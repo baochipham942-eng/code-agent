@@ -5,6 +5,7 @@ import { DEFERRED_TOOLS_META } from '../../../src/host/services/toolSearch/defer
 import { getProtocolRegistry, isProtocolToolName, resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { resetToolSearchService } from '../../../src/host/services/toolSearch';
 import type { ToolModule, ToolSchema } from '../../../src/host/protocol/tools';
+import type { JevSkillRerankJudge } from '../../../src/shared/contract/toolSearch';
 
 const mcpClientMocks = vi.hoisted(() => ({
   discoverLazyServersForSearch: vi.fn(),
@@ -387,6 +388,50 @@ describe('ToolSearchService loadable results', () => {
       canonicalInvocation: 'Skill({"command":"commit"})',
     });
     expect(result.tools[0]?.notCallableReason).toMatch(/Skill tool/i);
+  });
+
+  it('reranks required searches but never invokes the judge for select mode', async () => {
+    const service = new ToolSearchService();
+    service.registerMCPTools([
+      {
+        name: 'mcp__mock__required-a',
+        shortDescription: 'Required search candidate A',
+        tags: ['mcp'],
+        aliases: ['keyword'],
+        source: 'mcp',
+        mcpServer: 'mock',
+      },
+      {
+        name: 'mcp__mock__required-b',
+        shortDescription: 'Required search candidate B',
+        tags: ['mcp'],
+        aliases: ['keyword'],
+        source: 'mcp',
+        mcpServer: 'mock',
+      },
+    ]);
+    const judge: JevSkillRerankJudge = vi.fn(async ({ roster }) => ({
+      choice: { choice: roster.at(-1)!.name, confidence: 0.9 },
+      nouls: {
+        need_skill: { noul: 1 },
+        need_now: { noul: 1 },
+        none_of_roster: { noul: 0 },
+      },
+    }));
+
+    const required = await service.searchTools('+keyword', {
+      maxResults: 2,
+      includeMCP: true,
+      rerank: { enabled: true, judge },
+    });
+    expect(required.tools[0]?.name).toBe('mcp__mock__required-b');
+    const callsAfterRequired = vi.mocked(judge).mock.calls.length;
+
+    const selected = await service.searchTools('select:mcp__mock__required-a', {
+      rerank: { enabled: true, judge },
+    });
+    expect(selected.tools[0]?.name).toBe('mcp__mock__required-a');
+    expect(vi.mocked(judge)).toHaveBeenCalledTimes(callsAfterRequired);
   });
 
   // ── 意图驱动设计画布工具发现（agent 任何会话按意图搜到/select） ──────────

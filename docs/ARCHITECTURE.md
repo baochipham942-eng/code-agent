@@ -29,6 +29,7 @@
 | [Agent Architecture Debt Iteration](./architecture/agent-architecture-debt-iteration-plan-2026-05-31.md) | 历史债务计划与阶段边界（`docs/architecture/agent-architecture-debt-iteration-plan-2026-05-31.md`） |
 | [Chat-Native Workbench](./architecture/workbench.md) | Chat-Native Workbench的模块说明（`docs/architecture/workbench.md`） |
 | [v0.33 用户体验合同](./designs/v0.33-user-experience-contract.md) | v0.33 用户体验合同的模块说明（`docs/designs/v0.33-user-experience-contract.md`） |
+| [Brain 步数上限选项](./designs/brain-step-cap-options.md) | 前台 brain 8 轮硬上限的三个出路方案（自动转后台 / 续跑按钮 / 自适应），草稿·待拍板，非 ADR（`docs/designs/brain-step-cap-options.md`） |
 | [Live Voice](./architecture/live-voice.md) | Live Voice的模块说明（`docs/architecture/live-voice.md`） |
 | [Artifact Verification](./architecture/artifact-verification.md) | Artifact Verification的模块说明（`docs/architecture/artifact-verification.md`） |
 | [Activity Providers](./architecture/activity-providers.md) | Activity Providers的模块说明（`docs/architecture/activity-providers.md`） |

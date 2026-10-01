@@ -6,6 +6,7 @@ import {
 } from '../../../shared/utils/browserComputerRedaction';
 import { redactToolResultSecrets } from '../../security/secretRedaction';
 import { ensureFailedToolResultError } from '../../tools/toolResultError';
+import { getPluginOriginForTool } from '../../plugins/pluginToolOrigin';
 
 export function sanitizeToolArgumentsForObservation(toolCall: Pick<ToolCall, 'name' | 'arguments'>): Record<string, unknown> {
   const browserSafeArgs = sanitizeBrowserComputerToolArguments(toolCall.name, toolCall.arguments) || toolCall.arguments;
@@ -18,11 +19,27 @@ export function sanitizeToolResultForObservation(
 ): ToolResult {
   // 事件流（tool_call_end → SSE / session_events / CLI 展示）与会话落库同级：
   // 密钥形态子串必须在这里就脱敏，不能指望下游各自处理。
-  return sanitizeBrowserComputerToolResult(
+  const sanitized = sanitizeBrowserComputerToolResult(
     toolCall.name,
     toolCall.arguments,
     redactToolResultSecrets(ensureFailedToolResultError(toolCall.name, result)),
   );
+  const pluginOrigin = getPluginOriginForTool(toolCall.name);
+  const metadata = sanitized.metadata;
+  if (pluginOrigin) {
+    return {
+      ...sanitized,
+      metadata: { ...(metadata ?? {}), pluginOrigin },
+    };
+  }
+  if (metadata && Object.prototype.hasOwnProperty.call(metadata, 'pluginOrigin')) {
+    const { pluginOrigin: _toolSuppliedOrigin, ...rest } = metadata;
+    return {
+      ...sanitized,
+      metadata: Object.keys(rest).length > 0 ? rest : undefined,
+    };
+  }
+  return sanitized;
 }
 
 export function summarizeArtifactRepairFileEvidenceForObservation(

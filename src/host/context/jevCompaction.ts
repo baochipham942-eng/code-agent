@@ -1,12 +1,16 @@
 // Optional fast Jev compaction for tool rounds. It never rewrites or summarizes
-// text: entries are kept verbatim, dropped as whole call+result pairs (the
-// assistant text of a dropped pair goes with it), or truncated to the explicit
-// head+tail 300-character form that preserves any trailing archive pointer.
+// text: entries are kept verbatim, dropped as whole call+result pairs only when
+// both sides judge below the keep threshold (the assistant text of a dropped
+// pair goes with it), or truncated to the explicit head+tail 300-character form
+// that preserves any trailing archive pointer.
 
 import { estimateTokens } from './tokenEstimator';
 import type { ProjectableMessage } from './projectionEngine';
 import {
   buildJevCompactionQuestions,
+  JEV_COMPACTION_BATCH_ENTRY_OVERHEAD_TOKENS,
+  JEV_COMPACTION_MAX_BATCH_STATE_CHARS,
+  JEV_COMPACTION_PINNED_RECENT_MESSAGES,
   JEV_COMPACTION_THRESHOLDS,
   type JevAnswers,
   type JevSystemOneCall,
@@ -74,9 +78,14 @@ function buildCandidates(messages: ProjectableMessage[], protectedMessageIds?: S
   const used = new Set<string>();
   const toolMessages = messages.filter((message) =>
     Array.isArray(message.toolCalls) || typeof message.toolCallId === 'string');
-  // Positional pin of the latest six entries; user protection is a union on top,
-  // so a protected entry never consumes a pin slot from a recent entry.
+  // Positional pin of the latest six entries, unioned (只增不减) with every tool
+  // message inside the trailing pinnedRecentMessages-message window — the window
+  // aligns with the autoCompressor/compactionService preserveRecentCount default.
+  // User protection is a further union on top, so a protected entry never
+  // consumes a pin slot from a recent entry.
   const pinnedIds = new Set(toolMessages.slice(-JEV_COMPACTION_THRESHOLDS.pinnedLatestEntries).map((message) => message.id));
+  const recentWindowIds = new Set(
+    messages.slice(-JEV_COMPACTION_PINNED_RECENT_MESSAGES).map((message) => message.id));
   return toolMessages.map((message) => ({
     key: safeKey(message.id, used),
     message,
@@ -85,7 +94,7 @@ function buildCandidates(messages: ProjectableMessage[], protectedMessageIds?: S
       ? (message.toolCalls as Array<{ id?: unknown }>).flatMap((call) => typeof call.id === 'string' ? [call.id] : [])
       : [],
     toolCallId: typeof message.toolCallId === 'string' ? message.toolCallId : undefined,
-    pinned: pinnedIds.has(message.id),
+    pinned: pinnedIds.has(message.id) || recentWindowIds.has(message.id),
     protected: protectedMessageIds?.has(message.id) ?? false,
   }));
 }
@@ -121,18 +130,46 @@ export async function applyJevCompaction(
   const active = candidates.filter((candidate) => !isSafe(candidate));
   if (active.length === 0) return unavailable('no_candidates');
 
-  const batches: Candidate[][] = [];
-  let batch: Candidate[] = [];
+  // Guarded state entries are prepared before batching so the batch budget uses
+  // the exact JSON shapes sent to the judge: per-entry cost is the entry JSON's
+  // own estimateTokens plus a fixed margin covering its two noul questions and
+  // combined-JSON punctuation. A state-char cap keeps every batch inside
+  // tokenEstimator's exact-BPE regime, where concatenation never exceeds the sum
+  // of the parts — so each batch's state+questions estimate stays ≤ maxBatchTokens.
+  const prepared = active.map((candidate) => {
+    const entry = {
+      role: candidate.message.role,
+      kind: candidate.kind,
+      content: guardSensitiveText(candidate.message.content.slice(0, 12_000), {
+        surface: 'telemetry', mode: 'model-context',
+      }),
+    };
+    const entryJson = JSON.stringify({ [candidate.key]: entry });
+    return {
+      candidate,
+      entry,
+      entryJsonChars: entryJson.length,
+      cost: estimateTokens(entryJson) + JEV_COMPACTION_BATCH_ENTRY_OVERHEAD_TOKENS,
+    };
+  });
+
+  const batches: Array<typeof prepared> = [];
+  let batch: typeof prepared = [];
   let batchTokens = 0;
-  for (const candidate of active) {
-    const cost = estimateTokens(candidate.message.content) + 80;
-    if (batch.length > 0 && batchTokens + cost > JEV_COMPACTION_THRESHOLDS.maxBatchTokens) {
+  let batchChars = 0;
+  for (const item of prepared) {
+    const overflow = batch.length > 0
+      && (batchTokens + item.cost > JEV_COMPACTION_THRESHOLDS.maxBatchTokens
+        || batchChars + item.entryJsonChars > JEV_COMPACTION_MAX_BATCH_STATE_CHARS);
+    if (overflow) {
       batches.push(batch);
       batch = [];
       batchTokens = 0;
+      batchChars = 0;
     }
-    batch.push(candidate);
-    batchTokens += cost;
+    batch.push(item);
+    batchTokens += item.cost;
+    batchChars += item.entryJsonChars;
   }
   if (batch.length > 0) batches.push(batch);
 
@@ -145,18 +182,13 @@ export async function applyJevCompaction(
     for (const currentBatch of batches) {
       const entries: Record<string, unknown> = {};
       const keys: string[] = [];
-      for (const candidate of currentBatch) {
-        keys.push(candidate.key);
-        entries[candidate.key] = {
-          role: candidate.message.role,
-          kind: candidate.kind,
-          content: guardSensitiveText(candidate.message.content.slice(0, 12_000), {
-            surface: 'telemetry', mode: 'model-context',
-          }),
-        };
+      for (const item of currentBatch) {
+        keys.push(item.candidate.key);
+        entries[item.candidate.key] = item.entry;
       }
       const answers: JevAnswers = await call({ entries }, buildJevCompactionQuestions(keys));
-      for (const candidate of currentBatch) {
+      for (const item of currentBatch) {
+        const candidate = item.candidate;
         const callAnswer = answers[`keep_call_${candidate.key}`];
         const resultAnswer = answers[`keep_result_${candidate.key}`];
         if (!isNoul(callAnswer) || !isNoul(resultAnswer)) return unavailable('bad_shape');
@@ -183,6 +215,8 @@ export async function applyJevCompaction(
   // Pair integrity holds in both directions: a surviving call keeps its results
   // (truncated at most, never dropped) and a surviving result keeps its call —
   // when Jev would drop a call whose result is safe, the call is kept instead.
+  // 判定表①：整对删除只在 call 与 result 双双低于阈值时发生；result ≥ 阈值则
+  // call+result 原文保留（即使 call 低于阈值），只 call 过线则 result 走下方截断。
   // Compaction may keep more at pair boundaries, never orphan.
   const removeIds = new Set<string>();
   const truncateIds = new Set<string>();
@@ -192,6 +226,7 @@ export async function applyJevCompaction(
     if (decision?.keepCall !== false) continue;
     const results = candidate.toolCallIds.flatMap((id) => resultsByCallId.get(id) ?? []);
     if (results.some(isSafe)) continue;
+    if (results.some((result) => decisions.get(result.key)?.keepResult === true)) continue;
     removeIds.add(candidate.message.id);
     for (const result of results) removeIds.add(result.message.id);
   }

@@ -166,6 +166,7 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
       command: 'npx',
       args: ['-y', '@modelcontextprotocol/server-filesystem', os.homedir()],
       enabled: false, // 默认禁用，避免与内置工具冲突
+      stateless: true,
     },
     // Git 服务器 - 版本控制
     {
@@ -173,6 +174,7 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
       command: 'npx',
       args: ['-y', '@modelcontextprotocol/server-git'],
       enabled: false, // 默认禁用，可在设置中启用
+      stateless: true,
     },
     // GitHub 服务器
     {
@@ -183,6 +185,7 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
         GITHUB_PERSONAL_ACCESS_TOKEN: githubToken,
       },
       enabled: !!githubToken,
+      stateless: true,
     },
     // SQLite 服务器
     {
@@ -190,6 +193,7 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
       command: 'npx',
       args: ['-y', '@modelcontextprotocol/server-sqlite'],
       enabled: false,
+      stateless: true,
     },
     // Brave Search 服务器
     {
@@ -200,6 +204,7 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
         BRAVE_API_KEY: braveApiKey,
       },
       enabled: !!braveApiKey,
+      stateless: true,
     },
     // Memory 服务器 - 知识图谱记忆
     {
@@ -216,6 +221,7 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
       command: 'npx',
       args: ['-y', '@modelcontextprotocol/server-sequential-thinking'],
       enabled: true, // 默认启用，提升复杂任务处理能力
+      stateless: true,
     },
 
     // ========== Phase 3: Puppeteer ==========

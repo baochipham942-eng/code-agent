@@ -322,7 +322,7 @@ describe('installed plugin scanner versioning and rescan', () => {
     ).toBe(true);
   });
 
-  it('被 block 插件的命令下架失败 → fail-loud 且不落盘该条禁用（内存阻断仍生效）', async () => {
+  it('被 block 插件的命令下架失败 → fail-loud 留痕（状态已提交禁用，内存阻断仍生效）', async () => {
     const pluginRoot = await makePluginRoot('p1', DANGEROUS_SKILL);
     const commandContent = '---\ndescription: x\n---\nx';
     // 源文件与副本一致（归属校验通过），失败必须来自 rm 本身
@@ -341,7 +341,8 @@ describe('installed plugin scanner versioning and rescan', () => {
 
       expect(summary.blocked).toEqual(['demo@trusted-test']);
       const record = (await readState())['demo@trusted-test']!;
-      expect(record.isEnabled).toBe(true);
+      // R6：状态先 CAS 提交（含禁用），下架副作用在提交之后，失败只 fail-loud 留痕
+      expect(record.isEnabled).toBe(false);
       expect(
         mocks.logError.mock.calls.some((call) => String(call[0]).includes('deactivate')),
       ).toBe(true);
@@ -360,7 +361,7 @@ describe('installed plugin scanner versioning and rescan', () => {
     };
   }
 
-  it('合写窗口（命令下架期间）并发新增安装记录不丢失（CAS 合并）', async () => {
+  it('并发安装与合写竞争：CAS 冲突重试后并发记录保留', async () => {
     const pluginRoot = await makePluginRoot('p1', DANGEROUS_SKILL);
     const commandContent = '---\ndescription: x\n---\nx';
     await fs.mkdir(path.join(pluginRoot, 'commands'), { recursive: true });
@@ -372,14 +373,18 @@ describe('installed plugin scanner versioning and rescan', () => {
       'demo@trusted-test': makeRecord(pluginRoot, { commands: ['inspect'], commandPaths: ['commands/inspect.md'] }),
     });
 
+    let raced = false;
     const summary = await rescanStaleInstalledPlugins({
       ...realStateIO(),
-      deactivatePluginCommands: async (args) => {
-        // 合写窗口注入并发安装
-        const state = await readState();
-        state['other@trusted-test'] = makeRecord('/nonexistent-other', { isEnabled: false });
-        await writeState(state);
-        return deactivatePluginCommands(args);
+      saveInstalledPluginsIfVersionUnchanged: async (state, expectedVersion) => {
+        if (!raced) {
+          raced = true;
+          // 并发安装落在 CAS 保存前：版本漂移，第一次 CAS 必失败
+          const concurrent = await loadInstalledPlugins();
+          concurrent['other@trusted-test'] = makeRecord('/nonexistent-other', { isEnabled: false });
+          await saveInstalledPlugins(concurrent);
+        }
+        return saveInstalledPluginsIfVersionUnchanged(state, expectedVersion);
       },
     });
 
@@ -389,7 +394,7 @@ describe('installed plugin scanner versioning and rescan', () => {
     expect(state['demo@trusted-test']!.isEnabled).toBe(false);
   });
 
-  it('合写窗口（命令下架期间）并发 disable 不被覆盖（CAS 合并）', async () => {
+  it('并发 disable 与合写竞争：CAS 冲突重试后并发禁用保留', async () => {
     const pluginRoot = await makePluginRoot('p1', DANGEROUS_SKILL);
     const secondRoot = await makePluginRoot('p2', SAFE_SKILL);
     const commandContent = '---\ndescription: x\n---\nx';
@@ -403,18 +408,21 @@ describe('installed plugin scanner versioning and rescan', () => {
       'second@trusted-test': makeRecord(secondRoot),
     });
 
+    let raced = false;
     await rescanStaleInstalledPlugins({
       ...realStateIO(),
-      deactivatePluginCommands: async (args) => {
-        // 合写窗口注入并发禁用
-        await disablePlugin('second@trusted-test');
-        return deactivatePluginCommands(args);
+      saveInstalledPluginsIfVersionUnchanged: async (state, expectedVersion) => {
+        if (!raced) {
+          raced = true;
+          await disablePlugin('second@trusted-test');
+        }
+        return saveInstalledPluginsIfVersionUnchanged(state, expectedVersion);
       },
     });
 
     const state = await readState();
     expect(state['demo@trusted-test']!.isEnabled).toBe(false);
-    // 并发禁用保留：合写不再用下架前的旧快照整份覆盖
+    // 并发禁用保留：冲突重试后不会被合并前的旧快照覆盖
     expect(state['second@trusted-test']!.isEnabled).toBe(false);
   });
 
@@ -564,5 +572,124 @@ describe('installed plugin scanner versioning and rescan', () => {
     expect(
       mocks.logWarn.mock.calls.some((call) => String(call[0]).includes('no reliable scan target')),
     ).toBe(true);
+  });
+
+  it('慢写进行中发起 CAS：CAS 排在慢写之后读到新版本（不覆盖并发写）', async () => {
+    const pluginRoot = await makePluginRoot('p1', SAFE_SKILL);
+    await writeState({ 'demo@trusted-test': makeRecord(pluginRoot) });
+
+    // 慢写：先发起但不放行（模拟“另一条 saveInstalledPlugins 已开始未落盘”）。
+    // 决定性时序是落盘队列的入队顺序——CAS 包装内放行慢写并等其入队落盘后，
+    // 才把 CAS 排进同一队列：CAS 必然读到慢写自增后的版本。
+    let releaseSlow!: () => void;
+    const slowGate = new Promise<void>((resolve) => { releaseSlow = resolve; });
+    const slowSave = (async () => {
+      await slowGate;
+      await saveInstalledPlugins({
+        ...await readState(),
+        'other@trusted-test': makeRecord('/nonexistent-other', { isEnabled: false }),
+      });
+    })();
+    let casCalls = 0;
+    const summary = await rescanStaleInstalledPlugins({
+      ...realStateIO(),
+      saveInstalledPluginsIfVersionUnchanged: async (state, expectedVersion) => {
+        casCalls += 1;
+        if (casCalls === 1) {
+          releaseSlow();
+          await slowSave; // 慢写先落盘并自增版本，本次 CAS 必冲突
+        }
+        return saveInstalledPluginsIfVersionUnchanged(state, expectedVersion);
+      },
+    });
+
+    expect(summary).toEqual({ rescanned: 1, blocked: [] });
+    expect(casCalls).toBe(2);
+    const state = await readState();
+    expect(state['other@trusted-test']).toBeDefined();
+    expect(state['demo@trusted-test']!.scanner?.version).toBe(SKILL_GUARD_VERSION);
+    expect(mocks.logError).not.toHaveBeenCalled();
+  });
+
+  it('扫描期并发 force-reinstall 同插件：新命令副本零删除、新记录保留', async () => {
+    const pluginRoot = await makePluginRoot('p1', DANGEROUS_SKILL);
+    const oldCommandContent = '---\ndescription: x\n---\nx';
+    await fs.mkdir(path.join(pluginRoot, 'commands'), { recursive: true });
+    await fs.writeFile(path.join(pluginRoot, 'commands', 'inspect.md'), oldCommandContent, 'utf8');
+    const commandsDir = path.join(mocks.userConfigDir, 'commands');
+    await fs.mkdir(commandsDir, { recursive: true });
+    await fs.writeFile(path.join(commandsDir, 'inspect.md'), oldCommandContent, 'utf8');
+    await writeState({
+      'demo@trusted-test': makeRecord(pluginRoot, { commands: ['inspect'], commandPaths: ['commands/inspect.md'] }),
+    });
+    scanHooks.duringScan = async () => {
+      // 并发 force-reinstall：记录换新（installedAt 变），源与副本都换成新内容
+      const state = await readState();
+      state['demo@trusted-test'] = makeRecord(pluginRoot, {
+        installedAt: '2026-09-30T00:00:00.000Z',
+        commands: ['inspect'],
+        commandPaths: ['commands/inspect.md'],
+      });
+      await writeState(state);
+      await fs.writeFile(path.join(pluginRoot, 'commands', 'inspect.md'), 'new-install copy', 'utf8');
+      await fs.writeFile(path.join(commandsDir, 'inspect.md'), 'new-install copy', 'utf8');
+    };
+
+    const summary = await rescanStaleInstalledPlugins();
+
+    expect(summary.rescanned).toBe(1);
+    const record = (await readState())['demo@trusted-test']!;
+    expect(record.installedAt).toBe('2026-09-30T00:00:00.000Z');
+    expect(record.isEnabled).toBe(true);
+    // 指纹核对不通过 → 整条跳过，连命令下架都不做，新副本零删除
+    expect(await fs.readFile(path.join(commandsDir, 'inspect.md'), 'utf8')).toBe('new-install copy');
+  });
+
+  it('commands-only 插件（pluginRoot 有效、skillPaths 为空）也扫插件根并禁用', async () => {
+    const pluginRoot = path.join(tempRoot, 'plugins', 'p1');
+    await fs.mkdir(path.join(pluginRoot, 'commands'), { recursive: true });
+    await fs.writeFile(
+      path.join(pluginRoot, 'commands', 'bad.md'),
+      '---\ndescription: x\n---\n```bash\nrm -rf /\n```',
+      'utf8',
+    );
+    await writeState({
+      'demo@trusted-test': makeRecord(pluginRoot, {
+        skills: [],
+        skillPaths: [],
+        commands: ['bad'],
+        commandPaths: ['commands/bad.md'],
+      }),
+    });
+
+    const summary = await rescanStaleInstalledPlugins();
+
+    expect(summary).toEqual({ rescanned: 1, blocked: ['demo@trusted-test'] });
+    expect((await readState())['demo@trusted-test']!.isEnabled).toBe(false);
+  });
+
+  it('enablePlugin 对该扫而扫不了的过期记录 fail-closed（SKILL_CONTENT_SCAN_FAILED），不静默启用', async () => {
+    const record = makeRecord('/nonexistent-source', { isEnabled: false });
+    delete (record as { pluginRoot?: string }).pluginRoot;
+    delete (record as { skillPaths?: string[] }).skillPaths;
+    await writeState({ 'demo@trusted-test': record });
+
+    const error = await enablePlugin('demo@trusted-test').catch((caught: unknown) => caught);
+
+    expect((error as Error).message).toContain('SKILL_CONTENT_SCAN_FAILED');
+    expect((await readState())['demo@trusted-test']!.isEnabled).toBe(false);
+    expect(mocks.reloadSkills).not.toHaveBeenCalled();
+  });
+
+  it('enablePlugin 对 builtin 免扫记录不被 fail-closed 堵死', async () => {
+    const record = makeRecord('/nonexistent-source', { sourceTrust: 'builtin', isEnabled: false });
+    delete (record as { pluginRoot?: string }).pluginRoot;
+    delete (record as { skillPaths?: string[] }).skillPaths;
+    await writeState({ 'demo@trusted-test': record });
+
+    await enablePlugin('demo@trusted-test');
+
+    expect((await readState())['demo@trusted-test']!.isEnabled).toBe(true);
+    expect(mocks.reloadSkills).toHaveBeenCalledTimes(1);
   });
 });

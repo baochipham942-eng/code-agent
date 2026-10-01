@@ -40,7 +40,7 @@ import {
 } from './githubArchiveSecurity';
 import { copyDirectory, runExclusivePluginInstall, throwIfInstallAborted } from './installConcurrency';
 import { removeCommandFileIfOwnedByPlugin, type CommandOwnershipSource } from './commandFileOwnership';
-import { getInstalledPluginsFilePath, noteInstalledPluginsStateSaved } from './installedPluginsStateStore';
+import { getInstalledPluginsFilePath, saveInstalledPluginsState } from './installedPluginsStateStore';
 import { materializeOfficialSkillSection } from '../../security/skillOfficialSectionGuard';
 import { collectEnabledSkillDescriptors } from './enabledSkillDescriptors';
 import { migrateInstalledPlugins } from './installedPluginMigration';
@@ -129,21 +129,8 @@ export async function loadInstalledPlugins(): Promise<InstalledPluginsFile> {
 }
 
 export async function saveInstalledPlugins(state: InstalledPluginsFile): Promise<void> {
-  const filePath = getInstalledPluginsPath();
-  const tempPath = `${filePath}.tmp-${randomUUID()}`;
-  await ensureDir(path.dirname(filePath));
-  try {
-    await fs.writeFile(
-      tempPath,
-      JSON.stringify(state, null, 2) + '\n',
-      'utf8'
-    );
-    await fs.rename(tempPath, filePath);
-    noteInstalledPluginsStateSaved();
-  } catch (error) {
-    await fs.rm(tempPath, { force: true }).catch(() => {});
-    throw error;
-  }
+  // 唯一写入口：落盘串行化与版本自增都在 installedPluginsStateStore 内完成
+  await saveInstalledPluginsState(state);
 }
 
 function migrateStagingSkillNames(state: InstalledPluginsFile): InstalledPluginsFile {

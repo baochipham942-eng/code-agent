@@ -37,7 +37,7 @@ export class SkillContentScanBlockedError extends Error {
   }
 }
 
-class SkillContentScanFailedError extends Error {
+export class SkillContentScanFailedError extends Error {
   readonly code = 'SKILL_CONTENT_SCAN_FAILED';
 
   constructor(pluginSpec: string, sourceTrust: SkillInstallSourceTrust, filePath: string) {

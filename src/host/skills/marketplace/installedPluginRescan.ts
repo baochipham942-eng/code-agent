@@ -12,7 +12,7 @@ import fsSync from 'fs';
 import path from 'path';
 import { SKILL_GUARD_VERSION, type SkillGuardFinding } from '../../security/skillContentGuard';
 import { createLogger } from '../../services/infra/logger';
-import { scanPluginRootContent, SkillContentScanBlockedError } from './skillInstallContentGuard';
+import { scanPluginRootContent, SkillContentScanBlockedError, SkillContentScanFailedError } from './skillInstallContentGuard';
 import { getSkillsDir } from './pathUtils';
 import {
   getInstalledPluginsStateVersion,
@@ -53,9 +53,14 @@ interface InstalledPluginRescanOutcome {
  * sourceMarketplacePath（可能与复制内容漂移）。拿不到可靠路径返回空数组。
  */
 function resolveRescanTargetDirs(record: InstalledPluginRecord): string[] {
-  const pluginRoot = record.pluginRoot || record.sourceMarketplacePath;
-  if (pluginRoot && record.skillPaths?.length) {
-    return fsSync.existsSync(pluginRoot) ? [pluginRoot] : [];
+  // pluginRoot 有效就始终扫插件根（ai-review R6 Nit1：commands-only 插件
+  // skillPaths 为空也要扫，插件根含共享命令模板）
+  if (record.pluginRoot && fsSync.existsSync(record.pluginRoot)) {
+    return [record.pluginRoot];
+  }
+  const pluginRoot = record.sourceMarketplacePath;
+  if (pluginRoot && record.skillPaths?.length && fsSync.existsSync(pluginRoot)) {
+    return [pluginRoot];
   }
   const skillsDir = getSkillsDir(record.scope, record.projectPath);
   return (record.skills || [])
@@ -176,24 +181,9 @@ export async function rescanStaleInstalledPlugins(
   }
   if (decisions.length === 0) return summary;
 
-  // 合写期分两步（ai-review R4 Important 1）：先在 fresh 快照上做命令下架等
-  // 带 await 的副作用，再在保存前重读一次做 CAS 最小合并——合并只动本单负责的
-  // 字段（scanner / isEnabled），合写窗口里的并发安装/禁用/卸载随最新快照保留。
-  const fresh = await svc.loadInstalledPlugins();
-  const disableApproved = new Set<string>();
+  // block / scan_failed 结论落 summary.blocked 并 warn（与落盘成败无关，供内存级装载过滤）
   for (const decision of decisions) {
-    const record = fresh[decision.pluginSpec];
-    if (record?.installedAt !== decision.installedAt
-      || (record.pluginRoot || record.sourceMarketplacePath) !== decision.rootDir) {
-      logger.warn('Skipped rescan result: plugin record changed during rescan', {
-        pluginSpec: decision.pluginSpec,
-      });
-      continue;
-    }
-
-    if (decision.outcome.kind === 'pass') continue; // pass 无副作用，直接进合并阶段
-
-    // block / scan_failed → 禁用（结论进 summary.blocked，与落盘成败无关）
+    if (decision.outcome.kind === 'pass') continue;
     summary.blocked.push(decision.pluginSpec);
     if (decision.outcome.kind === 'block') {
       logger.warn('Installed plugin disabled by skill guard rescan', {
@@ -209,47 +199,31 @@ export async function rescanStaleInstalledPlugins(
         error: decision.outcome.error,
       });
     }
-    if (!record.isEnabled) continue; // 扫描期间已被并发禁用（命令亦已下架）
-
-    try {
-      await svc.deactivatePluginCommands({
-        scope: record.scope,
-        projectPath: record.projectPath,
-        commandNames: record.commands || [],
-        // 归属校验（ai-review R4 Important 2）：只删内容仍与插件源文件一致的
-        // 命令副本；用户改写过的同名文件不删（deactivatePluginCommands 内 warn 留痕）
-        verifyOwnership: {
-          sourceRootDir: record.sourceMarketplacePath,
-          commandPaths: record.commandPaths || [],
-        },
-      });
-    } catch (error) {
-      // fail-loud 且跳过该条落盘：命令下架失败时若仍保存 isEnabled=false，残留
-      // 命令仍可调用（ai-review R2 Nit2）。磁盘保持原样（仍 enabled），下次启动
-      // 重扫自愈；本次会话由 summary.blocked 的内存过滤兜底不装载。
-      logger.error('Failed to deactivate commands of rescan-blocked plugin; skipping state persist for this record', {
-        pluginSpec: decision.pluginSpec,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      continue;
-    }
-    disableApproved.add(decision.pluginSpec);
   }
 
-  // CAS 合并 + 冲突重试（ai-review R5 Important 1）：每次循环重读最新状态、
-  // 记录内存状态版本、做最小合并（只动本单负责的字段），版本不变才落盘；
+  // CAS 合并 + 冲突重试（ai-review R5/R6）：每次循环重读最新状态、记录内存状态
+  // 版本、做最小合并（只动本单负责的字段 scanner / isEnabled），版本不变才落盘，
   // 版本漂移重试，耗尽 fail-loud 留痕、本次结论丢弃（内存阻断集仍兜底）。
+  // 命令下架副作用挪到状态提交之后（ai-review R6 Important 2）：指纹核对在合并
+  // 前完成，并发重装的记录整条跳过、连下架都不做，不会误删新安装的命令副本。
+  const disabledRecords: Array<{ pluginSpec: string; record: InstalledPluginRecord }> = [];
   let persisted = false;
   let persistError: unknown;
   for (let attempt = 1; attempt <= MAX_SAVE_ATTEMPTS && !persisted; attempt += 1) {
     const latest = await svc.loadInstalledPlugins();
     const stateVersion = svc.getInstalledPluginsStateVersion();
     let dirty = false;
+    disabledRecords.length = 0;
     for (const decision of decisions) {
       const record = latest[decision.pluginSpec];
       if (record?.installedAt !== decision.installedAt
         || (record.pluginRoot || record.sourceMarketplacePath) !== decision.rootDir) {
-        continue; // 记录被并发替换——fresh 阶段已 warn，这里静默跳过即可
+        if (attempt === 1) {
+          logger.warn('Skipped rescan result: plugin record changed during rescan', {
+            pluginSpec: decision.pluginSpec,
+          });
+        }
+        continue;
       }
       if (decision.outcome.kind === 'pass') {
         record.scanner = {
@@ -260,9 +234,10 @@ export async function rescanStaleInstalledPlugins(
         dirty = true;
         continue;
       }
-      if (disableApproved.has(decision.pluginSpec) && record.isEnabled) {
+      if (record.isEnabled) {
         record.isEnabled = false;
         dirty = true;
+        disabledRecords.push({ pluginSpec: decision.pluginSpec, record });
       }
     }
     if (!dirty) {
@@ -286,6 +261,30 @@ export async function rescanStaleInstalledPlugins(
         attempts: MAX_SAVE_ATTEMPTS,
       });
     }
+    return summary;
+  }
+
+  // 状态已提交：对本次实际禁用的记录下架 prompt commands（这些记录已通过最终
+  // 指纹核对）。归属校验（ai-review R4/R5 Important 2）只删内容仍与插件源一致
+  // 的副本；下架失败 fail-loud 留痕（ai-review R2 Nit2），残留命令待人工或
+  // 下次安装周期清理。
+  for (const { pluginSpec, record } of disabledRecords) {
+    try {
+      await svc.deactivatePluginCommands({
+        scope: record.scope,
+        projectPath: record.projectPath,
+        commandNames: record.commands || [],
+        verifyOwnership: {
+          sourceRootDir: record.sourceMarketplacePath,
+          commandPaths: record.commandPaths || [],
+        },
+      });
+    } catch (error) {
+      logger.error('Failed to deactivate commands of rescan-disabled plugin', {
+        pluginSpec,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
   return summary;
 }
@@ -294,6 +293,8 @@ export async function rescanStaleInstalledPlugins(
  * enablePlugin 前置重扫：过期记录按当前规则重扫，block 抛
  * SkillContentScanBlockedError 而不是静默启用；pass 回写 record.scanner
  * （由调用方随启用一并落盘）。扫描失败（文件不可读等）fail-closed 向上抛。
+ * 该扫而扫不了（拿不到可靠扫描目标）同样 fail-closed（ai-review R6 Nit2）——
+ * 与免扫路径区分开：builtin 在 isInstalledPluginScanStale 已放行，走不到这里。
  */
 export async function assertPluginRescanPassesForEnable(
   pluginSpec: string,
@@ -301,7 +302,15 @@ export async function assertPluginRescanPassesForEnable(
 ): Promise<void> {
   if (!isInstalledPluginScanStale(record)) return;
   const rescan = await rescanInstalledPlugin(pluginSpec, record);
-  if (rescan?.verdict === 'block') {
+  if (!rescan) {
+    logger.error('Plugin enable blocked: no reliable scan target for stale record', { pluginSpec });
+    throw new SkillContentScanFailedError(
+      pluginSpec,
+      record.sourceTrust ?? 'local-marketplace',
+      record.pluginRoot ?? record.sourceMarketplacePath,
+    );
+  }
+  if (rescan.verdict === 'block') {
     logger.warn('Plugin enable blocked by skill guard rescan', {
       pluginSpec,
       findings: rescan.findings.map((finding) => finding.kind),
@@ -313,11 +322,9 @@ export async function assertPluginRescanPassesForEnable(
       rescan.file ?? record.pluginRoot ?? record.sourceMarketplacePath,
     );
   }
-  if (rescan) {
-    record.scanner = {
-      version: SKILL_GUARD_VERSION,
-      verdict: 'pass',
-      scannedAt: rescan.scannedAt,
-    };
-  }
+  record.scanner = {
+    version: SKILL_GUARD_VERSION,
+    verdict: 'pass',
+    scannedAt: rescan.scannedAt,
+  };
 }

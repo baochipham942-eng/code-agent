@@ -518,6 +518,32 @@ describe('installed plugin scanner versioning and rescan', () => {
     expect(mocks.logError).not.toHaveBeenCalled();
   });
 
+  it('CAS 循环读快照期间完成的并发保存不被旧快照覆盖（先取版本再读）', async () => {
+    const pluginRoot = await makePluginRoot('p1', SAFE_SKILL);
+    await writeState({ 'demo@trusted-test': makeRecord(pluginRoot) });
+    let loads = 0;
+
+    const summary = await rescanStaleInstalledPlugins({
+      ...realStateIO(),
+      loadInstalledPlugins: async () => {
+        loads += 1;
+        const snapshot = await loadInstalledPlugins();
+        if (loads === 2) {
+          // CAS 循环首读：文件已读出、返回之前，一笔并发安装落盘
+          const concurrent = await loadInstalledPlugins();
+          concurrent['other@trusted-test'] = makeRecord('/nonexistent-other', { isEnabled: false });
+          await saveInstalledPlugins(concurrent);
+        }
+        return snapshot;
+      },
+    });
+
+    expect(summary).toEqual({ rescanned: 1, blocked: [] });
+    const state = await readState();
+    expect(state['other@trusted-test']).toBeDefined();
+    expect(state['demo@trusted-test']!.scanner?.version).toBe(SKILL_GUARD_VERSION);
+  });
+
   it('CAS 连续冲突 → 有界放弃 + error 留痕 + 结论丢弃（内存阻断仍生效）', async () => {
     const pluginRoot = await makePluginRoot('p1', DANGEROUS_SKILL);
     await writeState({ 'demo@trusted-test': makeRecord(pluginRoot) });

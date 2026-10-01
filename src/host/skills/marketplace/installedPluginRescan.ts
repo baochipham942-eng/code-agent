@@ -78,6 +78,8 @@ async function rescanInstalledPlugin(
   record: InstalledPluginRecord,
 ): Promise<InstalledPluginRescanOutcome | null> {
   const targetDirs = resolveRescanTargetDirs(record);
+  // ponytail: 无 pluginRoot 且 skills 为空的老版纯命令插件拿不到目标，commands 副本永不重扫（基线同样不覆盖）；
+  // 要覆盖得从命令副本反推插件根，等真有此类存量再做
   if (targetDirs.length === 0) {
     logger.warn('Skipped rescan: no reliable scan target for installed record', { pluginSpec });
     return null;
@@ -150,6 +152,7 @@ const MAX_SAVE_ATTEMPTS = 3;
  * （会撞上 initialize 的 initPromise 自等待死锁），所以不走 disablePlugin。
  */
 export async function rescanStaleInstalledPlugins(
+  /** 仅供测试注入并发写；生产调用方不传 */
   io?: RescanStateIO,
 ): Promise<StaleRescanSummary> {
   const summary: StaleRescanSummary = { rescanned: 0, blocked: [] };
@@ -210,8 +213,10 @@ export async function rescanStaleInstalledPlugins(
   let persisted = false;
   let persistError: unknown;
   for (let attempt = 1; attempt <= MAX_SAVE_ATTEMPTS && !persisted; attempt += 1) {
-    const latest = await svc.loadInstalledPlugins();
+    // 先取版本再读快照（ai-review R8）：读文件期间完成的并发保存会让版本漂移、CAS 失败重试，
+    // 反过来取会把那次写入算进 expectedVersion，旧快照照样通过 CAS 覆盖它
     const stateVersion = svc.getInstalledPluginsStateVersion();
+    const latest = await svc.loadInstalledPlugins();
     let dirty = false;
     disabledRecords.length = 0;
     for (const decision of decisions) {

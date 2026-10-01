@@ -95,6 +95,12 @@ export async function removeCommandFileIfOwnedByPlugin(
     }
   }
   // 窗口内被改写：rename 回原路径，用户的文件不丢
-  await rename(quarantine, destination).catch(() => {});
+  await rename(quarantine, destination).catch((restoreError: unknown) => {
+    logger.error('Failed to restore quarantined command file after ownership mismatch', {
+      command: commandName,
+      file: destination,
+      error: restoreError instanceof Error ? restoreError.message : String(restoreError),
+    });
+  });
   return warnNotOwned(destination, commandName);
 }

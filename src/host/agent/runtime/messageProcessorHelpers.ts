@@ -56,8 +56,11 @@ export function buildForcedFinalAssistantContent(reason: string): string {
 export function shouldDeferForcedFinalToInference(ctx: RuntimeContext): boolean {
   const reason = ctx.control.forceFinalResponseReason ?? '';
   const prompt = ctx.control.forceFinalResponsePrompt ?? '';
+  // 这两类原因都带解释提示，必须再走一次禁工具的最终推理；其余原因仍就地静态收尾。
   return reason.startsWith('连续只读操作达到硬阈值')
-    || prompt.includes('reason="read-loop-hard-limit"');
+    || reason === 'failed-round-guard'
+    || prompt.includes('reason="read-loop-hard-limit"')
+    || prompt.includes('reason="failed-round-guard"');
 }
 
 export function buildArtifactRepairAdmissionRecoveryPrompt(

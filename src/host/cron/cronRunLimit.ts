@@ -112,7 +112,7 @@ export async function settleCronRunLimit(
  * 运行计数的窄写：内存定义原地改计数 + DB run_count 单列更新——不走 updateJob 的
  * 停定时器/重校验/整行重写，updatedAt 不 churn（PR#2208 ai-review Important）。
  */
-export async function writeCronRunCountNarrow(
+async function writeCronRunCountNarrow(
   definition: CronJobDefinition | undefined,
   runCount: number,
 ): Promise<void> {

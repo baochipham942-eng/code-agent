@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
+import { DesktopSchemas } from '../../../src/shared/ipc/schemas/desktop';
 
 // desktop.ipc.ts 的 DESKTOP domain dispatch 聚焦覆盖（computer-surface observe/
 // listElements 的复杂状态逻辑暂不深测）。重点：normalizeBrowserUrl 多分支校验、
@@ -31,6 +32,7 @@ const svc = vi.hoisted(() => ({
   audioStatus: { capturing: true, soxAvailable: true, asrEngine: 'whisper' } as Record<string, unknown>,
   startAudio: vi.fn(async (..._a: unknown[]) => {}),
   stopAudio: vi.fn(),
+  clearAudio: vi.fn(() => ({ deleted: 2, freedBytes: 40, failed: 0 })),
   openPath: vi.fn(async (..._a: unknown[]) => {}),
 }));
 
@@ -41,6 +43,7 @@ vi.mock('../../../src/host/services/desktop/desktopAudioCapture', () => ({
   startDesktopAudioCapture: (...a: unknown[]) => svc.startAudio(...a),
   stopDesktopAudioCapture: () => svc.stopAudio(),
   getAudioCaptureStatus: () => svc.audioStatus,
+  clearAudioRecordings: () => svc.clearAudio(),
 }));
 vi.mock('../../../src/host/services/infra/browserService', () => ({ browserService: svc.browser, getManagedBrowserService: () => svc.browser }));
 vi.mock('../../../src/host/services/infra/browserRelayService', () => ({ browserRelayService: svc.relay }));
@@ -178,6 +181,14 @@ describe('音频采集状态机', () => {
     expect((await call('stopAudioCapture')).success).toBe(true);
     expect(svc.stopAudio).toHaveBeenCalled();
     expect((await call('getAudioCaptureStatus')).data).toMatchObject({ capturing: true });
+  });
+
+  it('clearAudioRecordings is accepted by the schema and reaches the handler', async () => {
+    expect(DesktopSchemas.ACTIONS).toContain('clearAudioRecordings');
+    const call = await setup();
+    const res = await call('clearAudioRecordings');
+    expect(res).toMatchObject({ success: true, data: { deleted: 2, freedBytes: 40, failed: 0 } });
+    expect(svc.clearAudio).toHaveBeenCalledOnce();
   });
 });
 

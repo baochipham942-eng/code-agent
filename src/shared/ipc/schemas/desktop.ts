@@ -12,6 +12,7 @@ import { channelSchema } from './core';
 const DesktopDomainRequestSchema = z.object({
   action: z.enum([
     'attachBrowserRelayTab',
+    'clearAudioRecordings',
     'clearManagedBrowserCookies',
     'closeManagedBrowserSession',
     'detachBrowserRelayTab',

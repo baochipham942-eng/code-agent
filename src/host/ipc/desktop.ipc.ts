@@ -22,7 +22,7 @@ import type { ManagedBrowserProxyInput } from '../services/infra/browserService'
 import { getNativeDesktopService } from '../services/desktop/nativeDesktopService';
 import { getComputerSurface } from '../services/desktop/computerSurface';
 import { startDesktopVisionAnalyzer } from '../services/desktop/desktopVisionAnalyzer';
-import { startDesktopAudioCapture, stopDesktopAudioCapture, getAudioCaptureStatus } from '../services/desktop/desktopAudioCapture';
+import { startDesktopAudioCapture, stopDesktopAudioCapture, getAudioCaptureStatus, clearAudioRecordings } from '../services/desktop/desktopAudioCapture';
 import { browserService } from '../services/infra/browserService';
 import { browserRelayService } from '../services/infra/browserRelayService';
 import {
@@ -493,6 +493,9 @@ const desktopHandlers: RawDomainRouteHandlers<DesktopDomainRequest, NativeDeskto
   },
   getAudioCaptureStatus: async (_service, _raw) => {
     return { success: true, data: getAudioCaptureStatus() } satisfies IPCResponse<unknown>;
+  },
+  clearAudioRecordings: async (_service, _raw) => {
+    return { success: true, data: clearAudioRecordings() } satisfies IPCResponse<unknown>;
   },
 };
 

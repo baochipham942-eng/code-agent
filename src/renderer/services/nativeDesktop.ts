@@ -403,6 +403,14 @@ export interface AudioCaptureStatus {
   totalSegments: number;
   audioDir: string;
   queueLength: number;
+  retention?: {
+    lastSweepAt: number | null;
+    deletedTotal: number;
+    failedTotal: number;
+    lastError?: string;
+    fileCount?: number;
+    bytes?: number;
+  };
 }
 
 export interface AudioSegment {
@@ -517,6 +525,10 @@ export async function getAudioCaptureStatus(): Promise<AudioCaptureStatus | null
   } catch {
     return null;
   }
+}
+
+export async function clearAudioRecordings(): Promise<{ deleted: number; freedBytes: number; failed: number }> {
+  return postDesktopAction('clearAudioRecordings');
 }
 
 export async function observeComputerSurface(

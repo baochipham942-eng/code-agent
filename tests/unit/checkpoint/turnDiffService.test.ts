@@ -82,7 +82,9 @@ describe('captureTurnDiff path normalization', () => {
     const repo = await makeRepo();
     const missingPath = join(repo, 'missing.txt');
 
-    await expect(captureTurnDiff(repo, 'turn-missing', [missingPath])).resolves.toEqual({
+    // 不存在的候选不进 files；是否同时记进 absentPaths 取决于 resolveTrackedPath 能否把它判进仓内
+    // （macOS 的 /tmp 软链会判到仓外、Linux 判在仓内），这里只钉「不抛、files 为空」（N-DELIVCARD-GONE-FILE 收活）
+    await expect(captureTurnDiff(repo, 'turn-missing', [missingPath])).resolves.toMatchObject({
       turnId: 'turn-missing',
       files: [],
     });

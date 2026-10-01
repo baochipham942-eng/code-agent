@@ -2226,6 +2226,13 @@
             },
             "failedAt": {
               "type": "number"
+            },
+            "source": {
+              "type": "string",
+              "enum": [
+                "model_exit",
+                "synthetic_text"
+              ]
             }
           },
           "required": [

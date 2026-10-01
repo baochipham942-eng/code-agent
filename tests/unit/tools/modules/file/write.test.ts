@@ -54,12 +54,14 @@ function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
 
+let tmpDir: string;
+
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   const ctrl = new AbortController();
   return {
     sessionId: 'test-session',
     agentId: 'test-agent',
-    workingDir: process.cwd(),
+    workingDir: tmpDir,
     abortSignal: ctrl.signal,
     logger: makeLogger(),
     emit: () => void 0,
@@ -71,8 +73,6 @@ const allowAll: CanUseToolFn = async () => ({ allow: true });
 const denyAll: CanUseToolFn = async () => ({ allow: false, reason: 'blocked' });
 
 describe('writeModule (native)', () => {
-  let tmpDir: string;
-
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'write-native-'));
     fileReadTracker.clear();

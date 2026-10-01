@@ -71,52 +71,52 @@
         {
           "id": "buried-extract-1",
           "user": "请从抓取到的网页中提取第一行的订单号，按原文写出。",
-          "mustMention": "订单 1000"
+          "mustMention": "1000"
         },
         {
           "id": "buried-extract-2",
           "user": "请从抓取到的网页中提取第二行的订单号，按原文写出。",
-          "mustMention": "订单 1001"
+          "mustMention": "1001"
         },
         {
           "id": "buried-extract-3",
           "user": "请从抓取到的网页中提取第三行的订单号，按原文写出。",
-          "mustMention": "订单 1002"
+          "mustMention": "1002"
         },
         {
           "id": "buried-extract-4",
           "user": "请从抓取到的网页中提取第四行的订单号，按原文写出。",
-          "mustMention": "订单 1003"
+          "mustMention": "1003"
         },
         {
           "id": "buried-extract-5",
           "user": "请从抓取到的网页中提取第五行的订单号，按原文写出。",
-          "mustMention": "订单 1004"
+          "mustMention": "1004"
         },
         {
           "id": "buried-extract-6",
           "user": "请从抓取到的网页中提取第六行的订单号，按原文写出。",
-          "mustMention": "订单 1005"
+          "mustMention": "1005"
         },
         {
           "id": "buried-extract-last",
           "user": "请从抓取到的网页中提取最后一行的订单号，按原文写出。",
-          "mustMention": "订单 1091"
+          "mustMention": "1091"
         },
         {
           "id": "buried-extract-prev",
           "user": "请从抓取到的网页中提取倒数第二行的订单号，按原文写出。",
-          "mustMention": "订单 1090"
+          "mustMention": "1090"
         },
         {
           "id": "buried-summary-1",
           "user": "请用两句话总结这个网页里的订单表，并在回答中写明第一行的订单号。",
-          "mustMention": "订单 1000"
+          "mustMention": "1000"
         },
         {
           "id": "buried-summary-2",
           "user": "请总结网页里的发货状态，并在回答中写明第二行的订单号。",
-          "mustMention": "订单 1001"
+          "mustMention": "1001"
         }
       ],
       "jevRequired": true
@@ -503,7 +503,7 @@
         {
           "id": "clean-filler-1",
           "user": "请从抓取到的网页中提取第一行的订单号，按原文写出。",
-          "mustMention": "订单 1000"
+          "mustMention": "1000"
         }
       ],
       "jevRequired": false

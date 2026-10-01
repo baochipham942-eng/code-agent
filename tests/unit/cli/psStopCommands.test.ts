@@ -1,22 +1,28 @@
 // ============================================================================
-// /ps /stop 后台任务命令（newCommands.ts）单测：只读呈现 + 前缀匹配终止，
-// backgroundTasks 模块 mock（不起真进程）。
+// /ps /stop 后台任务命令（newCommands.ts）单测：只读呈现 + 前缀匹配终止。
+// 任务表走注入端口，不加载 host 模块、不起真进程。
 // ============================================================================
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const bgState = vi.hoisted(() => ({
+import { newCommands } from '../../../src/shared/commands/definitions/newCommands';
+import type { CommandContext, CommandDefinition, CommandOutput } from '../../../src/shared/commands/types';
+
+const bgState = {
   tasks: [] as Array<Record<string, unknown>>,
   kill: vi.fn(),
-}));
+};
 
-vi.mock('../../../src/host/tools/shell/backgroundTasks', () => ({
-  getAllBackgroundTasks: () => bgState.tasks,
-  killBackgroundTask: bgState.kill,
-}));
-
-import { newCommands } from '../../../src/shared/commands/definitions/newCommands';
-import type { CommandDefinition, CommandOutput } from '../../../src/shared/commands/types';
+function cliCtx(output: CommandOutput): CommandContext {
+  return {
+    surface: 'cli',
+    output,
+    loadBackgroundTasks: async () => ({
+      getAllBackgroundTasks: () => bgState.tasks,
+      killBackgroundTask: bgState.kill,
+    }),
+  };
+}
 
 function mustGetCommand(id: string): CommandDefinition {
   const command = newCommands.find((c) => c.id === id);
@@ -57,7 +63,7 @@ describe('/ps', () => {
 
   it('无任务时空提示', async () => {
     const output = makeOutput();
-    const result = await psCommand.handler({ surface: 'cli', output }, []);
+    const result = await psCommand.handler(cliCtx(output), []);
     expect(result.success).toBe(true);
     expect(output.lines[0]).toContain('没有后台任务');
   });
@@ -68,7 +74,7 @@ describe('/ps', () => {
       { ...task('bbbbbbbb-2222', 'failed', 'sleep 999'), exitCode: 1 },
     ];
     const output = makeOutput();
-    await psCommand.handler({ surface: 'cli', output }, []);
+    await psCommand.handler(cliCtx(output), []);
     const text = output.lines.join('\n');
     expect(text).toContain('aaaaaaaa');
     expect(text).toContain('running');
@@ -86,34 +92,34 @@ describe('/stop', () => {
   });
 
   it('空参数报用法', async () => {
-    const result = await stopCommand.handler({ surface: 'cli', output: makeOutput() }, []);
+    const result = await stopCommand.handler(cliCtx(makeOutput()), []);
     expect(result.success).toBe(false);
     expect(result.message).toContain('/stop');
   });
 
   it('前缀匹配终止运行中任务', async () => {
     const output = makeOutput();
-    const result = await stopCommand.handler({ surface: 'cli', output }, ['aaaa']);
+    const result = await stopCommand.handler(cliCtx(output), ['aaaa']);
     expect(bgState.kill).toHaveBeenCalledWith('aaaaaaaa-1111');
     expect(result.success).toBe(true);
     expect(output.lines.join('\n')).toContain('aaaaaaaa');
   });
 
   it('无匹配 / 多前缀歧义 / 已结束任务', async () => {
-    expect((await stopCommand.handler({ surface: 'cli', output: makeOutput() }, ['zz'])).success).toBe(false);
+    expect((await stopCommand.handler(cliCtx(makeOutput()), ['zz'])).success).toBe(false);
     bgState.tasks.push(task('aaaabbbb-3333', 'running'));
-    const ambiguous = await stopCommand.handler({ surface: 'cli', output: makeOutput() }, ['aaaa']);
+    const ambiguous = await stopCommand.handler(cliCtx(makeOutput()), ['aaaa']);
     expect(ambiguous.success).toBe(false);
     expect(ambiguous.message).toContain('2 个任务');
     bgState.tasks = [task('cccccccc-4444', 'completed')];
-    const done = await stopCommand.handler({ surface: 'cli', output: makeOutput() }, ['cccc']);
+    const done = await stopCommand.handler(cliCtx(makeOutput()), ['cccc']);
     expect(done.success).toBe(true);
     expect(bgState.kill).not.toHaveBeenCalledWith('cccccccc-4444');
   });
 
   it('kill 失败透传错误', async () => {
     bgState.kill.mockResolvedValue({ success: false, error: 'boom' });
-    const result = await stopCommand.handler({ surface: 'cli', output: makeOutput() }, ['aaaa']);
+    const result = await stopCommand.handler(cliCtx(makeOutput()), ['aaaa']);
     expect(result).toMatchObject({ success: false, message: 'boom' });
   });
 });

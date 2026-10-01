@@ -34,6 +34,10 @@ function normalizeBaseUrl(baseUrl: string): string {
 
 function scheduleToCronApi(definition: CronJobDefinition): Record<string, unknown> {
   const schedule = definition.schedule;
+  if (schedule.type === 'event') {
+    // 创建护栏已把 event 任务钉在 runsOn 'local'；走到这里说明不变量被打破，拒绝声明到云端。
+    throw new Error("Event-triggered jobs cannot be declared to the cloud scheduler; they require runsOn 'local'.");
+  }
   if (schedule.type === 'at') {
     const at = typeof schedule.datetime === 'number'
       ? new Date(schedule.datetime).toISOString()

@@ -155,6 +155,11 @@
   --input-border-focus: var(--accent-accessible);
   --input-placeholder: #808080;
 
+  /* Field 原语（Input/Select/Textarea，FB-216）：与 dark 同口径，维持改前的
+     zinc-700 底 / zinc-500 占位符观感（本主题的扩展 zinc 阶梯值）。 */
+  --field-bg: rgb(var(--zinc-700));
+  --field-placeholder: rgb(var(--zinc-500));
+
   /* Focus ring - thick and visible（rgba 字面量与 --accent-accessible 同色系；
      CSS 变量无法从 hex 派生 alpha 通道，改 accent 色时此处需同步） */
   --focus-ring: rgba(0, 255, 255, 0.8);

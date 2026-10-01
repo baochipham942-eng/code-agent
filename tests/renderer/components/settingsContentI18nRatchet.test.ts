@@ -15,6 +15,7 @@ const SETTINGS_DIR = path.join(RENDERER_DIR, 'components/features/settings');
 const MIGRATED: string[] = [
   'tabs/AppearanceSettings.tsx',
   'tabs/GeneralSettings.tsx',
+  'tabs/JevKeyConfig.tsx',
   'tabs/ConversationSettings.tsx',
   'tabs/KeybindingsSettings.tsx',
   'tabs/VoiceInputSettings.tsx',
@@ -48,7 +49,6 @@ const MIGRATED: string[] = [
   'tabs/SearchSettings.tsx',
   'tabs/HooksSettings.tsx',
   'tabs/VisualModelsSettings.tsx',
-  'tabs/CapabilityCenterSettings.tsx',
   'tabs/UserDashboardSettings.tsx',
   'tabs/InviteCodesSettings.tsx',
   'tabs/ControlPlaneSettings.tsx',

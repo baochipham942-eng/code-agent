@@ -3,6 +3,7 @@ import type { ContextInterventionSnapshot } from '../../../../shared/contract/co
 import { compactModelSummarize } from '../../../context/compactModel';
 import type { ContextAssemblyCtx, ContextTranscriptEntry } from './shared';
 import { logger } from './shared';
+import { getProtocolToolSchemas } from '../../../tools/protocolToolRegistration';
 import {
   formatArtifactRepairToolResultContent,
   getAllowedArtifactRepairToolCallIds,
@@ -19,6 +20,17 @@ export function buildContextTranscriptEntries(ctx: ContextAssemblyCtx, messages:
   let turnIndex = 0;
   let hasSeenUserTurn = false;
   const entries: ContextTranscriptEntry[] = [];
+  const toolNamesByCallId = new Map<string, string>();
+  for (const message of messages) {
+    for (const toolCall of message.toolCalls ?? []) {
+      toolNamesByCallId.set(toolCall.id, toolCall.name);
+    }
+  }
+  const resultBudgetByToolName = new Map(
+    getProtocolToolSchemas()
+      .filter((schema) => schema.resultBudgetTokens !== undefined)
+      .map((schema) => [schema.name, schema.resultBudgetTokens] as const),
+  );
 
   for (const message of messages) {
     if (message.role === 'user' && hasSeenUserTurn) {
@@ -65,6 +77,12 @@ export function buildContextTranscriptEntries(ctx: ContextAssemblyCtx, messages:
               ? formatArtifactRepairToolResultContent(ctx, result, result.output || result.error || '')
               : (result.output || result.error || ''),
             toolCallId: result.toolCallId,
+            ...(toolNamesByCallId.has(result.toolCallId)
+              ? { toolName: toolNamesByCallId.get(result.toolCallId) }
+              : {}),
+            ...(resultBudgetByToolName.get(toolNamesByCallId.get(result.toolCallId) ?? '') !== undefined
+              ? { resultBudgetTokens: resultBudgetByToolName.get(toolNamesByCallId.get(result.toolCallId) ?? '') }
+              : {}),
             toolError: !result.success,
             preserveObservation: result.metadata?.preserveObservation === true,
             evidenceKind: typeof result.metadata?.evidenceKind === 'string' ? result.metadata.evidenceKind : undefined,

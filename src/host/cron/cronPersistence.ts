@@ -1,7 +1,12 @@
 import type { CronJobDefinition, CronJobExecution } from '../../shared/contract/cron';
 import { getDatabase } from '../services/core/databaseService';
 import { minimumIntervalSecondsForLocation } from './cronExecutionPolicy';
-import { normalizeCronExecutionRow, parseJsonValue, type CronExecutionRow } from './cronNormalizers';
+import {
+  normalizeCronExecutionRow,
+  parseCronExecutionTrigger,
+  parseJsonValue,
+  type CronExecutionRow,
+} from './cronNormalizers';
 
 export function upsertCronExecutionInMemory(
   executions: Map<string, CronJobExecution[]>,
@@ -14,7 +19,7 @@ export function upsertCronExecutionInMemory(
   executions.set(execution.jobId, history.slice(-100));
 }
 
-export function mapCronExecutionRows(rows: unknown[]): CronJobExecution[] {
+function mapCronExecutionRows(rows: unknown[]): CronJobExecution[] {
   return rows.map(normalizeCronExecutionRow).filter((row): row is CronExecutionRow => row !== null).map((row) => ({
     id: row.id,
     jobId: row.job_id,
@@ -29,6 +34,7 @@ export function mapCronExecutionRows(rows: unknown[]): CronJobExecution[] {
     error: row.error || undefined,
     retryAttempt: row.retry_attempt,
     exitCode: row.exit_code ?? undefined,
+    trigger: parseCronExecutionTrigger(row.trigger_json),
   }));
 }
 
@@ -113,8 +119,8 @@ export async function saveCronExecution(execution: CronJobExecution): Promise<vo
     if (!db) return;
     db.prepare(`
       INSERT OR REPLACE INTO cron_executions
-      (id, job_id, session_id, status, scheduled_at, started_at, completed_at, duration, result, error, retry_attempt, exit_code)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, job_id, session_id, status, scheduled_at, started_at, completed_at, duration, result, error, retry_attempt, exit_code, trigger_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       execution.id, execution.jobId, execution.sessionId || null, execution.status,
       execution.scheduledAt, execution.startedAt || null,
@@ -122,9 +128,49 @@ export async function saveCronExecution(execution: CronJobExecution): Promise<vo
       execution.result ? JSON.stringify(execution.result) : null,
       execution.error || null, execution.retryAttempt,
       execution.exitCode || null,
+      execution.trigger ? JSON.stringify(execution.trigger) : null,
     );
   } catch (error) {
     console.error('[CronService] Failed to save execution to database:', error);
+  }
+}
+
+/** 单任务执行历史（倒序取 limit 后翻回时间正序）。 */
+export function loadCronExecutionsByJob(jobId: string, limit: number): CronJobExecution[] {
+  try {
+    const db = getDatabase().getDb();
+    if (!db) return [];
+    const rows = db.prepare(`
+      SELECT cron_executions.*, cron_jobs.runs_on AS runs_on
+      FROM cron_executions
+      JOIN cron_jobs ON cron_jobs.id = cron_executions.job_id
+      WHERE cron_executions.job_id = ?
+      ORDER BY cron_executions.scheduled_at DESC
+      LIMIT ?
+    `).all(jobId, limit) as unknown[];
+    return mapCronExecutionRows(rows.reverse());
+  } catch (error) {
+    console.error('[CronService] Failed to load executions from database:', error);
+    return [];
+  }
+}
+
+/** 跨任务执行流（自动化页「运行记录」tab）：全部任务的执行按时间倒序。DB 是权威源。 */
+export function loadRecentCronExecutions(limit: number): CronJobExecution[] {
+  try {
+    const db = getDatabase().getDb();
+    if (!db) return [];
+    const rows = db.prepare(`
+      SELECT cron_executions.*, cron_jobs.runs_on AS runs_on
+      FROM cron_executions
+      JOIN cron_jobs ON cron_jobs.id = cron_executions.job_id
+      ORDER BY cron_executions.scheduled_at DESC
+      LIMIT ?
+    `).all(limit) as unknown[];
+    return mapCronExecutionRows(rows);
+  } catch (error) {
+    console.error('[CronService] Failed to load recent executions from database:', error);
+    return [];
   }
 }
 

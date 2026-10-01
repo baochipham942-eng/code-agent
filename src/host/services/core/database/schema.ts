@@ -697,6 +697,9 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   `);
 
   safeAlter(db, 'ALTER TABLE cron_executions ADD COLUMN session_id TEXT', logger);
+  // N-TRIGGER-CHANNEL-EVENT：执行记录带 trigger 溯源（event 运行的来源账号/事件数/丢弃数）。
+  // 列名避开 SQL 关键字 TRIGGER，落 JSON 文本；调度触发的行保持 NULL。
+  safeAlter(db, 'ALTER TABLE cron_executions ADD COLUMN trigger_json TEXT', logger);
 
   // Session Automations 表：把 cron / heartbeat / loop / role wake 按 source session 串回原会话
   db.exec(`

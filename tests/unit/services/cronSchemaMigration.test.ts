@@ -53,16 +53,20 @@ describe('cron_jobs execution-location migration', () => {
     expect(columns.map((column) => column.name)).toEqual(expect.arrayContaining([
       'runs_on',
       'max_run_budget',
+      'max_runs',
+      'run_count',
       'min_interval_seconds',
       'result_channel',
       'cloud_job_id',
     ]));
     expect(db.prepare(`
-      SELECT runs_on, max_run_budget, min_interval_seconds, result_channel, cloud_job_id
+      SELECT runs_on, max_run_budget, max_runs, run_count, min_interval_seconds, result_channel, cloud_job_id
       FROM cron_jobs WHERE id = 'legacy-job'
     `).get()).toEqual({
       runs_on: 'local',
       max_run_budget: null,
+      max_runs: null,
+      run_count: 0,
       min_interval_seconds: 60,
       result_channel: null,
       cloud_job_id: null,

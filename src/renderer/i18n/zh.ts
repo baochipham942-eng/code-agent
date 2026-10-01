@@ -50,6 +50,7 @@ import { receiptPresentationZh } from './receiptPresentation';
 import { renderHumanPipeZh } from './renderHumanPipe';
 import { outcomeWordsZh } from './outcomeWords';
 import { engineModelPanelZh } from './engineModelPanel';
+import { jevAdvisoryZh } from './jevAdvisory';
 
 export const zh = {
   ...canvasActorZh, ...activityPanelZh,
@@ -68,6 +69,7 @@ export const zh = {
   ...renderHumanPipeZh,
   ...outcomeWordsZh,
   ...engineModelPanelZh,
+  ...jevAdvisoryZh,
   // Common
   common: {
     save: '保存',

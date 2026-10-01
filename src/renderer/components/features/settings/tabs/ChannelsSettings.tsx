@@ -250,6 +250,9 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
   const [tgAllowedUserIds, setTgAllowedUserIds] = useState(
     (account?.config as TelegramChannelConfig)?.allowedUserIds?.join(', ') || ''
   );
+  const [tgGroupAccessMode, setTgGroupAccessMode] = useState<'allowlist' | 'all_members'>(
+    (account?.config as TelegramChannelConfig)?.groupAccessMode || 'allowlist'
+  );
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -292,6 +295,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
         proxyUrl: tgProxyUrl || undefined,
         fallbackProxyUrl: tgFallbackProxy || undefined,
         allowedUserIds: userIds.length > 0 ? userIds : undefined,
+        groupAccessMode: tgGroupAccessMode,
         privacyMode,
       };
     } else {
@@ -567,6 +571,20 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                   className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
                   placeholder={channelText.modal.allowedUserIdsPlaceholder}
                 />
+              </div>
+              <div>
+                <label className="block text-sm text-zinc-400 mb-1">
+                  {channelText.modal.groupAccessModeLabel}
+                  <select
+                    value={tgGroupAccessMode}
+                    onChange={(e) => setTgGroupAccessMode(e.target.value as 'allowlist' | 'all_members')}
+                    className="mt-1 block w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-hidden focus:border-badge-accent"
+                  >
+                    <option value="allowlist">{channelText.modal.groupAccessModeAllowlist}</option>
+                    <option value="all_members">{channelText.modal.groupAccessModeAllMembers}</option>
+                  </select>
+                </label>
+                <p className="text-xs text-zinc-500 mt-1">{channelText.modal.groupAccessModeHint}</p>
               </div>
               <div className="p-3 bg-zinc-800 rounded-lg border border-zinc-700">
                 <p className="text-xs text-zinc-400">

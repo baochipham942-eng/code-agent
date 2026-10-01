@@ -245,7 +245,7 @@ goal 模式接入 swarm 并行执行，并把角色主动性的 advance 收进 g
 | 结构化失败码 | NON_CASCADE 新增 `depth-limit` / `child-refusal` / `child-max-tokens` / `parent-gone`；`routeFailureCode()` 路由为 throw / degrade / retry / surface | `src/shared/contract/cancellation.ts`、`src/host/agent/subagentExecutorTypes.ts` |
 | spawn 深度截断 | `SPAWN_GUARD.MAX_DEPTH=1` / `MAX_AGENTS=6`，执行层 2 线防御（非工具黑名单）；越界注入 depth-limit prompt | `src/host/agent/multiagentTools/spawnAgent.ts`、`src/shared/constants/agent.ts`（`SPAWN_GUARD`） |
 | SharedContext 新鲜度 | `lastUpdated` 版本戳 + `isStale` 判定，避免读到过期共享态 | `src/host/agent/parallelAgentCoordinator.ts` |
-| Agent Inbox 桥接 | `peekUnifiedInbox()` 只读统一查询入口，非破坏（不碰 write/drain 路径） | `src/host/agent/agentInbox.ts`、`src/host/agent/spawnGuard.ts` |
+| Agent Inbox 桥接 | 已移除：统一读取门面无生产调用方；`peekMessages` 仍供成员收尾检查使用 | `src/host/agent/spawnGuard.ts` |
 | 孤儿回收父探活 | 后台 detached 子代理每轮迭代探活父 run（`isParentRunAlive`），父已不在则自 abort（`parent-gone`）——结构化并发回收，非 heartbeat/WeakRef | `src/host/agent/orphanLiveness.ts`、`src/host/agent/subagentExecutor.ts` |
 
 ## 0.0.10 2026-06-04 Swarm 协作可见性（P1-3）

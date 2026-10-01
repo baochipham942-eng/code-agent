@@ -69,6 +69,10 @@ import {
   saveInstalledPlugins,
 } from '../../../../src/host/skills/marketplace/installService';
 import {
+  getInstalledPluginsStateVersion,
+  saveInstalledPluginsIfVersionUnchanged,
+} from '../../../../src/host/skills/marketplace/installedPluginsStateStore';
+import {
   rescanStaleInstalledPlugins,
 } from '../../../../src/host/skills/marketplace/installedPluginRescan';
 import { SkillContentScanBlockedError } from '../../../../src/host/skills/marketplace/skillInstallContentGuard';
@@ -346,6 +350,16 @@ describe('installed plugin scanner versioning and rescan', () => {
     }
   });
 
+  function realStateIO() {
+    return {
+      loadInstalledPlugins,
+      saveInstalledPlugins,
+      deactivatePluginCommands,
+      getInstalledPluginsStateVersion,
+      saveInstalledPluginsIfVersionUnchanged,
+    };
+  }
+
   it('合写窗口（命令下架期间）并发新增安装记录不丢失（CAS 合并）', async () => {
     const pluginRoot = await makePluginRoot('p1', DANGEROUS_SKILL);
     const commandContent = '---\ndescription: x\n---\nx';
@@ -359,8 +373,7 @@ describe('installed plugin scanner versioning and rescan', () => {
     });
 
     const summary = await rescanStaleInstalledPlugins({
-      loadInstalledPlugins,
-      saveInstalledPlugins,
+      ...realStateIO(),
       deactivatePluginCommands: async (args) => {
         // 合写窗口注入并发安装
         const state = await readState();
@@ -391,8 +404,7 @@ describe('installed plugin scanner versioning and rescan', () => {
     });
 
     await rescanStaleInstalledPlugins({
-      loadInstalledPlugins,
-      saveInstalledPlugins,
+      ...realStateIO(),
       deactivatePluginCommands: async (args) => {
         // 合写窗口注入并发禁用
         await disablePlugin('second@trusted-test');
@@ -473,5 +485,84 @@ describe('installed plugin scanner versioning and rescan', () => {
 
     expect(summary).toEqual({ rescanned: 1, blocked: [] });
     expect((await readState())['demo@trusted-test']!.scanner?.version).toBe(SKILL_GUARD_VERSION);
+  });
+
+  it('CAS 冲突重试：第一次保存版本漂移 → 重读重合并 → 第二次成功', async () => {
+    const pluginRoot = await makePluginRoot('p1', SAFE_SKILL);
+    await writeState({ 'demo@trusted-test': makeRecord(pluginRoot) });
+    let casCalls = 0;
+
+    const summary = await rescanStaleInstalledPlugins({
+      ...realStateIO(),
+      saveInstalledPluginsIfVersionUnchanged: async (state, expectedVersion) => {
+        casCalls += 1;
+        if (casCalls === 1) {
+          // 模拟并发写：真存一次让内存状态版本漂移，第一次 CAS 必失败
+          await saveInstalledPlugins(await loadInstalledPlugins());
+        }
+        return saveInstalledPluginsIfVersionUnchanged(state, expectedVersion);
+      },
+    });
+
+    expect(summary).toEqual({ rescanned: 1, blocked: [] });
+    expect(casCalls).toBe(2);
+    expect((await readState())['demo@trusted-test']!.scanner?.version).toBe(SKILL_GUARD_VERSION);
+    expect(mocks.logError).not.toHaveBeenCalled();
+  });
+
+  it('CAS 连续冲突 → 有界放弃 + error 留痕 + 结论丢弃（内存阻断仍生效）', async () => {
+    const pluginRoot = await makePluginRoot('p1', DANGEROUS_SKILL);
+    await writeState({ 'demo@trusted-test': makeRecord(pluginRoot) });
+    let casCalls = 0;
+
+    const summary = await rescanStaleInstalledPlugins({
+      ...realStateIO(),
+      saveInstalledPluginsIfVersionUnchanged: async (state, expectedVersion) => {
+        casCalls += 1;
+        // 每次都先制造一次并发写，版本永远漂移
+        await saveInstalledPlugins(await loadInstalledPlugins());
+        return saveInstalledPluginsIfVersionUnchanged(state, expectedVersion);
+      },
+    });
+
+    expect(casCalls).toBe(3);
+    expect(summary.blocked).toEqual(['demo@trusted-test']);
+    const record = (await readState())['demo@trusted-test']!;
+    // 结论丢弃：磁盘保持原样，本次会话由内存阻断集兜底
+    expect(record.isEnabled).toBe(true);
+    expect(record.scanner).toBeUndefined();
+    expect(mocks.logError.mock.calls.some((call) => String(call[0]).includes('discarded'))).toBe(true);
+  });
+
+  it('缺 pluginRoot 的旧记录扫实际装载的复制目录（skillsDir），不扫 sourceMarketplacePath', async () => {
+    // sourceMarketplacePath 放安全内容；实际装载真源 skillsDir 复制目录放危险内容
+    const safeSource = await makePluginRoot('p-safe-source', SAFE_SKILL);
+    const skillsCopyDir = path.join(mocks.userConfigDir, 'skills', 'demo');
+    await fs.mkdir(skillsCopyDir, { recursive: true });
+    await fs.writeFile(path.join(skillsCopyDir, 'SKILL.md'), DANGEROUS_SKILL, 'utf8');
+    const record = makeRecord(safeSource);
+    delete (record as { pluginRoot?: string }).pluginRoot;
+    delete (record as { skillPaths?: string[] }).skillPaths;
+    await writeState({ 'demo@trusted-test': record });
+
+    const summary = await rescanStaleInstalledPlugins();
+
+    expect(summary).toEqual({ rescanned: 1, blocked: ['demo@trusted-test'] });
+    expect((await readState())['demo@trusted-test']!.isEnabled).toBe(false);
+  });
+
+  it('拿不到可靠扫描目标（无 pluginRoot、复制目录也不存在）→ 跳过该条并 warn，不猜路径', async () => {
+    const record = makeRecord('/nonexistent-source');
+    delete (record as { pluginRoot?: string }).pluginRoot;
+    delete (record as { skillPaths?: string[] }).skillPaths;
+    await writeState({ 'demo@trusted-test': record });
+
+    const summary = await rescanStaleInstalledPlugins();
+
+    expect(summary).toEqual({ rescanned: 0, blocked: [] });
+    expect((await readState())['demo@trusted-test']!.isEnabled).toBe(true);
+    expect(
+      mocks.logWarn.mock.calls.some((call) => String(call[0]).includes('no reliable scan target')),
+    ).toBe(true);
   });
 });

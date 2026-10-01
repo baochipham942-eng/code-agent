@@ -9,10 +9,16 @@
 // ============================================================================
 
 import fsSync from 'fs';
+import path from 'path';
 import { SKILL_GUARD_VERSION, type SkillGuardFinding } from '../../security/skillContentGuard';
 import { createLogger } from '../../services/infra/logger';
 import { scanPluginRootContent, SkillContentScanBlockedError } from './skillInstallContentGuard';
-import type { InstalledPluginRecord } from './types';
+import { getSkillsDir } from './pathUtils';
+import {
+  getInstalledPluginsStateVersion,
+  saveInstalledPluginsIfVersionUnchanged,
+} from './installedPluginsStateStore';
+import type { InstalledPluginRecord, InstalledPluginsFile } from './types';
 
 const logger = createLogger('InstalledPluginRescan');
 
@@ -41,26 +47,53 @@ interface InstalledPluginRescanOutcome {
 }
 
 /**
- * 对单个已安装记录按当前规则重扫。插件根目录已不存在时返回 null（没有可扫
- * 内容，记录保持原样）。扫描失败（文件不可读等）按 fail-closed 向上抛。
+ * 重扫目标目录：与 enabledSkillDescriptors 的装载真源对齐（ai-review R5 Nit2）——
+ * 有 pluginRoot/skillPaths 的记录装载自插件根，扫插件根；缺 pluginRoot 的旧记录
+ * 实际装载的是 skillsDir 下的复制目录，必须扫复制目录本身，不扫
+ * sourceMarketplacePath（可能与复制内容漂移）。拿不到可靠路径返回空数组。
+ */
+function resolveRescanTargetDirs(record: InstalledPluginRecord): string[] {
+  const pluginRoot = record.pluginRoot || record.sourceMarketplacePath;
+  if (pluginRoot && record.skillPaths?.length) {
+    return fsSync.existsSync(pluginRoot) ? [pluginRoot] : [];
+  }
+  const skillsDir = getSkillsDir(record.scope, record.projectPath);
+  return (record.skills || [])
+    .map((skillName) => path.join(skillsDir, skillName))
+    .filter((dir) => fsSync.existsSync(dir));
+}
+
+/**
+ * 对单个已安装记录按当前规则重扫（逐目录，任一目录 block 即 block）。
+ * 拿不到可靠扫描目标时返回 null 并 warn 留痕（ai-review R5 Nit2：不许猜路径，
+ * 记录保持原样，下次启动再试）。扫描失败（文件不可读等）按 fail-closed 向上抛。
  */
 async function rescanInstalledPlugin(
   pluginSpec: string,
   record: InstalledPluginRecord,
 ): Promise<InstalledPluginRescanOutcome | null> {
-  const rootDir = record.pluginRoot || record.sourceMarketplacePath;
-  if (!rootDir || !fsSync.existsSync(rootDir)) return null;
-  const outcome = await scanPluginRootContent({
-    pluginSpec,
-    sourceTrust: record.sourceTrust ?? 'local-marketplace',
-    rootDir,
-  });
-  return {
-    verdict: outcome.verdict,
-    findings: outcome.findings,
-    ...(outcome.file ? { file: outcome.file } : {}),
-    scannedAt: new Date().toISOString(),
-  };
+  const targetDirs = resolveRescanTargetDirs(record);
+  if (targetDirs.length === 0) {
+    logger.warn('Skipped rescan: no reliable scan target for installed record', { pluginSpec });
+    return null;
+  }
+  const scannedAt = new Date().toISOString();
+  for (const rootDir of targetDirs) {
+    const outcome = await scanPluginRootContent({
+      pluginSpec,
+      sourceTrust: record.sourceTrust ?? 'local-marketplace',
+      rootDir,
+    });
+    if (outcome.verdict === 'block') {
+      return {
+        verdict: 'block',
+        findings: outcome.findings,
+        ...(outcome.file ? { file: outcome.file } : {}),
+        scannedAt,
+      };
+    }
+  }
+  return { verdict: 'pass', findings: [], scannedAt };
 }
 
 export interface StaleRescanSummary {
@@ -80,26 +113,47 @@ interface RescanDecision {
     | { kind: 'scan_failed'; error: string };
 }
 
+/** 状态 IO 依赖注入形状：生产走动态 import 的真实实现，测试注入包装版模拟并发写。 */
+interface RescanStateIO {
+  loadInstalledPlugins: () => Promise<InstalledPluginsFile>;
+  saveInstalledPlugins: (state: InstalledPluginsFile) => Promise<void>;
+  deactivatePluginCommands: (args: {
+    scope: InstalledPluginRecord['scope'];
+    projectPath?: string;
+    commandNames: string[];
+    verifyOwnership?: { sourceRootDir: string; commandPaths: string[] };
+  }) => Promise<string[]>;
+  getInstalledPluginsStateVersion: () => number;
+  saveInstalledPluginsIfVersionUnchanged: (state: InstalledPluginsFile, expectedVersion: number) => Promise<boolean> | boolean;
+}
+
+/** CAS 冲突重试上限：耗尽按 fail-loud 留痕、本次结论丢弃（内存阻断集仍兜底） */
+const MAX_SAVE_ATTEMPTS = 3;
+
 /**
  * 宿主启动重扫入口（skillDiscoveryService 装载已启用插件之前调用）：
  * 对 scanner 版本落后的已启用记录逐条重扫。block/扫不动 → isEnabled=false
  * 落盘并 warn；pass → 回写当前版本。单条失败不影响其他记录。
  *
- * 两阶段读改写（ai-review R2 Important）：扫描期只读不改状态；合写期重新
- * loadInstalledPlugins，只对「仍是同一次安装」的记录应用结论——扫描期间并发的
- * 禁用/卸载/重装不被旧快照覆盖，并发新增记录原样保留。仓内安装状态没有共享
- * 互斥（enable/disable 同样是无锁读改写），这里用指纹核对守住本函数新增的
- * 长窗口，不新造锁机制。
+ * 读改写形态（ai-review R2/R4/R5 Important 1）：扫描期只读；合写期先在 fresh
+ * 快照上做命令下架等带 await 的副作用；保存走「重读 → 记内存状态版本 → 最小
+ * 合并 → CAS 保存」，版本漂移就重读重合并重试（有界 MAX_SAVE_ATTEMPTS，耗尽
+ * fail-loud 留痕、结论丢弃）——合并只动本单负责的字段（scanner / isEnabled），
+ * 扫描与合写窗口里的并发安装/禁用/卸载一律保留。仓内安装状态没有共享互斥
+ * （enable/disable 同样是无锁读改写），不新造锁，用版本校验收口。
  * 注意：本函数在 discovery 初始化链路内运行，绝不能触发 discovery reload
  * （会撞上 initialize 的 initPromise 自等待死锁），所以不走 disablePlugin。
  */
 export async function rescanStaleInstalledPlugins(
-  io?: Pick<typeof import('./installService'), 'loadInstalledPlugins' | 'saveInstalledPlugins' | 'deactivatePluginCommands'>,
+  io?: RescanStateIO,
 ): Promise<StaleRescanSummary> {
   const summary: StaleRescanSummary = { rescanned: 0, blocked: [] };
-  // 依赖注入入口：生产不传 io 走动态 import；测试注入包装后的状态 IO，
-  // 用来确定性地在合写窗口注入并发写（vi.mock 模块图在混合真实调用时不可靠）
-  const svc = io ?? await import('./installService');
+  // 依赖注入入口（ai-review R4）：vi.mock 模块图在混合真实调用时不可靠，测试注入包装 IO
+  const svc: RescanStateIO = io ?? {
+    ...(await import('./installService')),
+    getInstalledPluginsStateVersion,
+    saveInstalledPluginsIfVersionUnchanged,
+  };
 
   // 扫描期：只读
   const state = await svc.loadInstalledPlugins();
@@ -182,37 +236,54 @@ export async function rescanStaleInstalledPlugins(
     disableApproved.add(decision.pluginSpec);
   }
 
-  // CAS 合并：保存前重读最新状态，只对本单负责的字段做最小合并
-  const latest = await svc.loadInstalledPlugins();
-  let dirty = false;
-  for (const decision of decisions) {
-    const record = latest[decision.pluginSpec];
-    if (record?.installedAt !== decision.installedAt
-      || (record.pluginRoot || record.sourceMarketplacePath) !== decision.rootDir) {
-      continue; // 下架窗口里记录被并发替换——fresh 阶段已 warn，这里静默跳过即可
+  // CAS 合并 + 冲突重试（ai-review R5 Important 1）：每次循环重读最新状态、
+  // 记录内存状态版本、做最小合并（只动本单负责的字段），版本不变才落盘；
+  // 版本漂移重试，耗尽 fail-loud 留痕、本次结论丢弃（内存阻断集仍兜底）。
+  let persisted = false;
+  let persistError: unknown;
+  for (let attempt = 1; attempt <= MAX_SAVE_ATTEMPTS && !persisted; attempt += 1) {
+    const latest = await svc.loadInstalledPlugins();
+    const stateVersion = svc.getInstalledPluginsStateVersion();
+    let dirty = false;
+    for (const decision of decisions) {
+      const record = latest[decision.pluginSpec];
+      if (record?.installedAt !== decision.installedAt
+        || (record.pluginRoot || record.sourceMarketplacePath) !== decision.rootDir) {
+        continue; // 记录被并发替换——fresh 阶段已 warn，这里静默跳过即可
+      }
+      if (decision.outcome.kind === 'pass') {
+        record.scanner = {
+          version: SKILL_GUARD_VERSION,
+          verdict: 'pass',
+          scannedAt: decision.outcome.scannedAt,
+        };
+        dirty = true;
+        continue;
+      }
+      if (disableApproved.has(decision.pluginSpec) && record.isEnabled) {
+        record.isEnabled = false;
+        dirty = true;
+      }
     }
-    if (decision.outcome.kind === 'pass') {
-      record.scanner = {
-        version: SKILL_GUARD_VERSION,
-        verdict: 'pass',
-        scannedAt: decision.outcome.scannedAt,
-      };
-      dirty = true;
-      continue;
+    if (!dirty) {
+      persisted = true; // 没有需要落盘的结论（全部被并发变化消化）
+      break;
     }
-    if (disableApproved.has(decision.pluginSpec) && record.isEnabled) {
-      record.isEnabled = false;
-      dirty = true;
+    try {
+      persisted = await svc.saveInstalledPluginsIfVersionUnchanged(latest, stateVersion);
+    } catch (error) {
+      persistError = error; // IO 错误不是版本冲突，重试无意义
+      break;
     }
   }
-
-  if (dirty) {
-    try {
-      await svc.saveInstalledPlugins(latest);
-    } catch (error) {
-      // 落盘失败不吞：error 留痕；本次会话装载仍由 summary.blocked 内存过滤兜底
+  if (!persisted) {
+    if (persistError) {
       logger.error('Failed to persist skill guard rescan results', {
-        error: error instanceof Error ? error.message : String(error),
+        error: persistError instanceof Error ? persistError.message : String(persistError),
+      });
+    } else {
+      logger.error('Skill guard rescan results discarded after repeated state conflicts', {
+        attempts: MAX_SAVE_ATTEMPTS,
       });
     }
   }

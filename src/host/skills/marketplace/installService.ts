@@ -39,7 +39,8 @@ import {
   getArchiveSha256,
 } from './githubArchiveSecurity';
 import { copyDirectory, runExclusivePluginInstall, throwIfInstallAborted } from './installConcurrency';
-import { commandFileOwnedByPlugin, type CommandOwnershipSource } from './commandFileOwnership';
+import { removeCommandFileIfOwnedByPlugin, type CommandOwnershipSource } from './commandFileOwnership';
+import { getInstalledPluginsFilePath, noteInstalledPluginsStateSaved } from './installedPluginsStateStore';
 import { materializeOfficialSkillSection } from '../../security/skillOfficialSectionGuard';
 import { collectEnabledSkillDescriptors } from './enabledSkillDescriptors';
 import { migrateInstalledPlugins } from './installedPluginMigration';
@@ -55,7 +56,6 @@ export async function getEnabledSkillDescriptors(excludePluginSpecs?: ReadonlySe
 // Constants
 // ----------------------------------------------------------------------------
 
-const INSTALLED_PLUGINS_FILE = 'installed-plugins.json';
 const STAGING_SKILL_NAME_PATTERN = /\.staging-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type PluginInstallOptions = {
@@ -93,7 +93,7 @@ function getPluginAssetsDir(scope: PluginScope, projectPath?: string): string {
 }
 
 function getInstalledPluginsPath(): string {
-  return path.join(getUserConfigDir(), INSTALLED_PLUGINS_FILE);
+  return getInstalledPluginsFilePath();
 }
 
 async function ensureDir(dirPath: string): Promise<void> {
@@ -139,6 +139,7 @@ export async function saveInstalledPlugins(state: InstalledPluginsFile): Promise
       'utf8'
     );
     await fs.rename(tempPath, filePath);
+    noteInstalledPluginsStateSaved();
   } catch (error) {
     await fs.rm(tempPath, { force: true }).catch(() => {});
     throw error;
@@ -649,12 +650,13 @@ export async function deactivatePluginCommands(args: {
   const removed: string[] = [];
   for (const [index, commandName] of args.commandNames.entries()) {
     const destination = path.join(commandsDir, `${commandName}.md`);
-    if (!fsSync.existsSync(destination)) continue;
-    if (args.verifyOwnership
-      && !await commandFileOwnedByPlugin(destination, args.verifyOwnership, index, commandName)) {
-      continue;
+    if (args.verifyOwnership) {
+      const outcome = await removeCommandFileIfOwnedByPlugin(destination, args.verifyOwnership, index, commandName);
+      if (outcome !== 'removed') continue;
+    } else {
+      if (!fsSync.existsSync(destination)) continue;
+      await fs.rm(destination, { force: true });
     }
-    await fs.rm(destination, { force: true });
     removed.push(commandName);
   }
   return removed;

@@ -3,13 +3,15 @@ import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const loggerMocks = vi.hoisted(() => ({
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+}));
+
 vi.mock('../../../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-  }),
+  createLogger: () => loggerMocks,
 }));
 
 const builtinSkillsFixture = vi.hoisted(() => ({
@@ -131,6 +133,10 @@ describe('SkillDiscoveryService discovery', () => {
     marketplaceSkillDirs.clear();
     marketplaceOfficialSkillDirs.clear();
     marketplaceDescriptorCalls.excludeArgs.length = 0;
+    loggerMocks.debug.mockClear();
+    loggerMocks.info.mockClear();
+    loggerMocks.warn.mockClear();
+    loggerMocks.error.mockClear();
     rescanMocks.rescanStaleInstalledPlugins.mockClear();
     rescanMocks.rescanStaleInstalledPlugins.mockResolvedValue({ rescanned: 0, blocked: [] });
     builtinSkillsFixture.skills = [];
@@ -302,6 +308,18 @@ describe('SkillDiscoveryService discovery', () => {
     await service.initialize(projectDir);
 
     expect(marketplaceDescriptorCalls.excludeArgs.at(-1)).toEqual(new Set(['demo@blocked-marketplace']));
+  });
+
+  it('logs a rescan failure as error and still completes discovery with persisted state', async () => {
+    rescanMocks.rescanStaleInstalledPlugins.mockRejectedValueOnce(new Error('boom'));
+
+    const service = new SkillDiscoveryService();
+    await service.initialize(projectDir);
+
+    expect(service.isInitialized()).toBe(true);
+    expect(
+      loggerMocks.error.mock.calls.some((call) => String(call[0]).includes('rescan failed')),
+    ).toBe(true);
   });
 
   it('keeps a protected built-in skill when external sources use the same name', async () => {

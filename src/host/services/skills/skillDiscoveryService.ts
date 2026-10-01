@@ -578,7 +578,9 @@ class SkillDiscoveryService {
       // 内存阻断集：禁用落盘失败/记录被并发替换时，本次装载也跳过这些插件
       if (summary.blocked.length > 0) rescanBlocked = new Set(summary.blocked);
     } catch (error) {
-      logger.warn('Skill guard rescan failed; continuing with persisted enabled state', { error });
+      // 重扫整体失败没有逐条结论可用，内存阻断集无从谈起——stale 插件本会话只能
+      // 按持久化状态装载，因此异常必须 error 级可见（ai-review R5 Nit1），留待排查
+      logger.error('Skill guard rescan failed; continuing with persisted enabled state', { error });
     }
     try {
       const { getEnabledSkillDescriptors } = await import('../../skills/marketplace/installService');

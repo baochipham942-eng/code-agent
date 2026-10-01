@@ -615,9 +615,12 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
 
   // 流式中的 markdown 内容保留流式样式标记；已完成消息不加，避免重播。
   const streamingDecor = isStreaming ? ' streaming-text' : '';
+  // 已完成消息开 text-wrap:pretty，收 CJK 断行留下的 1-2 字孤行；流式态排版
+  // 还在变，不开（每帧重排无收益）。
+  const textWrapDecor = isStreaming ? '' : ' [text-wrap:pretty]';
   return (
     <div
-      className={`text-sm leading-[1.7] break-words prose prose-invert prose-sm max-w-none${streamingDecor}`}
+      className={`text-sm leading-[1.7] break-words prose prose-invert prose-sm max-w-none${textWrapDecor}${streamingDecor}`}
       data-turn-heavy-content={deferCompletedLayout ? 'true' : undefined}
       data-deferred-content-kind={deferCompletedLayout ? deferredAssistantContentKind : undefined}
       style={deferCompletedLayout ? getDeferredContentStyle(deferredAssistantContentKind) : undefined}

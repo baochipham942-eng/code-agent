@@ -27,6 +27,7 @@ import { UserQuestionCard } from '../../UserQuestionCard';
 import { PlanApprovalCard } from '../../PlanApprovalCard';
 import type { PendingPlanApprovalTarget } from '../../../utils/planApprovalView';
 import { resolveStreamInterruptionOutcomeKey } from '../../../i18n/outcomeWords';
+import { hasCurrentTurnJevInjectionFlag } from '../../../utils/jevInjectionAdvisory';
 
 const GLOBAL_PERMISSION_SESSION_ID = 'global';
 
@@ -248,6 +249,7 @@ export function DecisionSlot({
 }: DecisionSlotProps) {
   const { t } = useI18n();
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const sessionMessages = useSessionStore((state) => state.messages);
   const [resolvedTurnId, setResolvedTurnId] = useState<string | null>(null);
   const {
     pendingPermissionRequest,
@@ -270,6 +272,9 @@ export function DecisionSlot({
     + visibleUserQuestionCount
     + (planApproval ? 1 : 0)
     + (interruptionVisible ? 1 : 0);
+  // Jev 注入扫描 advisory（N-JEV-INJECT-LAYER-MOCK 验收①）：本轮有远端内容被标记时
+  // 在权限卡上方加一行提示。纯提示，不参与放行/拒绝判定。
+  const showJevAdvisory = current !== undefined && hasCurrentTurnJevInjectionFlag(sessionMessages);
   const requestSignature = [
     ...candidates.map((candidate) => candidate.request.id),
     userQuestion?.id,
@@ -306,12 +311,23 @@ export function DecisionSlot({
         </div>
       )}
       {current && !collapsed ? (
-        <PermissionCard
-          requestOverride={current.request}
-          sessionIdOverride={current.sessionId}
-          remainingCount={decisionCount - 1}
-          onCollapse={() => setCollapsed(true)}
-        />
+        <>
+          {showJevAdvisory && (
+            <div
+              className="mx-auto mb-1 flex max-w-3xl items-center gap-1.5 px-1 text-xs text-badge-warning"
+              data-testid="jev-injection-advisory"
+            >
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              <span>{t.jevAdvisory.remoteContentFlagged}</span>
+            </div>
+          )}
+          <PermissionCard
+            requestOverride={current.request}
+            sessionIdOverride={current.sessionId}
+            remainingCount={decisionCount - 1}
+            onCollapse={() => setCollapsed(true)}
+          />
+        </>
       ) : !current && userQuestion ? (
         <UserQuestionCard
           request={userQuestion}

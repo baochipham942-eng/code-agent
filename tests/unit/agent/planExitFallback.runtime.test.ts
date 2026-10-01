@@ -157,13 +157,20 @@ function createMockContext(overrides: Partial<RuntimeContext> = {}): RuntimeCont
       recordFailure: vi.fn(),
       reset: vi.fn(),
     } as any,
-    antiPatternDetector: { detect: vi.fn().mockReturnValue([]), reset: vi.fn(), detectFailedToolCallPattern: vi.fn().mockReturnValue(null) } as any,
+    antiPatternDetector: {
+      detect: vi.fn().mockReturnValue([]),
+      reset: vi.fn(),
+      detectFailedToolCallPattern: vi.fn().mockReturnValue(null),
+      // allowlist 门判定只读 Bash 用（与 planExitFallback.test.ts 同款判据）
+      isReadOnlyShellCommand: (command: string) => /^(grep|ls|cat)\b/.test(command),
+    } as any,
     goalTracker: { initialize: vi.fn(), shouldInject: vi.fn().mockReturnValue(false), buildInjection: vi.fn().mockReturnValue(''), recordAction: vi.fn(), getGoal: vi.fn().mockReturnValue(''), getGoalCheckpoint: vi.fn().mockReturnValue(null) } as any,
     nudgeManager: {
       runNudgeChecks: vi.fn().mockReturnValue(false),
       runOutputValidation: vi.fn().mockReturnValue(false),
       getModifiedFiles: vi.fn().mockReturnValue(new Set<string>()),
       check: vi.fn().mockReturnValue(null),
+      checkProgressState: vi.fn().mockReturnValue(null),
     } as any,
     hookMessageBuffer: { append: vi.fn(), flush: vi.fn().mockReturnValue([]) } as any,
     messageHistoryCompressor: { compress: vi.fn() } as any,
@@ -225,6 +232,7 @@ function createMockModules(ctx: RuntimeContext) {
       stripInternalFormatMimicry: vi.fn((content: string) => content),
       updateContextHealth: vi.fn(),
       flushHookMessageBuffer: vi.fn(),
+      maybeInjectThinking: vi.fn(),
     } as any,
     runFinalizer: {
       finalizeRun: vi.fn(),
@@ -240,8 +248,8 @@ function createMockModules(ctx: RuntimeContext) {
   };
 }
 
-function buildRuntime(planMode: boolean) {
-  const ctx = createMockContext();
+function buildRuntime(planMode: boolean, ctxOverrides: Partial<RuntimeContext> = {}) {
+  const ctx = createMockContext(ctxOverrides);
   const modules = createMockModules(ctx);
   const runtime = new ConversationRuntime(ctx);
   runtime.setModules(modules.toolEngine, modules.contextAssembly, modules.runFinalizer, modules.learningPipeline);
@@ -267,11 +275,13 @@ beforeEach(() => {
 });
 
 describe('plan exit fallback runtime（ADR-074 K1）', () => {
-  it('①(b) plan 正文无退出工具：提醒一次 + 恰好一轮补推理', async () => {
+  it('①(b)+② 补推理仍是结构化计划正文：提醒一次 + 合成恰好一张审批卡，没有第三轮推理', async () => {
     const { ctx, modules, runtime } = buildRuntime(true);
+    const secondBody = '还是这段计划：\n1. 甲\n2. 乙';
     modules.contextAssembly.inference
       .mockResolvedValueOnce({ type: 'text', content: PLAN_BODY, finishReason: 'stop' } as ModelResponse)
-      .mockResolvedValueOnce({ type: 'text', content: '还是这段计划：\n1. 甲\n2. 乙', finishReason: 'stop' } as ModelResponse);
+      .mockResolvedValueOnce({ type: 'text', content: secondBody, finishReason: 'stop' } as ModelResponse)
+      .mockResolvedValue({ type: 'text', content: '不该出现的第三轮' } as ModelResponse);
 
     await runtime.run('帮我出个方案');
 
@@ -283,24 +293,73 @@ describe('plan exit fallback runtime（ADR-074 K1）', () => {
     // 原文照常落历史，补推理的正文也落历史
     const assistantTexts = ctx.messages.filter((m) => m.role === 'assistant').map((m) => m.content);
     expect(assistantTexts).toContain(PLAN_BODY);
-    // trace：detected + not_applicable（补推理仍是无工具的正文）
+    // K2：恰好一条合成卡消息（空正文 + 单个 exit_plan_mode toolCall，id 绑 runKey）
+    const cardMessages = ctx.messages.filter((m) => m.role === 'assistant'
+      && m.toolCalls?.some((tc) => tc.name === 'exit_plan_mode' && tc.id.startsWith('synthetic-plan-')));
+    expect(cardMessages).toHaveLength(1);
+    const card = cardMessages[0].toolCalls![0];
+    expect(card.id).toBe('synthetic-plan-run-e2e-1');
+    expect(cardMessages[0].content).toBe('');
+    // 卡片正文 = 补推理正文，逐字保留
+    expect(card.result?.metadata?.plan).toBe(secondBody);
+    const approval = card.result?.metadata?.planApproval as { source?: string; originalPlan?: string };
+    expect(approval.source).toBe('synthetic_text');
+    expect(approval.originalPlan).toBe(secondBody);
+    // 卡片消息走正常 message 事件宣布（renderer 无新 ingest 路径）
+    const onEventCalls = (ctx.onEvent as ReturnType<typeof vi.fn>).mock.calls as Array<[{ type?: string; data?: unknown }]>;
+    const emitted = onEventCalls.map((call) => call[0])
+      .filter((event) => event?.type === 'message')
+      .map((event) => event.data);
+    expect(emitted).toContain(cardMessages[0]);
+    // trace：detected + synthesized；结构化正文不再落 not_applicable
     const recorded = (ctx.turnTrace.record as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
     expect(recorded).toContain('plan_exit_fallback_detected');
-    expect(recorded).toContain('plan_exit_fallback_not_applicable');
+    expect(recorded).toContain('plan_exit_fallback_synthesized');
+    expect(recorded).not.toContain('plan_exit_fallback_not_applicable');
+    const synthesizedCall = (ctx.turnTrace.record as ReturnType<typeof vi.fn>).mock.calls
+      .find((c) => c[0] === 'plan_exit_fallback_synthesized');
+    expect(synthesizedCall?.[1]).toMatchObject({
+      runKey: 'run-e2e-1',
+      retryCount: 1,
+      cardId: 'synthetic-plan-run-e2e-1',
+      source: 'synthetic_text',
+      textLength: secondBody.length,
+    });
+    // 合成卡不翻任何模式位：plan mode 原样保留，等用户决定后的新 run
+    expect(runtime.isPlanMode()).toBe(true);
   });
 
-  it('③ 补推理交了计划正文：按今日语义收尾，没有第三轮推理', async () => {
-    const { modules, runtime } = buildRuntime(true);
+  it('② 卡片正文逐字保留（CJK、代码围栏、行尾换行）', async () => {
+    const { ctx, modules, runtime } = buildRuntime(true);
+    const body = '方案如下：\n1. 先读 `conversationRuntime.ts`\n2. 再跑下面这组检查：\n```bash\nnpm test -- planExit\n```\n';
     modules.contextAssembly.inference
       .mockResolvedValueOnce({ type: 'text', content: PLAN_BODY } as ModelResponse)
-      .mockResolvedValueOnce({ type: 'text', content: '另一版方案：\n1. 先A\n2. 后B' } as ModelResponse)
+      .mockResolvedValueOnce({ type: 'text', content: body } as ModelResponse)
       .mockResolvedValue({ type: 'text', content: '不该出现的第三轮' } as ModelResponse);
 
-    await runtime.run('继续');
+    await runtime.run('出方案');
+
+    const cardMessage = ctx.messages.find((m) => m.role === 'assistant'
+      && m.toolCalls?.some((tc) => tc.id === 'synthetic-plan-run-e2e-1'));
+    expect(cardMessage).toBeTruthy();
+    const metadata = cardMessage!.toolCalls![0].result!.metadata as { plan: string; planApproval: { originalPlan: string } };
+    expect(metadata.plan).toBe(body);
+    expect(metadata.planApproval.originalPlan).toBe(body);
+  });
+
+  it('② autoApprovePlan=true：不合成卡，维持今日语义', async () => {
+    const { ctx, modules, runtime } = buildRuntime(true, { autoApprovePlan: true });
+    modules.contextAssembly.inference
+      .mockResolvedValueOnce({ type: 'text', content: PLAN_BODY } as ModelResponse)
+      .mockResolvedValueOnce({ type: 'text', content: '还是这段计划：\n1. 甲\n2. 乙' } as ModelResponse)
+      .mockResolvedValue({ type: 'text', content: '不该出现的第三轮' } as ModelResponse);
+
+    await runtime.run('出方案');
 
     expect(modules.contextAssembly.inference).toHaveBeenCalledTimes(2);
-    expect(modules.contextAssembly.injectSystemMessage.mock.calls
-      .filter((call: [string, string?]) => call[1] === 'plan-exit-fallback')).toHaveLength(1);
+    expect(ctx.messages.filter((m) => m.toolCalls?.some((tc) => tc.id.startsWith('synthetic-plan-')))).toHaveLength(0);
+    const recorded = (ctx.turnTrace.record as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
+    expect(recorded).not.toContain('plan_exit_fallback_synthesized');
   });
 
   it('①(a) 补推理调了退出工具：走既有审批边界，不再注入提醒', async () => {
@@ -327,6 +386,22 @@ describe('plan exit fallback runtime（ADR-074 K1）', () => {
     const recorded = (ctx.turnTrace.record as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
     expect(recorded).toContain('plan_exit_fallback_detected');
     expect(recorded).not.toContain('plan_exit_fallback_not_applicable');
+  });
+
+  it('①(c) 补推理是澄清文本：不合成卡，只记一次 not_applicable', async () => {
+    const { ctx, modules, runtime } = buildRuntime(true);
+    modules.contextAssembly.inference
+      .mockResolvedValueOnce({ type: 'text', content: PLAN_BODY } as ModelResponse)
+      .mockResolvedValueOnce({ type: 'text', content: '你想先做哪一部分？' } as ModelResponse);
+
+    await runtime.run('出方案');
+
+    expect(modules.contextAssembly.inference).toHaveBeenCalledTimes(2);
+    expect(ctx.messages.filter((m) => m.toolCalls?.some((tc) => tc.id.startsWith('synthetic-plan-')))).toHaveLength(0);
+    const recorded = (ctx.turnTrace.record as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
+    expect(recorded).toContain('plan_exit_fallback_detected');
+    expect(recorded).toContain('plan_exit_fallback_not_applicable');
+    expect(recorded).not.toContain('plan_exit_fallback_synthesized');
   });
 
   it('①(c) 澄清问题（问号列表）不触发：一轮即收尾', async () => {
@@ -397,6 +472,52 @@ describe('plan exit fallback runtime（ADR-074 K1）', () => {
     const guidance = modules.contextAssembly.injectSystemMessage.mock.calls
       .find((call: [string, string?]) => call[1] === 'tool-policy-guard');
     expect(guidance?.[0]).toContain('Write');
+  });
+
+  it.each([
+    ['MCP 未知工具', 'mcp__github__create_issue'],
+    ['连接器写工具', 'mail'],
+    ['子代理 spawn', 'spawn_agent'],
+    ['写文件型 Bash', 'Bash'],
+  ])('④ allowlist：补推理中的 %s 在 admission 层拒绝', async (_label, toolName) => {
+    const { modules, runtime } = buildRuntime(true);
+    const arguments_ = toolName === 'Bash' ? { command: 'npm install left-pad' } : {};
+    modules.contextAssembly.inference
+      .mockResolvedValueOnce({ type: 'text', content: PLAN_BODY } as ModelResponse)
+      .mockResolvedValueOnce({
+        type: 'tool_use',
+        toolCalls: [{ id: 'd-1', name: toolName, arguments: arguments_ }],
+      } as unknown as ModelResponse)
+      .mockResolvedValueOnce({ type: 'text', content: '好的，先等确认' } as ModelResponse);
+
+    await runtime.run('出方案');
+
+    expect(modules.toolEngine.executeToolsWithHooks).not.toHaveBeenCalled();
+    const guidance = modules.contextAssembly.injectSystemMessage.mock.calls
+      .find((call: [string, string?]) => call[1] === 'tool-policy-guard');
+    expect(guidance?.[0]).toContain(toolName);
+  });
+
+  it('④ allowlist：补推理中的 Read 与只读 Bash 照常派发执行', async () => {
+    const { modules, runtime } = buildRuntime(true);
+    modules.toolEngine.executeToolsWithHooks.mockResolvedValue([
+      { toolCallId: 'r-1', success: true, output: 'ok' } as ToolResult,
+      { toolCallId: 'b-1', success: true, output: 'ok' } as ToolResult,
+    ]);
+    modules.contextAssembly.inference
+      .mockResolvedValueOnce({ type: 'text', content: PLAN_BODY } as ModelResponse)
+      .mockResolvedValueOnce({
+        type: 'tool_use',
+        toolCalls: [
+          { id: 'r-1', name: 'Read', arguments: { file_path: '/tmp/a.ts' } },
+          { id: 'b-1', name: 'Bash', arguments: { command: 'grep -r foo src/' } },
+        ],
+      } as unknown as ModelResponse)
+      .mockResolvedValueOnce({ type: 'text', content: '好的，先等确认' } as ModelResponse);
+
+    await runtime.run('出方案');
+
+    expect(modules.toolEngine.executeToolsWithHooks).toHaveBeenCalled();
   });
 
   it('④（单元层）MessageProcessor 在封锁旗标 + plan mode 下拒绝 Write', async () => {

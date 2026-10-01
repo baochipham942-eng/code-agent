@@ -961,7 +961,7 @@ export class MessageProcessor {
     // 不得在零上下文压力时预先截断（此前 compressToolResult 300→200 token 的
     // eager 压缩会把 image_analyze 等大结果砍成 "[truncated]" 存根且无落盘引用，
     // 模型看不到完整结果 → 重复调用 + 自述"被截断"）。
-    // 超大文本结果统一由管线 L1 toolResultBudget（2000 token + GAP-009 落盘提示）
+    // 超大文本结果统一由管线的窗口派生 L1 toolResultBudget（+ GAP-009 落盘提示）
     // 在 API view 投影时处理；bash/MCP 在工具层已有 30K/50K 字符上限。
     const toolMessage: Message = {
       id: this.contextAssembly.generateId(),

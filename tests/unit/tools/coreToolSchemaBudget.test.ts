@@ -40,6 +40,11 @@ import { CORE_TOOLS } from '../../../src/host/services/toolSearch/deferredTools'
  * 纯英文是 0.44 倍），工具 schema 几乎全英文会被高估约一倍，桶间比例直接失真。
  *
  * ## 基线变更记录
+ * - 4708 → 4807（2026-09-30，N-WRITE-XFORM-GUARD，+99）：规则分流 + 新能力入参。Write 新增
+ *   `overwrite: boolean`（用户明确要求大幅替换时绕过「同路径变换产物」拒写）与两条 description
+ *   规则：翻译/转换/摘要产出写到源文件旁的新文件；被拒时换新路径重写，仅在明确要求替换时才
+ *   overwrite:true 重试。这是 FB-224（翻译覆盖写回原文）的护栏口径，模型必须在选择写入路径的
+ *   那一刻读到，按 L8 结论（工具级规则下沉 description）只能放这里。文案已压到最短。Write 295 → 394。
  * - 4683 → 4708（2026-09-29，N-READ-ENCODING，+25）：新能力入参。Read 新增 `encoding: 'utf-8' | 'gbk'`
  *   ——不再由工具猜文件编码，改由模型看到「此文件有 N 处不是合法 UTF-8 的字节」告知行后显式指定 gbk 重读；
  *   参数已压到最小（enum + 一句 description），告知行本身（结果文本）不进 schema。Read 201 → 226。
@@ -66,7 +71,7 @@ import { CORE_TOOLS } from '../../../src/host/services/toolSearch/deferredTools'
  *   这 194 不是措辞膨胀，是**从「一分钱不花但也一点用没有」换成「花 194 但真的送到」**；
  *   同批 toolUsagePolicy 的委派判据搬进了 Task（非 CORE，按需下发，不计本门）。
  */
-const CORE_SCHEMA_TOKEN_BASELINE = 4708;
+const CORE_SCHEMA_TOKEN_BASELINE = 4807;
 
 const MODULES_DIR = join(__dirname, '../../../src/host/tools/modules');
 const FIXED_SCHEMA_CLOCK = new Date(2026, 7, 14, 12);

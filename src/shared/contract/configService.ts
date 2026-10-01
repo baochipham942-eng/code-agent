@@ -42,7 +42,8 @@ export type ServiceApiKey =
   | 'zhipu-search'
   | 'minimax-search'
   | 'skillsmp'
-  | 'neo-share';
+  | 'neo-share'
+  | 'typesafe';
 
 /**
  * settings.getAllServiceKeys 枚举并打码返回的服务 Key 列表。
@@ -66,6 +67,7 @@ export const MASKED_SERVICE_KEY_LIST = [
   'zhipu-search',
   'minimax-search',
   'neo-share',
+  'typesafe',
 ] as const satisfies readonly ServiceApiKey[];
 
 /** getAllServiceKeys 的返回形状：打码后的 key（前 8 位 + `...`），未配置的服务不出现。 */

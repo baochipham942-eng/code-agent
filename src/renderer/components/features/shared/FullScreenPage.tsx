@@ -141,7 +141,7 @@ export const FullScreenPageHeader: React.FC<FullScreenPageHeaderProps> = ({
               <h2 className="truncate text-base font-semibold text-zinc-100">{title}</h2>
               {badge}
             </div>
-            {description ? <p className="mt-0.5 truncate text-xs text-zinc-500">{description}</p> : null}
+            {description ? <p className="mt-0.5 truncate text-xs text-zinc-500" title={description}>{description}</p> : null}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">{actions}</div>
@@ -170,7 +170,7 @@ export const FullScreenPageHeader: React.FC<FullScreenPageHeaderProps> = ({
               <h1 className="truncate text-xl font-semibold tracking-tight text-zinc-100">{title}</h1>
               {badge}
             </div>
-            {description ? <p className="mt-1 truncate text-sm text-zinc-500">{description}</p> : null}
+            {description ? <p className="mt-1 truncate text-sm text-zinc-500" title={description}>{description}</p> : null}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2 pt-1">{actions}</div>

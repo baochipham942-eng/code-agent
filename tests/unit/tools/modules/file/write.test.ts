@@ -48,7 +48,13 @@ vi.mock('../../../../../src/host/tools/lsp/diagnosticsHelper', () => ({
 }));
 
 import { writeModule } from '../../../../../src/host/tools/modules/file/write';
+import { readModule } from '../../../../../src/host/tools/modules/file/read';
 import { validateToolArgs } from '../../../../../src/host/agent/runtime/toolArgsValidator';
+
+/** Spec copy of the escape sentence. Do not import the production helper: a blank helper would still satisfy toContain(''). */
+function expectedReadThenRetryHint(toolName: 'Write' | 'Edit', absPath: string): string {
+  return `To proceed: call Read with {"file_path": ${JSON.stringify(absPath)}} (no other arguments), then repeat this exact ${toolName} call.`;
+}
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -222,6 +228,60 @@ describe('writeModule (native)', () => {
       expect(await fs.readFile(file, 'utf-8')).toBe('old');
     });
 
+    it('rejects an unread existing file and names the exact Read call, JSON-escaping spaces and quotes', async () => {
+      const file = path.join(tmpDir, 'dir with space', 'quote"name.txt');
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, 'keep', 'utf-8');
+
+      const handler = await writeModule.createHandler();
+      const result = await handler.execute(
+        { file_path: file, content: 'overwrite' },
+        makeCtx(),
+        allowAll,
+      );
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.code).toBe('NOT_READ_FOR_OVERWRITE');
+      expect(result.meta).toEqual({ outputPath: file });
+      expect(result.error).toContain(
+        'Existing file must be read by this agent before overwrite. Use Read first to bind the latest digest, then retry Write.',
+      );
+      const hint = expectedReadThenRetryHint('Write', file);
+      expect(result.error).toContain(hint);
+      expect(result.error).toContain('\\"');
+      const embedded = result.error.match(/call Read with (\{.*?\}) \(no other arguments\)/);
+      expect(embedded).not.toBeNull();
+      expect(JSON.parse(embedded?.[1] ?? '{}')).toEqual({ file_path: file });
+      expect(await fs.readFile(file, 'utf-8')).toBe('keep');
+    });
+
+    it('follows the Read hint literally and then retries the same Write', async () => {
+      const file = path.join(tmpDir, 'retry-after-read.txt');
+      await fs.writeFile(file, 'old', 'utf-8');
+      const args = { file_path: file, content: 'rewritten' };
+      const ctx = makeCtx();
+      const handler = await writeModule.createHandler();
+
+      const blocked = await handler.execute(args, ctx, allowAll);
+      expect(blocked.ok).toBe(false);
+      if (blocked.ok) return;
+      expect(blocked.code).toBe('NOT_READ_FOR_OVERWRITE');
+      const embedded = blocked.error.match(/call Read with (\{.*?\}) \(no other arguments\)/);
+      expect(embedded).not.toBeNull();
+      const readArgs = JSON.parse(embedded?.[1] ?? '{}') as Record<string, unknown>;
+      expect(Object.keys(readArgs)).toEqual(['file_path']);
+      expect(readArgs.file_path).toBe(file);
+
+      const readHandler = await readModule.createHandler();
+      const readResult = await readHandler.execute(readArgs, ctx, allowAll);
+      expect(readResult.ok).toBe(true);
+
+      const retried = await handler.execute(args, ctx, allowAll);
+      expect(retried.ok).toBe(true);
+      expect(await fs.readFile(file, 'utf-8')).toBe('rewritten');
+    });
+
     it('rejects overwrite when digest changed after read even if size and mtime are restored', async () => {
       const file = path.join(tmpDir, 'stale-same-shape.txt');
       await fs.writeFile(file, 'abc', 'utf-8');
@@ -241,6 +301,8 @@ describe('writeModule (native)', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.code).toBe('STALE_FILE');
+        expect(result.error).toContain('Re-read the file before overwriting it.');
+        expect(result.error).toContain(expectedReadThenRetryHint('Write', file));
         expect(result.meta?.modification).toMatchObject({
           digestChanged: true,
           readDigest: expect.any(String),
@@ -403,6 +465,24 @@ describe('writeModule (native)', () => {
       );
       expect(result.ok).toBe(true);
       expect(await fs.readFile(file, 'utf-8')).toBe('nested');
+    });
+
+    it('creates a new file in a fresh nested directory without a prior Read', async () => {
+      const file = path.join(tmpDir, 'fresh', 'nested', 'brand-new.txt');
+      expect(fileReadTracker.hasBeenRead(file)).toBe(false);
+      await expect(fs.access(path.dirname(file))).rejects.toThrow();
+
+      const handler = await writeModule.createHandler();
+      const result = await handler.execute(
+        { file_path: file, content: 'born' },
+        makeCtx(),
+        allowAll,
+      );
+
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.output).toContain('Created');
+      if (!result.ok) expect(result.code).not.toBe('NOT_READ_FOR_OVERWRITE');
+      expect(await fs.readFile(file, 'utf-8')).toBe('born');
     });
 
     it('confines eval absolute repo paths to the sandbox', async () => {

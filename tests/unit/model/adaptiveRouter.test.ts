@@ -149,27 +149,57 @@ describe('AdaptiveRouter.selectFallback', () => {
 describe('AdaptiveRouter Jev intent router', () => {
   beforeEach(() => vi.unstubAllEnvs());
 
-  it('is default off and preserves the heuristic without calling Jev', async () => {
+  /** 新契约默认答案：命名键 complexity + needs_vision/high_stakes 两 Noul。 */
+  function jevAnswers(overrides: Record<string, unknown> = {}) {
+    return {
+      intent: { choice: 'chat', confidence: 0.9 },
+      complexity: { choice: 'simple', confidence: 0.9 },
+      needs_clarification: { noul: 0 },
+      needs_vision: { noul: 0 },
+      high_stakes: { noul: 0 },
+      ...overrides,
+    };
+  }
+  const mockSystemOne = (overrides: Record<string, unknown> = {}) =>
+    vi.fn(async () => jevAnswers(overrides)) as unknown as JevSystemOneCall;
+
+  it('is default off: field-by-field identical to the heuristic and never calls Jev', async () => {
     const router = new AdaptiveRouter();
     const systemOne = vi.fn() as unknown as JevSystemOneCall;
-    const result = await router.estimateComplexityWithJev([{ role: 'user', content: 'hello' }], systemOne);
-    expect(result.level).toBe('simple');
+    const messages = [{ role: 'user', content: 'hello' }];
+    const result = await router.estimateComplexityWithJev(messages, systemOne);
+    expect(result).toEqual(router.estimateComplexity(messages));
     expect(systemOne).not.toHaveBeenCalled();
   });
 
-  it('synthesizes intent and complexity, and keeps ambiguous requests out of the simple tier', async () => {
+  it('accepts named complexity keys and reports needs_vision/high_stakes signals', async () => {
     vi.stubEnv('CODE_AGENT_JEV_ROUTER', '1');
-    const systemOne = vi.fn(async () => ({
+    const systemOne = mockSystemOne({
+      intent: { choice: 'coding', confidence: 0.92 },
+      complexity: { choice: 'moderate', confidence: 0.91 },
+    });
+    const result = await new AdaptiveRouter().estimateComplexityWithJev(
+      [{ role: 'user', content: 'fix the parser bug' }],
+      systemOne,
+    );
+    expect(result.level).toBe('moderate');
+    expect(result.signals).toContain('jev_intent:coding');
+    expect(result.signals).toContain('jev_confidence:0.91');
+    expect(result.signals).toContain('needs_vision:0.00');
+    expect(result.signals).toContain('high_stakes:0.00');
+  });
+
+  it('keeps ambiguous requests out of the simple tier via suggestClarification', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_ROUTER', '1');
+    const systemOne = mockSystemOne({
       intent: { choice: 'artifact', confidence: 0.92 },
-      complexity: { choice: '1', confidence: 0.91 },
       needs_clarification: { noul: 0.95 },
-      destructive_intent: { noul: 0.05 },
-    })) as unknown as JevSystemOneCall;
+    });
     const result = await new AdaptiveRouter().estimateComplexityWithJev(
       [{ role: 'user', content: 'update the previous report' }],
       systemOne,
     );
-    expect(result.level).toBe('complex');
+    expect(result.level).not.toBe('simple');
     expect(result.suggestClarification).toBe(true);
     expect(result.signals).toContain('jev_intent:artifact');
     expect(result.signals).toContain('needs_clarification:0.95');
@@ -177,12 +207,7 @@ describe('AdaptiveRouter Jev intent router', () => {
 
   it('does not set suggestClarification below the centralized threshold', async () => {
     vi.stubEnv('CODE_AGENT_JEV_ROUTER', '1');
-    const systemOne = vi.fn(async () => ({
-      intent: { choice: 'chat', confidence: 0.9 },
-      complexity: { choice: '0', confidence: 0.9 },
-      needs_clarification: { noul: 0.89 },
-      destructive_intent: { noul: 0 },
-    })) as unknown as JevSystemOneCall;
+    const systemOne = mockSystemOne({ needs_clarification: { noul: 0.89 } });
     const result = await new AdaptiveRouter().estimateComplexityWithJev(
       [{ role: 'user', content: 'hi' }],
       systemOne,
@@ -191,14 +216,33 @@ describe('AdaptiveRouter Jev intent router', () => {
     expect(result.suggestClarification).toBeUndefined();
   });
 
+  it('high_stakes ≥ 0.6 keeps the request out of the simple tier even when Jev says simple', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_ROUTER', '1');
+    const systemOne = mockSystemOne({ high_stakes: { noul: 0.8 } });
+    const result = await new AdaptiveRouter().estimateComplexityWithJev(
+      [{ role: 'user', content: 'rename this variable' }],
+      systemOne,
+    );
+    expect(result.level).not.toBe('simple');
+  });
+
+  it('needs_vision ≥ 0.6 keeps the request out of the simple tier even when Jev says simple', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_ROUTER', '1');
+    const systemOne = mockSystemOne({ needs_vision: { noul: 0.7 } });
+    const result = await new AdaptiveRouter().estimateComplexityWithJev(
+      [{ role: 'user', content: 'what does this diagram show' }],
+      systemOne,
+    );
+    expect(result.level).not.toBe('simple');
+  });
+
   it('caches the Jev estimate per last user message within a turn', async () => {
     vi.stubEnv('CODE_AGENT_JEV_ROUTER', '1');
-    const systemOne = vi.fn(async () => ({
+    const systemOne = mockSystemOne({
       intent: { choice: 'coding', confidence: 0.9 },
-      complexity: { choice: '1', confidence: 0.9 },
+      complexity: { choice: 'moderate', confidence: 0.9 },
       needs_clarification: { noul: 0.1 },
-      destructive_intent: { noul: 0 },
-    })) as unknown as JevSystemOneCall;
+    });
     const router = new AdaptiveRouter();
     const first = await router.estimateComplexityWithJev([{ role: 'user', content: 'fix the parser bug' }], systemOne);
     // Loop iterations append tool messages; the last user message is unchanged.
@@ -219,12 +263,7 @@ describe('AdaptiveRouter Jev intent router', () => {
   it('fails open: heuristic fallbacks are not cached, the next iteration retries Jev', async () => {
     vi.stubEnv('CODE_AGENT_JEV_ROUTER', '1');
     const router = new AdaptiveRouter();
-    const lowConfidence = vi.fn(async () => ({
-      intent: { choice: 'chat', confidence: 0.9 },
-      complexity: { choice: '0', confidence: 0.49 },
-      needs_clarification: { noul: 0 },
-      destructive_intent: { noul: 0 },
-    })) as unknown as JevSystemOneCall;
+    const lowConfidence = mockSystemOne({ complexity: { choice: 'simple', confidence: 0.59 } });
     const fallback = await router.estimateComplexityWithJev(
       [{ role: 'user', content: 'hello' }],
       lowConfidence,
@@ -232,12 +271,7 @@ describe('AdaptiveRouter Jev intent router', () => {
     expect(fallback.signals).toContain('short_message');
     expect(fallback.suggestClarification).toBeUndefined();
 
-    const healthy = vi.fn(async () => ({
-      intent: { choice: 'chat', confidence: 0.9 },
-      complexity: { choice: '0', confidence: 0.9 },
-      needs_clarification: { noul: 0 },
-      destructive_intent: { noul: 0 },
-    })) as unknown as JevSystemOneCall;
+    const healthy = mockSystemOne();
     const retried = await router.estimateComplexityWithJev(
       [{ role: 'user', content: 'hello' }],
       healthy,
@@ -248,40 +282,113 @@ describe('AdaptiveRouter Jev intent router', () => {
 
   it('does not downgrade on low confidence and fails back to heuristic on provider errors', async () => {
     vi.stubEnv('CODE_AGENT_JEV_ROUTER', '1');
-    const lowConfidence = vi.fn(async () => ({
-      intent: { choice: 'chat', confidence: 0.9 },
-      complexity: { choice: '0', confidence: 0.49 },
-      needs_clarification: { noul: 0 },
-      destructive_intent: { noul: 0 },
-    })) as unknown as JevSystemOneCall;
+    const lowConfidence = mockSystemOne({ complexity: { choice: 'simple', confidence: 0.59 } });
     const low = await new AdaptiveRouter().estimateComplexityWithJev(
       [{ role: 'user', content: 'this is a long request that should not be downgraded by an uncertain classifier because it has a file.json reference' }],
       lowConfidence,
     );
     expect(low.signals).not.toContain('jev_intent:chat');
 
+    const router = new AdaptiveRouter();
     const failing = vi.fn(async () => { throw new Error('jev down'); }) as unknown as JevSystemOneCall;
-    const fallback = await new AdaptiveRouter().estimateComplexityWithJev(
-      [{ role: 'user', content: 'hello' }],
-      failing,
-    );
+    const messages = [{ role: 'user', content: 'hello' }];
+    const fallback = await router.estimateComplexityWithJev(messages, failing);
+    // 判官抛错 ⇒ 100% 回启发式，逐字段一致
+    expect(fallback).toEqual(router.estimateComplexity(messages));
     expect(fallback.signals).toContain('short_message');
+  });
+
+  it('malformed answers (missing high_stakes) fall back to the heuristic', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_ROUTER', '1');
+    const malformed = vi.fn(async () => ({
+      intent: { choice: 'chat', confidence: 0.9 },
+      complexity: { choice: 'simple', confidence: 0.9 },
+      needs_clarification: { noul: 0 },
+      needs_vision: { noul: 0 },
+    })) as unknown as JevSystemOneCall;
+    const router = new AdaptiveRouter();
+    const messages = [{ role: 'user', content: 'hello' }];
+    const result = await router.estimateComplexityWithJev(messages, malformed);
+    expect(result).toEqual(router.estimateComplexity(messages));
+  });
+
+  it('rejects integer-style complexity choices from the old contract', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_ROUTER', '1');
+    const oldShape = mockSystemOne({ complexity: { choice: '1', confidence: 0.9 } });
+    const router = new AdaptiveRouter();
+    const messages = [{ role: 'user', content: 'hello' }];
+    const result = await router.estimateComplexityWithJev(messages, oldShape);
+    expect(result).toEqual(router.estimateComplexity(messages));
   });
 
   it('keeps image requests out of the free text-only tier even when Jev says simple', async () => {
     vi.stubEnv('CODE_AGENT_JEV_ROUTER', '1');
-    const systemOne = vi.fn(async () => ({
-      intent: { choice: 'vision', confidence: 0.95 },
-      complexity: { choice: '0', confidence: 0.95 },
-      needs_clarification: { noul: 0 },
-      destructive_intent: { noul: 0 },
-    })) as unknown as JevSystemOneCall;
+    const systemOne = mockSystemOne({ complexity: { choice: 'simple', confidence: 0.95 } });
     const result = await new AdaptiveRouter().estimateComplexityWithJev(
       [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'redacted' } }] }],
       systemOne,
     );
-    expect(result.level).toBe('complex');
+    expect(result.level).not.toBe('simple');
     expect(result.signals).toContain('has_image');
+  });
+});
+
+describe('AdaptiveRouter Jev 规则地板（独立于判官）', () => {
+  beforeEach(() => vi.unstubAllEnvs());
+
+  const alwaysSimpleZeroStakes = () =>
+    vi.fn(async () => ({
+      intent: { choice: 'chat', confidence: 0.9 },
+      complexity: { choice: 'simple', confidence: 0.99 },
+      needs_clarification: { noul: 0 },
+      needs_vision: { noul: 0 },
+      high_stakes: { noul: 0 },
+    })) as unknown as JevSystemOneCall;
+
+  // 删除 / 付款转账 / 对外发帖发送 三类各两条（中英文各一），mock 判官恒 simple 且 high_stakes 恒 0。
+  const HIGH_RISK_PROMPTS = [
+    '帮我删除临时目录下的所有文件',
+    'delete all cached files under /tmp/scratch',
+    '帮我付款 200 元给这个供应商',
+    'transfer $300 to account 1234',
+    '帮我在社区论坛发帖宣布版本发布',
+    'post this announcement to the public subreddit',
+  ];
+
+  it('high-risk keyword floor: none of the six prompts route to simple whatever Jev answers', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_ROUTER', '1');
+    for (const prompt of HIGH_RISK_PROMPTS) {
+      const result = await new AdaptiveRouter().estimateComplexityWithJev(
+        [{ role: 'user', content: prompt }],
+        alwaysSimpleZeroStakes(),
+      );
+      expect(result.level, `prompt: ${prompt}`).not.toBe('simple');
+      expect(result.signals).toContain('high_risk_rule_floor');
+    }
+  });
+
+  it('rule floor still applies when the judge throws and the router falls back to the heuristic', async () => {
+    vi.stubEnv('CODE_AGENT_JEV_ROUTER', '1');
+    const failing = vi.fn(async () => { throw new Error('jev down'); }) as unknown as JevSystemOneCall;
+    for (const prompt of HIGH_RISK_PROMPTS) {
+      const result = await new AdaptiveRouter().estimateComplexityWithJev(
+        [{ role: 'user', content: prompt }],
+        failing,
+      );
+      expect(result.level, `prompt: ${prompt}`).not.toBe('simple');
+      expect(result.signals).toContain('high_risk_rule_floor');
+    }
+  });
+
+  it('rule floor is inert when the switch is off (zero behavior change vs heuristic)', async () => {
+    const router = new AdaptiveRouter();
+    const systemOne = alwaysSimpleZeroStakes();
+    for (const prompt of HIGH_RISK_PROMPTS) {
+      const messages = [{ role: 'user', content: prompt }];
+      const result = await router.estimateComplexityWithJev(messages, systemOne);
+      expect(result).toEqual(router.estimateComplexity(messages));
+    }
+    expect(systemOne).not.toHaveBeenCalled();
   });
 });
 

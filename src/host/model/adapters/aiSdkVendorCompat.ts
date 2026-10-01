@@ -41,25 +41,37 @@ function withDeepSeekReasoningContentCompat(
 }
 
 // ── ADR-068 刀 2：B1 续接请求（末条 assistant prefix）的 vendor body 注入 ──
-// prefix-param 档（当前仅 deepseek）的官方合同：prefix:true + /beta 端点
-// （api-docs.deepseek.com/zh-cn/guides/chat_prefix_completion）。@ai-sdk/deepseek 不暴露
-// 该形状，transformRequestBody 手搓顶层 body 参数（reasoning_effort 同先例）。注入条件
-// 双重收紧：档位 prefix-param + body.messages 末条 assistant——后者是 B1 续接请求的
-// 独有形状（正常请求末条恒为 user/tool），防 prefix 参数泄漏进正常请求。端点切换
-// （/beta）不在 body 层，由 adapter 重建 model 时按能力表 endpointPath 处理。
+// prefix-param 档有两种参数形状，按能力表 streamResume.param 分发（缺省 'prefix'）：
+// - 'prefix'（deepseek）：顶层 body 键 prefix:true + /beta 端点
+//   （api-docs.deepseek.com/zh-cn/guides/chat_prefix_completion）。@ai-sdk/deepseek 不暴露
+//   该形状，transformRequestBody 手搓顶层 body 参数（reasoning_effort 同先例）；
+// - 'partial'（moonshot）：官方 Partial Mode——partial:true 打在末条 assistant 消息对象上
+//   （不是顶层 body 键），主端点不变（platform.kimi.com/docs/guide/use-partial-mode-feature-of-kimi-api）。
+// 注入条件双重收紧：档位 prefix-param + body.messages 末条 assistant——后者是 B1 续接请求的
+// 独有形状（正常请求末条恒为 user/tool），防参数泄漏进正常请求。端点切换不在 body 层，
+// 由 adapter 重建 model 时按能力表 endpointPath 处理（缺省不切）。
 function withStreamResumePrefixCompat(
   config: ModelConfig,
   vendorTransform?: (body: Record<string, unknown>) => Record<string, unknown>,
 ): ((body: Record<string, unknown>) => Record<string, unknown>) | undefined {
-  if (resolveModelCapabilities(config.provider, config.model).streamResume?.mode !== 'prefix-param') {
+  const streamResume = resolveModelCapabilities(config.provider, config.model).streamResume;
+  if (streamResume?.mode !== 'prefix-param') {
     return vendorTransform;
   }
+  const param = streamResume.param ?? 'prefix';
   return (body) => {
     const transformed = vendorTransform ? vendorTransform(body) : body;
     const messages = Array.isArray(transformed.messages) ? (transformed.messages as unknown[]) : [];
     const last = messages[messages.length - 1];
     if (!last || typeof last !== 'object' || (last as Record<string, unknown>).role !== 'assistant') {
       return transformed;
+    }
+    if (param === 'partial') {
+      // Moonshot：partial:true 是消息级标记，只打在末条 assistant 上，其余消息原样保留。
+      return {
+        ...transformed,
+        messages: [...messages.slice(0, -1), { ...(last as Record<string, unknown>), partial: true }],
+      };
     }
     return { ...transformed, prefix: true };
   };
@@ -140,9 +152,10 @@ export function buildVendorCompatSettings(config: ModelConfig, options?: { searc
   }
   return {
     ...finalSettings,
-    // 组合顺序：prefix 注入先跑（只加顶层 prefix:true，不碰 messages），reasoning_content
-    // 兼容后跑（遍历所有 assistant 消息补字段，B1 续接的 prefix 消息同受覆盖——DeepSeek
-    // 要求所有 assistant 消息回传该字段，prefix 消息不例外）。
+    // 组合顺序：prefix 注入最后跑（deepseek 顶层 prefix:true 不碰 messages；moonshot 只给末条
+    // assistant 消息打 partial:true，其余消息不动），reasoning_content 兼容先跑（遍历所有
+    // assistant 消息补字段，B1 续接的 prefix 消息同受覆盖——DeepSeek 要求所有 assistant
+    // 消息回传该字段，prefix 消息不例外）。
     transformRequestBody: withStreamResumePrefixCompat(
       config,
       withDeepSeekReasoningContentCompat(config, settings.transformRequestBody),

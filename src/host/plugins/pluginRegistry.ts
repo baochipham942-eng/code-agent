@@ -351,7 +351,15 @@ export class PluginRegistry {
           permissionLevel: prefixedTool.permissionLevel,
         });
         registerProtocolTool(wrapped.schema, async () => wrapped);
-        pluginToolOrigin.register(prefixedTool.name, plugin.manifest.id);
+        pluginToolOrigin.register(
+          prefixedTool.name,
+          plugin.manifest.id,
+          pluginToolOrigin.resolvePluginDisplayName(
+            plugin.manifest.id,
+            plugin.manifest.name,
+            plugin.manifest.displayName,
+          ),
+        );
         pluginTools.push(prefixedTool.name);
         plugin.registeredTools.push(prefixedTool.name);
         logger.info(`Plugin ${plugin.manifest.id} registered tool: ${prefixedTool.name}`);
@@ -456,7 +464,15 @@ export class PluginRegistry {
         }
         // ToolLoader 签名要求返回 Promise<ToolModule>，registry 内部首次解析时再调 createHandler
         registerProtocolTool(finalModule.schema, async () => finalModule);
-        pluginToolOrigin.register(finalName, plugin.manifest.id);
+        pluginToolOrigin.register(
+          finalName,
+          plugin.manifest.id,
+          pluginToolOrigin.resolvePluginDisplayName(
+            plugin.manifest.id,
+            plugin.manifest.name,
+            plugin.manifest.displayName,
+          ),
+        );
         plugin.registeredTools.push(finalName);
         logger.info(`Plugin ${plugin.manifest.id} registered tool module: ${finalName}`);
       },

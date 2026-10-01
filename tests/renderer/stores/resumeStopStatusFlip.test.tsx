@@ -304,4 +304,56 @@ describe('send key after stopping an auto-resumed run', () => {
     });
     await expectContinueFor(30_000);
   });
+
+  it('a genuinely running resumed turn still shows stop', async () => {
+    listMode = 'stale-auto-resuming';
+    useSessionStore.setState({
+      sessions: [staleAutoResumingSession()] as ReturnType<typeof useSessionStore.getState>['sessions'],
+    });
+    render(<SendKey sessionId={SESSION_ID} />);
+    await flush();
+    await act(async () => {
+      emit(IPC_CHANNELS.SESSION_STATUS_UPDATE, {
+        sessionId: SESSION_ID,
+        status: 'running',
+        activeAgentCount: 1,
+        contextHealth: null,
+      });
+    });
+    expect(screen.queryByTestId('continue-run-button')).toBeNull();
+    expect(screen.getByRole('button', { name: /停止|Stop/ })).toBeTruthy();
+  });
+
+  it('a fresh run and a Continue that starts a newer turn both show stop', async () => {
+    useSessionStore.setState({
+      sessions: [resumedRunningSession()] as ReturnType<typeof useSessionStore.getState>['sessions'],
+    });
+    listMode = 'resumed-running';
+    const fresh = render(<SendKey sessionId={SESSION_ID} />);
+    await flush();
+    await act(async () => {
+      emit(IPC_CHANNELS.SESSION_STATUS_UPDATE, {
+        sessionId: SESSION_ID,
+        status: 'running',
+        activeAgentCount: 1,
+        contextHealth: null,
+      });
+    });
+    expect(screen.getByRole('button', { name: /停止|Stop/ })).toBeTruthy();
+    fresh.unmount();
+
+    listMode = 'parked';
+    settleStoppedRun();
+    render(<SendKey sessionId={SESSION_ID} />);
+    await flush();
+    expectContinueNow();
+    await act(async () => {
+      emit(IPC_CHANNELS.SESSION_UPDATED, {
+        sessionId: SESSION_ID,
+        updates: { status: 'running', updatedAt: RESUMED_UPDATED_AT },
+      });
+    });
+    expect(screen.queryByTestId('continue-run-button')).toBeNull();
+    expect(screen.getByRole('button', { name: /停止|Stop/ })).toBeTruthy();
+  });
 });

@@ -68,7 +68,7 @@ function throwingSystemOne(error: Error): JevSystemOneCall {
 }
 
 function newClassifier(jevSystemOne: JevSystemOneCall, enableLlm = true): PermissionClassifier {
-  return getPermissionClassifier({ enableLlm, jevSystemOne });
+  return new PermissionClassifier({ enableLlm, jevSystemOne });
 }
 
 async function classifyBash(
@@ -156,8 +156,10 @@ describe('PermissionClassifier Jev（LLM classifier）', () => {
     const cases: Array<{ name: string; overrides: StubAnswers }> = [
       { name: 'injection high', overrides: { injection: 0.9 } },
       { name: 'privilege escalation high', overrides: { privilegeEscalation: 0.9 } },
+      { name: 'injection NaN', overrides: { injection: Number.NaN } },
       { name: 'privilege escalation NaN', overrides: { privilegeEscalation: Number.NaN } },
       { name: 'injection above one', overrides: { injection: 1.1 } },
+      { name: 'privilege escalation above one', overrides: { privilegeEscalation: 1.1 } },
     ];
 
     for (const { name, overrides } of cases) {
@@ -176,6 +178,16 @@ describe('PermissionClassifier Jev（LLM classifier）', () => {
     })) as unknown as JevSystemOneCall;
     const missingResult = await classifyBash(newClassifier(missing), `${FALLBACK_COMMAND} # missing`);
     expect(missingResult.decision).toBe('ask');
+
+    const missingPrivilege = vi.fn(async () => ({
+      risk: { choice: 'read_only', confidence: 0.95 },
+      needs_human: { noul: 0.1 },
+      touches_secrets: { noul: 0.05 },
+      config_or_credential_access: { noul: 0.1 },
+      injection: { noul: 0.1 },
+    })) as unknown as JevSystemOneCall;
+    const missingPrivilegeResult = await classifyBash(newClassifier(missingPrivilege), `${FALLBACK_COMMAND} # missing privilege`);
+    expect(missingPrivilegeResult.decision).toBe('ask');
   });
 
   it('thresholds keep the read_only tier and all pre-existing values', () => {
@@ -275,7 +287,7 @@ describe('PermissionClassifier Jev（LLM classifier）', () => {
   it('非白名单工具 ⇒ systemOne 零调用；规则层 ask 的工具仍 ask', async () => {
     const stub = stubSystemOne();
     const classifier = newClassifier(stub);
-    for (const toolName of ['Browser', 'mcp']) {
+    for (const toolName of ['terminal_write', 'mcp', 'propose_team_recipe', 'Browser']) {
       const result = await classifier.classify(toolName, { text: 'x'.repeat(400) }, { workingDirectory: '/tmp' });
       expect(result.decision).toBe('ask');
       expect(result.riskUnknown).toBe(true);
@@ -304,6 +316,9 @@ describe('PermissionClassifier Jev（LLM classifier）', () => {
     expect(state).toContain('file_path=/tmp/report.pdf');
     expect(state).toContain('content=<omitted>');
     expect(state).not.toContain('private text must not leave the machine');
+    const questionMap = stub.questions[0] as Record<string, { type: string }>;
+    expect(questionMap.injection.type).toBe('noul');
+    expect(questionMap.privilege_escalation.type).toBe('noul');
   });
 
   it('扩桶工具的 Jev 放行不进缓存：同目录同长度参数也逐次问 Jev', async () => {
@@ -520,7 +535,7 @@ describe('PermissionClassifier Jev（LLM classifier）', () => {
     fileName = 'jev-permclass-samples.json',
     enableLlm = true,
   ): Promise<Array<{ sample: FixtureSample; decision: string; rule: string }>> {
-    const classifier = newClassifier(jevSystemOne, enableLlm);
+    const classifier = getPermissionClassifier({ enableLlm, jevSystemOne });
     const outcomes = [];
     for (const sample of loadFixture(fileName)) {
       const args = sample.tool_name === 'Bash' ? { command: sample.summary } : {};

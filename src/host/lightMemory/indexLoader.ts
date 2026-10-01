@@ -11,6 +11,7 @@ import { createLogger } from '../services/infra/logger';
 import { LIGHT_MEMORY } from '../../shared/constants';
 
 const logger = createLogger('LightMemory');
+const memoryIndexSnapshots = new Map<string, string | null>();
 
 /**
  * N-EVAL-MEMORY：索引块里实际列出的记忆文件名。
@@ -99,6 +100,26 @@ export async function loadMemoryIndex(): Promise<string | null> {
     logger.error('Failed to load memory index:', err);
     return null;
   }
+}
+
+/**
+ * Load the memory index once for a host session and reuse that snapshot.
+ * MemoryWrite still updates INDEX.md on disk; the prompt snapshot changes only
+ * when the session ends and its runtime caches are released.
+ */
+export async function loadMemoryIndexForSession(sessionId: string): Promise<string | null> {
+  if (memoryIndexSnapshots.has(sessionId)) {
+    return memoryIndexSnapshots.get(sessionId) ?? null;
+  }
+
+  const memoryIndex = await loadMemoryIndex();
+  memoryIndexSnapshots.set(sessionId, memoryIndex);
+  return memoryIndex;
+}
+
+/** Release a session's memory index snapshot when the host session ends. */
+export function releaseMemoryIndexSnapshot(sessionId: string): void {
+  memoryIndexSnapshots.delete(sessionId);
 }
 
 /**

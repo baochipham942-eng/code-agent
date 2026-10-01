@@ -569,9 +569,22 @@ class SkillDiscoveryService {
   }
 
   private async loadFromEnabledMarketplacePlugins(): Promise<void> {
+    let rescanBlocked: ReadonlySet<string> | undefined;
+    try {
+      // 扫描规则版本升级后的存量重扫：先于装载跑，被 block 的插件在此禁用，
+      // 下面的 getEnabledSkillDescriptors 自然不再装载它。重扫自身失败不阻塞发现。
+      const { rescanStaleInstalledPlugins } = await import('../../skills/marketplace/installedPluginRescan');
+      const summary = await rescanStaleInstalledPlugins();
+      // 内存阻断集：禁用落盘失败/记录被并发替换时，本次装载也跳过这些插件
+      if (summary.blocked.length > 0) rescanBlocked = new Set(summary.blocked);
+    } catch (error) {
+      // 重扫整体失败没有逐条结论可用，内存阻断集无从谈起——stale 插件本会话只能
+      // 按持久化状态装载，因此异常必须 error 级可见（ai-review R5 Nit1），留待排查
+      logger.error('Skill guard rescan failed; continuing with persisted enabled state', { error });
+    }
     try {
       const { getEnabledSkillDescriptors } = await import('../../skills/marketplace/installService');
-      const skillDescriptors = await getEnabledSkillDescriptors();
+      const skillDescriptors = await getEnabledSkillDescriptors(rescanBlocked);
       for (const descriptor of skillDescriptors) {
         await this.loadSkillDirectory(descriptor.dir, 'plugin', { official: descriptor.official });
       }

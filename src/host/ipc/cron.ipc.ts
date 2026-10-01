@@ -49,7 +49,9 @@ function getCronJobFilter(source: unknown): CronJobFilterPayload | undefined {
 
 function getCreateCronJobPayload(source: unknown): CreateCronJobPayload {
   if (!isRecord(source)) throw new Error('Invalid cron job payload');
-  return source as unknown as CreateCronJobPayload;
+  // runCount 是只读结算字段（contract/cron.ts）：外部传入一律丢弃，不许借创建重置计数。
+  const { runCount: _droppedRunCount, ...payload } = source;
+  return payload as unknown as CreateCronJobPayload;
 }
 
 function getUpdateCronJobRequest(source: unknown): { jobId: string; updates: UpdateCronJobPayload } {
@@ -57,7 +59,9 @@ function getUpdateCronJobRequest(source: unknown): { jobId: string; updates: Upd
   const jobId = getStringField(source, 'jobId');
   const updates = source.updates;
   if (!jobId || !isRecord(updates)) throw new Error('Invalid cron job update payload');
-  return { jobId, updates: updates as unknown as UpdateCronJobPayload };
+  // 同上：外部不许借更新改写 runCount；内部结算走 CronService 自己的窄写通道。
+  const { runCount: _droppedRunCount, ...restUpdates } = updates;
+  return { jobId, updates: restUpdates as unknown as UpdateCronJobPayload };
 }
 
 const CRON_GENERATION_SYSTEM_PROMPT = `你是一个定时任务配置助手。根据用户的自然语言描述，生成定时任务的 JSON 配置。

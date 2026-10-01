@@ -3,9 +3,17 @@ import path from 'node:path';
 import { parseShellCommand } from '../security/commandParse';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { CONFIG_DIR_LEGACY, CONFIG_DIR_NEW } from '../../shared/constants/configDir';
+import { isOsSandboxEnabled } from '../../shared/constants/sandbox';
 import { getSandboxManager } from './manager';
-import { isProtectedWritePath, isSensitiveCredentialPath, pathAliases } from './sensitivePaths';
+import {
+  getSensitiveSandboxPaths,
+  isPathDeniedBySensitiveSandboxPath,
+  isProtectedWritePath,
+  isSensitiveCredentialPath,
+  pathAliases,
+} from './sensitivePaths';
 import { resolveBackgroundWorkspaceAuthority } from '../runtime/workspaceAuthority';
+import type { ToolContext } from '../protocol/tools';
 
 const FENCED_WRITE_PROGRAMS = new Set(['printf', 'echo', 'tee']);
 /** Lookup / startup-file assignments that can change what the fenced command runs. Not an exhaustive bash env list.
@@ -28,6 +36,12 @@ const QUOTED_REDIRECT_TARGET = /(?:[0-9]?>{1,2}|&>)\s*\S*['"`]/;
 const EXPANSION_MARKER = /\$|`|<\(|>\(/;
 
 export const FENCED_IN_PROJECT_WRITE_REASON = 'in-project write under OS write fence';
+
+type ToolWriteBoundaryContext = Pick<ToolContext,
+  'workingDir' | 'workspace' | 'workspaceScope' | 'requiresOsWriteFence'
+  | 'writeFenceWorkspaceRoot' | 'deniedReadRoots'>;
+
+type ToolWriteTargetResolution = { allowed: true } | { allowed: false; reason: string };
 
 function writeTargetAliases(targetPath: string, cwd: string): string[] {
   const resolved = path.resolve(cwd, targetPath);
@@ -148,6 +162,61 @@ export function containWriteFenceWorkspaceRoot(workspaceRoot: string | undefined
   if (!canonical) return undefined;
   if (!resolveBackgroundWorkspaceAuthority({ workspace: canonical })) return undefined;
   return canonical;
+}
+
+function toolWriteBoundaryRoots(context: ToolWriteBoundaryContext): string[] {
+  if (context.requiresOsWriteFence === true) {
+    const fenceRoot = containWriteFenceWorkspaceRoot(context.writeFenceWorkspaceRoot);
+    return fenceRoot ? [fenceRoot] : [];
+  }
+  if (context.workspaceScope) {
+    return context.workspaceScope.roots
+      .filter((root) => root.access === 'read_write')
+      .map((root) => resolveCanonicalRunPath(root.path));
+  }
+  // Same single-root confinement as Bash: workspace tightens cwd only when inside it.
+  const cwd = resolveCanonicalRunPath(context.workingDir);
+  const workspace = context.workspace ? resolveCanonicalRunPath(context.workspace) : undefined;
+  return workspace && isInsideWorkspaceRoot(workspace, cwd) ? [workspace] : [cwd];
+}
+
+/**
+ * Single write gate for native file-writing tools. It mirrors the roots passed
+ * to SandboxManager.wrapCommand: fence root, read_write Project Sources, or
+ * confined cwd. Denied-read roots and sensitive paths are never writable.
+ * The emergency OS_SANDBOX_ENABLED=false switch preserves the pre-fence path.
+ */
+export function resolveToolWriteTarget(
+  targetPath: string,
+  context: ToolWriteBoundaryContext,
+): ToolWriteTargetResolution {
+  if (!isOsSandboxEnabled()) return { allowed: true };
+  const denied: ToolWriteTargetResolution = { allowed: false, reason: FENCED_IN_PROJECT_WRITE_REASON };
+  try {
+    const resolvedPath = resolveCanonicalRunPath(path.resolve(context.workingDir, targetPath));
+    const roots = toolWriteBoundaryRoots(context);
+    const deniedReadRoots = [
+      ...(context.deniedReadRoots ?? []),
+      ...(process.env.CODE_AGENT_EVAL_REAL_ROOT ? [process.env.CODE_AGENT_EVAL_REAL_ROOT] : []),
+    ];
+    const deniedEntries = [
+      ...getSensitiveSandboxPaths(),
+      ...deniedReadRoots.map((root) => ({ kind: 'directory' as const, path: root })),
+    ];
+    // Check lexical and canonical paths: symlinks cannot bypass either deny spelling.
+    const targets = [path.resolve(context.workingDir, targetPath), resolvedPath];
+    const canonicalEntries = deniedEntries.map((entry) => ({
+      ...entry, path: resolveCanonicalRunPath(entry.path),
+    }));
+    if (targets.some((target) => isPathDeniedBySensitiveSandboxPath(target, deniedEntries)
+      || isPathDeniedBySensitiveSandboxPath(target, canonicalEntries))) return denied;
+    return roots.some((root) => isInsideWorkspaceRoot(resolvedPath, root))
+      ? { allowed: true }
+      : denied;
+  } catch {
+    // Unresolvable roots or symlink loops cannot establish write authority.
+    return denied;
+  }
 }
 
 export function writeFenceObligationRoot(classification: {

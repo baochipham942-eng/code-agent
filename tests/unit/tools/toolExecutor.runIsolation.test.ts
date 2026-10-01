@@ -314,7 +314,7 @@ describe('ToolExecutor per-run workspace isolation', () => {
   });
 
   // N-DURABLE-FOLLOWUPS-0917：web 路由的 native run（durable 与非 durable）按会话 Project scope 定写边界。
-  // 同一份输入分别走两支，越界写（写进只读 Source）都必须被拒；不带 scope 的 legacy 回落是改前行为，对照用。
+  // 两支都拒只读 Source；不带 session scope 时，工具层沙盒仍约束 cwd 根外写入。
   describe.each([
     { branch: 'durable', durableActivation: true },
     { branch: 'non-durable', durableActivation: false },
@@ -370,7 +370,7 @@ describe('ToolExecutor per-run workspace isolation', () => {
       await expect(fs.access(path.join(docs, 'blocked.md'))).rejects.toThrow();
     });
 
-    it('legacy fallback (before) roots the boundary at cwd and does not guard the read-only Source', async () => {
+    it('sandbox rejects a sibling write even without the session Project scope', async () => {
       const { run, docs } = await startRouteRun({
         runId: `run-route-legacy-${durableActivation}`,
         workspace: 'primary',
@@ -382,7 +382,12 @@ describe('ToolExecutor per-run workspace isolation', () => {
         { file_path: path.join(docs, 'leaked.md'), content: 'leaked\n' },
         executionOptions(run),
       );
-      expect(write).toMatchObject({ success: true });
+      expect(write).toMatchObject({
+        success: false,
+        error: 'in-project write under OS write fence',
+        metadata: expect.objectContaining({ code: 'SANDBOX_WRITE_DENIED' }),
+      });
+      await expect(fs.access(path.join(docs, 'leaked.md'))).rejects.toThrow();
     });
 
     it('keeps the legacy fallback when the session cwd left the Project boundary', async () => {

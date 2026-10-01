@@ -216,6 +216,19 @@ describe('marketplace install service trust defaults', () => {
     expect(Number.isNaN(Date.parse(record.scanner?.scannedAt ?? ''))).toBe(false);
   });
 
+  it('getEnabledSkillDescriptors excludes rescan-blocked plugin specs even while state still says enabled', async () => {
+    await installPlugin('demo@trusted-test');
+    await enablePlugin('demo@trusted-test');
+    const pluginRoot = (await listInstalledPlugins())['demo@trusted-test']!.pluginRoot!;
+
+    await expect(getEnabledSkillDescriptors()).resolves.toEqual([
+      { dir: path.join(pluginRoot, 'skills', 'demo'), official: false },
+    ]);
+    await expect(
+      getEnabledSkillDescriptors(new Set(['demo@trusted-test'])),
+    ).resolves.toEqual([]);
+  });
+
   it('does not grant official treatment to a third-party install named official-registry', async () => {
     const result = await installPlugin('demo@official-registry', { enableAfterInstall: true });
     expect(result.pluginSpec).toBe('demo@official-registry');

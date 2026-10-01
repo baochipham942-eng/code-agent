@@ -46,8 +46,8 @@ import { getSkillsDir, resolveInside } from './pathUtils';
 
 const logger = createLogger('PluginInstallService');
 
-export async function getEnabledSkillDescriptors() {
-  return collectEnabledSkillDescriptors();
+export async function getEnabledSkillDescriptors(excludePluginSpecs?: ReadonlySet<string>) {
+  return collectEnabledSkillDescriptors(excludePluginSpecs);
 }
 
 // ----------------------------------------------------------------------------

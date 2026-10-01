@@ -60,66 +60,129 @@ async function rescanInstalledPlugin(
 
 export interface StaleRescanSummary {
   rescanned: number;
+  /** 判定需禁用的 pluginSpec（含 scan_failed），无论落盘成败——调用方用它做内存级装载过滤 */
   blocked: string[];
+}
+
+/** 扫描期只读收集的结论；合写期先核对安装指纹（installedAt + 根目录）再应用。 */
+interface RescanDecision {
+  pluginSpec: string;
+  installedAt: string;
+  rootDir: string;
+  outcome:
+    | { kind: 'pass'; scannedAt: string }
+    | { kind: 'block'; findings: SkillGuardFinding[]; file?: string }
+    | { kind: 'scan_failed'; error: string };
 }
 
 /**
  * 宿主启动重扫入口（skillDiscoveryService 装载已启用插件之前调用）：
  * 对 scanner 版本落后的已启用记录逐条重扫。block/扫不动 → isEnabled=false
  * 落盘并 warn；pass → 回写当前版本。单条失败不影响其他记录。
+ *
+ * 两阶段读改写（ai-review R2 Important）：扫描期只读不改状态；合写期重新
+ * loadInstalledPlugins，只对「仍是同一次安装」的记录应用结论——扫描期间并发的
+ * 禁用/卸载/重装不被旧快照覆盖，并发新增记录原样保留。仓内安装状态没有共享
+ * 互斥（enable/disable 同样是无锁读改写），这里用指纹核对守住本函数新增的
+ * 长窗口，不新造锁机制。
  * 注意：本函数在 discovery 初始化链路内运行，绝不能触发 discovery reload
  * （会撞上 initialize 的 initPromise 自等待死锁），所以不走 disablePlugin。
  */
 export async function rescanStaleInstalledPlugins(): Promise<StaleRescanSummary> {
   const summary: StaleRescanSummary = { rescanned: 0, blocked: [] };
   const { loadInstalledPlugins, saveInstalledPlugins, deactivatePluginCommands } = await import('./installService');
-  const state = await loadInstalledPlugins();
-  let dirty = false;
 
+  // 扫描期：只读
+  const state = await loadInstalledPlugins();
+  const decisions: RescanDecision[] = [];
   for (const [pluginSpec, record] of Object.entries(state)) {
     if (!record.isEnabled || !isInstalledPluginScanStale(record)) continue;
-
-    let outcome: InstalledPluginRescanOutcome | null;
+    const rootDir = record.pluginRoot || record.sourceMarketplacePath;
+    let outcome: RescanDecision['outcome'];
     try {
-      outcome = await rescanInstalledPlugin(pluginSpec, record);
+      const rescan = await rescanInstalledPlugin(pluginSpec, record);
+      if (!rescan) continue;
+      outcome = rescan.verdict === 'block'
+        ? { kind: 'block', findings: rescan.findings, ...(rescan.file ? { file: rescan.file } : {}) }
+        : { kind: 'pass', scannedAt: rescan.scannedAt };
     } catch (error) {
-      // 扫不动 ≠ 放行：fail-closed 禁用，warn 带出可区分原因（scan_failed）
-      record.isEnabled = false;
+      outcome = { kind: 'scan_failed', error: error instanceof Error ? error.message : String(error) };
+    }
+    summary.rescanned += 1;
+    decisions.push({ pluginSpec, installedAt: record.installedAt, rootDir, outcome });
+  }
+  if (decisions.length === 0) return summary;
+
+  // 合写期：重读最新状态，指纹核对后逐条应用
+  const fresh = await loadInstalledPlugins();
+  let dirty = false;
+  for (const decision of decisions) {
+    const record = fresh[decision.pluginSpec];
+    if (record?.installedAt !== decision.installedAt
+      || (record.pluginRoot || record.sourceMarketplacePath) !== decision.rootDir) {
+      logger.warn('Skipped rescan result: plugin record changed during rescan', {
+        pluginSpec: decision.pluginSpec,
+      });
+      continue;
+    }
+
+    if (decision.outcome.kind === 'pass') {
+      record.scanner = {
+        version: SKILL_GUARD_VERSION,
+        verdict: 'pass',
+        scannedAt: decision.outcome.scannedAt,
+      };
       dirty = true;
-      summary.rescanned += 1;
-      summary.blocked.push(pluginSpec);
+      continue;
+    }
+
+    // block / scan_failed → 禁用（结论进 summary.blocked，与落盘成败无关）
+    summary.blocked.push(decision.pluginSpec);
+    if (decision.outcome.kind === 'block') {
+      logger.warn('Installed plugin disabled by skill guard rescan', {
+        pluginSpec: decision.pluginSpec,
+        findings: decision.outcome.findings.map((finding) => finding.kind),
+        file: decision.outcome.file,
+      });
+    } else {
+      // 扫不动 ≠ 放行：fail-closed 禁用，warn 带出可区分原因（scan_failed）
       logger.warn('Installed plugin disabled after skill guard rescan failure', {
-        pluginSpec,
+        pluginSpec: decision.pluginSpec,
         reason: 'scan_failed',
+        error: decision.outcome.error,
+      });
+    }
+    if (!record.isEnabled) continue; // 扫描期间已被并发禁用（命令亦已下架）
+
+    try {
+      await deactivatePluginCommands({
+        scope: record.scope,
+        projectPath: record.projectPath,
+        commandNames: record.commands || [],
+      });
+    } catch (error) {
+      // fail-loud 且跳过该条落盘：命令下架失败时若仍保存 isEnabled=false，残留
+      // 命令仍可调用（ai-review R2 Nit2）。磁盘保持原样（仍 enabled），下次启动
+      // 重扫自愈；本次会话由 summary.blocked 的内存过滤兜底不装载。
+      logger.error('Failed to deactivate commands of rescan-blocked plugin; skipping state persist for this record', {
+        pluginSpec: decision.pluginSpec,
         error: error instanceof Error ? error.message : String(error),
       });
-      await deactivateBlockedPluginCommands(record, pluginSpec, deactivatePluginCommands);
       continue;
     }
-    if (!outcome) continue;
-
-    summary.rescanned += 1;
+    record.isEnabled = false;
     dirty = true;
-    if (outcome.verdict === 'block') {
-      record.isEnabled = false;
-      summary.blocked.push(pluginSpec);
-      logger.warn('Installed plugin disabled by skill guard rescan', {
-        pluginSpec,
-        findings: outcome.findings.map((finding) => finding.kind),
-        file: outcome.file,
-      });
-      await deactivateBlockedPluginCommands(record, pluginSpec, deactivatePluginCommands);
-      continue;
-    }
-    record.scanner = {
-      version: SKILL_GUARD_VERSION,
-      verdict: 'pass',
-      scannedAt: outcome.scannedAt,
-    };
   }
 
   if (dirty) {
-    await saveInstalledPlugins(state);
+    try {
+      await saveInstalledPlugins(fresh);
+    } catch (error) {
+      // 落盘失败不吞：error 留痕；本次会话装载仍由 summary.blocked 内存过滤兜底
+      logger.error('Failed to persist skill guard rescan results', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
   return summary;
 }
@@ -153,31 +216,5 @@ export async function assertPluginRescanPassesForEnable(
       verdict: 'pass',
       scannedAt: rescan.scannedAt,
     };
-  }
-}
-
-type DeactivateCommandsFn = (args: {
-  scope: InstalledPluginRecord['scope'];
-  projectPath?: string;
-  commandNames: string[];
-}) => Promise<string[]>;
-
-/** 被禁用插件的 prompt commands 一并下架，与 disablePlugin 的语义保持一致。 */
-async function deactivateBlockedPluginCommands(
-  record: InstalledPluginRecord,
-  pluginSpec: string,
-  deactivatePluginCommands: DeactivateCommandsFn,
-): Promise<void> {
-  try {
-    await deactivatePluginCommands({
-      scope: record.scope,
-      projectPath: record.projectPath,
-      commandNames: record.commands || [],
-    });
-  } catch (error) {
-    logger.warn('Failed to deactivate commands of rescan-disabled plugin', {
-      pluginSpec,
-      error: error instanceof Error ? error.message : String(error),
-    });
   }
 }

@@ -42,8 +42,25 @@ vi.mock('../../../../src/host/services/skills/skillDiscoveryService', () => ({
   getSkillDiscoveryService: () => ({ reload: mocks.reloadSkills }),
 }));
 
+// 部分 mock：scanPluginRootContent 包一层 duringScan 钩子，用来在重扫的扫描期
+// 注入并发操作（禁用/新增安装/重装），钉死「读快照→扫描→写回」不覆盖并发变更。
+const scanHooks = vi.hoisted(() => ({
+  duringScan: undefined as undefined | (() => Promise<void>),
+}));
+
+vi.mock('../../../../src/host/skills/marketplace/skillInstallContentGuard', async (importActual) => {
+  const actual = await importActual<typeof import('../../../../src/host/skills/marketplace/skillInstallContentGuard')>();
+  return {
+    ...actual,
+    scanPluginRootContent: async (args: Parameters<typeof actual.scanPluginRootContent>[0]) => {
+      await scanHooks.duringScan?.();
+      return actual.scanPluginRootContent(args);
+    },
+  };
+});
+
 import { SKILL_GUARD_VERSION } from '../../../../src/host/security/skillContentGuard';
-import { enablePlugin } from '../../../../src/host/skills/marketplace/installService';
+import { disablePlugin, enablePlugin } from '../../../../src/host/skills/marketplace/installService';
 import {
   getInstalledPluginScannerVersion,
   rescanStaleInstalledPlugins,
@@ -63,6 +80,7 @@ describe('installed plugin scanner versioning and rescan', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    scanHooks.duringScan = undefined;
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'code-agent-rescan-'));
     mocks.userConfigDir = path.join(tempRoot, 'user-config');
     mocks.projectConfigDir = path.join(tempRoot, 'project-config');
@@ -232,5 +250,79 @@ describe('installed plugin scanner versioning and rescan', () => {
 
     expect((await readState())['demo@trusted-test']!.isEnabled).toBe(true);
     expect(mocks.reloadSkills).toHaveBeenCalledTimes(1);
+  });
+
+  it('重扫扫描期并发 disablePlugin 的 isEnabled=false 不被旧快照覆盖', async () => {
+    const pluginRoot = await makePluginRoot('p1', SAFE_SKILL);
+    await writeState({ 'demo@trusted-test': makeRecord(pluginRoot) });
+    scanHooks.duringScan = async () => {
+      await disablePlugin('demo@trusted-test');
+    };
+
+    const summary = await rescanStaleInstalledPlugins();
+
+    expect(summary).toEqual({ rescanned: 1, blocked: [] });
+    const record = (await readState())['demo@trusted-test']!;
+    expect(record.isEnabled).toBe(false);
+    // pass 结论仍合写到未被替换的记录上
+    expect(record.scanner?.version).toBe(SKILL_GUARD_VERSION);
+  });
+
+  it('重扫扫描期并发新增的安装记录不丢失', async () => {
+    const pluginRoot = await makePluginRoot('p1', SAFE_SKILL);
+    await writeState({ 'demo@trusted-test': makeRecord(pluginRoot) });
+    scanHooks.duringScan = async () => {
+      const state = await readState();
+      state['other@trusted-test'] = makeRecord('/nonexistent-other', { isEnabled: false });
+      await writeState(state);
+    };
+
+    await rescanStaleInstalledPlugins();
+
+    const state = await readState();
+    expect(state['other@trusted-test']).toBeDefined();
+    expect(state['demo@trusted-test']!.scanner?.version).toBe(SKILL_GUARD_VERSION);
+  });
+
+  it('重扫扫描期记录被替换（重装）→ 扫描结论跳过不回写', async () => {
+    const pluginRoot = await makePluginRoot('p1', SAFE_SKILL);
+    await writeState({ 'demo@trusted-test': makeRecord(pluginRoot) });
+    scanHooks.duringScan = async () => {
+      const state = await readState();
+      state['demo@trusted-test'] = makeRecord(pluginRoot, { installedAt: '2026-09-30T00:00:00.000Z' });
+      await writeState(state);
+    };
+
+    const summary = await rescanStaleInstalledPlugins();
+
+    expect(summary.rescanned).toBe(1);
+    const record = (await readState())['demo@trusted-test']!;
+    expect(record.installedAt).toBe('2026-09-30T00:00:00.000Z');
+    expect(record.scanner).toBeUndefined();
+    expect(
+      mocks.logWarn.mock.calls.some((call) => String(call[0]).includes('changed during rescan')),
+    ).toBe(true);
+  });
+
+  it('被 block 插件的命令下架失败 → fail-loud 且不落盘该条禁用（内存阻断仍生效）', async () => {
+    const pluginRoot = await makePluginRoot('p1', DANGEROUS_SKILL);
+    const commandsDir = path.join(mocks.userConfigDir, 'commands');
+    await fs.mkdir(commandsDir, { recursive: true });
+    await fs.writeFile(path.join(commandsDir, 'inspect.md'), '---\ndescription: x\n---\nx', 'utf8');
+    await writeState({ 'demo@trusted-test': makeRecord(pluginRoot, { commands: ['inspect'] }) });
+    // 目录去写权限 → deactivatePluginCommands 的 rm 必失败
+    await fs.chmod(commandsDir, 0o555);
+    try {
+      const summary = await rescanStaleInstalledPlugins();
+
+      expect(summary.blocked).toEqual(['demo@trusted-test']);
+      const record = (await readState())['demo@trusted-test']!;
+      expect(record.isEnabled).toBe(true);
+      expect(
+        mocks.logError.mock.calls.some((call) => String(call[0]).includes('deactivate')),
+      ).toBe(true);
+    } finally {
+      await fs.chmod(commandsDir, 0o755);
+    }
   });
 });

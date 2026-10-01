@@ -12,6 +12,7 @@
 import { CRON_GUARDRAILS } from '../../shared/constants';
 import type { CronJobDefinition, CronJobExecution } from '../../shared/contract/cron';
 import { normalizeErrorMessage } from '../lightMemory/failureJournal';
+import { getConfigService } from '../services/core/configService';
 import { notificationService } from '../services/infra/notificationService';
 
 export type CronFailureKind = 'transient' | 'permanent' | 'capacity-wait';
@@ -113,6 +114,17 @@ function truncateForNotice(message: string, maxChars = 200): string {
   return message.length > maxChars ? `${message.slice(0, maxChars)}…` : message;
 }
 
+/** 到数停用文案（N-CRON-BUDGET-EXPOSE）：点名上限与重新启用的去处，中英随界面语言。 */
+function buildMaxRunsDisabledSummary(definition: CronJobDefinition): string {
+  const maxRuns = definition.maxRuns ?? '?';
+  const english = getConfigService().getSettings().ui?.language === 'en';
+  return english
+    ? `Run limit reached (${maxRuns} runs); the job has been auto-disabled. `
+      + 'Re-enable it under Automation Center → Scheduled tasks to reset the counter.'
+    : `已达运行次数上限（${maxRuns} 次）已自动停用。`
+      + '可在「自动化中心 → 定时任务」重新启用，重新启用后计数清零。';
+}
+
 /**
  * 最终停用通知（不受冷却约束）：必须带上出路——去哪重新启用、看什么错误。
  * 所有动作类型都发（不止 agent 任务）：用户不知道任务被停了正是本次回归的痛点。
@@ -120,12 +132,14 @@ function truncateForNotice(message: string, maxChars = 200): string {
 export function notifyCronJobDisabled(
   definition: CronJobDefinition,
   execution: CronJobExecution,
-  reason: 'consecutive' | 'permanent',
+  reason: 'consecutive' | 'permanent' | 'max_runs',
 ): void {
   const lastError = execution.error ? truncateForNotice(execution.error) : '未知错误';
   const summary = reason === 'consecutive'
     ? `连续失败 ${CRON_GUARDRAILS.MAX_CONSECUTIVE_FAILURES} 次已自动停用。最后错误：${lastError}。`
       + '可在「自动化中心 → 定时任务」重新启用。'
+    : reason === 'max_runs'
+      ? buildMaxRunsDisabledSummary(definition)
     : `因配置/鉴权类错误停用（重试无效）。错误：${lastError}。`
       + '修正配置后可在「自动化中心 → 定时任务」重新启用。';
   try {

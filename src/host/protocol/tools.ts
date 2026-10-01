@@ -111,6 +111,8 @@ export interface ToolSchema {
   readonly outputSchema: JSONSchema;
   readonly category: ToolCategory;
   readonly permissionLevel: PermissionLevel;
+  /** Optional per-result token budget; replaces the model-window-derived L1 value. */
+  readonly resultBudgetTokens?: number;
   /** 单次调用满足文字前台「短时 × 低副作用」边界；前台只按此声明筛选，禁止按工具名推断。 */
   readonly allowInTextForeground?: true;
   /**

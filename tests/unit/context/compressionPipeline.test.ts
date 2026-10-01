@@ -13,6 +13,7 @@ import { CompressionState } from '../../../src/host/context/compressionState';
 import { type ProjectableMessage } from '../../../src/host/context/projectionEngine';
 import { estimateTokens } from '../../../src/host/context/tokenEstimator';
 import { resolveTriggerTokens } from '../../../src/host/context/triggerTokens';
+import { resolveToolResultBudget } from '../../../src/host/context/layers/toolResultBudget';
 
 function makeMsg(id: string, role: string, content: string, turnIndex = 0): ProjectableMessage {
   return { id, role, content, turnIndex };
@@ -127,6 +128,43 @@ describe('CompressionPipeline', () => {
 
       expect(transcript[1].content).toBe(bigContent);
       expect(result.compressionState.getSnapshot().budgetedResults.has('t1')).toBe(false);
+    });
+
+    it('derives the L1 budget from the pipeline context window when no override is supplied', async () => {
+      const contextWindow = 200_000;
+      const derived = resolveToolResultBudget(contextWindow);
+      const content = makeText(5_000);
+      const transcript: ProjectableMessage[] = [
+        makeMsg('u1', 'user', 'Run tool'),
+        makeMsg('t1', 'tool', content),
+        makeMsg('a1', 'assistant', 'Result consumed'),
+      ];
+
+      await pipeline.evaluate(transcript, state, {
+        ...BASE_CONFIG,
+        maxTokens: contextWindow,
+        toolResultBudget: undefined,
+        activeToolResultPrune: { enabled: false, maxTokensPerResult: derived.l0MaxTokens },
+      });
+
+      expect(estimateTokens(transcript[1].content)).toBeLessThanOrEqual(derived.l1MaxTokens + 40);
+    });
+
+    it('applies a resultBudgetTokens override to both compression layers', async () => {
+      const content = makeText(3_000);
+      const transcript: ProjectableMessage[] = [
+        { ...makeMsg('t1', 'tool', content), toolName: 'custom', resultBudgetTokens: 700 },
+        makeMsg('a1', 'assistant', 'Result consumed'),
+      ];
+
+      await pipeline.evaluate(transcript, state, {
+        ...BASE_CONFIG,
+        maxTokens: 200_000,
+        toolResultBudget: undefined,
+        activeToolResultPrune: { enabled: true, maxTokensPerResult: 6_250 },
+      });
+
+      expect(transcript[0].content).toContain('[TOOL_RESULT_ARCHIVED]');
     });
   });
 

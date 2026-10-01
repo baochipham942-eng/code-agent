@@ -94,7 +94,7 @@ describe('L0 activeToolResultPrune 臂激活契约', () => {
     // producer：生产聊天路径把开关常量递进 pipeline config
     expect(producerSrc).toMatch(/activeToolResultPrune:\s*\{/);
     expect(producerSrc).toMatch(/enabled:\s*armEnabled\s*&&\s*ACTIVE_TOOL_RESULT_PRUNE\.ENABLED/);
-    expect(producerSrc).toMatch(/maxTokensPerResult:\s*ACTIVE_TOOL_RESULT_PRUNE\.MAX_TOKENS_PER_RESULT/);
+    expect(producerSrc).toMatch(/maxTokensPerResult:\s*resolveToolResultBudget\(contextWindowSize\)\.l0MaxTokens/);
     // consumer：pipeline 真消费该开关并调用层实现 + 留触发记号
     const consumerSrc = readFileSync(resolve(repoRoot, 'src/host/context/compressionPipeline.ts'), 'utf8');
     expect(consumerSrc).toMatch(/config\.activeToolResultPrune\?\.enabled/);

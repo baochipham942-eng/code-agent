@@ -75,7 +75,7 @@ function byteForByteEqual(a: Uint8Array, b: Uint8Array): boolean {
 /** CJK 字符（汉字 + CJK 符号/全角形式）占全部字符的比例；空串按 0 计。 */
 function cjkRatio(text: string): number {
   if (!text.length) return 0;
-  const cjk = text.match(/[㐀-䶿一-鿿豈-﫿　-〿＀-￯]/g);
+  const cjk = text.match(/[㐀-䶿一-鿿豈-﫿 -〿＀-￯]/g);
   return (cjk?.length ?? 0) / text.length;
 }
 

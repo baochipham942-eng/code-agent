@@ -40,7 +40,7 @@ export const BASH = {
   DEFAULT_TIMEOUT: 120000,
   /** 最大超时 (10 分钟) */
   MAX_TIMEOUT: 600000,
-  /** 最大输出长度 */
+  /** Unknown-window fallback; model-bound Bash results use resolveToolResultBudget. */
   MAX_OUTPUT_LENGTH: 30000,
   /** 最大缓冲区大小 (10MB) */
   MAX_BUFFER: 10 * 1024 * 1024,
@@ -131,6 +131,12 @@ export const TOOL_RESULT_SPILL = {
    * 否则 compressToolResult 的尾部预算 ~30 token 会把带长路径的提示行整体吞掉）。
    */
   NOTICE_MARKER: '[Full output saved to:',
+} as const;
+
+/** Hook stdout token budgets by event. */
+export const HOOK_OUTPUT_BUDGET = {
+  DEFAULT_TOKENS: 4000,
+  SESSION_START_TOKENS: 12000,
 } as const;
 
 /** Codex 会话挖掘配置 */

@@ -747,4 +747,5 @@ Context Health 的 bySource 是当前消息、system prompt 与已挂载技能�
 | 073 | 工具资源声明与保序并行分段 | 已拍板 | [ADR-073](./architecture/decisions/ADR-073-tool-resource-order-preserving-segments.md) |
 | 074 | Plan 模式正文收尾但未调用退出工具的兜底 | 已拍板 | [ADR-074](./architecture/decisions/ADR-074-plan-mode-exit-fallback.md) |
 | 075 | 重启后前台任务自动续跑（先接管已有 runId；parked=waiting+中断原因；崩溃自动续 / 其余发送按钮继续态） | 已拍板 | [ADR-075](./architecture/decisions/ADR-075-foreground-restart-resume.md) |
+| 076 | 文件工具层的沙盒写边界（Write/Edit 先接入，共用 write-fence roots） | 草稿·待拍板 | [ADR-076](./architecture/decisions/ADR-076-sandbox-tool-layer.md) |
 | 079 | 副作用工具的幂等：调研稿——重做本身安全（幂等键/查询合同）替代「结果未知→不重放」，不改 ADR-075 现行合同 | 草稿·调研 | [ADR-079](./architecture/decisions/ADR-079-side-effect-tool-idempotency.md) |

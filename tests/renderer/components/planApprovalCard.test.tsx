@@ -239,4 +239,39 @@ describe('PlanApprovalCard', () => {
     expect(screen.getByText('Read host code')).toBeTruthy();
     expect(screen.getByText('已改')).toBeTruthy();
   });
+
+  it('合成卡（source=synthetic_text）显示来源徽标，模型提交的卡不显示', () => {
+    render(<PlanApprovalCard target={{
+      ...target,
+      toolCallId: 'synthetic-plan-run-9',
+      approval: { ...approval, source: 'synthetic_text' },
+    }} />);
+    expect(screen.getByTestId('plan-approval-source').textContent).toContain('Neo');
+    cleanup();
+    renderCard();
+    expect(screen.queryByTestId('plan-approval-source')).toBeNull();
+  });
+
+  it('findPendingPlanApproval 接受宿主合成卡并透传 source', () => {
+    const syntheticMessage: Message = {
+      ...message,
+      toolCalls: [{
+        ...message.toolCalls![0],
+        id: 'synthetic-plan-run-9',
+        arguments: { plan: approval.originalPlan },
+        result: {
+          ...message.toolCalls![0].result!,
+          metadata: {
+            requiresUserConfirmation: true,
+            confirmationType: 'plan_approval',
+            plan: approval.originalPlan,
+            planApproval: { ...approval, source: 'synthetic_text' },
+          },
+        },
+      }],
+    };
+    const found = findPendingPlanApproval([syntheticMessage], 'session-1');
+    expect(found?.approval.source).toBe('synthetic_text');
+    expect(found?.toolCallId).toBe('synthetic-plan-run-9');
+  });
 });

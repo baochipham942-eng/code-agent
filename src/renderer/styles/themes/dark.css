@@ -156,6 +156,11 @@
   --input-border-focus: #71717A;
   --input-placeholder: #52525B;
 
+  /* Field 原语（Input/Select/Textarea，FB-216）：dark 维持改前的
+     zinc-700 底 / zinc-500 占位符观感，只改消费方式为令牌。 */
+  --field-bg: rgb(var(--zinc-700));
+  --field-placeholder: rgb(var(--zinc-500));
+
   /* Focus ring */
   --focus-ring: rgba(255, 255, 255, 0.22);
 }

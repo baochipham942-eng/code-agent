@@ -24,6 +24,7 @@ import type { CommandContext, CommandOutput } from '../../shared/commands';
 import { getPromptCommandService } from '../../host/services/commands/promptCommandService';
 import { resolveCLIPermissionModeFlag } from '../permissionPolicy';
 import { resolveChatOriginKind } from './chatOriginKind';
+import { buildSharedCommandHostPorts } from './sharedCommandHostPorts';
 
 /** Provider → env var name mapping */
 const PROVIDER_ENV_KEYS: Record<string, string> = {
@@ -507,6 +508,10 @@ async function handleCommand(
         error: (msg: string) => terminalOutput.error(msg),
         warn: (msg: string) => terminalOutput.warning(msg),
       };
+      const getSessionSkillService = async () => {
+        const { getSessionSkillService: load } = await import('../../host/services/skills/sessionSkillService');
+        return load();
+      };
       const ctx: CommandContext = {
         surface: 'cli',
         getLocale: () => getConfigService().getSettings().ui.language,
@@ -517,10 +522,8 @@ async function handleCommand(
           const { getToolExecutor } = await import('../bootstrap');
           return getToolExecutor();
         },
-        getSessionSkillService: async () => {
-          const { getSessionSkillService } = await import('../../host/services/skills/sessionSkillService');
-          return getSessionSkillService();
-        },
+        getSessionSkillService,
+        ...buildSharedCommandHostPorts({ agent, getSessionSkillService }),
       };
       const result = await registry.execute(cmdLower, ctx, args);
       if (!result.success && result.message) {

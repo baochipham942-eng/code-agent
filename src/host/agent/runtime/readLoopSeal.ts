@@ -34,7 +34,7 @@ const DELIVERABLE_GENERATE_TOOLS = new Set([
 ]);
 
 export function isReadLikeToolCall(
-  ctx: Pick<RuntimeContext, 'antiPatternDetector'>,
+  ctx: { readonly antiPatternDetector: { isReadOnlyShellCommand?: (command: string) => boolean } },
   toolCall: Pick<ToolCall, 'name' | 'arguments'>,
 ): boolean {
   if (READ_ONLY_TOOLS.includes(toolCall.name)) return true;

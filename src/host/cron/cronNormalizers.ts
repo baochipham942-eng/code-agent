@@ -10,8 +10,9 @@ import type {
   CronScheduleType,
   CronScheduleConfig,
   CronJobAction,
+  CronExecutionTrigger,
 } from '../../shared/contract/cron';
-import { CRON_GUARDRAILS } from '../../shared/constants';
+import { CRON_GUARDRAILS, CRON_EVENT_TRIGGER } from '../../shared/constants';
 import type { CronRunDigest } from '../../shared/cronRunDigest';
 
 export interface CronAgentActionResult {
@@ -36,6 +37,7 @@ export interface CronExecutionRow {
   error?: string | null;
   retry_attempt: number;
   exit_code?: number | null;
+  trigger_json?: string | null;
 }
 
 const CRON_JOB_STATUSES: readonly CronJobStatus[] = [
@@ -116,7 +118,7 @@ export function parseJsonValue(raw: unknown): unknown | undefined {
 }
 
 export function isCronScheduleType(value: unknown): value is CronScheduleType {
-  return value === 'at' || value === 'every' || value === 'cron';
+  return value === 'at' || value === 'every' || value === 'cron' || value === 'event';
 }
 
 export function isCronJobStatus(value: unknown): value is CronJobStatus {
@@ -202,9 +204,46 @@ export function normalizeSchedule(value: unknown): CronScheduleConfig | null {
       };
     }
 
+    case 'event': {
+      if (
+        value.source !== 'channel'
+        || value.eventName !== 'message'
+        || typeof value.accountId !== 'string'
+        || !value.accountId.trim()
+      ) {
+        return null;
+      }
+      const chatId = typeof value.chatId === 'string' && value.chatId.trim() ? value.chatId : undefined;
+      return {
+        type: 'event',
+        source: 'channel',
+        accountId: value.accountId,
+        ...(chatId ? { chatId } : {}),
+        eventName: 'message',
+        batchWindowSec: clampBatchWindowSec(readNumberField(value, 'batchWindowSec')),
+        minRunIntervalSec: clampMinRunIntervalSec(readNumberField(value, 'minRunIntervalSec')),
+      };
+    }
+
     default:
       return null;
   }
+}
+
+/** 合批窗夹取：[DEFAULT, MAX]，非法/缺省取缺省。 */
+function clampBatchWindowSec(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value) || value <= 0) {
+    return CRON_EVENT_TRIGGER.DEFAULT_BATCH_WINDOW_SEC;
+  }
+  return Math.min(value, CRON_EVENT_TRIGGER.MAX_BATCH_WINDOW_SEC);
+}
+
+/** 限频间隔夹取：不低于下限（绝不放低），非法/缺省取缺省。 */
+function clampMinRunIntervalSec(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value) || value <= 0) {
+    return CRON_EVENT_TRIGGER.DEFAULT_MIN_RUN_INTERVAL_SEC;
+  }
+  return Math.max(value, CRON_EVENT_TRIGGER.MIN_MIN_RUN_INTERVAL_SEC);
 }
 
 export function assertSupportedEveryScheduleUnit(schedule: CronScheduleConfig): void {
@@ -399,5 +438,29 @@ export function normalizeCronExecutionRow(row: unknown): CronExecutionRow | null
     error: readNullableStringField(row, 'error'),
     retry_attempt: retryAttempt,
     exit_code: readNullableNumberField(row, 'exit_code'),
+    trigger_json: readNullableStringField(row, 'trigger_json'),
+  };
+}
+
+/** trigger_json 列的形状校验：坏行按无 trigger 处理（trigger 是溯源字段，不承重执行语义）。 */
+export function parseCronExecutionTrigger(raw: unknown): CronExecutionTrigger | undefined {
+  const value = parseJsonValue(raw);
+  if (!isRecord(value) || (value.kind !== 'event' && value.kind !== 'schedule')) {
+    return undefined;
+  }
+  const accountId = readStringField(value, 'accountId');
+  const source = readStringField(value, 'source');
+  const eventCount = readNumberField(value, 'eventCount');
+  const droppedCount = readNumberField(value, 'droppedCount');
+  const eventIds = Array.isArray(value.eventIds) && value.eventIds.every((id) => typeof id === 'string')
+    ? value.eventIds as string[]
+    : undefined;
+  return {
+    kind: value.kind,
+    ...(source === 'channel' ? { source } : {}),
+    ...(accountId ? { accountId } : {}),
+    ...(eventCount !== undefined ? { eventCount } : {}),
+    ...(droppedCount !== undefined ? { droppedCount } : {}),
+    ...(eventIds ? { eventIds } : {}),
   };
 }

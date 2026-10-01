@@ -57,4 +57,52 @@ describe('ChannelModal (Modal primitive 迁移验证)', () => {
       }),
     }));
   });
+
+  it('新建 Telegram 账号默认白名单档，切全体成员档后提交 groupAccessMode（N-TELEGRAM-GROUPMODE-UI）', () => {
+    const onSave = vi.fn();
+    render(
+      <ChannelModal
+        channelTypes={[{ type: 'telegram', name: 'Telegram' }]}
+        onSave={onSave}
+        onClose={() => {}}
+      />
+    );
+
+    fireEvent.change(screen.getAllByRole('combobox')[0]!, { target: { value: 'telegram' } });
+    const modeSelect = screen.getByRole('combobox', { name: channelsText.modal.groupAccessModeLabel });
+    expect((modeSelect as HTMLSelectElement).value).toBe('allowlist');
+
+    fireEvent.change(modeSelect, { target: { value: 'all_members' } });
+    fireEvent.change(screen.getByPlaceholderText(channelsText.modal.botTokenPlaceholder), {
+      target: { value: '123:abc' },
+    });
+    fireEvent.submit(screen.getByRole('dialog').querySelector('form')!);
+
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'telegram',
+      config: expect.objectContaining({ groupAccessMode: 'all_members' }),
+    }));
+  });
+
+  it('编辑 Telegram 账号时回显已保存的群准入档', () => {
+    render(
+      <ChannelModal
+        account={{
+          id: 'tg-1',
+          name: 'TG',
+          type: 'telegram',
+          status: 'connected',
+          enabled: true,
+          createdAt: 1,
+          config: { type: 'telegram', botToken: '123:abc', groupAccessMode: 'all_members' },
+        }}
+        channelTypes={[{ type: 'telegram', name: 'Telegram' }]}
+        onSave={() => {}}
+        onClose={() => {}}
+      />
+    );
+
+    const modeSelect = screen.getByRole('combobox', { name: channelsText.modal.groupAccessModeLabel });
+    expect((modeSelect as HTMLSelectElement).value).toBe('all_members');
+  });
 });

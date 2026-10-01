@@ -127,7 +127,12 @@ export function mapLegacyRunView(
   };
 }
 
-export function mapDurableRunToSessionStatus(status: DurableRunView['status']): SessionStatus {
+export function mapDurableRunToSessionStatus(
+  status: DurableRunView['status'],
+  resume?: Pick<DurableResumeState, 'mode'>,
+): SessionStatus {
+  // 可继续的停靠若投影成 running，会话会进 runningSessionIds，主按钮停在「停止」而不是「继续」。
+  if (status === 'waiting' && resume?.mode === 'continue') return 'interrupted';
   if (status === 'paused') return 'paused';
   if (status === 'created' || status === 'running' || status === 'waiting' || status === 'recovering') return 'running';
   if (status === 'failed') return 'error';
@@ -147,7 +152,7 @@ export function projectDurableRunToSessionPayload(view: DurableRunView): {
 } {
   const durableResume = projectDurableResumeState(view);
   return {
-    status: mapDurableRunToSessionStatus(view.status),
+    status: mapDurableRunToSessionStatus(view.status, durableResume),
     ...(hasDurableWaitingApprovalRun(view) && durableResume?.mode !== 'continue'
       ? { durableWaitingInput: true as const }
       : {}),

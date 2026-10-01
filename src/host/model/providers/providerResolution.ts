@@ -148,9 +148,26 @@ interface ResolveApiKeyOptions {
 }
 
 /**
+ * typesafe 判断面 key。读取顺序跟 getServiceApiKey 一致：钥匙串，然后云托管，然后环境变量。
+ * 存储层任何抛错都退回仅环境变量，未初始化的 config service 或缺 mock 的测试保持只读 env 的结果。
+ */
+function resolveTypesafeApiKey(): string {
+  const envVal = normalizeApiKey(process.env.TYPESAFE_API_KEY) ?? '';
+  try {
+    const stored = normalizeApiKey(getConfigService().getServiceApiKey('typesafe'));
+    if (stored) return stored;
+  } catch {
+    return envVal;
+  }
+  return envVal;
+}
+
+/**
  * 解析 provider 的 API key —— 各 provider 类 getApiKey 的单一事实来源。
  */
 export function resolveProviderApiKey(config: ModelConfig, opts: ResolveApiKeyOptions = {}): string {
+  if (config.provider === 'typesafe') return resolveTypesafeApiKey();
+
   const trustConfigKey = opts.trustConfigKey !== false;
 
   // vendor 专用官方 key 始终最高优先（不依赖 config.apiKey 是否可信）

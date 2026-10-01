@@ -23,6 +23,13 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 
 import { ExternalEngineSubagentExecutor } from '../../../src/host/agent/externalEngineSubagentExecutor';
+import {
+  getPermissionModeManager,
+  resetPermissionModeManager,
+  type PermissionMode,
+} from '../../../src/host/permissions/modes';
+
+const SESSION = 'external-engine-subagent-executor';
 
 describe('ExternalEngineSubagentExecutor', () => {
   let worktreePath: string;
@@ -30,6 +37,8 @@ describe('ExternalEngineSubagentExecutor', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    resetPermissionModeManager();
+    getPermissionModeManager().setSessionMode(SESSION, 'acceptEdits', true);
     await fs.mkdir(WORKTREE_BASE_DIR, { recursive: true });
     worktreePath = await fs.mkdtemp(path.join(WORKTREE_BASE_DIR, 'executor-test-'));
     outsidePath = await fs.mkdtemp(path.join(path.dirname(WORKTREE_BASE_DIR), 'executor-outside-'));
@@ -45,6 +54,7 @@ describe('ExternalEngineSubagentExecutor', () => {
 
   afterEach(async () => {
     vi.useRealTimers();
+    resetPermissionModeManager();
     await fs.rm(worktreePath, { recursive: true, force: true });
     await fs.rm(outsidePath, { recursive: true, force: true });
   });
@@ -96,6 +106,49 @@ describe('ExternalEngineSubagentExecutor', () => {
     }));
   });
 
+  it('passes read_only inside a worktree when the session ceiling is read_only', async () => {
+    for (const mode of ['plan', 'readOnly', 'dontAsk', 'delegate'] as const satisfies readonly PermissionMode[]) {
+      mocks.adapterRun.mockClear();
+      getPermissionModeManager().setSessionMode(SESSION, mode, true);
+      await new ExternalEngineSubagentExecutor().execute(makeRequest('codex_cli', worktreePath));
+      expect(mocks.adapterRun).toHaveBeenCalledWith(expect.objectContaining({
+        permissionProfile: 'read_only',
+      }));
+    }
+  });
+
+  it('keeps workspace_write inside a worktree for acceptEdits, default, and bypassPermissions', async () => {
+    for (const mode of ['acceptEdits', 'default', 'bypassPermissions'] as const) {
+      mocks.adapterRun.mockClear();
+      getPermissionModeManager().setSessionMode(SESSION, mode, true);
+      await new ExternalEngineSubagentExecutor().execute(makeRequest('codex_cli', worktreePath));
+      expect(mocks.adapterRun).toHaveBeenCalledWith(expect.objectContaining({
+        permissionProfile: 'workspace_write',
+      }));
+    }
+  });
+
+  it('stays read_only outside a worktree for every session mode', async () => {
+    const modes = ['default', 'readOnly', 'acceptEdits', 'dontAsk', 'bypassPermissions', 'plan', 'delegate'] as const;
+    for (const mode of modes) {
+      mocks.adapterRun.mockClear();
+      getPermissionModeManager().setSessionMode(SESSION, mode, true);
+      await new ExternalEngineSubagentExecutor().execute(makeRequest('codex_cli', outsidePath));
+      expect(mocks.adapterRun).toHaveBeenCalledWith(expect.objectContaining({
+        permissionProfile: 'read_only',
+      }));
+    }
+  });
+
+  it('runs a worktree plan session read-only even when the engine lacks workspace_write', async () => {
+    getPermissionModeManager().setSessionMode(SESSION, 'plan', true);
+    const result = await new ExternalEngineSubagentExecutor().execute(makeRequest('mimo_code', worktreePath));
+    expect(result).toMatchObject({ success: true, output: 'done' });
+    expect(mocks.adapterRun).toHaveBeenCalledWith(expect.objectContaining({
+      permissionProfile: 'read_only',
+    }));
+  });
+
   it('fails loudly when a worktree run lacks the workspace_write capability', async () => {
     const result = await new ExternalEngineSubagentExecutor().execute(makeRequest('mimo_code', worktreePath));
 
@@ -128,7 +181,7 @@ function makeRequest(engine: ExternalAgentEngineKind, cwd: string): SubagentExec
       availableTools: [],
     },
     context: {
-      sessionId: 'session-1',
+      sessionId: SESSION,
       cwd,
       modelConfig: { provider: 'openai', model: 'gpt-5.3-codex' },
       resolver: { getDefinition: () => undefined },

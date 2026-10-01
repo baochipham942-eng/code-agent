@@ -17,11 +17,6 @@
       "kind": "export"
     },
     {
-      "file": "src/cli/bootstrap.ts",
-      "name": "syncCLIWorkingDirectory",
-      "kind": "export"
-    },
-    {
       "file": "src/cli/output/index.ts",
       "name": "JSONOutput",
       "kind": "export"
@@ -733,11 +728,6 @@
     },
     {
       "file": "src/host/agent/runtime/contextAssembly.ts",
-      "name": "MAX_PERSISTENT_SYSTEM_CONTEXT_TOKENS",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/agent/runtime/contextAssembly.ts",
       "name": "normalizePersistentSystemContextKey",
       "kind": "export"
     },
@@ -764,21 +754,6 @@
     {
       "file": "src/host/agent/runtime/game/breakout/BreakoutChecker.ts",
       "name": "arkanoidChecker",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/agent/runtime/game/breakout/BreakoutChecker.ts",
-      "name": "breakoutChecker",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/agent/runtime/game/breakout/BreakoutChecker.ts",
-      "name": "BreakoutChecker",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/agent/runtime/game/breakout/BreakoutChecker.ts",
-      "name": "isBreakoutArtifact",
       "kind": "export"
     },
     {
@@ -869,11 +844,6 @@
     {
       "file": "src/host/agent/runtime/maxStepsFallback.ts",
       "name": "buildMaxStepsPrompt",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/agent/runtime/maxStepsFallback.ts",
-      "name": "MAX_STEPS_REASON",
       "kind": "export"
     },
     {
@@ -1169,11 +1139,6 @@
     {
       "file": "src/host/agent/subagentExecutorProjection.ts",
       "name": "buildMessageAttachments",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/agent/subagentExecutorProjection.ts",
-      "name": "SUBAGENT_DISTILLATION_CONTRACT",
       "kind": "export"
     },
     {
@@ -1525,11 +1490,6 @@
       "file": "src/host/context/compactionHooks.ts",
       "name": "PreCompactHookResultLike",
       "kind": "type"
-    },
-    {
-      "file": "src/host/context/compactionService.ts",
-      "name": "summarizeCompactionPlan",
-      "kind": "export"
     },
     {
       "file": "src/host/context/compactionSummaryValidator.ts",
@@ -2632,16 +2592,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/model/providerHealthMonitor.ts",
-      "name": "HealthStatus",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/model/providerHealthMonitor.ts",
-      "name": "ProviderHealth",
-      "kind": "type"
-    },
-    {
       "file": "src/host/model/providerRuntimeCapabilities.ts",
       "name": "PROVIDER_PROTOCOL_FAMILIES",
       "kind": "export"
@@ -3392,16 +3342,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/prompts/systemReminders.ts",
-      "name": "REMINDERS",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/systemReminders.ts",
-      "name": "ReminderType",
-      "kind": "type"
-    },
-    {
       "file": "src/host/prompts/tools/index.ts",
       "name": "EXCEL_TOOL_DESCRIPTION",
       "kind": "export"
@@ -3943,11 +3883,6 @@
     },
     {
       "file": "src/host/security/sensitiveDetector.ts",
-      "name": "SensitiveMatch",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/security/sensitiveDetector.ts",
       "name": "SensitiveType",
       "kind": "type"
     },
@@ -4129,11 +4064,6 @@
     {
       "file": "src/host/services/capability/index.ts",
       "name": "resetCapabilityRecommender",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/services/checkpoint/fileCheckpointService.ts",
-      "name": "initFileCheckpointService",
       "kind": "export"
     },
     {
@@ -5027,11 +4957,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/services/infra/timeoutController.ts",
-      "name": "TimeoutController",
-      "kind": "export"
-    },
-    {
       "file": "src/host/services/infra/toolCache.ts",
       "name": "TOOL_CACHE_ALLOWLIST",
       "kind": "export"
@@ -5500,16 +5425,6 @@
       "file": "src/host/session/transcriptExporter.ts",
       "name": "TranscriptTemplate",
       "kind": "type"
-    },
-    {
-      "file": "src/host/skills/marketplace/githubArchiveSecurity.ts",
-      "name": "MAX_GITHUB_ARCHIVE_BYTES",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/skills/marketplace/index.ts",
-      "name": "getEnabledSkillDirs",
-      "kind": "export"
     },
     {
       "file": "src/host/skills/marketplace/index.ts",
@@ -6049,11 +5964,6 @@
     {
       "file": "src/host/tools/media/ppt/masterDecorations.ts",
       "name": "DECORATIONS",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/tools/media/ppt/parser.ts",
-      "name": "generatePlaceholderSlides",
       "kind": "export"
     },
     {
@@ -7882,11 +7792,6 @@
       "kind": "export"
     },
     {
-      "file": "src/renderer/hooks/useCapabilityInventory.ts",
-      "name": "CapabilityActionResult",
-      "kind": "type"
-    },
-    {
       "file": "src/renderer/hooks/useCurrentTurnCapabilityScope.ts",
       "name": "extractCurrentTurnWorkbenchSnapshot",
       "kind": "export"
@@ -8237,61 +8142,6 @@
       "kind": "type"
     },
     {
-      "file": "src/renderer/stores/uiStore.ts",
-      "name": "ConfirmOptions",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/stores/uiStore.ts",
-      "name": "DeepResearchState",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/stores/uiStore.ts",
-      "name": "ModalType",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/stores/uiStore.ts",
-      "name": "ReportStyle",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/stores/uiStore.ts",
-      "name": "ResearchPhase",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/stores/uiStore.ts",
-      "name": "ResearchProgress",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/stores/uiStore.ts",
-      "name": "Toast",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/stores/uiStore.ts",
-      "name": "useConfirm",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/stores/uiStore.ts",
-      "name": "useDeepResearch",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/stores/uiStore.ts",
-      "name": "useModal",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/stores/uiStore.ts",
-      "name": "useToast",
-      "kind": "export"
-    },
-    {
       "file": "src/renderer/types/runWorkbench.ts",
       "name": "RunIdentity",
       "kind": "type"
@@ -8325,11 +8175,6 @@
       "file": "src/renderer/utils/contextBuckets.ts",
       "name": "ContextBucket",
       "kind": "type"
-    },
-    {
-      "file": "src/renderer/utils/inAppValidationExecutor.ts",
-      "name": "runInAppInteractionStep",
-      "kind": "export"
     },
     {
       "file": "src/renderer/utils/logger.ts",
@@ -8682,31 +8527,6 @@
       "kind": "type"
     },
     {
-      "file": "src/shared/constants/agent.ts",
-      "name": "AGENT",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/agent.ts",
-      "name": "AGENT_COMPLEXITY",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/agent.ts",
-      "name": "AGENT_ITERATIONS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/agent.ts",
-      "name": "AGENT_TIMEOUT",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/agent.ts",
-      "name": "PLANNING",
-      "kind": "export"
-    },
-    {
       "file": "src/shared/constants/almaMcpRegistry.ts",
       "name": "AlmaMcpRegistryServer",
       "kind": "type"
@@ -8750,11 +8570,6 @@
       "file": "src/shared/constants/almaRegistryAudit.ts",
       "name": "AlmaRegistryKind",
       "kind": "type"
-    },
-    {
-      "file": "src/shared/constants/defaults.ts",
-      "name": "MODEL_MIGRATIONS",
-      "kind": "export"
     },
     {
       "file": "src/shared/constants/misc.ts",
@@ -8809,11 +8624,6 @@
     {
       "file": "src/shared/constants/models.ts",
       "name": "LONG_CONTEXT_THRESHOLD",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/models.ts",
-      "name": "MODEL_ABBREV",
       "kind": "export"
     },
     {
@@ -8939,11 +8749,6 @@
     {
       "file": "src/shared/constants/timeouts.ts",
       "name": "TASK_OUTPUT_TIMEOUTS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/tools.ts",
-      "name": "FILE",
       "kind": "export"
     },
     {
@@ -9295,21 +9100,6 @@
       "file": "src/shared/contract/backgroundTask.ts",
       "name": "TERMINAL_TASK_STATUSES",
       "kind": "export"
-    },
-    {
-      "file": "src/shared/contract/builtInAgents.ts",
-      "name": "BUILT_IN_AGENTS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/contract/builtInAgents.ts",
-      "name": "BuiltInAgentConfig",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/builtInAgents.ts",
-      "name": "BuiltInAgentRole",
-      "kind": "type"
     },
     {
       "file": "src/shared/contract/builtInAgents.ts",
@@ -9770,11 +9560,6 @@
       "file": "src/shared/contract/durableRun.ts",
       "name": "RunAttemptStatus",
       "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/durableRun.ts",
-      "name": "TERMINAL_RUN_STATUSES",
-      "kind": "export"
     },
     {
       "file": "src/shared/contract/error.ts",
@@ -11122,11 +10907,6 @@
       "kind": "export"
     },
     {
-      "file": "src/shared/memoriesFts.sql.ts",
-      "name": "MEMORIES_FTS_TABLE_SQL",
-      "kind": "export"
-    },
-    {
       "file": "src/shared/modelErrorDiagnostics.ts",
       "name": "ModelErrorDiagnosticCode",
       "kind": "type"
@@ -11177,11 +10957,6 @@
       "kind": "export"
     },
     {
-      "file": "src/shared/transcriptFts.sql.ts",
-      "name": "TRANSCRIPT_FTS_TABLE_SQL",
-      "kind": "export"
-    },
-    {
       "file": "src/shared/utils/agentPointerEvidence.ts",
       "name": "isAgentPointerEventLike",
       "kind": "export"
@@ -11203,18 +10978,8 @@
     },
     {
       "file": "src/shared/utils/browserComputerRedaction.ts",
-      "name": "BrowserComputerManualTakeoverStatus",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/utils/browserComputerRedaction.ts",
       "name": "BrowserComputerSecretPlaceholderSummary",
       "kind": "type"
-    },
-    {
-      "file": "src/shared/utils/browserComputerRedaction.ts",
-      "name": "classifyBrowserComputerManualTakeover",
-      "kind": "export"
     },
     {
       "file": "src/shared/utils/browserComputerRedaction.ts",
@@ -11239,11 +11004,6 @@
     {
       "file": "src/shared/utils/browserComputerRedaction.ts",
       "name": "summarizeBrowserComputerSecretPlaceholder",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/utils/providerError.ts",
-      "name": "getProviderErrorMessage",
       "kind": "export"
     },
     {

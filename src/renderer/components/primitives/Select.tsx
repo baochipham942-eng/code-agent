@@ -65,7 +65,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
     const hasError = error || !!errorMessage;
 
     const baseClasses = [
-      'bg-zinc-700',
+      'bg-[var(--field-bg)]',
       'border',
       'rounded-lg',
       'text-zinc-200',

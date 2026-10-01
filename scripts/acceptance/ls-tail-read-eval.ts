@@ -305,6 +305,7 @@ function materializeFixture(): { fixtureRoot: string; caseDir: string } {
   delete listingEnv.LSCOLORS;
   delete listingEnv.LS_COLORS;
   const listing = execFileSync('/bin/ls', ['-la'], { cwd: fixtureRoot, env: listingEnv, encoding: 'utf8' });
+  // eslint-disable-next-line no-control-regex -- intentional ANSI color stripping of ls output
   const plain = listing.replace(/\u001b\[[0-9;]*m/g, '');
   const names = plain.trimEnd().split('\n').slice(1).map((row) => row.trim().split(/\s+/).at(-1) ?? '');
   const named = names.filter((name) => name !== '.' && name !== '..');

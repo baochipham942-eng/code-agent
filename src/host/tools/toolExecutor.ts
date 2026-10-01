@@ -36,10 +36,11 @@ import type { SkillToolBoundary } from '../../shared/contract/agentSkill';
 import type { NeoTagRunContext } from '../../shared/contract/tag';
 import type { SwarmRunScope } from '../../shared/contract/swarm';
 import { createTraceBuilder, createTraceStep } from '../security/decisionTraceBuilder';
-import { getPluginIdForTool } from '../plugins/pluginToolOrigin';
+import { getPluginIdForTool, getPluginOriginForTool } from '../plugins/pluginToolOrigin';
 import { getWriteIsolationManager, getWriteIsolationScope, type WriteIsolationMetadata } from '../security/writeIsolation';
 import type { HookManager } from '../hooks/hookManager';
 import { getToolResolver } from '../tools/dispatch/toolResolver';
+import { lookupMcpToolAfterReapedReconnect } from './mcpReapedToolLookup';
 import type { ConversationExecutionIntent, WorkbenchToolScope } from '../../shared/contract/conversationEnvelope';
 import { isBashToolName, normalizeToolName } from './toolNames';
 import { isToolDeniedByRunPolicy } from './runToolPolicy';
@@ -641,10 +642,24 @@ export class ToolExecutor {
     });
 
     const resolver = getToolResolver();
-    const toolDef = resolver.getDefinition(requestedToolName)
+    let toolDef = resolver.getDefinition(requestedToolName)
       ?? (normalizedRequestedToolName !== requestedToolName
         ? resolver.getDefinition(normalizedRequestedToolName)
         : undefined);
+
+    if (!toolDef) {
+      toolDef = await lookupMcpToolAfterReapedReconnect(
+        requestedToolName,
+        (name) => resolver.getDefinition(name),
+      ) ?? (
+        normalizedRequestedToolName !== requestedToolName
+          ? await lookupMcpToolAfterReapedReconnect(
+            normalizedRequestedToolName,
+            (name) => resolver.getDefinition(name),
+          )
+          : undefined
+      );
+    }
 
     if (!toolDef) {
       logger.debug('Tool not found', { toolName: requestedToolName });
@@ -661,6 +676,7 @@ export class ToolExecutor {
     }
 
     const executionToolName = toolDef.name;
+    const pluginOrigin = getPluginOriginForTool(executionToolName);
     const pluginId = getPluginIdForTool(executionToolName);
     const policyToolName = normalizeToolName(executionToolName);
     const writeWithoutWorkspaceAuthority = Boolean(
@@ -1924,7 +1940,7 @@ export class ToolExecutor {
         commandValidation,
         commandRiskUnknown ? 'unknown' : knownAskCommandRisk,
       );
-      if (pluginId) permissionRequest.details.pluginId = pluginId;
+      if (pluginOrigin) Object.assign(permissionRequest.details, pluginOrigin);
       if (
         permissionRequest.type === 'file_read'
         || permissionRequest.type === 'file_write'

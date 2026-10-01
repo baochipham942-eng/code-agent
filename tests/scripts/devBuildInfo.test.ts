@@ -34,6 +34,30 @@ function functionBody(script: string, name: string): string {
   return script.slice(start, nextFunction + 3);
 }
 
+const KEYTAR_NATIVE = 'node_modules/keytar/build/Release/keytar.node';
+const NODE_PTY_DARWIN_NATIVE = `node_modules/node-pty/prebuilds/darwin-${process.arch}/pty.node`;
+
+function writeStartupFixture(root: string): void {
+  const relativePaths = [
+    'dist/renderer/index.html',
+    `dist/native/better-sqlite3/prebuilds/${process.platform}-${process.arch}.node`,
+    KEYTAR_NATIVE,
+  ];
+  if (process.platform === 'darwin') relativePaths.push(NODE_PTY_DARWIN_NATIVE);
+  for (const relativePath of relativePaths) {
+    const filePath = join(root, relativePath);
+    mkdirSync(resolve(filePath, '..'), { recursive: true });
+    writeFileSync(filePath, relativePath.endsWith('.html') ? '<!doctype html>' : 'fixture');
+  }
+}
+
+function runInventory(root: string) {
+  return spawnSync('node', ['scripts/tauri-resource-inventory.mjs', '--root', root], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  });
+}
+
 describe('dev build-info install gate', () => {
   it('refuses to install while the target slot app is running (fail-closed)', () => {
     const script = readInstallScript();
@@ -98,24 +122,50 @@ describe('dev build-info install gate', () => {
   it('fails the shared inventory when a required startup resource is missing', () => {
     const tempDir = mkdtempSync(join(tmpdir(), 'agent-neo-dev-resources-'));
     tempDirs.push(tempDir);
-    const renderer = join(tempDir, 'dist/renderer/index.html');
-    const native = join(
-      tempDir,
-      `dist/native/better-sqlite3/prebuilds/${process.platform}-${process.arch}.node`,
-    );
-    mkdirSync(resolve(renderer, '..'), { recursive: true });
-    mkdirSync(resolve(native, '..'), { recursive: true });
-    writeFileSync(renderer, '<!doctype html>');
-    writeFileSync(native, 'fixture');
+    writeStartupFixture(tempDir);
 
-    const command = ['scripts/tauri-resource-inventory.mjs', '--root', tempDir];
-    const green = spawnSync('node', command, { cwd: repoRoot, encoding: 'utf8' });
+    const green = runInventory(tempDir);
     expect(green.status).toBe(0);
 
-    rmSync(renderer);
-    const red = spawnSync('node', command, { cwd: repoRoot, encoding: 'utf8' });
+    rmSync(join(tempDir, 'dist/renderer/index.html'));
+    const red = runInventory(tempDir);
     expect(red.status).not.toBe(0);
     expect(red.stderr).toContain('dist/renderer/index.html');
+    expect(red.stderr).toContain('Missing startup resources under');
+  });
+
+  it('fails the shared inventory when keytar.node is missing', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'agent-neo-dev-resources-'));
+    tempDirs.push(tempDir);
+    writeStartupFixture(tempDir);
+
+    const green = runInventory(tempDir);
+    expect(green.status).toBe(0);
+
+    rmSync(join(tempDir, KEYTAR_NATIVE));
+    const red = runInventory(tempDir);
+    expect(red.status).not.toBe(0);
+    expect(red.stderr).toContain('Missing startup resources under');
+    expect(red.stderr).toContain(KEYTAR_NATIVE);
+  });
+
+  it('fails the shared inventory when the bundled darwin node-pty prebuild is missing', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'agent-neo-dev-resources-'));
+    tempDirs.push(tempDir);
+    writeStartupFixture(tempDir);
+
+    if (process.platform !== 'darwin') {
+      const unaffected = runInventory(tempDir);
+      expect(unaffected.status).toBe(0);
+      expect(unaffected.stderr).not.toContain('node-pty');
+      return;
+    }
+
+    rmSync(join(tempDir, NODE_PTY_DARWIN_NATIVE));
+    const red = runInventory(tempDir);
+    expect(red.status).not.toBe(0);
+    expect(red.stderr).toContain('Missing startup resources under');
+    expect(red.stderr).toContain(NODE_PTY_DARWIN_NATIVE);
   });
 
   it('preserves this slot renderer hot-update cache after install', () => {

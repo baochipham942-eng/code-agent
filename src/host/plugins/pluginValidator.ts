@@ -149,6 +149,11 @@ export function validateManifest(manifest: unknown): ValidationResult {
     warnings.push({ field: 'name', message: "'name' should be a string" });
   }
 
+  // Optional: displayName
+  if (m.displayName !== undefined && typeof m.displayName !== 'string') {
+    warnings.push({ field: 'displayName', message: "'displayName' should be a string" });
+  }
+
   // Optional: description
   if (m.description !== undefined && typeof m.description !== 'string') {
     warnings.push({ field: 'description', message: "'description' should be a string" });

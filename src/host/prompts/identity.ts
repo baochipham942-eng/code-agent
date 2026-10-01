@@ -281,9 +281,8 @@ type: {{user|feedback|project|reference}}
 
 ## How to Read
 
-- INDEX.md is loaded every session (see <memory_index> below)
-- Read detail files on-demand based on current task relevance
-- Use MemoryRead tool to access specific memory files
+- INDEX.md loads every session
+- Memory questions: use MemoryRead/memory_search (deferred tools; load via ToolSearch if hidden); never directly Read/Glob this directory.
 
 ## Maintenance
 

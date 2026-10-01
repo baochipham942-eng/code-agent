@@ -33,6 +33,7 @@ import { DEFERRED_TOOL_LOADING } from '../../../../shared/constants/tools';
 import { readDeferredToolInjectionSchemas } from '../../dispatch/toolDefinitions';
 import { boundSingleInjection } from '../../../services/toolSearch/singleInjectionCeiling';
 import { descriptionContextFromModelConfig } from '../../../services/toolSearch/sentToolSchema';
+import { resolveJevSkillRerankOptions } from '../../../services/toolSearch/jevSkillRerank';
 
 const MAX_RESULTS_HARD_CAP = DEFERRED_TOOL_LOADING.SEARCH_MAX_RESULTS_HARD_CAP;
 const DEFAULT_MAX_RESULTS = DEFERRED_TOOL_LOADING.SEARCH_DEFAULT_MAX_RESULTS;
@@ -90,6 +91,7 @@ export async function executeToolSearch(
       maxResults,
       includeMCP: true,
       sessionId: ctx.sessionId,
+      rerank: resolveJevSkillRerankOptions(),
       ...(ctx.deniedToolNames?.length ? { deniedToolNames: ctx.deniedToolNames } : {}),
     });
 

@@ -49,6 +49,12 @@ const EXPECTED_SCHEDULES = {
   'daily-lookahead': { type: 'cron', expression: '0 15 * * 1-5', timezone: 'Asia/Shanghai' },
   'daily-review': { type: 'cron', expression: '30 17 * * 1-5', timezone: 'Asia/Shanghai' },
   'weekly-review': { type: 'cron', expression: '30 17 * * 4', timezone: 'Asia/Shanghai' },
+  // 晨间分诊用运行机器的本地时区（台账口径「本地时区」），不钉死 Asia/Shanghai
+  'morning-triage': {
+    type: 'cron',
+    expression: '30 8 * * 1-5',
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  },
 } as const;
 
 const FEATURED_IDS = Object.keys(EXPECTED_SCHEDULES);
@@ -87,6 +93,7 @@ describe('cowork cron templates', () => {
       'daily-lookahead',
       'daily-review',
       'weekly-review',
+      'morning-triage',
       'web-change-watch',
       'feishu-calendar-conflict',
       'feishu-table-change',
@@ -155,7 +162,7 @@ describe('任务列表摘要不漏开发者字串', () => {
 });
 
 describe('CronCenterPanel featured templates', () => {
-  it('打开面板就能看到三张推荐卡', () => {
+  it('打开面板就能看到全部推荐卡', () => {
     render(<CronCenterPanel onClose={() => undefined} />);
     expect(screen.getByTestId('cron-featured-templates')).toBeTruthy();
     expect(FEATURED_CRON_TEMPLATES.map((template) => template.id)).toEqual(FEATURED_IDS);

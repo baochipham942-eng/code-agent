@@ -132,9 +132,9 @@ describe('N-CRON-BUDGET-EXPOSE 编辑器额度字段', () => {
   });
 
   it('复制带 maxRuns 的本地任务到云端：保存时不再提交 maxRuns（PR#2208 R2 Important）', async () => {
-    const createJob = vi.fn(async () => makeJob());
+    const createJob = vi.fn(async (_input: unknown) => makeJob());
     useCronStore.setState({ createJob });
-    render(<CronJobEditor isOpen copySource={makeJob({ maxRuns: 3 })} onClose={() => undefined} />);
+    render(<CronJobEditor isOpen job={null} copySource={makeJob({ maxRuns: 3 })} onClose={() => undefined} />);
 
     fireEvent.click(screen.getByText('创建任务'));
 

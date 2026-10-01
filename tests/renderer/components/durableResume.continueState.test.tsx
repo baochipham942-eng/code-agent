@@ -2,7 +2,10 @@
 import React from 'react';
 import { fireEvent, render, renderHook, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Message, StreamRecoverySnapshot } from '../../../src/shared/contract';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
+import { DecisionSlot } from '../../../src/renderer/components/features/chat/DecisionSlot';
+import { SendButton } from '../../../src/renderer/components/features/chat/ChatInput/SendButton';
 import {
   suppressLegacyInterruptionDecision,
   useDurableContinueVisible,
@@ -97,5 +100,66 @@ describe('useGuardedDurableContinue', () => {
     fireEvent.click(screen.getByTestId('composer-continue'));
     expect(onContinue).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+describe('parked continue projection in the composer', () => {
+  const snapshot: StreamRecoverySnapshot = {
+    sessionId: 'session-parked',
+    turnId: 'interrupted-turn-1',
+    content: '部分回复',
+    reasoning: '',
+    toolCalls: [{ id: 'write-1', name: 'Write', arguments: '{"file_path":"/workspace/report.md"}' }],
+    estimatedTokens: 10,
+    timestamp: 1,
+    isFinal: false,
+    streamStatus: 'incomplete',
+    stableForExecution: false,
+    incompleteToolCallIds: [],
+  };
+  const retryMessage: Message = {
+    id: 'user-before-interrupt',
+    role: 'user',
+    content: '写一篇长文',
+    timestamp: 0,
+  };
+
+  beforeEach(() => {
+    useSessionStore.setState({
+      currentSessionId: 'session-parked',
+      loadSessions: vi.fn(async () => undefined),
+    } as never);
+    window.localStorage.clear();
+  });
+
+  function ParkedComposer({ turnActive }: { turnActive: boolean }) {
+    const resume = { mode: 'continue' as const, canContinue: true };
+    const showContinue = useDurableContinueVisible(resume, turnActive);
+    const legacy = suppressLegacyInterruptionDecision({
+      snapshot,
+      retryMessage,
+      onContinue: async () => true,
+    }, resume.mode);
+    return (
+      <>
+        <SendButton
+          hasContinuation={showContinue}
+          isProcessing={turnActive}
+          onContinue={() => undefined}
+          onStop={() => undefined}
+        />
+        <DecisionSlot streamInterruption={legacy} />
+      </>
+    );
+  }
+
+  it('shows the composer continue action and hides the legacy interruption banner when the turn is idle', () => {
+    const view = render(<ParkedComposer turnActive={false} />);
+    expect(screen.getByTestId('continue-run-button')).toBeTruthy();
+    expect(screen.queryByTestId('stream-interruption-decision')).toBeNull();
+
+    view.rerender(<ParkedComposer turnActive={true} />);
+    expect(screen.queryByTestId('continue-run-button')).toBeNull();
+    expect(screen.queryByTestId('stream-interruption-decision')).toBeNull();
   });
 });

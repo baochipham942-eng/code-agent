@@ -1,6 +1,5 @@
 {
   "schemaVersion": 2,
-  "note": "2026-09-13 N-KNIP-MOBILE-BLINDSPOT：扫描范围纳入 packages/mobile。符号数变化含「手机消费的共享导出不再假死」和「手机侧只给单测用的导出首次入账」，不是清理战果。真死的 decodeInvitation / Dispose / FileExportResult / PushProvider / KEYBOARD_EASING / KeyboardFrame 已删或去 export，没有塞进基线。",
   "symbols": [
     {
       "file": "packages/internal/evaluation-center/src/host/evaluation/trajectory/trajectoryExporter.ts",
@@ -55,11 +54,6 @@
     {
       "file": "packages/mobile/src/stores/companionStore.ts",
       "name": "companionAckMatches",
-      "kind": "export"
-    },
-    {
-      "file": "packages/mobile/src/stores/mobileStore.ts",
-      "name": "joinTranscript",
       "kind": "export"
     },
     {
@@ -1363,11 +1357,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/agent/runtime/maxStepsFallback.ts",
-      "name": "MAX_STEPS_REASON",
-      "kind": "export"
-    },
-    {
       "file": "src/host/agent/runtime/messageProcessorHelpers.ts",
       "name": "shouldPreserveToolObservation",
       "kind": "export"
@@ -1644,11 +1633,6 @@
     },
     {
       "file": "src/host/agent/spawnGuard.ts",
-      "name": "AgentMessageType",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/agent/spawnGuard.ts",
       "name": "createAgentMessage",
       "kind": "export"
     },
@@ -1736,11 +1720,6 @@
       "file": "src/host/agent/subagentExecutorProjection.ts",
       "name": "MessageContent",
       "kind": "type"
-    },
-    {
-      "file": "src/host/agent/subagentExecutorProjection.ts",
-      "name": "SUBAGENT_DISTILLATION_CONTRACT",
-      "kind": "export"
     },
     {
       "file": "src/host/agent/subagentExecutorTypes.ts",
@@ -2336,11 +2315,6 @@
       "file": "src/host/context/documentContext/types.ts",
       "name": "SectionType",
       "kind": "type"
-    },
-    {
-      "file": "src/host/context/layers/activeToolResultPrune.ts",
-      "name": "ACTIVE_PRUNE_PLACEHOLDER_MARKER",
-      "kind": "export"
     },
     {
       "file": "src/host/context/layers/microcompact.ts",
@@ -3278,11 +3252,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/ipc/session.ipc.ts",
-      "name": "performCrossSessionSearch",
-      "kind": "export"
-    },
-    {
       "file": "src/host/ipc/settings.ipc.ts",
       "name": "applyLocalProviderDiscoverySnapshot",
       "kind": "export"
@@ -3838,11 +3807,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/mcp/secretRef.ts",
-      "name": "encodeSecretRef",
-      "kind": "export"
-    },
-    {
       "file": "src/host/mcp/servers/index.ts",
       "name": "CodeIndexServer",
       "kind": "export"
@@ -3965,11 +3929,6 @@
     {
       "file": "src/host/model/adapters/aiSdkAdapter.ts",
       "name": "buildVendorCompatSettings",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/model/errorClassifier.ts",
-      "name": "classifyError",
       "kind": "export"
     },
     {
@@ -4794,11 +4753,6 @@
     },
     {
       "file": "src/host/prompts/builder.ts",
-      "name": "buildPrompt",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/builder.ts",
       "name": "createReminderContext",
       "kind": "export"
     },
@@ -4895,21 +4849,6 @@
     {
       "file": "src/host/prompts/builder.ts",
       "name": "WEB_SOURCE_OUTPUT_RULE",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/prompts/cacheBreakDetection.ts",
-      "name": "CacheBreakOptions",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/prompts/cacheBreakDetection.ts",
-      "name": "CacheBreakResult",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/prompts/cacheBreakDetection.ts",
-      "name": "detectCacheBreak",
       "kind": "export"
     },
     {
@@ -5568,11 +5507,6 @@
       "kind": "type"
     },
     {
-      "file": "src/host/runtime/durableRunKernel.ts",
-      "name": "DurableRunPersistenceUnavailableError",
-      "kind": "export"
-    },
-    {
       "file": "src/host/runtime/durableRunStores.ts",
       "name": "CheckpointStore",
       "kind": "type"
@@ -5866,11 +5800,6 @@
       "file": "src/host/security/sensitiveDetector.ts",
       "name": "resetSensitiveDetector",
       "kind": "export"
-    },
-    {
-      "file": "src/host/security/sensitiveDetector.ts",
-      "name": "SensitiveMatch",
-      "kind": "type"
     },
     {
       "file": "src/host/security/sensitiveDetector.ts",
@@ -7478,11 +7407,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/services/infra/timeoutController.ts",
-      "name": "TimeoutController",
-      "kind": "export"
-    },
-    {
       "file": "src/host/services/infra/toolCache.ts",
       "name": "initToolCache",
       "kind": "export"
@@ -8493,16 +8417,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/session/modelOverridePersistence.ts",
-      "name": "PersistedModelOverride",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/session/modelOverridePersistence.ts",
-      "name": "readPersistedModelOverride",
-      "kind": "export"
-    },
-    {
       "file": "src/host/session/modelSessionState.ts",
       "name": "resetModelSessionState",
       "kind": "export"
@@ -8574,11 +8488,6 @@
     },
     {
       "file": "src/host/session/streamSnapshot.ts",
-      "name": "getIncompleteToolCallIds",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/session/streamSnapshot.ts",
       "name": "getStreamSnapshotPath",
       "kind": "export"
     },
@@ -8605,16 +8514,6 @@
     {
       "file": "src/host/shellCapabilities.ts",
       "name": "getShellCapabilities",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/skills/marketplace/githubArchiveSecurity.ts",
-      "name": "MAX_GITHUB_ARCHIVE_BYTES",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/skills/marketplace/index.ts",
-      "name": "getEnabledSkillDirs",
       "kind": "export"
     },
     {
@@ -9310,11 +9209,6 @@
     {
       "file": "src/host/tools/media/ppt/masterDecorations.ts",
       "name": "DECORATIONS",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/tools/media/ppt/parser.ts",
-      "name": "generatePlaceholderSlides",
       "kind": "export"
     },
     {
@@ -13363,61 +13257,6 @@
       "kind": "type"
     },
     {
-      "file": "src/renderer/stores/uiStore.ts",
-      "name": "ConfirmOptions",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/stores/uiStore.ts",
-      "name": "DeepResearchState",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/stores/uiStore.ts",
-      "name": "ModalType",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/stores/uiStore.ts",
-      "name": "ReportStyle",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/stores/uiStore.ts",
-      "name": "ResearchPhase",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/stores/uiStore.ts",
-      "name": "ResearchProgress",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/stores/uiStore.ts",
-      "name": "Toast",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/stores/uiStore.ts",
-      "name": "useConfirm",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/stores/uiStore.ts",
-      "name": "useDeepResearch",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/stores/uiStore.ts",
-      "name": "useModal",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/stores/uiStore.ts",
-      "name": "useToast",
-      "kind": "export"
-    },
-    {
       "file": "src/renderer/stores/workbenchPresetStore.ts",
       "name": "WORKBENCH_PRESET_STORAGE_KEY",
       "kind": "export"
@@ -14855,21 +14694,6 @@
     {
       "file": "src/shared/contract/browserRelay.ts",
       "name": "BrowserRelayHelloAckV2",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/builtInAgents.ts",
-      "name": "BUILT_IN_AGENTS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/contract/builtInAgents.ts",
-      "name": "BuiltInAgentConfig",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/builtInAgents.ts",
-      "name": "BuiltInAgentRole",
       "kind": "type"
     },
     {
@@ -16958,11 +16782,6 @@
       "kind": "export"
     },
     {
-      "file": "src/shared/memoriesFts.sql.ts",
-      "name": "MEMORIES_FTS_TABLE_SQL",
-      "kind": "export"
-    },
-    {
       "file": "src/shared/modelErrorDiagnostics.ts",
       "name": "ModelErrorDiagnosticCode",
       "kind": "type"
@@ -17043,11 +16862,6 @@
       "kind": "export"
     },
     {
-      "file": "src/shared/transcriptFts.sql.ts",
-      "name": "TRANSCRIPT_FTS_TABLE_SQL",
-      "kind": "export"
-    },
-    {
       "file": "src/shared/utils/agentPointerEvidence.ts",
       "name": "isAgentPointerEventLike",
       "kind": "export"
@@ -17074,18 +16888,8 @@
     },
     {
       "file": "src/shared/utils/browserComputerRedaction.ts",
-      "name": "BrowserComputerManualTakeoverStatus",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/utils/browserComputerRedaction.ts",
       "name": "BrowserComputerSecretPlaceholderSummary",
       "kind": "type"
-    },
-    {
-      "file": "src/shared/utils/browserComputerRedaction.ts",
-      "name": "classifyBrowserComputerManualTakeover",
-      "kind": "export"
     },
     {
       "file": "src/shared/utils/browserComputerRedaction.ts",
@@ -17649,7 +17453,6 @@
     "src/design/critique/index.ts",
     "src/design/critique/prompt.ts",
     "src/host/agent/agentBus.ts",
-    "src/host/agent/agentInbox.ts",
     "src/host/agent/agentLoopIterator.ts",
     "src/host/agent/guiAgent.ts",
     "src/host/agent/parallelErrorHandler.ts",
@@ -17699,7 +17502,6 @@
     "src/host/tools/media/ppt/spacing.ts",
     "src/host/tools/modules/_helpers/invokeNativeFromLegacy.ts",
     "src/host/tools/web/WebFetchUnifiedTool.ts",
-    "src/renderer/components/citations/CitationList.tsx",
     "src/renderer/components/ContextHealthPanel.tsx",
     "src/renderer/components/ContextPanel.tsx",
     "src/renderer/components/design/designSlidesStore.ts",
@@ -17723,7 +17525,6 @@
     "src/renderer/components/features/chat/SessionDiffSummary.tsx",
     "src/renderer/components/features/chat/ThoughtDisplay.tsx",
     "src/renderer/components/features/export/ExportModal.tsx",
-    "src/renderer/components/features/settings/tabs/CapabilityCenterSettings.tsx",
     "src/renderer/components/features/settings/tabs/ControlPlaneSettings.tsx",
     "src/renderer/components/features/settings/tabs/InviteCodesSettings.tsx",
     "src/renderer/components/features/settings/tabs/UserDashboardSettings.tsx",
@@ -17747,7 +17548,6 @@
     "src/renderer/components/workspacePreview/helpers.ts",
     "src/renderer/components/workspacePreview/parts.tsx",
     "src/renderer/components/WorkspacePreviewPanel.tsx",
-    "src/renderer/hooks/useCapabilityInventory.ts",
     "src/renderer/hooks/useComputerUsePip.ts",
     "src/renderer/hooks/useMultiAgentDetection.ts",
     "src/renderer/services/NetworkMonitor.ts",

@@ -123,6 +123,9 @@ function formatAutomationSchedule(schedule: CronScheduleConfig, text: ReturnType
     const time = Number.isFinite(timestamp) ? new Date(timestamp).toLocaleString() : String(schedule.datetime);
     return text.automationAt.replace("{time}", time);
   }
+  if (schedule.type === "event") {
+    return `事件触发 · ${schedule.accountId}${schedule.chatId ? ` · ${schedule.chatId}` : ''}`;
+  }
   return text.automationCron.replace("{expression}", schedule.timezone ? `${schedule.expression} · ${schedule.timezone}` : schedule.expression);
 }
 

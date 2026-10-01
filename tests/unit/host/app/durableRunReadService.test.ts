@@ -90,6 +90,7 @@ describe('DurableRunReadService migrated consumers', () => {
       terminal: false,
     };
     expect(projectDurableRunToSessionPayload({ ...base, interruptCause: 'user_stop', autoResumeCount: 0 })).toMatchObject({
+      status: 'interrupted',
       durableResume: {
         runId: 'parked', mode: 'continue', interruptCause: 'user_stop', canContinue: true,
       },
@@ -97,6 +98,7 @@ describe('DurableRunReadService migrated consumers', () => {
     // ADR-075 修订二：预算耗尽的停靠显式记 budget_exhausted 才出「继续」；crash_or_quit 的 waiting
     // 计数再高也是等审批（「预算耗尽后又等审批」），不出「继续」。
     expect(projectDurableRunToSessionPayload({ ...base, interruptCause: 'budget_exhausted', autoResumeCount: 2 })).toMatchObject({
+      status: 'interrupted',
       durableResume: {
         runId: 'parked', mode: 'continue', interruptCause: 'budget_exhausted', canContinue: true,
       },
@@ -121,8 +123,12 @@ describe('DurableRunReadService migrated consumers', () => {
     const ownedView = await owned.readSessionReplay('session', () => ({ status: 'idle' }));
     const orphanedView = await orphaned.readSessionReplay('session', () => ({ status: 'idle' }));
 
-    expect(projectDurableRunToSessionPayload(ownedView).durableResume).toMatchObject({ mode: 'continue', canContinue: true });
+    expect(projectDurableRunToSessionPayload(ownedView)).toMatchObject({
+      status: 'interrupted',
+      durableResume: { mode: 'continue', canContinue: true },
+    });
     expect(projectDurableRunToSessionPayload(orphanedView).durableResume).toBeUndefined();
+    expect(projectDurableRunToSessionPayload(orphanedView).status).toBe('running');
   });
 
   it('projects an in-flight crash recovery as one auto-resume signal', () => {

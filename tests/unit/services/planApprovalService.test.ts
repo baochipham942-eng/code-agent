@@ -488,3 +488,106 @@ describe('starting 崩溃残留对账（宿主轮内退出后的恢复出口）'
     }
   });
 });
+
+describe('宿主合成卡（ADR-074 K2，source=synthetic_text）走同一审批服务', () => {
+  // 与 planExitFallbackCard.buildSyntheticPlanApprovalToolCall 同形：空正文 assistant 消息 +
+  // 单个 exit_plan_mode toolCall，result.metadata 带 confirmationType/plan/planApproval(source)。
+  function syntheticToolCall(status: 'pending' | 'starting' | 'cancelled') {
+    const plan = '1. Read code\n2. Implement UI';
+    return {
+      id: 'synthetic-plan-run-9',
+      name: 'exit_plan_mode',
+      arguments: { plan },
+      result: {
+        toolCallId: 'synthetic-plan-run-9',
+        success: true,
+        output: '等待确认',
+        metadata: {
+          requiresUserConfirmation: true,
+          confirmationType: 'plan_approval',
+          plan,
+          planApproval: {
+            status,
+            originalPlan: plan,
+            steps: [
+              { id: 'step-1', content: 'Read code', originalContent: 'Read code' },
+              { id: 'step-2', content: 'Implement UI', originalContent: 'Implement UI' },
+            ],
+            source: 'synthetic_text',
+          },
+        },
+      },
+    };
+  }
+
+  function syntheticPlanMessage(status: 'pending' | 'starting' | 'cancelled'): Message {
+    return {
+      id: 'message-synthetic',
+      role: 'assistant',
+      content: '',
+      timestamp: 1,
+      toolCalls: [syntheticToolCall(status)],
+    };
+  }
+
+  const syntheticRequest = {
+    sessionId: 'session-1',
+    messageId: 'message-synthetic',
+    toolCallId: 'synthetic-plan-run-9',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.updateMessage.mockResolvedValue(undefined);
+    mocks.replaceTasksAtomically.mockReturnValue([]);
+    mocks.demoteInProgressTasks.mockReturnValue(null);
+  });
+
+  it('approve：读卡、认领 starting 并派发一次隐藏批准轮，确认后落 approved', async () => {
+    const sendMessage = vi.fn().mockResolvedValue(undefined);
+    mocks.getMessages
+      .mockResolvedValueOnce([syntheticPlanMessage('pending')])
+      .mockResolvedValue([syntheticPlanMessage('starting')]);
+
+    const response = await resolvePlanApproval({
+      ...syntheticRequest,
+      decision: 'approve',
+      steps: [
+        { id: 'step-1', content: 'Read code', originalContent: 'Read code' },
+        { id: 'step-2', content: 'Implement UI', originalContent: 'Implement UI' },
+      ],
+    }, {
+      appService: { sendMessage } as never,
+      taskManager: { emitAgentEventForSession: vi.fn() } as never,
+    });
+
+    expect(response.approval.status).toBe('starting');
+    expect(sendMessage).toHaveBeenCalledOnce();
+    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'session-1',
+      content: expect.stringContaining('<approved-plan>\n1. Read code\n2. Implement UI\n</approved-plan>'),
+      options: expect.objectContaining({ historyVisibility: 'meta' }),
+    }));
+    await flush();
+    const writes = mocks.updateMessage.mock.calls.map(
+      (call) => call[1].toolCalls[0].result.metadata.planApproval.status,
+    );
+    expect(writes).toEqual(['starting', 'approved']);
+  });
+
+  it('cancel：同一记录落 cancelled，不派发任何后续轮', async () => {
+    const sendMessage = vi.fn();
+    mocks.getMessages.mockResolvedValue([syntheticPlanMessage('pending')]);
+
+    const response = await resolvePlanApproval({ ...syntheticRequest, decision: 'cancel' }, {
+      appService: { sendMessage } as never,
+      taskManager: { emitAgentEventForSession: vi.fn() } as never,
+    });
+
+    expect(response.approval.status).toBe('cancelled');
+    expect(sendMessage).not.toHaveBeenCalled();
+    const cancelled = mocks.updateMessage.mock.calls[0][1].toolCalls[0].result.metadata.planApproval;
+    expect(cancelled.status).toBe('cancelled');
+    expect(cancelled.source).toBe('synthetic_text');
+  });
+});

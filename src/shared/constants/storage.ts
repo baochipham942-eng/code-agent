@@ -44,6 +44,8 @@ export const MEMORY = {
   PACK_BM25_RECALL_LIMIT: 30,
   /** memory packing 解析条目记忆键（git rev-parse）的并发上限（PR#2177 Nit） */
   PACK_KEY_RESOLVE_CONCURRENCY: 8,
+  /** 项目记忆键进程内缓存容量上限（插入序淘汰最旧；N-MEM-KEYCACHE-BOUND） */
+  PROJECT_MEMORY_KEY_CACHE_MAX: 256,
   /** Skill injection: 会话启动时最多注入多少条 skill 记忆 */
   SKILL_MAX_INJECTION_COUNT: 3,
   /** Skill injection: 所有 skill 拼起来的字符上限（~token 预算，粗估 4 chars/token）。

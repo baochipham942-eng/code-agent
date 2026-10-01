@@ -17,7 +17,11 @@ import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { PluginRegistry } from '../../../src/host/plugins/pluginRegistry';
 import { resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
-import { getPluginIdForTool } from '../../../src/host/plugins/pluginToolOrigin';
+import {
+  getPluginIdForTool,
+  getPluginOriginForTool,
+  resolvePluginDisplayName,
+} from '../../../src/host/plugins/pluginToolOrigin';
 import type {
   LoadedPlugin,
   PluginAPI,
@@ -72,7 +76,11 @@ function makeToolModule(name: string): ToolModule {
 }
 
 /** 注入 fake plugin + 走 activatePlugin lifecycle,捕获 PluginAPI 供测试调用 */
-async function getPluginApi(reg: PluginRegistry, pluginId: string): Promise<PluginAPI> {
+async function getPluginApi(
+  reg: PluginRegistry,
+  pluginId: string,
+  manifestOverrides: Partial<PluginManifest> = {},
+): Promise<PluginAPI> {
   let captured: PluginAPI | undefined;
   const entry: PluginEntry = {
     activate: async (api) => {
@@ -80,7 +88,7 @@ async function getPluginApi(reg: PluginRegistry, pluginId: string): Promise<Plug
     },
   };
   const loadedPlugin: LoadedPlugin = {
-    manifest: makeManifest(pluginId),
+    manifest: { ...makeManifest(pluginId), ...manifestOverrides },
     rootPath: `builtin:${pluginId}`,
     state: 'inactive',
     entry,
@@ -242,5 +250,31 @@ describe('PluginRegistry registerTool / registerToolModule symmetry', () => {
     await reg.deactivatePlugin('p-origin');
     expect(getPluginIdForTool('p-origin:module')).toBeUndefined();
     expect(getPluginIdForTool('builtin-style')).toBeUndefined();
+  });
+
+  it('resolves displayName before name before id, trims, and caps at 40 characters', () => {
+    expect(resolvePluginDisplayName('plugin.id', 'Manifest name', ' Display name ')).toBe('Display name');
+    expect(resolvePluginDisplayName('plugin.id', ' Manifest name ', '   ')).toBe('Manifest name');
+    expect(resolvePluginDisplayName(' plugin.id ', '   ', '')).toBe('plugin.id');
+    expect(resolvePluginDisplayName('plugin.id', 'x'.repeat(50))).toBe(`${'x'.repeat(39)}…`);
+  });
+
+  it('carries the resolved display name through both registration APIs', async () => {
+    const reg = new PluginRegistry();
+    const api = await getPluginApi(reg, 'p-display', {
+      name: 'Manifest name',
+      displayName: ' Display name ',
+    });
+    api.registerTool(makeTool('legacy'));
+    api.registerToolModule(makeToolModule('module'));
+
+    expect(getPluginOriginForTool('p-display:legacy')).toEqual({
+      pluginId: 'p-display',
+      pluginName: 'Display name',
+    });
+    expect(getPluginOriginForTool('p-display:module')).toEqual({
+      pluginId: 'p-display',
+      pluginName: 'Display name',
+    });
   });
 });

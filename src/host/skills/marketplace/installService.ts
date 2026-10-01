@@ -39,6 +39,7 @@ import {
   getArchiveSha256,
 } from './githubArchiveSecurity';
 import { copyDirectory, runExclusivePluginInstall, throwIfInstallAborted } from './installConcurrency';
+import { commandFileOwnedByPlugin, type CommandOwnershipSource } from './commandFileOwnership';
 import { materializeOfficialSkillSection } from '../../security/skillOfficialSectionGuard';
 import { collectEnabledSkillDescriptors } from './enabledSkillDescriptors';
 import { migrateInstalledPlugins } from './installedPluginMigration';
@@ -633,6 +634,12 @@ export async function deactivatePluginCommands(args: {
   scope: PluginScope;
   projectPath?: string;
   commandNames: string[];
+  /**
+   * 归属校验（ai-review R4 Important 2）：提供时只删除内容仍与插件源文件一致
+   * 的命令副本——commands 目录是共享目录，用户改写过的同名文件不归插件所有，
+   * 不删并 warn 留痕。commandPaths 与 commandNames 按下标一一对应。
+   */
+  verifyOwnership?: CommandOwnershipSource;
 }): Promise<string[]> {
   if (args.commandNames.length === 0) {
     return [];
@@ -640,12 +647,15 @@ export async function deactivatePluginCommands(args: {
 
   const commandsDir = getCommandsDir(args.scope, args.projectPath);
   const removed: string[] = [];
-  for (const commandName of args.commandNames) {
+  for (const [index, commandName] of args.commandNames.entries()) {
     const destination = path.join(commandsDir, `${commandName}.md`);
-    if (fsSync.existsSync(destination)) {
-      await fs.rm(destination, { force: true });
-      removed.push(commandName);
+    if (!fsSync.existsSync(destination)) continue;
+    if (args.verifyOwnership
+      && !await commandFileOwnedByPlugin(destination, args.verifyOwnership, index, commandName)) {
+      continue;
     }
+    await fs.rm(destination, { force: true });
+    removed.push(commandName);
   }
   return removed;
 }

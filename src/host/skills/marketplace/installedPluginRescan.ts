@@ -21,10 +21,15 @@ function getInstalledPluginScannerVersion(record: InstalledPluginRecord): number
   return record.scanner?.version ?? 0;
 }
 
-/** 需要重扫的判定：非 builtin 来源且 scanner 版本落后于当前规则版本。 */
+/**
+ * 需要重扫的判定：非 builtin 来源且 scanner 版本不等于当前规则版本。
+ * 高于当前版本的记录同样重扫（ai-review R4 Nit）：未来版本意味着记录出自更新的
+ * 扫描规则，当前进程无法证明其判定覆盖本版规则，按未知版本收敛——用当前规则
+ * 重扫并把版本回写到当前值，顺带自愈版本漂移。
+ */
 function isInstalledPluginScanStale(record: InstalledPluginRecord): boolean {
   if (record.sourceTrust === 'builtin') return false;
-  return getInstalledPluginScannerVersion(record) < SKILL_GUARD_VERSION;
+  return getInstalledPluginScannerVersion(record) !== SKILL_GUARD_VERSION;
 }
 
 interface InstalledPluginRescanOutcome {
@@ -88,12 +93,16 @@ interface RescanDecision {
  * 注意：本函数在 discovery 初始化链路内运行，绝不能触发 discovery reload
  * （会撞上 initialize 的 initPromise 自等待死锁），所以不走 disablePlugin。
  */
-export async function rescanStaleInstalledPlugins(): Promise<StaleRescanSummary> {
+export async function rescanStaleInstalledPlugins(
+  io?: Pick<typeof import('./installService'), 'loadInstalledPlugins' | 'saveInstalledPlugins' | 'deactivatePluginCommands'>,
+): Promise<StaleRescanSummary> {
   const summary: StaleRescanSummary = { rescanned: 0, blocked: [] };
-  const { loadInstalledPlugins, saveInstalledPlugins, deactivatePluginCommands } = await import('./installService');
+  // 依赖注入入口：生产不传 io 走动态 import；测试注入包装后的状态 IO，
+  // 用来确定性地在合写窗口注入并发写（vi.mock 模块图在混合真实调用时不可靠）
+  const svc = io ?? await import('./installService');
 
   // 扫描期：只读
-  const state = await loadInstalledPlugins();
+  const state = await svc.loadInstalledPlugins();
   const decisions: RescanDecision[] = [];
   for (const [pluginSpec, record] of Object.entries(state)) {
     if (!record.isEnabled || !isInstalledPluginScanStale(record)) continue;
@@ -113,9 +122,11 @@ export async function rescanStaleInstalledPlugins(): Promise<StaleRescanSummary>
   }
   if (decisions.length === 0) return summary;
 
-  // 合写期：重读最新状态，指纹核对后逐条应用
-  const fresh = await loadInstalledPlugins();
-  let dirty = false;
+  // 合写期分两步（ai-review R4 Important 1）：先在 fresh 快照上做命令下架等
+  // 带 await 的副作用，再在保存前重读一次做 CAS 最小合并——合并只动本单负责的
+  // 字段（scanner / isEnabled），合写窗口里的并发安装/禁用/卸载随最新快照保留。
+  const fresh = await svc.loadInstalledPlugins();
+  const disableApproved = new Set<string>();
   for (const decision of decisions) {
     const record = fresh[decision.pluginSpec];
     if (record?.installedAt !== decision.installedAt
@@ -126,15 +137,7 @@ export async function rescanStaleInstalledPlugins(): Promise<StaleRescanSummary>
       continue;
     }
 
-    if (decision.outcome.kind === 'pass') {
-      record.scanner = {
-        version: SKILL_GUARD_VERSION,
-        verdict: 'pass',
-        scannedAt: decision.outcome.scannedAt,
-      };
-      dirty = true;
-      continue;
-    }
+    if (decision.outcome.kind === 'pass') continue; // pass 无副作用，直接进合并阶段
 
     // block / scan_failed → 禁用（结论进 summary.blocked，与落盘成败无关）
     summary.blocked.push(decision.pluginSpec);
@@ -155,10 +158,16 @@ export async function rescanStaleInstalledPlugins(): Promise<StaleRescanSummary>
     if (!record.isEnabled) continue; // 扫描期间已被并发禁用（命令亦已下架）
 
     try {
-      await deactivatePluginCommands({
+      await svc.deactivatePluginCommands({
         scope: record.scope,
         projectPath: record.projectPath,
         commandNames: record.commands || [],
+        // 归属校验（ai-review R4 Important 2）：只删内容仍与插件源文件一致的
+        // 命令副本；用户改写过的同名文件不删（deactivatePluginCommands 内 warn 留痕）
+        verifyOwnership: {
+          sourceRootDir: record.sourceMarketplacePath,
+          commandPaths: record.commandPaths || [],
+        },
       });
     } catch (error) {
       // fail-loud 且跳过该条落盘：命令下架失败时若仍保存 isEnabled=false，残留
@@ -170,13 +179,36 @@ export async function rescanStaleInstalledPlugins(): Promise<StaleRescanSummary>
       });
       continue;
     }
-    record.isEnabled = false;
-    dirty = true;
+    disableApproved.add(decision.pluginSpec);
+  }
+
+  // CAS 合并：保存前重读最新状态，只对本单负责的字段做最小合并
+  const latest = await svc.loadInstalledPlugins();
+  let dirty = false;
+  for (const decision of decisions) {
+    const record = latest[decision.pluginSpec];
+    if (record?.installedAt !== decision.installedAt
+      || (record.pluginRoot || record.sourceMarketplacePath) !== decision.rootDir) {
+      continue; // 下架窗口里记录被并发替换——fresh 阶段已 warn，这里静默跳过即可
+    }
+    if (decision.outcome.kind === 'pass') {
+      record.scanner = {
+        version: SKILL_GUARD_VERSION,
+        verdict: 'pass',
+        scannedAt: decision.outcome.scannedAt,
+      };
+      dirty = true;
+      continue;
+    }
+    if (disableApproved.has(decision.pluginSpec) && record.isEnabled) {
+      record.isEnabled = false;
+      dirty = true;
+    }
   }
 
   if (dirty) {
     try {
-      await saveInstalledPlugins(fresh);
+      await svc.saveInstalledPlugins(latest);
     } catch (error) {
       // 落盘失败不吞：error 留痕；本次会话装载仍由 summary.blocked 内存过滤兜底
       logger.error('Failed to persist skill guard rescan results', {

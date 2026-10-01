@@ -6,6 +6,7 @@
 // ============================================================================
 
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -60,7 +61,13 @@ vi.mock('../../../../src/host/skills/marketplace/skillInstallContentGuard', asyn
 });
 
 import { SKILL_GUARD_VERSION } from '../../../../src/host/security/skillContentGuard';
-import { disablePlugin, enablePlugin } from '../../../../src/host/skills/marketplace/installService';
+import {
+  deactivatePluginCommands,
+  disablePlugin,
+  enablePlugin,
+  loadInstalledPlugins,
+  saveInstalledPlugins,
+} from '../../../../src/host/skills/marketplace/installService';
 import {
   rescanStaleInstalledPlugins,
 } from '../../../../src/host/skills/marketplace/installedPluginRescan';
@@ -313,10 +320,16 @@ describe('installed plugin scanner versioning and rescan', () => {
 
   it('被 block 插件的命令下架失败 → fail-loud 且不落盘该条禁用（内存阻断仍生效）', async () => {
     const pluginRoot = await makePluginRoot('p1', DANGEROUS_SKILL);
+    const commandContent = '---\ndescription: x\n---\nx';
+    // 源文件与副本一致（归属校验通过），失败必须来自 rm 本身
+    await fs.mkdir(path.join(pluginRoot, 'commands'), { recursive: true });
+    await fs.writeFile(path.join(pluginRoot, 'commands', 'inspect.md'), commandContent, 'utf8');
     const commandsDir = path.join(mocks.userConfigDir, 'commands');
     await fs.mkdir(commandsDir, { recursive: true });
-    await fs.writeFile(path.join(commandsDir, 'inspect.md'), '---\ndescription: x\n---\nx', 'utf8');
-    await writeState({ 'demo@trusted-test': makeRecord(pluginRoot, { commands: ['inspect'] }) });
+    await fs.writeFile(path.join(commandsDir, 'inspect.md'), commandContent, 'utf8');
+    await writeState({
+      'demo@trusted-test': makeRecord(pluginRoot, { commands: ['inspect'], commandPaths: ['commands/inspect.md'] }),
+    });
     // 目录去写权限 → deactivatePluginCommands 的 rm 必失败
     await fs.chmod(commandsDir, 0o555);
     try {
@@ -331,5 +344,134 @@ describe('installed plugin scanner versioning and rescan', () => {
     } finally {
       await fs.chmod(commandsDir, 0o755);
     }
+  });
+
+  it('合写窗口（命令下架期间）并发新增安装记录不丢失（CAS 合并）', async () => {
+    const pluginRoot = await makePluginRoot('p1', DANGEROUS_SKILL);
+    const commandContent = '---\ndescription: x\n---\nx';
+    await fs.mkdir(path.join(pluginRoot, 'commands'), { recursive: true });
+    await fs.writeFile(path.join(pluginRoot, 'commands', 'inspect.md'), commandContent, 'utf8');
+    const commandsDir = path.join(mocks.userConfigDir, 'commands');
+    await fs.mkdir(commandsDir, { recursive: true });
+    await fs.writeFile(path.join(commandsDir, 'inspect.md'), commandContent, 'utf8');
+    await writeState({
+      'demo@trusted-test': makeRecord(pluginRoot, { commands: ['inspect'], commandPaths: ['commands/inspect.md'] }),
+    });
+
+    const summary = await rescanStaleInstalledPlugins({
+      loadInstalledPlugins,
+      saveInstalledPlugins,
+      deactivatePluginCommands: async (args) => {
+        // 合写窗口注入并发安装
+        const state = await readState();
+        state['other@trusted-test'] = makeRecord('/nonexistent-other', { isEnabled: false });
+        await writeState(state);
+        return deactivatePluginCommands(args);
+      },
+    });
+
+    expect(summary.blocked).toEqual(['demo@trusted-test']);
+    const state = await readState();
+    expect(state['other@trusted-test']).toBeDefined();
+    expect(state['demo@trusted-test']!.isEnabled).toBe(false);
+  });
+
+  it('合写窗口（命令下架期间）并发 disable 不被覆盖（CAS 合并）', async () => {
+    const pluginRoot = await makePluginRoot('p1', DANGEROUS_SKILL);
+    const secondRoot = await makePluginRoot('p2', SAFE_SKILL);
+    const commandContent = '---\ndescription: x\n---\nx';
+    await fs.mkdir(path.join(pluginRoot, 'commands'), { recursive: true });
+    await fs.writeFile(path.join(pluginRoot, 'commands', 'inspect.md'), commandContent, 'utf8');
+    const commandsDir = path.join(mocks.userConfigDir, 'commands');
+    await fs.mkdir(commandsDir, { recursive: true });
+    await fs.writeFile(path.join(commandsDir, 'inspect.md'), commandContent, 'utf8');
+    await writeState({
+      'demo@trusted-test': makeRecord(pluginRoot, { commands: ['inspect'], commandPaths: ['commands/inspect.md'] }),
+      'second@trusted-test': makeRecord(secondRoot),
+    });
+
+    await rescanStaleInstalledPlugins({
+      loadInstalledPlugins,
+      saveInstalledPlugins,
+      deactivatePluginCommands: async (args) => {
+        // 合写窗口注入并发禁用
+        await disablePlugin('second@trusted-test');
+        return deactivatePluginCommands(args);
+      },
+    });
+
+    const state = await readState();
+    expect(state['demo@trusted-test']!.isEnabled).toBe(false);
+    // 并发禁用保留：合写不再用下架前的旧快照整份覆盖
+    expect(state['second@trusted-test']!.isEnabled).toBe(false);
+  });
+
+  it('用户改写过的同名命令文件在自动禁用时不被误删（归属校验不过则 warn 留痕）', async () => {
+    const pluginRoot = await makePluginRoot('p1', DANGEROUS_SKILL);
+    await fs.mkdir(path.join(pluginRoot, 'commands'), { recursive: true });
+    await fs.writeFile(path.join(pluginRoot, 'commands', 'inspect.md'), '---\ndescription: plugin version\n---\nplugin', 'utf8');
+    const commandsDir = path.join(mocks.userConfigDir, 'commands');
+    await fs.mkdir(commandsDir, { recursive: true });
+    const userContent = '---\ndescription: user rewrote\n---\nuser';
+    await fs.writeFile(path.join(commandsDir, 'inspect.md'), userContent, 'utf8');
+    await writeState({
+      'demo@trusted-test': makeRecord(pluginRoot, { commands: ['inspect'], commandPaths: ['commands/inspect.md'] }),
+    });
+
+    const summary = await rescanStaleInstalledPlugins();
+
+    expect(summary.blocked).toEqual(['demo@trusted-test']);
+    // 禁用照常落盘，但用户改写的文件不删
+    expect((await readState())['demo@trusted-test']!.isEnabled).toBe(false);
+    expect(await fs.readFile(path.join(commandsDir, 'inspect.md'), 'utf8')).toBe(userContent);
+    expect(
+      mocks.logWarn.mock.calls.some((call) => String(call[0]).includes('not owned')),
+    ).toBe(true);
+  });
+
+  it('内容仍与插件源一致的命令副本在自动禁用时正常删除', async () => {
+    const pluginRoot = await makePluginRoot('p1', DANGEROUS_SKILL);
+    const commandContent = '---\ndescription: x\n---\nx';
+    await fs.mkdir(path.join(pluginRoot, 'commands'), { recursive: true });
+    await fs.writeFile(path.join(pluginRoot, 'commands', 'inspect.md'), commandContent, 'utf8');
+    const commandsDir = path.join(mocks.userConfigDir, 'commands');
+    await fs.mkdir(commandsDir, { recursive: true });
+    await fs.writeFile(path.join(commandsDir, 'inspect.md'), commandContent, 'utf8');
+    await writeState({
+      'demo@trusted-test': makeRecord(pluginRoot, { commands: ['inspect'], commandPaths: ['commands/inspect.md'] }),
+    });
+
+    await rescanStaleInstalledPlugins();
+
+    expect((await readState())['demo@trusted-test']!.isEnabled).toBe(false);
+    expect(fsSync.existsSync(path.join(commandsDir, 'inspect.md'))).toBe(false);
+  });
+
+  it('scanner.version 高于当前版本按未知版本处理：block 重扫照样禁用', async () => {
+    const pluginRoot = await makePluginRoot('p1', DANGEROUS_SKILL);
+    await writeState({
+      'demo@trusted-test': makeRecord(pluginRoot, {
+        scanner: { version: SKILL_GUARD_VERSION + 1, verdict: 'pass', scannedAt: OLD_SCANNED_AT },
+      }),
+    });
+
+    const summary = await rescanStaleInstalledPlugins();
+
+    expect(summary).toEqual({ rescanned: 1, blocked: ['demo@trusted-test'] });
+    expect((await readState())['demo@trusted-test']!.isEnabled).toBe(false);
+  });
+
+  it('scanner.version 高于当前版本的重扫 pass 后回写当前版本（版本收敛）', async () => {
+    const pluginRoot = await makePluginRoot('p1', SAFE_SKILL);
+    await writeState({
+      'demo@trusted-test': makeRecord(pluginRoot, {
+        scanner: { version: SKILL_GUARD_VERSION + 1, verdict: 'pass', scannedAt: OLD_SCANNED_AT },
+      }),
+    });
+
+    const summary = await rescanStaleInstalledPlugins();
+
+    expect(summary).toEqual({ rescanned: 1, blocked: [] });
+    expect((await readState())['demo@trusted-test']!.scanner?.version).toBe(SKILL_GUARD_VERSION);
   });
 });

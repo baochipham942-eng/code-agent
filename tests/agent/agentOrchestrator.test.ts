@@ -705,6 +705,7 @@ describe('AgentOrchestrator', () => {
       const terminalDurable = vi.fn(async () => undefined);
       const registry = {
         hasDurableOwner: vi.fn(() => true),
+        getDurableCheckpointState: vi.fn(() => undefined),
         terminalDurable,
         unregister: vi.fn(),
         startDurable: vi.fn(async () => ({ attach: vi.fn(async () => undefined) })),
@@ -747,6 +748,210 @@ describe('AgentOrchestrator', () => {
         }),
         expect.anything(),
       );
+    });
+
+    it('用户取消且已有 native checkpoint 时停靠为 user_stop，而不是终态 cancelled', async () => {
+      const handle = { attach: vi.fn(async () => undefined) };
+      const parkDurable = vi.fn(async () => undefined);
+      const terminalDurable = vi.fn(async () => undefined);
+      const registry = {
+        hasDurableOwner: vi.fn(() => true),
+        getDurableCheckpointState: vi.fn(() => ({
+          schemaVersion: 1,
+          kind: 'native',
+          sourceMessageId: 'message-1',
+          provider: 'provider',
+          model: 'model',
+          workspace: { root: '/workspace', cwd: '/workspace', fingerprint: 'fp' },
+          logicalOperationId: 'turn-1',
+          operationId: 'model:turn-1',
+          checkpointSequence: 1,
+        })),
+        parkDurable,
+        terminalDurable,
+        unregister: vi.fn(),
+        startDurable: vi.fn(async () => handle),
+      };
+      const run = new AgentOrchestrator({
+        configService: mockConfigService,
+        hasApprovalUi: () => true,
+        onEvent: mockOnEvent,
+        runRegistry: registry as unknown as never,
+      }) as unknown as {
+        runNormalMode: (
+          content: string,
+          onEvent: (event: AgentEvent) => void,
+          modelConfig: { provider: string; model: string },
+          sessionId: string,
+          options?: { runRegistration?: 'primary' | 'auxiliary'; disableAutoAgent?: boolean },
+        ) => Promise<void>;
+      };
+      agentLoopProbe.onRun = () => {
+        agentLoopProbe.lastConfig?.onEvent?.({ type: 'agent_cancelled', data: null });
+      };
+
+      await run.runNormalMode(
+        'hello',
+        () => undefined,
+        { provider: 'openai', model: 'gpt-4o' },
+        'session-durable-park',
+        { runRegistration: 'primary', disableAutoAgent: true },
+      );
+      agentLoopProbe.onRun = undefined;
+
+      expect(parkDurable).toHaveBeenCalledWith(expect.any(String), { reason: 'user_stop' }, handle);
+      expect(terminalDurable).not.toHaveBeenCalled();
+      expect(registry.unregister).toHaveBeenCalledWith(expect.any(String), handle);
+    });
+
+    it.each([
+      { label: 'auxiliary + parentRunId', runRegistration: 'auxiliary' as const, parentRunId: 'parent-run' },
+      { label: 'auxiliary without parentRunId', runRegistration: 'auxiliary' as const },
+      { label: 'primary with parentRunId', runRegistration: 'primary' as const, parentRunId: 'parent-run' },
+    ])('用户取消且已有 native checkpoint 时 $label 走 terminalDurable，不停靠', async ({ runRegistration, parentRunId }) => {
+      const handle = { attach: vi.fn(async () => undefined) };
+      const parkDurable = vi.fn(async () => undefined);
+      const terminalDurable = vi.fn(async () => undefined);
+      const registry = {
+        hasDurableOwner: vi.fn(() => true),
+        getDurableCheckpointState: vi.fn(() => ({
+          schemaVersion: 1,
+          kind: 'native',
+          sourceMessageId: 'message-1',
+          provider: 'provider',
+          model: 'model',
+          workspace: { root: '/workspace', cwd: '/workspace', fingerprint: 'fp' },
+          logicalOperationId: 'turn-1',
+          operationId: 'model:turn-1',
+          checkpointSequence: 1,
+        })),
+        parkDurable,
+        terminalDurable,
+        unregister: vi.fn(),
+        startDurable: vi.fn(async () => handle),
+        startAuxiliary: vi.fn(() => handle),
+        startAuxiliaryDurableChild: vi.fn(async () => handle),
+      };
+      const run = new AgentOrchestrator({
+        configService: mockConfigService,
+        hasApprovalUi: () => true,
+        onEvent: mockOnEvent,
+        runRegistry: registry as unknown as never,
+      }) as unknown as {
+        runNormalMode: (
+          content: string,
+          onEvent: (event: AgentEvent) => void,
+          modelConfig: { provider: string; model: string },
+          sessionId: string,
+          options?: {
+            runRegistration?: 'primary' | 'auxiliary';
+            parentRunId?: string;
+            disableAutoAgent?: boolean;
+          },
+        ) => Promise<void>;
+      };
+      agentLoopProbe.onRun = () => {
+        agentLoopProbe.lastConfig?.onEvent?.({ type: 'agent_cancelled', data: null });
+      };
+      try {
+        await run.runNormalMode(
+          'hello',
+          () => undefined,
+          { provider: 'openai', model: 'gpt-4o' },
+          'session-auxiliary-cancel',
+          {
+            runRegistration,
+            disableAutoAgent: true,
+            ...(parentRunId ? { parentRunId } : {}),
+          },
+        );
+      } finally {
+        agentLoopProbe.onRun = undefined;
+      }
+
+      const auxiliary = runRegistration === 'auxiliary';
+      expect(parkDurable).not.toHaveBeenCalled();
+      expect(terminalDurable).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          status: 'cancelled',
+          reason: auxiliary ? 'auxiliary_run_cancelled' : 'primary_run_cancelled',
+          event: expect.objectContaining({
+            type: auxiliary ? 'auxiliary_run_cancelled' : 'run_cancelled',
+            payload: expect.objectContaining(parentRunId ? { parentRunId } : {}),
+          }),
+        }),
+        handle,
+      );
+    });
+
+    it('停靠写库失败时退回 terminalDurable，编排器收尾仍把会话放开', async () => {
+      const handle = { attach: vi.fn(async () => undefined) };
+      const parkDurable = vi.fn(async () => {
+        throw new Error('checkpoint write failed');
+      });
+      const terminalDurable = vi.fn(async () => undefined);
+      const unregister = vi.fn();
+      const registry = {
+        hasDurableOwner: vi.fn(() => true),
+        getDurableCheckpointState: vi.fn(() => ({
+          schemaVersion: 1,
+          kind: 'native',
+          sourceMessageId: 'message-1',
+          provider: 'provider',
+          model: 'model',
+          workspace: { root: '/workspace', cwd: '/workspace', fingerprint: 'fp' },
+          logicalOperationId: 'turn-1',
+          operationId: 'model:turn-1',
+          checkpointSequence: 1,
+        })),
+        parkDurable,
+        terminalDurable,
+        unregister,
+        startDurable: vi.fn(async () => handle),
+      };
+      const durableOrchestrator = new AgentOrchestrator({
+        configService: mockConfigService,
+        hasApprovalUi: () => true,
+        onEvent: mockOnEvent,
+        runRegistry: registry as unknown as never,
+      });
+      const run = durableOrchestrator as unknown as {
+        runNormalMode: (
+          content: string,
+          onEvent: (event: AgentEvent) => void,
+          modelConfig: { provider: string; model: string },
+          sessionId: string,
+          options?: { runRegistration?: 'primary' | 'auxiliary'; disableAutoAgent?: boolean },
+        ) => Promise<void>;
+      };
+      agentLoopProbe.onRun = () => {
+        agentLoopProbe.lastConfig?.onEvent?.({ type: 'agent_cancelled', data: null });
+      };
+      try {
+        await expect(run.runNormalMode(
+          'hello',
+          () => undefined,
+          { provider: 'openai', model: 'gpt-4o' },
+          'session-park-failure',
+          { runRegistration: 'primary', disableAutoAgent: true },
+        )).resolves.toBeUndefined();
+      } finally {
+        agentLoopProbe.onRun = undefined;
+      }
+
+      expect(parkDurable).toHaveBeenCalledWith(expect.any(String), { reason: 'user_stop' }, handle);
+      expect(terminalDurable).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          status: 'cancelled',
+          reason: 'primary_run_cancelled',
+          event: expect.objectContaining({ type: 'run_cancelled' }),
+        }),
+        handle,
+      );
+      expect(unregister).toHaveBeenCalledWith(expect.any(String), handle);
+      expect(durableOrchestrator.isProcessing()).toBe(false);
     });
 
     it('空最终回复转失败（正常 resolve + 终态 error 事件）→ durable 记 failed 而非 completed（ai-review Important 二轮）', async () => {

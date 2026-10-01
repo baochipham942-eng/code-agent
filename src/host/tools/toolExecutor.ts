@@ -53,6 +53,7 @@ import {
   CLASSIFIER_ERROR_TRACE_RULE,
   INJECTED_PERMISSION_HANDLER_TRACE_RULE,
   commandAnalysisDenialError,
+  commandAnalysisRepeatDenialError,
   peerOriginUnattendedDenialError,
   peermsgLaunderDenialError,
   permissionDenialError,
@@ -963,7 +964,7 @@ export class ToolExecutor {
           ? getPermissionModeManager().rememberCommandAnalysisFailure(effectiveSessionId, fingerprint)
           : false;
         if (repeated) {
-          const hostReason = commandAnalysisDenialError(executionToolName);
+          const hostReason = commandAnalysisRepeatDenialError(executionToolName);
           const error = hostReason.modelText;
           logger.warn('Repeated unanalyzable command denied before permission request', {
             tool: executionToolName,

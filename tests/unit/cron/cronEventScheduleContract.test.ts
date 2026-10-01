@@ -72,6 +72,8 @@ function createSchema(db: BetterSqlite3.Database): void {
       action TEXT NOT NULL,
       runs_on TEXT NOT NULL,
       max_run_budget REAL,
+      max_runs INTEGER,
+      run_count INTEGER NOT NULL DEFAULT 0,
       min_interval_seconds INTEGER NOT NULL DEFAULT 60,
       result_channel TEXT,
       cloud_job_id TEXT,

@@ -11,7 +11,7 @@ import {
   buildRuntimeModeBlock,
   buildGitStatusBlock,
 } from '../../../agent/messageHandling/contextBuilder';
-import { listMemoryIndexTargets, loadMemoryIndex } from '../../../lightMemory/indexLoader';
+import { listMemoryIndexTargets, loadMemoryIndex, loadMemoryIndexForSession } from '../../../lightMemory/indexLoader';
 import { withMemoryBackgroundGuidance } from '../../../memory/memoryContextGuidance';
 import { buildFailureJournalBlock } from '../../../lightMemory/failureJournal';
 import { loadRelevantSkills, buildSkillInjectionBlock } from '../../../lightMemory/skillLoader';
@@ -444,7 +444,7 @@ ${deferredToolsSummary}
   // 注入轻量记忆索引（File-as-Memory）。索引是 MemoryRead 的常驻目录，放进
   // 稳定前缀以复用 provider prompt cache，不再按单轮查询猜测是否需要。
   if (memoryContextEnabled) {
-    const memoryIndex = await loadMemoryIndex();
+    const memoryIndex = ctx.runtime.sessionId ? await loadMemoryIndexForSession(ctx.runtime.sessionId) : await loadMemoryIndex();
     if (memoryIndex) {
       const memoryIndexBlock = `<memory_index>\n${withMemoryBackgroundGuidance(memoryIndex)}\n</memory_index>`;
       const beforeMemoryIndex = systemPrompt;

@@ -1,15 +1,20 @@
 // ============================================================================
-// PlanExitFallback — ADR-074 slice 1（N-PLANEXIT-K1）
+// PlanExitFallback — ADR-074 slice 1（N-PLANEXIT-K1）+ slice 2 判定（N-PLANEXIT-K2）
 //
 // plan mode 里模型交出结构化计划正文却没调 exit_plan_mode 时的兜底判定：
 //   - isStructuredPlanText：只看结构与标点的正文判据（≥2 条列表步骤、非提问为主），
 //     不含任何动作词/目标词词表（判据按 ADR-074 拍板修订，误判代价只是一次提醒）。
 //   - planExitFallbackStep：在文本响应即将结束 run 时判一次；首次命中注入一次提醒、
 //     允许一轮补推理，预算绑定 runKey（同 run 至多一次，换 run 重新发）。
-//   - isWriteBlockedDuringPlanExitFallback：补推理期间写类工具在 admission 层拒绝。
-//
-// K2 的合成审批卡不在本刀：补推理仍是纯文本时按今日语义收尾，只留 not_applicable trace。
+//     补推理仍是结构化正文 → 判 synthesize（K2：宿主合成同形审批卡，见 planExitFallbackCard）。
+//   - isWriteBlockedDuringPlanExitFallback：兜底窗口内的工具面收成 allowlist——
+//     只放读类、只读 Bash、退出工具与提问工具，其余（含 MCP 未知名、连接器写、
+//     子代理、产物生成器）一律 admission 拒绝，未知名 fail closed。
 // ============================================================================
+
+import type { ToolCall } from '../../../shared/contract';
+import { READ_ONLY_TOOLS } from '../loopTypes';
+import { isReadLikeToolCall } from './readLoopSeal';
 
 /** 判据阈值（命名常量；行为经 planExitFallbackStep 公共入口测试，不单独导出）。 */
 const MIN_LIST_STEPS = 2;
@@ -54,15 +59,16 @@ function buildPlanExitReminder(): string {
     + '</plan-exit-fallback>';
 }
 
-/** 每 run 一次性预算：runKey 记最近一次已花掉预算的 run，notified 限定 not_applicable 只记一次。 */
+/** 每 run 一次性预算：runKey 记最近一次已花掉预算的 run，notified 限定 not_applicable 只记一次，synthesized 限定每 run 至多合成一张卡。 */
 export interface PlanExitFallbackState {
   runKey: string | undefined;
   spent: boolean;
   notified: boolean;
+  synthesized: boolean;
 }
 
 export function createPlanExitFallbackState(): PlanExitFallbackState {
-  return { runKey: undefined, spent: false, notified: false };
+  return { runKey: undefined, spent: false, notified: false, synthesized: false };
 }
 
 /** trace 事件 `plan_exit_fallback_detected` 载荷（turnTrace.ts 的 TraceEventDataMap 同形引用）。 */
@@ -98,12 +104,13 @@ export interface PlanExitFallbackStepInput {
   readonly remind: (reminderText: string) => void;
 }
 
-export type PlanExitFallbackOutcome = 'reminded' | 'not-applicable' | 'none';
+export type PlanExitFallbackOutcome = 'reminded' | 'synthesize' | 'not-applicable' | 'none';
 
 /**
  * 触发条件（全部满足才提醒）：plan mode 激活、非取消、非强制收尾、有 runKey、
  * 纯文本响应（非空且无任何工具调用）、结构判据命中、当前 run 预算未花。
- * 预算已花时补推理的落选文本只记一次 not_applicable，然后维持今日收尾语义。
+ * 预算已花时：补推理仍是结构化计划正文 → synthesize（每 run 至多一次，卡由 K2 合成器落）；
+ * 澄清/拒绝/非计划正文只记一次 not_applicable，然后维持今日收尾语义。
  */
 export function planExitFallbackStep(input: PlanExitFallbackStepInput): PlanExitFallbackOutcome {
   if (!input.planModeActive || input.cancelled || input.forcedFinalPass) return 'none';
@@ -113,6 +120,10 @@ export function planExitFallbackStep(input: PlanExitFallbackStepInput): PlanExit
   if ((response.toolCalls?.length ?? 0) > 0) return 'none';
 
   if (input.state.spent && input.state.runKey === input.runKey) {
+    if (!input.state.synthesized && analyzePlanTextStructure(response.content).isPlanText) {
+      input.state.synthesized = true;
+      return 'synthesize';
+    }
     if (!input.state.notified) {
       input.state.notified = true;
       input.emitNotApplicable({
@@ -139,24 +150,31 @@ export function planExitFallbackStep(input: PlanExitFallbackStepInput): PlanExit
   return 'reminded';
 }
 
-/** 补推理期间在 admission 层拒绝的写类工具名（小写比较）。K2 再扩连接器/MCP 写边界。 */
-const PLAN_EXIT_BLOCKED_TOOL_NAMES = new Set(['write', 'edit', 'append', 'bash']);
+/**
+ * 兜底窗口内显式放行的非读类工具：退出工具两形态与提问工具。读类（READ_ONLY_TOOLS
+ * 全表 + 只读 Bash）经 isReadLikeToolCall 放行；不在放行面内的一律拒绝——MCP 未知名、
+ * 连接器写、子代理、产物生成器、写类与写文件型 Bash 全部落回 TOOL_DISABLED_FOR_RUN。
+ */
+const PLAN_EXIT_ALLOWED_TOOL_NAMES = new Set(['exit_plan_mode', 'PlanMode', 'AskUserQuestion']);
 
 export interface PlanExitWriteBlockadeContext {
   readonly control: { readonly planExitFallbackActive: boolean };
+  /** 只读 Bash 判定用（isReadLikeToolCall 内部带可选链，缺成员时不当只读，仍拒绝）。 */
+  readonly antiPatternDetector: { isReadOnlyShellCommand?: (command: string) => boolean };
 }
 
 /**
- * 兜底提醒已发出（补推理进行中）且会话仍在 plan mode 时，写类工具一律在 admission 层
- * 拒绝——plan mode 退出（exit 工具）后旗标仍在，但 planModeActive 已翻 false，放行按
- * 审批后的正常路径走。这是本刀打开的补推理窗口的唯一硬门，不复制 K2 的审批前硬门。
+ * 兜底提醒已发出（补推理进行中）且会话仍在 plan mode 时，工具面收成 allowlist：
+ * 读类/只读 Bash/退出工具/提问工具放行，其余一律 admission 拒绝（未知名 fail closed）。
+ * plan mode 退出（exit 工具）后旗标仍在，但 planModeActive 已翻 false，放行按
+ * 审批后的正常路径走。审批前硬门不在此复制：外部引擎写回由 N-PLANEXIT-K3 收口。
  */
 export function isWriteBlockedDuringPlanExitFallback(
   ctx: PlanExitWriteBlockadeContext,
   planModeActive: () => boolean,
-  toolName: string,
+  toolCall: Pick<ToolCall, 'name' | 'arguments'>,
 ): boolean {
-  return ctx.control.planExitFallbackActive
-    && planModeActive()
-    && PLAN_EXIT_BLOCKED_TOOL_NAMES.has(toolName.trim().toLowerCase());
+  if (!ctx.control.planExitFallbackActive || !planModeActive()) return false;
+  if (PLAN_EXIT_ALLOWED_TOOL_NAMES.has(toolCall.name)) return false;
+  return !isReadLikeToolCall(ctx, toolCall);
 }

@@ -80,3 +80,4 @@ E6-1 做角色详情页时的别扭正是这个病的症状：`RoleDetailPage` �
 - `capabilities` 深链分流已改：不再打开设置页管理组，`appStore.openSettingsTab('capabilities')`
   直接重定向能力中心；设置管理组同批迁入 admin-console（commit `d2ecd40ac`）。
   上文「深链兼容」中「capabilities 打开设置页管理组」一句以本注记为准。
+Update 2026-09-30: the settings-side inventory screen `CapabilityCenterSettings` was removed as dead code; the `capabilities` settings tab id remains only as a deep-link redirect.

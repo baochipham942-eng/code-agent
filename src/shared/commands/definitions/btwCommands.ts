@@ -5,11 +5,12 @@
 // （只读）的临时子 agent 回答，答案打印给用户但不并回主线历史。
 //
 // CLI surface 先行（CLI 直接打印、天然不入 thread）；GUI 的 ephemeral 侧聊
-// 渲染作为后续增量。核心只读原语在 main/agent/readOnlySideChat.ts（已单测）。
-// 仿 /doctor：main 侧依赖走 handler 内动态 import，避免把 main 拽进 renderer 包。
+// 渲染作为后续增量，surfaces 保持 ['cli']。
+// host 侧依赖由 CLI ctx 注入：loadReadOnlySideChat / loadToolResolver / loadSubagentExecutor。
 // ============================================================================
 
 import type { CommandContext, CommandDefinition, CommandResult } from '../types';
+import { loadCommandPort } from '../loadCommandPort';
 
 /** CLI 注入到 ctx.agent 的最小形状（避免 shared 依赖 main/cli 类型）。 */
 interface SideChatAgentLike {
@@ -39,9 +40,9 @@ export const btwCommand: CommandDefinition = {
 
     try {
       const [{ runReadOnlySideChat }, { getToolResolver }, { getSubagentExecutor }] = await Promise.all([
-        import('../../../host/agent/readOnlySideChat'),
-        import('../../../host/tools/dispatch/toolResolver'),
-        import('../../../host/agent/subagentExecutor'),
+        loadCommandPort<{ runReadOnlySideChat: (deps: object, question: string) => Promise<string> }>(ctx, 'loadReadOnlySideChat'),
+        loadCommandPort<{ getToolResolver: () => unknown }>(ctx, 'loadToolResolver'),
+        loadCommandPort<{ getSubagentExecutor: () => unknown }>(ctx, 'loadSubagentExecutor'),
       ]);
 
       const cfg = agent.getConfig();

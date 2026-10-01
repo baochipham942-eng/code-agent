@@ -21,6 +21,7 @@ import type {
   ToolSchema,
 } from '../../../protocol/tools';
 import { getMemoryDir } from '../../../lightMemory/indexLoader';
+import { recordMemoryReadUsage } from '../../../memory/memoryUsageWriteback';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { guardSensitiveTextAsync } from '../../../security/sensitiveDataGuard';
 import { getRoleMemoriesDir, getProjectMemoriesDir } from '../../../services/roleAssets/roleAssetPaths';
@@ -122,6 +123,26 @@ class MemoryReadHandler implements ToolHandler<Record<string, unknown>, string> 
           bytes: Buffer.byteLength(content, 'utf8'),
         },
       });
+      if (!scope || scope === 'global') {
+        try {
+          const usage = recordMemoryReadUsage({
+            runKey: ctx.runId ?? ctx.sessionId,
+            filename: sanitized,
+          });
+          if (!usage.recorded && usage.reason !== 'duplicate') {
+            ctx.logger.debug('MemoryRead usage writeback skipped', {
+              filename: sanitized,
+              reason: usage.reason,
+            });
+          }
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error);
+          ctx.logger.debug('MemoryRead usage writeback skipped', {
+            filename: sanitized,
+            error: message,
+          });
+        }
+      }
       return {
         ok: true,
         output: safeContent,

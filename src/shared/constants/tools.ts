@@ -133,6 +133,12 @@ export const TOOL_RESULT_SPILL = {
   NOTICE_MARKER: '[Full output saved to:',
 } as const;
 
+/** Hook stdout token budgets by event. */
+export const HOOK_OUTPUT_BUDGET = {
+  DEFAULT_TOKENS: 4000,
+  SESSION_START_TOKENS: 12000,
+} as const;
+
 /** Codex 会话挖掘配置 */
 export const CODEX_SESSION = {
   /** Codex 会话存储目录 */

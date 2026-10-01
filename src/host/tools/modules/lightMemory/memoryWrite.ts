@@ -238,7 +238,7 @@ async function executeScopedWrite(
 
   return {
     ok: true,
-    output: `Memory saved: ${filename}\n- Scope: ${target.scope}\n- Description: ${description}`,
+    output: `Memory saved: ${filename}\n- Scope: ${target.scope}\n- Description: ${description}\nSaved. This session's memory index is not refreshed; it takes effect next session.`,
     meta: {
       action: 'write',
       filename,
@@ -349,7 +349,7 @@ ${safeContent}
 
   return {
     ok: true,
-    output: `Memory saved: ${filename}\n- Type: ${memType}\n- Description: ${safeDescription}`,
+    output: `Memory saved: ${filename}\n- Type: ${memType}\n- Description: ${safeDescription}\nSaved. This session's memory index is not refreshed; it takes effect next session.`,
     meta: {
       action: 'write',
       filename,

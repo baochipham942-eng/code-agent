@@ -41,6 +41,8 @@ export interface ToolContext {
   requiresOsWriteFence?: boolean;
   /** Canonical workspaceRoot the classifier used for the in-zone check. */
   writeFenceWorkspaceRoot?: string;
+  /** Host roots denied by the same OS sandbox profile (eval may provide one). */
+  deniedReadRoots?: readonly string[];
   /**
    * 写边界开关随 ToolContext 下传 spawn 链：toolExecutor 只在开着时带上（关着时
    * 形状不变）。shadowAdapter.buildProtocolContext / subagentExecutionContext 逐字段

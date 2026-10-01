@@ -20,8 +20,11 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
   }),
 }));
 
-import { PermissionClassifier } from '../../../src/host/tools/permissionClassifier';
-import type { JevSystemOneCall } from '../../../src/shared/constants/jevQuestions';
+import { getPermissionClassifier, PermissionClassifier } from '../../../src/host/tools/permissionClassifier';
+import {
+  PERMCLASS_APPROVE_THRESHOLDS,
+  type JevSystemOneCall,
+} from '../../../src/shared/constants/jevQuestions';
 
 /** 真实生产样本里走到 fallback 的探针命令（基线验证过 rules → null）。 */
 const FALLBACK_COMMAND = 'python3 -c "import pptx; print(pptx.__version__)"';
@@ -33,21 +36,28 @@ interface StubAnswers {
   secrets?: number;
   configAccess?: number;
   beyondScope?: number;
+  injection?: number;
+  privilegeEscalation?: number;
 }
 
-function stubSystemOne(overrides: StubAnswers = {}): JevSystemOneCall & { calls: unknown[] } {
+function stubSystemOne(overrides: StubAnswers = {}): JevSystemOneCall & { calls: unknown[]; questions: unknown[] } {
   const calls: unknown[] = [];
-  const fn = vi.fn(async (state: unknown) => {
+  const questions: unknown[] = [];
+  const fn = vi.fn(async (state: unknown, requestQuestions: unknown) => {
     calls.push(state);
+    questions.push(requestQuestions);
     return {
       risk: { choice: overrides.riskChoice ?? 'read_only', confidence: overrides.riskConfidence ?? 0.95 },
       needs_human: { noul: overrides.needsHuman ?? 0.1 },
       touches_secrets: { noul: overrides.secrets ?? 0.05 },
       config_or_credential_access: { noul: overrides.configAccess ?? 0.1 },
       beyond_scope: { noul: overrides.beyondScope ?? 0.1 },
+      injection: { noul: overrides.injection ?? 0.1 },
+      privilege_escalation: { noul: overrides.privilegeEscalation ?? 0.1 },
     };
-  }) as unknown as JevSystemOneCall & { calls: unknown[] };
+  }) as unknown as JevSystemOneCall & { calls: unknown[]; questions: unknown[] };
   fn.calls = calls;
+  fn.questions = questions;
   return fn;
 }
 
@@ -122,6 +132,73 @@ describe('PermissionClassifier Jev（LLM classifier）', () => {
     expect(second.decision).toBe('approve');
     expect(second.cached).toBe(true);
     expect(stub.calls.length).toBe(1);
+  });
+
+  it('one systemOne request carries existing conditions and both guard questions', async () => {
+    const stub = stubSystemOne();
+    const result = await classifyBash(newClassifier(stub), FALLBACK_COMMAND);
+
+    expect(result.decision).toBe('approve');
+    const questionMap = stub.questions[0] as Record<string, { type: string }>;
+    expect(Object.keys(questionMap)).toEqual([
+      'risk',
+      'needs_human',
+      'touches_secrets',
+      'config_or_credential_access',
+      'injection',
+      'privilege_escalation',
+    ]);
+    expect(questionMap.injection.type).toBe('noul');
+    expect(questionMap.privilege_escalation.type).toBe('noul');
+  });
+
+  it('guard vetoes and malformed guard answers always return ask', async () => {
+    const cases: Array<{ name: string; overrides: StubAnswers }> = [
+      { name: 'injection high', overrides: { injection: 0.9 } },
+      { name: 'privilege escalation high', overrides: { privilegeEscalation: 0.9 } },
+      { name: 'injection NaN', overrides: { injection: Number.NaN } },
+      { name: 'privilege escalation NaN', overrides: { privilegeEscalation: Number.NaN } },
+      { name: 'injection above one', overrides: { injection: 1.1 } },
+      { name: 'privilege escalation above one', overrides: { privilegeEscalation: 1.1 } },
+    ];
+
+    for (const { name, overrides } of cases) {
+      const stub = stubSystemOne(overrides);
+      const result = await classifyBash(newClassifier(stub), `${FALLBACK_COMMAND} # ${name}`);
+      expect(result.decision, name).toBe('ask');
+      expect(result.traceStep?.rule, name).toBe('fallback');
+    }
+
+    const missing = vi.fn(async () => ({
+      risk: { choice: 'read_only', confidence: 0.95 },
+      needs_human: { noul: 0.1 },
+      touches_secrets: { noul: 0.05 },
+      config_or_credential_access: { noul: 0.1 },
+      privilege_escalation: { noul: 0.1 },
+    })) as unknown as JevSystemOneCall;
+    const missingResult = await classifyBash(newClassifier(missing), `${FALLBACK_COMMAND} # missing`);
+    expect(missingResult.decision).toBe('ask');
+
+    const missingPrivilege = vi.fn(async () => ({
+      risk: { choice: 'read_only', confidence: 0.95 },
+      needs_human: { noul: 0.1 },
+      touches_secrets: { noul: 0.05 },
+      config_or_credential_access: { noul: 0.1 },
+      injection: { noul: 0.1 },
+    })) as unknown as JevSystemOneCall;
+    const missingPrivilegeResult = await classifyBash(newClassifier(missingPrivilege), `${FALLBACK_COMMAND} # missing privilege`);
+    expect(missingPrivilegeResult.decision).toBe('ask');
+  });
+
+  it('thresholds keep the read_only tier and all pre-existing values', () => {
+    expect(PERMCLASS_APPROVE_THRESHOLDS.tiers).toEqual(['read_only']);
+    expect(PERMCLASS_APPROVE_THRESHOLDS.minRiskConfidence).toBe(0.8);
+    expect(PERMCLASS_APPROVE_THRESHOLDS.maxNeedsHuman).toBe(0.2);
+    expect(PERMCLASS_APPROVE_THRESHOLDS.maxTouchesSecrets).toBe(0.3);
+    expect(PERMCLASS_APPROVE_THRESHOLDS.maxConfigAccess).toBe(0.5);
+    expect(PERMCLASS_APPROVE_THRESHOLDS.maxBeyondScope).toBe(0.3);
+    expect(PERMCLASS_APPROVE_THRESHOLDS.maxInjection).toBe(0.3);
+    expect(PERMCLASS_APPROVE_THRESHOLDS.maxPrivilegeEscalation).toBe(0.3);
   });
 
   describe('五个阈值边界各一 ⇒ 全部回落 fallback ask', () => {
@@ -207,14 +284,19 @@ describe('PermissionClassifier Jev（LLM classifier）', () => {
     expect(result.decision).toBe('approve');
   });
 
-  it('非 Bash 工具 ⇒ systemOne 零调用、ask', async () => {
+  it('非白名单工具 ⇒ systemOne 零调用；规则层 ask 的工具仍 ask', async () => {
     const stub = stubSystemOne();
     const classifier = newClassifier(stub);
-    for (const toolName of ['terminal_write', 'mcp', 'propose_team_recipe']) {
+    for (const toolName of ['terminal_write', 'mcp', 'propose_team_recipe', 'Browser']) {
       const result = await classifier.classify(toolName, { text: 'x'.repeat(400) }, { workingDirectory: '/tmp' });
       expect(result.decision).toBe('ask');
       expect(result.riskUnknown).toBe(true);
       expect(result.traceStep?.rule).toBe('fallback');
+    }
+    for (const toolName of ['WebSearch', 'WebFetch']) {
+      const result = await classifier.classify(toolName, { text: 'x'.repeat(400) }, { workingDirectory: '/tmp' });
+      expect(result.decision).toBe('approve');
+      expect(result.traceStep).toBeUndefined();
     }
     expect(stub.calls.length).toBe(0);
   });
@@ -234,6 +316,9 @@ describe('PermissionClassifier Jev（LLM classifier）', () => {
     expect(state).toContain('file_path=/tmp/report.pdf');
     expect(state).toContain('content=<omitted>');
     expect(state).not.toContain('private text must not leave the machine');
+    const questionMap = stub.questions[0] as Record<string, { type: string }>;
+    expect(questionMap.injection.type).toBe('noul');
+    expect(questionMap.privilege_escalation.type).toBe('noul');
   });
 
   it('扩桶工具的 Jev 放行不进缓存：同目录同长度参数也逐次问 Jev', async () => {
@@ -433,22 +518,26 @@ describe('PermissionClassifier Jev（LLM classifier）', () => {
   // ---------------------------------------------------------------------------
 
   interface FixtureSample {
-    id: number;
+    id: number | string;
     tool_name: string;
     summary: string;
     history_outcome: string;
   }
 
-  function loadFixture(): FixtureSample[] {
+  function loadFixture(fileName = 'jev-permclass-samples.json'): FixtureSample[] {
     return JSON.parse(
-      fs.readFileSync(path.join(__dirname, '../../fixtures/jev-permclass-samples.json'), 'utf8'),
+      fs.readFileSync(path.join(__dirname, '../../fixtures', fileName), 'utf8'),
     ) as FixtureSample[];
   }
 
-  async function runFixture(jevSystemOne: JevSystemOneCall): Promise<Array<{ sample: FixtureSample; decision: string; rule: string }>> {
-    const classifier = newClassifier(jevSystemOne);
+  async function runFixture(
+    jevSystemOne: JevSystemOneCall,
+    fileName = 'jev-permclass-samples.json',
+    enableLlm = true,
+  ): Promise<Array<{ sample: FixtureSample; decision: string; rule: string }>> {
+    const classifier = getPermissionClassifier({ enableLlm, jevSystemOne });
     const outcomes = [];
-    for (const sample of loadFixture()) {
+    for (const sample of loadFixture(fileName)) {
       const args = sample.tool_name === 'Bash' ? { command: sample.summary } : {};
       const result = await classifier.classify(sample.tool_name, args, { workingDirectory: process.cwd() });
       outcomes.push({
@@ -484,5 +573,68 @@ describe('PermissionClassifier Jev（LLM classifier）', () => {
     const probe = outcomes.find((o) => o.sample.summary === FALLBACK_COMMAND);
     expect(probe?.decision).toBe('ask');
     expect(probe?.rule).toBe('fallback');
+  });
+
+  it('反向变异 A：恒返 read_only + 两个 guard=0 不得放行 guard 拒绝样本', async () => {
+    const lyingReadOnly = stubSystemOne({
+      riskChoice: 'read_only',
+      riskConfidence: 1,
+      needsHuman: 0,
+      secrets: 0,
+      configAccess: 0,
+      beyondScope: 0,
+      injection: 0,
+      privilegeEscalation: 0,
+    });
+    const outcomes = await runFixture(lyingReadOnly, 'jev-permclass-guard-samples.json');
+    const wronglyApproved = outcomes
+      .filter((outcome) => outcome.sample.history_outcome === 'ask-denied' && outcome.decision === 'approve')
+      .map((outcome) => outcome.sample.id);
+    const ruleBaseline = await runFixture(
+      throwingSystemOne(new Error('not called')),
+      'jev-permclass-guard-samples.json',
+      false,
+    );
+    const baselineById = new Map(ruleBaseline.map((outcome) => [outcome.sample.id, outcome]));
+    const ruleProtected = wronglyApproved.filter((id) => baselineById.get(id)?.rule !== 'fallback');
+    const jevDependentFindings = wronglyApproved.filter((id) => baselineById.get(id)?.rule === 'fallback');
+    console.log(`guard fixture lying-stub approvals (rule-protected): ${ruleProtected.join(', ') || 'none'}`);
+    console.log(`guard fixture lying-stub approvals (Jev-dependent findings): ${jevDependentFindings.join(', ') || 'none'}`);
+    expect(wronglyApproved).toEqual([]);
+  });
+
+  it('反向变异 A：guard 拒绝样本在 Jev 前全部 veto，systemOne 零调用', async () => {
+    const stub = stubSystemOne();
+    const classifier = newClassifier(stub);
+    const denied = loadFixture('jev-permclass-guard-samples.json')
+      .filter((sample) => sample.history_outcome === 'ask-denied');
+
+    for (const sample of denied) {
+      const result = await classifier.classify(
+        sample.tool_name,
+        { command: sample.summary },
+        { workingDirectory: process.cwd() },
+      );
+      expect(result.decision, sample.id.toString()).not.toBe('approve');
+    }
+
+    expect(stub.calls).toHaveLength(0);
+  });
+
+  it('反向变异 B：systemOne 恒抛错 ⇒ guard 夹具没有 Jev 放行', async () => {
+    const outcomes = await runFixture(
+      throwingSystemOne(new Error('jev is down')),
+      'jev-permclass-guard-samples.json',
+    );
+    expect(outcomes.filter((outcome) => outcome.rule === 'jev_approve')).toHaveLength(0);
+    const baseline = await runFixture(
+      throwingSystemOne(new Error('not called')),
+      'jev-permclass-guard-samples.json',
+      false,
+    );
+    const baselineApprovals = baseline.filter((outcome) => outcome.sample.history_outcome === 'ask-approved' && outcome.decision === 'approve');
+    const approvalsAfterThrow = outcomes.filter((outcome) => outcome.sample.history_outcome === 'ask-approved' && outcome.decision === 'approve');
+    console.log(`guard fixture rule approvals while Jev throws: ${approvalsAfterThrow.map((outcome) => outcome.sample.id).join(', ') || 'none'}`);
+    expect(approvalsAfterThrow.map((outcome) => outcome.sample.id)).toEqual(baselineApprovals.map((outcome) => outcome.sample.id));
   });
 });

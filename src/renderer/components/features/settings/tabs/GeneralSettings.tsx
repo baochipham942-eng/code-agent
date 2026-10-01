@@ -39,6 +39,7 @@ import { zh } from '../../../../i18n/zh';
 import { useDoctorStore } from '../../../../stores/doctorStore';
 import { OS_SANDBOX_DOCTOR_ITEM_NAME } from '@shared/constants/sandbox';
 import { validateUserPermissionRule } from '@shared/permissionRuleSyntax';
+import { JevKeyConfig } from './JevKeyConfig';
 
 export type PermissionMode = 'default' | 'readOnly' | 'acceptEdits' | 'bypassPermissions';
 export type InheritanceMode = 'strict-inherit' | 'child-narrow' | 'independent';
@@ -492,6 +493,7 @@ export const GeneralSettings: React.FC = () => {
       description={generalText.pageDescription}
     >
       <WebModeBanner />
+      <JevKeyConfig />
 
       <SettingsSection
         title={generalText.sandbox.title}

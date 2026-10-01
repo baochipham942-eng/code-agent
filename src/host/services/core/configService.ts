@@ -1041,6 +1041,7 @@ export class ConfigService implements IReadConfigService {
       'minimax-search': 'MINIMAX_SEARCH_API_KEY',
       skillsmp: 'SKILLSMP_API_KEY',
       'neo-share': 'NEO_SHARE_UPLOAD_TOKEN',
+      typesafe: 'TYPESAFE_API_KEY',
     };
 
     const envKey = envKeyMap[service];

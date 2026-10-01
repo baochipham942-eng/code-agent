@@ -49,6 +49,7 @@ vi.mock('../../../src/renderer/components/design/designFiles', () => ({
 import { LibraryPanel } from '../../../src/renderer/components/features/knowledge/LibraryPanel';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
+import { zh } from '../../../src/renderer/i18n/zh';
 
 function makeItem(overrides: Partial<LibraryItem> = {}): LibraryItem {
   return {
@@ -88,11 +89,22 @@ describe('LibraryPanel', () => {
     const search = await screen.findByTestId('library-search');
     const upload = screen.getByTestId('library-upload');
 
-    expect(search.classList.contains('w-40')).toBe(true);
+    expect(search.classList.contains('w-56')).toBe(true);
     expect(search.classList.contains('min-w-0')).toBe(true);
     expect(upload.classList.contains('shrink-0')).toBe(true);
     expect(upload.classList.contains('whitespace-nowrap')).toBe(true);
     expect(upload.textContent).toBe('上传文件');
+  });
+
+  // FB-210b：搜索框加宽到 w-56，截断占位符用 title 兜底完整文案
+  it('搜索框加宽到 w-56 且 title 等于完整占位符', async () => {
+    listLibraryItems.mockResolvedValue([]);
+    render(<LibraryPanel />);
+
+    const search = await screen.findByTestId('library-search');
+    expect(search.classList.contains('w-40')).toBe(false);
+    expect(search.classList.contains('w-56')).toBe(true);
+    expect(search.getAttribute('title')).toBe(zh.library.searchPlaceholder);
   });
 
   it('空库渲染空态文案', async () => {

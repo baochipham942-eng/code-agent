@@ -1,0 +1,50 @@
+{
+  "gitHead": "3eb5692d7",
+  "model": {
+    "provider": "custom-stepfun",
+    "id": "step-3.5-flash-2603",
+    "pricePerMillionUsd": {
+      "input": 0.1,
+      "cached": 0.02,
+      "output": 0.3
+    }
+  },
+  "runs": [
+    {
+      "runId": "ls-tail-1790827828822-1",
+      "finalReplyClear": true,
+      "toolMentionsZiliao": true,
+      "hasFinalReply": true,
+      "promptTokens": 95961,
+      "cacheReadTokens": 63168,
+      "outputTokens": 2724,
+      "usd": 0.00536
+    },
+    {
+      "runId": "ls-tail-1790827866573-2",
+      "finalReplyClear": true,
+      "toolMentionsZiliao": true,
+      "hasFinalReply": true,
+      "promptTokens": 244626,
+      "cacheReadTokens": 151680,
+      "outputTokens": 7716,
+      "usd": 0.014643
+    },
+    {
+      "runId": "ls-tail-1790827939073-3",
+      "finalReplyClear": true,
+      "toolMentionsZiliao": true,
+      "hasFinalReply": true,
+      "promptTokens": 94701,
+      "cacheReadTokens": 64000,
+      "outputTokens": 2765,
+      "usd": 0.00518
+    }
+  ],
+  "totals": {
+    "promptTokens": 435288,
+    "cacheReadTokens": 278848,
+    "outputTokens": 13205,
+    "usd": 0.025183
+  }
+}

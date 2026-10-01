@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock3, GitBranch, HeartPulse } from 'lucide-react';
+import { Clock3, HeartPulse } from 'lucide-react';
 import type { SessionType } from '@shared/contract/session';
 import { useI18n } from '../../../hooks/useI18n';
 import type { Translations } from '../../../i18n';
@@ -14,7 +14,6 @@ function buildSessionTypeFilters(
     { value: 'chat', label: 'Chat' },
     { value: 'schedule', label: 'Schedule' },
     { value: 'heartbeat', label: 'Heartbeat' },
-    { value: 'subagent', label: 'Subagent' },
   ];
 }
 
@@ -24,8 +23,6 @@ export function getSessionTypeLabel(type: SessionType | undefined): string | nul
       return 'Schedule';
     case 'heartbeat':
       return 'Heartbeat';
-    case 'subagent':
-      return 'Subagent';
     default:
       return null;
   }
@@ -54,7 +51,6 @@ export const SessionTypeFilterBar: React.FC<SessionTypeFilterBarProps> = ({ valu
         >
           {filter.value === 'heartbeat' && <HeartPulse className="mr-1 inline h-3 w-3 align-[-2px]" />}
           {filter.value === 'schedule' && <Clock3 className="mr-1 inline h-3 w-3 align-[-2px]" />}
-          {filter.value === 'subagent' && <GitBranch className="mr-1 inline h-3 w-3 align-[-2px]" />}
           {filter.label}
         </button>
       ))}

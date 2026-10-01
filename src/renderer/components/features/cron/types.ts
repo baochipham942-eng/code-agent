@@ -21,7 +21,7 @@ export interface CronJobDraft {
   maxRetries: string;
   retryDelay: string;
   timeout: string;
-  scheduleType: 'at' | 'every' | 'cron';
+  scheduleType: 'at' | 'every' | 'cron' | 'event';
   atDatetime: string;
   everyInterval: string;
   everyUnit: EveryScheduleConfig['unit'];
@@ -240,7 +240,7 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
       startAt: draft.everyStartAt ? new Date(draft.everyStartAt).toISOString() : undefined,
       endAt: draft.everyEndAt ? new Date(draft.everyEndAt).toISOString() : undefined,
     };
-  } else {
+  } else if (draft.scheduleType === 'cron') {
     if (!draft.cronExpression.trim()) {
       throw new Error('Cron 表达式不能为空');
     }
@@ -249,6 +249,9 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
       expression: draft.cronExpression.trim(),
       timezone: draft.cronTimezone.trim() || undefined,
     };
+  } else {
+    // 'event' 调度由通道侧创建（本面板创建 UI 未开放），不该从 draft 重建。
+    throw new Error('事件触发任务不支持在此面板创建或编辑');
   }
 
   let action: CronJobDefinition['action'];

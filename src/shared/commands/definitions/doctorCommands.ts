@@ -2,7 +2,7 @@
 // Doctor Commands - /doctor
 // 跨 CLI + GUI 的统一健康检查入口。
 //
-// CLI surface: 直接动态 import runDoctor()，按表格分段打印。
+// CLI surface: ctx.loadDoctorRunner 注入 runDoctor()，按表格分段打印。
 // GUI surface: 通过 IPC（provider:run_doctor）调用，输出文本结果到对话流。
 //   GUI 用户也可通过设置面板的"诊断"按钮调起 ProviderDoctorDialog（旧路径）。
 // ============================================================================
@@ -12,6 +12,7 @@ import type {
   CommandDefinition,
   CommandResult,
 } from '../types';
+import { loadCommandPort } from '../loadCommandPort';
 
 // 与 src/host/diagnostics/types.ts 对齐的轻量副本，避免 shared 引用 main
 type DoctorCategory =
@@ -115,9 +116,8 @@ function formatReport(report: DoctorReport): string {
 // Surface-specific dispatchers
 // ----------------------------------------------------------------------------
 
-async function runViaCliSurface(): Promise<DoctorReport> {
-  // 动态 import 避免 renderer 打包时把 main 拽进去
-  const { runDoctor } = await import('../../../host/diagnostics/doctorRunner');
+async function runViaCliSurface(ctx: CommandContext): Promise<DoctorReport> {
+  const { runDoctor } = await loadCommandPort<{ runDoctor: () => Promise<DoctorReport> }>(ctx, 'loadDoctorRunner');
   return runDoctor();
 }
 
@@ -142,7 +142,7 @@ export const doctorCommand: CommandDefinition = {
     ctx.output.info('/doctor running... 这可能需要几秒钟');
     try {
       const report =
-        ctx.surface === 'cli' ? await runViaCliSurface() : await runViaGuiSurface();
+        ctx.surface === 'cli' ? await runViaCliSurface(ctx) : await runViaGuiSurface();
       ctx.output.info(formatReport(report));
 
       if (report.summary.fail > 0) {

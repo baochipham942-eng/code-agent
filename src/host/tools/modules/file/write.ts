@@ -38,6 +38,7 @@ import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { writeSchema as schema } from './write.schema';
 import { computeContentDigest, fileReadTracker } from '../../fileReadTracker';
 import { checkExternalModification } from '../../utils/externalModificationDetector';
+import { readThenRetryHint } from '../../utils/readBeforeMutateHint';
 import { getFileMutationActorId } from './fileMutationIdentity';
 import { guardSkillOfficialSections } from '../../../security/skillOfficialSectionGuard';
 import { resolveToolWriteTarget } from '../../../sandbox/writeFence';
@@ -378,7 +379,8 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
           return {
             ok: false,
             error:
-              'Existing file must be read by this agent before overwrite. Use Read first to bind the latest digest, then retry Write.',
+              'Existing file must be read by this agent before overwrite. Use Read first to bind the latest digest, then retry Write. ' +
+              readThenRetryHint('Write', resolvedPath),
             code: 'NOT_READ_FOR_OVERWRITE',
             meta: { outputPath: resolvedPath },
           };
@@ -398,7 +400,7 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
           if (!force) {
             return {
               ok: false,
-              error: `${modCheck.message}. Re-read the file before overwriting it.`,
+              error: `${modCheck.message}. Re-read the file before overwriting it. ${readThenRetryHint('Write', resolvedPath)}`,
               code: 'STALE_FILE',
               meta: {
                 outputPath: resolvedPath,

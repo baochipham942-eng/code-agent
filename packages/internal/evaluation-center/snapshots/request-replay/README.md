@@ -55,6 +55,7 @@ keyless 确定性假模型（`CODE_AGENT_E2E_LOCAL_AGENT_MODEL=1`）真会话的
 ## 重录确认
 
 （行为不可见改动在此追加：日期 / PR / 说明）
+- 2026-10-01 / N-WORKFLOW-BACKGROUND-A / 敏感变更：src/host/tools/modules/multiagent/workflow.schema.ts；录制语料未触及该改动段，本机 `acceptance:snapshot-replay:record` 重录零漂移（收活循环代录，PR 号见 ship 回执）。
 - 2026-10-01 / PR #2269 / `src/host/prompts/generativeUI.ts` 的改动（N-VIZ-NUMBERS-FROM-CODE：可视化里的数字必须来自代码计算，不许模型手写）只影响 generativeUI 产物任务的提示词段；录制语料 7 会话 16 轮没有 generativeUI 任务，该段未进入任何请求。本机 `acceptance:snapshot-replay:record` 重录 7 会话 16 轮零漂移（收活人 ai-24 代录）。
 - 2026-09-21 / PR #2006 / `contextAssembly/transcriptProjection.ts` 的改动（issue #1991：stripInternalFormatMimicry 剥离 longcat 裸工具调用标记）只影响含 `<longcat_*>` 标记的文本，录制语料 6 会话 13 轮无任何 longcat 标记，剥离分支未触发。本机 `acceptance:snapshot-replay:record` 在 PR head 重录 6 会话 13 轮，与已提交快照的差异全部为存量陈旧、与本 PR 无关：① 系统提示 `今天的日期`/星期（09-20→09-21）与 WebSearch 描述内嵌日期（9月20日→9月21日）；② main@2ed9ce099（#2004 产物收敛工作区）带的 identity.ts 第 4 条交付物路径约束与 AskUserQuestion「保存位置」选项顺序/描述（该 PR 合入后快照未重录）。canonicalMessages/canonicalTools 逐条比对（15 工具集合一致、schema 除日期串外一致、消息条数一致），此外无任何行为漂移。
 - 2026-09-20 / PR #1975 / `contextAssembly/messageBuild.ts`、`shared.ts`、`transcriptProjection.ts` 的改动（跨轮重复 Read 在面向模型的消息投影层去重）**是模型可见的**——同一文件同一区间被第二次 Read 且内容未变时，投影会把完整正文替换成一行回执。之所以重录零漂移，是因为现有录制语料 6 会话 13 轮里**没有任何一条同文件同区间读两次**的场景（`read-fixture` 与 `read-then-write` 都只有单次 Read），去重分支从未被触发。本机 `acceptance:snapshot-replay:record` 在 PR head（6e95b98e0，已含 main@04d6a51df）上重录 6 会话 13 轮，`git status` 快照目录零变更。⚠️ 因此本条不是「改动不可见」，而是「语料不覆盖该路径」：这道门目前对 Read 去重行为没有保护力，补一条重复 Read 语料的后续项见 N-SNAPSHOT-CORPUS-READDEDUPE。

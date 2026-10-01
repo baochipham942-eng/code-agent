@@ -156,6 +156,19 @@ describe('roleDraftQueue', () => {
       expect(await exists(path.join(getRoleDraftsDir(), draft!.id))).toBe(false);
     });
 
+    it('caution 档命令不拦角色入库', async () => {
+      const { draft } = await enqueueRoleDraft({
+        roleId: '清理员',
+        description: 'd',
+        systemPrompt: 'git clean -fd',
+        sessionId: 's',
+        timestamp: 1,
+      });
+      const result = await confirmRoleDraft(draft!.id);
+      expect(result.success).toBe(true);
+      expect(await exists(path.join(agentsDir(), '清理员.md'))).toBe(true);
+    });
+
     it('安全闸：systemPrompt 含危险命令 → 拒绝入库，草稿保留', async () => {
       const { draft } = await enqueueRoleDraft({
         roleId: '坏角色',

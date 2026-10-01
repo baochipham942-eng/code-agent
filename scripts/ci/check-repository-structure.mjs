@@ -81,7 +81,13 @@ const limits = {
   // 性能指标只报告，anchor/search/streaming-follow 三条确定性判据才阻塞。
   // 21: prompt-gate-evidence.yml — 只在 prompt/tool schema/证据机制变化时检查评测
   // 证据新鲜度；不塞进 swarm-ci，避免普通 PR 被付费评测边界或缺失首份证据误伤。
-  workflows: 21,
+  // 22: security.yml — 公开仓泄漏门（全历史 gitleaks、源码快照、构建后 dist，
+  // 另加仓外盐的 HMAC）。不能折进 swarm-ci.yml：全历史要 fetch-depth 0，dist 段要
+  // npm ci && npm run build；paths 又是 workflow 级的，折进去会让普通 PR 背上深克隆
+  // 和完整构建，或让泄漏扫描漏掉 paths 之外的文件。不能折进 repository-structure.yml：
+  // 那个门是 3 分钟导航棘轮，浅克隆、不装依赖。不设 paths：密钥可以出现在任意路径
+  // 和提交说明里，按目录收窄会漏检。
+  workflows: 22,
 };
 
 const navigationFiles = [

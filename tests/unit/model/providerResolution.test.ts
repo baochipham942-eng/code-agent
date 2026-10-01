@@ -20,9 +20,15 @@ import {
 // configService 单例：adapter 模式（trustConfigKey:false）会查它，受控返回。
 // getSettings：动态 custom provider 的 baseUrl 兜底来源（settings.models.providers[id].baseUrl）。
 const mockGetApiKey = vi.fn<(provider: string) => string | undefined>();
+const mockGetServiceApiKey = vi.fn<(service: string) => string | undefined>();
 const mockGetSettings = vi.fn<() => unknown>();
 vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({ onSettingsUpdated: vi.fn(), getApiKey: mockGetApiKey, getSettings: mockGetSettings }),
+  getConfigService: () => ({
+    onSettingsUpdated: vi.fn(),
+    getApiKey: mockGetApiKey,
+    getServiceApiKey: mockGetServiceApiKey,
+    getSettings: mockGetSettings,
+  }),
 }));
 
 const cfg = (provider: string, model: string, extra: Partial<ModelConfig> = {}): ModelConfig =>
@@ -33,6 +39,7 @@ const ENV_KEYS = [
   'ZHIPU_OFFICIAL_API_KEY', 'KIMI_K25_API_KEY', 'KIMI_K25_API_URL',
   'XIAOMI_API_KEY', 'LONGCAT_API_KEY', 'DEEPSEEK_API_KEY', 'ANTHROPIC_BASE_URL',
   'OPENAI_BASE_URL',
+  'TYPESAFE_API_KEY',
 ];
 let envSnapshot: Record<string, string | undefined>;
 beforeEach(() => {
@@ -43,6 +50,8 @@ beforeEach(() => {
   }
   mockGetApiKey.mockReset();
   mockGetApiKey.mockReturnValue(undefined);
+  mockGetServiceApiKey.mockReset();
+  mockGetServiceApiKey.mockReturnValue(undefined);
   mockGetSettings.mockReset();
   mockGetSettings.mockReturnValue({});
 });
@@ -229,5 +238,47 @@ describe('resolveProviderApiKey — adapter 模式（trustConfigKey:false）', (
     expect(
       resolveProviderApiKey(cfg('zhipu', 'glm-5', { apiKey: 'cfg-z' }), { trustConfigKey: false }),
     ).toBe('svc-z');
+  });
+});
+
+describe('resolveProviderApiKey — typesafe service key', () => {
+  const typesafe = (extra: Partial<ModelConfig> = {}) => cfg('typesafe', 'jev-1.13.0', extra);
+
+  it('仅钥匙串有 key（环境变量空）时返回钥匙串的值', () => {
+    mockGetServiceApiKey.mockReturnValue('kc-only-typesafe-key');
+    expect(resolveProviderApiKey(typesafe())).toBe('kc-only-typesafe-key');
+    expect(mockGetServiceApiKey).toHaveBeenCalledWith('typesafe');
+  });
+
+  it('钥匙串与环境变量都有时钥匙串优先', () => {
+    process.env.TYPESAFE_API_KEY = 'env-typesafe-key';
+    mockGetServiceApiKey.mockReturnValue('kc-typesafe-key');
+    expect(resolveProviderApiKey(typesafe())).toBe('kc-typesafe-key');
+  });
+
+  it('只设环境变量时返回环境变量（今日行为）', () => {
+    process.env.TYPESAFE_API_KEY = 'env-only-typesafe-key';
+    expect(resolveProviderApiKey(typesafe())).toBe('env-only-typesafe-key');
+  });
+
+  it('两处都没有时返回空串', () => {
+    expect(resolveProviderApiKey(typesafe())).toBe('');
+  });
+
+  it('配置服务读取抛错时退回仅环境变量结果，且不向外抛', () => {
+    process.env.TYPESAFE_API_KEY = 'env-typesafe-key';
+    mockGetServiceApiKey.mockImplementation(() => {
+      throw new Error('config service unavailable');
+    });
+    expect(resolveProviderApiKey(typesafe())).toBe('env-typesafe-key');
+    delete process.env.TYPESAFE_API_KEY;
+    expect(resolveProviderApiKey(typesafe())).toBe('');
+  });
+
+  it('规范化钥匙串里的成对引号，且不采用 config.apiKey', () => {
+    mockGetServiceApiKey.mockReturnValue('  "kc-quoted"  ');
+    expect(resolveProviderApiKey(typesafe({ apiKey: 'cfg-key' }))).toBe('kc-quoted');
+    mockGetServiceApiKey.mockReturnValue(undefined);
+    expect(resolveProviderApiKey(typesafe({ apiKey: 'cfg-key' }))).toBe('');
   });
 });

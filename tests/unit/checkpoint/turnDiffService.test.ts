@@ -87,4 +87,43 @@ describe('captureTurnDiff path normalization', () => {
       files: [],
     });
   });
+
+  it('records a deleted in-repo candidate on absentPaths and keeps only the new sibling in files', async () => {
+    const repo = await makeRepo();
+    const repoRoot = await realpath(repo);
+    await writeFile(join(repo, 'a.js'), 'console.log(1)\n', 'utf8');
+    await rm(join(repo, 'a.js'));
+    await writeFile(join(repo, 'b.cjs'), 'module.exports = {}\n', 'utf8');
+
+    const result = await captureTurnDiff(repo, 'turn-gone-file', ['a.js', 'b.cjs']);
+
+    expect(result?.files.map((file) => file.filePath)).toEqual([join(repoRoot, 'b.cjs')]);
+    expect(result?.absentPaths).toEqual([join(repoRoot, 'a.js'), 'a.js']);
+  });
+
+  it('omits a.js from absentPaths when that file is rewritten before capture', async () => {
+    const repo = await makeRepo();
+    const repoRoot = await realpath(repo);
+    const absolute = join(repoRoot, 'a.js');
+    await writeFile(join(repo, 'a.js'), 'first\n', 'utf8');
+    await rm(join(repo, 'a.js'));
+    await writeFile(join(repo, 'a.js'), 'second\n', 'utf8');
+
+    const result = await captureTurnDiff(repo, 'turn-rewritten', ['a.js']);
+
+    const absent = result?.absentPaths ?? [];
+    expect(result?.files.map((file) => file.filePath)).toEqual([absolute]);
+    expect(absent).not.toContain('a.js');
+    expect(absent).not.toContain(absolute);
+  });
+
+  it('does not record a missing path that resolves outside the repo', async () => {
+    const repo = await makeRepo();
+    const outside = join(tmpdir(), `turn-diff-outside-${Date.now()}.js`);
+
+    await expect(captureTurnDiff(repo, 'turn-outside', [outside])).resolves.toEqual({
+      turnId: 'turn-outside',
+      files: [],
+    });
+  });
 });

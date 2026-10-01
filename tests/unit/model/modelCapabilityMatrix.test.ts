@@ -113,10 +113,25 @@ describe('model capability matrix', () => {
     });
   });
 
+  it('resolves Moonshot to prefix-param with the partial message flag (no endpoint override)', () => {
+    // 官方 Partial Mode（platform.kimi.com/docs/guide/use-partial-mode-feature-of-kimi-api）；
+    // 2026-09-30 真机探测升档，证据 N-STREAM-RESUME-DOGFOOD-2026-09-30.md（B0：kimi-k2.6
+    // 带 partial:true 续写从 6 起、无需 reasoning_content、主端点不变）。
+    expect(resolveModelCapabilities('moonshot', 'kimi-k2.6').streamResume).toEqual({
+      mode: 'prefix-param',
+      param: 'partial',
+    });
+    expect(resolveModelCapabilities('moonshot', 'kimi-k2.5').streamResume).toEqual({
+      mode: 'prefix-param',
+      param: 'partial',
+    });
+  });
+
   it('falls back to unknown for providers without a documented resume contract', () => {
-    // OpenAI 兼容协议无公开 prefix 续写合同（2026-09-14 检索未命中官方文档）——一律 B2 兜底。
+    // OpenAI 兼容协议无公开 prefix 续写合同——一律 B2 兜底。zhipu/minimax/longcat 于
+    // 2026-09-30 真机探测后仍留 unknown（证据 N-STREAM-RESUME-DOGFOOD-2026-09-30.md：
+    // minimax 402 余额不足不可测；longcat 两次一续一重启 mixed；zhipu 0ki mixed 且官方端点 401）。
     const unverified: Array<[string, string]> = [
-      ['moonshot', 'kimi-k2.5'],
       ['zhipu', 'glm-5'],
       ['qwen', 'qwen3-max'],
       ['minimax', 'MiniMax-M2.7'],

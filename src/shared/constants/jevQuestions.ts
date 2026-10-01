@@ -183,37 +183,80 @@ export const JEV_ROUTER_QUESTIONS: Record<string, JevQuestionSpec> = {
   },
   complexity: {
     type: 'choice',
-    instructions: 'Give the request complexity as one integer level from 0 (trivial) to 3 (multi-step or high risk).',
+    instructions: 'Give the request complexity as one of three named tiers.',
     criteria: {
-      '0': 'Trivial answer or one obvious read-only step',
-      '1': 'A small, well-scoped task with little coordination',
-      '2': 'Several steps, files, tools, or meaningful judgment',
-      '3': 'Many dependent steps, broad scope, ambiguity, or high impact',
+      simple: 'Trivial answer or one obvious read-only step',
+      moderate: 'A small, well-scoped task, or a few steps with limited coordination',
+      complex: 'Many dependent steps, broad scope, ambiguity, or high impact',
     },
   },
   needs_clarification: {
     type: 'noul',
     instructions: 'Does the request lack information required to proceed without guessing?',
   },
-  destructive_intent: {
+  needs_vision: {
     type: 'noul',
-    instructions: 'Does the request explicitly intend deletion, irreversible overwrite, credential change, or another destructive action?',
+    instructions:
+      'Does fulfilling the request require seeing or understanding an image, screenshot, diagram, or other visual content?',
+  },
+  high_stakes: {
+    type: 'noul',
+    instructions:
+      'Does the request involve deletion, payment or money transfer, public posting or sending content to others, credential changes, or irreversible overwrite?',
   },
 };
 
 /**
  * 自动档路由阈值（绑 jev-1.13.0，同 PERMCLASS_APPROVE_THRESHOLDS / JUDGE_PRESCREEN_BANDS
  * 口径：换 Jev 版本必须先重跑对应回放再改这里）。
- * 方向都是「只升不降」：低置信回落启发式而不是降级档位；澄清/破坏意图只把档位往上抬。
+ * 方向都是「只升不降」：低置信回落启发式而不是降级档位；澄清/高风险/视觉只把档位往上抬。
  */
 export const JEV_ROUTER_THRESHOLDS = {
   /** complexity choice 的校准 confidence 下限；低于此值回落启发式估计，不采纳 Jev 档位。 */
-  minComplexityConfidence: 0.5,
+  minComplexityConfidence: 0.6,
   /** needs_clarification ≥ 此值：禁止 simple/free 档，并在复杂度结果上给出 suggestClarification 信号。 */
   needsClarification: 0.9,
-  /** destructive_intent ≥ 此值：禁止 simple/free 档（安全信号，只升档）。 */
-  destructiveIntent: 0.7,
+  /** needs_vision ≥ 此值：禁止 simple/free 档（视觉需求，只升档）。 */
+  needsVision: 0.6,
+  /** high_stakes ≥ 此值：禁止 simple/free 档（安全信号，只升档）。 */
+  highStakes: 0.6,
 } as const;
+
+/** Jev 命名键档位 → TaskComplexity.score 的映射（与启发式分档 <30/<60 同带宽）。 */
+export const JEV_ROUTER_LEVEL_SCORES = {
+  simple: 20,
+  moderate: 50,
+  complex: 85,
+} as const;
+
+/**
+ * 规则地板高风险词表（中英文，独立于判官）：覆盖删除 / 付款转账 / 对外发帖发送 /
+ * 凭据变更 / 不可逆覆盖。命中即不得为 simple——无论 Jev 答什么、是否回落启发式。
+ * 只在 CODE_AGENT_JEV_ROUTER=1 时生效；方向只升不降，误伤的代价仅是少走 free 档。
+ * 模块内部常量（生产消费只走 matchesJevRouterHighRisk），不导出——knip dead-export 棘轮。
+ */
+const JEV_ROUTER_HIGH_RISK_PATTERNS: readonly RegExp[] = [
+  // 删除 / 清空
+  /删除|删掉|清空|抹除|擦除/,
+  /\b(delete|deleting|erase|wipe|purge|rm\s+-rf)\b/i,
+  // 付款 / 转账
+  /付款|支付|转账|汇款|充值|打赏/,
+  /\b(pay|payment|transfer|wire|donate|checkout|purchase)\b/i,
+  // 对外发帖 / 发送
+  /发帖|发贴|发布到|群发|发微博|发朋友圈|发推|发给/,
+  /\b(post|publish|tweet|send|submit)\b/i,
+  // 凭据变更
+  /凭据|改密|重置密码|修改密码|轮换密钥/,
+  /\b(credentials?|passwords?|passphrase|rotate keys?)\b/i,
+  // 不可逆覆盖
+  /覆盖|不可逆/,
+  /\b(overwrite|overwriting|irreversible|force[- ]push)\b/i,
+];
+
+/** 规则地板匹配：最后一条用户消息命中高风险词表时为真。 */
+export function matchesJevRouterHighRisk(text: string): boolean {
+  return JEV_ROUTER_HIGH_RISK_PATTERNS.some((pattern) => pattern.test(text));
+}
 
 export function buildJevCompactionQuestions(
   keys: readonly string[],
@@ -546,3 +589,32 @@ export function withBrowserJevStepActionEnum(
     },
   };
 }
+
+// ============================================================================
+// N-JEV-COMPACTION-MOCK 追加块：jevCompaction 钉死窗口与批次估算上限
+// （独立块，不改既有常量块；合并冲突由编排侧处理）
+// ============================================================================
+
+/**
+ * jevCompaction 钉死集合的最近消息窗口（消息条数，不限工具消息）。
+ * 钉死集合 = 最后 pinnedRecentMessages 条消息里的工具消息 ∪ 最后
+ * JEV_COMPACTION_THRESHOLDS.pinnedLatestEntries 条工具条目（只增不减）。
+ * 取值 10 对齐 autoCompressor DEFAULT_CONFIG.preserveRecentCount
+ * （src/host/context/autoCompressor.ts）与 compactionService
+ * DEFAULT_PRESERVE_RECENT_COUNT（src/host/context/compactionService.ts）的默认值。
+ */
+export const JEV_COMPACTION_PINNED_RECENT_MESSAGES = 10;
+
+/**
+ * 单批 state JSON 的字符上限。对齐 tokenEstimator 的精确 BPE 上限
+ * （EXACT_TOKENIZATION_MAX_CHARS=50_000，超过走保守比例估算）：
+ * 批次器与「state+问句估算 ≤ maxBatchTokens」的批次预算断言用同一把尺，
+ * 合并 JSON 的 BPE 计数不超过逐条计数之和（边界合并只会减少 token）。
+ */
+export const JEV_COMPACTION_MAX_BATCH_STATE_CHARS = 50_000;
+
+/**
+ * 每条候选进入批次预算的额外 token 余量：entry JSON 包装（role/kind/content
+ * 字段与命名键）加两条 noul 问句的合计实测约 80-90 token，取 96 留余量。
+ */
+export const JEV_COMPACTION_BATCH_ENTRY_OVERHEAD_TOKENS = 96;

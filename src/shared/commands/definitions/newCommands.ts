@@ -5,6 +5,7 @@
 import type { CommandDefinition } from '../types';
 import { MODEL_PRICING_PER_1M } from '../../constants';
 import type { ExtensionInfo, ExtensionValidationResult } from '../../contract/extension';
+import { loadCommandPort } from '../loadCommandPort';
 
 interface ExtensionOpsCommandService {
   list(): Promise<ExtensionInfo[]>;
@@ -30,7 +31,7 @@ function isExtensionOpsCommandService(value: unknown): value is ExtensionOpsComm
   );
 }
 
-async function resolveExtensionOpsService(ctx: Record<string, unknown>): Promise<ExtensionOpsCommandService> {
+function resolveExtensionOpsService(ctx: Record<string, unknown>): ExtensionOpsCommandService {
   if (isExtensionOpsCommandService(ctx.extensionOps)) {
     return ctx.extensionOps;
   }
@@ -39,11 +40,98 @@ async function resolveExtensionOpsService(ctx: Record<string, unknown>): Promise
     throw new Error('Extension operations are not wired for GUI commands');
   }
 
-  const mod = await import('../../../host/services/plugins/extensionOpsService');
-  if (!isExtensionOpsCommandService(mod.getExtensionOpsService?.())) {
-    throw new Error('getExtensionOpsService is not available');
-  }
-  return mod.getExtensionOpsService();
+  throw new Error('getExtensionOpsService is not available');
+}
+
+interface SessionStateModule {
+  getSessionStateManager: () => {
+    getRunning: () => Array<{ sessionId: string; status: string }>;
+    getActiveAgentCount: (sessionId: string) => number;
+  };
+}
+
+interface AgentHistoryModule {
+  getRecentAgentHistory: (limit: number) => Promise<Array<{
+    name: string;
+    role: string;
+    status: string;
+    durationMs: number;
+    tokenUsage: { input: number; output: number };
+    resultPreview?: string;
+  }>>;
+}
+
+interface ContextHealthModule {
+  getContextHealthService: () => {
+    getLatest: () => {
+      lastUpdated: number;
+      currentTokens: number;
+      maxTokens: number;
+      usagePercent: number;
+      estimatedTurnsRemaining: number;
+      breakdown: { systemPrompt: number; messages: number; toolResults: number };
+    };
+  };
+}
+
+interface BudgetModule {
+  getBudgetService: () => {
+    checkBudget: () => { maxBudget: number; currentCost: number; usagePercentage: number };
+  };
+}
+
+interface AutoCompressorModule {
+  getAutoCompressor: () => {
+    getStats: () => { compressionCount: number; totalSavedTokens: number };
+  };
+}
+
+interface PermissionModeModule {
+  getPermissionModeManager: () => {
+    getMode: () => string;
+    getModeConfig: () => { description: string };
+  };
+}
+
+interface ExecPolicyModule {
+  getExecPolicyStore: () => {
+    getRules: () => Array<{ pattern: string[]; createdAt: number; source: string; decision: string }>;
+  };
+}
+
+interface DecisionHistoryModule {
+  getDecisionHistory: () => {
+    getRecent: (count: number) => Array<{
+      timestamp: number;
+      toolName: string;
+      summary: string;
+      outcome: string;
+      reason: string;
+      durationMs: number;
+      decisionTrace?: { finalOutcome: string; steps: unknown[] };
+    }>;
+    getAll: () => unknown[];
+  };
+}
+
+interface BackgroundTaskSnapshot {
+  taskId: string;
+  status: string;
+  command: string;
+  startTime: number;
+  duration: number;
+  exitCode?: number;
+}
+
+interface BackgroundTasksModule {
+  getAllBackgroundTasks: () => BackgroundTaskSnapshot[];
+  killBackgroundTask: (taskId: string) => Promise<{ success: boolean; error?: string }>;
+}
+
+function missingPortResult(ctx: { output: { error(msg: string): void } }, err: unknown): { success: false; message: string } {
+  const message = err instanceof Error ? err.message : String(err);
+  ctx.output.error(message);
+  return { success: false, message };
 }
 
 // Formatting helpers
@@ -70,9 +158,7 @@ export const agentsCommand: CommandDefinition = {
 
     // --- 运行中 ---
     try {
-      const { getSessionStateManager } = await import(
-        '../../../host/session/sessionStateManager'
-      );
+      const { getSessionStateManager } = await loadCommandPort<SessionStateModule>(ctx, 'loadSessionStateManager');
       const manager = getSessionStateManager();
       const running = manager.getRunning();
 
@@ -94,9 +180,7 @@ export const agentsCommand: CommandDefinition = {
 
     // --- 最近完成 ---
     try {
-      const { getRecentAgentHistory } = await import(
-        '../../../host/session/agentHistoryPersistence'
-      );
+      const { getRecentAgentHistory } = await loadCommandPort<AgentHistoryModule>(ctx, 'loadAgentHistory');
       const history = await getRecentAgentHistory(10);
 
       lines.push('最近完成');
@@ -168,7 +252,7 @@ export const statusCommand: CommandDefinition = {
     // Context info
     let contextLine = '';
     try {
-      const { getContextHealthService } = await import('../../../host/context/contextHealthService');
+      const { getContextHealthService } = await loadCommandPort<ContextHealthModule>(ctx, 'loadContextHealth');
       const health = getContextHealthService().getLatest();
       if (health.lastUpdated > 0) {
         contextLine = `\n  Context:  ${health.usagePercent.toFixed(1)}% (~${health.estimatedTurnsRemaining} turns remaining)`;
@@ -404,7 +488,7 @@ export const costCommand: CommandDefinition = {
 
     // Budget info (optional)
     try {
-      const { getBudgetService } = await import('../../../host/services/core/budgetService');
+      const { getBudgetService } = await loadCommandPort<BudgetModule>(ctx, 'loadBudgetService');
       const budget = getBudgetService();
       const status = budget.checkBudget();
       if (status.maxBudget > 0) {
@@ -425,7 +509,7 @@ export const contextCommand: CommandDefinition = {
   surfaces: ['cli', 'gui'],
   handler: async (ctx) => {
     try {
-      const { getContextHealthService } = await import('../../../host/context/contextHealthService');
+      const { getContextHealthService } = await loadCommandPort<ContextHealthModule>(ctx, 'loadContextHealth');
       const health = getContextHealthService().getLatest();
 
       if (health.lastUpdated === 0 || health.currentTokens === 0) {
@@ -449,7 +533,7 @@ export const contextCommand: CommandDefinition = {
 
       // Compression stats
       try {
-        const { getAutoCompressor } = await import('../../../host/context/autoCompressor');
+        const { getAutoCompressor } = await loadCommandPort<AutoCompressorModule>(ctx, 'loadAutoCompressor');
         const stats = getAutoCompressor().getStats();
         if (stats.compressionCount > 0) {
           lines.push(`  Compressed: ${stats.compressionCount} times, saved ${fmtNum(stats.totalSavedTokens)} tokens`);
@@ -485,7 +569,7 @@ export const permissionsCommand: CommandDefinition = {
 
     // Section 1: Mode
     try {
-      const { getPermissionModeManager } = await import('../../../host/permissions/modes');
+      const { getPermissionModeManager } = await loadCommandPort<PermissionModeModule>(ctx, 'loadPermissionModes');
       const manager = getPermissionModeManager();
       const mode = manager.getMode();
       const config = manager.getModeConfig();
@@ -500,7 +584,7 @@ export const permissionsCommand: CommandDefinition = {
 
     // Section 2: Exec Policy Rules
     try {
-      const { getExecPolicyStore } = await import('../../../host/security/execPolicy');
+      const { getExecPolicyStore } = await loadCommandPort<ExecPolicyModule>(ctx, 'loadExecPolicy');
       const rules = getExecPolicyStore().getRules();
       lines.push(`  Exec Policy (${rules.length} rules):`);
       if (rules.length === 0) {
@@ -524,7 +608,7 @@ export const permissionsCommand: CommandDefinition = {
 
     // Section 3: Recent Decisions
     try {
-      const { getDecisionHistory } = await import('../../../host/security/decisionHistory');
+      const { getDecisionHistory } = await loadCommandPort<DecisionHistoryModule>(ctx, 'loadDecisionHistory');
       const recent = getDecisionHistory().getRecent(10);
       const total = getDecisionHistory().getAll().length;
       lines.push(`  Recent Decisions (${total} total, showing last ${recent.length}):`);
@@ -572,7 +656,12 @@ const psCommand: CommandDefinition = {
   category: 'status',
   surfaces: ['cli'],
   handler: async (ctx) => {
-    const { getAllBackgroundTasks } = await import('../../../host/tools/shell/backgroundTasks');
+    let getAllBackgroundTasks: BackgroundTasksModule['getAllBackgroundTasks'];
+    try {
+      ({ getAllBackgroundTasks } = await loadCommandPort<BackgroundTasksModule>(ctx, 'loadBackgroundTasks'));
+    } catch (err: unknown) {
+      return missingPortResult(ctx, err);
+    }
     const tasks = getAllBackgroundTasks().sort((a, b) => b.startTime - a.startTime);
     if (tasks.length === 0) {
       ctx.output.info('没有后台任务');
@@ -604,7 +693,13 @@ const stopCommand: CommandDefinition = {
     if (!query) {
       return { success: false, message: '用法: /stop <taskId 或前缀>' };
     }
-    const { getAllBackgroundTasks, killBackgroundTask } = await import('../../../host/tools/shell/backgroundTasks');
+    let getAllBackgroundTasks: BackgroundTasksModule['getAllBackgroundTasks'];
+    let killBackgroundTask: BackgroundTasksModule['killBackgroundTask'];
+    try {
+      ({ getAllBackgroundTasks, killBackgroundTask } = await loadCommandPort<BackgroundTasksModule>(ctx, 'loadBackgroundTasks'));
+    } catch (err: unknown) {
+      return missingPortResult(ctx, err);
+    }
     const matches = getAllBackgroundTasks().filter((t) => t.taskId.startsWith(query));
     if (matches.length === 0) {
       return { success: false, message: `没有匹配的后台任务: ${query}` };

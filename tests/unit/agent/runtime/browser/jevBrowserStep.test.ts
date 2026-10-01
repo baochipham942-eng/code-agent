@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// 缺官方 key 时 resolveJevRoute 会读 OpenRouter key。单测不碰真实钥匙串。
+// 本文件的装配断言走环境变量。typesafe 读钥匙串时若打到共享的 mock userData，
+// 别的用例留下的槽会把「缺 key」误判成已装配；缺官方 key 时 resolveJevRoute 还会读 OpenRouter key。
+// 这里把 typesafe 槽钉成空，并让 getApiKey 永远返回 undefined——单测不碰真实钥匙串。
 vi.mock('../../../../../src/host/services/core/configService', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../../../src/host/services/core/configService')>();
   return {
@@ -10,6 +12,10 @@ vi.mock('../../../../../src/host/services/core/configService', async (importOrig
       return new Proxy(service, {
         get(target, prop, receiver) {
           if (prop === 'getApiKey') return () => undefined;
+          if (prop === 'getServiceApiKey') {
+            return (name: Parameters<typeof target.getServiceApiKey>[0]) =>
+              name === 'typesafe' ? undefined : target.getServiceApiKey(name);
+          }
           const value = Reflect.get(target, prop, receiver);
           return typeof value === 'function' ? value.bind(target) : value;
         },

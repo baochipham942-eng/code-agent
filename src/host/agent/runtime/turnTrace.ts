@@ -20,6 +20,7 @@ import type {
   PlanExitFallbackDetectedData,
   PlanExitFallbackNotApplicableData,
 } from './planExitFallback';
+import type { PlanExitFallbackSynthesizedData } from './planExitFallbackCard';
 
 const logger = createLogger('TurnTrace');
 
@@ -46,7 +47,8 @@ export type TraceEventType =
   | 'compensation_registered'
   | 'capability_lifecycle'
   | 'plan_exit_fallback_detected'
-  | 'plan_exit_fallback_not_applicable';
+  | 'plan_exit_fallback_not_applicable'
+  | 'plan_exit_fallback_synthesized';
 
 export type RequestManifestMessageRef =
   | { kind: 'ledger_message'; messageId: string }
@@ -244,6 +246,8 @@ export interface TraceEventDataMap {
   plan_exit_fallback_detected: PlanExitFallbackDetectedData;
   /** ADR-074 K1：补推理没换来退出工具，按今日文本收尾语义结束（不合成卡，K2 另做）。 */
   plan_exit_fallback_not_applicable: PlanExitFallbackNotApplicableData;
+  /** ADR-074 K2：补推理仍是结构化计划正文，宿主已合成 synthetic_text 审批卡并结束 run。 */
+  plan_exit_fallback_synthesized: PlanExitFallbackSynthesizedData;
 }
 
 type TraceEventFor<T extends TraceEventType> = {

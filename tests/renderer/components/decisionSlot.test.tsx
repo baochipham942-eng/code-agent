@@ -105,10 +105,10 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
 }));
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
   useSessionStore: Object.assign(
-    (selector: (state: { currentSessionId: string | null }) => unknown) => (
-      selector({ currentSessionId: currentSession.id })
+    (selector: (state: { currentSessionId: string | null; messages: Message[] }) => unknown) => (
+      selector({ currentSessionId: currentSession.id, messages: [] })
     ),
-    { getState: () => ({ currentSessionId: currentSession.id }) },
+    { getState: () => ({ currentSessionId: currentSession.id, messages: [] }) },
   ),
 }));
 vi.mock('../../../src/renderer/stores/permissionStore', () => ({

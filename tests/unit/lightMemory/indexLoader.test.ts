@@ -8,6 +8,11 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import os from 'os';
 
+vi.mock('fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs/promises')>();
+  return { ...actual, readFile: vi.fn(actual.readFile) };
+});
+
 // Mock configPaths to use a temp directory instead of real ~/.code-agent
 const mockConfigDir = vi.hoisted(() => {
   return { dir: '' };
@@ -30,6 +35,8 @@ import {
   getMemoryDir,
   getMemoryIndexPath,
   loadMemoryIndex,
+  loadMemoryIndexForSession,
+  releaseMemoryIndexSnapshot,
   ensureMemoryDir,
 } from '../../../src/host/lightMemory/indexLoader';
 
@@ -43,6 +50,7 @@ describe('indexLoader', () => {
 
   afterEach(async () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
   });
 
   // --------------------------------------------------------------------------
@@ -192,6 +200,53 @@ describe('indexLoader', () => {
       // The code handles both ENOENT and other errors gracefully
       const result = await loadMemoryIndex();
       expect(result).toBeNull();
+    });
+  });
+
+  describe('loadMemoryIndexForSession', () => {
+    it('caches the first index bytes per session and releases them explicitly', async () => {
+      const memDir = path.join(tmpDir, 'memory');
+      await fs.mkdir(memDir, { recursive: true });
+      const indexPath = path.join(memDir, 'INDEX.md');
+      const initial = '# Memory Index\n\nInitial entry';
+      const updated = '# Memory Index\n\nUpdated entry';
+      await fs.writeFile(indexPath, initial, 'utf-8');
+
+      const readFileMock = vi.mocked(fs.readFile);
+      readFileMock.mockClear();
+      expect(await loadMemoryIndexForSession('session-a')).toBe(initial);
+      expect(readFileMock).toHaveBeenCalledTimes(1);
+
+      readFileMock.mockClear();
+      await fs.writeFile(indexPath, updated, 'utf-8');
+      expect(await loadMemoryIndexForSession('session-a')).toBe(initial);
+      expect(readFileMock).not.toHaveBeenCalled();
+
+      expect(await loadMemoryIndexForSession('session-b')).toBe(updated);
+      expect(readFileMock).toHaveBeenCalledTimes(1);
+
+      releaseMemoryIndexSnapshot('session-a');
+      readFileMock.mockClear();
+      expect(await loadMemoryIndexForSession('session-a')).toBe(updated);
+      expect(readFileMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('caches a null result until the session snapshot is released', async () => {
+      const readFileMock = vi.mocked(fs.readFile);
+      readFileMock.mockClear();
+      expect(await loadMemoryIndexForSession('session-null')).toBeNull();
+      expect(readFileMock).toHaveBeenCalledTimes(1);
+
+      readFileMock.mockClear();
+      const memDir = path.join(tmpDir, 'memory');
+      await fs.mkdir(memDir, { recursive: true });
+      await fs.writeFile(path.join(memDir, 'INDEX.md'), '# Memory Index\n\nNow available', 'utf-8');
+      expect(await loadMemoryIndexForSession('session-null')).toBeNull();
+      expect(readFileMock).not.toHaveBeenCalled();
+
+      releaseMemoryIndexSnapshot('session-null');
+      expect(await loadMemoryIndexForSession('session-null')).toBe('# Memory Index\n\nNow available');
+      expect(readFileMock).toHaveBeenCalledTimes(1);
     });
   });
 });

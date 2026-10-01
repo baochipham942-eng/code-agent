@@ -11,6 +11,7 @@ import { createLogger } from '../infra/logger';
 import { getNativeDesktopService } from './nativeDesktopService';
 import { getUserConfigDir } from '../../config/configPaths';
 import { isOrtTensor, loadVadRuntime, type OrtRuntimeModule } from './audioVadRuntime';
+import { finalizeSegmentAudio, sweepAudioRetention } from './audioRetention';
 import type { InferenceSession, Tensor as OrtTensor } from 'onnxruntime-node';
 
 const logger = createLogger('DesktopAudioCapture');
@@ -36,6 +37,7 @@ const ASR_TIMEOUT_MS = 120_000;
 
 // Power management check interval
 const POWER_CHECK_INTERVAL_MS = 60_000;
+const AUDIO_RETENTION_INTERVAL_MS = 60 * 60 * 1000;
 
 // Capture mode: microphone (default) or system-audio (ScreenCaptureKit, captures headphone output)
 type CaptureMode = 'microphone' | 'system-audio';
@@ -114,6 +116,7 @@ let capturing = false;
 let captureMode: CaptureMode = 'microphone';
 let powerMode: 'full' | 'reduced' | 'paused' = 'full';
 let powerCheckTimer: ReturnType<typeof setInterval> | null = null;
+let audioRetentionTimer: ReturnType<typeof setInterval> | null = null;
 let totalSegments = 0;
 const asrQueue: Array<{ wavPath: string; startMs: number; endMs: number }> = [];
 let recBinaryPath: string | null = null; // 缓存 rec 二进制路径
@@ -678,15 +681,17 @@ function persistAudioSegment(
     asrEngine: string;
     asrDurationMs: number;
   }
-): void {
+): boolean {
   const transcript = segment.transcript ? `'${sqlEscape(segment.transcript)}'` : 'NULL';
   const sql = `INSERT OR REPLACE INTO audio_segments (id, start_at_ms, end_at_ms, duration_ms, wav_path, transcript, asr_engine, asr_duration_ms, created_at_ms) VALUES ('${sqlEscape(segment.id)}', ${segment.startAtMs}, ${segment.endAtMs}, ${segment.durationMs}, '${sqlEscape(segment.wavPath)}', ${transcript}, '${sqlEscape(segment.asrEngine)}', ${segment.asrDurationMs}, ${Date.now()});`;
   try {
     execFileSync('sqlite3', [sqlitePath, sql], { encoding: 'utf-8' });
+    return true;
   } catch (error) {
     logger.warn('[音频采集] 写入 audio_segments 失败', {
       error: error instanceof Error ? error.message : String(error),
     });
+    return false;
   }
 }
 
@@ -706,8 +711,9 @@ async function processOneAsrItem(): Promise<void> {
 
     const sqlitePath = getSqlitePath();
     if (sqlitePath) {
-      persistAudioSegment(sqlitePath, {
-        id: `audio-${item.startMs}`,
+      const segmentId = `audio-${item.startMs}`;
+      const persisted = persistAudioSegment(sqlitePath, {
+        id: segmentId,
         startAtMs: item.startMs,
         endAtMs: item.endMs,
         durationMs: item.endMs - item.startMs,
@@ -716,6 +722,9 @@ async function processOneAsrItem(): Promise<void> {
         asrEngine: engine,
         asrDurationMs: asrDuration,
       });
+      if (persisted && text) {
+        finalizeSegmentAudio({ sqlitePath, audioDir: getAudioDir(), segmentId, wavPath: item.wavPath });
+      }
     }
 
     if (text) {
@@ -1104,6 +1113,12 @@ function startFifoCapture(fifoPath: string): boolean {
   }
 }
 
+function sweepCapturedAudio(): void {
+  const sqlitePath = getSqlitePath();
+  if (sqlitePath) ensureAudioTable(sqlitePath);
+  sweepAudioRetention({ sqlitePath, audioDir: getAudioDir(), now: Date.now() });
+}
+
 export async function startDesktopAudioCapture(fifoPath?: string, mode: CaptureMode = 'microphone'): Promise<void> {
   if (capturing) return;
 
@@ -1160,6 +1175,9 @@ export async function startDesktopAudioCapture(fifoPath?: string, mode: CaptureM
     }
   }, POWER_CHECK_INTERVAL_MS);
 
+  sweepCapturedAudio();
+  audioRetentionTimer = setInterval(sweepCapturedAudio, AUDIO_RETENTION_INTERVAL_MS);
+
   logger.info('[音频采集] 后台音频采集已启动');
 }
 
@@ -1177,6 +1195,10 @@ export function stopDesktopAudioCapture(): void {
   if (powerCheckTimer) {
     clearInterval(powerCheckTimer);
     powerCheckTimer = null;
+  }
+  if (audioRetentionTimer) {
+    clearInterval(audioRetentionTimer);
+    audioRetentionTimer = null;
   }
   vadInstance = null;
   logger.info('[音频采集] 后台音频采集已停止');

@@ -47,8 +47,8 @@ export async function saveCronJob(
     if (!db) return;
     db.prepare(`
       INSERT INTO cron_jobs
-      (id, name, description, schedule_type, schedule, action, runs_on, max_run_budget, min_interval_seconds, result_channel, cloud_job_id, enabled, max_retries, retry_delay, timeout, tags, metadata, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, name, description, schedule_type, schedule, action, runs_on, max_run_budget, max_runs, run_count, min_interval_seconds, result_channel, cloud_job_id, enabled, max_retries, retry_delay, timeout, tags, metadata, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         description = excluded.description,
@@ -57,6 +57,8 @@ export async function saveCronJob(
         action = excluded.action,
         runs_on = excluded.runs_on,
         max_run_budget = excluded.max_run_budget,
+        max_runs = excluded.max_runs,
+        run_count = excluded.run_count,
         min_interval_seconds = excluded.min_interval_seconds,
         result_channel = excluded.result_channel,
         cloud_job_id = excluded.cloud_job_id,
@@ -72,6 +74,7 @@ export async function saveCronJob(
       job.id, job.name, job.description || null,
       job.scheduleType, JSON.stringify(job.schedule), JSON.stringify(job.action),
       job.runsOn, job.maxRunBudget ?? null,
+      job.maxRuns ?? null, job.runCount ?? 0,
       minimumIntervalSecondsForLocation(job.runsOn),
       job.resultChannel ?? null, cloudJobId ?? null,
       job.enabled ? 1 : 0, job.maxRetries || 0, job.retryDelay ?? null,
@@ -81,6 +84,22 @@ export async function saveCronJob(
     );
   } catch (error) {
     console.error('[CronService] Failed to save job to database:', error);
+  }
+}
+
+/**
+ * 只更新运行计数列（N-CRON-BUDGET-EXPOSE R1，PR#2208 ai-review Important）：
+ * 次数结算每趟都要记数，走 saveCronJob 整行 upsert 会顺改 updated_at 造成无意义
+ * churn；单列 UPDATE 不碰其它字段。与 saveCronJob 同款：落库失败只记日志，
+ * 由内存计数继续撑着，不许把异常甩回 executeJob 的 finally。
+ */
+export async function updateCronJobRunCount(jobId: string, runCount: number): Promise<void> {
+  try {
+    const db = getDatabase().getDb();
+    if (!db) return;
+    db.prepare('UPDATE cron_jobs SET run_count = ? WHERE id = ?').run(runCount, jobId);
+  } catch (error) {
+    console.error('[CronService] Failed to update job run count:', error);
   }
 }
 

@@ -350,3 +350,48 @@ describe('ConfigService.reconcileManagedProviderApiKeys', () => {
     expect(secureStorageMock.setApiKey).not.toHaveBeenCalled();
   });
 });
+
+describe('ConfigService.getServiceApiKey typesafe', () => {
+  let envBackup: string | undefined;
+
+  beforeEach(() => {
+    envBackup = process.env.TYPESAFE_API_KEY;
+    delete process.env.TYPESAFE_API_KEY;
+    keyStore.clear();
+  });
+
+  afterEach(() => {
+    if (envBackup === undefined) delete process.env.TYPESAFE_API_KEY;
+    else process.env.TYPESAFE_API_KEY = envBackup;
+    keyStore.clear();
+    vi.clearAllMocks();
+    vi.resetModules();
+  });
+
+  async function freshService() {
+    const dataDir = await mkdtemp(join(tmpdir(), 'cfg-typesafe-'));
+    const { ConfigService } = await loadConfigService(dataDir);
+    return new ConfigService();
+  }
+
+  it('钥匙串优先于云托管与环境变量', async () => {
+    process.env.TYPESAFE_API_KEY = 'env-typesafe-key';
+    keyStore.set('typesafe', 'kc-typesafe-key');
+    keyStore.set('cloud-service-key:typesafe', 'cloud-typesafe-key');
+    const service = await freshService();
+    expect(service.getServiceApiKey('typesafe')).toBe('kc-typesafe-key');
+  });
+
+  it('没有钥匙串时云托管优先于环境变量', async () => {
+    process.env.TYPESAFE_API_KEY = 'env-typesafe-key';
+    keyStore.set('cloud-service-key:typesafe', 'cloud-typesafe-key');
+    const service = await freshService();
+    expect(service.getServiceApiKey('typesafe')).toBe('cloud-typesafe-key');
+  });
+
+  it('钥匙串和云托管都没有时回落 TYPESAFE_API_KEY', async () => {
+    process.env.TYPESAFE_API_KEY = 'env-typesafe-key';
+    const service = await freshService();
+    expect(service.getServiceApiKey('typesafe')).toBe('env-typesafe-key');
+  });
+});

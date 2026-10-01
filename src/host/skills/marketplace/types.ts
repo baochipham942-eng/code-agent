@@ -132,6 +132,15 @@ export type PluginScope = 'user' | 'project';
 // Installed Plugin Record
 // ----------------------------------------------------------------------------
 
+/** 安装时/重扫后的内容扫描元数据；老记录缺该字段时按 version 0 处理。 */
+export interface InstalledPluginScanRecord {
+  /** 扫描时的 SKILL_GUARD_VERSION（src/host/security/skillContentGuard.ts） */
+  version: number;
+  verdict: 'pass' | 'block';
+  /** ISO 8601 扫描时间 */
+  scannedAt: string;
+}
+
 export interface InstalledPluginRecord {
   /** Plugin name */
   plugin: string;
@@ -165,6 +174,8 @@ export interface InstalledPluginRecord {
   commandPaths?: string[];
   /** Original marketplace source path */
   sourceMarketplacePath: string;
+  /** 内容扫描元数据；缺字段 = 版本化扫描上线前安装的老记录，按 version 0 重扫 */
+  scanner?: InstalledPluginScanRecord;
 }
 
 export type InstalledPluginsFile = Record<string, InstalledPluginRecord>;

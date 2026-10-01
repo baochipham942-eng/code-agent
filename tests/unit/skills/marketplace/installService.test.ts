@@ -54,6 +54,7 @@ vi.mock('../../../../src/host/tools/lsp/diagnosticsHelper', () => ({
 }));
 
 import crypto from 'crypto';
+import { SKILL_GUARD_VERSION } from '../../../../src/host/security/skillContentGuard';
 import {
   disablePlugin,
   enablePlugin,
@@ -205,6 +206,14 @@ describe('marketplace install service trust defaults', () => {
     await expect(getEnabledSkillDescriptors()).resolves.toEqual([]);
     expect(fsSync.existsSync(commandPath)).toBe(false);
     expect(mocks.reloadSkills).toHaveBeenCalledTimes(2);
+  });
+
+  it('records the skill guard scanner version on the installed record', async () => {
+    await installPlugin('demo@trusted-test');
+    const record = (await listInstalledPlugins())['demo@trusted-test']!;
+    expect(record.scanner?.version).toBe(SKILL_GUARD_VERSION);
+    expect(record.scanner?.verdict).toBe('pass');
+    expect(Number.isNaN(Date.parse(record.scanner?.scannedAt ?? ''))).toBe(false);
   });
 
   it('does not grant official treatment to a third-party install named official-registry', async () => {

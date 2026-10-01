@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { createLogger } from '../../services/infra/logger';
-import { scanSkillContent } from '../../security/skillContentGuard';
+import { scanSkillContent, type SkillGuardFinding } from '../../security/skillContentGuard';
 import type { MarketplaceSource } from './types';
 
 /**
@@ -26,7 +26,7 @@ const TEXT_FILE_EXTENSIONS = new Set([
   '.tsx', '.txt', '.vue', '.xml', '.yaml', '.yml', '.zsh', '.hook', '.command',
 ]);
 
-class SkillContentScanBlockedError extends Error {
+export class SkillContentScanBlockedError extends Error {
   readonly code = 'SKILL_CONTENT_SCAN_BLOCKED';
 
   constructor(pluginSpec: string, sourceTrust: SkillInstallSourceTrust, filePath: string) {
@@ -121,14 +121,25 @@ async function readTextFiles(rootDir: string): Promise<Array<{ relativePath: str
   return files;
 }
 
-export async function scanInstallContent(args: {
+export interface SkillPluginRootScanOutcome {
+  verdict: 'pass' | 'block';
+  findings: SkillGuardFinding[];
+  /** 命中阻断的相对文件路径（verdict=block 时存在） */
+  file?: string;
+}
+
+/**
+ * 扫描一个已落盘的插件根目录，返回判定结果而不抛阻断错。
+ * builtin 与 scanInstallContent 一致直接判 pass（builtin 资产编译进应用，
+ * 不经过 marketplace 落盘扫描）。读取失败仍按 fail-closed 抛
+ * SkillContentScanFailedError / SKILL_CONTENT_SCAN_BLOCKED 前缀错误。
+ */
+export async function scanPluginRootContent(args: {
   pluginSpec: string;
   sourceTrust: SkillInstallSourceTrust;
   rootDir: string;
-}): Promise<void> {
-  // builtin assets never reach this marketplace staging path. Keep this branch
-  // explicit so a future builtin caller cannot create a second policy.
-  if (args.sourceTrust === 'builtin') return;
+}): Promise<SkillPluginRootScanOutcome> {
+  if (args.sourceTrust === 'builtin') return { verdict: 'pass', findings: [] };
 
   let files: Array<{ relativePath: string; content: string }>;
   try {
@@ -144,13 +155,28 @@ export async function scanInstallContent(args: {
   for (const file of files) {
     const result = scanSkillContent(file.content);
     if (result.verdict !== 'block') continue;
-
-    logger.warn('Marketplace install blocked by skill content guard', {
-      pluginSpec: args.pluginSpec,
-      sourceTrust: args.sourceTrust,
-      file: file.relativePath,
-      findings: result.findings.map((finding) => finding.kind),
-    });
-    throw new SkillContentScanBlockedError(args.pluginSpec, args.sourceTrust, file.relativePath);
+    return { verdict: 'block', findings: result.findings, file: file.relativePath };
   }
+  return { verdict: 'pass', findings: [] };
+}
+
+export async function scanInstallContent(args: {
+  pluginSpec: string;
+  sourceTrust: SkillInstallSourceTrust;
+  rootDir: string;
+}): Promise<void> {
+  // builtin assets never reach this marketplace staging path. Keep this branch
+  // explicit so a future builtin caller cannot create a second policy.
+  if (args.sourceTrust === 'builtin') return;
+
+  const outcome = await scanPluginRootContent(args);
+  if (outcome.verdict !== 'block') return;
+
+  logger.warn('Marketplace install blocked by skill content guard', {
+    pluginSpec: args.pluginSpec,
+    sourceTrust: args.sourceTrust,
+    file: outcome.file,
+    findings: outcome.findings.map((finding) => finding.kind),
+  });
+  throw new SkillContentScanBlockedError(args.pluginSpec, args.sourceTrust, outcome.file ?? args.rootDir);
 }

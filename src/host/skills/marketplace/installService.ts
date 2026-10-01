@@ -28,6 +28,8 @@ import {
   scanInstallContent,
   type SkillInstallSourceTrust,
 } from './skillInstallContentGuard';
+import { SKILL_GUARD_VERSION } from '../../security/skillContentGuard';
+import { assertPluginRescanPassesForEnable } from './installedPluginRescan';
 import type { SkillRegistryEntry } from '../../../shared/contract/skillRegistry';
 import { SKILL_REGISTRY_MARKETPLACE_ID } from '../../../shared/contract/skillRegistry';
 import {
@@ -125,7 +127,7 @@ export async function loadInstalledPlugins(): Promise<InstalledPluginsFile> {
   }
 }
 
-async function saveInstalledPlugins(state: InstalledPluginsFile): Promise<void> {
+export async function saveInstalledPlugins(state: InstalledPluginsFile): Promise<void> {
   const filePath = getInstalledPluginsPath();
   const tempPath = `${filePath}.tmp-${randomUUID()}`;
   await ensureDir(path.dirname(filePath));
@@ -627,7 +629,7 @@ async function activatePluginCommands(args: {
   return copied;
 }
 
-async function deactivatePluginCommands(args: {
+export async function deactivatePluginCommands(args: {
   scope: PluginScope;
   projectPath?: string;
   commandNames: string[];
@@ -947,6 +949,13 @@ export async function performInstall(args: {
       commands: installedCommands,
       commandPaths: commandFiles.map((command) => command.relativeSourcePath),
       sourceMarketplacePath: pluginRoot,
+      // scanInstallContent 已通过（block 会在此前抛出），记下扫描时的规则版本，
+      // 供 SKILL_GUARD_VERSION 提升后的存量重扫判定新旧。
+      scanner: {
+        version: SKILL_GUARD_VERSION,
+        verdict: 'pass',
+        scannedAt: new Date().toISOString(),
+      },
     };
     await saveInstalledPlugins({ ...state, [pluginSpec]: installedRecord });
     stateCommitted = true;
@@ -1101,6 +1110,9 @@ export async function enablePlugin(pluginInput: string): Promise<void> {
     logger.info('Plugin already enabled', { pluginSpec });
     return;
   }
+
+  // 扫描规则升级后，过期记录先按当前规则重扫再启用：block 抛错而不是静默启用
+  await assertPluginRescanPassesForEnable(pluginSpec, record);
 
   await activatePluginCommands({
     rootDir: record.sourceMarketplacePath,

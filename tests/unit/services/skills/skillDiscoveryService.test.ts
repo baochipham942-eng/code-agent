@@ -70,6 +70,10 @@ vi.mock('../../../../src/host/skills/marketplace/installService', () => ({
   })),
 }));
 
+vi.mock('../../../../src/host/skills/marketplace/installedPluginRescan', () => ({
+  rescanStaleInstalledPlugins: async () => ({ rescanned: 0, blocked: [] }),
+}));
+
 import { SkillDiscoveryService } from '../../../../src/host/services/skills/skillDiscoveryService';
 
 async function writeSkill(baseDir: string, name: string): Promise<void> {

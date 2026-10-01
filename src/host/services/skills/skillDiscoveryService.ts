@@ -570,6 +570,14 @@ class SkillDiscoveryService {
 
   private async loadFromEnabledMarketplacePlugins(): Promise<void> {
     try {
+      // 扫描规则版本升级后的存量重扫：先于装载跑，被 block 的插件在此禁用，
+      // 下面的 getEnabledSkillDescriptors 自然不再装载它。重扫自身失败不阻塞发现。
+      const { rescanStaleInstalledPlugins } = await import('../../skills/marketplace/installedPluginRescan');
+      await rescanStaleInstalledPlugins();
+    } catch (error) {
+      logger.warn('Skill guard rescan failed; continuing with persisted enabled state', { error });
+    }
+    try {
       const { getEnabledSkillDescriptors } = await import('../../skills/marketplace/installService');
       const skillDescriptors = await getEnabledSkillDescriptors();
       for (const descriptor of skillDescriptors) {

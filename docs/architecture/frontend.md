@@ -192,7 +192,7 @@ v0.16.74 新增 `HooksSettings`：位于"能力与连接"分组，调用 `domain
 | 语音输入 | `VoiceInputSettings` + `VoiceInputButton` | 只在启用且环境支持时展示；麦克风权限由用户点击后触发 |
 | 快捷键 | `KeybindingsSettings` | 平台默认、冲突检测、系统保留组合键警告、全局热键总开关 |
 | 隐私防线 | `PrivacySettings` | 权限边界、诊断包、凭证库存、语音转写和 Browser Relay 风险说明 |
-| 能力与连接 | `CapabilityCenterSettings`、`PluginsSettings`、`MCPSettings`、`SkillsSettings`、`ChannelsSettings` | capability / plugin / MCP / skill / channel 都从 settings 进入管理和审计 |
+| 能力与连接 | `PluginsSettings`、`MCPSettings`、`SkillsSettings`、`ChannelsSettings` | plugin / MCP / skill / channel 都从 settings 进入管理；能力清单与审计归能力中心（ADR-049） |
 
 ### Turn Quality and Replay Audit
 
@@ -250,7 +250,7 @@ v0.16.74 新增 `HooksSettings`：位于"能力与连接"分组，调用 `domain
 |------|----------|----------|
 | 模型配置 onboarding | `ModelOnboardingModal` 在登录/注册后引导配置 Provider API Key；`AuthModal` 可触发 signup-first 流 | `settings.ipc.ts` + `ModelSettings` |
 | Agent Engine 选择 | `ModelSwitcher` 合并模型、reasoning effort 和 Native/Codex/Claude engine；engine 状态显示安装、运行、权限和风险说明 | `agentEngine.ipc.ts` + `sessionStore.updateSessionEngine()` |
-| Capability Center | `CapabilityCenterSettings` 展示本地 registry、requirements、risk、install plan、disabled MCP draft 安装/删除和跳转设置动作 | `capability.ipc.ts` + `useCapabilityInventory()` |
+| Capability Center | 设置侧的清单界面 `CapabilityCenterSettings` 已作为死代码移除（2026-09-30）；能力中心（Capability Hub，ADR-049）是能力清单与审计的唯一入口 | `capability.ipc.ts`（host 侧服务保留，暂无 renderer 客户端） |
 | 记忆管理 | `MemoryTab` + `MemoryEntriesManager` 管理记忆条目、导入、注入状态；`KnowledgeMemoryPanel` 负责工作台里的 audit 视图 | `memory.ipc.ts` + `memoryEntryRuntime` |
 | Workspace 设置 | `WorkspaceSettings` 管 recent directories、default open target、bridge/shell 状态和本地 workspace 行为 | `workspace.ipc.ts` + `settings.contract` |
 | Automation 设置 | `AutomationSettings` 把 cron/hook/自动化入口收进设置面，避免聊天页堆低频控制项 | `settingsTabs.ts` |

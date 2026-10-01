@@ -45,3 +45,4 @@ export * from './doctor';
 export * from './toolLedger';
 export * from './capabilityCandidates';
 export * from './shareService';
+export * from './cronEventTrigger';

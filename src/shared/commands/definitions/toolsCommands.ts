@@ -65,91 +65,20 @@ function isConnectorOpsCommandService(value: unknown): value is ConnectorOpsComm
   );
 }
 
-async function resolveSkillOps(ctx: Record<string, unknown>): Promise<SkillOpsCommandService | null> {
-  if (isSkillOpsCommandService(ctx.skillOps)) {
-    return ctx.skillOps;
-  }
-
-  if (ctx.surface === 'gui') {
-    return null;
-  }
-
-  const getSessionSkillService = ctx.getSessionSkillService as (() => {
-    getMountedSkills(sessionId: string): SessionSkillMount[];
-  }) | undefined;
-  const agent = ctx.agent as { getSessionId?: () => string | null } | undefined;
-  if (!getSessionSkillService || !agent?.getSessionId) {
-    return null;
-  }
-
-  return {
-    listAvailable: async () => {
-      const { getSkillDiscoveryService } = await import('../../../host/services/skills/skillDiscoveryService');
-      return getSkillDiscoveryService().getAllSkills();
-    },
-    listMounted: async () => {
-      const sessionId = agent.getSessionId?.();
-      return sessionId ? getSessionSkillService().getMountedSkills(sessionId) : [];
-    },
-    listSelected: () => [],
-  };
+function resolveSkillOps(ctx: Record<string, unknown>): SkillOpsCommandService | null {
+  // CLI 的真实 skillOps 由 chat 注入；缺端口与 GUI 未接线一样，报服务不可用。
+  if (isSkillOpsCommandService(ctx.skillOps)) return ctx.skillOps;
+  return null;
 }
 
-async function resolveMcpOps(ctx: Record<string, unknown>): Promise<McpOpsCommandService | null> {
-  if (isMcpOpsCommandService(ctx.mcpOps)) {
-    return ctx.mcpOps;
-  }
-
-  if (ctx.surface === 'gui') {
-    return null;
-  }
-
-  return {
-    getStatus: async () => {
-      const { getMCPClient } = await import('../../../host/mcp/mcpClient');
-      return getMCPClient().getStatus();
-    },
-    listServerStates: async () => {
-      const { getMCPClient } = await import('../../../host/mcp/mcpClient');
-      return getMCPClient().getServerStates() as McpServerCommandState[];
-    },
-    listTools: async () => {
-      const { getMCPClient } = await import('../../../host/mcp/mcpClient');
-      return getMCPClient().getTools();
-    },
-  };
+function resolveMcpOps(ctx: Record<string, unknown>): McpOpsCommandService | null {
+  if (isMcpOpsCommandService(ctx.mcpOps)) return ctx.mcpOps;
+  return null;
 }
 
-async function resolveConnectorOps(ctx: Record<string, unknown>): Promise<ConnectorOpsCommandService | null> {
-  if (isConnectorOpsCommandService(ctx.connectorOps)) {
-    return ctx.connectorOps;
-  }
-
-  if (ctx.surface === 'gui') {
-    return null;
-  }
-
-  return {
-    listStatuses: async () => {
-      const { getConnectorRegistry } = await import('../../../host/connectors');
-      const connectors = getConnectorRegistry().list();
-      return Promise.all(connectors.map(async (connector) => {
-        const status = await connector.getStatus();
-        return {
-          id: connector.id,
-          label: connector.label,
-          connected: status.connected,
-          readiness: status.readiness,
-          detail: status.detail,
-          error: status.error,
-          checkedAt: status.checkedAt,
-          actions: status.actions,
-          capabilities: connector.capabilities,
-        } satisfies ConnectorStatusSummary;
-      }));
-    },
-    listSelected: () => [],
-  };
+function resolveConnectorOps(ctx: Record<string, unknown>): ConnectorOpsCommandService | null {
+  if (isConnectorOpsCommandService(ctx.connectorOps)) return ctx.connectorOps;
+  return null;
 }
 
 export const toolsCommand: CommandDefinition = {

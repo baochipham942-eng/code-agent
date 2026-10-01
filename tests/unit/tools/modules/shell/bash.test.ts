@@ -1604,6 +1604,74 @@ describe('bashModule sandbox escalation', () => {
     }
   });
 
+  it('does not offer a directory when an Edit glob above it denies a descendant', async () => {
+    const work = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-wild-')));
+    const proj = join(work, 'proj');
+    mkdirSync(proj);
+    resetPolicyEngine();
+    getPolicyEngine().loadUserRules({ deny: [`Edit(${work}/*/secrets/**)`] });
+    try {
+      await expectEscalationOffers(proj, false);
+    } finally {
+      resetPolicyEngine();
+      rmSync(work, { recursive: true, force: true });
+    }
+  });
+
+  it('does not offer a missing directory when denied_paths uses a wildcard above it', async () => {
+    const project = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-wild-policy-')));
+    const proj = join(project, 'proj');
+    writeFileSync(join(project, 'code-agent-policy.toml'), [
+      '[filesystem]',
+      `writable_paths = ["./**", "${proj}", "${proj}/**"]`,
+      `denied_paths = ["${project}/*/secrets/**"]`,
+      '',
+    ].join('\n'));
+    resetPolicyEnforcer();
+    getPolicyEnforcer(project);
+    try {
+      await expectEscalationOffers(proj, false);
+    } finally {
+      resetPolicyEnforcer();
+      rmSync(project, { recursive: true, force: true });
+    }
+  });
+
+  it('does not offer escalation for an npm path line that is not a sandbox denial', async () => {
+    const target = `/tmp/sandbox-npm-enoent-${process.pid}/package.json`;
+    wrapMock.mockReturnValue({
+      command: `printf '%s\\n' 'npm error code ENOENT' 'npm error syscall open' 'npm error path ${target}' 'npm error errno -2' >&2; exit 1`,
+      cleanup: cleanupMock,
+    });
+    const canUse = vi.fn().mockResolvedValue({ allow: true as const });
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute({ command: 'npm install' }, makeCtx(), canUse);
+    expect(canUse.mock.calls.filter(([toolName]) => toolName === 'bash')).toHaveLength(0);
+    expect(canUse).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.meta?.sandboxEscalation).toBeUndefined();
+      expect(result.error ?? '').not.toContain('declined to widen the sandbox');
+      expect(result.error ?? '').toContain(target);
+    }
+  });
+
+  it('still offers escalation when npm reports EPERM on a path line', async () => {
+    const target = `/tmp/sandbox-npm-eperm-${process.pid}/package.json`;
+    wrapMock.mockReturnValue({
+      command: `printf '%s\\n' 'npm error code EPERM' 'npm error syscall open' 'npm error path ${target}' 'npm error errno -1' >&2; exit 1`,
+      cleanup: cleanupMock,
+    });
+    const canUse = vi.fn().mockResolvedValue({ allow: true as const });
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute({ command: 'npm install' }, makeCtx(), canUse);
+    const escalationCalls = canUse.mock.calls.filter(([toolName]) => toolName === 'bash');
+    expect(escalationCalls).toHaveLength(1);
+    expect(escalationCalls[0]?.[2]).toContain(target);
+    expect(canUse).toHaveBeenCalledTimes(2);
+    expect(result.ok).toBe(false);
+  });
+
   it('does not offer a path whose subpath contains a denied_paths descendant', async () => {
     const project = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-policy-')));
     const parent = join(project, 'missing-parent');

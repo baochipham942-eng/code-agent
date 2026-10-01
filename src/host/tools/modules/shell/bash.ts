@@ -23,7 +23,7 @@ import { generateBashDescription } from '../../shell/dynamicDescription';
 import {
   diagnoseBashFailure,
   appendFailureDiagnostics,
-  extractSandboxDeniedPath,
+  sandboxDeniedWritePath,
 } from '../../shell/sandboxFailureDiagnostics';
 import {
   SANDBOX_ESCALATION_DECLINED_MESSAGE,
@@ -796,7 +796,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
           errObj.stdout,
           errObj.stderr,
         ].filter((value): value is string => typeof value === 'string').join('\n');
-        const deniedPath = extractSandboxDeniedPath(failureText);
+        const deniedPath = sandboxDeniedWritePath(failureText);
         const offeredPath = shouldOfferEscalation({
           sandboxDecision,
           foreground: true,

@@ -84,7 +84,7 @@ export const AGENT_TIMEOUTS = {
  */
 export const ACTIVE_TOOL_RESULT_PRUNE = {
   ENABLED: true,
-  /** 高于 L1 的 2000：2000-4096 tokens 之间仍走 L1 有损截断，超过此值才整体换占位符 */
+  /** Unknown-window fallback; runtime derives this threshold from the active model window. */
   MAX_TOKENS_PER_RESULT: 4096,
 } as const;
 

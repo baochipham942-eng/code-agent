@@ -112,6 +112,8 @@ import {
 import { getPermissionModeManager } from '../../../../../src/host/permissions/modes';
 import { getSandboxManager } from '../../../../../src/host/sandbox';
 import { resolveCanonicalRunPath } from '../../../../../src/host/runtime/runContext';
+import { BASH } from '../../../../../src/shared/constants';
+import { resolveToolResultBudget } from '../../../../../src/host/context/layers/toolResultBudget';
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -1781,6 +1783,7 @@ describe('bash output truncation guidance (N-BASH-TRUNC-GUIDANCE)', () => {
     const result = await handler.execute({ command: overflow }, makeCtx(), allowAll);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    expect(result.output).toContain(`truncated to ${BASH.MAX_OUTPUT_LENGTH}`);
     expect(result.output).toContain('完整输出未能留存');
     expect(result.output).toContain('不要重跑可能已产生副作用的命令');
     expect(result.output).toContain('只有确认命令只读时，才缩小输出范围后重跑');
@@ -1806,9 +1809,14 @@ describe('bash output truncation guidance (N-BASH-TRUNC-GUIDANCE)', () => {
       },
     }));
     const handler = await bashModule.createHandler();
-    const result = await handler.execute({ command: overflow }, makeCtx(), allowAll);
+    const result = await handler.execute(
+      { command: overflow },
+      makeCtx({ modelConfig: { provider: 'deepseek', model: 'deepseek-chat' } }),
+      allowAll,
+    );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    expect(result.output).toContain(`truncated to ${resolveToolResultBudget(128_000).maxOutputChars}`);
     expect(result.output).toContain(`完整输出已留存于 ${savedAt}，用 Read/Grep 回查`);
     expect(result.output).toContain(savedAt);
     expect(result.output).not.toContain('Use Read tool with offset/limit');

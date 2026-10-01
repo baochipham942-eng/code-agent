@@ -314,7 +314,7 @@ describe('ToolExecutor per-run workspace isolation', () => {
   });
 
   // N-DURABLE-FOLLOWUPS-0917：web 路由的 native run（durable 与非 durable）按会话 Project scope 定写边界。
-  // 同一份输入分别走两支，越界写（写进只读 Source）都必须被拒；不带 scope 的 legacy 回落是改前行为，对照用。
+  // 两支都拒只读 Source；不带 skip-confirm 围栏义务时，显式批准的根外写入放行。
   describe.each([
     { branch: 'durable', durableActivation: true },
     { branch: 'non-durable', durableActivation: false },
@@ -370,7 +370,7 @@ describe('ToolExecutor per-run workspace isolation', () => {
       await expect(fs.access(path.join(docs, 'blocked.md'))).rejects.toThrow();
     });
 
-    it('legacy fallback (before) roots the boundary at cwd and does not guard the read-only Source', async () => {
+    it('allows an approved sibling write without the session Project scope', async () => {
       const { run, docs } = await startRouteRun({
         runId: `run-route-legacy-${durableActivation}`,
         workspace: 'primary',
@@ -383,6 +383,7 @@ describe('ToolExecutor per-run workspace isolation', () => {
         executionOptions(run),
       );
       expect(write).toMatchObject({ success: true });
+      await expect(fs.readFile(path.join(docs, 'leaked.md'), 'utf8')).resolves.toBe('leaked\n');
     });
 
     it('keeps the legacy fallback when the session cwd left the Project boundary', async () => {

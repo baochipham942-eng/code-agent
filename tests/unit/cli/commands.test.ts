@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   initializeCLIServices: vi.fn(),
   cleanup: vi.fn(),
   getDatabaseService: vi.fn(),
+  getSessionManager: vi.fn(),
   getCLIEnvironmentFingerprint: vi.fn(),
   whenCLIMcpReady: vi.fn(async () => {}),
   whenCLISkillsReady: vi.fn(async () => {}),
@@ -81,6 +82,7 @@ vi.mock('../../../src/cli/bootstrap', () => ({
   initializeCLIServices: mocks.initializeCLIServices,
   cleanup: mocks.cleanup,
   getDatabaseService: mocks.getDatabaseService,
+  getSessionManager: mocks.getSessionManager,
   getCLIEnvironmentFingerprint: mocks.getCLIEnvironmentFingerprint,
   whenCLIMcpReady: mocks.whenCLIMcpReady,
   whenCLISkillsReady: mocks.whenCLISkillsReady,
@@ -464,6 +466,8 @@ describe('CLI command entrypoints', () => {
       getSessionId,
     });
     mocks.getDatabaseService.mockReturnValue(null);
+    const once = vi.spyOn(process, 'once');
+    const off = vi.spyOn(process, 'off');
     const program = new Command();
     program.exitOverride();
     program
@@ -510,6 +514,12 @@ describe('CLI command entrypoints', () => {
     expect(mocks.jsonOutput.result).toHaveBeenCalledWith({ success: true, output: 'done' });
     expect(mocks.cleanup).toHaveBeenCalledTimes(1);
     expect(process.exit).toHaveBeenCalledWith(0);
+    const sigterm = once.mock.calls.find((call) => call[0] === 'SIGTERM')?.[1];
+    const sigint = once.mock.calls.find((call) => call[0] === 'SIGINT')?.[1];
+    expect(sigterm).toEqual(expect.any(Function));
+    expect(sigint).toEqual(expect.any(Function));
+    expect(off).toHaveBeenCalledWith('SIGTERM', sigterm);
+    expect(off).toHaveBeenCalledWith('SIGINT', sigint);
   });
 
   it('run forwards --tools/--disallowed-tools to createCLIAgent', async () => {

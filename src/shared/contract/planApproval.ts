@@ -31,6 +31,11 @@ export interface PlanApprovalRecord {
   reordered?: boolean;
   decidedAt?: number;
   feedback?: string;
+  /**
+   * 卡片来源（ADR-074 K2）：`model_exit` = 模型自己调了退出工具（缺省值，老卡不带此字段同义）；
+   * `synthetic_text` = 宿主从补推理的结构化计划正文合成的同形卡。只影响展示，不影响审批语义。
+   */
+  source?: 'model_exit' | 'synthetic_text';
   /** 最近一次启动失败的原因：failed 落定时写入；重试认领（starting）与重试成功（approved）都不清除，会残留。 */
   failureReason?: string;
   /** 最近一次启动失败的落定时刻：failed 落定时写入并残留；重试再败必换新值，是卡片投影 digest 的稳定判据。 */

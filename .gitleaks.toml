@@ -1,6 +1,8 @@
 # Public-repo gitleaks config. Default rules stay on. Each allowlist entry
-# exempts one fake-key fixture already listed in .security-allowlist.
-# Findings that are not those fixtures are not allowlisted.
+# has an exemption-reason comment.
+# Fixture entries below match fake keys already listed in .security-allowlist.
+# 2026-10-01 non-blocking rollout: one entry per false-positive family so a
+# clean tree scans to zero. Do not add other scripts/ or src/ paths.
 
 title = "code-agent public repo"
 minVersion = "v8.25.0"
@@ -62,3 +64,65 @@ paths = ['''(?:^|/)docs/guides/troubleshooting\.md$''']
 description = "documented github-pat placeholder in the alignment plan"
 targetRules = ["github-pat"]
 paths = ['''(?:^|/)docs/plans/2026-01-22-claude-code-alignment-plan\.md$''']
+
+# Exemption: tests/** and .claude/test-cases/** are fixtures, canaries, and
+# redline cases (generic-api-key, private-key, jwt, curl-auth-header).
+# Includes tests/fixtures/companion-relay-tls/*.pem, test-only CA and leaf keys.
+# Path allowlist so a new fixture of the same shape does not re-trigger.
+[[allowlists]]
+description = "fixtures, canaries, and redline cases under tests and .claude/test-cases"
+targetRules = ["generic-api-key", "private-key", "jwt", "curl-auth-header"]
+paths = [
+    '''(?:^|/)tests/''',
+    '''(?:^|/)\.claude/test-cases/''',
+]
+
+# Exemption: docs/acceptance/**/*.json acceptance proofs. recordKey and
+# tokenSha256 are metadata names and sha256 digests, not secrets.
+[[allowlists]]
+description = "acceptance proof JSON metadata names and sha256 digests"
+paths = ['''(?:^|/)docs/acceptance/.+\.json$''']
+
+# Exemption: docs/DEPLOYMENT.md placeholder X-Init-Key: YOUR_*.
+# The checked-in example is YOUR_AUTH_SECRET. Regex covers YOUR_INIT_SECRET too.
+[[allowlists]]
+description = "YOUR_* placeholder in docs/DEPLOYMENT.md"
+condition = "AND"
+paths = ['''(?:^|/)docs/DEPLOYMENT\.md$''']
+regexes = ['''YOUR_[A-Z_]+''']
+
+# Exemption: scripts/test-http-api.ts and scripts/acceptance/session-fork-smoke.ts
+# use test- / acceptance- literal test keys and idempotency keys.
+# AND keeps the regex inside those two paths. Other scripts stay scanned.
+[[allowlists]]
+description = "test- and acceptance- literal keys in the named scripts"
+condition = "AND"
+paths = [
+    '''(?:^|/)scripts/test-http-api\.ts$''',
+    '''(?:^|/)scripts/acceptance/session-fork-smoke\.ts$''',
+]
+regexes = ['''^(test|acceptance)-''']
+
+# Exemption: DEFAULT_SUPABASE_ANON_KEY in src/shared/constants/network.ts.
+# The Supabase anon key is public by design (row level security). jwt rule only.
+[[allowlists]]
+description = "public Supabase anon key in network.ts"
+targetRules = ["jwt"]
+paths = ['''(?:^|/)src/shared/constants/network\.ts$''']
+
+# Exemption: surface*V1 metadata key names in the projection service and the
+# export field sanitizer. AND so the regex does not apply to other files.
+[[allowlists]]
+description = "surface*V1 metadata key names"
+condition = "AND"
+paths = [
+    '''(?:^|/)src/host/services/surfaceExecution/SurfaceConversationProjectionService\.ts$''',
+    '''(?:^|/)src/shared/utils/surfaceExecutionExportFieldSanitizer\.ts$''',
+]
+regexes = ['''^surface[A-Za-z]+V\d+$''']
+
+# Exemption: src/shared/pricing/litellmSnapshot.json. litellmKey values are
+# model identifiers (claude-3…, perplexity/sonar), not credentials.
+[[allowlists]]
+description = "litellm model identifiers in litellmSnapshot.json"
+paths = ['''(?:^|/)src/shared/pricing/litellmSnapshot\.json$''']

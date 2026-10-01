@@ -1,10 +1,12 @@
+# 2026-10-01 non-blocking rollout (owner decision); flip to blocking once allowlist is settled and secrets are set
 name: Security leak gate
 
 # Three gitleaks stages, each its own job and named step:
 # full history, the checked-out source snapshot, and the built dist tree.
 # gitleaks is a pinned release tarball, not a marketplace action.
 # Repo-specific names and addresses are checked with salted hashes.
-# Until SENSITIVE_SALT and SENSITIVE_HASHES exist, --require fails closed.
+# Scan steps use continue-on-error so findings stay visible without failing the check.
+# Absent SENSITIVE_SALT / SENSITIVE_HASHES skips the hash step with a notice (exit 0).
 
 on:
   pull_request:
@@ -42,10 +44,17 @@ jobs:
           echo "${RUNNER_TEMP}/bin" >> "$GITHUB_PATH"
 
       - name: Gitleaks full history
+        continue-on-error: true
         run: gitleaks git --no-banner --redact --config .gitleaks.toml --log-opts=--all .
 
       - name: Sensitive hashes full history
-        run: node scripts/security/check-sensitive-hashes.mjs --require --git-history
+        continue-on-error: true
+        run: |
+          if [ -z "${SENSITIVE_SALT}" ] || [ -z "${SENSITIVE_HASHES}" ]; then
+            echo "::notice::SENSITIVE_SALT/SENSITIVE_HASHES not set, hash check skipped"
+            exit 0
+          fi
+          node scripts/security/check-sensitive-hashes.mjs --git-history
         env:
           SENSITIVE_SALT: ${{ secrets.SENSITIVE_SALT }}
           SENSITIVE_HASHES: ${{ secrets.SENSITIVE_HASHES }}
@@ -71,10 +80,17 @@ jobs:
           echo "${RUNNER_TEMP}/bin" >> "$GITHUB_PATH"
 
       - name: Gitleaks source snapshot
+        continue-on-error: true
         run: gitleaks dir --no-banner --redact --config .gitleaks.toml .
 
       - name: Sensitive hashes source snapshot
-        run: node scripts/security/check-sensitive-hashes.mjs --require .
+        continue-on-error: true
+        run: |
+          if [ -z "${SENSITIVE_SALT}" ] || [ -z "${SENSITIVE_HASHES}" ]; then
+            echo "::notice::SENSITIVE_SALT/SENSITIVE_HASHES not set, hash check skipped"
+            exit 0
+          fi
+          node scripts/security/check-sensitive-hashes.mjs .
         env:
           SENSITIVE_SALT: ${{ secrets.SENSITIVE_SALT }}
           SENSITIVE_HASHES: ${{ secrets.SENSITIVE_HASHES }}
@@ -100,13 +116,21 @@ jobs:
           bash scripts/security/install-gitleaks.sh "${RUNNER_TEMP}/bin"
           echo "${RUNNER_TEMP}/bin" >> "$GITHUB_PATH"
 
+      - name: Build dist
+        run: npm ci --ignore-scripts && npm run build
+
       - name: Gitleaks dist
-        run: |
-          npm ci --ignore-scripts && npm run build
-          gitleaks dir --no-banner --redact --config .gitleaks.toml dist
+        continue-on-error: true
+        run: gitleaks dir --no-banner --redact --config .gitleaks.toml dist
 
       - name: Sensitive hashes dist
-        run: node scripts/security/check-sensitive-hashes.mjs --require dist
+        continue-on-error: true
+        run: |
+          if [ -z "${SENSITIVE_SALT}" ] || [ -z "${SENSITIVE_HASHES}" ]; then
+            echo "::notice::SENSITIVE_SALT/SENSITIVE_HASHES not set, hash check skipped"
+            exit 0
+          fi
+          node scripts/security/check-sensitive-hashes.mjs dist
         env:
           SENSITIVE_SALT: ${{ secrets.SENSITIVE_SALT }}
           SENSITIVE_HASHES: ${{ secrets.SENSITIVE_HASHES }}

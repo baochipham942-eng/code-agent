@@ -15,9 +15,12 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   return { useI18n: () => ({ t: zh, language: 'zh' }) };
 });
 
-vi.mock('../../../src/renderer/services/sideChatClient', () => ({
-  askSideChat: (...args: unknown[]) => askSideChat(...args),
-}));
+vi.mock('../../../src/renderer/services/sideChatClient', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/renderer/services/sideChatClient')>();
+  return { ...actual, askSideChat: (...args: unknown[]) => askSideChat(...args) };
+});
+
+const { SideChatRequestError } = await import('../../../src/renderer/services/sideChatClient');
 
 import { InputArea, type InputAreaRef } from '../../../src/renderer/components/features/chat/ChatInput/InputArea';
 import {
@@ -235,6 +238,59 @@ describe('side chat floater', () => {
     expect(onSend).not.toHaveBeenCalled();
     expect(domainInvoke).not.toHaveBeenCalled();
     expect(useStatusStore.getState().isStreaming).toBe(true);
+  });
+
+  it('shows a localized failure cause with a retry way out, and retry re-sends the same question', async () => {
+    const pending = deferAnswer();
+    render(<SubmitHarness />);
+
+    await submitBtw();
+    await act(async () => {
+      pending.reject(new SideChatRequestError('auth'));
+    });
+
+    const dialog = await waitFor(() => {
+      const node = screen.getByRole('dialog');
+      expect(node.textContent).toContain('模型没有响应：账号未通过授权');
+      return node;
+    });
+    expect(dialog.textContent).not.toContain('侧聊没有完成');
+    expect(askSideChat).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(askSideChat).toHaveBeenCalledTimes(2);
+    const retryCall = askSideChat.mock.calls[1];
+    expect(retryCall[0]).toEqual({ sessionId: 'session-1', question: '旁边问一句' });
+    expect(screen.getByRole('dialog').textContent).toContain('思考中…');
+
+    await act(async () => {
+      pending.resolve('第二次成了');
+    });
+    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('第二次成了'));
+    expect(screen.queryByRole('button', { name: '重试' })).toBeNull();
+  });
+
+  it('maps timeout and unknown causes to their own fallback wording', async () => {
+    const pending = deferAnswer();
+    const view = render(<SubmitHarness />);
+    await submitBtw();
+    await act(async () => {
+      pending.reject(new SideChatRequestError('timeout'));
+    });
+    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('请求超时'));
+    expect(screen.getByRole('dialog').textContent).not.toContain('模型没有响应');
+
+    fireEvent.click(screen.getByRole('button', { name: '关闭侧聊' }));
+    view.unmount();
+
+    const second = deferAnswer();
+    render(<SubmitHarness />);
+    await submitBtw();
+    await act(async () => {
+      second.reject(new SideChatRequestError('unknown'));
+    });
+    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('侧聊没有完成'));
+    expect(screen.getByRole('button', { name: '重试' })).toBeTruthy();
   });
 
   it('reuses the context health popover shell and adds no new colour or z-index token', () => {

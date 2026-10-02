@@ -158,6 +158,7 @@ export const zhSettingsModels = {
         effortSectionLabel: '思考深度',
         // 思考段（Thinking/Effort 合并）：关/低/中/高 4 等分
         thinkingSectionLabel: '思考',
+        thinkingExternalHint: '此引擎自行决定推理档位',
         thinkingOptionAuto: '自动',
         thinkingOptionOff: '关',
         thinkingOptionLow: '低',

@@ -170,7 +170,11 @@ export function startCompanionRelayAccountIfConfigured(opts: {
       if (stopped || suspended || userId !== next) {
         await started.stop();
         if (client === started) client = null;
+        return;
       }
+      // suspend() 可能在 start() 等待期间把句柄引用摘成 null；这里判定仍要这个 client，就认领
+      // 回来，免得它活着却没人引用（后来的链也停不掉它）。
+      if (!client) client = started;
     });
   };
   const unsubscribe = opts.auth.addAuthChangeCallback(follow);
@@ -192,9 +196,12 @@ export function startCompanionRelayAccountIfConfigured(opts: {
     suspend: async () => {
       if (stopped) return;
       suspended = true;
-      await chain;
-      await client?.stop();
+      // 先同步摘掉句柄引用再等停：等待期间 resume()→follow(同一用户) 会把非空 client 当
+      // 活线早退，随后这里置空，账号通道就没人重拨了（快速关→开总闸正撞在关 socket 的等待上）。
+      const current = client;
       client = null;
+      await chain;
+      await current?.stop();
     },
     resume: () => {
       if (stopped || !suspended) return;

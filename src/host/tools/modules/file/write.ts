@@ -31,19 +31,59 @@ import type {
 } from '../../../protocol/tools';
 import { atomicWriteFile } from '../../utils/atomicWrite';
 import { existingPathWriteRefusal } from '../../utils/textEncodingGuard';
+import { decodeUtf8 } from '../../../utils/decodeText';
 import { getResourceLockManager } from '../../../services/infra/resourceLockManager';
 import { getPostEditDiagnostics } from '../../lsp/diagnosticsHelper';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { writeSchema as schema } from './write.schema';
 import { computeContentDigest, fileReadTracker } from '../../fileReadTracker';
 import { checkExternalModification } from '../../utils/externalModificationDetector';
+import { readThenRetryHint } from '../../utils/readBeforeMutateHint';
 import { getFileMutationActorId } from './fileMutationIdentity';
 import { guardSkillOfficialSections } from '../../../security/skillOfficialSectionGuard';
+import { resolveToolWriteTarget } from '../../../sandbox/writeFence';
 
 const LOCK_HOLD_TIMEOUT_MS = 60_000;
 const LOCK_WAIT_TIMEOUT_MS = 10_000;
 const LARGE_ARTIFACT_WRITE_NOTICE_CHAR_LIMIT = 12_000;
 const MAX_SINGLE_WRITE_ARTIFACT_CHAR_LIMIT = 160_000;
+
+// ----------------------------------------------------------------------------
+// 同路径变换产物护栏（2026-09-30 N-WRITE-XFORM-GUARD / FB-224）
+//
+// 翻译/转换/摘要类任务的事故形态：Read 整份源文件 → 变换 → Write 回同一路径，
+// 中文原稿被英文产物静默替换。已存在文件本来就必须先 Read（NOT_READ_FOR_OVERWRITE），
+// 所以「本 agent 读过」对每次覆盖都成立；能区分「改」与「换」的只有体量：
+// 新内容字符数与磁盘现有内容相差超过 50%（现有内容 ≥ 200 字符）时按变换产物拒写，
+// 要求写到新路径，或用户明确要求覆盖时传 overwrite:true。
+// 字符数用 string.length（UTF-16 码元）而非字节数：字节会把中英文比例放大失真。
+// ----------------------------------------------------------------------------
+
+const TRANSFORM_GUARD_MIN_OLD_CHARS = 200;
+const TRANSFORM_GUARD_MAX_FILE_BYTES = 5 * 1024 * 1024;
+const TRANSFORM_GUARD_RELATIVE_DELTA = 0.5;
+
+interface TransformGuardVerdict {
+  refuse: boolean;
+  oldChars: number;
+  newChars: number;
+}
+
+async function evaluateTransformGuard(resolvedPath: string, newContent: string): Promise<TransformGuardVerdict> {
+  const noRefusal: TransformGuardVerdict = { refuse: false, oldChars: 0, newChars: newContent.length };
+  const stats = await fs.stat(resolvedPath).catch(() => undefined);
+  if (!stats?.isFile() || stats.size > TRANSFORM_GUARD_MAX_FILE_BYTES) return noRefusal;
+  const decoded = decodeUtf8(await fs.readFile(resolvedPath));
+  // 非法 UTF-8（二进制/别的编码）不适用字符数判据，交给 existingPathWriteRefusal 那道编码守卫
+  if (decoded.invalidSequences > 0) return noRefusal;
+  const oldChars = decoded.text.length;
+  const relativeDelta = Math.abs(newContent.length - oldChars) / oldChars;
+  return {
+    refuse: oldChars >= TRANSFORM_GUARD_MIN_OLD_CHARS && relativeDelta > TRANSFORM_GUARD_RELATIVE_DELTA,
+    oldChars,
+    newChars: newContent.length,
+  };
+}
 
 const CODE_EXTENSIONS = new Set([
   '.html', '.htm', '.js', '.ts', '.jsx', '.tsx',
@@ -247,6 +287,7 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
     const rawPath = args.file_path;
     const content = args.content;
     const force = Boolean(args.force);
+    const overwrite = Boolean(args.overwrite);
     const forceReason = typeof args.force_reason === 'string' ? args.force_reason.trim() : '';
     const suppliedReadDigest = typeof args.read_digest === 'string' ? args.read_digest.trim() : '';
 
@@ -280,6 +321,15 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
     const filePath = resolveInputPath(rawPath, ctx.workingDir);
     // Eval 沙箱硬隔离：真仓绝对路径重映射回沙箱，防止 mimo 用真仓绝对路径写文件污染主仓
     const resolvedPath = confineEvalPath(path.resolve(filePath), ctx.workingDir);
+    const writeTarget = resolveToolWriteTarget(resolvedPath, ctx);
+    if (!writeTarget.allowed) {
+      return {
+        ok: false,
+        error: writeTarget.reason,
+        code: 'SANDBOX_WRITE_DENIED',
+        meta: { outputPath: resolvedPath },
+      };
+    }
 
     const actorId = getFileMutationActorId(ctx);
     if (!actorId) {
@@ -329,7 +379,8 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
           return {
             ok: false,
             error:
-              'Existing file must be read by this agent before overwrite. Use Read first to bind the latest digest, then retry Write.',
+              'Existing file must be read by this agent before overwrite. Use Read first to bind the latest digest, then retry Write. ' +
+              readThenRetryHint('Write', resolvedPath),
             code: 'NOT_READ_FOR_OVERWRITE',
             meta: { outputPath: resolvedPath },
           };
@@ -349,7 +400,7 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
           if (!force) {
             return {
               ok: false,
-              error: `${modCheck.message}. Re-read the file before overwriting it.`,
+              error: `${modCheck.message}. Re-read the file before overwriting it. ${readThenRetryHint('Write', resolvedPath)}`,
               code: 'STALE_FILE',
               meta: {
                 outputPath: resolvedPath,
@@ -367,6 +418,35 @@ class WriteHandler implements ToolHandler<Record<string, unknown>, string> {
             currentDigest: modCheck.details?.currentDigest,
           };
           ctx.logger.warn('Write overwrite safety overridden', forceAudit);
+        }
+      }
+
+      // 同路径变换产物护栏：只挡「像翻译/转换产物」的大幅改写；overwrite:true 只绕这一道
+      // （不绕未读拦截与陈旧检查），绕过时落审计日志。
+      if (existed) {
+        const transformVerdict = await evaluateTransformGuard(resolvedPath, content);
+        if (transformVerdict.refuse) {
+          if (!overwrite) {
+            return {
+              ok: false,
+              error:
+                `Refusing to overwrite ${filePath}: the new body (${transformVerdict.newChars} chars) differs by more ` +
+                `than 50% from the current file (${transformVerdict.oldChars} chars) — this looks like a transform ` +
+                `of the source; write to a new path or pass overwrite:true (only when the user explicitly asked to ` +
+                `replace the file). The file was NOT modified.`,
+              code: 'INVALID_ARGS',
+              meta: {
+                outputPath: resolvedPath,
+                oldChars: transformVerdict.oldChars,
+                newChars: transformVerdict.newChars,
+              },
+            };
+          }
+          ctx.logger.warn('Write transform-of-source guard bypassed via overwrite:true', {
+            path: resolvedPath,
+            oldChars: transformVerdict.oldChars,
+            newChars: transformVerdict.newChars,
+          });
         }
       }
 

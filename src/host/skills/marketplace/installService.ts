@@ -28,6 +28,8 @@ import {
   scanInstallContent,
   type SkillInstallSourceTrust,
 } from './skillInstallContentGuard';
+import { SKILL_GUARD_VERSION } from '../../security/skillContentGuard';
+import { assertPluginRescanPassesForEnable } from './installedPluginRescan';
 import type { SkillRegistryEntry } from '../../../shared/contract/skillRegistry';
 import { SKILL_REGISTRY_MARKETPLACE_ID } from '../../../shared/contract/skillRegistry';
 import {
@@ -37,6 +39,8 @@ import {
   getArchiveSha256,
 } from './githubArchiveSecurity';
 import { copyDirectory, runExclusivePluginInstall, throwIfInstallAborted } from './installConcurrency';
+import { removeCommandFileIfOwnedByPlugin, type CommandOwnershipSource } from './commandFileOwnership';
+import { getInstalledPluginsFilePath, saveInstalledPluginsState } from './installedPluginsStateStore';
 import { materializeOfficialSkillSection } from '../../security/skillOfficialSectionGuard';
 import { collectEnabledSkillDescriptors } from './enabledSkillDescriptors';
 import { migrateInstalledPlugins } from './installedPluginMigration';
@@ -44,15 +48,14 @@ import { getSkillsDir, resolveInside } from './pathUtils';
 
 const logger = createLogger('PluginInstallService');
 
-export async function getEnabledSkillDescriptors() {
-  return collectEnabledSkillDescriptors();
+export async function getEnabledSkillDescriptors(excludePluginSpecs?: ReadonlySet<string>) {
+  return collectEnabledSkillDescriptors(excludePluginSpecs);
 }
 
 // ----------------------------------------------------------------------------
 // Constants
 // ----------------------------------------------------------------------------
 
-const INSTALLED_PLUGINS_FILE = 'installed-plugins.json';
 const STAGING_SKILL_NAME_PATTERN = /\.staging-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type PluginInstallOptions = {
@@ -90,7 +93,7 @@ function getPluginAssetsDir(scope: PluginScope, projectPath?: string): string {
 }
 
 function getInstalledPluginsPath(): string {
-  return path.join(getUserConfigDir(), INSTALLED_PLUGINS_FILE);
+  return getInstalledPluginsFilePath();
 }
 
 async function ensureDir(dirPath: string): Promise<void> {
@@ -125,21 +128,9 @@ export async function loadInstalledPlugins(): Promise<InstalledPluginsFile> {
   }
 }
 
-async function saveInstalledPlugins(state: InstalledPluginsFile): Promise<void> {
-  const filePath = getInstalledPluginsPath();
-  const tempPath = `${filePath}.tmp-${randomUUID()}`;
-  await ensureDir(path.dirname(filePath));
-  try {
-    await fs.writeFile(
-      tempPath,
-      JSON.stringify(state, null, 2) + '\n',
-      'utf8'
-    );
-    await fs.rename(tempPath, filePath);
-  } catch (error) {
-    await fs.rm(tempPath, { force: true }).catch(() => {});
-    throw error;
-  }
+export async function saveInstalledPlugins(state: InstalledPluginsFile): Promise<void> {
+  // 唯一写入口：落盘串行化与版本自增都在 installedPluginsStateStore 内完成
+  await saveInstalledPluginsState(state);
 }
 
 function migrateStagingSkillNames(state: InstalledPluginsFile): InstalledPluginsFile {
@@ -627,10 +618,16 @@ async function activatePluginCommands(args: {
   return copied;
 }
 
-async function deactivatePluginCommands(args: {
+export async function deactivatePluginCommands(args: {
   scope: PluginScope;
   projectPath?: string;
   commandNames: string[];
+  /**
+   * 归属校验（ai-review R4 Important 2）：提供时只删除内容仍与插件源文件一致
+   * 的命令副本——commands 目录是共享目录，用户改写过的同名文件不归插件所有，
+   * 不删并 warn 留痕。commandPaths 与 commandNames 按下标一一对应。
+   */
+  verifyOwnership?: CommandOwnershipSource;
 }): Promise<string[]> {
   if (args.commandNames.length === 0) {
     return [];
@@ -638,12 +635,16 @@ async function deactivatePluginCommands(args: {
 
   const commandsDir = getCommandsDir(args.scope, args.projectPath);
   const removed: string[] = [];
-  for (const commandName of args.commandNames) {
+  for (const [index, commandName] of args.commandNames.entries()) {
     const destination = path.join(commandsDir, `${commandName}.md`);
-    if (fsSync.existsSync(destination)) {
+    if (args.verifyOwnership) {
+      const outcome = await removeCommandFileIfOwnedByPlugin(destination, args.verifyOwnership, index, commandName);
+      if (outcome !== 'removed') continue;
+    } else {
+      if (!fsSync.existsSync(destination)) continue;
       await fs.rm(destination, { force: true });
-      removed.push(commandName);
     }
+    removed.push(commandName);
   }
   return removed;
 }
@@ -947,6 +948,13 @@ export async function performInstall(args: {
       commands: installedCommands,
       commandPaths: commandFiles.map((command) => command.relativeSourcePath),
       sourceMarketplacePath: pluginRoot,
+      // scanInstallContent 已通过（block 会在此前抛出），记下扫描时的规则版本，
+      // 供 SKILL_GUARD_VERSION 提升后的存量重扫判定新旧。
+      scanner: {
+        version: SKILL_GUARD_VERSION,
+        verdict: 'pass',
+        scannedAt: new Date().toISOString(),
+      },
     };
     await saveInstalledPlugins({ ...state, [pluginSpec]: installedRecord });
     stateCommitted = true;
@@ -1101,6 +1109,9 @@ export async function enablePlugin(pluginInput: string): Promise<void> {
     logger.info('Plugin already enabled', { pluginSpec });
     return;
   }
+
+  // 扫描规则升级后，过期记录先按当前规则重扫再启用：block 抛错而不是静默启用
+  await assertPluginRescanPassesForEnable(pluginSpec, record);
 
   await activatePluginCommands({
     rootDir: record.sourceMarketplacePath,

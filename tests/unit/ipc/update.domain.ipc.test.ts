@@ -28,6 +28,12 @@ const h = vi.hoisted(() => ({
   assetsStatus: vi.fn(async (_o: unknown): Promise<unknown> => ({ assets: [], shell: 'ok' })),
   bundleStatus: vi.fn(async (_p: string): Promise<unknown> => ({ active: 'v1' })),
   logWarn: vi.fn(),
+  ensure: vi.fn(async (..._args: unknown[]): Promise<unknown> => ({
+    ok: true,
+    pythonPath: '/managed/venv/bin/python',
+    reused: false,
+    root: '/managed/runtimes/python',
+  })),
 }));
 
 vi.mock('../../../src/host/platform', () => ({
@@ -41,6 +47,9 @@ vi.mock('../../../src/host/runtime/runtimeAssetStatus', () => ({ getRuntimeAsset
 vi.mock('../../../src/host/services/renderer/rendererBundleCache', () => ({ readRendererBundleStatus: (p: string) => h.bundleStatus(p) }));
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: h.logWarn, error: vi.fn(), debug: vi.fn() }),
+}));
+vi.mock('../../../src/host/runtime/pythonEnv/ensure', () => ({
+  ensurePythonEnv: (...args: unknown[]) => h.ensure(...args),
 }));
 
 import { registerUpdateHandlers } from '../../../src/host/ipc/update.ipc';
@@ -99,6 +108,36 @@ describe('update.ipc dispatch 特征：下载与打开', () => {
     expect(h.svc.prepareRuntimeAsset).toHaveBeenCalledWith('poppler');
     expect(await call('prepareRuntimeAssets')).toEqual({ success: true, data: { all: true } });
   });
+
+  it('prepareRuntimeAssets python-env 走安装器，不依赖 UpdateService', async () => {
+    h.initialized = false;
+    const offline = 'Python runtime install needs a package index, but both PyPI and the mirror are unreachable. Check the network and try again.';
+    expect(await call('prepareRuntimeAssets', { assetId: 'python-env' })).toEqual({
+      success: true,
+      data: {
+        installed: [{ assetId: 'python-env', root: '/managed/runtimes/python', reusedExistingInstall: false }],
+        skipped: [],
+      },
+    });
+    expect(h.ensure).toHaveBeenCalledTimes(1);
+    expect(h.svc.prepareRuntimeAsset).not.toHaveBeenCalled();
+    expect(h.svc.prepareRuntimeAssets).not.toHaveBeenCalled();
+
+    h.ensure.mockResolvedValueOnce({
+      ok: false,
+      root: '/managed/runtimes/python',
+      error: {
+        code: 'PYTHON_RUNTIME_OFFLINE',
+        message: offline,
+        retryable: true,
+        logPath: '/managed/runtimes/python/install.log',
+      },
+    });
+    expect(await call('prepareRuntimeAssets', { assetId: 'python-env' })).toEqual({
+      success: false,
+      error: { code: 'INTERNAL_ERROR', message: offline },
+    });
+  });
 });
 
 describe('update.ipc dispatch 特征：自动检查与状态', () => {
@@ -114,10 +153,24 @@ describe('update.ipc dispatch 特征：自动检查与状态', () => {
   });
 
   it('runtimeAssetsStatus 合并 preparation（未初始化 null）；rendererBundleStatus 读 userData', async () => {
-    expect(await call('runtimeAssetsStatus')).toEqual({ success: true, data: { assets: [], shell: 'ok', preparation: { preparing: false } } });
+    const pythonEnv = {
+      id: 'python-env',
+      label: 'Python data runtime',
+      delivery: 'optional',
+      state: 'missing',
+      nodeModules: [],
+    };
+    const summary = { installed: 0, bundledFallback: 0, missing: 1, unsupported: 0 };
+    expect(await call('runtimeAssetsStatus')).toEqual({
+      success: true,
+      data: { assets: [pythonEnv], shell: 'ok', summary, preparation: { preparing: false } },
+    });
     expect(h.assetsStatus).toHaveBeenCalledWith({ shellVersion: '1.0.0' });
     h.initialized = false;
-    expect(await call('runtimeAssetsStatus')).toEqual({ success: true, data: { assets: [], shell: 'ok', preparation: null } });
+    expect(await call('runtimeAssetsStatus')).toEqual({
+      success: true,
+      data: { assets: [pythonEnv], shell: 'ok', summary, preparation: null },
+    });
     expect(await call('rendererBundleStatus')).toEqual({ success: true, data: { active: 'v1' } });
     expect(h.bundleStatus).toHaveBeenCalledWith('/data/userData');
   });

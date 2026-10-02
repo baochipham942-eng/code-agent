@@ -116,6 +116,7 @@ import { ComposerUploadStatus } from './ComposerUploadStatus';
 import { QueuedInputTray } from './QueuedInputTray';
 import { composerEditModeState } from './composerEditMode';
 import { useBundledCapabilityStore } from '../../../../stores/bundledCapabilityStore';
+import { ReadOnlySessionNotice } from './ReadOnlySessionNotice';
 
 // ============================================================================
 // 类型定义
@@ -323,6 +324,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const pinScopeProjectId = currentSessionId ? currentSessionProjectId : scopeProjectId;
   const currentSessionHadLiveVoice = useSessionStore((s) => (
     s.sessions.find((session) => session.id === currentSessionId)?.metadata?.hadLiveVoice === true
+  ));
+  // 只读判定放在顶层 selector。条件只出现在最后的 JSX，避免提前 return 打乱 hook 顺序。
+  const currentSessionReadOnly = useSessionStore((s) => (
+    s.sessions.find((session) => session.id === currentSessionId)?.readOnly === true
   ));
   const [pendingPromptCommand, setPendingPromptCommand] = useState<ComposerPromptCommandSelection | null>(null);
   const [pendingAgentSelection, setPendingAgentSelection] = useState<ComposerAgentSelection | null>(null);
@@ -1316,8 +1321,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           }}
         />
 
-        {/* composer 浮起（2026-08-04 §3.1）：L2 底 + 投影，默认无边框、聚焦描边显现，
-            与聊天内容拉开亮度层级，样式真源在 global.css .composer-elevated */}
+        {currentSessionReadOnly ? (
+          <ReadOnlySessionNotice />
+        ) : (
+        // composer 浮起（2026-08-04 §3.1）：L2 底 + 投影，默认无边框、聚焦描边显现，
+        // 与聊天内容拉开亮度层级，样式真源在 global.css .composer-elevated
         <div className="relative composer-elevated rounded-2xl">
           {/* Slash command inline popover */}
           <SlashCommandPopover
@@ -1563,6 +1571,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             )}
           </div>
         </div>
+        )}
       </form>
     </div>
   );

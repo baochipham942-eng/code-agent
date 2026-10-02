@@ -247,16 +247,6 @@
       "kind": "type"
     },
     {
-      "file": "src/host/agent/agentInbox.ts",
-      "name": "peekAgentInbox",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/agent/agentInbox.ts",
-      "name": "UnifiedInboxSource",
-      "kind": "type"
-    },
-    {
       "file": "src/host/agent/agentRegistry.ts",
       "name": "AgentSource",
       "kind": "type"
@@ -594,11 +584,6 @@
     {
       "file": "src/host/agent/planApproval.ts",
       "name": "RiskLevel",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/agent/readOnlySideChat.ts",
-      "name": "SideChatExecutor",
       "kind": "type"
     },
     {
@@ -1268,11 +1253,6 @@
     },
     {
       "file": "src/host/app/durableRunReadService.ts",
-      "name": "mapDurableRunView",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/app/durableRunReadService.ts",
       "name": "mapLegacyRunView",
       "kind": "export"
     },
@@ -1729,11 +1709,6 @@
     {
       "file": "src/host/cron/cronNormalizers.ts",
       "name": "isCronJobStatus",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/cron/cronNormalizers.ts",
-      "name": "isCronScheduleType",
       "kind": "export"
     },
     {
@@ -2802,11 +2777,6 @@
       "kind": "type"
     },
     {
-      "file": "src/host/permissions/modes.ts",
-      "name": "getCurrentMode",
-      "kind": "export"
-    },
-    {
       "file": "src/host/permissions/policyEngine.ts",
       "name": "evaluatePermission",
       "kind": "export"
@@ -3829,11 +3799,6 @@
     {
       "file": "src/host/security/auditLogger.ts",
       "name": "AuditEventType",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/security/decisionHistory.ts",
-      "name": "DecisionHistoryEntry",
       "kind": "type"
     },
     {
@@ -5292,16 +5257,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/session/agentHistoryPersistence.ts",
-      "name": "getAgentHistory",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/session/agentHistoryPersistence.ts",
-      "name": "persistAgentRun",
-      "kind": "export"
-    },
-    {
       "file": "src/host/session/backgroundTaskManager.ts",
       "name": "resetBackgroundTaskManager",
       "kind": "export"
@@ -5399,11 +5354,6 @@
     {
       "file": "src/host/session/search.ts",
       "name": "SearchResult",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/session/sessionStateManager.ts",
-      "name": "SessionStatusUpdateEvent",
       "kind": "type"
     },
     {
@@ -6210,21 +6160,6 @@
       "file": "src/host/tools/permissionClassifier.ts",
       "name": "PermissionDecision",
       "kind": "type"
-    },
-    {
-      "file": "src/host/tools/shell/backgroundTasks.ts",
-      "name": "BackgroundTaskLifecycleEventType",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/tools/shell/backgroundTasks.ts",
-      "name": "cleanupCompletedTasks",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/tools/shell/backgroundTasks.ts",
-      "name": "cleanupTimedOutTasks",
-      "kind": "export"
     },
     {
       "file": "src/host/tools/utils/anchorHint.ts",
@@ -8387,48 +8322,13 @@
       "kind": "type"
     },
     {
-      "file": "src/shared/commands/definitions/btwCommands.ts",
-      "name": "btwCommand",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/commands/definitions/doctorCommands.ts",
-      "name": "doctorCommand",
-      "kind": "export"
-    },
-    {
       "file": "src/shared/commands/definitions/modelCommands.ts",
       "name": "modelCommand",
       "kind": "export"
     },
     {
       "file": "src/shared/commands/definitions/newCommands.ts",
-      "name": "agentsCommand",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/commands/definitions/newCommands.ts",
-      "name": "contextCommand",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/commands/definitions/newCommands.ts",
-      "name": "costCommand",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/commands/definitions/newCommands.ts",
       "name": "hooksCommand",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/commands/definitions/newCommands.ts",
-      "name": "permissionsCommand",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/commands/definitions/newCommands.ts",
-      "name": "statusCommand",
       "kind": "export"
     },
     {
@@ -8439,11 +8339,6 @@
     {
       "file": "src/shared/commands/definitions/sessionCommands.ts",
       "name": "historyCommand",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/commands/definitions/sessionCommands.ts",
-      "name": "resumeCommand",
       "kind": "export"
     },
     {

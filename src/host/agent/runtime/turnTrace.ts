@@ -50,6 +50,7 @@ export type TraceEventType =
   | 'plan_exit_fallback_detected'
   | 'plan_exit_fallback_not_applicable'
   | 'plan_exit_fallback_synthesized'
+  | 'failed_round_guard'
   | 'jev_warden';
 
 export type RequestManifestMessageRef =
@@ -250,6 +251,11 @@ export interface TraceEventDataMap {
   plan_exit_fallback_not_applicable: PlanExitFallbackNotApplicableData;
   /** ADR-074 K2：补推理仍是结构化计划正文，宿主已合成 synthetic_text 审批卡并结束 run。 */
   plan_exit_fallback_synthesized: PlanExitFallbackSynthesizedData;
+  /** 连续整轮真实工具调用全部失败，已走强制收尾。 */
+  failed_round_guard: {
+    rounds: number;
+    toolNames: string[];
+  };
   /** N-JEV-WARDEN-MOCK：JevWarden 判面活动（仅开关 CODE_AGENT_JEV_WARDEN=1 时产生）。 */
   jev_warden: JevWardenTraceData;
 }

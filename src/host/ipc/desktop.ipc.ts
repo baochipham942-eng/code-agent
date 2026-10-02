@@ -2,6 +2,7 @@
 // Desktop IPC Handlers - 原生桌面活动查询
 // ============================================================================
 
+import { execFile } from 'node:child_process';
 import type { IpcMain } from '../platform';
 import type { IPCResponse } from '@shared/ipc';
 import type { RawDomainRouteHandlers } from '@shared/ipc/domainRoutes';
@@ -42,6 +43,7 @@ import { getManagedBrowserProviderAdapter } from '../services/surfaceExecution/M
 let manualAudioActive = false;
 
 const logger = createLogger('DesktopIPC');
+const FULL_DISK_ACCESS_SETTINGS_URL = 'x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles';
 const COMPUTER_SURFACE_FAILURE_KINDS = new Set<ComputerSurfaceFailureKind>([
   'permission_denied',
   'target_app_not_running',
@@ -214,6 +216,18 @@ const desktopHandlers: RawDomainRouteHandlers<DesktopDomainRequest, NativeDeskto
       success: true,
       data: listImportableBrowserProfiles(),
     } satisfies IPCResponse<unknown>;
+  },
+  openFullDiskAccessSettings: async () => {
+    if (process.platform !== 'darwin') {
+      return { success: true, data: false } satisfies IPCResponse<unknown>;
+    }
+    await new Promise<void>((resolve, reject) => {
+      execFile('open', [FULL_DISK_ACCESS_SETTINGS_URL], (error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+    return { success: true, data: true } satisfies IPCResponse<unknown>;
   },
   importBrowserProfileCookies: async (_service, raw) => {
     const payload = raw as {

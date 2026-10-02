@@ -13,6 +13,7 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
 }));
 
 import { saveCronJob } from '../../../src/host/cron/cronPersistence';
+import { normalizeCronJobRow } from '../../../src/host/cron/cronNormalizers';
 
 describe('cronPersistence', () => {
   beforeEach(() => {
@@ -28,6 +29,8 @@ describe('cronPersistence', () => {
         action TEXT NOT NULL,
         runs_on TEXT NOT NULL,
         max_run_budget REAL,
+        max_runs INTEGER CHECK (max_runs IS NULL OR max_runs >= 1),
+        run_count INTEGER NOT NULL DEFAULT 0,
         min_interval_seconds INTEGER NOT NULL,
         result_channel TEXT,
         cloud_job_id TEXT,
@@ -91,5 +94,54 @@ describe('cronPersistence', () => {
     expect(databaseState.db?.prepare(
       'SELECT id, status FROM cron_executions WHERE job_id = ?',
     ).all(original.id)).toEqual([{ id: 'execution-1', status: 'completed' }]);
+  });
+
+  it('maxRuns/runCount round-trip through save and load', async () => {
+    const job = {
+      id: 'cron-limited',
+      name: 'Limited job',
+      scheduleType: 'every' as const,
+      schedule: { type: 'every' as const, interval: 1, unit: 'hours' as const },
+      action: { type: 'shell' as const, command: 'echo ok' },
+      runsOn: 'local' as const,
+      enabled: true,
+      maxRunBudget: 0.5,
+      maxRuns: 3,
+      runCount: 2,
+      createdAt: 100,
+      updatedAt: 100,
+    };
+
+    await saveCronJob(job);
+    const loaded = normalizeCronJobRow(
+      databaseState.db?.prepare('SELECT * FROM cron_jobs WHERE id = ?').get(job.id),
+    );
+    expect(loaded).toMatchObject({ maxRunBudget: 0.5, maxRuns: 3, runCount: 2 });
+
+    // 未设置时：maxRuns 回 undefined（不设限），run_count 落库默认 0。
+    await saveCronJob({ ...job, id: 'cron-unlimited', maxRunBudget: undefined, maxRuns: undefined, runCount: undefined });
+    const unlimited = normalizeCronJobRow(
+      databaseState.db?.prepare('SELECT * FROM cron_jobs WHERE id = ?').get('cron-unlimited'),
+    );
+    expect(unlimited).toMatchObject({ maxRunBudget: undefined, maxRuns: undefined, runCount: 0 });
+  });
+
+  it('rejects a maxRuns below 1 at the database CHECK constraint', async () => {
+    const job = {
+      id: 'cron-invalid',
+      name: 'Invalid limited job',
+      scheduleType: 'every' as const,
+      schedule: { type: 'every' as const, interval: 1, unit: 'hours' as const },
+      action: { type: 'shell' as const, command: 'echo ok' },
+      runsOn: 'local' as const,
+      enabled: true,
+      maxRuns: 0,
+      createdAt: 100,
+      updatedAt: 100,
+    };
+
+    // saveCronJob 吞错只记日志：约束拒绝后行不存在即为护栏生效。
+    await saveCronJob(job);
+    expect(databaseState.db?.prepare('SELECT id FROM cron_jobs WHERE id = ?').get(job.id)).toBeUndefined();
   });
 });

@@ -22,6 +22,7 @@ import { estimateTokens } from '../../../../src/host/context/tokenEstimator';
 import { SPILL_NOTICE_MARKER } from '../../../../src/host/utils/toolResultSpill';
 import { CompressionPipeline, type PipelineConfig } from '../../../../src/host/context/compressionPipeline';
 import type { ProjectableMessage } from '../../../../src/host/context/projectionEngine';
+import { resolveToolResultBudget } from '../../../../src/host/context/layers/toolResultBudget';
 
 // mock factory 与测试体各自计算同一确定性路径（避免 vi.hoisted 跨作用域引用）
 const spillTestRoot = path.join(os.tmpdir(), `neo-active-prune-spill-test-${process.pid}`);
@@ -634,5 +635,31 @@ describe('CompressionPipeline integration with activeToolResultPrune', () => {
 
     expect(result.layersTriggered).not.toContain('active-prune');
     expect(transcript[0].content).toBe(bigContent);
+  });
+
+  it('keeps the archived placeholder byte-identical across 200K and 1M windows', async () => {
+    const content = makeText(40_000);
+    const windowBudgets = [resolveToolResultBudget(200_000), resolveToolResultBudget(1_000_000)];
+    const placeholders: string[] = [];
+
+    for (const budget of windowBudgets) {
+      const transcript: ProjectableMessage[] = [
+        makeMsg('t-window', 'tool', content),
+        makeMsg('a-window', 'assistant', 'done'),
+      ];
+      const result = await pipeline.evaluate(transcript, new CompressionState(), {
+        ...BASE_CONFIG,
+        maxTokens: budget.l1MaxTokens * 64,
+        activeToolResultPrune: {
+          enabled: true,
+          maxTokensPerResult: budget.l0MaxTokens,
+          spillSessionId: 'sess-placeholder-stability',
+        },
+      });
+      expect(result.layersTriggered).toContain('active-prune');
+      placeholders.push(transcript[0].content);
+    }
+
+    expect(placeholders[0]).toBe(placeholders[1]);
   });
 });

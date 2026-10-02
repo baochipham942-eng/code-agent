@@ -22,7 +22,7 @@ import { ToolExecutor } from '../tools/toolExecutor';
 import type { ExecutionTopology } from '../permissions';
 import { getPermissionModeManager, rolePermissionPresetToMode } from '../permissions/modes';
 import type { PermissionAskResult, PermissionDeliveryOutcome } from '../../shared/contract/permission';
-import { deniedExternalEnginePermission } from '../../shared/contract/agentEngine';
+import { externalEngineWriteDenial } from '../services/agentEngine/agentEngineGuards';
 import type { ConfigService } from '../services/core/configService';
 import { getSessionManager } from '../services';
 import { getToolSearchService } from '../services/toolSearch/toolSearchService';
@@ -467,11 +467,11 @@ export class AgentOrchestrator {
     return this.runSettings.getResearchUserSettings();
   }
 
-  /** ACP 写回：每次现读档位；read_only 直接拒绝，其余强制人工确认，不吃全局自动放行。 */
+  /** ACP 写回：每次现读档位；只读天花板或未决计划卡直接拒绝，其余强制人工确认，不吃全局自动放行。 */
   requestExternalEnginePermission(
     request: Omit<PermissionRequest, 'id' | 'timestamp'>,
   ): Promise<PermissionAskResult> {
-    const denial = deniedExternalEnginePermission(request.type, getPermissionModeManager().getModeForSession(request.sessionId));
+    const denial = externalEngineWriteDenial(request.type, request.sessionId, getPermissionModeManager().getModeForSession(request.sessionId));
     return denial ? Promise.resolve(denial) : this.permissions.requestPermission({ ...request, forceConfirm: true });
   }
 

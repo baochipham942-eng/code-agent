@@ -35,4 +35,7 @@ For searching file contents, use Grep.`,
   allowInTextForeground: true,
   readOnly: true,
   allowInPlanMode: true,
+  accesses: [
+    { kind: 'read', argumentNames: ['path'] },
+  ],
 };

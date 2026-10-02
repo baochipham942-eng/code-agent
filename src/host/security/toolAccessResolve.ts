@@ -4,6 +4,7 @@ import {
   type ToolAccessKind,
 } from '../protocol/tools';
 import type { FoldedToolAccess } from '../tools/dispatch/foldToolAccess';
+import { stripEmbeddedPathParams } from '../tools/utils/resolveInputPath';
 import {
   normalizeTargetPath,
   type ResolvedToolAccess,
@@ -165,7 +166,7 @@ function resolveExpression(
     const root = normalizeTargetPath(workspace, '.');
     return {
       type: 'domain',
-      domain: { type: 'path', root, targetPath: normalizeTargetPath(cwd, segment) },
+      domain: { type: 'path', root, targetPath: normalizeTargetPath(cwd, stripEmbeddedPathParams(segment)) },
     };
   }
   if (parsed.name === 'pty') {
@@ -195,6 +196,14 @@ function resolveExpression(
   return { type: 'domain', domain: { type: 'named', name } };
 }
 
+function cwdReadAccess(workspace: string, cwd: string): ResolvedToolAccess {
+  const root = normalizeTargetPath(workspace, '.');
+  return {
+    kind: 'read',
+    domain: { type: 'path', root, targetPath: normalizeTargetPath(cwd, '.') },
+  };
+}
+
 function resolveArgumentNames(
   kind: ToolAccessKind,
   names: readonly string[],
@@ -203,28 +212,35 @@ function resolveArgumentNames(
   cwd: string,
 ): ResolvedToolAccess[] {
   const paths: string[] = [];
-  let sawValue = false;
   for (const name of names) {
     const value = readOwn(params, name);
     if (value === undefined || value === null) continue;
-    sawValue = true;
     if (typeof value === 'string') {
-      if (value.trim() === '') return [unknownAccess(kind)];
-      paths.push(value);
+      if (value.trim() === '') {
+        if (kind !== 'read') return [unknownAccess(kind)];
+        continue;
+      }
+      // 与 Read 工具同一份内嵌参数剥离：只可能把不同写法归并到同一路径（更保守），
+      // 不会把真正相同的路径拆开。
+      paths.push(stripEmbeddedPathParams(value));
       continue;
     }
-    if (Array.isArray(value) && value.length > 0) {
-      const segments: string[] = [];
+    if (Array.isArray(value)) {
+      if (value.length === 0) {
+        if (kind !== 'read') return [unknownAccess(kind)];
+        continue;
+      }
       for (const item of value) {
         if (typeof item !== 'string' || item.trim() === '') return [unknownAccess(kind)];
-        segments.push(item);
+        paths.push(stripEmbeddedPathParams(item));
       }
-      paths.push(...segments);
       continue;
     }
     return [unknownAccess(kind)];
   }
-  if (!sawValue || paths.length === 0) return [unknownAccess(kind)];
+  if (paths.length === 0) {
+    return kind === 'read' ? [cwdReadAccess(workspace, cwd)] : [unknownAccess(kind)];
+  }
   const root = normalizeTargetPath(workspace, '.');
   return paths.map((candidate) => ({
     kind,

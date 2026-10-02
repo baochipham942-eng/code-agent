@@ -143,6 +143,53 @@ describe('side chat IPC', () => {
     for (const spy of writeSpies()) expect(spy).not.toHaveBeenCalled();
   });
 
+  it('classifies provider auth failures into a cause token instead of raw payloads', async () => {
+    execute.mockImplementation(async () => ({
+      success: false,
+      output: '',
+      error: 'Error code: 401 - {"error":{"code":"1002","message":"invalid api key"}}',
+      toolsUsed: [],
+      iterations: 1,
+    }));
+
+    const result = await askHandler()(null, { sessionId: 's1', question: 'q', requestId: 'r-auth' });
+
+    expect(result).toEqual({ failure: { cause: 'auth' } });
+    for (const spy of writeSpies()) expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('classifies executor timeouts via the structured failure code', async () => {
+    execute.mockImplementation(async () => ({
+      success: false,
+      output: '',
+      error: '执行超时 (60秒)，已完成 1 次迭代',
+      toolsUsed: [],
+      iterations: 1,
+      cancellationReason: 'timeout',
+      failureCode: 'timeout',
+    }));
+
+    const result = await askHandler()(null, { sessionId: 's1', question: 'q', requestId: 'r-timeout' });
+
+    expect(result).toEqual({ failure: { cause: 'timeout' } });
+  });
+
+  it('falls back to unknown for unclassified failures, thrown or returned', async () => {
+    execute.mockRejectedValue(new Error('ECONNRESET socket hang up'));
+    expect(await askHandler()(null, { sessionId: 's1', question: 'q', requestId: 'r-unk1' }))
+      .toEqual({ failure: { cause: 'unknown' } });
+
+    execute.mockImplementation(async () => ({
+      success: false,
+      output: '',
+      error: 'something odd happened',
+      toolsUsed: [],
+      iterations: 1,
+    }));
+    expect(await askHandler()(null, { sessionId: 's1', question: 'q', requestId: 'r-unk2' }))
+      .toEqual({ failure: { cause: 'unknown' } });
+  });
+
   it('aborts the in-flight signal and does not return a late answer', async () => {
     let capturedSignal: AbortSignal | undefined;
     execute.mockImplementation((request: { context: { abortSignal: AbortSignal } }) => new Promise((resolve) => {

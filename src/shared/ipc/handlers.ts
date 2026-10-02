@@ -31,6 +31,7 @@ import type { SurfaceLiveFrameV1 } from '../contract/surfaceExecution';
 import type { DAGVisualizationEvent } from '../contract/dagVisualization';
 import type { ScriptRunEvent, WorkflowLaunchEvent } from '../contract/scriptRun';
 import { DAG_CHANNELS, SKILL_CHANNELS } from './channels';
+import type { SideChatFailureCause } from './schemas';
 
 import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetrySessionListOptions, TelemetryToolStat, TelemetryIntentStat, TelemetryCostBucket, TelemetryCostByPeriodOptions, TelemetryPushEvent, TelemetryHealth, ComputerSurfaceReliabilitySummary, TelemetryFeedbackSubmitRequest, TelemetryFeedbackSubmitResult, TelemetryFeedbackRating } from '../contract/telemetry';
 
@@ -243,8 +244,9 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.CONTEXT_COMPRESSION_CONFIG_GET]: () => Promise<ContextCompressionChannelState>;
   [IPC_CHANNELS.CONTEXT_COMPRESSION_CONFIG_SET]: (patch: ContextCompressionConfigPatch) => Promise<ContextCompressionChannelState>;
 
-  // Read-only side chat. The answer is not a session message.
-  [IPC_CHANNELS.SIDE_CHAT_ASK]: (payload: { sessionId: string; question: string; requestId: string }) => Promise<{ answer: string }>;
+  // Read-only side chat. The answer is not a session message. On failure the
+  // handler resolves `{ failure: { cause } }` instead of throwing — see schemas/sideChat.
+  [IPC_CHANNELS.SIDE_CHAT_ASK]: (payload: { sessionId: string; question: string; requestId: string }) => Promise<{ answer?: string; failure?: { cause: SideChatFailureCause } }>;
   [IPC_CHANNELS.SIDE_CHAT_ABORT]: (payload: { requestId: string }) => Promise<{ aborted: boolean }>;
 
   // Skills

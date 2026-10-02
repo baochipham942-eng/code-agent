@@ -24,6 +24,7 @@ import { generateBashDescription } from '../../shell/dynamicDescription';
 import {
   diagnoseBashFailure,
   appendFailureDiagnostics,
+  sandboxDeniedWriteCreatesDirectory,
   sandboxDeniedWritePath,
 } from '../../shell/sandboxFailureDiagnostics';
 import {
@@ -819,6 +820,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
           permissionMode,
           abortSignal: ctx.abortSignal,
           deniedPath,
+          deniedPathCreatesDirectory: sandboxDeniedWriteCreatesDirectory(failureText),
           workingDirectory,
         });
         if (!offeredPath) throw error;

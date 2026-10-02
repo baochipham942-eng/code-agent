@@ -17,6 +17,8 @@ export interface SandboxEscalationEligibilityInput {
   permissionMode: OsSandboxPermissionMode;
   abortSignal: AbortSignal;
   deniedPath?: string;
+  /** The denial came from creating a directory: a missing path counts as a directory for policy. */
+  deniedPathCreatesDirectory?: boolean;
   /** Command cwd. User path rules compare workspace-relative spellings against it. */
   workingDirectory: string;
 }
@@ -45,12 +47,13 @@ function seatbeltSubpathGrantIsUnsafe(
   resolvedPath: string,
   workingDirectory: string,
   policyEnforcer: PolicyEnforcer | null | undefined,
+  missingPathIsDirectory: boolean,
 ): boolean {
   return grantContainsHome(resolvedPath)
-    || deniedWriteInsideSeatbeltSubpath({ resolvedPath, workingDirectory, policyEnforcer });
+    || deniedWriteInsideSeatbeltSubpath({ resolvedPath, workingDirectory, policyEnforcer, missingPathIsDirectory });
 }
 
-function writePathPolicyBlocksEscalation(deniedPath: string, workingDirectory: string): boolean {
+function writePathPolicyBlocksEscalation(deniedPath: string, workingDirectory: string, missingPathIsDirectory: boolean): boolean {
   let resolvedPath = path.resolve(deniedPath);
   try {
     resolvedPath = resolveCanonicalRunPath(deniedPath);
@@ -61,7 +64,7 @@ function writePathPolicyBlocksEscalation(deniedPath: string, workingDirectory: s
     // The executor already bound this process to the run's policy file.
     // Passing a directory here would retarget that singleton.
     const policyEnforcer = getPolicyEnforcer();
-    if (seatbeltSubpathGrantIsUnsafe(resolvedPath, workingDirectory, policyEnforcer)) return true;
+    if (seatbeltSubpathGrantIsUnsafe(resolvedPath, workingDirectory, policyEnforcer, missingPathIsDirectory)) return true;
     return denyConcreteShellWritePath({
       resolvedPath,
       workingDirectory,
@@ -98,7 +101,7 @@ export function shouldOfferEscalation(input: SandboxEscalationEligibilityInput):
   if (resolvedPath === path.parse(resolvedPath).root || resolvedPath === path.resolve(homedir())) {
     return undefined;
   }
-  if (writePathPolicyBlocksEscalation(deniedPath, input.workingDirectory)) {
+  if (writePathPolicyBlocksEscalation(deniedPath, input.workingDirectory, input.deniedPathCreatesDirectory === true)) {
     return undefined;
   }
   return deniedPath;

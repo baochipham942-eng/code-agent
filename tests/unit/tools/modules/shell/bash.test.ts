@@ -1411,15 +1411,20 @@ describe('bashModule OS 沙箱 gating（bypassPermissions）', () => {
 
 describe('bashModule sandbox escalation', () => {
   const modeMgr = getPermissionModeManager();
+  // CI（Linux，无 bwrap）上沙盒不可用 → default 档降级不包装 → 永远拿不到拒绝，整组假红；
+  // 包装本身已 mock（wrapMock），可用性也钉死，让判据只看升级逻辑不看平台。
+  let availableSpy: ReturnType<typeof vi.spyOn> | undefined;
 
   beforeEach(() => {
     modeMgr.setMode('default', true);
     process.env.OS_SANDBOX_ENABLED = 'true';
+    availableSpy = vi.spyOn(getSandboxManager(), 'isAvailable').mockReturnValue(true);
     wrapMock.mockReset();
     cleanupMock.mockReset();
   });
 
   afterEach(() => {
+    availableSpy?.mockRestore();
     modeMgr.setMode('default', true);
     process.env.OS_SANDBOX_ENABLED = 'true';
   });
@@ -1570,8 +1575,8 @@ describe('bashModule sandbox escalation', () => {
     }
   });
 
-  async function expectEscalationOffers(deniedPath: string, offered: boolean): Promise<void> {
-    const denial = `printf '%s\\n' "EPERM: operation not permitted, open '${deniedPath}'" >&2; exit 1`;
+  async function expectEscalationOffers(deniedPath: string, offered: boolean, op: 'open' | 'mkdir' = 'open'): Promise<void> {
+    const denial = `printf '%s\\n' "EPERM: operation not permitted, ${op} '${deniedPath}'" >&2; exit 1`;
     wrapMock.mockReturnValue({ command: denial, cleanup: cleanupMock });
     const canUse = vi.fn().mockResolvedValue({ allow: true as const });
     const handler = await bashModule.createHandler();
@@ -1706,6 +1711,29 @@ describe('bashModule sandbox escalation', () => {
     getPolicyEnforcer(project);
     try {
       await expectEscalationOffers(parent, false);
+    } finally {
+      resetPolicyEnforcer();
+      rmSync(project, { recursive: true, force: true });
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  it('does not offer a missing directory when denied file patterns could match inside it', async () => {
+    // 审查 Important（PR #2191）：目录尚不存在时 stat 失败被当成「无命中」，批准后 seatbelt 授整棵 subpath，
+    // 重跑可在新目录里写出 *.pem/.env 这类被 denied_file_patterns 禁止的文件名。不存在 = 可能包含 → 不给卡。
+    const project = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-missing-project-')));
+    const parent = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-missing-')));
+    const missing = join(parent, 'not-yet-created');
+    writeFileSync(join(project, 'code-agent-policy.toml'), [
+      '[filesystem]',
+      `writable_paths = ["./**", "${parent}/**"]`,
+      '',
+    ].join('\n'));
+    resetPolicyEnforcer();
+    getPolicyEnforcer(project);
+    try {
+      await expectEscalationOffers(missing, false, 'mkdir');
+      await expectEscalationOffers(join(parent, 'new-file.txt'), true);   // 新文件只授那一个文件，照旧给卡
     } finally {
       resetPolicyEnforcer();
       rmSync(project, { recursive: true, force: true });

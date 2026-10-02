@@ -179,7 +179,7 @@ export class PolicyEnforcer {
    * Seatbelt write allows `(subpath root)`. True when a filesystem deny matches
    * any path in that tree, including a denied file pattern inside a directory.
    */
-  writeSubpathIncludesFilesystemDeny(root: string): boolean {
+  writeSubpathIncludesFilesystemDeny(root: string, missingIsDirectory = false): boolean {
     if (!this.active) return false;
     const normalizedRoot = this.normalizePath(root);
     for (const pattern of this.policy.filesystem.denied_paths) {
@@ -193,7 +193,10 @@ export class PolicyEnforcer {
     try {
       return fs.statSync(normalizedRoot).isDirectory();
     } catch {
-      return false;
+      // 路径尚不存在：拒绝来自 mkdir 时它就是重跑要建的目录，授整棵 subpath 后能在里面写出被禁的
+      // 文件名，与基线「同一写入被沙盒拒绝」相悖 → 视为命中（PR #2191 审查 Important）；
+      // 来自 open 的新文件只授那一个文件，照旧放行。
+      return missingIsDirectory;
     }
   }
 

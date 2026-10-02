@@ -336,14 +336,17 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
   describe('N-WRITETARGET-UNRESOLVED：uncertain 写目标 + 路径 deny', () => {
     const unresolvedSshWrite = 'echo x > "$SSHDIR/authorized_keys"';
     const echoPreApproved = { preApprovedTools: new Set(['Bash(echo:*)']) };
+    let restoreSandbox: (() => void) | undefined;
 
     beforeEach(() => {
       classifierState.autoApprove = true;
+      restoreSandbox = pinOsWriteFenceAvailable(true);   // CI Linux 无 bwrap：沙盒不可用则 default 档降级不包装，沙盒拒绝路径根本走不到
       resetPolicyEnforcer();
       resetPolicyEngine();
     });
 
     afterEach(() => {
+      restoreSandbox?.();
       resetPolicyEnforcer();
       resetPolicyEngine();
     });

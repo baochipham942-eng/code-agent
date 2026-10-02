@@ -81,9 +81,11 @@ export function deniedWriteInsideSeatbeltSubpath(input: {
   resolvedPath: string;
   workingDirectory: string;
   policyEnforcer: PolicyEnforcer | null | undefined;
+  /** Denied operation was mkdir: a path that does not exist yet is a directory the retry would create. */
+  missingPathIsDirectory?: boolean;
 }): boolean {
   if (input.policyEnforcer?.isActive
-    && input.policyEnforcer.writeSubpathIncludesFilesystemDeny(input.resolvedPath)) {
+    && input.policyEnforcer.writeSubpathIncludesFilesystemDeny(input.resolvedPath, input.missingPathIsDirectory === true)) {
     return true;
   }
   return userPathDenySpecifiers().some((specifier) => patternIntersectsSubpath(

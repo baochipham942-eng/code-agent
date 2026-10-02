@@ -10,6 +10,18 @@ export function sandboxDeniedWritePath(failureText: string): string | undefined 
   return readSandboxDeniedPath(failureText);
 }
 
+/**
+ * True when the denied write was creating a directory (node `mkdir` EPERM or
+ * shell `mkdir: <path>: Operation not permitted`). A seatbelt subpath grant on a
+ * directory that does not exist yet lets the retry create it and write any name
+ * inside, so policy must treat the missing path as a directory (PR #2191 review).
+ */
+export function sandboxDeniedWriteCreatesDirectory(failureText: string): boolean {
+  if (!SANDBOX_DENIAL_PATTERN.test(failureText)) return false;
+  return /\bEPERM\b[^\r\n]*?\bmkdir\s+['"]/i.test(failureText)
+    || /(?:^|\n)mkdir:\s+(?:~|\/)[^:\r\n]+:\s+Operation not permitted\b/im.test(failureText);
+}
+
 function readSandboxDeniedPath(failureText: string): string | undefined {
   const nodeErrorPath = /\bEPERM\b[^\r\n]*?\b(?:open|mkdir|unlink|rename|scandir|stat|lstat|access|chmod|chown)\s+['"]([^'"\r\n]+)['"]/i.exec(failureText)?.[1];
   if (nodeErrorPath) return nodeErrorPath;

@@ -55,6 +55,7 @@ const MIGRATED: string[] = [
   'features/chat/ChatInput/pendingCommand.ts',
   'features/chat/ChatInput/PendingCommandChip.tsx',
   'features/chat/ChatInput/PermissionToggle.tsx',
+  'features/chat/ChatInput/ReadOnlySessionNotice.tsx',
   'features/chat/ChatInput/ReportStyleSelector.tsx',
   'features/chat/ChatInput/RoleDraftCard.tsx',
   'features/chat/ChatInput/TeamRecipeDraftCard.tsx',

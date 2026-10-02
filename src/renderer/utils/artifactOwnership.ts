@@ -97,8 +97,17 @@ export function buildArtifactOwnershipItems(
   const itemIndexByKey = new Map<string, number>();
   const primaryAgent = routingEvidence?.agentNames?.[0];
   const diffFilePaths = new Set(buildTurnFileChanges(turn).map((change) => change.filePath));
+  const stripLeadingSlashes = (filePath: string) => filePath.replace(/^[/\\]+/, '');
+  const absentPathKeys = turn.turnDiff?.absentPaths
+    ? new Set(turn.turnDiff.absentPaths.map(stripLeadingSlashes))
+    : null;
+  const isAbsentFileItem = (item: TurnArtifactOwnershipItem): boolean => {
+    if (!absentPathKeys || item.kind !== 'file' || typeof item.path !== 'string') return false;
+    return absentPathKeys.has(stripLeadingSlashes(item.path));
+  };
 
   const addItem = (item: TurnArtifactOwnershipItem, dedupeKey: string) => {
+    if (isAbsentFileItem(item)) return;
     const existingIndex = itemIndexByKey.get(dedupeKey);
     if (existingIndex !== undefined) {
       const existing = items[existingIndex];

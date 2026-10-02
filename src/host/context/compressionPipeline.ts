@@ -19,7 +19,7 @@ import {
   getFreshToolResultMessageIds,
   type ActiveToolResultPruneConfig,
 } from './layers/activeToolResultPrune';
-import { applyToolResultBudget } from './layers/toolResultBudget';
+import { applyToolResultBudget, resolveToolResultBudget } from './layers/toolResultBudget';
 import { applySnip } from './layers/snip';
 import { applyMicrocompact } from './layers/microcompact';
 import { applyContextCollapse } from './layers/contextCollapse';
@@ -73,7 +73,8 @@ export interface PipelineConfig {
   enableSnip: boolean;
   enableMicrocompact: boolean;
   enableContextCollapse: boolean;
-  toolResultBudget: number; // default: 2000
+  /** Optional explicit L1 override for callers/tests; production derives it from maxTokens. */
+  toolResultBudget?: number;
   protectedToolResultPredicate?: (message: ProjectableMessage) => boolean;
   interventions?: ContextInterventionSnapshot;
   /** GAP-009: 提供时 L1 超预算结果先落盘再截断（透传给 toolResultBudget） */
@@ -215,10 +216,30 @@ export class CompressionPipeline {
     // Deterministic full-body archive + placeholder for oversized results,
     // so they never enter L1's lossy head+tail truncation.
     // -------------------------------------------------------------------------
+    const resolvedToolResultBudget = resolveToolResultBudget(config.maxTokens);
+    const l1MaxTokens = config.toolResultBudget ?? resolvedToolResultBudget.l1MaxTokens;
+    const l0MaxTokens = config.activeToolResultPrune?.maxTokensPerResult
+      ?? resolvedToolResultBudget.l0MaxTokens;
+    const resolveMessageBudget = (message: {
+      toolName?: string;
+      resultBudgetTokens?: number;
+    }, layer: 'l1' | 'l0'): number => {
+      if (message.resultBudgetTokens === undefined) {
+        return layer === 'l1' ? l1MaxTokens : l0MaxTokens;
+      }
+      const budget = resolveToolResultBudget(
+        config.maxTokens,
+        message.toolName,
+        message.resultBudgetTokens,
+      );
+      return layer === 'l1' ? budget.l1MaxTokens : budget.l0MaxTokens;
+    };
+
     if (config.activeToolResultPrune?.enabled) {
       const prunedCount = applyActiveToolResultPrune(transcript, state, {
         enabled: true,
-        maxTokensPerResult: config.activeToolResultPrune.maxTokensPerResult,
+        maxTokensPerResult: l0MaxTokens,
+        resolveMaxTokens: (message) => resolveMessageBudget(message, 'l0'),
         protectedMessageIds,
         spillSessionId: config.activeToolResultPrune.spillSessionId,
       });
@@ -229,7 +250,8 @@ export class CompressionPipeline {
     // L1: Tool result budget — always runs (mutates transcript messages)
     // -------------------------------------------------------------------------
     applyToolResultBudget(transcript, state, {
-      maxTokensPerResult: config.toolResultBudget ?? 2000,
+      maxTokensPerResult: l1MaxTokens,
+      resolveMaxTokens: (message) => resolveMessageBudget(message, 'l1'),
       protectedMessageIds: toolResultBudgetProtectedMessageIds,
       spillSessionId: config.spillSessionId,
     });

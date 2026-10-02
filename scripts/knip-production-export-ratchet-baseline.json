@@ -17453,7 +17453,6 @@
     "src/design/critique/index.ts",
     "src/design/critique/prompt.ts",
     "src/host/agent/agentBus.ts",
-    "src/host/agent/agentInbox.ts",
     "src/host/agent/agentLoopIterator.ts",
     "src/host/agent/guiAgent.ts",
     "src/host/agent/parallelErrorHandler.ts",

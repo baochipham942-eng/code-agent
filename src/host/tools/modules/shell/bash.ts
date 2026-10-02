@@ -4,6 +4,7 @@
 // ============================================================================
 
 import path from 'node:path';
+import type { ModelConfig } from '../../../../shared/contract/model';
 import type {
   ToolHandler,
   ToolModule,
@@ -48,6 +49,8 @@ import {
 import { containWriteFenceWorkspaceRoot, isOsWriteFenceAvailable } from '../../../sandbox/writeFence';
 import { resolveCanonicalRunPath } from '../../../runtime/runContext';
 import { isPathWithinRoot } from '../../../runtime/workspaceScope';
+import { resolveContextWindow } from '../../../model/modelLimits';
+import { resolveToolResultBudget } from '../../../context/layers/toolResultBudget';
 
 const MAX_TIMEOUT_MS = BASH.MAX_TIMEOUT;
 const BACKGROUND_TRAILING_OPERATOR = /(?:^|[;\n])\s*([^;&|\n][\s\S]*?)\s*&\s*$/;
@@ -148,9 +151,10 @@ function detectHeredocTruncation(command: string): { ok: true } | { ok: false; r
 /** 添加 guidance 文本的输出截断；超阈值时先落盘完整输出（GAP-009） */
 function truncateOutput(
   output: string,
+  maxOutputLength: number,
   spillCtx?: { sessionId?: string; toolCallId?: string },
 ): string {
-  if (output.length <= BASH.MAX_OUTPUT_LENGTH) return output;
+  if (output.length <= maxOutputLength) return output;
   const originalLength = output.length;
   // 截断前落盘完整输出，模型可用 Read/Grep 回查而不必重跑命令
   const spillResult = spillToolResultArchive({
@@ -160,8 +164,8 @@ function truncateOutput(
     toolCallId: spillCtx?.toolCallId,
     reason: 'bash-output-limit',
   });
-  const truncated = truncateMiddleErrorAware(output, BASH.MAX_OUTPUT_LENGTH);
-  const size = `Output was ${originalLength} chars, truncated to ${BASH.MAX_OUTPUT_LENGTH}.`;
+  const truncated = truncateMiddleErrorAware(output, maxOutputLength);
+  const size = `Output was ${originalLength} chars, truncated to ${maxOutputLength}.`;
   // 落盘失败时没有路径，不能让模型去 Read offset / Edit；成功时只指落盘文件。
   if (!spillResult) {
     return (
@@ -314,6 +318,12 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     }
 
     const timeout = Math.min((args.timeout as number) || BASH.DEFAULT_TIMEOUT, MAX_TIMEOUT_MS);
+    const modelConfig = ctx.modelConfig as ModelConfig | undefined;
+    const maxOutputLength = resolveToolResultBudget(
+      modelConfig?.model ? resolveContextWindow(modelConfig.model, modelConfig.provider) : Number.NaN,
+      schema.name,
+      schema.resultBudgetTokens,
+    ).maxOutputChars;
     let workingDirectory: string;
     try {
       const rawWorkingDirectory = typeof args.working_directory === 'string' && args.working_directory.trim()
@@ -393,10 +403,13 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           readOnlyRoots: ctx.workspaceScope?.roots
             .filter((root) => root.access === 'read_only')
             .map((root) => resolveCanonicalRunPath(root.path)),
-          readWriteRoots,
-          deniedReadRoots: process.env.CODE_AGENT_EVAL_REAL_ROOT
-            ? [process.env.CODE_AGENT_EVAL_REAL_ROOT]
-            : undefined,
+          readWriteRoots: writeFence && fenceRoot
+            ? [fenceRoot]
+            : scopeWriteRoots ?? workspaceConfinedRoots,
+          deniedReadRoots: [
+            ...(ctx.deniedReadRoots ?? []),
+            ...(process.env.CODE_AGENT_EVAL_REAL_ROOT ? [process.env.CODE_AGENT_EVAL_REAL_ROOT] : []),
+          ],
           allowNetwork,
         });
         sandboxCleanup = wrapped.cleanup;
@@ -521,7 +534,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           };
         }
 
-        const outputText = truncateOutput(output.output, {
+        const outputText = truncateOutput(output.output, maxOutputLength, {
           sessionId: ctx.sessionId,
           toolCallId: ctx.currentToolCallId,
         });
@@ -878,7 +891,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
       if (stderr) {
         output += `\n[stderr]: ${stderr}`;
       }
-      output = truncateOutput(output, {
+      output = truncateOutput(output, maxOutputLength, {
         sessionId: ctx.sessionId,
         toolCallId: ctx.currentToolCallId,
       });
@@ -932,7 +945,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         errorOutput += (errorOutput ? '\n' : '') + `[stderr]: ${String(errObj.stderr)}`;
       }
       errorOutput = errorOutput
-        ? truncateOutput(errorOutput, { sessionId: ctx.sessionId, toolCallId: ctx.currentToolCallId })
+        ? truncateOutput(errorOutput, maxOutputLength, { sessionId: ctx.sessionId, toolCallId: ctx.currentToolCallId })
         : errorOutput;
 
       // 模型可见通道是 result.error（messageProcessor 取 output||error），meta.output 不会被读到。

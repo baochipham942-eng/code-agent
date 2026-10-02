@@ -15,6 +15,10 @@
 | **fault-injection**（故障注入 / 变异验证） | 故意打断被测逻辑的接线（删掉一行赋值、断开一个回调），确认对应测试真的会变红，再还原 | 测试本身有效——它不是"永远绿"的摆设，出问题真的会被拦下 | 生产环境下这条路径是否真的会被走到 |
 | **real-runtime**（真实运行时） | 在接近生产的环境里真跑一遍：本地 dogfood 包点击、真实 API 调用、部署后 smoke、真机截图 | 端到端链路在真实环境下确实工作 | 覆盖率——真机跑一次不代表所有分支都被覆盖 |
 
+### hermetic-protocol 的三层回放
+
+一条 hermetic 回放要同时钉住三层，各自一个断言，不能靠另外两层的绿掩盖：渲染层比用户可见投影（账本水合、`projectTurns`、步骤人话、turnDiff 卡片，不截图），协议层比发往 provider 的请求序列字节，持久层比会话条数与末角色、产物内容哈希、审批记录。基线是 `snapshots/request-replay/<case>.render.json` 与 `<case>.state.json`，和请求快照一起由 `acceptance:snapshot-replay:record` 录出；同步门把这两类文件算进「敏感面前缀一变，快照必须同 PR 更新」，并在三层用例缺旁路时直接红。判据全文见 [三层回放证据](testing/replay-three-layer-evidence.md)。
+
 ## 使用方式
 
 1. **每个功能点交付前**，按 `.claude/rules/testing.md` 的分层验证流程跑测试，并对每一层证据标注对应档位。

@@ -1,0 +1,15 @@
+{
+  "caseId": "write-file",
+  "session": {
+    "messageCount": 4,
+    "lastRole": "assistant"
+  },
+  "artifacts": [
+    {
+      "name": "snapshot-write-note.txt",
+      "sha256": "e500584e3c4e3d8b80f4bd050e798a493737b1a0b98c154bbee3aacf26e13eeb",
+      "bytes": 34
+    }
+  ],
+  "approvals": []
+}

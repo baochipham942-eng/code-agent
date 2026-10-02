@@ -12,6 +12,9 @@ keyless 确定性假模型（`CODE_AGENT_E2E_LOCAL_AGENT_MODEL=1`）真会话的
   turn-NN/manifest.json      request_manifest（requestId/账本 id 规范化）
   turn-NN/canonical-request.json   重建请求的 canonical 字节（回放逐字节咬它）
   turn-NN/expected-response.json   假模型 canonical 响应（回放用当前假模型重推导再咬）
+
+<caseId>.render.json         渲染层旁路（与用例目录同级；当前只录 write-file）
+<caseId>.state.json          持久层旁路（与用例目录同级；当前只录 write-file）
 ```
 
 ## 纪律
@@ -22,7 +25,9 @@ keyless 确定性假模型（`CODE_AGENT_E2E_LOCAL_AGENT_MODEL=1`）真会话的
   `src/host/testing/e2e/**`、`requestReplay*.ts`、`contextBuilder.ts`、
   `converter.ts`、`toolDefinitions.ts`、`deferredTools.ts`、`todayAnchor.ts`、
   以及 `src/host/tools/modules/**/*.schema.ts` 这类模型可见行为，必须同 PR
-  重录——`scripts/ci/snapshot-replay-sync-gate.mjs` 守。
+  重录——`scripts/ci/snapshot-replay-sync-gate.mjs` 守。协议层目录、
+  `<caseId>.render.json`、`<caseId>.state.json` 都算这次快照更新。
+  `write-file` 缺任一旁路，门直接红。判据见 `docs/testing/replay-three-layer-evidence.md`。
 - 若改动确认行为不可见（注释/重命名），重录后字节无变化时，在本文件末尾
   「重录确认」追加一行说明（PR 号 + 原因）作为同 PR 快照目录更新。
 - 生成器确定性：同机同代码重录必须字节一致（已双录验证）；id 全规范化、

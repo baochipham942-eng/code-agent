@@ -2346,6 +2346,12 @@
         },
         "filesAuthoritative": {
           "type": "boolean"
+        },
+        "absentPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "required": [

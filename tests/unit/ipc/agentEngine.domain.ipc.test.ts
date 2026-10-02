@@ -2,9 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
 import { AgentEngineCapabilityError } from '../../../src/shared/contract/agentEngine';
 
-// agentEngine.ipc.ts 派发特征测试（RQ-183 续作·AGENT_ENGINE 刀迁表前钉住 switch 形态）：派发层 9 个 action。
+// agentEngine.ipc.ts 派发特征测试（RQ-183 续作·AGENT_ENGINE 刀迁表前钉住 switch 形态）：派发层 10 个 action。
 // 既有 agentEngine.ipc.test.ts 只覆盖 detect 的双缓存失效与并发等待。这里补派发层契约：
-// - list / listSources / get / listModels / listHistory / previewHistory 的委派与原样回传（payload 透传）
+// - list / listSources / get / listModels / listHistory / previewHistory / importHistory 的委派与原样回传（payload 透传）
 // - select 缺参 INVALID_PAYLOAD；selectModel 的 INVALID_PAYLOAD / SESSION_NOT_FOUND / INVALID_ENGINE / MODEL_NOT_FOUND / MODEL_DISABLED 完整文案
 // - catch 映射：AgentEngineCapabilityError → 自带 code + details{engine,capability}；AgentEngineModelIncompatibleError →
 //   MODEL_NOT_FOUND + details{engine,model}；AgentEngineHistoryImportError → 自带 code + details；普通 Error → INTERNAL_ERROR；非 Error → String
@@ -32,6 +32,7 @@ const env = vi.hoisted(() => {
     history: {
       listHistory: vi.fn(async (_req: unknown): Promise<unknown> => [{ id: 'h1' }]),
       previewHistory: vi.fn(async (_req: unknown): Promise<unknown> => ({ id: 'h1', turns: [] })),
+      mapHistoryForImport: vi.fn(async (_req: unknown): Promise<unknown> => ({ summary: { id: 'h1' }, provenance: { kind: 'external_history' }, envelope: { schema: 'neo.session-export' } })),
     },
     session: {
       getSession: vi.fn(async (): Promise<unknown> => null),
@@ -97,6 +98,15 @@ describe('agentEngine.ipc dispatch 特征：只读委派', () => {
     expect(env.history.listHistory).toHaveBeenCalledWith(req);
     expect(await call('previewHistory', { id: 'h1' })).toEqual({ success: true, data: { id: 'h1', turns: [] } });
     expect(env.history.previewHistory).toHaveBeenCalledWith({ id: 'h1' });
+  });
+
+  it('importHistory 透传 payload 原样回传', async () => {
+    const req = { engine: 'claude_code', sourcePath: '/synthetic/history.jsonl', ownerScopeId: 'owner', projectId: 'project' };
+    expect(await call('importHistory', req)).toEqual({
+      success: true,
+      data: { summary: { id: 'h1' }, provenance: { kind: 'external_history' }, envelope: { schema: 'neo.session-export' } },
+    });
+    expect(env.history.mapHistoryForImport).toHaveBeenCalledWith(req);
   });
 });
 

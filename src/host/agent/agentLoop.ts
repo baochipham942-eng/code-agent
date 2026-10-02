@@ -27,6 +27,7 @@ import { AntiPatternDetector } from './antiPattern/detector';
 import { GoalTracker } from './goalTracker';
 import { GoalModeController } from './goalModeController';
 import { resolveScaffoldProfileForModel } from './runtime/scaffoldProfile';
+import type { CachePromptSampleHolder } from './runtime/toolTableFingerprint';
 import { NudgeManager } from './nudgeManager';
 import {
   HookMessageBuffer,
@@ -109,7 +110,7 @@ export class AgentLoop {
       logger.info(`[AgentLoop] scaffold-profile-active tier=${scaffoldProfile.tier} model=${config.modelConfig.model}`);
     }
     const resolvedSessionId = config.sessionId || `session-${Date.now()}`;
-    const cachePromptSample: { current?: { prompt: string; modelId: string } } = {};
+    const cachePromptSample: CachePromptSampleHolder = {};
     const onEvent = createTurnCostEventHandler({
       sessionId: resolvedSessionId,
       onEvent: config.onEvent,

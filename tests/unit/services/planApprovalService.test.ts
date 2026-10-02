@@ -9,6 +9,9 @@ const mocks = vi.hoisted(() => ({
   listSessions: vi.fn(),
   getRecentMessages: vi.fn(),
   dbReady: true,
+  dbThrows: false,
+  recentThrows: false,
+  warn: vi.fn(),
 }));
 
 vi.mock('../../../src/host/services/infra/sessionManager', () => ({
@@ -23,22 +26,48 @@ vi.mock('../../../src/host/services/planning/taskStore', () => ({
   demoteInProgressTasks: mocks.demoteInProgressTasks,
 }));
 
+vi.mock('../../../src/host/services/infra/logger', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/host/services/infra/logger')>();
+  return {
+    ...actual,
+    createLogger: () => ({
+      info: vi.fn(),
+      warn: (...args: unknown[]) => mocks.warn(...args),
+      error: vi.fn(),
+      debug: vi.fn(),
+    }),
+  };
+});
+
 vi.mock('../../../src/host/services/core/databaseService', () => ({
-  getDatabase: () => ({
-    get isReady() { return mocks.dbReady; },
-    listSessions: mocks.listSessions,
-    getRecentMessages: mocks.getRecentMessages,
-  }),
+  getDatabase: () => {
+    if (mocks.dbThrows) throw new Error('database unavailable');
+    return {
+      get isReady() { return mocks.dbReady; },
+      listSessions: mocks.listSessions,
+      getRecentMessages: (...args: [string, number]) => {
+        if (mocks.recentThrows) throw new Error('database unavailable');
+        return mocks.getRecentMessages(...args);
+      },
+    };
+  },
 }));
 
+import { hasPendingPlanApproval } from '../../../src/host/services/planning/planApprovalPending';
 import {
   reconcileRecentPlanApprovalStarts,
   resolvePlanApproval,
 } from '../../../src/host/services/planning/planApprovalService';
 
 function planMessage(
-  status: 'pending' | 'starting' | 'approved' | 'failed' | 'cancelled' = 'pending',
-  extra: { failureReason?: string; failedAt?: number; feedback?: string; decidedAt?: number } = {},
+  status: 'pending' | 'starting' | 'approved' | 'failed' | 'cancelled' | 'revision_requested' = 'pending',
+  extra: {
+    failureReason?: string;
+    failedAt?: number;
+    feedback?: string;
+    decidedAt?: number;
+    source?: 'model_exit' | 'synthetic_text';
+  } = {},
 ): Message {
   return {
     id: 'message-plan',
@@ -889,5 +918,89 @@ describe('versioned edit-then-approve (ADR-074 K4)', () => {
         content: expect.stringContaining('<approved-plan>\n1. Ship the edited plan\n2. Implement UI\n</approved-plan>'),
       }));
     }
+  });
+});
+
+describe('hasPendingPlanApproval', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.dbReady = true;
+    mocks.dbThrows = false;
+    mocks.recentThrows = false;
+    mocks.getRecentMessages.mockReturnValue([]);
+  });
+
+  it('近期窗口里的 pending 卡算未决，model_exit 与 synthetic_text 都算', () => {
+    mocks.getRecentMessages.mockReturnValue([
+      planMessage('pending', { source: 'model_exit' }),
+    ]);
+    expect(hasPendingPlanApproval('session-1')).toBe(true);
+    mocks.getRecentMessages.mockReturnValue([
+      planMessage('pending', { source: 'synthetic_text' }),
+    ]);
+    expect(hasPendingPlanApproval('session-1')).toBe(true);
+    expect(mocks.getRecentMessages).toHaveBeenCalledWith('session-1', 20);
+  });
+
+  it('failed 可重试，approved / cancelled / starting / revision_requested 不算未决', () => {
+    for (const status of ['approved', 'cancelled', 'starting', 'revision_requested'] as const) {
+      mocks.getRecentMessages.mockReturnValue([planMessage(status)]);
+      expect(hasPendingPlanApproval('session-1')).toBe(false);
+    }
+    mocks.getRecentMessages.mockReturnValue([planMessage('failed')]);
+    expect(hasPendingPlanApproval('session-1')).toBe(true);
+  });
+
+  it('窗口里只要有一张可重试卡就未决，非计划工具不算', () => {
+    const plain: Message = {
+      id: 'message-plain',
+      role: 'assistant',
+      content: '',
+      timestamp: 1,
+      toolCalls: [{
+        id: 'tool-plain',
+        name: 'Read',
+        arguments: {},
+        result: { toolCallId: 'tool-plain', success: true, metadata: { filePath: '/tmp' } },
+      }],
+    };
+    mocks.getRecentMessages.mockReturnValue([planMessage('approved'), plain]);
+    expect(hasPendingPlanApproval('session-1')).toBe(false);
+    mocks.getRecentMessages.mockReturnValue([planMessage('approved'), planMessage('pending')]);
+    expect(hasPendingPlanApproval('session-1')).toBe(true);
+  });
+
+  it('没有 planApproval 对象的计划确认卡按 pending 计', () => {
+    const card = planMessage('pending');
+    const toolCall = card.toolCalls?.[0];
+    if (!toolCall?.result?.metadata) throw new Error('missing card');
+    delete toolCall.result.metadata.planApproval;
+    mocks.getRecentMessages.mockReturnValue([card]);
+    expect(hasPendingPlanApproval('session-1')).toBe(true);
+  });
+
+  it('数据库未就绪、抛错或读窗口失败时失败打开并记日志', () => {
+    mocks.dbReady = false;
+    mocks.getRecentMessages.mockReturnValue([planMessage('pending')]);
+    expect(hasPendingPlanApproval('session-1')).toBe(false);
+    expect(mocks.getRecentMessages).not.toHaveBeenCalled();
+    expect(mocks.warn).toHaveBeenCalled();
+
+    mocks.warn.mockClear();
+    mocks.dbReady = true;
+    mocks.dbThrows = true;
+    expect(hasPendingPlanApproval('session-1')).toBe(false);
+    expect(mocks.warn).toHaveBeenCalled();
+
+    mocks.warn.mockClear();
+    mocks.dbThrows = false;
+    mocks.recentThrows = true;
+    expect(hasPendingPlanApproval('session-1')).toBe(false);
+    expect(mocks.warn).toHaveBeenCalled();
+  });
+
+  it('没有 sessionId 时不查库', () => {
+    expect(hasPendingPlanApproval(undefined)).toBe(false);
+    expect(mocks.getRecentMessages).not.toHaveBeenCalled();
   });
 });

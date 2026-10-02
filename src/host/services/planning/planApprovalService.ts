@@ -14,6 +14,7 @@ import type { TaskManager } from '../../task';
 import { getSessionManager } from '../infra/sessionManager';
 import { getDatabase } from '../core/databaseService';
 import { demoteInProgressTasks, replaceTasksAtomically } from './taskStore';
+import { RECONCILE_MESSAGE_WINDOW } from './planApprovalPending';
 import { createLogger } from '../infra/logger';
 
 const MAX_PLAN_STEPS = 50;
@@ -22,9 +23,8 @@ const MAX_FEEDBACK_LENGTH = 8_000;
 const MAX_FAILURE_REASON_LENGTH = 500;
 /** 崩溃残留对账落定的失败原因：宿主在启动确认到达前退出。 */
 const RESTART_ORPHAN_FAILURE_REASON = 'Host exited during plan startup';
-/** 启动对账扫描的近期会话数 / 每会话近期消息数：认领总在崩溃前一刻，浅窗口足够。 */
+/** 启动对账扫描的近期会话数：认领总在崩溃前一刻，浅窗口足够。每会话消息窗口见 planApprovalPending。 */
 const RECONCILE_SESSION_SCAN_LIMIT = 20;
-const RECONCILE_MESSAGE_WINDOW = 20;
 const logger = createLogger('PlanApprovalService');
 
 export class PlanApprovalError extends Error {

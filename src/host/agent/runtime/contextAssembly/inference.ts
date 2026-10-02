@@ -90,6 +90,7 @@ import {
 import { withNativeModelOperation } from './nativeModelCheckpoint';
 import { runInferenceWithTelemetry } from './inferenceTelemetry';
 import { completeRequestManifest, recordRequestManifest, recordInferenceRetryTrace, withActualModelIdentity } from './requestManifest';
+import { fingerprintToolTable } from '../toolTableFingerprint';
 import type { TraceEventDataMap } from '../turnTrace';
 import {
   applyCommandCenterPreannounce,
@@ -477,8 +478,8 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
   tools = [...tools].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   let effectiveTools = tools;
   let effectiveConfig = ctx.runtime.modelConfig;
-  let artifactRequest = false;
-  let pendingCapabilityFallback: ModelFallbackInfo | null = null;
+  // 有效行已经顶到 max-lines=1000，两个旗标挤在一行，给发送前的工具表指纹留出调用。
+  let artifactRequest = false, pendingCapabilityFallback: ModelFallbackInfo | null = null;
 
   const builtModelMessages = await ctx.buildModelMessages();
   let modelMessages: ModelMessage[] = builtModelMessages;
@@ -901,6 +902,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         artifactRepairFullRewritePriority,
         ...(streamReconnectMax !== undefined ? { streamReconnectMax } : {}),
       };
+      if (ctx.runtime.cachePromptSample) ctx.runtime.cachePromptSample.toolsFingerprint = fingerprintToolTable(effectiveTools);
       requestManifestData = recordRequestManifest(ctx, { requestId: llmCallId, messages: modelMessages, assembledMessages: builtModelMessages, tools: effectiveTools, requestConfig });
       // 这次模型调用的整个生命周期（prepared → dispatched → succeeded/abandoned）
       // 收在一处：没跑完也必须给终态，否则轮次收尾时 Durable Run 会因为「留着未了结

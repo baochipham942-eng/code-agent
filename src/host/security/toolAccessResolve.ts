@@ -4,6 +4,7 @@ import {
   type ToolAccessKind,
 } from '../protocol/tools';
 import type { FoldedToolAccess } from '../tools/dispatch/foldToolAccess';
+import { stripEmbeddedPathParams } from '../tools/utils/resolveInputPath';
 import {
   normalizeTargetPath,
   type ResolvedToolAccess,
@@ -165,7 +166,7 @@ function resolveExpression(
     const root = normalizeTargetPath(workspace, '.');
     return {
       type: 'domain',
-      domain: { type: 'path', root, targetPath: normalizeTargetPath(cwd, segment) },
+      domain: { type: 'path', root, targetPath: normalizeTargetPath(cwd, stripEmbeddedPathParams(segment)) },
     };
   }
   if (parsed.name === 'pty') {
@@ -219,7 +220,9 @@ function resolveArgumentNames(
         if (kind !== 'read') return [unknownAccess(kind)];
         continue;
       }
-      paths.push(value);
+      // 与 Read 工具同一份内嵌参数剥离：只可能把不同写法归并到同一路径（更保守），
+      // 不会把真正相同的路径拆开。
+      paths.push(stripEmbeddedPathParams(value));
       continue;
     }
     if (Array.isArray(value)) {
@@ -229,7 +232,7 @@ function resolveArgumentNames(
       }
       for (const item of value) {
         if (typeof item !== 'string' || item.trim() === '') return [unknownAccess(kind)];
-        paths.push(item);
+        paths.push(stripEmbeddedPathParams(item));
       }
       continue;
     }

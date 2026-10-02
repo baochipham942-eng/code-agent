@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
+import { expandTilde } from '../tools/utils/resolveInputPath';
 import type { ToolAccessKind } from '../protocol/tools';
 
 export type ToolResourceDomain =
@@ -16,11 +17,16 @@ export interface ResolvedToolAccess {
 
 const UNKNOWN_READWRITE: ResolvedToolAccess = { kind: 'readwrite', domain: { type: 'unknown' } };
 
-/** 与写隔离原先的路径归一同一实现：相对 cwd 解析，再走运行时真实路径。 */
+/**
+ * 与写隔离原先的路径归一同一实现：相对 cwd 解析，再走运行时真实路径。
+ * ~ 前缀先按工具的 resolveInputPath 同一份 expandTilde 展开——Read/Write/Append/Glob
+ * 打开文件前都会展开，调度与写锁若不展开，同一文件的 ~/ 与绝对写法会拿到不同 key。
+ */
 export function normalizeTargetPath(workingDirectory: string, candidate: string): string {
-  const resolved = path.normalize(path.isAbsolute(candidate)
-    ? candidate
-    : path.resolve(workingDirectory, candidate));
+  const expanded = expandTilde(candidate);
+  const resolved = path.normalize(path.isAbsolute(expanded)
+    ? expanded
+    : path.resolve(workingDirectory, expanded));
   return resolveCanonicalRunPath(resolved);
 }
 

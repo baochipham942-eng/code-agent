@@ -350,3 +350,34 @@ describe('shared resource conflict', () => {
     )).toBe(false);
   });
 });
+
+describe('scheduler path normalization matches the file tools (rework r2)', () => {
+  it('expands ~ the way Read/Write resolveInputPath do, so both spellings share one domain', () => {
+    const home = os.homedir();
+    expect(normalizeTargetPath(sub, '~/notes.md')).toBe(normalizeTargetPath(sub, path.join(home, 'notes.md')));
+    expect(normalizeTargetPath(sub, '~')).toBe(normalizeTargetPath(sub, home));
+    // 非 ~ 前缀的路径保持原语义：仍是相对 cwd 的字面路径
+    expect(normalizeTargetPath(sub, 'a~b.md')).toBe(normalizeTargetPath(sub, 'a~b.md'));
+  });
+
+  it('gives the ~ spelling and the absolute spelling the same write lock key', () => {
+    const tilde = scopeFor('Write', { file_path: '~/notes.md' }, 'write');
+    const absolute = scopeFor('Write', { file_path: path.join(os.homedir(), 'notes.md') }, 'write');
+    expect(tilde.kind).toBe('file');
+    expect(tilde.lockKey).toBe(absolute.lockKey);
+  });
+
+  it('strips Read embedded params before resolving the path domain', () => {
+    const readOf = (file_path: string) => resolveFoldedToolAccess({
+      toolName: 'Read',
+      folded: foldToolAccess({ accesses: [{ kind: 'read', argumentNames: ['file_path'] }] }),
+      params: { file_path },
+      workspace,
+      cwd: workspace,
+    });
+    const plain = readOf('a.md');
+    for (const embedded of ['a.md lines 1-20', 'a.md line 7', 'a.md offset=10', 'a.md offset 10 limit 5']) {
+      expect(readOf(embedded), embedded).toEqual(plain);
+    }
+  });
+});

@@ -1,3 +1,4 @@
+import { homedir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import {
   classifyToolCalls,
@@ -296,6 +297,38 @@ describe('order-preserving segments', () => {
     expect(classifyToolCalls([
       call('1', 'task_list', {}),
       call('2', 'Read', { file_path: 'a.txt' }),
+    ], undefined, options).segments).toHaveLength(1);
+  });
+
+  it('splits a write from a read of the same file spelled with ~ (tools expand it, so must the scheduler)', () => {
+    getProtocolRegistry();
+    const homeFile = `${homedir()}/k2-notes.md`;
+    const write = call('w', 'Write', { file_path: homeFile, content: 'x' });
+    const read = call('r', 'Read', { file_path: '~/k2-notes.md' });
+    expect(classifyToolCalls([write, read], undefined, options)
+      .segments.map((segment) => segment.map((entry) => entry.toolCall.name))).toEqual([['Write'], ['Read']]);
+    expect(classifyToolCalls([read, write], undefined, options).segments).toHaveLength(2);
+  });
+
+  it.each([
+    'a.md lines 1-20',
+    'a.md line 7',
+    'a.md offset=10',
+    'a.md offset 10 limit 5',
+  ])('splits Write(a.md) from Read(%s): Read strips embedded params, so must the scheduler', (file_path) => {
+    getProtocolRegistry();
+    const classified = classifyToolCalls([
+      call('w', 'Write', { file_path: 'a.md', content: 'x' }),
+      call('r', 'Read', { file_path }),
+    ], undefined, options);
+    expect(classified.segments.map((segment) => segment.map((entry) => entry.toolCall.name))).toEqual([['Write'], ['Read']]);
+  });
+
+  it('still parallelizes embedded-param reads of different files', () => {
+    getProtocolRegistry();
+    expect(classifyToolCalls([
+      call('1', 'Read', { file_path: 'a.md lines 1-5' }),
+      call('2', 'Read', { file_path: 'b.md lines 1-5' }),
     ], undefined, options).segments).toHaveLength(1);
   });
 });

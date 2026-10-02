@@ -14,6 +14,8 @@ export interface ResolvedToolAccess {
   readonly domain: ToolResourceDomain;
 }
 
+const UNKNOWN_READWRITE: ResolvedToolAccess = { kind: 'readwrite', domain: { type: 'unknown' } };
+
 /** 与写隔离原先的路径归一同一实现：相对 cwd 解析，再走运行时真实路径。 */
 export function normalizeTargetPath(workingDirectory: string, candidate: string): string {
   const resolved = path.normalize(path.isAbsolute(candidate)
@@ -85,4 +87,29 @@ export function toolResourceAccessesConflict(
   if (leftTarget === null || rightTarget === null) return false;
   return pathsAreSameOrChild(leftTarget, rightTarget)
     || pathsAreSameOrChild(rightTarget, leftTarget);
+}
+
+/** 未定域读（readOnly 且无 accesses 声明）不知道自己会读到什么。 */
+function isUnscopedRead(access: ResolvedToolAccess): boolean {
+  return access.kind === 'read' && access.domain.type === 'unscoped';
+}
+
+/**
+ * 段调度用的成对判定：在 toolResourceAccessesConflict 之上再收紧一条——
+ * 未定域读与任何写（含命名域写、agent:runtime 写）都视为冲突。
+ * fail closed：缺声明的只读工具（task_list/plan_read/MemoryRead 等）读到的东西
+ * 一律当成可能被同批的写改动，宁可拆段也不并发。读写原语语义不变。
+ */
+export function segmentAccessesConflict(
+  left: readonly ResolvedToolAccess[],
+  right: readonly ResolvedToolAccess[],
+): boolean {
+  const leftAccesses = left.length > 0 ? left : [UNKNOWN_READWRITE];
+  const rightAccesses = right.length > 0 ? right : [UNKNOWN_READWRITE];
+  return leftAccesses.some((access) => rightAccesses.some((other) => {
+    if (toolResourceAccessesConflict(access, other)) return true;
+    if (isUnscopedRead(access)) return other.kind !== 'read';
+    if (isUnscopedRead(other)) return access.kind !== 'read';
+    return false;
+  }));
 }

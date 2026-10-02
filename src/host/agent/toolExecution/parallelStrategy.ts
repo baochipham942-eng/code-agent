@@ -2,13 +2,15 @@
 // Order-preserving tool segments. A call joins the current segment only when
 // it conflicts with none of the calls already there. A barrier closes the
 // segment, runs alone, and defers every later call.
+// An unscoped read (readOnly without accesses) may observe anything, so it
+// never shares a segment with any write (fail closed).
 // ============================================================================
 
 import type { ToolCall } from '../../../shared/contract';
 import type { MCPToolAnnotations } from '../../mcp/types';
 import type { ToolClassification } from '../loopTypes';
 import {
-  toolResourceAccessesConflict,
+  segmentAccessesConflict,
   type ResolvedToolAccess,
 } from '../../security/resourceScope';
 import {
@@ -33,15 +35,6 @@ export interface ExecuteOrderedSegmentsOptions<R> {
   prepare(entry: OrderedToolCall, batchSize: number): void;
   run(entry: OrderedToolCall, parallel: boolean): Promise<R>;
   deferredResult(entry: OrderedToolCall): R;
-}
-
-function accessesConflict(
-  left: readonly ResolvedToolAccess[],
-  right: readonly ResolvedToolAccess[],
-): boolean {
-  const leftAccesses = left.length > 0 ? left : [UNKNOWN_READWRITE];
-  const rightAccesses = right.length > 0 ? right : [UNKNOWN_READWRITE];
-  return leftAccesses.some((access) => rightAccesses.some((other) => toolResourceAccessesConflict(access, other)));
 }
 
 export function classifyToolCalls(
@@ -82,7 +75,7 @@ export function classifyToolCalls(
       continue;
     }
     const accesses = accessesAt(index, toolCall);
-    const conflicts = current.some((member) => accessesConflict(
+    const conflicts = current.some((member) => segmentAccessesConflict(
       accesses,
       accessesAt(member.index, member.toolCall),
     ));

@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { classifyToolCalls, executeOrderedSegments } from '../../../src/host/agent/toolExecution/parallelStrategy';
+import {
+  classifyToolCalls,
+  executeOrderedSegments,
+} from '../../../src/host/agent/toolExecution/parallelStrategy';
 import { MAX_PARALLEL_TOOLS } from '../../../src/host/agent/loopTypes';
 import type { MCPToolAnnotations } from '../../../src/host/mcp/types';
-import { toolResourceAccessesConflict } from '../../../src/host/security/resourceScope';
+import {
+  segmentAccessesConflict,
+  toolResourceAccessesConflict,
+} from '../../../src/host/security/resourceScope';
 import type { ToolCall, ToolResult } from '../../../src/shared/contract';
 import { resolveToolCallAccesses } from '../../../src/host/tools/dispatch/resolveToolCallAccess';
 import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
@@ -32,7 +38,7 @@ function pairConflicts(
 ): boolean {
   const leftAccesses = resolveToolCallAccesses(left, { ...options, mcpAnnotations: annotations });
   const rightAccesses = resolveToolCallAccesses(right, { ...options, mcpAnnotations: annotations });
-  return leftAccesses.some((access) => rightAccesses.some((other) => toolResourceAccessesConflict(access, other)));
+  return segmentAccessesConflict(leftAccesses, rightAccesses);
 }
 
 function mulberry32(seed: number): () => number {
@@ -47,6 +53,7 @@ function mulberry32(seed: number): () => number {
 
 const KINDS = [
   'read-a', 'read-b', 'write-a', 'write-b', 'bash', 'task',
+  'task-update', 'task-list', 'plan-read',
   'mcp-read', 'mcp-plain', 'ask', 'confirm', 'exit-plan', 'plan-exit', 'plan-enter', 'complete',
 ] as const;
 
@@ -59,6 +66,9 @@ function callForKind(kind: (typeof KINDS)[number], index: number): ToolCall {
     case 'write-b': return call(id, 'Write', { file_path: 'b.txt', content: 'y' });
     case 'bash': return call(id, 'Bash', { command: 'pwd' });
     case 'task': return call(id, 'Task', { subagent_type: 'coder', prompt: 'edit a.txt' });
+    case 'task-update': return call(id, 'task_update', { task_id: 'T1', status: 'completed' });
+    case 'task-list': return call(id, 'task_list', {});
+    case 'plan-read': return call(id, 'plan_read', {});
     case 'mcp-read': return call(id, 'mcp_docs_read');
     case 'mcp-plain': return call(id, 'mcp_docs_write');
     case 'ask': return call(id, 'AskUserQuestion', { questions: [] });
@@ -266,5 +276,26 @@ describe('order-preserving segments', () => {
     ], undefined, options);
     expect(classified.segments).toHaveLength(1);
     expect(classified.deferred.map((entry) => entry.toolCall.name)).toEqual(['Write', 'confirm_action']);
+  });
+
+  it.each([
+    ['task_update(status=completed)', 'task_list', call('1', 'task_update', { task_id: 'T1', status: 'completed' }), call('2', 'task_list', {})],
+    ['plan_update', 'plan_read', call('1', 'plan_update', { stepId: 's1', stepContent: 'x', status: 'done' }), call('2', 'plan_read', {})],
+    ['Write(task_plan.md)', 'plan_read', call('1', 'Write', { file_path: 'task_plan.md', content: 'x' }), call('2', 'plan_read', {})],
+  ])('splits an unscoped read after %s from %s into a later segment', (_label, _readName, writeCall, readCall) => {
+    getProtocolRegistry();
+    const classified = classifyToolCalls([writeCall, readCall], undefined, options);
+    expect(classified.segments.map((segment) => segment.map((entry) => entry.toolCall.name))).toEqual([
+      [writeCall.name],
+      [readCall.name],
+    ]);
+  });
+
+  it('still shares a segment between an unscoped read and a path read', () => {
+    getProtocolRegistry();
+    expect(classifyToolCalls([
+      call('1', 'task_list', {}),
+      call('2', 'Read', { file_path: 'a.txt' }),
+    ], undefined, options).segments).toHaveLength(1);
   });
 });

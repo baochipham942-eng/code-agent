@@ -242,6 +242,28 @@ describe('INSTALL / UNINSTALL / ENABLE / DISABLE', () => {
     expect(await call(IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN, 'pdf')).toEqual({ success: false, error: 'install boom' });
   });
 
+  it('INSTALL 转发 cautionConfirmationToken', async () => {
+    await call(IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN, 'pdf@official', { cautionConfirmationToken: 'tok-mp' });
+    expect(mp.installPlugin).toHaveBeenCalledWith('pdf@official', expect.objectContaining({
+      cautionConfirmationToken: 'tok-mp',
+      signal: expect.any(AbortSignal),
+    }));
+  });
+
+  it('INSTALL 确认门返回契约而不是通用 error', async () => {
+    const { SkillCautionConfirmationRequiredError } = await import('../../../src/host/skills/marketplace/skillInstallCautionGate');
+    const confirmation = {
+      success: false as const,
+      code: 'SKILL_CAUTION_CONFIRMATION_REQUIRED' as const,
+      pluginSpec: 'pdf@official',
+      sourceTrust: 'local-marketplace' as const,
+      cautionHits: [{ file: 'skills/pdf/SKILL.md', ruleId: 'git_clean', snippet: 'git clean -fd' }],
+      confirmationToken: 'tok-mp',
+    };
+    mp.installPlugin.mockRejectedValueOnce(new SkillCautionConfirmationRequiredError(confirmation));
+    expect(await call(IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN, 'pdf@official')).toEqual(confirmation);
+  });
+
   it('同 id 安装进行中拒绝并发，取消后原请求返回 cancelled 而非错误', async () => {
     let rejectInstall!: (error: unknown) => void;
     mp.installPlugin.mockImplementationOnce((...args: unknown[]) => {

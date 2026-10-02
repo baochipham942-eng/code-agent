@@ -19,6 +19,8 @@ import { listSkillDrafts, confirmSkillDraft, rejectSkillDraft } from '../service
 import { getRemoteSkillRegistryService } from '../skills/marketplace/remoteSkillRegistryService';
 import { installFromRegistryEntry } from '../skills/marketplace/installService';
 import { installFromLocalZip } from '../skills/marketplace/localZipInstall';
+import { SkillCautionConfirmationRequiredError } from '../skills/marketplace/skillInstallCautionGate';
+import type { SkillInstallCautionHit } from '../../shared/contract/skillInstallCaution';
 import { exportInstalledSkill } from '../skills/marketplace/exportService';
 import { MAX_GITHUB_ARCHIVE_BYTES } from '../skills/marketplace/githubArchiveSecurity';
 import fs from 'fs/promises';
@@ -176,17 +178,17 @@ async function handleRegistryList() {
  * 从 registry 条目安装/升级。
  * 只认 host 侧新鲜拉取的条目（renderer 只传 name）；下载按收录钉点 + hash 强校验。
  */
-async function handleRegistryInstall(name: string): Promise<{ success: boolean; error?: string }> {
+async function handleRegistryInstall(name: string): Promise<{ success: boolean; error?: string; cautionHits?: SkillInstallCautionHit[] }> {
   const entry = await getRemoteSkillRegistryService().getEntry(name);
   if (!entry) {
     return { success: false, error: `Registry entry not found: ${name}` };
   }
-  // force: 升级=按新钉点重装；首装时目标不存在，force 无副作用
-  await installFromRegistryEntry(entry, { force: true, enableAfterInstall: true });
+  // force: 升级=按新钉点重装；首装时目标不存在，force 无副作用。force 不代替 caution 确认。
+  const installed = await installFromRegistryEntry(entry, { force: true, enableAfterInstall: true });
   // 全量 reload：marketplace plugin 来源的 skill 不在 refreshLibraries 覆盖面内
   await getSkillDiscoveryService().reload();
   getRemoteSkillRegistryService().invalidateListCache(); // installed 标记变了，推荐缓存失效
-  return { success: true };
+  return installed.cautionHits?.length ? { success: true, cautionHits: installed.cautionHits } : { success: true };
 }
 
 // ----------------------------------------------------------------------------
@@ -356,15 +358,17 @@ async function assertNoSymlinkInPath(targetFile: string): Promise<void> {
   }
 }
 
-function normalizeLocalZipPayload(value: unknown): { zipPath?: string; archiveBase64?: string } {
+function normalizeLocalZipPayload(value: unknown): { zipPath?: string; archiveBase64?: string; cautionConfirmationToken?: string } {
   if (typeof value === 'string' && value.trim()) return { zipPath: value };
   if (!value || typeof value !== 'object') return {};
   const record = value as Record<string, unknown>;
+  const cautionConfirmationToken = typeof record.cautionConfirmationToken === 'string' ? record.cautionConfirmationToken : undefined;
   return {
     zipPath: typeof record.zipPath === 'string' && record.zipPath.trim() ? record.zipPath : undefined,
     archiveBase64: typeof record.archiveBase64 === 'string' && record.archiveBase64.trim()
       ? record.archiveBase64
       : undefined,
+    ...(cautionConfirmationToken ? { cautionConfirmationToken } : {}),
   };
 }
 
@@ -399,7 +403,7 @@ async function handleSkillInstallLocalZip(payload?: unknown): Promise<{
   pluginSpec?: string;
   error?: string;
 }> {
-  const { zipPath, archiveBase64 } = normalizeLocalZipPayload(payload);
+  const { zipPath, archiveBase64, cautionConfirmationToken } = normalizeLocalZipPayload(payload);
   if (Boolean(zipPath) === Boolean(archiveBase64)) {
     return { success: false, error: 'SKILL_ZIP_INVALID_SOURCE: provide zipPath or archiveBase64' };
   }
@@ -410,7 +414,7 @@ async function handleSkillInstallLocalZip(payload?: unknown): Promise<{
     throw new Error(`SKILL_ZIP_TOO_LARGE: exceeds ${Math.floor(MAX_GITHUB_ARCHIVE_BYTES / 1024 / 1024)} MB`);
   }
   // force: 与 REGISTRY_INSTALL 同口径。GUI 没有 --force，重装同一份 zip 必须覆盖。
-  const result = await installFromLocalZip(archive, { force: true, enableAfterInstall: true });
+  const result = await installFromLocalZip(archive, { force: true, enableAfterInstall: true, ...(cautionConfirmationToken && { cautionConfirmationToken }) });
   await getSkillDiscoveryService().reload();
   return {
     success: true,
@@ -835,6 +839,7 @@ export function registerSkillHandlers(ipcMain: IpcMain): void {
     try {
       return await handleSkillInstallLocalZip(payload);
     } catch (error) {
+      if (error instanceof SkillCautionConfirmationRequiredError) return error.result;
       logger.error('Failed to install local skill zip', { error });
       return {
         success: false,

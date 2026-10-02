@@ -12,6 +12,14 @@ const mocks = vi.hoisted(() => ({
   getMarketplaceInfo: vi.fn(),
   listMarketplaces: vi.fn(),
   reloadSkills: vi.fn(),
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  },
+  logSecurityIncident: vi.fn(),
+  currentUser: { id: 'user-audit-1' } as { id: string } | null,
 }));
 
 vi.mock('../../../../src/host/config/configPaths', () => ({
@@ -41,13 +49,28 @@ vi.mock('../../../../src/host/mcp/mcpClient', () => ({
 }));
 
 vi.mock('../../../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
+  createLogger: () => mocks.logger,
 }));
+
+vi.mock('../../../../src/host/security/auditLogger', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../src/host/security/auditLogger')>();
+  return {
+    ...actual,
+    getAuditLogger: () => ({
+      logSecurityIncident: (...args: unknown[]) => mocks.logSecurityIncident(...args),
+    }),
+  };
+});
+
+vi.mock('../../../../src/host/services/auth/authService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../src/host/services/auth/authService')>();
+  return {
+    ...actual,
+    getAuthService: () => ({
+      getCurrentUser: () => mocks.currentUser,
+    }),
+  };
+});
 
 vi.mock('../../../../src/host/tools/lsp/diagnosticsHelper', () => ({
   getPostEditDiagnostics: async () => null,
@@ -70,6 +93,7 @@ import { editModule } from '../../../../src/host/tools/modules/file/multiEdit';
 import { readModule } from '../../../../src/host/tools/modules/file/read';
 import { getPromptCommandService } from '../../../../src/host/services/commands/promptCommandService';
 import { installFromLocalZip } from '../../../../src/host/skills/marketplace/localZipInstall';
+import { SkillCautionConfirmationRequiredError } from '../../../../src/host/skills/marketplace/skillInstallCautionGate';
 
 const OFFICIAL_SKILL_SECTION_BEGIN = '<!-- NEO:OFFICIAL-SKILL:BEGIN -->';
 const OFFICIAL_SKILL_SECTION_END = '<!-- NEO:OFFICIAL-SKILL:END -->';
@@ -723,6 +747,131 @@ describe('marketplace install service trust defaults', () => {
     expect(uninstallResult.removedPluginRoot).toBe(record?.pluginRoot);
     expect(fsSync.existsSync(record!.pluginRoot!)).toBe(false);
   });
+
+  async function writeCautionSkill(line: string): Promise<void> {
+    await fs.writeFile(
+      path.join(mocks.marketplaceRoot, 'skills', 'demo', 'SKILL.md'),
+      `${line}\n`,
+      'utf8',
+    );
+  }
+
+  async function expectNothingInstalled(pluginSpec: string): Promise<void> {
+    expect((await listInstalledPlugins())[pluginSpec]).toBeUndefined();
+    const pluginsDir = path.join(mocks.userConfigDir, 'plugins');
+    const residual = fsSync.existsSync(pluginsDir) ? await fs.readdir(pluginsDir) : [];
+    const dirName = pluginSpec.toLowerCase().replace('@', '__');
+    expect(residual.filter((entry) => entry.includes('.staging-') || entry.includes(dirName))).toEqual([]);
+  }
+
+  async function requireConfirmation(run: () => Promise<unknown>) {
+    try {
+      await run();
+    } catch (error) {
+      expect(error).toBeInstanceOf(SkillCautionConfirmationRequiredError);
+      if (error instanceof SkillCautionConfirmationRequiredError) return error.result;
+    }
+    throw new Error('expected SKILL_CAUTION_CONFIRMATION_REQUIRED');
+  }
+
+  it('stops a local marketplace caution install when no confirmation token is supplied', async () => {
+    await writeCautionSkill('git clean -fd');
+    const pending = await requireConfirmation(() => installPlugin('demo@trusted-test'));
+    expect(pending).toMatchObject({
+      success: false,
+      code: 'SKILL_CAUTION_CONFIRMATION_REQUIRED',
+      pluginSpec: 'demo@trusted-test',
+      sourceTrust: 'local-marketplace',
+      cautionHits: [expect.objectContaining({ file: 'skills/demo/SKILL.md', ruleId: 'git_clean', snippet: 'git clean -fd' })],
+    });
+    expect(pending.confirmationToken).toMatch(/^[0-9a-f]{64}$/);
+    expect(mocks.logSecurityIncident).not.toHaveBeenCalled();
+    await expectNothingInstalled('demo@trusted-test');
+  });
+
+  it('installs a local marketplace caution skill once the scanned token is supplied and writes one audit entry', async () => {
+    await writeCautionSkill('git clean -fd');
+    const pending = await requireConfirmation(() => installPlugin('demo@trusted-test'));
+    const result = await installPlugin('demo@trusted-test', { cautionConfirmationToken: pending.confirmationToken });
+    expect(result.cautionHits).toEqual([
+      expect.objectContaining({ file: 'skills/demo/SKILL.md', ruleId: 'git_clean', snippet: 'git clean -fd' }),
+    ]);
+    expect((await listInstalledPlugins())['demo@trusted-test']).toMatchObject({ sourceTrust: 'local-marketplace' });
+    expect(mocks.logSecurityIncident).toHaveBeenCalledTimes(1);
+    expect(mocks.logSecurityIncident).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'skill-install',
+      toolName: 'skill_install_caution_confirmed',
+      incident: expect.stringContaining('demo@trusted-test'),
+      riskLevel: 'medium',
+      details: expect.objectContaining({
+        pluginSpec: 'demo@trusted-test',
+        sourceTrust: 'local-marketplace',
+        userId: 'user-audit-1',
+        rules: [expect.objectContaining({ file: 'skills/demo/SKILL.md', ruleId: 'git_clean', snippet: 'git clean -fd' })],
+      }),
+    }));
+    const details = mocks.logSecurityIncident.mock.calls[0]?.[0] as { details: { confirmedAt: string } };
+    expect(Number.isNaN(Date.parse(details.details.confirmedAt))).toBe(false);
+  });
+
+  it('rejects a wrong caution token and a token from changed content', async () => {
+    await writeCautionSkill('git clean -fd');
+    await expect(installPlugin('demo@trusted-test', { cautionConfirmationToken: 'deadbeef' }))
+      .rejects.toThrow('SKILL_CAUTION_CONFIRMATION_REQUIRED');
+    await expect(installPlugin('demo@trusted-test', { cautionConfirmationToken: '0'.repeat(64) }))
+      .rejects.toThrow('SKILL_CAUTION_CONFIRMATION_REQUIRED');
+    const tokenA = (await requireConfirmation(() => installPlugin('demo@trusted-test'))).confirmationToken;
+    await writeCautionSkill('history -c');
+    const again = await requireConfirmation(() => installPlugin('demo@trusted-test', { cautionConfirmationToken: tokenA }));
+    expect(again.confirmationToken).not.toBe(tokenA);
+    expect(again.cautionHits).toEqual([
+      expect.objectContaining({ ruleId: 'history_clear', snippet: 'history -c' }),
+    ]);
+    await expectNothingInstalled('demo@trusted-test');
+    await expect(installPlugin('demo@trusted-test', { cautionConfirmationToken: again.confirmationToken }))
+      .resolves.toMatchObject({ pluginSpec: 'demo@trusted-test' });
+  });
+
+  it('does not let force satisfy the caution gate', async () => {
+    await writeCautionSkill('git clean -fd');
+    await expect(installPlugin('demo@trusted-test', { force: true })).rejects.toThrow('SKILL_CAUTION_CONFIRMATION_REQUIRED');
+    expect(mocks.logSecurityIncident).not.toHaveBeenCalled();
+    await expectNothingInstalled('demo@trusted-test');
+  });
+
+  it('does not install when the caution audit write throws', async () => {
+    await writeCautionSkill('git clean -fd');
+    const pending = await requireConfirmation(() => installPlugin('demo@trusted-test'));
+    mocks.logSecurityIncident.mockImplementation(() => {
+      throw new Error('audit write failed');
+    });
+    try {
+      await expect(installPlugin('demo@trusted-test', { cautionConfirmationToken: pending.confirmationToken }))
+        .rejects.toThrow(/audit write failed/);
+      await expectNothingInstalled('demo@trusted-test');
+    } finally {
+      mocks.logSecurityIncident.mockReset();
+    }
+  });
+
+  it('stops an unsigned github archive caution install until the token matches', async () => {
+    const zip = new JSZip();
+    zip.file('remote-repo/plugins/remote-demo/SKILL.md', 'git clean -fd\n');
+    mockGitHubInstall('a'.repeat(40), await zip.generateAsync({ type: 'nodebuffer' }));
+    useRemotePlugin();
+
+    const pending = await requireConfirmation(() => installPlugin('remote-demo@trusted-test'));
+    expect(pending.sourceTrust).toBe('unsigned-github-archive');
+    expect(pending.cautionHits).toEqual([
+      expect.objectContaining({ file: 'SKILL.md', ruleId: 'git_clean' }),
+    ]);
+    expect(mocks.logSecurityIncident).not.toHaveBeenCalled();
+    await expectNothingInstalled('remote-demo@trusted-test');
+
+    await expect(installPlugin('remote-demo@trusted-test', { cautionConfirmationToken: pending.confirmationToken }))
+      .resolves.toMatchObject({ pluginSpec: 'remote-demo@trusted-test' });
+    expect(mocks.logSecurityIncident).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('installFromRegistryEntry (官方 registry 可验证分发)', () => {
@@ -919,6 +1068,33 @@ describe('installFromRegistryEntry (官方 registry 可验证分发)', () => {
     expect(retainedRecord.pluginRoot).toBe(firstRecord.pluginRoot);
     await expect(fs.readFile(firstSkillPath, 'utf8')).resolves.toBe(firstSkillContent);
   });
+
+  it('proceeds on official-registry caution, returns cautionHits, and does not audit', async () => {
+    const commit = 'c'.repeat(40);
+    const zip = await makeRegistryZip('---\nname: remote-demo\ndescription: Registry demo\n---\n\ngit clean -fd\n');
+    mockCodeload(zip);
+    const result = await installFromRegistryEntry(registryEntry(commit, sha256(zip)), { enableAfterInstall: true });
+    expect(result.cautionHits).toEqual([
+      expect.objectContaining({ file: 'SKILL.md', ruleId: 'git_clean', snippet: 'git clean -fd' }),
+    ]);
+    expect((await listInstalledPlugins())['remote-demo@official-registry']).toMatchObject({
+      sourceTrust: 'official-registry',
+      isEnabled: true,
+    });
+    expect(mocks.logSecurityIncident).not.toHaveBeenCalled();
+    expect(mocks.logger.warn).toHaveBeenCalledWith(
+      'Official registry skill install proceeding with caution findings',
+      expect.objectContaining({
+        pluginSpec: 'remote-demo@official-registry',
+        ruleIds: expect.arrayContaining(['git_clean']),
+      }),
+    );
+    const installed = await fs.readFile(
+      path.join((await listInstalledPlugins())['remote-demo@official-registry']!.pluginRoot!, 'SKILL.md'),
+      'utf8',
+    );
+    expect(installed).toContain('git clean -fd');
+  });
 });
 
 describe('installFromLocalZip', () => {
@@ -1040,5 +1216,33 @@ describe('installFromLocalZip', () => {
     const result = await installFromLocalZip(archive);
     expect(result.pluginSpec).toBe('pack@local-zip');
     expect(result.skillName).toBe('demo');
+  });
+
+  it('requires a confirmation token for local-zip caution and audits the confirmed install', async () => {
+    const archive = await packSkillZip({
+      'demo/SKILL.md': '---\nname: demo\ndescription: Demo skill\n---\ngit clean -fd\n',
+    });
+    let token: string;
+    try {
+      await installFromLocalZip(archive);
+      throw new Error('expected SKILL_CAUTION_CONFIRMATION_REQUIRED');
+    } catch (error) {
+      expect(error).toBeInstanceOf(SkillCautionConfirmationRequiredError);
+      if (!(error instanceof SkillCautionConfirmationRequiredError)) throw error;
+      expect(error.result).toMatchObject({
+        sourceTrust: 'local-marketplace',
+        pluginSpec: 'demo@local-zip',
+        cautionHits: [expect.objectContaining({ file: 'demo/SKILL.md', ruleId: 'git_clean', snippet: 'git clean -fd' })],
+      });
+      token = error.result.confirmationToken;
+    }
+    expect(mocks.logSecurityIncident).not.toHaveBeenCalled();
+    expect((await listInstalledPlugins())['demo@local-zip']).toBeUndefined();
+    const installed = await installFromLocalZip(archive, { cautionConfirmationToken: token });
+    expect(installed.pluginSpec).toBe('demo@local-zip');
+    expect(installed.cautionHits).toEqual([
+      expect.objectContaining({ file: 'demo/SKILL.md', ruleId: 'git_clean' }),
+    ]);
+    expect(mocks.logSecurityIncident).toHaveBeenCalledTimes(1);
   });
 });

@@ -28,6 +28,7 @@ import {
   scanInstallContent,
   type SkillInstallSourceTrust,
 } from './skillInstallContentGuard';
+import { applySkillCautionGate } from './skillInstallCautionGate';
 import { SKILL_GUARD_VERSION } from '../../security/skillContentGuard';
 import { assertPluginRescanPassesForEnable } from './installedPluginRescan';
 import type { SkillRegistryEntry } from '../../../shared/contract/skillRegistry';
@@ -63,6 +64,7 @@ type PluginInstallOptions = {
   projectPath?: string;
   force?: boolean;
   enableAfterInstall?: boolean;
+  cautionConfirmationToken?: string;
   signal?: AbortSignal;
 };
 
@@ -749,6 +751,7 @@ async function installPluginUnlocked(
       existing,
       force: options.force,
       enableAfterInstall: options.enableAfterInstall,
+      cautionConfirmationToken: options.cautionConfirmationToken,
       signal: options.signal,
     });
   } finally {
@@ -763,7 +766,7 @@ async function installPluginUnlocked(
  */
 export function installFromRegistryEntry(
   registryEntry: SkillRegistryEntry,
-  options: { force?: boolean; enableAfterInstall?: boolean; signal?: AbortSignal } = {},
+  options: { force?: boolean; enableAfterInstall?: boolean; cautionConfirmationToken?: string; signal?: AbortSignal } = {},
 ): Promise<InstallResult> {
   const pluginSpec = `${registryEntry.name}@${SKILL_REGISTRY_MARKETPLACE_ID}`;
   return runExclusivePluginInstall(
@@ -774,7 +777,7 @@ export function installFromRegistryEntry(
 
 async function installFromRegistryEntryUnlocked(
   registryEntry: SkillRegistryEntry,
-  options: { force?: boolean; enableAfterInstall?: boolean; signal?: AbortSignal },
+  options: { force?: boolean; enableAfterInstall?: boolean; cautionConfirmationToken?: string; signal?: AbortSignal },
 ): Promise<InstallResult> {
   const pluginSpec = `${registryEntry.name}@${SKILL_REGISTRY_MARKETPLACE_ID}`;
   throwIfInstallAborted(options.signal);
@@ -827,6 +830,7 @@ async function installFromRegistryEntryUnlocked(
       existing,
       force: options.force,
       enableAfterInstall: options.enableAfterInstall,
+      cautionConfirmationToken: options.cautionConfirmationToken,
       signal: options.signal,
     });
   } finally {
@@ -847,6 +851,7 @@ export async function performInstall(args: {
   existing?: InstalledPluginRecord;
   force?: boolean;
   enableAfterInstall?: boolean;
+  cautionConfirmationToken?: string;
   signal?: AbortSignal;
 }): Promise<InstallResult> {
   const { plugin, marketplace, pluginSpec, entry, sourceTrust, entrySource, scope, projectPath, state, existing } = args;
@@ -887,10 +892,17 @@ export async function performInstall(args: {
       commandPaths: entry.commands || [],
     });
     const installedCommands = commandFiles.map((command) => command.name);
-    await scanInstallContent({
+    const scan = await scanInstallContent({
       pluginSpec,
       sourceTrust,
       rootDir: stagingRoot,
+    });
+    const cautionHits = await applySkillCautionGate({
+      pluginSpec,
+      sourceTrust,
+      contentHash: scan.contentHash,
+      cautionHits: scan.cautionHits,
+      confirmationToken: args.cautionConfirmationToken,
     });
     throwIfInstallAborted(args.signal);
 
@@ -984,7 +996,13 @@ export async function performInstall(args: {
       }
     });
 
-    return { pluginSpec, installedSkills, installedCommands, installedPluginRoot: pluginRoot };
+    return {
+      pluginSpec,
+      installedSkills,
+      installedCommands,
+      installedPluginRoot: pluginRoot,
+      ...(cautionHits.length > 0 ? { cautionHits } : {}),
+    };
   } catch (error) {
     if (stateCommitted) {
       await saveInstalledPlugins(state).catch(() => {});

@@ -5,9 +5,10 @@
 // 复用既有安全件：commandSafety.validateCommand + sensitiveDetector，不另造威胁正则。
 //
 // 阻断阈值刻意保守（只拦 critical / high-confidence），避免误伤正常 skill：
-//   - critical 危险命令（rm -rf /、mkfs、dd to /dev、fork bomb、反弹 shell 等）
-//   - 高置信嵌入密钥（API key / 私钥等明文写进 skill）
-// medium/low 风险只记录不拦，正常 skill 几乎不会命中。
+//   - critical 危险命令（rm -rf /、mkfs、dd to /dev、fork bomb、反弹 shell 等）→ block
+//   - 高置信嵌入密钥（API key / 私钥等明文写进 skill）→ block
+// low/medium/high 且带 securityFlags 的命令、以及 medium 置信密钥 → caution（不拦草稿入库）。
+// safe 或没有 securityFlags 的行是噪声，不进 caution。
 // ============================================================================
 
 import { validateCommand } from './commandSafety';
@@ -24,17 +25,22 @@ export interface SkillGuardFinding {
   kind: 'dangerous_command' | 'embedded_secret';
   /** 给用户看的中文说明 */
   detail: string;
+  /** caution 命中的规则 id。block 命中不带此字段，保持既有 finding 形状。 */
+  ruleId?: string;
+  /** caution 命中的一行摘要：命令行截断 80 字后经 maskSensitiveData；密钥用检测器的 masked。 */
+  snippet?: string;
 }
 
 /**
- * 内容扫描规则版本。扫描规则（危险命令/密钥/混淆签名等）加严时 +1；
+ * 内容扫描规则版本。扫描规则（危险命令/密钥/混淆签名等）加严时 +1。
+ * 2：新增 caution 档（low/medium/high 带 flag 的命令、medium 置信密钥）。
  * 安装记录里 scanner.version 低于该值的已启用插件会在宿主启动与 enablePlugin 时重扫
  * （src/host/skills/marketplace/installedPluginRescan.ts）。
  */
-export const SKILL_GUARD_VERSION = 1;
+export const SKILL_GUARD_VERSION = 2;
 
 export interface SkillGuardResult {
-  verdict: 'pass' | 'block';
+  verdict: 'pass' | 'caution' | 'block';
   findings: SkillGuardFinding[];
 }
 
@@ -67,8 +73,15 @@ export function extractCodeSegments(markdown: string): string[] {
 }
 
 /**
- * 扫描一份 SKILL.md 内容。返回 block = 命中需拒绝入库的风险。
+ * maskSensitiveData 就是 getSensitiveDetector().maskAll。部分 guard 测试把检测器
+ * 换成只含 detect 的替身；缺 maskAll 时退回截断原文，避免那些替身把扫描打崩。
  */
+function maskScanSnippet(line: string): string {
+  const truncated = line.slice(0, 80);
+  const detector: { maskAll?: (text: string) => string } = getSensitiveDetector();
+  return typeof detector.maskAll === 'function' ? detector.maskAll(truncated) : truncated;
+}
+
 // 命令位置的动态构造：命令名是变量/命令替换/参数展开/ANSI-C quote（如 $a、$(...)、${cmd/x/r}、$'\x72'）时，
 // 静态扫描无法判定它最终会展开成什么，对 skill 入库一律 fail-closed。
 // 注：反引号命令替换不在此列（markdown 行首内联代码会大量误伤）；反引号下载由 cmdsubst 签名覆盖。
@@ -145,11 +158,16 @@ export function normalizeForScan(content: string): string {
   return logicalLines.map((line) => canonicalizeCommand(line).command).join('\n');
 }
 
+/**
+ * 扫描一份 SKILL.md 内容。block = 拒绝入库；caution = 披露后按来源策略处理；pass = 无命中。
+ * 任一 block finding 使总判定为 block（caution 仍可并列列出，不能把 block 盖成 caution）。
+ */
 export function scanSkillContent(content: string): SkillGuardResult {
-  const findings: SkillGuardFinding[] = [];
+  const blockFindings: SkillGuardFinding[] = [];
+  const cautionFindings: SkillGuardFinding[] = [];
   const { found: specialTokens } = stripSpecialTokenLiterals(content);
   if (specialTokens.length > 0) {
-    findings.push({
+    blockFindings.push({
       kind: 'dangerous_command',
       detail: `模型控制 token：${[...new Set(specialTokens)].slice(0, 3).join(', ')}`,
     });
@@ -165,7 +183,7 @@ export function scanSkillContent(content: string): SkillGuardResult {
       && !commandWordIsDynamic(segment)
       && !firstWord.includes('`');
     if (canonical.parsingFailed && !dynamicOnlyInArguments) {
-      findings.push({
+      blockFindings.push({
         kind: 'dangerous_command',
         detail: `命令无法静态解析，已拒绝（${canonical.failureReason ?? 'parse failure'}）：${segment.slice(0, 80)}`,
       });
@@ -173,7 +191,8 @@ export function scanSkillContent(content: string): SkillGuardResult {
   }
 
   // 1) 危险命令：对【全文】逐行跑 validateCommand（不止代码块——skill 散文本身就是
-  //    agent 会照着执行的指令，藏在散文里的危险命令同样要拦），命中 critical 即拦。
+  //    agent 会照着执行的指令，藏在散文里的危险命令同样要拦）。
+  //    critical → block；low/medium/high 且至少有一个 securityFlags → caution。
   const seen = new Set<string>();
   for (const rawLine of normalized.split('\n')) {
     const line = rawLine.trim();
@@ -181,13 +200,27 @@ export function scanSkillContent(content: string): SkillGuardResult {
     seen.add(line);
     const result = validateCommand(line);
     if (result.riskLevel === 'critical') {
-      findings.push({
+      blockFindings.push({
         kind: 'dangerous_command',
         detail: `危险命令（${result.securityFlags.join(',') || 'critical'}）：${line.slice(0, 80)}`,
       });
+    } else if (
+      (result.riskLevel === 'low' || result.riskLevel === 'medium' || result.riskLevel === 'high')
+      && result.securityFlags.length > 0
+    ) {
+      const ruleId = result.securityFlags[0];
+      if (ruleId) {
+        const snippet = maskScanSnippet(line);
+        cautionFindings.push({
+          kind: 'dangerous_command',
+          detail: `需留意的命令（${ruleId}）：${snippet}`,
+          ruleId,
+          snippet,
+        });
+      }
     }
     if (SSH_PRIVATE_KEY_PATH.test(line) && SSH_PRIVATE_KEY_READ_VERB.test(line)) {
-      findings.push({
+      blockFindings.push({
         kind: 'dangerous_command',
         detail: `SSH 私钥读取规则：${line.slice(0, 80)}`,
       });
@@ -199,26 +232,35 @@ export function scanSkillContent(content: string): SkillGuardResult {
     pattern.lastIndex = 0;
     const m = normalized.match(pattern);
     if (m) {
-      findings.push({ kind: 'dangerous_command', detail: `可疑混淆/远程执行（${flag}）：${m[0].slice(0, 80)}` });
+      blockFindings.push({ kind: 'dangerous_command', detail: `可疑混淆/远程执行（${flag}）：${m[0].slice(0, 80)}` });
     }
   }
 
   // 2.5) 动态命令名：命令位置是变量/替换/展开 → 静态不可判定，fail-closed
   const dynamic = findDynamicCommandName(normalized);
   if (dynamic) {
-    findings.push({ kind: 'dangerous_command', detail: `命令名为动态构造，无法静态判定，已拒绝：${dynamic}` });
+    blockFindings.push({ kind: 'dangerous_command', detail: `命令名为动态构造，无法静态判定，已拒绝：${dynamic}` });
   }
 
-  // 3) 嵌入密钥：高置信的明文密钥/私钥不应写进 skill
+  // 3) 嵌入密钥：高置信 → block；medium 置信 → caution，snippet 只用检测器的 masked。
   const detection = getSensitiveDetector().detect(content);
   for (const match of detection.matches) {
     if (match.confidence === 'high') {
-      findings.push({
+      blockFindings.push({
         kind: 'embedded_secret',
         detail: `疑似明文密钥（${match.type}）：${match.masked}`,
+      });
+    } else if (match.confidence === 'medium') {
+      cautionFindings.push({
+        kind: 'embedded_secret',
+        detail: `疑似明文密钥（${match.type}）：${match.masked}`,
+        ruleId: `embedded_secret_medium:${match.type}`,
+        snippet: match.masked,
       });
     }
   }
 
-  return { verdict: findings.length > 0 ? 'block' : 'pass', findings };
+  const findings = [...blockFindings, ...cautionFindings];
+  const verdict = blockFindings.length > 0 ? 'block' : cautionFindings.length > 0 ? 'caution' : 'pass';
+  return { verdict, findings };
 }

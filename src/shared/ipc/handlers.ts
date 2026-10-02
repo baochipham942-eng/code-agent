@@ -39,6 +39,7 @@ import type { ChannelAccount, ChannelConversationListResponse, ChannelInboxItem,
 import type { LabProjectType, LabProjectStatus, PythonEnvStatus, TrainingProgressEvent, DownloadProjectRequest, DownloadProjectResponse, UploadDataRequest, UploadDataResponse, StartTrainingRequest, StartTrainingResponse, InferenceRequest, InferenceResult } from '../contract/lab';
 
 import type { MarketplaceInfo, MarketplacePluginEntry, InstalledPlugin, MarketplaceResult, PluginInstallResult } from '../contract/marketplace';
+import type { SkillCautionConfirmationRequired, SkillInstallCautionHit } from '../contract/skillInstallCaution';
 import type {
   CapabilityPackageInstallResult,
   CapabilityPackagePreview,
@@ -253,7 +254,7 @@ export interface IpcInvokeHandlers {
   [SKILL_CHANNELS.REPO_CONFIRM]: (stageId: string) => Promise<DownloadResult>;
   [SKILL_CHANNELS.REPO_CANCEL]: (stageId: string) => Promise<void>;
   [SKILL_CHANNELS.REGISTRY_LIST]: () => Promise<{ items: SkillRegistryListItem[]; error?: string }>;
-  [SKILL_CHANNELS.REGISTRY_INSTALL]: (name: string) => Promise<{ success: boolean; error?: string }>;
+  [SKILL_CHANNELS.REGISTRY_INSTALL]: (name: string) => Promise<{ success: boolean; error?: string; cautionHits?: SkillInstallCautionHit[] }>;
   [SKILL_CHANNELS.SKILL_LIST]: (workspacePath?: string) => Promise<Array<ParsedSkill & {
     globalEnabled: boolean;
     projectOverride: boolean | null;
@@ -278,12 +279,13 @@ export interface IpcInvokeHandlers {
   [SKILL_CHANNELS.SKILL_INSTALL_LOCAL_ZIP]: (payload: {
     zipPath?: string;
     archiveBase64?: string;
+    cautionConfirmationToken?: string;
   }) => Promise<{
     success: boolean;
     skillName?: string;
     pluginSpec?: string;
     error?: string;
-  }>;
+  } | SkillCautionConfirmationRequired>;
   [SKILL_CHANNELS.SESSION_MOUNT]: (sessionId: string, skillName: string, libraryId: string) => Promise<boolean>;
   [SKILL_CHANNELS.SESSION_UNMOUNT]: (sessionId: string, skillName: string) => Promise<boolean>;
   [SKILL_CHANNELS.SESSION_LIST]: (sessionId: string) => Promise<SessionSkillMount[]>;
@@ -370,7 +372,7 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.MARKETPLACE_INFO]: (id: string) => Promise<MarketplaceResult<MarketplaceInfo>>;
   [IPC_CHANNELS.MARKETPLACE_LIST_PLUGINS]: (marketplaceId?: string) => Promise<MarketplaceResult<MarketplacePluginEntry[]>>;
   [IPC_CHANNELS.MARKETPLACE_SEARCH_PLUGINS]: (query: string) => Promise<MarketplaceResult<MarketplacePluginEntry[]>>;
-  [IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN]: (spec: string, options?: { scope?: 'user' | 'project'; projectPath?: string }) => Promise<PluginInstallResult>;
+  [IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN]: (spec: string, options?: { scope?: 'user' | 'project'; projectPath?: string; cautionConfirmationToken?: string }) => Promise<PluginInstallResult | SkillCautionConfirmationRequired>;
   [IPC_CHANNELS.MARKETPLACE_CANCEL_INSTALL]: (spec: string) => Promise<MarketplaceResult<{ cancelled: boolean }>>;
   [IPC_CHANNELS.MARKETPLACE_UNINSTALL_PLUGIN]: (pluginId: string, scope?: 'user' | 'project') => Promise<MarketplaceResult<void>>;
   [IPC_CHANNELS.MARKETPLACE_LIST_INSTALLED]: (scope?: 'user' | 'project' | 'all') => Promise<MarketplaceResult<InstalledPlugin[]>>;

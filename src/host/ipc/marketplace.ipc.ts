@@ -18,6 +18,8 @@ import {
   enablePlugin,
   disablePlugin,
 } from '../skills/marketplace';
+import { SkillCautionConfirmationRequiredError } from '../skills/marketplace/skillInstallCautionGate';
+import type { SkillCautionConfirmationRequired } from '../../shared/contract/skillInstallCaution';
 import type {
   MarketplaceInfo,
   MarketplacePluginEntry,
@@ -327,7 +329,7 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
   // Install a plugin
   handleMarketplace(
     IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN,
-    async (_, pluginSpec: string, options?: { scope?: 'user' | 'project'; projectPath?: string }): Promise<PluginInstallResult> => {
+    async (_, pluginSpec: string, options?: { scope?: 'user' | 'project'; projectPath?: string; cautionConfirmationToken?: string }): Promise<PluginInstallResult | SkillCautionConfirmationRequired> => {
       if (!isCurrentUserAdmin()) {
         try {
           await assertConfiguredCatalogPlugin(pluginSpec);
@@ -377,6 +379,7 @@ export function registerMarketplaceHandlers(ipcMain: IpcMain): void {
             cancelled: true,
           };
         }
+        if (error instanceof SkillCautionConfirmationRequiredError) return error.result;
         logger.error('Failed to install plugin', { pluginSpec, error });
         return {
           success: false,

@@ -403,9 +403,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           readOnlyRoots: ctx.workspaceScope?.roots
             .filter((root) => root.access === 'read_only')
             .map((root) => resolveCanonicalRunPath(root.path)),
-          readWriteRoots: writeFence && fenceRoot
-            ? [fenceRoot]
-            : scopeWriteRoots ?? workspaceConfinedRoots,
+          readWriteRoots,
           deniedReadRoots: [
             ...(ctx.deniedReadRoots ?? []),
             ...(process.env.CODE_AGENT_EVAL_REAL_ROOT ? [process.env.CODE_AGENT_EVAL_REAL_ROOT] : []),

@@ -30,11 +30,14 @@ import {
 
 type EditorMode = 'steps' | 'feedback';
 
+function errorCode(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null || !('code' in error)) return undefined;
+  const code = (error as { code: unknown }).code;
+  return typeof code === 'string' ? code : undefined;
+}
+
 function isStaleVersion(error: unknown): boolean {
-  return typeof error === 'object'
-    && error !== null
-    && 'code' in error
-    && (error as { code: unknown }).code === 'STALE_VERSION';
+  return errorCode(error) === 'STALE_VERSION';
 }
 
 function editedStep(step: PlanApprovalStep, content: string): PlanApprovalStep {
@@ -116,7 +119,7 @@ export const PlanApprovalCard: React.FC<{
   const [feedback, setFeedback] = useState('');
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; code?: string } | null>(null);
   const [internalCollapsed, setInternalCollapsed] = useState(false);
   const collapsed = controlledCollapsed ?? internalCollapsed;
   const isCollapseControlled = controlledCollapsed !== undefined;
@@ -191,11 +194,16 @@ export const PlanApprovalCard: React.FC<{
       applyResponse(response);
       if (typeof response.approval.version === 'number') setVersion(response.approval.version);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : t.planApproval.submitFailed);
-      if (isStaleVersion(submitError)) resyncFromLatestUpdate();
+      // 失败态只说 UI 语言且带下一步；宿主英文 message 不进卡片，未知码回落通用文案 + 小字附码。
+      if (isStaleVersion(submitError)) {
+        setError({ message: t.planApproval.staleVersion });
+        resyncFromLatestUpdate();
+      } else {
+        setError({ message: t.planApproval.submitFailed, code: errorCode(submitError) });
+      }
       if (!options?.keepInteractive) setSubmitting(false);
     }
-  }, [applyResponse, resyncFromLatestUpdate, submitting, t.planApproval.submitFailed, target, version]);
+  }, [applyResponse, resyncFromLatestUpdate, submitting, t.planApproval.staleVersion, t.planApproval.submitFailed, target, version]);
 
   const beginEdit = (step: PlanApprovalStep) => {
     setEditingId(step.id);
@@ -406,7 +414,12 @@ export const PlanApprovalCard: React.FC<{
 
         <div className="px-4 pb-3">
           {steps.length === 0 && mode === 'steps' && <div className="mb-2 text-xs text-badge-danger">{t.planApproval.emptyPlan}</div>}
-          {error && <div className="mb-2 text-xs text-badge-danger">{error}</div>}
+          {error && (
+            <div className="mb-2 text-xs text-badge-danger" data-testid="plan-approval-error">
+              {error.message}
+              {error.code && <span className="ml-1 text-[10px] text-zinc-500">{error.code}</span>}
+            </div>
+          )}
           <div className="flex items-center justify-between gap-2">
             {mode === 'steps' ? (
               <Button size="sm" variant="ghost" onClick={() => setMode('feedback')} disabled={submitting || editingId !== null}>

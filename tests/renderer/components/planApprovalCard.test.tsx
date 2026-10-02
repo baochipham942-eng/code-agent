@@ -324,7 +324,7 @@ describe('PlanApprovalCard', () => {
     ));
   });
 
-  it('STALE_VERSION 走原错误路径，并从最新的计划更新里把步骤同步回来', async () => {
+  it('STALE_VERSION 显示中文文案并同步最新步骤，不透出宿主英文原文', async () => {
     const stale = new Error('Plan approval version is stale');
     (stale as Error & { code: string }).code = 'STALE_VERSION';
     mocks.invokeDomain.mockRejectedValue(stale);
@@ -349,7 +349,10 @@ describe('PlanApprovalCard', () => {
 
     fireEvent.click(screen.getByTestId('plan-approve-button'));
 
-    await waitFor(() => expect(screen.getByText('Plan approval version is stale')).toBeTruthy());
+    await waitFor(() => expect(
+      screen.getByText('计划已更新到新版本，已为你同步最新步骤，请重新确认后再批准'),
+    ).toBeTruthy());
+    expect(screen.queryByText('Plan approval version is stale')).toBeNull();
     expect(screen.getByText('Server revised step')).toBeTruthy();
     expect(screen.getByTestId('plan-approval-version').textContent).toContain('2');
     expect(mocks.invokeDomain).toHaveBeenCalledWith(
@@ -357,5 +360,27 @@ describe('PlanApprovalCard', () => {
       'respondApproval',
       expect.objectContaining({ decision: 'approve', version: 1 }),
     );
+  });
+
+  it('未知错误码回落到通用中文文案并以小字附码，无码错误不附码', async () => {
+    const coded = new Error('Some raw host failure text');
+    (coded as Error & { code: string }).code = 'SESSION_BUSY';
+    mocks.invokeDomain.mockRejectedValue(coded);
+    renderCard();
+
+    fireEvent.click(screen.getByTestId('plan-approve-button'));
+
+    await waitFor(() => expect(screen.getByText('计划决定未生效，请重试。')).toBeTruthy());
+    expect(screen.queryByText('Some raw host failure text')).toBeNull();
+    expect(screen.getByText('SESSION_BUSY')).toBeTruthy();
+
+    cleanup();
+    mocks.invokeDomain.mockClear();
+    mocks.invokeDomain.mockRejectedValue(new Error('Plain network failure'));
+    renderCard();
+    fireEvent.click(screen.getByTestId('plan-approve-button'));
+    await waitFor(() => expect(screen.getByText('计划决定未生效，请重试。')).toBeTruthy());
+    expect(screen.queryByText('Plain network failure')).toBeNull();
+    expect(screen.queryByText('SESSION_BUSY')).toBeNull();
   });
 });

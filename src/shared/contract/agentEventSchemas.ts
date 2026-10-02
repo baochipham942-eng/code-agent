@@ -584,6 +584,7 @@ const TurnDiffEventSchema = event('turn_diff', typed<TurnDiffEventData>(z.object
   parentToolUseId: z.string().optional(),
   missingFiles: z.array(z.string()).optional(),
   filesAuthoritative: z.boolean().optional(),
+  absentPaths: z.array(z.string()).optional(),
 })));
 const NotificationEventSchema = event('notification', z.object({ message: z.string(), parentToolUseId: z.string().optional() }));
 const hostReasonPayloadSchema = typed<HostReasonPayload>(z.object({

@@ -362,6 +362,7 @@ export function normalizeCronJobRow(row: unknown): CronJobDefinition | null {
   const action = normalizeAction(parseJsonValue(row.action));
   const runsOn = row.runs_on === 'cloud' ? 'cloud' : 'local';
   const maxRunBudget = readNumberField(row, 'max_run_budget');
+  const maxRuns = readNumberField(row, 'max_runs');
   const resultChannel = readStringField(row, 'result_channel');
 
   if (
@@ -385,6 +386,8 @@ export function normalizeCronJobRow(row: unknown): CronJobDefinition | null {
     action,
     runsOn,
     maxRunBudget,
+    maxRuns,
+    runCount: readNumberField(row, 'run_count') ?? 0,
     resultChannel,
     enabled: row.enabled === 1 || row.enabled === true,
     maxRetries: readOptionalNumberField(row, 'max_retries'),

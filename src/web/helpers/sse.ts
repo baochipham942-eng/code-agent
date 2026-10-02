@@ -99,7 +99,7 @@ function dropLeastRecentlyTouchedRing(): void {
       oldestRing = ring;
     }
   }
-  if (!oldestSessionId || !oldestRing) return;
+  if (oldestSessionId === undefined || oldestRing === undefined) return;
   const lastRetained = oldestRing.entries.at(-1);
   droppedSessionEvictedMaxId = Math.max(
     droppedSessionEvictedMaxId,

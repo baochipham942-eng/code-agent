@@ -360,15 +360,6 @@ export class TeammateService {
   // ========================================================================
 
   /**
-   * 获取未读消息
-   */
-  getUnread(agentId: string, scope?: SwarmRunRef): TeammateMessage[] {
-    if (scope && !this.agentMatchesRun(agentId, scope)) return [];
-    const mailbox = this.mailboxes.get(agentId);
-    return mailbox?.inbox.filter(m => !m.metadata?.responseTo) ?? [];
-  }
-
-  /**
    * 获取所有收件箱消息
    */
   getInbox(agentId: string, scope?: SwarmRunRef): TeammateMessage[] {
@@ -382,20 +373,6 @@ export class TeammateService {
   getOutbox(agentId: string, scope?: SwarmRunRef): TeammateMessage[] {
     if (scope && !this.agentMatchesRun(agentId, scope)) return [];
     return this.mailboxes.get(agentId)?.outbox ?? [];
-  }
-
-  /**
-   * 标记消息已读
-   */
-  markRead(agentId: string, messageId: string): void {
-    const mailbox = this.mailboxes.get(agentId);
-    if (mailbox) {
-      const idx = mailbox.inbox.findIndex(m => m.id === messageId);
-      if (idx >= 0) {
-        mailbox.inbox.splice(idx, 1);
-        mailbox.unreadCount = Math.max(0, mailbox.unreadCount - 1);
-      }
-    }
   }
 
   /**
@@ -708,13 +685,6 @@ export class TeammateService {
   // ========================================================================
   // Agent Teams P2 增强方法
   // ========================================================================
-
-  /**
-   * 订阅特定 Agent 的所有消息（让 UI 可以订阅）
-   */
-  subscribeToAgent(agentId: string, callback: TeammateEventCallback): () => void {
-    return this.subscribe(agentId, callback);
-  }
 
   /**
    * 用户直接给 Agent 发消息

@@ -132,6 +132,7 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
     // skip the cage after classifier skip-confirm.
     requiresOsWriteFence: input.legacyCtx.requiresOsWriteFence,
     writeFenceWorkspaceRoot: input.legacyCtx.writeFenceWorkspaceRoot,
+    deniedReadRoots: input.legacyCtx.deniedReadRoots,
     workingDir: input.workingDirectory,
     abortSignal: input.abortSignal ?? new AbortController().signal,
     deniedToolNames: legacy?.deniedToolNames as readonly string[] | undefined,

@@ -537,7 +537,7 @@ describe('CronService missed schedule traces', () => {
       reason: 'app-offline',
     }]);
     expect(service.getJob('job-at-missed')).toMatchObject({ enabled: false });
-    expect(dbState.savedRows.some((row) => row[0] === 'job-at-missed' && row[11] === 0)).toBe(true);
+    expect(dbState.savedRows.some((row) => row[0] === 'job-at-missed' && row[13] === 0)).toBe(true);
     unsubscribe();
     await service.shutdown();
   });
@@ -717,7 +717,7 @@ describe('CronService every schedule units', () => {
         actionType: 'agent',
       }),
     }));
-    expect(JSON.parse(String(dbState.savedRows.at(-1)?.[16]))).toMatchObject({
+    expect(JSON.parse(String(dbState.savedRows.at(-1)?.[18]))).toMatchObject({
       sourceSessionId: 'source-session-1',
       createdVia: 'slash_schedule',
     });
@@ -889,6 +889,188 @@ describe('N-CRON-SKIPPED-DELIVERY quiet watch rounds', () => {
     await service.triggerJob(job.id);
     expect(channelState.sendMessage).toHaveBeenCalledTimes(3);
 
+    await service.shutdown();
+  });
+});
+
+describe('N-CRON-BUDGET-EXPOSE maxRuns run-count cap', () => {
+  function limitedAgentJob(maxRuns: number) {
+    return {
+      name: 'Limited agent run',
+      runsOn: 'local' as const,
+      scheduleType: 'every' as const,
+      schedule: { type: 'every' as const, interval: 1, unit: 'hours' as const },
+      action: { type: 'agent' as const, agentType: 'default', prompt: 'work' },
+      enabled: true,
+      maxRuns,
+    };
+  }
+
+  function stubExecuteAction(service: CronService, implementation: () => Promise<unknown>) {
+    const executeAction = vi.fn(implementation);
+    (service as unknown as { executeAction: typeof executeAction }).executeAction = executeAction;
+    return executeAction;
+  }
+
+  function maxRunsEventCalls(jobId: string) {
+    const calls = automationState.recordEvent.mock.calls as unknown as Array<[{ eventId?: string }]>;
+    return calls.filter(([input]) => input.eventId === `max_runs:${jobId}`);
+  }
+
+  it('runs a maxRuns:2 job twice, disables it with max_runs_reached, and posts one inbox notice', async () => {
+    const service = new CronService();
+    const executeAction = stubExecuteAction(service, async () => ({ ok: true }));
+    const job = await service.createJob(limitedAgentJob(2));
+
+    const first = await service.triggerJob(job.id);
+    expect(first?.status).toBe('completed');
+    expect(service.getJob(job.id)).toMatchObject({ enabled: true, runCount: 1 });
+    expect(maxRunsEventCalls(job.id)).toHaveLength(0);
+
+    const second = await service.triggerJob(job.id);
+    expect(second?.status).toBe('completed');
+    const disabled = service.getJob(job.id);
+    expect(disabled).toMatchObject({ enabled: false, runCount: 2 });
+    expect(disabled?.metadata).toMatchObject({ disabledReason: 'max_runs_reached' });
+
+    // 停用后本地定时器已摘除：第三个排程 tick 无从触发。
+    const active = (service as unknown as {
+      jobs: Map<string, { cronInstance?: unknown }>;
+    }).jobs.get(job.id);
+    expect(active?.cronInstance).toBeUndefined();
+
+    // 「待过目」收件箱恰好一条到数停用事件。
+    expect(maxRunsEventCalls(job.id)).toHaveLength(1);
+    expect(maxRunsEventCalls(job.id)[0]?.[0]).toMatchObject({
+      event: 'completed',
+      recordStatus: 'paused',
+    });
+
+    // 第三趟不存在：执行动作只被调用了两次。
+    expect(executeAction).toHaveBeenCalledTimes(2);
+    await service.shutdown();
+  });
+
+  it('re-enabling a maxed-out job gives a full new allowance', async () => {
+    const service = new CronService();
+    stubExecuteAction(service, async () => ({ ok: true }));
+    const job = await service.createJob(limitedAgentJob(1));
+
+    await service.triggerJob(job.id);
+    expect(service.getJob(job.id)).toMatchObject({ enabled: false, runCount: 1 });
+
+    const reenabled = await service.updateJob(job.id, { enabled: true });
+    expect(reenabled).toMatchObject({ enabled: true, runCount: 0 });
+    expect(reenabled?.metadata).not.toMatchObject({ disabledReason: 'max_runs_reached' });
+
+    await service.triggerJob(job.id);
+    expect(service.getJob(job.id)).toMatchObject({ enabled: false, runCount: 1 });
+    await service.shutdown();
+  });
+
+  it('an over-budget run still disables via the existing permanent path and is not double-counted as max_runs', async () => {
+    const service = new CronService();
+    stubExecuteAction(service, async () => {
+      throw new Error('Cron job run exceeded its $0.01 budget limit.');
+    });
+    const job = await service.createJob(limitedAgentJob(2));
+
+    const execution = await service.triggerJob(job.id);
+    expect(execution?.status).toBe('failed');
+
+    const disabled = service.getJob(job.id);
+    expect(disabled?.enabled).toBe(false);
+    // 停用走的是 permanent 分档，不是 max_runs——原因与收件箱事件都不许双记。
+    expect(disabled?.metadata?.disabledReason).toBeUndefined();
+    expect(maxRunsEventCalls(job.id)).toHaveLength(0);
+    await service.shutdown();
+  });
+
+  it('a run that only succeeds after retries still counts toward maxRuns (PR#2208 R3 Important)', async () => {
+    const service = new CronService();
+    // 第一趟 transient 失败 → 退避重试（retryDelay 压到 1ms）；第二趟成功。
+    // retryExecution 在同一个 execution 对象上 retryAttempt++，终态 completed 必须计 1。
+    const executeAction = stubExecuteAction(service, vi.fn()
+      .mockRejectedValueOnce(new Error('network timeout'))
+      .mockResolvedValueOnce({ ok: true }));
+    const job = await service.createJob({ ...limitedAgentJob(1), maxRetries: 1, retryDelay: 1 });
+
+    const execution = await service.triggerJob(job.id);
+    expect(execution?.status).toBe('completed');
+    expect(execution?.retryAttempt).toBe(1);
+    expect(executeAction).toHaveBeenCalledTimes(2);
+
+    const disabled = service.getJob(job.id);
+    expect(disabled).toMatchObject({ enabled: false, runCount: 1 });
+    expect(disabled?.metadata).toMatchObject({ disabledReason: 'max_runs_reached' });
+    expect(maxRunsEventCalls(job.id)).toHaveLength(1);
+    await service.shutdown();
+  });
+
+  it('updateJob with a JSON-transported null actually clears a set maxRuns (PR#2208 R4 Important)', async () => {
+    const service = new CronService();
+    stubExecuteAction(service, async () => ({ ok: true }));
+    const job = await service.createJob(limitedAgentJob(1));
+
+    // 模拟编辑器「清空上限」经 HTTP JSON 传输后的 updates：null 键保留（undefined 会被丢弃）。
+    const wire = JSON.parse(JSON.stringify({ maxRuns: null }));
+    const updated = await service.updateJob(job.id, wire);
+    expect(updated?.maxRuns).toBeNull();
+
+    // 清空后不再到数停用：旧 maxRuns=1 时一趟就该停，现在连跑两趟仍启用、计数照涨。
+    await service.triggerJob(job.id);
+    await service.triggerJob(job.id);
+    expect(service.getJob(job.id)).toMatchObject({ enabled: true, runCount: 2 });
+    expect(maxRunsEventCalls(job.id)).toHaveLength(0);
+    await service.shutdown();
+  });
+
+  it('an unlimited job settles runCount via the narrow write: timer untouched, no updatedAt churn', async () => {
+    const service = new CronService();
+    stubExecuteAction(service, async () => ({ ok: true }));
+    const { maxRuns: _noCap, ...unlimited } = limitedAgentJob(0);
+    const job = await service.createJob(unlimited);
+
+    const jobs = (service as unknown as {
+      jobs: Map<string, { cronInstance?: unknown }>;
+    }).jobs;
+    const cronInstanceBefore = jobs.get(job.id)?.cronInstance;
+    expect(cronInstanceBefore).toBeDefined();
+
+    await service.triggerJob(job.id);
+
+    // 记数生效，但定时器是同一个（没被 stop/re-register），updatedAt 没被顺改。
+    expect(service.getJob(job.id)).toMatchObject({ enabled: true, runCount: 1, updatedAt: job.updatedAt });
+    expect(jobs.get(job.id)?.cronInstance).toBe(cronInstanceBefore);
+    await service.shutdown();
+  });
+
+  it('a throw inside settle never wedges the job: in-flight cleared, next scheduled run still fires', async () => {
+    const service = new CronService();
+    const executeAction = stubExecuteAction(service, async () => ({ ok: true }));
+    const job = await service.createJob(limitedAgentJob(1));
+
+    // 复现审查场景：到数停用的 updateJob 抛错（如遗留任务过不了现行校验 / 落库失败）。
+    const originalUpdateJob = service.updateJob.bind(service);
+    vi.spyOn(service, 'updateJob').mockImplementation(async (jobId, updates) => {
+      if (updates.enabled === false && updates.metadata) {
+        throw new Error('boom: legacy job fails current schedule validation');
+      }
+      return originalUpdateJob(jobId, updates);
+    });
+
+    const first = await service.triggerJob(job.id);
+    expect(first?.status).toBe('completed');
+    // 计数已窄写落账；停用虽抛错，任务保持启用。
+    expect(service.getJob(job.id)).toMatchObject({ enabled: true, runCount: 1 });
+
+    // in-flight 标记必须已释放——否则之后每趟都被 "previous run still in progress" 跳过。
+    const inFlight = (service as unknown as { inFlightJobIds: Set<string> }).inFlightJobIds;
+    expect(inFlight.has(job.id)).toBe(false);
+
+    // 下一个排程 tick 照常触发执行。
+    await (service as unknown as { runScheduledJob: (id: string) => Promise<void> }).runScheduledJob(job.id);
+    expect(executeAction).toHaveBeenCalledTimes(2);
     await service.shutdown();
   });
 });

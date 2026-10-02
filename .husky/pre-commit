@@ -2,3 +2,10 @@ bash scripts/check-hardcoded-models.sh
 bash scripts/check-provider-symmetry.sh --quiet
 bash scripts/check-prompt-version-bump.sh
 npx lint-staged
+# 2026-10-01 non-blocking rollout (owner decision); flip to blocking once allowlist is settled and secrets are set
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --redact --verbose || echo "gitleaks: warn-only during non-blocking rollout"
+else
+  echo "gitleaks: not on PATH, skipping staged secret scan"
+fi
+node scripts/security/check-sensitive-hashes.mjs --staged || echo "sensitive-hash: warn-only during non-blocking rollout"

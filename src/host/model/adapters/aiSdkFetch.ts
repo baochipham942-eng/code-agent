@@ -130,7 +130,7 @@ export function makeAiSdkFetch(
     await dumpModelPayload({
       body,
       provider,
-      protocol: 'chat-completions',
+      protocol: /\/messages(?:[?#]|$)/.test(url) ? 'anthropic-messages' : 'chat-completions',
       url,
     });
   }

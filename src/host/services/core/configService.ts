@@ -35,6 +35,7 @@ import {
   migrateQuickFreeTierToOkiFlash,
 } from './configHelpers';
 import { devSlotFromDataDirName } from '../../../shared/devSlot';
+import { assertValidUserPermissionRules } from '../../../shared/permissionRuleSyntax';
 
 const logger = createLogger('ConfigService');
 
@@ -731,6 +732,7 @@ export class ConfigService implements IReadConfigService {
       }
     }
 
+    assertValidUserPermissionRules(updates.permissions);
     this.settings = this.mergeAppSettings(this.settings, updates);
     await this.save();
 

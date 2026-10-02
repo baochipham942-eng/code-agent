@@ -3,6 +3,11 @@
 // ============================================================================
 
 import picomatch from 'picomatch';
+import {
+  PERMISSION_RULE_GLOB_OPTIONS,
+  TOOL_SPECIFIER_PATTERN,
+  TOOL_SPECIFIER_TYPES,
+} from '../../shared/permissionRuleSyntax';
 import { lenientCompoundSegments, splitCompoundCommand } from '../security/commandSafety';
 
 // ----------------------------------------------------------------------------
@@ -15,27 +20,16 @@ export interface ParsedSpecifier {
   specifierType: 'command' | 'path' | 'none';
 }
 
-// Tool name → specifier type mapping
-const TOOL_SPECIFIER_TYPES: Record<string, 'command' | 'path'> = {
-  Bash: 'command',
-  Edit: 'path',
-  Write: 'path',
-  Read: 'path',
-  Glob: 'path',
-  Grep: 'path',
-  ListDirectory: 'path',
-};
-
 // ----------------------------------------------------------------------------
 // Parsing
 // ----------------------------------------------------------------------------
 
 /**
- * Parse a rule string like "Bash(npm run *)" or "Edit(src/**)" into components.
- * Plain tool names like "Bash" are also supported (no specifier).
+ * Parse a rule string like "Bash(npm run *)" or "Edit(src/**)".
+ * A bare tool name has no specifier, so specifierType is `none`.
  */
 export function parseToolSpecifier(rule: string): ParsedSpecifier {
-  const match = rule.match(/^(\w+)\((.+)\)$/);
+  const match = rule.match(TOOL_SPECIFIER_PATTERN);
   if (match) {
     const toolName = match[1];
     const specifier = match[2];
@@ -43,10 +37,9 @@ export function parseToolSpecifier(rule: string): ParsedSpecifier {
     return { toolName, specifier, specifierType };
   }
 
-  // No parentheses — plain tool name
   return {
     toolName: rule,
-    specifierType: TOOL_SPECIFIER_TYPES[rule] || 'none',
+    specifierType: 'none',
   };
 }
 
@@ -57,10 +50,8 @@ export function parseToolSpecifier(rule: string): ParsedSpecifier {
 /** allow = the rule grants something; restrict = deny / ask. They fail in opposite directions. */
 export type SpecifierMatchIntent = 'allow' | 'restrict';
 
-const GLOB_OPTIONS = { bash: true, dot: true } as const;
-
 function globMatches(pattern: string, input: string): boolean {
-  return picomatch.isMatch(input, pattern, GLOB_OPTIONS);
+  return picomatch.isMatch(input, pattern, PERMISSION_RULE_GLOB_OPTIONS);
 }
 
 // splitCompoundCommand() rebuilds each segment through shell-quote, which escapes `~`, `=` …

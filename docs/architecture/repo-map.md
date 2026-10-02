@@ -82,7 +82,7 @@ Agent Neo 里有几组词容易混。它们都和“让 Agent 做事”有关，
 |------|------|
 | `.agents/` | 产品内置 Agent 能力和任务技能。 |
 | `.claude/` | 开发本仓库时给 Claude Code 使用的本地协作配置。 |
-| `.github/workflows/` | GitHub Actions，包含发布、bundle、CI、控制面验证等流程。 |
+| `.github/workflows/` | GitHub Actions，包含发布、bundle、CI、控制面验证、密钥扫描等流程。职责表在 [`.github/README.md`](../../.github/README.md)。 |
 | `config/` | 公开、可评审的发布锁定配置；当前用于锁定 Poppler 不可变制品与源码证据。 |
 | `.husky/` | Git hooks。 |
 

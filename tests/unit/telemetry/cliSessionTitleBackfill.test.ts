@@ -117,7 +117,7 @@ describe('backfillCliPlaceholderSessionTitles', () => {
     fileDb.close();
 
     const tsx = path.join(repoRoot, 'node_modules/.bin/tsx');
-    const script = path.join(repoRoot, 'scripts/backfill-cli-session-titles.ts');
+    const script = path.join(repoRoot, 'scripts/repair/backfill-cli-session-titles.ts');
     const dry = execFileSync(tsx, [script, dbPath], { encoding: 'utf8' });
     expect(dry.trim()).toBe('would update 1');
 

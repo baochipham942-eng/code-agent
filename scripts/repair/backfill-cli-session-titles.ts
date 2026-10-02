@@ -9,7 +9,7 @@ import path from 'node:path';
 
 import Database from 'better-sqlite3';
 
-import { backfillCliPlaceholderSessionTitles } from '../src/host/telemetry/telemetrySessionTitleBackfill';
+import { backfillCliPlaceholderSessionTitles } from '../../src/host/telemetry/telemetrySessionTitleBackfill';
 
 function usage(): never {
   console.error('用法：npx tsx scripts/backfill-cli-session-titles.ts <db-path> [--apply]');

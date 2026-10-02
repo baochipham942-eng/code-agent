@@ -1,15 +1,39 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { AgentEngineCapability, AgentEngineDescriptor, AgentEnginePermissionProfile, AgentEngineSessionMetadata, ExternalAgentEngineKind } from '../../../shared/contract/agentEngine';
-import { AgentEngineCapabilityError, normalizeAgentEngineSession } from '../../../shared/contract/agentEngine';
+import { AgentEngineCapabilityError, deniedExternalEnginePermission, normalizeAgentEngineSession } from '../../../shared/contract/agentEngine';
 import type { Session } from '../../../shared/contract/session';
 import type { WorkspaceScope } from '../../../shared/contract/project';
 import { getExternalEngineManifestForKind, isManifestBackedExternalKind } from '../../../shared/externalEngineManifest';
 import { resolveWorkspacePath } from '../../runtime/workspaceScope';
 import { createLogger } from '../infra/logger';
 import { isAgentWorktreePath } from '../../agent/agentWorktreePath';
+import { hasPendingPlanApproval } from '../planning/planApprovalPending';
 
 const logger = createLogger('AgentEngineGuards');
+
+function isExternalWriteRequest(requestType: string): boolean {
+  return requestType === 'file_write' || requestType === 'command';
+}
+
+/**
+ * 外部引擎写回是否直接拒绝。会话档由调用方现读后传入，本目录不读权限档管理器。
+ * 天花板复用 deniedExternalEnginePermission，不另建一张会话档表。
+ */
+function externalWriteBackBlocked(sessionId: string | undefined, sessionMode: string | undefined): boolean {
+  const ceilingBlocks = deniedExternalEnginePermission('file_write', sessionMode) !== null;
+  return ceilingBlocks || hasPendingPlanApproval(sessionId);
+}
+
+export function externalEngineWriteDenial(
+  requestType: string,
+  sessionId: string | undefined,
+  sessionMode: string | undefined,
+): { approved: false; denialSource: 'fail-closed' } | null {
+  if (!isExternalWriteRequest(requestType)) return null;
+  if (!externalWriteBackBlocked(sessionId, sessionMode)) return null;
+  return { approved: false, denialSource: 'fail-closed' };
+}
 
 function assertAgentEngineCapability(
   engine: AgentEngineSessionMetadata['kind'],

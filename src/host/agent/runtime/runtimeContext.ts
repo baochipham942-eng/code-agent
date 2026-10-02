@@ -44,6 +44,7 @@ import type { SkillDiscoveryService } from '../../services/skills/skillDiscovery
 import type { SystemPromptCache } from '../../telemetry/systemPromptCache';
 import type { TurnSnapshotSink } from './turnSnapshotWriter';
 import type { ScopedCostRecorder } from '../../services/core/scopedCostLimit';
+import type { CachePromptSampleHolder } from './toolTableFingerprint';
 
 /**
  * 运行时组合根：单对象，所有 runtime 模块共享同一引用（ADR-038）。
@@ -59,7 +60,7 @@ export interface RuntimeContext {
   // --- Configuration ---
   readonly systemPrompt: string;
   /** 本轮系统提示样本，turn cost 在 turn_end 时拿它跑 detectCacheBreak。 */
-  readonly cachePromptSample?: { current?: { prompt: string; modelId: string } };
+  readonly cachePromptSample?: CachePromptSampleHolder;
   readonly systemInstructions?: string[];
   modelConfig: ModelConfig;
   readonly toolExecutor: ToolExecutor;

@@ -18,6 +18,7 @@ import type {
   StandingGrant,
   UpsertSessionAutomationInput,
 } from '../../../shared/contract';
+import { countPendingReviewByTask as foldPendingReviewByTask, type CronRunGroupable } from '../../../shared/cronRunDigest';
 import type { ParkedApprovalInboxItem, ToolApprovalPayload } from '../../../shared/contract/pendingApproval';
 import { getDatabase } from '../core/databaseService';
 import { getSessionManager } from '../infra/sessionManager';
@@ -429,6 +430,13 @@ export class SessionAutomationService {
 
   countPendingReview(): number {
     return this.listPendingReview().length;
+  }
+
+  /** 同一 cron/heartbeat 任务的多条待过目折成 1；对不上运行会话的记录仍各计 1。 */
+  countPendingReviewByTask(sessions: readonly CronRunGroupable[]): number {
+    const sessionsById: Record<string, CronRunGroupable> = {};
+    for (const session of sessions) sessionsById[session.id] = session;
+    return foldPendingReviewByTask(this.listPendingReview(), sessionsById);
   }
 
   /**

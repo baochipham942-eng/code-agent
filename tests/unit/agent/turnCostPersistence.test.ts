@@ -218,4 +218,47 @@ describe('turn cost production event handler', () => {
     expect(repo.listBySession(sessionId).map((row) => row.cacheBreakReason)).toEqual(['none', 'prefix-changed']);
     clearSessionCachePrompt(sessionId);
   });
+
+  it('persists tools-changed when the prompt and model stay the same and the tools fingerprint differs', () => {
+    const sessionId = 'session-tools-fingerprint';
+    clearSessionCachePrompt(sessionId);
+    const sample: { current?: { prompt: string; modelId: string; toolsFingerprint?: string } } = {};
+    const onEvent = createTurnCostEventHandler({
+      sessionId,
+      onEvent: vi.fn(),
+      sink: repo,
+      readCachePrompt: () => sample.current,
+    });
+    const prompt = 'stable prefix\n<!-- DYNAMIC_SECTION -->\ndynamic';
+    const finish = (turnId: string, toolsFingerprint?: string) => {
+      sample.current = { prompt, modelId: 'deepseek-v4-pro', ...(toolsFingerprint ? { toolsFingerprint } : {}) };
+      onEvent({ type: 'turn_start', data: { turnId, iteration: 1 } });
+      onEvent({
+        type: 'model_response',
+        data: {
+          model: 'deepseek-v4-pro',
+          provider: 'deepseek',
+          responseType: 'text',
+          duration: 1,
+          toolCalls: [],
+          textLength: 1,
+          inputTokens: 10,
+          outputTokens: 2,
+        },
+      });
+      onEvent({ type: 'turn_end', data: { turnId } });
+    };
+
+    finish('turn-tools-a', 'fp-a');
+    finish('turn-tools-b', 'fp-b');
+    finish('turn-tools-c', 'fp-b');
+    finish('turn-tools-d');
+
+    const rows = repo.listBySession(sessionId);
+    expect(rows.map((row) => row.cacheBreakReason)).toEqual(['none', 'tools-changed', 'none', 'none']);
+    const reread = repo.getById(rows[1].id);
+    expect(reread?.cacheBreakReason).toBe('tools-changed');
+    expect(JSON.parse(JSON.stringify(reread)).cacheBreakReason).toBe('tools-changed');
+    clearSessionCachePrompt(sessionId);
+  });
 });

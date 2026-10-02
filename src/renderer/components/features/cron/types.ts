@@ -21,7 +21,9 @@ export interface CronJobDraft {
   maxRetries: string;
   retryDelay: string;
   timeout: string;
-  scheduleType: 'at' | 'every' | 'cron';
+  maxRunBudget: string;
+  maxRuns: string;
+  scheduleType: 'at' | 'every' | 'cron' | 'event';
   atDatetime: string;
   everyInterval: string;
   everyUnit: EveryScheduleConfig['unit'];
@@ -59,6 +61,8 @@ export function createDefaultCronJobDraft(): CronJobDraft {
     maxRetries: '0',
     retryDelay: '',
     timeout: '',
+    maxRunBudget: '',
+    maxRuns: '',
     scheduleType: 'every',
     atDatetime: '',
     everyInterval: '1',
@@ -116,6 +120,8 @@ export function buildDraftFromJob(job: CronJobDefinition): CronJobDraft {
   draft.maxRetries = job.maxRetries != null ? String(job.maxRetries) : '0';
   draft.retryDelay = job.retryDelay != null ? String(job.retryDelay) : '';
   draft.timeout = job.timeout != null ? String(job.timeout) : '';
+  draft.maxRunBudget = job.maxRunBudget != null ? String(job.maxRunBudget) : '';
+  draft.maxRuns = job.maxRuns != null ? String(job.maxRuns) : '';
   draft.scheduleType = job.scheduleType;
 
   if (job.schedule.type === 'at') {
@@ -209,6 +215,12 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
     maxRetries: parseOptionalNumber(draft.maxRetries) ?? 0,
     retryDelay: parseOptionalNumber(draft.retryDelay),
     timeout: parseOptionalNumber(draft.timeout),
+    // 清空/不支持的额度字段必须送 null 而不是 undefined：HTTP 传输 JSON.stringify 会丢
+    // undefined 键，而 host updateJob 是 {...existing, ...updates} 合并——缺键=保留旧值，
+    // 「清空上限」会静默不生效，编辑带 maxRuns 的任务上云端也会把旧值继承回去
+    // （PR#2208 ai-review R4 Important）。云端不支持次数上限（R2）：一律送 null 丢弃。
+    maxRunBudget: parseOptionalNumber(draft.maxRunBudget) ?? null,
+    maxRuns: draft.runsOn === 'cloud' ? null : parseOptionalNumber(draft.maxRuns) ?? null,
     tags: draft.tagsText
       .split(',')
       .map((tag) => tag.trim())
@@ -240,7 +252,7 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
       startAt: draft.everyStartAt ? new Date(draft.everyStartAt).toISOString() : undefined,
       endAt: draft.everyEndAt ? new Date(draft.everyEndAt).toISOString() : undefined,
     };
-  } else {
+  } else if (draft.scheduleType === 'cron') {
     if (!draft.cronExpression.trim()) {
       throw new Error('Cron 表达式不能为空');
     }
@@ -249,6 +261,9 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
       expression: draft.cronExpression.trim(),
       timezone: draft.cronTimezone.trim() || undefined,
     };
+  } else {
+    // 'event' 调度由通道侧创建（本面板创建 UI 未开放），不该从 draft 重建。
+    throw new Error('事件触发任务不支持在此面板创建或编辑');
   }
 
   let action: CronJobDefinition['action'];

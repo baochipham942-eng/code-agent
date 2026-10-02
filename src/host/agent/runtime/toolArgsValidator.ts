@@ -15,6 +15,7 @@
 // ============================================================================
 
 import type { JSONSchema, JSONSchemaProperty } from '../../../shared/contract';
+import { minimalCallExample } from './toolArgsMinimalCall';
 
 export interface ValidationFailure {
   ok: false;
@@ -115,7 +116,7 @@ export function validateToolArgs(
 
   return {
     ok: false,
-    message: formatValidationError(toolName, issues, properties, required),
+    message: formatValidationError(toolName, issues, properties, required, inputSchema),
     issues,
   };
 }
@@ -178,6 +179,7 @@ function formatValidationError(
   issues: ValidationIssue[],
   properties: Record<string, JSONSchemaProperty>,
   required: string[],
+  inputSchema: JSONSchema,
 ): string {
   const lines: string[] = [];
   lines.push(`<tool-args-validation-error>`);
@@ -192,6 +194,12 @@ function formatValidationError(
     }
   }
   lines.push(``);
+  // 缺必填参数时补一条可直接照抄的最小合法调用（N-EXCEL-ARGS-ECHO）——
+  // 模型第一次缺参就拿到能抄的形状，不再对着字段清单反复猜。
+  if (issues.some((issue) => issue.reason === 'missing')) {
+    lines.push(`Minimal valid call: ${toolName} ${minimalCallExample(toolName, inputSchema)}`);
+    lines.push(``);
+  }
   lines.push(...formatSchemaForModel(properties, required));
   lines.push(`</tool-args-validation-error>`);
   return lines.join('\n');

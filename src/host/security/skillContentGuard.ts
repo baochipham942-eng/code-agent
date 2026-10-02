@@ -13,7 +13,11 @@
 import { validateCommand } from './commandSafety';
 import { getSensitiveDetector } from './sensitiveDetector';
 import { canonicalizeCommand } from './canonicalizeCommand';
-import { OBFUSCATION_PATTERNS } from './patterns/injectionPatterns';
+import {
+  OBFUSCATION_PATTERNS,
+  SSH_PRIVATE_KEY_PATH,
+  SSH_PRIVATE_KEY_READ_VERB,
+} from './patterns/injectionPatterns';
 import { stripSpecialTokenLiterals } from './untrustedContentBoundary';
 
 export interface SkillGuardFinding {
@@ -21,6 +25,13 @@ export interface SkillGuardFinding {
   /** 给用户看的中文说明 */
   detail: string;
 }
+
+/**
+ * 内容扫描规则版本。扫描规则（危险命令/密钥/混淆签名等）加严时 +1；
+ * 安装记录里 scanner.version 低于该值的已启用插件会在宿主启动与 enablePlugin 时重扫
+ * （src/host/skills/marketplace/installedPluginRescan.ts）。
+ */
+export const SKILL_GUARD_VERSION = 1;
 
 export interface SkillGuardResult {
   verdict: 'pass' | 'block';
@@ -173,6 +184,12 @@ export function scanSkillContent(content: string): SkillGuardResult {
       findings.push({
         kind: 'dangerous_command',
         detail: `危险命令（${result.securityFlags.join(',') || 'critical'}）：${line.slice(0, 80)}`,
+      });
+    }
+    if (SSH_PRIVATE_KEY_PATH.test(line) && SSH_PRIVATE_KEY_READ_VERB.test(line)) {
+      findings.push({
+        kind: 'dangerous_command',
+        detail: `SSH 私钥读取规则：${line.slice(0, 80)}`,
       });
     }
   }

@@ -104,7 +104,8 @@ export async function executeExitPlanMode(
       requiresUserConfirmation: true,
       confirmationType: PLAN_CONFIRMATION_TYPE,
       plan,
-      planApproval: createPendingPlanApproval(plan),
+      // ADR-074 K2：模型主动退出的卡标记来源；宿主从计划正文合成的卡标记 synthetic_text。
+      planApproval: { ...createPendingPlanApproval(plan), source: 'model_exit' },
     },
   };
 }

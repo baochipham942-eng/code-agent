@@ -18,6 +18,7 @@ import type {
   CronJobDefinition,
   CronJobExecution,
   CronJobAction,
+  CronExecutionTrigger,
   CronServiceStats,
   CronMissedEvent,
   CronMissedReason,
@@ -62,17 +63,20 @@ import {
   scheduleBoundToDate,
 } from './cronExecutionPolicy';
 import { CronCloudRuntime } from './cronCloudRuntime';
+import { CronEventTrigger, assertEventScheduleConstraints } from './cronEventTrigger';
 import {
   deleteCronJob,
   loadCronExecutionStatus,
+  loadCronExecutionsByJob,
   loadCronLastRunAt,
-  mapCronExecutionRows,
+  loadRecentCronExecutions,
   markInterruptedCronExecutions,
   saveCronExecution,
   saveCronJob,
   upsertCronExecutionInMemory,
 } from './cronPersistence';
 import { deliverCronResultToChannel } from './cronResultDelivery';
+import { rearmCronRunLimit, settleCronRunLimit } from './cronRunLimit';
 import {
   adoptFailedAgentSession,
   classifyCronFailure,
@@ -107,6 +111,8 @@ export class CronService implements Disposable {
   private isInitialized = false;
   private disposed = false;
   private unsubscribeCronMissed?: () => void;
+  /** 'event' 调度的本地事件源（通道入站消息 → 合批 → executeJob）。 */
+  private cronEventTrigger?: CronEventTrigger;
   private readonly failureNoticeGate = new CronFailureNoticeGate();
   /** 正在执行（含退避重试链）的 jobId：系统侧触发互斥，见 runScheduledJob。 */
   private readonly inFlightJobIds = new Set<string>();
@@ -163,11 +169,23 @@ export class CronService implements Disposable {
       this.cloudRuntime.start();
     }
 
+    this.cronEventTrigger = new CronEventTrigger({
+      host: {
+        getJobDefinitions: () => this.listJobs(),
+        isJobInFlight: (jobId) => this.inFlightJobIds.has(jobId),
+        executeEventJob: (definition, trigger, payloadBlock) =>
+          this.executeJob(definition, trigger, payloadBlock),
+      },
+    });
+    this.cronEventTrigger.start();
+
     this.isInitialized = true;
     console.error('[CronService] Initialized');
   }
 
   async shutdown(): Promise<void> {
+    this.cronEventTrigger?.dispose();
+    this.cronEventTrigger = undefined;
     this.cloudRuntime.stop();
     // Stop all cron jobs
     for (const [jobId, job] of this.jobs) {
@@ -224,11 +242,8 @@ export class CronService implements Disposable {
     assertSupportedEveryScheduleUnit(definition.schedule);
 
     const runsOn = definition.runsOn ?? 'local';
-    assertExecutionLocationConstraints({
-      runsOn,
-      schedule: definition.schedule,
-      maxRunBudget: definition.maxRunBudget,
-    });
+    assertExecutionLocationConstraints({ ...definition, runsOn });
+    assertEventScheduleConstraints({ ...definition, runsOn });
 
     const job: CronJobDefinition = {
       ...definition,
@@ -281,8 +296,11 @@ export class CronService implements Disposable {
       ...updates,
       updatedAt: Date.now(),
     };
+    // 重新启用已停用任务：运行计数清零、摘掉停用原因（N-CRON-BUDGET-EXPOSE）；只改 maxRuns 不动计数。
+    if (updates.enabled === true && !existingJob.definition.enabled) rearmCronRunLimit(updatedJob);
     assertSupportedEveryScheduleUnit(updatedJob.schedule);
     assertExecutionLocationConstraints(updatedJob);
+    assertEventScheduleConstraints(updatedJob);
 
     // Save to database
     await this.persistJob(updatedJob);
@@ -472,7 +490,7 @@ export class CronService implements Disposable {
       return executions.slice(-limit);
     }
 
-    const persisted = this.loadExecutionsFromDatabase(jobId, limit);
+    const persisted = loadCronExecutionsByJob(jobId, limit);
     if (persisted.length > 0) {
       this.executions.set(jobId, persisted);
     }
@@ -606,6 +624,11 @@ export class CronService implements Disposable {
           );
         }
 
+        case 'event': {
+          // 事件任务没有 croner 实例也没有 nextRunAt：由 CronEventTrigger 按入站消息触发。
+          return undefined;
+        }
+
         default:
           console.error(`[CronService] Unknown schedule type for job ${id}`);
           return undefined;
@@ -642,7 +665,11 @@ export class CronService implements Disposable {
     await this.executeJob(current);
   }
 
-  private async executeJob(definition: CronJobDefinition): Promise<CronJobExecution> {
+  private async executeJob(
+    definition: CronJobDefinition,
+    trigger?: CronExecutionTrigger,
+    eventPayloadBlock?: string,
+  ): Promise<CronJobExecution> {
     const execution: CronJobExecution = {
       id: uuidv4(),
       jobId: definition.id,
@@ -651,6 +678,7 @@ export class CronService implements Disposable {
       scheduledAt: Date.now(),
       startedAt: Date.now(),
       retryAttempt: 0,
+      trigger,
     };
 
     // Store execution
@@ -678,7 +706,7 @@ export class CronService implements Disposable {
         execution.result = await this.cloudRuntime.runJob(definition);
         execution.status = 'completed';
       } else {
-        const result = await this.executeAction(definition, definition.action, definition.timeout, execution.id);
+        const result = await this.executeAction(definition, definition.action, definition.timeout, execution.id, eventPayloadBlock);
         if (isCronAgentActionResult(result)) {
           execution.sessionId = result.sessionId;
         }
@@ -710,7 +738,7 @@ export class CronService implements Disposable {
         // transient：退避重试（延迟序列见 retryExecution，替换旧的固定 5s 兜底）
         execution.status = 'failed';
         if (definition.runsOn === 'local' && definition.maxRetries && execution.retryAttempt < definition.maxRetries) {
-          await this.retryExecution(definition, execution);
+          await this.retryExecution(definition, execution, eventPayloadBlock);
         }
       }
     } finally {
@@ -750,6 +778,12 @@ export class CronService implements Disposable {
           disableNotified = true;
         }
       }
+
+      // 次数上限结算（N-CRON-BUDGET-EXPOSE，实现见 cronRunLimit.ts）：排在失败停用之后，同趟不重复停用；
+      // 记数走窄写且整体已兜底，抛错不会逃出 finally 卡死 in-flight（PR#2208 ai-review Important）。
+      // （hooks 压行：本文件贴 max-lines 红线，格式还原 #2208 R4 Nit-3 需要这两行额度。）
+      disableNotified = await settleCronRunLimit(definition.id, execution, disableNotified, {
+        getDefinition: (jobId) => this.jobs.get(jobId)?.definition, updateJob: (jobId, updates) => this.updateJob(jobId, updates) });
 
       // 定时 agent 任务执行完成后发系统通知，点通知跳到生成的 session。
       // 停用的那一趟只发停用通知（已含最后错误与出路）——同一笔失败再叠一条
@@ -793,7 +827,8 @@ export class CronService implements Disposable {
     definition: CronJobDefinition,
     action: CronJobAction,
     timeout?: number,
-    executionId?: string
+    executionId?: string,
+    eventPayloadBlock?: string
   ): Promise<unknown> {
     switch (action.type) {
       case 'shell': {
@@ -857,10 +892,14 @@ export class CronService implements Disposable {
         let runFailed = false;
         try {
           try {
+            // 事件触发时通道载荷只以 untrusted 定界块追加在 prompt 尾部，并给该条
+            // 用户消息标 memoryTainted（跳过自动记忆写）。调度触发的 run 字节不变。
             const sendMessage = () => orchestrator.sendMessage(
-              buildCronAgentPrompt(action.prompt, previousSnapshot, snapshotTrackingEnabled),
+              buildCronAgentPrompt(action.prompt, previousSnapshot, snapshotTrackingEnabled)
+                + (eventPayloadBlock === undefined ? '' : `\n\n${eventPayloadBlock}`),
               undefined,
               agentRunOptions,
+              eventPayloadBlock === undefined ? undefined : { memoryTainted: true },
             );
             result = await runWithCronJobBudget(definition.maxRunBudget, sendMessage);
             const unattendedTimeout = (await import('../agent/unattendedApprovalTerminal')).takeUnattendedApprovalTimeout(cronSession.id);
@@ -1088,7 +1127,8 @@ export class CronService implements Disposable {
 
   private async retryExecution(
     definition: CronJobDefinition,
-    execution: CronJobExecution
+    execution: CronJobExecution,
+    eventPayloadBlock?: string
   ): Promise<void> {
     // 指数退避（N-CRON-RESILIENCE）：第 n 次重试前等待 min(BASE×FACTOR^(n-1), MAX)，
     // 序列 30s→60s→120s→…封顶 15min，替换旧的固定 5s 兜底；显式 retryDelay 仍优先。
@@ -1112,7 +1152,7 @@ export class CronService implements Disposable {
     execution.startedAt = Date.now();
 
     try {
-      const result = await this.executeAction(current, current.action, current.timeout, execution.id);
+      const result = await this.executeAction(current, current.action, current.timeout, execution.id, eventPayloadBlock);
       if (isCronAgentActionResult(result)) {
         execution.sessionId = result.sessionId;
       }
@@ -1128,7 +1168,7 @@ export class CronService implements Disposable {
 
       // Continue retrying if we haven't reached the limit
       if (execution.retryAttempt < (current.maxRetries || 0)) {
-        await this.retryExecution(current, execution);
+        await this.retryExecution(current, execution, eventPayloadBlock);
       }
     }
   }
@@ -1251,47 +1291,12 @@ export class CronService implements Disposable {
     return saveCronJob(job, cloudJobId ?? this.jobs.get(job.id)?.cloudJobId);
   }
 
-  private loadExecutionsFromDatabase(jobId: string, limit: number): CronJobExecution[] {
-    try {
-      const db = getDatabase().getDb();
-      if (!db) return [];
-
-      const rows = db.prepare(`
-        SELECT cron_executions.*, cron_jobs.runs_on AS runs_on
-        FROM cron_executions
-        JOIN cron_jobs ON cron_jobs.id = cron_executions.job_id
-        WHERE cron_executions.job_id = ?
-        ORDER BY cron_executions.scheduled_at DESC
-        LIMIT ?
-      `).all(jobId, limit) as unknown[];
-
-      return mapCronExecutionRows(rows.reverse());
-    } catch (error) {
-      console.error('[CronService] Failed to load executions from database:', error);
-      return [];
-    }
-  }
-
   /**
    * 跨任务执行流（自动化页「运行记录」tab）：全部任务的执行按时间倒序。
    * DB 是权威源——executeJob 开头就落 running 行，无需再并内存态。
    */
   getRecentExecutions(limit: number = 50): CronJobExecution[] {
-    try {
-      const db = getDatabase().getDb();
-      if (!db) return [];
-      const rows = db.prepare(`
-        SELECT cron_executions.*, cron_jobs.runs_on AS runs_on
-        FROM cron_executions
-        JOIN cron_jobs ON cron_jobs.id = cron_executions.job_id
-        ORDER BY cron_executions.scheduled_at DESC
-        LIMIT ?
-      `).all(limit) as unknown[];
-      return mapCronExecutionRows(rows);
-    } catch (error) {
-      console.error('[CronService] Failed to load recent executions from database:', error);
-      return [];
-    }
+    return loadRecentCronExecutions(limit);
   }
 
 }

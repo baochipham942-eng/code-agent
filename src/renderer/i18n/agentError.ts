@@ -136,6 +136,10 @@ export const agentErrorZh = {
         title: '图片太多或文件太大，模型无法接收',
         suggestion: '请新开会话，只带这次需要的图片；图片较多时分批发送，单张过大时先压缩后再发。',
       },
+      interrupted: {
+        title: '已中断',
+        suggestion: '这次运行在给出任何回复之前被停掉了。可以重试。',
+      },
       generic: {
         title: '运行失败',
         suggestion: '请重试一次；若反复失败，可新开会话继续，或复制错误报告反馈。',
@@ -216,6 +220,10 @@ export const agentErrorEn: typeof agentErrorZh = {
       image_payload: {
         title: 'There are too many images or the image files are too large',
         suggestion: 'Start a new session with only the images needed for this request. Send large sets in smaller batches, and compress oversized images before sending them.',
+      },
+      interrupted: {
+        title: 'Interrupted',
+        suggestion: 'This run was stopped before any reply. You can retry.',
       },
       generic: {
         title: 'Run failed',

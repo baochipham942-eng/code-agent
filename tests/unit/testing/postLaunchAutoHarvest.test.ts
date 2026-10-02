@@ -9,9 +9,23 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 process.env.CODE_AGENT_DATA_DIR = path.join(os.tmpdir(), `postlaunch-autoharvest-${process.pid}`);
 
 const systemOneMock = vi.hoisted(() => vi.fn(async () => ({})));
-vi.mock('../../../src/host/model/providers/typesafeProvider', () => ({
-  systemOne: systemOneMock,
-}));
+vi.mock('../../../src/host/model/providers/typesafeProvider', async () => {
+  const { JEV_MODEL } = await import('../../../src/shared/constants/jevQuestions');
+  const { MODEL_API_ENDPOINTS } = await import('../../../src/shared/constants/providers');
+  return {
+    systemOne: systemOneMock,
+    resolveJevRoute: () => {
+      const apiKey = process.env.TYPESAFE_API_KEY?.trim() ?? '';
+      if (!apiKey) return null;
+      return {
+        kind: 'official' as const,
+        endpoint: MODEL_API_ENDPOINTS.typesafeSystemOne,
+        model: JEV_MODEL,
+        apiKey,
+      };
+    },
+  };
+});
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';

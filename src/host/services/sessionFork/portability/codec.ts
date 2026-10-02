@@ -14,6 +14,7 @@ import type {
   PortableAgentEngineV2,
   PortableArtifactProvenanceV2,
   PortableAttachmentProvenanceV2,
+  PortableExternalHistoryProvenanceV1,
   PortableMessageV2,
   PortableModelConfigV2,
   PortableSessionV2,
@@ -308,13 +309,12 @@ function sanitizeSession(
   };
   if (raw.type !== undefined) portable.type = raw.type;
   if (raw.origin !== undefined) {
-    // N-EXTHISTORY-IMPORT-WIRE: external_history provenance had zero production writers
-    // (nothing ever set origin.metadata.kind === 'external_history'), so this branch and
-    // its matching validatePortableSessionOrigin check were removed as dead code that
-    // would silently no-op forever. Reintroduce both together with the import mapper.
     portable.origin = {
       kind: raw.origin.kind,
       ...(raw.origin.name !== undefined ? { name: raw.origin.name } : {}),
+      ...(raw.origin.metadata?.kind === 'external_history'
+        ? { metadata: deepPortableClone(raw.origin.metadata) as unknown as PortableExternalHistoryProvenanceV1 }
+        : {}),
     };
   }
   if (raw.memoryMode !== undefined) portable.memoryMode = raw.memoryMode;

@@ -1,26 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // 本文件的装配断言走环境变量。typesafe 读钥匙串时若打到共享的 mock userData，
-// 别的用例留下的槽会把「缺 key」误判成已装配。这里只把 typesafe 槽钉成空。
+// 别的用例留下的槽会把「缺 key」误判成已装配；缺官方 key 时 resolveJevRoute 还会读 OpenRouter key。
+// 这里把 typesafe 槽钉成空，并让 getApiKey 永远返回 undefined——单测不碰真实钥匙串。
 vi.mock('../../../../../src/host/services/core/configService', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../../../src/host/services/core/configService')>();
-  let pinned = false;
   return {
     ...actual,
     getConfigService: () => {
-      const real = actual.getConfigService();
-      if (pinned) return real;
-      const readServiceKey = real.getServiceApiKey.bind(real);
-      real.getServiceApiKey = (service) => {
-        if (service === 'typesafe') return undefined;
-        return readServiceKey(service);
-      };
-      pinned = true;
-      return real;
+      const service = actual.getConfigService();
+      return new Proxy(service, {
+        get(target, prop, receiver) {
+          if (prop === 'getApiKey') return () => undefined;
+          if (prop === 'getServiceApiKey') {
+            return (name: Parameters<typeof target.getServiceApiKey>[0]) =>
+              name === 'typesafe' ? undefined : target.getServiceApiKey(name);
+          }
+          const value = Reflect.get(target, prop, receiver);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
     },
   };
 });
-
 import type { JevAnswers, JevSystemOneCall } from '../../../../../src/shared/constants/jevQuestions';
 import { BROWSER_STEP_OPERATIONS } from '../../../../../src/shared/constants/jevQuestions';
 import type { JevCapturedSnapshot } from '../../../../../src/host/services/infra/browser/jevBrowserSnapshotPrep';

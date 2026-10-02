@@ -106,6 +106,8 @@ export interface ContextTranscriptEntry extends ProjectableMessage {
   timestamp: number;
   turnIndex: number;
   toolCallId?: string;
+  toolName?: string;
+  resultBudgetTokens?: number;
   toolError?: boolean;
   attachments?: Message['attachments'];
   toolCalls?: Message['toolCalls'];

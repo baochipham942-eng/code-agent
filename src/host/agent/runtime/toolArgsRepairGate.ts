@@ -47,16 +47,42 @@ export class ToolArgsRepairGate {
   }
 }
 
+export interface RepairExhaustedHint {
+  /** 连续失败中累计缺过的必填字段名 */
+  missingFields: string[];
+  /** minimalCallExample 生成的最小合法调用（compact JSON） */
+  example: string;
+}
+
 /**
  * repair 耗尽时回灌给模型的终止指引：停止重试该工具、换路子或向用户要信息。
+ *
+ * 不带 hint 时输出与历史上逐字节一致；带 hint 时（N-EXCEL-ARGS-ECHO）额外回显
+ * 缺失字段名 + 最小合法调用，并指出：值不知道（比如文件路径）就用
+ * Glob/ListDirectory 找，或直接问用户——这两个工具没有可替代的别的工具，
+ * "换一条路径"对它们不成立，所以把可执行的下落写明白。
  */
-export function buildRepairExhaustedMessage(toolName: string, attempts: number): string {
-  return [
+export function buildRepairExhaustedMessage(
+  toolName: string,
+  attempts: number,
+  hint?: RepairExhaustedHint,
+): string {
+  const lines = [
     `<tool-args-repair-exhausted>`,
     `工具 "${toolName}" 已连续 ${attempts} 次入参校验失败。`,
+  ];
+  if (hint) {
+    if (hint.missingFields.length > 0) {
+      lines.push(`The failing calls are missing required field(s): ${hint.missingFields.join(', ')}.`);
+    }
+    lines.push(`Minimal valid call: ${toolName} ${hint.example}`);
+    lines.push(`If a value is unknown (for example the file path), find it with Glob/ListDirectory or ask the user — do not repeat the same call.`);
+  }
+  lines.push(
     `停止再用同样的方式重试该工具——继续重试只会浪费轮次。请改换策略：`,
     `  - 换一条能达成目标的不同路径（别的工具 / 别的方法）；或`,
     `  - 若确实缺少必要信息，直接向用户说明卡点并询问。`,
     `</tool-args-repair-exhausted>`,
-  ].join('\n');
+  );
+  return lines.join('\n');
 }

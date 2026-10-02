@@ -158,5 +158,6 @@ describe('SessionEventService database handle lifecycle', () => {
     } finally {
       sqlite.close();
     }
-  });
+  // esbuild bundle + child process startup on CI: explicit timeout, the global 30s cap would swallow the 60s wait.
+  }, 120_000);
 });

@@ -30,3 +30,13 @@ export const TOOL_CIRCUIT_BREAKER = {
     'context_overflow',
   ] as const satisfies readonly ErrorCategory[],
 } as const;
+
+/**
+ * 连续「整轮真实工具调用全部失败」后强制收尾。
+ * 与 TOOL_CIRCUIT_BREAKER 分开：业务失败也算，但按一次 executeToolsWithHooks 计一轮。
+ * 环境变量值为 0 时关闭，调用时读取。
+ */
+export const FAILED_ROUND_GUARD = {
+  MAX_CONSECUTIVE_FAILED_ROUNDS: 5,
+  DISABLE_ENV: 'CODE_AGENT_FAILED_ROUND_GUARD',
+} as const;

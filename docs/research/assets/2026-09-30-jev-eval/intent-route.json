@@ -1,0 +1,4067 @@
+{
+  "generatedAt": "2026-09-30T20:16:46.258Z",
+  "gitHead": "b3bf6b62381302f89911f7926aa1e704882013d7",
+  "jevModel": "jev-1.13.0",
+  "fixture": {
+    "path": "tests/fixtures/jev-intent-route-eval-samples.json",
+    "rows": 95,
+    "buckets": {
+      "chitchat": 22,
+      "refactor": 25,
+      "vision": 22,
+      "writedisk": 26
+    },
+    "visionImage": 11,
+    "visionText": 11,
+    "highStakes": 13
+  },
+  "arbiter": {
+    "backend": "stepfun",
+    "model": "step-3.5-flash-2603",
+    "price": {
+      "inputPerMTok": 0.1,
+      "outputPerMTok": 0.3,
+      "source": "user"
+    },
+    "priceNote": "硬编码刊例 ¥0.7/¥2.1 per 1M tokens ≈ $0.10/$0.30（platform.stepfun.com 2026-09-30）",
+    "probeAttempts": [
+      "deepseek/deepseek-v4-flash: 探针失败 DeepSeek API (402): Insufficient Balance (request_id: 73dd4b53-d7e5-40e9-8380-3cbb67bf9e38)",
+      "stepfun/step-3.5-flash-2603: 探针成功"
+    ],
+    "systemPrompt": "You are a strict labeling assistant for a model-routing evaluation. Read the user request and output exactly one JSON object with three fields: \"complexity\": \"simple\" for trivial chat or one obvious read-only step, \"moderate\" for a small well-scoped task or a few coordinated steps, \"complex\" for many dependent steps, broad scope, ambiguity, or high impact; \"high_stakes\": true if the request involves deletion, payment or money transfer, public posting or sending content to others, credential changes, or irreversible overwrite; \"needs_vision\": true if fulfilling the request requires seeing or understanding an image, screenshot, diagram, or visual layout. Output only the JSON object. No markdown fences, no commentary.",
+    "agreed": 70,
+    "disputed": 23,
+    "errors": 2,
+    "usd": 0.0336718
+  },
+  "jev": {
+    "calls": 95,
+    "judgeErrorFallbacks": 0,
+    "abstainFallbacks": 31,
+    "usdEstimate": 0.0013973820000000002,
+    "budgetAbortUsd": 1
+  },
+  "costModel": {
+    "mainTurnContextTokens": 20000,
+    "mainTurnOutputTokens": 800,
+    "simpleRouteCostUsd": 0,
+    "reworkRule": "该贵却走便宜每条记一轮返工"
+  },
+  "labels": [
+    {
+      "id": "cc-01",
+      "bucket": "chitchat",
+      "ruleLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "cc-02",
+      "bucket": "chitchat",
+      "ruleLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "cc-03",
+      "bucket": "chitchat",
+      "ruleLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "cc-04",
+      "bucket": "chitchat",
+      "ruleLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "cc-05",
+      "bucket": "chitchat",
+      "ruleLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "cc-06",
+      "bucket": "chitchat",
+      "ruleLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "cc-07",
+      "bucket": "chitchat",
+      "ruleLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "cc-08",
+      "bucket": "chitchat",
+      "ruleLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "cc-09",
+      "bucket": "chitchat",
+      "ruleLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "cc-10",
+      "bucket": "chitchat",
+      "ruleLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "cc-11",
+      "bucket": "chitchat",
+      "ruleLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "cc-12",
+      "bucket": "chitchat",
+      "ruleLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "cc-13",
+      "bucket": "chitchat",
+      "ruleLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "cc-14",
+      "bucket": "chitchat",
+      "ruleLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "cc-15",
+      "bucket": "chitchat",
+      "ruleLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "cc-16",
+      "bucket": "chitchat",
+      "ruleLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "cc-17",
+      "bucket": "chitchat",
+      "ruleLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "cc-18",
+      "bucket": "chitchat",
+      "ruleLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "cc-19",
+      "bucket": "chitchat",
+      "ruleLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "cc-20",
+      "bucket": "chitchat",
+      "ruleLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "cc-21",
+      "bucket": "chitchat",
+      "ruleLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "cc-22",
+      "bucket": "chitchat",
+      "ruleLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "rf-01",
+      "bucket": "refactor",
+      "ruleLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": true
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "rf-02",
+      "bucket": "refactor",
+      "ruleLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": true
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "rf-03",
+      "bucket": "refactor",
+      "ruleLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": true
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "rf-04",
+      "bucket": "refactor",
+      "ruleLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "complex",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"complex\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "rf-05",
+      "bucket": "refactor",
+      "ruleLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": true
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "rf-06",
+      "bucket": "refactor",
+      "ruleLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": true
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "rf-07",
+      "bucket": "refactor",
+      "ruleLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "complex",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"complex\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "rf-08",
+      "bucket": "refactor",
+      "ruleLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "complex",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"complex\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "rf-09",
+      "bucket": "refactor",
+      "ruleLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": true
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "rf-10",
+      "bucket": "refactor",
+      "ruleLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "complex",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"complex\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "rf-11",
+      "bucket": "refactor",
+      "ruleLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "complex",
+        "high_stakes": true,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "complex",
+        "highStakes": true,
+        "needsVision": false,
+        "disputed": true
+      },
+      "arbiterRaw": "{\"complexity\": \"complex\", \"high_stakes\": true, \"needs_vision\": false}"
+    },
+    {
+      "id": "rf-12",
+      "bucket": "refactor",
+      "ruleLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "complex",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"complex\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "rf-13",
+      "bucket": "refactor",
+      "ruleLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": true
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "rf-14",
+      "bucket": "refactor",
+      "ruleLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": true
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "rf-15",
+      "bucket": "refactor",
+      "ruleLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "complex",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"complex\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "rf-16",
+      "bucket": "refactor",
+      "ruleLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "complex",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"complex\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "rf-17",
+      "bucket": "refactor",
+      "ruleLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": true
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "rf-18",
+      "bucket": "refactor",
+      "ruleLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": true
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "rf-19",
+      "bucket": "refactor",
+      "ruleLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "complex",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"complex\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "rf-20",
+      "bucket": "refactor",
+      "ruleLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "complex",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"complex\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "rf-hs-01",
+      "bucket": "refactor",
+      "ruleLabel": {
+        "complexity": "complex",
+        "highStakes": true,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": true,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": true,
+        "needsVision": false,
+        "disputed": true
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": true, \"needs_vision\": false}"
+    },
+    {
+      "id": "rf-hs-02",
+      "bucket": "refactor",
+      "ruleLabel": {
+        "complexity": "complex",
+        "highStakes": true,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "complex",
+        "high_stakes": true,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "complex",
+        "highStakes": true,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"complex\", \"high_stakes\": true, \"needs_vision\": false}"
+    },
+    {
+      "id": "rf-hs-03",
+      "bucket": "refactor",
+      "ruleLabel": {
+        "complexity": "complex",
+        "highStakes": true,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": true,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": true,
+        "needsVision": false,
+        "disputed": true
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": true, \"needs_vision\": false}"
+    },
+    {
+      "id": "rf-hs-04",
+      "bucket": "refactor",
+      "ruleLabel": {
+        "complexity": "complex",
+        "highStakes": true,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "complex",
+        "high_stakes": true,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "complex",
+        "highStakes": true,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"complex\", \"high_stakes\": true, \"needs_vision\": false}"
+    },
+    {
+      "id": "rf-hs-05",
+      "bucket": "refactor",
+      "ruleLabel": {
+        "complexity": "complex",
+        "highStakes": true,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "complex",
+        "high_stakes": true,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "complex",
+        "highStakes": true,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"complex\", \"high_stakes\": true, \"needs_vision\": false}"
+    },
+    {
+      "id": "vi-img-01",
+      "bucket": "vision",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": true
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": true}"
+    },
+    {
+      "id": "vi-img-02",
+      "bucket": "vision",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": true
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": true}"
+    },
+    {
+      "id": "vi-img-03",
+      "bucket": "vision",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": true
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": true}"
+    },
+    {
+      "id": "vi-img-04",
+      "bucket": "vision",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": true
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": true}"
+    },
+    {
+      "id": "vi-img-05",
+      "bucket": "vision",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": true
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": true,
+        "disputed": true
+      },
+      "arbiterRaw": "Got it, let's analyze this request. First, the user is asking for the main color code from a design draft, and there's an attached image. So first, needs_vision is definitely true because we need to s"
+    },
+    {
+      "id": "vi-img-06",
+      "bucket": "vision",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": true
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": true}"
+    },
+    {
+      "id": "vi-img-07",
+      "bucket": "vision",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": true
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": true}"
+    },
+    {
+      "id": "vi-img-08",
+      "bucket": "vision",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": true
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": true}"
+    },
+    {
+      "id": "vi-img-09",
+      "bucket": "vision",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": true
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": true}"
+    },
+    {
+      "id": "vi-img-10",
+      "bucket": "vision",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": true
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": true,
+        "disputed": true
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": true}"
+    },
+    {
+      "id": "vi-hs-01",
+      "bucket": "vision",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": true,
+        "needsVision": true
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": true,
+        "needs_vision": true
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": true,
+        "needsVision": true,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": true, \"needs_vision\": true}"
+    },
+    {
+      "id": "vt-01",
+      "bucket": "vision",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": true
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": true,
+        "disputed": true
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": true}"
+    },
+    {
+      "id": "vt-02",
+      "bucket": "vision",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": true
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": true}"
+    },
+    {
+      "id": "vt-03",
+      "bucket": "vision",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": true
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": true}"
+    },
+    {
+      "id": "vt-04",
+      "bucket": "vision",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": true
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": true}"
+    },
+    {
+      "id": "vt-05",
+      "bucket": "vision",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": true
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": true}"
+    },
+    {
+      "id": "vt-06",
+      "bucket": "vision",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": true
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": true}"
+    },
+    {
+      "id": "vt-07",
+      "bucket": "vision",
+      "ruleLabel": {
+        "complexity": "complex",
+        "highStakes": false,
+        "needsVision": true
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": true
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true,
+        "disputed": true
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": true}"
+    },
+    {
+      "id": "vt-08",
+      "bucket": "vision",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": true
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": true,
+        "disputed": true
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": true}"
+    },
+    {
+      "id": "vt-09",
+      "bucket": "vision",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": true
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": true,
+        "disputed": true
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": true}"
+    },
+    {
+      "id": "vt-10",
+      "bucket": "vision",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": true
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": true,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": true}"
+    },
+    {
+      "id": "vt-hs-02",
+      "bucket": "vision",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": true,
+        "needsVision": true
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": true,
+        "needs_vision": true
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": true,
+        "needsVision": true,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": true, \"needs_vision\": true}"
+    },
+    {
+      "id": "wd-01",
+      "bucket": "writedisk",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "wd-02",
+      "bucket": "writedisk",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "wd-03",
+      "bucket": "writedisk",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "wd-04",
+      "bucket": "writedisk",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": true
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "wd-05",
+      "bucket": "writedisk",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "wd-06",
+      "bucket": "writedisk",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": true
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "wd-07",
+      "bucket": "writedisk",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "wd-08",
+      "bucket": "writedisk",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "wd-09",
+      "bucket": "writedisk",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "wd-10",
+      "bucket": "writedisk",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "wd-11",
+      "bucket": "writedisk",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "simple",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "simple",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": true
+      },
+      "arbiterRaw": "{\"complexity\": \"simple\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "wd-12",
+      "bucket": "writedisk",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "wd-13",
+      "bucket": "writedisk",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "wd-14",
+      "bucket": "writedisk",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "wd-15",
+      "bucket": "writedisk",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "wd-16",
+      "bucket": "writedisk",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "wd-17",
+      "bucket": "writedisk",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "wd-18",
+      "bucket": "writedisk",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "wd-19",
+      "bucket": "writedisk",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": null,
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "Got it, let's analyze this request step by step. First, the task is to rewrite a curl command to httpie, save to a specific file, add two explanatory notes. Wait, first, what's the complexity? Let's s"
+    },
+    {
+      "id": "wd-20",
+      "bucket": "writedisk",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": false,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": false,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": false, \"needs_vision\": false}"
+    },
+    {
+      "id": "wd-hs-01",
+      "bucket": "writedisk",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": true,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": true,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": true,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": true, \"needs_vision\": false}"
+    },
+    {
+      "id": "wd-hs-02",
+      "bucket": "writedisk",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": true,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": true,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": true,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": true, \"needs_vision\": false}"
+    },
+    {
+      "id": "wd-hs-03",
+      "bucket": "writedisk",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": true,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "complex",
+        "high_stakes": true,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "complex",
+        "highStakes": true,
+        "needsVision": false,
+        "disputed": true
+      },
+      "arbiterRaw": "{\"complexity\": \"complex\", \"high_stakes\": true, \"needs_vision\": false}"
+    },
+    {
+      "id": "wd-hs-04",
+      "bucket": "writedisk",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": true,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": true,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": true,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": true, \"needs_vision\": false}"
+    },
+    {
+      "id": "wd-hs-05",
+      "bucket": "writedisk",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": true,
+        "needsVision": false
+      },
+      "arbiterLabel": {
+        "complexity": "moderate",
+        "high_stakes": true,
+        "needs_vision": false
+      },
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": true,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "{\"complexity\": \"moderate\", \"high_stakes\": true, \"needs_vision\": false}"
+    },
+    {
+      "id": "wd-hs-06",
+      "bucket": "writedisk",
+      "ruleLabel": {
+        "complexity": "moderate",
+        "highStakes": true,
+        "needsVision": false
+      },
+      "arbiterLabel": null,
+      "finalLabel": {
+        "complexity": "moderate",
+        "highStakes": true,
+        "needsVision": false,
+        "disputed": false
+      },
+      "arbiterRaw": "Got it, let's analyze this request step by step. First, complexity: it involves reading a CSV, verifying the data, then generating and executing payroll transfer details for 29 people. That's multiple"
+    }
+  ],
+  "arms": {
+    "heuristic": {
+      "rows": [
+        {
+          "id": "cc-01",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "cc-02",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "cc-03",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "cc-04",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "cc-05",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "cc-06",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "cc-07",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "cc-08",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "cc-09",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "cc-10",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "cc-11",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "cc-12",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "cc-13",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "cc-14",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "cc-15",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "cc-16",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "cc-17",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "cc-18",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "cc-19",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "cc-20",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "cc-21",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "cc-22",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "rf-01",
+          "level": "complex",
+          "score": 70,
+          "signals": [
+            "medium_length",
+            "complex_keyword",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "rf-02",
+          "level": "complex",
+          "score": 70,
+          "signals": [
+            "medium_length",
+            "complex_keyword",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "rf-03",
+          "level": "moderate",
+          "score": 55,
+          "signals": [
+            "medium_length",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "rf-04",
+          "level": "moderate",
+          "score": 55,
+          "signals": [
+            "medium_length",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "rf-05",
+          "level": "complex",
+          "score": 70,
+          "signals": [
+            "medium_length",
+            "complex_keyword",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "rf-06",
+          "level": "complex",
+          "score": 70,
+          "signals": [
+            "medium_length",
+            "complex_keyword",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "rf-07",
+          "level": "moderate",
+          "score": 55,
+          "signals": [
+            "medium_length",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "rf-08",
+          "level": "complex",
+          "score": 70,
+          "signals": [
+            "medium_length",
+            "complex_keyword",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "rf-09",
+          "level": "moderate",
+          "score": 55,
+          "signals": [
+            "medium_length",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "rf-10",
+          "level": "moderate",
+          "score": 55,
+          "signals": [
+            "medium_length",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "rf-11",
+          "level": "complex",
+          "score": 70,
+          "signals": [
+            "medium_length",
+            "complex_keyword",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "rf-12",
+          "level": "complex",
+          "score": 70,
+          "signals": [
+            "medium_length",
+            "complex_keyword",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "rf-13",
+          "level": "moderate",
+          "score": 55,
+          "signals": [
+            "medium_length",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "rf-14",
+          "level": "moderate",
+          "score": 55,
+          "signals": [
+            "medium_length",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "rf-15",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "medium_length"
+          ]
+        },
+        {
+          "id": "rf-16",
+          "level": "moderate",
+          "score": 55,
+          "signals": [
+            "medium_length",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "rf-17",
+          "level": "complex",
+          "score": 65,
+          "signals": [
+            "medium_length",
+            "complex_keyword"
+          ]
+        },
+        {
+          "id": "rf-18",
+          "level": "complex",
+          "score": 70,
+          "signals": [
+            "medium_length",
+            "complex_keyword",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "rf-19",
+          "level": "complex",
+          "score": 65,
+          "signals": [
+            "medium_length",
+            "complex_keyword"
+          ]
+        },
+        {
+          "id": "rf-20",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "medium_length"
+          ]
+        },
+        {
+          "id": "rf-hs-01",
+          "level": "complex",
+          "score": 70,
+          "signals": [
+            "medium_length",
+            "complex_keyword",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "rf-hs-02",
+          "level": "complex",
+          "score": 65,
+          "signals": [
+            "medium_length",
+            "complex_keyword"
+          ]
+        },
+        {
+          "id": "rf-hs-03",
+          "level": "moderate",
+          "score": 55,
+          "signals": [
+            "medium_length",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "rf-hs-04",
+          "level": "complex",
+          "score": 70,
+          "signals": [
+            "medium_length",
+            "complex_keyword",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "rf-hs-05",
+          "level": "complex",
+          "score": 70,
+          "signals": [
+            "complex_keyword",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "vi-img-01",
+          "level": "complex",
+          "score": 80,
+          "signals": [
+            "short_message",
+            "has_image"
+          ]
+        },
+        {
+          "id": "vi-img-02",
+          "level": "complex",
+          "score": 80,
+          "signals": [
+            "medium_length",
+            "has_image"
+          ]
+        },
+        {
+          "id": "vi-img-03",
+          "level": "complex",
+          "score": 80,
+          "signals": [
+            "short_message",
+            "has_image"
+          ]
+        },
+        {
+          "id": "vi-img-04",
+          "level": "complex",
+          "score": 80,
+          "signals": [
+            "medium_length",
+            "has_image"
+          ]
+        },
+        {
+          "id": "vi-img-05",
+          "level": "complex",
+          "score": 80,
+          "signals": [
+            "short_message",
+            "complex_keyword",
+            "has_image"
+          ]
+        },
+        {
+          "id": "vi-img-06",
+          "level": "complex",
+          "score": 80,
+          "signals": [
+            "medium_length",
+            "has_image"
+          ]
+        },
+        {
+          "id": "vi-img-07",
+          "level": "complex",
+          "score": 80,
+          "signals": [
+            "short_message",
+            "has_image"
+          ]
+        },
+        {
+          "id": "vi-img-08",
+          "level": "complex",
+          "score": 80,
+          "signals": [
+            "medium_length",
+            "has_image"
+          ]
+        },
+        {
+          "id": "vi-img-09",
+          "level": "complex",
+          "score": 80,
+          "signals": [
+            "short_message",
+            "has_image"
+          ]
+        },
+        {
+          "id": "vi-img-10",
+          "level": "complex",
+          "score": 80,
+          "signals": [
+            "medium_length",
+            "has_image"
+          ]
+        },
+        {
+          "id": "vi-hs-01",
+          "level": "complex",
+          "score": 80,
+          "signals": [
+            "short_message",
+            "has_image"
+          ]
+        },
+        {
+          "id": "vt-01",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "vt-02",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "medium_length"
+          ]
+        },
+        {
+          "id": "vt-03",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "vt-04",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "medium_length"
+          ]
+        },
+        {
+          "id": "vt-05",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "vt-06",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "medium_length"
+          ]
+        },
+        {
+          "id": "vt-07",
+          "level": "moderate",
+          "score": 35,
+          "signals": [
+            "short_message",
+            "complex_keyword"
+          ]
+        },
+        {
+          "id": "vt-08",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "medium_length"
+          ]
+        },
+        {
+          "id": "vt-09",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "vt-10",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "medium_length"
+          ]
+        },
+        {
+          "id": "vt-hs-02",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "medium_length"
+          ]
+        },
+        {
+          "id": "wd-01",
+          "level": "moderate",
+          "score": 55,
+          "signals": [
+            "medium_length",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "wd-02",
+          "level": "moderate",
+          "score": 55,
+          "signals": [
+            "medium_length",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "wd-03",
+          "level": "moderate",
+          "score": 55,
+          "signals": [
+            "medium_length",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "wd-04",
+          "level": "moderate",
+          "score": 55,
+          "signals": [
+            "medium_length",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "wd-05",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "wd-06",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "medium_length"
+          ]
+        },
+        {
+          "id": "wd-07",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "medium_length"
+          ]
+        },
+        {
+          "id": "wd-08",
+          "level": "moderate",
+          "score": 55,
+          "signals": [
+            "medium_length",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "wd-09",
+          "level": "moderate",
+          "score": 55,
+          "signals": [
+            "file_reference"
+          ]
+        },
+        {
+          "id": "wd-10",
+          "level": "moderate",
+          "score": 55,
+          "signals": [
+            "medium_length",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "wd-11",
+          "level": "moderate",
+          "score": 55,
+          "signals": [
+            "medium_length",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "wd-12",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "medium_length"
+          ]
+        },
+        {
+          "id": "wd-13",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "wd-14",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "medium_length"
+          ]
+        },
+        {
+          "id": "wd-15",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "wd-16",
+          "level": "moderate",
+          "score": 55,
+          "signals": [
+            "medium_length",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "wd-17",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "wd-18",
+          "level": "moderate",
+          "score": 55,
+          "signals": [
+            "medium_length",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "wd-19",
+          "level": "moderate",
+          "score": 55,
+          "signals": [
+            "medium_length",
+            "file_reference"
+          ]
+        },
+        {
+          "id": "wd-20",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "medium_length"
+          ]
+        },
+        {
+          "id": "wd-hs-01",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "wd-hs-02",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "medium_length"
+          ]
+        },
+        {
+          "id": "wd-hs-03",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "wd-hs-04",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        },
+        {
+          "id": "wd-hs-05",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "medium_length"
+          ]
+        },
+        {
+          "id": "wd-hs-06",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ]
+        }
+      ],
+      "fourCell": {
+        "cheapButExpensive": [
+          "vi-img-05",
+          "vi-img-10",
+          "vt-08",
+          "wd-04",
+          "wd-06",
+          "wd-11"
+        ],
+        "expensiveButCheap": [
+          "vt-03",
+          "vt-05",
+          "wd-05",
+          "wd-13",
+          "wd-15",
+          "wd-17",
+          "wd-hs-01",
+          "wd-hs-03",
+          "wd-hs-04",
+          "wd-hs-06"
+        ],
+        "highStakesSimple": [
+          "wd-hs-01",
+          "wd-hs-03",
+          "wd-hs-04",
+          "wd-hs-06"
+        ],
+        "correct": 79
+      },
+      "costs": {
+        "savedUsd": 0.07620249999999999,
+        "reworkUsd": 0.0224223,
+        "netUsd": 0.05378019999999999,
+        "simpleRoutes": 34
+      }
+    },
+    "jev": {
+      "rows": [
+        {
+          "id": "cc-01",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:chat",
+            "jev_confidence:0.95",
+            "needs_clarification:0.93",
+            "needs_vision:0.03",
+            "high_stakes:0.02"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "cc-02",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "jev_intent:chat",
+            "jev_confidence:1.00",
+            "needs_clarification:0.78",
+            "needs_vision:0.02",
+            "high_stakes:0.01"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "cc-03",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "jev_intent:chat",
+            "jev_confidence:1.00",
+            "needs_clarification:0.65",
+            "needs_vision:0.02",
+            "high_stakes:0.02"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "cc-04",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "jev_intent:chat",
+            "jev_confidence:1.00",
+            "needs_clarification:0.18",
+            "needs_vision:0.02",
+            "high_stakes:0.01"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "cc-05",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "jev_intent:chat",
+            "jev_confidence:0.91",
+            "needs_clarification:0.58",
+            "needs_vision:0.02",
+            "high_stakes:0.01"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "cc-06",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "jev_intent:chat",
+            "jev_confidence:1.00",
+            "needs_clarification:0.09",
+            "needs_vision:0.02",
+            "high_stakes:0.01"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "cc-07",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "jev_intent:chat",
+            "jev_confidence:0.98",
+            "needs_clarification:0.32",
+            "needs_vision:0.02",
+            "high_stakes:0.01"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "cc-08",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "jev_intent:chat",
+            "jev_confidence:1.00",
+            "needs_clarification:0.28",
+            "needs_vision:0.02",
+            "high_stakes:0.01"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "cc-09",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "jev_intent:chat",
+            "jev_confidence:0.99",
+            "needs_clarification:0.14",
+            "needs_vision:0.02",
+            "high_stakes:0.01"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "cc-10",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "jev_intent:chat",
+            "jev_confidence:1.00",
+            "needs_clarification:0.06",
+            "needs_vision:0.02",
+            "high_stakes:0.01"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "cc-11",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "jev_intent:chat",
+            "jev_confidence:0.95",
+            "needs_clarification:0.86",
+            "needs_vision:0.03",
+            "high_stakes:0.01"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "cc-12",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "jev_intent:chat",
+            "jev_confidence:1.00",
+            "needs_clarification:0.66",
+            "needs_vision:0.02",
+            "high_stakes:0.02"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "cc-13",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "jev_intent:chat",
+            "jev_confidence:1.00",
+            "needs_clarification:0.15",
+            "needs_vision:0.02",
+            "high_stakes:0.02"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "cc-14",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "jev_intent:chat",
+            "jev_confidence:1.00",
+            "needs_clarification:0.04",
+            "needs_vision:0.02",
+            "high_stakes:0.01"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "cc-15",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "jev_intent:chat",
+            "jev_confidence:0.82",
+            "needs_clarification:0.71",
+            "needs_vision:0.02",
+            "high_stakes:0.02"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "cc-16",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "jev_intent:chat",
+            "jev_confidence:1.00",
+            "needs_clarification:0.04",
+            "needs_vision:0.02",
+            "high_stakes:0.01"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "cc-17",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "jev_intent:chat",
+            "jev_confidence:1.00",
+            "needs_clarification:0.31",
+            "needs_vision:0.03",
+            "high_stakes:0.02"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "cc-18",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "jev_intent:chat",
+            "jev_confidence:0.79",
+            "needs_clarification:0.49",
+            "needs_vision:0.02",
+            "high_stakes:0.01"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "cc-19",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "jev_intent:chat",
+            "jev_confidence:0.96",
+            "needs_clarification:0.08",
+            "needs_vision:0.02",
+            "high_stakes:0.02"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "cc-20",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "jev_intent:chat",
+            "jev_confidence:0.99",
+            "needs_clarification:0.69",
+            "needs_vision:0.03",
+            "high_stakes:0.01"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "cc-21",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "jev_intent:chat",
+            "jev_confidence:1.00",
+            "needs_clarification:0.43",
+            "needs_vision:0.02",
+            "high_stakes:0.02"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "cc-22",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "jev_intent:chat",
+            "jev_confidence:0.98",
+            "needs_clarification:0.47",
+            "needs_vision:0.02",
+            "high_stakes:0.02"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "rf-01",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:coding",
+            "jev_confidence:0.64",
+            "needs_clarification:0.87",
+            "needs_vision:0.03",
+            "high_stakes:0.04"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "rf-02",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:coding",
+            "jev_confidence:1.00",
+            "needs_clarification:0.92",
+            "needs_vision:0.03",
+            "high_stakes:0.03"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "rf-03",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:coding",
+            "jev_confidence:0.98",
+            "needs_clarification:0.85",
+            "needs_vision:0.03",
+            "high_stakes:0.03"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "rf-04",
+          "level": "moderate",
+          "score": 55,
+          "signals": [
+            "medium_length",
+            "file_reference"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "rf-05",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:coding",
+            "jev_confidence:0.75",
+            "needs_clarification:0.89",
+            "needs_vision:0.04",
+            "high_stakes:0.02"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "rf-06",
+          "level": "complex",
+          "score": 70,
+          "signals": [
+            "medium_length",
+            "complex_keyword",
+            "file_reference"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "rf-07",
+          "level": "complex",
+          "score": 85,
+          "signals": [
+            "jev_intent:coding",
+            "jev_confidence:1.00",
+            "needs_clarification:0.89",
+            "needs_vision:0.05",
+            "high_stakes:0.11"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "rf-08",
+          "level": "complex",
+          "score": 85,
+          "signals": [
+            "jev_intent:coding",
+            "jev_confidence:0.98",
+            "needs_clarification:0.91",
+            "needs_vision:0.03",
+            "high_stakes:0.03"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "rf-09",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:coding",
+            "jev_confidence:0.87",
+            "needs_clarification:0.87",
+            "needs_vision:0.03",
+            "high_stakes:0.06"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "rf-10",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:coding",
+            "jev_confidence:0.64",
+            "needs_clarification:0.91",
+            "needs_vision:0.04",
+            "high_stakes:0.22"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "rf-11",
+          "level": "complex",
+          "score": 70,
+          "signals": [
+            "medium_length",
+            "complex_keyword",
+            "file_reference"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "rf-12",
+          "level": "complex",
+          "score": 85,
+          "signals": [
+            "jev_intent:coding",
+            "jev_confidence:1.00",
+            "needs_clarification:0.92",
+            "needs_vision:0.04",
+            "high_stakes:0.03"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "rf-13",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:coding",
+            "jev_confidence:0.66",
+            "needs_clarification:0.83",
+            "needs_vision:0.03",
+            "high_stakes:0.03"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "rf-14",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:coding",
+            "jev_confidence:0.95",
+            "needs_clarification:0.87",
+            "needs_vision:0.03",
+            "high_stakes:0.09"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "rf-15",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "medium_length"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "rf-16",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:coding",
+            "jev_confidence:0.65",
+            "needs_clarification:0.87",
+            "needs_vision:0.03",
+            "high_stakes:0.02"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "rf-17",
+          "level": "complex",
+          "score": 85,
+          "signals": [
+            "jev_intent:coding",
+            "jev_confidence:0.93",
+            "needs_clarification:0.89",
+            "needs_vision:0.04",
+            "high_stakes:0.03"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "rf-18",
+          "level": "complex",
+          "score": 70,
+          "signals": [
+            "medium_length",
+            "complex_keyword",
+            "file_reference"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "rf-19",
+          "level": "complex",
+          "score": 85,
+          "signals": [
+            "jev_intent:coding",
+            "jev_confidence:1.00",
+            "needs_clarification:0.94",
+            "needs_vision:0.05",
+            "high_stakes:0.09"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "rf-20",
+          "level": "complex",
+          "score": 85,
+          "signals": [
+            "jev_intent:coding",
+            "jev_confidence:0.76",
+            "needs_clarification:0.91",
+            "needs_vision:0.04",
+            "high_stakes:0.08"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "rf-hs-01",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:file_task",
+            "jev_confidence:0.76",
+            "needs_clarification:0.69",
+            "needs_vision:0.02",
+            "high_stakes:0.97"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "rf-hs-02",
+          "level": "complex",
+          "score": 85,
+          "signals": [
+            "jev_intent:coding",
+            "jev_confidence:0.95",
+            "needs_clarification:0.93",
+            "needs_vision:0.04",
+            "high_stakes:0.93"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "rf-hs-03",
+          "level": "complex",
+          "score": 85,
+          "signals": [
+            "jev_intent:coding",
+            "jev_confidence:0.62",
+            "needs_clarification:0.88",
+            "needs_vision:0.04",
+            "high_stakes:0.97"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "rf-hs-04",
+          "level": "complex",
+          "score": 70,
+          "signals": [
+            "medium_length",
+            "complex_keyword",
+            "file_reference"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "rf-hs-05",
+          "level": "complex",
+          "score": 85,
+          "signals": [
+            "jev_intent:coding",
+            "jev_confidence:0.79",
+            "needs_clarification:0.94",
+            "needs_vision:0.06",
+            "high_stakes:0.95"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "vi-img-01",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:coding",
+            "jev_confidence:0.74",
+            "needs_clarification:0.92",
+            "needs_vision:0.98",
+            "high_stakes:0.03",
+            "has_image"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "vi-img-02",
+          "level": "complex",
+          "score": 80,
+          "signals": [
+            "medium_length",
+            "has_image"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "vi-img-03",
+          "level": "complex",
+          "score": 80,
+          "signals": [
+            "short_message",
+            "has_image"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "vi-img-04",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:chat",
+            "jev_confidence:0.61",
+            "needs_clarification:0.90",
+            "needs_vision:0.98",
+            "high_stakes:0.05",
+            "has_image"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "vi-img-05",
+          "level": "complex",
+          "score": 80,
+          "signals": [
+            "short_message",
+            "complex_keyword",
+            "has_image"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "vi-img-06",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:chat",
+            "jev_confidence:0.72",
+            "needs_clarification:0.93",
+            "needs_vision:0.99",
+            "high_stakes:0.01",
+            "has_image"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "vi-img-07",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:coding",
+            "jev_confidence:0.69",
+            "needs_clarification:0.93",
+            "needs_vision:0.98",
+            "high_stakes:0.02",
+            "has_image"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "vi-img-08",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:chat",
+            "jev_confidence:0.95",
+            "needs_clarification:0.88",
+            "needs_vision:0.99",
+            "high_stakes:0.02",
+            "has_image"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "vi-img-09",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:artifact",
+            "jev_confidence:0.86",
+            "needs_clarification:0.91",
+            "needs_vision:0.99",
+            "high_stakes:0.02",
+            "has_image"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "vi-img-10",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:chat",
+            "jev_confidence:0.97",
+            "needs_clarification:0.85",
+            "needs_vision:0.99",
+            "high_stakes:0.01",
+            "has_image"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "vi-hs-01",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:other",
+            "jev_confidence:0.97",
+            "needs_clarification:0.91",
+            "needs_vision:0.98",
+            "high_stakes:0.96",
+            "has_image"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "vt-01",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "vt-02",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "medium_length"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "vt-03",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "vt-04",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "medium_length"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "vt-05",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "vt-06",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "medium_length"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "vt-07",
+          "level": "moderate",
+          "score": 35,
+          "signals": [
+            "short_message",
+            "complex_keyword"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "vt-08",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "medium_length"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "vt-09",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "vt-10",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "medium_length"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "vt-hs-02",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "medium_length"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "wd-01",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:file_task",
+            "jev_confidence:0.91",
+            "needs_clarification:0.92",
+            "needs_vision:0.03",
+            "high_stakes:0.14"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "wd-02",
+          "level": "moderate",
+          "score": 55,
+          "signals": [
+            "medium_length",
+            "file_reference"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "wd-03",
+          "level": "moderate",
+          "score": 55,
+          "signals": [
+            "medium_length",
+            "file_reference"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "wd-04",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "jev_intent:file_task",
+            "jev_confidence:0.83",
+            "needs_clarification:0.32",
+            "needs_vision:0.02",
+            "high_stakes:0.34"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "wd-05",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "wd-06",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "jev_intent:coding",
+            "jev_confidence:0.98",
+            "needs_clarification:0.19",
+            "needs_vision:0.02",
+            "high_stakes:0.03"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "wd-07",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:artifact",
+            "jev_confidence:0.97",
+            "needs_clarification:0.59",
+            "needs_vision:0.03",
+            "high_stakes:0.11"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "wd-08",
+          "level": "moderate",
+          "score": 55,
+          "signals": [
+            "medium_length",
+            "file_reference"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "wd-09",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:artifact",
+            "jev_confidence:0.83",
+            "needs_clarification:0.92",
+            "needs_vision:0.04",
+            "high_stakes:0.11"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "wd-10",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:coding",
+            "jev_confidence:0.98",
+            "needs_clarification:0.85",
+            "needs_vision:0.03",
+            "high_stakes:0.02"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "wd-11",
+          "level": "moderate",
+          "score": 55,
+          "signals": [
+            "medium_length",
+            "file_reference"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "wd-12",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:artifact",
+            "jev_confidence:0.67",
+            "needs_clarification:0.74",
+            "needs_vision:0.02",
+            "high_stakes:0.16"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "wd-13",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "short_message"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "wd-14",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "medium_length"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "wd-15",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:file_task",
+            "jev_confidence:0.70",
+            "needs_clarification:0.94",
+            "needs_vision:0.06",
+            "high_stakes:0.09"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "wd-16",
+          "level": "simple",
+          "score": 20,
+          "signals": [
+            "jev_intent:coding",
+            "jev_confidence:0.74",
+            "needs_clarification:0.75",
+            "needs_vision:0.02",
+            "high_stakes:0.02"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "wd-17",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:coding",
+            "jev_confidence:0.87",
+            "needs_clarification:0.80",
+            "needs_vision:0.03",
+            "high_stakes:0.05"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "wd-18",
+          "level": "moderate",
+          "score": 55,
+          "signals": [
+            "medium_length",
+            "file_reference"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "wd-19",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:artifact",
+            "jev_confidence:0.87",
+            "needs_clarification:0.92",
+            "needs_vision:0.04",
+            "high_stakes:0.06"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "wd-20",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "medium_length"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "wd-hs-01",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:file_task",
+            "jev_confidence:0.93",
+            "needs_clarification:0.84",
+            "needs_vision:0.03",
+            "high_stakes:0.93"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "wd-hs-02",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "medium_length"
+          ],
+          "fallbackClass": "abstain"
+        },
+        {
+          "id": "wd-hs-03",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:other",
+            "jev_confidence:0.68",
+            "needs_clarification:0.96",
+            "needs_vision:0.28",
+            "high_stakes:0.97"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "wd-hs-04",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:other",
+            "jev_confidence:0.93",
+            "needs_clarification:0.93",
+            "needs_vision:0.04",
+            "high_stakes:0.96"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "wd-hs-05",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "jev_intent:browser_task",
+            "jev_confidence:0.77",
+            "needs_clarification:0.93",
+            "needs_vision:0.04",
+            "high_stakes:0.93"
+          ],
+          "fallbackClass": "no_fallback"
+        },
+        {
+          "id": "wd-hs-06",
+          "level": "moderate",
+          "score": 50,
+          "signals": [
+            "short_message",
+            "high_risk_rule_floor"
+          ],
+          "fallbackClass": "abstain"
+        }
+      ],
+      "fourCell": {
+        "cheapButExpensive": [
+          "cc-01",
+          "vi-img-05",
+          "vi-img-10",
+          "vt-08",
+          "wd-11"
+        ],
+        "expensiveButCheap": [
+          "vt-03",
+          "vt-05",
+          "wd-05",
+          "wd-13",
+          "wd-16"
+        ],
+        "highStakesSimple": [],
+        "correct": 85
+      },
+      "costs": {
+        "savedUsd": 0.0672345,
+        "reworkUsd": 0.011209900000000002,
+        "netUsd": 0.0560246,
+        "simpleRoutes": 30
+      }
+    }
+  },
+  "recommendation": {
+    "verdict": "可接电候选",
+    "rationale": "该便宜却走贵 5 条 < 启发式 6 条，且高风险降档为 0、该贵却走便宜未上升"
+  }
+}

@@ -7,7 +7,6 @@ import { deriveSessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspac
 import type { ContextHealthState } from '@shared/contract/contextHealth';
 import { shouldReplaceContextHealth } from './sessionContextHealth';
 import { IPC_CHANNELS, IPC_DOMAINS, type SessionStatusUpdateEvent, type SessionRuntimeSummary } from '@shared/ipc';
-import { useStatusStore } from './statusStore';
 import type { BackgroundSessionInfo, BackgroundTaskUpdateEvent } from '@shared/contract/sessionState';
 import { createLogger } from '../utils/logger';
 import { hydrateToolCallResults } from '../utils/messageHydration';
@@ -30,6 +29,8 @@ import { executeCreateSession } from './sessionCreate';
 import { bumpSessionsLocalVersion, executeLoadOlderSessions, executeLoadSessions } from './sessionListPagination';
 import { mergeSnapshotWithLiveTail } from './sessionSnapshotMerge';
 import { groupRunsByTask, type CronRunGroups } from '@shared/cronRunDigest';
+import { recoveryLoadLightsTurn, runtimeStatusCountsAsRunning } from './parkedContinueTurn';
+import { bindInitializedSessionBroadcasts } from './sessionStoreBroadcasts';
 
 const logger = createLogger('SessionStore');
 
@@ -438,8 +439,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           // 宿主说这个会话还有活跃 run（刷新/切回来时最常见）：前端的运行态是纯内存的，
           // 不从宿主接回来就会显示空闲——而后台还在跑，停止按钮消失、排队卡还邀请你「立即发送」，
           // 一点就跟正在跑的那轮撞车（2026-08-01 C3 真机）。终态由 run 收尾时广播的
-          // session:updated 负责清（见下面 SESSION_UPDATED 监听）。
-          if (activeForRecovery) {
+          // session:updated 负责清（见 sessionStoreBroadcasts）。
+          if (recoveryLoadLightsTurn(session)) {
             useAppStore.getState().setSessionProcessing(sessionId, true);
             useTaskStore.getState().updateSessionState(sessionId, { status: 'running' });
           } else if (isTerminalRecoverySessionStatus(session.status) && !preserveLiveRunState) {
@@ -839,7 +840,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       const { runningSessionIds, sessionRuntimes } = get();
 
       const newRunningIds = new Set(runningSessionIds);
-      if (event.status === 'running') {
+      const parkedResume = get().sessions.find((session) => session.id === event.sessionId)?.durableResume;
+      if (runtimeStatusCountsAsRunning(event.status, parkedResume)) {
         newRunningIds.add(event.sessionId);
       } else {
         newRunningIds.delete(event.sessionId);
@@ -1113,69 +1115,5 @@ export async function initializeSessionStore(): Promise<void> {
     _settleInitialSessionState?.();
   }
 
-  ipcService.on(IPC_CHANNELS.SESSION_UPDATED, (event) => {
-    const { sessionId, updates } = event;
-    useSessionStore.setState((state) => ({
-      sessions: state.sessions.map((session) => (
-        session.id === sessionId
-          ? normalizeSession({ ...session, ...updates })
-          : session
-      )),
-    }));
-
-    // run 收尾时宿主一定会广播一次带终态的 session:updated（AgentRunController.updateSessionStatus），
-    // 而且是全局广播、不挑连接——这是「刷新后接回来的运行态」唯一的出口。没有它，
-    // switchSession 里按 activeRun 点亮的运行态会永远亮着（那一轮的 SSE 已经跟着旧页面断了，
-    // agent_complete 到不了这个新页面）。
-    if (isTerminalRecoverySessionStatus(updates?.status)) {
-      useAppStore.getState().setSessionProcessing(sessionId, false);
-      useTaskStore.getState().updateSessionState(sessionId, { status: 'idle' });
-    }
-
-    // 对称的另一半：宿主说它开始跑了，前端就该亮。这条广播不挑连接，覆盖的是
-    // 「页面在 run 已经开跑之后才连上 SSE」那段窗口——那时首个 agent 事件早播完了，
-    // 新页面没有 Last-Event-ID 也不会重放（Kimi 独立诊断 2026-08-01 指出的纵深防御）。
-    // 只有终态分支、没有这一半的话，灭灯有人管、点灯没人管。
-    if (updates?.status === 'running') {
-      useAppStore.getState().setSessionProcessing(sessionId, true);
-      useTaskStore.getState().updateSessionState(sessionId, { status: 'running' });
-    }
-
-    if (useSessionStore.getState().currentSessionId === sessionId && updates.workingDirectory !== undefined) {
-      useAppStore.getState().setWorkingDirectory(updates.workingDirectory ?? null);
-    }
-  });
-
-  ipcService.on(IPC_CHANNELS.SESSION_LIST_UPDATED, () => {
-    void useSessionStore.getState().loadSessions({ silent: true }); // 签名去重消除刷新闪烁
-  });
-
-  ipcService.on(IPC_CHANNELS.WORKSPACE_CURRENT_CHANGED, (event: { dir: string | null }) => {
-    useAppStore.getState().setWorkingDirectory(event.dir ?? null);
-  });
-
-  ipcService.on(IPC_CHANNELS.SESSION_STATUS_UPDATE, (event: SessionStatusUpdateEvent) => {
-    useSessionStore.getState().updateSessionRuntime(event);
-  });
-
-  ipcService.on(IPC_CHANNELS.BACKGROUND_TASK_UPDATE, (event: BackgroundTaskUpdateEvent) => {
-    useSessionStore.getState().updateBackgroundTask(event);
-  });
-
-  ipcService.on(IPC_CHANNELS.STATUS_CONTEXT_UPDATE, (event: { percent: number }) => {
-    useStatusStore.getState().setContextUsage(event.percent);
-  });
-  ipcService.on(IPC_CHANNELS.STATUS_GIT_UPDATE, (event: { branch: string | null; changes: { staged: number; unstaged: number; untracked: number } | null }) => {
-    useStatusStore.getState().setGitInfo(event.branch, useStatusStore.getState().workingDirectory);
-    useStatusStore.getState().setGitChanges(event.changes);
-  });
-
-  try {
-    const backgroundSessions = await ipcService.invoke(IPC_CHANNELS.BACKGROUND_GET_TASKS);
-    if (backgroundSessions && backgroundSessions.length > 0) {
-      useSessionStore.setState({ backgroundSessions });
-    }
-  } catch {
-    // ignore
-  }
+  await bindInitializedSessionBroadcasts(normalizeSession);
 }

@@ -5,6 +5,8 @@ export const readXlsxSchema: UntrustedContentToolSchema = {
   name: 'read_xlsx',
   description: `Read Excel files (.xlsx, .xls) and return structured data with column names and rows.
 
+\`file_path\` is required. Minimal call: {"file_path":"/absolute/path/to/file.xlsx"}
+
 This is the ONLY correct way to read Excel files. Do NOT use Read for .xlsx/.xls — it will return garbled binary content.
 
 Output formats:

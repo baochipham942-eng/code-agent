@@ -122,9 +122,17 @@ describe('SessionEventService database handle lifecycle', () => {
     server.stdout?.on('data', chunk => { output += String(chunk); });
     server.stderr?.on('data', chunk => { output += String(chunk); });
     const baseUrl = `http://127.0.0.1:${port}`;
+    // CI runners load the ~270MB bundle slowly; a refused connection must
+    // surface the server's own output, not just ECONNREFUSED.
     await vi.waitFor(async () => {
-      expect((await fetch(`${baseUrl}/api/health`)).ok, output).toBe(true);
-    }, { timeout: 15_000, interval: 100 });
+      let health: Response;
+      try {
+        health = await fetch(`${baseUrl}/api/health`);
+      } catch (error) {
+        throw new Error(`web server not reachable: ${String(error)}\n--- server output ---\n${output.slice(-3000)}`, { cause: error });
+      }
+      expect(health.ok, output).toBe(true);
+    }, { timeout: 60_000, interval: 200 });
 
     // A missing-key model deliberately stops before paid inference. AgentLoop
     // still emits the lifecycle events whose durable side effect is under test.

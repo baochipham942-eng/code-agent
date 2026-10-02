@@ -139,18 +139,37 @@ function activeMcpRequestMeta(): { traceparent: string; tracestate?: string } | 
 }
 
 /**
+ * server 声明写路径参数的 _meta 键（N-CHECKPOINT-MCP-WRITETARGET）：SDK 的
+ * ToolAnnotationsSchema 是 strip 模式 z.object，annotations 里的自定义键
+ * （writePathParameters）在 listTools 解析时被剥掉；_meta 是 record 类型，任意键
+ * 原样保留——声明走这里，mapSdkToolToMCPTool 提升进 annotations。
+ */
+const WRITE_PATH_PARAMETERS_META_KEY = 'code-agent/writePathParameters';
+
+function parseDeclaredWritePathParameters(tool: Tool): string[] | undefined {
+  const declared = (tool as { _meta?: Record<string, unknown> })._meta?.[WRITE_PATH_PARAMETERS_META_KEY];
+  if (!Array.isArray(declared)) return undefined;
+  const parameters = declared.filter((name): name is string => typeof name === 'string' && name !== '');
+  return parameters.length > 0 ? parameters : undefined;
+}
+
+/**
  * 将 SDK 返回的 Tool 映射为内部 MCPTool
  */
 function mapSdkToolToMCPTool(serverName: string, tool: Tool): MCPTool {
   // SDK 返回的 annotations 包含 readOnlyHint/destructiveHint/openWorldHint/idempotentHint
   const annotations = (tool as { annotations?: MCPToolAnnotations }).annotations;
   const execution = (tool as { execution?: MCPToolExecution }).execution;
+  const writePathParameters = parseDeclaredWritePathParameters(tool);
+  const effectiveAnnotations = writePathParameters
+    ? { ...annotations, writePathParameters }
+    : annotations;
   return {
     name: tool.name,
     description: tool.description || '',
     inputSchema: tool.inputSchema,
     serverName,
-    ...(annotations ? { annotations } : {}),
+    ...(effectiveAnnotations ? { annotations: effectiveAnnotations } : {}),
     ...(execution ? { execution } : {}),
   };
 }

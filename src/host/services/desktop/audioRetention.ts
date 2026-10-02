@@ -7,14 +7,32 @@
 import { execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import { FAILED_AUDIO_RETENTION_MS } from '@shared/constants/desktopAudio';
 import { createLogger } from '../infra/logger';
 
 const logger = createLogger('AudioRetention');
 
-const FAILED_AUDIO_RETENTION_MS = 24 * 60 * 60 * 1000;
 const DATE_DIR_NAME = /^\d{4}-\d{2}-\d{2}$/;
 
-type RetentionSummary = { deleted: number; failed: number; rowsUpdated: number };
+type RetentionSummary = {
+  deleted: number;
+  failed: number;
+  rowsUpdated: number;
+  lastError?: string;
+};
+
+interface RetentionLedger {
+  lastSweepAt: number | null;
+  deletedTotal: number;
+  failedTotal: number;
+  lastError?: string;
+}
+
+const retentionStatus: RetentionLedger = {
+  lastSweepAt: null,
+  deletedTotal: 0,
+  failedTotal: 0,
+};
 
 interface RetentionRow {
   id: string;
@@ -43,25 +61,35 @@ export function finalizeSegmentAudio(input: {
   segmentId: string;
   wavPath: string;
 }): void {
+  const outcome = { deleted: 0, failed: 0, lastError: undefined as string | undefined };
   try {
     const inspection = inspectWav(input.audioDir, input.wavPath);
     if (inspection.action === 'missing') {
       clearPointer(input.sqlitePath, input.wavPath, input.segmentId);
-      return;
-    }
-    if (inspection.action === 'refuse') {
+    } else if (inspection.action === 'refuse') {
       warnRefuse(input.wavPath, inspection.reason);
-      return;
-    }
-    if (inspection.action === 'fail') {
+    } else if (inspection.action === 'fail') {
       warnFail(input.wavPath, inspection.reason);
-      return;
+      outcome.failed += 1;
+      outcome.lastError = inspection.reason;
+    } else {
+      const unlinked = unlinkKeptWav(inspection.deletePath, input.wavPath);
+      if (!unlinked.ok) {
+        outcome.failed += 1;
+        outcome.lastError = unlinked.reason;
+      } else {
+        outcome.deleted += 1;
+        clearPointer(input.sqlitePath, input.wavPath, input.segmentId);
+        removeEmptyDateDirs(input.audioDir);
+      }
     }
-    if (unlinkKeptWav(inspection.deletePath, input.wavPath) !== 'deleted') return;
-    clearPointer(input.sqlitePath, input.wavPath, input.segmentId);
-    removeEmptyDateDirs(input.audioDir);
   } catch (error) {
-    logger.warn('[音频保留] 清理过程失败', { path: input.wavPath, reason: errorText(error) });
+    const reason = errorText(error);
+    logger.warn('[音频保留] 清理过程失败', { path: input.wavPath, reason });
+    outcome.failed += 1;
+    outcome.lastError = reason;
+  } finally {
+    publishRetention(outcome.deleted, outcome.failed, outcome.lastError, Date.now());
   }
 }
 
@@ -75,9 +103,44 @@ export function sweepAudioRetention(input: {
   try {
     runSweep(input, summary);
   } catch (error) {
-    logger.warn('[音频保留] 清理过程失败', { reason: errorText(error) });
+    const reason = errorText(error);
+    logger.warn('[音频保留] 清理过程失败', { reason });
+    summary.lastError = reason;
   }
+  publishRetention(summary.deleted, summary.failed, summary.lastError, input.now);
   return summary;
+}
+
+export function clearAllAudioRecordings(input: {
+  audioDir: string;
+  sqlitePath: string | null;
+}): { deleted: number; freedBytes: number; failed: number } {
+  const result = { deleted: 0, freedBytes: 0, failed: 0, lastError: undefined as string | undefined };
+  try {
+    runClear(input, result);
+  } catch (error) {
+    const reason = errorText(error);
+    logger.warn('[音频保留] 清理过程失败', { reason });
+    result.failed += 1;
+    result.lastError = reason;
+  }
+  publishRetention(result.deleted, result.failed, result.lastError, Date.now());
+  return { deleted: result.deleted, freedBytes: result.freedBytes, failed: result.failed };
+}
+
+export function getAudioRetentionStatus(audioDir?: string): RetentionLedger & {
+  fileCount?: number;
+  bytes?: number;
+} {
+  const status: RetentionLedger = {
+    lastSweepAt: retentionStatus.lastSweepAt,
+    deletedTotal: retentionStatus.deletedTotal,
+    failedTotal: retentionStatus.failedTotal,
+  };
+  if (retentionStatus.lastError) status.lastError = retentionStatus.lastError;
+  if (!audioDir) return status;
+  const counts = countClearableWavs(audioDir);
+  return { ...status, fileCount: counts.fileCount, bytes: counts.bytes };
 }
 
 function runSweep(
@@ -108,8 +171,9 @@ function runSweep(
       try {
         processRow(row, ctx);
       } catch (error) {
-        warnFail(row.wavPath, errorText(error));
-        summary.failed += 1;
+        const reason = errorText(error);
+        warnFail(row.wavPath, reason);
+        countFailed(summary, reason);
       }
     }
   }
@@ -136,11 +200,12 @@ function processRow(row: RetentionRow, ctx: SweepContext): void {
   }
   if (inspection.action === 'fail') {
     warnFail(row.wavPath, inspection.reason);
-    ctx.summary.failed += 1;
+    countFailed(ctx.summary, inspection.reason);
     return;
   }
-  if (unlinkKeptWav(inspection.deletePath, row.wavPath) !== 'deleted') {
-    ctx.summary.failed += 1;
+  const unlinked = unlinkKeptWav(inspection.deletePath, row.wavPath);
+  if (!unlinked.ok) {
+    countFailed(ctx.summary, unlinked.reason);
     return;
   }
   ctx.summary.deleted += 1;
@@ -161,8 +226,9 @@ function sweepOrphans(
       mtimeMs = fs.statSync(wavPath).mtimeMs;
     } catch (error) {
       if (errorCode(error) === 'ENOENT') continue;
-      warnFail(wavPath, errorText(error));
-      summary.failed += 1;
+      const reason = errorText(error);
+      warnFail(wavPath, reason);
+      countFailed(summary, reason);
       continue;
     }
     // A young file with no row may still be queued for transcription.
@@ -176,26 +242,28 @@ function sweepOrphans(
     }
     if (inspection.action === 'fail') {
       warnFail(wavPath, inspection.reason);
-      summary.failed += 1;
+      countFailed(summary, inspection.reason);
       continue;
     }
-    if (unlinkKeptWav(inspection.deletePath, wavPath) !== 'deleted') {
-      summary.failed += 1;
+    const unlinked = unlinkKeptWav(inspection.deletePath, wavPath);
+    if (!unlinked.ok) {
+      countFailed(summary, unlinked.reason);
       continue;
     }
     summary.deleted += 1;
   }
 }
 
-function unlinkKeptWav(deletePath: string, wavPath: string): 'deleted' | 'failed' {
+function unlinkKeptWav(deletePath: string, wavPath: string): { ok: true } | { ok: false; reason: string } {
   try {
     fs.unlinkSync(deletePath);
-    return 'deleted';
+    return { ok: true };
   } catch (error) {
     // Already gone: the pointer can be cleared and a later pass stays quiet.
-    if (errorCode(error) === 'ENOENT') return 'deleted';
-    warnFail(wavPath, errorText(error));
-    return 'failed';
+    if (errorCode(error) === 'ENOENT') return { ok: true };
+    const reason = errorText(error);
+    warnFail(wavPath, reason);
+    return { ok: false, reason };
   }
 }
 
@@ -417,6 +485,143 @@ function errorCode(error: unknown): string | undefined {
   if (typeof error !== 'object' || error === null || !('code' in error)) return undefined;
   const code = error.code;
   return typeof code === 'string' ? code : undefined;
+}
+
+interface ClearAccum {
+  deleted: number;
+  freedBytes: number;
+  failed: number;
+  lastError?: string;
+}
+
+function runClear(input: { audioDir: string; sqlitePath: string | null }, result: ClearAccum): void {
+  const removed = new Set<string>();
+  for (const wavPath of listWavFiles(input.audioDir)) {
+    deleteClearableWav(input.audioDir, wavPath, result, removed);
+  }
+  if (input.sqlitePath == null) {
+    removeEmptyDateDirs(input.audioDir);
+    return;
+  }
+  const rows = loadRows(input.sqlitePath);
+  if (rows == null) {
+    countFailed(result, 'audio_segments query failed');
+    removeEmptyDateDirs(input.audioDir);
+    return;
+  }
+  for (const row of rows) settleClearedRow(input.sqlitePath, input.audioDir, row, result, removed);
+  removeEmptyDateDirs(input.audioDir);
+}
+
+function deleteClearableWav(audioDir: string, wavPath: string, result: ClearAccum, removed: Set<string>): void {
+  const inspection = inspectWav(audioDir, wavPath);
+  if (inspection.action === 'missing') return;
+  if (inspection.action === 'refuse') {
+    warnRefuse(wavPath, inspection.reason);
+    countFailed(result, inspection.reason);
+    return;
+  }
+  if (inspection.action === 'fail') {
+    warnFail(wavPath, inspection.reason);
+    countFailed(result, inspection.reason);
+    return;
+  }
+  let size = 0;
+  try {
+    size = fs.statSync(inspection.deletePath).size;
+  } catch (error) {
+    if (errorCode(error) !== 'ENOENT') {
+      const reason = errorText(error);
+      warnFail(wavPath, reason);
+      countFailed(result, reason);
+      return;
+    }
+  }
+  const unlinked = unlinkKeptWav(inspection.deletePath, wavPath);
+  if (!unlinked.ok) {
+    countFailed(result, unlinked.reason);
+    return;
+  }
+  result.deleted += 1;
+  result.freedBytes += size;
+  rememberRemoved(removed, wavPath, inspection.deletePath);
+}
+
+function settleClearedRow(
+  sqlitePath: string,
+  audioDir: string,
+  row: RetentionRow,
+  result: ClearAccum,
+  removed: Set<string>,
+): void {
+  const inspection = inspectWav(audioDir, row.wavPath);
+  if (inspection.action === 'missing') {
+    clearPointer(sqlitePath, row.wavPath, row.id);
+    return;
+  }
+  if (inspection.action === 'delete' && removed.has(inspection.deletePath)) {
+    clearPointer(sqlitePath, row.wavPath, row.id);
+    return;
+  }
+  if (inspection.action === 'refuse') {
+    warnRefuse(row.wavPath, inspection.reason);
+    countFailed(result, inspection.reason);
+    return;
+  }
+  if (inspection.action === 'fail') {
+    warnFail(row.wavPath, inspection.reason);
+    countFailed(result, inspection.reason);
+    return;
+  }
+  deleteClearableWav(audioDir, row.wavPath, result, removed);
+  if (inspectWav(audioDir, row.wavPath).action === 'missing') {
+    clearPointer(sqlitePath, row.wavPath, row.id);
+  }
+}
+
+function rememberRemoved(removed: Set<string>, wavPath: string, deletePath: string): void {
+  removed.add(wavPath);
+  removed.add(deletePath);
+  removed.add(path.resolve(wavPath));
+  try {
+    removed.add(canonicalPath(wavPath));
+  } catch {
+    // The raw path still stops a second unlink of the same file.
+  }
+}
+
+function countClearableWavs(audioDir: string): { fileCount: number; bytes: number } {
+  let fileCount = 0;
+  let bytes = 0;
+  try {
+    for (const wavPath of listWavFiles(audioDir)) {
+      const inspection = inspectWav(audioDir, wavPath);
+      if (inspection.action !== 'delete') continue;
+      try {
+        const stat = fs.statSync(inspection.deletePath);
+        if (!stat.isFile()) continue;
+        fileCount += 1;
+        bytes += stat.size;
+      } catch {
+        // Vanished between the listing and the stat.
+      }
+    }
+  } catch (error) {
+    logger.warn('[音频保留] 读取音频目录失败', { path: audioDir, reason: errorText(error) });
+  }
+  return { fileCount, bytes };
+}
+
+function publishRetention(deleted: number, failed: number, lastError: string | undefined, at: number): void {
+  retentionStatus.lastSweepAt = at;
+  retentionStatus.deletedTotal += deleted;
+  retentionStatus.failedTotal += failed;
+  if (lastError) retentionStatus.lastError = lastError;
+}
+
+function countFailed(summary: { failed: number; lastError?: string }, reason: string): void {
+  summary.failed += 1;
+  summary.lastError = reason;
 }
 
 function warnRefuse(wavPath: string, reason: string): void {

@@ -35,7 +35,9 @@ vi.mock('../../../src/web/routes/agent', async () => {
 
 vi.mock('../../../src/host/services/companion/CompanionRelayClient', () => ({
   startCompanionRelayIfConfigured: async () => null,
-  // 账号通道是同步返回 handle|null（app.ts 不 await）；返回 Promise 会让 shutdown 的 ?.stop() 炸。
+}));
+// 账号通道是同步返回句柄（app.ts 不 await）；返回 Promise 会让 shutdown 的 ?.stop() 炸。
+vi.mock('../../../src/host/services/companion/companionRelayAccount', () => ({
   startCompanionRelayAccountIfConfigured: () => null,
 }));
 

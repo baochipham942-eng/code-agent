@@ -189,7 +189,7 @@ export type CompanionSubmitResult =
   | { kind: 'accepted'; command: CompanionCommandRecord }
   | { kind: 'replayed'; command: CompanionCommandRecord }
   | { kind: 'conflict'; reason: 'command_payload_mismatch' | 'scope_epoch_mismatch' }
-  | { kind: 'rejected'; reason: 'device_revoked' | 'device_unknown' | 'scope_denied' | 'invalid_command' | 'unsupported_action' }
+  | { kind: 'rejected'; reason: 'device_revoked' | 'device_unknown' | 'scope_denied' | 'invalid_command' | 'unsupported_action' | 'remote_off' }
   | { kind: 'approval_conflict'; current: CompanionDecision };
 
 export interface CompanionSyncResult {

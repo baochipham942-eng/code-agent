@@ -111,6 +111,10 @@ export function applyCompanionSchema(db: BetterSqlite3.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_companion_push_outbox_state_expires
       ON companion_push_outbox(state, expires_at);
+    CREATE TABLE IF NOT EXISTS companion_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
   `);
   try {
     db.exec(`ALTER TABLE companion_decisions ADD COLUMN kind TEXT NOT NULL DEFAULT 'approval'`);

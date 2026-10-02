@@ -1163,7 +1163,9 @@ describe('LAN protocol validation', () => {
 
 
 describe('LAN manager network changes (mocked network and listener)', () => {
-  afterEach(() => { vi.restoreAllMocks(); });
+  // restoreAllMocks only puts spyOn back. mockReturnValue on the os mock stays,
+  // and the next real-socket describe would dial that leftover address.
+  afterEach(() => { vi.restoreAllMocks(); vi.mocked(networkInterfaces).mockReset(); });
   function setup() {
     const interfaces = vi.mocked(networkInterfaces);
     const setAddresses = (...addresses: string[]) => interfaces.mockReturnValue({ en0: addresses.map(address => ({

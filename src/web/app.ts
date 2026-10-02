@@ -75,7 +75,8 @@ import { companionSteerMessagePayload, steerOrQueueCompanionMessage } from '../h
 import { getPlanApprovalGate } from '../host/agent/planApproval';
 import type { PermissionResponse } from '../shared/contract/permission';
 import { LanCompanionManager } from '../host/services/companion/LanCompanionManager';
-import { startCompanionRelayAccountIfConfigured, startCompanionRelayIfConfigured } from '../host/services/companion/CompanionRelayClient';
+import { startCompanionRelayIfConfigured } from '../host/services/companion/CompanionRelayClient';
+import { startCompanionRelayAccountIfConfigured } from '../host/services/companion/companionRelayAccount';
 import { getAuthService } from '../host/services/auth/authService';
 import { IdleSleepInhibitor } from '../host/services/desktop/idleSleepInhibitor';
 import { getBackgroundTaskLedger } from '../host/task/backgroundTaskLedger';
@@ -543,6 +544,10 @@ export function createApp(deps: CreateAppDeps): express.Express {
       };
       app.use('/api/companion', createCompanionProvisioningRouter({ gateway }));
       inhibitorGateway = gateway;
+      const remoteTransports: { start(): Promise<void>; stop(): Promise<void> } = {
+        start: () => Promise.resolve(),
+        stop: () => Promise.resolve(),
+      };
       const lan = new LanCompanionManager(gateway, () => loadLanIdentity(resolveCodeAgentDataDir()), async () => {
         const sessions = await (await tryGetSessionManager())?.listSessions() ?? [];
         return sessions.map(session => ({ id: session.id, title: session.title }));
@@ -562,7 +567,8 @@ export function createApp(deps: CreateAppDeps): express.Express {
       // 配对信息随 welcome 带电脑账号邮箱：手机登录页预填 + 「这台电脑属于谁」的账号一致性核对。
       () => getAuthService().getCurrentUser()?.email ?? null,
       // LAN 连接层留痕透传（N-MOBILE-SEND-RESULT-LOST）。
-      logger);
+      logger,
+      remoteTransports);
       // Both halves must hold: a phone is reachable for this session, AND this particular
       // card is renderable. With no approvals service there is no companion approval path.
       hasCompanionApprovalUi = (sessionId, request) => lan.hasApprovalUi(sessionId) && services.approvals?.canDisplay(request) === true;
@@ -595,48 +601,70 @@ export function createApp(deps: CreateAppDeps): express.Express {
         }
       });
       companionLan = lan;
-      void lan.restore().catch(() => logger.warn('Companion LAN restore unavailable'));
-      void startCompanionRelayIfConfigured({
-        dataDirectory: resolveCodeAgentDataDir(),
-        gateway,
-        loadIdentity: () => loadLanIdentity(resolveCodeAgentDataDir()),
-        logger,
-      }).then(client => {
-        if (!client) return;
-        if (companionRelayAbandoned) {
-          void client.stop();
-          return;
+      let relayTicket = 0;
+      const startCompanionRemotes = async (): Promise<void> => {
+        if (companionRelayAbandoned || !gateway.remoteEnabled()) return;
+        const ticket = ++relayTicket;
+        if (!companionRelayAccount) {
+          // 账号通道与共享凭据通道并行（N-COMPANION-RELAY-ACCOUNT-BIND）：没登录就什么都不做。
+          // 找回配对的取值面全部走闭包现取——两条通道此刻可能还没就绪。
+          companionRelayAccount = startCompanionRelayAccountIfConfigured({
+            dataDirectory: resolveCodeAgentDataDir(),
+            gateway,
+            loadIdentity: () => loadLanIdentity(resolveCodeAgentDataDir()),
+            auth: getAuthService(),
+            logger,
+            pairScope: () => projectScope(requireLibrary().projects()).slice(0, COMPANION_LIMITS.maxScopeSessions),
+            pairLegacyRoute: deviceId => companionRelay?.routeFor(deviceId) ?? null,
+            pairLanAdvertisement: () => companionLan?.lanAdvertisement() ?? null,
+            hostAccountEmail: () => getAuthService().getCurrentUser()?.email ?? null,
+            onPairRequest: request => broadcastToRenderer(IPC_CHANNELS.COMPANION_PAIR_REQUEST, {
+              type: 'request', requestId: request.requestId, code: request.code, expiresAt: request.expiresAt,
+              scopeEmpty: request.scopeEmpty,
+            }),
+            onPairSettled: requestId => broadcastToRenderer(IPC_CHANNELS.COMPANION_PAIR_REQUEST, {
+              type: 'gone', requestId,
+            }),
+          });
+        } else {
+          companionRelayAccount.resume();
         }
-        services.relay = client;
-        companionRelay = client;
-      }).catch((error) => logger.warn(
-        'Companion relay dial-out skipped',
-        error instanceof Error ? error.message : String(error),
-      ));
-      // 账号通道与上面的共享凭据通道并行（N-COMPANION-RELAY-ACCOUNT-BIND）：没登录就什么都不做。
-      // 找回配对（N-COMPANION-RELAY-ACCOUNT-RECOVER）的取值面全部走闭包现取——relay 客户端是异步
-      // 拨起的，LAN 面与共享凭据通道此刻可能还没就绪，回调触发时读到的是什么就是什么。
-      companionRelayAccount = startCompanionRelayAccountIfConfigured({
-        dataDirectory: resolveCodeAgentDataDir(),
-        gateway,
-        loadIdentity: () => loadLanIdentity(resolveCodeAgentDataDir()),
-        auth: getAuthService(),
-        logger,
-        // 新设备的授权范围与二维码邀请同一取值面：全部项目的 grant（截到邀请同款上限）。
-        pairScope: () => projectScope(requireLibrary().projects()).slice(0, COMPANION_LIMITS.maxScopeSessions),
-        // 旧路由（含共享凭据）从共享凭据通道取：账号通道自己没有共享凭据可下发。
-        pairLegacyRoute: deviceId => companionRelay?.routeFor(deviceId) ?? null,
-        // LAN 地址三件套与二维码邀请同源；LAN 面没起（还没配对设备）就缺席，手机仅中继可达。
-        pairLanAdvertisement: () => companionLan?.lanAdvertisement() ?? null,
-        hostAccountEmail: () => getAuthService().getCurrentUser()?.email ?? null,
-        onPairRequest: request => broadcastToRenderer(IPC_CHANNELS.COMPANION_PAIR_REQUEST, {
-          type: 'request', requestId: request.requestId, code: request.code, expiresAt: request.expiresAt,
-          scopeEmpty: request.scopeEmpty,
-        }),
-        onPairSettled: requestId => broadcastToRenderer(IPC_CHANNELS.COMPANION_PAIR_REQUEST, {
-          type: 'gone', requestId,
-        }),
-      });
+        if (ticket !== relayTicket || companionRelayAbandoned || !gateway.remoteEnabled()) return;
+        if (companionRelay) return;
+        try {
+          const client = await startCompanionRelayIfConfigured({
+            dataDirectory: resolveCodeAgentDataDir(),
+            gateway,
+            loadIdentity: () => loadLanIdentity(resolveCodeAgentDataDir()),
+            logger,
+          });
+          if (!client) return;
+          if (ticket !== relayTicket || companionRelayAbandoned || !gateway.remoteEnabled()) {
+            await client.stop();
+            return;
+          }
+          services.relay = client;
+          companionRelay = client;
+        } catch (error) {
+          logger.warn('Companion relay dial-out skipped', error instanceof Error ? error.message : String(error));
+        }
+      };
+      const stopCompanionRemotes = async (): Promise<void> => {
+        relayTicket += 1;
+        const legacy = companionRelay;
+        companionRelay = undefined;
+        services.relay = undefined;
+        await companionRelayAccount?.suspend();
+        await legacy?.stop();
+      };
+      remoteTransports.start = startCompanionRemotes;
+      remoteTransports.stop = stopCompanionRemotes;
+      if (gateway.remoteEnabled()) {
+        void lan.restore().catch(() => logger.warn('Companion LAN restore unavailable'));
+        void startCompanionRemotes();
+      } else {
+        logger.info('Companion remote access is off; LAN listener and relay sockets stay down');
+      }
       app.use('/companion', createCompanionRouter({
         gateway,
         authenticate: (deviceId, credential) => gateway.authenticateDevice(deviceId, credential),

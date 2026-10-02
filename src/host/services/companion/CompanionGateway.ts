@@ -162,6 +162,7 @@ export class CompanionGateway {
   }
 
   pairIdentity(publicKey: string, scope: readonly string[]): Omit<CompanionDeviceCredential, 'credential'> {
+    this.assertRemoteEnabled();
     return this.db.transaction(() => {
       const previous = this.identityDevice(publicKey);
       if (previous) this.revokeDevice(previous.deviceId);
@@ -191,6 +192,23 @@ export class CompanionGateway {
       }));
   }
 
+  /** Missing row stays on, so an existing install keeps today's reachability. */
+  remoteEnabled(): boolean {
+    const row = this.db.prepare('SELECT value FROM companion_settings WHERE key = ?').get('remoteEnabled') as SqlRow | undefined;
+    if (!row) return true;
+    return row.value === '1';
+  }
+
+  /** Pause only. Does not revoke devices, rewrite identity keys, or bump scope_epoch. */
+  setRemoteEnabled(enabled: boolean): void {
+    this.db.prepare(`INSERT INTO companion_settings (key, value) VALUES ('remoteEnabled', ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(enabled ? '1' : '0');
+  }
+
+  private assertRemoteEnabled(): void {
+    if (!this.remoteEnabled()) throw new Error('COMPANION_REMOTE_OFF');
+  }
+
   revokeDevice(deviceId: string, now = this.now()): number {
     const nextEpoch = this.currentEpoch + 1;
     const changes = this.db.prepare(`
@@ -218,6 +236,11 @@ export class CompanionGateway {
   }
 
   async submit(rawCommand: unknown): Promise<CompanionSubmitResult> {
+    if (!this.remoteEnabled()) {
+      const result: CompanionSubmitResult = { kind: 'rejected', reason: 'remote_off' };
+      this.logSubmit(null, result);
+      return result;
+    }
     const parsed = companionCommandSchema.safeParse(rawCommand);
     if (!parsed.success) {
       this.logSubmit(null, { kind: 'rejected', reason: 'invalid_command' });
@@ -378,6 +401,7 @@ export class CompanionGateway {
   }
 
   commandStatus(deviceId: string, commandId: string): CompanionCommandRecord | null {
+    this.assertRemoteEnabled();
     const device = this.getDevice(deviceId);
     if (device?.revokedAt !== null) return null;
     const command = this.getCommand(deviceId, commandId);
@@ -517,6 +541,7 @@ export class CompanionGateway {
   }
 
   syncForDevice(deviceId: string, epoch: number, afterSeq: number): CompanionSyncResult {
+    this.assertRemoteEnabled();
     const device = this.getDevice(deviceId);
     if (device?.revokedAt !== null) return { kind: 'revoked', epoch, nextSeq: afterSeq, events: [] };
     // Page the underlying stream first, then filter. Advance over unauthorized
@@ -542,6 +567,7 @@ export class CompanionGateway {
   }
 
   async read(deviceId: string, raw: unknown): Promise<unknown> {
+    this.assertRemoteEnabled();
     if (!this.grants(deviceId).length || !this.deps.read) throw new Error('COMPANION_LIBRARY_UNAVAILABLE');
     const request = companionReadSchema.parse(raw);
     if ((request.kind === 'history' || request.kind === 'artifacts') && !this.canAccessSession(deviceId, request.sessionId)) throw new Error('COMPANION_SCOPE_DENIED');

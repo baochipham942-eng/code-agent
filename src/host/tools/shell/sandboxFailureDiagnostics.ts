@@ -7,7 +7,30 @@ const SANDBOX_DENIAL_PATTERN = /\bEPERM\b|Operation not permitted/i;
  */
 export function sandboxDeniedWritePath(failureText: string): string | undefined {
   if (!SANDBOX_DENIAL_PATTERN.test(failureText)) return undefined;
-  return readSandboxDeniedPath(failureText);
+  return readSandboxDeniedWritePath(failureText);
+}
+
+/**
+ * Only shapes that prove a *write* was denied may open the widen-sandbox card.
+ * The generic `<cmd>: <path>: Operation not permitted` form also comes from
+ * macOS TCC / deniedReadRoots read denials (`find: ~/Library/Mail: …`); offering
+ * a write grant there lies about the cause and re-runs the whole command for
+ * nothing (PR #2191 review). That form stays diagnostics-only.
+ */
+function readSandboxDeniedWritePath(failureText: string): string | undefined {
+  const nodeWritePath = /\bEPERM\b[^\r\n]*?\b(?:open|mkdir|rmdir|unlink|rename|chmod|chown|copyfile|symlink|link|truncate|utimes)\s+['"]([^'"\r\n]+)['"]/i.exec(failureText)?.[1];
+  if (nodeWritePath) return nodeWritePath;
+
+  const npmErrorPath = /(?:^|\n)(?:npm (?:error|ERR!)\s+)?path\s+([^\r\n]+)/im.exec(failureText)?.[1]?.trim();
+  if (npmErrorPath) return npmErrorPath;
+
+  // shell redirection: `/bin/sh: /path: Operation not permitted`, `bash: line 1: /path: …`, `zsh: operation not permitted: /path`
+  const shellRedirect = /(?:^|\n)(?:\/\S*\/)?(?:bash|sh|zsh|dash)(?:-?[\d.]*)?(?::\s+line\s+\d+)?:\s+((?:~|\/)[^:\r\n]+):\s+Operation not permitted\b/im.exec(failureText)?.[1]?.trim()
+    ?? /(?:^|\n)zsh:\s+operation not permitted:\s+((?:~|\/)[^\r\n]+)/im.exec(failureText)?.[1]?.trim();
+  if (shellRedirect) return shellRedirect;
+
+  // write utilities: `mkdir: /path: Operation not permitted`, `cp: /path: …`
+  return /(?:^|\n)(?:mkdir|touch|cp|mv|rm|rmdir|tee|install|ln|chmod|chown|truncate)(?:\s+\S+)?:\s+((?:~|\/)[^:\r\n]+):\s+Operation not permitted\b/im.exec(failureText)?.[1]?.trim();
 }
 
 /**

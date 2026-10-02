@@ -1644,6 +1644,42 @@ describe('bashModule sandbox escalation', () => {
     }
   });
 
+  it('does not offer escalation for a read denial in the generic command: path form', async () => {
+    // 审查 Important（PR #2191）：macOS TCC / deniedReadRoots 的读拒绝是 `find: /path: Operation not permitted`，
+    // 不是写拒绝；弹卡会谎称沙盒拦了写入并把整条命令重跑一遍。
+    const target = `/Users/shot/Library/Mail`;
+    wrapMock.mockReturnValue({
+      command: `printf '%s\\n' 'find: ${target}: Operation not permitted' >&2; exit 1`,
+      cleanup: cleanupMock,
+    });
+    const canUse = vi.fn().mockResolvedValue({ allow: true as const });
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute({ command: 'find ~ -name x' }, makeCtx(), canUse);
+    expect(canUse.mock.calls.filter(([toolName]) => toolName === 'bash')).toHaveLength(0);
+    expect(canUse).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.meta?.sandboxEscalation).toBeUndefined();
+  });
+
+  it('still offers escalation for a write utility denial in the command: path form', async () => {
+    const parent = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-cp-')));
+    const target = join(parent, 'out.txt');
+    wrapMock.mockReturnValue({
+      command: `printf '%s\\n' 'cp: ${target}: Operation not permitted' >&2; exit 1`,
+      cleanup: cleanupMock,
+    });
+    const canUse = vi.fn().mockResolvedValue({ allow: true as const });
+    const handler = await bashModule.createHandler();
+    try {
+      await handler.execute({ command: `cp a ${target}` }, makeCtx(), canUse);
+      const escalationCalls = canUse.mock.calls.filter(([toolName]) => toolName === 'bash');
+      expect(escalationCalls).toHaveLength(1);
+      expect(escalationCalls[0]?.[2]).toContain(target);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
   it('does not offer escalation for an npm path line that is not a sandbox denial', async () => {
     const target = `/tmp/sandbox-npm-enoent-${process.pid}/package.json`;
     wrapMock.mockReturnValue({

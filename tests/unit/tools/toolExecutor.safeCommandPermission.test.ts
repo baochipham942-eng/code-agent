@@ -336,17 +336,13 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
   describe('N-WRITETARGET-UNRESOLVED：uncertain 写目标 + 路径 deny', () => {
     const unresolvedSshWrite = 'echo x > "$SSHDIR/authorized_keys"';
     const echoPreApproved = { preApprovedTools: new Set(['Bash(echo:*)']) };
-    let restoreSandbox: (() => void) | undefined;
-
     beforeEach(() => {
       classifierState.autoApprove = true;
-      restoreSandbox = pinOsWriteFenceAvailable(true);   // CI Linux 无 bwrap：沙盒不可用则 default 档降级不包装，沙盒拒绝路径根本走不到
       resetPolicyEnforcer();
       resetPolicyEngine();
     });
 
     afterEach(() => {
-      restoreSandbox?.();
       resetPolicyEnforcer();
       resetPolicyEngine();
     });
@@ -442,7 +438,7 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
       expect(result.error ?? '').not.toContain('Blocked by path policy');
     });
 
-    it('没配任何路径 deny 时，$SSHDIR 的沙盒拒绝只追加一次明确的扩大确认', async () => {
+    it.skipIf(process.platform !== 'darwin')('没配任何路径 deny 时，$SSHDIR 的沙盒拒绝只追加一次明确的扩大确认', async () => {   // 真 seatbelt 拒绝，CI Linux 无 bwrap；逻辑面由 bash.test（mock 包装）覆盖
       const executor = buildPathPolicyExecutor();
 
       await executor.execute(
@@ -459,7 +455,7 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
       });
     });
 
-    it('配了 denied_paths 时，$SSHDIR 落到禁止路径不能出现 sandbox_escalate_once 卡', async () => {
+    it.skipIf(process.platform !== 'darwin')('配了 denied_paths 时，$SSHDIR 落到禁止路径不能出现 sandbox_escalate_once 卡', async () => {   // 真 seatbelt 拒绝，CI Linux 无 bwrap；逻辑面由 bash.test（mock 包装）覆盖
       const sshRoot = await fs.mkdtemp(path.join('/tmp', 'sandbox-deny-ssh-'));
       const canonical = resolveCanonicalRunPath(sshRoot);
       const authorizedKeys = path.join(canonical, 'authorized_keys');
@@ -497,7 +493,7 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
       }
     });
 
-    it('配了 Edit(path) deny 时，$SSHDIR 落到该路径不能出现 sandbox_escalate_once 卡', async () => {
+    it.skipIf(process.platform !== 'darwin')('配了 Edit(path) deny 时，$SSHDIR 落到该路径不能出现 sandbox_escalate_once 卡', async () => {   // 真 seatbelt 拒绝，CI Linux 无 bwrap；逻辑面由 bash.test（mock 包装）覆盖
       const sshRoot = await fs.mkdtemp(path.join('/tmp', 'sandbox-deny-edit-'));
       const canonical = resolveCanonicalRunPath(sshRoot);
       const authorizedKeys = path.join(canonical, 'authorized_keys');
@@ -526,7 +522,7 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
       }
     });
 
-    it('路径策略放行的区外写入被沙盒拒绝后仍只追加一次扩大确认', async () => {
+    it.skipIf(process.platform !== 'darwin')('路径策略放行的区外写入被沙盒拒绝后仍只追加一次扩大确认', async () => {   // 真 seatbelt 拒绝，CI Linux 无 bwrap；逻辑面由 bash.test（mock 包装）覆盖
       const allowedRoot = await fs.mkdtemp(path.join('/tmp', 'sandbox-escalate-allow-'));
       const canonical = resolveCanonicalRunPath(allowedRoot);
       const blockedRoot = path.join(canonical, 'blocked');

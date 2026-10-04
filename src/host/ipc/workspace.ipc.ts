@@ -40,6 +40,7 @@ import {
   listPublishedVersions,
   publishVersion,
 } from '../tools/modules/document/publishedVersions';
+import { resolveArtifactStandingRefresh } from '../cron/artifactStandingRefresh';
 import {
   getShareLink,
   pushLatestToShareLink,
@@ -905,9 +906,11 @@ const workspaceRoutes = defineDomainRoutes<WorkspaceDomainRequest, WorkspaceRout
   },
   getPublishInfo: async (_ctx, payload) => {
     const { filePath } = payload as { filePath: string };
+    const standingRefresh = await resolveArtifactStandingRefresh(filePath);
     return {
       publishState: getPublishState(filePath),
       publishedVersions: listPublishedVersions(filePath),
+      ...(standingRefresh ? { standingRefresh } : {}),
     };
   },
   publishVersion: async (_ctx, payload) => {

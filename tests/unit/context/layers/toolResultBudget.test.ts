@@ -6,7 +6,10 @@ import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { applyToolResultBudget } from '../../../../src/host/context/layers/toolResultBudget';
+import {
+  applyToolResultBudget,
+  resolveToolResultBudget,
+} from '../../../../src/host/context/layers/toolResultBudget';
 import { CompressionState } from '../../../../src/host/context/compressionState';
 import { estimateTokens } from '../../../../src/host/context/tokenEstimator';
 import { SPILL_NOTICE_MARKER, readToolResultArchive } from '../../../../src/host/utils/toolResultSpill';
@@ -22,7 +25,14 @@ vi.mock('../../../../src/host/config/configPaths', async () => {
   };
 });
 
-type TestMessage = { id: string; role: string; content: string; toolCallId?: string };
+type TestMessage = {
+  id: string;
+  role: string;
+  content: string;
+  toolCallId?: string;
+  toolName?: string;
+  resultBudgetTokens?: number;
+};
 
 function makeToolMsg(id: string, content: string): TestMessage {
   return { id, role: 'tool', content };
@@ -329,5 +339,67 @@ describe('applyToolResultBudget', () => {
       expect(result.originalTokens).toBeGreaterThan(2000);
       expect(result.truncatedTokens).toBeLessThan(result.originalTokens);
     });
+  });
+});
+
+describe('resolveToolResultBudget', () => {
+  it.each([
+    [32_000, { l1MaxTokens: 1_000, l0MaxTokens: 2_000, maxOutputChars: 6_000 }],
+    [200_000, { l1MaxTokens: 3_125, l0MaxTokens: 6_250, maxOutputChars: 18_750 }],
+    [1_000_000, { l1MaxTokens: 15_625, l0MaxTokens: 31_250, maxOutputChars: 93_750 }],
+    [2_000_000, { l1MaxTokens: 16_000, l0MaxTokens: 32_000, maxOutputChars: 96_000 }],
+  ])('derives thresholds for %d-token windows', (window, expected) => {
+    expect(resolveToolResultBudget(window)).toEqual(expected);
+  });
+
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+    'uses legacy fallbacks for unknown window %s',
+    (window) => {
+      expect(resolveToolResultBudget(window)).toEqual({ l1MaxTokens: 2_000, l0MaxTokens: 4_096, maxOutputChars: 30_000 });
+    },
+  );
+
+  it('lets a per-tool override replace L1 and derives L0 from it', () => {
+    expect(resolveToolResultBudget(200_000, 'large-output-tool', 7_500)).toEqual({
+      l1MaxTokens: 7_500,
+      l0MaxTokens: 15_000,
+      maxOutputChars: 45_000,
+    });
+  });
+
+  it('truncates the same 50KB result differently for 200K and 1M windows', () => {
+    const content = 'word '.repeat(10_240); // 51,200 bytes
+    const smallWindow = resolveToolResultBudget(200_000);
+    const largeWindow = resolveToolResultBudget(1_000_000);
+    const small = { id: 'small', role: 'tool', content };
+    const large = { id: 'large', role: 'tool', content };
+
+    applyToolResultBudget([small], new CompressionState(), {
+      maxTokensPerResult: smallWindow.l1MaxTokens,
+    });
+    applyToolResultBudget([large], new CompressionState(), {
+      maxTokensPerResult: largeWindow.l1MaxTokens,
+    });
+
+    expect(small.content).not.toBe(content);
+    expect(large.content).toBe(content);
+    expect(estimateTokens(small.content)).toBeLessThanOrEqual(smallWindow.l1MaxTokens + 40);
+    expect(small.content.length).toBeLessThan(large.content.length);
+  });
+
+  it('applies a schema override through the per-message resolver callback', () => {
+    const message = { id: 'override', role: 'tool', content: 'word '.repeat(1_500), toolName: 'custom', resultBudgetTokens: 700 };
+    const state = new CompressionState();
+    applyToolResultBudget([message], state, {
+      maxTokensPerResult: resolveToolResultBudget(200_000).l1MaxTokens,
+      resolveMaxTokens: (entry) => resolveToolResultBudget(
+        200_000,
+        entry.toolName,
+        entry.resultBudgetTokens,
+      ).l1MaxTokens,
+    });
+
+    expect(estimateTokens(message.content)).toBeLessThanOrEqual(740);
+    expect(state.getCommitLog()).toHaveLength(1);
   });
 });

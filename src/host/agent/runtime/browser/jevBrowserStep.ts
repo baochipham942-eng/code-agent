@@ -6,7 +6,6 @@ import {
   BROWSER_STEP_OPERATIONS,
   BROWSER_STEP_THRESHOLDS,
   BROWSER_TARGET_NONE,
-  JEV_MODEL,
   buildBrowserStepQuestions,
   estimateJevCallUsd,
   isBrowserJevStepEnabled,
@@ -16,7 +15,7 @@ import {
   type JevNoulAnswer,
   type JevSystemOneCall,
 } from '../../../../shared/constants/jevQuestions';
-import { resolveProviderApiKey } from '../../../model/providers/providerResolution';
+import { resolveJevRoute } from '../../../model/providers/typesafeProvider';
 import { classifyBrowserComputerManualTakeover } from '../../../../shared/utils/browserComputerRedaction';
 import type { BrowserService } from '../../../services/infra/browserService';
 import { guardJevBrowserSnapshot, guardJevPromptText } from '../../../services/infra/browser/jevBrowserSnapshotGuard';
@@ -723,8 +722,7 @@ export function resolveBrowserJevStep(deps?: {
       now: deps.now,
     });
   }
-  const apiKey = resolveProviderApiKey({ provider: 'typesafe', model: JEV_MODEL });
-  if (!apiKey) {
+  if (resolveJevRoute() === null) {
     if (!missingKeyWarned) {
       console.warn(BROWSER_JEV_MISSING_KEY_WARN);
       missingKeyWarned = true;

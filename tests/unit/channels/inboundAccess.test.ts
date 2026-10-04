@@ -29,10 +29,49 @@ describe('shared channel inbound access', () => {
 
   it('uses the same decision shape for Telegram user and chat allowlists', () => {
     expect(checkInboundAccess({
-      channel: 'telegram', senderId: 7, chatId: 9, allowedUserIds: [7], allowedChatIds: [9],
+      channel: 'telegram', chatType: 'p2p', senderId: 7, chatId: 9, allowedUserIds: [7], allowedChatIds: [9],
     }).action).toBe('allow');
     expect(checkInboundAccess({
-      channel: 'telegram', senderId: 8, chatId: 9, allowedUserIds: [7], allowedChatIds: [9],
+      channel: 'telegram', chatType: 'p2p', senderId: 8, chatId: 9, allowedUserIds: [7], allowedChatIds: [9],
     }).action).toBe('deny');
+  });
+
+  it('treats unknown Telegram senders as guests when allowlists are empty (fail-open 修复)', () => {
+    expect(checkInboundAccess({
+      channel: 'telegram', chatType: 'p2p', senderId: 42,
+    })).toEqual({ action: 'guest', auth: 'guest', reason: 'telegram_guest' });
+  });
+
+  it('drops Telegram group messages that neither mention nor reply to the bot', () => {
+    expect(checkInboundAccess({
+      channel: 'telegram', chatType: 'group', senderId: 42, chatId: 9, mentionedBot: false,
+    })).toEqual({ action: 'deny', reason: 'group_not_mentioned', replyUnauthorized: false });
+  });
+
+  it('admits Telegram group messages mentioning the bot as guest for unknown senders', () => {
+    expect(checkInboundAccess({
+      channel: 'telegram', chatType: 'group', senderId: 42, chatId: 9, mentionedBot: true,
+    })).toEqual({ action: 'guest', auth: 'guest', reason: 'telegram_guest' });
+  });
+
+  it('requires a mention even for allowlisted users in Telegram groups by default', () => {
+    expect(checkInboundAccess({
+      channel: 'telegram', chatType: 'group', senderId: 7, chatId: 9, mentionedBot: false, allowedUserIds: [7],
+    })).toEqual({ action: 'deny', reason: 'group_not_mentioned', replyUnauthorized: false });
+  });
+
+  it('keeps explicitly allowlisted Telegram identities paired (unchanged semantics)', () => {
+    expect(checkInboundAccess({
+      channel: 'telegram', chatType: 'p2p', senderId: 7, allowedUserIds: [7],
+    })).toEqual({ action: 'allow', auth: 'paired', reason: 'telegram_allowlist' });
+    expect(checkInboundAccess({
+      channel: 'telegram', chatType: 'group', senderId: 7, chatId: 9, mentionedBot: true, allowedUserIds: [7],
+    }).action).toBe('allow');
+  });
+
+  it('lets any Telegram group member reach the bot as guest under explicit all_members mode', () => {
+    expect(checkInboundAccess({
+      channel: 'telegram', chatType: 'group', senderId: 42, chatId: 9, mentionedBot: false, groupAccessMode: 'all_members',
+    })).toEqual({ action: 'guest', auth: 'guest', reason: 'telegram_guest' });
   });
 });

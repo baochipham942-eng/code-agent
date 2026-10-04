@@ -40,6 +40,7 @@ import {
   type ResolveRuntimeDefinition,
 } from './cronAutomationBridge';
 import {
+  buildCronAgentActionResult,
   formatCronAgentSessionTitle,
   isCronAgentActionResult,
   getCronAgentSessionType,
@@ -54,7 +55,7 @@ import { getEventBus } from '../services/eventing/bus';
 import { persistCronMissedTrace } from './cronMissedTrace';
 import { appendCronAgentExpertThreadReceipt } from './cronAgentExpertThreadReceipt';
 import { buildCronAgentPrompt, truncateUtf8Snapshot } from './cronAgentPrompt';
-import { parseCronRunDigest } from '../../shared/cronRunDigest';
+
 import {
   assertExecutionLocationConstraints,
   computeCronFireJitterMs,
@@ -1018,14 +1019,9 @@ export class CronService implements Disposable {
 
         // 无新料的监听运行整成 skipped 形状：复用 isSkippedResult 门，
         // 让它不进待过目收件箱、不写会话回流（快照已在上面照常写回）。
-        return {
-          agentType: action.agentType,
-          prompt: action.prompt,
-          result,
-          sessionId: cronSession.id,
-          digest: parseCronRunDigest(finalAssistantText),
-          ...(quietWatchRound ? { skipped: true, reason: 'no_new_event' } : {}),
-        };
+        // 结果组装（digest + 紧急档位 N-CRON-INBOX-URGENCY-TIER）在 cronNormalizers：
+        // cronService 贴 max-lines 线，档位优先读摘要头部行、无摘要块读正文头部。
+        return buildCronAgentActionResult(action, result, cronSession.id, finalAssistantText, quietWatchRound);
       }
 
       case 'webhook': {

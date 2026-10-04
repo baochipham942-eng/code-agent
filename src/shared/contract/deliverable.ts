@@ -2,6 +2,8 @@
 // Deliverable Contract
 // ============================================================================
 
+import type { StandingRefreshJobView } from '../artifactStandingRefresh';
+
 export type DeliverableEvidenceStatus = 'unverified' | 'verified' | 'failed';
 
 export type DeliverableEvidenceKind =
@@ -98,6 +100,11 @@ export type DeliverablePublishState =
 export interface DeliverablePublishInfo {
   publishState: DeliverablePublishState;
   publishedVersions: PublishedDeliverableVersion[];
+  /**
+   * 这份文件上的常设刷新任务视图（N-ARTIFACT-STANDING-REFRESH）；没有则缺省。
+   * 由 getPublishInfo 扫 cron 任务的 metadata.artifactRefresh 解析得出。
+   */
+  standingRefresh?: StandingRefreshJobView;
 }
 
 export interface DeliverableShareLink {

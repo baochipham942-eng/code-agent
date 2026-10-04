@@ -21,6 +21,15 @@ export interface ActiveToolResultPruneConfig {
   maxTokensPerResult: number;
   protectedMessageIds?: Set<string>;
   spillSessionId?: string;
+  /** Resolve an optional per-tool budget carried by the transcript entry. */
+  resolveMaxTokens?: (message: {
+    id: string;
+    role: string;
+    content: string;
+    toolCallId?: string;
+    toolName?: string;
+    resultBudgetTokens?: number;
+  }) => number;
 }
 
 /** 占位符固定标识前缀：识别已处理过的消息，防止对自己产出的占位符二次归档 */
@@ -30,6 +39,8 @@ type ToolResultMessage = {
   id: string;
   role: string;
   toolCallId?: string;
+  toolName?: string;
+  resultBudgetTokens?: number;
 };
 
 /**
@@ -112,8 +123,9 @@ export function applyActiveToolResultPrune(
     if (msg.content.includes(SPILL_NOTICE_MARKER)) continue;
     if (msg.content.startsWith(ACTIVE_PRUNE_PLACEHOLDER_MARKER)) continue;
 
+    const maxTokensPerResult = config.resolveMaxTokens?.(msg) ?? config.maxTokensPerResult;
     const originalTokens = estimateTokens(msg.content);
-    if (originalTokens <= config.maxTokensPerResult) continue;
+    if (originalTokens <= maxTokensPerResult) continue;
 
     const toolName = typeof msg.toolName === 'string' ? msg.toolName : 'tool-result';
 

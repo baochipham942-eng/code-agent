@@ -36,6 +36,13 @@ Evidence Pack rules:
 - For images, prefer persisted file paths plus mime/size/hash over large base64 in conversation state.
 - Final answers should name the evidence that actually ran, not only say the artifact is done.
 
+Fact-check rules:
+- For factual content (data, dates, names, and claims about a topic), look first at the user's own materials, library, and relevant local files. Do not repeat a search when existing evidence is already sufficient.
+- Use only source-lookup capabilities that are actually registered in this turn. Never pretend to have searched or cited a source you did not read.
+- When no source exists or the evidence is thin, say so plainly in the final answer. Keep unverified background separate from evidence-backed conclusions.
+- Do not require lookups for pure layout, translation, or creative writing. When the user restricted sources, stay inside them and do not add outside material.
+- Memory notes are not verified topic evidence.
+
 Revision Context rules:
 - When the user says to continue, edit, regenerate, revise, or use "the previous one", identify the parent artifact or file before making changes.
 - Preserve the parent path/id, the user change request, and the new validation evidence.

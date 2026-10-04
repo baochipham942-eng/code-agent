@@ -84,6 +84,7 @@ import {
 } from './inferenceRetryNotify';
 import { buildVendorCompatSettings, resolveAiSdkProviderOptions } from './aiSdkVendorCompat';
 import { buildAiSdkPrompt, type AiSdkPromptShape } from './aiSdkPromptBuilder';
+import { normalizeAnthropicBaseUrl, resolveAdapterProtocol } from './aiSdkProtocol';
 export { buildVendorCompatSettings } from './aiSdkVendorCompat';
 import {
   assertNativeRequestCapabilities,
@@ -95,7 +96,8 @@ import { sanitizeModelReplayForModelInfo } from '../modelReplaySanitizer';
 import { resolveModelInfo } from '../modelInfo';
 
 // resolveModel 现覆盖全部 provider：deepseek/claude·anthropic（专用包）/ gemini（@ai-sdk/google）/
-// openrouter（@openrouter/ai-sdk-provider）/ 其余走 openai-compatible。zhipu/moonshot/xiaomi 的 vendor
+// openrouter（@openrouter/ai-sdk-provider）/ 其余走 openai-compatible。自定义 id 的 protocol=claude
+// 同样走 createAnthropic（aiSdkProtocol）。zhipu/moonshot/xiaomi 的 vendor
 // quirk 经 buildVendorCompatSettings 叠加在 openai-compatible 上（thinking 字段 / 采样 / max_completion_tokens
 // / stream_options），reasoning_content 由 openai-compatible 原生映射成 reasoning-delta，zhipu 三态端点由
 // resolveProviderBaseUrl 处理、并发 limiter 在 inferenceViaAiSdk 层套。
@@ -156,7 +158,7 @@ function resolveModel(
       })(config.model);
     case 'anthropic':
     case 'claude':
-      return createAnthropic({ apiKey: req.apiKey, baseURL: req.baseURL ?? MODEL_API_ENDPOINTS.claude, fetch: makeAiSdkFetch(config.provider) })(config.model);
+      return createAnthropic({ apiKey: req.apiKey, baseURL: req.baseURL ? normalizeAnthropicBaseUrl(req.baseURL) : MODEL_API_ENDPOINTS.claude, fetch: makeAiSdkFetch(config.provider) })(config.model);
     case 'gemini':
       // 原生 Generative Language API（generateContent/streamGenerateContent + x-goog-api-key）由
       // @ai-sdk/google 接管，替掉手搓 convertToGeminiMessages/handleGeminiStream。默认端点已含
@@ -177,6 +179,10 @@ function resolveModel(
         // 裸 Error 会让手机落回「电脑执行时出了问题」（build 46 远端验收：会话 override 指向已删除的 provider）。
         throw Object.assign(new Error(`[AiSdkAdapter] 无法解析 provider "${config.provider}" 的 baseURL`),
           { code: MODEL_API_KEY_MISSING_CODE, provider: config.provider, model: config.model });
+      }
+      // 自定义 provider 的 claude 协议走 Anthropic Messages。缺省 / responses / openai 仍走下面的兼容路径。
+      if (resolveAdapterProtocol(config) === 'claude') {
+        return createAnthropic({ apiKey: req.apiKey, baseURL: normalizeAnthropicBaseUrl(req.baseURL), fetch: makeAiSdkFetch(config.provider) })(config.model);
       }
       // openai-compatible provider 默认请求流式 usage；zhipu/moonshot/xiaomi 再叠加 vendor
       // quirks。明确拒绝 stream_options 的端点由能力矩阵 requestCompat.noStreamOptions 关闭。
@@ -921,11 +927,18 @@ function withEndpointPath(baseURL: string, endpointPath: string): string {
 // seedAccumulatorFromBreakpoint 剔除（D2 铁律：永不进 prefix、永不执行，续写中模型重发
 // 完整调用）。reasoning 不回传：各家 thinking 协议不通用（deepseek reasoning_content /
 // anthropic thinking blocks / gemini thought signatures），前缀不变量只压 text；断点前
-// 只有 reasoning 时 prefix 退化为空文本，模型重写正文——诚实优先于伪续接。
+// 只有 reasoning 时不拼空 prefix（函数内空 content 短路，见下），原样重发重写正文——
+// 诚实优先于伪续接。
 // 原 messages 数组元素引用原样 append（不重建不重排，cacheControl 断点不动）：续接请求
 // 与原请求共享逐字相同的前缀（system + history + user），ADR-032 prompt cache 命中前提
 // （D4 增量成本控制全压在这条上）。
 function withResumePrefixAssistant(prompt: AiSdkPromptShape, acc: StreamAccumulator): AiSdkPromptShape {
+  // 空文本断点（断流发生在 reasoning 阶段，acc.content=''）：空 prefix 不带任何续写信息，
+  // 且 Moonshot 明确 400「assistant must not be empty」（N-STREAM-RESUME-DOGFOOD 刀 D 真机
+  // 抓获，非重试类错误会直接杀死整轮）——不 append，续接 attempt 退化为原样重发：seed 的
+  // content 本来就是空的，重生成 delta append 进空 seed 无重复可拼，天然诚实。prefix-param
+  // 档的双重收紧（末条 assistant 才注入 prefix/partial）随之自动失效，不会误发裸 prefix:true。
+  if (!acc.content) return prompt;
   // content '' 的空形态对齐 toAiMessages 的空 assistant 先例（string content）。
   const prefixMessage = { role: 'assistant', content: acc.content } as AiModelMessage;
   return { ...prompt, messages: [...prompt.messages, prefixMessage] };

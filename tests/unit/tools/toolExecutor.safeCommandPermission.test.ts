@@ -438,13 +438,29 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
       expect(result.error ?? '').not.toContain('Blocked by path policy');
     });
 
-    it.skipIf(process.platform !== 'darwin')('没配任何路径 deny 时，$SSHDIR 的沙盒拒绝只追加一次明确的扩大确认', async () => {   // 真 seatbelt 拒绝，CI Linux 无 bwrap；逻辑面由 bash.test（mock 包装）覆盖
+    // N-WRITETARGET-UNRESOLVED 的原规则，不分平台都要守（Linux CI 也跑）：没配路径 deny 时，
+    // 解析不出的写目标不得多弹路径策略卡。沙盒扩权卡是另一条通道（仅在真沙盒拒绝后出现），单独过滤掉。
+    it('没配任何路径 deny 时，$SSHDIR 写目标不因解析不出而多一张卡', async () => {
       const executor = buildPathPolicyExecutor();
 
       await executor.execute(
         'Bash',
         { command: unresolvedSshWrite },
         { sessionId: 'unresolved-sshdir-no-path-deny', ...echoPreApproved },
+      );
+
+      const pathPolicyAsks = permissionRequests.filter((request) => !isDirectiveMemoryProbe(request)
+        && (request.details as { action?: string } | undefined)?.action !== 'sandbox_escalate_once');
+      expect(pathPolicyAsks).toHaveLength(0);
+    });
+
+    it.skipIf(process.platform !== 'darwin')('没配任何路径 deny 时，$SSHDIR 的沙盒拒绝只追加一次明确的扩大确认', async () => {   // 真 seatbelt 拒绝才有这张卡，CI Linux 无 bwrap
+      const executor = buildPathPolicyExecutor();
+
+      await executor.execute(
+        'Bash',
+        { command: unresolvedSshWrite },
+        { sessionId: 'unresolved-sshdir-escalates-once', ...echoPreApproved },
       );
 
       const pathPolicyAsks = permissionRequests.filter((request) => !isDirectiveMemoryProbe(request));

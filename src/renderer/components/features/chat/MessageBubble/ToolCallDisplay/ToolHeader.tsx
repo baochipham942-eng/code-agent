@@ -62,6 +62,16 @@ function buildToolHeaderTitle(
   return displayName;
 }
 
+function getPluginOriginDisplayName(toolCall: ToolCall): string | undefined {
+  const origin = toolCall.result?.metadata?.pluginOrigin;
+  if (!origin || typeof origin !== 'object' || Array.isArray(origin)) return undefined;
+  const { pluginId, pluginName } = origin as { pluginId?: unknown; pluginName?: unknown };
+  if (typeof pluginId !== 'string' || pluginId.trim().length === 0) return undefined;
+  if (pluginName === undefined) return pluginId.trim();
+  if (typeof pluginName !== 'string') return undefined;
+  return pluginName.trim() || pluginId.trim();
+}
+
 export function ToolHeader({
   toolCall,
   status,
@@ -126,6 +136,7 @@ export function ToolHeader({
     resolveStreamInterruptionOutcomeKey(interruptionReason)
   ].timeline;
   const title = buildToolHeaderTitle(toolCall, displayName, interruptionOutcome.label);
+  const pluginOriginDisplayName = getPluginOriginDisplayName(toolCall);
 
   return (
     // 状态词 text-xs(12px) 与主文案 text-sm(14px) 同行混排：items-center 对齐的是
@@ -175,6 +186,12 @@ export function ToolHeader({
       {showSecondaryName && (
         <span className="flex-shrink-0 text-[10px] text-zinc-600 font-normal">
           {toolNameForDetail(toolCall.name)}
+        </span>
+      )}
+
+      {pluginOriginDisplayName && (
+        <span className="flex-shrink-0 text-xs text-zinc-500 font-normal" data-testid="tool-plugin-origin">
+          {t.toolStepHumanize.pluginOrigin.replace('{plugin}', pluginOriginDisplayName)}
         </span>
       )}
 

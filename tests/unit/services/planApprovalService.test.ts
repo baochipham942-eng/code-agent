@@ -9,6 +9,9 @@ const mocks = vi.hoisted(() => ({
   listSessions: vi.fn(),
   getRecentMessages: vi.fn(),
   dbReady: true,
+  dbThrows: false,
+  recentThrows: false,
+  warn: vi.fn(),
 }));
 
 vi.mock('../../../src/host/services/infra/sessionManager', () => ({
@@ -23,22 +26,48 @@ vi.mock('../../../src/host/services/planning/taskStore', () => ({
   demoteInProgressTasks: mocks.demoteInProgressTasks,
 }));
 
+vi.mock('../../../src/host/services/infra/logger', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/host/services/infra/logger')>();
+  return {
+    ...actual,
+    createLogger: () => ({
+      info: vi.fn(),
+      warn: (...args: unknown[]) => mocks.warn(...args),
+      error: vi.fn(),
+      debug: vi.fn(),
+    }),
+  };
+});
+
 vi.mock('../../../src/host/services/core/databaseService', () => ({
-  getDatabase: () => ({
-    get isReady() { return mocks.dbReady; },
-    listSessions: mocks.listSessions,
-    getRecentMessages: mocks.getRecentMessages,
-  }),
+  getDatabase: () => {
+    if (mocks.dbThrows) throw new Error('database unavailable');
+    return {
+      get isReady() { return mocks.dbReady; },
+      listSessions: mocks.listSessions,
+      getRecentMessages: (...args: [string, number]) => {
+        if (mocks.recentThrows) throw new Error('database unavailable');
+        return mocks.getRecentMessages(...args);
+      },
+    };
+  },
 }));
 
+import { hasPendingPlanApproval } from '../../../src/host/services/planning/planApprovalPending';
 import {
   reconcileRecentPlanApprovalStarts,
   resolvePlanApproval,
 } from '../../../src/host/services/planning/planApprovalService';
 
 function planMessage(
-  status: 'pending' | 'starting' | 'approved' | 'failed' | 'cancelled' = 'pending',
-  extra: { failureReason?: string; failedAt?: number; feedback?: string; decidedAt?: number } = {},
+  status: 'pending' | 'starting' | 'approved' | 'failed' | 'cancelled' | 'revision_requested' = 'pending',
+  extra: {
+    failureReason?: string;
+    failedAt?: number;
+    feedback?: string;
+    decidedAt?: number;
+    source?: 'model_exit' | 'synthetic_text';
+  } = {},
 ): Message {
   return {
     id: 'message-plan',
@@ -486,5 +515,192 @@ describe('starting 崩溃残留对账（宿主轮内退出后的恢复出口）'
     } finally {
       mocks.dbReady = true;
     }
+  });
+});
+
+describe('宿主合成卡（ADR-074 K2，source=synthetic_text）走同一审批服务', () => {
+  // 与 planExitFallbackCard.buildSyntheticPlanApprovalToolCall 同形：空正文 assistant 消息 +
+  // 单个 exit_plan_mode toolCall，result.metadata 带 confirmationType/plan/planApproval(source)。
+  function syntheticToolCall(status: 'pending' | 'starting' | 'cancelled') {
+    const plan = '1. Read code\n2. Implement UI';
+    return {
+      id: 'synthetic-plan-run-9',
+      name: 'exit_plan_mode',
+      arguments: { plan },
+      result: {
+        toolCallId: 'synthetic-plan-run-9',
+        success: true,
+        output: '等待确认',
+        metadata: {
+          requiresUserConfirmation: true,
+          confirmationType: 'plan_approval',
+          plan,
+          planApproval: {
+            status,
+            originalPlan: plan,
+            steps: [
+              { id: 'step-1', content: 'Read code', originalContent: 'Read code' },
+              { id: 'step-2', content: 'Implement UI', originalContent: 'Implement UI' },
+            ],
+            source: 'synthetic_text',
+          },
+        },
+      },
+    };
+  }
+
+  function syntheticPlanMessage(status: 'pending' | 'starting' | 'cancelled'): Message {
+    return {
+      id: 'message-synthetic',
+      role: 'assistant',
+      content: '',
+      timestamp: 1,
+      toolCalls: [syntheticToolCall(status)],
+    };
+  }
+
+  const syntheticRequest = {
+    sessionId: 'session-1',
+    messageId: 'message-synthetic',
+    toolCallId: 'synthetic-plan-run-9',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.updateMessage.mockResolvedValue(undefined);
+    mocks.replaceTasksAtomically.mockReturnValue([]);
+    mocks.demoteInProgressTasks.mockReturnValue(null);
+  });
+
+  it('approve：读卡、认领 starting 并派发一次隐藏批准轮，确认后落 approved', async () => {
+    const sendMessage = vi.fn().mockResolvedValue(undefined);
+    mocks.getMessages
+      .mockResolvedValueOnce([syntheticPlanMessage('pending')])
+      .mockResolvedValue([syntheticPlanMessage('starting')]);
+
+    const response = await resolvePlanApproval({
+      ...syntheticRequest,
+      decision: 'approve',
+      steps: [
+        { id: 'step-1', content: 'Read code', originalContent: 'Read code' },
+        { id: 'step-2', content: 'Implement UI', originalContent: 'Implement UI' },
+      ],
+    }, {
+      appService: { sendMessage } as never,
+      taskManager: { emitAgentEventForSession: vi.fn() } as never,
+    });
+
+    expect(response.approval.status).toBe('starting');
+    expect(sendMessage).toHaveBeenCalledOnce();
+    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'session-1',
+      content: expect.stringContaining('<approved-plan>\n1. Read code\n2. Implement UI\n</approved-plan>'),
+      options: expect.objectContaining({ historyVisibility: 'meta' }),
+    }));
+    await flush();
+    const writes = mocks.updateMessage.mock.calls.map(
+      (call) => call[1].toolCalls[0].result.metadata.planApproval.status,
+    );
+    expect(writes).toEqual(['starting', 'approved']);
+  });
+
+  it('cancel：同一记录落 cancelled，不派发任何后续轮', async () => {
+    const sendMessage = vi.fn();
+    mocks.getMessages.mockResolvedValue([syntheticPlanMessage('pending')]);
+
+    const response = await resolvePlanApproval({ ...syntheticRequest, decision: 'cancel' }, {
+      appService: { sendMessage } as never,
+      taskManager: { emitAgentEventForSession: vi.fn() } as never,
+    });
+
+    expect(response.approval.status).toBe('cancelled');
+    expect(sendMessage).not.toHaveBeenCalled();
+    const cancelled = mocks.updateMessage.mock.calls[0][1].toolCalls[0].result.metadata.planApproval;
+    expect(cancelled.status).toBe('cancelled');
+    expect(cancelled.source).toBe('synthetic_text');
+  });
+});
+
+describe('hasPendingPlanApproval', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.dbReady = true;
+    mocks.dbThrows = false;
+    mocks.recentThrows = false;
+    mocks.getRecentMessages.mockReturnValue([]);
+  });
+
+  it('近期窗口里的 pending 卡算未决，model_exit 与 synthetic_text 都算', () => {
+    mocks.getRecentMessages.mockReturnValue([
+      planMessage('pending', { source: 'model_exit' }),
+    ]);
+    expect(hasPendingPlanApproval('session-1')).toBe(true);
+    mocks.getRecentMessages.mockReturnValue([
+      planMessage('pending', { source: 'synthetic_text' }),
+    ]);
+    expect(hasPendingPlanApproval('session-1')).toBe(true);
+    expect(mocks.getRecentMessages).toHaveBeenCalledWith('session-1', 20);
+  });
+
+  it('failed 可重试，approved / cancelled / starting / revision_requested 不算未决', () => {
+    for (const status of ['approved', 'cancelled', 'starting', 'revision_requested'] as const) {
+      mocks.getRecentMessages.mockReturnValue([planMessage(status)]);
+      expect(hasPendingPlanApproval('session-1')).toBe(false);
+    }
+    mocks.getRecentMessages.mockReturnValue([planMessage('failed')]);
+    expect(hasPendingPlanApproval('session-1')).toBe(true);
+  });
+
+  it('窗口里只要有一张可重试卡就未决，非计划工具不算', () => {
+    const plain: Message = {
+      id: 'message-plain',
+      role: 'assistant',
+      content: '',
+      timestamp: 1,
+      toolCalls: [{
+        id: 'tool-plain',
+        name: 'Read',
+        arguments: {},
+        result: { toolCallId: 'tool-plain', success: true, metadata: { filePath: '/tmp' } },
+      }],
+    };
+    mocks.getRecentMessages.mockReturnValue([planMessage('approved'), plain]);
+    expect(hasPendingPlanApproval('session-1')).toBe(false);
+    mocks.getRecentMessages.mockReturnValue([planMessage('approved'), planMessage('pending')]);
+    expect(hasPendingPlanApproval('session-1')).toBe(true);
+  });
+
+  it('没有 planApproval 对象的计划确认卡按 pending 计', () => {
+    const card = planMessage('pending');
+    const toolCall = card.toolCalls?.[0];
+    if (!toolCall?.result?.metadata) throw new Error('missing card');
+    delete toolCall.result.metadata.planApproval;
+    mocks.getRecentMessages.mockReturnValue([card]);
+    expect(hasPendingPlanApproval('session-1')).toBe(true);
+  });
+
+  it('数据库未就绪、抛错或读窗口失败时失败打开并记日志', () => {
+    mocks.dbReady = false;
+    mocks.getRecentMessages.mockReturnValue([planMessage('pending')]);
+    expect(hasPendingPlanApproval('session-1')).toBe(false);
+    expect(mocks.getRecentMessages).not.toHaveBeenCalled();
+    expect(mocks.warn).toHaveBeenCalled();
+
+    mocks.warn.mockClear();
+    mocks.dbReady = true;
+    mocks.dbThrows = true;
+    expect(hasPendingPlanApproval('session-1')).toBe(false);
+    expect(mocks.warn).toHaveBeenCalled();
+
+    mocks.warn.mockClear();
+    mocks.dbThrows = false;
+    mocks.recentThrows = true;
+    expect(hasPendingPlanApproval('session-1')).toBe(false);
+    expect(mocks.warn).toHaveBeenCalled();
+  });
+
+  it('没有 sessionId 时不查库', () => {
+    expect(hasPendingPlanApproval(undefined)).toBe(false);
+    expect(mocks.getRecentMessages).not.toHaveBeenCalled();
   });
 });

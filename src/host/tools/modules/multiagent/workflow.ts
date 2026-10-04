@@ -12,11 +12,11 @@
 //   - resolveAgentTools    = 把 agent({tools}) 的档名解析成工具白名单（readonly/edit/full）
 //
 // 「中间结果不进主 context」：scriptRuntime 内部 agent() 直连 executor/inferenceViaAiSdk，
-// 绕开 spawn_agent/workflowOrchestrate/parallelCoordinator/cowork 四条会灌历史的高层入口；
-// 本工具只回传脚本 return 的最终结果。
+// 绕开 spawn_agent/workflowOrchestrate/parallelCoordinator/cowork 四条会灌历史的高层入口。
+// 审批通过后本工具立刻返回 runId；脚本 return / 失败原因经后台完成通知送达，不阻塞主回合。
 // ============================================================================
 
-import { randomUUID } from 'node:crypto';
+import * as nodeCrypto from 'node:crypto';
 import { SCRIPT_RUNTIME } from '../../../../shared/constants';
 import type {
   ToolHandler,
@@ -37,6 +37,7 @@ import {
   GraphEventCompatibilityAdapter,
   GraphExecutorRegistry,
   GraphRunner,
+  type GraphRunResult,
   type GraphRunSpec,
 } from '../../../orchestration';
 import type { RunTraceContext } from '../../../telemetry/runTraceContext';
@@ -49,10 +50,15 @@ import { buildLegacyCtxFromProtocol } from '../_helpers/legacyAdapter';
 import { createProtocolSubagentExecutionContext } from '../../../agent/subagentExecutionContext';
 import { getEventBus } from '../../../services/eventing/bus';
 import { getWorkflowLaunchApprovalGate, buildWorkflowLaunchRequest } from '../../../agent/workflowLaunchApproval';
+import { getBackgroundSubagentRegistry } from '../../../agent/backgroundSubagentRegistry';
+import { scheduleBackgroundSubagentIdleWake } from '../../../agent/backgroundSubagentIdleWake';
+import type { SubagentResult } from '../../../agent/subagentExecutorTypes';
+import { AgentFailureCode } from '../../../../shared/contract/agentFailure';
 import {
   buildRecoveryPriorProjection,
   buildWorkflowFailureRecoveryProposal,
   recordLongTaskRecoveryProposal,
+  type WorkflowFailureRecoveryInput,
 } from '../../../handoff/longTaskRecoveryProposal';
 import { getPtcProjectedTools, isPtcEnabled, workflowSchema } from './workflow.schema';
 import {
@@ -138,6 +144,186 @@ function truncateOuterOutput(value: string): string {
   return `${bytes.subarray(0, end).toString('utf8')}${marker}`;
 }
 
+type WorkflowTerminalStatus = 'completed' | 'failed' | 'cancelled';
+
+interface WorkflowSettlement {
+  terminalStatus: WorkflowTerminalStatus;
+  result: SubagentResult;
+  recovery: WorkflowFailureRecoveryInput | null;
+}
+
+/** runId + 终态。恢复重跑再次落到同一对时不再排队第二条通知。进程内守卫，重启随注册表一起清空。 */
+const announcedWorkflowSettlements = new Set<string>();
+
+function claimWorkflowSettlement(runId: string, terminalStatus: WorkflowTerminalStatus): boolean {
+  const key = `${runId}:${terminalStatus}`;
+  if (announcedWorkflowSettlements.has(key)) return false;
+  announcedWorkflowSettlements.add(key);
+  return true;
+}
+
+function workflowSubagentResult(
+  success: boolean,
+  output: string,
+  extras?: { error?: string; iterations?: number; tokensUsed?: number },
+): SubagentResult {
+  return {
+    success,
+    output,
+    toolsUsed: [],
+    iterations: extras?.iterations ?? 0,
+    ...(extras?.error ? { error: extras.error } : {}),
+    ...(extras?.tokensUsed !== undefined ? { tokensUsed: extras.tokensUsed } : {}),
+    // 文案含 cancelled/abort 时注册表会推断成 CancelledByUser，并因此跳过 idle wake。
+    // 显式标阶段失败，完成通知和唤醒都留在既有后台通道上。
+    ...(!success ? { failureCode: AgentFailureCode.WorkflowStageFailed } : {}),
+  };
+}
+
+function workflowBackgroundTitle(goal: string | undefined, runId: string): string {
+  const trimmed = goal?.trim();
+  return `workflow ${trimmed || runId}`;
+}
+
+function backgroundWorkflowAck(runId: string): string {
+  return `Workflow run ${runId} is running in the background. A notification will arrive when it finishes. Do not poll.`;
+}
+
+function publishWorkflowSettlement(settlement: WorkflowSettlement, safeProgress: ToolProgressFn): void {
+  if (settlement.recovery) {
+    recordLongTaskRecoveryProposal(buildWorkflowFailureRecoveryProposal(settlement.recovery));
+  }
+  if (settlement.terminalStatus === 'completed') {
+    safeProgress({ stage: 'completing', percent: 100 });
+  }
+}
+
+/**
+ * 把尚未结束的 graph run 交给后台注册表。
+ * 不传 parent runId：那会写一条 durable 子代理账，重启后被报成 interrupted，和 dynamicWorkflowRecovery 抢同一条 run。
+ * 同一 runId 已在册时不再 adopt 第二次；终态键已被占则直接丢掉，避免恢复重跑再响一次。
+ */
+function handWorkflowRunToBackground(
+  runId: string,
+  pending: Promise<WorkflowSettlement>,
+  options: {
+    sessionId?: string;
+    title: string;
+    onClaimed: (settlement: WorkflowSettlement) => void;
+    onError?: (error: unknown) => void;
+  },
+): void {
+  const registry = getBackgroundSubagentRegistry();
+  const adoptOptions = {
+    agentId: runId,
+    sessionId: options.sessionId,
+    title: options.title,
+    completionKind: 'internal' as const,
+    onComplete: scheduleBackgroundSubagentIdleWake,
+  };
+  const existing = registry.getStatus(runId);
+  if (!existing) {
+    registry.adopt(pending.then((settlement) => {
+      if (claimWorkflowSettlement(runId, settlement.terminalStatus)) options.onClaimed(settlement);
+      return settlement.result;
+    }), adoptOptions);
+    return;
+  }
+  void pending.then(async (settlement) => {
+    if (registry.getStatus(runId)?.status === 'running') await registry.await(runId);
+    if (!claimWorkflowSettlement(runId, settlement.terminalStatus)) return;
+    options.onClaimed(settlement);
+    registry.adopt(Promise.resolve(settlement.result), adoptOptions);
+  }).catch((error: unknown) => {
+    options.onError?.(error);
+  });
+}
+
+function scriptResultText(state: ScriptRunState): string {
+  if (typeof state.result === 'string') return state.result;
+  if (state.result === undefined) return '(workflow 脚本无返回值)';
+  try {
+    return JSON.stringify(state.result, null, 2);
+  } catch {
+    return `(workflow 结果无法序列化为 JSON: ${String(state.result)})`;
+  }
+}
+
+async function settleWorkflowGraph(input: {
+  ctx: ToolContext;
+  runSignal: AbortSignal;
+  runId: string;
+  goal?: string;
+  execute: () => Promise<GraphRunResult>;
+  parentNodeId: string;
+}): Promise<WorkflowSettlement> {
+  try {
+    const graphResult = await input.execute();
+    const graphNodeResult = graphResult.results[input.parentNodeId];
+    const state = graphNodeResult?.output as unknown as ScriptRunState | undefined;
+    if (!state) {
+      throw new Error(graphNodeResult?.error ?? 'dynamic workflow Graph executor returned no ScriptRunState');
+    }
+    if (state.status !== 'completed') {
+      input.ctx.logger.debug('workflow run did not complete', { status: state.status, error: state.error });
+      const terminalStatus: WorkflowTerminalStatus = state.status === 'cancelled' ? 'cancelled' : 'failed';
+      const reason = state.error ?? 'unknown error';
+      return {
+        terminalStatus,
+        recovery: terminalStatus === 'cancelled' ? null : {
+          sessionId: input.ctx.sessionId,
+          runId: input.runId,
+          goal: input.goal,
+          status: state.status,
+          error: state.error,
+          resumeFromRunId: input.runId,
+          cacheHits: state.cacheHits,
+          phaseCount: state.phases.length,
+          priorProjection: buildRecoveryPriorProjection(input.ctx.sessionId),
+        },
+        result: workflowSubagentResult(false, '', {
+          error: `workflow ${state.status}: ${reason}`,
+          iterations: state.agentCallCount,
+          tokensUsed: state.tokensSpent,
+        }),
+      };
+    }
+
+    let resultText = scriptResultText(state);
+    if (graphResult.checkpoint.status === 'requires_review') {
+      try {
+        resultText += `\n[workflow graph checkpoint] ${JSON.stringify(graphResult.checkpoint)}`;
+      } catch {
+        resultText += '\n[workflow graph requires_review]';
+      }
+    }
+    return {
+      terminalStatus: 'completed',
+      recovery: null,
+      result: workflowSubagentResult(true, truncateOuterOutput(resultText), {
+        iterations: state.agentCallCount,
+        tokensUsed: state.tokensSpent,
+      }),
+    };
+  } catch (err) {
+    if (input.runSignal.aborted || (err instanceof Error && err.name === 'AbortError')) {
+      const reason = err instanceof Error ? err.message : 'aborted';
+      return {
+        terminalStatus: 'cancelled',
+        recovery: null,
+        result: workflowSubagentResult(false, '', { error: `workflow cancelled: ${reason}` }),
+      };
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    input.ctx.logger.debug('workflow handler threw', { error: msg });
+    return {
+      terminalStatus: 'failed',
+      recovery: null,
+      result: workflowSubagentResult(false, '', { error: `workflow run failed: ${msg}` }),
+    };
+  }
+}
+
 async function runWorkflow(
   args: Record<string, unknown>,
   ctx: ToolContext,
@@ -190,7 +376,7 @@ async function runWorkflow(
     // runId 必须每次调用唯一（Codex HIGH#2）：currentToolCallId 可能缺失、sessionId 会复用，
     // 撞了会让 activeRuns 覆盖 + cancel/状态串线。加 uuid 后缀兜底（主线程可用 randomUUID）。
     // 提前到审批前算，审批请求与 run 共用同一 id，便于 renderer 关联。
-    const runId = `wf-${ctx.currentToolCallId ?? ctx.sessionId ?? 'run'}-${randomUUID().slice(0, 8)}`;
+    const runId = `wf-${ctx.currentToolCallId ?? ctx.sessionId ?? 'run'}-${nodeCrypto.randomUUID().slice(0, 8)}`;
 
     // 跑前审批闸（P3b）：静态预览脚本 → 展示 phases/扇出量/动写 + 4 维度成本 → 等用户决策。
     // 交互 UI 等真人（24h 泄漏兜底）；无头按既有 writeHint 规则在短超时后自动决策。
@@ -264,6 +450,9 @@ async function runWorkflow(
         }
       : undefined;
 
+    // 独立于本回合 ctx.abortSignal。用户停掉发起回合不会取消这次 workflow；
+    // workflow 自己的 cancelRun / GraphRunner.cancel 仍走脚本运行时，这里不接过去。
+    const runAbort = new AbortController();
     const deps: ScriptRunHostDeps = {
       baseModelConfig,
       resolveModelConfig: (override) => {
@@ -340,7 +529,7 @@ async function runWorkflow(
             }
           : { status: 'cleaned', branchName: cleanup.branchName };
       },
-      signal: ctx.abortSignal,
+      signal: runAbort.signal,
       emit: (event: ScriptRunEvent) => {
         // ① 进度树事件通道（P3a）：把【全部】8 类 ScriptRunEvent publish 到 'workflow' domain，
         //    workflow.ipc 的专用 bridge 投递到 renderer 'workflow:event'（Tauri IPC + web SSE 两端）。
@@ -406,75 +595,40 @@ async function runWorkflow(
       }),
     });
     const dynamicExecutor = new DynamicWorkflowExecutor({ dependenciesFactory: () => deps });
-    const graphResult = await new GraphRunner({
-      scheduler: new DAGGraphSchedulerAdapter(),
-      executors: new GraphExecutorRegistry([dynamicExecutor]),
-      emit: (event) => compatibility.emit(event),
-      attemptGuard: ({ runId: candidateRunId, attempt }) =>
-        candidateRunId === parentRunId && attempt === (trace?.attempt ?? 1),
-    }).run(graphSpec);
-    const graphNodeResult = graphResult.results[parentNodeId];
-    const state = graphNodeResult?.output as unknown as ScriptRunState | undefined;
-    if (!state) throw new Error(graphNodeResult?.error ?? 'dynamic workflow Graph executor returned no ScriptRunState');
-
-    if (state.status !== 'completed') {
-      ctx.logger.debug('workflow run did not complete', { status: state.status, error: state.error });
-      if (state.status !== 'cancelled') {
-        recordLongTaskRecoveryProposal(buildWorkflowFailureRecoveryProposal({
-          sessionId: ctx.sessionId,
+    const pending = settleWorkflowGraph({
+      ctx,
+      runSignal: runAbort.signal,
+      runId,
+      goal,
+      parentNodeId,
+      execute: () => new GraphRunner({
+        scheduler: new DAGGraphSchedulerAdapter(),
+        executors: new GraphExecutorRegistry([dynamicExecutor]),
+        emit: (event) => compatibility.emit(event),
+        attemptGuard: ({ runId: candidateRunId, attempt }) =>
+          candidateRunId === parentRunId && attempt === (trace?.attempt ?? 1),
+      }).run(graphSpec),
+    });
+    try {
+      handWorkflowRunToBackground(runId, pending, {
+        sessionId: ctx.sessionId,
+        title: workflowBackgroundTitle(goal, runId),
+        onClaimed: (settlement) => publishWorkflowSettlement(settlement, safeProgress),
+        onError: (error) => ctx.logger.debug('workflow background handoff failed', {
           runId,
-          goal,
-          status: state.status,
-          error: state.error,
-          resumeFromRunId: runId,
-          cacheHits: state.cacheHits,
-          phaseCount: state.phases.length,
-          priorProjection: buildRecoveryPriorProjection(ctx.sessionId),
-        }));
-      }
-      return {
-        ok: false,
-        error: `workflow ${state.status}: ${state.error ?? 'unknown error'}`,
-        code: state.status === 'cancelled' ? 'ABORTED' : 'DOMAIN_ERROR',
-        meta: {
-          runId, status: state.status, agentCallCount: state.agentCallCount,
-          tokensSpent: state.tokensSpent, cacheHits: state.cacheHits, phases: state.phases,
-          handoffs: state.handoffs,
-          graphCheckpoint: graphResult.checkpoint,
-          ...(resumeFromRunId ? { resumeFromRunId } : {}),
-        },
-      };
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      });
+    } catch (error) {
+      ctx.logger.debug('workflow background handoff failed', {
+        runId,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
-
-    // 仅成功路径报完成进度（Codex LOW#3：失败先发 completing 会让 UI 先看到完成再看到报错）。
-    safeProgress({ stage: 'completing', percent: 100 });
-
-    // 区分脚本 return undefined（无返回）与显式 null（Codex LOW#1）。
-    // 序列化单独兜住（Codex R4 LOW）：BigInt / 循环引用会让 JSON.stringify 抛错，
-    // 不兜的话会把一个已 completed 的 run 误包成 DOMAIN_ERROR。
-    let resultText: string;
-    if (typeof state.result === 'string') {
-      resultText = state.result;
-    } else if (state.result === undefined) {
-      resultText = '(workflow 脚本无返回值)';
-    } else {
-      try {
-        resultText = JSON.stringify(state.result, null, 2);
-      } catch {
-        resultText = `(workflow 结果无法序列化为 JSON: ${String(state.result)})`;
-      }
-    }
-
     return {
       ok: true,
-      output: truncateOuterOutput(resultText),
-      meta: {
-        runId, agentCallCount: state.agentCallCount, tokensSpent: state.tokensSpent,
-        cacheHits: state.cacheHits, phases: state.phases,
-        handoffs: state.handoffs,
-        graphCheckpoint: graphResult.checkpoint,
-        ...(resumeFromRunId ? { resumeFromRunId } : {}),
-      },
+      output: backgroundWorkflowAck(runId),
+      meta: { runId, background: true },
     };
   } catch (err) {
     if (isAbort(ctx, err)) {

@@ -127,4 +127,20 @@ describe('CronJobList 人话副标题 + 触发源 chip', () => {
     expect(screen.queryByText('本地任务')).toBeNull();
     expect(screen.getByText('云端任务')).toBeTruthy();
   });
+
+  // FB-211：pill 不可被压缩、不可竖排折行（挨着 truncate 的任务名时）
+  it('本地/云端 pill 都带 shrink-0 与 whitespace-nowrap', () => {
+    useCronStore.setState({
+      jobs: [
+        makeJob({ id: 'local-job', name: '本地任务', runsOn: 'local' }),
+        makeJob({ id: 'cloud-job', name: '云端任务', runsOn: 'cloud' }),
+      ],
+    });
+    render(<CronJobList />);
+    for (const runsOn of ['local', 'cloud'] as const) {
+      const pill = screen.getByTestId(`cron-runs-on-pill-${runsOn}`);
+      expect(pill.classList.contains('shrink-0')).toBe(true);
+      expect(pill.classList.contains('whitespace-nowrap')).toBe(true);
+    }
+  });
 });

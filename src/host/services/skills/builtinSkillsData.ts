@@ -7,6 +7,7 @@ import type { ParsedSkill } from '../../../shared/contract/agentSkill';
 import type { SkillCategory } from '../../../shared/contract/skillRepository';
 import { DREAM_SKILL_PROMPT } from '../../agent/dreamPrompt';
 import { DISTILL_SKILL_PROMPT } from '../../agent/distillPrompt';
+import { FRONTEND_SLIDES_BUILTIN_SKILLS } from './builtinFrontendSlides';
 import { ROLE_PACK_SKILLS, ROLE_PACK_SKILL_CATEGORY } from './rolePacks';
 
 /**
@@ -304,7 +305,7 @@ Commit message 格式：
   },
   {
     name: 'self-awareness',
-    description: '自我认知：当用户问你是谁、你能做什么、你记得我什么、你帮我做过什么、连了哪些服务、有哪些技能、遵守什么规则时使用——先现场重查记忆、技能、连接器、定时任务和近期产物再作答，查不到的直说缺，区分事实与推断，不凭印象编。',
+    description: '自我认知：当用户问你是谁、你能做什么、你记得我什么、我们聊过什么、你帮我做过什么、连了哪些服务、有哪些技能、遵守什么规则时使用——先现场重查记忆、技能、连接器、定时任务和近期产物再作答，查不到的直说缺，区分事实与推断，不凭印象编。',
     aliases: ['自我认知', 'self awareness'],
     promptContent: `# 自我认知
 
@@ -400,7 +401,6 @@ Commit message 格式：
     source: 'builtin',
     loaded: true,
   },
-  // ppt builtin skill 已移除 — 使用项目级 frontend-slides / ppt skills 替代
   {
     name: 'data-cleaning',
     description: '系统性数据清洗与分析 — 处理 Excel/CSV 数据时自动使用，覆盖去重、缺失值、异常值修正、格式标准化、分类统计等',
@@ -3097,6 +3097,8 @@ See template at: \`<work-review>/code-reviewer.md\``,
     license: 'MIT (obra/superpowers, adapted via XiaomiMiMo/MiMo-Code)',
     metadata: { category: 'development', upstreamDescription: 'Use when completing tasks, implementing major features, or before merging to verify work meets requirements' },
   },
+  // frontend-slides 与 /ppt 共用随包目录，正文在 resources/skills/frontend-slides。
+  ...FRONTEND_SLIDES_BUILTIN_SKILLS,
   // E1 内置专家包 skill（牧之/溯真/青禾/明镜，按包拆文件防单文件超债门）
   ...ROLE_PACK_SKILLS,
 ];
@@ -3131,6 +3133,8 @@ const BUILTIN_SKILL_CATEGORY: Record<string, SkillCategory> = {
   // 文档办公
   xlsx: 'docs-office',
   'meeting-summary': 'docs-office',
+  'frontend-slides': 'docs-office',
+  ppt: 'docs-office',
   // 研究调研
   'literature-review': 'research',
   'paper-distillation': 'research',

@@ -57,7 +57,7 @@ export const decisionCardZh = {
       detailMcpTool: 'MCP 工具',
       detailChanges: '变更内容',
       triggeredByAgentMessage: '此动作由 agent {sender} 的消息触发，请确认内容后再允许。',
-      pluginOrigin: '来自插件 {plugin}',
+      pluginOrigin: '来自插件《{plugin}》',
       traceToggle: '审批决策链',
       traceSteps: '{count} 步',
       optionOnce: '允许一次',

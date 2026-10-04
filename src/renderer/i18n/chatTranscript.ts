@@ -286,6 +286,7 @@ toolStepHumanize: {
   connectorFallbackAction: { queryStatus: '查询了连接状态', queryCollections: '查询了可用列表', queryItems: '查询了日程', query: '查询了信息', create: '创建了内容', update: '更新了内容', delete: '删除了内容' },
   openPreview: '预览',
   openPreviewAria: '在右栏预览 {path}',
+  pluginOrigin: '来自插件《{plugin}》',
   group: {
     explored: '查看了 {count} 次内容',
     ran: '运行了 {count} 条命令',
@@ -785,6 +786,7 @@ toolStepHumanize: {
   connectorFallbackAction: { queryStatus: 'Checked connection status', queryCollections: 'Listed available calendars', queryItems: 'Queried events', query: 'Queried information', create: 'Created content', update: 'Updated content', delete: 'Deleted content' },
   openPreview: 'Preview',
   openPreviewAria: 'Open preview for {path}',
+  pluginOrigin: 'From plugin {plugin}',
   group: {
     explored: 'Looked at content {count} times',
     ran: 'Ran {count} commands',

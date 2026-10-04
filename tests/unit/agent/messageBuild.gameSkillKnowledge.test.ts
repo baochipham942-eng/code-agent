@@ -76,6 +76,7 @@ vi.mock('../../../src/host/lightMemory/indexLoader', async (importOriginal) => (
   listMemoryIndexTargets: (await importOriginal<typeof import('../../../src/host/lightMemory/indexLoader')>())
     .listMemoryIndexTargets,
   loadMemoryIndex: vi.fn(async () => memoryIndexMock.content),
+  loadMemoryIndexForSession: vi.fn(async () => memoryIndexMock.content),
 }));
 
 vi.mock('../../../src/host/lightMemory/failureJournal', () => ({

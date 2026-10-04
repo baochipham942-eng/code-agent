@@ -6,6 +6,9 @@ import type { CronMissedReason } from './cron';
 
 export type SessionAutomationType = 'cron' | 'heartbeat' | 'loop' | 'role_wake' | 'goal_phase' | 'external_event';
 
+/** Cron 运行结果头部行解析出的紧急档位（N-CRON-INBOX-URGENCY-TIER）：must_today 置顶、can_wait 次之、fyi 兜底。 */
+export type CronUrgency = 'must_today' | 'can_wait' | 'fyi';
+
 export type SessionAutomationStatus =
   | 'active'
   | 'running'
@@ -90,8 +93,10 @@ export interface SessionAutomationConfig extends Record<string, unknown> {
   sourceMessageId?: string;
   handoffPrompt?: string;
   nextStage?: SessionAutomationNextStageConfig;
-  /** 最近一次成功运行的待过目标记；用户过目/归档后清除。recurring 任务记录保持 active，靠它进待审收件箱。 */
-  pendingReview?: { resultSessionId?: string; at: number };
+  /** 最近一次成功运行的待过目标记；用户过目/归档后清除。recurring 任务记录保持 active，靠它进待审收件箱。
+   *  urgency/urgencyRaw 自结果头部行透传（N-CRON-INBOX-URGENCY-TIER）；老记录没有这两个字段，按 fyi 呈现，
+   *  urgencyRaw 仅在头部行存在但值不合法时保留原文。 */
+  pendingReview?: { resultSessionId?: string; at: number; urgency?: CronUrgency; urgencyRaw?: string };
   /** 启动时发现漏跑且无法回写源会话时，由自动化收件箱承接。 */
   missedNotice?: { scheduledAt: number; reason: CronMissedReason };
   /** B4：本 automation 上人工铸造的 target 粒度长期授权规则。删/archive 即失效（消费时按 status 钳制）。 */

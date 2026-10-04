@@ -81,6 +81,14 @@ const FIXED_MEASURE_CLOCK_MS = new Date('2026-08-14T04:00:00Z').getTime();
 const measureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctx-overhead-ratchet-'));
 process.env.CODE_AGENT_DATA_DIR = measureDir;
 
+// 环境里的 Jev key（官方 TYPESAFE_API_KEY / OpenRouter OPENROUTER_API_KEY）会把条件工具
+// decide 翻进 <deferred-tools> 折叠索引，同一份代码在有 key / 无 key 的机器上量出不同的数，
+// 违反本脚本「同配置两次运行必须逐字节同数」的口径。基线钉的是 keyless 默认档
+// （builtin-only、无 MCP），与空数据目录同一类环境钉死：测量前摘掉这两把 ambient key。
+for (const jevKeyEnv of ['TYPESAFE_API_KEY', 'OPENROUTER_API_KEY']) {
+  delete process.env[jevKeyEnv];
+}
+
 const RealDate = Date;
 class FixedDate extends RealDate {
   constructor(...args: unknown[]) {

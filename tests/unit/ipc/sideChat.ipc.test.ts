@@ -158,6 +158,63 @@ describe('side chat IPC', () => {
     for (const spy of writeSpies()) expect(spy).not.toHaveBeenCalled();
   });
 
+  it('classifies the common Chinese provider auth wordings into auth', async () => {
+    const wordings = [
+      '认证失败，请检查访问凭证',
+      '认证未通过，请重新登录',
+      '访问凭证已过期',
+      '凭证无效',
+      '未授权的请求',
+      '无权限调用该模型',
+      '权限不足 (403)',
+    ];
+    for (const [index, error] of wordings.entries()) {
+      execute.mockImplementation(async () => ({
+        success: false,
+        output: '',
+        error,
+        toolsUsed: [],
+        iterations: 1,
+      }));
+
+      const result = await askHandler()(null, {
+        sessionId: 's1',
+        question: 'q',
+        requestId: `r-auth-zh-${index}`,
+      });
+
+      expect(result, `expected cause auth for: ${error}`).toEqual({ failure: { cause: 'auth' } });
+    }
+  });
+
+  it('keeps an unrelated failure wording unknown', async () => {
+    execute.mockImplementation(async () => ({
+      success: false,
+      output: '',
+      error: '模型正忙，请稍后再试',
+      toolsUsed: [],
+      iterations: 1,
+    }));
+
+    const result = await askHandler()(null, { sessionId: 's1', question: 'q', requestId: 'r-busy' });
+
+    expect(result).toEqual({ failure: { cause: 'unknown' } });
+  });
+
+  it('keeps the side-chat run out of the session agent activity ledger', async () => {
+    execute.mockImplementation(async () => ({
+      success: true,
+      output: 'side answer',
+      toolsUsed: [],
+      iterations: 1,
+    }));
+
+    await askHandler()(null, { sessionId: 's1', question: 'q', requestId: 'r-silent' });
+
+    const context = execute.mock.calls[0][0].context as { suppressContextPublishing?: boolean };
+    expect(context.suppressContextPublishing).toBe(true);
+  });
+
   it('classifies executor timeouts via the structured failure code', async () => {
     execute.mockImplementation(async () => ({
       success: false,

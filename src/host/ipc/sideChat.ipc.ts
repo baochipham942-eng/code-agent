@@ -32,7 +32,9 @@ function classifySideChatFailure(input: { message?: string; failureCode?: unknow
   const text = (input.message ?? '').toLowerCase();
   if (
     /(?:^|[^0-9])(?:401|403)(?:[^0-9]|$)/.test(text)
-    || /unauthorized|forbidden|authentication|invalid[ _/-]?api[ _/-]?key|incorrect[ _/-]?api|api[ _/-]?key[ _/-]?(?:invalid|not[ _/-]?valid|expired|error)|鉴权|授权失败|密钥无效|令牌无效/.test(text)
+    // 中文覆盖面：providerConnectionTest「认证失败/权限不足」、agentEngine「认证失败…
+    // 凭据」、国内 provider 直出的「请检查访问凭证/凭证无效/未授权/无权限」等自由文案。
+    || /unauthorized|forbidden|authentication|invalid[ _/-]?api[ _/-]?key|invalid[ _/-]?token|incorrect[ _/-]?api|api[ _/-]?key[ _/-]?(?:invalid|not[ _/-]?valid|expired|error)|鉴权|授权失败|认证失败|认证未通过|访问凭证|凭证无效|未授权|无权限|权限不足|密钥无效|令牌无效/.test(text)
   ) {
     return 'auth';
   }
@@ -80,6 +82,9 @@ async function askSideChat(payload: { sessionId: string; question: string; reque
           resolver: getToolResolver(),
           permission: { request: async () => false },
           events: { emit() { /* side chat does not touch the main conversation stream */ } },
+          // 侧聊不是代理活动：不进 subagentContextStore，否则「专家」面板会自动
+          // 弹出并滞留「工作中」行（N-BTW-GUI-FLOATER r2 Gap 2）。
+          suppressContextPublishing: true,
           abortSignal: controller.signal,
         },
         parentMessages,

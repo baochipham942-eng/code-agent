@@ -25,6 +25,7 @@ import {
   type HtmlLocalitySelectionController,
 } from '../utils/htmlLocality';
 import { DeliverableStatusBadge } from './DeliverableStatusBadge';
+import { ArtifactStandingRefresh } from './ArtifactStandingRefresh';
 import { DeliverablePublishBadge } from './DeliverablePublishBadge';
 import { ArtifactFollowToolbar, ArtifactPreviewLoading } from './ArtifactFollowToolbar';
 import { ArtifactSourceEditor } from './ArtifactSourceEditor';
@@ -827,6 +828,9 @@ export const PreviewPanel: React.FC = () => {
               </div>
             )}
           </div>
+        )}
+        {!isVirtual && previewFilePath && (
+          <ArtifactStandingRefresh filePath={previewFilePath} />
         )}
         {!isVirtual && (
           <button /* ds-allow:button: compact file-header icon action */

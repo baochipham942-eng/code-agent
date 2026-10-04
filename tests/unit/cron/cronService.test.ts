@@ -18,7 +18,7 @@ const channelState = vi.hoisted(() => ({
   // 通道契约是 SendMessageResult；返回 undefined 的桩不忠实于真实通道，
   // 而新实现要看这个返回值来判断平台有没有拒发。
   sendMessage: vi.fn(async (_accountId: string, _chatId: string, _text: string): Promise<{ success: boolean; messageId?: string; error?: string }> => ({ success: true, messageId: 'om_stub' })),
-  // CronEventTrigger 在 initialize() 里订阅 'message'；捕获 handler 供事件链路测试手动派发。
+  // CronEventTrigger 在 initialize() 里订阅 'message' / 'listen_message'；捕获 handler 供事件链路测试手动派发。
   on: vi.fn(),
   removeListener: vi.fn(),
 }));
@@ -1147,7 +1147,9 @@ describe('N-TRIGGER-CHANNEL-EVENT event-triggered jobs', () => {
     expect(scheduledArgs[3]).toBeUndefined();
     agentRunState.sendMessage.mockClear();
 
-    const messageHandler = channelState.on.mock.calls.at(-1)![1] as
+    const messageHandler = channelState.on.mock.calls
+      .filter(([event]) => event === 'message')
+      .at(-1)![1] as
       (accountId: string, message: ReturnType<typeof boundChannelMessage>) => void;
     messageHandler('acc-1', boundChannelMessage());
     await vi.advanceTimersByTimeAsync(5_000);
@@ -1194,7 +1196,9 @@ describe('N-TRIGGER-CHANNEL-EVENT event-triggered jobs', () => {
     await service.initialize();
     const job = await service.createJob(eventJobDefinition());
 
-    const messageHandler = channelState.on.mock.calls.at(-1)![1] as
+    const messageHandler = channelState.on.mock.calls
+      .filter(([event]) => event === 'message')
+      .at(-1)![1] as
       (accountId: string, message: ReturnType<typeof boundChannelMessage>) => void;
     messageHandler('acc-someone-else', boundChannelMessage());
     await vi.advanceTimersByTimeAsync(30_000);

@@ -247,6 +247,10 @@ export const IPC_CHANNELS = {
   // Context health channels
   CONTEXT_HEALTH_GET: 'context:health:get',
   CONTEXT_HEALTH_EVENT: 'context:health:event',
+
+  // Read-only side chat. Abort is a separate channel: IPC cannot carry AbortSignal.
+  SIDE_CHAT_ASK: 'side-chat:ask',
+  SIDE_CHAT_ABORT: 'side-chat:abort',
   CONTEXT_COMPRESSION_CONFIG_GET: 'context:compression-config:get',
   CONTEXT_COMPRESSION_CONFIG_SET: 'context:compression-config:set',
 

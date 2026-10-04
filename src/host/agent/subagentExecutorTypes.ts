@@ -232,6 +232,12 @@ export interface SubagentExecutionContext {
   /** Optional callback for lightweight context updates */
   onContextSnapshot?: (snapshot: SwarmAgentContextSnapshot) => void;
   /**
+   * 一次性运行（只读侧聊）不进会话的代理活动账：跳过 subagentContextStore 的
+   * upsert。agentTree/「专家」面板读的就是这本账，注册了就会出现「工作中」行且
+   * 失败后滞留；不注册则成功/失败/中止都没有要清理的东西。
+   */
+  suppressContextPublishing?: boolean;
+  /**
    * 父探活回调（swarm 护栏 P1-2 #5）。仅后台 detached 子代理注入：返回 false 表示
    * 父 run 已结束/被新 run 取代，子代理应自我中止（parent-gone）避免成孤儿烧预算。
    * 未注入时不探活（前台子代理被父 await，不会成孤儿）。

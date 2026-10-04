@@ -26,6 +26,7 @@ import {
   unregisterProtocolTool,
 } from '../../../src/host/tools/protocolToolRegistration';
 import { resolveToolCallAccesses } from '../../../src/host/tools/dispatch/resolveToolCallAccess';
+import { mailSendSchema } from '../../../src/host/tools/modules/connectors/mailSend.schema';
 import type { ToolSchema } from '../../../src/host/protocol/tools';
 import type { JSONSchemaProperty, ToolCall } from '../../../src/shared/contract';
 
@@ -177,6 +178,9 @@ describe('tool access coverage invariant (r3: a call may join a concurrent segme
 
   it('flags the review-named path-shaped parameters (bare probes carrying the real schema properties go serial)', () => {
     const byName = new Map(getProtocolRegistry().getSchemas().map((schema) => [schema.name, schema]));
+    // mail_send 只在 darwin 注册（registerMigratedTools 的 platform 分支）；探针只要它的真实 schema 属性，
+    // 直接取 schema 本体，Linux CI 上照样钉住。
+    byName.set(mailSendSchema.name, mailSendSchema);
     const probe = (toolName: string, paramName: string): ToolSchema => {
       const source = byName.get(toolName);
       expect(source, toolName).toBeDefined();

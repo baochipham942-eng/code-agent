@@ -196,14 +196,6 @@ function resolveExpression(
   return { type: 'domain', domain: { type: 'named', name } };
 }
 
-function cwdReadAccess(workspace: string, cwd: string): ResolvedToolAccess {
-  const root = normalizeTargetPath(workspace, '.');
-  return {
-    kind: 'read',
-    domain: { type: 'path', root, targetPath: normalizeTargetPath(cwd, '.') },
-  };
-}
-
 /** glob 元字符。字面文件名也可能带这些字符——按前缀收窄只会多拆段，不会漏拆。 */
 const GLOB_META_RE = /[*?[\]{}]/;
 
@@ -295,7 +287,9 @@ function resolveArgumentNames(
     return [unknownAccess(kind)];
   }
   if (paths.length === 0) {
-    return kind === 'read' ? [cwdReadAccess(workspace, cwd)] : [unknownAccess(kind)];
+    // 读声明的参数全缺席：工具的默认读范围各不相同（Glob 读 cwd、git_diff 读整仓），调度器不猜，
+    // 落未定域读——与任何写冲突、与别的读并发，和基线一致。
+    return kind === 'read' ? [{ kind: 'read', domain: { type: 'unscoped' } }] : [unknownAccess(kind)];
   }
   const root = normalizeTargetPath(workspace, '.');
   return paths.map((candidate) => ({

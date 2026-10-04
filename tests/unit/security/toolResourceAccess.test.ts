@@ -272,8 +272,7 @@ describe('shared resource conflict', () => {
     expect(workspaceLock).toEqual([asWrite(bash)]);
   });
 
-  it('resolves a missing or blank read path to the cwd and keeps write paths unknown', () => {
-    const cwdTarget = normalizeTargetPath(sub, '.');
+  it('resolves a missing or blank read path to an unscoped read (no guessing the tool default) and keeps write paths unknown', () => {
     const root = normalizeTargetPath(workspace, '.');
     const readOf = (params: Record<string, unknown>, argumentNames: readonly string[] = ['path']) => resolveFoldedToolAccess({
       toolName: 'Grep',
@@ -282,10 +281,10 @@ describe('shared resource conflict', () => {
       workspace,
       cwd: sub,
     });
-    const cwdRead = [{ kind: 'read' as const, domain: { type: 'path' as const, root, targetPath: cwdTarget } }];
-    expect(readOf({})).toEqual(cwdRead);
-    expect(readOf({ path: '   ' })).toEqual(cwdRead);
-    expect(readOf({ path: [] })).toEqual(cwdRead);
+    const unscopedRead = [{ kind: 'read' as const, domain: { type: 'unscoped' as const } }];
+    expect(readOf({})).toEqual(unscopedRead);
+    expect(readOf({ path: '   ' })).toEqual(unscopedRead);
+    expect(readOf({ path: [] })).toEqual(unscopedRead);
 
     const concrete = normalizeTargetPath(sub, 'a.txt');
     expect(readOf({ path: 'a.txt' })).toEqual([

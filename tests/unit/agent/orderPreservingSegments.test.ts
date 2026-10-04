@@ -449,4 +449,25 @@ describe('order-preserving segments', () => {
       ['Write'],
     ]);
   });
+
+  it('splits a write from reads wider than their argument: LSP on another file, and pathless reads from a subdirectory cwd (review r5)', () => {
+    getProtocolRegistry();
+    const names = (calls: ToolCall[], cwd = ROOT) => classifyToolCalls(calls, undefined, { workspace: ROOT, cwd })
+      .segments.map((segment) => segment.map((entry) => entry.toolCall.name));
+    const edit = call('w', 'Edit', { file_path: 'src/a.ts', old_string: 'a', new_string: 'b' });
+    // 诊断/跳转取决于整个项目：改 a.ts 之后查 b.ts 不能和 Edit 同段。
+    expect(names([edit, call('d', 'diagnostics', { file_path: 'src/b.ts' })])).toEqual([['Edit'], ['diagnostics']]);
+    expect(names([edit, call('l', 'lsp', { operation: 'hover', file_path: 'src/b.ts', line: 1, character: 1 })]))
+      .toEqual([['Edit'], ['lsp']]);
+    // 两个 LSP 读仍可同段。
+    expect(names([
+      call('d1', 'diagnostics', { file_path: 'src/a.ts' }),
+      call('d2', 'diagnostics', { file_path: 'src/b.ts' }),
+    ])).toHaveLength(1);
+    // cwd 是子目录：不带 files 的 git_diff 读整仓、不带 path 的 Grep 默认范围由工具定——
+    // 调度器不猜成「读 cwd」，cwd 之外的写也分段。
+    const outside = call('o', 'Write', { file_path: `${ROOT}/docs/a.md`, content: 'x' });
+    expect(names([outside, call('g', 'git_diff', { action: 'diff' })], `${ROOT}/src`)).toEqual([['Write'], ['git_diff']]);
+    expect(names([outside, call('s', 'Grep', { pattern: 'alpha' })], `${ROOT}/src`)).toEqual([['Write'], ['Grep']]);
+  });
 });

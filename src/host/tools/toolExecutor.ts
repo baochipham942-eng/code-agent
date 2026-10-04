@@ -36,9 +36,11 @@ import type { SkillToolBoundary } from '../../shared/contract/agentSkill';
 import type { NeoTagRunContext } from '../../shared/contract/tag';
 import type { SwarmRunScope } from '../../shared/contract/swarm';
 import { createTraceBuilder, createTraceStep } from '../security/decisionTraceBuilder';
+import { getPluginIdForTool, getPluginOriginForTool } from '../plugins/pluginToolOrigin';
 import { getWriteIsolationManager, getWriteIsolationScope, type WriteIsolationMetadata } from '../security/writeIsolation';
 import type { HookManager } from '../hooks/hookManager';
 import { getToolResolver } from '../tools/dispatch/toolResolver';
+import { lookupMcpToolAfterReapedReconnect } from './mcpReapedToolLookup';
 import type { ConversationExecutionIntent, WorkbenchToolScope } from '../../shared/contract/conversationEnvelope';
 import { isBashToolName, normalizeToolName } from './toolNames';
 import { isToolDeniedByRunPolicy } from './runToolPolicy';
@@ -51,6 +53,7 @@ import {
   CLASSIFIER_ERROR_TRACE_RULE,
   INJECTED_PERMISSION_HANDLER_TRACE_RULE,
   commandAnalysisDenialError,
+  commandAnalysisRepeatDenialError,
   peerOriginUnattendedDenialError,
   peermsgLaunderDenialError,
   permissionDenialError,
@@ -640,10 +643,24 @@ export class ToolExecutor {
     });
 
     const resolver = getToolResolver();
-    const toolDef = resolver.getDefinition(requestedToolName)
+    let toolDef = resolver.getDefinition(requestedToolName)
       ?? (normalizedRequestedToolName !== requestedToolName
         ? resolver.getDefinition(normalizedRequestedToolName)
         : undefined);
+
+    if (!toolDef) {
+      toolDef = await lookupMcpToolAfterReapedReconnect(
+        requestedToolName,
+        (name) => resolver.getDefinition(name),
+      ) ?? (
+        normalizedRequestedToolName !== requestedToolName
+          ? await lookupMcpToolAfterReapedReconnect(
+            normalizedRequestedToolName,
+            (name) => resolver.getDefinition(name),
+          )
+          : undefined
+      );
+    }
 
     if (!toolDef) {
       logger.debug('Tool not found', { toolName: requestedToolName });
@@ -660,6 +677,8 @@ export class ToolExecutor {
     }
 
     const executionToolName = toolDef.name;
+    const pluginOrigin = getPluginOriginForTool(executionToolName);
+    const pluginId = getPluginIdForTool(executionToolName);
     const policyToolName = normalizeToolName(executionToolName);
     const writeWithoutWorkspaceAuthority = Boolean(
       this.runContext
@@ -945,7 +964,7 @@ export class ToolExecutor {
           ? getPermissionModeManager().rememberCommandAnalysisFailure(effectiveSessionId, fingerprint)
           : false;
         if (repeated) {
-          const hostReason = commandAnalysisDenialError(executionToolName);
+          const hostReason = commandAnalysisRepeatDenialError(executionToolName);
           const error = hostReason.modelText;
           logger.warn('Repeated unanalyzable command denied before permission request', {
             tool: executionToolName,
@@ -1698,6 +1717,9 @@ export class ToolExecutor {
         : null;
       // Lazy trace: only created when needed (deny/ask path)
       const traceBuilder = createTraceBuilder(executionToolName);
+      if (pluginId) {
+        traceBuilder.addStep('plugin_hook', 'plugin_origin', 'allow', `Tool registered by plugin ${pluginId}`);
+      }
       /** 分类器抛错（≠ 判 ask）时的错误串；非空表示这次「问用户」其实是故障回退。 */
       let classifierFailedReason: string | undefined;
       // validateCommand 只描述已命中的危险形态：未识别 ask 才标 unknown；命中确定规则
@@ -1919,6 +1941,7 @@ export class ToolExecutor {
         commandValidation,
         commandRiskUnknown ? 'unknown' : knownAskCommandRisk,
       );
+      if (pluginOrigin) Object.assign(permissionRequest.details, pluginOrigin);
       if (
         permissionRequest.type === 'file_read'
         || permissionRequest.type === 'file_write'
@@ -2407,7 +2430,10 @@ export class ToolExecutor {
           error: result.error,
           securityFlags: commandValidation?.securityFlags,
           riskLevel: commandValidation?.riskLevel,
-          metadata: sandboxAuditMetadata(result.metadata),
+          metadata: {
+            ...sandboxAuditMetadata(result.metadata),
+            ...(pluginId ? { pluginId } : {}),
+          },
         });
       }
 
@@ -2431,6 +2457,7 @@ export class ToolExecutor {
           error: error instanceof Error ? error.message : 'Unknown error',
           securityFlags: commandValidation?.securityFlags,
           riskLevel: commandValidation?.riskLevel,
+          metadata: pluginId ? { pluginId } : undefined,
         });
       }
 

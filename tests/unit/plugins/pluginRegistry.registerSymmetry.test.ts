@@ -17,6 +17,11 @@ import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { PluginRegistry } from '../../../src/host/plugins/pluginRegistry';
 import { resetProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
+import {
+  getPluginIdForTool,
+  getPluginOriginForTool,
+  resolvePluginDisplayName,
+} from '../../../src/host/plugins/pluginToolOrigin';
 import type {
   LoadedPlugin,
   PluginAPI,
@@ -71,7 +76,11 @@ function makeToolModule(name: string): ToolModule {
 }
 
 /** 注入 fake plugin + 走 activatePlugin lifecycle,捕获 PluginAPI 供测试调用 */
-async function getPluginApi(reg: PluginRegistry, pluginId: string): Promise<PluginAPI> {
+async function getPluginApi(
+  reg: PluginRegistry,
+  pluginId: string,
+  manifestOverrides: Partial<PluginManifest> = {},
+): Promise<PluginAPI> {
   let captured: PluginAPI | undefined;
   const entry: PluginEntry = {
     activate: async (api) => {
@@ -79,7 +88,7 @@ async function getPluginApi(reg: PluginRegistry, pluginId: string): Promise<Plug
     },
   };
   const loadedPlugin: LoadedPlugin = {
-    manifest: makeManifest(pluginId),
+    manifest: { ...makeManifest(pluginId), ...manifestOverrides },
     rootPath: `builtin:${pluginId}`,
     state: 'inactive',
     entry,
@@ -221,5 +230,51 @@ describe('PluginRegistry registerTool / registerToolModule symmetry', () => {
     // 通过 plugin 实例读 registeredTools 验证只有一条
     const plugin = (reg as unknown as { plugins: Map<string, LoadedPlugin> }).plugins.get('p8');
     expect(plugin?.registeredTools.filter((n) => n === 'p8:once')).toHaveLength(1);
+  });
+
+  it('tracks plugin origins for both registration APIs and clears them on unregister/deactivate', async () => {
+    const reg = new PluginRegistry();
+    const api = await getPluginApi(reg, 'p-origin');
+
+    api.registerTool(makeTool('legacy'));
+    api.registerToolModule(makeToolModule('module'));
+    api.registerToolModule(makeToolModule('builtin-style'), { prefixWithPluginId: false });
+
+    expect(getPluginIdForTool('p-origin:legacy')).toBe('p-origin');
+    expect(getPluginIdForTool('p-origin:module')).toBe('p-origin');
+    expect(getPluginIdForTool('builtin-style')).toBe('p-origin');
+
+    api.unregisterTool('legacy');
+    expect(getPluginIdForTool('p-origin:legacy')).toBeUndefined();
+
+    await reg.deactivatePlugin('p-origin');
+    expect(getPluginIdForTool('p-origin:module')).toBeUndefined();
+    expect(getPluginIdForTool('builtin-style')).toBeUndefined();
+  });
+
+  it('resolves displayName before name before id, trims, and caps at 40 characters', () => {
+    expect(resolvePluginDisplayName('plugin.id', 'Manifest name', ' Display name ')).toBe('Display name');
+    expect(resolvePluginDisplayName('plugin.id', ' Manifest name ', '   ')).toBe('Manifest name');
+    expect(resolvePluginDisplayName(' plugin.id ', '   ', '')).toBe('plugin.id');
+    expect(resolvePluginDisplayName('plugin.id', 'x'.repeat(50))).toBe(`${'x'.repeat(39)}…`);
+  });
+
+  it('carries the resolved display name through both registration APIs', async () => {
+    const reg = new PluginRegistry();
+    const api = await getPluginApi(reg, 'p-display', {
+      name: 'Manifest name',
+      displayName: ' Display name ',
+    });
+    api.registerTool(makeTool('legacy'));
+    api.registerToolModule(makeToolModule('module'));
+
+    expect(getPluginOriginForTool('p-display:legacy')).toEqual({
+      pluginId: 'p-display',
+      pluginName: 'Display name',
+    });
+    expect(getPluginOriginForTool('p-display:module')).toEqual({
+      pluginId: 'p-display',
+      pluginName: 'Display name',
+    });
   });
 });

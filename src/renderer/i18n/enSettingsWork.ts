@@ -274,6 +274,7 @@ export const enSettingsWork = {
         enableCors: 'Enable CORS',
         encryptKeyLabel: 'Encrypt Key (optional)',
         verificationTokenLabel: 'Verification Token (optional)',
+        approvalCardSecurityWarning: 'Configure a verification token before approval cards can be used.',
         webhookPortLabel: 'Webhook port',
         webSocketLabel: 'Use long connection (recommended)',
         webSocketHint: 'Desktop apps use a long connection by default and need no public callback URL. Turn this off to use Webhook.',
@@ -293,7 +294,11 @@ export const enSettingsWork = {
         fallbackProxyUrlLabel: 'Fallback proxy URL (optional)',
         fallbackProxyUrlPlaceholder: 'Automatically switch when the primary proxy is unavailable',
         allowedUserIdsLabel: 'Allowlisted user IDs (optional)',
-        allowedUserIdsPlaceholder: 'Comma-separated; leave blank to allow all users',
+        allowedUserIdsPlaceholder: 'Comma-separated; blank = strangers get guest access (read-only tools), groups need @ or a reply',
+        groupAccessModeLabel: 'Group access mode',
+        groupAccessModeAllowlist: 'Allowlist (default) — groups trigger only on @ or a reply to the bot',
+        groupAccessModeAllMembers: 'All members — everyone in the group reaches the bot as a guest, no @ needed',
+        groupAccessModeHint: 'Guests get read-only tools; allowlisted users are unaffected',
         telegramTipSearchPrefix: 'Search ',
         telegramTipSearchSuffix: ' in Telegram to create a Bot',
         telegramTipNewBotPrefix: 'Send ',
@@ -856,11 +861,20 @@ export const enSettingsWork = {
       },
       telemetry: {
         title: 'Data sharing',
-        description: 'Two independent switches, both take effect immediately and are honored by every reporting channel. Metadata never includes full prompts or code content. Both are on by default.',
-        usageData: {
-          label: 'Share usage data',
-          body: 'Product analytics, runtime trace metadata and fleet telemetry. Turn off to stop this device from reporting usage to the cloud.',
+        description: 'Product analytics, cloud telemetry, runtime traces, and crash reports are separate switches. They take effect immediately. Reports never include full prompts or code. All are on by default.',
+        posthog: {
+          label: 'Product analytics',
+          body: 'Turn off to stop this device from sending usage to the product analytics service.',
         },
+        cloudUpload: {
+          label: 'Cloud telemetry upload',
+          body: 'Turn off to stop this device from uploading runtime metadata to the cloud.',
+        },
+        langfuse: {
+          label: 'Runtime traces',
+          body: 'Turn off to stop this device from sending model-call trace metadata.',
+        },
+        envOptOut: 'The {name} environment variable has turned these reports off. The switches stay locked until you remove it and reopen the app.',
         crashReports: {
           label: 'Send crash reports',
           body: 'Crash and error reports (scrubbed before upload — never contain source code, prompts or secrets). Helps us fix crashes you hit.',

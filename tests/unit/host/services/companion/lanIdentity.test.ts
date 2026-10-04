@@ -11,8 +11,10 @@ const keytar = {
   setPassword: vi.fn(),
 };
 
+const keytarAvailability: { current: typeof keytar | null } = { current: keytar };
+
 vi.mock('../../../../../src/host/services/core/keytarAdapter', () => ({
-  loadKeytar: () => keytar,
+  loadKeytar: () => keytarAvailability.current,
 }));
 
 const { loadLanIdentity } = await import('../../../../../src/host/services/companion/lanIdentity');
@@ -41,9 +43,34 @@ describe('loadLanIdentity', () => {
   });
 
   afterEach(() => {
+    keytarAvailability.current = keytar;
     keytar.getPassword.mockReset();
     keytar.setPassword.mockReset();
     warn.mockRestore();
+  });
+
+  it('warns when minting a new identity with no OS keychain and no identity file', async () => {
+    keytarAvailability.current = null;
+    const dir = await mkdtemp(join(tmpdir(), 'lan-identity-'));
+    const loaded = await loadLanIdentity(dir);
+    const onDisk = JSON.parse(await readFile(join(dir, IDENTITY_FILE), 'utf8')) as { publicKey: string; secretKey: string };
+    const message = warn.mock.calls.map((call) => call.map(String).join(' ')).join('\n');
+
+    expect(toHex(loaded.publicKey)).toBe(onDisk.publicKey);
+    expect(warn).toHaveBeenCalledOnce();
+    expect(message).toContain('companion-identity.json');
+    expect(message).toContain('no OS keychain');
+    expect(message.toLowerCase()).toContain('already-paired devices will need to re-pair');
+    expect(message).not.toContain(onDisk.secretKey);
+
+    const existingDir = await mkdtemp(join(tmpdir(), 'lan-identity-'));
+    const existing = createIdentity();
+    await writeFile(join(existingDir, IDENTITY_FILE), encodeIdentity(existing), { mode: 0o600 });
+    warn.mockClear();
+    const reloaded = await loadLanIdentity(existingDir);
+
+    expect(toHex(reloaded.secretKey)).toBe(toHex(existing.secretKey));
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it('promotes an existing companion-identity.json into empty keytar instead of minting a second key', async () => {

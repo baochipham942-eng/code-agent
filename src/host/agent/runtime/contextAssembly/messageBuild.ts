@@ -1,7 +1,9 @@
 // ContextAssembly - Model message construction and transcript projection.
 import type { Message } from '../../../../shared/contract';
 import { ACTIVE_TOOL_RESULT_PRUNE, CONTEXT_LEDGER } from '../../../../shared/constants';
-import { resolveContextWindow } from '../../../model/modelLimits';
+import { resolveContextWindow, resolveModelMaxOutputTokens } from '../../../model/modelLimits';
+import { resolveToolResultBudget } from '../../../context/layers/toolResultBudget';
+import { resolveTriggerTokens } from '../../../context/triggerTokens';
 import type { ModelMessage } from '../../../agent/loopTypes';
 import { formatToolCallForHistory, buildMultimodalContent } from '../../../agent/messageHandling/converter';
 import {
@@ -10,7 +12,7 @@ import {
   buildRuntimeModeBlock,
   buildGitStatusBlock,
 } from '../../../agent/messageHandling/contextBuilder';
-import { listMemoryIndexTargets, loadMemoryIndex } from '../../../lightMemory/indexLoader';
+import { listMemoryIndexTargets, loadMemoryIndex, loadMemoryIndexForSession } from '../../../lightMemory/indexLoader';
 import { withMemoryBackgroundGuidance } from '../../../memory/memoryContextGuidance';
 import { buildFailureJournalBlock } from '../../../lightMemory/failureJournal';
 import { loadRelevantSkills, buildSkillInjectionBlock } from '../../../lightMemory/skillLoader';
@@ -443,7 +445,7 @@ ${deferredToolsSummary}
   // 注入轻量记忆索引（File-as-Memory）。索引是 MemoryRead 的常驻目录，放进
   // 稳定前缀以复用 provider prompt cache，不再按单轮查询猜测是否需要。
   if (memoryContextEnabled) {
-    const memoryIndex = await loadMemoryIndex();
+    const memoryIndex = ctx.runtime.sessionId ? await loadMemoryIndexForSession(ctx.runtime.sessionId) : await loadMemoryIndex();
     if (memoryIndex) {
       const memoryIndexBlock = `<memory_index>\n${withMemoryBackgroundGuidance(memoryIndex)}\n</memory_index>`;
       const beforeMemoryIndex = systemPrompt;
@@ -843,16 +845,21 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
   // Keep the unprojected transcript through compression. A duplicate Read
   // receipt may refer to an earlier result, so projection must run only after
   // compression has decided which complete results remain model-visible.
-  const compressionTranscriptEntries = interventionAdjustedEntries;
-  let contextApiView = compressionTranscriptEntries;
+  let contextApiView = interventionAdjustedEntries;
   const contextWindowSize = resolveContextWindow(ctx.runtime.modelConfig.model, ctx.runtime.modelConfig.provider);
+  const autocompactTriggerTokens = resolveTriggerTokens(
+    contextWindowSize,
+    ctx.runtime.autoCompressor.getConfig().triggerTokens,
+    resolveModelMaxOutputTokens(ctx.runtime.modelConfig.model, ctx.runtime.modelConfig.provider),
+  );
   try {
     const cache = getRuntimeAssemblyCache(ctx);
     const compressionCacheKey = buildCompressionCacheKey(
       ctx,
-      compressionTranscriptEntries,
+      interventionAdjustedEntries,
       transcriptInterventions,
       contextWindowSize,
+      autocompactTriggerTokens,
     );
     const cachedCompression = cache.compression;
     const now = Date.now();
@@ -878,7 +885,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
 
       const armEnabled = getCompressionPipelineOverride() ?? DEFAULT_COMPRESSION_PIPELINE_ENABLED;
       const pipelineResult = await ctx.runtime.compressionPipeline.evaluate(
-        compressionTranscriptEntries.map((entry) => ({ ...entry })),
+        interventionAdjustedEntries.map((entry) => ({ ...entry })),
         nextCompressionState,
         {
           maxTokens: contextWindowSize,
@@ -892,10 +899,10 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
           enableSnip: armEnabled,
           enableMicrocompact: armEnabled,
           enableContextCollapse: armEnabled,
-          toolResultBudget: 2000,
+          toolResultBudget: resolveToolResultBudget(contextWindowSize).l1MaxTokens,
           activeToolResultPrune: {
             enabled: armEnabled && ACTIVE_TOOL_RESULT_PRUNE.ENABLED,
-            maxTokensPerResult: ACTIVE_TOOL_RESULT_PRUNE.MAX_TOKENS_PER_RESULT,
+            maxTokensPerResult: resolveToolResultBudget(contextWindowSize).l0MaxTokens,
             spillSessionId: ctx.runtime.sessionId,
           },
           protectedToolResultPredicate: (entry) =>
@@ -904,6 +911,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
           interventions: transcriptInterventions,
           // GAP-009: 超预算工具结果落盘到 session 临时目录
           spillSessionId: ctx.runtime.sessionId,
+          autocompactTriggerTokens,
         },
       );
 
@@ -949,7 +957,7 @@ export async function buildModelMessages(ctx: ContextAssemblyCtx): Promise<Model
         });
         if (autocompactNeeded) {
           logger.warn(
-            '[ContextAssembly] Pipeline reports autocompact-needed (usage ≥ 85%); ContextPressureController will route the compaction decision',
+            '[ContextAssembly] Pipeline reports autocompact-needed; ContextPressureController will route the compaction decision',
             { totalTokens: pipelineResult.totalTokens },
           );
         }

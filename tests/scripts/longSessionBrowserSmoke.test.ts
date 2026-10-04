@@ -7,6 +7,10 @@ import {
   selectLongSessionGates,
 } from '../../scripts/perf/long-session-browser-smoke.ts';
 import {
+  isSearchNavigationReady,
+  searchListGeometrySignature,
+} from '../../scripts/perf/search-navigation-ready.ts';
+import {
   waitForStable,
   waitForStableWithRetry,
 } from '../../scripts/perf/wait-for-stable.ts';
@@ -49,6 +53,33 @@ describe('long-session browser settling', () => {
 
     expect(result).toBe('visible');
     expect(retries).toBe(1);
+  });
+});
+
+describe('long-session search navigation ordering', () => {
+  it('does not arm search while the replaced list is still the streaming geometry or has only been seen once', () => {
+    const baseline = searchListGeometrySignature(120_000, 110_000);
+
+    expect(isSearchNavigationReady({
+      baselineSignature: baseline,
+      previousSignature: baseline,
+      scrollHeight: 120_000,
+      scrollTop: 110_000,
+    })).toBe(false);
+
+    expect(isSearchNavigationReady({
+      baselineSignature: baseline,
+      previousSignature: baseline,
+      scrollHeight: 80_000,
+      scrollTop: 70_000,
+    })).toBe(false);
+
+    expect(isSearchNavigationReady({
+      baselineSignature: baseline,
+      previousSignature: searchListGeometrySignature(80_000, 70_000),
+      scrollHeight: 80_000,
+      scrollTop: 70_000,
+    })).toBe(true);
   });
 });
 

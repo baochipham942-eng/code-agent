@@ -24,7 +24,13 @@ import {
 } from '@shared/contract';
 import { POST_LAUNCH_DEFAULTS } from '@shared/contract/postLaunchScore';
 import ipcService from '../../../../services/ipcService';
-import { applyRendererPrivacyFlags, resolvePrivacyFlags } from '../../../../observability/privacyFlags';
+import {
+  applyRendererPrivacyFlags,
+  readReportedTelemetryEnv,
+  readTelemetryEnvOptOut,
+  resolvePrivacyFlags,
+  type PrivacyFlags,
+} from '../../../../observability/privacyFlags';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
@@ -93,6 +99,43 @@ interface PrivacySettingsProps {
   onNavigateSettings?: (tab: SettingsTab) => void;
 }
 
+const CHANNEL_SETTING_KEY = {
+  posthog: 'posthogEnabled',
+  cloudUpload: 'cloudUploadEnabled',
+  langfuse: 'langfuseEnabled',
+  crashReporting: 'crashReportingEnabled',
+} as const satisfies Record<keyof PrivacyFlags, string>;
+
+function PrivacySwitch(props: {
+  testId: string;
+  checked: boolean;
+  disabled: boolean;
+  label: string;
+  body: string;
+  icon: React.ReactNode;
+  onChange: (next: boolean) => void;
+}): React.ReactElement {
+  return (
+    <label className={`flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 ${props.disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+      <input
+        type="checkbox"
+        data-testid={props.testId}
+        className="mt-0.5 h-4 w-4 accent-primary-700"
+        checked={props.checked}
+        disabled={props.disabled}
+        onChange={(event) => props.onChange(event.target.checked)}
+      />
+      <div className="flex items-center gap-2 text-sm">
+        {props.icon}
+        <div>
+          <div className="text-zinc-200 font-medium">{props.label}</div>
+          <div className="text-xs text-zinc-400 mt-0.5">{props.body}</div>
+        </div>
+      </div>
+    </label>
+  );
+}
+
 const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings }) => {
   const { t } = useI18n();
   const privacyText = t.settings.privacy;
@@ -105,9 +148,9 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
   const [loading, setLoading] = useState(true);
   const logEndRef = useRef<HTMLDivElement | null>(null);
 
-  // 隐私两档开关（使用数据 / 崩溃报告）。写 settings.privacy.*，host 侧 privacyGate 统一接线。
-  const [usageDataEnabled, setUsageDataEnabled] = useState(true);
-  const [crashReportingEnabled, setCrashReportingEnabled] = useState(true);
+  // 四个遥测通道。写 settings.privacy.<channel>Enabled，host 侧 privacyGate 按通道接线。
+  const [channels, setChannels] = useState(() => resolvePrivacyFlags(undefined, readReportedTelemetryEnv()));
+  const telemetryOptOut = readTelemetryEnvOptOut(readReportedTelemetryEnv());
   // 三态：'auto' = 跟随槽默认（由 host 侧算），'on' / 'off' 是显式选择。
   // 「跟随默认」发的是显式 'auto'——发 undefined 会被 JSON 与 mergeSettings 一起吞掉，
   // 从「开」切回来等于没切（ai-review PR #1650 Important①）。
@@ -164,9 +207,7 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
         const s = await ipcService.invokeDomain<AppSettings | undefined>(IPC_DOMAINS.SETTINGS, 'get');
         privacyCfgRef.current = s?.privacy;
         pluginUiCfgRef.current = s?.pluginUi;
-        const flags = resolvePrivacyFlags(s);
-        setUsageDataEnabled(flags.usageData);
-        setCrashReportingEnabled(flags.crashReporting);
+        setChannels(resolvePrivacyFlags(s, readReportedTelemetryEnv()));
         setPostLaunchScoring(s?.privacy?.postLaunchScoring ?? 'auto');
         setPostLaunchReflow(s?.privacy?.postLaunchReflow ?? 'auto');
         setThirdPartyUiEnabled(isThirdPartyPluginUiEnabled(s));
@@ -253,21 +294,18 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
     }
   }, []);
 
-  const handlePrivacyToggle = useCallback(async (
-    key: 'usageDataEnabled' | 'crashReportingEnabled',
-    next: boolean,
-  ) => {
-    const setLocal = key === 'usageDataEnabled' ? setUsageDataEnabled : setCrashReportingEnabled;
+  const handleChannelToggle = useCallback(async (channel: keyof PrivacyFlags, next: boolean) => {
+    if (readTelemetryEnvOptOut(readReportedTelemetryEnv())) return;
     setPrivacySaving(true);
-    setLocal(next); // 乐观更新
+    setChannels((prev) => ({ ...prev, [channel]: next }));
     try {
-      const nextCfg = { ...(privacyCfgRef.current ?? {}), [key]: next };
+      const nextCfg = { ...(privacyCfgRef.current ?? {}), [CHANNEL_SETTING_KEY[channel]]: next };
       await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', { privacy: nextCfg } as Partial<AppSettings>);
       privacyCfgRef.current = nextCfg;
       // renderer 侧通道立即生效（host 侧由 privacyGate 跟随 updateSettings 重放）
-      applyRendererPrivacyFlags(resolvePrivacyFlags({ privacy: nextCfg }));
+      applyRendererPrivacyFlags(resolvePrivacyFlags({ privacy: nextCfg }, readReportedTelemetryEnv()));
     } catch {
-      setLocal(!next); // 回滚
+      setChannels((prev) => ({ ...prev, [channel]: !next }));
     } finally {
       setPrivacySaving(false);
     }
@@ -350,26 +388,19 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
     </SettingsSection>
   );
 
-  if (isWebMode()) {
-    return (
-      <SettingsPage
-        title={t.settings.tabs.privacy}
-        description={privacyText.webDescription}
-      >
-        <WebModeBanner />
-        {feedbackHookSection}
-      </SettingsPage>
-    );
-  }
-
+  // web 模式不再整页短路（FB-240）：SETTINGS 通道在 web 链路是通的，凡只依赖 settings 的段
+  // （边界/语音/凭证/遥测/反馈钩子）照常渲染。仍留桌面专属的是 PII 脚本三段（spawn 本地脚本，
+  // domain:pii）与第三方插件界面开关（refreshThirdPartyPluginUi 未在 web 验证过）。
+  const webMode = isWebMode();
   const isReadyGreen = ready?.ready === true;
   const stateLabel = getSetupStateLabel(state, privacyText.setupState);
 
   return (
     <SettingsPage
       title={t.settings.tabs.privacy}
-      description={privacyText.pageDescription}
+      description={webMode ? privacyText.webDescription : privacyText.pageDescription}
     >
+      {webMode ? <WebModeBanner /> : null}
       <SettingsSection
         title={privacyText.boundary.title}
         description={privacyText.boundary.description}
@@ -448,66 +479,77 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
         </div>
       </SettingsSection>
 
-      <SettingsSection
-        title={privacyText.pluginUi.title}
-        description={privacyText.pluginUi.description}
-      >
-        <label className="flex items-start gap-3 rounded-lg border border-red-500/25 bg-red-500/5 p-3 cursor-pointer">
-          <input
-            type="checkbox"
-            className="mt-0.5 h-4 w-4 accent-primary-700"
-            checked={thirdPartyUiEnabled}
-            disabled={privacySaving || !isAdmin}
-            onChange={(event) => { void handleThirdPartyUiToggle(event.target.checked); }}
-          />
-          <div className="flex items-start gap-2 text-sm">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-badge-danger" />
-            <div>
-              <div className="font-medium text-zinc-200">{privacyText.pluginUi.label}</div>
-              <div className="mt-0.5 text-xs leading-5 text-zinc-400">{privacyText.pluginUi.body}</div>
-              {!isAdmin ? <div className="mt-1 text-xs text-zinc-500">{privacyText.pluginUi.adminHint}</div> : null}
+      {!webMode && (
+        <SettingsSection
+          title={privacyText.pluginUi.title}
+          description={privacyText.pluginUi.description}
+        >
+          <label className="flex items-start gap-3 rounded-lg border border-red-500/25 bg-red-500/5 p-3 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 accent-primary-700"
+              checked={thirdPartyUiEnabled}
+              disabled={privacySaving || !isAdmin}
+              onChange={(event) => { void handleThirdPartyUiToggle(event.target.checked); }}
+            />
+            <div className="flex items-start gap-2 text-sm">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-badge-danger" />
+              <div>
+                <div className="font-medium text-zinc-200">{privacyText.pluginUi.label}</div>
+                <div className="mt-0.5 text-xs leading-5 text-zinc-400">{privacyText.pluginUi.body}</div>
+                {!isAdmin ? <div className="mt-1 text-xs text-zinc-500">{privacyText.pluginUi.adminHint}</div> : null}
+              </div>
             </div>
-          </div>
-        </label>
-      </SettingsSection>
+          </label>
+        </SettingsSection>
+      )}
 
       <SettingsSection
         title={privacyText.telemetry.title}
         description={privacyText.telemetry.description}
       >
         <div className="space-y-2">
-          <label className="flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 cursor-pointer">
-            <input
-              type="checkbox"
-              className="mt-0.5 h-4 w-4 accent-primary-700"
-              checked={usageDataEnabled}
-              disabled={privacySaving}
-              onChange={(e) => handlePrivacyToggle('usageDataEnabled', e.target.checked)}
-            />
-            <div className="flex items-center gap-2 text-sm">
-              <Activity className="h-4 w-4 text-zinc-400" />
-              <div>
-                <div className="text-zinc-200 font-medium">{privacyText.telemetry.usageData.label}</div>
-                <div className="text-xs text-zinc-400 mt-0.5">{privacyText.telemetry.usageData.body}</div>
-              </div>
-            </div>
-          </label>
-          <label className="flex items-start gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 cursor-pointer">
-            <input
-              type="checkbox"
-              className="mt-0.5 h-4 w-4 accent-primary-700"
-              checked={crashReportingEnabled}
-              disabled={privacySaving}
-              onChange={(e) => handlePrivacyToggle('crashReportingEnabled', e.target.checked)}
-            />
-            <div className="flex items-center gap-2 text-sm">
-              <ShieldCheck className="h-4 w-4 text-zinc-400" />
-              <div>
-                <div className="text-zinc-200 font-medium">{privacyText.telemetry.crashReports.label}</div>
-                <div className="text-xs text-zinc-400 mt-0.5">{privacyText.telemetry.crashReports.body}</div>
-              </div>
-            </div>
-          </label>
+          {telemetryOptOut ? (
+            <p className="text-xs leading-5 text-zinc-400" data-testid="privacy-env-opt-out-reason">
+              {privacyText.telemetry.envOptOut.replace('{name}', telemetryOptOut)}
+            </p>
+          ) : null}
+          <PrivacySwitch
+            testId="privacy-posthog-toggle"
+            checked={channels.posthog}
+            disabled={privacySaving || telemetryOptOut !== null}
+            label={privacyText.telemetry.posthog.label}
+            body={privacyText.telemetry.posthog.body}
+            icon={<Activity className="h-4 w-4 text-zinc-400" />}
+            onChange={(next) => { void handleChannelToggle('posthog', next); }}
+          />
+          <PrivacySwitch
+            testId="privacy-cloud-upload-toggle"
+            checked={channels.cloudUpload}
+            disabled={privacySaving || telemetryOptOut !== null}
+            label={privacyText.telemetry.cloudUpload.label}
+            body={privacyText.telemetry.cloudUpload.body}
+            icon={<Activity className="h-4 w-4 text-zinc-400" />}
+            onChange={(next) => { void handleChannelToggle('cloudUpload', next); }}
+          />
+          <PrivacySwitch
+            testId="privacy-langfuse-toggle"
+            checked={channels.langfuse}
+            disabled={privacySaving || telemetryOptOut !== null}
+            label={privacyText.telemetry.langfuse.label}
+            body={privacyText.telemetry.langfuse.body}
+            icon={<Activity className="h-4 w-4 text-zinc-400" />}
+            onChange={(next) => { void handleChannelToggle('langfuse', next); }}
+          />
+          <PrivacySwitch
+            testId="privacy-crash-reporting-toggle"
+            checked={channels.crashReporting}
+            disabled={privacySaving || telemetryOptOut !== null}
+            label={privacyText.telemetry.crashReports.label}
+            body={privacyText.telemetry.crashReports.body}
+            icon={<ShieldCheck className="h-4 w-4 text-zinc-400" />}
+            onChange={(next) => { void handleChannelToggle('crashReporting', next); }}
+          />
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
             <div className="flex items-start gap-2 text-sm">
               <Activity className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" />
@@ -560,115 +602,119 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
 
       {feedbackHookSection}
 
-      <SettingsSection
-        title={privacyText.status.title}
-        description={privacyText.status.description}
-      >
-        <div className="space-y-3">
-          <div className="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
-            {isReadyGreen ? (
-              <>
-                <ShieldCheck className="h-5 w-5 text-badge-success" />
-                <div className="text-sm">
-                  <div className="text-zinc-200 font-medium">{privacyText.status.readyTitle}</div>
-                  <div className="text-xs text-zinc-400 mt-0.5">
-                    {privacyText.status.modelPrefix}{ready?.modelOnnx} · Python: {ready?.pythonPath}
-                  </div>
-                </div>
-              </>
-            ) : (
-              <>
-                <AlertTriangle className="h-5 w-5 text-zinc-500" />
-                <div className="text-sm text-zinc-300">
-                  {ready?.envFile.exists
-                    ? privacyText.status.configExistsNotReady
-                    : privacyText.status.notEnabled}
-                </div>
-              </>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2 text-sm">
-            <span className={`inline-block h-2 w-2 rounded-full ${stateLabel.dot}`} />
-            <span className="text-zinc-300">{stateLabel.text}</span>
-            {step && (
-              <span className="text-xs text-zinc-500">· {step}</span>
-            )}
-          </div>
-
-          {error && (
-            <div className="flex items-start gap-2 rounded-lg border border-red-900/40 bg-red-950/30 p-3 text-sm text-badge-danger">
-              <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
-              <div className="flex-1 whitespace-pre-wrap break-words">{error}</div>
-            </div>
-          )}
-        </div>
-      </SettingsSection>
-
-      <SettingsSection
-        title={privacyText.actions.title}
-        description={privacyText.actions.description}
-      >
-        <div className="flex flex-wrap gap-3">
-          {state === 'running' ? (
-            <button
-              type="button"
-              onClick={handleCancel}
-              disabled={loading}
-              className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <XCircle className="h-4 w-4" />
-              {privacyText.actions.cancel}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleStart}
-              disabled={loading}
-              className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-500 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {state === 'completed' || isReadyGreen ? (
-                <>
-                  <RefreshCw className="h-4 w-4" />
-                  {privacyText.actions.reinstall}
-                </>
-              ) : (
-                <>
-                  <ShieldCheck className="h-4 w-4" />
-                  {privacyText.actions.enable}
-                </>
-              )}
-            </button>
-          )}
-          {state === 'running' && (
-            <span className="inline-flex items-center gap-2 text-xs text-zinc-400">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              {privacyText.actions.runningHint}
-            </span>
-          )}
-        </div>
-      </SettingsSection>
-
-      <SettingsSection
-        title={privacyText.logs.title}
-        description={privacyText.logs.description}
-      >
-        <div className="max-h-72 overflow-y-auto rounded-lg border border-zinc-800 bg-black/60 p-3 font-mono text-[11px] leading-relaxed">
-          {logs.length === 0 ? (
-            <div className="text-zinc-600">{privacyText.logs.empty}</div>
-          ) : (
-            logs.map((entry, idx) => (
-              <div
-                key={idx}
-                className={getSetupLogLineClass(entry)}
-              >
-                {entry.line}
+      {!webMode && (
+        <>
+          <SettingsSection
+            title={privacyText.status.title}
+            description={privacyText.status.description}
+          >
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
+                {isReadyGreen ? (
+                  <>
+                    <ShieldCheck className="h-5 w-5 text-badge-success" />
+                    <div className="text-sm">
+                      <div className="text-zinc-200 font-medium">{privacyText.status.readyTitle}</div>
+                      <div className="text-xs text-zinc-400 mt-0.5">
+                        {privacyText.status.modelPrefix}{ready?.modelOnnx} · Python: {ready?.pythonPath}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle className="h-5 w-5 text-zinc-500" />
+                    <div className="text-sm text-zinc-300">
+                      {ready?.envFile.exists
+                        ? privacyText.status.configExistsNotReady
+                        : privacyText.status.notEnabled}
+                    </div>
+                  </>
+                )}
               </div>
-            ))
-          )}
-          <div ref={logEndRef} />
-        </div>
-      </SettingsSection>
+
+              <div className="flex items-center gap-2 text-sm">
+                <span className={`inline-block h-2 w-2 rounded-full ${stateLabel.dot}`} />
+                <span className="text-zinc-300">{stateLabel.text}</span>
+                {step && (
+                  <span className="text-xs text-zinc-500">· {step}</span>
+                )}
+              </div>
+
+              {error && (
+                <div className="flex items-start gap-2 rounded-lg border border-red-900/40 bg-red-950/30 p-3 text-sm text-badge-danger">
+                  <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <div className="flex-1 whitespace-pre-wrap break-words">{error}</div>
+                </div>
+              )}
+            </div>
+          </SettingsSection>
+
+          <SettingsSection
+            title={privacyText.actions.title}
+            description={privacyText.actions.description}
+          >
+            <div className="flex flex-wrap gap-3">
+              {state === 'running' ? (
+                <button
+                  type="button"
+                  onClick={handleCancel}
+                  disabled={loading}
+                  className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <XCircle className="h-4 w-4" />
+                  {privacyText.actions.cancel}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleStart}
+                  disabled={loading}
+                  className="inline-flex items-center gap-2 rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {state === 'completed' || isReadyGreen ? (
+                    <>
+                      <RefreshCw className="h-4 w-4" />
+                      {privacyText.actions.reinstall}
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="h-4 w-4" />
+                      {privacyText.actions.enable}
+                    </>
+                  )}
+                </button>
+              )}
+              {state === 'running' && (
+                <span className="inline-flex items-center gap-2 text-xs text-zinc-400">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  {privacyText.actions.runningHint}
+                </span>
+              )}
+            </div>
+          </SettingsSection>
+
+          <SettingsSection
+            title={privacyText.logs.title}
+            description={privacyText.logs.description}
+          >
+            <div className="max-h-72 overflow-y-auto rounded-lg border border-zinc-800 bg-black/60 p-3 font-mono text-[11px] leading-relaxed">
+              {logs.length === 0 ? (
+                <div className="text-zinc-600">{privacyText.logs.empty}</div>
+              ) : (
+                logs.map((entry, idx) => (
+                  <div
+                    key={idx}
+                    className={getSetupLogLineClass(entry)}
+                  >
+                    {entry.line}
+                  </div>
+                ))
+              )}
+              <div ref={logEndRef} />
+            </div>
+          </SettingsSection>
+        </>
+      )}
     </SettingsPage>
   );
 };

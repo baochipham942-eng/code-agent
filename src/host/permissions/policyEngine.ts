@@ -486,7 +486,7 @@ export class PolicyEngine {
       }
       // If specifier has a pattern but we have no input, no match
       if (spec.specifier && !input) return false;
-      if (input && !matchSpecifier(spec, input)) return false;
+      if (input && !matchSpecifier(spec, input, rule.action === 'allow' ? 'allow' : 'restrict')) return false;
     }
 
     // Session matching

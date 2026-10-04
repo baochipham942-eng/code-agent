@@ -82,17 +82,37 @@ function getInternalCronInstance(service: CronService, jobId: string): Cron | un
   return jobs.get(jobId)?.cronInstance;
 }
 
-describe('cron 触发 jitter（防惊群）', () => {
+describe('cron 触发 jitter（防惊群，窗口按周期取）', () => {
   it('一次性 at 任务不抖动', () => {
-    expect(computeCronFireJitterMs('at', () => 0.999)).toBe(0);
+    expect(computeCronFireJitterMs({ type: 'at', datetime: 0 }, () => 0.999)).toBe(0);
   });
 
-  it('every/cron 任务抖动落在 [0, FIRE_JITTER_MAX_MS) 内', () => {
-    expect(computeCronFireJitterMs('every', () => 0)).toBe(0);
-    expect(computeCronFireJitterMs('every', () => 0.999)).toBe(
+  it('every/cron 任务抖动落在 [0, 窗口) 内：窗口 = clamp(周期×10%, 2s, 15min)', () => {
+    // 分钟级任务（60s 周期）：窗口 6s（秒级抖动）
+    const minuteSchedule = { type: 'every', interval: 1, unit: 'minutes' } as const;
+    expect(computeCronFireJitterMs(minuteSchedule, () => 0)).toBe(0);
+    expect(computeCronFireJitterMs(minuteSchedule, () => 0.999)).toBe(
+      Math.floor(0.999 * 60_000 * CRON_GUARDRAILS.FIRE_JITTER_PERIOD_RATIO),
+    );
+    // 小时级任务：分钟级抖动（1h 周期 → 6min 窗口）
+    const hourSchedule = { type: 'every', interval: 1, unit: 'hours' } as const;
+    expect(computeCronFireJitterMs(hourSchedule, () => 0.999)).toBe(
+      Math.floor(0.999 * 60 * 60_000 * CRON_GUARDRAILS.FIRE_JITTER_PERIOD_RATIO),
+    );
+    // 天级任务：封顶 15min
+    const daySchedule = { type: 'every', interval: 1, unit: 'days' } as const;
+    expect(computeCronFireJitterMs(daySchedule, () => 0.999)).toBe(
       Math.floor(0.999 * CRON_GUARDRAILS.FIRE_JITTER_MAX_MS),
     );
-    expect(computeCronFireJitterMs('cron', () => 0.5)).toBeLessThan(CRON_GUARDRAILS.FIRE_JITTER_MAX_MS);
+    // 极短周期（本地档下限兜底 2s——分钟级以下不缩到没有）
+    const tinySchedule = { type: 'every', interval: 1, unit: 'seconds' } as const;
+    expect(computeCronFireJitterMs(tinySchedule, () => 0.999)).toBe(
+      Math.floor(0.999 * CRON_GUARDRAILS.FIRE_JITTER_MIN_MS),
+    );
+    // cron 表达式任务按表达式最小间隔取窗口（每小时的 0 分 → 6min 窗口）
+    expect(computeCronFireJitterMs({ type: 'cron', expression: '0 * * * *' }, () => 0.5)).toBe(
+      Math.floor(0.5 * 60 * 60_000 * CRON_GUARDRAILS.FIRE_JITTER_PERIOD_RATIO),
+    );
   });
 });
 
@@ -147,14 +167,15 @@ describe('cron 防重叠（protect）与调度窗口（startAt/endAt）', () => 
 });
 
 describe('过期一次性任务加载时停用（防僵尸 enabled 任务）', () => {
-  it('datetime 已过的 enabled at 任务：加载即停用并落库', async () => {
+  it('datetime 已过（超出 misfire 宽限窗）的 enabled at 任务：加载即停用并落库', async () => {
     dbState.cronRows = [
       {
         id: 'job-missed-at',
         name: '错过窗口的一次性任务',
         description: null,
         schedule_type: 'at',
-        schedule: JSON.stringify({ type: 'at', datetime: Date.now() - 60_000 }),
+        // 宽限窗 5 分钟：错过 1 小时已明显超窗，判离线错过停用
+        schedule: JSON.stringify({ type: 'at', datetime: Date.now() - 60 * 60_000 }),
         action: JSON.stringify({ type: 'shell', command: 'echo ok' }),
         enabled: 1,
         max_retries: 0,
@@ -173,9 +194,42 @@ describe('过期一次性任务加载时停用（防僵尸 enabled 任务）', (
     const job = service.getJob('job-missed-at');
     expect(job).not.toBeNull();
     expect(job!.enabled).toBe(false);
-    // 落库：新增 resultChannel/cloudJobId 后 enabled 是第 12 位，应写 0
+    // 落库：新增 max_runs/run_count 后 enabled 是第 14 位（0 基 13），应写 0
     const saved = dbState.savedRows.find((row) => row[0] === 'job-missed-at');
-    expect(saved?.[11]).toBe(0);
+    expect(saved?.[13]).toBe(0);
+    await service.shutdown();
+  });
+
+  it('datetime 刚过但在 misfire 宽限窗内：照跑而不是停用', async () => {
+    dbState.cronRows = [
+      {
+        id: 'job-grace-at',
+        name: '宽限窗内的一次性任务',
+        description: null,
+        schedule_type: 'at',
+        schedule: JSON.stringify({ type: 'at', datetime: Date.now() - 60_000 }),
+        action: JSON.stringify({ type: 'shell', command: 'echo ok' }),
+        enabled: 1,
+        max_retries: 0,
+        retry_delay: 5000,
+        timeout: 60000,
+        tags: null,
+        metadata: '{}',
+        created_at: Date.now() - 120_000,
+        updated_at: Date.now() - 120_000,
+      },
+    ];
+    const service = new CronService();
+
+    await service.initialize();
+    // catch-up 是 fire-and-forget：等一个微任务让 executeJob 走完
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const rowsForJob = dbState.executionRows.filter((row) => row.job_id === 'job-grace-at');
+    expect(rowsForJob).toHaveLength(1);
+    expect(rowsForJob[0].status).toBe('completed');
+    // at 任务跑完按既有语义停用
+    expect(service.getJob('job-grace-at')!.enabled).toBe(false);
     await service.shutdown();
   });
 

@@ -48,6 +48,8 @@ function normalizeRequest(
     dangerLevel: request.dangerLevel,
     boundary: request.boundary,
     details: {
+      pluginId: request.details.pluginId,
+      pluginName: request.details.pluginName,
       filePath: request.details.path,
       command: request.details.command,
       url: request.details.url,

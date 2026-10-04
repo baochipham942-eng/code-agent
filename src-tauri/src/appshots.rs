@@ -34,6 +34,59 @@ pub const DEFAULT_APPSHOTS_SHORTCUT: &str = "LeftCmd+RightCmd";
 
 #[cfg(target_os = "macos")]
 const OWN_BUNDLE_ID: &str = "com.linchen.code-agent";
+#[cfg(target_os = "macos")]
+const FINDER_BUNDLE_ID: &str = "com.apple.finder";
+const APP_CLOSED_REASON_CODE: &str = "app_closed";
+const FINDER_DESKTOP_REASON_CODE: &str = "finder_desktop";
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppshotsLastFrontApp {
+    pub pid: i32,
+    pub bundle_id: Option<String>,
+    pub app_name: String,
+    pub alive: bool,
+    pub attachable: bool,
+    pub reason_code: Option<String>,
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Debug, Clone)]
+struct LastExternalFrontApp {
+    pid: i32,
+    bundle_id: Option<String>,
+    app_name: String,
+}
+
+#[cfg(target_os = "macos")]
+static LAST_EXTERNAL_FRONT_APP: Mutex<Option<LastExternalFrontApp>> = Mutex::new(None);
+
+#[cfg(target_os = "macos")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LastFrontAppAvailability {
+    attachable: bool,
+    reason_code: Option<&'static str>,
+}
+
+#[cfg(target_os = "macos")]
+fn classify_last_front_app(bundle_id: Option<&str>, alive: bool) -> LastFrontAppAvailability {
+    if bundle_id == Some(FINDER_BUNDLE_ID) {
+        return LastFrontAppAvailability {
+            attachable: false,
+            reason_code: Some(FINDER_DESKTOP_REASON_CODE),
+        };
+    }
+    if !alive {
+        return LastFrontAppAvailability {
+            attachable: false,
+            reason_code: Some(APP_CLOSED_REASON_CODE),
+        };
+    }
+    LastFrontAppAvailability {
+        attachable: true,
+        reason_code: None,
+    }
+}
 
 /// 运行时真实 bundle id：测试包（com.linchen.code-agent.dev）由 main 注入 CODE_AGENT_BUNDLE_ID，
 /// 缺省时回退到生产常量，保证排除"自己窗口"时认的是当前进程的 bundle 而非写死的生产值。
@@ -46,7 +99,14 @@ const AX_TEXT_MAX_CHARS: usize = 4000;
 #[cfg(target_os = "macos")]
 const CAPTURE_TIMEOUT: Duration = Duration::from_secs(10);
 #[cfg(target_os = "macos")]
-const SWIFT_TIMEOUT: Duration = Duration::from_secs(5);
+const SWIFT_INLINE_TIMEOUT: Duration = Duration::from_secs(30);
+#[cfg(target_os = "macos")]
+const PREBUILT_BIN_TIMEOUT: Duration = Duration::from_secs(5);
+
+#[cfg(target_os = "macos")]
+fn with_timeout_hint(err: &str) -> String {
+    if err.contains("timed out after") { format!("{err} The first Appshot after launch compiles helper code and can be slow; try the hotkey again in a few seconds.") } else { err.to_string() }
+}
 
 /// Appshots 总开关：前端设置同步过来，控制左右 Cmd 热键是否触发捕获。
 #[cfg(target_os = "macos")]
@@ -118,11 +178,106 @@ pub fn appshots_trigger(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// The app that was frontmost before Neo became active, if one has been observed.
+#[tauri::command]
+pub fn appshots_last_front_app() -> Option<AppshotsLastFrontApp> {
+    #[cfg(target_os = "macos")]
+    {
+        let last = LAST_EXTERNAL_FRONT_APP.lock().ok()?.clone()?;
+        let alive = pid_is_alive(last.pid);
+        let availability = classify_last_front_app(last.bundle_id.as_deref(), alive);
+        return Some(AppshotsLastFrontApp {
+            pid: last.pid,
+            bundle_id: last.bundle_id,
+            app_name: last.app_name,
+            alive,
+            attachable: availability.attachable,
+            reason_code: availability.reason_code.map(str::to_string),
+        });
+    }
+    #[cfg(not(target_os = "macos"))]
+    None
+}
+
+/// Capture the remembered app rather than whichever app is frontmost after the menu click.
+#[tauri::command]
+pub fn appshots_trigger_for_pid(app: AppHandle, pid: i32) -> Result<(), String> {
+    if pid <= 0 {
+        return Err("Appshots target pid must be positive".to_string());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let app_name = LAST_EXTERNAL_FRONT_APP
+            .lock()
+            .ok()
+            .and_then(|last| last.as_ref().filter(|last| last.pid == pid).map(|last| last.app_name.clone()));
+        trigger_capture_for_pid(app, pid, app_name);
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, pid);
+    Ok(())
+}
+
 /// 供全局热键回调调用：在后台线程跑捕获，避免阻塞热键线程。
 pub fn trigger_capture(app: AppHandle) {
     std::thread::spawn(move || {
         capture_now(&app);
     });
+}
+
+#[cfg(target_os = "macos")]
+fn trigger_capture_for_pid(app: AppHandle, pid: i32, app_name: Option<String>) {
+    std::thread::spawn(move || {
+        capture_now_for_pid(&app, pid, app_name.as_deref());
+    });
+}
+
+/// Subscribe to NSWorkspace activation notifications once the Tauri app is running.
+/// The callback runs on the AppKit thread, so no polling or repeated Swift process
+/// launches are needed while Neo is open.
+#[cfg(target_os = "macos")]
+pub fn start_last_front_app_tracker() -> Result<(), String> {
+    use block2::RcBlock;
+    use objc2_app_kit::NSWorkspace;
+    use objc2_foundation::NSNotificationCenter;
+
+    fn remember_frontmost() {
+        let workspace = NSWorkspace::sharedWorkspace();
+        let Some(app) = workspace.frontmostApplication() else { return };
+        let pid = app.processIdentifier();
+        let bundle_id = app.bundleIdentifier().map(|value| value.to_string());
+        if pid == std::process::id() as i32 || bundle_id.as_deref() == Some(own_bundle_id().as_str()) {
+            return;
+        }
+        let app_name = app.localizedName().map(|value| value.to_string()).unwrap_or_else(|| "Unknown app".to_string());
+        if let Ok(mut last) = LAST_EXTERNAL_FRONT_APP.lock() {
+            *last = Some(LastExternalFrontApp { pid, bundle_id, app_name });
+        }
+    }
+
+    remember_frontmost();
+    let workspace = NSWorkspace::sharedWorkspace();
+    let center: objc2::rc::Retained<NSNotificationCenter> = workspace.notificationCenter();
+    let block = RcBlock::new(move |_notification: std::ptr::NonNull<objc2_foundation::NSNotification>| {
+        remember_frontmost();
+    });
+    let observer = unsafe {
+        center.addObserverForName_object_queue_usingBlock(
+            Some(objc2_app_kit::NSWorkspaceDidActivateApplicationNotification),
+            None,
+            None,
+            &block,
+        )
+    };
+    // NSNotificationCenter retains the block observer. Leak only the token so it remains
+    // subscribed for the process lifetime; the desktop app owns this process lifetime.
+    std::mem::forget(observer);
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn start_last_front_app_tracker() -> Result<(), String> {
+    Ok(())
 }
 
 /// 注册 Appshots 的左右 Command 全局热键。
@@ -462,25 +617,49 @@ pub fn appshots_skip_motion(
 
 #[cfg(target_os = "macos")]
 pub fn capture_now(app: &AppHandle) {
+    capture_now_for_pid(app, 0, None);
+}
+
+#[cfg(target_os = "macos")]
+fn capture_now_for_pid(app: &AppHandle, target_pid: i32, target_app_name: Option<&str>) {
     let request_id = format!("appshot-{}", now_ms());
     let _ = app.emit(
         "appshots:capture_starting",
         serde_json::json!({ "requestId": request_id }),
     );
 
-    let located = match locate_frontmost_window() {
+    let located = match if target_pid > 0 {
+        locate_window_for_pid(target_pid)
+    } else {
+        locate_frontmost_window()
+    } {
         Ok(Some(loc)) => loc,
         Ok(None) => {
-            emit_error(
-                app,
-                &request_id,
-                "no_target",
-                "没有可截取的前台窗口（或当前前台就是 Agent Neo 自身）。",
-            );
+            if target_pid > 0 {
+                let message = format!(
+                    "{} is no longer open",
+                    target_app_name.unwrap_or("The selected app")
+                );
+                emit_error_with_context(
+                    app,
+                    &request_id,
+                    "no_target",
+                    &message,
+                    Some(APP_CLOSED_REASON_CODE),
+                    target_app_name,
+                );
+            } else {
+                emit_error(
+                    app,
+                    &request_id,
+                    "no_target",
+                    "没有可截取的前台窗口（或当前前台就是 Agent Neo 自身）。",
+                );
+            }
             return;
         }
         Err(e) => {
-            emit_error(app, &request_id, "locate_failed", &e);
+            emit_error(app, &request_id, "locate_failed", &with_timeout_hint(&e));
             return;
         }
     };
@@ -627,6 +806,14 @@ struct LocateRaw {
 /// 用 NSWorkspace 取前台 app（排除自身），再用 CGWindowList 取其最前的可见窗口。
 #[cfg(target_os = "macos")]
 fn locate_frontmost_window() -> Result<Option<LocatedWindow>, String> {
+    locate_window_for_pid(0)
+}
+
+/// Locate the front layer-0 window for a pid. A pid of 0 means the current
+/// frontmost application; both capture entry points therefore share one Swift
+/// script and one JSON parser.
+#[cfg(target_os = "macos")]
+fn locate_window_for_pid(requested_pid: i32) -> Result<Option<LocatedWindow>, String> {
     let script = format!(
         r#"
         import Cocoa
@@ -638,7 +825,14 @@ fn locate_frontmost_window() -> Result<Option<LocatedWindow>, String> {
                let s = String(data: data, encoding: .utf8) {{ print(s) }}
         }}
 
-        guard let app = NSWorkspace.shared.frontmostApplication else {{ emit(["found": false]); exit(0) }}
+        let requestedPid: pid_t = {requested_pid}
+        let app: NSRunningApplication?
+        if requestedPid > 0 {{
+            app = NSRunningApplication(processIdentifier: requestedPid)
+        }} else {{
+            app = NSWorkspace.shared.frontmostApplication
+        }}
+        guard let app else {{ emit(["found": false]); exit(0) }}
         let pid = app.processIdentifier
         let bundleId = app.bundleIdentifier ?? ""
         let appName = app.localizedName ?? ""
@@ -672,13 +866,19 @@ fn locate_frontmost_window() -> Result<Option<LocatedWindow>, String> {
         emit(["found": false])
         "#,
         own = own_bundle_id(),
-        own_pid = std::process::id()
+        own_pid = std::process::id(),
+        requested_pid = requested_pid,
     );
 
-    let out = run_command_with_timeout("/usr/bin/swift", &["-e", script.as_str()], SWIFT_TIMEOUT)?;
+    let out = run_command_with_timeout("/usr/bin/swift", &["-e", script.as_str()], SWIFT_INLINE_TIMEOUT)?;
     let raw: LocateRaw = serde_json::from_str(out.trim())
         .map_err(|e| format!("解析窗口定位结果失败: {e} (输出: {out})"))?;
 
+    parse_located_window(raw)
+}
+
+#[cfg(target_os = "macos")]
+fn parse_located_window(raw: LocateRaw) -> Result<Option<LocatedWindow>, String> {
     if !raw.found {
         return Ok(None);
     }
@@ -693,6 +893,11 @@ fn locate_frontmost_window() -> Result<Option<LocatedWindow>, String> {
         bundle_id: raw.bundle_id.filter(|s| !s.is_empty()),
         title: raw.title,
     }))
+}
+
+#[cfg(target_os = "macos")]
+fn pid_is_alive(pid: i32) -> bool {
+    pid > 0 && unsafe { libc::kill(pid, 0) == 0 || *libc::__error() == libc::EPERM }
 }
 
 /// `screencapture -l <windowId>` 窗口级截图（-o 去阴影，-x 静音）。
@@ -749,7 +954,7 @@ fn extract_ax_text(pid: i32) -> Option<String> {
         pid = pid
     );
 
-    match run_command_with_timeout("/usr/bin/swift", &["-e", script.as_str()], SWIFT_TIMEOUT) {
+    match run_command_with_timeout("/usr/bin/swift", &["-e", script.as_str()], SWIFT_INLINE_TIMEOUT) {
         Ok(text) => Some(text),
         Err(e) => {
             eprintln!("[appshot] AX 文本提取失败: {e}");
@@ -766,7 +971,7 @@ fn ocr_image(app: &AppHandle, image_path: &PathBuf) -> Option<String> {
     // 优先用预编译 vision-ocr 二进制（比 swift -e 冷启快，与项目既有 OCR 用法一致）。
     if let Some(bin) = resolve_vision_ocr(app) {
         let bin_str = bin.to_string_lossy().to_string();
-        match run_command_with_timeout(&bin_str, &["--photo", &path], SWIFT_TIMEOUT) {
+        match run_command_with_timeout(&bin_str, &["--photo", &path], PREBUILT_BIN_TIMEOUT) {
             Ok(out) => {
                 if let Some(text) = parse_vision_ocr_full_text(&out) {
                     return Some(text);
@@ -799,7 +1004,7 @@ fn ocr_image(app: &AppHandle, image_path: &PathBuf) -> Option<String> {
         path = path
     );
 
-    match run_command_with_timeout("/usr/bin/swift", &["-e", script.as_str()], SWIFT_TIMEOUT) {
+    match run_command_with_timeout("/usr/bin/swift", &["-e", script.as_str()], SWIFT_INLINE_TIMEOUT) {
         Ok(text) => Some(text),
         Err(e) => {
             eprintln!("[appshot] OCR swift 兜底失败: {e}");
@@ -922,10 +1127,30 @@ fn read_reduce_motion() -> bool {
 }
 
 #[cfg(target_os = "macos")]
-fn emit_error(app: &AppHandle, request_id: &str, code: &str, message: &str) {    eprintln!("[appshot] {code}: {message}");
+fn emit_error(app: &AppHandle, request_id: &str, code: &str, message: &str) {
+    emit_error_with_context(app, request_id, code, message, None, None);
+}
+
+#[cfg(target_os = "macos")]
+fn emit_error_with_context(
+    app: &AppHandle,
+    request_id: &str,
+    code: &str,
+    message: &str,
+    reason_code: Option<&str>,
+    app_name: Option<&str>,
+) {
+    eprintln!("[appshot] {code}: {message}");
+    let mut payload = serde_json::json!({ "requestId": request_id, "code": code, "message": message });
+    if let Some(reason_code) = reason_code {
+        payload["reasonCode"] = serde_json::json!(reason_code);
+    }
+    if let Some(app_name) = app_name {
+        payload["appName"] = serde_json::json!(app_name);
+    }
     let _ = app.emit(
         "appshots:error",
-        serde_json::json!({ "requestId": request_id, "code": code, "message": message }),
+        payload,
     );
 }
 
@@ -1016,6 +1241,86 @@ mod clean_ax_text_tests {
     fn empty_input_yields_empty_output() {
         assert_eq!(clean_ax_text(""), "");
         assert_eq!(clean_ax_text("\n  \n"), "");
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod swift_timeout_tests {
+    use super::{with_timeout_hint, PREBUILT_BIN_TIMEOUT, SWIFT_INLINE_TIMEOUT};
+    use std::time::Duration;
+
+    #[test]
+    fn appends_hint_to_timeout_errors() {
+        let err = "/usr/bin/swift timed out after 5s";
+        let hinted = with_timeout_hint(err);
+        assert!(hinted.starts_with(err));
+        assert!(hinted.contains("try the hotkey again in a few seconds."));
+    }
+
+    #[test]
+    fn leaves_non_timeout_errors_unchanged() {
+        let err = "/usr/bin/swift exited with status 1";
+        assert_eq!(with_timeout_hint(err), err);
+    }
+
+    #[test]
+    fn inline_timeout_exceeds_prebuilt_timeout() {
+        assert!(SWIFT_INLINE_TIMEOUT > PREBUILT_BIN_TIMEOUT);
+    }
+
+    #[test]
+    fn inline_timeout_allows_cold_compile() {
+        assert!(SWIFT_INLINE_TIMEOUT >= Duration::from_secs(20));
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod locate_window_tests {
+    use super::{parse_located_window, LocateRaw};
+
+    #[test]
+    fn parses_pid_target_window_json() {
+        let raw: LocateRaw = serde_json::from_str(
+            r#"{"found":true,"pid":412,"windowId":77,"x":1.0,"y":2.0,"width":800.0,"height":600.0,"appName":"TextEdit","bundleId":"com.apple.TextEdit","title":"Notes"}"#,
+        )
+        .expect("test JSON should parse");
+        let located = parse_located_window(raw).expect("pid target should produce a window").expect("window should be present");
+        assert_eq!(located.pid, 412);
+        assert_eq!(located.window_id, 77);
+        assert_eq!(located.app_name, "TextEdit");
+        assert_eq!(located.bundle_id.as_deref(), Some("com.apple.TextEdit"));
+    }
+
+    #[test]
+    fn returns_none_when_pid_has_no_visible_window() {
+        let raw: LocateRaw = serde_json::from_str(r#"{"found":false}"#).expect("test JSON should parse");
+        assert!(parse_located_window(raw).expect("not-found JSON should be valid").is_none());
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod last_front_app_tests {
+    use super::{classify_last_front_app, APP_CLOSED_REASON_CODE, FINDER_DESKTOP_REASON_CODE};
+
+    #[test]
+    fn finder_is_not_attachable_even_when_the_process_is_alive() {
+        let availability = classify_last_front_app(Some("com.apple.finder"), true);
+        assert!(!availability.attachable);
+        assert_eq!(availability.reason_code, Some(FINDER_DESKTOP_REASON_CODE));
+    }
+
+    #[test]
+    fn closed_external_app_is_not_attachable_with_a_stable_reason_code() {
+        let availability = classify_last_front_app(Some("com.apple.TextEdit"), false);
+        assert!(!availability.attachable);
+        assert_eq!(availability.reason_code, Some(APP_CLOSED_REASON_CODE));
+    }
+
+    #[test]
+    fn live_external_app_is_attachable_without_a_reason() {
+        let availability = classify_last_front_app(Some("com.apple.TextEdit"), true);
+        assert!(availability.attachable);
+        assert_eq!(availability.reason_code, None);
     }
 }
 

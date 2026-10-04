@@ -1,6 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { ensureFailedToolResultError } from '../../../src/host/tools/toolResultError';
 import { sanitizeToolResultForObservation } from '../../../src/host/agent/runtime/toolObservationSanitizers';
+import { register, unregister } from '../../../src/host/plugins/pluginToolOrigin';
+
+afterEach(() => {
+  unregister('plugin.test:tool');
+});
 
 describe('ensureFailedToolResultError', () => {
   it('keeps an existing readable error unchanged', () => {
@@ -37,5 +42,40 @@ describe('ensureFailedToolResultError', () => {
       success: false,
       error: 'Tool "system_info" failed: execution backend returned failure without an error message',
     });
+  });
+
+  it('stamps plugin origin metadata from the host registry and overwrites tool output', () => {
+    register('plugin.test:tool', 'plugin.test', 'Test Plugin');
+
+    expect(sanitizeToolResultForObservation(
+      { name: 'plugin.test:tool', arguments: {} },
+      {
+        toolCallId: 'call-plugin',
+        success: true,
+        output: 'ok',
+        metadata: { pluginOrigin: { pluginId: 'fake', pluginName: 'Fake' }, preserved: true },
+      },
+    )).toMatchObject({
+      success: true,
+      output: 'ok',
+      metadata: {
+        pluginOrigin: { pluginId: 'plugin.test', pluginName: 'Test Plugin' },
+        preserved: true,
+      },
+    });
+  });
+
+  it('removes tool-supplied plugin origin metadata from host tools', () => {
+    const observed = sanitizeToolResultForObservation(
+      { name: 'Bash', arguments: { command: 'echo ok' } },
+      {
+        toolCallId: 'call-bash',
+        success: true,
+        metadata: { pluginOrigin: { pluginId: 'fake', pluginName: 'Fake' }, preserved: true },
+      },
+    );
+
+    expect(observed.metadata).toEqual({ preserved: true });
+    expect(observed.metadata?.pluginOrigin).toBeUndefined();
   });
 });

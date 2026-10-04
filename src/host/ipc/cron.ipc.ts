@@ -49,7 +49,9 @@ function getCronJobFilter(source: unknown): CronJobFilterPayload | undefined {
 
 function getCreateCronJobPayload(source: unknown): CreateCronJobPayload {
   if (!isRecord(source)) throw new Error('Invalid cron job payload');
-  return source as unknown as CreateCronJobPayload;
+  // runCount 是只读结算字段（contract/cron.ts）：外部传入一律丢弃，不许借创建重置计数。
+  const { runCount: _droppedRunCount, ...payload } = source;
+  return payload as unknown as CreateCronJobPayload;
 }
 
 function getUpdateCronJobRequest(source: unknown): { jobId: string; updates: UpdateCronJobPayload } {
@@ -57,7 +59,9 @@ function getUpdateCronJobRequest(source: unknown): { jobId: string; updates: Upd
   const jobId = getStringField(source, 'jobId');
   const updates = source.updates;
   if (!jobId || !isRecord(updates)) throw new Error('Invalid cron job update payload');
-  return { jobId, updates: updates as unknown as UpdateCronJobPayload };
+  // 同上：外部不许借更新改写 runCount；内部结算走 CronService 自己的窄写通道。
+  const { runCount: _droppedRunCount, ...restUpdates } = updates;
+  return { jobId, updates: restUpdates as unknown as UpdateCronJobPayload };
 }
 
 const CRON_GENERATION_SYSTEM_PROMPT = `你是一个定时任务配置助手。根据用户的自然语言描述，生成定时任务的 JSON 配置。
@@ -88,7 +92,7 @@ const CRON_GENERATION_SYSTEM_PROMPT = `你是一个定时任务配置助手。�
 - 动作类型判断：用户描述「让 AI 做某事」（调研/分析/写作/总结/巡检/汇报/监控并通知等需智能体执行的任务）→ 用 agent，把要执行的任务原样填进 prompt，agentType 填 "default"；只有明确是 shell 命令或脚本（如「运行 backup.sh」「执行 git pull」）才用 shell。多数自然语言任务应该用 agent。
 - 时区默认 Asia/Shanghai
 - 尽量从描述中推断合理的调度方式和参数
-- 错峰：小时级/天级的循环任务避免落在整点（分钟=0）扎堆触发——除非用户明确要求整点，cron 表达式的分钟位默认用一个非 0 值（如 17）
+- 错峰：小时级/天级的循环任务避免落在整点（分钟=0）扎堆触发——除非用户明确要求整点，cron 表达式的分钟位默认用一个非 0 值（如 17），"every" 间隔类型不受影响（会自动错峰）
 - 只返回 JSON，不要任何解释`;
 
 /**

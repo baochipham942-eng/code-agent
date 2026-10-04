@@ -174,6 +174,11 @@ export function createBackgroundSubagentRecoveryHandler(input: {
         ...(plan.envelope.parentRunId ? { runId: plan.envelope.parentRunId } : {}),
         ...(metadata?.treeId ? { treeId: metadata.treeId } : {}),
         ...(metadata?.startedAt !== undefined ? { startedAt: metadata.startedAt } : {}),
+        ...(metadata?.cost !== undefined ? { cost: metadata.cost } : {}),
+        ...(metadata?.lastProgress ? { lastProgress: metadata.lastProgress } : {}),
+        ...(metadata?.iterations !== undefined ? { iterations: metadata.iterations } : {}),
+        ...(metadata?.toolCalls !== undefined ? { toolCalls: metadata.toolCalls } : {}),
+        ...(backgroundCursorHasLiveProgress(metadata) ? { progressRecorded: true } : {}),
       });
       scheduleBackgroundSubagentIdleWake(record);
       return {
@@ -183,6 +188,17 @@ export function createBackgroundSubagentRecoveryHandler(input: {
       };
     },
   };
+}
+
+function backgroundCursorHasLiveProgress(
+  metadata: ReturnType<typeof readBackgroundSubagentCursorMetadata>,
+): boolean {
+  if (!metadata) return false;
+  return metadata.cost !== undefined
+    || metadata.tokensUsed !== undefined
+    || metadata.iterations !== undefined
+    || metadata.toolCalls !== undefined
+    || Boolean(metadata.lastProgress);
 }
 
 export function createExternalEngineRecoveryHandler(input: {

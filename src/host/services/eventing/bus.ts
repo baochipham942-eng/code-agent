@@ -11,6 +11,7 @@
 import { EventEmitter } from 'events';
 import type { EventDomain, BusEvent, EventHandler, EventPattern } from '../../protocol/events/busTypes';
 import { createLogger } from '../infra/logger';
+import { resolveEventSinks } from './eventSinks';
 import { getInternalEventStore } from './internalStore';
 
 const logger = createLogger('EventBus');
@@ -35,21 +36,22 @@ class EventBus {
   ): void {
     if (this._isShutdown) return;
 
+    const sinks = resolveEventSinks(domain, type, options?.bridgeToRenderer);
+
     const event: BusEvent<T> = {
       domain,
       type,
       data,
       timestamp: Date.now(),
       sessionId: options?.sessionId,
-      bridgeToRenderer: options?.bridgeToRenderer ?? true,
+      bridgeToRenderer: sinks.external,
     };
 
     this.safeEmit(`${domain}:${type}`, event);
     this.safeEmit(domain, event);
     this.safeEmit('*', event);
 
-    const PERSISTENT_DOMAINS = ['tool', 'agent', 'session'];
-    if (PERSISTENT_DOMAINS.includes(domain)) {
+    if (sinks.persist) {
       try {
         getInternalEventStore().writeEvent({
           agentId: options?.sessionId || 'main',

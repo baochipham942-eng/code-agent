@@ -185,6 +185,9 @@ export const spawnAgentSchema: ToolSchema = {
   category: 'multiagent',
   permissionLevel: 'execute',
   allowInTextForeground: true,
+  accesses: [
+    { kind: 'write', expression: 'resource(agent, runtime)' },
+  ],
 };
 
 export const agentSpawnSchema: ToolSchema = {

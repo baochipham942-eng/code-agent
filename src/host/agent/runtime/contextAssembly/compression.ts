@@ -10,8 +10,8 @@ import type { ToolResultArchiveRef } from '../../../utils/toolResultSpill';
 import { estimateTokens } from '../../../context/tokenOptimizer';
 import { estimateImageTokens } from '../../../context/tokenEstimator';
 import { assessContextPressure } from '../../../context/contextPressureController';
-import { resolveContextWindow } from '../../../model/modelLimits';
-import { applyToolResultBudget } from '../../../context/layers/toolResultBudget';
+import { resolveContextWindow, resolveModelMaxOutputTokens } from '../../../model/modelLimits';
+import { applyToolResultBudget, resolveToolResultBudget } from '../../../context/layers/toolResultBudget';
 import { tryInsertCheckpointRebuildBoundary } from '../../../context/checkpoint/runtimeBoundary';
 import { readExistingCheckpointStore, resolveCheckpointStorePaths } from '../../../context/checkpoint/store';
 import { validateCheckpointDocument } from '../../../context/checkpoint/validator';
@@ -310,21 +310,33 @@ export function updateContextHealth(ctx: ContextAssemblyCtx): void {
 
 /**
  * Item2 剪枝短路：非破坏地测量「若对原始 transcript 做系统 A 同款 tool-result 预算化
- * （2000 token/结果），token 会降到多少」。只用于判断付费 AI 摘要是否真有必要——
+ * （与当前模型上下文窗口派生的 token/结果），token 会降到多少」。只用于判断付费 AI 摘要是否真有必要——
  * 系统 A 的 compressionPipeline 每轮已对 apiView 做同样预算化，系统 B 却按原始
  * transcript 计 token，导致 raw 很大但 budgeted apiView 已够小时仍误付费摘要。
  *
  * 关键：在深拷贝上跑，绝不 mutate ctx.runtime.messages（那是系统 A 非破坏投影的真理源）。
  * 不传 protected/spill——纯测量不会真截断活跃文件，无 re-read 死循环风险。
  */
-export function estimatePrunedTranscriptTokens(messages: Message[]): number {
+export function estimatePrunedTranscriptTokens(messages: Message[], contextWindowTokens?: number): number {
+  const resolvedBudget = resolveToolResultBudget(contextWindowTokens ?? Number.NaN);
   const copies = messages.map((m) => ({
     id: m.id ?? '',
     role: m.role as string,
     content: m.content || '',
     toolCallId: (m as { toolCallId?: string }).toolCallId,
+    toolName: (m as { toolName?: string }).toolName,
+    resultBudgetTokens: (m as { resultBudgetTokens?: number }).resultBudgetTokens,
   }));
-  applyToolResultBudget(copies, new CompressionState(), { maxTokensPerResult: 2000 });
+  applyToolResultBudget(copies, new CompressionState(), {
+    maxTokensPerResult: resolvedBudget.l1MaxTokens,
+    resolveMaxTokens: (message) => message.resultBudgetTokens === undefined
+      ? resolvedBudget.l1MaxTokens
+      : resolveToolResultBudget(
+        contextWindowTokens ?? Number.NaN,
+        message.toolName,
+        message.resultBudgetTokens,
+      ).l1MaxTokens,
+  });
   return copies.reduce((sum, m) => sum + estimateTokens(m.content || ''), 0);
 }
 
@@ -393,6 +405,10 @@ export async function checkAndAutoCompress(
       ctx.runtime.modelConfig.model,
       ctx.runtime.modelConfig.provider,
     );
+    const maxOutputTokens = resolveModelMaxOutputTokens(
+      ctx.runtime.modelConfig.model,
+      ctx.runtime.modelConfig.provider,
+    );
     const health = getContextHealthService().get(ctx.runtime.sessionId);
     const paths = resolveCheckpointStorePaths({
       sessionId: ctx.runtime.sessionId,
@@ -413,7 +429,7 @@ export async function checkAndAutoCompress(
     // 注意 compressionEnabled 只 gate 百分比软触发；token 硬阈值和 pipeline 信号必须压。
     const decision = assessContextPressure({
       currentTokens,
-      tokenThresholdHit: ctx.runtime.autoCompressor.shouldTriggerByTokens(currentTokens, contextWindow),
+      tokenThresholdHit: ctx.runtime.autoCompressor.shouldTriggerByTokens(currentTokens, contextWindow, maxOutputTokens),
       usageRatio: health ? health.usagePercent / 100 : undefined,
       warningThreshold: compressorConfig.warningThreshold,
       pipelineAutocompactNeeded: ctx.runtime.contextHealth.pipelineAutocompactNeeded,
@@ -434,8 +450,8 @@ export async function checkAndAutoCompress(
     // usage-percent 触发是基于系统 A 已预算化的 apiView 做出的（其优先级高于 token-threshold，
     // 故走到这里时 pipelineAutocompactNeeded 必为 false），无需重复剪枝，照常压缩。
     if (decision.action === 'execute' && decision.trigger === 'token-threshold') {
-      const prunedTokens = estimatePrunedTranscriptTokens(ctx.runtime.messages);
-      if (!ctx.runtime.autoCompressor.shouldTriggerByTokens(prunedTokens, contextWindow)) {
+      const prunedTokens = estimatePrunedTranscriptTokens(ctx.runtime.messages, contextWindow);
+      if (!ctx.runtime.autoCompressor.shouldTriggerByTokens(prunedTokens, contextWindow, maxOutputTokens)) {
         // 无损预算化即可化解，不算卡死 → 清零计数器，跳过付费摘要。
         ctx.compressionRecovery._consecutiveCompacts = 0;
         logger.info(
@@ -659,7 +675,7 @@ export async function checkAndAutoCompress(
         0,
       );
       const postRatio = health?.maxTokens ? postTokens / health.maxTokens : 0;
-      const stillOver = ctx.runtime.autoCompressor.shouldTriggerByTokens(postTokens, contextWindow)
+      const stillOver = ctx.runtime.autoCompressor.shouldTriggerByTokens(postTokens, contextWindow, maxOutputTokens)
         || postRatio >= compressorConfig.warningThreshold;
       const guard = nextCompactionGuardState(
         ctx.compressionRecovery._consecutiveCompacts,
@@ -690,7 +706,7 @@ export async function checkAndAutoCompress(
       }
 
       // 检查是否应该收尾（总预算超限）—— 同样统一到所有触发路径
-      if (ctx.runtime.autoCompressor.shouldWrapUp(contextWindow)) {
+      if (ctx.runtime.autoCompressor.shouldWrapUp(contextWindow, maxOutputTokens)) {
         logger.warn('[AgentLoop] Total token budget exceeded, injecting wrap-up instruction');
         ctx.injectSystemMessage(
           '<wrap-up>\n' +

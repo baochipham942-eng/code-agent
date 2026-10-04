@@ -314,7 +314,7 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
               <button
                 onClick={handleSend}
                 disabled={!input.trim() || isGenerating}
-                className="px-4 py-2 rounded-lg bg-emerald-500 text-white font-medium hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="px-4 py-2 rounded-lg bg-emerald-700 text-white font-medium hover:bg-emerald-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <Send className="w-4 h-4" />
               </button>

@@ -117,6 +117,8 @@ describe('applyReadLoopHardLimit', () => {
     expect(ctx.control.readLoopSealBlockedReads).toBe(3);
     expect(ctx.control.forceFinalResponseReason).toContain('连续只读操作达到硬阈值');
     expect(ctx.control.forceFinalResponsePrompt).toContain('Do not call any tool');
+    expect(ctx.control.forceFinalResponsePrompt).toContain('which evidence is missing');
+    expect(ctx.control.forceFinalResponsePrompt).toContain('If no file was produced, say so explicitly');
     expect(escalated.metadata?.forceFinalResponseReason).toContain('连续只读操作达到硬阈值');
     expect(injectPrompt).toHaveBeenCalledTimes(1);
   });

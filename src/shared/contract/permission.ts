@@ -134,6 +134,10 @@ export interface PermissionRequest {
   type: PermissionType;
   tool: string;
   details: {
+    /** Raw id of the plugin that registered this tool, when applicable. */
+    pluginId?: string;
+    /** Host-resolved display name of the plugin that registered this tool. */
+    pluginName?: string;
     path?: string;
     filePath?: string;
     command?: string;

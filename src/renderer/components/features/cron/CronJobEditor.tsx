@@ -21,6 +21,7 @@ import {
   CRON_TEMPLATES,
   getMissingTemplateConnectors,
   getTemplateConnectorStatuses,
+  getTemplateDisplayCopy,
   type CronTemplate,
 } from './cronTemplates';
 import { CronSimpleCreate } from './CronSimpleCreate';
@@ -111,7 +112,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       : step === 'pick'
         ? '选择任务模板'
         : step === 'fill'
-          ? selectedTemplate?.name || '填写参数'
+          ? (selectedTemplate ? getTemplateDisplayCopy(selectedTemplate, cc.templates).name : '') || '填写参数'
           : '手动配置任务';
 
   const scheduleOptions = useMemo(
@@ -228,6 +229,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
         <div className="grid grid-cols-2 gap-3">
           {CRON_TEMPLATES.map((tpl) => {
             const connectorStatuses = getTemplateConnectorStatuses(tpl, connectedConnectorIds);
+            const copy = getTemplateDisplayCopy(tpl, cc.templates);
             return (
               <button
                 key={tpl.id}
@@ -236,10 +238,10 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
               >
                 <div className="mb-2 text-2xl">{tpl.emoji}</div>
                 <div className="text-sm font-medium text-zinc-200 group-hover:text-zinc-100">
-                  {tpl.name}
+                  {copy.name}
                 </div>
                 <div className="mt-1 text-xs text-zinc-500 group-hover:text-zinc-400">
-                  {tpl.description}
+                  {copy.description}
                 </div>
                 {connectorStatuses.length > 0 && (
                   <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -318,8 +320,12 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           <div className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-950/50 p-3">
             <span className="text-2xl">{selectedTemplate.emoji}</span>
             <div>
-              <div className="text-sm font-medium text-zinc-200">{selectedTemplate.name}</div>
-              <div className="text-xs text-zinc-500">{selectedTemplate.description}</div>
+              <div className="text-sm font-medium text-zinc-200">
+                {getTemplateDisplayCopy(selectedTemplate, cc.templates).name}
+              </div>
+              <div className="text-xs text-zinc-500">
+                {getTemplateDisplayCopy(selectedTemplate, cc.templates).description}
+              </div>
             </div>
           </div>
 
@@ -544,6 +550,11 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                   <p className="text-xs text-zinc-500" data-testid="cron-min-interval-hint">
                     {draft.runsOn === 'cloud' ? cc.cloudIntervalHint : cc.localIntervalHint}
                   </p>
+                  {(draft.everyUnit === 'hours' || draft.everyUnit === 'days') && (
+                    <p className="text-xs text-zinc-500" data-testid="cron-auto-stagger-hint">
+                      {draft.everyUnit === 'hours' ? '小时' : '天'}级任务会按任务 ID 自动错峰到非整点分钟，避免扎堆触发。
+                    </p>
+                  )}
                   <div className="grid gap-3 sm:grid-cols-2">
                     <FormField label="开始时间">
                       <Input
@@ -772,6 +783,31 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
               />
             </FormField>
           </div>
+          {draft.runsOn !== 'cloud' && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <FormField label="单次预算上限 (USD)" hint="本次运行花费超过该金额即停车并自动停用，留空为不限。">
+                <Input
+                  type="number"
+                  value={draft.maxRunBudget}
+                  onChange={(e) => setField('maxRunBudget', e.target.value)}
+                  placeholder="不限"
+                />
+              </FormField>
+              <FormField
+                label="运行次数上限"
+                hint={job?.maxRuns != null && job.runCount != null
+                  ? `已运行 ${job.runCount}/${job.maxRuns} 次，到数自动停用；重新启用后计数清零。留空为不限。`
+                  : '到数自动停用并通知；重新启用后计数清零。留空为不限。'}
+              >
+                <Input
+                  type="number"
+                  value={draft.maxRuns}
+                  onChange={(e) => setField('maxRuns', e.target.value)}
+                  placeholder="不限"
+                />
+              </FormField>
+            </div>
+          )}
         </div>
       )}
     </Modal>

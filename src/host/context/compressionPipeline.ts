@@ -19,7 +19,7 @@ import {
   getFreshToolResultMessageIds,
   type ActiveToolResultPruneConfig,
 } from './layers/activeToolResultPrune';
-import { applyToolResultBudget } from './layers/toolResultBudget';
+import { applyToolResultBudget, resolveToolResultBudget } from './layers/toolResultBudget';
 import { applySnip } from './layers/snip';
 import { applyMicrocompact } from './layers/microcompact';
 import { applyContextCollapse } from './layers/contextCollapse';
@@ -28,7 +28,7 @@ import type { ContextInterventionSnapshot } from '../../shared/contract/contextV
 import { getProtectedMessageIds } from './contextInterventionHelpers';
 import { createLogger } from '../services/infra/logger';
 import { applyJevCompaction, isJevCompactionEnabled, type JevCompactionResult } from './jevCompaction';
-import { PIPELINE_AUTOCOMPACT_OCCUPANCY } from './compactionOccupancy';
+import { resolveTriggerTokens } from './triggerTokens';
 
 const logger = createLogger('CompressionPipeline');
 
@@ -73,11 +73,17 @@ export interface PipelineConfig {
   enableSnip: boolean;
   enableMicrocompact: boolean;
   enableContextCollapse: boolean;
-  toolResultBudget: number; // default: 2000
+  /** Optional explicit L1 override for callers/tests; production derives it from maxTokens. */
+  toolResultBudget?: number;
   protectedToolResultPredicate?: (message: ProjectableMessage) => boolean;
   interventions?: ContextInterventionSnapshot;
   /** GAP-009: 提供时 L1 超预算结果先落盘再截断（透传给 toolResultBudget） */
   spillSessionId?: string;
+  /**
+   * Absolute autocompact line from resolveTriggerTokens.
+   * Absent → derive from maxTokens with the same function (no output reserve).
+   */
+  autocompactTriggerTokens?: number;
   /** L0：跑在 L1 之前，超预算结果整体归档换确定性占位符（不参与 L1 的有损截断） */
   activeToolResultPrune?: ActiveToolResultPruneConfig;
 }
@@ -91,14 +97,21 @@ export interface PipelineResult {
 }
 
 // Fractions of projected maxTokens. contextCollapse (0.75) is the L4 projection
-// layer, not the settings warning slider. autocompact is the forced signal
-// (PIPELINE_AUTOCOMPACT_OCCUPANCY). It is not a settings field.
+// layer, not the settings warning slider. The autocompact line is absolute
+// tokens from resolveTriggerTokens, not one of these fractions.
 const THRESHOLDS = {
   snip: 0.50,
   microcompact: 0.60,
   contextCollapse: 0.75,
-  autocompact: PIPELINE_AUTOCOMPACT_OCCUPANCY,
 } as const;
+
+function pipelineAutocompactLine(config: PipelineConfig): number {
+  const supplied = config.autocompactTriggerTokens;
+  if (typeof supplied === 'number' && Number.isFinite(supplied) && supplied > 0) {
+    return supplied;
+  }
+  return resolveTriggerTokens(config.maxTokens);
+}
 
 /**
  * Count total tokens across an array of ProjectableMessages.
@@ -203,10 +216,30 @@ export class CompressionPipeline {
     // Deterministic full-body archive + placeholder for oversized results,
     // so they never enter L1's lossy head+tail truncation.
     // -------------------------------------------------------------------------
+    const resolvedToolResultBudget = resolveToolResultBudget(config.maxTokens);
+    const l1MaxTokens = config.toolResultBudget ?? resolvedToolResultBudget.l1MaxTokens;
+    const l0MaxTokens = config.activeToolResultPrune?.maxTokensPerResult
+      ?? resolvedToolResultBudget.l0MaxTokens;
+    const resolveMessageBudget = (message: {
+      toolName?: string;
+      resultBudgetTokens?: number;
+    }, layer: 'l1' | 'l0'): number => {
+      if (message.resultBudgetTokens === undefined) {
+        return layer === 'l1' ? l1MaxTokens : l0MaxTokens;
+      }
+      const budget = resolveToolResultBudget(
+        config.maxTokens,
+        message.toolName,
+        message.resultBudgetTokens,
+      );
+      return layer === 'l1' ? budget.l1MaxTokens : budget.l0MaxTokens;
+    };
+
     if (config.activeToolResultPrune?.enabled) {
       const prunedCount = applyActiveToolResultPrune(transcript, state, {
         enabled: true,
-        maxTokensPerResult: config.activeToolResultPrune.maxTokensPerResult,
+        maxTokensPerResult: l0MaxTokens,
+        resolveMaxTokens: (message) => resolveMessageBudget(message, 'l0'),
         protectedMessageIds,
         spillSessionId: config.activeToolResultPrune.spillSessionId,
       });
@@ -217,7 +250,8 @@ export class CompressionPipeline {
     // L1: Tool result budget — always runs (mutates transcript messages)
     // -------------------------------------------------------------------------
     applyToolResultBudget(transcript, state, {
-      maxTokensPerResult: config.toolResultBudget ?? 2000,
+      maxTokensPerResult: l1MaxTokens,
+      resolveMaxTokens: (message) => resolveMessageBudget(message, 'l1'),
       protectedMessageIds: toolResultBudgetProtectedMessageIds,
       spillSessionId: config.spillSessionId,
     });
@@ -317,8 +351,8 @@ export class CompressionPipeline {
     // -------------------------------------------------------------------------
     // L5: Autocompact — NOT triggered here, reported to loop
     // -------------------------------------------------------------------------
-    const finalUsage = totalTokens / config.maxTokens;
-    if (finalUsage >= THRESHOLDS.autocompact) {
+    const autocompactLine = pipelineAutocompactLine(config);
+    if (autocompactLine > 0 && totalTokens >= autocompactLine) {
       layersTriggered.push('autocompact-needed');
     }
 

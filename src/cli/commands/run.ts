@@ -12,15 +12,18 @@ import {
   initializeCLIServices,
   getDatabaseService,
   getCLIEnvironmentFingerprint,
+  getSessionManager,
   whenCLIMcpReady,
   whenCLISkillsReady,
 } from '../bootstrap';
+import { installInterruptHandlers, markInterruptedIfNoAssistant } from '../interruptedRunMarker';
 import type { CLIGlobalOptions } from '../types';
 import { extractJSON } from '../utils/jsonExtractor';
 import { validateSchema, formatValidationErrors, type JSONSchema } from '../utils/schemaValidator';
 import { getPromptCommandService } from '../../host/services/commands/promptCommandService';
 import { resolveCLIPermissionModeFlag, type CLIPermissionMode } from '../permissionPolicy';
 import { resolveRunExitCode } from '../exitCodes';
+import { formatThrownError } from '../../shared/utils/providerError';
 
 /**
  * Read stdin when piped (non-TTY)
@@ -165,6 +168,8 @@ export const runCommand = new Command('run')
 
     const maxRetries = parseInt(options.maxRetries || '3', 10);
 
+    // 正常收尾前卸掉。信号路径自己 exit，不会走到这里。
+    let removeInterruptHandlers = (): void => {};
     try {
       // 初始化服务（--bare：宿主机 skills/hooks/MCP 跳过，产品内置 skills 仍装载）
       await initializeCLIServices({
@@ -236,6 +241,18 @@ export const runCommand = new Command('run')
           }
         }
       }
+
+      // 会话行要到 agent.run() 里的 initSession 才创建。处理器先装上，信号到达时再读
+      // sessionId：还没有 id 就只按码退出；已有回复则不追加。零 assistant 才落「已中断」。
+      removeInterruptHandlers = installInterruptHandlers({
+        sessionManager: getSessionManager(),
+        getSessionId: () => agent.getSessionId(),
+        now: () => Date.now(),
+        markInterrupted: markInterruptedIfNoAssistant,
+        exit: (code) => {
+          process.exit(code);
+        },
+      });
 
       // prompt 命令展开（/命令协议层，roadmap 2.2）：run "/name args" → 模板 prompt
       if (fullPrompt.startsWith('/')) {
@@ -362,10 +379,12 @@ export const runCommand = new Command('run')
       }
 
       // 设置退出码并退出（0 正常 / 1 异常失败 / 2 撞最大轮次部分完成，见 cli/exitCodes.ts）
+      removeInterruptHandlers();
       await cleanup();
       process.exit(resolveRunExitCode(result));
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      removeInterruptHandlers();
+      const message = formatThrownError(error);
 
       if (isJson) {
         jsonOutput.error(message);

@@ -184,6 +184,7 @@
         "src/renderer/slots/productSlotHosts.tsx",
         "scripts/perf/long-session-browser-harness.tsx",
         "scripts/perf/long-session-browser-smoke.ts",
+        "scripts/perf/search-navigation-ready.ts",
         "scripts/perf/wait-for-stable.ts",
         "scripts/perf/journey-long-session-harness.tsx",
         "scripts/perf/journey-browser-smoke.ts",
@@ -317,6 +318,7 @@
     "commit-checks": 45000,
     "vitest": 90000,
     "package-typechecks": 45000,
-    "tests-typecheck": 45000
+    "tests-typecheck": 45000,
+    "shared-host-boundary": 20000
   }
 }

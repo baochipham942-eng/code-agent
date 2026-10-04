@@ -670,3 +670,83 @@ describe('TelemetryUploaderService', () => {
     });
   });
 });
+
+describe('TelemetryUploaderService syncAutoUpload', () => {
+  let service: InstanceType<typeof import('../../../src/host/telemetry/telemetryUploaderService').TelemetryUploaderService>;
+  let upload: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    const { TelemetryUploaderService } = await import('../../../src/host/telemetry/telemetryUploaderService');
+    service = new TelemetryUploaderService();
+    upload = vi.spyOn(service, 'upload').mockResolvedValue(0);
+  });
+
+  afterEach(() => {
+    service.stopAutoUpload();
+    vi.useRealTimers();
+  });
+
+  it('does not start auto upload when cloud upload is disabled at login', async () => {
+    service.setEnabled(false);
+    service.syncAutoUpload({ id: 'user-1' });
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(upload).not.toHaveBeenCalled();
+    expect(mocks.getCurrentUser).not.toHaveBeenCalled();
+  });
+
+  it('startAutoUpload is a no-op while disabled', async () => {
+    service.setEnabled(false);
+    service.startAutoUpload();
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it('does not start before a logged-in sync has asked for upload', async () => {
+    service.setEnabled(true);
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it('setEnabled(false) stops a schedule that already started', async () => {
+    service.syncAutoUpload({ id: 'user-1' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(upload).toHaveBeenCalledTimes(1);
+
+    upload.mockClear();
+    service.setEnabled(false);
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it('setEnabled(true) resumes only when a logged-in sync still wants upload', async () => {
+    service.setEnabled(false);
+    service.syncAutoUpload({ id: 'user-1' });
+    service.setEnabled(true);
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(mocks.getCurrentUser).not.toHaveBeenCalled();
+  });
+
+  it('logout stops the schedule', async () => {
+    service.syncAutoUpload({ id: 'user-1' });
+    await vi.advanceTimersByTimeAsync(0);
+    upload.mockClear();
+
+    service.syncAutoUpload(null);
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+
+    expect(upload).not.toHaveBeenCalled();
+  });
+});
+

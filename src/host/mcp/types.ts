@@ -46,6 +46,12 @@ export interface MCPStdioServerConfig {
    * 设为 false 将在应用启动时立即连接
    */
   lazyLoad?: boolean;
+  /**
+   * 显式声明本进程不持有会话状态，允许空闲回收。
+   * 缺省或 false 视为有状态（登录、页面、REPL），永不回收。
+   * 只有严格等于 true 才可回收。
+   */
+  stateless?: boolean;
   /** 配置来源 scope（由加载层填充，业务代码不应手写） */
   scope?: MCPConfigScope;
   capabilityDraft?: MCPCapabilityDraftMetadata;

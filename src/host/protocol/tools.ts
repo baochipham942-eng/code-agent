@@ -50,6 +50,48 @@ export type ToolCategory =
 
 export type PermissionLevel = 'read' | 'write' | 'execute' | 'network' | 'dangerous';
 
+/** 一次调用对某个资源域的最低语义。声明的是资源，不是 permissionLevel。 */
+export type ToolAccessKind = 'read' | 'write' | 'readwrite';
+
+/**
+ * 显式资源合同。argumentNames 与 expression 互斥；两者都省略表示固定的非路径资源，
+ * 由解析器赋稳定域名。一个工具可以声明多项。
+ */
+export interface ToolAccessDeclaration {
+  readonly kind: ToolAccessKind;
+  /** 调用参数里承载路径或资源键的字段；多个字段组成同一项访问。 */
+  readonly argumentNames?: readonly string[];
+  /** 目标不是普通路径时的稳定表达式，例如 `mcp(server, tool, args.target)`。 */
+  readonly expression?: string;
+}
+
+/**
+ * argumentNames 与 expression 不能同时出现。返回 null 表示声明形状合法；
+ * 不解析表达式，也不根据工具名推断。
+ */
+export function validateToolAccessDeclaration(
+  declaration: ToolAccessDeclaration,
+): string | null {
+  if (declaration.kind !== 'read' && declaration.kind !== 'write' && declaration.kind !== 'readwrite') {
+    return 'kind must be read, write, or readwrite';
+  }
+  const hasArguments = declaration.argumentNames !== undefined;
+  const hasExpression = declaration.expression !== undefined;
+  if (hasArguments && hasExpression) {
+    return 'argumentNames and expression are mutually exclusive';
+  }
+  if (hasArguments && (declaration.argumentNames ?? []).length === 0) {
+    return 'argumentNames must be non-empty when set';
+  }
+  if (hasArguments && (declaration.argumentNames ?? []).some((name) => name.trim() === '')) {
+    return 'argumentNames must not contain an empty name';
+  }
+  if (hasExpression && (declaration.expression ?? '').trim() === '') {
+    return 'expression must not be empty';
+  }
+  return null;
+}
+
 export type UntrustedContentPolicy = 'block' | 'annotate';
 
 export interface ToolDescriptionContext extends SharedToolDescriptionContext {
@@ -69,6 +111,8 @@ export interface ToolSchema {
   readonly outputSchema: JSONSchema;
   readonly category: ToolCategory;
   readonly permissionLevel: PermissionLevel;
+  /** Optional per-result token budget; replaces the model-window-derived L1 value. */
+  readonly resultBudgetTokens?: number;
   /** 单次调用满足文字前台「短时 × 低副作用」边界；前台只按此声明筛选，禁止按工具名推断。 */
   readonly allowInTextForeground?: true;
   /**
@@ -93,6 +137,8 @@ export interface ToolSchema {
   readonly requiresApiKey?: readonly string[];
   /** 幂等 hint（read-only tool），用于缓存和 plan-mode 判断 */
   readonly readOnly?: boolean;
+  /** 显式资源访问。缺省时由折叠器从旧标记推导，调度器本切片不消费。 */
+  readonly accesses?: readonly ToolAccessDeclaration[];
   /**
    * 工具会阻塞执行，等待用户在当前会话界面当场输入或选择。
    * 通话等无法操作会话 UI 的形态据此收窄工具面。
@@ -158,6 +204,8 @@ export interface ToolContext {
   readonly requiresOsWriteFence?: boolean;
   /** Canonical workspaceRoot the classifier used for the in-zone check. */
   readonly writeFenceWorkspaceRoot?: string;
+  /** Host roots denied by the same OS sandbox profile (eval may provide one). */
+  readonly deniedReadRoots?: readonly string[];
   /**
    * N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE：写边界开关沿 spawn 链下传。
    * subagentToolRuntime 自建 ToolExecutor 不走 forRun，不传子代理就绕过边界。

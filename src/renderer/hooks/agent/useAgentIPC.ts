@@ -41,6 +41,7 @@ import ipcService from '../../services/ipcService';
 import { typedInvokeDomain } from '../../services/typedInvoke';
 import { getApiBaseUrl } from '../../api/transport';
 import { useI18n } from '../useI18n';
+import { interpolate } from '../../i18n/interpolate';
 import {
   chatSendInflightKey,
   claimSendInflight,
@@ -848,10 +849,18 @@ export function useAgentIPC({
 
           if (deliveredTargets.length === 0) {
             rollbackDirectMessage();
+            const externalFailure = results.find((result) => (
+              result.status === 'fulfilled' && result.value?.failure?.code === 'external_engine'
+            ));
+            const externalLabel = externalFailure?.status === 'fulfilled'
+              ? externalFailure.value.failure?.engineLabel
+              : undefined;
             addDirectMessage({
               id: generateMessageId(),
               role: 'assistant',
-              content: 'Direct 路由发送失败，消息未送达，也没有写入当前 Team 记录。请重试，或切回 Auto / Parallel。',
+              content: externalLabel
+                ? interpolate(t.expert.memberBar.rejectExternalEngine, { engine: externalLabel })
+                : 'Direct 路由发送失败，消息未送达，也没有写入当前 Team 记录。请重试，或切回 Auto / Parallel。',
               timestamp: Date.now(),
             });
             return { outcome: 'failed' as const };

@@ -13,6 +13,46 @@ import { getActiveRunTraceContext } from '../telemetry/runTraceContext';
 
 const logger = createLogger('SessionEventService');
 
+/** Recent messages with no session event inside this window count as stalled. */
+const SESSION_EVENT_STALL_THRESHOLD_MINUTES = 30;
+const SESSION_EVENT_LIVENESS_INTERVAL_MS = 10 * 60 * 1000;
+
+interface SessionEventLiveness {
+  stalled: boolean;
+  lastMessageAt: number | null;
+  lastEventAt: number | null;
+  minutesSinceLastEvent: number | null;
+}
+
+interface SaveFailureDetail {
+  message: string;
+  stack?: string;
+  cause: string;
+}
+
+function describeFailure(error: unknown): SaveFailureDetail {
+  if (!(error instanceof Error)) {
+    const message = String(error);
+    return { message, cause: message };
+  }
+  const nested = error.cause;
+  let cause = error.message;
+  if (nested instanceof Error) cause = nested.message;
+  else if (typeof nested === 'string') cause = nested;
+  else if (nested !== undefined) cause = String(nested);
+  return {
+    message: error.message,
+    stack: error.stack,
+    cause,
+  };
+}
+
+function readSqlNumber(row: unknown, key: string): number | null {
+  if (!row || typeof row !== 'object') return null;
+  const value = (row as Record<string, unknown>)[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
 function parseStoredEventData(value: string | null): unknown {
   if (!value) return null;
   try {
@@ -39,6 +79,9 @@ export interface StoredEvent {
 export class SessionEventService {
   private static instance: SessionEventService;
   private insertStmt: Database.Statement | null = null;
+  private saveFailureCount = 0;
+  private lastSaveErrorMessage: string | null = null;
+  private insertDb: Database.Database | null = null;
 
   private constructor() {}
 
@@ -72,12 +115,13 @@ export class SessionEventService {
     try {
       const db = this.getDb();
 
-      // 准备语句（只创建一次）
-      if (!this.insertStmt) {
+      // 数据库服务可能在恢复/重试时更换句柄，不能跨句柄复用 prepared statement。
+      if (!this.insertStmt || this.insertDb !== db) {
         this.insertStmt = db.prepare(`
           INSERT INTO session_events (session_id, event_type, event_data, timestamp)
           VALUES (?, ?, ?, ?)
         `);
+        this.insertDb = db;
       }
 
       // 序列化事件数据
@@ -109,9 +153,80 @@ export class SessionEventService {
         Date.now()
       );
     } catch (error) {
-      // 静默失败，不影响主流程
-      logger.debug('Failed to save event', { error, eventType: event.type });
+      // 失败留痕但不打断主流程。首条以及每 100 条打一条 warn，避免坏库刷屏。
+      this.recordSaveFailure(sessionId, event.type, error);
     }
+  }
+
+  /** How many saveEvent calls have failed in this process, and the latest cause. */
+  getSaveFailureStatus(): { failureCount: number; lastErrorMessage: string | null } {
+    return {
+      failureCount: this.saveFailureCount,
+      lastErrorMessage: this.lastSaveErrorMessage,
+    };
+  }
+
+  private recordSaveFailure(sessionId: string, eventType: string, error: unknown): void {
+    try {
+      this.saveFailureCount += 1;
+      const detail = describeFailure(error);
+      this.lastSaveErrorMessage = detail.message;
+      // 第 1 次，以及第 100、200、300… 次。250 次失败因此是 3 条日志。
+      if (this.saveFailureCount !== 1 && this.saveFailureCount % 100 !== 0) return;
+      logger.warn('Failed to save event', {
+        sessionId,
+        eventType,
+        error: detail.message,
+        stack: detail.stack,
+        cause: detail.cause,
+      });
+    } catch {
+      // 记账或打日志失败也不能打断主流程。
+    }
+  }
+
+  /**
+   * stalled = a message landed within the last N minutes AND (no event ever, or the
+   * latest event is older than N minutes). A message exactly N minutes old is still
+   * recent; an event exactly N minutes old is not yet older than N.
+   */
+  probeSessionEventLiveness(
+    sqlite: Database.Database,
+    now: number,
+    thresholdMinutes = SESSION_EVENT_STALL_THRESHOLD_MINUTES,
+  ): SessionEventLiveness {
+    const messageRow: unknown = sqlite.prepare(
+      'SELECT MAX(timestamp) AS lastMessageAt FROM messages',
+    ).get();
+    const eventRow: unknown = sqlite.prepare(
+      'SELECT timestamp AS lastEventAt FROM session_events ORDER BY id DESC LIMIT 1',
+    ).get();
+    const lastMessageAt = readSqlNumber(messageRow, 'lastMessageAt');
+    const lastEventAt = readSqlNumber(eventRow, 'lastEventAt');
+    const thresholdMs = thresholdMinutes * 60 * 1000;
+    const messageIsRecent = lastMessageAt !== null && now - lastMessageAt <= thresholdMs;
+    const eventIsMissingOrOlder = lastEventAt === null || now - lastEventAt > thresholdMs;
+    const stalled = messageIsRecent && eventIsMissingOrOlder;
+    const minutesSinceLastEvent = lastEventAt === null ? null : (now - lastEventAt) / 60_000;
+    const report: SessionEventLiveness = {
+      stalled,
+      lastMessageAt,
+      lastEventAt,
+      minutesSinceLastEvent,
+    };
+    if (stalled) {
+      const failures = this.getSaveFailureStatus();
+      logger.warn(
+        `messages are being written but no session event has been written for ${thresholdMinutes} minutes`,
+        {
+          ...report,
+          thresholdMinutes,
+          failureCount: failures.failureCount,
+          lastErrorMessage: failures.lastErrorMessage,
+        },
+      );
+    }
+    return report;
   }
 
   /**
@@ -322,6 +437,7 @@ export class SessionEventService {
    */
   async dispose(): Promise<void> {
     this.insertStmt = null;
+    this.insertDb = null;
   }
 }
 
@@ -333,4 +449,37 @@ export function getSessionEventService(): SessionEventService {
     eventServiceInstance = SessionEventService.getInstance();
   }
   return eventServiceInstance;
+}
+
+let livenessProbeTimer: ReturnType<typeof setInterval> | null = null;
+
+/** One unref'd timer per process. A second call does not arm another timer. */
+export function startSessionEventLivenessProbe(): void {
+  if (livenessProbeTimer) return;
+  const timer = setInterval(() => {
+    try {
+      runSessionEventLivenessProbe();
+    } catch (error) {
+      try {
+        const detail = describeFailure(error);
+        logger.warn('session event liveness probe failed', {
+          error: detail.message,
+          stack: detail.stack,
+          cause: detail.cause,
+        });
+      } catch {
+        // 探针自己的失败不能冒泡到定时器宿主。
+      }
+    }
+  }, SESSION_EVENT_LIVENESS_INTERVAL_MS);
+  timer.unref();
+  livenessProbeTimer = timer;
+}
+
+function runSessionEventLivenessProbe(): void {
+  const db = getDatabase();
+  if (!db.isReady) return;
+  const sqlite = db.getDb();
+  if (!sqlite) return;
+  getSessionEventService().probeSessionEventLiveness(sqlite, Date.now());
 }

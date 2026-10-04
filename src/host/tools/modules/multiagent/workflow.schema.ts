@@ -7,7 +7,7 @@ import { renderToolsSdk, type SdkToolProjection } from '../../../agent/scriptRun
 // 经 script 参数交给 scriptRuntime.startRun 在受限 worker 沙箱后台执行。
 const description = `Author and run a JS orchestration script that fans out work across many sub-agents deterministically.
 
-Use this when a task benefits from structured multi-agent control flow you express in code — loops, conditionals, fan-out/fan-in, staged pipelines — rather than spawning agents one by one. The middle results stay inside the script (they do NOT pollute your main context); only the script's \`return\` value comes back to you.
+Use this only when the user explicitly names a workflow. Do not use it for ordinary multi-step tasks. It returns a runId immediately and the result arrives later as a notification, so do not poll.
 
 ## How it works
 You write the script body as a string in the \`script\` parameter. It runs in a background worker thread with these primitives already in scope (use \`await\`, and \`return\` the final result):
@@ -144,4 +144,7 @@ export const workflowSchema: ToolSchema = {
   inputSchema: workflowInputSchema,
   category: 'multiagent',
   permissionLevel: 'execute',
+  accesses: [
+    { kind: 'readwrite', expression: 'resource(workflow, run)' },
+  ],
 };

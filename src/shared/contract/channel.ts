@@ -247,6 +247,8 @@ export interface FeishuChannelConfig extends ChannelPrivacyConfig {
   outboundAllowlist?: string[];
   /** 已完成入站配对的发送者 open_id；与账号配置一同持久化 */
   inboundAllowlist?: string[];
+  /** 可直接处理审批卡的机器人 owner open_id（可选；配对用户同样允许） */
+  ownerOpenId?: string;
   /** 群聊入站策略，默认 allowlist */
   groupAccessMode?: 'all_members' | 'allowlist' | 'disabled';
   /** 入站准入控制消息语言，默认 zh-CN */
@@ -278,6 +280,8 @@ export interface LarkChannelConfig extends ChannelPrivacyConfig {
   outboundAllowlist?: string[];
   /** 已完成入站配对的发送者 open_id；与账号配置一同持久化 */
   inboundAllowlist?: string[];
+  /** 可直接处理审批卡的机器人 owner open_id（可选；配对用户同样允许） */
+  ownerOpenId?: string;
   /** 群聊入站策略，默认 allowlist */
   groupAccessMode?: 'all_members' | 'allowlist' | 'disabled';
   /** 入站准入控制消息语言，默认 zh-CN */
@@ -295,15 +299,17 @@ export interface TelegramChannelConfig extends ChannelPrivacyConfig {
   proxyUrl?: string;
   /** 备用代理 URL（如龙虾 VPS），主代理不可用时自动切换 */
   fallbackProxyUrl?: string;
-  /** 白名单用户 ID，空数组=允许所有 */
+  /** 白名单用户 ID；在册身份=paired。空数组不再是「全员 paired」：陌生人一律访客档 */
   allowedUserIds?: number[];
-  /** 群组白名单 ID，空数组=允许所有 */
+  /** 群组白名单 ID，语义同 allowedUserIds */
   allowedChatIds?: number[];
+  /** 群准入档：默认 allowlist=群消息需 @ 或回复 bot 才触发；all_members=全群成员无需 @ 以访客档触达 */
+  groupAccessMode?: 'all_members' | 'allowlist';
   /** 流式编辑节流间隔 (ms)，默认 1000 */
   streamEditIntervalMs?: number;
   /** 消息解析模式 */
   parseMode?: 'MarkdownV2' | 'HTML' | 'Markdown';
-  /** 出站 send-target 白名单（WP3-3）：未配置=功能关；配置后不在名单一律拒发（fail-closed，空数组即全拒）。与入站 allowedChatIds（空数组=允许所有）语义不同 */
+  /** 出站 send-target 白名单（WP3-3）：未配置=功能关；配置后不在名单一律拒发（fail-closed，空数组即全拒）。与入站 allowedChatIds（空数组=陌生人访客档）语义不同 */
   outboundAllowlist?: string[];
 }
 

@@ -20,6 +20,7 @@ import { SESSION_LIST_PAGE_SIZE } from '@shared/constants';
 import type { SessionListQueryOptions } from '@shared/contract/appService';
 import { createLogger } from '../utils/logger';
 import { sessionsSignature } from '../utils/sessionListSignature';
+import { preserveParkedContinueOnRefresh } from './parkedContinueTurn';
 import { useSessionUIStore } from './sessionUIStore';
 import type { SessionFilter } from './sessionStore';
 
@@ -138,10 +139,10 @@ export async function executeLoadSessions(
       return executeLoadSessions(deps, options);
     }
 
-    const sessionsWithMeta = applyClientFilter(
+    const sessionsWithMeta = preserveParkedContinueOnRefresh(get().sessions, applyClientFilter(
       (sessions || []).map((session) => normalizeSession(session as Session & { messageCount?: number; turnCount?: number })),
       filter,
-    );
+    ));
 
     // 闪烁修复：数据签名不变就保留旧引用、跳过 setState，避免云端同步广播触发侧栏整树重渲染。
     if (sessionsSignature(get().sessions) === sessionsSignature(sessionsWithMeta)) {

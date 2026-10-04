@@ -32,6 +32,13 @@ import {
   materializeFeishuMedia,
   type FeishuMediaMessageType,
 } from './feishuMedia';
+import {
+  assembleFeishuInbound,
+  extractFeishuPostText,
+  feishuReplyCountsAsMention,
+  readFeishuReplyParent,
+  type FeishuParentRead,
+} from './feishuInboundContext';
 import { BoundedDedupeSet } from '../inboundDedupe';
 import { checkOutboundTarget } from '../outboundAllowlist';
 import { checkInboundAccess, type InboundAccessDecision } from '../inboundAccess';
@@ -39,6 +46,7 @@ import { inboundAccessText } from '../inboundAccessI18n';
 import type { InboundPairingRequest } from '../inboundPairingService';
 import { CHANNEL_INGRESS } from '../../../shared/constants';
 import { getAuditLogger } from '../../security/auditLogger';
+import { buildFeishuCardActionPayload } from './feishuCardAction';
 
 const logger = createLogger('FeishuChannel');
 type FeishuPlatform = 'feishu' | 'lark';
@@ -62,7 +70,7 @@ const FEISHU_CHANNEL_CAPABILITIES: ChannelCapabilities = {
 /**
  * 飞书消息类型
  */
-type FeishuMessageType = 'text' | 'post' | 'image' | 'file' | 'audio' | 'media' | 'interactive';
+type FeishuMessageType = 'text' | 'post' | 'image' | 'file' | 'audio' | 'media' | 'interactive' | 'merge_forward';
 type FeishuCardTextTag = 'lark_md' | 'plain_text';
 type FeishuCardButtonType = 'primary';
 
@@ -112,6 +120,7 @@ interface FeishuMessageEvent {
     message_id: string;
     root_id?: string;
     parent_id?: string;
+    thread_id?: string;
     create_time: string;
     chat_id: string;
     chat_type: 'p2p' | 'group';
@@ -147,15 +156,6 @@ function readArrayField(record: Record<string, unknown>, key: string): unknown[]
   return Array.isArray(value) ? value : undefined;
 }
 
-function parseJsonRecord(raw: string): Record<string, unknown> {
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return isRecord(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
 function normalizeFeishuMessageType(value: unknown): FeishuMessageType | undefined {
   if (
     value === 'text' ||
@@ -164,7 +164,8 @@ function normalizeFeishuMessageType(value: unknown): FeishuMessageType | undefin
     value === 'file' ||
     value === 'audio' ||
     value === 'media' ||
-    value === 'interactive'
+    value === 'interactive' ||
+    value === 'merge_forward'
   ) {
     return value;
   }
@@ -229,6 +230,7 @@ function normalizeFeishuMessageEvent(payload: unknown): FeishuMessageEvent | und
       message_id: messageId,
       root_id: readStringField(message, 'root_id'),
       parent_id: readStringField(message, 'parent_id'),
+      thread_id: readStringField(message, 'thread_id'),
       create_time: createTime,
       chat_id: chatId,
       chat_type: chatType,
@@ -817,20 +819,18 @@ export class FeishuChannel extends BaseChannelPlugin {
           return;
         }
 
-        // 卡片按钮回传（B3 审批回批）。两种形态都在此收口：
-        //   - 旧版消息卡片回调：顶层 action.value.action（本 relay 发的就是旧版卡片）
-        //   - 卡片 2.0 事件：header.event_type==='card.action.trigger' + event.action.value.action
-        // 状态变更类回调：配了 verificationToken 就校验（旧版回调带 token 字段）。
-        const cardActionValue = this.extractCardActionValue(bodyRecord, eventType, eventPayload);
-        if (cardActionValue !== undefined) {
+        const verificationToken = this.feishuConfig?.verificationToken?.trim();
+        const cardAction = buildFeishuCardActionPayload(bodyRecord, eventPayload, this.extractCardActionValue(bodyRecord, eventType, eventPayload), Boolean(verificationToken));
+        if (cardAction) {
+          if (!verificationToken) { logger.warn(`${this.meta.name} card action rejected: verification token not configured`); res.status(401).json({ code: -1, msg: 'verification credential required' }); return; }
           const token = readStringField(bodyRecord, 'token');
-          if (this.feishuConfig?.verificationToken && token !== this.feishuConfig.verificationToken) {
+          if (token !== verificationToken) {
             logger.warn(`${this.meta.name} card action rejected: token mismatch`);
             res.status(401).json({ code: -1, msg: 'invalid token' });
             return;
           }
           logger.info(`${this.meta.name} card action received`);
-          this.emit('card_action', { value: cardActionValue });
+          this.emit('card_action', cardAction);
           res.json({}); // 旧版卡片回调可回卡片/toast 更新；这里由 resolved 事件统一更新，回空即可
           return;
         }
@@ -1000,9 +1000,14 @@ export class FeishuChannel extends BaseChannelPlugin {
       const senderId = sender.sender_id.open_id;
       const paired = this.feishuConfig?.inboundAllowlist?.includes(senderId) === true;
       let mentionedBot = false;
+      let parentRead: FeishuParentRead | undefined;
       if (msg.chat_type === 'group') {
         const botOpenId = await this.resolveBotOpenId();
         mentionedBot = Boolean(botOpenId && msg.mentions?.some((mention) => mention.id.open_id === botOpenId));
+        if (!mentionedBot && msg.parent_id) {
+          parentRead = await readFeishuReplyParent(this.client, msg.parent_id);
+          mentionedBot = feishuReplyCountsAsMention(parentRead, this.feishuConfig?.appId, botOpenId);
+        }
       }
       const ingress = checkInboundAccess({
         channel: 'feishu',
@@ -1041,34 +1046,21 @@ export class FeishuChannel extends BaseChannelPlugin {
         this.auditIngress(ingress, msg.chat_id, senderId);
       }
 
-      // 解析消息内容
-      let content = '';
-      let attachments: ChannelAttachment[] | undefined;
-
-      if (msg.message_type === 'text') {
-        const parsed = parseJsonRecord(msg.content);
-        content = readStringField(parsed, 'text') || '';
-      } else if (msg.message_type === 'post') {
-        // 富文本消息，提取纯文本
-        const parsed = parseJsonRecord(msg.content);
-        content = this.extractTextFromPost(parsed);
-      } else if (
-        msg.message_type === 'image' ||
-        msg.message_type === 'file' ||
-        msg.message_type === 'audio' ||
-        msg.message_type === 'media'
-      ) {
-        const materialized = await materializeFeishuMedia({
-          accountId: this._accountId,
-          messageId: msg.message_id,
-          messageType: msg.message_type as FeishuMediaMessageType,
-          content: msg.content,
-          client: this.client,
-          platform: this.platform,
-        });
-        content = materialized?.content || `[${msg.message_type}]`;
-        attachments = materialized?.attachments;
-      }
+      const assembled = await assembleFeishuInbound({
+        client: this.client,
+        accountId: this._accountId,
+        platform: this.platform,
+        messageId: msg.message_id,
+        messageType: msg.message_type,
+        rawContent: msg.content,
+        parentId: msg.parent_id,
+        rootId: msg.root_id,
+        threadId: msg.thread_id,
+        parentRead,
+        renderPost: extractFeishuPostText,
+      });
+      const content = assembled.content;
+      const attachments = assembled.attachments;
 
       // 构建统一消息格式
       const channelMessage: ChannelMessage = sanitizeFeishuInboundMessage({
@@ -1082,7 +1074,7 @@ export class FeishuChannel extends BaseChannelPlugin {
         context: {
           chatId: msg.chat_id,
           chatType: msg.chat_type,
-          threadId: msg.root_id,
+          threadId: msg.root_id ?? msg.thread_id,
           replyToMessageId: msg.parent_id,
         },
         content,
@@ -1153,31 +1145,6 @@ export class FeishuChannel extends BaseChannelPlugin {
     } catch (error) {
       logger.warn('Failed to persist Feishu ingress audit entry', { error });
     }
-  }
-
-  private extractTextFromPost(post: Record<string, unknown>): string {
-    // 从富文本 post 中提取纯文本
-    const content = readArrayField(post, 'content') || [];
-    const texts: string[] = [];
-
-    for (const paragraph of content) {
-      if (Array.isArray(paragraph)) {
-        for (const element of paragraph) {
-          if (!isRecord(element)) continue;
-          const tag = readStringField(element, 'tag');
-          if (tag === 'text') {
-            const text = readStringField(element, 'text');
-            if (text) texts.push(text);
-          } else if (tag === 'at') {
-            const userName = readStringField(element, 'user_name');
-            const userId = readStringField(element, 'user_id');
-            texts.push(`@${userName || userId || ''}`);
-          }
-        }
-      }
-    }
-
-    return texts.join('');
   }
 
   private buildMessageContent(text: string): { text: string } {

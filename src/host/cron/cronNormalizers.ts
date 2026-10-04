@@ -10,13 +10,17 @@ import type {
   CronScheduleType,
   CronScheduleConfig,
   CronJobAction,
+  CronExecutionTrigger,
 } from '../../shared/contract/cron';
+import { CRON_GUARDRAILS, CRON_EVENT_TRIGGER } from '../../shared/constants';
+import type { CronRunDigest } from '../../shared/cronRunDigest';
 
 export interface CronAgentActionResult {
   agentType: string;
   prompt: string;
   result: unknown;
   sessionId: string;
+  digest?: CronRunDigest;
 }
 
 export interface CronExecutionRow {
@@ -33,6 +37,7 @@ export interface CronExecutionRow {
   error?: string | null;
   retry_attempt: number;
   exit_code?: number | null;
+  trigger_json?: string | null;
 }
 
 const CRON_JOB_STATUSES: readonly CronJobStatus[] = [
@@ -50,6 +55,24 @@ export type SupportedEveryTimeUnit = typeof SUPPORTED_EVERY_TIME_UNITS[number];
 
 export function isCronAgentActionResult(value: unknown): value is CronAgentActionResult {
   return isRecord(value) && typeof value.sessionId === 'string';
+}
+
+/** cron/heartbeat agent 会话档位：context 带 heartbeatTask 的按 heartbeat 建会话。
+ *  （自 cronService 平移，逐字未动——该文件贴 max-lines 线。） */
+export function getCronAgentSessionType(action: CronJobAction): 'schedule' | 'heartbeat' {
+  if (action.type === 'agent' && action.context?.heartbeatTask) {
+    return 'heartbeat';
+  }
+  return 'schedule';
+}
+
+/** cron/heartbeat 会话标题：剥掉历史前缀再按档位重打，避免 [Cron] [Schedule] 叠罗汉。
+ *  （自 cronService 平移，逐字未动——该文件贴 max-lines 线。） */
+export function formatCronAgentSessionTitle(definition: CronJobDefinition, sessionType: 'schedule' | 'heartbeat'): string {
+  const cleanName = definition.name.replace(/^\[(Cron|Schedule|Heartbeat)\]\s*/i, '').trim() || definition.name;
+  return sessionType === 'heartbeat'
+    ? `[Heartbeat] ${cleanName}`
+    : `[Schedule] ${cleanName}`;
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -95,7 +118,7 @@ export function parseJsonValue(raw: unknown): unknown | undefined {
 }
 
 export function isCronScheduleType(value: unknown): value is CronScheduleType {
-  return value === 'at' || value === 'every' || value === 'cron';
+  return value === 'at' || value === 'every' || value === 'cron' || value === 'event';
 }
 
 export function isCronJobStatus(value: unknown): value is CronJobStatus {
@@ -181,9 +204,46 @@ export function normalizeSchedule(value: unknown): CronScheduleConfig | null {
       };
     }
 
+    case 'event': {
+      if (
+        value.source !== 'channel'
+        || value.eventName !== 'message'
+        || typeof value.accountId !== 'string'
+        || !value.accountId.trim()
+      ) {
+        return null;
+      }
+      const chatId = typeof value.chatId === 'string' && value.chatId.trim() ? value.chatId : undefined;
+      return {
+        type: 'event',
+        source: 'channel',
+        accountId: value.accountId,
+        ...(chatId ? { chatId } : {}),
+        eventName: 'message',
+        batchWindowSec: clampBatchWindowSec(readNumberField(value, 'batchWindowSec')),
+        minRunIntervalSec: clampMinRunIntervalSec(readNumberField(value, 'minRunIntervalSec')),
+      };
+    }
+
     default:
       return null;
   }
+}
+
+/** 合批窗夹取：[DEFAULT, MAX]，非法/缺省取缺省。 */
+function clampBatchWindowSec(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value) || value <= 0) {
+    return CRON_EVENT_TRIGGER.DEFAULT_BATCH_WINDOW_SEC;
+  }
+  return Math.min(value, CRON_EVENT_TRIGGER.MAX_BATCH_WINDOW_SEC);
+}
+
+/** 限频间隔夹取：不低于下限（绝不放低），非法/缺省取缺省。 */
+function clampMinRunIntervalSec(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value) || value <= 0) {
+    return CRON_EVENT_TRIGGER.DEFAULT_MIN_RUN_INTERVAL_SEC;
+  }
+  return Math.max(value, CRON_EVENT_TRIGGER.MIN_MIN_RUN_INTERVAL_SEC);
 }
 
 export function assertSupportedEveryScheduleUnit(schedule: CronScheduleConfig): void {
@@ -304,6 +364,7 @@ export function normalizeCronJobRow(row: unknown): CronJobDefinition | null {
   const action = normalizeAction(parseJsonValue(row.action));
   const runsOn = row.runs_on === 'cloud' ? 'cloud' : 'local';
   const maxRunBudget = readNumberField(row, 'max_run_budget');
+  const maxRuns = readNumberField(row, 'max_runs');
   const resultChannel = readStringField(row, 'result_channel');
 
   if (
@@ -327,10 +388,16 @@ export function normalizeCronJobRow(row: unknown): CronJobDefinition | null {
     action,
     runsOn,
     maxRunBudget,
+    maxRuns,
+    runCount: readNumberField(row, 'run_count') ?? 0,
     resultChannel,
     enabled: row.enabled === 1 || row.enabled === true,
     maxRetries: readOptionalNumberField(row, 'max_retries'),
-    retryDelay: readOptionalNumberField(row, 'retry_delay'),
+    // 旧版保存把未设置的 retryDelay 写成 5000（`|| 5000` + schema DEFAULT 5000），
+    // 会把退避序列永久钉死在 5s；等于旧默认的存量值视为未设置，走指数退避（R2 审查 Important-2）。
+    retryDelay: readOptionalNumberField(row, 'retry_delay') === CRON_GUARDRAILS.LEGACY_DEFAULT_RETRY_DELAY_MS
+      ? undefined
+      : readOptionalNumberField(row, 'retry_delay'),
     timeout: readOptionalNumberField(row, 'timeout'),
     tags: normalizeTags(parseJsonValue(row.tags)),
     metadata: normalizeUnknownRecord(parseJsonValue(row.metadata)),
@@ -374,5 +441,29 @@ export function normalizeCronExecutionRow(row: unknown): CronExecutionRow | null
     error: readNullableStringField(row, 'error'),
     retry_attempt: retryAttempt,
     exit_code: readNullableNumberField(row, 'exit_code'),
+    trigger_json: readNullableStringField(row, 'trigger_json'),
+  };
+}
+
+/** trigger_json 列的形状校验：坏行按无 trigger 处理（trigger 是溯源字段，不承重执行语义）。 */
+export function parseCronExecutionTrigger(raw: unknown): CronExecutionTrigger | undefined {
+  const value = parseJsonValue(raw);
+  if (!isRecord(value) || (value.kind !== 'event' && value.kind !== 'schedule')) {
+    return undefined;
+  }
+  const accountId = readStringField(value, 'accountId');
+  const source = readStringField(value, 'source');
+  const eventCount = readNumberField(value, 'eventCount');
+  const droppedCount = readNumberField(value, 'droppedCount');
+  const eventIds = Array.isArray(value.eventIds) && value.eventIds.every((id) => typeof id === 'string')
+    ? value.eventIds as string[]
+    : undefined;
+  return {
+    kind: value.kind,
+    ...(source === 'channel' ? { source } : {}),
+    ...(accountId ? { accountId } : {}),
+    ...(eventCount !== undefined ? { eventCount } : {}),
+    ...(droppedCount !== undefined ? { droppedCount } : {}),
+    ...(eventIds ? { eventIds } : {}),
   };
 }

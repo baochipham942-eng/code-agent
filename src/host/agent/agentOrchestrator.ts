@@ -22,6 +22,7 @@ import { ToolExecutor } from '../tools/toolExecutor';
 import type { ExecutionTopology } from '../permissions';
 import { getPermissionModeManager, rolePermissionPresetToMode } from '../permissions/modes';
 import type { PermissionAskResult, PermissionDeliveryOutcome } from '../../shared/contract/permission';
+import { externalEngineWriteDenial } from '../services/agentEngine/agentEngineGuards';
 import type { ConfigService } from '../services/core/configService';
 import { getSessionManager } from '../services';
 import { getToolSearchService } from '../services/toolSearch/toolSearchService';
@@ -47,7 +48,7 @@ import { buildRoutingResolvedEventData } from './routingResolvedEvent';
 import { assembleTurnDenylist } from './routingToolPolicy';
 import { queuePendingSteerMessagesOrWarn, steerOrQueue, type SteerOrQueueOutcome } from '../runtime/steerQueueFence';
 import { adoptExistingDurableRun, startRunPreferringDurable } from './orchestrator/durableRunStart';
-import { createTerminalEventTracker, finalizeDurableRun } from './orchestrator/durableRunTerminal';
+import { createTerminalEventTracker, finalizeOrParkDurableRun } from './orchestrator/durableRunTerminal';
 import { getUserPresenceToolNames } from '../tools/dispatch/toolDefinitions';
 import { OrchestratorRunSettings } from './orchestratorRunSettings';
 import { OrchestratorMessageHistory } from './orchestratorMessageHistory';
@@ -271,7 +272,8 @@ export class AgentOrchestrator {
       try {
         const mod = await import('../session/sessionEventService');
         eventService = mod.getSessionEventService();
-      } catch { /* evaluation module not available */ }
+        mod.startSessionEventLivenessProbe();
+      } catch (error) { logger.warn(`Failed to load session event service: ${error instanceof Error ? error.message : String(error)}`, error); }
     }
     const telemetryCollector = getTelemetryCollector();
     const sessionAwareOnEvent = (event: AgentEvent) => {
@@ -465,17 +467,12 @@ export class AgentOrchestrator {
     return this.runSettings.getResearchUserSettings();
   }
 
-  /**
-   * 外部引擎（ACP transport）借用同一条审批链的入口。
-   *
-   * ACP agent 把写文件/跑命令反向委托回 Neo，那些副作用必须和 Neo 自己的工具走**同一个**
-   * permission island —— 同一张审批卡、同一套用户预设、同一份账本。这里只是把已有能力
-   * 开一个公开口，不是第二套通道。
-   */
+  /** ACP 写回：每次现读档位；只读天花板或未决计划卡直接拒绝，其余强制人工确认，不吃全局自动放行。 */
   requestExternalEnginePermission(
     request: Omit<PermissionRequest, 'id' | 'timestamp'>,
   ): Promise<PermissionAskResult> {
-    return this.permissions.requestPermission(request);
+    const denial = externalEngineWriteDenial(request.type, request.sessionId, getPermissionModeManager().getModeForSession(request.sessionId));
+    return denial ? Promise.resolve(denial) : this.permissions.requestPermission({ ...request, forceConfirm: true });
   }
 
   handlePermissionResponse(requestId: string, response: PermissionResponse, updatedArgs?: Record<string, unknown>): PermissionDeliveryOutcome {
@@ -1096,9 +1093,7 @@ export class AgentOrchestrator {
         getPermissionModeManager().clearRolePresetSession(rolePresetSessionId);
       }
       if (registeredRun && this.runRegistry?.hasDurableOwner(nativeRunId)) {
-        if (options?.resumeExistingDurableRun && terminalTracker.snapshot().cancelled) {
-          await this.runRegistry.parkDurable(nativeRunId, { reason: 'user_stop' }, registeredRun);
-        } else await finalizeDurableRun({
+        await finalizeOrParkDurableRun({
           registry: this.runRegistry, runId: nativeRunId, handle: registeredRun, sessionId,
           completed: runCompletedNormally && !terminalTracker.snapshot().terminalError,
           cancelled: terminalTracker.snapshot().cancelled, registration: options?.runRegistration ?? 'primary',

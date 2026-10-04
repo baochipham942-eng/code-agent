@@ -190,6 +190,7 @@ async function resolveBaseline(): Promise<BaselineChoice> {
   console.log(`STEPFUN_API_KEY=${keyState('STEPFUN_API_KEY')}`);
   console.log(`MOONSHOT_API_KEY=${keyState('MOONSHOT_API_KEY')}`);
   console.log(`LONGCAT_API_KEY=${keyState('LONGCAT_API_KEY')}`);
+  const tierOutcomes: string[] = [];
 
   if (keyState('DEEPSEEK_API_KEY') === 'set') {
     const apiKey = resolveProviderApiKey({ provider: 'deepseek', model: 'deepseek-v4-flash' }, { trustConfigKey: false });
@@ -197,7 +198,9 @@ async function resolveBaseline(): Promise<BaselineChoice> {
       console.log('baseline=deepseek/deepseek-v4-flash (probe ok)');
       return catalogChoice('deepseek', 'deepseek-v4-flash', apiKey);
     }
-    console.log('deepseek probe failed (account 402 expected); falling through');
+    tierOutcomes.push(`deepseek probe failed (account 402 expected)`);
+  } else {
+    tierOutcomes.push('deepseek key unset');
   }
   if (keyState('STEPFUN_API_KEY') === 'set') {
     const apiKey = (process.env.STEPFUN_API_KEY || '').trim();
@@ -213,23 +216,31 @@ async function resolveBaseline(): Promise<BaselineChoice> {
         freePriced: false,
       };
     }
-    console.log('stepfun probe failed; falling through');
+    tierOutcomes.push(`stepfun probe failed (key ${apiKey ? 'set' : 'empty'})`);
+  } else {
+    tierOutcomes.push('stepfun key unset');
   }
   if (keyState('MOONSHOT_API_KEY') === 'set') {
     const apiKey = resolveProviderApiKey({ provider: 'moonshot', model: 'kimi-k2.6' }, { trustConfigKey: false });
-    if (apiKey) {
-      console.log('baseline=moonshot/kimi-k2.6');
+    if (apiKey && await probeRegistered('moonshot', 'kimi-k2.6', apiKey)) {
+      console.log('baseline=moonshot/kimi-k2.6 (probe ok)');
       return catalogChoice('moonshot', 'kimi-k2.6', apiKey);
     }
+    tierOutcomes.push('moonshot probe failed');
+  } else {
+    tierOutcomes.push('moonshot key unset/empty placeholder');
   }
   if (keyState('LONGCAT_API_KEY') === 'set') {
     const apiKey = resolveProviderApiKey({ provider: 'longcat', model: 'LongCat-2.0' }, { trustConfigKey: false });
-    if (apiKey) {
-      console.log('baseline=longcat/LongCat-2.0 (free tier; reference price column applies)');
+    if (apiKey && await probeRegistered('longcat', 'LongCat-2.0', apiKey)) {
+      console.log('baseline=longcat/LongCat-2.0 (free tier; reference price column applies; probe ok)');
       return catalogChoice('longcat', 'LongCat-2.0', apiKey);
     }
+    tierOutcomes.push('longcat probe failed');
+  } else {
+    tierOutcomes.push('longcat key unset');
   }
-  throw new Error('no baseline model available: deepseek probe failed and stepfun/moonshot/longcat keys unset');
+  throw new Error(`no runnable baseline model — tier outcomes: ${tierOutcomes.join(' | ')}`);
 }
 
 function providerFor(name: RegisteredProvider): Provider {

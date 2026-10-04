@@ -13,12 +13,14 @@ import type {
   CronExecutionTrigger,
 } from '../../shared/contract/cron';
 import { CRON_GUARDRAILS, CRON_EVENT_TRIGGER } from '../../shared/constants';
+import type { CronRunDigest } from '../../shared/cronRunDigest';
 
 export interface CronAgentActionResult {
   agentType: string;
   prompt: string;
   result: unknown;
   sessionId: string;
+  digest?: CronRunDigest;
 }
 
 export interface CronExecutionRow {

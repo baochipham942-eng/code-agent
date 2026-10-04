@@ -62,7 +62,19 @@ function expectNoOrphans(messages: ProjectableMessage[]): void {
 describe('jevCompaction', () => {
   beforeEach(() => vi.unstubAllEnvs());
 
-  it('is default off and does not mutate the transcript', async () => {
+  it('is default on (N-JEV-DEFAULT-ON): judge runs, keep-all leaves the transcript untouched', async () => {
+    const messages = toolTranscript();
+    const before = messages.map((message) => message.content);
+    const systemOne = vi.fn(judgeAll(1)) as unknown as JevSystemOneCall;
+    const result = await applyJevCompaction(messages, systemOne);
+    expect(result.skipped).toBe(false);
+    expect(result.changed).toBe(false);
+    expect(messages.map((message) => message.content)).toEqual(before);
+    expect(systemOne).toHaveBeenCalledTimes(1);
+  });
+
+  it("flag '0' disables the layer and never calls the judge", async () => {
+    vi.stubEnv('CODE_AGENT_JEV_COMPACTION', '0');
     const messages = toolTranscript();
     const before = messages.map((message) => message.content);
     const systemOne = vi.fn() as unknown as JevSystemOneCall;

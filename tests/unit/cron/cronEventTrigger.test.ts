@@ -4,6 +4,8 @@
 // 覆盖验收：② 绑定触发 ③ 未绑定不触发（具名）④ 幂等去重 ⑤ 合批/限频/溢出计数
 // ⑦ untrusted 定界块 ⑧ 无监听面。①/⑥（契约 round-trip + trigger 落库重载）见
 // cronEventScheduleContract.test.ts。反向变异（⑨）见证据档。
+// 群监听（N-TRIGGER-GROUP-LISTEN）：'listen_message' 只路由显式 chatId 绑定，
+// 复用同一套去重/限频/预算闸，run 记录标 trigger.listen。
 // ============================================================================
 import { EventEmitter } from 'events';
 import { readFileSync } from 'node:fs';
@@ -14,9 +16,11 @@ import type { CronExecutionTrigger, CronJobDefinition, EventScheduleConfig } fro
 import {
   CronEventTrigger,
   assertEventScheduleConstraints,
+  hasExplicitChatListenBinding,
   type CronEventChannelSource,
   type CronEventTriggerHost,
 } from '../../../src/host/cron/cronEventTrigger';
+import { parseCronExecutionTrigger } from '../../../src/host/cron/cronNormalizers';
 
 const NOW = Date.UTC(2026, 8, 30, 8, 0, 0);
 
@@ -446,6 +450,185 @@ describe('CronEventTrigger', () => {
       h.source.emit('message', 'acc-1', channelMessage({ id: 'm1' }));
       await vi.advanceTimersByTimeAsync(10_000);
       expect(h.runs).toHaveLength(0);
+    });
+
+    it('dispose 后 listen_message 也不再触发任何 run', async () => {
+      const job = eventJob({
+        schedule: {
+          type: 'event', source: 'channel', accountId: 'acc-1', chatId: 'chat-1', eventName: 'message',
+        },
+      });
+      const h = createHarness([job]);
+      h.trigger.dispose();
+      h.source.emit('listen_message', 'acc-1', channelMessage({ id: 'm1', context: { chatId: 'chat-1', chatType: 'group' } }));
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(h.runs).toHaveLength(0);
+    });
+  });
+
+  describe('群监听（listen_message，N-TRIGGER-GROUP-LISTEN）', () => {
+    const listenJob = (id = 'job-listen'): CronJobDefinition => eventJob({
+      id,
+      schedule: {
+        type: 'event', source: 'channel', accountId: 'acc-1', chatId: 'chat-1', eventName: 'message',
+      },
+    });
+
+    function listenMessage(id: string, chatId = 'chat-1', overrides: Partial<ChannelMessage> = {}): ChannelMessage {
+      return channelMessage({
+        id,
+        context: { chatId, chatType: 'group' },
+        ingressAuth: undefined,
+        ...overrides,
+      });
+    }
+
+    it('② 显式 (accountId, chatId) 绑定的监听事件触发 run，且 trigger 带 listen 标记（④）', async () => {
+      const h = createHarness([listenJob()]);
+      h.source.emit('listen_message', 'acc-1', listenMessage('m1'));
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(h.runs).toHaveLength(1);
+      expect(h.runs[0].jobId).toBe('job-listen');
+      expect(h.runs[0].trigger.listen).toBe(true);
+      expect(h.runs[0].trigger.eventIds).toEqual(['m1']);
+      expect(h.runs[0].payloadBlock).toContain('msg m1');
+    });
+
+    it('未锁 chatId 的任务不是监听者：listen_message 不触发它', async () => {
+      const h = createHarness([eventJob()]);
+      h.source.emit('listen_message', 'acc-1', listenMessage('m1'));
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(h.runs).toHaveLength(0);
+    });
+
+    it('监听事件的 chatId 逐字匹配：其他 chat 不触发', async () => {
+      const h = createHarness([listenJob()]);
+      h.source.emit('listen_message', 'acc-1', listenMessage('m1', 'chat-2'));
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(h.runs).toHaveLength(0);
+    });
+
+    it('其他 accountId 的监听事件不触发', async () => {
+      const h = createHarness([listenJob()]);
+      h.source.emit('listen_message', 'acc-other', listenMessage('m1'));
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(h.runs).toHaveLength(0);
+    });
+
+    it('监听事件跳过游客过滤（只进 untrusted 块）', async () => {
+      const h = createHarness([listenJob()]);
+      h.source.emit('listen_message', 'acc-1', listenMessage('m1', 'chat-1', { ingressAuth: 'guest' }));
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(h.runs).toHaveLength(1);
+    });
+
+    it('监听事件保留 bot 回声过滤（防自触发环）', async () => {
+      const h = createHarness([listenJob()]);
+      h.source.emit('listen_message', 'acc-1', listenMessage('m1', 'chat-1', {
+        sender: { id: 'bot-1', name: 'Agent Neo', isBot: true },
+      }));
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(h.runs).toHaveLength(0);
+    });
+
+    it('③ 与 message 路径共用同一去重集：同一 message id 两种事件只出一个 run', async () => {
+      const h = createHarness([listenJob()]);
+      h.source.emit('listen_message', 'acc-1', listenMessage('m1'));
+      h.source.emit('message', 'acc-1', channelMessage({ id: 'm1', context: { chatId: 'chat-1', chatType: 'group' } }));
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(h.runs).toHaveLength(1);
+      expect(h.runs[0].trigger.eventCount).toBe(1);
+      // 先到的监听事件决定整批标记。
+      expect(h.runs[0].trigger.listen).toBe(true);
+    });
+
+    it('③ 监听事件复用同一限频下限（30s）与合批：间隔内的事件并入下一批', async () => {
+      const h = createHarness([eventJob({
+        id: 'job-listen',
+        schedule: {
+          type: 'event', source: 'channel', accountId: 'acc-1', chatId: 'chat-1',
+          eventName: 'message', batchWindowSec: 10, minRunIntervalSec: 30,
+        },
+      })]);
+      h.source.emit('listen_message', 'acc-1', listenMessage('m1'));
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(h.runs).toHaveLength(1);
+
+      h.source.emit('listen_message', 'acc-1', listenMessage('m2'));
+      await vi.advanceTimersByTimeAsync(10_000); // t=20s：flush 被 30s 间隔挡回，仍 1 个 run
+      expect(h.runs).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(25_000); // t=45s：越过间隔边界
+      expect(h.runs).toHaveLength(2);
+      expect(h.runs[1].trigger.eventIds).toEqual(['m2']);
+      expect(h.runs[1].trigger.listen).toBe(true);
+    });
+
+    it('混批（@ 消息 + 监听消息合并成一个 run）也标 listen: true', async () => {
+      const h = createHarness([listenJob()]);
+      h.source.emit('listen_message', 'acc-1', listenMessage('m1'));
+      h.source.emit('message', 'acc-1', channelMessage({ id: 'm2', context: { chatId: 'chat-1', chatType: 'group' } }));
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(h.runs).toHaveLength(1);
+      expect(h.runs[0].trigger.eventIds).toEqual(['m1', 'm2']);
+      expect(h.runs[0].trigger.listen).toBe(true);
+    });
+
+    it('纯 @ 消息批不带 listen 标记', async () => {
+      const h = createHarness([listenJob()]);
+      h.source.emit('message', 'acc-1', channelMessage({ id: 'm1', context: { chatId: 'chat-1', chatType: 'group' } }));
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(h.runs).toHaveLength(1);
+      expect(h.runs[0].trigger.listen).toBeUndefined();
+    });
+  });
+
+  describe('hasExplicitChatListenBinding（监听绑定纯匹配）', () => {
+    const baseJob = (overrides: Partial<CronJobDefinition>): CronJobDefinition => eventJob(overrides);
+
+    it('enabled event 任务 + 显式 chatId 才算监听绑定', () => {
+      const jobs = [
+        baseJob({ id: 'a', schedule: { type: 'event', source: 'channel', accountId: 'acc-1', chatId: 'chat-1', eventName: 'message' } }),
+        baseJob({ id: 'b', schedule: { type: 'event', source: 'channel', accountId: 'acc-1', eventName: 'message' } }),
+        baseJob({ id: 'c', schedule: { type: 'cron', expression: '*/5 * * * *' }, scheduleType: 'cron' }),
+      ];
+      expect(hasExplicitChatListenBinding(jobs, 'acc-1', 'chat-1')).toBe(true);
+      // chatId 未设置 / 不匹配 / 账号不匹配 / 非事件任务，都不算。
+      expect(hasExplicitChatListenBinding(jobs, 'acc-1', 'chat-2')).toBe(false);
+      expect(hasExplicitChatListenBinding(jobs, 'acc-2', 'chat-1')).toBe(false);
+      expect(hasExplicitChatListenBinding(jobs, 'acc-2', 'chat-9')).toBe(false);
+    });
+
+    it('停用（disabled）的任务不算监听绑定', () => {
+      const jobs = [baseJob({
+        id: 'a', enabled: false,
+        schedule: { type: 'event', source: 'channel', accountId: 'acc-1', chatId: 'chat-1', eventName: 'message' },
+      })];
+      expect(hasExplicitChatListenBinding(jobs, 'acc-1', 'chat-1')).toBe(false);
+    });
+
+    it('空任务表恒 false', () => {
+      expect(hasExplicitChatListenBinding([], 'acc-1', 'chat-1')).toBe(false);
+    });
+  });
+
+  describe('④ trigger.listen 的 parseCronExecutionTrigger round-trip', () => {
+    it('listen: true 落库重载后保留；缺失时保持缺失；坏值按无标记处理', () => {
+      const withListen: CronExecutionTrigger = {
+        kind: 'event', source: 'channel', accountId: 'acc-1',
+        eventCount: 1, droppedCount: 0, eventIds: ['m1'], listen: true,
+      };
+      // parseCronExecutionTrigger 的入参是 trigger_json 列的字符串形状。
+      expect(parseCronExecutionTrigger(JSON.stringify(withListen))).toEqual(withListen);
+
+      const withoutListen: CronExecutionTrigger = {
+        kind: 'event', source: 'channel', accountId: 'acc-1', eventCount: 1,
+      };
+      const parsed = parseCronExecutionTrigger(JSON.stringify(withoutListen));
+      expect(parsed).toEqual(withoutListen);
+      expect(parsed?.listen).toBeUndefined();
+
+      expect(parseCronExecutionTrigger('{"kind":"event","listen":"yes"}')?.listen).toBeUndefined();
+      expect(parseCronExecutionTrigger('{"kind":"event","listen":false}')?.listen).toBeUndefined();
     });
   });
 });

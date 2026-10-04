@@ -21,3 +21,4 @@ export * from './handlers';
 export * from './api';
 export * from './channels';
 export * from './protocol';
+export * from './schemas';

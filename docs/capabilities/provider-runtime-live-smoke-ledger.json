@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-09-15",
+  "updatedAt": "2026-10-03",
   "policy": {
     "verificationStatus": [
       "verified",
@@ -139,14 +139,14 @@
       "protocolFamily": "opaque_cli",
       "provider": "cli-owned",
       "model": "kimi-code/k3 (agent default)",
-      "verificationStatus": "verified",
+      "verificationStatus": "unverified",
       "result": "passed",
       "scope": "initialize + session/new + session/prompt + session/update event stream + session/load resume + client-side fs/* and terminal/* delegation, against Kimi Code CLI 0.38.0",
       "evidence": [
         "tests/unit/agentEngine/acpEventMapping.test.ts",
         "tests/unit/agentEngine/acpClientHostBridge.test.ts"
       ],
-      "reason": "Four minimal live prompts on 2026-08-27 captured the full bidirectional NDJSON stream; the agent delegated every side effect back to the client (fs/write_text_file, terminal/create) and never sent session/request_permission. Raw capture and the update-to-AgentEvent mapping table are held in the private evidence archive (2026-08-27-N-ACP-CLIENT-*), not in this repo."
+      "reason": "Four minimal live prompts on 2026-08-27 captured the full bidirectional NDJSON stream; the agent delegated every side effect back to the client (fs/write_text_file, terminal/create) and never sent session/request_permission. Raw capture and the update-to-AgentEvent mapping table are held in the private evidence archive (2026-08-27-N-ACP-CLIENT-*), not in this repo. 2026-10-03 downgraded from verified: the 2026-08-27 live smoke passed but is older than the 30-day freshness window and cannot be re-run now (Kimi Code subscription was not renewed on 2026-10-01). Re-run the same scope and restore verified once the seat is available."
     },
     {
       "id": "codebuddy-code-local-spike",
@@ -155,7 +155,7 @@
       "protocolFamily": "opaque_cli",
       "provider": "cli-owned",
       "model": "hy4-preview",
-      "verificationStatus": "verified",
+      "verificationStatus": "unverified",
       "result": "passed",
       "scope": "CLI model discovery, Neo webServer model selection persistence, print-mode stream-json, SSE, persisted assistant message, tools disabled",
       "evidence": [
@@ -164,7 +164,7 @@
         "tests/unit/agentEngine/agentEngineModelCatalog.test.ts",
         "tests/unit/services/agentEngine/agentEngineModelCatalogStrict.test.ts"
       ],
-      "reason": "2026-08-29 rerun via WORKBUDDY_E2E_MODEL=hy4-preview npx tsx scripts/acceptance/workbuddy-engine-live-smoke.ts (WorkBuddy 5.3.14 / CodeBuddy CLI 2.115.0): the installed CLI help catalog exposed hy4-preview, Neo persisted codebuddy_code / hy4-preview on the session, and the exact per-run nonce NEO_WORKBUDDY_HY4_20260829_1648 returned through streaming SSE and the persisted assistant message. The smoke also verified that both client_default and hy4-preview are present in the runtime catalog."
+      "reason": "2026-08-29 rerun via WORKBUDDY_E2E_MODEL=hy4-preview npx tsx scripts/acceptance/workbuddy-engine-live-smoke.ts (WorkBuddy 5.3.14 / CodeBuddy CLI 2.115.0): the installed CLI help catalog exposed hy4-preview, Neo persisted codebuddy_code / hy4-preview on the session, and the exact per-run nonce NEO_WORKBUDDY_HY4_20260829_1648 returned through streaming SSE and the persisted assistant message. The smoke also verified that both client_default and hy4-preview are present in the runtime catalog. 2026-10-03 downgraded from verified: the 2026-08-29 live smoke passed but is older than the 30-day freshness window and cannot be re-run now (no authorized re-run yet (subscription smoke requires explicit authorization)). Re-run the same scope and restore verified once the seat is available."
     },
     {
       "id": "grok-cli-local-spike",
@@ -173,7 +173,7 @@
       "protocolFamily": "opaque_cli",
       "provider": "cli-owned",
       "model": "grok-4.6",
-      "verificationStatus": "verified",
+      "verificationStatus": "unverified",
       "result": "passed",
       "scope": "Official login, model discovery, single-turn streaming-json text and terminal session identity",
       "evidence": [
@@ -183,7 +183,7 @@
         "docs/acceptance/external-cli-engine-onboarding/09-session-grok-live-conversation.png",
         "docs/acceptance/external-cli-engine-onboarding/10-session-grok-model-popup.png"
       ],
-      "reason": "2026-08-29 rerun via scripts/acceptance/grok-engine-live-smoke.ts: authenticated Grok Build 1.0.5 (5115b46bc909) returned the exact per-run nonce through Neo webServer selection, streaming SSE, and persisted conversation with model grok-4.6 (Neo runtime catalog discovered grok-4.6; the CLI itself also lists grok-4.5); model popup screenshot refreshed. Smoke now follows the live catalog default and dismisses the folder-trust dialog."
+      "reason": "2026-08-29 rerun via scripts/acceptance/grok-engine-live-smoke.ts: authenticated Grok Build 1.0.5 (5115b46bc909) returned the exact per-run nonce through Neo webServer selection, streaming SSE, and persisted conversation with model grok-4.6 (Neo runtime catalog discovered grok-4.6; the CLI itself also lists grok-4.5); model popup screenshot refreshed. Smoke now follows the live catalog default and dismisses the folder-trust dialog. 2026-10-03 downgraded from verified: the 2026-08-29 live smoke passed but is older than the 30-day freshness window and cannot be re-run now (Grok Build free usage limit is exhausted and the seat is parked until after the October holiday). Re-run the same scope and restore verified once the seat is available."
     },
     {
       "id": "p0-local-stop-verified",

@@ -2,6 +2,8 @@
 // AutomationReviewInbox —— 自动化页首的「待过目」收件箱（三件套 A4，独立卡片区）。
 // 数据源 = sessionAutomation 记录（status=pending_review 或 config.pendingReview）
 // + 停车审批（parked approvals）；查看结果跳结果会话，已过目清标记。
+// 待过目按紧急档位三档分组（N-CRON-INBOX-URGENCY-TIER）：must_today 置顶带角标，
+// 空档不渲染；档位来自结果头部行（shared/cronUrgency），老记录归 fyi。
 // 呈现：有内容时是琥珀描边卡片（与侧栏待过目角标同一视觉语言），「已过目」为
 // 品牌色主操作；无内容时渲染安静空态「都过目完了 ✓」（不再整块隐藏）。
 // onPendingCountChange 把待过目条数回传给页首状态条（语义同服务侧 countPendingReview，
@@ -9,8 +11,9 @@
 // ============================================================================
 
 import React, { useCallback, useEffect, useState } from 'react';
-import type { PermissionResponse, SessionAutomationRecord } from '@shared/contract';
+import type { CronUrgency, PermissionResponse, SessionAutomationRecord } from '@shared/contract';
 import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
+import { isCronUrgency } from '@shared/cronUrgency';
 import { Check, CircleCheck, Cloud, Inbox, MessageSquareText, ShieldAlert, ShieldCheck, X } from 'lucide-react';
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
 import ipcService from '../../../services/ipcService';
@@ -23,6 +26,14 @@ import { Button } from '../../primitives/Button';
 
 function reviewResultSessionId(record: SessionAutomationRecord): string | undefined {
   return record.config?.pendingReview?.resultSessionId ?? record.resultSessionId;
+}
+
+/** 三档分组（N-CRON-INBOX-URGENCY-TIER）：must_today 置顶带角标，空档不渲染；无档位/坏值一律归 fyi。 */
+const URGENCY_SECTION_ORDER: readonly CronUrgency[] = ['must_today', 'can_wait', 'fyi'];
+
+function recordUrgency(record: SessionAutomationRecord): CronUrgency {
+  const urgency = record.config?.pendingReview?.urgency;
+  return isCronUrgency(urgency) ? urgency : 'fyi';
 }
 
 function formatWaiting(requestedAt: number): string {
@@ -113,6 +124,12 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
   };
 
   const hasContent = items.length > 0 || parked.length > 0;
+  const urgencyGroups: Record<CronUrgency, SessionAutomationRecord[]> = {
+    must_today: [],
+    can_wait: [],
+    fyi: [],
+  };
+  for (const record of items) urgencyGroups[recordUrgency(record)].push(record);
 
   return (
     <div className="shrink-0 px-5 pt-4" data-testid="automation-review-inbox">
@@ -226,66 +243,99 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                 <Inbox className="h-3.5 w-3.5" />
                 {cc.inboxTitle.replace('{count}', String(items.length))}
               </div>
-              <div className="space-y-1.5">
-                {items.map((record) => {
-                  const isCloud = record.config?.runsOn === 'cloud';
+              <div className="space-y-2.5">
+                {URGENCY_SECTION_ORDER.map((tier) => {
+                  const tierItems = urgencyGroups[tier];
+                  if (tierItems.length === 0) return null;
+                  const isMustToday = tier === 'must_today';
+                  const sectionTitle = tier === 'must_today'
+                    ? cc.inboxUrgencySectionMustToday
+                    : tier === 'can_wait'
+                      ? cc.inboxUrgencySectionCanWait
+                      : cc.inboxUrgencySectionFyi;
                   return (
-                  <div
-                    key={record.id}
-                    className="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2"
-                    data-testid="automation-review-item"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <div className="truncate text-sm text-zinc-200">{record.title}</div>
-                        {isCloud && (
-                          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-badge-info/30 bg-blue-500/10 px-2 py-0.5 text-[10px] text-badge-info">
-                            <Cloud className="h-3 w-3" />
-                            {cc.locationCloud}
-                          </span>
-                        )}
+                    <div key={tier} data-testid={`automation-urgency-section-${tier}`}>
+                      <div className={`mb-1.5 text-[11px] font-medium ${isMustToday ? 'text-badge-warning' : 'text-zinc-500'}`}>
+                        {sectionTitle}
                       </div>
-                      {record.config?.missedNotice ? (
-                        <div className="text-[11px] text-badge-warning" data-testid="automation-review-missed">
-                          {cc.inboxMissedAt.replace(
-                            '{time}',
-                            new Date(record.config.missedNotice.scheduledAt).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN'),
+                      <div className="space-y-1.5">
+                        {tierItems.map((record) => {
+                        const isCloud = record.config?.runsOn === 'cloud';
+                        const urgencyRaw = record.config?.pendingReview?.urgencyRaw;
+                        return (
+                        <div
+                          key={record.id}
+                          className={`flex items-center gap-3 rounded-lg border px-3 py-2 ${isMustToday ? 'border-badge-warning/30 bg-amber-500/[0.04]' : 'border-zinc-800 bg-zinc-950/50'}`}
+                          data-testid="automation-review-item"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <div className="truncate text-sm text-zinc-200">{record.title}</div>
+                              {isMustToday && (
+                                <span
+                                  className="inline-flex shrink-0 items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] text-badge-warning"
+                                  data-testid="automation-urgency-badge"
+                                >
+                                  {cc.inboxUrgencyBadge}
+                                </span>
+                              )}
+                              {isCloud && (
+                                <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-badge-info/30 bg-blue-500/10 px-2 py-0.5 text-[10px] text-badge-info">
+                                  <Cloud className="h-3 w-3" />
+                                  {cc.locationCloud}
+                                </span>
+                              )}
+                            </div>
+                            {urgencyRaw && (
+                              <div className="truncate text-[11px] text-zinc-500" data-testid="automation-urgency-raw">
+                                {cc.inboxUrgencyRawPrefix}{urgencyRaw}
+                              </div>
+                            )}
+                            {record.config?.missedNotice ? (
+                              <div className="text-[11px] text-badge-warning" data-testid="automation-review-missed">
+                                {cc.inboxMissedAt.replace(
+                                  '{time}',
+                                  new Date(record.config.missedNotice.scheduledAt).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN'),
+                                )}
+                              </div>
+                            ) : record.config?.pendingReview?.at != null && (
+                              <div className="text-[11px] text-zinc-500">
+                                {isCloud
+                                  ? cc.inboxCloudCompleted.replace(
+                                    '{time}',
+                                    new Date(record.config.pendingReview.at).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN'),
+                                  )
+                                  : new Date(record.config.pendingReview.at).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN')}
+                              </div>
+                            )}
+                          </div>
+                          {reviewResultSessionId(record) && (
+                            <button /* ds-allow:button: 收件箱行内超小文本按钮（py-1 text-xs），primitive 最小 sm 仍更大 */
+                              onClick={() => handleOpenResult(record)}
+                              disabled={busyId === record.id}
+                              className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-badge-info transition-colors hover:bg-blue-500/10 hover:text-badge-info disabled:opacity-50"
+                            >
+                              <MessageSquareText className="h-3.5 w-3.5" />
+                              {cc.inboxOpenResult}
+                            </button>
                           )}
+                          {/* 「已过目」是收件箱的主操作（每条都要点的闭环动作），用品牌色主按钮；
+                              「查看结果」是跳走的次操作，保持行内文本按钮。 */}
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            onClick={() => handleMarkReviewed(record)}
+                            disabled={busyId === record.id}
+                            leftIcon={<Check className="h-3.5 w-3.5" />}
+                            data-testid="automation-review-done"
+                          >
+                            {cc.inboxMarkDone}
+                          </Button>
                         </div>
-                      ) : record.config?.pendingReview?.at != null && (
-                        <div className="text-[11px] text-zinc-500">
-                          {isCloud
-                            ? cc.inboxCloudCompleted.replace(
-                              '{time}',
-                              new Date(record.config.pendingReview.at).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN'),
-                            )
-                            : new Date(record.config.pendingReview.at).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN')}
-                        </div>
-                      )}
+                        );
+                        })}
+                      </div>
                     </div>
-                    {reviewResultSessionId(record) && (
-                      <button /* ds-allow:button: 收件箱行内超小文本按钮（py-1 text-xs），primitive 最小 sm 仍更大 */
-                        onClick={() => handleOpenResult(record)}
-                        disabled={busyId === record.id}
-                        className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-badge-info transition-colors hover:bg-blue-500/10 hover:text-badge-info disabled:opacity-50"
-                      >
-                        <MessageSquareText className="h-3.5 w-3.5" />
-                        {cc.inboxOpenResult}
-                      </button>
-                    )}
-                    {/* 「已过目」是收件箱的主操作（每条都要点的闭环动作），用品牌色主按钮；
-                        「查看结果」是跳走的次操作，保持行内文本按钮。 */}
-                    <Button
-                      size="sm"
-                      variant="primary"
-                      onClick={() => handleMarkReviewed(record)}
-                      disabled={busyId === record.id}
-                      leftIcon={<Check className="h-3.5 w-3.5" />}
-                      data-testid="automation-review-done"
-                    >
-                      {cc.inboxMarkDone}
-                    </Button>
-                  </div>
                   );
                 })}
               </div>

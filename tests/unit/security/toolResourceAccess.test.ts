@@ -381,3 +381,94 @@ describe('scheduler path normalization matches the file tools (rework r2)', () =
     }
   });
 });
+
+describe('glob-pattern read scoping and unprovable write targets (rework r3)', () => {
+  const globScope = (params: Record<string, unknown>, argumentNames: readonly string[] = ['path', 'pattern']) => resolveFoldedToolAccess({
+    toolName: 'Glob',
+    folded: foldToolAccess({ accesses: [{ kind: 'read', argumentNames }] }),
+    params,
+    workspace,
+    cwd: workspace,
+  });
+
+  it('scopes a wildcard pattern to its static directory prefix joined onto the base path argument', () => {
+    const readAt = (target: string) => ({
+      kind: 'read',
+      domain: { type: 'path', root: normalizeTargetPath(workspace, '.'), targetPath: normalizeTargetPath(workspace, target) },
+    });
+    expect(globScope({ pattern: 'src/**/*.ts' })).toEqual([readAt('src')]);
+    // 基目录自身也在作用域里（对冲突判定只增不减），模式前缀并入基目录。
+    expect(globScope({ path: 'docs', pattern: 'src/**/*.ts' })).toEqual([readAt('docs'), readAt(path.join('docs', 'src'))]);
+    expect(globScope({ pattern: '*.md' })).toEqual([readAt('.')]);
+  });
+
+  it.each(['/tmp/out/*.md', '../out/*.md', 'src/../../out/*.md', '~/docs/*.md'])(
+    'sends absolute or ..-escaping patterns (%s) to the unknown domain',
+    (pattern) => {
+      expect(globScope({ pattern })).toEqual([{ kind: 'read', domain: { type: 'unknown' } }]);
+    },
+  );
+
+  it('joins a literal (non-glob) pattern onto the base too: exact.ts under docs is docs/exact.ts', () => {
+    const literal = globScope({ path: 'docs', pattern: 'exact.ts' });
+    const docsDir = normalizeTargetPath(workspace, 'docs');
+    const exactFile = normalizeTargetPath(workspace, path.join('docs', 'exact.ts'));
+    expect(literal).toEqual([
+      { kind: 'read', domain: { type: 'path', root: normalizeTargetPath(workspace, '.'), targetPath: docsDir } },
+      { kind: 'read', domain: { type: 'path', root: normalizeTargetPath(workspace, '.'), targetPath: exactFile } },
+    ]);
+    // 独立路径不挤进一个声明：数组元素彼此并列（input_files 形状），不互相拼接。
+    const siblings = resolveFoldedToolAccess({
+      toolName: 'PdfAutomate',
+      folded: foldToolAccess({ accesses: [{ kind: 'read', argumentNames: ['input_files'] }] }),
+      params: { input_files: ['a.pdf', 'dir/b.pdf'] },
+      workspace,
+      cwd: workspace,
+    });
+    expect(siblings).toEqual([
+      { kind: 'read', domain: { type: 'path', root: normalizeTargetPath(workspace, '.'), targetPath: normalizeTargetPath(workspace, 'a.pdf') } },
+      { kind: 'read', domain: { type: 'path', root: normalizeTargetPath(workspace, '.'), targetPath: normalizeTargetPath(workspace, path.join('dir', 'b.pdf')) } },
+    ]);
+  });
+
+  it('treats a missing write-side argument as unprovable, not as absent', () => {
+    const excelFold = foldToolAccess({
+      accesses: [
+        { kind: 'readwrite', argumentNames: ['file_path'] },
+        { kind: 'write', argumentNames: ['output_path'] },
+      ],
+    });
+    const editOnly = resolveFoldedToolAccess({
+      toolName: 'ExcelAutomate',
+      folded: excelFold,
+      params: { file_path: 'a.xlsx' },
+      workspace,
+      cwd: workspace,
+    });
+    // output_path 缺席：generate 默认写到哪里不可证 → 未知域串行
+    expect(editOnly).toContainEqual({ kind: 'write', domain: { type: 'unknown' } });
+    const both = resolveFoldedToolAccess({
+      toolName: 'ExcelAutomate',
+      folded: excelFold,
+      params: { file_path: 'a.xlsx', output_path: 'b.xlsx' },
+      workspace,
+      cwd: workspace,
+    });
+    expect(both.length).toBe(2);
+    expect(both.every((access) => access.domain.type === 'path')).toBe(true);
+  });
+
+  it('keeps read-kind tolerance for missing values (Grep path/include stays cwd-scoped)', () => {
+    const readOf = resolveFoldedToolAccess({
+      toolName: 'Grep',
+      folded: foldToolAccess({ accesses: [{ kind: 'read', argumentNames: ['path', 'include'] }] }),
+      params: { include: '*.js' },
+      workspace,
+      cwd: workspace,
+    });
+    expect(readOf).toEqual([{
+      kind: 'read',
+      domain: { type: 'path', root: normalizeTargetPath(workspace, '.'), targetPath: normalizeTargetPath(workspace, '.') },
+    }]);
+  });
+});

@@ -78,6 +78,9 @@ image_analyze { "paths": ["/Users/xxx/Photos/*.jpg"], "filter": "有猫的照片
   readOnly: true,
   allowInPlanMode: true,
   accesses: [
-    { kind: 'read', argumentNames: ['path', 'paths'] },
+    // path 与 paths 是并列的独立图片路径，不是彼此的基目录——拆成两条声明
+    // （一个 argumentNames 列表里第二个值相对第一个解析，Glob/Grep 的形状）。
+    { kind: 'read', argumentNames: ['path'] },
+    { kind: 'read', argumentNames: ['paths'] },
   ],
 };

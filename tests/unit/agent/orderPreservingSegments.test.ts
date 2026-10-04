@@ -331,4 +331,122 @@ describe('order-preserving segments', () => {
       call('2', 'Read', { file_path: 'b.md lines 1-5' }),
     ], undefined, options).segments).toHaveLength(1);
   });
+
+  // ---------------------------------------------------------------- r3 -----
+  it('splits a pdf write from a compress call reading its output (review scenario 1)', () => {
+    getProtocolRegistry();
+    const classified = classifyToolCalls([
+      call('gen', 'pdf_generate', { title: 't', content: 'c', output_path: 'report.pdf' }),
+      call('zip', 'pdf_compress', { input_path: 'report.pdf', output_path: 'small.pdf' }),
+    ], undefined, options);
+    expect(classified.segments.map((segment) => segment.map((entry) => entry.toolCall.name))).toEqual([
+      ['pdf_generate'],
+      ['pdf_compress'],
+    ]);
+  });
+
+  it('serializes pdf_compress when its output path is implicit (the default sibling is unprovable)', () => {
+    getProtocolRegistry();
+    const classified = classifyToolCalls([
+      call('zip', 'pdf_compress', { input_path: 'report.pdf' }),
+      call('read', 'Read', { file_path: 'unrelated.txt' }),
+    ], undefined, options);
+    expect(classified.segments.map((segment) => segment.map((entry) => entry.toolCall.name))).toEqual([
+      ['pdf_compress'],
+      ['Read'],
+    ]);
+  });
+
+  it('splits a write from an absolute Glob pattern that escapes the declared path scope (review scenario 2)', () => {
+    getProtocolRegistry();
+    const classified = classifyToolCalls([
+      call('w', 'Write', { file_path: '/tmp/out/report.md', content: 'x' }),
+      call('g', 'Glob', { pattern: '/tmp/out/*.md' }),
+    ], undefined, options);
+    expect(classified.segments.map((segment) => segment.map((entry) => entry.toolCall.name))).toEqual([
+      ['Write'],
+      ['Glob'],
+    ]);
+  });
+
+  it('scopes a relative Glob pattern to its static directory prefix: writes inside the tree split, outside share', () => {
+    getProtocolRegistry();
+    const inside = classifyToolCalls([
+      call('w', 'Write', { file_path: 'src/foo.ts', content: 'x' }),
+      call('g', 'Glob', { pattern: 'src/**/*.ts' }),
+    ], undefined, options);
+    expect(inside.segments.map((segment) => segment.map((entry) => entry.toolCall.name))).toEqual([
+      ['Write'],
+      ['Glob'],
+    ]);
+    const outside = classifyToolCalls([
+      call('w', 'Write', { file_path: 'other.txt', content: 'x' }),
+      call('g', 'Glob', { pattern: 'src/**/*.ts' }),
+    ], undefined, options);
+    expect(outside.segments).toHaveLength(1);
+  });
+
+  it('treats a cwd-wide glob as a read of the whole cwd (a write anywhere in it splits)', () => {
+    getProtocolRegistry();
+    const classified = classifyToolCalls([
+      call('g', 'Glob', { pattern: '*.md' }),
+      call('w', 'Write', { file_path: 'notes.md', content: 'x' }),
+    ], undefined, options);
+    expect(classified.segments.map((segment) => segment.map((entry) => entry.toolCall.name))).toEqual([
+      ['Glob'],
+      ['Write'],
+    ]);
+  });
+
+  it.each(['../out/*.md', 'src/../../out/*.md'])('serializes a Glob pattern containing .. (%s)', (pattern) => {
+    getProtocolRegistry();
+    const classified = classifyToolCalls([
+      call('w', 'Write', { file_path: 'a.txt', content: 'x' }),
+      call('g', 'Glob', { pattern }),
+    ], undefined, options);
+    expect(classified.segments.map((segment) => segment.map((entry) => entry.toolCall.name))).toEqual([
+      ['Write'],
+      ['Glob'],
+    ]);
+  });
+
+  it('joins a Glob pattern with the path parameter as its base', () => {
+    getProtocolRegistry();
+    const inside = classifyToolCalls([
+      call('w', 'Write', { file_path: 'docs/src/a.ts', content: 'x' }),
+      call('g', 'Glob', { path: 'docs', pattern: 'src/**/*.ts' }),
+    ], undefined, options);
+    expect(inside.segments).toHaveLength(2);
+    const outside = classifyToolCalls([
+      call('w', 'Write', { file_path: 'src/a.ts', content: 'x' }),
+      call('g', 'Glob', { path: 'docs', pattern: 'src/**/*.ts' }),
+    ], undefined, options);
+    expect(outside.segments).toHaveLength(1);
+  });
+
+  it('declared Grep include keeps the traversal base in scope and stays parallel with unrelated writes', () => {
+    getProtocolRegistry();
+    const split = classifyToolCalls([
+      call('g', 'Grep', { pattern: 'needle', path: 'docs', include: '*.js' }),
+      call('w', 'Write', { file_path: 'docs/a.js', content: 'x' }),
+    ], undefined, options);
+    expect(split.segments).toHaveLength(2);
+    const shared = classifyToolCalls([
+      call('g', 'Grep', { pattern: 'needle', path: 'docs', include: '*.js' }),
+      call('w', 'Write', { file_path: 'other/b.js', content: 'x' }),
+    ], undefined, options);
+    expect(shared.segments).toHaveLength(1);
+  });
+
+  it('splits a spawn_agent ownedPaths write domain from a write inside the owned tree', () => {
+    getProtocolRegistry();
+    const classified = classifyToolCalls([
+      call('s', 'spawn_agent', { prompt: 'fix it', ownedPaths: ['src/**'] }),
+      call('w', 'Write', { file_path: 'src/a.ts', content: 'x' }),
+    ], undefined, options);
+    expect(classified.segments.map((segment) => segment.map((entry) => entry.toolCall.name))).toEqual([
+      ['spawn_agent'],
+      ['Write'],
+    ]);
+  });
 });

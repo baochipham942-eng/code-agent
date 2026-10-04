@@ -20,6 +20,90 @@ const BARRIER_TOOL_NAMES = new Set([
 
 const UNKNOWN_READWRITE: ResolvedToolAccess = { kind: 'readwrite', domain: { type: 'unknown' } };
 
+/**
+ * 路径形状参数名（整词匹配，camelCase 先转 snake）。只收无歧义的词；
+ * source/target/input 之类泛型名不进表，靠描述判据补。
+ */
+const PATH_PARAM_NAME_TOKENS = new Set([
+  'path', 'paths', 'file', 'files', 'filepath', 'file_path', 'dir', 'dirs',
+  'directory', 'directories', 'folder', 'folders', 'cwd', 'filename', 'file_name',
+  'input_path', 'output_path', 'input_file', 'output_file', 'input_files',
+  'output_files', 'outdir', 'out_dir', 'workdir', 'work_dir', 'working_dir',
+  'working_directory', 'notebook_path', 'template_path', 'data_path',
+]);
+
+/** 描述里出现路径/glob 语义即按路径参数对待（宁多勿漏：漏一个就少拆一段）。 */
+const PATH_PARAM_DESC_RE = /path|directory|folder|glob|目录|路径|文件夹/i;
+/** 「file type」词表参数（Grep 的 type：描述里带 glob 字样但值是扩展名闭集）不是路径。 */
+const FILE_TYPE_DESC_RE = /file[- ]type|文件类型/i;
+
+const EXPRESSION_ARG_RE = /args\.([A-Za-z0-9_]+)/g;
+
+function stringLikeProperty(prop: unknown): boolean {
+  const { type, items, enum: vocabulary } = prop as {
+    type?: unknown;
+    items?: { type?: unknown };
+    enum?: unknown;
+  };
+  if (vocabulary !== undefined) return false; // 闭集词表（enum）不是路径
+  if (Array.isArray(type)) return type.includes('string');
+  if (type === 'array') return items?.type === 'string';
+  return type === 'string';
+}
+
+/**
+ * schema 里"长得像路径"的参数（N-TOOLRES-K2 r3）：名字整词命中或描述含路径/glob 语义，
+ * 且类型是 string / string[]。调度只能把这些参数当成工具可能真的会碰的路径——
+ * 谁没被声明覆盖，谁的访问集就没被证完。
+ * 行为由 tests/unit/tools/toolAccessCoverageInvariant.test.ts 经 resolver 钉死。
+ */
+function pathTypedPropertyNames(schema: ToolSchema): string[] {
+  const properties = (schema.inputSchema as { properties?: Record<string, unknown> }).properties ?? {};
+  const names: string[] = [];
+  for (const [name, prop] of Object.entries(properties)) {
+    if (!stringLikeProperty(prop)) continue;
+    const token = name.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+    if (PATH_PARAM_NAME_TOKENS.has(token)) {
+      names.push(name);
+      continue;
+    }
+    const description = typeof (prop as { description?: unknown }).description === 'string'
+      ? (prop as { description: string }).description
+      : '';
+    if (PATH_PARAM_DESC_RE.test(description) && !FILE_TYPE_DESC_RE.test(description)) names.push(name);
+  }
+  return names;
+}
+
+/** 显式 accesses（argumentNames + expression 里引用的 args.X）、pathAuthority、emission 共同覆盖的参数名。 */
+function declaredPathParameterNames(schema: ToolSchema): Set<string> {
+  const covered = new Set<string>();
+  for (const declaration of schema.accesses ?? []) {
+    for (const name of declaration.argumentNames ?? []) covered.add(name);
+    if (declaration.expression) {
+      for (const match of declaration.expression.matchAll(EXPRESSION_ARG_RE)) covered.add(match[1]);
+    }
+  }
+  for (const authority of schema.pathAuthority ?? []) {
+    if (authority.kind === 'path' || authority.kind === 'global-memory') covered.add(authority.pathParameter);
+  }
+  const emission = schema.emission;
+  if (emission?.kind === 'external_file_write') covered.add(emission.targetParameter);
+  if (emission?.kind === 'external_effect') {
+    for (const name of emission.targetParameters) covered.add(name);
+  }
+  return covered;
+}
+
+/**
+ * r3 不变量：路径形状参数没有被声明证完的工具，访问集按 unknown read+write 处理
+ * （串行，与 pre-PR 一致）。多路径工具要并发，唯一的路是把 accesses 声明补全。
+ */
+function accessSetIsProvenComplete(schema: ToolSchema): boolean {
+  const covered = declaredPathParameterNames(schema);
+  return pathTypedPropertyNames(schema).every((name) => covered.has(name));
+}
+
 export interface ResolveToolCallAccessOptions {
   readonly workspace: string;
   readonly cwd: string;
@@ -57,6 +141,7 @@ export function resolveToolCallAccesses(
 ): ResolvedToolAccess[] {
   const schema = findBuiltinSchema(builtinSchemas(), toolCall.name);
   if (schema) {
+    if (!accessSetIsProvenComplete(schema)) return [UNKNOWN_READWRITE];
     const folded = foldToolAccess({
       accesses: schema.accesses,
       readOnly: schema.readOnly,

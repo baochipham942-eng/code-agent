@@ -1,10 +1,10 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { homedir } from 'node:os';
 import type { OsSandboxDecision, OsSandboxPermissionMode } from '../../sandbox/osSandboxPolicy';
 import { resolveCanonicalRunPath } from '../../runtime/runContext';
-import { isPathWithinRoot } from '../../runtime/workspaceScope';
-import { getPolicyEnforcer, type PolicyEnforcer } from '../../security/policyEnforcer';
-import { denyConcreteShellWritePath, deniedWriteInsideSeatbeltSubpath } from './writePathPolicyDeny';
+import { getPolicyEnforcer } from '../../security/policyEnforcer';
+import { denyConcreteShellWritePath } from './writePathPolicyDeny';
 
 export interface SandboxEscalationEligibilityInput {
   sandboxDecision: Pick<OsSandboxDecision, 'sandboxed'>;
@@ -17,43 +17,37 @@ export interface SandboxEscalationEligibilityInput {
   permissionMode: OsSandboxPermissionMode;
   abortSignal: AbortSignal;
   deniedPath?: string;
-  /** The denial came from creating a directory: a missing path counts as a directory for policy. */
+  /** The denial came from creating a directory. Directories are never offered. */
   deniedPathCreatesDirectory?: boolean;
+  /** The sandbox can allow one file that does not exist yet (seatbelt literal; bubblewrap cannot). */
+  newFileGrantSupported: boolean;
   /** Command cwd. User path rules compare workspace-relative spellings against it. */
   workingDirectory: string;
 }
 
-function grantContainsHome(resolvedPath: string): boolean {
-  const homes = new Set<string>([path.resolve(homedir())]);
-  try {
-    homes.add(resolveCanonicalRunPath(homedir()));
-  } catch {
-    // Can't prove the grant misses home. Withhold the card.
-    return true;
-  }
-  for (const home of homes) {
-    if (isPathWithinRoot(home, resolvedPath)) return true;
-    const relative = path.relative(resolvedPath, home);
-    if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) return true;
-  }
-  return false;
-}
+type EscalationTarget = 'file' | 'missing' | 'other';
 
 /**
- * Seatbelt repeats an extra write root as `(subpath …)`, so the retry can
- * write every descendant. The offered path itself is not enough.
+ * The card grants exactly one file, never a tree: the retry gets a literal
+ * write allowance for this path and nothing below it. A directory (existing or
+ * about to be created) would need a subtree grant whose descendants no card can
+ * list, so directories, symlinks and special files are never offered. A missing
+ * file needs an existing parent directory, otherwise the retry cannot create it.
  */
-function seatbeltSubpathGrantIsUnsafe(
-  resolvedPath: string,
-  workingDirectory: string,
-  policyEnforcer: PolicyEnforcer | null | undefined,
-  missingPathIsDirectory: boolean,
-): boolean {
-  return grantContainsHome(resolvedPath)
-    || deniedWriteInsideSeatbeltSubpath({ resolvedPath, workingDirectory, policyEnforcer, missingPathIsDirectory });
+function escalationTarget(resolvedPath: string): EscalationTarget {
+  try {
+    return fs.lstatSync(resolvedPath).isFile() ? 'file' : 'other';
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return 'other';
+  }
+  try {
+    return fs.statSync(path.dirname(resolvedPath)).isDirectory() ? 'missing' : 'other';
+  } catch {
+    return 'other';
+  }
 }
 
-function writePathPolicyBlocksEscalation(deniedPath: string, workingDirectory: string, missingPathIsDirectory: boolean): boolean {
+function writePathPolicyBlocksEscalation(deniedPath: string, workingDirectory: string): boolean {
   let resolvedPath = path.resolve(deniedPath);
   try {
     resolvedPath = resolveCanonicalRunPath(deniedPath);
@@ -63,22 +57,20 @@ function writePathPolicyBlocksEscalation(deniedPath: string, workingDirectory: s
   try {
     // The executor already bound this process to the run's policy file.
     // Passing a directory here would retarget that singleton.
-    const policyEnforcer = getPolicyEnforcer();
-    if (seatbeltSubpathGrantIsUnsafe(resolvedPath, workingDirectory, policyEnforcer, missingPathIsDirectory)) return true;
     return denyConcreteShellWritePath({
       resolvedPath,
       workingDirectory,
-      policyEnforcer,
+      policyEnforcer: getPolicyEnforcer(),
       pathCandidates: [deniedPath, resolvedPath],
       displayPath: deniedPath,
     }) !== undefined;
   } catch {
-    // Unclassifiable paths stay hard-denied. A card would add them to write roots.
+    // Unclassifiable paths stay hard-denied. A card would add them to the write grant.
     return true;
   }
 }
 
-/** Return the one path that may be offered for a single foreground retry. */
+/** Return the one file that may be offered for a single foreground retry. */
 export function shouldOfferEscalation(input: SandboxEscalationEligibilityInput): string | undefined {
   const deniedPath = input.deniedPath;
   if (
@@ -101,7 +93,12 @@ export function shouldOfferEscalation(input: SandboxEscalationEligibilityInput):
   if (resolvedPath === path.parse(resolvedPath).root || resolvedPath === path.resolve(homedir())) {
     return undefined;
   }
-  if (writePathPolicyBlocksEscalation(deniedPath, input.workingDirectory, input.deniedPathCreatesDirectory === true)) {
+  const target = escalationTarget(resolvedPath);
+  if (target === 'other') return undefined;
+  if (target === 'missing' && (input.deniedPathCreatesDirectory === true || !input.newFileGrantSupported)) {
+    return undefined;
+  }
+  if (writePathPolicyBlocksEscalation(deniedPath, input.workingDirectory)) {
     return undefined;
   }
   return deniedPath;

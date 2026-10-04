@@ -371,7 +371,7 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
       sandboxCleanup = undefined;
       cleanup?.();
     };
-    const applySandbox = (cmd: string, allowNetwork: boolean, extraWriteRoot?: string): { ok: true; command: string } | { ok: false; error: string } => {
+    const applySandbox = (cmd: string, allowNetwork: boolean, extraWriteFile?: string): { ok: true; command: string } | { ok: false; error: string } => {
       if (!sandboxDecision.apply) return { ok: true, command: cmd };
       try {
         if (writeFence && (!fenceRoot || !isOsWriteFenceAvailable())) {
@@ -396,15 +396,14 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
         const baseWriteRoots = writeFence && fenceRoot
           ? [fenceRoot]
           : scopeWriteRoots ?? workspaceConfinedRoots;
-        const readWriteRoots = extraWriteRoot
-          ? [...(baseWriteRoots ?? [workingDirectory]), extraWriteRoot]
-          : baseWriteRoots;
         const wrapped = wrapCommandForSandbox(cmd, {
           workingDirectory,
           readOnlyRoots: ctx.workspaceScope?.roots
             .filter((root) => root.access === 'read_only')
             .map((root) => resolveCanonicalRunPath(root.path)),
-          readWriteRoots,
+          readWriteRoots: baseWriteRoots,
+          // 一次性扩权只放开这一个文件（不含子孙），与审批卡上写的路径完全一致
+          readWriteFiles: extraWriteFile ? [extraWriteFile] : undefined,
           deniedReadRoots: [
             ...(ctx.deniedReadRoots ?? []),
             ...(process.env.CODE_AGENT_EVAL_REAL_ROOT ? [process.env.CODE_AGENT_EVAL_REAL_ROOT] : []),
@@ -821,11 +820,12 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
           abortSignal: ctx.abortSignal,
           deniedPath,
           deniedPathCreatesDirectory: sandboxDeniedWriteCreatesDirectory(failureText),
+          newFileGrantSupported: getSandboxManager().supportsNewFileWriteGrant(),
           workingDirectory,
         });
         if (!offeredPath) throw error;
 
-        const escalationReason = `沙盒拦截了这一步：它想写入 ${offeredPath}。允许仅这一次向该路径写入并重跑？`;
+        const escalationReason = `沙盒拦截了这一步：它想写入文件 ${offeredPath}。允许仅这一次写入这个文件并重跑？`;
         let permit: Awaited<ReturnType<CanUseToolFn>>;
         try {
           permit = await canUseTool('bash', args, escalationReason, {

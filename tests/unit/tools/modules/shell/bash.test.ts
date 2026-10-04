@@ -1414,22 +1414,27 @@ describe('bashModule sandbox escalation', () => {
   // CI（Linux，无 bwrap）上沙盒不可用 → default 档降级不包装 → 永远拿不到拒绝，整组假红；
   // 包装本身已 mock（wrapMock），可用性也钉死，让判据只看升级逻辑不看平台。
   let availableSpy: ReturnType<typeof vi.spyOn> | undefined;
+  // 「尚不存在的文件能不能授」随平台变（seatbelt literal 能，bubblewrap 只能绑已存在的文件），钉成能；
+  // 不能的那一侧由下面单独一条测试覆盖。
+  let newFileGrantSpy: ReturnType<typeof vi.spyOn> | undefined;
 
   beforeEach(() => {
     modeMgr.setMode('default', true);
     process.env.OS_SANDBOX_ENABLED = 'true';
     availableSpy = vi.spyOn(getSandboxManager(), 'isAvailable').mockReturnValue(true);
+    newFileGrantSpy = vi.spyOn(getSandboxManager(), 'supportsNewFileWriteGrant').mockReturnValue(true);
     wrapMock.mockReset();
     cleanupMock.mockReset();
   });
 
   afterEach(() => {
     availableSpy?.mockRestore();
+    newFileGrantSpy?.mockRestore();
     modeMgr.setMode('default', true);
     process.env.OS_SANDBOX_ENABLED = 'true';
   });
 
-  it('asks once, appends only the denied path, and retries once after approval', async () => {
+  it('asks once, grants only the denied file, and retries once after approval', async () => {
     const cwd = mkdtempSync(join(tmpdir(), 'sandbox-escalation-'));
     const deniedPath = join(tmpdir(), `sandbox-escalation-target-${process.pid}.txt`);
     const denial = `printf '%s\\n' "EPERM: operation not permitted, open '${deniedPath}'" >&2; exit 1`;
@@ -1444,10 +1449,13 @@ describe('bashModule sandbox escalation', () => {
       const result = await handler.execute({ command: `printf x > ${deniedPath}` }, makeCtx({ workingDir: cwd }), canUse);
       expect(result.ok).toBe(true);
       expect(wrapMock).toHaveBeenCalledTimes(2);
-      expect(wrapMock.mock.calls[1]?.[1]).toEqual(expect.objectContaining({
-        readWriteRoots: [resolveCanonicalRunPath(cwd), deniedPath],
-        allowNetwork: false,
-      }));
+      // 重跑只多放开这一个文件：写根与第一次相同，不把它（或它的目录）加进子树授权
+      const firstOptions = wrapMock.mock.calls[0]?.[1] as { readWriteRoots?: string[]; readWriteFiles?: string[] };
+      const retryOptions = wrapMock.mock.calls[1]?.[1] as { readWriteRoots?: string[]; readWriteFiles?: string[]; allowNetwork?: boolean };
+      expect(firstOptions.readWriteFiles).toBeUndefined();
+      expect(retryOptions.readWriteFiles).toEqual([deniedPath]);
+      expect(retryOptions.readWriteRoots).toEqual(firstOptions.readWriteRoots);
+      expect(retryOptions.allowNetwork).toBe(false);
       expect(canUse).toHaveBeenCalledTimes(2);
       expect(canUse.mock.calls[1]).toEqual([
         'bash',
@@ -1598,49 +1606,81 @@ describe('bashModule sandbox escalation', () => {
     await expectEscalationOffers(ancestor, false);
   });
 
-  it('does not offer a directory whose subpath contains an Edit path deny', async () => {
-    const parent = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-edit-')));
-    const secret = join(parent, 'secret');
-    resetPolicyEngine();
-    getPolicyEngine().loadUserRules({ deny: [`Edit(${secret})`] });
+  it('never offers a directory, whether it exists or is about to be created', async () => {
+    // 卡只授一个文件。目录要整棵子树才有用，而子树里会写出什么没有哪张卡列得清（PR #2191 五轮审查的同一个根）。
+    const parent = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-dir-')));
     try {
       await expectEscalationOffers(parent, false);
+      await expectEscalationOffers(join(parent, 'new-dir'), false, 'mkdir');
     } finally {
-      resetPolicyEngine();
       rmSync(parent, { recursive: true, force: true });
     }
   });
 
-  it('does not offer a directory when an Edit glob above it denies a descendant', async () => {
-    const work = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-wild-')));
-    const proj = join(work, 'proj');
-    mkdirSync(proj);
-    resetPolicyEngine();
-    getPolicyEngine().loadUserRules({ deny: [`Edit(${work}/*/secrets/**)`] });
+  it('does not offer a symlink or a file whose parent directory is missing', async () => {
+    const parent = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-link-')));
+    const real = join(parent, 'real.txt');
+    const link = join(parent, 'link.txt');
+    writeFileSync(real, 'x');
+    symlinkSync(real, link);
     try {
-      await expectEscalationOffers(proj, false);
+      await expectEscalationOffers(link, false);
+      await expectEscalationOffers(join(parent, 'missing-dir', 'out.txt'), false);
     } finally {
-      resetPolicyEngine();
-      rmSync(work, { recursive: true, force: true });
+      rmSync(parent, { recursive: true, force: true });
     }
   });
 
-  it('does not offer a missing directory when denied_paths uses a wildcard above it', async () => {
-    const project = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-wild-policy-')));
-    const proj = join(project, 'proj');
+  it('offers an existing regular file and a new file in an existing directory', async () => {
+    const parent = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-file-ok-')));
+    const existing = join(parent, 'existing.txt');
+    writeFileSync(existing, 'x');
+    try {
+      await expectEscalationOffers(existing, true);
+      await expectEscalationOffers(join(parent, 'new-file.txt'), true);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  it('offers only existing files when the sandbox cannot grant a new file (bubblewrap)', async () => {
+    newFileGrantSpy?.mockReturnValue(false);
+    const parent = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-bwrap-')));
+    const existing = join(parent, 'existing.txt');
+    writeFileSync(existing, 'x');
+    try {
+      await expectEscalationOffers(existing, true);
+      await expectEscalationOffers(join(parent, 'new-file.txt'), false);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  it('does not offer a file that a user Edit deny or filesystem policy forbids', async () => {
+    const project = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-deny-project-')));
+    const parent = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-deny-')));
+    const editDenied = join(parent, 'edit-denied.txt');
+    const policyDenied = join(parent, 'policy-denied.txt');
+    mkdirSync(join(parent, 'sub'));
+    resetPolicyEngine();
+    getPolicyEngine().loadUserRules({ deny: [`Edit(${editDenied})`] });
     writeFileSync(join(project, 'code-agent-policy.toml'), [
       '[filesystem]',
-      `writable_paths = ["./**", "${proj}", "${proj}/**"]`,
-      `denied_paths = ["${project}/*/secrets/**"]`,
+      `writable_paths = ["./**", "${parent}/**"]`,
+      `denied_paths = ["${policyDenied}"]`,
       '',
     ].join('\n'));
     resetPolicyEnforcer();
     getPolicyEnforcer(project);
     try {
-      await expectEscalationOffers(proj, false);
+      await expectEscalationOffers(editDenied, false);
+      await expectEscalationOffers(policyDenied, false);
+      await expectEscalationOffers(join(parent, 'sub', 'allowed.txt'), true);
     } finally {
+      resetPolicyEngine();
       resetPolicyEnforcer();
       rmSync(project, { recursive: true, force: true });
+      rmSync(parent, { recursive: true, force: true });
     }
   });
 
@@ -1700,7 +1740,7 @@ describe('bashModule sandbox escalation', () => {
   });
 
   it('still offers escalation when npm reports EPERM on a path line', async () => {
-    const target = `/tmp/sandbox-npm-eperm-${process.pid}/package.json`;
+    const target = join(resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-npm-eperm-'))), 'package.json');
     wrapMock.mockReturnValue({
       command: `printf '%s\\n' 'npm error code EPERM' 'npm error syscall open' 'npm error path ${target}' 'npm error errno -1' >&2; exit 1`,
       cleanup: cleanupMock,
@@ -1713,68 +1753,6 @@ describe('bashModule sandbox escalation', () => {
     expect(escalationCalls[0]?.[2]).toContain(target);
     expect(canUse).toHaveBeenCalledTimes(2);
     expect(result.ok).toBe(false);
-  });
-
-  it('does not offer a path whose subpath contains a denied_paths descendant', async () => {
-    const project = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-policy-')));
-    const parent = join(project, 'missing-parent');
-    const secret = join(parent, 'secret');
-    writeFileSync(join(project, 'code-agent-policy.toml'), [
-      '[filesystem]',
-      `writable_paths = ["./**", "${parent}", "${parent}/**"]`,
-      `denied_paths = ["${secret}"]`,
-      '',
-    ].join('\n'));
-    resetPolicyEnforcer();
-    getPolicyEnforcer(project);
-    try {
-      await expectEscalationOffers(parent, false);
-    } finally {
-      resetPolicyEnforcer();
-      rmSync(project, { recursive: true, force: true });
-    }
-  });
-
-  it('does not offer an existing directory when denied file patterns can match inside it', async () => {
-    const project = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-project-')));
-    const parent = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-dir-')));
-    writeFileSync(join(project, 'code-agent-policy.toml'), [
-      '[filesystem]',
-      `writable_paths = ["./**", "${parent}", "${parent}/**"]`,
-      '',
-    ].join('\n'));
-    resetPolicyEnforcer();
-    getPolicyEnforcer(project);
-    try {
-      await expectEscalationOffers(parent, false);
-    } finally {
-      resetPolicyEnforcer();
-      rmSync(project, { recursive: true, force: true });
-      rmSync(parent, { recursive: true, force: true });
-    }
-  });
-
-  it('does not offer a missing directory when denied file patterns could match inside it', async () => {
-    // 审查 Important（PR #2191）：目录尚不存在时 stat 失败被当成「无命中」，批准后 seatbelt 授整棵 subpath，
-    // 重跑可在新目录里写出 *.pem/.env 这类被 denied_file_patterns 禁止的文件名。不存在 = 可能包含 → 不给卡。
-    const project = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-missing-project-')));
-    const parent = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-missing-')));
-    const missing = join(parent, 'not-yet-created');
-    writeFileSync(join(project, 'code-agent-policy.toml'), [
-      '[filesystem]',
-      `writable_paths = ["./**", "${parent}/**"]`,
-      '',
-    ].join('\n'));
-    resetPolicyEnforcer();
-    getPolicyEnforcer(project);
-    try {
-      await expectEscalationOffers(missing, false, 'mkdir');
-      await expectEscalationOffers(join(parent, 'new-file.txt'), true);   // 新文件只授那一个文件，照旧给卡
-    } finally {
-      resetPolicyEnforcer();
-      rmSync(project, { recursive: true, force: true });
-      rmSync(parent, { recursive: true, force: true });
-    }
   });
 
   it('still offers a file when policy only denies a sibling directory', async () => {

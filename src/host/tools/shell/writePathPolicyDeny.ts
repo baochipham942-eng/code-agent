@@ -2,7 +2,6 @@ import path from 'node:path';
 import { homedir } from 'node:os';
 import { getPolicyEngine } from '../../permissions/policyEngine';
 import type { PolicyCheckResult, PolicyEnforcer } from '../../security/policyEnforcer';
-import { patternIntersectsSubpath } from '../../security/patternSubpath';
 import { createTraceStep } from '../../security/decisionTraceBuilder';
 
 interface ConcreteWritePathDenyInput {
@@ -54,45 +53,4 @@ function pathSpellings(resolvedPath: string, workingDirectory: string): string[]
     candidates.push(`~/${homeRelative}`);
   }
   return candidates;
-}
-
-function userPathDenySpecifiers(): string[] {
-  return getPolicyEngine().getRules().flatMap((rule) => {
-    const specifier = rule.matcher.toolSpecifier;
-    if (!rule.id.startsWith('user-deny-') || rule.action !== 'deny') return [];
-    if (specifier?.specifierType !== 'path' || !specifier.specifier) return [];
-    return [specifier.specifier];
-  });
-}
-
-function absoluteUserPattern(specifier: string, workingDirectory: string): string {
-  if (specifier === '~') return path.resolve(homedir());
-  if (specifier.startsWith('~/')) return path.join(path.resolve(homedir()), specifier.slice(2));
-  if (path.isAbsolute(specifier)) return specifier;
-  if (specifier.startsWith('*') || specifier.startsWith('?')) return specifier;
-  return path.resolve(workingDirectory, specifier);
-}
-
-/**
- * True when a seatbelt subpath grant on `resolvedPath` includes a write that
- * path policy still denies. The offered path itself is checked separately.
- */
-export function deniedWriteInsideSeatbeltSubpath(input: {
-  resolvedPath: string;
-  workingDirectory: string;
-  policyEnforcer: PolicyEnforcer | null | undefined;
-  /** Denied operation was mkdir: a path that does not exist yet is a directory the retry would create. */
-  missingPathIsDirectory?: boolean;
-}): boolean {
-  if (input.policyEnforcer?.isActive
-    && input.policyEnforcer.writeSubpathIncludesFilesystemDeny(input.resolvedPath, input.missingPathIsDirectory === true)) {
-    return true;
-  }
-  return userPathDenySpecifiers().some((specifier) => patternIntersectsSubpath(
-    absoluteUserPattern(specifier, input.workingDirectory),
-    input.resolvedPath,
-    (candidate) => getPolicyEngine().matchUserPathDeny(
-      pathSpellings(candidate, input.workingDirectory),
-    ) !== null,
-  ));
 }

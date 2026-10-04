@@ -241,6 +241,7 @@ export function getRendererBundleSummaryText(
 
 export { getRendererBundleDiagnosticRows } from './UpdateSettings.helpers';
 import { getRendererBundleDiagnosticRows, shortContentHash } from './UpdateSettings.helpers';
+import { getPythonEnvAssetRowDisplay } from './pythonEnvAssetRow';
 export function getDesktopShellSummaryText(
   diagnostics: DesktopShellDiagnostics | null,
   text: UpdateSettingsText['desktopShell']['summary'] = DEFAULT_UPDATE_SETTINGS_TEXT.desktopShell.summary,
@@ -794,15 +795,22 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
                 const preparation = runtimeAssetsStatus.preparation?.assetId === asset.id
                   ? runtimeAssetsStatus.preparation
                   : null;
+                // python-env 行的安装中/失败态来自 preparation，映射集中在 helper
+                const pythonEnvRow = getPythonEnvAssetRowDisplay(asset, preparation, updateText.runtimeAssets);
                 return (
                 <div key={asset.id} className="flex items-center justify-end gap-2">
                   <span className="text-xs text-zinc-400">
                     {getRuntimeAssetDisplayName(asset, updateText.runtimeAssets.displayNames)}
                   </span>
-                  <span className={`text-xs px-2 py-1 rounded border ${getRuntimeAssetTone(asset)}`}>
-                    {getRuntimeAssetStatusText(asset, updateText.runtimeAssets.status)}
+                  <span className={`text-xs px-2 py-1 rounded border ${pythonEnvRow?.tone ?? getRuntimeAssetTone(asset)}`}>
+                    {pythonEnvRow?.statusText ?? getRuntimeAssetStatusText(asset, updateText.runtimeAssets.status)}
                   </span>
-                  {asset.delivery === 'optional' && asset.state === 'missing' && (
+                  {pythonEnvRow?.failureReason && (
+                    <span className="text-xs text-badge-warning max-w-[260px] truncate" title={pythonEnvRow.failureReason}>
+                      {pythonEnvRow.failureReason}
+                    </span>
+                  )}
+                  {asset.delivery === 'optional' && asset.state === 'missing' && pythonEnvRow?.action !== 'hide' && (
                     <Button
                       disabled={isDisabled || Boolean(preparingRuntimeAssetId)}
                       onClick={() => handlePrepareRuntimeAssets(asset.id)}
@@ -812,7 +820,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
                     >
                       {isPreparing && preparation?.phase === 'downloading' && preparation.percent !== undefined
                         ? `${Math.round(preparation.percent)}%`
-                        : runtimeAssetsError ? updateText.runtimeAssets.retryAsset : updateText.runtimeAssets.installAsset}
+                        : runtimeAssetsError || pythonEnvRow?.action === 'retry' ? updateText.runtimeAssets.retryAsset : updateText.runtimeAssets.installAsset}
                     </Button>
                   )}
                 </div>

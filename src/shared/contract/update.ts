@@ -127,12 +127,14 @@ export type RuntimeAssetDisplayKind =
   | 'rtk'
   | 'audioInput'
   | 'browserAutomation'
-  | 'imageUnderstanding';
+  | 'imageUnderstanding'
+  | 'pythonEnv';
 
 export function getRuntimeAssetDisplayKind(
   asset: Pick<RuntimeAssetStatusEntry, 'id' | 'label'>,
 ): RuntimeAssetDisplayKind | null {
   const value = `${asset.id} ${asset.label}`.toLowerCase();
+  if (value.includes('python-env')) return 'pythonEnv';
   if (value.includes('computer-use')) return 'computerUse';
   if (value === 'uv uv sidecar binary' || value.includes('uv sidecar')) return 'uv';
   if (value === 'rtk rtk sidecar binary' || value.includes('rtk sidecar')) return 'rtk';

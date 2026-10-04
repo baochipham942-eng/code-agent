@@ -184,6 +184,7 @@ export const enSettingsSystem = {
           audioInput: 'Voice input',
           browserAutomation: 'Browser control',
           imageUnderstanding: 'Image understanding',
+          pythonEnv: 'Python data runtime',
         },
         summary: {
           unavailableSuffix: ' unavailable',
@@ -198,6 +199,8 @@ export const enSettingsSystem = {
           firstUseDownload: 'Downloads on first use',
           unsupported: 'Not supported',
           missing: 'Missing',
+          installing: 'Installing',
+          installFailed: 'Install failed',
         },
       },
       rendererBundle: {

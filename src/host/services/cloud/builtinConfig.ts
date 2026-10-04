@@ -25,6 +25,8 @@ export interface FeatureFlags {
   enableExperimentalTools: boolean;
   nativeGenerativeUI: boolean;
   executionManifestV1: boolean;
+  /** Jev skill/tool rerank rollout; absent in older remote configs means off. */
+  jev_skill_rerank?: boolean;
 }
 
 export type EntitlementStatus = 'active' | 'trial' | 'expired' | 'revoked';
@@ -262,6 +264,7 @@ const BUILTIN_FEATURE_FLAGS: FeatureFlags = {
   enableExperimentalTools: false,
   nativeGenerativeUI: false,
   executionManifestV1: false,
+  jev_skill_rerank: false,
 };
 
 const BUILTIN_ENTITLEMENT: EntitlementPolicy = {

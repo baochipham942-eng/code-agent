@@ -64,6 +64,28 @@ function makeDraft(overrides: Partial<CronJobDraft>): CronJobDraft {
   return { ...createDefaultCronJobDraft(), ...overrides };
 }
 
+/** 本机系统时区（晨间分诊这类「本地时间」模板用，不钉死 Asia/Shanghai）。 */
+function localCronTimezone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+}
+
+// ── Template display copy (i18n) ────────────────────────────────────
+
+/**
+ * 模板卡片展示文案：i18n 词条（cronCenter.templates[模板 id]，zh/en 双份）优先，
+ * 没登记词条的存量模板回退对象内文案。新增模板的展示文案一律走 i18n。
+ */
+export function getTemplateDisplayCopy(
+  template: Pick<CronTemplate, 'id' | 'name' | 'description' | 'scheduleLabel'>,
+  localized: Readonly<Record<string, Pick<CronTemplate, 'name' | 'description' | 'scheduleLabel'>>> | undefined,
+): Pick<CronTemplate, 'name' | 'description' | 'scheduleLabel'> {
+  return localized?.[template.id] ?? {
+    name: template.name,
+    description: template.description,
+    scheduleLabel: template.scheduleLabel,
+  };
+}
+
 // ── Templates ───────────────────────────────────────────────────────
 
 export const CRON_TEMPLATES: CronTemplate[] = [
@@ -131,6 +153,33 @@ export const CRON_TEMPLATES: CronTemplate[] = [
         agentType: 'default',
         agentPrompt:
           '请总结我本周的主要进展、重要结果、未完成事项和风险，并结合已有日程与待办，整理下周的重点、准备事项和优先顺序。',
+      }),
+  },
+  {
+    id: 'morning-triage',
+    name: '晨间分诊',
+    emoji: '🌅',
+    description: '汇总昨晚到现在的未读邮件、消息和日历变动',
+    scheduleLabel: '工作日 08:30',
+    featured: true,
+    fields: [],
+    generate: () =>
+      makeDraft({
+        name: '晨间分诊',
+        description: '汇总昨晚到现在的未读邮件、即时消息和日历变动，按轻重缓急分档',
+        tagsText: '晨间分诊, 邮件, 消息, 日程',
+        scheduleType: 'cron',
+        cronExpression: '30 8 * * 1-5',
+        // 本地时区（台账口径）：取运行机器的系统时区，不钉死 Asia/Shanghai
+        cronTimezone: localCronTimezone(),
+        actionType: 'agent',
+        agentType: 'default',
+        agentPrompt:
+          '请汇总我从昨晚到现在的未读邮件、即时消息和日历变动，给我一份晨间分诊。' +
+          '先盘点我当前可用的连接（邮箱、IM、日历），有什么用什么。' +
+          '把值得关注的条目按「今天必须处理 / 可等 / 只需知道」三档列出，每档最多 5 条，挑最重要的；每条一句话说明是什么、为什么归到这一档。' + // copy-allow: 「只需知道」是台账原单指定的三档分类标签之一，是分类名而非营销压力词
+          '如果今早没有任何需要处理或值得知道的内容，直接明说「今早没有需要处理的」，不要硬凑条目，也不要产出空列表。' +
+          '如果没有任何可用的邮箱/IM/日历连接，不要报错：在产出里说明缺少哪些连接、各自能补上什么信息，并建议我去设置里连接。',
       }),
   },
   {

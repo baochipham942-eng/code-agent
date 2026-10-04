@@ -649,9 +649,9 @@ export class MessageProcessor {
       );
     }
 
-    // ADR-074 K1：plan-exit 兜底补推理期间，写类工具与 run 级禁用工具同一 admission 口拒绝。
+    // ADR-074 K1/K2：plan-exit 兜底窗口内工具面收成 allowlist，落选者与 run 级禁用工具同一 admission 口拒绝。
     const deniedToolCalls = toolCalls.filter((toolCall) => isToolDeniedForRun(this.ctx, toolCall.name)
-      || isWriteBlockedDuringPlanExitFallback(this.ctx, () => this.toolEngine.runtimeControl?.isPlanMode() === true, toolCall.name));
+      || isWriteBlockedDuringPlanExitFallback(this.ctx, () => this.toolEngine.runtimeControl?.isPlanMode() === true, toolCall));
     if (deniedToolCalls.length > 0) {
       for (const call of toolCalls) {
         const blocked = deniedToolCalls.some((denied) => denied.id === call.id);
@@ -961,7 +961,7 @@ export class MessageProcessor {
     // 不得在零上下文压力时预先截断（此前 compressToolResult 300→200 token 的
     // eager 压缩会把 image_analyze 等大结果砍成 "[truncated]" 存根且无落盘引用，
     // 模型看不到完整结果 → 重复调用 + 自述"被截断"）。
-    // 超大文本结果统一由管线 L1 toolResultBudget（2000 token + GAP-009 落盘提示）
+    // 超大文本结果统一由管线的窗口派生 L1 toolResultBudget（+ GAP-009 落盘提示）
     // 在 API view 投影时处理；bash/MCP 在工具层已有 30K/50K 字符上限。
     const toolMessage: Message = {
       id: this.contextAssembly.generateId(),

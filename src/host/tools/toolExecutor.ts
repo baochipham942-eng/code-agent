@@ -36,7 +36,7 @@ import type { SkillToolBoundary } from '../../shared/contract/agentSkill';
 import type { NeoTagRunContext } from '../../shared/contract/tag';
 import type { SwarmRunScope } from '../../shared/contract/swarm';
 import { createTraceBuilder, createTraceStep } from '../security/decisionTraceBuilder';
-import { getPluginIdForTool } from '../plugins/pluginToolOrigin';
+import { getPluginIdForTool, getPluginOriginForTool } from '../plugins/pluginToolOrigin';
 import { getWriteIsolationManager, getWriteIsolationScope, type WriteIsolationMetadata } from '../security/writeIsolation';
 import type { HookManager } from '../hooks/hookManager';
 import { getToolResolver } from '../tools/dispatch/toolResolver';
@@ -53,6 +53,7 @@ import {
   CLASSIFIER_ERROR_TRACE_RULE,
   INJECTED_PERMISSION_HANDLER_TRACE_RULE,
   commandAnalysisDenialError,
+  commandAnalysisRepeatDenialError,
   peerOriginUnattendedDenialError,
   peermsgLaunderDenialError,
   permissionDenialError,
@@ -677,6 +678,7 @@ export class ToolExecutor {
     }
 
     const executionToolName = toolDef.name;
+    const pluginOrigin = getPluginOriginForTool(executionToolName);
     const pluginId = getPluginIdForTool(executionToolName);
     const policyToolName = normalizeToolName(executionToolName);
     const writeWithoutWorkspaceAuthority = Boolean(
@@ -963,7 +965,7 @@ export class ToolExecutor {
           ? getPermissionModeManager().rememberCommandAnalysisFailure(effectiveSessionId, fingerprint)
           : false;
         if (repeated) {
-          const hostReason = commandAnalysisDenialError(executionToolName);
+          const hostReason = commandAnalysisRepeatDenialError(executionToolName);
           const error = hostReason.modelText;
           logger.warn('Repeated unanalyzable command denied before permission request', {
             tool: executionToolName,
@@ -1940,7 +1942,7 @@ export class ToolExecutor {
         commandValidation,
         commandRiskUnknown ? 'unknown' : knownAskCommandRisk,
       );
-      if (pluginId) permissionRequest.details.pluginId = pluginId;
+      if (pluginOrigin) Object.assign(permissionRequest.details, pluginOrigin);
       if (
         permissionRequest.type === 'file_read'
         || permissionRequest.type === 'file_write'

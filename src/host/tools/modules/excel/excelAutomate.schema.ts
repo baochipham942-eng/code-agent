@@ -6,6 +6,11 @@ export const excelAutomateSchema: ToolSchema = {
   name: 'ExcelAutomate',
   description: `Unified Excel automation tool combining reading, generating, and live automation.
 
+Every call MUST include \`action\`. Minimal call examples:
+- read: {"action":"read","file_path":"/absolute/path/to/file.xlsx"}
+- list_sheets: {"action":"list_sheets","file_path":"/absolute/path/to/file.xlsx"}
+- edit: {"action":"edit","file_path":"/absolute/path/to/file.xlsx","operations":[{"action":"set_cell","cell":"B7","value":42000}]}
+
 ## Actions:
 
 ### read — Read Excel file contents

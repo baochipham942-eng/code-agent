@@ -122,6 +122,14 @@ describe('exitPlanModeModule (native)', () => {
       }
     });
 
+    it('stamps planApproval.source = model_exit（ADR-074 K2：与宿主合成卡区分来源）', async () => {
+      const result = await run({ plan: SAMPLE_PLAN });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.meta?.planApproval).toMatchObject({ status: 'pending', source: 'model_exit', originalPlan: SAMPLE_PLAN });
+      }
+    });
+
     it('emits plan_mode_exited AgentEvent with plan', async () => {
       const emit = vi.fn<(event: AgentEvent) => void>();
       const ctx = makeCtx({ emit });

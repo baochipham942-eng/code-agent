@@ -20,8 +20,16 @@ export interface ModelCapabilityMatrixEntry {
     /**
      * prefix-param 档的端点路径覆盖：替换主端点（MODEL_API_ENDPOINTS）的 path 段，host 不变。
      * DeepSeek 官方 prefix 续写必须切 /beta（api-docs.deepseek.com/zh-cn/guides/chat_prefix_completion）。
+     * 缺省（不声明）= 不切端点。
      */
     endpointPath?: string;
+    /**
+     * prefix-param 档的请求参数名（缺省 'prefix'）：
+     * 'prefix' = DeepSeek 合同，顶层 body 键 prefix:true；
+     * 'partial' = Moonshot Partial Mode，partial:true 打在末条 assistant 消息上
+     * （platform.kimi.com/docs/guide/use-partial-mode-feature-of-kimi-api）。
+     */
+    param?: 'prefix' | 'partial';
   };
   /** Responses 端点是否在 API 根（true 时剥掉 baseUrl 末尾的 /vN）；默认 false = 端点在 baseUrl 之下的 /responses。 */
   responsesAtApiRoot?: boolean;
@@ -72,6 +80,14 @@ const MATRIX: ModelCapabilityMatrix = {
       // ADR-068 D1：contents 末尾 model 角色可续写（社区/官方支持帖证实的事实标准，
       // 非一等文档合同）；thinking 模型续接须保留 thought signatures。
       streamResume: { mode: 'trailing-assistant' },
+    },
+  },
+  moonshot: {
+    default: {
+      // ADR-068 follow-up（N-STREAM-RESUME-DOGFOOD，2026-09-30 真机探测，证据
+      // N-STREAM-RESUME-DOGFOOD-2026-09-30.md）：官方 Partial Mode——末条 assistant
+      // 消息带 partial:true 续写，标记打在消息上而非顶层 body，主端点不变。
+      streamResume: { mode: 'prefix-param', param: 'partial' },
     },
   },
   'custom-tokenrhythm': {

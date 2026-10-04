@@ -2,6 +2,7 @@ import type { CronJobAction, CronJobDefinition, CronJobExecution } from '../../s
 import { CRON_AGENT_SNAPSHOT, CRON_RESULT_PUSH, EXTERNAL_WATCH } from '../../shared/constants';
 import { saveCronExecution, upsertCronExecutionInMemory } from './cronPersistence';
 import { truncateUtf8Snapshot } from './cronAgentPrompt';
+import { CRON_SUMMARY_TAG_PATTERN } from '../../shared/cronRunDigest';
 
 interface CronResultDeliveryOutcome {
   delivered: boolean;
@@ -39,8 +40,9 @@ function parseTarget(raw: string): { account: string; chatId?: string } {
  * 推送正文清洗（PR#2060 ai-review Important 第二轮）：内置飞书监听模板让模型把对比状态
  * 包进 <cron_snapshot>、新发现包进 <cron_alert>，原文照推会把内部状态和标签壳怼到群里。
  * 规则：任何推送先剥全部 <cron_snapshot> 块；出现 <cron_alert> 时只推标签内正文
- * （多块拼接）；剥完为空 = 没东西要发，按安静处理不推（不写失败留痕）。
- * 正则复用 shared/constants 里的既有 pattern source，只加 global 旗标，不新造表达式。
+ * （多块拼接），摘要块不参与这条路径。没有 alert 时再剥 <cron_summary>；
+ * 剥完为空才回退成去掉标签的摘要正文。剥完仍为空 = 没东西要发，按安静处理不推。
+ * 快照/告警正则复用 shared/constants 里的既有 pattern source，只加 global 旗标。
  */
 function sanitizePushBody(raw: string): string {
   const snapshotBlocks = new RegExp(CRON_AGENT_SNAPSHOT.TAG_PATTERN.source, 'gi');
@@ -49,7 +51,13 @@ function sanitizePushBody(raw: string): string {
   const alerts = [...withoutSnapshots.matchAll(alertBlocks)]
     .map((match) => match[1].trim())
     .filter(Boolean);
-  return (alerts.length > 0 ? alerts.join('\n') : withoutSnapshots).trim();
+  if (alerts.length > 0) return alerts.join('\n').trim();
+  const summaryBlocks = new RegExp(CRON_SUMMARY_TAG_PATTERN.source, 'gi');
+  const summaries = [...withoutSnapshots.matchAll(summaryBlocks)]
+    .map((match) => match[1].trim())
+    .filter(Boolean);
+  const plainBody = withoutSnapshots.replace(summaryBlocks, '').trim();
+  return plainBody || summaries.join('\n');
 }
 
 async function pushCronResult(

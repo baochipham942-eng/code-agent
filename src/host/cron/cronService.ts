@@ -54,6 +54,7 @@ import { getEventBus } from '../services/eventing/bus';
 import { persistCronMissedTrace } from './cronMissedTrace';
 import { appendCronAgentExpertThreadReceipt } from './cronAgentExpertThreadReceipt';
 import { buildCronAgentPrompt, truncateUtf8Snapshot } from './cronAgentPrompt';
+import { parseCronRunDigest } from '../../shared/cronRunDigest';
 import {
   assertExecutionLocationConstraints,
   computeCronFireJitterMs,
@@ -886,10 +887,8 @@ export class CronService implements Disposable {
         const isExternalWatch = Boolean(ctx?.[EXTERNAL_WATCH.CONTEXT_KEY]);
         let hasAlert = !isExternalWatch;
 
-        let result: unknown;
-        let finalAssistantText = '';
-        let runError: unknown;
-        let runFailed = false;
+        let result: unknown; let finalAssistantText = '';
+        let runError: unknown; let runFailed = false;
         try {
           try {
             // 事件触发时通道载荷只以 untrusted 定界块追加在 prompt 尾部，并给该条
@@ -1019,6 +1018,7 @@ export class CronService implements Disposable {
           prompt: action.prompt,
           result,
           sessionId: cronSession.id,
+          digest: parseCronRunDigest(finalAssistantText),
           ...(quietWatchRound ? { skipped: true, reason: 'no_new_event' } : {}),
         };
       }

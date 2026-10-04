@@ -11,7 +11,9 @@
 export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 
 // 版本门把 src/host/prompts/ 下任何改动都当成提示词文本。sys-v70 只覆盖 cache-break 归因，请求字节未变。
-export const PROMPT_VERSION = 'sys-v70' as const;
+// sys-v71：N-TOOLRES-K2 r3 只给工具 schema 加了 host 侧 accesses 声明（快照字节比对证明请求体不变），
+// 版本门按 *.schema.ts 实质改动触发 bump；此处是启发式的归因切分，不是提示词变更。
+export const PROMPT_VERSION = 'sys-v71' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

@@ -25,7 +25,7 @@ vi.mock('../../../src/host/services/core', () => ({
 
 import { applySchema } from '../../../src/host/services/core/database/schema';
 import { applySessionsMigrations } from '../../../src/host/services/core/database/migrations';
-import { FileCheckpointService } from '../../../src/host/services/checkpoint/fileCheckpointService';
+import { FileCheckpointService, initFileCheckpointService } from '../../../src/host/services/checkpoint/fileCheckpointService';
 import { createFileCheckpointIfNeeded } from '../../../src/host/tools/middleware/fileCheckpointMiddleware';
 import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 import { writeSchema } from '../../../src/host/tools/modules/file/write.schema';
@@ -344,6 +344,64 @@ describe('fileCheckpointMiddleware MCP-declared write targets (integration)', ()
     await createFileCheckpointIfNeeded(undeclaredMcpTool, { path: path.join(tempDir, 'a.txt') }, ctx(), tempDir);
     await createFileCheckpointIfNeeded(undeclaredMcpTool, { path: path.join(tempDir, 'b.txt') }, ctx(), tempDir);
     expect(rows()).toHaveLength(1);
+  });
+
+  // ---- Rework r1：undeclared-tool 逐轮行不得挤掉路径类披露（披露预算按类拆两池） ----
+
+  it('keeps an earlier path disclosure when undeclared-tool rows flood their own budget', async () => {
+    // ai-review Important 场景：先有一次 Bash 变量重定向写盘（路径类披露），之后多轮
+    // 无 annotations 的 MCP 工具逐轮落 undeclared-tool 行——两池各自封顶，互不逐出。
+    initFileCheckpointService({ maxCheckpointsPerSession: 3 });
+    try {
+      await createFileCheckpointIfNeeded(
+        bashDefinition,
+        { command: 'echo x > "$OUT"/a.txt' },
+        ctx('tool-call-1'),
+        tempDir,
+      );
+      for (let turn = 2; turn <= 5; turn++) {
+        await createFileCheckpointIfNeeded(
+          undeclaredMcpTool,
+          { path: path.join(tempDir, `flood-${turn}.txt`) },
+          ctx(`tool-call-${turn}`),
+          tempDir,
+        );
+      }
+      // undeclared 池自身仍封顶 3 条（最旧的 tool-call-2 被自己池内淘汰），路径披露原样存活
+      expect(rows().map((row) => row.file_path)).toEqual([
+        'uncertain-redirection:$OUT/a.txt',
+        'undeclared-tool:mcp__fs__write_text_file',
+        'undeclared-tool:mcp__fs__write_text_file',
+        'undeclared-tool:mcp__fs__write_text_file',
+      ]);
+
+      // 回退轮次 1：路径披露照常出现在 skippedFiles，不是被挤掉后的无提示。注意
+      // service 层的 success 本就因路径披露在场而为 false（「窗口内有未恢复项」的
+      // 既有语义）——非致命口径在 sessionHistoryAppService，那里两种披露都不抛错。
+      const rewind = await service.rewindFiles(sessionId, 'tool-call-1');
+      expect(rewind.errors).toEqual([]);
+      expect(rewind.skippedFiles.map((item) => item.reason).sort())
+        .toEqual(['uncertain_write_target', 'undeclared_tool_write']);
+      expect(rewind.skippedFiles.find((item) => item.reason === 'uncertain_write_target')?.filePath)
+        .toBe('uncertain-redirection:$OUT/a.txt');
+    } finally {
+      initFileCheckpointService();
+    }
+  });
+
+  it('keeps undeclared-tool rows when path disclosures flood their own budget', async () => {
+    const limited = new FileCheckpointService({ maxCheckpointsPerSession: 3 });
+    await limited.recordUncertainWriteTarget(sessionId, 'tool-call-1', 'undeclared-tool:mcp__fs__write_text_file');
+    for (const key of ['$A', '$B', '$C', '$D']) {
+      await limited.recordUncertainWriteTarget(sessionId, `msg-${key}`, `uncertain-redirection:${key}`);
+    }
+    // 反方向同样拆池：路径池自身封顶 3 条（$A 被自己池内淘汰），undeclared 行原样存活
+    expect(rows().map((row) => row.file_path)).toEqual([
+      'undeclared-tool:mcp__fs__write_text_file',
+      'uncertain-redirection:$B',
+      'uncertain-redirection:$C',
+      'uncertain-redirection:$D',
+    ]);
   });
 
   it('folds many turns of one undeclared tool into one rewind disclosure entry', async () => {

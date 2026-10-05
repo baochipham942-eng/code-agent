@@ -15,6 +15,8 @@ const RolesDomainRequestSchema = z.object({
     'confirmDraft',
     'deleteMemory',
     'detail',
+    'firstWakeGet',
+    'firstWakeSkip',
     'list',
     'listBindings',
     'listBoundCronJobs',

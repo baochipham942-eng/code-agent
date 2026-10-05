@@ -16,6 +16,7 @@ import type { SwarmRunScope } from '../../shared/contract/swarm';
 import type { WorkspaceScope } from '../../shared/contract/project';
 import type { SkillDiscoveryService } from '../services/skills/skillDiscoveryService';
 import type { TelemetryCollector } from '../telemetry/telemetryCollector';
+import type { PolicyEnforcer } from '../security/policyEnforcer';
 
 export interface Tool extends ToolDefinition {
   execute: (
@@ -41,6 +42,15 @@ export interface ToolContext {
   requiresOsWriteFence?: boolean;
   /** Canonical workspaceRoot the classifier used for the in-zone check. */
   writeFenceWorkspaceRoot?: string;
+  /** Host roots denied by the same OS sandbox profile (eval may provide one). */
+  deniedReadRoots?: readonly string[];
+  /**
+   * The PolicyEnforcer bound to this run's workspace at ToolExecutor bind time
+   * (null = no policy file). Deferred checks (bash sandbox escalation) must use
+   * this instance: the getPolicyEnforcer() singleton is rebound by any concurrent
+   * session in another workspace. Missing = unverified = hard deny.
+   */
+  policyEnforcer?: PolicyEnforcer | null;
   /**
    * 写边界开关随 ToolContext 下传 spawn 链：toolExecutor 只在开着时带上（关着时
    * 形状不变）。shadowAdapter.buildProtocolContext / subagentExecutionContext 逐字段

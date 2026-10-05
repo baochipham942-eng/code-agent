@@ -13,6 +13,7 @@
 import React, { useCallback, useLayoutEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useI18n } from '../../../../hooks/useI18n';
+import { SideChatFloater } from '../SideChatFloater';
 import { InlineComposerChip, type InlineChipView } from './InlineComposerChip';
 import {
   chipMountAfterCaret,
@@ -104,6 +105,8 @@ export interface InputAreaProps {
   onRemoveInlineChip?: (chip: InlineChipView) => void;
   /** 浏览器侧删除了 chip（框选删除 / 剪切）后，DOM 里现存的 chip key 列表 */
   onInlineChipsChanged?: (presentKeys: string[]) => void;
+  /** 只读侧聊浮层所属会话。切换会话时浮层自行关掉。 */
+  sideChatSessionId?: string | null;
 }
 
 export interface InputAreaRef {
@@ -155,6 +158,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
       inlineChips = NO_INLINE_CHIPS,
       onRemoveInlineChip,
       onInlineChipsChanged,
+      sideChatSessionId = null,
     },
     ref
   ) => {
@@ -431,6 +435,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
 
     return (
       <div className="relative">
+        <SideChatFloater activeSessionId={sideChatSessionId} />
         {/* 隐藏的文件输入 */}
         <input
           ref={fileInputRef}

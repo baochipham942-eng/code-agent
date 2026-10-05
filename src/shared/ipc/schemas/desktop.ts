@@ -12,6 +12,7 @@ import { channelSchema } from './core';
 const DesktopDomainRequestSchema = z.object({
   action: z.enum([
     'attachBrowserRelayTab',
+    'clearAudioRecordings',
     'clearManagedBrowserCookies',
     'closeManagedBrowserSession',
     'detachBrowserRelayTab',
@@ -33,6 +34,7 @@ const DesktopDomainRequestSchema = z.object({
     'observeComputerSurface',
     'openBrowserRelayExtensionDirectory',
     'openBrowserRelayTab',
+    'openFullDiskAccessSettings',
     'openManagedBrowserUrl',
     'refreshManagedBrowserAccountState',
     'search',

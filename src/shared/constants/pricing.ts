@@ -11,6 +11,25 @@ export interface ModelPricingEntry {
   cacheRead?: number;
   /** 缓存写入价（Anthropic cache_creation）。缺省 = input × DEFAULT_CACHE_WRITE_PRICE_RATIO */
   cacheWrite?: number;
+  /**
+   * Optional long-context tier. When one request's prompt size (input + cacheRead +
+   * cacheCreation tokens) is strictly greater than the threshold, the whole request
+   * uses the input/output multipliers; cacheRead/cacheWrite use cacheMultiplier when
+   * supplied, otherwise inputMultiplier. At or below the threshold this is ignored.
+   */
+  longContext?: {
+    thresholdPromptTokens: number;
+    inputMultiplier: number;
+    outputMultiplier: number;
+    cacheMultiplier?: number;
+  };
+}
+
+interface UsageCostTokens {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
 }
 
 export interface RealtimeVoicePricingEntry {
@@ -42,6 +61,31 @@ export const REALTIME_VOICE_PRICING_PER_1M: Record<string, RealtimeVoicePricingE
 export const DEFAULT_CACHE_READ_PRICE_RATIO = 0.1;
 /** 无显式 cacheWrite 价的模型按 input × 1.25 近似（Anthropic 5m ephemeral 档） */
 export const DEFAULT_CACHE_WRITE_PRICE_RATIO = 1.25;
+
+/**
+ * Calculate one request's USD cost from catalogue data and normalized token usage.
+ * The arithmetic order matches the existing budget calculation so entries without
+ * a long-context tier retain their exact floating-point result.
+ */
+export function computeUsageCostUsd(pricing: ModelPricingEntry, usage: UsageCostTokens): number {
+  const cacheReadPrice = pricing.cacheRead ?? pricing.input * DEFAULT_CACHE_READ_PRICE_RATIO;
+  const cacheWritePrice = pricing.cacheWrite ?? pricing.input * DEFAULT_CACHE_WRITE_PRICE_RATIO;
+  const promptTokens = usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheCreationTokens ?? 0);
+  const tier = pricing.longContext;
+  const useLongContext = tier !== undefined && promptTokens > tier.thresholdPromptTokens;
+  const inputPrice = useLongContext ? pricing.input * tier.inputMultiplier : pricing.input;
+  const outputPrice = useLongContext ? pricing.output * tier.outputMultiplier : pricing.output;
+  const cachedPriceMultiplier = useLongContext
+    ? tier.cacheMultiplier ?? tier.inputMultiplier
+    : 1;
+  const effectiveCacheReadPrice = useLongContext ? cacheReadPrice * cachedPriceMultiplier : cacheReadPrice;
+  const effectiveCacheWritePrice = useLongContext ? cacheWritePrice * cachedPriceMultiplier : cacheWritePrice;
+  const inputCost = (usage.inputTokens / 1_000_000) * inputPrice;
+  const outputCost = (usage.outputTokens / 1_000_000) * outputPrice;
+  const cacheReadCost = ((usage.cacheReadTokens ?? 0) / 1_000_000) * effectiveCacheReadPrice;
+  const cacheWriteCost = ((usage.cacheCreationTokens ?? 0) / 1_000_000) * effectiveCacheWritePrice;
+  return inputCost + outputCost + cacheReadCost + cacheWriteCost;
+}
 
 /** 模型定价（每 1M tokens，美元）— 仅包含 PROVIDER_REGISTRY 中注册的模型 */
 export const MODEL_PRICING_PER_1M: Record<string, ModelPricingEntry> = {

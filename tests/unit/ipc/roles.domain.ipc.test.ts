@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IPCRequest, IPCResponse } from '../../../src/shared/ipc';
 
-// roles.ipc.ts 派发特征测试（RQ-183 续作·ROLES 刀迁表前钉住现状）：派发层共 22 个 action，既有 rolesIpc.test.ts 覆盖 list /
-// detail / 记忆 / 绑定 / 主动性 / 视觉 / 装备 / 定义正文 / 恢复出厂等 14 个，且未知 action 只断言 code。这里补齐其余 8 个：
+// roles.ipc.ts 派发特征测试（RQ-183 续作·ROLES 刀迁表前钉住现状）：派发层共 24 个 action，既有 rolesIpc.test.ts 覆盖 list /
+// detail / 记忆 / 绑定 / 主动性 / 视觉 / 装备 / 定义正文 / 恢复出厂等 14 个，且未知 action 只断言 code。这里补齐其余：
 // updatePersonalization 四条校验与写入形状、草稿队列 listDrafts / confirmDraft / rejectDraft（含 CONFIRM_FAILED /
-// REJECT_FAILED 缺省文案）、rolePack 四件套（缺 roleId 与动态 import 委派）、未知 action 的完整文案
+// REJECT_FAILED 缺省文案）、rolePack 四件套（缺 roleId 与动态 import 委派）、首次醒来 firstWakeGet / firstWakeSkip
+// （非法 roleId 拒绝、形状透传、FIRST_WAKE_SKIP_FAILED 兜底）、未知 action 的完整文案
 // 'Unknown roles action:'，以及抛错兜底 ROLES_ERROR（Error → message、非 Error → 'Unknown error'，记 error 日志）。
 // 迁表后本文件零改动全绿即行为不变证明。
 
@@ -19,6 +20,8 @@ const h = vi.hoisted(() => ({
   installRolePack: vi.fn(async (..._a: unknown[]) => ({ installed: true })),
   uninstallRolePack: vi.fn(async (..._a: unknown[]) => ({ uninstalled: true })),
   retryMissingSkills: vi.fn(async (..._a: unknown[]) => ({ retried: 2 })),
+  firstWakeSnapshot: vi.fn(async (..._a: unknown[]) => ({ state: 'completed', sourcesMode: 'none', suggestions: [] }) as Record<string, unknown> | null),
+  firstWakeSkip: vi.fn(async (..._a: unknown[]) => ({ success: true })),
 }));
 
 vi.mock('../../../src/host/services/infra/logger', async (importOriginal) => ({
@@ -34,6 +37,8 @@ vi.mock('../../../src/host/services/roleAssets', async (importOriginal) => ({
   listRoleDrafts: () => h.listDrafts(),
   confirmRoleDraft: (...a: unknown[]) => h.confirmDraft(...a),
   rejectRoleDraft: (...a: unknown[]) => h.rejectDraft(...a),
+  getFirstWakeSnapshot: (...a: unknown[]) => h.firstWakeSnapshot(...a),
+  skipFirstWake: (...a: unknown[]) => h.firstWakeSkip(...a),
 }));
 vi.mock('../../../src/host/services/roleAssets/rolePackInstallService', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../src/host/services/roleAssets/rolePackInstallService')>()),
@@ -117,6 +122,40 @@ describe('roles.ipc dispatch 特征：角色包', () => {
     expect(h.uninstallRolePack).toHaveBeenCalledWith('pack-a');
     expect(await call('rolePackRetryMissingSkills', { roleId: 'pack-a' })).toEqual({ success: true, data: { retried: 2 } });
     expect(h.retryMissingSkills).toHaveBeenCalledWith('pack-a');
+  });
+});
+
+describe('roles.ipc dispatch 特征：首次醒来', () => {
+  it('firstWakeGet：缺 roleId / 不安全 roleId → INVALID_ARGS；合法 → 透传快照', async () => {
+    expect(await call('firstWakeGet', {})).toEqual(invalid('a safe roleId is required'));
+    expect(await call('firstWakeGet')).toEqual(invalid('a safe roleId is required'));
+    expect(await call('firstWakeGet', { roleId: '../escape' })).toEqual(invalid('a safe roleId is required'));
+    expect(h.firstWakeSnapshot).not.toHaveBeenCalled();
+
+    expect(await call('firstWakeGet', { roleId: 'r1' })).toEqual({
+      success: true,
+      data: { state: 'completed', sourcesMode: 'none', suggestions: [] },
+    });
+    expect(h.firstWakeSnapshot).toHaveBeenCalledWith('r1');
+  });
+
+  it('firstWakeGet：从未入队 → data null', async () => {
+    h.firstWakeSnapshot.mockResolvedValueOnce(null);
+    expect(await call('firstWakeGet', { roleId: 'ghost' })).toEqual({ success: true, data: null });
+  });
+
+  it('firstWakeSkip：非法 roleId → INVALID_ARGS；成功 → { success: true }；失败 → FIRST_WAKE_SKIP_FAILED', async () => {
+    expect(await call('firstWakeSkip', { roleId: 'a/b' })).toEqual(invalid('a safe roleId is required'));
+    expect(h.firstWakeSkip).not.toHaveBeenCalled();
+
+    expect(await call('firstWakeSkip', { roleId: 'r1' })).toEqual({ success: true, data: { success: true } });
+    expect(h.firstWakeSkip).toHaveBeenCalledWith('r1');
+
+    h.firstWakeSkip.mockResolvedValueOnce({ success: false });
+    expect(await call('firstWakeSkip', { roleId: 'r1' })).toEqual({
+      success: false,
+      error: { code: 'FIRST_WAKE_SKIP_FAILED', message: 'skip failed' },
+    });
   });
 });
 

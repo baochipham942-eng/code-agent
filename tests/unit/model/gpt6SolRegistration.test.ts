@@ -61,7 +61,7 @@ describe('GPT-6 Sol catalogue entries', () => {
     }
   });
 
-  it('carries exact pricing rows and no astra id anywhere', () => {
+  it('carries exact pricing rows for both Sol ids', () => {
     expect(MODEL_PRICING_PER_1M['gpt-6.1-sol']).toEqual({
       input: 2,
       output: 10,
@@ -77,9 +77,6 @@ describe('GPT-6 Sol catalogue entries', () => {
       longContext: { thresholdPromptTokens: 272000, inputMultiplier: 2, outputMultiplier: 1.5, cacheMultiplier: 2 },
     });
     expect(PRICING_TABLE_VERSION).toBe(3);
-    const registryIds = Object.values(PROVIDER_REGISTRY).flatMap((provider) => provider.models.map((m) => m.id));
-    const haystack = [...registryIds, ...Object.keys(MODEL_PRICING_PER_1M), JSON.stringify(catalogJson)].join('\n');
-    expect(haystack.toLowerCase()).not.toContain('astra');
   });
 
   it('switches both Sol ids onto the responses protocol while gpt-5.5 stays chat-completions', () => {

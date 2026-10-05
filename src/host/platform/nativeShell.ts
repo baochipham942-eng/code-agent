@@ -8,12 +8,19 @@ import {
   assertSafeUrl,
   assertExistingAbsolutePath,
 } from '../utils/safeShell';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('NativeShell');
 
 /**
  * 在默认浏览器中打开 URL（仅允许 http/https/mailto scheme）
  */
 export async function openExternal(url: string): Promise<void> {
-  assertSafeUrl(url);
+  const parsedUrl = assertSafeUrl(url);
+  if (process.env.NEO_VERIFY_NO_FOREGROUND === '1') {
+    logger.info(`[openExternal] verification mode: suppressed external link (${parsedUrl.origin})`);
+    return;
+  }
   if (process.platform === 'darwin') {
     safeExecDetached('open', [url]);
   } else if (process.platform === 'win32') {

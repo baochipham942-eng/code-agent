@@ -6,7 +6,8 @@
 //   - 工具面 = TOOLSCOPE 醒来白名单 ∩ permissionLevel=read（空 = 拒绝全部哨兵）
 //   - 提示词变体由已连接源决定（connector / mcp_template 且 runtime=connected）
 //   - 产出 = 自我介绍 + 最多 3 条可一键委托的建议（first_wake_suggestions 块）
-//   - 状态机落 roles/<roleId>/first-wake.json：pending → running → completed/skipped
+//   - 状态机落 roles/<roleId>/first-wake.json：pending → running → completed/skipped/failed
+//     （run 抛错也封口成 failed 终态，绝不把状态卡在 running/pending）
 //
 // 与 wakeRole 的关系：复用它的工具收窄（resolveWakeRunToolScope）与会话/自动化
 // 记录范式，但刻意忽略主动性等级、免打扰时段与每日醒来预算——用户刚建完角色，
@@ -368,7 +369,7 @@ export async function skipFirstWake(roleId: string): Promise<{ success: boolean 
   try {
     if (!isSafeRoleId(roleId)) return { success: false };
     const current = await readFirstWakeState(roleId);
-    // completed / skipped / 无状态文件：no-op（跳过的语义是「别再弹」，没有东西可跳也算达成）
+    // completed / skipped / failed / 无状态文件：no-op（跳过的语义是「别再弹」，没有东西可跳也算达成）
     if (!current || (current.state !== 'pending' && current.state !== 'running')) {
       return { success: true };
     }
@@ -511,6 +512,22 @@ async function runFirstWake(roleId: string, deps?: FirstWakeDeps): Promise<void>
     logger.info('First wake completed', { roleId, sessionId: session.id, sourcesMode, suggestions: suggestions.length });
   } catch (error) {
     logger.warn('First wake run failed (no retry)', { roleId, error: String(error) });
+    // 失败也要落终态：不写的话状态文件永久停在 running（前置步骤抛错则停在 pending），
+    // firstWakeGet 永远报「进行中」，enqueue 又因文件已存在永不重跑。skipped 优先——
+    // 用户已跳过的失败不覆盖 skipped（与成功路径同一条规则）。
+    try {
+      const current = await readFirstWakeState(roleId);
+      if (current && (current.state === 'pending' || current.state === 'running')) {
+        await writeFirstWakeState(roleId, {
+          ...current,
+          state: 'failed',
+          ...(session ? { sessionId: session.id } : {}),
+          suggestions: [],
+        });
+      }
+    } catch (writeError) {
+      logger.warn('First wake failed-state write failed', { roleId, error: String(writeError) });
+    }
     if (session) {
       await recordFirstWakeResult(session.id, 'failed', `首次醒来执行失败：${String(error)}`);
     }

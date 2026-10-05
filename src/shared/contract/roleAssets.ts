@@ -150,8 +150,8 @@ export interface RoleFirstWakeSuggestion {
   prompt: string;
 }
 
-/** 首次醒来状态机取值：pending（已入队待跑）→ running → completed / skipped（终态，不再重入） */
-export type RoleFirstWakeStateName = 'pending' | 'running' | 'completed' | 'skipped';
+/** 首次醒来状态机取值：pending（已入队待跑）→ running → completed / skipped / failed（终态，不再重入） */
+export type RoleFirstWakeStateName = 'pending' | 'running' | 'completed' | 'skipped' | 'failed';
 
 /** 首次醒来快照（roles IPC firstWakeGet 的返回；状态文件本体是 host 侧 first-wake.json） */
 export interface RoleFirstWakeSnapshot {

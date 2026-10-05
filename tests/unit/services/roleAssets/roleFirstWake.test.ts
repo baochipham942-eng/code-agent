@@ -538,6 +538,76 @@ describe('skipFirstWake', () => {
 });
 
 // ----------------------------------------------------------------------------
+// 失败终态（run 出错不得把状态永久卡在 running/pending）
+// ----------------------------------------------------------------------------
+
+describe('失败终态：runner 抛错 / 前置步骤抛错', () => {
+  it('runner 抛错：状态落 failed（保留 sessionId、建议清空），自动化记 failed，终态不重入', async () => {
+    harness.listCapabilities.mockResolvedValue(connectedInventory());
+    await enqueueFirstWake('boom-role', {
+      runner: async (input) => {
+        harness.runnerCalls.push(input);
+        throw new Error('model exploded');
+      },
+    });
+    await vi.waitFor(() => { expect(harness.runnerCalls).toHaveLength(1); });
+
+    await vi.waitFor(async () => { await expect(readState('boom-role')).resolves.toMatchObject({ state: 'failed' }); });
+    expect(await readState('boom-role')).toMatchObject({
+      sessionId: harness.runnerCalls[0]!.sessionId,
+      sourcesMode: 'connected',
+      suggestions: [],
+    });
+    expect(harness.automationRecordEvent).toHaveBeenCalledWith(expect.objectContaining({ event: 'failed' }));
+    // 快照（IPC 读路径）能区分失败与进行中
+    expect(await getFirstWakeSnapshot('boom-role')).toMatchObject({ state: 'failed' });
+    // failed 是终态：二次入队被 exists 挡住，跳过是 no-op
+    expect(await enqueueFirstWake('boom-role', {
+      runner: async () => { throw new Error('must not rerun'); },
+    })).toEqual({ enqueued: false, reason: 'exists' });
+    expect(await skipFirstWake('boom-role')).toEqual({ success: true });
+    expect(await readState('boom-role')).toMatchObject({ state: 'failed' });
+  });
+
+  it('前置步骤抛错（建会话失败）：pending 也落 failed 终态，runner 从未被调用', async () => {
+    mockSessionManager.createSession.mockRejectedValueOnce(new Error('no session'));
+    await enqueueFirstWake('early-boom-role', {
+      runner: async (input) => {
+        harness.runnerCalls.push(input);
+        return { finalOutput: '介绍' };
+      },
+    });
+    await vi.waitFor(async () => { await expect(readState('early-boom-role')).resolves.toMatchObject({ state: 'failed' }); });
+    await settle(50);
+    expect(harness.runnerCalls).toHaveLength(0);
+    expect(await getFirstWakeSnapshot('early-boom-role')).toMatchObject({ state: 'failed', sourcesMode: 'none' });
+    expect(await enqueueFirstWake('early-boom-role', {
+      runner: async () => { throw new Error('must not rerun'); },
+    })).toEqual({ enqueued: false, reason: 'exists' });
+  });
+
+  it('失败不覆盖用户跳过：running 中跳过后 runner 抛错 → 状态保持 skipped、建议不落盘', async () => {
+    let releaseRun: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => { releaseRun = resolve; });
+    await enqueueFirstWake('skip-fail-role', {
+      runner: async (input) => {
+        harness.runnerCalls.push(input);
+        await gate;
+        throw new Error('late failure');
+      },
+    });
+    await vi.waitFor(() => { expect(harness.runnerCalls).toHaveLength(1); });
+
+    expect(await skipFirstWake('skip-fail-role')).toEqual({ success: true });
+    releaseRun!();
+    await vi.waitFor(() => {
+      expect(harness.automationRecordEvent).toHaveBeenCalledWith(expect.objectContaining({ event: 'failed' }));
+    });
+    expect(await readState('skip-fail-role')).toMatchObject({ state: 'skipped', suggestions: [] });
+  });
+});
+
+// ----------------------------------------------------------------------------
 // 快照（IPC 读路径的数据源）
 // ----------------------------------------------------------------------------
 

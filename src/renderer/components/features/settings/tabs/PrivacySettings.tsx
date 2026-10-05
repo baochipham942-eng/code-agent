@@ -160,6 +160,7 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
   // 评测反馈池钩子命令（ADR-071 Q4）。空串 = 抽屉按钮退化成「复制 fb add 命令」。
   const [feedbackHookCommand, setFeedbackHookCommand] = useState('');
   const [feedbackHookSaved, setFeedbackHookSaved] = useState(false);
+  const [appGrants, setAppGrants] = useState<Array<{ appKey: string; name: string; grantedAt: number }>>([]);
   const [privacySaving, setPrivacySaving] = useState(false);
   const privacyCfgRef = useRef<NonNullable<AppSettings['privacy']> | undefined>(undefined);
   const pluginUiCfgRef = useRef<NonNullable<AppSettings['pluginUi']> | undefined>(undefined);
@@ -216,6 +217,31 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
         // ignore — 保持各项产品默认值
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await ipcService.invokeDomain<Array<{ appKey: string; name: string; grantedAt: number }>>(
+          IPC_DOMAINS.SETTINGS,
+          'listAppGrants',
+        );
+        if (!cancelled && Array.isArray(rows)) setAppGrants(rows);
+      } catch {
+        // 旧测试会拒未知 action；列表失败就当没有授权。
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleRevokeAppGrant = useCallback(async (appKey: string) => {
+    try {
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'revokeAppGrant', { appKey });
+      setAppGrants((rows) => rows.filter((row) => row.appKey !== appKey));
+    } catch {
+      // 撤销没落地就留着这一行。
+    }
   }, []);
 
   const handleThirdPartyUiToggle = useCallback(async (next: boolean) => {
@@ -388,6 +414,39 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
     </SettingsSection>
   );
 
+  const appGrantCopy = t.decisionCard.permission.computerApp;
+  const appGrantSection = (
+    <SettingsSection
+      title={appGrantCopy.settingsTitle}
+      description={appGrantCopy.settingsDescription}
+    >
+      {appGrants.length === 0 ? (
+        <p className="text-xs text-zinc-500">{appGrantCopy.settingsEmpty}</p>
+      ) : (
+        <ul className="divide-y divide-zinc-800">
+          {appGrants.map((grant) => (
+            <li key={grant.appKey} data-testid="app-grant-row" className="flex items-center justify-between gap-3 py-2">
+              <div>
+                <div className="text-sm text-zinc-200">{grant.name}</div>
+                <div className="text-xs text-zinc-500">
+                  {appGrantCopy.grantedOn.replace('{date}', new Date(grant.grantedAt).toLocaleDateString())}
+                </div>
+              </div>
+              <button /* ds-allow:button: 设置页按应用授权的文字撤销，与本页既有微尺寸行内按钮同款 */
+                type="button"
+                data-testid="app-grant-revoke"
+                onClick={() => { void handleRevokeAppGrant(grant.appKey); }}
+                className="inline-flex h-7 items-center rounded-md border border-zinc-700 px-2 text-xs text-zinc-300 hover:bg-zinc-800"
+              >
+                {appGrantCopy.revoke}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </SettingsSection>
+  );
+
   // web 模式不再整页短路（FB-240）：SETTINGS 通道在 web 链路是通的，凡只依赖 settings 的段
   // （边界/语音/凭证/遥测/反馈钩子）照常渲染。仍留桌面专属的是 PII 脚本三段（spawn 本地脚本，
   // domain:pii）与第三方插件界面开关（refreshThirdPartyPluginUi 未在 web 验证过）。
@@ -401,6 +460,7 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
       description={webMode ? privacyText.webDescription : privacyText.pageDescription}
     >
       {webMode ? <WebModeBanner /> : null}
+      {appGrantSection}
       <SettingsSection
         title={privacyText.boundary.title}
         description={privacyText.boundary.description}

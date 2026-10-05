@@ -163,6 +163,11 @@ export interface PermissionRequest {
      * 透传，供停车审批卡出「每次都允许发 <target>」铸权入口；模型侧无入口（no-self-grant）。
      */
     standingGrantTarget?: string;
+    /**
+     * computer_use 的目标应用。有此字段时审批卡按应用给「始终 / 本次对话 / 拒绝」，
+     * 不走工具级会话记忆。bundleId 缺省时按应用名匹配。
+     */
+    targetApp?: { bundleId?: string; name: string };
     /** directory_access：申请的访问档位（request_directory 工具透传） */
     requestedAccess?: 'read_only' | 'read_write';
     /**
@@ -203,9 +208,9 @@ export interface PermissionRequest {
 }
 
 // 权限响应（兼容旧版）
-// - allow_standing（B4）：批准本次 + 在该 automation 上铸造 (工具, target) 长期授权规则。
-//   仅停车审批（无人值守 automation）+ external+有 target 时可用；铸造由人工点击触发，
-//   模型侧无任何入口（no-self-grant）。
+// - allow_standing：批准本次并记住长期授权。external 工具在无人值守 automation 上
+//   铸造 (工具, target)；computer_use 带 targetApp 时记住该应用（交互会话没有 automation
+//   也能记）。铸造只由人工点击触发，模型侧无入口。
 export type PermissionResponse = 'allow' | 'allow_session' | 'allow_standing' | 'deny';
 
 /**

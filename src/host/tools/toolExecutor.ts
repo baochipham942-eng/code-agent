@@ -1348,6 +1348,8 @@ export class ToolExecutor {
     // deny 不可被任何后续层推翻（skill 预授权 / 安全命令白名单 / classifier / 用户审批）。
     // 无 policy 文件时 getPolicyEnforcer 返回 null，零开销。
     const policyEnforcer = getPolicyEnforcer(resolveCanonicalRunPath(this.runtimeWorkspace));
+    // 扩权检查发生在整条命令跑完之后，期间别的工作区会改绑单例：把本次绑定的实例钉进 ctx。
+    context.policyEnforcer = policyEnforcer;
     const shellPathCheck = isBashToolName(policyToolName) && typeof params.command === 'string'
       ? shellWritePathPolicyCheck(params.command, bashWorkingDirectory, policyEnforcer)
       : { kind: 'allow' as const };

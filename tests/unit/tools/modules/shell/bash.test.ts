@@ -133,6 +133,8 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
     abortSignal: ctrl.signal,
     logger: makeLogger(),
     emit: () => void 0,
+    // ToolExecutor 绑定的策略实例；null = 无策略文件（扩权检查不再读进程单例）。
+    policyEnforcer: null,
     ...overrides,
   };
 }
@@ -1583,12 +1585,17 @@ describe('bashModule sandbox escalation', () => {
     }
   });
 
-  async function expectEscalationOffers(deniedPath: string, offered: boolean, op: 'open' | 'mkdir' = 'open'): Promise<void> {
+  async function expectEscalationOffers(
+    deniedPath: string,
+    offered: boolean,
+    op: 'open' | 'mkdir' = 'open',
+    ctx: Partial<ToolContext> = {},
+  ): Promise<void> {
     const denial = `printf '%s\\n' "EPERM: operation not permitted, ${op} '${deniedPath}'" >&2; exit 1`;
     wrapMock.mockReturnValue({ command: denial, cleanup: cleanupMock });
     const canUse = vi.fn().mockResolvedValue({ allow: true as const });
     const handler = await bashModule.createHandler();
-    const result = await handler.execute({ command: `printf x > ${deniedPath}` }, makeCtx(), canUse);
+    const result = await handler.execute({ command: `printf x > ${deniedPath}` }, makeCtx(ctx), canUse);
     const escalationCalls = canUse.mock.calls.filter(([toolName]) => toolName === 'bash');
     expect(escalationCalls).toHaveLength(offered ? 1 : 0);
     expect(canUse).toHaveBeenCalledTimes(offered ? 2 : 1);
@@ -1671,11 +1678,22 @@ describe('bashModule sandbox escalation', () => {
       '',
     ].join('\n'));
     resetPolicyEnforcer();
-    getPolicyEnforcer(project);
+    const policyEnforcer = getPolicyEnforcer(project);
     try {
-      await expectEscalationOffers(editDenied, false);
-      await expectEscalationOffers(policyDenied, false);
-      await expectEscalationOffers(join(parent, 'sub', 'allowed.txt'), true);
+      await expectEscalationOffers(editDenied, false, 'open', { policyEnforcer });
+      await expectEscalationOffers(policyDenied, false, 'open', { policyEnforcer });
+      await expectEscalationOffers(join(parent, 'sub', 'allowed.txt'), true, 'open', { policyEnforcer });
+      // 审查 Important（PR #2191 轮 4）：另一工作区的并发 Bash 把单例改绑成 null，
+      // 本次调用绑定的实例仍必须硬拒 denied_paths。
+      const other = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-other-')));
+      try {
+        expect(getPolicyEnforcer(other)).toBeNull();
+        await expectEscalationOffers(policyDenied, false, 'open', { policyEnforcer });
+      } finally {
+        rmSync(other, { recursive: true, force: true });
+      }
+      // 没人绑定过（ctx 缺字段）= 未核验，不弹卡。
+      await expectEscalationOffers(join(parent, 'sub', 'allowed.txt'), false, 'open', { policyEnforcer: undefined });
     } finally {
       resetPolicyEngine();
       resetPolicyEnforcer();
@@ -1767,9 +1785,9 @@ describe('bashModule sandbox escalation', () => {
       '',
     ].join('\n'));
     resetPolicyEnforcer();
-    getPolicyEnforcer(project);
+    const policyEnforcer = getPolicyEnforcer(project);
     try {
-      await expectEscalationOffers(target, true);
+      await expectEscalationOffers(target, true, 'open', { policyEnforcer });
     } finally {
       resetPolicyEnforcer();
       rmSync(project, { recursive: true, force: true });

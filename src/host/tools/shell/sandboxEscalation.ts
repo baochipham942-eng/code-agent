@@ -3,7 +3,7 @@ import path from 'node:path';
 import { homedir } from 'node:os';
 import type { OsSandboxDecision, OsSandboxPermissionMode } from '../../sandbox/osSandboxPolicy';
 import { resolveCanonicalRunPath } from '../../runtime/runContext';
-import { getPolicyEnforcer } from '../../security/policyEnforcer';
+import type { PolicyEnforcer } from '../../security/policyEnforcer';
 import { denyConcreteShellWritePath } from './writePathPolicyDeny';
 
 export interface SandboxEscalationEligibilityInput {
@@ -23,6 +23,12 @@ export interface SandboxEscalationEligibilityInput {
   newFileGrantSupported: boolean;
   /** Command cwd. User path rules compare workspace-relative spellings against it. */
   workingDirectory: string;
+  /**
+   * The enforcer ToolExecutor bound for this call (null = no policy file). Never the
+   * process singleton: by the time the first run is denied, another workspace may
+   * have rebound it. undefined = nobody bound one = hard deny.
+   */
+  policyEnforcer: PolicyEnforcer | null | undefined;
 }
 
 type EscalationTarget = 'file' | 'missing' | 'other';
@@ -47,7 +53,11 @@ function escalationTarget(resolvedPath: string): EscalationTarget {
   }
 }
 
-function writePathPolicyBlocksEscalation(deniedPath: string, workingDirectory: string): boolean {
+function writePathPolicyBlocksEscalation(
+  deniedPath: string,
+  workingDirectory: string,
+  policyEnforcer: PolicyEnforcer | null,
+): boolean {
   let resolvedPath = path.resolve(deniedPath);
   try {
     resolvedPath = resolveCanonicalRunPath(deniedPath);
@@ -55,12 +65,10 @@ function writePathPolicyBlocksEscalation(deniedPath: string, workingDirectory: s
     // Keep the lexical absolute path and still consult policy below.
   }
   try {
-    // The executor already bound this process to the run's policy file.
-    // Passing a directory here would retarget that singleton.
     return denyConcreteShellWritePath({
       resolvedPath,
       workingDirectory,
-      policyEnforcer: getPolicyEnforcer(),
+      policyEnforcer,
       pathCandidates: [deniedPath, resolvedPath],
       displayPath: deniedPath,
     }) !== undefined;
@@ -98,7 +106,8 @@ export function shouldOfferEscalation(input: SandboxEscalationEligibilityInput):
   if (target === 'missing' && (input.deniedPathCreatesDirectory === true || !input.newFileGrantSupported)) {
     return undefined;
   }
-  if (writePathPolicyBlocksEscalation(deniedPath, input.workingDirectory)) {
+  if (input.policyEnforcer === undefined) return undefined;
+  if (writePathPolicyBlocksEscalation(deniedPath, input.workingDirectory, input.policyEnforcer)) {
     return undefined;
   }
   return deniedPath;

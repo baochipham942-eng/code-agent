@@ -49,6 +49,7 @@ import {
 } from '../../../sandbox/osSandboxPolicy';
 import { containWriteFenceWorkspaceRoot, isOsWriteFenceAvailable } from '../../../sandbox/writeFence';
 import { resolveCanonicalRunPath } from '../../../runtime/runContext';
+import type { PolicyEnforcer } from '../../../security/policyEnforcer';
 import { isPathWithinRoot } from '../../../runtime/workspaceScope';
 import { resolveContextWindow } from '../../../model/modelLimits';
 import { resolveToolResultBudget } from '../../../context/layers/toolResultBudget';
@@ -822,6 +823,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
           deniedPathCreatesDirectory: sandboxDeniedWriteCreatesDirectory(failureText),
           newFileGrantSupported: getSandboxManager().supportsNewFileWriteGrant(),
           workingDirectory,
+          policyEnforcer: ctx.policyEnforcer as PolicyEnforcer | null | undefined,
         });
         if (!offeredPath) throw error;
 
@@ -969,7 +971,8 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
       const withDiagnostics = (msg: string) => appendFailureDiagnostics(msg, diagnostics);
 
       // 超时：child_process 超时会 killed + SIGTERM
-      if (!sandboxEscalationMeta && (
+      // 扩权被拒后原始沙盒错误原样返回；批准后的重跑被中断仍是 ABORTED。
+      if (sandboxEscalationMeta?.decision !== 'declined' && (
         ctx.abortSignal.aborted || errObj.name === 'AbortError' || errObj.code === 'ABORT_ERR'
       )) {
         return {

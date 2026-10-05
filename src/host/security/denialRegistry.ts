@@ -52,6 +52,8 @@ interface DenialRecord {
   summary: string;
   reason: string;
   timestamp: number;
+  /** 登记当时生效的权限策略哈希。 */
+  policyHash?: string;
 }
 
 /**

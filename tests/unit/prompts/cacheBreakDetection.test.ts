@@ -92,6 +92,56 @@ describe('detectCacheBreak', () => {
     const result = detectCacheBreak(prev, curr, { dynamicBoundary: CUSTOM });
     expect(result.broken).toBe(false);
   });
+
+  it('returns tools-changed when only the tools fingerprint differs', () => {
+    const same = detectCacheBreak(PROMPT_WITH_BOUNDARY, PROMPT_WITH_BOUNDARY, {
+      prevToolsFingerprint: 'fp-a',
+      currToolsFingerprint: 'fp-a',
+    });
+    expect(same.broken).toBe(false);
+    expect(same.cacheBreakReason).toBe('none');
+
+    const changed = detectCacheBreak(PROMPT_WITH_BOUNDARY, PROMPT_WITH_BOUNDARY, {
+      prevToolsFingerprint: 'fp-a',
+      currToolsFingerprint: 'fp-b',
+    });
+    expect(changed.broken).toBe(true);
+    expect(changed.reason).toBe('tool table changed');
+    expect(changed.cacheBreakReason).toBe('tools-changed');
+  });
+
+  it('returns none when either tools fingerprint is missing', () => {
+    expect(detectCacheBreak(PROMPT_WITH_BOUNDARY, PROMPT_WITH_BOUNDARY, {
+      currToolsFingerprint: 'fp-b',
+    }).cacheBreakReason).toBe('none');
+    expect(detectCacheBreak(PROMPT_WITH_BOUNDARY, PROMPT_WITH_BOUNDARY, {
+      prevToolsFingerprint: 'fp-a',
+    }).cacheBreakReason).toBe('none');
+    expect(detectCacheBreak(PROMPT_WITH_BOUNDARY, PROMPT_WITH_BOUNDARY, {
+      prevToolsFingerprint: '',
+      currToolsFingerprint: 'fp-b',
+    }).cacheBreakReason).toBe('none');
+  });
+
+  it('keeps model-switch and prefix-changed ahead of a tools fingerprint change', () => {
+    const model = detectCacheBreak(PROMPT_WITH_BOUNDARY, PROMPT_WITH_BOUNDARY, {
+      prevModel: 'kimi-k2.5',
+      currModel: 'deepseek-chat',
+      prevToolsFingerprint: 'fp-a',
+      currToolsFingerprint: 'fp-b',
+    });
+    expect(model.cacheBreakReason).toBe('model-switch');
+
+    const prefix = detectCacheBreak(
+      PROMPT_WITH_BOUNDARY,
+      `${STABLE} [EXTRA]${DYNAMIC_BOUNDARY_MARKER}${DYNAMIC}`,
+      {
+        prevToolsFingerprint: 'fp-a',
+        currToolsFingerprint: 'fp-b',
+      },
+    );
+    expect(prefix.cacheBreakReason).toBe('prefix-changed');
+  });
 });
 
 describe('splitAtDynamicBoundary', () => {

@@ -21,6 +21,11 @@ import type { DomainRouteHandlers } from '../../shared/ipc/domainRoutes';
 import { SettingsSchemas, type SettingsDomainRequest } from '../../shared/ipc/schemas/settings';
 import { WindowSchemas, type WindowDomainRequest } from '../../shared/ipc/schemas/window';
 import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
+import {
+  bindAppGrantDatabase,
+  listAppGrants as readAppGrantList,
+  revokeAppGrant as revokeStoredAppGrant,
+} from '../permissions/appGrantStore';
 import { extractDocxParagraphsFromBuffer } from '../tools/artifacts/docxParagraphLocator';
 import {
   resolveSheetCoordinate,
@@ -519,6 +524,13 @@ type SettingsRouteCtx = () => ConfigService | null;
  * （INVALID_ACTION `Unknown action:` / INTERNAL_ERROR + Error.message 或 String(error)），与原实现逐字一致。请求体为 null / 非对象时，
  * 原实现在 try 外解构抛错（IPC reject），现返回 INVALID_ACTION。
  */
+function bindLiveAppGrantDatabase(): void {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { getDatabase } = require('../services/core/databaseService') as typeof import('../services/core/databaseService');
+  const db = getDatabase().getDb();
+  if (db) bindAppGrantDatabase(db);
+}
+
 const settingsHandlers: DomainRouteHandlers<SettingsDomainRequest, SettingsRouteCtx> = {
   get: async (getConfigService) => {
     let data: unknown = await handleGet(getConfigService);
@@ -570,6 +582,17 @@ const settingsHandlers: DomainRouteHandlers<SettingsDomainRequest, SettingsRoute
   setBudgetConfig: async (getConfigService, payload) => {
     await handleSetBudgetConfig(getConfigService, payload as Parameters<typeof handleSetBudgetConfig>[1]);
     return null;
+  },
+  listAppGrants: async () => {
+    bindLiveAppGrantDatabase();
+    return readAppGrantList();
+  },
+  revokeAppGrant: async (_getConfigService, payload) => {
+    bindLiveAppGrantDatabase();
+    const appKey = payload && typeof payload === 'object' && typeof (payload as { appKey?: unknown }).appKey === 'string'
+      ? (payload as { appKey: string }).appKey
+      : '';
+    return { revoked: revokeStoredAppGrant(appKey) };
   },
 };
 

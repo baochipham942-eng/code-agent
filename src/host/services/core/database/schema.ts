@@ -2,6 +2,7 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import { applyTelemetrySchema } from './schemaTelemetry';
 import { applyAnnotationsSchema } from './schemaAnnotations';
+import { applyAppGrantsSchema } from './schemaAppGrants';
 import { safeAlter, type Logger } from './schemaHelpers';
 import { applyTranscriptFtsSchema } from '../../../../shared/transcriptFts.sql';
 import { applyMemoriesFtsSchema } from '../../../../shared/memoriesFts.sql';
@@ -783,6 +784,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
 
   applyTelemetrySchema(db, logger);
   applyAnnotationsSchema(db, logger);
+  applyAppGrantsSchema(db, logger);
 
   // Captures 表 (知识库采集内容持久化)
   db.exec(`

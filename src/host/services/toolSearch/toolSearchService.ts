@@ -14,6 +14,7 @@ import { JEV_SKILL_RERANK_THRESHOLDS, JEV_TIMEOUT_MS } from '../../../shared/con
 import { withTimeout } from '../infra/timeoutController';
 import { DEFERRED_TOOL_LOADING } from '../../../shared/constants/tools';
 import { DEFERRED_TOOLS_META, buildDeferredToolIndex, isCoreToolName, resolveToolAlias } from './deferredTools';
+import { isDecideToolAvailable } from '../../tools/modules/network/decideAvailability';
 import { createLogger } from '../infra/logger';
 
 interface InsertedLoadClaim {
@@ -491,7 +492,11 @@ export class ToolSearchService {
   ): DeferredToolMeta[] {
     const result: DeferredToolMeta[] = [];
 
+    // decide 无可用 Jev 路由时不可搜（toolDefinitions 同步过滤，select 直选仍可命中
+    // 但加载后不进工具表，handler 兜底清晰报错）。
+    const decideAvailable = isDecideToolAvailable();
     for (const meta of DEFERRED_TOOLS_META) {
+      if (meta.name === 'decide' && !decideAvailable) continue;
       result.push(meta);
     }
 

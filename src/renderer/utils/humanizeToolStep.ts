@@ -86,6 +86,16 @@ function parseMcpName(name: string): { server: string; tool: string } | null {
   return null;
 }
 
+/**
+ * 未声明工具写盘披露（undeclared-tool:<name>）的展示名：mcp__server__tool →
+ * 「server / tool」，解不动（无 server/tool 段、非 mcp 前缀）原样展示。
+ * 消费方：RewindPanel 与 TraceNodeRenderer 的回退披露行（turnCheckoutNoteUndeclaredTool）。
+ */
+export function undeclaredToolDisplayName(name: string): string {
+  const parsed = parseMcpName(name);
+  return parsed && parsed.tool !== '' ? `${parsed.server} / ${parsed.tool}` : name;
+}
+
 // 已知即时通讯类 MCP server：命中 + 工具名带 message/im/send 关键字才判定为"发消息"这一更
 // 具体的人话，其余 MCP 调用一律走通用"调用了 X 的 Y"。
 // ponytail: 名字启发式而非精确 schema 判定；新增即时通讯类 MCP server 需要在这里补一条。

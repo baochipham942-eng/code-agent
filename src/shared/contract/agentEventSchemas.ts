@@ -178,6 +178,10 @@ const permissionRequestSchema = typed<PermissionRequest>(z.object({
     affectedFileCount: z.number().int().nonnegative().optional(),
     targetKind: z.enum(FILE_TARGET_KINDS).optional(),
     standingGrantTarget: z.string().optional(),
+    targetApp: z.object({
+      bundleId: z.string().optional(),
+      name: z.string(),
+    }).optional(),
     requestedAccess: z.enum(['read_only', 'read_write']).optional(),
     preview: z.object({
       type: z.enum(['diff', 'command', 'network', 'generic']),
@@ -584,6 +588,7 @@ const TurnDiffEventSchema = event('turn_diff', typed<TurnDiffEventData>(z.object
   parentToolUseId: z.string().optional(),
   missingFiles: z.array(z.string()).optional(),
   filesAuthoritative: z.boolean().optional(),
+  absentPaths: z.array(z.string()).optional(),
 })));
 const NotificationEventSchema = event('notification', z.object({ message: z.string(), parentToolUseId: z.string().optional() }));
 const hostReasonPayloadSchema = typed<HostReasonPayload>(z.object({

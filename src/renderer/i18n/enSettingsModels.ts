@@ -186,7 +186,7 @@ export const enSettingsModels = {
           tokensUnit: 'tokens',
           effortLabel: 'Reasoning depth',
           effortAriaLabel: 'Reasoning depth',
-          effortLevels: { low: 'Low', medium: 'Medium', high: 'High' },
+          effortLevels: { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'XHigh', max: 'Max' },
           toggleLabel: 'Thinking',
           toggleAriaLabel: 'Enable thinking for this model',
         },

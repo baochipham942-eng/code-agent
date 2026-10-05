@@ -132,6 +132,14 @@ export interface MCPToolAnnotations {
   openWorldHint?: boolean;
   /** Tool is idempotent (safe to retry) */
   idempotentHint?: boolean;
+  /**
+   * code-agent 扩展（非 MCP 标准）：server 声明「哪些参数承载文件写目标」，文件
+   * 检查点只认这条声明、不做参数名推断。协议侧 SDK 的 ToolAnnotationsSchema 是
+   * strip 模式 z.object，annotations 里的这个自定义键活不过 listTools 解析——远程
+   * server 的声明走 tool._meta['code-agent/writePathParameters']，由
+   * mapSdkToolToMCPTool 提升到这里；in-process server 不经 SDK 解析，可直接填。
+   */
+  writePathParameters?: string[];
 }
 
 export interface MCPToolExecution {

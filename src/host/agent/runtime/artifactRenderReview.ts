@@ -510,7 +510,7 @@ export async function applyDeliverableCloseGates(input: {
       prompt: disk.prompt,
       tag: 'deliverable-disk-check',
       logMessage: '[DeliverableDiskCheck] deliverables not on disk, bounded repair round fed back',
-      missing: disk.missing.map((item) => item.claim.resolved),
+      missing: disk.missing.map((item) => item.requestedFormat ?? item.claim.resolved),
     };
   }
 

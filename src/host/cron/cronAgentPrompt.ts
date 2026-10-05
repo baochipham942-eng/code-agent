@@ -28,7 +28,9 @@ export function buildCronAgentPrompt(
     + `若要按「今天/本地当天」查询时间戳，直接用这两个算好的值，不要自己换算年份：`
     + `今天本地 00:00 = ${todayEpoch}（Unix 秒），次日本地 00:00 = ${tomorrowEpoch}（Unix 秒）。`
     + '其他相对时间以【当前时间】为基准，不要用你训练时的日期。';
-  if (!enabled) return [prompt, '', timeAnchor].join('\n');
+  const deliveryDigestInstruction =
+    '最后请在回复末尾追加简短的 <cron_summary>...</cron_summary> 块：先写结果摘要；每个生成的文件或可访问产物另起一行，格式为 artifact: <path>。';
+  if (!enabled) return [prompt, '', timeAnchor, '', deliveryDigestInstruction].join('\n');
 
   const hasSnapshot = typeof snapshot === 'string' && Boolean(snapshot.trim());
   return [
@@ -48,6 +50,8 @@ export function buildCronAgentPrompt(
       : []),
     '',
     '回复末尾请用 <cron_snapshot>...</cron_snapshot> 包住本次需要记住的简短快照，供下次对比。',
+    '',
+    deliveryDigestInstruction,
   ].join('\n');
 }
 

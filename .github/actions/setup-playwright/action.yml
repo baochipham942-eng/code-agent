@@ -1,0 +1,41 @@
+name: Setup Playwright browsers
+description: >-
+  Cache Playwright's Chromium under a lockfile version key suffixed -v2,
+  then install it unconditionally. A cache hit must not skip install.
+
+inputs:
+  with-deps:
+    description: >-
+      When true, pass --with-deps so Playwright installs OS libraries.
+      Callers whose runner already has those libraries omit this input.
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Read Playwright version
+      id: playwright-version
+      shell: bash
+      run: |
+        version="$(node -p "require('./package-lock.json').packages['node_modules/playwright'].version")"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+
+    - name: Restore Playwright browser cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/ms-playwright
+        # -v2 drops a poisoned cache: the key said the lockfile version while the
+        # blob was filled by a different Playwright build, so a hit missed
+        # chromium_headless_shell (N-CI-XYFLOW-DEPOPT). Install stays unconditional
+        # below — a hit is not proof the browser executable is present.
+        key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}-v2
+
+    - name: Install Playwright browsers
+      shell: bash
+      run: |
+        if [ "${{ inputs.with-deps }}" = "true" ]; then
+          npx playwright install --with-deps chromium
+        else
+          npx playwright install chromium
+        fi

@@ -29,6 +29,7 @@ import { registerDataHandlers } from './data.ipc';
 import { registerTaskHandlers } from './task.ipc';
 import { registerStatusHandlers } from './status.ipc';
 import { registerContextHealthHandlers } from './contextHealth.ipc';
+import { registerSideChatHandlers } from './sideChat.ipc';
 import { registerSessionStatusHandlers } from './sessionStatus.ipc';
 import { registerSkillHandlers } from './skill.ipc';
 import { registerPromptCommandHandlers } from './commands.ipc';
@@ -181,6 +182,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Context health handlers (上下文健康度)
   registerContextHealthHandlers({ getAppService, getTaskManager });
+
+  // Read-only side chat (GUI /btw)
+  registerSideChatHandlers();
 
   // Session status handlers (多会话并行)
   registerSessionStatusHandlers();

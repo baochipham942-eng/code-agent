@@ -20,6 +20,12 @@
 #   - global hotkeys
 #   - inputs needing real focus
 #
+# Known focus-stealing actions under --background (expected, not measured):
+#   - renderer-side external links (Tauri opener)
+#   - the update-URL command
+#   - system permission prompts
+#   - OAuth browser windows started from the renderer
+#
 # 注意：agent 沙箱可能连 `open` 都拦（要和 launchd 通信）。open 失败时把脚本
 # 末尾打出的那条命令交回用户终端执行，别在沙箱里重试。
 # ============================================================================
@@ -91,7 +97,7 @@ fi
 APP_PATH="/Applications/$APP_NAME.app"
 LAUNCH=(open)
 if [ "$BACKGROUND" = "1" ]; then
-  LAUNCH+=(-g -j)
+  LAUNCH+=(--env NEO_VERIFY_NO_FOREGROUND=1 -g -j)
 fi
 LAUNCH+=("$APP_PATH")
 
@@ -100,6 +106,7 @@ print_launch_command() {
   printf '%s' "${LAUNCH[0]}"
   for arg in "${LAUNCH[@]:1}"; do
     case "$arg" in
+      NEO_VERIFY_NO_FOREGROUND=1) printf ' %s' "$arg" ;;
       -*) printf ' %s' "$arg" ;;
       *) printf ' "%s"' "$arg" ;;
     esac

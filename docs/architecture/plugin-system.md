@@ -1,5 +1,7 @@
 # 插件系统与 Capability Center 架构
 
+本页的 model-facing 视角见 [Model-facing surface](model-facing-surface.md)。
+
 > 扩展 Agent Neo 能力的插件机制（PluginAPI v2 + builtin plugins），以及 2026-05 后本地能力货架的边界
 
 ## 概述

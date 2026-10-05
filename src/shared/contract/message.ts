@@ -262,6 +262,8 @@ export type AgentErrorCategory =
   | 'network'
   | 'context_length'
   | 'image_payload'
+  /** headless run 在任何 assistant 回复前被 SIGTERM/SIGINT 打断。 */
+  | 'interrupted'
   | 'generic';
 
 /**

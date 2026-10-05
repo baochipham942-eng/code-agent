@@ -16,6 +16,8 @@ NC='\033[0m'
 
 # 排除文件（常量来源 / 模型元数据来源 / 本脚本）
 EXCLUDE_FILES=(
+  # 注册表全量 golden（PROVIDER_REGISTRY 逐条快照，含遗留 id 是注册表的事实，不是硬编码）—— N-MODELCAT-EFFORT-PASSTHROUGH 2026-10-01
+  "tests/unit/agent/effortControls.golden.ts"
   "src/shared/constants.ts"
   "src/shared/constants/"
   "src/host/model/providerRegistry.ts"

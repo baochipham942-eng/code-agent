@@ -56,6 +56,8 @@ const CHECK_ACCOUNT_CATEGORIES: ReadonlySet<AgentErrorCategory> = new Set([
   'forbidden',
 ]);
 
+// interrupted 留在这四组之外：回复前被停掉时仍给重试，不换模型、不查账号、不开新会话。
+
 function shouldShowRetry(category: AgentErrorCategory): boolean {
   return !NO_RETRY_CATEGORIES.has(category);
 }

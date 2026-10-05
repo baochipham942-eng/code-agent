@@ -31,7 +31,7 @@ import {
   resolvePrivacyFlags,
   type PrivacyFlags,
 } from '../../../../observability/privacyFlags';
-import { isWebMode } from '../../../../utils/platform';
+import { isWebMode, openExternalLink } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
 import type { SettingsTab } from '../../../../utils/settingsTabs';
@@ -405,6 +405,21 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
         title={privacyText.boundary.title}
         description={privacyText.boundary.description}
       >
+        <p className="mb-3 text-xs text-zinc-400">
+          <a
+            href="https://github.com/baochipham942-eng/code-agent/blob/main/docs/NOTICE.md"
+            target="_blank"
+            rel="noreferrer"
+            className="text-badge-info underline underline-offset-2 hover:text-badge-info"
+            onClick={(event) => {
+              if (openExternalLink('https://github.com/baochipham942-eng/code-agent/blob/main/docs/NOTICE.md')) {
+                event.preventDefault();
+              }
+            }}
+          >
+            {privacyText.boundary.noticeLink}
+          </a>
+        </p>
         <div className="grid gap-3 md:grid-cols-2">
           {listPrivacyBoundaryIndexEntries().map((entry) => (
             <div key={entry.id} className="rounded-lg border border-zinc-800 bg-zinc-900/45 p-3">

@@ -67,7 +67,10 @@ export class LanCompanionManager {
     if (request.action === 'setRemote') {
       this.gateway.setRemoteEnabled(request.enabled);
       if (request.enabled) {
-        await this.restore();
+        // LAN 面受环境影响（仅热点/VPN 时无私网 IPv4，restore 会抛 COMPANION_LAN_UNAVAILABLE）。
+        // 打开总闸时它与 app.ts 开机路径同形按 best-effort 处理：失败只留痕，不能挡住
+        // 两条 relay 的重新拨起——否则开关已持久化为开，relay 却直到重启 app 都不拨号。
+        await this.restore().catch(error => console.warn('[companion] remote switch on; LAN surface unavailable:', error instanceof Error ? error.message : error));
         await this.remoteTransports?.start();
       } else {
         await this.stop();

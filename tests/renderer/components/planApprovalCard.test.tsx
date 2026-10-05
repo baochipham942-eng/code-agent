@@ -66,7 +66,18 @@ describe('PlanApprovalCard', () => {
 
   afterEach(() => cleanup());
 
-  it('edits inline and keeps approval disabled until the edit is saved', () => {
+  it('edits inline and keeps approval disabled until the edit is saved', async () => {
+    mocks.invokeDomain.mockResolvedValue({
+      approval: {
+        ...approval,
+        version: 2,
+        steps: [
+          approval.steps[0],
+          { id: 'step-2', content: 'Build editable plan card', originalContent: 'Build card', edited: true },
+          approval.steps[2],
+        ],
+      },
+    });
     renderCard();
     const card = screen.getByTestId('plan-approval-card').firstElementChild;
     expect(card?.className).toContain('shadow-md');
@@ -82,6 +93,16 @@ describe('PlanApprovalCard', () => {
     expect(screen.getByText('Build editable plan card')).toBeTruthy();
     expect(screen.getByText('已改')).toBeTruthy();
     expect(approveButton.disabled).toBe(false);
+    await waitFor(() => expect(mocks.invokeDomain).toHaveBeenCalledWith(
+      'domain:planning',
+      'respondApproval',
+      expect.objectContaining({
+        decision: 'edit',
+        version: 1,
+        steps: expect.arrayContaining([expect.objectContaining({ content: 'Build editable plan card' })]),
+      }),
+    ));
+    expect(screen.getByTestId('plan-approval-version').textContent).toContain('2');
   });
 
   it('deletes a step and reorders the remaining rows with native drag events', () => {
@@ -273,5 +294,93 @@ describe('PlanApprovalCard', () => {
     const found = findPendingPlanApproval([syntheticMessage], 'session-1');
     expect(found?.approval.source).toBe('synthetic_text');
     expect(found?.toolCallId).toBe('synthetic-plan-run-9');
+  });
+
+  it('sends the card version with approve, revise, and cancel', async () => {
+    mocks.invokeDomain.mockResolvedValue({ approval: { ...approval, status: 'cancelled', version: 1 } });
+    renderCard();
+    expect(screen.queryByTestId('plan-approval-version')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '计划 · 拒绝' }));
+    await waitFor(() => expect(mocks.invokeDomain).toHaveBeenCalledWith(
+      'domain:planning',
+      'respondApproval',
+      expect.objectContaining({ decision: 'cancel', version: 1 }),
+    ));
+
+    cleanup();
+    mocks.invokeDomain.mockClear();
+    mocks.invokeDomain.mockResolvedValue({ approval: { ...approval, status: 'starting', version: 4 } });
+    render(<PlanApprovalCard target={{ ...target, approval: { ...approval, version: 4 } }} />);
+    expect(screen.getByTestId('plan-approval-version').textContent).toContain('4');
+    fireEvent.click(screen.getByRole('button', { name: '有别的想法…' }));
+    fireEvent.change(screen.getByPlaceholderText('例如：先做最小闭环，把迁移和兼容放到下一期'), {
+      target: { value: '缩小范围' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '重新规划' }));
+    await waitFor(() => expect(mocks.invokeDomain).toHaveBeenCalledWith(
+      'domain:planning',
+      'respondApproval',
+      expect.objectContaining({ decision: 'revise', version: 4, feedback: '缩小范围' }),
+    ));
+  });
+
+  it('STALE_VERSION 显示中文文案并同步最新步骤，不透出宿主英文原文', async () => {
+    const stale = new Error('Plan approval version is stale');
+    (stale as Error & { code: string }).code = 'STALE_VERSION';
+    mocks.invokeDomain.mockRejectedValue(stale);
+    renderCard();
+    const serverSteps = [
+      { id: 'step-1', content: 'Server revised step', originalContent: 'Read code' },
+      { id: 'step-2', content: 'Build card', originalContent: 'Build card' },
+      { id: 'step-3', content: 'Run tests', originalContent: 'Run tests' },
+    ];
+    useSessionStore.setState({
+      messages: [{
+        ...message,
+        toolCalls: [{
+          ...message.toolCalls![0],
+          result: {
+            ...message.toolCalls![0].result!,
+            metadata: { planApproval: { ...approval, version: 2, steps: serverSteps } },
+          },
+        }],
+      }],
+    });
+
+    fireEvent.click(screen.getByTestId('plan-approve-button'));
+
+    await waitFor(() => expect(
+      screen.getByText('计划已更新到新版本，已为你同步最新步骤，请重新确认后再批准'),
+    ).toBeTruthy());
+    expect(screen.queryByText('Plan approval version is stale')).toBeNull();
+    expect(screen.getByText('Server revised step')).toBeTruthy();
+    expect(screen.getByTestId('plan-approval-version').textContent).toContain('2');
+    expect(mocks.invokeDomain).toHaveBeenCalledWith(
+      'domain:planning',
+      'respondApproval',
+      expect.objectContaining({ decision: 'approve', version: 1 }),
+    );
+  });
+
+  it('未知错误码回落到通用中文文案并以小字附码，无码错误不附码', async () => {
+    const coded = new Error('Some raw host failure text');
+    (coded as Error & { code: string }).code = 'SESSION_BUSY';
+    mocks.invokeDomain.mockRejectedValue(coded);
+    renderCard();
+
+    fireEvent.click(screen.getByTestId('plan-approve-button'));
+
+    await waitFor(() => expect(screen.getByText('计划决定未生效，请重试。')).toBeTruthy());
+    expect(screen.queryByText('Some raw host failure text')).toBeNull();
+    expect(screen.getByText('SESSION_BUSY')).toBeTruthy();
+
+    cleanup();
+    mocks.invokeDomain.mockClear();
+    mocks.invokeDomain.mockRejectedValue(new Error('Plain network failure'));
+    renderCard();
+    fireEvent.click(screen.getByTestId('plan-approve-button'));
+    await waitFor(() => expect(screen.getByText('计划决定未生效，请重试。')).toBeTruthy());
+    expect(screen.queryByText('Plain network failure')).toBeNull();
+    expect(screen.queryByText('SESSION_BUSY')).toBeNull();
   });
 });

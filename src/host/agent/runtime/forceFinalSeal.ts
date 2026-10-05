@@ -91,6 +91,43 @@ export function emitForceFinalSkippedToolResult(
 }
 
 /**
+ * 屏障之后的调用不派发、不记工具失败。UI 仍收口，metadata.skipped 让连续错误计数跳过。
+ */
+export function emitBatchTerminatedToolResult(
+  ctx: RuntimeContext,
+  toolCall: ToolCall,
+  index: number,
+  duration = 0,
+): ToolResult {
+  const toolResult: ToolResult = {
+    toolCallId: toolCall.id,
+    success: false,
+    error: 'BATCH_TERMINATED: calls after a barrier are deferred',
+    duration,
+    metadata: {
+      skipped: true,
+      blocked: true,
+      deferred: true,
+      code: 'BATCH_TERMINATED',
+    },
+  };
+  ctx.onEvent({
+    type: 'tool_call_start',
+    data: {
+      ...toolCall,
+      arguments: sanitizeToolArgumentsForObservation(toolCall) ?? {},
+      _index: index,
+      turnId: ctx.turn.currentTurnId,
+    },
+  });
+  ctx.onEvent({
+    type: 'tool_call_end',
+    data: sanitizeToolResultForObservation(toolCall, toolResult),
+  });
+  return toolResult;
+}
+
+/**
  * 强制收尾结论（从 MessageProcessor.handleToolResponse 尾部抽出，两处共用）：
  * 只读硬阈值类原因 → 'continue' 让 inference 层做一次禁工具的最终推理；
  * 其余原因 → 就地落最终 assistant 消息并 'break' 结束本轮。

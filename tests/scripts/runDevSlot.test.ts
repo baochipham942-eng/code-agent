@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -30,12 +30,12 @@ describe('run-dev-slot.sh --dry-run', () => {
   });
 
   it('prints the background command for the flag and environment forms', () => {
-    const expected = '[run-dev-slot] would run: open -g -j "/Applications/Agent Neo Dev 3.app"';
+    const expected = '[run-dev-slot] would run: open --env NEO_VERIFY_NO_FOREGROUND=1 -g -j "/Applications/Agent Neo Dev 3.app"';
 
     expect(runDryRun(['3', '--open-only', '--background'], { NEO_SLOT_BACKGROUND: '0' }).trim()).toBe(expected);
     expect(runDryRun(['3', '--open-only'], { NEO_SLOT_BACKGROUND: '1' }).trim()).toBe(expected);
     expect(runDryRun(['1', '--open-only', '--background'], { NEO_SLOT_BACKGROUND: '0' }).trim()).toBe(
-      '[run-dev-slot] would run: open -g -j "/Applications/Agent Neo Dev.app"',
+      '[run-dev-slot] would run: open --env NEO_VERIFY_NO_FOREGROUND=1 -g -j "/Applications/Agent Neo Dev.app"',
     );
   });
 
@@ -45,6 +45,17 @@ describe('run-dev-slot.sh --dry-run', () => {
     expect(output).toContain('open "/Applications/Agent Neo Dev 2.app"');
     expect(output).not.toContain('-g');
     expect(output).not.toContain('-j');
+    expect(output).not.toContain('--env NEO_VERIFY_NO_FOREGROUND=1');
+  });
+
+  it('documents known focus-stealing actions in the usage header', () => {
+    const usage = readFileSync(SCRIPT, 'utf8');
+
+    expect(usage).toContain('# Known focus-stealing actions under --background (expected, not measured):');
+    expect(usage).toContain('#   - renderer-side external links (Tauri opener)');
+    expect(usage).toContain('#   - the update-URL command');
+    expect(usage).toContain('#   - system permission prompts');
+    expect(usage).toContain('#   - OAuth browser windows started from the renderer');
   });
 
   it('reports both new flags in the usage line for invalid arguments', () => {

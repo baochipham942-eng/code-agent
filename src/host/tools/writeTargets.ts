@@ -8,6 +8,7 @@ import type {
 import { getMemoryDir } from '../lightMemory/indexLoader';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { canonicalizeCommand, ANSI_C_ESCAPES } from '../security/canonicalizeCommand';
+import type { MCPToolAnnotations } from '../mcp/types';
 
 export interface ResolveToolWriteTargetsInput {
   definition: ToolDefinition;
@@ -588,22 +589,46 @@ export function resolveToolWriteTargets(input: ResolveToolWriteTargetsInput): To
   };
 }
 
+/** registry 给 def.metadata 挂的运行时字段（公开 ToolDefinition 类型未暴露，窄化读取）。 */
+type MCPDefinitionMetadata = { metadata?: { annotations?: MCPToolAnnotations } };
+
+/**
+ * server 声明的 MCP 写路径参数名（N-CHECKPOINT-MCP-WRITETARGET，编排决策 2026-09-30）：
+ * 写目标**只认声明**，参数名推断（猜 path/file_path/destination）被永久否决。声明挂在
+ * def.metadata.annotations.writePathParameters（registry 从 tool._meta 提升，in-process
+ * server 直接填）；有 pathAuthority 声明的工具不走这条通道（声明面不混用）。
+ * 只返回 server 声明过的参数名，params 里其余字段一概不看。
+ */
+export function declaredMcpWritePathParameters(definition: ToolDefinition): string[] {
+  if (definition.pathAuthority && definition.pathAuthority.length > 0) return [];
+  const declared = (definition as ToolDefinition & MCPDefinitionMetadata)
+    .metadata?.annotations?.writePathParameters;
+  return Array.isArray(declared)
+    ? declared.filter((parameter) => typeof parameter === 'string' && parameter !== '')
+    : [];
+}
+
 /**
  * 检查点路径专用的写目标解析（返修 r3 白名单来源，返修 r4 最终砍范围）：**不**跑
  * genericPathAssessment 的通用后缀扫描——那条是安全门（ownership / 写边界闸）的口径，
  * 参数面必须宽；检查点面宽了会把目录类参数（working_directory）变成建不出快照的
- * 噪音披露行。来源只有两档：
+ * 噪音披露行。来源只有三档：
  * - 声明 shell 权威的工具（bash / terminal_write）：只从命令解析取**单目标**写入
  *   （重定向、cp 目的地、rm 目标、tee、内嵌脚本），移动类（mv）除外——一律不进回退
  *   （返修 r4）；绝不从 Bash 的其它参数（working_directory、cwd、timeout 等）取；
  *   memory 目录提及目标也不进这条路径（见 redirectAndArgumentTargets）。
  * - 声明 path / global-memory 权威的内置工具：只认 schema 里明确声明的写路径字段
  *   （Write/Edit 的 file_path、docx 的 output_path 等，含 whenParameter 条件命中）。
- * - 无声明的 MCP / 未知工具：不推断，零目标零披露（返修 r4 砍掉，回 origin/main 行为）。
+ * - server 声明过 writePathParameters 的 MCP 工具：每个声明的参数名按 kind:'path'
+ *   描述符同款口径评估（string/array/object 取值同那里，空值落 uncertain:<param>）；
+ *   信任边界（只快照 workspace 范围内）在 middleware 收口。
+ * - 无声明的 MCP / 未知工具：不推断，零目标零披露（返修 r4 砍掉，回 origin/main 行为；
+ *   未声明写盘的披露由 middleware 的 undeclared-tool 行承担，不在这里产生路径行）。
  */
 export function resolveCheckpointWriteTargets(input: ResolveToolWriteTargetsInput): ToolWriteTargets {
   const descriptors = input.definition.pathAuthority ?? [];
   const shellDescriptors = descriptors.filter((descriptor) => descriptor.kind === 'shell');
+  const declaredParameters = declaredMcpWritePathParameters(input.definition);
   const assessment = shellDescriptors.length > 0
     ? mergeAssessments(shellDescriptors.map((descriptor) => {
       const command = input.params[descriptor.commandParameter];
@@ -619,7 +644,10 @@ export function resolveCheckpointWriteTargets(input: ResolveToolWriteTargetsInpu
     }))
     : descriptors.length > 0
       ? mergeAssessments(descriptors.map((descriptor) => descriptorAssessment(descriptor, input)))
-      : { targets: [], uncertain: [], mutations: {} };
+      : declaredParameters.length > 0
+        ? mergeAssessments(declaredParameters.map((pathParameter) =>
+          descriptorAssessment({ kind: 'path', pathParameter }, input)))
+        : { targets: [], uncertain: [], mutations: {} };
   return {
     targets: [...new Set(assessment.targets)].sort(),
     uncertain: [...new Set(assessment.uncertain)].sort(),

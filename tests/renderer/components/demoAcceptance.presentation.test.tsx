@@ -7,7 +7,8 @@ import { zh, en } from '../../../src/renderer/i18n';
 import { ToolStepGroup } from '../../../src/renderer/components/features/chat/ToolStepGroup';
 import { getToolPreflightKind, toolPreflightCopy } from '../../../src/renderer/utils/toolPreflightPresentation';
 import { humanizeToolFailureReason } from '../../../src/renderer/utils/toolExecutionPresentation';
-import { wrapFilePathsInBackticks } from '../../../src/renderer/components/features/chat/MessageBubble/filePathProcessor';
+import { wrapFilePathsInBackticks, wrapTicketsAsLinks } from '../../../src/renderer/components/features/chat/MessageBubble/filePathProcessor';
+import { runHref } from './encodeRunCommand';
 import { projectTurns } from '../../../src/renderer/hooks/useTurnProjection';
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: zh, language: 'zh' }) }));
@@ -163,8 +164,13 @@ describe('demo acceptance: truthful historical presentation', () => {
     expect(html).not.toContain('审批被拒绝');
   });
   it('preserves a quoted command link without nested path formatting', () => {
-    const content = '[python3 "/workspace/演示/build_ppt.py"](!run)';
+    const command = 'python3 "/workspace/演示/build_ppt.py"';
+    const content = `[${command}](${runHref(command)})`;
     expect(wrapFilePathsInBackticks(content)).toBe(content);
+    expect(wrapTicketsAsLinks(content)).toBe(content);
+    const ticketed = `[看](${runHref('echo JIRA-42')})`;
+    expect(wrapTicketsAsLinks(ticketed)).toBe(ticketed);
+    expect(wrapFilePathsInBackticks(ticketed)).toBe(ticketed);
     expect(wrapFilePathsInBackticks('Inspect /workspace/report.md')).toContain('`/workspace/report.md`');
   });
   it('known precondition errors explain Read first; unclassified recorded errors do not become missing', () => {

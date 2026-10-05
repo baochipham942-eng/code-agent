@@ -34,6 +34,8 @@ export interface BubblewrapConfig {
   readOnlyPaths: string[];
   /** Paths to mount read-write */
   readWritePaths: string[];
+  /** Existing regular files to mount read-write. A file that does not exist cannot be bound. */
+  readWriteFiles?: string[];
   /** Paths to mount as tmpfs (ephemeral) */
   tmpfsPaths: string[];
   /** Unshare all namespaces (default: true) */
@@ -352,6 +354,14 @@ export class Bubblewrap {
       }
     }
 
+    // Single-file grants (one-shot escalation). Bind regular files only: binding a
+    // directory here would grant its whole tree.
+    for (const p of config.readWriteFiles ?? []) {
+      if (this.isRegularFile(p)) {
+        args.push('--bind', p, p);
+      }
+    }
+
     args.push(...buildSensitivePathMountArgs({
       sensitivePaths: config.sensitivePaths,
     }));
@@ -380,6 +390,14 @@ export class Bubblewrap {
   /**
    * Check if a path exists
    */
+  private isRegularFile(p: string): boolean {
+    try {
+      return fs.lstatSync(p).isFile();
+    } catch {
+      return false;
+    }
+  }
+
   private pathExists(p: string): boolean {
     return fs.existsSync(p);
   }

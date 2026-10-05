@@ -22,6 +22,7 @@ import { ExpandableContent } from './ExpandableContent';
 import { LaunchRequestCard } from '../swarm/LaunchRequestCard';
 import { WorkbenchPill } from '../../workbench/WorkbenchPrimitives';
 import { isReadOnlyArtifactOwnershipItem } from '../../../utils/artifactOwnership';
+import { undeclaredToolDisplayName } from '../../../utils/humanizeToolStep';
 import { kindForTurnArtifact } from '../../../utils/deliverables';
 import { iconForKind } from './MessageBubble/DeliverableCardList';
 import { SkillStatusMessage } from './MessageBubble/SkillStatusMessage';
@@ -1050,6 +1051,8 @@ const SystemNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node, s
       const file = item.reason === 'uncertain_write_target'
         ? item.filePath
         : item.filePath.split(/[\\/]/).filter(Boolean).at(-1) ?? item.filePath;
+      // 未声明工具写盘（undeclared-tool:<name>）按工具披露，不剪路径
+      if (item.reason === 'undeclared_tool_write') return t.chat.turnCheckoutNoteUndeclaredTool.replace('{tool}', undeclaredToolDisplayName(item.toolName ?? item.filePath));
       const template = item.reason === 'human_edit'
         ? t.chat.turnCheckoutNoteHumanEdit
         : item.reason === 'missing_post_write_digest'

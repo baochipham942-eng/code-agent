@@ -2,8 +2,10 @@
 // 真入口（middleware）+ 真 FileCheckpointService（内存 SQLite）+ 真回退：
 // - 声明通道：metadata.annotations.writePathParameters（registry 从 tool._meta 提升）
 // - 信任边界：MCP 声明目标只快照 workspace 范围内（无 scope 以执行基准目录为界）
-// - 未声明写盘：MCP 非只读 / 内置 write|execute 无声明工具 → 回退时逐工具披露
-//   `undeclared-tool:<name>`，reason 'undeclared_tool_write'，success 不翻红
+// - 未声明写盘：MCP 非只读且未声明 writePathParameters / 内置最小档（真起子程或
+//   写盘的 git_commit、Process、git_worktree、xlwings_execute，Rework r2 与
+//   permissionLevel 解耦）→ 回退时逐工具披露 `undeclared-tool:<name>`，reason
+//   'undeclared_tool_write'，success 不翻红
 // 参数名推断（path/file_path 猜测）被永久否决——inference-bait 用例钉住零推断。
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -30,6 +32,9 @@ import { createFileCheckpointIfNeeded } from '../../../src/host/tools/middleware
 import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
 import { writeSchema } from '../../../src/host/tools/modules/file/write.schema';
 import { bashSchema } from '../../../src/host/tools/modules/shell/bash.schema';
+import { gitCommitSchema } from '../../../src/host/tools/modules/shell/gitCommit.schema';
+import { askUserQuestionSchema } from '../../../src/host/tools/modules/planning/askUserQuestion.schema';
+import { mailSendSchema } from '../../../src/host/tools/modules/connectors/mailSend.schema';
 import type { ToolDefinition } from '../../../src/shared/contract';
 import type { MCPToolAnnotations } from '../../../src/host/mcp/types';
 import type { ToolSchema } from '../../../src/host/protocol/tools';
@@ -459,5 +464,48 @@ describe('fileCheckpointMiddleware MCP-declared write targets (integration)', ()
     );
     expect(rows().filter((row) => row.file_path.startsWith('undeclared-tool:'))).toEqual([]);
     expect(rows()).toHaveLength(1);
+  });
+
+  // ---- Rework r2：资格档与 permissionLevel 解耦——不可能写本地盘的工具不得失实披露 ----
+
+  it('records no undeclared row for app-internal write/execute tools that cannot touch local disk', async () => {
+    // planning（AskUserQuestion，execute）与 connectors（mail_send，write，写外部服务）
+    // 都不写工作区文件：逐轮披露它们会把回退卡片 success→partial，并显示
+    // 「写入不在回退范围」的失实陈述（噪音反复出现会削弱披露机制的可信度）。
+    await createFileCheckpointIfNeeded(
+      toDefinition(askUserQuestionSchema),
+      { question: '继续吗？', options: ['是', '否'] },
+      ctx(),
+      tempDir,
+    );
+    await createFileCheckpointIfNeeded(
+      toDefinition(mailSendSchema),
+      { subject: 'hi', to: ['a@b.c'] },
+      ctx(),
+      tempDir,
+    );
+    expect(rows()).toEqual([]);
+  });
+
+  it('records no undeclared row for a declared MCP tool whose declared write parameter is omitted', async () => {
+    // server 声明了 writePathParameters＝写面已知；调用省略可选声明参数＝这次调用
+    // 没有指向任何写目标，与内置 pathAuthority 工具的豁免同款（undefined 不落
+    // uncertain:<param>，也不得落 undeclared-tool 行）。
+    await createFileCheckpointIfNeeded(declaredMcpTool, { content: 'x' }, ctx(), tempDir);
+    expect(rows()).toEqual([]);
+  });
+
+  it('keeps undeclared disclosure for built-ins that genuinely execute or write local disk', async () => {
+    // 最小档正向钉：git_commit 写 .git 对象（回退工作区文件会留下指向回退后状态的
+    // 提交＝混合态），仍逐轮披露。收窄不能把机制整个收死。
+    await createFileCheckpointIfNeeded(
+      toDefinition(gitCommitSchema),
+      { message: 'wip' },
+      ctx(),
+      tempDir,
+    );
+    expect(rows().filter((row) => row.file_path.startsWith('undeclared-tool:'))).toEqual([
+      { file_path: 'undeclared-tool:git_commit', uncertain_target: 1, message_id: messageId },
+    ]);
   });
 });

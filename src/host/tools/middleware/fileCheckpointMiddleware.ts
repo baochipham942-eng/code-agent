@@ -61,23 +61,38 @@ export interface CreatedFileCheckpoint {
 /** 未声明写盘披露键前缀：值是工具名（mcp__server__tool），回退时逐工具披露。 */
 const UNDECLARED_TOOL_KEY_PREFIX = 'undeclared-tool:';
 
-/** 未声明写盘披露的资格档（非 MCP 侧）；schema 的 dangerous 在 adapter 已折成 execute。 */
-const UNDECLARED_QUALIFYING_LEVELS = new Set(['write', 'execute']);
+/**
+ * 非 MCP 侧「确实可能触达本地盘」的最小档（Rework r2）：起子进程/写盘但 schema 没声明
+ * pathAuthority 的内置工具——Process（任意子进程）、git_commit（写 .git 对象）、
+ * git_worktree（建工作树目录）、xlwings_execute（驱动 Excel 改本地表格）。资格与
+ * permissionLevel 解耦：write/execute 档里 planning/multiagent/connectors/design 等
+ * 约 50 个纯 app 内/外部服务工具（ask_user_question、spawn_agent、mail_send…）不写
+ * 工作区文件，逐轮披露它们＝回退卡片 success→partial + 「写入不在回退范围」的失实
+ * 陈述，噪音反复出现会削弱整个披露机制的可信度。漏登（新的写盘内置没进此表）＝回到
+ * origin/main 的静默行为，不产生失实披露；编排日后可放宽此表。
+ */
+const UNDECLARED_LOCAL_WRITE_TOOL_NAMES = new Set(['Process', 'git_commit', 'git_worktree', 'xlwings_execute']);
 
 /**
  * 「可能写盘但不在回退覆盖里」的资格判定（N-CHECKPOINT-MCP-WRITETARGET，编排决策：
  * 集合保持最小，编排日后可放宽）：
  * - MCP 工具（mcp__ 前缀）且非 readOnly——cua 桌面动作、无 annotations 的 MCP 写操作
- *   都算；纯只读（readOnlyHint）不算。
- * - 非 MCP 工具：permissionLevel 是 write/execute 且无 pathAuthority 声明、也不在
- *   六名下限里。纯 network 内置（http_request/jira…）不写本地盘，不披露（false noise）。
+ *   都算；纯只读（readOnlyHint）不算。声明过 writePathParameters 的不算（Rework r2）：
+ *   写面已知，调用省略可选声明参数＝这次调用没有指向任何写目标，与内置 pathAuthority
+ *   工具的豁免同款，否则误落逐轮披露。
+ * - 非 MCP 工具：UNDECLARED_LOCAL_WRITE_TOOL_NAMES 命名档（见上，与 permissionLevel
+ *   解耦）且无 pathAuthority 声明、也不在六名下限里。纯 network 内置（http_request/
+ *   jira…）与纯 app 内工具都不写本地盘，不披露（false noise）。
  */
 function qualifiesAsUndeclaredWriteTool(definition: ToolDefinition): boolean {
-  if (definition.name.startsWith('mcp__')) return definition.readOnly !== true;
-  if (!UNDECLARED_QUALIFYING_LEVELS.has(definition.permissionLevel)) return false;
+  if (definition.name.startsWith('mcp__')) {
+    if (declaredMcpWritePathParameters(definition).length > 0) return false;
+    return definition.readOnly !== true;
+  }
   if (definition.pathAuthority && definition.pathAuthority.length > 0) return false;
   const names = [definition.name, ...(definition.aliases ?? [])];
-  return !names.some((name) => LEGACY_SNAPSHOT_TOOL_NAMES.has(name));
+  return !names.some((name) => LEGACY_SNAPSHOT_TOOL_NAMES.has(name))
+    && names.some((name) => UNDECLARED_LOCAL_WRITE_TOOL_NAMES.has(name));
 }
 
 /**

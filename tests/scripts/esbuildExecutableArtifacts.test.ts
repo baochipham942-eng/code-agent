@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 
@@ -32,11 +33,22 @@ describe.skipIf(process.platform === 'win32')('esbuild artifact executable modes
     }
 
     execFileSync('npm', ['run', 'build:worker'], { cwd: repoRoot, stdio: 'pipe' });
-    execFileSync(
-      process.execPath,
-      ['node_modules/tsx/dist/cli.mjs', 'esbuild.config.ts', 'cli', 'web', 'mcp', 'bridge', 'test-runner'],
-      { cwd: repoRoot, stdio: 'pipe' },
-    );
+    // The web target reads ~/.code-agent/.env for a control-plane keys file.
+    // Artifact modes only need the bundled key set, so the child gets an empty home.
+    const home = mkdtempSync(path.join(os.tmpdir(), 'esbuild-artifact-home-'));
+    try {
+      execFileSync(
+        process.execPath,
+        ['node_modules/tsx/dist/cli.mjs', 'esbuild.config.ts', 'cli', 'web', 'mcp', 'bridge', 'test-runner'],
+        {
+          cwd: repoRoot,
+          stdio: 'pipe',
+          env: { ...process.env, HOME: home, USERPROFILE: home },
+        },
+      );
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   }, 120_000);
 
   it('makes the CLI executable because its post-build artifact has a shebang', () => {

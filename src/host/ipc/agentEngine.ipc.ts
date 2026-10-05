@@ -27,6 +27,7 @@ import {
 import {
   AgentEngineHistoryImportError,
   getAgentEngineHistoryImportService,
+  type AgentEngineHistoryImportEnvelopeRequest,
   type AgentEngineHistoryListRequest,
   type AgentEngineHistoryPreviewRequest,
 } from '../services/agentEngine/agentEngineHistoryImport';
@@ -75,6 +76,11 @@ const agentEngineHandlers: RawDomainRouteHandlers<AgentEngineDomainRequest, void
   get: async (_ctx, requestPayload) => {
     const registry = getAgentEngineRegistry();
     const data = await registry.get((requestPayload as { kind: AgentEngineKind }).kind);
+    return { success: true, data };
+  },
+  importHistory: async (_ctx, requestPayload) => {
+    const data = await getAgentEngineHistoryImportService()
+      .mapHistoryForImport(requestPayload as AgentEngineHistoryImportEnvelopeRequest);
     return { success: true, data };
   },
   listModels: async (_ctx, _requestPayload) => {

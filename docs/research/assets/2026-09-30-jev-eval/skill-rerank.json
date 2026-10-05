@@ -1,0 +1,2170 @@
+{
+  "generatedAt": "2026-09-30T18:11:48.296Z",
+  "gitHead": "6e67269128755c57afc7ea4b979aa69cb56ae489",
+  "JEV_MODEL": "jev-1.13.0",
+  "loadDefinition": "skill at tools[0] when the auto-load predicate is true (sole hit or clear lead, not suppressed). raw loadedTools stays empty for skill:* on a fresh service.",
+  "baselineModel": {
+    "provider": "stepfun",
+    "model": "step-3.5-flash-2603",
+    "inputPerMTok": 0.1,
+    "outputPerMTok": 0.3
+  },
+  "summary": {
+    "K": {
+      "misPick": {
+        "count": 0,
+        "total": 30,
+        "rate": 0
+      },
+      "extraLoad": {
+        "count": 9,
+        "total": 34,
+        "rate": 0.2647058823529412
+      },
+      "miss": {
+        "count": 3,
+        "total": 30,
+        "rate": 0.1
+      }
+    },
+    "J": {
+      "misPick": {
+        "count": 0,
+        "total": 30,
+        "rate": 0
+      },
+      "extraLoad": {
+        "count": 0,
+        "total": 34,
+        "rate": 0
+      },
+      "miss": {
+        "count": 4,
+        "total": 30,
+        "rate": 0.13333333333333333
+      }
+    },
+    "skillBodyTokensSaved": 5106,
+    "skillBodyUsd": 0.0005106,
+    "jevUsd": 0.0006322260000000002,
+    "judgeCalls": 66,
+    "judgeErrors": 0,
+    "judgeBadShapes": 0,
+    "recommendation": "不接电",
+    "regressed": [
+      "syn-imp-commit-staged"
+    ]
+  },
+  "rows": [
+    {
+      "id": "skill-neg-xlsx-translation",
+      "kind": "negative",
+      "origin": "bank",
+      "expected": null,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "monthly-review"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:monthly-review",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": "skill:monthly-review",
+        "totalCount": 1,
+        "suppressed": true
+      },
+      "judge": [
+        {
+          "choice": "skill:monthly-review",
+          "confidence": 1,
+          "needSkill": 0.03,
+          "needNow": 0.11,
+          "noneOfRoster": 0.91,
+          "badShape": false,
+          "usd": 0.00000953
+        }
+      ]
+    },
+    {
+      "id": "skill-neg-meeting-summary-ad-copy",
+      "kind": "negative",
+      "origin": "bank",
+      "expected": null,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0,
+        "suppressed": false
+      },
+      "judge": []
+    },
+    {
+      "id": "skill-neg-contract-review-polish",
+      "kind": "negative",
+      "origin": "bank",
+      "expected": null,
+      "adjacent": true,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0,
+        "suppressed": false
+      },
+      "judge": []
+    },
+    {
+      "id": "skill-imp-xlsx-sales-table",
+      "kind": "implicit",
+      "origin": "bank",
+      "expected": "xlsx",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": "ExcelAutomate",
+        "totalCount": 9
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": "excel_generate",
+        "totalCount": 9,
+        "suppressed": false
+      },
+      "judge": [
+        {
+          "choice": "excel_generate",
+          "confidence": 0.82,
+          "needSkill": 0.97,
+          "needNow": 0.85,
+          "noneOfRoster": 0.05,
+          "badShape": false,
+          "usd": 0.00002419
+        },
+        {
+          "choice": "excel_generate",
+          "confidence": 0.71,
+          "needSkill": 0.98,
+          "needNow": 0.88,
+          "noneOfRoster": 0.09,
+          "badShape": false,
+          "usd": 0.00001117
+        }
+      ]
+    },
+    {
+      "id": "skill-imp-meeting-summary-transcript",
+      "kind": "implicit",
+      "origin": "bank",
+      "expected": "meeting-summary",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0,
+        "suppressed": false
+      },
+      "judge": []
+    },
+    {
+      "id": "skill-imp-data-cleaning-messy-csv",
+      "kind": "implicit",
+      "origin": "bank",
+      "expected": "data-cleaning",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": "tmeetMeetingList",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": "tmeetMeetingList",
+        "totalCount": 1,
+        "suppressed": true
+      },
+      "judge": [
+        {
+          "choice": "tmeetMeetingList",
+          "confidence": 1,
+          "needSkill": 0.04,
+          "needNow": 0.37,
+          "noneOfRoster": 0.94,
+          "badShape": false,
+          "usd": 0.00000882
+        }
+      ]
+    },
+    {
+      "id": "syn-imp-xlsx-budget",
+      "kind": "implicit",
+      "origin": "synthetic",
+      "expected": "xlsx",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "xlsx"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:xlsx",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [
+          "xlsx"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:xlsx",
+        "totalCount": 1,
+        "suppressed": false
+      },
+      "judge": [
+        {
+          "choice": "skill:xlsx",
+          "confidence": 1,
+          "needSkill": 0.97,
+          "needNow": 0.89,
+          "noneOfRoster": 0.05,
+          "badShape": false,
+          "usd": 0.00000911
+        },
+        {
+          "choice": "skill:xlsx",
+          "confidence": 1,
+          "needSkill": 0.98,
+          "needNow": 0.9,
+          "noneOfRoster": 0.05,
+          "badShape": false,
+          "usd": 0.00000911
+        }
+      ]
+    },
+    {
+      "id": "syn-imp-xlsx-inventory",
+      "kind": "implicit",
+      "origin": "synthetic",
+      "expected": "xlsx",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "xlsx"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:xlsx",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [
+          "xlsx"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:xlsx",
+        "totalCount": 1,
+        "suppressed": false
+      },
+      "judge": [
+        {
+          "choice": "skill:xlsx",
+          "confidence": 1,
+          "needSkill": 0.97,
+          "needNow": 0.87,
+          "noneOfRoster": 0.09,
+          "badShape": false,
+          "usd": 0.00000928
+        },
+        {
+          "choice": "skill:xlsx",
+          "confidence": 1,
+          "needSkill": 0.97,
+          "needNow": 0.86,
+          "noneOfRoster": 0.08,
+          "badShape": false,
+          "usd": 0.00000928
+        }
+      ]
+    },
+    {
+      "id": "syn-imp-meeting-standup",
+      "kind": "implicit",
+      "origin": "synthetic",
+      "expected": "meeting-summary",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "meeting-summary"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:meeting-summary",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [
+          "meeting-summary"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:meeting-summary",
+        "totalCount": 1,
+        "suppressed": false
+      },
+      "judge": [
+        {
+          "choice": "skill:meeting-summary",
+          "confidence": 1,
+          "needSkill": 0.97,
+          "needNow": 0.9,
+          "noneOfRoster": 0.05,
+          "badShape": false,
+          "usd": 0.00001012
+        },
+        {
+          "choice": "skill:meeting-summary",
+          "confidence": 1,
+          "needSkill": 0.97,
+          "needNow": 0.89,
+          "noneOfRoster": 0.04,
+          "badShape": false,
+          "usd": 0.00001012
+        }
+      ]
+    },
+    {
+      "id": "syn-imp-meeting-retro",
+      "kind": "implicit",
+      "origin": "synthetic",
+      "expected": "meeting-summary",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "meeting-summary"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:meeting-summary",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [
+          "meeting-summary"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:meeting-summary",
+        "totalCount": 1,
+        "suppressed": false
+      },
+      "judge": [
+        {
+          "choice": "skill:meeting-summary",
+          "confidence": 1,
+          "needSkill": 0.97,
+          "needNow": 0.89,
+          "noneOfRoster": 0.05,
+          "badShape": false,
+          "usd": 0.00001
+        },
+        {
+          "choice": "skill:meeting-summary",
+          "confidence": 1,
+          "needSkill": 0.97,
+          "needNow": 0.89,
+          "noneOfRoster": 0.05,
+          "badShape": false,
+          "usd": 0.00001
+        }
+      ]
+    },
+    {
+      "id": "syn-imp-clean-dupes",
+      "kind": "implicit",
+      "origin": "synthetic",
+      "expected": "data-cleaning",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "data-cleaning"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:data-cleaning",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [
+          "data-cleaning"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:data-cleaning",
+        "totalCount": 1,
+        "suppressed": false
+      },
+      "judge": [
+        {
+          "choice": "skill:data-cleaning",
+          "confidence": 1,
+          "needSkill": 0.95,
+          "needNow": 0.72,
+          "noneOfRoster": 0.21,
+          "badShape": false,
+          "usd": 0.0000092
+        },
+        {
+          "choice": "skill:data-cleaning",
+          "confidence": 1,
+          "needSkill": 0.94,
+          "needNow": 0.7,
+          "noneOfRoster": 0.21,
+          "badShape": false,
+          "usd": 0.0000092
+        }
+      ]
+    },
+    {
+      "id": "syn-imp-clean-dates",
+      "kind": "implicit",
+      "origin": "synthetic",
+      "expected": "data-cleaning",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "data-cleaning"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:data-cleaning",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [
+          "data-cleaning"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:data-cleaning",
+        "totalCount": 1,
+        "suppressed": false
+      },
+      "judge": [
+        {
+          "choice": "skill:data-cleaning",
+          "confidence": 1,
+          "needSkill": 0.97,
+          "needNow": 0.78,
+          "noneOfRoster": 0.07,
+          "badShape": false,
+          "usd": 0.00000928
+        },
+        {
+          "choice": "skill:data-cleaning",
+          "confidence": 1,
+          "needSkill": 0.97,
+          "needNow": 0.79,
+          "noneOfRoster": 0.07,
+          "badShape": false,
+          "usd": 0.00000928
+        }
+      ]
+    },
+    {
+      "id": "syn-imp-contract-lease",
+      "kind": "implicit",
+      "origin": "synthetic",
+      "expected": "contract-review",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "contract-review"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:contract-review",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [
+          "contract-review"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:contract-review",
+        "totalCount": 1,
+        "suppressed": false
+      },
+      "judge": [
+        {
+          "choice": "skill:contract-review",
+          "confidence": 1,
+          "needSkill": 0.98,
+          "needNow": 0.9,
+          "noneOfRoster": 0.04,
+          "badShape": false,
+          "usd": 0.00000987
+        },
+        {
+          "choice": "skill:contract-review",
+          "confidence": 1,
+          "needSkill": 0.98,
+          "needNow": 0.91,
+          "noneOfRoster": 0.03,
+          "badShape": false,
+          "usd": 0.00000987
+        }
+      ]
+    },
+    {
+      "id": "syn-imp-contract-nda",
+      "kind": "implicit",
+      "origin": "synthetic",
+      "expected": "contract-review",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "contract-review"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:contract-review",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [
+          "contract-review"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:contract-review",
+        "totalCount": 1,
+        "suppressed": false
+      },
+      "judge": [
+        {
+          "choice": "skill:contract-review",
+          "confidence": 1,
+          "needSkill": 0.98,
+          "needNow": 0.91,
+          "noneOfRoster": 0.05,
+          "badShape": false,
+          "usd": 0.00000983
+        },
+        {
+          "choice": "skill:contract-review",
+          "confidence": 1,
+          "needSkill": 0.98,
+          "needNow": 0.9,
+          "noneOfRoster": 0.05,
+          "badShape": false,
+          "usd": 0.00000983
+        }
+      ]
+    },
+    {
+      "id": "syn-imp-commit-readme",
+      "kind": "implicit",
+      "origin": "synthetic",
+      "expected": "commit",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "commit"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:commit",
+        "totalCount": 2
+      },
+      "J": {
+        "loadedSkills": [
+          "commit"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:commit",
+        "totalCount": 2,
+        "suppressed": false
+      },
+      "judge": [
+        {
+          "choice": "skill:commit",
+          "confidence": 0.78,
+          "needSkill": 0.97,
+          "needNow": 0.87,
+          "noneOfRoster": 0.17,
+          "badShape": false,
+          "usd": 0.00000991
+        },
+        {
+          "choice": "skill:commit",
+          "confidence": 0.76,
+          "needSkill": 0.97,
+          "needNow": 0.86,
+          "noneOfRoster": 0.11,
+          "badShape": false,
+          "usd": 0.00000991
+        }
+      ]
+    },
+    {
+      "id": "syn-imp-commit-staged",
+      "kind": "implicit",
+      "origin": "synthetic",
+      "expected": "commit",
+      "regressed": true,
+      "K": {
+        "loadedSkills": [
+          "commit"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:commit",
+        "totalCount": 2
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": "skill:commit",
+        "totalCount": 2,
+        "suppressed": true
+      },
+      "judge": [
+        {
+          "choice": "skill:commit",
+          "confidence": 0.43,
+          "needSkill": 0.96,
+          "needNow": 0.86,
+          "noneOfRoster": 0.16,
+          "badShape": false,
+          "usd": 0.00000991
+        }
+      ]
+    },
+    {
+      "id": "syn-imp-review-parser",
+      "kind": "implicit",
+      "origin": "synthetic",
+      "expected": "review",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "review"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:review",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [
+          "review"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:review",
+        "totalCount": 1,
+        "suppressed": false
+      },
+      "judge": [
+        {
+          "choice": "skill:review",
+          "confidence": 1,
+          "needSkill": 0.97,
+          "needNow": 0.75,
+          "noneOfRoster": 0.11,
+          "badShape": false,
+          "usd": 0.00000815
+        },
+        {
+          "choice": "skill:review",
+          "confidence": 1,
+          "needSkill": 0.97,
+          "needNow": 0.75,
+          "noneOfRoster": 0.09,
+          "badShape": false,
+          "usd": 0.00000815
+        }
+      ]
+    },
+    {
+      "id": "syn-imp-review-auth",
+      "kind": "implicit",
+      "origin": "synthetic",
+      "expected": "review",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "review"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:review",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [
+          "review"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:review",
+        "totalCount": 1,
+        "suppressed": false
+      },
+      "judge": [
+        {
+          "choice": "skill:review",
+          "confidence": 1,
+          "needSkill": 0.97,
+          "needNow": 0.8,
+          "noneOfRoster": 0.06,
+          "badShape": false,
+          "usd": 0.00000811
+        },
+        {
+          "choice": "skill:review",
+          "confidence": 1,
+          "needSkill": 0.98,
+          "needNow": 0.79,
+          "noneOfRoster": 0.07,
+          "badShape": false,
+          "usd": 0.00000811
+        }
+      ]
+    },
+    {
+      "id": "syn-imp-explain-debounce",
+      "kind": "implicit",
+      "origin": "synthetic",
+      "expected": "explain",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "explain"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:explain",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [
+          "explain"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:explain",
+        "totalCount": 1,
+        "suppressed": false
+      },
+      "judge": [
+        {
+          "choice": "skill:explain",
+          "confidence": 1,
+          "needSkill": 0.95,
+          "needNow": 0.71,
+          "noneOfRoster": 0.06,
+          "badShape": false,
+          "usd": 0.00000815
+        },
+        {
+          "choice": "skill:explain",
+          "confidence": 1,
+          "needSkill": 0.95,
+          "needNow": 0.73,
+          "noneOfRoster": 0.07,
+          "badShape": false,
+          "usd": 0.00000815
+        }
+      ]
+    },
+    {
+      "id": "syn-imp-explain-middleware",
+      "kind": "implicit",
+      "origin": "synthetic",
+      "expected": "explain",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "explain"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:explain",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [
+          "explain"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:explain",
+        "totalCount": 1,
+        "suppressed": false
+      },
+      "judge": [
+        {
+          "choice": "skill:explain",
+          "confidence": 1,
+          "needSkill": 0.95,
+          "needNow": 0.81,
+          "noneOfRoster": 0.07,
+          "badShape": false,
+          "usd": 0.00000811
+        },
+        {
+          "choice": "skill:explain",
+          "confidence": 1,
+          "needSkill": 0.95,
+          "needNow": 0.81,
+          "noneOfRoster": 0.07,
+          "badShape": false,
+          "usd": 0.00000811
+        }
+      ]
+    },
+    {
+      "id": "syn-imp-docker-ps",
+      "kind": "implicit",
+      "origin": "synthetic",
+      "expected": "docker",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "docker"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:docker",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [
+          "docker"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:docker",
+        "totalCount": 1,
+        "suppressed": false
+      },
+      "judge": [
+        {
+          "choice": "skill:docker",
+          "confidence": 1,
+          "needSkill": 0.97,
+          "needNow": 0.89,
+          "noneOfRoster": 0.08,
+          "badShape": false,
+          "usd": 0.00000815
+        },
+        {
+          "choice": "skill:docker",
+          "confidence": 1,
+          "needSkill": 0.97,
+          "needNow": 0.9,
+          "noneOfRoster": 0.07,
+          "badShape": false,
+          "usd": 0.00000815
+        }
+      ]
+    },
+    {
+      "id": "syn-imp-docker-prune",
+      "kind": "implicit",
+      "origin": "synthetic",
+      "expected": "docker",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "docker"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:docker",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [
+          "docker"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:docker",
+        "totalCount": 1,
+        "suppressed": false
+      },
+      "judge": [
+        {
+          "choice": "skill:docker",
+          "confidence": 1,
+          "needSkill": 0.98,
+          "needNow": 0.89,
+          "noneOfRoster": 0.06,
+          "badShape": false,
+          "usd": 0.00000811
+        },
+        {
+          "choice": "skill:docker",
+          "confidence": 1,
+          "needSkill": 0.98,
+          "needNow": 0.89,
+          "noneOfRoster": 0.06,
+          "badShape": false,
+          "usd": 0.00000811
+        }
+      ]
+    },
+    {
+      "id": "syn-imp-lit-picking",
+      "kind": "implicit",
+      "origin": "synthetic",
+      "expected": "literature-review",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "literature-review"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:literature-review",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [
+          "literature-review"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:literature-review",
+        "totalCount": 1,
+        "suppressed": false
+      },
+      "judge": [
+        {
+          "choice": "skill:literature-review",
+          "confidence": 1,
+          "needSkill": 0.98,
+          "needNow": 0.89,
+          "noneOfRoster": 0.03,
+          "badShape": false,
+          "usd": 0.00001
+        },
+        {
+          "choice": "skill:literature-review",
+          "confidence": 1,
+          "needSkill": 0.98,
+          "needNow": 0.9,
+          "noneOfRoster": 0.03,
+          "badShape": false,
+          "usd": 0.00001
+        }
+      ]
+    },
+    {
+      "id": "syn-imp-lit-cache",
+      "kind": "implicit",
+      "origin": "synthetic",
+      "expected": "literature-review",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "literature-review"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:literature-review",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [
+          "literature-review"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:literature-review",
+        "totalCount": 1,
+        "suppressed": false
+      },
+      "judge": [
+        {
+          "choice": "skill:literature-review",
+          "confidence": 1,
+          "needSkill": 0.98,
+          "needNow": 0.86,
+          "noneOfRoster": 0.04,
+          "badShape": false,
+          "usd": 0.00001
+        },
+        {
+          "choice": "skill:literature-review",
+          "confidence": 1,
+          "needSkill": 0.98,
+          "needNow": 0.87,
+          "noneOfRoster": 0.04,
+          "badShape": false,
+          "usd": 0.00001
+        }
+      ]
+    },
+    {
+      "id": "syn-imp-paper-one",
+      "kind": "implicit",
+      "origin": "synthetic",
+      "expected": "paper-distillation",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "paper-distillation"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:paper-distillation",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [
+          "paper-distillation"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:paper-distillation",
+        "totalCount": 1,
+        "suppressed": false
+      },
+      "judge": [
+        {
+          "choice": "skill:paper-distillation",
+          "confidence": 1,
+          "needSkill": 0.97,
+          "needNow": 0.86,
+          "noneOfRoster": 0.04,
+          "badShape": false,
+          "usd": 0.00000995
+        },
+        {
+          "choice": "skill:paper-distillation",
+          "confidence": 1,
+          "needSkill": 0.98,
+          "needNow": 0.84,
+          "noneOfRoster": 0.04,
+          "badShape": false,
+          "usd": 0.00000995
+        }
+      ]
+    },
+    {
+      "id": "syn-imp-paper-table",
+      "kind": "implicit",
+      "origin": "synthetic",
+      "expected": "paper-distillation",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "paper-distillation"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:paper-distillation",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [
+          "paper-distillation"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:paper-distillation",
+        "totalCount": 1,
+        "suppressed": false
+      },
+      "judge": [
+        {
+          "choice": "skill:paper-distillation",
+          "confidence": 1,
+          "needSkill": 0.97,
+          "needNow": 0.89,
+          "noneOfRoster": 0.05,
+          "badShape": false,
+          "usd": 0.00001
+        },
+        {
+          "choice": "skill:paper-distillation",
+          "confidence": 1,
+          "needSkill": 0.98,
+          "needNow": 0.89,
+          "noneOfRoster": 0.05,
+          "badShape": false,
+          "usd": 0.00001
+        }
+      ]
+    },
+    {
+      "id": "syn-imp-house-disk",
+      "kind": "implicit",
+      "origin": "synthetic",
+      "expected": "computer-housekeeper",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "computer-housekeeper"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:computer-housekeeper",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [
+          "computer-housekeeper"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:computer-housekeeper",
+        "totalCount": 1,
+        "suppressed": false
+      },
+      "judge": [
+        {
+          "choice": "skill:computer-housekeeper",
+          "confidence": 1,
+          "needSkill": 0.98,
+          "needNow": 0.93,
+          "noneOfRoster": 0.03,
+          "badShape": false,
+          "usd": 0.00001
+        },
+        {
+          "choice": "skill:computer-housekeeper",
+          "confidence": 1,
+          "needSkill": 0.98,
+          "needNow": 0.92,
+          "noneOfRoster": 0.03,
+          "badShape": false,
+          "usd": 0.00001
+        }
+      ]
+    },
+    {
+      "id": "syn-imp-house-net",
+      "kind": "implicit",
+      "origin": "synthetic",
+      "expected": "computer-housekeeper",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "computer-housekeeper"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:computer-housekeeper",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [
+          "computer-housekeeper"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:computer-housekeeper",
+        "totalCount": 1,
+        "suppressed": false
+      },
+      "judge": [
+        {
+          "choice": "skill:computer-housekeeper",
+          "confidence": 1,
+          "needSkill": 0.98,
+          "needNow": 0.91,
+          "noneOfRoster": 0.03,
+          "badShape": false,
+          "usd": 0.00001004
+        },
+        {
+          "choice": "skill:computer-housekeeper",
+          "confidence": 1,
+          "needSkill": 0.98,
+          "needNow": 0.91,
+          "noneOfRoster": 0.03,
+          "badShape": false,
+          "usd": 0.00001004
+        }
+      ]
+    },
+    {
+      "id": "syn-imp-analysis-weekly",
+      "kind": "implicit",
+      "origin": "synthetic",
+      "expected": "data-analysis-helper",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "data-analysis-helper"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:data-analysis-helper",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [
+          "data-analysis-helper"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:data-analysis-helper",
+        "totalCount": 1,
+        "suppressed": false
+      },
+      "judge": [
+        {
+          "choice": "skill:data-analysis-helper",
+          "confidence": 1,
+          "needSkill": 0.97,
+          "needNow": 0.86,
+          "noneOfRoster": 0.06,
+          "badShape": false,
+          "usd": 0.00001021
+        },
+        {
+          "choice": "skill:data-analysis-helper",
+          "confidence": 1,
+          "needSkill": 0.97,
+          "needNow": 0.87,
+          "noneOfRoster": 0.05,
+          "badShape": false,
+          "usd": 0.00001021
+        }
+      ]
+    },
+    {
+      "id": "syn-imp-analysis-channel",
+      "kind": "implicit",
+      "origin": "synthetic",
+      "expected": "data-analysis-helper",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "data-analysis-helper"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:data-analysis-helper",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [
+          "data-analysis-helper"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:data-analysis-helper",
+        "totalCount": 1,
+        "suppressed": false
+      },
+      "judge": [
+        {
+          "choice": "skill:data-analysis-helper",
+          "confidence": 1,
+          "needSkill": 0.97,
+          "needNow": 0.86,
+          "noneOfRoster": 0.04,
+          "badShape": false,
+          "usd": 0.00001012
+        },
+        {
+          "choice": "skill:data-analysis-helper",
+          "confidence": 1,
+          "needSkill": 0.98,
+          "needNow": 0.87,
+          "noneOfRoster": 0.04,
+          "badShape": false,
+          "usd": 0.00001012
+        }
+      ]
+    },
+    {
+      "id": "syn-imp-ocr-receipt",
+      "kind": "implicit",
+      "origin": "synthetic",
+      "expected": "image-ocr-search",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "image-ocr-search"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:image-ocr-search",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [
+          "image-ocr-search"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:image-ocr-search",
+        "totalCount": 1,
+        "suppressed": false
+      },
+      "judge": [
+        {
+          "choice": "skill:image-ocr-search",
+          "confidence": 1,
+          "needSkill": 0.97,
+          "needNow": 0.91,
+          "noneOfRoster": 0.07,
+          "badShape": false,
+          "usd": 0.00000966
+        },
+        {
+          "choice": "skill:image-ocr-search",
+          "confidence": 1,
+          "needSkill": 0.97,
+          "needNow": 0.91,
+          "noneOfRoster": 0.07,
+          "badShape": false,
+          "usd": 0.00000966
+        }
+      ]
+    },
+    {
+      "id": "syn-imp-brainstorm-cafe",
+      "kind": "implicit",
+      "origin": "synthetic",
+      "expected": "brainstorm",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "brainstorm"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:brainstorm",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [
+          "brainstorm"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:brainstorm",
+        "totalCount": 1,
+        "suppressed": false
+      },
+      "judge": [
+        {
+          "choice": "skill:brainstorm",
+          "confidence": 1,
+          "needSkill": 0.93,
+          "needNow": 0.79,
+          "noneOfRoster": 0.12,
+          "badShape": false,
+          "usd": 0.00000844
+        },
+        {
+          "choice": "skill:brainstorm",
+          "confidence": 1,
+          "needSkill": 0.93,
+          "needNow": 0.79,
+          "noneOfRoster": 0.11,
+          "badShape": false,
+          "usd": 0.00000844
+        }
+      ]
+    },
+    {
+      "id": "syn-imp-debug-flake",
+      "kind": "implicit",
+      "origin": "synthetic",
+      "expected": "debug",
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "debug"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:debug",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [
+          "debug"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:debug",
+        "totalCount": 1,
+        "suppressed": false
+      },
+      "judge": [
+        {
+          "choice": "skill:debug",
+          "confidence": 1,
+          "needSkill": 0.95,
+          "needNow": 0.77,
+          "noneOfRoster": 0.08,
+          "badShape": false,
+          "usd": 0.00000848
+        },
+        {
+          "choice": "skill:debug",
+          "confidence": 1,
+          "needSkill": 0.96,
+          "needNow": 0.78,
+          "noneOfRoster": 0.08,
+          "badShape": false,
+          "usd": 0.00000848
+        }
+      ]
+    },
+    {
+      "id": "syn-neg-adj-contract-translate",
+      "kind": "negative",
+      "origin": "synthetic",
+      "expected": null,
+      "adjacent": true,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "contract-review"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:contract-review",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": "skill:contract-review",
+        "totalCount": 1,
+        "suppressed": true
+      },
+      "judge": [
+        {
+          "choice": "skill:contract-review",
+          "confidence": 1,
+          "needSkill": 0.23,
+          "needNow": 0.38,
+          "noneOfRoster": 0.74,
+          "badShape": false,
+          "usd": 0.00000983
+        }
+      ]
+    },
+    {
+      "id": "syn-neg-adj-meeting-lunch",
+      "kind": "negative",
+      "origin": "synthetic",
+      "expected": null,
+      "adjacent": true,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "meeting-summary"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:meeting-summary",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": "skill:meeting-summary",
+        "totalCount": 1,
+        "suppressed": true
+      },
+      "judge": [
+        {
+          "choice": "skill:meeting-summary",
+          "confidence": 1,
+          "needSkill": 0.07,
+          "needNow": 0.09,
+          "noneOfRoster": 0.88,
+          "badShape": false,
+          "usd": 0.00001004
+        }
+      ]
+    },
+    {
+      "id": "syn-neg-adj-excel-font",
+      "kind": "negative",
+      "origin": "synthetic",
+      "expected": null,
+      "adjacent": true,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "xlsx"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:xlsx",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": "skill:xlsx",
+        "totalCount": 1,
+        "suppressed": true
+      },
+      "judge": [
+        {
+          "choice": "skill:xlsx",
+          "confidence": 1,
+          "needSkill": 0.03,
+          "needNow": 0.06,
+          "noneOfRoster": 0.94,
+          "badShape": false,
+          "usd": 0.00000911
+        }
+      ]
+    },
+    {
+      "id": "syn-neg-adj-paper-cake",
+      "kind": "negative",
+      "origin": "synthetic",
+      "expected": null,
+      "adjacent": true,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "paper-distillation"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:paper-distillation",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": "skill:paper-distillation",
+        "totalCount": 1,
+        "suppressed": true
+      },
+      "judge": [
+        {
+          "choice": "skill:paper-distillation",
+          "confidence": 1,
+          "needSkill": 0.41,
+          "needNow": 0.42,
+          "noneOfRoster": 0.62,
+          "badShape": false,
+          "usd": 0.00000991
+        }
+      ]
+    },
+    {
+      "id": "syn-neg-adj-clean-kitchen",
+      "kind": "negative",
+      "origin": "synthetic",
+      "expected": null,
+      "adjacent": true,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "data-cleaning"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:data-cleaning",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": "skill:data-cleaning",
+        "totalCount": 1,
+        "suppressed": true
+      },
+      "judge": [
+        {
+          "choice": "skill:data-cleaning",
+          "confidence": 1,
+          "needSkill": 0.02,
+          "needNow": 0.05,
+          "noneOfRoster": 0.97,
+          "badShape": false,
+          "usd": 0.00000916
+        }
+      ]
+    },
+    {
+      "id": "syn-neg-adj-docker-story",
+      "kind": "negative",
+      "origin": "synthetic",
+      "expected": null,
+      "adjacent": true,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "docker"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:docker",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": "skill:docker",
+        "totalCount": 1,
+        "suppressed": true
+      },
+      "judge": [
+        {
+          "choice": "skill:docker",
+          "confidence": 1,
+          "needSkill": 0.05,
+          "needNow": 0.06,
+          "noneOfRoster": 0.88,
+          "badShape": false,
+          "usd": 0.00000815
+        }
+      ]
+    },
+    {
+      "id": "syn-neg-adj-commit-poem",
+      "kind": "negative",
+      "origin": "synthetic",
+      "expected": null,
+      "adjacent": true,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "commit"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:commit",
+        "totalCount": 2
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": "skill:commit",
+        "totalCount": 2,
+        "suppressed": true
+      },
+      "judge": [
+        {
+          "choice": "skill:commit",
+          "confidence": 0.03,
+          "needSkill": 0.07,
+          "needNow": 0.11,
+          "noneOfRoster": 0.89,
+          "badShape": false,
+          "usd": 0.00000995
+        }
+      ]
+    },
+    {
+      "id": "syn-neg-adj-review-blurb",
+      "kind": "negative",
+      "origin": "synthetic",
+      "expected": null,
+      "adjacent": true,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [
+          "review"
+        ],
+        "rawLoadedTools": [],
+        "top": "skill:review",
+        "totalCount": 1
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": "skill:review",
+        "totalCount": 1,
+        "suppressed": true
+      },
+      "judge": [
+        {
+          "choice": "skill:review",
+          "confidence": 1,
+          "needSkill": 0.06,
+          "needNow": 0.09,
+          "noneOfRoster": 0.83,
+          "badShape": false,
+          "usd": 0.00000815
+        }
+      ]
+    },
+    {
+      "id": "syn-neg-birthday",
+      "kind": "negative",
+      "origin": "synthetic",
+      "expected": null,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0,
+        "suppressed": false
+      },
+      "judge": []
+    },
+    {
+      "id": "syn-neg-menu",
+      "kind": "negative",
+      "origin": "synthetic",
+      "expected": null,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0,
+        "suppressed": false
+      },
+      "judge": []
+    },
+    {
+      "id": "syn-neg-lunch",
+      "kind": "negative",
+      "origin": "synthetic",
+      "expected": null,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0,
+        "suppressed": false
+      },
+      "judge": []
+    },
+    {
+      "id": "syn-neg-checkers",
+      "kind": "negative",
+      "origin": "synthetic",
+      "expected": null,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0,
+        "suppressed": false
+      },
+      "judge": []
+    },
+    {
+      "id": "syn-neg-plant",
+      "kind": "negative",
+      "origin": "synthetic",
+      "expected": null,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0,
+        "suppressed": false
+      },
+      "judge": []
+    },
+    {
+      "id": "syn-neg-riddle",
+      "kind": "negative",
+      "origin": "synthetic",
+      "expected": null,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0,
+        "suppressed": false
+      },
+      "judge": []
+    },
+    {
+      "id": "syn-neg-umbrella",
+      "kind": "negative",
+      "origin": "synthetic",
+      "expected": null,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0,
+        "suppressed": false
+      },
+      "judge": []
+    },
+    {
+      "id": "syn-neg-recipe",
+      "kind": "negative",
+      "origin": "synthetic",
+      "expected": null,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0,
+        "suppressed": false
+      },
+      "judge": []
+    },
+    {
+      "id": "syn-neg-gift",
+      "kind": "negative",
+      "origin": "synthetic",
+      "expected": null,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": "AgentSpawn",
+        "totalCount": 2
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": "AgentSpawn",
+        "totalCount": 2,
+        "suppressed": true
+      },
+      "judge": [
+        {
+          "choice": "RequestDesignAutonomy",
+          "confidence": 0.03,
+          "needSkill": 0.13,
+          "needNow": 0.38,
+          "noneOfRoster": 0.78,
+          "badShape": false,
+          "usd": 0.00000979
+        }
+      ]
+    },
+    {
+      "id": "syn-neg-music",
+      "kind": "negative",
+      "origin": "synthetic",
+      "expected": null,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0,
+        "suppressed": false
+      },
+      "judge": []
+    },
+    {
+      "id": "syn-neg-season",
+      "kind": "negative",
+      "origin": "synthetic",
+      "expected": null,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0,
+        "suppressed": false
+      },
+      "judge": []
+    },
+    {
+      "id": "syn-chat-hello",
+      "kind": "chitchat",
+      "origin": "synthetic",
+      "expected": null,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0,
+        "suppressed": false
+      },
+      "judge": []
+    },
+    {
+      "id": "syn-chat-thanks",
+      "kind": "chitchat",
+      "origin": "synthetic",
+      "expected": null,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0,
+        "suppressed": false
+      },
+      "judge": []
+    },
+    {
+      "id": "syn-chat-weekend",
+      "kind": "chitchat",
+      "origin": "synthetic",
+      "expected": null,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0,
+        "suppressed": false
+      },
+      "judge": []
+    },
+    {
+      "id": "syn-chat-mood",
+      "kind": "chitchat",
+      "origin": "synthetic",
+      "expected": null,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0,
+        "suppressed": false
+      },
+      "judge": []
+    },
+    {
+      "id": "syn-chat-joke",
+      "kind": "chitchat",
+      "origin": "synthetic",
+      "expected": null,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0,
+        "suppressed": false
+      },
+      "judge": []
+    },
+    {
+      "id": "syn-chat-bye",
+      "kind": "chitchat",
+      "origin": "synthetic",
+      "expected": null,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0,
+        "suppressed": false
+      },
+      "judge": []
+    },
+    {
+      "id": "syn-chat-sun",
+      "kind": "chitchat",
+      "origin": "synthetic",
+      "expected": null,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0,
+        "suppressed": false
+      },
+      "judge": []
+    },
+    {
+      "id": "syn-chat-how",
+      "kind": "chitchat",
+      "origin": "synthetic",
+      "expected": null,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0,
+        "suppressed": false
+      },
+      "judge": []
+    },
+    {
+      "id": "syn-chat-ok",
+      "kind": "chitchat",
+      "origin": "synthetic",
+      "expected": null,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0,
+        "suppressed": false
+      },
+      "judge": []
+    },
+    {
+      "id": "syn-chat-haha",
+      "kind": "chitchat",
+      "origin": "synthetic",
+      "expected": null,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0,
+        "suppressed": false
+      },
+      "judge": []
+    },
+    {
+      "id": "syn-chat-morning",
+      "kind": "chitchat",
+      "origin": "synthetic",
+      "expected": null,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0,
+        "suppressed": false
+      },
+      "judge": []
+    },
+    {
+      "id": "syn-chat-water",
+      "kind": "chitchat",
+      "origin": "synthetic",
+      "expected": null,
+      "regressed": false,
+      "K": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0
+      },
+      "J": {
+        "loadedSkills": [],
+        "rawLoadedTools": [],
+        "top": null,
+        "totalCount": 0,
+        "suppressed": false
+      },
+      "judge": []
+    }
+  ]
+}

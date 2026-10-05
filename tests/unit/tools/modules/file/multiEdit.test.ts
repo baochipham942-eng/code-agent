@@ -12,6 +12,11 @@ vi.mock('../../../../../src/host/tools/lsp/diagnosticsHelper', () => ({
 import { editModule } from '../../../../../src/host/tools/modules/file/multiEdit';
 import { readModule } from '../../../../../src/host/tools/modules/file/read';
 
+/** Spec copy of the escape sentence. Do not import the production helper: a blank helper would still satisfy toContain(''). */
+function expectedReadThenRetryHint(toolName: 'Write' | 'Edit', absPath: string): string {
+  return `To proceed: call Read with {"file_path": ${JSON.stringify(absPath)}} (no other arguments), then repeat this exact ${toolName} call.`;
+}
+
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
@@ -328,11 +333,47 @@ describe('multiEditModule evidence metadata', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.code).toBe('STALE_FILE');
+      expect(result.error).toContain('Re-read the file to see the current content.');
+      expect(result.error).toContain(expectedReadThenRetryHint('Edit', file));
       expect(result.meta?.modification).toMatchObject({
         digestChanged: true,
       });
     }
     expect(await fs.readFile(file, 'utf-8')).toBe('xyz');
+  });
+
+  it('rejects an unread file with the exact Read call and keeps the force bypass after it', async () => {
+    const file = path.join(tmpDir, 'unread edit', 'quote"name.txt');
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, 'alpha', 'utf-8');
+
+    const handler = await editModule.createHandler();
+    const result = await handler.execute(
+      {
+        file_path: file,
+        edits: [{ old_text: 'alpha', new_text: 'beta' }],
+      },
+      makeCtx(),
+      allowAll,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe('NOT_READ');
+    expect(result.meta).toBeUndefined();
+    const hint = expectedReadThenRetryHint('Edit', file);
+    expect(result.error).toContain(
+      'File must be read before editing. Use Read first to view the current content, then make your edit.',
+    );
+    expect(result.error).toContain(hint);
+    expect(result.error).toContain('(Use force: true with force_reason to bypass this check)');
+    expect(result.error.indexOf(hint)).toBeLessThan(
+      result.error.indexOf('(Use force: true with force_reason to bypass this check)'),
+    );
+    expect(result.error).toContain('\\"');
+    const embedded = result.error.match(/call Read with (\{.*?\}) \(no other arguments\)/);
+    expect(JSON.parse(embedded?.[1] ?? '{}')).toEqual({ file_path: file });
+    expect(await fs.readFile(file, 'utf-8')).toBe('alpha');
   });
 
   it('requires a force_reason when force bypasses edit safety', async () => {

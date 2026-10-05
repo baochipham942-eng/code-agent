@@ -60,7 +60,8 @@ export interface ModelQuotaFailureMarker {
   model?: string;
 }
 
-export type ModelReasoningEffort = 'low' | 'medium' | 'high';
+/** Catalogue reasoning effort. `ultra_code` stays a UI-only effort and is not a model level. */
+export type ModelReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 /** 模型原生 thinking 控制形态；调用方必须按 kind 渲染和写入对应参数。 */
 export type ModelThinkingCapability =

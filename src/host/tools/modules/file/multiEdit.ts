@@ -36,6 +36,7 @@ import {
 import { atomicWriteFile } from '../../utils/atomicWrite';
 import { existingFileWriteRefusal } from '../../utils/textEncodingGuard';
 import { buildNearestAnchorHint } from '../../utils/anchorHint';
+import { readThenRetryHint } from '../../utils/readBeforeMutateHint';
 import { findFlexibleMatch } from '../../utils/editReplacers';
 import { getResourceLockManager } from '../../../services/infra/resourceLockManager';
 import { getPostEditDiagnostics } from '../../lsp/diagnosticsHelper';
@@ -145,7 +146,9 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
         ok: false,
         error:
           'File must be read before editing. Use Read first to view the current content, ' +
-          'then make your edit. (Use force: true with force_reason to bypass this check)',
+          'then make your edit. ' +
+          readThenRetryHint('Edit', filePath) +
+          ' (Use force: true with force_reason to bypass this check)',
         code: 'NOT_READ',
       };
     }
@@ -190,7 +193,7 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
         if (modCheck.modified) {
           return {
             ok: false,
-            error: `${modCheck.message}. Re-read the file to see the current content.`,
+            error: `${modCheck.message}. Re-read the file to see the current content. ${readThenRetryHint('Edit', filePath)}`,
             code: 'STALE_FILE',
             meta: {
               modification: modCheck.details,

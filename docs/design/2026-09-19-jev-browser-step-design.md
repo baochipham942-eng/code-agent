@@ -529,8 +529,7 @@ export function resolveBrowserJevStep(deps?: {
   onWarn?: (msg: string) => void;
 }): JevBrowserStepDriver | undefined {
   if (!isBrowserJevStepEnabled()) return undefined;
-  const apiKey = resolveProviderApiKey({ provider: 'typesafe', model: JEV_MODEL });
-  if (!apiKey) {
+  if (resolveJevRoute() === null) {
     console.warn(BROWSER_JEV_MISSING_KEY_WARN);
     deps?.onWarn?.(BROWSER_JEV_MISSING_KEY_WARN);
     return undefined; // 缺 key = 未装配，click/type 与关开关逐字节一致

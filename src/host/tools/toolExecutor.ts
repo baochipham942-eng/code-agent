@@ -35,7 +35,8 @@ import {
 import type { SkillToolBoundary } from '../../shared/contract/agentSkill';
 import type { NeoTagRunContext } from '../../shared/contract/tag';
 import type { SwarmRunScope } from '../../shared/contract/swarm';
-import { createTraceBuilder, createTraceStep } from '../security/decisionTraceBuilder';
+import { createTraceBuilder } from '../security/decisionTraceBuilder';
+import { denyConcreteShellWritePath } from './shell/writePathPolicyDeny';
 import { getPluginIdForTool, getPluginOriginForTool } from '../plugins/pluginToolOrigin';
 import { getWriteIsolationManager, getWriteIsolationScope, type WriteIsolationMetadata } from '../security/writeIsolation';
 import type { HookManager } from '../hooks/hookManager';
@@ -53,6 +54,7 @@ import {
   CLASSIFIER_ERROR_TRACE_RULE,
   INJECTED_PERMISSION_HANDLER_TRACE_RULE,
   commandAnalysisDenialError,
+  commandAnalysisRepeatDenialError,
   peerOriginUnattendedDenialError,
   peermsgLaunderDenialError,
   permissionDenialError,
@@ -204,30 +206,14 @@ function shellWritePathPolicyCheck(
       targetPath = expanded;
     }
     const resolved = resolveShellTarget(targetPath, workingDirectory);
-    if (policyEnforcer?.isActive) {
-      const policyCheck = policyEnforcer.checkFilePath(resolved, 'write');
-      if (!policyCheck.allowed) return { kind: 'deny', check: policyCheck };
-    }
-
-    const relative = nodePath.relative(workingDirectory, resolved) || '.';
-    const homeRelative = nodePath.relative(nodeOs.homedir(), resolved);
-    const candidates = [target.path, targetPath, resolved, relative];
-    if (homeRelative && !homeRelative.startsWith('..') && !nodePath.isAbsolute(homeRelative)) {
-      candidates.push(`~/${homeRelative}`);
-    }
-    const matchedRule = getPolicyEngine().matchUserPathDeny(candidates);
-    if (matchedRule) {
-      const reason = `Shell write target "${target.path}" is denied by ${matchedRule.name}`;
-      return {
-        kind: 'deny',
-        check: {
-          allowed: false,
-          reason,
-          section: 'user-permissions',
-          traceStep: createTraceStep('policy_enforcer', matchedRule.id, 'deny', reason, Date.now()),
-        },
-      };
-    }
+    const denied = denyConcreteShellWritePath({
+      resolvedPath: resolved,
+      workingDirectory,
+      policyEnforcer,
+      pathCandidates: [target.path, targetPath],
+      displayPath: target.path,
+    });
+    if (denied) return { kind: 'deny', check: denied };
   }
   if (unresolved.length > 0 && hasConfiguredWritePathDeny(policyEnforcer)) {
     return { kind: 'ask', uncertain: unresolved };
@@ -963,7 +949,7 @@ export class ToolExecutor {
           ? getPermissionModeManager().rememberCommandAnalysisFailure(effectiveSessionId, fingerprint)
           : false;
         if (repeated) {
-          const hostReason = commandAnalysisDenialError(executionToolName);
+          const hostReason = commandAnalysisRepeatDenialError(executionToolName);
           const error = hostReason.modelText;
           logger.warn('Repeated unanalyzable command denied before permission request', {
             tool: executionToolName,
@@ -1362,6 +1348,8 @@ export class ToolExecutor {
     // deny 不可被任何后续层推翻（skill 预授权 / 安全命令白名单 / classifier / 用户审批）。
     // 无 policy 文件时 getPolicyEnforcer 返回 null，零开销。
     const policyEnforcer = getPolicyEnforcer(resolveCanonicalRunPath(this.runtimeWorkspace));
+    // 扩权检查发生在整条命令跑完之后，期间别的工作区会改绑单例：把本次绑定的实例钉进 ctx。
+    context.policyEnforcer = policyEnforcer;
     const shellPathCheck = isBashToolName(policyToolName) && typeof params.command === 'string'
       ? shellWritePathPolicyCheck(params.command, bashWorkingDirectory, policyEnforcer)
       : { kind: 'allow' as const };

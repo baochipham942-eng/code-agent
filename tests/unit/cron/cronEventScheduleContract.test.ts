@@ -72,6 +72,8 @@ function createSchema(db: BetterSqlite3.Database): void {
       action TEXT NOT NULL,
       runs_on TEXT NOT NULL,
       max_run_budget REAL,
+      max_runs INTEGER,
+      run_count INTEGER NOT NULL DEFAULT 0,
       min_interval_seconds INTEGER NOT NULL DEFAULT 60,
       result_channel TEXT,
       cloud_job_id TEXT,
@@ -243,6 +245,35 @@ describe('执行记录 trigger 落库重载（⑥）', () => {
     expect(eventRun?.trigger?.accountId).toBe('acc-1');
     expect(eventRun?.trigger?.eventCount).toBe(3);
     expect(scheduleRun?.trigger).toBeUndefined();
+  });
+
+  it('监听标记 trigger.listen 落库重载后保留（N-TRIGGER-GROUP-LISTEN ④）', async () => {
+    await saveCronJob(normalizeCronJobRow(eventJobRow())!);
+    await saveCronExecution({
+      ...executionWithTrigger(),
+      id: 'exec-listen-1',
+      trigger: {
+        kind: 'event',
+        source: 'channel',
+        accountId: 'acc-1',
+        eventCount: 2,
+        droppedCount: 0,
+        eventIds: ['m1', 'm2'],
+        listen: true,
+      },
+    });
+
+    const reloaded = loadCronExecutionsByJob('job-event-1', 10);
+    const listenRun = reloaded.find((item) => item.id === 'exec-listen-1');
+    expect(listenRun?.trigger).toEqual({
+      kind: 'event',
+      source: 'channel',
+      accountId: 'acc-1',
+      eventCount: 2,
+      droppedCount: 0,
+      eventIds: ['m1', 'm2'],
+      listen: true,
+    });
   });
 
   it('坏 trigger_json 行按无 trigger 处理，不炸整页', async () => {

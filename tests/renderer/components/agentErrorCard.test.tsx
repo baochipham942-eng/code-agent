@@ -314,6 +314,26 @@ describe('AgentErrorCard', () => {
     renderCard(makeError({ category: 'auth', httpStatus: 401 }));
     expect(screen.getByRole('button', { name: '复制错误报告' })).toBeTruthy();
   });
+
+  it('interrupted 显示「已中断」和重试，不提供换模型或检查账号，且 en 文案齐全', () => {
+    renderCard(makeError({
+      category: 'interrupted',
+      code: 'RUN_INTERRUPTED',
+      httpStatus: undefined,
+      rawMessage: 'run interrupted by signal',
+    }));
+
+    expect(screen.getByText('已中断')).toBeTruthy();
+    expect(screen.getByText('这次运行在给出任何回复之前被停掉了。可以重试。')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /重试/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /切换模型/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /检查账号/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /新开会话/ })).toBeNull();
+    expect(en.agentError.categories.interrupted).toEqual({
+      title: 'Interrupted',
+      suggestion: 'This run was stopped before any reply. You can retry.',
+    });
+  });
 });
 
 describe('resolveAgentErrorCopy / buildAgentErrorReport', () => {

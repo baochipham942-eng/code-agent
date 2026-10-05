@@ -13,6 +13,8 @@ import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../../src/shared/contract';
+
+vi.mock('fs/promises', async (importOriginal) => ({ ...await importOriginal<typeof import('fs/promises')>(), readFile: vi.fn() }));
 import {
   CompressionPipeline,
   setCompressionPipelineOverride,
@@ -107,10 +109,8 @@ vi.mock('../../../src/host/lightMemory/recentConversations', () => ({
 }));
 
 vi.mock('../../../src/host/lightMemory/indexLoader', async (importOriginal) => ({
-  // listMemoryIndexTargets 用真实实现：memory_injected 的 entries 由它算出，替身会把被测对象也 mock 掉
-  listMemoryIndexTargets: (await importOriginal<typeof import('../../../src/host/lightMemory/indexLoader')>())
-    .listMemoryIndexTargets,
-  loadMemoryIndex: vi.fn().mockResolvedValue(null),
+  ...(await importOriginal<typeof import('../../../src/host/lightMemory/indexLoader')>()),
+  loadMemoryIndexForSession: vi.fn().mockResolvedValue(null),
 }));
 
 // GAP-005: messageBuild 注入 failure journal 的依赖
@@ -247,6 +247,8 @@ vi.mock('../../../src/shared/constants', async (importOriginal) => ({
 vi.mock('../../../src/host/agent/toolExecution/parallelStrategy', () => ({
   isParallelSafeTool: vi.fn(),
   classifyToolCalls: vi.fn(),
+  executeOrderedSegments: vi.fn(),
+  toolBatchLabel: (name: string) => name,
 }));
 
 vi.mock('../../../src/host/agent/toolExecution/circuitBreaker', () => ({
@@ -364,7 +366,7 @@ import { buildEnhancedSystemPrompt, injectWorkingDirectoryContext } from '../../
 import { getPromptForTask } from '../../../src/host/prompts/builder';
 import { needsArtifactTaskBrief, needsGenerativeUI } from '../../../src/host/prompts/builder';
 import { buildSessionMetadataBlock } from '../../../src/host/lightMemory/sessionMetadata';
-import { loadMemoryIndex } from '../../../src/host/lightMemory/indexLoader';
+import { loadMemoryIndexForSession } from '../../../src/host/lightMemory/indexLoader';
 import { buildRecentConversationsBlock } from '../../../src/host/lightMemory/recentConversations';
 import { loadRelevantSkills, buildSkillInjectionBlock } from '../../../src/host/lightMemory/skillLoader';
 import { getRepoMap } from '../../../src/host/context/repoMap';
@@ -520,8 +522,8 @@ beforeEach(() => {
   vi.mocked(injectWorkingDirectoryContext).mockImplementation((prompt: string) => prompt);
   vi.mocked(buildSessionMetadataBlock).mockReset();
   vi.mocked(buildSessionMetadataBlock).mockResolvedValue('');
-  vi.mocked(loadMemoryIndex).mockReset();
-  vi.mocked(loadMemoryIndex).mockResolvedValue(null);
+  vi.mocked(loadMemoryIndexForSession).mockReset();
+  vi.mocked(loadMemoryIndexForSession).mockResolvedValue(null);
   vi.mocked(loadRelevantSkills).mockReset();
   vi.mocked(loadRelevantSkills).mockResolvedValue({
     fullSkills: [],
@@ -854,7 +856,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
   });
 
   it('keeps memory_index in the stable system prefix for a query without memory keywords', async () => {
-    vi.mocked(loadMemoryIndex).mockResolvedValueOnce('- [Project]: Keep memory audit visible');
+    vi.mocked(loadMemoryIndexForSession).mockResolvedValueOnce('- [Project]: Keep memory audit visible');
     const ctx = buildRuntimeContext({
       sessionId: 'session-memory-index',
       messages: [
@@ -883,7 +885,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
   });
 
   it('does not emit memory_hint or recent conversations for a normal turn', async () => {
-    vi.mocked(loadMemoryIndex).mockResolvedValueOnce('- [Project]: Always available');
+    vi.mocked(loadMemoryIndexForSession).mockResolvedValueOnce('- [Project]: Always available');
     vi.mocked(buildRecentConversationsBlock).mockResolvedValueOnce('- must not inject');
     const ctx = buildRuntimeContext({
       sessionId: 'session-memory-no-hint',
@@ -906,7 +908,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
 
   it('keeps memoryMode off from loading the memory index', async () => {
     const query = '那个东西咱们再推进一版';
-    vi.mocked(loadMemoryIndex).mockResolvedValueOnce('- should stay hidden');
+    vi.mocked(loadMemoryIndexForSession).mockResolvedValueOnce('- should stay hidden');
     vi.mocked(buildRecentConversationsBlock).mockResolvedValueOnce('- should stay hidden');
     const ctx = buildRuntimeContext({
       memoryMode: 'off',
@@ -917,7 +919,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
     const modelMessages = await new ContextAssembly(ctx as never).buildModelMessages();
     const allContent = modelMessages.map((message) => String(message.content)).join('\n');
 
-    expect(loadMemoryIndex).not.toHaveBeenCalled();
+    expect(loadMemoryIndexForSession).not.toHaveBeenCalled();
     expect(buildRecentConversationsBlock).not.toHaveBeenCalled();
     expect(allContent).not.toContain('<memory_index>');
     expect(allContent).not.toContain('<memory_hint>');
@@ -1048,7 +1050,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
     vi.mocked(getPromptForTask).mockReturnValueOnce('base '.repeat(4800));
     vi.mocked(needsGenerativeUI).mockReturnValueOnce(true);
     vi.mocked(buildSessionMetadataBlock).mockResolvedValueOnce(`<session_metadata>${'session '.repeat(300)}</session_metadata>`);
-    vi.mocked(loadMemoryIndex).mockResolvedValueOnce(`<memory_index>${'memory '.repeat(300)}</memory_index>`);
+    vi.mocked(loadMemoryIndexForSession).mockResolvedValueOnce(`<memory_index>${'memory '.repeat(300)}</memory_index>`);
     vi.mocked(loadRelevantSkills).mockResolvedValueOnce({
       fullSkills: [{
         filename: 'skill_big.md',
@@ -1114,7 +1116,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
     expect(modelMessages[0].content).not.toContain('<deferred-tools>');
     expect(estimateTokens(modelMessages[0].content as string)).toBeLessThanOrEqual(MAX_SYSTEM_PROMPT_TOKENS);
     expect(buildSessionMetadataBlock).not.toHaveBeenCalled();
-    expect(loadMemoryIndex).not.toHaveBeenCalled();
+    expect(loadMemoryIndexForSession).not.toHaveBeenCalled();
     expect(getRepoMap).not.toHaveBeenCalled();
     expect(buildRecentConversationsBlock).not.toHaveBeenCalled();
     expect(getDeferredToolsSummary).not.toHaveBeenCalled();
@@ -1150,7 +1152,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
     vi.mocked(getPromptForTask).mockReturnValueOnce('base '.repeat(5400));
     vi.mocked(needsArtifactTaskBrief).mockReturnValue(false);
     vi.mocked(buildSessionMetadataBlock).mockResolvedValueOnce(`<session_metadata>${'session '.repeat(220)}</session_metadata>`);
-    vi.mocked(loadMemoryIndex).mockResolvedValueOnce(`<memory_index>${'memory '.repeat(220)}</memory_index>`);
+    vi.mocked(loadMemoryIndexForSession).mockResolvedValueOnce(`<memory_index>${'memory '.repeat(220)}</memory_index>`);
     vi.mocked(loadRelevantSkills).mockResolvedValueOnce({
       fullSkills: [{
         filename: 'game_skill.md',
@@ -1213,7 +1215,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
     expect(systemPrompt).not.toContain('<recent_conversations>');
     expect(systemPrompt).not.toContain('<deferred-tools>');
     expect(buildSessionMetadataBlock).not.toHaveBeenCalled();
-    expect(loadMemoryIndex).not.toHaveBeenCalled();
+    expect(loadMemoryIndexForSession).not.toHaveBeenCalled();
     expect(loadRelevantSkills).not.toHaveBeenCalled();
     expect(getRepoMap).not.toHaveBeenCalled();
     expect(buildRecentConversationsBlock).not.toHaveBeenCalled();
@@ -1654,7 +1656,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
   it('keeps normal code task prompt block injection unchanged', async () => {
     vi.mocked(needsArtifactTaskBrief).mockReturnValue(false);
     vi.mocked(buildSessionMetadataBlock).mockResolvedValueOnce('<session_metadata>normal</session_metadata>');
-    vi.mocked(loadMemoryIndex).mockResolvedValueOnce('<memory_index>normal memory</memory_index>');
+    vi.mocked(loadMemoryIndexForSession).mockResolvedValueOnce('<memory_index>normal memory</memory_index>');
     vi.mocked(loadRelevantSkills).mockResolvedValueOnce({
       fullSkills: [{
         filename: 'perf.md',
@@ -1725,11 +1727,11 @@ describe('ContextAssembly.buildModelMessages()', () => {
     });
 
     vi.mocked(buildEnhancedSystemPrompt).mockClear();
-    vi.mocked(loadMemoryIndex).mockClear();
+    vi.mocked(loadMemoryIndexForSession).mockClear();
     vi.mocked(loadRelevantSkills).mockClear();
     vi.mocked(getRepoMap).mockClear();
     vi.mocked(buildRecentConversationsBlock).mockClear();
-    vi.mocked(loadMemoryIndex).mockResolvedValue('memory index');
+    vi.mocked(loadMemoryIndexForSession).mockResolvedValue('memory index');
     vi.mocked(loadRelevantSkills).mockResolvedValue({
       fullSkills: [{
         filename: 'skill_perf.md',
@@ -1825,6 +1827,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
       enableSnip: false,
       enableMicrocompact: false,
       enableContextCollapse: false,
+      // test-model is an unknown model and resolves to the 128K fallback window: round(128K / 64) = 2000.
       toolResultBudget: 2000,
       activeToolResultPrune: { enabled: false },
     });
@@ -1851,7 +1854,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
     await assembly.buildModelMessages();
 
     expect(buildEnhancedSystemPrompt).toHaveBeenCalledTimes(1);
-    expect(loadMemoryIndex).toHaveBeenCalledTimes(1);
+    expect(loadMemoryIndexForSession).toHaveBeenCalledTimes(1);
     expect(loadRelevantSkills).toHaveBeenCalledTimes(1);
     expect(getRepoMap).toHaveBeenCalledTimes(1);
     expect(evaluate).toHaveBeenCalledTimes(1);
@@ -1860,7 +1863,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
     await assembly.buildModelMessages();
 
     expect(buildEnhancedSystemPrompt).toHaveBeenCalledTimes(1);
-    expect(loadMemoryIndex).toHaveBeenCalledTimes(1);
+    expect(loadMemoryIndexForSession).toHaveBeenCalledTimes(1);
     expect(loadRelevantSkills).toHaveBeenCalledTimes(1);
     expect(getRepoMap).toHaveBeenCalledTimes(1);
     expect(evaluate).toHaveBeenCalledTimes(2);
@@ -2800,13 +2803,6 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
   });
 });
 
-// ============================================================================
-// 前缀稳定（P1 request shape）：system 消息在会话内字节级稳定，
-// 每请求变化的内容只出现在历史末尾的 transient 动态尾巴里。
-// OpenAI-compat provider 的自动前缀缓存以 system 开头——system 任何字节变化
-// 等于整个历史 cache miss，这里的字节级断言是本批的核心行为保证。
-// ============================================================================
-
 describe('ContextAssembly 前缀稳定（request shape）', () => {
   it('轮内连续构建：通知进出/persistent context 追加/git 状态变化只影响尾巴，system 字节稳定', async () => {
     const ctx = buildRuntimeContext({
@@ -2815,12 +2811,10 @@ describe('ContextAssembly 前缀稳定（request shape）', () => {
     });
     const assembly = new ContextAssembly(ctx as never);
 
-    // 第一步：有一条后台完成通知 + git dirty
     vi.mocked(drainCompletionNotifications).mockReturnValueOnce(['<agent-completed>agent-x done</agent-completed>']);
     vi.mocked(buildGitStatusBlock).mockReturnValueOnce('<git_status>Working tree: dirty (3 file(s) changed)</git_status>');
     const first = await assembly.buildModelMessages();
 
-    // 步间发生的事：模型发起工具调用、结果回流、persistent context 追加、git 状态变化
     (ctx as { messages: Message[] }).messages.push(
       {
         id: 'assistant-prefix-1',
@@ -2841,11 +2835,9 @@ describe('ContextAssembly 前缀稳定（request shape）', () => {
     vi.mocked(buildGitStatusBlock).mockReturnValueOnce('<git_status>Working tree: dirty (5 file(s) changed)</git_status>');
     const second = await assembly.buildModelMessages();
 
-    // 核心断言：system 消息字节级一致
     expect(second[0].role).toBe('system');
     expect(second[0].content).toBe(first[0].content);
 
-    // 第一步的通知在尾巴里；第二步已 drain，不再出现
     const firstTail = first[first.length - 1];
     expect(firstTail.transient).toBe(true);
     expect(firstTail.content).toContain('<agent-completed>');
@@ -2865,16 +2857,22 @@ describe('ContextAssembly 前缀稳定（request shape）', () => {
   });
 
   it('跨轮 repo map 变化不改含常驻 memory_index 的 system，只改尾巴', async () => {
+    const actualIndexLoader = await vi.importActual<typeof import('../../../src/host/lightMemory/indexLoader')>('../../../src/host/lightMemory/indexLoader');
+    const fsPromises = await import('fs/promises'); let indexContent = 'memory index stable';
+    const readFileMock = vi.mocked(fsPromises.readFile); const originalReadFile = readFileMock.getMockImplementation();
+    readFileMock.mockImplementation(async () => indexContent as never);
+    vi.mocked(loadMemoryIndexForSession).mockImplementation((sessionId) => actualIndexLoader.loadMemoryIndexForSession(sessionId));
+
     const ctx = buildRuntimeContext({
       sessionId: 'session-prefix-cross-turn',
       isSimpleTaskMode: false,
       messages: [buildMessage('user-prefix-t1', 'user', 'hello there')],
     });
-    vi.mocked(loadMemoryIndex).mockResolvedValue('memory index stable');
     const assembly = new ContextAssembly(ctx as never);
     const turn1 = await assembly.buildModelMessages();
 
     // 第二轮：query 命中 repo map，advisory 块进场；memory_index 始终在稳定前缀。
+    indexContent = 'memory index changed after MemoryWrite';
     vi.mocked(getRepoMap).mockResolvedValueOnce({
       text: 'repo map cross-turn',
       fileCount: 2,
@@ -2894,5 +2892,9 @@ describe('ContextAssembly 前缀稳定（request shape）', () => {
     expect(turn2Tail.transient).toBe(true);
     expect(turn2Tail.content).toContain('repo map cross-turn');
     expect(turn2Tail.content).not.toContain('memory index stable');
+    expect(readFileMock).toHaveBeenCalledTimes(1);
+
+    actualIndexLoader.releaseMemoryIndexSnapshot('session-prefix-cross-turn');
+    readFileMock.mockImplementation(originalReadFile!);
   });
 });

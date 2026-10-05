@@ -17,6 +17,51 @@ describe('shared channel inbound access', () => {
     })).toEqual({ action: 'deny', reason: 'group_not_mentioned', replyUnauthorized: false });
   });
 
+  it('re-routes an un-mentioned group message to listen only with an explicit listen binding', () => {
+    // 无绑定（缺省）：仍是 deny/group_not_mentioned —— ① 无绑定不放行。
+    expect(checkInboundAccess({
+      channel: 'feishu', chatType: 'group', mentionedBot: false, paired: true, hasListenBinding: false,
+    })).toEqual({ action: 'deny', reason: 'group_not_mentioned', replyUnauthorized: false });
+    expect(checkInboundAccess({
+      channel: 'feishu', chatType: 'group', mentionedBot: false, paired: true,
+    })).toEqual({ action: 'deny', reason: 'group_not_mentioned', replyUnauthorized: false });
+    // 有绑定：改判 listen/group_listen（无 auth 档 —— 不进正常入站）。
+    expect(checkInboundAccess({
+      channel: 'feishu', chatType: 'group', mentionedBot: false, paired: true, hasListenBinding: true,
+    })).toEqual({ action: 'listen', reason: 'group_listen' });
+    expect(checkInboundAccess({
+      channel: 'feishu', chatType: 'group', mentionedBot: false, paired: false, hasListenBinding: true,
+    })).toEqual({ action: 'listen', reason: 'group_listen' });
+  });
+
+  it('keeps denying un-mentioned messages in a disabled group even with a listen binding (fail-closed)', () => {
+    expect(checkInboundAccess({
+      channel: 'feishu', chatType: 'group', mentionedBot: false, paired: true,
+      groupAccessMode: 'disabled', hasListenBinding: true,
+    })).toEqual({ action: 'deny', reason: 'group_not_mentioned', replyUnauthorized: false });
+    expect(checkInboundAccess({
+      channel: 'feishu', chatType: 'group', mentionedBot: false, paired: true,
+      groupAccessMode: 'allowlist', hasListenBinding: true,
+    })).toEqual({ action: 'listen', reason: 'group_listen' });
+    expect(checkInboundAccess({
+      channel: 'feishu', chatType: 'group', mentionedBot: false, paired: true,
+      groupAccessMode: 'all_members', hasListenBinding: true,
+    })).toEqual({ action: 'listen', reason: 'group_listen' });
+  });
+
+  it('ignores hasListenBinding outside the un-mentioned group branch (p2p and mentioned paths unchanged)', () => {
+    expect(checkInboundAccess({
+      channel: 'feishu', chatType: 'p2p', mentionedBot: false, paired: false, hasListenBinding: true,
+    })).toEqual({ action: 'pair', reason: 'p2p_unpaired' });
+    expect(checkInboundAccess({
+      channel: 'feishu', chatType: 'p2p', mentionedBot: false, paired: true, hasListenBinding: true,
+    })).toEqual({ action: 'allow', auth: 'paired', reason: 'paired' });
+    // @ 了 bot 的群消息走原路径（allowlist + unpaired → group_sender_unpaired），与绑定无关。
+    expect(checkInboundAccess({
+      channel: 'feishu', chatType: 'group', mentionedBot: true, paired: false, hasListenBinding: true,
+    })).toEqual({ action: 'deny', reason: 'group_sender_unpaired', replyUnauthorized: true });
+  });
+
   it.each([
     ['disabled', true, 'deny'],
     ['allowlist', false, 'deny'],

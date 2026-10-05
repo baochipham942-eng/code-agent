@@ -20,7 +20,8 @@ import {
   PermissionRequestReason,
 } from '../../shared/contract/permission';
 import { getToolCache } from '../services/infra/toolCache';
-import { getSessionAutomationService } from '../services/sessionAutomation/sessionAutomationService';
+import { extractComputerTargetApp } from '../permissions/computerAppTarget';
+import { resolvePreAskGrant } from '../permissions/preAskGrant';
 import { createLogger } from '../services/infra/logger';
 import { getAuditLogger, maskSensitiveData, isKnownSafeCommand, validateCommand, getShellSafetyMode, getExecPolicyStore, getPolicyEnforcer, type PolicyEnforcer, type PolicyCheckResult, type ValidationResult } from '../security';
 import { evaluateToolSlotDataDirAccess, FOREIGN_SLOT_DATA_DIR_CODE, type SlotDataDirAccess } from '../security/slotDataDirGuard';
@@ -35,7 +36,8 @@ import {
 import type { SkillToolBoundary } from '../../shared/contract/agentSkill';
 import type { NeoTagRunContext } from '../../shared/contract/tag';
 import type { SwarmRunScope } from '../../shared/contract/swarm';
-import { createTraceBuilder, createTraceStep } from '../security/decisionTraceBuilder';
+import { createTraceBuilder } from '../security/decisionTraceBuilder';
+import { denyConcreteShellWritePath } from './shell/writePathPolicyDeny';
 import { getPluginIdForTool, getPluginOriginForTool } from '../plugins/pluginToolOrigin';
 import { getWriteIsolationManager, getWriteIsolationScope, type WriteIsolationMetadata } from '../security/writeIsolation';
 import type { HookManager } from '../hooks/hookManager';
@@ -206,30 +208,14 @@ function shellWritePathPolicyCheck(
       targetPath = expanded;
     }
     const resolved = resolveShellTarget(targetPath, workingDirectory);
-    if (policyEnforcer?.isActive) {
-      const policyCheck = policyEnforcer.checkFilePath(resolved, 'write');
-      if (!policyCheck.allowed) return { kind: 'deny', check: policyCheck };
-    }
-
-    const relative = nodePath.relative(workingDirectory, resolved) || '.';
-    const homeRelative = nodePath.relative(nodeOs.homedir(), resolved);
-    const candidates = [target.path, targetPath, resolved, relative];
-    if (homeRelative && !homeRelative.startsWith('..') && !nodePath.isAbsolute(homeRelative)) {
-      candidates.push(`~/${homeRelative}`);
-    }
-    const matchedRule = getPolicyEngine().matchUserPathDeny(candidates);
-    if (matchedRule) {
-      const reason = `Shell write target "${target.path}" is denied by ${matchedRule.name}`;
-      return {
-        kind: 'deny',
-        check: {
-          allowed: false,
-          reason,
-          section: 'user-permissions',
-          traceStep: createTraceStep('policy_enforcer', matchedRule.id, 'deny', reason, Date.now()),
-        },
-      };
-    }
+    const denied = denyConcreteShellWritePath({
+      resolvedPath: resolved,
+      workingDirectory,
+      policyEnforcer,
+      pathCandidates: [target.path, targetPath],
+      displayPath: target.path,
+    });
+    if (denied) return { kind: 'deny', check: denied };
   }
   if (unresolved.length > 0 && hasConfiguredWritePathDeny(policyEnforcer)) {
     return { kind: 'ask', uncertain: unresolved };
@@ -1364,6 +1350,8 @@ export class ToolExecutor {
     // deny 不可被任何后续层推翻（skill 预授权 / 安全命令白名单 / classifier / 用户审批）。
     // 无 policy 文件时 getPolicyEnforcer 返回 null，零开销。
     const policyEnforcer = getPolicyEnforcer(resolveCanonicalRunPath(this.runtimeWorkspace));
+    // 扩权检查发生在整条命令跑完之后，期间别的工作区会改绑单例：把本次绑定的实例钉进 ctx。
+    context.policyEnforcer = policyEnforcer;
     const shellPathCheck = isBashToolName(policyToolName) && typeof params.command === 'string'
       ? shellWritePathPolicyCheck(params.command, bashWorkingDirectory, policyEnforcer)
       : { kind: 'allow' as const };
@@ -1716,6 +1704,7 @@ export class ToolExecutor {
       const standingGrantTarget = isExternalSideEffectTool(executionToolName)
         ? extractStandingGrantTarget(executionToolName, params)
         : null;
+      const computerApp = extractComputerTargetApp(executionToolName, params);
       // Lazy trace: only created when needed (deny/ask path)
       const traceBuilder = createTraceBuilder(executionToolName);
       if (pluginId) {
@@ -1792,6 +1781,7 @@ export class ToolExecutor {
             classification.decision === 'approve'
             && !this.forcePermissionHandler
             && !protectedWriteForcesConfirmation
+            && !computerApp
           ) {
             logger.info('Auto-approved by classifier', {
               tool: executionToolName,
@@ -1910,29 +1900,22 @@ export class ToolExecutor {
         }
       }
 
-      // B4 target 粒度长期授权消费：external 工具 + 可确定性提取 target + 命中该会话所属
-      // automation 上人工铸造的 (tool, target) 规则 → 免这一层询问（等价 session 记忆的持久版，
-      // 但按 target 精确、挂 automation、随其归档失效）。绝不越 deny：分类器 deny 已在上面 return；
-      // 任一强制确认门（guardFabric/policy/boundary/readOnly）在此让路——与 session 记忆同规矩，
-      // 只把「普通询问」降为放行，不碰任何硬门。
-      if (
-        needsUserApproval
-        && standingGrantTarget
-        && !guardFabricForcesApproval
-        && !protectedWriteForcesConfirmation
-        && !policyForcesConfirmation
-        && !unresolvedWriteTargetForcesAsk
-        && !boundaryViolation
-        && !readOnlyForcesConfirmation
-        && !peerOriginForcesConfirmation
-        && !launderRetryForcesAsk
-        && !commandAnalysisFailedReason
-        && getSessionAutomationService().matchStandingGrant(effectiveSessionId, executionToolName, standingGrantTarget)
-      ) {
+      const preAsk = needsUserApproval ? resolvePreAskGrant({
+        toolName: executionToolName,
+        sessionId: effectiveSessionId,
+        standingGrantTarget,
+        computerApp,
+        blocked: Boolean(commandAnalysisFailedReason)
+          || guardFabricForcesApproval || protectedWriteForcesConfirmation
+          || policyForcesConfirmation || unresolvedWriteTargetForcesAsk
+          || Boolean(boundaryViolation) || readOnlyForcesConfirmation
+          || peerOriginForcesConfirmation || launderRetryForcesAsk,
+      }) : null;
+      if (preAsk) {
         needsUserApproval = false;
         const grantTrace = createTraceBuilder(executionToolName);
-        grantTrace.addStep('permission_classifier', 'standing_grant', 'allow', `长期授权命中：${executionToolName} → ${standingGrantTarget}`);
-        recordDecision(executionToolName, params, 'auto-approve', `standing_grant:${standingGrantTarget}`, permStartTime, grantTrace.build('allow'), effectiveSessionId, this.ledgerOrigin);
+        grantTrace.addStep('permission_classifier', preAsk.traceRule, 'allow', preAsk.traceDetail);
+        recordDecision(executionToolName, params, 'auto-approve', preAsk.ledgerReason, permStartTime, grantTrace.build('allow'), effectiveSessionId, this.ledgerOrigin);
       }
 
       if (needsUserApproval) {
@@ -2003,9 +1986,8 @@ export class ToolExecutor {
       // 只补关联字段，不复制参数或另建历史存储。
       permissionRequest.parentToolUseId = options.currentToolCallId;
       // B4：把授权 target 透传给审批层，供无人值守停车审批卡出「每次都允许发 <target>」铸权入口。
-      if (standingGrantTarget) {
-        permissionRequest.details.standingGrantTarget = standingGrantTarget;
-      }
+      if (standingGrantTarget) permissionRequest.details.standingGrantTarget = standingGrantTarget;
+      if (computerApp) permissionRequest.details.targetApp = computerApp;
 
       // B1 readOnly（审出 HIGH）：最终审批层的自动放行捷径（agentOrchestrator 的
       // devModeAutoApprove / autoApprove[level]、renderer PermissionCard 的
@@ -2183,7 +2165,7 @@ export class ToolExecutor {
         // 通话态曾有一条专用文案分支，2026-07-29 通话不再钳档后它已死（见 readOnlyDenialError）。
         const defaultDenialReason = readOnlyForcesConfirmation
           ? readOnlyDenialError(executionToolName)
-          : permissionDenialError(executionToolName, denialSource);
+          : permissionDenialError(executionToolName, denialSource, computerApp);
         const hostReason = ask.message
           ? { ...defaultDenialReason, modelText: ask.message }
           : defaultDenialReason;

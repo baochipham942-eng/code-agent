@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MessageContent } from '../../../src/renderer/components/features/chat/MessageBubble/MessageContent';
 import { wrapFilePathsInBackticks, wrapTicketsAsLinks } from '../../../src/renderer/components/features/chat/MessageBubble/filePathProcessor';
+import { runHref } from './encodeRunCommand';
 import { FileArtifactCard } from '../../../src/renderer/components/features/chat/MessageBubble/FileArtifactCard';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useWorkbenchFocusStore } from '../../../src/renderer/stores/workbenchFocusStore';
@@ -29,7 +30,7 @@ describe('deliverable and command navigation', () => {
     const receive = vi.fn();
     window.addEventListener('iact:run', receive);
     try {
-      const view = render(<MessageContent content={`[${command}](!run)`} isUser={false} />);
+      const view = render(<MessageContent content={`[${command}](${runHref(command)})`} isUser={false} />);
       const button = await view.findByRole('button', { name: '运行生成脚本' });
       expect(view.container.querySelectorAll('button')).toHaveLength(1);
       expect(view.container.textContent).toContain(command);

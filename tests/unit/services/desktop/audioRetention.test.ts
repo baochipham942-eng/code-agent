@@ -410,7 +410,7 @@ describe('audio retention', () => {
       });
     }).not.toThrow();
 
-    expect(summary).toEqual({ deleted: 1, failed: 1, rowsUpdated: 1 });
+    expect(summary).toEqual({ deleted: 1, failed: 1, rowsUpdated: 1, lastError: 'not a regular file' });
     expect(fs.existsSync(path.join(blocked, 'keep.txt'))).toBe(true);
     expect(readSegment(current.sqlitePath, 'blocked')).toEqual({
       wavPath: blocked,

@@ -11,6 +11,11 @@ import type {
 } from '../shared/contract';
 import { stampAssistantMessageCorrelation } from '../host/session/assistantCorrelation';
 import { readSqliteErrorCode } from '../host/services/core/database/sqliteErrors';
+import {
+  deriveFallbackSessionTitle,
+  isPlaceholderSessionTitle,
+  sessionTitleSource,
+} from '../shared/sessionTitlePlaceholder';
 import crypto from 'crypto';
 
 // ----------------------------------------------------------------------------
@@ -303,12 +308,6 @@ export class CLISessionManager {
     }
 
     await this.addMessageToSession(this.currentSessionId, message);
-
-    // 自动更新会话标题（如果是第一条用户消息）
-    // fire-and-forget：标题生成调用 quick model，不阻塞主推理链路
-    if (message.role === 'user') {
-      void this.maybeUpdateTitle(message.content).catch(() => { /* 静默降级 */ });
-    }
   }
 
   /**
@@ -332,12 +331,14 @@ export class CLISessionManager {
 
     stampAssistantMessageCorrelation(message);
 
-    // 数据库可用时持久化
+    // 数据库可用时持久化。只有新插入才允许派生标题；重复落库走 update，不重命名。
+    let inserted = false;
     if (await this.ensureDbReady()) {
       const db = this.getDb();
       if (db) {
         try {
           db.addMessage(sessionId, message);
+          inserted = true;
         } catch (error) {
           if (this.isDuplicateMessageError(error)) {
             if (typeof db.updateMessageForSession === 'function') {
@@ -371,6 +372,18 @@ export class CLISessionManager {
       }
       cached.messageCount = cached.messages.length;
       cached.updatedAt = Date.now();
+    }
+
+    // 新插入的可见用户消息才派生标题。fire-and-forget，不阻塞主推理链路。
+    if (
+      inserted
+      && message.role === 'user'
+      && !message.isMeta
+      && message.visibility !== 'rewound'
+      && typeof message.content === 'string'
+      && message.content.trim()
+    ) {
+      void this.maybeUpdateTitle(sessionId, message.content).catch(() => { /* 静默降级 */ });
     }
   }
 
@@ -489,33 +502,21 @@ export class CLISessionManager {
   }
 
   /**
-   * 根据第一条消息自动更新标题
+   * 按指定会话的第一条可见用户消息派生标题。小模型返回后重读，仍是占位才落笔。
    */
-  private async maybeUpdateTitle(firstMessage: string): Promise<void> {
-    if (!this.currentSessionId) return;
-
-    const session = await this.getSession(this.currentSessionId);
+  private async maybeUpdateTitle(sessionId: string, firstMessage: string): Promise<void> {
+    const session = await this.getSession(sessionId);
     if (!session) return;
+    if (!isPlaceholderSessionTitle(session.title) || session.messageCount > 1) return;
 
-    // 只在标题是默认标题时更新
-    const isDefaultTitle =
-      session.title.startsWith('CLI Session ') ||
-      session.title === 'New Chat' ||
-      session.title === '新对话';
+    const titleSource = sessionTitleSource(firstMessage);
+    let title = await this.generateSmartTitle(titleSource);
+    if (!title) title = deriveFallbackSessionTitle(firstMessage);
 
-    if (!(isDefaultTitle && session.messageCount <= 1)) return;
+    const latest = await this.getSession(sessionId);
+    if (!latest || !isPlaceholderSessionTitle(latest.title)) return;
 
-    // 1. 尝试用小模型生成标题
-    let title = await this.generateSmartTitle(firstMessage);
-
-    // 2. 降级：截取前 50 字符
-    if (!title) {
-      const firstLine = firstMessage.trim().split('\n')[0];
-      title = firstLine.slice(0, 50);
-      if (firstLine.length > 50) title += '...';
-    }
-
-    await this.updateSession(this.currentSessionId, { title });
+    await this.updateSession(sessionId, { title });
   }
 
   /**

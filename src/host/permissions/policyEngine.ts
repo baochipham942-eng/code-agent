@@ -13,6 +13,7 @@ import {
   MODE_CONFIGS,
 } from './modes';
 import { parseToolSpecifier, matchSpecifier, type ParsedSpecifier } from './specifierParser';
+import { validateUserPermissionRule } from '../../shared/permissionRuleSyntax';
 
 const logger = createLogger('PolicyEngine');
 
@@ -412,10 +413,20 @@ export class PolicyEngine {
     }
 
     for (const entry of ruleEntries) {
-      const parsed = parseToolSpecifier(entry.ruleStr);
+      const list = entry.action === 'allow' ? 'allow' : entry.action === 'deny' ? 'deny' : 'ask';
+      const ruleStr = entry.ruleStr.trim();
+      const verdict = validateUserPermissionRule(ruleStr, list);
+      if (!verdict.ok) {
+        logger.warn(`Skipping invalid user permission rule: ${entry.ruleStr}`, {
+          list,
+          reason: verdict.reason,
+        });
+        continue;
+      }
+      const parsed = parseToolSpecifier(ruleStr);
       const rule: PolicyRule = {
-        id: `user-${entry.action}-${entry.ruleStr}`,
-        name: `User ${entry.action}: ${entry.ruleStr}`,
+        id: `user-${entry.action}-${ruleStr}`,
+        name: `User ${entry.action}: ${ruleStr}`,
         priority: entry.priority,
         matcher: {
           tool: parsed.toolName,

@@ -42,6 +42,8 @@ import {
 import { BoundedDedupeSet } from '../inboundDedupe';
 import { checkOutboundTarget } from '../outboundAllowlist';
 import { checkInboundAccess, type InboundAccessDecision } from '../inboundAccess';
+import { hasChannelListenBinding } from '../channelListenRegistry';
+import { buildFeishuListenChannelMessage } from './feishuListenMessage';
 import { inboundAccessText } from '../inboundAccessI18n';
 import type { InboundPairingRequest } from '../inboundPairingService';
 import { CHANNEL_INGRESS } from '../../../shared/constants';
@@ -1015,6 +1017,9 @@ export class FeishuChannel extends BaseChannelPlugin {
         mentionedBot,
         paired,
         groupAccessMode: this.feishuConfig?.groupAccessMode,
+        hasListenBinding: msg.chat_type === 'group' && !mentionedBot
+          ? hasChannelListenBinding(this._accountId, msg.chat_id)
+          : undefined,
       });
 
       if (ingress.action === 'pair') {
@@ -1040,6 +1045,22 @@ export class FeishuChannel extends BaseChannelPlugin {
             content: inboundAccessText(this.feishuConfig?.inboundLocale, 'unauthorized'),
           });
         }
+        return;
+      }
+      if (ingress.action === 'listen') {
+        // 监听事件与正常入站分流：同一套组装（映射在 helper 内），只走 'listen_message'。
+        this.auditIngress(ingress, msg.chat_id, senderId);
+        const listenMessage = await buildFeishuListenChannelMessage({
+          client: this.client,
+          accountId: this._accountId,
+          platform: this.platform,
+          privacyMode: this.privacyMode,
+          parentRead,
+          msg,
+          sender,
+          raw: event,
+        });
+        this.emit('listen_message', listenMessage);
         return;
       }
       if (ingress.action === 'guest') {
@@ -1120,11 +1141,11 @@ export class FeishuChannel extends BaseChannelPlugin {
   }
 
   private auditIngress(
-    decision: Extract<InboundAccessDecision, { action: 'deny' | 'pair' | 'guest' }>,
+    decision: Extract<InboundAccessDecision, { action: 'deny' | 'pair' | 'guest' | 'listen' }>,
     chatId: string,
     senderId: string,
   ): void {
-    const outcome = decision.action === 'guest' ? 'guest' : 'denied';
+    const outcome = decision.action === 'guest' ? 'guest' : decision.action === 'listen' ? 'listen' : 'denied';
     logger.info(`[feishu-ingress] ${outcome}`, {
       accountId: this._accountId,
       chatId,
@@ -1139,8 +1160,8 @@ export class FeishuChannel extends BaseChannelPlugin {
         input: { accountId: this._accountId, chatId, senderId },
         output: `${outcome}:${decision.reason}`,
         duration: 0,
-        success: decision.action === 'guest',
-        riskLevel: decision.action === 'guest' ? 'low' : 'high',
+        success: decision.action === 'guest' || decision.action === 'listen',
+        riskLevel: decision.action === 'deny' || decision.action === 'pair' ? 'high' : 'low',
       });
     } catch (error) {
       logger.warn('Failed to persist Feishu ingress audit entry', { error });

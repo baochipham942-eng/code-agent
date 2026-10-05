@@ -458,6 +458,8 @@ export function parseCronExecutionTrigger(raw: unknown): CronExecutionTrigger | 
   const eventIds = Array.isArray(value.eventIds) && value.eventIds.every((id) => typeof id === 'string')
     ? value.eventIds as string[]
     : undefined;
+  // 监听标记（N-TRIGGER-GROUP-LISTEN）：只认显式 true，坏值按无标记处理。
+  const listen = value.listen === true;
   return {
     kind: value.kind,
     ...(source === 'channel' ? { source } : {}),
@@ -465,5 +467,6 @@ export function parseCronExecutionTrigger(raw: unknown): CronExecutionTrigger | 
     ...(eventCount !== undefined ? { eventCount } : {}),
     ...(droppedCount !== undefined ? { droppedCount } : {}),
     ...(eventIds ? { eventIds } : {}),
+    ...(listen ? { listen: true } : {}),
   };
 }

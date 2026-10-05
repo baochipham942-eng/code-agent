@@ -413,6 +413,17 @@ export const chatInputZh = {
     ui: { label: '界面', description: '打开设置、工作区、DAG 和侧边栏' },
     system: { label: '系统', description: '帮助、配置和系统命令' },
   },
+  sideChat: {
+    dialogLabel: '只读侧聊',
+    title: '顺便问一句',
+    loading: '思考中…',
+    error: '侧聊没有完成',
+    errorAuth: '模型没有响应：账号未通过授权',
+    errorTimeout: '请求超时',
+    retry: '重试',
+    closeAria: '关闭侧聊',
+    missingQuestion: '在 /btw 后面写上要问的问题',
+  },
 };
 
 export const chatInputEn: typeof chatInputZh = {
@@ -815,5 +826,16 @@ export const chatInputEn: typeof chatInputZh = {
     status: { label: 'Status & diagnostics', description: 'Status, cost, hooks, permissions, and diagnostics' },
     ui: { label: 'Interface', description: 'Open settings, workspace, DAG, or the sidebar' },
     system: { label: 'System', description: 'Help, config, and system commands' },
+  },
+  sideChat: {
+    dialogLabel: 'Side question',
+    title: 'Side question',
+    loading: 'Thinking…',
+    error: 'The side question failed',
+    errorAuth: 'The model did not respond: authorization failed',
+    errorTimeout: 'The request timed out',
+    retry: 'Retry',
+    closeAria: 'Close side question',
+    missingQuestion: 'Type a question after /btw',
   },
 };

@@ -103,6 +103,8 @@ export interface SandboxWrapOptions {
   readOnlyRoots?: string[];
   /** Project roots allowed for writes. */
   readWriteRoots?: string[];
+  /** Exact files allowed for writes, without descendants (one-shot sandbox escalation). */
+  readWriteFiles?: string[];
   /** Host roots that must not be readable from this command. */
   deniedReadRoots?: string[];
   /** 是否放行网络（bypass 档默认 true） */
@@ -241,6 +243,14 @@ export class SandboxManager {
   }
 
   /**
+   * Whether `readWriteFiles` can allow a file that does not exist yet.
+   * Seatbelt matches a literal path, so it can; bubblewrap binds existing files only.
+   */
+  supportsNewFileWriteGrant(): boolean {
+    return this.platform === 'darwin';
+  }
+
+  /**
    * Enable sandboxing
    */
   enable(): void {
@@ -339,6 +349,7 @@ export class SandboxManager {
     const resolved = path.resolve(opts.workingDirectory);
     const readOnlyRoots = (opts.readOnlyRoots ?? []).map((root) => path.resolve(root));
     const readWriteRoots = (opts.readWriteRoots ?? [resolved]).map((root) => path.resolve(root));
+    const readWriteFiles = (opts.readWriteFiles ?? []).map((file) => path.resolve(file));
     const sensitivePaths = [
       ...getSensitiveSandboxPaths(),
       ...(opts.deniedReadRoots ?? []).map((root) => ({ kind: 'directory' as const, path: root })),
@@ -354,6 +365,7 @@ export class SandboxManager {
             allowNetwork,
             readPaths: readOnlyRoots,
             writePaths: [...readWriteRoots, npmEnvironment.npmHome],
+            writeFiles: readWriteFiles,
             workingDirectory: resolved,
             allowWorkingDirectoryWrite: false,
             sensitivePaths,
@@ -379,6 +391,7 @@ export class SandboxManager {
             allowNetwork,
             readOnlyPaths: [...(dev.readOnlyPaths ?? []), ...readOnlyRoots],
             readWritePaths: [...readWriteRoots, npmEnvironment.npmHome],
+            readWriteFiles,
             workingDirectory: resolved,
             sensitivePaths,
             customEnv: npmEnvironment.customEnv,

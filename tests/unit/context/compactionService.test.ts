@@ -699,6 +699,173 @@ describe('compactionService', () => {
     );
   });
 
+  it('sums reported summary usage across the repair call', async () => {
+    compactionServiceMocks.summarizeWithMetadata
+      .mockResolvedValueOnce({
+        summary: 'Tiny summary without required survivors.',
+        metadata: {
+          provider: 'moonshot',
+          model: 'kimi-k2.5',
+          useMainModel: false,
+          usage: { inputTokens: 100, cacheReadTokens: 0 },
+        },
+      })
+      .mockResolvedValueOnce({
+        summary: compactionServiceMocks.summary,
+        metadata: {
+          provider: 'xiaomi',
+          model: 'mimo-v2.5-pro',
+          useMainModel: true,
+          fallbackReason: 'compact_context_length_exceeded',
+          usage: { inputTokens: 25, cacheCreationTokens: 7 },
+        },
+      });
+    const messages = [
+      message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
+      message('m2', 'assistant', 'TODO: wire service into IPC. '.repeat(80)),
+      message('m3', 'tool', 'AssertionError: expected true '.repeat(80)),
+      message('m4', 'assistant', 'recent answer'),
+    ];
+
+    const result = await compactMessagesWithSummary({
+      sessionId: 'session-usage-sum',
+      source: 'manual_current',
+      messages,
+      anchorMessageId: 'm4',
+      preserveRecentCount: 1,
+    });
+
+    expect(compactionServiceMocks.summarizeWithMetadata).toHaveBeenCalledTimes(2);
+    expect(result.summaryModel).toEqual({
+      provider: 'xiaomi',
+      model: 'mimo-v2.5-pro',
+      useMainModel: true,
+      fallbackReason: 'compact_context_length_exceeded',
+      usage: {
+        inputTokens: 125,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 7,
+      },
+    });
+    expect(result.summaryModel?.usage).not.toHaveProperty('outputTokens');
+    expect(result.summaryModel?.usage?.cacheReadTokens).toBe(0);
+  });
+
+  it('does not invent a zero for a token count neither summary call reported', async () => {
+    compactionServiceMocks.summarizeWithMetadata
+      .mockResolvedValueOnce({
+        summary: 'Tiny summary without required survivors.',
+        metadata: {
+          ...compactionServiceMocks.summaryModel,
+          usage: { inputTokens: 3 },
+        },
+      })
+      .mockResolvedValueOnce({
+        summary: compactionServiceMocks.summary,
+        metadata: {
+          ...compactionServiceMocks.summaryModel,
+          usage: { inputTokens: 4 },
+        },
+      });
+    const messages = [
+      message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
+      message('m2', 'assistant', 'TODO: wire service into IPC. '.repeat(80)),
+      message('m3', 'tool', 'AssertionError: expected true '.repeat(80)),
+      message('m4', 'assistant', 'recent answer'),
+    ];
+
+    const result = await compactMessagesWithSummary({
+      sessionId: 'session-usage-unset',
+      source: 'manual_current',
+      messages,
+      anchorMessageId: 'm4',
+      preserveRecentCount: 1,
+    });
+
+    expect(result.summaryModel?.usage).toEqual({ inputTokens: 7 });
+    expect(result.summaryModel?.usage).not.toHaveProperty('cacheReadTokens');
+    expect(result.summaryModel?.usage).not.toHaveProperty('cacheCreationTokens');
+  });
+
+  it('keeps the first call usage when the repair call reports none', async () => {
+    compactionServiceMocks.summarizeWithMetadata
+      .mockResolvedValueOnce({
+        summary: 'Tiny summary without required survivors.',
+        metadata: {
+          ...compactionServiceMocks.summaryModel,
+          usage: { inputTokens: 8, cacheReadTokens: 1, cacheCreationTokens: 2 },
+        },
+      })
+      .mockResolvedValueOnce({
+        summary: compactionServiceMocks.summary,
+        metadata: { ...compactionServiceMocks.summaryModel },
+      });
+    const messages = [
+      message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
+      message('m2', 'assistant', 'TODO: wire service into IPC. '.repeat(80)),
+      message('m3', 'tool', 'AssertionError: expected true '.repeat(80)),
+      message('m4', 'assistant', 'recent answer'),
+    ];
+
+    const result = await compactMessagesWithSummary({
+      sessionId: 'session-usage-repair-absent',
+      source: 'manual_current',
+      messages,
+      anchorMessageId: 'm4',
+      preserveRecentCount: 1,
+    });
+
+    expect(compactionServiceMocks.summarizeWithMetadata).toHaveBeenCalledTimes(2);
+    expect(result.summaryModel).toEqual({
+      provider: 'moonshot',
+      model: 'kimi-k2.5',
+      useMainModel: false,
+      usage: { inputTokens: 8, cacheReadTokens: 1, cacheCreationTokens: 2 },
+    });
+  });
+
+  it('passes one summary call usage through and omits it when unreported', async () => {
+    const messages = [
+      message('m1', 'user', 'Read /Users/linchen/Downloads/ai/code-agent/src/host/context/autoCompressor.ts '.repeat(80)),
+      message('m2', 'assistant', 'TODO: wire service into IPC. '.repeat(80)),
+      message('m3', 'tool', 'AssertionError: expected true '.repeat(80)),
+      message('m4', 'assistant', 'recent answer'),
+    ];
+    const options = {
+      sessionId: 'session-usage-once',
+      source: 'manual_current' as const,
+      messages,
+      anchorMessageId: 'm4',
+      preserveRecentCount: 1,
+    };
+    compactionServiceMocks.summarizeWithMetadata.mockResolvedValue({
+      summary: compactionServiceMocks.summary,
+      metadata: {
+        ...compactionServiceMocks.summaryModel,
+        usage: { inputTokens: 11, cacheReadTokens: 0, cacheCreationTokens: 3 },
+      },
+    });
+
+    const withUsage = await compactMessagesWithSummary(options);
+    expect(withUsage.summaryModel?.usage).toEqual({
+      inputTokens: 11,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 3,
+    });
+
+    compactionServiceMocks.summarizeWithMetadata.mockResolvedValue({
+      summary: compactionServiceMocks.summary,
+      metadata: { ...compactionServiceMocks.summaryModel },
+    });
+    const withoutUsage = await compactMessagesWithSummary({ ...options, sessionId: 'session-usage-none' });
+    expect(withoutUsage.summaryModel?.usage).toBeUndefined();
+    expect(withoutUsage.summaryModel).toEqual({
+      provider: 'moonshot',
+      model: 'kimi-k2.5',
+      useMainModel: false,
+    });
+  });
+
   it('records fallback summary model metadata when compact summarization used the main model', async () => {
     compactionServiceMocks.summarizeWithMetadata.mockResolvedValue({
       summary: compactionServiceMocks.summary,

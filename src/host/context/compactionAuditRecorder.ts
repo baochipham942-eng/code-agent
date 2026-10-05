@@ -77,6 +77,11 @@ interface CompactionAuditResultLike {
     model?: string;
     useMainModel?: boolean;
     fallbackReason?: string;
+    usage?: {
+      inputTokens?: number;
+      cacheReadTokens?: number;
+      cacheCreationTokens?: number;
+    };
   };
   warnings: string[];
 }
@@ -104,6 +109,9 @@ export interface CompactionAuditSummary {
     model: string | null;
     useMainModel: boolean | null;
     fallbackReason: string | null;
+    inputTokens: number | null;
+    cacheReadTokens: number | null;
+    cacheCreationTokens: number | null;
   };
   validation: {
     ok: boolean | null;
@@ -186,6 +194,10 @@ function hasDataFingerprint(result: CompactionAuditResultLike): boolean {
   );
 }
 
+function auditTokenCount(value: number | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
 function buildPreAuditSummary(plan: CompactionAuditPlanLike): unknown {
   return {
     type: 'compact_messages_with_summary_pre_audit',
@@ -225,6 +237,9 @@ export function buildCompactionAuditSummary(result: CompactionAuditResultLike): 
       model: summaryModel?.model ?? null,
       useMainModel: typeof summaryModel?.useMainModel === 'boolean' ? summaryModel.useMainModel : null,
       fallbackReason: summaryModel?.fallbackReason ?? null,
+      inputTokens: auditTokenCount(summaryModel?.usage?.inputTokens),
+      cacheReadTokens: auditTokenCount(summaryModel?.usage?.cacheReadTokens),
+      cacheCreationTokens: auditTokenCount(summaryModel?.usage?.cacheCreationTokens),
     },
     validation: {
       ok: typeof validation?.ok === 'boolean' ? validation.ok : null,

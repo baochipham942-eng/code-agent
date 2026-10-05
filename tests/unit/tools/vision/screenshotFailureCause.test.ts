@@ -130,10 +130,35 @@ describe('screenshot failure cause detection', () => {
       text: 'SSH session without a graphical session',
     },
     {
-      name: 'returns screen_recording_permission for permission text',
-      input: { platform: 'darwin', env: {}, message: 'Screen Recording: not authorized' },
+      // Real screencapture stderr observed on darwin when the capture is denied.
+      name: 'returns screen_recording_permission for real screencapture denial text',
+      input: {
+        platform: 'darwin',
+        env: {},
+        message: 'Command failed: screencapture -x /tmp/work/.screenshots/screenshot_1.png',
+        stderr: 'could not create image from display',
+      },
       kind: 'screen_recording_permission',
       text: 'screen recording permission denied',
+    },
+    {
+      name: 'returns screen_recording_permission when the error names Screen Recording',
+      input: { platform: 'darwin', env: {}, message: 'Screen Recording access is required to capture the screen' },
+      kind: 'screen_recording_permission',
+      text: 'screen recording permission denied',
+    },
+    {
+      // Real osascript stderr when Automation (Apple Events) permission is denied.
+      // Automation denial is a different permission and must not be reported as
+      // screen recording — regression for the PR-review misclassification.
+      name: 'returns unknown for real osascript automation denial text',
+      input: {
+        platform: 'darwin',
+        env: {},
+        message: 'execution error: Not authorized to send Apple events to "Safari". (-1743)',
+      },
+      kind: 'unknown',
+      text: 'unknown',
     },
     {
       name: 'returns no_display_server for linux without DISPLAY/WAYLAND_DISPLAY',
@@ -151,11 +176,39 @@ describe('screenshot failure cause detection', () => {
     expect(detectScreenshotFailureCause(input)).toEqual({ kind, text });
   });
 
-  it('gives SSH session detection precedence over permission text', () => {
+  it('treats the Apple events error code alone as automation denial, not screen recording', () => {
+    expect(detectScreenshotFailureCause({
+      platform: 'darwin',
+      env: {},
+      stderr: 'osascript: -1743',
+    })).toEqual({ kind: 'unknown', text: 'unknown' });
+  });
+
+  it('gives the automation-denial exclusion precedence over screen-recording text', () => {
+    expect(detectScreenshotFailureCause({
+      platform: 'darwin',
+      env: {},
+      message: 'Command failed: screencapture -x out.png (screen recording required)',
+      stderr: 'execution error: Not authorized to send Apple events to "System Events". (-1743)',
+    })).toEqual({ kind: 'unknown', text: 'unknown' });
+  });
+
+  it('does not claim screen recording for the window-variant capture error', () => {
+    // Real screencapture stderr for an unresolvable window id — not permission-specific.
+    expect(detectScreenshotFailureCause({
+      platform: 'darwin',
+      env: {},
+      message: 'Command failed: screencapture -l$(osascript ...) out.png',
+      stderr: 'could not create image from window',
+    })).toEqual({ kind: 'unknown', text: 'unknown' });
+  });
+
+  it('gives SSH session detection precedence over the screencapture denial text', () => {
     expect(detectScreenshotFailureCause({
       platform: 'darwin',
       env: { SSH_TTY: '/dev/ttys001' },
-      message: 'screen recording not authorized',
+      message: 'Command failed: screencapture -x out.png',
+      stderr: 'could not create image from display',
     })).toEqual({
       kind: 'ssh_session_no_gui',
       text: 'SSH session without a graphical session',
@@ -172,6 +225,32 @@ describe('screenshot failure cause detection', () => {
     expect(result.error?.startsWith('Failed to capture screenshot: capture command failed')).toBe(true);
     expect(result.error).toContain('Detected cause: SSH session without a graphical session');
     expect(result.metadata).toMatchObject({ failureCause: 'ssh_session_no_gui' });
+  });
+
+  it('screenshotTool.execute reports the screen recording cause for real screencapture denial stderr', async () => {
+    setProcessPlatform('darwin');
+    failExec('Command failed: screencapture -x out.png', 'could not create image from display');
+
+    const result = await screenshotTool.execute({}, makeLegacyCtx());
+
+    expect(result.error?.startsWith('Failed to capture screenshot: Command failed: screencapture -x out.png')).toBe(true);
+    expect(result.error).toContain('Detected cause: screen recording permission denied');
+    expect(result.metadata).toMatchObject({ failureCause: 'screen_recording_permission' });
+  });
+
+  it('screenshotTool.execute does not report screen recording for an osascript automation denial', async () => {
+    setProcessPlatform('darwin');
+    failExec(
+      'Command failed: screencapture -l$(osascript -e \'tell app "Safari" to id of window 1\') out.png',
+      'execution error: Not authorized to send Apple events to "Safari". (-1743)',
+    );
+
+    const result = await screenshotTool.execute({}, makeLegacyCtx());
+
+    expect(result.error?.startsWith('Failed to capture screenshot: Command failed: screencapture')).toBe(true);
+    expect(result.error).toContain('Cause: unknown (not detected by the tool; do not assume one)');
+    expect(result.error).not.toContain('screen recording permission denied');
+    expect(result.metadata).toMatchObject({ failureCause: 'unknown' });
   });
 
   it('screenshotModule preserves the detected cause text and metadata', async () => {

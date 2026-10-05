@@ -11,6 +11,12 @@ const CAUSE_TEXT: Record<ScreenshotFailureCauseKind, string> = {
   unknown: 'unknown',
 };
 
+// osascript without Automation (Apple Events) permission reports
+// "Not authorized to send Apple events ... (-1743)" — a different permission
+// from Screen Recording, so it must never be classified as the latter.
+const APPLE_EVENTS_DENIAL_PATTERN = /apple events|-1743/i;
+const SCREEN_RECORDING_DENIED_PATTERN = /screen recording|could not create image from display/i;
+
 export function detectScreenshotFailureCause(args: {
   platform: string;
   env: Record<string, string | undefined>;
@@ -28,7 +34,8 @@ export function detectScreenshotFailureCause(args: {
 
   if (
     args.platform === 'darwin'
-    && /screen recording|not authorized/i.test(combinedOutput)
+    && SCREEN_RECORDING_DENIED_PATTERN.test(combinedOutput)
+    && !APPLE_EVENTS_DENIAL_PATTERN.test(combinedOutput)
   ) {
     return { kind: 'screen_recording_permission', text: CAUSE_TEXT.screen_recording_permission };
   }

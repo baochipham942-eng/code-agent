@@ -35,6 +35,8 @@ import { estimateTokens } from '../../context/tokenEstimator';
 import { DEFERRED_TOOL_LOADING } from '../../../shared/constants/tools';
 import type { InjectedToolSchema } from '../../services/toolSearch/singleInjectionCeiling';
 import { measureSentToolTokens } from '../../services/toolSearch/sentToolSchema';
+import { isDecideToolAvailable } from '../modules/network/decideAvailability';
+
 type LegacyPermissionLevel = 'read' | 'write' | 'execute' | 'network';
 
 /**
@@ -132,20 +134,25 @@ export function getCoreToolDefinitions(
  * 获取延迟工具定义（全量）
  *
  * 延迟工具不会默认发送给模型，需要通过 tool_search 加载后才可用。
+ * decide 只有解析得到可用 Jev 路由才算 deferred 一员（isDecideToolAvailable），
+ * 无路由时既不出现在全量枚举里，也不允许被 ToolSearch 加载进表。
  */
 export function getDeferredToolDefinitions(): ToolDefinition[] {
   const cloudToolMeta = getCloudConfigService().getAllToolMeta();
   const core = new Set(CORE_TOOLS);
+  const decideAvailable = isDecideToolAvailable();
 
   return getProtocolToolSchemas()
     .filter((schema) => !core.has(schema.name))
+    .filter((schema) => schema.name !== 'decide' || decideAvailable)
     .map((schema) => schemaToDefinition(schema, cloudToolMeta));
 }
 
 /**
  * 获取已加载的延迟工具定义
  *
- * 只返回已通过 tool_search 加载的延迟工具。
+ * 只返回已通过 tool_search 加载的延迟工具。decide 无可用 Jev 路由时即便被
+ * select/preload 标记为 loaded 也不进表（handler 兜底返回清晰错误）。
  */
 export function getLoadedDeferredToolDefinitions(
   descriptionContext?: ToolDescriptionContext,
@@ -156,9 +163,11 @@ export function getLoadedDeferredToolDefinitions(
     toolSearchService.getLoadedDeferredTools().filter((name) => !core.has(name)),
   );
   const cloudToolMeta = getCloudConfigService().getAllToolMeta();
+  const decideAvailable = isDecideToolAvailable();
 
   const protocolDefinitions = getProtocolToolSchemas()
     .filter((schema) => loadedNames.has(schema.name))
+    .filter((schema) => schema.name !== 'decide' || decideAvailable)
     .map((schema) => schemaToDefinition(schema, cloudToolMeta, descriptionContext));
 
   const mcpDefinitions = getMCPClient()
@@ -289,9 +298,12 @@ export function getDeferredToolsSummary(
   }
   const denied = new Set(deniedToolNames.map((name) => name.trim().toLowerCase()));
   const budget = Math.max(1, Math.floor(tokenBudget));
+  // 这份摘要是模型可见的工具宣传：无可用 Jev 路由时 decide 不列出（列了模型也调不成，
+  // 与上方 T3b 同一条「不宣传走不通的路」原则）。
+  const summaryMetas = DEFERRED_TOOLS_META.filter((meta) => meta.name !== 'decide' || isDecideToolAvailable());
   const grouped = new Map<string, string[]>();
-  const visibleBuiltinCount = DEFERRED_TOOLS_META.filter((meta) => !denied.has(meta.name.toLowerCase())).length;
-  for (const meta of DEFERRED_TOOLS_META) {
+  const visibleBuiltinCount = summaryMetas.filter((meta) => !denied.has(meta.name.toLowerCase())).length;
+  for (const meta of summaryMetas) {
     if (denied.has(meta.name.toLowerCase())) continue;
     const category = meta.tags[0] || 'other';
     if (!grouped.has(category)) grouped.set(category, []);

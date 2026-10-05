@@ -93,6 +93,18 @@ describe('readTurnOutcome', () => {
     const stamp = readTurnOutcome(outcome('maybe'));
     expect(stamp?.verdict).toBeNull();
   });
+
+  it('保留 DELIVERABLE_NONE_PRODUCED 问题码，账本 verdict 仍是 self_claimed', () => {
+    const stamp = readTurnOutcome(event('turn_outcome', {
+      terminal: 'completed',
+      verdict: 'self_claimed',
+      evidenceRefs: [],
+      source: 'generic',
+      evidenceProblems: ['DELIVERABLE_NONE_PRODUCED: pdf'],
+    }));
+    expect(stamp?.verdict).toBe('self_claimed');
+    expect(stamp?.evidenceProblems).toEqual(['DELIVERABLE_NONE_PRODUCED: pdf']);
+  });
 });
 
 describe('applyTail', () => {

@@ -20,3 +20,7 @@ Error: kill EPERM
 ```
 
 还原后：`Tests 19 passed (19)`。
+
+
+## ship 回执
+✓ gates:fast passed required local preflight. schema=2 head=bbf827157cebffe05cff74a66fb21453f086a53a base=226d03e6461c93c02136df1b5b0717fae4ea40b3 receipt=6a0fd759-9cf6-4822-94ec-d65ff30f8838

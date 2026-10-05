@@ -4,6 +4,7 @@
 // ============================================================================
 
 import React, { useEffect, useState, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
+import { FAILED_AUDIO_RETENTION_MS } from '@shared/constants/desktopAudio';
 import {
   Play,
   Square,
@@ -29,6 +30,7 @@ import {
   startAudioCapture,
   stopAudioCapture,
   getAudioCaptureStatus,
+  clearAudioRecordings,
   type AudioSegment,
   type AudioCaptureStatus,
   type DesktopActivityEvent,
@@ -51,8 +53,13 @@ import {
   type HourBlock,
   type NativeDesktopSectionProps,
 } from './nativeDesktopActivityModel';
+import { ConfirmDialog } from '../../../composites/ConfirmDialog';
+import { DangerButton } from '../../../primitives/Button';
 import { useI18n } from '../../../../hooks/useI18n';
+import { interpolate } from '../../../../i18n/interpolate';
 import { resolveScreenshotUrl } from '../../../../utils/resolveFileUrl';
+
+const AUDIO_RETENTION_HOURS = Math.round(FAILED_AUDIO_RETENTION_MS / (60 * 60 * 1000));
 
 const MarkdownCore = lazy(() => import('../../chat/MessageBubble/MarkdownCore'));
 
@@ -702,6 +709,9 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
   const [selectedHour, setSelectedHour] = useState<number>(new Date().getHours());
   const [audioStatus, setAudioStatus] = useState<AudioCaptureStatus | null>(null);
   const [audioBusy, setAudioBusy] = useState(false);
+  const [clearBusy, setClearBusy] = useState(false);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const [clearResult, setClearResult] = useState<string | null>(null);
   const hourListRef = useRef<HTMLDivElement>(null);
 
   const loadData = useCallback(async () => {
@@ -754,6 +764,32 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
   };
 
   const [audioCaptureMode, setAudioCaptureMode] = useState<'microphone' | 'system-audio'>('system-audio');
+
+  const openClearConfirm = async () => {
+    if (clearBusy) return;
+    const latest = await getAudioCaptureStatus();
+    if (latest) setAudioStatus(latest);
+    setClearConfirmOpen(true);
+  };
+
+  const handleConfirmClear = async () => {
+    setClearBusy(true);
+    setError(null);
+    try {
+      const result = await clearAudioRecordings();
+      setClearResult(interpolate(nativeDesktopText.audioRetention.cleared, {
+        count: result.deleted,
+        bytes: result.freedBytes,
+      }));
+      setClearConfirmOpen(false);
+      const latest = await getAudioCaptureStatus();
+      if (latest) setAudioStatus(latest);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setClearBusy(false);
+    }
+  };
 
   const handleToggleAudio = async () => {
     setAudioBusy(true);
@@ -907,6 +943,31 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-3 border-b border-zinc-800/50 px-5 py-2 shrink-0">
+        <span className="text-[11px] text-zinc-400">
+          {interpolate(nativeDesktopText.audioRetention.rule, { hours: AUDIO_RETENTION_HOURS })}
+        </span>
+        <DangerButton
+          type="button"
+          size="sm"
+          disabled={clearBusy}
+          onClick={() => { void openClearConfirm(); }}
+        >
+          {nativeDesktopText.audioRetention.clear}
+        </DangerButton>
+      </div>
+      {audioStatus?.retention && audioStatus.retention.failedTotal > 0 ? (
+        <div className="px-5 py-1.5 text-[11px] text-badge-danger shrink-0">
+          {interpolate(nativeDesktopText.audioRetention.failed, {
+            count: audioStatus.retention.failedTotal,
+            error: audioStatus.retention.lastError ?? '',
+          })}
+        </div>
+      ) : null}
+      {clearResult ? (
+        <div className="px-5 py-1.5 text-[11px] text-zinc-300 shrink-0">{clearResult}</div>
+      ) : null}
+
       {error && (
         <div className="mx-4 mt-2 p-2 rounded-lg border border-badge-danger/20 bg-rose-500/10 text-xs text-badge-danger shrink-0">
           {error}
@@ -957,6 +1018,21 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={clearConfirmOpen}
+        variant="danger"
+        title={nativeDesktopText.audioRetention.confirmTitle}
+        message={interpolate(nativeDesktopText.audioRetention.confirmMessage, {
+          count: audioStatus?.retention?.fileCount ?? 0,
+          bytes: audioStatus?.retention?.bytes ?? 0,
+        })}
+        confirmText={nativeDesktopText.audioRetention.confirm}
+        cancelText={nativeDesktopText.audioRetention.cancel}
+        confirmDisabled={clearBusy}
+        onConfirm={() => { void handleConfirmClear(); }}
+        onCancel={() => { if (!clearBusy) setClearConfirmOpen(false); }}
+      />
     </div>
   );
 };

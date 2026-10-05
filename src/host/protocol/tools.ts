@@ -137,7 +137,7 @@ export interface ToolSchema {
   readonly requiresApiKey?: readonly string[];
   /** 幂等 hint（read-only tool），用于缓存和 plan-mode 判断 */
   readonly readOnly?: boolean;
-  /** 显式资源访问。缺省时由折叠器从旧标记推导，调度器本切片不消费。 */
+  /** 显式资源访问。缺省时由折叠器从旧标记推导，调度按折叠结果分段。 */
   readonly accesses?: readonly ToolAccessDeclaration[];
   /**
    * 工具会阻塞执行，等待用户在当前会话界面当场输入或选择。

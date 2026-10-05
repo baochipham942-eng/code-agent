@@ -64,7 +64,8 @@ import {
   scheduleBoundToDate,
 } from './cronExecutionPolicy';
 import { CronCloudRuntime } from './cronCloudRuntime';
-import { CronEventTrigger, assertEventScheduleConstraints } from './cronEventTrigger';
+import { CronEventTrigger, assertEventScheduleConstraints, hasExplicitChatListenBinding } from './cronEventTrigger';
+import { setChannelListenResolver } from '../channels/channelListenRegistry';
 import {
   deleteCronJob,
   loadCronExecutionStatus,
@@ -180,6 +181,9 @@ export class CronService implements Disposable {
     });
     this.cronEventTrigger.start();
 
+    // 群监听绑定解析器：未 @ 的群消息按 hasExplicitChatListenBinding 判显式 (accountId, chatId) 绑定。
+    setChannelListenResolver((accountId, chatId) => hasExplicitChatListenBinding(this.listJobs(), accountId, chatId));
+
     this.isInitialized = true;
     console.error('[CronService] Initialized');
   }
@@ -187,6 +191,7 @@ export class CronService implements Disposable {
   async shutdown(): Promise<void> {
     this.cronEventTrigger?.dispose();
     this.cronEventTrigger = undefined;
+    setChannelListenResolver(undefined);
     this.cloudRuntime.stop();
     // Stop all cron jobs
     for (const [jobId, job] of this.jobs) {

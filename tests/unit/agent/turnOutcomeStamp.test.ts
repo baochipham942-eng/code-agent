@@ -8,6 +8,7 @@ import path from 'path';
 
 import type { CompletionSummaryRecord, Message } from '../../../src/shared/contract';
 import { makeEvidenceRef } from '../../../src/shared/contract/evidence';
+import { stampSurfaceVerdict } from '../../../src/shared/contract/planning';
 
 const traceRoot = path.join(os.tmpdir(), `turn-outcome-stamp-${process.pid}-${Date.now()}`);
 
@@ -416,6 +417,74 @@ describe('turn outcome stamp', () => {
     const outcome = latestOutcome(recorder);
     expect(outcome.verdict).toBe('self_claimed');
     expect(outcome.evidenceProblems).toEqual([`DELIVERABLE_NOT_ON_DISK: ${path.join(traceRoot, 'ghost.md')}`]);
+  });
+
+  it('stamps DELIVERABLE_NONE_PRODUCED from the live detector when a requested file was never written', async () => {
+    mkdirSync(traceRoot, { recursive: true });
+    const recorder = new TurnTraceRecorder('none-produced-live', traceRoot);
+    const messages = [
+      message({ content: '请生成一个 pdf 报告' }),
+      message({
+        id: 'script-only',
+        role: 'assistant',
+        content: '',
+        toolCalls: [{ id: 'write-script', name: 'Write', arguments: { file_path: 'build_report.py' } }],
+        toolResults: [{
+          toolCallId: 'write-script',
+          success: true,
+          output: 'ok',
+          metadata: { outputPath: 'build_report.py' },
+        }],
+      }),
+      message({ id: 'final', role: 'assistant', content: '脚本写好了，还没跑。', timestamp: 1_700_000_000_100 }),
+    ];
+    await recordTurnOutcomeStamp({ ...context(recorder, messages), workingDirectory: traceRoot }, 'completed', summary());
+    const outcome = latestOutcome(recorder);
+    expect(outcome.verdict).toBe('self_claimed');
+    expect(outcome.evidenceProblems).toContain('DELIVERABLE_NONE_PRODUCED: pdf');
+  });
+
+  it.each([
+    ['table-chat', '用表格输出一下 A 和 B 的对比'],
+    ['read-summary', '帮我读这个文档生成摘要'],
+  ])('does not stamp an undelivered file for conversational request %s', async (id, userContent) => {
+    mkdirSync(traceRoot, { recursive: true });
+    const finalText = '回复正文。';
+    const recorder = new TurnTraceRecorder(`none-produced-chat-${id}`, traceRoot);
+    const messages = [
+      message({ content: userContent }),
+      message({ id: 'final', role: 'assistant', content: finalText, timestamp: 1_700_000_000_100 }),
+    ];
+    await recordTurnOutcomeStamp({ ...context(recorder, messages), workingDirectory: traceRoot }, 'completed', summary());
+    const outcome = latestOutcome(recorder);
+    const problems = outcome.evidenceProblems ?? [];
+    expect(problems.filter((problem) => problem.startsWith('DELIVERABLE_NONE_PRODUCED'))).toEqual([]);
+    expect(stampSurfaceVerdict(outcome.verdict, problems)).toBe('self_claimed');
+    expect(messages.at(-1)?.content).toBe(finalText);
+  });
+
+  it('records no-produced requests as self_claimed after the repair budget, with an honest final note', async () => {
+    mkdirSync(traceRoot, { recursive: true });
+    const recorder = new TurnTraceRecorder('none-produced', traceRoot);
+    const artifactState = ArtifactState.forTest();
+    artifactState.setLastDeliverableCheck({
+      claims: [],
+      evidenceRefs: [],
+      missing: [{
+        claim: { claimed: 'pdf', resolved: '', source: 'inferred' },
+        kind: 'none_produced',
+        requestedFormat: 'pdf',
+      }],
+    }, Date.now());
+    const messages = [
+      message({ content: '请生成一个 pdf 文件' }),
+      message({ id: 'final', role: 'assistant', content: '本轮实际未交付：pdf 文件没有生成。', timestamp: 1_700_000_000_100 }),
+    ];
+    await recordTurnOutcomeStamp({ ...context(recorder, messages), workingDirectory: traceRoot, artifact: artifactState }, 'completed', summary());
+    const outcome = latestOutcome(recorder);
+    expect(messages.at(-1)?.content).toContain('本轮实际未交付');
+    expect(outcome.verdict).toBe('self_claimed');
+    expect(outcome.evidenceProblems).toContain('DELIVERABLE_NONE_PRODUCED: pdf');
   });
 
   it('treats a zero-byte claimed deliverable as undelivered', async () => {

@@ -10,6 +10,7 @@ export const turnCheckoutChatZh = {
   turnCheckoutNoteHumanEdit: '{file} 检测到人工编辑，未覆盖。',
   turnCheckoutNoteLegacyDigest: '{file} 缺少写后校验信息，未覆盖。',
   turnCheckoutNoteUncertainTarget: '{file} 的写入目标无法确定，没有快照可回退。',
+  turnCheckoutNoteUndeclaredTool: '「{tool}」的写入不在回退范围内。',
   turnCheckoutNoteSnapshotFailed: '{file} 无法安全保存反悔快照，未覆盖。',
 };
 
@@ -25,5 +26,6 @@ export const turnCheckoutChatEn: typeof turnCheckoutChatZh = {
   turnCheckoutNoteHumanEdit: '{file} has manual edits and was not overwritten.',
   turnCheckoutNoteLegacyDigest: '{file} lacks a post-write digest and was not overwritten.',
   turnCheckoutNoteUncertainTarget: '{file} had an unresolved write target; no snapshot exists to restore.',
+  turnCheckoutNoteUndeclaredTool: '{tool} wrote files that are not in the rollback scope.',
   turnCheckoutNoteSnapshotFailed: '{file} could not be snapshotted safely and was not overwritten.',
 };

@@ -35,6 +35,7 @@ import {
   migrateQuickFreeTierToOkiFlash,
 } from './configHelpers';
 import { devSlotFromDataDirName } from '../../../shared/devSlot';
+import { assertValidUserPermissionRules } from '../../../shared/permissionRuleSyntax';
 
 const logger = createLogger('ConfigService');
 
@@ -123,8 +124,14 @@ import { app as electronApp } from '../../platform';
 
 function loadEnvFile(): void {
   // Try multiple paths for .env file
-  const appPath = electronApp?.getAppPath?.() || '';
-  const userDataPath = electronApp?.getPath?.('userData') || '';
+  let appPath = '';
+  let userDataPath = '';
+  try {
+    appPath = electronApp?.getAppPath?.() || '';
+    userDataPath = electronApp?.getPath?.('userData') || '';
+  } catch {
+    // 平台层未就绪（如测试 mock 缺 app 导出）：import 期不能因此炸，只走 cwd/.env 路径
+  }
 
   // For packaged app, Resources folder is at appPath/../
   const resourcesPath = appPath ? path.join(appPath, '..') : '';
@@ -731,6 +738,7 @@ export class ConfigService implements IReadConfigService {
       }
     }
 
+    assertValidUserPermissionRules(updates.permissions, this.settings.permissions);
     this.settings = this.mergeAppSettings(this.settings, updates);
     await this.save();
 

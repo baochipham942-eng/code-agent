@@ -1,5 +1,6 @@
 import { checkDocumentEvidenceClaims, currentMessages } from './documentEvidenceBoundary';
 import {
+  appendRequestedNoneProduced,
   checkDeliverablesOnDisk,
   collectDeliverableClaims,
   formatDeliverableProblems,
@@ -263,7 +264,8 @@ async function buildTurnOutcome(
   // 核对结果没有语义（ai-review #2007 第五轮 Nit）。
   // 收尾闸（messageProcessor）刚做完的核对在本 run 内（checkedAtMs 不早于最后一条
   // user 消息）则直接复用——闸与印章消费同一份结论，office 交付物不再二次解析
-  // （PR#2079 Round 2 Nit）；闸没跑（错误收尾/forced-final 跳闸）就现场核对。
+  // （PR#2079 Round 2 Nit）；闸没跑（错误收尾/forced-final 跳闸）就现场核对，
+  // 并补上“请求了但没产出”（与收尾闸同一函数）。
   const workingDirectory = ctx.workingDirectory;
   const lastCheck = ctx.artifact?.lastDeliverableCheck;
   const cachedCheck = workingDirectory && lastCheck && lastCheck.checkedAtMs >= lastUserTimestamp(ctx.messages)
@@ -281,7 +283,10 @@ async function buildTurnOutcome(
       : [];
   const deliverableCheck: DeliverableDiskCheckResult = cachedCheck
     ?? (workingDirectory
-      ? await checkDeliverablesOnDisk(deliverableClaims, workingDirectory, { messages: ctx.messages })
+      ? appendRequestedNoneProduced(
+        await checkDeliverablesOnDisk(deliverableClaims, workingDirectory, { messages: ctx.messages }),
+        { messages: ctx.messages, workingDirectory, nudgeManager: ctx.nudgeManager },
+      )
       : { claims: [], evidenceRefs: [], missing: [] });
   problems.push(...formatDeliverableProblems(deliverableCheck.missing));
   const renderReview = ctx.artifact?.renderReview;

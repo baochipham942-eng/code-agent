@@ -31,7 +31,7 @@ import {
   resolveModelPrice,
 } from '@shared/pricing/resolveModelPrice';
 import { toast } from '../../hooks/useToast';
-import { BadgeCheck, Brain, Sparkles, Code2, Settings, Star } from 'lucide-react';
+import { BadgeCheck, Sparkles, Code2, Settings, Star } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import { useAppStore } from '../../stores/appStore';
 import { useModeStore } from '../../stores/modeStore';
@@ -53,6 +53,7 @@ import {
   formatExternalModelSwitcherTooltip,
   formatNativeModelSwitcherTooltip,
   getEngineEffortOptions,
+  getReasoningSegmentMode,
   buildThinkingSegmentOptions,
   getProviderEffortOptions,
   getSelectedEffortOption,
@@ -67,6 +68,7 @@ import {
   type EngineMenuView,
 } from './EngineScopedModelPanel';
 import { loadEnginePanelData } from './enginePanelLoader';
+import { ReasoningSegment } from './ReasoningSegment';
 import { SearchToggleSection } from './SearchToggleSection';
 
 export { buildModelSwitcherEngineSelection } from './modelSwitcherHelpers';
@@ -153,9 +155,7 @@ export function shouldShowNativeReasoningSegment(args: {
   showModelSettingsPrompt: boolean;
   effortOptionCount: number;
 }): boolean {
-  return args.engineKind === 'native'
-    && !args.showModelSettingsPrompt
-    && args.effortOptionCount > 1;
+  return getReasoningSegmentMode(args) === 'active';
 }
 
 export function shouldDismissModelSwitcher(
@@ -670,7 +670,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       || Boolean(selectedNativeOption?.features.includes('reasoning'))
       || /reason|thinking|think|mimo|r1|o\d/i.test(displayModel)
     : false;
-  const showNativeReasoningSegment = shouldShowNativeReasoningSegment({
+  const reasoningSegmentMode = getReasoningSegmentMode({
     engineKind: engine.kind,
     showModelSettingsPrompt,
     effortOptionCount: effortOptions.length,
@@ -688,7 +688,6 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     ? formatExternalModelSwitcherTooltip({
       engineLabel: ENGINE_SHORT_LABEL[engine.kind],
       model: engine.model ?? '默认模型',
-      effort: selectedEffort,
     })
     : showModelSettingsPrompt
       ? '还没有可用模型'
@@ -1010,32 +1009,12 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           </div>
           )}
 
-          {showNativeReasoningSegment && (
-            <div className="px-2 pt-1.5 pb-1.5 border-b border-zinc-700/50">
-              <div className="flex items-center gap-1 text-[10px] text-zinc-500 mb-1 px-1">
-                <Brain className="w-3 h-3" />
-                <span>{modelText.thinkingSectionLabel}</span>
-              </div>
-              <div className="grid grid-cols-5 gap-1" data-native-reasoning-segment>
-                {thinkingSegmentOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={option.onSelect}
-                    className={`
-                      inline-flex h-7 items-center justify-center rounded px-2 text-[10px] transition-colors
-                      ${option.selected
-                        ? `${option.color} ${option.tint} font-medium ring-1 ring-zinc-600/70`
-                        : 'text-zinc-500 hover:bg-zinc-700/50'}
-                    `}
-                    title={`${modelText.thinkingSectionLabel}: ${option.label}`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          <ReasoningSegment
+            mode={reasoningSegmentMode}
+            sectionLabel={modelText.thinkingSectionLabel}
+            note={modelText.thinkingExternalHint}
+            options={thinkingSegmentOptions}
+          />
 
           <SearchToggleSection
             visible={engine.kind === 'native' && !showModelSettingsPrompt}

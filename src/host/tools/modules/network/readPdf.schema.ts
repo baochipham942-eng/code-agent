@@ -36,4 +36,7 @@ Best for:
   readsUntrustedContent: 'block',
   readOnly: true,
   allowInPlanMode: true,
+  accesses: [
+    { kind: 'read', argumentNames: ['file_path'] },
+  ],
 };

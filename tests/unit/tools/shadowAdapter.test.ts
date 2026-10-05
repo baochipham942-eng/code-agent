@@ -45,6 +45,7 @@ describe('protocolAdapter — buildProtocolContext', () => {
       ...makeLegacyCtx('/tmp/workdir'),
       requiresOsWriteFence: true,
       writeFenceWorkspaceRoot: '/tmp/proj',
+      policyEnforcer: null,
     } as LegacyToolContext;
     const ctx = buildProtocolContext({
       sessionId: 'sess-fence',
@@ -53,6 +54,8 @@ describe('protocolAdapter — buildProtocolContext', () => {
     });
     expect(ctx.requiresOsWriteFence).toBe(true);
     expect(ctx.writeFenceWorkspaceRoot).toBe('/tmp/proj');
+    // 绑定实例（含 null = 无策略文件）必须原样到达 bash；漏搬 = 扩权卡永远不弹（fail-closed）。
+    expect(ctx.policyEnforcer).toBeNull();
   });
 
   it('原样搬运 executeTool（PTC 再入口），漏搬会让真实路径静默失效', async () => {

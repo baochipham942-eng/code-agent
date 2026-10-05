@@ -9,6 +9,7 @@ import { DREAM_SKILL_PROMPT } from '../../agent/dreamPrompt';
 import { DISTILL_SKILL_PROMPT } from '../../agent/distillPrompt';
 import { FRONTEND_SLIDES_BUILTIN_SKILLS } from './builtinFrontendSlides';
 import { ROLE_PACK_SKILLS, ROLE_PACK_SKILL_CATEGORY } from './rolePacks';
+import { TRIAGE_SKILL } from './triageSkill';
 
 /**
  * 内置 Skill 定义列表
@@ -3101,6 +3102,8 @@ See template at: \`<work-review>/code-reviewer.md\``,
   ...FRONTEND_SLIDES_BUILTIN_SKILLS,
   // E1 内置专家包 skill（牧之/溯真/青禾/明镜，按包拆文件防单文件超债门）
   ...ROLE_PACK_SKILLS,
+  // 批量分拣（N-JEV-DECIDE-TOOL，正文在 triageSkill.ts）
+  TRIAGE_SKILL,
 ];
 
 // ----------------------------------------------------------------------------
@@ -3148,6 +3151,7 @@ const BUILTIN_SKILL_CATEGORY: Record<string, SkillCategory> = {
   'create-role': 'automation',
   'create-team': 'automation',
   'edit-role': 'automation',
+  triage: 'automation',
   // E1 内置专家包（分类随包数据文件维护）
   ...ROLE_PACK_SKILL_CATEGORY,
 };

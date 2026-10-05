@@ -688,7 +688,7 @@ async function generateViaAiSdk(params: {
             tools: aiTools,
             abortSignal: guard.signal,
             temperature: requestTemperature,
-            ...(config.reasoningEffort ? { reasoning: config.reasoningEffort } : {}),
+            ...(config.reasoningEffort && config.reasoningEffort !== 'max' ? { reasoning: config.reasoningEffort } : {}),
             ...(providerOptions ? { providerOptions } : {}),
             ...(options?.toolChoice ? { toolChoice: options.toolChoice as ToolChoice<ToolSet> } : {}),
             ...(typeof config.maxTokens === 'number' && Number.isFinite(config.maxTokens)
@@ -1089,7 +1089,7 @@ async function streamViaAiSdk(params: {
         tools: aiTools,
         abortSignal: streamSignal,
         temperature: requestTemperature,
-        ...(config.reasoningEffort ? { reasoning: config.reasoningEffort } : {}),
+        ...(config.reasoningEffort && config.reasoningEffort !== 'max' ? { reasoning: config.reasoningEffort } : {}),
         ...(providerOptions ? { providerOptions } : {}),
         ...(options?.toolChoice ? { toolChoice: options.toolChoice as ToolChoice<ToolSet> } : {}),
         // 主 loop 的 artifact 生成/修复按阶段 cap maxTokens，必须透传给 SDK 保住上限；

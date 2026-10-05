@@ -18,6 +18,7 @@ import { EDITABLE_PERMISSION_TIMEOUT_MS, isEditableTool } from '../../shared/con
 import { approvalParkEvents } from './approvalParkEvents';
 import { noteUnattendedApprovalTimeout, UNATTENDED_APPROVAL_TIMEOUT } from './unattendedApprovalTerminal';
 import { getConfirmationGate } from './confirmationGate';
+import { mintAppGrantSession, mintAppGrantStanding } from '../permissions/appGrantStore';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
 import { createLogger } from '../services/infra/logger';
 import { approvalAnswerFromPermission, noteCompanionApprovalSettlement } from '../services/companion/companionDecisionSink';
@@ -51,6 +52,17 @@ function toDeliveryOutcome(resolution: ParkedResolution): PermissionDeliveryOutc
 /** 归一化审批响应为「放行/拒绝」。allow_standing（B4 铸权）在放行语义上等价 allow。 */
 function isApproveResponse(response: PermissionResponse): boolean {
   return response === 'allow' || response === 'allow_session' || response === 'allow_standing';
+}
+
+/** 真人点的会话/始终。带 targetApp 时只记该应用，不记工具级放行。plain allow 不记。 */
+function recordHumanGrant(response: PermissionResponse, request: PermissionRequest): void {
+  const app = request.details?.targetApp;
+  if (response === 'allow_session' && request.sessionId) {
+    if (app?.name) mintAppGrantSession(request.sessionId, app);
+    else getConfirmationGate().recordApproval(request.sessionId, request.tool);
+  } else if (response === 'allow_standing' && app?.name) {
+    mintAppGrantStanding(app);
+  }
 }
 
 /**
@@ -229,7 +241,7 @@ export class OrchestratorPermissionIsland {
     // B4 铸权：仅当人工在停车审批卡点「每次都允许发 <target>」（allow_standing）且赢得裁决后，
     // 把 (tool, target) 长期授权规则写到该会话所属 automation。target 从审批请求透传字段取，
     // 模型侧无任何入口（no-self-grant）。铸造失败（automation 不可解析/已归档）不影响本次放行。
-    if (response === 'allow_standing') {
+    if (response === 'allow_standing' && !pending.request.details?.targetApp) {
       this.mintStandingGrantFromRequest(pending.request);
     }
     this.pendingPermissions.delete(id);
@@ -483,9 +495,7 @@ export class OrchestratorPermissionIsland {
       this.pendingPermissions.set(fullRequest.id, {
         resolve: (response, machineDenial, updatedArgs) => {
           clearInterval(watchdog);
-          if (response === 'allow_session' && fullRequest.sessionId) {
-            getConfirmationGate().recordApproval(fullRequest.sessionId, fullRequest.tool);
-          }
+          recordHumanGrant(response, fullRequest);
           resolve(toAskResult(response, machineDenial, updatedArgs));
         },
         request: fullRequest,
@@ -532,9 +542,7 @@ export class OrchestratorPermissionIsland {
         parked: true,
         resolve: (response, machineDenial, _updatedArgs, message) => {
           clearTimeout(timeoutId);
-          if (response === 'allow_session' && fullRequest.sessionId) {
-            getConfirmationGate().recordApproval(fullRequest.sessionId, fullRequest.tool);
-          }
+          recordHumanGrant(response, fullRequest);
           resolve(toAskResult(response, machineDenial, undefined, message));
         },
         request: fullRequest,

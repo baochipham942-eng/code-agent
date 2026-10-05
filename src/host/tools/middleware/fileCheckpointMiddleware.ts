@@ -5,8 +5,8 @@ import { createLogger } from '../../services/infra/logger';
 import path from 'node:path';
 import type { ToolDefinition } from '../../../shared/contract';
 import type { WorkspaceScope } from '../../../shared/contract/project';
-import { resolveWorkspacePath } from '../../runtime/workspaceScope';
-import { resolveCheckpointWriteTargets, resolveToolPath } from '../writeTargets';
+import { isPathWithinRoot, resolveWorkspacePath } from '../../runtime/workspaceScope';
+import { declaredMcpWritePathParameters, resolveCheckpointWriteTargets, resolveToolPath } from '../writeTargets';
 
 const logger = createLogger('FileCheckpointMiddleware');
 
@@ -58,6 +58,43 @@ export interface CreatedFileCheckpoint {
   filePath: string;
 }
 
+/** 未声明写盘披露键前缀：值是工具名（mcp__server__tool），回退时逐工具披露。 */
+const UNDECLARED_TOOL_KEY_PREFIX = 'undeclared-tool:';
+
+/**
+ * 非 MCP 侧「确实可能触达本地盘」的最小档（Rework r2）：起子进程/写盘但 schema 没声明
+ * pathAuthority 的内置工具——Process（任意子进程）、git_commit（写 .git 对象）、
+ * git_worktree（建工作树目录）、xlwings_execute（驱动 Excel 改本地表格）。资格与
+ * permissionLevel 解耦：write/execute 档里 planning/multiagent/connectors/design 等
+ * 约 50 个纯 app 内/外部服务工具（ask_user_question、spawn_agent、mail_send…）不写
+ * 工作区文件，逐轮披露它们＝回退卡片 success→partial + 「写入不在回退范围」的失实
+ * 陈述，噪音反复出现会削弱整个披露机制的可信度。漏登（新的写盘内置没进此表）＝回到
+ * origin/main 的静默行为，不产生失实披露；编排日后可放宽此表。
+ */
+const UNDECLARED_LOCAL_WRITE_TOOL_NAMES = new Set(['Process', 'git_commit', 'git_worktree', 'xlwings_execute']);
+
+/**
+ * 「可能写盘但不在回退覆盖里」的资格判定（N-CHECKPOINT-MCP-WRITETARGET，编排决策：
+ * 集合保持最小，编排日后可放宽）：
+ * - MCP 工具（mcp__ 前缀）且非 readOnly——cua 桌面动作、无 annotations 的 MCP 写操作
+ *   都算；纯只读（readOnlyHint）不算。声明过 writePathParameters 的不算（Rework r2）：
+ *   写面已知，调用省略可选声明参数＝这次调用没有指向任何写目标，与内置 pathAuthority
+ *   工具的豁免同款，否则误落逐轮披露。
+ * - 非 MCP 工具：UNDECLARED_LOCAL_WRITE_TOOL_NAMES 命名档（见上，与 permissionLevel
+ *   解耦）且无 pathAuthority 声明、也不在六名下限里。纯 network 内置（http_request/
+ *   jira…）与纯 app 内工具都不写本地盘，不披露（false noise）。
+ */
+function qualifiesAsUndeclaredWriteTool(definition: ToolDefinition): boolean {
+  if (definition.name.startsWith('mcp__')) {
+    if (declaredMcpWritePathParameters(definition).length > 0) return false;
+    return definition.readOnly !== true;
+  }
+  if (definition.pathAuthority && definition.pathAuthority.length > 0) return false;
+  const names = [definition.name, ...(definition.aliases ?? [])];
+  return !names.some((name) => LEGACY_SNAPSHOT_TOOL_NAMES.has(name))
+    && names.some((name) => UNDECLARED_LOCAL_WRITE_TOOL_NAMES.has(name));
+}
+
 /**
  * 在工具执行前按**写目标**创建检查点（不枚举工具名）。
  * 判据是 resolveCheckpointWriteTargets（返修 r4 砍范围后的口径）**加上 main 白名单
@@ -67,7 +104,12 @@ export interface CreatedFileCheckpoint {
  * - 内置写工具：只认 schema 里声明 path / global-memory 权威的写路径字段（Write/Edit 等），
  *   白名单六名（Write/Append/Edit 及 snake 别名）即使 schema 未声明（Append）也按
  *   main 的取数方式兜底建快照。
- * - MCP / 未知工具：不推断（回 origin/main 行为，不建快照）。
+ * - MCP 工具：只认 server 声明的 writePathParameters（决策 2026-09-30，参数名推断被
+ *   永久否决）；声明的目标还要过信任边界——server 不可信，快照会把文件内容拷进本地
+ *   DB，只有 run 的 workspace 范围内（无 scope 以执行基准目录为界）才建快照，界外
+ *   落披露。
+ * - 未声明的「可能写盘」工具（qualifiesAsUndeclaredWriteTool）：调用零目标零披露时
+ *   落一条 undeclared-tool:<name> 行，回退时逐工具披露「不在回退范围」，不静默。
  * 解析不出的目标（含通配/变量的重定向）与建不出无损快照的目标（二进制/超大/读错误/
  * 目录）逐条落 uncertain 披露，回退时进 skippedFiles。本单建的每条快照都是
  * 「单文件、单行、自足可回退」——被每 session 上限逐出的行，其文件回退时不碰，
@@ -106,12 +148,26 @@ export async function createFileCheckpointIfNeeded(
       params,
       workingDirectory: effectiveWorkingDirectory,
     });
+    // MCP 声明目标的信任边界（N-CHECKPOINT-MCP-WRITETARGET）：只有声明的目标才过这
+    // 道闸；有 workspace scope 用 scope（read_write 根），没有以执行基准目录为界。
+    // 界外不建快照（不把任意路径的文件内容拷进本地 DB），逐条按真实路径落披露。
+    const declaredMcpParameters = declaredMcpWritePathParameters(definition);
+    const withinMcpBoundary = (filePath: string): boolean => context.workspaceScope
+      ? Boolean(resolveWorkspacePath(context.workspaceScope, filePath, 'read_write'))
+      : isPathWithinRoot(filePath, effectiveWorkingDirectory);
+    const outOfScopeTargets = declaredMcpParameters.length > 0
+      ? targets.filter((filePath) => !withinMcpBoundary(filePath))
+      : [];
+    const scopedTargets = declaredMcpParameters.length > 0
+      ? targets.filter((filePath) => withinMcpBoundary(filePath))
+      : targets;
+    const legacyTargets = legacyWhitelistTargets(definition, params, effectiveWorkingDirectory);
     // main 白名单下限在声明/命令解析**之后**并集（返修 r5）：两条来源都过同一归一
     // 管线，对同一文件只落一行快照；下限保证 Append 这类未声明 schema 的六名工具
     // 仍有 main 的快照覆盖。
     const snapshotTargets = [...new Set([
-      ...targets,
-      ...legacyWhitelistTargets(definition, params, effectiveWorkingDirectory),
+      ...scopedTargets,
+      ...legacyTargets,
     ])]
       .filter((filePath) => !UNSNAPSHOTABLE_DEVICES.has(filePath))
       .sort();
@@ -135,11 +191,27 @@ export async function createFileCheckpointIfNeeded(
     const createdPaths = new Set(created.map((entry) => entry.filePath));
     for (const key of [...new Set([
       ...uncertain,
+      ...outOfScopeTargets,
       ...snapshotTargets.filter((filePath) => !createdPaths.has(filePath)),
     ])].sort()) {
       await service.recordUncertainWriteTarget(context.sessionId, context.messageId, key, {
         workspaceScopeVersion: context.workspaceScope?.version,
       });
+    }
+    // 未声明写盘（N-CHECKPOINT-MCP-WRITETARGET）：这次调用零目标、零披露、零下限，
+    // 而工具本身「可能写盘且不被回退覆盖」——落一条逐工具披露行，回退时告知
+    // 「该工具的写入不在回退范围」。键按 (session, key, message) 去重，每轮各留一条。
+    if (
+      scopedTargets.length === 0 && uncertain.length === 0 && outOfScopeTargets.length === 0
+      && legacyTargets.length === 0
+      && qualifiesAsUndeclaredWriteTool(definition)
+    ) {
+      await service.recordUncertainWriteTarget(
+        context.sessionId,
+        context.messageId,
+        `${UNDECLARED_TOOL_KEY_PREFIX}${definition.name}`,
+        { workspaceScopeVersion: context.workspaceScope?.version },
+      );
     }
   } catch (error) {
     // 检查点失败不应阻止工具执行；已建成的照常返回，供执行成功后收 digest

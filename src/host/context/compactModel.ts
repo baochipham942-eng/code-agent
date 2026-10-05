@@ -25,12 +25,20 @@ export type CompactModelFallbackReason =
   | 'compact_model_missing_api_key'
   | 'compact_context_length_exceeded';
 
+/** 供应商本次调用上报的计数。缺的字段保持缺省，不补 0。 */
+interface SummaryCallUsage {
+  inputTokens?: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+}
+
 export interface CompactModelSummaryMetadata {
   provider: ModelProvider;
   model: string;
   useMainModel: boolean;
   fallbackReason?: CompactModelFallbackReason;
   truncated?: boolean;
+  usage?: SummaryCallUsage;
 }
 
 export interface CompactModelSummaryResult {
@@ -82,6 +90,32 @@ function isContextLengthError(error: unknown): boolean {
   return /context length|上下文长度超出|maximum context length/i.test(maybeError?.message ?? '');
 }
 
+function reportedSummaryUsage(usage: {
+  inputTokens?: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+} | undefined): SummaryCallUsage | undefined {
+  if (!usage) return undefined;
+  const reported: SummaryCallUsage = {};
+  if (typeof usage.inputTokens === 'number' && Number.isFinite(usage.inputTokens)) {
+    reported.inputTokens = usage.inputTokens;
+  }
+  if (typeof usage.cacheReadTokens === 'number' && Number.isFinite(usage.cacheReadTokens)) {
+    reported.cacheReadTokens = usage.cacheReadTokens;
+  }
+  if (typeof usage.cacheCreationTokens === 'number' && Number.isFinite(usage.cacheCreationTokens)) {
+    reported.cacheCreationTokens = usage.cacheCreationTokens;
+  }
+  if (
+    reported.inputTokens === undefined
+    && reported.cacheReadTokens === undefined
+    && reported.cacheCreationTokens === undefined
+  ) {
+    return undefined;
+  }
+  return reported;
+}
+
 async function requestSummary(
   router: ModelRouter,
   config: ModelConfig,
@@ -90,7 +124,7 @@ async function requestSummary(
   useMainModel: boolean,
   cacheScopeId: string,
   searchEnabled?: boolean,
-): Promise<{ content: string; truncated?: boolean }> {
+): Promise<{ content: string; truncated?: boolean; usage?: SummaryCallUsage }> {
   logger.debug('Generating summary', {
     provider: config.provider,
     model: config.model,
@@ -116,6 +150,17 @@ async function requestSummary(
     },
   );
 
+  const usage = reportedSummaryUsage(response.usage);
+  logger.info('Summary usage', {
+    provider: config.provider,
+    model: config.model,
+    cacheScopeId,
+    useMainModel,
+    inputTokens: usage?.inputTokens,
+    cacheReadTokens: usage?.cacheReadTokens,
+    cacheCreationTokens: usage?.cacheCreationTokens,
+  });
+
   if (response.content) {
     logger.debug('Summary generated', {
       responseLength: response.content.length,
@@ -123,6 +168,7 @@ async function requestSummary(
     return {
       content: response.content,
       ...(response.truncated !== undefined ? { truncated: response.truncated } : {}),
+      ...(usage !== undefined ? { usage } : {}),
     };
   }
 
@@ -261,7 +307,7 @@ function resolveMainSummaryModel(): ResolvedSummaryModel | null {
 }
 
 function toSummaryResult(
-  response: { content: string; truncated?: boolean },
+  response: { content: string; truncated?: boolean; usage?: SummaryCallUsage },
   resolution: ResolvedSummaryModel,
 ): CompactModelSummaryResult {
   return {
@@ -272,6 +318,7 @@ function toSummaryResult(
       useMainModel: resolution.useMainModel,
       fallbackReason: resolution.fallbackReason,
       ...(response.truncated !== undefined ? { truncated: response.truncated } : {}),
+      ...(response.usage !== undefined ? { usage: response.usage } : {}),
     },
   };
 }

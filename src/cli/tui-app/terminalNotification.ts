@@ -8,6 +8,8 @@
 // NEO_DISABLE_TERMINAL_NOTIFY=1 为逃生门。
 // ============================================================================
 
+import { isPlaceholderSessionTitle } from '../../shared/sessionTitlePlaceholder';
+
 export interface TerminalNotifyEnv {
   TERM_PROGRAM?: string;
   TERM?: string;
@@ -51,11 +53,7 @@ export function formatTerminalTitle(input: {
   sessionTitle?: string | null;
 }): string {
   const raw = input.sessionTitle?.trim() ?? '';
-  const isDefault = !raw
-    || raw.startsWith('CLI Session ')
-    || raw === 'New Chat'
-    || raw === '新对话';
-  const title = isDefault ? 'neo' : raw;
+  const title = isPlaceholderSessionTitle(raw) ? 'neo' : raw;
   if (input.running) return `${input.activity ?? 'Working…'} · ${title}`;
   if (input.queued > 0) return `${title} · ${input.queued} queued`;
   return title;

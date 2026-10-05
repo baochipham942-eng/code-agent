@@ -1438,7 +1438,7 @@ describe('bashModule sandbox escalation', () => {
 
   it('asks once, grants only the denied file, and retries once after approval', async () => {
     const cwd = mkdtempSync(join(tmpdir(), 'sandbox-escalation-'));
-    const deniedPath = join(tmpdir(), `sandbox-escalation-target-${process.pid}.txt`);
+    const deniedPath = join(resolveCanonicalRunPath(tmpdir()), `sandbox-escalation-target-${process.pid}.txt`);
     const denial = `printf '%s\\n' "EPERM: operation not permitted, open '${deniedPath}'" >&2; exit 1`;
     wrapMock
       .mockReturnValueOnce({ command: denial, cleanup: cleanupMock })
@@ -1501,7 +1501,8 @@ describe('bashModule sandbox escalation', () => {
         expect(result.error).toContain('Command failed with exit code 1');
         expect(result.error).toContain('The user declined to widen the sandbox');
         expect(result.meta?.sandboxEscalation).toEqual({
-          path: `/tmp/sandbox-escalation-declined-${process.pid}`,
+          // 卡上/授权的是规范路径（macOS /tmp → /private/tmp）
+          path: resolveCanonicalRunPath(`/tmp/sandbox-escalation-declined-${process.pid}`),
           decision: 'declined',
         });
       }
@@ -1509,7 +1510,7 @@ describe('bashModule sandbox escalation', () => {
   });
 
   it('does not open a second card when the approved retry fails', async () => {
-    const deniedPath = `/tmp/sandbox-escalation-retry-${process.pid}`;
+    const deniedPath = resolveCanonicalRunPath(`/tmp/sandbox-escalation-retry-${process.pid}`);
     const denial = `printf '%s\\n' "EPERM: operation not permitted, open '${deniedPath}'" >&2; exit 1`;
     wrapMock
       .mockReturnValueOnce({ command: denial, cleanup: cleanupMock })
@@ -1526,7 +1527,7 @@ describe('bashModule sandbox escalation', () => {
   });
 
   it('does not remember an approval across invocations', async () => {
-    const deniedPath = `/tmp/sandbox-escalation-repeat-${process.pid}`;
+    const deniedPath = resolveCanonicalRunPath(`/tmp/sandbox-escalation-repeat-${process.pid}`);
     const denial = `printf '%s\\n' "EPERM: operation not permitted, open '${deniedPath}'" >&2; exit 1`;
     wrapMock.mockImplementation(() => ({ command: denial, cleanup: cleanupMock }));
     const canUse = vi.fn()
@@ -1647,6 +1648,37 @@ describe('bashModule sandbox escalation', () => {
       await expectEscalationOffers(join(parent, 'new-file.txt'), true);
     } finally {
       rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  it('shows and grants the real file when a parent directory is a symlink (ai-review round 5)', async () => {
+    // `ln -s ~/.ssh <ws>/link; echo key >> <ws>/link/authorized_keys`：拒绝信息里是工作区拼法，
+    // seatbelt literal 放行的却是解析后的真实文件。卡与授权都必须是真实路径，不能让卡谎报目标。
+    const outside = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-outside-')));
+    const ws = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-ws-')));
+    const link = join(ws, 'link');
+    symlinkSync(outside, link);
+    const spelled = join(link, 'authorized_keys');
+    const real = join(outside, 'authorized_keys');
+    wrapMock
+      .mockReturnValueOnce({ command: `printf '%s\\n' "EPERM: operation not permitted, open '${spelled}'" >&2; exit 1`, cleanup: cleanupMock })
+      .mockReturnValueOnce({ command: "printf 'retried\\n'", cleanup: cleanupMock });
+    const canUse = vi.fn().mockResolvedValue({ allow: true as const });
+    try {
+      const handler = await bashModule.createHandler();
+      const result = await handler.execute({ command: `echo key >> ${spelled}` }, makeCtx({ workingDir: ws }), canUse);
+      expect(result.ok).toBe(true);
+      const escalationCalls = canUse.mock.calls.filter(([toolName]) => toolName === 'bash');
+      expect(escalationCalls).toHaveLength(1);
+      expect(escalationCalls[0]?.[2]).toContain(real);
+      expect(escalationCalls[0]?.[2]).not.toContain(spelled);
+      expect(escalationCalls[0]?.[3]).toEqual(expect.objectContaining({ details: expect.objectContaining({ deniedPath: real }) }));
+      const retryOptions = wrapMock.mock.calls[1]?.[1] as { readWriteFiles?: string[] };
+      expect(retryOptions.readWriteFiles).toEqual([real]);
+      if (result.ok) expect(result.meta?.sandboxEscalation).toEqual({ path: real, decision: 'approved' });
+    } finally {
+      rmSync(ws, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
     }
   });
 

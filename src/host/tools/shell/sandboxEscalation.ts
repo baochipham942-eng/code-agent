@@ -39,6 +39,9 @@ type EscalationTarget = 'file' | 'missing' | 'other';
  * about to be created) would need a subtree grant whose descendants no card can
  * list, so directories, symlinks and special files are never offered. A missing
  * file needs an existing parent directory, otherwise the retry cannot create it.
+ * The offered path is canonical (symlinks in parent directories resolved): the
+ * card shows and the retry grants the file that is actually written, never a
+ * workspace-looking spelling of a file outside it.
  */
 function escalationTarget(resolvedPath: string): EscalationTarget {
   try {
@@ -55,15 +58,10 @@ function escalationTarget(resolvedPath: string): EscalationTarget {
 
 function writePathPolicyBlocksEscalation(
   deniedPath: string,
+  resolvedPath: string,
   workingDirectory: string,
   policyEnforcer: PolicyEnforcer | null,
 ): boolean {
-  let resolvedPath = path.resolve(deniedPath);
-  try {
-    resolvedPath = resolveCanonicalRunPath(deniedPath);
-  } catch {
-    // Keep the lexical absolute path and still consult policy below.
-  }
   try {
     return denyConcreteShellWritePath({
       resolvedPath,
@@ -97,20 +95,29 @@ export function shouldOfferEscalation(input: SandboxEscalationEligibilityInput):
     return undefined;
   }
 
-  const resolvedPath = path.resolve(deniedPath);
-  if (resolvedPath === path.parse(resolvedPath).root || resolvedPath === path.resolve(homedir())) {
+  const home = path.resolve(homedir());
+  const spelledPath = path.resolve(deniedPath);
+  // lstat on the spelled path refuses a symlink as the last component; the canonical path would hide it.
+  if (spelledPath === path.parse(spelledPath).root || spelledPath === home || escalationTarget(spelledPath) === 'other') {
     return undefined;
   }
+  let resolvedPath: string;
+  try {
+    resolvedPath = resolveCanonicalRunPath(spelledPath);
+  } catch {
+    return undefined;
+  }
+  if (resolvedPath === path.parse(resolvedPath).root || resolvedPath === home) return undefined;
   const target = escalationTarget(resolvedPath);
   if (target === 'other') return undefined;
   if (target === 'missing' && (input.deniedPathCreatesDirectory === true || !input.newFileGrantSupported)) {
     return undefined;
   }
   if (input.policyEnforcer === undefined) return undefined;
-  if (writePathPolicyBlocksEscalation(deniedPath, input.workingDirectory, input.policyEnforcer)) {
+  if (writePathPolicyBlocksEscalation(deniedPath, resolvedPath, input.workingDirectory, input.policyEnforcer)) {
     return undefined;
   }
-  return deniedPath;
+  return resolvedPath;
 }
 
 export const SANDBOX_ESCALATION_DECLINED_MESSAGE =

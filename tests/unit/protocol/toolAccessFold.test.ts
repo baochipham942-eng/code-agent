@@ -25,7 +25,7 @@ const FLAGGED_KIND: Record<string, ToolAccessKind> = {
   github_pr: 'readwrite',
   http_request: 'readwrite',
   jira: 'readwrite',
-  ppt_generate: 'write',
+  ppt_generate: 'readwrite', // r3：补声明 template_path/data_source 的读入后折叠档升为 readwrite
   screenshot_page: 'readwrite',
   WebSearch: 'readwrite',
   AskUserQuestion: 'readwrite',

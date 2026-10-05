@@ -274,30 +274,10 @@ jobs:
         # 同时拒绝本机 -darwin 产物冒充 Swarm full 的 Linux/Chromium 基线。
         run: npm run check:visual-shotbase-baselines
 
-      - name: Read Playwright version
-        id: playwright-version
-        run: |
-          version="$(node -p "require('./package-lock.json').packages['node_modules/playwright'].version")"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Restore Playwright browser cache
-        id: playwright-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}-v2
-
       - name: Install Playwright browsers
-        # 主链路子集里有真跑交互 smoke 的用例（gameArtifactValidator 等，走 playwright
-        # 启浏览器）。本 job 此前不装浏览器，全靠 runner 镜像里碰巧有匹配版本的缓存——
-        # 实测 #666 绿而 #665 连挂两次，失败信息是 browserType.launch: Executable
-        # doesn't exist at ~/.cache/ms-playwright/chromium_headless_shell-<build>。
-        # 即这道门当时是抽奖：跑不起浏览器时 runtimeChecks 为空，断言"有 runtime 证据"
-        # 反而落空，红得跟被测代码毫无关系。与本 workflow 的 full job / main-full-gate
-        # 🔴 无条件装（浏览器已在时是空操作）。08-25 实付：此前「缓存命中就跳过」，而缓存是
-        # 无锁重解析时代按错版本 playwright-core 填的，键却写着锁里的 1.60.0 ⇒ 命中即缺
-        # chromium_headless_shell。键加 -v2 甩掉毒缓存（N-CI-XYFLOW-DEPOPT）。
-        run: npx playwright install --with-deps chromium
+        uses: ./.github/actions/setup-playwright
+        with:
+          with-deps: true
 
       - name: Script gates (vitest tests/scripts)
         # tests/scripts 下的守门测试（designSystemGate / architectureDebtReport /
@@ -396,24 +376,10 @@ jobs:
           test -f node_modules/better-sqlite3/prebuilds/linux-x64.node
           node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.prepare('SELECT 1').get(); db.close()"
 
-      - name: Read Playwright version
-        id: playwright-version
-        run: |
-          version="$(node -p "require('./package-lock.json').packages['node_modules/playwright'].version")"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Restore Playwright browser cache
-        id: playwright-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}-v2
-
       - name: Install Playwright browsers
-        # 子集里有真跑交互 smoke 的用例（gameArtifactValidator 等，走 playwright 启浏览器）。
-        # 🔴 无条件装（浏览器已在时是空操作）——缓存命中就跳过曾在 08-25 实付：缓存是无锁重
-        # 解析时代按错版本 playwright-core 填的，键却写着锁里的版本 ⇒ 命中即缺 headless shell。
-        run: npx playwright install --with-deps chromium
+        uses: ./.github/actions/setup-playwright
+        with:
+          with-deps: true
 
       - name: Unit + renderer vitest (shard ${{ matrix.shard }}/4)
         # 2026-09-05 N-GATE-SUBSET-EXPAND：全收 tests/unit + tests/renderer。
@@ -494,21 +460,10 @@ jobs:
           npm rebuild node-pty --build-from-source
           test -f node_modules/node-pty/build/Release/pty.node
 
-      - name: Read Playwright version
-        id: playwright-version
-        run: |
-          version="$(node -p "require('./package-lock.json').packages['node_modules/playwright'].version")"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Restore Playwright browser cache
-        id: playwright-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}-v2
-
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+        uses: ./.github/actions/setup-playwright
+        with:
+          with-deps: true
 
       - name: Run smoke suite
         run: node scripts/ci/vitest-with-flake-ledger.mjs --job "Run smoke suite" -- npm run test:swarm:smoke -- --retry=1
@@ -600,20 +555,10 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts
 
-      - name: Read Playwright version
-        id: playwright-version
-        run: |
-          version="$(node -p "require('./package-lock.json').packages['node_modules/playwright'].version")"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Restore Playwright browser cache
-        uses: actions/cache@v4
+      - name: Install Playwright browsers
+        uses: ./.github/actions/setup-playwright
         with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}-v2
-
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+          with-deps: true
 
       - name: Run all journey commit-count probes
         env:

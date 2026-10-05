@@ -10,8 +10,12 @@
 /** 隐藏唤醒回合的「无话可说」出口工具名（N-TASKWAKE）；host 与 renderer 共用，放 shared 以免 runtime 反向依赖 commandCenter 服务图。 */
 export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 
-// 版本门把 src/host/prompts/ 下任何改动都当成提示词文本。sys-v71：新增 deferred 工具 decide 的 schema 与 triage 技能（模型可见面变化）。
-export const PROMPT_VERSION = 'sys-v71' as const;
+// 版本门把 src/host/prompts/ 下任何改动都当成提示词文本。sys-v70 只覆盖 cache-break 归因，请求字节未变。
+// sys-v71：N-TOOLRES-K2 r3 只给工具 schema 加了 host 侧 accesses 声明（快照字节比对证明请求体不变），
+// 版本门按 *.schema.ts 实质改动触发 bump；此处是启发式的归因切分，不是提示词变更。
+// sys-v72：同单 r5 再调 lsp/diagnostics 的 accesses 声明（仍是 host 侧元数据，模型只收 name/description/inputSchema）。
+// sys-v73：N-JEV-DECIDE-TOOL 新增 deferred 工具 decide 的 schema 与 triage 技能（模型可见面变化）。
+export const PROMPT_VERSION = 'sys-v73' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

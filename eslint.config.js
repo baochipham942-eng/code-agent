@@ -232,11 +232,8 @@ export default tseslint.config(
     // 消息链路的汇聚口），2026-07-29 UX round2 后同 agentOrchestrator 类按汇聚口豁免。
     // browserService.ts — 托管浏览器生命周期/标签/视口/输入汇聚口（system Chrome CDP + Playwright
     // bundled 双路径）；helper 已拆到 browser/*，本文件仍是会话真源与 IPC 入口。
-    // deferredTools.ts — 延迟工具元数据扁平表（N-JEV-DECIDE-TOOL 加 decide 条目后有效行越过 1000；
-    // 纯数据 + 两个纯函数，拆表收益低于搬迁成本）。
     files: [
       'src/host/services/skills/builtinSkillsData.ts',
-      'src/host/services/toolSearch/deferredTools.ts',
       'src/host/services/core/database/schema.ts',
       'src/host/services/core/databaseService.ts',
       'src/host/tools/toolExecutor.ts',

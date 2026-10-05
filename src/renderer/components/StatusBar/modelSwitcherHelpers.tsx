@@ -1021,6 +1021,18 @@ export function getEngineEffortOptions(kind: AgentEngineKind): EffortOption[] {
   return BASE_EFFORT_OPTIONS;
 }
 
+export type ReasoningSegmentMode = 'active' | 'disabled_external' | 'hidden';
+
+/** 原生沿用「不在配置提示里、且档位多于一档才展开」；任何非原生引擎都置灰，不把段藏掉。 */
+export function getReasoningSegmentMode(args: {
+  engineKind: AgentEngineKind;
+  showModelSettingsPrompt: boolean;
+  effortOptionCount: number;
+}): ReasoningSegmentMode {
+  if (args.engineKind !== 'native') return 'disabled_external';
+  return !args.showModelSettingsPrompt && args.effortOptionCount > 1 ? 'active' : 'hidden';
+}
+
 export function getSelectedEffortOption(
   effortLevel: EffortLevel,
   options: readonly EffortOption[],

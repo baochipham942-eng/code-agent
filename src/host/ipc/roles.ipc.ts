@@ -46,6 +46,9 @@ import {
   listRoleDrafts,
   confirmRoleDraft,
   rejectRoleDraft,
+  getFirstWakeSnapshot,
+  skipFirstWake,
+  isSafeRoleId,
 } from '../services/roleAssets';
 import { sanitizeTopicList } from '../services/roleAssets/wakeRationale';
 import { getDatabase } from '../services/core/databaseService';
@@ -621,6 +624,25 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
     if (!roleId) return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
     const { retryMissingSkills } = await import('../services/roleAssets/rolePackInstallService');
     return { success: true, data: await retryMissingSkills(roleId) };
+  },
+  // --- 首次醒来（新角色的只读介绍 + 可委托建议） ---
+  firstWakeGet: async (_ctx, payload) => {
+    const { roleId } = (payload ?? {}) as RoleIdPayload;
+    if (!roleId || !isSafeRoleId(roleId)) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'a safe roleId is required' } };
+    }
+    return { success: true, data: await getFirstWakeSnapshot(roleId) };
+  },
+  firstWakeSkip: async (_ctx, payload) => {
+    const { roleId } = (payload ?? {}) as RoleIdPayload;
+    if (!roleId || !isSafeRoleId(roleId)) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'a safe roleId is required' } };
+    }
+    const result = await skipFirstWake(roleId);
+    if (!result.success) {
+      return { success: false, error: { code: 'FIRST_WAKE_SKIP_FAILED', message: 'skip failed' } };
+    }
+    return { success: true, data: { success: true } };
   },
 };
 

@@ -19,6 +19,13 @@ function getCheckpointDatabase() {
 const MISSING_FILE_DIGEST = 'missing';
 
 /**
+ * 未声明写盘披露键前缀（middleware 生成，值是工具名）。本文件里它不只用于识别：
+ * 披露上限也按这个前缀拆成两池（见 enforceUncertainLimit），逐轮的 undeclared 行
+ * 不许挤掉路径类披露。
+ */
+const UNDECLARED_TOOL_KEY_PREFIX = 'undeclared-tool:';
+
+/**
  * 一个路径能否进**无损**快照（返修 r2）。二进制/非 utf-8 的判据用 Buffer 做
  * 解码再编码的往返比对，不靠 utf-8 字符串——有损读入的字符串看不出自己有损。
  */
@@ -180,6 +187,10 @@ export class FileCheckpointService {
    * 而不是删旧插新——删旧会把更早消息的行抹掉，那条行若是该消息唯一的行，「按消息
    * 回退」的锚点查询就一行不剩。披露行有自己的总量上限（enforceUncertainLimit），
    * 不占真快照的预算：真快照已满时，写一条披露不允许把可回退的快照挤出去。
+   * 例外（N-CHECKPOINT-MCP-WRITETARGET）：`undeclared-tool:` 键按 (session, key,
+   * message) 去重——未声明写盘的披露是逐**轮**的，「这轮用了会写盘的未声明工具」
+   * 必须出现在这轮的回退窗口里，只留最早一条会把后面轮次的披露藏掉。上限也按类
+   * 拆两池（Rework r1），见 enforceUncertainLimit。
    * @returns 记录 id（含同键已存在时返回既有行 id），失败返回 null
    */
   async recordUncertainWriteTarget(
@@ -192,14 +203,16 @@ export class FileCheckpointService {
     if (!db) return null;
 
     try {
+      const perMessage = uncertainTarget.startsWith(UNDECLARED_TOOL_KEY_PREFIX);
       const existing = db.prepare(`
         SELECT id FROM file_checkpoints
         WHERE session_id = ? AND file_path = ? AND uncertain_target = 1
+          ${perMessage ? 'AND message_id = ?' : ''}
         LIMIT 1
-      `).get(sessionId, uncertainTarget) as { id: string } | undefined;
+      `).get(...(perMessage ? [sessionId, uncertainTarget, messageId] : [sessionId, uncertainTarget])) as { id: string } | undefined;
       if (existing) return existing.id;
 
-      await this.enforceUncertainLimit(sessionId);
+      await this.enforceUncertainLimit(sessionId, perMessage);
 
       const id = `ckpt_${Date.now()}_${uuidv4().slice(0, 8)}`;
       db.prepare(`
@@ -340,6 +353,18 @@ export class FileCheckpointService {
       for (const [filePath, original] of fileToOriginal) {
         try {
           if (original.uncertain) {
+            // undeclared-tool:<name> 行（N-CHECKPOINT-MCP-WRITETARGET）：该工具的写盘
+            // 从不在回退范围——按 key 分组每工具一条（跑多少次都折叠成一条），带工具
+            // 名披露。是披露不是恢复失败，不计入下面的 success 翻红。
+            if (filePath.startsWith(UNDECLARED_TOOL_KEY_PREFIX)) {
+              result.skippedFiles.push({
+                filePath,
+                reason: 'undeclared_tool_write',
+                toolName: filePath.slice(UNDECLARED_TOOL_KEY_PREFIX.length),
+                detail: 'This tool\'s writes are not in the rollback scope.',
+              });
+              continue;
+            }
             // 写目标解析不出来（含通配/变量的重定向等），或建不出无损快照（超大/二进制/
             // 读错误，返修 r2）——没有可安全回退的快照，逐条披露，回退不碰这些文件
             result.skippedFiles.push({
@@ -445,7 +470,10 @@ export class FileCheckpointService {
         }
       }
 
-      result.success = result.errors.length === 0 && result.skippedFiles.length === 0;
+      // undeclared_tool_write 披露不翻红：未声明工具的写盘从不在回退范围，它的 skip
+      // 是告知不是失败（与 uncertain 披露在 sessionHistoryAppService 的非致命口径对齐）
+      result.success = result.errors.length === 0
+        && !result.skippedFiles.some((item) => item.reason !== 'undeclared_tool_write');
 
       logger.info('Files rewound', {
         sessionId,
@@ -631,16 +659,26 @@ export class FileCheckpointService {
    * 披露行自己的总量上限（返修 r3，返修 r4 与真快照预算拆开）：真快照预算不动，但
    * 披露也不许无上限增长（同键去重之外，不同键各来一条照样能涨）——超出按最旧淘汰，
    * 总量封顶。只在写披露行前调用，绝不逐出真快照。
+   * 预算按披露类拆两池（Rework r1）：`undeclared-tool:` 行按 (session,key,message)
+   * 逐轮落行，无 annotations 的 MCP / execute 档工具一轮一条；若与路径类披露（通配
+   * 重定向、界外路径、建不出无损快照的文件）共用一个池，几十轮就会把更早轮次的路径
+   * 披露挤出局——回退到那轮时 restore 依旧 success、界面不再提示该文件没有快照，
+   * 用户误以为已回退。两池各自 maxCheckpointsPerSession 封顶、各自最旧先删，
+   * 谁也逐不出谁。
    */
-  private async enforceUncertainLimit(sessionId: string): Promise<void> {
+  private async enforceUncertainLimit(sessionId: string, undeclaredToolPool: boolean): Promise<void> {
     const db = getCheckpointDatabase();
     if (!db) return;
 
     try {
+      // substr 等值比较 = 前缀精确匹配（避开 LIKE 的大小写不敏感与 _/% 通配符歧义）
+      const poolPredicate = undeclaredToolPool
+        ? `substr(file_path, 1, ${UNDECLARED_TOOL_KEY_PREFIX.length}) = ?`
+        : `substr(file_path, 1, ${UNDECLARED_TOOL_KEY_PREFIX.length}) != ?`;
       const uncertainResult = db.prepare(`
         SELECT COUNT(*) as cnt FROM file_checkpoints
-        WHERE session_id = ? AND uncertain_target = 1
-      `).get(sessionId) as { cnt: number } | undefined;
+        WHERE session_id = ? AND uncertain_target = 1 AND ${poolPredicate}
+      `).get(sessionId, UNDECLARED_TOOL_KEY_PREFIX) as { cnt: number } | undefined;
 
       const uncertainCount = uncertainResult?.cnt || 0;
       if (uncertainCount >= this.config.maxCheckpointsPerSession) {
@@ -649,13 +687,17 @@ export class FileCheckpointService {
           DELETE FROM file_checkpoints
           WHERE id IN (
             SELECT id FROM file_checkpoints
-            WHERE session_id = ? AND uncertain_target = 1
+            WHERE session_id = ? AND uncertain_target = 1 AND ${poolPredicate}
             ORDER BY created_at ASC, rowid ASC
             LIMIT ?
           )
-        `).run(sessionId, uncertainDeleteCount);
+        `).run(sessionId, UNDECLARED_TOOL_KEY_PREFIX, uncertainDeleteCount);
 
-        logger.debug('Enforced uncertain disclosure limit', { sessionId, deleted: uncertainDeleteCount });
+        logger.debug('Enforced uncertain disclosure limit', {
+          sessionId,
+          pool: undeclaredToolPool ? 'undeclared-tool' : 'path',
+          deleted: uncertainDeleteCount,
+        });
       }
     } catch (error) {
       logger.error('Failed to enforce uncertain limit', { error, sessionId });

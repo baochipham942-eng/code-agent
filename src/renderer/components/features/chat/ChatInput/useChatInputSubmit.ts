@@ -32,6 +32,7 @@ import { useDoomLoopHandbackStore } from '../DoomLoopHandbackBar';
 import { buildAutomationNoticeMessage, formatCronScheduleLabel, formatLoopIntervalLabel } from '../automationNotice';
 import type { InputAreaRef } from './InputArea';
 import type { BuildEnvelope } from './useChatInputEnvelope';
+import { btwCommand } from '@shared/commands/definitions/btwCommands';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { generateMessageId } from '@shared/utils/id';
 import {
@@ -56,6 +57,8 @@ import { shouldOpenGoalConfirm } from './goalConfirm';
 import { buildSeedComposerCommand, getBareSeedComposerKind, type SeedComposerKind } from './SeedComposerCard';
 import { getAgentCommandToken, parseAgentSlashCommand } from './agentCommand';
 import { applyPendingCommandPrefix } from './pendingCommand';
+import { openSideChat as openSideChatLayer } from '../sideChatFloaterState';
+import { parseBtwCommand } from './parseBtwCommand';
 import { shouldClearComposerAfterSend } from './utils';
 
 type VoiceInputContextValue = {
@@ -369,6 +372,31 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     // 命令 chip 在这里拼回前缀（配方分支只吃用户原话当主题，不看 chip）
     const commandValue = pendingCommand ? applyPendingCommandPrefix(trimmedValue, pendingCommand) : trimmedValue;
     let contentToSend = commandValue;
+
+    const btwParsed = parseBtwCommand(commandValue);
+    if (btwParsed) {
+      if (!btwParsed.question) {
+        toast.warning(t.sideChat.missingQuestion);
+        return;
+      }
+      if (!currentSessionId) return;
+      addToInputHistory(commandValue);
+      setValue('');
+      discardPendingResend();
+      clearPendingCommand();
+      setVoiceInputContext(null);
+      await btwCommand.handler(
+        {
+          surface: 'gui',
+          output: { info() {}, success() {}, warn() {}, error() {} },
+          openSideChat: (question: string) => {
+            openSideChatLayer(currentSessionId, question);
+          },
+        },
+        [btwParsed.question],
+      );
+      return;
+    }
 
     const compactCommand = parseCompactCommand(commandValue);
     if (compactCommand) {

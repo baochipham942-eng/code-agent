@@ -61,6 +61,7 @@ function normalizeRequest(
       affectedPath: request.details.affectedPath,
       affectedFileCount: request.details.affectedFileCount,
       targetKind: request.details.targetKind,
+      targetApp: request.details.targetApp,
       triggeredByAgentMessage: request.details.triggeredByAgentMessage,
       path: request.details.path,
       preview: request.details.preview,
@@ -131,13 +132,14 @@ export function PermissionCard({
     : null;
   const settled = request?.resolved === true && request.decision !== undefined;
   const safeDefaultDeny = request !== null && isSafeDefaultDeny(request);
+  const appGrantCard = Boolean(request?.details.targetApp?.name) && request?.forceConfirm !== true;
 
   // 新请求进来时清空选中态（ processedRequestRef 之外的生命周期，独立于记忆直发 ）
   const requestId = request?.id ?? null;
   useEffect(() => {
-    setSelectedLevel('once');
+    setSelectedLevel(appGrantCard ? 'session' : 'once');
     setDraft(null);
-  }, [requestId]);
+  }, [requestId, appGrantCard]);
 
   // 可编辑写回工具：三选一（原样写回 / 改一改再写回 / 取消），永远一次性放行
   const editable = request?.rawArgs !== undefined && isEditableTool(request.tool);
@@ -168,11 +170,16 @@ export function PermissionCard({
 
   const memoryRequest = request ? toMemoryRequest(request) : null;
   const isNewRequest = request !== null && !settled && processedRequestRef.current !== request.id;
-  const memoryResult = memoryRequest && isNewRequest && request?.forceConfirm !== true
+  const memoryResult = memoryRequest && isNewRequest && request?.forceConfirm !== true && !appGrantCard
     ? checkMemory(memoryRequest)
     : null;
 
   const toPermissionResponse = (level: ApprovalLevel): PermissionResponse => {
+    if (appGrantCard && !isDangerous) {
+      if (level === 'always') return 'allow_standing';
+      if (level === 'session') return 'allow_session';
+      return 'deny';
+    }
     switch (level) {
       case 'once':
       case 'always':
@@ -197,7 +204,7 @@ export function PermissionCard({
       processedRequestRef.current = request.id;
 
       try {
-        if ((level === 'session' || level === 'always' || level === 'never') && request.forceConfirm !== true) {
+        if (!appGrantCard && (level === 'session' || level === 'always' || level === 'never') && request.forceConfirm !== true) {
           const memoryReq: PermissionRequestForMemory = {
             id: request.id,
             tool: request.tool,
@@ -258,6 +265,7 @@ export function PermissionCard({
       request?.tool,
       request?.type,
       request?.details,
+      appGrantCard,
       saveMemory,
       settled,
       recordPermissionDecision,
@@ -301,7 +309,7 @@ export function PermissionCard({
         case 'y':
           e.preventDefault();
           e.stopPropagation();
-          handleApproval('once');
+          handleApproval(appGrantCard && !isDangerous ? 'session' : 'once');
           break;
         case 'n':
           e.preventDefault();
@@ -331,7 +339,7 @@ export function PermissionCard({
 
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [request, settled, handleApproval, hideStandingGrants, draft, editable]);
+  }, [request, settled, handleApproval, hideStandingGrants, draft, editable, appGrantCard, isDangerous]);
 
   // 如果没有当前会话可见的待处理权限请求，不渲染
   if (!request) return null;
@@ -372,6 +380,12 @@ export function PermissionCard({
       : []),
     { id: 'deny', label: p.optionDeny, description: p.optionDenyDesc, shortcut: 'n' },
   ];
+  const appOptions: DecisionOption[] = [
+    { id: 'always', label: p.computerApp.always, description: p.computerApp.alwaysDesc, shortcut: 'a' },
+    { id: 'session', label: p.computerApp.session, description: p.computerApp.sessionDesc, shortcut: 's' },
+    { id: 'deny', label: p.computerApp.deny, description: p.computerApp.denyDesc, shortcut: 'n' },
+  ];
+
 
   // 可编辑写回工具的专属呈现：标题 / 图标 / 问句点题（不再是「创建文件」+「允许这次操作？」）
   const firstRecipient = editable && Array.isArray(request.rawArgs?.to) ? String(request.rawArgs.to[0] ?? '') : '';
@@ -381,7 +395,9 @@ export function PermissionCard({
   const contentTitle = editable && typeof request.rawArgs?.title === 'string'
     ? request.rawArgs.title.trim()
     : '';
-  const title = isMeetingCreate
+  const title = appGrantCard
+    ? p.computerApp.title.replace('{app}', request.details.targetApp?.name ?? '')
+    : isMeetingCreate
     ? w.tmeetCreateTitle
     : request.tool === 'calendar_create_event'
       ? w.calendarCreateTitle
@@ -428,7 +444,9 @@ export function PermissionCard({
         { id: 'once', label: t.decisionCard.stillExecute, shortcut: 'y' },
         { id: 'deny', label: p.optionDeny, shortcut: 'n' },
       ]
-    : options;
+    : appGrantCard
+      ? appOptions
+      : options;
 
   // 已决请求不再由 PermissionCard 渲染；结果归属到对应工具步骤旁的一行存证。
   if (settled) return null;
@@ -509,7 +527,7 @@ export function PermissionCard({
       expandLabel={t.decisionCard.details}
       collapseLabel={t.decisionCard.collapse}
       directActions
-      primaryActionId={safeDefaultDeny ? 'deny' : 'once'}
+      primaryActionId={appGrantCard && !isDangerous ? 'session' : (safeDefaultDeny ? 'deny' : 'once')}
       dangerActionId={safeDefaultDeny ? 'once' : undefined}
       onDirectAction={(id) => {
         if (id === 'edit') {

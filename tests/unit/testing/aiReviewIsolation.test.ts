@@ -5,7 +5,23 @@ import type { TestCase, TestResult, TestRunnerConfig } from '../../../src/host/t
 const quickTask = vi.hoisted(() => vi.fn());
 vi.mock('../../../src/host/model/quickModel', () => ({ quickTask }));
 const systemOne = vi.hoisted(() => vi.fn());
-vi.mock('../../../src/host/model/providers/typesafeProvider', () => ({ systemOne }));
+vi.mock('../../../src/host/model/providers/typesafeProvider', async () => {
+  const { JEV_MODEL } = await import('../../../src/shared/constants/jevQuestions');
+  const { MODEL_API_ENDPOINTS } = await import('../../../src/shared/constants/providers');
+  return {
+    systemOne,
+    resolveJevRoute: () => {
+      const apiKey = process.env.TYPESAFE_API_KEY?.trim() ?? '';
+      if (!apiKey) return null;
+      return {
+        kind: 'official' as const,
+        endpoint: MODEL_API_ENDPOINTS.typesafeSystemOne,
+        model: JEV_MODEL,
+        apiKey,
+      };
+    },
+  };
+});
 
 import { attachAiReview } from '../../../src/host/testing/testRunnerAiReview';
 import { JEV_JUDGE_MODEL } from '../../../src/shared/constants/jevQuestions';

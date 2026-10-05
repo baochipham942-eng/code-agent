@@ -363,6 +363,11 @@ describe('ToolSearch output plus newly loaded schema', () => {
       if (!result.ok) return;
       const raw = readDeferredToolInjectionSchemas([meta.name])[0];
       const sent = getLoadedDeferredToolDefinitions().find((tool) => tool.name === meta.name);
+      if (!sent) {
+        // decide 无可用 Jev 路由（测试环境无 key）时即便被 select 标记 loaded 也不进表，是设计（toolDefinitions.ts）
+        expect(meta.name).toBe('decide');
+        continue;
+      }
       expect(sent?.description, meta.name).toBe(raw?.description);
       expect(JSON.stringify(sent?.inputSchema), meta.name).toBe(JSON.stringify(raw?.input_schema));
       expect(estimateTokens(result.output) + (raw?.sentTokens ?? 0), meta.name).toBeLessThanOrEqual(EXPLICIT_CEILING);

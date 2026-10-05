@@ -1,4 +1,5 @@
 import type { AgentErrorMetadata, Message, ModelConfig, Session } from '../../shared/contract';
+import { isPlaceholderSessionTitle } from '../../shared/sessionTitlePlaceholder';
 import type { DatabaseService } from '../../host/services/core/databaseService';
 import { extractArtifacts } from '../../host/agent/artifactExtractor';
 import type { SessionCreateOptions } from '../../cli/session';
@@ -13,6 +14,8 @@ import {
   type InMemorySession,
   toCachedSessionMessages,
 } from './sessionCache';
+
+export { isPlaceholderSessionTitle };
 
 const SESSION_CACHE_MAX = 50;
 const sessionMessages = new Map<string, CachedMessage[]>();
@@ -298,20 +301,6 @@ function hasCliSessionLifecycle(
   );
 }
 
-export function isPlaceholderSessionTitle(title: string | undefined): boolean {
-  return !title
-    || title === '新对话'
-    || title === '新会话'
-    || title === 'New Chat'
-    || title === 'New Session'
-    || title === 'New conversation'
-    || title.startsWith('Session ');
-}
-
-function isDefaultSessionTitle(title: string | undefined): boolean {
-  return isPlaceholderSessionTitle(title);
-}
-
 async function prepareCliSessionForWrite(
   sessionManager: Required<Pick<WebCLISessionManagerLike, 'getSession' | 'updateSession'>>,
   sessionId: string,
@@ -320,7 +309,7 @@ async function prepareCliSessionForWrite(
   const existing = await sessionManager.getSession(sessionId, 1);
   if (!existing) return false;
 
-  if (isDefaultSessionTitle(existing.title) && title && title !== existing.title) {
+  if (isPlaceholderSessionTitle(existing.title) && title && title !== existing.title) {
     try {
       await sessionManager.updateSession(sessionId, { title, updatedAt: Date.now() });
     } catch {

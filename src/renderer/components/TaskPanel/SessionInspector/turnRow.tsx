@@ -27,6 +27,7 @@ import { humanizeToolStep } from '../../../utils/humanizeToolStep';
 import { humanizeToolError, humanizeToolFailureReason } from '../../../utils/toolExecutionPresentation';
 import type { Translations } from '../../../i18n';
 import { AgentFailureCode, inferAgentFailureCode } from '@shared/contract';
+import { stampSurfaceVerdict } from '@shared/contract/planning';
 
 function humanizeDispatchTool(
   toolName: string,
@@ -100,9 +101,10 @@ function StampChip({ segment }: { segment: TurnSegment }) {
     );
   }
   if (!segment.stamp) return null;
-  const { verdict, terminal } = segment.stamp;
+  const { terminal } = segment.stamp;
+  const surface = stampSurfaceVerdict(segment.stamp.verdict, segment.stamp.evidenceProblems);
   const terminalOutcome = resolveTerminalOutcome(segment, t);
-  if (verdict === 'verified') {
+  if (surface === 'verified') {
     return (
       <span
         data-testid="inspector-stamp"
@@ -123,7 +125,19 @@ function StampChip({ segment }: { segment: TurnSegment }) {
       </span>
     );
   }
-  if (verdict === 'self_claimed') {
+  if (surface === 'undelivered') {
+    return (
+      <span
+        data-testid="inspector-stamp"
+        data-verdict="undelivered"
+        className="inline-flex items-center gap-1 rounded-md border border-badge-warning/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-badge-warning"
+      >
+        <AlertTriangle className="h-3 w-3" />
+        <span data-testid="inspector-stamp-qualifier">{stamp.undelivered}</span>
+      </span>
+    );
+  }
+  if (surface === 'self_claimed') {
     return (
       <span
         data-testid="inspector-stamp"

@@ -162,6 +162,27 @@ interface LocalStateProfileInfo {
   last_active_time?: number;
 }
 
+class BrowserProfilePermissionError extends Error {
+  readonly code: 'EPERM' | 'EACCES';
+
+  constructor(code: 'EPERM' | 'EACCES') {
+    super(code);
+    this.name = 'BrowserProfilePermissionError';
+    this.code = code;
+  }
+}
+
+function readErrno(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object' || !('code' in error)) return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' ? code : undefined;
+}
+
+function permissionErrno(error: unknown): 'EPERM' | 'EACCES' | null {
+  const code = readErrno(error);
+  return code === 'EPERM' || code === 'EACCES' ? code : null;
+}
+
 function readLocalStateProfileCache(userDataRoot: string): Record<string, LocalStateProfileInfo> {
   const localStatePath = path.join(userDataRoot, 'Local State');
   if (!fs.existsSync(localStatePath)) {
@@ -177,7 +198,9 @@ function readLocalStateProfileCache(userDataRoot: string): Record<string, LocalS
       return {};
     }
     return cache;
-  } catch {
+  } catch (error) {
+    const code = permissionErrno(error);
+    if (code) throw new BrowserProfilePermissionError(code);
     return {};
   }
 }
@@ -191,7 +214,9 @@ function listCandidateProfileIds(userDataRoot: string, infoCache: Record<string,
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
       .filter((name) => name === 'Default' || /^Profile \d+$/i.test(name) || name === 'Guest Profile' || name === 'System Profile');
-  } catch {
+  } catch (error) {
+    const code = permissionErrno(error);
+    if (code) throw new BrowserProfilePermissionError(code);
     fromDisk = [];
   }
 
@@ -216,6 +241,22 @@ function toUnixMsFromChromeActiveTime(value: number | undefined): number | null 
     return Math.floor(value * 1000);
   }
   return Math.floor(value * 1000);
+}
+
+function permissionDeniedProfile(
+  source: BrowserProfileSourceDefinition,
+  userDataRoot: string,
+  code: 'EPERM' | 'EACCES',
+): BrowserProfileDescriptor {
+  return buildUnavailable({
+    source: source.source,
+    appName: source.appName,
+    profileId: 'Default',
+    profileName: 'Default',
+    profileDir: userDataRoot,
+    unavailableReason: 'permission_denied',
+    unavailableMessage: `Permission denied reading ${userDataRoot} (${code})`,
+  });
 }
 
 function buildUnavailable(
@@ -276,8 +317,29 @@ export function listBrowserProfiles(options?: {
       continue;
     }
 
-    const infoCache = readLocalStateProfileCache(userDataRoot);
-    const profileIds = listCandidateProfileIds(userDataRoot, infoCache);
+    // existsSync stays true under a TCC denial; a root readdir EPERM/EACCES is not an empty catalog.
+    try {
+      fs.readdirSync(userDataRoot);
+    } catch (error) {
+      const code = permissionErrno(error);
+      if (code) {
+        results.push(permissionDeniedProfile(source, userDataRoot, code));
+        continue;
+      }
+    }
+
+    let infoCache: Record<string, LocalStateProfileInfo>;
+    let profileIds: string[];
+    try {
+      infoCache = readLocalStateProfileCache(userDataRoot);
+      profileIds = listCandidateProfileIds(userDataRoot, infoCache);
+    } catch (error) {
+      if (error instanceof BrowserProfilePermissionError) {
+        results.push(permissionDeniedProfile(source, userDataRoot, error.code));
+        continue;
+      }
+      throw error;
+    }
     if (profileIds.length === 0) {
       results.push(
         buildUnavailable({

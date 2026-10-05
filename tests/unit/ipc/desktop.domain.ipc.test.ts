@@ -1,6 +1,30 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
 import { DesktopSchemas } from '../../../src/shared/ipc/schemas/desktop';
+
+const FULL_DISK_ACCESS_SETTINGS_URL = 'x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles';
+const execFileGate = vi.hoisted(() => ({
+  installed: false,
+  calls: [] as Array<{ file: string; args: string[] }>,
+}));
+
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  const execFile: typeof actual.execFile = ((...args: unknown[]) => {
+    if (execFileGate.installed) {
+      const file = String(args[0]);
+      const argv = Array.isArray(args[1]) ? args[1].map(String) : [];
+      execFileGate.calls.push({ file, args: argv });
+      const callback = [...args].reverse().find((item) => typeof item === 'function') as
+        | ((error: NodeJS.ErrnoException | null, stdout?: string, stderr?: string) => void)
+        | undefined;
+      callback?.(null, '', '');
+      return undefined as unknown as ReturnType<typeof actual.execFile>;
+    }
+    return (actual.execFile as (...inner: unknown[]) => ReturnType<typeof actual.execFile>)(...args);
+  }) as typeof actual.execFile;
+  return { ...actual, execFile };
+});
 
 // desktop.ipc.ts 的 DESKTOP domain dispatch 聚焦覆盖（computer-surface observe/
 // listElements 的复杂状态逻辑暂不深测）。重点：normalizeBrowserUrl 多分支校验、
@@ -189,6 +213,36 @@ describe('音频采集状态机', () => {
     const res = await call('clearAudioRecordings');
     expect(res).toMatchObject({ success: true, data: { deleted: 2, freedBytes: 40, failed: 0 } });
     expect(svc.clearAudio).toHaveBeenCalledOnce();
+  });
+});
+
+describe('openFullDiskAccessSettings', () => {
+  const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+
+  afterEach(() => {
+    execFileGate.installed = false;
+    execFileGate.calls = [];
+    if (platformDescriptor) {
+      Object.defineProperty(process, 'platform', platformDescriptor);
+    }
+  });
+
+  it('darwin calls open once with the Full Disk Access URL', async () => {
+    execFileGate.installed = true;
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+    const call = await setup();
+    await expect(call('openFullDiskAccessSettings')).resolves.toEqual({ success: true, data: true });
+    expect(execFileGate.calls).toEqual([
+      { file: 'open', args: [FULL_DISK_ACCESS_SETTINGS_URL] },
+    ]);
+  });
+
+  it('non-darwin does not call open and returns false', async () => {
+    execFileGate.installed = true;
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+    const call = await setup();
+    await expect(call('openFullDiskAccessSettings')).resolves.toEqual({ success: true, data: false });
+    expect(execFileGate.calls).toEqual([]);
   });
 });
 

@@ -34,6 +34,7 @@ const DesktopDomainRequestSchema = z.object({
     'observeComputerSurface',
     'openBrowserRelayExtensionDirectory',
     'openBrowserRelayTab',
+    'openFullDiskAccessSettings',
     'openManagedBrowserUrl',
     'refreshManagedBrowserAccountState',
     'search',

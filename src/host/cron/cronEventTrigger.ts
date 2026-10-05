@@ -2,9 +2,12 @@
 // CronEventTrigger — 'event' 调度的本地事件源（N-TRIGGER-CHANNEL-EVENT）
 // ----------------------------------------------------------------------------
 // 只订阅本机已连接通道（ChannelManager）的入站 'message' 事件，按 (accountId[,
-// chatId]) 显式绑定启动任务。事件只进不出：不开监听端口、不挂 HTTP endpoint、
-// 不接任何公开回调。本模块只做四件事：
-//   绑定过滤（禁通配/停用不触发/游客与 bot 自身消息不触发）
+// chatId]) 显式绑定启动任务。N-TRIGGER-GROUP-LISTEN 起同时订阅 'listen_message'
+// （未 @ 但命中显式 (accountId, chatId) 监听绑定的群消息）——监听事件只路由给
+// 显式 chatId 绑定，且只进 untrusted 块，永不进正常入站。事件只进不出：不开
+// 监听端口、不挂 HTTP endpoint、不接任何公开回调。本模块只做四件事：
+//   绑定过滤（禁通配/停用不触发/游客与 bot 自身消息不触发；监听事件豁免游客
+//   过滤但保留 bot 回声过滤）
 //   → 幂等去重（订阅 id + 平台 message.id，fail-open）
 //   → 合批限频（batchWindowSec 合并成一次 run；minRunIntervalSec 限频，间隔内的
 //     事件合并进下一批而不是静默丢，队列有界、溢出计数）
@@ -29,6 +32,8 @@ interface ChannelEventRecord {
   senderName: string;
   text: string;
   timestamp: number;
+  /** 经监听绑定（未 @）进入的事件；run 级 trigger 据此标 listen: true。 */
+  listen?: true;
 }
 
 /** CronService 注入的宿主能力：拿当前任务表 / 判互斥 / 走既有 executeJob 路径。 */
@@ -45,7 +50,9 @@ export interface CronEventTriggerHost {
 /** 事件源依赖；生产缺省 ChannelManager 单例，测试可注入假 emitter。 */
 export interface CronEventChannelSource {
   on(event: 'message', listener: (accountId: string, message: ChannelMessage) => void): unknown;
+  on(event: 'listen_message', listener: (accountId: string, message: ChannelMessage) => void): unknown;
   removeListener(event: 'message', listener: (accountId: string, message: ChannelMessage) => void): unknown;
+  removeListener(event: 'listen_message', listener: (accountId: string, message: ChannelMessage) => void): unknown;
 }
 
 export interface CronEventTriggerOptions {
@@ -90,6 +97,25 @@ export function assertEventScheduleConstraints(
   if (definition.maxRunBudget == null || !Number.isFinite(definition.maxRunBudget) || definition.maxRunBudget <= 0) {
     throw new Error('Event-triggered jobs require maxRunBudget > 0 so every run is cost-bounded.');
   }
+}
+
+/**
+ * 群监听绑定的纯匹配（N-TRIGGER-GROUP-LISTEN）：enabled 的 event 任务里是否存在
+ * 显式 (accountId, chatId) 绑定。chatId 未设置（= 任意 chat）不算监听 —— 监听
+ * 必须逐字锁到一个群。CronService 把它注入 channelListenRegistry，供准入门在
+ * 未 @ 的群消息上改判 listen；纯函数，无状态。
+ */
+export function hasExplicitChatListenBinding(
+  jobs: readonly CronJobDefinition[],
+  accountId: string,
+  chatId: string,
+): boolean {
+  return jobs.some((job) => {
+    if (!job.enabled) return false;
+    const schedule = job.schedule;
+    if (schedule?.type !== 'event' || schedule.eventName !== 'message') return false;
+    return schedule.accountId === accountId && schedule.chatId === chatId;
+  });
 }
 
 /** 确定性订阅 id：sha256(jobId|accountId|chatId|eventName)。 */
@@ -143,7 +169,7 @@ function buildUntrustedChannelEventBlock(events: readonly ChannelEventRecord[]):
   ].join('\n');
 }
 
-function toEventRecord(message: ChannelMessage): ChannelEventRecord {
+function toEventRecord(message: ChannelMessage, listen: boolean): ChannelEventRecord {
   return {
     messageId: typeof message.id === 'string' ? message.id : '',
     chatId: message.context?.chatId ?? '',
@@ -152,6 +178,7 @@ function toEventRecord(message: ChannelMessage): ChannelEventRecord {
     senderName: message.sender?.name ?? '',
     text: typeof message.content === 'string' ? message.content : '',
     timestamp: typeof message.timestamp === 'number' ? message.timestamp : 0,
+    ...(listen ? { listen: true } : {}),
   };
 }
 
@@ -175,18 +202,21 @@ export class CronEventTrigger {
     });
   }
 
-  /** 订阅 ChannelManager 'message' 事件。幂等。 */
+  /** 订阅 ChannelManager 'message' / 'listen_message' 事件。幂等。 */
   start(): void {
     if (this.started) return;
     const source = this.channelSource ?? getChannelManager();
     source.on('message', this.handleChannelMessage);
+    source.on('listen_message', this.handleChannelListenMessage);
     this.started = true;
   }
 
   /** 退订并清掉所有挂起的合批定时器（不触发任何 run）。 */
   dispose(): void {
     if (!this.started) return;
-    (this.channelSource ?? getChannelManager()).removeListener('message', this.handleChannelMessage);
+    const source = this.channelSource ?? getChannelManager();
+    source.removeListener('message', this.handleChannelMessage);
+    source.removeListener('listen_message', this.handleChannelListenMessage);
     this.started = false;
     for (const state of this.states.values()) {
       state.flushTimer?.clear();
@@ -199,6 +229,17 @@ export class CronEventTrigger {
     // 游客级入站与 bot 自身回声永不触发自动化。
     if (message?.ingressAuth === 'guest') return;
     if (message?.sender?.isBot === true) return;
+    this.dispatchToJobs(accountId, message, false);
+  };
+
+  private readonly handleChannelListenMessage = (accountId: string, message: ChannelMessage): void => {
+    // 监听事件只来自未 @ 的群消息：跳过游客过滤（它们只进 untrusted 块，够不到
+    // 任何会话/工具），保留 bot 回声过滤（防自触发环）。
+    if (message?.sender?.isBot === true) return;
+    this.dispatchToJobs(accountId, message, true);
+  };
+
+  private dispatchToJobs(accountId: string, message: ChannelMessage, listen: boolean): void {
     for (const definition of this.host.getJobDefinitions()) {
       if (!definition.enabled) continue;
       const schedule = definition.schedule;
@@ -207,19 +248,21 @@ export class CronEventTrigger {
       // 只认显式绑定：accountId 必须逐字相等（禁通配/禁「全部账号」）；设了 chatId 就再锁 chat。
       if (schedule.accountId !== accountId) continue;
       if (schedule.chatId !== undefined && schedule.chatId !== message.context?.chatId) continue;
+      // 监听事件只路由给显式 chatId 绑定：未锁 chat 的任务不是「群监听」。
+      if (listen && schedule.chatId === undefined) continue;
       // 幂等去重（fail-open：没有平台 message.id 就当新事件，宁可重跑不可吞事件）。
       const messageId = typeof message.id === 'string' && message.id ? message.id : undefined;
       if (messageId) {
         const eventKey = `${channelSubscriptionId(definition.id, schedule)}:${messageId}`;
         if (!this.dedupe.markSeen(eventKey)) continue;
       }
-      this.enqueue(definition, message);
+      this.enqueue(definition, message, listen);
     }
-  };
+  }
 
-  private enqueue(definition: CronJobDefinition, message: ChannelMessage): void {
+  private enqueue(definition: CronJobDefinition, message: ChannelMessage, listen: boolean): void {
     const state = this.stateFor(definition.id);
-    state.pending.push(toEventRecord(message));
+    state.pending.push(toEventRecord(message, listen));
     if (state.pending.length > CRON_EVENT_TRIGGER.PENDING_QUEUE_MAX) {
       state.pending.shift();
       state.droppedCount += 1;
@@ -283,6 +326,8 @@ export class CronEventTrigger {
       eventCount: carried.length,
       droppedCount,
       eventIds: carried.map((event) => event.messageId),
+      // 批内混有监听事件（未 @）就整批标 listen：run 记录可溯源这次是「群监听」触发的。
+      ...(carried.some((event) => event.listen === true) ? { listen: true } : {}),
     };
     this.host.executeEventJob(current, trigger, buildUntrustedChannelEventBlock(carried)).catch((error) => {
       console.error(`[CronEventTrigger] Event run failed for job ${jobId}:`, error);

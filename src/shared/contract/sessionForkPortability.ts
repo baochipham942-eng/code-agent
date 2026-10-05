@@ -157,6 +157,14 @@ export interface PortableArtifactProvenanceV2 {
   contentDigest: string;
 }
 
+export interface PortableExternalHistoryProvenanceV1 {
+  kind: 'external_history';
+  engine: 'codex_cli' | 'claude_code';
+  sourceSessionId: string;
+  sourceDigest: string;
+  sourcePathDigest: string;
+}
+
 export interface PortableSessionV2 {
   id: string;
   ownerScopeId: string;
@@ -164,10 +172,9 @@ export interface PortableSessionV2 {
   title: string;
   modelConfig: PortableModelConfigV2;
   type?: SessionType;
-  // N-EXTHISTORY-IMPORT-WIRE: validatePortableSessionOrigin only allows kind/name —
-  // 'metadata' has no decode-side consumer, so the type doesn't declare a shape decode
-  // never accepts.
-  origin?: Omit<SessionOrigin, 'metadata'>;
+  origin?: Omit<SessionOrigin, 'metadata'> & {
+    metadata?: PortableExternalHistoryProvenanceV1;
+  };
   memoryMode?: SessionMemoryMode;
   suppressedMemoryEntryIds?: string[];
   readOnly?: boolean;

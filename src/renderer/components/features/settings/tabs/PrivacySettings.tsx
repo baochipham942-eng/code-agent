@@ -388,26 +388,19 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
     </SettingsSection>
   );
 
-  if (isWebMode()) {
-    return (
-      <SettingsPage
-        title={t.settings.tabs.privacy}
-        description={privacyText.webDescription}
-      >
-        <WebModeBanner />
-        {feedbackHookSection}
-      </SettingsPage>
-    );
-  }
-
+  // web 模式不再整页短路（FB-240）：SETTINGS 通道在 web 链路是通的，凡只依赖 settings 的段
+  // （边界/语音/凭证/遥测/反馈钩子）照常渲染。仍留桌面专属的是 PII 脚本三段（spawn 本地脚本，
+  // domain:pii）与第三方插件界面开关（refreshThirdPartyPluginUi 未在 web 验证过）。
+  const webMode = isWebMode();
   const isReadyGreen = ready?.ready === true;
   const stateLabel = getSetupStateLabel(state, privacyText.setupState);
 
   return (
     <SettingsPage
       title={t.settings.tabs.privacy}
-      description={privacyText.pageDescription}
+      description={webMode ? privacyText.webDescription : privacyText.pageDescription}
     >
+      {webMode ? <WebModeBanner /> : null}
       <SettingsSection
         title={privacyText.boundary.title}
         description={privacyText.boundary.description}
@@ -486,28 +479,30 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
         </div>
       </SettingsSection>
 
-      <SettingsSection
-        title={privacyText.pluginUi.title}
-        description={privacyText.pluginUi.description}
-      >
-        <label className="flex items-start gap-3 rounded-lg border border-red-500/25 bg-red-500/5 p-3 cursor-pointer">
-          <input
-            type="checkbox"
-            className="mt-0.5 h-4 w-4 accent-primary-700"
-            checked={thirdPartyUiEnabled}
-            disabled={privacySaving || !isAdmin}
-            onChange={(event) => { void handleThirdPartyUiToggle(event.target.checked); }}
-          />
-          <div className="flex items-start gap-2 text-sm">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-badge-danger" />
-            <div>
-              <div className="font-medium text-zinc-200">{privacyText.pluginUi.label}</div>
-              <div className="mt-0.5 text-xs leading-5 text-zinc-400">{privacyText.pluginUi.body}</div>
-              {!isAdmin ? <div className="mt-1 text-xs text-zinc-500">{privacyText.pluginUi.adminHint}</div> : null}
+      {!webMode && (
+        <SettingsSection
+          title={privacyText.pluginUi.title}
+          description={privacyText.pluginUi.description}
+        >
+          <label className="flex items-start gap-3 rounded-lg border border-red-500/25 bg-red-500/5 p-3 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 accent-primary-700"
+              checked={thirdPartyUiEnabled}
+              disabled={privacySaving || !isAdmin}
+              onChange={(event) => { void handleThirdPartyUiToggle(event.target.checked); }}
+            />
+            <div className="flex items-start gap-2 text-sm">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-badge-danger" />
+              <div>
+                <div className="font-medium text-zinc-200">{privacyText.pluginUi.label}</div>
+                <div className="mt-0.5 text-xs leading-5 text-zinc-400">{privacyText.pluginUi.body}</div>
+                {!isAdmin ? <div className="mt-1 text-xs text-zinc-500">{privacyText.pluginUi.adminHint}</div> : null}
+              </div>
             </div>
-          </div>
-        </label>
-      </SettingsSection>
+          </label>
+        </SettingsSection>
+      )}
 
       <SettingsSection
         title={privacyText.telemetry.title}
@@ -607,115 +602,119 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
 
       {feedbackHookSection}
 
-      <SettingsSection
-        title={privacyText.status.title}
-        description={privacyText.status.description}
-      >
-        <div className="space-y-3">
-          <div className="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
-            {isReadyGreen ? (
-              <>
-                <ShieldCheck className="h-5 w-5 text-badge-success" />
-                <div className="text-sm">
-                  <div className="text-zinc-200 font-medium">{privacyText.status.readyTitle}</div>
-                  <div className="text-xs text-zinc-400 mt-0.5">
-                    {privacyText.status.modelPrefix}{ready?.modelOnnx} · Python: {ready?.pythonPath}
-                  </div>
-                </div>
-              </>
-            ) : (
-              <>
-                <AlertTriangle className="h-5 w-5 text-zinc-500" />
-                <div className="text-sm text-zinc-300">
-                  {ready?.envFile.exists
-                    ? privacyText.status.configExistsNotReady
-                    : privacyText.status.notEnabled}
-                </div>
-              </>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2 text-sm">
-            <span className={`inline-block h-2 w-2 rounded-full ${stateLabel.dot}`} />
-            <span className="text-zinc-300">{stateLabel.text}</span>
-            {step && (
-              <span className="text-xs text-zinc-500">· {step}</span>
-            )}
-          </div>
-
-          {error && (
-            <div className="flex items-start gap-2 rounded-lg border border-red-900/40 bg-red-950/30 p-3 text-sm text-badge-danger">
-              <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
-              <div className="flex-1 whitespace-pre-wrap break-words">{error}</div>
-            </div>
-          )}
-        </div>
-      </SettingsSection>
-
-      <SettingsSection
-        title={privacyText.actions.title}
-        description={privacyText.actions.description}
-      >
-        <div className="flex flex-wrap gap-3">
-          {state === 'running' ? (
-            <button
-              type="button"
-              onClick={handleCancel}
-              disabled={loading}
-              className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <XCircle className="h-4 w-4" />
-              {privacyText.actions.cancel}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleStart}
-              disabled={loading}
-              className="inline-flex items-center gap-2 rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {state === 'completed' || isReadyGreen ? (
-                <>
-                  <RefreshCw className="h-4 w-4" />
-                  {privacyText.actions.reinstall}
-                </>
-              ) : (
-                <>
-                  <ShieldCheck className="h-4 w-4" />
-                  {privacyText.actions.enable}
-                </>
-              )}
-            </button>
-          )}
-          {state === 'running' && (
-            <span className="inline-flex items-center gap-2 text-xs text-zinc-400">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              {privacyText.actions.runningHint}
-            </span>
-          )}
-        </div>
-      </SettingsSection>
-
-      <SettingsSection
-        title={privacyText.logs.title}
-        description={privacyText.logs.description}
-      >
-        <div className="max-h-72 overflow-y-auto rounded-lg border border-zinc-800 bg-black/60 p-3 font-mono text-[11px] leading-relaxed">
-          {logs.length === 0 ? (
-            <div className="text-zinc-600">{privacyText.logs.empty}</div>
-          ) : (
-            logs.map((entry, idx) => (
-              <div
-                key={idx}
-                className={getSetupLogLineClass(entry)}
-              >
-                {entry.line}
+      {!webMode && (
+        <>
+          <SettingsSection
+            title={privacyText.status.title}
+            description={privacyText.status.description}
+          >
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
+                {isReadyGreen ? (
+                  <>
+                    <ShieldCheck className="h-5 w-5 text-badge-success" />
+                    <div className="text-sm">
+                      <div className="text-zinc-200 font-medium">{privacyText.status.readyTitle}</div>
+                      <div className="text-xs text-zinc-400 mt-0.5">
+                        {privacyText.status.modelPrefix}{ready?.modelOnnx} · Python: {ready?.pythonPath}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle className="h-5 w-5 text-zinc-500" />
+                    <div className="text-sm text-zinc-300">
+                      {ready?.envFile.exists
+                        ? privacyText.status.configExistsNotReady
+                        : privacyText.status.notEnabled}
+                    </div>
+                  </>
+                )}
               </div>
-            ))
-          )}
-          <div ref={logEndRef} />
-        </div>
-      </SettingsSection>
+
+              <div className="flex items-center gap-2 text-sm">
+                <span className={`inline-block h-2 w-2 rounded-full ${stateLabel.dot}`} />
+                <span className="text-zinc-300">{stateLabel.text}</span>
+                {step && (
+                  <span className="text-xs text-zinc-500">· {step}</span>
+                )}
+              </div>
+
+              {error && (
+                <div className="flex items-start gap-2 rounded-lg border border-red-900/40 bg-red-950/30 p-3 text-sm text-badge-danger">
+                  <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <div className="flex-1 whitespace-pre-wrap break-words">{error}</div>
+                </div>
+              )}
+            </div>
+          </SettingsSection>
+
+          <SettingsSection
+            title={privacyText.actions.title}
+            description={privacyText.actions.description}
+          >
+            <div className="flex flex-wrap gap-3">
+              {state === 'running' ? (
+                <button
+                  type="button"
+                  onClick={handleCancel}
+                  disabled={loading}
+                  className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <XCircle className="h-4 w-4" />
+                  {privacyText.actions.cancel}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleStart}
+                  disabled={loading}
+                  className="inline-flex items-center gap-2 rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {state === 'completed' || isReadyGreen ? (
+                    <>
+                      <RefreshCw className="h-4 w-4" />
+                      {privacyText.actions.reinstall}
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="h-4 w-4" />
+                      {privacyText.actions.enable}
+                    </>
+                  )}
+                </button>
+              )}
+              {state === 'running' && (
+                <span className="inline-flex items-center gap-2 text-xs text-zinc-400">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  {privacyText.actions.runningHint}
+                </span>
+              )}
+            </div>
+          </SettingsSection>
+
+          <SettingsSection
+            title={privacyText.logs.title}
+            description={privacyText.logs.description}
+          >
+            <div className="max-h-72 overflow-y-auto rounded-lg border border-zinc-800 bg-black/60 p-3 font-mono text-[11px] leading-relaxed">
+              {logs.length === 0 ? (
+                <div className="text-zinc-600">{privacyText.logs.empty}</div>
+              ) : (
+                logs.map((entry, idx) => (
+                  <div
+                    key={idx}
+                    className={getSetupLogLineClass(entry)}
+                  >
+                    {entry.line}
+                  </div>
+                ))
+              )}
+              <div ref={logEndRef} />
+            </div>
+          </SettingsSection>
+        </>
+      )}
     </SettingsPage>
   );
 };

@@ -42,8 +42,27 @@ export function applyProviderRegistryPatches(registry: Record<string, ProviderCo
     name: string;
     capabilities: ModelInfo['capabilities'];
     maxTokens: number;
+    thinking?: ModelInfo['thinking'];
   }> = [
-    { id: 'gpt-5.5', name: 'GPT-5.5', capabilities: ['general', 'code', 'vision', 'reasoning'], maxTokens: 128000 },
+    // GPT-6 Sol 系列（官方模型页，抓取 2026-09-30）：上下文 1,050,000、最大输出 128,000，
+    // reasoning.effort 支持 low/medium/high/xhigh/max（默认 medium；6 另支持 none 但 UI 无该档）。
+    // 官方输入为 Text+Image，但不标 vision：Responses 协议的 input 转换目前只送文本
+    // （同 deepseek-flash 在 providerRegistryBase 的同类限制），协议能送图前 registry 不得声称。
+    {
+      id: 'gpt-6.1-sol',
+      name: 'GPT-6.1 Sol',
+      capabilities: ['general', 'code', 'reasoning'],
+      maxTokens: 128000,
+      thinking: { kind: 'effort', levels: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'medium' },
+    },
+    {
+      id: 'gpt-6-sol',
+      name: 'GPT-6 Sol',
+      capabilities: ['general', 'code', 'reasoning'],
+      maxTokens: 128000,
+      thinking: { kind: 'effort', levels: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'medium' },
+    },
+    { id: 'gpt-5.5', name: 'GPT-5.5', capabilities: ['general', 'code', 'vision', 'reasoning'], maxTokens: 128000, thinking: { kind: 'effort', levels: ['low', 'medium', 'high'] } },
     { id: 'gpt-5.5-pro', name: 'GPT-5.5 Pro', capabilities: ['general', 'code', 'vision', 'reasoning'], maxTokens: 128000 },
     { id: 'gpt-5.4', name: 'GPT-5.4', capabilities: ['general', 'code', 'vision', 'reasoning'], maxTokens: 128000 },
     { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini', capabilities: ['general', 'code', 'vision', 'fast'], maxTokens: 128000 },
@@ -52,12 +71,10 @@ export function applyProviderRegistryPatches(registry: Record<string, ProviderCo
     { id: 'gpt-5.2', name: 'GPT-5.2', capabilities: ['general', 'code', 'vision', 'reasoning'], maxTokens: 128000 },
   ];
 
-  openAIModelPatches.forEach(({ id, name, capabilities, maxTokens }) => {
+  openAIModelPatches.forEach(({ id, name, capabilities, maxTokens, thinking }) => {
     registerModel('openai', {
       ...textModel(id, name, capabilities, maxTokens),
-      ...(id === 'gpt-5.5'
-        ? { thinking: { kind: 'effort' as const, levels: ['low', 'medium', 'high'] } }
-        : {}),
+      ...(thinking ? { thinking } : {}),
       supportsVision: (capabilities as readonly string[]).includes('vision'),
       visionCapabilities: (capabilities as readonly string[]).includes('vision')
         ? { supportsBase64: true, supportsUrl: true, supportedFormats: ['png', 'jpeg', 'gif', 'webp'] }

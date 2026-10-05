@@ -1,5 +1,5 @@
 {
-  "updated": "2026-09-11",
+  "updated": "2026-10-04",
   "providers": [
     {
       "id": "openai",
@@ -9,6 +9,20 @@
       "apiKeyHint": "your-api-key",
       "default": "gpt-5.5",
       "models": [
+        {
+          "id": "gpt-6.1-sol",
+          "label": "GPT-6.1 Sol",
+          "group": "GPT 系列",
+          "desc": "1.05M · Sol 旗舰，推理档位到 max",
+          "scaffoldTier": "strong"
+        },
+        {
+          "id": "gpt-6-sol",
+          "label": "GPT-6 Sol",
+          "group": "GPT 系列",
+          "desc": "1.05M · Sol 标准档",
+          "scaffoldTier": "strong"
+        },
         {
           "id": "gpt-5.5",
           "label": "GPT-5.5",

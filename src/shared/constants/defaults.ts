@@ -117,7 +117,9 @@ export const MODEL_MAX_OUTPUT_TOKENS: Record<string, number> = {
   'claude-opus-4-7': 128_000,
   'claude-sonnet-4-6': 64_000,
   'claude-haiku-4-5-20251001': 64_000,
-  // OpenAI
+  // OpenAI — GPT-6 Sol 系列最大输出 128K（官方模型页，抓取 2026-09-30）
+  'gpt-6.1-sol': 128_000,
+  'gpt-6-sol': 128_000,
   'gpt-5.5': 128_000,
   'gpt-5.5-pro': 128_000,
   'gpt-5.4': 128_000,
@@ -209,7 +211,9 @@ export const CONTEXT_WINDOWS: Record<string, number> = {
   'claude-opus-4-7': 1_000_000,
   'claude-sonnet-4-6': 1_000_000,
   'claude-haiku-4-5-20251001': 200_000,
-  // OpenAI
+  // OpenAI — GPT-6 Sol 系列上下文 1,050,000（官方模型页，抓取 2026-09-30）
+  'gpt-6.1-sol': 1_050_000,
+  'gpt-6-sol': 1_050_000,
   'gpt-5.5': 1_000_000,
   'gpt-5.5-pro': 1_000_000,
   'gpt-5.4': 1_000_000,

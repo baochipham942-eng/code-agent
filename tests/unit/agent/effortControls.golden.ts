@@ -69,6 +69,8 @@ export const GOLDEN_MODELS: readonly string[] = [
   'openai/gpt-5.4-nano',
   'openai/gpt-5.5',
   'openai/gpt-5.5-pro',
+  'openai/gpt-6-sol',
+  'openai/gpt-6.1-sol',
   'openrouter/anthropic/claude-haiku-4.5',
   'openrouter/anthropic/claude-opus-4.5',
   'openrouter/anthropic/claude-sonnet-4.5',
@@ -185,4 +187,24 @@ export const GOLDEN_CASES: Record<string, EffortControlsGoldenCase> = {
   'ultra_code|false|reasoningEffort': { thinkingBudget: undefined, reasoningEffort: undefined },
   'ultra_code|false|thinkingBudget': { thinkingBudget: undefined, reasoningEffort: undefined },
   'ultra_code|false|both': { thinkingBudget: undefined, reasoningEffort: undefined },
+};
+
+/**
+ * Catalogue entries that explicitly declare xhigh/max (N-MODELCAT-GPT6-SOL) pass those
+ * levels through instead of clamping to 'high'. Only the cases that diverge from the
+ * shared table are listed; every other case keeps the shared value.
+ */
+export const GOLDEN_MODEL_CASE_OVERRIDES: Record<string, Partial<Record<string, EffortControlsGoldenCase>>> = {
+  'openai/gpt-6-sol': {
+    'xhigh|true|none': { thinkingBudget: 32768, reasoningEffort: 'xhigh' },
+    'xhigh|true|thinkingBudget': { thinkingBudget: 32768, reasoningEffort: 'xhigh' },
+    'max|true|none': { thinkingBudget: 65536, reasoningEffort: 'max' },
+    'max|true|thinkingBudget': { thinkingBudget: 32768, reasoningEffort: 'max' },
+  },
+  'openai/gpt-6.1-sol': {
+    'xhigh|true|none': { thinkingBudget: 32768, reasoningEffort: 'xhigh' },
+    'xhigh|true|thinkingBudget': { thinkingBudget: 32768, reasoningEffort: 'xhigh' },
+    'max|true|none': { thinkingBudget: 65536, reasoningEffort: 'max' },
+    'max|true|thinkingBudget': { thinkingBudget: 32768, reasoningEffort: 'max' },
+  },
 };

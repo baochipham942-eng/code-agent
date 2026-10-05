@@ -37,6 +37,7 @@ import { getAgentRequirementsAnalyzer } from './agentRequirementsAnalyzer';
 import { getRoutingService } from '../routing';
 import type { RoutingContext, RoutingResolution } from '../../shared/contract/agentRouting';
 import { getTelemetryCollector } from '../telemetry';
+import { isPlaceholderSessionTitle } from '../../shared/sessionTitlePlaceholder';
 import { taskComplexityAnalyzer } from '../planning/taskComplexityAnalyzer';
 import type { EffortLevel } from '../../shared/contract/agent';
 import { getTaskListManager, type TaskListManager } from './taskList';
@@ -753,7 +754,7 @@ export class AgentOrchestrator {
         // 云端同步直写 db.updateSession，绕过 SM 钩子；轮末把 sessions 真标题补进遥测。
         try {
           const session = await getSessionManager().getSession(sessionId);
-          if (session?.title && session.title !== 'New Chat' && session.title !== '新对话' && !session.title.startsWith('Session ')) {
+          if (session?.title && !isPlaceholderSessionTitle(session.title)) {
             getTelemetryCollector().updateSessionTitle(sessionId, session.title);
           }
         } catch { /* ignore - title sync is best effort */ }

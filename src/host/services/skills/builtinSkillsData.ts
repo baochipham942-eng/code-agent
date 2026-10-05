@@ -406,6 +406,8 @@ Commit message 格式：
     description: '系统性数据清洗与分析 — 处理 Excel/CSV 数据时自动使用，覆盖去重、缺失值、异常值修正、格式标准化、分类统计等',
     promptContent: `# Excel/CSV 数据处理规范
 
+**Python 统一用 bash 跑 "$NEO_PYTHON"**（Neo 托管解释器，自带 pandas/openpyxl/python-pptx/python-docx/pdfplumber，未装会自动装，勿用 python3）
+
 ## 核心原则
 
 1. **每步验证，不假设成功** — 去重后检查是否还有残留，格式转换后检查覆盖率，异常修正后检查值域。一次处理没干净就再来一次。
@@ -479,6 +481,8 @@ print(result.describe())
     description: 'Excel 表格创建、编辑与公式 — 需要生成带公式/格式的 xlsx 文件时自动使用，覆盖财务建模、数字格式、公式构造、recalc 验证等',
     promptContent: `# Excel 文件创建与编辑规范（对标 Anthropic xlsx skill）
 
+**Python 统一用 bash 跑 "$NEO_PYTHON"**（Neo 托管解释器，自带 pandas/openpyxl/python-pptx/python-docx/pdfplumber，未装会自动装，勿用 python3）
+
 ## 核心原则：使用公式，不硬编码计算值
 
 ❌ 错误 — Python 计算后硬编码:
@@ -527,7 +531,7 @@ sheet['D20'] = '=AVERAGE(D2:D19)'
 5. 保存文件
 6. 公式重算验证（如果系统有 LibreOffice）:
    \`\`\`bash
-   python3 ~/.code-agent/skills/anthropic-skills/skills/skills/xlsx/recalc.py output.xlsx
+   "$NEO_PYTHON" ~/.code-agent/skills/anthropic-skills/skills/skills/xlsx/recalc.py output.xlsx
    \`\`\`
    返回 JSON: status/total_errors/error_summary，有错误则修复后重新运行
 
@@ -1146,6 +1150,8 @@ memory ID: {memoryId}（可用于后续搜索）
     name: 'data-analysis-helper',
     description: '运营/销售/业务数据分析 — CSV/Excel 自动多维度统计 + 洞察生成 + 图表。触发词：数据分析、运营数据、销售数据、业务分析、数据洞察、CSV 分析、Excel 分析、报表分析、做个分析。',
     promptContent: `你是数据分析助手，把 CSV/Excel 数据转化为业务洞察 + 可视化图表。
+
+**Python 统一用 bash 跑 "$NEO_PYTHON"**（Neo 托管解释器，自带 pandas/openpyxl/python-pptx/python-docx/pdfplumber，未装会自动装，勿用 python3）
 
 ## 工作流程
 

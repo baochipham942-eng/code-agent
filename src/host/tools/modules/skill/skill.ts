@@ -39,6 +39,9 @@ import { getSkillContentCache, hashSkillContent } from '../../../telemetry/skill
 import { createProtocolSubagentExecutionContext } from '../../../agent/subagentExecutionContext';
 import { markDistilledSkillTurnSignal } from '../../../services/skills/distillSignalStore';
 import { hasOfficialSkillSections } from '../../../security/skillOfficialSectionGuard';
+import { ensurePythonEnv } from '../../../runtime/pythonEnv/ensure';
+import { getPythonEnvState } from '../../../runtime/pythonEnv/state';
+import type { EnsurePythonEnvResult, PythonRuntimeError } from '../../../runtime/pythonEnv/types';
 
 // ----------------------------------------------------------------------------
 // Helpers — 与 legacy skillMetaTool 行为保真
@@ -293,6 +296,91 @@ export function suggestClosestSkills(
 }
 
 // ----------------------------------------------------------------------------
+// Managed Python gate — N-PY-RUNTIME-K2
+//
+// bins 含 python3 的 skill（data-cleaning / xlsx / data-analysis-helper）在分发前
+// 等待托管解释器就绪：按需安装（ensurePythonEnv 单飞）、可中止（AbortSignal 竞速，
+// 安装本身继续在后台跑）、进度经 onProgress 透传（状态机 percent 轮询）。
+// ----------------------------------------------------------------------------
+
+const PYTHON_ENV_PROGRESS_POLL_MS = 500;
+
+type EnsureOutcome =
+  | { kind: 'aborted' }
+  | { kind: 'done'; result: EnsurePythonEnvResult }
+  | { kind: 'thrown'; thrown: unknown };
+
+function raceInstallWithAbort(
+  install: Promise<EnsurePythonEnvResult>,
+  signal: AbortSignal,
+): Promise<EnsureOutcome> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const onAbort = () => finish({ kind: 'aborted' });
+    const finish = (outcome: EnsureOutcome) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', onAbort);
+      resolve(outcome);
+    };
+    if (signal.aborted) {
+      finish({ kind: 'aborted' });
+      return;
+    }
+    signal.addEventListener('abort', onAbort);
+    install.then(
+      (result) => finish({ kind: 'done', result }),
+      (thrown) => finish({ kind: 'thrown', thrown }),
+    );
+  });
+}
+
+function pythonEnvFailure(error: PythonRuntimeError): { error: string; code: string } {
+  return {
+    error: `${error.message} Retry from Settings → Local capabilities, or re-run this skill.`,
+    code: error.code,
+  };
+}
+
+async function ensureManagedPythonForSkill(
+  abortSignal: AbortSignal,
+  onProgress?: ToolProgressFn,
+): Promise<{ ok: true } | { ok: false; error: string; code: string }> {
+  const state = getPythonEnvState();
+  if (state.phase === 'installed') return { ok: true };
+  if (state.phase === 'unsupported' && state.error) return { ok: false, ...pythonEnvFailure(state.error) };
+
+  if (state.phase === 'installing') {
+    onProgress?.({ stage: 'running', detail: 'python runtime', percent: state.percent ?? 0 });
+  } else {
+    onProgress?.({ stage: 'running', detail: 'python runtime' });
+  }
+  const poll = setInterval(() => {
+    const current = getPythonEnvState();
+    if (current.phase === 'installing') {
+      onProgress?.({ stage: 'running', detail: 'python runtime', percent: current.percent ?? 0 });
+    }
+  }, PYTHON_ENV_PROGRESS_POLL_MS);
+  try {
+    // missing/failed ⇒ ensure 启动（或重启）安装；installing ⇒ 加入 inflight 单飞
+    const outcome = await raceInstallWithAbort(ensurePythonEnv(), abortSignal);
+    if (outcome.kind === 'aborted') return { ok: false, error: 'aborted', code: 'ABORTED' };
+    if (outcome.kind === 'thrown') {
+      // K1 契约上 ensure 不 reject，这里只是防御性兜底
+      return {
+        ok: false,
+        error: `Python runtime prepare failed: ${outcome.thrown instanceof Error ? outcome.thrown.message : String(outcome.thrown)}`,
+        code: 'PYTHON_RUNTIME_INSTALL_FAILED',
+      };
+    }
+    if (outcome.result.ok) return { ok: true };
+    return { ok: false, ...pythonEnvFailure(outcome.result.error) };
+  } finally {
+    clearInterval(poll);
+  }
+}
+
+// ----------------------------------------------------------------------------
 // Native execute
 // ----------------------------------------------------------------------------
 
@@ -409,6 +497,19 @@ export async function executeSkill(
 
   if (ctx.abortSignal.aborted) {
     return { ok: false, error: 'aborted', code: 'ABORTED' };
+  }
+
+  // bins 含 python3 ⇒ 分发前等托管解释器就绪（未装按需安装；失败结构化返回，
+  // 不悄悄回退系统 python）
+  if (skill.bins?.includes('python3')) {
+    const ensured = await ensureManagedPythonForSkill(ctx.abortSignal, onProgress);
+    if (!ensured.ok) {
+      ctx.logger.warn('Skill blocked: managed python env unavailable', {
+        skill: skill.name,
+        code: ensured.code,
+      });
+      return { ok: false, error: ensured.error, code: ensured.code };
+    }
   }
 
   // 根据执行模式分发

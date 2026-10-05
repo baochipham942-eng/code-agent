@@ -295,6 +295,18 @@ export async function confirmRoleDraft(
     }
     await fs.rm(draftDir, { recursive: true, force: true });
 
+    // 新建角色 → 入队一次「首次醒来」（只读介绍 + 可委托建议）。改已有不入队。
+    // 入队失败绝不把一次成功的 confirm 变成失败——只记日志。
+    if (!isEdit) {
+      try {
+        const { enqueueFirstWake } = await import('./roleFirstWake');
+        const firstWake = await enqueueFirstWake(meta.roleId);
+        logger.info('First wake enqueued after role confirm', { id, roleId: meta.roleId, enqueued: firstWake.enqueued });
+      } catch (error) {
+        logger.warn('First wake enqueue failed (confirm unaffected)', { id, roleId: meta.roleId, error: String(error) });
+      }
+    }
+
     logger.info('Role draft confirmed and installed', { id, roleId: meta.roleId, isEdit, agentMdPath });
     return { success: true, roleId: meta.roleId, agentMdPath };
   } catch (error) {

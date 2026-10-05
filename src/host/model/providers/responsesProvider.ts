@@ -5,6 +5,7 @@
 import type { ModelConfig, ToolDefinition } from '../../../shared/contract';
 import type { InferenceOptions, ModelMessage, ModelResponse, Provider, StreamCallback } from '../types';
 import { resolveModelCapabilities } from '../modelCapabilityMatrix';
+import { explicitlyDeclaredEffortLevels } from '../providerRegistry';
 import { electronFetch, logger } from './shared';
 import { resolveProviderApiKey, resolveProviderBaseUrl } from './providerResolution';
 import { convertToolsToResponses, parseResponsesResponse } from './wrappers/responsesWrapper';
@@ -347,6 +348,15 @@ export class ResponsesProvider implements Provider {
     responseTools.push(...convertToolsToResponses(tools));
     if (responseTools.length) body.tools = responseTools;
     if (onStream) body.stream = true;
+    // reasoning.effort 只对目录条目显式声明了该档位的模型发送（与 applyEffortControls 同一
+    // 查询接缝 explicitlyDeclaredEffortLevels）；其余模型——含 deepseek 走 Responses 的——
+    // 请求体保持逐字节不变。
+    if (
+      config.reasoningEffort
+      && explicitlyDeclaredEffortLevels(config.provider, config.model)?.includes(config.reasoningEffort)
+    ) {
+      body.reasoning = { effort: config.reasoningEffort };
+    }
 
     if (process.env.CODE_AGENT_DUMP_MODEL_PAYLOAD) {
       const { dumpModelPayload } = await import('../modelPayloadDump');

@@ -283,6 +283,8 @@ export const MODEL_FEATURES: Record<string, ('tool' | 'vision' | 'reasoning')[]>
  */
 export const MODEL_ABBREV: Record<string, string> = {
   // openai
+  'gpt-6.1-sol': '6.1-sol',
+  'gpt-6-sol': 'gpt-6-sol',
   'gpt-5.5': 'gpt-5.5',
   'gpt-5.5-pro': '5.5-pro',
   'gpt-5.4': 'gpt-5.4',

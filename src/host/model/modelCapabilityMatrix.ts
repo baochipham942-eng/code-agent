@@ -67,6 +67,14 @@ const MATRIX: ModelCapabilityMatrix = {
       // 拒绝末条 assistant prefill（「This model does not support assistant message prefill」）。
       streamResume: { mode: 'none' },
     },
+    models: {
+      // GPT-6 Sol 系列：官方要求工具调用走 Responses API（Chat Completions 仅限无工具
+      // 调用），按模型切协议；模型页 2026-09-30：
+      //   https://developers.openai.com/api/docs/models/gpt-6-sol
+      //   https://developers.openai.com/api/docs/models/gpt-6.1-sol
+      'gpt-6-sol': { protocol: 'responses' },
+      'gpt-6.1-sol': { protocol: 'responses' },
+    },
   },
   openrouter: {
     default: {

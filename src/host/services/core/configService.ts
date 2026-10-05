@@ -738,7 +738,7 @@ export class ConfigService implements IReadConfigService {
       }
     }
 
-    assertValidUserPermissionRules(updates.permissions);
+    assertValidUserPermissionRules(updates.permissions, this.settings.permissions);
     this.settings = this.mergeAppSettings(this.settings, updates);
     await this.save();
 

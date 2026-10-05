@@ -7,6 +7,7 @@ import { getPermissionModeManager, resetPermissionModeManager } from '../../../s
 import {
   TOOL_SPECIFIER_PATTERN,
   TOOL_SPECIFIER_TYPES,
+  assertValidUserPermissionRules,
   validateUserPermissionRule,
 } from '../../../src/shared/permissionRuleSyntax';
 import { resolvePermissionRulesBlur } from '../../../src/renderer/components/features/settings/tabs/GeneralSettings';
@@ -65,6 +66,22 @@ describe('validateUserPermissionRule', () => {
     for (const rule of NARROW_BASH) {
       expect(validateUserPermissionRule(rule, 'allow'), rule).toEqual({ ok: true });
     }
+  });
+});
+
+describe('assertValidUserPermissionRules skips lists echoed from storage', () => {
+  it('does not throw for lists identical to the stored ones', () => {
+    expect(() => assertValidUserPermissionRules(
+      { deny: ['Network(*)'], allow: ['Bash(*)'] },
+      { deny: ['Network(*)'], allow: ['Bash(*)'] },
+    )).not.toThrow();
+  });
+
+  it('still throws for a list that differs from the stored one', () => {
+    expect(() => assertValidUserPermissionRules(
+      { deny: ['Network(*)'] },
+      { deny: [] },
+    )).toThrow('Invalid permission rule in deny: "Network(*)"');
   });
 });
 

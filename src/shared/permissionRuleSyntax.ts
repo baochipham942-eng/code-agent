@@ -86,14 +86,29 @@ export function validateUserPermissionRule(
   return { ok: true };
 }
 
-/** Throw on the first invalid deny/ask/allow entry. Callers must do this before persisting. */
+/** True when both lists are arrays holding the same strings in the same order. */
+function sameRuleList(a: readonly string[] | undefined, b: readonly string[] | undefined): boolean {
+  if (a === b) return true;
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  return a.every((rule, i) => rule === b[i]);
+}
+
+/**
+ * Throw on the first invalid deny/ask/allow entry a rule edit introduces.
+ * Callers must do this before persisting. A list identical to `previous` is
+ * echoed storage, not a rule edit, and is skipped: legacy rules older builds
+ * accepted must not block unrelated settings writes (e.g. toggling dev mode);
+ * those rules are skipped with a warning at PolicyEngine load time instead.
+ */
 export function assertValidUserPermissionRules(
   permissions: { deny?: readonly string[]; ask?: readonly string[]; allow?: readonly string[] } | null | undefined,
+  previous?: { deny?: readonly string[]; ask?: readonly string[]; allow?: readonly string[] } | null,
 ): void {
   if (!permissions) return;
   for (const list of ['deny', 'ask', 'allow'] as const) {
     const rules = permissions[list];
     if (!rules) continue;
+    if (previous && sameRuleList(rules, previous[list])) continue;
     for (const rule of rules) {
       if (typeof rule !== 'string' || !validateUserPermissionRule(rule, list).ok) {
         throw new Error(`Invalid permission rule in ${list}: ${JSON.stringify(rule)}`);

@@ -11,6 +11,7 @@ import ipcService from '../services/ipcService';
 import { Button, Modal } from './primitives';
 import { ConfirmDialog } from './composites/ConfirmDialog';
 import { useI18n } from '../hooks/useI18n';
+import { undeclaredToolDisplayName } from '../utils/humanizeToolStep';
 
 interface Checkpoint {
   id: string;
@@ -187,6 +188,14 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose, onChe
             const file = item.reason === 'uncertain_write_target'
               ? item.filePath
               : item.filePath.split(/[\\/]/).filter(Boolean).at(-1) ?? item.filePath;
+            // 未声明工具写盘（undeclared-tool:<name>）按工具披露，不剪路径
+            if (item.reason === 'undeclared_tool_write') {
+              return (
+                <p key={`${item.filePath}:${item.reason}`} className="mt-1 text-xs text-zinc-400">
+                  {t.chat.turnCheckoutNoteUndeclaredTool.replace('{tool}', undeclaredToolDisplayName(item.toolName ?? item.filePath))}
+                </p>
+              );
+            }
             const template = item.reason === 'human_edit'
               ? t.chat.turnCheckoutNoteHumanEdit
               : item.reason === 'missing_post_write_digest'

@@ -22,7 +22,7 @@ import { ToolExecutor } from '../tools/toolExecutor';
 import type { ExecutionTopology } from '../permissions';
 import { getPermissionModeManager, rolePermissionPresetToMode } from '../permissions/modes';
 import type { PermissionAskResult, PermissionDeliveryOutcome } from '../../shared/contract/permission';
-import { deniedExternalEnginePermission } from '../../shared/contract/agentEngine';
+import { externalEngineWriteDenial } from '../services/agentEngine/agentEngineGuards';
 import type { ConfigService } from '../services/core/configService';
 import { getSessionManager } from '../services';
 import { getToolSearchService } from '../services/toolSearch/toolSearchService';
@@ -37,6 +37,7 @@ import { getAgentRequirementsAnalyzer } from './agentRequirementsAnalyzer';
 import { getRoutingService } from '../routing';
 import type { RoutingContext, RoutingResolution } from '../../shared/contract/agentRouting';
 import { getTelemetryCollector } from '../telemetry';
+import { isPlaceholderSessionTitle } from '../../shared/sessionTitlePlaceholder';
 import { taskComplexityAnalyzer } from '../planning/taskComplexityAnalyzer';
 import type { EffortLevel } from '../../shared/contract/agent';
 import { getTaskListManager, type TaskListManager } from './taskList';
@@ -467,11 +468,11 @@ export class AgentOrchestrator {
     return this.runSettings.getResearchUserSettings();
   }
 
-  /** ACP 写回：每次现读档位；read_only 直接拒绝，其余强制人工确认，不吃全局自动放行。 */
+  /** ACP 写回：每次现读档位；只读天花板或未决计划卡直接拒绝，其余强制人工确认，不吃全局自动放行。 */
   requestExternalEnginePermission(
     request: Omit<PermissionRequest, 'id' | 'timestamp'>,
   ): Promise<PermissionAskResult> {
-    const denial = deniedExternalEnginePermission(request.type, getPermissionModeManager().getModeForSession(request.sessionId));
+    const denial = externalEngineWriteDenial(request.type, request.sessionId, getPermissionModeManager().getModeForSession(request.sessionId));
     return denial ? Promise.resolve(denial) : this.permissions.requestPermission({ ...request, forceConfirm: true });
   }
 
@@ -753,7 +754,7 @@ export class AgentOrchestrator {
         // 云端同步直写 db.updateSession，绕过 SM 钩子；轮末把 sessions 真标题补进遥测。
         try {
           const session = await getSessionManager().getSession(sessionId);
-          if (session?.title && session.title !== 'New Chat' && session.title !== '新对话' && !session.title.startsWith('Session ')) {
+          if (session?.title && !isPlaceholderSessionTitle(session.title)) {
             getTelemetryCollector().updateSessionTitle(sessionId, session.title);
           }
         } catch { /* ignore - title sync is best effort */ }

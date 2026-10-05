@@ -161,6 +161,8 @@ export const ROLE_ASSETS = {
   /** 角色草稿队列目录名（位于 ~/.code-agent/ 下，与 roles/ 平级，避免被 agentRegistry 扫描）。
    *  对话式建角色：模型起草 → 落草稿 → 用户确认才写 agents/<id>.md（镜像 skill-drafts 范式）。 */
   DRAFTS_DIR_NAME: 'role-drafts',
+  /** 首次醒来状态文件名：roles/<roleId>/first-wake.json（pending → running → completed/skipped） */
+  FIRST_WAKE_FILENAME: 'first-wake.json',
 } as const;
 
 /** 角色主动性（cadence 触发器 + 醒来循环，内部文档） */

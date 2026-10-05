@@ -20,7 +20,11 @@ import { toGenerativeUIExportSnapshot } from '../generativeUI/generativeUIExport
 import { getGenerativeUIRepository } from '../generativeUI/generativeUIRepositoryAccess';
 import { normalizeAgentEngineSession } from '../../../shared/contract/agentEngine';
 import { MODEL_OVERRIDE_METADATA_KEY } from '../../session/modelOverridePersistence';
-import { stripAppshotBlocks } from '../../../shared/contract/appshot';
+import {
+  deriveFallbackSessionTitle,
+  isPlaceholderSessionTitle,
+  sessionTitleSource,
+} from '../../../shared/sessionTitlePlaceholder';
 import { deriveSessionWorkbenchSnapshot, toSessionWorkbenchProvenance } from '../../../shared/contract/sessionWorkspace';
 import { SESSION_PROJECT_PINNED_METADATA_KEY, UNSORTED_PROJECT_ID } from '@shared/contract/project';
 import { createLogger } from './logger';
@@ -49,16 +53,6 @@ export interface SessionWithMessages extends Session {
 
 function isVisibleHistoryMessage(message: Message): boolean {
   return !message.isMeta && message.visibility !== 'rewound';
-}
-
-/** 会话还没被命名过（自动标题只允许覆盖这一档，别的都是用户/上一轮的真标题）。 */
-function isDefaultSessionTitle(title: string): boolean {
-  return title === 'New Chat'
-    || title === 'New Session'
-    || title === '新对话'
-    || title === '新会话'
-    || title === 'New conversation'
-    || title.startsWith('Session ');
 }
 
 function isSessionForkAnchorCandidate(message: Message): boolean {
@@ -1262,23 +1256,17 @@ export class SessionManager implements Disposable {
     const session = await this.getSession(sessionId);
     if (!session) return;
 
-    if (!(isDefaultSessionTitle(session.title) && session.messageCount <= 1)) return;
+    if (!(isPlaceholderSessionTitle(session.title) && session.messageCount <= 1)) return;
 
-    const visibleMessage = stripAppshotBlocks(firstMessage);
-    const titleSource = visibleMessage || (firstMessage.trim().startsWith('<appshot') ? 'Appshot 会话' : firstMessage);
+    const titleSource = sessionTitleSource(firstMessage);
     let title = await this.generateSmartTitle(titleSource);
-
-    if (!title) {
-      const firstLine = titleSource.trim().split('\n')[0] || 'Appshot 会话';
-      title = firstLine.slice(0, 50);
-      if (firstLine.length > 50) title += '...';
-    }
+    if (!title) title = deriveFallbackSessionTitle(firstMessage);
 
     // generateSmartTitle 要调小模型，实测能拖几十秒。这段窗口里目标会话可能已被
     // 改名（用户手动重命名，或它先被别的路径命名过），此时再写就是覆盖用户的标题。
-    // 回来后重新读一次，仍是默认标题才落笔。
+    // 回来后重新读一次，仍是占位标题才落笔。
     const latest = await this.getSession(sessionId);
-    if (!latest || !isDefaultSessionTitle(latest.title)) return;
+    if (!latest || !isPlaceholderSessionTitle(latest.title)) return;
 
     await this.updateSession(sessionId, { title });
   }

@@ -132,6 +132,9 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
     // skip the cage after classifier skip-confirm.
     requiresOsWriteFence: input.legacyCtx.requiresOsWriteFence,
     writeFenceWorkspaceRoot: input.legacyCtx.writeFenceWorkspaceRoot,
+    deniedReadRoots: input.legacyCtx.deniedReadRoots,
+    // 漏搬 = bash 扩权检查拿不到绑定实例，按未核验硬拒（不弹卡）。
+    policyEnforcer: input.legacyCtx.policyEnforcer,
     workingDir: input.workingDirectory,
     abortSignal: input.abortSignal ?? new AbortController().signal,
     deniedToolNames: legacy?.deniedToolNames as readonly string[] | undefined,

@@ -81,6 +81,18 @@ describe('pending review', () => {
     expect(service.listPendingReview().map((r) => r.id).sort()).toEqual(['a1', 'a2']);
   });
 
+  it('countPendingReviewByTask 把同一任务的多条待过目折成 1，缺省计数仍按记录', () => {
+    const service = new SessionAutomationService();
+    seed(service, 'a1', { status: 'pending_review', resultSessionId: 'run-1' });
+    seed(service, 'a2', { status: 'active', resultSessionId: 'run-2', config: { pendingReview: { resultSessionId: 'run-2', at: 1 } } });
+    const sessions = [
+      { id: 'run-1', updatedAt: 2, origin: { kind: 'cron', id: 'job-a' } },
+      { id: 'run-2', updatedAt: 1, origin: { kind: 'heartbeat', id: 'job-a' } },
+    ];
+    expect(service.countPendingReview()).toBe(2);
+    expect(service.countPendingReviewByTask(sessions)).toBe(1);
+  });
+
   it('markReviewed 清标记；pending_review 状态转 archived', () => {
     const service = new SessionAutomationService();
     seed(service, 'once', { status: 'pending_review', config: { pendingReview: { at: 1 } } });

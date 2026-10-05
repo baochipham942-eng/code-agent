@@ -9,8 +9,7 @@ import { resolveHumanGoldLabels } from './lib/humanGold';
 import type { AiReviewDimension, AiReviewVerdict } from '../src/shared/contract/evaluation';
 import { CONFIG_DIR_NEW } from '../src/shared/constants/configDir';
 import { quickTask, getQuickModelRuntimeInfo } from '../src/host/model/quickModel';
-import { resolveProviderApiKey } from '../src/host/model/providers/providerResolution';
-import { systemOne } from '../src/host/model/providers/typesafeProvider';
+import { resolveJevRoute, systemOne } from '../src/host/model/providers/typesafeProvider';
 import { MODEL_API_ENDPOINTS } from '../src/shared/constants';
 import { JEV_MODEL, JEV_JUDGE_MODEL } from '../src/shared/constants/jevQuestions';
 import { computeCalibration, type CalibrationLabel, type CalibrationPair } from '../src/host/testing/calibration/judgeCalibration';
@@ -126,8 +125,8 @@ async function main(): Promise<void> {
   // 没配 key 直接 fail-loud，不静默回落生成式冒充 Jev 数据。
   let prescreenCall: DimensionJudgePrescreen | undefined;
   if (prescreen) {
-    if (!resolveProviderApiKey({ provider: 'typesafe', model: JEV_MODEL })) {
-      throw new Error('--prescreen 需要 TYPESAFE_API_KEY（或 providerResolution 可解析的 typesafe key）');
+    if (resolveJevRoute() === null) {
+      throw new Error('--prescreen 需要 TYPESAFE_API_KEY 或 OpenRouter key');
     }
     prescreenCall = (state, questions) => systemOne(state, questions);
   }

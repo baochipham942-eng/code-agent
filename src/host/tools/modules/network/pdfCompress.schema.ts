@@ -53,6 +53,12 @@ pdf_compress { "input_path": "report.pdf", "output_path": "report_small.pdf", "q
   category: 'network',
   permissionLevel: 'write',
   pathAuthority: [{ kind: 'path', pathParameter: 'output_path', mutation: 'overwrite' }],
+  // r3：input_path 的读必须进访问集，否则与产出它的调用并发会读到半成品。
+  // output_path 缺席（默认写同名 _compressed.pdf）时写声明落未知域 → 串行。
+  accesses: [
+    { kind: 'read', argumentNames: ['input_path'] },
+    { kind: 'write', argumentNames: ['output_path'] },
+  ],
   readOnly: false,
   allowInPlanMode: false,
 };

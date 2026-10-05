@@ -14,6 +14,8 @@ import type {
 } from '../../shared/contract';
 import { getUpdateService, isUpdateServiceInitialized } from '../services/cloud/updateService';
 import { getRuntimeAssetsStatus } from '../runtime/runtimeAssetStatus';
+import { PYTHON_ENV_ASSET_ID } from '../runtime/pythonEnv/constants';
+import { preparePythonEnvAsset, withPythonEnvStatus } from '../runtime/pythonEnv/status';
 import { createLogger } from '../services/infra/logger';
 import { readRendererBundleStatus } from '../services/renderer/rendererBundleCache';
 
@@ -69,12 +71,10 @@ async function handleStopAutoCheck(): Promise<void> {
 
 async function handleRuntimeAssetsStatus(): Promise<RuntimeAssetsStatus> {
   const status = await getRuntimeAssetsStatus({ shellVersion: app.getVersion() });
-  return {
-    ...status,
-    preparation: isUpdateServiceInitialized()
-      ? getUpdateService().getRuntimeAssetPreparationStatus()
-      : null,
-  };
+  const preparation = isUpdateServiceInitialized()
+    ? getUpdateService().getRuntimeAssetPreparationStatus()
+    : null;
+  return withPythonEnvStatus({ ...status, preparation });
 }
 
 async function handleRendererBundleStatus(): Promise<RendererBundleStatus> {
@@ -82,6 +82,7 @@ async function handleRendererBundleStatus(): Promise<RendererBundleStatus> {
 }
 
 async function handlePrepareRuntimeAssets(payload?: { assetId?: string }): Promise<PrepareRuntimeAssetsResult> {
+  if (payload?.assetId?.trim() === PYTHON_ENV_ASSET_ID) return preparePythonEnvAsset();
   if (!isUpdateServiceInitialized()) throw new Error('Update service not initialized');
   return payload?.assetId
     ? getUpdateService().prepareRuntimeAsset(payload.assetId)

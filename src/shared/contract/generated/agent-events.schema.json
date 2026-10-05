@@ -1161,6 +1161,21 @@
             "standingGrantTarget": {
               "type": "string"
             },
+            "targetApp": {
+              "type": "object",
+              "properties": {
+                "bundleId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            },
             "requestedAccess": {
               "type": "string",
               "enum": [
@@ -2343,6 +2358,12 @@
         },
         "filesAuthoritative": {
           "type": "boolean"
+        },
+        "absentPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "required": [

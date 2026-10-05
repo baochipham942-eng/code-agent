@@ -9,6 +9,7 @@ import {
   type WriteIsolationScope,
 } from '../../../src/host/security/writeIsolation';
 import {
+  normalizeTargetPath,
   toolResourceAccessesConflict,
   type ResolvedToolAccess,
 } from '../../../src/host/security/resourceScope';
@@ -269,5 +270,204 @@ describe('shared resource conflict', () => {
     });
     const bash = scopeFor('Bash', {}, 'execute');
     expect(workspaceLock).toEqual([asWrite(bash)]);
+  });
+
+  it('resolves a missing or blank read path to an unscoped read (no guessing the tool default) and keeps write paths unknown', () => {
+    const root = normalizeTargetPath(workspace, '.');
+    const readOf = (params: Record<string, unknown>, argumentNames: readonly string[] = ['path']) => resolveFoldedToolAccess({
+      toolName: 'Grep',
+      folded: foldToolAccess({ accesses: [{ kind: 'read', argumentNames }] }),
+      params,
+      workspace,
+      cwd: sub,
+    });
+    const unscopedRead = [{ kind: 'read' as const, domain: { type: 'unscoped' as const } }];
+    expect(readOf({})).toEqual(unscopedRead);
+    expect(readOf({ path: '   ' })).toEqual(unscopedRead);
+    expect(readOf({ path: [] })).toEqual(unscopedRead);
+
+    const concrete = normalizeTargetPath(sub, 'a.txt');
+    expect(readOf({ path: 'a.txt' })).toEqual([
+      { kind: 'read', domain: { type: 'path', root, targetPath: concrete } },
+    ]);
+    expect(readOf({ path: '  ', paths: ['a.txt'] }, ['path', 'paths'])).toEqual([
+      { kind: 'read', domain: { type: 'path', root, targetPath: concrete } },
+    ]);
+    expect(readOf({ paths: ['a.txt', '  '] }, ['paths'])).toEqual([{ kind: 'read', domain: { type: 'unknown' } }]);
+    expect(readOf({ path: 3 })).toEqual([{ kind: 'read', domain: { type: 'unknown' } }]);
+
+    const blankWrite = resolveFoldedToolAccess({
+      toolName: 'ppt_generate',
+      folded: foldToolAccess({ accesses: [{ kind: 'write', argumentNames: ['output_path'] }] }),
+      params: { output_path: '   ' },
+      workspace,
+      cwd: workspace,
+    });
+    expect(blankWrite).toEqual([{ kind: 'write', domain: { type: 'unknown' } }]);
+    const emptyWrite = resolveFoldedToolAccess({
+      toolName: 'ppt_generate',
+      folded: foldToolAccess({ accesses: [{ kind: 'write', argumentNames: ['output_path'] }] }),
+      params: { output_path: [] },
+      workspace,
+      cwd: workspace,
+    });
+    expect(emptyWrite).toEqual([{ kind: 'write', domain: { type: 'unknown' } }]);
+  });
+
+  it('conflicts agent:runtime with path access and leaves write-isolation answers unchanged', async () => {
+    expect(getWriteIsolationScope('Task', { prompt: 'x' }, workspace, 'execute', workspace)).toBeNull();
+    expect(getWriteIsolationScope('spawn_agent', {}, workspace, 'execute', workspace)).toBeNull();
+    expect(getWriteIsolationScope('Explore', { prompt: 'x' }, workspace, 'execute', workspace)).not.toBeNull();
+
+    const file = scopeFor('Write', { path: 'a.txt' }, 'write');
+    const tree = scopeFor('Bash', {}, 'execute');
+    expect(await managerConflicts(file, tree)).toBe(true);
+    expect(toolResourceAccessesConflict(asWrite(file), asWrite(tree))).toBe(true);
+    expect(await managerConflicts(file, scopeFor('Write', { path: 'b.txt' }, 'write'))).toBe(false);
+
+    const agent = (kind: ResolvedToolAccess['kind']): ResolvedToolAccess => ({
+      kind,
+      domain: { type: 'named', name: 'agent:runtime' },
+    });
+    const pathRead: ResolvedToolAccess = { kind: 'read', domain: { type: 'path', root: file.root, targetPath: file.targetPath } };
+    const unscoped: ResolvedToolAccess = { kind: 'read', domain: { type: 'unscoped' } };
+    const otherNamed: ResolvedToolAccess = { kind: 'read', domain: { type: 'named', name: 'session:plan' } };
+    expect(toolResourceAccessesConflict(agent('write'), agent('write'))).toBe(false);
+    expect(toolResourceAccessesConflict(agent('read'), agent('read'))).toBe(false);
+    expect(toolResourceAccessesConflict(agent('write'), pathRead)).toBe(true);
+    expect(toolResourceAccessesConflict(agent('read'), pathRead)).toBe(true);
+    expect(toolResourceAccessesConflict(pathRead, agent('read'))).toBe(true);
+    expect(toolResourceAccessesConflict(agent('read'), asWrite(tree))).toBe(true);
+    expect(toolResourceAccessesConflict(agent('read'), otherNamed)).toBe(true);
+    expect(toolResourceAccessesConflict(agent('write'), otherNamed)).toBe(true);
+    expect(toolResourceAccessesConflict(agent('write'), unscoped)).toBe(false);
+    expect(toolResourceAccessesConflict(agent('read'), unscoped)).toBe(false);
+    expect(toolResourceAccessesConflict(agent('read'), { kind: 'read', domain: { type: 'unknown' } })).toBe(true);
+    expect(toolResourceAccessesConflict(
+      { kind: 'write', domain: { type: 'named', name: 'session:plan' } },
+      { kind: 'write', domain: { type: 'named', name: 'pty:current' } },
+    )).toBe(false);
+  });
+});
+
+describe('scheduler path normalization matches the file tools (rework r2)', () => {
+  it('expands ~ the way Read/Write resolveInputPath do, so both spellings share one domain', () => {
+    const home = os.homedir();
+    expect(normalizeTargetPath(sub, '~/notes.md')).toBe(normalizeTargetPath(sub, path.join(home, 'notes.md')));
+    expect(normalizeTargetPath(sub, '~')).toBe(normalizeTargetPath(sub, home));
+    // 非 ~ 前缀的路径保持原语义：仍是相对 cwd 的字面路径
+    expect(normalizeTargetPath(sub, 'a~b.md')).toBe(normalizeTargetPath(sub, 'a~b.md'));
+  });
+
+  it('gives the ~ spelling and the absolute spelling the same write lock key', () => {
+    const tilde = scopeFor('Write', { file_path: '~/notes.md' }, 'write');
+    const absolute = scopeFor('Write', { file_path: path.join(os.homedir(), 'notes.md') }, 'write');
+    expect(tilde.kind).toBe('file');
+    expect(tilde.lockKey).toBe(absolute.lockKey);
+  });
+
+  it('strips Read embedded params before resolving the path domain', () => {
+    const readOf = (file_path: string) => resolveFoldedToolAccess({
+      toolName: 'Read',
+      folded: foldToolAccess({ accesses: [{ kind: 'read', argumentNames: ['file_path'] }] }),
+      params: { file_path },
+      workspace,
+      cwd: workspace,
+    });
+    const plain = readOf('a.md');
+    for (const embedded of ['a.md lines 1-20', 'a.md line 7', 'a.md offset=10', 'a.md offset 10 limit 5']) {
+      expect(readOf(embedded), embedded).toEqual(plain);
+    }
+  });
+});
+
+describe('glob-pattern read scoping and unprovable write targets (rework r3)', () => {
+  const globScope = (params: Record<string, unknown>, argumentNames: readonly string[] = ['path', 'pattern']) => resolveFoldedToolAccess({
+    toolName: 'Glob',
+    folded: foldToolAccess({ accesses: [{ kind: 'read', argumentNames }] }),
+    params,
+    workspace,
+    cwd: workspace,
+  });
+
+  it('scopes a wildcard pattern to its static directory prefix joined onto the base path argument', () => {
+    const readAt = (target: string) => ({
+      kind: 'read',
+      domain: { type: 'path', root: normalizeTargetPath(workspace, '.'), targetPath: normalizeTargetPath(workspace, target) },
+    });
+    expect(globScope({ pattern: 'src/**/*.ts' })).toEqual([readAt('src')]);
+    // 基目录自身也在作用域里（对冲突判定只增不减），模式前缀并入基目录。
+    expect(globScope({ path: 'docs', pattern: 'src/**/*.ts' })).toEqual([readAt('docs'), readAt(path.join('docs', 'src'))]);
+    expect(globScope({ pattern: '*.md' })).toEqual([readAt('.')]);
+  });
+
+  it.each(['/tmp/out/*.md', '../out/*.md', 'src/../../out/*.md', '~/docs/*.md'])(
+    'sends absolute or ..-escaping patterns (%s) to the unknown domain',
+    (pattern) => {
+      expect(globScope({ pattern })).toEqual([{ kind: 'read', domain: { type: 'unknown' } }]);
+    },
+  );
+
+  it('joins a literal (non-glob) pattern onto the base too: exact.ts under docs is docs/exact.ts', () => {
+    const literal = globScope({ path: 'docs', pattern: 'exact.ts' });
+    const docsDir = normalizeTargetPath(workspace, 'docs');
+    const exactFile = normalizeTargetPath(workspace, path.join('docs', 'exact.ts'));
+    expect(literal).toEqual([
+      { kind: 'read', domain: { type: 'path', root: normalizeTargetPath(workspace, '.'), targetPath: docsDir } },
+      { kind: 'read', domain: { type: 'path', root: normalizeTargetPath(workspace, '.'), targetPath: exactFile } },
+    ]);
+    // 独立路径不挤进一个声明：数组元素彼此并列（input_files 形状），不互相拼接。
+    const siblings = resolveFoldedToolAccess({
+      toolName: 'PdfAutomate',
+      folded: foldToolAccess({ accesses: [{ kind: 'read', argumentNames: ['input_files'] }] }),
+      params: { input_files: ['a.pdf', 'dir/b.pdf'] },
+      workspace,
+      cwd: workspace,
+    });
+    expect(siblings).toEqual([
+      { kind: 'read', domain: { type: 'path', root: normalizeTargetPath(workspace, '.'), targetPath: normalizeTargetPath(workspace, 'a.pdf') } },
+      { kind: 'read', domain: { type: 'path', root: normalizeTargetPath(workspace, '.'), targetPath: normalizeTargetPath(workspace, path.join('dir', 'b.pdf')) } },
+    ]);
+  });
+
+  it('treats a missing write-side argument as unprovable, not as absent', () => {
+    const excelFold = foldToolAccess({
+      accesses: [
+        { kind: 'readwrite', argumentNames: ['file_path'] },
+        { kind: 'write', argumentNames: ['output_path'] },
+      ],
+    });
+    const editOnly = resolveFoldedToolAccess({
+      toolName: 'ExcelAutomate',
+      folded: excelFold,
+      params: { file_path: 'a.xlsx' },
+      workspace,
+      cwd: workspace,
+    });
+    // output_path 缺席：generate 默认写到哪里不可证 → 未知域串行
+    expect(editOnly).toContainEqual({ kind: 'write', domain: { type: 'unknown' } });
+    const both = resolveFoldedToolAccess({
+      toolName: 'ExcelAutomate',
+      folded: excelFold,
+      params: { file_path: 'a.xlsx', output_path: 'b.xlsx' },
+      workspace,
+      cwd: workspace,
+    });
+    expect(both.length).toBe(2);
+    expect(both.every((access) => access.domain.type === 'path')).toBe(true);
+  });
+
+  it('keeps read-kind tolerance for missing values (Grep path/include stays cwd-scoped)', () => {
+    const readOf = resolveFoldedToolAccess({
+      toolName: 'Grep',
+      folded: foldToolAccess({ accesses: [{ kind: 'read', argumentNames: ['path', 'include'] }] }),
+      params: { include: '*.js' },
+      workspace,
+      cwd: workspace,
+    });
+    expect(readOf).toEqual([{
+      kind: 'read',
+      domain: { type: 'path', root: normalizeTargetPath(workspace, '.'), targetPath: normalizeTargetPath(workspace, '.') },
+    }]);
   });
 });

@@ -262,6 +262,8 @@ export type AgentErrorCategory =
   | 'network'
   | 'context_length'
   | 'image_payload'
+  /** headless run 在任何 assistant 回复前被 SIGTERM/SIGINT 打断。 */
+  | 'interrupted'
   | 'generic';
 
 /**
@@ -416,7 +418,7 @@ export interface MessageMetadata {
     state: 'success' | 'partial';
     done: string[];
     failed: Array<{ step: string; reason: string; filePath?: string }>;
-    skippedFiles: Array<{ filePath: string; reason: string; detail: string }>;
+    skippedFiles: Array<{ filePath: string; reason: string; detail: string; toolName?: string }>;
     changedFileCount: number;
     externalSideEffectsWarning: string;
   };

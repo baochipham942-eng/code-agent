@@ -11,7 +11,12 @@ import type { PriceSource } from '../../../../shared/pricing/resolveModelPrice';
 type SQLiteRow = Record<string, unknown>;
 
 function readCacheBreakReason(value: unknown): CacheBreakReason {
-  if (value === 'model-switch' || value === 'prefix-changed' || value === 'none') return value;
+  if (
+    value === 'model-switch'
+    || value === 'prefix-changed'
+    || value === 'tools-changed'
+    || value === 'none'
+  ) return value;
   return 'none';
 }
 

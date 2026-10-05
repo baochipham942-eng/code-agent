@@ -2233,6 +2233,9 @@
                 "model_exit",
                 "synthetic_text"
               ]
+            },
+            "version": {
+              "type": "number"
             }
           },
           "required": [

@@ -237,6 +237,42 @@ suite('seatbelt wrapCommand 真实隔离', () => {
     }
   });
 
+  it('单文件写授权只放开那一个文件：同目录别的文件、把它建成目录后往里写都仍被拒', async () => {
+    // 一次性扩权卡的授权粒度（PR #2191）：readWriteFiles 走 seatbelt literal，不含子孙。
+    const outside = fs.realpathSync(fs.mkdtempSync(path.join(os.homedir(), '.sbx-file-grant-')));
+    const granted = path.join(outside, 'granted.txt');
+    const sibling = path.join(outside, 'sibling.txt');
+    const becomesDir = path.join(outside, 'becomes-dir');
+    try {
+      const denied = wrapCommandForSandbox(`echo x > ${JSON.stringify(granted)}`, { workingDirectory: projectDir });
+      const r0 = await run(denied.command, projectDir);
+      denied.cleanup();
+      expect(r0.code).not.toBe(0);
+      expect(fs.existsSync(granted)).toBe(false);
+
+      const ok = wrapCommandForSandbox(
+        `echo x > ${JSON.stringify(granted)} && echo y > ${JSON.stringify(sibling)}`,
+        { workingDirectory: projectDir, readWriteFiles: [granted] },
+      );
+      const r1 = await run(ok.command, projectDir);
+      ok.cleanup();
+      expect(fs.readFileSync(granted, 'utf8')).toBe('x\n');
+      expect(r1.code).not.toBe(0);
+      expect(fs.existsSync(sibling)).toBe(false);
+
+      const tree = wrapCommandForSandbox(
+        `mkdir ${JSON.stringify(becomesDir)}; echo secret > ${JSON.stringify(path.join(becomesDir, '.env'))}`,
+        { workingDirectory: projectDir, readWriteFiles: [becomesDir] },
+      );
+      const r2 = await run(tree.command, projectDir);
+      tree.cleanup();
+      expect(r2.code).not.toBe(0);
+      expect(fs.existsSync(path.join(becomesDir, '.env'))).toBe(false);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
   it('引号/管道命令经 shell-quote 包装后语义正确', async () => {
     const { command, cleanup } = wrapCommandForSandbox(
       `echo 'a b c' | tr ' ' '-'`,

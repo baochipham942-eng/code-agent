@@ -2,12 +2,15 @@
 // Provider Registry - 模型能力注册表
 // ============================================================================
 
-import type { ProviderConfig } from '../../shared/contract';
+import type { ModelReasoningEffort, ProviderConfig } from '../../shared/contract';
 import { ADDITIONAL_PROVIDER_REGISTRY } from './providerRegistryAdditional';
 import { BASE_PROVIDER_REGISTRY } from './providerRegistryBase';
 import { applyProviderRegistryPatches } from './providerRegistryPatches';
 import { resolveModelCapabilities } from './modelCapabilityMatrix';
-import { resolveModelThinkingCapability } from './providerRuntimeCapabilities';
+import {
+  isSynthesizedModelThinkingCapability,
+  resolveModelThinkingCapability,
+} from './providerRuntimeCapabilities';
 
 export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
   ...BASE_PROVIDER_REGISTRY,
@@ -47,4 +50,15 @@ export function getAvailableModels(): Array<{ provider: string; providerName: st
     }
   }
   return result;
+}
+
+/** Effort levels written on the catalogue entry itself, not the provider fallback matrix. */
+export function explicitlyDeclaredEffortLevels(
+  provider: string,
+  modelId: string,
+): readonly ModelReasoningEffort[] | undefined {
+  const thinking = PROVIDER_REGISTRY[provider]?.models.find((model) => model.id === modelId)?.thinking;
+  if (thinking?.kind !== 'effort') return undefined;
+  if (isSynthesizedModelThinkingCapability(thinking)) return undefined;
+  return thinking.levels;
 }

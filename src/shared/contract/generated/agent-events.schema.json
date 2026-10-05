@@ -1161,6 +1161,21 @@
             "standingGrantTarget": {
               "type": "string"
             },
+            "targetApp": {
+              "type": "object",
+              "properties": {
+                "bundleId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            },
             "requestedAccess": {
               "type": "string",
               "enum": [
@@ -2218,6 +2233,9 @@
                 "model_exit",
                 "synthetic_text"
               ]
+            },
+            "version": {
+              "type": "number"
             }
           },
           "required": [

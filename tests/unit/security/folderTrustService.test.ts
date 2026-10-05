@@ -16,6 +16,10 @@ import {
 import { configureFolderTrustService } from '../../../src/host/security/folderTrustServiceConfig';
 import { getUserConfigDir } from '../../../src/host/config/configPaths';
 
+// macOS /tmp and /var are symlinks (/private/tmp, /private/var). Linux CI has no
+// such alias — skip rather than fail the premise.
+const TMP_HAS_ALIAS = nativeFs.realpathSync.native(os.tmpdir()) !== path.resolve(os.tmpdir());
+
 async function writeFile(filePath: string, content = '{}'): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, content, 'utf-8');
@@ -442,6 +446,27 @@ describe('FolderTrustService', () => {
       expect((await service.evaluate(projectDir)).state).toBe('trusted');
     } finally {
       migration.mockRestore();
+      service.close();
+    }
+  });
+
+  it.skipIf(!TMP_HAS_ALIAS)('keys trust by the tmp alias realpath and rejects a nonexistent leaf', async () => {
+    const canonical = nativeFs.realpathSync.native(projectDir);
+    expect(path.resolve(projectDir)).not.toBe(canonical);
+
+    const service = new FolderTrustService();
+    try {
+      expect(service.evaluateSync(projectDir).canonicalRealpath).toBe(canonical);
+      expect(service.evaluateSync(canonical).canonicalRealpath).toBe(canonical);
+      await service.set(projectDir, 'trusted', 'test');
+      expect(service.evaluateSync(canonical).state).toBe('trusted');
+      expect((await service.evaluate(projectDir)).canonicalRealpath).toBe(canonical);
+
+      const missing = path.join(projectDir, 'not-created');
+      expect(nativeFs.existsSync(missing)).toBe(false);
+      expect(() => service.evaluateSync(missing)).toThrow(/ENOENT/);
+      await expect(service.evaluate(missing)).rejects.toThrow(/ENOENT/);
+    } finally {
       service.close();
     }
   });

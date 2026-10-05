@@ -301,6 +301,12 @@ export const enSettingsCore = {
           denyLabel: 'Deny (highest priority)',
           askLabel: 'Ask',
           allowLabel: 'Allow (lowest priority)',
+          invalid: {
+            empty: 'The rule is empty.',
+            malformed: 'The rule syntax is invalid. Use a tool name or Tool(pattern).',
+            specifierNotSupported: 'This tool does not take a pattern.',
+            allowAllBash: 'Allowing every Bash command is not permitted. Use a narrower pattern or the ask list.',
+          },
         },
         semantics: {
           title: 'Permission semantics',

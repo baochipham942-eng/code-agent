@@ -194,11 +194,20 @@ export function browserComputerConsequenceForcesClassification(
  * 泛用的 "Permission denied by user" 在机器自动拒的路径上是**假话**——用户什么都没看见，
  * 模型却会告诉他「你拒绝了」。每种 denialSource 必须给出真实原因 + 可执行的出路。
  */
-export function permissionDenialError(toolName: string, source: PermissionDenialSource): HostReasonPayload {
+export function permissionDenialError(
+  toolName: string,
+  source: PermissionDenialSource,
+  app?: { name: string } | null,
+): HostReasonPayload {
   const metadata = { toolName };
   switch (source) {
-    case 'user':
-      return createHostReason(HostReasonCode.PermissionDeniedByUser, 'Permission denied by user', metadata);
+    case 'user': {
+      const name = app?.name?.trim();
+      const modelText = name
+        ? `Permission denied by user: access to ${name} was denied. Do not retry operating ${name} in this task unless the user asks.`
+        : 'Permission denied by user';
+      return createHostReason(HostReasonCode.PermissionDeniedByUser, modelText, metadata);
+    }
     case 'no-approval-ui':
       return createHostReason(
         HostReasonCode.PermissionDeniedNoApprovalUi,

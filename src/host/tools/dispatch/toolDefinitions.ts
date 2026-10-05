@@ -35,9 +35,6 @@ import { estimateTokens } from '../../context/tokenEstimator';
 import { DEFERRED_TOOL_LOADING } from '../../../shared/constants/tools';
 import type { InjectedToolSchema } from '../../services/toolSearch/singleInjectionCeiling';
 import { measureSentToolTokens } from '../../services/toolSearch/sentToolSchema';
-import { resolveFoldedToolAccess, type ResolveToolAccessInput } from '../../security/toolAccessResolve';
-import { foldToolAccess, type FoldedToolAccess, type ToolAccessFoldInput } from './foldToolAccess';
-
 type LegacyPermissionLevel = 'read' | 'write' | 'execute' | 'network';
 
 /**
@@ -77,31 +74,11 @@ function resolveToolDescription(
  * 把 protocol ToolSchema 映射成 ToolDefinition，合并 cloud meta。
  * description 优先级: cloud || dynamicDescription(context) || static schema.description
  */
-function retainToolResourceContract(schema: ToolSchema): void {
-  const foldInput: ToolAccessFoldInput = {
-    accesses: schema.accesses,
-    readOnly: schema.readOnly,
-    pathAuthority: schema.pathAuthority,
-    emission: schema.emission,
-    toolName: schema.name,
-  };
-  const folded: FoldedToolAccess = foldToolAccess(foldInput);
-  const resolved: ResolveToolAccessInput = {
-    toolName: schema.name,
-    folded,
-    params: {},
-    workspace: '.',
-    cwd: '.',
-  };
-  resolveFoldedToolAccess(resolved);
-}
-
 function schemaToDefinition(
   schema: ToolSchema,
   cloudMeta: Record<string, { description?: string }>,
   descriptionContext?: ToolDescriptionContext,
 ): ToolDefinition {
-  retainToolResourceContract(schema);
   const cloud = cloudMeta[schema.name];
   const description = resolveToolDescription(
     cloud?.description,

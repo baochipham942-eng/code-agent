@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -8,6 +8,10 @@ import {
   createWorkspaceScope,
 } from '../../../../src/host/runtime/workspaceScope';
 import { createRunContext } from '../../../../src/host/runtime/runContext';
+
+// macOS /tmp and /var are symlinks (/private/tmp, /private/var). Linux CI has no
+// such alias — skip rather than fail the premise.
+const TMP_HAS_ALIAS = realpathSync.native(os.tmpdir()) !== path.resolve(os.tmpdir());
 
 function rootsFixture() {
   const base = mkdtempSync(path.join(os.tmpdir(), 'neo-multi-source-'));
@@ -78,5 +82,28 @@ describe('WorkspaceScopeResolver', () => {
       cwd: fixture.base,
       createdAt: 1,
     })).toThrow(/workspace Project Sources/);
+  });
+
+  it.skipIf(!TMP_HAS_ALIAS)('canonicalizes a tmp alias and a nonexistent leaf onto the native ancestor', () => {
+    const lexical = mkdtempSync(path.join(os.tmpdir(), 'ws-alias-'));
+    try {
+      const canonical = realpathSync.native(lexical);
+      expect(path.resolve(lexical)).not.toBe(canonical);
+      expect(canonicalizeWorkspacePath(lexical)).toBe(canonical);
+
+      const missing = path.join(lexical, 'not-created');
+      expect(existsSync(missing)).toBe(false);
+      expect(canonicalizeWorkspacePath(missing)).toBe(path.join(canonical, 'not-created'));
+
+      // Symlink walk already rewrites /var → /private/var. The ENOENT fallback's
+      // realpathSync.native is what still pins the existing ancestor's on-disk spelling.
+      mkdirSync(path.join(lexical, 'CamelDir'));
+      const casedLeaf = path.join(lexical, 'cameldir', 'not-created');
+      expect(existsSync(casedLeaf)).toBe(false);
+      expect(realpathSync.native(path.join(lexical, 'cameldir'))).toBe(path.join(canonical, 'CamelDir'));
+      expect(canonicalizeWorkspacePath(casedLeaf)).toBe(path.join(canonical, 'CamelDir', 'not-created'));
+    } finally {
+      rmSync(lexical, { recursive: true, force: true });
+    }
   });
 });

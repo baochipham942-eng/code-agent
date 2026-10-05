@@ -186,7 +186,7 @@ export const zhSettingsModels = {
           tokensUnit: 'Token',
           effortLabel: '推理深度',
           effortAriaLabel: '推理深度',
-          effortLevels: { low: '低', medium: '中', high: '高' },
+          effortLevels: { low: '低', medium: '中', high: '高', xhigh: '极高', max: 'Max' },
           toggleLabel: '思考',
           toggleAriaLabel: '为此模型开启思考',
         },

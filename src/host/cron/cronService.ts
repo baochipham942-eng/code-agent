@@ -54,6 +54,7 @@ import { getEventBus } from '../services/eventing/bus';
 import { persistCronMissedTrace } from './cronMissedTrace';
 import { appendCronAgentExpertThreadReceipt } from './cronAgentExpertThreadReceipt';
 import { buildCronAgentPrompt, truncateUtf8Snapshot } from './cronAgentPrompt';
+import { parseCronRunDigest } from '../../shared/cronRunDigest';
 import {
   assertExecutionLocationConstraints,
   computeCronFireJitterMs,
@@ -63,7 +64,8 @@ import {
   scheduleBoundToDate,
 } from './cronExecutionPolicy';
 import { CronCloudRuntime } from './cronCloudRuntime';
-import { CronEventTrigger, assertEventScheduleConstraints } from './cronEventTrigger';
+import { CronEventTrigger, assertEventScheduleConstraints, hasExplicitChatListenBinding } from './cronEventTrigger';
+import { setChannelListenResolver } from '../channels/channelListenRegistry';
 import {
   deleteCronJob,
   loadCronExecutionStatus,
@@ -76,6 +78,7 @@ import {
   upsertCronExecutionInMemory,
 } from './cronPersistence';
 import { deliverCronResultToChannel } from './cronResultDelivery';
+import { rearmCronRunLimit, settleCronRunLimit } from './cronRunLimit';
 import {
   adoptFailedAgentSession,
   classifyCronFailure,
@@ -178,6 +181,9 @@ export class CronService implements Disposable {
     });
     this.cronEventTrigger.start();
 
+    // 群监听绑定解析器：未 @ 的群消息按 hasExplicitChatListenBinding 判显式 (accountId, chatId) 绑定。
+    setChannelListenResolver((accountId, chatId) => hasExplicitChatListenBinding(this.listJobs(), accountId, chatId));
+
     this.isInitialized = true;
     console.error('[CronService] Initialized');
   }
@@ -185,6 +191,7 @@ export class CronService implements Disposable {
   async shutdown(): Promise<void> {
     this.cronEventTrigger?.dispose();
     this.cronEventTrigger = undefined;
+    setChannelListenResolver(undefined);
     this.cloudRuntime.stop();
     // Stop all cron jobs
     for (const [jobId, job] of this.jobs) {
@@ -241,11 +248,7 @@ export class CronService implements Disposable {
     assertSupportedEveryScheduleUnit(definition.schedule);
 
     const runsOn = definition.runsOn ?? 'local';
-    assertExecutionLocationConstraints({
-      runsOn,
-      schedule: definition.schedule,
-      maxRunBudget: definition.maxRunBudget,
-    });
+    assertExecutionLocationConstraints({ ...definition, runsOn });
     assertEventScheduleConstraints({ ...definition, runsOn });
 
     const job: CronJobDefinition = {
@@ -299,6 +302,8 @@ export class CronService implements Disposable {
       ...updates,
       updatedAt: Date.now(),
     };
+    // 重新启用已停用任务：运行计数清零、摘掉停用原因（N-CRON-BUDGET-EXPOSE）；只改 maxRuns 不动计数。
+    if (updates.enabled === true && !existingJob.definition.enabled) rearmCronRunLimit(updatedJob);
     assertSupportedEveryScheduleUnit(updatedJob.schedule);
     assertExecutionLocationConstraints(updatedJob);
     assertEventScheduleConstraints(updatedJob);
@@ -780,6 +785,12 @@ export class CronService implements Disposable {
         }
       }
 
+      // 次数上限结算（N-CRON-BUDGET-EXPOSE，实现见 cronRunLimit.ts）：排在失败停用之后，同趟不重复停用；
+      // 记数走窄写且整体已兜底，抛错不会逃出 finally 卡死 in-flight（PR#2208 ai-review Important）。
+      // （hooks 压行：本文件贴 max-lines 红线，格式还原 #2208 R4 Nit-3 需要这两行额度。）
+      disableNotified = await settleCronRunLimit(definition.id, execution, disableNotified, {
+        getDefinition: (jobId) => this.jobs.get(jobId)?.definition, updateJob: (jobId, updates) => this.updateJob(jobId, updates) });
+
       // 定时 agent 任务执行完成后发系统通知，点通知跳到生成的 session。
       // 停用的那一趟只发停用通知（已含最后错误与出路）——同一笔失败再叠一条
       // 失败告警就是一次失败两条通知（R2 审查 Nit-1）。
@@ -881,10 +892,8 @@ export class CronService implements Disposable {
         const isExternalWatch = Boolean(ctx?.[EXTERNAL_WATCH.CONTEXT_KEY]);
         let hasAlert = !isExternalWatch;
 
-        let result: unknown;
-        let finalAssistantText = '';
-        let runError: unknown;
-        let runFailed = false;
+        let result: unknown; let finalAssistantText = '';
+        let runError: unknown; let runFailed = false;
         try {
           try {
             // 事件触发时通道载荷只以 untrusted 定界块追加在 prompt 尾部，并给该条
@@ -1014,6 +1023,7 @@ export class CronService implements Disposable {
           prompt: action.prompt,
           result,
           sessionId: cronSession.id,
+          digest: parseCronRunDigest(finalAssistantText),
           ...(quietWatchRound ? { skipped: true, reason: 'no_new_event' } : {}),
         };
       }

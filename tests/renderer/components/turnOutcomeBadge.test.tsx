@@ -47,8 +47,12 @@ function turn(overrides: Partial<TraceTurn> = {}): TraceTurn {
   };
 }
 
-function stamp(verdict: TurnOutcomeStamp['verdict'], ts = 2500): TurnOutcomeStamp {
-  return { ts, terminal: 'completed', verdict, evidenceCount: 2, source: 'generic' };
+function stamp(
+  verdict: TurnOutcomeStamp['verdict'],
+  ts = 2500,
+  evidenceProblems: readonly string[] = [],
+): TurnOutcomeStamp {
+  return { ts, terminal: 'completed', verdict, evidenceCount: 2, evidenceProblems, source: 'generic' };
 }
 
 beforeEach(() => {
@@ -110,6 +114,33 @@ describe('TurnOutcomeBadge', () => {
     expect(badge.dataset.verdict).toBe('self_claimed');
     expect(badge.textContent).toContain('自称完成');
     expect(badge.className).not.toContain('badge-success');
+  });
+
+  it('DELIVERABLE_NONE_PRODUCED: pdf → 未交付，不是自称完成', () => {
+    stampState.stamps = [stamp('self_claimed', 2500, ['DELIVERABLE_NONE_PRODUCED: pdf'])];
+    render(<TurnOutcomeBadge turn={turn()} sessionId="s1" />);
+    const badge = screen.getByTestId('turn-outcome-badge');
+    expect(badge.dataset.verdict).toBe('undelivered');
+    expect(badge.textContent).toContain('未交付');
+    expect(badge.textContent).not.toContain('自称完成');
+  });
+
+  it('DELIVERABLE_NONE_PRODUCED uses the english not-delivered label', () => {
+    copyState.language = 'en';
+    stampState.stamps = [stamp('self_claimed', 2500, ['DELIVERABLE_NONE_PRODUCED: pdf'])];
+    render(<TurnOutcomeBadge turn={turn()} sessionId="s1" />);
+    const badge = screen.getByTestId('turn-outcome-badge');
+    expect(badge.dataset.verdict).toBe('undelivered');
+    expect(badge.textContent).toContain('Not delivered');
+    expect(badge.textContent).not.toContain('Self-claimed');
+  });
+
+  it('其它交付问题码仍是自称完成', () => {
+    stampState.stamps = [stamp('self_claimed', 2500, ['DELIVERABLE_NOT_ON_DISK: missing.pdf'])];
+    render(<TurnOutcomeBadge turn={turn()} sessionId="s1" />);
+    const badge = screen.getByTestId('turn-outcome-badge');
+    expect(badge.dataset.verdict).toBe('self_claimed');
+    expect(badge.textContent).toContain('自称完成');
   });
 
   it('无印章（存量旧会话）不渲染，不臆造', () => {

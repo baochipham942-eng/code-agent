@@ -5,7 +5,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { homedir, tmpdir } from 'os';
-import { join } from 'path';
+import { dirname, join, parse, resolve } from 'path';
+import { resetPolicyEngine, getPolicyEngine } from '../../../../../src/host/permissions/policyEngine';
+import { getPolicyEnforcer, resetPolicyEnforcer } from '../../../../../src/host/security/policyEnforcer';
 import type {
   ToolContext,
   CanUseToolFn,
@@ -112,6 +114,8 @@ import {
 import { getPermissionModeManager } from '../../../../../src/host/permissions/modes';
 import { getSandboxManager } from '../../../../../src/host/sandbox';
 import { resolveCanonicalRunPath } from '../../../../../src/host/runtime/runContext';
+import { BASH } from '../../../../../src/shared/constants';
+import { resolveToolResultBudget } from '../../../../../src/host/context/layers/toolResultBudget';
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -129,6 +133,8 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
     abortSignal: ctrl.signal,
     logger: makeLogger(),
     emit: () => void 0,
+    // ToolExecutor 绑定的策略实例；null = 无策略文件（扩权检查不再读进程单例）。
+    policyEnforcer: null,
     ...overrides,
   };
 }
@@ -1405,6 +1411,423 @@ describe('bashModule OS 沙箱 gating（bypassPermissions）', () => {
   });
 });
 
+describe('bashModule sandbox escalation', () => {
+  const modeMgr = getPermissionModeManager();
+  // CI（Linux，无 bwrap）上沙盒不可用 → default 档降级不包装 → 永远拿不到拒绝，整组假红；
+  // 包装本身已 mock（wrapMock），可用性也钉死，让判据只看升级逻辑不看平台。
+  let availableSpy: ReturnType<typeof vi.spyOn> | undefined;
+  // 「尚不存在的文件能不能授」随平台变（seatbelt literal 能，bubblewrap 只能绑已存在的文件），钉成能；
+  // 不能的那一侧由下面单独一条测试覆盖。
+  let newFileGrantSpy: ReturnType<typeof vi.spyOn> | undefined;
+
+  beforeEach(() => {
+    modeMgr.setMode('default', true);
+    process.env.OS_SANDBOX_ENABLED = 'true';
+    availableSpy = vi.spyOn(getSandboxManager(), 'isAvailable').mockReturnValue(true);
+    newFileGrantSpy = vi.spyOn(getSandboxManager(), 'supportsNewFileWriteGrant').mockReturnValue(true);
+    wrapMock.mockReset();
+    cleanupMock.mockReset();
+  });
+
+  afterEach(() => {
+    availableSpy?.mockRestore();
+    newFileGrantSpy?.mockRestore();
+    modeMgr.setMode('default', true);
+    process.env.OS_SANDBOX_ENABLED = 'true';
+  });
+
+  it('asks once, grants only the denied file, and retries once after approval', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'sandbox-escalation-'));
+    const deniedPath = join(resolveCanonicalRunPath(tmpdir()), `sandbox-escalation-target-${process.pid}.txt`);
+    const denial = `printf '%s\\n' "EPERM: operation not permitted, open '${deniedPath}'" >&2; exit 1`;
+    wrapMock
+      .mockReturnValueOnce({ command: denial, cleanup: cleanupMock })
+      .mockReturnValueOnce({ command: "printf 'retried\\n'", cleanup: cleanupMock });
+    const canUse = vi.fn()
+      .mockResolvedValueOnce({ allow: true as const })
+      .mockResolvedValueOnce({ allow: true as const });
+    try {
+      const handler = await bashModule.createHandler();
+      const result = await handler.execute({ command: `printf x > ${deniedPath}` }, makeCtx({ workingDir: cwd }), canUse);
+      expect(result.ok).toBe(true);
+      expect(wrapMock).toHaveBeenCalledTimes(2);
+      // 重跑只多放开这一个文件：写根与第一次相同，不把它（或它的目录）加进子树授权
+      const firstOptions = wrapMock.mock.calls[0]?.[1] as { readWriteRoots?: string[]; readWriteFiles?: string[] };
+      const retryOptions = wrapMock.mock.calls[1]?.[1] as { readWriteRoots?: string[]; readWriteFiles?: string[]; allowNetwork?: boolean };
+      expect(firstOptions.readWriteFiles).toBeUndefined();
+      expect(retryOptions.readWriteFiles).toEqual([deniedPath]);
+      expect(retryOptions.readWriteRoots).toEqual(firstOptions.readWriteRoots);
+      expect(retryOptions.allowNetwork).toBe(false);
+      expect(canUse).toHaveBeenCalledTimes(2);
+      expect(canUse.mock.calls[1]).toEqual([
+        'bash',
+        expect.objectContaining({ command: `printf x > ${deniedPath}` }),
+        expect.stringContaining(deniedPath),
+        expect.objectContaining({
+          type: 'command',
+          forceConfirm: true,
+          dangerLevel: 'warning',
+          details: expect.objectContaining({ command: `printf x > ${deniedPath}`, deniedPath, action: 'sandbox_escalate_once' }),
+        }),
+      ]);
+      if (result.ok) expect(result.meta?.sandboxEscalation).toEqual({ path: deniedPath, decision: 'approved' });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('preserves the original failure and explains a declined or thrown approval', async () => {
+    for (const approval of [
+      { allow: false as const, reason: 'declined' },
+      new Error('approval aborted'),
+    ]) {
+      wrapMock.mockReset();
+      wrapMock.mockReturnValue({
+        command: `printf '%s\\n' "EPERM: operation not permitted, open '/tmp/sandbox-escalation-declined-${process.pid}'" >&2; exit 1`,
+        cleanup: cleanupMock,
+      });
+      const canUse = vi.fn()
+        .mockResolvedValueOnce({ allow: true as const })
+        .mockImplementationOnce(async () => {
+          if (approval instanceof Error) throw approval;
+          return approval;
+        });
+      const handler = await bashModule.createHandler();
+      const result = await handler.execute({ command: 'printf x > /tmp/sandbox-escalation-declined' }, makeCtx(), canUse);
+      expect(result.ok).toBe(false);
+      expect(wrapMock).toHaveBeenCalledTimes(1);
+      expect(canUse).toHaveBeenCalledTimes(2);
+      if (!result.ok) {
+        expect(result.error).toContain('Command failed with exit code 1');
+        expect(result.error).toContain('The user declined to widen the sandbox');
+        expect(result.meta?.sandboxEscalation).toEqual({
+          // 卡上/授权的是规范路径（macOS /tmp → /private/tmp）
+          path: resolveCanonicalRunPath(`/tmp/sandbox-escalation-declined-${process.pid}`),
+          decision: 'declined',
+        });
+      }
+    }
+  });
+
+  it('does not open a second card when the approved retry fails', async () => {
+    const deniedPath = resolveCanonicalRunPath(`/tmp/sandbox-escalation-retry-${process.pid}`);
+    const denial = `printf '%s\\n' "EPERM: operation not permitted, open '${deniedPath}'" >&2; exit 1`;
+    wrapMock
+      .mockReturnValueOnce({ command: denial, cleanup: cleanupMock })
+      .mockReturnValueOnce({ command: denial, cleanup: cleanupMock });
+    const canUse = vi.fn()
+      .mockResolvedValueOnce({ allow: true as const })
+      .mockResolvedValueOnce({ allow: true as const });
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute({ command: `printf x > ${deniedPath}` }, makeCtx(), canUse);
+    expect(result.ok).toBe(false);
+    expect(wrapMock).toHaveBeenCalledTimes(2);
+    expect(canUse).toHaveBeenCalledTimes(2);
+    if (!result.ok) expect(result.meta?.sandboxEscalation).toEqual({ path: deniedPath, decision: 'approved' });
+  });
+
+  it('does not remember an approval across invocations', async () => {
+    const deniedPath = resolveCanonicalRunPath(`/tmp/sandbox-escalation-repeat-${process.pid}`);
+    const denial = `printf '%s\\n' "EPERM: operation not permitted, open '${deniedPath}'" >&2; exit 1`;
+    wrapMock.mockImplementation(() => ({ command: denial, cleanup: cleanupMock }));
+    const canUse = vi.fn()
+      .mockResolvedValue({ allow: true as const });
+    const handler = await bashModule.createHandler();
+    await handler.execute({ command: `printf x > ${deniedPath}` }, makeCtx(), canUse);
+    await handler.execute({ command: `printf x > ${deniedPath}` }, makeCtx(), canUse);
+    expect(wrapMock).toHaveBeenCalledTimes(4);
+    expect(canUse.mock.calls.filter(([toolName]) => toolName === 'bash')).toHaveLength(2);
+  });
+
+  it('does not offer escalation for ineligible sessions, modes, paths, or execution modes', async () => {
+    const target = `/tmp/sandbox-escalation-ineligible-${process.pid}`;
+    const denialFor = (pathText: string) =>
+      `printf '%s\\n' "EPERM: operation not permitted, open '${pathText}'" >&2; exit 1`;
+    const cases: Array<{ label: string; pathText: string; args?: Record<string, unknown>; ctx?: Partial<ToolContext>; mode?: 'default' | 'readOnly' | 'bypassPermissions'; env?: string }> = [
+      { label: 'unattended', pathText: target, ctx: { sessionId: `unattended-escalation-${process.pid}` } },
+      { label: 'readOnly', pathText: target, mode: 'readOnly' },
+      { label: 'bypassPermissions', pathText: target, mode: 'bypassPermissions' },
+      { label: 'write-fence', pathText: target, ctx: { requiresOsWriteFence: true, writeFenceWorkspaceRoot: process.cwd() } },
+      { label: 'eval', pathText: target, env: '/private/eval-root' },
+      { label: 'root', pathText: '/' },
+      { label: 'home', pathText: homedir() },
+      { label: 'relative', pathText: 'relative-target' },
+      { label: 'no-path', pathText: '' },
+      { label: 'background', pathText: target, args: { run_in_background: true } },
+      { label: 'pty', pathText: target, args: { pty: true } },
+    ];
+    const handler = await bashModule.createHandler();
+    for (const testCase of cases) {
+      vi.clearAllMocks();
+      modeMgr.setMode(testCase.mode ?? 'default', true);
+      if (testCase.ctx?.sessionId?.startsWith('unattended-')) {
+        modeMgr.markUnattendedSession(testCase.ctx.sessionId);
+      }
+      if (testCase.env) process.env.CODE_AGENT_EVAL_REAL_ROOT = testCase.env;
+      else delete process.env.CODE_AGENT_EVAL_REAL_ROOT;
+      const denial = testCase.label === 'relative'
+        ? `printf 'npm error path relative-target\\nOperation not permitted\\n' >&2; exit 1`
+        : testCase.label === 'no-path'
+          ? `printf 'EPERM: Operation not permitted\\n' >&2; exit 1`
+          : denialFor(testCase.pathText);
+      wrapMock.mockReturnValue({ command: denial, cleanup: cleanupMock });
+      if (testCase.label === 'background') startBackgroundTaskMock.mockReturnValue({ success: false, error: denial });
+      if (testCase.label === 'pty') createPtySessionMock.mockReturnValue({ success: false, error: denial });
+      const canUse = vi.fn().mockResolvedValue({ allow: true as const });
+      await handler.execute(
+        { command: `printf x > ${target}`, ...(testCase.args ?? {}) },
+        makeCtx(testCase.ctx),
+        canUse,
+      );
+      expect(canUse.mock.calls.filter(([toolName]) => toolName === 'bash'), testCase.label).toHaveLength(0);
+      expect(canUse).toHaveBeenCalledTimes(1);
+      modeMgr.setMode('default', true);
+      delete process.env.CODE_AGENT_EVAL_REAL_ROOT;
+    }
+  });
+
+  async function expectEscalationOffers(
+    deniedPath: string,
+    offered: boolean,
+    op: 'open' | 'mkdir' = 'open',
+    ctx: Partial<ToolContext> = {},
+  ): Promise<void> {
+    const denial = `printf '%s\\n' "EPERM: operation not permitted, ${op} '${deniedPath}'" >&2; exit 1`;
+    wrapMock.mockReturnValue({ command: denial, cleanup: cleanupMock });
+    const canUse = vi.fn().mockResolvedValue({ allow: true as const });
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute({ command: `printf x > ${deniedPath}` }, makeCtx(ctx), canUse);
+    const escalationCalls = canUse.mock.calls.filter(([toolName]) => toolName === 'bash');
+    expect(escalationCalls).toHaveLength(offered ? 1 : 0);
+    expect(canUse).toHaveBeenCalledTimes(offered ? 2 : 1);
+    expect(result.ok).toBe(false);
+    if (!result.ok && !offered) {
+      expect(result.meta?.sandboxEscalation).toBeUndefined();
+      expect(result.error ?? '').not.toContain('declined to widen the sandbox');
+    }
+  }
+
+  it('does not offer an ancestor of the home directory', async () => {
+    const ancestor = dirname(resolve(homedir()));
+    expect(ancestor).not.toBe(resolve(homedir()));
+    expect(ancestor).not.toBe(parse(ancestor).root);
+    await expectEscalationOffers(ancestor, false);
+  });
+
+  it('never offers a directory, whether it exists or is about to be created', async () => {
+    // 卡只授一个文件。目录要整棵子树才有用，而子树里会写出什么没有哪张卡列得清（PR #2191 五轮审查的同一个根）。
+    const parent = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-dir-')));
+    try {
+      await expectEscalationOffers(parent, false);
+      await expectEscalationOffers(join(parent, 'new-dir'), false, 'mkdir');
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  it('does not offer a symlink or a file whose parent directory is missing', async () => {
+    const parent = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-link-')));
+    const real = join(parent, 'real.txt');
+    const link = join(parent, 'link.txt');
+    writeFileSync(real, 'x');
+    symlinkSync(real, link);
+    try {
+      await expectEscalationOffers(link, false);
+      await expectEscalationOffers(join(parent, 'missing-dir', 'out.txt'), false);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  it('offers an existing regular file and a new file in an existing directory', async () => {
+    const parent = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-file-ok-')));
+    const existing = join(parent, 'existing.txt');
+    writeFileSync(existing, 'x');
+    try {
+      await expectEscalationOffers(existing, true);
+      await expectEscalationOffers(join(parent, 'new-file.txt'), true);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  it('shows and grants the real file when a parent directory is a symlink (ai-review round 5)', async () => {
+    // `ln -s ~/.ssh <ws>/link; echo key >> <ws>/link/authorized_keys`：拒绝信息里是工作区拼法，
+    // seatbelt literal 放行的却是解析后的真实文件。卡与授权都必须是真实路径，不能让卡谎报目标。
+    const outside = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-outside-')));
+    const ws = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-ws-')));
+    const link = join(ws, 'link');
+    symlinkSync(outside, link);
+    const spelled = join(link, 'authorized_keys');
+    const real = join(outside, 'authorized_keys');
+    wrapMock
+      .mockReturnValueOnce({ command: `printf '%s\\n' "EPERM: operation not permitted, open '${spelled}'" >&2; exit 1`, cleanup: cleanupMock })
+      .mockReturnValueOnce({ command: "printf 'retried\\n'", cleanup: cleanupMock });
+    const canUse = vi.fn().mockResolvedValue({ allow: true as const });
+    try {
+      const handler = await bashModule.createHandler();
+      const result = await handler.execute({ command: `echo key >> ${spelled}` }, makeCtx({ workingDir: ws }), canUse);
+      expect(result.ok).toBe(true);
+      const escalationCalls = canUse.mock.calls.filter(([toolName]) => toolName === 'bash');
+      expect(escalationCalls).toHaveLength(1);
+      expect(escalationCalls[0]?.[2]).toContain(real);
+      expect(escalationCalls[0]?.[2]).not.toContain(spelled);
+      expect(escalationCalls[0]?.[3]).toEqual(expect.objectContaining({ details: expect.objectContaining({ deniedPath: real }) }));
+      const retryOptions = wrapMock.mock.calls[1]?.[1] as { readWriteFiles?: string[] };
+      expect(retryOptions.readWriteFiles).toEqual([real]);
+      if (result.ok) expect(result.meta?.sandboxEscalation).toEqual({ path: real, decision: 'approved' });
+    } finally {
+      rmSync(ws, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('offers only existing files when the sandbox cannot grant a new file (bubblewrap)', async () => {
+    newFileGrantSpy?.mockReturnValue(false);
+    const parent = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-bwrap-')));
+    const existing = join(parent, 'existing.txt');
+    writeFileSync(existing, 'x');
+    try {
+      await expectEscalationOffers(existing, true);
+      await expectEscalationOffers(join(parent, 'new-file.txt'), false);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  it('does not offer a file that a user Edit deny or filesystem policy forbids', async () => {
+    const project = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-deny-project-')));
+    const parent = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-deny-')));
+    const editDenied = join(parent, 'edit-denied.txt');
+    const policyDenied = join(parent, 'policy-denied.txt');
+    mkdirSync(join(parent, 'sub'));
+    resetPolicyEngine();
+    getPolicyEngine().loadUserRules({ deny: [`Edit(${editDenied})`] });
+    writeFileSync(join(project, 'code-agent-policy.toml'), [
+      '[filesystem]',
+      `writable_paths = ["./**", "${parent}/**"]`,
+      `denied_paths = ["${policyDenied}"]`,
+      '',
+    ].join('\n'));
+    resetPolicyEnforcer();
+    const policyEnforcer = getPolicyEnforcer(project);
+    try {
+      await expectEscalationOffers(editDenied, false, 'open', { policyEnforcer });
+      await expectEscalationOffers(policyDenied, false, 'open', { policyEnforcer });
+      await expectEscalationOffers(join(parent, 'sub', 'allowed.txt'), true, 'open', { policyEnforcer });
+      // 审查 Important（PR #2191 轮 4）：另一工作区的并发 Bash 把单例改绑成 null，
+      // 本次调用绑定的实例仍必须硬拒 denied_paths。
+      const other = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-other-')));
+      try {
+        expect(getPolicyEnforcer(other)).toBeNull();
+        await expectEscalationOffers(policyDenied, false, 'open', { policyEnforcer });
+      } finally {
+        rmSync(other, { recursive: true, force: true });
+      }
+      // 没人绑定过（ctx 缺字段）= 未核验，不弹卡。
+      await expectEscalationOffers(join(parent, 'sub', 'allowed.txt'), false, 'open', { policyEnforcer: undefined });
+    } finally {
+      resetPolicyEngine();
+      resetPolicyEnforcer();
+      rmSync(project, { recursive: true, force: true });
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  it('does not offer escalation for a read denial in the generic command: path form', async () => {
+    // 审查 Important（PR #2191）：macOS TCC / deniedReadRoots 的读拒绝是 `find: /path: Operation not permitted`，
+    // 不是写拒绝；弹卡会谎称沙盒拦了写入并把整条命令重跑一遍。
+    const target = `/Users/shot/Library/Mail`;
+    wrapMock.mockReturnValue({
+      command: `printf '%s\\n' 'find: ${target}: Operation not permitted' >&2; exit 1`,
+      cleanup: cleanupMock,
+    });
+    const canUse = vi.fn().mockResolvedValue({ allow: true as const });
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute({ command: 'find ~ -name x' }, makeCtx(), canUse);
+    expect(canUse.mock.calls.filter(([toolName]) => toolName === 'bash')).toHaveLength(0);
+    expect(canUse).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.meta?.sandboxEscalation).toBeUndefined();
+  });
+
+  it('still offers escalation for a write utility denial in the command: path form', async () => {
+    const parent = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-cp-')));
+    const target = join(parent, 'out.txt');
+    wrapMock.mockReturnValue({
+      command: `printf '%s\\n' 'cp: ${target}: Operation not permitted' >&2; exit 1`,
+      cleanup: cleanupMock,
+    });
+    const canUse = vi.fn().mockResolvedValue({ allow: true as const });
+    const handler = await bashModule.createHandler();
+    try {
+      await handler.execute({ command: `cp a ${target}` }, makeCtx(), canUse);
+      const escalationCalls = canUse.mock.calls.filter(([toolName]) => toolName === 'bash');
+      expect(escalationCalls).toHaveLength(1);
+      expect(escalationCalls[0]?.[2]).toContain(target);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  it('does not offer escalation for an npm path line that is not a sandbox denial', async () => {
+    const target = `/tmp/sandbox-npm-enoent-${process.pid}/package.json`;
+    wrapMock.mockReturnValue({
+      command: `printf '%s\\n' 'npm error code ENOENT' 'npm error syscall open' 'npm error path ${target}' 'npm error errno -2' >&2; exit 1`,
+      cleanup: cleanupMock,
+    });
+    const canUse = vi.fn().mockResolvedValue({ allow: true as const });
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute({ command: 'npm install' }, makeCtx(), canUse);
+    expect(canUse.mock.calls.filter(([toolName]) => toolName === 'bash')).toHaveLength(0);
+    expect(canUse).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.meta?.sandboxEscalation).toBeUndefined();
+      expect(result.error ?? '').not.toContain('declined to widen the sandbox');
+      expect(result.error ?? '').toContain(target);
+    }
+  });
+
+  it('still offers escalation when npm reports EPERM on a path line', async () => {
+    const target = join(resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-npm-eperm-'))), 'package.json');
+    wrapMock.mockReturnValue({
+      command: `printf '%s\\n' 'npm error code EPERM' 'npm error syscall open' 'npm error path ${target}' 'npm error errno -1' >&2; exit 1`,
+      cleanup: cleanupMock,
+    });
+    const canUse = vi.fn().mockResolvedValue({ allow: true as const });
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute({ command: 'npm install' }, makeCtx(), canUse);
+    const escalationCalls = canUse.mock.calls.filter(([toolName]) => toolName === 'bash');
+    expect(escalationCalls).toHaveLength(1);
+    expect(escalationCalls[0]?.[2]).toContain(target);
+    expect(canUse).toHaveBeenCalledTimes(2);
+    expect(result.ok).toBe(false);
+  });
+
+  it('still offers a file when policy only denies a sibling directory', async () => {
+    const project = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-file-project-')));
+    const parent = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-file-')));
+    const blocked = join(parent, 'blocked');
+    const target = join(parent, 'out.txt');
+    writeFileSync(join(project, 'code-agent-policy.toml'), [
+      '[filesystem]',
+      `writable_paths = ["./**", "${parent}/**"]`,
+      `denied_paths = ["${blocked}/**"]`,
+      '',
+    ].join('\n'));
+    resetPolicyEnforcer();
+    const policyEnforcer = getPolicyEnforcer(project);
+    try {
+      await expectEscalationOffers(target, true, 'open', { policyEnforcer });
+    } finally {
+      resetPolicyEnforcer();
+      rmSync(project, { recursive: true, force: true });
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('bashModule write-fence (default mode, unified eligibility)', () => {
   const modeMgr = getPermissionModeManager();
 
@@ -1781,6 +2204,7 @@ describe('bash output truncation guidance (N-BASH-TRUNC-GUIDANCE)', () => {
     const result = await handler.execute({ command: overflow }, makeCtx(), allowAll);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    expect(result.output).toContain(`truncated to ${BASH.MAX_OUTPUT_LENGTH}`);
     expect(result.output).toContain('完整输出未能留存');
     expect(result.output).toContain('不要重跑可能已产生副作用的命令');
     expect(result.output).toContain('只有确认命令只读时，才缩小输出范围后重跑');
@@ -1806,9 +2230,14 @@ describe('bash output truncation guidance (N-BASH-TRUNC-GUIDANCE)', () => {
       },
     }));
     const handler = await bashModule.createHandler();
-    const result = await handler.execute({ command: overflow }, makeCtx(), allowAll);
+    const result = await handler.execute(
+      { command: overflow },
+      makeCtx({ modelConfig: { provider: 'deepseek', model: 'deepseek-chat' } }),
+      allowAll,
+    );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    expect(result.output).toContain(`truncated to ${resolveToolResultBudget(128_000).maxOutputChars}`);
     expect(result.output).toContain(`完整输出已留存于 ${savedAt}，用 Read/Grep 回查`);
     expect(result.output).toContain(savedAt);
     expect(result.output).not.toContain('Use Read tool with offset/limit');

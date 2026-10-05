@@ -247,6 +247,8 @@ vi.mock('../../../src/shared/constants', async (importOriginal) => ({
 vi.mock('../../../src/host/agent/toolExecution/parallelStrategy', () => ({
   isParallelSafeTool: vi.fn(),
   classifyToolCalls: vi.fn(),
+  executeOrderedSegments: vi.fn(),
+  toolBatchLabel: (name: string) => name,
 }));
 
 vi.mock('../../../src/host/agent/toolExecution/circuitBreaker', () => ({
@@ -1825,6 +1827,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
       enableSnip: false,
       enableMicrocompact: false,
       enableContextCollapse: false,
+      // test-model is an unknown model and resolves to the 128K fallback window: round(128K / 64) = 2000.
       toolResultBudget: 2000,
       activeToolResultPrune: { enabled: false },
     });

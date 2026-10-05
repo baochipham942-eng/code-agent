@@ -124,8 +124,14 @@ import { app as electronApp } from '../../platform';
 
 function loadEnvFile(): void {
   // Try multiple paths for .env file
-  const appPath = electronApp?.getAppPath?.() || '';
-  const userDataPath = electronApp?.getPath?.('userData') || '';
+  let appPath = '';
+  let userDataPath = '';
+  try {
+    appPath = electronApp?.getAppPath?.() || '';
+    userDataPath = electronApp?.getPath?.('userData') || '';
+  } catch {
+    // 平台层未就绪（如测试 mock 缺 app 导出）：import 期不能因此炸，只走 cwd/.env 路径
+  }
 
   // For packaged app, Resources folder is at appPath/../
   const resourcesPath = appPath ? path.join(appPath, '..') : '';

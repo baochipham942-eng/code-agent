@@ -1,8 +1,6 @@
 import type { TestCase, TestResult, TestRunnerConfig } from './types';
 import { quickTask } from '../model/quickModel';
-import { resolveProviderApiKey } from '../model/providers/providerResolution';
-import { systemOne } from '../model/providers/typesafeProvider';
-import { JEV_MODEL } from '../../shared/constants/jevQuestions';
+import { resolveJevRoute, systemOne } from '../model/providers/typesafeProvider';
 import {
   getAiReviewPromptHash,
   judgeDimensions,
@@ -33,8 +31,7 @@ let missingKeyWarned = false;
 
 function resolveDimensionPrescreen(): DimensionJudgePrescreen | undefined {
   if (!isDimJudgeJevPrescreenEnabled()) return undefined;
-  const apiKey = resolveProviderApiKey({ provider: 'typesafe', model: JEV_MODEL });
-  if (!apiKey) {
+  if (resolveJevRoute() === null) {
     if (!missingKeyWarned) {
       missingKeyWarned = true;
       console.warn(DIMJUDGE_PRESCREEN_MISSING_KEY_WARN);

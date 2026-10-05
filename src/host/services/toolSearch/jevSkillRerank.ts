@@ -1,5 +1,4 @@
 import {
-  JEV_MODEL,
   JEV_TIMEOUT_MS,
   skillRerank,
   type JevAnswers,
@@ -11,7 +10,7 @@ import type {
   ToolSearchOptions,
 } from '../../../shared/contract/toolSearch';
 import { getFeatureFlagService } from '../cloud/featureFlagService';
-import { resolveProviderApiKey } from '../../model/providers/providerResolution';
+import { resolveJevRoute } from '../../model/providers/typesafeProvider';
 import { guardSensitiveText } from '../../security/sensitiveDataGuard';
 
 const JEV_SKILL_RERANK_ENV = 'CODE_AGENT_JEV_SKILL_RERANK';
@@ -86,6 +85,6 @@ export function resolveJevSkillRerankOptions(
   env: NodeJS.ProcessEnv = process.env,
 ): ToolSearchOptions['rerank'] | undefined {
   if (!isJevSkillRerankEnabled(env)) return undefined;
-  if (!resolveProviderApiKey({ provider: 'typesafe', model: JEV_MODEL })) return undefined;
+  if (resolveJevRoute() === null) return undefined;
   return { enabled: true, judge: createJevSkillRerankJudge() };
 }

@@ -114,6 +114,8 @@ export function sweepAudioRetention(input: {
 export function clearAllAudioRecordings(input: {
   audioDir: string;
   sqlitePath: string | null;
+  now?: number;
+  failedRetentionMs?: number;
 }): { deleted: number; freedBytes: number; failed: number } {
   const result = { deleted: 0, freedBytes: 0, failed: 0, lastError: undefined as string | undefined };
   try {
@@ -128,7 +130,10 @@ export function clearAllAudioRecordings(input: {
   return { deleted: result.deleted, freedBytes: result.freedBytes, failed: result.failed };
 }
 
-export function getAudioRetentionStatus(audioDir?: string): RetentionLedger & {
+export function getAudioRetentionStatus(
+  audioDir?: string,
+  sqlitePath?: string | null,
+): RetentionLedger & {
   fileCount?: number;
   bytes?: number;
 } {
@@ -139,7 +144,7 @@ export function getAudioRetentionStatus(audioDir?: string): RetentionLedger & {
   };
   if (retentionStatus.lastError) status.lastError = retentionStatus.lastError;
   if (!audioDir) return status;
-  const counts = countClearableWavs(audioDir);
+  const counts = countClearableWavs(audioDir, sqlitePath ?? null, Date.now(), FAILED_AUDIO_RETENTION_MS);
   return { ...status, fileCount: counts.fileCount, bytes: counts.bytes };
 }
 
@@ -494,23 +499,39 @@ interface ClearAccum {
   lastError?: string;
 }
 
-function runClear(input: { audioDir: string; sqlitePath: string | null }, result: ClearAccum): void {
+function runClear(
+  input: { audioDir: string; sqlitePath: string | null; now?: number; failedRetentionMs?: number },
+  result: ClearAccum,
+): void {
+  const now = input.now ?? Date.now();
+  const retentionMs = input.failedRetentionMs ?? FAILED_AUDIO_RETENTION_MS;
   const removed = new Set<string>();
+  const rows = input.sqlitePath == null ? [] : loadRows(input.sqlitePath);
+  if (rows == null) countFailed(result, 'audio_segments query failed');
+  const referenced = new Set<string>();
+  if (rows) for (const row of rows) addReference(referenced, row.wavPath);
   for (const wavPath of listWavFiles(input.audioDir)) {
+    if (isYoungOrphanWav(wavPath, referenced, now, retentionMs)) continue;
     deleteClearableWav(input.audioDir, wavPath, result, removed);
   }
-  if (input.sqlitePath == null) {
-    removeEmptyDateDirs(input.audioDir);
-    return;
+  if (input.sqlitePath && rows) {
+    for (const row of rows) settleClearedRow(input.sqlitePath, input.audioDir, row, result, removed);
   }
-  const rows = loadRows(input.sqlitePath);
-  if (rows == null) {
-    countFailed(result, 'audio_segments query failed');
-    removeEmptyDateDirs(input.audioDir);
-    return;
-  }
-  for (const row of rows) settleClearedRow(input.sqlitePath, input.audioDir, row, result, removed);
   removeEmptyDateDirs(input.audioDir);
+}
+
+// An audio_segments row is written only after transcription, so a wav still
+// sitting in the ASR queue has no row. The sweep skips such young orphans
+// (sweepOrphans); the clear and its dialog count must skip the same files or a
+// queued wav is deleted before transcribeSegment ever reads it.
+function isYoungOrphanWav(wavPath: string, referenced: Set<string>, now: number, retentionMs: number): boolean {
+  if (isReferenced(referenced, wavPath)) return false;
+  try {
+    return now - fs.statSync(wavPath).mtimeMs < retentionMs;
+  } catch {
+    // Vanished or unreadable: inspectWav in the caller skips or reports it.
+    return false;
+  }
 }
 
 function deleteClearableWav(audioDir: string, wavPath: string, result: ClearAccum, removed: Set<string>): void {
@@ -590,11 +611,20 @@ function rememberRemoved(removed: Set<string>, wavPath: string, deletePath: stri
   }
 }
 
-function countClearableWavs(audioDir: string): { fileCount: number; bytes: number } {
+function countClearableWavs(
+  audioDir: string,
+  sqlitePath: string | null,
+  now: number,
+  retentionMs: number,
+): { fileCount: number; bytes: number } {
   let fileCount = 0;
   let bytes = 0;
+  const rows = sqlitePath == null ? [] : loadRows(sqlitePath);
+  const referenced = new Set<string>();
+  if (rows) for (const row of rows) addReference(referenced, row.wavPath);
   try {
     for (const wavPath of listWavFiles(audioDir)) {
+      if (isYoungOrphanWav(wavPath, referenced, now, retentionMs)) continue;
       const inspection = inspectWav(audioDir, wavPath);
       if (inspection.action !== 'delete') continue;
       try {

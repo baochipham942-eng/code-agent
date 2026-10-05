@@ -1220,6 +1220,6 @@ export function getAudioCaptureStatus() {
     totalSegments,
     audioDir: getAudioDir(),
     queueLength: asrQueue.length,
-    retention: getAudioRetentionStatus(getAudioDir()),
+    retention: getAudioRetentionStatus(getAudioDir(), getSqlitePath()),
   };
 }

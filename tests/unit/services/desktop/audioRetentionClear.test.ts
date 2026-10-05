@@ -31,6 +31,7 @@ import {
   sweepAudioRetention,
 } from '../../../../src/host/services/desktop/audioRetention';
 import { getAudioCaptureStatus } from '../../../../src/host/services/desktop/desktopAudioCapture';
+import { FAILED_AUDIO_RETENTION_MS } from '@shared/constants/desktopAudio';
 
 const AUDIO_SEGMENTS_DDL = `
 CREATE TABLE IF NOT EXISTS audio_segments (
@@ -110,6 +111,11 @@ function writeWav(audioDir: string, day: string, name: string, bytes: string): s
   fs.mkdirSync(path.dirname(wavPath), { recursive: true });
   fs.writeFileSync(wavPath, bytes);
   return wavPath;
+}
+
+function setMtime(wavPath: string, atMs: number): void {
+  const when = new Date(atMs);
+  fs.utimesSync(wavPath, when, when);
 }
 
 beforeEach(() => {
@@ -230,6 +236,45 @@ describe('clearAllAudioRecordings', () => {
     expect(readSegment(current.sqlitePath, 'blocked')).toEqual({
       wavPath: blocked,
       transcript: 'keep me',
+    });
+  });
+
+  it('keeps a young wav with no audio_segments row (may still be queued for ASR)', () => {
+    const current = fixture;
+    if (!current) throw new Error('missing fixture');
+    const now = Date.now();
+    // No row yet: a queued wav is only written to audio_segments after ASR.
+    const queued = writeWav(current.audioDir, '2026-09-20', 'audio_queued.wav', 'RIFF-QUEUED');
+    const stale = writeWav(current.audioDir, '2026-09-20', 'audio_stale.wav', 'RIFF-STALE');
+    const transcribed = writeWav(current.audioDir, '2026-09-20', 'audio_done.wav', 'RIFF-DONE');
+    setMtime(queued, now - 60_000);
+    setMtime(stale, now - FAILED_AUDIO_RETENTION_MS - 60_000);
+    const expectedBytes = fs.statSync(stale).size + fs.statSync(transcribed).size;
+    insertSegment(current.sqlitePath, {
+      id: 'done',
+      wavPath: transcribed,
+      transcript: 'already transcribed',
+      createdAtMs: now,
+    });
+
+    const counts = getAudioRetentionStatus(current.audioDir, current.sqlitePath);
+    expect(counts.fileCount).toBe(2);
+    expect(counts.bytes).toBe(expectedBytes);
+
+    const result = clearAllAudioRecordings({
+      audioDir: current.audioDir,
+      sqlitePath: current.sqlitePath,
+      now,
+    });
+
+    expect(result.deleted).toBe(2);
+    expect(result.freedBytes).toBe(expectedBytes);
+    expect(fs.existsSync(queued)).toBe(true);
+    expect(fs.existsSync(stale)).toBe(false);
+    expect(fs.existsSync(transcribed)).toBe(false);
+    expect(readSegment(current.sqlitePath, 'done')).toEqual({
+      wavPath: null,
+      transcript: 'already transcribed',
     });
   });
 

@@ -41,6 +41,7 @@ import { NeoBrandMark } from './features/sidebar/NeoBrandMark';
 import { isTauriMode } from '../utils/platform';
 import { isNativeWindowFullscreen } from '../services/tauriPluginFacade';
 import { useI18n } from '../hooks/useI18n';
+import { cronRunAggregatesByTaskId, useCronRunGroups } from '../hooks/useCronRunGroups';
 import ipcService from '../services/ipcService';
 import { isOptionalUpdateAvailable } from '../utils/updatePrompt';
 import { canAccessFeature } from '../utils/accessControl';
@@ -345,6 +346,9 @@ export const Sidebar: React.FC = () => {
   const [automationSummariesBySessionId, setAutomationSummariesBySessionId] = useState<
     Record<string, SessionAutomationSessionSummary>
   >({});
+  // cron/heartbeat 运行会话按 origin.id 聚成 { runCount, latestSessionId }（N-CRON-ARTIFACT-HANDOFF-COUNT）：
+  // 会话行按任务折叠的渲染留给侧栏 redesign，这里先把数据层经 sessionItemProps 备到位（行渲染暂不消费）。
+  const cronRunAggregates = cronRunAggregatesByTaskId(useCronRunGroups());
   const visibleSessionIds = useMemo(
     () => workspaceGroupedSessions.flatMap((group) => group.sessions.map((session) => session.id)),
     [workspaceGroupedSessions],
@@ -621,6 +625,7 @@ export const Sidebar: React.FC = () => {
   const sessionItemProps: SidebarSessionItemSharedProps = {
     unreadSessionIds,
     automationSummariesBySessionId,
+    cronRunAggregatesByTaskId: cronRunAggregates,
     currentSessionId,
     selectedSessionIds,
     pinnedSessionIds,

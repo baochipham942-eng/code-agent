@@ -123,6 +123,27 @@ function parsePatchPath(section: Buffer): string | null {
 }
 
 /**
+ * Extracts the a-side (pre-patch) repository path from a `diff --git` header.
+ * For rename/copy sections this is a different path than the b-side item, and
+ * `git apply` still needs its pre-image present to run the section at all.
+ */
+export function parsePatchPreimagePath(section: Buffer): string | null {
+  const lineEnd = section.indexOf('\n');
+  const header = section.subarray(0, lineEnd === -1 ? section.byteLength : lineEnd).toString('utf8');
+  if (!header.startsWith(DIFF_HEADER)) return null;
+  const rest = header.slice(DIFF_HEADER.length);
+  if (!rest.startsWith('"')) {
+    const separator = rest.indexOf(' b/');
+    if (separator === -1) return null;
+    const raw = rest.slice(0, separator);
+    return raw.startsWith('a/') && raw.length > 2 ? raw.slice(2) : null;
+  }
+  const first = readQuoted(rest, 0);
+  if (first === null) return null;
+  return first.value.startsWith('a/') && first.value.length > 2 ? first.value.slice(2) : null;
+}
+
+/**
  * Evidence-borne paths (patch section headers, untracked manifest entries) are
  * not constrained to the repository envelope by digest validation, and
  * apply-back skips the materializer's ls-files cross-check that would reject

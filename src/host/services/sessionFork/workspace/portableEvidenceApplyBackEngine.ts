@@ -2,11 +2,14 @@ import { createHash } from 'node:crypto';
 import { chmod, lstat, mkdir, readFile, rmdir, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
+import { parsePatchPreimagePath } from './portableEvidenceWorkItems';
 import type { PortableEvidenceWorkItem } from './portableEvidenceWorkItems';
 import type { WorkspaceCommandRunner } from './types';
 
 export const CONFLICT_OPTIONS = ['keep-local', 'take-cloud', 'save-as'] as const;
 export type PortableEvidenceConflictOption = (typeof CONFLICT_OPTIONS)[number];
+
+const MAX_SIDECAR_ATTEMPTS = 64;
 
 type PortableEvidenceFileStatus =
   | 'would-apply' | 'already-present' | 'conflict'
@@ -29,8 +32,7 @@ export interface PortableEvidenceClassification {
 type JournalEntry =
   | { kind: 'patch'; section: Buffer }
   | { kind: 'created-file'; target: string; createdDirs: string[] }
-  | { kind: 'restore-file'; target: string; priorBytes: Buffer | null; createdDirs: string[] }
-  | { kind: 'artifact'; target: string };
+  | { kind: 'restore-file'; target: string; priorBytes: Buffer | null; createdDirs: string[] };
 
 function sha256Hex(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
@@ -191,22 +193,41 @@ export class PortableEvidenceApplyBackEngine {
       await chmod(target, item.mode);
     } else {
       await this.restoreBaseContent(item.path, target);
-      for (const section of item.sections) await this.applyPatchSection(section);
+      for (const section of item.sections) {
+        await this.restoreSectionPreimage(section, item.path);
+        await this.applyPatchSection(section);
+      }
     }
     return { target };
+  }
+
+  /**
+   * A rename/copy section's pre-image lives at its a-side path, which may have
+   * drifted locally even though the user adjudicated the b-side conflict.
+   * Restoring that pre-image (journaled like any overwrite) is what lets
+   * `git apply` run the section and honour the explicit take-cloud/save-as
+   * resolution instead of failing the whole apply-back over a missing old path.
+   */
+  private async restoreSectionPreimage(section: Buffer, itemPath: string): Promise<void> {
+    const preimagePath = parsePatchPreimagePath(section);
+    if (preimagePath === null || preimagePath === itemPath) return;
+    const target = this.resolve(preimagePath);
+    const info = await lstat(target).catch(() => null);
+    if (info && !info.isFile()) {
+      throw new Error(`refusing to overwrite non-regular local path: ${preimagePath}`);
+    }
+    const priorBytes = await readFileIfExists(target);
+    const createdDirs = await this.createDirectories(path.dirname(target));
+    this.journal.push({ kind: 'restore-file', target, priorBytes, createdDirs });
+    await this.restoreBaseContent(preimagePath, target);
   }
 
   async saveAsCloud(
     item: PortableEvidenceWorkItem,
   ): Promise<Omit<PortableEvidenceApplyBackFileReport, 'path' | 'source'>> {
-    const cloudRelative = `${item.path}.cloud`;
-    const cloudTarget = this.resolve(cloudRelative);
     if (item.kind === 'untracked') {
-      await this.createDirectories(path.dirname(cloudTarget));
-      await writeFile(cloudTarget, item.bytes);
-      await chmod(cloudTarget, item.mode);
-      this.journal.push({ kind: 'artifact', target: cloudTarget });
-      return { status: 'saved-as-cloud', savedAs: cloudRelative };
+      const savedAs = await this.writeCloudSidecar(item.path, item.bytes, item.mode);
+      return { status: 'saved-as-cloud', savedAs };
     }
     // The cloud bytes only exist mid-rebuild, so undo the temporary overwrite
     // through the journal itself (mark back): leaving the restore-file/patch
@@ -222,10 +243,35 @@ export class PortableEvidenceApplyBackEngine {
         reason: 'the cloud copy deletes this file, so save-as has no cloud bytes to preserve',
       };
     }
-    await this.createDirectories(path.dirname(cloudTarget));
-    await writeFile(cloudTarget, cloudBytes);
-    this.journal.push({ kind: 'artifact', target: cloudTarget });
-    return { status: 'saved-as-cloud', savedAs: cloudRelative };
+    const savedAs = await this.writeCloudSidecar(item.path, cloudBytes);
+    return { status: 'saved-as-cloud', savedAs };
+  }
+
+  /**
+   * Saves the cloud bytes beside the local file without ever destroying prior
+   * bytes: a byte-identical sidecar is reused as-is, while an occupied or
+   * non-regular `<path>.cloud` shifts the write to `<path>.cloud.2`, `.cloud.3`,
+   * ... so whatever was there survives both the success path and any rollback.
+   * The sidecar is journaled as a restore-file, so a rollback removes exactly
+   * the file this call created instead of unlinking a path it did not own.
+   */
+  private async writeCloudSidecar(itemPath: string, bytes: Buffer, mode?: number): Promise<string> {
+    for (let attempt = 1; attempt <= MAX_SIDECAR_ATTEMPTS; attempt += 1) {
+      const relative = attempt === 1 ? `${itemPath}.cloud` : `${itemPath}.cloud.${attempt}`;
+      const target = this.resolve(relative);
+      const info = await lstat(target).catch(() => null);
+      if (info && !info.isFile()) continue;
+      const prior = info ? await readFile(target) : null;
+      if (prior !== null && !prior.equals(bytes)) continue;
+      if (prior === null) {
+        const createdDirs = await this.createDirectories(path.dirname(target));
+        this.journal.push({ kind: 'restore-file', target, priorBytes: null, createdDirs });
+        await writeFile(target, bytes);
+        if (mode !== undefined) await chmod(target, mode);
+      }
+      return relative;
+    }
+    throw new Error(`no free ${itemPath}.cloud sidecar slot within ${MAX_SIDECAR_ATTEMPTS} attempts`);
   }
 
   async resolveConflict(
@@ -260,15 +306,11 @@ export class PortableEvidenceApplyBackEngine {
       } else if (entry.kind === 'created-file') {
         await unlink(entry.target).catch(ignoreMissingFile);
         await removeEmptyDirectories(entry.createdDirs);
-      } else if (entry.kind === 'restore-file') {
-        if (entry.priorBytes === null) {
-          await unlink(entry.target).catch(ignoreMissingFile);
-          await removeEmptyDirectories(entry.createdDirs);
-        } else {
-          await writeFile(entry.target, entry.priorBytes);
-        }
-      } else {
+      } else if (entry.priorBytes === null) {
         await unlink(entry.target).catch(ignoreMissingFile);
+        await removeEmptyDirectories(entry.createdDirs);
+      } else {
+        await writeFile(entry.target, entry.priorBytes);
       }
     }
   }

@@ -23,6 +23,8 @@ import type {
 const CLOUD_TRACKED = 'staged\nunstaged\n';
 const CLOUD_BINARY = Buffer.from([0, 1, 255, 2]);
 const CLOUD_NOTE = 'cloud note\n';
+const SHARED_CONTENT = 'shared content\n';
+const PRIOR_SIDECAR = 'prior sidecar bytes\n';
 
 const temporaryDirectories: string[] = [];
 
@@ -125,6 +127,28 @@ async function captureFixture(options: {
   git(repositoryRoot, 'reset', '--hard', baseCommit);
   git(repositoryRoot, 'clean', '-fdx');
   return { repositoryRoot, baseCommit, portableEvidence, sourceEvidence };
+}
+
+/**
+ * A pure `git mv` staged in the cloud session: capture's `git diff --cached`
+ * emits a single rename section (`rename from`/`rename to`) whose a-side
+ * pre-image lives at a different path than the item's own b-side path.
+ */
+async function createRenameFixture(options: { cloudModifyExtra?: string } = {}): Promise<ApplyBackFixture> {
+  const repositoryRoot = await initTempRepository();
+  git(repositoryRoot, 'config', 'diff.renames', 'true');
+  await writeFile(path.join(repositoryRoot, 'old.txt'), SHARED_CONTENT);
+  if (options.cloudModifyExtra) {
+    await writeFile(path.join(repositoryRoot, options.cloudModifyExtra), 'base\n');
+  }
+  git(repositoryRoot, 'add', '.');
+  git(repositoryRoot, 'commit', '-m', 'base');
+  const baseCommit = git(repositoryRoot, 'rev-parse', 'HEAD');
+  git(repositoryRoot, 'mv', 'old.txt', 'new.txt');
+  if (options.cloudModifyExtra) {
+    await writeFile(path.join(repositoryRoot, options.cloudModifyExtra), 'cloud extra\n');
+  }
+  return await captureFixture({ repositoryRoot, baseCommit });
 }
 
 async function initTempRepository(): Promise<string> {
@@ -513,5 +537,135 @@ describe('applyPortableEvidenceToWorkspace · rework r1 regressions', () => {
     expect(saved?.savedAs).toBe('中文.md.cloud');
     expect(await readFile(path.join(repositoryRoot, '中文.md'), 'utf8')).toBe('local drift\n');
     expect(await readFile(path.join(repositoryRoot, '中文.md.cloud'), 'utf8')).toBe('云端\n');
+  });
+});
+
+describe('applyPortableEvidenceToWorkspace · rework r2 regressions', () => {
+  it('save-as never clobbers a pre-existing sidecar and shifts to .cloud.2', async () => {
+    const fixture = await createFixture();
+    await writeFile(path.join(fixture.repositoryRoot, 'tracked.txt'), 'local drift\n');
+    await writeFile(path.join(fixture.repositoryRoot, 'tracked.txt.cloud'), PRIOR_SIDECAR);
+
+    const applied = await applyPortableEvidenceToWorkspace({
+      evidence: fixture.portableEvidence,
+      workspaceRoot: fixture.repositoryRoot,
+      mode: 'apply',
+      resolutions: { 'tracked.txt': 'save-as' },
+    });
+    expect(applied.outcome).toBe('success');
+    expect(await readFile(path.join(fixture.repositoryRoot, 'tracked.txt'), 'utf8')).toBe('local drift\n');
+    expect(await readFile(path.join(fixture.repositoryRoot, 'tracked.txt.cloud'), 'utf8')).toBe(PRIOR_SIDECAR);
+    expect(await readFile(path.join(fixture.repositoryRoot, 'tracked.txt.cloud.2'), 'utf8')).toBe(CLOUD_TRACKED);
+    const saved = applied.files.find((file) => file.path === 'tracked.txt');
+    expect(saved?.status).toBe('saved-as-cloud');
+    expect(saved?.savedAs).toBe('tracked.txt.cloud.2');
+  });
+
+  it('rollback restores a pre-existing sidecar instead of deleting it', async () => {
+    const repositoryRoot = await initTempRepository();
+    for (const name of ['a.txt', 'm.txt', 'z.txt']) {
+      await writeFile(path.join(repositoryRoot, name), 'base\n');
+    }
+    git(repositoryRoot, 'add', '.');
+    git(repositoryRoot, 'commit', '-m', 'base');
+    const baseCommit = git(repositoryRoot, 'rev-parse', 'HEAD');
+    for (const name of ['a.txt', 'm.txt', 'z.txt']) {
+      await writeFile(path.join(repositoryRoot, name), `cloud ${name}\n`);
+    }
+    const fixture = await captureFixture({ repositoryRoot, baseCommit });
+    await writeFile(path.join(repositoryRoot, 'm.txt'), 'local drift\n');
+    await writeFile(path.join(repositoryRoot, 'm.txt.cloud'), PRIOR_SIDECAR);
+    const treeBefore = await hashWorktree(repositoryRoot);
+    // Item order is a.txt, m.txt, z.txt: forward `git apply` calls are a.txt
+    // (1), the save-as rebuild of m.txt (2), then z.txt fails on call 3.
+    const runner = createFailingApplyRunner((invocation) => (
+      invocation >= 3 ? 'injected late failure' : null
+    ));
+
+    const failed = await applyPortableEvidenceToWorkspace({
+      evidence: fixture.portableEvidence,
+      workspaceRoot: repositoryRoot,
+      mode: 'apply',
+      resolutions: { 'm.txt': 'save-as' },
+    }, { runner });
+    expect(failed.outcome).toBe('failed');
+    expect(failed.rollbackVerified).toBe(true);
+    expect(failed.error).toContain('injected late failure');
+    expect(await hashWorktree(repositoryRoot)).toBe(treeBefore);
+    expect(await readFile(path.join(repositoryRoot, 'm.txt'), 'utf8')).toBe('local drift\n');
+    expect(await readFile(path.join(repositoryRoot, 'm.txt.cloud'), 'utf8')).toBe(PRIOR_SIDECAR);
+  });
+
+  it('honours take-cloud for a rename item whose a-side file was deleted locally', async () => {
+    const fixture = await createRenameFixture();
+    const { repositoryRoot } = fixture;
+    await rm(path.join(repositoryRoot, 'old.txt'));
+    await writeFile(path.join(repositoryRoot, 'new.txt'), 'local new\n');
+
+    const dryRun = await applyPortableEvidenceToWorkspace({
+      evidence: fixture.portableEvidence,
+      workspaceRoot: repositoryRoot,
+      mode: 'dry-run',
+    });
+    expect(dryRun.outcome).toBe('partial');
+    expect(dryRun.conflicts).toEqual(['new.txt']);
+
+    const applied = await applyPortableEvidenceToWorkspace({
+      evidence: fixture.portableEvidence,
+      workspaceRoot: repositoryRoot,
+      mode: 'apply',
+      resolutions: { 'new.txt': 'take-cloud' },
+    });
+    expect(applied.outcome).toBe('success');
+    expect(applied.files.find((file) => file.path === 'new.txt')?.status).toBe('took-cloud');
+    expect(await readFile(path.join(repositoryRoot, 'new.txt'), 'utf8')).toBe(SHARED_CONTENT);
+    await expect(readFile(path.join(repositoryRoot, 'old.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('rolls back a rename take-cloud together with the restored a-side preimage', async () => {
+    const fixture = await createRenameFixture({ cloudModifyExtra: 'z.txt' });
+    const { repositoryRoot } = fixture;
+    await rm(path.join(repositoryRoot, 'old.txt'));
+    await writeFile(path.join(repositoryRoot, 'new.txt'), 'local new\n');
+    const treeBefore = await hashWorktree(repositoryRoot);
+    // Forward `git apply` calls: the rename rebuild of new.txt (1), then z.txt
+    // fails on call 2 — after the rename itself was applied and journaled.
+    const runner = createFailingApplyRunner((invocation) => (
+      invocation >= 2 ? 'injected late failure' : null
+    ));
+
+    const failed = await applyPortableEvidenceToWorkspace({
+      evidence: fixture.portableEvidence,
+      workspaceRoot: repositoryRoot,
+      mode: 'apply',
+      resolutions: { 'new.txt': 'take-cloud' },
+    }, { runner });
+    expect(failed.outcome).toBe('failed');
+    expect(failed.rollbackVerified).toBe(true);
+    expect(failed.error).toContain('injected late failure');
+    expect(await hashWorktree(repositoryRoot)).toBe(treeBefore);
+    expect(await readFile(path.join(repositoryRoot, 'new.txt'), 'utf8')).toBe('local new\n');
+    await expect(readFile(path.join(repositoryRoot, 'old.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('honours save-as for a rename item whose a-side file was deleted locally', async () => {
+    const fixture = await createRenameFixture();
+    const { repositoryRoot } = fixture;
+    await rm(path.join(repositoryRoot, 'old.txt'));
+    await writeFile(path.join(repositoryRoot, 'new.txt'), 'local new\n');
+
+    const applied = await applyPortableEvidenceToWorkspace({
+      evidence: fixture.portableEvidence,
+      workspaceRoot: repositoryRoot,
+      mode: 'apply',
+      resolutions: { 'new.txt': 'save-as' },
+    });
+    expect(applied.outcome).toBe('success');
+    const saved = applied.files.find((file) => file.path === 'new.txt');
+    expect(saved?.status).toBe('saved-as-cloud');
+    expect(saved?.savedAs).toBe('new.txt.cloud');
+    expect(await readFile(path.join(repositoryRoot, 'new.txt'), 'utf8')).toBe('local new\n');
+    expect(await readFile(path.join(repositoryRoot, 'new.txt.cloud'), 'utf8')).toBe(SHARED_CONTENT);
+    await expect(readFile(path.join(repositoryRoot, 'old.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });

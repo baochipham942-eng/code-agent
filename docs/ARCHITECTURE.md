@@ -751,3 +751,4 @@ Context Health 的 bySource 是当前消息、system prompt 与已挂载技能�
 | 076 | 文件工具层的沙盒写边界（Write/Edit 先接入，共用 write-fence roots） | 草稿·待拍板 | [ADR-076](./architecture/decisions/ADR-076-sandbox-tool-layer.md) |
 | 079 | 副作用工具的幂等：调研稿——重做本身安全（幂等键/查询合同）替代「结果未知→不重放」，不改 ADR-075 现行合同 | 草稿·调研 | [ADR-079](./architecture/decisions/ADR-079-side-effect-tool-idempotency.md) |
 | 081 | 执行环境成为一等对象（逐轮选择地点，账本不换边；云端带连接器授权；并发按用户配额） | 已接受（10-05，配额 2） | [ADR-081](./architecture/decisions/ADR-081-execution-environment.md) |
+| 083 | 桌面常驻宿主：执行进程与 Tauri 壳解耦（关窗/Quit 不杀任务；daemon 主、壳/CLI/手机从；`owner_epoch` 定主；合盖仍 OS-owned） | 草稿·待拍板 | [ADR-083](./architecture/decisions/ADR-083-resident-host.md) |

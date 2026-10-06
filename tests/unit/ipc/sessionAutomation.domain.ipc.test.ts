@@ -4,7 +4,7 @@ import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/sha
 // sessionAutomation.ipc.ts 派发特征测试（RQ-183 续作·SESSION_AUTOMATION 刀迁表前钉住 switch 形态；派发层原本零测试）：派发层 7 个 action（计数以切块断言为准）。
 // - listBySession / getSessionSummary / markReviewed：缺字符串参数 → 抛「缺少 …」→ SESSION_AUTOMATION_ERROR；有参数时按原形委派
 // - summarizeSessions：sessionIds 只保留字符串元素，非数组 → []
-// - getSessionSummary 回 summarizeSessions([id])[id]；listPendingReview / listParkedApprovals / countPendingReview 原样回传
+// - getSessionSummary 回 summarizeSessions([id])[id]；listPendingReview / listParkedApprovals 原样回传；countPendingReview 委派 countPendingReviewByTask（按任务口径）
 // - 未知 action → UNKNOWN_ACTION + `Unknown session automation action: <action>`
 // - 抛错 → 记 ('Session automation IPC error:', error) + SESSION_AUTOMATION_ERROR；Error 取 message、非 Error 为 'Unknown error'
 // 迁表后本文件零改动全绿即行为不变证明。
@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
     listPendingReview: vi.fn((): unknown => [{ id: 'p1' }]),
     listParkedApprovals: vi.fn((): unknown => [{ id: 'k1' }]),
     countPendingReview: vi.fn((): unknown => 3),
+    countPendingReviewByTask: vi.fn((): unknown => 3),
     markReviewed: vi.fn((_id: string): unknown => ({ reviewed: true })),
   },
 }));
@@ -68,10 +69,12 @@ describe('sessionAutomation.ipc dispatch 特征：带参 action', () => {
 });
 
 describe('sessionAutomation.ipc dispatch 特征：只读与兜底', () => {
-  it('listPendingReview / listParkedApprovals / countPendingReview 原样回传', async () => {
+  it('listPendingReview / listParkedApprovals / countPendingReview 原样回传（count 走按任务口径）', async () => {
     expect(await call('listPendingReview')).toEqual({ success: true, data: [{ id: 'p1' }] });
     expect(await call('listParkedApprovals')).toEqual({ success: true, data: [{ id: 'k1' }] });
     expect(await call('countPendingReview')).toEqual({ success: true, data: 3 });
+    expect(h.svc.countPendingReviewByTask).toHaveBeenCalledTimes(1);
+    expect(h.svc.countPendingReview).not.toHaveBeenCalled();
   });
 
   it('未知 action → UNKNOWN_ACTION + 完整文案', async () => {
@@ -79,7 +82,7 @@ describe('sessionAutomation.ipc dispatch 特征：只读与兜底', () => {
   });
 
   it('服务抛 Error → message；抛非 Error → Unknown error', async () => {
-    h.svc.countPendingReview.mockImplementationOnce(() => { throw new Error('db locked'); });
+    h.svc.countPendingReviewByTask.mockImplementationOnce(() => { throw new Error('db locked'); });
     expect(await call('countPendingReview')).toEqual(err('db locked'));
     h.svc.listPendingReview.mockImplementationOnce(() => { throw 'raw'; });
     expect(await call('listPendingReview')).toEqual(err('Unknown error'));

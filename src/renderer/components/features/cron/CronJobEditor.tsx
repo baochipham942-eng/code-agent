@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { CronJobDefinition } from '@shared/contract';
 import { isHourAlignedCronExpression, suggestCronStaggerMinute } from '@shared/cronStagger';
+import { validateEventScheduleConstraints } from '@shared/cronEventValidation';
 import { ArrowLeft, Clock, Settings, Terminal } from 'lucide-react';
 import { Modal } from '../../primitives/Modal';
 import { Button } from '../../primitives/Button';
@@ -28,6 +29,7 @@ import { CronSimpleCreate } from './CronSimpleCreate';
 import { useI18n } from '../../../hooks/useI18n';
 import { CronRunsOnSelector } from './CronRunsOnSelector';
 import { CronResultChannelField } from './CronResultChannel';
+import { CronEventScheduleFields } from './CronEventScheduleFields';
 
 interface CronJobEditorProps {
   isOpen: boolean;
@@ -120,20 +122,45 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       { value: 'at', label: '一次性' },
       { value: 'every', label: '间隔循环' },
       { value: 'cron', label: 'Cron 表达式' },
+      { value: 'event', label: cc.eventScheduleOption },
     ],
-    []
+    [cc.eventScheduleOption]
   );
 
+  // event 调度的创建期护栏（host createJob 同款）：只允许本机 + Agent 动作。
   const actionOptions = useMemo(
-    () => [
-      { value: 'shell', label: 'Shell 命令' },
-      { value: 'tool', label: 'Tool 调用' },
-      { value: 'agent', label: 'Agent 任务' },
-      { value: 'webhook', label: 'Webhook' },
-      { value: 'ipc', label: 'IPC 消息' },
-    ],
-    []
+    () => (draft.scheduleType === 'event'
+      ? [{ value: 'agent', label: 'Agent 任务' }]
+      : [
+        { value: 'shell', label: 'Shell 命令' },
+        { value: 'tool', label: 'Tool 调用' },
+        { value: 'agent', label: 'Agent 任务' },
+        { value: 'webhook', label: 'Webhook' },
+        { value: 'ipc', label: 'IPC 消息' },
+      ]),
+    [draft.scheduleType]
   );
+
+  // 从别的调度切到 event（或复制出 event 任务）时钉死护栏前置项：本机 + Agent。
+  // 不静默留一个注定被 createJob 拒绝的组合在表单里。
+  useEffect(() => {
+    if (draft.scheduleType === 'event' && (draft.runsOn !== 'local' || draft.actionType !== 'agent')) {
+      setDraft((current) => ({ ...current, runsOn: 'local', actionType: 'agent' }));
+    }
+  }, [draft.scheduleType, draft.runsOn, draft.actionType]);
+
+  // 提交前的实时护栏提示：与 buildCronJobInput/createJob 用同一份 shared 校验器，
+  // 表单里看到什么，提交后 host 就会为什么拒绝。
+  const eventValidationMessage = useMemo(() => {
+    if (draft.scheduleType !== 'event') return null;
+    const budgetText = draft.maxRunBudget.trim();
+    return validateEventScheduleConstraints({
+      schedule: { type: 'event', source: 'channel', eventName: 'message', accountId: draft.eventAccountId },
+      runsOn: draft.runsOn,
+      action: { type: draft.actionType },
+      maxRunBudget: budgetText === '' ? null : Number(budgetText),
+    });
+  }, [draft.scheduleType, draft.eventAccountId, draft.runsOn, draft.actionType, draft.maxRunBudget]);
 
   const setField = <K extends keyof CronJobDraft>(key: K, value: CronJobDraft[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -493,7 +520,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           <CronRunsOnSelector
             value={draft.runsOn}
             onChange={(runsOn) => setField('runsOn', runsOn)}
-            readOnly={Boolean(job)}
+            readOnly={Boolean(job) || draft.scheduleType === 'event'}
           />
 
           <div className="border-t border-zinc-800 pt-4">
@@ -603,6 +630,16 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                     </p>
                   )}
                 </div>
+              )}
+
+              {draft.scheduleType === 'event' && (
+                <CronEventScheduleFields
+                  accountId={draft.eventAccountId}
+                  chatId={draft.eventChatId}
+                  onAccountChange={(eventAccountId) => setField('eventAccountId', eventAccountId)}
+                  onChatChange={(eventChatId) => setField('eventChatId', eventChatId)}
+                  validationMessage={eventValidationMessage}
+                />
               )}
             </div>
           </div>

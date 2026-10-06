@@ -9,6 +9,7 @@ import type {
   ToolAction,
   WebhookAction,
 } from '@shared/contract';
+import { validateEventScheduleConstraints } from '@shared/cronEventValidation';
 import { humanizeCronExpression, humanizeEverySchedule, type CronHumanLang } from '../../../utils/cronHumanize';
 
 export interface CronJobDraft {
@@ -31,6 +32,10 @@ export interface CronJobDraft {
   everyEndAt: string;
   cronExpression: string;
   cronTimezone: string;
+  /** event 调度：触发账号（ChannelManager 已连接账号的 id）。 */
+  eventAccountId: string;
+  /** event 调度：限定群/会话 id；空串 = 该账号任意会话。 */
+  eventChatId: string;
   actionType: 'shell' | 'tool' | 'agent' | 'webhook' | 'ipc';
   shellCommand: string;
   shellCwd: string;
@@ -71,6 +76,8 @@ export function createDefaultCronJobDraft(): CronJobDraft {
     everyEndAt: '',
     cronExpression: '0 * * * *',
     cronTimezone: '',
+    eventAccountId: '',
+    eventChatId: '',
     actionType: 'shell',
     shellCommand: '',
     shellCwd: '',
@@ -134,6 +141,9 @@ export function buildDraftFromJob(job: CronJobDefinition): CronJobDraft {
   } else if (job.schedule.type === 'cron') {
     draft.cronExpression = job.schedule.expression;
     draft.cronTimezone = job.schedule.timezone || '';
+  } else if (job.schedule.type === 'event') {
+    draft.eventAccountId = job.schedule.accountId;
+    draft.eventChatId = job.schedule.chatId || '';
   }
 
   switch (job.action.type) {
@@ -262,8 +272,15 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
       timezone: draft.cronTimezone.trim() || undefined,
     };
   } else {
-    // 'event' 调度由通道侧创建（本面板创建 UI 未开放），不该从 draft 重建。
-    throw new Error('事件触发任务不支持在此面板创建或编辑');
+    // 'event'：显式 (accountId, chatId) 绑定即群监听，chatId 缺省 = 该账号任意会话。
+    // 两个可选窗口（batchWindowSec/minRunIntervalSec）不设值，host normalize 落默认。
+    schedule = {
+      type: 'event',
+      source: 'channel',
+      accountId: draft.eventAccountId.trim(),
+      eventName: 'message',
+      ...(draft.eventChatId.trim() ? { chatId: draft.eventChatId.trim() } : {}),
+    };
   }
 
   let action: CronJobDefinition['action'];
@@ -323,6 +340,18 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
     };
   }
 
+  // event 任务与 host createJob 用同一份护栏与同一份文案（shared/cronEventValidation）：
+  // 面板里看到的提示就是提交后 createJob 会抛的那句。
+  if (schedule.type === 'event') {
+    const message = validateEventScheduleConstraints({
+      schedule,
+      runsOn: common.runsOn,
+      action,
+      maxRunBudget: common.maxRunBudget,
+    });
+    if (message !== null) throw new Error(message);
+  }
+
   return {
     ...common,
     scheduleType: draft.scheduleType,
@@ -361,6 +390,15 @@ export function formatScheduleSummary(job: CronJobDefinition, lang: CronHumanLan
       return job.schedule.timezone
         ? `${job.schedule.expression} · ${job.schedule.timezone}`
         : job.schedule.expression;
+    }
+    case 'event': {
+      // 纯格式化只认得到账号 id（账号名要走异步通道目录）；编辑/详情面板里
+      // 选择器展示账号名，这里至少把绑定如实交代清楚。
+      const eventLabel = lang === 'en' ? 'Channel message' : '通道消息';
+      const anyChatLabel = lang === 'en' ? 'any chat' : '任意会话';
+      return `${eventLabel} · ${job.schedule.accountId} · ${
+        job.schedule.chatId || anyChatLabel
+      }`;
     }
     default:
       return job.scheduleType;

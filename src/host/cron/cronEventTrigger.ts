@@ -19,9 +19,9 @@ import { createHash } from 'crypto';
 import type { ChannelMessage } from '../../shared/contract/channel';
 import type { CronExecutionTrigger, CronJobDefinition, EventScheduleConfig } from '../../shared/contract/cron';
 import { CRON_EVENT_TRIGGER } from '../../shared/constants';
+import { validateEventScheduleConstraints } from '../../shared/cronEventValidation';
 import { BoundedDedupeSet } from '../channels/inboundDedupe';
 import { getChannelManager } from '../channels/channelManager';
-import { normalizeSchedule } from './cronNormalizers';
 
 /** 进入合批队列的最小事件形状（ChannelMessage 的截断快照）。 */
 interface ChannelEventRecord {
@@ -77,26 +77,13 @@ interface JobEventState {
 /**
  * 创建期护栏（createJob/updateJob 调用）：event 任务只允许本机 agent 动作 + 显式
  * 预算闸。事件载荷永远不进 webhook/shell 动作（url/headers/command 里插不可信文本）。
+ * 校验逻辑与文案在 shared/cronEventValidation（renderer 表单共用同一份），这里只抛。
  */
 export function assertEventScheduleConstraints(
   definition: Pick<CronJobDefinition, 'schedule' | 'runsOn' | 'action' | 'maxRunBudget'>,
 ): void {
-  if (definition.schedule.type !== 'event') return;
-  const schedule = normalizeSchedule(definition.schedule);
-  if (schedule === null) {
-    throw new Error(
-      "Invalid event schedule: source must be 'channel', eventName must be 'message', and accountId must be a non-empty string.",
-    );
-  }
-  if (definition.runsOn !== 'local') {
-    throw new Error("Event-triggered jobs require runsOn 'local'; cloud execution is not supported.");
-  }
-  if (definition.action.type !== 'agent') {
-    throw new Error("Event-triggered jobs only support agent actions; channel payloads are never routed into other action types.");
-  }
-  if (definition.maxRunBudget == null || !Number.isFinite(definition.maxRunBudget) || definition.maxRunBudget <= 0) {
-    throw new Error('Event-triggered jobs require maxRunBudget > 0 so every run is cost-bounded.');
-  }
+  const message = validateEventScheduleConstraints(definition);
+  if (message !== null) throw new Error(message);
 }
 
 /**

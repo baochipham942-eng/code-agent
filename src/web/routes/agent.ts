@@ -48,6 +48,7 @@ import {
   recordExternalEngineFailure,
 } from './agentEngineFailureRecorder';
 import { buildTurnTerminalFailure } from './agentTurnTerminalFailure';
+import { checkEnvironmentProtocol } from './environmentProtocolGate';
 import {
   AgentRunBodySchema,
   AgentToolResultBodySchema,
@@ -1429,6 +1430,11 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
   }));
 
   router.post('/run', async (req: Request, res: Response) => {
+    const environmentProtocol = checkEnvironmentProtocol(req.body);
+    if (!environmentProtocol.supported) {
+      res.status(400).json({ success: false, error: { code: environmentProtocol.errorCode } });
+      return;
+    }
     const parsedBody = AgentRunBodySchema.safeParse(req.body);
     if (!parsedBody.success) {
       res.status(400).json({ error: 'Missing prompt' });

@@ -268,6 +268,7 @@ describe('③ 表单内联护栏（与 createJob 同一份文案）', () => {
       maxRunBudget: null,
     });
     expect(expected).toBe('Event-triggered jobs require maxRunBudget > 0 so every run is cost-bounded.');
+    if (expected === null) throw new Error('shared validator unexpectedly passed an invalid config');
 
     expect(screen.getByTestId('cron-event-validation').textContent).toBe(expected);
 
@@ -305,7 +306,7 @@ describe('② 列表可见 + 停用/删除', () => {
       loadExecutions: vi.fn(),
       openEditEditor: vi.fn(),
       openCopyEditor: vi.fn(),
-      triggerJob: vi.fn(async () => undefined),
+      triggerJob: vi.fn(async () => null),
       updateJob: vi.fn(async () => null),
       deleteJob: vi.fn(async () => true),
     });

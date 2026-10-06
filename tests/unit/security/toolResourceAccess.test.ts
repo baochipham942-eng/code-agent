@@ -14,6 +14,12 @@ import {
   type ResolvedToolAccess,
 } from '../../../src/host/security/resourceScope';
 import { resolveFoldedToolAccess } from '../../../src/host/security/toolAccessResolve';
+import {
+  createConflictFixtureWorkspace,
+  destroyConflictFixtureWorkspace,
+  toolResourceConflictCases,
+  type ToolResourceConflictCase,
+} from '../../fixtures/toolResourceConflictCases';
 
 const workspace = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'toolres-scope-')));
 const sub = path.join(workspace, 'sub');
@@ -469,5 +475,39 @@ describe('glob-pattern read scoping and unprovable write targets (rework r3)', (
       kind: 'read',
       domain: { type: 'path', root: normalizeTargetPath(workspace, '.'), targetPath: normalizeTargetPath(workspace, '.') },
     }]);
+  });
+});
+
+// ADR-073 K3 Test B：同一张共享冲突表驱动运行时写锁——两侧都有锁的行
+// manager 等待当且仅当表行声明冲突；无锁行断言对应侧 scope 为 null。
+// 静态侧（Test A）在 tests/unit/agent/parallelStrategy.test.ts。
+describe('shared conflict table drives the runtime write lock', () => {
+  const k3ws = createConflictFixtureWorkspace();
+
+  afterAll(() => {
+    destroyConflictFixtureWorkspace(k3ws);
+  });
+
+  it('waits on a pair iff the shared table says conflict, for pairs that both lock', async () => {
+    for (const row of toolResourceConflictCases(k3ws)) {
+      const scopeOf = (side: ToolResourceConflictCase['left']) => getWriteIsolationScope(
+        side.toolName,
+        side.params,
+        k3ws.root,
+        side.permissionLevel ?? undefined,
+        k3ws.root,
+      );
+      const left = scopeOf(row.left);
+      const right = scopeOf(row.right);
+      if (row.runtimeLock) {
+        expect(left, row.note).not.toBeNull();
+        expect(right, row.note).not.toBeNull();
+        if (!left || !right) continue;
+        expect(await managerConflicts(left, right), row.note).toBe(row.conflict);
+        continue;
+      }
+      // 无锁行：至少一侧运行时根本没有锁（两读 / Task / Read 侧），不存在等待可断言。
+      expect(left === null || right === null, row.note).toBe(true);
+    }
   });
 });

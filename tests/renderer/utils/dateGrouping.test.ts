@@ -10,10 +10,17 @@ import { getDateGroup, groupSessions, DATE_GROUP_LABELS } from '../../../src/ren
 // ============================================================================
 
 describe('getDateGroup', () => {
+  // 固定"现在"为 2026-03-16 周一 14:00 UTC；其余夹具一律以本地日界推算，
+  // 不写死 UTC 时刻——UTC 字面量在 UTC-X 时区会落到另一个本地日，测试就成时区炸弹
+  // （本机 PDT 实测 2026-10-05 必红）。getDateGroup 按本地日分组，夹具必须同口径。
+  const NOW = new Date('2026-03-16T14:00:00Z');
+  const localNoon = (base: Date, dayOffset: number) =>
+    new Date(base.getFullYear(), base.getMonth(), base.getDate() + dayOffset, 12);
+
   beforeEach(() => {
     // Fix time to 2026-03-16 Monday 14:00:00 UTC
     vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-03-16T14:00:00Z'));
+    vi.setSystemTime(NOW);
   });
 
   afterEach(() => {
@@ -25,28 +32,26 @@ describe('getDateGroup', () => {
   });
 
   it('should return "today" for earlier today', () => {
-    const today = new Date('2026-03-16T02:00:00Z');
+    const today = new Date(NOW.getTime() - 60 * 60 * 1000);
     expect(getDateGroup(today.getTime())).toBe('today');
   });
 
   it('should return "yesterday" for yesterday', () => {
-    const yesterday = new Date('2026-03-15T12:00:00Z');
+    const yesterday = localNoon(NOW, -1);
     expect(getDateGroup(yesterday.getTime())).toBe('yesterday');
   });
 
   it('should return "thisWeek" for earlier this week (after Monday)', () => {
-    // 2026-03-16 is Monday, so "this week" starts on Monday 03-16.
-    // 03-15 (Sunday) is actually last week for Monday-start weeks,
-    // but let's check a day that would be thisWeek if we were on Wednesday.
-    // Let's move time to Wednesday 2026-03-18
-    vi.setSystemTime(new Date('2026-03-18T14:00:00Z'));
-    // Monday of that week = 2026-03-16
-    const monday = new Date('2026-03-16T12:00:00Z');
+    // Move time to Wednesday so Monday is "this week" but not today/yesterday.
+    const wednesday = new Date('2026-03-18T14:00:00Z');
+    vi.setSystemTime(wednesday);
+    const monday = localNoon(wednesday, -2);
     expect(getDateGroup(monday.getTime())).toBe('thisWeek');
   });
 
   it('should return "earlier" for dates before this week', () => {
-    const oldDate = new Date('2026-03-01T12:00:00Z');
+    // NOW 是周一，本周一之前即"更早"：上周三正午
+    const oldDate = localNoon(NOW, -5);
     expect(getDateGroup(oldDate.getTime())).toBe('earlier');
   });
 
@@ -77,9 +82,13 @@ describe('groupSessions', () => {
     vi.useRealTimers();
   });
 
-  const now = new Date('2026-03-16T14:00:00Z').getTime();
-  const yesterdayTs = new Date('2026-03-15T10:00:00Z').getTime();
-  const oldTs = new Date('2026-02-01T10:00:00Z').getTime();
+  // 同上：以本地日界推算，避免 UTC 字面量随时区漂移
+  const anchor = new Date('2026-03-16T14:00:00Z');
+  const localNoon = (dayOffset: number) =>
+    new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() + dayOffset, 10);
+  const now = anchor.getTime();
+  const yesterdayTs = localNoon(-1).getTime();
+  const oldTs = localNoon(-20).getTime();
 
   it('should separate pinned sessions into their own group', () => {
     const sessions = [
@@ -143,10 +152,11 @@ describe('groupSessions', () => {
 
   it('should maintain group order: pinned > today > yesterday > thisWeek > earlier', () => {
     // Move to Wednesday so we can have a "thisWeek" that's not today/yesterday
-    vi.setSystemTime(new Date('2026-03-18T14:00:00Z'));
-    const wednesdayNow = new Date('2026-03-18T14:00:00Z').getTime();
-    const mondayTs = new Date('2026-03-16T10:00:00Z').getTime();
-    const tuesdayTs = new Date('2026-03-17T10:00:00Z').getTime();
+    const wednesday = new Date('2026-03-18T14:00:00Z');
+    vi.setSystemTime(wednesday);
+    const wednesdayNow = wednesday.getTime();
+    const mondayTs = new Date(wednesday.getFullYear(), wednesday.getMonth(), wednesday.getDate() - 2, 10).getTime();
+    const tuesdayTs = new Date(wednesday.getFullYear(), wednesday.getMonth(), wednesday.getDate() - 1, 10).getTime();
 
     const sessions = [
       { id: 'old', updatedAt: oldTs },

@@ -47,30 +47,56 @@ function splitPatchSections(patch: Buffer): Buffer[] {
   return starts.map((start, index) => patch.subarray(start, bounds[index + 1]));
 }
 
+/**
+ * Decodes a C-quoted `diff --git` header path. Git's default quotepath escapes
+ * non-ASCII bytes as octal, so escapes must accumulate as raw bytes and decode
+ * as UTF-8; one code unit per byte would turn every non-ASCII path into
+ * mojibake that no resolution or write target can match.
+ */
 function readQuoted(text: string, start: number): { value: string; end: number } | null {
   if (text[start] !== '"') return null;
   let value = '';
+  let octets: number[] = [];
   let index = start + 1;
+  const flushOctets = (): void => {
+    if (octets.length > 0) {
+      value += Buffer.from(octets).toString('utf8');
+      octets = [];
+    }
+  };
   while (index < text.length) {
     const char = text[index];
-    if (char === '"') return { value, end: index + 1 };
+    if (char === '"') {
+      flushOctets();
+      return { value, end: index + 1 };
+    }
     if (char !== '\\') {
+      flushOctets();
       value += char;
       index += 1;
       continue;
     }
     const escape = text[index + 1];
     if (escape === undefined) return null;
-    if (escape === 'n') value += '\n';
-    else if (escape === 't') value += '\t';
-    else if (escape === 'r') value += '\r';
-    else if (escape >= '0' && escape <= '7') {
+    if (escape === 'n') {
+      flushOctets();
+      value += '\n';
+    } else if (escape === 't') {
+      flushOctets();
+      value += '\t';
+    } else if (escape === 'r') {
+      flushOctets();
+      value += '\r';
+    } else if (escape >= '0' && escape <= '7') {
       const octal = /^[0-7]{1,3}/u.exec(text.slice(index + 1, index + 4));
       if (!octal) return null;
-      value += String.fromCharCode(parseInt(octal[0], 8));
+      octets.push(parseInt(octal[0], 8));
       index += octal[0].length + 1;
       continue;
-    } else value += escape;
+    } else {
+      flushOctets();
+      value += escape;
+    }
     index += 2;
   }
   return null;
@@ -97,8 +123,11 @@ function parsePatchPath(section: Buffer): string | null {
 }
 
 /**
- * Patch-derived paths are not covered by the evidence digests' path validation,
- * so every section header is gated here before it can name a write target.
+ * Evidence-borne paths (patch section headers, untracked manifest entries) are
+ * not constrained to the repository envelope by digest validation, and
+ * apply-back skips the materializer's ls-files cross-check that would reject
+ * `.git` entries — so every path is gated here before it can name a write
+ * target.
  */
 function safeRepositoryPath(relative: string): string | null {
   if (!relative || relative.includes('\\') || relative.includes('\0')) return null;
@@ -158,9 +187,18 @@ export function buildPortableEvidenceWorkItems(evidence: AnchorWorkspaceEvidence
     }
   }
   for (const file of evidence.manifest.untrackedFiles) {
+    const safePath = safeRepositoryPath(file.path);
+    if (safePath === null) {
+      invalid.push({
+        label: file.path,
+        source: 'untracked',
+        reason: 'untracked entry targets a path outside the repository safety envelope',
+      });
+      continue;
+    }
     items.push({
       kind: 'untracked',
-      path: file.path,
+      path: safePath,
       source: 'untracked',
       bytes: Buffer.from(evidence.payload.untrackedBlobs[file.sha256], 'base64'),
       mode: file.mode,

@@ -179,9 +179,7 @@ export class PortableEvidenceApplyBackEngine {
    * state at the local path: pristine base-commit content plus the evidence's
    * own patch sections, which always apply against that exact pre-image.
    */
-  private async beginCloudOverwrite(
-    item: PortableEvidenceWorkItem,
-  ): Promise<{ target: string; priorBytes: Buffer | null }> {
+  private async beginCloudOverwrite(item: PortableEvidenceWorkItem): Promise<{ target: string }> {
     const target = this.resolve(item.path);
     const info = await lstat(target).catch(() => null);
     if (info && !info.isFile()) throw new Error(`refusing to overwrite non-regular local path: ${item.path}`);
@@ -195,7 +193,7 @@ export class PortableEvidenceApplyBackEngine {
       await this.restoreBaseContent(item.path, target);
       for (const section of item.sections) await this.applyPatchSection(section);
     }
-    return { target, priorBytes };
+    return { target };
   }
 
   async saveAsCloud(
@@ -210,10 +208,14 @@ export class PortableEvidenceApplyBackEngine {
       this.journal.push({ kind: 'artifact', target: cloudTarget });
       return { status: 'saved-as-cloud', savedAs: cloudRelative };
     }
-    const { target, priorBytes } = await this.beginCloudOverwrite(item);
+    // The cloud bytes only exist mid-rebuild, so undo the temporary overwrite
+    // through the journal itself (mark back): leaving the restore-file/patch
+    // entries behind would make a later rollback reverse-apply patches whose
+    // effect was already hand-restored, aborting the whole rollback.
+    const mark = this.journal.length;
+    const { target } = await this.beginCloudOverwrite(item);
     const cloudBytes = await readFileIfExists(target);
-    if (priorBytes === null) await unlink(target).catch(ignoreMissingFile);
-    else await writeFile(target, priorBytes);
+    await this.rollbackTo(mark);
     if (cloudBytes === null) {
       return {
         status: 'kept-local',
@@ -251,8 +253,8 @@ export class PortableEvidenceApplyBackEngine {
     return { path: item.path, source: item.source, ...saved };
   }
 
-  async rollback(): Promise<void> {
-    for (const entry of this.journal.reverse()) {
+  private async rollbackEntries(entries: readonly JournalEntry[]): Promise<void> {
+    for (const entry of [...entries].reverse()) {
       if (entry.kind === 'patch') {
         await this.git(['apply', '--reverse', '--binary', '--whitespace=nowarn', '-'], entry.section);
       } else if (entry.kind === 'created-file') {
@@ -269,6 +271,16 @@ export class PortableEvidenceApplyBackEngine {
         await unlink(entry.target).catch(ignoreMissingFile);
       }
     }
+  }
+
+  /** Undoes exactly the entries journalled after `mark`, leaving the rest intact. */
+  private async rollbackTo(mark: number): Promise<void> {
+    await this.rollbackEntries(this.journal.slice(mark));
+    this.journal.length = mark;
+  }
+
+  async rollback(): Promise<void> {
+    await this.rollbackEntries(this.journal);
     this.journal.length = 0;
   }
 }

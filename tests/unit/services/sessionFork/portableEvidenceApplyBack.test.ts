@@ -13,8 +13,12 @@ import {
   AnchorWorkspaceEvidenceService,
   NodeWorkspaceCommandRunner,
   applyPortableEvidenceToWorkspace,
+  digestWorkspaceValue,
 } from '../../../../src/host/services/sessionFork/workspace';
-import type { WorkspaceCommandRunner } from '../../../../src/host/services/sessionFork/workspace';
+import type {
+  AnchorWorkspaceEvidence,
+  WorkspaceCommandRunner,
+} from '../../../../src/host/services/sessionFork/workspace';
 
 const CLOUD_TRACKED = 'staged\nunstaged\n';
 const CLOUD_BINARY = Buffer.from([0, 1, 255, 2]);
@@ -30,17 +34,12 @@ interface ApplyBackFixture {
   repositoryRoot: string;
   baseCommit: string;
   portableEvidence: PortableIsolatedAnchorEvidenceV1;
+  sourceEvidence: AnchorWorkspaceEvidence;
 }
 
 async function createFixture(options: { trackedEdits?: boolean } = {}): Promise<ApplyBackFixture> {
   const trackedEdits = options.trackedEdits !== false;
-  const root = await mkdtemp(path.join(tmpdir(), 'neo-apply-back-'));
-  temporaryDirectories.push(root);
-  const repositoryRoot = path.join(root, 'repository');
-  await mkdir(repositoryRoot, { recursive: true });
-  git(repositoryRoot, 'init', '--initial-branch=main');
-  git(repositoryRoot, 'config', 'user.email', 'neo-test@example.invalid');
-  git(repositoryRoot, 'config', 'user.name', 'Neo Test');
+  const repositoryRoot = await initTempRepository();
   await writeFile(path.join(repositoryRoot, 'tracked.txt'), 'base\n');
   git(repositoryRoot, 'add', '.');
   git(repositoryRoot, 'commit', '-m', 'base');
@@ -53,8 +52,59 @@ async function createFixture(options: { trackedEdits?: boolean } = {}): Promise<
   await writeFile(path.join(repositoryRoot, 'new.bin'), CLOUD_BINARY);
   await mkdir(path.join(repositoryRoot, 'notes'));
   await writeFile(path.join(repositoryRoot, 'notes', 'deep.md'), CLOUD_NOTE);
-  const evidenceService = new AnchorWorkspaceEvidenceService();
-  const sourceEvidence = await evidenceService.capture({
+  return await captureFixture({ repositoryRoot, baseCommit });
+}
+
+/**
+ * Re-signs the captured evidence with one extra untracked entry, mirroring a
+ * cloud producer whose manifest lists a path the capture harness would never
+ * emit (e.g. inside .git). All digests stay self-consistent, so this exercises
+ * the apply-back gate rather than the portability validation.
+ */
+async function buildTamperedPortableEvidence(
+  sourceEvidence: AnchorWorkspaceEvidence,
+  extraUntracked: { path: string; bytes: Buffer; mode: number },
+): Promise<PortableIsolatedAnchorEvidenceV1> {
+  const digest = createHash('sha256').update(extraUntracked.bytes).digest('hex');
+  const payload = {
+    ...sourceEvidence.payload,
+    untrackedBlobs: {
+      ...sourceEvidence.payload.untrackedBlobs,
+      [digest]: extraUntracked.bytes.toString('base64'),
+    },
+  };
+  const { evidenceDigest: _discarded, ...sourceManifestWithoutDigest } = sourceEvidence.manifest;
+  const manifestWithoutDigest = {
+    ...sourceManifestWithoutDigest,
+    untrackedFiles: [
+      {
+        path: extraUntracked.path,
+        sha256: digest,
+        sizeBytes: extraUntracked.bytes.byteLength,
+        mode: extraUntracked.mode,
+      },
+      ...sourceEvidence.manifest.untrackedFiles,
+    ],
+  };
+  const manifest = {
+    ...manifestWithoutDigest,
+    evidenceDigest: digestWorkspaceValue({ manifest: manifestWithoutDigest, payload }),
+  };
+  return await buildPortableIsolatedAnchorEvidenceV1({
+    evidenceId: 'apply-back-tampered-1',
+    repositoryIdentityDigest: `sha256:${createHash('sha256')
+      .update(sourceEvidence.manifest.repositoryIdentity.fingerprint)
+      .digest('hex')}`,
+    evidence: { manifest, payload },
+  });
+}
+
+async function captureFixture(options: {
+  repositoryRoot: string;
+  baseCommit: string;
+}): Promise<ApplyBackFixture> {
+  const { repositoryRoot, baseCommit } = options;
+  const sourceEvidence = await new AnchorWorkspaceEvidenceService().capture({
     anchorId: 'apply-back-source',
     repositoryRoot,
     baseCommit,
@@ -74,7 +124,18 @@ async function createFixture(options: { trackedEdits?: boolean } = {}): Promise<
   });
   git(repositoryRoot, 'reset', '--hard', baseCommit);
   git(repositoryRoot, 'clean', '-fdx');
-  return { repositoryRoot, baseCommit, portableEvidence };
+  return { repositoryRoot, baseCommit, portableEvidence, sourceEvidence };
+}
+
+async function initTempRepository(): Promise<string> {
+  const root = await mkdtemp(path.join(tmpdir(), 'neo-apply-back-'));
+  temporaryDirectories.push(root);
+  const repositoryRoot = path.join(root, 'repository');
+  await mkdir(repositoryRoot, { recursive: true });
+  git(repositoryRoot, 'init', '--initial-branch=main');
+  git(repositoryRoot, 'config', 'user.email', 'neo-test@example.invalid');
+  git(repositoryRoot, 'config', 'user.name', 'Neo Test');
+  return repositoryRoot;
 }
 
 async function hashWorktree(root: string): Promise<string> {
@@ -344,5 +405,113 @@ describe('applyPortableEvidenceToWorkspace', () => {
     });
     expect(applied.outcome).toBe('success');
     expect(applied.wouldChange).toEqual([]);
+  });
+});
+
+describe('applyPortableEvidenceToWorkspace · rework r1 regressions', () => {
+  it('refuses untracked entries that target .git and never writes git metadata', async () => {
+    const fixture = await createFixture();
+    const hookBytes = Buffer.from('#!/bin/sh\necho injected\n');
+    const portable = await buildTamperedPortableEvidence(fixture.sourceEvidence, {
+      path: '.git/hooks/pre-commit',
+      bytes: hookBytes,
+      mode: 0o755,
+    });
+
+    const dryRun = await applyPortableEvidenceToWorkspace({
+      evidence: portable,
+      workspaceRoot: fixture.repositoryRoot,
+      mode: 'dry-run',
+    });
+    expect(dryRun.conflicts).toContain('.git/hooks/pre-commit');
+    expect(dryRun.wouldChange).not.toContain('.git/hooks/pre-commit');
+
+    const applied = await applyPortableEvidenceToWorkspace({
+      evidence: portable,
+      workspaceRoot: fixture.repositoryRoot,
+      mode: 'apply',
+    });
+    expect(applied.outcome).toBe('partial');
+    const rejected = applied.files.find((file) => file.path === '.git/hooks/pre-commit');
+    expect(rejected?.status).toBe('conflict');
+    expect(rejected?.reason).toContain('safety envelope');
+    await expect(readFile(path.join(fixture.repositoryRoot, '.git', 'hooks', 'pre-commit')))
+      .rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(applyPortableEvidenceToWorkspace({
+      evidence: portable,
+      workspaceRoot: fixture.repositoryRoot,
+      mode: 'apply',
+      resolutions: { '.git/hooks/pre-commit': 'take-cloud' },
+    })).rejects.toMatchObject({ code: 'INVALID_RESOLUTION' });
+  });
+
+  it('rolls back earlier applied files when a later item fails after save-as', async () => {
+    const repositoryRoot = await initTempRepository();
+    for (const name of ['a.txt', 'm.txt', 'z.txt']) {
+      await writeFile(path.join(repositoryRoot, name), 'base\n');
+    }
+    git(repositoryRoot, 'add', '.');
+    git(repositoryRoot, 'commit', '-m', 'base');
+    const baseCommit = git(repositoryRoot, 'rev-parse', 'HEAD');
+    for (const name of ['a.txt', 'm.txt', 'z.txt']) {
+      await writeFile(path.join(repositoryRoot, name), `cloud ${name}\n`);
+    }
+    const fixture = await captureFixture({ repositoryRoot, baseCommit });
+    await writeFile(path.join(repositoryRoot, 'm.txt'), 'local drift\n');
+    const treeBefore = await hashWorktree(repositoryRoot);
+    // Item order is a.txt, m.txt, z.txt: forward `git apply` calls are a.txt
+    // (1), the save-as rebuild of m.txt (2), then z.txt fails on call 3 — with
+    // an applied entry both before and after the save-as journal leftovers.
+    const runner = createFailingApplyRunner((invocation) => (
+      invocation >= 3 ? 'injected late failure' : null
+    ));
+
+    const failed = await applyPortableEvidenceToWorkspace({
+      evidence: fixture.portableEvidence,
+      workspaceRoot: repositoryRoot,
+      mode: 'apply',
+      resolutions: { 'm.txt': 'save-as' },
+    }, { runner });
+    expect(failed.outcome).toBe('failed');
+    expect(failed.rollbackVerified).toBe(true);
+    expect(failed.error).toContain('injected late failure');
+    expect(await hashWorktree(repositoryRoot)).toBe(treeBefore);
+    expect(await readFile(path.join(repositoryRoot, 'a.txt'), 'utf8')).toBe('base\n');
+    expect(await readFile(path.join(repositoryRoot, 'm.txt'), 'utf8')).toBe('local drift\n');
+    await expect(readFile(path.join(repositoryRoot, 'm.txt.cloud')))
+      .rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('keeps non-ASCII diff header paths intact instead of quotepath mojibake', async () => {
+    const repositoryRoot = await initTempRepository();
+    git(repositoryRoot, 'config', 'core.quotepath', 'true');
+    await writeFile(path.join(repositoryRoot, '中文.md'), 'base\n');
+    git(repositoryRoot, 'add', '.');
+    git(repositoryRoot, 'commit', '-m', 'base');
+    const baseCommit = git(repositoryRoot, 'rev-parse', 'HEAD');
+    await writeFile(path.join(repositoryRoot, '中文.md'), '云端\n');
+    const fixture = await captureFixture({ repositoryRoot, baseCommit });
+    await writeFile(path.join(repositoryRoot, '中文.md'), 'local drift\n');
+
+    const dryRun = await applyPortableEvidenceToWorkspace({
+      evidence: fixture.portableEvidence,
+      workspaceRoot: repositoryRoot,
+      mode: 'dry-run',
+    });
+    expect(dryRun.conflicts).toEqual(['中文.md']);
+    expect(dryRun.files.every((file) => !file.path.includes('ä'))).toBe(true);
+
+    const applied = await applyPortableEvidenceToWorkspace({
+      evidence: fixture.portableEvidence,
+      workspaceRoot: repositoryRoot,
+      mode: 'apply',
+      resolutions: { '中文.md': 'save-as' },
+    });
+    expect(applied.outcome).toBe('success');
+    const saved = applied.files.find((file) => file.path === '中文.md');
+    expect(saved?.status).toBe('saved-as-cloud');
+    expect(saved?.savedAs).toBe('中文.md.cloud');
+    expect(await readFile(path.join(repositoryRoot, '中文.md'), 'utf8')).toBe('local drift\n');
+    expect(await readFile(path.join(repositoryRoot, '中文.md.cloud'), 'utf8')).toBe('云端\n');
   });
 });

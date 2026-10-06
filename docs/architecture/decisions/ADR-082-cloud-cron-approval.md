@@ -1,6 +1,6 @@
 # ADR-082：云端定时任务的审批往返
 
-- 状态：**草稿·待爸拍板**
+- 状态：**已接受**（方案 A，爸 2026-10-02 批，10-05 确认）
 - 单号：N-CLOUD-CRON-APPROVAL-DESIGN
 - 基线：`origin/main@a567f8513`（`a567f8513c60412a965ca692f14ddb96aad36219`）
 - 相关：ADR-075（同一 run 上的停车与续跑）、[ADR-076](./ADR-076-execution-environment.md)（执行环境；N-CLOUD-ENV-ADR 在写，本单不改那个文件）、N-CLOUD-CRON-APPROVAL-PROBE（实测，写本 ADR 时证据档缺失）、N-CLOUD-CRON-APPROVAL-IMPL（拍板后的施工单，依赖本单）

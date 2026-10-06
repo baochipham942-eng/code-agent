@@ -309,6 +309,43 @@ describe('runInteractiveCommand（!run 按钮 host 入口）', () => {
     expect(harness.spawnCalls[0]!.command).toBe(payload);
   });
 
+  it('(g) exec-policy forbidden 在强制审批路上仍无条件硬拒：不出卡、不跑、refused', async () => {
+    await prepareWorkspace();
+    harness.execPolicyMatch = () => 'forbidden';
+    const payload = `printf '%s' 'user-forbidden'`;
+
+    const run = runInteractiveCommand({ sessionId: sessionId(), command: payload });
+    let settled = false;
+    const guarded = run.finally(() => { settled = true; });
+    await flushUntil(
+      () => settled || orchestrator.getPendingPermissionRequests().length > 0,
+      'forbidden refusal or permission card',
+    );
+    // forbidden 必须先于审批卡熔断：卡一旦出现就是把禁止清单降成了可批卡（PR #2307 ai-review）。
+    expect(orchestrator.getPendingPermissionRequests()).toHaveLength(0);
+    const result = await guarded;
+    expect(result.status).toBe('refused');
+    expect(result.reason).toContain('Blocked by exec policy');
+    expect(permissionCards(events)).toHaveLength(0);
+    expect(harness.spawnCalls).toHaveLength(0);
+  });
+
+  it('(h) exec-policy allow 不能替真人放行：强制审批照旧出卡，deny 后 denied', async () => {
+    await prepareWorkspace();
+    harness.execPolicyMatch = () => 'allow';
+    const payload = `printf '%s' 'policy-allow-gated'`;
+
+    const run = runInteractiveCommand({ sessionId: sessionId(), command: payload });
+    await flushUntil(() => orchestrator.getPendingPermissionRequests().length > 0, 'permission card');
+    const cards = orchestrator.getPendingPermissionRequests();
+    expect(cards).toHaveLength(1);
+    expect(harness.spawnCalls).toHaveLength(0);
+    orchestrator.handlePermissionResponse(cards[0]!.id, 'deny');
+
+    const result = await run;
+    expect(result.status).toBe('denied');
+  });
+
   it('(4) 非法入参与无 orchestrator 都 refused，且零审批零进程', async () => {
     const empty = await runInteractiveCommand({ sessionId: 's-x', command: '' });
     expect(empty).toMatchObject({ status: 'refused', output: '' });

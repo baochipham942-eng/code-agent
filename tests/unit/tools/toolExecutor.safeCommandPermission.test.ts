@@ -149,6 +149,51 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
     expect(result.success).toBe(false);
   });
 
+  it('forcePermissionHandler 不豁免 exec-policy forbidden：硬拒先于审批卡，零审批调用', async () => {
+    execPolicyState.match = () => 'forbidden';
+    const executor = new ToolExecutor({
+      workingDirectory: workspace,
+      forcePermissionHandler: true,
+      requestPermission: async (request) => {
+        permissionRequests.push(request);
+        return true;
+      },
+    });
+    executor.setAuditEnabled(false);
+
+    const result = await executor.execute(
+      'Bash',
+      { command: "printf 'forbidden-by-policy'" },
+      { sessionId: 'safe-command-force-handler-forbidden' },
+    );
+
+    expect(permissionRequests, 'forbidden must hard-deny before any approval card').toHaveLength(0);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Blocked by exec policy');
+  });
+
+  it('forcePermissionHandler 下 exec-policy allow 不自动放行：照旧走审批', async () => {
+    execPolicyState.match = () => 'allow';
+    const executor = new ToolExecutor({
+      workingDirectory: workspace,
+      forcePermissionHandler: true,
+      requestPermission: async (request) => {
+        permissionRequests.push(request);
+        return false;
+      },
+    });
+    executor.setAuditEnabled(false);
+
+    const result = await executor.execute(
+      'Bash',
+      { command: "printf 'allow-gated'" },
+      { sessionId: 'safe-command-force-handler-allow-still-asks' },
+    );
+
+    expect(permissionRequests).toHaveLength(1);
+    expect(result.success).toBe(false);
+  });
+
   it('带引号的工作区重定向请求审批，拒绝后不写入', async () => {
     const target = path.join(workspace, 'printf-output.txt');
     const command = `printf 'x' > ${JSON.stringify(target)}`;

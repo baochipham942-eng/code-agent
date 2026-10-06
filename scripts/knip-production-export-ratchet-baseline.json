@@ -7897,6 +7897,11 @@
       "kind": "export"
     },
     {
+      "file": "src/host/services/sessionFork/workspace/portableEvidenceApplyBack.ts",
+      "name": "applyPortableEvidenceToWorkspace",
+      "kind": "export"
+    },
+    {
       "file": "src/host/services/skills/comboRecorder.ts",
       "name": "ComboRecording",
       "kind": "type"

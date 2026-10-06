@@ -156,6 +156,20 @@ describe('CronEventTrigger', () => {
       expect(h.runs).toHaveLength(0);
     });
 
+    // N-CRON-EVENT-CREATE-UI ②：详情页「停用」= updateJob(id, { enabled: false }) 落到
+    // 任务定义；停用前后各来一条消息，停用后的那条不再点火。
+    it('详情页停用动作（enabled true→false）后，后续消息不再触发', async () => {
+      const h = createHarness([eventJob()]);
+      h.source.emit('message', 'acc-1', channelMessage({ id: 'm1' }));
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(h.runs).toHaveLength(1);
+
+      h.jobs[0].enabled = false; // updateJob(jobId, { enabled: false }) 之后的定义
+      h.source.emit('message', 'acc-1', channelMessage({ id: 'm2' }));
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(h.runs).toHaveLength(1);
+    });
+
     it('窗口等待期间被停用的任务不触发（flush 前重取定义）', async () => {
       const h = createHarness([eventJob()]);
       h.source.emit('message', 'acc-1', channelMessage({ id: 'm1' }));

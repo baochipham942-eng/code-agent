@@ -49,7 +49,7 @@
 | 17 | durable kernel：一个 run 的活主人是 `ownerId + processInstanceId + epoch`。租约内别人不能认领。序号按 `runId` 单调，不因 attempt 归零 | `docs/architecture/durable-run-kernel.md:108-120`；ADR-037 决策 1–2 |
 | 18 | 本仓搜不到部署侧的 `maxConcurrentRuns=1`。唯一同名符号是网页排队输入测试里的局部计数，断言排水并发为 1 | `tests/unit/web/webQueuedInputDrain.test.ts:340-360` |
 | 19 | 连接器长期秘密走 `secureref:`，真值在 SecureStorage，解不开就 fail-closed。能力中心写入的是用户级配置，不绑工作目录 | ADR-050；ADR-051 |
-| 20 | 常驻宿主单（N-RESIDENT-HOST-ADR）正文不在本仓。ADR-075 的划界是：执行进程与壳解耦之后，关窗不等于杀进程。任务书给的现状句是合盖等于本机离线 | `docs/architecture/decisions/ADR-075-foreground-restart-resume.md:199` |
+| 20 | 常驻宿主单（N-RESIDENT-HOST-ADR）的 ADR 正文见 [ADR-083](./ADR-083-resident-host.md)。ADR-075 的划界是：执行进程与壳解耦之后，关窗不等于杀进程。任务书给的现状句是合盖等于本机离线 | `docs/architecture/decisions/ADR-075-foreground-restart-resume.md:199` |
 
 ## 竞品实测摘录
 

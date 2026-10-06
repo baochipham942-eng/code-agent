@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* global console */
 // ============================================================================
 // eslint-ratchet — ESLint error / warning 双基线棘轮门
 // ============================================================================
@@ -127,7 +128,7 @@ const flatConfigs = await eslintConfigModule.default;
 function runNineFiftyTierPass() {
   const tierResult = spawnSync(
     process.execPath,
-    [eslintBin, 'src', '--ext', '.ts,.tsx', '--format', 'json', '--no-config-lookup', '--config', 'scripts/eslint-ratchet-950.config.mjs'],
+    [eslintBin, 'src', '--ext', '.ts,.tsx', '--format', 'json', '--no-config-lookup', '--config', 'scripts/lib/eslint-ratchet-950.config.mjs'],
     {
       cwd: repoRoot,
       encoding: 'utf8',

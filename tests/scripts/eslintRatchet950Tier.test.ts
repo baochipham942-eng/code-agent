@@ -119,7 +119,7 @@ describe('eslint-ratchet 950-tier 接线与不动项（特征断言）', () => {
   it('ratchet 真的接了 tier helper 并在两个出口都打印（删掉 tier 逻辑此测试必红）', () => {
     expect(ratchetSource).toMatch(/from '\.\/lib\/eslint-ratchet-950-tier\.mjs'/);
     expect(ratchetSource).toMatch(/buildNineFiftyTier/);
-    expect(ratchetSource).toMatch(/scripts\/eslint-ratchet-950\.config\.mjs/);
+    expect(ratchetSource).toMatch(/scripts\/lib\/eslint-ratchet-950\.config\.mjs/);
     // breach 路径（process.exit(1) 紧跟前）与通过路径各打印一次
     const printCalls = ratchetSource.match(/printNineFiftyTier\(\);/g) ?? [];
     expect(printCalls.length).toBe(2);

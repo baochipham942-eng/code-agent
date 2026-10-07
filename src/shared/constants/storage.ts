@@ -131,3 +131,11 @@ export const BACKGROUND_TASK_LOG = {
   /** TaskPanel 单次只读取日志尾部 64 KiB。 */
   TAIL_MAX_BYTES: 64 * 1024,
 } as const;
+
+/** Browser/Computer 证据台账（JSONL）按大小分片轮转（FB-307：append-only 无上限增长要封顶）。 */
+export const PROOF_LEDGER = {
+  /** 单个 shard（含 active 文件）的最大字节数；active 加上新行超限即轮转出下一个 shard。 */
+  MAX_SHARD_BYTES: 5 * 1024 * 1024,
+  /** 保留的 shard 总数（active + rotated），更老的在轮转时删除。 */
+  KEPT_SHARDS: 4,
+} as const;

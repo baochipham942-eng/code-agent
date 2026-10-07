@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* global console, process */
 // 设计系统静态门（W2）——契约见 docs/designs/design-system.md §5（规则清单，改一边必须改另一边）
 //
 // 棘轮基线策略：现存违规（建门时 760 裸 button / 21 手搓 modal / 81 hex）不强制一次清零，
@@ -25,6 +26,9 @@
 //                             （pt-*/py-*）——sticky 贴的是内容区顶，内边距会在容器顶留一条带子，
 //                             滚上来的行从带子里透出（09-15 题库表 FB-162 实付）。本条额外扫
 //                             packages/internal/*/src/renderer；`ds-allow:sticky` 豁免
+//  11. undefined-css-var:<theme>: 禁引用但未定义的 CSS custom property；四个主题分别报告，
+//                             fallback 或同线 `ds-allow:var` 豁免。主题外 CSS 定义和 JS inline style
+//                             定义对四个主题共享。
 //
 // 对比度断言（默认门已 enforce，--contrast 看明细）：四套主题按各自真实用法场景
 // 核对 WCAG ≥4.5:1。2026-07-02 产品负责人拍板方案 A：dark/light brand 加深至
@@ -97,6 +101,55 @@ const STICKY_RE = /\bsticky\b[^"'`}]*\btop-/;
 const SCROLLER_RE = /\boverflow-(?:auto|scroll|y-auto|y-scroll)\b/;
 // 不吃 pt-0/py-0（零内边距无害）与 scroll-pt-*（滚动吸附偏移，不是盒内边距）
 const TOP_PADDING_RE = /(?<![\w-])p[ty]-(?:0\.\d+|[1-9]\d*(?:\.\d+)?|\[|px)\b/;
+const CSS_VAR_RE = /var\s*\(/g;
+const CSS_VAR_NAME_RE = /^\s*(--[A-Za-z0-9_-]+)/;
+const CSS_VAR_DECL_RE = /(?:^|[\s{;])(--[A-Za-z0-9_-]+)\s*:/g;
+const JS_INLINE_CSS_VAR_RE = /["'](--[A-Za-z0-9_-]+)["']\s*:/g;
+const JS_SET_PROPERTY_CSS_VAR_RE = /setProperty\(\s*["'](--[A-Za-z0-9_-]+)["']/g;
+const THEME_NAMES = ['dark', 'light', 'high-contrast-dark', 'high-contrast-light'];
+
+/**
+ * 收集一段源码里的 CSS var() 引用。保留 fallback 信息和源行，供主题规则复用。
+ * 这是纯解析 helper，不能读文件或依赖仓库路径。
+ */
+export function collectCssVarReferences(source) {
+  const references = [];
+  for (const match of source.matchAll(CSS_VAR_RE)) {
+    const openIndex = (match.index ?? 0) + match[0].length;
+    const nameMatch = source.slice(openIndex).match(CSS_VAR_NAME_RE);
+    if (!nameMatch) continue;
+    const name = nameMatch[1];
+    const bodyStart = openIndex + nameMatch[0].length;
+    let depth = 1;
+    let hasFallback = false;
+    for (let i = bodyStart; i < source.length && depth > 0; i++) {
+      const char = source[i];
+      if (char === '(') depth++;
+      else if (char === ')') depth--;
+      else if (char === ',' && depth === 1) hasFallback = true;
+    }
+    const index = match.index ?? 0;
+    const lineStart = source.lastIndexOf('\n', index - 1) + 1;
+    const lineEnd = source.indexOf('\n', index);
+    references.push({
+      name,
+      line: source.slice(0, index).split('\n').length,
+      lineText: source.slice(lineStart, lineEnd === -1 ? source.length : lineEnd),
+      hasFallback,
+    });
+  }
+  return references;
+}
+
+/**
+ * 根据已知定义找出未定义的 CSS var() 引用。纯 helper 供脚本和契约测试共用。
+ */
+export function findUndefinedCssVarViolations(source, rel, definedNames) {
+  const defined = definedNames instanceof Set ? definedNames : new Set(definedNames);
+  return collectCssVarReferences(source)
+    .filter(({ name, hasFallback, lineText }) => !hasFallback && !defined.has(name) && !isAllowed(lineText, ['var']))
+    .map(({ name, line }) => `${rel}:${line} ${name}`);
+}
 
 function indentOf(line) {
   return line.length - line.trimStart().length;
@@ -230,7 +283,14 @@ export function scan(scanRoot = SCAN_ROOT) {
     'theme-blind-white-hover-foreground': [],
     'stale-zindex-allowlist': [],
     'sticky-in-padded-scroller': [],
+    'undefined-css-var:dark': [],
+    'undefined-css-var:light': [],
+    'undefined-css-var:high-contrast-dark': [],
+    'undefined-css-var:high-contrast-light': [],
   };
+  const cssVarReferenceFiles = [];
+  const externalCssVarDefinitions = new Set();
+  const themeCssVarDefinitions = new Map(THEME_NAMES.map((theme) => [theme, new Set()]));
   for (const root of [scanRoot, ...INTERNAL_RENDERER_ROOTS]) {
     for (const file of walk(root)) {
       const rel = relative(ROOT, file);
@@ -248,7 +308,12 @@ export function scan(scanRoot = SCAN_ROOT) {
     const inPrimitives = rel.startsWith('components/primitives/');
     const isModalPrimitive = rel === 'components/primitives/Modal.tsx';
     const isVizExempt = VIZ_EXEMPT.some((p) => rel.includes(p));
-    const lines = readFileSync(file, 'utf8').split('\n');
+    const source = readFileSync(file, 'utf8');
+    const lines = source.split('\n');
+    const references = collectCssVarReferences(source);
+    if (references.length > 0) cssVarReferenceFiles.push({ rel, source });
+    for (const match of source.matchAll(JS_INLINE_CSS_VAR_RE)) externalCssVarDefinitions.add(match[1]);
+    for (const match of source.matchAll(JS_SET_PROPERTY_CSS_VAR_RE)) externalCssVarDefinitions.add(match[1]);
     // 模板字符串（反引号）内的 hex = 注入 iframe/sandbox 的自包含 HTML/CSS，
     // app 的 CSS 变量不级联进去，必须用字面色——契约 §5 自动豁免。
     let inTemplate = false;
@@ -311,7 +376,15 @@ export function scan(scanRoot = SCAN_ROOT) {
   for (const file of walk(scanRoot, /\.css$/)) {
     cssFileCount++;
     const rel = relative(scanRoot, file);
-    const lines = readFileSync(file, 'utf8').split('\n');
+    const source = readFileSync(file, 'utf8');
+    const lines = source.split('\n');
+    const references = collectCssVarReferences(source);
+    if (references.length > 0) cssVarReferenceFiles.push({ rel, source });
+    const themeMatch = rel.match(/^styles\/themes\/([^/]+)\.css$/);
+    const themeDefinitions = themeMatch ? themeCssVarDefinitions.get(themeMatch[1]) : null;
+    for (const match of source.matchAll(CSS_VAR_DECL_RE)) {
+      (themeDefinitions ?? externalCssVarDefinitions).add(match[1]);
+    }
     lines.forEach((line, i) => {
       const loc = `${rel}:${i + 1}`;
       if (BARE_RADIUS_CSS_RE.test(line) && !isAllowed(line, ['radius'])) {
@@ -334,6 +407,25 @@ export function scan(scanRoot = SCAN_ROOT) {
   if (brightForegroundTargetCount === 0) {
     throw new Error(
       `[check-design-system] 自检失败：亮档彩色前景扫描没有命中任何目标（扫描根 ${scanRoot}，文件后缀 .tsx/.ts，正则 ${THEME_BLIND_BRIGHT_FOREGROUND_RE}）。若正则或目录结构调整过，请同步更新本脚本。`,
+    );
+  }
+
+  const cssVarReferenceCount = cssVarReferenceFiles.reduce(
+    (count, { source }) => count + collectCssVarReferences(source).length,
+    0,
+  );
+  if (cssVarReferenceCount === 0) {
+    throw new Error(
+      `[check-design-system] 自检失败：CSS var(--name) 引用扫描没有命中任何目标（扫描根 ${scanRoot}）。若正则或目录结构调整过，请同步更新本脚本。`,
+    );
+  }
+  for (const theme of THEME_NAMES) {
+    const definedNames = new Set([
+      ...externalCssVarDefinitions,
+      ...(themeCssVarDefinitions.get(theme) ?? []),
+    ]);
+    violations[`undefined-css-var:${theme}`] = cssVarReferenceFiles.flatMap(({ rel, source }) =>
+      findUndefinedCssVarViolations(source, rel, definedNames),
     );
   }
 

@@ -173,6 +173,46 @@ interface PrePersistUserMessageInput {
   message: Message;
 }
 
+/** run 入口幂等重放（N-RUNENTRY-IDEMPOTENT）的查重结果。 */
+interface ClientMessageReplayLookup {
+  messageId: string;
+  /** 该消息归属的既有 run；非 durable 的老轮归因不到，允许 null。 */
+  runId: string | null;
+  createdAt: number;
+}
+
+function findActiveUserMessageById(
+  messages: Array<Pick<Message, 'id' | 'role' | 'timestamp' | 'visibility'>> | undefined,
+  clientMessageId: string,
+): { messageId: string; createdAt: number } | null {
+  const found = messages?.find(
+    (message) => message.id === clientMessageId
+      && message.role === 'user'
+      && message.visibility !== 'rewound',
+  );
+  return found ? { messageId: found.id, createdAt: found.timestamp } : null;
+}
+
+/**
+ * 把已找到的用户消息归因到 durable root run：runAgentTurn 先建 run 再落消息，
+ * 同会话 run 串行，所以「created_at <= 消息时间戳的最近 root run」即该轮。
+ * 查不到（无 durable 记录 / 降级态 / 老非 durable 轮）返回 null，不阻塞重放判定。
+ */
+async function attributeDurableRootRun(
+  getDatabase: WebSessionStoreDeps['getDatabase'],
+  sessionId: string,
+  createdAt: number,
+): Promise<string | null> {
+  if (!dbAvailable) return null;
+  try {
+    const db = await getDatabase();
+    const envelope = await db.getDurableRunRepository().getLatestRootRunAsOf(sessionId, createdAt);
+    return envelope?.runId ?? null;
+  } catch {
+    return null;
+  }
+}
+
 interface CommitTurnInput {
   sessionId: string;
   title: string;
@@ -471,6 +511,76 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
       } catch (error) {
         deps.logger.warn(`[AgentRouter] Failed to hydrate persisted history for ${sessionId}:`, error);
         return [];
+      }
+    },
+
+    /**
+     * run 入口幂等重放查重（N-RUNENTRY-IDEMPOTENT）：同会话是否已存在以
+     * clientMessageId 为主键的用户消息。clientMessageId 就是消息主键（pre-persist
+     * 的 msgId），读序与 loadSessionHistoryForRun 一致：投影 → 会话管理器 → DB 点查。
+     * rewound（回退撤回）的消息不算存在，回退后重发不受挡。
+     */
+    async findUserMessageByClientMessageId(
+      sessionId: string,
+      clientMessageId: string,
+    ): Promise<ClientMessageReplayLookup | null> {
+      const projected = findActiveUserMessageById(
+        getSessionMessagesProjection(sessionId),
+        clientMessageId,
+      );
+      if (projected) {
+        return {
+          ...projected,
+          runId: await attributeDurableRootRun(deps.getDatabase, sessionId, projected.createdAt),
+        };
+      }
+
+      try {
+        const cliSessionManager = await resolvePersistentSessionManager(
+          await deps.tryGetSessionManager(),
+          deps.logger,
+        );
+        const sm = cliSessionManager?.getMessages
+          ? cliSessionManager
+          : await deps.tryGetInfraSessionManager?.();
+        if (sm?.getMessages) {
+          const persisted = await sm.getMessages(sessionId);
+          const found = Array.isArray(persisted)
+            ? findActiveUserMessageById(persisted, clientMessageId)
+            : null;
+          if (found) {
+            return {
+              ...found,
+              runId: await attributeDurableRootRun(deps.getDatabase, sessionId, found.createdAt),
+            };
+          }
+        }
+      } catch (error) {
+        deps.logger.warn(
+          `[AgentRouter] Failed to look up clientMessageId ${clientMessageId} for ${sessionId}:`,
+          error,
+        );
+      }
+
+      if (!dbAvailable) return null;
+      try {
+        const db = await deps.getDatabase();
+        const persisted = db.getMessageById(sessionId, clientMessageId);
+        const found = persisted?.role === 'user' && persisted.visibility !== 'rewound'
+          ? { messageId: persisted.id, createdAt: persisted.timestamp }
+          : null;
+        return found
+          ? {
+            ...found,
+            runId: await attributeDurableRootRun(deps.getDatabase, sessionId, found.createdAt),
+          }
+          : null;
+      } catch (error) {
+        deps.logger.warn(
+          `[AgentRouter] Failed point query for clientMessageId ${clientMessageId} in ${sessionId}:`,
+          error,
+        );
+        return null;
       }
     },
 

@@ -525,4 +525,9 @@ export interface AppSettings {
   roleAssets?: {
     proactivity?: RoleProactivitySettings;
   };
+  /** ADR-083 常驻宿主。首刀只落设置位，不写任何 LaunchAgent / 登录项。 */
+  daemon?: {
+    /** 登录自启（macOS LaunchAgent / Windows Run 键）。默认 false，由后续单子接线生效。 */
+    launchAtLogin?: boolean;
+  };
 }

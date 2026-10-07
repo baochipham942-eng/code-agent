@@ -69,6 +69,7 @@ async function main(): Promise<void> {
       ['policy', 'exec-policy 离线校验与规则解释'],
       ['doctor', '健康检查 / OS 沙箱探测'],
       ['telemetry', '查看遥测开关状态，或预览一条不会发出的上传信封'],
+      ['daemon', '常驻宿主状态与优雅停止'],
     ]) {
       program.command(name).description(description);
     }
@@ -83,6 +84,11 @@ async function main(): Promise<void> {
   } else if (requestedCommand === 'telemetry') {
     const { telemetryCommand } = await import('./commands/telemetry');
     program.addCommand(telemetryCommand);
+  } else if (requestedCommand === 'daemon') {
+    // 轻量路由：daemon status/stop 只需要只读库 + pid 文件（configPaths / daemonLock /
+    // ReadOnlySessionDatabase），不引入会在 import 时初始化可写运行目录的模块。
+    const { daemonCliCommand } = await import('./commands/daemon');
+    program.addCommand(daemonCliCommand);
   } else if (requestedCommand !== 'session') {
     const [
       { chatCommand }, { runCommand }, { serveCommand }, { exportCommand },

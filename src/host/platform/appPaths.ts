@@ -93,8 +93,10 @@ function parseBuildInfo(content: string): BuildInfo | null {
   const installedFrom = parsed.installedFrom === undefined
     ? parsed.worktree
     : parsed.installedFrom;
+  const version = parsed.version === undefined ? undefined : parsed.version;
   if (
     typeof parsed.appName !== 'string'
+    || (version !== undefined && typeof version !== 'string')
     || !nullableString(parsed.branch)
     || !nullableString(parsed.commit)
     || !nullableString(parsed.commitShort)
@@ -107,6 +109,7 @@ function parseBuildInfo(content: string): BuildInfo | null {
   }
   return {
     appName: parsed.appName,
+    ...(version === undefined ? {} : { version }),
     branch: parsed.branch,
     commit: parsed.commit,
     commitShort: parsed.commitShort,

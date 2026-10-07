@@ -16,14 +16,10 @@ const HEALTH_KEYS = [
   'status',
   'mode',
   'timestamp',
-  'handlers',
-  'serverRoot',
-  'pid',
-  'tauriBootToken',
-  'build',
-  'persistence',
   'durableRunReady',
   'rendererServe',
+  'tauriBootToken',
+  'build',
 ];
 
 function buildDeps(dataDir: string): CreateAppDeps {

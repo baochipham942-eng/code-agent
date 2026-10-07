@@ -16,7 +16,8 @@ import type {
   PermissionRequest,
   PersistenceHealth,
   RendererServeDecision,
-  WebHealthResponse,
+  WebHealthDetail,
+  WebHealthPublic,
 } from '../../shared/contract';
 
 interface HealthDeps {
@@ -45,27 +46,46 @@ function sendPendingPermissionSnapshots(
   return requests.length;
 }
 
+function buildHealthPayload(deps: HealthDeps): WebHealthDetail {
+  return {
+    status: 'ok',
+    mode: 'web-standalone',
+    timestamp: Date.now(),
+    handlers: deps.handlers.size,
+    serverRoot: process.cwd(),
+    pid: process.pid,
+    tauriBootToken: process.env.CODE_AGENT_TAURI_BOOT_TOKEN || null,
+    build: deps.getBuildInfo(),
+    persistence: deps.getPersistenceHealth(),
+    durableRunReady: deps.getDurableRunReady(),
+    rendererServe: deps.getRendererServeDecision?.() ?? null,
+  };
+}
+
+function projectPublicHealth(payload: WebHealthDetail): WebHealthPublic {
+  const buildVersion = payload.build?.version;
+  return {
+    status: payload.status,
+    mode: payload.mode,
+    timestamp: payload.timestamp,
+    durableRunReady: payload.durableRunReady,
+    rendererServe: payload.rendererServe,
+    tauriBootToken: payload.tauriBootToken,
+    build: typeof buildVersion === 'string' ? { version: buildVersion } : null,
+  };
+}
+
 export function createHealthRouter(deps: HealthDeps): Router {
   const router = Router();
-  const { handlers } = deps;
 
   // ── Health ──────────────────────────────────────────────────────────
   router.get('/health', (req: Request, res: Response) => {
     if (req.query.rendererReady === '1') deps.onRendererReady?.();
-    const payload: WebHealthResponse = {
-      status: 'ok',
-      mode: 'web-standalone',
-      timestamp: Date.now(),
-      handlers: handlers.size,
-      serverRoot: process.cwd(),
-      pid: process.pid,
-      tauriBootToken: process.env.CODE_AGENT_TAURI_BOOT_TOKEN || null,
-      build: deps.getBuildInfo(),
-      persistence: deps.getPersistenceHealth(),
-      durableRunReady: deps.getDurableRunReady(),
-      rendererServe: deps.getRendererServeDecision?.() ?? null,
-    };
-    res.json(payload);
+    res.json(projectPublicHealth(buildHealthPayload(deps)));
+  });
+
+  router.get('/health/detail', (_req: Request, res: Response) => {
+    res.json(buildHealthPayload(deps));
   });
 
   // ── SSE Events ─────────────────────────────────────────────────────

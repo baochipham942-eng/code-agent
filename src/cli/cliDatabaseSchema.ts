@@ -396,6 +396,7 @@ export function createCliTables(db: CliDb): void {
   `);
   addColumnIfMissing(db, `ALTER TABLE permission_decisions ADD COLUMN wait_ms INTEGER`);
   addColumnIfMissing(db, `ALTER TABLE permission_decisions ADD COLUMN origin TEXT`);
+  addColumnIfMissing(db, `ALTER TABLE permission_decisions ADD COLUMN policy_hash TEXT`);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS tool_execution_events (

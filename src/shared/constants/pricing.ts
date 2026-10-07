@@ -1,7 +1,7 @@
 import { normalizeProviderId } from './providers';
 
 /** 改动 MODEL_PRICING_PER_1M 中任一价格时必须同步递增。 */
-export const PRICING_TABLE_VERSION = 2;
+export const PRICING_TABLE_VERSION = 3;
 
 /** 模型定价条目（每 1M tokens，美元）。cacheRead/cacheWrite 缺省时按比例回退（见下方 ratio 常量）。 */
 export interface ModelPricingEntry {
@@ -100,6 +100,25 @@ export const MODEL_PRICING_PER_1M: Record<string, ModelPricingEntry> = {
   // OpenAI — cached input 为 0.5x 档
   'gpt-4o': { input: 2.5, output: 10, cacheRead: 1.25 },
   'gpt-4o-mini': { input: 0.15, output: 0.6, cacheRead: 0.075 },
+  // OpenAI GPT-6 Sol 系列 — 官方模型页（抓取 2026-09-30）：
+  //   https://developers.openai.com/api/docs/models/gpt-6.1-sol
+  //   https://developers.openai.com/api/docs/models/gpt-6-sol
+  // 输入 $2 / 输出 $10；缓存读 6.1 为 $0.10、6 为 $0.20；缓存写 $2.50。
+  // 单次请求 prompt 超 272K tokens 时整单按输入 ×2、缓存 ×2、输出 ×1.5 计价。
+  'gpt-6.1-sol': {
+    input: 2,
+    output: 10,
+    cacheRead: 0.1,
+    cacheWrite: 2.5,
+    longContext: { thresholdPromptTokens: 272_000, inputMultiplier: 2, outputMultiplier: 1.5, cacheMultiplier: 2 },
+  },
+  'gpt-6-sol': {
+    input: 2,
+    output: 10,
+    cacheRead: 0.2,
+    cacheWrite: 2.5,
+    longContext: { thresholdPromptTokens: 272_000, inputMultiplier: 2, outputMultiplier: 1.5, cacheMultiplier: 2 },
+  },
   // Anthropic — cacheRead 0.1x / cacheWrite(5m ephemeral) 1.25x
   'claude-sonnet-4-20250514': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
   'claude-3-5-sonnet-20241022': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },

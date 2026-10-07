@@ -18,7 +18,10 @@ on:
 
 concurrency:
   group: main-full-gate-${{ github.ref }}
-  cancel-in-progress: true
+  # 2026-10-06：全量门一次约 40 分钟，合并频率更高，cancel-in-progress=true 时最近 40 次有 32 次被取消、
+  # main 上大多数提交从没被全量门跑完。改为不取消：在跑的那次跑完，排队里只留最新一个（GitHub 并发组语义），
+  # 每轮都有判决，最多晚一轮验到最新 head。
+  cancel-in-progress: false
 
 permissions:
   contents: read

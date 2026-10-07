@@ -202,7 +202,9 @@ export class ReadOnlySessionDatabase {
       reason: String(row.reason ?? ''), durationMs: Number(row.duration_ms ?? 0),
       waitMs: row.wait_ms == null ? null : Number(row.wait_ms),
       origin: optionalString(row.origin) as PermissionDecisionRecord['origin'],
-      recordedAt: Number(row.recorded_at), trace: parseJson(row.trace_json, null),
+      recordedAt: Number(row.recorded_at),
+      policyHash: typeof row.policy_hash === 'string' ? row.policy_hash : null,
+      trace: parseJson(row.trace_json, null),
     }));
   }
 

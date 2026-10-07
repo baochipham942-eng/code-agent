@@ -35,6 +35,7 @@ import {
   migrateQuickFreeTierToOkiFlash,
 } from './configHelpers';
 import { devSlotFromDataDirName } from '../../../shared/devSlot';
+import { assertValidUserPermissionRules } from '../../../shared/permissionRuleSyntax';
 
 const logger = createLogger('ConfigService');
 
@@ -228,8 +229,10 @@ export class ConfigService implements IReadConfigService {
   /**
    * 把 settings.permissions.{deny, ask, allow} 注入 PolicyEngine，供 UserConfigSource 使用。
    * 启动期间调用一次；用户在 UI 上更新规则时通过 reloadUserPermissionRules 重新调用。
+   * source（N-PERM-POLICYVERSION）：updateSettings（UI 保存）传 'user-ui'，外部热重载/
+   * 启动装载走缺省 'external'——外部来源的放宽不作用于已开始的 run。
    */
-  private applyUserPermissionRules(): void {
+  private applyUserPermissionRules(source: 'user-ui' | 'external' = 'external'): void {
     try {
       const policy = getPolicyEngine();
       const perms = this.settings.permissions;
@@ -237,7 +240,7 @@ export class ConfigService implements IReadConfigService {
         deny: perms.deny,
         ask: perms.ask,
         allow: perms.allow,
-      });
+      }, source);
       logger.info('User permission rules applied', {
         deny: perms.deny?.length ?? 0,
         ask: perms.ask?.length ?? 0,
@@ -251,9 +254,10 @@ export class ConfigService implements IReadConfigService {
 
   /**
    * 公开接口：UI 改了 permissions.deny/ask/allow 后调一次，重新生效。
+   * source 缺省 'external'（fail-closed）；UI 路径应传 'user-ui'。
    */
-  reloadUserPermissionRules(): void {
-    this.applyUserPermissionRules();
+  reloadUserPermissionRules(source: 'user-ui' | 'external' = 'external'): void {
+    this.applyUserPermissionRules(source);
   }
 
   /** 订阅设置写入（updateSettings 与外部编辑热重载都会触发）。privacyGate 等运行时重放用。 */
@@ -737,6 +741,7 @@ export class ConfigService implements IReadConfigService {
       }
     }
 
+    assertValidUserPermissionRules(updates.permissions, this.settings.permissions);
     this.settings = this.mergeAppSettings(this.settings, updates);
     await this.save();
 
@@ -746,7 +751,7 @@ export class ConfigService implements IReadConfigService {
       updates.permissions.ask !== undefined ||
       updates.permissions.allow !== undefined
     )) {
-      this.applyUserPermissionRules();
+      this.applyUserPermissionRules('user-ui');
     }
 
     // 用户在模型配置页改了 provider（含 maxConcurrent / proxyMode）后热更新

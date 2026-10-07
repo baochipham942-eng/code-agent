@@ -185,6 +185,21 @@ export class DurableRunRepository implements DurableRunStores {
     return row ? rowToEnvelope(row) : null;
   }
 
+  /**
+   * run 入口幂等重放（N-RUNENTRY-IDEMPOTENT）的归因查询：某条用户消息（落库于
+   * createdBefore）属于哪条 root run。runAgentTurn 先建 run 再落用户消息，且同会话
+   * run 严格串行（活跃唯一索引），所以「created_at <= 消息时间戳的最近一条 root run」
+   * 就是承载这条消息的那轮。child run 不是消息的归属，排除。
+   */
+  async getLatestRootRunAsOf(sessionId: string, createdBefore: number): Promise<RunEnvelope | null> {
+    const row = this.db.prepare(`SELECT envelope_json FROM durable_runs
+      WHERE session_id = ?
+        AND parent_run_id IS NULL
+        AND created_at <= ?
+      ORDER BY created_at DESC, rowid DESC LIMIT 1`).get(sessionId, createdBefore) as Row | undefined;
+    return row ? rowToEnvelope(row) : null;
+  }
+
   async listRecoverable(now: number, limit: number): Promise<RunEnvelope[]> {
     const rows = this.db.prepare(`SELECT envelope_json FROM durable_runs
       WHERE status IN ('running','waiting','recovering') AND lease_expires_at <= ?

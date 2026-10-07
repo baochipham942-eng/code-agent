@@ -17,8 +17,21 @@ import {
   renderBrowserComputerEvidenceCard,
   type BrowserComputerVisualObservation,
 } from '../../../shared/utils/browserComputerRedaction';
+import { detectScreenshotFailureCause } from './screenshotFailureCause';
 
 const execAsync = promisify(exec);
+
+function getScreenshotFailureStderr(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object' || !('stderr' in error)) return undefined;
+  const stderr = (error as { stderr?: unknown }).stderr;
+  return typeof stderr === 'string' ? stderr : undefined;
+}
+
+function formatScreenshotFailureCause(cause: ReturnType<typeof detectScreenshotFailureCause>): string {
+  return cause.kind === 'unknown'
+    ? 'Cause: unknown (not detected by the tool; do not assume one)'
+    : `Detected cause: ${cause.text}`;
+}
 
 function buildAnalysisFailureMessage(args: {
   outputPath: string;
@@ -222,9 +235,14 @@ Returns the path to the saved screenshot file, plus AI analysis if analyze=true.
 
       // Verify the file was created
       if (!fs.existsSync(outputPath)) {
+        const cause = detectScreenshotFailureCause({
+          platform: process.platform,
+          env: process.env,
+        });
         return {
           success: false,
-          error: 'Screenshot was not created',
+          error: `Screenshot was not created\n${formatScreenshotFailureCause(cause)}`,
+          metadata: { failureCause: cause.kind },
         };
       }
 
@@ -343,9 +361,17 @@ Returns the path to the saved screenshot file, plus AI analysis if analyze=true.
         cannotObserveScreen: !analysis,
       });
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      const cause = detectScreenshotFailureCause({
+        platform: process.platform,
+        env: process.env,
+        message,
+        stderr: getScreenshotFailureStderr(error),
+      });
       return {
         success: false,
-        error: `Failed to capture screenshot: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to capture screenshot: ${message}\n${formatScreenshotFailureCause(cause)}`,
+        metadata: { failureCause: cause.kind },
       };
     }
   },

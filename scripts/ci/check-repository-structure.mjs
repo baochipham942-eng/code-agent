@@ -62,7 +62,9 @@ const limits = {
   // 2026-09-30 +1: scripts/bundle-frontend-slides-skill.mjs（N-PPT-SKILL-DEADEND：把
   // frontend-slides skill 的 merge-to-*.mjs 打成自带依赖的 .bundle.mjs，生成物头注释回指此脚本；
   // 与 build-audio-capture.sh / fetch-rtk.sh 同族的构建输入生成器，留在直属层）。
-  directScriptFiles: 163,
+  // 2026-10-07 +1: scripts/check-refactor-bundle-identical.mjs（N-REFACTOR-BUNDLE-GATE：
+  // 手工验收入口，用固定 esbuild 选项证明大文件拆分没有改变 bundle 字节内容）。
+  directScriptFiles: 164,
   // 15: the Poppler promotion boundary is split across two workflows on purpose —
   // build-poppler-sidecar.yml only reviews candidates and can never publish, while
   // promote-poppler-sidecar.yml holds the OSS credentials and publishes them.

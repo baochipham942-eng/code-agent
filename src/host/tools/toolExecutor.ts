@@ -42,6 +42,7 @@ import { getPluginIdForTool, getPluginOriginForTool } from '../plugins/pluginToo
 import { getWriteIsolationManager, getWriteIsolationScope, type WriteIsolationMetadata } from '../security/writeIsolation';
 import type { HookManager } from '../hooks/hookManager';
 import { getToolResolver } from '../tools/dispatch/toolResolver';
+import { findResourceScopeMismatch } from '../tools/dispatch/resolveToolCallAccess';
 import { lookupMcpToolAfterReapedReconnect } from './mcpReapedToolLookup';
 import type { ConversationExecutionIntent, WorkbenchToolScope } from '../../shared/contract/conversationEnvelope';
 import { isBashToolName, normalizeToolName } from './toolNames';
@@ -67,6 +68,7 @@ import {
 import { getPermissionModeManager } from '../permissions/modes';
 import { pickLeastTrustedOrigin, type AgentMessageOrigin } from '../agent/messageOrigin';
 import { computeActionFingerprint, getDenialRegistry } from '../security/denialRegistry';
+import { computePolicyHash } from '../permissions/policyHash';
 import { normalizePermissionAskResult, type RequestPermissionResult } from '../../shared/contract/permission';
 import { applyEditedArgs } from '../../shared/contract/permissionEdit';
 import { EXTERNAL_SIDE_EFFECT_TRACE_RULE, EXTERNAL_SIDE_EFFECT_TRACE_REASON, isExternalSideEffectTool, extractStandingGrantTarget } from './externalSideEffect';
@@ -111,7 +113,8 @@ import {
 import { resolveToolWriteTargets } from './writeTargets';
 import { isProtectedWritePath } from '../sandbox/sensitivePaths';
 import { parseShellCommand } from '../security/commandParse';
-import { getPolicyEngine } from '../permissions/policyEngine';
+// N-PERM-POLICYVERSION E2/E4/E5/E6：run 有效视图（外部放宽冻结、收紧与 UI 放宽即时）
+import { matchEffectiveExecPolicy, resolveEffectivePolicyEnforcer, resolveEffectivePolicyRules, resolveEffectiveSessionMode } from '../permissions/runPolicySnapshot';
 import {
   createFileOwnershipActor,
   getFileOwnershipRegistry,
@@ -176,11 +179,11 @@ type ShellWritePathPolicyOutcome =
   | { kind: 'deny'; check: PolicyCheckResult }
   | { kind: 'ask'; uncertain: string[] };
 
-function hasConfiguredWritePathDeny(policyEnforcer: PolicyEnforcer | null | undefined): boolean {
+function hasConfiguredWritePathDeny(policyEnforcer: PolicyEnforcer | null | undefined, sessionId?: string): boolean {
   // Active policy files union-merge with defaults that always include denied_paths
   // (~/.ssh/**, ~/.aws/**, /etc/**). No file → getPolicyEnforcer returns null.
   if (policyEnforcer?.isActive) return true;
-  return getPolicyEngine().getRules().some((rule) =>
+  return resolveEffectivePolicyRules(sessionId).some((rule) =>
     rule.id.startsWith('user-deny-')
     && rule.action === 'deny'
     && rule.matcher.toolSpecifier?.specifierType === 'path'
@@ -191,7 +194,7 @@ function hasConfiguredWritePathDeny(policyEnforcer: PolicyEnforcer | null | unde
 function shellWritePathPolicyCheck(
   command: string,
   workingDirectory: string,
-  policyEnforcer: PolicyEnforcer | null | undefined,
+  policyEnforcer: PolicyEnforcer | null | undefined, sessionId?: string,
 ): ShellWritePathPolicyOutcome {
   const parsed = parseShellCommand(command);
   const unresolved: string[] = [];
@@ -213,10 +216,11 @@ function shellWritePathPolicyCheck(
       policyEnforcer,
       pathCandidates: [target.path, targetPath],
       displayPath: target.path,
+      sessionId,
     });
     if (denied) return { kind: 'deny', check: denied };
   }
-  if (unresolved.length > 0 && hasConfiguredWritePathDeny(policyEnforcer)) {
+  if (unresolved.length > 0 && hasConfiguredWritePathDeny(policyEnforcer, sessionId)) {
     return { kind: 'ask', uncertain: unresolved };
   }
   return { kind: 'allow' };
@@ -1348,11 +1352,12 @@ export class ToolExecutor {
     // P0: Policy Enforcer — code-agent-policy.toml 硬规则（system/user/project 三层合并）。
     // deny 不可被任何后续层推翻（skill 预授权 / 安全命令白名单 / classifier / 用户审批）。
     // 无 policy 文件时 getPolicyEnforcer 返回 null，零开销。
-    const policyEnforcer = getPolicyEnforcer(resolveCanonicalRunPath(this.runtimeWorkspace));
+    const policyEnforcer = resolveEffectivePolicyEnforcer(
+      getPolicyEnforcer(resolveCanonicalRunPath(this.runtimeWorkspace)), effectiveSessionId);
     // 扩权检查发生在整条命令跑完之后，期间别的工作区会改绑单例：把本次绑定的实例钉进 ctx。
     context.policyEnforcer = policyEnforcer;
     const shellPathCheck = isBashToolName(policyToolName) && typeof params.command === 'string'
-      ? shellWritePathPolicyCheck(params.command, bashWorkingDirectory, policyEnforcer)
+      ? shellWritePathPolicyCheck(params.command, bashWorkingDirectory, policyEnforcer, effectiveSessionId)
       : { kind: 'allow' as const };
     if (isBashToolName(policyToolName) && typeof params.command === 'string') {
       const officialSkillShellCheck = await guardShellOfficialSkillWrites(params.command, bashWorkingDirectory);
@@ -1651,7 +1656,7 @@ export class ToolExecutor {
 
       // 1. 检查 exec policy 持久化规则（forbidden 先于受保护路径熔断）
       try {
-        const policyDecision = getExecPolicyStore().match(cmd);
+        const policyDecision = matchEffectiveExecPolicy(cmd, effectiveSessionId);
         if (policyDecision === 'forbidden') {
           recordDecision(executionToolName, params, 'policy-deny', 'exec-policy', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
           return {
@@ -1966,7 +1971,7 @@ export class ToolExecutor {
       if (isBashToolName(policyToolName) && typeof params.command === 'string') {
         const sandboxDecision = resolveOsSandboxDecision({
           command: params.command,
-          permissionMode: getPermissionModeManager().getModeForSession(effectiveSessionId) as OsSandboxPermissionMode,
+          permissionMode: resolveEffectiveSessionMode(effectiveSessionId) as OsSandboxPermissionMode,
           unattended: getPermissionModeManager().isUnattendedSession(effectiveSessionId),
           writeFence: context.requiresOsWriteFence === true,
           evalRealRoot: process.env.CODE_AGENT_EVAL_REAL_ROOT !== undefined,
@@ -2142,7 +2147,8 @@ export class ToolExecutor {
         && params.command
       ) {
         try {
-          getExecPolicyStore().learnFromApproval(params.command as string);
+          // 'user-ui'（N-PERM-POLICYVERSION）：真人审批卡放行，学到的 allow 立即生效。
+          getExecPolicyStore().learnFromApproval(params.command as string, 'user-ui');
         } catch {
           // exec policy not initialized, skip
         }
@@ -2200,6 +2206,7 @@ export class ToolExecutor {
             summary: String(params.command || params.file_path || params.path || executionToolName).substring(0, 80),
             reason: denialReason,
             timestamp: Date.now(),
+            policyHash: computePolicyHash(effectiveSessionId),
           });
         }
         recordDecision(executionToolName, params, 'ask-denied', denialReason, permStartTime, traceBuilder.build('deny'), effectiveSessionId, this.ledgerOrigin, getApprovalWaitMs(options.currentToolCallId, Date.now()));
@@ -2253,6 +2260,17 @@ export class ToolExecutor {
       toolDef.permissionLevel,
       this.executionCwd,
     );
+    // ADR-073 §3：静态声明域盖不住运行时锁域 → 记 resource_scope_mismatch；锁照拿
+    //（串行即等待本身），绝不因静态"安全"跳过或放宽锁。检查自身故障不影响执行。
+    try {
+      const scopeMismatch = findResourceScopeMismatch(
+        executionToolName,
+        params,
+        { workspace: this.runtimeWorkspace, cwd: this.executionCwd, toolCallId: options.currentToolCallId },
+        writeIsolationScope,
+      );
+      if (scopeMismatch) options.turnTrace?.record('resource_scope_mismatch', scopeMismatch);
+    } catch { /* mismatch 检查绝不拦工具执行 */ }
     let releaseWriteIsolation: (() => void) | undefined;
     let writeIsolationMetadata: WriteIsolationMetadata | undefined;
     const startTime = Date.now();

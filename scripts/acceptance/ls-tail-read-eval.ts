@@ -2,22 +2,20 @@
 // entry is 资料. eval-ci is started with that fixture as its git root so the
 // sandbox archive is the fixture, not this repository. --scope full is
 // required because a clean fixture has no diff and eval-ci would otherwise skip.
-// StepFun list price (do not add it to pricing.ts):
-// https://platform.stepfun.com/docs/zh/guides/pricing/details (2026-09-30)
-// ¥0.7 in / ¥0.14 cached / ¥2.1 out per 1M tokens ≈ $0.10 / $0.02 / $0.30.
+// Step Plan subscription (flat fee, per-token price 0).
 
 import { execFileSync, spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveStepfunBaseUrl } from './stepfunEndpoint';
 
 const USER_MESSAGE = '我有几件事：1) 周报汇总 2) 会议待办 3) 合同对比 4) 销售图表 5) 公告改写，你看着办';
 const CASE_ID = 'ls-tail-read';
 const HARD_STOP_USD = 1;
 const RUNS = 3;
 const RUN_TIMEOUT_MS = 10 * 60 * 1000;
-const STEPFUN_BASE_URL = 'https://api.stepfun.com/v1';
 const DEEPSEEK_BASE_URL = 'https://api.deepseek.com/v1';
 
 const ABSENCE_PATTERNS: RegExp[] = [
@@ -104,9 +102,9 @@ function runSelfCheck(): void {
     ['empty reply fails', finalReplyClear('') === false],
     ['tool path mentions 资料', toolMentionsZiliao([{ path: '资料/会议纪要.md' }]) === true],
     ['plain ls does not', toolMentionsZiliao([{ command: 'ls' }]) === false],
-    ['stepfun list price', listPriceUsd(1_000_000, 0, 0, { input: 0.1, cached: 0.02, output: 0.3 }) === 0.1],
-    ['stepfun cached price', listPriceUsd(0, 1_000_000, 0, { input: 0.1, cached: 0.02, output: 0.3 }) === 0.02],
-    ['stepfun output price', listPriceUsd(0, 0, 1_000_000, { input: 0.1, cached: 0.02, output: 0.3 }) === 0.3],
+    ['stepfun subscription price', listPriceUsd(1_000_000, 0, 0, { input: 0, cached: 0, output: 0 }) === 0],
+    ['stepfun subscription cached price', listPriceUsd(0, 1_000_000, 0, { input: 0, cached: 0, output: 0 }) === 0],
+    ['stepfun subscription output price', listPriceUsd(0, 0, 1_000_000, { input: 0, cached: 0, output: 0 }) === 0],
   ];
   const failed = checks.filter(([, ok]) => !ok).map(([name]) => name);
   if (failed.length > 0) {
@@ -190,10 +188,10 @@ async function resolveBaseline(): Promise<ModelChoice> {
     return {
       provider: 'custom-stepfun',
       model: 'step-3.5-flash-2603',
-      baseUrl: STEPFUN_BASE_URL,
+      baseUrl: resolveStepfunBaseUrl(),
       key: stepfun,
-      price: { input: 0.1, cached: 0.02, output: 0.3 },
-      priceLine: '$0.10 in / $0.02 cached / $0.30 out per 1M',
+      price: { input: 0, cached: 0, output: 0 },
+      priceLine: 'Step Plan subscription (flat fee, per-token price 0)',
     };
   }
   const moonshot = process.env.MOONSHOT_API_KEY?.trim();

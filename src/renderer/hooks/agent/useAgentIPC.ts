@@ -42,6 +42,7 @@ import { typedInvokeDomain } from '../../services/typedInvoke';
 import { getApiBaseUrl } from '../../api/transport';
 import { useI18n } from '../useI18n';
 import { interpolate } from '../../i18n/interpolate';
+import { environmentProtocolUnsupportedMessage } from '../../i18n/executionEnvironment';
 import {
   chatSendInflightKey,
   claimSendInflight,
@@ -366,9 +367,11 @@ export function getAgentSendFailureMessage(error: unknown): string {
       ? error
       : '';
   const message = raw.trim();
-  return message
-    ? `Error: ${message}`
-    : 'Error: 消息发送失败，但前端没有收到具体错误。请查看后台日志。';
+  // ADR-081 协议版本闸：宿主只回稳定码，用户可见句子由 i18n 给，不透传原始报错。
+  return environmentProtocolUnsupportedMessage(error, useAppStore.getState().language)
+    ?? (message
+      ? `Error: ${message}`
+      : 'Error: 消息发送失败，但前端没有收到具体错误。请查看后台日志。');
 }
 
 export function getRuntimeInputMode(context?: ConversationEnvelopeContext): RuntimeInputMode {

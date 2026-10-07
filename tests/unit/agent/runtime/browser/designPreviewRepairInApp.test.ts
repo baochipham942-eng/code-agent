@@ -30,7 +30,14 @@ function contentType(filePath: string): string {
 function makeWorkspaceFileServer(): Server {
   return createServer(async (req, res) => {
     const url = new URL(req.url || '/', 'http://127.0.0.1');
-    if (url.pathname === '/api/health') {
+    if (url.pathname === '/api/health/detail') {
+      // serverRoot 等诊断字段只在鉴权 detail 路由上；mock 不再提供公开 /api/health，
+      // 代码若回退公开路由会 404、漏带 token 会 401，两种回退都必须让测试红。
+      if (req.headers.authorization !== `Bearer ${TOKEN}`) {
+        res.writeHead(401);
+        res.end('unauthorized');
+        return;
+      }
       res.setHeader('content-type', 'application/json');
       res.end(JSON.stringify({ status: 'ok', serverRoot: process.cwd() }));
       return;

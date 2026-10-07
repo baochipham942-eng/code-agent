@@ -93,7 +93,8 @@ export async function assertEnv(env, { requireCommit } = {}) {
   const api = createApi(env);
   let probe;
   try {
-    probe = await api.get('/api/health');
+    // build.commit 是 detail-only 字段（同源校验用），createApi 自带 Bearer，走鉴权 detail 路由
+    probe = await api.get('/api/health/detail');
   } catch (error) {
     throw new NotRun('cannot_connect', {
       message: error instanceof Error ? error.message : String(error),

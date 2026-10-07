@@ -109,21 +109,32 @@ export function redactPreviewHealthUrl(value: string): string {
   }
 }
 
-async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {
+async function fetchWithTimeout(url: string, timeoutMs: number, headers?: Record<string, string>): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, { signal: controller.signal });
+    return await fetch(url, { signal: controller.signal, headers });
   } finally {
     clearTimeout(timer);
   }
 }
 
-async function assertWebServerHealthy(baseUrl: string, filePath: string, locale?: string | null): Promise<void> {
-  const healthUrl = new URL(WEB_SERVER_DEFAULTS.HEALTH_PATH, baseUrl).href;
+async function assertWebServerHealthy(
+  baseUrl: string,
+  token: string,
+  filePath: string,
+  locale?: string | null,
+): Promise<void> {
+  // serverRoot 只在鉴权 detail 路由上；公开 /api/health 拿不到它会让路径围栏
+  // 静默退化为仅 tmpdir 可过，所以这里必须带 token 走 HEALTH_DETAIL_PATH。
+  const healthUrl = new URL(WEB_SERVER_DEFAULTS.HEALTH_DETAIL_PATH, baseUrl).href;
   let response: Response;
   try {
-    response = await fetchWithTimeout(healthUrl, ARTIFACT_PREVIEW_HEALTH.WEB_SERVER_HEALTH_TIMEOUT_MS);
+    response = await fetchWithTimeout(
+      healthUrl,
+      ARTIFACT_PREVIEW_HEALTH.WEB_SERVER_HEALTH_TIMEOUT_MS,
+      { Authorization: `Bearer ${token}` },
+    );
   } catch (error) {
     throw new InAppArtifactPreviewHealthUnavailableError(
       'webserver_health_unreachable',
@@ -184,8 +195,8 @@ async function resolveWebServerAccess(
   options: InAppArtifactPreviewHealthOptions,
 ): Promise<WebServerAccess> {
   const baseUrl = resolveWebServerBaseUrl(options);
-  await assertWebServerHealthy(baseUrl, filePath, options.locale);
   const token = await readWebServerToken(options);
+  await assertWebServerHealthy(baseUrl, token, filePath, options.locale);
   const artifactUrl = buildWorkspaceFileUrl(baseUrl, filePath, token);
   const access = {
     baseUrl,

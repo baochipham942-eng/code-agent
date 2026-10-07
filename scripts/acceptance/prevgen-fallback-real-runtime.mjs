@@ -66,7 +66,9 @@ function waitUntil(predicate, timeoutMs, label) {
 let ws;
 let sessionId;
 try {
-  const health = await fetch(`${url}/api/health`).then((response) => response.json());
+  const health = await fetch(`${url}/api/health/detail`, {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then((response) => response.json());
   evidence.health = {
     status: health.status,
     build: health.build,

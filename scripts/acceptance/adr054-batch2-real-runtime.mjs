@@ -301,8 +301,19 @@ async function setExecutionModel(page, executionModel) {
   return original;
 }
 
+function readDevToken() {
+  try {
+    return fs.readFileSync(path.join(DATA_DIR, '.dev-token'), 'utf8').trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 async function main() {
-  const health = await fetch(`${BASE_URL}/api/health`).then((response) => response.json());
+  const token = readDevToken();
+  const health = await fetch(`${BASE_URL}/api/health/detail`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  }).then((response) => response.json());
   record('runtime.build', health?.status === 'ok' && health?.serverRoot === EXPECTED_ROOT, {
     pid: health?.pid,
     serverRoot: health?.serverRoot,

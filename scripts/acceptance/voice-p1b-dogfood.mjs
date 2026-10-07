@@ -107,9 +107,26 @@ async function launchBrowser(wav) {
 async function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
 
-  // 0. Dev 包 webServer 存活 + bundle 指纹
-  const health = await fetch(`${URL_BASE}/api/health`).then((r) => r.json()).catch(() => null);
-  if (!health) throw new Error(`webServer not reachable at ${URL_BASE} — Dev 包未启动？`);
+  // 0. Dev 包 webServer 存活 + bundle 指纹（pid 是诊断字段，走鉴权 detail 路由）
+  const dataDir = (() => {
+    const portMatch = /:(\d{2,5})\/?$/.exec(URL_BASE);
+    const slot = portMatch ? Number(portMatch[1]) - 8180 : 1;
+    if (Number.isInteger(slot) && slot >= 1 && slot <= 9) {
+      return path.join(os.homedir(), slot === 1 ? '.code-agent-dev' : `.code-agent-dev${slot}`);
+    }
+    return path.join(os.homedir(), '.code-agent-dev');
+  })();
+  const token = (() => {
+    try {
+      return fs.readFileSync(path.join(dataDir, '.dev-token'), 'utf8').trim() || null;
+    } catch {
+      return null;
+    }
+  })();
+  const health = await fetch(`${URL_BASE}/api/health/detail`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  }).then((r) => r.json()).catch(() => null);
+  if (!health || health.status !== 'ok') throw new Error(`webServer not reachable at ${URL_BASE} — Dev 包未启动？`);
   record('health', true, `pid=${health.pid}`);
 
   // 句尾 [[slnc 3000]]：fake-audio-capture 循环播放，没有 ≥500ms 静音窗 server_vad

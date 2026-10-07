@@ -140,7 +140,9 @@ async function waitForServer(server: StartedServer, port: number): Promise<void>
     if (token) {
       server.token = token;
       try {
-        const response = await fetch(`${server.baseUrl}/api/health`);
+        const response = await fetch(`${server.baseUrl}/api/health/detail`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         const health = await response.json() as {
           status?: string;
           persistence?: { status?: string; durable?: boolean; reason?: string };

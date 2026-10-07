@@ -425,6 +425,7 @@ export function verifyPackagedDesktopShellEvidence(evidence) {
   const warnings = [];
   const bootFile = evidence?.bootFile;
   const healthUrl = evidence?.healthUrl;
+  const healthDetailUrl = evidence?.healthDetailUrl;
   const diagnosticsEndpoint = evidence?.diagnosticsEndpoint;
 
   if (!boot) {
@@ -452,6 +453,13 @@ export function verifyPackagedDesktopShellEvidence(evidence) {
     pushFailure(failures, 'desktop_shell_health_not_ok', `/api/health status is ${health.status ?? 'missing'}.`, {
       healthUrl,
       status: health.status,
+    });
+  }
+
+  if (health && evidence?.healthDetailMissing) {
+    pushFailure(failures, 'desktop_shell_health_detail_missing', '/api/health/detail was not readable with the dev token; pid/serverRoot/persistence cross-checks would silently degrade.', {
+      healthDetailUrl,
+      healthUrl,
     });
   }
 
@@ -529,6 +537,7 @@ export function verifyPackagedDesktopShellEvidence(evidence) {
       evidenceReady: Boolean(boot && health && diagnostics),
       bootFile,
       healthUrl,
+      healthDetailUrl,
       diagnosticsEndpoint,
       bootStage: boot?.stage ?? 'unknown',
       staleBootStage: staleBoot?.stage,
@@ -561,6 +570,7 @@ export function verifyPackagedDesktopShellHealthEvidence(evidence) {
   const warnings = [];
   const bootFile = evidence?.bootFile;
   const healthUrl = evidence?.healthUrl;
+  const healthDetailUrl = evidence?.healthDetailUrl;
 
   if (!boot) {
     pushFailure(failures, 'desktop_shell_boot_json_missing', 'desktop-shell-boot-latest.json was not readable.', { bootFile });
@@ -598,6 +608,13 @@ export function verifyPackagedDesktopShellHealthEvidence(evidence) {
     });
   }
 
+  if (health && evidence?.healthDetailMissing) {
+    pushFailure(failures, 'desktop_shell_health_detail_missing', '/api/health/detail was not readable with the dev token; the pid cross-check would silently lose its health leg.', {
+      healthDetailUrl,
+      healthUrl,
+    });
+  }
+
   if (boot?.webServerPid && health?.pid && boot.webServerPid !== health.pid) {
     pushFailure(failures, 'desktop_shell_pid_mismatch', 'boot diagnostics and /api/health disagree on webServer pid.', {
       bootWebServerPid: boot.webServerPid,
@@ -611,6 +628,7 @@ export function verifyPackagedDesktopShellHealthEvidence(evidence) {
       evidenceReady: Boolean(boot && health),
       bootFile,
       healthUrl,
+      healthDetailUrl,
       bootStage: boot?.stage ?? 'unknown',
       staleBootStage: staleBoot?.stage,
       port: boot?.webPort,
@@ -636,6 +654,7 @@ async function collectEvidence({ dataDir, tauriDataDir, port, timeoutMs, started
   const baseUrl = `http://localhost:${port}`;
   const bootFile = path.join(tauriDataDir, 'logs', BOOT_FILE);
   const healthUrl = `${baseUrl}/api/health`;
+  const healthDetailUrl = `${baseUrl}/api/health/detail`;
   const diagnosticsEndpoint = `${baseUrl}/api/domain/diagnostics/desktopShell`;
   const deadline = Date.now() + timeoutMs;
   let lastResult = null;
@@ -653,13 +672,37 @@ async function collectEvidence({ dataDir, tauriDataDir, port, timeoutMs, started
     } catch {
       health = null;
     }
+    // pid/serverRoot/handlers/persistence 等诊断字段只在鉴权 detail 路由上；公开
+    // /api/health 只承担 liveness。detail 拿不到时绝不静默降级——pid 交叉核对
+    // 丢腿必须显式报 desktop_shell_health_detail_missing（verify* 里判）。
+    let healthDetail = null;
+    if (health) {
+      const token = readDevToken(dataDir);
+      if (token) {
+        try {
+          const response = await fetchJson(healthDetailUrl, {
+            timeoutMs: 1500,
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (response.ok && isRecord(response.body)) {
+            healthDetail = response.body;
+          }
+        } catch {
+          healthDetail = null;
+        }
+      }
+    }
+    const evidenceHealth = healthDetail ?? health;
+    const healthDetailMissing = Boolean(health && !healthDetail);
     if (healthOnly) {
       lastResult = verifyPackagedDesktopShellHealthEvidence({
         boot,
         staleBoot,
-        health,
+        health: evidenceHealth,
+        healthDetailMissing,
         bootFile,
         healthUrl,
+        healthDetailUrl,
       });
       if (lastResult.ok) return lastResult;
       await sleep(1000);
@@ -670,10 +713,12 @@ async function collectEvidence({ dataDir, tauriDataDir, port, timeoutMs, started
     lastResult = verifyPackagedDesktopShellEvidence({
       boot,
       staleBoot,
-      health,
+      health: evidenceHealth,
+      healthDetailMissing,
       desktopShellResponse: desktopShell.response,
       bootFile,
       healthUrl,
+      healthDetailUrl,
       diagnosticsEndpoint,
     });
 
@@ -687,9 +732,11 @@ async function collectEvidence({ dataDir, tauriDataDir, port, timeoutMs, started
     boot: null,
     staleBoot: readJsonIfExists(bootFile),
     health: null,
+    healthDetailMissing: false,
     desktopShellResponse: null,
     bootFile,
     healthUrl,
+    healthDetailUrl,
     diagnosticsEndpoint,
   });
 }

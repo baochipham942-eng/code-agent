@@ -7,6 +7,7 @@
 // ============================================================================
 
 import { getPolicyEngine } from './policyEngine';
+import { resolveEffectivePolicyRules } from './runPolicySnapshot';
 import { HookGuardSource } from './hookSource';
 import { UserConfigSource } from './userConfigSource';
 import type { DecisionStep } from '../../shared/contract/decisionTrace';
@@ -181,6 +182,7 @@ export class PolicyEngineSource implements GuardSource {
 
   evaluate(request: GuardRequest): GuardSourceResult | null {
     try {
+      // N-PERM-POLICYVERSION E3：按 run 有效规则评估（外部放宽不作用于已开始的 run）。
       const result = getPolicyEngine().evaluate({
         tool: request.tool,
         level: 'execute',
@@ -188,7 +190,7 @@ export class PolicyEngineSource implements GuardSource {
         command: request.args?.command as string,
         filePath: (request.args?.filePath as string) || (request.args?.file_path as string),
         sessionId: request.sessionId,
-      });
+      }, resolveEffectivePolicyRules(request.sessionId));
 
       // policyEngine uses 'prompt'; map to 'ask'
       const verdict: GuardVerdict =

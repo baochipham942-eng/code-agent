@@ -1,7 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { classifyToolCalls } from '../../../src/host/agent/toolExecution/parallelStrategy';
 import type { MCPToolAnnotations } from '../../../src/host/mcp/types';
 import type { ToolCall } from '../../../src/shared/contract';
+import {
+  createConflictFixtureWorkspace,
+  destroyConflictFixtureWorkspace,
+  toolResourceConflictCases,
+  type ToolConflictSide,
+} from '../../fixtures/toolResourceConflictCases';
 
 const ROOT = '/tmp/toolres-k2';
 const options = { workspace: ROOT, cwd: ROOT };
@@ -73,4 +79,34 @@ it('splits Task from Read in either order and keeps Task fan-out in one segment'
     call('1', 'Task', { subagent_type: 'coder' }),
     call('2', 'Task', { subagent_type: 'reviewer' }),
   ])).toEqual([['Task', 'Task']]);
+});
+
+// ADR-073 K3 Test A：共享冲突表驱动静态分段——segments split 当且仅当表行声明冲突。
+// 同一张表也驱动运行时锁（Test B 在 toolResourceAccess.test.ts），两侧答案必须一致。
+describe('shared conflict table drives the static segmenter', () => {
+  const ws = createConflictFixtureWorkspace();
+
+  afterAll(() => {
+    destroyConflictFixtureWorkspace(ws);
+  });
+
+  it('splits a pair into two segments iff the shared table says conflict', () => {
+    const cases = toolResourceConflictCases(ws);
+    expect(cases.length).toBeGreaterThanOrEqual(12);
+    for (const row of cases) {
+      const toCall = (side: ToolConflictSide, index: number): ToolCall => ({
+        id: `call-${index}`,
+        name: side.toolName,
+        arguments: side.params,
+      });
+      const segments = classifyToolCalls(
+        [toCall(row.left, 1), toCall(row.right, 2)],
+        undefined,
+        { workspace: ws.root, cwd: ws.root },
+      ).segments.map((segment) => segment.map((entry) => entry.toolCall.name));
+      expect(segments, row.note).toEqual(row.conflict
+        ? [[row.left.toolName], [row.right.toolName]]
+        : [[row.left.toolName, row.right.toolName]]);
+    }
+  });
 });

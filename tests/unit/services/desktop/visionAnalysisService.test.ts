@@ -8,6 +8,10 @@ const {
   getVisionPreflightCandidatesMock,
   inferenceWithVisionMock,
   readFileSyncMock,
+  statSyncMock,
+  loadSharpMock,
+  sharpMetadataMock,
+  sharpToFileSyncMock,
   loggerMock,
 } = vi.hoisted(() => ({
   getApiKeyMock: vi.fn(),
@@ -17,6 +21,10 @@ const {
   getVisionPreflightCandidatesMock: vi.fn(),
   inferenceWithVisionMock: vi.fn(),
   readFileSyncMock: vi.fn().mockReturnValue(Buffer.from('png-data')),
+  statSyncMock: vi.fn().mockReturnValue({ size: 2048 }),
+  loadSharpMock: vi.fn(),
+  sharpMetadataMock: vi.fn(),
+  sharpToFileSyncMock: vi.fn(),
   loggerMock: {
     debug: vi.fn(),
     info: vi.fn(),
@@ -49,11 +57,7 @@ vi.mock('../../../../src/host/model/modelRouter', () => ({
 }));
 
 vi.mock('../../../../src/host/runtime/sharpRuntime', () => ({
-  loadSharp: () => ({
-    ok: false,
-    error: 'sharp not available in unit test',
-    missingPackage: true,
-  }),
+  loadSharp: (...args: unknown[]) => loadSharpMock(...args),
 }));
 
 vi.mock('../../../../src/host/services/infra/logger', () => ({
@@ -62,6 +66,7 @@ vi.mock('../../../../src/host/services/infra/logger', () => ({
 
 vi.mock('fs', () => ({
   readFileSync: (...args: unknown[]) => readFileSyncMock(...args),
+  statSync: (...args: unknown[]) => statSyncMock(...args),
   promises: {
     unlink: vi.fn().mockResolvedValue(undefined),
   },
@@ -74,6 +79,21 @@ import {
 
 const HAPPY_VISION_ROUTING = { provider: 'zhipu' as const, model: 'glm-4.6v' };
 const HAPPY_MODEL_INFO = { supportsVision: true };
+
+// 默认装一个「能干活」的 sharp stub：metadata 出 800x600、resize/toFile 全链路可走。
+// sharp 失败/超限的用例在各自 it 里覆盖 loadSharpMock / sharpMetadataMock / statSyncMock。
+function installWorkingSharpStub(): void {
+  const instance: Record<string, unknown> = {};
+  instance.metadata = (...args: unknown[]) => sharpMetadataMock(...args);
+  instance.resize = vi.fn(() => instance);
+  instance.png = vi.fn(() => instance);
+  instance.toFile = (...args: unknown[]) => sharpToFileSyncMock(...args);
+  const sharpModule = vi.fn(() => instance);
+  loadSharpMock.mockReturnValue({ ok: true, sharp: sharpModule });
+  sharpMetadataMock.mockResolvedValue({ width: 800, height: 600 });
+  sharpToFileSyncMock.mockResolvedValue(undefined);
+  statSyncMock.mockReturnValue({ size: 2048 });
+}
 
 describe('visionAnalysisService', () => {
   beforeEach(() => {
@@ -93,6 +113,7 @@ describe('visionAnalysisService', () => {
       },
     ]);
     readFileSyncMock.mockReturnValue(Buffer.from('png-data'));
+    installWorkingSharpStub();
   });
 
   it('returns missing_api_key when no configured candidate supports vision', async () => {
@@ -243,5 +264,82 @@ describe('visionAnalysisService', () => {
     });
 
     expect(result).toMatchObject({ ok: true, analysis: 'a cat picture', model: 'gpt-4o' });
+  });
+
+  it('returns image_too_large (non-retryable, no model call) when the image exceeds the byte cap', async () => {
+    // 拿不到尺寸 → 走「原图直发」分支；statSync 报 9 MiB > 5 MiB 上限
+    sharpMetadataMock.mockResolvedValue({});
+    statSyncMock.mockReturnValue({ size: 9 * 1024 * 1024 });
+
+    const result = await analyzeImageWithVisionDetailed({
+      imagePath: '/tmp/screen.png',
+      prompt: 'describe',
+      source: 'test',
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      analysis: null,
+      reason: 'image_too_large',
+      retryable: false,
+    });
+    if (!result.ok) {
+      expect(result.error).toContain('9 MiB');
+      expect(result.error).toContain('5 MiB vision limit');
+    }
+    expect(inferenceWithVisionMock).not.toHaveBeenCalled();
+    // 超限文件在读入内存前就被拒
+    expect(readFileSyncMock).not.toHaveBeenCalled();
+  });
+
+  it('returns exception without fallback bytes when the sharp runtime is unavailable', async () => {
+    loadSharpMock.mockReturnValue({
+      ok: false,
+      error: 'sharp not available in unit test',
+      missingPackage: true,
+    });
+
+    const result = await analyzeImageWithVisionDetailed({
+      imagePath: '/tmp/screen.png',
+      prompt: 'describe',
+      source: 'test',
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      analysis: null,
+      reason: 'exception',
+      retryable: true,
+    });
+    if (!result.ok) {
+      expect(result.error).toContain('sharp not available in unit test');
+      expect(result.error).toContain('the image was not sent');
+    }
+    expect(inferenceWithVisionMock).not.toHaveBeenCalled();
+    // 不再有「sharp 失败 → 回退原始字节」的降级
+    expect(readFileSyncMock).not.toHaveBeenCalled();
+  });
+
+  it('returns exception naming the sharp failure when a sharp step throws', async () => {
+    sharpMetadataMock.mockRejectedValue(new Error('vips: bad image header'));
+
+    const result = await analyzeImageWithVisionDetailed({
+      imagePath: '/tmp/screen.png',
+      prompt: 'describe',
+      source: 'test',
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      analysis: null,
+      reason: 'exception',
+      retryable: true,
+    });
+    if (!result.ok) {
+      expect(result.error).toContain('vips: bad image header');
+      expect(result.error).toContain('the image was not sent');
+    }
+    expect(inferenceWithVisionMock).not.toHaveBeenCalled();
+    expect(readFileSyncMock).not.toHaveBeenCalled();
   });
 });

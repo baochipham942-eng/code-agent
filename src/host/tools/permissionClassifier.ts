@@ -41,6 +41,7 @@ import { resolvedRmCriticalTarget } from '../security/recursiveRmPathSafety';
 import { anchoredAllowCommandWords } from '../security/commandAllowProof';
 import type { JevSystemOneCall } from '../../shared/constants/jevQuestions';
 import { classifyByJev, isPermissionLlmClassifierEnabled } from './permissionClassifierJev';
+import { createProductionJevCall } from '../model/jevFeatures';
 
 const logger = createLogger('PermissionClassifier');
 
@@ -97,16 +98,13 @@ function classificationHostReason(result: ClassificationResult, toolName: string
 }
 
 export interface ClassifierConfig {
-  /** Enable LLM-based classification（默认读 CODE_AGENT_PERMISSION_LLM_CLASSIFIER=1，否则 false） */
+  /** Enable LLM-based classification（默认读 CODE_AGENT_PERMISSION_LLM_CLASSIFIER，N-JEV-DEFAULT-ON 起默认开） */
   enableLlm?: boolean;
   /** Confidence threshold for auto-approve (default: 0.8) */
   confidenceThreshold?: number;
   /** Cache TTL in ms (default: 5 min) */
   cacheTtlMs?: number;
-  /**
-   * Jev systemOne 注入点（测试/回放用替身）。生产缺省走 typesafeProvider.systemOne；
-   * 别在这里 mock 网络——桩的是函数，不是 fetch。
-   */
+  /** Jev systemOne 注入点（测试/回放用替身）。生产缺省走 createProductionJevCall；别 mock 网络——桩的是函数。 */
   jevSystemOne?: JevSystemOneCall;
 }
 
@@ -573,7 +571,7 @@ export class PermissionClassifier {
       confidenceThreshold: config?.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD,
       cacheTtlMs: config?.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS,
     };
-    this.jevSystemOne = config?.jevSystemOne ?? ((state, questions, options) => import('../model/providers/typesafeProvider').then((m) => m.systemOne(state, questions, options)));
+    this.jevSystemOne = config?.jevSystemOne ?? createProductionJevCall('permissionClassifier');
   }
 
   /**

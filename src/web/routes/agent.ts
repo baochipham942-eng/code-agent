@@ -68,6 +68,7 @@ import { getProjectSourceTrustFailureMarker } from '../../host/services/project/
 import { getModelAuthFailureMarker } from '../../host/model/errorClassifier';
 import { AgentRunEventCollector } from './agentRunEventCollector';
 import { RunRegistry, RunSessionConflictError } from '../../host/runtime/runRegistry';
+import { isTerminalRunStatus, type RunEnvelope } from '../../shared/contract/durableRun';
 import {
   type RunControlTarget,
   type RunContext,
@@ -182,6 +183,36 @@ async function ensureDefaultWebWorkingDirectory(): Promise<string> {
   const workDir = getDefaultWorkDirectory();
   await fs.mkdir(workDir, { recursive: true });
   return workDir;
+}
+
+// ── run 入口幂等重放（N-RUNENTRY-IDEMPOTENT）────────────────────────────────
+// 同 clientMessageId 的用户消息已存在时，重试不再建新 run，而是把既有 run 的
+// 描述回给客户端。runId/status/eventCursor 取自该消息归因到的 durable run；
+// 归因不到（非 durable 老轮 / 降级态）时 runId 与 eventCursor 为 null、status
+// 为 'unknown'，由客户端决定怎么呈现。
+interface RunEntryReplayPayload {
+  runId: string | null;
+  status: RunEnvelope['status'] | 'unknown';
+  eventCursor: { nextEventSeq: number; checkpointSeq: number } | null;
+}
+
+async function readRunReplayEnvelope(runId: string | null): Promise<RunEnvelope | null> {
+  if (!runId || !dbAvailable) return null;
+  // 读库异常向上抛：吞成 null 会把「读不到」当「归因不到」回 status:'unknown'
+  // 收口重放（rework r2）。
+  return await getDatabase().getDurableRunRepository().get(runId);
+}
+
+function toRunReplayPayload(envelope: RunEnvelope | null): RunEntryReplayPayload {
+  if (!envelope) return { runId: null, status: 'unknown', eventCursor: null };
+  return {
+    runId: envelope.runId,
+    status: envelope.status,
+    eventCursor: {
+      nextEventSeq: envelope.cursor.nextEventSeq,
+      checkpointSeq: envelope.cursor.checkpointSeq,
+    },
+  };
 }
 
 async function tryGetSharedCLISessionManager(): Promise<AgentSessionManagerLike | null> {
@@ -379,6 +410,13 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       | {
           connectedClient: false;
           onDurableActivated?: (activation: { runId: string; activatedAt: number }) => void;
+          /**
+           * 幂等重放命中：不建新 run，调用方按既有 runId 收口回执（不再发 run_started）。
+           * 离线调用方传了它才允许重放收口；不传（drain / send-now idle 排队投递）时
+           * 一律落回真实起跑——没有回执通道的重放会被上层当成功结算（drainOne 标
+           * consumed），上一轮失败后的重投就被静默吞掉（rework r1）。
+           */
+          onReplayedRun?: (replay: { runId: string | null }) => void;
         },
   ): Promise<void> {
     const { prompt, project, sessionDir, model, provider, eventFilter } = body;
@@ -393,6 +431,75 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
     // 使用请求中的 sessionId，或生成一个临时的（web 模式兼容）
     const sessionId = body.sessionId?.trim() || `web-session-${randomUUID()}`;
+
+    // 幂等重放前置查重（N-RUNENTRY-IDEMPOTENT）：首轮结束后客户端拿同一
+    // clientMessageId 重试（丢回执 / 断线重连 / 双击）此前会静默再起一轮、追加
+    // 重复用户消息并重复计费。同会话已存在该消息 ⇒ 不建新 run、不追加消息，
+    // HTTP 入口回 200 JSON（不是 409——409 专指「另一条 run 正在跑」）。
+    // 以下情况都不在此收口，落回下方 run 注册的现有分支（活跃时 409，否则真跑）：
+    // ① 本会话挂着任何活跃 run——不只是归因 run（durable 非终态 / 归因 run 即
+    //   活跃 run），同会话另一条 run 活跃时同样不能收口：前端把 200 JSON 当
+    //   SSE 解析零事件后走流尾兜底 clearSessionProcessing，会把那条活跃 run 的
+    //   运行中状态清掉（rework r2）。
+    // ② 查重链路（归因 / envelope 点读）读库异常——拿不到确定状态不是「归因不
+    //   到」，吞成 replayed(unknown) 会让终态失败轮的重试静默无反应；照常真跑
+    //   一轮，与基线同窗口行为一致，且 warn 留痕（rework r2）。
+    // ③ 归因 run 终态 failed——失败轮的客户端重试（renderer 错误卡重试/编辑重发、
+    //   排队输入 requeue 重投）都复用原 clientMessageId，重试语义就是再跑一轮；
+    //   重放对 HTTP 是 200 JSON 被前端按 SSE 解析（零事件、UI 无反应），该 id
+    //   从此再也起不了新 run（rework r1）。
+    // ④ 没传 onReplayedRun 的离线投递（drain / send-now idle 排队重投）——它们的
+    //   重投只发生在上一轮失败（requeueAfterFailure）或崩溃孤儿恢复之后，静默
+    //   收口会被上层当成功结算（drainOne 标 consumed），排队输入被吞（rework r1）。
+    if (clientMessageId) {
+      let replayedMessage: Awaited<ReturnType<typeof sessionStore.findUserMessageByClientMessageId>> | null = null;
+      let replayEnvelope: RunEnvelope | null = null;
+      try {
+        const hit = await sessionStore.findUserMessageByClientMessageId(
+          sessionId,
+          clientMessageId,
+        );
+        if (hit) {
+          // 两读都成功才认定可判定；任一读抛异常进 catch，不当「查不到」。
+          replayEnvelope = await readRunReplayEnvelope(hit.runId);
+          replayedMessage = hit;
+        }
+      } catch (error) {
+        logger.warn(
+          `[AgentRouter] Replay precheck read failed for clientMessageId ${clientMessageId} in ${sessionId}; starting a new run:`,
+          error,
+        );
+      }
+      if (replayedMessage) {
+        const activeRunId = runRegistry.getBySessionId(sessionId)?.context.runId;
+        const runStillActive = activeRunId != null
+          || (replayEnvelope ? !isTerminalRunStatus(replayEnvelope.status) : false);
+        const earlierRunFailed = replayEnvelope?.status === 'failed';
+        const canSettleReplay = transport.connectedClient
+          || transport.onReplayedRun !== undefined;
+        if (!runStillActive && !earlierRunFailed && canSettleReplay) {
+          const replay = toRunReplayPayload(replayEnvelope);
+          logger.info('run entry replayed', {
+            sessionId,
+            clientMessageId,
+            runId: replay.runId,
+          });
+          if (transport.connectedClient) {
+            res.status(200).json({
+              replayed: true,
+              sessionId,
+              clientMessageId,
+              runId: replay.runId,
+              status: replay.status,
+              eventCursor: replay.eventCursor,
+            });
+            return;
+          }
+          transport.onReplayedRun?.({ runId: replay.runId });
+          return;
+        }
+      }
+    }
     const durableActivation = transport.connectedClient
       ? resolveAgentDurableActivation(deps, res)
       : (() => {
@@ -1419,6 +1526,12 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         activated = true;
         if (body.sessionId) deps.publishCompanionEvent?.(body.sessionId, 'run_started', { event: {}, runId });
         resolve({ runId });
+      },
+      // 幂等重放命中（手机重发同一 commandId）：回执按 accepted 结算到既有 run，
+      // 不再发 run_started——重放不产生新事件，否则手机端多一条「任务开始」。
+      onReplayedRun: ({ runId }) => {
+        activated = true;
+        resolve({ runId: runId ?? '' });
       },
     }).then(() => {
       if (!activated) reject(new Error('COMPANION_RUN_NOT_STARTED'));

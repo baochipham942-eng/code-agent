@@ -1,8 +1,9 @@
-// Optional fast Jev compaction for tool rounds. It never rewrites or summarizes
-// text: entries are kept verbatim, dropped as whole call+result pairs only when
-// both sides judge below the keep threshold (the assistant text of a dropped
-// pair goes with it), or truncated to the explicit head+tail 300-character form
-// that preserves any trailing archive pointer.
+// Default-on (flag off via CODE_AGENT_JEV_COMPACTION=0) fast Jev compaction for
+// tool rounds. It never rewrites or summarizes text: entries are kept verbatim,
+// dropped as whole call+result pairs only when both sides judge below the keep
+// threshold (the assistant text of a dropped pair goes with it), or truncated to
+// the explicit head+tail 300-character form that preserves any trailing archive
+// pointer.
 
 import { estimateTokens } from './tokenEstimator';
 import type { ProjectableMessage } from './projectionEngine';
@@ -16,6 +17,7 @@ import {
   type JevSystemOneCall,
 } from '../../shared/constants/jevQuestions';
 import { guardSensitiveText } from '../security/sensitiveDataGuard';
+import { createProductionJevCall, isJevFeatureOn } from '../model/jevFeatures';
 import { SPILL_NOTICE_MARKER } from '../utils/toolResultSpill';
 import { ACTIVE_PRUNE_PLACEHOLDER_MARKER } from './layers/activeToolResultPrune';
 
@@ -111,8 +113,9 @@ function unavailable(reason: JevCompactionResult['reason']): JevCompactionResult
   };
 }
 
+/** 压缩档开关（默认开，'0'/'false' 显式关——判定单源见 model/jevFeatures.ts）。 */
 export function isJevCompactionEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.CODE_AGENT_JEV_COMPACTION === '1';
+  return isJevFeatureOn('compaction', env);
 }
 
 export interface JevCompactionOptions {
@@ -173,10 +176,7 @@ export async function applyJevCompaction(
   }
   if (batch.length > 0) batches.push(batch);
 
-  const call = systemOne ?? (async (state, questions, options) => {
-    const { systemOne: productionSystemOne } = await import('../model/providers/typesafeProvider');
-    return productionSystemOne(state, questions, options);
-  });
+  const call = systemOne ?? createProductionJevCall('compaction');
   const decisions = new Map<string, { keepCall: boolean; keepResult: boolean }>();
   try {
     for (const currentBatch of batches) {

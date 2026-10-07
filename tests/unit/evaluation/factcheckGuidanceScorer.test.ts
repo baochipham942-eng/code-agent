@@ -15,7 +15,7 @@ import {
   type FactCheckScenario,
   type FactCheckToolCall,
   type FactCheckTranscript,
-} from '@internal-evaluation-scripts/acceptance/factcheckGuidanceScorer';
+} from '@internal-evaluation-scripts/lib/factcheckGuidanceScorer';
 
 const fixturePath = path.resolve(
   process.cwd(),

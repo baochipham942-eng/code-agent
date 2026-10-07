@@ -24,11 +24,14 @@ const EVAL_CI = resolve(REPO_ROOT, 'packages/internal/evaluation-center/scripts/
 // - snapshot-replay.ts：N-SNAPSHOT-REGRESSION 双模式入口。--record 跑真 AgentLoop/DB/telemetry
 //   （N-EVAL-CI-NOEXIT 同款常驻句柄形态），成功路径保留 #1610 式 flush+exit；
 //   默认回放模式纯文件+纯函数，共用同一收尾无副作用。2026-09-07 掐表：--record 8s exit 0。
+// - factcheck-guidance-eval.ts：N-ARTIFACT-FACTCHECK-EVAL-GLM 真跑 GLM 订阅端点
+//   （chat/completions 网络句柄），成功路径同款 flush+exit。
 const REAL_RUN_ENTRIES = [
   'real-agent-replay-eval-smoke.ts',
   'agent-trajectory-fresh-sample-smoke.ts',
   'paid-real-model-replay-eval-smoke.ts',
   'snapshot-replay.ts',
+  'factcheck-guidance-eval.ts',
 ] as const;
 
 // 豁免（不修也不要求 exit）：
@@ -38,7 +41,8 @@ const REAL_RUN_ENTRIES = [
 //   只被 snapshot-replay.ts 的 --record 动态 import；进程收尾由入口的 flush+exit 统一兜底，
 //   自身不许带 exit（否则 record 中途就掐掉入口进程）。
 //   （同批的 snapshot-replay-cases.ts 是纯数据/路径规划模块，不占入口名额，
-//   已挪 scripts/lib/，与 eval-run-stamp.ts 同格。）
+//   已挪 scripts/lib/，与 eval-run-stamp.ts 同格。N-ARTIFACT-FACTCHECK-EVAL-GLM 的
+//   factcheckGuidanceScorer.ts 同理：纯打分模块，也住 scripts/lib/。）
 const EXEMPT_ENTRIES = [
   'request-replay-smoke.ts',
   'surface-execution-replay-import-child.ts',

@@ -4,7 +4,7 @@
 // Replays 6 artifact-generation scenarios against the GLM coding-plan
 // chat/completions endpoint with ARTIFACT_TASK_BRIEF_PROMPT as the system
 // text and stubbed Read/Write/WebSearch tools, then scores each transcript
-// with the pure scorer in factcheckGuidanceScorer.ts. Writes
+// with the pure scorer in ../lib/factcheckGuidanceScorer.ts. Writes
 // docs/research/assets/2026-10-06-factcheck-eval/baseline.json plus an
 // evidence note beside it, atomically (tmp file + rename).
 //
@@ -39,7 +39,7 @@ import {
   type FactCheckFixture,
   type FactCheckScenario,
   type FactCheckToolCall,
-} from './factcheckGuidanceScorer';
+} from '../lib/factcheckGuidanceScorer';
 
 const KEY_ENV = 'ZHIPU_CODING_API_KEY';
 const ZHIPU_CODING_BASE_URL = 'https://open.bigmodel.cn/api/coding/paas/v4';
@@ -523,7 +523,11 @@ async function main(): Promise<void> {
   console.log(`notes=${outNotesPath}`);
 }
 
-main().catch((error: unknown) => {
+// 同 N-EVAL-CI-NOEXIT：成功路径先排空 stdout 再显式退出——真跑里的网络 keep-alive
+// 句柄让事件循环排不空，裸 main().catch 打印完汇总会挂死。
+main().then(() => {
+  process.stdout.write('', () => process.exit(process.exitCode ?? 0));
+}).catch((error: unknown) => {
   const message = error instanceof EvalFatalError
     ? error.message
     : `eval failed: ${error instanceof Error ? error.message : String(error)}`;

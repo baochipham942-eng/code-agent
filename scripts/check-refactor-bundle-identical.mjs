@@ -30,7 +30,6 @@ const BUNDLE_OPTIONS = {
   packages: 'external',
   legalComments: 'none',
   write: false,
-  logLevel: 'silent',
 };
 
 function usageError(message) {

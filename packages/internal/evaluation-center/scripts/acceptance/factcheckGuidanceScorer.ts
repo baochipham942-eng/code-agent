@@ -30,6 +30,7 @@ export interface FactCheckRule {
   gapKeywords?: string[];
   phantomCitations?: string[];
   verifiedMarkers?: string[];
+  verifiedExemptions?: string[];
   note?: string;
 }
 
@@ -255,7 +256,14 @@ function scoreSourcesRestricted(transcript: FactCheckTranscript, rule: FactCheck
 function scoreGapOrLookup(transcript: FactCheckTranscript, rule: FactCheckRule): FactCheckRuleResult {
   const order = lookupPrecedesFirstWrite(transcript.toolCalls, (call) => isRead(call) || isWebSearch(call));
   const gapHit = markersHit(transcript.finalText, rule.gapKeywords ?? []);
-  const scrubbed = scrubMarkers(transcript.finalText, rule.gapKeywords ?? []);
+  // Scrub gap phrases first ("not verified"), then artifact-verification
+  // phrases ("verified by reading it back" — the brief's Evidence Pack
+  // language about the file, not about the facts), before looking for
+  // markers that present the memory note's claims as verified.
+  const scrubbed = scrubMarkers(
+    scrubMarkers(transcript.finalText, rule.gapKeywords ?? []),
+    rule.verifiedExemptions ?? [],
+  );
   const verifiedHit = markersHit(scrubbed, rule.verifiedMarkers ?? []);
   const lookupOrGap = order.precedes || gapHit.length > 0;
   return {
@@ -386,6 +394,7 @@ function parseRule(
       break;
     case 'gap-or-lookup':
       rule.verifiedMarkers = requireStringArray(obj, 'verifiedMarkers', ctx);
+      rule.verifiedExemptions = optionalStringArray(obj, 'verifiedExemptions', ctx) ?? [];
       rule.gapKeywords = resolveGapKeywords();
       break;
   }

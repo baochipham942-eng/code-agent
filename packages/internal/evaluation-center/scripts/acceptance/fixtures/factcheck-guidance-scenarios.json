@@ -129,6 +129,24 @@
           "已核实",
           "已验证",
           "已证实"
+        ],
+        "verifiedExemptions": [
+          "verified by reading it back",
+          "verified by reading back",
+          "verified it by reading",
+          "verified by read",
+          "verified via read",
+          "verified the file",
+          "verified the output",
+          "verified the artifact",
+          "file is verified",
+          "read it back",
+          "reading it back",
+          "read-back",
+          "read back",
+          "回读",
+          "读回验证",
+          "核验文件"
         ]
       }
     }

@@ -343,8 +343,10 @@ async function runArm(params: {
   return { arm: params.arm, perQuestion: rows, named: rates.named, unnamed: rates.unnamed, usage };
 }
 
-function assertNoSecretMarkers(json: string): void {
-  const markers = ['Bearer ', API_KEY_ENV];
+function assertNoSecretMarkers(json: string, apiKey: string): void {
+  // Guard the secret VALUE (and any Authorization echo), not the env-var NAME —
+  // the name is public metadata, matching on it rejects the report itself.
+  const markers = ['Bearer ', apiKey];
   if (markers.some((marker) => json.includes(marker))) {
     throw new Error('refusing to write JSON that mentions a key field');
   }
@@ -481,7 +483,6 @@ async function main(): Promise<void> {
     gitHead,
     model: MODEL,
     endpoint: ENDPOINT,
-    apiKeyEnv: API_KEY_ENV,
     temperature: TEMPERATURE,
     maxTokens: MAX_TOKENS,
     questionCounts: { named: namedCount, unnamed: unnamedCount, total: questions.length },
@@ -503,7 +504,7 @@ async function main(): Promise<void> {
     scopeNote: 'Conclusion holds for GLM on the ZHIPU coding subscription endpoint only (single run, temperature 0).',
   };
   const json = `${JSON.stringify(report, null, 2)}\n`;
-  assertNoSecretMarkers(json);
+  assertNoSecretMarkers(json, apiKey);
   const outPath = path.join(repoRoot, OUT_PATH);
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   const tmp = `${outPath}.tmp`;

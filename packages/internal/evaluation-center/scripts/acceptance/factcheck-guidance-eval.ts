@@ -137,6 +137,7 @@ interface ScenarioRun {
   turnsUsed: number;
   exhaustedTurns: boolean;
   toolCallNames: string[];
+  toolCallSummaries: string[];
   finalTextExcerpt: string;
   promptTokens: number;
   completionTokens: number;
@@ -290,23 +291,44 @@ async function chatCompletion(
   };
 }
 
-function stubToolResult(scenario: FactCheckScenario, name: string, args: Record<string, unknown>): string {
+function stubToolResult(
+  scenario: FactCheckScenario,
+  name: string,
+  args: Record<string, unknown>,
+  writtenFiles: Map<string, string>,
+): string {
   if (name === 'Read') {
     const target = typeof args.file_path === 'string' ? args.file_path : '';
     for (const [fixturePath, content] of Object.entries(scenario.reads)) {
       if (toolPathMatches(target, fixturePath)) return content;
+    }
+    for (const [writtenPath, content] of writtenFiles) {
+      if (toolPathMatches(target, writtenPath)) return content;
     }
     return `ERROR: file not found: ${target || '(no file_path)'}`;
   }
   if (name === 'Write') {
     const target = typeof args.file_path === 'string' ? args.file_path : '(no file_path)';
     const content = typeof args.content === 'string' ? args.content : '';
+    writtenFiles.set(target, content);
     return `Wrote ${target} (${Buffer.byteLength(content, 'utf8')} bytes)`;
   }
   if (name === 'WebSearch') {
     return scenario.webSearchResult ?? 'ERROR: WebSearch is not registered in this turn';
   }
   return `ERROR: tool ${name} is not registered in this turn`;
+}
+
+function toolCallSummary(name: string, args: Record<string, unknown>): string {
+  if (name === 'Read' || name === 'Write') {
+    const target = typeof args.file_path === 'string' ? args.file_path : '(no file_path)';
+    return `${name}:${target}`;
+  }
+  if (name === 'WebSearch') {
+    const query = typeof args.query === 'string' ? args.query.slice(0, 80) : '(no query)';
+    return `WebSearch:${query}`;
+  }
+  return name;
 }
 
 async function runScenario(
@@ -321,6 +343,8 @@ async function runScenario(
     { role: 'user', content: scenario.userMessage },
   ];
   const toolCalls: FactCheckToolCall[] = [];
+  const writtenFiles = new Map<string, string>();
+  const toolCallSummaries: string[] = [];
   let finalText = '';
   let exhaustedTurns = false;
   let turnsUsed = 0;
@@ -347,7 +371,8 @@ async function runScenario(
         fatal(`bad shape: tool ${call.function.name} arguments are not valid JSON`);
       }
       toolCalls.push({ name: call.function.name, args });
-      messages.push({ role: 'tool', tool_call_id: call.id, content: stubToolResult(scenario, call.function.name, args) });
+      toolCallSummaries.push(toolCallSummary(call.function.name, args));
+      messages.push({ role: 'tool', tool_call_id: call.id, content: stubToolResult(scenario, call.function.name, args, writtenFiles) });
     }
     if (turn === MAX_TURNS) exhaustedTurns = true;
   }
@@ -359,6 +384,7 @@ async function runScenario(
     turnsUsed,
     exhaustedTurns,
     toolCallNames: toolCalls.map((call) => call.name),
+    toolCallSummaries,
     finalTextExcerpt: finalText.slice(0, 240),
     promptTokens,
     completionTokens,
@@ -481,6 +507,7 @@ async function main(): Promise<void> {
       turnsUsed: run.turnsUsed,
       exhaustedTurns: run.exhaustedTurns,
       toolCallNames: run.toolCallNames,
+      toolCallSummaries: run.toolCallSummaries,
       finalTextExcerpt: run.finalTextExcerpt,
       promptTokens: run.promptTokens,
       completionTokens: run.completionTokens,

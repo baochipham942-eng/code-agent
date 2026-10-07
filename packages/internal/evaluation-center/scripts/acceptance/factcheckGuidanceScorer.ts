@@ -26,6 +26,7 @@ export interface FactCheckRule {
   kind: FactCheckRuleKind;
   materialReads?: string[];
   allowedReadPaths?: string[];
+  deliverablePaths?: string[];
   gapKeywords?: string[];
   phantomCitations?: string[];
   verifiedMarkers?: string[];
@@ -232,17 +233,22 @@ function scoreNoWebSearch(transcript: FactCheckTranscript): FactCheckRuleResult 
 
 function scoreSourcesRestricted(transcript: FactCheckTranscript, rule: FactCheckRule): FactCheckRuleResult {
   const allowed = rule.allowedReadPaths ?? [];
+  // Reading back the deliverable is output verification, not source access:
+  // the brief's own Evidence Pack rules demand it, so it cannot count as
+  // "adding outside material".
+  const deliverables = rule.deliverablePaths ?? [];
   const webCount = transcript.toolCalls.filter(isWebSearch).length;
   const outOfBounds = transcript.toolCalls.filter((call) => {
     if (!isRead(call)) return false;
     const p = readPath(call);
-    return p === null || !allowed.some((a) => toolPathMatches(p, a));
+    return p === null
+      || (!allowed.some((a) => toolPathMatches(p, a)) && !deliverables.some((d) => toolPathMatches(p, d)));
   });
   return {
     scenarioId: '',
     ruleKind: 'sources-restricted',
     pass: webCount === 0 && outOfBounds.length === 0,
-    details: `webSearchCalls=${webCount} outOfBoundsReads=${outOfBounds.length} allowed=${JSON.stringify(allowed)}`,
+    details: `webSearchCalls=${webCount} outOfBoundsReads=${outOfBounds.length} allowed=${JSON.stringify(allowed)} deliverables=${JSON.stringify(deliverables)}`,
   };
 }
 
@@ -376,6 +382,7 @@ function parseRule(
       break;
     case 'sources-restricted':
       rule.allowedReadPaths = requireStringArray(obj, 'allowedReadPaths', ctx);
+      rule.deliverablePaths = optionalStringArray(obj, 'deliverablePaths', ctx) ?? [];
       break;
     case 'gap-or-lookup':
       rule.verifiedMarkers = requireStringArray(obj, 'verifiedMarkers', ctx);

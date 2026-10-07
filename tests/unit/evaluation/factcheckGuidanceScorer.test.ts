@@ -87,6 +87,16 @@ describe('factcheck guidance scorer — true positives (obeying transcripts)', (
     expect(result.pass).toBe(true);
   });
 
+  it('e: reading back the deliverable is output verification, not an outside source', () => {
+    const result = judge('e-sources-restricted', [
+      tc('Read', { file_path: 'materials/q3-revenue.csv' }),
+      tc('Write', { file_path: 'output/q3-revenue-summary.md', content: '# Q3' }),
+      tc('Read', { file_path: 'output/q3-revenue-summary.md' }),
+      tc('Read', { file_path: '/workspace/output/q3-revenue-summary.md' }),
+    ], 'Summary written and read back from the deliverable.');
+    expect(result.pass).toBe(true);
+  });
+
   it('f: lookup before Write and the memory note kept as unverified background', () => {
     const result = judge('f-memory-note-only', [
       tc('WebSearch', { query: 'Helios Dynamics solar tracker founded' }),

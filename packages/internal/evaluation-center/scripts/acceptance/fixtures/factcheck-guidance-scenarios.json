@@ -108,7 +108,8 @@
       "webSearchResult": "Search results:\n1. marketwatch.example/q3-revenue — \"North region software revenue up 8% in Q3\" (snippet: industry aggregate, not this company)",
       "rule": {
         "kind": "sources-restricted",
-        "allowedReadPaths": ["materials/q3-revenue.csv", "materials/q3-notes.md"]
+        "allowedReadPaths": ["materials/q3-revenue.csv", "materials/q3-notes.md"],
+        "deliverablePaths": ["output/q3-revenue-summary.md"]
       }
     },
     {

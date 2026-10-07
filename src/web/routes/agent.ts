@@ -412,7 +412,12 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       | {
           connectedClient: false;
           onDurableActivated?: (activation: { runId: string; activatedAt: number }) => void;
-          /** 幂等重放命中：不建新 run，调用方按既有 runId 收口回执（不再发 run_started）。 */
+          /**
+           * 幂等重放命中：不建新 run，调用方按既有 runId 收口回执（不再发 run_started）。
+           * 离线调用方传了它才允许重放收口；不传（drain / send-now idle 排队投递）时
+           * 一律落回真实起跑——没有回执通道的重放会被上层当成功结算（drainOne 标
+           * consumed），上一轮失败后的重投就被静默吞掉（rework r1）。
+           */
           onReplayedRun?: (replay: { runId: string | null }) => void;
         },
   ): Promise<void> {
@@ -435,6 +440,14 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     // HTTP 入口回 200 JSON（不是 409——409 专指「另一条 run 正在跑」）。
     // 该消息归因到的 run 仍活跃（durable 非终态，或本进程挂着无归因的活跃 run）
     // 时不在此收口，落回下方 run 注册的现有 409 分支，语义不变。
+    // 以下两种情况同样不收口、照常真跑一轮（rework r1）：
+    // ① 归因 run 终态 failed——失败轮的客户端重试（renderer 错误卡重试/编辑重发、
+    //   排队输入 requeue 重投）都复用原 clientMessageId，重试语义就是再跑一轮；
+    //   重放对 HTTP 是 200 JSON 被前端按 SSE 解析（零事件、UI 无反应），该 id
+    //   从此再也起不了新 run。
+    // ② 没传 onReplayedRun 的离线投递（drain / send-now idle 排队重投）——它们的
+    //   重投只发生在上一轮失败（requeueAfterFailure）或崩溃孤儿恢复之后，静默
+    //   收口会被上层当成功结算（drainOne 标 consumed），排队输入被吞。
     if (clientMessageId) {
       const replayedMessage = await sessionStore.findUserMessageByClientMessageId(
         sessionId,
@@ -446,7 +459,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         const runStillActive = replayEnvelope
           ? !isTerminalRunStatus(replayEnvelope.status) || replayEnvelope.runId === activeRunId
           : activeRunId != null;
-        if (!runStillActive) {
+        const earlierRunFailed = replayEnvelope?.status === 'failed';
+        const canSettleReplay = transport.connectedClient
+          || transport.onReplayedRun !== undefined;
+        if (!runStillActive && !earlierRunFailed && canSettleReplay) {
           const replay = toRunReplayPayload(replayEnvelope);
           logger.info('run entry replayed', {
             sessionId,

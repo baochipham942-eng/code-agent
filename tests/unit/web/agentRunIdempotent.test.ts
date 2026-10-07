@@ -24,7 +24,7 @@ import {
   sessionMessagesProjection as sessionMessages,
 } from '../../../src/web/helpers/webSessionStore';
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
-import { QueuedInputRepository } from '../../../src/host/services/core/repositories/QueuedInputRepository';
+import { QueuedInputRepository, type QueuedInputRecord } from '../../../src/host/services/core/repositories/QueuedInputRepository';
 import { sseClients } from '../../../src/web/helpers/sse';
 import { DurableRunRepository } from '../../../src/host/services/core/repositories/DurableRunRepository';
 
@@ -218,6 +218,8 @@ async function startAgentApi(deps: {
   tryGetSessionManager?: () => Promise<unknown>;
   registerCompanionRun?: Parameters<typeof createAgentRouter>[0]['registerCompanionRun'];
   publishCompanionEvent?: Parameters<typeof createAgentRouter>[0]['publishCompanionEvent'];
+  registerQueuedInputSendNowHook?: Parameters<typeof createAgentRouter>[0]['registerQueuedInputSendNowHook'];
+  registerQueuedInputEnqueueHook?: Parameters<typeof createAgentRouter>[0]['registerQueuedInputEnqueueHook'];
 } = {}) {
   const app = express();
   app.use(express.json());
@@ -230,6 +232,8 @@ async function startAgentApi(deps: {
     getSupabaseForSession: async () => null,
     registerCompanionRun: deps.registerCompanionRun,
     publishCompanionEvent: deps.publishCompanionEvent,
+    registerQueuedInputSendNowHook: deps.registerQueuedInputSendNowHook,
+    registerQueuedInputEnqueueHook: deps.registerQueuedInputEnqueueHook,
   } as Parameters<typeof createAgentRouter>[0]));
 
   server = await new Promise<http.Server>((resolve) => {
@@ -288,14 +292,29 @@ function parseSSEData(raw: string, eventName: string): Record<string, unknown> |
   return dataLine ? JSON.parse(dataLine.trim().slice(5).trim()) as Record<string, unknown> : null;
 }
 
-/** 一轮能自然跑完的 loop：发一条 assistant message 事件后 resolve。 */
-function completingLoop() {
+/**
+ * 一轮能自然跑完的 loop：onEvent 由 createAgentLoop(config, onEvent, ...) 在建 loop
+ * 时注入（agentLoop.run 的第二参是 displayPrompt，不是回调），发一条 assistant
+ * message 事件后 resolve。
+ */
+function completingLoop(onEvent?: (event: { type: string; data: unknown }) => void) {
   return {
-    run: vi.fn(async (_prompt: string, onEvent: (event: { type: string; data: unknown }) => void) => {
-      onEvent({
+    run: vi.fn(async () => {
+      onEvent?.({
         type: 'message',
         data: { id: `assistant-${Date.now()}`, role: 'assistant', content: '完成了', timestamp: Date.now() },
       });
+    }),
+    cancel: vi.fn(),
+    steer: vi.fn(),
+  };
+}
+
+/** 一轮必失败的 loop：run 直接 reject（引擎/模型错误形状）。 */
+function failingLoop(message = '引擎炸了') {
+  return {
+    run: vi.fn(async () => {
+      throw new Error(message);
     }),
     cancel: vi.fn(),
     steer: vi.fn(),
@@ -348,7 +367,7 @@ describe('POST /run clientMessageId idempotent replay', () => {
     setDbAvailable(true);
     durableStub.getLatestRootRunAsOf.mockImplementation(async () => null);
     durableStub.get.mockImplementation(async () => null);
-    mockCreateAgentLoop.mockImplementation(() => completingLoop());
+    mockCreateAgentLoop.mockImplementation((_config: unknown, onEvent?: (event: { type: string; data: unknown }) => void) => completingLoop(onEvent));
     await startAgentApi({ tryGetSessionManager: async () => sessionManagerMock() });
   });
 
@@ -547,6 +566,208 @@ describe('POST /run clientMessageId idempotent replay', () => {
       ([sessionId, kind]) => sessionId === 'session-comp-idem' && kind === 'run_started',
     ).length;
     expect(runStartedCount).toBe(1);
+  });
+
+  // ── rework r1-2：终态 failed 不收口，失败轮重试真跑一轮 ──────────────────
+  it('终态 failed 后同 id 重试 → 不重放，真跑新一轮（renderer 错误卡重试/编辑重发语义）', async () => {
+    mockCreateAgentLoop.mockImplementation(() => failingLoop());
+    const first = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '会失败的一问',
+        sessionId: 'session-idem-failed',
+        clientMessageId: 'msg-failed-1',
+      }),
+    });
+    expect(first.status).toBe(200);
+    const firstRaw = await first.text();
+    const firstRunId = parseSSEData(firstRaw, 'task_start')?.runId as string;
+    expect(firstRunId).toEqual(expect.any(String));
+    await waitForAssertion(() => expect(runRegistry.hasSession('session-idem-failed')).toBe(false));
+    expect(mockCreateAgentLoop).toHaveBeenCalledTimes(1);
+    // 失败轮消息已 pre-persist（请求已达服务端、响应传输失败时前端只能重试同 id）。
+    expect(persistedMessages.filter((m) => m.id === 'msg-failed-1' && m.role === 'user')).toHaveLength(1);
+
+    attributeDurableRun({ runId: firstRunId, status: 'failed' });
+    mockCreateAgentLoop.mockImplementation((_config: unknown, onEvent?: (event: { type: string; data: unknown }) => void) => completingLoop(onEvent));
+
+    const second = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '会失败的一问',
+        sessionId: 'session-idem-failed',
+        clientMessageId: 'msg-failed-1',
+      }),
+    });
+    // 不是 200 重放 JSON（前端把它当 SSE 解析会零事件静默无反应），而是新一轮 SSE。
+    expect(second.status).toBe(200);
+    expect(second.headers.get('content-type')).not.toContain('application/json');
+    const secondRaw = await second.text();
+    const secondRunId = parseSSEData(secondRaw, 'task_start')?.runId as string;
+    expect(secondRunId).toEqual(expect.any(String));
+    expect(secondRunId).not.toBe(firstRunId);
+    expect(mockCreateAgentLoop).toHaveBeenCalledTimes(2);
+    // 同 id 用户消息只此一条（重跑走 upsert，不追加重复消息）。
+    expect(persistedMessages.filter((m) => m.id === 'msg-failed-1' && m.role === 'user')).toHaveLength(1);
+  });
+
+  it('companion 终态 failed 后同 commandId 重发 → 真跑新一轮并结算新 runId（不重放失败轮）', async () => {
+    await closeServer();
+    let startCompanionRun: Parameters<
+      NonNullable<Parameters<typeof createAgentRouter>[0]['registerCompanionRun']>
+    >[0] | undefined;
+    const publish = vi.fn();
+    await startAgentApi({
+      tryGetSessionManager: async () => sessionManagerMock(),
+      registerCompanionRun: (run) => {
+        startCompanionRun = run;
+      },
+      publishCompanionEvent: publish,
+    });
+
+    mockCreateAgentLoop.mockImplementation(() => failingLoop());
+    const first = await startCompanionRun!({
+      version: 1,
+      sessionId: 'session-comp-failed',
+      prompt: '手机指令',
+      clientMessageId: 'cmd-failed-1',
+    });
+    const firstRunId = first.runId;
+    expect(firstRunId).toEqual(expect.any(String));
+    await waitForAssertion(() => expect(runRegistry.hasSession('session-comp-failed')).toBe(false));
+
+    attributeDurableRun({ runId: firstRunId, status: 'failed' });
+    mockCreateAgentLoop.mockImplementation((_config: unknown, onEvent?: (event: { type: string; data: unknown }) => void) => completingLoop(onEvent));
+
+    const second = await startCompanionRun!({
+      version: 1,
+      sessionId: 'session-comp-failed',
+      prompt: '手机指令',
+      clientMessageId: 'cmd-failed-1',
+    });
+    // 回执结算到新一轮（基线重试语义），不把已失败的旧 run 当「已接受」。
+    // 回执在 run 注册（activation）时即 resolve，loop 建立在其后——用 waitFor 收口。
+    expect(second.runId).toEqual(expect.any(String));
+    expect(second.runId).not.toBe(firstRunId);
+    await waitForAssertion(() => expect(mockCreateAgentLoop).toHaveBeenCalledTimes(2));
+    await waitForAssertion(() => {
+      const runStartedCount = publish.mock.calls.filter(
+        ([sessionId, kind]) => sessionId === 'session-comp-failed' && kind === 'run_started',
+      ).length;
+      expect(runStartedCount).toBe(2);
+    });
+    await waitForAssertion(() => expect(runRegistry.hasSession('session-comp-failed')).toBe(false));
+  });
+
+  // ── rework r1-1：无回执通道的离线排队投递不收口（防「标 consumed 但没跑」）──
+  it('离线排队投递（send-now idle）不重放：completed 轮后同 id 重投仍真跑新一轮', async () => {
+    await closeServer();
+    let sendNowIdle: Parameters<
+      NonNullable<Parameters<typeof createAgentRouter>[0]['registerQueuedInputSendNowHook']>
+    >[0] | undefined;
+    await startAgentApi({
+      tryGetSessionManager: async () => sessionManagerMock(),
+      registerQueuedInputSendNowHook: (sendNow) => {
+        sendNowIdle = sendNow;
+      },
+    });
+
+    // 首轮 HTTP 直发正常完成：消息 queued-sendnow-1 已存在，run 终态 completed。
+    const first = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '排队的问题',
+        sessionId: 'session-sendnow',
+        clientMessageId: 'queued-sendnow-1',
+      }),
+    });
+    const firstRaw = await first.text();
+    const firstRunId = parseSSEData(firstRaw, 'task_start')?.runId as string;
+    await waitForAssertion(() => expect(runRegistry.hasSession('session-sendnow')).toBe(false));
+    attributeDurableRun({ runId: firstRunId, status: 'completed' });
+
+    // 排队记录同 id 重投（route idle）：没有回执通道，收口=被上层当成功结算，
+    // 必须真跑（at-least-once，与基线一致），而不是静默重放返回。
+    const outcome = await sendNowIdle!({
+      id: 'queued-sendnow-1',
+      sessionId: 'session-sendnow',
+      envelope: { content: '排队的问题', sessionId: 'session-sendnow', clientMessageId: 'queued-sendnow-1' },
+    }, 'idle');
+    expect(outcome).toBe('sent');
+    expect(mockCreateAgentLoop).toHaveBeenCalledTimes(2);
+    expect(persistedMessages.filter((m) => m.id === 'queued-sendnow-1' && m.role === 'user')).toHaveLength(1);
+  });
+
+  it('排队 drain 失败重投：failed 轮后同 id 重投真跑一轮，不被静默标 consumed', async () => {
+    await closeServer();
+    let onEnqueued: ((sessionId: string) => void) | undefined;
+    await startAgentApi({
+      tryGetSessionManager: async () => sessionManagerMock(),
+      registerQueuedInputEnqueueHook: (hook) => {
+        onEnqueued = hook;
+      },
+    });
+
+    const record: QueuedInputRecord = {
+      id: 'drain-1',
+      sessionId: 'session-drain',
+      envelopeJson: JSON.stringify({ content: '排队的问题', sessionId: 'session-drain' }),
+      status: 'queued',
+      retryCount: 0,
+      position: 0,
+      pausedReason: null,
+      createdAt: 0,
+      updatedAt: 0,
+    };
+    // 排队仓库桩：getNextDispatchable 读后即空（重投前手工再装填），否则
+    // release 触发的再抽干会拿同一条记录无限重发，测试进程直接 OOM。
+    let dispatchable: QueuedInputRecord | null = record;
+    const getNextDispatchable = vi.spyOn(QueuedInputRepository.prototype, 'getNextDispatchable')
+      .mockImplementation(() => {
+        const next = dispatchable;
+        dispatchable = null;
+        return next;
+      });
+    const markSending = vi.spyOn(QueuedInputRepository.prototype, 'markSending').mockReturnValue(true);
+    const markConsumed = vi.spyOn(QueuedInputRepository.prototype, 'markConsumed').mockReturnValue(true);
+    const requeueAfterFailure = vi.spyOn(QueuedInputRepository.prototype, 'requeueAfterFailure')
+      .mockReturnValue({ ...record, retryCount: 1 });
+    try {
+      // 首投：真跑一轮后失败（离线 transport 对失败重 throw）→ drainOne requeue。
+      mockCreateAgentLoop.mockImplementation(() => failingLoop());
+      onEnqueued!('session-drain');
+      await waitForAssertion(() => expect(mockCreateAgentLoop).toHaveBeenCalledTimes(1));
+      await waitForAssertion(() => expect(requeueAfterFailure).toHaveBeenCalledWith('drain-1'));
+      await waitForAssertion(() => expect(runRegistry.hasSession('session-drain')).toBe(false));
+      expect(persistedMessages.filter((m) => m.id === 'drain-1' && m.role === 'user')).toHaveLength(1);
+
+      // durable 归因：drain-1 的那轮终态 failed（本会话唯一一条 run，任意 runId 都回它）。
+      const failedEnvelope = {
+        runId: 'run-drain-1',
+        sessionId: 'session-drain',
+        status: 'failed',
+        cursor: { nextEventSeq: 3, checkpointSeq: 1 },
+      };
+      durableStub.getLatestRootRunAsOf.mockImplementation(async () => failedEnvelope);
+      durableStub.get.mockImplementation(async () => failedEnvelope);
+
+      // 重投（requeue 后的下一次抽干）：必须真跑第二轮，而不是命中重放被吞、
+      // 直接标 consumed 通知前端「已消费」。
+      dispatchable = record;
+      mockCreateAgentLoop.mockImplementation((_config: unknown, onEvent?: (event: { type: string; data: unknown }) => void) => completingLoop(onEvent));
+      onEnqueued!('session-drain');
+      await waitForAssertion(() => expect(mockCreateAgentLoop).toHaveBeenCalledTimes(2));
+      await waitForAssertion(() => expect(markConsumed).toHaveBeenCalledWith('drain-1'));
+      expect(persistedMessages.filter((m) => m.id === 'drain-1' && m.role === 'user')).toHaveLength(1);
+    } finally {
+      getNextDispatchable.mockRestore();
+      markSending.mockRestore();
+      markConsumed.mockRestore();
+      requeueAfterFailure.mockRestore();
+    }
   });
 });
 

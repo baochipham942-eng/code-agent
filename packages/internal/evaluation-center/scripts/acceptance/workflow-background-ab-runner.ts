@@ -42,6 +42,7 @@ import {
   requireCodingApiKey,
   scoreQuestion,
   validateQuestions,
+  type AbGroup,
   type AbQuestion,
   type AbUsage,
   type FetchLike,
@@ -64,7 +65,7 @@ type StubMode = (typeof STUB_MODES)[number];
 
 interface ArmRow {
   id: string;
-  group: string;
+  group: AbGroup;
   toolCalls: string[];
   opened: boolean;
   pass: boolean;

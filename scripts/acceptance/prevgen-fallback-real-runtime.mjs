@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* global clearInterval, fetch, process, setInterval, setTimeout, URL */
 // N-L7-PREVGEN-MUTE: one paid real-runtime call. Never retries a call.
 
 import fs from 'node:fs';
@@ -152,7 +153,7 @@ try {
 } finally {
   if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'end' }));
   await new Promise((resolve) => setTimeout(resolve, 1_500));
-  try { ws?.close(); } catch {}
+  try { ws?.close(); } catch { /* already closed */ }
   evidence.finishedAt = new Date().toISOString();
   evidence.durationMs = Date.now() - startedAt;
   fs.mkdirSync(path.dirname(outPath), { recursive: true });

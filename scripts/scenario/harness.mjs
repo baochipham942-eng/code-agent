@@ -1,3 +1,4 @@
+/* global AbortController, fetch, process, TextDecoder, setTimeout */
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
 import crypto from 'node:crypto';
@@ -326,9 +327,9 @@ export function createLegContext({ env, api, outDir, scenario, legName }) {
         const end = async () => {
           if (call.ended) return true;
           call.ended = true;
-          try { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'end' })); } catch {}
+          try { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'end' })); } catch { /* peer already gone */ }
           await sleep(1500);
-          try { ws.close(); } catch {}
+          try { ws.close(); } catch { /* already closed */ }
           for (let i = 0; i < 15; i += 1) {
             try {
               const status = await api.get('/api/voice/status');
@@ -336,7 +337,7 @@ export function createLegContext({ env, api, outDir, scenario, legName }) {
                 call.endedAt = Date.now();
                 return true;
               }
-            } catch {}
+            } catch { /* probe unavailable; keep polling */ }
             await sleep(2000);
           }
           call.endedAt = Date.now();

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* global AbortController, clearTimeout, fetch, setTimeout, URL */
 
 import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -299,7 +300,7 @@ async function collectCompanionEvidence({ appPath, dataDir, port, roundtrip }) {
 
   const workspace = path.join(dataDir, 'companion-smoke-workspace');
   fs.mkdirSync(workspace, { recursive: true });
-  let session = { ok: false };
+  let session;
   try {
     const created = await authorizedFetch(baseUrl, token, '/api/sessions', {
       title: 'packaged-companion-smoke',
@@ -382,7 +383,7 @@ async function collectCompanionEvidence({ appPath, dataDir, port, roundtrip }) {
         };
       } catch (error) {
         let parsed = null;
-        try { parsed = JSON.parse(fs.readFileSync(roundtripOut, 'utf8')); } catch { parsed = null; }
+        try { parsed = JSON.parse(fs.readFileSync(roundtripOut, 'utf8')); } catch { /* unparseable roundtrip output counts as no evidence */ }
         roundtripResult = {
           attempted: true,
           paired: parsed?.paired === true,

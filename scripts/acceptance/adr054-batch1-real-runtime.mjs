@@ -1,3 +1,4 @@
+/* global Buffer, console, fetch, process, setTimeout, window */
 // ADR-054 batch 1 real-runtime acceptance against an installed Agent Neo Dev host.
 //
 // This intentionally uses the real DashScope realtime connection and the real task

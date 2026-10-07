@@ -1,3 +1,4 @@
+/* global Buffer, atob, console, fetch, navigator, process, setTimeout, window */
 // ADR-054 batch 2 real-runtime acceptance against a locally built web host.
 // The real realtime voice model dispatches two background tasks, the real task
 // engine asks questions, and the user cancels one task through an ambiguous

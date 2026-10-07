@@ -1,17 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-// @ts-expect-error —— 纯 JS 审计脚本，无类型声明
-import {
-  buildImporterIndexWithExists,
-  candidateSpecPaths,
-  collectImportSpecifiers,
-  isTestLikePath,
-  parseArgs,
-  resolveSpecifier,
-  tierT1,
-  tierT2,
-  tierT3,
-} from '../../scripts/audit-orphan-candidates.mjs';
+// @ts-expect-error —— 纯 JS 审计脚本，无类型声明（import 必须单行：多行时 TS7016 报在收尾行，压不住）
+import { buildImporterIndexWithExists, candidateSpecPaths, collectImportSpecifiers, isTestLikePath, parseArgs, resolveSpecifier, tierT1, tierT2, tierT3 } from '../../scripts/audit-orphan-candidates.mjs';
 
 describe('collectImportSpecifiers / resolveSpecifier', () => {
   it('抽取 from/import()/require 四种说明符并去重', () => {

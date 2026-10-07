@@ -5,6 +5,7 @@
 import type { ModelConfig, ToolDefinition } from '../../../shared/contract';
 import type { InferenceOptions, ModelMessage, ModelResponse, Provider, StreamCallback } from '../types';
 import { resolveModelCapabilities } from '../modelCapabilityMatrix';
+import { explicitlyDeclaredEffortLevels } from '../providerRegistry';
 import { electronFetch, logger } from './shared';
 import { resolveProviderApiKey, resolveProviderBaseUrl } from './providerResolution';
 import { convertToolsToResponses, parseResponsesResponse } from './wrappers/responsesWrapper';
@@ -19,7 +20,7 @@ function resolveResponsesEndpoint(baseUrl: string, atApiRoot: boolean): string {
   return `${atApiRoot ? trimmed.replace(/\/v\d+$/, '') : trimmed}/responses`;
 }
 
-function buildResponsesInput(messages: ModelMessage[]): unknown[] {
+function buildResponsesInput(messages: ModelMessage[], options?: { dropUnencryptedReasoning?: boolean }): unknown[] {
   type LocatedInput = {
     item: Record<string, unknown>;
     messageIndex: number;
@@ -30,12 +31,29 @@ function buildResponsesInput(messages: ModelMessage[]): unknown[] {
   const located = messages.flatMap((message, messageIndex): LocatedInput[] => {
     // 无状态续聊的唯一可靠写法：把服务端整个 output（含 web_search_call）原样送回。
     if (message.role === 'assistant' && message.responsesOutput?.length) {
-      const rawItems: LocatedInput[] = message.responsesOutput.map((item, responsesOutputIndex) => ({
-        item: item as Record<string, unknown>,
-        messageIndex,
-        assistantItemIndex: responsesOutputIndex,
-        responsesOutputIndex,
-      }));
+      const rawItems: LocatedInput[] = message.responsesOutput.flatMap((item, responsesOutputIndex): LocatedInput[] => {
+        const record = item as Record<string, unknown>;
+        // store:false 下服务端不保存 rs_ 推理项；没有 encrypted_content 的 reasoning 项
+        // 回放必被拒（'Item rs_… not found, items are not persisted when store=false'），
+        // 工具循环第二轮即断。带 encrypted_content 的（include 请求要来的）原样回放。
+        if (
+          options?.dropUnencryptedReasoning
+          && record.type === 'reasoning'
+          && typeof record.encrypted_content !== 'string'
+        ) {
+          logger.warn(
+            `[ResponsesProvider] Dropped reasoning item ${typeof record.id === 'string' ? record.id : '(no id)'}: unreplayable under store=false without encrypted_content`,
+            { itemId: record.id, missingSide: 'encrypted_content', messageIndex },
+          );
+          return [];
+        }
+        return [{
+          item: record,
+          messageIndex,
+          assistantItemIndex: responsesOutputIndex,
+          responsesOutputIndex,
+        }];
+      });
       const rawCallIds = new Set(rawItems.flatMap(({ item }) =>
         item.type === 'function_call' && typeof item.call_id === 'string' ? [item.call_id] : []
       ));
@@ -336,10 +354,16 @@ export class ResponsesProvider implements Provider {
     const baseUrl = resolveProviderBaseUrl(config);
     const caps = resolveModelCapabilities(config.provider, config.model);
     const endpoint = resolveResponsesEndpoint(baseUrl, caps.responsesAtApiRoot === true);
+    // OpenAI 推理模型在 Responses 工具循环的官方无状态写法：store:false 时带
+    // include:['reasoning.encrypted_content']，服务端在 reasoning 项里带回加密推理，
+    // 下一轮回放才合法。判定与 reasoning.effort 同接缝（目录显式声明 effort 档位）；
+    // 未声明的模型——含 deepseek 走 Responses 的——请求体保持逐字节不变。
+    const encryptedReasoning = explicitlyDeclaredEffortLevels(config.provider, config.model) !== undefined;
     const body: Record<string, unknown> = {
       model: config.model,
-      input: buildResponsesInput(messages),
+      input: buildResponsesInput(messages, { dropUnencryptedReasoning: encryptedReasoning }),
       store: false,
+      ...(encryptedReasoning ? { include: ['reasoning.encrypted_content'] } : {}),
     };
     const responseTools: unknown[] = [];
     // 逐轮「联网搜索」开关（默认开）：关掉时这一轮不挂 web_search，矩阵裁决让位。
@@ -347,6 +371,15 @@ export class ResponsesProvider implements Provider {
     responseTools.push(...convertToolsToResponses(tools));
     if (responseTools.length) body.tools = responseTools;
     if (onStream) body.stream = true;
+    // reasoning.effort 只对目录条目显式声明了该档位的模型发送（与 applyEffortControls 同一
+    // 查询接缝 explicitlyDeclaredEffortLevels）；其余模型——含 deepseek 走 Responses 的——
+    // 请求体保持逐字节不变。
+    if (
+      config.reasoningEffort
+      && explicitlyDeclaredEffortLevels(config.provider, config.model)?.includes(config.reasoningEffort)
+    ) {
+      body.reasoning = { effort: config.reasoningEffort };
+    }
 
     if (process.env.CODE_AGENT_DUMP_MODEL_PAYLOAD) {
       const { dumpModelPayload } = await import('../modelPayloadDump');

@@ -3,7 +3,7 @@ import { applyEffortControls } from '../../../src/host/agent/runtime/contextAsse
 import { PROVIDER_REGISTRY } from '../../../src/host/model/providerRegistry';
 import { SUPPORTED_AGENT_EFFORT_LEVELS } from '../../../src/shared/effortLevels';
 import type { ModelConfig } from '../../../src/shared/contract/model';
-import { GOLDEN_CASES, GOLDEN_MODELS } from './effortControls.golden';
+import { GOLDEN_CASES, GOLDEN_MODEL_CASE_OVERRIDES, GOLDEN_MODELS } from './effortControls.golden';
 
 const PRESETS = {
   none: {},
@@ -34,7 +34,9 @@ describe('applyEffortControls golden registry outputs', () => {
                 ...PRESETS[presetName],
               };
               const actual = applyEffortControls(config, effort, { thinkingEnabled });
-              const recorded = GOLDEN_CASES[`${effort}|${thinkingEnabled}|${presetName}`];
+              const caseKey = `${effort}|${thinkingEnabled}|${presetName}`;
+              const recorded = GOLDEN_MODEL_CASE_OVERRIDES[`${providerId}/${model.id}`]?.[caseKey]
+                ?? GOLDEN_CASES[caseKey];
               expect(actual).toEqual({
                 provider: providerId,
                 model: model.id,

@@ -15,11 +15,32 @@ export default tseslint.config(
       '*.config.js',
       '*.config.ts',
       'src/host/tools/media/ppt/__tests__/**/*.mjs',
+      // frontend-slides 的 esbuild 生成物（pdf-lib/pptxgenjs 等第三方打包产物，
+      // 由 scripts/bundle-frontend-slides-skill.mjs 从 resources/skill-sources/ 再生），
+      // 手写不可修，lint 只看手写源（见下方 node .mjs globals 那组）。
+      'resources/skills/frontend-slides/scripts/*.bundle.mjs',
       // SWE-bench sandbox 是 clone 的第三方 repo (django 等), 不该被项目 lint 管
       'benchmarks/swe-bench/sandbox/**',
       'benchmarks/swe-bench/runs/**',
       'benchmarks/swe-bench/_docker-tmp/**',
     ],
+  },
+  {
+    // Node 直跑的 .mjs（scripts 工具 + frontend-slides 手写源/包装）：tseslint 的
+    // eslint-recommended 只对 .ts/.tsx 关 no-undef，纯 .mjs 不在其口径，
+    // process/console 会整片误报。只补这两个 Node globals，规则一条不减；
+    // 生成物 *.bundle.mjs 走全局 ignores，不落在这组 files 里。
+    files: [
+      'scripts/**/*.mjs',
+      'resources/skill-sources/**/*.mjs',
+      'resources/skills/frontend-slides/scripts/*.mjs',
+    ],
+    languageOptions: {
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+      },
+    },
   },
   {
     // CommonJS web bootstrap runs directly in Node; keep this environment override file-scoped.

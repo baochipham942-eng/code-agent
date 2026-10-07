@@ -342,7 +342,7 @@ function main() {
     fail(`${args.exportsBaseline} 不是 schemaVersion=2 的导出基线。`);
   }
   const scanFiles = scanImporterFiles();
-  const importerIndex = buildImporterIndexWithExists(scanFiles, (candidate) => false);
+  const importerIndex = buildImporterIndexWithExists(scanFiles, () => false);
   const rendererTsxFiles = scanFiles
     .filter(({ path }) => path.startsWith('src/renderer/') && path.endsWith('.tsx'))
     .map(({ path }) => path)

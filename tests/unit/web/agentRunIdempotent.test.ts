@@ -661,6 +661,173 @@ describe('POST /run clientMessageId idempotent replay', () => {
     await waitForAssertion(() => expect(runRegistry.hasSession('session-comp-failed')).toBe(false));
   });
 
+  // ── rework r2-1：durable 读库异常 ≠ 归因不到，不得收口 replayed(unknown) ──
+  it('投影命中但 durable 归因读库异常 → 不回 replayed(unknown)，照常真跑一轮', async () => {
+    const first = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '会成功的一问',
+        sessionId: 'session-r2-busy',
+        clientMessageId: 'msg-r2-busy',
+      }),
+    });
+    expect(first.status).toBe(200);
+    const firstRaw = await first.text();
+    const firstRunId = parseSSEData(firstRaw, 'task_start')?.runId as string;
+    await waitForAssertion(() => expect(runRegistry.hasSession('session-r2-busy')).toBe(false));
+    expect(mockCreateAgentLoop).toHaveBeenCalledTimes(1);
+
+    // SQLITE_BUSY 式瞬时读异常：消息确实存在（投影命中），但归因不到状态。
+    // 收口 replayed(unknown) 会让失败轮重试零事件无反应；必须当「不确定」真跑。
+    durableStub.getLatestRootRunAsOf.mockImplementation(async () => {
+      throw new Error('database is locked');
+    });
+
+    const second = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '会成功的一问',
+        sessionId: 'session-r2-busy',
+        clientMessageId: 'msg-r2-busy',
+      }),
+    });
+    expect(second.status).toBe(200);
+    // 不是重放 JSON（前端把 200 JSON 当 SSE 解析会零事件、UI 无反应）。
+    expect(second.headers.get('content-type')).not.toContain('application/json');
+    const secondRaw = await second.text();
+    const secondRunId = parseSSEData(secondRaw, 'task_start')?.runId as string;
+    expect(secondRunId).toEqual(expect.any(String));
+    expect(secondRunId).not.toBe(firstRunId);
+    expect(mockCreateAgentLoop).toHaveBeenCalledTimes(2);
+    expect(persistedMessages.filter((m) => m.id === 'msg-r2-busy' && m.role === 'user')).toHaveLength(1);
+    // 降级要留痕：读库异常带原因上日志，不能静默。
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('Replay precheck read failed'),
+      expect.any(Error),
+    );
+  });
+
+  it('归因到 runId 但 durable envelope 读库异常 → 同样不收口，照常真跑一轮', async () => {
+    const first = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '归因成功读失败',
+        sessionId: 'session-r2-get',
+        clientMessageId: 'msg-r2-get',
+      }),
+    });
+    expect(first.status).toBe(200);
+    const firstRaw = await first.text();
+    const firstRunId = parseSSEData(firstRaw, 'task_start')?.runId as string;
+    await waitForAssertion(() => expect(runRegistry.hasSession('session-r2-get')).toBe(false));
+
+    // as-of 归因成功，envelope 点读抛异常：吞成 null 会与「非 durable 老轮」合流。
+    durableStub.getLatestRootRunAsOf.mockImplementation(async () => ({
+      runId: firstRunId,
+      sessionId: 'session-r2-get',
+      status: 'completed',
+      cursor: { nextEventSeq: 5, checkpointSeq: 2 },
+    }));
+    durableStub.get.mockImplementation(async () => {
+      throw new Error('database is locked');
+    });
+
+    const second = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: '归因成功读失败',
+        sessionId: 'session-r2-get',
+        clientMessageId: 'msg-r2-get',
+      }),
+    });
+    expect(second.status).toBe(200);
+    expect(second.headers.get('content-type')).not.toContain('application/json');
+    const secondRaw = await second.text();
+    const secondRunId = parseSSEData(secondRaw, 'task_start')?.runId as string;
+    expect(secondRunId).toEqual(expect.any(String));
+    expect(secondRunId).not.toBe(firstRunId);
+    expect(mockCreateAgentLoop).toHaveBeenCalledTimes(2);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('Replay precheck read failed'),
+      expect.any(Error),
+    );
+  });
+
+  // ── rework r2-2：同会话任何活跃 run（不限于归因 run）都不收口 200 JSON ──
+  it('归因 run 已终态、同会话另一条 run 活跃 → 409（activeRunId），不回 200 重放 JSON', async () => {
+    // A 轮：正常跑完。
+    const first = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: 'A 轮',
+        sessionId: 'session-r2-active',
+        clientMessageId: 'msg-r2-a',
+      }),
+    });
+    expect(first.status).toBe(200);
+    const firstRaw = await first.text();
+    const firstRunId = parseSSEData(firstRaw, 'task_start')?.runId as string;
+    await waitForAssertion(() => expect(runRegistry.hasSession('session-r2-active')).toBe(false));
+    attributeDurableRun({ runId: firstRunId, status: 'completed' });
+
+    // B 轮：挂着不结束。
+    let releaseB: (() => void) | undefined;
+    mockCreateAgentLoop.mockImplementation(() => ({
+      run: vi.fn(() => new Promise<void>((resolve) => {
+        releaseB = resolve;
+      })),
+      cancel: vi.fn(() => {
+        releaseB?.();
+      }),
+      steer: vi.fn(),
+    }));
+    const controller = new AbortController();
+    const second = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: 'B 轮',
+        sessionId: 'session-r2-active',
+        clientMessageId: 'msg-r2-b',
+      }),
+      signal: controller.signal,
+    });
+    expect(second.status).toBe(200);
+    const secondRaw = await readSSEUntilWithoutClosing(second, 'event: task_start');
+    const activeRunId = parseSSEData(secondRaw, 'task_start')?.runId as string;
+    await waitForAssertion(() => expect(runRegistry.getBySessionId('session-r2-active')?.isAttached).toBe(true));
+
+    // 带 A 的 clientMessageId 重试：归因 run 终态，但同会话 B 活跃。回 200 JSON
+    // 会被前端当 SSE 解析零事件、流尾兜底清掉 B 的运行中状态——必须维持 409。
+    const retried = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        prompt: 'A 轮',
+        sessionId: 'session-r2-active',
+        clientMessageId: 'msg-r2-a',
+      }),
+    });
+    expect(retried.status).toBe(409);
+    expect(retried.headers.get('content-type')).toContain('application/json');
+    await expect(retried.json()).resolves.toMatchObject({
+      code: 'RUN_SESSION_CONFLICT',
+      sessionId: 'session-r2-active',
+      activeRunId,
+    });
+    // A + B 两轮，重试没起第三轮，也没追加 A 的重复消息。
+    expect(mockCreateAgentLoop).toHaveBeenCalledTimes(2);
+    expect(persistedMessages.filter((m) => m.id === 'msg-r2-a' && m.role === 'user')).toHaveLength(1);
+
+    controller.abort();
+    await waitForAssertion(() => expect(runRegistry.hasSession('session-r2-active')).toBe(false));
+  });
+
   // ── rework r1-1：无回执通道的离线排队投递不收口（防「标 consumed 但没跑」）──
   it('离线排队投递（send-now idle）不重放：completed 轮后同 id 重投仍真跑新一轮', async () => {
     await closeServer();

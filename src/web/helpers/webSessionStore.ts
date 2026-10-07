@@ -197,6 +197,8 @@ function findActiveUserMessageById(
  * 把已找到的用户消息归因到 durable root run：runAgentTurn 先建 run 再落消息，
  * 同会话 run 串行，所以「created_at <= 消息时间戳的最近 root run」即该轮。
  * 查不到（无 durable 记录 / 降级态 / 老非 durable 轮）返回 null，不阻塞重放判定。
+ * 读库异常向上抛，不当「归因不到」：吞成 null 会与非 durable 老轮合流，被路由按
+ * status:'unknown' 收口重放，终态失败轮的重试就静默无反应了（rework r2）。
  */
 async function attributeDurableRootRun(
   getDatabase: WebSessionStoreDeps['getDatabase'],
@@ -204,13 +206,9 @@ async function attributeDurableRootRun(
   createdAt: number,
 ): Promise<string | null> {
   if (!dbAvailable) return null;
-  try {
-    const db = await getDatabase();
-    const envelope = await db.getDurableRunRepository().getLatestRootRunAsOf(sessionId, createdAt);
-    return envelope?.runId ?? null;
-  } catch {
-    return null;
-  }
+  const db = await getDatabase();
+  const envelope = await db.getDurableRunRepository().getLatestRootRunAsOf(sessionId, createdAt);
+  return envelope?.runId ?? null;
 }
 
 interface CommitTurnInput {
@@ -476,6 +474,53 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
     }
   }
 
+  /**
+   * 消息查重的持久层读（投影 miss 后）：会话管理器整读 → DB 点查。读失败只影响
+   * 「能不能重放」，落回 null 照常真跑（与基线一致），且必须带原因上日志。
+   * durable 归因不在内——它的异常要向上抛，见 findUserMessageByClientMessageId。
+   */
+  async function findPersistedActiveUserMessage(
+    sessionId: string,
+    clientMessageId: string,
+  ): Promise<{ messageId: string; createdAt: number } | null> {
+    try {
+      const cliSessionManager = await resolvePersistentSessionManager(
+        await deps.tryGetSessionManager(),
+        deps.logger,
+      );
+      const sm = cliSessionManager?.getMessages
+        ? cliSessionManager
+        : await deps.tryGetInfraSessionManager?.();
+      if (sm?.getMessages) {
+        const persisted = await sm.getMessages(sessionId);
+        const found = Array.isArray(persisted)
+          ? findActiveUserMessageById(persisted, clientMessageId)
+          : null;
+        if (found) return found;
+      }
+    } catch (error) {
+      deps.logger.warn(
+        `[AgentRouter] Failed to look up clientMessageId ${clientMessageId} for ${sessionId}:`,
+        error,
+      );
+    }
+
+    if (!dbAvailable) return null;
+    try {
+      const db = await deps.getDatabase();
+      const persisted = db.getMessageById(sessionId, clientMessageId);
+      return persisted?.role === 'user' && persisted.visibility !== 'rewound'
+        ? { messageId: persisted.id, createdAt: persisted.timestamp }
+        : null;
+    } catch (error) {
+      deps.logger.warn(
+        `[AgentRouter] Failed point query for clientMessageId ${clientMessageId} in ${sessionId}:`,
+        error,
+      );
+      return null;
+    }
+  }
+
   return {
     async loadSessionHistoryForRun(sessionId: string): Promise<CachedMessage[]> {
       const cached = getSessionMessagesProjection(sessionId);
@@ -519,6 +564,8 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
      * clientMessageId 为主键的用户消息。clientMessageId 就是消息主键（pre-persist
      * 的 msgId），读序与 loadSessionHistoryForRun 一致：投影 → 会话管理器 → DB 点查。
      * rewound（回退撤回）的消息不算存在，回退后重发不受挡。
+     * 消息查到的 durable 归因读库异常向上抛（由路由 catch 后照常真跑一轮），
+     * 不与「非 durable 老轮归因不到」合流（rework r2）。
      */
     async findUserMessageByClientMessageId(
       sessionId: string,
@@ -528,60 +575,12 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
         getSessionMessagesProjection(sessionId),
         clientMessageId,
       );
-      if (projected) {
-        return {
-          ...projected,
-          runId: await attributeDurableRootRun(deps.getDatabase, sessionId, projected.createdAt),
-        };
-      }
-
-      try {
-        const cliSessionManager = await resolvePersistentSessionManager(
-          await deps.tryGetSessionManager(),
-          deps.logger,
-        );
-        const sm = cliSessionManager?.getMessages
-          ? cliSessionManager
-          : await deps.tryGetInfraSessionManager?.();
-        if (sm?.getMessages) {
-          const persisted = await sm.getMessages(sessionId);
-          const found = Array.isArray(persisted)
-            ? findActiveUserMessageById(persisted, clientMessageId)
-            : null;
-          if (found) {
-            return {
-              ...found,
-              runId: await attributeDurableRootRun(deps.getDatabase, sessionId, found.createdAt),
-            };
-          }
-        }
-      } catch (error) {
-        deps.logger.warn(
-          `[AgentRouter] Failed to look up clientMessageId ${clientMessageId} for ${sessionId}:`,
-          error,
-        );
-      }
-
-      if (!dbAvailable) return null;
-      try {
-        const db = await deps.getDatabase();
-        const persisted = db.getMessageById(sessionId, clientMessageId);
-        const found = persisted?.role === 'user' && persisted.visibility !== 'rewound'
-          ? { messageId: persisted.id, createdAt: persisted.timestamp }
-          : null;
-        return found
-          ? {
-            ...found,
-            runId: await attributeDurableRootRun(deps.getDatabase, sessionId, found.createdAt),
-          }
-          : null;
-      } catch (error) {
-        deps.logger.warn(
-          `[AgentRouter] Failed point query for clientMessageId ${clientMessageId} in ${sessionId}:`,
-          error,
-        );
-        return null;
-      }
+      const found = projected ?? await findPersistedActiveUserMessage(sessionId, clientMessageId);
+      if (!found) return null;
+      return {
+        ...found,
+        runId: await attributeDurableRootRun(deps.getDatabase, sessionId, found.createdAt),
+      };
     },
 
     async prePersistUserMessage(input: PrePersistUserMessageInput): Promise<boolean> {

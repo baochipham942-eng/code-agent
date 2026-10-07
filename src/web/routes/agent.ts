@@ -198,11 +198,9 @@ interface RunEntryReplayPayload {
 
 async function readRunReplayEnvelope(runId: string | null): Promise<RunEnvelope | null> {
   if (!runId || !dbAvailable) return null;
-  try {
-    return await getDatabase().getDurableRunRepository().get(runId);
-  } catch {
-    return null;
-  }
+  // 读库异常向上抛：吞成 null 会把「读不到」当「归因不到」回 status:'unknown'
+  // 收口重放（rework r2）。
+  return await getDatabase().getDurableRunRepository().get(runId);
 }
 
 function toRunReplayPayload(envelope: RunEnvelope | null): RunEntryReplayPayload {
@@ -438,27 +436,44 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     // clientMessageId 重试（丢回执 / 断线重连 / 双击）此前会静默再起一轮、追加
     // 重复用户消息并重复计费。同会话已存在该消息 ⇒ 不建新 run、不追加消息，
     // HTTP 入口回 200 JSON（不是 409——409 专指「另一条 run 正在跑」）。
-    // 该消息归因到的 run 仍活跃（durable 非终态，或本进程挂着无归因的活跃 run）
-    // 时不在此收口，落回下方 run 注册的现有 409 分支，语义不变。
-    // 以下两种情况同样不收口、照常真跑一轮（rework r1）：
-    // ① 归因 run 终态 failed——失败轮的客户端重试（renderer 错误卡重试/编辑重发、
+    // 以下情况都不在此收口，落回下方 run 注册的现有分支（活跃时 409，否则真跑）：
+    // ① 本会话挂着任何活跃 run——不只是归因 run（durable 非终态 / 归因 run 即
+    //   活跃 run），同会话另一条 run 活跃时同样不能收口：前端把 200 JSON 当
+    //   SSE 解析零事件后走流尾兜底 clearSessionProcessing，会把那条活跃 run 的
+    //   运行中状态清掉（rework r2）。
+    // ② 查重链路（归因 / envelope 点读）读库异常——拿不到确定状态不是「归因不
+    //   到」，吞成 replayed(unknown) 会让终态失败轮的重试静默无反应；照常真跑
+    //   一轮，与基线同窗口行为一致，且 warn 留痕（rework r2）。
+    // ③ 归因 run 终态 failed——失败轮的客户端重试（renderer 错误卡重试/编辑重发、
     //   排队输入 requeue 重投）都复用原 clientMessageId，重试语义就是再跑一轮；
     //   重放对 HTTP 是 200 JSON 被前端按 SSE 解析（零事件、UI 无反应），该 id
-    //   从此再也起不了新 run。
-    // ② 没传 onReplayedRun 的离线投递（drain / send-now idle 排队重投）——它们的
+    //   从此再也起不了新 run（rework r1）。
+    // ④ 没传 onReplayedRun 的离线投递（drain / send-now idle 排队重投）——它们的
     //   重投只发生在上一轮失败（requeueAfterFailure）或崩溃孤儿恢复之后，静默
-    //   收口会被上层当成功结算（drainOne 标 consumed），排队输入被吞。
+    //   收口会被上层当成功结算（drainOne 标 consumed），排队输入被吞（rework r1）。
     if (clientMessageId) {
-      const replayedMessage = await sessionStore.findUserMessageByClientMessageId(
-        sessionId,
-        clientMessageId,
-      );
+      let replayedMessage: Awaited<ReturnType<typeof sessionStore.findUserMessageByClientMessageId>> | null = null;
+      let replayEnvelope: RunEnvelope | null = null;
+      try {
+        const hit = await sessionStore.findUserMessageByClientMessageId(
+          sessionId,
+          clientMessageId,
+        );
+        if (hit) {
+          // 两读都成功才认定可判定；任一读抛异常进 catch，不当「查不到」。
+          replayEnvelope = await readRunReplayEnvelope(hit.runId);
+          replayedMessage = hit;
+        }
+      } catch (error) {
+        logger.warn(
+          `[AgentRouter] Replay precheck read failed for clientMessageId ${clientMessageId} in ${sessionId}; starting a new run:`,
+          error,
+        );
+      }
       if (replayedMessage) {
-        const replayEnvelope = await readRunReplayEnvelope(replayedMessage.runId);
         const activeRunId = runRegistry.getBySessionId(sessionId)?.context.runId;
-        const runStillActive = replayEnvelope
-          ? !isTerminalRunStatus(replayEnvelope.status) || replayEnvelope.runId === activeRunId
-          : activeRunId != null;
+        const runStillActive = activeRunId != null
+          || (replayEnvelope ? !isTerminalRunStatus(replayEnvelope.status) : false);
         const earlierRunFailed = replayEnvelope?.status === 'failed';
         const canSettleReplay = transport.connectedClient
           || transport.onReplayedRun !== undefined;

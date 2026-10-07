@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -9,6 +9,18 @@ import { VISION_IMAGE } from '../../../../src/shared/constants';
 // 真 sharp + 真临时文件，验证 Gap 1 的降采样 + 尺寸记账逻辑。
 const createdFiles: string[] = [];
 
+// 默认透传真 loadSharp；个别用例 mockReturnValue 覆盖成「sharp 不可用 / stub 抛错」。
+const { loadSharpOverrideMock } = vi.hoisted(() => ({ loadSharpOverrideMock: vi.fn() }));
+
+vi.mock('../../../../src/host/runtime/sharpRuntime', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../src/host/runtime/sharpRuntime')>();
+  return {
+    ...actual,
+    loadSharp: (options?: Parameters<typeof actual.loadSharp>[0]) =>
+      loadSharpOverrideMock(options) ?? actual.loadSharp(options),
+  };
+});
+
 async function makePng(width: number, height: number): Promise<string> {
   const filePath = path.join(os.tmpdir(), `vision-prepare-test-${width}x${height}-${Date.now()}-${Math.random().toString(36).slice(2)}.png`);
   await sharp({
@@ -16,6 +28,23 @@ async function makePng(width: number, height: number): Promise<string> {
   }).png().toFile(filePath);
   createdFiles.push(filePath);
   return filePath;
+}
+
+// 高熵噪声图：PNG 压不动，用来造「尺寸合规但字节超限」的输入。
+async function makeNoisyPng(width: number, height: number): Promise<string> {
+  const filePath = path.join(os.tmpdir(), `vision-prepare-noise-${width}x${height}-${Date.now()}-${Math.random().toString(36).slice(2)}.png`);
+  await sharp({
+    create: { width, height, channels: 3, noise: { type: 'gaussian' } },
+  }).png().toFile(filePath);
+  createdFiles.push(filePath);
+  return filePath;
+}
+
+function listVisionTempFiles(): string[] {
+  return fs
+    .readdirSync(os.tmpdir())
+    .filter((f) => f.startsWith('code-agent-vision-resized-'))
+    .map((f) => path.join(os.tmpdir(), f));
 }
 
 afterEach(() => {
@@ -76,5 +105,67 @@ describe('prepareImageForVision', () => {
     await expect(
       prepareImageForVision('/nonexistent/path/does-not-exist.png', 2),
     ).rejects.toThrow();
+  });
+});
+
+describe('prepareImageForVision 字节上限与 sharp 失败契约', () => {
+  afterEach(() => {
+    loadSharpOverrideMock.mockReset();
+  });
+
+  it('未降采样的原图超过 MAX_BYTES → 抛错带上限值，不返回任何字节', async () => {
+    // 1500x1500 噪声 ≈ 5.7 MiB > 5 MiB；1500 < MAX_EDGE_PX 且 scaleFactor=1 → 走「不 resize 原图直发」分支
+    const src = await makeNoisyPng(1500, 1500);
+    expect(fs.statSync(src).size).toBeGreaterThan(VISION_IMAGE.MAX_BYTES);
+
+    // 「不读入内存」（statSync 前置）由 mocked-fs 侧的 readFileSync-not-called 断言覆盖；
+    // 真 sharp 侧断言可观察契约：拒绝且错误带上限值，而不是带着 base64 走成功分支。
+    await expect(prepareImageForVision(src, 1)).rejects.toThrow(
+      'larger than the 5 MiB vision limit',
+    );
+  });
+
+  it('降采样后仍超 MAX_BYTES → 抛错且不留泄漏的 temp 文件', async () => {
+    // 3200x3200 噪声，scaleFactor=2 → 逻辑 1600 > 1568 → resize 到 1568x1568 ≈ 5.1 MiB 仍超限
+    const src = await makeNoisyPng(3200, 3200);
+    const tmpBefore = listVisionTempFiles();
+
+    await expect(prepareImageForVision(src, 2)).rejects.toThrow('5 MiB vision limit');
+
+    const leaked = listVisionTempFiles().filter((f) => !tmpBefore.includes(f));
+    expect(leaked).toEqual([]);
+  });
+
+  it('sharp 运行时不可用 → 抛错声明图片未发送，不回退读原始字节', async () => {
+    loadSharpOverrideMock.mockReturnValue({
+      ok: false,
+      error: 'sharp missing in unit test',
+      missingPackage: true,
+    });
+    const src = await makePng(800, 600);
+
+    const err = await prepareImageForVision(src, 1).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toContain('sharp missing in unit test');
+    expect((err as Error).message).toContain('the image was not sent');
+  });
+
+  it('sharp 步骤抛错 → 错误点名 sharp 失败且图片未发送，不回退原始字节', async () => {
+    const failingSharp = () => ({
+      metadata: () => Promise.reject(new Error('vips: bad image header')),
+    });
+    loadSharpOverrideMock.mockReturnValue({ ok: true, sharp: failingSharp });
+    const src = await makePng(800, 600);
+
+    const err = await prepareImageForVision(src, 1).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toContain('vips: bad image header');
+    expect((err as Error).message).toContain('Sharp image processing failed, the image was not sent');
   });
 });

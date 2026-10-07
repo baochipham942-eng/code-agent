@@ -89,10 +89,7 @@ import { createToolExecutionLedger } from './toolExecutionLedger';
 import { classifyToolReplaySafety } from './toolReplaySafety';
 import { type ExecutionTopology } from '../permissions';
 import { boundaryIdForRequestType } from './permissionBoundaryMapping';
-import {
-  connectorExternalWriteReason,
-  findConnectorToolMetadata,
-} from '../../shared/contract/workbenchTools';
+import { connectorWritePermissionRequest, findConnectorTokenWrite } from './connectorTokenWrite';
 import { evaluateGuardFabricGate } from './guardFabricGate';
 import { classifyShellDesktopAutomation } from '../permissions/shellDesktopAutomation';
 import { resolveFileTargetKind } from '../permissions/fileTargetKind';
@@ -1619,8 +1616,11 @@ export class ToolExecutor {
         },
       };
     }
+    // http_request 携带已连接连接器令牌的写调用必须进分类器强确认（skill 预授权不得跳过）。
+    const connectorTokenWriteForcesClassification = findConnectorTokenWrite(policyToolName, params) !== undefined;
     const argumentForcesClassification = bashArgumentForcesClassification
-      || readArgumentForcesClassification;
+      || readArgumentForcesClassification
+      || connectorTokenWriteForcesClassification;
 
     // Check permission if required
     // Skill 系统：预授权工具跳过普通权限检查（但不能跳过边界违规或 consequence hard deny）
@@ -2610,25 +2610,9 @@ export class ToolExecutor {
         };
 
       default: {
-        const connector = findConnectorToolMetadata(tool.name);
-        const connectorWriteReason = tool.permissionLevel === 'write'
-          ? connectorExternalWriteReason(tool.name)
-          : undefined;
-        if (connector && connectorWriteReason) {
-          return {
-            type: 'file_write',
-            tool: tool.name,
-            details: { ...params },
-            reason: connectorWriteReason,
-            boundary: {
-              id: 'connector.external_write',
-              reason: connectorWriteReason,
-              reasonEn: connectorExternalWriteReason(tool.name, 'en'),
-              connectorName: connector.connectorName,
-              connectorNameEn: connector.connectorNameEn,
-            },
-          };
-        }
+        // 连接器写回与 http_request 令牌写共用 connector.external_write 边界（构造见 connectorTokenWrite.ts）。
+        const connectorRequest = connectorWritePermissionRequest(tool, params);
+        if (connectorRequest) return connectorRequest;
         // Map permission level to permission request type
         const requestType = permissionRequestTypeForLevel(tool.permissionLevel);
         return {

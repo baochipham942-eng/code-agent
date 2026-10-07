@@ -1,11 +1,15 @@
 // ============================================================================
-// shouldDaemonExit 表驱动单测（ADR-083 ④）：三信号（在跑 run / 配对伴侣 / 等审批）
-// 全空闲才随壳退出；任何一项在忙就留守（拍板记录 2）。
+// daemon 空闲去留与设置默认值单测（ADR-083 ④/⑤）：
+//   - shouldDaemonExit 表驱动：三信号（在跑 run / 配对伴侣 / 等审批）全空闲才随壳
+//     退出，任何一项在忙就留守（拍板记录 2）。
+//   - launchAtLogin 默认 false（拍板记录 2：登录自启默认关）；只测设置位，
+//     LaunchAgent / 登录项的写入不在本刀范围（证据档附 grep 佐证）。
 // ============================================================================
 
 import { describe, expect, it } from 'vitest';
 
 import { shouldDaemonExit } from '../../../../src/host/daemon/daemonIdle';
+import { DEFAULT_SETTINGS } from '../../../../src/host/services/core/configDefaults';
 
 describe('shouldDaemonExit（表驱动，ADR-083 ④）', () => {
   const cases: Array<{
@@ -28,4 +32,14 @@ describe('shouldDaemonExit（表驱动，ADR-083 ④）', () => {
       expect(shouldDaemonExit(snapshot)).toBe(expected);
     });
   }
+});
+
+describe('daemon 设置默认值（ADR-083 ⑤）', () => {
+  it('launchAtLogin 默认 false（登录自启默认关）', () => {
+    expect(DEFAULT_SETTINGS.daemon?.launchAtLogin).toBe(false);
+  });
+
+  it('默认配置带全 daemon 组，存量配置可整组缺省（可选组）', () => {
+    expect(DEFAULT_SETTINGS.daemon).toEqual({ launchAtLogin: false });
+  });
 });

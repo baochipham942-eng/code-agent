@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { DeferredToolMeta } from '../../src/shared/contract/toolSearch.ts';
 import type { ToolSearchService } from '../../src/host/services/toolSearch/toolSearchService.ts';
+import { resolveStepfunBaseUrl } from './stepfunEndpoint';
 
 const spyUrl = new URL('./jev-skill-rerank-systemone-spy.ts', import.meta.url).href;
 registerHooks({
@@ -28,9 +29,8 @@ registerHooks({
 const JEV_USD_ABORT = 1;
 const JUDGE_ERROR_RATE_LIMIT = 0.1;
 const OUT_JSON = 'docs/research/assets/2026-09-30-jev-eval/skill-rerank.json';
-// https://platform.stepfun.com/docs/zh/guides/pricing/details (2026-09-30)
-// ¥0.7 in / ¥0.14 cached / ¥2.1 out per 1M tokens ≈ $0.10 / $0.02 / $0.30
-const STEPFUN_PRICE = { inputPerMTok: 0.1, outputPerMTok: 0.3, baseURL: 'https://api.stepfun.com/v1', model: 'step-3.5-flash-2603' };
+// Step Plan subscription (flat fee, per-token price 0).
+const STEPFUN_PRICE = { inputPerMTok: 0, outputPerMTok: 0, baseURL: resolveStepfunBaseUrl(), model: 'step-3.5-flash-2603' };
 
 type Kind = 'implicit' | 'negative' | 'chitchat';
 type Origin = 'bank' | 'synthetic';

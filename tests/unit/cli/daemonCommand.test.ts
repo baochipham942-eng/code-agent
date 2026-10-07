@@ -19,7 +19,7 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 
 import { daemonCliCommand } from '../../../src/cli/commands/daemon';
-import { isDaemonPidAlive } from '../../../src/host/daemon/daemonLock';
+import { isDaemonPidAlive } from '../../../src/host/services/daemon/daemonLock';
 import { DurableRunKernel } from '../../../src/host/runtime/durableRunKernel';
 import { DurableRunRepository } from '../../../src/host/services/core/repositories/DurableRunRepository';
 

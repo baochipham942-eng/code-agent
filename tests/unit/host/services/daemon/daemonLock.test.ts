@@ -20,7 +20,7 @@ import {
   isDaemonPidAlive,
   readDaemonPidFile,
   releaseDaemonLock,
-} from '../../../../src/host/daemon/daemonLock';
+} from '../../../../../src/host/services/daemon/daemonLock';
 
 const tempDirs: string[] = [];
 

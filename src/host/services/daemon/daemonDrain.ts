@@ -12,7 +12,7 @@
 // （webServer.shutdown）只需传一个 watchdogActive 布尔。
 // ============================================================================
 
-import { WEB_DAEMON } from '../../shared/constants/webServer';
+import { WEB_DAEMON } from '../../../shared/constants/webServer';
 
 function delay(ms: number): Promise<void> {
   return new Promise<void>((resolve) => {

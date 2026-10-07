@@ -8,8 +8,8 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { drainPendingOpsForShutdown } from '../../../../src/host/daemon/daemonDrain';
-import { WEB_DAEMON } from '../../../../src/shared/constants/webServer';
+import { drainPendingOpsForShutdown } from '../../../../../src/host/services/daemon/daemonDrain';
+import { WEB_DAEMON } from '../../../../../src/shared/constants/webServer';
 
 describe('drainPendingOpsForShutdown（ADR-083 ③ 排空语义）', () => {
   /** withCap 侦查件：手写闭包记录调用（vi.fn 对泛型签名的 Mock 类型对不上真签名）。 */

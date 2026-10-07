@@ -1,4 +1,8 @@
-import { normalizeTargetPath, toolResourceAccessesConflict, type ResolvedToolAccess } from './resourceScope';
+import {
+  normalizeTargetPath,
+  runtimeScopeAsWriteAccess,
+  toolResourceAccessesConflict,
+} from './resourceScope';
 
 export type WriteIsolationKind = 'file' | 'workspace';
 
@@ -90,21 +94,8 @@ function firstStringParam(params: Record<string, unknown>, keys: string[]): stri
   return null;
 }
 
-function writeScopeAccess(scope: WriteIsolationScope): ResolvedToolAccess {
-  if (scope.kind === 'workspace') {
-    return {
-      kind: 'write',
-      domain: { type: 'workspace', root: scope.root, targetPath: scope.targetPath },
-    };
-  }
-  return {
-    kind: 'write',
-    domain: { type: 'path', root: scope.root, targetPath: scope.targetPath },
-  };
-}
-
 function scopeConflicts(left: WriteIsolationScope, right: WriteIsolationScope): boolean {
-  return toolResourceAccessesConflict(writeScopeAccess(left), writeScopeAccess(right));
+  return toolResourceAccessesConflict(runtimeScopeAsWriteAccess(left), runtimeScopeAsWriteAccess(right));
 }
 
 export function getWriteIsolationScope(

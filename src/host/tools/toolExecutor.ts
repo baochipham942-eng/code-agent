@@ -42,6 +42,7 @@ import { getPluginIdForTool, getPluginOriginForTool } from '../plugins/pluginToo
 import { getWriteIsolationManager, getWriteIsolationScope, type WriteIsolationMetadata } from '../security/writeIsolation';
 import type { HookManager } from '../hooks/hookManager';
 import { getToolResolver } from '../tools/dispatch/toolResolver';
+import { findResourceScopeMismatch } from '../tools/dispatch/resolveToolCallAccess';
 import { lookupMcpToolAfterReapedReconnect } from './mcpReapedToolLookup';
 import type { ConversationExecutionIntent, WorkbenchToolScope } from '../../shared/contract/conversationEnvelope';
 import { isBashToolName, normalizeToolName } from './toolNames';
@@ -2259,6 +2260,17 @@ export class ToolExecutor {
       toolDef.permissionLevel,
       this.executionCwd,
     );
+    // ADR-073 §3：静态声明域盖不住运行时锁域 → 记 resource_scope_mismatch；锁照拿
+    //（串行即等待本身），绝不因静态"安全"跳过或放宽锁。检查自身故障不影响执行。
+    try {
+      const scopeMismatch = findResourceScopeMismatch(
+        executionToolName,
+        params,
+        { workspace: this.runtimeWorkspace, cwd: this.executionCwd, toolCallId: options.currentToolCallId },
+        writeIsolationScope,
+      );
+      if (scopeMismatch) options.turnTrace?.record('resource_scope_mismatch', scopeMismatch);
+    } catch { /* mismatch 检查绝不拦工具执行 */ }
     let releaseWriteIsolation: (() => void) | undefined;
     let writeIsolationMetadata: WriteIsolationMetadata | undefined;
     const startTime = Date.now();

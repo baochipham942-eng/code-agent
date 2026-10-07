@@ -34,7 +34,8 @@ async function makePng(width: number, height: number): Promise<string> {
 async function makeNoisyPng(width: number, height: number): Promise<string> {
   const filePath = path.join(os.tmpdir(), `vision-prepare-noise-${width}x${height}-${Date.now()}-${Math.random().toString(36).slice(2)}.png`);
   await sharp({
-    create: { width, height, channels: 3, noise: { type: 'gaussian' } },
+    // Create 类型的 background 必填；有 noise 时被忽略
+    create: { width, height, channels: 3, background: { r: 0, g: 0, b: 0 }, noise: { type: 'gaussian' } },
   }).png().toFile(filePath);
   createdFiles.push(filePath);
   return filePath;

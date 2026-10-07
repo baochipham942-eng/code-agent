@@ -152,6 +152,35 @@ describe('resolveReviewModelConfig（可用性降级链）', () => {
 
     expect(config.provider).toBe('xiaomi');
   });
+
+  // N-MODELCAT-SERVICE-TIER-WIRE：评审强制 standard——父 run 的半价档（无人值守省钱）
+  // 不进评审请求，四条返回路径（powerful / 降级 / 无父兜底）都不带 serviceTier。
+  it('评审配置强制 standard：父 run 带 serviceTier 时每条返回路径都摘掉', () => {
+    const tieredParent = { ...parentModelConfig, serviceTier: 'flex' } as ModelConfig;
+
+    // powerful 可用 → 返回 powerful（fresh 配置，本就不带档）
+    providerResolutionState.resolveProviderApiKey.mockReturnValue('sk-xiaomi-valid');
+    expect('serviceTier' in resolveReviewModelConfig(tieredParent)).toBe(false);
+
+    // powerful 无 key → 降级 {...parent}（父带档也必须摘）
+    providerResolutionState.resolveProviderApiKey.mockReturnValue('');
+    const fallback = resolveReviewModelConfig(tieredParent);
+    expect(fallback.provider).toBe('zhipu');
+    expect(fallback.serviceTier).toBeUndefined();
+    expect('serviceTier' in fallback).toBe(false);
+
+    // powerful 有 key 但 unavailable → 降级 {...parent} 同样摘
+    providerResolutionState.resolveProviderApiKey.mockReturnValue('sk-xiaomi-expired');
+    healthMonitorState.healthMap = new Map([['xiaomi', { status: 'unavailable' }]]);
+    const degraded = resolveReviewModelConfig(tieredParent);
+    expect(degraded.provider).toBe('zhipu');
+    expect('serviceTier' in degraded).toBe(false);
+
+    // 无父配置兜底 → powerful
+    providerResolutionState.resolveProviderApiKey.mockReturnValue('sk-xiaomi-valid');
+    healthMonitorState.healthMap = new Map();
+    expect('serviceTier' in resolveReviewModelConfig(undefined)).toBe(false);
+  });
 });
 
 describe('runReviewGate（闸2 派发）', () => {

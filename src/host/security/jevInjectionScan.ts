@@ -3,6 +3,7 @@
 
 import { guardSensitiveText } from './sensitiveDataGuard';
 import { getInputSanitizer } from './inputSanitizer';
+import { createProductionJevCall, isJevFeatureOn } from '../model/jevFeatures';
 import {
   JEV_INJECTION_QUESTIONS,
   JEV_INJECTION_THRESHOLDS,
@@ -26,10 +27,6 @@ const REMOTE_TOOL_PREFIXES = [
   'memory_write', 'remote_skill',
 ];
 
-function isJevInjectionScanEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.CODE_AGENT_JEV_INJECTION_SCAN === '1';
-}
-
 function isRemoteInjectionSource(source: string): boolean {
   return REMOTE_TOOL_PREFIXES.some((prefix) => source === prefix || source.startsWith(prefix));
 }
@@ -46,7 +43,8 @@ function unavailable(reason: JevInjectionScanResult['reason'] = 'unavailable'): 
 
 /**
  * Run the advisory second layer. The caller supplies a seam for replay tests;
- * production uses the pinned provider only when the explicit flag and key exist.
+ * production uses the pinned provider only when the feature flag (default on,
+ * see model/jevFeatures.ts) and a usable key exist.
  */
 export async function scanWithJevInjection(
   source: string,
@@ -54,7 +52,7 @@ export async function scanWithJevInjection(
   systemOne?: JevSystemOneCall,
   signal?: AbortSignal,
 ): Promise<JevInjectionScanResult> {
-  if (!isJevInjectionScanEnabled()) return unavailable('disabled');
+  if (!isJevFeatureOn('injectionScan')) return unavailable('disabled');
   if (!isRemoteInjectionSource(source)) return unavailable('not_remote');
   if (!text) return { skipped: false, flagged: false, injection: 0, exfilRequest: 0 };
   // Advisory only: a cancelled run must not wait on the scan.
@@ -69,11 +67,7 @@ export async function scanWithJevInjection(
     remote_text: guardSensitiveText(text.slice(0, 12_000), { surface: 'telemetry', mode: 'model-context' }),
   };
 
-  const call = systemOne ?? (async (stateArg, questions, options) => {
-    const { resolveJevRoute, systemOne: productionSystemOne } = await import('../model/providers/typesafeProvider');
-    if (resolveJevRoute() === null) throw new Error('TYPESAFE_KEY_MISSING');
-    return productionSystemOne(stateArg, questions, options);
-  });
+  const call = systemOne ?? createProductionJevCall('injectionScan');
 
   let answers: JevAnswers;
   try {

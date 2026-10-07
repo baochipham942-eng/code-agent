@@ -270,6 +270,12 @@ const diagnosticsHandlers: RawDomainRouteHandlers<DiagnosticsDomainRequest, void
       },
     };
   },
+  // /permissions（诊断）— Jev 四特性开关与降级状态（N-JEV-DEFAULT-ON）：只读快照，
+  // 只含 flag/effective/degradedCount 与 route 类别，永不包含 key 材料。
+  jevStatus: async (_ctx, _requestPayload) => {
+    const { getJevStatus } = await import('../model/jevFeatures');
+    return { success: true, data: getJevStatus() };
+  },
   // /cost — 预算状态
   budget: async (_ctx, _requestPayload) => {
     const { getBudgetService } = await import('../services/core/budgetService');

@@ -138,7 +138,7 @@ interface ScenarioRun {
   exhaustedTurns: boolean;
   toolCallNames: string[];
   toolCallSummaries: string[];
-  finalTextExcerpt: string;
+  finalText: string;
   promptTokens: number;
   completionTokens: number;
   wallMs: number;
@@ -385,7 +385,7 @@ async function runScenario(
     exhaustedTurns,
     toolCallNames: toolCalls.map((call) => call.name),
     toolCallSummaries,
-    finalTextExcerpt: finalText.slice(0, 240),
+    finalText: finalText.slice(0, 4000),
     promptTokens,
     completionTokens,
     wallMs: Date.now() - startedAt,
@@ -508,7 +508,7 @@ async function main(): Promise<void> {
       exhaustedTurns: run.exhaustedTurns,
       toolCallNames: run.toolCallNames,
       toolCallSummaries: run.toolCallSummaries,
-      finalTextExcerpt: run.finalTextExcerpt,
+      finalText: run.finalText,
       promptTokens: run.promptTokens,
       completionTokens: run.completionTokens,
       wallMs: run.wallMs,

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* global console, process */
 // 设计系统静态门（W2）——契约见 docs/designs/design-system.md §5（规则清单，改一边必须改另一边）
 //
 // 棘轮基线策略：现存违规（建门时 760 裸 button / 21 手搓 modal / 81 hex）不强制一次清零，
@@ -102,9 +103,9 @@ const SCROLLER_RE = /\boverflow-(?:auto|scroll|y-auto|y-scroll)\b/;
 const TOP_PADDING_RE = /(?<![\w-])p[ty]-(?:0\.\d+|[1-9]\d*(?:\.\d+)?|\[|px)\b/;
 const CSS_VAR_RE = /var\s*\(/g;
 const CSS_VAR_NAME_RE = /^\s*(--[A-Za-z0-9_-]+)/;
-const CSS_VAR_DECL_RE = /(?:^|[\s{;])(\-\-[A-Za-z0-9_-]+)\s*:/g;
-const JS_INLINE_CSS_VAR_RE = /["'](\-\-[A-Za-z0-9_-]+)["']\s*:/g;
-const JS_SET_PROPERTY_CSS_VAR_RE = /setProperty\(\s*["'](\-\-[A-Za-z0-9_-]+)["']/g;
+const CSS_VAR_DECL_RE = /(?:^|[\s{;])(--[A-Za-z0-9_-]+)\s*:/g;
+const JS_INLINE_CSS_VAR_RE = /["'](--[A-Za-z0-9_-]+)["']\s*:/g;
+const JS_SET_PROPERTY_CSS_VAR_RE = /setProperty\(\s*["'](--[A-Za-z0-9_-]+)["']/g;
 const THEME_NAMES = ['dark', 'light', 'high-contrast-dark', 'high-contrast-light'];
 
 /**

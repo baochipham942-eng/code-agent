@@ -2,6 +2,8 @@ import http from 'node:http';
 import { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp, type CreateAppDeps } from '../../../src/web/app';
+import { shouldDaemonExit, type DaemonIdleSnapshot } from '../../../src/host/daemon/daemonIdle';
+import type { PermissionRequest } from '../../../src/shared/contract';
 import { SERVER_AUTH_TOKEN } from '../../../src/web/middleware/auth';
 import {
   getApplicationRunRegistry,
@@ -183,6 +185,22 @@ describe('web app assembly (createApp)', () => {
 
     expect(registerQueuedInputStartupSweep).toHaveBeenCalledOnce();
     expect(registerQueuedInputStartupSweep).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it('把 daemon 空闲快照透传给调用方，三信号与防闲睡同源（ADR-083）', () => {
+    let getSnapshot: (() => DaemonIdleSnapshot) | undefined;
+    createApp({
+      ...buildDeps('/tmp/seam-assembly-daemon-idle'),
+      getPendingPermissionRequests: () => [{ id: 'pr-1' } as PermissionRequest],
+      registerDaemonIdleSnapshot: (getter) => { getSnapshot = getter; },
+    });
+
+    expect(getSnapshot).toBeTypeOf('function');
+    // 装配测试环境：runRegistry / 后台任务台账 / companion gateway 都为空 → 前两个
+    // 信号 false；审批信号直接来自 deps（有等审批 → 不许随壳退出）。
+    const snapshot = getSnapshot!();
+    expect(snapshot).toEqual({ runningRuns: false, pairedCompanion: false, awaitingApproval: true });
+    expect(shouldDaemonExit(snapshot)).toBe(false);
   });
 
   it('mounts cors -> rate limit -> auth -> json parser before any router/route', () => {

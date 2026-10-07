@@ -140,6 +140,7 @@
           "verified the output",
           "verified the artifact",
           "file is verified",
+          "written and verified",
           "read it back",
           "reading it back",
           "read-back",
@@ -147,6 +148,12 @@
           "回读",
           "读回验证",
           "核验文件"
+        ],
+        "memoryMentions": [
+          "memory",
+          "记忆",
+          "笔记",
+          "备忘"
         ]
       }
     }

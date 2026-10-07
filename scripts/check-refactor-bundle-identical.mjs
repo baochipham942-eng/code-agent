@@ -104,10 +104,14 @@ export function scanForPattern(text, regex) {
   const previousLastIndex = pattern.lastIndex;
   pattern.lastIndex = 0;
   let hits = 0;
-  while (pattern.exec(text) !== null) {
+  let match;
+  while ((match = pattern.exec(text)) !== null) {
     hits += 1;
     if (!pattern.global) break;
-    if (pattern.lastIndex === 0) pattern.lastIndex = 1;
+    // A zero-width match leaves lastIndex at match.index; step past it or exec
+    // returns the same empty match forever (the guard must look at the match,
+    // not at lastIndex, since the stall happens at any position).
+    if (match[0].length === 0) pattern.lastIndex += 1;
   }
   pattern.lastIndex = previousLastIndex;
   if (hits === 0) throw new Error(`expected pattern had zero hits: ${pattern}`);

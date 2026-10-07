@@ -21,7 +21,7 @@ import { getConfirmationGate } from './confirmationGate';
 import { mintAppGrantSession, mintAppGrantStanding } from '../permissions/appGrantStore';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
 import { createLogger } from '../services/infra/logger';
-import { approvalAnswerFromPermission, noteCompanionApprovalSettlement } from '../services/companion/companionDecisionSink';
+import { approvalAnswerFromPermission, isCompanionApprovalResponding, noteCompanionApprovalSettlement } from '../services/companion/companionDecisionSink';
 import { holdStallClock } from './stallObserver';
 
 const logger = createLogger('AgentOrchestrator');
@@ -171,6 +171,21 @@ export class OrchestratorPermissionIsland {
       outcome: 'answered',
       answer: approvalAnswerFromPermission(response),
     });
+    // 手机先答：桌面卡片还挂着，必须让它知道这条已在别处裁决，否则它会一直留到
+    // 迟到的点击撞上 unknown_request（N-COMPANION-APPROVAL-DESKTOP-RESOLVED）。
+    // 只在 companion respond 的 deliver 窗口内发——桌面先点的那条路一个字节都不变。
+    // 与 settleTimedOut 同形（加法字段），在 Promise 释放之前发出。
+    if (isCompanionApprovalResponding(requestId)) {
+      this.onEvent({
+        type: 'permission_request',
+        data: {
+          ...pending.request,
+          resolved: true,
+          decision: isApproveResponse(response) ? 'once' : 'deny',
+          resolvedBy: 'companion',
+        },
+      });
+    }
     pending.resolve(response, undefined, updatedArgs);
     return 'delivered';
   }

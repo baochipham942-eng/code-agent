@@ -1,6 +1,6 @@
 # ADR-083：桌面常驻宿主（执行进程与 Tauri 壳解耦）
 
-- 状态：**草稿·待爸拍板**
+- 状态：**已接受**（2026-10-06 爸「按推荐」：两处 Decision needed 全按推荐）
 - 单号：N-RESIDENT-HOST-ADR（只定架构，不施工；本文不含任何代码改动）
 - 基线：`origin/main@d9f25f664`（`d9f25f66482a`，HEAD 即基线，工作树干净）
 - 证据：本机证据档 `~/work/evidence/N-RESIDENT-HOST-ADR.md`。竞品（Codex）事实按任务书文本引用，逐条标注「per ticket text, not re-verified」——本机无私档原文与 codex-rs 树，未复核
@@ -119,6 +119,11 @@ sequenceDiagram
 - 空闲（无 run、无配对伴侣、无等审批）时 daemon 是否随壳退出：推荐**随壳退出**（空闲不驻留）；配对伴侣在线时除外——今天配对就在防闲睡，常驻与它同向。备选：常驻到登出。
 - 登录自启：推荐**默认关、设置里可开**。默认驻留一个能执行命令的进程属于要用户知情的选择。竞品默认开（per ticket text, not re-verified），不照抄。
 - 优雅停排空宽限：竞品默认 60 秒、上限 300 秒（per ticket text, not re-verified）。本 ADR 不钉数，数值由首张施工单定并进 `shared/constants`；恢复语义由 ADR-075 定（`crash_or_quit` 自动续），不照抄竞品「崩溃不自动恢复」的口径。
+
+## 拍板记录（2026-10-06，只增不改）
+
+1. 常驻宿主来源：**方案 A**，现有 webServer 服务态升格为 daemon（pid 文件、单实例锁、`durable_runs` 当名册，桌面与 CLI 变客户端），首刀只做 mac；Quit 确认随首刀并入，有任务在跑时给「后台继续」「停止并退出」两个出口。
+2. 默认值：空闲（无 run、无配对伴侣、无等审批）时 daemon **随壳退出**，配对伴侣在线时除外；登录自启**默认关**、设置里可开；排空宽限数值由首张施工单定并进 `shared/constants`。
 
 ## 划界
 

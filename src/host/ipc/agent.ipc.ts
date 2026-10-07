@@ -184,7 +184,7 @@ const agentHandlers: RawDomainRouteHandlers<AgentDomainRequest, AgentRouteCtx> =
       const adminError = getAdminAccessIpcError('Permission mode');
       if (adminError) return adminError;
     }
-    const changed = setPermissionMode(mode, Boolean((payload as { approved?: boolean } | undefined)?.approved));
+    const changed = setPermissionMode(mode, Boolean((payload as { approved?: boolean } | undefined)?.approved), 'user-ui');
     return { success: true, data: { changed, mode } };
   },
   getSessionPermissionMode: async (_getAppService, payload) => {
@@ -211,7 +211,7 @@ const agentHandlers: RawDomainRouteHandlers<AgentDomainRequest, AgentRouteCtx> =
       if (adminError) return adminError;
     }
     const manager = getPermissionModeManager();
-    const changed = manager.setSessionMode(req.sessionId, mode, Boolean(req.approved));
+    const changed = manager.setSessionMode(req.sessionId, mode, Boolean(req.approved), 'user-ui');
     if (changed) {
       // 单一真源：档位状态只存在于 PermissionModeManager，变更即广播，
       // 所有消费方（会话内切换器/设置页）从广播同步，不留 pending 中转 state。

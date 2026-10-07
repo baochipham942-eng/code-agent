@@ -94,13 +94,24 @@ describe('PermissionClassifier Jev（LLM classifier）', () => {
     expect(stub.calls.length).toBe(0);
   });
 
-  it('默认（不传 config）开关关闭：环境变量未设时不调 systemOne', async () => {
+  it('默认（不传 config）开关打开（N-JEV-DEFAULT-ON）：环境变量未设时走 Jev 档', async () => {
     const stub = stubSystemOne();
-    // 显式传 jevSystemOne 但 enableLlm 缺省 → 环境变量未设 → 关
+    // 显式传 jevSystemOne 但 enableLlm 缺省 → 环境变量未设 → 默认开
+    const classifier = new PermissionClassifier({ jevSystemOne: stub });
+    const result = await classifyBash(classifier, FALLBACK_COMMAND);
+
+    expect(result.decision).toBe('approve');
+    expect(stub.calls.length).toBe(1);
+  });
+
+  it("环境变量 CODE_AGENT_PERMISSION_LLM_CLASSIFIER='0' 显式关：不调 systemOne，维持 fallback ask", async () => {
+    vi.stubEnv('CODE_AGENT_PERMISSION_LLM_CLASSIFIER', '0');
+    const stub = stubSystemOne();
     const classifier = new PermissionClassifier({ jevSystemOne: stub });
     const result = await classifyBash(classifier, FALLBACK_COMMAND);
 
     expect(result.decision).toBe('ask');
+    expect(result.traceStep?.rule).toBe('fallback');
     expect(stub.calls.length).toBe(0);
   });
 

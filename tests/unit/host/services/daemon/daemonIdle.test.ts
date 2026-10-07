@@ -8,8 +8,8 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { shouldDaemonExit } from '../../../../src/host/daemon/daemonIdle';
-import { DEFAULT_SETTINGS } from '../../../../src/host/services/core/configDefaults';
+import { shouldDaemonExit } from '../../../../../src/host/services/daemon/daemonIdle';
+import { DEFAULT_SETTINGS } from '../../../../../src/host/services/core/configDefaults';
 
 describe('shouldDaemonExit（表驱动，ADR-083 ④）', () => {
   const cases: Array<{

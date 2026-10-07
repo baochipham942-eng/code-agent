@@ -78,7 +78,7 @@ import { LanCompanionManager } from '../host/services/companion/LanCompanionMana
 import { startCompanionRelayAccountIfConfigured, startCompanionRelayIfConfigured } from '../host/services/companion/CompanionRelayClient';
 import { getAuthService } from '../host/services/auth/authService';
 import { IdleSleepInhibitor } from '../host/services/desktop/idleSleepInhibitor';
-import type { DaemonIdleSnapshot } from '../host/daemon/daemonIdle';
+import type { DaemonIdleSnapshot } from '../host/services/daemon/daemonIdle';
 import { getBackgroundTaskLedger } from '../host/task/backgroundTaskLedger';
 import { loadLanIdentity } from '../host/services/companion/lanIdentity';
 import { COMPANION_LIMITS, COMPANION_MANAGE_CHANNEL } from '../shared/constants/companion';

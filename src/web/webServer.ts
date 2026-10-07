@@ -369,9 +369,9 @@ import {
 import { resolveDurableRunRollout } from '../host/app/durableRunRollout';
 import type { PendingDevPermissionRequest } from './routes/dev';
 import { createApp, type CreateAppDeps } from './app';
-import { acquireDaemonLock, releaseDaemonLock } from '../host/daemon/daemonLock';
-import { shouldDaemonExit, type DaemonIdleSnapshot } from '../host/daemon/daemonIdle';
-import { drainPendingOpsForShutdown } from '../host/daemon/daemonDrain';
+import { acquireDaemonLock, releaseDaemonLock } from '../host/services/daemon/daemonLock';
+import { shouldDaemonExit, type DaemonIdleSnapshot } from '../host/services/daemon/daemonIdle';
+import { drainPendingOpsForShutdown } from '../host/services/daemon/daemonDrain';
 import { getBackgroundTaskLedger } from '../host/task/backgroundTaskLedger';
 import { listForegroundPermissionRequests } from './foregroundPermissionRegistry';
 import { createWebSessionContext } from './sessionDomainHandler';

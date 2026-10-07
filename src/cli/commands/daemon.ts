@@ -9,7 +9,7 @@
 import { Command } from 'commander';
 import path from 'path';
 import { getUserConfigDir } from '../../host/config/configPaths';
-import { isDaemonPidAlive, readDaemonPidFile } from '../../host/daemon/daemonLock';
+import { isDaemonPidAlive, readDaemonPidFile } from '../../host/services/daemon/daemonLock';
 import type { ActiveRunRosterEntry } from '../../host/services/core/repositories/DurableRunRepository';
 import { WEB_DAEMON } from '../../shared/constants/webServer';
 

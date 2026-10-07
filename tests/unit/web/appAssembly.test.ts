@@ -2,7 +2,7 @@ import http from 'node:http';
 import { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp, type CreateAppDeps } from '../../../src/web/app';
-import { shouldDaemonExit, type DaemonIdleSnapshot } from '../../../src/host/daemon/daemonIdle';
+import { shouldDaemonExit, type DaemonIdleSnapshot } from '../../../src/host/services/daemon/daemonIdle';
 import type { PermissionRequest } from '../../../src/shared/contract';
 import { SERVER_AUTH_TOKEN } from '../../../src/web/middleware/auth';
 import {

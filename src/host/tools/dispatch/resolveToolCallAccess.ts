@@ -3,8 +3,10 @@ import type { MCPToolAnnotations } from '../../mcp/types';
 import type { ToolSchema } from '../../protocol/tools';
 import { resolveToolAlias } from '../../services/toolSearch/deferredTools';
 import {
+  staticAccessCoversRuntimeScope,
   type ResolvedToolAccess,
 } from '../../security/resourceScope';
+import type { WriteIsolationScope } from '../../security/writeIsolation';
 import { resolveFoldedToolAccess } from '../../security/toolAccessResolve';
 import { getProtocolRegistry } from '../protocolRegistry';
 import { getProtocolToolSchemas } from '../protocolToolRegistration';
@@ -178,4 +180,48 @@ export function isBarrierToolCall(toolCall: ToolCall): boolean {
   const canonical = schema?.name ?? resolveToolAlias(toolCall.name);
   if (canonical === 'PlanMode') return toolCall.arguments?.action === 'exit';
   return BARRIER_TOOL_NAMES.has(canonical);
+}
+
+export interface ResourceScopeMismatch {
+  toolCallId: string | null;
+  toolName: string;
+  /** 静态访问域的短描述串（kind:domain），只进 trace，不含文件内容。 */
+  staticDomains: string[];
+  runtimeLockKey: string;
+}
+
+/** 访问域的短描述：named 域带名字，其余域只报类型。 */
+function describeAccess(access: ResolvedToolAccess): string {
+  const domain = access.domain;
+  const domainText = domain.type === 'named' ? `named:${domain.name}` : domain.type;
+  return `${access.kind}:${domainText}`;
+}
+
+/**
+ * ADR-073 §3 mismatch 检查：静态声明解析出的访问域盖不住运行时写锁域时，返回
+ * resource_scope_mismatch 的 trace 负载；盖得住或运行时无锁返回 null。锁本身
+ * 由调用方照常获取——分歧的串行化就是锁等待，绝不因静态说"安全"跳过锁。
+ * resolver 抛错按不覆盖处理（记 resolver-error），不向调用方抛。
+ */
+export function findResourceScopeMismatch(
+  toolName: string,
+  params: Record<string, unknown>,
+  options: ResolveToolCallAccessOptions & { readonly toolCallId?: string },
+  runtimeScope: WriteIsolationScope | null,
+): ResourceScopeMismatch | null {
+  if (!runtimeScope) return null;
+  const toolCallId = options.toolCallId ?? null;
+  let accesses: readonly ResolvedToolAccess[];
+  try {
+    accesses = resolveToolCallAccesses({ id: '', name: toolName, arguments: params }, options);
+  } catch {
+    return { toolCallId, toolName, staticDomains: ['resolver-error'], runtimeLockKey: runtimeScope.lockKey };
+  }
+  if (staticAccessCoversRuntimeScope(accesses, runtimeScope)) return null;
+  return {
+    toolCallId,
+    toolName,
+    staticDomains: accesses.map(describeAccess),
+    runtimeLockKey: runtimeScope.lockKey,
+  };
 }

@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -15,6 +15,7 @@ import {
   applyPortableEvidenceToWorkspace,
   digestWorkspaceValue,
 } from '../../../../src/host/services/sessionFork/workspace';
+import { PortableEvidenceApplyBackEngine } from '../../../../src/host/services/sessionFork/workspace/portableEvidenceApplyBackEngine';
 import type {
   AnchorWorkspaceEvidence,
   WorkspaceCommandRunner,
@@ -101,6 +102,37 @@ async function buildTamperedPortableEvidence(
   });
 }
 
+/**
+ * Re-signs the captured evidence with a fully replaced staged patch, so a
+ * crafted section (e.g. a rename whose a-side header path escapes the
+ * repository) reaches the apply-back gates with self-consistent digests.
+ */
+async function buildTamperedPatchEvidence(
+  sourceEvidence: AnchorWorkspaceEvidence,
+  stagedPatch: Buffer,
+): Promise<PortableIsolatedAnchorEvidenceV1> {
+  const payload = { ...sourceEvidence.payload, stagedPatchBase64: stagedPatch.toString('base64') };
+  const { evidenceDigest: _discarded, ...sourceManifestWithoutDigest } = sourceEvidence.manifest;
+  const manifestWithoutDigest = {
+    ...sourceManifestWithoutDigest,
+    stagedPatch: {
+      sha256: createHash('sha256').update(stagedPatch).digest('hex'),
+      sizeBytes: stagedPatch.byteLength,
+    },
+  };
+  const manifest = {
+    ...manifestWithoutDigest,
+    evidenceDigest: digestWorkspaceValue({ manifest: manifestWithoutDigest, payload }),
+  };
+  return await buildPortableIsolatedAnchorEvidenceV1({
+    evidenceId: 'apply-back-tampered-patch-1',
+    repositoryIdentityDigest: `sha256:${createHash('sha256')
+      .update(sourceEvidence.manifest.repositoryIdentity.fingerprint)
+      .digest('hex')}`,
+    evidence: { manifest, payload },
+  });
+}
+
 async function captureFixture(options: {
   repositoryRoot: string;
   baseCommit: string;
@@ -148,6 +180,17 @@ async function createRenameFixture(options: { cloudModifyExtra?: string } = {}):
   if (options.cloudModifyExtra) {
     await writeFile(path.join(repositoryRoot, options.cloudModifyExtra), 'cloud extra\n');
   }
+  return await captureFixture({ repositoryRoot, baseCommit });
+}
+
+/** Minimal evidence: one base commit plus one untracked cloud file — small enough to tamper. */
+async function createSingleFileFixture(): Promise<ApplyBackFixture> {
+  const repositoryRoot = await initTempRepository();
+  await writeFile(path.join(repositoryRoot, 'base.txt'), 'base\n');
+  git(repositoryRoot, 'add', '.');
+  git(repositoryRoot, 'commit', '-m', 'base');
+  const baseCommit = git(repositoryRoot, 'rev-parse', 'HEAD');
+  await writeFile(path.join(repositoryRoot, 'cloud.txt'), 'cloud\n');
   return await captureFixture({ repositoryRoot, baseCommit });
 }
 
@@ -441,32 +484,26 @@ describe('applyPortableEvidenceToWorkspace · rework r1 regressions', () => {
       bytes: hookBytes,
       mode: 0o755,
     });
+    const treeBefore = await hashWorktree(fixture.repositoryRoot);
 
-    const dryRun = await applyPortableEvidenceToWorkspace({
-      evidence: portable,
-      workspaceRoot: fixture.repositoryRoot,
-      mode: 'dry-run',
-    });
-    expect(dryRun.conflicts).toContain('.git/hooks/pre-commit');
-    expect(dryRun.wouldChange).not.toContain('.git/hooks/pre-commit');
-
-    const applied = await applyPortableEvidenceToWorkspace({
-      evidence: portable,
-      workspaceRoot: fixture.repositoryRoot,
-      mode: 'apply',
-    });
-    expect(applied.outcome).toBe('partial');
-    const rejected = applied.files.find((file) => file.path === '.git/hooks/pre-commit');
-    expect(rejected?.status).toBe('conflict');
-    expect(rejected?.reason).toContain('safety envelope');
-    await expect(readFile(path.join(fixture.repositoryRoot, '.git', 'hooks', 'pre-commit')))
-      .rejects.toMatchObject({ code: 'ENOENT' });
+    // Since rework r3 an envelope escape rejects the WHOLE apply instead of
+    // degrading to a per-file conflict: hostile evidence applies nothing.
+    for (const mode of ['dry-run', 'apply'] as const) {
+      await expect(applyPortableEvidenceToWorkspace({
+        evidence: portable,
+        workspaceRoot: fixture.repositoryRoot,
+        mode,
+      })).rejects.toMatchObject({ code: 'UNSAFE_EVIDENCE_PATH' });
+    }
     await expect(applyPortableEvidenceToWorkspace({
       evidence: portable,
       workspaceRoot: fixture.repositoryRoot,
       mode: 'apply',
       resolutions: { '.git/hooks/pre-commit': 'take-cloud' },
-    })).rejects.toMatchObject({ code: 'INVALID_RESOLUTION' });
+    })).rejects.toMatchObject({ code: 'UNSAFE_EVIDENCE_PATH' });
+    await expect(readFile(path.join(fixture.repositoryRoot, '.git', 'hooks', 'pre-commit')))
+      .rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await hashWorktree(fixture.repositoryRoot)).toBe(treeBefore);
   });
 
   it('rolls back earlier applied files when a later item fails after save-as', async () => {
@@ -667,5 +704,156 @@ describe('applyPortableEvidenceToWorkspace · rework r2 regressions', () => {
     expect(await readFile(path.join(repositoryRoot, 'new.txt'), 'utf8')).toBe('local new\n');
     expect(await readFile(path.join(repositoryRoot, 'new.txt.cloud'), 'utf8')).toBe(SHARED_CONTENT);
     await expect(readFile(path.join(repositoryRoot, 'old.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+});
+
+describe('applyPortableEvidenceToWorkspace · rework r3 regressions', () => {
+  it('dry-run lists a rename a-side path as a path that would change', async () => {
+    const fixture = await createRenameFixture();
+
+    const dryRun = await applyPortableEvidenceToWorkspace({
+      evidence: fixture.portableEvidence,
+      workspaceRoot: fixture.repositoryRoot,
+      mode: 'dry-run',
+    });
+    expect(dryRun.outcome).toBe('success');
+    expect(dryRun.wouldChange).toEqual(['new.txt', 'old.txt']);
+
+    const applied = await applyPortableEvidenceToWorkspace({
+      evidence: fixture.portableEvidence,
+      workspaceRoot: fixture.repositoryRoot,
+      mode: 'apply',
+    });
+    expect(applied.outcome).toBe('success');
+    expect(applied.wouldChange).toEqual(['new.txt', 'old.txt']);
+    expect(await readFile(path.join(fixture.repositoryRoot, 'new.txt'), 'utf8')).toBe(SHARED_CONTENT);
+    await expect(readFile(path.join(fixture.repositoryRoot, 'old.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('rejects a rename whose a-side pre-image escapes the repository, applying nothing', async () => {
+    const fixture = await createSingleFileFixture();
+    const { repositoryRoot } = fixture;
+    const sentinel = path.join(path.dirname(repositoryRoot), 'outside-sentinel.txt');
+    await writeFile(sentinel, 'do not touch\n');
+    const treeBefore = await hashWorktree(repositoryRoot);
+    const portable = await buildTamperedPatchEvidence(fixture.sourceEvidence, Buffer.from(
+      'diff --git a/../outside-sentinel.txt b/safe.txt\n'
+      + 'similarity index 100%\n'
+      + 'rename from ../outside-sentinel.txt\n'
+      + 'rename to safe.txt\n',
+    ));
+
+    await expect(applyPortableEvidenceToWorkspace({
+      evidence: portable,
+      workspaceRoot: repositoryRoot,
+      mode: 'dry-run',
+    })).rejects.toMatchObject({ code: 'UNSAFE_EVIDENCE_PATH' });
+    await expect(applyPortableEvidenceToWorkspace({
+      evidence: portable,
+      workspaceRoot: repositoryRoot,
+      mode: 'dry-run',
+    })).rejects.toThrow(/outside-sentinel\.txt/);
+    await expect(applyPortableEvidenceToWorkspace({
+      evidence: portable,
+      workspaceRoot: repositoryRoot,
+      mode: 'apply',
+    })).rejects.toMatchObject({ code: 'UNSAFE_EVIDENCE_PATH' });
+    await expect(applyPortableEvidenceToWorkspace({
+      evidence: portable,
+      workspaceRoot: repositoryRoot,
+      mode: 'apply',
+      resolutions: { 'safe.txt': 'take-cloud' },
+    })).rejects.toMatchObject({ code: 'UNSAFE_EVIDENCE_PATH' });
+    expect(await readFile(sentinel, 'utf8')).toBe('do not touch\n');
+    expect(await hashWorktree(repositoryRoot)).toBe(treeBefore);
+  });
+
+  it('rejects a-side pre-images that are absolute or inside .git', async () => {
+    const fixture = await createSingleFileFixture();
+    const { repositoryRoot } = fixture;
+    await mkdir(path.join(repositoryRoot, '.git', 'hooks'), { recursive: true });
+    await writeFile(path.join(repositoryRoot, '.git', 'evil'), 'git sentinel\n');
+    const treeBefore = await hashWorktree(repositoryRoot);
+    const cases = [
+      'diff --git a//etc/passwd b/safe.txt\nsimilarity index 100%\nrename from /etc/passwd\nrename to safe.txt\n',
+      'diff --git a/.git/evil b/safe.txt\nsimilarity index 100%\nrename from .git/evil\nrename to safe.txt\n',
+    ];
+    for (const patch of cases) {
+      const portable = await buildTamperedPatchEvidence(fixture.sourceEvidence, Buffer.from(patch));
+      await expect(applyPortableEvidenceToWorkspace({
+        evidence: portable,
+        workspaceRoot: repositoryRoot,
+        mode: 'dry-run',
+      })).rejects.toMatchObject({ code: 'UNSAFE_EVIDENCE_PATH' });
+      await expect(applyPortableEvidenceToWorkspace({
+        evidence: portable,
+        workspaceRoot: repositoryRoot,
+        mode: 'apply',
+        resolutions: { 'safe.txt': 'take-cloud' },
+      })).rejects.toMatchObject({ code: 'UNSAFE_EVIDENCE_PATH' });
+    }
+    expect(await readFile(path.join(repositoryRoot, '.git', 'evil'), 'utf8')).toBe('git sentinel\n');
+    expect(await hashWorktree(repositoryRoot)).toBe(treeBefore);
+  });
+
+  it('take-cloud refuses to follow a symlinked parent out of the repository', async () => {
+    const fixture = await createSingleFileFixture();
+    const { repositoryRoot } = fixture;
+    const outsideDir = path.join(path.dirname(repositoryRoot), 'outside-dir');
+    await mkdir(outsideDir);
+    await writeFile(path.join(outsideDir, 'secret.txt'), 'outside secret\n');
+    await symlink(outsideDir, path.join(repositoryRoot, 'link'));
+    await writeFile(path.join(repositoryRoot, 'new.txt'), 'local drift\n');
+    const treeBefore = await hashWorktree(repositoryRoot);
+    const portable = await buildTamperedPatchEvidence(fixture.sourceEvidence, Buffer.from(
+      'diff --git a/link/secret.txt b/new.txt\n'
+      + 'similarity index 100%\n'
+      + 'rename from link/secret.txt\n'
+      + 'rename to new.txt\n',
+    ));
+
+    const failed = await applyPortableEvidenceToWorkspace({
+      evidence: portable,
+      workspaceRoot: repositoryRoot,
+      mode: 'apply',
+      resolutions: { 'new.txt': 'take-cloud' },
+    });
+    expect(failed.outcome).toBe('failed');
+    expect(failed.error).toContain('symlink');
+    expect(failed.rollbackVerified).toBe(true);
+    expect(await readFile(path.join(outsideDir, 'secret.txt'), 'utf8')).toBe('outside secret\n');
+    expect(await hashWorktree(repositoryRoot)).toBe(treeBefore);
+  });
+
+  it('engine rejects an unsafe rename pre-image before any filesystem effect', async () => {
+    const fixture = await createSingleFileFixture();
+    const { repositoryRoot, baseCommit } = fixture;
+    const sentinel = path.join(path.dirname(repositoryRoot), 'id_rsa');
+    await writeFile(sentinel, 'secret key\n');
+    await writeFile(path.join(repositoryRoot, 'safe.txt'), 'local\n');
+    const treeBefore = await hashWorktree(repositoryRoot);
+    const engine = new PortableEvidenceApplyBackEngine(
+      new NodeWorkspaceCommandRunner(),
+      repositoryRoot,
+      baseCommit,
+    );
+    const item = {
+      kind: 'patch' as const,
+      path: 'safe.txt',
+      source: 'unstaged-patch' as const,
+      sections: [Buffer.from(
+        'diff --git a/../id_rsa b/safe.txt\n'
+        + 'similarity index 100%\n'
+        + 'rename from ../id_rsa\n'
+        + 'rename to safe.txt\n',
+      )],
+      preimagePaths: [],
+    };
+
+    await expect(engine.resolveConflict(item, { status: 'conflict', reason: 'drift' }, 'take-cloud'))
+      .rejects.toThrow('safety envelope');
+    expect(await readFile(sentinel, 'utf8')).toBe('secret key\n');
+    await engine.rollback();
+    expect(await hashWorktree(repositoryRoot)).toBe(treeBefore);
   });
 });

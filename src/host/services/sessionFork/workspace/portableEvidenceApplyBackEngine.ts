@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { chmod, lstat, mkdir, readFile, rmdir, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { parsePatchPreimagePath } from './portableEvidenceWorkItems';
+import { parsePatchPreimagePath, safeRepositoryPath } from './portableEvidenceWorkItems';
 import type { PortableEvidenceWorkItem } from './portableEvidenceWorkItems';
 import type { WorkspaceCommandRunner } from './types';
 
@@ -83,6 +83,32 @@ export class PortableEvidenceApplyBackEngine {
     return path.resolve(this.root, ...relative.split('/'));
   }
 
+  /**
+   * Every repository path the engine reads, writes, unlinks or renames — item
+   * paths, rename pre-images, sidecar slots — resolves through this gate: the
+   * SAME lexical envelope gate as evidence ingest first (a `../`, absolute or
+   * `.git` path is rejected before any filesystem effect), then an ancestor
+   * walk so the target is reached through real directories, never a symlink
+   * planted to point out of the repository.
+   */
+  private async resolveRepositoryPath(relative: string): Promise<string> {
+    if (safeRepositoryPath(relative) === null) {
+      throw new Error(`path escapes the repository safety envelope: ${relative}`);
+    }
+    const target = this.resolve(relative);
+    let current = this.root;
+    for (const segment of path.relative(this.root, path.dirname(target)).split(path.sep)) {
+      if (!segment) continue;
+      current = path.join(current, segment);
+      const info = await lstat(current).catch(() => null);
+      if (info === null) break;
+      if (info.isSymbolicLink()) {
+        throw new Error(`${relative} traverses a symlinked directory; refusing to follow it out of the repository`);
+      }
+    }
+    return target;
+  }
+
   private async git(args: string[], input?: Buffer): Promise<Buffer> {
     return (await this.runner.run({ executable: 'git', args, cwd: this.root, input })).stdout;
   }
@@ -105,7 +131,7 @@ export class PortableEvidenceApplyBackEngine {
   async checkUntrackedItem(
     item: PortableEvidenceWorkItem & { kind: 'untracked' },
   ): Promise<PortableEvidenceClassification> {
-    const target = this.resolve(item.path);
+    const target = await this.resolveRepositoryPath(item.path);
     const info = await lstat(target).catch(() => null);
     if (info && !info.isFile()) {
       return { status: 'conflict', reason: 'local path exists and is not a regular file' };
@@ -157,7 +183,7 @@ export class PortableEvidenceApplyBackEngine {
   }
 
   async applyUntrackedItem(item: PortableEvidenceWorkItem & { kind: 'untracked' }): Promise<void> {
-    const target = this.resolve(item.path);
+    const target = await this.resolveRepositoryPath(item.path);
     const createdDirs = await this.createDirectories(path.dirname(target));
     await writeFile(target, item.bytes);
     await chmod(target, item.mode);
@@ -182,7 +208,7 @@ export class PortableEvidenceApplyBackEngine {
    * own patch sections, which always apply against that exact pre-image.
    */
   private async beginCloudOverwrite(item: PortableEvidenceWorkItem): Promise<{ target: string }> {
-    const target = this.resolve(item.path);
+    const target = await this.resolveRepositoryPath(item.path);
     const info = await lstat(target).catch(() => null);
     if (info && !info.isFile()) throw new Error(`refusing to overwrite non-regular local path: ${item.path}`);
     const priorBytes = await readFileIfExists(target);
@@ -211,7 +237,7 @@ export class PortableEvidenceApplyBackEngine {
   private async restoreSectionPreimage(section: Buffer, itemPath: string): Promise<void> {
     const preimagePath = parsePatchPreimagePath(section);
     if (preimagePath === null || preimagePath === itemPath) return;
-    const target = this.resolve(preimagePath);
+    const target = await this.resolveRepositoryPath(preimagePath);
     const info = await lstat(target).catch(() => null);
     if (info && !info.isFile()) {
       throw new Error(`refusing to overwrite non-regular local path: ${preimagePath}`);
@@ -258,7 +284,7 @@ export class PortableEvidenceApplyBackEngine {
   private async writeCloudSidecar(itemPath: string, bytes: Buffer, mode?: number): Promise<string> {
     for (let attempt = 1; attempt <= MAX_SIDECAR_ATTEMPTS; attempt += 1) {
       const relative = attempt === 1 ? `${itemPath}.cloud` : `${itemPath}.cloud.${attempt}`;
-      const target = this.resolve(relative);
+      const target = await this.resolveRepositoryPath(relative);
       const info = await lstat(target).catch(() => null);
       if (info && !info.isFile()) continue;
       const prior = info ? await readFile(target) : null;

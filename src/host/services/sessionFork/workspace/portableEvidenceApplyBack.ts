@@ -26,7 +26,7 @@ interface PortableEvidenceApplyBackResult {
   rollbackVerified?: boolean;
 }
 
-type ApplyBackErrorCode = 'EVIDENCE_BINDING_REJECTED' | 'INVALID_RESOLUTION';
+type ApplyBackErrorCode = 'EVIDENCE_BINDING_REJECTED' | 'UNSAFE_EVIDENCE_PATH' | 'INVALID_RESOLUTION';
 
 class PortableEvidenceApplyBackError extends Error {
   constructor(
@@ -122,7 +122,16 @@ export async function applyPortableEvidenceToWorkspace(
     },
   );
   const engine = new PortableEvidenceApplyBackEngine(runner, rebound.repositoryRoot, input.evidence.baseCommit);
-  const { items, invalid } = buildPortableEvidenceWorkItems(rebound.evidence);
+  const { items, invalid, unsafe } = buildPortableEvidenceWorkItems(rebound.evidence);
+  if (unsafe.length > 0) {
+    // A path outside the safety envelope means hostile or corrupt evidence:
+    // nothing is applied, not even the clean items, in either mode.
+    throw new PortableEvidenceApplyBackError(
+      'UNSAFE_EVIDENCE_PATH',
+      `evidence names ${unsafe.length} path(s) outside the repository safety envelope `
+        + `(${unsafe.map((entry) => entry.label).join(', ')}); rejecting without applying anything`,
+    );
+  }
   validateResolutions(input.mode, input.resolutions, new Set(items.map((item) => item.path)));
   const invalidReports: PortableEvidenceApplyBackFileReport[] = invalid.map((entry) => ({
     path: entry.label,
@@ -152,15 +161,18 @@ export async function applyPortableEvidenceToWorkspace(
       workspaceRoot: rebound.repositoryRoot,
       baseCommit: input.evidence.baseCommit,
       files,
-      wouldChange: plans
-        .filter((plan) => plan.classification.status === 'would-apply')
-        .map((plan) => plan.item.path),
+      wouldChange: [
+        ...new Set(plans
+          .filter((plan) => plan.classification.status === 'would-apply')
+          .flatMap((plan) => itemChangePaths(plan.item))),
+      ],
       conflicts,
     };
   }
 
   const statusBefore = await engine.treeStatusSnapshot();
   const files: PortableEvidenceApplyBackFileReport[] = [...invalidReports];
+  const changedPaths: string[] = [];
   try {
     for (const { item, classification } of plans) {
       if (classification.status === 'would-apply') {
@@ -169,11 +181,17 @@ export async function applyPortableEvidenceToWorkspace(
         } else {
           await engine.applyUntrackedItem(item);
         }
+        changedPaths.push(...itemChangePaths(item));
         files.push({ path: item.path, source: item.source, status: 'applied' });
       } else if (classification.status === 'already-present') {
         files.push({ path: item.path, source: item.source, status: 'already-present' });
       } else {
-        files.push(await engine.resolveConflict(item, classification, input.resolutions?.[item.path]));
+        const resolved = await engine.resolveConflict(item, classification, input.resolutions?.[item.path]);
+        // took-cloud rebuilds and consumes the rename pre-image; save-as leaves
+        // it rolled back, so only the sidecar (reported under the item path) changed.
+        if (resolved.status === 'took-cloud') changedPaths.push(...itemChangePaths(item));
+        else if (resolved.status === 'saved-as-cloud') changedPaths.push(item.path);
+        files.push(resolved);
       }
     }
   } catch (error) {
@@ -204,11 +222,14 @@ export async function applyPortableEvidenceToWorkspace(
     workspaceRoot: rebound.repositoryRoot,
     baseCommit: input.evidence.baseCommit,
     files,
-    wouldChange: files
-      .filter((file) => file.status === 'applied' || file.status === 'took-cloud' || file.status === 'saved-as-cloud')
-      .map((file) => file.path),
+    wouldChange: [...new Set(changedPaths)],
     conflicts,
   };
+}
+
+/** An apply of a patch item also restores/consumes its rename pre-image paths. */
+function itemChangePaths(item: PortableEvidenceWorkItem): string[] {
+  return item.kind === 'patch' ? [item.path, ...item.preimagePaths] : [item.path];
 }
 
 function classify(

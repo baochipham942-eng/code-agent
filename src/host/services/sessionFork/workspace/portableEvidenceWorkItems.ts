@@ -7,6 +7,8 @@ interface PortableEvidencePatchWorkItem {
   path: string;
   source: PortableEvidenceFileSource;
   sections: Buffer[];
+  /** Safe a-side paths of rename/copy sections: also touched by an apply. */
+  preimagePaths: string[];
 }
 
 interface PortableEvidenceUntrackedWorkItem {
@@ -148,9 +150,10 @@ export function parsePatchPreimagePath(section: Buffer): string | null {
  * not constrained to the repository envelope by digest validation, and
  * apply-back skips the materializer's ls-files cross-check that would reject
  * `.git` entries — so every path is gated here before it can name a write
- * target.
+ * target. Exported because the apply-back engine runs the SAME gate on the
+ * paths it derives itself (rename pre-images, sidecar slots).
  */
-function safeRepositoryPath(relative: string): string | null {
+export function safeRepositoryPath(relative: string): string | null {
   if (!relative || relative.includes('\\') || relative.includes('\0')) return null;
   if (relative.startsWith('/') || /^[A-Za-z]:/u.test(relative)) return null;
   const segments = relative.split('/');
@@ -167,10 +170,16 @@ function sectionLabel(section: Buffer): string {
   return rest.length > 80 ? `${rest.slice(0, 77)}...` : rest;
 }
 
-/** Groups the evidence's patch streams and untracked blobs into per-path work items. */
+/**
+ * Groups the evidence's patch streams and untracked blobs into per-path work
+ * items. `unsafe` collects every path (a-side or b-side of a section, untracked
+ * entry) that fails the safety-envelope gate: such evidence is rejected as a
+ * whole, while `invalid` keeps merely unparseable sections as per-file reports.
+ */
 export function buildPortableEvidenceWorkItems(evidence: AnchorWorkspaceEvidence): {
   items: PortableEvidenceWorkItem[];
   invalid: PortableEvidenceInvalidSection[];
+  unsafe: PortableEvidenceInvalidSection[];
 } {
   const streams: Array<{ patch: Buffer; source: PortableEvidenceFileSource }> = [
     { patch: Buffer.from(evidence.payload.stagedPatchBase64, 'base64'), source: 'staged-patch' },
@@ -178,29 +187,51 @@ export function buildPortableEvidenceWorkItems(evidence: AnchorWorkspaceEvidence
   ];
   const items: PortableEvidenceWorkItem[] = [];
   const invalid: PortableEvidenceInvalidSection[] = [];
+  const unsafe: PortableEvidenceInvalidSection[] = [];
   const patchByPath = new Map<string, PortableEvidencePatchWorkItem>();
   for (const stream of streams) {
     for (const section of splitPatchSections(stream.patch)) {
       const headerPath = parsePatchPath(section);
       const safePath = headerPath === null ? null : safeRepositoryPath(headerPath);
       if (safePath === null) {
-        invalid.push({
+        if (headerPath === null) {
+          invalid.push({
+            label: sectionLabel(section),
+            source: stream.source,
+            reason: 'patch section header could not be parsed to a repository path',
+          });
+        } else {
+          unsafe.push({
+            label: sectionLabel(section),
+            source: stream.source,
+            reason: 'patch section targets a path outside the repository safety envelope',
+          });
+        }
+        continue;
+      }
+      const preimagePath = parsePatchPreimagePath(section);
+      const safePreimage = preimagePath === null ? null : safeRepositoryPath(preimagePath);
+      if (preimagePath !== null && safePreimage === null) {
+        unsafe.push({
           label: sectionLabel(section),
           source: stream.source,
-          reason: headerPath === null
-            ? 'patch section header could not be parsed to a repository path'
-            : 'patch section targets a path outside the repository safety envelope',
+          reason: 'patch section pre-image (a-side) path is outside the repository safety envelope',
         });
         continue;
       }
       const existing = patchByPath.get(safePath);
-      if (existing) existing.sections.push(section);
-      else {
+      if (existing) {
+        existing.sections.push(section);
+        if (safePreimage !== null && safePreimage !== safePath && !existing.preimagePaths.includes(safePreimage)) {
+          existing.preimagePaths.push(safePreimage);
+        }
+      } else {
         const item: PortableEvidencePatchWorkItem = {
           kind: 'patch',
           path: safePath,
           source: stream.source,
           sections: [section],
+          preimagePaths: safePreimage !== null && safePreimage !== safePath ? [safePreimage] : [],
         };
         patchByPath.set(safePath, item);
         items.push(item);
@@ -210,7 +241,7 @@ export function buildPortableEvidenceWorkItems(evidence: AnchorWorkspaceEvidence
   for (const file of evidence.manifest.untrackedFiles) {
     const safePath = safeRepositoryPath(file.path);
     if (safePath === null) {
-      invalid.push({
+      unsafe.push({
         label: file.path,
         source: 'untracked',
         reason: 'untracked entry targets a path outside the repository safety envelope',
@@ -225,5 +256,5 @@ export function buildPortableEvidenceWorkItems(evidence: AnchorWorkspaceEvidence
       mode: file.mode,
     });
   }
-  return { items, invalid };
+  return { items, invalid, unsafe };
 }

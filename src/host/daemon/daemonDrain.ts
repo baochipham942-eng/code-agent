@@ -20,7 +20,7 @@ function delay(ms: number): Promise<void> {
   });
 }
 
-export interface DaemonDrainDeps {
+interface DaemonDrainDeps {
   /** 当前未决 op 数（0 = 已收口）。口径由调用方定：webServer 用「在跑 run」信号。 */
   getPendingOps: () => number;
   /** 宽限（ms）。到期仍有未决 op → 强停。 */
@@ -33,10 +33,10 @@ export interface DaemonDrainDeps {
 }
 
 /**
- * 排空：等未决 op 归零（'drained'），或宽限耗尽后强停并留痕（'force-stopped'）。
- * 入口处未决已为 0 时立即返回，正常空闲停机零延迟零日志。
+ * 排空引擎（模块内部）：等未决 op 归零（'drained'），或宽限耗尽后强停并留痕
+ * （'force-stopped'）。入口处未决已为 0 时立即返回，正常空闲停机零延迟零日志。
  */
-export async function drainAndStop(deps: DaemonDrainDeps): Promise<'drained' | 'force-stopped'> {
+async function drainAndStop(deps: DaemonDrainDeps): Promise<'drained' | 'force-stopped'> {
   const pollMs = deps.pollIntervalMs ?? WEB_DAEMON.POLL_INTERVAL_MS;
   const startedAt = Date.now();
   for (;;) {
@@ -52,9 +52,10 @@ export async function drainAndStop(deps: DaemonDrainDeps): Promise<'drained' | '
 }
 
 /**
- * webServer.shutdown 的排空步骤：按「壳看门狗是否还挂着」选宽限档位，看门狗在时
- * 还要套 withCap（关库前步骤的预算封顶器）——排空绝不允许吃穿关库预算（Rust 侧
- * 3s 到点 SIGKILL，陈旧 -wal/-shm 的老坑见 webShutdownFinalizers 头注）。
+ * webServer.shutdown 的排空步骤（模块唯一出口）：按「壳看门狗是否还挂着」选宽限
+ * 档位，看门狗在时还要套 withCap（关库前步骤的预算封顶器）——排空绝不允许吃穿
+ * 关库预算（Rust 侧 3s 到点 SIGKILL，陈旧 -wal/-shm 的老坑见 webShutdownFinalizers
+ * 头注）。
  */
 export function drainPendingOpsForShutdown(deps: {
   getPendingOps: () => number;

@@ -192,8 +192,9 @@ function readUserPrompt(blocks: ReplayBlock[]): string | undefined {
 }
 
 /**
- * Jev 判官初筛开关（默认关，与 CODE_AGENT_PERMISSION_LLM_CLASSIFIER /
- * CODEX_SANDBOX_ENABLED 同一惯例：能力默认关，显式开启）。
+ * Jev 判官初筛开关（默认关，与 CODEX_SANDBOX_ENABLED 同一惯例：能力默认关，
+ * 显式开启。注意 CODE_AGENT_PERMISSION_LLM_CLASSIFIER 等四特性自 N-JEV-DEFAULT-ON
+ * 起默认开，不再是本惯例的例子）。
  */
 function isPostLaunchJevPrescreenEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.CODE_AGENT_POSTLAUNCH_JEV_PRESCREEN === '1';

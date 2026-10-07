@@ -31,6 +31,13 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 import { resetWriteIsolationForTests } from '../../../src/host/security/writeIsolation';
 import { resolveCanonicalRunPath } from '../../../src/host/runtime/runContext';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
+import { TurnTraceRecorder } from '../../../src/host/agent/runtime/turnTrace';
+import { setProtocolToolRegistryPort } from '../../../src/host/tools/protocolToolRegistration';
+import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
+import type { ToolSchema, ToolLoader } from '../../../src/host/protocol/tools';
+import { mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -207,6 +214,127 @@ describe('ToolExecutor write isolation', () => {
     expect(writeResult.metadata?.writeIsolation).toMatchObject({
       kind: 'file',
       lockKey: `file:${canonicalWorkspace}/a.md`,
+    });
+  });
+});
+
+// ADR-073 K3：静态声明域与运行时写锁域 disagree 时串行（锁照拿）并落
+// resource_scope_mismatch trace；一致时无记录；resolver 故障只记 mismatch 不拦执行。
+describe('ToolExecutor resource scope mismatch trace', () => {
+  let trace: TurnTraceRecorder;
+  let traceDir: string;
+
+  beforeEach(() => {
+    resetWriteIsolationForTests();
+    resolverState.getDefinition.mockReset();
+    resolverState.execute.mockReset();
+    resolverState.getDefinition.mockReturnValue(writeToolDefinition());
+    traceDir = mkdtempSync(path.join(os.tmpdir(), 'toolres-k3-trace-'));
+    trace = new TurnTraceRecorder('write-isolation-test', traceDir);
+  });
+
+  afterEach(() => {
+    resetWriteIsolationForTests();
+  });
+
+  afterEach(() => {
+    trace.flush();
+    rmSync(traceDir, { recursive: true, force: true });
+  });
+
+  function mismatchEvents() {
+    return trace.getEvents().filter((event) => event.type === 'resource_scope_mismatch');
+  }
+
+  it('records exactly one mismatch when the static declaration is read-only but the runtime level is write, and still serializes', async () => {
+    resolverState.getDefinition.mockReturnValue(writeToolDefinition('Read'));
+    const first = deferred<ToolExecutionResult>();
+    const second = deferred<ToolExecutionResult>();
+    resolverState.execute
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise);
+
+    const executor = createExecutor();
+    const firstRun = executor.execute('Read', { file_path: 'notes.md', content: 'one' }, {
+      turnTrace: trace, currentToolCallId: 'call-a',
+    });
+    await nextTick();
+
+    // 锁照拿：第二个同文件写必须等第一个释放，绝不因静态"只读"而并行。
+    const secondRun = executor.execute('Read', { file_path: 'notes.md', content: 'two' }, {
+      turnTrace: trace, currentToolCallId: 'call-b',
+    });
+    await nextTick();
+    expect(resolverState.execute).toHaveBeenCalledTimes(1);
+
+    first.resolve({ success: true, result: 'first' });
+    await firstRun;
+    await nextTick();
+    expect(resolverState.execute).toHaveBeenCalledTimes(2);
+    second.resolve({ success: true, result: 'second' });
+    const secondResult = await secondRun;
+
+    expect(secondResult.metadata?.writeIsolation).toMatchObject({
+      kind: 'file',
+      lockKey: `file:${canonicalWorkspace}/notes.md`,
+    });
+    const events = mismatchEvents();
+    expect(events).toHaveLength(2);
+    expect(events[0]?.data).toEqual({
+      toolCallId: 'call-a',
+      toolName: 'Read',
+      staticDomains: ['read:path'],
+      runtimeLockKey: `file:${canonicalWorkspace}/notes.md`,
+    });
+    expect(events[1]?.data).toEqual({
+      toolCallId: 'call-b',
+      toolName: 'Read',
+      staticDomains: ['read:path'],
+      runtimeLockKey: `file:${canonicalWorkspace}/notes.md`,
+    });
+  });
+
+  it('records nothing for a tool whose static declaration matches the runtime lock', async () => {
+    resolverState.execute.mockResolvedValue({ success: true, result: 'ok' });
+    const executor = createExecutor();
+    const result = await executor.execute('Write', { file_path: 'a.md', content: 'a' }, {
+      turnTrace: trace, currentToolCallId: 'call-c',
+    });
+    expect(result).toMatchObject({ success: true });
+    expect(result.metadata?.writeIsolation).toMatchObject({ kind: 'file' });
+    expect(mismatchEvents()).toHaveLength(0);
+  });
+
+  it('records a mismatch and keeps the tool result unchanged when the resolver throws', async () => {
+    const registry = getProtocolRegistry();
+    const standardPort = {
+      register: (schema: ToolSchema, loader: ToolLoader) => registry.register(schema, loader),
+      unregister: (name: string) => registry.unregister(name),
+      has: (name: string) => registry.has(name),
+      getSchemas: () => registry.getSchemas(),
+      resolve: (name: string) => registry.resolve(name),
+    };
+    setProtocolToolRegistryPort({
+      ...standardPort,
+      getSchemas: () => { throw new Error('registry port exploded'); },
+    });
+    let result: ToolExecutionResult | undefined;
+    try {
+      resolverState.execute.mockResolvedValue({ success: true, result: 'still-runs' });
+      const executor = createExecutor();
+      result = await executor.execute('Write', { file_path: 'a.md', content: 'a' }, {
+        turnTrace: trace, currentToolCallId: 'call-d',
+      });
+    } finally {
+      setProtocolToolRegistryPort(standardPort);
+    }
+    expect(result).toMatchObject({ success: true, result: 'still-runs' });
+    expect(mismatchEvents()).toHaveLength(1);
+    expect(mismatchEvents()[0]?.data).toEqual({
+      toolCallId: 'call-d',
+      toolName: 'Write',
+      staticDomains: ['resolver-error'],
+      runtimeLockKey: `file:${canonicalWorkspace}/a.md`,
     });
   });
 });

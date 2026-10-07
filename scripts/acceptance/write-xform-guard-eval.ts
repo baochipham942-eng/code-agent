@@ -26,6 +26,7 @@ import { readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+import { resolveStepfunBaseUrl } from './stepfunEndpoint';
 
 const TICKET = 'N-WRITE-XFORM-GUARD';
 const RUNS = 3;
@@ -200,14 +201,12 @@ async function resolveBaselineModel(): Promise<BaselineModel> {
       provider: 'custom-stepfun',
       model: 'step-3.5-flash-2603',
       // StepFun 不是注册 provider：按 OpenAI 兼容端点显式注入（eval 刻意不读用户 config.json）。
-      // 牌价（platform.stepfun.com/docs/zh/guides/pricing/details，2026-09-30）：
-      // ¥0.7 in / ¥0.14 cached / ¥2.1 out per 1M ≈ $0.10 / $0.02 / $0.30（按 ~7 CNY/USD）。
-      inputUsdPer1M: 0.1,
-      cacheReadUsdPer1M: 0.02,
-      outputUsdPer1M: 0.3,
-      priceSource: 'https://platform.stepfun.com/docs/zh/guides/pricing/details (2026-09-30), CNY->USD ~7',
+      inputUsdPer1M: 0,
+      cacheReadUsdPer1M: 0,
+      outputUsdPer1M: 0,
+      priceSource: 'Step Plan subscription (flat fee, per-token price 0)',
       childEnv: {
-        AUTO_TEST_BASE_URL: 'https://api.stepfun.com/v1',
+        AUTO_TEST_BASE_URL: resolveStepfunBaseUrl(),
         AUTO_TEST_API_KEY: stepfunKey,
       },
     };

@@ -10,16 +10,23 @@ describe('jevInjectionScan', () => {
     resetInputSanitizer();
   });
 
-  it('is default off and only recognizes remote sources', async () => {
+  it('is default on (N-JEV-DEFAULT-ON) and only recognizes remote sources', async () => {
+    const systemOne = vi.fn(async () => ({ injection: { noul: 0.1 }, exfil_request: { noul: 0.1 } })) as unknown as JevSystemOneCall;
+    const result = await scanWithJevInjection('web_fetch', 'ordinary report', systemOne);
+    expect(result.skipped).toBe(false);
+    expect(systemOne).toHaveBeenCalledTimes(1);
+
+    // 非远端来源直接 not_remote（不碰 flag 也不调 Jev）
+    const notRemote = await scanWithJevInjection('MemoryWrite', 'ordinary report', systemOne);
+    expect(notRemote).toMatchObject({ skipped: true, reason: 'not_remote', flagged: false });
+    expect(systemOne).toHaveBeenCalledTimes(1);
+  });
+
+  it("flag '0' disables the scan and never calls Jev", async () => {
+    vi.stubEnv('CODE_AGENT_JEV_INJECTION_SCAN', '0');
     const systemOne = vi.fn() as unknown as JevSystemOneCall;
     const result = await scanWithJevInjection('web_fetch', 'ordinary report', systemOne);
     expect(result).toMatchObject({ skipped: true, reason: 'disabled', flagged: false });
-    expect(systemOne).not.toHaveBeenCalled();
-
-    // 非远端来源直接 not_remote（不碰 flag 也不调 Jev）
-    vi.stubEnv('CODE_AGENT_JEV_INJECTION_SCAN', '1');
-    const notRemote = await scanWithJevInjection('MemoryWrite', 'ordinary report', systemOne);
-    expect(notRemote).toMatchObject({ skipped: true, reason: 'not_remote', flagged: false });
     expect(systemOne).not.toHaveBeenCalled();
   });
 

@@ -1294,17 +1294,19 @@ async function main(): Promise<void> {
   // 3s SIGKILL 看门狗才悬在头上；管道断开后没人再兜底杀我们，排空才可以用完整
   // 宽限，去留也改由空闲判据说了算：全空闲随壳退出（拍板记录 2），还有 run /
   // 配对伴侣 / 等审批就留守继续跑。standalone / dev 模式没有这个环境变量，不受影响。
+  // 回调必须定义在守卫块外：gracefulShutdown 静态门用 lazy 正则截守卫块体（到第一个
+  // 独行 `}` 为止），监听语句内嵌函数体会把 'end' 监听挤出匹配范围，跨端合同门假红。
   let shellPipeAttached = Boolean(process.env.CODE_AGENT_TAURI_BOOT_TOKEN);
+  const onShellPipeClosed = () => {
+    shellPipeAttached = false;
+    const snapshot = daemonIdleSnapshot?.();
+    if (!snapshot || shouldDaemonExit(snapshot)) {
+      void shutdown();
+      return;
+    }
+    logger.info('[daemon] shell exited while busy — staying resident (runs/companion/approval pending)');
+  };
   if (process.env.CODE_AGENT_TAURI_BOOT_TOKEN) {
-    const onShellPipeClosed = () => {
-      shellPipeAttached = false;
-      const snapshot = daemonIdleSnapshot?.();
-      if (!snapshot || shouldDaemonExit(snapshot)) {
-        void shutdown();
-        return;
-      }
-      logger.info('[daemon] shell exited while busy — staying resident (runs/companion/approval pending)');
-    };
     process.stdin.resume();
     process.stdin.on('end', onShellPipeClosed);
     process.stdin.on('error', onShellPipeClosed);

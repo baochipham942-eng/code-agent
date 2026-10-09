@@ -138,6 +138,16 @@ function expectsIpcResultEnvelope(channel: string): boolean {
   return channel.startsWith('marketplace:') || channel.startsWith('capability-package:');
 }
 
+/**
+ * 审批应答通道的「未送达」是业务信号，不是传输故障：宿主把迟到点击（最常见是
+ * 手机已先答、island 里这条已不在）回报为 `{success:false, error:{code}}`，renderer
+ * 靠它识别「别处已裁决」并拒绝记成本机决定。这里若像其他通道一样坍缩成 undefined，
+ * 迟到点击就会被当成正常送达。送达路径不受影响（success:true 照常解包 data）。
+ */
+function preservesUndeliveredPermissionEnvelope(channel: string): boolean {
+  return channel === IPC_CHANNELS.AGENT_PERMISSION_RESPONSE;
+}
+
 function normalizeIpcResultEnvelope(channel: string, value: unknown): unknown {
   if (!expectsIpcResultEnvelope(channel) || isWrappedHttpResponse(value)) {
     return value;
@@ -840,6 +850,10 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           // 前端 store 期望的是裸数据（Session[], AppSettings 等）
           if (isWrappedHttpResponse(json)) {
             if (json.success === false) {
+              // 审批应答的失败信封原样透传（宿主侧已逐口留痕），见 helper 注释。
+              if (preservesUndeliveredPermissionEnvelope(channel)) {
+                return json as ReturnType<IpcInvokeHandlers[K]>;
+              }
               // 错误响应（如 NOT_FOUND）不应作为有效数据透传到前端
               console.warn(`[HttpTransport] ${channel} returned error:`, json.error);
               recordTransportFailure(channel, response.status, parseHttpErrorMessage(JSON.stringify(json.error ?? '')));

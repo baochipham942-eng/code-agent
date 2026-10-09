@@ -17,6 +17,7 @@ const DiagnosticsDomainRequestSchema = z.object({
     'desktopShell',
     'execPolicy',
     'exportAppBundle',
+    'jevStatus',
     'logClientError',
     'recovery',
     'sessionLedger',

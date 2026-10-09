@@ -62,6 +62,7 @@ export type { AgentLoopConfig };
  */
 import type { RuntimeContext } from './runtime/runtimeContext';
 import { ConversationRuntime } from './runtime/conversationRuntime';
+import { applyRunServiceTier } from './serviceTier';
 import { resolveBudgetScope } from '../services/core/budgetService';
 import { ToolExecutionEngine } from './runtime/toolExecutionEngine';
 import { ContextAssembly } from './runtime/contextAssembly';
@@ -127,11 +128,18 @@ export class AgentLoop {
       }
     }
 
+    // ADR-068 同款口径（不含 goalMode）：无人值守轮（unattendedTurn / budgetScope）
+    // 才有资格吃半价档；goal run 用户在前台等结果，不进慢档。
+    const budgetScope = resolveBudgetScope(config.toolExecutor.getExecutionTopology?.());
+    const unattendedRun = config.unattendedTurn === true || budgetScope === 'unattended';
+
     this.ctx = {
       systemPrompt: config.systemPrompt || '',
       cachePromptSample,
       systemInstructions: config.systemInstructions,
-      modelConfig: config.modelConfig,
+      // service_tier 接缝：所有入口（桌面/CLI/通道）的唯一汇聚点，子代理经
+      // context.modelConfig 展开继承这里的档位；评审路径由 resolveReviewModelConfig 摘档。
+      modelConfig: applyRunServiceTier(config.modelConfig, unattendedRun),
       toolExecutor: config.toolExecutor,
       messages: config.messages,
       onEvent,
@@ -261,7 +269,7 @@ export class AgentLoop {
       goalEvidenceState: { bounces: 0 },
 
       // Budget
-      budgetScope: resolveBudgetScope(config.toolExecutor.getExecutionTopology?.()),
+      budgetScope,
       consecutiveErrors: 0,
 
       // Thinking

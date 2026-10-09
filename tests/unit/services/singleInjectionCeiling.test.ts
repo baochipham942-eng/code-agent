@@ -14,6 +14,7 @@ import {
   readDeferredToolInjectionSchemas,
 } from '../../../src/host/tools/dispatch/toolDefinitions';
 import { executeToolSearch } from '../../../src/host/tools/modules/search/toolSearch';
+import { isToolAvailable } from '../../../src/host/tools/modules/network/toolAvailability';
 import type { ToolContext } from '../../../src/host/protocol/tools';
 import { getCloudConfigService } from '../../../src/host/services/cloud';
 import '../../../src/host/agent/agentRegistry';
@@ -364,8 +365,13 @@ describe('ToolSearch output plus newly loaded schema', () => {
       const raw = readDeferredToolInjectionSchemas([meta.name])[0];
       const sent = getLoadedDeferredToolDefinitions().find((tool) => tool.name === meta.name);
       if (!sent) {
-        // decide 无可用 Jev 路由（测试环境无 key）时即便被 select 标记 loaded 也不进表，是设计（toolDefinitions.ts）
-        expect(meta.name).toBe('decide');
+        // decide 无可用 Jev 路由（测试环境无 key）时即便被 select 标记 loaded 也不进表，是设计（toolDefinitions.ts）；
+        // 其余 key-gated 工具（visual_edit / gui_agent / text_to_speech / video_generate）缺 key 不进表
+        // 同理是设计，由 isToolAvailable 公共谓词说了算（toolAvailability.ts）
+        expect(
+          meta.name === 'decide' || !isToolAvailable(meta.name),
+          `${meta.name} hidden while still reported available`,
+        ).toBe(true);
         continue;
       }
       expect(sent?.description, meta.name).toBe(raw?.description);

@@ -180,7 +180,7 @@ describe('applyPermissionQueueEvent', () => {
       currentSessionId: 'session-current',
       pendingPermissionRequest: request,
       pendingPermissionSessionId: 'session-current',
-      queuedPermissionRequests: { 'session-current': [queued] },
+      queuedPermissionRequests: { 'session-current': [request, queued] },
     });
 
     applyPermissionQueueEvent({

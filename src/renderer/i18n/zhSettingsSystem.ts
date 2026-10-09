@@ -204,6 +204,15 @@ export const zhSettingsSystem = {
           installing: '安装中',
           installFailed: '安装失败',
         },
+        // python-env 失败原因主文案：按 host 失败码选条目（映射见 pythonEnvAssetRow.ts），
+        // 原始英文错误经 title 提示保留可达，不做主文案。
+        failureReasons: {
+          offline: '网络不可用：连不上 Python 包源，本次安装没有完成。检查网络后点「重试」。',
+          installFailed: '安装没有完成。点「重试」重新安装；仍失败可打开安装日志查看详情。',
+          unsupported: '当前平台不支持托管 Python 运行时，数据处理功能暂不可用。',
+          fallback: '安装没有完成。点「重试」重新安装。',
+        },
+        openInstallLog: '查看日志',
       },
       rendererBundle: {
         title: '前端界面',

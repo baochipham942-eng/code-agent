@@ -9,14 +9,12 @@ import { Button } from '../../../primitives';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { SettingsPage } from '../SettingsLayout';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
-import { getRuntimeAssetDisplayKind } from '@shared/contract';
 import type {
   DesktopShellDiagnostics,
   NativePermissionSnapshot,
   PrepareRuntimeAssetsResult,
   RendererBundleStatus,
   RuntimeAssetsStatus,
-  RuntimeAssetStatusEntry,
   UpdateInfo,
 } from '@shared/contract';
 import { createLogger } from '../../../../utils/logger';
@@ -44,6 +42,7 @@ import {
   isNativeDesktopAvailable,
 } from '../../../../services/nativeDesktop';
 import { zh } from '../../../../i18n/zh';
+import { RuntimeAssetRow, getRuntimeAssetDisplayName } from './RuntimeAssetRow';
 
 export {
   getRendererBundleActivationText,
@@ -54,6 +53,10 @@ export {
   readLoadedRendererBundleStatus,
   shouldAutoReloadRendererBundle,
 } from '../../../../utils/rendererBundleActivation';
+
+// 运行资产通用展示函数随 RuntimeAssetRow 迁出（N-PY-RUNTIME-K2 rework r2），
+// 这里原样 re-export 维持既有导入面（tests/renderer updateSettings.status 等）。
+export { getRuntimeAssetStatusText, getRuntimeAssetDisplayName } from './RuntimeAssetRow';
 
 const logger = createLogger('UpdateSettings');
 type UpdateSettingsText = typeof zh.settings.update;
@@ -180,25 +183,6 @@ export function getRuntimeAssetsPrepareText(
   text: UpdateSettingsText['runtimeAssets'] = DEFAULT_UPDATE_SETTINGS_TEXT.runtimeAssets,
 ): string {
   return isPreparing ? text.prepareBusy : text.prepareIdle;
-}
-
-export function getRuntimeAssetStatusText(
-  asset: RuntimeAssetStatusEntry,
-  text: UpdateSettingsText['runtimeAssets']['status'] = DEFAULT_UPDATE_SETTINGS_TEXT.runtimeAssets.status,
-): string {
-  if (asset.state === 'installed') return text.available;
-  if (asset.state === 'bundledFallback') return text.available;
-  if (asset.state === 'unsupported') return text.unsupported;
-  if (asset.delivery === 'optional') return text.firstUseDownload;
-  return text.missing;
-}
-
-export function getRuntimeAssetDisplayName(
-  asset: RuntimeAssetStatusEntry,
-  text: UpdateSettingsText['runtimeAssets']['displayNames'] = DEFAULT_UPDATE_SETTINGS_TEXT.runtimeAssets.displayNames,
-): string {
-  const kind = getRuntimeAssetDisplayKind(asset);
-  return kind ? text[kind] : asset.label;
 }
 
 export function getRendererBundleSummaryText(
@@ -419,12 +403,6 @@ export function getDesktopShellDiagnosticRows(
     });
   }
   return rows;
-}
-
-function getRuntimeAssetTone(asset: RuntimeAssetStatusEntry): string {
-  if (asset.state === 'installed') return 'text-badge-success bg-green-500/10 border-badge-success/30';
-  if (asset.state === 'bundledFallback') return 'text-badge-warning bg-amber-500/10 border-badge-warning/30';
-  return 'text-zinc-300 bg-zinc-700/40 border-zinc-600/60';
 }
 
 function getRendererBundleTone(status: RendererBundleStatus): string {
@@ -682,6 +660,16 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
     return () => window.clearInterval(timer);
   }, [preparingRuntimeAssetId]);
 
+  // python-env 失败行的「查看日志」：host 给的是绝对路径（<root>/install.log），
+  // 直接走 workspace:openPath 交给系统默认应用打开；失败只落日志不打断 UI。
+  const handleOpenInstallLog = async (logPath: string) => {
+    try {
+      await ipcService.invokeDomain(IPC_DOMAINS.WORKSPACE, 'openPath', { filePath: logPath });
+    } catch (err) {
+      logger.error('Open python install log failed', err);
+    }
+  };
+
   const handleInstallClick = async () => {
     setIsCheckingTasks(true);
     const count = await resolveInstallInterruptedTaskCount(
@@ -798,32 +786,20 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
                 // python-env 行的安装中/失败态来自 preparation，映射集中在 helper
                 const pythonEnvRow = getPythonEnvAssetRowDisplay(asset, preparation, updateText.runtimeAssets);
                 return (
-                <div key={asset.id} className="flex items-center justify-end gap-2">
-                  <span className="text-xs text-zinc-400">
-                    {getRuntimeAssetDisplayName(asset, updateText.runtimeAssets.displayNames)}
-                  </span>
-                  <span className={`text-xs px-2 py-1 rounded border ${pythonEnvRow?.tone ?? getRuntimeAssetTone(asset)}`}>
-                    {pythonEnvRow?.statusText ?? getRuntimeAssetStatusText(asset, updateText.runtimeAssets.status)}
-                  </span>
-                  {pythonEnvRow?.failureReason && (
-                    <span className="text-xs text-badge-warning max-w-[260px] truncate" title={pythonEnvRow.failureReason}>
-                      {pythonEnvRow.failureReason}
-                    </span>
-                  )}
-                  {asset.delivery === 'optional' && asset.state === 'missing' && pythonEnvRow?.action !== 'hide' && (
-                    <Button
-                      disabled={isDisabled || Boolean(preparingRuntimeAssetId)}
-                      onClick={() => handlePrepareRuntimeAssets(asset.id)}
-                      variant="ghost"
-                      size="sm"
-                      leftIcon={isPreparing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
-                    >
-                      {isPreparing && preparation?.phase === 'downloading' && preparation.percent !== undefined
-                        ? `${Math.round(preparation.percent)}%`
-                        : runtimeAssetsError || pythonEnvRow?.action === 'retry' ? updateText.runtimeAssets.retryAsset : updateText.runtimeAssets.installAsset}
-                    </Button>
-                  )}
-                </div>
+                  <RuntimeAssetRow
+                    key={asset.id}
+                    asset={asset}
+                    pythonEnvRow={pythonEnvRow}
+                    text={updateText.runtimeAssets}
+                    preparingAssetId={preparingRuntimeAssetId}
+                    isPreparing={isPreparing}
+                    preparationPhase={preparation?.phase}
+                    preparationPercent={preparation?.percent}
+                    forceRetryLabel={Boolean(runtimeAssetsError)}
+                    actionsDisabled={isDisabled}
+                    onPrepare={(assetId) => { void handlePrepareRuntimeAssets(assetId); }}
+                    onOpenInstallLog={(logPath) => { void handleOpenInstallLog(logPath); }}
+                  />
                 );
               })}
             </div>

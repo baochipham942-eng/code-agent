@@ -164,6 +164,10 @@ export interface RuntimeAssetPreparationStatus {
   transferred?: number;
   total?: number;
   error?: string;
+  /** 机器可读失败码（python-env：PYTHON_RUNTIME_*），renderer 据此选本地化文案 */
+  errorCode?: string;
+  /** 安装日志绝对路径（python-env 失败时总有），renderer 提供「查看日志」动作 */
+  logPath?: string;
 }
 
 export type RendererBundleAttemptOutcome = 'applied' | 'staged' | 'rolled-back' | 'skipped' | 'failed';

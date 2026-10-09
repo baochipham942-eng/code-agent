@@ -33,7 +33,7 @@ vi.mock('../../../../../src/host/services/core/configService', async (importOrig
 import type { JevAnswers, JevSystemOneCall } from '../../../../../src/shared/constants/jevQuestions';
 import { BROWSER_STEP_OPERATIONS } from '../../../../../src/shared/constants/jevQuestions';
 import type { JevCapturedSnapshot } from '../../../../../src/host/services/infra/browser/jevBrowserSnapshotPrep';
-import { BrowserTargetRefError, type BrowserDomSnapshot, type BrowserTargetRef } from '../../../../../src/host/services/infra/browser/types';
+import { BrowserTargetRefError, type BrowserDomSnapshot, type BrowserTargetRef, type PageContent } from '../../../../../src/host/services/infra/browser/types';
 import {
   resolveBrowserJevStep,
 } from '../../../../../src/host/agent/runtime/browser/jevBrowserStep';
@@ -1249,7 +1249,7 @@ function makePoolStubService() {
     click: vi.fn(async () => undefined),
     getElementBoundingBox: vi.fn(async () => ({ x: 0, y: 0, width: 10, height: 10 })),
     captureJevPage: vi.fn(async () => emptySnapshot),
-    getPageContent: vi.fn(async () => ({ url: 'http://127.0.0.1/page', title: 'Page', text: '' })),
+    getPageContent: vi.fn(async (): Promise<PageContent> => ({ url: 'http://127.0.0.1/page', title: 'Page', text: '' })),
     getDialogState: vi.fn(() => ({ pending: false })),
     scroll: vi.fn(async () => undefined),
     clickTargetRef: vi.fn(async () => ({})),

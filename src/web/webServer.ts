@@ -369,6 +369,10 @@ import {
 import { resolveDurableRunRollout } from '../host/app/durableRunRollout';
 import type { PendingDevPermissionRequest } from './routes/dev';
 import { createApp, type CreateAppDeps } from './app';
+import { acquireDaemonLock, releaseDaemonLock } from '../host/services/daemon/daemonLock';
+import { shouldDaemonExit, type DaemonIdleSnapshot } from '../host/services/daemon/daemonIdle';
+import { drainPendingOpsForShutdown } from '../host/services/daemon/daemonDrain';
+import { getBackgroundTaskLedger } from '../host/task/backgroundTaskLedger';
 import { listForegroundPermissionRequests } from './foregroundPermissionRegistry';
 import { createWebSessionContext } from './sessionDomainHandler';
 import { startDurableRunStartup } from './durableRunStartup';
@@ -1097,6 +1101,14 @@ async function main(): Promise<void> {
   const host = process.env.WEB_HOST || WEB_SERVER_DEFAULTS.HOST;
   const serviceMode = isWebServiceMode();
 
+  // ADR-083 常驻宿主单实例锁：同数据目录只允许一个执行体。必须先于 killPortHolder
+  // ——已有活实例占着端口时，先探锁直接让位退出，而不是把还活着的 daemon 杀掉。
+  const daemonLock = acquireDaemonLock(resolveCodeAgentDataDir());
+  if (!daemonLock.acquired) {
+    console.error(`Another instance holds the daemon lock (pid ${daemonLock.existingPid ?? 'unknown, starting'}) in ${resolveCodeAgentDataDir()} — exiting.`);
+    process.exit(1);
+  }
+
   console.log('╔══════════════════════════════════════════╗');
   console.log('║   Agent Neo — Web Standalone Mode        ║');
   console.log('╚══════════════════════════════════════════╝');
@@ -1131,9 +1143,12 @@ async function main(): Promise<void> {
   }
 
   let stopCompanion: (() => Promise<void>) | undefined;
+  // ADR-083 空闲去留快照（与 IdleSleepInhibitor 同源的三信号），app.ts 创建时回填。
+  let daemonIdleSnapshot: (() => DaemonIdleSnapshot) | undefined;
   const app = createApp({
     handlers,
     registerCompanionShutdown: stop => { stopCompanion = stop; },
+    registerDaemonIdleSnapshot: getSnapshot => { daemonIdleSnapshot = getSnapshot; },
     logger,
     runRegistry,
     pendingLocalToolCalls,
@@ -1202,6 +1217,15 @@ async function main(): Promise<void> {
     // 硬杀，留下陈旧 -wal/-shm。所以关库之前的步骤共用一个总预算、每步再各自封顶，
     // 超时就跳过，绝不挡住关库。预算从这一刻起算。
     const { withCap, stepMs } = createShutdownStepCap();
+    // ADR-083 daemon 排空：先给在跑的 run 自然收口窗口（未决口径 = 与防闲睡同一份
+    // 「在跑 run」信号）。壳的 3s SIGKILL 看门狗还挂着（stdin 管道未断）时宽限压进
+    // 预算并套 withCap；无看门狗（独立 daemon / 壳已死 / neo daemon stop）才用完整
+    // 宽限。强停后的真取消由下面的 reap 步骤执行。
+    await drainPendingOpsForShutdown({
+      getPendingOps: () => runRegistry.size + (getBackgroundTaskLedger().hasActiveTasks() ? 1 : 0),
+      watchdogActive: shellPipeAttached,
+      withCap,
+    });
     // companion 的 LAN 监听器最先撤，但必须在预算之内：restore() 可能正卡在
     // keytar.getPassword 上（macOS 会弹钥匙串授权框等人点），无上限地等它 = 预算一秒
     // 没走、关库永远轮不到、Rust 侧到点 SIGKILL，留下陈旧 -wal/-shm（下次启动 SIGBUS）。
@@ -1257,12 +1281,36 @@ async function main(): Promise<void> {
     // 连接清单登记在 webShutdownDatabases.ts，新增主库连接必须同步登记。
     // 不设超时封顶：这是唯一不能跳过的一步，必须等它做完。
     await (await import('./webShutdownDatabases')).closeAllDatabaseConnections();
+    releaseDaemonLock(resolveCodeAgentDataDir());
     server.close();
     process.exit(0);
   };
 
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+
+  // Tauri 父进程死亡检测 + ADR-083 常驻宿主去留：父进程退出/崩溃（含 SIGABRT）时
+  // stdin 管道关闭。只有被 Tauri spawn（有 boot token）且管道还连着时，Rust 侧的
+  // 3s SIGKILL 看门狗才悬在头上；管道断开后没人再兜底杀我们，排空才可以用完整
+  // 宽限，去留也改由空闲判据说了算：全空闲随壳退出（拍板记录 2），还有 run /
+  // 配对伴侣 / 等审批就留守继续跑。standalone / dev 模式没有这个环境变量，不受影响。
+  // 回调必须定义在守卫块外：gracefulShutdown 静态门用 lazy 正则截守卫块体（到第一个
+  // 独行 `}` 为止），监听语句内嵌函数体会把 'end' 监听挤出匹配范围，跨端合同门假红。
+  let shellPipeAttached = Boolean(process.env.CODE_AGENT_TAURI_BOOT_TOKEN);
+  const onShellPipeClosed = () => {
+    shellPipeAttached = false;
+    const snapshot = daemonIdleSnapshot?.();
+    if (!snapshot || shouldDaemonExit(snapshot)) {
+      void shutdown();
+      return;
+    }
+    logger.info('[daemon] shell exited while busy — staying resident (runs/companion/approval pending)');
+  };
+  if (process.env.CODE_AGENT_TAURI_BOOT_TOKEN) {
+    process.stdin.resume();
+    process.stdin.on('end', onShellPipeClosed);
+    process.stdin.on('error', onShellPipeClosed);
+  }
 
   // ── 前端热更：启动后异步拉取（不阻塞 health，失败不影响启动）─────────
   // 后台拉取+验签后只写 staged/；下一次启动在 HTTP serve 前切换 active/。
@@ -1275,15 +1323,6 @@ async function main(): Promise<void> {
     }).catch((err) => {
       console.warn('[renderer-hot-update] background update error:', err);
     });
-  }
-
-  // Tauri 父进程死亡检测：父进程退出/崩溃（含 SIGABRT）时 stdin 管道关闭，
-  // webServer 跟着优雅退出，不留孤儿进程占住端口。
-  // 仅在被 Tauri spawn 时生效（standalone / dev 模式没有这个环境变量，不受影响）。
-  if (process.env.CODE_AGENT_TAURI_BOOT_TOKEN) {
-    process.stdin.resume();
-    process.stdin.on('end', () => { void shutdown(); });
-    process.stdin.on('error', () => { void shutdown(); });
   }
 }
 

@@ -169,5 +169,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
       enabled: VOICE_LIVE_ENABLED_DEFAULT,
     },
   },
+  // ADR-083：登录自启默认关（拍板记录 2——默认驻留一个能执行命令的进程属于
+  // 要用户知情的选择）；设置位先行，LaunchAgent / 登录项由后续单子接线。
+  daemon: {
+    launchAtLogin: false,
+  },
   keybindings: createDefaultKeybindingsSettings(getKeybindingPlatformFromNodePlatform(process.platform)),
 };

@@ -115,37 +115,62 @@ export interface DelegationDrainHooks {
   projectTerminal(sessionId?: string): void;
 }
 
+/**
+ * 投影类钩子（回填/暂停投影/撤回投影）失败不炸宿主流程：这些钩子跑在
+ * runAgentTurn 的激活点、drain 收尾与 IPC 结算路径上，throw 会把已经合法
+ * 起跑的 run / 已成功的撤回整个打死（错题本：fail-open 不等于失败不留痕）
+ * ——warn 带可区分原因。
+ */
+function safeProject(
+  deps: DelegationRuntimeDependencies,
+  action: string,
+  record: unknown,
+  run: () => void,
+): void {
+  try {
+    run();
+  } catch (error) {
+    deps.logger.warn(`Delegation hook failed: ${action}`, { record, error });
+  }
+}
+
 export function createDelegationDrainHooks(deps: DelegationRuntimeDependencies): DelegationDrainHooks {
   return {
     async beforeClaim(record) {
       return evaluateDelegationDelivery(deps, record);
     },
     onActivated(record, activation) {
-      const db = deps.getDb();
-      if (!db) return;
-      const delegations = new SessionDelegationRepository(db);
-      const delegation = delegations.getByTargetQueuedInputId(record.id);
-      if (!delegation) return;
-      if (isDeliveryFailedAbort(delegation)) {
-        delegations.reviveAfterResend(delegation.delegationId, activation.runId, Date.now());
-        return;
-      }
-      delegations.backfillTargetRunId(delegation.delegationId, activation.runId);
+      safeProject(deps, 'onActivated', record, () => {
+        const db = deps.getDb();
+        if (!db) return;
+        const delegations = new SessionDelegationRepository(db);
+        const delegation = delegations.getByTargetQueuedInputId(record.id);
+        if (!delegation) return;
+        if (isDeliveryFailedAbort(delegation)) {
+          delegations.reviveAfterResend(delegation.delegationId, activation.runId, Date.now());
+          return;
+        }
+        delegations.backfillTargetRunId(delegation.delegationId, activation.runId);
+      });
     },
     onClaimConflict(record) {
-      const db = deps.getDb();
-      if (!db) return;
-      if (!new QueuedInputRepository(db).pauseAfterClaim(record.id, 'target_busy')) {
-        deps.logger.warn('Delegation row could not pause after claim conflict', record);
-      }
+      safeProject(deps, 'onClaimConflict', record, () => {
+        const db = deps.getDb();
+        if (!db) return;
+        if (!new QueuedInputRepository(db).pauseAfterClaim(record.id, 'target_busy')) {
+          deps.logger.warn('Delegation row could not pause after claim conflict', record);
+        }
+      });
     },
     onRetryExhausted(record) {
-      const db = deps.getDb();
-      if (!db) return;
-      const delegations = new SessionDelegationRepository(db);
-      const delegation = delegations.getByTargetQueuedInputId(record.id);
-      if (!delegation) return;
-      delegations.markAborted(delegation.delegationId, 'delivery_failed', Date.now());
+      safeProject(deps, 'onRetryExhausted', record, () => {
+        const db = deps.getDb();
+        if (!db) return;
+        const delegations = new SessionDelegationRepository(db);
+        const delegation = delegations.getByTargetQueuedInputId(record.id);
+        if (!delegation) return;
+        delegations.markAborted(delegation.delegationId, 'delivery_failed', Date.now());
+      });
     },
     projectTerminal(sessionId) {
       const db = deps.getDb();
@@ -154,7 +179,7 @@ export function createDelegationDrainHooks(deps: DelegationRuntimeDependencies):
         ...(deps.getRun ? { getRun: deps.getRun } : {}),
         now: Date.now(),
         ...(sessionId ? { targetSessionId: sessionId } : {}),
-      }).catch((error) => {
+      }).catch((error: unknown) => {
         deps.logger.warn('Delegation terminal projection failed', { sessionId, error });
       });
     },
@@ -181,13 +206,15 @@ export function createQueuedInputDelegationGuard(
       return evaluateDelegationDelivery(deps, record);
     },
     onRetracted(record) {
-      const db = deps.getDb();
-      if (!db) return;
-      const delegations = new SessionDelegationRepository(db);
-      const delegation = delegations.getByTargetQueuedInputId(record.id);
-      if (delegation) {
-        delegations.markAborted(delegation.delegationId, 'retracted_by_user', Date.now());
-      }
+      safeProject(deps, 'onRetracted', record, () => {
+        const db = deps.getDb();
+        if (!db) return;
+        const delegations = new SessionDelegationRepository(db);
+        const delegation = delegations.getByTargetQueuedInputId(record.id);
+        if (delegation) {
+          delegations.markAborted(delegation.delegationId, 'retracted_by_user', Date.now());
+        }
+      });
     },
   };
 }

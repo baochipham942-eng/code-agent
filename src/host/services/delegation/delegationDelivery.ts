@@ -14,6 +14,7 @@ import { isTerminalRunStatus } from '../../../shared/contract/durableRun';
 import { QueuedInputRepository } from '../core/repositories/QueuedInputRepository';
 import {
   SessionDelegationRepository,
+  type SessionDelegationDisposition,
   type SessionDelegationRecord,
 } from '../core/repositories/SessionDelegationRepository';
 import { DurableRunRepository } from '../core/repositories/DurableRunRepository';
@@ -24,10 +25,9 @@ import {
 import {
   recheckForDelivery,
   type DelegationDeliverySnapshot,
-  type DelegationRejectionCode,
 } from './delegationAdmission';
 
-export const DELEGATION_QUEUE_ID_PREFIX = 'delegation:';
+const DELEGATION_QUEUE_ID_PREFIX = 'delegation:';
 
 export function delegationQueuedInputId(submissionKey: string): string {
   return DELEGATION_QUEUE_ID_PREFIX + submissionKey;
@@ -37,7 +37,7 @@ export interface CommitDelegationInput {
   delegationId: string;
   originSessionId: string;
   originTurnId: string;
-  disposition: 'delegate_existing' | 'create_new';
+  disposition: SessionDelegationDisposition;
   targetSessionId: string;
   submissionKey: string;
   actionFingerprint: string;
@@ -321,7 +321,7 @@ export async function projectTerminalDelegations(
   let observed = 0;
   for (const row of pending) {
     if (!row.targetRunId) continue;
-    let run: DelegationRunLike | null = null;
+    let run: DelegationRunLike | null;
     try {
       run = await getRun(row.targetRunId);
     } catch {
@@ -333,15 +333,3 @@ export async function projectTerminalDelegations(
   }
   return observed;
 }
-
-/** 复核/指纹 pause 码的收口集合（IPC 文案与 drain 写库共用字面量来源）。 */
-export const DELEGATION_PAUSE_CODES: ReadonlySet<string> = new Set<string>([
-  'payload_mismatch',
-  'target_busy',
-  'target_unavailable',
-  'not_delegatable',
-  'target_permission_mode',
-  'untrusted_workspace',
-]);
-
-export type { DelegationRejectionCode };

@@ -167,7 +167,7 @@ export function workspacesOverlap(left: string | null, right: string | null): bo
   return a.startsWith(b + path.sep) || b.startsWith(a + path.sep);
 }
 
-export interface DelegationFolderTrustSnapshot {
+interface DelegationFolderTrustSnapshot {
   state: string;
   blockedItems: number;
 }
@@ -178,7 +178,7 @@ export type DelegationFolderTrustFact =
   | { error: true }
   | null;
 
-export interface DelegationTargetSnapshot {
+interface DelegationTargetSnapshot {
   /** delegate_existing：解析出的目标；create_new：null。 */
   sessionId: string | null;
   sessionExists: boolean;
@@ -197,7 +197,7 @@ export interface DelegationTargetSnapshot {
   folderTrust: DelegationFolderTrustFact;
 }
 
-export interface DelegationCandidateSetSnapshot {
+interface DelegationCandidateSetSnapshot {
   candidateSetId: string;
   /** host 内部：与 candidates 同序的不透明 ref。 */
   candidateRefs: readonly string[];

@@ -26,7 +26,7 @@ type WebQueuedInputDrainRepository = Pick<
  * onActivated 回填 target_run_id（INV-4）；冲突暂停不重试；重试耗尽投影
  * aborted(delivery_failed)；projectTerminal 做终态投影（幂等）。
  */
-export interface WebQueuedInputDrainDelegation {
+interface WebQueuedInputDrainDelegation {
   beforeClaim(record: QueuedInputRecord): Promise<DelegationClaimDecision> | DelegationClaimDecision;
   onActivated(record: QueuedInputRecord, activation: { runId: string; activatedAt: number }): void;
   onClaimConflict(record: QueuedInputRecord): void;

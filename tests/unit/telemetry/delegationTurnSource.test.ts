@@ -182,34 +182,11 @@ describe('telemetry turn_source（ADR-072 K1C）', () => {
 
     it('存量库（无 turn_source 列）经 turns 迁移补列，老行读回 NULL', () => {
       const legacy = new Database(':memory:');
-      // 旧 DDL：turn_source 加入前的形状（telemetryDdlDriftGuard 钉住的新形状不含它）
-      legacy.exec(`
-        CREATE TABLE telemetry_turns (
-          id TEXT PRIMARY KEY,
-          session_id TEXT NOT NULL,
-          turn_number INTEGER,
-          start_time INTEGER,
-          end_time INTEGER,
-          duration_ms INTEGER,
-          user_prompt TEXT,
-          agent_mode TEXT,
-          effort_level TEXT,
-          assistant_response TEXT,
-          total_input_tokens INTEGER,
-          total_output_tokens INTEGER,
-          intent_primary TEXT,
-          intent_confidence REAL,
-          intent_method TEXT,
-          outcome_status TEXT,
-          outcome_confidence REAL,
-          outcome_method TEXT,
-          compaction_occurred INTEGER,
-          iteration_count INTEGER,
-          turn_type TEXT,
-          parent_turn_id TEXT
-        );
-      `);
-      legacy.prepare(`INSERT INTO telemetry_turns (id, session_id, turn_number) VALUES ('legacy-1', 's', 1)`).run();
+      // 旧形状 = 现行 schema 去掉 turn_source（不手抄 DDL，drift guard 会抓）
+      applyTestTelemetrySchema(legacy);
+      legacy.exec('ALTER TABLE telemetry_turns DROP COLUMN turn_source');
+      legacy.prepare(`INSERT INTO telemetry_turns (id, session_id, turn_number, start_time, end_time, duration_ms)
+        VALUES ('legacy-1', 's', 1, 1000, 2000, 1000)`).run();
       applyTelemetryTurnsMigrations(legacy, { info: () => {}, warn: () => {}, error: () => {} } as never);
       const columns = (legacy.prepare('PRAGMA table_info(telemetry_turns)').all() as Array<{ name: string }>)
         .map((column) => column.name);

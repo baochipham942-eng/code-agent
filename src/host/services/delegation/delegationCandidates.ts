@@ -34,9 +34,9 @@ export interface SessionCandidateRow {
   parentSessionId?: string;
 }
 
-export type SessionCandidateFreshness = '1h' | '1d' | '7d' | 'older';
+type SessionCandidateFreshness = '1h' | '1d' | '7d' | 'older';
 
-export interface SessionCandidate {
+interface SessionCandidate {
   candidateRef: string;
   shortName: string;
   workspaceName: string;

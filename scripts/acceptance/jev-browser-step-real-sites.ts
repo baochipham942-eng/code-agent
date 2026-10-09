@@ -728,9 +728,7 @@ function rowFrom(input: {
     ...(input.referencePricing ? { usdReference: input.result.usdReference } : {}),
     jevCalls: input.result.jevCalls,
     jevUsd: input.result.jevUsd,
-    ...(input.errorMessage !== undefined || input.result.fallbackReason !== undefined
-      ? { fallbackReason: input.errorMessage ?? input.result.fallbackReason }
-      : {}),
+    fallbackReason: input.errorMessage ?? input.result.fallbackReason ?? '',
     finalTitle: input.finalTitle,
     finalUrl: input.finalUrl,
   };

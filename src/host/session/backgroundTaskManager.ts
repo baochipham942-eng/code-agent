@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { EventEmitter } from 'events';
-import { AppWindow } from '../platform';
+import { AppWindow, broadcastToRenderer } from '../platform';
 import { createLogger } from '../services/infra/logger';
 import { getSessionManager, notificationService } from '../services';
 import type { BackgroundSessionInfo, BackgroundTaskUpdateEvent } from '../../shared/contract/sessionState';
@@ -124,14 +124,15 @@ class BackgroundTaskManager extends EventEmitter {
       task,
     });
 
-    // 发送系统通知
+    // 发送系统通知。force：后台完成提醒绕过焦点门——用户可能正停在 app 里聊别的会话
+    // （与 loop/定时任务同一档「默默长跑、完成才冒头」）。
     notificationService.notifyTaskComplete({
       sessionId,
       sessionTitle: task.title,
       summary: message || '任务已完成',
       duration: Date.now() - task.startedAt,
       toolsUsed: [],
-    });
+    }, { force: true });
 
     // 3 秒后自动从后台列表移除
     setTimeout(() => {
@@ -196,6 +197,10 @@ class BackgroundTaskManager extends EventEmitter {
    */
   private emitUpdate(event: BackgroundTaskUpdateEvent): void {
     this.emit('update', event);
+
+    // web 路径（浏览器/无槽验证）：与 notificationService.deliver 同款 renderer bus → SSE。
+    // Tauri 渲染端不走 SSE（bridge 模式无订阅者，emit 静默丢弃），不会与 webContents 重复投递。
+    broadcastToRenderer('background:task:update', event);
 
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
       this.mainWindow.webContents.send('background:task:update', event);

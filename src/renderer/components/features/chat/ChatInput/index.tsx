@@ -25,6 +25,8 @@ import { ComposerSlot, SlotEntry } from './ComposerSlot';
 import { InputAddMenu } from './InputAddMenu';
 import { SuggestionBar } from './SuggestionBar';
 import { ComposerCoreActions, type ComposerCoreAction } from './ComposerCoreActions';
+import { BackgroundHandoffButton } from './BackgroundHandoffButton';
+import { useBackgroundHandoffSubmit } from './useBackgroundHandoffSubmit';
 import { DictationRecordingBar } from './DictationRecordingBar';
 import {
   applyDictationPartial,
@@ -939,6 +941,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setActiveAgentId,
     pendingResendClientMessageIdRef,
   });
+  // 「转后台继续聊」：当前会话转后台 + 新前台会话发草稿（排队/改道默认路径不动）
+  const submitBackgroundHandoff = useBackgroundHandoffSubmit({ currentSessionId, handleSubmit });
 
   const submitWithRuntimeChoice = useCallback(async (event?: React.FormEvent, opts?: { steer?: boolean; content?: string }) => {
     event?.preventDefault();
@@ -977,15 +981,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
   const modelConfig = useAppStore((s) => s.modelConfig);
 
-  // G4 Dictation 录音态：hook 提到 ChatInput 层，录音条（波形铺满输入行）与
-  // 语音按钮共享同一路采集状态。录音条的发送按钮 = 停止录音 + 转写完成后
-  // 自动提交（send-after-transcript）；停止按钮 = 转写后文本落回输入框可编辑。
+  // G4 Dictation 录音态：hook 提到 ChatInput 层，录音条（波形铺满输入行）与语音按钮共享
+  // 同一路采集状态。录音条的发送按钮 = 停止录音 + 转写完成后自动提交；停止 = 文本落回可编辑。
   const handleVoiceTranscriptRef = useRef(handleVoiceTranscript);
   handleVoiceTranscriptRef.current = handleVoiceTranscript;
   const handleSubmitRef = useRef(submitWithRuntimeChoice);
   handleSubmitRef.current = submitWithRuntimeChoice;
   // 浏览器批注（N3）：appshotsStore 已写 pending 后，把 pin 文案塞进输入框并走主提交链路
-  // （appshot 附件/XML 与用户手动发送同路径）。必须挂在 handleSubmitRef 之后。
+  // （appshot 附件/XML 与用户手动发送同路径）；必须挂在 handleSubmitRef 之后。
   useEffect(() => {
     const handleBrowserAnnotationSubmit = (e: Event) => {
       const text = (e as CustomEvent<{ text?: string }>).detail?.text?.trim();
@@ -1061,8 +1064,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     handleValueChange(newValue);
   }, [handleValueChange]);
   const isDictationActive = voice.status === 'recording' || voice.status === 'transcribing';
-  // 录音失败（如太短）不会触发 onTranscript——滞留的 send-after 旗标必须在
-  // 出错时清掉，否则下一次成功转写会被意外自动发送。
+  // 录音失败（如太短）不会触发 onTranscript——滞留的 send-after 旗标必须在出错时清掉，
+  // 否则下一次成功转写会被意外自动发送。
   useEffect(() => {
     if (voice.status === 'error') {
       const anchor = dictationAnchorRef.current;
@@ -1082,23 +1085,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       }
     }
   }, [voice.status, writeDictationValue]);
-  // 累计费用已收进 ContextUsagePill 的 hover 面板（底栏收敛拍板 2026-07-26）：
-  // 圆环 hover 展开时与上下文用量同面板展示，底栏不再常驻成本数字。
+  // 累计费用已收进 ContextUsagePill 的 hover 面板（底栏收敛拍板 2026-07-26），底栏不常驻成本数字。
   // useBudgetStatus 不是定时轮询：仅在成本前进 / 流式结束时各拉一次，挂在 pill 侧。
 
   const hasContent = value.trim().length > 0 || attachments.length > 0 || Boolean(pendingCommand);
   // 右侧主按钮的归属：空会话和已有实时通话身份的会话，在输入框为空、未运行时
   // 可以显示通话；纯文字会话一旦有消息，入口整个隐藏。其余状态由发送/停止兜底。
-  //
-  // 不看 `configured`（2026-07-30 缺 key 降级）：没配 key 时主位照让，
-  // LiveVoiceButton 自己渲染成「点我配 key」的引导态——能力不可用要降级提示，
-  // 不是消失，否则新用户永远发现不了这儿有实时语音。
-  //
-  // 刻意不看 `disabled`（2026-07-27 真机：切到新会话时底栏按钮闪变）：
-  // `disabled = isProcessing || isCreatingSession`，而 `!isProcessing` 上面已经拦了，
-  // 它多出来的只有「正在建会话」那一小段。建会话跟「有没有通话入口」无关——
-  // 拿它决定按钮存不存在，就是让底栏在每次开新会话时换一次构成。
-  // 这段窗口按钮照常在位，只是 disabled 置灰（两个按钮都真的会灰，见各自实现）。
+  // 不看 `configured`（2026-07-30 缺 key 降级）：没配 key 时主位照让，LiveVoiceButton
+  // 自己渲染成「点我配 key」的引导态——能力不可用要降级提示不是消失，否则新用户发现不了入口。
+  // 刻意不看 `disabled`（2026-07-27 真机：切到新会话时底栏按钮闪变）：`disabled =
+  // isProcessing || isCreatingSession`，而 `!isProcessing` 上面已经拦了，多出来的只有
+  // 「正在建会话」那一小段。建会话跟「有没有通话入口」无关，这段窗口按钮照常在位只是置灰。
   //
   const liveVoiceAvailability = useVoiceLiveAvailability();
   const liveVoiceCallPhase = useVoiceLiveRuntime().phase;
@@ -1142,9 +1139,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         }}
         className="max-w-3xl mx-auto"
       >
-        {/* 输入框上方那一格：全部占用者统一走 <ComposerSlot>/<SlotEntry id>。
-            层级登记与让位规则在 composerNoticeStore 的 COMPOSER_SLOT_LAYER；
-            裸挂任何未登记组件都会被 ComposerSlot 拒渲染（防以后又塞进来一个不声明层级的）。
+        {/* 输入框上方那一格：全部占用者统一走 <ComposerSlot>/<SlotEntry id>；层级登记与
+            让位规则在 composerNoticeStore 的 COMPOSER_SLOT_LAYER，裸挂未登记组件会被拒渲染。
             拖放遮罩是绝对定位盖层、不参与这一格的堆叠，故留在容器外。 */}
         <ComposerSlot>
           {/* 会话内循环（/loop）运行状态条（L3 上下文层，组件自闸） */}
@@ -1494,14 +1490,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             onRemoveInlineChip={handleRemoveInlineChip}
             onInlineChipsChanged={handleInlineChipsChanged}
           />
-          {/* 底部工具栏。录音中这一行**原地变成波形条**（`+` 留在最左，波形铺中间，
-              右侧 时长 + 停止 + 发送）——不在输入框上方另悬浮一条，也就不会出现
-              两个发送键（产品负责人 2026-07-27 真机反馈，形态对齐 Codex composer）。
-              输入框本体全程可见可编辑。 */}
+          {/* 底部工具栏。录音中这一行**原地变成波形条**（`+` 留在最左，波形铺中间，右侧
+              时长 + 停止 + 发送）——不在输入框上方另悬浮一条，也就不会出现两个发送键
+              （产品负责人 2026-07-27 真机反馈，形态对齐 Codex composer）；输入框本体全程可见可编辑。 */}
           <div className="flex items-center gap-1 px-4 pb-2">
-            {/* pb-2(8) 不是 16 的笔误：行内图标是 16px 字形居中在 32px 点击盒里，
-                盒底自带 8px 隐形 chrome，8+8=16 才是肉眼看到的「图标到下边框」距离，
-                与左轨的 16 一致（左侧靠「+」的 -ml-2 补偿同一件事）。 */}
+            {/* pb-2(8) 不是 16 的笔误：行内图标是 16px 字形居中在 32px 点击盒里，盒底自带
+                8px 隐形 chrome，8+8=16 才是肉眼看到的「图标到下边框」距离，与左轨的 16 一致。 */}
             {/* "+" 二级菜单（Codex 风格 B+）— 收纳上传附件 + 能力入口 + 交互模式 */}
             <InputAddMenu
               onFileSelect={handleFileSelect}
@@ -1538,7 +1532,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             {/* 弹性空白 */}
             <div className="flex-1" />
 
-            {/* 累计费用：底栏不再常驻，收进 ContextUsagePill hover 面板（2026-07-26 底栏收敛） */}
+            {/* 累计费用：底栏不常驻，收进 ContextUsagePill hover 面板（2026-07-26 底栏收敛） */}
 
             {/* 上下文使用 pill — 模型选择器左边，Codex 风格 */}
             <ContextUsagePill />
@@ -1548,11 +1542,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               <ModelSwitcher currentModel={modelConfig.model} />
             </div>
 
-            {/*
-              核心操作区 = 工具栏右端同级的「口述输入 + 主操作」，上限 2 项。
-              这里逐项消费 resolveComposerCoreActions；附件 +、身份/连接器/权限/模型、
-              审批与提示 chip、上方 VoiceChrome 状态条不属于核心操作区。
-            */}
+            {/* 运行中第三个显式动作（次级位，紧挨发送；不占核心操作区、不加默认键位） */}
+            <BackgroundHandoffButton
+              isProcessing={Boolean(isProcessing)}
+              draftText={value}
+              attachmentCount={attachments.length}
+              sessionId={currentSessionId}
+              editingQueuedInput={Boolean(editingQueuedInputId)}
+              onTrigger={() => { void submitBackgroundHandoff(); }}
+            />
+            {/* 核心操作区 = 工具栏右端同级的「口述输入 + 主操作」，上限 2 项；逐项消费
+              resolveComposerCoreActions。附件 +、身份/连接器/权限/模型、审批与提示 chip 不在核心操作区。 */}
             <ComposerCoreActions
               actions={composerCoreActions}
               voice={voice}

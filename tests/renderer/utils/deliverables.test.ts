@@ -243,6 +243,121 @@ describe('deliverable card projection', () => {
     ]);
   });
 
+  it('keeps only the latest turn card for repeated previewable paths', () => {
+    const cards = buildTurnArtifactDeliverableCards([
+      {
+        kind: 'file',
+        role: 'deliverable',
+        label: 'diagram draft.png',
+        ownerKind: 'tool',
+        ownerLabel: 'designer · Write draft',
+        path: '/repo/out/diagram.png',
+        sourceNodeId: 'node-1',
+      },
+      {
+        kind: 'file',
+        role: 'deliverable',
+        label: 'diagram revision.png',
+        ownerKind: 'tool',
+        ownerLabel: 'designer · Write revision',
+        path: '/repo/out/diagram.png',
+        sourceNodeId: 'node-2',
+      },
+      {
+        kind: 'file',
+        role: 'deliverable',
+        label: 'diagram final.png',
+        ownerKind: 'tool',
+        ownerLabel: 'designer · Write final',
+        path: '/repo/out/diagram.png',
+        sourceNodeId: 'node-3',
+      },
+    ]);
+
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({
+      title: 'diagram final.png',
+      sourceLabel: 'designer · Write final',
+      openTarget: { kind: 'file-preview', path: '/repo/out/diagram.png' },
+      contextPack: { sourceOfTruth: ['/repo/out/diagram.png', 'trace-node:node-3'] },
+    });
+  });
+
+  it('uses card ids for no-path turn cards', () => {
+    const cards = buildTurnArtifactDeliverableCards([
+      {
+        kind: 'link',
+        role: 'deliverable',
+        label: 'docs-a',
+        ownerKind: 'tool',
+        ownerLabel: 'Open first',
+        url: 'https://example.test/shared',
+        sourceNodeId: 'url-node-a',
+      },
+      {
+        kind: 'link',
+        role: 'deliverable',
+        label: 'docs-b',
+        ownerKind: 'tool',
+        ownerLabel: 'Open distinct',
+        url: 'https://example.test/shared',
+        sourceNodeId: 'url-node-b',
+      },
+      {
+        kind: 'link',
+        role: 'deliverable',
+        label: 'docs-a',
+        ownerKind: 'tool',
+        ownerLabel: 'Open latest',
+        url: 'https://example.test/shared',
+        sourceNodeId: 'url-node-a',
+      },
+    ]);
+
+    expect(cards).toHaveLength(2);
+    expect(cards.map((card) => card.title)).toEqual(['docs-b', 'docs-a']);
+    expect(cards.map((card) => card.sourceLabel)).toEqual(['Open distinct', 'Open latest']);
+    expect(cards.every((card) => card.openTarget.kind === 'external')).toBe(true);
+  });
+
+  it('keeps different previewable paths in input order', () => {
+    const cards = buildTurnArtifactDeliverableCards([
+      {
+        kind: 'file',
+        role: 'deliverable',
+        label: 'first.png',
+        ownerKind: 'tool',
+        ownerLabel: 'Write first',
+        path: '/repo/out/first.png',
+        sourceNodeId: 'node-1',
+      },
+      {
+        kind: 'file',
+        role: 'deliverable',
+        label: 'second.png',
+        ownerKind: 'tool',
+        ownerLabel: 'Write second',
+        path: '/repo/out/second.png',
+        sourceNodeId: 'node-2',
+      },
+      {
+        kind: 'file',
+        role: 'deliverable',
+        label: 'third.png',
+        ownerKind: 'tool',
+        ownerLabel: 'Write third',
+        path: '/repo/out/third.png',
+        sourceNodeId: 'node-3',
+      },
+    ]);
+
+    expect(cards.map((card) => card.openTarget)).toEqual([
+      { kind: 'file-preview', path: '/repo/out/first.png' },
+      { kind: 'file-preview', path: '/repo/out/second.png' },
+      { kind: 'file-preview', path: '/repo/out/third.png' },
+    ]);
+  });
+
   it('projects draft, published, and published-dirty states and enables sharing from the published snapshot', () => {
     const [draft] = buildTurnArtifactDeliverableCards([{
       kind: 'file',

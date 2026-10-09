@@ -36,6 +36,7 @@ import { DEFERRED_TOOL_LOADING } from '../../../shared/constants/tools';
 import type { InjectedToolSchema } from '../../services/toolSearch/singleInjectionCeiling';
 import { measureSentToolTokens } from '../../services/toolSearch/sentToolSchema';
 import { isDecideToolAvailable } from '../modules/network/decideAvailability';
+import { isToolAvailable } from '../modules/network/toolAvailability';
 
 type LegacyPermissionLevel = 'read' | 'write' | 'execute' | 'network';
 
@@ -145,6 +146,8 @@ export function getDeferredToolDefinitions(): ToolDefinition[] {
   return getProtocolToolSchemas()
     .filter((schema) => !core.has(schema.name))
     .filter((schema) => schema.name !== 'decide' || decideAvailable)
+    // 外部 key 缺失的 key-gated 工具同位收敛：枚举里不出现（isToolAvailable 未登记名恒 true）
+    .filter((schema) => isToolAvailable(schema.name))
     .map((schema) => schemaToDefinition(schema, cloudToolMeta));
 }
 
@@ -168,6 +171,8 @@ export function getLoadedDeferredToolDefinitions(
   const protocolDefinitions = getProtocolToolSchemas()
     .filter((schema) => loadedNames.has(schema.name))
     .filter((schema) => schema.name !== 'decide' || decideAvailable)
+    // key-gated 工具即便被 select/preload 标记 loaded，key 缺失也不进表（handler 兜底报错）
+    .filter((schema) => isToolAvailable(schema.name))
     .map((schema) => schemaToDefinition(schema, cloudToolMeta, descriptionContext));
 
   const mcpDefinitions = getMCPClient()
@@ -298,9 +303,11 @@ export function getDeferredToolsSummary(
   }
   const denied = new Set(deniedToolNames.map((name) => name.trim().toLowerCase()));
   const budget = Math.max(1, Math.floor(tokenBudget));
-  // 这份摘要是模型可见的工具宣传：无可用 Jev 路由时 decide 不列出（列了模型也调不成，
-  // 与上方 T3b 同一条「不宣传走不通的路」原则）。
-  const summaryMetas = DEFERRED_TOOLS_META.filter((meta) => meta.name !== 'decide' || isDecideToolAvailable());
+  // 这份摘要是模型可见的工具宣传：无可用 Jev 路由时 decide 不列出、外部 key 缺失的
+  // key-gated 工具不列出（列了模型也调不成，与上方 T3b 同一条「不宣传走不通的路」原则）。
+  const summaryMetas = DEFERRED_TOOLS_META
+    .filter((meta) => meta.name !== 'decide' || isDecideToolAvailable())
+    .filter((meta) => isToolAvailable(meta.name));
   const grouped = new Map<string, string[]>();
   const visibleBuiltinCount = summaryMetas.filter((meta) => !denied.has(meta.name.toLowerCase())).length;
   for (const meta of summaryMetas) {

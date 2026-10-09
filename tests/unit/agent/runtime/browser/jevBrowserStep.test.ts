@@ -346,6 +346,22 @@ describe('jevBrowserStep', () => {
     expect(host.clicks).toEqual([]);
   });
 
+  it('登录墙仅手机号文本输入（无 form 无 password）仍 needs_review', async () => {
+    const page = snapshot('请先登录', [
+      textbox('tref_phone', '手机号', '请输入手机号'),
+      button('tref_go', 'Submit', 80),
+    ]);
+    const host = new FakeHost([page]);
+    host.visibleText = '请先登录后再操作';
+    const systemOne = stubSystemOne(() => answers());
+    const result = await runLoop(host, systemOne, { task: 'read the page title' });
+    expect(result.status).toBe('needs_review');
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('login_required');
+    expect(systemOne).toHaveBeenCalledTimes(0);
+    expect(host.clicks).toEqual([]);
+  });
+
   it('manual_takeover_required 命中 → needs_review', async () => {
     const host = new FakeHost([snapshot('Help', [button('tref_go', 'Continue')])]);
     host.visibleText = 'This page requires manual takeover';

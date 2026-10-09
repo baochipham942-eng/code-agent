@@ -240,17 +240,35 @@ function extractTaskUrl(task: string): string | null {
   return match ? match[0] : null;
 }
 
+function capturedHasPasswordOrForm(captured: JevCapturedSnapshot): boolean {
+  if (captured.extras.some((extra) => {
+    const type = (extra.inputType || '').toLowerCase();
+    const auto = (extra.autocomplete || '').toLowerCase();
+    return type === 'password' || auto.includes('password');
+  })) return true;
+  return captured.snapshot.interactiveElements.some((element) => {
+    const tag = element.tag.toLowerCase();
+    const role = (element.role || '').toLowerCase();
+    return tag === 'form'
+      || tag === 'input'
+      || tag === 'textarea'
+      || tag === 'select'
+      || role === 'textbox'
+      || role === 'searchbox'
+      || role === 'combobox';
+  });
+}
+
 function isJevLoginWall(captured: JevCapturedSnapshot, visibleText: string): boolean {
+  // JEV 交互路径保持 origin/main 的宽证据（password 额外项或任意表单/输入类可交互元素），
+  // 只复用共享谓词的登录文案匹配——宽布尔整体作为表单侧证据传入。严格 login-form 判定
+  // （isLoginFormEvidence）只服务无人值守 cron gate，不回灌 JEV 的交互行为。
   return isBrowserLoginWall({
     title: captured.snapshot.title,
     headings: captured.snapshot.headings.map((heading) => heading.text),
     visibleText,
-    passwordInputPresent: captured.extras.some((extra) => {
-      const type = (extra.inputType || '').toLowerCase();
-      const auto = (extra.autocomplete || '').toLowerCase();
-      return type === 'password' || auto.includes('password');
-    }),
-    loginFormPresent: captured.snapshot.interactiveElements.some((element) => element.tag.toLowerCase() === 'form'),
+    passwordInputPresent: false,
+    loginFormPresent: capturedHasPasswordOrForm(captured),
   });
 }
 

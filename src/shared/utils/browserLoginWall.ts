@@ -17,6 +17,49 @@ export interface BrowserLoginWallEvidence {
   loginFormPresent: boolean;
 }
 
+/** autocomplete tokens that mark an input as a login identity field. */
+const LOGIN_FIELD_AUTOCOMPLETE = /(?:^|\s)(?:username|email|tel|current-password|new-password)(?:\s|$)/i;
+
+/** submit copy that labels a form as a login form. */
+const LOGIN_SUBMIT_COPY = /sign in|log in|login|登录|登陆/i;
+
+/**
+ * Serialized per-`<form>` evidence for {@link pageHasLoginForm}. Collected in
+ * page context with attribute/property reads only, so the classification below
+ * stays a hermetic pure function over fixture snapshots.
+ */
+export interface LoginPageFormEvidence {
+  role: string | null;
+  action: string | null;
+  inputs: ReadonlyArray<{ type: string; autocomplete: string | null }>;
+  submitTexts: readonly string[];
+}
+
+/**
+ * Strict login-form evidence: a password input, or an identity field
+ * (autocomplete username/email/tel, `type=email`/`tel`), or a login-labelled
+ * submit. Search forms (role=search, search action, search input) never count —
+ * a homepage whose header merely says 「你好，请登录」 must not stop the run.
+ */
+function isLoginFormEvidence(form: LoginPageFormEvidence): boolean {
+  if ((form.role ?? '').trim().toLowerCase() === 'search') return false;
+  if (/search/i.test(form.action ?? '')) return false;
+  const inputs = form.inputs.map((input) => ({
+    type: input.type.trim().toLowerCase(),
+    autocomplete: input.autocomplete ?? '',
+  }));
+  if (inputs.some((input) => input.type === 'password')) return true;
+  if (inputs.some((input) => input.type === 'email' || input.type === 'tel')) return true;
+  if (inputs.some((input) => LOGIN_FIELD_AUTOCOMPLETE.test(input.autocomplete))) return true;
+  if (inputs.some((input) => input.type === 'search')) return false;
+  return form.submitTexts.some((text) => LOGIN_SUBMIT_COPY.test(text));
+}
+
+export function pageHasLoginForm(forms: readonly LoginPageFormEvidence[]): boolean {
+  return forms.some(isLoginFormEvidence);
+}
+
+
 export function isBrowserLoginWall(evidence: BrowserLoginWallEvidence): boolean {
   const primary = [
     evidence.title ?? '',

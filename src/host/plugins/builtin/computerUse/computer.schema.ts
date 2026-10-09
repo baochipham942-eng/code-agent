@@ -112,7 +112,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
       },
       outputPath: {
         type: 'string',
-        description: '[screenshot] Path to save the screenshot (default: temp directory)',
+        description: '[screenshot] Path to save the screenshot (default: app data directory, outside the workspace)',
       },
       region: {
         type: 'object',

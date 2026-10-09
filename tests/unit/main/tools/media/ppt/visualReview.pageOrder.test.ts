@@ -292,6 +292,61 @@ describe('convertToScreenshots — renderer 生命周期与页数对账', () => 
   });
 });
 
+describe('convertToScreenshots — 缺省 outputDir 落数据目录（N-RETENTION-SHOTS-APPDIR）', () => {
+  it('无 outputDir 时写 <dataDir>/tool-screenshots/ppt-XXXX/，不写 pptx 同目录', async () => {
+    const fixture = makeConversionFixture();
+    const dataDir = mkdtempSync(path.join(tmpdir(), 'visual-review-appdir-'));
+    dirs.push(dataDir);
+    const beforeRoot = readdirSync(fixture.root).sort();
+    const originalDataDir = process.env.CODE_AGENT_DATA_DIR;
+    process.env.CODE_AGENT_DATA_DIR = dataDir;
+    resolvePresentationPackageIndexMock.mockResolvedValue(packageIndexOf(2));
+    const ok = (callback: ReturnType<typeof callbackOf>) => {
+      if (callback) process.nextTick(() => callback(null, '', ''));
+    };
+    const fail = (error: Error, callback: ReturnType<typeof callbackOf>) => {
+      if (callback) process.nextTick(() => callback(error));
+      else throw error;
+    };
+    execFileMock.mockImplementation((file: string, args: unknown[] = [], options?: unknown, cb?: unknown) => {
+      const callback = callbackOf(options, cb);
+      const argv = (Array.isArray(args) ? args : []).map(String);
+      if (argv.includes('--convert-to')) {
+        // soffice --convert-to pdf --outdir <dir> <pptx>
+        const pdfDir = argv[argv.indexOf('--outdir') + 1];
+        mkdirSync(pdfDir, { recursive: true });
+        writeFileSync(path.join(pdfDir, `${path.basename(fixture.pptxPath, '.pptx')}.pdf`), 'pdf');
+        return ok(callback);
+      }
+      if (argv.includes('-jpeg')) {
+        // pdftoppm … <pdf> <outputDir>/<baseName>
+        const outDir = path.dirname(argv[argv.length - 1]);
+        writePages(outDir, 'deck', [1, 2], 1);
+        return ok(callback);
+      }
+      return fail(new Error(`Unexpected command: ${file} ${argv.join(' ')}`), callback);
+    });
+
+    try {
+      const got = await convertToScreenshots(fixture.pptxPath);
+
+      const appRoot = path.join(dataDir, 'tool-screenshots');
+      expect(got).toHaveLength(2);
+      for (const file of got) {
+        expect(file.startsWith(appRoot + path.sep)).toBe(true);
+        expect(path.basename(path.dirname(file)).startsWith('ppt-')).toBe(true);
+        expect(file.startsWith(fixture.root)).toBe(false);
+      }
+      // pptx 同目录零新增：旧默认 _screenshots/ 不再创建，根目录清单不变
+      expect(existsSync(path.join(fixture.root, '_screenshots'))).toBe(false);
+      expect(readdirSync(fixture.root).sort()).toEqual(beforeRoot);
+    } finally {
+      if (originalDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
+      else process.env.CODE_AGENT_DATA_DIR = originalDataDir;
+    }
+  });
+});
+
 describe('reviewPresentation — 独立临时目录生命周期', () => {
   it('截图转换抛错时也清理临时目录，不在 PPT 旁遗留默认目录', async () => {
     const fixture = makeConversionFixture();

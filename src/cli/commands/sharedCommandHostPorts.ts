@@ -71,6 +71,10 @@ export function buildSharedCommandHostPorts(deps: {
       validate: async (id: string) => (await extensionOpsService()).validate(id),
     },
     loadDoctorRunner: () => import('../../host/diagnostics/doctorRunner'),
+    loadProjectMemoryDrafter: async () => {
+      const mod = await import('../../host/memory/projectMemoryDraft');
+      return { runProjectMemoryDraft: mod.runProjectMemoryDraft };
+    },
     loadReadOnlySideChat: () => import('../../host/agent/readOnlySideChat'),
     loadToolResolver: () => import('../../host/tools/dispatch/toolResolver'),
     loadSubagentExecutor: () => import('../../host/agent/subagentExecutor'),

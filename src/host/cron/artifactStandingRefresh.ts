@@ -33,6 +33,19 @@ export interface ArtifactRefreshRunState {
 
 type JobUpdater = (updates: Partial<Omit<CronJobDefinition, 'id' | 'createdAt'>>) => Promise<unknown>;
 
+async function updateRefreshJob(
+  state: ArtifactRefreshRunState,
+  updateJob: JobUpdater | undefined,
+  updates: Partial<Omit<CronJobDefinition, 'id' | 'createdAt'>>,
+): Promise<void> {
+  if (updateJob) {
+    await updateJob(updates);
+    return;
+  }
+  const { getCronService } = await import('./cronService');
+  await getCronService().updateJob(state.jobId, updates);
+}
+
 function sha256OfFile(filePath: string): string {
   return createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
@@ -96,9 +109,9 @@ function verifyRefreshedArtifact(filePath: string): string | undefined {
 
 /** 把 lastRefreshFailed 标注写回任务 metadata（浅合并：其他 metadata 键原样保留）。 */
 async function markRefresh(
-  updateJob: JobUpdater,
   state: ArtifactRefreshRunState,
   failure: { at: number; reason: string } | undefined,
+  updateJob: JobUpdater | undefined,
 ): Promise<void> {
   const base = getArtifactRefreshMetadata(state.metadata);
   if (!base) return;
@@ -109,7 +122,7 @@ async function markRefresh(
     ...(failure ? { lastRefreshFailed: failure } : {}),
   };
   try {
-    await updateJob({ metadata: { ...state.metadata, artifactRefresh: next } });
+    await updateRefreshJob(state, updateJob, { metadata: { ...state.metadata, artifactRefresh: next } });
   } catch (error) {
     console.error('[ArtifactStandingRefresh] failed to write the refresh marker onto the job:', error);
   }
@@ -122,7 +135,7 @@ async function markRefresh(
  */
 export async function finishArtifactRefresh(
   state: ArtifactRefreshRunState,
-  outcome: { runFailed: boolean; error?: unknown; updateJob: JobUpdater },
+  outcome: { runFailed: boolean; error?: unknown; updateJob?: JobUpdater },
 ): Promise<void> {
   const failure = outcome.runFailed
     ? `agent run failed: ${errorText(outcome.error)}`
@@ -132,17 +145,17 @@ export async function finishArtifactRefresh(
       publishVersion(state.path, `standing refresh ${new Date().toISOString()}`);
     }
     const base = getArtifactRefreshMetadata(state.metadata);
-    if (base?.lastRefreshFailed) await markRefresh(outcome.updateJob, state, undefined);
+    if (base?.lastRefreshFailed) await markRefresh(state, undefined, outcome.updateJob);
     return;
   }
   const restored = restoreSnapshot(state.snapshotId, state.path);
   if (!restored) {
     console.error(`[ArtifactStandingRefresh] pre-run snapshot unavailable, could not restore: ${state.path}`);
   }
-  await markRefresh(outcome.updateJob, state, {
+  await markRefresh(state, {
     at: Date.now(),
     reason: restored ? failure : `${failure}; pre-run snapshot restore also failed`,
-  });
+  }, outcome.updateJob);
 }
 
 /**

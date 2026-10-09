@@ -7,7 +7,7 @@
 // 一个文件只挂一条常设指令。到点重写、留版本、失败回滚由 host 侧负责。
 // ============================================================================
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from 'react';
 import { AlertTriangle, CalendarClock } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import {
@@ -30,8 +30,10 @@ function parseCadence(value: string | undefined): StandingRefreshCadence {
 }
 
 function workingDirectoryOf(filePath: string): string {
-  const index = filePath.lastIndexOf('/');
-  return index > 0 ? filePath.slice(0, index) : '.';
+  const normalized = filePath.replace(/\\/g, '/');
+  const index = normalized.lastIndexOf('/');
+  if (index < 0) return '.';
+  return index === 0 ? '/' : normalized.slice(0, index);
 }
 
 async function invokeWorkspace<T>(action: string, payload?: unknown): Promise<T> {
@@ -42,7 +44,11 @@ async function invokeWorkspace<T>(action: string, payload?: unknown): Promise<T>
   return response.data as T;
 }
 
-export const ArtifactStandingRefresh: React.FC<{ filePath: string }> = ({ filePath }) => {
+export interface ArtifactStandingRefreshHandle {
+  open: () => void;
+}
+
+export const ArtifactStandingRefresh = forwardRef<ArtifactStandingRefreshHandle, { filePath: string }>(({ filePath }, ref) => {
   const { t } = useI18n();
   const pv = t.previewWorkspace.preview;
   const [standingRefresh, setStandingRefresh] = useState<StandingRefreshJobView | undefined>(undefined);
@@ -70,6 +76,8 @@ export const ArtifactStandingRefresh: React.FC<{ filePath: string }> = ({ filePa
     setSaveError(null);
     setDialogOpen(true);
   }, [standingRefresh]);
+
+  useImperativeHandle(ref, () => ({ open: openDialog }), [openDialog]);
 
   const handleSave = async () => {
     const trimmed = instruction.trim();
@@ -183,4 +191,4 @@ export const ArtifactStandingRefresh: React.FC<{ filePath: string }> = ({ filePa
       </Modal>
     </>
   );
-};
+});

@@ -913,10 +913,9 @@ export class CronService implements Disposable {
             if (unattendedTimeout) throw new Error(unattendedTimeout);
 
             finalAssistantText = [...orchestrator.getMessages()].reverse().find((message) => message.role === 'assistant')?.content.trim() ?? '';
-            const snapshotMatch = finalAssistantText.match(CRON_AGENT_SNAPSHOT.TAG_PATTERN);
+            const snapshotToPersist = snapshotTrackingEnabled ? finalAssistantText.match(CRON_AGENT_SNAPSHOT.TAG_PATTERN)?.[1]?.trim() : undefined;
             // 只认标记：解析不到就保留上一次的值。拿整段回答顶替会把叙述性文字
             // 当成状态存下来，下一轮再原样注回提示词。
-            const snapshotToPersist = snapshotTrackingEnabled ? snapshotMatch?.[1]?.trim() : undefined;
             if (isExternalWatch) {
               hasAlert = EXTERNAL_WATCH.ALERT_TAG_PATTERN.test(finalAssistantText);
             }

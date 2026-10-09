@@ -88,25 +88,25 @@ chat: {
   connectorCount: '{count} 连接器',
   mcpCount: '{count} MCP',
   suggestions: {
-    game: {
-      title: '做个能玩的小游戏',
-      description: '霓虹贪吃蛇，键盘直接开玩',
-      prompt: '用单个 HTML 文件做一个能直接玩的霓虹风《贪吃蛇》：方向键控制、实时计分与最高分、随长度逐渐加速、撞墙或咬到自己结束并可按键重开；深色背景、霓虹描边、流畅动画。直接给出完整可运行的单文件，不要问我任何问题。',
+    weeklyReport: {
+      title: '写一份本周工作周报',
+      description: '给要点素材，直接成稿可发送',
+      prompt: '帮我把这周的工作要点写成一份可以直接发给主管的周报：结构含 本周完成 / 数据与进展 / 风险与需协调 / 下周计划，语气专业克制、成果尽量量化。要点（示例素材，请直接基于它成稿）：客户门户 v2 上线，注册转化率从 3.1% 提到 4.6%；处理客诉 37 件，平均响应压到 2 小时内；供应商接口不稳定造成 2 次发货延迟，正在接备份通道；下周准备季度复盘材料并上线积分功能。直接输出完整周报正文，不要问我任何问题。',
     },
-    chart: {
-      title: '出一张可交互数据图表',
-      description: '聊天里直接渲染，可切换可悬停',
-      prompt: '在聊天里直接渲染一张折线图，不要写 HTML 文件、不要调用任何工具。直接在回复里输出一个代码块（语言标记用 chart 或 json 均可），内容是图表 JSON，schema：{"type":"line","title":"编程语言流行度趋势 (2015–2024)","xKey":"year","series":[{"key":"Python"},{"key":"JavaScript"},{"key":"TypeScript"},{"key":"Rust"},{"key":"Go"}],"data":[{"year":2015,"Python":64,"JavaScript":90,"TypeScript":20,"Rust":8,"Go":18}, … 每年一条直到 2024]}。流行度取 0–100、用你掌握的合理近似。只输出这个代码块加一句话说明，不要问我任何问题。',
+    meetingNotes: {
+      title: '整理一份会议纪要',
+      description: '速记流水直出结论与待办',
+      prompt: '把下面这段会议速记整理成正式会议纪要：结构含 会议主题 / 关键结论 / 决议事项 / 待办清单（负责人 + 截止时间）/ 遗留问题，剔除口语和跑题，待办必须可执行。速记（示例素材，请直接基于它整理）：产品周会，运营说拉新这周 +8%，主要来自新渠道投放；首页 A/B 测试 B 版转化高 12% 但首屏慢 300ms，工程说能优化；定下周三全量上 B 版，小陈负责，先解决性能；客服反馈安装包太大，下个迭代压缩，老王跟进；发票系统对接又延两周，财务在催，要 PM 重新排优先级。直接输出完整纪要，不要问我任何问题。',
     },
-    briefing: {
-      title: '搜一份最新行业简报',
-      description: '联网汇总近一周 AI 要闻',
-      prompt: '联网搜索过去一周 AI 行业最值得关注的 5 件事：每条给标题、一句话摘要、为什么重要、来源链接，最后用一句话总结整体趋势。直接联网开始，不要问我任何问题。',
+    sheetAnalysis: {
+      title: '分析一组销售数据',
+      description: '示例数据在手，直出汇报结论',
+      prompt: '分析下面这份月度销售数据，给出能直接用于汇报的结论：整体趋势、增长最快与下滑最快的品类、异常点，外加 3 条可执行的改进建议，结论用表格收拢。数据（示例素材，请直接基于它分析）：2024 年 1–6 月销售额（万元）— 1 月：咖啡 42、茶饮 30、烘焙 18；2 月：咖啡 38、茶饮 26、烘焙 17；3 月：咖啡 51、茶饮 33、烘焙 21；4 月：咖啡 55、茶饮 29、烘焙 24；5 月：咖啡 61、茶饮 31、烘焙 19；6 月：咖啡 66、茶饮 28、烘焙 17。直接开始分析，不要问我任何问题。',
     },
-    disk: {
-      title: '梳理磁盘空间占用',
-      description: '找出最占地的目录，给清理建议',
-      prompt: '帮我梳理这台 Mac 的磁盘占用：用命令找出主目录下最占空间的前 15 个目录/文件并按大小排序，识别其中可安全清理的缓存、临时文件和重复构建产物，给出每项预计可释放的空间和具体清理命令（先列出，不要直接执行删除）。直接开始，不要问我任何问题。',
+    competitorBrief: {
+      title: '搜一份竞品简报',
+      description: '联网调研对手，一张表看清',
+      prompt: '联网调研并输出一份竞品简报，市场以「团队协作工具」为例（示例场景）：对比 Notion、飞书、钉钉，各给 定位与目标人群 / 主打能力与价格带 / 近半年值得注意的动向（功能、定价、AI 能力）/ 一个值得借鉴的亮点，最后用一张对比表收拢并给一句话总结；信息取自公开资料并附来源链接。直接联网开始，不要问我任何问题。',
     },
   },
 },
@@ -588,25 +588,25 @@ chat: {
   connectorCount: '{count} Connector',
   mcpCount: '{count} MCP',
   suggestions: {
-    game: {
-      title: 'Build a playable mini game',
-      description: 'Neon Snake, playable with your keyboard',
-      prompt: 'Build a playable neon-style Snake game in a single HTML file: arrow-key controls, live score and high score, speed that ramps up as the snake grows, game over on wall or self collision with a key to restart; dark background, neon strokes, smooth animation. Give me the complete runnable single file directly, without asking me any questions.',
+    weeklyReport: {
+      title: 'Draft this week’s status report',
+      description: 'Rough bullets in, a sendable report out',
+      prompt: 'Turn this week’s rough bullets into a status report I can send my manager as-is: sections for Done this week / Metrics & progress / Risks & asks / Next week’s plan, professional tone, quantify results where possible. My bullets (sample input — write the report directly from them): shipped Client Portal v2, lifting signup conversion from 3.1% to 4.6%; resolved 37 support tickets with average response under 2 hours; vendor API instability caused 2 shipping delays, backup channel in progress; next week, prepare the quarterly review deck and launch the loyalty-points feature. Output the complete report directly, without asking me any questions.',
     },
-    chart: {
-      title: 'Render an interactive data chart',
-      description: 'Rendered right in the chat, switchable and hoverable',
-      prompt: 'Render a line chart directly in the chat. Do not write an HTML file or call any tools. Reply with a single code block (language tag chart or json) containing chart JSON with this schema: {"type":"line","title":"Programming language popularity (2015–2024)","xKey":"year","series":[{"key":"Python"},{"key":"JavaScript"},{"key":"TypeScript"},{"key":"Rust"},{"key":"Go"}],"data":[{"year":2015,"Python":64,"JavaScript":90,"TypeScript":20,"Rust":8,"Go":18}, … one entry per year through 2024]}. Use popularity values from 0–100 based on your reasonable estimates. Output only that code block plus one sentence of explanation, without asking me any questions.',
+    meetingNotes: {
+      title: 'Write up meeting minutes',
+      description: 'Raw scribble in, minutes and actions out',
+      prompt: 'Turn this raw meeting scribble into formal minutes: sections for Topic / Key conclusions / Decisions / Action items (owner + due date) / Open questions; strip small talk and tangents, keep every action executable. Scribble (sample input — work from it directly): weekly product meeting — growth up 8% this week, mostly the new paid channel; homepage A/B test, variant B converts 12% higher but first paint is 300ms slower, engineering says it is fixable; decision: ship B to everyone next Wednesday, owned by Chen, performance fix first; support says the installer is too big, compress it next sprint, Wang following up; invoicing integration slipped another two weeks, finance is pushing, PM to re-prioritize. Output the full minutes directly, without asking me any questions.',
     },
-    briefing: {
-      title: 'Compile a fresh industry brief',
-      description: 'Summarize this week’s AI news from the web',
-      prompt: 'Search the web for the 5 most noteworthy things in the AI industry from the past week: for each, give a title, a one-sentence summary, why it matters, and a source link, then close with one sentence on the overall trend. Start searching right away, without asking me any questions.',
+    sheetAnalysis: {
+      title: 'Analyze a sales spreadsheet',
+      description: 'Sample sales data in, conclusions out',
+      prompt: 'Analyze this monthly sales dataset and produce conclusions I can use in a review: overall trend, fastest-growing and fastest-declining categories, anomalies, plus 3 actionable recommendations, with the conclusions wrapped up in a table. Data (sample input — analyze it directly): Jan–Jun 2024 revenue in 10k CNY — Jan: coffee 42, tea 30, bakery 18; Feb: coffee 38, tea 26, bakery 17; Mar: coffee 51, tea 33, bakery 21; Apr: coffee 55, tea 29, bakery 24; May: coffee 61, tea 31, bakery 19; Jun: coffee 66, tea 28, bakery 17. Start the analysis right away, without asking me any questions.',
     },
-    disk: {
-      title: 'Map my disk usage',
-      description: 'Find the biggest directories and suggest cleanup',
-      prompt: 'Help me map disk usage on this Mac: use commands to find the top 15 largest directories/files under my home directory sorted by size, identify caches, temp files, and duplicate build artifacts that are safe to clean, and give the estimated space freed plus the exact cleanup command for each (list them first, do not run any deletion). Start right away, without asking me any questions.',
+    competitorBrief: {
+      title: 'Research a competitor brief',
+      description: 'Web-research rivals, one comparison table',
+      prompt: 'Research the web and produce a competitor brief for the team-collaboration software market (sample scenario): compare Notion, Lark, and DingTalk — for each, positioning and target users / flagship capabilities and pricing tiers / notable moves in the last six months (features, pricing, AI) / one highlight worth learning from; close with a comparison table and a one-sentence takeaway, drawing on public sources with links. Start searching right away, without asking me any questions.',
     },
   },
 },

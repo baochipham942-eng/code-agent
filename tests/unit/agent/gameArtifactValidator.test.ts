@@ -288,7 +288,7 @@ describe('validateGameArtifact', () => {
   });
 
   it('light contract passes a runnable interactive artifact that lacks the full game contract', async () => {
-    // 复刻"做个能玩的小游戏"卡的真实场景：canvas + 键盘输入 + 玩法词，但没有
+    // 复刻「做个小游戏」类请求的真实场景：canvas + 键盘输入 + 玩法词，但没有
     // __GAME_META__ / __INTERACTIVE_TEST__ / runSmokeTest 等内部机器可读契约。
     const html = [
       '<!doctype html>',

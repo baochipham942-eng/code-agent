@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowRight, BarChart3, Gamepad2, HardDrive, Search } from 'lucide-react';
+import { ArrowRight, CalendarCheck, ClipboardList, FileSpreadsheet, Radar } from 'lucide-react';
 import type { SessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace';
 import { PLAIN_CHAT_SUMMARY_LABEL } from '@shared/contract/sessionWorkspace';
 import { useI18n } from '../../../hooks/useI18n';
@@ -23,33 +23,33 @@ interface SuggestionItem {
   iconColor: string;
 }
 
-// 新会话任务卡：一键直出可运行/可交互产物或真实 agent 产出，第一轮不追问、即见结果。
+// 新会话任务卡：一键直出职场交付物（周报/纪要/分析/简报），第一轮不追问、即见结果。
 // 文案（含 prompt 本体）随 UI 语言走 i18n：中文用户发中文 prompt，英文用户发英文 prompt。
 // 用色拍板（2026-07-26 空态品牌化）：首张推荐卡 = 品牌青（--brand-primary 派生），
 // 其余一律中性——此前的琥珀/蓝/紫/绿分类色让首屏像通用模板，品牌无处识别。
 export function buildDefaultSuggestions(t: Translations): SuggestionItem[] {
   return [
     {
-      icon: Gamepad2,
-      ...t.chat.suggestions.game,
+      icon: CalendarCheck,
+      ...t.chat.suggestions.weeklyReport,
       accent: 'bg-[color-mix(in_srgb,var(--brand-primary)_12%,transparent)] border-[color-mix(in_srgb,var(--brand-primary)_30%,transparent)]',
       iconColor: 'text-brand',
     },
     {
-      icon: BarChart3,
-      ...t.chat.suggestions.chart,
+      icon: ClipboardList,
+      ...t.chat.suggestions.meetingNotes,
       accent: 'bg-[color-mix(in_srgb,var(--text-primary)_3%,transparent)] border-[color-mix(in_srgb,var(--text-primary)_8%,transparent)]',
       iconColor: 'text-zinc-400',
     },
     {
-      icon: Search,
-      ...t.chat.suggestions.briefing,
+      icon: FileSpreadsheet,
+      ...t.chat.suggestions.sheetAnalysis,
       accent: 'bg-[color-mix(in_srgb,var(--text-primary)_3%,transparent)] border-[color-mix(in_srgb,var(--text-primary)_8%,transparent)]',
       iconColor: 'text-zinc-400',
     },
     {
-      icon: HardDrive,
-      ...t.chat.suggestions.disk,
+      icon: Radar,
+      ...t.chat.suggestions.competitorBrief,
       accent: 'bg-[color-mix(in_srgb,var(--text-primary)_3%,transparent)] border-[color-mix(in_srgb,var(--text-primary)_8%,transparent)]',
       iconColor: 'text-zinc-400',
     },
@@ -81,7 +81,7 @@ export const NewSessionWelcome: React.FC<{
   // 纯对话（无工作区）是默认形态，不必再标「空白会话」——用户反馈看不懂、是噪音。
   // 只有继承了项目/工作区上下文时才显示上下文标签（"项目会话 · name"），告诉用户这条会话带了上下文。
   const hasWorkspaceContext = Boolean(workingDirectory?.trim());
-  // 通用模板卡（贪吃蛇/图表…）只服务「不知道干什么」的空会话：给个起点。
+  // 通用模板卡（周报/纪要这类）只服务「不知道干什么」的空会话：给个起点。
   // 会话一旦带了上下文——资料库材料 pin 进来、或从空间/项目进来——用户是带着目的
   // 来的，这几张与他手上的事无关的卡就是噪音（真机 2026-08-05「上方的示意和带入的
   // 材料没关系」）。2026-08-06 拍板：不做「按材料生成建议」，不为此加模型调用，

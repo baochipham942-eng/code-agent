@@ -33,6 +33,7 @@ import {
   readRoleBindings,
   removeRoleBinding,
 } from '../../../../src/host/services/roleAssets/roleContextBindings';
+import { getBuiltinSkill } from '../../../../src/host/services/skills/builtinSkills';
 import { buildRoleContextBlock } from '../../../../src/host/services/roleAssets/roleAssetService';
 import { ensureRoleAssetDirs } from '../../../../src/host/services/roleAssets/roleAssetService';
 
@@ -127,6 +128,21 @@ describe('readRoleBindings / addRoleBinding / removeRoleBinding', () => {
     await addRoleBinding('牧之', { kind: 'file', target: realFilePath, mode: 'always', scope: 'private' });
     expect(await readRoleBindings('溯真')).toEqual([]);
   });
+
+  it('skill 绑定：校验可解析、缺省标题=skill 名、不存在的拒绝、同 target 幂等', async () => {
+    const binding = await addRoleBinding('牧之', { kind: 'skill', target: 'xlsx', mode: 'always', scope: 'private' }, 1000);
+    expect(binding.kind).toBe('skill');
+    expect(binding.target).toBe('xlsx');
+    expect(binding.title).toBe('xlsx');
+
+    const again = await addRoleBinding('牧之', { kind: 'skill', target: 'xlsx', mode: 'on_demand', scope: 'project' }, 2000);
+    expect(again.id).toBe(binding.id);
+    expect(await readRoleBindings('牧之')).toHaveLength(1);
+
+    await expect(
+      addRoleBinding('牧之', { kind: 'skill', target: 'no-such-skill', mode: 'always', scope: 'private' }),
+    ).rejects.toThrow(/Skill not found/i);
+  });
 });
 
 describe('buildRoleBindingsSection', () => {
@@ -151,6 +167,24 @@ describe('buildRoleBindingsSection', () => {
     mockLibrary.items.clear();
     expect(await buildRoleBindingsSection('牧之')).toBeNull();
   });
+
+  it('skill 绑定注入一行（技能）标记 + skill 自带一行描述', async () => {
+    await addRoleBinding('牧之', { kind: 'skill', target: 'data-cleaning', mode: 'always', scope: 'private' });
+    const section = await buildRoleBindingsSection('牧之');
+    expect(section).toContain('data-cleaning（技能）');
+    const desc = getBuiltinSkill('data-cleaning')!.description.split('\n')[0]!.trim();
+    expect(section).toContain(desc);
+    expect(section).toContain('技能（skill）绑定无需读取');
+  });
+
+  it('skill 已不可解析（改名/移除）的绑定不注入失效引用', async () => {
+    // 手工落一份指向已不存在 skill 的存量绑定，模拟后续版本移除该 skill
+    await fs.mkdir(path.dirname(getRoleBindingsPath('牧之')), { recursive: true });
+    await fs.writeFile(getRoleBindingsPath('牧之'), JSON.stringify([{
+      id: 'b_skill_ghost', kind: 'skill', target: 'ghost-removed-skill', mode: 'always', scope: 'private', createdAt: 1,
+    }]), 'utf-8');
+    expect(await buildRoleBindingsSection('牧之')).toBeNull();
+  });
 });
 
 describe('buildRoleContextBlock 集成', () => {
@@ -165,5 +199,12 @@ describe('buildRoleContextBlock 集成', () => {
 
     const blockB = await buildRoleContextBlock('溯真');
     expect(blockB).not.toContain('你的资料架');
+  });
+
+  it('注入块包含 skill 绑定行（名字 + 一行描述 + 技能标记）', async () => {
+    await ensureRoleAssetDirs('明镜');
+    await addRoleBinding('明镜', { kind: 'skill', target: 'weekly-report-synthesis', mode: 'always', scope: 'private' });
+    const block = await buildRoleContextBlock('明镜');
+    expect(block).toContain('weekly-report-synthesis（技能）');
   });
 });

@@ -2,6 +2,7 @@ import path from 'node:path';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { expandTilde } from '../tools/utils/resolveInputPath';
 import type { ToolAccessKind } from '../protocol/tools';
+import type { WriteIsolationScope } from './writeIsolation';
 
 export type ToolResourceDomain =
   | { readonly type: 'path'; readonly root: string; readonly targetPath: string }
@@ -98,6 +99,41 @@ export function toolResourceAccessesConflict(
 /** 未定域读（readOnly 且无 accesses 声明）不知道自己会读到什么。 */
 function isUnscopedRead(access: ResolvedToolAccess): boolean {
   return access.kind === 'read' && access.domain.type === 'unscoped';
+}
+
+/**
+ * 运行时写锁域看作一个写访问。writeIsolation 的 scopeConflicts 与下面的
+ * staticAccessCoversRuntimeScope 用同一个视图，两边不会各画一份域形状。
+ */
+export function runtimeScopeAsWriteAccess(
+  scope: Pick<WriteIsolationScope, 'kind' | 'root' | 'targetPath'>,
+): ResolvedToolAccess {
+  if (scope.kind === 'workspace') {
+    return {
+      kind: 'write',
+      domain: { type: 'workspace', root: scope.root, targetPath: scope.targetPath },
+    };
+  }
+  return {
+    kind: 'write',
+    domain: { type: 'path', root: scope.root, targetPath: scope.targetPath },
+  };
+}
+
+/**
+ * ADR-073 §3：静态声明域是否盖得住运行时写锁域。运行时无锁 → 盖住（没有可分歧的
+ * 东西）；否则当且仅当存在一条非 read 的静态访问经唯一冲突真源
+ * toolResourceAccessesConflict 与该锁域（视为写访问）冲突。静态只读、静态路径与
+ * 锁域不相交都盖不住；未知域与一切冲突，所以天然盖住。
+ */
+export function staticAccessCoversRuntimeScope(
+  staticAccesses: readonly ResolvedToolAccess[],
+  runtimeScope: WriteIsolationScope | null,
+): boolean {
+  if (!runtimeScope) return true;
+  const runtimeAccess = runtimeScopeAsWriteAccess(runtimeScope);
+  return staticAccesses.some((access) => access.kind !== 'read'
+    && toolResourceAccessesConflict(access, runtimeAccess));
 }
 
 /**

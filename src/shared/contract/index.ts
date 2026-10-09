@@ -167,3 +167,6 @@ export * from './agentHistory';
 export * from './durableRun';
 export * from './surfaceExecution';
 export * from './browserRelay';
+
+// Execution environment types (ADR-081 逐轮选择 + 协议版本闸)
+export * from './executionEnvironment';

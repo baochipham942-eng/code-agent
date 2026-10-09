@@ -266,13 +266,14 @@ describe('companion relay client legacy usage hook', () => {
     });
     try {
       // last 是静态残留：先清掉，确保后面等到的是本用例 client 的 socket（账号通道异步拨号，
-      // 旧 socket 会让握手事件打进死连接、用例假绿）。
+      // 旧 socket 会让握手事件打进死连接、用例假绿）。经函数取值读回，避开对静态属性的收窄。
       FakeWebSocket.last = null;
+      const currentSocket = (): FakeWebSocket | null => FakeWebSocket.last;
       client.advertise({ deviceRef: DEVICE_REF, routeToken: TOKEN });
       void client.start();
       // 账号通道的凭据是异步现取的：排空微任务让拨号走到 socket 构造，共享凭据通道则同步就有。
-      for (let i = 0; i < 10 && !FakeWebSocket.last; i += 1) await Promise.resolve();
-      const socket = FakeWebSocket.last;
+      for (let i = 0; i < 10 && !currentSocket(); i += 1) await Promise.resolve();
+      const socket = currentSocket();
       if (!socket) throw new Error('fake socket not constructed');
       socket.readyState = 1;
       socket.emit('open');

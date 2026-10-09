@@ -19,6 +19,7 @@ import { CronExecutionList } from './CronExecutionList';
 import { CronExecutionDetail } from './CronExecutionDetail';
 import { CronRunsOnPill } from './CronRunsOnSelector';
 import { CronResultChannelSummary } from './CronResultChannel';
+import { useEventScheduleNames } from './useChannelCatalog';
 
 interface CronJobDetailProps {
   job: CronJobDefinition | null;
@@ -39,6 +40,8 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job }) => {
   } = useCronStore();
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [isTriggering, setIsTriggering] = useState(false);
+  // event 摘要的账号/群显示名（通道目录）；目录没有的回落 id。挂在早退 return 之前（hook 不得条件调用）。
+  const eventNamesFor = useEventScheduleNames();
 
   useEffect(() => {
     if (!job) return;
@@ -161,7 +164,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job }) => {
             同一件事不再拆成四张卡各说一遍 */}
         <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-950/50 px-4 py-3">
           <div className="flex flex-wrap items-center gap-x-8 gap-y-1.5">
-            <SummaryItem label={cc.cardSchedule} value={formatScheduleSummary(job, language)} />
+            <SummaryItem label={cc.cardSchedule} value={formatScheduleSummary(job, language, eventNamesFor(job))} />
             <SummaryItem
               label={cc.cardNextRun}
               value={job.enabled && job.nextRunAt != null ? formatDateTime(job.nextRunAt) : '—'}

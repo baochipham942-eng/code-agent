@@ -1,6 +1,7 @@
 // ============================================================================
 
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
+import type { EventScheduleValidationReason } from '@shared/cronEventValidation';
 // 自动化面板词条（features/cron 全家桶）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 sidebar.ts / chatInput.ts 先例）。
 // 注：types.ts 里的 formatActionSummary/formatDateTime 等格式化函数文案暂未迁移
@@ -155,6 +156,30 @@ export const cronCenterZh = {
     resultPushListFailed: '暂时无法读取会话，可手动填写接收会话 ID。',
     resultPushAccountUnavailable: '之前保存的推送目标“{value}”对应的通道已不可用。原配置已保留，重新选择或改为不推送后再保存。',
     resultPushConversationUnavailable: '之前保存的接收会话已不可用。原配置已保留，重新选择后再保存。',
+    // 事件触发（N-CRON-EVENT-CREATE-UI）：通道消息 / 群监听调度
+    eventScheduleOption: '通道消息（群监听）',
+    eventAccountLabel: '触发账号',
+    eventAccountPlaceholder: '选择一个已连接账号',
+    eventAccountUnavailable: '之前绑定的触发账号“{value}”已不可用。原配置已保留，重新选择后再保存。',
+    eventNoAccounts: '还没有连接消息通道，事件触发无从绑定账号。',
+    eventChatLabel: '限定会话 / 群（可选）',
+    eventChatAny: '任意会话（不限群，私聊消息也触发）',
+    eventChatHint: '选定一个群 = 群监听：群里未 @ 你的消息也会触发；留空 = 该账号的任意会话。',
+    eventChatManualLabel: '会话 / 群 ID（可选）',
+    eventChatManualPlaceholder: '粘贴会话或群的 ID，留空 = 任意会话',
+    eventChatManualHint: '该通道不能自动列出会话。请打开对应会话详情复制 ID；留空 = 任意会话。',
+    eventConstraintsHint: '事件触发任务只能在本机运行，动作固定为 Agent 任务；单次预算上限必须设置（就在下方）。',
+    eventBudgetLabel: '单次预算上限 (USD)',
+    eventBudgetHint: '事件触发任务必填：本次运行花费超过该金额即停车并自动停用。',
+    // shared 校验器（cronEventValidation）reason → 用户能照着改的中文提示；
+    // 判据与文案原文在 shared 层（= createJob 抛的），这里只做呈现映射。
+    // Record 键集 = reason 全集：校验器新增 reason 时 zh/en 都必须补齐词条。
+    eventValidation: {
+      'invalid-schedule': '先选一个触发账号：通道消息触发需要绑定一个已连接的消息通道账号。',
+      'requires-local': '事件触发任务只能在本机运行，执行位置请保持「本地」。',
+      'agent-only': '事件触发任务只支持 Agent 动作，请把动作类型换成 Agent 任务。',
+      'requires-budget': '事件触发任务必须设置单次预算上限：在上方「单次预算上限 (USD)」里填一个大于 0 的数，单次运行花费超过它就会停车并自动停用。',
+    } satisfies Record<EventScheduleValidationReason, string>,
     simpleFreqLabel: '何时执行',
     freqDaily: '每天',
     freqWeekdays: '工作日',
@@ -367,6 +392,30 @@ export const cronCenterEn: typeof cronCenterZh = {
     resultPushListFailed: 'Conversations could not be loaded. Enter the destination conversation ID manually.',
     resultPushAccountUnavailable: 'The channel for the saved destination “{value}” is no longer available. The original setting is preserved until you choose another destination or turn delivery off and save.',
     resultPushConversationUnavailable: 'The saved destination conversation is no longer available. The original setting is preserved until you choose another conversation and save.',
+    // Event-triggered schedules (N-CRON-EVENT-CREATE-UI): channel message / group listen
+    eventScheduleOption: 'Channel message (group listen)',
+    eventAccountLabel: 'Trigger account',
+    eventAccountPlaceholder: 'Pick a connected account',
+    eventAccountUnavailable: 'The trigger account "{value}" is no longer available. The original setting is preserved until you pick another account and save.',
+    eventNoAccounts: 'No messaging channels connected yet — an event trigger needs an account to bind to.',
+    eventChatLabel: 'Restrict to chat / group (optional)',
+    eventChatAny: 'Any chat (group or direct message)',
+    eventChatHint: 'Picking a group = group listen: messages that do not mention you still trigger it. Leave empty = any chat on this account.',
+    eventChatManualLabel: 'Chat / group ID (optional)',
+    eventChatManualPlaceholder: 'Paste the chat or group ID; empty = any chat',
+    eventChatManualHint: 'This channel cannot list conversations automatically. Open the chat details and copy its ID; leave empty for any chat.',
+    eventConstraintsHint: 'Event-triggered jobs run on this machine only, use an Agent action, and require a per-run budget cap (set it just below).',
+    eventBudgetLabel: 'Per-run budget cap (USD)',
+    eventBudgetHint: 'Required for event jobs: the run stops and the job is disabled once spending exceeds this cap.',
+    // reason → user-facing copy, mapped from the shared validator (cronEventValidation);
+    // the check itself and its English messages live in shared (what createJob throws).
+    // Record keys = the full reason set: adding a reason forces copy here and in zh.
+    eventValidation: {
+      'invalid-schedule': 'Pick a trigger account first: a channel-message trigger needs a connected messaging account.',
+      'requires-local': 'Event-triggered jobs run on this machine only — keep the execution location on Local.',
+      'agent-only': 'Event-triggered jobs only support agent actions — switch the action type to Agent.',
+      'requires-budget': 'Event-triggered jobs need a per-run budget cap: enter a number greater than 0 in "Per-run budget cap (USD)" above; a run stops and the job is disabled once spending exceeds it.',
+    } satisfies Record<EventScheduleValidationReason, string>,
     simpleFreqLabel: 'When to run',
     freqDaily: 'Daily',
     freqWeekdays: 'Weekdays',

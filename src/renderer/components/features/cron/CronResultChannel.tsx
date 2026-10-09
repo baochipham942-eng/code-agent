@@ -1,19 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import type {
-  ChannelAccount,
-  ChannelConversationListResponse,
-} from '@shared/contract/channel';
-import { IPC_CHANNELS } from '@shared/ipc';
+import type { ChannelAccount } from '@shared/contract/channel';
 import { Button } from '../../primitives/Button';
 import { Input } from '../../primitives/Input';
 import { Select } from '../../primitives/Select';
 import { useI18n } from '../../../hooks/useI18n';
-import ipcService from '../../../services/ipcService';
 import { useAppStore } from '../../../stores/appStore';
-
-interface ConversationState extends ChannelConversationListResponse {
-  loading: boolean;
-}
+import { useChannelCatalog } from './useChannelCatalog';
 
 function parseResultTarget(value: string): { accountKey: string; conversationId: string } | null {
   const separator = value.indexOf(':');
@@ -30,74 +22,6 @@ function findTargetAccount(accounts: ChannelAccount[], accountKey: string): Chan
 function buildResultTarget(account: ChannelAccount, conversationId: string): string {
   const destination = conversationId.trim();
   return destination ? `${account.name}:${destination}` : '';
-}
-
-function useChannelCatalog(): {
-  accounts: ChannelAccount[];
-  accountsLoading: boolean;
-  conversationsByAccount: Record<string, ConversationState>;
-} {
-  const [accounts, setAccounts] = useState<ChannelAccount[]>([]);
-  const [accountsLoading, setAccountsLoading] = useState(true);
-  const [conversationsByAccount, setConversationsByAccount] = useState<Record<string, ConversationState>>({});
-
-  useEffect(() => {
-    let active = true;
-    void Promise.resolve(ipcService.invoke(IPC_CHANNELS.CHANNEL_LIST_ACCOUNTS))
-      .then((items) => {
-        if (active) setAccounts(items || []);
-      })
-      .catch(() => {
-        if (active) setAccounts([]);
-      })
-      .finally(() => {
-        if (active) setAccountsLoading(false);
-      });
-
-    const removeListener = ipcService.on(
-      IPC_CHANNELS.CHANNEL_ACCOUNTS_CHANGED,
-      (items: ChannelAccount[]) => setAccounts(items),
-    );
-    return () => {
-      active = false;
-      removeListener?.();
-    };
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    setConversationsByAccount(Object.fromEntries(
-      accounts.map((account) => [account.id, {
-        supported: true,
-        conversations: [],
-        loading: true,
-      }]),
-    ));
-
-    void Promise.all(accounts.map(async (account): Promise<readonly [string, ConversationState]> => {
-      try {
-        const result = await Promise.resolve(
-          ipcService.invoke(IPC_CHANNELS.CHANNEL_LIST_CONVERSATIONS, account.id),
-        );
-        return [account.id, { ...result, loading: false }] as const;
-      } catch (error) {
-        return [account.id, {
-          supported: true,
-          conversations: [],
-          loading: false,
-          error: error instanceof Error ? error.message : String(error),
-        }] as const;
-      }
-    })).then((entries) => {
-      if (active) setConversationsByAccount(Object.fromEntries(entries));
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [accounts]);
-
-  return { accounts, accountsLoading, conversationsByAccount };
 }
 
 interface CronResultChannelFieldProps {

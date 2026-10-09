@@ -388,9 +388,10 @@ export const BUILTIN_ROLE_IDS: readonly string[] = [
  * skills 列表的前 ≤3 个（即上表各 agentMd 的 skills: 字段前缀，validateBuiltinRolePack
  * 保证全部可解析）。绑定只存 skill 名引用，正文永远以内置 skill 集为单一真源。
  * 种入规则见 installBuiltinRoles：仅 bindings.json 不存在时一次性写入，
- * 用户改过或删空（[]）的文件不再触碰。
+ * 用户改过或删空（[]）的文件不再触碰。测试经 installBuiltinRoles 的落盘产物核对，
+ * 本常量不导出（knip 生产面无消费者）。
  */
-export const BUILTIN_ROLE_DEFAULT_SKILL_BINDINGS: Readonly<Record<string, readonly string[]>> = {
+const BUILTIN_ROLE_DEFAULT_SKILL_BINDINGS: Readonly<Record<string, readonly string[]>> = {
   数据分析师: ['data-analysis-helper', 'data-cleaning', 'xlsx'],
   牧之: ['brainstorming', 'requirement-elicitation', 'prd-authoring'],
   溯真: ['competitor-teardown', 'multi-source-verification', 'industry-scan'],

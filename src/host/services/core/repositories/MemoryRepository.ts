@@ -244,9 +244,10 @@ export class MemoryRepository {
    * 关键词检索。BM25（memories_fts）召回优先——相关性排序、零外部依赖；
    * 以下情形退回 LIKE 全扫（保持旧行为）：查询 <3 字符（trigram 下限）、
    * raw FTS 语法错误、FTS 零命中（历史数据缺口兜底）。
-   * 读时 decay 在两条通道之上统一应用。
+   * 读时 decay 在两条通道之上统一应用。排序：衰减置信度降序 → accessCount 降序
+   * → (lastAccessedAt || updatedAt) 降序——高频使用的记忆在置信度打平时先被召回。
    */
-  searchMemories(query: string, options: { type?: string; category?: string; limit?: number; applyDecay?: boolean; includeArchived?: boolean; includeCandidates?: boolean } = {}): MemoryRecord[] {
+  searchMemories(query: string, options: { type?: string; category?: string; limit?: number; applyDecay?: boolean; includeArchived?: boolean; includeCandidates?: boolean; now?: number } = {}): MemoryRecord[] {
     // Fetch more rows than needed so decay filtering still returns enough
     const requestedLimit = options.limit || 20;
     const fetchLimit = (options.applyDecay !== false) ? requestedLimit * 3 : requestedLimit;
@@ -259,7 +260,7 @@ export class MemoryRepository {
     // Apply read-time decay: confidence decreases with time since last access (or update).
     // Refresh-on-read: memories accessed recently via recordMemoryAccess() stay fresh.
     if (options.applyDecay !== false) {
-      const now = Date.now();
+      const now = options.now ?? Date.now();
       const halfLifeMs = MEMORY.RECORD_DECAY_DAYS * 24 * 60 * 60 * 1000;
 
       records = records
@@ -270,7 +271,11 @@ export class MemoryRepository {
           return { ...r, confidence: r.confidence * decayFactor };
         })
         .filter(r => r.confidence >= MEMORY.RECORD_MIN_CONFIDENCE)
-        .sort((a, b) => b.confidence - a.confidence);
+        .sort((a, b) =>
+          b.confidence - a.confidence ||
+          b.accessCount - a.accessCount ||
+          (b.lastAccessedAt || b.updatedAt) - (a.lastAccessedAt || a.updatedAt)
+        );
     }
 
     return records.slice(0, requestedLimit);
@@ -343,7 +348,7 @@ export class MemoryRepository {
 
     return this.db.prepare(`
       SELECT * FROM memories WHERE ${conditions.join(' AND ')}
-      ORDER BY access_count DESC, updated_at DESC
+      ORDER BY access_count DESC, COALESCE(last_accessed_at, updated_at) DESC
       LIMIT ?
     `).all(...params, fetchLimit) as SQLiteRow[];
   }

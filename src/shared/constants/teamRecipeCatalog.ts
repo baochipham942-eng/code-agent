@@ -16,6 +16,7 @@ export const TEAM_RECIPES: TeamRecipe[] = [
       { roleId: '青禾', taskTemplate: '把「{topic}」的规格提炼成一段对外可讲的清晰说明。' },
     ],
     tags: ['产品', '协作'],
+    quickPrompts: ['帮我把这个想法拆成一份可落地的产品规格，说清目标用户和功能优先级'],
   },
   {
     id: 'deep-research',
@@ -39,6 +40,7 @@ export const TEAM_RECIPES: TeamRecipe[] = [
       },
     ],
     tags: ['调研'],
+    quickPrompts: ['帮我深度调研这个主题，交叉核验来源后给出一份结构化综述'],
   },
   {
     id: 'content-campaign',
@@ -54,5 +56,6 @@ export const TEAM_RECIPES: TeamRecipe[] = [
       { roleId: '明镜', taskTemplate: '对「{topic}」战役方案做复盘与风险审视，给改进建议。' },
     ],
     tags: ['内容', '营销'],
+    quickPrompts: ['帮我围绕这个主题定一套内容战役方案，从核心信息排到渠道节奏'],
   },
 ];

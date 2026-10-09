@@ -286,7 +286,9 @@ export const PlanApprovalCard: React.FC<{
     options?: { keepInteractive?: boolean },
   ) => {
     if (!options?.keepInteractive && submitting) return;
-    if (decision === 'approve' && unresolvedConflict) return;
+    // 冲突未选完时，任何带 steps 的 submit（approve/edit）都会把未选的冲突步骤以本地内容
+    // 悄悄写穿写边界；只有不带 steps 的 cancel/revise 可以放行。
+    if (unresolvedConflict && decision !== 'cancel' && decision !== 'revise') return;
     if (!options?.keepInteractive) setSubmitting(true);
     setError(null);
     try {
@@ -334,6 +336,12 @@ export const PlanApprovalCard: React.FC<{
     updateSteps(nextSteps);
     setEditingId(null);
     setDraft('');
+    if (unresolvedConflict) {
+      // 冲突未选完：编辑只在本地保留（随批准一并提交），不带 steps 走写边界，
+      // 并把冲突提示顶回来，让保存被拦这件事可见而非静默 no-op。
+      setError({ message: t.planApproval.staleVersion });
+      return;
+    }
     if (changed) void submit('edit', { steps: nextSteps }, { keepInteractive: true });
   };
 

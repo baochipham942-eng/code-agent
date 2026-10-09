@@ -82,8 +82,8 @@ interface JobEventState {
 export function assertEventScheduleConstraints(
   definition: Pick<CronJobDefinition, 'schedule' | 'runsOn' | 'action' | 'maxRunBudget'>,
 ): void {
-  const message = validateEventScheduleConstraints(definition);
-  if (message !== null) throw new Error(message);
+  const violation = validateEventScheduleConstraints(definition);
+  if (violation !== null) throw new Error(violation.message);
 }
 
 /**

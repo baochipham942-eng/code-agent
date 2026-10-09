@@ -341,15 +341,16 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
   }
 
   // event 任务与 host createJob 用同一份护栏与同一份文案（shared/cronEventValidation）：
-  // 面板里看到的提示就是提交后 createJob 会抛的那句。
+  // 编辑器在提交前已按 reason 映射本地化提示拦过一次，这里是兜底（模板流/直接调用方），
+  // 抛出的仍是 shared 校验器的原文。
   if (schedule.type === 'event') {
-    const message = validateEventScheduleConstraints({
+    const violation = validateEventScheduleConstraints({
       schedule,
       runsOn: common.runsOn,
       action,
       maxRunBudget: common.maxRunBudget,
     });
-    if (message !== null) throw new Error(message);
+    if (violation !== null) throw new Error(violation.message);
   }
 
   return {
@@ -374,7 +375,17 @@ export function formatDuration(ms?: number): string {
   return `${(ms / 60_000).toFixed(1)}m`;
 }
 
-export function formatScheduleSummary(job: CronJobDefinition, lang: CronHumanLang = 'zh'): string {
+/** event 摘要的显示名（来自通道目录）：有名字用名字，缺了回落 id。 */
+export interface EventScheduleDisplayNames {
+  accountName?: string;
+  chatName?: string;
+}
+
+export function formatScheduleSummary(
+  job: CronJobDefinition,
+  lang: CronHumanLang = 'zh',
+  eventNames?: EventScheduleDisplayNames,
+): string {
   switch (job.schedule.type) {
     case 'at':
       return `一次性 · ${formatDateTime(job.schedule.datetime)}`;
@@ -392,13 +403,15 @@ export function formatScheduleSummary(job: CronJobDefinition, lang: CronHumanLan
         : job.schedule.expression;
     }
     case 'event': {
-      // 纯格式化只认得到账号 id（账号名要走异步通道目录）；编辑/详情面板里
-      // 选择器展示账号名，这里至少把绑定如实交代清楚。
+      // 显示名优先（通道目录里的账号名/群名），目录没有或还没加载完才回落 id；
+      // chatId 缺省 = 该账号任意会话。
       const eventLabel = lang === 'en' ? 'Channel message' : '通道消息';
       const anyChatLabel = lang === 'en' ? 'any chat' : '任意会话';
-      return `${eventLabel} · ${job.schedule.accountId} · ${
-        job.schedule.chatId || anyChatLabel
-      }`;
+      const accountDisplay = eventNames?.accountName || job.schedule.accountId;
+      const chatDisplay = job.schedule.chatId
+        ? (eventNames?.chatName || job.schedule.chatId)
+        : anyChatLabel;
+      return `${eventLabel} · ${accountDisplay} · ${chatDisplay}`;
     }
     default:
       return job.scheduleType;

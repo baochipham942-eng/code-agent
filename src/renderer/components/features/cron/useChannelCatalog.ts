@@ -4,13 +4,15 @@
 // 事件触发源选择共用同一份目录，账号/会话口径永远一致。
 // ============================================================================
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import type { CronJobDefinition } from '@shared/contract';
 import type {
   ChannelAccount,
   ChannelConversationListResponse,
 } from '@shared/contract/channel';
 import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../../../services/ipcService';
+import type { EventScheduleDisplayNames } from './types';
 
 interface ConversationState extends ChannelConversationListResponse {
   loading: boolean;
@@ -82,4 +84,25 @@ export function useChannelCatalog(): {
   }, [accounts]);
 
   return { accounts, accountsLoading, conversationsByAccount };
+}
+
+/**
+ * event 任务摘要的显示名解析（N-CRON-EVENT-CREATE-UI r2）：列表/详情行里
+ * accountId/chatId 换成通道目录里的账号名/群名；目录没有（账号已删、群不在
+ * 最近会话里、还没加载完）回落 id，由 formatScheduleSummary 兜底。
+ */
+export function useEventScheduleNames(): (job: CronJobDefinition) => EventScheduleDisplayNames {
+  const { accounts, conversationsByAccount } = useChannelCatalog();
+  return useCallback((job: CronJobDefinition): EventScheduleDisplayNames => {
+    if (job.schedule?.type !== 'event') return {};
+    const schedule = job.schedule;
+    return {
+      accountName: accounts.find((account) => account.id === schedule.accountId)?.name,
+      chatName: schedule.chatId
+        ? conversationsByAccount[schedule.accountId]?.conversations.find(
+            (conversation) => conversation.id === schedule.chatId,
+          )?.name
+        : undefined,
+    };
+  }, [accounts, conversationsByAccount]);
 }

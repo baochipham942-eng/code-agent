@@ -1,8 +1,11 @@
 // ============================================================================
 // CronEventScheduleFields —— 'event' 调度（通道消息/群监听）的触发源选择。
 // 账号 + 可选会话/群都来自 useChannelCatalog（与结果推送同一份目录）；选了具体
-// 群 = 群监听绑定（未 @ 也触发），留空 = 该账号任意会话。护栏提示直接渲染
-// shared/cronEventValidation 的输出——表单里看到的与 createJob 抛的是同一句。
+// 群 = 群监听绑定（未 @ 也触发），留空 = 该账号任意会话。
+// 单次预算上限是 event 任务的必填项，直接摆在触发源旁边（不藏进「高级选项」），
+// 与高级选项里的同一个 draft 字段双向同步。护栏提示按 shared 校验器的 reason
+// 映射出的本地化文案渲染（校验判据与 createJob 同一份；是否显示由外层闸门控制，
+// 选完调度类型不立刻报）。
 // ============================================================================
 
 import React from 'react';
@@ -21,7 +24,10 @@ interface CronEventScheduleFieldsProps {
   chatId: string;
   onAccountChange: (accountId: string) => void;
   onChatChange: (chatId: string) => void;
-  /** shared 校验器输出的第一条违规文案；null = 配置合规。 */
+  /** 单次预算上限（USD，draft 字符串）；event 任务必填 > 0。 */
+  maxRunBudget: string;
+  onBudgetChange: (value: string) => void;
+  /** 按校验器 reason 映射出的本地化违规文案；null = 合规或未到显示时机。 */
   validationMessage: string | null;
 }
 
@@ -30,6 +36,8 @@ export const CronEventScheduleFields: React.FC<CronEventScheduleFieldsProps> = (
   chatId,
   onAccountChange,
   onChatChange,
+  maxRunBudget,
+  onBudgetChange,
   validationMessage,
 }) => {
   const { t } = useI18n();
@@ -133,6 +141,21 @@ export const CronEventScheduleFields: React.FC<CronEventScheduleFieldsProps> = (
           </p>
         </div>
       )}
+
+      <FormField
+        label={cc.eventBudgetLabel}
+        required
+        htmlFor="cron-event-budget"
+        hint={cc.eventBudgetHint}
+      >
+        <Input
+          id="cron-event-budget"
+          type="number"
+          value={maxRunBudget}
+          onChange={(event) => onBudgetChange(event.target.value)}
+          placeholder="0.5"
+        />
+      </FormField>
 
       <p className="text-xs text-zinc-500" data-testid="cron-event-constraints-hint">
         {cc.eventConstraintsHint}

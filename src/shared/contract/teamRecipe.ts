@@ -50,6 +50,8 @@ export interface TeamRecipe {
   members: TeamRecipeMember[];
   lead?: TeamRecipeLead;
   tags?: string[];
+  /** 快捷开场 prompt（一句话真实协作场景，点击预选团队并填进输入框）；仅内置配方携带 */
+  quickPrompts?: string[];
 }
 
 export interface TeamRecipeValidationError {

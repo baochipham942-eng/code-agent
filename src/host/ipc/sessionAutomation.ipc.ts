@@ -61,7 +61,7 @@ const sessionAutomationRoutes = defineDomainRoutes<SessionAutomationDomainReques
   },
   countPendingReview: (_ctx, _payload) => {
     const service = getSessionAutomationService();
-    return service.countPendingReview();
+    return service.countPendingReviewByTask();
   },
   markReviewed: (_ctx, payload) => {
     const service = getSessionAutomationService();

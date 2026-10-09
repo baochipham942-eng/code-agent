@@ -83,6 +83,34 @@ describe('PermissionCard computer app grant', () => {
     expect(saveMemory).not.toHaveBeenCalled();
   });
 
+  it('asks about operating the app, not the underlying command wording', () => {
+    state.request = {
+      ...computerRequest(),
+      id: 'permission-app-safari',
+      details: { targetApp: { name: 'Safari' } },
+    };
+    const { container } = render(<PermissionCard />);
+    expect(screen.getByText('Neo 想操作 Safari，你来决定。')).toBeTruthy();
+    expect(container.textContent).not.toContain('执行这条命令');
+  });
+
+  it('keeps the dangerous command wording when the app request itself is dangerous', () => {
+    state.request = {
+      ...computerRequest(),
+      id: 'permission-app-dangerous',
+      type: 'dangerous_command',
+      details: { targetApp: { name: 'Safari' }, command: 'rm -rf /tmp/x' },
+    };
+    const { container } = render(<PermissionCard />);
+    expect(container.textContent).toContain('允许执行这条命令');
+  });
+
+  it('keeps the command wording for forceConfirm requests', () => {
+    state.request = computerRequest(true);
+    const { container } = render(<PermissionCard />);
+    expect(container.textContent).toContain('允许执行这条命令');
+  });
+
   it('maps the three buttons to standing, session, and deny without touching permission memory', () => {
     const { rerender } = render(<PermissionCard />);
     fireEvent.click(screen.getByRole('button', { name: /始终允许/ }));

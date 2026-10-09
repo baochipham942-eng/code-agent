@@ -413,7 +413,9 @@ export function PermissionCard({
     : isRemindersWrite
       ? <ListTodo size={20} />
       : editable ? <Mail size={20} /> : config.icon;
-  const question = isMeetingCreate
+  const question = appGrantCard && !isDangerous
+    ? p.computerApp.question.replace('{app}', request.details.targetApp?.name ?? '')
+    : isMeetingCreate
     ? (meetingSubject ? w.tmeetCreateQuestion.replace('{subject}', meetingSubject) : w.tmeetCreateQuestionFallback)
     : request.tool === 'calendar_create_event'
       ? (contentTitle ? w.calendarCreateQuestion.replace('{title}', contentTitle) : w.calendarCreateQuestionFallback)

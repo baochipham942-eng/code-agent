@@ -669,5 +669,50 @@ describe('multiEditModule evidence metadata', () => {
       }
       expect(await fs.readFile(file, 'utf-8')).toBe('{"a": 2\n');
     });
+
+    it('stays silent when a length-changing edit drifts the position inside a pre-existing JSON error', async () => {
+      const file = path.join(tmpDir, 'already-broken-drift.json');
+      await fs.writeFile(file, '{\n  "aaa": 1\n  "b": 2\n}\n', 'utf-8');
+      await fileReadTracker.recordReadWithStats(file);
+
+      const handler = await editModule.createHandler();
+      const result = await handler.execute(
+        // 无害改值但改变长度：存量 JSON 错误的 position 随之漂移（15→19），
+        // 错误消息不再逐字相等——须按去掉位置片段的错误类别比对，才不误报「新引入」
+        { file_path: file, edits: [{ old_text: '"aaa": 1', new_text: '"aaa": 10000' }] },
+        makeCtx(),
+        allowAll,
+      );
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).not.toContain('代码完整性警告');
+        expect(result.meta?.completenessIssues).toBeUndefined();
+      }
+      expect(await fs.readFile(file, 'utf-8')).toBe('{\n  "aaa": 10000\n  "b": 2\n}\n');
+    });
+
+    it('still warns when the edit swaps a pre-existing JSON error for a different kind', async () => {
+      const file = path.join(tmpDir, 'already-broken-new-kind.json');
+      await fs.writeFile(file, '{a: 1}', 'utf-8');
+      await fileReadTracker.recordReadWithStats(file);
+
+      const handler = await editModule.createHandler();
+      const result = await handler.execute(
+        // 存量是属性名未加引号（Expected property name…），编辑换成逗号缺失
+        // （Expected ',' or '}'…）——错误类别变了，去重归一化不得把它吞掉
+        { file_path: file, edits: [{ old_text: 'a: 1', new_text: '"a": 1 "b": 2' }] },
+        makeCtx(),
+        allowAll,
+      );
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toContain('代码完整性警告');
+        expect(result.meta?.completenessIssues).toEqual(
+          expect.arrayContaining([expect.stringContaining("Expected ',' or '}'")]),
+        );
+      }
+    });
   });
 });

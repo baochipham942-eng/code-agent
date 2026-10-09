@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { BookMarked, FileText, Folder, Library, Trash2 } from 'lucide-react';
+import { BookMarked, FileText, Folder, Library, Sparkles, Trash2 } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { ExpertBindingKind, ExpertBindingMode, ExpertBindingScope, ExpertContextBinding } from '@shared/contract/roleAssets';
 import type { LibraryItem } from '@shared/contract/library';
@@ -18,6 +18,7 @@ const KIND_ICONS: Record<ExpertBindingKind, React.ReactNode> = {
   file: <FileText className="h-3.5 w-3.5 text-badge-info" />,
   folder: <Folder className="h-3.5 w-3.5 text-badge-warning" />,
   library_item: <Library className="h-3.5 w-3.5 text-badge-success" />,
+  skill: <Sparkles className="h-3.5 w-3.5 text-badge-accent" />,
 };
 
 async function fetchBindings(roleId: string): Promise<ExpertContextBinding[]> {

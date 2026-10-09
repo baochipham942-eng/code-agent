@@ -20,12 +20,13 @@ import type {
   ExpertContextBinding,
 } from '../../../shared/contract/roleAssets';
 import { getLibraryService } from '../library/libraryService';
+import { getBuiltinSkill } from '../skills/builtinSkills';
 import { createLogger } from '../infra/logger';
 import { getRoleDir, isSafeRoleId } from './roleAssetPaths';
 
 const logger = createLogger('RoleContextBindings');
 
-const BINDING_KINDS: ReadonlySet<ExpertBindingKind> = new Set(['file', 'folder', 'library_item']);
+const BINDING_KINDS: ReadonlySet<ExpertBindingKind> = new Set(['file', 'folder', 'library_item', 'skill']);
 const BINDING_MODES: ReadonlySet<ExpertBindingMode> = new Set(['always', 'on_demand']);
 const BINDING_SCOPES: ReadonlySet<ExpertBindingScope> = new Set(['private', 'project']);
 
@@ -102,6 +103,11 @@ export async function addRoleBinding(
     const item = getLibraryService().get(target);
     if (!item) throw new Error(`Library item not found: ${target}`);
     title = title ?? item.title;
+  } else if (kind === 'skill') {
+    // skill 只存名字引用（单一真源在内置 skill 集），不复制 prompt 正文
+    const skill = getBuiltinSkill(target);
+    if (!skill) throw new Error(`Skill not found: ${target}`);
+    title = title ?? skill.name;
   } else {
     // 路径类：存在性校验 + 以真实盘上形态定 file/folder（不信 renderer 的猜测）
     const stat = await fs.stat(target).catch(() => null);
@@ -152,6 +158,17 @@ function describeBinding(binding: ExpertContextBinding): string | null {
     if (binding.mode === 'always' && item.summary) parts.push(`  摘要: ${item.summary}`);
     return parts.join('\n');
   }
+  if (binding.kind === 'skill') {
+    let skill;
+    try {
+      skill = getBuiltinSkill(binding.target);
+    } catch {
+      skill = undefined;
+    }
+    if (!skill) return null; // skill 已不可解析（改名/移除）：不注入失效引用
+    const desc = skill.description.split('\n').map((l) => l.trim()).find(Boolean) ?? '';
+    return desc ? `- ${skill.name}（技能）: ${desc}` : `- ${skill.name}（技能）`;
+  }
   const label = binding.kind === 'folder' ? '目录' : '文件';
   return `- ${binding.title ?? path.basename(binding.target)}（${label}）: ${binding.target}`;
 }
@@ -175,6 +192,6 @@ export async function buildRoleBindingsSection(roleId: string): Promise<string |
   if (onDemand.length > 0) {
     lines.push('按需资料（用到时再读，引用须标注来源）：', ...(onDemand as string[]));
   }
-  lines.push('读取方式：本地路径用 Read 工具（目录先 ListDirectory / Glob），URL 用网页抓取工具。');
+  lines.push('读取方式：本地路径用 Read 工具（目录先 ListDirectory / Glob），URL 用网页抓取工具；技能（skill）绑定无需读取，按名直接使用。');
   return lines.join('\n');
 }

@@ -377,13 +377,23 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
         params,
       });
       try {
+        const loginWallBeforeRun = await enforceBrowserLoginWallStop({ browserService, context });
+        if (loginWallBeforeRun) {
+          const completedTrace = browserService.finishTrace(trace, {
+            success: false,
+            error: loginWallBeforeRun.error || null,
+          });
+          return appendBrowserWorkbenchNote(withWorkbenchTrace(loginWallBeforeRun, completedTrace, context), workbenchNotes);
+        }
         const result = await driver.run({ task, assertions, jevBudgetUsd, browserService }, context);
+        const loginWallAfterRun = await enforceBrowserLoginWallStop({ browserService, context });
+        const finalResult = loginWallAfterRun ?? result;
         const completedTrace = browserService.finishTrace(trace, {
-          success: result.success,
-          error: result.error || null,
-          screenshotPath: getScreenshotPathFromResult(result),
+          success: finalResult.success,
+          error: finalResult.error || null,
+          screenshotPath: getScreenshotPathFromResult(finalResult),
         });
-        return appendBrowserWorkbenchNote(withWorkbenchTrace(result, completedTrace, context), workbenchNotes);
+        return appendBrowserWorkbenchNote(withWorkbenchTrace(finalResult, completedTrace, context), workbenchNotes);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         browserService.logger.log('ERROR', `Action "${action}" failed: ${errorMessage}`);

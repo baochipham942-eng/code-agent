@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const loginWallPermission = vi.hoisted(() => ({ unattended: false }));
+vi.mock('../../../../../src/host/permissions/modes', () => ({
+  getPermissionModeManager: () => ({
+    isUnattendedSession: () => loginWallPermission.unattended,
+  }),
+}));
+
 // 本文件的装配断言走环境变量。typesafe 读钥匙串时若打到共享的 mock userData，
 // 别的用例留下的槽会把「缺 key」误判成已装配；缺官方 key 时 resolveJevRoute 还会读 OpenRouter key。
 // 这里把 typesafe 槽钉成空，并让 getApiKey 永远返回 undefined——单测不碰真实钥匙串。
@@ -77,6 +84,7 @@ function textbox(
 describe('jevBrowserStep', () => {
   beforeEach(() => {
     vi.unstubAllEnvs();
+    loginWallPermission.unattended = false;
   });
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -809,6 +817,46 @@ describe('jevBrowserStep', () => {
       expect(services.has(identity.agentId)).toBe(false);
       expect(surface).toBe(services.get(surfaceKey));
       expect(acquireSpy.mock.calls.some((call) => call[0] === identity.agentId)).toBe(false);
+    } finally {
+      acquireSpy.mockRestore();
+    }
+  });
+
+  it('browserAction execute_goal 无人值守遇到登录墙时终止，而交互 JEV 仍由自身处理', async () => {
+    vi.stubEnv('CODE_AGENT_BROWSER_JEV_STEP', '1');
+    vi.stubEnv('TYPESAFE_API_KEY', 'test-key-not-used');
+    loginWallPermission.unattended = true;
+
+    const service = makePoolStubService();
+    service.getPageContent.mockResolvedValue({
+      url: 'http://127.0.0.1:4123/login?next=1',
+      title: 'Please sign in',
+      text: 'Please sign in to continue',
+      passwordInputPresent: true,
+      loginFormPresent: true,
+    });
+    const acquireSpy = vi.spyOn(browserPool, 'acquire').mockReturnValue(service as unknown as BrowserService);
+    const forceFinalResponse = vi.fn();
+    const ctx: ToolContext = {
+      ...context(),
+      sessionId: 'cron-browser-login-wall',
+      runId: 'run-browser-login-wall',
+      agentId: 'agent-browser-login-wall',
+      forceFinalResponse,
+    };
+
+    try {
+      const result = await browserActionTool.execute({ action: 'execute_goal', task: 'open the account page' }, ctx);
+      expect(result).toMatchObject({
+        success: false,
+        metadata: {
+          code: 'CRON_LOGIN_WALL_STOP',
+          siteOrigin: 'http://127.0.0.1:4123',
+          stopRun: true,
+        },
+      });
+      expect(forceFinalResponse).toHaveBeenCalledWith('cron-login-wall-stop', expect.stringContaining('127.0.0.1:4123'));
+      expect(service.captureJevPage).not.toHaveBeenCalled();
     } finally {
       acquireSpy.mockRestore();
     }

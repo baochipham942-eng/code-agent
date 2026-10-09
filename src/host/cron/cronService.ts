@@ -1168,7 +1168,7 @@ export class CronService implements Disposable {
       adoptFailedAgentSession(execution, error);
 
       // permanent：确定性失败，烧掉剩余重试毫无意义，停在这里等 finally 的停用档。
-      if (classifyCronFailure(execution.error) === 'permanent') return;
+      if (classifyCronFailure(execution.error) === 'permanent' || classifyCronFailure(execution.error) === 'login-wall') return;
 
       // Continue retrying if we haven't reached the limit
       if (execution.retryAttempt < (current.maxRetries || 0)) {

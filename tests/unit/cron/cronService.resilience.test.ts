@@ -300,6 +300,39 @@ describe('①③ 同因失败去重后告警：单次告警 + 冷却窗', () => 
     }));
     await service.shutdown();
   });
+
+  it('N-CRON-LOGINWALL-STOP：重试途中遇到登录墙也不再继续退避', async () => {
+    vi.useFakeTimers();
+    const service = new CronService();
+    const job = await service.createJob({
+      ...agentJob(),
+      retryDelay: 1,
+      maxRetries: 3,
+    });
+    let calls = 0;
+    const loginWallError = Object.assign(
+      new Error(buildCronLoginWallStopCode('https://example.test')),
+      { cronSessionId: 'cron-login-wall-retry-session' },
+    );
+    const { calls: callCount } = patchExecuteAction(service, async () => {
+      calls += 1;
+      if (calls === 1) throw new Error('transient provider error');
+      throw loginWallError;
+    });
+
+    const settled = service.triggerJob(job.id);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(callCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    const execution = (await settled)!;
+
+    expect(callCount()).toBe(2);
+    expect(execution.status).toBe('failed');
+    expect(execution.retryAttempt).toBe(1);
+    expect(execution.error).toBe(buildCronLoginWallStopCode('https://example.test'));
+    expect(service.getJob(job.id)!.enabled).toBe(true);
+    await service.shutdown();
+  });
 });
 
 describe('⑤ 容量/并发等待不计失败不计重试（Cline 实付回归）', () => {

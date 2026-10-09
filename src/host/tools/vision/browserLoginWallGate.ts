@@ -3,6 +3,7 @@ import { getPermissionModeManager } from '../../permissions/modes';
 import { noteUnattendedRunTerminal } from '../../agent/unattendedApprovalTerminal';
 import {
   buildCronLoginWallStopCode,
+  CRON_LOGIN_WALL_STOP,
   isBrowserLoginWall,
   siteOriginFromUrl,
 } from '../../../shared/utils/browserLoginWall';
@@ -55,7 +56,7 @@ export async function enforceBrowserLoginWallStop(
     success: false,
     error: `${code}; stop this unattended run and tell the user to log in again.`,
     metadata: {
-      code: 'CRON_LOGIN_WALL_STOP',
+      code: CRON_LOGIN_WALL_STOP,
       siteOrigin,
       stopRun: true,
       forceFinalResponse: true,

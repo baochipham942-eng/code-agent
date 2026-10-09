@@ -89,6 +89,7 @@ import {
 import { openSurfaceForArtifact } from './services/surfaceIntentDispatcher';
 import { useInAppValidationBridge } from './hooks/useInAppValidationBridge';
 import { useI18n } from './hooks/useI18n';
+import { CRON_LOGIN_WALL_STOP } from '@shared/utils/browserLoginWall';
 import { InternalFeatureWorkspaceRegistration, PluginUiActivationPolicyBootstrap, ShellOverlaySlotHost, WorkspacePageSlotHost } from './slots/productSlotHosts';
 
 const logger = createLogger('App');
@@ -667,7 +668,7 @@ export const App: React.FC = () => {
       IPC_CHANNELS.NOTIFICATION_SHOW,
       (event: NotificationShowEvent) => {
         lastNotifSessionIdRef.current = event.sessionId;
-        const loginWall = event.code === 'CRON_LOGIN_WALL_STOP' && event.siteOrigin
+        const loginWall = event.code === CRON_LOGIN_WALL_STOP && event.siteOrigin
           ? {
               title: t.cronCenter.loginWallNotificationTitle,
               body: t.cronCenter.loginWallNotificationBody.replace('{site}', event.siteOrigin),

@@ -12,6 +12,7 @@ const requestSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('status') }).strict(),
   z.object({ action: z.literal('invite'), scope: z.array(z.string().trim().min(1).max(L.idLength)).min(1).max(L.maxScopeSessions) }).strict(),
   z.object({ action: z.literal('revoke'), deviceId: z.string().min(1).max(L.idLength) }).strict(),
+  z.object({ action: z.literal('setRemote'), enabled: z.boolean() }).strict(),
 ]);
 
 export class LanCompanionManager {
@@ -30,7 +31,9 @@ export class LanCompanionManager {
     /** 电脑当前登录的 Neo 账号邮箱；随 welcome 进配对信息（手机登录引导/账号核对用）。 */
     private readonly hostAccountEmail?: () => string | null,
     /** 透传给 LanCompanionServer 的连接层留痕 logger（N-MOBILE-SEND-RESULT-LOST）。 */
-    private readonly logger?: CompanionRelayLogger) {}
+    private readonly logger?: CompanionRelayLogger,
+    /** 总闸打开/关掉时，由装配层用同一批工厂停掉或重新拨起两条 relay。 */
+    private readonly remoteTransports?: { start(): Promise<void>; stop(): Promise<void> }) {}
 
   /**
    * 开机自动起局域网服务的**唯一**入口，条件是本槽有配对设备。不满足时要留痕：
@@ -38,6 +41,10 @@ export class LanCompanionManager {
    * 真机：跑的是 Dev 3 槽、配对在 Dev 槽，全程零对外端口、零日志，只能靠 lsof 才查得出来）。
    */
   async restore(): Promise<void> {
+    if (!this.gateway.remoteEnabled()) {
+      console.info('[companion] remote access is off; LAN surface stays closed');
+      return;
+    }
     if (!this.gateway.pairedDevices().length) {
       console.info('[companion] no paired device in this profile; LAN surface stays closed (phones cannot reach this host)');
       return;
@@ -51,18 +58,43 @@ export class LanCompanionManager {
 
   async manage(raw: unknown): Promise<CompanionManagementResult> {
     const request = requestSchema.parse(raw);
-    if (request.action === 'status') {
-      const relay = this.relayStatus?.();
-      return { kind: 'status', sessions: await this.listSessions(), projects: this.listProjects(), devices: this.gateway.pairedDevices(), ...(relay ? { relay } : {}) };
-    }
+    if (request.action === 'status') return this.statusResult();
     if (request.action === 'revoke') {
+      // 单台撤销与总闸无关：关着的时候也允许，打开后仍然拒绝这台。
       if (this.server) this.server.revoke(request.deviceId); else this.gateway.revokeDevice(request.deviceId);
       return { kind: 'revoked' };
     }
+    if (request.action === 'setRemote') {
+      this.gateway.setRemoteEnabled(request.enabled);
+      if (request.enabled) {
+        // LAN 面受环境影响（仅热点/VPN 时无私网 IPv4，restore 会抛 COMPANION_LAN_UNAVAILABLE）。
+        // 打开总闸时它与 app.ts 开机路径同形按 best-effort 处理：失败只留痕，不能挡住
+        // 两条 relay 的重新拨起——否则开关已持久化为开，relay 却直到重启 app 都不拨号。
+        await this.restore().catch(error => console.warn('[companion] remote switch on; LAN surface unavailable:', error instanceof Error ? error.message : error));
+        await this.remoteTransports?.start();
+      } else {
+        await this.stop();
+        await this.remoteTransports?.stop();
+      }
+      return this.statusResult();
+    }
+    if (!this.gateway.remoteEnabled()) throw new Error('COMPANION_REMOTE_OFF');
     const sessions = await this.listSessions();
     if (request.scope.some(id => !sessions.some(session => session.id === id) && !this.listProjects().some(project => projectGrant(project.id) === id))) throw new Error('COMPANION_SESSION_NOT_FOUND');
     const server = await this.start();
     return { kind: 'invitation', invitation: server.invite(request.scope) };
+  }
+
+  private async statusResult(): Promise<CompanionManagementResult> {
+    const relay = this.relayStatus?.();
+    return {
+      kind: 'status',
+      sessions: await this.listSessions(),
+      projects: this.listProjects(),
+      devices: this.gateway.pairedDevices(),
+      remoteEnabled: this.gateway.remoteEnabled(),
+      ...(relay ? { relay } : {}),
+    };
   }
 
   hasApprovalUi(sessionId: string): boolean { return this.server?.hasApprovalUi(sessionId) ?? false; }

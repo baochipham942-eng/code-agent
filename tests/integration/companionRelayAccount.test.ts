@@ -8,10 +8,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
 import { CompanionGateway } from '../../src/host/services/companion/CompanionGateway';
-import {
-  CompanionRelayClient,
-  startCompanionRelayAccountIfConfigured,
-} from '../../src/host/services/companion/CompanionRelayClient';
+import { CompanionRelayClient } from '../../src/host/services/companion/CompanionRelayClient';
+import { startCompanionRelayAccountIfConfigured } from '../../src/host/services/companion/companionRelayAccount';
 import { deriveCompanionRelayRouteToken } from '../../src/host/services/companion/companionRelayRouteToken';
 import { createIdentity } from '../../src/shared/companion/noiseChannel';
 import { toHex } from '../../src/shared/companion/lanProtocol';

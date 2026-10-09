@@ -17,13 +17,31 @@ import { createLogger } from '../../services/infra/logger';
 import type { ContextAssembly } from './contextAssembly';
 import type { RunFinalizer } from './runFinalizer';
 import type { RuntimeContext } from './runtimeContext';
-import {
-  createDesignPreviewRepairSpec,
-  formatDesignPreviewRepairSpecForPrompt,
-  runDesignPreviewRepairAssessment,
-  type DesignPreviewHealthRunner,
+import type {
+  DesignPreviewHealthRunner,
+  DesignPreviewRepairAssessment,
 } from './browser/designPreviewRepair';
 import { isAppendTool } from './toolArtifactRepairPolicy';
+
+// designPreviewRepair → artifactPreviewHealth → browserPool 的链条在模块加载期就会
+// 实例化 BrowserService 单例；lifecycle/messageProcessor 的静态 import 图不该连带
+// 拖进这个副作用（对齐 playwrightRuntime 的 loadPlaywrightChromium 延迟装载先例），
+// 首次真正要体检网页交付物时才加载。
+type DesignPreviewRepairHelpers = {
+  runDesignPreviewRepairAssessment: (
+    artifactPath: string,
+    options?: { healthRunner?: DesignPreviewHealthRunner },
+  ) => Promise<DesignPreviewRepairAssessment>;
+  createDesignPreviewRepairSpec: typeof import('./browser/designPreviewRepair').createDesignPreviewRepairSpec;
+  formatDesignPreviewRepairSpecForPrompt: typeof import('./browser/designPreviewRepair').formatDesignPreviewRepairSpecForPrompt;
+};
+
+let designPreviewRepairHelpers: Promise<DesignPreviewRepairHelpers> | undefined;
+
+function loadDesignPreviewRepairHelpers(): Promise<DesignPreviewRepairHelpers> {
+  designPreviewRepairHelpers ??= import('./browser/designPreviewRepair');
+  return designPreviewRepairHelpers;
+}
 
 const logger = createLogger('WebDeliverablePreviewRepair');
 
@@ -92,9 +110,11 @@ export async function maybeRunWebDeliverablePreviewRepair({
   if (state.reported.has(absolutePath)) return;
 
   const awaitingRecheck = state.injected.has(absolutePath);
+  let helpers: DesignPreviewRepairHelpers;
   let assessment;
   try {
-    assessment = await runDesignPreviewRepairAssessment(
+    helpers = await loadDesignPreviewRepairHelpers();
+    assessment = await helpers.runDesignPreviewRepairAssessment(
       absolutePath,
       healthRunner ? { healthRunner } : {},
     );
@@ -147,8 +167,8 @@ export async function maybeRunWebDeliverablePreviewRepair({
   if (assessment.findings.length === 0) return;
 
   state.injected.add(absolutePath);
-  const spec = createDesignPreviewRepairSpec({ artifactPath: absolutePath, attempt: 1, assessment });
-  const prompt = formatDesignPreviewRepairSpecForPrompt(spec);
+  const spec = helpers.createDesignPreviewRepairSpec({ artifactPath: absolutePath, attempt: 1, assessment });
+  const prompt = helpers.formatDesignPreviewRepairSpecForPrompt(spec);
   runFinalizer.emitTaskProgress(
     'tool_running',
     formatPreviewHealthMessage('webRepairNotice', { count: assessment.findings.length }, locale),

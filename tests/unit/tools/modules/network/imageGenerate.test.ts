@@ -3,11 +3,13 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import path from 'node:path';
 import type {
   ToolContext,
   CanUseToolFn,
   Logger,
 } from '../../../../../src/host/protocol/tools';
+import { createWorkspaceScope } from '../../../../../src/host/runtime/workspaceScope';
 
 const { existsSyncMock, mkdirSyncMock, writeFileSyncMock } = vi.hoisted(() => ({
   existsSyncMock: vi.fn().mockReturnValue(true),
@@ -15,11 +17,17 @@ const { existsSyncMock, mkdirSyncMock, writeFileSyncMock } = vi.hoisted(() => ({
   writeFileSyncMock: vi.fn(),
 }));
 
-vi.mock('fs', () => ({
-  existsSync: (...args: unknown[]) => existsSyncMock(...args),
-  mkdirSync: (...args: unknown[]) => mkdirSyncMock(...args),
-  writeFileSync: (...args: unknown[]) => writeFileSyncMock(...args),
-}));
+// workspaceScope.ts reads realpathSync/lstatSync/readlinkSync/statSync from node:fs.
+// A partial fs mock makes isPathWithinRoot fail closed and would refuse in-workspace paths.
+vi.mock('fs', async () => {
+  const actual = await vi.importActual<typeof import('node:fs')>('node:fs');
+  return {
+    ...actual,
+    existsSync: (...args: unknown[]) => existsSyncMock(...args),
+    mkdirSync: (...args: unknown[]) => mkdirSyncMock(...args),
+    writeFileSync: (...args: unknown[]) => writeFileSyncMock(...args),
+  };
+});
 
 const { getConfigServiceMock, getAuthServiceMock } = vi.hoisted(() => ({
   getConfigServiceMock: vi.fn(),
@@ -47,7 +55,9 @@ vi.mock('../../../../../src/host/utils/safeShell', () => ({
 }));
 
 import { imageGenerateModule, executeImageGenerate } from '../../../../../src/host/plugins/builtin/imageCreation/imageGenerate';
-import { determineImageEngine } from '../../../../../src/host/services/media/imageGenerationService';
+import * as imageGenerationService from '../../../../../src/host/services/media/imageGenerationService';
+
+const { determineImageEngine } = imageGenerationService;
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -817,5 +827,155 @@ describe('image_generate — flux SSE 扩写', () => {
       expect(result.meta?.engine).toBe('flux');
       expect(result.meta?.expandedPrompt).toBe('a fluffy corgi in a meadow');
     }
+  });
+});
+
+describe('image_generate — output_path stays inside the workspace', () => {
+  const origEnv = { ...process.env };
+  const workingDir = '/tmp/work';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    existsSyncMock.mockReturnValue(true);
+    delete process.env.ZHIPU_OFFICIAL_API_KEY;
+    delete process.env.CODE_AGENT_CLI_MODE;
+    getConfigServiceMock.mockReturnValue({
+      onSettingsUpdated: vi.fn(),
+      getApiKey: vi.fn().mockReturnValue(undefined),
+    });
+    getAuthServiceMock.mockReturnValue({
+      getCurrentUser: vi.fn().mockReturnValue({ isAdmin: false }),
+    });
+  });
+
+  afterEach(() => {
+    process.env = { ...origEnv };
+  });
+
+  function armPaidFetch() {
+    process.env.ZHIPU_OFFICIAL_API_KEY = 'official-key';
+    const fetchMock = vi.fn();
+    global.fetch = fetchMock;
+    fetchMock.mockImplementation(async (url: unknown) => {
+      const target = String(url);
+      if (target.includes('/chat/completions')) {
+        const body = JSON.stringify({ choices: [{ message: { content: 'expanded cat' } }] });
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'application/json' }),
+          text: async () => body,
+          json: async () => JSON.parse(body),
+        };
+      }
+      if (target.startsWith('https://cdn.example/')) {
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'image/png' }),
+          arrayBuffer: async () => Uint8Array.from([9]).buffer,
+        };
+      }
+      const body = JSON.stringify({ data: [{ url: 'https://cdn.example/img.png' }] });
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        text: async () => body,
+        json: async () => JSON.parse(body),
+      };
+    });
+    return fetchMock;
+  }
+
+  async function expectRefused(outputPath: string, ctxOverrides: Partial<ToolContext> = {}): Promise<void> {
+    existsSyncMock.mockReturnValue(false);
+    const fetchMock = armPaidFetch();
+    const emit = vi.fn();
+    const generateSpy = vi.spyOn(imageGenerationService, 'generateImage');
+    const resolved = path.resolve(workingDir, outputPath);
+    try {
+      const result = await executeImageGenerate(
+        { prompt: 'cat', output_path: outputPath, expand_prompt: true },
+        makeCtx({ workingDir, emit, currentToolCallId: 'tc-refuse', ...ctxOverrides }),
+        allowAll,
+      );
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.code).toBe('INVALID_ARGS');
+      expect(result.error).toContain(resolved);
+      expect(result.error).toMatch(/must be inside the workspace/);
+      expect(result.error).not.toMatch(/[\u3400-\u9fff]/);
+      expect(result.meta).toEqual({ outputPath: resolved });
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(generateSpy).not.toHaveBeenCalled();
+      expect(emit).not.toHaveBeenCalled();
+      expect(mkdirSyncMock).not.toHaveBeenCalled();
+      expect(writeFileSyncMock).not.toHaveBeenCalled();
+    } finally {
+      generateSpy.mockRestore();
+    }
+  }
+
+  it('refuses an absolute path outside the workspace (/etc/x.png)', async () => {
+    await expectRefused('/etc/x.png');
+  });
+
+  it('refuses an absolute path outside the workspace (/tmp/other/x.png)', async () => {
+    await expectRefused('/tmp/other/x.png');
+  });
+
+  it('refuses a parent-directory escape (../escape.png)', async () => {
+    await expectRefused('../escape.png');
+  });
+
+  it('refuses a nested parent-directory escape (./a/../../escape.png)', async () => {
+    await expectRefused('./a/../../escape.png');
+  });
+
+  it('refuses a sibling directory that only shares a name prefix (/tmp/work-evil/x.png)', async () => {
+    await expectRefused('/tmp/work-evil/x.png');
+  });
+
+  it('refuses a path that is only inside a read_only workspace root', async () => {
+    const workspaceScope = createWorkspaceScope('proj-pathguard-ro', [
+      { sourceId: 'primary', path: workingDir, role: 'primary', access: 'read_write' },
+      { sourceId: 'extra', path: '/tmp/other', role: 'additional', access: 'read_only' },
+    ]);
+    await expectRefused('/tmp/other/ro.png', { workspaceScope });
+  });
+
+  it('allows a nested relative path a/b/c.png', async () => {
+    const fetchMock = armPaidFetch();
+    const generateSpy = vi.spyOn(imageGenerationService, 'generateImage');
+    try {
+      const result = await executeImageGenerate(
+        { prompt: 'cat', output_path: 'a/b/c.png' },
+        makeCtx({ workingDir, currentToolCallId: 'tc-nested' }),
+        allowAll,
+      );
+      expect(result.ok).toBe(true);
+      expect(fetchMock).toHaveBeenCalled();
+      expect(generateSpy).toHaveBeenCalled();
+      expect(writeFileSyncMock).toHaveBeenCalledWith('/tmp/work/a/b/c.png', expect.anything());
+    } finally {
+      generateSpy.mockRestore();
+    }
+  });
+
+  it('allows an absolute path on a read_write root outside workingDir', async () => {
+    const fetchMock = armPaidFetch();
+    const workspaceScope = createWorkspaceScope('proj-pathguard-rw', [
+      { sourceId: 'primary', path: workingDir, role: 'primary', access: 'read_write' },
+      { sourceId: 'extra', path: '/tmp/other', role: 'additional', access: 'read_write' },
+    ]);
+    const result = await executeImageGenerate(
+      { prompt: 'cat', output_path: '/tmp/other/ok.png' },
+      makeCtx({ workingDir, workspaceScope, currentToolCallId: 'tc-extra-root' }),
+      allowAll,
+    );
+    expect(result.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalled();
+    expect(writeFileSyncMock).toHaveBeenCalledWith('/tmp/other/ok.png', expect.anything());
   });
 });

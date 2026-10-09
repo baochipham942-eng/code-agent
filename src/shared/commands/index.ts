@@ -14,7 +14,8 @@ export { systemCommands } from './definitions/systemCommands';
 export { newCommands } from './definitions/newCommands';
 export { doctorCommands } from './definitions/doctorCommands';
 export { btwCommands } from './definitions/btwCommands';
-export { initMemoryCommands } from './definitions/initMemoryCommands';
+// initMemoryCommands 不出 barrel：knip 视角无外部消费者（测试走 definitions 路径），
+// 仅在下方 initializeCommands 内静态引用。
 
 import { getCommandRegistry } from './commandRegistry';
 import { sessionCommands } from './definitions/sessionCommands';

@@ -2,9 +2,16 @@ import { describe, expect, it, vi } from 'vitest';
 import { BUILTIN_PROMPT_COMMANDS } from '../../../src/shared/commands/builtinPromptCommands';
 import { initializeCommands } from '../../../src/shared/commands';
 import { getCommandRegistry } from '../../../src/shared/commands/commandRegistry';
-import { initMemoryCommand } from '../../../src/shared/commands/definitions/initMemoryCommands';
 import type { CommandContext, CommandDefinition, CommandOutput } from '../../../src/shared/commands/types';
 import type { ProjectMemoryDraftResult } from '../../../src/shared/contract/memory';
+
+// 单条定义经 registry 取用（公开入口），definitions 文件只导出数组。
+function initMemoryCommand(): CommandDefinition {
+  initializeCommands();
+  const def = getCommandRegistry().get('init-memory');
+  if (!def) throw new Error('init-memory command not registered');
+  return def;
+}
 
 const guiMemory = vi.hoisted(() => ({ calls: 0 }));
 
@@ -59,7 +66,7 @@ describe('/init-memory command', () => {
         },
       }),
     });
-    const result = await initMemoryCommand.handler(ctx, []);
+    const result = await initMemoryCommand().handler(ctx, []);
     expect(seen).toEqual(['/tmp/work']);
     expect(result).toEqual({ success: true, data: draftResult });
     expect(lines).toEqual([
@@ -77,7 +84,7 @@ describe('/init-memory command', () => {
         },
       }),
     });
-    const result = await initMemoryCommand.handler(ctx, []);
+    const result = await initMemoryCommand().handler(ctx, []);
     expect(seen).toEqual([process.cwd()]);
     expect(result.success).toBe(true);
   });
@@ -96,7 +103,7 @@ describe('/init-memory command', () => {
         }),
       }),
     });
-    const result = await initMemoryCommand.handler(ctx, []);
+    const result = await initMemoryCommand().handler(ctx, []);
     expect(result.success).toBe(true);
     expect(lines[0]).toContain('写入 1 条候选记忆，跳过 2 条主题');
     expect(lines[0]).toContain('- 技术栈：同键记忆已存在，未覆盖');
@@ -105,7 +112,7 @@ describe('/init-memory command', () => {
 
   it('reports a missing drafter port without leaving the handler', async () => {
     const { ctx, lines } = makeCtx();
-    const result = await initMemoryCommand.handler(ctx, []);
+    const result = await initMemoryCommand().handler(ctx, []);
     expect(result).toMatchObject({ success: false, message: 'loadProjectMemoryDrafter port is not available' });
     expect(lines).toEqual(['error:/init-memory 失败：loadProjectMemoryDrafter port is not available']);
   });
@@ -115,7 +122,7 @@ describe('/init-memory command', () => {
       throw new Error('cli drafter must not load');
     });
     const { ctx, lines } = makeCtx({ surface: 'gui', loadProjectMemoryDrafter: load });
-    const result = await initMemoryCommand.handler(ctx, []);
+    const result = await initMemoryCommand().handler(ctx, []);
     expect(guiMemory.calls).toBe(1);
     expect(load).not.toHaveBeenCalled();
     expect(result.success).toBe(true);

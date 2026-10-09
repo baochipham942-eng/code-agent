@@ -51,7 +51,9 @@ async function runViaGuiSurface(): Promise<ProjectMemoryDraftResult> {
   return initProjectMemoryViaGuiSurface();
 }
 
-export const initMemoryCommand: CommandDefinition = {
+// 仅导出数组（index.ts 注册消费）；单条定义经 registry.get('init-memory') 取用，
+// 避免生产图里出现只有测试引用的 dead export。
+const initMemoryCommand: CommandDefinition = {
   id: 'init-memory',
   name: '初始化项目记忆',
   description: '扫描当前项目生成记忆候选（技术栈/目录/常用命令/README 定位），需人工确认后生效',
@@ -79,3 +81,4 @@ export const initMemoryCommand: CommandDefinition = {
 };
 
 export const initMemoryCommands: CommandDefinition[] = [initMemoryCommand];
+

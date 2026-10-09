@@ -61,6 +61,7 @@ import type {
   MemoryImportV2ApplyRequest,
   MemoryMirrorRebuildResult,
   MemoryPackRequest,
+  ProjectMemoryDraftRequest,
   ProjectMemoryDraftResult,
 } from '../../shared/contract/memory';
 import { respondToDirectiveMemoryConfirmation } from '../memory/directiveMemoryConfirmation';
@@ -576,7 +577,7 @@ async function handleMemoryHarnessImportConfirmDirective(payload: MemoryImportDi
   });
 }
 
-async function handleMemoryInitProjectDraft(payload: { projectDir?: string }): Promise<ProjectMemoryDraftResult> {
+async function handleMemoryInitProjectDraft(payload: ProjectMemoryDraftRequest): Promise<ProjectMemoryDraftResult> {
   if (!payload?.projectDir || typeof payload.projectDir !== 'string') {
     throw new Error('memory init project draft requires projectDir');
   }
@@ -860,7 +861,7 @@ const memoryRoutes = defineDomainRoutes<MemoryDomainRequest, void>(
     memoryHarnessImportConfirmDirective: (_ctx, payload) =>
       handleMemoryHarnessImportConfirmDirective(payload as MemoryImportDirectiveConfirmRequest),
     memoryInitProjectDraft: (_ctx, payload) =>
-      handleMemoryInitProjectDraft(payload as { projectDir?: string }),
+      handleMemoryInitProjectDraft(payload as ProjectMemoryDraftRequest),
   },
   {
     resolveErrorCode: (error) => {
@@ -964,7 +965,7 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
           data = await handleMemoryHarnessImportConfirmDirective(request as unknown as MemoryImportDirectiveConfirmRequest);
           break;
         case 'memoryInitProjectDraft':
-          data = await handleMemoryInitProjectDraft(request as { projectDir?: string });
+          data = await handleMemoryInitProjectDraft(request as unknown as ProjectMemoryDraftRequest);
           break;
         default:
           return { success: false, error: `Unknown action: ${request.action}` };

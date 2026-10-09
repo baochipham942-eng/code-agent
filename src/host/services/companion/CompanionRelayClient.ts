@@ -21,7 +21,7 @@ import {
   type CompanionRelayRoute,
   type CompanionRelayRouteRef,
 } from '../../../shared/contract/companionRelay';
-import type { CompanionRelayStatus } from '../../../shared/contract/companionManagement';
+import type { CompanionRelayLegacyUsage, CompanionRelayStatus } from '../../../shared/contract/companionManagement';
 import { getRegisteredCompanionDictation } from '../capabilities/hostCapabilityPorts';
 import { companionDictationReadiness, companionTranscriptionReadiness } from './transcriptionReadiness';
 import type { CompanionGateway } from './CompanionGateway';
@@ -32,6 +32,7 @@ import {
   loadCompanionRelayTicket,
   storeCompanionRelayTicket,
 } from './companionRelayTicketStore';
+import { createCompanionRelayLegacyUsage, type CompanionRelayLegacyUsageRecorder } from './companionRelayLegacyUsage';
 import {
   errorHead,
   loadCompanionRelayConfig,
@@ -164,6 +165,11 @@ export class CompanionRelayClient {
     pairLanAdvertisement?: () => { endpoint: string; altEndpoint: string | null; candidates: string[] } | null;
     /** 电脑当前登录的 Neo 账号邮箱（welcome 等值内容；手机登录引导/账号核对用）。 */
     hostAccountEmail?: () => string | null;
+    /**
+     * 共享凭据通道的存量清点（N-COMPANION-RELAY-LEGACY-COUNT）：会话被接受即记一笔。只在共享
+     * 凭据通道装配（账号通道不接也不记——那条通道的手机不属于「还依赖旧凭据」的分母）。
+     */
+    legacyUsage?: CompanionRelayLegacyUsageRecorder;
     now?: () => number;
     jitter?: () => number;
     WebSocket?: typeof WebSocket;
@@ -271,6 +277,15 @@ export class CompanionRelayClient {
   get connected(): boolean { return this.live && this.stableTimer === null; }
   /** 最近一次拨号失败的码（连上后清空）；只进日志语义，不直接展示给用户。 */
   get lastDialError(): string | null { return this.lastDialErrorCode; }
+
+  /**
+   * 共享凭据通道的存量使用统计（N-COMPANION-RELAY-LEGACY-COUNT）：设置页诊断读。账号通道或
+   * 未接线时 null ⇒ 状态块不带 legacyUsage（可选字段，旧 renderer 容忍缺省）。
+   */
+  legacyUsageSummary(): CompanionRelayLegacyUsage | null {
+    if (typeof this.deps.credential !== 'string' || !this.deps.legacyUsage) return null;
+    return this.deps.legacyUsage.summary();
+  }
 
   revoke(deviceId: string): void {
     const route = this.routes.get(deviceId);
@@ -777,6 +792,9 @@ export class CompanionRelayClient {
     const reply = toHex(noise.send());
     const cipher = new NoiseChannel(noise);
     this.sessions.set(device.deviceId, { cipher, publicKey, inbound });
+    // 旧凭据存量清点（N-COMPANION-RELAY-LEGACY-COUNT）：会话被接受即视为该设备经共享凭据通道
+    // 到达，记一笔即返——不改握手应答的任何字节。账号通道（credential 非 string）不记。
+    if (typeof this.deps.credential === 'string') this.deps.legacyUsage?.record(device.deviceId, this.now());
     this.push({
       v: 1, kind: 'handshake',
       envelope: { routeToken: route.routeToken, deviceRef: route.deviceRef, seq: 0, ttlMs: L.relayRouteTokenTtlMs, issuedAt: this.now() },
@@ -858,6 +876,9 @@ export async function startCompanionRelayIfConfigured(opts: {
     identity,
     config,
     credential,
+    // 存量清点只在共享凭据通道接（N-COMPANION-RELAY-LEGACY-COUNT）：到这一步才建，中继没配/凭据
+    // 缺席时不起客户端也不碰统计文件。
+    legacyUsage: createCompanionRelayLegacyUsage({ dataDirectory: opts.dataDirectory, logger: opts.logger, now: opts.now }),
     now: opts.now,
     jitter: opts.jitter,
     logger: opts.logger,

@@ -143,6 +143,13 @@ export const COMPANION_LIMITS = {
   relayConfigFile: 'companion-relay.json',
   /** Host 数据目录下的设备票据文件（N-COMPANION-RELAY-DEVICE-TICKET），与 relayConfigFile 同目录。 */
   relayTicketFile: 'companion-relay-ticket.json',
+  /**
+   * Host 数据目录下的共享凭据通道存量统计文件（N-COMPANION-RELAY-LEGACY-COUNT），与 relayTicketFile
+   * 同目录：deviceId → lastSeenAt，回答「旧凭据还有多少台设备在用」。
+   */
+  relayLegacyUsageFile: 'companion-relay-legacy-usage.json',
+  /** 存量统计文件最多记多少台设备（超出按 lastSeenAt 最旧淘汰）：真实已配对手机数的小上界。 */
+  relayLegacyUsageMaxDevices: 64,
   /** relay 设备票据有效期：账号令牌只在换票时用一次，日常连接全靠票据（不依赖 supabase 可达）。 */
   relayTicketTtlMs: 30 * 24 * 60 * 60 * 1000,
   /** 票据剩余有效期低于该阈值时，relay 在以票据鉴权的连接上下发新票（续签）。 */

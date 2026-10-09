@@ -1341,14 +1341,18 @@ export class TaskManager extends EventEmitter {
 
       // Send desktop notification on task complete
       if (event.type === 'task_complete' && event.data) {
-        const session = await sessionManager.getSession(sessionId);
-        if (session) {
-          notificationService.notifyTaskComplete({
-            sessionId: session.id,
-            sessionTitle: session.title,
-            summary: event.data.summary,
-            duration: event.data.duration,
-            toolsUsed: event.data.toolsUsed || [],
+        // 转后台的会话（后台快捷键 / composer「转后台继续聊」）：完成交给 BackgroundTaskManager
+        // 收口——面板条目标成 completed，通知走 force（用户多半停在 app 里聊别的会话，
+        // 普通焦点门会把它吞掉）。子代理的 task_complete（eventKey ≠ sessionId）不在此列。
+        // 下面 else 分支的实参压成两行是 max-lines 债务门所迫（本文件基线贴顶），勿拆行。
+        const { getBackgroundTaskManager } = await import('../session/backgroundTaskManager');
+        if (eventKey === sessionId && getBackgroundTaskManager().isInBackground(sessionId)) {
+          await getBackgroundTaskManager().markCompleted(sessionId, event.data.summary);
+        } else {
+          const session = await sessionManager.getSession(sessionId);
+          if (session) notificationService.notifyTaskComplete({
+            sessionId: session.id, sessionTitle: session.title, summary: event.data.summary,
+            duration: event.data.duration, toolsUsed: event.data.toolsUsed || [],
           });
         }
       }

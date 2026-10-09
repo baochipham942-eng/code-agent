@@ -34,6 +34,8 @@ export interface PageContent {
   text: string;
   html?: string;
   links?: Array<{ text: string; href: string }>;
+  passwordInputPresent?: boolean;
+  loginFormPresent?: boolean;
 }
 
 export interface ElementInfo {

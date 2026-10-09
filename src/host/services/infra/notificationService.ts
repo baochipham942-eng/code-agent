@@ -38,6 +38,8 @@ export interface TaskNotificationData {
   toolsUsed: string[];
   /** false 表示任务失败——通知标题用「任务失败」而非「任务完成」。缺省视为成功。 */
   succeeded?: boolean;
+  code?: string;
+  siteOrigin?: string;
 }
 
 interface TaskResumingNotificationData {
@@ -127,6 +129,8 @@ class NotificationService implements Disposable {
     body: string;
     sessionId: string;
     markSessionUnread?: boolean;
+    code?: string;
+    siteOrigin?: string;
   }): void {
     if (this.isDryRun()) return;
     broadcastToRenderer(IPC_CHANNELS.NOTIFICATION_SHOW, {
@@ -170,7 +174,12 @@ class NotificationService implements Disposable {
       title: data.title,
       body: data.body,
     });
-    this.deliver({ id: entry.id, title: entry.title, body: entry.body, sessionId: data.sessionId });
+    this.deliver({
+      id: entry.id,
+      title: entry.title,
+      body: entry.body,
+      sessionId: data.sessionId,
+    });
     logger.info('Needs-input notification sent', { title: data.title });
   }
 
@@ -205,7 +214,14 @@ class NotificationService implements Disposable {
       title,
       body: trimmedBody,
     });
-    this.deliver({ id: entry.id, title: entry.title, body: entry.body, sessionId: data.sessionId });
+    this.deliver({
+      id: entry.id,
+      title: entry.title,
+      body: entry.body,
+      sessionId: data.sessionId,
+      ...(data.code ? { code: data.code } : {}),
+      ...(data.siteOrigin ? { siteOrigin: data.siteOrigin } : {}),
+    });
     logger.info('Notification sent', { sessionTitle });
   }
 

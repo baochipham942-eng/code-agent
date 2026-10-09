@@ -5,7 +5,7 @@ import type {
 } from './types';
 
 export async function getBrowserPageContent(tab: BrowserTab): Promise<PageContent> {
-  const [text, links] = await Promise.all([
+  const [text, links, passwordInputPresent, loginFormPresent] = await Promise.all([
     tab.page.innerText('body').catch(() => ''),
     tab.page.$$eval('a[href]', (anchors) =>
       anchors.slice(0, 50).map((a) => ({
@@ -13,6 +13,12 @@ export async function getBrowserPageContent(tab: BrowserTab): Promise<PageConten
         href: (a as HTMLAnchorElement).href,
       }))
     ).catch(() => []),
+    tab.page.locator('input[type="password"], input[autocomplete*="password" i]').count()
+      .then((count) => count > 0)
+      .catch(() => false),
+    tab.page.locator('form').count()
+      .then((count) => count > 0)
+      .catch(() => false),
   ]);
 
   return {
@@ -20,6 +26,8 @@ export async function getBrowserPageContent(tab: BrowserTab): Promise<PageConten
     title: await tab.page.title(),
     text: text.substring(0, 10000),
     links,
+    passwordInputPresent,
+    loginFormPresent,
   };
 }
 

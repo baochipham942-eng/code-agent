@@ -17,6 +17,7 @@ import {
 } from '../../../../shared/constants/jevQuestions';
 import { resolveJevRoute } from '../../../model/providers/typesafeProvider';
 import { classifyBrowserComputerManualTakeover } from '../../../../shared/utils/browserComputerRedaction';
+import { isBrowserLoginWall } from '../../../../shared/utils/browserLoginWall';
 import type { BrowserService } from '../../../services/infra/browserService';
 import { guardJevBrowserSnapshot, guardJevPromptText } from '../../../services/infra/browser/jevBrowserSnapshotGuard';
 import {
@@ -47,7 +48,6 @@ const NO_PROGRESS_LIMIT = 3;
 const RISK_KEYWORD = /pay|payment|checkout|购买|支付|delete|删除|authorize|oauth|授权|grant access|confirm purchase|unsubscribe/i;
 const UPLOAD_TASK = /upload|上传|file|文件|传上/i;
 const TASK_URL_RE = /https?:\/\/[^\s<>"'`)]+/i;
-const LOGIN_WALL_COPY = /登录后继续|请先登录|请登录|需要登录|sign in to continue|log in to continue|please sign in|please log in|login required|sign in required|not signed in|authentication required|needs login/i;
 const MANUAL_TAKEOVER_COPY = /manual takeover|user takeover|take over manually|requires manual|人工接管|用户接管/i;
 
 const BROWSER_JEV_MISSING_KEY_WARN =
@@ -240,33 +240,18 @@ function extractTaskUrl(task: string): string | null {
   return match ? match[0] : null;
 }
 
-function capturedHasPasswordOrForm(captured: JevCapturedSnapshot): boolean {
-  if (captured.extras.some((extra) => {
-    const type = (extra.inputType || '').toLowerCase();
-    const auto = (extra.autocomplete || '').toLowerCase();
-    return type === 'password' || auto.includes('password');
-  })) return true;
-  return captured.snapshot.interactiveElements.some((element) => {
-    const tag = element.tag.toLowerCase();
-    const role = (element.role || '').toLowerCase();
-    return tag === 'form'
-      || tag === 'input'
-      || tag === 'textarea'
-      || tag === 'select'
-      || role === 'textbox'
-      || role === 'searchbox'
-      || role === 'combobox';
-  });
-}
-
 function isJevLoginWall(captured: JevCapturedSnapshot, visibleText: string): boolean {
-  const primary = [
-    captured.snapshot.title,
-    ...captured.snapshot.headings.map((heading) => heading.text),
+  return isBrowserLoginWall({
+    title: captured.snapshot.title,
+    headings: captured.snapshot.headings.map((heading) => heading.text),
     visibleText,
-  ].join('\n');
-  if (!LOGIN_WALL_COPY.test(primary)) return false;
-  return capturedHasPasswordOrForm(captured);
+    passwordInputPresent: captured.extras.some((extra) => {
+      const type = (extra.inputType || '').toLowerCase();
+      const auto = (extra.autocomplete || '').toLowerCase();
+      return type === 'password' || auto.includes('password');
+    }),
+    loginFormPresent: captured.snapshot.interactiveElements.some((element) => element.tag.toLowerCase() === 'form'),
+  });
 }
 
 function sameUrl(current: string, target: string): boolean {

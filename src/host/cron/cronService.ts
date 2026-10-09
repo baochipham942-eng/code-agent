@@ -88,9 +88,8 @@ import {
   notifyCronAgentExecution,
   notifyCronJobDisabled,
 } from './cronFailurePolicy';
-export { computeCronFireJitterMs } from './cronExecutionPolicy';
-
-const execAsync = promisify(exec);
+import { cronLoginWallMetadata } from './cronLoginWall';
+export { computeCronFireJitterMs } from './cronExecutionPolicy'; const execAsync = promisify(exec);
 
 // ============================================================================
 // Types
@@ -254,9 +253,8 @@ export class CronService implements Disposable {
     const job: CronJobDefinition = {
       ...definition,
       runsOn,
-      id: uuidv4(),
-      createdAt: now,
-      updatedAt: now,
+      metadata: cronLoginWallMetadata({ action: definition.action }, definition.metadata),
+      id: uuidv4(), createdAt: now, updatedAt: now,
     };
 
     // Save to database
@@ -300,7 +298,7 @@ export class CronService implements Disposable {
     const updatedJob: CronJobDefinition = {
       ...existingJob.definition,
       ...updates,
-      updatedAt: Date.now(),
+      metadata: cronLoginWallMetadata({ action: updates.action ?? existingJob.definition.action }, updates.metadata ?? existingJob.definition.metadata), updatedAt: Date.now(),
     };
     // 重新启用已停用任务：运行计数清零、摘掉停用原因（N-CRON-BUDGET-EXPOSE）；只改 maxRuns 不动计数。
     if (updates.enabled === true && !existingJob.definition.enabled) rearmCronRunLimit(updatedJob);
@@ -734,6 +732,7 @@ export class CronService implements Disposable {
         console.warn(
           `[CronService] Job ${definition.id} run interrupted while queued for capacity; not counted as failure`,
         );
+      } else if (failureKind === 'login-wall') { execution.status = 'failed';
       } else if (failureKind === 'permanent') {
         // 配置/鉴权类确定性失败：重试无用，直接 failed；停用+告知在 finally 统一处理。
         execution.status = 'failed';
@@ -774,7 +773,7 @@ export class CronService implements Disposable {
           await this.updateJob(definition.id, { enabled: false });
           notifyCronJobDisabled(definition, execution, 'permanent');
           disableNotified = true;
-        } else if (countTrailingCronFailures(this.executions.get(definition.id) ?? []) >= CRON_GUARDRAILS.MAX_CONSECUTIVE_FAILURES) {
+        } else if (finalKind !== 'login-wall' && countTrailingCronFailures(this.executions.get(definition.id) ?? []) >= CRON_GUARDRAILS.MAX_CONSECUTIVE_FAILURES) {
           console.error(
             `[CronService] Job ${definition.id} auto-disabled after `
             + `${CRON_GUARDRAILS.MAX_CONSECUTIVE_FAILURES} consecutive failures`,

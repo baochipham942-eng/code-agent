@@ -11,7 +11,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import type { PermissionResponse, SessionAutomationRecord } from '@shared/contract';
 import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
-import { Check, CircleCheck, Cloud, Inbox, MessageSquareText, ShieldAlert, ShieldCheck, X } from 'lucide-react';
+import { Check, CircleCheck, Cloud, ExternalLink, Inbox, MessageSquareText, ShieldAlert, ShieldCheck, X } from 'lucide-react';
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
 import ipcService from '../../../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
@@ -20,6 +20,7 @@ import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';
 import { Button } from '../../primitives/Button';
+import { openCronLoginWallSite } from './cronLoginWallNotice';
 
 function reviewResultSessionId(record: SessionAutomationRecord): string | undefined {
   return record.config?.pendingReview?.resultSessionId ?? record.resultSessionId;
@@ -110,6 +111,11 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
     } finally {
       setBusyId(null);
     }
+  };
+
+  const handleOpenLoginWallSite = (record: SessionAutomationRecord) => {
+    const siteOrigin = record.config?.loginWall?.siteOrigin;
+    if (siteOrigin) openCronLoginWallSite(siteOrigin);
   };
 
   const hasContent = items.length > 0 || parked.length > 0;
@@ -252,6 +258,10 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                             new Date(record.config.missedNotice.scheduledAt).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN'),
                           )}
                         </div>
+                      ) : record.config?.loginWall ? (
+                        <div className="text-[11px] text-badge-warning" data-testid="automation-review-login-wall">
+                          {cc.loginWallError.replace('{site}', record.config.loginWall.siteOrigin)}
+                        </div>
                       ) : record.config?.pendingReview?.at != null && (
                         <div className="text-[11px] text-zinc-500">
                           {isCloud
@@ -271,6 +281,17 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                       >
                         <MessageSquareText className="h-3.5 w-3.5" />
                         {cc.inboxOpenResult}
+                      </button>
+                    )}
+                    {record.config?.loginWall?.siteOrigin && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenLoginWallSite(record)}
+                        className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-badge-warning transition-colors hover:bg-amber-500/10"
+                        data-testid="automation-review-open-login-site"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        {cc.loginWallOpenSite}
                       </button>
                     )}
                     {/* 「已过目」是收件箱的主操作（每条都要点的闭环动作），用品牌色主按钮；

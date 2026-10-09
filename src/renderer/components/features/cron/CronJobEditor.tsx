@@ -26,6 +26,7 @@ import {
 } from './cronTemplates';
 import { CronSimpleCreate } from './CronSimpleCreate';
 import { useI18n } from '../../../hooks/useI18n';
+import { showCronLoginWallWarning } from './cronLoginWallNotice';
 import { CronRunsOnSelector } from './CronRunsOnSelector';
 import { CronResultChannelField } from './CronResultChannel';
 
@@ -163,7 +164,8 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       const generatedDraft = selectedTemplate.generate(templateValues);
       generatedDraft.runsOn = draft.runsOn;
       const input = buildCronJobInput(generatedDraft);
-      await createJob(input);
+      const created = await createJob(input);
+      showCronLoginWallWarning(created, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
       onClose();
     } catch (error) {
       setErrors({ form: saveErrorMessage(error, cc.simpleCreateFailed) });
@@ -179,9 +181,11 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
     try {
       const input = buildCronJobInput(draft);
       if (job) {
-        await updateJob(job.id, input);
+        const updated = await updateJob(job.id, input);
+        showCronLoginWallWarning(updated, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
       } else {
-        await createJob(input);
+        const created = await createJob(input);
+        showCronLoginWallWarning(created, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
       }
       onClose();
     } catch (error) {

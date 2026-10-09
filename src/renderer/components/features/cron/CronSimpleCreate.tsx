@@ -20,6 +20,7 @@ import { listRoles } from '../../../services/rolesClient';
 import { buildCronJobInput, createDefaultCronJobDraft, type CronJobDraft } from './types';
 import { CronRunsOnSelector } from './CronRunsOnSelector';
 import { CronResultChannelField } from './CronResultChannel';
+import { showCronLoginWallWarning } from './cronLoginWallNotice';
 
 type SimpleFrequency = 'daily' | 'weekdays' | 'weekly' | 'hourly' | 'once';
 
@@ -124,7 +125,8 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
         runsOn,
         resultChannel,
       );
-      await createJob(buildCronJobInput(draft));
+      const created = await createJob(buildCronJobInput(draft));
+      showCronLoginWallWarning(created, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
       onDone();
     } catch (err) {
       const message = err instanceof Error ? err.message : '';

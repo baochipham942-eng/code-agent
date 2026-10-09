@@ -18,6 +18,7 @@ import type {
   SessionAutomationStatus,
   SessionAutomationType,
 } from '../../shared/contract/sessionAutomation';
+import { parseCronLoginWallStop } from '../../shared/utils/browserLoginWall';
 
 /**
  * 解析定时任务对应的「运行时定义」（带最新 nextRunAt）。
@@ -213,6 +214,7 @@ export async function recordCronAutomationExecution(
       });
     }
     const skipped = execution.status === 'completed' && isSkippedResult(execution.result);
+    const loginWall = parseCronLoginWallStop(execution.error);
     const event = skipped ? 'skipped' : execution.status === 'failed' ? 'failed' : 'completed';
     const eventStatus: SessionAutomationStatus = skipped
       ? 'skipped'
@@ -237,7 +239,9 @@ export async function recordCronAutomationExecution(
       recordStatus,
       ...(reviewable
         ? { configPatch: { pendingReview: { resultSessionId: execution.sessionId, at: execution.completedAt ?? Date.now() } } }
-        : {}),
+        : loginWall
+          ? { configPatch: { loginWall: { siteOrigin: loginWall.siteOrigin, at: execution.completedAt ?? Date.now() } } }
+          : {}),
       resultSessionId: execution.sessionId,
       summary: skipped
         ? '当前触发被跳过。'

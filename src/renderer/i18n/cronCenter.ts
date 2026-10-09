@@ -73,6 +73,11 @@ export const cronCenterZh = {
     cloudExecutionNotWired: '云端执行尚未接线（N-L3-MINLOOP-SRV）',
     unsupportedAction: '该类任务暂不支持',
     runBudgetExceeded: '本次执行超过了任务的 {amount} 美元预算上限',
+    loginWallWarning: '这个任务会访问可能需要登录的网站 {site}。请先登录一次，定时运行才能继续。',
+    loginWallNotificationTitle: '需要重新登录',
+    loginWallNotificationBody: '你需要重新登录 {site}，然后下一次定时运行才能继续。',
+    loginWallError: '你需要重新登录 {site}，这次定时运行已停止。',
+    loginWallOpenSite: '打开网站',
     // 触发源 chip（键 = utils/cronHumanize 的 CronTriggerKind，语义对齐 SessionAutomationType）
     triggerKind: {
       cron: '定时',
@@ -289,6 +294,11 @@ export const cronCenterEn: typeof cronCenterZh = {
     cloudExecutionNotWired: 'Cloud execution is not wired yet (N-L3-MINLOOP-SRV)',
     unsupportedAction: 'This task type is not supported yet.',
     runBudgetExceeded: 'This run exceeded the task budget limit of ${amount}',
+    loginWallWarning: 'This task visits a site that may require login: {site}. Log in once before the scheduled run.',
+    loginWallNotificationTitle: 'Login needed',
+    loginWallNotificationBody: 'You need to log in to {site} again before the next scheduled run can continue.',
+    loginWallError: 'You need to log in to {site} again. This scheduled run was stopped.',
+    loginWallOpenSite: 'Open site',
     triggerKind: {
       cron: 'Scheduled',
       at: 'One-time',

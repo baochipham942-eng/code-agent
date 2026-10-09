@@ -11,6 +11,7 @@ import {
 } from '../../../src/host/cron/cronFailurePolicy';
 import { CRON_GUARDRAILS } from '../../../src/shared/constants';
 import type { CronJobExecution } from '../../../src/shared/contract/cron';
+import { buildCronLoginWallStopCode } from '../../../src/shared/utils/browserLoginWall';
 
 describe('cronRetryBackoffMs：指数退避序列', () => {
   it('30s → 60s → 120s → 240s（BASE×FACTOR^(n-1)）', () => {
@@ -50,6 +51,10 @@ describe('classifyCronFailure：错误分类判据（集中一处）', () => {
     expect(classifyCronFailure('Cron job run exceeded its $1.50 budget limit.')).toBe('permanent');
     expect(classifyCronFailure('成本超限：单 case 实际成本 $2 超过上限 $1')).toBe('permanent');
     expect(classifyCronFailure('runsOn is immutable after creation')).toBe('permanent');
+  });
+
+  it('无人值守登录墙 → login-wall（停本趟但不走永久停用）', () => {
+    expect(classifyCronFailure(buildCronLoginWallStopCode('https://example.test'))).toBe('login-wall');
   });
 
   it('R2 审查三个误判样例（execAsync message 含命令原文与 stderr）→ transient', () => {
@@ -125,12 +130,13 @@ describe('CronFailureNoticeGate：失败通知去重 + 冷却', () => {
 });
 
 describe('countTrailingCronFailures：末尾连续失败', () => {
-  const exec = (status: CronJobExecution['status']): CronJobExecution => ({
+  const exec = (status: CronJobExecution['status'], error?: string): CronJobExecution => ({
     id: `exec-${status}-${Math.random()}`,
     jobId: 'job-x',
     status,
     scheduledAt: 0,
     retryAttempt: 0,
+    ...(error ? { error } : {}),
   });
 
   it('末尾连续 failed 计数，遇非 failed 断链（成功即重置）', () => {
@@ -146,5 +152,11 @@ describe('countTrailingCronFailures：末尾连续失败', () => {
     expect(countTrailingCronFailures(
       [exec('cancelled'), exec('failed'), exec('cancelled'), exec('failed')],
     )).toBe(2);
+  });
+
+  it('N-CRON-LOGINWALL-STOP：登录墙失败不计入末尾连败', () => {
+    const loginWall = buildCronLoginWallStopCode('https://example.test');
+    expect(countTrailingCronFailures([exec('failed', loginWall), exec('failed', loginWall)])).toBe(0);
+    expect(countTrailingCronFailures([exec('failed'), exec('failed', loginWall)])).toBe(1);
   });
 });

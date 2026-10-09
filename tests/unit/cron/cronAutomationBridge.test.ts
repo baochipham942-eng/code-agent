@@ -380,6 +380,20 @@ describe('recordCronAutomationExecution', () => {
     expect(service.upsert.mock.calls[0][0].cadenceLabel).not.toContain('每');
   });
 
+  it('maps an unattended login wall to the review inbox with the site origin', async () => {
+    await recordCronAutomationExecution(
+      def({ metadata: { sourceSessionId: 'sess' }, action: { type: 'agent', agentType: 'default', prompt: 'visit site' } }),
+      exec({ status: 'failed', error: 'CRON_LOGIN_WALL_STOP|https://example.test; stop this unattended run' }),
+      identityRuntime,
+    );
+    const arg = service.recordEvent.mock.calls[0][0];
+    expect(arg.event).toBe('failed');
+    expect(arg.recordStatus).toBe('active');
+    expect(arg.configPatch).toEqual({
+      loginWall: { siteOrigin: 'https://example.test', at: expect.any(Number) },
+    });
+  });
+
   it('成功的 recurring agent 运行：记录保持 active 并打 pendingReview 标记（A4 待过目）', async () => {
     await recordCronAutomationExecution(
       def({

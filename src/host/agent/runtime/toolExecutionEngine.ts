@@ -798,6 +798,7 @@ export class ToolExecutionEngine {
           neoTag: this.ctx.neoTag,
           suppressBackgroundSubagentIdleWake: Boolean(this.ctx.goalMode?.isPending()),
           abortSignal: toolAbortController.signal,
+          forceFinalResponse: this.ctx.control.forceFinalResponse.bind(this.ctx.control),
           deniedToolNames: this.ctx.deniedToolNames,
           allowedToolNames: this.ctx.allowedToolNames, foregroundToolFace: this.ctx.foregroundToolFace,
         }

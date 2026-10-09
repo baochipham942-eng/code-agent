@@ -78,6 +78,7 @@ import { CronService } from '../../../src/host/cron/cronService';
 import { CRON_GUARDRAILS } from '../../../src/shared/constants';
 import { suggestCronStaggerMinute } from '../../../src/shared/cronStagger';
 import type { CronJobDefinition } from '../../../src/shared/contract/cron';
+import { buildCronLoginWallStopCode } from '../../../src/shared/utils/browserLoginWall';
 
 const NOW = Date.UTC(2026, 8, 29, 9, 3, 0);
 
@@ -267,6 +268,36 @@ describe('①③ 同因失败去重后告警：单次告警 + 冷却窗', () => 
       await service.triggerJob(job.id);
     }
     expect(service.getJob(job.id)!.enabled).toBe(true);
+    await service.shutdown();
+  });
+
+  it('N-CRON-LOGINWALL-STOP：登录墙失败停止本趟，任务保持启用且通知携带站点', async () => {
+    const service = new CronService();
+    const job = await service.createJob({
+      ...agentJob(),
+      action: { type: 'agent' as const, agentType: 'default', prompt: 'Please login at https://example.test first' },
+      maxRetries: 3,
+    });
+    const loginWallError = Object.assign(
+      new Error(buildCronLoginWallStopCode('https://example.test')),
+      { cronSessionId: 'cron-login-wall-session' },
+    );
+    const { calls } = patchExecuteAction(service, async () => { throw loginWallError; });
+
+    for (let i = 0; i < CRON_GUARDRAILS.MAX_CONSECUTIVE_FAILURES + 1; i++) {
+      const execution = (await service.triggerJob(job.id))!;
+      expect(execution.status).toBe('failed');
+      expect(execution.retryAttempt).toBe(0);
+    }
+
+    expect(calls()).toBe(CRON_GUARDRAILS.MAX_CONSECUTIVE_FAILURES + 1);
+    expect(service.getJob(job.id)!.enabled).toBe(true);
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalled();
+    expect(notifyState.notifyTaskComplete.mock.calls[0][0]).toEqual(expect.objectContaining({
+      code: 'CRON_LOGIN_WALL_STOP',
+      siteOrigin: 'https://example.test',
+      succeeded: false,
+    }));
     await service.shutdown();
   });
 });

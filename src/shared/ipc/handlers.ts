@@ -615,6 +615,8 @@ export interface NotificationShowEvent {
    * Renderer 只把它接到既有 session unread 状态，不另建通知账本。
    */
   markSessionUnread?: boolean;
+  code?: string;
+  siteOrigin?: string;
 }
 
 export type MCPEventType = 'connection_errors' | 'server_connected' | 'server_disconnected' | 'capabilities_changed';

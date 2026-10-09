@@ -336,6 +336,7 @@ export interface ExecuteOptions {
   setPlanMode?: (active: boolean) => void;
   isPlanMode?: () => boolean;
   emitEvent?: (event: string, data: unknown) => void;
+  forceFinalResponse?: (reason: string, prompt?: string) => void;
   // Session ID for cross-session isolation
   sessionId?: string;
   // Agent ID for per-agent BrowserPool / ComputerSurface isolation。子 agent 派活
@@ -1297,6 +1298,7 @@ export class ToolExecutor {
       setPlanMode: options.setPlanMode,
       isPlanMode: options.isPlanMode,
       emitEvent: options.emitEvent,
+      forceFinalResponse: options.forceFinalResponse,
       // Also set emit as alias for emitEvent (tools use context.emit)
       emit: options.emitEvent,
       // Per-agent BrowserPool / ComputerSurface isolation

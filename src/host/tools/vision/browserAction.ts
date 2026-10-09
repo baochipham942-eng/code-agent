@@ -35,6 +35,7 @@ import {
 } from './browserActionResultProjection';
 import { maybeExecuteBrowserSurfaceInteraction } from './browserActionSurfaceInteractions';
 import { enforceBrowserCaptchaTakeoverGate } from './browserCaptchaGate';
+import { enforceBrowserLoginWallStop } from './browserLoginWallGate';
 import {
   jevBrowserStepEmptyTaskResult,
   jevBrowserStepUnarmedResult,
@@ -409,6 +410,8 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
 
     try {
       const executeManagedProviderAction = async (): Promise<ToolExecutionResult> => {
+        const loginWallStop = await enforceBrowserLoginWallStop({ browserService, tabId, context });
+        if (loginWallStop) return loginWallStop;
         const captchaGate = await enforceBrowserCaptchaTakeoverGate({ action, browserService, tabId, context });
         if (captchaGate) {
           return captchaGate;
@@ -848,7 +851,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
           return { success: false, error: `Unknown action: ${action}` };
         }
       };
-      const rawResult = useManagedSurface && surfaceIdentity
+      let rawResult = useManagedSurface && surfaceIdentity
         ? await managedAdapter.execute({
             identity: surfaceIdentity,
             operationId: createManagedBrowserOperationId(context, action),
@@ -858,6 +861,10 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
             executeProvider: async () => executeManagedProviderAction(),
           })
         : await executeManagedProviderAction();
+      if (rawResult.success) {
+        const loginWallStop = await enforceBrowserLoginWallStop({ browserService, tabId, context });
+        if (loginWallStop) rawResult = loginWallStop;
+      }
       const completedTrace = browserService.finishTrace(trace, {
         success: rawResult.success,
         error: rawResult.error || null,

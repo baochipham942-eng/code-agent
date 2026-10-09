@@ -607,6 +607,7 @@ export class ProjectService {
   /** D4 启动迁移归桶：把存量无 project_id 的 session 按 workspace 自动归桶。返回归桶数。 */
   backfillSessions(now: number): number {
     const repo = this.repo();
+    const skipped: Array<{ sessionId: string; reason: string }> = [];
     const count = repo.backfillSessions(
       now,
       (workspacePath, key) => {
@@ -615,10 +616,22 @@ export class ProjectService {
           ? buildProjectRow(workspacePath, key, now)
           : this.ensureUnsorted(now);
       },
-      ({ sessionId, reason }) => {
-        logger.warn('[ProjectService] 跳过不可变边界冲突的存量会话归桶', { sessionId, reason });
+      (skippedSession) => {
+        skipped.push(skippedSession);
+        logger.debug('[ProjectService] 跳过不可变边界冲突的存量会话归桶', skippedSession);
       },
     );
+    if (skipped.length > 0) {
+      // 冲突会话保持 project_id 为空，每次开机都会被重新选出来；逐会话 warn 只会重复
+      // 刷屏，聚成一条（明细在 debug）。
+      const reasons = Array.from(new Set(skipped.map((item) => item.reason)));
+      const sampleSessionIds = skipped.slice(0, 5).map((item) => item.sessionId);
+      logger.warn('[ProjectService] 跳过不可变边界冲突的存量会话归桶', {
+        skipped: skipped.length,
+        sampleSessionIds,
+        reasons,
+      });
+    }
     repo.backfillProjectSources(now);
     return count;
   }

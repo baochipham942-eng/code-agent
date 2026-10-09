@@ -566,6 +566,8 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
       'session:get-messages': { method: 'GET', path: '/api/sessions/:id/messages' },
       'session:archive': { method: 'POST', path: '/api/sessions/:id/archive' },
       'session:unarchive': { method: 'POST', path: '/api/sessions/:id/unarchive' },
+      // 后台任务：web 路由是 GET /background/tasks（非通用 /background/get-tasks）
+      'background:get-tasks': { method: 'GET', path: '/api/background/tasks' },
     };
 
     if (specialRoutes[channel]) {
@@ -788,6 +790,14 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
         // session:create 传入的是字符串 title，后端期望 {title} 对象
         if (channel === 'session:create' && typeof bodyPayload === 'string') {
           bodyPayload = { title: bodyPayload };
+        }
+        // 后台切换（Tauri IPC 侧是单 string 参数，web 路由吃 {sessionId} 对象）：
+        // 单 string 按同名对象包一层，否则 /background/move-to-* 会以 INVALID_BODY 400。
+        if (
+          (channel === 'background:move-to-background' || channel === 'background:move-to-foreground')
+          && typeof bodyPayload === 'string'
+        ) {
+          bodyPayload = { sessionId: bodyPayload };
         }
         fetchOptions.body = JSON.stringify(bodyPayload);
       } else if (method === 'GET' && bodyArgs.length > 0 && typeof bodyArgs[0] === 'object') {

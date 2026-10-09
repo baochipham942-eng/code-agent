@@ -65,6 +65,7 @@ import { sanitizeAttachmentsForPersistence, stripInlineAttachmentBlocks } from '
 import { generateMessageId } from '../../shared/utils/id';
 import { composeDesignCanvasSystemPrompt } from '../../shared/design/canvasSessionReminder';
 import { AgentRunController } from './agentRunController';
+import { getBackgroundTaskManager } from '../../host/session/backgroundTaskManager';
 import { getProjectSourceTrustFailureMarker } from '../../host/services/project/projectSourceTrustError';
 import { getModelAuthFailureMarker } from '../../host/model/errorClassifier';
 import { AgentRunEventCollector } from './agentRunEventCollector';
@@ -1389,6 +1390,12 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           ? 'error'
           : 'completed';
       await runController.updateSessionStatus(finalStatus);
+
+      // 转后台会话在 web 直连轮的完成收口（桌面 orchestrator 轮在 TaskManager.persistEventToSession
+      // 的 task_complete 分支）：面板条目标 completed + force 完成通知。失败/取消轮不在此列。
+      if (finalStatus === 'completed' && getBackgroundTaskManager().isInBackground(sessionId)) {
+        await getBackgroundTaskManager().markCompleted(sessionId);
+      }
 
       await durableRunLifecycle.markSuccess({ finalStatus });
 

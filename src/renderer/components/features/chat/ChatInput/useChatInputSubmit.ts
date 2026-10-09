@@ -328,8 +328,9 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
 
   // 处理提交
   // 运行中允许提交，把新输入排到当前回复结束后发送。
+  // toBackground：「转后台继续聊」——草稿发去新前台会话，按空闲发送处理（不排队不改道）。
   // P3-18: ! prefix executes shell command directly
-  const handleSubmit = async (e?: React.FormEvent, opts?: { steer?: boolean; content?: string }) => {
+  const handleSubmit = async (e?: React.FormEvent, opts?: { steer?: boolean; content?: string; toBackground?: boolean }) => {
     e?.preventDefault();
     const trimmedValue = (opts?.content ?? value).trim();
     let preferredAgentIdOverride: string | null | undefined;
@@ -578,7 +579,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       }
     }
 
-    const activeRuntimeInputMode: RuntimeInputMode | undefined = isProcessing
+    const activeRuntimeInputMode: RuntimeInputMode | undefined = isProcessing && !opts?.toBackground
       ? (opts?.steer ? 'redirect' : 'supplement')
       : undefined;
     // Appshot：截图作为图片附件追加；窗口文本作为隐藏 XML 前置到消息内容。
@@ -660,7 +661,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
           generateMessageId,
         );
         const stamped: ConversationEnvelope = { ...envelope, clientMessageId };
-        if (isProcessing && !opts?.steer) {
+        if (isProcessing && !opts?.steer && !opts?.toBackground) {
           if (!currentSessionId) return false;
           const queuedEnvelope: ConversationEnvelope = {
             ...stamped,

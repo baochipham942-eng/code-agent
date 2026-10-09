@@ -3,8 +3,10 @@
 // 事件触发任务创建 UI（N-CRON-EVENT-CREATE-UI）—— 验收 ①③②（renderer 侧）。
 // ① 手动配置里选「通道消息（群监听）」→ 选账号 + 群 → createJob 收到预期的
 //    EventScheduleConfig；不选群 = chatId 缺省（任意会话）。
-// ③ 非法配置在表单内联报出，文案与 shared 校验器（= createJob 抛的）逐字节一致。
-// ② 建好的 event 任务出现在列表里，详情页可停用（enabled=false）/删除。
+// ③ 非法配置在表单里报出（r2：只在提交过/动过事件字段后才显示，且按 shared
+//    校验器的 reason 映射成 zh 文案——判据同一份，呈现本地化）。
+// ② 建好的 event 任务出现在列表/详情里，摘要显示通道目录的账号名/群名
+//    （目录没有回落 id），详情页可停用（enabled=false）/删除。
 // 「停用后不再触发」的 host 侧行为在 tests/unit/cron/cronEventTrigger.test.ts。
 // ============================================================================
 import React from 'react';
@@ -14,6 +16,7 @@ import type { ChannelAccount } from '../../../src/shared/contract/channel';
 import { validateEventScheduleConstraints } from '../../../src/shared/cronEventValidation';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 import type { CronJobDefinition } from '../../../src/shared/contract/cron';
+import { cronCenterZh } from '../../../src/renderer/i18n/cronCenter';
 
 const ipc = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -91,8 +94,13 @@ function makeEventJob(overrides: Partial<CronJobDefinition> = {}): CronJobDefini
   };
 }
 
+/** reason → 本地化文案（生产同款映射）：期望值跟着 i18n 走，不在测试里复抄一遍。 */
+function localizedCopy(reason: keyof typeof cronCenterZh.cronCenter.eventValidation): string {
+  return cronCenterZh.cronCenter.eventValidation[reason];
+}
+
 /** FormField 没有给所有标签挂 htmlFor，按「标签文本 → 同级控件」取输入元素。 */
-function controlForLabel(label: string): HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement {
+function controlForLabel(label: string | RegExp): HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement {
   const labelEl = screen.getByText(label);
   const control = labelEl.parentElement?.querySelector('input, textarea, select');
   if (!control) throw new Error(`no control found for label ${label}`);
@@ -105,10 +113,15 @@ async function openManualEditor(): Promise<void> {
   await waitFor(() => expect(screen.getByText('调度方式')).toBeTruthy());
 }
 
-/** 走到可提交状态：event 调度 + 账号（+可选群）+ agent 动作 + 预算。 */
-async function fillEventJob(options: { chat?: 'group' | 'manual' | 'none'; budget?: string } = {}): Promise<void> {
+/** 选中 event 调度并停在基本设置页（什么都不填）。 */
+async function selectEventSchedule(): Promise<void> {
   fireEvent.change(controlForLabel('调度类型'), { target: { value: 'event' } });
   await screen.findByLabelText(/^触发账号/);
+}
+
+/** 走到可提交状态：event 调度 + 账号（+可选群）+ agent 动作 + 预算（事件字段里就有一个）。 */
+async function fillEventJob(options: { chat?: 'group' | 'manual' | 'none'; budget?: string } = {}): Promise<void> {
+  await selectEventSchedule();
 
   if (options.chat === 'manual') {
     fireEvent.change(screen.getByLabelText(/^触发账号/), { target: { value: telegramAccount.id } });
@@ -122,16 +135,16 @@ async function fillEventJob(options: { chat?: 'group' | 'manual' | 'none'; budge
     }
   }
 
+  // 预算输入在事件字段里（r2），不再绕去「高级选项」找。
+  fireEvent.change(controlForLabel(/^单次预算上限/), {
+    target: { value: options.budget ?? '0.5' },
+  });
+
   fireEvent.change(controlForLabel('任务名称'), { target: { value: '盯群消息' } });
 
   fireEvent.click(screen.getByText('执行动作'));
   fireEvent.change(controlForLabel('Agent 类型'), { target: { value: 'default' } });
   fireEvent.change(controlForLabel('Prompt'), { target: { value: '处理新消息' } });
-
-  fireEvent.click(screen.getByText('高级选项'));
-  fireEvent.change(controlForLabel('单次预算上限 (USD)'), {
-    target: { value: options.budget ?? '0.5' },
-  });
 
   // 回到基本设置页：事件字段与内联护栏提示挂在这里（tab 卸载式渲染）。
   fireEvent.click(screen.getByText('基本设置'));
@@ -231,75 +244,120 @@ describe('① 手动配置创建事件任务', () => {
     expect(draft.runsOn).toBe('local');
     expect(() => buildCronJobInput(draft)).not.toThrow();
   });
-});
 
-describe('③ 表单内联护栏（与 createJob 同一份文案）', () => {
-  it('没选账号：提交前内联、提交后表单报的都是 shared 校验器那句', async () => {
-    await openManualEditor();
-    await fillEventJob({ chat: 'group' });
-    // 把账号清回去：重新选择触发账号 → placeholder 项（空值）。
-    fireEvent.change(screen.getByLabelText(/^触发账号/), { target: { value: '' } });
-
-    const expected = validateEventScheduleConstraints({
-      schedule: { type: 'event', source: 'channel', eventName: 'message', accountId: '' },
+  it('buildCronJobInput 的兜底护栏仍抛 shared 校验器英文原文（host 同款，byte-identical）', () => {
+    const draft = { ...buildDraftFromJob(makeEventJob()), eventAccountId: ' ' };
+    const violation = validateEventScheduleConstraints({
+      schedule: { type: 'event', source: 'channel', eventName: 'message', accountId: ' ' },
       runsOn: 'local',
       action: { type: 'agent' },
-      maxRunBudget: 0.5,
+      maxRunBudget: 1,
     });
-    expect(expected).toBeTruthy();
+    expect(violation?.reason).toBe('invalid-schedule');
+    expect(() => buildCronJobInput(draft)).toThrow(violation?.message);
+  });
+});
 
-    // 提交前就在表单里（内联提示），不用先撞一次 createJob。
-    expect(screen.getByTestId('cron-event-validation').textContent).toBe(expected);
+describe('③ 表单内护栏（同判据、本地化呈现、提交/触碰后才显示）', () => {
+  it('选完「通道消息」什么都没填：不出校验框（不因选中调度类型就报红）', async () => {
+    await openManualEditor();
+    await selectEventSchedule();
 
+    expect(screen.queryByTestId('cron-event-validation')).toBeNull();
+    // 没到显示时机时，提交也不该把英文原文漏出来。
     fireEvent.click(screen.getByText('创建任务'));
-
-    await waitFor(() => expect(screen.getByTestId('cron-event-validation').textContent).toBe(expected));
+    await waitFor(() => expect(screen.getByTestId('cron-event-validation')).toBeTruthy());
     expect(useCronStore.getState().createJob).not.toHaveBeenCalled();
   });
 
-  it('没设单次预算上限：报 maxRunBudget > 0 那句（提交前内联可见）', async () => {
+  it('没选账号就提交：表单与内联都是 invalid-schedule 的 zh 文案，createJob 不被调用', async () => {
+    await openManualEditor();
+    await selectEventSchedule();
+
+    const violation = validateEventScheduleConstraints({
+      schedule: { type: 'event', source: 'channel', eventName: 'message', accountId: '' },
+      runsOn: 'local',
+      action: { type: 'agent' }, // 编辑器把 event 钉为 agent
+      maxRunBudget: null,
+    });
+    expect(violation?.reason).toBe('invalid-schedule');
+    const expected = localizedCopy('invalid-schedule');
+
+    fireEvent.click(screen.getByText('创建任务'));
+
+    // 提交后：内联提示 + 表单错误框都是同一句 zh 文案（不是校验器英文原文）。
+    await waitFor(() => expect(screen.getAllByText(expected).length).toBeGreaterThanOrEqual(2));
+    expect(screen.getByTestId('cron-event-validation').textContent).toBe(expected);
+    expect(screen.queryByText(violation?.message ?? '')).toBeNull();
+    expect(useCronStore.getState().createJob).not.toHaveBeenCalled();
+  });
+
+  it('没设预算就提交：报 requires-budget 的 zh 文案，并指向事件字段里的预算输入', async () => {
     await openManualEditor();
     await fillEventJob({ chat: 'group', budget: '' });
 
-    const expected = validateEventScheduleConstraints({
+    const violation = validateEventScheduleConstraints({
       schedule: { type: 'event', source: 'channel', eventName: 'message', accountId: 'account-feishu' },
       runsOn: 'local',
       action: { type: 'agent' },
       maxRunBudget: null,
     });
-    expect(expected).toBe('Event-triggered jobs require maxRunBudget > 0 so every run is cost-bounded.');
-    if (expected === null) throw new Error('shared validator unexpectedly passed an invalid config');
-
-    expect(screen.getByTestId('cron-event-validation').textContent).toBe(expected);
+    expect(violation?.reason).toBe('requires-budget');
+    const expected = localizedCopy('requires-budget');
+    expect(expected).toContain('单次预算上限');
 
     fireEvent.click(screen.getByText('创建任务'));
 
-    // 内联提示与表单错误框是两个节点，同文案各报各的，都在页面上。
-    await waitFor(() => expect(screen.getAllByText(expected).length).toBeGreaterThan(1));
+    await waitFor(() => expect(screen.getAllByText(expected).length).toBeGreaterThanOrEqual(2));
     expect(useCronStore.getState().createJob).not.toHaveBeenCalled();
+  });
+
+  it('动过预算字段（清空）不用提交就亮内联提示；填回去提示消失', async () => {
+    await openManualEditor();
+    await fillEventJob({ chat: 'group', budget: '0.5' });
+    expect(screen.queryByTestId('cron-event-validation')).toBeNull();
+
+    fireEvent.change(controlForLabel(/^单次预算上限/), { target: { value: '' } });
+    expect(screen.getByTestId('cron-event-validation').textContent).toBe(localizedCopy('requires-budget'));
+
+    fireEvent.change(controlForLabel(/^单次预算上限/), { target: { value: '0.5' } });
+    await waitFor(() => expect(screen.queryByTestId('cron-event-validation')).toBeNull());
   });
 });
 
-describe('② 列表可见 + 停用/删除', () => {
-  it('event 任务出现在列表里：摘要交代账号与会话，触发源 chip 标「事件」', () => {
+describe('② 列表/详情可见 + 停用/删除', () => {
+  it('列表摘要显示通道目录的账号名/群名（不再是内部 ID），触发源 chip 标「事件」', async () => {
     useCronStore.setState({ jobs: [makeEventJob()] });
     render(<CronJobList />);
 
+    await waitFor(() =>
+      expect(screen.getByTestId('cron-job-schedule-summary').textContent).toBe('通道消息 · 工作飞书 · 林晨, 苏三'));
     expect(screen.getByText('盯群消息')).toBeTruthy();
-    expect(screen.getByTestId('cron-job-schedule-summary').textContent).toBe('通道消息 · account-feishu · oc_group');
     expect(screen.getByTestId('cron-job-trigger-kind').textContent).toBe('事件');
   });
 
-  it('未限定会话的 event 任务摘要在「任意会话」档', () => {
+  it('目录里没有的账号/群回落 ID；未限定会话在「任意会话」档', async () => {
     useCronStore.setState({
-      jobs: [makeEventJob({ schedule: { type: 'event', source: 'channel', accountId: 'account-feishu', eventName: 'message' } })],
+      jobs: [
+        makeEventJob({
+          schedule: { type: 'event', source: 'channel', accountId: 'acc-gone', chatId: 'oc_unknown', eventName: 'message' },
+        }),
+        makeEventJob({
+          id: 'job-any',
+          schedule: { type: 'event', source: 'channel', accountId: 'account-feishu', eventName: 'message' },
+        }),
+      ],
     });
     render(<CronJobList />);
 
-    expect(screen.getByTestId('cron-job-schedule-summary').textContent).toBe('通道消息 · account-feishu · 任意会话');
+    const summaries = await screen.findAllByTestId('cron-job-schedule-summary');
+    await waitFor(() => expect(summaries.map((el) => el.textContent)).toEqual([
+      '通道消息 · acc-gone · oc_unknown',
+      '通道消息 · 工作飞书 · 任意会话',
+    ]));
   });
 
-  it('详情页停用走 updateJob(enabled=false)，删除走 deleteJob', async () => {
+  it('详情页摘要显示账号名/群名；停用走 updateJob(enabled=false)，删除走 deleteJob', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     useCronStore.setState({
       jobs: [makeEventJob()],
@@ -313,7 +371,7 @@ describe('② 列表可见 + 停用/删除', () => {
     render(<CronJobDetail job={makeEventJob()} />);
 
     expect(screen.getByText('盯群消息')).toBeTruthy();
-    expect(screen.getByText('通道消息 · account-feishu · oc_group')).toBeTruthy();
+    await waitFor(() => expect(screen.getByText('通道消息 · 工作飞书 · 林晨, 苏三')).toBeTruthy());
 
     fireEvent.click(screen.getByText('停用'));
     await waitFor(() =>
@@ -324,10 +382,14 @@ describe('② 列表可见 + 停用/删除', () => {
     expect(confirmSpy).toHaveBeenCalled();
   });
 
-  it('formatScheduleSummary 的 event 档（zh/en）', () => {
+  it('formatScheduleSummary 的 event 档（zh/en、显示名优先、缺名回落 id）', () => {
+    expect(formatScheduleSummary(makeEventJob(), 'zh', { accountName: '工作飞书', chatName: '林晨, 苏三' }))
+      .toBe('通道消息 · 工作飞书 · 林晨, 苏三');
+    expect(formatScheduleSummary(makeEventJob(), 'en', { accountName: 'Feishu Work' }))
+      .toBe('Channel message · Feishu Work · oc_group');
+    // 目录缺名字（未加载/已删除）时回落 id。
     expect(formatScheduleSummary(makeEventJob(), 'zh')).toBe('通道消息 · account-feishu · oc_group');
-    expect(formatScheduleSummary(makeEventJob(), 'en')).toBe('Channel message · account-feishu · oc_group');
     const anyChat = makeEventJob({ schedule: { type: 'event', source: 'channel', accountId: 'a1', eventName: 'message' } });
-    expect(formatScheduleSummary(anyChat, 'en')).toBe('Channel message · a1 · any chat');
+    expect(formatScheduleSummary(anyChat, 'en', { accountName: 'A1' })).toBe('Channel message · A1 · any chat');
   });
 });

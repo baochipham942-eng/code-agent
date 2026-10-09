@@ -7,7 +7,10 @@ import { wrapFilePathsInBackticks, wrapTicketsAsLinks } from '../../../src/rende
 import { runHref } from './encodeRunCommand';
 import { FileArtifactCard } from '../../../src/renderer/components/features/chat/MessageBubble/FileArtifactCard';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useWorkbenchFocusStore } from '../../../src/renderer/stores/workbenchFocusStore';
+import ipcService from '../../../src/renderer/services/ipcService';
+import { IPC_DOMAINS } from '../../../src/shared/ipc';
 import { zh } from '../../../src/renderer/i18n';
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ t: zh, language: 'zh' }) }));
 vi.mock('../../../src/renderer/components/DiffView', () => ({ DiffView: () => <div data-testid="diff">changes</div> }));
@@ -25,19 +28,27 @@ describe('deliverable and command navigation', () => {
     await waitFor(() => expect(useAppStore.getState().activeWorkbenchTab).toBe('preview:/workspace/report.md'));
     expect(useWorkbenchFocusStore.getState().workbenchFocused).toBe(true);
   });
-  it('renders one command action and dispatches its exact quoted text', async () => {
+  it('renders one command action and runs its exact quoted text via the agent domain', async () => {
     const command = 'python3 "/workspace/演示/build_ppt.py"';
-    const receive = vi.fn();
-    window.addEventListener('iact:run', receive);
+    const runInvoke = vi.spyOn(ipcService, 'invokeDomain')
+      .mockResolvedValue({ status: 'completed', output: '', exitCode: 0 });
     try {
+      useSessionStore.setState({ currentSessionId: 'session-1' });
       const view = render(<MessageContent content={`[${command}](${runHref(command)})`} isUser={false} />);
       const button = await view.findByRole('button', { name: '运行生成脚本' });
       expect(view.container.querySelectorAll('button')).toHaveLength(1);
       expect(view.container.textContent).toContain(command);
-      expect(receive).not.toHaveBeenCalled();
+      expect(runInvoke).not.toHaveBeenCalled();
       fireEvent.click(button);
-      expect((receive.mock.calls[0][0] as CustomEvent).detail).toBe(command);
-    } finally { window.removeEventListener('iact:run', receive); }
+      expect(runInvoke).toHaveBeenCalledTimes(1);
+      expect(runInvoke).toHaveBeenCalledWith(IPC_DOMAINS.AGENT, 'runInteractiveCommand', {
+        sessionId: 'session-1',
+        command,
+      });
+    } finally {
+      runInvoke.mockRestore();
+      useSessionStore.setState({ currentSessionId: null });
+    }
   });
   // ai-review #1739 Important：链接扫描正则里 (?:[^\]\n]|\\.)* 的两个分支对反斜杠歧义，
   // 行内有未闭合的 `[` 时整体匹配失败会让引擎穷举切分，步数随反斜杠个数 2^k 增长。这两条

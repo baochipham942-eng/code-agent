@@ -57,10 +57,15 @@ export function withPythonEnvStatus(
       percent: state.percent ?? 0,
     };
   } else if (state.phase === 'failed') {
+    // code/logPath 一并透传：renderer 只拿 error 字符串时只能显示 host 英文原文，
+    // 无法选本地化文案，也打不开错误信息里提到的安装日志。
+    const failure = state.error ?? installFailedError(state.root);
     preparation = {
       assetId: PYTHON_ENV_ASSET_ID,
       phase: 'failed',
-      error: state.error?.message ?? installFailedError(state.root).message,
+      error: failure.message,
+      errorCode: failure.code,
+      logPath: failure.logPath,
     };
   }
   return { ...status, assets, summary: summarize(assets), preparation };

@@ -32,7 +32,7 @@ describe('python-env settings row', () => {
     for (const text of [zh.settings.update.runtimeAssets, en.settings.update.runtimeAssets]) {
       const row = getPythonEnvAssetRowDisplay(pythonEnvAsset('installed'), null, text);
       expect(row?.statusText).toBe(text.status.available);
-      expect(row?.failureReason).toBeUndefined();
+      expect(row?.failure).toBeUndefined();
       expect(row?.action).toBe('default');
     }
   });
@@ -42,7 +42,7 @@ describe('python-env settings row', () => {
       const row = getPythonEnvAssetRowDisplay(pythonEnvAsset('missing'), null, text);
       expect(row?.statusText).toBe(text.status.firstUseDownload);
       expect(row?.action).toBe('default');
-      expect(row?.failureReason).toBeUndefined();
+      expect(row?.failure).toBeUndefined();
     }
   });
 
@@ -55,7 +55,7 @@ describe('python-env settings row', () => {
       );
       expect(row?.statusText).toBe(`${text.status.installing} 42%`);
       expect(row?.action).toBe('hide');
-      expect(row?.failureReason).toBeUndefined();
+      expect(row?.failure).toBeUndefined();
     }
   });
 
@@ -68,17 +68,51 @@ describe('python-env settings row', () => {
     expect(row?.statusText).toBe(zh.settings.update.runtimeAssets.status.installing);
   });
 
-  it('preparation failed ⇒ failed label with reason and retry action in both languages', () => {
-    const reason = 'Python runtime install needs a package index, but both PyPI and the mirror are unreachable.';
+  it('preparation failed ⇒ failed label with localized reason (raw host string only as detail) and retry, zh+en', () => {
+    const rawError = 'Python runtime install needs a package index, but both PyPI and the mirror are unreachable.';
+    const logPath = '/Users/tester/.code-agent/runtimes/python/install.log';
     for (const text of [zh.settings.update.runtimeAssets, en.settings.update.runtimeAssets]) {
       const row = getPythonEnvAssetRowDisplay(
         pythonEnvAsset('missing'),
-        { assetId: 'python-env', phase: 'failed', error: reason },
+        { assetId: 'python-env', phase: 'failed', errorCode: 'PYTHON_RUNTIME_OFFLINE', error: rawError, logPath },
         text,
       );
       expect(row?.statusText).toBe(text.status.installFailed);
-      expect(row?.failureReason).toBe(reason);
+      // 主文案是本地化失败原因，不是 host 英文原文
+      expect(row?.failure?.reasonText).toBe(text.failureReasons.offline);
+      expect(row?.failure?.reasonText).not.toBe(rawError);
+      // host 原文经 detail（title 提示）保留可达
+      expect(row?.failure?.detail).toBe(rawError);
+      expect(row?.failure?.logPath).toBe(logPath);
       expect(row?.action).toBe('retry');
+    }
+  });
+
+  it('failed with PYTHON_RUNTIME_INSTALL_FAILED ⇒ installFailed copy in both languages', () => {
+    const rawError = 'Python runtime install failed. See the install log and try again.';
+    for (const text of [zh.settings.update.runtimeAssets, en.settings.update.runtimeAssets]) {
+      const row = getPythonEnvAssetRowDisplay(
+        pythonEnvAsset('missing'),
+        { assetId: 'python-env', phase: 'failed', errorCode: 'PYTHON_RUNTIME_INSTALL_FAILED', error: rawError },
+        text,
+      );
+      expect(row?.failure?.reasonText).toBe(text.failureReasons.installFailed);
+      expect(row?.failure?.reasonText).not.toBe(rawError);
+      expect(row?.failure?.detail).toBe(rawError);
+    }
+  });
+
+  it('failed with unknown or missing code ⇒ localized fallback copy, never the raw host string', () => {
+    const rawError = 'Python runtime install failed. See the install log and try again.';
+    for (const errorCode of [undefined, 'SOME_FUTURE_CODE']) {
+      const row = getPythonEnvAssetRowDisplay(
+        pythonEnvAsset('missing'),
+        { assetId: 'python-env', phase: 'failed', errorCode, error: rawError },
+        zh.settings.update.runtimeAssets,
+      );
+      expect(row?.failure?.reasonText).toBe(zh.settings.update.runtimeAssets.failureReasons.fallback);
+      expect(row?.failure?.reasonText).not.toBe(rawError);
+      expect(row?.failure?.detail).toBe(rawError);
     }
   });
 

@@ -448,7 +448,13 @@ describe('ensurePythonEnv', () => {
     expect(getPythonEnvState(lookup(dataDir)).phase).toBe('failed');
     const overlaid = withPythonEnvStatus(emptyStatus({ assetId: 'uv', phase: 'completed' }), lookup(dataDir));
     expect(overlaid.assets.at(-1)?.state).toBe('missing');
-    expect(overlaid.preparation).toEqual({ assetId: 'python-env', phase: 'failed', error: OFFLINE_MESSAGE });
+    expect(overlaid.preparation).toEqual({
+      assetId: 'python-env',
+      phase: 'failed',
+      error: OFFLINE_MESSAGE,
+      errorCode: 'PYTHON_RUNTIME_OFFLINE',
+      logPath: path.join(root, 'install.log'),
+    });
     expect(overlaid.summary).toEqual({ installed: 0, bundledFallback: 0, missing: 1, unsupported: 0 });
   });
 

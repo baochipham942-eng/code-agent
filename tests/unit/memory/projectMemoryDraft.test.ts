@@ -216,6 +216,7 @@ describe('project memory draft', () => {
       await write(path.join(projectDir, 'Makefile'), 'build:\n\techo build\n\n.PHONY: build\ntest-unit:\n\techo test\n');
       await write(path.join(projectDir, 'go.mod'), 'module example.invalid/mixed\n\ngo 1.24\n\nrequire (\n\tgithub.com/foo/bar v1.2.3\n\tgithub.com/baz/qux v0.4.0 // indirect\n)\n');
       await write(path.join(projectDir, 'Cargo.toml'), '[package]\nname = "mixed"\nversion = "0.2.0"\n\n[dependencies]\nserde = "1"\ntokio = { version = "1" }\n');
+      await write(path.join(projectDir, 'pyproject.toml'), '[project]\nname = "mixed-py"\nversion = "1.0.0"\ndependencies = ["requests>=2.0", "click"]\n');
       await fs.mkdir(path.join(projectDir, 'docs'));
       // 指向 projectDir 外的符号链接清单：必须当不存在处理，绝不跟随读出界
       await write(path.join(outsideDir, 'package.json'), JSON.stringify({ name: 'outside-project' }));
@@ -229,6 +230,8 @@ describe('project memory draft', () => {
       expect(joined).toContain('Go 项目：module example.invalid/mixed');
       expect(joined).toContain('github.com/foo/bar@v1.2.3');
       expect(joined).toContain('Rust 项目：mixed@0.2.0');
+      expect(joined).toContain('Python 项目：mixed-py');
+      expect(joined).toContain('依赖（2 项）：requests、click');
       expect(joined).toContain('make build');
       expect(joined).toContain('make test-unit');
       expect(joined).not.toContain('.PHONY');

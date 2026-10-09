@@ -902,11 +902,6 @@
       "kind": "type"
     },
     {
-      "file": "src/host/agent/readOnlySideChat.ts",
-      "name": "SideChatExecutor",
-      "kind": "type"
-    },
-    {
       "file": "src/host/agent/resultAggregator.ts",
       "name": "AgentResultEntry",
       "kind": "type"
@@ -948,11 +943,6 @@
     },
     {
       "file": "src/host/agent/runtime/browser/artifactPreviewHealth.ts",
-      "name": "ArtifactPreviewHealthFinding",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/agent/runtime/browser/artifactPreviewHealth.ts",
       "name": "ArtifactPreviewHealthViewportDiagnostics",
       "kind": "type"
     },
@@ -967,13 +957,73 @@
       "kind": "export"
     },
     {
-      "file": "src/host/agent/runtime/browser/artifactPreviewHealth.ts",
-      "name": "runArtifactPreviewHealth",
+      "file": "src/host/agent/runtime/browser/artifactPreviewHealthProbe.ts",
+      "name": "normalizeArtifactPreviewResourceUrl",
       "kind": "export"
     },
     {
-      "file": "src/host/agent/runtime/browser/artifactPreviewHealthProbe.ts",
-      "name": "normalizeArtifactPreviewResourceUrl",
+      "file": "src/host/agent/runtime/browser/artifactPreviewVision.ts",
+      "name": "ArtifactPreviewVisionScreenshot",
+      "kind": "type"
+    },
+    {
+      "file": "src/host/agent/runtime/browser/artifactPreviewVision.ts",
+      "name": "ArtifactPreviewVisionSeverity",
+      "kind": "type"
+    },
+    {
+      "file": "src/host/agent/runtime/browser/artifactPreviewVision.ts",
+      "name": "buildArtifactPreviewVisionPrompt",
+      "kind": "export"
+    },
+    {
+      "file": "src/host/agent/runtime/browser/artifactPreviewVision.ts",
+      "name": "parseArtifactPreviewVisionAnalysis",
+      "kind": "export"
+    },
+    {
+      "file": "src/host/agent/runtime/browser/designPreviewRepair.ts",
+      "name": "DesignPreviewRepairAgent",
+      "kind": "type"
+    },
+    {
+      "file": "src/host/agent/runtime/browser/designPreviewRepair.ts",
+      "name": "DesignPreviewRepairAgentResult",
+      "kind": "type"
+    },
+    {
+      "file": "src/host/agent/runtime/browser/designPreviewRepair.ts",
+      "name": "DesignPreviewRepairFinding",
+      "kind": "type"
+    },
+    {
+      "file": "src/host/agent/runtime/browser/designPreviewRepair.ts",
+      "name": "DesignPreviewRepairResult",
+      "kind": "type"
+    },
+    {
+      "file": "src/host/agent/runtime/browser/designPreviewRepair.ts",
+      "name": "DesignPreviewRepairRound",
+      "kind": "type"
+    },
+    {
+      "file": "src/host/agent/runtime/browser/designPreviewRepair.ts",
+      "name": "DesignPreviewRepairSource",
+      "kind": "type"
+    },
+    {
+      "file": "src/host/agent/runtime/browser/designPreviewRepair.ts",
+      "name": "DesignPreviewRepairStateScope",
+      "kind": "type"
+    },
+    {
+      "file": "src/host/agent/runtime/browser/designPreviewRepair.ts",
+      "name": "DesignPreviewVisionRunner",
+      "kind": "type"
+    },
+    {
+      "file": "src/host/agent/runtime/browser/designPreviewRepair.ts",
+      "name": "runDesignPreviewRepairLoop",
       "kind": "export"
     },
     {
@@ -1792,36 +1842,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/agent/toolExecution/parallelStrategy.ts",
-      "name": "createParallelStrategy",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/agent/toolExecution/parallelStrategy.ts",
-      "name": "DEFAULT_PARALLEL_CONFIG",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/agent/toolExecution/parallelStrategy.ts",
-      "name": "executeInBatches",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/agent/toolExecution/parallelStrategy.ts",
-      "name": "getBatchSlices",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/agent/toolExecution/parallelStrategy.ts",
-      "name": "isParallelSafeTool",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/agent/toolExecution/parallelStrategy.ts",
-      "name": "ParallelExecutionConfig",
-      "kind": "type"
-    },
-    {
       "file": "src/host/agent/types.ts",
       "name": "AgentExecutionMode",
       "kind": "type"
@@ -1992,11 +2012,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/channels/feishu/feishuMedia.ts",
-      "name": "parseFeishuMediaContent",
-      "kind": "export"
-    },
-    {
       "file": "src/host/channels/index.ts",
       "name": "ApiChannel",
       "kind": "export"
@@ -2154,11 +2169,6 @@
     {
       "file": "src/host/context/agentsDiscovery.ts",
       "name": "isProtectedUserFolder",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/autoCompressor.ts",
-      "name": "initAutoCompressor",
       "kind": "export"
     },
     {
@@ -2504,11 +2514,6 @@
     {
       "file": "src/host/context/tokenEstimator.ts",
       "name": "fitsInBudget",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/tokenEstimator.ts",
-      "name": "TOKEN_RATIOS",
       "kind": "export"
     },
     {
@@ -4327,31 +4332,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/permissions/modes.ts",
-      "name": "clampFirstRunPermissionMode",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/permissions/modes.ts",
-      "name": "clampLiveVoicePermissionMode",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/permissions/modes.ts",
-      "name": "clampUnattendedPermissionMode",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/permissions/modes.ts",
-      "name": "getCurrentMode",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/permissions/modes.ts",
-      "name": "resetPermissionModeManager",
-      "kind": "export"
-    },
-    {
       "file": "src/host/permissions/policyEngine.ts",
       "name": "evaluatePermission",
       "kind": "export"
@@ -5638,11 +5618,6 @@
     },
     {
       "file": "src/host/sandbox/sensitivePaths.ts",
-      "name": "isPathDeniedBySensitiveSandboxPath",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/sandbox/sensitivePaths.ts",
       "name": "SensitiveSandboxPathKind",
       "kind": "type"
     },
@@ -5679,21 +5654,6 @@
     {
       "file": "src/host/security/auditLogger.ts",
       "name": "resetAuditLogger",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/security/decisionHistory.ts",
-      "name": "DecisionHistoryEntry",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/security/decisionHistory.ts",
-      "name": "resetDecisionHistory",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/security/execPolicy.ts",
-      "name": "resetExecPolicyStore",
       "kind": "export"
     },
     {
@@ -5835,11 +5795,6 @@
       "file": "src/host/security/skillContentGuard.ts",
       "name": "normalizeForScan",
       "kind": "export"
-    },
-    {
-      "file": "src/host/security/skillContentGuard.ts",
-      "name": "SkillGuardFinding",
-      "kind": "type"
     },
     {
       "file": "src/host/security/userFacingError.ts",
@@ -8317,16 +8272,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/session/agentHistoryPersistence.ts",
-      "name": "getAgentHistory",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/session/agentHistoryPersistence.ts",
-      "name": "persistAgentRun",
-      "kind": "export"
-    },
-    {
       "file": "src/host/session/backgroundTaskManager.ts",
       "name": "resetBackgroundTaskManager",
       "kind": "export"
@@ -8472,11 +8417,6 @@
       "kind": "type"
     },
     {
-      "file": "src/host/session/sessionStateManager.ts",
-      "name": "SessionStatusUpdateEvent",
-      "kind": "type"
-    },
-    {
       "file": "src/host/session/spine/packageBuilder.ts",
       "name": "SessionPackageManifest",
       "kind": "type"
@@ -8518,11 +8458,6 @@
     },
     {
       "file": "src/host/skills/marketplace/index.ts",
-      "name": "parsePluginSpec",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/skills/marketplace/installService.ts",
       "name": "parsePluginSpec",
       "kind": "export"
     },
@@ -8999,11 +8934,6 @@
     {
       "file": "src/host/tools/dispatch/toolDefinitions.ts",
       "name": "getDesignCanvasToolDefinitions",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/tools/dispatch/toolResolver.ts",
-      "name": "resetToolResolver",
       "kind": "export"
     },
     {
@@ -9500,36 +9430,6 @@
       "file": "src/host/tools/permissionClassifier.ts",
       "name": "PermissionDecision",
       "kind": "type"
-    },
-    {
-      "file": "src/host/tools/shell/backgroundTasks.ts",
-      "name": "BackgroundTaskLifecycleEventType",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/tools/shell/backgroundTasks.ts",
-      "name": "cleanupCompletedTasks",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/tools/shell/backgroundTasks.ts",
-      "name": "cleanupTimedOutTasks",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/tools/shell/backgroundTasks.ts",
-      "name": "clearPersistedTasks",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/tools/shell/backgroundTasks.ts",
-      "name": "loadPersistedTasks",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/tools/shell/backgroundTasks.ts",
-      "name": "persistRunningTasks",
-      "kind": "export"
     },
     {
       "file": "src/host/tools/shell/ptyExecutor.ts",
@@ -10732,6 +10632,26 @@
       "kind": "export"
     },
     {
+      "file": "src/renderer/components/features/chat/ChatInput/neoMentionRouting.ts",
+      "name": "buildNeoTopicMentionCandidates",
+      "kind": "export"
+    },
+    {
+      "file": "src/renderer/components/features/chat/ChatInput/neoMentionRouting.ts",
+      "name": "NEO_TAG_MENTION_AGENT",
+      "kind": "export"
+    },
+    {
+      "file": "src/renderer/components/features/chat/ChatInput/neoMentionRouting.ts",
+      "name": "NEO_TOPIC_MENTION_PREFIX",
+      "kind": "export"
+    },
+    {
+      "file": "src/renderer/components/features/chat/ChatInput/neoMentionRouting.ts",
+      "name": "NeoTopicMentionSource",
+      "kind": "type"
+    },
+    {
       "file": "src/renderer/components/features/chat/ChatInput/parseGoalCommand.ts",
       "name": "buildGoalContractReview",
       "kind": "export"
@@ -11170,6 +11090,41 @@
       "file": "src/renderer/components/features/chat/MessageBubble/utils.ts",
       "name": "parseMarkdownBlocks",
       "kind": "export"
+    },
+    {
+      "file": "src/renderer/components/features/chat/neoTagSubmit.ts",
+      "name": "buildNeoTagContinuationMessage",
+      "kind": "export"
+    },
+    {
+      "file": "src/renderer/components/features/chat/neoTagSubmit.ts",
+      "name": "buildNeoTagSourceMessage",
+      "kind": "export"
+    },
+    {
+      "file": "src/renderer/components/features/chat/neoTagSubmit.ts",
+      "name": "BuildNeoTagSourceMessageParams",
+      "kind": "type"
+    },
+    {
+      "file": "src/renderer/components/features/chat/neoTagSubmit.ts",
+      "name": "submitNeoTagContinuation",
+      "kind": "export"
+    },
+    {
+      "file": "src/renderer/components/features/chat/neoTagSubmit.ts",
+      "name": "SubmitNeoTagContinuationParams",
+      "kind": "type"
+    },
+    {
+      "file": "src/renderer/components/features/chat/neoTagSubmit.ts",
+      "name": "submitNeoTagDraft",
+      "kind": "export"
+    },
+    {
+      "file": "src/renderer/components/features/chat/neoTagSubmit.ts",
+      "name": "SubmitNeoTagDraftParams",
+      "kind": "type"
     },
     {
       "file": "src/renderer/components/features/chat/neoWorkCardPhase.ts",
@@ -13762,11 +13717,6 @@
       "kind": "type"
     },
     {
-      "file": "src/shared/commands/definitions/btwCommands.ts",
-      "name": "btwCommand",
-      "kind": "export"
-    },
-    {
       "file": "src/shared/commands/definitions/contextCommands.ts",
       "name": "compactCommand",
       "kind": "export"
@@ -14208,23 +14158,8 @@
     },
     {
       "file": "src/shared/constants/previewHealth.ts",
-      "name": "ARTIFACT_PREVIEW_VISION",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/previewHealth.ts",
       "name": "ArtifactPreviewHealthViewportName",
       "kind": "type"
-    },
-    {
-      "file": "src/shared/constants/previewHealth.ts",
-      "name": "ArtifactPreviewVisionFindingCode",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/constants/previewHealth.ts",
-      "name": "DESIGN_PREVIEW_REPAIR",
-      "kind": "export"
     },
     {
       "file": "src/shared/constants/pricing.ts",
@@ -16173,11 +16108,6 @@
     },
     {
       "file": "src/shared/contract/update.ts",
-      "name": "RuntimeAssetStatusState",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/update.ts",
       "name": "RuntimeAssetsUpdateAsset",
       "kind": "type"
     },
@@ -16429,11 +16359,6 @@
     {
       "file": "src/shared/ipc/handlers.ts",
       "name": "PlanningEventType",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/ipc/handlers.ts",
-      "name": "SessionUpdatedEvent",
       "kind": "type"
     },
     {
@@ -17457,8 +17382,6 @@
     "src/host/agent/guiAgent.ts",
     "src/host/agent/parallelErrorHandler.ts",
     "src/host/agent/progressAggregator.ts",
-    "src/host/agent/runtime/browser/artifactPreviewVision.ts",
-    "src/host/agent/runtime/browser/designPreviewRepair.ts",
     "src/host/agent/runtime/dashboard/general/browserProbes.ts",
     "src/host/agent/runtime/dashboard/general/GeneralDashboardChecker.ts",
     "src/host/agent/runtime/dashboard/general/htmlProbes.ts",
@@ -17512,13 +17435,11 @@
     "src/renderer/components/features/chat/ChatInput/modelStrategyRecommendation.ts",
     "src/renderer/components/features/chat/ChatInput/ModelStrategyRecommendationStrip.tsx",
     "src/renderer/components/features/chat/ChatInput/ModeSwitch.tsx",
-    "src/renderer/components/features/chat/ChatInput/neoMentionRouting.ts",
     "src/renderer/components/features/chat/ChatInput/ReportStyleSelector.tsx",
     "src/renderer/components/features/chat/ChatInput/slashCommandDisplayGroups.ts",
     "src/renderer/components/features/chat/ContextIndicator.tsx",
     "src/renderer/components/features/chat/ContextUsageIndicator.tsx",
     "src/renderer/components/features/chat/InlinePlanCard.tsx",
-    "src/renderer/components/features/chat/neoTagSubmit.ts",
     "src/renderer/components/features/chat/NeoWorkCardInlineCard.tsx",
     "src/renderer/components/features/chat/PlanPanel.tsx",
     "src/renderer/components/features/chat/ResearchProgress.tsx",

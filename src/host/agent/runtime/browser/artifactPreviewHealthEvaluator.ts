@@ -10,6 +10,7 @@ export type ArtifactPreviewHealthFindingCode =
   | 'page_error'
   | 'broken_image'
   | 'missing_main_element'
+  | 'primary_button_not_visible'
   | 'responsive_breakpoint_failure';
 
 export interface ArtifactPreviewHealthFinding {
@@ -97,6 +98,15 @@ export function evaluateArtifactPreviewHealthDiagnostics(
         { visibleElements: viewport.visibleElements },
       );
     }
+
+    if (viewport.buttons.declared > 0 && viewport.buttons.visible === 0) {
+      addViewportFinding(
+        viewport,
+        'primary_button_not_visible',
+        `${viewport.name} preview declares ${viewport.buttons.declared} button-like element(s) but none is visible.`,
+        { declared: viewport.buttons.declared, visible: viewport.buttons.visible },
+      );
+    }
   }
 
   for (const error of uniqueStrings(diagnostics.consoleErrors).slice(0, 5)) {
@@ -108,7 +118,7 @@ export function evaluateArtifactPreviewHealthDiagnostics(
   }
 
   const viewportSpecificCodes = new Set<ArtifactPreviewHealthFindingCode>();
-  for (const code of ['blank_body_text', 'horizontal_overflow', 'broken_image', 'missing_main_element'] as const) {
+  for (const code of ['blank_body_text', 'horizontal_overflow', 'broken_image', 'missing_main_element', 'primary_button_not_visible'] as const) {
     const affectedViewports = diagnostics.viewports
       .filter((viewport) => viewportFindingCodes.get(viewport.name)?.has(code))
       .map((viewport) => viewport.name);

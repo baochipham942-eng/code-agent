@@ -657,16 +657,6 @@
       "kind": "type"
     },
     {
-      "file": "src/host/agent/runtime/browser/designPreviewRepair.ts",
-      "name": "formatDesignPreviewRepairSpecForPrompt",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/agent/runtime/browser/designPreviewRepair.ts",
-      "name": "runDesignPreviewRepairAssessment",
-      "kind": "export"
-    },
-    {
       "file": "src/host/agent/runtime/browser/playwrightRuntime.ts",
       "name": "PlaywrightChromiumLoadResult",
       "kind": "type"
@@ -1155,31 +1145,6 @@
       "file": "src/host/agent/toolExecution/circuitBreaker.ts",
       "name": "DEFAULT_CIRCUIT_BREAKER_CONFIG",
       "kind": "export"
-    },
-    {
-      "file": "src/host/agent/toolExecution/parallelStrategy.ts",
-      "name": "createParallelStrategy",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/agent/toolExecution/parallelStrategy.ts",
-      "name": "DEFAULT_PARALLEL_CONFIG",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/agent/toolExecution/parallelStrategy.ts",
-      "name": "executeInBatches",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/agent/toolExecution/parallelStrategy.ts",
-      "name": "getBatchSlices",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/agent/toolExecution/parallelStrategy.ts",
-      "name": "ParallelExecutionConfig",
-      "kind": "type"
     },
     {
       "file": "src/host/agent/types.ts",
@@ -3767,11 +3732,6 @@
       "kind": "type"
     },
     {
-      "file": "src/host/sandbox/sensitivePaths.ts",
-      "name": "SensitiveSandboxPathKind",
-      "kind": "type"
-    },
-    {
       "file": "src/host/scheduler/dagEventBridge.ts",
       "name": "buildDAGVisualizationState",
       "kind": "export"
@@ -3870,11 +3830,6 @@
       "file": "src/host/security/skillContentGuard.ts",
       "name": "findDynamicCommandName",
       "kind": "export"
-    },
-    {
-      "file": "src/host/security/skillContentGuard.ts",
-      "name": "SkillGuardFinding",
-      "kind": "type"
     },
     {
       "file": "src/host/security/userFacingError.ts",
@@ -5382,11 +5337,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/skills/marketplace/installService.ts",
-      "name": "parsePluginSpec",
-      "kind": "export"
-    },
-    {
       "file": "src/host/skills/marketplace/types.ts",
       "name": "KnownMarketplaceEntry",
       "kind": "type"
@@ -5465,11 +5415,6 @@
       "file": "src/host/task/index.ts",
       "name": "TaskManagerEventType",
       "kind": "type"
-    },
-    {
-      "file": "src/host/task/TaskManager.ts",
-      "name": "resetTaskManager",
-      "kind": "export"
     },
     {
       "file": "src/host/telemetry/diagnosticVersions.ts",
@@ -5729,11 +5674,6 @@
     {
       "file": "src/host/tools/dispatch/toolDefinitions.ts",
       "name": "DESIGN_SUPPRESSED_GENERIC_MEDIA_TOOLS",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/tools/dispatch/toolDefinitions.ts",
-      "name": "getDeferredToolDefinitions",
       "kind": "export"
     },
     {
@@ -7184,11 +7124,6 @@
     {
       "file": "src/renderer/components/features/sidebar/SessionReplaySummaryDialog.tsx",
       "name": "default",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/sidebar/SessionTypeFilterBar.tsx",
-      "name": "SessionTypeFilterBar",
       "kind": "export"
     },
     {
@@ -10243,16 +10178,6 @@
     },
     {
       "file": "src/shared/contract/update.ts",
-      "name": "RuntimeAssetPreparationStatus",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/update.ts",
-      "name": "RuntimeAssetStatusState",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/update.ts",
       "name": "RuntimeAssetsUpdateAsset",
       "kind": "type"
     },
@@ -10397,11 +10322,6 @@
       "kind": "export"
     },
     {
-      "file": "src/shared/effortLevels.ts",
-      "name": "SUPPORTED_AGENT_EFFORT_LEVELS",
-      "kind": "export"
-    },
-    {
       "file": "src/shared/i18n/previewHealth.ts",
       "name": "normalizePreviewHealthLocale",
       "kind": "export"
@@ -10474,11 +10394,6 @@
     {
       "file": "src/shared/ipc/handlers.ts",
       "name": "PlanningEventType",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/ipc/handlers.ts",
-      "name": "SessionUpdatedEvent",
       "kind": "type"
     },
     {

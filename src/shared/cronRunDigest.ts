@@ -101,7 +101,8 @@ export function groupRunsByTask<T extends CronRunGroupable>(sessions: readonly T
   return { groups, ungrouped };
 }
 
-function reviewSessionId(record: {
+/** 待过目记录 → 它挂在哪条运行会话上（resultSessionId 优先，其次 config 标记）。 */
+export function reviewSessionId(record: {
   resultSessionId?: string | null;
   config?: { pendingReview?: { resultSessionId?: string | null } | null } | null;
 }): string | undefined {

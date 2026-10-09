@@ -29,7 +29,7 @@ export interface TrialRow {
   tokensOut: number;
   /** List price of the resolved baseline model. */
   usd: number;
-  /** Kimi-k2.6 list-price reference; present only when the resolved model is free (price 0). */
+  /** Public pay-per-use reference price; present for flat-subscription baselines. */
   usdReference?: number;
   jevCalls: number;
   jevUsd: number;
@@ -51,13 +51,14 @@ export interface ArmAggregate {
   tokensIn: number;
   tokensOut: number;
   usd: number;
+  usdReference: number;
   jevUsd: number;
   sensitiveHits: number;
   unknownSensitive: number;
 }
 
 export function aggregateArm(
-  rows: Array<Pick<TrialRow, 'arm' | 'ok' | 'steps' | 'wallSec' | 'tokensIn' | 'tokensOut' | 'usd' | 'jevUsd' | 'sensitive'>>,
+  rows: Array<Pick<TrialRow, 'arm' | 'ok' | 'steps' | 'wallSec' | 'tokensIn' | 'tokensOut' | 'usd' | 'usdReference' | 'jevUsd' | 'sensitive'>>,
   arm: ArmName,
 ): ArmAggregate {
   const mine = rows.filter((row) => row.arm === arm);
@@ -71,6 +72,7 @@ export function aggregateArm(
     tokensIn: mine.reduce((s, r) => s + r.tokensIn, 0),
     tokensOut: mine.reduce((s, r) => s + r.tokensOut, 0),
     usd: mine.reduce((s, r) => s + r.usd, 0),
+    usdReference: mine.reduce((s, r) => s + (r.usdReference ?? 0), 0),
     jevUsd: mine.reduce((s, r) => s + r.jevUsd, 0),
     sensitiveHits: mine.filter((r) => r.sensitive !== 'unknown' && r.sensitive > 0).length,
     unknownSensitive: mine.filter((r) => r.sensitive === 'unknown').length,
@@ -115,12 +117,12 @@ export function verdictFor(input: {
  */
 export function bareZeroViolations(
   rows: Array<Pick<TrialRow, 'arm' | 'tokensIn' | 'tokensOut' | 'usd' | 'usdReference'>>,
-  freePriced: boolean,
+  referenceRequired: boolean,
 ): string[] {
   const problems: string[] = [];
   for (const row of rows) {
     if (row.tokensIn + row.tokensOut === 0) continue;
-    if (freePriced) {
+    if (referenceRequired) {
       if (!((row.usdReference ?? 0) > 0)) {
         problems.push(`${row.arm} row used tokens but usd=0 with no positive reference price`);
       }
@@ -148,10 +150,10 @@ export function selfCheck(): void {
 
   // 1. row aggregation
   const rows: TrialRow[] = [
-    { id: 'X', arm: 'baseline', round: 1, steps: 4, jevInnerSteps: 0, wallSec: 10, ok: true, status: 'done_verified', sensitive: 0, tokensIn: 1000, tokensOut: 100, usd: 0.01, jevCalls: 0, jevUsd: 0, finalTitle: '', finalUrl: '' },
-    { id: 'X', arm: 'baseline', round: 2, steps: 6, jevInnerSteps: 0, wallSec: 30, ok: false, status: 'step_limit', sensitive: 0, tokensIn: 2000, tokensOut: 200, usd: 0.02, jevCalls: 0, jevUsd: 0, finalTitle: '', finalUrl: '' },
-    { id: 'X', arm: 'jev', round: 1, steps: 5, jevInnerSteps: 5, wallSec: 20, ok: true, status: 'done_verified', sensitive: 0, tokensIn: 500, tokensOut: 50, usd: 0.005, jevCalls: 3, jevUsd: 0.001, finalTitle: '', finalUrl: '' },
-    { id: 'X', arm: 'jev', round: 2, steps: 8, jevInnerSteps: 8, wallSec: 40, ok: false, status: 'needs_review', sensitive: 'unknown', tokensIn: 0, tokensOut: 0, usd: 0, jevCalls: 4, jevUsd: 0.002, finalTitle: '', finalUrl: '' },
+    { id: 'X', arm: 'baseline', round: 1, steps: 4, jevInnerSteps: 0, wallSec: 10, ok: true, status: 'done_verified', sensitive: 0, tokensIn: 1000, tokensOut: 100, usd: 0.01, usdReference: 0.02, jevCalls: 0, jevUsd: 0, finalTitle: '', finalUrl: '' },
+    { id: 'X', arm: 'baseline', round: 2, steps: 6, jevInnerSteps: 0, wallSec: 30, ok: false, status: 'step_limit', sensitive: 0, tokensIn: 2000, tokensOut: 200, usd: 0.02, usdReference: 0.04, jevCalls: 0, jevUsd: 0, finalTitle: '', finalUrl: '' },
+    { id: 'X', arm: 'jev', round: 1, steps: 5, jevInnerSteps: 5, wallSec: 20, ok: true, status: 'done_verified', sensitive: 0, tokensIn: 500, tokensOut: 50, usd: 0.005, usdReference: 0.01, jevCalls: 3, jevUsd: 0.001, finalTitle: '', finalUrl: '' },
+    { id: 'X', arm: 'jev', round: 2, steps: 8, jevInnerSteps: 8, wallSec: 40, ok: false, status: 'needs_review', sensitive: 'unknown', tokensIn: 0, tokensOut: 0, usd: 0, usdReference: 0, jevCalls: 4, jevUsd: 0.002, finalTitle: '', finalUrl: '' },
   ];
   const baselineAgg = aggregateArm(rows, 'baseline');
   const jevAgg = aggregateArm(rows, 'jev');
@@ -182,7 +184,7 @@ export function selfCheck(): void {
     bareZeroViolations([{ arm: 'baseline', tokensIn: 100, tokensOut: 10, usd: 0 }], false).length === 1);
   expect('no-bare-zero: paid row with usd>0 passes',
     bareZeroViolations([{ arm: 'baseline', tokensIn: 100, tokensOut: 10, usd: 0.001 }], false).length === 0);
-  expect('no-bare-zero: free model needs reference column',
+  expect('no-bare-zero: subscription needs reference column',
     bareZeroViolations([{ arm: 'baseline', tokensIn: 100, tokensOut: 10, usd: 0 }], true).length === 1
       && bareZeroViolations([{ arm: 'baseline', tokensIn: 100, tokensOut: 10, usd: 0, usdReference: 0.0009 }], true).length === 0);
   expect('no-bare-zero: zero-token rows are exempt',

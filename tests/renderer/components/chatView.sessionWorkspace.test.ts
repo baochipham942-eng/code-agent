@@ -283,6 +283,7 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
 });
 
 import { ChatView, buildDefaultSuggestions } from '../../../src/renderer/components/ChatView';
+import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
 
 const defaultSuggestions = buildDefaultSuggestions(zh);
@@ -297,12 +298,12 @@ describe('ChatView session shell', () => {
     expect(html).toContain('flex-1 min-h-0 flex flex-col min-w-0');
     expect(html).toContain('flex-1 min-h-0 overflow-hidden');
     // 2026-08-06 拍板：会话带了上下文（这个夹具带工作区 /repo/code-agent）就不摆通用
-    // 建议卡——用户是带着目的进来的，贪吃蛇/图表这类与他手上的事无关的卡是噪音。
+    // 建议卡——用户是带着目的进来的，周报/纪要这类与他手上的事无关的卡是噪音。
     // 建议卡本身的内容契约（4 条、标题、prompt）由本文件下方独立用例继续守着。
-    expect(html).not.toContain('做个能玩的小游戏');
-    expect(html).not.toContain('出一张可交互数据图表');
-    expect(html).not.toContain('搜一份最新行业简报');
-    expect(html).not.toContain('梳理磁盘空间占用');
+    expect(html).not.toContain('写一份本周工作周报');
+    expect(html).not.toContain('整理一份会议纪要');
+    expect(html).not.toContain('分析一组销售数据');
+    expect(html).not.toContain('搜一份竞品简报');
     // 2026-08-01 起：这个夹具是**历史**会话（有标题、有消息计数），空态首屏不再给它
     // 通用欢迎页——冷启动自动恢复的历史会话此前与真新会话不可区分，用户以为自己新开
     // 了一条，首条消息接进了旧会话。会话标题因此获准出现在这一句消歧文案里；
@@ -342,21 +343,52 @@ describe('ChatView session shell', () => {
   it('keeps starter prompts concrete enough for a first-turn deliverable', () => {
     expect(defaultSuggestions).toHaveLength(4);
     expect(defaultSuggestions.map((item) => item.title)).toEqual([
-      '做个能玩的小游戏',
-      '出一张可交互数据图表',
-      '搜一份最新行业简报',
-      '梳理磁盘空间占用',
+      '写一份本周工作周报',
+      '整理一份会议纪要',
+      '分析一组销售数据',
+      '搜一份竞品简报',
     ]);
 
     for (const suggestion of defaultSuggestions) {
       expect(suggestion.prompt).not.toMatch(/如果|先问|先确认|和我对齐|补充信息|信息还不全/);
-      expect(suggestion.prompt).toMatch(/做|渲染|搜索|找出|给出|输出|联网|列出/);
+      expect(suggestion.prompt).toMatch(/写|整理|分析|调研|输出|给出|联网/);
     }
 
-    expect(defaultSuggestions[0].prompt).toContain('完整可运行的单文件');
-    expect(defaultSuggestions[1].prompt).toContain('图表 JSON');
-    expect(defaultSuggestions[2].prompt).toContain('过去一周 AI 行业');
-    expect(defaultSuggestions[3].prompt).toContain('先列出，不要直接执行删除');
+    expect(defaultSuggestions[0].prompt).toContain('发给主管的周报');
+    expect(defaultSuggestions[1].prompt).toContain('正式会议纪要');
+    expect(defaultSuggestions[2].prompt).toContain('月度销售数据');
+    expect(defaultSuggestions[3].prompt).toContain('附来源链接');
+  });
+
+  // 职场交付卡的自足性契约（zh/en 双语）：prompt 非空、不带「先问我」话术、
+  // 点名自己的交付物种、并且内置示例素材——用户不传文件第一轮就能拿到成品。
+  it('keeps starter prompts self-sufficient in both zh and en', () => {
+    const enSuggestions = buildDefaultSuggestions(en);
+    expect(enSuggestions).toHaveLength(4);
+
+    const deliverablePatterns = [
+      { zh: /周报/, en: /status report/i },
+      { zh: /会议纪要/, en: /minutes/i },
+      { zh: /销售数据/, en: /sales/i },
+      { zh: /竞品简报/, en: /competitor brief/i },
+    ];
+    const packs = [
+      { language: 'zh', suggestions: defaultSuggestions, askFirst: /如果|先问|先确认|和我对齐|补充信息|信息还不全|请告诉我|需要我提供/, sample: /示例素材|示例场景/, tail: /不要问我任何问题/ },
+      { language: 'en', suggestions: enSuggestions, askFirst: /please (provide|share|confirm|upload)|let me know|could you clarify|do you want me to/i, sample: /sample (input|scenario)/, tail: /without asking me any questions/ },
+    ] as const;
+
+    for (const { language, suggestions, askFirst, sample, tail } of packs) {
+      suggestions.forEach((suggestion, index) => {
+        expect(suggestion.title, `${language}[${index}] title`).toBeTruthy();
+        expect(suggestion.description, `${language}[${index}] description`).toBeTruthy();
+        expect(suggestion.prompt.length, `${language}[${index}] prompt non-empty`).toBeGreaterThan(0);
+        expect(suggestion.prompt, `${language}[${index}] no ask-first phrasing`).not.toMatch(askFirst);
+        // 每张卡点名自己的交付物种 + 内置示例素材 + 收尾不追问
+        expect(suggestion.prompt).toMatch(deliverablePatterns[index][language === 'zh' ? 'zh' : 'en']);
+        expect(suggestion.prompt, `${language}[${index}] embeds sample material`).toMatch(sample);
+        expect(suggestion.prompt, `${language}[${index}] house-style tail`).toMatch(tail);
+      });
+    }
   });
 
   it('pending 提问时输入区仍可见可输入，发送继续走普通 ChatView 消息链路', async () => {

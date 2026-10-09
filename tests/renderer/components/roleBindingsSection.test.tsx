@@ -25,7 +25,6 @@ function makeBinding(overrides: Partial<ExpertContextBinding> = {}): ExpertConte
     target: '/Users/x/PRD 模板.md',
     title: 'PRD 模板.md',
     mode: 'on_demand',
-    scope: 'private',
     createdAt: 1,
     ...overrides,
   };
@@ -46,7 +45,7 @@ describe('RoleBindingsSection', () => {
     expect(invokeDomain).toHaveBeenCalledWith('domain:roles', 'listBindings', { roleId: '牧之' });
   });
 
-  it('渲染绑定条目（标题 + 模式/范围标签）并可移除', async () => {
+  it('渲染绑定条目（标题 + 模式标签）并可移除；不再有范围选择器', async () => {
     invokeDomain.mockImplementation((_domain: string, action: string) => {
       if (action === 'listBindings') return Promise.resolve([makeBinding()]);
       return Promise.resolve({ removed: true });
@@ -56,7 +55,7 @@ describe('RoleBindingsSection', () => {
       expect(screen.getByText('PRD 模板.md')).toBeTruthy();
     });
     expect(screen.getAllByText('按需').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('私有').length).toBeGreaterThan(0);
+    expect(screen.queryByText('私有')).toBeNull();
 
     fireEvent.click(screen.getByTitle('移除'));
     await waitFor(() => {
@@ -64,7 +63,7 @@ describe('RoleBindingsSection', () => {
     });
   });
 
-  it('从资料库绑定走 addBinding（带当前 mode/scope）', async () => {
+  it('从资料库绑定走 addBinding（带当前 mode，不带 scope）', async () => {
     invokeDomain.mockImplementation((_domain: string, action: string) => {
       if (action === 'listBindings') return Promise.resolve([]);
       return Promise.resolve(makeBinding({ kind: 'library_item', target: 'lib_1' }));
@@ -75,7 +74,6 @@ describe('RoleBindingsSection', () => {
     });
 
     fireEvent.change(screen.getByTestId('role-binding-library-select'), { target: { value: 'lib_1' } });
-    fireEvent.change(screen.getByTestId('role-binding-scope'), { target: { value: 'project' } });
     fireEvent.click(screen.getByTestId('role-binding-add-library'));
 
     await waitFor(() => {
@@ -84,7 +82,6 @@ describe('RoleBindingsSection', () => {
         kind: 'library_item',
         target: 'lib_1',
         mode: 'always',
-        scope: 'project',
       });
     });
   });

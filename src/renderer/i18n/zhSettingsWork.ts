@@ -411,8 +411,6 @@ export const zhSettingsWork = {
         librarySelectPlaceholder: '选择资料库条目…',
         modeAlways: '常驻索引',
         modeOnDemand: '按需',
-        scopePrivate: '私有',
-        scopeProject: '项目共享',
         add: '绑定',
         remove: '移除',
         addFailed: '绑定失败',

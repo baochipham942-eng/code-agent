@@ -462,7 +462,7 @@ describe('roles.ipc (domain:roles)', () => {
       const boundFile = path.join(mockConfigDir.dir, 'bound.md');
       await fs.writeFile(boundFile, 'x', 'utf-8');
       const added = await invoke<{ id: string; kind: string }>('addBinding', {
-        roleId: '研究员', kind: 'file', target: boundFile, mode: 'always', scope: 'private',
+        roleId: '研究员', kind: 'file', target: boundFile, mode: 'always',
       });
       expect(added.success).toBe(true);
 
@@ -475,13 +475,36 @@ describe('roles.ipc (domain:roles)', () => {
       expect(after.data).toEqual([]);
     });
 
+    it('addBinding 不再要求 scope；旧 renderer 多带的 scope 被忽略且不回写', async () => {
+      const boundFile = path.join(mockConfigDir.dir, 'bound.md');
+      await fs.writeFile(boundFile, 'x', 'utf-8');
+
+      const noScope = await invoke<Record<string, unknown>>('addBinding', {
+        roleId: '研究员', kind: 'file', target: boundFile, mode: 'always',
+      });
+      expect(noScope.success).toBe(true);
+      expect(noScope.data).not.toHaveProperty('scope');
+
+      const strayScope = await invoke<Record<string, unknown>>('addBinding', {
+        roleId: '研究员', kind: 'file', target: boundFile, mode: 'on_demand', scope: 'project',
+      });
+      expect(strayScope.success).toBe(true);
+      expect(strayScope.data).not.toHaveProperty('scope');
+
+      // 同 kind+target 幂等去重：stray scope 没有生成第二条，也没有把 scope 写进文件
+      const listed = await invoke<Array<Record<string, unknown>>>('listBindings', { roleId: '研究员' });
+      expect(listed.data).toHaveLength(1);
+      expect(listed.data![0]).not.toHaveProperty('scope');
+    });
+
     it('addBinding 缺参 / 路径不存在都报错', async () => {
       const missingArgs = await invoke('addBinding', { roleId: '研究员', kind: 'file' });
       expect(missingArgs.success).toBe(false);
       expect(missingArgs.error?.code).toBe('INVALID_ARGS');
+      expect(missingArgs.error?.message).toBe('roleId, kind, target, mode are required');
 
       const badPath = await invoke('addBinding', {
-        roleId: '研究员', kind: 'file', target: path.join(mockConfigDir.dir, 'nope.md'), mode: 'always', scope: 'private',
+        roleId: '研究员', kind: 'file', target: path.join(mockConfigDir.dir, 'nope.md'), mode: 'always',
       });
       expect(badPath.success).toBe(false);
     });

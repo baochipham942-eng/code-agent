@@ -9,6 +9,19 @@ import {
 } from '../../../src/host/cron/artifactStandingRefresh';
 import { listPublishedVersions } from '../../../src/host/tools/document/snapshotManager';
 
+const cronState = vi.hoisted(() => ({
+  jobs: [] as Array<Record<string, unknown>>,
+  lastRunAt: {} as Record<string, number>,
+}));
+
+vi.mock('../../../src/host/cron/cronService', () => ({
+  getCronService: () => ({ listJobs: () => cronState.jobs }),
+}));
+
+vi.mock('../../../src/host/cron/cronPersistence', () => ({
+  loadCronLastRunAt: (jobId: string) => cronState.lastRunAt[jobId],
+}));
+
 // 常设刷新 host 段：真临时目录 + 真 snapshotManager（快照/留版原语不做 mock），
 // 只把 updateJob 换成捕获调用的 spy。
 type JobUpdatePayload = Parameters<Parameters<typeof finishArtifactRefresh>[1]['updateJob']>[0];
@@ -56,6 +69,8 @@ describe('artifactStandingRefresh host 执行段', () => {
     target = join(workDir, 'dashboard.json');
     await writeFile(target, '{"title":"v1"}\n');
     updateJob = vi.fn<(updates: JobUpdatePayload) => Promise<unknown>>(async () => undefined);
+    cronState.jobs = [];
+    cronState.lastRunAt = {};
   });
 
   afterEach(async () => {
@@ -192,5 +207,54 @@ describe('artifactStandingRefresh host 执行段', () => {
     expect(beginArtifactRefresh(refreshJob(join(workDir, 'missing.json')))).toBeUndefined();
     expect(await readFile(target, 'utf-8')).toBe(before);
     expect(listPublishedVersions(target)).toHaveLength(0);
+  });
+});
+
+async function getPublishInfoRoute() {
+  const { registerWorkspaceHandlers } = await import('../../../src/host/ipc/workspace.ipc');
+  return (registerWorkspaceHandlers.routes as unknown as {
+    actions: Record<string, (ctx: unknown, payload: unknown) => Promise<Record<string, unknown>>>;
+  }).actions.getPublishInfo;
+}
+
+describe('workspace getPublishInfo · standingRefresh', () => {
+  const workspaceTarget = '/tmp/standing-refresh-workspace-target.json';
+
+  it('同路径任务返回 standingRefresh，路径不匹配时省略该键', async () => {
+    cronState.jobs = [{
+      id: 'job-1', enabled: true, updatedAt: 5,
+      metadata: { artifactRefresh: { path: workspaceTarget, instruction: 'refresh it', cadence: 'weekly' } },
+    }];
+    cronState.lastRunAt['job-1'] = 4242;
+
+    const getPublishInfo = await getPublishInfoRoute();
+    const info = await getPublishInfo(undefined, { filePath: workspaceTarget });
+    expect(info.standingRefresh).toEqual({
+      jobId: 'job-1', enabled: true, cadence: 'weekly', instruction: 'refresh it', lastRunAt: 4242,
+    });
+
+    cronState.jobs = [{
+      id: 'job-2', enabled: true, updatedAt: 5,
+      metadata: { artifactRefresh: { path: '/tmp/other.json', instruction: 'x', cadence: 'daily' } },
+    }];
+    const withoutMatch = await getPublishInfo(undefined, { filePath: workspaceTarget });
+    expect('standingRefresh' in withoutMatch).toBe(false);
+  });
+
+  it('失败标注透传到 standingRefresh 视图', async () => {
+    cronState.jobs = [{
+      id: 'job-3', enabled: false, updatedAt: 5,
+      metadata: {
+        artifactRefresh: {
+          path: workspaceTarget, instruction: 'refresh it', cadence: 'daily',
+          lastRefreshFailed: { at: 99, reason: 'agent run failed: boom' },
+        },
+      },
+    }];
+    const getPublishInfo = await getPublishInfoRoute();
+    const info = await getPublishInfo(undefined, { filePath: workspaceTarget });
+    expect(info.standingRefresh).toMatchObject({
+      jobId: 'job-3', enabled: false, lastRefreshFailed: { at: 99, reason: 'agent run failed: boom' },
+    });
   });
 });

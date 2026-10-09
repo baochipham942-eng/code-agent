@@ -16,12 +16,16 @@ const classifierState = vi.hoisted(() => ({
   autoApprove: false,
 }));
 
-vi.mock('../../../src/host/security', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../../../src/host/security')>();
+// mock 具体模块而非 barrel：exec-policy 读取经 runPolicySnapshot 直读
+// ../security/execPolicy，vi.mock 按模块路径拦截，barrel mock 盖不到它。
+// barrel 的 re-export 会跟随指向 mock（toolExecutor 的 learnFromApproval 同样被盖）。
+vi.mock('../../../src/host/security/execPolicy', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../../src/host/security/execPolicy')>();
   return {
     ...original,
     getExecPolicyStore: () => ({
       match: (cmd: string) => execPolicyState.match(cmd),
+      getRules: () => [],
       learnFromApproval: () => false,
     }),
   };
@@ -146,6 +150,51 @@ describe('ToolExecutor Bash 安全命令单一判据', () => {
       type: 'command',
       details: { command: 'npm install && npm publish' },
     });
+    expect(result.success).toBe(false);
+  });
+
+  it('forcePermissionHandler 不豁免 exec-policy forbidden：硬拒先于审批卡，零审批调用', async () => {
+    execPolicyState.match = () => 'forbidden';
+    const executor = new ToolExecutor({
+      workingDirectory: workspace,
+      forcePermissionHandler: true,
+      requestPermission: async (request) => {
+        permissionRequests.push(request);
+        return true;
+      },
+    });
+    executor.setAuditEnabled(false);
+
+    const result = await executor.execute(
+      'Bash',
+      { command: "printf 'forbidden-by-policy'" },
+      { sessionId: 'safe-command-force-handler-forbidden' },
+    );
+
+    expect(permissionRequests, 'forbidden must hard-deny before any approval card').toHaveLength(0);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Blocked by exec policy');
+  });
+
+  it('forcePermissionHandler 下 exec-policy allow 不自动放行：照旧走审批', async () => {
+    execPolicyState.match = () => 'allow';
+    const executor = new ToolExecutor({
+      workingDirectory: workspace,
+      forcePermissionHandler: true,
+      requestPermission: async (request) => {
+        permissionRequests.push(request);
+        return false;
+      },
+    });
+    executor.setAuditEnabled(false);
+
+    const result = await executor.execute(
+      'Bash',
+      { command: "printf 'allow-gated'" },
+      { sessionId: 'safe-command-force-handler-allow-still-asks' },
+    );
+
+    expect(permissionRequests).toHaveLength(1);
     expect(result.success).toBe(false);
   });
 

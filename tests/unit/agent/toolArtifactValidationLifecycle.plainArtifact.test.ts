@@ -13,6 +13,12 @@ vi.mock('../../../src/host/agent/runtime/gameArtifactValidator', () => ({
   validateGameArtifact: gameValidatorState.validateGameArtifact,
 }));
 
+// 网页交付物预览体检单独在 webDeliverablePreviewRepair.test.ts 覆盖；这里 mock 掉
+// 避免单测里真起浏览器跑 health check。
+vi.mock('../../../src/host/agent/runtime/webDeliverablePreviewRepair', () => ({
+  maybeRunWebDeliverablePreviewRepair: vi.fn(),
+}));
+
 import { handleModifiedArtifactValidation } from '../../../src/host/agent/runtime/toolArtifactValidationLifecycle';
 
 const TARGET_FILE = '/tmp/interactive-artifact-5.html';

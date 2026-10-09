@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState, useSyncExternalStore } from 'r
 import { X as XIcon } from 'lucide-react';
 import { useI18n } from '../../../hooks/useI18n';
 import { askSideChat, SideChatRequestError } from '../../../services/sideChatClient';
+import { useAppStore } from '../../../stores/appStore';
 import type { SideChatFailureCause } from '@shared/ipc';
 import {
   dismissSideChat,
@@ -12,9 +13,23 @@ import {
 
 const SHELL_CLASS = 'absolute bottom-full right-0 z-30 mb-2 w-[440px] max-w-[calc(100vw-2rem)] rounded-xl border border-border-hover bg-zinc-900/95 shadow-md dark:shadow-2xl backdrop-blur';
 
-function causeLine(copy: { error: string; errorAuth: string; errorTimeout: string }, cause: SideChatFailureCause): string {
+/** cause → 出路按钮。鉴权/配额重试必败，只给「检查密钥」；超时/网络只给重试；未知两条都给。 */
+const SIDE_CHAT_EXITS: Record<SideChatFailureCause, { retry: boolean; checkKey: boolean }> = {
+  auth: { retry: false, checkKey: true },
+  quota: { retry: false, checkKey: true },
+  timeout: { retry: true, checkKey: false },
+  network: { retry: true, checkKey: false },
+  unknown: { retry: true, checkKey: true },
+};
+
+function causeLine(
+  copy: { error: string; errorAuth: string; errorQuota: string; errorTimeout: string; errorNetwork: string },
+  cause: SideChatFailureCause,
+): string {
   if (cause === 'auth') return copy.errorAuth;
+  if (cause === 'quota') return copy.errorQuota;
   if (cause === 'timeout') return copy.errorTimeout;
+  if (cause === 'network') return copy.errorNetwork;
   return copy.error;
 }
 
@@ -89,13 +104,26 @@ function SideChatFloaterPanel({ request }: { request: SideChatRequest }) {
         {phase === 'error' ? (
           <div className="mt-1">
             <p className="text-[11px] text-zinc-400">{causeLine(copy, cause)}</p>
-            <button // ds-allow:button
-              type="button"
-              onClick={() => setAttempt((n) => n + 1)}
-              className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-border-muted bg-surface-hover px-3 py-1.5 text-xs font-medium text-zinc-100 transition-colors hover:bg-white/[0.1]"
-            >
-              {copy.retry}
-            </button>
+            <div className="mt-2 flex items-center gap-2">
+              {SIDE_CHAT_EXITS[cause].retry ? (
+                <button // ds-allow:button
+                  type="button"
+                  onClick={() => setAttempt((n) => n + 1)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-border-muted bg-surface-hover px-3 py-1.5 text-xs font-medium text-zinc-100 transition-colors hover:bg-white/[0.1]"
+                >
+                  {copy.retry}
+                </button>
+              ) : null}
+              {SIDE_CHAT_EXITS[cause].checkKey ? (
+                <button // ds-allow:button
+                  type="button"
+                  onClick={() => useAppStore.getState().setShowSettings(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-border-muted bg-surface-hover px-3 py-1.5 text-xs font-medium text-zinc-100 transition-colors hover:bg-white/[0.1]"
+                >
+                  {copy.checkKey}
+                </button>
+              ) : null}
+            </div>
           </div>
         ) : null}
       </div>

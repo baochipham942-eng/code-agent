@@ -187,6 +187,32 @@ describe('side chat IPC', () => {
     }
   });
 
+  it('classifies quota and network wordings through the executor failure path', async () => {
+    const cases = [
+      { error: '余额不足，请充值后重试', cause: 'quota' },
+      { error: 'Error code: 429 - rate limit exceeded', cause: 'quota' },
+      { error: 'ECONNRESET socket hang up', cause: 'network' },
+      { error: 'fetch failed', cause: 'network' },
+    ] as const;
+    for (const [index, { error, cause }] of cases.entries()) {
+      execute.mockImplementation(async () => ({
+        success: false,
+        output: '',
+        error,
+        toolsUsed: [],
+        iterations: 1,
+      }));
+
+      const result = await askHandler()(null, {
+        sessionId: 's1',
+        question: 'q',
+        requestId: `r-cause-${index}`,
+      });
+
+      expect(result, `expected cause ${cause} for: ${error}`).toEqual({ failure: { cause } });
+    }
+  });
+
   it('keeps an unrelated failure wording unknown', async () => {
     execute.mockImplementation(async () => ({
       success: false,
@@ -232,14 +258,14 @@ describe('side chat IPC', () => {
   });
 
   it('falls back to unknown for unclassified failures, thrown or returned', async () => {
-    execute.mockRejectedValue(new Error('ECONNRESET socket hang up'));
+    execute.mockRejectedValue(new Error('something odd happened'));
     expect(await askHandler()(null, { sessionId: 's1', question: 'q', requestId: 'r-unk1' }))
       .toEqual({ failure: { cause: 'unknown' } });
 
     execute.mockImplementation(async () => ({
       success: false,
       output: '',
-      error: 'something odd happened',
+      error: '模型正忙，请稍后再试',
       toolsUsed: [],
       iterations: 1,
     }));

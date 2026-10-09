@@ -6,8 +6,7 @@
 // 注入原则（E1 备料 context-bindings.md）：
 //   - always：索引常驻（标题/路径/摘要一行级），正文按需 Read
 //   - on_demand：仅列出（模型知道去哪取），用到再读
-//   - scope=private 默认不进其他专家（隔离天然：按 roleId 取文件）
-// ponytail: scope=project 的跨专家共读本批只存字段不接线，后续批次（E4/E5）拍板后再做
+// 条目只进本专家（隔离天然：按 roleId 取文件）；跨专家共读走项目资料库，不在条目上存共享字段
 
 import * as crypto from 'crypto';
 import * as fs from 'fs/promises';
@@ -16,7 +15,6 @@ import { ROLE_ASSETS } from '../../../shared/constants';
 import type {
   ExpertBindingKind,
   ExpertBindingMode,
-  ExpertBindingScope,
   ExpertContextBinding,
 } from '../../../shared/contract/roleAssets';
 import { getLibraryService } from '../library/libraryService';
@@ -27,7 +25,6 @@ const logger = createLogger('RoleContextBindings');
 
 const BINDING_KINDS: ReadonlySet<ExpertBindingKind> = new Set(['file', 'folder', 'library_item']);
 const BINDING_MODES: ReadonlySet<ExpertBindingMode> = new Set(['always', 'on_demand']);
-const BINDING_SCOPES: ReadonlySet<ExpertBindingScope> = new Set(['private', 'project']);
 
 export function getRoleBindingsPath(roleId: string): string {
   return path.join(getRoleDir(roleId), ROLE_ASSETS.BINDINGS_FILENAME);
@@ -41,10 +38,15 @@ function isValidBinding(value: unknown): value is ExpertContextBinding {
     && BINDING_KINDS.has(b.kind as ExpertBindingKind)
     && typeof b.target === 'string' && b.target.length > 0
     && BINDING_MODES.has(b.mode as ExpertBindingMode)
-    && BINDING_SCOPES.has(b.scope as ExpertBindingScope)
     && typeof b.createdAt === 'number'
     && (b.title === undefined || typeof b.title === 'string')
   );
+}
+
+/** 兼容存量：旧版写入的 scope 字段读入时忽略并剥离，不回写（下一次 add/remove 自然重写掉） */
+function stripLegacyScope(binding: ExpertContextBinding): ExpertContextBinding {
+  const { scope: _legacyScope, ...rest } = binding as ExpertContextBinding & { scope?: unknown };
+  return rest;
 }
 
 /** 读取角色资料架；文件缺失/损坏 → 空数组（空资料架也能工作），非法条目剔除并告警 */
@@ -54,7 +56,7 @@ export async function readRoleBindings(roleId: string): Promise<ExpertContextBin
     const raw = await fs.readFile(getRoleBindingsPath(roleId), 'utf-8');
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
-    const valid = parsed.filter(isValidBinding);
+    const valid = parsed.filter(isValidBinding).map(stripLegacyScope);
     if (valid.length !== parsed.length) {
       logger.warn('Dropped invalid role bindings entries', { roleId, dropped: parsed.length - valid.length });
     }
@@ -81,7 +83,6 @@ export interface AddRoleBindingArgs {
   target: string;
   title?: string;
   mode: ExpertBindingMode;
-  scope: ExpertBindingScope;
 }
 
 /** 追加绑定（同 kind+target 幂等去重，返回现有条目）；library_item 校验条目存在并回填标题 */
@@ -90,8 +91,8 @@ export async function addRoleBinding(
   args: AddRoleBindingArgs,
   now: number = Date.now(),
 ): Promise<ExpertContextBinding> {
-  if (!BINDING_KINDS.has(args.kind) || !BINDING_MODES.has(args.mode) || !BINDING_SCOPES.has(args.scope)) {
-    throw new Error('Invalid binding kind/mode/scope');
+  if (!BINDING_KINDS.has(args.kind) || !BINDING_MODES.has(args.mode)) {
+    throw new Error('Invalid binding kind/mode');
   }
   const target = args.target.trim();
   if (!target) throw new Error('Binding target is required');
@@ -120,7 +121,6 @@ export async function addRoleBinding(
     target,
     title,
     mode: args.mode,
-    scope: args.scope,
     createdAt: now,
   };
   await writeRoleBindings(roleId, [...bindings, binding]);

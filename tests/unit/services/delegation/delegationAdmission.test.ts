@@ -6,9 +6,18 @@ import {
   recheckForDelivery,
   workspacesOverlap,
   type DelegationAdmissionSnapshot,
+  type DelegateSessionCall,
   type DelegationDeliverySnapshot,
+  type DelegationFolderTrustFact,
 } from '../../../../src/host/services/delegation/delegationAdmission';
 import { deriveActionFingerprint } from '../../../../src/host/services/delegation/delegationKeys';
+
+/** tsc-tests 棘轮：判别联合须先收窄再取 .call——非法输入另有专测，这里一律断言 ok。 */
+function parseOkCall(args: unknown): DelegateSessionCall {
+  const parsed = parseDelegateSessionCall(args);
+  if (!parsed.ok) throw new Error(`unexpected invalid delegate_session args: ${parsed.detail}`);
+  return parsed.call;
+}
 
 function healthySnapshot(
   overrides: Partial<DelegationAdmissionSnapshot> = {},
@@ -111,7 +120,7 @@ describe('parseDelegateSessionCall（D4 调用形状）', () => {
 describe('admitDelegation（G1-G12）', () => {
   it('基线快照全绿：admitted 且绑定解析出的目标', () => {
     const result = admitDelegation(
-      parseDelegateSessionCall(delegateExistingCall()).call ?? { action: 'delegate_existing' },
+      parseOkCall(delegateExistingCall()),
       healthySnapshot(),
     );
     expect(result).toMatchObject({ kind: 'admitted', targetSessionId: 'target-a' });
@@ -125,20 +134,20 @@ describe('admitDelegation（G1-G12）', () => {
       { isDeleted: true },
     ]) {
       const result = admitDelegation(
-        parseDelegateSessionCall(delegateExistingCall()).call ?? { action: 'delegate_existing' },
+        parseOkCall(delegateExistingCall()),
         healthySnapshot({ target: { ...healthySnapshot().target, ...patch } }),
       );
       expect(result).toMatchObject({ kind: 'rejected', code: 'target_unavailable', gate: 'G1' });
     }
     expect(admitDelegation(
-      parseDelegateSessionCall(delegateExistingCall()).call ?? { action: 'delegate_existing' },
+      parseOkCall(delegateExistingCall()),
       healthySnapshot(),
     )).toMatchObject({ kind: 'admitted' });
   });
 
   it('G2：非 chat 类型 → not_delegatable（真阳），chat 通过（真阴）', () => {
     const subagent = admitDelegation(
-      parseDelegateSessionCall(delegateExistingCall()).call ?? { action: 'delegate_existing' },
+      parseOkCall(delegateExistingCall()),
       healthySnapshot({ target: { ...healthySnapshot().target, sessionType: 'subagent' } }),
     );
     expect(subagent).toMatchObject({ kind: 'rejected', code: 'not_delegatable', gate: 'G2' });
@@ -146,7 +155,7 @@ describe('admitDelegation（G1-G12）', () => {
 
   it('G2：未登记的新引擎 kind 名（cast）→ not_delegatable，判据是 !== native', () => {
     const result = admitDelegation(
-      parseDelegateSessionCall(delegateExistingCall()).call ?? { action: 'delegate_existing' },
+      parseOkCall(delegateExistingCall()),
       healthySnapshot({
         target: { ...healthySnapshot().target, engineKind: 'brand_new_engine' as never },
       }),
@@ -156,7 +165,7 @@ describe('admitDelegation（G1-G12）', () => {
 
   it('G2：目标是发起会话自身 → self_route', () => {
     const result = admitDelegation(
-      parseDelegateSessionCall(delegateExistingCall()).call ?? { action: 'delegate_existing' },
+      parseOkCall(delegateExistingCall()),
       healthySnapshot({
         originSessionId: 'target-a',
         target: { ...healthySnapshot().target, sessionId: 'target-a' },
@@ -167,22 +176,19 @@ describe('admitDelegation（G1-G12）', () => {
 
   it('G3：candidateSetId 过期 → candidate_set_stale（真阳），当前集合通过（真阴）', () => {
     const result = admitDelegation(
-      parseDelegateSessionCall(delegateExistingCall({ candidateSetId: 'set-old' })).call
-        ?? { action: 'delegate_existing' },
+      parseOkCall(delegateExistingCall({ candidateSetId: 'set-old' })),
       healthySnapshot(),
     );
     expect(result).toMatchObject({ kind: 'rejected', code: 'candidate_set_stale', gate: 'G3' });
     expect(admitDelegation(
-      parseDelegateSessionCall(delegateExistingCall({ candidateSetId: 'set-current' })).call
-        ?? { action: 'delegate_existing' },
+      parseOkCall(delegateExistingCall({ candidateSetId: 'set-current' })),
       healthySnapshot(),
     )).toMatchObject({ kind: 'admitted' });
   });
 
   it('G3：candidateRef 对不上 → ambiguous（真阳）', () => {
     const result = admitDelegation(
-      parseDelegateSessionCall(delegateExistingCall({ candidateRef: 'ref-elsewhere' })).call
-        ?? { action: 'delegate_existing' },
+      parseOkCall(delegateExistingCall({ candidateRef: 'ref-elsewhere' })),
       healthySnapshot(),
     );
     expect(result).toMatchObject({ kind: 'rejected', code: 'ambiguous', gate: 'G3' });
@@ -192,14 +198,14 @@ describe('admitDelegation（G1-G12）', () => {
     const snapshot = healthySnapshot();
     delete snapshot.candidates;
     const result = admitDelegation(
-      parseDelegateSessionCall(delegateExistingCall()).call ?? { action: 'delegate_existing' },
+      parseOkCall(delegateExistingCall()),
       snapshot,
     );
     expect(result).toMatchObject({ kind: 'rejected', code: 'ambiguous' });
   });
 
   it('G4：同键同指纹 → reused；同键异指纹 → idempotency_conflict', () => {
-    const call = parseDelegateSessionCall(delegateExistingCall()).call ?? { action: 'delegate_existing' };
+    const call = parseOkCall(delegateExistingCall());
     const fingerprint = deriveActionFingerprint({
       action: 'delegate_existing',
       targetIdentity: 'session:target-a',
@@ -230,7 +236,7 @@ describe('admitDelegation（G1-G12）', () => {
   });
 
   it('G4 排在门首：目标已归档时幂等重试仍返回 reused', () => {
-    const call = parseDelegateSessionCall(delegateExistingCall()).call ?? { action: 'delegate_existing' };
+    const call = parseOkCall(delegateExistingCall());
     const fingerprint = deriveActionFingerprint({
       action: 'delegate_existing',
       targetIdentity: 'session:target-a',
@@ -256,7 +262,7 @@ describe('admitDelegation（G1-G12）', () => {
       { workspaceAuthorized: false },
     ]) {
       const result = admitDelegation(
-        parseDelegateSessionCall(delegateExistingCall()).call ?? { action: 'delegate_existing' },
+        parseOkCall(delegateExistingCall()),
         healthySnapshot({ target: { ...healthySnapshot().target, ...patch } }),
       );
       expect(result).toMatchObject({ kind: 'rejected', code: 'workspace_boundary', gate: 'G5' });
@@ -265,7 +271,7 @@ describe('admitDelegation（G1-G12）', () => {
 
   it('G6：其他会话轮与目标工作区重叠 → write_conflict（真阳）', () => {
     const result = admitDelegation(
-      parseDelegateSessionCall(delegateExistingCall()).call ?? { action: 'delegate_existing' },
+      parseOkCall(delegateExistingCall()),
       healthySnapshot({
         runningTurns: [{ sessionId: 'user-session', workspaceRoot: '/ws/target-a/sub' }],
       }),
@@ -275,7 +281,7 @@ describe('admitDelegation（G1-G12）', () => {
 
   it('G6：发起会话自身的轮不算写方（K1B 决策），不重叠路径也不算', () => {
     const result = admitDelegation(
-      parseDelegateSessionCall(delegateExistingCall()).call ?? { action: 'delegate_existing' },
+      parseOkCall(delegateExistingCall()),
       healthySnapshot({
         runningTurns: [
           { sessionId: 'origin-1', workspaceRoot: '/ws/target-a' },
@@ -288,8 +294,7 @@ describe('admitDelegation（G1-G12）', () => {
   });
 
   it('G8：create_new 缺 host 受信工作区根 → unauthorized_workspace（真阳），带根通过（真阴）', () => {
-    const createNew = parseDelegateSessionCall({ action: 'create_new', content: '新活' }).call
-      ?? { action: 'create_new' as const };
+    const createNew = parseOkCall({ action: 'create_new', content: '新活' });
     const noRoot = healthySnapshot();
     delete noRoot.hostWorkspaceRoot;
     expect(admitDelegation(createNew, noRoot))
@@ -309,7 +314,7 @@ describe('admitDelegation（G1-G12）', () => {
 
   it('G10：用户活跃 run（对不上任何委托行）→ target_busy（真阳）', () => {
     const result = admitDelegation(
-      parseDelegateSessionCall(delegateExistingCall()).call ?? { action: 'delegate_existing' },
+      parseOkCall(delegateExistingCall()),
       healthySnapshot({ targetActiveRunId: 'run-user' }),
     );
     expect(result).toMatchObject({ kind: 'rejected', code: 'target_busy', gate: 'G10' });
@@ -317,7 +322,7 @@ describe('admitDelegation（G1-G12）', () => {
 
   it('G10：run id 对得上委托行的 target_run_id → 不拒（同目标多条委托排队）', () => {
     const result = admitDelegation(
-      parseDelegateSessionCall(delegateExistingCall()).call ?? { action: 'delegate_existing' },
+      parseOkCall(delegateExistingCall()),
       healthySnapshot({ targetActiveRunId: 'run-delegated', delegatedRunIds: ['run-delegated'] }),
     );
     expect(result).toMatchObject({ kind: 'admitted' });
@@ -325,7 +330,7 @@ describe('admitDelegation（G1-G12）', () => {
 
   it('G10：目标上有用户来源 queued/sending 行 → target_busy', () => {
     const result = admitDelegation(
-      parseDelegateSessionCall(delegateExistingCall()).call ?? { action: 'delegate_existing' },
+      parseOkCall(delegateExistingCall()),
       healthySnapshot({ userQueuedOrSendingRows: 2 }),
     );
     expect(result).toMatchObject({ kind: 'rejected', code: 'target_busy', gate: 'G10' });
@@ -334,7 +339,7 @@ describe('admitDelegation（G1-G12）', () => {
   it('G11：bypassPermissions / delegate / 未知档 → target_permission_mode（真阳×3）', () => {
     for (const mode of ['bypassPermissions', 'delegate', 'made-up-mode']) {
       const result = admitDelegation(
-        parseDelegateSessionCall(delegateExistingCall()).call ?? { action: 'delegate_existing' },
+        parseOkCall(delegateExistingCall()),
         healthySnapshot({ target: { ...healthySnapshot().target, permissionMode: mode } }),
       );
       expect(result).toMatchObject({ kind: 'rejected', code: 'target_permission_mode', gate: 'G11' });
@@ -344,7 +349,7 @@ describe('admitDelegation（G1-G12）', () => {
   it('G11：default/readOnly/acceptEdits/dontAsk/plan 全通过（真阴×5）', () => {
     for (const mode of ['default', 'readOnly', 'acceptEdits', 'dontAsk', 'plan']) {
       const result = admitDelegation(
-        parseDelegateSessionCall(delegateExistingCall()).call ?? { action: 'delegate_existing' },
+        parseOkCall(delegateExistingCall()),
         healthySnapshot({ target: { ...healthySnapshot().target, permissionMode: mode } }),
       );
       expect(result).toMatchObject({ kind: 'admitted' });
@@ -352,9 +357,9 @@ describe('admitDelegation（G1-G12）', () => {
   });
 
   it('G12：评估缺失/抛错形状 → untrusted_workspace（真阳×2）', () => {
-    for (const folderTrust of [null, { error: true }]) {
+    for (const folderTrust of [null, { error: true }] as DelegationFolderTrustFact[]) {
       const result = admitDelegation(
-        parseDelegateSessionCall(delegateExistingCall()).call ?? { action: 'delegate_existing' },
+        parseOkCall(delegateExistingCall()),
         healthySnapshot({ target: { ...healthySnapshot().target, folderTrust } }),
       );
       expect(result).toMatchObject({ kind: 'rejected', code: 'untrusted_workspace', gate: 'G12' });
@@ -363,7 +368,7 @@ describe('admitDelegation（G1-G12）', () => {
 
   it('G12：非 trusted 且 blockedItems>0 → untrusted_workspace；blocked=0 不拒', () => {
     const blocked = admitDelegation(
-      parseDelegateSessionCall(delegateExistingCall()).call ?? { action: 'delegate_existing' },
+      parseOkCall(delegateExistingCall()),
       healthySnapshot({
         target: { ...healthySnapshot().target, folderTrust: { state: 'blocked', blockedItems: 2 } },
       }),
@@ -371,7 +376,7 @@ describe('admitDelegation（G1-G12）', () => {
     expect(blocked).toMatchObject({ kind: 'rejected', code: 'untrusted_workspace', gate: 'G12' });
 
     const clean = admitDelegation(
-      parseDelegateSessionCall(delegateExistingCall()).call ?? { action: 'delegate_existing' },
+      parseOkCall(delegateExistingCall()),
       healthySnapshot({
         target: { ...healthySnapshot().target, folderTrust: { state: 'blocked', blockedItems: 0 } },
       }),
@@ -390,7 +395,7 @@ describe('admitDelegation（G1-G12）', () => {
       healthySnapshot({ target: { ...healthySnapshot().target, permissionMode: 'bypassPermissions' } }),
       healthySnapshot({ target: { ...healthySnapshot().target, folderTrust: null } }),
     ];
-    const call = parseDelegateSessionCall(delegateExistingCall()).call ?? { action: 'delegate_existing' };
+    const call = parseOkCall(delegateExistingCall());
     for (const snapshot of rejectionSnapshots) {
       const result = admitDelegation(call, snapshot);
       expect(result.kind).toBe('rejected');
@@ -398,8 +403,7 @@ describe('admitDelegation（G1-G12）', () => {
     // create_new 自己的拒绝路径（G8：无 host 受信根）同样不产出绑定。
     const noRoot = healthySnapshot();
     delete noRoot.hostWorkspaceRoot;
-    const createNew = parseDelegateSessionCall({ action: 'create_new', content: 'x' }).call
-      ?? { action: 'create_new' as const };
+    const createNew = parseOkCall({ action: 'create_new', content: 'x' });
     expect(admitDelegation(createNew, noRoot)).toMatchObject({ kind: 'rejected' });
     const admitted = admitDelegation(createNew, healthySnapshot({
       target: { ...healthySnapshot().target, sessionId: null, sessionExists: false, permissionMode: null },

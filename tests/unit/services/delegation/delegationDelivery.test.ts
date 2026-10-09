@@ -22,7 +22,7 @@ import {
   projectTerminalDelegations,
   type DelegationDeliveryFactDependencies,
 } from '../../../../src/host/services/delegation/delegationDelivery';
-import type { SessionCandidateRowLike } from '../../../../src/host/services/delegation/delegationCandidates';
+import type { DelegationSessionRowLike } from '../../../../src/host/services/delegation/delegationDelivery';
 
 const schemaLogger = {
   info: () => {},
@@ -30,6 +30,18 @@ const schemaLogger = {
   error: () => {},
   debug: () => {},
 } as unknown as Parameters<typeof applySchema>[1];
+
+function attachmentFixture(id: string, path: string) {
+  return {
+    id,
+    path,
+    name: `${id}.png`,
+    type: 'image' as const,
+    category: 'image' as const,
+    mimeType: 'image/png',
+    size: 42,
+  };
+}
 
 interface TargetFacts {
   sessionType?: string;
@@ -77,7 +89,7 @@ describe('delegationDelivery（K1C 投递接缝）', () => {
           workingDirectory: facts.workingDirectory ?? '/ws/target-1',
           isArchived: false,
           isDeleted: false,
-        } satisfies SessionCandidateRowLike),
+        } satisfies DelegationSessionRowLike),
       getPermissionMode: () => facts.permissionMode ?? 'default',
       evaluateFolderTrust: async () => {
         if (facts.folderTrustError) throw new Error('trust scan failed');
@@ -256,14 +268,14 @@ describe('delegationDelivery（K1C 投递接缝）', () => {
         delegationId: 'd-1', originSessionId, originTurnId,
         disposition: 'delegate_existing', targetSessionId,
         submissionKey, actionFingerprint: fingerprintWithAttachment,
-        envelope: { content, sessionId: targetSessionId, attachments: [{ id: 'att-1', path: '/tmp/a.png' }] },
+        envelope: { content, sessionId: targetSessionId, attachments: [attachmentFixture('att-1', '/tmp/a.png')] },
         now: 1_000,
       });
       const decision = await evaluateDelegationDelivery(makeDeps(), queuedInputs.getById(queuedInputId)!);
       expect(decision).toMatchObject({ kind: 'deliver' });
 
       queuedInputs.updateEnvelope(queuedInputId, JSON.stringify({
-        content, sessionId: targetSessionId, attachments: [{ id: 'att-1', path: '/tmp/b.png' }],
+        content, sessionId: targetSessionId, attachments: [attachmentFixture('att-1', '/tmp/b.png')],
       }), 2_000);
       const mismatch = await evaluateDelegationDelivery(makeDeps(), queuedInputs.getById(queuedInputId)!);
       expect(mismatch).toMatchObject({ kind: 'pause', code: 'payload_mismatch' });

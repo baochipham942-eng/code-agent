@@ -446,7 +446,7 @@ describe('web queued input drain · 委托钩子（ADR-072 K1C）', () => {
 
   function createDelegationDrain(input: {
     repository: QueuedInputRepository;
-    runEnvelope: Parameters<WebQueuedInputDrainDependenciesForTest['runEnvelope']>[0];
+    runEnvelope: WebQueuedInputDrainDependenciesForTest['runEnvelope'];
     stub: DelegationHooksStub;
     order?: string[];
     settled?: import('../../../src/shared/contract/queuedInput').QueuedInputSettledEvent[];

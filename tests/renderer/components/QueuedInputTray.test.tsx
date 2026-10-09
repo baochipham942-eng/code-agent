@@ -198,4 +198,42 @@ describe('QueuedInputTray', () => {
     });
     await waitFor(() => expect(screen.queryByTestId('queued-input-tray')).toBeNull());
   });
+
+  // 委托行（ADR-072 K1C gap 4）
+    it('委托行隐藏编辑入口，改道与撤回保留；普通行不受影响', async () => {
+      items = [
+        input('delegated', { origin: 'delegation' }),
+        input('plain', { position: 1 }),
+      ];
+      const onEdit = vi.fn();
+      render(<QueuedInputTray sessionId="session-1" revision={0} editingId={null} onEdit={onEdit} />);
+      await screen.findByTestId('queued-input-row-delegated');
+
+      // 委托行：无编辑按钮（INV-5：载荷不可经 renderer 改写），改道/撤回仍在
+      expect(screen.queryByTestId('queued-input-actions-delegated')?.textContent).not.toContain('编辑');
+      expect(onEdit).not.toHaveBeenCalled();
+      expect(screen.getByTestId('queued-input-actions-delegated').textContent).toContain('撤回');
+
+      // 普通行：编辑按钮照旧
+      fireEvent.click(screen.getByTestId('queued-input-actions-plain').querySelector('button:not([title])')!);
+      expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ id: 'plain' }));
+
+      // 委托行撤回入口可用（撤回是允许的用户动作）
+      const retractButton = Array.from(
+        screen.getByTestId('queued-input-actions-delegated').querySelectorAll('button'),
+      ).find((button) => button.textContent === '撤回');
+      expect(retractButton).toBeTruthy();
+      fireEvent.click(retractButton!);
+      await waitFor(() => expect(ipc.invokeDomain).toHaveBeenCalledWith(
+        expect.anything(), 'retract', { id: 'delegated' },
+      ));
+    });
+
+    it('sendNow（立即改道）对委托行仍暴露（解停只经复核后的 sendNow）', async () => {
+      items = [input('delegated', { origin: 'delegation' })];
+      render(<QueuedInputTray sessionId="session-1" revision={0} editingId={null} onEdit={vi.fn()} />);
+      await screen.findByTestId('queued-input-row-delegated');
+      const redirect = screen.getAllByRole('button', { name: '立即改道' })[0];
+      expect(redirect).toBeTruthy();
+    });
 });

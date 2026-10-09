@@ -55,6 +55,7 @@ import { persistCronMissedTrace } from './cronMissedTrace';
 import { appendCronAgentExpertThreadReceipt } from './cronAgentExpertThreadReceipt';
 import { buildCronAgentPrompt, truncateUtf8Snapshot } from './cronAgentPrompt';
 import { parseCronRunDigest } from '../../shared/cronRunDigest';
+import { beginArtifactRefresh, finishArtifactRefresh } from './artifactStandingRefresh';
 import {
   assertExecutionLocationConstraints,
   computeCronFireJitterMs,
@@ -894,6 +895,8 @@ export class CronService implements Disposable {
 
         let result: unknown; let finalAssistantText = '';
         let runError: unknown; let runFailed = false;
+        // 常设刷新（metadata.artifactRefresh）：跑前建快照记基线；非刷新任务返回 undefined 零扰动
+        const artifactRefresh = beginArtifactRefresh(definition);
         try {
           try {
             // 事件触发时通道载荷只以 untrusted 定界块追加在 prompt 尾部，并给该条
@@ -909,13 +912,10 @@ export class CronService implements Disposable {
             const unattendedTimeout = (await import('../agent/unattendedApprovalTerminal')).takeUnattendedApprovalTimeout(cronSession.id);
             if (unattendedTimeout) throw new Error(unattendedTimeout);
 
-            const messages = orchestrator.getMessages();
-            const lastAssistant = [...messages].reverse().find((message) => message.role === 'assistant');
-            finalAssistantText = lastAssistant?.content.trim() ?? '';
-            const snapshotMatch = finalAssistantText.match(CRON_AGENT_SNAPSHOT.TAG_PATTERN);
+            finalAssistantText = [...orchestrator.getMessages()].reverse().find((message) => message.role === 'assistant')?.content.trim() ?? '';
+            const snapshotToPersist = snapshotTrackingEnabled ? finalAssistantText.match(CRON_AGENT_SNAPSHOT.TAG_PATTERN)?.[1]?.trim() : undefined;
             // 只认标记：解析不到就保留上一次的值。拿整段回答顶替会把叙述性文字
             // 当成状态存下来，下一轮再原样注回提示词。
-            const snapshotToPersist = snapshotTrackingEnabled ? snapshotMatch?.[1]?.trim() : undefined;
             if (isExternalWatch) {
               hasAlert = EXTERNAL_WATCH.ALERT_TAG_PATTERN.test(finalAssistantText);
             }
@@ -964,9 +964,7 @@ export class CronService implements Disposable {
             runFailed = true;
             runError = ((code: string | undefined) => code ? new Error(code) : error)((await import('../agent/unattendedApprovalTerminal')).takeUnattendedApprovalTimeout(cronSession.id));
             try {
-              const lastAssistant = [...orchestrator.getMessages()]
-                .reverse()
-                .find((message) => message.role === 'assistant');
+              const lastAssistant = [...orchestrator.getMessages()].reverse().find((message) => message.role === 'assistant');
               finalAssistantText = lastAssistant?.content.trim() ?? '';
             } catch (messageReadError) {
               console.warn('[CronService] Failed to read partial agent conclusion after cron run failure', messageReadError);
@@ -975,6 +973,9 @@ export class CronService implements Disposable {
         } finally {
           tm.cleanup(cronSession.id);
         }
+
+        // runFailed 已知即结算常设刷新：成功走校验+留版（有标注则清），失败回滚快照并标注
+        if (artifactRefresh) await finishArtifactRefresh(artifactRefresh, { runFailed, error: runError, updateJob: (u) => this.updateJob(definition.id, u) });
 
         if (action.roleId) {
           try {

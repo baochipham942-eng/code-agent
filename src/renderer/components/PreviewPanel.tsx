@@ -25,6 +25,7 @@ import {
   type HtmlLocalitySelectionController,
 } from '../utils/htmlLocality';
 import { DeliverableStatusBadge } from './DeliverableStatusBadge';
+import { ArtifactStandingRefresh, type ArtifactStandingRefreshHandle } from './ArtifactStandingRefresh';
 import { DeliverablePublishBadge } from './DeliverablePublishBadge';
 import { ArtifactFollowToolbar, ArtifactPreviewLoading } from './ArtifactFollowToolbar';
 import { ArtifactSourceEditor } from './ArtifactSourceEditor';
@@ -482,6 +483,7 @@ export const PreviewPanel: React.FC = () => {
   const { fileMetadata, refreshFileMetadata } = usePreviewFileMetadata(previewFilePath);
   const moreActionsRef = useRef<HTMLDivElement | null>(null);
   const versionsRef = useRef<HTMLDivElement | null>(null);
+  const standingRefreshRef = useRef<ArtifactStandingRefreshHandle | null>(null);
   // 预览用 HTML：把同目录相对 css/js 内联进来（srcDoc iframe 无法解析相对引用）。
   // 与可编辑/保存的 content 分开，保存仍写原始 content。
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
@@ -828,6 +830,7 @@ export const PreviewPanel: React.FC = () => {
             )}
           </div>
         )}
+        {!isVirtual && previewFilePath && <ArtifactStandingRefresh ref={standingRefreshRef} filePath={previewFilePath} />}
         {!isVirtual && (
           <button /* ds-allow:button: compact file-header icon action */
             type="button"
@@ -852,6 +855,7 @@ export const PreviewPanel: React.FC = () => {
           </button>
           {moreActionsOpen && (
             <div className="absolute right-0 top-full z-10 mt-1 w-48 rounded-lg bg-zinc-800 p-1 shadow-xl">
+              {!isVirtual && previewFilePath && <button type="button" onClick={() => { standingRefreshRef.current?.open(); setMoreActionsOpen(false); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-700"><RefreshCw className="h-4 w-4" />{pv.standingRefreshSetup}</button>}
               {(hasSourceModes || isCode) && !isVirtual && (
                 <button type="button" onClick={() => { void handleSave(); setMoreActionsOpen(false); }} disabled={!isDirty || isSaving || viewingPublishedVersion} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-700 disabled:opacity-40">
                   <Save className={`h-4 w-4 ${isSaving ? 'animate-pulse' : ''}`} />{isDirty ? pv.saveShortcut : pv.saved}

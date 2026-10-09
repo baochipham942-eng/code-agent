@@ -2,8 +2,8 @@
 // N-COMPANION-APPROVAL-DESKTOP-RESOLVED：手机先答后，桌面上迟到的点击拿到
 // 未送达结果（unknown_request / PENDING_PERMISSION_NOT_FOUND / success:false）——
 // 不记成本机决定（recordPermissionDecision 不得被调）、不留卡，并明说「已在其他设备处理」。
-// 独立成文件而不是塞进 permissionCard.respond.test.tsx：那个文件的 appStore mock
-// 不带 recordPermissionDecision（走 else 分支），补上会改变既有用例的断言路径。
+// 独立成文件而不是塞进 permissionCard.respond.test.tsx：这里需要同时覆盖
+// DecisionSlot 传入 requestOverride 的真实渲染入口和 IPC 失败结果。
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -17,6 +17,7 @@ const state = vi.hoisted(() => ({
 const invoke = vi.hoisted(() => vi.fn());
 const saveMemory = vi.hoisted(() => vi.fn());
 const setPendingPermissionRequest = vi.hoisted(() => vi.fn());
+const dismissPermissionRequest = vi.hoisted(() => vi.fn());
 const recordPermissionDecision = vi.hoisted(() => vi.fn());
 const toastError = vi.hoisted(() => vi.fn());
 
@@ -29,6 +30,7 @@ vi.mock('../../../src/renderer/stores/appStore', () => ({
     pendingPermissionRequest: state.request,
     pendingPermissionSessionId: state.sessionId,
     setPendingPermissionRequest,
+    dismissPermissionRequest,
     recordPermissionDecision,
     language: 'zh',
     setLanguage: () => {},
@@ -88,7 +90,7 @@ describe('PermissionCard click that was already answered elsewhere', () => {
       success: false,
       error: { code: 'PENDING_PERMISSION_NOT_FOUND', message: 'already resolved elsewhere' },
     });
-    render(<PermissionCard />);
+    render(<PermissionCard requestOverride={request} sessionIdOverride="session-current" />);
 
     confirmAllowOnce();
 
@@ -100,27 +102,27 @@ describe('PermissionCard click that was already answered elsewhere', () => {
         request.sessionId,
       );
       expect(recordPermissionDecision).not.toHaveBeenCalled();
-      expect(setPendingPermissionRequest).toHaveBeenCalledWith(null);
+      expect(dismissPermissionRequest).toHaveBeenCalledWith(request.id);
       expect(toastError).toHaveBeenCalledWith(zh.decisionCard.permission.settledElsewhere);
     });
   });
 
   it('electron-shaped unknown_request outcome is treated the same', async () => {
     invoke.mockResolvedValueOnce({ outcome: 'unknown_request' });
-    render(<PermissionCard />);
+    render(<PermissionCard requestOverride={request} sessionIdOverride="session-current" />);
 
     confirmAllowOnce();
 
     await waitFor(() => {
       expect(recordPermissionDecision).not.toHaveBeenCalled();
-      expect(setPendingPermissionRequest).toHaveBeenCalledWith(null);
+      expect(dismissPermissionRequest).toHaveBeenCalledWith(request.id);
       expect(toastError).toHaveBeenCalledWith('已在其他设备处理');
     });
   });
 
   it('delivered results keep today behaviour: decision recorded, no toast', async () => {
     invoke.mockResolvedValueOnce({ success: true, data: { requestId: request.id, source: 'task-manager' } });
-    render(<PermissionCard />);
+    render(<PermissionCard requestOverride={request} sessionIdOverride="session-current" />);
 
     confirmAllowOnce();
 

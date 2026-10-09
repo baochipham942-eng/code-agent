@@ -123,6 +123,7 @@ export function PermissionCard({
     pendingPermissionRequest,
     pendingPermissionSessionId,
     setPendingPermissionRequest,
+    dismissPermissionRequest,
     recordPermissionDecision,
   } = useAppStore();
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
@@ -251,9 +252,7 @@ export function PermissionCard({
         // 明说「已在其他设备处理」——静默吞掉等于让用户对着一张已失效的卡反复点。
         if (isUndeliveredResponse(outcome)) {
           releaseApprovalResponse(request.id);
-          if (!requestOverride) {
-            setPendingPermissionRequest(null);
-          }
+          dismissPermissionRequest(request.id);
           toast.error(t.decisionCard.permission.settledElsewhere);
           return;
         }
@@ -293,6 +292,7 @@ export function PermissionCard({
       settled,
       recordPermissionDecision,
       setPendingPermissionRequest,
+      dismissPermissionRequest,
       t,
     ]
   );

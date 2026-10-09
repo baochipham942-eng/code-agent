@@ -57,6 +57,7 @@ describe('artifact preview health probe normalization', () => {
           visibleElements: 4,
           horizontalOverflow: false,
           mainElement: { present: true, selector: 'main' },
+          buttons: { declared: 0, visible: 0 },
           brokenImages: [
             {
               src: 'http://127.0.0.1:8180/api/workspace/assets/missing.png',

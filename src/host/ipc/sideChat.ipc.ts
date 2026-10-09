@@ -5,13 +5,13 @@
 // SIDE_CHAT_ABORT aborts the matching in-flight controller.
 
 import { SideChatSchemas, type SideChatFailureCause } from '../../shared/ipc/schemas';
-import { AgentFailureCode } from '../../shared/contract/agentFailure';
 import { runReadOnlySideChat } from '../agent/readOnlySideChat';
 import { getSubagentExecutor } from '../agent/subagentExecutor';
 import { defineHandler } from '../platform/ipcRegistry';
 import { getDatabase } from '../services/core/databaseService';
 import { getSessionManager } from '../services/infra/sessionManager';
 import { getToolResolver } from '../tools/dispatch/toolResolver';
+import { classifySideChatFailure } from './sideChatFailure';
 
 const RECENT_CONTEXT_MESSAGES = 12;
 
@@ -21,25 +21,6 @@ function sideChatError(code: 'SIDE_CHAT_ABORTED' | 'SIDE_CHAT_SESSION_NOT_FOUND'
   const error = new Error(code);
   error.name = code === 'SIDE_CHAT_ABORTED' ? 'AbortError' : 'Error';
   return error;
-}
-
-/**
- * 把底层错误（provider 文案 / executor 结构化失败码）归并成稳定 cause token。
- * 原始 payload 不出宿主——renderer 只拿到 token 去映射本地化文案，未知兜底 'unknown'。
- */
-function classifySideChatFailure(input: { message?: string; failureCode?: unknown }): SideChatFailureCause {
-  if (input.failureCode === AgentFailureCode.Timeout) return 'timeout';
-  const text = (input.message ?? '').toLowerCase();
-  if (
-    /(?:^|[^0-9])(?:401|403)(?:[^0-9]|$)/.test(text)
-    // 中文覆盖面：providerConnectionTest「认证失败/权限不足」、agentEngine「认证失败…
-    // 凭据」、国内 provider 直出的「请检查访问凭证/凭证无效/未授权/无权限」等自由文案。
-    || /unauthorized|forbidden|authentication|invalid[ _/-]?api[ _/-]?key|invalid[ _/-]?token|incorrect[ _/-]?api|api[ _/-]?key[ _/-]?(?:invalid|not[ _/-]?valid|expired|error)|鉴权|授权失败|认证失败|认证未通过|访问凭证|凭证无效|未授权|无权限|权限不足|密钥无效|令牌无效/.test(text)
-  ) {
-    return 'auth';
-  }
-  if (/timeout|timed?[ _-]?out|etimedout|econnaborted|deadline|超时/.test(text)) return 'timeout';
-  return 'unknown';
 }
 
 async function askSideChat(payload: { sessionId: string; question: string; requestId: string }): Promise<{ answer?: string; failure?: { cause: SideChatFailureCause } }> {

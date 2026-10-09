@@ -265,6 +265,9 @@ describe('companion relay client legacy usage hook', () => {
       WebSocket: FakeWebSocket as unknown as typeof WebSocket,
     });
     try {
+      // last 是静态残留：先清掉，确保后面等到的是本用例 client 的 socket（账号通道异步拨号，
+      // 旧 socket 会让握手事件打进死连接、用例假绿）。
+      FakeWebSocket.last = null;
       client.advertise({ deviceRef: DEVICE_REF, routeToken: TOKEN });
       void client.start();
       // 账号通道的凭据是异步现取的：排空微任务让拨号走到 socket 构造，共享凭据通道则同步就有。

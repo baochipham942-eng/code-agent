@@ -29,6 +29,12 @@ vi.mock('../../../../../src/host/services', () => ({
   getConfigService: () => getConfigServiceMock(),
 }));
 
+// 智谱 key 查找已抽到 toolAvailability（直连 core/configService，不走 barrel），
+// 两条路径都要 mock 到，handler 与可用性判定读到同一份 fake config。
+vi.mock('../../../../../src/host/services/core/configService', () => ({
+  getConfigService: () => getConfigServiceMock(),
+}));
+
 import { textToSpeechModule, executeTextToSpeech } from '../../../../../src/host/plugins/builtin/audioProcessing/textToSpeech';
 
 function makeLogger(): Logger {

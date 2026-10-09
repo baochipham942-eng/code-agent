@@ -217,6 +217,21 @@ export class SessionDelegationRepository {
     );
   }
 
+  /**
+   * K1C 终态投影的扫描集合：已回填 run id、尚未 observed 的 active/stopped 行。
+   * 带 sessionId 时只扫该目标（一轮结束后），否则全量（启动扫补写）。
+   */
+  listPendingTerminalObservation(targetSessionId?: string): SessionDelegationRecord[] {
+    const sql = targetSessionId
+      ? `SELECT * FROM session_delegations
+         WHERE target_session_id = ? AND target_run_id IS NOT NULL AND status IN ('active', 'stopped')
+         ORDER BY created_at ASC, delegation_id ASC`
+      : `SELECT * FROM session_delegations
+         WHERE target_run_id IS NOT NULL AND status IN ('active', 'stopped')
+         ORDER BY created_at ASC, delegation_id ASC`;
+    return this.many(sql, ...(targetSessionId ? [targetSessionId] : []));
+  }
+
   /** INV-4. Sets target_run_id once. A later call does not overwrite. */
   backfillTargetRunId(delegationId: string, runId: string): number {
     return this.changes(

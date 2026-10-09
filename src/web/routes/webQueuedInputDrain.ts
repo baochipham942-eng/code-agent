@@ -1,9 +1,11 @@
 import type { Response } from 'express';
 import type { AgentEvent } from '../../shared/contract';
-import type { QueuedInputActivatedEvent } from '../../shared/contract/queuedInput';
+import type { DelegationOriginMarker, QueuedInputActivatedEvent } from '../../shared/contract/queuedInput';
 import type { ConversationEnvelope } from '../../shared/contract/conversationEnvelope';
 import { QUEUED_INPUT_RETRY } from '../../shared/constants/queuedInput';
-import type { QueuedInputRepository } from '../../host/services/core/repositories/QueuedInputRepository';
+import type { QueuedInputRepository, QueuedInputRecord } from '../../host/services/core/repositories/QueuedInputRepository';
+import { RunSessionConflictError } from '../../host/runtime/runRegistry';
+import type { DelegationClaimDecision } from '../../host/services/delegation/delegationDelivery';
 import type { WebRouteLogger } from './routeTypes';
 
 type WebQueuedInputDrainRepository = Pick<
@@ -13,9 +15,24 @@ type WebQueuedInputDrainRepository = Pick<
   | 'markConsumed'
   | 'requeueAfterFailure'
   | 'markFailed'
+  | 'pauseQueued'
   | 'listSessionsWithQueuedInputs'
   | 'recoverSendingOrphans'
 >;
+
+/**
+ * ADR-072 K1C 委托投递钩子（可选，缺省 = 现行为）：beforeClaim 必须先于
+ * markSending（INV-1）；pause 时本行写 paused_reason 并继续抽下一行（I4）；
+ * onActivated 回填 target_run_id（INV-4）；冲突暂停不重试；重试耗尽投影
+ * aborted(delivery_failed)；projectTerminal 做终态投影（幂等）。
+ */
+export interface WebQueuedInputDrainDelegation {
+  beforeClaim(record: QueuedInputRecord): Promise<DelegationClaimDecision> | DelegationClaimDecision;
+  onActivated(record: QueuedInputRecord, activation: { runId: string; activatedAt: number }): void;
+  onClaimConflict(record: QueuedInputRecord): void;
+  onRetryExhausted(record: QueuedInputRecord): void;
+  projectTerminal(sessionId?: string): void;
+}
 
 interface WebQueuedInputDrainDependencies {
   getRepository: () => WebQueuedInputDrainRepository;
@@ -24,6 +41,7 @@ interface WebQueuedInputDrainDependencies {
     envelope: ConversationEnvelope,
     response: Response,
     onActivated: (activation: Omit<QueuedInputActivatedEvent, 'id' | 'sessionId'>) => void,
+    options?: { delegationOrigin?: DelegationOriginMarker },
   ) => Promise<void>;
   emitAgentEvent: (sessionId: string, event: AgentEvent) => void;
   /**
@@ -36,6 +54,8 @@ interface WebQueuedInputDrainDependencies {
     settled: { sessionId: string; id: string; status: 'consumed' | 'failed' | 'sending' | 'queued' },
   ) => void;
   notifyQueuedInputActivated: (activated: QueuedInputActivatedEvent) => void;
+  /** 委托行专属行为；不传时 drain 对一切行按既有用户输入语义处理。 */
+  delegation?: WebQueuedInputDrainDelegation;
   logger: WebRouteLogger;
 }
 
@@ -92,6 +112,7 @@ export function createWebQueuedInputDrain({
   emitAgentEvent,
   notifyQueuedInputSettled,
   notifyQueuedInputActivated,
+  delegation,
   logger,
 }: WebQueuedInputDrainDependencies): WebQueuedInputDrain {
   const activeSessions = new Set<string>();
@@ -101,9 +122,10 @@ export function createWebQueuedInputDrain({
   const settleRunFailure = (
     repository: WebQueuedInputDrainRepository,
     sessionId: string,
-    id: string,
+    record: QueuedInputRecord,
     error: unknown,
   ): void => {
+    const { id } = record;
     const requeued = repository.requeueAfterFailure(id);
     if (!requeued) {
       logger.warn('Web queued input could not be requeued after run failure', { sessionId, id });
@@ -123,6 +145,8 @@ export function createWebQueuedInputDrain({
       });
       return;
     }
+
+    delegation?.onRetryExhausted(record);
 
     emitAgentEvent(sessionId, {
       type: 'error',
@@ -147,7 +171,28 @@ export function createWebQueuedInputDrain({
     try {
       const repository = getRepository();
       const record = repository.getNextDispatchable(sessionId);
-      if (!record || !repository.markSending(record.id)) {
+      if (!record) {
+        return;
+      }
+      // INV-1：先复核再抢占。无 delegation 钩子（旧行为）或普通用户行走 markSending 直投。
+      let delegationOrigin: DelegationOriginMarker | undefined;
+      if (delegation) {
+        const decision = await delegation.beforeClaim(record);
+        if (decision.kind === 'wait') {
+          return;
+        }
+        if (decision.kind === 'pause') {
+          if (!repository.pauseQueued(record.id, decision.code)) {
+            return;
+          }
+          notifyQueuedInputSettled({ sessionId, id: record.id, status: 'queued' });
+          // I4：本行暂停不停摆，继续抽同会话的下一行。
+          scheduleDrain(sessionId);
+          return;
+        }
+        delegationOrigin = decision.delegationOrigin;
+      }
+      if (!repository.markSending(record.id)) {
         return;
       }
       notifyQueuedInputSettled({ sessionId, id: record.id, status: 'sending' });
@@ -160,7 +205,7 @@ export function createWebQueuedInputDrain({
           sessionId: record.sessionId,
         };
       } catch (error) {
-        settleRunFailure(repository, sessionId, record.id, error);
+        settleRunFailure(repository, sessionId, record, error);
         return;
       }
 
@@ -168,14 +213,24 @@ export function createWebQueuedInputDrain({
         await runEnvelope(
           envelope,
           createOfflineAgentRunResponseSink(),
-          (activation) => notifyQueuedInputActivated({
-            id: record.id,
-            sessionId,
-            ...activation,
-          }),
+          (activation) => {
+            delegation?.onActivated(record, activation);
+            notifyQueuedInputActivated({
+              id: record.id,
+              sessionId,
+              ...activation,
+            });
+          },
+          delegationOrigin ? { delegationOrigin } : undefined,
         );
       } catch (error) {
-        settleRunFailure(repository, sessionId, record.id, error);
+        if (delegationOrigin && error instanceof RunSessionConflictError) {
+          // 抢占后才发现目标已有活跃 run：暂停不进自动重试（INV-3）。
+          delegation?.onClaimConflict(record);
+          notifyQueuedInputSettled({ sessionId, id: record.id, status: 'queued' });
+          return;
+        }
+        settleRunFailure(repository, sessionId, record, error);
         return;
       }
 
@@ -187,6 +242,7 @@ export function createWebQueuedInputDrain({
       }
       notifyQueuedInputSettled({ sessionId, id: record.id, status: 'consumed' });
     } finally {
+      delegation?.projectTerminal(sessionId);
       activeSessions.delete(sessionId);
       if (pendingReleasedSessions.delete(sessionId)) {
         scheduleDrain(sessionId);
@@ -219,6 +275,8 @@ export function createWebQueuedInputDrain({
       startupSweepDone = true;
 
       getRepository().recoverSendingOrphans();
+      // 停机期间目标 run 已终态的委托行在这里补写 terminal_observed（幂等、可重放）。
+      delegation?.projectTerminal();
 
       for (const sessionId of getRepository().listSessionsWithQueuedInputs()) {
         if (hasActiveRun(sessionId)) {

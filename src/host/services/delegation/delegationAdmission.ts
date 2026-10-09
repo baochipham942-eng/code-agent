@@ -261,9 +261,9 @@ function checkG1(target: DelegationTargetSnapshot): string | null {
   return null;
 }
 
-/** G2：非发起会话自身、session_type 白名单、引擎 kind 必须是 native。 */
-function checkG2(target: DelegationTargetSnapshot, originSessionId: string): string | null {
-  if (target.sessionId !== null && target.sessionId === originSessionId) {
+/** G2：非发起会话自身、session_type 白名单、引擎 kind 必须是 native（origin 缺省跳过 self 判）。 */
+function checkG2(target: DelegationTargetSnapshot, originSessionId: string | null): string | null {
+  if (originSessionId !== null && target.sessionId !== null && target.sessionId === originSessionId) {
     return 'target is the origin session itself';
   }
   const sessionType = target.sessionType || 'chat';

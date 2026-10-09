@@ -28,6 +28,7 @@ import { z } from 'zod';
 import { getConfigService } from '../../../services';
 import { ZHIPU_VISION_MODEL, MODEL_API_ENDPOINTS } from '../../../../shared/constants';
 import { formatFileSize } from '../../utils/fileSize';
+import { getToolScreenshotDir } from '../../utils/toolScreenshotDir';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { screenshotPageSchema as schema } from './screenshotPage.schema';
 
@@ -292,7 +293,11 @@ export async function executeScreenshotPage(
     const timestamp = Date.now();
     const hostname = parsedUrl.hostname.replace(/\./g, '_');
     const fileName = `screenshot_${hostname}_${timestamp}.${format}`;
-    const finalPath = resolveInputPath(params.output_path ?? fileName, ctx.workingDir);
+    // 无显式 output_path 时落数据目录下按会话隔离的子目录（N-RETENTION-SHOTS-APPDIR），
+    // 不再写用户工作目录；显式 output_path 仍按 workingDir 解析，行为不变。
+    const finalPath = params.output_path
+      ? resolveInputPath(params.output_path, ctx.workingDir)
+      : path.join(getToolScreenshotDir(ctx.sessionId), fileName);
     const outputDir = path.dirname(finalPath);
 
     if (!fs.existsSync(outputDir)) {

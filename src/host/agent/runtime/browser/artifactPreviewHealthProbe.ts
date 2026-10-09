@@ -191,24 +191,24 @@ export async function collectArtifactPreviewHealthDiagnosticsFromPage(
         const documentElement = document.documentElement;
         const body = document.body;
 
-        // 可见性判据单一源：visibleElements / mainElement / 按钮探针共用同一套
-        // 尺寸+样式+视口相交标准，避免各探针口径漂移。
-        const isElementVisible = (element: Element): boolean => {
-          const rect = element.getBoundingClientRect();
-          const style = window.getComputedStyle(element);
-          return rect.width > minVisibleSize
-            && rect.height > minVisibleSize
-            && style.visibility !== 'hidden'
-            && style.display !== 'none'
-            && Number(style.opacity || '1') !== 0
-            && rect.bottom >= 0
-            && rect.right >= 0
-            && rect.top <= viewport.height
-            && rect.left <= viewport.width;
-        };
-
+        // 注意：这个回调会被整体序列化进页面执行，函数体里不许出现「具名函数绑定」——
+        // tsx/esbuild keepNames 会给它包 __name(...)，序列化后在页面上下文里是未定义
+        // （实机踩坑 ReferenceError: __name is not defined）。可见性判据因此保持内联
+        // 箭头（与既有 visibleElements/mainElement 探针同构），不抽共享 helper。
         const visibleElements = [...document.body.querySelectorAll('*')]
-          .filter(isElementVisible)
+          .filter((element) => {
+            const rect = element.getBoundingClientRect();
+            const style = window.getComputedStyle(element);
+            return rect.width > minVisibleSize
+              && rect.height > minVisibleSize
+              && style.visibility !== 'hidden'
+              && style.display !== 'none'
+              && Number(style.opacity || '1') !== 0
+              && rect.bottom >= 0
+              && rect.right >= 0
+              && rect.top <= viewport.height
+              && rect.left <= viewport.width;
+          })
           .length;
 
         let mainElementSelector: string | undefined;
@@ -216,7 +216,18 @@ export async function collectArtifactPreviewHealthDiagnosticsFromPage(
           try {
             const element = document.querySelector(selector);
             if (!element) continue;
-            if (isElementVisible(element)) {
+            const rect = element.getBoundingClientRect();
+            const style = window.getComputedStyle(element);
+            const visible = rect.width > minVisibleSize
+              && rect.height > minVisibleSize
+              && style.visibility !== 'hidden'
+              && style.display !== 'none'
+              && Number(style.opacity || '1') !== 0
+              && rect.bottom >= 0
+              && rect.right >= 0
+              && rect.top <= viewport.height
+              && rect.left <= viewport.width;
+            if (visible) {
               mainElementSelector = selector;
               break;
             }
@@ -232,7 +243,19 @@ export async function collectArtifactPreviewHealthDiagnosticsFromPage(
         )];
         const buttons = {
           declared: buttonLikeElements.length,
-          visible: buttonLikeElements.filter(isElementVisible).length,
+          visible: buttonLikeElements.filter((element) => {
+            const rect = element.getBoundingClientRect();
+            const style = window.getComputedStyle(element);
+            return rect.width > minVisibleSize
+              && rect.height > minVisibleSize
+              && style.visibility !== 'hidden'
+              && style.display !== 'none'
+              && Number(style.opacity || '1') !== 0
+              && rect.bottom >= 0
+              && rect.right >= 0
+              && rect.top <= viewport.height
+              && rect.left <= viewport.width;
+          }).length,
         };
 
         const brokenImages = [...document.images]

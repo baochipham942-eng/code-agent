@@ -95,6 +95,18 @@ export const SKILL_REVIEW = {
   ],
 } as const;
 
+/** /init-memory 确定性项目扫描（projectMemoryDraft → /init-memory 命令） */
+export const PROJECT_MEMORY_DRAFT = {
+  /** 单个白名单文件读取的字节上限（超出截断，防巨型 README/lockfile 灌爆扫描） */
+  FILE_MAX_BYTES: 64 * 1024,
+  /** 目录布局草稿列出的顶层目录数上限 */
+  LAYOUT_MAX_DIRS: 40,
+  /** 技术栈 / 常用命令草稿列出的条目数上限 */
+  LIST_MAX_ITEMS: 30,
+  /** README 一句话定位的字符上限 */
+  README_PURPOSE_MAX_CHARS: 240,
+} as const;
+
 /** 记忆 consolidation（cron 周期任务 → consolidation 模块） */
 export const MEMORY_CONSOLIDATION = {
   /** 调度 cron 表达式（6 字段，croner）：默认每周一 04:00 本地时间 */

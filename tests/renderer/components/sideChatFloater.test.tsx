@@ -31,6 +31,7 @@ import { dismissSideChat } from '../../../src/renderer/components/features/chat/
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useStatusStore } from '../../../src/renderer/stores/statusStore';
 import { useComposerStore } from '../../../src/renderer/stores/composerStore';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 const originalAddMessage = useSessionStore.getState().addMessage;
 
@@ -142,6 +143,7 @@ beforeEach(() => {
   });
   useStatusStore.setState({ isStreaming: false });
   useComposerStore.getState().setPendingCommand(null);
+  useAppStore.setState({ showSettings: false });
   window.codeAgentDomainAPI = undefined;
 });
 
@@ -153,6 +155,7 @@ afterEach(() => {
     currentSessionId: null,
     addMessage: originalAddMessage,
   });
+  useAppStore.setState({ showSettings: false });
   window.codeAgentDomainAPI = undefined;
 });
 
@@ -246,15 +249,17 @@ describe('side chat floater', () => {
 
     await submitBtw();
     await act(async () => {
-      pending.reject(new SideChatRequestError('auth'));
+      pending.reject(new SideChatRequestError('unknown'));
     });
 
     const dialog = await waitFor(() => {
       const node = screen.getByRole('dialog');
-      expect(node.textContent).toContain('模型没有响应：账号未通过授权');
+      expect(node.textContent).toContain('侧聊没有完成');
       return node;
     });
-    expect(dialog.textContent).not.toContain('侧聊没有完成');
+    expect(dialog.textContent).not.toContain('模型没有响应');
+    expect(screen.getByRole('button', { name: '重试' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '检查密钥 / 切换模型' })).toBeTruthy();
     expect(askSideChat).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole('button', { name: '重试' }));
@@ -270,27 +275,64 @@ describe('side chat floater', () => {
     expect(screen.queryByRole('button', { name: '重试' })).toBeNull();
   });
 
-  it('maps timeout and unknown causes to their own fallback wording', async () => {
-    const pending = deferAnswer();
-    const view = render(<SubmitHarness />);
-    await submitBtw();
-    await act(async () => {
-      pending.reject(new SideChatRequestError('timeout'));
-    });
-    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('请求超时'));
-    expect(screen.getByRole('dialog').textContent).not.toContain('模型没有响应');
+  it('offers the settings exit instead of retry for auth and quota failures', async () => {
+    const cases = [
+      { cause: 'auth', line: '模型没有响应：账号未通过授权' },
+      { cause: 'quota', line: '模型没有响应：额度或余额不足' },
+    ] as const;
+    for (const { cause, line } of cases) {
+      askSideChat.mockReset();
+      useAppStore.setState({ showSettings: false });
+      const pending = deferAnswer();
+      const view = render(<SubmitHarness />);
+      await submitBtw();
+      await act(async () => {
+        pending.reject(new SideChatRequestError(cause));
+      });
 
-    fireEvent.click(screen.getByRole('button', { name: '关闭侧聊' }));
-    view.unmount();
+      await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain(line));
+      expect(screen.queryByRole('button', { name: '重试' })).toBeNull();
+      const checkKey = screen.getByRole('button', { name: '检查密钥 / 切换模型' });
+      expect(useAppStore.getState().showSettings).toBe(false);
+      fireEvent.click(checkKey);
+      expect(useAppStore.getState().showSettings).toBe(true);
+      expect(askSideChat).toHaveBeenCalledTimes(1);
 
-    const second = deferAnswer();
-    render(<SubmitHarness />);
-    await submitBtw();
-    await act(async () => {
-      second.reject(new SideChatRequestError('unknown'));
-    });
-    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('侧聊没有完成'));
-    expect(screen.getByRole('button', { name: '重试' })).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: '关闭侧聊' }));
+      view.unmount();
+    }
+  });
+
+  it('maps timeout and network causes to retry only', async () => {
+    const cases = [
+      { cause: 'timeout', line: '请求超时' },
+      { cause: 'network', line: '网络连接中断' },
+    ] as const;
+    for (const { cause, line } of cases) {
+      askSideChat.mockReset();
+      const pending = deferAnswer();
+      const view = render(<SubmitHarness />);
+      await submitBtw();
+      await act(async () => {
+        pending.reject(new SideChatRequestError(cause));
+      });
+
+      await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain(line));
+      expect(screen.getByRole('dialog').textContent).not.toContain('模型没有响应');
+      expect(screen.getByRole('button', { name: '重试' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: '检查密钥 / 切换模型' })).toBeNull();
+
+      fireEvent.click(screen.getByRole('button', { name: '重试' }));
+      expect(askSideChat).toHaveBeenCalledTimes(2);
+      await act(async () => {
+        pending.resolve('好了');
+      });
+      await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('好了'));
+
+      fireEvent.click(screen.getByRole('button', { name: '关闭侧聊' }));
+      view.unmount();
+      dismissSideChat();
+    }
   });
 
   it('reuses the context health popover shell and adds no new colour or z-index token', () => {

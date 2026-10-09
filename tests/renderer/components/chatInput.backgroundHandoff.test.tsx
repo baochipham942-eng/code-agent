@@ -132,7 +132,11 @@ afterEach(() => {
 });
 
 describe('① 运行中第三个显式选项的可见性', () => {
-  const visibleCases: Array<[string, React.ComponentProps<typeof BackgroundHandoffButton>, boolean]> = [
+  type HandoffVisibilityProps = Pick<
+    React.ComponentProps<typeof BackgroundHandoffButton>,
+    'isProcessing' | 'draftText' | 'attachmentCount' | 'sessionId' | 'editingQueuedInput'
+  >;
+  const visibleCases: Array<[string, HandoffVisibilityProps, boolean]> = [
     ['运行中 + 有草稿', { isProcessing: true, draftText: '草稿', attachmentCount: 0, sessionId: 's1', editingQueuedInput: false }, true],
     ['运行中 + 仅附件', { isProcessing: true, draftText: '', attachmentCount: 1, sessionId: 's1', editingQueuedInput: false }, true],
     ['空闲时不出现', { isProcessing: false, draftText: '草稿', attachmentCount: 0, sessionId: 's1', editingQueuedInput: false }, false],

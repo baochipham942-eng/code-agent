@@ -679,6 +679,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   }, []);
 
   // IACT protocol: listen for inline interaction events from message bubbles
+  // （!run 不走这里：RunCommandCard 自己就地执行 + 渲染结果，不再发聊天消息。）
   useEffect(() => {
     const handleSend = (e: Event) => {
       const text = (e as CustomEvent<string>).detail;
@@ -693,19 +694,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         inputAreaRef.current?.focus();
       }
     };
-    const handleRun = (e: Event) => {
-      const cmd = (e as CustomEvent<string>).detail;
-      if (cmd?.trim()) {
-        void onSend(buildEnvelope(`Execute this shell command and show the output: \`${cmd.trim()}\``));
-      }
-    };
     window.addEventListener('iact:send', handleSend);
     window.addEventListener('iact:add', handleAdd);
-    window.addEventListener('iact:run', handleRun);
     return () => {
       window.removeEventListener('iact:send', handleSend);
       window.removeEventListener('iact:add', handleAdd);
-      window.removeEventListener('iact:run', handleRun);
     };
   }, [buildEnvelope, onSend, t]);
 

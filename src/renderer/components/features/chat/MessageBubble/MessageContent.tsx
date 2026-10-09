@@ -4,7 +4,7 @@
 
 import { useI18n } from '../../../../hooks/useI18n';
 import React, { useMemo, useCallback, memo, useEffect, useRef } from 'react';
-import { Send, PenLine, Terminal, Eye, ExternalLink, Play } from 'lucide-react';
+import { Send, PenLine, Eye, ExternalLink, Play } from 'lucide-react';
 import remend from 'remend';
 import type { Components } from 'react-markdown';
 import type { MessageContentProps } from './types';
@@ -12,6 +12,7 @@ import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { wrapFilePathsInBackticks, wrapTicketsAsLinks } from './filePathProcessor';
 import { parseRunHref } from './runHref';
+import { RunCommandCard } from './RunCommandCard';
 import { dedupeCodeCopyLinks } from './dedupeCodeCopyLinks';
 import { parseLeadingTriggerToken } from './triggerTokenHighlight';
 import { isWebMode, copyPathToClipboard, openExternalLink } from '../../../../utils/platform';
@@ -427,26 +428,10 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
           );
         }
 
-        // IACT: [label](!run?cmd=<percent-encoded>) — 按钮执行 href 载荷，不用链接文字。
-        // 裸 !run、缺/空 cmd、百分号解码失败：不渲染按钮，只留等宽纯文本（旧消息 fail-closed）。
+        // IACT: [label](!run?cmd=<percent-encoded>) — 卡片化就地执行（含 running/
+        // completed/refused/denied/failed 状态与输出），见 RunCommandCard。
         if (href === '!run' || (typeof href === 'string' && href.startsWith('!run?'))) {
-          const command = parseRunHref(href);
-          const label = plainText(children);
-          if (command === null) {
-            return <span className="whitespace-pre-wrap break-all font-mono text-xs text-zinc-400" data-iact-run-inert="">{label}</span>;
-          }
-          return <span className="my-2 inline-flex max-w-full flex-col gap-2 rounded-lg border border-zinc-700 bg-zinc-900 p-3 align-top">
-            {label !== command && (
-              <span className="whitespace-pre-wrap break-all text-xs text-zinc-500" data-iact-run-label="">{label}</span>
-            )}
-            <span className="whitespace-pre-wrap break-all font-mono text-xs text-zinc-300" data-iact-run-command="">{command}</span>
-            <button type="button" title={t.deliveryExperience.runHint}
-              onClick={() => window.dispatchEvent(new CustomEvent('iact:run', { detail: command }))}
-              className="inline-flex w-fit items-center gap-2 rounded-md border border-zinc-600 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800">
-              <Terminal className="h-3.5 w-3.5" />
-              {/\bpython[23]?\b.*\.py\b/.test(command) ? t.deliveryExperience.runScript : t.deliveryExperience.runCommand}
-            </button>
-          </span>;
+          return <RunCommandCard command={parseRunHref(href)} label={plainText(children)} />;
         }
 
         // IACT: [filepath](!open) — click to open file in editor/Finder

@@ -1265,6 +1265,12 @@
             "timeout"
           ]
         },
+        "resolvedBy": {
+          "type": "string",
+          "enum": [
+            "companion"
+          ]
+        },
         "dangerLevel": {
           "type": "string",
           "enum": [

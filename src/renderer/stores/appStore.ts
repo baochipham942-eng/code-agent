@@ -61,7 +61,7 @@ import {
 import { createWorkbenchActions } from './workbenchActions';
 import { SECONDARY_PAGES_CLOSED } from './secondaryPages';
 import { buildContentPreviewState } from './contentPreviewState';
-import { buildPermissionDecisionState } from './permissionDecisionState';
+import { buildPermissionDecisionState, buildPermissionDismissState } from './permissionDecisionState';
 import { installedBundledCapabilityIds } from './bundledCapabilityStore';
 
 // V2-A: 关 tab 时 fire-and-forget 调 stopDevServer。lazy import 避免
@@ -465,6 +465,8 @@ export interface AppState {
   markPreviewTabSaved: (id: string) => void;
   setPendingPermissionRequest: (request: PermissionRequest | null, sessionId?: string | null) => void;
   recordPermissionDecision: (request: PermissionRequest, decision: NonNullable<PermissionRequest['decision']>, sessionId?: string | null) => void;
+  /** 另一个面（手机）先答：按 requestId 收卡，不进本机已决存证。 */
+  dismissPermissionRequest: (requestId: string) => void;
   enqueuePermissionRequest: (
     sessionId: string,
     request: PermissionRequest,
@@ -1071,6 +1073,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   recordPermissionDecision: (request, decision, sessionId = null) => set((state) =>
     buildPermissionDecisionState(state, request, decision, sessionId, GLOBAL_PERMISSION_REQUEST_SESSION_ID)),
+
+  dismissPermissionRequest: (requestId) => set((state) => buildPermissionDismissState(state, requestId)),
 
   enqueuePermissionRequest: (sessionId, request, options) =>
     set((state) => {

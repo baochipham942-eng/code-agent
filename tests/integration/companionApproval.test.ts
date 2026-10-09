@@ -15,6 +15,7 @@ import { DEFAULT_SETTINGS } from '../../src/host/services/core/configDefaults';
 import { COMPANION_LIMITS } from '../../src/shared/constants/companion';
 import { EDITABLE_PERMISSION_TIMEOUT_MS } from '../../src/shared/contract/permissionEdit';
 import type { CompanionCommand } from '../../src/shared/contract/companion';
+import type { AgentEvent } from '../../src/shared/contract';
 
 describe('companion uses the desktop live approval authority', () => {
   let db: Database.Database;
@@ -22,12 +23,15 @@ describe('companion uses the desktop live approval authority', () => {
   let island: OrchestratorPermissionIsland;
   let service: CompanionApprovalService;
   let handlers: Parameters<typeof installPermissionResponseHandler>[0]['handlers'];
+  // N-COMPANION-APPROVAL-DESKTOP-RESOLVED：收集岛发出的 permission_request 事件，
+  // 供「手机先答 → 桌面收卡」的用例断言；既有用例不读它，行为不变。
+  let islandEvents: AgentEvent[];
   const sessionId = 'approval-session';
   beforeEach(() => {
-    db = new Database(':memory:'); handlers = new Map();
+    db = new Database(':memory:'); handlers = new Map(); islandEvents = [];
     island = new OrchestratorPermissionIsland({
       getSettings: () => ({ ...DEFAULT_SETTINGS, permissions: { ...DEFAULT_SETTINGS.permissions, autoApprove: { read: false, write: false, execute: false, network: false }, blockedCommands: [], devModeAutoApprove: false } }),
-      isDevModeAutoApproveEnabled: () => false, getExecutionTopology: () => 'main', hasApprovalUi: () => true, onEvent: () => {},
+      isDevModeAutoApproveEnabled: () => false, getExecutionTopology: () => 'main', hasApprovalUi: () => true, onEvent: event => { islandEvents.push(event); },
     });
     registerForegroundPermissionIsland(sessionId, island);
     const deliver = installPermissionResponseHandler({ handlers, pendingDevPermissions: new Map(), getCurrentSessionId: () => sessionId,
@@ -86,6 +90,41 @@ describe('companion uses the desktop live approval authority', () => {
     });
     expect((await gateway.submit(command)).kind).toBe('approval_conflict');
     await expect(promise).resolves.toMatchObject({ approved: false });
+  });
+
+  // N-COMPANION-APPROVAL-DESKTOP-RESOLVED：手机先答后桌面卡片必须能收掉——
+  // 岛要为这条裁决回传一个带 resolvedBy:'companion' 的 resolved 事件，恰好一条。
+  it('a phone approval emits exactly one resolved permission_request marked resolvedBy companion', async () => {
+    const { promise, request, command } = pending();
+    // Promise 释放那一刻事件必须已经在事件流里（「先于/伴随释放」的时序钉子）：
+    // then 回调在 resolve() 的同步块之后才跑，若事件晚于 resolve 发出，这里读到 0。
+    let resolvedEventsWhenReleased = -1;
+    const resolvedFor = (id: string) => islandEvents.filter(event =>
+      event.type === 'permission_request' && event.data.id === id && event.data.resolved === true);
+    void promise.then(() => { resolvedEventsWhenReleased = resolvedFor(request.id).length; });
+    expect((await gateway.submit(command)).kind).toBe('accepted');
+    await expect(promise).resolves.toEqual({ approved: true, approvalSource: 'user' });
+    expect(resolvedEventsWhenReleased).toBe(1);
+    expect(resolvedFor(request.id)).toHaveLength(1);
+    expect(resolvedFor(request.id)[0].data).toMatchObject({
+      resolved: true, decision: 'once', resolvedBy: 'companion',
+    });
+  });
+
+  it('a desktop-first decision emits no resolved permission_request at all', async () => {
+    const { promise, request } = pending();
+    await handlers.get(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE)!(null, request.id, 'deny', sessionId);
+    await expect(promise).resolves.toMatchObject({ approved: false });
+    expect(islandEvents.filter(event =>
+      event.type === 'permission_request' && event.data.resolved === true)).toEqual([]);
+  });
+
+  it('a late desktop click after a phone decision is reported not delivered', async () => {
+    const { promise, request, command } = pending();
+    expect((await gateway.submit(command)).kind).toBe('accepted');
+    await expect(promise).resolves.toMatchObject({ approved: true });
+    const late = await handlers.get(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE)!(null, request.id, 'allow', sessionId);
+    expect(late).toMatchObject({ success: false, error: { code: 'PENDING_PERMISSION_NOT_FOUND' } });
   });
 
   it('desktop allow_session and timeout/cancel carry distinct outcomes', async () => {

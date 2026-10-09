@@ -340,10 +340,13 @@ describe('toolResultLifecycle external data aliases', () => {
   });
 
   it('attaches jevInjectionScan metadata before returning (awaited, deterministic per turn)', async () => {
+    // N-JEV-DEFAULT-ON 后扫描默认开；本用例验证「元数据在返回前已就位」，用显式 '0'
+    // 关掉扫描以保持无 I/O 的确定性形状（默认开路径的降级形状由下方 unavailable 用例覆盖）。
+    vi.stubEnv('CODE_AGENT_JEV_INJECTION_SCAN', '0');
     const harness = makeHarness();
     const result = await harness.runTool('WebSearch', '1. Safe search https://example.com/search');
 
-    // Default-off: the scan resolves to 'disabled' without any I/O, and because
+    // Flag off: the scan resolves to 'disabled' without any I/O, and because
     // bookkeeping awaits it the metadata is on the result at return time.
     expect(result.metadata?.jevInjectionScan).toEqual({
       skipped: true,

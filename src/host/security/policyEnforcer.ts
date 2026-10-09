@@ -29,6 +29,13 @@ export interface PolicyCheckResult {
   traceStep?: DecisionStep;
 }
 
+/** N-PERM-POLICYVERSION：一个 enforcer 的可冻结快照（纯 JSON 数据，SecurityPolicy 无函数/正则）。 */
+export interface PolicyEnforcerState {
+  projectDir: string;
+  active: boolean;
+  policy: SecurityPolicy;
+}
+
 // ----------------------------------------------------------------------------
 // PolicyEnforcer
 // ----------------------------------------------------------------------------
@@ -39,7 +46,15 @@ export class PolicyEnforcer {
   private logStream: fs.WriteStream | null = null;
   private active: boolean;
 
-  constructor(projectDir: string) {
+  constructor(projectDir: string, frozenState?: PolicyEnforcerState) {
+    if (frozenState) {
+      // N-PERM-POLICYVERSION：从 run 起点捕获的状态重建冻结视图——不读盘、不开审计流，
+      // 只做判定（checkFilePath/checkCommand/...）；logToolCall 走已有的无流降级分支。
+      this.projectDir = frozenState.projectDir;
+      this.active = frozenState.active;
+      this.policy = frozenState.policy;
+      return;
+    }
     this.projectDir = projectDir;
     this.active = hasPolicyFile(projectDir);
     this.policy = loadPolicy(projectDir);
@@ -47,6 +62,20 @@ export class PolicyEnforcer {
     if (this.active && this.policy.audit.log_all_tool_calls) {
       this.initAuditLog();
     }
+  }
+
+  /** 深拷贝当前策略状态（N-PERM-POLICYVERSION：run 起点冻结用）。 */
+  captureState(): PolicyEnforcerState {
+    return {
+      projectDir: this.projectDir,
+      active: this.active,
+      policy: structuredClone(this.policy),
+    };
+  }
+
+  /** 由捕获状态构建冻结实例（无磁盘 IO、无审计流）。 */
+  static fromState(state: PolicyEnforcerState): PolicyEnforcer {
+    return new PolicyEnforcer(state.projectDir, state);
   }
 
   /**

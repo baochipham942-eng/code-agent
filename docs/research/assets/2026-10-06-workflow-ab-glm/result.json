@@ -1,0 +1,399 @@
+{
+  "generatedAt": "2026-10-07T05:11:48.611Z",
+  "gitHead": "ef48297cce6b7373fd4f1df73dd436e7a7ab0de2",
+  "model": "glm-5.3",
+  "endpoint": "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions",
+  "temperature": 0,
+  "maxTokens": 8192,
+  "questionCounts": {
+    "named": 7,
+    "unnamed": 7,
+    "total": 14
+  },
+  "descriptionSources": {
+    "before": "git show 999ccc4ef^:src/host/tools/modules/multiagent/workflow.schema.ts",
+    "after": "working tree src/host/tools/modules/multiagent/workflow.schema.ts"
+  },
+  "descriptionExcerpt": {
+    "before": "Author and run a JS orchestration script that fans out work across many sub-agents deterministically.\n\nUse this when a task benefits from structured multi-agent",
+    "after": "Author and run a JS orchestration script that fans out work across many sub-agents deterministically.\n\nUse this only when the user explicitly names a workflow. "
+  },
+  "arms": {
+    "before": {
+      "arm": "before",
+      "perQuestion": [
+        {
+          "id": "named-en-run-research",
+          "group": "named",
+          "toolCalls": [
+            "workflow"
+          ],
+          "opened": true,
+          "pass": true,
+          "ms": 13974,
+          "promptTokens": 1750,
+          "completionTokens": 788
+        },
+        {
+          "id": "named-en-launch-refactor",
+          "group": "named",
+          "toolCalls": [
+            "Bash",
+            "Bash"
+          ],
+          "opened": false,
+          "pass": false,
+          "ms": 5440,
+          "promptTokens": 1743,
+          "completionTokens": 166
+        },
+        {
+          "id": "named-en-start-translate",
+          "group": "named",
+          "toolCalls": [
+            "Bash"
+          ],
+          "opened": false,
+          "pass": false,
+          "ms": 2283,
+          "promptTokens": 1739,
+          "completionTokens": 108
+        },
+        {
+          "id": "named-en-kickoff-release",
+          "group": "named",
+          "toolCalls": [
+            "Bash"
+          ],
+          "opened": false,
+          "pass": false,
+          "ms": 10026,
+          "promptTokens": 1749,
+          "completionTokens": 514
+        },
+        {
+          "id": "named-zh-pao-zongjie",
+          "group": "named",
+          "toolCalls": [],
+          "opened": false,
+          "pass": false,
+          "ms": 5311,
+          "promptTokens": 1747,
+          "completionTokens": 149
+        },
+        {
+          "id": "named-zh-qidong-paicha",
+          "group": "named",
+          "toolCalls": [
+            "workflow"
+          ],
+          "opened": true,
+          "pass": true,
+          "ms": 28581,
+          "promptTokens": 1751,
+          "completionTokens": 2198
+        },
+        {
+          "id": "named-zh-yong-baojia",
+          "group": "named",
+          "toolCalls": [],
+          "opened": false,
+          "pass": false,
+          "ms": 9150,
+          "promptTokens": 1745,
+          "completionTokens": 410
+        },
+        {
+          "id": "unnamed-en-research-topics",
+          "group": "unnamed",
+          "toolCalls": [
+            "workflow"
+          ],
+          "opened": true,
+          "pass": false,
+          "ms": 9887,
+          "promptTokens": 1753,
+          "completionTokens": 572
+        },
+        {
+          "id": "unnamed-en-refactor-callbacks",
+          "group": "unnamed",
+          "toolCalls": [
+            "Bash"
+          ],
+          "opened": false,
+          "pass": true,
+          "ms": 4609,
+          "promptTokens": 1745,
+          "completionTokens": 63
+        },
+        {
+          "id": "unnamed-en-compare-databases",
+          "group": "unnamed",
+          "toolCalls": [],
+          "opened": false,
+          "pass": true,
+          "ms": 22448,
+          "promptTokens": 1744,
+          "completionTokens": 1217
+        },
+        {
+          "id": "unnamed-zh-tiyao-baogao",
+          "group": "unnamed",
+          "toolCalls": [
+            "Bash"
+          ],
+          "opened": false,
+          "pass": true,
+          "ms": 6073,
+          "promptTokens": 1742,
+          "completionTokens": 178
+        },
+        {
+          "id": "unnamed-zh-bingxing-xianliu",
+          "group": "unnamed",
+          "toolCalls": [],
+          "opened": false,
+          "pass": true,
+          "ms": 8654,
+          "promptTokens": 1743,
+          "completionTokens": 247
+        },
+        {
+          "id": "unnamed-zh-paicha-flaky",
+          "group": "unnamed",
+          "toolCalls": [
+            "Bash",
+            "Bash"
+          ],
+          "opened": false,
+          "pass": true,
+          "ms": 9348,
+          "promptTokens": 1748,
+          "completionTokens": 545
+        },
+        {
+          "id": "unnamed-zh-wendang-zhaiyao",
+          "group": "unnamed",
+          "toolCalls": [
+            "Bash"
+          ],
+          "opened": false,
+          "pass": true,
+          "ms": 1471,
+          "promptTokens": 1746,
+          "completionTokens": 71
+        }
+      ],
+      "named": {
+        "total": 7,
+        "opened": 2,
+        "hitRate": 0.2857142857142857
+      },
+      "unnamed": {
+        "total": 7,
+        "opened": 1,
+        "falseOpenRate": 0.14285714285714285
+      },
+      "usage": {
+        "promptTokens": 24445,
+        "completionTokens": 7226,
+        "totalTokens": 31671
+      }
+    },
+    "after": {
+      "arm": "after",
+      "perQuestion": [
+        {
+          "id": "named-en-run-research",
+          "group": "named",
+          "toolCalls": [
+            "workflow"
+          ],
+          "opened": true,
+          "pass": true,
+          "ms": 21367,
+          "promptTokens": 1722,
+          "completionTokens": 1773
+        },
+        {
+          "id": "named-en-launch-refactor",
+          "group": "named",
+          "toolCalls": [
+            "Bash",
+            "Bash"
+          ],
+          "opened": false,
+          "pass": false,
+          "ms": 12194,
+          "promptTokens": 1715,
+          "completionTokens": 621
+        },
+        {
+          "id": "named-en-start-translate",
+          "group": "named",
+          "toolCalls": [
+            "Bash"
+          ],
+          "opened": false,
+          "pass": false,
+          "ms": 7753,
+          "promptTokens": 1711,
+          "completionTokens": 485
+        },
+        {
+          "id": "named-en-kickoff-release",
+          "group": "named",
+          "toolCalls": [
+            "workflow"
+          ],
+          "opened": true,
+          "pass": true,
+          "ms": 27322,
+          "promptTokens": 1721,
+          "completionTokens": 2153
+        },
+        {
+          "id": "named-zh-pao-zongjie",
+          "group": "named",
+          "toolCalls": [],
+          "opened": false,
+          "pass": false,
+          "ms": 6001,
+          "promptTokens": 1719,
+          "completionTokens": 178
+        },
+        {
+          "id": "named-zh-qidong-paicha",
+          "group": "named",
+          "toolCalls": [
+            "workflow"
+          ],
+          "opened": true,
+          "pass": true,
+          "ms": 31199,
+          "promptTokens": 1723,
+          "completionTokens": 2066
+        },
+        {
+          "id": "named-zh-yong-baojia",
+          "group": "named",
+          "toolCalls": [],
+          "opened": false,
+          "pass": false,
+          "ms": 9140,
+          "promptTokens": 1717,
+          "completionTokens": 316
+        },
+        {
+          "id": "unnamed-en-research-topics",
+          "group": "unnamed",
+          "toolCalls": [
+            "WebSearch",
+            "WebSearch",
+            "WebSearch"
+          ],
+          "opened": false,
+          "pass": true,
+          "ms": 2075,
+          "promptTokens": 1725,
+          "completionTokens": 121
+        },
+        {
+          "id": "unnamed-en-refactor-callbacks",
+          "group": "unnamed",
+          "toolCalls": [
+            "Bash"
+          ],
+          "opened": false,
+          "pass": true,
+          "ms": 6594,
+          "promptTokens": 1717,
+          "completionTokens": 85
+        },
+        {
+          "id": "unnamed-en-compare-databases",
+          "group": "unnamed",
+          "toolCalls": [
+            "WebSearch",
+            "WebSearch"
+          ],
+          "opened": false,
+          "pass": true,
+          "ms": 7182,
+          "promptTokens": 1716,
+          "completionTokens": 252
+        },
+        {
+          "id": "unnamed-zh-tiyao-baogao",
+          "group": "unnamed",
+          "toolCalls": [
+            "Bash"
+          ],
+          "opened": false,
+          "pass": true,
+          "ms": 8290,
+          "promptTokens": 1714,
+          "completionTokens": 108
+        },
+        {
+          "id": "unnamed-zh-bingxing-xianliu",
+          "group": "unnamed",
+          "toolCalls": [],
+          "opened": false,
+          "pass": true,
+          "ms": 4963,
+          "promptTokens": 1715,
+          "completionTokens": 338
+        },
+        {
+          "id": "unnamed-zh-paicha-flaky",
+          "group": "unnamed",
+          "toolCalls": [
+            "Bash",
+            "Bash"
+          ],
+          "opened": false,
+          "pass": true,
+          "ms": 8325,
+          "promptTokens": 1720,
+          "completionTokens": 318
+        },
+        {
+          "id": "unnamed-zh-wendang-zhaiyao",
+          "group": "unnamed",
+          "toolCalls": [
+            "Bash"
+          ],
+          "opened": false,
+          "pass": true,
+          "ms": 5160,
+          "promptTokens": 1718,
+          "completionTokens": 119
+        }
+      ],
+      "named": {
+        "total": 7,
+        "opened": 3,
+        "hitRate": 0.42857142857142855
+      },
+      "unnamed": {
+        "total": 7,
+        "opened": 0,
+        "falseOpenRate": 0
+      },
+      "usage": {
+        "promptTokens": 24053,
+        "completionTokens": 8933,
+        "totalTokens": 32986
+      }
+    }
+  },
+  "wallTimeMs": 303278,
+  "tokenUsage": {
+    "promptTokens": 48498,
+    "completionTokens": 16159,
+    "totalTokens": 64657
+  },
+  "scopeNote": "Conclusion holds for GLM on the ZHIPU coding subscription endpoint only (single run, temperature 0)."
+}

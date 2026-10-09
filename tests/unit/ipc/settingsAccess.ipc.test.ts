@@ -85,7 +85,6 @@ function makeSettings(): AppSettings {
     ui: {
       theme: 'dark',
       fontSize: 14,
-      showToolCalls: true,
       language: 'zh',
     },
     cloud: {

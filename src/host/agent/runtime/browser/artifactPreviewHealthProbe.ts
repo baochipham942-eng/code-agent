@@ -16,6 +16,10 @@ export interface ArtifactPreviewHealthViewportDiagnostics {
     present: boolean;
     selector?: string;
   };
+  buttons: {
+    declared: number;
+    visible: number;
+  };
   brokenImages: Array<{
     src: string;
     alt?: string;
@@ -187,20 +191,24 @@ export async function collectArtifactPreviewHealthDiagnosticsFromPage(
         const documentElement = document.documentElement;
         const body = document.body;
 
+        // 可见性判据单一源：visibleElements / mainElement / 按钮探针共用同一套
+        // 尺寸+样式+视口相交标准，避免各探针口径漂移。
+        const isElementVisible = (element: Element): boolean => {
+          const rect = element.getBoundingClientRect();
+          const style = window.getComputedStyle(element);
+          return rect.width > minVisibleSize
+            && rect.height > minVisibleSize
+            && style.visibility !== 'hidden'
+            && style.display !== 'none'
+            && Number(style.opacity || '1') !== 0
+            && rect.bottom >= 0
+            && rect.right >= 0
+            && rect.top <= viewport.height
+            && rect.left <= viewport.width;
+        };
+
         const visibleElements = [...document.body.querySelectorAll('*')]
-          .filter((element) => {
-            const rect = element.getBoundingClientRect();
-            const style = window.getComputedStyle(element);
-            return rect.width > minVisibleSize
-              && rect.height > minVisibleSize
-              && style.visibility !== 'hidden'
-              && style.display !== 'none'
-              && Number(style.opacity || '1') !== 0
-              && rect.bottom >= 0
-              && rect.right >= 0
-              && rect.top <= viewport.height
-              && rect.left <= viewport.width;
-          })
+          .filter(isElementVisible)
           .length;
 
         let mainElementSelector: string | undefined;
@@ -208,18 +216,7 @@ export async function collectArtifactPreviewHealthDiagnosticsFromPage(
           try {
             const element = document.querySelector(selector);
             if (!element) continue;
-            const rect = element.getBoundingClientRect();
-            const style = window.getComputedStyle(element);
-            const visible = rect.width > minVisibleSize
-              && rect.height > minVisibleSize
-              && style.visibility !== 'hidden'
-              && style.display !== 'none'
-              && Number(style.opacity || '1') !== 0
-              && rect.bottom >= 0
-              && rect.right >= 0
-              && rect.top <= viewport.height
-              && rect.left <= viewport.width;
-            if (visible) {
+            if (isElementVisible(element)) {
               mainElementSelector = selector;
               break;
             }
@@ -227,6 +224,16 @@ export async function collectArtifactPreviewHealthDiagnosticsFromPage(
             // Invalid custom selectors are ignored; default selectors are static.
           }
         }
+
+        // 主操作按钮探针：页面声明了 button 类元素但一个都不可见（被遮挡/移出视口/
+        // 零尺寸）= 交付出"够不着的按钮"。页面本来就没有按钮时不算缺陷。
+        const buttonLikeElements = [...document.querySelectorAll(
+          'button, [role="button"], input[type="button"], input[type="submit"]',
+        )];
+        const buttons = {
+          declared: buttonLikeElements.length,
+          visible: buttonLikeElements.filter(isElementVisible).length,
+        };
 
         const brokenImages = [...document.images]
           .filter((image) => image.naturalWidth === 0)
@@ -250,6 +257,7 @@ export async function collectArtifactPreviewHealthDiagnosticsFromPage(
             present: Boolean(mainElementSelector),
             selector: mainElementSelector,
           },
+          buttons,
           brokenImages,
         };
       }, {
@@ -269,6 +277,7 @@ export async function collectArtifactPreviewHealthDiagnosticsFromPage(
         visibleElements: probe.visibleElements,
         horizontalOverflow: probe.horizontalOverflow,
         mainElement: probe.mainElement,
+        buttons: probe.buttons,
         brokenImages: probe.brokenImages,
       });
     }

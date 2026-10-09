@@ -51,6 +51,8 @@ export type {
 export interface ArtifactPreviewHealthSummary {
   attempted: boolean;
   skipped?: boolean;
+  /** 检查器自身失败（浏览器起不来/页面打不开等），finding 里的 page_error 是合成占位而非页面缺陷。 */
+  checkerFailed?: boolean;
   passed: boolean;
   findings: ArtifactPreviewHealthFinding[];
   failures: string[];
@@ -225,6 +227,9 @@ export async function runSelfStartedArtifactPreviewHealth(
     const message = error instanceof Error ? error.message : String(error);
     return {
       attempted: true,
+      // 检查器自崩 ≠ 页面缺陷：标记 checkerFailed 让调用方降级而不是把合成的
+      // page_error 当成页面问题去触发修复。
+      checkerFailed: true,
       passed: false,
       findings: [
         createArtifactPreviewHealthFinding(

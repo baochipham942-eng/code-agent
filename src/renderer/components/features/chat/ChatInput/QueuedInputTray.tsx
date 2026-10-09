@@ -64,7 +64,7 @@ export function QueuedInputTray({
 
   return (
     <section
-      className="mb-2 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950/80"
+      className="mb-2 overflow-hidden rounded-xl border border-border-default bg-surface-subtle"
       data-testid="queued-input-tray"
     >
       <button /* ds-allow:button: 队列条标题整行都是收起热区，Button primitive 的居中按钮形态不适配 */

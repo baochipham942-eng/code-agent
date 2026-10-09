@@ -36,6 +36,7 @@ const MemoryDomainRequestSchema = z.object({
     'memoryHarnessImportConfirmDirective',
     'memoryHarnessImportDryRun',
     'memoryImportV2Apply',
+    'memoryInitProjectDraft',
     'memoryImportV2DryRun',
     'memoryInboxResolve',
     'memoryPack',

@@ -24,7 +24,7 @@ vi.mock('../../../src/host/cron/cronPersistence', () => ({
 
 // 常设刷新 host 段：真临时目录 + 真 snapshotManager（快照/留版原语不做 mock），
 // 只把 updateJob 换成捕获调用的 spy。
-type JobUpdatePayload = Parameters<Parameters<typeof finishArtifactRefresh>[1]['updateJob']>[0];
+type JobUpdatePayload = Parameters<NonNullable<Parameters<typeof finishArtifactRefresh>[1]['updateJob']>>[0];
 type UpdateJobSpy = Mock<(updates: JobUpdatePayload) => Promise<unknown>>;
 
 function refreshJob(filePath: string, metadataExtra: Record<string, unknown> = {}): CronJobDefinition {

@@ -120,6 +120,15 @@ describe('skillCreateModule (native)', () => {
       if (!result.ok) expect(result.code).toBe('INVALID_ARGS');
     });
 
+    it('lets a caution-tier command through skill creation', async () => {
+      const result = await run({
+        name: 'clean-skill',
+        description: 'cleans the worktree',
+        content: '```\ngit clean -fd\n```',
+      });
+      expect(result.ok).toBe(true);
+    });
+
     it('rejects skill content that pipes into a shell', async () => {
       const result = await run({
         name: 'evil-skill',

@@ -36,7 +36,7 @@ screenshot_page { "url": "https://example.com", "analyze": true, "prompt": "这�
       },
       output_path: {
         type: 'string',
-        description: '输出文件路径（默认: 工作目录下自动生成）',
+        description: '输出文件路径（默认: 应用数据目录下自动生成，不写进工作目录）',
       },
       overwrite: { type: 'boolean', description: 'output_path 已存在且确认替换时必须设为 true' },
       width: {

@@ -21,6 +21,7 @@ import { parseAgentMd } from '../../agent/hybrid/agentMdLoader';
 import { getAgentsMdDir } from '../../config/configPaths';
 import { createLogger } from '../infra/logger';
 import { ensureRoleAssetDirs } from './roleAssetService';
+import { addRoleBinding, getRoleBindingsPath } from './roleContextBindings';
 
 const logger = createLogger('BuiltinRoles');
 
@@ -382,6 +383,22 @@ export const BUILTIN_ROLE_IDS: readonly string[] = [
   ...Object.keys(RETIRED_BUILTIN_ROLE_VISUALS),
 ];
 
+/**
+ * 出厂默认资料架（N-ROLE-DEFAULT-BINDINGS-SKILL）：每位内置专家绑自己 frontmatter
+ * skills 列表的前 ≤3 个（即上表各 agentMd 的 skills: 字段前缀，validateBuiltinRolePack
+ * 保证全部可解析）。绑定只存 skill 名引用，正文永远以内置 skill 集为单一真源。
+ * 种入规则见 installBuiltinRoles：仅 bindings.json 不存在时一次性写入，
+ * 用户改过或删空（[]）的文件不再触碰。测试经 installBuiltinRoles 的落盘产物核对，
+ * 本常量不导出（knip 生产面无消费者）。
+ */
+const BUILTIN_ROLE_DEFAULT_SKILL_BINDINGS: Readonly<Record<string, readonly string[]>> = {
+  数据分析师: ['data-analysis-helper', 'data-cleaning', 'xlsx'],
+  牧之: ['brainstorming', 'requirement-elicitation', 'prd-authoring'],
+  溯真: ['competitor-teardown', 'multi-source-verification', 'industry-scan'],
+  青禾: ['copywriting', 'topic-to-draft', 'xhs-post-crafting'],
+  明镜: ['internal-comms', 'weekly-report-synthesis', 'project-retro'],
+};
+
 /** 预设角色视觉 metadata 按 id 查表（P2-1：roles IPC 回填 RolePanelEntry 用；含退役角色） */
 const BUILTIN_ROLE_VISUAL_BY_ID = new Map<string, BuiltinRoleVisual>([
   ...BUILTIN_ROLES.map((role) => [role.id, role.visual] as const),
@@ -470,6 +487,7 @@ export interface InstallBuiltinRolesResult {
  * 安装预设角色到用户目录（幂等）：
  * - agents/<id>.md 不存在才写（用户编辑过的定义不覆盖）
  * - roles/<id>/ 骨架不存在才建（角色记忆永远归用户）
+ * - roles/<id>/bindings.json 不存在才种出厂 skill 绑定（引用 only；用户删空不复活）
  *
  * 调用时机：应用启动、agentRegistry 初始化之前（desktop 与 webServer 两条路径都要调）。
  * 任何失败只记日志，不阻塞启动。
@@ -508,6 +526,24 @@ export async function installBuiltinRoles(): Promise<InstallBuiltinRolesResult> 
       }
     } catch (err) {
       logger.warn('Failed to install builtin role asset dirs', { roleId: role.id, error: String(err) });
+    }
+
+    // 3. 出厂默认资料架：bindings.json 不存在才种入 skill 绑定（mode=always / scope=private，
+    //    只存名字引用）。文件已存在（含用户删空的 []）一律不碰——用户绑定与删除都归用户，
+    //    重复安装天然幂等。写入走 addRoleBinding 的原子写路径（校验 + 去重复用同一入口）。
+    try {
+      const hasBindings = await fs.access(getRoleBindingsPath(role.id)).then(() => true, () => false);
+      if (!hasBindings) {
+        const skillNames = BUILTIN_ROLE_DEFAULT_SKILL_BINDINGS[role.id] ?? [];
+        for (const skillName of skillNames) {
+          await addRoleBinding(role.id, { kind: 'skill', target: skillName, mode: 'always', scope: 'private' });
+        }
+        if (skillNames.length > 0) {
+          logger.info('Seeded builtin role default skill bindings', { roleId: role.id, skills: [...skillNames] });
+        }
+      }
+    } catch (err) {
+      logger.warn('Failed to seed builtin role default bindings', { roleId: role.id, error: String(err) });
     }
   }
 

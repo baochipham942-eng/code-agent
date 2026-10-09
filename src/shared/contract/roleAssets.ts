@@ -71,7 +71,7 @@ export interface RolePanelEntry {
 // 专家默认资料架（Batch 3 E3，调研文档 §4.1）
 // ----------------------------------------------------------------------------
 
-export type ExpertBindingKind = 'file' | 'folder' | 'library_item';
+export type ExpertBindingKind = 'file' | 'folder' | 'library_item' | 'skill';
 /** always=索引常驻注入（含摘要）；on_demand=仅列出，正文按需 Read */
 export type ExpertBindingMode = 'always' | 'on_demand';
 /** private=该专家私有（L1 隔离，不进其他专家）；project=同项目专家可共读（跨专家共读后续批次接线，先存字段） */
@@ -81,9 +81,9 @@ export type ExpertBindingScope = 'private' | 'project';
 export interface ExpertContextBinding {
   id: string;
   kind: ExpertBindingKind;
-  /** file/folder=绝对路径；library_item=LibraryItem id */
+  /** file/folder=绝对路径；library_item=LibraryItem id；skill=内置 skill 名（只存引用，不复制正文） */
   target: string;
-  /** 展示名；library_item 缺省用条目标题，路径类缺省用 basename */
+  /** 展示名；library_item 缺省用条目标题，路径类缺省用 basename，skill 缺省用 skill 名 */
   title?: string;
   mode: ExpertBindingMode;
   scope: ExpertBindingScope;

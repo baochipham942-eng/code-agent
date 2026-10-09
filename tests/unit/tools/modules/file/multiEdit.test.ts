@@ -557,4 +557,117 @@ describe('multiEditModule evidence metadata', () => {
       }
     }
   });
+
+  // N-EDIT-COMPLETENESS-CHECK：Write 已有的代码完整性检测接上 Edit——
+  // 编辑删掉 JSON 逗号/HTML 闭合标签不再静默通过。ok 语义、审批、回滚行为都不变。
+  describe('code completeness detection', () => {
+    it('warns when an edit breaks JSON, without rolling back the write', async () => {
+      const file = path.join(tmpDir, 'data.json');
+      await fs.writeFile(file, '{\n  "a": 1,\n  "b": 2\n}\n', 'utf-8');
+      await fileReadTracker.recordReadWithStats(file);
+
+      const handler = await editModule.createHandler();
+      const result = await handler.execute(
+        {
+          file_path: file,
+          // 删掉逗号：编辑后 JSON 不再可解析
+          edits: [{ old_text: '"a": 1,', new_text: '"a": 1' }],
+        },
+        makeCtx(),
+        allowAll,
+      );
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.output).toContain('代码完整性警告');
+      expect(result.output).toContain('JSON 格式错误');
+      expect(result.output).toContain('问题:');
+      // 警告追加在 output 末尾，收尾建议指向再次 Edit 修复
+      expect(result.output.trimEnd().endsWith('或重新生成完整文件。')).toBe(true);
+      expect(result.output).toContain('请再次使用 Edit 工具');
+      expect(result.meta?.completenessIssues).toEqual(
+        expect.arrayContaining([expect.stringContaining('JSON 格式错误')]),
+      );
+      expect(result.meta?.artifact).toMatchObject({
+        metadata: {
+          completenessIssues: expect.arrayContaining([
+            expect.stringContaining('JSON 格式错误'),
+          ]),
+        },
+      });
+      // 不回滚：磁盘上是编辑后的（坏）内容
+      expect(await fs.readFile(file, 'utf-8')).toBe('{\n  "a": 1\n  "b": 2\n}\n');
+    });
+
+    it('stays silent on valid edits to .json and .ts files', async () => {
+      const jsonFile = path.join(tmpDir, 'ok.json');
+      await fs.writeFile(jsonFile, '{\n  "a": 1,\n  "b": 2\n}\n', 'utf-8');
+      await fileReadTracker.recordReadWithStats(jsonFile);
+      const tsFile = path.join(tmpDir, 'ok.ts');
+      await fs.writeFile(tsFile, 'export function foo(): number {\n  return 1;\n}\n', 'utf-8');
+      await fileReadTracker.recordReadWithStats(tsFile);
+
+      const handler = await editModule.createHandler();
+      const jsonResult = await handler.execute(
+        { file_path: jsonFile, edits: [{ old_text: '"b": 2', new_text: '"b": 3' }] },
+        makeCtx(),
+        allowAll,
+      );
+      const tsResult = await handler.execute(
+        { file_path: tsFile, edits: [{ old_text: 'return 1;', new_text: 'return 2;' }] },
+        makeCtx(),
+        allowAll,
+      );
+
+      for (const result of [jsonResult, tsResult]) {
+        expect(result.ok).toBe(true);
+        if (!result.ok) continue;
+        expect(result.output).not.toContain('代码完整性警告');
+        expect(result.meta?.completenessIssues).toBeUndefined();
+      }
+      expect(await fs.readFile(jsonFile, 'utf-8')).toBe('{\n  "a": 1,\n  "b": 3\n}\n');
+      expect(await fs.readFile(tsFile, 'utf-8')).toBe('export function foo(): number {\n  return 2;\n}\n');
+    });
+
+    it('does not check non-code extensions (.md)', async () => {
+      const file = path.join(tmpDir, 'notes.md');
+      await fs.writeFile(file, 'before\n', 'utf-8');
+      await fileReadTracker.recordReadWithStats(file);
+
+      const handler = await editModule.createHandler();
+      const result = await handler.execute(
+        // 编辑后内容「看起来坏了」（未闭合括号 + 非法 JSON），但 .md 不在检测范围
+        { file_path: file, edits: [{ old_text: 'before', new_text: "{'unclosed': true" }] },
+        makeCtx(),
+        allowAll,
+      );
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).not.toContain('代码完整性警告');
+        expect(result.meta?.completenessIssues).toBeUndefined();
+      }
+    });
+
+    it('stays silent when the issues already existed before the edit (noise guard)', async () => {
+      const file = path.join(tmpDir, 'already-broken.json');
+      await fs.writeFile(file, '{"a": 1\n', 'utf-8');
+      await fileReadTracker.recordReadWithStats(file);
+
+      const handler = await editModule.createHandler();
+      const result = await handler.execute(
+        // 无害编辑：文件编辑前后同样不完整，问题串逐条相同 → 不重复报警
+        { file_path: file, edits: [{ old_text: '"a": 1', new_text: '"a": 2' }] },
+        makeCtx(),
+        allowAll,
+      );
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).not.toContain('代码完整性警告');
+        expect(result.meta?.completenessIssues).toBeUndefined();
+      }
+      expect(await fs.readFile(file, 'utf-8')).toBe('{"a": 2\n');
+    });
+  });
 });

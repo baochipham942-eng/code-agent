@@ -46,6 +46,7 @@ import { confineEvalPath } from '../../file/pathUtils';
 import { getFileMutationActorId } from './fileMutationIdentity';
 import { guardSkillOfficialSections } from '../../../security/skillOfficialSectionGuard';
 import { resolveToolWriteTarget } from '../../../sandbox/writeFence';
+import { CODE_EXTENSIONS, checkCodeCompleteness } from './write';
 
 interface EditOperation {
   old_text: string;
@@ -338,6 +339,28 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
         // diagnostic 失败不致命
       }
 
+      // 代码完整性检测（N-EDIT-COMPLETENESS-CHECK）：Write 写完会查，Edit 之前从不查——
+      // 删掉一个 JSON 逗号/HTML 闭合标签也静默通过。检测器与警告格式复用 Write 的，
+      // 不回滚、不改变 ok/审批语义；只报本次编辑新引入的问题（与编辑前内容逐条
+      // 字符串对比），存量问题不重复打扰。
+      let completenessIssues: string[] | undefined;
+      const ext = path.extname(filePath).toLowerCase();
+      if (CODE_EXTENSIONS.has(ext)) {
+        const issues = checkCodeCompleteness(content, filePath).issues;
+        if (issues.length > 0) {
+          const preexisting = new Set(checkCodeCompleteness(originalContent, filePath).issues);
+          const fresh = issues.filter((issue) => !preexisting.has(issue));
+          if (fresh.length > 0) {
+            completenessIssues = fresh;
+            ctx.logger.warn('Code completeness check failed', { filePath, issues: fresh });
+            output +=
+              `\n\n⚠️ **代码完整性警告**: 检测到文件可能不完整！\n` +
+              `问题:\n${fresh.map((i) => `- ${i}`).join('\n')}\n\n` +
+              `**建议**: 请再次使用 Edit 工具修复以上问题，或重新生成完整文件。`;
+          }
+        }
+      }
+
       onProgress?.({ stage: 'completing', percent: 100 });
       ctx.logger.info('Edit done', { filePath, edits: edits.length, totalReplacements });
 
@@ -350,6 +373,7 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
           editCount: edits.length,
           replacementCount: totalReplacements,
           lineCount,
+          ...(completenessIssues ? { completenessIssues } : {}),
           ...(forceAudit ? { audit: forceAudit } : {}),
         },
       }).catch(() => undefined);
@@ -367,6 +391,7 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
           lineCount,
           edits: editResults,
           digest: newDigest,
+          ...(completenessIssues ? { completenessIssues } : {}),
           ...(forceAudit ? { audit: forceAudit } : {}),
           ...(artifact ? { artifact } : {}),
         },

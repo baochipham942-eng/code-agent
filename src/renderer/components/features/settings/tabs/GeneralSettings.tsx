@@ -227,9 +227,12 @@ export function buildPermissionRuleSummary(
   input: PermissionRuleInput,
   noRulesLabel: string = DEFAULT_GENERAL_SETTINGS_TEXT.noRules,
 ): PermissionRuleSummary {
-  const denyCount = parsePermissionRules(input.denyRules).length;
-  const askCount = parsePermissionRules(input.askRules).length;
-  const allowCount = parsePermissionRules(input.allowRules).length;
+  const denyCount = parsePermissionRules(input.denyRules)
+    .filter((line) => validateUserPermissionRule(line, 'deny').ok).length;
+  const askCount = parsePermissionRules(input.askRules)
+    .filter((line) => validateUserPermissionRule(line, 'ask').ok).length;
+  const allowCount = parsePermissionRules(input.allowRules)
+    .filter((line) => validateUserPermissionRule(line, 'allow').ok).length;
 
   return {
     denyCount,

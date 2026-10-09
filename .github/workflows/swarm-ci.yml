@@ -111,6 +111,9 @@ on:
       - 'packages/internal/evaluation-center/src/**'
       - 'packages/internal/evaluation-center/scripts/**'
       - 'packages/internal/evaluation-center/snapshots/**'
+      # 三层旁路与用例目录同级，显式挂上，避免只改投影/落库基线时路径过滤器把它们看成目录外文件。
+      - 'packages/internal/evaluation-center/snapshots/request-replay/*.render.json'
+      - 'packages/internal/evaluation-center/snapshots/request-replay/*.state.json'
   push:
     branches: [main]
   workflow_dispatch:
@@ -198,7 +201,8 @@ jobs:
       - name: Snapshot replay baseline sync gate
         # 动了模型可见行为面（contextAssembly/prompts/E2E 假模型/requestReplay）
         # 必须同 PR 重录快照（acceptance:snapshot-replay:record），照
-        # visual-shotbase-baseline-gate 的 git-diff 口径。
+        # visual-shotbase-baseline-gate 的 git-diff 口径。协议层语料、
+        # `<case>.render.json`、`<case>.state.json` 都算快照更新；write-file 缺旁路即红。
         run: npm run check:snapshot-replay-sync
 
       - name: Tool output schema ratchet

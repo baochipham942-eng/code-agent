@@ -1,8 +1,9 @@
 // ============================================================================
 // ArtifactStandingRefresh - 文件产物头部的常设刷新入口（N-ARTIFACT-STANDING-REFRESH）
 // ============================================================================
-// 一份文件产物挂一条常设指令 + 节奏：chip 显示节奏，失败时转为警示态（说明已
-// 保留上一版与失败时间）；点击打开设置弹窗（指令 textarea + 三个节奏按钮 + 保存）。
+// 一份文件产物挂一条常设指令 + 节奏：chip 显示节奏，失败时转为警示态（短状态常显
+// 「已保留上一版」，时间与原因进 title）；点击打开设置弹窗（指令 textarea + 三个
+// 节奏按钮 + 保存）。
 // 保存按 getPublishInfo 的 standingRefresh.jobId 决定 createJob 还是 updateJob，
 // 一个文件只挂一条常设指令。到点重写、留版本、失败回滚由 host 侧负责。
 // ============================================================================
@@ -49,7 +50,7 @@ export interface ArtifactStandingRefreshHandle {
 }
 
 export const ArtifactStandingRefresh = forwardRef<ArtifactStandingRefreshHandle, { filePath: string }>(({ filePath }, ref) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const pv = t.previewWorkspace.preview;
   const [standingRefresh, setStandingRefresh] = useState<StandingRefreshJobView | undefined>(undefined);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -110,9 +111,12 @@ export const ArtifactStandingRefresh = forwardRef<ArtifactStandingRefreshHandle,
     ? pv.standingRefreshChip.replace('{cadence}', cadenceLabel(parseCadence(standingRefresh.cadence)))
     : pv.standingRefreshSetup;
   const failure = standingRefresh?.lastRefreshFailed;
-  const failureChipLabel = failure
-    ? pv.standingRefreshFailedChip.replace('{time}', new Date(failure.at).toLocaleTimeString())
-    : undefined;
+  // 失败态 chip 只放短状态（不含时间——长标签撞上 max-w 会被截掉「已保留上一版」）；
+  // 时间与原因都进 title。时间按 app 语言（zh→zh-CN / en→en-US）格式化，不用浏览器
+  // 默认 locale，避免 zh 界面冒出 AM/PM。
+  const failureLocale = language === 'zh' ? 'zh-CN' : 'en-US';
+  const failureChipLabel = failure ? pv.standingRefreshFailedChip : undefined;
+  const failureTime = failure ? new Date(failure.at).toLocaleString(failureLocale) : undefined;
 
   return (
     <>
@@ -123,10 +127,10 @@ export const ArtifactStandingRefresh = forwardRef<ArtifactStandingRefreshHandle,
         aria-label={failure ? failureChipLabel : chipLabel}
         title={failure
           ? pv.standingRefreshFailedDetail
-            .replace('{time}', new Date(failure.at).toLocaleString())
+            .replace('{time}', failureTime ?? '')
             .replace('{reason}', failure.reason)
           : chipLabel}
-        className={`inline-flex max-w-56 items-center gap-1 rounded border px-1.5 py-0.5 text-xs transition-colors ${
+        className={`inline-flex ${failure ? '' : 'max-w-56'} items-center gap-1 rounded border px-1.5 py-0.5 text-xs transition-colors ${
           failure
             ? 'border-badge-warning/40 bg-badge-warning/10 text-badge-warning'
             : 'border-white/[0.08] text-zinc-400 hover:text-zinc-200'
@@ -135,7 +139,7 @@ export const ArtifactStandingRefresh = forwardRef<ArtifactStandingRefreshHandle,
         {failure
           ? <AlertTriangle className="h-3 w-3 shrink-0" />
           : <CalendarClock className="h-3 w-3 shrink-0" />}
-        <span className="truncate">{failure ? failureChipLabel : chipLabel}</span>
+        <span className={failure ? undefined : 'truncate'}>{failure ? failureChipLabel : chipLabel}</span>
       </button>
 
       <Modal

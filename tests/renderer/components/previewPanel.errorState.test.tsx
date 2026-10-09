@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PreviewErrorState, toPreviewErrorState } from '../../../src/renderer/components/PreviewPanel';
 import { ArtifactStandingRefresh } from '../../../src/renderer/components/ArtifactStandingRefresh';
 import { buildStandingRefreshJobInput } from '@shared/artifactStandingRefresh';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -217,21 +218,66 @@ describe('ArtifactStandingRefresh chip 状态', () => {
     expect(screen.getByTestId('artifact-standing-refresh-chip').textContent).toContain('每天');
   });
 
-  it('lastRefreshFailed 在场：chip 转警示态，文案说明已保留上一版与失败时间', async () => {
+  it('lastRefreshFailed 在场：chip 只显示短状态「已保留上一版」，时间/原因进 title，label 无 truncate', async () => {
+    const at = Date.UTC(2026, 9, 4, 1, 2, 3);
     mockPublishInfo({
       jobId: 'job-1',
       enabled: true,
       cadence: 'daily',
       instruction: 'x',
-      lastRefreshFailed: { at: Date.UTC(2026, 9, 4, 1, 2, 3), reason: 'agent run failed: boom' },
+      lastRefreshFailed: { at, reason: 'agent run failed: boom' },
     });
     render(<ArtifactStandingRefresh filePath="/tmp/wt/a.json" />);
 
-    const chip = await waitFor(() => screen.getByTestId('artifact-standing-refresh-chip'));
-    expect(chip.textContent).toContain('更新失败');
-    expect(chip.textContent).toContain('已保留上一版');
+    // 等 failure 态渲染出来（初始是 setup 态）
+    const chip = await waitFor(() => {
+      const el = screen.getByTestId('artifact-standing-refresh-chip');
+      expect(el.textContent).toContain('更新失败·已保留上一版');
+      return el;
+    });
+    // 「已保留上一版」常显完整：失败 label 元素不得带 truncate（textContent 断言
+    // 抓不住视觉截断，旧形状长标签 + truncate 会把它截成「已…」只剩 hover 可见）
+    const label = chip.querySelector('span');
+    expect(label).not.toBeNull();
+    expect(label?.className).not.toContain('truncate');
+    // 失败态 chip 本身也不设 max-w 上限，短状态任何宽度都放得下
+    expect(chip.className).not.toContain('max-w-');
+    // 可见文案不含时间（旧形状把时间塞进 label 后被截断）
+    expect(chip.textContent).not.toMatch(/\d{1,2}:\d{2}/);
     // 原因属工程细节：进 tooltip，不进可见文案
     expect(chip.textContent).not.toContain('boom');
-    expect(chip.getAttribute('title')).toContain('boom');
+    const title = chip.getAttribute('title') ?? '';
+    expect(title).toContain('boom');
+    // 时间按 app 语言（zh→zh-CN）格式化，不是浏览器默认 locale（本机默认 en-US）
+    expect(title).toContain(new Date(at).toLocaleString('zh-CN'));
+    expect(title).not.toMatch(/\b[AP]M\b/);
+  });
+
+  it('en 语言：失败 chip 是英文短状态，title 用 en-US 格式化时间', async () => {
+    const at = Date.UTC(2026, 9, 4, 1, 2, 3);
+    mockPublishInfo({
+      jobId: 'job-1',
+      enabled: true,
+      cadence: 'daily',
+      instruction: 'x',
+      lastRefreshFailed: { at, reason: 'agent run failed: boom' },
+    });
+    useAppStore.getState().setLanguage('en');
+    try {
+      render(<ArtifactStandingRefresh filePath="/tmp/wt/a.json" />);
+
+      const chip = await waitFor(() => {
+        const el = screen.getByTestId('artifact-standing-refresh-chip');
+        expect(el.textContent).toContain('Refresh failed · previous version kept');
+        return el;
+      });
+      expect(chip.textContent).not.toMatch(/\d{1,2}:\d{2}/);
+      const label = chip.querySelector('span');
+      expect(label?.className).not.toContain('truncate');
+      const title = chip.getAttribute('title') ?? '';
+      expect(title).toContain(new Date(at).toLocaleString('en-US'));
+    } finally {
+      useAppStore.getState().setLanguage('zh');
+    }
   });
 });

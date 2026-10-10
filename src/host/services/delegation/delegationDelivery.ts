@@ -41,6 +41,7 @@ export interface CommitDelegationInput {
   targetSessionId: string;
   submissionKey: string;
   actionFingerprint: string;
+  supersedesDelegationId?: string | null;
   /** 完整 envelope（content/attachments）；modelSpec 由调用方按目标档位盖好。 */
   envelope: ConversationEnvelope;
   now: number;
@@ -52,9 +53,9 @@ export type CommitDelegationResult =
   | { kind: 'idempotency_conflict'; delegationId: string; queuedInputId: string };
 
 /**
- * 单事务提交边界（D5.1）：writeSessionRow（create_new 的 sessions 行，由 K1D 传
- * sessionManager options.commit 的写回调）→ session_delegations 行（带
- * target_queued_input_id）→ 仅 created 时 enqueue queued_inputs 行。
+ * 单事务提交边界（D5.1）：先判幂等键写入 session_delegations 行（带
+ * target_queued_input_id），仅 created 时写入 create_new 的 sessions 行（由 K1D
+ * 传 sessionManager options.commit 的写回调）并 enqueue queued_inputs 行。
  * 任一步抛错三者都不可见。id = 'delegation:' + submission_key，INSERT OR IGNORE
  * 主键幂等，崩溃重放不重复入队；提交后由调用方（K1D）通知 drain。
  */
@@ -76,7 +77,6 @@ export function commitDelegation(
   };
 
   const run = db.transaction((): CommitDelegationResult => {
-    writeSessionRow?.();
     const delegations = new SessionDelegationRepository(db);
     const inserted = delegations.insertOrGet({
       delegationId: input.delegationId,
@@ -87,9 +87,11 @@ export function commitDelegation(
       targetQueuedInputId: queuedInputId,
       submissionKey: input.submissionKey,
       actionFingerprint: input.actionFingerprint,
+      supersedesDelegationId: input.supersedesDelegationId ?? null,
       createdAt: input.now,
     });
     if (inserted.kind === 'created') {
+      writeSessionRow?.();
       new QueuedInputRepository(db).enqueue({
         id: queuedInputId,
         sessionId: input.targetSessionId,

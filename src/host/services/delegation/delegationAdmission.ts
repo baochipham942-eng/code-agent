@@ -101,7 +101,7 @@ export function parseDelegateSessionCall(args: unknown): ParsedDelegateSessionCa
     return { ok: false, code: 'invalid_call', detail: `unknown action: ${String(action)}` };
   }
   const allowed = new Set<string>(['action']);
-  if (DELEGATE_ACTIONS.includes(action as DelegationChainAction)) {
+  if (DELEGATE_ACTIONS.includes(action as DelegationChainAction) || action === 'correct') {
     allowed.add('content');
   }
   if (action === 'delegate_existing') {
@@ -146,6 +146,16 @@ export function parseDelegateSessionCall(args: unknown): ParsedDelegateSessionCa
         ...(optionalString(args.candidateSetId) ? { candidateSetId: optionalString(args.candidateSetId) } : {}),
       },
     };
+  }
+
+  if (action === 'correct') {
+    const content = args.content;
+    if (typeof content !== 'string' || content.trim().length === 0) {
+      return { ok: false, code: 'invalid_call', detail: 'correct requires task text' };
+    }
+    const delegationId = optionalString(args.delegationId);
+    if (!delegationId) return { ok: false, code: 'invalid_call', detail: 'correct requires a delegationId' };
+    return { ok: true, call: { action: 'correct', content, delegationId } };
   }
 
   const delegationId = optionalString(args.delegationId);

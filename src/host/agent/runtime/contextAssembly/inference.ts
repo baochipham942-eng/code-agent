@@ -13,6 +13,7 @@ import {
   getLoadedDeferredToolDefinitions,
   getAllToolDefinitions,
   withDesignCanvasTools,
+  withCrossSessionDelegationTools,
   withoutGenericMediaToolsInDesign,
 } from '../../../tools/dispatch/toolDefinitions';
 import { filterToolDefinitionsByWorkbenchScope } from '../../../tools/workbenchToolScope';
@@ -39,6 +40,7 @@ import { getAdaptiveRouter, withClarificationHint } from '../../../model/adaptiv
 import { resolveModelDecision, resolveProviderBillingMode, type BillingMode, type ModelDecisionProviderSettings } from '../../../model/modelDecision';
 import type { ContextAssemblyCtx } from './shared';
 import { logger } from './shared';
+import { isCrossSessionDelegationEnabled } from '../../../services/delegation/crossSessionDelegationFlag';
 import { noteStreamProgress } from '../../stallObserver';
 import { cacheOptionsForMaxModeCall, maxModeBudgetHeadroomOk } from './maxModePolicy';
 import { emitOverflowRecoverySignal } from './compressionSignal';
@@ -431,6 +433,8 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       logger.debug(`Tools (design canvas active): ${beforeCanvas} -> ${tools.length} total`);
     }
   }
+
+  tools = withCrossSessionDelegationTools(tools, isCrossSessionDelegationEnabled());
 
   tools = filterToolDefinitionsByWorkbenchScope(tools, ctx.runtime.toolScope);
   // opt-in 严格工具集：strict-toolset skill（edit-role/create-role）激活时，把可见工具集

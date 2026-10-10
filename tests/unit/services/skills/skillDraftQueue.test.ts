@@ -219,6 +219,17 @@ describe('skillDraftQueue', () => {
       await expect(fs.access(path.join(tmpDir, 'skills'))).rejects.toThrow();
     });
 
+    it('allows promotion when a semantic [IF] draft also contains a caution command', async () => {
+      const meta = await enqueueSkillDraft(makeDraftInput({
+        toolSequence: [],
+        exampleSteps: [],
+        body: '[IF 当前任务需要清理工作区] 适用。\n\n## 使用方法\n\ngit clean -fd\n',
+      }));
+
+      const result = await confirmSkillDraft(meta!.id);
+      expect(result.success).toBe(true);
+    });
+
     it('allows promotion when a draft has a semantic [IF] boundary', async () => {
       const meta = await enqueueSkillDraft(makeDraftInput({
         toolSequence: [],

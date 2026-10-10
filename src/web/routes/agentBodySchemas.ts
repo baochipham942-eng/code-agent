@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { MessageAttachment } from '../../shared/contract/message';
 import type { ConversationEnvelopeContext } from '../../shared/contract/conversationEnvelope';
 import type { AgentEventFilter } from '../../host/protocol/events/eventFilter';
+import type { TurnEnvironmentSelection } from '../../shared/contract/executionEnvironment';
 
 const LooseObjectSchema = z.object({}).passthrough();
 
@@ -11,6 +12,13 @@ const MessageAttachmentBodySchema = LooseObjectSchema.transform(
 
 const ConversationEnvelopeContextBodySchema = LooseObjectSchema.transform(
   (value) => value as unknown as ConversationEnvelopeContext,
+);
+
+// ADR-081：只声明形状（松 cast，同上两个先例），不在 schema 层校验字段；协议版本
+// 是否匹配由 environmentProtocolGate 在解析前判定。值不是对象时 safeParse 失败，
+// 这一轮不开始（不静默落回本机）。
+const TurnEnvironmentSelectionBodySchema = LooseObjectSchema.transform(
+  (value) => value as unknown as TurnEnvironmentSelection,
 );
 
 const AgentEventFilterBodySchema = z.object({
@@ -51,6 +59,7 @@ export const AgentRunBodySchema = z.object({
   goal: GoalBodySchema.optional(),
   historyVisibility: z.enum(['visible', 'meta']).optional(),
   disableAutoAgent: z.boolean().optional(),
+  environmentSelection: TurnEnvironmentSelectionBodySchema.optional(),
 }).passthrough();
 
 export type AgentRunBody = z.infer<typeof AgentRunBodySchema>;

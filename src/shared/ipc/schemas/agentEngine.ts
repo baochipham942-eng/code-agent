@@ -13,6 +13,7 @@ const AgentEngineDomainRequestSchema = z.object({
   action: z.enum([
     'detect',
     'get',
+    'importHistory',
     'list',
     'listHistory',
     'listModels',

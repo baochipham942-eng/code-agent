@@ -293,6 +293,8 @@ export interface CronExecutionTrigger {
   droppedCount?: number;
   /** Platform message ids of the carried events. */
   eventIds?: string[];
+  /** True when any carried event arrived via a group listen binding (no @-mention needed). */
+  listen?: boolean;
 }
 
 /**

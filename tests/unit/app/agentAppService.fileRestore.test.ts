@@ -165,6 +165,32 @@ describe('AgentAppService explicit workspace file restore', () => {
     });
   });
 
+  it('treats undeclared-tool disclosures as non-fatal exactly like uncertain targets', async () => {
+    // N-CHECKPOINT-MCP-WRITETARGET：未声明写盘的披露（不在回退范围）同样不是恢复
+    // 失败——否则一次未声明 MCP 写盘就让恢复入口永远抛 WORKSPACE_FILE_RESTORE_FAILED
+    checkpointService.rewindFiles.mockResolvedValue({
+      success: true,
+      restoredFiles: ['/workspace/file.ts'],
+      deletedFiles: [],
+      skippedFiles: [{
+        filePath: 'undeclared-tool:mcp__fs__write_text_file',
+        reason: 'undeclared_tool_write',
+        toolName: 'mcp__fs__write_text_file',
+        detail: 'This tool\'s writes are not in the rollback scope.',
+      }],
+      errors: [],
+    });
+
+    await expect(createService().restoreWorkspaceFilesAtCheckpoint({
+      sessionId: 'session-1',
+      checkpointMessageId: 'assistant-anchor-1',
+    })).resolves.toMatchObject({
+      success: true,
+      restoredFileCount: 1,
+      deletedFileCount: 0,
+    });
+  });
+
   it('still fails when a restorable file was skipped for a non-uncertain reason', async () => {
     checkpointService.rewindFiles.mockResolvedValue({
       success: false,

@@ -163,7 +163,18 @@ describe('AdaptiveRouter Jev intent router', () => {
   const mockSystemOne = (overrides: Record<string, unknown> = {}) =>
     vi.fn(async () => jevAnswers(overrides)) as unknown as JevSystemOneCall;
 
-  it('is default off: field-by-field identical to the heuristic and never calls Jev', async () => {
+  it('is default on (N-JEV-DEFAULT-ON): unset flag routes through Jev', async () => {
+    const systemOne = mockSystemOne();
+    const result = await new AdaptiveRouter().estimateComplexityWithJev(
+      [{ role: 'user', content: 'hello' }],
+      systemOne,
+    );
+    expect(systemOne).toHaveBeenCalledTimes(1);
+    expect(result.signals).toContain('jev_intent:chat');
+  });
+
+  it("flag '0' is field-by-field identical to the heuristic and never calls Jev", async () => {
+    vi.stubEnv('CODE_AGENT_JEV_ROUTER', '0');
     const router = new AdaptiveRouter();
     const systemOne = vi.fn() as unknown as JevSystemOneCall;
     const messages = [{ role: 'user', content: 'hello' }];
@@ -380,7 +391,8 @@ describe('AdaptiveRouter Jev 规则地板（独立于判官）', () => {
     }
   });
 
-  it('rule floor is inert when the switch is off (zero behavior change vs heuristic)', async () => {
+  it("rule floor is inert when the switch is off ('0', zero behavior change vs heuristic)", async () => {
+    vi.stubEnv('CODE_AGENT_JEV_ROUTER', '0');
     const router = new AdaptiveRouter();
     const systemOne = alwaysSimpleZeroStakes();
     for (const prompt of HIGH_RISK_PROMPTS) {

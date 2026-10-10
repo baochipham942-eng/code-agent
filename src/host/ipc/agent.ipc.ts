@@ -184,7 +184,7 @@ const agentHandlers: RawDomainRouteHandlers<AgentDomainRequest, AgentRouteCtx> =
       const adminError = getAdminAccessIpcError('Permission mode');
       if (adminError) return adminError;
     }
-    const changed = setPermissionMode(mode, Boolean((payload as { approved?: boolean } | undefined)?.approved));
+    const changed = setPermissionMode(mode, Boolean((payload as { approved?: boolean } | undefined)?.approved), 'user-ui');
     return { success: true, data: { changed, mode } };
   },
   getSessionPermissionMode: async (_getAppService, payload) => {
@@ -211,7 +211,7 @@ const agentHandlers: RawDomainRouteHandlers<AgentDomainRequest, AgentRouteCtx> =
       if (adminError) return adminError;
     }
     const manager = getPermissionModeManager();
-    const changed = manager.setSessionMode(req.sessionId, mode, Boolean(req.approved));
+    const changed = manager.setSessionMode(req.sessionId, mode, Boolean(req.approved), 'user-ui');
     if (changed) {
       // 单一真源：档位状态只存在于 PermissionModeManager，变更即广播，
       // 所有消费方（会话内切换器/设置页）从广播同步，不留 pending 中转 state。
@@ -308,6 +308,21 @@ const agentHandlers: RawDomainRouteHandlers<AgentDomainRequest, AgentRouteCtx> =
     return {
       success: true,
       data: await getAgentWorktreeReview(agentId),
+    };
+  },
+  runInteractiveCommand: async (_getAppService, payload) => {
+    // 两条异步加载的理由与 sendMemberInput 相同：静态 import 会把 TaskManager →
+    // services 索引整棵拉进本模块加载图，mock 了 platform 的宿主单测在 import 期就炸。
+    const { runInteractiveCommand } = await import('../app/interactiveRunCommand');
+    const req = (payload ?? {}) as { sessionId?: unknown; command?: unknown };
+    // refused/denied/failed 都是合法的业务结果（data.status 承载），不是 IPC 层错误；
+    // 非法入参在 runInteractiveCommand 内按 refused 归一。
+    return {
+      success: true,
+      data: await runInteractiveCommand({
+        sessionId: typeof req.sessionId === 'string' ? req.sessionId : '',
+        command: typeof req.command === 'string' ? req.command : '',
+      }),
     };
   },
 };

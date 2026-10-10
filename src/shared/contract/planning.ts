@@ -273,6 +273,25 @@ export function applyUnresolvedTaskTurnGate(
   };
 }
 
+export type StampSurfaceVerdict = 'verified' | 'self_claimed' | 'undelivered' | 'n_a';
+
+/** 账本 verdict 不变。只有「请求了文件但什么都没产出」这一档问题码改界面口径。 */
+export function stampSurfaceVerdict(
+  verdict: string | null | undefined,
+  evidenceProblems?: readonly string[] | null,
+): StampSurfaceVerdict | null {
+  if (
+    verdict === 'self_claimed'
+    && (evidenceProblems ?? []).some((problem) => (
+      problem === 'DELIVERABLE_NONE_PRODUCED' || problem.startsWith('DELIVERABLE_NONE_PRODUCED:')
+    ))
+  ) {
+    return 'undelivered';
+  }
+  if (verdict === 'verified' || verdict === 'self_claimed' || verdict === 'n_a') return verdict;
+  return null;
+}
+
 // Task Plan Types
 export type TaskStepStatus = 'pending' | 'in_progress' | 'completed' | 'skipped';
 export type TaskPhaseStatus = 'pending' | 'in_progress' | 'completed' | 'blocked';

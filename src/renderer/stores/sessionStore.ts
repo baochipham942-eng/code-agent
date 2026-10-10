@@ -5,6 +5,7 @@ import { normalizeAgentEngineSession } from '@shared/contract/agentEngine';
 import type { DesignBrief } from '@shared/contract/designBrief';
 import { deriveSessionWorkbenchSnapshot } from '@shared/contract/sessionWorkspace';
 import type { ContextHealthState } from '@shared/contract/contextHealth';
+import { shouldReplaceContextHealth } from './sessionContextHealth';
 import { IPC_CHANNELS, IPC_DOMAINS, type SessionStatusUpdateEvent, type SessionRuntimeSummary } from '@shared/ipc';
 import type { BackgroundSessionInfo, BackgroundTaskUpdateEvent } from '@shared/contract/sessionState';
 import { createLogger } from '../utils/logger';
@@ -27,6 +28,7 @@ import {
 import { executeCreateSession } from './sessionCreate';
 import { bumpSessionsLocalVersion, executeLoadOlderSessions, executeLoadSessions } from './sessionListPagination';
 import { mergeSnapshotWithLiveTail } from './sessionSnapshotMerge';
+import { groupRunsByTask, type CronRunGroups } from '@shared/cronRunDigest';
 import { recoveryLoadLightsTurn, runtimeStatusCountsAsRunning } from './parkedContinueTurn';
 import { bindInitializedSessionBroadcasts } from './sessionStoreBroadcasts';
 
@@ -81,22 +83,6 @@ async function refreshContextHealthForSession(sessionId: string, switchVersion: 
       useAppStore.getState().setContextHealth(null);
     }
   }
-}
-
-function shouldReplaceContextHealth(
-  next: ContextHealthState | null | undefined,
-  previous: ContextHealthState | null | undefined,
-): boolean {
-  if (!previous) {
-    return true;
-  }
-  if (!next) {
-    return false;
-  }
-  if (next.currentTokens > 0) {
-    return true;
-  }
-  return previous.currentTokens <= 0;
 }
 
 export interface SessionWithMeta extends Session {
@@ -285,6 +271,8 @@ interface SessionActions {
   setSessionDesignBrief: (sessionId: string, brief: DesignBrief) => void;
   clearSessionDesignBrief: (sessionId: string) => void;
   getSessionDesignBrief: (sessionId: string) => DesignBrief | undefined;
+  /** Data contract for cron/heartbeat run grouping; presentation can consume it later. */
+  getCronRunGroups: () => CronRunGroups<SessionWithMeta>;
 }
 
 type SessionStore = SessionState & SessionActions;
@@ -312,6 +300,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     sessionDesignBriefs: new Map<string, DesignBrief>(),
 
     getPendingSessionCreate: () => _pendingSessionCreate,
+
+    getCronRunGroups: () => groupRunsByTask(get().sessions),
 
     loadSessions: async (options) => {
       // 实现已迁到 sessionListPagination（侧栏分页 + god-file 门，此处只留接线）。

@@ -178,6 +178,10 @@ const permissionRequestSchema = typed<PermissionRequest>(z.object({
     affectedFileCount: z.number().int().nonnegative().optional(),
     targetKind: z.enum(FILE_TARGET_KINDS).optional(),
     standingGrantTarget: z.string().optional(),
+    targetApp: z.object({
+      bundleId: z.string().optional(),
+      name: z.string(),
+    }).optional(),
     requestedAccess: z.enum(['read_only', 'read_write']).optional(),
     preview: z.object({
       type: z.enum(['diff', 'command', 'network', 'generic']),
@@ -566,6 +570,7 @@ const PlanApprovalUpdateEventSchema = event('plan_approval_update', typed<PlanAp
     failureReason: z.string().optional(),
     failedAt: z.number().optional(),
     source: z.enum(['model_exit', 'synthetic_text']).optional(),
+    version: z.number().optional(),
   }),
 })));
 const TurnDiffEventSchema = event('turn_diff', typed<TurnDiffEventData>(z.object({

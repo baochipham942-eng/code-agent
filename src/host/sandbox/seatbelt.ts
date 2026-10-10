@@ -33,6 +33,8 @@ export interface SeatbeltConfig {
   readPaths: string[];
   /** Paths to allow write access */
   writePaths: string[];
+  /** Exact files to allow write access to; descendants are not included. */
+  writeFiles?: string[];
   /** Paths to allow execute access */
   executePaths: string[];
   /** Allow process execution (default: true) */
@@ -187,6 +189,11 @@ export function generateProfile(config: SeatbeltConfig): string {
   for (const p of writeRoots) {
     lines.push(`(allow file-write* (subpath "${escapeProfileString(p)}"))`);
   }
+  // Single-file grants (one-shot escalation): `literal` opens this path only. If the command
+  // turns it into a directory, nothing inside is writable.
+  for (const p of config.writeFiles ?? []) {
+    lines.push(`(allow file-write* (literal "${escapeProfileString(realFilePath(p))}"))`);
+  }
   lines.push('');
 
   return lines.join('\n');
@@ -200,6 +207,19 @@ function realPath(p: string): string {
     return fs.realpathSync(p);
   } catch {
     return path.resolve(p);
+  }
+}
+
+/**
+ * Real path for a file that may not exist yet: resolve symlinks in the parent
+ * directory (/tmp -> /private/tmp) and keep the file name.
+ */
+function realFilePath(p: string): string {
+  const resolved = path.resolve(p);
+  try {
+    return fs.realpathSync(resolved);
+  } catch {
+    return path.join(realPath(path.dirname(resolved)), path.basename(resolved));
   }
 }
 

@@ -219,6 +219,21 @@ describe('ModelRouter', () => {
     })).toBeInstanceOf(ResponsesProvider);
   });
 
+  it('routes the GPT-6 Sol models to the Responses provider (official tool-calling requirement)', () => {
+    // N-MODELCAT-GPT6-SOL：官方要求两款 Sol 的工具调用走 Responses API；矩阵按模型切协议，
+    // 存量 protocol:'openai' 家族缺省不得挡道（同 deepseek-flash 先例）。其余 openai 模型
+    //（gpt-5.5）保持原生 chat-completions 实现。
+    expect((router as any).getDynamicCustomProvider({
+      provider: 'openai', model: 'gpt-6-sol',
+    })).toBeInstanceOf(ResponsesProvider);
+    expect((router as any).getDynamicCustomProvider({
+      provider: 'openai', model: 'gpt-6.1-sol', protocol: 'openai',
+    })).toBeInstanceOf(ResponsesProvider);
+    expect((router as any).getDynamicCustomProvider({
+      provider: 'openai', model: 'gpt-5.5', protocol: 'openai',
+    })).toBeUndefined();
+  });
+
   // --------------------------------------------------------------------------
   // selectModelByCapability
   // --------------------------------------------------------------------------

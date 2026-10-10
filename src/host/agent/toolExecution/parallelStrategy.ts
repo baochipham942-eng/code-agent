@@ -1,158 +1,128 @@
 // ============================================================================
-// Parallel Execution Strategy - Tool execution parallelization logic
+// Order-preserving tool segments. A call joins the current segment only when
+// it conflicts with none of the calls already there. A barrier closes the
+// segment, runs alone, and defers every later call.
+// An unscoped read (readOnly without accesses) may observe anything, so it
+// never shares a segment with any write (fail closed).
 // ============================================================================
 
 import type { ToolCall } from '../../../shared/contract';
 import type { MCPToolAnnotations } from '../../mcp/types';
-import { isMcpToolReadOnly } from '../../mcp/mcpToolSafety';
 import type { ToolClassification } from '../loopTypes';
-import { PARALLEL_SAFE_TOOLS, MAX_PARALLEL_TOOLS } from '../loopTypes';
+import {
+  segmentAccessesConflict,
+  type ResolvedToolAccess,
+} from '../../security/resourceScope';
+import {
+  isBarrierToolCall,
+  resolveToolCallAccesses,
+} from '../../tools/dispatch/resolveToolCallAccess';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('ParallelStrategy');
 
-/**
- * Check if a tool is safe for parallel execution
- *
- * A tool is parallel-safe if:
- * 1. It's in the PARALLEL_SAFE_TOOLS set (built-in tools)
- * 2. It's an MCP tool classified via annotations (readOnlyHint=true, destructiveHint!=true)
- * Missing MCP annotations are sequential (fail closed).
- */
-export function isParallelSafeTool(toolName: string, toolAnnotations?: MCPToolAnnotations): boolean {
-  if (toolName.startsWith('mcp_')) {
-    return isMcpToolReadOnly(toolAnnotations);
-  }
-  return PARALLEL_SAFE_TOOLS.has(toolName);
+const UNKNOWN_READWRITE: ResolvedToolAccess = { kind: 'readwrite', domain: { type: 'unknown' } };
+
+export interface OrderedToolCall {
+  readonly index: number;
+  readonly toolCall: ToolCall;
 }
 
-/**
- * Classify tool calls into parallel-safe and sequential groups
- *
- * @param toolCalls - Array of tool calls to classify
- * @param toolAnnotations - Optional MCP tool annotations map (key: full tool name)
- * @returns Classification result with parallel and sequential groups
- */
-/** Parallel-safe tools that may still write through a subagent; they end the read-hoisting prefix. */
-const WRITE_CAPABLE_PARALLEL_TOOLS = new Set(['Task']);
+export interface ExecuteOrderedSegmentsOptions<R> {
+  readonly resultCount: number;
+  readonly maxParallel: number;
+  shouldHalt(): boolean;
+  prepare(entry: OrderedToolCall, batchSize: number): void;
+  run(entry: OrderedToolCall, parallel: boolean): Promise<R>;
+  deferredResult(entry: OrderedToolCall): R;
+}
 
 export function classifyToolCalls(
-  toolCalls: ToolCall[],
+  toolCalls: readonly ToolCall[],
   toolAnnotations?: Map<string, MCPToolAnnotations>,
+  options?: { readonly workspace?: string; readonly cwd?: string },
 ): ToolClassification {
-  const parallelGroup: Array<{ index: number; toolCall: ToolCall }> = [];
-  const sequentialGroup: Array<{ index: number; toolCall: ToolCall }> = [];
+  const workspace = options?.workspace ?? '.';
+  const cwd = options?.cwd ?? '.';
+  const resolveOptions = { workspace, cwd, mcpAnnotations: toolAnnotations };
+  const segments: ToolClassification['segments'] = [];
+  const deferred: ToolClassification['deferred'] = [];
+  const resolvedByIndex: ResolvedToolAccess[][] = [];
+  let current: Array<{ index: number; toolCall: ToolCall }> = [];
+  let closed = false;
 
-  // 引擎先跑整个并行组、再按序跑串行组。只有「第一个非并行安全调用之前」的读才能安全提前：
-  // 一旦越过一次写（Write/Edit/Bash…），后面的 Read/Grep/Glob 必须留在原位，否则同批
-  // [Write(a.txt), Read(a.txt)] 会先读后写（ai-review 09-06）。保序分段的完整方案归 N-TOOL-RESOURCE-ADR。
-  // Task 在白名单里是为了子代理能扇出，但 coder 这类子代理会写文件：它本身可以并行，
-  // 却是后续读的写边界（二裁 09-06：[Task(coder 改 a.txt), Read(a.txt)] 不能同批并发）。
-  let crossedWriteBoundary = false;
-  for (let i = 0; i < toolCalls.length; i++) {
-    const toolCall = toolCalls[i];
-    const annotations = toolAnnotations?.get(toolCall.name);
-    const writeCapable = WRITE_CAPABLE_PARALLEL_TOOLS.has(toolCall.name);
-    if (isParallelSafeTool(toolCall.name, annotations) && (writeCapable || !crossedWriteBoundary)) {
-      parallelGroup.push({ index: i, toolCall });
-    } else {
-      sequentialGroup.push({ index: i, toolCall });
-    }
-    if (writeCapable || !isParallelSafeTool(toolCall.name, annotations)) crossedWriteBoundary = true;
-  }
-
-  logger.debug(
-    `Tool classification: ${parallelGroup.length} parallel-safe, ${sequentialGroup.length} sequential`
-  );
-
-  return { parallelGroup, sequentialGroup };
-}
-
-/**
- * Get batch slices for parallel execution
- *
- * Splits the parallel group into batches of MAX_PARALLEL_TOOLS size
- *
- * @param parallelGroup - Array of parallel-safe tool calls
- * @returns Array of batches
- */
-export function getBatchSlices<T>(
-  items: T[]
-): T[][] {
-  const batches: T[][] = [];
-  for (let i = 0; i < items.length; i += MAX_PARALLEL_TOOLS) {
-    batches.push(items.slice(i, i + MAX_PARALLEL_TOOLS));
-  }
-  return batches;
-}
-
-/**
- * Execute items in parallel batches
- *
- * @param items - Items to process
- * @param executor - Async function to execute each item
- * @param maxParallel - Maximum parallel executions (defaults to MAX_PARALLEL_TOOLS)
- * @returns Results in the same order as input
- */
-export async function executeInBatches<T, R>(
-  items: Array<{ index: number; item: T }>,
-  executor: (item: T, index: number) => Promise<R>,
-  maxParallel: number = MAX_PARALLEL_TOOLS
-): Promise<Array<{ index: number; result: R }>> {
-  const results: Array<{ index: number; result: R }> = [];
-
-  for (let batchStart = 0; batchStart < items.length; batchStart += maxParallel) {
-    const batch = items.slice(batchStart, batchStart + maxParallel);
-
-    const batchPromises = batch.map(async ({ index, item }) => {
-      const result = await executor(item, index);
-      return { index, result };
-    });
-
-    const batchResults = await Promise.all(batchPromises);
-    results.push(...batchResults);
-  }
-
-  return results;
-}
-
-/**
- * Parallel execution configuration
- */
-export interface ParallelExecutionConfig {
-  maxParallelTools: number;
-  enabled: boolean;
-}
-
-/**
- * Default parallel execution configuration
- */
-export const DEFAULT_PARALLEL_CONFIG: ParallelExecutionConfig = {
-  maxParallelTools: MAX_PARALLEL_TOOLS,
-  enabled: true,
-};
-
-/**
- * Create a parallel execution strategy with custom configuration
- */
-export function createParallelStrategy(config: Partial<ParallelExecutionConfig> = {}) {
-  const finalConfig = { ...DEFAULT_PARALLEL_CONFIG, ...config };
-
-  return {
-    isParallelSafe: (name: string, annotations?: MCPToolAnnotations) => isParallelSafeTool(name, annotations),
-    classify: (calls: ToolCall[], annotations?: Map<string, MCPToolAnnotations>) => classifyToolCalls(calls, annotations),
-    getBatches: <T>(items: T[]) => {
-      const batches: T[][] = [];
-      const batchSize = finalConfig.maxParallelTools;
-      for (let i = 0; i < items.length; i += batchSize) {
-        batches.push(items.slice(i, i + batchSize));
-      }
-      return batches;
-    },
-    execute: async <T, R>(
-      items: Array<{ index: number; item: T }>,
-      executor: (item: T, index: number) => Promise<R>
-    ) => executeInBatches(items, executor, finalConfig.maxParallelTools),
-    config: finalConfig,
+  const accessesAt = (index: number, toolCall: ToolCall): readonly ResolvedToolAccess[] => {
+    const cached = resolvedByIndex[index];
+    if (cached) return cached;
+    const resolved = resolveToolCallAccesses(toolCall, resolveOptions);
+    const accesses = resolved.length > 0 ? resolved : [UNKNOWN_READWRITE];
+    resolvedByIndex[index] = accesses;
+    return accesses;
   };
+
+  for (let index = 0; index < toolCalls.length; index += 1) {
+    const toolCall = toolCalls[index];
+    const entry = { index, toolCall };
+    if (closed) {
+      deferred.push(entry);
+      continue;
+    }
+    if (isBarrierToolCall(toolCall)) {
+      if (current.length > 0) segments.push(current);
+      segments.push([entry]);
+      current = [];
+      closed = true;
+      continue;
+    }
+    const accesses = accessesAt(index, toolCall);
+    const conflicts = current.some((member) => segmentAccessesConflict(
+      accesses,
+      accessesAt(member.index, member.toolCall),
+    ));
+    if (!conflicts) {
+      current.push(entry);
+      continue;
+    }
+    segments.push(current);
+    current = [entry];
+  }
+  if (current.length > 0) segments.push(current);
+
+  logger.debug(`Tool classification: ${segments.length} segments, ${deferred.length} deferred`);
+  return { segments, deferred };
+}
+
+export function toolBatchLabel(toolName: string, batchSize: number, researchMode: boolean): string {
+  if (batchSize > 1) return `并行执行 ${batchSize} 个工具`;
+  if (researchMode && toolName === 'web_fetch') return '正在抓取详情...';
+  return `执行 ${toolName}`;
+}
+
+/** 段内按上限切片。取消或需要重推理时停在下一片之前；屏障后的调用始终补结果。 */
+export async function executeOrderedSegments<R>(
+  segments: ReadonlyArray<ReadonlyArray<OrderedToolCall>>,
+  deferred: ReadonlyArray<OrderedToolCall>,
+  options: ExecuteOrderedSegmentsOptions<R>,
+): Promise<Array<R | undefined>> {
+  const results: Array<R | undefined> = Array.from({ length: options.resultCount });
+  let halted = false;
+  for (const segment of segments) {
+    if (halted) break;
+    for (let start = 0; start < segment.length; start += options.maxParallel) {
+      if (options.shouldHalt()) {
+        halted = true;
+        break;
+      }
+      const batch = segment.slice(start, start + options.maxParallel);
+      const parallel = batch.length > 1;
+      for (const entry of batch) options.prepare(entry, batch.length);
+      const batchResults = await Promise.all(batch.map(async (entry) => ({
+        index: entry.index,
+        result: await options.run(entry, parallel),
+      })));
+      for (const item of batchResults) results[item.index] = item.result;
+    }
+  }
+  for (const entry of deferred) results[entry.index] = options.deferredResult(entry);
+  return results;
 }

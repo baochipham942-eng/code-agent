@@ -490,6 +490,37 @@ function recordAudit(result: CompactionServiceResult, options: CompactionPlanOpt
   });
 }
 
+function sumReportedToken(left: number | undefined, right: number | undefined): number | undefined {
+  if (left === undefined && right === undefined) return undefined;
+  return (left ?? 0) + (right ?? 0);
+}
+
+/** 只加有上报的字段。两边都没报的字段保持缺省，不把缺省当成 0。 */
+function sumSummaryUsage(
+  left: CompactModelSummaryMetadata['usage'],
+  right: CompactModelSummaryMetadata['usage'],
+): CompactModelSummaryMetadata['usage'] {
+  const inputTokens = sumReportedToken(left?.inputTokens, right?.inputTokens);
+  const cacheReadTokens = sumReportedToken(left?.cacheReadTokens, right?.cacheReadTokens);
+  const cacheCreationTokens = sumReportedToken(left?.cacheCreationTokens, right?.cacheCreationTokens);
+  if (inputTokens === undefined && cacheReadTokens === undefined && cacheCreationTokens === undefined) {
+    return undefined;
+  }
+  const summed: NonNullable<CompactModelSummaryMetadata['usage']> = {};
+  if (inputTokens !== undefined) summed.inputTokens = inputTokens;
+  if (cacheReadTokens !== undefined) summed.cacheReadTokens = cacheReadTokens;
+  if (cacheCreationTokens !== undefined) summed.cacheCreationTokens = cacheCreationTokens;
+  return summed;
+}
+
+function metadataWithSummedUsage(
+  metadata: CompactModelSummaryMetadata,
+  usage: CompactModelSummaryMetadata['usage'],
+): CompactModelSummaryMetadata {
+  const { usage: _usage, ...rest } = metadata;
+  return usage !== undefined ? { ...rest, usage } : rest;
+}
+
 export async function summarizeCompactionPlan(plan: CompactionPlan): Promise<{
   summary: string;
   validation: CompactionSummaryValidation;
@@ -515,7 +546,10 @@ export async function summarizeCompactionPlan(plan: CompactionPlan): Promise<{
     const repairPrompt = buildSummaryPrompt(plan, summary, repairInstruction);
     summaryResult = await compactModelSummarizeWithMetadata(repairPrompt, SUMMARY_MAX_TOKENS);
     summary = summaryResult.summary;
-    summaryModel = summaryResult.metadata;
+    summaryModel = metadataWithSummedUsage(
+      summaryResult.metadata,
+      sumSummaryUsage(summaryModel.usage, summaryResult.metadata.usage),
+    );
     callCostTokens += estimateTokens(repairPrompt) + estimateTokens(summary);
     validation = validateCompactionSummary(summary, toSharedManifest(plan.manifest), {
       truncated: summaryResult.metadata.truncated,

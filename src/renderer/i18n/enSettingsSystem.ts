@@ -321,6 +321,16 @@ export const enSettingsSystem = {
         stop: 'Stop',
         collect: 'Capture',
       },
+      audioRetention: {
+        rule: 'Recordings are deleted once they are transcribed. A recording whose transcription failed is kept for {hours} hours and then deleted.',
+        clear: 'Clear recordings',
+        confirmTitle: 'Clear recordings',
+        confirmMessage: 'This will delete {count} files and free {bytes} bytes. Transcripts are kept.',
+        confirm: 'Clear now',
+        cancel: 'Cancel',
+        cleared: 'Deleted {count} files and freed {bytes} bytes.',
+        failed: 'Cleanup failed {count} times, last error: {error}',
+      },
       units: {
         speechSegmentSuffix: ' speech segments',
         speakerCountSuffix: ' speakers',

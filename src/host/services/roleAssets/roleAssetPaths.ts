@@ -81,6 +81,11 @@ export function getRoleBoundariesPath(roleId: string): string {
   return path.join(getRoleDir(roleId), ROLE_ASSETS.BOUNDARIES_FILENAME);
 }
 
+/** 首次醒来状态：roles/<roleId>/first-wake.json */
+export function getRoleFirstWakePath(roleId: string): string {
+  return path.join(getRoleDir(roleId), ROLE_ASSETS.FIRST_WAKE_FILENAME);
+}
+
 /** 角色工作履历：roles/<roleId>/history.md */
 export function getRoleHistoryPath(roleId: string): string {
   return path.join(getRoleDir(roleId), ROLE_ASSETS.HISTORY_FILENAME);

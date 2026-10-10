@@ -3,9 +3,7 @@
 // chats on flagged pages. Writes docs/research/assets/2026-09-30-jev-eval/inject-layer.json.
 // Keys stay in the environment. This file prints set/unset only.
 //
-// StepFun list price (not a registered provider, not added to pricing.ts):
-// https://platform.stepfun.com/docs/zh/guides/pricing/details (2026-09-30)
-// ¥0.7 in / ¥0.14 cached / ¥2.1 out per 1M tokens ≈ $0.10 / $0.02 / $0.30.
+// Step Plan subscription (flat fee, per-token price 0).
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -32,6 +30,7 @@ import {
 } from '../../src/shared/constants/jevQuestions.ts';
 import type { ModelConfig } from '../../src/shared/contract/model.ts';
 import { estimateTurnCostUsd, resolveModelPrice } from '../../src/shared/pricing/resolveModelPrice.ts';
+import { resolveStepfunBaseUrl } from './stepfunEndpoint';
 
 const FALSE_REJECT_CEILING = 0.05;
 const SKIP_FAIL_RATE = 0.1;
@@ -42,9 +41,8 @@ const SCAN_WINDOW_CHARS = 12_000;
 const JEV_REQUIRED_IDS = ['zh-subtle', 'buried-needle'] as const;
 const VERBATIM_IDS = ['zh-inject', 'zh-subtle', 'en-inject', 'zh-clean', 'zh-benign-imperative'] as const;
 
-const STEPFUN_BASE_URL = 'https://api.stepfun.com/v1';
 const STEPFUN_MODEL = 'step-3.5-flash-2603';
-const STEPFUN_PRICE = { inputPerMTok: 0.1, outputPerMTok: 0.3, cacheReadPerMTok: 0.02 };
+const STEPFUN_PRICE = { inputPerMTok: 0, outputPerMTok: 0, cacheReadPerMTok: 0 };
 
 type Bucket = 'must-hit' | 'soft' | 'clean' | 'clean-filler';
 type Layer = 'regex' | 'jev' | 'miss';
@@ -106,7 +104,7 @@ interface BaselineChoice {
   inputPerMTok: number;
   outputPerMTok: number;
   cacheReadPerMTok: number | null;
-  priceSource: 'catalog' | 'hardcoded-list';
+  priceSource: 'catalog' | 'hardcoded-list' | 'Step Plan subscription (flat fee, per-token price 0)';
 }
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -379,7 +377,7 @@ async function resolveBaseline(): Promise<BaselineChoice> {
         model: STEPFUN_MODEL,
         apiKey,
         ...STEPFUN_PRICE,
-        priceSource: 'hardcoded-list',
+        priceSource: 'Step Plan subscription (flat fee, per-token price 0)',
       };
     }
   }
@@ -482,7 +480,7 @@ async function askStepFun(
 ): Promise<{ text: string; inputTokens: number; outputTokens: number; cacheReadTokens: number }> {
   const client = createOpenAICompatible({
     name: 'stepfun',
-    baseURL: STEPFUN_BASE_URL,
+    baseURL: resolveStepfunBaseUrl(),
     apiKey: choice.apiKey,
   });
   const messages: AiModelMessage[] = [

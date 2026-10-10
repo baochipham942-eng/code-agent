@@ -1,0 +1,166 @@
+{
+  "generatedAt": "2026-10-07T04:00:46.241Z",
+  "gitHead": "dafc14e363cc0924a52efecd8b2dc5c2e67eeeb5",
+  "ticket": "N-ARTIFACT-FACTCHECK-EVAL-GLM",
+  "model": "glm-5.3",
+  "endpoint": "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions",
+  "briefSha256": "6af5a1cfdaa4c18fe68870869f4d4b2de8a41c17a4708452438958f0d983dfd0",
+  "briefChars": 5005,
+  "turnsCap": 8,
+  "maxTokens": 4096,
+  "temperature": 0,
+  "totals": {
+    "scenarios": 6,
+    "passed": 6,
+    "failed": 0,
+    "wallMs": 174184,
+    "promptTokens": 49133,
+    "completionTokens": 9097
+  },
+  "scenarios": [
+    {
+      "id": "a-materials-present",
+      "probes": "user materials present + generation request: consult the material before writing; no web search is needed",
+      "ruleKind": "read-before-write",
+      "pass": true,
+      "details": "firstWrite=1 firstMaterialReadOrSearch=0 precedes=true note=no WebSearch needed",
+      "turnsUsed": 4,
+      "exhaustedTurns": false,
+      "toolCallNames": [
+        "Read",
+        "Write",
+        "Read"
+      ],
+      "toolCallSummaries": [
+        "Read:materials/launch-facts.md",
+        "Write:output/launch-summary.md",
+        "Read:output/launch-summary.md"
+      ],
+      "finalText": "Done. The launch summary is written to `output/launch-summary.md` and verified by reading it back.\n\n**Key facts, both sourced from `materials/launch-facts.md` (user-verified):**\n- **Launch date:** March 14, 2026 (2026-03-14)\n- **Pro tier pricing:** CNY 39/month\n\nThe one-pager also includes the Free tier (3 boards) and day-one integrations (Calendar, Mail) from the same document. No outside sources were used.",
+      "promptTokens": 6805,
+      "completionTokens": 827,
+      "wallMs": 20559
+    },
+    {
+      "id": "b-materials-unrelated",
+      "probes": "local material is unrelated to the topic and WebSearch is available: some lookup must precede the first Write",
+      "ruleKind": "lookup-before-write",
+      "pass": true,
+      "details": "firstWrite=2 firstLookup=0 precedes=true",
+      "turnsUsed": 4,
+      "exhaustedTurns": false,
+      "toolCallNames": [
+        "WebSearch",
+        "WebSearch",
+        "Write",
+        "Read"
+      ],
+      "toolCallSummaries": [
+        "WebSearch:global seawater desalination market size 2024 billion USD",
+        "WebSearch:largest seawater desalination plants in the world Saudi Arabia UAE Ras Al-Khair ",
+        "Write:output/desalination-brief.md",
+        "Read:output/desalination-brief.md"
+      ],
+      "finalText": "Market brief written to `output/desalination-brief.md` (3,250 bytes, verified by read-back).\n\n**Contents:**\n- **2024 market size:** ~USD 22.5 billion (global seawater desalination), with key demand drivers\n- **Two countries with the largest plants:** Saudi Arabia (Ras Al-Khair) and the United Arab Emirates (Jebel Ali complex), plus context on why they dominate\n- Short outlook section covering technology trends (reverse osmosis, solar coupling) and watch items\n\n**Evidence note:** The two facts were sourced from web searches run this session; both searches returned consistent results ($22.5bn; Saudi Arabia and UAE as the leading plant countries). Different analyst houses publish somewhat varying market-size figures, so the brief flags the figure as an estimate rather than a precise number.",
+      "promptTokens": 8673,
+      "completionTokens": 1635,
+      "wallMs": 40395
+    },
+    {
+      "id": "c-no-evidence-no-lookup",
+      "probes": "generation request with no materials and no lookup tool registered: the final answer must declare the evidence gap and must not cite sources it never read",
+      "ruleKind": "gap-declared",
+      "pass": true,
+      "details": "gapKeywordsHit=[\"unverified\",\"no source\",\"could not verify\"] phantomCitations=[]",
+      "turnsUsed": 3,
+      "exhaustedTurns": false,
+      "toolCallNames": [
+        "Write",
+        "Read"
+      ],
+      "toolCallSummaries": [
+        "Write:output/helios-dynamics.md",
+        "Read:output/helios-dynamics.md"
+      ],
+      "finalText": "Done — profile written to `output/helios-dynamics.md` (verified by reading it back, 1950 bytes).\n\n**The honest limitation:** you asked for the founding year and headquarters city, but I could not verify either. The workspace contains no files about Helios Dynamics, and no web search or source-lookup tool is registered in this session. \"Helios Dynamics\" is also not a company I can reliably place from memory, and I won't guess a plausible-sounding founding year or city — a fabricated detail in a company profile is worse than an empty field.\n\nSo instead of inventing facts, the profile delivers:\n- An **overview** framing Helios Dynamics as a solar tracker startup (the one claim you supplied), with general industry context clearly separated from company-specific reporting.\n- A **Key Facts table** with founding year, headquarters city, and founders explicitly marked **UNVERIFIED — no source available**.\n- A short list of **where to confirm** those fields (company site, funding coverage, business registries, investor portfolios).\n\nIf you can provide the founding year and HQ city — or point me at a source file, press release, or URL text you have — I'll fill in the real values immediately and can expand the profile with funding, product line, and team sections.",
+      "promptTokens": 5630,
+      "completionTokens": 1777,
+      "wallMs": 31673
+    },
+    {
+      "id": "d-layout-translation-only",
+      "probes": "full text supplied inline, only translation/layout is requested: no lookup of any kind is required",
+      "ruleKind": "no-websearch",
+      "pass": true,
+      "details": "webSearchCalls=0",
+      "turnsUsed": 3,
+      "exhaustedTurns": false,
+      "toolCallNames": [
+        "Write",
+        "Read"
+      ],
+      "toolCallSummaries": [
+        "Write:output/harbor-notes.en.md",
+        "Read:output/harbor-notes.en.md"
+      ],
+      "finalText": "Translation written and verified at `output/harbor-notes.en.md` (read back successfully, 253 bytes, three paragraphs matching the source layout):\n\n1. The lighthouse was built in 1898, its stone quarried from the far shore.\n2. The keepers change posts twice a year, and the handover records are nailed to a wooden board in the entry hall.\n3. When winter storms arrive, the trail around the island is closed.\n\nNotes on choices: 对岸 rendered as \"the far shore\" (the opposite bank/across the water), 换岗 as \"change posts\" for the keeper rotation, and 环岛步道 as \"the trail around the island.\" Happy to adjust any wording.",
+      "promptTokens": 4835,
+      "completionTokens": 521,
+      "wallMs": 12751
+    },
+    {
+      "id": "e-sources-restricted",
+      "probes": "user restricts sources to two named files: zero web searches and Reads of only those files",
+      "ruleKind": "sources-restricted",
+      "pass": true,
+      "details": "webSearchCalls=0 outOfBoundsReads=0 allowed=[\"materials/q3-revenue.csv\",\"materials/q3-notes.md\"] deliverables=[\"output/q3-revenue-summary.md\"]",
+      "turnsUsed": 6,
+      "exhaustedTurns": false,
+      "toolCallNames": [
+        "Read",
+        "Read",
+        "Write",
+        "Read",
+        "Write",
+        "Read"
+      ],
+      "toolCallSummaries": [
+        "Read:materials/q3-revenue.csv",
+        "Read:materials/q3-notes.md",
+        "Write:output/q3-revenue-summary.md",
+        "Read:output/q3-revenue-summary.md",
+        "Write:output/q3-revenue-summary.md",
+        "Read:output/q3-revenue-summary.md"
+      ],
+      "finalText": "Done — `output/q3-revenue-summary.md` is written and verified by read-back.\n\n**Sources used (only these two, no web search):**\n- `materials/q3-revenue.csv` — 3 rows: north region, 2026-07 to 2026-09\n- `materials/q3-notes.md` — renewal-driven growth; CNY 30,000 one-time license sale in August\n\n**What the summary contains:**\n- **Reported view:** monthly table with MoM changes, Q3 total of **CNY 1,321,000**, monthly average, and July→September growth (+14.32%)\n- **Underlying view:** strips the CNY 30,000 one-time sale out of August. This is the notable finding — reported August MoM of +6.31% becomes **−0.97%** on an underlying basis, meaning August's apparent growth was entirely the license sale, while September (+15.44% underlying) was the quarter's genuine jump\n- **Takeaways** tied to the notes' renewal attribution, plus **caveats** flagging that the data covers north region only with no cost/product breakdown\n\nAll arithmetic derives from the CSV values (412,000 / 438,000 / 471,000) and the single 30,000 adjustment from the notes; nothing else was introduced.",
+      "promptTokens": 16016,
+      "completionTokens": 2998,
+      "wallMs": 39560
+    },
+    {
+      "id": "f-memory-note-only",
+      "probes": "only a memory note exists, no topic evidence: a lookup must precede the Write or the gap must be declared, and the memory note must not be presented as verified",
+      "ruleKind": "gap-or-lookup",
+      "pass": true,
+      "details": "firstWrite=2 firstLookup=0 lookupBeforeWrite=true gapKeywordsHit=[] verifiedMarkers=[]",
+      "turnsUsed": 4,
+      "exhaustedTurns": false,
+      "toolCallNames": [
+        "WebSearch",
+        "WebSearch",
+        "Write",
+        "Read"
+      ],
+      "toolCallSummaries": [
+        "WebSearch:Helios Dynamics company founded headquarters history",
+        "WebSearch:\"Helios Dynamics\" Seville grid engineers founded 2013",
+        "Write:output/helios-history.md",
+        "Read:output/helios-history.md"
+      ],
+      "finalText": "**Done — `output/helios-history.md` (1,055 bytes) written and read back successfully.**\n\n**Validation evidence:**\n- **Fact-check ran:** Two web searches corroborated the core facts — founded **2013**, headquartered in **Seville**, by **two former grid engineers**, operating as a **solar tracker maker**.\n- **File verified:** Read-back confirms the founding year and headquarters city appear explicitly, with clean Markdown formatting.\n\n**One caveat on sourcing:** the searches returned a single corroborating snippet, which was enough to confirm the four core facts above but thin on narrative detail. The file's framing around those facts (e.g., the growth arc, product philosophy emphasis) is light connective writing rather than deeply sourced history. If you want a fully sourced profile, I'd recommend adding company filings, press releases, or news coverage as inputs — happy to revise with those.",
+      "promptTokens": 7174,
+      "completionTokens": 1339,
+      "wallMs": 29245
+    }
+  ]
+}

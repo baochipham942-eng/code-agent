@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-03",
+  "updatedAt": "2026-10-05",
   "policy": {
     "verificationStatus": [
       "verified",
@@ -187,7 +187,7 @@
     },
     {
       "id": "p0-local-stop-verified",
-      "date": "2026-09-09",
+      "date": "2026-10-05",
       "runtime": "native",
       "protocolFamily": "local-control-plane",
       "provider": "none",
@@ -201,7 +201,7 @@
         "docs/stability/tool-cancel-smoke-latest.json",
         "docs/stability/agent-runtime-app-host-smoke-latest.json"
       ],
-      "reason": "2026-09-09 rerun against a fresh build at 176092727: Bash and HTTP cancellation passed; app-host headless Chrome explicitly blocked isolated folder configuration, released RunRegistry in 66ms, and cleared renderer stop state in 77ms. The smoke fixture now creates its folder-bound session and uses current localized dialog labels. Non-provider stop evidence only; no provider stop_abort cell is promoted."
+      "reason": "2026-10-05 rerun against a fresh build at e16897caf: Bash and HTTP cancellation passed; app-host headless Chrome released RunRegistry in 25ms and cleared renderer stop state in 130ms. Non-provider stop evidence only; no provider stop_abort cell is promoted."
     },
     {
       "id": "dsh-cli-local-spike",

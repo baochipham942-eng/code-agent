@@ -157,6 +157,7 @@ export const enSettingsModels = {
         effortSectionLabel: 'Thinking depth',
         // Merged thinking segment (Thinking + Effort): Off/Low/Med/High quarters
         thinkingSectionLabel: 'Thinking',
+        thinkingExternalHint: 'This engine decides its own reasoning level',
         thinkingOptionAuto: 'Auto',
         thinkingOptionOff: 'Off',
         thinkingOptionLow: 'Low',

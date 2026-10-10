@@ -28,6 +28,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 
 import { registerPlanningHandlers } from '../../../src/host/ipc/planning.ipc';
+import { respondApprovalPayloadSchema } from '../../../src/shared/ipc/schemas/planning';
 
 type HandlerFn = (event: unknown, request: IPCRequest) => Promise<IPCResponse>;
 
@@ -115,6 +116,42 @@ describe('planning.ipc dispatch 特征：respondApproval', () => {
     });
     h.resolvePlanApproval.mockRejectedValueOnce(Object.assign(Object.create(h.PlanApprovalError.prototype), { code: 'APPROVAL_NOT_FOUND', message: 'gone' }));
     expect(await call('respondApproval', req)).toEqual({ success: false, error: { code: 'APPROVAL_NOT_FOUND', message: 'gone' } });
+  });
+
+  it('edit + version 原样转发，STALE_VERSION 用自带 code 回传', async () => {
+    const req = {
+      sessionId: 's',
+      messageId: 'm',
+      toolCallId: 't',
+      decision: 'edit',
+      version: 2,
+      steps: [{ id: 'step-1', content: 'Ship the edited plan', originalContent: 'Read code' }],
+    };
+    expect(await call('respondApproval', req)).toEqual({ success: true, data: { approved: true } });
+    expect(h.resolvePlanApproval).toHaveBeenCalledWith(req, {
+      appService: expect.objectContaining({ sendMessage: expect.any(Function) }),
+      taskManager: { id: 'tm' },
+    });
+    h.resolvePlanApproval.mockRejectedValueOnce(Object.assign(Object.create(h.PlanApprovalError.prototype), {
+      code: 'STALE_VERSION',
+      message: 'Plan approval version is stale',
+    }));
+    expect(await call('respondApproval', req)).toEqual({
+      success: false,
+      error: { code: 'STALE_VERSION', message: 'Plan approval version is stale' },
+    });
+  });
+
+  it('respondApproval payload schema accepts edit and a positive integer version', () => {
+    expect(respondApprovalPayloadSchema.safeParse({
+      decision: 'edit',
+      version: 2,
+      sessionId: 's',
+      steps: [{ id: 'step-1', content: 'A', originalContent: 'A' }],
+    }).success).toBe(true);
+    expect(respondApprovalPayloadSchema.safeParse({ decision: 'approve' }).success).toBe(true);
+    expect(respondApprovalPayloadSchema.safeParse({ decision: 'nope' }).success).toBe(false);
+    expect(respondApprovalPayloadSchema.safeParse({ version: '2' }).success).toBe(false);
   });
 });
 

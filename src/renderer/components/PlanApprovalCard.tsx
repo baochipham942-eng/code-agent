@@ -22,12 +22,23 @@ import { useSessionStore } from '../stores/sessionStore';
 import { Button } from './primitives/Button';
 import { DecisionCollapsedBar } from './DecisionCard';
 import {
+  getPlanApprovalRecord,
   movePlanStep,
   type PendingPlanApprovalTarget,
   updateMessageWithPlanApproval,
 } from '../utils/planApprovalView';
 
 type EditorMode = 'steps' | 'feedback';
+
+function errorCode(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null || !('code' in error)) return undefined;
+  const code = (error as { code: unknown }).code;
+  return typeof code === 'string' ? code : undefined;
+}
+
+function isStaleVersion(error: unknown): boolean {
+  return errorCode(error) === 'STALE_VERSION';
+}
 
 function editedStep(step: PlanApprovalStep, content: string): PlanApprovalStep {
   const nextContent = content.trim();
@@ -101,13 +112,14 @@ export const PlanApprovalCard: React.FC<{
 }> = ({ target, collapsed: controlledCollapsed, onCollapse }) => {
   const { t } = useI18n();
   const [steps, setSteps] = useState<PlanApprovalStep[]>(() => target.approval.steps.map((step) => ({ ...step })));
+  const [version, setVersion] = useState(() => target.approval.version ?? 1);
   const [mode, setMode] = useState<EditorMode>('steps');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [feedback, setFeedback] = useState('');
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; code?: string } | null>(null);
   const [internalCollapsed, setInternalCollapsed] = useState(false);
   const collapsed = controlledCollapsed ?? internalCollapsed;
   const isCollapseControlled = controlledCollapsed !== undefined;
@@ -118,6 +130,13 @@ export const PlanApprovalCard: React.FC<{
   useEffect(() => {
     setInternalCollapsed(false);
   }, [target.toolCallId]);
+
+  useEffect(() => {
+    setVersion(target.approval.version ?? 1);
+    setSteps(target.approval.steps.map((step) => ({ ...step })));
+    setEditingId(null);
+    setDraft('');
+  }, [target.toolCallId, target.approval.version, target.approval.steps]);
 
   useEffect(() => {
     if (collapsed) return;
@@ -140,12 +159,24 @@ export const PlanApprovalCard: React.FC<{
     if (response.tasks) store.setSessionTasks(response.tasks);
   }, [target.messageId, target.toolCallId]);
 
+  const resyncFromLatestUpdate = useCallback(() => {
+    const message = useSessionStore.getState().messages.find((candidate) => candidate.id === target.messageId);
+    const toolCall = message?.toolCalls?.find((candidate) => candidate.id === target.toolCallId);
+    const latest = getPlanApprovalRecord(toolCall);
+    if (!latest) return;
+    setVersion(latest.version ?? 1);
+    setSteps(latest.steps.map((step) => ({ ...step })));
+    setEditingId(null);
+    setDraft('');
+  }, [target.messageId, target.toolCallId]);
+
   const submit = useCallback(async (
     decision: PlanApprovalRequest['decision'],
     payload?: Pick<PlanApprovalRequest, 'steps' | 'feedback'>,
+    options?: { keepInteractive?: boolean },
   ) => {
-    if (submitting) return;
-    setSubmitting(true);
+    if (!options?.keepInteractive && submitting) return;
+    if (!options?.keepInteractive) setSubmitting(true);
     setError(null);
     try {
       const response = await ipcService.invokeDomain<PlanApprovalResponse>(
@@ -156,15 +187,23 @@ export const PlanApprovalCard: React.FC<{
           messageId: target.messageId,
           toolCallId: target.toolCallId,
           decision,
+          version,
           ...payload,
         } satisfies PlanApprovalRequest,
       );
       applyResponse(response);
+      if (typeof response.approval.version === 'number') setVersion(response.approval.version);
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : t.planApproval.submitFailed);
-      setSubmitting(false);
+      // 失败态只说 UI 语言且带下一步；宿主英文 message 不进卡片，未知码回落通用文案 + 小字附码。
+      if (isStaleVersion(submitError)) {
+        setError({ message: t.planApproval.staleVersion });
+        resyncFromLatestUpdate();
+      } else {
+        setError({ message: t.planApproval.submitFailed, code: errorCode(submitError) });
+      }
+      if (!options?.keepInteractive) setSubmitting(false);
     }
-  }, [applyResponse, submitting, t.planApproval.submitFailed, target]);
+  }, [applyResponse, resyncFromLatestUpdate, submitting, t.planApproval.staleVersion, t.planApproval.submitFailed, target, version]);
 
   const beginEdit = (step: PlanApprovalStep) => {
     setEditingId(step.id);
@@ -175,11 +214,12 @@ export const PlanApprovalCard: React.FC<{
   const saveEdit = () => {
     const content = draft.trim();
     if (!editingId || !content) return;
-    setSteps((current) => current.map((step) => (
-      step.id === editingId ? editedStep(step, content) : step
-    )));
+    const nextSteps = steps.map((step) => (step.id === editingId ? editedStep(step, content) : step));
+    const changed = nextSteps.some((step, index) => step.content !== steps[index]?.content);
+    setSteps(nextSteps);
     setEditingId(null);
     setDraft('');
+    if (changed) void submit('edit', { steps: nextSteps }, { keepInteractive: true });
   };
 
   useEffect(() => {
@@ -248,6 +288,11 @@ export const PlanApprovalCard: React.FC<{
           <ListChecks className="h-4 w-4 shrink-0 text-badge-info" />
           <span className="text-sm font-medium text-badge-info">{t.planApproval.title}</span>
           <span className="text-xs text-zinc-500">{t.planApproval.stepCount.replace('{count}', String(steps.length))}</span>
+          {version > 1 && (
+            <span className="text-xs text-zinc-500" data-testid="plan-approval-version">
+              {t.planApproval.version.replace('{version}', String(version))}
+            </span>
+          )}
         </div>
         {target.approval.source === 'synthetic_text' && (
           <p className="border-b border-zinc-800 px-4 py-1.5 text-xs text-zinc-500" data-testid="plan-approval-source">
@@ -369,7 +414,12 @@ export const PlanApprovalCard: React.FC<{
 
         <div className="px-4 pb-3">
           {steps.length === 0 && mode === 'steps' && <div className="mb-2 text-xs text-badge-danger">{t.planApproval.emptyPlan}</div>}
-          {error && <div className="mb-2 text-xs text-badge-danger">{error}</div>}
+          {error && (
+            <div className="mb-2 text-xs text-badge-danger" data-testid="plan-approval-error">
+              {error.message}
+              {error.code && <span className="ml-1 text-[10px] text-zinc-500">{error.code}</span>}
+            </div>
+          )}
           <div className="flex items-center justify-between gap-2">
             {mode === 'steps' ? (
               <Button size="sm" variant="ghost" onClick={() => setMode('feedback')} disabled={submitting || editingId !== null}>

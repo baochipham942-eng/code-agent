@@ -135,6 +135,15 @@ function parseMemoryEntryStatus(value: string | undefined): MemoryEntryStatus | 
   return undefined;
 }
 
+/**
+ * 从记忆文件原始内容解析 frontmatter status（MemoryRead 读取面判断
+ * candidate/stale 文末提示用）。无 frontmatter 或 status 未识别时返回 undefined。
+ */
+export function parseMemoryFileStatus(content: string): MemoryEntryStatus | undefined {
+  const { metadata } = parseFrontmatter(content);
+  return parseMemoryEntryStatus(metadata.status);
+}
+
 function parseSchemaVersion(value: string | undefined): number | undefined {
   if (!value) return undefined;
   const parsed = Number(value);

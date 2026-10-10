@@ -11,6 +11,7 @@
     "packages/internal/evaluation-center/esbuild.host.config.ts",
     "packages/internal/evaluation-center/vite.renderer.config.ts",
     "packages/internal/evaluation-center/scripts/**/*.ts",
+    "scripts/repair/backfill-cli-session-titles.ts",
     "packages/mobile/src/main.tsx"
   ],
   "project": [

@@ -32,9 +32,33 @@ const compactModelMocks = vi.hoisted(() => {
         },
       },
     } as Partial<AppSettings> as AppSettings,
-    inference: vi.fn(async (): Promise<{ type: string; content: string; finishReason: string; truncated?: boolean }> => ({ type: 'text', content: '压缩摘要', finishReason: 'stop' })),
+    inference: vi.fn(async (
+      _messages?: unknown,
+      _tools?: unknown,
+      _config?: unknown,
+      _trace?: unknown,
+      _signal?: unknown,
+      _options?: unknown,
+    ): Promise<{
+      type: string;
+      content: string;
+      finishReason: string;
+      truncated?: boolean;
+      usage?: {
+        inputTokens?: number;
+        outputTokens?: number;
+        cacheReadTokens?: number;
+        cacheCreationTokens?: number;
+      };
+    }> => ({ type: 'text', content: '压缩摘要', finishReason: 'stop' })),
     getFallbackConfig: vi.fn(() => null as ModelConfig | null),
     getApiKey: vi.fn((provider: string) => state.apiKeys[provider]),
+    logger: {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    },
   };
 
   state.getFallbackConfig = vi.fn(() => state.fallbackConfig);
@@ -42,12 +66,7 @@ const compactModelMocks = vi.hoisted(() => {
 });
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
+  createLogger: () => compactModelMocks.logger,
 }));
 
 vi.mock('../../../src/host/services', () => ({
@@ -257,5 +276,103 @@ describe('compactModelSummarize', () => {
       undefined,
       { cacheRetention: 'none', cacheScopeId: 'compact-summary' },
     );
+  });
+
+  it('returns provider-reported usage and logs it without changing the inference request', async () => {
+    compactModelMocks.fallbackConfig = {
+      provider: 'moonshot',
+      model: 'kimi-k2.5',
+      maxTokens: 2048,
+    };
+    compactModelMocks.apiKeys = { moonshot: 'moonshot-key' };
+    compactModelMocks.inference.mockResolvedValue({
+      type: 'text',
+      content: '压缩摘要',
+      finishReason: 'stop',
+      usage: {
+        inputTokens: 120,
+        outputTokens: 40,
+        cacheReadTokens: 80,
+        cacheCreationTokens: 15,
+      },
+    });
+
+    const result = await compactModelSummarizeWithMetadata('请压缩这段上下文', 500);
+
+    expect(compactModelMocks.inference).toHaveBeenCalledTimes(1);
+    expect(compactModelMocks.inference).toHaveBeenCalledWith(
+      [{ role: 'user', content: '请压缩这段上下文' }],
+      [],
+      expect.objectContaining({
+        provider: 'moonshot',
+        model: 'kimi-k2.5',
+        apiKey: 'moonshot-key',
+      }),
+      undefined,
+      undefined,
+      { cacheRetention: 'none', cacheScopeId: 'compact-summary' },
+    );
+    expect(result.metadata.usage).toEqual({
+      inputTokens: 120,
+      cacheReadTokens: 80,
+      cacheCreationTokens: 15,
+    });
+    expect(result.metadata.usage).not.toHaveProperty('outputTokens');
+    expect(compactModelMocks.logger.info).toHaveBeenCalledWith('Summary usage', {
+      provider: 'moonshot',
+      model: 'kimi-k2.5',
+      cacheScopeId: 'compact-summary',
+      useMainModel: false,
+      inputTokens: 120,
+      cacheReadTokens: 80,
+      cacheCreationTokens: 15,
+    });
+  });
+
+  it('keeps unreported usage fields undefined on the context-length fallback call', async () => {
+    compactModelMocks.fallbackConfig = {
+      provider: 'moonshot',
+      model: 'kimi-k2.5',
+      maxTokens: 2048,
+    };
+    compactModelMocks.apiKeys = {
+      moonshot: 'moonshot-key',
+      xiaomi: 'xiaomi-key',
+    };
+    compactModelMocks.inference
+      .mockRejectedValueOnce(Object.assign(new Error('maximum context length exceeded'), {
+        code: 'CONTEXT_LENGTH_EXCEEDED',
+        name: 'ContextLengthExceededError',
+      }))
+      .mockResolvedValueOnce({
+        type: 'text',
+        content: '主模型压缩摘要',
+        finishReason: 'stop',
+        usage: { inputTokens: 50, outputTokens: 9 },
+      });
+
+    const result = await compactModelSummarizeWithMetadata('请压缩这段超长上下文', 500);
+
+    expect(result.metadata.usage).toEqual({ inputTokens: 50 });
+    expect(result.metadata.usage?.cacheReadTokens).toBeUndefined();
+    expect(result.metadata.usage?.cacheCreationTokens).toBeUndefined();
+    const usageLogs = compactModelMocks.logger.info.mock.calls.filter((call) => call[0] === 'Summary usage');
+    expect(usageLogs).toEqual([[
+      'Summary usage',
+      {
+        provider: 'xiaomi',
+        model: 'mimo-v2.5-pro',
+        cacheScopeId: 'compact-summary',
+        useMainModel: true,
+        inputTokens: 50,
+        cacheReadTokens: undefined,
+        cacheCreationTokens: undefined,
+      },
+    ]]);
+    expect(compactModelMocks.inference).toHaveBeenCalledTimes(2);
+    for (const call of compactModelMocks.inference.mock.calls) {
+      expect(call[0]).toEqual([{ role: 'user', content: '请压缩这段超长上下文' }]);
+      expect(call[5]).toEqual({ cacheRetention: 'none', cacheScopeId: 'compact-summary' });
+    }
   });
 });

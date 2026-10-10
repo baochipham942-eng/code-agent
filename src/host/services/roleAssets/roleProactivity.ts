@@ -780,7 +780,7 @@ export async function syncCadenceJobs(): Promise<{ registered: string[]; removed
  * 角色没声明工具（空或缺失）：不发明白名单，只把已知名册里的对外副作用工具放进 deniedToolNames。
  * wake_noop 不在这条路径上使用，不额外塞进名单。
  */
-async function resolveWakeRunToolScope(roleId: string): Promise<{
+export async function resolveWakeRunToolScope(roleId: string): Promise<{
   allowedToolNames?: string[];
   deniedToolNames?: string[];
 }> {

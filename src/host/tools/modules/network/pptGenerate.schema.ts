@@ -176,6 +176,10 @@ export const pptGenerateSchema: ToolSchema = {
   allowInPlanMode: false,
   accesses: [
     { kind: 'write', argumentNames: ['output_path'] },
+    // r3：模板与数据源是真实读入，未声明时会与写它们的上游调用并发。
+    // 两个是独立路径，拆开声明（同一列表内第二个值相对第一个解析）。
+    { kind: 'read', argumentNames: ['template_path'] },
+    { kind: 'read', argumentNames: ['data_source'] },
   ],
 };
 

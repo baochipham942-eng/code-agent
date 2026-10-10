@@ -141,3 +141,9 @@ vi.mock('better-sqlite3', () => {
 // Retry timing is an explicit test input; production code keeps production defaults.
 process.env.ARTIFACT_SELECTED_PROVIDER_RETRY_DELAY_1_MS = '0';
 process.env.ARTIFACT_SELECTED_PROVIDER_RETRY_DELAY_2_MS = '0';
+
+// 开发机 shell 可能常驻真实 TYPESAFE_API_KEY，而 CI 没有。N-JEV-DEFAULT-ON 起 Jev 四特性
+// 默认开：环境渗入的 key 会让走生产包装的单测（如 permissionClassifier 单例）真打网络，
+// 结果随机器漂移。这里统一清掉，单测一律 keyless（与 CI 同构）；要测有 key 路径的套件
+// 自行 vi.stubEnv / vi.mock（现有套件全部如此，无一依赖环境渗入值）。
+delete process.env.TYPESAFE_API_KEY;

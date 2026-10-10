@@ -577,6 +577,95 @@ describe('MCPToolRegistry listChanged refresh', () => {
   });
 });
 
+// N-CHECKPOINT-MCP-WRITETARGET：MCP 写目标的声明通道。SDK 的 ToolAnnotationsSchema
+// 是 strip 模式 z.object——annotations 里的自定义键（writePathParameters）活不过
+// listTools 解析，声明必须走 tool._meta['code-agent/writePathParameters']，由
+// mapSdkToolToMCPTool 提升进 annotations，再随 getToolDefinitions 拷进 def.metadata。
+describe('MCPToolRegistry writePathParameters declaration channel', () => {
+  it('SDK listTools parse strips custom annotation keys but keeps _meta (channel rationale)', async () => {
+    const { ListToolsResultSchema } = await import('@modelcontextprotocol/core');
+    const parsed = ListToolsResultSchema.parse({
+      tools: [{
+        name: 'save_file',
+        description: 'save',
+        inputSchema: { type: 'object', properties: {} },
+        annotations: { readOnlyHint: false, writePathParameters: ['target'] },
+        _meta: { 'code-agent/writePathParameters': ['target'] },
+      }],
+    });
+    // 若 SDK 升级改成语义 passthrough（annotations 保住自定义键），本用例与通道选择
+    // 需要一并重审；在那之前 _meta 是唯一活过解析的载体
+    expect(parsed.tools[0].annotations).toEqual({ readOnlyHint: false });
+    expect(parsed.tools[0]._meta).toEqual({ 'code-agent/writePathParameters': ['target'] });
+  });
+
+  it('lifts _meta["code-agent/writePathParameters"] into def.metadata.annotations', () => {
+    resetToolSearchService();
+    const registry = new MCPToolRegistry();
+
+    registry.refreshServerTools('fs', [{
+      name: 'save_file',
+      description: 'save',
+      inputSchema: { type: 'object' as const, properties: {} },
+      _meta: { 'code-agent/writePathParameters': ['target'] },
+    }]);
+
+    const definition = registry.getToolDefinitions()[0] as unknown as {
+      metadata?: { annotations?: { writePathParameters?: string[] } };
+    };
+    expect(definition?.metadata?.annotations?.writePathParameters).toEqual(['target']);
+  });
+
+  it('drops malformed declarations (non-strings / empties) instead of trusting them', () => {
+    resetToolSearchService();
+    const registry = new MCPToolRegistry();
+
+    registry.refreshServerTools('fs', [
+      {
+        name: 'mixed',
+        description: 'mixed',
+        inputSchema: { type: 'object' as const, properties: {} },
+        _meta: { 'code-agent/writePathParameters': ['target', 42, '', null] },
+      },
+      {
+        name: 'not_an_array',
+        description: 'bad',
+        inputSchema: { type: 'object' as const, properties: {} },
+        _meta: { 'code-agent/writePathParameters': 'target' },
+      },
+    ]);
+
+    const definitions = registry.getToolDefinitions() as unknown as Array<{
+      name: string;
+      metadata?: { annotations?: { writePathParameters?: string[] } };
+    }>;
+    expect(definitions.find((def) => def.name === 'mcp__fs__mixed')?.metadata?.annotations?.writePathParameters)
+      .toEqual(['target']);
+    expect(definitions.find((def) => def.name === 'mcp__fs__not_an_array')?.metadata?.annotations?.writePathParameters)
+      .toBeUndefined();
+  });
+
+  it('carries writePathParameters from in-process MCPTool annotations into def.metadata', () => {
+    resetToolSearchService();
+    const registry = new MCPToolRegistry();
+    registry.tools = [
+      {
+        serverName: 'inproc',
+        name: 'render_report',
+        description: 'render',
+        inputSchema: { type: 'object', properties: {} },
+        // in-process server 不经 SDK 解析，可以直接在 annotations 上声明
+        annotations: { writePathParameters: ['output_path'] },
+      },
+    ];
+
+    const definition = registry.getToolDefinitions()[0] as unknown as {
+      metadata?: { annotations?: { writePathParameters?: string[] } };
+    };
+    expect(definition?.metadata?.annotations?.writePathParameters).toEqual(['output_path']);
+  });
+});
+
 describe('ToolSearchService.unregisterMCPServer', () => {
   it('removes only the targeted server MCP tool metadata', () => {
     resetToolSearchService();

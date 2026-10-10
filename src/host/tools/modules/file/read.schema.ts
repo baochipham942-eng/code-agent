@@ -40,4 +40,7 @@ export const readSchema: ToolSchema = {
   allowInTextForeground: true,
   readOnly: true,
   allowInPlanMode: true,
+  accesses: [
+    { kind: 'read', argumentNames: ['file_path'] },
+  ],
 };

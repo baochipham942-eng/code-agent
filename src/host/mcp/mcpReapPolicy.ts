@@ -58,8 +58,17 @@ function connectionFailed(toolCallId: string, serverName: string, errorMsg: stri
   };
 }
 
-function notConnected(toolCallId: string, serverName: string): ToolResult {
-  return { toolCallId, success: false, error: `MCP server ${serverName} not connected` };
+/**
+ * Server-down tool result. The fallback clause is model-facing guidance: without it
+ * the model retried the dead server or invented a missing-ability reason.
+ * mcpClient.ts reuses this builder for its belt-and-braces guard so the texts cannot drift.
+ */
+export function notConnected(toolCallId: string, serverName: string): ToolResult {
+  return {
+    toolCallId,
+    success: false,
+    error: `MCP server ${serverName} is not connected. Use another available tool, or tell the user this service is unavailable instead of retrying.`,
+  };
 }
 
 function cancelled(toolCallId: string): ToolResult {

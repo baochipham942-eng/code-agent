@@ -112,6 +112,16 @@ export const TASK_PATCH = {
   TRASH_DIR: 'trashed-task-patches',
 } as const;
 
+/** 工具默认截图落盘（N-RETENTION-SHOTS-APPDIR）：无显式路径时不写用户工作目录，改落数据目录 */
+export const TOOL_SCREENSHOTS = {
+  /** 根子目录名（相对 getUserConfigDir()） */
+  DIR_NAME: 'tool-screenshots',
+  /** 会话 id 清洗后为空（含未提供）时的兜底子目录名 */
+  NO_SESSION_DIR_NAME: 'no-session',
+  /** 无会话上下文的调用方（convertToScreenshots）的 per-call 目录前缀，mkdtemp 补随机后缀 */
+  PER_CALL_DIR_PREFIX: 'ppt-',
+} as const;
+
 /** 资源管理常量 */
 export const RESOURCE_MANAGEMENT = {
   /** 磁盘空间警告阈值（1GB） */
@@ -130,4 +140,12 @@ export const RESOURCE_MANAGEMENT = {
 export const BACKGROUND_TASK_LOG = {
   /** TaskPanel 单次只读取日志尾部 64 KiB。 */
   TAIL_MAX_BYTES: 64 * 1024,
+} as const;
+
+/** Browser/Computer 证据台账（JSONL）按大小分片轮转（FB-307：append-only 无上限增长要封顶）。 */
+export const PROOF_LEDGER = {
+  /** 单个 shard（含 active 文件）的最大字节数；active 加上新行超限即轮转出下一个 shard。 */
+  MAX_SHARD_BYTES: 5 * 1024 * 1024,
+  /** 保留的 shard 总数（active + rotated），更老的在轮转时删除。 */
+  KEPT_SHARDS: 4,
 } as const;

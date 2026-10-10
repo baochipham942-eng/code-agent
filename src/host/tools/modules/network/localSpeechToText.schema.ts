@@ -66,4 +66,7 @@ local_speech_to_text { "file_path": "meeting.mp3", "language": "en", "output_for
   permissionLevel: 'read',
   readOnly: true,
   allowInPlanMode: true,
+  accesses: [
+    { kind: 'read', argumentNames: ['file_path'] },
+  ],
 };

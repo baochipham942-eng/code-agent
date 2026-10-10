@@ -120,6 +120,30 @@ describe('companionUserPlan registers ChatView exit_plan_mode cards', () => {
     expect(startRun).toHaveBeenCalledWith('session-a', prompt, { historyVisibility: 'meta', disableAutoAgent: true });
   });
 
+  it('legacy approve omits version and still resolves', async () => {
+    const id = `legacy-version-${Date.now()}`;
+    noteCompanionUserPlan('session-a', {
+      toolCallId: id,
+      success: true,
+      metadata: {
+        confirmationType: PLAN_APPROVAL_CONFIRMATION_TYPE,
+        plan: PLAN,
+        planApproval: APPROVAL,
+      },
+    });
+    getMessages.mockReturnValueOnce([{
+      id: 'msg-legacy',
+      toolCalls: [{ id, result: { metadata: { planApproval: APPROVAL } } }],
+    }]);
+    await expect(deliverCompanionUserPlan(id, true, undefined, 'session-a', async () => {})).resolves.toEqual({ success: true });
+    expect(resolveApproval).toHaveBeenCalledWith(
+      expect.objectContaining({ decision: 'approve', steps: STEPS, messageId: 'msg-legacy', toolCallId: id }),
+      expect.any(Object),
+    );
+    const request = resolveApproval.mock.calls[0][0] as { version?: unknown };
+    expect(request.version).toBeUndefined();
+  });
+
   it('回读走全量消息而非固定窗口：审批卡滑出最近消息后仍可处理（不僵尸）', async () => {
     const id = `stale-window-${Date.now()}`;
     noteCompanionUserPlan('session-a', {

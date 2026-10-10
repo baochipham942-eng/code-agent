@@ -144,6 +144,24 @@ export type RoleWakeDecision = 'advance' | 'report' | 'suggest' | 'silence';
 /** 醒来触发方式 */
 export type RoleWakeTrigger = 'cadence' | 'event';
 
+/** 首次醒来的一条可一键委托建议：title 一句话；prompt = 用户点这条时发给角色的话 */
+export interface RoleFirstWakeSuggestion {
+  title: string;
+  prompt: string;
+}
+
+/** 首次醒来状态机取值：pending（已入队待跑）→ running → completed / skipped / failed（终态，不再重入） */
+export type RoleFirstWakeStateName = 'pending' | 'running' | 'completed' | 'skipped' | 'failed';
+
+/** 首次醒来快照（roles IPC firstWakeGet 的返回；状态文件本体是 host 侧 first-wake.json） */
+export interface RoleFirstWakeSnapshot {
+  state: RoleFirstWakeStateName;
+  sessionId?: string;
+  /** connected = 提示词带了已连接源名单；none = 无已连接源（引导连接，不编造建议） */
+  sourcesMode: 'connected' | 'none';
+  suggestions: RoleFirstWakeSuggestion[];
+}
+
 /** 一次醒来的执行结果（cron 执行记录 / E2E 验收用） */
 export interface RoleWakeResult {
   roleId: string;

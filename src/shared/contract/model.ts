@@ -164,6 +164,12 @@ export interface ModelConfig {
    * is not set explicitly.
    */
   reasoningEffort?: ModelReasoningEffort;
+  /**
+   * OpenAI Responses 请求的 service_tier（如半价档 'flex'）。缺省 = standard
+   * （字段缺席，不进请求体）。档位常量与拒绝信号集见 shared/constants/serviceTier.ts；
+   * 只有 run 接缝（agentLoop 的 applyRunServiceTier）会设置它，评审路径强制摘除。
+   */
+  serviceTier?: string;
   /** true 表示允许 adaptiveRouter 按任务复杂度切 free/default model。默认 false，严格用指定 provider/model */
   adaptive?: boolean;
 }

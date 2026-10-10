@@ -32,10 +32,28 @@ function cautionConfirmationToken(args: {
 }
 
 /**
+ * Confirmation hard-gate switch for unsigned sources, default OFF (same
+ * convention as CODEX_SANDBOX_ENABLED / CODE_AGENT_PERMISSION_LLM_CLASSIFIER:
+ * ship dark, flip on when the surface exists). The renderer confirmation modal
+ * (part B) is not merged yet, so no caller can obtain or echo a
+ * confirmationToken: with the gate enforced, any skill whose content trips a
+ * caution rule (`rm -rf ./dist`, `curl localhost`, prose `shutdown`, ...) from
+ * GitHub marketplace or a local zip fails with "install failed" and no retry
+ * path. Default-off keeps those installs working on the official-registry
+ * policy (proceed + distinguishable warn + cautionHits in the result). Part B
+ * flips this default to enforced.
+ */
+function isSkillCautionConfirmationGateEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.CODE_AGENT_SKILL_CAUTION_CONFIRMATION_ENABLED === '1';
+}
+
+/**
  * Empty hits and builtin skip the gate. official-registry proceeds with a warn
  * and no audit. Unsigned archive and local marketplace throw until the caller
- * repeats the install with the token from the latest scan. `force` is not an
- * input: overwrite never satisfies this gate.
+ * repeats the install with the token from the latest scan — but only while the
+ * confirmation gate is enabled; with it off (see above) they take the
+ * official-registry policy. `force` is not an input: overwrite never satisfies
+ * this gate.
  */
 export async function applySkillCautionGate(args: {
   pluginSpec: string;
@@ -50,6 +68,15 @@ export async function applySkillCautionGate(args: {
   if (args.sourceTrust === 'official-registry') {
     logger.warn('Official registry skill install proceeding with caution findings', {
       pluginSpec: args.pluginSpec,
+      ruleIds: cautionHits.map((hit) => hit.ruleId),
+    });
+    return cautionHits;
+  }
+
+  if (!isSkillCautionConfirmationGateEnabled()) {
+    logger.warn('Skill install proceeding with caution findings before the confirmation gate is enabled', {
+      pluginSpec: args.pluginSpec,
+      sourceTrust: args.sourceTrust,
       ruleIds: cautionHits.map((hit) => hit.ruleId),
     });
     return cautionHits;

@@ -139,10 +139,12 @@ describe('marketplace install service trust defaults', () => {
       },
     });
     mocks.reloadSkills.mockResolvedValue(undefined);
+    vi.stubEnv('CODE_AGENT_SKILL_CAUTION_CONFIRMATION_ENABLED', '1');
   });
 
   afterEach(async () => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
     vi.restoreAllMocks();
     await fs.rm(tempRoot, { recursive: true, force: true });
   });
@@ -872,6 +874,30 @@ describe('marketplace install service trust defaults', () => {
       .resolves.toMatchObject({ pluginSpec: 'remote-demo@trusted-test' });
     expect(mocks.logSecurityIncident).toHaveBeenCalledTimes(1);
   });
+
+  describe('confirmation gate off (default until the renderer confirmation surface ships)', () => {
+    beforeEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it('installs a local marketplace caution skill without a token and warns with a distinguishable reason', async () => {
+      await writeCautionSkill('git clean -fd');
+      const result = await installPlugin('demo@trusted-test');
+      expect(result.cautionHits).toEqual([
+        expect.objectContaining({ file: 'skills/demo/SKILL.md', ruleId: 'git_clean', snippet: 'git clean -fd' }),
+      ]);
+      expect((await listInstalledPlugins())['demo@trusted-test']).toMatchObject({ sourceTrust: 'local-marketplace' });
+      expect(mocks.logSecurityIncident).not.toHaveBeenCalled();
+      expect(mocks.logger.warn).toHaveBeenCalledWith(
+        'Skill install proceeding with caution findings before the confirmation gate is enabled',
+        expect.objectContaining({
+          pluginSpec: 'demo@trusted-test',
+          sourceTrust: 'local-marketplace',
+          ruleIds: ['git_clean'],
+        }),
+      );
+    });
+  });
 });
 
 describe('installFromRegistryEntry (官方 registry 可验证分发)', () => {
@@ -1106,9 +1132,11 @@ describe('installFromLocalZip', () => {
     mocks.userConfigDir = path.join(tempRoot, 'user-config');
     mocks.projectConfigDir = path.join(tempRoot, 'project-config');
     mocks.reloadSkills.mockResolvedValue(undefined);
+    vi.stubEnv('CODE_AGENT_SKILL_CAUTION_CONFIRMATION_ENABLED', '1');
   });
 
   afterEach(async () => {
+    vi.unstubAllEnvs();
     await fs.rm(tempRoot, { recursive: true, force: true });
   });
 
@@ -1244,5 +1272,31 @@ describe('installFromLocalZip', () => {
       expect.objectContaining({ file: 'demo/SKILL.md', ruleId: 'git_clean' }),
     ]);
     expect(mocks.logSecurityIncident).toHaveBeenCalledTimes(1);
+  });
+
+  describe('confirmation gate off (default until the renderer confirmation surface ships)', () => {
+    beforeEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it('installs a local-zip caution skill without a token and warns with a distinguishable reason', async () => {
+      const archive = await packSkillZip({
+        'demo/SKILL.md': '---\nname: demo\ndescription: Demo skill\n---\ngit clean -fd\n',
+      });
+      const result = await installFromLocalZip(archive);
+      expect(result.pluginSpec).toBe('demo@local-zip');
+      expect(result.cautionHits).toEqual([
+        expect.objectContaining({ file: 'demo/SKILL.md', ruleId: 'git_clean', snippet: 'git clean -fd' }),
+      ]);
+      expect((await listInstalledPlugins())['demo@local-zip']).toMatchObject({ sourceTrust: 'local-marketplace' });
+      expect(mocks.logSecurityIncident).not.toHaveBeenCalled();
+      expect(mocks.logger.warn).toHaveBeenCalledWith(
+        'Skill install proceeding with caution findings before the confirmation gate is enabled',
+        expect.objectContaining({
+          pluginSpec: 'demo@local-zip',
+          sourceTrust: 'local-marketplace',
+        }),
+      );
+    });
   });
 });

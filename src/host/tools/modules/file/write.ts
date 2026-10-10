@@ -85,7 +85,7 @@ async function evaluateTransformGuard(resolvedPath: string, newContent: string):
   };
 }
 
-const CODE_EXTENSIONS = new Set([
+export const CODE_EXTENSIONS = new Set([
   '.html', '.htm', '.js', '.ts', '.jsx', '.tsx',
   '.css', '.scss', '.less', '.json', '.mjs', '.cjs',
   '.vue', '.svelte',
@@ -157,7 +157,7 @@ function shouldRejectOversizedSingleWriteArtifact(filePath: string, content: str
   return isGeneratedCodeArtifact(filePath, existed) && content.length > MAX_SINGLE_WRITE_ARTIFACT_CHAR_LIMIT;
 }
 
-function checkCodeCompleteness(content: string, filePath: string): CompletenessCheck {
+export function checkCodeCompleteness(content: string, filePath: string): CompletenessCheck {
   const ext = path.extname(filePath).toLowerCase();
   const issues: string[] = [];
 

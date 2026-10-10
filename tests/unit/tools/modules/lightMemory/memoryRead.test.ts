@@ -29,6 +29,10 @@ vi.mock('../../../../../src/host/services/infra/logger', () => ({
 }));
 
 import { memoryReadModule } from '../../../../../src/host/tools/modules/lightMemory/memoryRead';
+import {
+  getRoleMemoriesDir,
+  getProjectMemoriesDir,
+} from '../../../../../src/host/services/roleAssets/roleAssetPaths';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -210,6 +214,191 @@ const x = 42;
       if (result.ok) {
         expect(result.output).toContain('## Architecture');
         expect(result.output).toContain('const x = 42');
+      }
+    });
+  });
+
+  describe('status footnote (candidate/stale)', () => {
+    // 与 src/host/tools/modules/lightMemory/memoryRead.ts 的 MEMORY_UNVERIFIED_HINT 同字节；
+    // 断言落在提示行本身，改文案必须同步这里。
+    const HINT = '⚠️ 此记忆状态为 candidate/stale：未经确认或可能已过时，作为事实使用前请先核对当前状态。';
+
+    const candidateContent = `---
+name: Trial Note
+description: Unverified candidate memory
+type: project
+status: candidate
+---
+
+The deploy command might have changed since this was captured.
+`;
+
+    const staleContent = `---
+name: Old Runbook
+description: Possibly outdated runbook
+type: project
+status: stale
+---
+
+The service used to run on port 3000.
+`;
+
+    it('appends the unverified hint line for status candidate', async () => {
+      await fs.writeFile(path.join(memDir, 'candidate_note.md'), candidateContent, 'utf-8');
+
+      const handler = await memoryReadModule.createHandler();
+      const result = await handler.execute(
+        { filename: 'candidate_note.md' },
+        makeCtx(),
+        allowAll,
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toBe(`${candidateContent}${HINT}\n`);
+      }
+    });
+
+    it('appends the unverified hint line for status stale', async () => {
+      await fs.writeFile(path.join(memDir, 'stale_note.md'), staleContent, 'utf-8');
+
+      const handler = await memoryReadModule.createHandler();
+      const result = await handler.execute(
+        { filename: 'stale_note.md' },
+        makeCtx(),
+        allowAll,
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toBe(`${staleContent}${HINT}\n`);
+      }
+    });
+
+    it('keeps active memory output byte-identical to the raw content', async () => {
+      const activeContent = `---
+name: Confirmed Note
+description: Verified memory
+type: user
+status: active
+---
+
+Confirmed fact that was double-checked.
+`;
+      await fs.writeFile(path.join(memDir, 'active_note.md'), activeContent, 'utf-8');
+
+      const handler = await memoryReadModule.createHandler();
+      const result = await handler.execute(
+        { filename: 'active_note.md' },
+        makeCtx(),
+        allowAll,
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toBe(activeContent);
+      }
+    });
+
+    it('keeps output byte-identical for a file without frontmatter', async () => {
+      const plainContent = 'plain note without any frontmatter\n';
+      await fs.writeFile(path.join(memDir, 'plain_note.md'), plainContent, 'utf-8');
+
+      const handler = await memoryReadModule.createHandler();
+      const result = await handler.execute(
+        { filename: 'plain_note.md' },
+        makeCtx(),
+        allowAll,
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toBe(plainContent);
+      }
+    });
+
+    it('does not add the hint for rejected status', async () => {
+      const rejectedContent = `---
+name: Rejected Note
+description: Rejected memory
+type: user
+status: rejected
+---
+
+Content that was rejected.
+`;
+      await fs.writeFile(path.join(memDir, 'rejected_note.md'), rejectedContent, 'utf-8');
+
+      const handler = await memoryReadModule.createHandler();
+      const result = await handler.execute(
+        { filename: 'rejected_note.md' },
+        makeCtx(),
+        allowAll,
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toBe(rejectedContent);
+      }
+    });
+
+    it('appends the hint for candidate memory in role scope', async () => {
+      const roleDir = getRoleMemoriesDir('trial-role');
+      await fs.mkdir(roleDir, { recursive: true });
+      await fs.writeFile(path.join(roleDir, 'role_candidate.md'), candidateContent, 'utf-8');
+
+      const handler = await memoryReadModule.createHandler();
+      const result = await handler.execute(
+        { filename: 'role_candidate.md', scope: 'role' },
+        makeCtx({ subagent: { agentRole: 'trial-role' } }),
+        allowAll,
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toBe(`${candidateContent}${HINT}\n`);
+        expect(result.meta).toMatchObject({ scope: 'role' });
+      }
+    });
+
+    it('appends the hint for candidate memory in project scope', async () => {
+      const workingDir = process.cwd();
+      const projectDir = getProjectMemoriesDir(workingDir);
+      await fs.mkdir(projectDir, { recursive: true });
+      await fs.writeFile(path.join(projectDir, 'project_candidate.md'), candidateContent, 'utf-8');
+
+      const handler = await memoryReadModule.createHandler();
+      const result = await handler.execute(
+        { filename: 'project_candidate.md', scope: 'project' },
+        makeCtx({ workingDir }),
+        allowAll,
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toBe(`${candidateContent}${HINT}\n`);
+        expect(result.meta).toMatchObject({ scope: 'project' });
+      }
+    });
+
+    it('applies sensitive-data guarding before appending the hint', async () => {
+      const sensitiveContent = `---
+name: Contact Note
+description: Contains contact info
+type: user
+status: candidate
+---
+
+Reach the on-call engineer at ops@example.com when this breaks.
+`;
+      await fs.writeFile(path.join(memDir, 'contact_note.md'), sensitiveContent, 'utf-8');
+
+      const handler = await memoryReadModule.createHandler();
+      const result = await handler.execute(
+        { filename: 'contact_note.md' },
+        makeCtx(),
+        allowAll,
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).not.toContain('ops@example.com');
+        expect(result.output).toContain('[email hidden]');
+        expect(result.output.endsWith(`${HINT}\n`)).toBe(true);
+        // 提示行在脱敏之后追加：脱敏产物仍在提示行之前
+        expect(result.output.indexOf('[email hidden]')).toBeLessThan(result.output.indexOf(HINT));
       }
     });
   });

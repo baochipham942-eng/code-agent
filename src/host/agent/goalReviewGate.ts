@@ -13,6 +13,7 @@ import { getModelConfig } from './hybrid/coreAgents';
 import { resolveProviderApiKey } from '../model/providers/providerResolution';
 import { getProviderHealthMonitor } from '../model/providerHealthMonitor';
 import { GOAL_MODE } from '../../shared/constants';
+import { resolveServiceTier, withServiceTier } from './serviceTier';
 import { createLogger } from '../services/infra/logger';
 import type { ModelConfig } from '../../shared/contract';
 import type { HookManager } from '../hooks/hookManager';
@@ -95,6 +96,14 @@ export interface ReviewGateDeps {
 }
 
 /**
+ * 评审强制 standard 档（resolveServiceTier isReview=true 恒无档）：评审是交互链路的
+ * 质量闸，父 run 的半价档（无人值守省钱）不该拖慢它；带档也要摘掉。
+ */
+function stripTierForReview(config: ModelConfig): ModelConfig {
+  return withServiceTier(config, resolveServiceTier('default', config.serviceTier, true));
+}
+
+/**
  * 解析评审类子代理（闸2 / delivery critic）使用的模型 —— 可用性降级链。
  *
  * powerful tier（默认 DEFAULT_PROVIDER/DEFAULT_MODEL = xiaomi/mimo）指向的 provider
@@ -117,18 +126,18 @@ export function resolveReviewModelConfig(parentModelConfig?: ModelConfig): Model
         powerful: `${powerful.provider}/${powerful.model}`,
         fallback: `${parentModelConfig.provider}/${parentModelConfig.model}`,
       });
-      return { ...parentModelConfig };
+      return stripTierForReview({ ...parentModelConfig });
     }
-    return powerful;
+    return stripTierForReview(powerful);
   }
   if (parentModelConfig) {
     logger.warn('[GoalGate] powerful tier 无可用 API key，评审子代理降级用主 run 模型', {
       powerful: `${powerful.provider}/${powerful.model}`,
       fallback: `${parentModelConfig.provider}/${parentModelConfig.model}`,
     });
-    return { ...parentModelConfig };
+    return stripTierForReview({ ...parentModelConfig });
   }
-  return powerful;
+  return stripTierForReview(powerful);
 }
 
 /**
@@ -302,7 +311,7 @@ export async function runReviewGate(
         primary: `${primary.provider}/${primary.model}`,
         fallback: `${parent.provider}/${parent.model}`,
       });
-      outcome = await executeReviewAttempt({ ...parent }, reviewCondition, goal, deps);
+      outcome = await executeReviewAttempt(stripTierForReview({ ...parent }), reviewCondition, goal, deps);
     }
   }
 

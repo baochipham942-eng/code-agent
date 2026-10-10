@@ -12,6 +12,7 @@ import {
   PROVIDER_REGISTRY,
 } from '../../shared/constants';
 import { resolveBaseFallbackChain } from './modelRouterPolicy';
+import { createProductionJevCall, isJevFeatureOn } from './jevFeatures';
 import { guardSensitiveText } from '../security/sensitiveDataGuard';
 import {
   JEV_ROUTER_LEVEL_SCORES,
@@ -168,7 +169,9 @@ export class AdaptiveRouter {
    * 两者不写进同一条 telemetry、互不消费；本函数不改 taskComplexityAnalyzer 一侧。
    *
    * A low-confidence answer never downgrades the requested tier; any provider failure
-   * returns the heuristic. 规则地板独立于判官：开关开时，最后一条用户消息命中
+   * returns the heuristic. 开关默认开（CODE_AGENT_JEV_ROUTER=0/'false' 关，单源
+   * jevFeatures）；无 key 时逐调用静默降级为与开关关逐字段一致（不经规则地板）。
+   * 规则地板独立于判官：开关开时，最后一条用户消息命中
    * JEV_ROUTER_HIGH_RISK_PATTERNS（删除/付款转账/对外发帖发送/凭据变更/不可逆覆盖，
    * 中英文）则无论 Jev 答什么、无论是否回落启发式，结果都不得为 simple；开关关时
    * 整段不生效（与启发式逐字段一致，零行为变化）。
@@ -187,7 +190,7 @@ export class AdaptiveRouter {
     systemOne?: JevSystemOneCall,
     signal?: AbortSignal,
   ): Promise<TaskComplexity> {
-    if (process.env.CODE_AGENT_JEV_ROUTER !== '1') return this.estimateComplexity(messages);
+    if (!isJevFeatureOn('router')) return this.estimateComplexity(messages);
     const lastUserMsg = [...messages].reverse().find((message) => message.role === 'user');
     const content = lastUserMsg
       ? typeof lastUserMsg.content === 'string'
@@ -226,16 +229,19 @@ export class AdaptiveRouter {
       has_image: hasImage,
       message_count: messages.length,
     };
-    const call = systemOne ?? (async (stateArg, questions, options) => {
-      const { systemOne: productionSystemOne } = await import('./providers/typesafeProvider');
-      return productionSystemOne(stateArg, questions, options);
-    });
+    const call = systemOne ?? createProductionJevCall('router');
     let answers: JevAnswers;
     try {
       answers = await call(state, JEV_ROUTER_QUESTIONS, { signal });
     } catch (error) {
       // 取消不是故障：静默回启发式，不打 warn、不记 provider_error（ai-review R7 Nit）。
       if (signal?.aborted) return applyRuleFloor(this.estimateComplexity(messages));
+      // 无 key 静默降级（N-JEV-DEFAULT-ON）：默认开后无 key 是常态而非故障，
+      // 不逐调用打 warn（计数与单次留痕在 jevFeatures），且降级结果与开关关
+      // 逐字段一致——不经规则地板，保证快照字节不变。
+      if ((error as { code?: string } | null | undefined)?.code === 'TYPESAFE_KEY_MISSING') {
+        return this.estimateComplexity(messages);
+      }
       return fallback(`provider_error: ${error instanceof Error ? error.message : String(error)}`);
     }
     const intent = answerChoice(answers, 'intent');

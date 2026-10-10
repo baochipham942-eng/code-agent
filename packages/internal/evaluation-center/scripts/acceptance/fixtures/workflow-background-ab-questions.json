@@ -1,0 +1,74 @@
+{
+  "questions": [
+    {
+      "id": "named-en-run-research",
+      "group": "named",
+      "prompt": "Run a workflow to compare the top three Rust web frameworks: research each one in parallel, then give me a comparison table."
+    },
+    {
+      "id": "named-en-launch-refactor",
+      "group": "named",
+      "prompt": "Please launch a workflow that refactors every file under src/utils to use the new logger."
+    },
+    {
+      "id": "named-en-start-translate",
+      "group": "named",
+      "prompt": "Start a workflow to translate the README into Japanese and Korean in parallel."
+    },
+    {
+      "id": "named-en-kickoff-release",
+      "group": "named",
+      "prompt": "Kick off the release-notes workflow: one pass over the commits since the last tag, one pass over the closed issues."
+    },
+    {
+      "id": "named-zh-pao-zongjie",
+      "group": "named",
+      "prompt": "帮我跑一个工作流：把这三个链接的内容各自总结成三句话，最后合并成一段摘要。"
+    },
+    {
+      "id": "named-zh-qidong-paicha",
+      "group": "named",
+      "prompt": "启动一个工作流来排查这个内存泄漏：一条支线看堆快照，一条支线看 GC 日志。"
+    },
+    {
+      "id": "named-zh-yong-baojia",
+      "group": "named",
+      "prompt": "用工作流的方式并行调研这五家供应商的报价，跑完给我一张对比表。"
+    },
+    {
+      "id": "unnamed-en-research-topics",
+      "group": "unnamed",
+      "prompt": "Research these three topics and summarize each in a short paragraph: WebGPU adoption, WebAssembly at the edge, and Rust in embedded devices."
+    },
+    {
+      "id": "unnamed-en-refactor-callbacks",
+      "group": "unnamed",
+      "prompt": "Refactor the three callback-style modules in src/legacy to async/await and keep behavior identical."
+    },
+    {
+      "id": "unnamed-en-compare-databases",
+      "group": "unnamed",
+      "prompt": "Compare SQLite, DuckDB, and PostgreSQL for small analytical workloads and recommend one with reasons."
+    },
+    {
+      "id": "unnamed-zh-tiyao-baogao",
+      "group": "unnamed",
+      "prompt": "把这三份调研报告各自提炼成五个要点，然后合并成一份总结。"
+    },
+    {
+      "id": "unnamed-zh-bingxing-xianliu",
+      "group": "unnamed",
+      "prompt": "并行查一下这几个 API 各自的限流政策，整理成一张表格给我。"
+    },
+    {
+      "id": "unnamed-zh-paicha-flaky",
+      "group": "unnamed",
+      "prompt": "排查这个偶发失败的测试：分别在两个平台各跑十次，统计失败率，找出共同点。"
+    },
+    {
+      "id": "unnamed-zh-wendang-zhaiyao",
+      "group": "unnamed",
+      "prompt": "给 docs 目录下这十篇文档每篇写一句摘要，再按主题分成三组。"
+    }
+  ]
+}

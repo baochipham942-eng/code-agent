@@ -2404,7 +2404,7 @@
         "actualUsageLine": "Actual usage (process budget): 424,442 prompt (incl. 357,760 cache read) / 25,958 out tokens, cost $0.1803",
         "processListUsd": 0.0216108,
         "processReportUsd": 0.1803,
-        "reportPath": "/Users/leo/work/out/N-JEV-WARDEN-EVAL/reports/warden-c0-off.json"
+        "reportPath": "reports/warden-c0-off.json"
       },
       {
         "cliRunId": "warden-c0-on",
@@ -2415,7 +2415,7 @@
         "actualUsageLine": "Actual usage (process budget): 352,706 prompt (incl. 310,272 cache read) / 8,611 out tokens, cost $0.0993",
         "processListUsd": 0.01303214,
         "processReportUsd": 0.0993,
-        "reportPath": "/Users/leo/work/out/N-JEV-WARDEN-EVAL/reports/warden-c0-on.json"
+        "reportPath": "reports/warden-c0-on.json"
       },
       {
         "cliRunId": "warden-c1-on",
@@ -2426,7 +2426,7 @@
         "actualUsageLine": "Actual usage (process budget): 661,455 prompt (incl. 552,384 cache read) / 10,102 out tokens, cost $0.1946",
         "processListUsd": 0.02498538,
         "processReportUsd": 0.1946,
-        "reportPath": "/Users/leo/work/out/N-JEV-WARDEN-EVAL/reports/warden-c1-on.json"
+        "reportPath": "reports/warden-c1-on.json"
       },
       {
         "cliRunId": "warden-c1-off",
@@ -2437,7 +2437,7 @@
         "actualUsageLine": "Actual usage (process budget): 1,258,772 prompt (incl. 1,025,216 cache read) / 38,490 out tokens, cost $0.4515",
         "processListUsd": 0.05540692,
         "processReportUsd": 0.4515,
-        "reportPath": "/Users/leo/work/out/N-JEV-WARDEN-EVAL/reports/warden-c1-off.json"
+        "reportPath": "reports/warden-c1-off.json"
       },
       {
         "cliRunId": "warden-c2-off",
@@ -2448,7 +2448,7 @@
         "actualUsageLine": "Actual usage (process budget): 763,584 prompt (incl. 678,976 cache read) / 32,837 out tokens, cost $0.2510",
         "processListUsd": 0.03189142,
         "processReportUsd": 0.251,
-        "reportPath": "/Users/leo/work/out/N-JEV-WARDEN-EVAL/reports/warden-c2-off.json"
+        "reportPath": "reports/warden-c2-off.json"
       },
       {
         "cliRunId": "warden-c2-on",
@@ -2459,7 +2459,7 @@
         "actualUsageLine": "Actual usage (process budget): 565,453 prompt (incl. 493,504 cache read) / 29,868 out tokens, cost $0.2109",
         "processListUsd": 0.02602538,
         "processReportUsd": 0.2109,
-        "reportPath": "/Users/leo/work/out/N-JEV-WARDEN-EVAL/reports/warden-c2-on.json"
+        "reportPath": "reports/warden-c2-on.json"
       }
     ],
     "totals": {

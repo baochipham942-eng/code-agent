@@ -624,7 +624,12 @@ export class ProjectService {
     if (skipped.length > 0) {
       // 冲突会话保持 project_id 为空，每次开机都会被重新选出来；逐会话 warn 只会重复
       // 刷屏，聚成一条（明细在 debug）。
-      const reasons = Array.from(new Set(skipped.map((item) => item.reason)));
+      const reasons = Array.from(
+        new Set(
+          // reason 内嵌各自 `session <id>`，按原文去重恒等于全量；先把本会话 id 归一化掉
+          skipped.map((item) => item.reason.replaceAll(`session ${item.sessionId}`, 'session <id>')),
+        ),
+      );
       const sampleSessionIds = skipped.slice(0, 5).map((item) => item.sessionId);
       logger.warn('[ProjectService] 跳过不可变边界冲突的存量会话归桶', {
         skipped: skipped.length,

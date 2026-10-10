@@ -129,10 +129,13 @@ describe('ProjectService.backfillSessions 冲突 WARN 聚合', () => {
       's_conflict_3',
     ]);
     const reasons = (firstWarns[0].payload?.reasons as string[]) ?? [];
-    expect(reasons.length).toBeGreaterThan(0);
-    expect(new Set(reasons).size).toBe(reasons.length); // 原因已去重
+    // reason 内嵌各自 sessionId（PROJECT_BOUNDARY_IMMUTABLE: session <id> ...），
+    // 按原文去重恒等于全量；必须先归一化再去重，3 个冲突只塌缩出 1 条原因，
+    // 且聚合行不携带任何具体会话 id（那属于 sampleSessionIds / debug 明细）
+    expect(reasons).toHaveLength(1);
+    expect(reasons[0]).toContain('PROJECT_BOUNDARY_IMMUTABLE');
     for (const reason of reasons) {
-      expect(reason).toContain('PROJECT_BOUNDARY_IMMUTABLE');
+      expect(reason).not.toContain('s_conflict_');
     }
     // 逐会话 warn 为 0：没有任何 warn 载荷携带单个 sessionId
     expect(firstWarns.filter((entry) => entry.payload && 'sessionId' in entry.payload)).toHaveLength(0);
@@ -152,6 +155,7 @@ describe('ProjectService.backfillSessions 冲突 WARN 聚合', () => {
     expect(second).toBe(0);
     expect(secondWarns).toHaveLength(1);
     expect(secondWarns[0].payload).toMatchObject({ skipped: 3 });
+    expect(((secondWarns[0].payload?.reasons as string[]) ?? [])).toHaveLength(1); // 原因塌缩跨开机稳定
     expect(secondWarns.filter((entry) => entry.payload && 'sessionId' in entry.payload)).toHaveLength(0);
     expect(sessionProjectId(db, 's_healthy')).toBe(healthyProject); // 只在第一次归桶
   });

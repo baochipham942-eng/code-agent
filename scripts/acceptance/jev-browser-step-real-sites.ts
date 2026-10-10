@@ -17,10 +17,17 @@ import {
   ERROR_RATE_CEILING,
   errorRateOf,
   isUnknownSensitive,
+  listPriceCost,
+  pickBaselineTier,
+  referencePriceCost,
   selfCheck,
   verdictFor,
+  ZHIPU_CODING_TIER,
+  STEPFUN_TIER,
   type ArmAggregate,
   type ArmName,
+  type BaselinePricing,
+  type BaselineProviderName,
   type TrialRow,
 } from './_jev-real-sites-lib.ts';
 import { makeSystemChromeProviderOptions, SYSTEM_CHROME_CDP_PROVIDER } from './browser-computer-system-chrome.ts';
@@ -48,18 +55,7 @@ const JEV_BUDGET_USD = 0.03;
 const JEV_CALL_TIMEOUT_MS = 20_000;
 const TOTAL_SPEND_HARD_STOP_USD = 10;
 const NO_KEY_FILE_SWITCH = 'CODE_AGENT_JEV_REAL_SITES_NO_KEY_FILE';
-const ZHIPU_CODING_BASE_URL = 'https://open.bigmodel.cn/api/coding/paas/v4';
-const ZHIPU_CODING_MODEL = 'glm-5.3';
-const ZHIPU_REFERENCE_PRICE = { inputPerMTok: 1.4, outputPerMTok: 4.4 };
-const ZHIPU_REFERENCE_SOURCE = 'https://open.bigmodel.cn/pricing (2026-10-09)';
-const STEPFUN_BASE_URL = 'https://api.stepfun.com/step_plan/v1';
-const STEPFUN_MODEL = 'step-3.5-flash';
-// StepFun list price (platform.stepfun.com/docs/zh/guides/pricing/details, 2026-09-30)
-// ¥0.7 in / ¥0.14 cached / ¥2.1 out per 1M ≈ $0.10 / $0.02 / $0.30 per 1M.
-const STEPFUN_REFERENCE_PRICE = { inputPerMTok: 0.1, outputPerMTok: 0.3 };
-const STEPFUN_REFERENCE_SOURCE = 'https://platform.stepfun.com/docs/zh/guides/pricing/details (2026-09-30)';
 type AuditKind = 'none' | 'captcha' | 'uploadSubmit' | 'deleteClicks' | 'dialogAccepted';
-type RegisteredProvider = 'zhipu' | 'stepfun';
 interface RealCaseSpec {
   id: string;
   url: string;
@@ -70,16 +66,8 @@ interface RealCaseSpec {
   audit: { kind: AuditKind };
   prefillAddElements?: number;
 }
-interface BaselineChoice {
-  provider: RegisteredProvider;
-  model: string;
+interface BaselineChoice extends BaselinePricing {
   apiKey: string;
-  inputPerMTok: number;
-  outputPerMTok: number;
-  priceSource: 'subscription-flat';
-  referenceInputPerMTok: number;
-  referenceOutputPerMTok: number;
-  referencePriceSource: string;
 }
 /** Internal turn message; materialised to ModelMessage[] or ai-sdk messages per provider. */
 type StepMsg =
@@ -132,55 +120,39 @@ function failLoud(message: string): never {
 async function resolveBaseline(): Promise<BaselineChoice> {
   console.log(`ZHIPU_CODING_API_KEY=${keyState('ZHIPU_CODING_API_KEY')}`);
   console.log(`STEPFUN_API_KEY=${keyState('STEPFUN_API_KEY')}`);
-  const tierOutcomes: string[] = [];
-  if (keyState('ZHIPU_CODING_API_KEY') === 'set') {
-    const apiKey = (process.env.ZHIPU_CODING_API_KEY || '').trim();
-    if (apiKey && await probeRegistered('zhipu', ZHIPU_CODING_MODEL, apiKey)) {
-      console.log(`baseline=zhipu-coding/${ZHIPU_CODING_MODEL} (probe ok; subscription-flat)`);
-      return {
-        provider: 'zhipu', model: ZHIPU_CODING_MODEL, apiKey,
-        inputPerMTok: 0, outputPerMTok: 0, priceSource: 'subscription-flat',
-        referenceInputPerMTok: ZHIPU_REFERENCE_PRICE.inputPerMTok,
-        referenceOutputPerMTok: ZHIPU_REFERENCE_PRICE.outputPerMTok,
-        referencePriceSource: ZHIPU_REFERENCE_SOURCE,
-      };
-    }
-    tierOutcomes.push('zhipu-coding probe failed');
-  } else {
-    tierOutcomes.push('zhipu-coding key unset');
+  const zhipuKeySet = keyState('ZHIPU_CODING_API_KEY') === 'set';
+  const stepfunKeySet = keyState('STEPFUN_API_KEY') === 'set';
+  const zhipuApiKey = (process.env.ZHIPU_CODING_API_KEY || '').trim();
+  const stepfunApiKey = (process.env.STEPFUN_API_KEY || '').trim();
+  const apiKeyFor = (tier: { provider: BaselineProviderName }) =>
+    tier.provider === 'zhipu' ? zhipuApiKey : stepfunApiKey;
+  // Probes stay lazy in tier order: an earlier viable tier short-circuits the
+  // later probe (pickBaselineTier with stepfun unset is the "stop after GLM" call).
+  const zhipuProbeOk = zhipuKeySet && zhipuApiKey !== ''
+    && await probeRegistered('zhipu', ZHIPU_CODING_TIER.model, zhipuApiKey);
+  const glmLone = pickBaselineTier({ zhipuKeySet, zhipuProbeOk, stepfunKeySet: false, stepfunProbeOk: false });
+  if (glmLone.tier) {
+    console.log(`baseline=${glmLone.tier.label}/${glmLone.tier.model} (probe ok; subscription-flat)`);
+    return { ...glmLone.tier, apiKey: apiKeyFor(glmLone.tier) };
   }
-  if (keyState('STEPFUN_API_KEY') === 'set') {
-    const apiKey = (process.env.STEPFUN_API_KEY || '').trim();
-    if (apiKey && await probeStepFun(apiKey)) {
-      console.log(`baseline=step-plan/${STEPFUN_MODEL} (probe ok; subscription-flat)`);
-      return {
-        provider: 'stepfun',
-        model: STEPFUN_MODEL,
-        apiKey,
-        inputPerMTok: 0,
-        outputPerMTok: 0,
-        priceSource: 'subscription-flat',
-        referenceInputPerMTok: STEPFUN_REFERENCE_PRICE.inputPerMTok,
-        referenceOutputPerMTok: STEPFUN_REFERENCE_PRICE.outputPerMTok,
-        referencePriceSource: STEPFUN_REFERENCE_SOURCE,
-      };
-    }
-    tierOutcomes.push(`stepfun probe failed (key ${apiKey ? 'set' : 'empty'})`);
-  } else {
-    tierOutcomes.push('stepfun key unset');
+  const stepfunProbeOk = stepfunKeySet && stepfunApiKey !== '' && await probeStepFun(stepfunApiKey);
+  const pick = pickBaselineTier({ zhipuKeySet, zhipuProbeOk, stepfunKeySet, stepfunProbeOk });
+  if (!pick.tier) {
+    throw new Error(`no runnable subscription baseline model — tier outcomes: ${pick.tierOutcomes.join(' | ')}`);
   }
-  throw new Error(`no runnable subscription baseline model — tier outcomes: ${tierOutcomes.join(' | ')}`);
+  console.log(`baseline=${pick.tier.label}/${pick.tier.model} (probe ok; subscription-flat)`);
+  return { ...pick.tier, apiKey: apiKeyFor(pick.tier) };
 }
-function providerFor(name: RegisteredProvider): Provider {
+function providerFor(name: BaselineProviderName): Provider {
   if (name === 'zhipu') return new ZhipuProvider();
   throw new Error(`registered provider unavailable: ${name}`);
 }
-async function probeRegistered(provider: RegisteredProvider, model: string, apiKey: string): Promise<boolean> {
+async function probeRegistered(provider: BaselineProviderName, model: string, apiKey: string): Promise<boolean> {
   try {
     await providerFor(provider).inference(
       [{ role: 'user', content: 'ping' }],
       [],
-      { provider, model, apiKey, baseUrl: provider === 'zhipu' ? ZHIPU_CODING_BASE_URL : undefined, maxTokens: 1 },
+      { provider, model, apiKey, baseUrl: provider === 'zhipu' ? ZHIPU_CODING_TIER.baseUrl : undefined, maxTokens: 1 },
     );
     return true; // a thrown HTTP/HTTP-402 error is the only probe failure
   } catch (error) {
@@ -190,9 +162,9 @@ async function probeRegistered(provider: RegisteredProvider, model: string, apiK
 }
 async function probeStepFun(apiKey: string): Promise<boolean> {
   try {
-    const client = createOpenAICompatible({ name: 'stepfun-step-plan', baseURL: STEPFUN_BASE_URL, apiKey });
+    const client = createOpenAICompatible({ name: 'stepfun-step-plan', baseURL: STEPFUN_TIER.baseUrl, apiKey });
     const result = await generateText({
-      model: client.chatModel(STEPFUN_MODEL),
+      model: client.chatModel(STEPFUN_TIER.model),
       messages: [{ role: 'user', content: 'ping' }],
       maxOutputTokens: 1,
       maxRetries: 0,
@@ -255,13 +227,6 @@ function stepFunTools() {
     },
   };
 }
-function costOf(choice: BaselineChoice, tokensIn: number, tokensOut: number): number {
-  return (tokensIn / 1e6) * choice.inputPerMTok + (tokensOut / 1e6) * choice.outputPerMTok;
-}
-function referenceCost(choice: BaselineChoice, tokensIn: number, tokensOut: number): number {
-  return (tokensIn / 1e6) * choice.referenceInputPerMTok
-    + (tokensOut / 1e6) * choice.referenceOutputPerMTok;
-}
 function compactJevInput(
   state: Record<string, unknown>,
   questions: Record<string, JevQuestionSpec>,
@@ -294,7 +259,7 @@ interface InferenceTurn {
 async function baselineTurn(choice: BaselineChoice, msgs: StepMsg[]): Promise<InferenceTurn> {
   clearInheritedProxy(); // dotenv reload of ~/.code-agent/.env can restore a breaking proxy between turns
   if (choice.provider === 'stepfun') {
-    const client = createOpenAICompatible({ name: 'stepfun-step-plan', baseURL: STEPFUN_BASE_URL, apiKey: choice.apiKey });
+    const client = createOpenAICompatible({ name: 'stepfun-step-plan', baseURL: choice.baseUrl, apiKey: choice.apiKey });
     const result = await generateText({
       model: client.chatModel(choice.model),
       messages: toAiMessages(msgs),
@@ -312,13 +277,13 @@ async function baselineTurn(choice: BaselineChoice, msgs: StepMsg[]): Promise<In
       tokensOut: result.usage.outputTokens ?? 0,
     };
   }
-  const provider = choice.provider as RegisteredProvider;
+  const provider = choice.provider;
   const response: ModelResponse = await providerFor(provider).inference(
     toModelMessages(msgs),
     [browserToolDef],
     {
       provider, model: choice.model, apiKey: choice.apiKey,
-      ...(provider === 'zhipu' ? { baseUrl: ZHIPU_CODING_BASE_URL } : {}),
+      baseUrl: choice.baseUrl,
       maxTokens: 1024, temperature: 0,
     },
     undefined,
@@ -574,7 +539,7 @@ async function runBaselineArm(args: {
     const turn = await baselineTurn(args.choice, msgs);
     tokensIn += turn.tokensIn;
     tokensOut += turn.tokensOut;
-    usd += costOf(args.choice, turn.tokensIn, turn.tokensOut);
+    usd += listPriceCost(args.choice, turn.tokensIn, turn.tokensOut);
     if (!turn.call) {
       status = 'stalled';
       msgs.push({ kind: 'assistant', text: turn.text });
@@ -601,7 +566,7 @@ async function runBaselineArm(args: {
     tokensIn,
     tokensOut,
     usd,
-    usdReference: referenceCost(args.choice, tokensIn, tokensOut),
+    usdReference: referencePriceCost(args.choice, tokensIn, tokensOut),
     jevCalls: 0,
     jevUsd: 0,
   };
@@ -683,7 +648,7 @@ async function runJevArmReal(args: {
       tokensIn,
       tokensOut,
       usd,
-      usdReference: referenceCost(args.choice, tokensIn, tokensOut),
+      usdReference: referencePriceCost(args.choice, tokensIn, tokensOut),
       jevCalls,
       jevUsd,
       fallbackReason: finalReason ?? reason,
@@ -876,7 +841,7 @@ async function main(): Promise<void> {
           const finalTitle = await pageTitle();
           const finalUrl = await pageUrl();
           const success = await evaluateSuccess(spec);
-          spendUsd += costOf(baseline, result.tokensIn, result.tokensOut) + result.jevUsd;
+          spendUsd += listPriceCost(baseline, result.tokensIn, result.tokensOut) + result.jevUsd;
           rows.push(rowFrom({ spec, arm, round, wallSec, result, audit, finalTitle, finalUrl, success, referencePricing: true }));
           console.error(`${trialId} status=${result.status} ok=${rows[rows.length - 1].ok} steps=${result.steps} sens=${rows[rows.length - 1].sensitive === 'unknown' ? 'unknown' : rows[rows.length - 1].sensitive} tokens=${result.tokensIn}/${result.tokensOut} $=${result.usd.toFixed(4)} spend=${spendUsd.toFixed(3)}`);
         } catch (error) {

@@ -138,6 +138,106 @@ export function isUnknownSensitive(row: Pick<TrialRow, 'arm' | 'sensitive'>): bo
 }
 
 // ---------------------------------------------------------------------------
+// Baseline tiers (subscription-flat): price basis + ordered GLM→StepFun resolution
+// ---------------------------------------------------------------------------
+
+export type BaselineProviderName = 'zhipu' | 'stepfun';
+
+export interface BaselinePricing {
+  provider: BaselineProviderName;
+  /** Console label used by the runner when it prints the resolved tier. */
+  label: string;
+  model: string;
+  baseUrl: string;
+  /** Marginal list price; subscription tiers are flat-rate so 0, and the reference column carries the cost. */
+  inputPerMTok: number;
+  outputPerMTok: number;
+  priceSource: 'subscription-flat';
+  referenceInputPerMTok: number;
+  referenceOutputPerMTok: number;
+  referencePriceSource: string;
+}
+
+// Resolution order is fixed: GLM coding plan first, StepFun step plan second.
+// Reference prices are public pay-per-use list prices on the documented dates;
+// experiment-local, not business constants (deliberately not in shared/constants).
+export const ZHIPU_CODING_TIER: BaselinePricing = {
+  provider: 'zhipu',
+  label: 'zhipu-coding',
+  model: 'glm-5.3',
+  baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
+  inputPerMTok: 0,
+  outputPerMTok: 0,
+  priceSource: 'subscription-flat',
+  referenceInputPerMTok: 1.4,
+  referenceOutputPerMTok: 4.4,
+  referencePriceSource: 'https://open.bigmodel.cn/pricing (2026-10-09)',
+};
+// StepFun list price (platform.stepfun.com/docs/zh/guides/pricing/details, 2026-09-30)
+// ¥0.7 in / ¥2.1 out per 1M ≈ $0.10 / $0.30 per 1M.
+export const STEPFUN_TIER: BaselinePricing = {
+  provider: 'stepfun',
+  label: 'step-plan',
+  model: 'step-3.5-flash',
+  baseUrl: 'https://api.stepfun.com/step_plan/v1',
+  inputPerMTok: 0,
+  outputPerMTok: 0,
+  priceSource: 'subscription-flat',
+  referenceInputPerMTok: 0.1,
+  referenceOutputPerMTok: 0.3,
+  referencePriceSource: 'https://platform.stepfun.com/docs/zh/guides/pricing/details (2026-09-30)',
+};
+export const BASELINE_TIERS = [ZHIPU_CODING_TIER, STEPFUN_TIER] as const;
+
+/** Key-state + probe outcomes for both tiers; the runner probes lazily in this order. */
+export interface BaselineTierProbes {
+  zhipuKeySet: boolean;
+  zhipuProbeOk: boolean;
+  stepfunKeySet: boolean;
+  stepfunProbeOk: boolean;
+}
+
+/**
+ * Pure tier resolution: first viable tier in GLM→StepFun order, or the tier
+ * outcomes explaining why nothing resolved. A key that is set but whose probe
+ * failed falls through to the next tier exactly like an unset key.
+ */
+export function pickBaselineTier(
+  probes: BaselineTierProbes,
+): { tier: BaselinePricing | null; tierOutcomes: string[] } {
+  const tierOutcomes: string[] = [];
+  if (probes.zhipuKeySet) {
+    if (probes.zhipuProbeOk) return { tier: ZHIPU_CODING_TIER, tierOutcomes };
+    tierOutcomes.push('zhipu-coding probe failed');
+  } else {
+    tierOutcomes.push('zhipu-coding key unset');
+  }
+  if (probes.stepfunKeySet) {
+    if (probes.stepfunProbeOk) return { tier: STEPFUN_TIER, tierOutcomes };
+    tierOutcomes.push('stepfun probe failed');
+  } else {
+    tierOutcomes.push('stepfun key unset');
+  }
+  return { tier: null, tierOutcomes };
+}
+
+export function listPriceCost(
+  tier: Pick<BaselinePricing, 'inputPerMTok' | 'outputPerMTok'>,
+  tokensIn: number,
+  tokensOut: number,
+): number {
+  return (tokensIn / 1e6) * tier.inputPerMTok + (tokensOut / 1e6) * tier.outputPerMTok;
+}
+
+export function referencePriceCost(
+  tier: Pick<BaselinePricing, 'referenceInputPerMTok' | 'referenceOutputPerMTok'>,
+  tokensIn: number,
+  tokensOut: number,
+): number {
+  return (tokensIn / 1e6) * tier.referenceInputPerMTok + (tokensOut / 1e6) * tier.referenceOutputPerMTok;
+}
+
+// ---------------------------------------------------------------------------
 // --self-check (offline, no browser/network/keys)
 // ---------------------------------------------------------------------------
 

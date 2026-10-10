@@ -3,6 +3,7 @@ import { buildSharedCommandHostPorts } from '../../../src/cli/commands/sharedCom
 
 const LOADER_KEYS = [
   'loadDoctorRunner',
+  'loadProjectMemoryDrafter',
   'loadReadOnlySideChat',
   'loadToolResolver',
   'loadSubagentExecutor',

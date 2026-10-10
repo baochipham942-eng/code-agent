@@ -54,6 +54,15 @@ describe('buildCronAgentPrompt delivery digest instruction', () => {
     expect(disabled).toContain('artifact: <path>');
     expect(disabled).not.toContain('<cron_snapshot>');
   });
+
+  it('lets the model mark urgency as the first line of the summary (N-CRON-INBOX-URGENCY-TIER)', () => {
+    const enabled = buildCronAgentPrompt('检查', null, true, new Date('2026-09-30T00:00:00.000Z'));
+    const disabled = buildCronAgentPrompt('检查', null, false, new Date('2026-09-30T00:00:00.000Z'));
+
+    for (const prompt of [enabled, disabled]) {
+      expect(prompt).toContain('urgency: must_today|can_wait|fyi');
+    }
+  });
 });
 
 describe('groupRunsByTask', () => {

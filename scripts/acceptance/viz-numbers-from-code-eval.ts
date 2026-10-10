@@ -18,6 +18,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveStepfunBaseUrl } from './stepfunEndpoint';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const OUT_DIR = path.join(os.homedir(), 'work', 'out', 'N-VIZ-NUMBERS-FROM-CODE');
@@ -577,20 +578,20 @@ async function resolveModel(): Promise<ModelChoice> {
   }
   const stepfunKey = process.env.STEPFUN_API_KEY?.trim() ?? '';
   if (stepfunKey) {
-    const status = await probe('https://api.stepfun.com/v1/chat/completions', stepfunKey, 'step-3.5-flash-2603');
+    const status = await probe(`${resolveStepfunBaseUrl()}/chat/completions`, stepfunKey, 'step-3.5-flash-2603');
     console.log(`stepfun probe: HTTP ${status}`);
     if (status >= 200 && status < 300) {
       return {
         id: 'stepfun',
         provider: 'custom-stepfun',
         model: 'step-3.5-flash-2603',
-        baseUrl: 'https://api.stepfun.com/v1',
+        baseUrl: resolveStepfunBaseUrl(),
         apiKey: stepfunKey,
         price: {
-          input: 0.1,
-          cached: 0.02,
-          output: 0.3,
-          note: 'https://platform.stepfun.com/docs/zh/guides/pricing/details (2026-09-30) ¥0.7 in / ¥0.14 cached / ¥2.1 out per 1M ≈ $0.10 / $0.02 / $0.30',
+          input: 0,
+          cached: 0,
+          output: 0,
+          note: 'Step Plan subscription (flat fee, per-token price 0)',
         },
       };
     }

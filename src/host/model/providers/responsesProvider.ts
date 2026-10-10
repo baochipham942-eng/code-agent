@@ -3,6 +3,7 @@
 // 因为请求/响应均不是 /chat/completions SSE 形态。
 // ============================================================================
 import type { ModelConfig, ToolDefinition } from '../../../shared/contract';
+import { SERVICE_TIER_REJECTION } from '../../../shared/constants';
 import type { InferenceOptions, ModelMessage, ModelResponse, Provider, StreamCallback } from '../types';
 import { resolveModelCapabilities } from '../modelCapabilityMatrix';
 import { explicitlyDeclaredEffortLevels } from '../providerRegistry';
@@ -219,6 +220,30 @@ async function* chunksOf(body: ReadableStream<Uint8Array> | NodeJS.ReadableStrea
   for await (const chunk of body) yield Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
 }
 
+/**
+ * service_tier 拒绝信号判别（信号集单一源 SERVICE_TIER_REJECTION；UNVERIFIED——
+ * 组合来自协议阅读，未真机核对）。只认结构化 error.param/error.code，绝不按报错
+ * 文本枚举；命中返回触发判据（code 或 param），不命中返回 undefined。
+ */
+function matchServiceTierRejection(status: number, errorText: string): { code?: string; param?: string } | undefined {
+  let error: unknown;
+  try { error = (JSON.parse(errorText) as Record<string, unknown>).error; } catch { return undefined; }
+  if (!error || typeof error !== 'object') return undefined;
+  const { code, param } = error as Record<string, unknown>;
+  const codeStr = typeof code === 'string' ? code : undefined;
+  const paramStr = typeof param === 'string' ? param : undefined;
+  if (SERVICE_TIER_REJECTION.codeStatuses.includes(status) && codeStr && SERVICE_TIER_REJECTION.codes.includes(codeStr)) {
+    return { code: codeStr };
+  }
+  if (SERVICE_TIER_REJECTION.paramStatuses.includes(status) && paramStr === SERVICE_TIER_REJECTION.param) {
+    return { param: paramStr };
+  }
+  if (status === SERVICE_TIER_REJECTION.unavailable.status && codeStr === SERVICE_TIER_REJECTION.unavailable.code) {
+    return { code: codeStr };
+  }
+  return undefined;
+}
+
 function searchProgress(item: Record<string, unknown>): string {
   const action = item.action as Record<string, unknown> | undefined;
   const query = action?.query ?? item.query;
@@ -380,6 +405,10 @@ export class ResponsesProvider implements Provider {
     ) {
       body.reasoning = { effort: config.reasoningEffort };
     }
+    // service_tier（半价档，N-MODELCAT-SERVICE-TIER-WIRE）：只在 config 显式带档时下发；
+    // 未带档的请求体保持逐字节不变。档位由 run 接缝（agentLoop 的 applyRunServiceTier）
+    // 决定，provider 只忠实转发 config 里已有的档。
+    if (config.serviceTier) body.service_tier = config.serviceTier;
 
     if (process.env.CODE_AGENT_DUMP_MODEL_PAYLOAD) {
       const { dumpModelPayload } = await import('../modelPayloadDump');
@@ -391,17 +420,38 @@ export class ResponsesProvider implements Provider {
       });
     }
 
-    const response = await electronFetch(endpoint, {
+    const sendRequest = (requestBody: Record<string, unknown>) => electronFetch(endpoint, {
       method: 'POST',
       headers: { Authorization: `Bearer ${resolveProviderApiKey(config)}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify(requestBody),
       signal,
       provider: config.provider,
       ...(onStream ? { stream: true } : {}),
     });
+    let response = await sendRequest(body);
+    let errorText: string | undefined;
     if (!response.ok) {
-      const errorText = await response.text();
-      throw Object.assign(new Error(`Responses API (${response.status}): ${errorText.slice(0, 500)}`), {
+      // 每个 response 的 text() 只读一次（真 Response 的 body 读二次会锁死）。
+      errorText = await response.text();
+      // 带档请求被拒（SERVICE_TIER_REJECTION 信号集）→ warn 留痕后摘档重试一次；
+      // 其余错误走下面的原样抛，不做第二次请求。
+      const rejection = config.serviceTier ? matchServiceTierRejection(response.status, errorText) : undefined;
+      if (rejection) {
+        logger.warn('[ResponsesProvider] service_tier rejected; retrying once at the standard tier', {
+          provider: config.provider,
+          model: config.model,
+          status: response.status,
+          code: rejection.code ?? rejection.param,
+          serviceTier: config.serviceTier,
+        });
+        const { service_tier: _dropped, ...standardBody } = body;
+        response = await sendRequest(standardBody);
+        errorText = response.ok ? undefined : await response.text();
+      }
+    }
+    if (!response.ok) {
+      const text = errorText ?? await response.text();
+      throw Object.assign(new Error(`Responses API (${response.status}): ${text.slice(0, 500)}`), {
         status: response.status, provider: config.provider, model: config.model,
       });
     }

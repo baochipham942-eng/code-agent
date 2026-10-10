@@ -8,7 +8,10 @@ import {
   type EvidenceInvalidationRecord,
 } from '../../../shared/contract/evidenceInvalidation';
 import { getPath } from '../../platform/appPaths';
-import { getBrowserComputerProofLedgerPath } from '../../session/browserComputerProofStore';
+import {
+  appendBrowserComputerProofLedgerLine,
+  getBrowserComputerProofLedgerPath,
+} from '../../session/browserComputerProofStore';
 import { getCompletionSummaryPath } from '../../session/completionSummaryService';
 import { SessionRepository } from '../core/repositories/SessionRepository';
 
@@ -126,7 +129,15 @@ export async function invalidateSessionEvidence(
     getBrowserComputerProofLedgerPath(),
     getCompletionSummaryPath(),
   ];
+  const proofLedgerPath = getBrowserComputerProofLedgerPath();
   for (const ledgerPath of ledgerPaths) {
+    if (ledgerPath === proofLedgerPath) {
+      // The proof ledger rotates by size; route its invalidation append through the
+      // same rotation-aware helper so overlays never bypass the shard cap (FB-307).
+      // Same record shape as the non-trace branch of appendInvalidation.
+      appendBrowserComputerProofLedgerLine(`${JSON.stringify(invalidation)}\n`);
+      continue;
+    }
     await appendInvalidation(ledgerPath, invalidation, ledgerPath === tracePath);
   }
   return { staleRefCount: staleIds.size, updatedRecordCount };

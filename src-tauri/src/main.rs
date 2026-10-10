@@ -15,8 +15,12 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{
-    include_image, menu::MenuBuilder, tray::TrayIconBuilder, AppHandle, Emitter, Listener, Manager,
-    RunEvent, State, WindowEvent,
+    include_image,
+    menu::{
+        AboutMetadata, Menu, MenuBuilder, MenuItem, PredefinedMenuItem, Submenu,
+        HELP_SUBMENU_ID, WINDOW_SUBMENU_ID,
+    },
+    tray::TrayIconBuilder, AppHandle, Emitter, Listener, Manager, RunEvent, State, WindowEvent,
 };
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
@@ -25,6 +29,7 @@ mod appshots;
 mod native_app_icon;
 mod native_desktop;
 mod pip;
+mod quit_guard;
 mod traffic_lights;
 
 use appshots::{
@@ -2277,6 +2282,10 @@ fn cleanup_server(app: &tauri::AppHandle) {
 /// mac 上这一步同样会跑（此后 relaunch 走 request_restart，cleanup 已被 take，无副作用）。
 #[tauri::command]
 fn shutdown_web_server_for_update(app: tauri::AppHandle) {
+    // 走到这里 = 渲染器已拿到用户「确认更新」的答复；随后的重启退出不弹确认框
+    //（QuitSkip::UpdateRestart 豁免对应这里）。
+    app.state::<Arc<quit_guard::QuitCoordinator>>()
+        .set_update_restart_confirmed();
     cleanup_server(&app);
 }
 
@@ -2302,11 +2311,173 @@ fn warm_compile_cache_after_install(app: tauri::AppHandle) {
 
 fn install_signal_handler(app: &tauri::AppHandle) {
     let handle = app.clone();
+    let coordinator = app
+        .state::<Arc<quit_guard::QuitCoordinator>>()
+        .inner()
+        .clone();
 
     let _ = ctrlc::set_handler(move || {
+        // SIGINT/SIGTERM 是系统/用户在进程层面的退出指令，不弹框
+        //（QuitSkip::SignalExit 豁免对应这里，随 handle.exit(0) 重入的
+        // ExitRequested 会经 current_skip() 放行）。
+        coordinator.set_signal_exit();
         cleanup_server(&handle);
         handle.exit(0);
     });
+}
+
+// ============================================================================
+// Quit Guard（N-QUIT-RUNNING-NATIVE）：退出前问一次 /api/quit-guard
+// ============================================================================
+
+/// 受守卫退出请求的异步主体：worker 线程里查 quit-guard（2s 总超时），再决定
+/// 直接退出（无任务/已豁免）还是弹原生确认框。HTTP 查询绝不在事件循环线程上跑。
+fn spawn_quit_guard_flow(app: AppHandle, coordinator: Arc<quit_guard::QuitCoordinator>) {
+    thread::spawn(move || {
+        // token 解析镜像 auth.ts resolveDevAuthTokenPath：以 webServer 的 cwd 为准，
+        // 打包态落在 *.app/Contents/Resources → <数据目录>/.dev-token，dev 态 <cwd>/.dev-token
+        let token = resolve_server_script(&app).ok().and_then(|(_script, root)| {
+            quit_guard::read_quit_guard_token(&root, real_data_dir().as_deref())
+        });
+        let outcome = quit_guard::query_quit_guard(
+            &server_url(),
+            token.as_deref(),
+            quit_guard::QUIT_GUARD_TIMEOUT,
+        );
+        match quit_guard::decide_quit(outcome, None) {
+            quit_guard::QuitDecision::ExitNow => {
+                coordinator.allow_exit();
+                coordinator.finish();
+                app.exit(0);
+            }
+            quit_guard::QuitDecision::Confirm(prompt) => {
+                show_quit_confirm_dialog(&app, &coordinator, quit_guard::quit_prompt_text(prompt));
+            }
+        }
+    });
+}
+
+/// 原生退出确认框（非阻塞 show，回调在插件自己的线程上跑）。
+/// 默认按钮=取消：OkCancelCustom 第一个参数在 macOS(NSAlert) / Windows(TaskDialog)
+/// 都是默认（回车）按钮，安全动作「取消」放第一位，见 quit_guard::dialog_answer_action。
+fn show_quit_confirm_dialog(
+    app: &AppHandle,
+    coordinator: &Arc<quit_guard::QuitCoordinator>,
+    message: &str,
+) {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+
+    let app = app.clone();
+    let coordinator = coordinator.clone();
+    app.dialog()
+        .message(message)
+        .title(quit_guard::QUIT_DIALOG_TITLE)
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            quit_guard::QUIT_DIALOG_CANCEL_BUTTON.to_string(),
+            quit_guard::QUIT_DIALOG_QUIT_BUTTON.to_string(),
+        ))
+        .show(move |answer_is_first_button| {
+            match quit_guard::dialog_answer_action(answer_is_first_button) {
+                quit_guard::QuitAnswerAction::Quit => {
+                    coordinator.allow_exit();
+                    coordinator.finish();
+                    app.exit(0);
+                }
+                quit_guard::QuitAnswerAction::StayRunning => {
+                    // 取消：什么都不清理（webServer 继续跑），app 继续运行
+                    coordinator.finish();
+                }
+            }
+        });
+}
+
+/// macOS 专用：复制 tauri `Menu::default` 的菜单栏结构（AppName/Edit/View/Window/Help），
+/// 但把预定义 Quit 换成自定义 `quit_app` 项（⌘Q 加速器）。
+/// 为什么必须换：预定义 Quit 在 muda macOS 后端映射 NSApp `terminate:`
+/// （muda-0.19.2 src/platform_impl/macos/mod.rs:994），而 tao 不实现
+/// applicationShouldTerminate，于是直接 LoopDestroyed → RunEvent::Exit，
+/// ExitRequested/prevent_exit 全都拦不到。换成自定义项后 ⌘Q/菜单退出走
+/// RunEvent::MenuEvent → app.exit(0) → ExitRequested 的受守卫路径，
+/// 与托盘退出同一入口。
+#[cfg(target_os = "macos")]
+fn setup_app_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let handle = app.handle();
+    let pkg_info = handle.package_info();
+    let about_metadata = AboutMetadata {
+        name: Some(pkg_info.name.clone()),
+        version: Some(pkg_info.version.to_string()),
+        copyright: handle.config().bundle.copyright.clone(),
+        authors: handle.config().bundle.publisher.clone().map(|p| vec![p]),
+        ..Default::default()
+    };
+
+    let app_submenu = Submenu::with_items(
+        handle,
+        pkg_info.name.clone(),
+        true,
+        &[
+            &PredefinedMenuItem::about(handle, None, Some(about_metadata))?,
+            &PredefinedMenuItem::separator(handle)?,
+            &PredefinedMenuItem::services(handle, None)?,
+            &PredefinedMenuItem::separator(handle)?,
+            &PredefinedMenuItem::hide(handle, None)?,
+            &PredefinedMenuItem::hide_others(handle, None)?,
+            &PredefinedMenuItem::separator(handle)?,
+            &MenuItem::with_id(handle, "quit_app", "退出 Agent Neo", true, Some("Cmd+Q"))?,
+        ],
+    )?;
+
+    let edit_submenu = Submenu::with_items(
+        handle,
+        "Edit",
+        true,
+        &[
+            &PredefinedMenuItem::undo(handle, None)?,
+            &PredefinedMenuItem::redo(handle, None)?,
+            &PredefinedMenuItem::separator(handle)?,
+            &PredefinedMenuItem::cut(handle, None)?,
+            &PredefinedMenuItem::copy(handle, None)?,
+            &PredefinedMenuItem::paste(handle, None)?,
+            &PredefinedMenuItem::select_all(handle, None)?,
+        ],
+    )?;
+
+    let view_submenu = Submenu::with_items(
+        handle,
+        "View",
+        true,
+        &[&PredefinedMenuItem::fullscreen(handle, None)?],
+    )?;
+
+    let window_menu = Submenu::with_id_and_items(
+        handle,
+        WINDOW_SUBMENU_ID,
+        "Window",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(handle, None)?,
+            &PredefinedMenuItem::maximize(handle, None)?,
+            &PredefinedMenuItem::separator(handle)?,
+            &PredefinedMenuItem::close_window(handle, None)?,
+        ],
+    )?;
+
+    let help_menu = Submenu::with_id_and_items(handle, HELP_SUBMENU_ID, "Help", true, &[])?;
+
+    let menu = Menu::with_items(
+        handle,
+        &[
+            &app_submenu,
+            &edit_submenu,
+            &view_submenu,
+            &window_menu,
+            &help_menu,
+        ],
+    )?;
+
+    app.set_menu(menu)?;
+    Ok(())
 }
 
 // ============================================================================
@@ -3475,7 +3646,9 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .text("new_chat", "新建对话")
         .text("paste_context", "粘贴为上下文")
         .separator()
-        .quit()
+        // 不用预定义 .quit()：它走 muda 的 terminate:/PostQuitMessage，绕过
+        // ExitRequested，守卫拦不到。自定义项与 ⌘Q 走同一受守卫入口。
+        .text("quit_app", "退出 Agent Neo")
         .build()?;
     const TRAY_ICON: tauri::image::Image<'_> = include_image!("./icons/tray-template.png");
 
@@ -3965,6 +4138,7 @@ fn main() {
         .manage(AppshotsState::default())
         .manage(KeybindingHotkeysState::default())
         .manage(AgentHaloState::default())
+        .manage(Arc::new(quit_guard::QuitCoordinator::new()))
         .invoke_handler(tauri::generate_handler![
             get_app_version,
             check_for_update,
@@ -4132,6 +4306,12 @@ fn main() {
                 DesktopShellBootStage::WindowNavigated,
             );
 
+            // macOS app 菜单（把预定义 Quit 换成走守卫的自定义项，⌘Q 由此拦截）
+            #[cfg(target_os = "macos")]
+            if let Err(e) = setup_app_menu(app) {
+                eprintln!("Failed to setup app menu: {e}");
+            }
+
             // System Tray
             if let Err(e) = setup_tray(app) {
                 eprintln!("Failed to setup tray: {e}");
@@ -4153,6 +4333,12 @@ fn main() {
         .expect("failed to build Tauri application");
 
     install_signal_handler(app.handle());
+    // macOS：系统关机时置豁免标志，退出请求不再弹框（不能让模态框拖住关机流程）
+    quit_guard::install_shutdown_observer(
+        app.state::<Arc<quit_guard::QuitCoordinator>>()
+            .inner()
+            .clone(),
+    );
 
     app.run(|app_handle, event| match event {
         RunEvent::WindowEvent {
@@ -4169,8 +4355,36 @@ fn main() {
         // 缩放/双击放大的动画期间会变成「先按默认位画出来、再被拨回去」，肉眼就是灯在抖
         // （2026-07-27 产品负责人实测）。缩放态由 wry 在 drawRect 里的帧内重放负责，
         // 见 tauri.conf.json 的 trafficLightPosition 与 traffic_lights.rs 的注释。
-        RunEvent::ExitRequested { .. } | RunEvent::Exit => {
+        // 退出守卫（N-QUIT-RUNNING-NATIVE）：拦下退出请求，先问 webServer 的
+        // /api/quit-guard。无任务 → 原样放行；有任务/查不清 → 原生确认框。
+        // 豁免：程序化 exit（exit_allowed，消费一次）、更新重启（RESTART_EXIT_CODE
+        // 或 shutdown_web_server_for_update 置位）、系统关机、信号退出。
+        // 注意 ⌘Q 不天然走到这里：macOS 上 ⌘Q 由 setup_app_menu 的自定义项拦截后
+        // 经 app.exit(0) 重入本分支（详见 setup_app_menu 注释）。
+        RunEvent::ExitRequested { code, api, .. } => {
+            let coordinator = app_handle.state::<Arc<quit_guard::QuitCoordinator>>();
+            let restart_requested = code == Some(tauri::RESTART_EXIT_CODE);
+            if restart_requested || coordinator.exit_allowed() || coordinator.current_skip().is_some()
+            {
+                cleanup_server(app_handle);
+            } else {
+                api.prevent_exit();
+                // 弹框去重：已开着 → 本次请求并入那个弹框，不重复弹也不直接退出
+                if coordinator.begin_request() {
+                    spawn_quit_guard_flow(
+                        app_handle.clone(),
+                        coordinator.inner().clone(),
+                    );
+                }
+            }
+        }
+        RunEvent::Exit => {
             cleanup_server(app_handle);
+        }
+        // quit_app 的唯一消费点：app 菜单（⌘Q/菜单退出）与托盘退出都汇到这里，
+        // 统一转 exit(0) → ExitRequested 的受守卫路径。
+        RunEvent::MenuEvent(event) if event.id().as_ref() == "quit_app" => {
+            app_handle.exit(0);
         }
         _ => {}
     });

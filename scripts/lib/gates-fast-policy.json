@@ -291,6 +291,17 @@
         "tests/unit/host/ipc/domainRoutes.test.ts",
         "tests/unit/host/ipc/sessionRoutes.test.ts"
       ]
+    },
+    {
+      "id": "renderer-token-boundary",
+      "paths": [
+        "src/renderer/**",
+        "src/shared/ipc/**",
+        "tests/unit/security/rendererTokenBoundary.test.ts"
+      ],
+      "files": [
+        "tests/unit/security/rendererTokenBoundary.test.ts"
+      ]
     }
   ],
   "sharedPackageInputs": [

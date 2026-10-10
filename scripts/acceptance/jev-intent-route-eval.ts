@@ -50,6 +50,7 @@ import {
   type ModelPrice,
 } from '../../src/shared/pricing/resolveModelPrice';
 import type { ModelMessage } from '../../src/host/model/types';
+import { resolveStepfunBaseUrl } from './stepfunEndpoint';
 
 // ----------------------------------------------------------------------------
 // 类型与常量
@@ -330,24 +331,20 @@ function providerBackend(input: {
 }
 
 // StepFun 不是注册 Neo provider，按 OpenAI 兼容端点裸调。
-// 刊例（platform.stepfun.com/docs/zh/guides/pricing/details，2026-09-30）：
-// ¥0.7/M 输入、¥0.14/M 缓存命中、¥2.1/M 输出 ≈ $0.10 / $0.02 / $0.30。
-// 只在本评测脚本硬编码，不进 pricing.ts。
-const STEPFUN_BASE_URL = 'https://api.stepfun.com/v1';
 const STEPFUN_MODEL = 'step-3.5-flash-2603';
 
 function stepfunBackend(apiKey: string): ArbiterBackend {
   return {
     name: 'stepfun',
     model: STEPFUN_MODEL,
-    price: { modelId: STEPFUN_MODEL, source: 'user', inputPerMTok: 0.1, outputPerMTok: 0.3 },
-    priceNote: '硬编码刊例 ¥0.7/¥2.1 per 1M tokens ≈ $0.10/$0.30（platform.stepfun.com 2026-09-30）',
+    price: { modelId: STEPFUN_MODEL, source: 'user', inputPerMTok: 0, outputPerMTok: 0 },
+    priceNote: 'Step Plan subscription (flat fee, per-token price 0)',
     call: async (messages, maxTokens) => {
       const wire = messages.map((m) => ({
         role: m.role,
         content: typeof m.content === 'string' ? m.content : lastUserText([m]).text,
       }));
-      const response = await fetch(`${STEPFUN_BASE_URL}/chat/completions`, {
+      const response = await fetch(`${resolveStepfunBaseUrl()}/chat/completions`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: STEPFUN_MODEL, messages: wire, max_tokens: maxTokens, temperature: 0 }),

@@ -412,6 +412,95 @@ describe('recordCronAutomationExecution', () => {
     expect(arg.configPatch?.pendingReview?.resultSessionId).toBe('result-sess');
   });
 
+  it('待过目标记透传 agent 结果的紧急档位与乱值原文（N-CRON-INBOX-URGENCY-TIER）', async () => {
+    await recordCronAutomationExecution(
+      def({
+        metadata: { sourceSessionId: 'sess' },
+        scheduleType: 'every',
+        action: { type: 'agent', agentType: 'default', prompt: 'do it' },
+      }),
+      exec({
+        status: 'completed',
+        sessionId: 'result-sess',
+        completedAt: 1234,
+        result: { agentType: 'default', prompt: 'do it', result: undefined, sessionId: 'result-sess', urgency: 'must_today' },
+      }),
+      identityRuntime
+    );
+    const arg = service.recordEvent.mock.calls[0][0];
+    expect(arg.configPatch).toEqual({
+      pendingReview: { resultSessionId: 'result-sess', at: 1234, urgency: 'must_today' },
+    });
+
+    service.recordEvent.mockClear();
+    await recordCronAutomationExecution(
+      def({
+        metadata: { sourceSessionId: 'sess' },
+        scheduleType: 'every',
+        action: { type: 'agent', agentType: 'default', prompt: 'do it' },
+      }),
+      exec({
+        status: 'completed',
+        sessionId: 'result-sess',
+        completedAt: 1234,
+        result: { agentType: 'default', prompt: 'do it', result: undefined, sessionId: 'result-sess', urgency: 'fyi', urgencyRaw: 'urgency: maybe' },
+      }),
+      identityRuntime
+    );
+    expect(service.recordEvent.mock.calls[0][0].configPatch).toEqual({
+      pendingReview: { resultSessionId: 'result-sess', at: 1234, urgency: 'fyi', urgencyRaw: 'urgency: maybe' },
+    });
+  });
+
+  it('老结果与乱形状结果不带 urgency 字段（收件箱按 fyi 呈现）', async () => {
+    const agentDef = def({
+      metadata: { sourceSessionId: 'sess' },
+      scheduleType: 'every',
+      action: { type: 'agent', agentType: 'default', prompt: 'do it' },
+    });
+    // 老结果：agent 执行结果没有 urgency 字段
+    await recordCronAutomationExecution(
+      agentDef,
+      exec({
+        status: 'completed',
+        sessionId: 'result-sess',
+        completedAt: 1234,
+        result: { agentType: 'default', prompt: 'do it', result: undefined, sessionId: 'result-sess' },
+      }),
+      identityRuntime
+    );
+    expect(service.recordEvent.mock.calls[0][0].configPatch).toEqual({
+      pendingReview: { resultSessionId: 'result-sess', at: 1234 },
+    });
+
+    // 乱形状：非合法档位值/非字符串 raw 不透传（不把脏值写进契约）
+    service.recordEvent.mockClear();
+    await recordCronAutomationExecution(
+      agentDef,
+      exec({
+        status: 'completed',
+        sessionId: 'result-sess',
+        completedAt: 1234,
+        result: { urgency: 'asap', urgencyRaw: 42 },
+      }),
+      identityRuntime
+    );
+    expect(service.recordEvent.mock.calls[0][0].configPatch).toEqual({
+      pendingReview: { resultSessionId: 'result-sess', at: 1234 },
+    });
+
+    // 非 record 结果（shell/云端形状）同样不带档位
+    service.recordEvent.mockClear();
+    await recordCronAutomationExecution(
+      agentDef,
+      exec({ status: 'completed', sessionId: 'result-sess', completedAt: 1234, result: 'plain text result' }),
+      identityRuntime
+    );
+    expect(service.recordEvent.mock.calls[0][0].configPatch).toEqual({
+      pendingReview: { resultSessionId: 'result-sess', at: 1234 },
+    });
+  });
+
   it('面板创建（无源会话）的任务在 FK 开启时落库并进入待过目', async () => {
     const automationService = new SessionAutomationService();
     service.recordCreated.mockImplementation(automationService.recordCreated.bind(automationService));

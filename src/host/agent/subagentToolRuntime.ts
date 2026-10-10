@@ -5,7 +5,10 @@ import { getMemoryDir } from '../lightMemory/indexLoader';
 import { ToolExecutor } from '../tools/toolExecutor';
 import type { WorkspaceScope } from '../../shared/contract/project';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
-import { getPermissionModeManager, permissionModeAutoApproves, type PermissionMode } from '../permissions/modes';
+import { permissionModeAutoApproves, type PermissionMode } from '../permissions/modes';
+// N-PERM-POLICYVERSION E6：档位解析统一走 resolveSessionPermissionMode（无 override 时
+// 读 run 有效视图；子代理链的 sessionId 在模块内映射到本会话活跃 run 的快照）。
+import { resolveSessionPermissionMode } from '../tools/toolPermissionClassification';
 import { isAgentWorktreePath } from './agentWorktreePath';
 import type { ToolExecutionRequest } from './subagentPipeline';
 import type { SubagentExecutionContext } from './subagentExecutorTypes';
@@ -106,10 +109,7 @@ export function createSubagentToolRuntime(input: {
     requestPermission: async (request) => {
       const forceConfirm = request.forceConfirm === true;
       // 限流在 spawn 之后才置位，不能用构造时的 effectiveMode 决定免确认。
-      const mode = getPermissionModeManager().clampForRateLimit(
-        input.effectiveMode as PermissionMode,
-        input.sessionId,
-      );
+      const mode = resolveSessionPermissionMode(input.effectiveMode as PermissionMode, input.sessionId);
       if (
         !forceConfirm
         && (

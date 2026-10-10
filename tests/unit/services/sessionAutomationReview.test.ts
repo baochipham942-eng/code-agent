@@ -1,10 +1,12 @@
-// A4 待过目：markReviewed / countPendingReview / summarizeSessions.pendingReviewCount
+// A4 待过目：markReviewed / countPendingReviewByTask / summarizeSessions.pendingReviewCount
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Row = Record<string, unknown>;
 
 const state = vi.hoisted(() => ({
   rows: new Map<string, Row>(),
+  // countPendingReviewByTask 用同步 getSession 解析运行会话的 origin（只取 origin）。
+  sessions: new Map<string, { origin?: { kind?: string; id?: string } } | null>(),
 }));
 
 vi.mock('../../../src/host/platform', () => ({
@@ -50,6 +52,7 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
         },
       }),
     }),
+    getSession: (id: string) => state.sessions.get(String(id)) ?? null,
   }),
 }));
 
@@ -69,28 +72,39 @@ function seed(service: SessionAutomationService, id: string, over: Record<string
 
 beforeEach(() => {
   state.rows.clear();
+  state.sessions.clear();
 });
 
 describe('pending review', () => {
-  it('countPendingReview 同时统计 status=pending_review 与 config.pendingReview 标记', () => {
+  it('countPendingReviewByTask 同时统计 status=pending_review 与 config.pendingReview 标记（无任务可折时按记录计）', () => {
     const service = new SessionAutomationService();
     seed(service, 'a1', { status: 'pending_review' });
     seed(service, 'a2', { status: 'active', config: { pendingReview: { resultSessionId: 'r2', at: 1 } } });
     seed(service, 'a3', { status: 'active' });
-    expect(service.countPendingReview()).toBe(2);
+    expect(service.countPendingReviewByTask()).toBe(2);
     expect(service.listPendingReview().map((r) => r.id).sort()).toEqual(['a1', 'a2']);
   });
 
-  it('countPendingReviewByTask 把同一任务的多条待过目折成 1，缺省计数仍按记录', () => {
+  it('countPendingReviewByTask 同一任务的 3 条待过目只计 1（任务口径，不按运行会话重复计）', () => {
+    const service = new SessionAutomationService();
+    seed(service, 'a1', { status: 'pending_review', resultSessionId: 'run-1' });
+    seed(service, 'a2', { status: 'pending_review', resultSessionId: 'run-2' });
+    seed(service, 'a3', { status: 'active', config: { pendingReview: { resultSessionId: 'run-3', at: 1 } } });
+    state.sessions.set('run-1', { origin: { kind: 'cron', id: 'job-a' } });
+    state.sessions.set('run-2', { origin: { kind: 'cron', id: 'job-a' } });
+    state.sessions.set('run-3', { origin: { kind: 'heartbeat', id: 'job-a' } });
+    expect(service.listPendingReview()).toHaveLength(3);
+    expect(service.countPendingReviewByTask()).toBe(1);
+  });
+
+  it('countPendingReviewByTask 把同一任务的多条待过目折成 1，对不上会话的记录仍各计 1', () => {
     const service = new SessionAutomationService();
     seed(service, 'a1', { status: 'pending_review', resultSessionId: 'run-1' });
     seed(service, 'a2', { status: 'active', resultSessionId: 'run-2', config: { pendingReview: { resultSessionId: 'run-2', at: 1 } } });
-    const sessions = [
-      { id: 'run-1', updatedAt: 2, origin: { kind: 'cron', id: 'job-a' } },
-      { id: 'run-2', updatedAt: 1, origin: { kind: 'heartbeat', id: 'job-a' } },
-    ];
-    expect(service.countPendingReview()).toBe(2);
-    expect(service.countPendingReviewByTask(sessions)).toBe(1);
+    seed(service, 'a3', { status: 'pending_review', resultSessionId: 'ghost-run' });
+    state.sessions.set('run-1', { origin: { kind: 'cron', id: 'job-a' } });
+    state.sessions.set('run-2', { origin: { kind: 'heartbeat', id: 'job-a' } });
+    expect(service.countPendingReviewByTask()).toBe(2);
   });
 
   it('markReviewed 清标记；pending_review 状态转 archived', () => {
@@ -106,7 +120,7 @@ describe('pending review', () => {
     expect(recurringAfter?.status).toBe('active');
     expect(recurringAfter?.config?.pendingReview).toBeUndefined();
 
-    expect(service.countPendingReview()).toBe(0);
+    expect(service.countPendingReviewByTask()).toBe(0);
   });
 
   it('markReviewed 不存在的 id 返回 null', () => {
@@ -117,14 +131,14 @@ describe('pending review', () => {
   it('recordEvent cancelled 清 pendingReview 标记（已删任务不占收件箱）', async () => {
     const service = new SessionAutomationService();
     seed(service, 'doomed', { status: 'active', config: { pendingReview: { resultSessionId: 'r', at: 1 } } });
-    expect(service.countPendingReview()).toBe(1);
+    expect(service.countPendingReviewByTask()).toBe(1);
     await service.recordEvent({
       automationId: 'doomed',
       event: 'cancelled',
       status: 'cancelled',
       summary: '定时任务已删除。',
     });
-    expect(service.countPendingReview()).toBe(0);
+    expect(service.countPendingReviewByTask()).toBe(0);
     expect(service.getById('doomed')?.status).toBe('cancelled');
   });
 });

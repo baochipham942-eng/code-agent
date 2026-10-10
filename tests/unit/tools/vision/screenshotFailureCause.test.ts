@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ToolContext } from '../../../../src/host/tools/types';
 import type {
@@ -295,9 +296,11 @@ describe('screenshot failure cause detection', () => {
     const result = await screenshotTool.execute({}, makeLegacyCtx());
 
     expect(result.success).toBe(true);
+    // 默认落盘改到数据目录（N-RETENTION-SHOTS-APPDIR）；无 sessionId 的 legacy ctx 落 no-session
+    const defaultDir = path.join(String(process.env.CODE_AGENT_DATA_DIR), 'tool-screenshots', 'no-session');
     expect(result.output).toBe([
       'Screenshot captured successfully:',
-      '- Path: /tmp/work/.screenshots/screenshot_1790771696789.png',
+      `- Path: ${path.join(defaultDir, 'screenshot_1790771696789.png')}`,
       '- Size: 8.00 KB',
       '- Target: screen',
       '- Timestamp: 2026-09-30T12:34:56.789Z',

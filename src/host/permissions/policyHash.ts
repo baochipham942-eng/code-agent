@@ -4,8 +4,8 @@
 // ============================================================================
 
 import { createHash } from 'node:crypto';
-import { getPermissionModeManager } from './modes';
-import { getPolicyEngine } from './policyEngine';
+import { resolveEffectivePolicy } from './runPolicySnapshot';
+import type { PrefixRule } from '../security/execPolicy';
 
 interface ProjectedRule {
   id: string;
@@ -53,12 +53,24 @@ function compareProjected(a: ProjectedRule, b: ProjectedRule): number {
   return left < right ? -1 : 1;
 }
 
-export function computePolicyHash(sessionId?: string): string | undefined {
+/**
+ * N-PERM-POLICYVERSION ⑤：哈希覆盖 run 的**有效视图**（rules + exec 规则 + mode）——
+ * 账本记下的是实际参与判决的策略状态，而不是被冻结挡掉的活状态。没有快照的路径
+ * （CLI/eval/未 begin 的测试）视图 === 活状态，与 ① 的语义无缝衔接。
+ */
+export function computePolicyHash(sessionId?: string, runId?: string): string | undefined {
   try {
-    const mode = getPermissionModeManager().getModeForSession(sessionId);
-    const rules = getPolicyEngine().getRules().map(projectRule).sort(compareProjected);
-    return createHash('sha256').update(JSON.stringify({ mode, rules })).digest('hex');
+    const view = resolveEffectivePolicy(runId, sessionId);
+    const rules = view.rules.map(projectRule).sort(compareProjected);
+    const execRules = view.execRules
+      .map(projectExecRule)
+      .sort((a, b) => (a.pattern < b.pattern ? -1 : a.pattern > b.pattern ? 1 : 0));
+    return createHash('sha256').update(JSON.stringify({ mode: view.mode, rules, execRules })).digest('hex');
   } catch {
     return undefined;
   }
+}
+
+function projectExecRule(rule: PrefixRule): { pattern: string; decision: string; source: string } {
+  return { pattern: rule.pattern.join(' '), decision: rule.decision, source: rule.source };
 }

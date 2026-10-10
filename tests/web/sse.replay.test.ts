@@ -116,7 +116,7 @@ describe('sse replay buffer', () => {
   });
 
   it('lastEventId 已落在 buffer 头之前时返回 -1 表示丢失', () => {
-    // 填满 buffer 需要超过 SSE_REPLAY_BUFFER_SIZE=256 条
+    // session-less ring 超过 SSE_GLOBAL_REPLAY_BUFFER_SIZE=256 条后会报告 gap
     for (let i = 0; i < 300; i += 1) {
       broadcastSSE('swarm:event', { seq: i });
     }
@@ -182,5 +182,71 @@ describe('sse replay buffer', () => {
       0,
     )).toBe(2);
     unregister();
+  });
+
+  it('按 session 隔离 replay ring，A 的洪水不会让 B 报 gap', () => {
+    for (let i = 0; i < 600; i += 1) {
+      broadcastSSE('agent:event', { sessionId: 'session-a', seq: i });
+    }
+    broadcastSSE('agent:event', { sessionId: 'session-b', seq: 1 });
+    broadcastSSE('agent:event', { sessionId: 'session-b', seq: 2 });
+    broadcastSSE('agent:event', { sessionId: 'session-b', seq: 3 });
+
+    const reconnecting = fakeResponse();
+    // A's ring evicted ids 1..88; cursor 89 is after that point and still before B's events.
+    const replayed = replayFromLastEventId(reconnecting, 89);
+    const replayedChunks = reconnecting._chunks.map((chunk) => JSON.parse(chunk.match(/data: ({.*})/)?.[1] ?? '{}')) as Array<{
+      channel: string;
+      args: { sessionId: string; seq: number };
+    }>;
+
+    expect(replayed).toBe(514);
+    expect(replayedChunks.slice(-3).map((event) => event.args.sessionId)).toEqual([
+      'session-b',
+      'session-b',
+      'session-b',
+    ]);
+    const ids = parseChunks(reconnecting._chunks).map((event) => event.id);
+    expect(ids).toEqual(Array.from({ length: 514 }, (_, index) => index + 90));
+    expect(ids.every((id, index) => index === 0 || id > ids[index - 1])).toBe(true);
+  });
+
+  it('session ring 上限为 512，global ring 上限为 256', () => {
+    for (let i = 0; i < 513; i += 1) {
+      broadcastSSE('agent:event', { sessionId: 'session-a', seq: i });
+    }
+    const sessionReplay = fakeResponse();
+    expect(replayFromLastEventId(sessionReplay, 1)).toBe(512);
+    expect(parseChunks(sessionReplay._chunks).map((event) => event.id)).toEqual(
+      Array.from({ length: 512 }, (_, index) => index + 2),
+    );
+
+    __resetSSEReplayBufferForTests();
+    for (let i = 0; i < 257; i += 1) {
+      broadcastSSE('swarm:event', { seq: i });
+    }
+    const globalReplay = fakeResponse();
+    expect(replayFromLastEventId(globalReplay, 1)).toBe(256);
+    expect(parseChunks(globalReplay._chunks).map((event) => event.id)).toEqual(
+      Array.from({ length: 256 }, (_, index) => index + 2),
+    );
+  });
+
+  it('最多保留 64 个 session ring，并丢弃最久未触碰的 ring', () => {
+    for (let i = 0; i < 64; i += 1) {
+      broadcastSSE('agent:event', { sessionId: `session-${i}`, seq: 1 });
+    }
+    broadcastSSE('agent:event', { sessionId: 'session-0', seq: 2 });
+    broadcastSSE('agent:event', { sessionId: 'session-64', seq: 1 });
+
+    const reconnecting = fakeResponse();
+    expect(replayFromLastEventId(reconnecting, 64)).toBe(2);
+    const replayed = reconnecting._chunks.map((chunk) => JSON.parse(chunk.match(/data: ({.*})/)?.[1] ?? '{}')) as Array<{
+      args: { sessionId: string; seq: number };
+    }>;
+    expect(replayed.map((event) => event.args)).toEqual([
+      { sessionId: 'session-0', seq: 2 },
+      { sessionId: 'session-64', seq: 1 },
+    ]);
   });
 });

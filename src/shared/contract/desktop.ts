@@ -99,6 +99,7 @@ export type BrowserProfileUnavailableReason =
   | 'unsupported_platform'
   | 'app_not_found'
   | 'profile_dir_missing'
+  | 'permission_denied'
   | 'cookie_db_missing'
   | 'cookie_db_locked'
   | 'keychain_unavailable'

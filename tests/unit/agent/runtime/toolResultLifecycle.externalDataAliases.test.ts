@@ -2,6 +2,24 @@ import { ArtifactState } from '../../../../src/host/agent/runtime/artifactState'
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
+
+// 注入扫描在缺官方 key 时会读 OpenRouter key。单测不碰真实钥匙串。
+vi.mock('../../../../src/host/services/core/configService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../src/host/services/core/configService')>();
+  return {
+    ...actual,
+    getConfigService: () => {
+      const service = actual.getConfigService();
+      return new Proxy(service, {
+        get(target, prop, receiver) {
+          if (prop === 'getApiKey') return () => undefined;
+          const value = Reflect.get(target, prop, receiver);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+    },
+  };
+});
 import { handleToolResultBookkeeping } from '../../../../src/host/agent/runtime/toolResultLifecycle';
 import type { ContextAssembly } from '../../../../src/host/agent/runtime/contextAssembly';
 import type { RuntimeContext } from '../../../../src/host/agent/runtime/runtimeContext';
@@ -322,10 +340,13 @@ describe('toolResultLifecycle external data aliases', () => {
   });
 
   it('attaches jevInjectionScan metadata before returning (awaited, deterministic per turn)', async () => {
+    // N-JEV-DEFAULT-ON 后扫描默认开；本用例验证「元数据在返回前已就位」，用显式 '0'
+    // 关掉扫描以保持无 I/O 的确定性形状（默认开路径的降级形状由下方 unavailable 用例覆盖）。
+    vi.stubEnv('CODE_AGENT_JEV_INJECTION_SCAN', '0');
     const harness = makeHarness();
     const result = await harness.runTool('WebSearch', '1. Safe search https://example.com/search');
 
-    // Default-off: the scan resolves to 'disabled' without any I/O, and because
+    // Flag off: the scan resolves to 'disabled' without any I/O, and because
     // bookkeeping awaits it the metadata is on the result at return time.
     expect(result.metadata?.jevInjectionScan).toEqual({
       skipped: true,

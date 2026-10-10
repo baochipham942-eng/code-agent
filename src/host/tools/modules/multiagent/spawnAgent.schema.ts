@@ -187,6 +187,9 @@ export const spawnAgentSchema: ToolSchema = {
   allowInTextForeground: true,
   accesses: [
     { kind: 'write', expression: 'resource(agent, runtime)' },
+    // r3：ownedPaths 是子代理存活期间的写入范围（可含 glob）。未声明 ownedPaths 的
+    // spawn 本身按写未知域串行——first-write-wins 的兄弟不能和本批调用并发调度。
+    { kind: 'write', argumentNames: ['ownedPaths'] },
   ],
 };
 

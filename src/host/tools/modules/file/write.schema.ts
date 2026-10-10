@@ -11,7 +11,10 @@ export const writeSchema: ToolSchema = {
     'prefer Append chunks when the content is very large. Complete medium-sized artifacts are accepted ' +
     'in one Write call when the whole content is already available. ' +
     'When the user pastes code instead of naming a file, do not ask for a path — derive a name from ' +
-    'the content and write it under the working directory.',
+    'the content and write it under the working directory. ' +
+    'Translation, conversion, or summary outputs go to a NEW file next to the source (e.g. name.en.md) ' +
+    'unless the user explicitly asked to overwrite. A refused Write means write to a new path, or retry ' +
+    'with overwrite:true only if replacing was explicitly requested.',
   outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',
@@ -37,6 +40,12 @@ export const writeSchema: ToolSchema = {
         type: 'string',
         description:
           'Required with force=true when overwriting. Copy the version digest returned by your Read of this file.',
+      },
+      overwrite: {
+        type: 'boolean',
+        description:
+          'Set true only when the user explicitly asked to replace the file with a differently sized body. ' +
+          'Bypasses only the transform-size refusal, not the pre-read gate or stale check.',
       },
     },
     required: ['file_path', 'content'],

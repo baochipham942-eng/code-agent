@@ -162,6 +162,60 @@ describe('compactionAuditRecorder', () => {
     });
   });
 
+  it('stores null summary usage when unreported and keeps a reported zero', () => {
+    const absent = buildCompactionAuditSummary(compactionResult());
+    expect(absent.summaryModel).toEqual({
+      provider: 'moonshot',
+      model: 'kimi-k2.5',
+      useMainModel: false,
+      fallbackReason: null,
+      inputTokens: null,
+      cacheReadTokens: null,
+      cacheCreationTokens: null,
+    });
+
+    const partial = buildCompactionAuditSummary({
+      ...compactionResult(),
+      summaryModel: {
+        provider: 'moonshot',
+        model: 'kimi-k2.5',
+        useMainModel: false,
+        usage: { inputTokens: 0, cacheCreationTokens: 7 },
+      },
+    });
+    expect(partial.summaryModel.inputTokens).toBe(0);
+    expect(partial.summaryModel.cacheReadTokens).toBeNull();
+    expect(partial.summaryModel.cacheCreationTokens).toBe(7);
+
+    recordCompactionAuditSnapshot({
+      result: {
+        ...compactionResult(),
+        summaryModel: {
+          provider: 'moonshot',
+          model: 'kimi-k2.5',
+          useMainModel: true,
+          fallbackReason: 'compact_context_length_exceeded',
+          usage: { inputTokens: 125, cacheReadTokens: 40, cacheCreationTokens: 7 },
+        },
+      },
+    });
+    expect(recorderMocks.db.insertCompactionSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        postMessagesSummary: expect.objectContaining({
+          summaryModel: {
+            provider: 'moonshot',
+            model: 'kimi-k2.5',
+            useMainModel: true,
+            fallbackReason: 'compact_context_length_exceeded',
+            inputTokens: 125,
+            cacheReadTokens: 40,
+            cacheCreationTokens: 7,
+          },
+        }),
+      }),
+    );
+  });
+
   it('writes a compaction audit snapshot when the database sink is ready', () => {
     const result = compactionResult();
 

@@ -158,6 +158,7 @@ export const zhSettingsModels = {
         effortSectionLabel: '思考深度',
         // 思考段（Thinking/Effort 合并）：关/低/中/高 4 等分
         thinkingSectionLabel: '思考',
+        thinkingExternalHint: '此引擎自行决定推理档位',
         thinkingOptionAuto: '自动',
         thinkingOptionOff: '关',
         thinkingOptionLow: '低',
@@ -186,7 +187,7 @@ export const zhSettingsModels = {
           tokensUnit: 'Token',
           effortLabel: '推理深度',
           effortAriaLabel: '推理深度',
-          effortLevels: { low: '低', medium: '中', high: '高' },
+          effortLevels: { low: '低', medium: '中', high: '高', xhigh: '极高', max: 'Max' },
           toggleLabel: '思考',
           toggleAriaLabel: '为此模型开启思考',
         },

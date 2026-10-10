@@ -1,5 +1,7 @@
 # 工具系统架构
 
+本页的 model-facing 视角见 [Model-facing surface](model-facing-surface.md)。
+
 > ToolRegistry + ToolExecutor + Core/Deferred 双层 + 统一工具合并
 
 ## 2026-07-11 Run-scoped 工具安全合同

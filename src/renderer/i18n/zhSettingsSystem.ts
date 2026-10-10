@@ -323,6 +323,16 @@ export const zhSettingsSystem = {
         stop: '停止',
         collect: '采集',
       },
+      audioRetention: {
+        rule: '录音转写成功后即删除。转写失败的录音保留 {hours} 小时后删除。',
+        clear: '清空录音',
+        confirmTitle: '清空录音',
+        confirmMessage: '将删除 {count} 个文件，释放 {bytes} 字节。转写文字会保留。',
+        confirm: '确认清空',
+        cancel: '取消',
+        cleared: '已删除 {count} 个文件，释放 {bytes} 字节。',
+        failed: '清理失败 {count} 次，最后一条错误：{error}',
+      },
       units: {
         speechSegmentSuffix: ' 段发言',
         speakerCountSuffix: ' 位说话人',

@@ -2,6 +2,7 @@
 // Desktop IPC Handlers - 原生桌面活动查询
 // ============================================================================
 
+import { execFile } from 'node:child_process';
 import type { IpcMain } from '../platform';
 import type { IPCResponse } from '@shared/ipc';
 import type { RawDomainRouteHandlers } from '@shared/ipc/domainRoutes';
@@ -22,7 +23,7 @@ import type { ManagedBrowserProxyInput } from '../services/infra/browserService'
 import { getNativeDesktopService } from '../services/desktop/nativeDesktopService';
 import { getComputerSurface } from '../services/desktop/computerSurface';
 import { startDesktopVisionAnalyzer } from '../services/desktop/desktopVisionAnalyzer';
-import { startDesktopAudioCapture, stopDesktopAudioCapture, getAudioCaptureStatus } from '../services/desktop/desktopAudioCapture';
+import { startDesktopAudioCapture, stopDesktopAudioCapture, getAudioCaptureStatus, clearAudioRecordings } from '../services/desktop/desktopAudioCapture';
 import { browserService } from '../services/infra/browserService';
 import { browserRelayService } from '../services/infra/browserRelayService';
 import {
@@ -42,6 +43,7 @@ import { getManagedBrowserProviderAdapter } from '../services/surfaceExecution/M
 let manualAudioActive = false;
 
 const logger = createLogger('DesktopIPC');
+const FULL_DISK_ACCESS_SETTINGS_URL = 'x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles';
 const COMPUTER_SURFACE_FAILURE_KINDS = new Set<ComputerSurfaceFailureKind>([
   'permission_denied',
   'target_app_not_running',
@@ -214,6 +216,18 @@ const desktopHandlers: RawDomainRouteHandlers<DesktopDomainRequest, NativeDeskto
       success: true,
       data: listImportableBrowserProfiles(),
     } satisfies IPCResponse<unknown>;
+  },
+  openFullDiskAccessSettings: async () => {
+    if (process.platform !== 'darwin') {
+      return { success: true, data: false } satisfies IPCResponse<unknown>;
+    }
+    await new Promise<void>((resolve, reject) => {
+      execFile('open', [FULL_DISK_ACCESS_SETTINGS_URL], (error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+    return { success: true, data: true } satisfies IPCResponse<unknown>;
   },
   importBrowserProfileCookies: async (_service, raw) => {
     const payload = raw as {
@@ -493,6 +507,9 @@ const desktopHandlers: RawDomainRouteHandlers<DesktopDomainRequest, NativeDeskto
   },
   getAudioCaptureStatus: async (_service, _raw) => {
     return { success: true, data: getAudioCaptureStatus() } satisfies IPCResponse<unknown>;
+  },
+  clearAudioRecordings: async (_service, _raw) => {
+    return { success: true, data: clearAudioRecordings() } satisfies IPCResponse<unknown>;
   },
 };
 

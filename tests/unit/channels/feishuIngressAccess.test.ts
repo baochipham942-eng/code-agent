@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ChannelMessage, FeishuChannelConfig } from '../../../src/shared/contract/channel';
 import { FeishuChannel } from '../../../src/host/channels/feishu/feishuChannel';
 import { ChannelAgentBridge } from '../../../src/host/channels/channelAgentBridge';
+import { setChannelListenResolver } from '../../../src/host/channels/channelListenRegistry';
 import type { ChannelResponseCallback } from '../../../src/host/channels/channelInterface';
 
 vi.mock('../../../src/host/tools/dispatch/toolDefinitions', () => ({
@@ -54,9 +55,11 @@ function event(options: { chatType: 'p2p' | 'group'; mentioned?: boolean; id?: s
 async function drive(config: Partial<FeishuChannelConfig>, input: unknown) {
   const channel = new FeishuChannel('feishu-account');
   const messages: ChannelMessage[] = [];
+  const listenMessages: ChannelMessage[] = [];
   const pairings: unknown[] = [];
   const create = vi.fn(async () => ({ code: 0, data: { message_id: 'om_reply' } }));
   channel.on('message', (message: ChannelMessage) => messages.push(message));
+  channel.on('listen_message', (message: ChannelMessage) => listenMessages.push(message));
   channel.on('pairing_request', (pairing: unknown) => pairings.push(pairing));
   await channel.initialize({
     type: 'feishu', appId: 'app', appSecret: 'secret', ...config,
@@ -65,10 +68,14 @@ async function drive(config: Partial<FeishuChannelConfig>, input: unknown) {
   harness.botOpenId = 'ou_bot';
   harness.client = { im: { message: { create } } };
   await harness.handleMessageEvent(input);
-  return { messages, pairings, create };
+  return { messages, listenMessages, pairings, create };
 }
 
 describe('Feishu ingress access', () => {
+  afterEach(() => {
+    setChannelListenResolver(undefined);
+  });
+
   it('drops an unpaired direct message and emits a pairing request', async () => {
     const result = await drive({}, event({ chatType: 'p2p' }));
     expect(result.messages).toHaveLength(0);
@@ -87,6 +94,56 @@ describe('Feishu ingress access', () => {
       event({ chatType: 'group', mentioned: false }),
     );
     expect(result.messages).toHaveLength(0);
+    expect(result.listenMessages).toHaveLength(0);
+  });
+
+  it('emits an un-mentioned group message as listen_message only when a listen binding exists', async () => {
+    // ② 显式绑定：未 @ 的群消息只走 listen_message，永不走 message。
+    setChannelListenResolver(() => true);
+    const result = await drive(
+      { inboundAllowlist: ['ou_sender'], groupAccessMode: 'allowlist' },
+      event({ chatType: 'group', mentioned: false, id: 'om_listen' }),
+    );
+    expect(result.listenMessages).toHaveLength(1);
+    expect(result.messages).toHaveLength(0);
+    expect(result.pairings).toHaveLength(0);
+    expect(result.create).not.toHaveBeenCalled();
+    const listenMessage = result.listenMessages[0];
+    expect(listenMessage.id).toBe('om_listen');
+    expect(listenMessage.context).toMatchObject({ chatId: 'oc_chat', chatType: 'group' });
+    expect(listenMessage.content).toBe('hello');
+    // 监听消息不带 auth 档：既非 paired 也非 guest。
+    expect(listenMessage.ingressAuth).toBeUndefined();
+  });
+
+  it('resolves the listen binding per (accountId, chatId)', async () => {
+    setChannelListenResolver((accountId, chatId) => accountId === 'feishu-account' && chatId === 'oc_chat');
+    const otherChat = JSON.parse(JSON.stringify(event({ chatType: 'group', mentioned: false, id: 'om_other' })));
+    otherChat.message.chat_id = 'oc_other';
+    const miss = await drive({ groupAccessMode: 'allowlist' }, otherChat);
+    expect(miss.listenMessages).toHaveLength(0);
+    expect(miss.messages).toHaveLength(0);
+  });
+
+  it('keeps denying un-mentioned messages in a disabled group even with a listen binding', async () => {
+    setChannelListenResolver(() => true);
+    const result = await drive(
+      { inboundAllowlist: ['ou_sender'], groupAccessMode: 'disabled' },
+      event({ chatType: 'group', mentioned: false, id: 'om_disabled_listen' }),
+    );
+    expect(result.messages).toHaveLength(0);
+    expect(result.listenMessages).toHaveLength(0);
+  });
+
+  it('still emits message (not listen_message) for an @-mentioned group message with a listen binding present', async () => {
+    setChannelListenResolver(() => true);
+    const result = await drive(
+      { inboundAllowlist: ['ou_sender'] },
+      event({ chatType: 'group', mentioned: true, id: 'om_mentioned' }),
+    );
+    expect(result.messages).toHaveLength(1);
+    expect(result.messages[0].ingressAuth).toBe('paired');
+    expect(result.listenMessages).toHaveLength(0);
   });
 
   it('enforces disabled and allowlist group modes', async () => {

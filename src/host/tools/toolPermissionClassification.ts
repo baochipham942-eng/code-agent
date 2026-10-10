@@ -7,6 +7,7 @@ import { enforceWriteFenceObligation } from '../sandbox/writeFence';
 import { isExternalSideEffectTool } from './externalSideEffect';
 import { createTraceStep } from '../security/decisionTraceBuilder';
 import { getPermissionModeManager, permissionModeAutoApproves, type PermissionMode } from '../permissions/modes';
+import { resolveEffectiveSessionMode } from '../permissions/runPolicySnapshot';
 import {
   createHostReason,
   HostReasonCode,
@@ -32,6 +33,8 @@ interface PermissionedToolShape {
  * 会话有效权限档：subagent 走父子收缩后的 override（禁止回读父会话档扩权），
  * 主 agent 走会话档单一真源。
  * override 仍过限流钳制：只收紧不放宽，限流发生在 spawn 之后也生效。
+ * N-PERM-POLICYVERSION E1：主 agent 分支改读 run 有效视图——外部来源的档位放宽
+ * 对已开始的 run 冻结在起点，收紧与用户 UI 放宽仍立即生效。
  */
 export function resolveSessionPermissionMode(
   override: PermissionMode | undefined,
@@ -40,7 +43,7 @@ export function resolveSessionPermissionMode(
   if (override !== undefined) {
     return getPermissionModeManager().clampForRateLimit(override, sessionId);
   }
-  return getPermissionModeManager().getModeForSession(sessionId);
+  return resolveEffectiveSessionMode(sessionId);
 }
 
 /**
@@ -194,11 +197,20 @@ export function browserComputerConsequenceForcesClassification(
  * 泛用的 "Permission denied by user" 在机器自动拒的路径上是**假话**——用户什么都没看见，
  * 模型却会告诉他「你拒绝了」。每种 denialSource 必须给出真实原因 + 可执行的出路。
  */
-export function permissionDenialError(toolName: string, source: PermissionDenialSource): HostReasonPayload {
+export function permissionDenialError(
+  toolName: string,
+  source: PermissionDenialSource,
+  app?: { name: string } | null,
+): HostReasonPayload {
   const metadata = { toolName };
   switch (source) {
-    case 'user':
-      return createHostReason(HostReasonCode.PermissionDeniedByUser, 'Permission denied by user', metadata);
+    case 'user': {
+      const name = app?.name?.trim();
+      const modelText = name
+        ? `Permission denied by user: access to ${name} was denied. Do not retry operating ${name} in this task unless the user asks.`
+        : 'Permission denied by user';
+      return createHostReason(HostReasonCode.PermissionDeniedByUser, modelText, metadata);
+    }
     case 'no-approval-ui':
       return createHostReason(
         HostReasonCode.PermissionDeniedNoApprovalUi,

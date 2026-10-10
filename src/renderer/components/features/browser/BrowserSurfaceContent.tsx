@@ -176,6 +176,15 @@ export const BrowserSurfaceContent: React.FC = () => {
     setNotice('已打开扩展目录。Chrome 里用「加载已解压的扩展程序」选择这个目录。');
   }), [run]);
 
+  const handleOpenFullDiskAccess = useCallback(() => {
+    void ipcService.invokeDomain(
+      IPC_DOMAINS.DESKTOP,
+      'openFullDiskAccessSettings',
+    ).catch((err) => {
+      setError(err instanceof Error ? err.message : '操作失败');
+    });
+  }, []);
+
   const handleListProfiles = useCallback(() => run('listProfiles', async () => {
     const list = await ipcService.invokeDomain<BrowserProfileDescriptor[]>(
       IPC_DOMAINS.DESKTOP,
@@ -275,6 +284,14 @@ export const BrowserSurfaceContent: React.FC = () => {
     () => profiles.filter((item) => item.available),
     [profiles],
   );
+  const permissionDeniedAppNames = useMemo(() => {
+    const names: string[] = [];
+    for (const profile of profiles) {
+      if (profile.unavailableReason !== 'permission_denied') continue;
+      if (!names.includes(profile.appName)) names.push(profile.appName);
+    }
+    return names;
+  }, [profiles]);
   const selectedCookieDomains = availableProfiles.find(
     (item) => `${item.source}::${item.profileId}` === selectedProfileKey,
   )?.cookieDomains ?? [];
@@ -447,13 +464,31 @@ export const BrowserSurfaceContent: React.FC = () => {
                 </div>
               </div>
 
+              {permissionDeniedAppNames.length > 0 && (
+                <div className="mb-2 rounded-md border border-badge-warning/30 bg-amber-500/10 px-2 py-2 text-[11px] leading-relaxed text-zinc-300" data-testid="browser-profile-permission-denied">
+                  {permissionDeniedAppNames.map((appName) => (
+                    <div key={appName}>
+                      {cookieCopy.importCookiesPermissionDenied.replace('{app}', appName)}
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={handleOpenFullDiskAccess}
+                    className="mt-1 inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-zinc-900/70 px-2 py-1 text-[11px] text-zinc-100 transition-colors hover:border-white/[0.16]"
+                  >
+                    {cookieCopy.importCookiesOpenFullDiskAccess}
+                  </button>
+                  <div className="mt-1 text-zinc-500">{cookieCopy.importCookiesUseRelayHint}</div>
+                </div>
+              )}
+
               {!profilesLoaded ? (
                 <div className="text-[11px] text-zinc-500">正在扫描本机浏览器 profile…</div>
-              ) : availableProfiles.length === 0 ? (
+              ) : availableProfiles.length === 0 && permissionDeniedAppNames.length === 0 ? (
                 <div className="text-[11px] text-zinc-500">
                   未发现可用 Chromium profile。请确认已安装并运行过对应浏览器，或改用 Chrome Relay。
                 </div>
-              ) : (
+              ) : availableProfiles.length === 0 ? null : (
                 <div className="max-h-48 space-y-1 overflow-y-auto pr-1">
                   {availableProfiles.map((profile) => {
                     const key = `${profile.source}::${profile.profileId}`;

@@ -26,7 +26,7 @@ function swarmRun(over: Partial<SwarmRunListItem>): SwarmRunListItem {
 function decision(over: Partial<PermissionDecisionRecord>): PermissionDecisionRecord {
   return {
     id: 1, sessionId: SID, toolName: 'Bash', summary: null, finalOutcome: 'allow',
-    historyOutcome: 'auto-approve', reason: 'policy', durationMs: 5, waitMs: null, origin: null, recordedAt: 0, trace: null,
+    historyOutcome: 'auto-approve', reason: 'policy', durationMs: 5, waitMs: null, origin: null, recordedAt: 0, policyHash: null, trace: null,
     ...over,
   };
 }

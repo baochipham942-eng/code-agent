@@ -9,5 +9,9 @@
   "theme-blind-bright-foreground": 0,
   "theme-blind-white-hover-foreground": 0,
   "stale-zindex-allowlist": 0,
-  "sticky-in-padded-scroller": 0
+  "sticky-in-padded-scroller": 0,
+  "undefined-css-var:dark": 0,
+  "undefined-css-var:light": 0,
+  "undefined-css-var:high-contrast-dark": 0,
+  "undefined-css-var:high-contrast-light": 0
 }

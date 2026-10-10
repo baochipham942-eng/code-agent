@@ -56,7 +56,15 @@ export const MODEL_API_ENDPOINTS = {
   ollama: 'http://localhost:11434/v1',
   /** TypeSafe Jev System One（判断面专用，非聊天端点） */
   typesafeSystemOne: 'https://api.typesafe.ai/v1/systemone',
+  /** OpenRouter Decisions API（Jev 第二路由，非聊天端点） */
+  openrouterDecisions: 'https://openrouter.ai/api/alpha/decisions',
 } as const;
+
+/**
+ * OpenRouter 上的 Jev 决策模型。
+ * 与官方 `JEV_MODEL`（jev-1.13.0）和判官缓存键 `JEV_JUDGE_MODEL` 都不是同一字符串。
+ */
+export const JEV_OPENROUTER_MODEL = 'typesafe/jev-1.13';
 
 /** Groq 在售的低时延默认模型；判断步与通用 Groq provider 共用。 */
 export const GROQ_DEFAULT_MODEL = 'openai/gpt-oss-20b';

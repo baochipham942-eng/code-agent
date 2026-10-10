@@ -156,6 +156,10 @@ headless 编排（cron / 调度器 / 上层 agent）用退出码区分 run 的�
 | 0 | 正常完成 | `result.success === true` |
 | 1 | 异常失败 | 推理错误、内部异常、未收尾的运行时失败等 |
 | 2 | 部分完成 | 撞最大执行轮次上限（max iterations），已产出「部分结果 + 未完成说明」收尾；`result.terminationReason === 'max_iterations'`（error 事件带稳定 code `MAX_ITERATIONS_REACHED`） |
+| 130 | 收到 SIGINT | `installInterruptHandlers`：当前会话还没有 assistant 消息时先落一条 `agentError.category=interrupted` 的空回复，再退出（128+2） |
+| 143 | 收到 SIGTERM | 同上，退出码 128+15。已有 assistant 回复则不追加。SIGKILL 无法落这条记录 |
+
+0/1/2 的真源仍是 `resolveRunExitCode`（`src/cli/exitCodes.ts`）。130/143 不是运行结果映射，真源在 `src/cli/interruptedRunMarker.ts`。
 
 撞 max iterations 时 host 会先给模型一个禁用工具的 forced-final 收尾轮；模型交白卷时运行时再用本次运行已有产出合成确定性部分结果，保证 run 不零收尾断流（issue #1999）。
 

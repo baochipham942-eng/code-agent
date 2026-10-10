@@ -40,6 +40,7 @@ import {
   type ResolveRuntimeDefinition,
 } from './cronAutomationBridge';
 import {
+  buildCronAgentActionResult,
   formatCronAgentSessionTitle,
   isCronAgentActionResult,
   getCronAgentSessionType,
@@ -54,6 +55,7 @@ import { getEventBus } from '../services/eventing/bus';
 import { persistCronMissedTrace } from './cronMissedTrace';
 import { appendCronAgentExpertThreadReceipt } from './cronAgentExpertThreadReceipt';
 import { buildCronAgentPrompt, truncateUtf8Snapshot } from './cronAgentPrompt';
+
 import {
   assertExecutionLocationConstraints,
   computeCronFireJitterMs,
@@ -63,7 +65,8 @@ import {
   scheduleBoundToDate,
 } from './cronExecutionPolicy';
 import { CronCloudRuntime } from './cronCloudRuntime';
-import { CronEventTrigger, assertEventScheduleConstraints } from './cronEventTrigger';
+import { CronEventTrigger, assertEventScheduleConstraints, hasExplicitChatListenBinding } from './cronEventTrigger';
+import { setChannelListenResolver } from '../channels/channelListenRegistry';
 import {
   deleteCronJob,
   loadCronExecutionStatus,
@@ -179,6 +182,9 @@ export class CronService implements Disposable {
     });
     this.cronEventTrigger.start();
 
+    // 群监听绑定解析器：未 @ 的群消息按 hasExplicitChatListenBinding 判显式 (accountId, chatId) 绑定。
+    setChannelListenResolver((accountId, chatId) => hasExplicitChatListenBinding(this.listJobs(), accountId, chatId));
+
     this.isInitialized = true;
     console.error('[CronService] Initialized');
   }
@@ -186,6 +192,7 @@ export class CronService implements Disposable {
   async shutdown(): Promise<void> {
     this.cronEventTrigger?.dispose();
     this.cronEventTrigger = undefined;
+    setChannelListenResolver(undefined);
     this.cloudRuntime.stop();
     // Stop all cron jobs
     for (const [jobId, job] of this.jobs) {
@@ -886,10 +893,8 @@ export class CronService implements Disposable {
         const isExternalWatch = Boolean(ctx?.[EXTERNAL_WATCH.CONTEXT_KEY]);
         let hasAlert = !isExternalWatch;
 
-        let result: unknown;
-        let finalAssistantText = '';
-        let runError: unknown;
-        let runFailed = false;
+        let result: unknown; let finalAssistantText = '';
+        let runError: unknown; let runFailed = false;
         try {
           try {
             // 事件触发时通道载荷只以 untrusted 定界块追加在 prompt 尾部，并给该条
@@ -1014,13 +1019,9 @@ export class CronService implements Disposable {
 
         // 无新料的监听运行整成 skipped 形状：复用 isSkippedResult 门，
         // 让它不进待过目收件箱、不写会话回流（快照已在上面照常写回）。
-        return {
-          agentType: action.agentType,
-          prompt: action.prompt,
-          result,
-          sessionId: cronSession.id,
-          ...(quietWatchRound ? { skipped: true, reason: 'no_new_event' } : {}),
-        };
+        // 结果组装（digest + 紧急档位 N-CRON-INBOX-URGENCY-TIER）在 cronNormalizers：
+        // cronService 贴 max-lines 线，档位优先读摘要头部行、无摘要块读正文头部。
+        return buildCronAgentActionResult(action, result, cronSession.id, finalAssistantText, quietWatchRound);
       }
 
       case 'webhook': {

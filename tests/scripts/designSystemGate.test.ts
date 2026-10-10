@@ -1,15 +1,39 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 // @ts-expect-error —— 纯 JS 静态门脚本，无类型声明
-import { findStickyInPaddedScrollerViolations, findThemeBlindBrightForegroundMatches, findThemeBlindBrightForegroundViolations, findThemeBlindWhiteHoverForegroundMatches, findThemeBlindWhiteHoverForegroundViolations, scan } from '../../scripts/check-design-system.mjs';
+import { collectCssVarReferences, findStickyInPaddedScrollerViolations, findThemeBlindBrightForegroundMatches, findThemeBlindBrightForegroundViolations, findThemeBlindWhiteHoverForegroundMatches, findThemeBlindWhiteHoverForegroundViolations, findUndefinedCssVarViolations, scan } from '../../scripts/check-design-system.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const baseline = JSON.parse(
   readFileSync(join(here, '../../scripts/design-system-baseline.json'), 'utf8'),
 );
+
+const themeNames = ['dark', 'light', 'high-contrast-dark', 'high-contrast-light'];
+
+function makeCssVarFixture(
+  {
+    reference = 'var(--missing)',
+    missingTheme = null,
+    includeReference = true,
+  }: { reference?: string; missingTheme?: string | null; includeReference?: boolean } = {},
+) {
+  const root = mkdtempSync(join(tmpdir(), 'check-design-system-css-var-'));
+  const themesDir = join(root, 'styles/themes');
+  mkdirSync(themesDir, { recursive: true });
+  for (const theme of themeNames) {
+    const definition = theme === missingTheme ? '' : '--theme-only: #123456;';
+    writeFileSync(join(themesDir, `${theme}.css`), `:root { ${definition} }\n`);
+  }
+  const source = includeReference
+    ? `export const sample = <div className="text-red-300">${reference}</div>;\n`
+    : 'export const sample = <div className="text-red-300">sample</div>;\n';
+  writeFileSync(join(root, 'Sample.tsx'), source);
+  writeFileSync(join(root, 'global.css'), ':root { --external-token: #123456; }\n');
+  return root;
+}
 
 // 设计系统棘轮门（W2）——契约见 docs/designs/design-system.md
 // 守约：禁止引入超出基线的新违规；收口（current < baseline）后须 `--update` 降棘轮。
@@ -28,6 +52,72 @@ describe('design-system gate', () => {
       ).toBeLessThanOrEqual(baseline[rule]);
     });
   }
+});
+
+describe('undefined CSS custom property gate', () => {
+  it('收集 var() 引用并豁免 fallback 与同线 ds-allow:var', () => {
+    const source = [
+      'const a = "var(--missing)";',
+      'const b = "var(--with-fallback, #fff)";',
+      'const c = "var(--allowed) /* ds-allow:var runtime token */";',
+    ].join('\n');
+    expect(collectCssVarReferences(source)).toHaveLength(3);
+    expect(findUndefinedCssVarViolations(source, 'Fixture.tsx', new Set())).toEqual(['Fixture.tsx:1 --missing']);
+  });
+
+  it('新引用按四套主题分别报告，fixture 输出会使对应规则变红', () => {
+    const root = makeCssVarFixture({ reference: 'var(--missing)' });
+    try {
+      const violations = scan(root) as Record<string, string[]>;
+      for (const theme of themeNames) {
+        expect(violations[`undefined-css-var:${theme}`]).toEqual(['Sample.tsx:1 --missing']);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('只有缺 token 的主题报告，其他三套主题保持绿色', () => {
+    const root = makeCssVarFixture({ reference: 'var(--theme-only)', missingTheme: 'light' });
+    try {
+      const violations = scan(root) as Record<string, string[]>;
+      expect(violations['undefined-css-var:light']).toEqual(['Sample.tsx:1 --theme-only']);
+      for (const theme of themeNames.filter((name) => name !== 'light')) {
+        expect(violations[`undefined-css-var:${theme}`]).toEqual([]);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('主题外 CSS、JS inline style key 与 setProperty 定义对所有主题共享', () => {
+    const root = makeCssVarFixture({
+      reference: 'var(--external-token) var(--inline-token) var(--setter-token)',
+    });
+    try {
+      writeFileSync(
+        join(root, 'Sample.tsx'),
+        [
+          'const style = { \'--inline-token\': \'red\' };',
+          'element.style.setProperty(\'--setter-token\', \'red\');',
+          '<div className="text-red-300">var(--external-token) var(--inline-token) var(--setter-token)</div>;',
+        ].join('\n'),
+      );
+      const violations = scan(root) as Record<string, string[]>;
+      for (const theme of themeNames) expect(violations[`undefined-css-var:${theme}`]).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('没有任何 var(--name) 引用时 fail loud', () => {
+    const root = makeCssVarFixture({ includeReference: false });
+    try {
+      expect(() => scan(root)).toThrow(/CSS var\(--name\) 引用扫描没有命中任何目标/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('theme-blind bright foreground gate', () => {

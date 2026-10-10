@@ -88,3 +88,32 @@ describe('seatbelt write confinement profile (#1997)', () => {
     }
   });
 });
+
+describe('seatbelt single-file write grant (one-shot escalation)', () => {
+  it('allows the file by literal path and grants no subtree for it', () => {
+    const dir = realPath(fs.mkdtempSync(path.join(os.homedir(), '.seatbelt-file-grant-')));
+    const file = path.join(dir, 'out.txt');
+    try {
+      const profile = generateProfile(baseConfig({ writeFiles: [file] }));
+      expect(profile).toContain(`(allow file-write* (literal "${file}"))`);
+      // 反向变异：若把 literal 写成 subpath，这两条会红——文件被建成目录后里面就全可写了
+      expect(allowWriteSubpaths(profile)).not.toContain(file);
+      expect(allowWriteSubpaths(profile)).not.toContain(dir);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('resolves symlinks in the parent directory of a file that does not exist yet', () => {
+    const real = realPath(fs.mkdtempSync(path.join(os.tmpdir(), 'seatbelt-file-real-')));
+    const alias = path.join(path.dirname(real), `seatbelt-file-alias-${process.pid}`);
+    fs.symlinkSync(real, alias, 'dir');
+    try {
+      const profile = generateProfile(baseConfig({ writeFiles: [path.join(alias, 'new.txt')] }));
+      expect(profile).toContain(`(allow file-write* (literal "${path.join(real, 'new.txt')}"))`);
+    } finally {
+      fs.rmSync(alias, { force: true });
+      fs.rmSync(real, { recursive: true, force: true });
+    }
+  });
+});

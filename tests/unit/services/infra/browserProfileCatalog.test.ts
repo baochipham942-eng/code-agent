@@ -134,4 +134,136 @@ describe('browserProfileCatalog (ADR-041)', () => {
       { domain: 'github.com', cookieCount: 1 },
     ]);
   });
+
+  function makeChromeAndArcHome(prefix: string): { home: string; chromeRoot: string } {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+    tempRoots.push(home);
+    const chromeRoot = path.join(home, 'Library', 'Application Support', 'Google', 'Chrome');
+    fs.mkdirSync(chromeRoot, { recursive: true });
+    const arcRoot = path.join(home, 'Library', 'Application Support', 'Arc', 'User Data');
+    const arcDefault = path.join(arcRoot, 'Default');
+    fs.mkdirSync(path.join(arcDefault, 'Network'), { recursive: true });
+    fs.writeFileSync(path.join(arcDefault, 'Network', 'Cookies'), 'fake-db');
+    fs.writeFileSync(
+      path.join(arcRoot, 'Local State'),
+      JSON.stringify({ profile: { info_cache: { Default: { name: 'Arc Person' } } } }),
+    );
+    return { home, chromeRoot };
+  }
+
+  function expectArcStillListed(home: string): void {
+    const arc = listBrowserProfiles({ homeDir: home, platform: 'darwin' })
+      .find((entry) => entry.source === 'arc' && entry.profileId === 'Default');
+    expect(arc?.available).toBe(true);
+    expect(arc?.profileName).toBe('Arc Person');
+  }
+
+  it.each(['EPERM', 'EACCES'] as const)(
+    'readdir %s on an existing Chrome root is permission_denied and leaves Arc listed',
+    (code) => {
+      const { home, chromeRoot } = makeChromeAndArcHome(`neo-profile-catalog-${code.toLowerCase()}-`);
+      fs.writeFileSync(
+        path.join(chromeRoot, 'Local State'),
+        JSON.stringify({ profile: { info_cache: { Default: { name: 'Person 1' } } } }),
+      );
+      const realReaddir = fs.readdirSync.bind(fs);
+      const readdir = vi.spyOn(fs, 'readdirSync').mockImplementation(((
+        target: fs.PathLike,
+        options?: unknown,
+      ) => {
+        if (String(target) === chromeRoot) {
+          throw Object.assign(new Error('x'), { code });
+        }
+        return realReaddir(target, options as never);
+      }) as typeof fs.readdirSync);
+      const realReadFile = fs.readFileSync.bind(fs);
+      const readFile = vi.spyOn(fs, 'readFileSync').mockImplementation(((
+        target: fs.PathLike,
+        options?: unknown,
+      ) => realReadFile(target, options as never)) as typeof fs.readFileSync);
+      try {
+        const profiles = listBrowserProfiles({ homeDir: home, platform: 'darwin' });
+        const chromeRows = profiles.filter((entry) => entry.source === 'chrome');
+        expect(chromeRows).toHaveLength(1);
+        expect(chromeRows[0]).toMatchObject({
+          available: false,
+          unavailableReason: 'permission_denied',
+          unavailableMessage: `Permission denied reading ${chromeRoot} (${code})`,
+        });
+        expect(readFile.mock.calls.some((call) => String(call[0]) === path.join(chromeRoot, 'Local State'))).toBe(false);
+        const arc = profiles.find((entry) => entry.source === 'arc' && entry.profileId === 'Default');
+        expect(arc?.available).toBe(true);
+        expect(arc?.profileName).toBe('Arc Person');
+      } finally {
+        readdir.mockRestore();
+        readFile.mockRestore();
+      }
+    },
+  );
+
+  it('readdir ENOENT on an existing Chrome root stays profile_dir_missing', () => {
+    const { home, chromeRoot } = makeChromeAndArcHome('neo-profile-catalog-enoent-');
+    const realReaddir = fs.readdirSync.bind(fs);
+    const readdir = vi.spyOn(fs, 'readdirSync').mockImplementation(((
+      target: fs.PathLike,
+      options?: unknown,
+    ) => {
+      if (String(target) === chromeRoot) {
+        throw Object.assign(new Error('x'), { code: 'ENOENT' });
+      }
+      return realReaddir(target, options as never);
+    }) as typeof fs.readdirSync);
+    try {
+      const chrome = listBrowserProfiles({ homeDir: home, platform: 'darwin' })
+        .find((entry) => entry.source === 'chrome');
+      expect(chrome?.unavailableReason).toBe('profile_dir_missing');
+      expect(chrome?.unavailableMessage).toBe('No profiles found under Google Chrome.');
+    } finally {
+      readdir.mockRestore();
+    }
+    expectArcStillListed(home);
+  });
+
+  it('keeps profile_dir_missing when the Chrome root is readable but empty', () => {
+    const { home } = makeChromeAndArcHome('neo-profile-catalog-empty-');
+    const chrome = listBrowserProfiles({ homeDir: home, platform: 'darwin' })
+      .find((entry) => entry.source === 'chrome');
+    expect(chrome?.unavailableReason).toBe('profile_dir_missing');
+    expect(chrome?.unavailableMessage).toBe('No profiles found under Google Chrome.');
+    expectArcStillListed(home);
+  });
+
+  it('read Local State EPERM on an existing Chrome profile is permission_denied', () => {
+    const { home, chromeRoot } = makeChromeAndArcHome('neo-profile-catalog-local-state-eperm-');
+    const defaultDir = path.join(chromeRoot, 'Default');
+    fs.mkdirSync(path.join(defaultDir, 'Network'), { recursive: true });
+    fs.writeFileSync(path.join(defaultDir, 'Network', 'Cookies'), 'fake-db');
+    const localStatePath = path.join(chromeRoot, 'Local State');
+    fs.writeFileSync(localStatePath, JSON.stringify({ profile: { info_cache: { Default: { name: 'Person 1' } } } }));
+    const realReadFile = fs.readFileSync.bind(fs);
+    const readFile = vi.spyOn(fs, 'readFileSync').mockImplementation(((
+      target: fs.PathLike,
+      options?: unknown,
+    ) => {
+      if (String(target) === localStatePath) {
+        throw Object.assign(new Error('x'), { code: 'EPERM' });
+      }
+      return realReadFile(target, options as never);
+    }) as typeof fs.readFileSync);
+    try {
+      const profiles = listBrowserProfiles({ homeDir: home, platform: 'darwin' });
+      const chromeRows = profiles.filter((entry) => entry.source === 'chrome');
+      expect(chromeRows).toHaveLength(1);
+      expect(chromeRows[0]).toMatchObject({
+        available: false,
+        unavailableReason: 'permission_denied',
+        unavailableMessage: `Permission denied reading ${chromeRoot} (EPERM)`,
+      });
+      const arc = profiles.find((entry) => entry.source === 'arc' && entry.profileId === 'Default');
+      expect(arc?.available).toBe(true);
+      expect(arc?.profileName).toBe('Arc Person');
+    } finally {
+      readFile.mockRestore();
+    }
+  });
 });

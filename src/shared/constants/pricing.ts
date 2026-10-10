@@ -1,7 +1,7 @@
 import { normalizeProviderId } from './providers';
 
 /** 改动 MODEL_PRICING_PER_1M 中任一价格时必须同步递增。 */
-export const PRICING_TABLE_VERSION = 2;
+export const PRICING_TABLE_VERSION = 3;
 
 /** 模型定价条目（每 1M tokens，美元）。cacheRead/cacheWrite 缺省时按比例回退（见下方 ratio 常量）。 */
 export interface ModelPricingEntry {
@@ -11,6 +11,25 @@ export interface ModelPricingEntry {
   cacheRead?: number;
   /** 缓存写入价（Anthropic cache_creation）。缺省 = input × DEFAULT_CACHE_WRITE_PRICE_RATIO */
   cacheWrite?: number;
+  /**
+   * Optional long-context tier. When one request's prompt size (input + cacheRead +
+   * cacheCreation tokens) is strictly greater than the threshold, the whole request
+   * uses the input/output multipliers; cacheRead/cacheWrite use cacheMultiplier when
+   * supplied, otherwise inputMultiplier. At or below the threshold this is ignored.
+   */
+  longContext?: {
+    thresholdPromptTokens: number;
+    inputMultiplier: number;
+    outputMultiplier: number;
+    cacheMultiplier?: number;
+  };
+}
+
+interface UsageCostTokens {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
 }
 
 export interface RealtimeVoicePricingEntry {
@@ -43,6 +62,31 @@ export const DEFAULT_CACHE_READ_PRICE_RATIO = 0.1;
 /** 无显式 cacheWrite 价的模型按 input × 1.25 近似（Anthropic 5m ephemeral 档） */
 export const DEFAULT_CACHE_WRITE_PRICE_RATIO = 1.25;
 
+/**
+ * Calculate one request's USD cost from catalogue data and normalized token usage.
+ * The arithmetic order matches the existing budget calculation so entries without
+ * a long-context tier retain their exact floating-point result.
+ */
+export function computeUsageCostUsd(pricing: ModelPricingEntry, usage: UsageCostTokens): number {
+  const cacheReadPrice = pricing.cacheRead ?? pricing.input * DEFAULT_CACHE_READ_PRICE_RATIO;
+  const cacheWritePrice = pricing.cacheWrite ?? pricing.input * DEFAULT_CACHE_WRITE_PRICE_RATIO;
+  const promptTokens = usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheCreationTokens ?? 0);
+  const tier = pricing.longContext;
+  const useLongContext = tier !== undefined && promptTokens > tier.thresholdPromptTokens;
+  const inputPrice = useLongContext ? pricing.input * tier.inputMultiplier : pricing.input;
+  const outputPrice = useLongContext ? pricing.output * tier.outputMultiplier : pricing.output;
+  const cachedPriceMultiplier = useLongContext
+    ? tier.cacheMultiplier ?? tier.inputMultiplier
+    : 1;
+  const effectiveCacheReadPrice = useLongContext ? cacheReadPrice * cachedPriceMultiplier : cacheReadPrice;
+  const effectiveCacheWritePrice = useLongContext ? cacheWritePrice * cachedPriceMultiplier : cacheWritePrice;
+  const inputCost = (usage.inputTokens / 1_000_000) * inputPrice;
+  const outputCost = (usage.outputTokens / 1_000_000) * outputPrice;
+  const cacheReadCost = ((usage.cacheReadTokens ?? 0) / 1_000_000) * effectiveCacheReadPrice;
+  const cacheWriteCost = ((usage.cacheCreationTokens ?? 0) / 1_000_000) * effectiveCacheWritePrice;
+  return inputCost + outputCost + cacheReadCost + cacheWriteCost;
+}
+
 /** 模型定价（每 1M tokens，美元）— 仅包含 PROVIDER_REGISTRY 中注册的模型 */
 export const MODEL_PRICING_PER_1M: Record<string, ModelPricingEntry> = {
   // DeepSeek — V4.1 Flash 官方峰时刊例（2026-09-10）：cache hit $0.006 / miss $0.30 / out $1.20
@@ -56,6 +100,25 @@ export const MODEL_PRICING_PER_1M: Record<string, ModelPricingEntry> = {
   // OpenAI — cached input 为 0.5x 档
   'gpt-4o': { input: 2.5, output: 10, cacheRead: 1.25 },
   'gpt-4o-mini': { input: 0.15, output: 0.6, cacheRead: 0.075 },
+  // OpenAI GPT-6 Sol 系列 — 官方模型页（抓取 2026-09-30）：
+  //   https://developers.openai.com/api/docs/models/gpt-6.1-sol
+  //   https://developers.openai.com/api/docs/models/gpt-6-sol
+  // 输入 $2 / 输出 $10；缓存读 6.1 为 $0.10、6 为 $0.20；缓存写 $2.50。
+  // 单次请求 prompt 超 272K tokens 时整单按输入 ×2、缓存 ×2、输出 ×1.5 计价。
+  'gpt-6.1-sol': {
+    input: 2,
+    output: 10,
+    cacheRead: 0.1,
+    cacheWrite: 2.5,
+    longContext: { thresholdPromptTokens: 272_000, inputMultiplier: 2, outputMultiplier: 1.5, cacheMultiplier: 2 },
+  },
+  'gpt-6-sol': {
+    input: 2,
+    output: 10,
+    cacheRead: 0.2,
+    cacheWrite: 2.5,
+    longContext: { thresholdPromptTokens: 272_000, inputMultiplier: 2, outputMultiplier: 1.5, cacheMultiplier: 2 },
+  },
   // Anthropic — cacheRead 0.1x / cacheWrite(5m ephemeral) 1.25x
   'claude-sonnet-4-20250514': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
   'claude-3-5-sonnet-20241022': { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },

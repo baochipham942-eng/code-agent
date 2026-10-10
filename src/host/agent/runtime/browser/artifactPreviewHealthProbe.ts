@@ -16,6 +16,10 @@ export interface ArtifactPreviewHealthViewportDiagnostics {
     present: boolean;
     selector?: string;
   };
+  buttons: {
+    declared: number;
+    visible: number;
+  };
   brokenImages: Array<{
     src: string;
     alt?: string;
@@ -187,6 +191,10 @@ export async function collectArtifactPreviewHealthDiagnosticsFromPage(
         const documentElement = document.documentElement;
         const body = document.body;
 
+        // 注意：这个回调会被整体序列化进页面执行，函数体里不许出现「具名函数绑定」——
+        // tsx/esbuild keepNames 会给它包 __name(...)，序列化后在页面上下文里是未定义
+        // （实机踩坑 ReferenceError: __name is not defined）。可见性判据因此保持内联
+        // 箭头（与既有 visibleElements/mainElement 探针同构），不抽共享 helper。
         const visibleElements = [...document.body.querySelectorAll('*')]
           .filter((element) => {
             const rect = element.getBoundingClientRect();
@@ -228,6 +236,28 @@ export async function collectArtifactPreviewHealthDiagnosticsFromPage(
           }
         }
 
+        // 主操作按钮探针：页面声明了 button 类元素但一个都不可见（被遮挡/移出视口/
+        // 零尺寸）= 交付出"够不着的按钮"。页面本来就没有按钮时不算缺陷。
+        const buttonLikeElements = [...document.querySelectorAll(
+          'button, [role="button"], input[type="button"], input[type="submit"]',
+        )];
+        const buttons = {
+          declared: buttonLikeElements.length,
+          visible: buttonLikeElements.filter((element) => {
+            const rect = element.getBoundingClientRect();
+            const style = window.getComputedStyle(element);
+            return rect.width > minVisibleSize
+              && rect.height > minVisibleSize
+              && style.visibility !== 'hidden'
+              && style.display !== 'none'
+              && Number(style.opacity || '1') !== 0
+              && rect.bottom >= 0
+              && rect.right >= 0
+              && rect.top <= viewport.height
+              && rect.left <= viewport.width;
+          }).length,
+        };
+
         const brokenImages = [...document.images]
           .filter((image) => image.naturalWidth === 0)
           .map((image) => ({
@@ -250,6 +280,7 @@ export async function collectArtifactPreviewHealthDiagnosticsFromPage(
             present: Boolean(mainElementSelector),
             selector: mainElementSelector,
           },
+          buttons,
           brokenImages,
         };
       }, {
@@ -269,6 +300,7 @@ export async function collectArtifactPreviewHealthDiagnosticsFromPage(
         visibleElements: probe.visibleElements,
         horizontalOverflow: probe.horizontalOverflow,
         mainElement: probe.mainElement,
+        buttons: probe.buttons,
         brokenImages: probe.brokenImages,
       });
     }

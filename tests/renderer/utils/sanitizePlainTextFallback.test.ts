@@ -13,7 +13,9 @@ describe('sanitizePlainTextFallback — 纯文本兜底降级', () => {
   });
 
   it('多个 IACT 协议（!send/!run/!open 等）都降级', () => {
-    expect(sanitizePlainTextFallback('[发我](!send) 和 [ls -la](!run)')).toBe('发我 和 ls -la');
+    expect(sanitizePlainTextFallback('[发我](!send) 和 [ls -la](!run?cmd=ls%20-la)')).toBe('发我 和 ls -la');
+    expect(sanitizePlainTextFallback('[查看报告](!run?cmd=npm%20run%20typecheck)')).toBe('查看报告');
+    expect(sanitizePlainTextFallback('[跑](!run?cmd=echo%20%28hi%29)')).toBe('跑');
   });
 
   it('普通文本里的比较符号不误伤（< 后不是字母）', () => {

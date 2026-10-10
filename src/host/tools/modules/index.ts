@@ -115,6 +115,7 @@ import { xlwingsExecuteSchema } from './network/xlwingsExecute.schema';
 import { pdfGenerateSchema } from './network/pdfGenerate.schema';
 import { pdfCompressSchema } from './network/pdfCompress.schema';
 import { pdfAutomateSchema } from './network/pdfAutomate.schema';
+import { decideSchema } from './network/decide.schema';
 import { screenshotPageSchema } from './network/screenshotPage.schema';
 import { localSpeechToTextSchema } from './network/localSpeechToText.schema';
 import { imageAnalyzeSchema } from './network/imageAnalyze.schema';
@@ -613,6 +614,12 @@ export function registerMigratedTools(
   registry.register(
     pdfCompressSchema,
     async () => (await import('./network/pdfCompress')).pdfCompressModule,
+  );
+  // decide：无可用 Jev 路由时不进工具表/不可搜（枚举处按 isDecideToolAvailable 过滤），
+  // 注册本身无条件——skill allowedTools 的发现门按静态枚举判。
+  registry.register(
+    decideSchema,
+    async () => (await import('./network/decide')).decideModule,
   );
   registry.register(
     pdfAutomateSchema,

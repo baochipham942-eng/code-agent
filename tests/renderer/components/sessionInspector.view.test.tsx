@@ -106,6 +106,41 @@ describe('层1 人话时间线', () => {
     expect(screen.getAllByTestId('inspector-turn')).toHaveLength(3);
   });
 
+  it('DELIVERABLE_NONE_PRODUCED: pdf → 未交付，不是自称完成', async () => {
+    traceApi.read = readWith([
+      event('turn_outcome', {
+        terminal: 'completed',
+        verdict: 'self_claimed',
+        evidenceRefs: [],
+        source: 'generic',
+        evidenceProblems: ['DELIVERABLE_NONE_PRODUCED: pdf'],
+      }, 1, 2000),
+    ]);
+    render(<SessionInspector />);
+    const stamp = await screen.findByTestId('inspector-stamp');
+    expect(stamp.dataset.verdict).toBe('undelivered');
+    expect(stamp.textContent).toContain('未交付');
+    expect(stamp.textContent).not.toContain('自称完成');
+    expect(stamp.textContent).not.toContain('自称');
+  });
+
+  it('其它交付问题码的轮行仍显示自称', async () => {
+    traceApi.read = readWith([
+      event('turn_outcome', {
+        terminal: 'completed',
+        verdict: 'self_claimed',
+        evidenceRefs: [],
+        source: 'generic',
+        evidenceProblems: ['DELIVERABLE_NOT_ON_DISK: missing.pdf'],
+      }, 1, 2000),
+    ]);
+    render(<SessionInspector />);
+    const stamp = await screen.findByTestId('inspector-stamp');
+    expect(stamp.dataset.verdict).toBe('self_claimed');
+    expect(stamp.textContent).toContain('自称');
+    expect(stamp.textContent).not.toContain('未交付');
+  });
+
   it('无账本（missing）与空账本（empty）走各自空态', async () => {
     traceApi.read = { sessionId: 'session_test', state: 'missing', events: [], skippedLines: 0, cursor: 0 };
     const { unmount } = render(<SessionInspector />);

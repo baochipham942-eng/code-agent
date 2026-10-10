@@ -11,7 +11,7 @@ import { createLogger } from '../infra/logger';
 import { getNativeDesktopService } from './nativeDesktopService';
 import { getUserConfigDir } from '../../config/configPaths';
 import { isOrtTensor, loadVadRuntime, type OrtRuntimeModule } from './audioVadRuntime';
-import { finalizeSegmentAudio, sweepAudioRetention } from './audioRetention';
+import { clearAllAudioRecordings, finalizeSegmentAudio, getAudioRetentionStatus, sweepAudioRetention } from './audioRetention';
 import type { InferenceSession, Tensor as OrtTensor } from 'onnxruntime-node';
 
 const logger = createLogger('DesktopAudioCapture');
@@ -1204,6 +1204,10 @@ export function stopDesktopAudioCapture(): void {
   logger.info('[音频采集] 后台音频采集已停止');
 }
 
+export function clearAudioRecordings() {
+  return clearAllAudioRecordings({ audioDir: getAudioDir(), sqlitePath: getSqlitePath() });
+}
+
 export function getAudioCaptureStatus() {
   return {
     capturing,
@@ -1216,5 +1220,6 @@ export function getAudioCaptureStatus() {
     totalSegments,
     audioDir: getAudioDir(),
     queueLength: asrQueue.length,
+    retention: getAudioRetentionStatus(getAudioDir(), getSqlitePath()),
   };
 }

@@ -2,6 +2,7 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import { applyTelemetrySchema } from './schemaTelemetry';
 import { applyAnnotationsSchema } from './schemaAnnotations';
+import { applyAppGrantsSchema } from './schemaAppGrants';
 import { safeAlter, type Logger } from './schemaHelpers';
 import { applyTranscriptFtsSchema } from '../../../../shared/transcriptFts.sql';
 import { applyMemoriesFtsSchema } from '../../../../shared/memoriesFts.sql';
@@ -400,6 +401,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   `);
   safeAlter(db, `ALTER TABLE permission_decisions ADD COLUMN wait_ms INTEGER`, logger);
   safeAlter(db, `ALTER TABLE permission_decisions ADD COLUMN origin TEXT`, logger);
+  safeAlter(db, `ALTER TABLE permission_decisions ADD COLUMN policy_hash TEXT`, logger);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_permission_decisions_recorded ON permission_decisions (recorded_at)`);
   db.exec(
     `CREATE INDEX IF NOT EXISTS idx_permission_decisions_session ON permission_decisions (session_id, recorded_at)`,
@@ -783,6 +785,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
 
   applyTelemetrySchema(db, logger);
   applyAnnotationsSchema(db, logger);
+  applyAppGrantsSchema(db, logger);
 
   // Captures 表 (知识库采集内容持久化)
   db.exec(`

@@ -18,7 +18,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
-import { getConfigService } from '../../../services';
+import { getConfiguredZhipuApiKey } from '../../../tools/modules/network/toolAvailability';
 import { createFileArtifact, createVirtualArtifact } from '../../../tools/artifacts/artifactMeta';
 import { MODEL_API_ENDPOINTS } from '../../../../shared/constants';
 import { textToSpeechSchema as schema } from './textToSpeech.schema';
@@ -124,8 +124,7 @@ export async function executeTextToSpeech(
   const startTime = Date.now();
 
   try {
-    const configService = getConfigService();
-    const zhipuApiKey = configService.getApiKey('zhipu');
+    const zhipuApiKey = getConfiguredZhipuApiKey();
     if (!zhipuApiKey) {
       return {
         ok: false,

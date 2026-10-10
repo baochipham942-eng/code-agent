@@ -9,7 +9,7 @@ type PlanApprovalStatus =
   | 'failed' // 启动轮次失败：卡片须带原因重现，pending/failed 都允许再次决定
   | 'cancelled'
   | 'revision_requested';
-type PlanApprovalDecision = 'approve' | 'cancel' | 'revise';
+type PlanApprovalDecision = 'approve' | 'cancel' | 'revise' | 'edit';
 
 /** A card in these states accepts a new decision (first attempt or retry after failure). */
 export function isRetryablePlanApprovalStatus(status: PlanApprovalRecord['status']): boolean {
@@ -36,6 +36,11 @@ export interface PlanApprovalRecord {
    * `synthetic_text` = 宿主从补推理的结构化计划正文合成的同形卡。只影响展示，不影响审批语义。
    */
   source?: 'model_exit' | 'synthetic_text';
+  /**
+   * 卡片版本，单调递增。缺省（老卡）视为 1。编辑或带步骤的批准把它加 1，
+   * 仍绑在同一张卡上（同一个 messageId / toolCallId），不另开卡。
+   */
+  version?: number;
   /** 最近一次启动失败的原因：failed 落定时写入；重试认领（starting）与重试成功（approved）都不清除，会残留。 */
   failureReason?: string;
   /** 最近一次启动失败的落定时刻：failed 落定时写入并残留；重试再败必换新值，是卡片投影 digest 的稳定判据。 */
@@ -49,6 +54,11 @@ export interface PlanApprovalRequest {
   decision: PlanApprovalDecision;
   steps?: PlanApprovalStep[];
   feedback?: string;
+  /**
+   * 客户端正在编辑或决定的版本。缺省（companion 等旧调用方）视为卡上的当前版本。
+   * 与当前版本不一致时宿主拒绝，不产生副作用。
+   */
+  version?: number;
 }
 
 export interface PlanApprovalResponse {
@@ -84,6 +94,7 @@ export function createPendingPlanApproval(plan: string): PlanApprovalRecord {
     status: 'pending',
     originalPlan: plan,
     steps: planApprovalStepsFromText(plan),
+    version: 1,
   };
 }
 

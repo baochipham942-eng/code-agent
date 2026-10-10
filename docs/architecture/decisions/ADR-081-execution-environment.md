@@ -1,6 +1,6 @@
 # ADR-081：执行环境成为一等对象
 
-- 状态：**草稿·待爸拍板**
+- 状态：**已接受**（2026-10-05 爸拍板：下文八处 Decision needed 按推荐、每用户在飞配额 = 2；出站通道与旧客户端文案两处按推荐暂行、待爸复核）
 - 单号：N-CLOUD-ENV-ADR（只定合同，不施工）
 - 基线：`origin/main@869f4918b361`（`869f4918b361d534efaac5ccb18a041dac2738e3`）
 - 证据：本机证据档 `~/work/evidence/N-CLOUD-ENV-ADR.md`。竞品摘录来自任务书所附 2026-09-30 一手实测摘要；私档原文路径在本机不存在，见「竞品实测摘录」
@@ -49,7 +49,7 @@
 | 17 | durable kernel：一个 run 的活主人是 `ownerId + processInstanceId + epoch`。租约内别人不能认领。序号按 `runId` 单调，不因 attempt 归零 | `docs/architecture/durable-run-kernel.md:108-120`；ADR-037 决策 1–2 |
 | 18 | 本仓搜不到部署侧的 `maxConcurrentRuns=1`。唯一同名符号是网页排队输入测试里的局部计数，断言排水并发为 1 | `tests/unit/web/webQueuedInputDrain.test.ts:340-360` |
 | 19 | 连接器长期秘密走 `secureref:`，真值在 SecureStorage，解不开就 fail-closed。能力中心写入的是用户级配置，不绑工作目录 | ADR-050；ADR-051 |
-| 20 | 常驻宿主单（N-RESIDENT-HOST-ADR）正文不在本仓。ADR-075 的划界是：执行进程与壳解耦之后，关窗不等于杀进程。任务书给的现状句是合盖等于本机离线 | `docs/architecture/decisions/ADR-075-foreground-restart-resume.md:199` |
+| 20 | 常驻宿主单（N-RESIDENT-HOST-ADR）的 ADR 正文见 [ADR-083](./ADR-083-resident-host.md)。ADR-075 的划界是：执行进程与壳解耦之后，关窗不等于杀进程。任务书给的现状句是合盖等于本机离线 | `docs/architecture/decisions/ADR-075-foreground-restart-resume.md:199` |
 
 ## 竞品实测摘录
 
@@ -163,6 +163,24 @@ stateDiagram-v2
 4. 地点粒度是一轮。默认这台机器。云端是显式升级。选地点的是用户，不是模型。
 5. 五条不变量写在下一节，原文含义保持，不降成可选项。
 6. 明确不学的三件事写在文末专节：服务端能读到的运行时密钥；挂载等于信任、目录没有沙箱；审批默认全部允许。
+
+### 2026-10-05 拍板（Decision needed 按推荐）
+
+下文各「Decision needed」小节保留原文作记录，结论如下，作为施工合同：
+
+1. 合盖期间账本：云端轮追加写到账户域里的**同一 `sessionId`**，本机 SQLite 按序号追赶。
+2. 断线宽限 **30 秒**，心跳沿用伴侣中继的 20 秒。
+3. 云端审批用**结构化卡片**（允许一次 / 本会话允许 / 拒绝），对话里的 yes 不算批准。
+4. 共享环境默认**只有创建者**可用，逐个加账户，无链接即用。
+5. 连接器授权上云按「连接器凭据边界」一节的三句 + 泄露演练口径执行。
+6. 阶段 1 每用户在飞配额 **2**，第 3 条起排队。
+7. 同一 `sessionId` **不并行**两条云端 run，下一次云端升级排队。
+8. 云端浏览器与电脑操作**现在不开单**，等 N-CLOUD-HANDOFF 与云端审批回传合同被施工单接住后再开。
+
+以下两处拍板时未单独呈给爸（编排漏列），**按推荐暂行、待爸复核**；施工可以照做，爸改口时再改：
+
+9. 出站通道：新的执行体**向外拨号**，会合地址由服务端发、补输出按序号；身份是新的环境登记（不复用 `cronCloud.token` / 伴侣路由令牌）；禁止在用户电脑上听可被云端连入的口。
+10. 旧客户端文案按推荐原文，稳定码 `ENVIRONMENT_PROTOCOL_UNSUPPORTED`。
 
 ## 不变量
 

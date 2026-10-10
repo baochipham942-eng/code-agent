@@ -13,12 +13,14 @@
 // 矮屏不低于 420px、整页可滚到达。
 // ============================================================================
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Clock3, WalletCards } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
 import ipcService from '../../../services/ipcService';
+import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
+import { createLogger } from '../../../utils/logger';
 import { openBudgetSettings } from '../../../utils/budgetSettingsNavigation';
 import { CronJobList } from './CronJobList';
 import { AutomationReviewInbox } from './AutomationReviewInbox';
@@ -50,6 +52,8 @@ interface ScopedBudgetStatusResponse {
 function formatUsd(value: number): string {
   return `$${value.toFixed(2)}`;
 }
+
+const logger = createLogger('CronCenterPanel');
 
 const StatusTile: React.FC<{ label: string; value: string; attention?: boolean; testId: string }> = ({
   label,
@@ -89,9 +93,23 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
   } = useCronStore();
   const [activeTab, setActiveTab] = useState<CronCenterTab>('jobs');
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
-  // 待过目数由收件箱回传（同一条 listPendingReview 通道，语义与服务侧 countPendingReview 一致），
-  // 收件箱里「已过目」后状态条同步归零，不用再发一次 IPC。
+  // 待过目数以 IPC countPendingReview（服务侧按**任务**折算）为真源：收件箱的回传只当
+  // 「列表变了，该重取了」的触发信号（回传值是按记录数，同一任务跑 3 轮会虚报 3）。
+  // IPC 失败时回落回传值并 warn 留痕，不静默吞。回调必须稳定（收件箱 effect 依赖它）。
   const [pendingReviewCount, setPendingReviewCount] = useState(0);
+  const refreshPendingReviewCount = useCallback((inboxRecordCount: number) => {
+    void sessionAutomationClient
+      .countPendingReview()
+      .then((count) => {
+        if (typeof count === 'number') setPendingReviewCount(count);
+      })
+      .catch((error) => {
+        logger.warn('Failed to load per-task pending review count, falling back to inbox record count', {
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+        setPendingReviewCount(inboxRecordCount);
+      });
+  }, []);
   const [unattendedBudgetStatus, setUnattendedBudgetStatus] = useState<UnattendedBudgetStatus | null>(null);
 
   useEffect(() => {
@@ -265,7 +283,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
             切 tab 用 CSS 隐藏而不是卸载，不丢数、不重复拉取。收件箱按产品语义
             归属「运行记录」——它是运行结果里需要人过目的子集。 */}
         <div className={activeTab === 'runs' ? undefined : 'hidden'}>
-          <AutomationReviewInbox onPendingCountChange={setPendingReviewCount} />
+          <AutomationReviewInbox onPendingCountChange={refreshPendingReviewCount} />
         </div>
 
         {activeTab === 'jobs' ? (

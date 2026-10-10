@@ -2,6 +2,7 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { groupRunsByTask } from '../../../src/shared/cronRunDigest';
 
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
@@ -65,6 +66,8 @@ vi.mock('react', async () => {
 });
 
 const sessionState = {
+  // 与真实 store 同形：Sidebar 经 useCronRunGroups 消费 getCronRunGroups 选择器。
+  getCronRunGroups: () => groupRunsByTask(sessionState.sessions),
   sessions: [
     {
       id: 'session-1',

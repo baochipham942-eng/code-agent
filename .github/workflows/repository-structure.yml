@@ -34,6 +34,9 @@ jobs:
       - name: Check repository structure
         run: node scripts/ci/check-repository-structure.mjs
 
+      - name: Check NOTICE anchors
+        run: node scripts/ci/check-notice-anchors.mjs
+
       # 报错文案里裸 $VAR 紧跟非 ASCII 字符，在 macOS 自带 bash 3.2 下会被吃进变量名，
       # set -u 触发 "VAR?: unbound variable"，把真正的诊断整条吞掉——只在出错路径上炸，
       # 平时永远发现不了。本机 gates:local 已挂，这里补 PR 门，防止跨会话回归。

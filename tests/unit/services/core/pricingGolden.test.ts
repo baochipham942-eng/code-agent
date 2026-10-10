@@ -12,6 +12,8 @@ const GOLDEN_PROVIDERS = [
   "deepseek",
   "openai",
   "openai",
+  "openai",
+  "openai",
   "claude",
   "claude",
   "claude",
@@ -132,6 +134,22 @@ const GOLDEN_EXPECTED_COST_USD = [
     "allFour": 0.04875,
     "zero": 0,
     "large": 0.6187499999999999
+  },
+  {
+    "inputOutput": 0.7,
+    "cacheRead": 0.7024999999999999,
+    "cacheCreation": 0.7625,
+    "allFour": 0.7274999999999999,
+    "zero": 0,
+    "large": 14.2
+  },
+  {
+    "inputOutput": 0.7,
+    "cacheRead": 0.705,
+    "cacheCreation": 0.7625,
+    "allFour": 0.73,
+    "zero": 0,
+    "large": 14.4
   },
   {
     "inputOutput": 1.05,

@@ -29,7 +29,7 @@ import {
 
 const DELEGATION_QUEUE_ID_PREFIX = 'delegation:';
 
-export function delegationQueuedInputId(submissionKey: string): string {
+function delegationQueuedInputId(submissionKey: string): string {
   return DELEGATION_QUEUE_ID_PREFIX + submissionKey;
 }
 

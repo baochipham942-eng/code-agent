@@ -1,18 +1,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { executeListSessionCandidates } from '../../../../../src/host/tools/modules/delegation/listSessionCandidates';
-import { setDelegationToolRuntimeForTests } from '../../../../../src/host/services/delegation/delegationToolRuntime';
 
 const ctx = { sessionId: 'origin', workingDir: '/workspace/origin', abortSignal: new AbortController().signal } as never;
+const setRuntime = (value: unknown) => {
+  (ctx as unknown as { delegationRuntime?: unknown }).delegationRuntime = value;
+};
 
 afterEach(() => {
   delete process.env.CODE_AGENT_CROSS_SESSION_DELEGATION;
-  setDelegationToolRuntimeForTests(null);
+  setRuntime(undefined);
 });
 
 describe('list_session_candidates', () => {
   it('returns capped opaque candidates without stable session ids', async () => {
     process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
-    setDelegationToolRuntimeForTests({
+    setRuntime({
       listSessions: () => [
         { id: 'target-1', title: 'Target One', workingDirectory: '/workspace/target', updatedAt: 10, sessionType: 'chat' },
         { id: 'origin', title: 'Origin', workingDirectory: '/workspace/origin', updatedAt: 20, sessionType: 'chat' },

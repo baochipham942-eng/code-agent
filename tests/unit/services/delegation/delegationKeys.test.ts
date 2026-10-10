@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  SUBMISSION_KEY_PREFIX,
   attachmentRefsOf,
-  canonicalJson,
   deriveActionFingerprint,
   deriveSubmissionKey,
   delegationTargetIdentity,
@@ -35,7 +33,7 @@ describe('delegationKeys', () => {
       action: 'delegate_existing',
       targetIdentity: 'session:target-1',
     });
-    expect(key.startsWith(SUBMISSION_KEY_PREFIX)).toBe(true);
+    expect(key.startsWith('sdk_')).toBe(true);
     expect(key).toMatch(/^sdk_[0-9a-f]{32}$/);
   });
 
@@ -109,13 +107,6 @@ describe('delegationKeys', () => {
       ],
     });
     expect(orderOne).toBe(orderTwo);
-  });
-
-  it('canonicalJson 键排序且无空白，嵌套对象同样排序', () => {
-    expect(canonicalJson({ b: 1, a: 2 })).toBe('{"a":2,"b":1}');
-    expect(canonicalJson({ z: { d: 1, c: 2 }, a: [3, { y: 1, x: 2 }] }))
-      .toBe('{"a":[3,{"x":2,"y":1}],"z":{"c":2,"d":1}}');
-    expect(canonicalJson(undefined)).toBe('null');
   });
 
   it('attachmentRefsOf 只收 id/path，缺 id 的条目丢弃', () => {

@@ -17,7 +17,6 @@ import {
 import {
   commitDelegation,
   collectDeliveryFacts,
-  delegationQueuedInputId,
   evaluateDelegationDelivery,
   projectTerminalDelegations,
   type DelegationDeliveryFactDependencies,
@@ -76,7 +75,7 @@ describe('delegationDelivery（K1C 投递接缝）', () => {
     content,
     attachmentRefs: [],
   });
-  const queuedInputId = delegationQueuedInputId(submissionKey);
+  const queuedInputId = `delegation:${submissionKey}`;
 
   function makeDeps(facts: TargetFacts = {}): DelegationDeliveryFactDependencies {
     return {

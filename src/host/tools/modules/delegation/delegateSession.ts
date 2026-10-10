@@ -6,7 +6,6 @@ import { SessionDelegationRepository, type SessionDelegationRecord } from '../..
 import {
   commitDelegation,
   collectDeliveryFacts,
-  delegationQueuedInputId,
   type DelegationDeliveryFactDependencies,
 } from '../../../services/delegation/delegationDelivery';
 import {
@@ -81,13 +80,14 @@ async function buildSnapshot(
   }
   const roots = [...runtime.getWorkspaceRoots(), ...(ctx.workspaceScope?.roots.map((root) => root.path) ?? [])];
   const runs = runtime.getRuns();
-  const delegatedRunIds = targetSessionId && runtime.getDb()
-    ? new SessionDelegationRepository(runtime.getDb()!).listByTargetSession(targetSessionId).flatMap((row) => row.targetRunId ? [row.targetRunId] : [])
+  const db = runtime.getDb();
+  const delegatedRunIds = targetSessionId && db
+    ? new SessionDelegationRepository(db).listByTargetSession(targetSessionId).flatMap((row) => row.targetRunId ? [row.targetRunId] : [])
     : [];
   let userQueuedOrSendingRows = 0;
-  if (targetSessionId && runtime.getDb()) {
-    const queued = new QueuedInputRepository(runtime.getDb()!).listBySession(targetSessionId);
-    const delegations = new SessionDelegationRepository(runtime.getDb()!);
+  if (targetSessionId && db) {
+    const queued = new QueuedInputRepository(db).listBySession(targetSessionId);
+    const delegations = new SessionDelegationRepository(db);
     userQueuedOrSendingRows = queued.filter((row) =>
       (row.status === 'queued' && row.pausedReason === null || row.status === 'sending')
       && delegations.getByTargetQueuedInputId(row.id) === null,
@@ -217,7 +217,7 @@ export async function executeDelegateSession(
   if (!permission.allow) return { ok: false, code: 'PERMISSION_DENIED', error: permission.reason };
   const parsed = parseArgs(args);
   if (!parsed.ok) return rejection(parsed.code, parsed.detail);
-  const runtime = getDelegationToolRuntime();
+  const runtime = getDelegationToolRuntime(ctx);
   const call = parsed.call;
   try {
     const admission = await admissionFor(call, ctx, runtime);
@@ -298,7 +298,7 @@ async function executeChain(
   if (call.action === 'stop') {
     if (row.targetQueuedInputId && isQueuedRow(row, db)) queued.pauseQueued(row.targetQueuedInputId, 'delegation_stopped', now);
     const handle = runtime.getRun(row.targetSessionId);
-    if (handle?.cancel && row.targetRunId) await handle.cancel('user');
+    if (handle?.cancel && row.targetRunId && handle.context.runId === row.targetRunId) await handle.cancel('user');
     repository.markStopped(row.delegationId, { reason: 'user' }, now);
     return successfulOutput({ delegationId: row.delegationId, targetName: runtime.getSessionRow(row.targetSessionId)?.title ?? 'session', queuedAhead: 0 });
   }

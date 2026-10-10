@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.unmock('better-sqlite3');
 import { applySchema } from '../../../../../src/host/services/core/database/schema';
 import { SessionDelegationRepository } from '../../../../../src/host/services/core/repositories/SessionDelegationRepository';
-import { getDelegationCandidateSecret, setDelegationToolRuntimeForTests } from '../../../../../src/host/services/delegation/delegationToolRuntime';
+import { getDelegationCandidateSecret } from '../../../../../src/host/services/delegation/delegationToolRuntime';
 import { projectSessionCandidates } from '../../../../../src/host/services/delegation/delegationCandidates';
 import { executeDelegateSession } from '../../../../../src/host/tools/modules/delegation/delegateSession';
 
@@ -14,9 +14,13 @@ const ctx = {
   abortSignal: new AbortController().signal,
 } as never;
 
+const setRuntime = (value: unknown) => {
+  (ctx as unknown as { delegationRuntime?: unknown }).delegationRuntime = value;
+};
+
 afterEach(() => {
   delete process.env.CODE_AGENT_CROSS_SESSION_DELEGATION;
-  setDelegationToolRuntimeForTests(null);
+  setRuntime(undefined);
 });
 
 describe('delegate_session', () => {
@@ -28,10 +32,10 @@ describe('delegate_session', () => {
     const sessions = [{ id: 'target', title: 'Target', workingDirectory: '/workspace/origin', updatedAt: now, sessionType: 'chat' as const, engineKind: 'native' }];
     const projection = projectSessionCandidates(sessions, { originSessionId: 'origin', now, secret: getDelegationCandidateSecret() });
     const notify = vi.fn();
-    setDelegationToolRuntimeForTests({
+    setRuntime({
       getDb: () => db,
       listSessions: () => sessions,
-      getSessionRow: (id) => id === 'target' ? { id, title: 'Target', workingDirectory: '/workspace/origin', sessionType: 'chat', engineKind: 'native', modelConfig: { provider: 'local', model: 'test' } } : null,
+      getSessionRow: (id: string) => id === 'target' ? { id, title: 'Target', workingDirectory: '/workspace/origin', sessionType: 'chat', engineKind: 'native', modelConfig: { provider: 'local', model: 'test' } } : null,
       getWorkspaceRoots: () => ['/workspace'],
       getRuns: () => [],
       getRun: () => undefined,
@@ -50,7 +54,7 @@ describe('delegate_session', () => {
 
   it('candidate set stale is a structured rejection with no write', async () => {
     process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
-    setDelegationToolRuntimeForTests({ listSessions: () => [], now: () => 1 });
+    setRuntime({ listSessions: () => [], now: () => 1 });
     const result = await executeDelegateSession({ action: 'delegate_existing', candidateSetId: 'stale', candidateRef: 'ref', text: 'do it' }, ctx, async () => ({ allow: true }));
     expect(result).toMatchObject({ ok: false, code: 'DELEGATION_REJECTED' });
     expect((result as { error: string }).error).toContain('candidate_set_stale');

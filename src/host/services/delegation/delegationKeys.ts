@@ -9,7 +9,7 @@
 import { createHash } from 'node:crypto';
 
 /** submission_key 前缀：一眼可辨这是委托幂等键，不是 renderer 自选 id。 */
-export const SUBMISSION_KEY_PREFIX = 'sdk_';
+const SUBMISSION_KEY_PREFIX = 'sdk_';
 
 /** submission_key 取 sha256 的前 32 个 hex 字符（128 bit，足够防碰撞）。 */
 const SUBMISSION_KEY_HEX_LENGTH = 32;
@@ -54,7 +54,7 @@ function joined(...fields: string[]): string {
  * 排序键 canonical JSON：对象键按字典序、无空白。用于载荷指纹，保证同载荷
  * （不论字段书写顺序）逐字节同输出。
  */
-export function canonicalJson(value: unknown): string {
+function canonicalJson(value: unknown): string {
   return serializeCanonical(value);
 }
 

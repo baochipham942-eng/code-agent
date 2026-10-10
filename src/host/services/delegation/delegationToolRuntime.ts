@@ -13,7 +13,7 @@ import { evaluateFolderTrust } from '../../security/folderTrustService';
 import type { WorkspaceScope } from '../../../shared/contract/project';
 import { notifyDelegationEnqueued } from './delegationEnqueueSignal';
 
-export interface DelegationRunSummary {
+interface DelegationRunSummary {
   context: { sessionId: string; runId?: string; workspace?: string; workspaceScope?: WorkspaceScope };
   cancel?(reason: 'user'): void | Promise<void>;
 }
@@ -84,19 +84,13 @@ export function workspaceWithinRoots(workspace: string | null | undefined, roots
   });
 }
 
-let override: Partial<DelegationToolRuntime> | null = null;
 const candidateSecret = crypto.randomBytes(32).toString('hex');
 
 export function getDelegationCandidateSecret(): string {
   return candidateSecret;
 }
 
-/** Tests can inject a complete or partial runtime without touching process singletons. */
-export function setDelegationToolRuntimeForTests(value: Partial<DelegationToolRuntime> | null): void {
-  override = value;
-}
-
-export function getDelegationToolRuntime(): DelegationToolRuntime {
+export function getDelegationToolRuntime(context?: unknown): DelegationToolRuntime {
   const registry = getApplicationRunRegistry();
   const runtime: DelegationToolRuntime = {
     getDb: () => getDatabase().getDb(),
@@ -133,5 +127,8 @@ export function getDelegationToolRuntime(): DelegationToolRuntime {
     now: () => Date.now(),
     randomId: (prefix) => `${prefix}${crypto.randomUUID()}`,
   };
-  return { ...runtime, ...(override ?? {}) };
+  const contextRuntime = context && typeof context === 'object'
+    ? (context as { delegationRuntime?: Partial<DelegationToolRuntime> }).delegationRuntime
+    : undefined;
+  return { ...runtime, ...(contextRuntime ?? {}) };
 }

@@ -13,7 +13,6 @@ import {
   getLoadedDeferredToolDefinitions,
   getAllToolDefinitions,
   withDesignCanvasTools,
-  withCrossSessionDelegationTools,
   withoutGenericMediaToolsInDesign,
 } from '../../../tools/dispatch/toolDefinitions';
 import { filterToolDefinitionsByWorkbenchScope } from '../../../tools/workbenchToolScope';
@@ -425,7 +424,11 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
   // 普通会话零污染。（非破坏式去重；全集模式下已含它们时 withDesignCanvasTools 不重复加。）
   {
     const beforeCanvas = tools.length;
-    tools = withDesignCanvasTools(tools, ctx.runtime.executionIntent?.designCanvasActive);
+    tools = withDesignCanvasTools(
+      tools,
+      ctx.runtime.executionIntent?.designCanvasActive,
+      isCrossSessionDelegationEnabled(),
+    );
     // 同时停用通用媒介工具（image_generate/video_generate/image_annotate），funnel 到画布工具——
     // 否则 agent 会误抓通用 video_generate（智谱 cogvideox，无成本卡、余额不足 429）。
     tools = withoutGenericMediaToolsInDesign(tools, ctx.runtime.executionIntent?.designCanvasActive);
@@ -433,8 +436,6 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
       logger.debug(`Tools (design canvas active): ${beforeCanvas} -> ${tools.length} total`);
     }
   }
-
-  tools = withCrossSessionDelegationTools(tools, isCrossSessionDelegationEnabled());
 
   tools = filterToolDefinitionsByWorkbenchScope(tools, ctx.runtime.toolScope);
   // opt-in 严格工具集：strict-toolset skill（edit-role/create-role）激活时，把可见工具集

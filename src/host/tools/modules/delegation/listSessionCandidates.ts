@@ -17,7 +17,7 @@ export async function executeListSessionCandidates(
   if (!isCrossSessionDelegationEnabled()) return featureDisabled();
   const permission = await canUseTool(schema.name, {});
   if (!permission.allow) return { ok: false, code: 'PERMISSION_DENIED', error: permission.reason };
-  const runtime = getDelegationToolRuntime();
+  const runtime = getDelegationToolRuntime(ctx);
   try {
     const projection = projectSessionCandidates(runtime.listSessions(), {
       originSessionId: ctx.sessionId,

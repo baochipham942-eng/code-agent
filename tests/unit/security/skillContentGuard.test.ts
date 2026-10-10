@@ -185,8 +185,10 @@ describe('scanSkillContent — shell 语义归一化', () => {
     expect(scanSkillContent('部署：tar czf - dist | ssh user@host "tar xzf -"').verdict).toBe('pass');
   });
 
-  it('合法的具体路径删除不误伤（rm -rf ./dist）', () => {
-    expect(scanSkillContent('```\nrm -rf ./dist\n```').verdict).toBe('pass');
+  it('合法的具体路径删除不升到 block（rm -rf ./dist 归 caution）', () => {
+    const result = scanSkillContent('```\nrm -rf ./dist\n```');
+    expect(result.verdict).toBe('caution');
+    expect(result.findings.every((finding) => finding.ruleId)).toBe(true);
   });
 });
 

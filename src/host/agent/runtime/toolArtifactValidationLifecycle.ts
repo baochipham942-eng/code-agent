@@ -13,6 +13,7 @@ import { createArtifactRepairSpec, formatArtifactRepairSpecForPrompt } from './a
 import { activateArtifactRepairAdmissionStop } from './artifactRepairAdmission';
 import { isSameArtifactRepairPath } from './artifactRepairGuard';
 import { validateGameArtifact, type GameArtifactValidationOptions } from './gameArtifactValidator';
+import { maybeRunWebDeliverablePreviewRepair } from './webDeliverablePreviewRepair';
 import type { ContextAssembly } from './contextAssembly';
 import type { RunFinalizer } from './runFinalizer';
 import type { RuntimeContext } from './runtimeContext';
@@ -75,7 +76,13 @@ export async function handleModifiedArtifactValidation({
       ? filePath
       : resolve(ctx.workingDirectory || process.cwd(), filePath);
     // 设计草稿目录下的产物豁免游戏校验（见上方 isDesignDraftArtifact 说明）。
-    if (isDesignDraftArtifact(absolutePath)) return;
+    if (isDesignDraftArtifact(absolutePath)) {
+      // 设计草稿同样是用户可见的网页交付物，只走确定性预览体检（无游戏探针）。
+      await maybeRunWebDeliverablePreviewRepair({
+        ctx, contextAssembly, runFinalizer, toolCall, absolutePath, toolResult,
+      });
+      return;
+    }
     // 验证分级：仅 goal 验收走完整游戏契约 + 运行时/视觉冒烟；普通聊天里随手生成的交互产物
     // 走轻校验，避免"能跑的休闲小游戏"被内部契约卡成"验收失败"。
     const fullContract = Boolean(ctx.goalMode?.isPending());
@@ -101,6 +108,10 @@ export async function handleModifiedArtifactValidation({
       // 仅对"确实无需验证"(非 append 中途、非 repair)的产物生效,不影响游戏 artifact 的分阶段验收。
       if (!effectiveProbe.shouldValidate && !isAppendTool(toolCall.name) && !ctx.artifact.repairGuard) {
         ctx.artifact.setValidationPassed(absolutePath);
+        // 非游戏网页交付物：确定性预览体检 + 至多一次自动修复（无 vision，检查失败不致命）。
+        await maybeRunWebDeliverablePreviewRepair({
+          ctx, contextAssembly, runFinalizer, toolCall, absolutePath, toolResult,
+        });
       }
       return;
     }

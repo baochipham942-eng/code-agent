@@ -264,7 +264,7 @@ export function withDesignCanvasTools(
 
 /** Injects K1D tools only for an explicitly enabled turn; they are absent from
  * core/deferred metadata so the default model-visible tool bytes stay stable. */
-export function withCrossSessionDelegationTools(
+function withCrossSessionDelegationTools(
   tools: ToolDefinition[],
   enabled: boolean,
 ): ToolDefinition[] {

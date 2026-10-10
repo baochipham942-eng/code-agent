@@ -35,12 +35,13 @@ import {
 import { isBashToolName, normalizeToolName } from './toolNames';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { isPathWithinRoot } from '../runtime/workspaceScope';
-import { connectorExternalWriteReason, isConnectorToolName } from '../../shared/contract/workbenchTools';
+import { connectorWriteAskClassification } from './connectorTokenWrite';
 import { isProtectedWritePath, isSensitiveCredentialPath } from '../sandbox/sensitivePaths';
 import { resolvedRmCriticalTarget } from '../security/recursiveRmPathSafety';
 import { anchoredAllowCommandWords } from '../security/commandAllowProof';
 import type { JevSystemOneCall } from '../../shared/constants/jevQuestions';
 import { classifyByJev, isPermissionLlmClassifierEnabled } from './permissionClassifierJev';
+import { createProductionJevCall } from '../model/jevFeatures';
 
 const logger = createLogger('PermissionClassifier');
 
@@ -97,16 +98,13 @@ function classificationHostReason(result: ClassificationResult, toolName: string
 }
 
 export interface ClassifierConfig {
-  /** Enable LLM-based classification（默认读 CODE_AGENT_PERMISSION_LLM_CLASSIFIER=1，否则 false） */
+  /** Enable LLM-based classification（默认读 CODE_AGENT_PERMISSION_LLM_CLASSIFIER，N-JEV-DEFAULT-ON 起默认开） */
   enableLlm?: boolean;
   /** Confidence threshold for auto-approve (default: 0.8) */
   confidenceThreshold?: number;
   /** Cache TTL in ms (default: 5 min) */
   cacheTtlMs?: number;
-  /**
-   * Jev systemOne 注入点（测试/回放用替身）。生产缺省走 typesafeProvider.systemOne；
-   * 别在这里 mock 网络——桩的是函数，不是 fetch。
-   */
+  /** Jev systemOne 注入点（测试/回放用替身）。生产缺省走 createProductionJevCall；别 mock 网络——桩的是函数。 */
   jevSystemOne?: JevSystemOneCall;
 }
 
@@ -573,7 +571,7 @@ export class PermissionClassifier {
       confidenceThreshold: config?.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD,
       cacheTtlMs: config?.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS,
     };
-    this.jevSystemOne = config?.jevSystemOne ?? ((state, questions, options) => import('../model/providers/typesafeProvider').then((m) => m.systemOne(state, questions, options)));
+    this.jevSystemOne = config?.jevSystemOne ?? createProductionJevCall('permissionClassifier');
   }
 
   /**
@@ -665,27 +663,11 @@ export class PermissionClassifier {
       return sensitiveRead;
     }
 
-    // C1: 连接器写回会在外部系统产生真实副作用，必须确定性逐次确认。
-    // 工具归属来自连接器描述符，写权限来自工具 schema 传入的 context，避免按名字猜动作。
-    if (context.permissionLevel === 'write' && isConnectorToolName(toolName)) {
-      const reason = connectorExternalWriteReason(toolName);
-      if (reason) {
-        return {
-          decision: 'ask',
-          reason,
-          confidence: 1.0,
-          cached: false,
-          traceStep: createTraceStep(
-            'permission_classifier',
-            'C1: connector_external_write',
-            'ask',
-            reason,
-            startTime,
-          ),
-          trustBoundary: true,
-        };
-      }
-    }
+    // C1/C1b: 连接器写回与 http_request 令牌写都以用户已连接应用的身份在外部系统
+    // 产生真实副作用，必须确定性逐次确认（判据与文案见 connectorTokenWrite.ts，
+    // 先于一切 approve 规则与 LLM 档）。
+    const connectorWriteAsk = connectorWriteAskClassification(toolName, args, context.permissionLevel, startTime);
+    if (connectorWriteAsk) return connectorWriteAsk;
 
     // R1: 只读工具 → approve (no traceStep on allow)
     if (READ_ONLY_TOOLS.has(toolName)) {

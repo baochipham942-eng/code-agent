@@ -21,6 +21,7 @@ const AgentDomainRequestSchema = z.object({
     'pause',
     'permissionResponse',
     'resume',
+    'runInteractiveCommand',
     'send',
     'sendMemberInput',
     'setPermissionMode',

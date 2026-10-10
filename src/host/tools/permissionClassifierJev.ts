@@ -33,6 +33,7 @@ import {
   type JevSystemOneCall,
 } from '../../shared/constants/jevQuestions';
 import { isBashToolName, normalizeToolName } from './toolNames';
+import { isJevFeatureOn } from '../model/jevFeatures';
 import type { ClassificationContext, ClassificationResult } from './permissionClassifier';
 
 const logger = createLogger('PermissionClassifierJev');
@@ -56,12 +57,12 @@ function isJevPermissionTool(toolName: string): boolean {
 }
 
 /**
- * Jev 权限分类开关（默认关，与 CODEX_SANDBOX_ENABLED / CODE_AGENT_CLOUD_PROMPTS
- * 同一惯例：能力默认关，显式开启）。开启后仅影响「规则判不了→ask」那一桶——
- * 数据出境说明见 docs/shipnotes/2026-08-30-ship-note-cli-permission-mode-auto.md 追记节。
+ * Jev 权限分类开关（默认开，'0'/'false' 显式关——判定单源见 model/jevFeatures.ts，
+ * N-JEV-DEFAULT-ON）。开启后仅影响「规则判不了→ask」那一桶——数据出境说明见
+ * docs/shipnotes/2026-08-30-ship-note-cli-permission-mode-auto.md 追记节。
  */
 export function isPermissionLlmClassifierEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.CODE_AGENT_PERMISSION_LLM_CLASSIFIER === '1';
+  return isJevFeatureOn('permissionClassifier', env);
 }
 
 /**
@@ -112,8 +113,6 @@ function buildJevState(toolName: string, args: Record<string, unknown>, context:
         },
   };
 }
-
-let jevKeyMissingWarned = false;
 
 /** 只按路径形 key 定向提取（path/file/dir/image/output/template/target/source），
  * 正文 key（content/data/subtitle…）不进文件系统解析——长正文含 '/' 时逐段
@@ -203,15 +202,11 @@ function hitsBashPreJevVeto(command: string, workingDirectory: string): boolean 
   return paths.some((token) => !isWithinAny(resolveBashPathToken(token, workingDirectory), [workspace]));
 }
 
-/** Jev 不可用只 warn 一行、不抛：key 缺失属配置错误只报一次，其余失败逐次留痕。 */
+/** Jev 不可用只留痕不抛：无 key 的降级计数与单次 warn 已在 jevFeatures 统一
+ * （N-JEV-DEFAULT-ON），这里静默回落 ask；其余失败逐次留痕。 */
 function warnJevUnavailable(error: unknown): void {
   const code = (error as { code?: string } | null | undefined)?.code;
-  if (code === 'TYPESAFE_KEY_MISSING') {
-    if (jevKeyMissingWarned) return;
-    jevKeyMissingWarned = true;
-    logger.warn('CODE_AGENT_PERMISSION_LLM_CLASSIFIER 已开启但 TYPESAFE_API_KEY 缺失，Jev 分类不生效（保持 ask）');
-    return;
-  }
+  if (code === 'TYPESAFE_KEY_MISSING') return;
   const detail = error instanceof Error ? error.message : String(error);
   logger.warn(`Jev 分类失败，回退 ask: ${detail}`);
 }

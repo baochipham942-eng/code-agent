@@ -869,7 +869,7 @@ export function registerSettingsHandlers(
     }
     // bypassPermissions 需要用户审批
     const approved = mode === 'bypassPermissions';
-    const result = getPermissionModeManager().setMode(mode as 'default' | 'readOnly' | 'acceptEdits' | 'dontAsk' | 'bypassPermissions' | 'plan' | 'delegate', approved);
+    const result = getPermissionModeManager().setMode(mode as 'default' | 'readOnly' | 'acceptEdits' | 'dontAsk' | 'bypassPermissions' | 'plan' | 'delegate', approved, 'user-ui');
 
     // 持久化权限模式到 config（重启/重装后恢复）——直接写 settings 并广播，
     // 不经任何 pending 中转 state（单一真源纪律）。

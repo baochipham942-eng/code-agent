@@ -51,7 +51,8 @@ export type TraceEventType =
   | 'plan_exit_fallback_not_applicable'
   | 'plan_exit_fallback_synthesized'
   | 'failed_round_guard'
-  | 'jev_warden';
+  | 'jev_warden'
+  | 'resource_scope_mismatch';
 
 export type RequestManifestMessageRef =
   | { kind: 'ledger_message'; messageId: string }
@@ -258,6 +259,16 @@ export interface TraceEventDataMap {
   };
   /** N-JEV-WARDEN-MOCK：JevWarden 判面活动（仅开关 CODE_AGENT_JEV_WARDEN=1 时产生）。 */
   jev_warden: JevWardenTraceData;
+  /**
+   * ADR-073 K3：静态资源声明解析出的访问域盖不住运行时写锁域。锁照拿（分歧的
+   * 串行化就是锁等待本身），这里只留痕。staticDomains 是短描述串，不含文件内容。
+   */
+  resource_scope_mismatch: {
+    toolCallId: string | null;
+    toolName: string;
+    staticDomains: string[];
+    runtimeLockKey: string;
+  };
 }
 
 type TraceEventFor<T extends TraceEventType> = {

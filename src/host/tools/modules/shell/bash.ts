@@ -41,6 +41,7 @@ import { spillToolResultArchive, buildSpillNotice } from '../../../utils/toolRes
 import { checkCommandPolicy } from './commandPolicy';
 import { rewriteBashCommand } from './rtkRewriter';
 import { getPermissionModeManager } from '../../../permissions/modes';
+import { resolveEffectiveSessionMode } from '../../../permissions/runPolicySnapshot';
 import { getSandboxManager, resolveSandboxNetworkPolicy, wrapCommandForSandbox } from '../../../sandbox';
 import {
   resolveOsSandboxDecision,
@@ -291,7 +292,8 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
     const fenceRoot = writeFence
       ? containWriteFenceWorkspaceRoot(ctx.writeFenceWorkspaceRoot)
       : undefined;
-    const permissionMode = permissionModeManager.getModeForSession(ctx.sessionId) as OsSandboxPermissionMode;
+    // N-PERM-POLICYVERSION E6：run 有效档（外部放宽冻结；无快照时与 getModeForSession 一致）
+    const permissionMode = resolveEffectiveSessionMode(ctx.sessionId) as OsSandboxPermissionMode;
     let sandboxDecision = resolveOsSandboxDecision({
       command: normalizedCommand,
       permissionMode,

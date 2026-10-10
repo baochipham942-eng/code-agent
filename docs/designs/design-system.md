@@ -288,7 +288,7 @@ React 侧**当前唯一真源是 NeoBrandMark 内联 SVG**,不接资产文件的
 ## §5 守卫机制(machine-checkable 的一半)
 
 `scripts/check-design-system.mjs` 是静态门,本文档是它注释里指的"契约"。
-**十条规则**(扫描 `src/renderer`,测试文件除外;第 10 条额外扫 `packages/internal/*/src/renderer`):
+**十一条规则**(扫描 `src/renderer`,测试文件除外;第 10 条额外扫 `packages/internal/*/src/renderer`):
 
 1. `hardcoded-hex` — 禁硬编码 `#rrggbb`,走 token。
 2. `bare-button` — 禁裸 `<button>`,走 `primitives/` 的 Button/IconButton。
@@ -309,6 +309,10 @@ React 侧**当前唯一真源是 NeoBrandMark 内联 SVG**,不接资产文件的
    给表头上底色治不到(FB-162,`EvalCaseListTab.tsx` #1844)。内边距放进子块;基线 0 且 `--update`
    拒绝把这条抬高(脚本里挡住,不同于其他棘轮项);`pt-0`/`scroll-pt-*` 不算;`ds-allow:sticky` 豁免。
    上限:祖先按同文件 JSX 缩进近似,className 拆到 `cn()` 多行或滚动容器在父组件时看不见,靠 review。
+11. `undefined-css-var:<theme>` — 禁引用但未定义的 CSS custom property,按 `dark` / `light` /
+   `high-contrast-dark` / `high-contrast-light` 四套主题分别报告。主题文件里的定义只对本主题生效,
+   非主题 CSS 的 `--x:`、JS inline style 的 `'--x':` / `"--x":` 与 `setProperty('--x')` 对四套主题共享;
+   `var(--x, ...)` 与同线 `ds-allow:var` 豁免。未定义引用会把文件、行号和 token 写进扫描结果。
 
 另有若干**硬断言**(非棘轮,任何回退直接红):
 
@@ -325,7 +329,7 @@ React 侧**当前唯一真源是 NeoBrandMark 内联 SVG**,不接资产文件的
 
 **豁免写法**(必须显式、必须带理由):
 
-- 行内: `// ds-allow:<kind> 理由`(kind = `viz`/`button`/`modal`/`radius`/`z`/`important`/`primitive`/`brand`/`color`/`sticky`);裸 `ds-allow` 放行任意规则,是给特殊场景留的口子,慎用。
+- 行内: `// ds-allow:<kind> 理由`(kind = `viz`/`button`/`modal`/`radius`/`z`/`important`/`primitive`/`brand`/`color`/`sticky`/`var`);裸 `ds-allow` 放行任意规则,是给特殊场景留的口子,慎用。
 - 区块: `// ds-allow:start 理由` … `// ds-allow:end` 之间整段跳过(品牌贴图调色板、品牌图标字面色用这个)。
 - 自动豁免: 数据可视化目录(脚本内 `VIZ_EXEMPT` 清单)与模板字符串内 hex(注入 iframe 的自包含 HTML,CSS 变量级联不进去)。
 

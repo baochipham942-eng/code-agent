@@ -233,4 +233,70 @@ describe('AutomationReviewInbox', () => {
     expect(screen.queryByTestId('parked-approve')).toBeNull();
     expect(screen.queryByTestId('parked-reject')).toBeNull();
   });
+
+  // 三档分组（N-CRON-INBOX-URGENCY-TIER）
+  it('must_today 置顶带角标，fyi 与无档位记录归入 fyi 档', async () => {
+    listPendingReview.mockResolvedValue([
+      makeRecord({ id: 'auto-fyi', title: '天气速览', config: { pendingReview: { resultSessionId: 'r-fyi', at: 1700000000000, urgency: 'fyi' } } }),
+      makeRecord({ id: 'auto-must', title: '发票今天到期', config: { pendingReview: { resultSessionId: 'r-must', at: 1700000000000, urgency: 'must_today' } } }),
+      makeRecord({ id: 'auto-none', title: '老记录无档位', config: { pendingReview: { resultSessionId: 'r-none', at: 1700000000000 } } }),
+    ]);
+    render(<AutomationReviewInbox />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('automation-urgency-section-must_today')).toBeTruthy();
+    });
+    // 空档（can_wait）不渲染
+    expect(screen.queryByTestId('automation-urgency-section-can_wait')).toBeNull();
+    expect(screen.getByTestId('automation-urgency-section-fyi')).toBeTruthy();
+
+    // must_today 置顶第一，行带角标；fyi 与无档位两条都在 fyi 档
+    const sections = screen.getAllByTestId(/^automation-urgency-section-/);
+    expect(sections.map((node) => node.getAttribute('data-testid'))).toEqual([
+      'automation-urgency-section-must_today',
+      'automation-urgency-section-fyi',
+    ]);
+    const mustSection = screen.getByTestId('automation-urgency-section-must_today');
+    expect(mustSection.contains(screen.getByText('发票今天到期'))).toBe(true);
+    expect(mustSection.contains(screen.getByText('天气速览'))).toBe(false);
+    expect(screen.getAllByTestId('automation-urgency-badge')).toHaveLength(1);
+    expect(screen.getByTestId('automation-urgency-badge').textContent).toBe('今日必办');
+    const fyiSection = screen.getByTestId('automation-urgency-section-fyi');
+    expect(fyiSection.contains(screen.getByText('天气速览'))).toBe(true);
+    expect(fyiSection.contains(screen.getByText('老记录无档位'))).toBe(true);
+    // 每行保留既有按钮
+    expect(screen.getAllByTestId('automation-review-item')).toHaveLength(3);
+    expect(screen.getAllByTestId('automation-review-done')).toHaveLength(3);
+  });
+
+  it('can_wait 有记录时渲染在 must_today 之后', async () => {
+    listPendingReview.mockResolvedValue([
+      makeRecord({ id: 'auto-wait', title: '周报汇总', config: { pendingReview: { resultSessionId: 'r-wait', at: 1700000000000, urgency: 'can_wait' } } }),
+      makeRecord({ id: 'auto-must', title: '发票今天到期', config: { pendingReview: { resultSessionId: 'r-must', at: 1700000000000, urgency: 'must_today' } } }),
+    ]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('automation-urgency-section-can_wait')).toBeTruthy();
+    });
+    expect(screen.getAllByTestId(/^automation-urgency-section-/).map((node) => node.getAttribute('data-testid'))).toEqual([
+      'automation-urgency-section-must_today',
+      'automation-urgency-section-can_wait',
+    ]);
+  });
+
+  it('头部行乱值的记录归 fyi 并在行内保留原文', async () => {
+    listPendingReview.mockResolvedValue([
+      makeRecord({
+        id: 'auto-garbled',
+        title: '模型写坏头部',
+        config: { pendingReview: { resultSessionId: 'r-garbled', at: 1700000000000, urgency: 'fyi', urgencyRaw: 'urgency: maybe' } },
+      }),
+    ]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('automation-urgency-raw')).toBeTruthy();
+    });
+    expect(screen.queryByTestId('automation-urgency-section-must_today')).toBeNull();
+    expect(screen.getByTestId('automation-urgency-raw').textContent).toBe('原文：urgency: maybe');
+  });
 });

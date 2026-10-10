@@ -424,14 +424,12 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
   // 普通会话零污染。（非破坏式去重；全集模式下已含它们时 withDesignCanvasTools 不重复加。）
   {
     const beforeCanvas = tools.length;
-    tools = withDesignCanvasTools(tools, ctx.runtime.executionIntent?.designCanvasActive,
-      isCrossSessionDelegationEnabled());
+    tools = withDesignCanvasTools(tools, ctx.runtime.executionIntent?.designCanvasActive, isCrossSessionDelegationEnabled());
     // 同时停用通用媒介工具（image_generate/video_generate/image_annotate），funnel 到画布工具——
     // 否则 agent 会误抓通用 video_generate（智谱 cogvideox，无成本卡、余额不足 429）。
     tools = withoutGenericMediaToolsInDesign(tools, ctx.runtime.executionIntent?.designCanvasActive);
-    if (tools.length !== beforeCanvas) {
+    if (tools.length !== beforeCanvas)
       logger.debug(`Tools (design canvas active): ${beforeCanvas} -> ${tools.length} total`);
-    }
   }
 
   tools = filterToolDefinitionsByWorkbenchScope(tools, ctx.runtime.toolScope);

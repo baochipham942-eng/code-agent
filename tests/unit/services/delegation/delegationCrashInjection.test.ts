@@ -8,7 +8,7 @@
 //      行不删、委托行仍 active；解停只经复核后的 sendNow（recheck 先于抢占）。
 // ============================================================================
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
@@ -166,8 +166,7 @@ function makeDrain(input: {
 }): ReturnType<typeof createWebQueuedInputDrain> {
   const { harness, calls } = input;
   const hooks = createDelegationDrainHooks(harness.deps);
-  let handle: ReturnType<typeof createWebQueuedInputDrain>;
-  handle = createWebQueuedInputDrain({
+  const handle = createWebQueuedInputDrain({
     getRepository: () => new QueuedInputRepository(harness.db),
     hasActiveRun: () => false,
     runEnvelope: async (envelope, _response, onActivated, options) => {

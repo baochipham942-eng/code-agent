@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 import * as lark from '@larksuiteoapi/node-sdk';
 import { FeishuChannel } from '../../../src/host/channels/feishu/feishuChannel';
 
@@ -27,6 +27,7 @@ const loggerSpies = vi.hoisted(() => ({ info: vi.fn() }));
 const wsCaptures = vi.hoisted(() => ({
   ctor: [] as WsCtorOpts[],
   start: [] as WsStartOpts[],
+  clients: [] as Array<{ close: Mock }>,
 }));
 
 vi.mock('../../../src/host/services/infra/logger', async () => {
@@ -57,6 +58,7 @@ vi.mock('@larksuiteoapi/node-sdk', async () => {
     close = vi.fn();
     constructor(opts: WsCtorOpts) {
       wsCaptures.ctor.push(opts);
+      wsCaptures.clients.push(this);
     }
     start = vi.fn((opts: WsStartOpts) => {
       wsCaptures.start.push(opts);
@@ -112,6 +114,7 @@ afterEach(async () => {
   }
   wsCaptures.ctor.length = 0;
   wsCaptures.start.length = 0;
+  wsCaptures.clients.length = 0;
   loggerSpies.info.mockClear();
   delete process.env.NEO_FEISHU_WS_DEBUG;
 });
@@ -133,8 +136,11 @@ describe('Feishu WebSocket status', () => {
     expect(errors).toHaveLength(1);
     expect(errors[0]?.message).toMatch(/handshake timeout/);
 
+    // r1（PR 评审）：失败的 connect 不得留下无人持有的活连接。超时后必须强关
+    // WSClient（SDK autoReconnect 不再有任何归属），晚到的 onReady 不得复活账号。
+    expect(wsCaptures.clients.at(-1)?.close).toHaveBeenCalledWith({ force: true });
     latestClient().ctor.onReady?.();
-    expect(channel.status).toBe('connected');
+    expect(channel.status).toBe('error');
   });
 
   it('④b records onError once with the SDK message', async () => {
@@ -148,6 +154,8 @@ describe('Feishu WebSocket status', () => {
     const errors = events.filter((event) => event.status === 'error');
     expect(errors).toHaveLength(1);
     expect(errors[0]?.message).toContain('boom');
+    // r1：onError 结束的 connect 同样不得留下活连接。
+    expect(wsCaptures.clients.at(-1)?.close).toHaveBeenCalledWith({ force: true });
   });
 
   it('④c follows onReady, onReconnecting, and onReconnected', async () => {
@@ -184,6 +192,8 @@ describe('Feishu WebSocket status', () => {
     expect(channel.status).toBe('disconnected');
     expect(await pending).toBeInstanceOf(Error);
     expect(channel.status).toBe('disconnected');
+    // r1：disconnect 已收走的会话，connect 失败路径不得二次 close。
+    expect(wsCaptures.clients.at(-1)?.close).toHaveBeenCalledTimes(1);
   });
 
   it('③ forwards SDK logs through Neo logger with the [lark-ws] prefix', async () => {

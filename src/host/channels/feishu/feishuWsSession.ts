@@ -4,7 +4,7 @@ import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('FeishuChannel');
 
-/** First handshake wait. Rejects connect(); the SDK keeps its own auto-reconnect. */
+/** First handshake wait. Rejects connect(); the failed client is force-closed, never left auto-reconnecting. */
 const FEISHU_WS_HANDSHAKE_TIMEOUT_MS = 30_000;
 const LARK_WS_LOG_PREFIX = '[lark-ws]';
 
@@ -24,6 +24,11 @@ interface FeishuWsCredentials {
 }
 
 export interface FeishuWsSession {
+  /**
+   * Settles on the SDK onReady callback. Rejects on timeout, onError, or a start()
+   * failure — and on rejection the still-owned client is detached and force-closed,
+   * so a failed connect never leaves an ownerless socket auto-reconnecting.
+   */
   done: Promise<void>;
   /** Null the account's client first, then close the socket. Does not reject the handshake. */
   detachAndClose(): void;
@@ -158,14 +163,26 @@ export function openFeishuWebSocket(input: OpenFeishuWebSocketInput): FeishuWsSe
       settled = true;
       clearTimeout(timer);
       cancelHandshake = null;
-      if (kind === 'ready') resolve();
-      else reject(error ?? new Error('WebSocket handshake timeout'));
+      if (kind === 'ready') {
+        resolve();
+        return;
+      }
+      // 没握上手的客户端不能留给 SDK 自行 autoReconnect：connect 的调用方
+      // （channelManager.connectAccount）会把失败的 channel 丢弃，无人持有的
+      // 长连接会在稍后 onReady 时把账号翻成 connected 并继续收消息。
+      // disconnect() 已收走（detach 过）的会话不再二次 close。
+      if (current()) {
+        input.detach();
+        closeStarted();
+      }
+      reject(error ?? new Error('WebSocket handshake timeout'));
     }
     cancelHandshake = (error: Error) => finish('error', error);
     markReady = () => finish('ready');
     markFailed = (error: Error) => finish('error', error);
 
-    // Timeout rejects this promise only. A later onReady still reports connected.
+    // Timeout/onError/start 失败都会经由 finish 摘除并强关仍归频道持有的客户端；
+    // 之后晚到的 onReady 因已 detach 而失效。
     void started.start(startParams).catch((error: unknown) => {
       if (!current()) return;
       const err = error instanceof Error ? error : new Error(String(error));
@@ -174,16 +191,20 @@ export function openFeishuWebSocket(input: OpenFeishuWebSocketInput): FeishuWsSe
     });
   });
 
+  function closeStarted(): void {
+    try {
+      started.close({ force: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn(`${input.channelName} WebSocket close failed`, { error: message });
+    }
+  }
+
   return {
     done,
     detachAndClose() {
       input.detach();
-      try {
-        started.close({ force: true });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        logger.warn(`${input.channelName} WebSocket close failed`, { error: message });
-      }
+      closeStarted();
     },
     cancel(error: Error) {
       cancelHandshake?.(error);

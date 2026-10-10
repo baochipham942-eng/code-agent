@@ -12,6 +12,7 @@ import * as path from 'path';
 import { createLogger } from '../../services/infra/logger';
 import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
 import { TOOL_DEPENDENCY_HINTS } from '../modules/_helpers/dependencyHints';
+import { getGuiAgentVolcengineApiKey } from '../modules/network/toolAvailability';
 
 const execAsync = promisify(exec);
 const logger = createLogger('GUIAgent', { lane: 'computer-use' });
@@ -321,8 +322,9 @@ IMPORTANT:
     const maxSteps = (params.max_steps as number) || 25;
     const timeoutMs = (params.timeout_ms as number) || 120_000;
 
-    // 获取火山引擎 API Key（非标准 ModelProvider，直接从环境变量读取）
-    const apiKey = process.env.VOLCENGINE_API_KEY || process.env.DOUBAO_API_KEY;
+    // 获取火山引擎 API Key（非标准 ModelProvider，直接从环境变量读取；
+    // 查找与工具表可用性判定同源，见 toolAvailability.ts）
+    const apiKey = getGuiAgentVolcengineApiKey();
 
     if (!apiKey) {
       return {

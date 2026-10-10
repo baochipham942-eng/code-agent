@@ -74,6 +74,7 @@ function makeFakePage(brokenImageSrc: string): Page {
         visibleElements: 3,
         horizontalOverflow: false,
         mainElement: { present: true, selector: 'main' },
+        buttons: { declared: 0, visible: 0 },
         brokenImages: [
           {
             src: brokenImageSrc,

@@ -82,7 +82,7 @@ import { resolveServerConfigSecrets } from './mcpSecretResolver';
 import { processBatched } from './mcpSearchUtils';
 import { discoverLazyMcpServersForSearch, type McpLazySearchClient } from './mcpLazySearch';
 import { McpIdleReaper, type McpIdleReapingOptions } from './mcpIdleReaper';
-import { acquireMcpToolClient, isReapableStdioServer, ServerTeardownGate, teardownOwnedMcpServer } from './mcpReapPolicy';
+import { acquireMcpToolClient, isReapableStdioServer, notConnected, ServerTeardownGate, teardownOwnedMcpServer } from './mcpReapPolicy';
 import {
   getDefaultMCPServers as _getDefaultMCPServers,
   DEFAULT_MCP_SERVERS as _DEFAULT_MCP_SERVERS,
@@ -1067,7 +1067,7 @@ export class MCPClient extends EventEmitter {
     });
     if (acquired.failure) return acquired.failure;
     const client = acquired.client;
-    if (!client) return { toolCallId, success: false, error: `MCP server ${serverName} not connected` };
+    if (!client) return notConnected(toolCallId, serverName);
 
     const startTime = Date.now();
 

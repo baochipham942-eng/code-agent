@@ -17,6 +17,7 @@ import type {
 } from '@shared/contract/skillRepository';
 import { BUILTIN_REPO_ID } from '@shared/contract/skillRepository';
 import type { SkillRegistryListItem } from '@shared/contract/skillRegistry';
+import type { SkillCautionConfirmationRequired } from '@shared/contract/skillInstallCaution';
 import {
   findRecommendedRepository,
   getBuiltinSkillCatalogPayload,
@@ -44,6 +45,9 @@ import type { InstalledSkill, ProjectOverrideValue } from './SkillsInstalledTab'
 import { SkillsDiscoverTab } from './SkillsDiscoverTab';
 import type { SkillsMPSearchResult } from './SkillsSettingsCards';
 import { SkillInstallPreviewModal, mapRepoInstallError } from './SkillInstallPreviewModal';
+import { SkillCautionDisclosureModal } from './SkillCautionDisclosureModal';
+import { getSkillCautionSourceLabel, useSkillCautionFlow } from './useSkillCautionFlow';
+import { isSkillCautionConfirmationRequired } from '../../../../services/skillInstallCaution';
 import { HubTabHeader } from '../../capabilityHub/HubTabHeader';
 
 // 分组/摘要工具函数集中在 SkillsInstalledTab，测试也从那里引用
@@ -69,6 +73,16 @@ const logger = createLogger('SkillsSettings');
 export const SkillsSettings: React.FC = () => {
   const { t } = useI18n();
   const skillsText = t.settings.skills.main;
+  const cautionText = t.settings.skills.caution;
+  // caution 披露流（registry 装完知悉 / 本地 ZIP 装前确认），弹窗本体在页尾挂一份
+  const {
+    cautionDisclosure,
+    cautionBusy,
+    acknowledgeSkillCaution,
+    requestSkillCautionConfirmation,
+    closeSkillCaution,
+    confirmSkillCaution,
+  } = useSkillCautionFlow();
   const settingsCapabilityFocus = useAppStore((state) => state.settingsCapabilityFocus);
   const clearSettingsCapabilityFocus = useAppStore((state) => state.clearSettingsCapabilityFocus);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
@@ -323,6 +337,14 @@ export const SkillsSettings: React.FC = () => {
           type: 'success',
           text: `${item.entry.displayName || item.entry.name}${skillsText.installSuccessSuffix}`,
         });
+        // official-registry 的 caution 档：host 已放行装完，装后披露（仅知悉）
+        if (result.cautionHits && result.cautionHits.length > 0) {
+          acknowledgeSkillCaution({
+            pluginName: item.entry.displayName || item.entry.name,
+            sourceLabel: getSkillCautionSourceLabel('official-registry', cautionText.sourceLabels),
+            hits: result.cautionHits,
+          });
+        }
         await loadData();
       } else {
         setMessage({ type: 'error', text: result?.error || skillsText.installFailed });
@@ -464,6 +486,47 @@ export const SkillsSettings: React.FC = () => {
     return text;
   };
 
+  // ZIP 装成功的收尾（首装与 caution 确认后的重发共用）：挂当前会话 + 成功提示 + 刷新
+  const completeZipInstall = async (result: { skillName?: string }) => {
+    let text = `${skillsText.zipInstallSuccessPrefix}${result.skillName || ''}`;
+    if (currentSessionId && result.skillName) {
+      const mounted = await mountInstalledSkill(currentSessionId, result.skillName);
+      if (mounted) text += skillsText.zipInstallMountedSuffix;
+    }
+    setMessage({ type: 'success', text });
+    setActiveTab('installed');
+    await loadData();
+  };
+
+  // 本地 ZIP 的 caution 确认流：确认 = 携 host 下发的 token 原样重发（其余 payload 不变）；
+  // 内容变化导致二次 confirmation-required 时，用新命中/新 token 重开同一弹窗
+  const openZipCautionConfirmation = (
+    required: SkillCautionConfirmationRequired,
+    payload: { zipPath?: string; archiveBase64?: string },
+  ) => {
+    requestSkillCautionConfirmation({
+      pluginName: required.pluginSpec,
+      sourceLabel: getSkillCautionSourceLabel(required.sourceTrust, cautionText.sourceLabels),
+      hits: required.cautionHits,
+      onConfirm: async () => {
+        const retry = await installLocalSkillZip({
+          ...payload,
+          cautionConfirmationToken: required.confirmationToken,
+        });
+        if (isSkillCautionConfirmationRequired(retry)) {
+          openZipCautionConfirmation(retry, payload);
+          return false;
+        }
+        if (!retry.success) {
+          setMessage({ type: 'error', text: describeZipInstallError(retry.error) });
+          return true;
+        }
+        await completeZipInstall(retry);
+        return true;
+      },
+    });
+  };
+
   const handleInstallLocalZip = async (file?: File | null) => {
     setActionLoading('install-local-zip');
     setMessage(null);
@@ -484,18 +547,16 @@ export const SkillsSettings: React.FC = () => {
         payload = { zipPath: selectedPath };
       }
       const result = await installLocalSkillZip(payload);
+      // 未签名来源命中 caution：host 未落盘，弹确认面；取消即不装
+      if (isSkillCautionConfirmationRequired(result)) {
+        openZipCautionConfirmation(result, payload);
+        return;
+      }
       if (!result.success) {
         setMessage({ type: 'error', text: describeZipInstallError(result.error) });
         return;
       }
-      let text = `${skillsText.zipInstallSuccessPrefix}${result.skillName || ''}`;
-      if (currentSessionId && result.skillName) {
-        const mounted = await mountInstalledSkill(currentSessionId, result.skillName);
-        if (mounted) text += skillsText.zipInstallMountedSuffix;
-      }
-      setMessage({ type: 'success', text });
-      setActiveTab('installed');
-      await loadData();
+      await completeZipInstall(result);
     } catch (err) {
       logger.error('Failed to install local skill zip', err);
       setMessage({
@@ -896,6 +957,19 @@ export const SkillsSettings: React.FC = () => {
             setActiveTab('installed');
             await loadData();
           }}
+        />
+      )}
+
+      {/* caution 披露：registry 装后知悉（acknowledge）/ 本地 ZIP 装前确认（confirm） */}
+      {cautionDisclosure && (
+        <SkillCautionDisclosureModal
+          mode={cautionDisclosure.mode}
+          pluginName={cautionDisclosure.pluginName}
+          sourceLabel={cautionDisclosure.sourceLabel}
+          hits={cautionDisclosure.hits}
+          busy={cautionBusy}
+          onConfirm={cautionDisclosure.mode === 'confirm' ? confirmSkillCaution : undefined}
+          onClose={closeSkillCaution}
         />
       )}
     </div>

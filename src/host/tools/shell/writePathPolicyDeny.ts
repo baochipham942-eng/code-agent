@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { homedir } from 'node:os';
 import { getPolicyEngine } from '../../permissions/policyEngine';
+import { resolveEffectivePolicyRules } from '../../permissions/runPolicySnapshot';
 import type { PolicyCheckResult, PolicyEnforcer } from '../../security/policyEnforcer';
 import { createTraceStep } from '../../security/decisionTraceBuilder';
 
@@ -13,6 +14,8 @@ interface ConcreteWritePathDenyInput {
   pathCandidates?: readonly string[];
   /** Quoted in a user-rule deny reason. Defaults to the resolved path. */
   displayPath?: string;
+  /** N-PERM-POLICYVERSION E2：传 run 有效规则视图（外部放宽不作用于已开始的 run）。 */
+  sessionId?: string;
 }
 
 /**
@@ -32,7 +35,7 @@ export function denyConcreteShellWritePath(
     ...(input.pathCandidates ?? []),
     ...pathSpellings(input.resolvedPath, input.workingDirectory),
   ];
-  const matchedRule = getPolicyEngine().matchUserPathDeny(candidates);
+  const matchedRule = getPolicyEngine().matchUserPathDeny(candidates, resolveEffectivePolicyRules(input.sessionId));
   if (!matchedRule) return undefined;
 
   const displayPath = input.displayPath ?? input.resolvedPath;

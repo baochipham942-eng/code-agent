@@ -7,6 +7,7 @@ import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
 import { getUserConfigDir } from '../config/configPaths';
 import type { PermissionPreset } from '../../shared/contract/permission';
+import { recordPolicyMutation, type PolicyMutationSource } from './policyMutationSource';
 
 const logger = createLogger('PermissionModes');
 
@@ -298,9 +299,10 @@ export class PermissionModeManager {
    *
    * @param mode - New mode to set
    * @param approved - Whether user has approved this mode change
+   * @param source - 变更来源（N-PERM-POLICYVERSION：外部来源的放宽对已开始的 run 冻结）
    * @returns Whether mode was changed
    */
-  setMode(mode: PermissionMode, approved = false): boolean {
+  setMode(mode: PermissionMode, approved = false, source: PolicyMutationSource = 'external'): boolean {
     const config = MODE_CONFIGS[mode];
 
     // Check if mode requires approval
@@ -312,6 +314,7 @@ export class PermissionModeManager {
     const previousMode = this.currentMode;
     this.currentMode = mode;
     this.recordModeChange(mode);
+    recordPolicyMutation({ source, kind: 'mode', id: 'global' });
 
     logger.info('Permission mode changed', {
       from: previousMode,
@@ -334,19 +337,26 @@ export class PermissionModeManager {
     const base = (sessionId && this.rolePresetSessions.get(sessionId))
       || (sessionId && this.sessionModes.get(sessionId))
       || this.currentMode;
-    // 四处钳制都只收紧不放宽，所以依次叠加即可，顺序不影响结果。
-    let mode = base;
+    return this.applyDynamicClamps(base, sessionId);
+  }
+
+  /**
+   * 四处动态钳制（首跑/无人值守/语音抬严/限流），只收紧不放宽、依次叠加即可。
+   * N-PERM-POLICYVERSION：抽成公开方法供 runPolicySnapshot 复用——钳制可能在 run
+   * 中途置位（限流、语音建连），冻结基线也要叠加上，保证收紧立即生效。
+   */
+  applyDynamicClamps(mode: PermissionMode, sessionId?: string): PermissionMode {
+    let clamped = mode;
     if (sessionId && this.firstRunStrictSessions.has(sessionId)) {
-      mode = clampFirstRunPermissionMode(mode);
+      clamped = clampFirstRunPermissionMode(clamped);
     }
     if (sessionId && this.unattendedSessions.has(sessionId)) {
-      mode = clampUnattendedPermissionMode(mode);
+      clamped = clampUnattendedPermissionMode(clamped);
     }
     if (this.isLiveVoiceSession(sessionId)) {
-      mode = clampLiveVoicePermissionMode(mode);
+      clamped = clampLiveVoicePermissionMode(clamped);
     }
-    mode = this.clampForRateLimit(mode, sessionId);
-    return mode;
+    return this.clampForRateLimit(clamped, sessionId);
   }
 
   /**
@@ -475,8 +485,14 @@ export class PermissionModeManager {
 
   /**
    * 设置会话级权限档（会话内切换器入口）。与全局 setMode 同一审批语义。
+   * source 标记变更来源（N-PERM-POLICYVERSION）：缺省 external，向冻结方向 fail-closed。
    */
-  setSessionMode(sessionId: string, mode: PermissionMode, approved = false): boolean {
+  setSessionMode(
+    sessionId: string,
+    mode: PermissionMode,
+    approved = false,
+    source: PolicyMutationSource = 'external',
+  ): boolean {
     const config = MODE_CONFIGS[mode];
     if (!config) return false;
     if (config.requiresApproval && !approved) {
@@ -487,6 +503,7 @@ export class PermissionModeManager {
     this.sessionModes.set(sessionId, mode);
     this.explicitSessionModes.set(sessionId, mode);
     this.persistSessionModes();
+    recordPolicyMutation({ source, kind: 'mode', id: sessionId });
     logger.info('Session permission mode changed', { sessionId, mode, riskLevel: config.riskLevel });
     return true;
   }
@@ -728,8 +745,12 @@ export function getCurrentMode(): PermissionMode {
 /**
  * Convenience function to set mode
  */
-export function setPermissionMode(mode: PermissionMode, approved = false): boolean {
-  return getPermissionModeManager().setMode(mode, approved);
+export function setPermissionMode(
+  mode: PermissionMode,
+  approved = false,
+  source: PolicyMutationSource = 'external',
+): boolean {
+  return getPermissionModeManager().setMode(mode, approved, source);
 }
 
 /**

@@ -4,6 +4,7 @@ import type { SessionRuntimeSummary } from '@shared/ipc';
 import type { SessionAutomationSessionSummary } from '@shared/contract';
 import { IconButton } from '../../primitives';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
+import type { CronTaskRunAggregate } from '../../../hooks/useCronRunGroups';
 import type { SessionState } from '../../../stores/taskStore';
 import { getDisplaySessionTitle, getSessionStatusPresentation } from '../../../utils/sessionPresentation';
 import { localeForLanguage } from '../../../utils/i18nTime';
@@ -53,6 +54,8 @@ export interface SidebarSessionItemProps {
   session: SessionWithMeta;
   unreadSessionIds: Set<string>;
   automationSummariesBySessionId: Record<string, SessionAutomationSessionSummary>;
+  /** cron/heartbeat 任务 id → { runCount, latestSessionId }；按任务折叠行的数据层（渲染暂未消费）。 */
+  cronRunAggregatesByTaskId?: Record<string, CronTaskRunAggregate>;
   currentSessionId: string | null;
   selectedSessionIds: Set<string>;
   pinnedSessionIds: Set<string>;

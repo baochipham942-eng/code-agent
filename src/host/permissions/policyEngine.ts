@@ -14,6 +14,7 @@ import {
 } from './modes';
 import { parseToolSpecifier, matchSpecifier, type ParsedSpecifier } from './specifierParser';
 import { validateUserPermissionRule } from '../../shared/permissionRuleSyntax';
+import { recordPolicyMutation, type PolicyMutationSource } from './policyMutationSource';
 
 const logger = createLogger('PolicyEngine');
 
@@ -255,20 +256,25 @@ export class PolicyEngine {
 
   /**
    * Add a custom rule
+   * @param source 变更来源（N-PERM-POLICYVERSION）：外部来源加的 allow 规则对已开始的
+   * run 冻结在起点状态；deny/prompt 是收紧，任何来源立即生效。
    */
-  addRule(rule: PolicyRule): void {
+  addRule(rule: PolicyRule, source: PolicyMutationSource = 'external'): void {
     this.rules.push(rule);
     this.sortRules();
+    recordPolicyMutation({ source, kind: 'rule-add', id: rule.id, action: rule.action });
     logger.debug('Rule added', { id: rule.id, priority: rule.priority });
   }
 
   /**
    * Remove a rule by ID
+   * @param source 变更来源：外部来源删掉的 deny/prompt 规则对已开始的 run 冻结。
    */
-  removeRule(ruleId: string): boolean {
+  removeRule(ruleId: string, source: PolicyMutationSource = 'external'): boolean {
     const index = this.rules.findIndex((r) => r.id === ruleId);
     if (index !== -1) {
-      this.rules.splice(index, 1);
+      const [removed] = this.rules.splice(index, 1);
+      recordPolicyMutation({ source, kind: 'rule-remove', id: ruleId, action: removed?.action });
       logger.debug('Rule removed', { id: ruleId });
       return true;
     }
@@ -282,9 +288,12 @@ export class PolicyEngine {
     return [...this.rules];
   }
 
-  /** Match a parsed write path against user Tool(path) denies, independent of tool spelling. */
-  matchUserPathDeny(pathCandidates: readonly string[]): PolicyRule | null {
-    for (const rule of this.rules) {
+  /**
+   * Match a parsed write path against user Tool(path) denies, independent of tool spelling.
+   * @param rules 覆盖规则列表（N-PERM-POLICYVERSION E2：传 run 有效视图；缺省活状态）。
+   */
+  matchUserPathDeny(pathCandidates: readonly string[], rules?: readonly PolicyRule[]): PolicyRule | null {
+    for (const rule of rules ?? this.rules) {
       const specifier = rule.matcher.toolSpecifier;
       if (!rule.id.startsWith('user-deny-') || rule.action !== 'deny'
           || specifier?.specifierType !== 'path' || !specifier.specifier) {
@@ -306,12 +315,15 @@ export class PolicyEngine {
    * Evaluate a permission request
    *
    * @param request - Permission request to evaluate
+   * @param rules - 覆盖规则列表（N-PERM-POLICYVERSION E3：传 run 有效视图；缺省活状态，
+   *   判定逻辑本身不变）
    * @returns Policy result with action and details
    */
-  evaluate(request: PolicyRequest): PolicyResult {
+  evaluate(request: PolicyRequest, rules?: readonly PolicyRule[]): PolicyResult {
     const timestamp = Date.now();
     const modeManager = getPermissionModeManager();
     const mode = modeManager.getEffectiveMode();
+    const effectiveRules = rules ?? this.rules;
 
     // Get mode-based default action
     const modeAction = modeManager.evaluate(request);
@@ -322,7 +334,7 @@ export class PolicyEngine {
     let ruleAction: PermissionAction | undefined;
 
     // Pass 1: Check for non-overridable deny rules (highest precedence)
-    for (const rule of this.rules) {
+    for (const rule of effectiveRules) {
       if (this.matchesRule(request, rule) && !rule.overridable && rule.action === 'deny') {
         matchedRule = rule;
         ruleAction = 'deny';
@@ -337,7 +349,7 @@ export class PolicyEngine {
       const matchingPrompt: PolicyRule[] = [];
       const matchingAllow: PolicyRule[] = [];
 
-      for (const rule of this.rules) {
+      for (const rule of effectiveRules) {
         if (!this.matchesRule(request, rule)) continue;
         if (rule.action === 'deny') matchingDeny.push(rule);
         else if (rule.action === 'prompt') matchingPrompt.push(rule);
@@ -395,8 +407,13 @@ export class PolicyEngine {
   /**
    * Load user-defined permission rules from config (allow/deny/ask arrays).
    * Creates PolicyRules with specifier parsing from Tool(glob) syntax.
+   * @param source 变更来源（N-PERM-POLICYVERSION）：UI 保存路径传 'user-ui'（放宽立即
+   * 生效），config 热重载走缺省 'external'（放宽冻结到下一个 run）。
    */
-  loadUserRules(rules: { allow?: string[]; deny?: string[]; ask?: string[] }): void {
+  loadUserRules(
+    rules: { allow?: string[]; deny?: string[]; ask?: string[] },
+    source: PolicyMutationSource = 'external',
+  ): void {
     const ruleEntries: Array<{ ruleStr: string; action: PermissionAction; priority: number }> = [];
 
     // deny rules get highest user priority
@@ -436,7 +453,7 @@ export class PolicyEngine {
         overridable: true,
         audit: entry.action === 'deny',
       };
-      this.addRule(rule);
+      this.addRule(rule, source);
     }
 
     logger.debug('User rules loaded', {

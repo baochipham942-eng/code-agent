@@ -530,7 +530,7 @@ export async function runPartB(): Promise<void> {
         actualUsageLine: usage.line,
         processListUsd: listUsd,
         processReportUsd: usage.processReportUsd,
-        reportPath: copied,
+        reportPath: path.relative(outDir(), copied),
       });
       console.log(`${cliRunId} exit=${result.code} processListUsd=${listUsd} cumulative=${spent} reportRunId=${parsed.runId ?? 'none'}`);
       for (const [id, armRow] of parsed.arms) {

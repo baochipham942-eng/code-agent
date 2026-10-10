@@ -160,6 +160,7 @@ export interface PartBRunMeta {
   actualUsageLine: string;
   processListUsd: number;
   processReportUsd: number | null;
+  /** Relative to outDir() (e.g. "reports/warden-c0-off.json"); never absolute — warden.json is committed. */
   reportPath: string;
 }
 
@@ -661,6 +662,10 @@ export function writeWardenDocument(doc: WardenDocument): void {
   const text = `${JSON.stringify(doc, null, 2)}\n`;
   if (SECRET_LEAK.test(text)) {
     throw new Error('refusing to write warden.json: serialized document matched a secret-like pattern');
+  }
+  const home = os.homedir();
+  if (home.length > 1 && text.includes(home)) {
+    throw new Error('refusing to write warden.json: serialized document contains an absolute home directory path; store run paths relative to the out dir instead (REVIEW.md: no absolute home paths in committed artifacts)');
   }
   const target = wardenJsonPath();
   fs.mkdirSync(path.dirname(target), { recursive: true });

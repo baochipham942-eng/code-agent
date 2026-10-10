@@ -6,109 +6,52 @@
 
 import { describe, it, expect } from 'vitest';
 
-// ----------------------------------------------------------------------------
-// Parallel Tool Safety Detection Tests
-// These test the parallel execution logic without needing full AgentLoop setup
-// ----------------------------------------------------------------------------
+import { classifyToolCalls } from '../../../src/host/agent/toolExecution/parallelStrategy';
+import type { ToolCall } from '../../../src/shared/contract';
 
-import { isParallelSafeTool } from '../../../src/host/agent/toolExecution/parallelStrategy';
-import { SEQUENTIAL_TOOLS, MAX_PARALLEL_TOOLS } from '../../../src/host/agent/loopTypes';
+const ROOT = '/tmp/toolres-k2';
 
-/**
- * Check if any tool in the list requires sequential execution
- */
-function hasSequentialTool(toolNames: string[]): boolean {
-  return toolNames.some(name => SEQUENTIAL_TOOLS.has(name) || !isParallelSafeTool(name));
+function call(id: string, name: string, args: Record<string, unknown> = {}): ToolCall {
+  return { id, name, arguments: args };
 }
 
-/**
- * Determine execution strategy for a list of tools
- */
-function determineExecutionStrategy(toolNames: string[]): 'parallel' | 'sequential' | 'mixed' {
-  const safeCount = toolNames.filter(name => isParallelSafeTool(name)).length;
-  const unsafeCount = toolNames.length - safeCount;
-
-  if (safeCount === toolNames.length && toolNames.length <= MAX_PARALLEL_TOOLS) {
-    return 'parallel';
-  }
-  if (unsafeCount === toolNames.length) {
-    return 'sequential';
-  }
-  return 'mixed';
+function segmentNames(toolCalls: ToolCall[]): string[][] {
+  return classifyToolCalls(toolCalls, undefined, { workspace: ROOT, cwd: ROOT })
+    .segments.map((segment) => segment.map((entry) => entry.toolCall.name));
 }
 
-describe('Parallel Tool Safety Detection', () => {
-  describe('isParallelSafeTool', () => {
-    it('should identify read-only tools as parallel safe', () => {
-      expect(isParallelSafeTool('Read')).toBe(true);
-      expect(isParallelSafeTool('Glob')).toBe(true);
-      expect(isParallelSafeTool('Grep')).toBe(true);
-      expect(isParallelSafeTool('ListDirectory')).toBe(true);
-      expect(isParallelSafeTool('WebSearch')).toBe(true);
-      expect(isParallelSafeTool('memory_search')).toBe(true);
-    });
-
-    it('should identify write tools as not parallel safe', () => {
-      expect(isParallelSafeTool('write_file')).toBe(false);
-      expect(isParallelSafeTool('edit_file')).toBe(false);
-      expect(isParallelSafeTool('bash')).toBe(false);
-      expect(isParallelSafeTool('memory_store')).toBe(false);
-    });
-
-    it('should keep MCP tools without annotations sequential', () => {
-      expect(isParallelSafeTool('mcp_read_resource')).toBe(false);
-      expect(isParallelSafeTool('mcp_list_tools')).toBe(false);
-      expect(isParallelSafeTool('mcp_list_resources')).toBe(false);
-      expect(isParallelSafeTool('mcp_get_status')).toBe(false);
-    });
-
-    it('should handle MCP write tools as sequential', () => {
-      expect(isParallelSafeTool('mcp_write_file')).toBe(false);
-      expect(isParallelSafeTool('mcp_create_resource')).toBe(false);
-    });
-
-    it('should handle unknown tools as not parallel safe', () => {
-      expect(isParallelSafeTool('unknown_tool')).toBe(false);
-      expect(isParallelSafeTool('custom_action')).toBe(false);
-    });
+describe('order-preserving tool segments', () => {
+  it('keeps independent reads together', () => {
+    expect(segmentNames([
+      call('1', 'Read', { file_path: 'a.txt' }),
+      call('2', 'Glob', { pattern: '*.ts', path: 'src' }),
+      call('3', 'Grep', { pattern: 'x', path: 'src' }),
+      call('4', 'ListDirectory', { path: 'src' }),
+    ])).toEqual([['Read', 'Glob', 'Grep', 'ListDirectory']]);
   });
 
-  describe('hasSequentialTool', () => {
-    it('should return false for all-parallel tools', () => {
-      expect(hasSequentialTool(['Read', 'Glob', 'Grep'])).toBe(false);
-    });
-
-    it('should return true if any sequential tool exists', () => {
-      expect(hasSequentialTool(['Read', 'write_file', 'Glob'])).toBe(true);
-      expect(hasSequentialTool(['bash'])).toBe(true);
-      expect(hasSequentialTool(['edit_file'])).toBe(true);
-    });
-
-    it('should return true for empty list as safe', () => {
-      expect(hasSequentialTool([])).toBe(false);
-    });
+  it('serializes pathless writes and shell calls', () => {
+    expect(segmentNames([
+      call('1', 'write_file'),
+      call('2', 'edit_file'),
+    ])).toEqual([['write_file'], ['edit_file']]);
+    expect(segmentNames([call('1', 'bash', { command: 'pwd' })])).toEqual([['bash']]);
+    expect(segmentNames([call('1', 'memory_store')])).toEqual([['memory_store']]);
   });
 
-  describe('determineExecutionStrategy', () => {
-    it('should return parallel for all safe tools within limit', () => {
-      expect(determineExecutionStrategy(['Read', 'Glob'])).toBe('parallel');
-      expect(determineExecutionStrategy(['Read', 'Glob', 'Grep', 'ListDirectory'])).toBe('parallel');
-    });
+  it('puts an unannotated MCP call in its own segment before a later read', () => {
+    expect(segmentNames([
+      call('1', 'mcp_read_resource'),
+      call('2', 'Read', { file_path: 'a.txt' }),
+    ])).toEqual([['mcp_read_resource'], ['Read']]);
+    expect(segmentNames([call('1', 'unknown_tool')])).toEqual([['unknown_tool']]);
+  });
 
-    it('should return sequential for all unsafe tools', () => {
-      expect(determineExecutionStrategy(['write_file', 'edit_file'])).toBe('sequential');
-      expect(determineExecutionStrategy(['bash'])).toBe('sequential');
-    });
-
-    it('should return mixed for combination of safe and unsafe', () => {
-      expect(determineExecutionStrategy(['Read', 'write_file'])).toBe('mixed');
-      expect(determineExecutionStrategy(['Glob', 'bash', 'Grep'])).toBe('mixed');
-    });
-
-    it('should return mixed if exceeds MAX_PARALLEL_TOOLS', () => {
-      const manyReadOps = ['Read', 'Glob', 'Grep', 'ListDirectory', 'WebSearch'];
-      expect(determineExecutionStrategy(manyReadOps)).toBe('mixed');
-    });
+  it('splits a same-path read from the write that precedes it', () => {
+    expect(segmentNames([
+      call('1', 'Write', { file_path: 'a.txt', content: 'x' }),
+      call('2', 'Read', { file_path: 'a.txt' }),
+    ])).toEqual([['Write'], ['Read']]);
   });
 });
 

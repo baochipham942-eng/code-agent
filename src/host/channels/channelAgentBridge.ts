@@ -28,6 +28,7 @@ import {
   type ChannelSessionBindingKey,
   type ChannelSessionBindingStorage,
 } from './channelSessionBindingStore';
+import { clearStoppedChannelRuns, consumeStoppedChannelRun, deliverChannelCommandText, parseChannelCommand } from './channelCommandRuntime';
 
 const logger = createLogger('ChannelAgentBridge');
 
@@ -159,6 +160,7 @@ export class ChannelAgentBridge {
     await this.channelManager.disconnectAll();
     this.processingMessages.clear();
     this.processedMessages.clear();
+    clearStoppedChannelRuns();
     logger.info('ChannelAgentBridge shutdown');
   }
 
@@ -189,6 +191,27 @@ export class ChannelAgentBridge {
         messageId: message.id,
         sessionKey,
       });
+      return;
+    }
+
+    const parsed = parseChannelCommand(message.content, { chatType: message.context.chatType });
+    if (parsed) {
+      const paired = { ...message, ingressAuth: 'paired' as const };
+      const pairedKey = this.getSessionKey(accountId, paired);
+      const bindingKey = this.getSessionBindingKey(accountId, paired);
+      await deliverChannelCommandText({
+        guest: message.ingressAuth === 'guest',
+        locale: this.config.configService.getSettings().ui.language === 'en' ? 'en-US' : 'zh-CN',
+        lookupSessionId: () => this.channelSessions.get(pairedKey) ?? this.bindingStore.get(bindingKey),
+        forgetPairedSession: () => { this.channelSessions.delete(pairedKey); this.bindingStore.delete(bindingKey); },
+        send: async (text) => {
+          const callback = this.channelManager.getResponseCallback(accountId, message);
+          if (!callback) throw new Error('Failed to get response callback');
+          await callback.sendText(withSenderAttribution(message, text));
+        },
+        complete: () => { this.markMessageCompleted(accountId, message.id); },
+        fail: () => { this.markMessageFailed(accountId, message.id); },
+      }, parsed.command, message);
       return;
     }
 
@@ -374,14 +397,16 @@ export class ChannelAgentBridge {
       // 发送响应
       logCollector.log('agent', 'INFO', `[Channel] Sending response (length: ${fullResponse.length})`);
       await this.stopTyping(responseCallback);
+      const channelRunStopped = consumeStoppedChannelRun(this.channelSessions.get(this.getSessionKey(accountId, message)) ?? '');
       if (fullResponse) {
         const result = await send(fullResponse);
         logCollector.log('agent', 'INFO', `[Channel] Response sent: success=${result.success}, error=${result.error || 'none'}`);
-      } else {
+      } else if (!channelRunStopped) {
         const result = await send('处理完成，但没有生成响应。');
         logCollector.log('agent', 'INFO', `[Channel] Default response sent: success=${result.success}`);
       }
     } catch (error) {
+      if (consumeStoppedChannelRun(this.channelSessions.get(this.getSessionKey(accountId, message)) ?? '')) return;
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       const { summary, retryHint } = summarizeUserFacingError(error, { surface: 'channel_reply' });
       const channelSummary = summarizeChannelError(error).message;

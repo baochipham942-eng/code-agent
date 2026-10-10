@@ -81,6 +81,7 @@ export class SessionEventService {
   private insertStmt: Database.Statement | null = null;
   private saveFailureCount = 0;
   private lastSaveErrorMessage: string | null = null;
+  private insertDb: Database.Database | null = null;
 
   private constructor() {}
 
@@ -114,12 +115,13 @@ export class SessionEventService {
     try {
       const db = this.getDb();
 
-      // 准备语句（只创建一次）
-      if (!this.insertStmt) {
+      // 数据库服务可能在恢复/重试时更换句柄，不能跨句柄复用 prepared statement。
+      if (!this.insertStmt || this.insertDb !== db) {
         this.insertStmt = db.prepare(`
           INSERT INTO session_events (session_id, event_type, event_data, timestamp)
           VALUES (?, ?, ?, ?)
         `);
+        this.insertDb = db;
       }
 
       // 序列化事件数据
@@ -435,6 +437,7 @@ export class SessionEventService {
    */
   async dispose(): Promise<void> {
     this.insertStmt = null;
+    this.insertDb = null;
   }
 }
 

@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "ticket": "N-WRITE-XFORM-GUARD",
+  "generatedAt": "2026-10-01T04:45:41.989Z",
+  "gitHead": "9d10a82e45c527bbd76521cf4d38d0f3ea291775",
+  "baseline": {
+    "label": "stepfun",
+    "provider": "custom-stepfun",
+    "model": "step-3.5-flash-2603",
+    "priceSource": "https://platform.stepfun.com/docs/zh/guides/pricing/details (2026-09-30), CNY->USD ~7",
+    "inputUsdPer1M": 0.1,
+    "cacheReadUsdPer1M": 0.02,
+    "outputUsdPer1M": 0.3
+  },
+  "runs": [
+    {
+      "run": 1,
+      "runId": "write-xform-guard-20261001T044446-r1",
+      "caseStatus": "passed",
+      "sourceUnchanged": true,
+      "sourceSha256Before": "cd3ad804242a3051e645086122985f25d8a649b62eb722145ede506b2ce7993c",
+      "sourceSha256After": "cd3ad804242a3051e645086122985f25d8a649b62eb722145ede506b2ce7993c",
+      "latinNewFile": {
+        "found": true,
+        "path": "资料/公告草稿.en.md",
+        "chars": 2402,
+        "cjkRatio": 0
+      },
+      "writeRefusalSeen": false,
+      "promptTokens": 56329,
+      "completionTokens": 1141,
+      "cacheReadTokens": 46208,
+      "costUsd": 0.00227856
+    },
+    {
+      "run": 2,
+      "runId": "write-xform-guard-20261001T044505-r2",
+      "caseStatus": "passed",
+      "sourceUnchanged": true,
+      "sourceSha256Before": "cd3ad804242a3051e645086122985f25d8a649b62eb722145ede506b2ce7993c",
+      "sourceSha256After": "cd3ad804242a3051e645086122985f25d8a649b62eb722145ede506b2ce7993c",
+      "latinNewFile": {
+        "found": true,
+        "path": "资料/公告草稿_EN.md",
+        "chars": 2573,
+        "cjkRatio": 0
+      },
+      "writeRefusalSeen": false,
+      "promptTokens": 56433,
+      "completionTokens": 1147,
+      "cacheReadTokens": 32256,
+      "costUsd": 0.00340692
+    },
+    {
+      "run": 3,
+      "runId": "write-xform-guard-20261001T044523-r3",
+      "caseStatus": "passed",
+      "sourceUnchanged": true,
+      "sourceSha256Before": "cd3ad804242a3051e645086122985f25d8a649b62eb722145ede506b2ce7993c",
+      "sourceSha256After": "cd3ad804242a3051e645086122985f25d8a649b62eb722145ede506b2ce7993c",
+      "latinNewFile": {
+        "found": true,
+        "path": "资料/公告草稿_EN.md",
+        "chars": 2413,
+        "cjkRatio": 0
+      },
+      "writeRefusalSeen": false,
+      "promptTokens": 56308,
+      "completionTokens": 1145,
+      "cacheReadTokens": 46208,
+      "costUsd": 0.00227766
+    }
+  ],
+  "totals": {
+    "promptTokens": 169070,
+    "completionTokens": 3433,
+    "cacheReadTokens": 124672,
+    "costUsd": 0.00796314,
+    "hardStopUsd": 1,
+    "expectedUnderUsd": 0.2
+  }
+}

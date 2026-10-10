@@ -88,6 +88,7 @@ import { releaseDoomLoopHandbackForSteer } from './doomLoopHandback';
 import { markStreamSnapshotInterruptionReason } from '../../session/streamSnapshot';
 import { recordInferenceTrace } from './inferenceCacheTrace';
 import { getCachedDynamicSystemPrompt } from './contextAssembly/runtimeAssemblyCache';
+import { sampleWithToolsFingerprint } from './toolTableFingerprint';
 
 
 const logger = createLogger('AgentLoop');
@@ -549,10 +550,10 @@ export class ConversationRuntime {
         const inferenceStartTime = Date.now();
         let response = await this.contextAssembly.inference();
         if (this.ctx.cachePromptSample) {
-          this.ctx.cachePromptSample.current = {
+          this.ctx.cachePromptSample.current = sampleWithToolsFingerprint(this.ctx.cachePromptSample, {
             prompt: getCachedDynamicSystemPrompt(this.ctx) ?? this.ctx.systemPrompt,
             modelId: response.actualModel ?? response.fallback?.to.model ?? this.ctx.modelConfig.model,
-          };
+          });
         }
         const inferenceDuration = Date.now() - inferenceStartTime;
         logger.debug('[AgentLoop] Inference response type:', response.type);

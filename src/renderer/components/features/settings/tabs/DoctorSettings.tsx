@@ -32,6 +32,7 @@ import { SettingsPage } from '../SettingsLayout';
 import type { DoctorFixCode } from '@shared/constants/doctor';
 import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
+import { useBundledCapabilityStore } from '../../../../stores/bundledCapabilityStore';
 import { useDoctorStore } from '../../../../stores/doctorStore';
 import {
   DOCTOR_CATEGORY_ORDER,
@@ -164,15 +165,26 @@ export const DoctorSettings: React.FC = () => {
   // 通话录音进包（N-L7-REC）：默认 false，必须是这次导出的显式勾选。
   const [includeRecordings, setIncludeRecordings] = useState(false);
   const [recordingSummary, setRecordingSummary] = useState<{ count: number; totalBytes: number } | null>(null);
+  const voiceLiveInstalled = useBundledCapabilityStore((state) => state.installed['builtin.voice-live']);
 
   useEffect(() => {
+    // 未安装 builtin.voice-live 时 host 没有 recordingOverview handler，web 槽会 404。
+    if (!voiceLiveInstalled) {
+      setRecordingSummary(null);
+      return;
+    }
+    let cancelled = false;
     void window.domainAPI?.invoke<{ count: number; totalBytes: number }>(IPC_DOMAINS.VOICE, 'recordingOverview')
       .then((response) => {
+        if (cancelled) return;
         if (response?.success && response.data && response.data.count > 0) setRecordingSummary(response.data);
       })
       // 旧壳不认识这个 action：不显示勾选框即可，不打断诊断页。
       .catch(() => undefined);
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [voiceLiveInstalled]);
 
   // 进页面时复用已有报告（如启动静默快检的结果）；没有则自动跑全量
   useEffect(() => {

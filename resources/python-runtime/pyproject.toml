@@ -1,0 +1,14 @@
+[project]
+name = "python-runtime"
+version = "0.0.0"
+requires-python = "==3.14.*"
+dependencies = [
+  "pandas",
+  "openpyxl",
+  "python-pptx",
+  "python-docx",
+  "pdfplumber",
+]
+
+[tool.uv]
+package = false

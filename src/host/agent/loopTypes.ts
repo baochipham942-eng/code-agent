@@ -290,11 +290,11 @@ export interface ToolExecutionContext {
 }
 
 /**
- * Result of tool call classification
+ * Order-preserving segments. Calls after the first barrier are deferred.
  */
 export interface ToolClassification {
-  parallelGroup: Array<{ index: number; toolCall: ToolCall }>;
-  sequentialGroup: Array<{ index: number; toolCall: ToolCall }>;
+  segments: Array<Array<{ index: number; toolCall: ToolCall }>>;
+  deferred: Array<{ index: number; toolCall: ToolCall }>;
 }
 
 /**
@@ -354,37 +354,6 @@ export interface TurnProgressState {
 // ----------------------------------------------------------------------------
 // Constants
 // ----------------------------------------------------------------------------
-
-/**
- * Tools that are safe to execute in parallel (stateless, read-only)
- */
-export const PARALLEL_SAFE_TOOLS = new Set([
-  'Read',
-  'Glob',
-  'Grep',
-  'ListDirectory',
-  'web_fetch',
-  'WebFetch',
-  'WebSearch',
-  'memory_search',
-  'Explore',
-  'Task',
-]);
-
-/**
- * Tools that modify state and must be executed sequentially
- */
-export const SEQUENTIAL_TOOLS = new Set([
-  'write_file',
-  'edit_file',
-  'bash',
-  'memory_store',
-  'ask_user_question',
-  'todo_write' /* 已移除，保留兼容 */,
-  // P5: task 已移到并行安全（只读子代理可并行）
-  // 注意：spawn_agent 仍需串行，因为可能创建有写权限的代理
-  'spawn_agent',
-]);
 
 /**
  * Maximum number of tools to execute in parallel

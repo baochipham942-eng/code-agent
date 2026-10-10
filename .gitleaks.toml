@@ -1,0 +1,128 @@
+# Public-repo gitleaks config. Default rules stay on. Each allowlist entry
+# has an exemption-reason comment.
+# Fixture entries below match fake keys already listed in .security-allowlist.
+# 2026-10-01 non-blocking rollout: one entry per false-positive family so a
+# clean tree scans to zero. Do not add other scripts/ or src/ paths.
+
+title = "code-agent public repo"
+minVersion = "v8.25.0"
+
+[extend]
+useDefault = true
+
+# Exemption: synthetic openai-project-key. The detector test plants a fake
+# project key so it can prove the pattern matches. Not a live credential.
+# .security-allowlist: tests/unit/security/sensitiveDetector.test.ts : openai-project-key
+[[allowlists]]
+description = "fake openai-project-key fixture in sensitiveDetector.test.ts"
+targetRules = ["openai-api-key"]
+paths = ['''(?:^|/)tests/unit/security/sensitiveDetector\.test\.ts$''']
+
+# Exemption: synthetic gitlab-pat. Same detector test, fake glpat placeholder.
+# .security-allowlist: tests/unit/security/sensitiveDetector.test.ts : gitlab-pat
+[[allowlists]]
+description = "fake gitlab-pat fixture in sensitiveDetector.test.ts"
+targetRules = ["gitlab-pat"]
+paths = ['''(?:^|/)tests/unit/security/sensitiveDetector\.test\.ts$''']
+
+# Exemption: synthetic aws-access-key. The AWS example id in this test ends
+# with EXAMPLE, which the default aws-access-token rule already ignores.
+# This path exemption is the repo-level match for that fixture.
+# .security-allowlist: tests/unit/security/sensitiveDetector.test.ts : aws-access-key
+[[allowlists]]
+description = "fake aws-access-key fixture in sensitiveDetector.test.ts"
+targetRules = ["aws-access-token"]
+paths = ['''(?:^|/)tests/unit/security/sensitiveDetector\.test\.ts$''']
+
+# Exemption: synthetic openai-project-key in the data-guard test.
+# .security-allowlist: tests/unit/security/sensitiveDataGuard.test.ts : openai-project-key
+[[allowlists]]
+description = "fake openai-project-key fixture in sensitiveDataGuard.test.ts"
+targetRules = ["openai-api-key"]
+paths = ['''(?:^|/)tests/unit/security/sensitiveDataGuard\.test\.ts$''']
+
+# Exemption: slack-token placeholder listed for the troubleshooting guide.
+# The guide file is not in the tree right now; the entry stays so a restored
+# copy of that documented placeholder is still exempt. xox* rules only.
+# .security-allowlist: docs/guides/troubleshooting.md : slack-token
+[[allowlists]]
+description = "documented slack-token placeholder in troubleshooting.md"
+targetRules = [
+    "slack-bot-token",
+    "slack-legacy-bot-token",
+    "slack-legacy-token",
+    "slack-legacy-workspace-token",
+    "slack-user-token",
+]
+paths = ['''(?:^|/)docs/guides/troubleshooting\.md$''']
+
+# Exemption: github-pat placeholder listed for the alignment plan.
+# That plan file is not in the tree right now; the entry stays for the
+# documented placeholder. github-pat (ghp_) only.
+# .security-allowlist: docs/plans/2026-01-22-claude-code-alignment-plan.md : github-pat
+[[allowlists]]
+description = "documented github-pat placeholder in the alignment plan"
+targetRules = ["github-pat"]
+paths = ['''(?:^|/)docs/plans/2026-01-22-claude-code-alignment-plan\.md$''']
+
+# Exemption: tests/** and .claude/test-cases/** are fixtures, canaries, and
+# redline cases (generic-api-key, private-key, jwt, curl-auth-header).
+# Includes tests/fixtures/companion-relay-tls/*.pem, test-only CA and leaf keys.
+# Path allowlist so a new fixture of the same shape does not re-trigger.
+[[allowlists]]
+description = "fixtures, canaries, and redline cases under tests and .claude/test-cases"
+targetRules = ["generic-api-key", "private-key", "jwt", "curl-auth-header"]
+paths = [
+    '''(?:^|/)tests/''',
+    '''(?:^|/)\.claude/test-cases/''',
+]
+
+# Exemption: docs/acceptance/**/*.json acceptance proofs. recordKey and
+# tokenSha256 are metadata names and sha256 digests, not secrets.
+[[allowlists]]
+description = "acceptance proof JSON metadata names and sha256 digests"
+paths = ['''(?:^|/)docs/acceptance/.+\.json$''']
+
+# Exemption: docs/DEPLOYMENT.md placeholder X-Init-Key: YOUR_*.
+# The checked-in example is YOUR_AUTH_SECRET. Regex covers YOUR_INIT_SECRET too.
+[[allowlists]]
+description = "YOUR_* placeholder in docs/DEPLOYMENT.md"
+condition = "AND"
+paths = ['''(?:^|/)docs/DEPLOYMENT\.md$''']
+regexes = ['''YOUR_[A-Z_]+''']
+
+# Exemption: scripts/test-http-api.ts and scripts/acceptance/session-fork-smoke.ts
+# use test- / acceptance- literal test keys and idempotency keys.
+# AND keeps the regex inside those two paths. Other scripts stay scanned.
+[[allowlists]]
+description = "test- and acceptance- literal keys in the named scripts"
+condition = "AND"
+paths = [
+    '''(?:^|/)scripts/test-http-api\.ts$''',
+    '''(?:^|/)scripts/acceptance/session-fork-smoke\.ts$''',
+]
+regexes = ['''^(test|acceptance)-''']
+
+# Exemption: DEFAULT_SUPABASE_ANON_KEY in src/shared/constants/network.ts.
+# The Supabase anon key is public by design (row level security). jwt rule only.
+[[allowlists]]
+description = "public Supabase anon key in network.ts"
+targetRules = ["jwt"]
+paths = ['''(?:^|/)src/shared/constants/network\.ts$''']
+
+# Exemption: surface*V1 metadata key names in the projection service and the
+# export field sanitizer. AND so the regex does not apply to other files.
+[[allowlists]]
+description = "surface*V1 metadata key names"
+condition = "AND"
+paths = [
+    '''(?:^|/)src/host/services/surfaceExecution/SurfaceConversationProjectionService\.ts$''',
+    '''(?:^|/)src/shared/utils/surfaceExecutionExportFieldSanitizer\.ts$''',
+]
+regexes = ['''^surface[A-Za-z]+V\d+$''']
+
+# Exemption: src/shared/pricing/litellmSnapshot.json. litellmKey values are
+# model identifiers (claude-3…, perplexity/sonar), not credentials.
+[[allowlists]]
+description = "litellm model identifiers in litellmSnapshot.json"
+paths = ['''(?:^|/)src/shared/pricing/litellmSnapshot\.json$''']

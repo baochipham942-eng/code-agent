@@ -404,9 +404,10 @@ describe('fileCheckpointMiddleware write-target snapshots (integration)', () => 
     expect(await fs.readFile(path.join(multiDir, 'multi-b.md'), 'utf-8')).toBe('multi-b\n');
   });
 
-  // ---- 返修 r4：MCP / 未知工具的写目标推断删除（回 origin/main 行为，不建快照）----
+  // ---- 返修 r4：MCP / 未知工具的写目标推断删除；N-CHECKPOINT-MCP-WRITETARGET 起
+  // ---- 零覆盖的未声明写盘改为回退时逐工具披露（undeclared-tool:<name>），仍零推断 ----
 
-  it('returns MCP and unknown tools to main behavior: no write-target inference at all', async () => {
+  it('returns MCP and unknown tools to zero inference, disclosing the uncovered tool instead', async () => {
     const file = path.join(tempDir, 'mcp-note.txt');
     await fs.writeFile(file, 'before-mcp\n', 'utf-8');
     const moveDefinition: ToolDefinition = {
@@ -417,8 +418,8 @@ describe('fileCheckpointMiddleware write-target snapshots (integration)', () => 
       requiresPermission: true,
       permissionLevel: 'network',
     };
-    // move 形状（source+destination）与写字段形状（path）都不再推断：MCP 写盘工具
-    // 回到「不建快照」，回退不碰（turnCheckout 的差额披露口径不变）
+    // move 形状（source+destination）与写字段形状（path）都不推断：MCP 写盘工具
+    // 不建快照；未声明写盘各落一条 undeclared-tool 披露行，回退时逐工具披露
     const moveCheckpoints = await createFileCheckpointIfNeeded(
       moveDefinition,
       { source: file, destination: path.join(tempDir, 'moved.md') },
@@ -434,8 +435,14 @@ describe('fileCheckpointMiddleware write-target snapshots (integration)', () => 
     );
     expect(writeCheckpoints).toEqual([]);
     expect(db.prepare(
-      'SELECT COUNT(*) AS count FROM file_checkpoints WHERE session_id = ?',
+      'SELECT COUNT(*) AS count FROM file_checkpoints WHERE session_id = ? AND COALESCE(uncertain_target, 0) = 0',
     ).get(sessionId)).toEqual({ count: 0 });
+    expect(db.prepare(
+      'SELECT file_path FROM file_checkpoints WHERE session_id = ? AND uncertain_target = 1 ORDER BY file_path',
+    ).all(sessionId)).toEqual([
+      { file_path: 'undeclared-tool:mcp__filesystem__move_file' },
+      { file_path: 'undeclared-tool:mcp__filesystem__write_text_file' },
+    ]);
   });
 
   it('records uncertain redirection targets and reports them in rewind skippedFiles', async () => {

@@ -21,11 +21,11 @@ export function createCliLedgerSink(provider: RawDbProvider): ToolLedgerSink {
         if (!db) return;
         db.prepare(`
           INSERT INTO permission_decisions
-            (session_id, tool_name, summary, final_outcome, history_outcome, reason, duration_ms, wait_ms, origin, recorded_at, trace_json)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (session_id, tool_name, summary, final_outcome, history_outcome, reason, duration_ms, wait_ms, origin, recorded_at, trace_json, policy_hash)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(input.sessionId ?? null, input.toolName, input.summary ?? null, input.finalOutcome,
           input.historyOutcome, input.reason, input.durationMs, input.waitMs ?? null, input.origin ?? null,
-          input.recordedAt, input.trace ? JSON.stringify(input.trace) : null);
+          input.recordedAt, input.trace ? JSON.stringify(input.trace) : null, input.policyHash ?? null);
       } catch {
         // 账本失败不能影响 CLI 的权限裁决。
       }

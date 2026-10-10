@@ -22,6 +22,10 @@ import fs from 'node:fs';
 
 import { getPermissionClassifier } from '../../src/host/tools/permissionClassifier';
 import { systemOne } from '../../src/host/model/providers/typesafeProvider';
+import {
+  PERMCLASS_APPROVE_THRESHOLDS,
+  PERMCLASS_GUARD_QUESTIONS,
+} from '../../src/shared/constants/jevQuestions';
 
 interface ReplaySample {
   id: number | string;
@@ -31,9 +35,10 @@ interface ReplaySample {
   origin?: string;
 }
 
-const file = process.argv[2];
+const withoutGuards = process.argv.includes('--without-guards');
+const file = process.argv.slice(2).find((arg) => !arg.startsWith('--'));
 if (!file) {
-  console.error('用法：npx tsx scripts/security/jev-permclass-replay.ts <samples.json>');
+  console.error('用法：npx tsx scripts/security/jev-permclass-replay.ts [--without-guards] <samples.json>');
   process.exit(1);
 }
 const rows = JSON.parse(fs.readFileSync(file, 'utf8')) as ReplaySample[];
@@ -51,7 +56,13 @@ const spySystemOne: typeof systemOne = async (state, questions, options) => {
   const entry: Captured = { id: currentId, state };
   captured.set(currentId, entry);
   try {
-    const answers = await systemOne(state, questions, options);
+    const requestQuestions = withoutGuards
+      ? Object.fromEntries(Object.entries(questions).filter(([key]) => !(key in PERMCLASS_GUARD_QUESTIONS)))
+      : questions;
+    const answers = await systemOne(state, requestQuestions, options);
+    if (withoutGuards) {
+      Object.assign(answers, { injection: { noul: 0 }, privilege_escalation: { noul: 0 } });
+    }
     entry.answers = answers as Captured['answers'];
     return answers;
   } catch (error) {
@@ -77,6 +88,8 @@ interface Outcome {
   secrets?: number;
   configAccess?: number;
   beyondScope?: number;
+  injection?: number;
+  privilegeEscalation?: number;
   abstain?: boolean;
   error?: string;
 }
@@ -125,6 +138,10 @@ for (const row of rows) {
       ? Number(noul('config_or_credential_access')!.toFixed(2))
       : undefined,
     beyondScope: noul('beyond_scope') !== undefined ? Number(noul('beyond_scope')!.toFixed(2)) : undefined,
+    injection: noul('injection') !== undefined ? Number(noul('injection')!.toFixed(2)) : undefined,
+    privilegeEscalation: noul('privilege_escalation') !== undefined
+      ? Number(noul('privilege_escalation')!.toFixed(2))
+      : undefined,
     abstain: riskAnswer?.confidence !== undefined ? riskAnswer.confidence < 0.6 : undefined,
     error: cap?.error,
   });
@@ -137,7 +154,7 @@ const cell = (reference: string, decision: string) =>
   outcomes.filter((o) => o.reference === reference && o.decision === decision).length;
 const approvedWrongly = outcomes.filter((o) => o.reference === 'ask-denied' && o.decision === 'approve');
 
-console.log(`n=${outcomes.length} jevReached=${jevReached.length} errors=${outcomes.filter((o) => o.decision === 'error').length}`);
+console.log(`mode=${withoutGuards ? 'without-guards' : 'guards'} n=${outcomes.length} jevReached=${jevReached.length} errors=${outcomes.filter((o) => o.decision === 'error').length}`);
 for (const origin of [...new Set(rows.map((r) => r.origin ?? 'unknown'))]) {
   const ids = new Set(rows.filter((r) => (r.origin ?? 'unknown') === origin).map((r) => r.id));
   const sub = outcomes.filter((o) => ids.has(o.id));
@@ -151,12 +168,52 @@ console.log(`\n四格（全量）: 放行/放行=${cell('ask-approved', 'approve
   + `拒绝/放行(必须0)=${approvedWrongly.length} 拒绝/ask=${outcomes.filter((o) => o.reference === 'ask-denied' && o.decision !== 'approve').length}`);
 console.log(`弃权率(Jev 被问且 risk.conf<0.6): ${abstains}/${jevReached.length}${jevReached.length ? ` = ${(100 * abstains / jevReached.length).toFixed(1)}%` : ''}`);
 
-console.log('\n== 逐条数值（id | ref | decision | rule | risk conf nh sec cfg bs | summary）');
+function wouldApproveWithoutGuards(outcome: Outcome): boolean {
+  const cap = captured.get(outcome.id);
+  const risk = cap?.answers?.risk as { choice?: unknown; confidence?: unknown } | undefined;
+  const number = (key: string) => (cap?.answers?.[key] as { noul?: unknown } | undefined)?.noul;
+  if (typeof risk?.choice !== 'string' || typeof risk.confidence !== 'number') return false;
+  if (!(PERMCLASS_APPROVE_THRESHOLDS.tiers as readonly string[]).includes(risk.choice)) return false;
+  if (risk.confidence < PERMCLASS_APPROVE_THRESHOLDS.minRiskConfidence) return false;
+  const needsHuman = number('needs_human');
+  const secrets = number('touches_secrets');
+  const configAccess = number('config_or_credential_access');
+  if (typeof needsHuman !== 'number' || typeof secrets !== 'number' || typeof configAccess !== 'number') return false;
+  if (!(needsHuman < PERMCLASS_APPROVE_THRESHOLDS.maxNeedsHuman
+    && secrets < PERMCLASS_APPROVE_THRESHOLDS.maxTouchesSecrets
+    && configAccess < PERMCLASS_APPROVE_THRESHOLDS.maxConfigAccess)) return false;
+  if (outcome.tool !== 'Bash') {
+    const beyondScope = number('beyond_scope');
+    if (typeof beyondScope !== 'number' || !(beyondScope < PERMCLASS_APPROVE_THRESHOLDS.maxBeyondScope)) return false;
+  }
+  return true;
+}
+
+const referenceApproved = outcomes.filter((o) => o.reference === 'ask-approved');
+const beforeGuardApprovals = referenceApproved.filter((o) => o.jevCalled && wouldApproveWithoutGuards(o)).length;
+const afterGuardApprovals = referenceApproved.filter((o) => o.rule === 'jev_approve').length;
+console.log(`\n打断摘要（参照=放行且实际走 Jev）：guard 前 ask 卡减少=${beforeGuardApprovals}，guard 后 ask 卡减少=${afterGuardApprovals}，guard veto=${beforeGuardApprovals - afterGuardApprovals}`);
+
+const jevToolNames = new Set(['Bash', 'image_analyze', 'pdf_generate', 'ppt_generate', 'docx_generate', 'excel_generate', 'chart_generate']);
+const nonWhitelisted = outcomes.filter((o) => !jevToolNames.has(o.tool));
+const nonWhitelistedFallback = nonWhitelisted.filter((o) => o.rule === 'fallback');
+console.log(`非白名单工具：n=${nonWhitelisted.length} Jev 调用=${nonWhitelisted.filter((o) => o.jevCalled).length} fallback ask=${nonWhitelistedFallback.filter((o) => o.decision === 'ask').length}/${nonWhitelistedFallback.length}（Jev调用必须为0，fallback必须全ask）`);
+if (nonWhitelisted.some((o) => o.jevCalled)) {
+  console.error('FAIL: 非白名单工具发生 Jev 调用');
+  process.exit(1);
+}
+if (nonWhitelistedFallback.some((o) => o.decision !== 'ask')) {
+  console.error('FAIL: 非白名单 fallback 样本没有保持 ask');
+  process.exit(1);
+}
+
+console.log('\n== 逐条数值（id | ref | decision | rule | risk conf nh sec cfg bs inj priv | summary）');
 for (const o of outcomes) {
   const vals = o.jevCalled && o.risk !== undefined
     ? `${o.risk} ${o.conf} nh=${o.needsHuman} sec=${o.secrets} cfg=${o.configAccess}`
       + `${o.beyondScope !== undefined ? ` bs=${o.beyondScope}` : ''}${o.abstain ? ' [abstain]' : ''}`
-    : o.error ? `ERR ${o.error.slice(0, 60)}` : '(rule)';
+      + ` inj=${o.injection} priv=${o.privilegeEscalation}`
+    : o.error ? `ERR ${o.error.slice(0, 60)} inj=- priv=-` : '(rule) inj=- priv=-';
   console.log(`  ${o.id} | ${o.reference} | ${o.decision} | ${o.rule} | ${vals} | ${o.summary}`);
 }
 if (approvedWrongly.length > 0) {

@@ -1,26 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // 本文件的装配断言走环境变量。typesafe 读钥匙串时若打到共享的 mock userData，
-// 别的用例留下的槽会把「缺 key」误判成已装配。这里只把 typesafe 槽钉成空。
+// 别的用例留下的槽会把「缺 key」误判成已装配；缺官方 key 时 resolveJevRoute 还会读 OpenRouter key。
+// 这里把 typesafe 槽钉成空，并让 getApiKey 永远返回 undefined——单测不碰真实钥匙串。
 vi.mock('../../../../../src/host/services/core/configService', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../../../src/host/services/core/configService')>();
-  let pinned = false;
   return {
     ...actual,
     getConfigService: () => {
-      const real = actual.getConfigService();
-      if (pinned) return real;
-      const readServiceKey = real.getServiceApiKey.bind(real);
-      real.getServiceApiKey = (service) => {
-        if (service === 'typesafe') return undefined;
-        return readServiceKey(service);
-      };
-      pinned = true;
-      return real;
+      const service = actual.getConfigService();
+      return new Proxy(service, {
+        get(target, prop, receiver) {
+          if (prop === 'getApiKey') return () => undefined;
+          if (prop === 'getServiceApiKey') {
+            return (name: Parameters<typeof target.getServiceApiKey>[0]) =>
+              name === 'typesafe' ? undefined : target.getServiceApiKey(name);
+          }
+          const value = Reflect.get(target, prop, receiver);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
     },
   };
 });
-
 import type { JevAnswers, JevSystemOneCall } from '../../../../../src/shared/constants/jevQuestions';
 import { BROWSER_STEP_OPERATIONS } from '../../../../../src/shared/constants/jevQuestions';
 import type { JevCapturedSnapshot } from '../../../../../src/host/services/infra/browser/jevBrowserSnapshotPrep';
@@ -32,7 +34,6 @@ import {
   evaluateJevAssertions,
   extractJevAssertions,
 } from '../../../../../src/host/agent/runtime/browser/jevBrowserAssertions';
-import type { JevBrowserHost } from '../../../../../src/host/agent/runtime/browser/jevBrowserHost';
 import type { ToolContext } from '../../../../../src/host/tools/types';
 import { BrowserTool } from '../../../../../src/host/tools/vision/BrowserTool';
 import { browserActionTool } from '../../../../../src/host/tools/vision/browserAction';
@@ -45,37 +46,16 @@ import {
   managedBrowserServiceKey,
   surfaceIdentityFromToolContext,
 } from '../../../../../src/host/services/surfaceExecution/ManagedBrowserProviderAdapter';
-
-function targetRef(id: string, name: string, rect: { x: number; y: number; width: number; height: number }): BrowserTargetRef {
-  return {
-    refId: id,
-    source: 'dom',
-    selector: `#${id}`,
-    name,
-    textHint: name,
-    frameId: 'FRAME',
-    documentRevision: 'rev',
-    tabId: 'tab',
-    snapshotId: 'snap',
-    capturedAtMs: 1,
-    ttlMs: 60_000,
-    confidence: 0.9,
-    rect,
-  };
-}
-
-function button(id: string, text: string, y = 10): BrowserDomSnapshot['interactiveElements'][number] {
-  const rect = { x: 0, y, width: 80, height: 20 };
-  return {
-    tag: 'button',
-    text,
-    ariaLabel: text,
-    placeholder: null,
-    selectorHint: `#${id}`,
-    targetRef: targetRef(id, text, rect),
-    rect,
-  };
-}
+import {
+  answers,
+  button,
+  context,
+  FakeHost,
+  runLoop,
+  snapshot,
+  stubSystemOne,
+  targetRef,
+} from './jevBrowserTestKit';
 
 function textbox(
   id: string,
@@ -91,122 +71,6 @@ function textbox(
     selectorHint: `#${id}`,
     targetRef: targetRef(id, name, rect),
     rect,
-  };
-}
-
-function snapshot(title: string, elements: BrowserDomSnapshot['interactiveElements'], url = 'http://127.0.0.1/page'): JevCapturedSnapshot {
-  return {
-    snapshot: {
-      snapshotId: 'snap',
-      tabId: 'tab',
-      capturedAtMs: 1,
-      url,
-      title,
-      headings: [{ level: 1, text: title }],
-      interactiveElements: elements,
-    },
-    extras: elements.map(() => ({ inputType: null, autocomplete: null, accept: null })),
-    viewport: { width: 800, height: 600 },
-    scrollY: 0,
-  };
-}
-
-function answers(overrides: Partial<{
-  operation: string;
-  opConf: number;
-  target: string;
-  targetConf: number;
-  done: number;
-  risk: number;
-}> = {}): JevAnswers {
-  return {
-    operation: { choice: overrides.operation ?? 'click', confidence: overrides.opConf ?? 0.9 },
-    target: { choice: overrides.target ?? 'tref_go', confidence: overrides.targetConf ?? 0.9 },
-    done: { noul: overrides.done ?? 0.1 },
-    risk: { noul: overrides.risk ?? 0.1 },
-  };
-}
-
-class FakeHost implements JevBrowserHost {
-  launched = true;
-  url = 'http://127.0.0.1/page';
-  pages: JevCapturedSnapshot[];
-  clicks: string[] = [];
-  types: Array<{ id: string; text: string }> = [];
-  scrolls: string[] = [];
-  formValues: Record<string, string> = {};
-  visibleText = '';
-  dialog: { pending: boolean; type?: string } = { pending: false };
-  constructor(pages: JevCapturedSnapshot[]) {
-    this.pages = pages;
-  }
-  isLaunched() { return this.launched; }
-  async launch() { this.launched = true; }
-  async navigate(url: string) { this.url = url; }
-  currentUrl() { return this.url; }
-  async capture() {
-    const current = this.pages[0] || snapshot('Empty', []);
-    return { ...current, snapshot: { ...current.snapshot, url: this.url } };
-  }
-  async clickTargetRef(ref: BrowserTargetRef) { this.clicks.push(ref.refId); }
-  async typeTargetRef(ref: BrowserTargetRef, text: string) { this.types.push({ id: ref.refId, text }); }
-  async scroll(direction: 'up' | 'down') { this.scrolls.push(direction); }
-  async pressEnter() {}
-  async wait() {}
-  getDialogState() { return this.dialog; }
-  async getFormValues() { return this.formValues; }
-  async getVisibleText() { return this.visibleText; }
-  async listDownloads() { return []; }
-}
-
-let turnSeq = 0;
-function context(requestPermission: ToolContext['requestPermission'] = async () => true): ToolContext {
-  turnSeq += 1;
-  return {
-    workingDirectory: '/tmp',
-    sessionId: `s${turnSeq}`,
-    turnId: `t${turnSeq}`,
-    requestPermission,
-  };
-}
-
-function stubSystemOne(impl: (state: Record<string, unknown>) => JevAnswers | Promise<JevAnswers>): JevSystemOneCall & { calls: Record<string, unknown>[] } {
-  const calls: Record<string, unknown>[] = [];
-  const fn = vi.fn(async (state: Record<string, unknown>) => {
-    calls.push(state);
-    return impl(state);
-  }) as unknown as JevSystemOneCall & { calls: Record<string, unknown>[] };
-  fn.calls = calls;
-  return fn;
-}
-
-async function runLoop(
-  host: FakeHost,
-  systemOne: JevSystemOneCall,
-  input: {
-    task?: string;
-    assertions?: Array<Record<string, unknown>>;
-    mutate?: 'done1' | 'empty-window';
-  },
-  ctx: ToolContext = context(),
-  extra?: { quickType?: ((prompt: string) => Promise<string | null>) | null },
-) {
-  vi.stubEnv('CODE_AGENT_BROWSER_JEV_STEP', '1');
-  const driver = resolveBrowserJevStep({
-    systemOne,
-    host,
-    mutate: input.mutate,
-    ...(extra && Object.hasOwn(extra, 'quickType') ? { quickType: extra.quickType } : {}),
-  });
-  if (!driver) throw new Error('driver unarmed');
-  const result = await driver.run(input, ctx);
-  return {
-    ...result,
-    status: result.metadata?.status,
-    fallback: result.metadata?.fallback,
-    reason: result.metadata?.reason,
-    browserJevMode: result.metadata?.browserJevMode,
-    falseDoneCount: result.metadata?.false_done_count,
   };
 }
 

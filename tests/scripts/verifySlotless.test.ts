@@ -15,7 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 // @ts-expect-error —— 纯 JS 本机验证入口，无类型声明
-import { buildSlotlessConfig, buildSlotlessTemplateProvenance, copySecureStoragePair, linkCliConnectorInstallDirectories, maskTokenRhythmKey, parseDogfoodEnv, readDogfoodCredentials, resolveSourceConfigPath, stopRun } from '../../scripts/verify-slotless.mjs';
+import { buildSlotlessConfig, buildSlotlessTemplateProvenance, copySecureStoragePair, isAlive, linkCliConnectorInstallDirectories, maskTokenRhythmKey, parseDogfoodEnv, readDogfoodCredentials, resolveSourceConfigPath, stopRun } from '../../scripts/verify-slotless.mjs';
 // @ts-expect-error —— 纯 JS 本机验证入口，无类型声明
 import { parseViewport } from '../../scripts/verify-shot.mjs';
 
@@ -280,6 +280,12 @@ describe('slotless verification scripts', () => {
     await stopRun(dir);
 
     expect(existsSync(dir)).toBe(false);
+  });
+
+  it('isAlive treats EPERM (live process owned by another user) as alive, ESRCH as dead', () => {
+    // pid 1 为 root/launchd：非 root 下 kill(1,0) 抛 EPERM
+    if (process.getuid?.() !== 0) expect(isAlive(1)).toBe(true);
+    expect(isAlive(2_147_483_647)).toBe(false);
   });
 
   it('--stop derives late app launches from state and quits only this run\'s new pid', async () => {

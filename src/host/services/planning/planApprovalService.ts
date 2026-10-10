@@ -14,6 +14,7 @@ import type { TaskManager } from '../../task';
 import { getSessionManager } from '../infra/sessionManager';
 import { getDatabase } from '../core/databaseService';
 import { demoteInProgressTasks, replaceTasksAtomically } from './taskStore';
+import { RECONCILE_MESSAGE_WINDOW } from './planApprovalPending';
 import { createLogger } from '../infra/logger';
 
 const MAX_PLAN_STEPS = 50;
@@ -22,9 +23,8 @@ const MAX_FEEDBACK_LENGTH = 8_000;
 const MAX_FAILURE_REASON_LENGTH = 500;
 /** 崩溃残留对账落定的失败原因：宿主在启动确认到达前退出。 */
 const RESTART_ORPHAN_FAILURE_REASON = 'Host exited during plan startup';
-/** 启动对账扫描的近期会话数 / 每会话近期消息数：认领总在崩溃前一刻，浅窗口足够。 */
+/** 启动对账扫描的近期会话数：认领总在崩溃前一刻，浅窗口足够。每会话消息窗口见 planApprovalPending。 */
 const RECONCILE_SESSION_SCAN_LIMIT = 20;
-const RECONCILE_MESSAGE_WINDOW = 20;
 const logger = createLogger('PlanApprovalService');
 
 export class PlanApprovalError extends Error {
@@ -59,7 +59,10 @@ function normalizeSteps(
       throw new PlanApprovalError('INVALID_STEPS', `steps[${index}].id is duplicated`);
     }
     seenIds.add(id);
-    const originalContent = originalById.get(id)?.content ?? '';
+    // 以步骤上留下的原文为基准，这样「先 edit 再带步骤批准」不会把已改标记洗掉。
+    // 老步骤没有 originalContent 时退回当前正文，和只批准一次的结果一致。
+    const prior = originalById.get(id);
+    const originalContent = prior?.originalContent ?? prior?.content ?? '';
     return {
       id,
       content,
@@ -260,6 +263,41 @@ async function persistApproval(
   await getSessionManager().updateMessage(message.id, { toolCalls });
 }
 
+/** 老卡没有 version 字段时视为 1。新卡由 createPendingPlanApproval 写成 1。 */
+function currentPlanVersion(approval: PlanApprovalRecord): number {
+  const version = approval.version;
+  return typeof version === 'number' && Number.isInteger(version) && version >= 1 ? version : 1;
+}
+
+/**
+ * 请求带了 version 且不等于卡上的当前版本：在 normalizeSteps 和任何副作用之前拒绝。
+ * version 缺省的旧调用方视为当前版本，不进这个分支。
+ */
+function rejectStalePlanVersion(requested: number | undefined, current: number): void {
+  if (typeof requested === 'number' && requested !== current) {
+    throw new PlanApprovalError('STALE_VERSION', 'Plan approval version is stale');
+  }
+}
+
+function stepEditMetadata(
+  previous: readonly PlanApprovalStep[],
+  steps: readonly PlanApprovalStep[],
+): Pick<PlanApprovalRecord, 'removedSteps' | 'reordered'> {
+  const submittedIds = new Set(steps.map((step) => step.id));
+  const removedSteps = previous.filter((step) => !submittedIds.has(step.id));
+  const originalRetainedOrder = previous
+    .filter((step) => submittedIds.has(step.id))
+    .map((step) => step.id);
+  const submittedRetainedOrder = steps
+    .filter((step) => previous.some((original) => original.id === step.id))
+    .map((step) => step.id);
+  const reordered = originalRetainedOrder.some((id, index) => submittedRetainedOrder[index] !== id);
+  return {
+    ...(removedSteps.length > 0 ? { removedSteps } : {}),
+    ...(reordered ? { reordered: true } : {}),
+  };
+}
+
 function hiddenPlanTurn(content: string) {
   return {
     content,
@@ -286,25 +324,45 @@ export async function resolvePlanApproval(
     toolCallId: requiredId(request.toolCallId, 'toolCallId'),
   };
   const target = await loadApprovalTarget(normalizedRequest, deps);
+  const currentVersion = currentPlanVersion(target.approval);
+  if (normalizedRequest.decision === 'edit' && typeof normalizedRequest.version !== 'number') {
+    throw new PlanApprovalError('INVALID_REQUEST', 'version is required');
+  }
+  rejectStalePlanVersion(normalizedRequest.version, currentVersion);
   const decidedAt = Date.now();
 
-  if (normalizedRequest.decision === 'approve') {
+  if (normalizedRequest.decision === 'edit') {
     const steps = normalizeSteps(normalizedRequest.steps, target.approval.steps);
-    const submittedIds = new Set(steps.map((step) => step.id));
-    const removedSteps = target.approval.steps.filter((step) => !submittedIds.has(step.id));
-    const originalRetainedOrder = target.approval.steps
-      .filter((step) => submittedIds.has(step.id))
-      .map((step) => step.id);
-    const submittedRetainedOrder = steps
-      .filter((step) => target.approval.steps.some((original) => original.id === step.id))
-      .map((step) => step.id);
-    const reordered = originalRetainedOrder.some((id, index) => submittedRetainedOrder[index] !== id);
+    const approval: PlanApprovalRecord = {
+      ...target.approval,
+      steps,
+      version: currentVersion + 1,
+      ...stepEditMetadata(target.approval.steps, steps),
+    };
+    await persistApproval(target.message, normalizedRequest.toolCallId, approval);
+    deps.taskManager.emitAgentEventForSession(normalizedRequest.sessionId, {
+      type: 'plan_approval_update',
+      data: {
+        sessionId: normalizedRequest.sessionId,
+        messageId: normalizedRequest.messageId,
+        toolCallId: normalizedRequest.toolCallId,
+        approval,
+      },
+    });
+    return { approval };
+  }
+
+  if (normalizedRequest.decision === 'approve') {
+    const inlineSteps = normalizedRequest.steps;
+    const steps = inlineSteps
+      ? normalizeSteps(inlineSteps, target.approval.steps)
+      : target.approval.steps;
     const approval: PlanApprovalRecord = {
       ...target.approval,
       status: 'starting',
       steps,
-      ...(removedSteps.length > 0 ? { removedSteps } : {}),
-      ...(reordered ? { reordered: true } : {}),
+      version: inlineSteps ? currentVersion + 1 : currentVersion,
+      ...(inlineSteps ? stepEditMetadata(target.approval.steps, steps) : {}),
       decidedAt,
     };
     const tasks = replaceTasksAtomically(normalizedRequest.sessionId, steps.map((step) => step.content));

@@ -10,6 +10,7 @@ import {
 } from '../helpers/sse';
 import { envelopeWebAgentEvent } from '../helpers/agentStreamCursor';
 import { isCurrentUserAdmin } from '../../host/ipc/adminGuard';
+import { getSessionStateManager } from '../../host/session/sessionStateManager';
 import type {
   BuildInfo,
   PermissionRequest,
@@ -115,6 +116,13 @@ export function createHealthRouter(deps: HealthDeps): Router {
         sendPendingPermissionSnapshots(res, deps.getPendingPermissionRequests?.() ?? []);
       } catch {
         // SSE 主连接仍可继续；后续实时 permission_request 不受一次快照读取失败影响。
+      }
+      try {
+        for (const summary of getSessionStateManager().getAllSummariesArray()) {
+          sendSSEPayload(res, 'session:status:update', { ...summary, snapshot: true });
+        }
+      } catch {
+        // SSE 主连接仍可继续；后续实时 session status 不受一次快照读取失败影响。
       }
     }
 

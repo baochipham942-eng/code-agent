@@ -32,14 +32,24 @@ import {
   materializeFeishuMedia,
   type FeishuMediaMessageType,
 } from './feishuMedia';
+import {
+  assembleFeishuInbound,
+  extractFeishuPostText,
+  feishuReplyCountsAsMention,
+  readFeishuReplyParent,
+  type FeishuParentRead,
+} from './feishuInboundContext';
 import { BoundedDedupeSet } from '../inboundDedupe';
 import { checkOutboundTarget } from '../outboundAllowlist';
 import { checkInboundAccess, type InboundAccessDecision } from '../inboundAccess';
+import { hasChannelListenBinding } from '../channelListenRegistry';
+import { buildFeishuListenChannelMessage } from './feishuListenMessage';
 import { inboundAccessText } from '../inboundAccessI18n';
 import type { InboundPairingRequest } from '../inboundPairingService';
 import { CHANNEL_INGRESS } from '../../../shared/constants';
 import { getAuditLogger } from '../../security/auditLogger';
 import { buildFeishuCardActionPayload } from './feishuCardAction';
+import { openFeishuWebSocket, type FeishuWsSession } from './feishuWsSession';
 
 const logger = createLogger('FeishuChannel');
 type FeishuPlatform = 'feishu' | 'lark';
@@ -63,7 +73,7 @@ const FEISHU_CHANNEL_CAPABILITIES: ChannelCapabilities = {
 /**
  * 飞书消息类型
  */
-type FeishuMessageType = 'text' | 'post' | 'image' | 'file' | 'audio' | 'media' | 'interactive';
+type FeishuMessageType = 'text' | 'post' | 'image' | 'file' | 'audio' | 'media' | 'interactive' | 'merge_forward';
 type FeishuCardTextTag = 'lark_md' | 'plain_text';
 type FeishuCardButtonType = 'primary';
 
@@ -113,6 +123,7 @@ interface FeishuMessageEvent {
     message_id: string;
     root_id?: string;
     parent_id?: string;
+    thread_id?: string;
     create_time: string;
     chat_id: string;
     chat_type: 'p2p' | 'group';
@@ -148,15 +159,6 @@ function readArrayField(record: Record<string, unknown>, key: string): unknown[]
   return Array.isArray(value) ? value : undefined;
 }
 
-function parseJsonRecord(raw: string): Record<string, unknown> {
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return isRecord(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
 function normalizeFeishuMessageType(value: unknown): FeishuMessageType | undefined {
   if (
     value === 'text' ||
@@ -165,7 +167,8 @@ function normalizeFeishuMessageType(value: unknown): FeishuMessageType | undefin
     value === 'file' ||
     value === 'audio' ||
     value === 'media' ||
-    value === 'interactive'
+    value === 'interactive' ||
+    value === 'merge_forward'
   ) {
     return value;
   }
@@ -230,6 +233,7 @@ function normalizeFeishuMessageEvent(payload: unknown): FeishuMessageEvent | und
       message_id: messageId,
       root_id: readStringField(message, 'root_id'),
       parent_id: readStringField(message, 'parent_id'),
+      thread_id: readStringField(message, 'thread_id'),
       create_time: createTime,
       chat_id: chatId,
       chat_type: chatType,
@@ -257,6 +261,7 @@ export class FeishuChannel extends BaseChannelPlugin {
   private privacyMode: ChannelPrivacyMode = 'local-redact';
   private client: lark.Client | null = null;
   private wsClient: lark.WSClient | null = null;
+  private wsSession: FeishuWsSession | null = null;
   private botOpenId: string | null = null;
 
   // Webhook 服务器
@@ -323,18 +328,18 @@ export class FeishuChannel extends BaseChannelPlugin {
 
     try {
       if (this.feishuConfig.useWebSocket === true) {
-        // 使用 WebSocket 长连接 (需要飞书后台配置)
         await this.connectWebSocket();
       } else {
-        // 默认使用 Webhook 模式
         await this.startWebhookServer();
+        this.setStatus('connected');
       }
-
-      this.setStatus('connected');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       logger.error(`Failed to connect ${this.meta.name}Channel`, { error: message });
-      this.setStatus('error', message);
+      // onError 已经写过 error；disconnect 之后也不要把状态打回 error。
+      if (this.status === 'connecting') {
+        this.setStatus('error', message);
+      }
       throw error;
     }
   }
@@ -347,10 +352,9 @@ export class FeishuChannel extends BaseChannelPlugin {
     }
     this.reconnectAttempts = 0;
 
-    // 关闭 WebSocket 连接
-    if (this.wsClient) {
-      this.wsClient = null;
-    }
+    const session = this.wsSession;
+    this.wsSession = null;
+    session?.detachAndClose();
 
     // 关闭 Webhook 服务器
     if (this.webhookServer) {
@@ -364,6 +368,7 @@ export class FeishuChannel extends BaseChannelPlugin {
 
     this.setStatus('disconnected');
     logger.info(`${this.meta.name}Channel disconnected`);
+    session?.cancel(new Error('WebSocket disconnected'));
   }
 
   async destroy(): Promise<void> {
@@ -920,27 +925,21 @@ export class FeishuChannel extends BaseChannelPlugin {
       throw new Error('Client not initialized');
     }
 
-    // 创建 WebSocket 客户端
-    this.wsClient = new lark.WSClient({
-      appId: this.feishuConfig.appId,
-      appSecret: this.feishuConfig.appSecret,
+    const session = openFeishuWebSocket({
+      config: this.feishuConfig,
       domain: this.getSdkDomain(),
+      channelName: this.meta.name,
+      onStatus: (status, message) => {
+        if (status === 'connected') this.reconnectAttempts = 0;
+        this.setStatus(status, message);
+      },
+      onEvent: (data) => this.handleMessageEvent(data as unknown as FeishuMessageEvent),
+      attach: (client) => { this.wsClient = client; },
+      detach: () => { this.wsClient = null; },
+      isCurrent: (client) => this.wsClient === client,
     });
-
-    // 注册消息事件处理器
-    this.wsClient.start({
-      eventDispatcher: new lark.EventDispatcher({
-        encryptKey: this.feishuConfig.encryptKey,
-        verificationToken: this.feishuConfig.verificationToken,
-      }).register({
-        'im.message.receive_v1': async (data) => {
-          await this.handleMessageEvent(data as unknown as FeishuMessageEvent);
-        },
-      }),
-    });
-
-    logger.info(`${this.meta.name} WebSocket connected`);
-    this.reconnectAttempts = 0; // Reset on successful connect
+    this.wsSession = session;
+    await session.done;
   }
 
   private scheduleReconnect(): void {
@@ -999,9 +998,14 @@ export class FeishuChannel extends BaseChannelPlugin {
       const senderId = sender.sender_id.open_id;
       const paired = this.feishuConfig?.inboundAllowlist?.includes(senderId) === true;
       let mentionedBot = false;
+      let parentRead: FeishuParentRead | undefined;
       if (msg.chat_type === 'group') {
         const botOpenId = await this.resolveBotOpenId();
         mentionedBot = Boolean(botOpenId && msg.mentions?.some((mention) => mention.id.open_id === botOpenId));
+        if (!mentionedBot && msg.parent_id) {
+          parentRead = await readFeishuReplyParent(this.client, msg.parent_id);
+          mentionedBot = feishuReplyCountsAsMention(parentRead, this.feishuConfig?.appId, botOpenId);
+        }
       }
       const ingress = checkInboundAccess({
         channel: 'feishu',
@@ -1009,6 +1013,9 @@ export class FeishuChannel extends BaseChannelPlugin {
         mentionedBot,
         paired,
         groupAccessMode: this.feishuConfig?.groupAccessMode,
+        hasListenBinding: msg.chat_type === 'group' && !mentionedBot
+          ? hasChannelListenBinding(this._accountId, msg.chat_id)
+          : undefined,
       });
 
       if (ingress.action === 'pair') {
@@ -1036,38 +1043,41 @@ export class FeishuChannel extends BaseChannelPlugin {
         }
         return;
       }
+      if (ingress.action === 'listen') {
+        // 监听事件与正常入站分流：同一套组装（映射在 helper 内），只走 'listen_message'。
+        this.auditIngress(ingress, msg.chat_id, senderId);
+        const listenMessage = await buildFeishuListenChannelMessage({
+          client: this.client,
+          accountId: this._accountId,
+          platform: this.platform,
+          privacyMode: this.privacyMode,
+          parentRead,
+          msg,
+          sender,
+          raw: event,
+        });
+        this.emit('listen_message', listenMessage);
+        return;
+      }
       if (ingress.action === 'guest') {
         this.auditIngress(ingress, msg.chat_id, senderId);
       }
 
-      // 解析消息内容
-      let content = '';
-      let attachments: ChannelAttachment[] | undefined;
-
-      if (msg.message_type === 'text') {
-        const parsed = parseJsonRecord(msg.content);
-        content = readStringField(parsed, 'text') || '';
-      } else if (msg.message_type === 'post') {
-        // 富文本消息，提取纯文本
-        const parsed = parseJsonRecord(msg.content);
-        content = this.extractTextFromPost(parsed);
-      } else if (
-        msg.message_type === 'image' ||
-        msg.message_type === 'file' ||
-        msg.message_type === 'audio' ||
-        msg.message_type === 'media'
-      ) {
-        const materialized = await materializeFeishuMedia({
-          accountId: this._accountId,
-          messageId: msg.message_id,
-          messageType: msg.message_type as FeishuMediaMessageType,
-          content: msg.content,
-          client: this.client,
-          platform: this.platform,
-        });
-        content = materialized?.content || `[${msg.message_type}]`;
-        attachments = materialized?.attachments;
-      }
+      const assembled = await assembleFeishuInbound({
+        client: this.client,
+        accountId: this._accountId,
+        platform: this.platform,
+        messageId: msg.message_id,
+        messageType: msg.message_type,
+        rawContent: msg.content,
+        parentId: msg.parent_id,
+        rootId: msg.root_id,
+        threadId: msg.thread_id,
+        parentRead,
+        renderPost: extractFeishuPostText,
+      });
+      const content = assembled.content;
+      const attachments = assembled.attachments;
 
       // 构建统一消息格式
       const channelMessage: ChannelMessage = sanitizeFeishuInboundMessage({
@@ -1081,7 +1091,7 @@ export class FeishuChannel extends BaseChannelPlugin {
         context: {
           chatId: msg.chat_id,
           chatType: msg.chat_type,
-          threadId: msg.root_id,
+          threadId: msg.root_id ?? msg.thread_id,
           replyToMessageId: msg.parent_id,
         },
         content,
@@ -1127,11 +1137,11 @@ export class FeishuChannel extends BaseChannelPlugin {
   }
 
   private auditIngress(
-    decision: Extract<InboundAccessDecision, { action: 'deny' | 'pair' | 'guest' }>,
+    decision: Extract<InboundAccessDecision, { action: 'deny' | 'pair' | 'guest' | 'listen' }>,
     chatId: string,
     senderId: string,
   ): void {
-    const outcome = decision.action === 'guest' ? 'guest' : 'denied';
+    const outcome = decision.action === 'guest' ? 'guest' : decision.action === 'listen' ? 'listen' : 'denied';
     logger.info(`[feishu-ingress] ${outcome}`, {
       accountId: this._accountId,
       chatId,
@@ -1146,37 +1156,12 @@ export class FeishuChannel extends BaseChannelPlugin {
         input: { accountId: this._accountId, chatId, senderId },
         output: `${outcome}:${decision.reason}`,
         duration: 0,
-        success: decision.action === 'guest',
-        riskLevel: decision.action === 'guest' ? 'low' : 'high',
+        success: decision.action === 'guest' || decision.action === 'listen',
+        riskLevel: decision.action === 'deny' || decision.action === 'pair' ? 'high' : 'low',
       });
     } catch (error) {
       logger.warn('Failed to persist Feishu ingress audit entry', { error });
     }
-  }
-
-  private extractTextFromPost(post: Record<string, unknown>): string {
-    // 从富文本 post 中提取纯文本
-    const content = readArrayField(post, 'content') || [];
-    const texts: string[] = [];
-
-    for (const paragraph of content) {
-      if (Array.isArray(paragraph)) {
-        for (const element of paragraph) {
-          if (!isRecord(element)) continue;
-          const tag = readStringField(element, 'tag');
-          if (tag === 'text') {
-            const text = readStringField(element, 'text');
-            if (text) texts.push(text);
-          } else if (tag === 'at') {
-            const userName = readStringField(element, 'user_name');
-            const userId = readStringField(element, 'user_id');
-            texts.push(`@${userName || userId || ''}`);
-          }
-        }
-      }
-    }
-
-    return texts.join('');
   }
 
   private buildMessageContent(text: string): { text: string } {

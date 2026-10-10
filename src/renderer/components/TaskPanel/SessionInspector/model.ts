@@ -47,6 +47,7 @@ export interface TurnOutcomeStamp {
   terminal: TurnTerminal | null;
   verdict: TurnOutcomeVerdict | null;
   evidenceCount: number;
+  evidenceProblems: readonly string[];
   source: string | null;
 }
 
@@ -60,6 +61,7 @@ export function readTurnOutcome(event: TraceLedgerEvent): TurnOutcomeStamp | nul
     terminal: str(data.terminal) as TurnTerminal | null,
     verdict: verdict === 'verified' || verdict === 'self_claimed' || verdict === 'n_a' ? verdict : null,
     evidenceCount: invalidated ? 0 : Array.isArray(data.evidenceRefs) ? data.evidenceRefs.length : 0,
+    evidenceProblems: strArray(data.evidenceProblems),
     source: str(data.source),
   };
 }

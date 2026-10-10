@@ -25,8 +25,9 @@
 // ============================================================================
 
 import { describe, expect, it } from 'vitest';
-import { PARALLEL_SAFE_TOOLS } from '../../../src/host/agent/loopTypes';
 import type { ToolSchema } from '../../../src/host/protocol/tools';
+import { resolveToolCallAccesses } from '../../../src/host/tools/dispatch/resolveToolCallAccess';
+import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { registerMigratedTools } from '../../../src/host/tools/modules';
 import { CORE_TOOLS } from '../../../src/host/services/toolSearch/deferredTools';
 import { ToolSearchService } from '../../../src/host/services/toolSearch/toolSearchService';
@@ -164,12 +165,20 @@ describe('注册即可发现（registry → 模型到达路径）', () => {
 });
 
 
-describe('并行白名单注册名棘轮', () => {
-  it('每个名字都是真实注册名，禁止残留旧名', () => {
+describe('调度内置名走真实 schema', () => {
+  it('每个名字都已注册，且不是未注册工具的未知读写', () => {
+    getProtocolRegistry();
     const registered = new Set(collectRegisteredSchemas().map(schema => schema.name));
-    expect([...PARALLEL_SAFE_TOOLS].filter(name => !registered.has(name))).toEqual([]);
     for (const name of ['Read', 'Glob', 'Grep', 'ListDirectory', 'WebFetch', 'WebSearch', 'memory_search', 'Explore', 'Task']) {
-      expect(PARALLEL_SAFE_TOOLS.has(name), name).toBe(true);
+      expect(registered.has(name), name).toBe(true);
+      const resolved = resolveToolCallAccesses(
+        { id: name, name, arguments: { file_path: 'a.txt', path: 'a.txt', pattern: 'x' } },
+        { workspace: '/tmp/toolres-k2', cwd: '/tmp/toolres-k2' },
+      );
+      const unknownReadWrite = resolved.length === 1
+        && resolved[0]?.kind === 'readwrite'
+        && resolved[0]?.domain.type === 'unknown';
+      expect(unknownReadWrite, name).toBe(false);
     }
   });
 });

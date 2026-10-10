@@ -47,4 +47,7 @@ The output always includes column names, which you should reference exactly when
   readsUntrustedContent: 'block',
   readOnly: true,
   allowInPlanMode: true,
+  accesses: [
+    { kind: 'read', argumentNames: ['file_path'] },
+  ],
 };

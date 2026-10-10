@@ -2,9 +2,10 @@ import type { PriceSource } from '../pricing/resolveModelPrice';
 
 /**
  * 本轮相对上一轮的 prompt-cache 前缀是否被打断。
- * model-switch：模型变了。prefix-changed：动态边界之前的静态前缀变了。none：没断。
+ * model-switch：模型变了。prefix-changed：动态边界之前的静态前缀变了。
+ * tools-changed：提示与模型都没变，但发给模型的工具表变了。none：没断。
  */
-export type CacheBreakReason = 'model-switch' | 'prefix-changed' | 'none';
+export type CacheBreakReason = 'model-switch' | 'prefix-changed' | 'tools-changed' | 'none';
 
 /** 一轮模型调用的刊例费用估算；usd=null 表示没有可信价格。 */
 export interface TurnCostEstimate {

@@ -1,5 +1,6 @@
 import type { AgentEvent } from '../../../shared/contract';
 import type { CacheBreakReason, TurnCostEstimateInput } from '../../../shared/contract/turnCost';
+import type { CachePromptSample } from './toolTableFingerprint';
 import {
   estimateTurnCostUsd,
   resolveModelPrice,
@@ -21,12 +22,7 @@ interface PendingTurnCost {
   outputTokens?: number;
 }
 
-interface TurnCachePromptSample {
-  prompt: string;
-  modelId: string;
-}
-
-const previousPromptBySession = new Map<string, TurnCachePromptSample>();
+const previousPromptBySession = new Map<string, CachePromptSample>();
 const MAX_PREVIOUS_PROMPT_SESSIONS = 256;
 
 export function clearSessionCachePrompt(sessionId: string): void {
@@ -53,8 +49,8 @@ export function createTurnCostEventHandler(options: {
   sessionId: string;
   onEvent: (event: AgentEvent) => void;
   sink?: TurnCostWriteSink;
-  /** 本轮系统提示与模型。缺省时 cacheBreakReason 记 none。 */
-  readCachePrompt?: () => TurnCachePromptSample | undefined;
+  /** 本轮系统提示、模型，以及发送时的工具表指纹。缺省时 cacheBreakReason 记 none。 */
+  readCachePrompt?: () => CachePromptSample | undefined;
 }): (event: AgentEvent) => void {
   const turns = new Map<string, PendingTurnCost>();
   const sink = options.sink ?? defaultSink();
@@ -73,6 +69,8 @@ export function createTurnCostEventHandler(options: {
     return detectCacheBreak(previous.prompt, current.prompt, {
       prevModel: previous.modelId,
       currModel: current.modelId,
+      prevToolsFingerprint: previous.toolsFingerprint,
+      currToolsFingerprint: current.toolsFingerprint,
     }).cacheBreakReason;
   };
 

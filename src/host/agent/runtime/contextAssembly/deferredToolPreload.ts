@@ -3,6 +3,7 @@ import { getToolSearchService } from '../../../services/toolSearch';
 import { isCoreToolName, resolveToolAlias } from '../../../services/toolSearch/deferredTools';
 import { createLogger } from '../../../services/infra/logger';
 import { CONNECTOR_TOOL_NAMES } from '../../../../shared/contract/workbenchTools';
+import { needsArtifactTaskBrief } from '../../../prompts/builder';
 
 const logger = createLogger('ContextAssembly');
 
@@ -140,6 +141,15 @@ export function getDeferredToolsToPreloadForTurn(
         tools.add(canonical);
       }
     }
+  }
+
+  // Artifact turns skip the <deferred-tools> name index (messageBuild hides it
+  // when shouldInjectArtifactBrief) while the artifact brief and Write's
+  // large-file fallback both tell the model to Append. Append is deferred, so
+  // preload its schema here. The denied-names filter below still applies.
+  // Repair mode needs ctx, which this function does not receive, so it stays out.
+  if (needsArtifactTaskBrief(userText)) {
+    tools.add('Append');
   }
 
   const denied = new Set((runtime.deniedToolNames ?? []).map((name) => resolveToolAlias(name).toLowerCase()));

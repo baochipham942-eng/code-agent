@@ -124,9 +124,9 @@ async function runAgentAction(
   agentState.getMessages.mockReturnValue([assistantMessage(finalAssistantText)]);
   const updateJob = vi.spyOn(service, 'updateJob');
 
-  await harness.executeAction(definition, definition.action, undefined, 'execution-1');
+  const result = await harness.executeAction(definition, definition.action, undefined, 'execution-1');
 
-  return { service, definition, updateJob };
+  return { service, definition, updateJob, result };
 }
 
 beforeEach(() => {
@@ -358,6 +358,25 @@ describe('CronService external_event 无变化则安静门', () => {
       '<cron_alert>周会 15:00-16:00 与 评审 15:30-16:30 时间冲突</cron_alert>\n<cron_snapshot>冲突对：周会×评审</cron_snapshot>',
     );
     expect(result.skipped).toBeUndefined();
+  });
+
+  it('同时包含 snapshot、alert、summary 时保留原有 snapshot/alert 判据并附 digest', async () => {
+    const { service, definition, result } = await runAgentAction(
+      watchContext,
+      '<cron_snapshot>冲突对：周会×评审</cron_snapshot>\n'
+      + '<cron_alert>新增冲突：周会与评审</cron_alert>\n'
+      + '<cron_summary>已完成检查。\nartifact: /tmp/report.md</cron_summary>',
+    );
+
+    expect((result as Record<string, unknown>).skipped).toBeUndefined();
+    expect((result as Record<string, unknown>).digest).toEqual({
+      summary: '已完成检查。',
+      artifacts: ['/tmp/report.md'],
+    });
+    expect(service.getJob(definition.id)?.action).toMatchObject({
+      type: 'agent',
+      context: { [CRON_AGENT_SNAPSHOT.CONTEXT_KEY]: '冲突对：周会×评审' },
+    });
   });
 
   it('普通 agent 任务即使无 alert 标记也永不被静音', async () => {

@@ -47,6 +47,7 @@ vi.mock('../../../../../src/host/agent/workflowLaunchApproval', async (orig) => 
 });
 
 import { workflowModule } from '../../../../../src/host/tools/modules/multiagent/workflow';
+import { getBackgroundSubagentRegistry } from '../../../../../src/host/agent/backgroundSubagentRegistry';
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -74,7 +75,7 @@ function completedState(): ScriptRunState {
 async function run(ctx: ToolContext, script = 'return 1;'): Promise<ScriptRunHostDeps> {
   const handler = await workflowModule.createHandler();
   await handler.execute({ script }, ctx, allowAll, undefined as never);
-  expect(startRunMock).toHaveBeenCalledTimes(1);
+  await vi.waitFor(() => expect(startRunMock).toHaveBeenCalledTimes(1));
   return startRunMock.mock.calls[0][1] as ScriptRunHostDeps;
 }
 
@@ -84,9 +85,12 @@ beforeEach(() => {
   startRunMock.mockResolvedValue(completedState());
 });
 
-afterEach(() => {
+afterEach(async () => {
   if (ORIGINAL_FLAG === undefined) delete process.env.CODE_AGENT_PTC_ENABLED;
   else process.env.CODE_AGENT_PTC_ENABLED = ORIGINAL_FLAG;
+  const registry = getBackgroundSubagentRegistry();
+  const running = registry.list().filter((entry) => entry.status === 'running');
+  await Promise.all(running.map((entry) => registry.await(entry.agentId)));
 });
 
 describe('PTC 执行侧 · 通道注入', () => {
@@ -153,9 +157,15 @@ describe('PTC 执行侧 · 通道注入', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error(result.error);
-    expect(result.output).toContain('[workflow output truncated: exceeded');
-    expect(Buffer.byteLength(result.output ?? '', 'utf8')).toBeLessThanOrEqual(SCRIPT_RUNTIME.MAX_OUTER_OUTPUT_BYTES);
-    expect(result.output).not.toContain('\uFFFD');
+    const runId = result.meta?.runId;
+    expect(typeof runId).toBe('string');
+    await vi.waitFor(() => {
+      expect(getBackgroundSubagentRegistry().getStatus(runId as string)?.status).toBe('completed');
+    });
+    const settled = await getBackgroundSubagentRegistry().await(runId as string);
+    expect(settled?.output).toContain('[workflow output truncated: exceeded');
+    expect(Buffer.byteLength(settled?.output ?? '', 'utf8')).toBeLessThanOrEqual(SCRIPT_RUNTIME.MAX_OUTER_OUTPUT_BYTES);
+    expect(settled?.output).not.toContain('\uFFFD');
   });
 });
 

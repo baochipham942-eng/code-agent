@@ -21,4 +21,9 @@ export interface TurnDiffEventData {
    * 卡片仍从工具节点反推已经写成的文件。
    */
   filesAuthoritative?: boolean;
+  /**
+   * 本轮候选里、收尾时位于仓库内且磁盘上已不存在的路径。
+   * 每条同时记下解析后的绝对路径和调用方传入的原始字符串。仓库外的不记。
+   */
+  absentPaths?: string[];
 }

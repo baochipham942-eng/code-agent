@@ -161,4 +161,44 @@ describe('RewindPanel (Modal primitive 迁移验证)', () => {
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: '仅恢复文件' }).getAttribute('disabled')).toBeNull();
   });
+
+  // N-CHECKPOINT-MCP-WRITETARGET：未声明写盘披露在面板里逐工具呈现，
+  // mcp__server__tool 显示成「server / tool」，不裸露 undeclared-tool: 合成键
+  it('discloses undeclared tool writes per tool after a partial checkout', async () => {
+    mocks.invoke
+      .mockResolvedValueOnce([
+        { id: 'checkpoint-1', messageId: 'message-1', anchorUserMessageId: 'user-1', timestamp: 1, description: 'Before edit', fileCount: 1 },
+      ])
+      .mockResolvedValueOnce([]);
+    mocks.invokeDomain.mockResolvedValueOnce({
+      success: true,
+      state: 'partial',
+      sessionId: 'sess-1',
+      rewindId: 'rewind-1',
+      done: ['conversation', 'workspace', 'manifest', 'evidence', 'note'],
+      failed: [],
+      skippedFiles: [{
+        filePath: 'undeclared-tool:mcp__fs__save_file',
+        reason: 'undeclared_tool_write',
+        toolName: 'mcp__fs__save_file',
+        detail: 'This tool\'s writes are not in the rollback scope.',
+      }],
+      restoredFiles: [],
+      deletedFiles: [],
+      activeMessages: [],
+      hiddenMessageCount: 1,
+      staleEvidenceCount: 0,
+      redoAvailable: true,
+      externalSideEffectsWarning: 'Changes caused by external commands are not rolled back.',
+    });
+    render(<RewindPanel isOpen={true} onClose={() => {}} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Before edit/ }));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByRole('button', { name: '回到这一轮' }));
+    fireEvent.click(screen.getAllByRole('button', { name: '回到这一轮' }).at(-1)!);
+
+    expect(await screen.findByText('「fs / save_file」的写入不在回退范围内。')).toBeTruthy();
+    expect(screen.queryByText(/undeclared-tool:/)).toBeNull();
+  });
 });

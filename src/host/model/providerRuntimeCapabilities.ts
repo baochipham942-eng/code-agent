@@ -324,6 +324,20 @@ export function getProviderRuntimeCapabilityEntry(
   return entry;
 }
 
+const synthesizedThinkingCapabilities = new WeakSet<ModelThinkingCapability>();
+
+/**
+ * The registry stores the resolved capability on the model, and the fallback
+ * effort shape is identical to an explicit low/medium/high declaration.
+ * Only objects created here are synthesized; catalogue objects are returned
+ * as-is and stay out of this set.
+ */
+export function isSynthesizedModelThinkingCapability(
+  capability: ModelThinkingCapability | undefined,
+): boolean {
+  return capability != null && synthesizedThinkingCapabilities.has(capability);
+}
+
 /**
  * Resolve a model's effective thinking control. Explicit model metadata wins;
  * otherwise the provider matrix supplies an effort/none/unknown default.
@@ -339,10 +353,13 @@ export function resolveModelThinkingCapability(
   const status = entry.capabilityOverrides?.[provider]?.reasoning_effort?.status
     ?? entry.capabilities.reasoning_effort.status;
 
-  if (status === 'supported' || status === 'experimental') {
-    return { kind: 'effort', levels: ['low', 'medium', 'high'] };
-  }
-  return status === 'unsupported' ? { kind: 'none' } : { kind: 'unknown' };
+  const resolved: ModelThinkingCapability = status === 'supported' || status === 'experimental'
+    ? { kind: 'effort', levels: ['low', 'medium', 'high'] }
+    : status === 'unsupported'
+      ? { kind: 'none' }
+      : { kind: 'unknown' };
+  synthesizedThinkingCapabilities.add(resolved);
+  return resolved;
 }
 
 export function assertProviderRuntimeCapability(

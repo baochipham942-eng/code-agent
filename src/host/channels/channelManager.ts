@@ -47,6 +47,8 @@ const CHANNEL_ACCOUNTS_KEY = 'channel.accounts';
 export interface ChannelManagerEvents {
   /** 收到消息 */
   message: (accountId: string, message: ChannelMessage) => void;
+  /** 收到监听事件（未 @ 但命中显式监听绑定的群消息）：只转发，不进收件箱、不触 messageHandler */
+  listen_message: (accountId: string, message: ChannelMessage) => void;
   /** 账号状态变化 */
   account_status_change: (accountId: string, status: ChannelAccountStatus, error?: string) => void;
   /** 账号列表变化 */
@@ -288,6 +290,13 @@ export class ChannelManager extends EventEmitter {
     // 监听事件
     channel.on('message', (message: ChannelMessage) => {
       this.handleMessage(accountId, message);
+    });
+
+    // 监听事件（N-TRIGGER-GROUP-LISTEN）：未 @ 但命中显式监听绑定的群消息。
+    // 只转发给事件订阅方（CronEventTrigger）：不进收件箱、不调 messageHandler，
+    // agent 桥（经 setMessageHandler 注入）永远看不到它们。
+    channel.on('listen_message', (message: ChannelMessage) => {
+      this.emit('listen_message', accountId, message);
     });
 
     channel.on('status_change', (status: ChannelAccountStatus, error?: string) => {

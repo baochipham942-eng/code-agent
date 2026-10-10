@@ -2,7 +2,7 @@
 // PermissionClassifier 的 Jev（TypeSafe System One）分类档
 // ============================================================================
 // 从 permissionClassifier.ts 拆出（eslint max-lines 1000 有效行硬门）：
-// state 构造 + 出境脱敏 + 四问消费 + 放行判据全在这里，分类器主文件只留调用。
+// state 构造 + 出境脱敏 + 权限问句消费 + 放行判据全在这里，分类器主文件只留调用。
 //
 // ponytail: Jev 只缩小 ask 桶，不扩 approve 边界，不做 deny——生效范围是 Bash +
 // PERMWIDE_TOOL_NAMES 明确列出的本地产物工具（扩桶工具额外要求 beyond_scope 过关）。
@@ -21,6 +21,10 @@ import { isProtectedWritePath, isSensitiveCredentialPath } from '../sandbox/sens
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 import {
   PERMCLASS_APPROVE_THRESHOLDS,
+  PERMCLASS_BASH_CHMOD_PATTERN,
+  PERMCLASS_BASH_PATH_TOKEN_PATTERN,
+  PERMCLASS_BASH_PRE_JEV_VETO_PATTERNS,
+  PERMCLASS_GUARD_QUESTIONS,
   PERMCLASS_QUESTIONS,
   PERMWIDE_QUESTIONS,
   type JevAnswers,
@@ -29,6 +33,7 @@ import {
   type JevSystemOneCall,
 } from '../../shared/constants/jevQuestions';
 import { isBashToolName, normalizeToolName } from './toolNames';
+import { isJevFeatureOn } from '../model/jevFeatures';
 import type { ClassificationContext, ClassificationResult } from './permissionClassifier';
 
 const logger = createLogger('PermissionClassifierJev');
@@ -52,12 +57,12 @@ function isJevPermissionTool(toolName: string): boolean {
 }
 
 /**
- * Jev 权限分类开关（默认关，与 CODEX_SANDBOX_ENABLED / CODE_AGENT_CLOUD_PROMPTS
- * 同一惯例：能力默认关，显式开启）。开启后仅影响「规则判不了→ask」那一桶——
- * 数据出境说明见 docs/shipnotes/2026-08-30-ship-note-cli-permission-mode-auto.md 追记节。
+ * Jev 权限分类开关（默认开，'0'/'false' 显式关——判定单源见 model/jevFeatures.ts，
+ * N-JEV-DEFAULT-ON）。开启后仅影响「规则判不了→ask」那一桶——数据出境说明见
+ * docs/shipnotes/2026-08-30-ship-note-cli-permission-mode-auto.md 追记节。
  */
 export function isPermissionLlmClassifierEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.CODE_AGENT_PERMISSION_LLM_CLASSIFIER === '1';
+  return isJevFeatureOn('permissionClassifier', env);
 }
 
 /**
@@ -108,8 +113,6 @@ function buildJevState(toolName: string, args: Record<string, unknown>, context:
         },
   };
 }
-
-let jevKeyMissingWarned = false;
 
 /** 只按路径形 key 定向提取（path/file/dir/image/output/template/target/source），
  * 正文 key（content/data/subtitle…）不进文件系统解析——长正文含 '/' 时逐段
@@ -173,15 +176,37 @@ function hitsDeterministicBoundary(args: Record<string, unknown>, workingDirecto
     || !isWithinAny(resolved, allowedRoots));
 }
 
-/** Jev 不可用只 warn 一行、不抛：key 缺失属配置错误只报一次，其余失败逐次留痕。 */
+function resolveBashPathToken(token: string, workingDirectory: string): string {
+  const unquoted = token.replace(/^["']|["']$/g, '').replace(/[;,]+$/, '');
+  const expanded = unquoted.startsWith('~') ? os.homedir() + unquoted.slice(1) : unquoted;
+  const resolved = path.isAbsolute(expanded)
+    ? path.normalize(expanded)
+    : path.resolve(workingDirectory, expanded);
+  try {
+    return resolveCanonicalRunPath(resolved);
+  } catch {
+    return resolved;
+  }
+}
+
+/**
+ * Bash-only deterministic veto before Jev. Jev can narrow the ask bucket, but
+ * it is never allowed to make a privilege/system change, destructive command,
+ * or instruction-like injection look safe.
+ */
+function hitsBashPreJevVeto(command: string, workingDirectory: string): boolean {
+  if (PERMCLASS_BASH_PRE_JEV_VETO_PATTERNS.some((pattern) => pattern.test(command))) return true;
+  if (!PERMCLASS_BASH_CHMOD_PATTERN.test(command)) return false;
+  const workspace = resolveCanonicalRunPath(path.resolve(workingDirectory));
+  const paths = command.match(PERMCLASS_BASH_PATH_TOKEN_PATTERN) ?? [];
+  return paths.some((token) => !isWithinAny(resolveBashPathToken(token, workingDirectory), [workspace]));
+}
+
+/** Jev 不可用只留痕不抛：无 key 的降级计数与单次 warn 已在 jevFeatures 统一
+ * （N-JEV-DEFAULT-ON），这里静默回落 ask；其余失败逐次留痕。 */
 function warnJevUnavailable(error: unknown): void {
   const code = (error as { code?: string } | null | undefined)?.code;
-  if (code === 'TYPESAFE_KEY_MISSING') {
-    if (jevKeyMissingWarned) return;
-    jevKeyMissingWarned = true;
-    logger.warn('CODE_AGENT_PERMISSION_LLM_CLASSIFIER 已开启但 TYPESAFE_API_KEY 缺失，Jev 分类不生效（保持 ask）');
-    return;
-  }
+  if (code === 'TYPESAFE_KEY_MISSING') return;
   const detail = error instanceof Error ? error.message : String(error);
   logger.warn(`Jev 分类失败，回退 ask: ${detail}`);
 }
@@ -203,9 +228,10 @@ function jevNoulAnswer(answer: JevAnswers[string] | undefined): JevNoulAnswer | 
 }
 
 /**
- * Jev 分类：Bash 使用四问；扩桶工具再加 beyond_scope。所有问全过（tier + conf +
- * needs_human + secrets + config_access [+ beyond_scope]）才
- * approve（trace `jev_approve`、reason 带 tier 与四问数值供审批卡复盘）；
+ * Jev 分类：Bash 使用四问；扩桶工具再加 beyond_scope；两类工具都加注入与越权
+ * veto 问。所有问全过（tier + conf + needs_human + secrets + config_access
+ * [+ beyond_scope] + injection + privilege_escalation）才
+ * approve（trace `jev_approve`、reason 带 tier 与全部问句数值供审批卡复盘）；
  * 非 Bash / 不过 / 报错 / 超时 / 形状不对一律返回 null，交回主流程的 fallback ask。
  */
 export async function classifyByJev(
@@ -216,11 +242,17 @@ export async function classifyByJev(
   startTime: number,
 ): Promise<ClassificationResult | null> {
   if (!isJevPermissionTool(toolName)) return null;
+  if (isBashToolName(toolName)
+    && typeof args.command === 'string'
+    && hitsBashPreJevVeto(args.command, context.workingDirectory)) return null;
   // 确定性边界预检只对扩桶的非 Bash 工具做（Bash 走原有四问协议，形状与
   // 判据不变）：凭据目录 / 受保护写路径 / 工作目录与临时目录之外，一律 ask。
   if (!isBashToolName(toolName) && hitsDeterministicBoundary(args, context.workingDirectory)) return null;
   const state = buildJevState(toolName, args, context);
-  const questions = isBashToolName(toolName) ? PERMCLASS_QUESTIONS : PERMWIDE_QUESTIONS;
+  const questions = {
+    ...(isBashToolName(toolName) ? PERMCLASS_QUESTIONS : PERMWIDE_QUESTIONS),
+    ...PERMCLASS_GUARD_QUESTIONS,
+  };
   let answers: JevAnswers;
   try {
     answers = await systemOne(state, questions);
@@ -234,7 +266,17 @@ export async function classifyByJev(
   const touchesSecrets = jevNoulAnswer(answers.touches_secrets);
   const configAccess = jevNoulAnswer(answers.config_or_credential_access);
   const beyondScope = isBashToolName(toolName) ? null : jevNoulAnswer(answers.beyond_scope);
-  if (!risk || !needsHuman || !touchesSecrets || !configAccess || (!isBashToolName(toolName) && !beyondScope)) {
+  const injection = jevNoulAnswer(answers.injection);
+  const privilegeEscalation = jevNoulAnswer(answers.privilege_escalation);
+  if (
+    !risk
+    || !needsHuman
+    || !touchesSecrets
+    || !configAccess
+    || (!isBashToolName(toolName) && !beyondScope)
+    || !injection
+    || !privilegeEscalation
+  ) {
     logger.warn(`Jev 回答形状不符合预期，回退 ask: ${JSON.stringify(answers).slice(0, 200)}`);
     return null;
   }
@@ -245,12 +287,15 @@ export async function classifyByJev(
     && needsHuman.noul < thresholds.maxNeedsHuman
     && touchesSecrets.noul < thresholds.maxTouchesSecrets
     && configAccess.noul < thresholds.maxConfigAccess
-    && (beyondScope === null || beyondScope.noul < thresholds.maxBeyondScope);
+    && (beyondScope === null || beyondScope.noul < thresholds.maxBeyondScope)
+    && injection.noul < thresholds.maxInjection
+    && privilegeEscalation.noul < thresholds.maxPrivilegeEscalation;
   if (!approved) return null;
 
   const reason = `Jev 判定 ${risk.choice}（conf=${risk.confidence.toFixed(2)}, `
     + `needs_human=${needsHuman.noul.toFixed(2)}, secrets=${touchesSecrets.noul.toFixed(2)}, `
-    + `config_access=${configAccess.noul.toFixed(2)}`
+    + `config_access=${configAccess.noul.toFixed(2)}, injection=${injection.noul.toFixed(2)}, `
+    + `privilege_escalation=${privilegeEscalation.noul.toFixed(2)}`
     + (beyondScope ? `, beyond_scope=${beyondScope.noul.toFixed(2)}` : '') + '）';
   return {
     decision: 'approve',

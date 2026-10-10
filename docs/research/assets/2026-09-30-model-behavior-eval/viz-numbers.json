@@ -1,0 +1,567 @@
+{
+  "gitHead": "c11bf0136376c4fbb65c6177a97616e02a3e2cbc",
+  "promptVersion": "sys-v65",
+  "model": {
+    "provider": "custom-stepfun",
+    "model": "step-3.5-flash-2603",
+    "price": {
+      "input": 0.1,
+      "cached": 0.02,
+      "output": 0.3,
+      "note": "https://platform.stepfun.com/docs/zh/guides/pricing/details (2026-09-30) ¥0.7 in / ¥0.14 cached / ¥2.1 out per 1M ≈ $0.10 / $0.02 / $0.30"
+    }
+  },
+  "controlArm": "prompts-overrides/generativeUI.md with the new bullet removed; source file was not edited",
+  "seriesPolicy": "phone-normal is the filled class (valid + the 1380000 batch; the baseline model reads phone status as filled/missing, r1 6/6 runs); every charted number, on any slice, is additionally gated by the global whole-token check",
+  "runs": [
+    {
+      "arm": "with-rule",
+      "runId": "viz-numbers-with-rule-1-1790830547353",
+      "evalExit": 0,
+      "runPass": true,
+      "tokens": {
+        "promptTokens": 276612,
+        "cacheReadTokens": 209088,
+        "outputTokens": 7163
+      },
+      "usd": 0.013083,
+      "global": {
+        "pass": true,
+        "reason": "all 3 distinct chart numbers are whole tokens in tool outputs"
+      },
+      "series": [
+        {
+          "id": "phone-normal",
+          "pass": true,
+          "numbers": [
+            96
+          ],
+          "a": {
+            "pass": true,
+            "reason": "parsed 96"
+          },
+          "b": {
+            "pass": true,
+            "reason": "every number is a whole token in a tool output"
+          },
+          "c": {
+            "pass": true,
+            "reason": "executed script references phone and an aggregation"
+          }
+        },
+        {
+          "id": "phone-blank",
+          "pass": true,
+          "numbers": [
+            24
+          ],
+          "a": {
+            "pass": true,
+            "reason": "parsed 24"
+          },
+          "b": {
+            "pass": true,
+            "reason": "every number is a whole token in a tool output"
+          },
+          "c": {
+            "pass": true,
+            "reason": "executed script references phone and an aggregation"
+          }
+        },
+        {
+          "id": "city-shanghai",
+          "pass": true,
+          "numbers": [
+            30
+          ],
+          "a": {
+            "pass": true,
+            "reason": "parsed 30"
+          },
+          "b": {
+            "pass": true,
+            "reason": "every number is a whole token in a tool output"
+          },
+          "c": {
+            "pass": true,
+            "reason": "executed script references city and an aggregation"
+          }
+        },
+        {
+          "id": "city-beijing",
+          "pass": true,
+          "numbers": [
+            30
+          ],
+          "a": {
+            "pass": true,
+            "reason": "parsed 30"
+          },
+          "b": {
+            "pass": true,
+            "reason": "every number is a whole token in a tool output"
+          },
+          "c": {
+            "pass": true,
+            "reason": "executed script references city and an aggregation"
+          }
+        }
+      ]
+    },
+    {
+      "arm": "with-rule",
+      "runId": "viz-numbers-with-rule-2-1790830619825",
+      "evalExit": 0,
+      "runPass": true,
+      "tokens": {
+        "promptTokens": 49133,
+        "cacheReadTokens": 20160,
+        "outputTokens": 831
+      },
+      "usd": 0.00355,
+      "global": {
+        "pass": true,
+        "reason": "all 3 distinct chart numbers are whole tokens in tool outputs"
+      },
+      "series": [
+        {
+          "id": "phone-normal",
+          "pass": true,
+          "numbers": [
+            96
+          ],
+          "a": {
+            "pass": true,
+            "reason": "parsed 96"
+          },
+          "b": {
+            "pass": true,
+            "reason": "every number is a whole token in a tool output"
+          },
+          "c": {
+            "pass": true,
+            "reason": "executed script references phone and an aggregation"
+          }
+        },
+        {
+          "id": "phone-blank",
+          "pass": true,
+          "numbers": [
+            24
+          ],
+          "a": {
+            "pass": true,
+            "reason": "parsed 24"
+          },
+          "b": {
+            "pass": true,
+            "reason": "every number is a whole token in a tool output"
+          },
+          "c": {
+            "pass": true,
+            "reason": "executed script references phone and an aggregation"
+          }
+        },
+        {
+          "id": "city-shanghai",
+          "pass": true,
+          "numbers": [
+            30
+          ],
+          "a": {
+            "pass": true,
+            "reason": "parsed 30"
+          },
+          "b": {
+            "pass": true,
+            "reason": "every number is a whole token in a tool output"
+          },
+          "c": {
+            "pass": true,
+            "reason": "executed script references city and an aggregation"
+          }
+        },
+        {
+          "id": "city-beijing",
+          "pass": true,
+          "numbers": [
+            30
+          ],
+          "a": {
+            "pass": true,
+            "reason": "parsed 30"
+          },
+          "b": {
+            "pass": true,
+            "reason": "every number is a whole token in a tool output"
+          },
+          "c": {
+            "pass": true,
+            "reason": "executed script references city and an aggregation"
+          }
+        }
+      ]
+    },
+    {
+      "arm": "with-rule",
+      "runId": "viz-numbers-with-rule-3-1790830640351",
+      "evalExit": 0,
+      "runPass": true,
+      "tokens": {
+        "promptTokens": 68959,
+        "cacheReadTokens": 47168,
+        "outputTokens": 2139
+      },
+      "usd": 0.003764,
+      "global": {
+        "pass": true,
+        "reason": "all 3 distinct chart numbers are whole tokens in tool outputs"
+      },
+      "series": [
+        {
+          "id": "phone-normal",
+          "pass": true,
+          "numbers": [
+            96
+          ],
+          "a": {
+            "pass": true,
+            "reason": "parsed 96"
+          },
+          "b": {
+            "pass": true,
+            "reason": "every number is a whole token in a tool output"
+          },
+          "c": {
+            "pass": true,
+            "reason": "executed script references phone and an aggregation"
+          }
+        },
+        {
+          "id": "phone-blank",
+          "pass": true,
+          "numbers": [
+            24
+          ],
+          "a": {
+            "pass": true,
+            "reason": "parsed 24"
+          },
+          "b": {
+            "pass": true,
+            "reason": "every number is a whole token in a tool output"
+          },
+          "c": {
+            "pass": true,
+            "reason": "executed script references phone and an aggregation"
+          }
+        },
+        {
+          "id": "city-shanghai",
+          "pass": true,
+          "numbers": [
+            30
+          ],
+          "a": {
+            "pass": true,
+            "reason": "parsed 30"
+          },
+          "b": {
+            "pass": true,
+            "reason": "every number is a whole token in a tool output"
+          },
+          "c": {
+            "pass": true,
+            "reason": "executed script references city and an aggregation"
+          }
+        },
+        {
+          "id": "city-beijing",
+          "pass": true,
+          "numbers": [
+            30
+          ],
+          "a": {
+            "pass": true,
+            "reason": "parsed 30"
+          },
+          "b": {
+            "pass": true,
+            "reason": "every number is a whole token in a tool output"
+          },
+          "c": {
+            "pass": true,
+            "reason": "executed script references city and an aggregation"
+          }
+        }
+      ]
+    },
+    {
+      "arm": "control",
+      "runId": "viz-numbers-control-1-1790830669911",
+      "evalExit": 0,
+      "runPass": false,
+      "tokens": {
+        "promptTokens": 259803,
+        "cacheReadTokens": 194880,
+        "outputTokens": 10515
+      },
+      "usd": 0.013544,
+      "global": {
+        "pass": true,
+        "reason": "all 0 distinct chart numbers are whole tokens in tool outputs"
+      },
+      "series": [
+        {
+          "id": "phone-normal",
+          "pass": false,
+          "numbers": [],
+          "a": {
+            "pass": false,
+            "reason": "chart spec has no number for this series"
+          },
+          "b": {
+            "pass": false,
+            "reason": "no chart number for this series"
+          },
+          "c": {
+            "pass": true,
+            "reason": "executed script references phone and an aggregation"
+          }
+        },
+        {
+          "id": "phone-blank",
+          "pass": false,
+          "numbers": [],
+          "a": {
+            "pass": false,
+            "reason": "chart spec has no number for this series"
+          },
+          "b": {
+            "pass": false,
+            "reason": "no chart number for this series"
+          },
+          "c": {
+            "pass": true,
+            "reason": "executed script references phone and an aggregation"
+          }
+        },
+        {
+          "id": "city-shanghai",
+          "pass": false,
+          "numbers": [],
+          "a": {
+            "pass": false,
+            "reason": "chart spec has no number for this series"
+          },
+          "b": {
+            "pass": false,
+            "reason": "no chart number for this series"
+          },
+          "c": {
+            "pass": true,
+            "reason": "executed script references city and an aggregation"
+          }
+        },
+        {
+          "id": "city-beijing",
+          "pass": false,
+          "numbers": [],
+          "a": {
+            "pass": false,
+            "reason": "chart spec has no number for this series"
+          },
+          "b": {
+            "pass": false,
+            "reason": "no chart number for this series"
+          },
+          "c": {
+            "pass": true,
+            "reason": "executed script references city and an aggregation"
+          }
+        }
+      ]
+    },
+    {
+      "arm": "control",
+      "runId": "viz-numbers-control-2-1790830764631",
+      "evalExit": 0,
+      "runPass": false,
+      "tokens": {
+        "promptTokens": 166883,
+        "cacheReadTokens": 121024,
+        "outputTokens": 8926
+      },
+      "usd": 0.009684,
+      "global": {
+        "pass": true,
+        "reason": "all 0 distinct chart numbers are whole tokens in tool outputs"
+      },
+      "series": [
+        {
+          "id": "phone-normal",
+          "pass": false,
+          "numbers": [],
+          "a": {
+            "pass": false,
+            "reason": "chart spec has no number for this series"
+          },
+          "b": {
+            "pass": false,
+            "reason": "no chart number for this series"
+          },
+          "c": {
+            "pass": true,
+            "reason": "executed script references phone and an aggregation"
+          }
+        },
+        {
+          "id": "phone-blank",
+          "pass": false,
+          "numbers": [],
+          "a": {
+            "pass": false,
+            "reason": "chart spec has no number for this series"
+          },
+          "b": {
+            "pass": false,
+            "reason": "no chart number for this series"
+          },
+          "c": {
+            "pass": true,
+            "reason": "executed script references phone and an aggregation"
+          }
+        },
+        {
+          "id": "city-shanghai",
+          "pass": false,
+          "numbers": [],
+          "a": {
+            "pass": false,
+            "reason": "chart spec has no number for this series"
+          },
+          "b": {
+            "pass": false,
+            "reason": "no chart number for this series"
+          },
+          "c": {
+            "pass": true,
+            "reason": "executed script references city and an aggregation"
+          }
+        },
+        {
+          "id": "city-beijing",
+          "pass": false,
+          "numbers": [],
+          "a": {
+            "pass": false,
+            "reason": "chart spec has no number for this series"
+          },
+          "b": {
+            "pass": false,
+            "reason": "no chart number for this series"
+          },
+          "c": {
+            "pass": true,
+            "reason": "executed script references city and an aggregation"
+          }
+        }
+      ]
+    },
+    {
+      "arm": "control",
+      "runId": "viz-numbers-control-3-1790830844251",
+      "evalExit": 0,
+      "runPass": true,
+      "tokens": {
+        "promptTokens": 394234,
+        "cacheReadTokens": 314944,
+        "outputTokens": 7495
+      },
+      "usd": 0.016476,
+      "global": {
+        "pass": true,
+        "reason": "all 3 distinct chart numbers are whole tokens in tool outputs"
+      },
+      "series": [
+        {
+          "id": "phone-normal",
+          "pass": true,
+          "numbers": [
+            96
+          ],
+          "a": {
+            "pass": true,
+            "reason": "parsed 96"
+          },
+          "b": {
+            "pass": true,
+            "reason": "every number is a whole token in a tool output"
+          },
+          "c": {
+            "pass": true,
+            "reason": "executed script references phone and an aggregation"
+          }
+        },
+        {
+          "id": "phone-blank",
+          "pass": true,
+          "numbers": [
+            24
+          ],
+          "a": {
+            "pass": true,
+            "reason": "parsed 24"
+          },
+          "b": {
+            "pass": true,
+            "reason": "every number is a whole token in a tool output"
+          },
+          "c": {
+            "pass": true,
+            "reason": "executed script references phone and an aggregation"
+          }
+        },
+        {
+          "id": "city-shanghai",
+          "pass": true,
+          "numbers": [
+            30
+          ],
+          "a": {
+            "pass": true,
+            "reason": "parsed 30"
+          },
+          "b": {
+            "pass": true,
+            "reason": "every number is a whole token in a tool output"
+          },
+          "c": {
+            "pass": true,
+            "reason": "executed script references city and an aggregation"
+          }
+        },
+        {
+          "id": "city-beijing",
+          "pass": true,
+          "numbers": [
+            30
+          ],
+          "a": {
+            "pass": true,
+            "reason": "parsed 30"
+          },
+          "b": {
+            "pass": true,
+            "reason": "every number is a whole token in a tool output"
+          },
+          "c": {
+            "pass": true,
+            "reason": "executed script references city and an aggregation"
+          }
+        }
+      ]
+    }
+  ],
+  "totalUsd": 0.060102
+}

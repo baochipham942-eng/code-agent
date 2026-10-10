@@ -36,6 +36,7 @@ import {
 import { atomicWriteFile } from '../../utils/atomicWrite';
 import { existingFileWriteRefusal } from '../../utils/textEncodingGuard';
 import { buildNearestAnchorHint } from '../../utils/anchorHint';
+import { readThenRetryHint } from '../../utils/readBeforeMutateHint';
 import { findFlexibleMatch } from '../../utils/editReplacers';
 import { getResourceLockManager } from '../../../services/infra/resourceLockManager';
 import { getPostEditDiagnostics } from '../../lsp/diagnosticsHelper';
@@ -44,11 +45,20 @@ import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { confineEvalPath } from '../../file/pathUtils';
 import { getFileMutationActorId } from './fileMutationIdentity';
 import { guardSkillOfficialSections } from '../../../security/skillOfficialSectionGuard';
+import { resolveToolWriteTarget } from '../../../sandbox/writeFence';
+import { CODE_EXTENSIONS, checkCodeCompleteness } from './write';
 
 interface EditOperation {
   old_text: string;
   new_text: string;
   replace_all?: boolean;
+}
+
+// V8 的 JSON.parse 错误消息内嵌绝对位置（"… in JSON at position 15 (line 3 column 3)"），
+// 无关编辑改变错误前方内容长度后位置漂移、消息必然不同；存量问题去重前先剥掉
+// 位置片段，按「错误类别 + 位置无关正文」比对，避免存量问题被误判为本次新引入。
+function normalizeCompletenessIssue(issue: string): string {
+  return issue.replace(/ in JSON at position \d+.*$/, '');
 }
 
 function normalizeEdits(rawEdits: unknown): EditOperation[] | null {
@@ -112,6 +122,15 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
       ? path.resolve(inputPath)
       : path.resolve(ctx.workingDir, inputPath);
     const filePath = confineEvalPath(inputFilePath, ctx.workingDir);
+    const writeTarget = resolveToolWriteTarget(filePath, ctx);
+    if (!writeTarget.allowed) {
+      return {
+        ok: false,
+        error: writeTarget.reason,
+        code: 'SANDBOX_WRITE_DENIED',
+        meta: { outputPath: filePath },
+      };
+    }
     const actorId = getFileMutationActorId(ctx);
     if (!actorId) {
       return {
@@ -135,7 +154,9 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
         ok: false,
         error:
           'File must be read before editing. Use Read first to view the current content, ' +
-          'then make your edit. (Use force: true with force_reason to bypass this check)',
+          'then make your edit. ' +
+          readThenRetryHint('Edit', filePath) +
+          ' (Use force: true with force_reason to bypass this check)',
         code: 'NOT_READ',
       };
     }
@@ -180,7 +201,7 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
         if (modCheck.modified) {
           return {
             ok: false,
-            error: `${modCheck.message}. Re-read the file to see the current content.`,
+            error: `${modCheck.message}. Re-read the file to see the current content. ${readThenRetryHint('Edit', filePath)}`,
             code: 'STALE_FILE',
             meta: {
               modification: modCheck.details,
@@ -325,6 +346,30 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
         // diagnostic 失败不致命
       }
 
+      // 代码完整性检测（N-EDIT-COMPLETENESS-CHECK）：Write 写完会查，Edit 之前从不查——
+      // 删掉一个 JSON 逗号/HTML 闭合标签也静默通过。检测器与警告格式复用 Write 的，
+      // 不回滚、不改变 ok/审批语义；只报本次编辑新引入的问题（与编辑前内容对比，
+      // JSON 位置片段先归一化），存量问题不重复打扰。
+      let completenessIssues: string[] | undefined;
+      const ext = path.extname(filePath).toLowerCase();
+      if (CODE_EXTENSIONS.has(ext)) {
+        const issues = checkCodeCompleteness(content, filePath).issues;
+        if (issues.length > 0) {
+          const preexisting = new Set(
+            checkCodeCompleteness(originalContent, filePath).issues.map(normalizeCompletenessIssue),
+          );
+          const fresh = issues.filter((issue) => !preexisting.has(normalizeCompletenessIssue(issue)));
+          if (fresh.length > 0) {
+            completenessIssues = fresh;
+            ctx.logger.warn('Code completeness check failed', { filePath, issues: fresh });
+            output +=
+              `\n\n⚠️ **代码完整性警告**: 检测到文件可能不完整！\n` +
+              `问题:\n${fresh.map((i) => `- ${i}`).join('\n')}\n\n` +
+              `**建议**: 请再次使用 Edit 工具修复以上问题，或重新生成完整文件。`;
+          }
+        }
+      }
+
       onProgress?.({ stage: 'completing', percent: 100 });
       ctx.logger.info('Edit done', { filePath, edits: edits.length, totalReplacements });
 
@@ -337,6 +382,7 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
           editCount: edits.length,
           replacementCount: totalReplacements,
           lineCount,
+          ...(completenessIssues ? { completenessIssues } : {}),
           ...(forceAudit ? { audit: forceAudit } : {}),
         },
       }).catch(() => undefined);
@@ -354,6 +400,7 @@ class EditHandler implements ToolHandler<Record<string, unknown>, string> {
           lineCount,
           edits: editResults,
           digest: newDigest,
+          ...(completenessIssues ? { completenessIssues } : {}),
           ...(forceAudit ? { audit: forceAudit } : {}),
           ...(artifact ? { artifact } : {}),
         },

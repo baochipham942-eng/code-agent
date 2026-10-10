@@ -1,8 +1,10 @@
 import path from 'node:path';
 import os from 'node:os';
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   unlinkSync,
@@ -15,6 +17,10 @@ import {
   SteerUnsupportedError,
 } from '../../../../src/host/runtime/runContext';
 import { RunRegistry, RunSessionConflictError } from '../../../../src/host/runtime/runRegistry';
+
+// macOS /tmp and /var are symlinks (/private/tmp, /private/var). Linux CI has no
+// such alias — skip rather than fail the premise.
+const TMP_HAS_ALIAS = realpathSync.native(os.tmpdir()) !== path.resolve(os.tmpdir());
 
 describe('RunContext', () => {
   it('creates an immutable context with a run identity distinct from the session', () => {
@@ -80,6 +86,29 @@ describe('RunContext', () => {
       expect(context.cwd).toBe(resolveCanonicalRunPath(targetA));
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(!TMP_HAS_ALIAS)('canonicalizes a tmp alias and a nonexistent leaf onto the native ancestor', () => {
+    const lexical = mkdtempSync(path.join(os.tmpdir(), 'run-alias-'));
+    try {
+      const canonical = realpathSync.native(lexical);
+      expect(path.resolve(lexical)).not.toBe(canonical);
+      expect(resolveCanonicalRunPath(lexical)).toBe(canonical);
+
+      const missing = path.join(lexical, 'not-created');
+      expect(existsSync(missing)).toBe(false);
+      expect(resolveCanonicalRunPath(missing)).toBe(path.join(canonical, 'not-created'));
+
+      // Symlink walk already rewrites /var → /private/var. The ENOENT fallback's
+      // realpathSync.native is what still pins the existing ancestor's on-disk spelling.
+      mkdirSync(path.join(lexical, 'CamelDir'));
+      const casedLeaf = path.join(lexical, 'cameldir', 'not-created');
+      expect(existsSync(casedLeaf)).toBe(false);
+      expect(realpathSync.native(path.join(lexical, 'cameldir'))).toBe(path.join(canonical, 'CamelDir'));
+      expect(resolveCanonicalRunPath(casedLeaf)).toBe(path.join(canonical, 'CamelDir', 'not-created'));
+    } finally {
+      rmSync(lexical, { recursive: true, force: true });
     }
   });
 });

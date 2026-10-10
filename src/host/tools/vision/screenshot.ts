@@ -17,8 +17,22 @@ import {
   renderBrowserComputerEvidenceCard,
   type BrowserComputerVisualObservation,
 } from '../../../shared/utils/browserComputerRedaction';
+import { detectScreenshotFailureCause } from './screenshotFailureCause';
+import { getToolScreenshotDir } from '../utils/toolScreenshotDir';
 
 const execAsync = promisify(exec);
+
+function getScreenshotFailureStderr(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object' || !('stderr' in error)) return undefined;
+  const stderr = (error as { stderr?: unknown }).stderr;
+  return typeof stderr === 'string' ? stderr : undefined;
+}
+
+function formatScreenshotFailureCause(cause: ReturnType<typeof detectScreenshotFailureCause>): string {
+  return cause.kind === 'unknown'
+    ? 'Cause: unknown (not detected by the tool; do not assume one)'
+    : `Detected cause: ${cause.text}`;
+}
 
 function buildAnalysisFailureMessage(args: {
   outputPath: string;
@@ -124,7 +138,7 @@ Returns the path to the saved screenshot file, plus AI analysis if analyze=true.
       },
       outputPath: {
         type: 'string',
-        description: 'Path to save the screenshot (default: temp directory)',
+        description: 'Path to save the screenshot (default: app data directory, outside the workspace)',
       },
       region: {
         type: 'object',
@@ -158,10 +172,11 @@ Returns the path to the saved screenshot file, plus AI analysis if analyze=true.
     const analysisPrompt = (params.prompt as string) || '请描述并分析这个截图的内容，包括界面元素、文字、按钮等。如果包含代码或文档，请提取关键信息。';
 
     // Generate output path
+    // 无显式 outputPath 时落数据目录下按会话隔离的子目录（N-RETENTION-SHOTS-APPDIR），
+    // 不再写用户工作目录；显式 outputPath 行为不变。
     const timestamp = Date.now();
     const defaultPath = path.join(
-      context.workingDirectory,
-      '.screenshots',
+      getToolScreenshotDir(context.sessionId),
       `screenshot_${timestamp}.png`
     );
     const outputPath = (params.outputPath as string) || defaultPath;
@@ -222,9 +237,14 @@ Returns the path to the saved screenshot file, plus AI analysis if analyze=true.
 
       // Verify the file was created
       if (!fs.existsSync(outputPath)) {
+        const cause = detectScreenshotFailureCause({
+          platform: process.platform,
+          env: process.env,
+        });
         return {
           success: false,
-          error: 'Screenshot was not created',
+          error: `Screenshot was not created\n${formatScreenshotFailureCause(cause)}`,
+          metadata: { failureCause: cause.kind },
         };
       }
 
@@ -343,9 +363,17 @@ Returns the path to the saved screenshot file, plus AI analysis if analyze=true.
         cannotObserveScreen: !analysis,
       });
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      const cause = detectScreenshotFailureCause({
+        platform: process.platform,
+        env: process.env,
+        message,
+        stderr: getScreenshotFailureStderr(error),
+      });
       return {
         success: false,
-        error: `Failed to capture screenshot: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error: `Failed to capture screenshot: ${message}\n${formatScreenshotFailureCause(cause)}`,
+        metadata: { failureCause: cause.kind },
       };
     }
   },

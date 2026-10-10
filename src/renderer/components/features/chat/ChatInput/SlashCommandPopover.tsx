@@ -48,6 +48,8 @@ import {
 } from './slashPickerModel';
 import { useKeybindingsSettings } from '../../../../hooks/useKeybindingsSettings';
 import { useI18n } from '../../../../hooks/useI18n';
+import { btwQuestionArgs } from './parseBtwCommand';
+import { openSideChat as openSideChatLayer } from '../sideChatFloaterState';
 import { RoleInitialAvatar } from '../../expert/RoleInitialAvatar';
 import { isImeKeyEvent, useImeCompositionRef } from './imeCompositionGuard';
 
@@ -125,6 +127,8 @@ interface SlashCommandPopoverProps {
   capabilitySuggestions: WorkbenchCapabilityRegistryItem[];
   onClose: () => void;
   onSelect: (command: SlashCommand) => void;
+  composerValue?: string;
+  composerSessionId?: string | null;
 }
 
 export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
@@ -136,6 +140,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
   capabilitySuggestions,
   onClose,
   onSelect,
+  composerValue = '',
+  composerSessionId = null,
 }) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
@@ -660,12 +666,15 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     // 挂载候选，COMMANDS 区再放一个「技能列表」首项只是噪音。
     const fromRegistry: SlashCommand[] = registryDefs
       .filter((def: CommandDefinition) => !guiOnlyIds.has(def.id) && def.id !== 'skills')
-      .map((def: CommandDefinition) => makeCommand({
+      .map((def: CommandDefinition) => {
+        const commandArgs = def.id === 'btw' ? btwQuestionArgs(composerValue) : [];
+        return makeCommand({
         id: def.id,
         label: def.name,
         description: def.description,
         emptyQueryVisible: EMPTY_QUERY_BUILTIN_IDS.has(def.id),
         emptyQueryRank: 10,
+        actionKind: def.id === 'btw' && commandArgs.length === 0 ? 'prefill-leading-command' : undefined,
         icon: registryIconMap[def.id] || <Terminal className="w-4 h-4" />,
         sourceLabel: 'Command',
         action: () => {
@@ -690,6 +699,9 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
                 skillOps,
                 mcpOps,
                 connectorOps,
+                openSideChat: (question: string) => {
+                  if (composerSessionId) openSideChatLayer(composerSessionId, question);
+                },
                 output: {
                   info: writeAssistant(''),
                   success: writeAssistant('✅ '),
@@ -697,14 +709,15 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
                   error: writeAssistant('❌ '),
                 },
               },
-              [],
+              commandArgs,
             )
             .catch((err: unknown) => {
               const message = err instanceof Error ? err.message : String(err);
               writeAssistant('❌ ')(`/${def.id}${t.slashDiagnostics.registryCommandFailedPrefix}${message}`);
             });
         },
-      }, sc.picker));
+      }, sc.picker);
+      });
 
     // Prompt commands（文件式 + MCP），同名让位于 GUI/registry 命令
     const takenIds = new Set([...guiOnlyIds, ...fromRegistry.map((c) => c.id)]);
@@ -760,6 +773,8 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
     selectedSkillIds,
     skillRecommendations,
     skillOps,
+    composerValue,
+    composerSessionId,
   ]);
 
   const filtered = useMemo(

@@ -157,6 +157,7 @@ export const enSettingsModels = {
         effortSectionLabel: 'Thinking depth',
         // Merged thinking segment (Thinking + Effort): Off/Low/Med/High quarters
         thinkingSectionLabel: 'Thinking',
+        thinkingExternalHint: 'This engine decides its own reasoning level',
         thinkingOptionAuto: 'Auto',
         thinkingOptionOff: 'Off',
         thinkingOptionLow: 'Low',
@@ -185,7 +186,7 @@ export const enSettingsModels = {
           tokensUnit: 'tokens',
           effortLabel: 'Reasoning depth',
           effortAriaLabel: 'Reasoning depth',
-          effortLevels: { low: 'Low', medium: 'Medium', high: 'High' },
+          effortLevels: { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'XHigh', max: 'Max' },
           toggleLabel: 'Thinking',
           toggleAriaLabel: 'Enable thinking for this model',
         },

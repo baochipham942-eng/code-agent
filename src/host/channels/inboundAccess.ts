@@ -8,7 +8,10 @@ export type InboundAccessDecision =
       action: 'deny';
       reason: 'group_not_mentioned' | 'group_disabled' | 'group_sender_unpaired' | 'telegram_allowlist';
       replyUnauthorized: boolean;
-    };
+    }
+  // 未 @ 的群消息命中显式监听绑定（N-TRIGGER-GROUP-LISTEN）：不进正常入站
+  // （不配对、不进收件箱、不回 agent），只作为 'listen_message' 事件给 CronEventTrigger。
+  | { action: 'listen'; reason: 'group_listen' };
 
 type TelegramGroupAccessMode = 'all_members' | 'allowlist';
 
@@ -19,6 +22,8 @@ export type InboundAccessInput =
       mentionedBot: boolean;
       paired: boolean;
       groupAccessMode?: FeishuGroupAccessMode;
+      /** (accountId, chatId) 是否有显式监听绑定；仅影响未 @ 的群消息（改判 listen）。 */
+      hasListenBinding?: boolean;
     }
   | {
       channel: 'telegram';
@@ -67,6 +72,11 @@ export function checkInboundAccess(input: InboundAccessInput): InboundAccessDeci
   }
 
   if (!input.mentionedBot) {
+    // 未 @ 的群消息默认拒；仅当 (accountId, chatId) 有显式监听绑定且群未被
+    // disabled（fail-closed）时改判 listen —— 只给事件触发器，不给正常入站。
+    if (input.hasListenBinding === true && input.groupAccessMode !== 'disabled') {
+      return { action: 'listen', reason: 'group_listen' };
+    }
     return { action: 'deny', reason: 'group_not_mentioned', replyUnauthorized: false };
   }
 

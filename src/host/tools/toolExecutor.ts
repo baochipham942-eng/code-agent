@@ -20,7 +20,8 @@ import {
   PermissionRequestReason,
 } from '../../shared/contract/permission';
 import { getToolCache } from '../services/infra/toolCache';
-import { getSessionAutomationService } from '../services/sessionAutomation/sessionAutomationService';
+import { extractComputerTargetApp } from '../permissions/computerAppTarget';
+import { resolvePreAskGrant } from '../permissions/preAskGrant';
 import { createLogger } from '../services/infra/logger';
 import { getAuditLogger, maskSensitiveData, isKnownSafeCommand, validateCommand, getShellSafetyMode, getExecPolicyStore, getPolicyEnforcer, type PolicyEnforcer, type PolicyCheckResult, type ValidationResult } from '../security';
 import { evaluateToolSlotDataDirAccess, FOREIGN_SLOT_DATA_DIR_CODE, type SlotDataDirAccess } from '../security/slotDataDirGuard';
@@ -35,11 +36,13 @@ import {
 import type { SkillToolBoundary } from '../../shared/contract/agentSkill';
 import type { NeoTagRunContext } from '../../shared/contract/tag';
 import type { SwarmRunScope } from '../../shared/contract/swarm';
-import { createTraceBuilder, createTraceStep } from '../security/decisionTraceBuilder';
+import { createTraceBuilder } from '../security/decisionTraceBuilder';
+import { denyConcreteShellWritePath } from './shell/writePathPolicyDeny';
 import { getPluginIdForTool, getPluginOriginForTool } from '../plugins/pluginToolOrigin';
 import { getWriteIsolationManager, getWriteIsolationScope, type WriteIsolationMetadata } from '../security/writeIsolation';
 import type { HookManager } from '../hooks/hookManager';
 import { getToolResolver } from '../tools/dispatch/toolResolver';
+import { findResourceScopeMismatch } from '../tools/dispatch/resolveToolCallAccess';
 import { lookupMcpToolAfterReapedReconnect } from './mcpReapedToolLookup';
 import type { ConversationExecutionIntent, WorkbenchToolScope } from '../../shared/contract/conversationEnvelope';
 import { isBashToolName, normalizeToolName } from './toolNames';
@@ -65,6 +68,7 @@ import {
 import { getPermissionModeManager } from '../permissions/modes';
 import { pickLeastTrustedOrigin, type AgentMessageOrigin } from '../agent/messageOrigin';
 import { computeActionFingerprint, getDenialRegistry } from '../security/denialRegistry';
+import { computePolicyHash } from '../permissions/policyHash';
 import { normalizePermissionAskResult, type RequestPermissionResult } from '../../shared/contract/permission';
 import { applyEditedArgs } from '../../shared/contract/permissionEdit';
 import { EXTERNAL_SIDE_EFFECT_TRACE_RULE, EXTERNAL_SIDE_EFFECT_TRACE_REASON, isExternalSideEffectTool, extractStandingGrantTarget } from './externalSideEffect';
@@ -86,10 +90,7 @@ import { createToolExecutionLedger } from './toolExecutionLedger';
 import { classifyToolReplaySafety } from './toolReplaySafety';
 import { type ExecutionTopology } from '../permissions';
 import { boundaryIdForRequestType } from './permissionBoundaryMapping';
-import {
-  connectorExternalWriteReason,
-  findConnectorToolMetadata,
-} from '../../shared/contract/workbenchTools';
+import { connectorWritePermissionRequest, findConnectorTokenWrite } from './connectorTokenWrite';
 import { evaluateGuardFabricGate } from './guardFabricGate';
 import { classifyShellDesktopAutomation } from '../permissions/shellDesktopAutomation';
 import { resolveFileTargetKind } from '../permissions/fileTargetKind';
@@ -109,7 +110,8 @@ import {
 import { resolveToolWriteTargets } from './writeTargets';
 import { isProtectedWritePath } from '../sandbox/sensitivePaths';
 import { parseShellCommand } from '../security/commandParse';
-import { getPolicyEngine } from '../permissions/policyEngine';
+// N-PERM-POLICYVERSION E2/E4/E5/E6：run 有效视图（外部放宽冻结、收紧与 UI 放宽即时）
+import { matchEffectiveExecPolicy, resolveEffectivePolicyEnforcer, resolveEffectivePolicyRules, resolveEffectiveSessionMode } from '../permissions/runPolicySnapshot';
 import {
   createFileOwnershipActor,
   getFileOwnershipRegistry,
@@ -174,11 +176,11 @@ type ShellWritePathPolicyOutcome =
   | { kind: 'deny'; check: PolicyCheckResult }
   | { kind: 'ask'; uncertain: string[] };
 
-function hasConfiguredWritePathDeny(policyEnforcer: PolicyEnforcer | null | undefined): boolean {
+function hasConfiguredWritePathDeny(policyEnforcer: PolicyEnforcer | null | undefined, sessionId?: string): boolean {
   // Active policy files union-merge with defaults that always include denied_paths
   // (~/.ssh/**, ~/.aws/**, /etc/**). No file → getPolicyEnforcer returns null.
   if (policyEnforcer?.isActive) return true;
-  return getPolicyEngine().getRules().some((rule) =>
+  return resolveEffectivePolicyRules(sessionId).some((rule) =>
     rule.id.startsWith('user-deny-')
     && rule.action === 'deny'
     && rule.matcher.toolSpecifier?.specifierType === 'path'
@@ -189,7 +191,7 @@ function hasConfiguredWritePathDeny(policyEnforcer: PolicyEnforcer | null | unde
 function shellWritePathPolicyCheck(
   command: string,
   workingDirectory: string,
-  policyEnforcer: PolicyEnforcer | null | undefined,
+  policyEnforcer: PolicyEnforcer | null | undefined, sessionId?: string,
 ): ShellWritePathPolicyOutcome {
   const parsed = parseShellCommand(command);
   const unresolved: string[] = [];
@@ -205,32 +207,17 @@ function shellWritePathPolicyCheck(
       targetPath = expanded;
     }
     const resolved = resolveShellTarget(targetPath, workingDirectory);
-    if (policyEnforcer?.isActive) {
-      const policyCheck = policyEnforcer.checkFilePath(resolved, 'write');
-      if (!policyCheck.allowed) return { kind: 'deny', check: policyCheck };
-    }
-
-    const relative = nodePath.relative(workingDirectory, resolved) || '.';
-    const homeRelative = nodePath.relative(nodeOs.homedir(), resolved);
-    const candidates = [target.path, targetPath, resolved, relative];
-    if (homeRelative && !homeRelative.startsWith('..') && !nodePath.isAbsolute(homeRelative)) {
-      candidates.push(`~/${homeRelative}`);
-    }
-    const matchedRule = getPolicyEngine().matchUserPathDeny(candidates);
-    if (matchedRule) {
-      const reason = `Shell write target "${target.path}" is denied by ${matchedRule.name}`;
-      return {
-        kind: 'deny',
-        check: {
-          allowed: false,
-          reason,
-          section: 'user-permissions',
-          traceStep: createTraceStep('policy_enforcer', matchedRule.id, 'deny', reason, Date.now()),
-        },
-      };
-    }
+    const denied = denyConcreteShellWritePath({
+      resolvedPath: resolved,
+      workingDirectory,
+      policyEnforcer,
+      pathCandidates: [target.path, targetPath],
+      displayPath: target.path,
+      sessionId,
+    });
+    if (denied) return { kind: 'deny', check: denied };
   }
-  if (unresolved.length > 0 && hasConfiguredWritePathDeny(policyEnforcer)) {
+  if (unresolved.length > 0 && hasConfiguredWritePathDeny(policyEnforcer, sessionId)) {
     return { kind: 'ask', uncertain: unresolved };
   }
   return { kind: 'allow' };
@@ -1362,9 +1349,12 @@ export class ToolExecutor {
     // P0: Policy Enforcer — code-agent-policy.toml 硬规则（system/user/project 三层合并）。
     // deny 不可被任何后续层推翻（skill 预授权 / 安全命令白名单 / classifier / 用户审批）。
     // 无 policy 文件时 getPolicyEnforcer 返回 null，零开销。
-    const policyEnforcer = getPolicyEnforcer(resolveCanonicalRunPath(this.runtimeWorkspace));
+    const policyEnforcer = resolveEffectivePolicyEnforcer(
+      getPolicyEnforcer(resolveCanonicalRunPath(this.runtimeWorkspace)), effectiveSessionId);
+    // 扩权检查发生在整条命令跑完之后，期间别的工作区会改绑单例：把本次绑定的实例钉进 ctx。
+    context.policyEnforcer = policyEnforcer;
     const shellPathCheck = isBashToolName(policyToolName) && typeof params.command === 'string'
-      ? shellWritePathPolicyCheck(params.command, bashWorkingDirectory, policyEnforcer)
+      ? shellWritePathPolicyCheck(params.command, bashWorkingDirectory, policyEnforcer, effectiveSessionId)
       : { kind: 'allow' as const };
     if (isBashToolName(policyToolName) && typeof params.command === 'string') {
       const officialSkillShellCheck = await guardShellOfficialSkillWrites(params.command, bashWorkingDirectory);
@@ -1630,8 +1620,11 @@ export class ToolExecutor {
         },
       };
     }
+    // http_request 携带已连接连接器令牌的写调用必须进分类器强确认（skill 预授权不得跳过）。
+    const connectorTokenWriteForcesClassification = findConnectorTokenWrite(policyToolName, params) !== undefined;
     const argumentForcesClassification = bashArgumentForcesClassification
-      || readArgumentForcesClassification;
+      || readArgumentForcesClassification
+      || connectorTokenWriteForcesClassification;
 
     // Check permission if required
     // Skill 系统：预授权工具跳过普通权限检查（但不能跳过边界违规或 consequence hard deny）
@@ -1655,15 +1648,15 @@ export class ToolExecutor {
     }
 
     // P0: 安全命令白名单 + exec policy — 已知安全命令跳过审批。
-    // exec-policy forbidden 留在放行守卫外：学来的 allow 不得放行受保护路径，
-    // 但用户显式 forbidden 仍硬拒，不得被 protectedWriteForcesConfirmation 降成可批卡。
+    // exec-policy forbidden 留在放行守卫外：学来的 allow 不得放行受保护路径；用户显式
+    // forbidden 无条件硬拒（forcePermissionHandler 只让路自动放行，禁止清单不得降成可批卡）。
     let isSafeCommand = false;
-    if (isBashToolName(policyToolName) && params.command && !commandAnalysisFailedReason && !shellDesktopAutomation && !isPreApproved && !guardFabricForcesApproval && !this.forcePermissionHandler && !peerOriginForcesConfirmation && !launderRetryForcesAsk) {
+    if (isBashToolName(policyToolName) && params.command && !commandAnalysisFailedReason && !shellDesktopAutomation && !isPreApproved && !guardFabricForcesApproval && !peerOriginForcesConfirmation && !launderRetryForcesAsk) {
       const cmd = params.command as string;
 
       // 1. 检查 exec policy 持久化规则（forbidden 先于受保护路径熔断）
       try {
-        const policyDecision = getExecPolicyStore().match(cmd);
+        const policyDecision = matchEffectiveExecPolicy(cmd, effectiveSessionId);
         if (policyDecision === 'forbidden') {
           recordDecision(executionToolName, params, 'policy-deny', 'exec-policy', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
           return {
@@ -1671,7 +1664,7 @@ export class ToolExecutor {
             error: `Blocked by exec policy: ${cmd.substring(0, 80)}`,
           };
         }
-        if (policyDecision === 'allow' && !bashArgumentForcesClassification && !protectedWriteForcesConfirmation) {
+        if (!this.forcePermissionHandler && policyDecision === 'allow' && !bashArgumentForcesClassification && !protectedWriteForcesConfirmation) {
           isSafeCommand = true;
           logger.debug('Command allowed by exec policy', { command: cmd.substring(0, 80) });
           recordDecision(executionToolName, params, 'policy-allow', 'exec-policy', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
@@ -1681,7 +1674,7 @@ export class ToolExecutor {
       }
 
       // 2. 检查安全命令白名单
-      if (!isSafeCommand && !bashArgumentForcesClassification && !protectedWriteForcesConfirmation && isKnownSafeCommand(cmd)) {
+      if (!this.forcePermissionHandler && !isSafeCommand && !bashArgumentForcesClassification && !protectedWriteForcesConfirmation && isKnownSafeCommand(cmd)) {
         isSafeCommand = true;
         logger.debug('Command is known safe, skipping approval', { command: cmd.substring(0, 80) });
         recordDecision(executionToolName, params, 'auto-approve', 'safe-command', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
@@ -1691,7 +1684,7 @@ export class ToolExecutor {
       //    （validateCommand critical 在前置闸已挡），其余未识别命令放行不进审批。
       //    confirmationGate 的 HIGH_RISK_PATTERNS 仍独立生效，最高危命令保留确认。
       if (
-        !isSafeCommand
+        !this.forcePermissionHandler && !isSafeCommand
         && !argumentForcesClassification
         && !protectedWriteForcesConfirmation
         && getShellSafetyMode() === 'lenient'
@@ -1715,6 +1708,7 @@ export class ToolExecutor {
       const standingGrantTarget = isExternalSideEffectTool(executionToolName)
         ? extractStandingGrantTarget(executionToolName, params)
         : null;
+      const computerApp = extractComputerTargetApp(executionToolName, params);
       // Lazy trace: only created when needed (deny/ask path)
       const traceBuilder = createTraceBuilder(executionToolName);
       if (pluginId) {
@@ -1791,6 +1785,7 @@ export class ToolExecutor {
             classification.decision === 'approve'
             && !this.forcePermissionHandler
             && !protectedWriteForcesConfirmation
+            && !computerApp
           ) {
             logger.info('Auto-approved by classifier', {
               tool: executionToolName,
@@ -1909,29 +1904,22 @@ export class ToolExecutor {
         }
       }
 
-      // B4 target 粒度长期授权消费：external 工具 + 可确定性提取 target + 命中该会话所属
-      // automation 上人工铸造的 (tool, target) 规则 → 免这一层询问（等价 session 记忆的持久版，
-      // 但按 target 精确、挂 automation、随其归档失效）。绝不越 deny：分类器 deny 已在上面 return；
-      // 任一强制确认门（guardFabric/policy/boundary/readOnly）在此让路——与 session 记忆同规矩，
-      // 只把「普通询问」降为放行，不碰任何硬门。
-      if (
-        needsUserApproval
-        && standingGrantTarget
-        && !guardFabricForcesApproval
-        && !protectedWriteForcesConfirmation
-        && !policyForcesConfirmation
-        && !unresolvedWriteTargetForcesAsk
-        && !boundaryViolation
-        && !readOnlyForcesConfirmation
-        && !peerOriginForcesConfirmation
-        && !launderRetryForcesAsk
-        && !commandAnalysisFailedReason
-        && getSessionAutomationService().matchStandingGrant(effectiveSessionId, executionToolName, standingGrantTarget)
-      ) {
+      const preAsk = needsUserApproval ? resolvePreAskGrant({
+        toolName: executionToolName,
+        sessionId: effectiveSessionId,
+        standingGrantTarget,
+        computerApp,
+        blocked: Boolean(commandAnalysisFailedReason)
+          || guardFabricForcesApproval || protectedWriteForcesConfirmation
+          || policyForcesConfirmation || unresolvedWriteTargetForcesAsk
+          || Boolean(boundaryViolation) || readOnlyForcesConfirmation
+          || peerOriginForcesConfirmation || launderRetryForcesAsk,
+      }) : null;
+      if (preAsk) {
         needsUserApproval = false;
         const grantTrace = createTraceBuilder(executionToolName);
-        grantTrace.addStep('permission_classifier', 'standing_grant', 'allow', `长期授权命中：${executionToolName} → ${standingGrantTarget}`);
-        recordDecision(executionToolName, params, 'auto-approve', `standing_grant:${standingGrantTarget}`, permStartTime, grantTrace.build('allow'), effectiveSessionId, this.ledgerOrigin);
+        grantTrace.addStep('permission_classifier', preAsk.traceRule, 'allow', preAsk.traceDetail);
+        recordDecision(executionToolName, params, 'auto-approve', preAsk.ledgerReason, permStartTime, grantTrace.build('allow'), effectiveSessionId, this.ledgerOrigin);
       }
 
       if (needsUserApproval) {
@@ -1983,7 +1971,7 @@ export class ToolExecutor {
       if (isBashToolName(policyToolName) && typeof params.command === 'string') {
         const sandboxDecision = resolveOsSandboxDecision({
           command: params.command,
-          permissionMode: getPermissionModeManager().getModeForSession(effectiveSessionId) as OsSandboxPermissionMode,
+          permissionMode: resolveEffectiveSessionMode(effectiveSessionId) as OsSandboxPermissionMode,
           unattended: getPermissionModeManager().isUnattendedSession(effectiveSessionId),
           writeFence: context.requiresOsWriteFence === true,
           evalRealRoot: process.env.CODE_AGENT_EVAL_REAL_ROOT !== undefined,
@@ -2002,9 +1990,8 @@ export class ToolExecutor {
       // 只补关联字段，不复制参数或另建历史存储。
       permissionRequest.parentToolUseId = options.currentToolCallId;
       // B4：把授权 target 透传给审批层，供无人值守停车审批卡出「每次都允许发 <target>」铸权入口。
-      if (standingGrantTarget) {
-        permissionRequest.details.standingGrantTarget = standingGrantTarget;
-      }
+      if (standingGrantTarget) permissionRequest.details.standingGrantTarget = standingGrantTarget;
+      if (computerApp) permissionRequest.details.targetApp = computerApp;
 
       // B1 readOnly（审出 HIGH）：最终审批层的自动放行捷径（agentOrchestrator 的
       // devModeAutoApprove / autoApprove[level]、renderer PermissionCard 的
@@ -2160,7 +2147,8 @@ export class ToolExecutor {
         && params.command
       ) {
         try {
-          getExecPolicyStore().learnFromApproval(params.command as string);
+          // 'user-ui'（N-PERM-POLICYVERSION）：真人审批卡放行，学到的 allow 立即生效。
+          getExecPolicyStore().learnFromApproval(params.command as string, 'user-ui');
         } catch {
           // exec policy not initialized, skip
         }
@@ -2182,7 +2170,7 @@ export class ToolExecutor {
         // 通话态曾有一条专用文案分支，2026-07-29 通话不再钳档后它已死（见 readOnlyDenialError）。
         const defaultDenialReason = readOnlyForcesConfirmation
           ? readOnlyDenialError(executionToolName)
-          : permissionDenialError(executionToolName, denialSource);
+          : permissionDenialError(executionToolName, denialSource, computerApp);
         const hostReason = ask.message
           ? { ...defaultDenialReason, modelText: ask.message }
           : defaultDenialReason;
@@ -2218,6 +2206,7 @@ export class ToolExecutor {
             summary: String(params.command || params.file_path || params.path || executionToolName).substring(0, 80),
             reason: denialReason,
             timestamp: Date.now(),
+            policyHash: computePolicyHash(effectiveSessionId),
           });
         }
         recordDecision(executionToolName, params, 'ask-denied', denialReason, permStartTime, traceBuilder.build('deny'), effectiveSessionId, this.ledgerOrigin, getApprovalWaitMs(options.currentToolCallId, Date.now()));
@@ -2271,6 +2260,17 @@ export class ToolExecutor {
       toolDef.permissionLevel,
       this.executionCwd,
     );
+    // ADR-073 §3：静态声明域盖不住运行时锁域 → 记 resource_scope_mismatch；锁照拿
+    //（串行即等待本身），绝不因静态"安全"跳过或放宽锁。检查自身故障不影响执行。
+    try {
+      const scopeMismatch = findResourceScopeMismatch(
+        executionToolName,
+        params,
+        { workspace: this.runtimeWorkspace, cwd: this.executionCwd, toolCallId: options.currentToolCallId },
+        writeIsolationScope,
+      );
+      if (scopeMismatch) options.turnTrace?.record('resource_scope_mismatch', scopeMismatch);
+    } catch { /* mismatch 检查绝不拦工具执行 */ }
     let releaseWriteIsolation: (() => void) | undefined;
     let writeIsolationMetadata: WriteIsolationMetadata | undefined;
     const startTime = Date.now();
@@ -2626,25 +2626,9 @@ export class ToolExecutor {
         };
 
       default: {
-        const connector = findConnectorToolMetadata(tool.name);
-        const connectorWriteReason = tool.permissionLevel === 'write'
-          ? connectorExternalWriteReason(tool.name)
-          : undefined;
-        if (connector && connectorWriteReason) {
-          return {
-            type: 'file_write',
-            tool: tool.name,
-            details: { ...params },
-            reason: connectorWriteReason,
-            boundary: {
-              id: 'connector.external_write',
-              reason: connectorWriteReason,
-              reasonEn: connectorExternalWriteReason(tool.name, 'en'),
-              connectorName: connector.connectorName,
-              connectorNameEn: connector.connectorNameEn,
-            },
-          };
-        }
+        // 连接器写回与 http_request 令牌写共用 connector.external_write 边界（构造见 connectorTokenWrite.ts）。
+        const connectorRequest = connectorWritePermissionRequest(tool, params);
+        if (connectorRequest) return connectorRequest;
         // Map permission level to permission request type
         const requestType = permissionRequestTypeForLevel(tool.permissionLevel);
         return {

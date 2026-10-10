@@ -5,7 +5,7 @@
 import type { IpcMain } from '../platform';
 import path from 'path';
 import type { RawDomainRouteHandlers } from '../../shared/ipc/domainRoutes';
-import { PlanningSchemas, type PlanningDomainRequest } from '../../shared/ipc/schemas/planning';
+import { PlanningSchemas, respondApprovalPayloadSchema, type PlanningDomainRequest } from '../../shared/ipc/schemas/planning';
 import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import type { PlanningState } from '../../shared/contract';
 import type { PlanningService } from '../planning';
@@ -220,7 +220,11 @@ const planningHandlers: RawDomainRouteHandlers<PlanningDomainRequest, PlanningRo
     if (!appService || !taskManager) {
       return { success: false, error: { code: 'NOT_INITIALIZED', message: 'Agent runtime is not initialized' } };
     }
-    const data = await resolvePlanApproval(requestPayload as PlanApprovalRequest, {
+    const parsed = respondApprovalPayloadSchema.safeParse(requestPayload ?? {});
+    if (!parsed.success) {
+      throw new PlanApprovalError('INVALID_REQUEST', 'Plan approval request is invalid');
+    }
+    const data = await resolvePlanApproval(parsed.data as unknown as PlanApprovalRequest, {
       appService: startScopedAppService(appService, taskManager),
       taskManager,
     });

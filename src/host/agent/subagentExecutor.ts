@@ -406,6 +406,8 @@ export class SubagentExecutor {
         context.attachments,
       );
       context.onContextSnapshot?.(latestContextSnapshot);
+      // 只读侧聊等一次性运行不落活动账（见 SubagentExecutionContext.suppressContextPublishing）
+      if (context.suppressContextPublishing) return;
       const annotations = buildSnapshotAnnotations(effectiveMessages, executionAgentId);
       subagentContextStore.upsert({
         sessionId,

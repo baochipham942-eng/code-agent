@@ -2,6 +2,12 @@
 export const VISION_IMAGE = {
   /** 发给视觉模型的最长边上限 (px) — API 安全阈值，超过则等比降采样 */
   MAX_EDGE_PX: 1568,
+  /**
+   * 发给视觉模型的单图解码字节上限。挡两类事故：一是单图超 provider 请求体上限
+   * （模型侧只能事后报 413/request_too_large，见 ImagePayloadExceededError），二是
+   * 一张超大图把单次请求的 token 成本抬上天。超限直接拒绝，不降级发原始字节。
+   */
+  MAX_BYTES: 5 * 1024 * 1024,
   /** 拿不到 display info 时假设的 Retina backing scale。Phase 2 用实测值替换，此常量留作 fallback */
   FALLBACK_SCALE_FACTOR: 2,
   /** sharp 降采样核 */

@@ -4687,4 +4687,84 @@ describe('createAgentRouter', () => {
       expect(config.modelConfig.adaptive).toBe(true);
     });
   });
+
+  describe('/api/run 协议版本闸（ADR-081：带 environmentSelection 必须带 environment-selection/1）', () => {
+    const environmentSelection = {
+      environmentId: 'env-cloud-prod',
+      cwd: '/workspace/repo',
+      workspaceRoots: ['/workspace/repo'],
+      config: {
+        internet: 'deny',
+        credentialPlaceholders: [],
+      },
+    };
+
+    it('① 缺 protocolVersion → 400 只回 ENVIRONMENT_PROTOCOL_UNSUPPORTED，本轮不开始', async () => {
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: '把这轮放到云端',
+          sessionId: 'session-env-protocol',
+          environmentSelection,
+        }),
+      });
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({
+        success: false,
+        error: { code: 'ENVIRONMENT_PROTOCOL_UNSUPPORTED' },
+      });
+      // ③ 不静默落回本机：run / 会话 / 账本全都没被创建
+      expect(mockCreateAgentLoop).not.toHaveBeenCalled();
+      expect(runRegistry.hasSession('session-env-protocol')).toBe(false);
+      expect(inMemorySessions.has('session-env-protocol')).toBe(false);
+      expect(mockDb.createSessionWithId).not.toHaveBeenCalled();
+      expect(mockDb.addMessage).not.toHaveBeenCalled();
+      expect(agentEngineMocks.ledgerUpsertTask).not.toHaveBeenCalled();
+      expect(mockQueuedInputEnqueue).not.toHaveBeenCalled();
+    });
+
+    it('① 版本不是这一版 → 同样拒绝', async () => {
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: '把这轮放到云端',
+          sessionId: 'session-env-protocol',
+          environmentSelection,
+          protocolVersion: 'environment-selection/2',
+        }),
+      });
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({
+        success: false,
+        error: { code: 'ENVIRONMENT_PROTOCOL_UNSUPPORTED' },
+      });
+      expect(mockCreateAgentLoop).not.toHaveBeenCalled();
+      expect(runRegistry.hasSession('session-env-protocol')).toBe(false);
+      expect(inMemorySessions.has('session-env-protocol')).toBe(false);
+    });
+
+    it('② 版本正确 → 行为不变：本轮照常开始并跑在本机（与不带该字段的消息同路）', async () => {
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: '版本正确照常开始',
+          sessionId: 'session-env-protocol-ok',
+          environmentSelection,
+          protocolVersion: 'environment-selection/1',
+        }),
+        signal: controller.signal,
+      });
+      expect(response.status).toBe(200);
+      const taskStartRaw = await readSSEUntilWithoutClosing(response, 'event: task_start');
+      expect(parseSSEData(taskStartRaw, 'task_start')?.sessionId).toBe('session-env-protocol-ok');
+      await waitForAssertion(() => expect(mockCreateAgentLoop).toHaveBeenCalledTimes(1));
+
+      controller.abort();
+      await waitForAssertion(() => expect(runRegistry.hasSession('session-env-protocol-ok')).toBe(false), 3000);
+    });
+  });
 });

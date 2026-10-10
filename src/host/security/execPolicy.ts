@@ -13,6 +13,7 @@ import { getProjectConfigDir, getUserConfigDir } from '../config/configPaths';
 import { canonicalizeCommand } from './canonicalizeCommand';
 import { commandWordsFromParse, parseShellCommand, qualificationExecutable } from './commandParse';
 import { classifyCommand, isKnownSafeCommand, splitCompoundCommand } from './commandSafety';
+import { recordPolicyMutation, type PolicyMutationSource } from '../permissions/policyMutationSource';
 
 const logger = createLogger('ExecPolicy');
 
@@ -186,9 +187,11 @@ export class ExecPolicyStore {
    * 提取规则 ["npm", "install"]（去掉具体参数）
    *
    * @param command - 用户批准的命令
+   * @param mutationSource - 变更来源（N-PERM-POLICYVERSION）：真人审批卡放行 =
+   *   'user-ui'（学到的 allow 对进行中的 run 立即生效）；缺省 external（冻结到下个 run）。
    * @returns 是否成功添加规则
    */
-  learnFromApproval(command: string): boolean {
+  learnFromApproval(command: string, mutationSource: PolicyMutationSource = 'external'): boolean {
     const tokens = tokenizePolicyCommand(command);
     if (tokens.length === 0) return false;
 
@@ -252,6 +255,12 @@ export class ExecPolicyStore {
 
     this.rules.push(rule);
     this.dirty = true;
+    recordPolicyMutation({
+      source: mutationSource,
+      kind: 'exec-add',
+      id: pattern.join(' '),
+      action: rule.decision,
+    });
     logger.info('Learned new exec policy rule', { pattern, from: command.substring(0, 80) });
 
     // 异步保存，不阻塞
@@ -262,8 +271,14 @@ export class ExecPolicyStore {
 
   /**
    * 添加显式规则
+   * @param mutationSource 变更来源（N-PERM-POLICYVERSION）：缺省 external（放宽冻结）。
    */
-  addRule(pattern: string[], decision: PolicyDecision, source: 'user' | 'builtin' = 'user'): void {
+  addRule(
+    pattern: string[],
+    decision: PolicyDecision,
+    source: 'user' | 'builtin' = 'user',
+    mutationSource: PolicyMutationSource = 'external',
+  ): void {
     // 去重
     const exists = this.rules.some(r =>
       r.pattern.length === pattern.length &&
@@ -278,6 +293,12 @@ export class ExecPolicyStore {
       source,
     });
     this.dirty = true;
+    recordPolicyMutation({
+      source: mutationSource,
+      kind: 'exec-add',
+      id: pattern.join(' '),
+      action: decision,
+    });
   }
 
   /**

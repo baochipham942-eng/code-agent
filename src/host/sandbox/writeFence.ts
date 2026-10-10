@@ -3,9 +3,17 @@ import path from 'node:path';
 import { parseShellCommand } from '../security/commandParse';
 import { resolveCanonicalRunPath } from '../runtime/runContext';
 import { CONFIG_DIR_LEGACY, CONFIG_DIR_NEW } from '../../shared/constants/configDir';
+import { isOsSandboxEnabled } from '../../shared/constants/sandbox';
 import { getSandboxManager } from './manager';
-import { isProtectedWritePath, isSensitiveCredentialPath, pathAliases } from './sensitivePaths';
+import {
+  getSensitiveSandboxPaths,
+  isPathDeniedBySensitiveSandboxPath,
+  isProtectedWritePath,
+  isSensitiveCredentialPath,
+  pathAliases,
+} from './sensitivePaths';
 import { resolveBackgroundWorkspaceAuthority } from '../runtime/workspaceAuthority';
+import type { ToolContext } from '../protocol/tools';
 
 const FENCED_WRITE_PROGRAMS = new Set(['printf', 'echo', 'tee']);
 /** Lookup / startup-file assignments that can change what the fenced command runs. Not an exhaustive bash env list.
@@ -28,6 +36,13 @@ const QUOTED_REDIRECT_TARGET = /(?:[0-9]?>{1,2}|&>)\s*\S*['"`]/;
 const EXPANSION_MARKER = /\$|`|<\(|>\(/;
 
 export const FENCED_IN_PROJECT_WRITE_REASON = 'in-project write under OS write fence';
+const SANDBOX_DENYLIST_WRITE_REASON = 'write target is on the sandbox deny list';
+
+type ToolWriteBoundaryContext = Pick<ToolContext,
+  'workingDir' | 'requiresOsWriteFence'
+  | 'writeFenceWorkspaceRoot' | 'deniedReadRoots'>;
+
+type ToolWriteTargetResolution = { allowed: true } | { allowed: false; reason: string };
 
 function writeTargetAliases(targetPath: string, cwd: string): string[] {
   const resolved = path.resolve(cwd, targetPath);
@@ -148,6 +163,55 @@ export function containWriteFenceWorkspaceRoot(workspaceRoot: string | undefined
   if (!canonical) return undefined;
   if (!resolveBackgroundWorkspaceAuthority({ workspace: canonical })) return undefined;
   return canonical;
+}
+
+/**
+ * Single write gate for native file-writing tools. The OS write fence backs
+ * classifier-granted skip-confirm writes; explicit approvals are not narrowed
+ * to workspace or cwd roots. Denied-read roots and sensitive paths are never writable.
+ * The emergency OS_SANDBOX_ENABLED=false switch preserves the pre-fence path.
+ */
+export function resolveToolWriteTarget(
+  targetPath: string,
+  context: ToolWriteBoundaryContext,
+): ToolWriteTargetResolution {
+  if (!isOsSandboxEnabled()) return { allowed: true };
+  const deniedByFence: ToolWriteTargetResolution = { allowed: false, reason: FENCED_IN_PROJECT_WRITE_REASON };
+  const deniedByDenyList: ToolWriteTargetResolution = { allowed: false, reason: SANDBOX_DENYLIST_WRITE_REASON };
+  const fenceRoot = context.requiresOsWriteFence === true
+    ? containWriteFenceWorkspaceRoot(context.writeFenceWorkspaceRoot)
+    : undefined;
+  if (context.requiresOsWriteFence === true && !fenceRoot) return deniedByFence;
+  try {
+    const lexicalPath = path.resolve(context.workingDir, targetPath);
+    const resolvedPath = resolveCanonicalRunPath(lexicalPath);
+    const deniedReadRoots = [
+      ...(context.deniedReadRoots ?? []),
+      ...(process.env.CODE_AGENT_EVAL_REAL_ROOT ? [process.env.CODE_AGENT_EVAL_REAL_ROOT] : []),
+    ];
+    const deniedEntries = [
+      ...getSensitiveSandboxPaths(),
+      ...deniedReadRoots.map((root) => ({ kind: 'directory' as const, path: root })),
+    ];
+    // Check lexical and canonical paths: symlinks cannot bypass either deny spelling.
+    const targets = [path.resolve(context.workingDir, targetPath), resolvedPath];
+    const canonicalEntries = deniedEntries.map((entry) => ({
+      ...entry, path: resolveCanonicalRunPath(entry.path),
+    }));
+    if (targets.some((target) => isPathDeniedBySensitiveSandboxPath(target, deniedEntries)
+      || isPathDeniedBySensitiveSandboxPath(target, canonicalEntries))) return deniedByDenyList;
+    const cwdLexicalRoot = path.resolve(context.workingDir);
+    const cwdCanonicalRoot = tryCanonicalFencePath(cwdLexicalRoot) ?? cwdLexicalRoot;
+    if (isInsideWorkspaceRoot(lexicalPath, cwdLexicalRoot)
+      && !isInsideWorkspaceRoot(resolvedPath, cwdCanonicalRoot)) return deniedByDenyList;
+    if (context.requiresOsWriteFence !== true) return { allowed: true };
+    if (!fenceRoot) return deniedByFence;
+    if (isInsideWorkspaceRoot(resolvedPath, fenceRoot)) return { allowed: true };
+    return isInsideWorkspaceRoot(lexicalPath, fenceRoot) ? deniedByDenyList : deniedByFence;
+  } catch {
+    // Unresolvable roots or symlink loops cannot establish write authority.
+    return deniedByDenyList;
+  }
 }
 
 export function writeFenceObligationRoot(classification: {

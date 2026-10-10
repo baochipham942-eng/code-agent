@@ -212,24 +212,45 @@ export async function captureTurnDiff(
   const repoRoot = await resolveRepoRoot(workingDir);
   if (!repoRoot) return null;
 
-  const resolvedPaths = await Promise.all(
-    [...modifiedPaths].map((candidate) => resolveTrackedPath(repoRoot, workingDir, candidate)),
+  const resolvedEntries = await Promise.all(
+    [...modifiedPaths].map(async (candidate) => ({
+      candidate,
+      absolutePath: await resolveTrackedPath(repoRoot, workingDir, candidate),
+    })),
   );
   const absolutePaths = [...new Set(
-    resolvedPaths.filter((candidate): candidate is string => Boolean(candidate)),
+    resolvedEntries.flatMap((entry) => (entry.absolutePath ? [entry.absolutePath] : [])),
   )];
+  const rawCandidatesByAbsolute = new Map<string, string[]>();
+  for (const entry of resolvedEntries) {
+    if (!entry.absolutePath) continue;
+    const rawCandidates = rawCandidatesByAbsolute.get(entry.absolutePath);
+    if (rawCandidates) rawCandidates.push(entry.candidate);
+    else rawCandidatesByAbsolute.set(entry.absolutePath, [entry.candidate]);
+  }
 
   const files: TurnDiffFileChange[] = [];
+  const absentPaths: string[] = [];
+  const seenAbsent = new Set<string>();
+  const pushAbsent = (filePath: string) => {
+    if (seenAbsent.has(filePath)) return;
+    seenAbsent.add(filePath);
+    absentPaths.push(filePath);
+  };
   for (const absolutePath of absolutePaths) {
     const relativePath = path.relative(repoRoot, absolutePath).split(path.sep).join('/');
     const [before, after] = await Promise.all([
       readHeadText(repoRoot, relativePath),
       readCurrentText(absolutePath),
     ]);
+    if (after?.exists === false) {
+      pushAbsent(absolutePath);
+      for (const raw of rawCandidatesByAbsolute.get(absolutePath) ?? []) pushAbsent(raw);
+    }
     if (!before || !after) continue;
     const change = buildFileChange(absolutePath, before, after);
     if (change) files.push(change);
   }
 
-  return { turnId, files };
+  return absentPaths.length > 0 ? { turnId, files, absentPaths } : { turnId, files };
 }

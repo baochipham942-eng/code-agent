@@ -137,7 +137,7 @@ export interface ToolSchema {
   readonly requiresApiKey?: readonly string[];
   /** 幂等 hint（read-only tool），用于缓存和 plan-mode 判断 */
   readonly readOnly?: boolean;
-  /** 显式资源访问。缺省时由折叠器从旧标记推导，调度器本切片不消费。 */
+  /** 显式资源访问。缺省时由折叠器从旧标记推导，调度按折叠结果分段。 */
   readonly accesses?: readonly ToolAccessDeclaration[];
   /**
    * 工具会阻塞执行，等待用户在当前会话界面当场输入或选择。
@@ -204,6 +204,10 @@ export interface ToolContext {
   readonly requiresOsWriteFence?: boolean;
   /** Canonical workspaceRoot the classifier used for the in-zone check. */
   readonly writeFenceWorkspaceRoot?: string;
+  /** Host roots denied by the same OS sandbox profile (eval may provide one). */
+  readonly deniedReadRoots?: readonly string[];
+  /** Opaque host PolicyEnforcer bound for this call (null = no policy file); bash sandbox escalation must not read the process singleton. */
+  readonly policyEnforcer?: unknown;
   /**
    * N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE：写边界开关沿 spawn 链下传。
    * subagentToolRuntime 自建 ToolExecutor 不走 forRun，不传子代理就绕过边界。

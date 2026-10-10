@@ -51,7 +51,8 @@ describe('remend integration: streaming markdown', () => {
     const cases = [
       '[发送](!send)',
       '[追加](!add)',
-      '[运行](!run)',
+      '[运行](!run?cmd=npm%20run%20typecheck)',
+      '[运行](!run?cmd=echo%20%28hi%29)',
       '[打开](!open)',
       '[预览](!preview)',
       '[复制](!copy)',

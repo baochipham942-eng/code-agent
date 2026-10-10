@@ -4,9 +4,8 @@
 // 干活中途岔开问一个无关问题：开一个继承当前会话上下文、但禁用所有工具
 // （只读）的临时子 agent 回答，答案打印给用户但不并回主线历史。
 //
-// CLI surface 先行（CLI 直接打印、天然不入 thread）；GUI 的 ephemeral 侧聊
-// 渲染作为后续增量，surfaces 保持 ['cli']。
-// host 侧依赖由 CLI ctx 注入：loadReadOnlySideChat / loadToolResolver / loadSubagentExecutor。
+// CLI 直接打印、不入 thread。GUI 不写 output：调用 ctx.openSideChat 打开浮层。
+// host 侧依赖只在 CLI 路径注入：loadReadOnlySideChat / loadToolResolver / loadSubagentExecutor。
 // ============================================================================
 
 import type { CommandContext, CommandDefinition, CommandResult } from '../types';
@@ -21,12 +20,21 @@ interface SideChatAgentLike {
 export const btwCommand: CommandDefinition = {
   id: 'btw',
   name: '只读侧聊',
-  description: '岔开问一个无关问题：继承当前上下文、禁用所有工具、不污染主线',
+  description: '顺便问一句，不影响当前任务',
   category: 'session',
-  surfaces: ['cli'],
+  surfaces: ['cli', 'gui'],
   args: [{ name: 'question', description: '要岔开问的问题', required: true }],
   handler: async (ctx: CommandContext, args: string[]): Promise<CommandResult> => {
     const question = args.join(' ').trim();
+    if (ctx.surface === 'gui') {
+      if (!question) return { success: false, message: 'missing question' };
+      const open = ctx.openSideChat;
+      if (typeof open !== 'function') {
+        return { success: false, message: 'side chat is not available' };
+      }
+      await Promise.resolve((open as (nextQuestion: string) => void | Promise<void>)(question));
+      return { success: true };
+    }
     if (!question) {
       ctx.output.warn('用法：/btw <你的问题>');
       return { success: false, message: 'missing question' };

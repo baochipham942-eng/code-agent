@@ -20,6 +20,7 @@ function baseDiagnostics(overrides: Partial<ArtifactPreviewHealthDiagnostics> = 
         visibleElements: 4,
         horizontalOverflow: false,
         mainElement: { present: true, selector: 'main' },
+        buttons: { declared: 0, visible: 0 },
         brokenImages: [],
       },
       {
@@ -32,6 +33,7 @@ function baseDiagnostics(overrides: Partial<ArtifactPreviewHealthDiagnostics> = 
         visibleElements: 4,
         horizontalOverflow: false,
         mainElement: { present: true, selector: 'main' },
+        buttons: { declared: 0, visible: 0 },
         brokenImages: [],
       },
     ],
@@ -61,6 +63,7 @@ describe('artifactPreviewHealth deterministic findings', () => {
           visibleElements: 2,
           horizontalOverflow: false,
           mainElement: { present: false },
+          buttons: { declared: 0, visible: 0 },
           brokenImages: [
             {
               src: 'missing.png',
@@ -81,6 +84,7 @@ describe('artifactPreviewHealth deterministic findings', () => {
           visibleElements: 2,
           horizontalOverflow: true,
           mainElement: { present: false },
+          buttons: { declared: 0, visible: 0 },
           brokenImages: [
             {
               src: 'missing.png',
@@ -119,6 +123,7 @@ describe('artifactPreviewHealth deterministic findings', () => {
           visibleElements: 4,
           horizontalOverflow: false,
           mainElement: { present: true, selector: 'main' },
+          buttons: { declared: 0, visible: 0 },
           brokenImages: [],
         },
         {
@@ -131,6 +136,7 @@ describe('artifactPreviewHealth deterministic findings', () => {
           visibleElements: 4,
           horizontalOverflow: true,
           mainElement: { present: true, selector: 'main' },
+          buttons: { declared: 0, visible: 0 },
           brokenImages: [],
         },
       ],
@@ -139,5 +145,49 @@ describe('artifactPreviewHealth deterministic findings', () => {
     const findings = evaluateArtifactPreviewHealthDiagnostics(diagnostics);
 
     expect(findings.map((finding) => finding.code)).toContain('responsive_breakpoint_failure');
+  });
+
+  it('flags declared buttons that are all invisible, and aggregates viewport-only cases', () => {
+    const diagnostics = baseDiagnostics({
+      viewports: [
+        {
+          name: 'desktop',
+          width: 1280,
+          height: 720,
+          documentWidth: 1280,
+          documentHeight: 720,
+          bodyTextLength: 18,
+          visibleElements: 4,
+          horizontalOverflow: false,
+          mainElement: { present: true, selector: 'main' },
+          buttons: { declared: 2, visible: 0 },
+          brokenImages: [],
+        },
+        {
+          name: 'mobile',
+          width: 390,
+          height: 780,
+          documentWidth: 390,
+          documentHeight: 780,
+          bodyTextLength: 18,
+          visibleElements: 4,
+          horizontalOverflow: false,
+          mainElement: { present: true, selector: 'main' },
+          buttons: { declared: 2, visible: 1 },
+          brokenImages: [],
+        },
+      ],
+    });
+
+    const findings = evaluateArtifactPreviewHealthDiagnostics(diagnostics);
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        code: 'primary_button_not_visible',
+        viewport: 'desktop',
+        evidence: { declared: 2, visible: 0 },
+      }),
+      expect.objectContaining({ code: 'responsive_breakpoint_failure' }),
+    ]);
   });
 });

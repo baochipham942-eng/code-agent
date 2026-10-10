@@ -9,7 +9,10 @@ export type PreviewHealthMessageKey =
   | 'inspectedViewports'
   | 'unableToRun'
   | 'webServerUnavailable'
-  | 'inAppUnavailable';
+  | 'inAppUnavailable'
+  | 'webRepairNotice'
+  | 'webRepairFixed'
+  | 'webRepairRemaining';
 
 const messages: Record<PreviewHealthLocale, Record<PreviewHealthMessageKey, string>> = {
   zh: {
@@ -22,6 +25,9 @@ const messages: Record<PreviewHealthLocale, Record<PreviewHealthMessageKey, stri
     unableToRun: 'artifact preview health 无法运行：{reason}',
     webServerUnavailable: 'webServer 不可用：{reason}',
     inAppUnavailable: 'in-app browser 不可用：{reason}',
+    webRepairNotice: '网页交付物预览发现 {count} 个显示问题，正在自动修复…',
+    webRepairFixed: '网页交付物的显示问题已自动修复',
+    webRepairRemaining: '自动修复后网页交付物仍有 {count} 个显示问题',
   },
   en: {
     skipped: 'artifact preview health skipped: {reason}',
@@ -33,6 +39,9 @@ const messages: Record<PreviewHealthLocale, Record<PreviewHealthMessageKey, stri
     unableToRun: 'Unable to run artifact preview health: {reason}',
     webServerUnavailable: 'webServer unavailable: {reason}',
     inAppUnavailable: 'in-app browser unavailable: {reason}',
+    webRepairNotice: 'Found {count} display problem(s) in the web deliverable preview, repairing...',
+    webRepairFixed: 'Display problem(s) in the web deliverable were fixed automatically',
+    webRepairRemaining: '{count} display problem(s) remain in the web deliverable after auto-repair',
   },
 };
 

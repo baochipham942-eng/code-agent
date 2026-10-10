@@ -39,10 +39,10 @@ function pickVisualEditModel(hasScreenshot: boolean): string {
   }
   return process.env.VISUAL_EDIT_MODEL_TEXT || VISUAL_EDIT_MODEL_TEXT;
 }
-import { getConfigService } from '../../../services';
 import { atomicWriteFile } from '../../utils/atomicWrite';
 import { visualEditSchema as schema } from './visualEdit.schema';
 import { TOOL_DEPENDENCY_HINTS } from '../_helpers/dependencyHints';
+import { getConfiguredZhipuApiKey } from '../network/toolAvailability';
 import { getResourceLockManager } from '../../../services/infra/resourceLockManager';
 import { getFileMutationActorId } from '../file/fileMutationIdentity';
 
@@ -327,8 +327,7 @@ class VisualEditHandler implements ToolHandler<VisualEditArgs, VisualEditOutput>
     );
 
     // 调视觉 LLM
-    const configService = getConfigService();
-    const zhipuApiKey = configService?.getApiKey('zhipu');
+    const zhipuApiKey = getConfiguredZhipuApiKey();
     if (!zhipuApiKey) {
       return {
         ok: false,

@@ -21,6 +21,7 @@ import { applyProviderVariant } from '../prompts/providerVariants';
 import { ToolExecutor } from '../tools/toolExecutor';
 import type { ExecutionTopology } from '../permissions';
 import { getPermissionModeManager, rolePermissionPresetToMode } from '../permissions/modes';
+import { beginRunPolicy, endRunPolicy } from '../permissions/runPolicySnapshot';
 import type { PermissionAskResult, PermissionDeliveryOutcome } from '../../shared/contract/permission';
 import { externalEngineWriteDenial } from '../services/agentEngine/agentEngineGuards';
 import type { ConfigService } from '../services/core/configService';
@@ -956,12 +957,13 @@ export class AgentOrchestrator {
         ? registryResolveAgent(routingResolution.agent.id)?.permissionPreset
         : undefined;
       if (sessionId && turnRolePreset) {
-        getPermissionModeManager().setRolePresetSession(
-          sessionId,
-          rolePermissionPresetToMode(turnRolePreset),
-        );
+        getPermissionModeManager().setRolePresetSession(sessionId, rolePermissionPresetToMode(turnRolePreset));
         rolePresetSessionId = sessionId;
       }
+      // N-PERM-POLICYVERSION ②③：run 起点冻结权限基线——外部来源（config 热重载/hook/
+      // plugin/项目设置）的放宽不作用于本 run，下个 run 起生效；收紧与用户 UI 放宽仍
+      // 立即生效。放在角色档写入之后：专家自带的审批档属于本轮基线。
+      beginRunPolicy(nativeRunId, sessionId);
       const runSession = sessionId ? await getSessionManager().getSession(sessionId) : undefined;
       const sessionWorkspaceScope = runSession
         ? resolveSessionWorkspaceScope(
@@ -1089,6 +1091,9 @@ export class AgentOrchestrator {
         }
       }
     } finally {
+      // N-PERM-POLICYVERSION：run 终点丢权限快照（begin 在角色档写入之后、try 体内，
+      // 与这里严格配对；begin 未执行的异常路径 endRunPolicy 是 no-op）。
+      endRunPolicy(nativeRunId);
       // 只钳这一轮：下一轮换成别的专家（或回到主会话）时回到会话自己的档。
       if (rolePresetSessionId) {
         getPermissionModeManager().clearRolePresetSession(rolePresetSessionId);

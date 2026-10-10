@@ -646,7 +646,7 @@ export function kindForTurnArtifact(item: TurnArtifactOwnershipItem): string {
 export function buildTurnArtifactDeliverableCards(
   items: TurnArtifactOwnershipItem[],
 ): DeliverableCardView[] {
-  return items.map((item, index) => {
+  const cards: DeliverableCardView[] = items.map((item, index) => {
     const openTarget = openTargetForTurnArtifact(item);
     const deliverableType = workspaceKindLabel(kindForTurnArtifact(item));
     const sourceOfTruth = [
@@ -724,6 +724,17 @@ export function buildTurnArtifactDeliverableCards(
       tone: toneFromEvidence(evidencePack.status),
     };
   });
+
+  const dedupKeyForCard = (card: DeliverableCardView): string => {
+    if (card.openTarget.kind === 'file-preview') return card.openTarget.path;
+    if (card.openTarget.kind === 'workspace-preview') return card.openTarget.itemId;
+    return card.id;
+  };
+  const lastIndexByKey = new Map<string, number>();
+  cards.forEach((card, index) => {
+    lastIndexByKey.set(dedupKeyForCard(card), index);
+  });
+  return cards.filter((card, index) => lastIndexByKey.get(dedupKeyForCard(card)) === index);
 }
 
 export function applyPublishInfoToDeliverableCard(

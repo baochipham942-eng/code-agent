@@ -40,7 +40,7 @@ Returns the path to the saved screenshot file, plus AI analysis if analyze=true.
       },
       outputPath: {
         type: 'string',
-        description: 'Path to save the screenshot (default: temp directory)',
+        description: 'Path to save the screenshot (default: app data directory, outside the workspace)',
       },
       region: {
         type: 'object',

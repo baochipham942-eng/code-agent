@@ -1274,8 +1274,11 @@ export class ConfigService implements IReadConfigService {
   private mergeAppSettings(base: AppSettings, updates: Partial<AppSettings>): AppSettings {
     const merged = this.mergeSettings(base, updates);
     // 先拷贝再改，避免浅合并时写穿 DEFAULT_SETTINGS。
-    if (!isPersistedDisclosureLevel(merged.ui.disclosureLevel)) {
-      merged.ui = { ...merged.ui, disclosureLevel: 'standard' };
+    const mergedUi = merged.ui ?? DEFAULT_SETTINGS.ui;
+    if (!isPersistedDisclosureLevel(mergedUi.disclosureLevel)) {
+      merged.ui = { ...mergedUi, disclosureLevel: 'standard' };
+    } else if (merged.ui == null) {
+      merged.ui = { ...mergedUi };
     }
     const persistedRules = updates.models?.taskStrategy?.rules;
     const defaultRules = DEFAULT_SETTINGS.models.taskStrategy?.rules;

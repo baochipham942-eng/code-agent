@@ -88,6 +88,22 @@ describe('outputs / todos 接线', () => {
     expect(result.current.outputs.files).toEqual([]);
   });
 
+  it('projects image_generate output_file_path from a batch request', () => {
+    state.app = { workingDirectory: '/workspace' };
+    state.session = {
+      todos: [],
+      messages: [{
+        toolCalls: [{
+          name: 'image_generate',
+          arguments: { prompt: ['one', 'two'], output_file_path: 'images/result.png' },
+          result: {},
+        }],
+      }],
+    };
+    const { result } = renderHook(() => useStatusRailModel());
+    expect(result.current.outputs.files.map((file) => file.path)).toContain('/workspace/images/result.png');
+  });
+
   it('todos 委派 deriveStatusRailTodoModel（空 → 不显示）', () => {
     const { result } = renderHook(() => useStatusRailModel());
     expect(result.current.todos).toBeDefined();

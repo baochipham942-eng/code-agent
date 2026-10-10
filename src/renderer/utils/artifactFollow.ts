@@ -39,7 +39,9 @@ export function artifactPathFromToolStart(
 ): string | null {
   const rawPath = FILE_PATH_TOOLS.has(toolCall.name)
     ? stringField(toolCall.arguments.file_path)
-    : IMAGE_OUTPUT_TOOLS.has(toolCall.name)
+    : toolCall.name === 'image_generate'
+      ? stringField(toolCall.arguments.output_file_path)
+      : IMAGE_OUTPUT_TOOLS.has(toolCall.name)
       ? stringField(toolCall.arguments.output_path)
       : null;
   return rawPath ? resolveFollowableArtifactPath(rawPath, workingDirectory) : null;

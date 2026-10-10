@@ -140,9 +140,14 @@ function buildEvidencePack(refs: DeliverableEvidenceRef[]): DeliverableEvidenceP
 }
 
 function promptSummaryFromArgs(args: Record<string, unknown> | undefined): string {
-  const prompt = typeof args?.prompt === 'string' ? args.prompt.trim() : '';
+  const rawPrompt = args?.prompt;
+  const prompts = Array.isArray(rawPrompt)
+    ? rawPrompt.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : typeof rawPrompt === 'string' ? [rawPrompt] : [];
+  const prompt = prompts[0]?.trim() || '';
   if (!prompt) return 'Image generation';
-  return prompt.length > 72 ? `${prompt.slice(0, 72)}...` : prompt;
+  const summary = prompt.length > 72 ? `${prompt.slice(0, 72)}...` : prompt;
+  return prompts.length > 1 ? `${summary} +${prompts.length - 1} more` : summary;
 }
 
 function imageConstraintsFromArgs(args: Record<string, unknown> | undefined): string[] {
@@ -155,6 +160,8 @@ function imageConstraintsFromArgs(args: Record<string, unknown> | undefined): st
   if (aspectRatio) constraints.push(`aspect_ratio:${aspectRatio}`);
   const style = typeof args?.style === 'string' ? args.style : undefined;
   if (style) constraints.push(`style:${style}`);
+  const outputPath = typeof args?.output_file_path === 'string' ? args.output_file_path : undefined;
+  if (outputPath) constraints.push(`output_file_path:${outputPath}`);
   return constraints;
 }
 

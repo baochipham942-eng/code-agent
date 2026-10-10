@@ -987,7 +987,14 @@ function extractImageResult(toolCall: {
   const metadata = toolCall.result.metadata;
   if (!metadata) return null;
 
-  const imagePath = metadata.imagePath as string | undefined;
+  const artifactCandidates: unknown[] = Array.isArray(metadata.artifacts) ? metadata.artifacts : [];
+  const firstArtifact = artifactCandidates.find((artifact: unknown) => (
+      artifact && typeof artifact === 'object' && typeof (artifact as { path?: unknown }).path === 'string'
+  ));
+  const imagePath = (metadata.imagePath as string | undefined)
+    || (firstArtifact && typeof (firstArtifact as { path?: unknown }).path === 'string'
+      ? (firstArtifact as { path: string }).path
+      : undefined);
   const imageBase64 = metadata.imageBase64 as string | undefined;
 
   if (imagePath || imageBase64) {

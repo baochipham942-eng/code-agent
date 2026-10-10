@@ -119,6 +119,26 @@ describe('session media assets', () => {
     expect(assets[0]?.sources.map((source) => source.source)).toEqual(['tool_result', 'artifact']);
   });
 
+  it('projects every image_generate artifact from a batch result', () => {
+    const assets = buildToolResultMediaAssets({
+      id: 'tool-batch',
+      name: 'image_generate',
+      arguments: { prompt: ['one', 'two'] },
+      result: {
+        toolCallId: 'tool-batch',
+        success: true,
+        metadata: {
+          imagePaths: ['/repo/one.png', '/repo/two.png'],
+          artifacts: [
+            { artifactId: 'a1', kind: 'image', path: '/repo/one.png', mimeType: 'image/png' },
+            { artifactId: 'a2', kind: 'image', path: '/repo/two.png', mimeType: 'image/png' },
+          ],
+        },
+      },
+    });
+    expect(assets.map((asset) => asset.path)).toEqual(['/repo/one.png', '/repo/two.png']);
+  });
+
   it('marks large inline base64 media so renderers can avoid treating it as an ordinary lightweight src', () => {
     const payload = 'a'.repeat(Math.ceil((LARGE_INLINE_MEDIA_BYTES + 1) * 4 / 3));
     const dataUrl = `data:image/png;base64,${payload}`;

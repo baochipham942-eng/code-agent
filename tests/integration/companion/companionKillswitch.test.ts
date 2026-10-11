@@ -286,20 +286,33 @@ describe('companion remote pause: LAN wire and the same phone', () => {
   it('keeps a phone revoked across off and on, and allows revoke while off', async () => {
     const phoneA = createIdentity();
     const phoneB = createIdentity();
-    const clientA = new LanCompanionClient(phoneA, recordingPost([]));
-    const clientB = new LanCompanionClient(phoneB, recordingPost([]));
+    const phoneC = createIdentity();
+    const bodiesA: unknown[] = [];
+    const bodiesB: unknown[] = [];
+    const bodiesC: unknown[] = [];
+    const clientA = new LanCompanionClient(phoneA, recordingPost(bodiesA));
+    const clientB = new LanCompanionClient(phoneB, recordingPost(bodiesB));
+    const clientC = new LanCompanionClient(phoneC, recordingPost(bodiesC));
     manager = openManager();
     const bindingA = await invite(clientA);
     const bindingB = await invite(clientB);
+    const bindingC = await invite(clientC);
     const epochB = bindingB.scopeEpoch;
+    // pairedDevices 的 SQL 不带 ORDER BY，比较前两边都排序，别让 UUID 插入序当隐式契约。
+    const pairedIds = () => gateway.pairedDevices().map(device => device.deviceId).sort();
     await manager.manage({ action: 'revoke', deviceId: bindingA.deviceId });
     expect(gateway.identityDevice(toHex(phoneA.publicKey))).toBeNull();
-    expect(gateway.pairedDevices().map(device => device.deviceId)).toEqual([bindingB.deviceId]);
+    expect(pairedIds()).toEqual([bindingB.deviceId, bindingC.deviceId].sort());
     await manager.manage({ action: 'setRemote', enabled: false });
     await manager.manage({ action: 'setRemote', enabled: true });
     expect(gateway.identityDevice(toHex(phoneA.publicKey))).toBeNull();
-    expect(gateway.pairedDevices().map(device => device.deviceId)).toEqual([bindingB.deviceId]);
-    await expect(clientA.resume(bindingA)).rejects.toThrow();
+    expect(pairedIds()).toEqual([bindingB.deviceId, bindingC.deviceId].sort());
+    // 被撤销的手机必须拨「当前」端点（off/on 后真服务可能换了端口，拨旧端点只能证明不可达）。
+    // hello 路由把撤销在内的所有握手错误统一包成 403 HANDSHAKE_REJECTED——线上代码钉这个，
+    // 且开着总闸后绝不是 REMOTE_OFF。
+    await expect(resumeSame(clientA, bindingA)).rejects.toThrow('HTTP_403');
+    expect(bodiesA.at(-1)).toEqual({ error: 'COMPANION_HANDSHAKE_REJECTED' });
+    expect(bodiesA).not.toContainEqual({ error: 'COMPANION_REMOTE_OFF' });
     const backB = await resumeSame(clientB, bindingB);
     expect(backB.deviceId).toBe(bindingB.deviceId);
     expect(backB.scopeEpoch).toBe(epochB);
@@ -307,15 +320,30 @@ describe('companion remote pause: LAN wire and the same phone', () => {
     expect(['events', 'snapshot_required']).toContain(synced.kind);
     expect(await clientB.request({ action: 'command', command: command(backB, 'still-here') })).toMatchObject({ kind: 'accepted' });
 
+    // 关闸期间撤销：打开后该手机拨当前端点同样吃具体拒绝码，不是 fetch failed。
     await manager.manage({ action: 'setRemote', enabled: false });
+    await manager.manage({ action: 'revoke', deviceId: bindingC.deviceId });
+    expect(gateway.identityDevice(toHex(phoneC.publicKey))).toBeNull();
+    await manager.manage({ action: 'setRemote', enabled: true });
+    expect(gateway.identityDevice(toHex(phoneC.publicKey))).toBeNull();
+    expect(pairedIds()).toEqual([bindingB.deviceId]);
+    await expect(resumeSame(clientC, bindingC)).rejects.toThrow('HTTP_403');
+    expect(bodiesC.at(-1)).toEqual({ error: 'COMPANION_HANDSHAKE_REJECTED' });
+    expect(bodiesC).not.toContainEqual({ error: 'COMPANION_REMOTE_OFF' });
+
+    // DEVICE_REVOKED 只在 /v1/exchange（带活通道）点名：开着总闸撤销后，下一次 exchange 的
+    // 403 body 是撤销码，手机能直接按 revoked 结算；全程没有 REMOTE_OFF。
+    const backB2 = await resumeSame(clientB, bindingB);
+    expect(backB2.scopeEpoch).toBe(epochB);
     await manager.manage({ action: 'revoke', deviceId: bindingB.deviceId });
     expect(gateway.identityDevice(toHex(phoneB.publicKey))).toBeNull();
-    await manager.manage({ action: 'setRemote', enabled: true });
-    expect(gateway.identityDevice(toHex(phoneB.publicKey))).toBeNull();
     expect(gateway.pairedDevices()).toEqual([]);
-    await expect(clientB.resume(bindingB)).rejects.toThrow();
+    await expect(clientB.request({ action: 'sync', epoch: epochB, afterSeq: 0 })).rejects.toThrow('HTTP_403');
+    expect(bodiesB.at(-1)).toEqual({ error: 'COMPANION_DEVICE_REVOKED' });
+    expect(bodiesB).not.toContainEqual({ error: 'COMPANION_REMOTE_OFF' });
     clientA.close();
     clientB.close();
+    clientC.close();
   });
 
   it('starts LAN for a paired device by default and restores only the responder when the saved flag is off', async () => {

@@ -1,12 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AgentFailureCode } from '../../../src/shared/contract/agentFailure';
 import { classifySideChatFailure } from '../../../src/host/ipc/sideChatFailure';
+import { withTransientRetry } from '../../../src/host/model/providers/retryStrategy';
+
+// 真实重试链路（withTransientRetry）会打 warn 日志，测试里静音（与 retryStrategy.test.ts 同法）。
+vi.mock('../../../src/host/model/providers/shared', () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
 
 type ExpectedCause = ReturnType<typeof classifySideChatFailure>;
 
+// 真实熔断包装的最小同构形状：文案只有「Retry stopped…」，原始错误挂在 cause 上。
+const RETRY_STOPPED_MESSAGE = 'Retry stopped: the same retryable error repeated 3 times.';
+const retryStopped = (underlying: unknown): Error =>
+  Object.assign(new Error(RETRY_STOPPED_MESSAGE), { cause: underlying });
+
 // 表驱动：每行是一条 provider/executor 原始文案（含中文），断言归并出的 cause token。
 // 新 cause 的准入在这里扩行，不回改旧行——旧文案的分类漂移是破坏性变更。
-const TABLE: { expected: ExpectedCause; label: string; input: { message?: string; failureCode?: unknown } }[] = [
+const TABLE: { expected: ExpectedCause; label: string; input: { message?: string; failureCode?: unknown; error?: unknown } }[] = [
   // ── auth：401/403 状态码与鉴权文案（中英）─────────────────────────────
   { expected: 'auth', label: 'http 401 code', input: { message: 'Error code: 401 - {"error":{"code":"1002","message":"invalid api key"}}' } },
   { expected: 'auth', label: 'http 403 code', input: { message: 'Error code: 403 - forbidden' } },
@@ -40,6 +51,15 @@ const TABLE: { expected: ExpectedCause; label: string; input: { message?: string
   { expected: 'unknown', label: 'busy model', input: { message: '模型正忙，请稍后再试' } },
   { expected: 'unknown', label: 'odd failure', input: { message: 'something odd happened' } },
   { expected: 'unknown', label: 'empty message', input: { message: '' } },
+  // ── carried cause：熔断包装（Retry stopped…）cause 链上携带的原始错误 ────
+  // 真机上重试耗尽后文案只剩「Retry stopped…」，原始 429/ECONNREFUSED 在
+  // cause 链与保留的 status 上；这些行断言不带原始文案 signal 的底层错误
+  // 也能归类（UI 验收 2026-10-11：此前全落 unknown）。
+  { expected: 'auth', label: 'carried 401 status, wording-free message', input: { message: RETRY_STOPPED_MESSAGE, error: retryStopped(Object.assign(new Error('provider rejected the request'), { statusCode: 401 })) } },
+  { expected: 'quota', label: 'carried 429 status, wording-free message', input: { message: RETRY_STOPPED_MESSAGE, error: retryStopped(Object.assign(new Error('Too many requests, slow down'), { statusCode: 429 })) } },
+  { expected: 'quota', label: 'carried 402 status, wording-free message', input: { message: RETRY_STOPPED_MESSAGE, error: retryStopped(Object.assign(new Error('provider requires an upgraded plan'), { status: 402 })) } },
+  { expected: 'network', label: 'carried AI SDK connect wording', input: { message: RETRY_STOPPED_MESSAGE, error: retryStopped(new Error('Cannot connect to API: connect ECONNREFUSED 127.0.0.1:443')) } },
+  { expected: 'network', label: 'carried undici double wrap', input: { message: RETRY_STOPPED_MESSAGE, error: retryStopped(Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:443'), { code: 'ECONNREFUSED' }) })) } },
 ];
 
 describe('classifySideChatFailure', () => {
@@ -56,5 +76,46 @@ describe('classifySideChatFailure', () => {
     expect(classifySideChatFailure({ message: '额度不足，请求已超时放弃' })).toBe('quota');
     // 超时文案压过网络：网络栈的 ETIMEDOUT 属超时，不归 network。
     expect(classifySideChatFailure({ message: 'network timeout while dialing provider' })).toBe('timeout');
+  });
+});
+
+// UI 验收 2026-10-11：真机上 429/ECONNREFUSED 被 ModelRouter 重试 3 次后熔断，
+// 执行器最终抛出的文案只剩「Retry stopped…」——分类器不看 cause 链就全落 unknown。
+// 这里用真实 withTransientRetry 把重试真正跑穿（不 mock 被测的重试机制），断言
+// 熔断包装按携带的原始错误归类。
+describe('classifySideChatFailure — real retry-exhaustion wrapper', () => {
+  const CASES = [
+    {
+      label: '429 without digits or rate-limit wording in text',
+      // AI SDK APICallError 形状：statusCode 是结构化字段，message 只有供应商文案。
+      underlying: () => Object.assign(new Error('Too many requests, slow down'), { statusCode: 429 }),
+      expected: 'quota' as const,
+    },
+    {
+      label: 'ECONNREFUSED via AI SDK connect wording',
+      // handleFetchError 包出来的真实形状：message = `Cannot connect to API: ${cause.message}`。
+      underlying: () => new Error('Cannot connect to API: connect ECONNREFUSED 127.0.0.1:443'),
+      expected: 'network' as const,
+    },
+  ];
+
+  it.each(CASES)('classifies $label from the carried cause', async ({ underlying, expected }) => {
+    const thrown = await withTransientRetry(() => Promise.reject(underlying()), {
+      providerName: 'side-chat-exhaustion',
+      model: 'test-model',
+      maxRetries: 4,
+      baseDelay: 1,
+    }).then(
+      () => { throw new Error('expected the fingerprint breaker to trip'); },
+      (err: unknown) => err as Error,
+    );
+
+    // 确认真走的是熔断包装路径（与执行器在真机上抛出的同型错误）。
+    expect(thrown.name).toBe('RepeatedRetryableFingerprintError');
+    expect(thrown.message).toMatch(/^Retry stopped: the same retryable error repeated \d+ times\.$/);
+    // 只看文案（不带携带的错误对象）时落 unknown——这正是 UI 验收发现的病灶。
+    expect(classifySideChatFailure({ message: thrown.message })).toBe('unknown');
+    // 带上错误对象后按 cause 链上的原始错误归类。
+    expect(classifySideChatFailure({ message: thrown.message, error: thrown })).toBe(expected);
   });
 });

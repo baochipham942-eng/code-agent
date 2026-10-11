@@ -78,7 +78,16 @@ async function askSideChat(payload: { sessionId: string; question: string; reque
   } catch (err) {
     if (controller.signal.aborted) throw sideChatError('SIDE_CHAT_ABORTED');
     if (err instanceof Error && err.message.startsWith('SIDE_CHAT_')) throw err;
-    return { failure: { cause: classifySideChatFailure({ message: err instanceof Error ? err.message : String(err) }) } };
+    return {
+      failure: {
+        cause: classifySideChatFailure({
+          message: err instanceof Error ? err.message : String(err),
+          // 重试耗尽抛出的 RepeatedRetryableFingerprintError 文案只有「Retry stopped…」，
+          // 原始 429/ECONNREFUSED 在 cause 链与保留的 status/code 上——分类要读携带的错误。
+          error: err,
+        }),
+      },
+    };
   } finally {
     if (inflight.get(payload.requestId) === controller) inflight.delete(payload.requestId);
   }

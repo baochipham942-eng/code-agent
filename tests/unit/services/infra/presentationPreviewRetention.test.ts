@@ -1,31 +1,22 @@
-import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PRESENTATION_PREVIEW_CACHE_DIRNAME } from '../../../../src/host/tools/media/ppt/constants';
 import { sweepPresentationPreviewRetention } from '../../../../src/host/services/infra/presentationPreviewRetention';
+import { applyTestSessionSchema } from '../../../utils/applyTestSessionSchema';
+
+vi.unmock('better-sqlite3');
+import Database from 'better-sqlite3';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-// 引用扫描要读的表全部建出来（只含被扫描的列）；缺任何一张都会被当成扫描失败
-const SCAN_TABLES_DDL = `
-CREATE TABLE messages (id TEXT PRIMARY KEY, content TEXT, tool_calls TEXT, tool_results TEXT, responses_output TEXT, attachments TEXT, compaction TEXT, metadata TEXT);
-CREATE TABLE companion_artifacts (artifact_id TEXT PRIMARY KEY, path TEXT);
-CREATE TABLE tool_executions (id TEXT PRIMARY KEY, arguments TEXT, result TEXT);
-CREATE TABLE turn_snapshots (id TEXT PRIMARY KEY, context_chunks TEXT);
-CREATE TABLE compaction_snapshots (id TEXT PRIMARY KEY, pre_messages_summary TEXT, post_messages_summary TEXT);
-CREATE TABLE file_checkpoints (id TEXT PRIMARY KEY, file_path TEXT, original_content TEXT);
-CREATE TABLE workflow_runs (run_id TEXT PRIMARY KEY, result_json TEXT);
-CREATE TABLE workflow_run_calls (run_id TEXT, call_index INTEGER, result_json TEXT);
-CREATE TABLE session_fork_anchor_evidence (id TEXT PRIMARY KEY, summary_json TEXT, evidence_json TEXT);
-`;
 
 interface Fixture {
   root: string;
   cacheRoot: string;
   dbPath: string;
+  db: InstanceType<typeof Database>;
 }
 
 let fixture: Fixture | undefined;
@@ -35,8 +26,11 @@ function makeFixture(): Fixture {
   const cacheRoot = path.join(root, 'cache', PRESENTATION_PREVIEW_CACHE_DIRNAME);
   fs.mkdirSync(cacheRoot, { recursive: true });
   const dbPath = path.join(root, 'code-agent.db');
-  execFileSync('sqlite3', [dbPath, SCAN_TABLES_DDL], { encoding: 'utf-8' });
-  return { root, cacheRoot, dbPath };
+  // 引用扫描要读的表全走生产 applySchema（messages DDL 不手抄，见 messagesSchemaFixtureGate）；
+  // 缺任何一张（如下面的 DROP TABLE 用例）都会被当成扫描失败
+  const db = new Database(dbPath);
+  applyTestSessionSchema(db);
+  return { root, cacheRoot, dbPath, db };
 }
 
 /** 64 位 hex revision 目录名（sha256 输出形状） */
@@ -48,8 +42,13 @@ function sha256File(filePath: string): string {
   return createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
 
-function sqlQuote(value: string): string {
-  return `'${value.replace(/'/g, "''")}'`;
+/** 插一行：生产 schema 的 NOT NULL 列由调用方给齐（约束是真的，不给会插不进） */
+function insertRow(table: string, row: Record<string, string | number | null>): void {
+  const columns = Object.keys(row);
+  const marks = columns.map(() => '?').join(', ');
+  fixture!.db
+    .prepare(`INSERT INTO ${table} (${columns.join(', ')}) VALUES (${marks})`)
+    .run(...columns.map((column) => row[column]));
 }
 
 interface RevisionInput {
@@ -77,14 +76,6 @@ function writeRevisionDir(revision: string, input: RevisionInput = {}): string {
   return dirPath;
 }
 
-function insertRow(table: string, columns: string[], values: Array<string | null>): void {
-  const cols = columns.join(', ');
-  const vals = values.map((value) => (value == null ? 'NULL' : sqlQuote(value))).join(', ');
-  execFileSync('sqlite3', [fixture!.dbPath, `INSERT INTO ${table} (${cols}) VALUES (${vals});`], {
-    encoding: 'utf-8',
-  });
-}
-
 function writeDeck(name: string): string {
   const deckPath = path.join(fixture!.root, name);
   fs.writeFileSync(deckPath, `pptx-bytes-${name}`);
@@ -98,7 +89,10 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (fixture) fs.rmSync(fixture.root, { recursive: true, force: true });
+  if (fixture) {
+    fixture.db.close();
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+  }
   fixture = undefined;
 });
 
@@ -129,11 +123,62 @@ describe('presentation preview retention sweep', () => {
     const viaToolExecutions = writeRevisionDir(revHex(5), { filePath: deck, lastUsedAt: NOW - 40 * DAY_MS });
     const unreferenced = writeRevisionDir(revHex(6), { filePath: deck, lastUsedAt: NOW - 40 * DAY_MS });
 
-    insertRow('messages', ['id', 'content'], ['m1', `看图 ${fixture!.cacheRoot}/${revHex(1)}/pages/deck-1.jpg`]);
-    insertRow('messages', ['id', 'tool_results'], ['m2', `{"screenshot":"${fixture!.cacheRoot}/${revHex(2)}/pages/deck-1.jpg"}`]);
-    insertRow('messages', ['id', 'metadata'], ['m3', `{"preview":"${fixture!.cacheRoot}/${revHex(3)}"}`]);
-    insertRow('companion_artifacts', ['artifact_id', 'path'], ['a1', `${fixture!.cacheRoot}/${revHex(4)}/pages/deck-2.jpg`]);
-    insertRow('tool_executions', ['id', 'result'], ['t1', `{"path":"${fixture!.cacheRoot}/${revHex(5)}/pages/deck-1.jpg"}`]);
+    // better-sqlite3 默认开 FK：messages/tool_executions 都引用 sessions(id)，先落一条真 session
+    insertRow('sessions', {
+      id: 's1',
+      title: 'fixture',
+      model_provider: 'test',
+      model_name: 'test',
+      created_at: NOW,
+      updated_at: NOW,
+    });
+    // messages 的 session_id/role/content/timestamp 是生产 schema 的 NOT NULL 列
+    insertRow('messages', {
+      id: 'm1',
+      session_id: 's1',
+      role: 'user',
+      content: `看图 ${fixture!.cacheRoot}/${revHex(1)}/pages/deck-1.jpg`,
+      timestamp: NOW,
+    });
+    insertRow('messages', {
+      id: 'm2',
+      session_id: 's1',
+      role: 'user',
+      content: '',
+      timestamp: NOW,
+      tool_results: `{"screenshot":"${fixture!.cacheRoot}/${revHex(2)}/pages/deck-1.jpg"}`,
+    });
+    insertRow('messages', {
+      id: 'm3',
+      session_id: 's1',
+      role: 'user',
+      content: '',
+      timestamp: NOW,
+      metadata: `{"preview":"${fixture!.cacheRoot}/${revHex(3)}"}`,
+    });
+    insertRow('companion_artifacts', {
+      artifact_id: 'a1',
+      session_id: 's1',
+      version: 1,
+      name: 'deck',
+      mime_type: 'image/jpeg',
+      size: 5,
+      sha256: 'x',
+      origin: 'test',
+      created_at: NOW,
+      path: `${fixture!.cacheRoot}/${revHex(4)}/pages/deck-2.jpg`,
+    });
+    insertRow('tool_executions', {
+      id: 't1',
+      session_id: 's1',
+      tool_name: 'preview',
+      arguments: '{}',
+      arguments_hash: 'h',
+      success: 1,
+      duration: 1,
+      created_at: NOW,
+      result: `{"path":"${fixture!.cacheRoot}/${revHex(5)}/pages/deck-1.jpg"}`,
+    });
 
     const summary = await sweepPresentationPreviewRetention({
       cacheRoot: fixture!.cacheRoot,
@@ -163,7 +208,7 @@ describe('presentation preview retention sweep', () => {
     expect(fs.existsSync(old)).toBe(true);
 
     // 再验表缺失：拆掉一张扫描表后重扫，同样一个不删
-    execFileSync('sqlite3', [fixture!.dbPath, 'DROP TABLE workflow_run_calls;'], { encoding: 'utf-8' });
+    fixture!.db.exec('DROP TABLE workflow_run_calls;');
     const missingTable = await sweepPresentationPreviewRetention({
       cacheRoot: fixture!.cacheRoot,
       dbPath: fixture!.dbPath,

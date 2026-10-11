@@ -286,6 +286,13 @@ export const ExpertPanel: React.FC = () => {
     app.setShowCapabilityHub(false);
   };
 
+  // 快捷句点击 = 预选团队 + 句子填进输入框（只填不发，用户改完自己发送）。
+  // 预填走 store 而不是窗口事件：能力中心关闭前 ChatInput 还是卸载态，事件会丢。
+  const quickPromptRecipe = (recipe: TeamRecipe, prompt: string) => {
+    useComposerStore.getState().setPendingComposerPrefill({ text: prompt });
+    openRecipe(recipe);
+  };
+
   const copyRecipe = async (recipe: TeamRecipe) => {
     try {
       const copied = await createTeamRecipe({
@@ -417,7 +424,9 @@ export const ExpertPanel: React.FC = () => {
                 <h2 id="team-recipes-title" className="mb-3 text-sm font-medium text-zinc-200">{t.team.sectionTitle}</h2>
                 <h3 className="mb-2 text-xs font-medium text-zinc-400">{t.team.builtinRecipes}</h3>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {TEAM_RECIPES.map((recipe) => (
+                  {TEAM_RECIPES.map((recipe) => {
+                    const quickPrompt = recipe.quickPrompts?.[0];
+                    return (
                     <div
                       key={recipe.id}
                       data-testid={`team-recipe-${recipe.id}`}
@@ -443,6 +452,16 @@ export const ExpertPanel: React.FC = () => {
                           {recipe.tags.map((tag) => <span key={tag} className={SHELF_TAG_CLASS}>{tag}</span>)}
                         </div>
                       ) : null}
+                      {quickPrompt ? (
+                        <div className="flex flex-col gap-1">
+                          <span className="text-[10px] uppercase tracking-wide text-zinc-600">{text.quickPromptsTitle}</span>
+                          {/* 引用条与专家卡同一语言：点击 = 预选这个团 + 把句子填进输入框（只填不发） */}
+                          <button /* ds-allow:button: 专家团快捷句行（左对齐引号文案），Button primitive 是居中动作按钮形状 */ type="button" data-testid="team-quick-prompt" onClick={() => quickPromptRecipe(recipe, quickPrompt)} className="flex items-start gap-1.5 rounded-md border border-zinc-700/60 bg-zinc-800/40 px-2 py-1.5 text-left text-xs text-zinc-300 transition-colors hover:border-zinc-500 hover:bg-zinc-700/60 hover:text-zinc-100">
+                            <Quote className="mt-0.5 h-3 w-3 flex-shrink-0 text-zinc-500" />
+                            <span>{quickPrompt}</span>
+                          </button>
+                        </div>
+                      ) : null}
                       <div className="mt-auto flex gap-2 pt-1">
                         <Button variant="primary" size="sm" onClick={() => openRecipe(recipe)}>
                           {t.team.useRecipe}
@@ -450,7 +469,8 @@ export const ExpertPanel: React.FC = () => {
                         <Button variant="ghost" size="sm" onClick={() => { void copyRecipe(recipe); }}>{t.team.copy}</Button>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 <h3 className="mb-2 mt-5 text-xs font-medium text-zinc-400">{t.team.myRecipes}</h3>
                 {userRecipes.length === 0 ? <p data-testid="team-my-recipes-empty" className="text-xs text-zinc-500">{t.team.myRecipesEmpty}</p> : null}

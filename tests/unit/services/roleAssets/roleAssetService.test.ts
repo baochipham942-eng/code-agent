@@ -16,6 +16,11 @@ vi.mock('../../../../src/host/config/configPaths', () => ({
 
 vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
+vi.mock('../../../../src/host/services/skills/subagentSkillInjection', () => ({
+  buildSubagentSkillsBlock: vi.fn(async () => ({ block: null, loaded: [], missing: [] })),
 }));
 
 import {
@@ -23,6 +28,7 @@ import {
   getProjectKey,
   getRoleDir,
 } from '../../../../src/host/services/roleAssets/roleAssetPaths';
+import { ROLE_ASSETS } from '../../../../src/shared/constants';
 import {
   isPersistentRole,
   listPersistentRoles,
@@ -39,6 +45,7 @@ import {
   buildRoleContextBlock,
   instantiateRole,
 } from '../../../../src/host/services/roleAssets/roleAssetService';
+import { buildEffectiveSubagentSystemPrompt } from '../../../../src/host/agent/subagentExecutorProjection';
 
 describe('roleAssetPaths', () => {
   beforeEach(async () => {
@@ -314,6 +321,48 @@ describe('roleAssetService', () => {
     });
   });
 
+  describe('scoped memory index truncation', () => {
+    it('keeps exactly INDEX_MAX_LINES entries without a notice', async () => {
+      await ensureRoleAssetDirs('研究员');
+      const lines = Array.from(
+        { length: ROLE_ASSETS.INDEX_MAX_LINES },
+        (_, index) => `- entry-${index}`,
+      );
+      const content = `${lines.join('\n')}\n`;
+      await fs.writeFile(path.join(getRoleDir('研究员'), 'MEMORY.md'), content, 'utf-8');
+
+      const result = await loadScopedMemoryIndex({ scope: 'role', roleId: '研究员' });
+
+      expect(result).toBe(lines.join('\n'));
+      expect(result).not.toContain('OmittedMemoryIndexNotice');
+    });
+
+    it('reports the accurate number of omitted entries and preserves the first 200', async () => {
+      await ensureRoleAssetDirs('研究员');
+      const lines = Array.from({ length: ROLE_ASSETS.INDEX_MAX_LINES + 5 }, (_, index) => `- entry-${index}`);
+      await fs.writeFile(
+        path.join(getRoleDir('研究员'), 'MEMORY.md'),
+        `${lines.join('\n')}\n`,
+        'utf-8',
+      );
+
+      const result = await loadScopedMemoryIndex({ scope: 'role', roleId: '研究员' });
+
+      expect(result).toBe(
+        `${lines.slice(0, ROLE_ASSETS.INDEX_MAX_LINES).join('\n')}\n\nOmittedMemoryIndexNotice: 省略了 5 条记忆索引条目，需要时可使用 MemoryRead 获取。`,
+      );
+      expect(result).not.toContain('- entry-200');
+    });
+
+    it('keeps non-truncated output byte-for-byte equal to the trimmed source', async () => {
+      await ensureRoleAssetDirs('研究员');
+      const content = '\n# custom index\n- [entry.md](entry.md) — description\n\n';
+      await fs.writeFile(path.join(getRoleDir('研究员'), 'MEMORY.md'), content, 'utf-8');
+
+      await expect(loadScopedMemoryIndex({ scope: 'role', roleId: '研究员' })).resolves.toBe(content.trim());
+    });
+  });
+
   describe('role history (设计 §4.3 履历 = 产物清单)', () => {
     it('appends history entries and loads recent ones', async () => {
       await ensureRoleAssetDirs('研究员');
@@ -433,6 +482,26 @@ describe('roleAssetService', () => {
       const block = await buildRoleContextBlock('研究员');
       expect(block).toContain('最近工作履历');
       expect(block).toContain('报告A');
+    });
+  });
+
+  describe('subagent system prompt role memory gate', () => {
+    it('omits generic agent role memory and injects it for a self-made role directory', async () => {
+      const input = {
+        agentName: 'coder',
+        systemPrompt: 'base system prompt',
+        roleId: 'coder',
+        cwd: '/tmp/workspace',
+      };
+      const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
+
+      const genericPrompt = await buildEffectiveSubagentSystemPrompt(input, logger);
+      expect(genericPrompt).not.toContain('<role_assets');
+
+      await fs.mkdir(path.join(mockConfigDir.dir, 'roles', 'coder'), { recursive: true });
+
+      const persistentPrompt = await buildEffectiveSubagentSystemPrompt(input, logger);
+      expect(persistentPrompt).toContain('<role_assets role="coder">');
     });
   });
 

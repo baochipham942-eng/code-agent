@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import express from 'express';
 import http from 'http';
 import { mkdtemp, rm } from 'fs/promises';
@@ -35,15 +35,19 @@ const mockCancel = vi.fn();
 const mockSteer = vi.fn();
 const mockCreateAgentLoop = vi.fn();
 const mockCreateRunToolExecutor = vi.fn((..._args: unknown[]) => ({ execute: vi.fn() }));
+// 基准 settings 抽出来供个别用例按需覆写（如 ui.language=en）再还原——
+// vi.clearAllMocks 不还原 mockImplementation，覆写泄漏会毒化后续用例。
+const baseSettings = vi.hoisted(() => ({
+  permissions: {
+    autoApprove: { read: true, write: false, execute: false, network: false },
+    devModeAutoApprove: false,
+  },
+  models: { default: 'openai', providers: {}, routing: {} },
+  ui: { language: 'zh' },
+}));
 const configServiceMocks = vi.hoisted(() => ({
   onSettingsUpdated: vi.fn(),
-  getSettings: vi.fn(() => ({
-    permissions: {
-      autoApprove: { read: true, write: false, execute: false, network: false },
-      devModeAutoApprove: false,
-    },
-    models: { default: 'openai', providers: {}, routing: {} },
-  })),
+  getSettings: vi.fn(() => baseSettings),
   isDevModeAutoApproveEnabled: vi.fn(() => false),
 }));
 const mockBroadcastSSE = vi.hoisted(() => vi.fn());
@@ -461,6 +465,10 @@ describe('createAgentRouter', () => {
     inMemorySessions.clear();
     sessionMessages.clear();
     setDbAvailable(false);
+    // 无目录会话的兜底会 mkdir 默认工作目录（N-DELIVERABLE-WORKDIR-DEFAULT 起还在其下
+    // 开 任务_* 按会话子目录）：统一指到临时数据目录，别往真实主目录 ~/Neo 里写。
+    tempDataDir = await mkdtemp(join(tmpdir(), 'code-agent-data-'));
+    process.env.CODE_AGENT_DATA_DIR = tempDataDir;
     Object.values(mockDb).forEach((mock) => mock.mockClear());
     agentEngineMocks.resolveExternalEngineLaunch.mockImplementation((session, engine, requestedCwd) => ({
       cwd: requestedCwd || session?.workingDirectory || engine?.cwd,
@@ -506,6 +514,8 @@ describe('createAgentRouter', () => {
 
   afterEach(async () => {
     await closeServer();
+    // 个别用例按需覆写 getSettings（ui.language=en 等），这里统一还原，防泄漏毒化后续用例
+    configServiceMocks.getSettings.mockImplementation(() => baseSettings);
     if (tempDataDir) {
       await rm(tempDataDir, { recursive: true, force: true });
       await rm(`${tempDataDir}-work`, { recursive: true, force: true });
@@ -4196,10 +4206,8 @@ describe('createAgentRouter', () => {
     expect(agentEngineMocks.enqueueReviewSession).not.toHaveBeenCalled();
   });
 
-  it('falls back to the app work directory instead of HOME when no working directory is known', async () => {
+  it('opens a per-session work folder for a first-run session with no working directory (N-DELIVERABLE-WORKDIR-DEFAULT)', async () => {
     await closeServer();
-    tempDataDir = await mkdtemp(join(tmpdir(), 'code-agent-data-'));
-    process.env.CODE_AGENT_DATA_DIR = tempDataDir;
 
     mockCreateAgentLoop.mockImplementationOnce(() => ({
       run: vi.fn(async () => undefined),
@@ -4209,7 +4217,9 @@ describe('createAgentRouter', () => {
     await startAgentApi({
       tryGetSessionManager: async () => ({
         getMessages: vi.fn(async () => []),
+        // preflight：会话行不存在（新会话，零历史消息）
         getSession: vi.fn(async () => null),
+        updateSession: vi.fn(async () => undefined),
       }),
     });
 
@@ -4217,7 +4227,7 @@ describe('createAgentRouter', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        prompt: '普通聊天',
+        prompt: '帮我出一份季度总结',
         sessionId: 'session-safe-fallback',
       }),
     });
@@ -4225,9 +4235,197 @@ describe('createAgentRouter', () => {
     expect(response.ok).toBe(true);
     await response.text();
 
+    // 不再落 HOME，也不再是扁平默认目录本身：嵌套数据目录旁边开按会话子目录
+    //（ui.language=zh 档；无标题 → 首条用户消息前 20 字符）
+    const now = new Date();
+    const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const expectedDir = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
     expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({
-      // 默认目录不在数据目录里（后台写边界按设计拒绝数据目录）：嵌套数据目录放在旁边
+      project: expectedDir,
+    }));
+    expect(existsSync(expectedDir)).toBe(true);
+  });
+
+  it('sanitizes illegal characters from the session title and appends -2 on collision (N-DELIVERABLE-WORKDIR-DEFAULT)', async () => {
+    await closeServer();
+
+    const now = new Date();
+    const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    // 预占同名目录：验证撞名走 -2 后缀，既有目录内容不动
+    const occupied = `${tempDataDir}-work/任务_${mmdd}_报表2026Q4`;
+    mkdirSync(`${tempDataDir}-work`, { recursive: true });
+    mkdirSync(occupied);
+    writeFileSync(join(occupied, '既有产物.md'), 'keep');
+
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        // 零消息 + 已命名会话：目录名用会话标题，非法字符 / : 洗掉
+        getSession: vi.fn(async () => ({
+          title: '报表/2026:Q4',
+          messages: [],
+        })),
+        updateSession: vi.fn(async () => undefined),
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '继续做报表', sessionId: 'session-sanitized-title' }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({
+      project: `${occupied}-2`,
+    }));
+    expect(readFileSync(join(occupied, '既有产物.md'), 'utf8')).toBe('keep');
+  });
+
+  it('keeps the flat default for an existing session that already has messages (files are never moved)', async () => {
+    await closeServer();
+
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        // 存量会话：有历史消息、没存过目录 → 维持扁平默认目录
+        getSession: vi.fn(async () => ({
+          title: '老会话',
+          messages: [{ id: 'prior-user-1', role: 'user', content: '上一轮', timestamp: 1 }],
+        })),
+        updateSession: vi.fn(async () => undefined),
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '第二轮', sessionId: 'session-existing-flat' }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({
       project: `${tempDataDir}-work`,
+    }));
+    const flatEntries = readdirSync(`${tempDataDir}-work`);
+    expect(flatEntries.some((entry) => entry.startsWith('任务_') || entry.startsWith('Task_'))).toBe(false);
+  });
+
+  it('keeps an explicitly bound folder even for a zero-message session', async () => {
+    await closeServer();
+
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    const explicitFolder = await mkdtemp(join(tmpdir(), 'explicit-bound-folder-'));
+    try {
+      await startAgentApi({
+        tryGetSessionManager: async () => ({
+          getMessages: vi.fn(async () => []),
+          getSession: vi.fn(async () => ({
+            workingDirectory: explicitFolder,
+            messages: [],
+          })),
+          updateSession: vi.fn(async () => undefined),
+        }),
+      });
+
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: '在这个项目里干活', sessionId: 'session-explicit-folder' }),
+      });
+
+      expect(response.ok).toBe(true);
+      await response.text();
+      expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({
+        project: explicitFolder,
+      }));
+    } finally {
+      await rm(explicitFolder, { recursive: true, force: true });
+    }
+  });
+
+  it('reuses the backfilled per-session folder on the next run instead of opening a new one', async () => {
+    await closeServer();
+
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    // 上一轮回写过的按会话目录（resolution 链里 session.workingDirectory 优先于兜底）
+    const stickyFolder = `${tempDataDir}-work/任务_1010_既有任务`;
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        getSession: vi.fn(async () => ({
+          workingDirectory: stickyFolder,
+          messages: [{ id: 'prior-user-1', role: 'user', content: '首轮', timestamp: 1 }],
+        })),
+        updateSession: vi.fn(async () => undefined),
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '第二轮换个说法', sessionId: 'session-sticky-folder' }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({
+      project: stickyFolder,
+    }));
+  });
+
+  it('uses the Task_ prefix when ui.language is en (N-DELIVERABLE-WORKDIR-DEFAULT)', async () => {
+    await closeServer();
+
+    configServiceMocks.getSettings.mockImplementation(() => ({
+      ...baseSettings,
+      ui: { language: 'en' },
+    }));
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        getSession: vi.fn(async () => null),
+        updateSession: vi.fn(async () => undefined),
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: 'quarterly summary', sessionId: 'session-en-ui' }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+    const now = new Date();
+    const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({
+      project: `${tempDataDir}-work/Task_${mmdd}_quarterly summary`,
     }));
   });
 
@@ -4235,13 +4433,16 @@ describe('createAgentRouter', () => {
   it('treats a session still pinned to the legacy <dataDir>/work as having no directory and uses the new default', async () => {
     await closeServer();
     setDbAvailable(true);
-    tempDataDir = await mkdtemp(join(tmpdir(), 'code-agent-data-'));
-    process.env.CODE_AGENT_DATA_DIR = tempDataDir;
     mockCreateAgentLoop.mockImplementationOnce(() => ({ run: vi.fn(async () => undefined), cancel: mockCancel }));
     await startAgentApi({
       tryGetSessionManager: async () => ({
         getMessages: vi.fn(async () => []),
-        getSession: vi.fn(async () => ({ workingDirectory: join(tempDataDir!, 'work') })),
+        // 真实形状：getSession 返回 SessionWithMessages；存过目录的会话必然存过消息
+        //（N-DELIVERABLE-WORKDIR-DEFAULT 起零消息会话首轮开按会话子目录）
+        getSession: vi.fn(async () => ({
+          workingDirectory: join(tempDataDir!, 'work'),
+          messages: [{ id: 'prior-user-1', role: 'user', content: '上一轮', timestamp: 1 }],
+        })),
       }),
     });
     const response = await fetch(`${baseUrl}/api/run`, {

@@ -93,6 +93,7 @@ import { QueuedInputRepository } from '../../host/services/core/repositories/Que
 import { getDatabase } from '../../host/services/core/databaseService';
 import { getLogsPath } from '../../host/platform/appPaths';
 import { getDefaultWorkDirectory, isLegacyDefaultWorkDirectory } from '../../host/config/configPaths';
+import { createSessionWorkDirectory } from '../../host/config/sessionWorkDirectory';
 import { hasInteractiveUi } from '../../host/platform';
 import { getProjectService } from '../../host/services/project/projectService';
 import { getAuthService } from '../../host/services/auth/authService';
@@ -184,6 +185,14 @@ async function ensureDefaultWebWorkingDirectory(): Promise<string> {
   const workDir = getDefaultWorkDirectory();
   await fs.mkdir(workDir, { recursive: true });
   return workDir;
+}
+
+/**
+ * preflight 读到的会话是否已有历史消息。getSession 实际返回 SessionWithMessages
+ * （cli/session.ts），messages 数组带消息上限——limit=1 时非空即「跑过至少一轮」。
+ */
+function persistedSessionHasMessages(session: Session | null): boolean {
+  return ((session as (Session & { messages?: unknown[] }) | null)?.messages?.length ?? 0) > 0;
 }
 
 // ── run 入口幂等重放（N-RUNENTRY-IDEMPOTENT）────────────────────────────────
@@ -546,8 +555,18 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     // 旧默认目录 <dataDir>/work 已经存进了一批会话（请求里也可能原样带回来）：按没有目录处理，走下面的新默认目录
     if (resolvedProject && isLegacyDefaultWorkDirectory(resolvedProject)) resolvedProject = undefined;
     if (!resolvedProject) {
+      // 无文件夹会话分两档（N-DELIVERABLE-WORKDIR-DEFAULT）：新会话（preflight 时零历史
+      // 消息——本轮 user message 要到下方 SSE 之后的 pre-persist 才落库，此处读到的就是
+      // 首轮前状态）首轮开按会话产出子目录 任务_MMDD_<标题>，并经下方回写粘住；已有
+      // 消息的存量会话保持扁平默认目录，既有文件永不挪动。
+      const firstRunNoFolderSession = !persistedSessionHasMessages(persistedSession);
       try {
-        resolvedProject = await ensureDefaultWebWorkingDirectory();
+        resolvedProject = firstRunNoFolderSession
+          ? await createSessionWorkDirectory({
+            sessionTitle: persistedSession?.title,
+            userMessage: prompt,
+          })
+          : await ensureDefaultWebWorkingDirectory();
         logger.info(`[AgentRouter] No project/sessionDir/context workingDirectory, falling back to app work dir ${resolvedProject}`);
       } catch (error) {
         if (transport.connectedClient) {

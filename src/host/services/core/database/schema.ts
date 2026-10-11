@@ -1366,6 +1366,19 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
     )
   `);
 
+  // workflow_settlement_claims - 终态通知的跨重启去重键（N-WF-SETTLEMENT-DEDUPE / 设计 D6-A）。
+  // 刻意不 FK 到 workflow_runs：startRun 的 INSERT OR REPLACE 是 DELETE+INSERT，同 runId
+  // 重启重跑会把 CASCADE 掉的 claim 一起抹掉，去重就失效了；run 记录删除时由
+  // WorkflowJournalRepository.deleteRun/clearAll 显式清掉对应 claim 行。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS workflow_settlement_claims (
+      run_id TEXT NOT NULL,
+      terminal_status TEXT NOT NULL,
+      claimed_at INTEGER NOT NULL,
+      PRIMARY KEY (run_id, terminal_status)
+    )
+  `);
+
   // workflow_stall_notices - durable (run_id, epoch) key for background stall announcements.
   // Deliberately no FK: startRun uses INSERT OR REPLACE, whose DELETE+INSERT would otherwise
   // erase the announcement history for a reused run id.

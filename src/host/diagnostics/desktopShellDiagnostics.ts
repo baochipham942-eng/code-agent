@@ -15,7 +15,8 @@ import type {
   DesktopShellResourceStatus,
   DesktopShellWebHealthStatus,
   RendererServeDecision,
-  WebHealthResponse,
+  WebHealthDetail,
+  WebHealthPublic,
 } from '../../shared/contract';
 import {
   devSlotDataDirName,
@@ -284,17 +285,32 @@ function readBootDiagnostics(dataDir: string, env: NodeJS.ProcessEnv = process.e
 
 async function fetchWebHealth(url: string): Promise<{
   status: DesktopShellWebHealthStatus;
-  health: WebHealthResponse | null;
+  health: WebHealthDetail | WebHealthPublic | null;
   errorMessage?: string;
 }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 1000);
   try {
-    const response = await fetch(`${url}/api/health`, { signal: controller.signal });
+    // Diagnostics normally runs in the same host process as the web server, so it
+    // can use the server token for the detail projection. During an early boot
+    // probe the token module may not be available yet; retain the public liveness
+    // route in that case and leave detail-only fields unset.
+    let authToken: string | undefined;
+    try {
+      const auth = await import('../../web/middleware/auth');
+      authToken = auth.SERVER_AUTH_TOKEN;
+    } catch {
+      authToken = undefined;
+    }
+    const healthPath = authToken ? '/api/health/detail' : '/api/health';
+    const response = await fetch(`${url}${healthPath}`, {
+      signal: controller.signal,
+      ...(authToken ? { headers: { Authorization: `Bearer ${authToken}` } } : {}),
+    });
     if (!response.ok) {
       return { status: 'unreachable', health: null, errorMessage: `HTTP ${response.status}` };
     }
-    return { status: 'ok', health: await response.json() as WebHealthResponse };
+    return { status: 'ok', health: await response.json() as WebHealthDetail | WebHealthPublic };
   } catch (error) {
     return {
       status: 'unreachable',
@@ -304,6 +320,10 @@ async function fetchWebHealth(url: string): Promise<{
   } finally {
     clearTimeout(timer);
   }
+}
+
+function isWebHealthDetail(health: WebHealthDetail | WebHealthPublic | null): health is WebHealthDetail {
+  return health !== null && 'pid' in health && 'persistence' in health;
 }
 
 function resourceIssues(resources: DesktopShellResourceCheck[]): DesktopShellIssue[] {
@@ -496,9 +516,9 @@ export async function getDesktopShellDiagnostics(): Promise<DesktopShellDiagnost
     webServer: {
       url,
       health: healthStatus,
-      pid: web.health?.pid,
-      serverRoot: web.health?.serverRoot,
-      persistence: web.health?.persistence,
+      pid: isWebHealthDetail(web.health) ? web.health.pid : undefined,
+      serverRoot: isWebHealthDetail(web.health) ? web.health.serverRoot : undefined,
+      persistence: isWebHealthDetail(web.health) ? web.health.persistence : undefined,
       errorMessage: web.errorMessage,
     },
     renderer,

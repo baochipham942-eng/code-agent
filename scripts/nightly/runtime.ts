@@ -56,7 +56,7 @@ export async function schedulerProbe(state: Resident): Promise<unknown> {
   checkBrake();
   try {
     ownedCommand(state.pid, path.join(repo, 'dist/web/webServer.cjs'));
-    const health = await api<{ status: string; persistence?: { durable: boolean } }>(state, 'health');
+    const health = await api<{ status: string; persistence?: { durable: boolean } }>(state, 'health/detail');
     if (health.status !== 'ok' || health.persistence?.durable !== true) throw new Error('durable health unavailable');
     const job = await api<{ id: string }>(state, 'domain/cron/createJob', { payload: { name: 'nightly-scheduler-probe', runsOn: 'local', enabled: true, scheduleType: 'at', schedule: { type: 'at', datetime: new Date(Date.now() + 3000).toISOString() }, action: { type: 'webhook', url: `http://127.0.0.1:${state.port}/api/health`, method: 'GET' }, maxRetries: 0 } });
     try {

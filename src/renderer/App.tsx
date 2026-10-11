@@ -271,7 +271,7 @@ export const App: React.FC = () => {
   ));
 
   // 渐进披露 Hook（权限层：*Enabled 表示功能是否可用）
-  const { isStandard, dagPanelEnabled } = useDisclosure();
+  const { dagPanelEnabled } = useDisclosure();
 
   // Panel toggle states from appStore（用户偏好层：show* 表示用户手动开关）
   const {
@@ -851,8 +851,10 @@ export const App: React.FC = () => {
     };
   }, []);
 
-  // 侧栏是否真的在画（收起 / 非 standard 档都不画）——顶栏该不该存在跟着它走。
-  const isSidebarVisible = isStandard && !sidebarCollapsed;
+  // 侧栏是否真的在画（只跟「收起」走）——顶栏该不该存在跟着它走。
+  // 披露档位只管聊天过程呈现的繁简（workDetailPolicy），不影响侧栏/导航骨架：
+  // 一旦跟档位联动，「简洁」档会连会话列表/新任务/账号菜单一起藏掉，用户失去导航。
+  const isSidebarVisible = !sidebarCollapsed;
   // 侧栏常驻的 inline 二级页（能力中心/资料库/自动化/专家详情/本机操作，
   // 以及 2026-07-29 起统一收进 inline 的账号菜单页：提示词库/Lab/时间能力/活动/
   // Neo 协同/桌面状态）在位时，顶栏收敛。
@@ -905,18 +907,16 @@ export const App: React.FC = () => {
               聊天区宽度随 flex 连续跟随，居中内容列不横向猛跳。
               左右栏分界靠底色差（2026-08-04 D6）：左栏消费 --sidebar-bg token
               （四主题各自定值），不再画 border-r 分隔线。 */}
-          {isStandard && (
-            <div
-              className={`flex flex-col shrink-0 bg-[var(--sidebar-bg)] overflow-hidden transition-[width] duration-200 ease-out motion-reduce:transition-none ${
-                sidebarCollapsed ? 'w-0' : 'w-60'
-              }`}
-              aria-hidden={sidebarCollapsed}
-            >
-              <div className="w-60 h-full flex flex-col">
-                <Sidebar />
-              </div>
+          <div
+            className={`flex flex-col shrink-0 bg-[var(--sidebar-bg)] overflow-hidden transition-[width] duration-200 ease-out motion-reduce:transition-none ${
+              sidebarCollapsed ? 'w-0' : 'w-60'
+            }`}
+            aria-hidden={sidebarCollapsed}
+          >
+            <div className="w-60 h-full flex flex-col">
+              <Sidebar />
             </div>
-          )}
+          </div>
 
           {/* Right Area: Chat + TaskPanel with shared title bar */}
           <div className="flex-1 flex flex-col min-w-0 bg-zinc-900">

@@ -284,6 +284,14 @@ const COMPUTER_USE_DESKTOP_CATALOG: ActionCatalogMap = {
     evidenceKind: "desktop_observation",
   },
   act: { ...DESKTOP_INPUT_DEFAULTS, consequence: "external_side_effect" },
+  // N-JEV-CU-STEP-LOOP: execute_goal stays in the catalog for runtime lookup
+  // (consequence classifier denies unregistered actions). The operation enum
+  // only advertises it when CODE_AGENT_CUA_JEV_STEP=1 and a typesafe key
+  // resolves; calling it unarmed still returns the unarmed error string.
+  // Inner loop drives acts that each re-enter the existing approval gate
+  // (payment/delete/auth escalate forceConfirm); catalog matches act:
+  // desktop input + external side effect, not high_risk.
+  execute_goal: { ...DESKTOP_INPUT_DEFAULTS, consequence: "external_side_effect" },
   get_ax_elements: {
     ...DESKTOP_READ_DEFAULTS,
     consequence: "no_external_side_effect",

@@ -9,7 +9,8 @@
 //   1) 先做只读引用扫描：会话消息（含 tool results / metadata / 隐藏回卷行）、
 //      companion_artifacts 产物账本以及其他存产物/文件路径的表，找子串
 //      `presentation-page-previews/<rev>`。扫描抛错或读不全 → 本轮一个不删，记 1 次失败。
-//   2) 不是 manifest.filePath 当前 revision（文件还在就重算 sha256；文件没了自然不是）。
+//   2) 不是 manifest.filePath 当前 revision（文件还在就重算 sha256；文件已不存在——
+//      ENOENT/ENOTDIR——按无现行 revision 处理；读不出才保守保留）。
 //   3) lastUsedAt 超 30 天，或（超出同 deck 保留的最新 3 个 revision 且超 7 天）。
 // 没有 filePath 的旧 manifest 一律不动。
 //
@@ -204,7 +205,8 @@ function isNodeError(error: unknown, code: string): boolean {
 
 /**
  * 可删除判定：未引用 && 不是该 filePath 的当前 revision &&（超 30 天未用，或超出
- * 同 deck 最新 3 个且超 7 天）。sha256 重算失败按「可能是当前 revision」保守保留。
+ * 同 deck 最新 3 个且超 7 天）。deck 文件已不存在（ENOENT/ENOTDIR）= 无现行 revision；
+ * sha256 其他读失败按「可能是当前 revision」保守保留。
  */
 async function pickDeletableRevisions(
   revisions: PreviewRevisionDir[],
@@ -246,12 +248,18 @@ async function pickDeletableRevisions(
   return deletable;
 }
 
-/** deck 文件还在就重算 sha256；文件没了返回 null（deck 已不存在，无当前 revision 可保护）。读失败返回 undefined（保守保留）。 */
+/**
+ * deck 文件还在就重算 sha256。文件已不存在（ENOENT/ENOTDIR：被删、被挪、中间路径成了文件）
+ * 返回 null——deck 已不在该路径，无当前 revision 可保护，正常走年龄/名额判定。
+ * 其他读失败（EACCES/EISDIR 等，路径上有东西但算不出 sha256）返回 undefined：无法证明
+ * 「不是当前 revision」，保守保留。
+ */
 async function resolveCurrentRevision(filePath: string): Promise<string | null | undefined> {
   try {
     const revision = await computeArtifactRevision(filePath);
     return revision.value;
   } catch (error) {
+    if (isNodeError(error, 'ENOENT') || isNodeError(error, 'ENOTDIR')) return null;
     const reason = error instanceof Error ? error.message : String(error);
     logger.warn('[预览保留] 无法重算 deck 当前 revision，保守保留其预览目录', { path: filePath, reason });
     return undefined;

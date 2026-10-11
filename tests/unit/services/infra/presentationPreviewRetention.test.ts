@@ -98,7 +98,7 @@ afterEach(() => {
 
 describe('presentation preview retention sweep', () => {
   it('删除未引用且超 30 天的 revision 目录；30 天内与 29 天的不动', async () => {
-    const old = writeRevisionDir(revHex(1), { filePath: writeDeck('gone-deck.pptx'), lastUsedAt: NOW - 31 * DAY_MS });
+    const old = writeRevisionDir(revHex(1), { filePath: writeDeck('stale.pptx'), lastUsedAt: NOW - 31 * DAY_MS });
     const fresh = writeRevisionDir(revHex(2), { filePath: writeDeck('fresh.pptx'), lastUsedAt: NOW - DAY_MS });
     const almost = writeRevisionDir(revHex(3), { filePath: writeDeck('almost.pptx'), lastUsedAt: NOW - 29 * DAY_MS });
 
@@ -231,6 +231,28 @@ describe('presentation preview retention sweep', () => {
 
     expect(summary).toEqual({ deleted: 0, failed: 0 });
     expect(fs.existsSync(currentDir)).toBe(true);
+  });
+
+  it('deck 文件已不存在（ENOENT）：超 30 天回收、30 天内不动；deck 路径读不出（EISDIR）保守保留', async () => {
+    // manifest 指向的 pptx 已被删/挪走 → 无现行 revision 可保护，按年龄正常判定
+    const missingDeck = path.join(fixture!.root, 'no-such-deck.pptx');
+    const staleMissing = writeRevisionDir(revHex(1), { filePath: missingDeck, lastUsedAt: NOW - 40 * DAY_MS });
+    const freshMissing = writeRevisionDir(revHex(2), { filePath: missingDeck, lastUsedAt: NOW - DAY_MS });
+    // 路径被目录占住：算不出 sha256 但文件系统有东西 → 保守保留
+    const dirDeck = path.join(fixture!.root, 'dir-deck.pptx');
+    fs.mkdirSync(dirDeck);
+    const unreadable = writeRevisionDir(revHex(3), { filePath: dirDeck, lastUsedAt: NOW - 40 * DAY_MS });
+
+    const summary = await sweepPresentationPreviewRetention({
+      cacheRoot: fixture!.cacheRoot,
+      dbPath: fixture!.dbPath,
+      now: NOW,
+    });
+
+    expect(summary).toEqual({ deleted: 1, failed: 0 });
+    expect(fs.existsSync(staleMissing)).toBe(false);
+    expect(fs.existsSync(freshMissing)).toBe(true);
+    expect(fs.existsSync(unreadable)).toBe(true);
   });
 
   it('同 deck 保留最新 3 个；超出且超 7 天的回收，超出但未超 7 天的不动', async () => {

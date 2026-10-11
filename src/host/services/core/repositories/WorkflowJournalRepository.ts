@@ -168,6 +168,22 @@ export class WorkflowJournalRepository {
       );
   }
 
+  /**
+   * 终态通知 claim（N-WF-SETTLEMENT-DEDUPE）：INSERT OR IGNORE，只有第一个 claimer
+   * 拿到 true（changes === 1）。跨重启的 at-most-once 去重键——进程内 Set 重启即空，
+   * 这行是唯一能挡住「同 runId 同终态再响一次」的东西。
+   * claimedAt 缺省才取 Date.now()，显式传入用于测试/回填保留原时间戳。
+   */
+  claimSettlement(runId: string, terminalStatus: string, claimedAt?: number): boolean {
+    const result = this.db
+      .prepare(`
+        INSERT OR IGNORE INTO workflow_settlement_claims (run_id, terminal_status, claimed_at)
+        VALUES (?, ?, ?)
+      `)
+      .run(runId, terminalStatus, claimedAt ?? Date.now());
+    return result.changes === 1;
+  }
+
   // ── 读取 ─────────────────────────────────────────────────────────────────
 
   getRun(runId: string): WorkflowRunRecord | null {
@@ -193,14 +209,17 @@ export class WorkflowJournalRepository {
   }
 
   deleteRun(runId: string): boolean {
+    // settlement claims 刻意无 FK（防 startRun 的 REPLACE 顺带 CASCADE 掉），这里显式清。
+    this.db.prepare('DELETE FROM workflow_settlement_claims WHERE run_id = ?').run(runId);
     const result = this.db.prepare('DELETE FROM workflow_runs WHERE run_id = ?').run(runId);
     return result.changes > 0;
   }
 
-  /** 仅供测试/维护：清空两表。 */
+  /** 仅供测试/维护：清空全部表。 */
   clearAll(): void {
     this.db.exec('DELETE FROM workflow_run_calls');
     this.db.exec('DELETE FROM workflow_runs');
+    this.db.exec('DELETE FROM workflow_settlement_claims');
   }
 
   // ── 行映射 ─────────────────────────────────────────────────────────────────

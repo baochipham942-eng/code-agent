@@ -42,6 +42,7 @@ import {
 } from '../../../orchestration';
 import type { RunTraceContext } from '../../../telemetry/runTraceContext';
 import { getWorkflowJournalRepository } from '../../../services/core/repositories/WorkflowJournalRepository';
+import { createLogger } from '../../../services/infra/logger';
 import { validateScript } from '../../../agent/scriptRuntime/scriptValidator';
 import { extractScriptPreview } from '../../../agent/scriptRuntime/scriptPreview';
 import { resolveToolProfile } from '../../../agent/scriptRuntime/toolProfiles';
@@ -152,12 +153,37 @@ interface WorkflowSettlement {
   recovery: WorkflowFailureRecoveryInput | null;
 }
 
-/** runId + 终态。恢复重跑再次落到同一对时不再排队第二条通知。进程内守卫，重启随注册表一起清空。 */
+const settlementLogger = createLogger('WorkflowSettlement');
+
+/**
+ * runId + 终态。恢复重跑再次落到同一对时不再排队第二条通知。
+ * 进程内 Set 只是快路径/降级兜底——权威键在 workflow_settlement_claims 表里，
+ * 重启后 Set 清空，靠 durable claim 挡住同 runId 同终态的第二条终态通知（D6-A）。
+ */
 const announcedWorkflowSettlements = new Set<string>();
 
 function claimWorkflowSettlement(runId: string, terminalStatus: WorkflowTerminalStatus): boolean {
   const key = `${runId}:${terminalStatus}`;
   if (announcedWorkflowSettlements.has(key)) return false;
+  const repo = getWorkflowJournalRepository();
+  if (!repo) {
+    settlementLogger.warn('workflow settlement dedupe downgraded: journal repository unavailable, falling back to in-process dedupe', { runId, terminalStatus });
+    announcedWorkflowSettlements.add(key);
+    return true;
+  }
+  try {
+    if (!repo.claimSettlement(runId, terminalStatus)) {
+      announcedWorkflowSettlements.add(key);
+      return false;
+    }
+  } catch (error) {
+    // DB 故障不得把异常抛进 settlement 路径：warn 带真因后按进程内答案降级。
+    settlementLogger.warn('workflow settlement dedupe downgraded: durable claim failed, falling back to in-process dedupe', {
+      runId,
+      terminalStatus,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   announcedWorkflowSettlements.add(key);
   return true;
 }

@@ -4208,6 +4208,8 @@ describe('createAgentRouter', () => {
 
   it('opens a per-session work folder for a first-run session with no working directory (N-DELIVERABLE-WORKDIR-DEFAULT)', async () => {
     await closeServer();
+    // 开按会话目录要求 DB 健康（rework r1：粘不住就不开）
+    setDbAvailable(true);
 
     mockCreateAgentLoop.mockImplementationOnce(() => ({
       run: vi.fn(async () => undefined),
@@ -4248,6 +4250,7 @@ describe('createAgentRouter', () => {
 
   it('sanitizes illegal characters from the session title and appends -2 on collision (N-DELIVERABLE-WORKDIR-DEFAULT)', async () => {
     await closeServer();
+    setDbAvailable(true);
 
     const now = new Date();
     const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
@@ -4396,6 +4399,7 @@ describe('createAgentRouter', () => {
 
   it('uses the Task_ prefix when ui.language is en (N-DELIVERABLE-WORKDIR-DEFAULT)', async () => {
     await closeServer();
+    setDbAvailable(true);
 
     configServiceMocks.getSettings.mockImplementation(() => ({
       ...baseSettings,
@@ -4452,6 +4456,133 @@ describe('createAgentRouter', () => {
     expect(response.ok).toBe(true);
     await response.text();
     expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: `${tempDataDir}-work` }));
+  });
+
+  // rework r1：preflight 时会话行还不存在（服务端生成 sessionId / 建行失败的渲染端）的会话，
+  // 回写守卫（要求 persistedSession 非空）永远跳过——目录必须随建行落库，否则第二轮起掉回扁平默认。
+  it('persists the per-session folder on the row born mid-run, so round 2 reuses it instead of falling back to the flat default (rework r1)', async () => {
+    await closeServer();
+    setDbAvailable(true);
+    mockCreateAgentLoop.mockImplementation(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    // 状态镜像真实 DB：行不存在 → pre-persist 建行（带 createOptions）→ 之后 getSession 读回该行
+    const sessionRows = new Map<string, { workingDirectory?: string; messages: Array<Record<string, unknown>> }>();
+    const addMessageToSession = vi.fn(async (
+      sessionId: string,
+      _message: unknown,
+      options?: { workingDirectory?: string },
+    ) => {
+      if (!sessionRows.has(sessionId)) {
+        sessionRows.set(sessionId, { workingDirectory: options?.workingDirectory, messages: [{ id: 'msg-1', role: 'user' }] });
+      }
+    });
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        getSession: vi.fn(async (sessionId: string) => sessionRows.get(sessionId) ?? null),
+        updateSession: vi.fn(async () => undefined),
+        addMessageToSession,
+      }),
+    });
+
+    const sessionId = 'session-row-born-midrun';
+    for (const prompt of ['帮我出一份季度总结', '第二轮补充数据']) {
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt, sessionId }),
+      });
+      expect(response.ok).toBe(true);
+      await response.text();
+    }
+
+    const now = new Date();
+    const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const expectedDir = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
+    // 建行那一刻目录随行落库（缺这步 → 第二轮行里没目录、有消息 → 扁平默认，同会话产物分裂）
+    expect(addMessageToSession).toHaveBeenCalledWith(
+      sessionId,
+      expect.anything(),
+      expect.objectContaining({ workingDirectory: expectedDir }),
+    );
+    // 两轮都跑在同一个按会话目录里，且只开了这一个目录
+    expect(createCLIAgent).toHaveBeenCalledTimes(2);
+    expect(createCLIAgent).toHaveBeenNthCalledWith(1, expect.objectContaining({ project: expectedDir }));
+    expect(createCLIAgent).toHaveBeenNthCalledWith(2, expect.objectContaining({ project: expectedDir }));
+    const perSessionEntries = readdirSync(`${tempDataDir}-work`)
+      .filter((entry) => entry.startsWith('任务_') || entry.startsWith('Task_'));
+    expect(perSessionEntries).toEqual([`任务_${mmdd}_帮我出一份季度总结`]);
+  });
+
+  // rework r1：DB 读失败持续时状态未知——不开新目录（否则每轮各开一个 任务_x-N，垃圾逐轮累积），
+  // 回落扁平默认目录（与特性前行为一致）。
+  it('does not mint a per-session folder when the preflight session read fails; falls back to the flat default (rework r1)', async () => {
+    await closeServer();
+    setDbAvailable(true);
+    mockCreateAgentLoop.mockImplementation(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    let readFailuresLeft = 2; // preflight + 新会话标题重读两处各红一次，之后的读（pre-persist 等）恢复
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        getSession: vi.fn(async () => {
+          if (readFailuresLeft > 0) {
+            readFailuresLeft -= 1;
+            throw new Error('sqlite: disk I/O error');
+          }
+          return null;
+        }),
+        updateSession: vi.fn(async () => undefined),
+        addMessageToSession: vi.fn(async () => undefined),
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '帮我出一份季度总结', sessionId: 'session-preflight-read-failed' }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: `${tempDataDir}-work` }));
+    const flatEntries = readdirSync(`${tempDataDir}-work`);
+    expect(flatEntries.some((entry) => entry.startsWith('任务_') || entry.startsWith('Task_'))).toBe(false);
+  });
+
+  // rework r1：DB 不可用时目录选择无法粘住（行建不出来、回写也落不了库）——同样不开新目录。
+  it('does not mint a per-session folder while the database is unavailable (rework r1)', async () => {
+    await closeServer();
+    mockCreateAgentLoop.mockImplementation(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        getSession: vi.fn(async () => null),
+        updateSession: vi.fn(async () => undefined),
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '帮我出一份季度总结', sessionId: 'session-db-unavailable' }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: `${tempDataDir}-work` }));
+    const flatEntries = readdirSync(`${tempDataDir}-work`);
+    expect(flatEntries.some((entry) => entry.startsWith('任务_') || entry.startsWith('Task_'))).toBe(false);
   });
 
   it('persists assistant output when loop message events were not actually stored', async () => {

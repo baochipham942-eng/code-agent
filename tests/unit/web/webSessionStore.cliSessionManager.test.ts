@@ -377,6 +377,71 @@ describe('WebSessionStore CLI SessionManager backend', () => {
     expect(await cliSessionManager.getMessages('session-cli-b')).toEqual([]);
   });
 
+  // rework r1（N-DELIVERABLE-WORKDIR-DEFAULT）：preflight 时行还不存在的会话，行在本轮
+  // pre-persist 才建——workingDirectory 必须随建行落库，否则第二轮起掉回扁平默认目录。
+  it('本轮建行的会话行携带 workingDirectory 落库（CLI SM 建行路径）', async () => {
+    const sessionId = 'session-born-with-dir';
+    const store = createWebSessionStore({
+      tryGetSessionManager: async () => cliSessionManager,
+      tryGetInfraSessionManager: async () => infraSessionManager,
+      logger,
+      getDatabase: vi.fn(async () => coreDb),
+    });
+    const workDir = path.join(tmpDir, '任务_1011_首轮建行');
+
+    expect(await store.prePersistUserMessage({
+      sessionId,
+      title: '首轮建行',
+      modelConfig: { provider: 'zhipu', model: 'glm-5' },
+      workingDirectory: workDir,
+      message: {
+        id: 'user-born-with-dir',
+        role: 'user',
+        content: '首轮',
+        timestamp: 1_700_000_000_000,
+      },
+    })).toBe(true);
+
+    expect((await infraSessionManager.getSession(sessionId, 1))?.workingDirectory).toBe(workDir);
+  });
+
+  it('本轮建行的会话行携带 workingDirectory 落库（CLI SM 不可用的 infra 直写路径）', async () => {
+    const sessionId = 'session-born-with-dir-direct';
+    // 与「打包态 bindings 缺失」用例同形：CLI SM 初始化永远失败 → 直写 core DB 建行
+    const brokenSessionManager = new CLISessionManager();
+    Object.assign(brokenSessionManager as unknown as Record<string, unknown>, {
+      _dbChecked: true,
+      _db: {
+        isInitialized: false,
+        initialize: vi.fn(async () => {
+          throw new Error("Cannot find module 'bindings' (simulated packaged env)");
+        }),
+      },
+    });
+    const store = createWebSessionStore({
+      tryGetSessionManager: async () => brokenSessionManager,
+      tryGetInfraSessionManager: async () => infraSessionManager,
+      logger,
+      getDatabase: vi.fn(async () => coreDb),
+    });
+    const workDir = path.join(tmpDir, '任务_1011_直写建行');
+
+    expect(await store.prePersistUserMessage({
+      sessionId,
+      title: '直写建行',
+      modelConfig: { provider: 'zhipu', model: 'glm-5' },
+      workingDirectory: workDir,
+      message: {
+        id: 'user-born-with-dir-direct',
+        role: 'user',
+        content: '首轮',
+        timestamp: 1_700_000_000_100,
+      },
+    })).toBe(true);
+
+    expect((await infraSessionManager.getSession(sessionId, 1))?.workingDirectory).toBe(workDir);
+  });
+
   it('infra manager 对跨会话重复 id fail-loud，不覆写原会话', async () => {
     const messageId = 'forced-infra-collision';
     coreDb.createSessionWithId('session-infra-a', {

@@ -532,6 +532,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     // rejected with an HTTP 409 instead of a misleading 200 SSE stream.
     let persistedSession: Session | null = null;
     let sessionManagerForRun: AgentSessionManagerLike | null = null;
+    let sessionPreflightReadFailed = false;
     try {
       const sm = await tryGetSessionManager();
       sessionManagerForRun = sm ?? null;
@@ -539,6 +540,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         persistedSession = await sm.getSession(sessionId, 1);
       }
     } catch (err) {
+      sessionPreflightReadFailed = true;
       logger.warn(`[AgentRouter] Failed to restore session ${sessionId}:`, err);
     }
 
@@ -559,7 +561,12 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // 消息——本轮 user message 要到下方 SSE 之后的 pre-persist 才落库，此处读到的就是
       // 首轮前状态）首轮开按会话产出子目录 任务_MMDD_<标题>，并经下方回写粘住；已有
       // 消息的存量会话保持扁平默认目录，既有文件永不挪动。
-      const firstRunNoFolderSession = !persistedSessionHasMessages(persistedSession);
+      // 只在「确知零消息且目录选择粘得住」（preflight 读成功 + DB 可用，行能随建行带上
+      // 目录/回写落库）时才开新目录：读失败=新旧状态未知，DB 不可用=行建不出来，都开
+      // 的话每轮各开一个 任务_x-N 目录，垃圾逐轮累积（rework r1），回落扁平默认目录。
+      const firstRunNoFolderSession = dbAvailable
+        && !sessionPreflightReadFailed
+        && !persistedSessionHasMessages(persistedSession);
       try {
         resolvedProject = firstRunNoFolderSession
           ? await createSessionWorkDirectory({
@@ -1292,6 +1299,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       userMsgPrePersistedDb = await sessionStore.prePersistUserMessage({
         sessionId,
         title: buildSessionTitle(visiblePrompt),
+        // preflight 时行还不存在的会话（服务端生成 sessionId 等），行在本轮 pre-persist
+        // 才建：目录必须随建行落库——回写守卫要求 persistedSession 非空，跳过它的话
+        // 第二轮起会话掉回扁平默认目录，同会话产物分裂（rework r1）
+        workingDirectory: resolvedProject,
         modelConfig: { provider: runModelConfig.provider as ModelProvider, model: runModelConfig.model },
         message: {
           id: msgId,

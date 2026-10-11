@@ -648,6 +648,14 @@ describe('cua execute_goal safety', () => {
       canUseToolFor(harness),
     );
     expect(result.ok).toBe(true);
+    // 两次 act 都真实投递到驱动（第二次用 successor 的新 stateId，不是旧 id 重放）
+    const riskPayload = JSON.parse(result.ok ? result.output : result.error) as {
+      result: { status: string };
+    };
+    expect(riskPayload.result.status).toBe('done_verified');
+    const clickCalls = harness.driver.calls.filter((call) => call.toolName === 'click');
+    expect(clickCalls).toHaveLength(2);
+    expect(clickCalls.map((call) => call.args.element_token)).toEqual(['token-1', 'token-2']);
 
     // 两次 act 两次审批：低风险那次也不跳过；只有风险那次 forceConfirm
     expect(harness.permissionHints).toHaveLength(2);

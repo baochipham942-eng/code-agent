@@ -12,207 +12,64 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Clock,
-  Database,
   ExternalLink,
   Folder,
-  FolderGit2,
   FolderOpen,
   Globe,
   Info,
-  LockKeyhole,
   Monitor,
   Plug,
   RefreshCw,
-  UserRound,
   X,
 } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings, WorkspaceDirectorySummary } from '@shared/contract';
 import type {
   ConfigSafetyScanSummary,
-  ConfigSafetySeverity,
-  ConfigScopeItem,
-  ConfigScopeItemStatus,
   ConfigScopeLayer,
-  ConfigScopeLayerId,
   ConfigScopeSummary,
   ConfigWriteRecommendation,
 } from '@shared/contract/configScope';
-import type { BrowserSessionMode } from '@shared/contract/conversationEnvelope';
 import { Button } from '../../../primitives';
 import { useComposerStore } from '../../../../stores/composerStore';
 import { useWorkbenchBrowserSession } from '../../../../hooks/useWorkbenchBrowserSession';
 import {
   buildBrowserWorkbenchStatusRows,
   getBrowserWorkbenchOperationalHint,
-  type BrowserWorkbenchStatusTone,
 } from '../../../../utils/workbenchPresentation';
 import { useI18n } from '../../../../hooks/useI18n';
-import { zh } from '../../../../i18n/zh';
 import { getDesktopShellLabel, isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import { SettingsPage, SettingsSection } from '../SettingsLayout';
 import { WorkspaceDirectorySummaryCard } from './WorkspaceDirectorySummaryCard';
+import {
+  BROWSER_OPTIONS,
+  DEFAULT_OPEN_OPTIONS,
+  buildConfigScopeTiles,
+  buildRecentRows,
+  browserStatusToneClass,
+  describeOpenTarget,
+  safetySeverityClass,
+  safetySeverityLabel,
+  safetyStatusText,
+  scopeIcon,
+  scopeLayerClass,
+  scopeLayerLabel,
+  scopeStatusLabel,
+  scopeStatusClass,
+  shareabilityLabel,
+} from './workspaceSettingsFormatters';
+import type {
+  DefaultOpenTarget,
+  RecentDirRow,
+  WorkspaceSettingsText,
+} from './workspaceSettingsFormatters';
 import { createLogger } from '../../../../utils/logger';
 import ipcService from '../../../../services/ipcService';
+
+// 历史公开导出留在原路径（N-MAXLINES-MINEFIELD-2 拆出，消费方无需改 import）。
+export { buildConfigScopeTiles };
 const logger = createLogger('WorkspaceSettings');
-type WorkspaceSettingsText = typeof zh.settings.workspace;
-
-const BROWSER_OPTIONS: Array<{ value: BrowserSessionMode }> = [
-  { value: 'none' },
-  { value: 'managed' },
-  { value: 'desktop' },
-];
-
-type DefaultOpenTarget = NonNullable<AppSettings['workspace']['defaultOpenTarget']>;
-
-const DEFAULT_OPEN_OPTIONS: Array<{ value: DefaultOpenTarget }> = [
-  { value: 'lastDirectory' },
-  { value: 'fixedDirectory' },
-  { value: 'askEachTime' },
-];
-
-function describeOpenTarget(
-  target: DefaultOpenTarget | undefined,
-  labels: WorkspaceSettingsText['openTargets'] = zh.settings.workspace.openTargets,
-): string {
-  switch (target ?? 'lastDirectory') {
-    case 'fixedDirectory':
-      return labels.fixedDirectory.label;
-    case 'askEachTime':
-      return labels.askEachTime.label;
-    case 'lastDirectory':
-    default:
-      return labels.lastDirectory.label;
-  }
-}
-
-interface RecentDirRow {
-  path: string;
-  label: string;
-  active: boolean;
-}
-
-interface ConfigScopeTile {
-  id: ConfigScopeLayerId;
-  label: string;
-  value: string;
-  caption: string;
-  warningCount: number;
-}
-
-function browserStatusToneClass(tone?: BrowserWorkbenchStatusTone): string {
-  if (tone === 'ready') return 'text-badge-success';
-  if (tone === 'blocked') return 'text-badge-warning';
-  return 'text-zinc-300';
-}
-
-function buildRecentRows(currentDir: string | null, recent: string[]): RecentDirRow[] {
-  const dedup = new Map<string, RecentDirRow>();
-  if (currentDir) {
-    dedup.set(currentDir, {
-      path: currentDir,
-      label: currentDir.split('/').filter(Boolean).pop() || currentDir,
-      active: true,
-    });
-  }
-  for (const dir of recent) {
-    if (dedup.has(dir)) continue;
-    dedup.set(dir, {
-      path: dir,
-      label: dir.split('/').filter(Boolean).pop() || dir,
-      active: false,
-    });
-  }
-  return Array.from(dedup.values());
-}
-
-export function buildConfigScopeTiles(summary: ConfigScopeSummary | null): ConfigScopeTile[] {
-  if (!summary) return [];
-  return summary.layers.map((layer) => ({
-    id: layer.id,
-    label: layer.label,
-    value: `${layer.activeCount}/${layer.items.length}`,
-    caption: layer.pathLabel,
-    warningCount: layer.warningCount,
-  }));
-}
-
-function scopeStatusClass(status: ConfigScopeItemStatus): string {
-  if (status === 'active') return 'border-badge-success/30 bg-emerald-500/10 text-badge-success';
-  if (status === 'warning') return 'border-badge-warning/30 bg-amber-500/10 text-badge-warning';
-  if (status === 'present') return 'border-badge-info/30 bg-blue-500/10 text-badge-info';
-  return 'border-zinc-700 bg-zinc-900 text-zinc-500';
-}
-
-function scopeStatusLabel(
-  item: ConfigScopeItem,
-  labels: WorkspaceSettingsText['scopeStatus'] = zh.settings.workspace.scopeStatus,
-): string {
-  if (item.status === 'warning') return labels.warning;
-  if (item.status === 'active') return labels.active;
-  if (item.status === 'present') return item.active ? labels.active : labels.presentOnly;
-  return labels.missing;
-}
-
-function scopeIcon(layerId: ConfigScopeLayerId): React.ReactNode {
-  if (layerId === 'user') return <UserRound className="h-4 w-4" />;
-  if (layerId === 'project') return <FolderGit2 className="h-4 w-4" />;
-  if (layerId === 'local') return <LockKeyhole className="h-4 w-4" />;
-  return <Database className="h-4 w-4" />;
-}
-
-function scopeLayerLabel(
-  layerId: ConfigScopeLayerId,
-  labels: WorkspaceSettingsText['scopeLayers'] = zh.settings.workspace.scopeLayers,
-): string {
-  if (layerId === 'user') return labels.user;
-  if (layerId === 'project') return labels.project;
-  if (layerId === 'local') return labels.local;
-  return labels.runtime;
-}
-
-function scopeLayerClass(layerId: ConfigScopeLayerId): string {
-  if (layerId === 'user') return 'border-badge-info/30 bg-blue-500/10 text-badge-info';
-  if (layerId === 'project') return 'border-badge-success/30 bg-emerald-500/10 text-badge-success';
-  if (layerId === 'local') return 'border-badge-warning/30 bg-amber-500/10 text-badge-warning';
-  return 'border-zinc-600 bg-zinc-800 text-zinc-300';
-}
-
-function shareabilityLabel(
-  recommendation: ConfigWriteRecommendation,
-  labels: WorkspaceSettingsText['shareability'] = zh.settings.workspace.shareability,
-): string {
-  if (recommendation.shareability === 'team-shareable') return labels.teamShareable;
-  if (recommendation.shareability === 'local-only') return labels.localOnly;
-  if (recommendation.shareability === 'runtime-private') return labels.runtimePrivate;
-  return labels.personalPrivate;
-}
-
-function safetySeverityClass(severity: ConfigSafetySeverity): string {
-  if (severity === 'critical') return 'border-red-500/30 bg-red-500/10 text-badge-danger';
-  if (severity === 'warning') return 'border-badge-warning/30 bg-amber-500/10 text-badge-warning';
-  return 'border-badge-info/30 bg-blue-500/10 text-badge-info';
-}
-
-function safetySeverityLabel(
-  severity: ConfigSafetySeverity,
-  labels: WorkspaceSettingsText['safetySeverity'] = zh.settings.workspace.safetySeverity,
-): string {
-  if (severity === 'critical') return labels.critical;
-  if (severity === 'warning') return labels.warning;
-  return labels.info;
-}
-
-function safetyStatusText(
-  scan: ConfigSafetyScanSummary,
-  labels: WorkspaceSettingsText['safetyStatus'] = zh.settings.workspace.safetyStatus,
-): string {
-  if (scan.status === 'no_workspace') return labels.noWorkspace;
-  if (scan.totalFindings === 0) return labels.noFindings;
-  if (scan.criticalCount > 0) return labels.needsAction;
-  return labels.needsReview;
-}
 
 export const WorkspaceSettings: React.FC = () => {
   const { t } = useI18n();

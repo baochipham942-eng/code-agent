@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* global console */
 // ============================================================================
 // eslint-ratchet — ESLint error / warning 双基线棘轮门
 // ============================================================================
@@ -15,12 +16,23 @@
 // 自检 guard 有意 fail loud：0 文件、不可解析 JSON、缺失 errorCount / warningCount
 // 都说明门本身已经失去测量能力。此时静默通过会制造“门在但没在看”的假绿。
 //
+// 950-tier 早 warn（N-MAXLINES-MINEFIELD-2）：另跑一遍最小 config 的 eslint 取
+// 「有效行 ≥950 且不在 God File 白名单」的名单，只报告不计数——不进任何基线、
+// 不影响退出码、不改动下方既有输出行。设计约束：这条 tier 绝不能做成主配置里的
+// 第二条 max-lines warning，否则 950-1000 段的文件会全部计入 BASELINE_WARNING_MAX
+// 把棘轮打红。第二遍跑不了（工具坏/配置坏）同属测量失效，按惯例 fail loud。
+//
 // 用法：node scripts/eslint-ratchet.mjs
 
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import {
+  buildNineFiftyTier,
+  extractMaxLinesOffWhitelist,
+  parseMaxLinesCounts,
+} from './lib/eslint-ratchet-950-tier.mjs';
 
 const BASELINE_ERROR_MAX = 0;
 // 2026-08-10 收紧 416 → 415：main 上的存量漂移，与 sharp 0.35 那批改动无关。
@@ -107,6 +119,51 @@ console.log(`[eslint-ratchet] 扫描 ${report.length} 个文件`);
 console.log(`[eslint-ratchet] errors current=${errors} baseline=${BASELINE_ERROR_MAX} delta=${formatDelta(errors, BASELINE_ERROR_MAX)}`);
 console.log(`[eslint-ratchet] warnings current=${warnings} baseline=${BASELINE_WARNING_MAX} delta=${formatDelta(warnings, BASELINE_WARNING_MAX)}`);
 
+// 950-tier：第二遍 eslint（最小 config，仅 max-lines、无类型感知，单遍 ~13s）。
+// 与主遍同一 `src --ext .ts,.tsx` 文件集，白名单由主配置（rules['max-lines']==='off'）
+// 在 JS 侧排除；文件数不一致说明最小 config 与主配置的文件面漂移了，fail loud。
+const eslintConfigModule = await import(pathToFileURL(path.join(repoRoot, 'eslint.config.js')).href);
+const flatConfigs = await eslintConfigModule.default;
+
+function runNineFiftyTierPass() {
+  const tierResult = spawnSync(
+    process.execPath,
+    [eslintBin, 'src', '--ext', '.ts,.tsx', '--format', 'json', '--no-config-lookup', '--config', 'scripts/lib/eslint-ratchet-950.config.mjs'],
+    {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      maxBuffer: 256 * 1024 * 1024,
+    },
+  );
+  if (tierResult.error || tierResult.signal || tierResult.status === null || tierResult.status > 1) {
+    console.error('[eslint-ratchet] ✗ 自检失败：950-tier ESLint 遍未正常产生报告（工具未安装/配置损坏/被 kill）');
+    console.error(tierResult.error?.message || tierResult.stderr?.slice(0, 2000) || `(status=${tierResult.status}, signal=${tierResult.signal ?? 'none'})`);
+    process.exit(1);
+  }
+  let tierReport;
+  try {
+    tierReport = JSON.parse(tierResult.stdout);
+  } catch {
+    console.error('[eslint-ratchet] ✗ 自检失败：950-tier ESLint JSON 不可解析，禁止在测量失效时静默通过');
+    console.error(tierResult.stderr?.slice(0, 2000) || '(no stderr)');
+    process.exit(1);
+  }
+  if (!Array.isArray(tierReport) || tierReport.length !== report.length) {
+    console.error(`[eslint-ratchet] ✗ 自检失败：950-tier 扫描文件数 ${Array.isArray(tierReport) ? tierReport.length : '非数组'} != 主遍 ${report.length}，最小 config 与主配置文件面漂移`);
+    process.exit(1);
+  }
+  return buildNineFiftyTier({
+    counts: parseMaxLinesCounts(tierReport),
+    whitelistPatterns: extractMaxLinesOffWhitelist(flatConfigs),
+    repoRoot,
+  });
+}
+
+const nineFiftyTier = runNineFiftyTierPass();
+function printNineFiftyTier() {
+  for (const line of nineFiftyTier.outputLines) console.log(line);
+}
+
 const breachedSeverities = new Set();
 if (errors > BASELINE_ERROR_MAX) breachedSeverities.add(2);
 if (warnings > BASELINE_WARNING_MAX) breachedSeverities.add(1);
@@ -158,6 +215,7 @@ if (breachedSeverities.size > 0) {
   if (findings.length > MAX_FINDINGS_TO_PRINT) {
     console.error(`  ...另有 ${findings.length - MAX_FINDINGS_TO_PRINT} 处（已限制输出，避免 CI 日志刷屏）`);
   }
+  printNineFiftyTier();
   process.exit(1);
 }
 
@@ -172,3 +230,4 @@ if (errors === BASELINE_ERROR_MAX && warnings === BASELINE_WARNING_MAX) {
 } else {
   console.log('[eslint-ratchet] ✓ 未超基线，通过');
 }
+printNineFiftyTier();

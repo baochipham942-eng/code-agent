@@ -8,6 +8,8 @@ export const WEB_SERVER_DEFAULTS = {
   HOST: '127.0.0.1',
   PORT: 8180,
   HEALTH_PATH: '/api/health',
+  /** 鉴权版健康详情（pid/serverRoot/handlers/persistence 等诊断字段只在这里） */
+  HEALTH_DETAIL_PATH: '/api/health/detail',
   WORKSPACE_FILE_PATH: '/api/workspace/file',
   DEV_AUTH_TOKEN_FILE: '.dev-token',
 } as const;

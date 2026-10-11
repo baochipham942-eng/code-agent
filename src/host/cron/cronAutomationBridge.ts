@@ -18,6 +18,7 @@ import type {
   SessionAutomationStatus,
   SessionAutomationType,
 } from '../../shared/contract/sessionAutomation';
+import { isCronUrgency } from '../../shared/cronUrgency';
 import { parseCronLoginWallStop } from '../../shared/utils/browserLoginWall';
 
 /**
@@ -226,6 +227,12 @@ export async function recordCronAutomationExecution(
     // recurring 记录保持 active，用 config.pendingReview 标记最近一次待审运行。
     const reviewable = !skipped && execution.status === 'completed'
       && definition.action.type === 'agent' && Boolean(execution.sessionId);
+    // 紧急档位透传（N-CRON-INBOX-URGENCY-TIER）：agent 结果由 cronService 带上 urgency/
+    // urgencyRaw；非 agent 结果与老记录没有这两个字段，收件箱按 fyi 呈现。
+    const resultRecord = isRecord(execution.result) ? execution.result : undefined;
+    const urgencyValue = resultRecord?.urgency;
+    const urgency = isCronUrgency(urgencyValue) ? urgencyValue : undefined;
+    const urgencyRaw = typeof resultRecord?.urgencyRaw === 'string' ? resultRecord.urgencyRaw : undefined;
     const recordStatus: SessionAutomationStatus = keepActive
       ? 'active'
       : reviewable
@@ -238,7 +245,12 @@ export async function recordCronAutomationExecution(
       status: eventStatus,
       recordStatus,
       ...(reviewable
-        ? { configPatch: { pendingReview: { resultSessionId: execution.sessionId, at: execution.completedAt ?? Date.now() } } }
+        ? { configPatch: { pendingReview: {
+          resultSessionId: execution.sessionId,
+          at: execution.completedAt ?? Date.now(),
+          ...(urgency ? { urgency } : {}),
+          ...(urgencyRaw ? { urgencyRaw } : {}),
+        } } }
         : loginWall
           ? { configPatch: { loginWall: { siteOrigin: loginWall.siteOrigin, at: execution.completedAt ?? Date.now() } } }
           : {}),

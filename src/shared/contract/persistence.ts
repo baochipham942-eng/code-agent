@@ -17,16 +17,13 @@ export interface PersistenceHealth {
   checkedAt: number;
 }
 
-export interface WebHealthResponse {
+export interface WebHealthPublic {
   status: 'ok';
   mode: string;
   timestamp: number;
-  handlers: number;
-  serverRoot: string;
-  pid: number;
   tauriBootToken: string | null;
-  build: BuildInfo | null;
-  persistence: PersistenceHealth;
+  /** A build version is safe to expose publicly; the rest of build metadata is detail-only. */
+  build: { version?: string } | null;
   /**
    * agent/run 现在会不会因为 durable rollout 未就绪而回 503。
    *
@@ -34,7 +31,15 @@ export interface WebHealthResponse {
    * （插件 → 技能 → MCP）之后异步完成，实测冷启动后有 9~60 秒的窗口，
    * 期间 /api/run 一律 503 DURABLE_RUN_ROLLOUT_UNAVAILABLE。
    * 判「服务能不能用」要看这个字段，不要看 status / startup token。
-   */
+  */
   durableRunReady: boolean;
-  rendererServe?: RendererServeDecision | null;
+  rendererServe: RendererServeDecision | null;
+}
+
+export interface WebHealthDetail extends WebHealthPublic {
+  handlers: number;
+  serverRoot: string;
+  pid: number;
+  build: BuildInfo | null;
+  persistence: PersistenceHealth;
 }

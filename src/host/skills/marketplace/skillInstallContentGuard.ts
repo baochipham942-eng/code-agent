@@ -1,7 +1,11 @@
+import { createHash } from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
 import { createLogger } from '../../services/infra/logger';
 import { scanSkillContent, type SkillGuardFinding } from '../../security/skillContentGuard';
+import { scanWithJevInjection } from '../../security/jevInjectionScan';
+import type { SkillInstallCautionHit } from '../../../shared/contract/skillInstallCaution';
+import { JEV_TIMEOUT_MS } from '../../../shared/constants/jevQuestions';
 import type { MarketplaceSource } from './types';
 
 /**
@@ -121,7 +125,40 @@ async function readTextFiles(rootDir: string): Promise<Array<{ relativePath: str
   return files;
 }
 
-export interface SkillPluginRootScanOutcome {
+/** sha256 of sorted relativePath + NUL + content + NUL pairs. Empty input hashes no bytes. */
+function hashScannedText(files: Array<{ relativePath: string; content: string }>): string {
+  const hash = createHash('sha256');
+  const sorted = [...files].sort((left, right) => left.relativePath < right.relativePath ? -1 : left.relativePath > right.relativePath ? 1 : 0);
+  for (const file of sorted) {
+    hash.update(file.relativePath);
+    hash.update('\0');
+    hash.update(file.content);
+    hash.update('\0');
+  }
+  return hash.digest('hex');
+}
+
+function buildJevSkillInstallText(files: Array<{ relativePath: string; content: string }>): string {
+  const skillFiles = files
+    .filter((file) => path.basename(file.relativePath).toLowerCase() === 'skill.md')
+    .sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+  const otherFiles = files
+    .filter((file) => path.basename(file.relativePath).toLowerCase() !== 'skill.md')
+    .sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+  return [
+    ...skillFiles.map((file) => `${file.relativePath}\n${file.content}`),
+    ...otherFiles.map((file) => `${file.relativePath}\n${file.content}`),
+  ].join('\n\n');
+}
+
+interface SkillInstallScanResult {
+  cautionHits: SkillInstallCautionHit[];
+  /** Hash of the text files this scan actually read. Confirmation tokens bind to it. */
+  contentHash: string;
+  jevAdvisory?: { injection: number; exfilRequest: number };
+}
+
+export interface SkillPluginRootScanOutcome extends SkillInstallScanResult {
   verdict: 'pass' | 'block';
   findings: SkillGuardFinding[];
   /** 命中阻断的相对文件路径（verdict=block 时存在） */
@@ -139,7 +176,9 @@ export async function scanPluginRootContent(args: {
   sourceTrust: SkillInstallSourceTrust;
   rootDir: string;
 }): Promise<SkillPluginRootScanOutcome> {
-  if (args.sourceTrust === 'builtin') return { verdict: 'pass', findings: [] };
+  if (args.sourceTrust === 'builtin') {
+    return { verdict: 'pass', findings: [], cautionHits: [], contentHash: hashScannedText([]) };
+  }
 
   let files: Array<{ relativePath: string; content: string }>;
   try {
@@ -152,25 +191,71 @@ export async function scanPluginRootContent(args: {
     throw new SkillContentScanFailedError(args.pluginSpec, args.sourceTrust, filePath);
   }
 
+  const contentHash = hashScannedText(files);
+  const cautionHits: SkillInstallCautionHit[] = [];
   for (const file of files) {
     const result = scanSkillContent(file.content);
-    if (result.verdict !== 'block') continue;
-    return { verdict: 'block', findings: result.findings, file: file.relativePath };
+    if (result.verdict === 'block') {
+      return { verdict: 'block', findings: result.findings, file: file.relativePath, cautionHits, contentHash };
+    }
+    // Plugin-root verdict stays pass|block for rescan. Caution is pass there;
+    // install reads cautionHits and applies the source policy.
+    for (const finding of result.findings) {
+      if (!finding.ruleId || finding.snippet === undefined) continue;
+      cautionHits.push({ file: file.relativePath, ruleId: finding.ruleId, snippet: finding.snippet });
+    }
   }
-  return { verdict: 'pass', findings: [] };
+  return { verdict: 'pass', findings: [], cautionHits, contentHash };
 }
 
 export async function scanInstallContent(args: {
   pluginSpec: string;
   sourceTrust: SkillInstallSourceTrust;
   rootDir: string;
-}): Promise<void> {
+}): Promise<SkillInstallScanResult> {
   // builtin assets never reach this marketplace staging path. Keep this branch
   // explicit so a future builtin caller cannot create a second policy.
-  if (args.sourceTrust === 'builtin') return;
+  if (args.sourceTrust === 'builtin') {
+    return { cautionHits: [], contentHash: hashScannedText([]) };
+  }
 
   const outcome = await scanPluginRootContent(args);
-  if (outcome.verdict !== 'block') return;
+  if (outcome.verdict !== 'block') {
+    const scanResult: SkillInstallScanResult = {
+      cautionHits: outcome.cautionHits,
+      contentHash: outcome.contentHash,
+    };
+    if (args.sourceTrust === 'official-registry' || args.sourceTrust === 'unsigned-github-archive') {
+      // Advisory only; this is not a security boundary. Any failure leaves the
+      // deterministic install result unchanged and never blocks installation.
+      try {
+        const files = await readTextFiles(args.rootDir);
+        const jevResult = await scanWithJevInjection(
+          'remote_skill',
+          buildJevSkillInstallText(files),
+          undefined,
+          AbortSignal.timeout(JEV_TIMEOUT_MS),
+        );
+        if (!jevResult.skipped && jevResult.flagged) {
+          const jevAdvisory = {
+            injection: jevResult.injection,
+            exfilRequest: jevResult.exfilRequest,
+          };
+          logger.warn('Jev advisory flagged remote skill install', {
+            pluginSpec: args.pluginSpec,
+            sourceTrust: args.sourceTrust,
+            injection: jevAdvisory.injection,
+            exfilRequest: jevAdvisory.exfilRequest,
+          });
+          scanResult.jevAdvisory = jevAdvisory;
+        }
+      } catch {
+        // The judge is best-effort: unavailable, timed out, or malformed
+        // responses must preserve the pre-advisory return value.
+      }
+    }
+    return scanResult;
+  }
 
   logger.warn('Marketplace install blocked by skill content guard', {
     pluginSpec: args.pluginSpec,

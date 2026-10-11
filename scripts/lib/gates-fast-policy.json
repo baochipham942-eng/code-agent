@@ -302,6 +302,19 @@
       "files": [
         "tests/unit/security/rendererTokenBoundary.test.ts"
       ]
+    },
+    {
+      "id": "frontend-slides-packaging",
+      "paths": [
+        "resources/skills/frontend-slides/**",
+        "resources/skill-sources/frontend-slides/**",
+        "scripts/bundle-frontend-slides-skill.mjs",
+        "src-tauri/tauri.conf.json",
+        "eslint.config.js"
+      ],
+      "files": [
+        "tests/scripts/frontendSlidesSkillPackaging.test.ts"
+      ]
     }
   ],
   "sharedPackageInputs": [

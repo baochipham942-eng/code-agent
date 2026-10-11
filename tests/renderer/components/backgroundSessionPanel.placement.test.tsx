@@ -7,10 +7,9 @@
 // composer 正上方的文档流块，参与布局，几何上不可能再压 composer。这里钉死三件事：
 //   1. 面板 root 不得回退到 fixed/absolute 浮层（那正是当初盖住 composer 的形态）；
 //   2. 挂载点必须在 ChatView 列内、<ChatInput 之前，App.tsx 不再全局挂载
-//      （源码结构断言，primaryActionConvergence.test.ts 同款手法）；
-//   3. 模态打开时面板仍压在遮罩之下（floatingPanel < modal 档位关系，rework 前的
-//      zLayer 测试意图原样保留）。
-// 真实窗口内的 elementFromPoint 几何由真机无槽验证（Playwright）覆盖。
+//      （源码结构断言，primaryActionConvergence.test.ts 同款手法）。
+// 面板压在模态遮罩之下的层级契约在 backgroundSessionPanel.zLayer.test.tsx（与
+// origin/main 同名同意图）；真实窗口内的 elementFromPoint 几何由真机无槽验证覆盖。
 
 import React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
@@ -19,15 +18,9 @@ import { readFileSync } from 'node:fs';
 import * as path from 'node:path';
 
 import { BackgroundSessionPanel } from '../../../src/renderer/components/features/background/BackgroundSessionPanel';
-import { Modal } from '../../../src/renderer/components/primitives/Modal';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
-import { Z_LAYERS } from '../../../src/renderer/styles/zLayers';
 
 const RENDERER_SRC = path.resolve(__dirname, '../../../src/renderer');
-
-function zIndexOf(el: Element | null): number {
-  return Number((el as HTMLElement | null)?.style.zIndex);
-}
 
 function readRendererSource(rel: string): string {
   return readFileSync(path.join(RENDERER_SRC, rel), 'utf8');
@@ -79,26 +72,5 @@ describe('BackgroundSessionPanel 放置（不压 composer）', () => {
 
     const app = readRendererSource('App.tsx');
     expect(app.includes('BackgroundSessionPanel')).toBe(false);
-  });
-
-  it('floatingPanel 档严格低于 modal 档（rework 前的层级关系不变）', () => {
-    expect(Z_LAYERS.floatingPanel).toBeLessThan(Z_LAYERS.modal);
-  });
-
-  it('模态打开时面板 z-index 严格小于 Modal 遮罩容器', () => {
-    render(
-      <>
-        <BackgroundSessionPanel />
-        <Modal isOpen onClose={() => {}} title="确认更新">
-          <p>modal body</p>
-        </Modal>
-      </>,
-    );
-    const card = screen.getByTestId('background-session-panel').firstElementChild?.firstElementChild as HTMLElement;
-    const panelZ = zIndexOf(card);
-    const modalZ = zIndexOf(screen.getByRole('dialog').parentElement);
-    expect(panelZ).toBe(Z_LAYERS.floatingPanel);
-    expect(modalZ).toBe(Z_LAYERS.modal);
-    expect(panelZ).toBeLessThan(modalZ);
   });
 });

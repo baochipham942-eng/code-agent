@@ -1,6 +1,6 @@
 # 沙盒一次性扩权·目录子树版设计稿
 
-- 状态：**草稿·待爸拍板**
+- 状态：**爸 10-11 拍板·全按推荐**
 - 单号：N-SANDBOX-ESCALATE-DIR-DESIGN
 - 基线：`origin/main@a00a39c04`
 - 相关：单文件版已上线（私档证据 N-SANDBOX-DENY-ESCALATE-2026-10-03，PR #2191）；敏感路径清单与「代理不许改自己的笼子」先例在 `src/host/sandbox/sensitivePaths.ts`；版式对照 `docs/architecture/designs/cloud-run-retention.md`
@@ -178,7 +178,7 @@ sequenceDiagram
 
 **推荐 A。** mkdir 拒绝是目录版最高频的触发形状，二话不说放弃等于砍掉一半收益；而 seatbelt `subpath` 是否需要存在没有仓内试验记录，拍脑袋写进合同不如把试验做成实现单的验收第一格。B 是试验失败后的自动回退位，不是独立首选。
 
-结论：darwin: missing-directory grant allowed (mkdir allowed, write-inside allowed)；试验记录见 `docs/architecture/designs/sandbox-escalate-dir-d3-trial.md`；macOS 27.0.1 (26A434)。
+结论：darwin: missing-directory grant allowed (mkdir allowed, write-inside allowed)；linux: missing directory 永不 offer（bwrap 绑不了不存在的路径，无试验余地）。试验记录见 `docs/architecture/designs/sandbox-escalate-dir-d3-trial.md`；macOS 27.0.1 (26A434)。
 
 ### D4 [动作名与 meta]：`details.action` 与 `SandboxEscalationMeta` 怎么扩
 

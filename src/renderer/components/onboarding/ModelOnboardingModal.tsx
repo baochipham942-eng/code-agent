@@ -1,6 +1,7 @@
 // ============================================================================
 // ModelOnboardingModal —— 首次启动模型配置向导（连接来源 → 默认模型 两步，
-// 其后紧跟「随时开口」绑键卡：不塞进 ONBOARDING_STEPS，避免改漏斗契约）。
+// 其后紧跟「连上你平时用的工具」连接器步与「随时开口」绑键卡：这两个后置卡
+// 都不塞进 ONBOARDING_STEPS，避免改漏斗契约）。
 //
 // P3 品牌升级「抵达新栖地」欢迎时刻（拍板 2026-08-02）：欢迎内容不独立成步，
 // 而是作为首步（step === 'source'）页面的上半区同屏渲染——侵入最小，不增加
@@ -52,8 +53,9 @@ import {
   type OnboardingStep,
 } from './modelOnboarding';
 import { VoiceHotkeyOnboardingStep } from './VoiceHotkeyOnboardingStep';
+import { ConnectorsOnboardingStep } from './ConnectorsOnboardingStep';
 
-type ModalStep = OnboardingStep | 'voiceHotkey';
+type ModalStep = OnboardingStep | 'connectors' | 'voiceHotkey';
 
 interface ProviderTestResult {
   success: boolean;
@@ -445,17 +447,19 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
             {isBusy ? <Loader2 className="mr-1 inline h-3.5 w-3.5 animate-spin" /> : null}
             {message || (step === 'voiceHotkey'
               ? text.voiceHotkeyImmediateHint
-              : route === 'subscription' ? '官方登录凭证始终由对应客户端管理' : text.keyStaysLocal)}
+              : step === 'connectors'
+                ? text.connectorsFootnote
+                : route === 'subscription' ? '官方登录凭证始终由对应客户端管理' : text.keyStaysLocal)}
           </div>
           <div className="flex items-center gap-2">
             {step === 'source' && onSkip ? (
               <Button variant="ghost" onClick={onSkip} disabled={isBusy}>{text.skipButton}</Button>
             ) : null}
-            {step === 'model' || step === 'voiceHotkey' ? (
+            {step !== 'source' ? (
               <Button
                 variant="ghost"
                 onClick={() => {
-                  setStep(step === 'voiceHotkey' ? 'model' : 'source');
+                  setStep(step === 'voiceHotkey' ? 'connectors' : step === 'connectors' ? 'model' : 'source');
                   setStatus('idle');
                   setMessage('');
                 }}
@@ -463,6 +467,20 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                 leftIcon={<ArrowLeft className="h-4 w-4" />}
               >
                 返回
+              </Button>
+            ) : null}
+            {step === 'connectors' ? (
+              <Button
+                variant="secondary"
+                data-testid="onboarding-connectors-skip"
+                onClick={() => {
+                  setStatus('idle');
+                  setMessage('');
+                  setStep('voiceHotkey');
+                }}
+                disabled={isBusy}
+              >
+                {text.connectorsSkip}
               </Button>
             ) : null}
             {step === 'voiceHotkey' ? (
@@ -491,7 +509,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                 onClick={() => {
                   setStatus('idle');
                   setMessage('');
-                  setStep('voiceHotkey');
+                  setStep('connectors');
                 }}
                 disabled={route === 'subscription'
                   ? !selectedSource
@@ -499,6 +517,19 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
                   : !selectedModel}
               >
                 {text.nextButton}
+              </Button>
+            ) : null}
+            {step === 'connectors' ? (
+              <Button
+                data-testid="onboarding-connectors-next"
+                onClick={() => {
+                  setStatus('idle');
+                  setMessage('');
+                  setStep('voiceHotkey');
+                }}
+                disabled={isBusy}
+              >
+                {text.connectorsNext}
               </Button>
             ) : null}
           </div>
@@ -525,7 +556,10 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
         <div className="grid grid-cols-2 gap-2 text-xs text-zinc-400" data-testid="onboarding-stepper">
           {ONBOARDING_STEPS.map((id, index) => {
             const active = step === id;
-            const stepIndex = step === 'voiceHotkey' ? ONBOARDING_STEPS.length : ONBOARDING_STEPS.indexOf(step);
+            // connectors/voiceHotkey 都在漏斗两步之后：不属于 ONBOARDING_STEPS，按"已全部完成"计
+            const stepIndex = step === 'source' || step === 'model'
+              ? ONBOARDING_STEPS.indexOf(step)
+              : ONBOARDING_STEPS.length;
             const done = stepIndex > index;
             return (
               <div
@@ -553,6 +587,8 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
             disabled={isBusy}
             onBound={() => void completeOnboarding()}
           />
+        ) : step === 'connectors' ? (
+          <ConnectorsOnboardingStep disabled={isBusy} />
         ) : step === 'source' ? (
           <>
             <div

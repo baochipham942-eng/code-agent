@@ -10,6 +10,7 @@ import type {
   WebhookAction,
 } from '@shared/contract';
 import { validateEventScheduleConstraints } from '@shared/cronEventValidation';
+import { CRON_EVENT_TRIGGER } from '@shared/constants';
 import { humanizeCronExpression, humanizeEverySchedule, type CronHumanLang } from '../../../utils/cronHumanize';
 
 export interface CronJobDraft {
@@ -142,8 +143,12 @@ export function buildDraftFromJob(job: CronJobDefinition): CronJobDraft {
     draft.cronExpression = job.schedule.expression;
     draft.cronTimezone = job.schedule.timezone || '';
   } else if (job.schedule.type === 'event') {
-    draft.eventAccountId = job.schedule.accountId;
-    draft.eventChatId = job.schedule.chatId || '';
+    // connector 源（mail）编辑 UI 未开放（N-TRIGGER-CONNECTOR-MAIL 范围外）：
+    // 草稿不回填 mail 绑定，通道字段保持默认。
+    if (job.schedule.source === 'channel') {
+      draft.eventAccountId = job.schedule.accountId;
+      draft.eventChatId = job.schedule.chatId || '';
+    }
   }
 
   switch (job.action.type) {
@@ -403,6 +408,12 @@ export function formatScheduleSummary(
         : job.schedule.expression;
     }
     case 'event': {
+      // connector 源（mail）：账号是 Mail 账号名、绑定粒度是邮箱，不查通道目录。
+      if (job.schedule.source === 'connector') {
+        const mailLabel = lang === 'en' ? 'Mail message' : '邮件消息';
+        const mailbox = job.schedule.mailbox ?? CRON_EVENT_TRIGGER.DEFAULT_MAILBOX;
+        return `${mailLabel} · ${job.schedule.accountId} · ${mailbox}`;
+      }
       // 显示名优先（通道目录里的账号名/群名），目录没有或还没加载完才回落 id；
       // chatId 缺省 = 该账号任意会话。
       const eventLabel = lang === 'en' ? 'Channel message' : '通道消息';

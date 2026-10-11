@@ -1,15 +1,18 @@
 // ============================================================================
 // `neo daemon status` / `neo daemon stop` 单测（ADR-083 ②/③ 的客户端面）：
-//   - status：pid 文件三态（无 / 活 pid / 陈旧 pid）+ durable_runs 名册
-//     （有 run 逐行列 id/status/session/owner；空名册明确打「No runs in progress.」）。
-//   - stop：对 pid 文件里的真子进程发 SIGTERM 并等到它退出；陈旧 pid / 无 pid
-//     文件时明确说没事可停。
-// 夹具：真实临时数据目录（CODE_AGENT_DATA_DIR）+ 真实 sqlite + 真实子进程，
-// 不 mock 进程语义——被测对象就是「读文件 / 发信号 / 等退出」。
+//   - status：pid 记录四态（无 / owned 活 / 陈旧死 pid / pid 被复用）+ durable_runs
+//     名册（有 run 逐行列 id/status/session/owner；空名册明确打「No runs in
+//     progress.」）。
+//   - stop：对「身份吻合（owned）」的 pid 文件进程发 SIGTERM 并等到它退出；
+//     陈旧 pid / 无 pid 文件 / pid 被复用时明确说没事可停；身份未知（旧版纯
+//     pid 文件指着活进程）时拒绝发信号——pid 复用会误杀无辜进程。
+// 夹具：真实临时数据目录（CODE_AGENT_DATA_DIR）+ 真实 sqlite + 真实子进程 +
+// 真实 `ps lstart` 启动标记，不 mock 进程语义——被测对象就是「读文件 / 比身份 /
+// 发信号 / 等退出」。
 // ============================================================================
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -19,7 +22,6 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 
 import { daemonCliCommand } from '../../../src/cli/commands/daemon';
-import { isDaemonPidAlive } from '../../../src/host/services/daemon/daemonLock';
 import { DurableRunKernel } from '../../../src/host/runtime/durableRunKernel';
 import { DurableRunRepository } from '../../../src/host/services/core/repositories/DurableRunRepository';
 
@@ -30,6 +32,26 @@ function makeTempDir(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'neo-daemon-cli-'));
   tempDirs.push(dir);
   return dir;
+}
+
+/** 与 daemonLock 同款活性判据（process.kill(pid, 0)，EPERM = 活）：测试自用，不引被测实现。 */
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/** 真实读取进程启动标记（与实现同源口径：`ps lstart`）。 */
+function psLstart(pid: number): string {
+  return execFileSync('ps', ['-p', String(pid), '-o', 'lstart='], { encoding: 'utf8' }).trim();
+}
+
+/** 把 pid 记录写进 dataDir：marker 为真值 = 一份「身份可证明」的 pid 文件。 */
+function writePidRecord(dataDir: string, pid: number, startTime: string | null): void {
+  fs.writeFileSync(path.join(dataDir, 'daemon.pid'), JSON.stringify({ pid, startTime }));
 }
 
 interface IO {
@@ -120,6 +142,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
+  process.exitCode = undefined;
   while (tempDirs.length > 0) {
     fs.rmSync(tempDirs.pop()!, { recursive: true, force: true });
   }
@@ -133,11 +156,11 @@ describe('neo daemon status', () => {
     expect(io.stdout()).toContain('No runs in progress.');
   });
 
-  it('活 pid + 名册有 run：列 daemon pid 与 run 的 id/status/session/owner（ADR-083 ②）', async () => {
+  it('身份吻合的活 pid + 名册有 run：列 daemon pid 与 run 的 id/status/session/owner（ADR-083 ②）', async () => {
     await seedRosterDb(true);
     const fake = await spawnFakeDaemon();
     try {
-      fs.writeFileSync(path.join(dataDir, 'daemon.pid'), String(fake.pid));
+      writePidRecord(dataDir, fake.pid, psLstart(fake.pid));
       const io = await runDaemon(['status']);
       expect(io.stdout()).toContain(`Daemon: running (pid ${fake.pid})`);
       expect(io.stdout()).toContain('Runs in progress (1):');
@@ -156,28 +179,63 @@ describe('neo daemon status', () => {
     expect(io.stdout()).toContain('stale pid file');
     expect(io.stdout()).toContain('Run roster: unavailable');
   });
+
+  it('pid 被复用（标记不符的活 pid）：明说是陈旧 pid 文件、pid 已归别的进程', async () => {
+    const reused = await spawnFakeDaemon();
+    try {
+      writePidRecord(dataDir, reused.pid, 'Fri Jan  1 00:00:00 1970');
+      const io = await runDaemon(['status']);
+      expect(io.stdout()).toContain('Daemon: not running');
+      expect(io.stdout()).toContain(`pid ${reused.pid} was reused by another process`);
+    } finally {
+      await reused.stop();
+    }
+  });
 });
 
 describe('neo daemon stop', () => {
-  it('对 pid 文件里的进程发 SIGTERM 并等到退出（ADR-083 ③ 客户端面）', async () => {
+  it('对身份吻合的 pid 发 SIGTERM 并等到退出（ADR-083 ③ 客户端面）', async () => {
     const fake = await spawnFakeDaemon();
     try {
-      fs.writeFileSync(path.join(dataDir, 'daemon.pid'), String(fake.pid));
+      writePidRecord(dataDir, fake.pid, psLstart(fake.pid));
       const io = await runDaemon(['stop']);
       expect(io.stdout()).toContain(`SIGTERM sent to daemon (pid ${fake.pid})`);
       expect(io.stdout()).toContain('Daemon stopped.');
-      expect(isDaemonPidAlive(fake.pid)).toBe(false);
+      expect(isAlive(fake.pid)).toBe(false);
     } finally {
       await fake.stop();
     }
   }, 15_000);
 
-  it('无 pid 文件 / 陈旧 pid：明确说没事可停，不发信号', async () => {
+  it('无 pid 文件 / 陈旧 pid / pid 被复用：明确说没事可停，不发信号', async () => {
     const noFile = await runDaemon(['stop']);
     expect(noFile.stdout()).toContain('nothing to stop');
     fs.writeFileSync(path.join(dataDir, 'daemon.pid'), '999999999');
     const stale = await runDaemon(['stop']);
     expect(stale.stdout()).toContain('stale pid file');
     expect(stale.stdout()).toContain('nothing to stop');
+    const reused = await spawnFakeDaemon();
+    try {
+      writePidRecord(dataDir, reused.pid, 'Fri Jan  1 00:00:00 1970');
+      const foreign = await runDaemon(['stop']);
+      expect(foreign.stdout()).toContain('reused by another process');
+      expect(foreign.stdout()).toContain('nothing to stop');
+      expect(isAlive(reused.pid)).toBe(true); // 没被误杀
+    } finally {
+      await reused.stop();
+    }
+  });
+
+  it('旧版纯 pid 文件指着活进程：身份无法证明，拒绝发信号（fail-closed）', async () => {
+    const live = await spawnFakeDaemon();
+    try {
+      fs.writeFileSync(path.join(dataDir, 'daemon.pid'), String(live.pid));
+      const io = await runDaemon(['stop']);
+      expect(io.stderr()).toContain('refusing to signal it');
+      expect(process.exitCode).toBe(1);
+      expect(isAlive(live.pid)).toBe(true); // 没被误杀
+    } finally {
+      await live.stop();
+    }
   });
 });

@@ -5,11 +5,13 @@
 // pid 文件 + durable_runs 名册（经 DurableRunRepository 挂在只读连接上），不走
 // HTTP、不需要 auth——本机数据目录即权威；stop 对 pid 文件里的进程发 SIGTERM 并
 // 等它退出（daemon 侧收到后先按 WEB_DAEMON 宽限排空，再走干净关库路径）。
+// pid 复用防线：只有「活进程 + 启动标记吻合」（owned）才发信号；身份未知或标记
+// 不符（pid 已被复用）时拒绝发信号——SIGTERM 打到无辜进程比停不掉 daemon 更糟。
 
 import { Command } from 'commander';
 import path from 'path';
 import { getUserConfigDir } from '../../host/config/configPaths';
-import { isDaemonPidAlive, readDaemonPidFile } from '../../host/services/daemon/daemonLock';
+import { inspectDaemonPid, readDaemonPidRecord } from '../../host/services/daemon/daemonLock';
 import type { ActiveRunRosterEntry } from '../../host/services/core/repositories/DurableRunRepository';
 import { WEB_DAEMON } from '../../shared/constants/webServer';
 
@@ -38,13 +40,20 @@ async function loadActiveRunRoster(): Promise<ActiveRunRosterEntry[]> {
 
 function printDaemonPidState(): void {
   const dataDir = getUserConfigDir();
-  const pid = readDaemonPidFile(dataDir);
-  if (pid == null) {
+  const record = readDaemonPidRecord(dataDir);
+  if (record == null) {
     write(`Daemon: not running (no readable pid file in ${dataDir})`);
-  } else if (isDaemonPidAlive(pid)) {
-    write(`Daemon: running (pid ${pid})`);
+    return;
+  }
+  const state = inspectDaemonPid(record);
+  if (state === 'owned') {
+    write(`Daemon: running (pid ${record.pid})`);
+  } else if (state === 'dead') {
+    write(`Daemon: not running (stale pid file, pid ${record.pid})`);
+  } else if (state === 'foreign') {
+    write(`Daemon: not running (stale pid file; pid ${record.pid} was reused by another process)`);
   } else {
-    write(`Daemon: not running (stale pid file, pid ${pid})`);
+    write(`Daemon: pid ${record.pid} is alive, but the pid file cannot prove it is the daemon`);
   }
 }
 
@@ -69,21 +78,34 @@ async function runStatus(): Promise<void> {
 
 async function runStop(): Promise<void> {
   const dataDir = getUserConfigDir();
-  const pid = readDaemonPidFile(dataDir);
-  if (pid == null) {
+  const record = readDaemonPidRecord(dataDir);
+  if (record == null) {
     write(`Daemon: no readable pid file in ${dataDir} — nothing to stop.`);
     return;
   }
-  if (!isDaemonPidAlive(pid)) {
-    write(`Daemon: pid ${pid} is not running (stale pid file) — nothing to stop.`);
+  const state = inspectDaemonPid(record);
+  if (state === 'dead') {
+    write(`Daemon: pid ${record.pid} is not running (stale pid file) — nothing to stop.`);
     return;
   }
-  process.kill(pid, 'SIGTERM');
-  write(`SIGTERM sent to daemon (pid ${pid}); waiting up to ${WEB_DAEMON.STOP_WAIT_MS / 1000}s (drain grace ${WEB_DAEMON.DRAIN_GRACE_MS / 1000}s)...`);
+  if (state === 'foreign') {
+    write(`Daemon: pid ${record.pid} was reused by another process (stale pid file) — nothing to stop.`);
+    return;
+  }
+  if (state === 'unknown') {
+    // fail-closed：不给我们证明不了的活进程发信号；必要时手动 kill。
+    process.stderr.write(`Daemon: pid ${record.pid} is alive but cannot be verified as the daemon — refusing to signal it.\n`);
+    process.exitCode = 1;
+    return;
+  }
+  process.kill(record.pid, 'SIGTERM');
+  write(`SIGTERM sent to daemon (pid ${record.pid}); waiting up to ${WEB_DAEMON.STOP_WAIT_MS / 1000}s (drain grace ${WEB_DAEMON.DRAIN_GRACE_MS / 1000}s)...`);
   const deadline = Date.now() + WEB_DAEMON.STOP_WAIT_MS;
-  while (isDaemonPidAlive(pid)) {
+  // 等待期间也按身份判活：daemon 退出（dead）或 pid 被复用（foreign）都算等完，
+  // 不会因复用出现的「同 pid 活进程」而傻等到超时。
+  while (inspectDaemonPid(record) === 'owned') {
     if (Date.now() >= deadline) {
-      process.stderr.write(`Daemon (pid ${pid}) did not exit within ${WEB_DAEMON.STOP_WAIT_MS / 1000}s; still running.\n`);
+      process.stderr.write(`Daemon (pid ${record.pid}) did not exit within ${WEB_DAEMON.STOP_WAIT_MS / 1000}s; still running.\n`);
       process.exitCode = 1;
       return;
     }

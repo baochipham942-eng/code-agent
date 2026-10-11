@@ -53,9 +53,11 @@ function slideXmlCount(pptxPath: string): number {
 describe('frontend-slides packaged merge scripts', () => {
   const root = repoRoot();
   const packagedScripts = path.join(root, 'resources', 'skills', 'frontend-slides', 'scripts');
+  // Entry sources live outside the packaged tree (release leak); bundles are generated from them.
+  const skillSources = path.join(root, 'resources', 'skill-sources', 'frontend-slides');
 
   it('keeps the text-only notice inside the committed bundle and does not import pptxgenjs bare', () => {
-    const source = fs.readFileSync(path.join(packagedScripts, 'src', 'merge-to-pptx-hybrid.mjs'), 'utf8');
+    const source = fs.readFileSync(path.join(skillSources, 'merge-to-pptx-hybrid.mjs'), 'utf8');
     const notice = source.match(/const TEXT_ONLY_NOTICE = '([^']+)';/);
     expect(notice?.[1]).toBe('backgrounds were skipped');
     const bundle = fs.readFileSync(path.join(packagedScripts, 'merge-to-pptx-hybrid.bundle.mjs'), 'utf8');

@@ -3,7 +3,7 @@
 // 边界断言按设计稿 docs/architecture/designs/sandbox-escalate-dir.md：
 // 边界二「授权根必须恰是拒绝路径的 canonical 形式，绝不向上推断祖先」、
 // 边界三「root/home/home 祖先/home 直接子目录永不 offer」、卡文案逐字（D5-A 例外句随
-// DIR-FORBIDDEN 的禁写名机制同批落地，先行版不带，见专项测试）。
+// DIR-FORBIDDEN 的禁写名机制同批落地，见下方专项断言）。
 // 单文件版 A1–A12 仍由 tests/unit/tools/modules/shell/bash.test.ts 钉死，本文件只测目录分支。
 // ============================================================================
 
@@ -309,10 +309,9 @@ describe('bashModule directory escalation', () => {
     dirs.push(dir);
     return dir;
   };
-  // D5 结论（r1）：例外句「（其中凭据与配置类文件仍不可写）」随 DIR-FORBIDDEN 的禁写名
-  // deny 行同批恢复，先行版卡面不带。
+  // D5-A 例外句已随 DIR-FORBIDDEN 的禁写名机制（deny 行 / ro-bind 盖）同批上卡面。
   const DIR_CARD_REASON = (path: string) =>
-    `沙盒拦截了这一步：它想写入目录 ${path}（含其中全部内容）。允许仅这一次写入这个目录及其中内容并重跑？`;
+    `沙盒拦截了这一步：它想写入目录 ${path}（含其中全部内容）。允许仅这一次写入这个目录及其中内容并重跑？（其中凭据与配置类文件仍不可写）`;
 
   beforeEach(() => {
     modeMgr.setMode('default', true);
@@ -354,23 +353,24 @@ describe('bashModule directory escalation', () => {
       reason: DIR_CARD_REASON(dir),
       details: { command: `mkdir -p ${dir}`, deniedPath: dir, action: 'sandbox_escalate_dir_once' },
     }));
-    // 目录授权走 readWriteRoots（基座写根缺省回退 cwd，之上追加该目录），永不进 readWriteFiles
-    const firstOptions = wrapMock.mock.calls[0]?.[1] as { readWriteRoots?: string[]; readWriteFiles?: string[] };
-    const retryOptions = wrapMock.mock.calls[1]?.[1] as { readWriteRoots?: string[]; readWriteFiles?: string[] };
+    // 目录授权走 readWriteRoots（基座写根缺省回退 cwd，之上追加该目录），永不进 readWriteFiles；
+    // 该树同时作为 forbiddenWriteUnder 下传：子树内禁写名（凭据/笼子/钩子/rc）仍保持只读（DIR-FORBIDDEN）
+    const firstOptions = wrapMock.mock.calls[0]?.[1] as { readWriteRoots?: string[]; readWriteFiles?: string[]; forbiddenWriteUnder?: string[] };
+    const retryOptions = wrapMock.mock.calls[1]?.[1] as { readWriteRoots?: string[]; readWriteFiles?: string[]; forbiddenWriteUnder?: string[] };
     expect(firstOptions.readWriteRoots).toBeUndefined();
+    expect(firstOptions.forbiddenWriteUnder).toBeUndefined();
     expect(retryOptions.readWriteRoots).toEqual([resolveCanonicalRunPath(process.cwd()), dir]);
     expect(retryOptions.readWriteFiles).toBeUndefined();
+    expect(retryOptions.forbiddenWriteUnder).toEqual([dir]);
     if (result.ok) {
       expect(result.meta?.sandboxEscalation).toEqual({ path: dir, decision: 'approved', granularity: 'directory' });
     }
   });
 
-  it('does not promise the credential/config exception before its enforcement lands (D5 r1)', async () => {
-    // D5 结论（r1 修订）：例外句必须随禁写名例外机制（DIR-FORBIDDEN 单的 deny 行 / ro-bind
-    // 盖）同批上卡面。机制未落地时写上该句，用户以为凭据受保护，重跑沙箱却只追加
-    // readWriteRoots、无任何禁写名 deny 行——子树内 .env* / .git/hooks / .npmrc 照写不误，
-    // 「开口子 ⊆ 卡面承诺」被反转成承诺比开口宽，违反铁律「卡片说的就是重跑打开的」。
-    const dir = tmp('escalate-dir-no-promise-');
+  it('carries the credential/config exception sentence now that its enforcement landed (D5 + DIR-FORBIDDEN)', async () => {
+    // D5 r1：例外句「（其中凭据与配置类文件仍不可写）」与禁写名机制同批上卡面——deny 行 /
+    // ro-bind 盖落地后，卡面承诺与重跑开口子重新对齐。反向钉死：句子若被单独摘掉，本测试红。
+    const dir = tmp('escalate-dir-exception-');
     wrapMock
       .mockReturnValueOnce({
         command: `printf '%s\\n' "EPERM: operation not permitted, open '${dir}'" >&2; exit 1`,
@@ -384,8 +384,10 @@ describe('bashModule directory escalation', () => {
     expect(escalationCalls).toHaveLength(1);
     const reason = escalationCalls[0]?.[2] as string;
     expect(reason).toBe(DIR_CARD_REASON(dir));
-    expect(reason).not.toContain('其中凭据与配置类文件仍不可写');
-    expect(reason).not.toContain('仍不可写');
+    expect(reason).toContain('（其中凭据与配置类文件仍不可写）');
+    // 例外句只在目录卡上：机制（forbiddenWriteUnder → deny 行 / ro-bind）只随目录授权下发
+    const retryOptions = wrapMock.mock.calls[1]?.[1] as { forbiddenWriteUnder?: string[] };
+    expect(retryOptions.forbiddenWriteUnder).toEqual([dir]);
   });
 
   it('grants exactly the denied mkdir path and never its nearest existing ancestor (边界二反例)', async () => {
@@ -474,9 +476,11 @@ describe('bashModule directory escalation', () => {
     expect(escalationCalls[0]?.[3]).toEqual(expect.objectContaining({
       details: expect.objectContaining({ deniedPath: file, action: 'sandbox_escalate_once' }),
     }));
-    const retryOptions = wrapMock.mock.calls[1]?.[1] as { readWriteRoots?: string[]; readWriteFiles?: string[] };
+    const retryOptions = wrapMock.mock.calls[1]?.[1] as { readWriteRoots?: string[]; readWriteFiles?: string[]; forbiddenWriteUnder?: string[] };
     expect(retryOptions.readWriteFiles).toEqual([file]);
     expect(retryOptions.readWriteRoots).toBeUndefined();
+    // 文件卡（sandbox_escalate_once）永不带 forbiddenWriteUnder：禁写名例外只属于目录子树授权
+    expect(retryOptions.forbiddenWriteUnder).toBeUndefined();
     if (result.ok) {
       expect(result.meta?.sandboxEscalation).toEqual({ path: file, decision: 'approved' });
     }

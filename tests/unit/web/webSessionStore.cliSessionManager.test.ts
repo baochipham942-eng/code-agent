@@ -442,6 +442,28 @@ describe('WebSessionStore CLI SessionManager backend', () => {
     expect((await infraSessionManager.getSession(sessionId, 1))?.workingDirectory).toBe(workDir);
   });
 
+  // rework r2（N-DELIVERABLE-WORKDIR-DEFAULT）：agent 路由的 mint 门在 getSession
+  // 返回 null 时用 isPersistent() 分辨「行不存在」与「持久层运行期死亡」（后者的
+  // getSession 走 ensureDbReady 失败路径返回 null 而非抛错）。本用例钉死真实后端
+  // 两个方向的探测值——这是该门消费的契约。
+  it('isPersistent 反映运行期实况：健康后端 true，初始化失败的后端 false（rework r2）', async () => {
+    expect(await cliSessionManager.isPersistent()).toBe(true);
+
+    // 与「打包态 bindings 缺失」同形：initialize 失败（_initPromise 拒绝被缓存），
+    // ensureDbReady 永远 false —— getSession 从此返回 null，不是抛错
+    const deadBackendManager = new CLISessionManager();
+    Object.assign(deadBackendManager as unknown as Record<string, unknown>, {
+      _dbChecked: true,
+      _db: {
+        isInitialized: false,
+        initialize: vi.fn(async () => {
+          throw new Error('simulated runtime death (readonly / disk full)');
+        }),
+      },
+    });
+    expect(await deadBackendManager.isPersistent()).toBe(false);
+  });
+
   it('infra manager 对跨会话重复 id fail-loud，不覆写原会话', async () => {
     const messageId = 'forced-infra-collision';
     coreDb.createSessionWithId('session-infra-a', {

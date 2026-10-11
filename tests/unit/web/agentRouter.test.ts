@@ -4585,6 +4585,89 @@ describe('createAgentRouter', () => {
     expect(flatEntries.some((entry) => entry.startsWith('任务_') || entry.startsWith('Task_'))).toBe(false);
   });
 
+  // rework r2：DB 启动后运行期死亡（readonly/磁盘满/初始化失败，_initPromise 拒绝被
+  // 永久缓存）时 getSession 走 ensureDbReady 失败路径**返回 null** 而非抛错，web 层
+  // dbAvailable 又是启动时写死的标志——存量会话（有历史消息）每轮都被读成 null、
+  // 判成「新会话首轮」，每轮 mint 一个 任务_x-N 且落库粘不住。isPersistent 探测的是
+  // 持久层运行期实况，死亡期间不开目录，逐轮回落扁平默认。
+  it('does not mint a per-session folder when persistence died at runtime (getSession null via dead backend); every run falls back to the flat default (rework r2)', async () => {
+    await closeServer();
+    // 启动时 DB 健康：web 层 dbAvailable 已写死为 true，看不见运行期死亡
+    setDbAvailable(true);
+    mockCreateAgentLoop.mockImplementation(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        // ensureDbReady 失败路径：null 而非 throw（cli/session.ts getSession），
+        // 会话行即使在库里也读不回来
+        getSession: vi.fn(async () => null),
+        isPersistent: vi.fn(async () => false),
+        updateSession: vi.fn(async () => undefined),
+        addMessageToSession: vi.fn(async () => undefined),
+      }),
+    });
+
+    const sessionId = 'session-runtime-dead-db';
+    for (const prompt of ['帮我出一份季度总结', '第二轮补充数据', '第三轮再补']) {
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt, sessionId }),
+      });
+      expect(response.ok).toBe(true);
+      await response.text();
+    }
+
+    // 三轮全部扁平默认，不开任何 任务_*/Task_* 目录（修复前每轮各 mint 一个 x/-2/-3）
+    expect(createCLIAgent).toHaveBeenCalledTimes(3);
+    for (let i = 1; i <= 3; i += 1) {
+      expect(createCLIAgent).toHaveBeenNthCalledWith(
+        i,
+        expect.objectContaining({ project: `${tempDataDir}-work` }),
+      );
+    }
+    const flatEntries = readdirSync(`${tempDataDir}-work`);
+    expect(flatEntries.some((entry) => entry.startsWith('任务_') || entry.startsWith('Task_'))).toBe(false);
+  });
+
+  // rework r2 反向保护：探测健康 + 行确实不存在（DB 可用的新会话）→ 仍然开按会话目录，
+  // 收口不能把特性本身关死。
+  it('still mints the per-session folder for a genuinely-new session when the persistence probe is healthy (rework r2)', async () => {
+    await closeServer();
+    setDbAvailable(true);
+    mockCreateAgentLoop.mockImplementation(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        getSession: vi.fn(async () => null),
+        isPersistent: vi.fn(async () => true),
+        updateSession: vi.fn(async () => undefined),
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '帮我出一份季度总结', sessionId: 'session-probe-healthy' }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+    const now = new Date();
+    const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const expectedDir = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: expectedDir }));
+    expect(existsSync(expectedDir)).toBe(true);
+  });
+
   it('persists assistant output when loop message events were not actually stored', async () => {
     await closeServer();
     setDbAvailable(true);

@@ -127,7 +127,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ui: {
     theme: 'system',
     fontSize: 14,
-    showToolCalls: true,
     language: 'zh',
     disclosureLevel: 'standard',
   },

@@ -2,7 +2,7 @@ import { SUBAGENT_COMPLETION_NOTIFICATIONS } from '../../shared/constants';
 import { buildSpillNotice, spillToolResultArchive, type ToolResultArchiveRef } from '../utils/toolResultSpill';
 import type { AgentFailureCode } from '../../shared/contract/agentFailure';
 
-export type SubagentCompletionStatus = 'completed' | 'failed' | 'cancelled' | 'killed';
+export type SubagentCompletionStatus = 'completed' | 'failed' | 'cancelled' | 'killed' | 'stalled';
 export type SubagentCompletionKind = 'user_visible' | 'internal' | 'shell';
 
 export interface SubagentCompletionScope {
@@ -46,10 +46,15 @@ export interface BuildSubagentCompletionRecordInput extends SubagentCompletionSc
   lastProgress?: string;
   /** 声明了但未装配的工具（N-SUBAGENT-ZEROTOOLS 返修 Important 2：后台完成通知透传给父模型）。 */
   missingTools?: string[];
+  /** 覆盖 payload.next_action 默认文案。stall 提醒指向当前状态而非「最终结果」（run 未收尾）。 */
+  nextAction?: string;
 }
 
 function statusLabel(status: SubagentCompletionStatus): string {
-  return status === 'completed' ? 'completed' : `ended with ${status}`;
+  if (status === 'completed') return 'completed';
+  // stalled 是非终态提醒（N-WF-STALL-NOTICE）：run 还在跑，不许渲染成失败收尾。
+  if (status === 'stalled') return 'stalled (no progress)';
+  return `ended with ${status}`;
 }
 
 function scopeDedupePrefix(input: SubagentCompletionScope): string {
@@ -134,7 +139,7 @@ export function buildSubagentCompletionRecord(input: BuildSubagentCompletionReco
           sha256: archiveRef.sha256.slice(0, 12),
         }
       : undefined,
-    next_action: `Use collect_agent("${input.agentId}") to inspect the final result.`,
+    next_action: input.nextAction ?? `Use collect_agent("${input.agentId}") to inspect the final result.`,
   };
   const ackInstruction = buildCompletionAckInstruction(kind, title);
   const content = `<subagent_notification>\n${JSON.stringify(payload, null, 2)}\n<completion_ack_instruction>\n${ackInstruction}\n</completion_ack_instruction>\n</subagent_notification>`;
@@ -157,11 +162,23 @@ export function buildSubagentCompletionRecord(input: BuildSubagentCompletionReco
   };
 }
 
+/** 批标题：混入 stalled 记录时不许说 "completed"——那是终态词，stall 的 run 还在跑。 */
+function batchTitle(records: readonly SubagentCompletionRecord[]): string {
+  const stalled = records.filter((record) => record.status === 'stalled').length;
+  if (stalled === 0) {
+    return records.length === 1 ? '1 background task completed' : `${records.length} background tasks completed`;
+  }
+  if (stalled === records.length) {
+    return records.length === 1
+      ? '1 background task stalled (no progress)'
+      : `${records.length} background tasks stalled (no progress)`;
+  }
+  return `${records.length} background task updates`;
+}
+
 export function formatSystemReminderForCompletions(records: readonly SubagentCompletionRecord[]): string {
   if (records.length === 0) return '';
-  const title = records.length === 1
-    ? '1 background task completed'
-    : `${records.length} background tasks completed`;
+  const title = batchTitle(records);
   const body = records
     .map((record) => {
       const role = record.role ? ` (${record.role})` : '';

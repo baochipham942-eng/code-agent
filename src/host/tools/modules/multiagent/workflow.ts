@@ -462,7 +462,24 @@ async function runWorkflow(
     // resumable journal 网关：DB 就绪才有（getWorkflowJournalRepository() 在未就绪时返 null）→
     // 无则不持久化、不重放，workflow 照常全 live 跑（优雅降级）。sessionId 经闭包带入 onRunStart。
     const journalRepo = getWorkflowJournalRepository();
-    const stallDetector = new WorkflowStallDetector({ journal: journalRepo, logger: ctx.logger });
+    // N-WF-STALL-NOTICE：硬停滞的模型面投递。检测器自身不依赖注册表；这里注入
+    // 「recordStallNotice 入队 + idle wake」两步（announce=false 与 journal 降级路径不进来）。
+    // recordStallNotice 不写终态 entry，run 在 collect_agent 下仍报 running。
+    const stallDetector = new WorkflowStallDetector({
+      journal: journalRepo,
+      logger: ctx.logger,
+      onStallNotice: (notice) => {
+        const record = getBackgroundSubagentRegistry().recordStallNotice({
+          runId: notice.runId,
+          sessionId: ctx.sessionId,
+          title: workflowBackgroundTitle(goal, runId),
+          epoch: notice.epoch,
+          idleSeconds: notice.idleSeconds,
+          ...(notice.lastActivity ? { lastActivity: notice.lastActivity } : {}),
+        });
+        scheduleBackgroundSubagentIdleWake(record);
+      },
+    });
     const journal: ScriptRunJournal | undefined = journalRepo
       ? {
           loadPriorRun: (rid) => {

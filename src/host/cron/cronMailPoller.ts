@@ -18,7 +18,7 @@ import { BoundedDedupeSet } from '../channels/inboundDedupe';
 import { getConnectorRegistry } from '../connectors/registry';
 
 /** mail 源单次轮询拿到的邮件摘要（mail connector list_messages 的 data 项形状）。 */
-export interface CronMailPollMessage {
+interface CronMailPollMessage {
   id: number;
   subject: string;
   sender: string;
@@ -27,9 +27,10 @@ export interface CronMailPollMessage {
 }
 
 /** mail 轮询失败的可区分原因（降级必须留可区分的痕：缺件 ≠ 未就绪 ≠ 读取失败）。 */
-export type CronMailPollFailureCause = 'connector-missing' | 'connector-not-ready' | 'read-error';
+type CronMailPollFailureCause = 'connector-missing' | 'connector-not-ready' | 'read-error';
 
-export class CronMailPollError extends Error {
+/** mail 轮询错误：cause 携带可区分失败原因（本模块与测试经公开入口观测日志分类）。 */
+class CronMailPollError extends Error {
   constructor(
     readonly cause: CronMailPollFailureCause,
     message: string,
@@ -59,7 +60,7 @@ export interface MailEventFields {
 }
 
 /** mail 轮询喂回合批链路的事件形状（CronEventTrigger 补齐通道侧字段后入队）。 */
-export interface MailEventRecord {
+interface MailEventRecord {
   /** account|mailbox|id 组合键（去重与 eventIds 溯源共用）。 */
   messageId: string;
   senderName: string;
@@ -135,7 +136,7 @@ function mailEventKey(account: string, mailbox: string, messageId: number): stri
 }
 
 /** 取定义里的 mail 源调度；不是 connector:mail + message 的事件源返回 undefined。 */
-export function mailScheduleOf(definition: CronJobDefinition): EventConnectorMailScheduleConfig | undefined {
+function mailScheduleOf(definition: CronJobDefinition): EventConnectorMailScheduleConfig | undefined {
   const schedule = definition.schedule;
   if (schedule?.type !== 'event' || schedule.source !== 'connector') return undefined;
   if (schedule.connector !== 'mail' || schedule.eventName !== 'message') return undefined;

@@ -52,6 +52,7 @@ import { getEventBus } from '../../../services/eventing/bus';
 import { getWorkflowLaunchApprovalGate, buildWorkflowLaunchRequest } from '../../../agent/workflowLaunchApproval';
 import { getBackgroundSubagentRegistry } from '../../../agent/backgroundSubagentRegistry';
 import { scheduleBackgroundSubagentIdleWake } from '../../../agent/backgroundSubagentIdleWake';
+import { WorkflowStallDetector } from '../../../agent/workflowStallDetector';
 import type { SubagentResult } from '../../../agent/subagentExecutorTypes';
 import { AgentFailureCode } from '../../../../shared/contract/agentFailure';
 import {
@@ -210,6 +211,8 @@ function handWorkflowRunToBackground(
     sessionId?: string;
     title: string;
     onClaimed: (settlement: WorkflowSettlement) => void;
+    onAdopted?: () => void;
+    onSettled?: () => void;
     onError?: (error: unknown) => void;
   },
 ): void {
@@ -224,12 +227,15 @@ function handWorkflowRunToBackground(
   const existing = registry.getStatus(runId);
   if (!existing) {
     registry.adopt(pending.then((settlement) => {
+      options.onSettled?.();
       if (claimWorkflowSettlement(runId, settlement.terminalStatus)) options.onClaimed(settlement);
       return settlement.result;
     }), adoptOptions);
+    options.onAdopted?.();
     return;
   }
   void pending.then(async (settlement) => {
+    options.onSettled?.();
     if (registry.getStatus(runId)?.status === 'running') await registry.await(runId);
     if (!claimWorkflowSettlement(runId, settlement.terminalStatus)) return;
     options.onClaimed(settlement);
@@ -420,6 +426,7 @@ async function runWorkflow(
     // resumable journal 网关：DB 就绪才有（getWorkflowJournalRepository() 在未就绪时返 null）→
     // 无则不持久化、不重放，workflow 照常全 live 跑（优雅降级）。sessionId 经闭包带入 onRunStart。
     const journalRepo = getWorkflowJournalRepository();
+    const stallDetector = new WorkflowStallDetector({ journal: journalRepo, logger: ctx.logger });
     const journal: ScriptRunJournal | undefined = journalRepo
       ? {
           loadPriorRun: (rid) => {
@@ -531,6 +538,7 @@ async function runWorkflow(
       },
       signal: runAbort.signal,
       emit: (event: ScriptRunEvent) => {
+        stallDetector.handleEvent(event);
         // ① 进度树事件通道（P3a）：把【全部】8 类 ScriptRunEvent publish 到 'workflow' domain，
         //    workflow.ipc 的专用 bridge 投递到 renderer 'workflow:event'（Tauri IPC + web SSE 两端）。
         //    bridgeToRenderer:false 避免 Tauri 主进程的通用 EventBridge 再转发一次（重复事件）。
@@ -584,6 +592,10 @@ async function runWorkflow(
       }],
     };
     const compatibility = new GraphEventCompatibilityAdapter({
+      graph: (event) => {
+        if (event.type === 'graph_waiting') stallDetector.setParked(runId, true);
+        else if (event.type === 'graph_started') stallDetector.setParked(runId, false);
+      },
       script: (event) => {
         if (['agent:start', 'agent:done', 'agent:error'].includes(event.type) && event.data?.agentId === parentNodeId) return;
         deps.emit?.({ ...event, runId });
@@ -613,6 +625,8 @@ async function runWorkflow(
       handWorkflowRunToBackground(runId, pending, {
         sessionId: ctx.sessionId,
         title: workflowBackgroundTitle(goal, runId),
+        onAdopted: () => stallDetector.startRun(runId),
+        onSettled: () => stallDetector.stopRun(runId),
         onClaimed: (settlement) => publishWorkflowSettlement(settlement, safeProgress),
         onError: (error) => ctx.logger.debug('workflow background handoff failed', {
           runId,

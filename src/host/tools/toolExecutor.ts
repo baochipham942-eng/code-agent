@@ -1648,10 +1648,10 @@ export class ToolExecutor {
     }
 
     // P0: 安全命令白名单 + exec policy — 已知安全命令跳过审批。
-    // exec-policy forbidden 留在放行守卫外：学来的 allow 不得放行受保护路径，
-    // 但用户显式 forbidden 仍硬拒，不得被 protectedWriteForcesConfirmation 降成可批卡。
+    // exec-policy forbidden 留在放行守卫外：学来的 allow 不得放行受保护路径；用户显式
+    // forbidden 无条件硬拒（forcePermissionHandler 只让路自动放行，禁止清单不得降成可批卡）。
     let isSafeCommand = false;
-    if (isBashToolName(policyToolName) && params.command && !commandAnalysisFailedReason && !shellDesktopAutomation && !isPreApproved && !guardFabricForcesApproval && !this.forcePermissionHandler && !peerOriginForcesConfirmation && !launderRetryForcesAsk) {
+    if (isBashToolName(policyToolName) && params.command && !commandAnalysisFailedReason && !shellDesktopAutomation && !isPreApproved && !guardFabricForcesApproval && !peerOriginForcesConfirmation && !launderRetryForcesAsk) {
       const cmd = params.command as string;
 
       // 1. 检查 exec policy 持久化规则（forbidden 先于受保护路径熔断）
@@ -1664,7 +1664,7 @@ export class ToolExecutor {
             error: `Blocked by exec policy: ${cmd.substring(0, 80)}`,
           };
         }
-        if (policyDecision === 'allow' && !bashArgumentForcesClassification && !protectedWriteForcesConfirmation) {
+        if (!this.forcePermissionHandler && policyDecision === 'allow' && !bashArgumentForcesClassification && !protectedWriteForcesConfirmation) {
           isSafeCommand = true;
           logger.debug('Command allowed by exec policy', { command: cmd.substring(0, 80) });
           recordDecision(executionToolName, params, 'policy-allow', 'exec-policy', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
@@ -1674,7 +1674,7 @@ export class ToolExecutor {
       }
 
       // 2. 检查安全命令白名单
-      if (!isSafeCommand && !bashArgumentForcesClassification && !protectedWriteForcesConfirmation && isKnownSafeCommand(cmd)) {
+      if (!this.forcePermissionHandler && !isSafeCommand && !bashArgumentForcesClassification && !protectedWriteForcesConfirmation && isKnownSafeCommand(cmd)) {
         isSafeCommand = true;
         logger.debug('Command is known safe, skipping approval', { command: cmd.substring(0, 80) });
         recordDecision(executionToolName, params, 'auto-approve', 'safe-command', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
@@ -1684,7 +1684,7 @@ export class ToolExecutor {
       //    （validateCommand critical 在前置闸已挡），其余未识别命令放行不进审批。
       //    confirmationGate 的 HIGH_RISK_PATTERNS 仍独立生效，最高危命令保留确认。
       if (
-        !isSafeCommand
+        !this.forcePermissionHandler && !isSafeCommand
         && !argumentForcesClassification
         && !protectedWriteForcesConfirmation
         && getShellSafetyMode() === 'lenient'

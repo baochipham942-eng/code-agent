@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type {
@@ -56,6 +56,10 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
 
 const allowAll: CanUseToolFn = async () => ({ allow: true });
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 describe('screenshot_page — schema', () => {
   it('declares correct name and category', () => {
     expect(screenshotPageModule.schema.name).toBe('screenshot_page');
@@ -83,38 +87,99 @@ describe('screenshot_page — execute', () => {
   });
 
   it('happy path via Thum.io', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
-    });
-
-    const result = await executeScreenshotPage(
-      { url: 'https://example.com' },
-      makeCtx(),
-      allowAll,
-    );
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.meta?.api).toBe('Thum.io');
-      expect(result.meta?.artifact).toMatchObject({
-        kind: 'image',
-        sourceTool: 'screenshot_page',
-        path: expect.stringMatching(/^\/tmp\/work\/screenshot_example_com_\d+\.png$/),
-        mimeType: 'image/png',
-        sizeBytes: 4096,
-        metadata: {
-          url: 'https://example.com',
-          width: 1280,
-          height: 800,
-          fullPage: false,
-          format: 'png',
-          api: 'Thum.io',
-          analyzed: false,
-        },
+    const dataDir = await mkdtemp(join(tmpdir(), 'screenshot-page-data-'));
+    try {
+      vi.stubEnv('CODE_AGENT_DATA_DIR', dataDir);
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
       });
-      expect(writeFileSyncMock).toHaveBeenCalled();
-      expect((result.meta?.attachment as Record<string, unknown>)?.category).toBe('image');
+
+      const result = await executeScreenshotPage(
+        { url: 'https://example.com' },
+        makeCtx(),
+        allowAll,
+      );
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.meta?.api).toBe('Thum.io');
+        // 无 output_path 时默认落数据目录下按会话隔离的子目录，不写工作目录（N-RETENTION-SHOTS-APPDIR）
+        const expectedDir = escapeRegExp(join(dataDir, 'tool-screenshots', 'test-session'));
+        expect(result.meta?.artifact).toMatchObject({
+          kind: 'image',
+          sourceTool: 'screenshot_page',
+          path: expect.stringMatching(new RegExp(`^${expectedDir}/screenshot_example_com_\\d+\\.png$`)),
+          mimeType: 'image/png',
+          sizeBytes: 4096,
+          metadata: {
+            url: 'https://example.com',
+            width: 1280,
+            height: 800,
+            fullPage: false,
+            format: 'png',
+            api: 'Thum.io',
+            analyzed: false,
+          },
+        });
+        expect(writeFileSyncMock).toHaveBeenCalled();
+        expect((result.meta?.attachment as Record<string, unknown>)?.category).toBe('image');
+        expect(String(result.meta?.filePath)).not.toContain('/tmp/work');
+      }
+    } finally {
+      vi.unstubAllEnvs();
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it('default path writes under the app data dir and leaves pre-existing workspace files untouched', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'screenshot-page-data-'));
+    const workingDir = await mkdtemp(join(tmpdir(), 'screenshot-page-work-'));
+    const legacyShotDir = join(workingDir, '.screenshots');
+    const decoyDefault = join(workingDir, 'screenshot_example_com_1234567890.png');
+    const decoyLegacy = join(legacyShotDir, 'screenshot_old.png');
+    try {
+      vi.stubEnv('CODE_AGENT_DATA_DIR', dataDir);
+      // 工具侧 mkdirSync 被 mock，目录由测试预先建好（生产路径上 mkdir 负责建目录）
+      await mkdir(join(dataDir, 'tool-screenshots', 'test-session'), { recursive: true });
+      await writeFile(decoyDefault, 'pre-existing decoy');
+      await mkdir(legacyShotDir, { recursive: true });
+      await writeFile(decoyLegacy, 'legacy decoy');
+      const before = (await readdir(workingDir)).sort();
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+      });
+      let diskWrite: Promise<void> | undefined;
+      writeFileSyncMock.mockImplementationOnce((filePath: string, data: Buffer) => {
+        diskWrite = writeFile(filePath, data);
+      });
+
+      const result = await executeScreenshotPage(
+        { url: 'https://example.com' },
+        makeCtx({ workingDir }),
+        allowAll,
+      );
+      await diskWrite;
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        // 新文件落在数据目录的会话子目录
+        const sessionDir = join(dataDir, 'tool-screenshots', 'test-session');
+        expect(result.meta?.filePath).toMatch(
+          new RegExp(`^${escapeRegExp(sessionDir)}/screenshot_example_com_\\d+\\.png$`),
+        );
+        expect(await readFile(String(result.meta?.filePath))).toEqual(Buffer.from([1, 2, 3]));
+        // 工作目录里的既有文件原样保留，目录清单零新增
+        expect((await readdir(workingDir)).sort()).toEqual(before);
+        expect(await readFile(decoyDefault, 'utf-8')).toBe('pre-existing decoy');
+        expect(await readFile(decoyLegacy, 'utf-8')).toBe('legacy decoy');
+      }
+    } finally {
+      vi.unstubAllEnvs();
+      await rm(dataDir, { recursive: true, force: true });
+      await rm(workingDir, { recursive: true, force: true });
     }
   });
 

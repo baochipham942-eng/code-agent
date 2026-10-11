@@ -59,7 +59,12 @@ const svc = vi.hoisted(() => {
     invalidateListCache: vi.fn(),
     getEntry: vi.fn(async (): Promise<SkillRegistryEntry | null> => null),
   };
-  const marketplaceInstall = vi.fn(async (..._a: unknown[]) => ({ success: true }));
+  const marketplaceInstall = vi.fn(async (..._a: unknown[]): Promise<{
+    success: boolean;
+    pluginSpec?: string;
+    installedSkills?: string[];
+    cautionHits?: Array<{ file: string; ruleId: string; snippet: string }>;
+  }> => ({ success: true }));
   const installFromLocalZip = vi.fn(async (..._a: unknown[]) => ({
     pluginSpec: 'demo@local-zip',
     installedSkills: ['demo'],
@@ -497,6 +502,34 @@ describe('会话挂载', () => {
       error: 'SKILL_ZIP_MISSING_SKILL_MD: zip has no SKILL.md',
     });
   });
+
+  it('SKILL_INSTALL_LOCAL_ZIP 转发 cautionConfirmationToken', async () => {
+    await call(SKILL_CHANNELS.SKILL_INSTALL_LOCAL_ZIP, {
+      archiveBase64: Buffer.from('zip').toString('base64'),
+      cautionConfirmationToken: 'tok-local',
+    });
+    expect(svc.installFromLocalZip).toHaveBeenCalledWith(expect.any(Buffer), {
+      force: true,
+      enableAfterInstall: true,
+      cautionConfirmationToken: 'tok-local',
+    });
+  });
+
+  it('SKILL_INSTALL_LOCAL_ZIP 确认门返回契约而不是通用 error', async () => {
+    const { SkillCautionConfirmationRequiredError } = await import('../../../src/host/skills/marketplace/skillInstallCautionGate');
+    const confirmation = {
+      success: false as const,
+      code: 'SKILL_CAUTION_CONFIRMATION_REQUIRED' as const,
+      pluginSpec: 'demo@local-zip',
+      sourceTrust: 'local-marketplace' as const,
+      cautionHits: [{ file: 'demo/SKILL.md', ruleId: 'git_clean', snippet: 'git clean -fd' }],
+      confirmationToken: 'tok',
+    };
+    svc.installFromLocalZip.mockRejectedValueOnce(new SkillCautionConfirmationRequiredError(confirmation));
+    expect(await call(SKILL_CHANNELS.SKILL_INSTALL_LOCAL_ZIP, {
+      archiveBase64: Buffer.from('zip').toString('base64'),
+    })).toEqual(confirmation);
+  });
 });
 
 describe('官方 registry 安装', () => {
@@ -528,6 +561,21 @@ describe('官方 registry 安装', () => {
       pinnedCommit: 'b'.repeat(40),
     }), expect.anything());
     expect(svc.discovery.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('REGISTRY_INSTALL 带回 official cautionHits', async () => {
+    svc.registry.getEntry.mockResolvedValue(freshEntry);
+    const cautionHits = [{ file: 'SKILL.md', ruleId: 'git_clean', snippet: 'git clean -fd' }];
+    svc.marketplaceInstall.mockResolvedValue({
+      success: true,
+      pluginSpec: 'figma-skill@official-registry',
+      installedSkills: ['figma'],
+      cautionHits,
+    });
+    expect(await call(SKILL_CHANNELS.REGISTRY_INSTALL, 'figma-skill')).toEqual({
+      success: true,
+      cautionHits,
+    });
   });
 
   it('REGISTRY_INSTALL 找不到 entry 时不进入安装链', async () => {

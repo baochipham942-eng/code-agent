@@ -310,6 +310,21 @@ const agentHandlers: RawDomainRouteHandlers<AgentDomainRequest, AgentRouteCtx> =
       data: await getAgentWorktreeReview(agentId),
     };
   },
+  runInteractiveCommand: async (_getAppService, payload) => {
+    // 两条异步加载的理由与 sendMemberInput 相同：静态 import 会把 TaskManager →
+    // services 索引整棵拉进本模块加载图，mock 了 platform 的宿主单测在 import 期就炸。
+    const { runInteractiveCommand } = await import('../app/interactiveRunCommand');
+    const req = (payload ?? {}) as { sessionId?: unknown; command?: unknown };
+    // refused/denied/failed 都是合法的业务结果（data.status 承载），不是 IPC 层错误；
+    // 非法入参在 runInteractiveCommand 内按 refused 归一。
+    return {
+      success: true,
+      data: await runInteractiveCommand({
+        sessionId: typeof req.sessionId === 'string' ? req.sessionId : '',
+        command: typeof req.command === 'string' ? req.command : '',
+      }),
+    };
+  },
 };
 
 const agentRoutes = defineDomainRoutes<AgentDomainRequest, AgentRouteCtx>(AgentSchemas.REQUEST, agentHandlers, {

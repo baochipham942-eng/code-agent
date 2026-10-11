@@ -304,7 +304,12 @@ export function createApp(deps: CreateAppDeps): express.Express {
   // registerCompanionShutdown 只保存一个回调（webServer.ts 的 stopCompanion 单槽），
   // 必须注册一次组合回调；companion 侧句柄在 db 分支里接线，未接线时安全跳过。
   let companionLan: { stop(): Promise<void>; lanAdvertisement(): { endpoint: string; altEndpoint: string | null; candidates: string[] } | null } | undefined;
-  let companionRelay: { stop(): Promise<void>; routeFor(deviceId: string): import('../shared/contract/companionRelay').CompanionRelayRoute | null; connected: boolean } | undefined;
+  let companionRelay: {
+    stop(): Promise<void>;
+    routeFor(deviceId: string): import('../shared/contract/companionRelay').CompanionRelayRoute | null;
+    connected: boolean;
+    legacyUsageSummary(): import('../shared/contract/companionManagement').CompanionRelayLegacyUsage | null;
+  } | undefined;
   let companionRelayAbandoned = false;
   let companionRelayAccount: ReturnType<typeof startCompanionRelayAccountIfConfigured> | null = null;
   const idleSleepInhibitor = new IdleSleepInhibitor(
@@ -554,11 +559,17 @@ export function createApp(deps: CreateAppDeps): express.Express {
       deviceId => companionRelayAccount?.relayRoute(deviceId) ?? null,
       // 跨网连接状态块（N-COMPANION-RELAY-ACCOUNT-DESKTOP-STATUS）：照 relayRoute 的方式注入取值回调。
       // 「配没配中继」由 account === 'off' 表达（没配时账号通道自报 off）；缺省日志已由两条通道启动时打过。
-      () => ({
-        legacy: companionRelay?.connected ? 'connected' as const : 'disconnected' as const,
-        // 句柄还没赋上（db 分支未接线/启动瞬间）时按没开通报：那种场景下整个 manage 口都不存在。
-        ...(companionRelayAccount?.status() ?? { account: 'off' as const }),
-      }),
+      () => {
+        // 旧凭据存量统计（N-COMPANION-RELAY-LEGACY-COUNT）：共享凭据通道起着才带；可选字段，旧
+        // renderer 容忍缺省。句柄闭包现取——与上面 legacy 的取值同拍。
+        const legacyUsage = companionRelay?.legacyUsageSummary();
+        return {
+          legacy: companionRelay?.connected ? 'connected' as const : 'disconnected' as const,
+          // 句柄还没赋上（db 分支未接线/启动瞬间）时按没开通报：那种场景下整个 manage 口都不存在。
+          ...(companionRelayAccount?.status() ?? { account: 'off' as const }),
+          ...(legacyUsage ? { legacyUsage } : {}),
+        };
+      },
       // 配对信息随 welcome 带电脑账号邮箱：手机登录页预填 + 「这台电脑属于谁」的账号一致性核对。
       () => getAuthService().getCurrentUser()?.email ?? null,
       // LAN 连接层留痕透传（N-MOBILE-SEND-RESULT-LOST）。

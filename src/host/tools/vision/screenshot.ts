@@ -18,6 +18,7 @@ import {
   type BrowserComputerVisualObservation,
 } from '../../../shared/utils/browserComputerRedaction';
 import { detectScreenshotFailureCause } from './screenshotFailureCause';
+import { getToolScreenshotDir } from '../utils/toolScreenshotDir';
 
 const execAsync = promisify(exec);
 
@@ -137,7 +138,7 @@ Returns the path to the saved screenshot file, plus AI analysis if analyze=true.
       },
       outputPath: {
         type: 'string',
-        description: 'Path to save the screenshot (default: temp directory)',
+        description: 'Path to save the screenshot (default: app data directory, outside the workspace)',
       },
       region: {
         type: 'object',
@@ -171,10 +172,11 @@ Returns the path to the saved screenshot file, plus AI analysis if analyze=true.
     const analysisPrompt = (params.prompt as string) || '请描述并分析这个截图的内容，包括界面元素、文字、按钮等。如果包含代码或文档，请提取关键信息。';
 
     // Generate output path
+    // 无显式 outputPath 时落数据目录下按会话隔离的子目录（N-RETENTION-SHOTS-APPDIR），
+    // 不再写用户工作目录；显式 outputPath 行为不变。
     const timestamp = Date.now();
     const defaultPath = path.join(
-      context.workingDirectory,
-      '.screenshots',
+      getToolScreenshotDir(context.sessionId),
       `screenshot_${timestamp}.png`
     );
     const outputPath = (params.outputPath as string) || defaultPath;

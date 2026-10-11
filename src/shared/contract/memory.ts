@@ -182,6 +182,23 @@ export interface MemoryEntryBatchReviewResult {
   skipped: Array<{ entryId: string; reason: string }>;
 }
 
+/** /init-memory 产出的固定草稿主题（id = hash(projectDir + topic)，重跑稳定） */
+export type ProjectMemoryDraftTopic = 'tech-stack' | 'directory-layout' | 'common-commands' | 'readme-purpose';
+
+export interface ProjectMemoryDraftRequest {
+  projectDir: string;
+}
+
+export interface ProjectMemoryDraftResult {
+  projectDir: string;
+  /** 本次写入的候选条数 */
+  written: number;
+  /** 跳过的主题：同键已存在（existing-key）或来源缺失（source-absent） */
+  skipped: Array<{ topic: ProjectMemoryDraftTopic; reason: 'existing-key' | 'source-absent' }>;
+  /** 本次写入的候选条目（全部 status: 'candidate'） */
+  entries: MemoryEntry[];
+}
+
 export interface MemoryEntry {
   id: string;
   schemaVersion: 2;

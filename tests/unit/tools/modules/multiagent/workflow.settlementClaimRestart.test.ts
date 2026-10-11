@@ -215,10 +215,6 @@ describe('workflow settlement claim across a simulated process restart', () => {
     expect(recordRecoveryMock).toHaveBeenCalledTimes(1);
     const drained1 = p1.registry.drainCompletionNotifications({ sessionId: 'sess-restart' });
     expect(drained1).toHaveLength(1);
-    const claimRow = db1.prepare(
-      'SELECT COUNT(*) as c FROM workflow_settlement_claims WHERE run_id = ? AND terminal_status = ?',
-    ).get(runId, 'failed') as { c: number };
-    expect(claimRow.c).toBe(1);
 
     // ── 重启：模块级 Set 与注册表单例随 resetModules 蒸发；sqlite 文件 close 后重开 ──
     db1.close();
@@ -237,6 +233,11 @@ describe('workflow settlement claim across a simulated process restart', () => {
     // 如实断言 1 条——去重信号是上面的宣布次数，不是这里的队列长度。
     const drained2 = p2.registry.drainCompletionNotifications({ sessionId: 'sess-restart' });
     expect(drained2).toHaveLength(1);
+    // 后置条件：durable claim 行确实落库（进程 1 写入，跨重启存活）。
+    const claimRow = db2.prepare(
+      'SELECT COUNT(*) as c FROM workflow_settlement_claims WHERE run_id = ? AND terminal_status = ?',
+    ).get(runId, 'failed') as { c: number };
+    expect(claimRow.c).toBe(1);
   });
 
   it('a rerun whose previous process never settled still announces exactly once (no stale claim)', async () => {

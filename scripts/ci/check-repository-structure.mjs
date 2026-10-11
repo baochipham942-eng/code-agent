@@ -62,9 +62,13 @@ const limits = {
   // 2026-09-30 +1: scripts/bundle-frontend-slides-skill.mjs（N-PPT-SKILL-DEADEND：把
   // frontend-slides skill 的 merge-to-*.mjs 打成自带依赖的 .bundle.mjs，生成物头注释回指此脚本；
   // 与 build-audio-capture.sh / fetch-rtk.sh 同族的构建输入生成器，留在直属层）。
+  // 2026-10-06 +1: scripts/audit-orphan-candidates.mjs（N-ORPHAN-WIRING-AUDIT：只读
+  // 孤儿能力审计候选生成器，读两份 knip 生产基线产三层候选清单，产出被
+  // docs/audits/2026-10-06-orphan-wiring-audit.md 引用；与 gdpval-rubric-score.ts 同族
+  // 的稳定 CLI 入口，任务书按直属路径引用）。
   // 2026-10-07 +1: scripts/check-refactor-bundle-identical.mjs（N-REFACTOR-BUNDLE-GATE：
   // 手工验收入口，用固定 esbuild 选项证明大文件拆分没有改变 bundle 字节内容）。
-  directScriptFiles: 164,
+  directScriptFiles: 165,
   // 15: the Poppler promotion boundary is split across two workflows on purpose —
   // build-poppler-sidecar.yml only reviews candidates and can never publish, while
   // promote-poppler-sidecar.yml holds the OSS credentials and publishes them.

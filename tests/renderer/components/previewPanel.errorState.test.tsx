@@ -192,6 +192,30 @@ describe('ArtifactStandingRefresh 弹窗保存', () => {
     });
   });
 
+  it('既有任务已被删除：updateJob 返回 null 时保留弹窗并显示保存失败', async () => {
+    cronCalls.updateJob.mockResolvedValueOnce(null);
+    mockPublishInfo({
+      jobId: 'job-deleted-before-save',
+      enabled: true,
+      cadence: 'daily',
+      instruction: '旧指令',
+    });
+    render(<ArtifactStandingRefresh filePath="/tmp/wt/weekly-report.json" />);
+    await waitFor(() => screen.getByTestId('artifact-standing-refresh-chip'));
+
+    fireEvent.click(screen.getByTestId('artifact-standing-refresh-chip'));
+    await waitFor(() => screen.getByDisplayValue('旧指令'));
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => screen.getByTestId('standing-refresh-save-error'));
+    expect(cronCalls.updateJob).toHaveBeenCalledWith(
+      'job-deleted-before-save',
+      expect.any(Object),
+    );
+    expect(screen.getByPlaceholderText(/汇总本周进展/)).not.toBeNull();
+    expect(screen.getByTestId('standing-refresh-save-error').textContent).toBe('保存自动更新设置失败');
+  });
+
   it('保存失败：显示人话错误，不抛原始 IPC 文本', async () => {
     cronCalls.createJob.mockRejectedValueOnce(new Error('IPC blew up with raw stack'));
     render(<ArtifactStandingRefresh filePath="/tmp/wt/weekly-report.json" />);

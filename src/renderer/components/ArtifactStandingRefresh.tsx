@@ -90,8 +90,12 @@ export const ArtifactStandingRefresh = forwardRef<ArtifactStandingRefreshHandle,
         { path: filePath, instruction: trimmed, cadence },
         workingDirectoryOf(filePath),
       );
-      if (standingRefresh?.jobId) await cronClient.updateJob(standingRefresh.jobId, input);
-      else await cronClient.createJob(input);
+      if (standingRefresh?.jobId) {
+        const updated = await cronClient.updateJob(standingRefresh.jobId, input);
+        if (!updated) throw new Error('Standing refresh job was not found');
+      } else {
+        await cronClient.createJob(input);
+      }
       setDialogOpen(false);
       setReloadNonce((nonce) => nonce + 1);
     } catch (err) {

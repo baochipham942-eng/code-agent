@@ -2,7 +2,8 @@
 // N-SANDBOX-ESCALATE-DIR-HOST · 目录子树一次性扩权（host 侧）
 // 边界断言按设计稿 docs/architecture/designs/sandbox-escalate-dir.md：
 // 边界二「授权根必须恰是拒绝路径的 canonical 形式，绝不向上推断祖先」、
-// 边界三「root/home/home 祖先/home 直接子目录永不 offer」、卡文案逐字（含 D5-A 例外句）。
+// 边界三「root/home/home 祖先/home 直接子目录永不 offer」、卡文案逐字（D5-A 例外句随
+// DIR-FORBIDDEN 的禁写名机制同批落地，先行版不带，见专项测试）。
 // 单文件版 A1–A12 仍由 tests/unit/tools/modules/shell/bash.test.ts 钉死，本文件只测目录分支。
 // ============================================================================
 
@@ -308,8 +309,10 @@ describe('bashModule directory escalation', () => {
     dirs.push(dir);
     return dir;
   };
+  // D5 结论（r1）：例外句「（其中凭据与配置类文件仍不可写）」随 DIR-FORBIDDEN 的禁写名
+  // deny 行同批恢复，先行版卡面不带。
   const DIR_CARD_REASON = (path: string) =>
-    `沙盒拦截了这一步：它想写入目录 ${path}（含其中全部内容）。允许仅这一次写入这个目录及其中内容并重跑？（其中凭据与配置类文件仍不可写）`;
+    `沙盒拦截了这一步：它想写入目录 ${path}（含其中全部内容）。允许仅这一次写入这个目录及其中内容并重跑？`;
 
   beforeEach(() => {
     modeMgr.setMode('default', true);
@@ -360,6 +363,29 @@ describe('bashModule directory escalation', () => {
     if (result.ok) {
       expect(result.meta?.sandboxEscalation).toEqual({ path: dir, decision: 'approved', granularity: 'directory' });
     }
+  });
+
+  it('does not promise the credential/config exception before its enforcement lands (D5 r1)', async () => {
+    // D5 结论（r1 修订）：例外句必须随禁写名例外机制（DIR-FORBIDDEN 单的 deny 行 / ro-bind
+    // 盖）同批上卡面。机制未落地时写上该句，用户以为凭据受保护，重跑沙箱却只追加
+    // readWriteRoots、无任何禁写名 deny 行——子树内 .env* / .git/hooks / .npmrc 照写不误，
+    // 「开口子 ⊆ 卡面承诺」被反转成承诺比开口宽，违反铁律「卡片说的就是重跑打开的」。
+    const dir = tmp('escalate-dir-no-promise-');
+    wrapMock
+      .mockReturnValueOnce({
+        command: `printf '%s\\n' "EPERM: operation not permitted, open '${dir}'" >&2; exit 1`,
+        cleanup: cleanupMock,
+      })
+      .mockReturnValueOnce({ command: "printf 'retried\\n'", cleanup: cleanupMock });
+    const canUse = vi.fn().mockResolvedValue({ allow: true as const });
+    const handler = await bashModule.createHandler();
+    await handler.execute({ command: `mkdir -p ${dir}` }, makeCtx(), canUse);
+    const escalationCalls = canUse.mock.calls.filter(([toolName]) => toolName === 'bash');
+    expect(escalationCalls).toHaveLength(1);
+    const reason = escalationCalls[0]?.[2] as string;
+    expect(reason).toBe(DIR_CARD_REASON(dir));
+    expect(reason).not.toContain('其中凭据与配置类文件仍不可写');
+    expect(reason).not.toContain('仍不可写');
   });
 
   it('grants exactly the denied mkdir path and never its nearest existing ancestor (边界二反例)', async () => {

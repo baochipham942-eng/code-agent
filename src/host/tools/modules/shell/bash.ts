@@ -845,8 +845,10 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         const offeredPath = offeredFilePath ?? offeredDirectoryPath;
         if (!offeredPath) throw error;
 
+        // 目录卡文案 = 设计表目录行原文；D5-A 例外句「（其中凭据与配置类文件仍不可写）」
+        // 随 DIR-FORBIDDEN 的禁写名 deny 行同批恢复——机制未落地时写上即承诺比开口宽（r1）。
         const escalationReason = offeredDirectoryPath
-          ? `沙盒拦截了这一步：它想写入目录 ${offeredDirectoryPath}（含其中全部内容）。允许仅这一次写入这个目录及其中内容并重跑？（其中凭据与配置类文件仍不可写）`
+          ? `沙盒拦截了这一步：它想写入目录 ${offeredDirectoryPath}（含其中全部内容）。允许仅这一次写入这个目录及其中内容并重跑？`
           : `沙盒拦截了这一步：它想写入文件 ${offeredPath}。允许仅这一次写入这个文件并重跑？`;
         let permit: Awaited<ReturnType<CanUseToolFn>>;
         try {

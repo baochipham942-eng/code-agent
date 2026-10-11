@@ -29,6 +29,7 @@ import {
 } from '../../shell/sandboxFailureDiagnostics';
 import {
   SANDBOX_ESCALATION_DECLINED_MESSAGE,
+  shouldOfferDirectoryEscalation,
   shouldOfferEscalation,
   type SandboxEscalationMeta,
 } from '../../shell/sandboxEscalation';
@@ -374,7 +375,12 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
       sandboxCleanup = undefined;
       cleanup?.();
     };
-    const applySandbox = (cmd: string, allowNetwork: boolean, extraWriteFile?: string): { ok: true; command: string } | { ok: false; error: string } => {
+    const applySandbox = (
+      cmd: string,
+      allowNetwork: boolean,
+      extraWriteFile?: string,
+      extraWriteRoot?: string,
+    ): { ok: true; command: string } | { ok: false; error: string } => {
       if (!sandboxDecision.apply) return { ok: true, command: cmd };
       try {
         if (writeFence && (!fenceRoot || !isOsWriteFenceAvailable())) {
@@ -404,8 +410,12 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
           readOnlyRoots: ctx.workspaceScope?.roots
             .filter((root) => root.access === 'read_only')
             .map((root) => resolveCanonicalRunPath(root.path)),
-          readWriteRoots: baseWriteRoots,
-          // 一次性扩权只放开这一个文件（不含子孙），与审批卡上写的路径完全一致
+          // 目录子树扩权：基座写根（缺省回退 cwd，与 wrapCommand 的默认一致）之上追加该目录，
+          // 绝不整体替换——替换会丢掉工作区写根
+          readWriteRoots: extraWriteRoot
+            ? [...(baseWriteRoots ?? [workingDirectory]), extraWriteRoot]
+            : baseWriteRoots,
+          // 一次性文件扩权只放开这一个文件（不含子孙），与审批卡上写的路径完全一致
           readWriteFiles: extraWriteFile ? [extraWriteFile] : undefined,
           deniedReadRoots: [
             ...(ctx.deniedReadRoots ?? []),
@@ -811,7 +821,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
           errObj.stderr,
         ].filter((value): value is string => typeof value === 'string').join('\n');
         const deniedPath = sandboxDeniedWritePath(failureText);
-        const offeredPath = shouldOfferEscalation({
+        const eligibility = {
           sandboxDecision,
           foreground: true,
           pty: false,
@@ -826,10 +836,20 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
           newFileGrantSupported: getSandboxManager().supportsNewFileWriteGrant(),
           workingDirectory,
           policyEnforcer: ctx.policyEnforcer as PolicyEnforcer | null | undefined,
-        });
+        };
+        // 文件门优先：文件拒绝今天看到哪张卡一个字不改；文件不合格再看目录子树（N-SANDBOX-ESCALATE-DIR）
+        const offeredFilePath = shouldOfferEscalation(eligibility);
+        const offeredDirectoryPath = offeredFilePath
+          ? undefined
+          : shouldOfferDirectoryEscalation(eligibility);
+        const offeredPath = offeredFilePath ?? offeredDirectoryPath;
         if (!offeredPath) throw error;
 
-        const escalationReason = `沙盒拦截了这一步：它想写入文件 ${offeredPath}。允许仅这一次写入这个文件并重跑？`;
+        // 目录卡文案 = 设计表目录行原文；D5-A 例外句「（其中凭据与配置类文件仍不可写）」
+        // 随 DIR-FORBIDDEN 的禁写名 deny 行同批恢复——机制未落地时写上即承诺比开口宽（r1）。
+        const escalationReason = offeredDirectoryPath
+          ? `沙盒拦截了这一步：它想写入目录 ${offeredDirectoryPath}（含其中全部内容）。允许仅这一次写入这个目录及其中内容并重跑？`
+          : `沙盒拦截了这一步：它想写入文件 ${offeredPath}。允许仅这一次写入这个文件并重跑？`;
         let permit: Awaited<ReturnType<CanUseToolFn>>;
         try {
           permit = await canUseTool('bash', args, escalationReason, {
@@ -840,7 +860,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
             details: {
               command: normalizedCommand,
               deniedPath: offeredPath,
-              action: 'sandbox_escalate_once',
+              action: offeredDirectoryPath ? 'sandbox_escalate_dir_once' : 'sandbox_escalate_once',
             },
           });
         } catch {
@@ -848,14 +868,23 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         }
 
         if (!permit.allow) {
-          sandboxEscalationMeta = { path: offeredPath, decision: 'declined' };
+          sandboxEscalationMeta = offeredDirectoryPath
+            ? { path: offeredPath, decision: 'declined', granularity: 'directory' }
+            : { path: offeredPath, decision: 'declined' };
           throw error;
         }
 
-        sandboxEscalationMeta = { path: offeredPath, decision: 'approved' };
+        sandboxEscalationMeta = offeredDirectoryPath
+          ? { path: offeredPath, decision: 'approved', granularity: 'directory' }
+          : { path: offeredPath, decision: 'approved' };
         escalationAttempted = true;
         cleanupSandbox();
-        const retrySandbox = applySandbox(commandForExecution, allowNetworkFg, offeredPath);
+        const retrySandbox = applySandbox(
+          commandForExecution,
+          allowNetworkFg,
+          offeredDirectoryPath ? undefined : offeredPath,
+          offeredDirectoryPath,
+        );
         if (!retrySandbox.ok || !sandboxDecision.sandboxed) {
           throw new Error(
             retrySandbox.ok ? 'OS sandbox retry was not applied' : retrySandbox.error,

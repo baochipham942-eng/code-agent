@@ -254,6 +254,8 @@ describe('memoryUsageEviction（seed 注入用量淘汰）', () => {
     setUsage(fresh.rowId, 1, NOW - 5 * DAY_MS);
     setUsage(boundary.rowId, 2, NOW - MEMORY.SEED_STALE_USED_MS);
     setUsage(noStamp.rowId, 5, null);
+    // 有次数无时间戳 + 行本身很老：仍不淘汰（不回落 updatedAt）
+    backdate(noStamp.rowId, NOW - 400 * DAY_MS);
 
     const ids = await injectedEntryIds();
     expect(ids).toContain(neverOld.entryId);

@@ -70,7 +70,10 @@ const limits = {
   // 2026-10-10 +1: scripts/pending-concurrency-baseline.mjs
   // （N-PENDING-INPLACE-RESOLVE-BASELINE：任务要求的只读基线数据入口，固定直属路径
   // 供一次性分析与证据复跑；不导出业务模块，也不适合折入 scripts/lib/）。
-  directScriptFiles: 166,
+  // 2026-10-11 +1: scripts/sandbox-escalate-dir-seatbelt-probe.sh
+  // （N-SANDBOX-ESCALATE-DIR-SEATBELT：macOS seatbelt 真机试验入口，任务书和试验记录
+  // 直接引用直属路径；一次性探针不适合折入 scripts/lib/）。
+  directScriptFiles: 167,
   // 15: the Poppler promotion boundary is split across two workflows on purpose —
   // build-poppler-sidecar.yml only reviews candidates and can never publish, while
   // promote-poppler-sidecar.yml holds the OSS credentials and publishes them.

@@ -38,6 +38,17 @@ describe('TeamRecipe', () => {
     expect(deepResearch?.members[0].taskTemplate).not.toBe(deepResearch?.members[1].taskTemplate);
   });
 
+  it('quickPrompts 是可选字段：旧配方不带它、新配方带上它都照常过校验', () => {
+    const legacyRecipe = makeRecipe([{ roleId: '溯真', taskTemplate: '研究 {topic}' }]);
+    expect(validateTeamRecipe(legacyRecipe, KNOWN)).toEqual([]);
+
+    const withPrompts: TeamRecipe = {
+      ...legacyRecipe,
+      quickPrompts: ['帮我围绕这个主题做一次调研'],
+    };
+    expect(validateTeamRecipe(withPrompts, KNOWN)).toEqual([]);
+  });
+
   it('无 id 时 member key 回退到 roleId', () => {
     expect(teamRecipeMemberKey({ roleId: '溯真', taskTemplate: 'x' })).toBe('溯真');
   });

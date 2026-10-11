@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 // IACT !run 执行链路（N-IACT-RUN-EXEC-UI）：点击按钮 → agent 域 runInteractiveCommand
 // （当前 sessionId + 载荷串逐字节原样，可见链接文字绝不参与），running / completed /
-// refused / denied / failed 就地渲染在按钮下方；输出只存组件内存（零 store / storage
-// 写入，重挂载即消失），且点击永远不会变成聊天消息（无 iact:run 监听、onSend 不动）。
+// refused / denied / failed 就地渲染在按钮下方；执行状态存内存 store
+// （runCommandState，按 messageId+command 组合 key）：零 storage / 会话库写入，
+// 消息列表重渲染导致卡片 remount 不丢 running/输出（2026-10-11 rework），页面刷新
+// 才清空；且点击永远不会变成聊天消息（无 iact:run 监听、onSend 不动）。
 
 import React from 'react';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
@@ -49,8 +51,12 @@ function resetCapabilityStore(): void {
   });
 }
 
-async function renderRunCard(content: string) {
-  const utils = render(<MessageContent content={content} isUser={false} messageId="assistant-1" />);
+// runCommandState 是 module 级单例（这正是 remount 不丢状态的机制），用例间不重置，
+// 靠每次渲染拿唯一 messageId 保证组合 key 互不串；要验 remount 的用例显式传同一个 id。
+let renderSeq = 0;
+
+async function renderRunCard(content: string, messageId = `assistant-${++renderSeq}`) {
+  const utils = render(<MessageContent content={content} isUser={false} messageId={messageId} />);
   const commandEl = await waitFor(() => {
     const el = utils.container.querySelector('[data-iact-run-command], [data-iact-run-inert]');
     expect(el).toBeTruthy();
@@ -214,10 +220,11 @@ describe('IACT !run 执行链路', () => {
     expect(runInvoke).not.toHaveBeenCalled();
   });
 
-  // (e) 输出只在内存：零 storage / store 写入，重挂载即消失
-  it('persists nothing: zero storage and store writes, output gone after remount', async () => {
+  // (e) 输出只在内存：零 storage / 会话库写入；remount（消息列表重渲染）不丢，
+  // 另一条消息里的同命令卡不串状态
+  it('persists nothing: zero storage and session-store writes, output survives remount', async () => {
     runInvoke.mockResolvedValue({ status: 'completed', output: '不留痕的输出', exitCode: 0 });
-    const first = await renderRunCard(`[跑](${runHref('echo hi')})`);
+    const first = await renderRunCard(`[跑](${runHref('echo hi')})`, 'assistant-persist');
 
     const localSetItem = vi.spyOn(window.localStorage, 'setItem');
     const sessionSetItem = vi.spyOn(window.sessionStorage, 'setItem');
@@ -235,11 +242,43 @@ describe('IACT !run 执行链路', () => {
       storeSetState.mockRestore();
     }
 
+    // 同一条消息重渲染（卡片 remount）：输出与状态原样接回，不是重置成 idle
     first.unmount();
-    const second = await renderRunCard(`[跑](${runHref('echo hi')})`);
-    expect(second.container.querySelector('[data-iact-run-output]')).toBeNull();
-    expect(second.container.querySelector('[data-iact-run-status]')).toBeNull();
-    expect(second.container.querySelector('[data-iact-run-command]')?.textContent).toBe('echo hi');
+    const second = await renderRunCard(`[跑](${runHref('echo hi')})`, 'assistant-persist');
+    expect(second.container.querySelector('[data-iact-run-output]')?.textContent).toBe('不留痕的输出');
+    expect(second.container.querySelector('[data-iact-run-status="completed"]')).toBeTruthy();
+
+    // 另一条消息里的同命令卡是另一个 key：不接別人的状态，自己 idle
+    const other = await renderRunCard(`[跑](${runHref('echo hi')})`, 'assistant-other');
+    expect(other.container.querySelector('[data-iact-run-output]')).toBeNull();
+    expect(other.container.querySelector('[data-iact-run-status]')).toBeNull();
+    expect(other.container.querySelector('[data-iact-run-command]')?.textContent).toBe('echo hi');
+  });
+
+  // 2026-10-11 UI 验收缺陷的钉子：消息列表重渲染让卡片 remount，执行状态不能丢——
+  // running 期间被卸载重挂仍是 running（不能再发一条 IPC）；审批期间整卡无挂载，
+  // 结果落地后再挂回来必须能看到 completed + 输出
+  it('keeps running state and the eventual result across a mid-run remount', async () => {
+    const gate = deferred<unknown>();
+    runInvoke.mockReturnValue(gate.promise as Promise<never>);
+    const first = await renderRunCard(`[跑](${runHref('sleep 3')})`, 'assistant-remount');
+    fireEvent.click(first.button);
+    await waitFor(() => expect(first.container.querySelector('[data-iact-run-status="running"]')).toBeTruthy());
+
+    first.unmount();
+    const second = await renderRunCard(`[跑](${runHref('sleep 3')})`, 'assistant-remount');
+    expect(second.container.querySelector('[data-iact-run-status="running"]')).toBeTruthy();
+    expect(second.button.disabled).toBe(true);
+    fireEvent.click(second.button); // remount 换出的新实例再点一次，也不许并发第二条 IPC
+    expect(runInvoke).toHaveBeenCalledTimes(1);
+
+    // 审批停留期间列表又重渲染了一轮：IPC 在完全无挂载时落地
+    second.unmount();
+    gate.resolve({ status: 'completed', output: '审批后回来的输出', exitCode: 0 });
+    const third = await renderRunCard(`[跑](${runHref('sleep 3')})`, 'assistant-remount');
+    await waitFor(() => expect(third.container.querySelector('[data-iact-run-status="completed"]')).toBeTruthy());
+    expect(third.container.querySelector('[data-iact-run-output]')?.textContent).toBe('审批后回来的输出');
+    expect(third.button.disabled).toBe(false);
   });
 
   // (f) 点击永不变成聊天消息：没有 iact:run 监听，onSend 不被调用
@@ -258,7 +297,7 @@ describe('IACT !run 执行链路', () => {
     const view = render(
       <>
         <ChatInput onSend={onSend} />
-        <MessageContent content={`[跑一下](${runHref('echo hi')})`} isUser={false} messageId="assistant-1" />
+        <MessageContent content={`[跑一下](${runHref('echo hi')})`} isUser={false} messageId="assistant-nosend" />
       </>,
     );
     const commandEl = await waitFor(() => {

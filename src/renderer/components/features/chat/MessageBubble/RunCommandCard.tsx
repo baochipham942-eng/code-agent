@@ -4,50 +4,20 @@
 // - 点击走 agent 域 IPC `runInteractiveCommand`（真 Bash 管道 + 审批卡，见
 //   src/host/app/interactiveRunCommand.ts），不再 dispatch iact:run、不再发聊天消息；
 // - 载荷串原样下发（不 trim、不改写），可见链接文字永远不参与执行；
-// - 输出只存组件 state（业主拍板 in-memory only）：不进 store / localStorage /
-//   消息模型，重挂载即消失；
+// - 执行状态存 runCommandState（内存 store，按 messageId+command 组合 key），
+//   不落任何 storage / 消息模型：消息列表重渲染导致卡片 remount 也不丢
+//   running/completed/output（2026-10-11 rework），页面刷新即清空；
 // - 裸 !run / 坏编码 / 空 cmd：不渲染按钮，只留等宽纯文本（旧消息 fail-closed）。
 
-import { useState } from 'react';
 import { Loader2, Terminal } from 'lucide-react';
-import { IPC_DOMAINS } from '@shared/ipc';
-import ipcService from '../../../../services/ipcService';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useSessionStore } from '../../../../stores/sessionStore';
+import { refuseRunCommand, startRunCommand, useRunCommandPhase } from '../../../../stores/runCommandState';
 
-/** host 侧 runInteractiveCommand 的返回形状（src/host/app/interactiveRunCommand.ts） */
-interface InteractiveRunResult {
-  status: 'completed' | 'refused' | 'denied' | 'failed';
-  output: string;
-  exitCode?: number;
-  reason?: string;
-}
-
-type RunCardPhase =
-  | { kind: 'idle' }
-  | { kind: 'running' }
-  | { kind: 'finished'; result: InteractiveRunResult };
-
-/** IPC data 不可信（跨进程边界），按字段收窄，坏形状归 failed */
-function normalizeRunResult(value: unknown): InteractiveRunResult {
-  if (!value || typeof value !== 'object') {
-    return { status: 'failed', output: '', reason: 'unexpected host response' };
-  }
-  const raw = value as Partial<InteractiveRunResult>;
-  const status = raw.status === 'completed' || raw.status === 'refused'
-    || raw.status === 'denied' || raw.status === 'failed' ? raw.status : 'failed';
-  return {
-    status,
-    output: typeof raw.output === 'string' ? raw.output : '',
-    exitCode: typeof raw.exitCode === 'number' ? raw.exitCode : undefined,
-    reason: typeof raw.reason === 'string' ? raw.reason : undefined,
-  };
-}
-
-export function RunCommandCard({ command, label }: { command: string | null; label?: string }) {
+export function RunCommandCard({ command, label, messageId }: { command: string | null; label?: string; messageId?: string }) {
   const { t } = useI18n();
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
-  const [phase, setPhase] = useState<RunCardPhase>({ kind: 'idle' });
+  const phase = useRunCommandPhase(messageId, command ?? '');
 
   if (command === null) {
     return (
@@ -59,30 +29,10 @@ export function RunCommandCard({ command, label }: { command: string | null; lab
     if (phase.kind === 'running') return;
     // 没有当前会话就没有审批链可挂，直接就地 refused，不碰 IPC
     if (!currentSessionId) {
-      setPhase({
-        kind: 'finished',
-        result: { status: 'refused', output: '', reason: t.deliveryExperience.runNoSession },
-      });
+      refuseRunCommand(messageId, command, t.deliveryExperience.runNoSession);
       return;
     }
-    const sessionId = currentSessionId;
-    setPhase({ kind: 'running' });
-    void (async () => {
-      try {
-        const data = await ipcService.invokeDomain<InteractiveRunResult>(
-          IPC_DOMAINS.AGENT,
-          'runInteractiveCommand',
-          { sessionId, command },
-        );
-        setPhase({ kind: 'finished', result: normalizeRunResult(data) });
-      } catch (error) {
-        // IPC 层拒绝（DomainInvokeError 等）按 failed 呈现，错误消息透传
-        setPhase({
-          kind: 'finished',
-          result: { status: 'failed', output: '', reason: error instanceof Error ? error.message : String(error) },
-        });
-      }
-    })();
+    startRunCommand(messageId, command, currentSessionId);
   };
 
   const finished = phase.kind === 'finished' ? phase.result : null;

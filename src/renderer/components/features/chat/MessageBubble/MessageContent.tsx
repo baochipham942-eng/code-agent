@@ -431,7 +431,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         // IACT: [label](!run?cmd=<percent-encoded>) — 卡片化就地执行（含 running/
         // completed/refused/denied/failed 状态与输出），见 RunCommandCard。
         if (href === '!run' || (typeof href === 'string' && href.startsWith('!run?'))) {
-          return <RunCommandCard command={parseRunHref(href)} label={plainText(children)} />;
+          return <RunCommandCard command={parseRunHref(href)} label={plainText(children)} messageId={messageId} />;
         }
 
         // IACT: [filepath](!open) — click to open file in editor/Finder

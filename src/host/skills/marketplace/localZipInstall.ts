@@ -100,7 +100,7 @@ async function resolveLocalZipSkillDir(extractRoot: string): Promise<string> {
 
 async function installFromLocalZipUnlocked(
   archive: Buffer,
-  options: { force?: boolean; enableAfterInstall?: boolean; signal?: AbortSignal },
+  options: { force?: boolean; enableAfterInstall?: boolean; cautionConfirmationToken?: string; signal?: AbortSignal },
 ): Promise<InstallResult & { skillName: string }> {
   throwIfInstallAborted(options.signal);
   if (archive.byteLength === 0) {
@@ -167,6 +167,7 @@ async function installFromLocalZipUnlocked(
       existing,
       force: options.force,
       enableAfterInstall: options.enableAfterInstall !== false,
+      cautionConfirmationToken: options.cautionConfirmationToken,
       signal: options.signal,
     });
     return { ...result, skillName: parsed.name };
@@ -181,7 +182,7 @@ async function installFromLocalZipUnlocked(
  */
 export function installFromLocalZip(
   archive: Buffer,
-  options: { force?: boolean; enableAfterInstall?: boolean; signal?: AbortSignal } = {},
+  options: { force?: boolean; enableAfterInstall?: boolean; cautionConfirmationToken?: string; signal?: AbortSignal } = {},
 ): Promise<InstallResult & { skillName: string }> {
   return runExclusivePluginInstall(
     LOCAL_ZIP_MARKETPLACE,

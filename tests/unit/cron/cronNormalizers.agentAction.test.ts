@@ -62,8 +62,9 @@ describe('normalizeAction — urgencyCriteria round-trip', () => {
   it('truncates over-length input to CRON_URGENCY_CRITERIA.MAX_CHARS instead of rejecting the action', () => {
     const over = 'a'.repeat(CRON_URGENCY_CRITERIA.MAX_CHARS + 10);
     const action = normalizeAction({ type: 'agent', agentType: 'default', prompt: 'x', urgencyCriteria: over });
-    expect(action).not.toBeNull();
-    expect(action?.urgencyCriteria).toHaveLength(CRON_URGENCY_CRITERIA.MAX_CHARS);
-    expect(action?.urgencyCriteria).toBe('a'.repeat(CRON_URGENCY_CRITERIA.MAX_CHARS));
+    expect(action?.type).toBe('agent');
+    if (action?.type !== 'agent') throw new Error('expected an agent action');
+    expect(action.urgencyCriteria).toHaveLength(CRON_URGENCY_CRITERIA.MAX_CHARS);
+    expect(action.urgencyCriteria).toBe('a'.repeat(CRON_URGENCY_CRITERIA.MAX_CHARS));
   });
 });

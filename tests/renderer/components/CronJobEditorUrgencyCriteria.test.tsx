@@ -76,7 +76,7 @@ describe('N-CRON-MORNING-TRIAGE-URGENCY-RULE 编辑器紧急判据字段', () =>
   });
 
   it('改完保存：draft → 提交的 action 带 urgencyCriteria（job → draft → saved 往返）', async () => {
-    const updateJob = vi.fn(async () => makeAgentJob());
+    const updateJob = vi.fn(async (_jobId: string, _updates: unknown) => makeAgentJob());
     useCronStore.setState({ updateJob });
     openActionTab(makeAgentJob('旧判据'));
 
@@ -93,7 +93,7 @@ describe('N-CRON-MORNING-TRIAGE-URGENCY-RULE 编辑器紧急判据字段', () =>
   });
 
   it('清空后保存：提交的 action 不带 urgencyCriteria（回落缺省判据）', async () => {
-    const updateJob = vi.fn(async () => makeAgentJob());
+    const updateJob = vi.fn(async (_jobId: string, _updates: unknown) => makeAgentJob());
     useCronStore.setState({ updateJob });
     openActionTab(makeAgentJob('旧判据'));
 
@@ -101,7 +101,8 @@ describe('N-CRON-MORNING-TRIAGE-URGENCY-RULE 编辑器紧急判据字段', () =>
     fireEvent.click(screen.getByText('保存修改'));
 
     await waitFor(() => expect(updateJob).toHaveBeenCalledTimes(1), { timeout: 3000 });
-    expect(updateJob.mock.calls[0]?.[1].action).toMatchObject({ urgencyCriteria: undefined });
+    const submitted = updateJob.mock.calls[0]?.[1] as { action?: { urgencyCriteria?: string } };
+    expect(submitted?.action).toMatchObject({ urgencyCriteria: undefined });
   });
 
   it('非 agent 动作不渲染该字段；draft 往返两端默认空串', () => {

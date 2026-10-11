@@ -77,6 +77,14 @@ function createSchema(db: BetterSqlite3.Database): void {
       PRIMARY KEY (run_id, terminal_status)
     )
   `);
+  db.exec(`
+    CREATE TABLE workflow_stall_notices (
+      run_id TEXT NOT NULL,
+      epoch INTEGER NOT NULL,
+      announced_at INTEGER NOT NULL,
+      PRIMARY KEY (run_id, epoch)
+    )
+  `);
 }
 
 function git(repo: string, args: string): void {

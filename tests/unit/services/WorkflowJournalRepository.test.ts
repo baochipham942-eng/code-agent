@@ -55,6 +55,14 @@ function createSchema(db: BetterSqlite3.Database): void {
       PRIMARY KEY (run_id, terminal_status)
     )
   `);
+  db.exec(`
+    CREATE TABLE workflow_stall_notices (
+      run_id TEXT NOT NULL,
+      epoch INTEGER NOT NULL,
+      announced_at INTEGER NOT NULL,
+      PRIMARY KEY (run_id, epoch)
+    )
+  `);
 }
 
 describe('WorkflowJournalRepository', () => {
@@ -180,24 +188,47 @@ describe('WorkflowJournalRepository', () => {
     expect(repo.getRun('nope')).toBeNull();
   });
 
+  it('records each (run, epoch) stall notice once and preserves it across startRun replace', () => {
+    repo.startRun({ runId: 'wf-stall', scriptHash: 'abc', startedAt: 1000 });
+    expect(repo.recordStallNotice('wf-stall', 1, 1600)).toBe(true);
+    expect(repo.recordStallNotice('wf-stall', 1, 1700)).toBe(false);
+    expect(repo.getMaxStallEpoch('wf-stall')).toBe(1);
+    repo.startRun({ runId: 'wf-stall', scriptHash: 'def', startedAt: 2000 });
+    expect(repo.getMaxStallEpoch('wf-stall')).toBe(1);
+    expect(db.prepare('SELECT announced_at FROM workflow_stall_notices WHERE run_id = ? AND epoch = 1').get('wf-stall')).toEqual({ announced_at: 1600 });
+  });
+
+  it('lists only running workflow runs', () => {
+    repo.startRun({ runId: 'wf-running', scriptHash: 'a', startedAt: 1000 });
+    repo.startRun({ runId: 'wf-done', scriptHash: 'b', startedAt: 900 });
+    repo.finishRun({ runId: 'wf-done', status: 'completed', finishedAt: 1200, tokensSpent: 0 });
+    expect(repo.listUnfinishedRuns().map((run) => run.runId)).toEqual(['wf-running']);
+  });
+
   it('deleteRun cascades to calls', () => {
     repo.startRun({ runId: 'wf-1', scriptHash: 'abc', startedAt: 1000 });
     repo.recordCall({ runId: 'wf-1', callIndex: 1, contentHash: 'h', result: 'x', tokensUsed: 0, ts: 1 });
+    repo.recordStallNotice('wf-1', 1, 2);
     expect(repo.deleteRun('wf-1')).toBe(true);
     expect(repo.getRun('wf-1')).toBeNull();
     // 级联：calls 也清空
     const remaining = db.prepare('SELECT COUNT(*) as c FROM workflow_run_calls WHERE run_id = ?').get('wf-1') as { c: number };
     expect(remaining.c).toBe(0);
+    const notices = db.prepare('SELECT COUNT(*) as c FROM workflow_stall_notices WHERE run_id = ?').get('wf-1') as { c: number };
+    expect(notices.c).toBe(0);
     expect(repo.deleteRun('wf-1')).toBe(false);
   });
 
   it('clearAll wipes both tables', () => {
     repo.startRun({ runId: 'wf-1', scriptHash: 'abc', startedAt: 1000 });
     repo.recordCall({ runId: 'wf-1', callIndex: 1, contentHash: 'h', result: 'x', tokensUsed: 0, ts: 1 });
+    repo.recordStallNotice('wf-1', 1, 2);
     repo.clearAll();
     expect(repo.getRun('wf-1')).toBeNull();
     const c = db.prepare('SELECT COUNT(*) as c FROM workflow_run_calls').get() as { c: number };
     expect(c.c).toBe(0);
+    const notices = db.prepare('SELECT COUNT(*) as c FROM workflow_stall_notices').get() as { c: number };
+    expect(notices.c).toBe(0);
   });
 
   // ── N-WF-SETTLEMENT-DEDUPE：终态通知 claim 的 durable 键 ─────────────────────

@@ -1379,6 +1379,18 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
     )
   `);
 
+  // workflow_stall_notices - durable (run_id, epoch) key for background stall announcements.
+  // Deliberately no FK: startRun uses INSERT OR REPLACE, whose DELETE+INSERT would otherwise
+  // erase the announcement history for a reused run id.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS workflow_stall_notices (
+      run_id TEXT NOT NULL,
+      epoch INTEGER NOT NULL,
+      announced_at INTEGER NOT NULL,
+      PRIMARY KEY (run_id, epoch)
+    )
+  `);
+
   // Projects 表 (P0-2 项目空间容器) — 项目 = 目标 + 产物 + 角色 + 会话
   // 1:1 绑定 workspace（独立 ID）；workspace_key 接管项目记忆目录（内部文档 §3.1）
   db.exec(`

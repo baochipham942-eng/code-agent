@@ -95,6 +95,8 @@ export function getCronTriggerKind(job: CronJobDefinition): CronTriggerKind {
     if (context?.[EXTERNAL_WATCH.CONTEXT_KEY]) return 'external_event';
     if (context?.heartbeatTask) return 'heartbeat';
   }
+  // 'event' 调度（通道消息/群监听）与 externalWatch 同属事件触发，chip 也标「事件」。
+  if (job.scheduleType === 'event') return 'external_event';
   if (job.scheduleType === 'at') return 'at';
   if (job.scheduleType === 'every') return 'every';
   return 'cron';

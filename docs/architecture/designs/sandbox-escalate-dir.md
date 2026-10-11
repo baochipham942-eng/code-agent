@@ -178,6 +178,8 @@ sequenceDiagram
 
 **推荐 A。** mkdir 拒绝是目录版最高频的触发形状，二话不说放弃等于砍掉一半收益；而 seatbelt `subpath` 是否需要存在没有仓内试验记录，拍脑袋写进合同不如把试验做成实现单的验收第一格。B 是试验失败后的自动回退位，不是独立首选。
 
+结论：darwin: missing-directory grant allowed (mkdir allowed, write-inside allowed)；试验记录见 `docs/architecture/designs/sandbox-escalate-dir-d3-trial.md`；macOS 27.0.1 (26A434)。
+
 ### D4 [动作名与 meta]：`details.action` 与 `SandboxEscalationMeta` 怎么扩
 
 - 选项 A：**新动作名 `sandbox_escalate_dir_once` + meta 加可选 `granularity: 'file' | 'directory'`**（旧卡不写该字段或写 `'file'`）。

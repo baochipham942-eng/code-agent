@@ -119,6 +119,7 @@ const DETERMINISTIC_REPAIR_DIRECTIVES: Record<ArtifactPreviewHealthFindingCode, 
   page_error: 'Fix runtime exceptions before judging visual quality.',
   broken_image: 'Replace missing images with working local, data URI, or reachable assets.',
   missing_main_element: 'Add a visible main artifact root such as main, data-preview-root, or data-design-root.',
+  primary_button_not_visible: 'Make the primary action button visible and reachable at every tested viewport; restore hidden or clipped controls.',
   responsive_breakpoint_failure: 'Fix the breakpoint-specific failure without regressing healthy viewports.',
 };
 

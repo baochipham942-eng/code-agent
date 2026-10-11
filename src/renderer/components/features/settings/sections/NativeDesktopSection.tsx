@@ -55,6 +55,7 @@ import {
 } from './nativeDesktopActivityModel';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { DangerButton } from '../../../primitives/Button';
+import { AudioRetentionFailureLine } from './audioRetentionFailure';
 import { useI18n } from '../../../../hooks/useI18n';
 import { interpolate } from '../../../../i18n/interpolate';
 import { resolveScreenshotUrl } from '../../../../utils/resolveFileUrl';
@@ -957,12 +958,13 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
         </DangerButton>
       </div>
       {audioStatus?.retention && audioStatus.retention.failedTotal > 0 ? (
-        <div className="px-5 py-1.5 text-[11px] text-badge-danger shrink-0">
-          {interpolate(nativeDesktopText.audioRetention.failed, {
-            count: audioStatus.retention.failedTotal,
-            error: audioStatus.retention.lastError ?? '',
-          })}
-        </div>
+        <AudioRetentionFailureLine
+          failedTotal={audioStatus.retention.failedTotal}
+          lastError={audioStatus.retention.lastError}
+          audioDir={audioStatus.audioDir}
+          text={nativeDesktopText.audioRetention}
+          onRetry={() => { void openClearConfirm(); }}
+        />
       ) : null}
       {clearResult ? (
         <div className="px-5 py-1.5 text-[11px] text-zinc-300 shrink-0">{clearResult}</div>

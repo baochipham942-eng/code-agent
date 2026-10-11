@@ -9,7 +9,7 @@
 
 import React from 'react';
 import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { BackgroundSessionPanel } from '../../../src/renderer/components/features/background/BackgroundSessionPanel';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
@@ -45,16 +45,23 @@ describe('状态行映射（经渲染）', () => {
   });
 
   it('running → 计时态（秒/分钟/小时三档）', () => {
-    renderPanelWith(backgroundTask({ startedAt: Date.now() - 4_000 }));
-    expect(itemLine()).toBe('4秒');
-    cleanup();
+    // 假计时器：面板的 1s interval 在高负载下可能在断言间跳动（实测全目录跑时抖过一次
+    // 红），冻结系统时间后计时行完全确定。
+    vi.useFakeTimers();
+    try {
+      renderPanelWith(backgroundTask({ startedAt: Date.now() - 4_000 }));
+      expect(itemLine()).toBe('4秒');
+      cleanup();
 
-    renderPanelWith(backgroundTask({ startedAt: Date.now() - 125_000 }));
-    expect(itemLine()).toBe('2分钟');
-    cleanup();
+      renderPanelWith(backgroundTask({ startedAt: Date.now() - 125_000 }));
+      expect(itemLine()).toBe('2分钟');
+      cleanup();
 
-    renderPanelWith(backgroundTask({ startedAt: Date.now() - 7_325_000 }));
-    expect(itemLine()).toBe('2小时2分钟');
+      renderPanelWith(backgroundTask({ startedAt: Date.now() - 7_325_000 }));
+      expect(itemLine()).toBe('2小时2分钟');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('completed / failed 空消息 → 默认结果行', () => {

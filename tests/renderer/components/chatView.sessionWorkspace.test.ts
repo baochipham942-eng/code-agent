@@ -389,6 +389,11 @@ describe('ChatView session shell', () => {
         expect(suggestion.prompt, `${language}[${index}] house-style tail`).toMatch(tail);
       });
     }
+
+    // 竞品简报卡额外契约：显式禁止派子代理/团队（2026-10-11 UI 真机验收缺陷——
+    // glm-5.3 收到「联网调研」类 prompt 会拉起 swarm，触发成员启动审批卡，首轮无交付）。
+    expect(defaultSuggestions[3].prompt).toMatch(/不要派出子代理或团队成员/);
+    expect(enSuggestions[3].prompt).toMatch(/do not spawn sub-agents or team members/);
   });
 
   it('pending 提问时输入区仍可见可输入，发送继续走普通 ChatView 消息链路', async () => {

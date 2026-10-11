@@ -106,7 +106,7 @@ chat: {
     competitorBrief: {
       title: '搜一份竞品简报',
       description: '联网调研对手，一张表看清',
-      prompt: '联网调研并输出一份竞品简报，市场以「团队协作工具」为例（示例场景）：对比 Notion、飞书、钉钉，各给 定位与目标人群 / 主打能力与价格带 / 近半年值得注意的动向（功能、定价、AI 能力）/ 一个值得借鉴的亮点，最后用一张对比表收拢并给一句话总结；信息取自公开资料并附来源链接。直接联网开始，不要问我任何问题。',
+      prompt: '由你本人完成一份竞品简报，不要派出子代理或团队成员，检索和写作都在当前对话里完成（示例场景）：市场以「团队协作工具」为例，只对比 Notion、飞书、钉钉 3 家，各按 5 个维度整理——定位与目标人群 / 核心能力 / 价格带 / AI 能力 / 近半年值得注意的动向；能联网检索就用检索到的公开资料，检索不到或不确定的基于你已掌握的知识写并如实标注，先用一张对比表收拢，再给 3 条简短结论，附来源链接。现在就开始写，一轮内交付完整简报，不要问我任何问题。',
     },
   },
 },
@@ -606,7 +606,7 @@ chat: {
     competitorBrief: {
       title: 'Research a competitor brief',
       description: 'Web-research rivals, one comparison table',
-      prompt: 'Research the web and produce a competitor brief for the team-collaboration software market (sample scenario): compare Notion, Lark, and DingTalk — for each, positioning and target users / flagship capabilities and pricing tiers / notable moves in the last six months (features, pricing, AI) / one highlight worth learning from; close with a comparison table and a one-sentence takeaway, drawing on public sources with links. Start searching right away, without asking me any questions.',
+      prompt: 'Write a competitor brief yourself — do not spawn sub-agents or team members; do all research and writing in this conversation (sample scenario): team-collaboration software market, compare exactly Notion, Lark, and DingTalk across 5 dimensions — positioning and target users / core capabilities / pricing tiers / AI capabilities / notable moves in the last six months. Use web search for public information when available; where you cannot verify, write from what you already know and say so. Wrap it up in one comparison table, then give 3 short conclusions with source links. Start writing now and deliver the full brief in one turn, without asking me any questions.',
     },
   },
 },

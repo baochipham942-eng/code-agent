@@ -15,9 +15,13 @@ export function useComposerPrefill(
 ): void {
   const prefill = useComposerStore((state) => state.pendingComposerPrefill);
   useEffect(() => {
-    if (!prefill) return;
+    // 判空与取值都读 store 实时值：StrictMode 开发态挂载双跑（setup→cleanup→setup）
+    // 时第二次 setup 的闭包还是旧 prefill，按闭包判空会把同句消费两次（追加口径 = 填两遍）。
+    // deps 里的 prefill 只负责「来新的了」触发 effect，不作为消费依据。
+    const live = useComposerStore.getState().pendingComposerPrefill;
+    if (!live) return;
     useComposerStore.getState().setPendingComposerPrefill(null);
-    apply(prefill.text);
+    apply(live.text);
     focusComposer();
   }, [prefill, apply, focusComposer]);
 }

@@ -5,6 +5,7 @@
 // ExpertPanel.test.tsx 钉死；两半都在才叫「用户路通」。
 
 import { act, renderHook } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useComposerPrefill } from '../../../src/renderer/components/features/chat/ChatInput/useComposerPrefill';
 import { useComposerStore } from '../../../src/renderer/stores/composerStore';
@@ -41,5 +42,21 @@ describe('useComposerPrefill', () => {
     act(() => { useComposerStore.getState().setPendingComposerPrefill({ text: '同一句' }); });
     act(() => { useComposerStore.getState().setPendingComposerPrefill({ text: '同一句' }); });
     expect(apply).toHaveBeenCalledTimes(2);
+  });
+
+  it('StrictMode 挂载双跑（setup→cleanup→setup）只填一次：判空读 store 实时值，不吃闭包快照', () => {
+    // 真实场景：ChatInput 在能力中心打开期间卸载，快捷句先落 store，回来重新挂载。
+    // StrictMode 开发态会把挂载 effect 双跑一遍，第二次 setup 拿到的闭包还是旧 prefill，
+    // 按闭包判空就会把句子填两遍（追加口径下变成「句子 句子」）。
+    useComposerStore.getState().setPendingComposerPrefill({ text: '只填一次' });
+
+    const apply = vi.fn();
+    const focusComposer = vi.fn();
+    renderHook(() => useComposerPrefill(apply, focusComposer), { wrapper: StrictMode });
+
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(apply).toHaveBeenCalledWith('只填一次');
+    expect(focusComposer).toHaveBeenCalledTimes(1);
+    expect(useComposerStore.getState().pendingComposerPrefill).toBeNull();
   });
 });

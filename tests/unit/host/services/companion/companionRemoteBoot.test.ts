@@ -9,6 +9,9 @@ const harness = vi.hoisted(() => ({
   db: null as Database.Database | null,
   legacyStarts: 0,
   accountStarts: 0,
+  handlers: null as Map<string, (...args: unknown[]) => unknown> | null,
+  idlePaired: null as (() => boolean) | null,
+  idleReconciles: 0,
 }));
 
 vi.mock('../../../../../src/host/services/core/databaseService', () => ({
@@ -51,15 +54,27 @@ vi.mock('../../../../../src/host/services/auth/authService', () => ({
   }),
 }));
 
+vi.mock('../../../../../src/host/services/desktop/idleSleepInhibitor', () => ({
+  IdleSleepInhibitor: class {
+    constructor(_hasRunningRun: () => boolean, hasPairedCompanion: () => boolean) {
+      harness.idlePaired = hasPairedCompanion;
+    }
+    start(): void {}
+    async stop(): Promise<void> {}
+    async reconcile(): Promise<void> { harness.idleReconciles += 1; }
+  },
+}));
+
 import { createApp, type CreateAppDeps } from '../../../../../src/web/app';
 import { CompanionGateway } from '../../../../../src/host/services/companion/CompanionGateway';
 import { RunRegistry } from '../../../../../src/host/runtime/runRegistry';
 import { createIdentity } from '../../../../../src/shared/companion/noiseChannel';
 import { toHex } from '../../../../../src/shared/companion/lanProtocol';
+import { COMPANION_MANAGE_CHANNEL } from '../../../../../src/shared/constants/companion';
 
 function deps(dataDir: string, info: string[], stop: { current?: () => Promise<void> }): CreateAppDeps {
   return {
-    handlers: new Map(),
+    handlers: harness.handlers ?? new Map(),
     logger: { info: message => { info.push(String(message)); }, warn: () => {}, error: () => {} },
     runRegistry: new RunRegistry(),
     pendingLocalToolCalls: new Map(),
@@ -96,6 +111,9 @@ describe('createApp honours the persisted remote switch', () => {
   function boot(off: boolean): string[] {
     harness.legacyStarts = 0;
     harness.accountStarts = 0;
+    harness.handlers = new Map();
+    harness.idlePaired = null;
+    harness.idleReconciles = 0;
     dataDir = mkdtempSync(path.join(tmpdir(), 'killswitch-boot-'));
     db = new Database(':memory:');
     const gateway = new CompanionGateway(db);
@@ -107,6 +125,22 @@ describe('createApp honours the persisted remote switch', () => {
     createApp(deps(dataDir, info, stop));
     return info;
   }
+
+  it('releases paired-companion inhibition while remote access is off and reacquires it on toggle', async () => {
+    boot(false);
+    expect(harness.idlePaired?.()).toBe(true);
+    const manage = harness.handlers?.get(COMPANION_MANAGE_CHANNEL);
+    if (!manage) throw new Error('companion manage handler missing');
+
+    await manage({}, { action: 'setRemote', enabled: false });
+    expect(harness.idlePaired?.()).toBe(false);
+    expect(harness.idleReconciles).toBeGreaterThan(0);
+
+    const reconcilesAfterOff = harness.idleReconciles;
+    await manage({}, { action: 'setRemote', enabled: true });
+    expect(harness.idlePaired?.()).toBe(true);
+    expect(harness.idleReconciles).toBeGreaterThan(reconcilesAfterOff);
+  });
 
   it('starts both relay factories when the settings row is absent', () => {
     const info = boot(false);

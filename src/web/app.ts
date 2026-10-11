@@ -315,7 +315,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
   let companionRelayAccount: ReturnType<typeof startCompanionRelayAccountIfConfigured> | null = null;
   const idleSleepInhibitor = new IdleSleepInhibitor(
     () => runRegistry.size > 0 || getBackgroundTaskLedger().hasActiveTasks(),
-    () => (inhibitorGateway?.pairedDevices().length ?? 0) > 0,
+    () => inhibitorGateway?.remoteEnabled() === true && inhibitorGateway.pairedDevices().length > 0,
     { logger },
   );
   idleSleepInhibitor.start();
@@ -549,6 +549,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
       };
       app.use('/api/companion', createCompanionProvisioningRouter({ gateway }));
       inhibitorGateway = gateway;
+      void idleSleepInhibitor.reconcile();
       const remoteTransports: { start(): Promise<void>; stop(): Promise<void> } = {
         start: () => Promise.resolve(),
         stop: () => Promise.resolve(),
@@ -587,7 +588,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
        * manage 口的统一包装（N-COMPANION-RELAY-ACCOUNT-RECOVER）：pair.respond 是账号通道挂起配对
        * 的表态，不归 LanCompanionManager（它只管 LAN 面），在这里截走；其余动作原样转发。
        */
-      const manageCompanion = (request: unknown): Promise<unknown> => {
+      const manageCompanion = async (request: unknown): Promise<unknown> => {
         if (request && typeof request === 'object' && 'action' in request && (request as { action: unknown }).action === 'pair.respond') {
           const { requestId, approve } = request as { requestId?: unknown; approve?: unknown };
           if (typeof requestId !== 'string' || typeof approve !== 'boolean') {
@@ -596,6 +597,15 @@ export function createApp(deps: CreateAppDeps): express.Express {
           return Promise.resolve(companionRelayAccount
             ? { kind: 'pairResponded' as const, ok: companionRelayAccount.respondPair(requestId, approve) }
             : { kind: 'pairResponded' as const, ok: false });
+        }
+        const isRemoteToggle = request && typeof request === 'object' && 'action' in request
+          && (request as { action: unknown }).action === 'setRemote';
+        if (isRemoteToggle) {
+          try {
+            return await lan.manage(request);
+          } finally {
+            await idleSleepInhibitor.reconcile();
+          }
         }
         return lan.manage(request);
       };

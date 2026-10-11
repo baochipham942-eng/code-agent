@@ -21,6 +21,7 @@ import { useSessionStore } from '../../../../stores/sessionStore';
 import { useAppshotsStore } from '../../../../stores/appshotsStore';
 import { useLoopStore } from '../../../../stores/loopStore';
 import { cronClient, type CreateCronJobInput } from '../../../../services/cronClient';
+import type { PendingScheduleDraft, ScheduleDraftController, ScheduleRestatement } from './useScheduleDraft';
 import { loopClient } from '../../../../services/loopClient';
 import ipcService, { invoke, DomainInvokeError } from '../../../../services/ipcService';
 import { useComposerStore } from '../../../../stores/composerStore';
@@ -119,6 +120,7 @@ export interface UseChatInputSubmitParams {
   setSessionReferences?: React.Dispatch<React.SetStateAction<ConversationSessionReference[]>>;
   setArtifactReferences?: React.Dispatch<React.SetStateAction<ConversationArtifactReference[]>>;
   setScheduleComposerOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  scheduleDraft?: ScheduleDraftController;
   /** 打开 /goal 安静确认卡（initialGoal = 用户自然语言原话，空串 = 引导态） */
   openGoalConfirm: (initialGoal: string) => void;
   closeGoalConfirm: () => void;
@@ -133,7 +135,7 @@ export interface UseChatInputSubmitParams {
 
 /**
  * ChatInput 的提交发送管线（全 app 最高风险路径）：
- * - runScheduleCreation：/schedule 自然语言 → 定时任务
+ * - runScheduleCreation：/schedule 自然语言 → 定时任务草案
  * - startGoalRun：/goal 自治模式启动
  * - handleSubmit：发送主链路（schedule/loop/goal/agent 命令分支 → appshot 注入
  *   → ! shell 快捷 → onSend → 失败 restoreDraft 回滚）
@@ -171,6 +173,14 @@ async function settleSendWithinTimeout(
   }
 }
 
+function readScheduleRestatement(value: unknown): ScheduleRestatement | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const what = typeof record.what === 'string' ? record.what.trim() : '';
+  const notifyWhen = typeof record.notifyWhen === 'string' ? record.notifyWhen.trim() : '';
+  return what && notifyWhen ? { what, notifyWhen } : undefined;
+}
+
 export function useChatInputSubmit(params: UseChatInputSubmitParams) {
   const { t } = useI18n();
   const {
@@ -203,12 +213,19 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     setSessionReferences,
     setArtifactReferences,
     setScheduleComposerOpen,
+    scheduleDraft,
     openGoalConfirm,
     closeGoalConfirm,
     openSeedComposer,
     setActiveAgentId,
     pendingResendClientMessageIdRef,
   } = params;
+  const {
+    pendingScheduleDraft = null,
+    storePendingScheduleDraft = () => true,
+    discardPendingScheduleDraft = () => undefined,
+    setCreatingSchedule = () => undefined,
+  } = scheduleDraft ?? {};
 
   // 版本同时绑定能力选择和会话；handoff 保留同一轮版本，切槽或再选择都会失效。
   const captureSuccessfulSendReset = useCallback(() => {
@@ -216,17 +233,47 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     return () => useComposerStore.getState().resetForSuccessfulSend(revision);
   }, []);
 
-  // 定时任务创建统一入口：内联 /schedule 和对话式卡片都走这里（cron:generateFromPrompt → createJob）。
+  // 定时任务统一先生成草案，内联 /schedule 和对话式卡片随后共用确认卡。
   const runScheduleCreation = useCallback(async (
     description: string,
     options: { handoffPrompt?: string } = {},
   ): Promise<boolean> => {
     const cs = t.chatInputSubmit;
+    setCreatingSchedule(true);
     toast.info(cs.scheduleParsingToast);
     try {
       const draft = await cronClient.generateFromPrompt(description);
-      const input = draft as unknown as CreateCronJobInput;
+      if (!draft || typeof draft !== 'object' || Array.isArray(draft)) {
+        throw new Error(cs.scheduleDraftInvalid);
+      }
+      const { restatement: rawRestatement, ...rawInput } = draft as Record<string, unknown>;
       const handoffPrompt = options.handoffPrompt?.trim();
+      const pending: PendingScheduleDraft = {
+        input: rawInput as unknown as CreateCronJobInput,
+        restatement: readScheduleRestatement(rawRestatement),
+        description,
+        handoffPrompt: handoffPrompt || undefined,
+        sourceSessionId: currentSessionId,
+      };
+      const stored = storePendingScheduleDraft(pending);
+      if (!stored) return false;
+      return true;
+    } catch (err) {
+      toast.error(cs.scheduleCreateFailedPrefix + (err instanceof Error ? err.message : t.chatInput.unknownError));
+      return false;
+    } finally {
+      setCreatingSchedule(false);
+    }
+  }, [currentSessionId, setCreatingSchedule, storePendingScheduleDraft, t]);
+
+  const confirmScheduleCreation = useCallback(async (): Promise<boolean> => {
+    const pending = pendingScheduleDraft;
+    if (!pending) return false;
+    const cs = t.chatInputSubmit;
+    setCreatingSchedule(true);
+    try {
+      const input = pending.input;
+      const handoffPrompt = pending.handoffPrompt;
       const action = input.action.type === 'agent' && currentSessionId
         ? {
             ...input.action,
@@ -243,7 +290,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
           ...(input.metadata ?? {}),
           ...(currentSessionId ? { sourceSessionId: currentSessionId } : {}),
           createdVia: 'slash_schedule',
-          originalDescription: description,
+          originalDescription: pending.description,
           ...(handoffPrompt ? {
             handoffPrompt,
             nextStage: { prompt: handoffPrompt, title: cs.resumeAfterWakeTitle },
@@ -270,12 +317,15 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
         }));
       }
       toast.success(`${cs.scheduleCreatedToastPrefix}${job.name || cs.unnamedSchedule}${cs.scheduleCreatedToastSuffix}`);
+      discardPendingScheduleDraft();
       return true;
     } catch (err) {
       toast.error(cs.scheduleCreateFailedPrefix + (err instanceof Error ? err.message : t.chatInput.unknownError));
       return false;
+    } finally {
+      setCreatingSchedule(false);
     }
-  }, [currentSessionId, t]);
+  }, [currentSessionId, discardPendingScheduleDraft, pendingScheduleDraft, setCreatingSchedule, t]);
 
   const startGoalRun = useCallback(async (
     parsed: ParsedGoalCommand,
@@ -331,6 +381,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
   // P3-18: ! prefix executes shell command directly
   const handleSubmit = async (e?: React.FormEvent, opts?: { steer?: boolean; content?: string }) => {
     e?.preventDefault();
+    discardPendingScheduleDraft();
     const trimmedValue = (opts?.content ?? value).trim();
     let preferredAgentIdOverride: string | null | undefined;
     let selectedAgentOverride: ComposerAgentSelection | null | undefined;
@@ -805,5 +856,5 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     handleSubmit(undefined, { content: buildSeedComposerCommand(kind, text) })
   ), [handleSubmit]);
 
-  return { handleSubmit, runScheduleCreation, startGoalRun, submitSeedComposer };
+  return { handleSubmit, runScheduleCreation, confirmScheduleCreation, startGoalRun, submitSeedComposer };
 }

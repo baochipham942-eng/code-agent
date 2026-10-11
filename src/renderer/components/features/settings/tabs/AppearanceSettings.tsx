@@ -8,7 +8,7 @@ import { Moon, Sun, Monitor, Contrast, Check } from 'lucide-react';
 import { useI18n, type Language } from '../../../../hooks/useI18n';
 import { useTheme, type Theme } from '../../../../hooks/useTheme';
 import { toast } from '../../../../hooks/useToast';
-import { useAppStore } from '../../../../stores/appStore';
+import { useAppStore, type DisclosureLevel } from '../../../../stores/appStore';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings } from '@shared/contract';
 import { createLogger } from '../../../../utils/logger';
@@ -18,6 +18,8 @@ import ipcService from '../../../../services/ipcService';
 import { Toggle } from '../../../primitives/Toggle';
 
 const logger = createLogger('AppearanceSettings');
+
+const DISCLOSURE_LEVEL_OPTIONS: readonly DisclosureLevel[] = ['simple', 'standard', 'advanced', 'expert'];
 
 // ============================================================================
 // Types
@@ -55,6 +57,8 @@ export const AppearanceSettings: React.FC = () => {
   const [fontSize, setFontSize] = useState<'small' | 'medium' | 'large'>('medium');
   const developerMode = useAppStore((state) => state.developerMode);
   const setDeveloperMode = useAppStore((state) => state.setDeveloperMode);
+  const disclosureLevel = useAppStore((state) => state.disclosureLevel);
+  const setDisclosureLevel = useAppStore((state) => state.setDisclosureLevel);
 
   // 加载已保存的字体大小
   useEffect(() => {
@@ -161,6 +165,21 @@ export const AppearanceSettings: React.FC = () => {
       logger.error('Failed to save language', error);
       setLanguage(previousLanguage);
       toast.error(appearanceText.languageSaveFailed);
+    }
+  };
+
+  const handleDisclosureLevelChange = async (level: DisclosureLevel) => {
+    const previousLevel = disclosureLevel;
+    setDisclosureLevel(level);
+    try {
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
+        ui: { disclosureLevel: level },
+      } as Partial<AppSettings>);
+      logger.info('Disclosure level saved', { level });
+    } catch (error) {
+      logger.error('Failed to save disclosure level', error);
+      setDisclosureLevel(previousLevel);
+      toast.error(appearanceText.disclosureLevelSaveFailed);
     }
   };
 
@@ -345,6 +364,37 @@ export const AppearanceSettings: React.FC = () => {
               </div>
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* Work detail */}
+      <div className="pt-4 border-t border-zinc-700">
+        <h3 className="text-sm font-medium text-zinc-200 mb-2">{appearanceText.disclosureLevel}</h3>
+        <p className="text-xs text-zinc-500 mb-4">
+          {appearanceText.disclosureLevelDescription}
+        </p>
+        <div role="radiogroup" aria-label={appearanceText.disclosureLevel} className="grid grid-cols-4 gap-2">
+          {DISCLOSURE_LEVEL_OPTIONS.map((level) => {
+            const isActive = disclosureLevel === level;
+            return (
+              <button
+                key={level}
+                role="radio"
+                aria-checked={isActive}
+                disabled={isWebMode()}
+                onClick={() => handleDisclosureLevelChange(level)}
+                className={`p-3 rounded-lg border text-center transition-all ${
+                  isActive
+                    ? 'border-zinc-500 bg-zinc-800/60'
+                    : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
+                }`}
+              >
+                <span className={`text-sm ${isActive ? 'text-zinc-200' : 'text-zinc-400'}`}>
+                  {appearanceText.disclosureLevels[level]}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 

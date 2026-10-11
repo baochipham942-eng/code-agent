@@ -112,6 +112,16 @@ export const TASK_PATCH = {
   TRASH_DIR: 'trashed-task-patches',
 } as const;
 
+/** 工具默认截图落盘（N-RETENTION-SHOTS-APPDIR）：无显式路径时不写用户工作目录，改落数据目录 */
+export const TOOL_SCREENSHOTS = {
+  /** 根子目录名（相对 getUserConfigDir()） */
+  DIR_NAME: 'tool-screenshots',
+  /** 会话 id 清洗后为空（含未提供）时的兜底子目录名 */
+  NO_SESSION_DIR_NAME: 'no-session',
+  /** 无会话上下文的调用方（convertToScreenshots）的 per-call 目录前缀，mkdtemp 补随机后缀 */
+  PER_CALL_DIR_PREFIX: 'ppt-',
+} as const;
+
 /** 资源管理常量 */
 export const RESOURCE_MANAGEMENT = {
   /** 磁盘空间警告阈值（1GB） */

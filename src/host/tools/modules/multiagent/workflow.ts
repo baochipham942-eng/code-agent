@@ -227,7 +227,8 @@ function publishWorkflowSettlement(settlement: WorkflowSettlement, safeProgress:
 /**
  * 把尚未结束的 graph run 交给后台注册表。
  * 不传 parent runId：那会写一条 durable 子代理账，重启后被报成 interrupted，和 dynamicWorkflowRecovery 抢同一条 run。
- * 同一 runId 已在册时不再 adopt 第二次；终态键已被占则直接丢掉，避免恢复重跑再响一次。
+ * 同一 runId 已在册时不再 adopt 第二次；终态键已被占则直接丢掉，避免恢复重跑再响一次——
+ * 两个分支都含 completion record 入队与 idle wake（branch-1 经闸门对象带到完成时，branch-2 干脆不 adopt）。
  */
 function handWorkflowRunToBackground(
   runId: string,
@@ -249,10 +250,19 @@ function handWorkflowRunToBackground(
   };
   const existing = registry.getStatus(runId);
   if (!existing) {
+    // claim 结果要到 pending settle 时才知道；闸门对象按引用穿透 adopt 内部的
+    // options 拷贝，recordCompletion 完成时读最新值——claim 输给上个进程（durable
+    // 行已存在）时 completion record 不入队、idle wake 不响，重启后不再收到第二条
+    // 「workflow finished」。结果仍照常回填注册表，collect_agent 取结果不受影响。
+    const completionGate = { suppress: false };
     registry.adopt(pending.then((settlement) => {
-      if (claimWorkflowSettlement(runId, settlement.terminalStatus)) options.onClaimed(settlement);
+      if (claimWorkflowSettlement(runId, settlement.terminalStatus)) {
+        options.onClaimed(settlement);
+      } else {
+        completionGate.suppress = true;
+      }
       return settlement.result;
-    }), adoptOptions);
+    }), { ...adoptOptions, completionNotificationGate: completionGate });
     return;
   }
   void pending.then(async (settlement) => {

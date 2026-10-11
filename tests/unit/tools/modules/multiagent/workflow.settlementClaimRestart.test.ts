@@ -9,10 +9,11 @@
 // 重启夹具（任务书 ③）：vi.resetModules() 清空模块级 Set 与注册表单例，同一
 // sqlite 文件先 close 再重开（新 Database 句柄 + 生产 applySchema 幂等重跑），
 // real better-sqlite3（vi.unmock，同 WorkflowJournalRepository.test.ts）。
-// 断言的「通知」与既有 in-process 去重测试（workflow.test.ts 的 dup 用例）同口径：
-// onClaimed 驱动的 recordLongTaskRecoveryProposal（failed 终态的恢复提案）次数。
-// 注册表自己的 completion 队列（queuedNotificationKeys）是另一套机制，本单明确
-// 不动：branch-1 adopt 的 completion record 仍会入队，这里如实断言为 1 条。
+// 断言的「通知」覆盖两层：onClaimed 驱动的终态宣布（恢复提案/completing 进度），
+// 以及用户可见完成通知（注册表 completion record 队列 + idle wake——重启后收到的
+// 第二条「workflow finished」就是它）。两层的跨重启去重都由 durable claim 把关：
+// branch-1 经 completionNotificationGate 在完成时跳过队列推送与 onComplete，
+// branch-2 输掉 claim 时根本不 adopt。结果仍回填注册表，collect_agent 不受影响。
 // ============================================================================
 
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -227,12 +228,16 @@ describe('workflow settlement claim across a simulated process restart', () => {
     const rerunId = await launchAndSettle(p2.handler, p2.registry, 'restart-call');
     expect(rerunId).toBe(runId);
 
+    // 用户可见完成通知被挡住：进程 2 的注册表不排队 completion record、idle wake
+    // 不响（全测试合计仍只有进程 1 的那一次）——重启后不会收到第二条「workflow
+    // finished」。结果照常回填：上面的 waitFor 已确认条目落到终态，collect_agent
+    // 取结果不受 claim 影响。soft：反向变异时把「重复通知」的每条通道（队列/唤醒）
+    // 的红行都打出来，不在第一条断言就中断。
+    const drained2 = p2.registry.drainCompletionNotifications({ sessionId: 'sess-restart' });
+    expect.soft(drained2).toHaveLength(0);
+    expect.soft(idleWakeMock).toHaveBeenCalledTimes(1);
     // durable claim 挡住第二次终态宣布：恢复提案仍只有进程 1 的那一条。
     expect(recordRecoveryMock).toHaveBeenCalledTimes(1);
-    // 注册表自己的 completion 队列是另一套机制（本单不动）：branch-1 的 record 仍入队，
-    // 如实断言 1 条——去重信号是上面的宣布次数，不是这里的队列长度。
-    const drained2 = p2.registry.drainCompletionNotifications({ sessionId: 'sess-restart' });
-    expect(drained2).toHaveLength(1);
     // 后置条件：durable claim 行确实落库（进程 1 写入，跨重启存活）。
     const claimRow = db2.prepare(
       'SELECT COUNT(*) as c FROM workflow_settlement_claims WHERE run_id = ? AND terminal_status = ?',
@@ -271,6 +276,7 @@ describe('workflow settlement claim across a simulated process restart', () => {
     const drained = p2.registry.drainCompletionNotifications({ sessionId: 'sess-restart' });
     expect(drained).toHaveLength(1);
     expect(drained[0]?.content).toContain(runId);
+    expect(idleWakeMock).toHaveBeenCalledTimes(1);
     const claimAfter = db2.prepare(
       'SELECT COUNT(*) as c FROM workflow_settlement_claims WHERE run_id = ?',
     ).get(runId) as { c: number };

@@ -32,6 +32,7 @@ import { useMemberViewStore } from '../stores/memberViewStore';
 export { buildDefaultSuggestions } from './features/chat/NewSessionWelcome';
 import { SurfaceExecutionChatPanel } from './features/surfaceExecution/SurfaceExecutionChatPanel';
 import { PinnedTodoBar } from './features/chat/PinnedTodoBar';
+import { BackgroundSessionPanel } from './features/background';
 import { SessionRecapBanner } from './features/chat/SessionRecapBanner';
 import { ForkSourceHint } from './features/chat/ForkSourceHint';
 import { ChatTraceFallback } from './features/chat/ChatTraceFallback';
@@ -1111,6 +1112,11 @@ export const ChatView: React.FC = () => {
           <GoalStatusBar />
           <DoomLoopHandbackBar sessionId={currentSessionId} />
           {durableContinue.confirmDialog}
+
+          {/* 后台任务面板（2026-10-11 rework）：composer 正上方的列内文档流块。
+              原全局 fixed bottom-4 浮层会盖住发送键/模型切换/上下文表（无槽验收实测），
+              迁入聊天列后参与布局，几何上不可能再压 composer。 */}
+          <BackgroundSessionPanel />
 
           <ChatInput ref={chatInputRef} onSend={handleSendEnvelope} onSteer={handleSteerEnvelope}
             disabled={effectiveIsProcessing || isCreatingSession} isProcessing={effectiveIsProcessing}

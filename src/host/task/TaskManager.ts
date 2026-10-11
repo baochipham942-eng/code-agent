@@ -32,6 +32,7 @@ import type { WorkspaceScope } from '../../shared/contract/project';
 import { getModelSessionState } from '../session/modelSessionState';
 import type { RunRegistry } from '../runtime/runRegistry';
 import { getProjectSourceTrustFailureMarker } from '../services/project/projectSourceTrustError';
+import { closeBackgroundRunAtTerminal, settleBackgroundOnTaskComplete, trackBackgroundRunError, type BackgroundRunErrorRecord } from './backgroundTaskTerminal';
 import { getModelAuthFailureMarker } from '../model/errorClassifier';
 import { MULTIAGENT_TOOL_NAMES } from '../../shared/constants/tools';
 import { SESSION_COMMAND_CENTER_TOOL_NAMES } from '../../shared/constants/sessionCommandCenter';
@@ -172,6 +173,8 @@ export class TaskManager extends EventEmitter {
   private backgroundRuns = new Map<string, BackgroundTaskRun>();
   /** permission requestId → 后台 taskId，保证审批只回到发起它的 run。 */
   private backgroundPermissionOwners = new Map<string, string>();
+  /** 主 run 的 run 级 error 记账（agent 终态收线用；见 backgroundTaskTerminal）。 */
+  private backgroundRunErrors = new Map<string, BackgroundRunErrorRecord>();
   private activeModelSpecs = new Map<string, ConversationModelSpec>();
   private sessionStates: Map<string, SessionState> = new Map();
   private waitingQueue: string[] = [];
@@ -1339,22 +1342,18 @@ export class TaskManager extends EventEmitter {
         }
       }
 
-      // Send desktop notification on task complete
+      // task_complete 收口 + 后台条目终态收线（逻辑在 backgroundTaskTerminal：本文件贴
+      // effective-line 硬限；task_complete 与 agent 终态两收口点共用 running-guard 幂等）。
       if (event.type === 'task_complete' && event.data) {
-        // 转后台的会话（后台快捷键 / composer「转后台继续聊」）：完成交给 BackgroundTaskManager
-        // 收口——面板条目标成 completed，通知走 force（用户多半停在 app 里聊别的会话，
-        // 普通焦点门会把它吞掉）。子代理的 task_complete（eventKey ≠ sessionId）不在此列。
-        // 下面 else 分支的实参压成两行是 max-lines 债务门所迫（本文件基线贴顶），勿拆行。
-        const { getBackgroundTaskManager } = await import('../session/backgroundTaskManager');
-        if (eventKey === sessionId && getBackgroundTaskManager().isInBackground(sessionId)) {
-          await getBackgroundTaskManager().markCompleted(sessionId, event.data.summary);
-        } else {
-          const session = await sessionManager.getSession(sessionId);
-          if (session) notificationService.notifyTaskComplete({
-            sessionId: session.id, sessionTitle: session.title, summary: event.data.summary,
-            duration: event.data.duration, toolsUsed: event.data.toolsUsed || [],
-          });
-        }
+        await settleBackgroundOnTaskComplete(sessionId, eventKey, event.data);
+      }
+      // run 级 error 记账；agent 终态到点仍 running（无收尾文本的终态：失败/取消/中断/
+      // max-step 撞顶）→ 收线，spinner 必须停（2026-10-11 验收：撞顶轮 12/22 分钟不落）。
+      if (event.type === 'error' && eventKey === sessionId) {
+        trackBackgroundRunError(this.backgroundRunErrors, sessionId, event.data);
+      }
+      if ((event.type === 'agent_complete' || event.type === 'agent_cancelled') && eventKey === sessionId) {
+        await closeBackgroundRunAtTerminal(sessionId, event.type, this.backgroundRunErrors);
       }
     } catch (error) {
       logger.error(`Failed to persist event for session ${sessionId}`, error);

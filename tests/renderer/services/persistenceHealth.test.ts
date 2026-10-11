@@ -151,8 +151,9 @@ describe('persistence health renderer helpers', () => {
 
     await expect(fetchWebBuildInfo()).resolves.toEqual(build);
     await expect(fetchWebBuildInfo()).resolves.toBeNull();
-    expect(fetchMock).toHaveBeenCalledWith('http://localhost:8180/api/health', {
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:8180/api/health/detail', {
       cache: 'no-store',
+      headers: {},
     });
   });
 });

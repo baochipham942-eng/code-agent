@@ -1,3 +1,4 @@
+/* global Buffer, atob, console, fetch, navigator, process, setTimeout, window */
 // ADR-054 batch 2 real-runtime acceptance against a locally built web host.
 // The real realtime voice model dispatches two background tasks, the real task
 // engine asks questions, and the user cancels one task through an ambiguous
@@ -301,8 +302,19 @@ async function setExecutionModel(page, executionModel) {
   return original;
 }
 
+function readDevToken() {
+  try {
+    return fs.readFileSync(path.join(DATA_DIR, '.dev-token'), 'utf8').trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 async function main() {
-  const health = await fetch(`${BASE_URL}/api/health`).then((response) => response.json());
+  const token = readDevToken();
+  const health = await fetch(`${BASE_URL}/api/health/detail`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  }).then((response) => response.json());
   record('runtime.build', health?.status === 'ok' && health?.serverRoot === EXPECTED_ROOT, {
     pid: health?.pid,
     serverRoot: health?.serverRoot,

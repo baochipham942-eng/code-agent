@@ -46,6 +46,15 @@ function createSchema(db: BetterSqlite3.Database): void {
       FOREIGN KEY (run_id) REFERENCES workflow_runs(run_id) ON DELETE CASCADE
     )
   `);
+  // 与 schema.ts 逐字一致：无 FK，删除 run 时由 repo.deleteRun/clearAll 显式清。
+  db.exec(`
+    CREATE TABLE workflow_settlement_claims (
+      run_id TEXT NOT NULL,
+      terminal_status TEXT NOT NULL,
+      claimed_at INTEGER NOT NULL,
+      PRIMARY KEY (run_id, terminal_status)
+    )
+  `);
 }
 
 describe('WorkflowJournalRepository', () => {
@@ -189,5 +198,58 @@ describe('WorkflowJournalRepository', () => {
     expect(repo.getRun('wf-1')).toBeNull();
     const c = db.prepare('SELECT COUNT(*) as c FROM workflow_run_calls').get() as { c: number };
     expect(c.c).toBe(0);
+  });
+
+  // ── N-WF-SETTLEMENT-DEDUPE：终态通知 claim 的 durable 键 ─────────────────────
+
+  it('claimSettlement returns true only for the first claimer of (run_id, terminal_status)', () => {
+    expect(repo.claimSettlement('wf-1', 'failed')).toBe(true);
+    expect(repo.claimSettlement('wf-1', 'failed')).toBe(false);
+    // 跨重启等价：换一个 repo 实例（同库）再 claim，仍被挡——去重不随进程蒸发。
+    const secondInstance = new WorkflowJournalRepository(db);
+    expect(secondInstance.claimSettlement('wf-1', 'failed')).toBe(false);
+  });
+
+  it('claimSettlement keys by terminal status: completed 与 failed 互不抢占', () => {
+    expect(repo.claimSettlement('wf-1', 'completed')).toBe(true);
+    expect(repo.claimSettlement('wf-1', 'failed')).toBe(true);
+    expect(repo.claimSettlement('wf-1', 'completed')).toBe(false);
+    expect(repo.claimSettlement('wf-1', 'failed')).toBe(false);
+  });
+
+  it('claimSettlement honors explicit claimedAt and stamps Date.now() only when omitted', () => {
+    repo.claimSettlement('wf-explicit', 'completed', 12345);
+    const explicit = db.prepare('SELECT claimed_at FROM workflow_settlement_claims WHERE run_id = ?').get('wf-explicit') as { claimed_at: number };
+    expect(explicit.claimed_at).toBe(12345);
+    const before = Date.now();
+    repo.claimSettlement('wf-default', 'completed');
+    const row = db.prepare('SELECT claimed_at FROM workflow_settlement_claims WHERE run_id = ?').get('wf-default') as { claimed_at: number };
+    expect(row.claimed_at).toBeGreaterThanOrEqual(before);
+  });
+
+  it('startRun REPLACE on the same runId does not wipe the claim row (why the table has no FK)', () => {
+    repo.startRun({ runId: 'wf-1', scriptHash: 'abc', startedAt: 1000 });
+    expect(repo.claimSettlement('wf-1', 'failed')).toBe(true);
+    // 重启重跑同 runId：INSERT OR REPLACE 是 DELETE+INSERT，有 FK CASCADE 的话 claim 就没了。
+    repo.startRun({ runId: 'wf-1', scriptHash: 'def', startedAt: 2000 });
+    expect(repo.claimSettlement('wf-1', 'failed')).toBe(false);
+    const row = db.prepare('SELECT COUNT(*) as c FROM workflow_settlement_claims WHERE run_id = ?').get('wf-1') as { c: number };
+    expect(row.c).toBe(1);
+  });
+
+  it('deleteRun and clearAll remove the run’s settlement claim rows', () => {
+    repo.startRun({ runId: 'wf-1', scriptHash: 'abc', startedAt: 1000 });
+    repo.claimSettlement('wf-1', 'failed');
+    repo.claimSettlement('wf-1', 'completed');
+    expect(repo.deleteRun('wf-1')).toBe(true);
+    let rows = db.prepare('SELECT COUNT(*) as c FROM workflow_settlement_claims WHERE run_id = ?').get('wf-1') as { c: number };
+    expect(rows.c).toBe(0);
+    // 删除后同 runId 重跑：claim 重新可拿（新 run 不吃旧 claim 的亏）。
+    expect(repo.claimSettlement('wf-1', 'failed')).toBe(true);
+
+    repo.claimSettlement('wf-2', 'cancelled');
+    repo.clearAll();
+    rows = db.prepare('SELECT COUNT(*) as c FROM workflow_settlement_claims').get() as { c: number };
+    expect(rows.c).toBe(0);
   });
 });

@@ -19,6 +19,8 @@ export interface WorkflowStallDetectorOptions {
   setTimer?: (callback: () => void, delayMs: number) => StallTimer;
   clearTimer?: (timer: StallTimer) => void;
   logger?: WorkflowStallDetectorLogger;
+  /** announce=true 时调用（每 epoch 至多一次）；announce=false 与 journal 降级路径保持模型面静默。 */
+  onStallNotice?: (notice: WorkflowStallNotice) => void;
 }
 
 interface RunState {
@@ -30,14 +32,38 @@ interface RunState {
   parked: boolean;
   parkedAt?: number;
   timer?: StallTimer;
+  /** 最近一次活动事件的可读标签，随 stall 提醒带给模型（缺省时提醒里报 unknown）。 */
+  lastActivity?: string;
 }
 
 const TERMINAL_EVENTS = new Set<ScriptRunEvent['type']>(['run:done', 'run:cancelled', 'run:error']);
 
+/** N-WF-STALL-NOTICE：announce=true 时交给注入方的模型面提醒载荷。 */
+interface WorkflowStallNotice {
+  runId: string;
+  epoch: number;
+  idleSeconds: number;
+  lastActivity?: string;
+}
+
+/** 活动事件压成一句可读标签：事件类型 + 顺带的 title/message/label 字段（有则带上）。 */
+function describeActivity(event: ScriptRunEvent): string {
+  const data = event.data as Record<string, unknown> | undefined;
+  const detail = typeof data?.title === 'string' && data.title
+    ? data.title
+    : typeof data?.message === 'string' && data.message
+      ? data.message
+      : typeof data?.label === 'string' && data.label
+        ? data.label
+        : undefined;
+  return detail ? `${event.type}: ${detail}` : event.type;
+}
+
 /**
  * Host-only detector for background dynamic-workflow runs.
- * It deliberately has no notification or registry dependency: a hard stall only writes a durable
- * (run, epoch) key and one warning, leaving model-facing notice delivery to a later work item.
+ * It deliberately has no registry dependency: a hard stall writes a durable (run, epoch) key,
+ * one warning, and hands the model-facing notice to the injected onStallNotice callback
+ * (wired to BackgroundSubagentRegistry.recordStallNotice + idle wake by workflow.ts).
  */
 export class WorkflowStallDetector {
   private readonly runs = new Map<string, RunState>();
@@ -90,6 +116,7 @@ export class WorkflowStallDetector {
     const now = this.now();
     state.lastProgressAt = now;
     state.windowStartedAt = now;
+    state.lastActivity = describeActivity(event);
     if (event.type === 'agent:start') state.inFlightCalls += 1;
     if (event.type === 'agent:done' || event.type === 'agent:error') {
       state.inFlightCalls = Math.max(0, state.inFlightCalls - 1);
@@ -171,13 +198,25 @@ export class WorkflowStallDetector {
     state.epoch = epoch;
     state.windowStartedAt = now;
     if (announce) {
-      this.logger.warn('workflow run stalled', {
-        runId,
-        epoch,
-        idleSeconds: Math.floor(Math.max(0, now - state.lastProgressAt) / 1000),
-      });
+      const idleSeconds = Math.floor(Math.max(0, now - state.lastProgressAt) / 1000);
+      this.logger.warn('workflow run stalled', { runId, epoch, idleSeconds });
+      this.notify(runId, epoch, idleSeconds, state.lastActivity);
     }
     if (state.epoch < WORKFLOW_STALL_THRESHOLDS.MAX_EPOCHS) this.schedule(runId, state);
+  }
+
+  /** 投递回调的失败不回滚 durable epoch，也不打断检测器：warn 留痕即可。 */
+  private notify(runId: string, epoch: number, idleSeconds: number, lastActivity?: string): void {
+    if (!this.options.onStallNotice) return;
+    try {
+      this.options.onStallNotice({ runId, epoch, idleSeconds, ...(lastActivity ? { lastActivity } : {}) });
+    } catch (error) {
+      this.logger.warn('workflow stall notice delivery failed', {
+        runId,
+        epoch,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private clearScheduledTimer(state: RunState): void {

@@ -429,6 +429,43 @@ export class BackgroundSubagentRegistry {
     return record;
   }
 
+  /**
+   * N-WF-STALL-NOTICE：后台 workflow run 硬停滞的非终态提醒入队。仿
+   * recordInterruptedCompletion 的构造 + queuedNotificationKeys 去重两步，但不补
+   * 终态 entry——run 还在跑，collect_agent(runId) 必须继续报 running，终态留给真结算；
+   * 也不算进展、不标 failed。dedupeKey 固定为 `${runId}:stall:${epoch}`：同一 epoch
+   * 重复上报只投一次（queuedNotificationKeys 不随 drain 清空），新 epoch 放行。
+   */
+  recordStallNotice(input: {
+    runId: string;
+    sessionId?: string;
+    title?: string;
+    epoch: number;
+    idleSeconds: number;
+    lastActivity?: string;
+  }): SubagentCompletionRecord {
+    const lastActivity = input.lastActivity ? `last activity ${input.lastActivity}` : 'last activity unknown';
+    const body = `no progress for ${input.idleSeconds}s, ${lastActivity}; `
+      + `Do not poll. Use collect_agent("${input.runId}") to inspect.`;
+    const record: SubagentCompletionRecord = {
+      ...buildSubagentCompletionRecord({
+        agentId: input.runId,
+        title: input.title,
+        kind: 'internal',
+        status: 'stalled',
+        error: body,
+        nextAction: `Use collect_agent("${input.runId}") to inspect the current state.`,
+        sessionId: input.sessionId,
+      }),
+      dedupeKey: `${input.runId}:stall:${input.epoch}`,
+    };
+    if (!this.queuedNotificationKeys.has(record.dedupeKey)) {
+      this.queuedNotificationKeys.add(record.dedupeKey);
+      this.pendingNotifications.push(record);
+    }
+    return record;
+  }
+
   drainCompletionNotifications(scope?: BackgroundSubagentScopeFilter): SubagentCompletionRecord[] {
     if (this.pendingNotifications.length === 0) return [];
     const matched: SubagentCompletionRecord[] = [];

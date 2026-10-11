@@ -21,14 +21,30 @@ import type {
   ToolSchema,
 } from '../../../protocol/tools';
 import { getMemoryDir } from '../../../lightMemory/indexLoader';
+import { parseMemoryFileStatus } from '../../../lightMemory/lightMemoryIpc';
 import { recordMemoryReadUsage } from '../../../memory/memoryUsageWriteback';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { guardSensitiveTextAsync } from '../../../security/sensitiveDataGuard';
 import { getRoleMemoriesDir, getProjectMemoriesDir } from '../../../services/roleAssets/roleAssetPaths';
+import type { MemoryEntryStatus } from '../../../../shared/contract/memory';
 
 // Schema lives in memoryRead.schema.ts (P0-7 single source of truth)
 import { memoryReadSchema } from './memoryRead.schema';
 const schema: ToolSchema = memoryReadSchema;
+
+/**
+ * candidate/stale 记忆的文末提示行（模型可见）：这类记忆未经确认或可能已过时，
+ * 与 MEMORY_BACKGROUND_GUIDANCE 的「重新验证后才能当事实」条款呼应。
+ */
+const MEMORY_UNVERIFIED_HINT =
+  '⚠️ 此记忆状态为 candidate/stale：未经确认或可能已过时，作为事实使用前请先核对当前状态。';
+
+/** candidate/stale 时在脱敏后的正文末尾追加一行提示；其余状态输出字节不变。 */
+function withUnverifiedHint(safeContent: string, status: MemoryEntryStatus | undefined): string {
+  if (status !== 'candidate' && status !== 'stale') return safeContent;
+  const base = safeContent.endsWith('\n') ? safeContent : `${safeContent}\n`;
+  return `${base}${MEMORY_UNVERIFIED_HINT}\n`;
+}
 
 /**
  * 按 scope 解析记忆目录（持久化角色资产三层记忆，设计 §3）：
@@ -111,6 +127,8 @@ class MemoryReadHandler implements ToolHandler<Record<string, unknown>, string> 
         mode: 'model-context',
         maxLength: 50_000,
       });
+      // 脱敏后再追加提示；status 解析用原始 content（frontmatter 在文件头，脱敏前最真）
+      const output = withUnverifiedHint(safeContent, parseMemoryFileStatus(content));
       onProgress?.({ stage: 'completing', percent: 100 });
       ctx.logger.debug('MemoryRead done', { filename: sanitized, bytes: content.length });
       const artifact = await createFileArtifact(filePath, schema.name, ctx, {
@@ -145,7 +163,7 @@ class MemoryReadHandler implements ToolHandler<Record<string, unknown>, string> 
       }
       return {
         ok: true,
-        output: safeContent,
+        output,
         meta: {
           filename: sanitized,
           path: filePath,

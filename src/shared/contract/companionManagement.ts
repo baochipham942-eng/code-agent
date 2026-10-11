@@ -14,7 +14,14 @@ export type CompanionRelayStatus = {
   /** 账号通道：off=没配中继；signedOut=没登录 Neo 账号；connecting=已登录未连上；connected=已连上。 */
   account: 'off' | 'signedOut' | 'connecting' | 'connected';
   accountError?: string;
+  /**
+   * 共享凭据通道的存量使用统计（N-COMPANION-RELAY-LEGACY-COUNT）：还在经旧凭据到达的设备数
+   * （按 deviceId 去重）与最近一次到达时间。可选字段：共享通道没起或旧 host 不带，消费方需容忍缺省。
+   */
+  legacyUsage?: CompanionRelayLegacyUsage;
 };
+/** 见 CompanionRelayStatus.legacyUsage；独立命名供 Host 侧存取与状态块共用同一形状。 */
+export type CompanionRelayLegacyUsage = { devices: number; lastSeenAt: number | null };
 export type CompanionManagementResult =
   | { kind: 'status'; sessions: { id: string; title: string }[]; projects?: { id: string; name: string }[]; devices: CompanionPairedDevice[]; relay?: CompanionRelayStatus }
   | { kind: 'invitation'; invitation: LanInvitation }

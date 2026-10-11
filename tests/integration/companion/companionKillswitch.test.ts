@@ -11,7 +11,6 @@ import { CompanionGateway } from '../../../src/host/services/companion/Companion
 import { CompanionRelayClient } from '../../../src/host/services/companion/CompanionRelayClient';
 import { startCompanionRelayAccountIfConfigured } from '../../../src/host/services/companion/companionRelayAccount';
 import { LanCompanionManager } from '../../../src/host/services/companion/LanCompanionManager';
-import { LanCompanionServer } from '../../../src/host/services/companion/LanCompanionServer';
 import { createIdentity } from '../../../src/shared/companion/noiseChannel';
 import { isPrivateIPv4, toHex, type LanBinding } from '../../../src/shared/companion/lanProtocol';
 import { COMPANION_LIMITS as L } from '../../../src/shared/constants/companion';
@@ -20,7 +19,7 @@ import { FakeCompanionRelay } from './fakeCompanionRelay';
 
 /**
  * 总闸是暂停：关掉之后旧手机拿不到能力，打开之后同一对配对原样回来。
- * 监听还在时看线上的拒绝码；manage 关掉时端口要真的拒绝连接。
+ * 监听还在时看线上的拒绝码；manage 关掉时端口继续由固定应答器占着。
  */
 
 const address = Object.values(networkInterfaces()).flat().find(item => item?.family === 'IPv4' && isPrivateIPv4(item.address))?.address;
@@ -133,7 +132,6 @@ describe('companion remote pause: gateway entry points', () => {
 describe('companion remote pause: LAN wire and the same phone', () => {
   let db: Database.Database | undefined;
   let gateway: CompanionGateway;
-  let server: LanCompanionServer | undefined;
   let manager: LanCompanionManager | undefined;
   const hostIdentity = createIdentity();
 
@@ -148,7 +146,6 @@ describe('companion remote pause: LAN wire and the same phone', () => {
   });
   afterEach(async () => {
     await manager?.stop();
-    await server?.stop();
     db?.close();
   });
 
@@ -171,30 +168,40 @@ describe('companion remote pause: LAN wire and the same phone', () => {
     return { status: res.status, body: await res.json() as unknown };
   }
 
-  it('hello, finish and exchange answer COMPANION_REMOTE_OFF before identity or decrypt', async () => {
-    server = new LanCompanionServer(gateway, hostIdentity);
-    await server.start(requireAddress(), 0);
+  it('while off the LAN surface answers fixed COMPANION_REMOTE_OFF before identity or decrypt', async () => {
+    manager = openManager();
     const phone = createIdentity();
     const bodies: unknown[] = [];
     const client = new LanCompanionClient(phone, recordingPost(bodies));
-    const binding = await client.pair(JSON.stringify(server.invite(['shared'])));
-    const base = server.endpoints().endpoint;
-    gateway.setRemoteEnabled(false);
+    const binding = await invite(client);
+    const base = manager.lanAdvertisement()!.endpoint;
     const identity = vi.spyOn(gateway, 'identityDevice');
     const pair = vi.spyOn(gateway, 'pairIdentity');
     const submit = vi.spyOn(gateway, 'submit');
-    const hello = await postRaw(`${base}/v1/hello`, { mode: 'resume', frame: '00' });
-    const finish = await postRaw(`${base}/v1/finish`, { channelId: 'stale', frame: '00' });
+    const read = vi.spyOn(gateway, 'read');
+    const sync = vi.spyOn(gateway, 'syncForDevice');
+    const commandStatus = vi.spyOn(gateway, 'commandStatus');
+    await manager.manage({ action: 'setRemote', enabled: false });
+    identity.mockClear();
+    pair.mockClear();
+    submit.mockClear();
+    read.mockClear();
+    sync.mockClear();
+    commandStatus.mockClear();
+    const offBase = `http://127.0.0.1:${new URL(base).port}`;
+    const hello = await postRaw(`${offBase}/v1/hello`, { mode: 'resume', frame: '00' });
+    const finish = await postRaw(`${offBase}/v1/finish`, { channelId: 'stale', frame: '00' });
+    const exchange = await postRaw(`${offBase}/v1/exchange`, { channelId: 'stale', frame: '00' });
     expect(hello).toEqual({ status: 403, body: { error: 'COMPANION_REMOTE_OFF' } });
     expect(finish).toEqual({ status: 403, body: { error: 'COMPANION_REMOTE_OFF' } });
-    await expect(client.request({ action: 'sync', epoch: binding.scopeEpoch, afterSeq: 0 })).rejects.toThrow('HTTP_403');
-    expect(bodies.at(-1)).toEqual({ error: 'COMPANION_REMOTE_OFF' });
+    expect(exchange).toEqual({ status: 403, body: { error: 'COMPANION_REMOTE_OFF' } });
+    expect(binding.deviceId).toBeTruthy();
     expect(identity).not.toHaveBeenCalled();
     expect(pair).not.toHaveBeenCalled();
     expect(submit).not.toHaveBeenCalled();
-    gateway.revokeDevice(binding.deviceId);
-    const revoked = await postRaw(`${base}/v1/hello`, { mode: 'resume', frame: '00' });
-    expect(revoked).toEqual({ status: 403, body: { error: 'COMPANION_REMOTE_OFF' } });
+    expect(read).not.toHaveBeenCalled();
+    expect(sync).not.toHaveBeenCalled();
+    expect(commandStatus).not.toHaveBeenCalled();
     client.close();
   });
 
@@ -234,7 +241,7 @@ describe('companion remote pause: LAN wire and the same phone', () => {
     }, binding);
   }
 
-  it('closes the LAN port while off and lets the same phone sync after on', async () => {
+  it('keeps the LAN port open with a fixed answer while off and lets the same phone sync after on', async () => {
     const bodies: unknown[] = [];
     const phone = createIdentity();
     const client = new LanCompanionClient(phone, recordingPost(bodies));
@@ -247,13 +254,20 @@ describe('companion remote pause: LAN wire and the same phone', () => {
     expect(await connectCode(endpoint.hostname, Number(endpoint.port))).toBe('open');
     const pair = vi.spyOn(gateway, 'pairIdentity');
     const revoke = vi.spyOn(gateway, 'revokeDevice');
+    const identity = vi.spyOn(gateway, 'identityDevice');
+    const submit = vi.spyOn(gateway, 'submit');
     await manager.manage({ action: 'setRemote', enabled: false });
-    expect(await connectCode(endpoint.hostname, Number(endpoint.port))).toBe('ECONNREFUSED');
+    identity.mockClear();
+    expect(await connectCode(endpoint.hostname, Number(endpoint.port))).toBe('open');
+    expect(await postRaw(`${manager.lanAdvertisement()!.endpoint}/v1/hello`, { mode: 'resume', frame: '00' }))
+      .toEqual({ status: 403, body: { error: 'COMPANION_REMOTE_OFF' } });
     expect(gateway.pairedDevices()).toEqual(paired);
     expect(gateway.epoch).toBe(epoch);
     expect(rows(db)).toEqual(stored);
     expect(pair).not.toHaveBeenCalled();
     expect(revoke).not.toHaveBeenCalled();
+    expect(identity).not.toHaveBeenCalled();
+    expect(submit).not.toHaveBeenCalled();
     await expect(manager.manage({ action: 'invite', scope: ['shared'] })).rejects.toThrow('COMPANION_REMOTE_OFF');
     const status = await manager.manage({ action: 'setRemote', enabled: true });
     expect(status).toMatchObject({ kind: 'status', remoteEnabled: true });
@@ -272,20 +286,33 @@ describe('companion remote pause: LAN wire and the same phone', () => {
   it('keeps a phone revoked across off and on, and allows revoke while off', async () => {
     const phoneA = createIdentity();
     const phoneB = createIdentity();
-    const clientA = new LanCompanionClient(phoneA, recordingPost([]));
-    const clientB = new LanCompanionClient(phoneB, recordingPost([]));
+    const phoneC = createIdentity();
+    const bodiesA: unknown[] = [];
+    const bodiesB: unknown[] = [];
+    const bodiesC: unknown[] = [];
+    const clientA = new LanCompanionClient(phoneA, recordingPost(bodiesA));
+    const clientB = new LanCompanionClient(phoneB, recordingPost(bodiesB));
+    const clientC = new LanCompanionClient(phoneC, recordingPost(bodiesC));
     manager = openManager();
     const bindingA = await invite(clientA);
     const bindingB = await invite(clientB);
+    const bindingC = await invite(clientC);
     const epochB = bindingB.scopeEpoch;
+    // pairedDevices 的 SQL 不带 ORDER BY，比较前两边都排序，别让 UUID 插入序当隐式契约。
+    const pairedIds = () => gateway.pairedDevices().map(device => device.deviceId).sort();
     await manager.manage({ action: 'revoke', deviceId: bindingA.deviceId });
     expect(gateway.identityDevice(toHex(phoneA.publicKey))).toBeNull();
-    expect(gateway.pairedDevices().map(device => device.deviceId)).toEqual([bindingB.deviceId]);
+    expect(pairedIds()).toEqual([bindingB.deviceId, bindingC.deviceId].sort());
     await manager.manage({ action: 'setRemote', enabled: false });
     await manager.manage({ action: 'setRemote', enabled: true });
     expect(gateway.identityDevice(toHex(phoneA.publicKey))).toBeNull();
-    expect(gateway.pairedDevices().map(device => device.deviceId)).toEqual([bindingB.deviceId]);
-    await expect(clientA.resume(bindingA)).rejects.toThrow();
+    expect(pairedIds()).toEqual([bindingB.deviceId, bindingC.deviceId].sort());
+    // 被撤销的手机必须拨「当前」端点（off/on 后真服务可能换了端口，拨旧端点只能证明不可达）。
+    // hello 路由把撤销在内的所有握手错误统一包成 403 HANDSHAKE_REJECTED——线上代码钉这个，
+    // 且开着总闸后绝不是 REMOTE_OFF。
+    await expect(resumeSame(clientA, bindingA)).rejects.toThrow('HTTP_403');
+    expect(bodiesA.at(-1)).toEqual({ error: 'COMPANION_HANDSHAKE_REJECTED' });
+    expect(bodiesA).not.toContainEqual({ error: 'COMPANION_REMOTE_OFF' });
     const backB = await resumeSame(clientB, bindingB);
     expect(backB.deviceId).toBe(bindingB.deviceId);
     expect(backB.scopeEpoch).toBe(epochB);
@@ -293,18 +320,33 @@ describe('companion remote pause: LAN wire and the same phone', () => {
     expect(['events', 'snapshot_required']).toContain(synced.kind);
     expect(await clientB.request({ action: 'command', command: command(backB, 'still-here') })).toMatchObject({ kind: 'accepted' });
 
+    // 关闸期间撤销：打开后该手机拨当前端点同样吃具体拒绝码，不是 fetch failed。
     await manager.manage({ action: 'setRemote', enabled: false });
+    await manager.manage({ action: 'revoke', deviceId: bindingC.deviceId });
+    expect(gateway.identityDevice(toHex(phoneC.publicKey))).toBeNull();
+    await manager.manage({ action: 'setRemote', enabled: true });
+    expect(gateway.identityDevice(toHex(phoneC.publicKey))).toBeNull();
+    expect(pairedIds()).toEqual([bindingB.deviceId]);
+    await expect(resumeSame(clientC, bindingC)).rejects.toThrow('HTTP_403');
+    expect(bodiesC.at(-1)).toEqual({ error: 'COMPANION_HANDSHAKE_REJECTED' });
+    expect(bodiesC).not.toContainEqual({ error: 'COMPANION_REMOTE_OFF' });
+
+    // DEVICE_REVOKED 只在 /v1/exchange（带活通道）点名：开着总闸撤销后，下一次 exchange 的
+    // 403 body 是撤销码，手机能直接按 revoked 结算；全程没有 REMOTE_OFF。
+    const backB2 = await resumeSame(clientB, bindingB);
+    expect(backB2.scopeEpoch).toBe(epochB);
     await manager.manage({ action: 'revoke', deviceId: bindingB.deviceId });
     expect(gateway.identityDevice(toHex(phoneB.publicKey))).toBeNull();
-    await manager.manage({ action: 'setRemote', enabled: true });
-    expect(gateway.identityDevice(toHex(phoneB.publicKey))).toBeNull();
     expect(gateway.pairedDevices()).toEqual([]);
-    await expect(clientB.resume(bindingB)).rejects.toThrow();
+    await expect(clientB.request({ action: 'sync', epoch: epochB, afterSeq: 0 })).rejects.toThrow('HTTP_403');
+    expect(bodiesB.at(-1)).toEqual({ error: 'COMPANION_DEVICE_REVOKED' });
+    expect(bodiesB).not.toContainEqual({ error: 'COMPANION_REMOTE_OFF' });
     clientA.close();
     clientB.close();
+    clientC.close();
   });
 
-  it('starts LAN for a paired device by default and stays closed when the saved flag is off', async () => {
+  it('starts LAN for a paired device by default and restores only the responder when the saved flag is off', async () => {
     const device = gateway.pairIdentity(toHex(createIdentity().publicKey), ['shared']);
     manager = openManager();
     await manager.restore();
@@ -320,7 +362,13 @@ describe('companion remote pause: LAN wire and the same phone', () => {
     const quiet = new LanCompanionManager(restarted, loadIdentity, async () => [{ id: 'shared', title: 'Shared' }]);
     await quiet.restore();
     expect(loadIdentity).not.toHaveBeenCalled();
-    expect(quiet.lanAdvertisement()).toBeNull();
+    const responderAd = quiet.lanAdvertisement();
+    expect(responderAd).not.toBeNull();
+    const response = await fetch(`${responderAd!.endpoint}/v1/hello`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode: 'resume', frame: '00' }),
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: 'COMPANION_REMOTE_OFF' });
     expect(restarted.pairedDevices().map(item => item.deviceId)).toEqual([device.deviceId]);
     expect(restarted.remoteEnabled()).toBe(false);
   });

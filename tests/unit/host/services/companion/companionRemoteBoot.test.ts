@@ -149,10 +149,10 @@ describe('createApp honours the persisted remote switch', () => {
     expect(info.join('\n')).not.toContain('Companion remote access is off');
   });
 
-  it('does not start LAN or either relay factory when the saved flag is off', () => {
+  it('starts only the LAN responder and no relay factory when the saved flag is off', () => {
     const info = boot(true);
     expect(harness.legacyStarts).toBe(0);
     expect(harness.accountStarts).toBe(0);
-    expect(info).toContain('Companion remote access is off; LAN listener and relay sockets stay down');
+    expect(info).toContain('Companion remote access is off; relay sockets stay down, LAN answers a fixed refusal');
   });
 });

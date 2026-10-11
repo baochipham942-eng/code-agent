@@ -5,7 +5,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { BookMarked, FileText, Folder, Library, Trash2 } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
-import type { ExpertBindingKind, ExpertBindingMode, ExpertBindingScope, ExpertContextBinding } from '@shared/contract/roleAssets';
+import type { ExpertBindingKind, ExpertBindingMode, ExpertContextBinding } from '@shared/contract/roleAssets';
 import type { LibraryItem } from '@shared/contract/library';
 import ipcService from '../../../../services/ipcService';
 import { listLibraryItems } from '../../../../services/libraryClient';
@@ -33,7 +33,6 @@ export const RoleBindingsSection: React.FC<{ roleId: string }> = ({ roleId }) =>
   const [selectedItemId, setSelectedItemId] = useState('');
   const [pathInput, setPathInput] = useState('');
   const [mode, setMode] = useState<ExpertBindingMode>('always');
-  const [scope, setScope] = useState<ExpertBindingScope>('private');
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -58,7 +57,6 @@ export const RoleBindingsSection: React.FC<{ roleId: string }> = ({ roleId }) =>
         kind,
         target: target.trim(),
         mode,
-        scope,
       });
       setPathInput('');
       setSelectedItemId('');
@@ -106,9 +104,6 @@ export const RoleBindingsSection: React.FC<{ roleId: string }> = ({ roleId }) =>
               <span className="rounded bg-zinc-700/60 px-1.5 py-0.5 text-[10px] text-zinc-400">
                 {binding.mode === 'always' ? text.modeAlways : text.modeOnDemand}
               </span>
-              <span className="rounded bg-zinc-700/60 px-1.5 py-0.5 text-[10px] text-zinc-400">
-                {binding.scope === 'private' ? text.scopePrivate : text.scopeProject}
-              </span>
               <IconButton
                 icon={<Trash2 className="h-3.5 w-3.5" />}
                 aria-label={text.remove}
@@ -132,15 +127,6 @@ export const RoleBindingsSection: React.FC<{ roleId: string }> = ({ roleId }) =>
           >
             <option value="always">{text.modeAlways}</option>
             <option value="on_demand">{text.modeOnDemand}</option>
-          </select>
-          <select
-            value={scope}
-            onChange={(e) => setScope(e.target.value as ExpertBindingScope)}
-            data-testid="role-binding-scope"
-            className="h-7 rounded-md border border-zinc-700 bg-zinc-900 px-1.5 text-xs text-zinc-300 outline-none focus:border-zinc-600"
-          >
-            <option value="private">{text.scopePrivate}</option>
-            <option value="project">{text.scopeProject}</option>
           </select>
         </div>
         <div className="flex items-center gap-2">

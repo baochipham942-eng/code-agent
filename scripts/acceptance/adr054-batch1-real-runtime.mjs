@@ -1,3 +1,4 @@
+/* global Buffer, console, fetch, process, setTimeout, window */
 // ADR-054 batch 1 real-runtime acceptance against an installed Agent Neo Dev host.
 //
 // This intentionally uses the real DashScope realtime connection and the real task
@@ -285,8 +286,19 @@ async function startScenario({ name, hangUpWithPendingTerminal }) {
   }
 }
 
+function readDevToken() {
+  try {
+    return fs.readFileSync(path.join(DATA_DIR, '.dev-token'), 'utf8').trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 async function main() {
-  const health = await fetch(`${BASE_URL}/api/health`).then((response) => response.json());
+  const token = readDevToken();
+  const health = await fetch(`${BASE_URL}/api/health/detail`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  }).then((response) => response.json());
   record('runtime.build', health?.status === 'ok' && health?.serverRoot === EXPECTED_ROOT, {
     pid: health?.pid,
     serverRoot: health?.serverRoot,

@@ -64,12 +64,12 @@ export function QueuedInputTray({
 
   return (
     <section
-      className="mb-2 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950/80"
+      className="mb-2 overflow-hidden rounded-xl border border-border-default bg-surface-subtle"
       data-testid="queued-input-tray"
     >
       <button /* ds-allow:button: 队列条标题整行都是收起热区，Button primitive 的居中按钮形态不适配 */
         type="button"
-        className="flex w-full items-center justify-between px-3 py-2 text-left text-xs text-zinc-400 hover:text-zinc-200"
+        className="flex w-full items-center justify-between px-3 py-2 text-left text-xs text-text-secondary hover:text-text-primary"
         aria-expanded={!collapsed}
         onClick={() => setCollapsed((value) => !value)}
       >
@@ -98,11 +98,11 @@ export function QueuedInputTray({
                   </span>
                 )}
                 {editingId === item.id && (
-                  <span className="shrink-0 text-[10px] text-zinc-500">
+                  <span className="shrink-0 text-[10px] text-text-tertiary">
                     {copy.editing}
                   </span>
                 )}
-                <span className="min-w-0 flex-1 truncate text-xs text-zinc-300">
+                <span className="min-w-0 flex-1 truncate text-xs text-text-primary">
                   {item.envelope.content}
                 </span>
                 <div
@@ -114,7 +114,7 @@ export function QueuedInputTray({
                       <button /* ds-allow:button: 行内文字动作需保持 11px 紧凑密度，Button primitive 最小尺寸会挤掉正文 */ type="button" className="rounded px-1.5 py-1 text-[11px] text-mark-warning hover:opacity-80" onClick={() => { void runAction('sendNow', item.id); }}>
                         {copy.retry}
                       </button>
-                      <button /* ds-allow:button: paused 行内删除与重试同密度排列 */ type="button" className="rounded px-1.5 py-1 text-[11px] text-zinc-400 hover:text-zinc-200" onClick={() => { void runAction('retract', item.id); }}>
+                      <button /* ds-allow:button: paused 行内删除与重试同密度排列 */ type="button" className="rounded px-1.5 py-1 text-[11px] text-text-secondary hover:text-text-primary" onClick={() => { void runAction('retract', item.id); }}>
                         {copy.delete}
                       </button>
                     </>
@@ -130,10 +130,10 @@ export function QueuedInputTray({
                       >
                         <GitBranch className="h-3.5 w-3.5" aria-hidden />
                       </button>
-                      <button /* ds-allow:button: 普通行内编辑与其他文字动作同密度排列 */ type="button" className="rounded px-1.5 py-1 text-[11px] text-zinc-400 hover:text-zinc-200" onClick={() => onEdit(item)}>
+                      <button /* ds-allow:button: 普通行内编辑与其他文字动作同密度排列 */ type="button" className="rounded px-1.5 py-1 text-[11px] text-text-secondary hover:text-text-primary" onClick={() => onEdit(item)}>
                         {copy.edit}
                       </button>
-                      <button /* ds-allow:button: 普通行内撤回与其他文字动作同密度排列 */ type="button" className="rounded px-1.5 py-1 text-[11px] text-zinc-400 hover:text-zinc-200" onClick={() => { void runAction('retract', item.id); }}>
+                      <button /* ds-allow:button: 普通行内撤回与其他文字动作同密度排列 */ type="button" className="rounded px-1.5 py-1 text-[11px] text-text-secondary hover:text-text-primary" onClick={() => { void runAction('retract', item.id); }}>
                         {copy.retract}
                       </button>
                     </>

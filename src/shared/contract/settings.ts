@@ -346,7 +346,6 @@ export interface AppSettings {
   ui: {
     theme: 'light' | 'dark' | 'system' | 'high-contrast-light' | 'high-contrast-dark';
     fontSize: number;
-    showToolCalls: boolean;
     language: 'zh' | 'en';
     disclosureLevel?: 'simple' | 'standard' | 'advanced' | 'expert';
     /** 开发者模式：在对话流中显示回合质量评分、路由详情等调试信息 */

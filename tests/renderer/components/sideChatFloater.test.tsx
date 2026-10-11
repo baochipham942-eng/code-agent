@@ -293,6 +293,48 @@ describe('side chat floater', () => {
     expect(screen.getByRole('button', { name: '重试' })).toBeTruthy();
   });
 
+  it('keeps the header row outside the scroll container and caps the body height to the space above the input', async () => {
+    const pending = deferAnswer();
+    render(<SubmitHarness />);
+    await submitBtw();
+    await act(async () => {
+      pending.resolve('长答案'.repeat(40));
+    });
+    const dialog = await waitFor(() => screen.getByRole('dialog'));
+    const body = dialog.querySelector<HTMLDivElement>('div.overflow-y-auto');
+    expect(body).not.toBeNull();
+    // 结构性质：标题行（X 所在行）在滚动容器外，不随正文滚动
+    expect(screen.getByRole('button', { name: '关闭侧聊' }).closest('div.overflow-y-auto')).toBeNull();
+    // 滚动容器有高度帽；jsdom 量不到布局（offsetParent null）时保持 60vh class 兜底、无内联覆盖
+    expect(body?.className).toContain('max-h-[60vh]');
+    expect(body?.style.maxHeight).toBe('');
+
+    // 量得到布局时：正文帽 = min(60vh, 锚点上沿 − mb-2(8) − TitleBar 预留(56) − 标题行高)
+    const anchor = document.createElement('div');
+    document.body.append(anchor);
+    Object.defineProperty(dialog, 'offsetParent', { get: () => anchor, configurable: true });
+    const header = dialog.firstElementChild as HTMLElement;
+    anchor.getBoundingClientRect = () => ({ top: 336.5 }) as DOMRect;
+    header.getBoundingClientRect = () => ({ height: 42 }) as DOMRect;
+    Object.defineProperty(window, 'innerHeight', { value: 600, configurable: true });
+    try {
+      window.dispatchEvent(new Event('resize'));
+      await waitFor(() => expect(body?.style.maxHeight).toBe('230px')); // 336.5 - 8 - 56 - 42 = 230.5 → 230
+      // 空间充裕时仍以 60vh 为帽（900 视口 → 540）
+      anchor.getBoundingClientRect = () => ({ top: 800 }) as DOMRect;
+      Object.defineProperty(window, 'innerHeight', { value: 900, configurable: true });
+      window.dispatchEvent(new Event('resize'));
+      await waitFor(() => expect(body?.style.maxHeight).toBe('540px'));
+      // 空间不足时保底 64px：正文不至于整块塌成只剩标题行
+      anchor.getBoundingClientRect = () => ({ top: 100 }) as DOMRect;
+      window.dispatchEvent(new Event('resize'));
+      await waitFor(() => expect(body?.style.maxHeight).toBe('64px'));
+    } finally {
+      Object.defineProperty(window, 'innerHeight', { value: 768, configurable: true });
+      anchor.remove();
+    }
+  });
+
   it('reuses the context health popover shell and adds no new colour or z-index token', () => {
     const popover = readFileSync(
       resolve(__dirname, '../../../src/renderer/components/features/chat/ContextHealthDetailPopover.tsx'),

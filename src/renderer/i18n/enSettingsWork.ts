@@ -409,8 +409,6 @@ export const enSettingsWork = {
         librarySelectPlaceholder: 'Select a library item…',
         modeAlways: 'Always indexed',
         modeOnDemand: 'On demand',
-        scopePrivate: 'Private',
-        scopeProject: 'Project shared',
         add: 'Bind',
         remove: 'Remove',
         addFailed: 'Failed to bind',

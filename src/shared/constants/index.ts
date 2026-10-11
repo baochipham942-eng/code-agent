@@ -44,6 +44,7 @@ export * from './sessionSearch';
 export * from './voice';
 export * from './desktopAudio';
 export * from './presentationPreview';
+export * from './appCacheRetention';
 export * from './doctor';
 export * from './toolLedger';
 export * from './capabilityCandidates';

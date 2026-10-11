@@ -156,6 +156,7 @@ describe('死主进程路径（src/host/index.ts）', () => {
     ['logRetention', /\brunLogRetention\s*\(/, '审计日志清理在发行版里不会执行'],
     ['dbRetention', /\brunDbRetention\s*\(/, 'telemetry 表无 TTL，生产库会无限涨（实测 377MB+）'],
     ['presentationPreviewRetention', /\bkickoffPresentationPreviewRetention\s*\(/, 'pptx 逐页预览缓存旧 revision 目录无回收路径，会无限堆积'],
+    ['appCacheRetention', /\bkickoffAppCacheRetention\s*\(/, 'channel-media/托管浏览器截图/appshots 三个缓存目录无回收路径，会无限堆积'],
   ])('webStartupRetention.ts 真的调了 %s（第二跳）', (moduleName, callPattern, consequence) => {
     const kickoff = readCode(RETENTION_KICKOFF);
     expect(kickoff, `未 import ${moduleName}：${consequence}`)

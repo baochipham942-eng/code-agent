@@ -73,6 +73,13 @@ export interface BackgroundSubagentOptions {
   declaredOutputs?: string[];
   suppressIdleWake?: boolean;
   suppressReason?: 'block-wait' | 'cancelled' | 'goal-loop';
+  /**
+   * 完成通知闸门（N-WF-SETTLEMENT-DEDUPE）：对象按引用穿透 adopt/spawn 内部的
+   * options 拷贝，完成时可读到调用方置的最新值。suppress=true 时 recordCompletion
+   * 跳过队列推送与 onComplete，但结果照常回填条目（collect_agent 仍能取到）。
+   * workflow 终态 claim 输给上个进程（durable 行已存在）时置位——同键通知已交付过。
+   */
+  completionNotificationGate?: { suppress: boolean };
   onComplete?: (record: SubagentCompletionRecord) => void | Promise<void>;
 }
 
@@ -297,6 +304,7 @@ export class BackgroundSubagentRegistry {
 
   private recordCompletion(entry: BackgroundSubagentEntry, options: BackgroundSubagentOptions): void {
     this.liveProgressByAgent.delete(entry.agentId);
+    if (options.completionNotificationGate?.suppress) return;
     const record = buildSubagentCompletionRecord({
       agentId: entry.agentId,
       title: entry.title,

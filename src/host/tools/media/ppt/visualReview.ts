@@ -21,6 +21,8 @@ import {
   rasterizePdfToImages,
   clearPageImages,
 } from '../officeRaster';
+import { getToolScreenshotsRoot } from '../../utils/toolScreenshotDir';
+import { TOOL_SCREENSHOTS } from '../../../../shared/constants';
 
 export { isLibreOfficeAvailable, collectPageImages, resolvePdftoppm };
 
@@ -36,7 +38,7 @@ const logger = createLogger('VisualReview');
  * 流程：PPTX → PDF (LibreOffice) → PNG (sips/convert)
  *
  * @param pptxPath - PPTX 文件路径
- * @param outputDir - 截图输出目录（默认同目录下 _screenshots/）
+ * @param outputDir - 截图输出目录（缺省时落数据目录 tool-screenshots/ 下 per-call 目录，不再写 pptx 同目录）
  * @returns 每页 PNG 文件路径数组
  */
 export async function convertToScreenshots(
@@ -47,7 +49,13 @@ export async function convertToScreenshots(
     throw new Error(`PPTX not found: ${pptxPath}`);
   }
 
-  const screenshotDir = outputDir || path.join(path.dirname(pptxPath), '_screenshots');
+  // 无显式目录时不再写 pptx 同目录（N-RETENTION-SHOTS-APPDIR）：改落数据目录下 per-call 目录
+  let screenshotDir = outputDir;
+  if (!screenshotDir) {
+    const root = getToolScreenshotsRoot();
+    fs.mkdirSync(root, { recursive: true });
+    screenshotDir = fs.mkdtempSync(path.join(root, TOOL_SCREENSHOTS.PER_CALL_DIR_PREFIX));
+  }
   if (!fs.existsSync(screenshotDir)) {
     fs.mkdirSync(screenshotDir, { recursive: true });
   }

@@ -22,7 +22,7 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
-import { getConfigService } from '../../../services';
+import { getZhipuOfficialVideoApiKey } from '../../../tools/modules/network/toolAvailability';
 import { MODEL_API_ENDPOINTS, ZHIPU_OFFICIAL_QUICK_MODEL } from '../../../../shared/constants';
 import { createFileArtifact, createVirtualArtifact } from '../../../tools/artifacts/artifactMeta';
 import { videoGenerateSchema as schema } from './videoGenerate.schema';
@@ -71,15 +71,6 @@ interface ZhipuVideoTaskResponse {
   task_status: 'PROCESSING' | 'SUCCESS' | 'FAIL';
   video_result?: Array<{ url: string; cover_image_url: string }>;
   error?: { code: string; message: string };
-}
-
-function getZhipuOfficialApiKey(): string | undefined {
-  const officialKey = process.env.ZHIPU_OFFICIAL_API_KEY;
-  if (officialKey) return officialKey;
-  const configService = getConfigService();
-  const zhipuKey = configService.getApiKey('zhipu');
-  if (zhipuKey && !zhipuKey.startsWith('oki-')) return zhipuKey;
-  return undefined;
 }
 
 async function fetchWithAbort(
@@ -399,7 +390,7 @@ export async function executeVideoGenerate(
   const startTime = Date.now();
 
   try {
-    const zhipuApiKey = getZhipuOfficialApiKey();
+    const zhipuApiKey = getZhipuOfficialVideoApiKey();
     if (!zhipuApiKey) {
       return {
         ok: false,

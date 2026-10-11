@@ -160,6 +160,7 @@
     "postinstall": "npm run rebuild-native:system",
     "eval": "npx tsx packages/internal/evaluation-center/scripts/eval-ci.ts --split held-in",
     "eval:core": "npx tsx packages/internal/evaluation-center/scripts/eval-ci.ts --split core",
+    "eval:factcheck-guidance": "npx tsx packages/internal/evaluation-center/scripts/acceptance/factcheck-guidance-eval.ts",
     "voice-eval": "npx tsx tests/eval/voice/run.ts",
     "trajectory:audit": "npx tsx packages/internal/evaluation-center/scripts/export-agent-trajectories.ts",
     "trajectory:collect-sample": "npx tsx packages/internal/evaluation-center/scripts/collect-agent-trajectory-sample.ts",

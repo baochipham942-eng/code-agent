@@ -13,7 +13,9 @@ import type {
   CronExecutionTrigger,
 } from '../../shared/contract/cron';
 import { CRON_GUARDRAILS, CRON_EVENT_TRIGGER } from '../../shared/constants';
-import type { CronRunDigest } from '../../shared/cronRunDigest';
+import { parseCronRunDigest, type CronRunDigest } from '../../shared/cronRunDigest';
+import { parseUrgencyHeader } from '../../shared/cronUrgency';
+import type { CronUrgency } from '../../shared/contract/sessionAutomation';
 
 export interface CronAgentActionResult {
   agentType: string;
@@ -21,6 +23,36 @@ export interface CronAgentActionResult {
   result: unknown;
   sessionId: string;
   digest?: CronRunDigest;
+  /** 结果头部行解析出的紧急档位（N-CRON-INBOX-URGENCY-TIER），供待过目标记透传。 */
+  urgency?: CronUrgency;
+  /** 头部行存在但值不合法时的整行原文（归 fyi 时保留给用户看）。 */
+  urgencyRaw?: string;
+}
+
+/**
+ * 组装 agent 动作的执行结果：digest + 紧急档位 + 安静监听轮的 skipped 标记。
+ * 档位优先读 `<cron_summary>` 摘要的头部行，没有摘要块时读最后一条 assistant
+ * 正文的头部（N-CRON-INBOX-URGENCY-TIER；解析逻辑在 shared/cronUrgency）。
+ */
+export function buildCronAgentActionResult(
+  action: { agentType: string; prompt: string },
+  result: unknown,
+  sessionId: string,
+  finalAssistantText: string,
+  quietWatchRound: boolean,
+): CronAgentActionResult & { skipped?: boolean; reason?: string } {
+  const digest = parseCronRunDigest(finalAssistantText);
+  const { urgency, raw: urgencyRaw } = parseUrgencyHeader(digest.summary ?? finalAssistantText);
+  return {
+    agentType: action.agentType,
+    prompt: action.prompt,
+    result,
+    sessionId,
+    digest,
+    urgency,
+    ...(urgencyRaw ? { urgencyRaw } : {}),
+    ...(quietWatchRound ? { skipped: true, reason: 'no_new_event' } : {}),
+  };
 }
 
 export interface CronExecutionRow {

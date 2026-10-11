@@ -192,13 +192,42 @@ export class WorkflowJournalRepository {
     return { run, calls };
   }
 
+  /** Record one durable stall announcement. Duplicate (run, epoch) writes are ignored. */
+  recordStallNotice(runId: string, epoch: number, announcedAt: number = Date.now()): boolean {
+    const result = this.db
+      .prepare(`
+        INSERT OR IGNORE INTO workflow_stall_notices (run_id, epoch, announced_at)
+        VALUES (?, ?, ?)
+      `)
+      .run(runId, epoch, announcedAt);
+    return result.changes > 0;
+  }
+
+  /** Return the highest durably announced stall epoch, or zero when none exists. */
+  getMaxStallEpoch(runId: string): number {
+    const row = this.db
+      .prepare('SELECT MAX(epoch) AS max_epoch FROM workflow_stall_notices WHERE run_id = ?')
+      .get(runId) as { max_epoch?: number | null } | undefined;
+    return row?.max_epoch ?? 0;
+  }
+
+  /** Return workflow runs that were still running when the process last wrote the journal. */
+  listUnfinishedRuns(): WorkflowRunRecord[] {
+    const rows = this.db
+      .prepare("SELECT * FROM workflow_runs WHERE status = 'running' ORDER BY started_at ASC")
+      .all() as SQLiteRow[];
+    return rows.map((row) => this.mapRunRow(row));
+  }
+
   deleteRun(runId: string): boolean {
+    this.db.prepare('DELETE FROM workflow_stall_notices WHERE run_id = ?').run(runId);
     const result = this.db.prepare('DELETE FROM workflow_runs WHERE run_id = ?').run(runId);
     return result.changes > 0;
   }
 
   /** 仅供测试/维护：清空两表。 */
   clearAll(): void {
+    this.db.exec('DELETE FROM workflow_stall_notices');
     this.db.exec('DELETE FROM workflow_run_calls');
     this.db.exec('DELETE FROM workflow_runs');
   }

@@ -3,7 +3,9 @@ import fs from 'fs/promises';
 import path from 'path';
 import { createLogger } from '../../services/infra/logger';
 import { scanSkillContent, type SkillGuardFinding } from '../../security/skillContentGuard';
+import { scanWithJevInjection } from '../../security/jevInjectionScan';
 import type { SkillInstallCautionHit } from '../../../shared/contract/skillInstallCaution';
+import { JEV_TIMEOUT_MS } from '../../../shared/constants/jevQuestions';
 import type { MarketplaceSource } from './types';
 
 /**
@@ -136,10 +138,24 @@ function hashScannedText(files: Array<{ relativePath: string; content: string }>
   return hash.digest('hex');
 }
 
+function buildJevSkillInstallText(files: Array<{ relativePath: string; content: string }>): string {
+  const skillFiles = files
+    .filter((file) => path.basename(file.relativePath).toLowerCase() === 'skill.md')
+    .sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+  const otherFiles = files
+    .filter((file) => path.basename(file.relativePath).toLowerCase() !== 'skill.md')
+    .sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+  return [
+    ...skillFiles.map((file) => `${file.relativePath}\n${file.content}`),
+    ...otherFiles.map((file) => `${file.relativePath}\n${file.content}`),
+  ].join('\n\n');
+}
+
 interface SkillInstallScanResult {
   cautionHits: SkillInstallCautionHit[];
   /** Hash of the text files this scan actually read. Confirmation tokens bind to it. */
   contentHash: string;
+  jevAdvisory?: { injection: number; exfilRequest: number };
 }
 
 export interface SkillPluginRootScanOutcome extends SkillInstallScanResult {
@@ -205,7 +221,40 @@ export async function scanInstallContent(args: {
 
   const outcome = await scanPluginRootContent(args);
   if (outcome.verdict !== 'block') {
-    return { cautionHits: outcome.cautionHits, contentHash: outcome.contentHash };
+    const scanResult: SkillInstallScanResult = {
+      cautionHits: outcome.cautionHits,
+      contentHash: outcome.contentHash,
+    };
+    if (args.sourceTrust === 'official-registry' || args.sourceTrust === 'unsigned-github-archive') {
+      // Advisory only; this is not a security boundary. Any failure leaves the
+      // deterministic install result unchanged and never blocks installation.
+      try {
+        const files = await readTextFiles(args.rootDir);
+        const jevResult = await scanWithJevInjection(
+          'remote_skill',
+          buildJevSkillInstallText(files),
+          undefined,
+          AbortSignal.timeout(JEV_TIMEOUT_MS),
+        );
+        if (!jevResult.skipped && jevResult.flagged) {
+          const jevAdvisory = {
+            injection: jevResult.injection,
+            exfilRequest: jevResult.exfilRequest,
+          };
+          logger.warn('Jev advisory flagged remote skill install', {
+            pluginSpec: args.pluginSpec,
+            sourceTrust: args.sourceTrust,
+            injection: jevAdvisory.injection,
+            exfilRequest: jevAdvisory.exfilRequest,
+          });
+          scanResult.jevAdvisory = jevAdvisory;
+        }
+      } catch {
+        // The judge is best-effort: unavailable, timed out, or malformed
+        // responses must preserve the pre-advisory return value.
+      }
+    }
+    return scanResult;
   }
 
   logger.warn('Marketplace install blocked by skill content guard', {

@@ -22,11 +22,11 @@ interface BackgroundTaskLineLabels {
 }
 
 /**
- * 条目状态行的纯函数（测试锚点）：running → 由组件渲染计时；终态 → 结果行。
- * completionMessage 携带稳定 code（USER_CANCELLED / MAX_ITERATIONS_REACHED）时翻译成
- * 人话，其余原样展示（engine 的终态消息），空则回落默认完成/失败行。
+ * 条目状态行：running → 由组件渲染计时；终态 → 结果行。completionMessage 携带
+ * 稳定 code（USER_CANCELLED / MAX_ITERATIONS_REACHED）时翻译成人话，其余原样展示
+ * （engine 的终态消息），空则回落默认完成/失败行。
  */
-export function resolveBackgroundTaskStatusLine(
+function resolveBackgroundTaskStatusLine(
   session: Pick<BackgroundSessionInfo, 'status' | 'completionMessage'>,
   labels: BackgroundTaskLineLabels,
 ): { isRunning: boolean; line: string } {
@@ -44,7 +44,7 @@ interface DurationLabels {
   hours: string;
 }
 
-export function formatBackgroundDuration(startedAt: number, now: number, labels: DurationLabels): string {
+function formatBackgroundDuration(startedAt: number, now: number, labels: DurationLabels): string {
   const seconds = Math.max(0, Math.floor((now - startedAt) / 1000));
   if (seconds < 60) return labels.seconds.replace('{n}', String(seconds));
   const minutes = Math.floor(seconds / 60);

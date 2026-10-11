@@ -80,7 +80,7 @@ export function SelectedCapabilityChips() {
             }}
             className={`group inline-flex max-w-[220px] cursor-default items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs transition-colors ${
               dimmed
-                ? 'border-zinc-800 bg-zinc-900/50 text-zinc-500'
+                ? 'border-border-default bg-surface-subtle text-zinc-500'
                 : 'border-zinc-700 bg-zinc-800/70 text-zinc-200 hover:border-zinc-500'
             }`}
           >

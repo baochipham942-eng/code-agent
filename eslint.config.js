@@ -228,6 +228,10 @@ export default tseslint.config(
   {
     // God File 历史白名单：有意为之的数据表/兼容性边界，max-lines 不适用（architecture-debt-report 据此豁免）。
     // builtinSkillsData.ts — 内置 skill 扁平目录（~2960 行纯数据），accessor 逻辑已分离至 builtinSkills.ts。
+    // deferredToolsData.ts — 延迟工具元数据扁平目录（~1150 行纯数据：CORE_TOOLS 名单 + DEFERRED_TOOLS_META
+    // + TOOL_ALIASES），accessor 逻辑已分离至 deferredTools.ts（N-MAXLINES-MINEFIELD-2）。
+    // enSettingsModels / zhSettingsModels — settings/Models 域文案表（单一 exported object literal 的
+    // en/zh 镜像，新 provider/模型条目只追加不重构），与主文案 en.ts/zh.ts 同类纯数据（N-MAXLINES-MINEFIELD-2）。
     // agentAppService / ChatInput/index / web/routes/agent — 编排与协议穿越边界（桌面/渲染/web 三条
     // 消息链路的汇聚口），2026-07-29 UX round2 后同 agentOrchestrator 类按汇聚口豁免。
     // browserService.ts — 托管浏览器生命周期/标签/视口/输入汇聚口（system Chrome CDP + Playwright
@@ -241,6 +245,9 @@ export default tseslint.config(
       'src/host/services/infra/browserService.ts',
       'src/renderer/components/features/chat/ChatInput/index.tsx',
       'src/web/routes/agent.ts',
+      'src/host/services/toolSearch/deferredToolsData.ts',
+      'src/renderer/i18n/enSettingsModels.ts',
+      'src/renderer/i18n/zhSettingsModels.ts',
     ],
     rules: {
       'max-lines': 'off',

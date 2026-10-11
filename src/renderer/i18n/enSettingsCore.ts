@@ -200,6 +200,7 @@ export const enSettingsCore = {
         ruleCountSuffix: ' rules',
         highestPriorityPrefix: 'Highest priority: ',
         adminOnlySwitchHint: 'Switching permission mode requires admin access; the current account cannot make this change.',
+        adminManagedNote: 'Managed by your administrator',
         permissionModes: {
           default: {
             title: permissionVocabularyEn.ask,

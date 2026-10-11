@@ -195,6 +195,57 @@ describe('presentation preview retention sweep', () => {
     expect(fs.existsSync(unreferenced)).toBe(false);
   });
 
+  it('Windows 反斜杠引用（raw 路径与 JSON 转义两种形状）也算被引用，不删', async () => {
+    const deck = writeDeck('win-shaped.pptx');
+    const viaRawBackslash = writeRevisionDir(revHex(1), { filePath: deck, lastUsedAt: NOW - 40 * DAY_MS });
+    const viaJsonEscaped = writeRevisionDir(revHex(2), { filePath: deck, lastUsedAt: NOW - 40 * DAY_MS });
+    const unreferenced = writeRevisionDir(revHex(3), { filePath: deck, lastUsedAt: NOW - 40 * DAY_MS });
+
+    insertRow('sessions', {
+      id: 's1',
+      title: 'fixture',
+      model_provider: 'test',
+      model_name: 'test',
+      created_at: NOW,
+      updated_at: NOW,
+    });
+    // Windows 上 buildPresentationPagePreview 的 path.join 产出反斜杠路径；
+    // companion_artifacts.path 存原始单反斜杠形状
+    const winCachePath = `C:\\Users\\dev\\AppData\\Roaming\\code-agent\\cache\\${PRESENTATION_PREVIEW_CACHE_DIRNAME}`;
+    insertRow('companion_artifacts', {
+      artifact_id: 'a1',
+      session_id: 's1',
+      version: 1,
+      name: 'deck',
+      mime_type: 'image/jpeg',
+      size: 5,
+      sha256: 'x',
+      origin: 'test',
+      created_at: NOW,
+      path: `${winCachePath}\\${revHex(1)}\\pages\\deck-1.jpg`,
+    });
+    // messages.tool_results 这类 JSON 列里路径被 JSON.stringify 转义，反斜杠成对
+    insertRow('messages', {
+      id: 'm1',
+      session_id: 's1',
+      role: 'user',
+      content: '',
+      timestamp: NOW,
+      tool_results: JSON.stringify({ screenshot: `${winCachePath}\\${revHex(2)}\\pages\\deck-1.jpg` }),
+    });
+
+    const summary = await sweepPresentationPreviewRetention({
+      cacheRoot: fixture!.cacheRoot,
+      dbPath: fixture!.dbPath,
+      now: NOW,
+    });
+
+    expect(summary).toEqual({ deleted: 1, failed: 0 });
+    expect(fs.existsSync(viaRawBackslash)).toBe(true);
+    expect(fs.existsSync(viaJsonEscaped)).toBe(true);
+    expect(fs.existsSync(unreferenced)).toBe(false);
+  });
+
   it('扫描读不全（库文件缺失 / 表缺失）本轮一个不删，恰好记 1 次失败', async () => {
     const deck = writeDeck('scan-fail.pptx');
     const old = writeRevisionDir(revHex(1), { filePath: deck, lastUsedAt: NOW - 40 * DAY_MS });

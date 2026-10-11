@@ -8,7 +8,8 @@
 // 删除前提（owner 规矩：扫描不可信就一个都不删）：
 //   1) 先做只读引用扫描：会话消息（含 tool results / metadata / 隐藏回卷行）、
 //      companion_artifacts 产物账本以及其他存产物/文件路径的表，找子串
-//      `presentation-page-previews/<rev>`。扫描抛错或读不全 → 本轮一个不删，记 1 次失败。
+//      `presentation-page-previews/<rev>`。Windows 落库的是反斜杠路径（path.join），
+//      JSON 列里还成对转义，扫描前按分隔符归一。扫描抛错或读不全 → 本轮一个不删，记 1 次失败。
 //   2) 不是 manifest.filePath 当前 revision（文件还在就重算 sha256；文件已不存在——
 //      ENOENT/ENOTDIR——按无现行 revision 处理；读不出才保守保留）。
 //   3) lastUsedAt 超 30 天，或（超出同 deck 保留的最新 3 个 revision 且超 7 天）。
@@ -168,9 +169,11 @@ async function listSweepableRevisionDirs(cacheRoot: string): Promise<PreviewRevi
 async function collectReferenceText(dbPath: string): Promise<string> {
   const chunks: string[] = [];
   for (const source of REFERENCE_SOURCES) {
-    // 常量目录名不含引号/通配符，直接内插；列名是本文件维护的白名单
+    // 常量目录名不含引号/通配符，直接内插；列名是本文件维护的白名单。
+    // 预筛用 LIKE 的 `_` 单字符通配兜住 `/` 与 `\` 两种分隔符（Windows 写入点是
+    // path.join 的反斜杠路径，JSON 列里还成对转义）——宁可多捞，精筛在 isReferenced。
     const like = source.columns
-      .map((column) => `${column} LIKE '%${PRESENTATION_PREVIEW_CACHE_DIRNAME}/%'`)
+      .map((column) => `${column} LIKE '%${PRESENTATION_PREVIEW_CACHE_DIRNAME}_%'`)
       .join(' OR ');
     const sql = `SELECT ${source.columns.join(', ')} FROM ${source.table} WHERE ${like};`;
     const { stdout } = await execFileAsync('sqlite3', ['-readonly', '-json', dbPath, sql], {
@@ -186,14 +189,22 @@ async function collectReferenceText(dbPath: string): Promise<string> {
     for (const row of rows) {
       if (typeof row !== 'object' || row === null) continue;
       for (const value of Object.values(row as Record<string, unknown>)) {
-        if (typeof value === 'string' && value.length > 0) chunks.push(value);
+        if (typeof value === 'string' && value.length > 0) chunks.push(normalizeSeparators(value));
       }
     }
   }
   return chunks.join('\n');
 }
 
-/** 引用判定：按子串 `presentation-page-previews/<rev>` 精确匹配（64 位 hex 定长，无前缀误伤）。 */
+/**
+ * 分隔符归一：反斜杠串（含 JSON 列里成对转义的 `\\`）折叠成单个 `/`，
+ * 让 Windows 形状 `presentation-page-previews\<rev>` 与正斜杠判定统一命中。
+ */
+function normalizeSeparators(value: string): string {
+  return value.replace(/\\+/g, '/');
+}
+
+/** 引用判定：按子串 `presentation-page-previews/<rev>` 精确匹配（64 位 hex 定长，无前缀误伤；输入已归一分隔符）。 */
 function isReferenced(referenceText: string, dirName: string): boolean {
   return referenceText.includes(`${PRESENTATION_PREVIEW_CACHE_DIRNAME}/${dirName}`);
 }

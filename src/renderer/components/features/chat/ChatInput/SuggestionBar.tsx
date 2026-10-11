@@ -103,7 +103,7 @@ const RecoveryPanel: React.FC<Omit<SuggestionBarProps, 'lastTurnStatus'>> = ({ s
                   key={s.id}
                   type="button"
                   onClick={() => onSelect(s.text)}
-                  className="px-3 py-1.5 text-xs bg-surface-subtle text-zinc-400 rounded-full hover:bg-surface-hover hover:text-zinc-300 transition-colors truncate max-w-[200px] border border-border-default"
+                  className="px-3 py-1.5 text-xs bg-surface-subtle text-text-secondary rounded-full hover:bg-surface-hover hover:text-text-primary transition-colors truncate max-w-[200px] border border-border-default"
                 >
                   {s.text}
                 </button>
@@ -130,7 +130,7 @@ export const SuggestionBar: React.FC<SuggestionBarProps> = ({ suggestions, onSel
           key={s.id}
           type="button"
           onClick={() => onSelect(s.text)}
-          className="px-3 py-1.5 text-xs bg-surface-subtle text-zinc-400 rounded-full hover:bg-surface-hover hover:text-zinc-400 transition-colors truncate max-w-[200px] border border-border-default"
+          className="px-3 py-1.5 text-xs bg-surface-subtle text-text-secondary rounded-full hover:bg-surface-hover transition-colors truncate max-w-[200px] border border-border-default"
         >
           {s.text}
         </button>

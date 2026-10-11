@@ -100,3 +100,62 @@ describe('read-only session notice theme tokens', () => {
     expect(contrast(edge, card)).toBeGreaterThanOrEqual(contrast(oldEdge, oldCard));
   });
 });
+
+describe('chat input text tokens on the semantic card surface (rework r1)', () => {
+  const inputDir = 'src/renderer/components/features/chat/ChatInput';
+  const zincText = /text-[^"'`]*zinc-/;
+
+  it('read-only notice body uses the semantic text hierarchy', () => {
+    const notice = readSource(`${inputDir}/ReadOnlySessionNotice.tsx`);
+
+    expect(notice).toContain('text-sm text-text-primary');
+    expect(notice).not.toMatch(zincText);
+  });
+
+  it('queued input tray text uses semantic tokens on the tokenized surface', () => {
+    const tray = readSource(`${inputDir}/QueuedInputTray.tsx`);
+
+    expect(tray).not.toMatch(zincText);
+    expect(tray).toContain('text-text-secondary hover:text-text-primary');
+    expect(tray).toContain('truncate text-xs text-text-primary');
+    expect(tray).toContain('text-text-tertiary');
+  });
+
+  it('suggestion chips pair the semantic surface with semantic text', () => {
+    const bar = readSource(`${inputDir}/SuggestionBar.tsx`);
+    const chips = bar.match(/className="[^"]*bg-surface-subtle[^"]*"/g) ?? [];
+
+    expect(chips.length).toBeGreaterThanOrEqual(2);
+    for (const chip of chips) {
+      expect(chip).toContain('text-text-secondary');
+      expect(chip).not.toMatch(zincText);
+    }
+  });
+
+  it.each(themeFiles)('%s theme keeps semantic text on the card WCAG AA readable', (_name, path) => {
+    const theme = readSource(path);
+    const page = readHexVariable(theme, '--bg-void');
+    const surface = readRgbaVariable(theme, '--surface-subtle');
+    const card = composite(surface.color, page, surface.alpha);
+
+    for (const variable of ['--text-primary', '--text-secondary']) {
+      expect(contrast(readHexVariable(theme, variable), card)).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('does not reduce dark text contrast from the zinc implementation', () => {
+    const theme = readSource('src/renderer/styles/themes/dark.css');
+    const page = readHexVariable(theme, '--bg-void');
+    const surface = readRgbaVariable(theme, '--surface-subtle');
+    const card = composite(surface.color, page, surface.alpha);
+
+    const zincBody = readRgbTripletVariable(theme, '--zinc-300');
+    const primaryBody = readHexVariable(theme, '--text-primary');
+    expect(contrast(primaryBody, card)).toBeGreaterThanOrEqual(contrast(zincBody, card));
+
+    // tertiary 取代 zinc-500（暗色两值同为 #71717A），只要求不回退。
+    const zincLabel = readRgbTripletVariable(theme, '--zinc-500');
+    const tertiaryLabel = readHexVariable(theme, '--text-tertiary');
+    expect(contrast(tertiaryLabel, card)).toBeGreaterThanOrEqual(contrast(zincLabel, card));
+  });
+});

@@ -11,7 +11,7 @@ export function ReadOnlySessionNotice(): React.ReactElement {
       data-testid="readonly-session-notice"
       className="rounded-2xl border border-border-default bg-surface-subtle px-4 py-3"
     >
-      <p className="text-sm text-zinc-300">{t.chatInput.readOnlyNotice}</p>
+      <p className="text-sm text-text-primary">{t.chatInput.readOnlyNotice}</p>
       <div className="mt-2">
         <Button
           type="button"

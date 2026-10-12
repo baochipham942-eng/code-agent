@@ -381,7 +381,115 @@ describe('② 列表/详情可见 + 停用/删除', () => {
     await waitFor(() => expect(useCronStore.getState().deleteJob).toHaveBeenCalledWith('job-event'));
     expect(confirmSpy).toHaveBeenCalled();
   });
+});
 
+describe('connector:mail 任务编辑不损坏（rework r1）', () => {
+  // PR#2372 ai-review：mail 触发任务打开编辑器后，buildCronJobInput 会把 event 调度
+  // 无条件回建成 source:'channel' + 空 accountId——只改名字点保存必炸；用户若在绑定
+  // 选择器里随手选个通道账号绕过报错，updateJob 会把 mail 触发静默改写成通道触发。
+  // 根因修复：draft 带出原 mail 绑定（eventMailSource），保存时原样回写；绑定选择器
+  // 对 mail 草稿锁定为只读展示，不给「静默改绑」留入口。
+
+  function makeMailEventJob(overrides: Partial<CronJobDefinition> = {}): CronJobDefinition {
+    return makeEventJob({
+      id: 'job-mail',
+      name: '处理新邮件',
+      schedule: {
+        type: 'event',
+        source: 'connector',
+        connector: 'mail',
+        accountId: '_icloud',
+        mailbox: 'INBOX',
+        eventName: 'message',
+        pollIntervalSec: 120,
+        batchWindowSec: 20,
+        minRunIntervalSec: 90,
+      },
+      ...overrides,
+    });
+  }
+
+  it('buildDraftFromJob 带出 mail 原绑定；buildCronJobInput 原样回写，不再回建 channel 源', () => {
+    const job = makeMailEventJob();
+    const draft = buildDraftFromJob(job);
+    expect(draft.scheduleType).toBe('event');
+    expect(draft.eventMailSource).toEqual(job.schedule);
+    // 通道字段保持默认（mail 账号名不是通道账号 id，不能混进去）。
+    expect(draft.eventAccountId).toBe('');
+
+    const input = buildCronJobInput(draft);
+    expect(input.scheduleType).toBe('event');
+    expect(input.schedule).toEqual(job.schedule);
+  });
+
+  it('mail 草稿即使混入通道账号 id 也不静默改绑（eventMailSource 优先）', () => {
+    const draft = { ...buildDraftFromJob(makeMailEventJob()), eventAccountId: 'account-feishu' };
+    const input = buildCronJobInput(draft);
+    expect(input.schedule).toMatchObject({
+      source: 'connector',
+      connector: 'mail',
+      accountId: '_icloud',
+      mailbox: 'INBOX',
+    });
+  });
+
+  it('channel 任务的草稿不带 eventMailSource（channel 路径不受影响）', () => {
+    const draft = buildDraftFromJob(makeEventJob());
+    expect(draft.eventMailSource).toBeUndefined();
+    expect(buildCronJobInput(draft).schedule).toEqual({
+      type: 'event',
+      source: 'channel',
+      accountId: 'account-feishu',
+      chatId: 'oc_group',
+      eventName: 'message',
+    });
+  });
+
+  it('编辑 mail 任务只改名字并保存：updateJob 收到原封不动的 mail 调度，表单不再报错', async () => {
+    render(<CronJobEditor isOpen job={makeMailEventJob()} onClose={() => undefined} />);
+
+    // mail 绑定锁定展示；通道账号选择器不出现（没有可「随手选一个」的入口）。
+    expect(screen.getByTestId('cron-event-mail-source').textContent).toBe('_icloud · INBOX');
+    expect(screen.queryByTestId('cron-event-account')).toBeNull();
+
+    fireEvent.change(controlForLabel('任务名称'), { target: { value: '处理新邮件（改）' } });
+    fireEvent.click(screen.getByText('保存修改'));
+
+    const updateJob = useCronStore.getState().updateJob as Mock;
+    await waitFor(() => expect(updateJob).toHaveBeenCalledTimes(1));
+    expect(updateJob).toHaveBeenCalledWith('job-mail', expect.objectContaining({
+      name: '处理新邮件（改）',
+      scheduleType: 'event',
+      schedule: {
+        type: 'event',
+        source: 'connector',
+        connector: 'mail',
+        accountId: '_icloud',
+        mailbox: 'INBOX',
+        eventName: 'message',
+        pollIntervalSec: 120,
+        batchWindowSec: 20,
+        minRunIntervalSec: 90,
+      },
+    }));
+  });
+
+  it('mail 草稿清空预算照旧被 requires-budget 拦下（护栏对 mail 源仍生效，不再误报 invalid-schedule）', () => {
+    const draft = { ...buildDraftFromJob(makeMailEventJob()), maxRunBudget: '' };
+    const mailSchedule = draft.eventMailSource;
+    if (!mailSchedule) throw new Error('mail 草稿应带 eventMailSource 原绑定');
+    const violation = validateEventScheduleConstraints({
+      schedule: mailSchedule,
+      runsOn: draft.runsOn,
+      action: { type: draft.actionType },
+      maxRunBudget: null,
+    });
+    expect(violation?.reason).toBe('requires-budget');
+    expect(() => buildCronJobInput(draft)).toThrow(violation?.message);
+  });
+});
+
+describe('② 列表/详情（formatScheduleSummary 档）', () => {
   it('formatScheduleSummary 的 event 档（zh/en、显示名优先、缺名回落 id）', () => {
     expect(formatScheduleSummary(makeEventJob(), 'zh', { accountName: '工作飞书', chatName: '林晨, 苏三' }))
       .toBe('通道消息 · 工作飞书 · 林晨, 苏三');

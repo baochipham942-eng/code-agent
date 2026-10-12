@@ -166,6 +166,8 @@ export const cronCenterZh = {
     eventAccountPlaceholder: '选择一个已连接账号',
     eventAccountUnavailable: '之前绑定的触发账号“{value}”已不可用。原配置已保留，重新选择后再保存。',
     eventNoAccounts: '还没有连接消息通道，事件触发无从绑定账号。',
+    // connector:mail 源的锁定展示（编辑/复制 mail 任务时；保存保留原绑定）
+    eventMailSourceLockedHint: '邮件触发源暂不支持在此编辑；保存会保留原来的账号与邮箱绑定。',
     eventChatLabel: '限定会话 / 群（可选）',
     eventChatAny: '任意会话（不限群，私聊消息也触发）',
     eventChatHint: '选定一个群 = 群监听：群里未 @ 你的消息也会触发；留空 = 该账号的任意会话。',
@@ -413,6 +415,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     eventAccountPlaceholder: 'Pick a connected account',
     eventAccountUnavailable: 'The trigger account "{value}" is no longer available. The original setting is preserved until you pick another account and save.',
     eventNoAccounts: 'No messaging channels connected yet — an event trigger needs an account to bind to.',
+    eventMailSourceLockedHint: 'The mail trigger source cannot be edited here yet; saving keeps the existing account and mailbox binding.',
     eventChatLabel: 'Restrict to chat / group (optional)',
     eventChatAny: 'Any chat (group or direct message)',
     eventChatHint: 'Picking a group = group listen: messages that do not mention you still trigger it. Leave empty = any chat on this account.',

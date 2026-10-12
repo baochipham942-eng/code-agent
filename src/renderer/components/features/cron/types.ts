@@ -3,6 +3,7 @@ import type {
   CronJobDefinition,
   CronJobExecution,
   CronJobStatus,
+  EventConnectorMailScheduleConfig,
   EveryScheduleConfig,
   IpcAction,
   ShellAction,
@@ -37,6 +38,12 @@ export interface CronJobDraft {
   eventAccountId: string;
   /** event 调度：限定群/会话 id；空串 = 该账号任意会话。 */
   eventChatId: string;
+  /**
+   * event 调度（connector:mail 源）：编辑/复制 mail 任务时由 buildDraftFromJob 带出的
+   * 原绑定整份。mail 源的编辑 UI 未开放——通道字段不回填，保存时这份原绑定原样回写，
+   * 防止把 mail 触发回建成 channel 源（空账号保存必炸 / 混入通道账号即静默改绑）。
+   */
+  eventMailSource?: EventConnectorMailScheduleConfig;
   actionType: 'shell' | 'tool' | 'agent' | 'webhook' | 'ipc';
   shellCommand: string;
   shellCwd: string;
@@ -147,10 +154,12 @@ export function buildDraftFromJob(job: CronJobDefinition): CronJobDraft {
     draft.cronTimezone = job.schedule.timezone || '';
   } else if (job.schedule.type === 'event') {
     // connector 源（mail）编辑 UI 未开放（N-TRIGGER-CONNECTOR-MAIL 范围外）：
-    // 草稿不回填 mail 绑定，通道字段保持默认。
+    // 通道字段不回填 mail 绑定，原绑定整份挂在 eventMailSource 上，保存时原样回写。
     if (job.schedule.source === 'channel') {
       draft.eventAccountId = job.schedule.accountId;
       draft.eventChatId = job.schedule.chatId || '';
+    } else {
+      draft.eventMailSource = job.schedule;
     }
   }
 
@@ -281,15 +290,19 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
       timezone: draft.cronTimezone.trim() || undefined,
     };
   } else {
-    // 'event'：显式 (accountId, chatId) 绑定即群监听，chatId 缺省 = 该账号任意会话。
+    // 'event'：connector:mail 草稿（eventMailSource 挂原绑定）原样回写——mail 源编辑
+    // UI 未开放，不回建成 channel 源（空账号保存必炸 / 混入通道账号即静默改绑）。
+    // 通道源照旧：显式 (accountId, chatId) 绑定即群监听，chatId 缺省 = 该账号任意会话。
     // 两个可选窗口（batchWindowSec/minRunIntervalSec）不设值，host normalize 落默认。
-    schedule = {
-      type: 'event',
-      source: 'channel',
-      accountId: draft.eventAccountId.trim(),
-      eventName: 'message',
-      ...(draft.eventChatId.trim() ? { chatId: draft.eventChatId.trim() } : {}),
-    };
+    schedule = draft.eventMailSource
+      ? { ...draft.eventMailSource }
+      : {
+        type: 'event',
+        source: 'channel',
+        accountId: draft.eventAccountId.trim(),
+        eventName: 'message',
+        ...(draft.eventChatId.trim() ? { chatId: draft.eventChatId.trim() } : {}),
+      };
   }
 
   let action: CronJobDefinition['action'];

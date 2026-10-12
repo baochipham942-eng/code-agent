@@ -19,8 +19,10 @@ export interface FileCheckpoint {
 
 export interface RewindSkippedFile {
   filePath: string;
-  reason: 'human_edit' | 'missing_post_write_digest' | 'redo_snapshot_failed' | 'uncertain_write_target';
+  reason: 'human_edit' | 'missing_post_write_digest' | 'redo_snapshot_failed' | 'uncertain_write_target' | 'undeclared_tool_write';
   detail: string;
+  /** reason 为 undeclared_tool_write 时的工具名（mcp__server__tool 原名，展示层自行美化）。 */
+  toolName?: string;
 }
 
 /**

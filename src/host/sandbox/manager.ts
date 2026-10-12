@@ -9,7 +9,7 @@ import { createLogger } from '../services/infra/logger';
 import { Bubblewrap, getBubblewrap, type BubblewrapConfig, type BubblewrapStatus } from './bubblewrap';
 import { getSeatbelt, type SeatbeltConfig, type SeatbeltStatus } from './seatbelt';
 import { SANDBOX_TIMEOUTS } from '../../shared/constants';
-import { getSensitiveSandboxPaths } from './sensitivePaths';
+import { getForbiddenWritePathsUnderRoot, getSensitiveSandboxPaths } from './sensitivePaths';
 
 const logger = createLogger('SandboxManager', { lane: 'sandbox' });
 
@@ -103,6 +103,13 @@ export interface SandboxWrapOptions {
   readOnlyRoots?: string[];
   /** Project roots allowed for writes. */
   readWriteRoots?: string[];
+  /** Exact files allowed for writes, without descendants (one-shot sandbox escalation). */
+  readWriteFiles?: string[];
+  /**
+   * Granted write subtrees (one-shot directory escalation, DIR-FORBIDDEN): credential /
+   * cage / hook / shell-rc names existing under these roots stay read-only despite the grant.
+   */
+  forbiddenWriteUnder?: string[];
   /** Host roots that must not be readable from this command. */
   deniedReadRoots?: string[];
   /** 是否放行网络（bypass 档默认 true） */
@@ -241,6 +248,14 @@ export class SandboxManager {
   }
 
   /**
+   * Whether `readWriteFiles` can allow a file that does not exist yet.
+   * Seatbelt matches a literal path, so it can; bubblewrap binds existing files only.
+   */
+  supportsNewFileWriteGrant(): boolean {
+    return this.platform === 'darwin';
+  }
+
+  /**
    * Enable sandboxing
    */
   enable(): void {
@@ -339,10 +354,15 @@ export class SandboxManager {
     const resolved = path.resolve(opts.workingDirectory);
     const readOnlyRoots = (opts.readOnlyRoots ?? []).map((root) => path.resolve(root));
     const readWriteRoots = (opts.readWriteRoots ?? [resolved]).map((root) => path.resolve(root));
+    const readWriteFiles = (opts.readWriteFiles ?? []).map((file) => path.resolve(file));
     const sensitivePaths = [
       ...getSensitiveSandboxPaths(),
       ...(opts.deniedReadRoots ?? []).map((root) => ({ kind: 'directory' as const, path: root })),
     ];
+    // DIR-FORBIDDEN：目录子树一次性扩权的禁写名清单（现存路径），平台层在写放行之后回盖只读
+    const writeDenyEntries = (opts.forbiddenWriteUnder ?? []).flatMap(
+      (root) => getForbiddenWritePathsUnderRoot(path.resolve(root)),
+    );
     const allowNetwork = opts.allowNetwork ?? false;
     const npmEnvironment = prepareNpmSandboxEnvironment();
 
@@ -354,6 +374,8 @@ export class SandboxManager {
             allowNetwork,
             readPaths: readOnlyRoots,
             writePaths: [...readWriteRoots, npmEnvironment.npmHome],
+            writeFiles: readWriteFiles,
+            writeDenyPaths: writeDenyEntries,
             workingDirectory: resolved,
             allowWorkingDirectoryWrite: false,
             sensitivePaths,
@@ -379,6 +401,8 @@ export class SandboxManager {
             allowNetwork,
             readOnlyPaths: [...(dev.readOnlyPaths ?? []), ...readOnlyRoots],
             readWritePaths: [...readWriteRoots, npmEnvironment.npmHome],
+            readWriteFiles,
+            readOnlyOverlayPaths: writeDenyEntries,
             workingDirectory: resolved,
             sensitivePaths,
             customEnv: npmEnvironment.customEnv,

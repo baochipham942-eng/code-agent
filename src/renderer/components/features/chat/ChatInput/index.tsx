@@ -98,6 +98,7 @@ import { useChatInputEnvelope } from './useChatInputEnvelope';
 import { useChatInputAgentCommand } from './useChatInputAgentCommand';
 import { useChatInputSlashCommands } from './useChatInputSlashCommands';
 import { useComposerFocusRequest } from './useComposerFocusRequest';
+import { useComposerPrefill } from './useComposerPrefill';
 import { useChatInputSubmit } from './useChatInputSubmit';
 import { useChatInputComposerActions } from './useChatInputComposerActions';
 import {
@@ -116,6 +117,7 @@ import { ComposerUploadStatus } from './ComposerUploadStatus';
 import { QueuedInputTray } from './QueuedInputTray';
 import { composerEditModeState } from './composerEditMode';
 import { useBundledCapabilityStore } from '../../../../stores/bundledCapabilityStore';
+import { ReadOnlySessionNotice } from './ReadOnlySessionNotice';
 
 // ============================================================================
 // 类型定义
@@ -323,6 +325,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const pinScopeProjectId = currentSessionId ? currentSessionProjectId : scopeProjectId;
   const currentSessionHadLiveVoice = useSessionStore((s) => (
     s.sessions.find((session) => session.id === currentSessionId)?.metadata?.hadLiveVoice === true
+  ));
+  // 只读判定放在顶层 selector。条件只出现在最后的 JSX，避免提前 return 打乱 hook 顺序。
+  const currentSessionReadOnly = useSessionStore((s) => (
+    s.sessions.find((session) => session.id === currentSessionId)?.readOnly === true
   ));
   const [pendingPromptCommand, setPendingPromptCommand] = useState<ComposerPromptCommandSelection | null>(null);
   const [pendingAgentSelection, setPendingAgentSelection] = useState<ComposerAgentSelection | null>(null);
@@ -827,6 +833,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
   useComposerFocusRequest(focusComposer);
 
+  // 预填只填不发：已有草稿时拼在后面（iact:add 同口径），空草稿直接放进去
+  const applyComposerPrefill = useCallback((text: string) => {
+    setValue((current) => current.trim() ? `${current} ${text}` : text);
+  }, []);
+  useComposerPrefill(applyComposerPrefill, focusComposer);
+
   // Agent 自动补全单元：@ mention 与 /agent 命令的 state / 派生 / 键盘导航 / 选择 handler
   const {
     selectedAgentMentionIndex,
@@ -1316,8 +1328,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           }}
         />
 
-        {/* composer 浮起（2026-08-04 §3.1）：L2 底 + 投影，默认无边框、聚焦描边显现，
-            与聊天内容拉开亮度层级，样式真源在 global.css .composer-elevated */}
+        {currentSessionReadOnly ? (
+          <ReadOnlySessionNotice />
+        ) : (
+        // composer 浮起（2026-08-04 §3.1）：L2 底 + 投影，默认无边框、聚焦描边显现，
+        // 与聊天内容拉开亮度层级，样式真源在 global.css .composer-elevated
         <div className="relative composer-elevated rounded-2xl">
           {/* Slash command inline popover */}
           <SlashCommandPopover
@@ -1332,6 +1347,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               setSlashFilter('');
             }}
             onSelect={handleSlashCommandSelect}
+            composerValue={value}
+            composerSessionId={currentSessionId}
           />
           {isAgentCommandAutocompleteOpen && (
             <div className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-[240px] overflow-y-auto rounded-lg elevation-l2 popover-enter">
@@ -1449,6 +1466,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           <InputArea
             ref={inputAreaRef}
             value={value}
+            sideChatSessionId={currentSessionId}
             onChange={handleDictationAwareValueChange}
             onSubmit={(opts) => { void submitWithRuntimeChoice(undefined, opts); }}
             onFileSelect={handleFileSelect}
@@ -1560,6 +1578,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             )}
           </div>
         </div>
+        )}
       </form>
     </div>
   );

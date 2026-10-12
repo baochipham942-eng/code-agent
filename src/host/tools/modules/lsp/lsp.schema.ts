@@ -67,4 +67,9 @@ export const lspSchema: ToolSchema = {
   permissionLevel: 'read',
   readOnly: true,
   allowInPlanMode: true,
+  // 结果取决于整个项目和语言服务器状态，不止 file_path：读范围声明成整个工作区，与工作区内任何写冲突。
+  accesses: [
+    { kind: 'read', expression: 'workspace()' },
+    { kind: 'read', argumentNames: ['file_path'] },
+  ],
 };

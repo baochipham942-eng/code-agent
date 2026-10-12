@@ -18,6 +18,11 @@ import type {
   StandingGrant,
   UpsertSessionAutomationInput,
 } from '../../../shared/contract';
+import {
+  countPendingReviewByTask as foldPendingReviewByTask,
+  reviewSessionId,
+  type CronRunGroupable,
+} from '../../../shared/cronRunDigest';
 import type { ParkedApprovalInboxItem, ToolApprovalPayload } from '../../../shared/contract/pendingApproval';
 import { getDatabase } from '../core/databaseService';
 import { getSessionManager } from '../infra/sessionManager';
@@ -427,8 +432,23 @@ export class SessionAutomationService {
     return this.listAll().filter(hasPendingReview);
   }
 
-  countPendingReview(): number {
-    return this.listPendingReview().length;
+  /**
+   * 待过目按**任务**计数：同一 cron/heartbeat 任务的多条待过目折成 1，对不上运行会话
+   * 的记录仍各计 1。运行会话的 origin 用同步 DB getSession 解析（只取 origin，不载消息），
+   * 与 resolveAutomationForSession 同一低成本路径。
+   */
+  countPendingReviewByTask(): number {
+    const records = this.listPendingReview();
+    const sessionsById: Record<string, { origin?: CronRunGroupable['origin'] } | undefined> = {};
+    if (getDb()) {
+      const database = getDatabase();
+      for (const record of records) {
+        const sessionId = reviewSessionId(record);
+        if (!sessionId || sessionId in sessionsById) continue;
+        sessionsById[sessionId] = { origin: database.getSession(sessionId)?.origin };
+      }
+    }
+    return foldPendingReviewByTask(records, sessionsById);
   }
 
   /**

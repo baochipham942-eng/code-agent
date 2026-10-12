@@ -24,6 +24,7 @@ export const sessionInspectorZh = {
   stamp: {
     verified: '完成有据',
     selfClaimed: '自称完成',
+    undelivered: '未交付',
     evidencedQualifier: '有据',
     selfClaimedQualifier: '自称',
     cancelled: outcomeWordsZh.outcomeWords['cancelled-by-user'].badge.label,
@@ -138,6 +139,7 @@ export const sessionInspectorEn: typeof sessionInspectorZh = {
   stamp: {
     verified: 'Verified',
     selfClaimed: 'Self-claimed',
+    undelivered: 'Not delivered',
     evidencedQualifier: 'Evidence-backed',
     selfClaimedQualifier: 'Self-claimed',
     cancelled: outcomeWordsEn.outcomeWords['cancelled-by-user'].badge.label,

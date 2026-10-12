@@ -409,8 +409,6 @@ export const enSettingsWork = {
         librarySelectPlaceholder: 'Select a library item…',
         modeAlways: 'Always indexed',
         modeOnDemand: 'On demand',
-        scopePrivate: 'Private',
-        scopeProject: 'Project shared',
         add: 'Bind',
         remove: 'Remove',
         addFailed: 'Failed to bind',
@@ -834,6 +832,7 @@ export const enSettingsWork = {
       boundary: {
         title: 'Permissions and data boundaries',
         description: 'Explains and links out only. The actual switches stay on their original settings pages.',
+        noticeLink: 'View data flow and capability boundaries',
         dataLabel: 'Data: ',
         storageLabel: 'Storage: ',
         cloudLabel: 'Cloud: ',

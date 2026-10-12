@@ -621,6 +621,306 @@ describe('宿主合成卡（ADR-074 K2，source=synthetic_text）走同一审批
   });
 });
 
+describe('versioned edit-then-approve (ADR-074 K4)', () => {
+  const editedSteps = [
+    { id: 'step-1', content: 'Ship the edited plan', originalContent: 'Read code', edited: true },
+    { id: 'step-2', content: 'Implement UI', originalContent: 'Implement UI' },
+  ];
+
+  function trackPlan(initial: Message): { approval: () => Record<string, unknown> } {
+    let current = initial;
+    mocks.getMessages.mockImplementation(async () => [current]);
+    mocks.updateMessage.mockImplementation(async (_id: string, patch: { toolCalls?: Message['toolCalls'] }) => {
+      current = { ...current, ...patch };
+    });
+    return {
+      approval: () => current.toolCalls?.[0].result?.metadata?.planApproval as Record<string, unknown>,
+    };
+  }
+
+  function deps(sendMessage: ReturnType<typeof vi.fn> = vi.fn(), emitAgentEventForSession: ReturnType<typeof vi.fn> = vi.fn()) {
+    return {
+      sendMessage,
+      emitAgentEventForSession,
+      bundle: {
+        appService: { sendMessage } as never,
+        taskManager: { emitAgentEventForSession } as never,
+      },
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.updateMessage.mockResolvedValue(undefined);
+    mocks.replaceTasksAtomically.mockReturnValue(tasks);
+    mocks.demoteInProgressTasks.mockReturnValue(null);
+    mocks.dbReady = true;
+  });
+
+  it('edit v1 -> v2 persists steps, stays pending, and emits one plan_approval_update', async () => {
+    const card = trackPlan(planMessage());
+    const { sendMessage, emitAgentEventForSession, bundle } = deps();
+
+    const response = await resolvePlanApproval({
+      sessionId: 'session-1',
+      messageId: 'message-plan',
+      toolCallId: 'tool-plan',
+      decision: 'edit',
+      version: 1,
+      steps: editedSteps,
+    }, bundle);
+
+    expect(response.approval.status).toBe('pending');
+    expect(response.approval.version).toBe(2);
+    expect(response.approval.steps.map((step) => step.content)).toEqual(['Ship the edited plan', 'Implement UI']);
+    expect(card.approval()).toMatchObject({ status: 'pending', version: 2 });
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(mocks.replaceTasksAtomically).not.toHaveBeenCalled();
+    const updates = emitAgentEventForSession.mock.calls.filter(([, event]) => event.type === 'plan_approval_update');
+    expect(updates).toHaveLength(1);
+    expect(updates[0][1].data.approval).toMatchObject({ status: 'pending', version: 2 });
+    expect(updates[0][1].data.approval.steps.map((step: { content: string }) => step.content)).toEqual([
+      'Ship the edited plan',
+      'Implement UI',
+    ]);
+  });
+
+  it('approve executes the edited version：编辑落库后按新版本批准，隐藏轮只含编辑后的步骤', async () => {
+    trackPlan(planMessage());
+    const { sendMessage, bundle } = deps(vi.fn().mockResolvedValue(undefined));
+    await resolvePlanApproval({
+      sessionId: 'session-1',
+      messageId: 'message-plan',
+      toolCallId: 'tool-plan',
+      decision: 'edit',
+      version: 1,
+      steps: editedSteps,
+    }, bundle);
+
+    sendMessage.mockClear();
+    mocks.replaceTasksAtomically.mockClear();
+    const response = await resolvePlanApproval({
+      sessionId: 'session-1',
+      messageId: 'message-plan',
+      toolCallId: 'tool-plan',
+      decision: 'approve',
+      version: 2,
+    }, bundle);
+
+    expect(response.approval.status).toBe('starting');
+    expect(mocks.replaceTasksAtomically).toHaveBeenCalledWith('session-1', ['Ship the edited plan', 'Implement UI']);
+    expect(sendMessage).toHaveBeenCalledOnce();
+    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({
+      content: expect.stringContaining('<approved-plan>\n1. Ship the edited plan\n2. Implement UI\n</approved-plan>'),
+    }));
+    expect(String(sendMessage.mock.calls[0][0].content)).not.toContain('1. Read code\n2. Implement UI');
+  });
+
+  it('approve with inline steps after an edit still executes the edited text and keeps the edited mark', async () => {
+    trackPlan(planMessage());
+    const { sendMessage, bundle } = deps(vi.fn().mockResolvedValue(undefined));
+    await resolvePlanApproval({
+      sessionId: 'session-1',
+      messageId: 'message-plan',
+      toolCallId: 'tool-plan',
+      decision: 'edit',
+      version: 1,
+      steps: editedSteps,
+    }, bundle);
+
+    sendMessage.mockClear();
+    const response = await resolvePlanApproval({
+      sessionId: 'session-1',
+      messageId: 'message-plan',
+      toolCallId: 'tool-plan',
+      decision: 'approve',
+      version: 2,
+      steps: editedSteps,
+    }, bundle);
+
+    expect(response.approval.steps[0]).toMatchObject({
+      content: 'Ship the edited plan',
+      originalContent: 'Read code',
+      edited: true,
+    });
+    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({
+      content: expect.stringContaining('<approved-plan>\n1. Ship the edited plan\n2. Implement UI\n</approved-plan>'),
+    }));
+  });
+
+  it('older version cannot be approved：编辑后用旧版本批准得到 STALE_VERSION，不换台账、不发隐藏轮', async () => {
+    const card = trackPlan(planMessage());
+    const { sendMessage, bundle } = deps(vi.fn().mockResolvedValue(undefined));
+    await resolvePlanApproval({
+      sessionId: 'session-1',
+      messageId: 'message-plan',
+      toolCallId: 'tool-plan',
+      decision: 'edit',
+      version: 1,
+      steps: editedSteps,
+    }, bundle);
+    const persisted = card.approval();
+    const writes = mocks.updateMessage.mock.calls.length;
+
+    sendMessage.mockClear();
+    mocks.replaceTasksAtomically.mockClear();
+    await expect(resolvePlanApproval({
+      sessionId: 'session-1',
+      messageId: 'message-plan',
+      toolCallId: 'tool-plan',
+      decision: 'approve',
+      version: 1,
+      steps: editedSteps,
+    }, bundle)).rejects.toMatchObject({ code: 'STALE_VERSION' });
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(mocks.replaceTasksAtomically).not.toHaveBeenCalled();
+    expect(mocks.updateMessage).toHaveBeenCalledTimes(writes);
+    expect(card.approval()).toEqual(persisted);
+  });
+
+  it('stale edit is rejected, and two consecutive edits land on versions 2 then 3', async () => {
+    const card = trackPlan(planMessage());
+    const { emitAgentEventForSession, bundle } = deps();
+    const edit = (version: number, content: string) => resolvePlanApproval({
+      sessionId: 'session-1',
+      messageId: 'message-plan',
+      toolCallId: 'tool-plan',
+      decision: 'edit',
+      version,
+      steps: [
+        { id: 'step-1', content, originalContent: 'Read code', edited: true },
+        { id: 'step-2', content: 'Implement UI', originalContent: 'Implement UI' },
+      ],
+    }, bundle);
+
+    await edit(1, 'Ship the edited plan');
+    expect(card.approval().version).toBe(2);
+    await expect(edit(1, 'Stale rewrite')).rejects.toMatchObject({ code: 'STALE_VERSION' });
+    expect(card.approval().version).toBe(2);
+    expect((card.approval().steps as Array<{ content: string }>)[0].content).toBe('Ship the edited plan');
+
+    await edit(2, 'Ship the third version');
+    expect(card.approval()).toMatchObject({ status: 'pending', version: 3 });
+    expect((card.approval().steps as Array<{ content: string }>)[0].content).toBe('Ship the third version');
+    const versions = emitAgentEventForSession.mock.calls
+      .filter(([, event]) => event.type === 'plan_approval_update')
+      .map(([, event]) => event.data.approval.version);
+    expect(versions).toEqual([2, 3]);
+  });
+
+  it('legacy approve without version still executes the submitted steps', async () => {
+    mocks.getMessages
+      .mockResolvedValueOnce([planMessage()])
+      .mockResolvedValue([planMessage('starting')]);
+    const { sendMessage, bundle } = deps(vi.fn().mockResolvedValue(undefined));
+    expect(approveRequest).not.toHaveProperty('version');
+
+    const response = await resolvePlanApproval(approveRequest, bundle);
+
+    expect(response.approval.status).toBe('starting');
+    expect(sendMessage).toHaveBeenCalledOnce();
+    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({
+      content: expect.stringContaining('<approved-plan>\n1. Read host code\n2. Implement UI\n</approved-plan>'),
+    }));
+  });
+
+  it('revise and cancel with a stale version are rejected before any side effect', async () => {
+    const card = trackPlan(planMessage());
+    const { sendMessage, bundle } = deps();
+    await resolvePlanApproval({
+      sessionId: 'session-1',
+      messageId: 'message-plan',
+      toolCallId: 'tool-plan',
+      decision: 'edit',
+      version: 1,
+      steps: editedSteps,
+    }, bundle);
+    const persisted = card.approval();
+    const writes = mocks.updateMessage.mock.calls.length;
+
+    await expect(resolvePlanApproval({
+      sessionId: 'session-1',
+      messageId: 'message-plan',
+      toolCallId: 'tool-plan',
+      decision: 'revise',
+      version: 1,
+      feedback: 'shrink scope',
+    }, bundle)).rejects.toMatchObject({ code: 'STALE_VERSION' });
+    await expect(resolvePlanApproval({
+      sessionId: 'session-1',
+      messageId: 'message-plan',
+      toolCallId: 'tool-plan',
+      decision: 'cancel',
+      version: 1,
+    }, bundle)).rejects.toMatchObject({ code: 'STALE_VERSION' });
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(mocks.updateMessage).toHaveBeenCalledTimes(writes);
+    expect(card.approval()).toEqual(persisted);
+  });
+
+  it('stale approve is rejected before step validation', async () => {
+    trackPlan(planMessage());
+    const { bundle } = deps();
+    await resolvePlanApproval({
+      sessionId: 'session-1',
+      messageId: 'message-plan',
+      toolCallId: 'tool-plan',
+      decision: 'edit',
+      version: 1,
+      steps: editedSteps,
+    }, bundle);
+
+    await expect(resolvePlanApproval({
+      sessionId: 'session-1',
+      messageId: 'message-plan',
+      toolCallId: 'tool-plan',
+      decision: 'approve',
+      version: 1,
+      steps: [],
+    }, bundle)).rejects.toMatchObject({ code: 'STALE_VERSION' });
+  });
+
+  it('both a model_exit card and a synthetic_text card can be edited and approved', async () => {
+    for (const source of ['model_exit', 'synthetic_text'] as const) {
+      vi.clearAllMocks();
+      mocks.replaceTasksAtomically.mockReturnValue(tasks);
+      const initial = planMessage();
+      const approval = initial.toolCalls?.[0].result?.metadata?.planApproval as Record<string, unknown>;
+      approval.source = source;
+      trackPlan(initial);
+      const sendMessage = vi.fn().mockResolvedValue(undefined);
+      const bundle = {
+        appService: { sendMessage } as never,
+        taskManager: { emitAgentEventForSession: vi.fn() } as never,
+      };
+
+      const edited = await resolvePlanApproval({
+        sessionId: 'session-1',
+        messageId: 'message-plan',
+        toolCallId: 'tool-plan',
+        decision: 'edit',
+        version: 1,
+        steps: editedSteps,
+      }, bundle);
+      expect(edited.approval).toMatchObject({ status: 'pending', version: 2, source });
+
+      const approved = await resolvePlanApproval({
+        sessionId: 'session-1',
+        messageId: 'message-plan',
+        toolCallId: 'tool-plan',
+        decision: 'approve',
+        version: 2,
+      }, bundle);
+      expect(approved.approval).toMatchObject({ status: 'starting', source });
+      expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({
+        content: expect.stringContaining('<approved-plan>\n1. Ship the edited plan\n2. Implement UI\n</approved-plan>'),
+      }));
+    }
+  });
+});
+
 describe('hasPendingPlanApproval', () => {
   beforeEach(() => {
     vi.clearAllMocks();

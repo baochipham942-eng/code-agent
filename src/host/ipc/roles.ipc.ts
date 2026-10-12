@@ -24,7 +24,6 @@ import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry
 import type {
   ExpertBindingKind,
   ExpertBindingMode,
-  ExpertBindingScope,
   RolePanelDetail,
   RolePanelEntry,
   RoleBoundCronJob,
@@ -46,6 +45,9 @@ import {
   listRoleDrafts,
   confirmRoleDraft,
   rejectRoleDraft,
+  getFirstWakeSnapshot,
+  skipFirstWake,
+  isSafeRoleId,
 } from '../services/roleAssets';
 import { sanitizeTopicList } from '../services/roleAssets/wakeRationale';
 import { getDatabase } from '../services/core/databaseService';
@@ -468,21 +470,21 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
     return { success: true, data: await readRoleBindings(roleId) };
   },
   addBinding: async (_ctx, payload) => {
-    const { roleId, kind, target, title, mode, scope } = (payload ?? {}) as {
+    // 旧 renderer 可能多带一个已废弃的 scope 字段：解构不取即忽略
+    const { roleId, kind, target, title, mode } = (payload ?? {}) as {
       roleId?: string;
       kind?: ExpertBindingKind;
       target?: string;
       title?: string;
       mode?: ExpertBindingMode;
-      scope?: ExpertBindingScope;
     };
-    if (!roleId || !kind || !target || !mode || !scope) {
+    if (!roleId || !kind || !target || !mode) {
       return {
         success: false,
-        error: { code: 'INVALID_ARGS', message: 'roleId, kind, target, mode, scope are required' },
+        error: { code: 'INVALID_ARGS', message: 'roleId, kind, target, mode are required' },
       };
     }
-    return { success: true, data: await addRoleBinding(roleId, { kind, target, title, mode, scope }) };
+    return { success: true, data: await addRoleBinding(roleId, { kind, target, title, mode }) };
   },
   removeBinding: async (_ctx, payload) => {
     const { roleId, bindingId } = (payload ?? {}) as { roleId?: string; bindingId?: string };
@@ -621,6 +623,25 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
     if (!roleId) return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
     const { retryMissingSkills } = await import('../services/roleAssets/rolePackInstallService');
     return { success: true, data: await retryMissingSkills(roleId) };
+  },
+  // --- 首次醒来（新角色的只读介绍 + 可委托建议） ---
+  firstWakeGet: async (_ctx, payload) => {
+    const { roleId } = (payload ?? {}) as RoleIdPayload;
+    if (!roleId || !isSafeRoleId(roleId)) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'a safe roleId is required' } };
+    }
+    return { success: true, data: await getFirstWakeSnapshot(roleId) };
+  },
+  firstWakeSkip: async (_ctx, payload) => {
+    const { roleId } = (payload ?? {}) as RoleIdPayload;
+    if (!roleId || !isSafeRoleId(roleId)) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'a safe roleId is required' } };
+    }
+    const result = await skipFirstWake(roleId);
+    if (!result.success) {
+      return { success: false, error: { code: 'FIRST_WAKE_SKIP_FAILED', message: 'skip failed' } };
+    }
+    return { success: true, data: { success: true } };
   },
 };
 

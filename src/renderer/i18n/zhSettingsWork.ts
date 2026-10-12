@@ -411,8 +411,6 @@ export const zhSettingsWork = {
         librarySelectPlaceholder: '选择资料库条目…',
         modeAlways: '常驻索引',
         modeOnDemand: '按需',
-        scopePrivate: '私有',
-        scopeProject: '项目共享',
         add: '绑定',
         remove: '移除',
         addFailed: '绑定失败',
@@ -836,6 +834,7 @@ export const zhSettingsWork = {
       boundary: {
         title: '权限与数据边界',
         description: '只解释和跳转，具体开关仍留在原设置页。',
+        noticeLink: '查看数据流与能力边界说明',
         dataLabel: '数据: ',
         storageLabel: '存储: ',
         cloudLabel: '云端: ',

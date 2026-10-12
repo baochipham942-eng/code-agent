@@ -28,6 +28,8 @@ export interface PermissionDecisionInput {
   origin?: ToolLedgerOrigin;
   /** 决策发生时间戳（毫秒），由调用方传入 */
   recordedAt: number;
+  /** 决策当时生效的权限策略哈希（sha256 hex）。计算失败时不传。 */
+  policyHash?: string;
   /** 多层决策 trace（可选） */
   trace?: DecisionTrace;
 }
@@ -45,6 +47,8 @@ export interface PermissionDecisionRecord {
   waitMs: number | null;
   origin: ToolLedgerOrigin | null;
   recordedAt: number;
+  /** 决策当时生效的权限策略哈希；旧行或未记录时为空。 */
+  policyHash: string | null;
   trace: DecisionTrace | null;
 }
 
@@ -70,6 +74,7 @@ function rowToRecord(row: SQLiteRow): PermissionDecisionRecord {
     waitMs: row.wait_ms == null ? null : Number(row.wait_ms),
     origin: (row.origin as ToolLedgerOrigin | null) ?? null,
     recordedAt: Number(row.recorded_at),
+    policyHash: typeof row.policy_hash === 'string' ? row.policy_hash : null,
     trace,
   };
 }
@@ -81,8 +86,8 @@ export class PermissionDecisionRepository {
   append(input: PermissionDecisionInput): void {
     this.db.prepare(`
       INSERT INTO permission_decisions
-        (session_id, tool_name, summary, final_outcome, history_outcome, reason, duration_ms, wait_ms, origin, recorded_at, trace_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (session_id, tool_name, summary, final_outcome, history_outcome, reason, duration_ms, wait_ms, origin, recorded_at, trace_json, policy_hash)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       input.sessionId ?? null,
       input.toolName,
@@ -95,6 +100,7 @@ export class PermissionDecisionRepository {
       input.origin ?? null,
       input.recordedAt,
       input.trace ? JSON.stringify(input.trace) : null,
+      input.policyHash ?? null,
     );
   }
 

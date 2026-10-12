@@ -23,4 +23,7 @@ export const gitDiffSchema: ToolSchema = {
   permissionLevel: 'execute',
   readOnly: true, // diff 是只读操作
   allowInPlanMode: true,
+  accesses: [
+    { kind: 'read', argumentNames: ['files'] },
+  ],
 };

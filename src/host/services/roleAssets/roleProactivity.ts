@@ -37,6 +37,9 @@ import {
 } from './wakeRationale';
 import { getSessionAutomationService } from '../sessionAutomation';
 import type { SessionAutomationEventKind, SessionAutomationStatus } from '../../../shared/contract/sessionAutomation';
+import { isExternalSideEffectTool } from '../../tools/externalSideEffect';
+import { getKnownToolNames } from '../../tools/knownToolNames';
+import { resolveRoleToolBoundary, toRoleBoundaryRunAllowlist } from './rolePersonalization';
 
 const logger = createLogger('RoleProactivity');
 
@@ -413,6 +416,7 @@ export async function wakeRole(
     if (workspacePath) {
       tm.setWorkingDirectory(session.id, workspacePath);
     }
+    const wakeTools = await resolveWakeRunToolScope(roleId);
     try {
       await orchestrator.sendMessage(wakePrompt, undefined, {
         mode: 'normal',
@@ -422,6 +426,8 @@ export async function wakeRole(
         agentOverrideId: roleId,
         turnSystemContext: instantiation.contextBlock ? [instantiation.contextBlock] : undefined,
         maxIterations: ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS,
+        ...(wakeTools.allowedToolNames ? { allowedToolNames: wakeTools.allowedToolNames } : {}),
+        ...(wakeTools.deniedToolNames?.length ? { deniedToolNames: wakeTools.deniedToolNames } : {}),
       });
     } finally {
       tm.cleanup(session.id);
@@ -768,11 +774,44 @@ export async function syncCadenceJobs(): Promise<{ registered: string[]; removed
 // ----------------------------------------------------------------------------
 
 /**
+ * 醒来 run 的工具面。
+ * 角色声明了工具：从声明出发，先丢掉对外副作用工具（醒来时没有人在场），
+ * 再套 resolveRoleToolBoundary，空结果用拒绝全部哨兵而不是「不限制」。
+ * 角色没声明工具（空或缺失）：不发明白名单，只把已知名册里的对外副作用工具放进 deniedToolNames。
+ * wake_noop 不在这条路径上使用，不额外塞进名单。
+ */
+export async function resolveWakeRunToolScope(roleId: string): Promise<{
+  allowedToolNames?: string[];
+  deniedToolNames?: string[];
+}> {
+  let declared: readonly string[] | undefined;
+  try {
+    const { resolveAgent } = await import('../../agent/agentRegistry');
+    declared = resolveAgent(roleId)?.tools;
+  } catch {
+    declared = undefined;
+  }
+
+  if (!declared || declared.length === 0) {
+    // 已知名册不含运行时才连上的 MCP 名。角色把这类名字写进 tools 时，走下面的声明过滤。
+    const deniedToolNames = new Set<string>();
+    for (const name of getKnownToolNames()) {
+      if (isExternalSideEffectTool(name)) deniedToolNames.add(name);
+    }
+    if (isExternalSideEffectTool('mail_send')) deniedToolNames.add('mail_send');
+    return deniedToolNames.size > 0 ? { deniedToolNames: [...deniedToolNames] } : {};
+  }
+
+  const withoutExternal = declared.filter((tool) => !isExternalSideEffectTool(tool));
+  const boundary = resolveRoleToolBoundary(roleId, withoutExternal);
+  const allowed = boundary ? boundary.allowedTools : withoutExternal;
+  return { allowedToolNames: toRoleBoundaryRunAllowlist(allowed) };
+}
+
+/**
  * headless 醒来路径：cli/bootstrap createAgentLoop（与 /api/run 同源的执行链路）。
  * webServer（发行版后端）没有 Electron main 的 TaskManager orchestrator，走这条。
- *
- * 简化（MVP）：角色的 system prompt 和记忆注入块通过 config.systemPrompt 附加，
- * 工具集用默认全集（角色 tools 白名单约束在这条路径暂不生效，由醒来 prompt 约束行为）。
+ * 角色 system prompt 和记忆注入块通过 config.systemPrompt 附加；工具面走 resolveWakeRunToolScope。
  */
 async function runWakeViaCliLoop(params: {
   sessionId: string;
@@ -804,6 +843,11 @@ async function runWakeViaCliLoop(params: {
   config.maxIterations = ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS;
   // 角色醒来是无人值守发起，不进上线后评测分母。
   config.originKind = 'headless';
+  const wakeTools = await resolveWakeRunToolScope(params.roleId);
+  if (wakeTools.allowedToolNames) config.allowedToolNames = wakeTools.allowedToolNames;
+  if (wakeTools.deniedToolNames?.length) {
+    config.deniedToolNames = [...new Set([...(config.deniedToolNames ?? []), ...wakeTools.deniedToolNames])];
+  }
 
   const agentLoop = createAgentLoop(config, () => { /* 醒来是后台运行，无 UI 事件消费方 */ }, [], params.sessionId);
   await agentLoop.run(params.wakePrompt);
@@ -868,6 +912,7 @@ async function launchAdvanceGoalRun(params: {
     allowSwarm: false,
   };
 
+  const wakeTools = await resolveWakeRunToolScope(params.roleId);
   if (params.orchestrator) {
     if (params.workspacePath) params.taskManager.setWorkingDirectory(params.sessionId, params.workspacePath);
     try {
@@ -879,6 +924,8 @@ async function launchAdvanceGoalRun(params: {
         agentOverrideId: params.roleId,
         turnSystemContext: params.contextBlock ? [params.contextBlock] : undefined,
         goal: goalInput,
+        ...(wakeTools.allowedToolNames ? { allowedToolNames: wakeTools.allowedToolNames } : {}),
+        ...(wakeTools.deniedToolNames?.length ? { deniedToolNames: wakeTools.deniedToolNames } : {}),
       });
     } finally {
       params.taskManager.cleanup(params.sessionId);
@@ -907,6 +954,10 @@ async function launchAdvanceGoalRun(params: {
   config.systemInstructions = [UNATTENDED_TRUST_NOTICE];
   // goal run 同样是无人值守发起。
   config.originKind = 'headless';
+  if (wakeTools.allowedToolNames) config.allowedToolNames = wakeTools.allowedToolNames;
+  if (wakeTools.deniedToolNames?.length) {
+    config.deniedToolNames = [...new Set([...(config.deniedToolNames ?? []), ...wakeTools.deniedToolNames])];
+  }
   config.goalContract = buildGoalContract({
     goal: goalInput.goal,
     verifyCommand: goalInput.verify,

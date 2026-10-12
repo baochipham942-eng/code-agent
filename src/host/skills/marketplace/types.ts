@@ -5,6 +5,7 @@
 // ============================================================================
 
 import { z } from 'zod';
+import type { SkillInstallCautionHit } from '../../../shared/contract/skillInstallCaution';
 import type { SkillInstallSourceTrust } from './skillInstallContentGuard';
 
 // ----------------------------------------------------------------------------
@@ -189,6 +190,8 @@ export interface InstallResult {
   installedSkills: string[];
   installedCommands?: string[];
   installedPluginRoot?: string;
+  /** Present when the scan reported caution and the source policy let the install proceed. */
+  cautionHits?: SkillInstallCautionHit[];
 }
 
 export interface UninstallResult {

@@ -176,6 +176,15 @@ export const zhSettingsCore = {
       },
       developerMode: '开发者模式',
       developerModeDesc: '在对话流中显示回合质量评分、路由详情等调试信息',
+      disclosureLevel: '对话详略',
+      disclosureLevelDescription: '选择聊天里展示多少过程细节',
+      disclosureLevels: {
+        simple: '简洁',
+        standard: '标准',
+        advanced: '详细',
+        expert: '完整',
+      },
+      disclosureLevelSaveFailed: '对话详略保存失败，已恢复原设置',
       themeSaveFailed: '主题保存失败，已恢复原设置',
       languageSaveFailed: '语言保存失败，已恢复原设置',
       developerModeSaveFailed: '开发者模式保存失败，已恢复原设置',
@@ -301,6 +310,12 @@ export const zhSettingsCore = {
           denyLabel: 'Deny（拒绝，最高优先级）',
           askLabel: 'Ask（询问）',
           allowLabel: 'Allow（允许，最低优先级）',
+          invalid: {
+            empty: '规则是空的。',
+            malformed: '规则格式不对。请写成工具名，或 Tool(匹配)。',
+            specifierNotSupported: '这个工具不能带括号里的匹配。',
+            allowAllBash: '不允许放行全部 Bash 命令。请改用更窄的匹配，或放到询问列表。',
+          },
         },
         semantics: {
           title: '权限语义说明',

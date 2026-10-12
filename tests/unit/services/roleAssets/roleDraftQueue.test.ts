@@ -18,6 +18,13 @@ vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 
+// 首次醒来：confirm 钩子只入队不等待；这里用 fake enqueue 观察调用（不真跑 run）
+const firstWake = vi.hoisted(() => ({ enqueue: vi.fn(async (_roleId: string) => ({ enqueued: true })) }));
+
+vi.mock('../../../../src/host/services/roleAssets/roleFirstWake', () => ({
+  enqueueFirstWake: (roleId: string) => firstWake.enqueue(roleId),
+}));
+
 import {
   generateRoleAgentMd,
   enqueueRoleDraft,
@@ -37,6 +44,7 @@ async function exists(p: string): Promise<boolean> {
 describe('roleDraftQueue', () => {
   beforeEach(async () => {
     mockConfigDir.dir = await fs.mkdtemp(path.join(os.tmpdir(), 'role-draft-'));
+    vi.clearAllMocks();
   });
 
   afterEach(async () => {
@@ -154,6 +162,19 @@ describe('roleDraftQueue', () => {
       expect(await exists(path.join(rolesDir(), '产品经理', 'MEMORY.md'))).toBe(true);
       // 草稿已删
       expect(await exists(path.join(getRoleDraftsDir(), draft!.id))).toBe(false);
+    });
+
+    it('caution 档命令不拦角色入库', async () => {
+      const { draft } = await enqueueRoleDraft({
+        roleId: '清理员',
+        description: 'd',
+        systemPrompt: 'git clean -fd',
+        sessionId: 's',
+        timestamp: 1,
+      });
+      const result = await confirmRoleDraft(draft!.id);
+      expect(result.success).toBe(true);
+      expect(await exists(path.join(agentsDir(), '清理员.md'))).toBe(true);
     });
 
     it('安全闸：systemPrompt 含危险命令 → 拒绝入库，草稿保留', async () => {
@@ -312,6 +333,53 @@ describe('roleDraftQueue', () => {
     it('草稿不存在 → 报错', async () => {
       const result = await rejectRoleDraft('nope-1');
       expect(result.success).toBe(false);
+    });
+  });
+
+  describe('confirm 后入队首次醒来', () => {
+    it('新建角色 confirm 成功 → 恰好入队一次，带角色 id', async () => {
+      const { draft } = await enqueueRoleDraft({
+        roleId: '首次醒来角色',
+        description: 'd',
+        systemPrompt: '你是专家',
+        sessionId: 's',
+        timestamp: 1,
+      });
+      const result = await confirmRoleDraft(draft!.id);
+      expect(result.success).toBe(true);
+      expect(firstWake.enqueue).toHaveBeenCalledTimes(1);
+      expect(firstWake.enqueue).toHaveBeenCalledWith('首次醒来角色');
+    });
+
+    it('改已有角色 confirm → 不入队', async () => {
+      await fs.mkdir(path.join(rolesDir(), '老角色'), { recursive: true });
+      const { draft } = await enqueueRoleDraft({
+        roleId: '老角色',
+        editingRoleId: '老角色',
+        description: '升级',
+        systemPrompt: '你是升级版',
+        sessionId: 's',
+        timestamp: 1,
+      });
+      const result = await confirmRoleDraft(draft!.id);
+      expect(result.success).toBe(true);
+      expect(firstWake.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('入队抛错 → confirm 仍成功（enqueue 失败不拖垮确认）', async () => {
+      firstWake.enqueue.mockRejectedValueOnce(new Error('boom'));
+      const { draft } = await enqueueRoleDraft({
+        roleId: '入队失败角色',
+        description: 'd',
+        systemPrompt: 'p',
+        sessionId: 's',
+        timestamp: 1,
+      });
+      const result = await confirmRoleDraft(draft!.id);
+      expect(result.success).toBe(true);
+      expect(result.roleId).toBe('入队失败角色');
+      // 角色定义照常落盘
+      expect(await exists(path.join(agentsDir(), '入队失败角色.md'))).toBe(true);
     });
   });
 });

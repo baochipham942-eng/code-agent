@@ -74,8 +74,6 @@ export interface RolePanelEntry {
 export type ExpertBindingKind = 'file' | 'folder' | 'library_item';
 /** always=索引常驻注入（含摘要）；on_demand=仅列出，正文按需 Read */
 export type ExpertBindingMode = 'always' | 'on_demand';
-/** private=该专家私有（L1 隔离，不进其他专家）；project=同项目专家可共读（跨专家共读后续批次接线，先存字段） */
-export type ExpertBindingScope = 'private' | 'project';
 
 /** 专家 L1 资料架绑定条目，存 roles/<roleId>/bindings.json */
 export interface ExpertContextBinding {
@@ -86,7 +84,6 @@ export interface ExpertContextBinding {
   /** 展示名；library_item 缺省用条目标题，路径类缺省用 basename */
   title?: string;
   mode: ExpertBindingMode;
-  scope: ExpertBindingScope;
   createdAt: number;
 }
 
@@ -143,6 +140,24 @@ export type RoleWakeDecision = 'advance' | 'report' | 'suggest' | 'silence';
 
 /** 醒来触发方式 */
 export type RoleWakeTrigger = 'cadence' | 'event';
+
+/** 首次醒来的一条可一键委托建议：title 一句话；prompt = 用户点这条时发给角色的话 */
+export interface RoleFirstWakeSuggestion {
+  title: string;
+  prompt: string;
+}
+
+/** 首次醒来状态机取值：pending（已入队待跑）→ running → completed / skipped / failed（终态，不再重入） */
+export type RoleFirstWakeStateName = 'pending' | 'running' | 'completed' | 'skipped' | 'failed';
+
+/** 首次醒来快照（roles IPC firstWakeGet 的返回；状态文件本体是 host 侧 first-wake.json） */
+export interface RoleFirstWakeSnapshot {
+  state: RoleFirstWakeStateName;
+  sessionId?: string;
+  /** connected = 提示词带了已连接源名单；none = 无已连接源（引导连接，不编造建议） */
+  sourcesMode: 'connected' | 'none';
+  suggestions: RoleFirstWakeSuggestion[];
+}
 
 /** 一次醒来的执行结果（cron 执行记录 / E2E 验收用） */
 export interface RoleWakeResult {

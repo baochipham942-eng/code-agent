@@ -119,8 +119,18 @@ async function startCall(page: Page): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const health = await fetch(`${URL_BASE}/api/health`).then((r) => r.json() as Promise<Record<string, unknown>>).catch(() => null);
-  if (!health) throw new Error(`webServer 不可达 ${URL_BASE} —— Dev 包没起？`);
+  // pid/build.branch 是诊断字段，只从鉴权 detail 路由取（token 就是本槽数据目录的 .dev-token）
+  const token = (() => {
+    try {
+      return fs.readFileSync(path.join(DATA_DIR, '.dev-token'), 'utf8').trim() || null;
+    } catch {
+      return null;
+    }
+  })();
+  const health = await fetch(`${URL_BASE}/api/health/detail`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  }).then((r) => r.json() as Promise<Record<string, unknown>>).catch(() => null);
+  if (!health || health.status !== 'ok') throw new Error(`webServer 不可达 ${URL_BASE} —— Dev 包没起？`);
   record('health', true, `pid=${String(health.pid)} branch=${String((health.build as Record<string, unknown> | undefined)?.branch)}`);
 
   const voiceprintDir = path.join(DATA_DIR, VOICEPRINT_DIR);

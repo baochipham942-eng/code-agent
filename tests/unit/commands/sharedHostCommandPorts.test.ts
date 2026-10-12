@@ -73,8 +73,9 @@ function extensionOps(list: () => Promise<unknown[]> = async () => []) {
 }
 
 describe('shared command host ports', () => {
-  it('keeps /btw on the CLI surface only', () => {
-    expect(btwCommand.surfaces).toEqual(['cli']);
+  it('opens /btw on the CLI and GUI surfaces', () => {
+    expect(btwCommand.surfaces).toEqual(['cli', 'gui']);
+    expect(btwCommand.description).toBe('顺便问一句，不影响当前任务');
   });
 
   it('runs /doctor from the injected runner and keeps the CLI report text', async () => {
@@ -182,6 +183,28 @@ describe('shared command host ports', () => {
     expect(result).toEqual({ success: true });
     expect(seen).toEqual(['hello']);
     expect(lines).toEqual(['info:（侧聊·只读）思考中…', 'info:side-answer']);
+  });
+
+  it('opens a GUI /btw question without writing output or loading host ports', async () => {
+    const openSideChat = vi.fn();
+    const load = vi.fn();
+    const { ctx, lines } = makeCtx({
+      surface: 'gui',
+      openSideChat,
+      loadReadOnlySideChat: load,
+      loadToolResolver: load,
+      loadSubagentExecutor: load,
+    });
+    const result = await btwCommand.handler(ctx, ['旁边问一句']);
+    expect(result).toEqual({ success: true });
+    expect(openSideChat).toHaveBeenCalledWith('旁边问一句');
+    expect(lines).toEqual([]);
+    expect(load).not.toHaveBeenCalled();
+
+    const empty = makeCtx({ surface: 'gui', openSideChat, loadReadOnlySideChat: load });
+    expect(await btwCommand.handler(empty.ctx, ['  '])).toMatchObject({ success: false, message: 'missing question' });
+    expect(empty.lines).toEqual([]);
+    expect(openSideChat).toHaveBeenCalledTimes(1);
   });
 
   it('rejects an empty /btw question and a missing agent before loading ports', async () => {

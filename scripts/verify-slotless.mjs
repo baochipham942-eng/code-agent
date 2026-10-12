@@ -569,12 +569,14 @@ function signalRun(state, signal) {
   }
 }
 
-function isAlive(pid) {
+export function isAlive(pid) {
   try {
     process.kill(pid, 0);
     return true;
   } catch (error) {
     if (error?.code === 'ESRCH') return false;
+    // EPERM: 进程存在但属于别的用户 —— 存在即 true，后续命令行/marker 校验会拒绝它
+    if (error?.code === 'EPERM') return true;
     throw error;
   }
 }

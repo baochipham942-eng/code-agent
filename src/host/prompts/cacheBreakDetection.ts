@@ -2,8 +2,9 @@
 // Cache Break Detection - Detects when prompt caching would be invalidated
 // ============================================================================
 // Used by M4-S4 request normalizer to decide whether to set cache_control.
-// The key insight: only static prefix changes invalidate the cache.
-// Dynamic section changes (memory, rules, reminders) should not count.
+// The key insight: static prefix changes, and a tool table whose fingerprint
+// changed, invalidate the cache. Dynamic section changes (memory, rules,
+// reminders) should not count. A missing tool fingerprint is not a break.
 // ============================================================================
 
 import type { CacheBreakReason } from '../../shared/contract/turnCost';
@@ -19,6 +20,9 @@ export interface CacheBreakOptions {
   prevModel?: string;
   currModel?: string;
   dynamicBoundary?: string;
+  /** 两边都有且不相等才记 tools-changed。缺任意一边不当作工具表变化。 */
+  prevToolsFingerprint?: string;
+  currToolsFingerprint?: string;
 }
 
 export const DYNAMIC_BOUNDARY_MARKER = '\n<!-- DYNAMIC_SECTION -->\n';
@@ -29,8 +33,10 @@ export const DYNAMIC_BOUNDARY_MARKER = '\n<!-- DYNAMIC_SECTION -->\n';
  * Returns broken=true if:
  * 1. The model changed (different tokenizer → different cache key)
  * 2. The static prefix (before DYNAMIC_BOUNDARY_MARKER) changed
+ * 3. Both tool-table fingerprints are present and differ
  *
  * Dynamic section changes after the boundary marker are ignored.
+ * A missing fingerprint on either side is not a tools-changed break.
  */
 export function detectCacheBreak(
   prevPrompt: string,
@@ -53,6 +59,12 @@ export function detectCacheBreak(
 
   if (prevPrefix !== currPrefix) {
     return { broken: true, reason: 'static prefix changed', cacheBreakReason: 'prefix-changed' };
+  }
+
+  const prevToolsFingerprint = options?.prevToolsFingerprint;
+  const currToolsFingerprint = options?.currToolsFingerprint;
+  if (prevToolsFingerprint && currToolsFingerprint && prevToolsFingerprint !== currToolsFingerprint) {
+    return { broken: true, reason: 'tool table changed', cacheBreakReason: 'tools-changed' };
   }
 
   return { broken: false, reason: 'cache stable', cacheBreakReason: 'none' };

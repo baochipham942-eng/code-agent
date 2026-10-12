@@ -23,6 +23,16 @@ const PlanningDomainRequestSchema = z.object({
 
 export type PlanningDomainRequest = z.infer<typeof PlanningDomainRequestSchema>;
 
+/**
+ * respondApproval 的请求体。decision 含 edit；version 是客户端持有的卡片版本。
+ * 其余字段透传：步骤正文仍由 planApprovalService 校验，这里不改写旧调用方的载荷。
+ */
+export const respondApprovalPayloadSchema = z.object({
+  decision: z.enum(['approve', 'cancel', 'revise', 'edit']).optional(),
+  version: z.number().int().positive().optional(),
+  feedback: z.string().optional(),
+}).passthrough();
+
 export const PlanningSchemas = {
   REQUEST: channelSchema({ channel: IPC_DOMAINS.PLANNING, payload: PlanningDomainRequestSchema }),
   /** action 字面量集合：shellCapabilities 派生用（shared 层零 host 依赖） */

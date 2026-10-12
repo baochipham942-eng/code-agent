@@ -7,6 +7,7 @@ import {
   isEvidenceInvalidationRecord,
   markDurableRecordInvalidated,
 } from '../../shared/contract/evidenceInvalidation';
+import { PROOF_LEDGER } from '@shared/constants';
 
 const LEDGER_FILE = 'browser-computer-proof-ledger.jsonl';
 const SCHEMA_VERSION = 1;
@@ -61,6 +62,50 @@ function targetKindForTool(toolName: string): BrowserComputerProofRecord['target
 
 export function getBrowserComputerProofLedgerPath(): string {
   return path.join(getUserConfigDir(), 'sessions', LEDGER_FILE);
+}
+
+/** Highest rotated suffix: KEPT_SHARDS total = active file plus suffixes 1..MAX_ROTATED_SUFFIX. */
+const MAX_ROTATED_SUFFIX = PROOF_LEDGER.KEPT_SHARDS - 1;
+
+function rotatedShardPath(activePath: string, suffix: number): string {
+  return `${activePath}.${suffix}`;
+}
+
+/** All shard paths in time order, oldest (highest suffix) first and the active file last. */
+function listProofLedgerShardPaths(activePath: string): string[] {
+  const shards: string[] = [];
+  for (let suffix = MAX_ROTATED_SUFFIX; suffix >= 1; suffix -= 1) {
+    shards.push(rotatedShardPath(activePath, suffix));
+  }
+  shards.push(activePath);
+  return shards;
+}
+
+/**
+ * Rotation-aware append for the proof ledger: keeps the append-only file bounded
+ * (FB-307). Before appending, if the active shard plus the new line would exceed
+ * MAX_SHARD_BYTES, the shards are rotated (`.jsonl` -> `.jsonl.1`, `.1` -> `.2`, ...)
+ * and shards beyond KEPT_SHARDS are deleted, then the line lands in a fresh active
+ * file. Every step is synchronous so a single process cannot interleave a rotation
+ * with a partial line: a line is never split across shards and never written to a
+ * file that is about to be deleted.
+ */
+export function appendBrowserComputerProofLedgerLine(line: string): void {
+  const ledgerPath = getBrowserComputerProofLedgerPath();
+  fs.mkdirSync(path.dirname(ledgerPath), { recursive: true });
+  const lineBytes = Buffer.byteLength(line, 'utf-8');
+  const activeBytes = fs.existsSync(ledgerPath) ? fs.statSync(ledgerPath).size : 0;
+  if (activeBytes > 0 && activeBytes + lineBytes > PROOF_LEDGER.MAX_SHARD_BYTES) {
+    fs.rmSync(rotatedShardPath(ledgerPath, MAX_ROTATED_SUFFIX), { force: true });
+    for (let suffix = MAX_ROTATED_SUFFIX - 1; suffix >= 1; suffix -= 1) {
+      const from = rotatedShardPath(ledgerPath, suffix);
+      if (fs.existsSync(from)) {
+        fs.renameSync(from, rotatedShardPath(ledgerPath, suffix + 1));
+      }
+    }
+    fs.renameSync(ledgerPath, rotatedShardPath(ledgerPath, 1));
+  }
+  fs.appendFileSync(ledgerPath, line, 'utf-8');
 }
 
 function buildRecordId(parts: {
@@ -193,9 +238,7 @@ export function persistBrowserComputerProofFromResult(
     ...(surfaceScope ? { surfaceScope: sanitizeValue(surfaceScope) } : {}),
   };
 
-  const ledgerPath = getBrowserComputerProofLedgerPath();
-  fs.mkdirSync(path.dirname(ledgerPath), { recursive: true });
-  fs.appendFileSync(ledgerPath, `${JSON.stringify(record)}\n`, 'utf-8');
+  appendBrowserComputerProofLedgerLine(`${JSON.stringify(record)}\n`);
   return record;
 }
 
@@ -204,8 +247,15 @@ export function readBrowserComputerProofRecordsBySession(
   limit = 100,
 ): BrowserComputerProofRecord[] {
   const ledgerPath = getBrowserComputerProofLedgerPath();
-  if (!sessionId || limit <= 0 || !fs.existsSync(ledgerPath)) return [];
-  const lines = fs.readFileSync(ledgerPath, 'utf-8').split('\n').filter(Boolean);
+  if (!sessionId || limit <= 0) return [];
+  // Shards are read oldest to newest so invalidation records keep landing after
+  // the records they invalidate, regardless of which shard either lives in.
+  // Missing shards are skipped; malformed lines are still ignored below.
+  const lines: string[] = [];
+  for (const shardPath of listProofLedgerShardPaths(ledgerPath)) {
+    if (!fs.existsSync(shardPath)) continue;
+    lines.push(...fs.readFileSync(shardPath, 'utf-8').split('\n').filter(Boolean));
+  }
   const records: BrowserComputerProofRecord[] = [];
   for (const line of lines) {
     try {

@@ -10,6 +10,8 @@ export const planApprovalZh = {
     save: '保存',
     cancelEdit: '取消编辑',
     changed: '已改',
+    yourEdit: '你的编辑',
+    latestVersion: '最新版本',
     reordered: '已重排',
     removed: '已删除',
     feedbackAction: '有别的想法…',
@@ -21,6 +23,7 @@ export const planApprovalZh = {
     cancel: '计划 · 拒绝',
     submitting: '正在提交…',
     submitFailed: '计划决定未生效，请重试。',
+    staleVersion: '计划已更新到新版本，请比较冲突步骤并选择后再批准',
     emptyPlan: '至少保留一个步骤。',
     approvedSummary: '计划 · 已允许 · {count} 步',
     cancelledSummary: '计划 · 已拒绝',
@@ -31,6 +34,7 @@ export const planApprovalZh = {
     evidenceHint: '批准时的完整计划',
     drag: '拖拽重排',
     syntheticSource: '由 Neo 根据计划正文补出',
+    version: '版本 {version}',
   },
 };
 
@@ -46,6 +50,8 @@ export const planApprovalEn: typeof planApprovalZh = {
     save: 'Save',
     cancelEdit: 'Cancel edit',
     changed: 'Edited',
+    yourEdit: 'Your edit',
+    latestVersion: 'Latest version',
     reordered: 'Reordered',
     removed: 'Removed',
     feedbackAction: 'I have other ideas…',
@@ -57,6 +63,7 @@ export const planApprovalEn: typeof planApprovalZh = {
     cancel: 'Plan · Deny',
     submitting: 'Submitting…',
     submitFailed: 'The plan decision did not take effect. Try again.',
+    staleVersion: 'The plan was updated to a newer version. Compare each conflict and choose a version before approving again.',
     emptyPlan: 'Keep at least one step.',
     approvedSummary: 'Plan · Allowed · {count} steps',
     cancelledSummary: 'Plan · Denied',
@@ -67,5 +74,6 @@ export const planApprovalEn: typeof planApprovalZh = {
     evidenceHint: 'Full plan at approval time',
     drag: 'Drag to reorder',
     syntheticSource: 'Neo drafted this from the plan text',
+    version: 'Version {version}',
   },
 };

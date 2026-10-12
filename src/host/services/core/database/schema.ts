@@ -2,6 +2,7 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import { applyTelemetrySchema } from './schemaTelemetry';
 import { applyAnnotationsSchema } from './schemaAnnotations';
+import { applyAppGrantsSchema } from './schemaAppGrants';
 import { safeAlter, type Logger } from './schemaHelpers';
 import { applyTranscriptFtsSchema } from '../../../../shared/transcriptFts.sql';
 import { applyMemoriesFtsSchema } from '../../../../shared/memoriesFts.sql';
@@ -400,6 +401,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   `);
   safeAlter(db, `ALTER TABLE permission_decisions ADD COLUMN wait_ms INTEGER`, logger);
   safeAlter(db, `ALTER TABLE permission_decisions ADD COLUMN origin TEXT`, logger);
+  safeAlter(db, `ALTER TABLE permission_decisions ADD COLUMN policy_hash TEXT`, logger);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_permission_decisions_recorded ON permission_decisions (recorded_at)`);
   db.exec(
     `CREATE INDEX IF NOT EXISTS idx_permission_decisions_session ON permission_decisions (session_id, recorded_at)`,
@@ -783,6 +785,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
 
   applyTelemetrySchema(db, logger);
   applyAnnotationsSchema(db, logger);
+  applyAppGrantsSchema(db, logger);
 
   // Captures 表 (知识库采集内容持久化)
   db.exec(`
@@ -1360,6 +1363,31 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
       ts INTEGER NOT NULL,
       PRIMARY KEY (run_id, call_index),
       FOREIGN KEY (run_id) REFERENCES workflow_runs(run_id) ON DELETE CASCADE
+    )
+  `);
+
+  // workflow_settlement_claims - 终态通知的跨重启去重键（N-WF-SETTLEMENT-DEDUPE / 设计 D6-A）。
+  // 刻意不 FK 到 workflow_runs：startRun 的 INSERT OR REPLACE 是 DELETE+INSERT，同 runId
+  // 重启重跑会把 CASCADE 掉的 claim 一起抹掉，去重就失效了；run 记录删除时由
+  // WorkflowJournalRepository.deleteRun/clearAll 显式清掉对应 claim 行。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS workflow_settlement_claims (
+      run_id TEXT NOT NULL,
+      terminal_status TEXT NOT NULL,
+      claimed_at INTEGER NOT NULL,
+      PRIMARY KEY (run_id, terminal_status)
+    )
+  `);
+
+  // workflow_stall_notices - durable (run_id, epoch) key for background stall announcements.
+  // Deliberately no FK: startRun uses INSERT OR REPLACE, whose DELETE+INSERT would otherwise
+  // erase the announcement history for a reused run id.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS workflow_stall_notices (
+      run_id TEXT NOT NULL,
+      epoch INTEGER NOT NULL,
+      announced_at INTEGER NOT NULL,
+      PRIMARY KEY (run_id, epoch)
     )
   `);
 

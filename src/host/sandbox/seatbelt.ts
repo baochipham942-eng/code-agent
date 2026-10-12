@@ -33,6 +33,8 @@ export interface SeatbeltConfig {
   readPaths: string[];
   /** Paths to allow write access */
   writePaths: string[];
+  /** Exact files to allow write access to; descendants are not included. */
+  writeFiles?: string[];
   /** Paths to allow execute access */
   executePaths: string[];
   /** Allow process execution (default: true) */
@@ -47,6 +49,11 @@ export interface SeatbeltConfig {
   workingDirectory?: string;
   /** Legacy default grants cwd write; multi-root callers disable it and pass explicit writePaths. */
   allowWorkingDirectoryWrite?: boolean;
+  /**
+   * Forbidden names inside a one-shot escalated write root (DIR-FORBIDDEN): re-denied AFTER
+   * every write allow below, so SBPL last-match-wins keeps them read-only despite the grant.
+   */
+  writeDenyPaths?: SensitiveSandboxPath[];
   /** Timeout in milliseconds */
   timeout?: number;
   /** Custom Seatbelt profile (overrides generated profile) */
@@ -187,6 +194,18 @@ export function generateProfile(config: SeatbeltConfig): string {
   for (const p of writeRoots) {
     lines.push(`(allow file-write* (subpath "${escapeProfileString(p)}"))`);
   }
+  // Single-file grants (one-shot escalation): `literal` opens this path only. If the command
+  // turns it into a directory, nothing inside is writable.
+  for (const p of config.writeFiles ?? []) {
+    lines.push(`(allow file-write* (literal "${escapeProfileString(realFilePath(p))}"))`);
+  }
+  // DIR-FORBIDDEN：目录子树一次性扩权内的禁写名（凭据/笼子/钩子/shell rc）保持只读。
+  // SBPL 后规则压过先规则，deny 必须排在上面所有 allow file-write 之后才咬得住。
+  for (const entry of config.writeDenyPaths ?? []) {
+    const resolved = entry.kind === 'directory' ? realPath(entry.path) : realFilePath(entry.path);
+    const form = entry.kind === 'directory' ? 'subpath' : 'literal';
+    lines.push(`(deny file-write* (${form} "${escapeProfileString(resolved)}"))`);
+  }
   lines.push('');
 
   return lines.join('\n');
@@ -200,6 +219,19 @@ function realPath(p: string): string {
     return fs.realpathSync(p);
   } catch {
     return path.resolve(p);
+  }
+}
+
+/**
+ * Real path for a file that may not exist yet: resolve symlinks in the parent
+ * directory (/tmp -> /private/tmp) and keep the file name.
+ */
+function realFilePath(p: string): string {
+  const resolved = path.resolve(p);
+  try {
+    return fs.realpathSync(resolved);
+  } catch {
+    return path.join(realPath(path.dirname(resolved)), path.basename(resolved));
   }
 }
 

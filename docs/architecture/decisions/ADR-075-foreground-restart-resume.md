@@ -196,7 +196,7 @@ N-RECOVERY-MATRIX 仍只做六类故障的用户可见状态验收，不在那�
 
 | 邻居 | 它管什么 | 本 ADR 管什么 | 互不吸收 |
 |---|---|---|---|
-| **T-083 / RQ-132 / N-RESIDENT-HOST-ADR** | 执行进程与 Tauri 壳解耦，关窗不等于杀进程；桌面/CLI 变成客户端 | 进程**真的死了**之后，前台 native run 怎么接着跑 | 常驻宿主少触发本 ADR，不代替本 ADR。本 ADR 不引入 daemon、pid 文件、session attach |
+| **T-083 / RQ-132 / N-RESIDENT-HOST-ADR**（[ADR-083](./ADR-083-resident-host.md)） | 执行进程与 Tauri 壳解耦，关窗不等于杀进程；桌面/CLI 变成客户端 | 进程**真的死了**之后，前台 native run 怎么接着跑 | 常驻宿主少触发本 ADR，不代替本 ADR。本 ADR 不引入 daemon、pid 文件、session attach |
 | **N-BGSPAWN-DURABLE** | 后台子代理 `engine_kind='subagent_single'`：启动收口 `interrupted_by_restart`，刀1 已合；断点续跑若立项是它的刀 | 前台 native agent loop 的续跑 | 前台续跑时，子代理仍按 close-only 向父会话投影中断事实。本 ADR 不把子代理接回 loop。父 run 必须先收口子 op |
 | **N-CRON-APPROVAL-PARK** | cron 碰到审批改为停车等人，批准后**续接同一 run**，同 job 停车期间不起第二发 | 提供「同一 `runId` 从 waiting/approval 回到 live loop」+ **批准后恰好执行一次** | 它依赖本 ADR 的回 loop 原语和「批准后执行一次」；本 ADR 不改 cron 调度、不改 60s 超时 |
 | **ADR-068** | 进程还活着时的流式断流续接（B1 无缝 / B2 诚实分段） | 进程已死后的跨进程续跑 | 进程内走 068；跨进程走本 ADR 的重发+诚实展示。不把 068 的 prefix 合同套到已死的 socket 上。自动续次数**不要**拿 `STREAM_RECONNECT_MAX` 当理由（那是进程内断流预算） |

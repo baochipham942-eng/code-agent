@@ -237,6 +237,79 @@ suite('seatbelt wrapCommand 真实隔离', () => {
     }
   });
 
+  it('单文件写授权只放开那一个文件：同目录别的文件、把它建成目录后往里写都仍被拒', async () => {
+    // 一次性扩权卡的授权粒度（PR #2191）：readWriteFiles 走 seatbelt literal，不含子孙。
+    const outside = fs.realpathSync(fs.mkdtempSync(path.join(os.homedir(), '.sbx-file-grant-')));
+    const granted = path.join(outside, 'granted.txt');
+    const sibling = path.join(outside, 'sibling.txt');
+    const becomesDir = path.join(outside, 'becomes-dir');
+    try {
+      const denied = wrapCommandForSandbox(`echo x > ${JSON.stringify(granted)}`, { workingDirectory: projectDir });
+      const r0 = await run(denied.command, projectDir);
+      denied.cleanup();
+      expect(r0.code).not.toBe(0);
+      expect(fs.existsSync(granted)).toBe(false);
+
+      const ok = wrapCommandForSandbox(
+        `echo x > ${JSON.stringify(granted)} && echo y > ${JSON.stringify(sibling)}`,
+        { workingDirectory: projectDir, readWriteFiles: [granted] },
+      );
+      const r1 = await run(ok.command, projectDir);
+      ok.cleanup();
+      expect(fs.readFileSync(granted, 'utf8')).toBe('x\n');
+      expect(r1.code).not.toBe(0);
+      expect(fs.existsSync(sibling)).toBe(false);
+
+      const tree = wrapCommandForSandbox(
+        `mkdir ${JSON.stringify(becomesDir)}; echo secret > ${JSON.stringify(path.join(becomesDir, '.env'))}`,
+        { workingDirectory: projectDir, readWriteFiles: [becomesDir] },
+      );
+      const r2 = await run(tree.command, projectDir);
+      tree.cleanup();
+      expect(r2.code).not.toBe(0);
+      expect(fs.existsSync(path.join(becomesDir, '.env'))).toBe(false);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('目录子树扩权（DIR-FORBIDDEN）：子树内普通文件可写，.git/hooks / shell rc / .npmrc 仍被拒', async () => {
+    // 真实 manager 路径：forbiddenWriteUnder → writeDenyPaths → deny 行压过 subpath allow
+    const outside = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sbx-dir-deny-')));
+    const normal = path.join(outside, 'normal.txt');
+    const preCommit = path.join(outside, '.git', 'hooks', 'pre-commit');
+    const zshrc = path.join(outside, '.zshrc');
+    const npmrc = path.join(outside, '.npmrc');
+    fs.mkdirSync(path.dirname(preCommit), { recursive: true });
+    fs.writeFileSync(preCommit, '#!/bin/sh\n');
+    fs.writeFileSync(zshrc, '# rc\n');
+    fs.writeFileSync(npmrc, 'registry=x\n');
+    try {
+      const opts = {
+        workingDirectory: projectDir,
+        readWriteRoots: [projectDir, outside],
+        forbiddenWriteUnder: [outside],
+        allowNetwork: false,
+      };
+      const ok = wrapCommandForSandbox(`echo ok > ${JSON.stringify(normal)}`, opts);
+      const r0 = await run(ok.command, projectDir);
+      ok.cleanup();
+      expect(r0.code, r0.stderr).toBe(0);
+      expect(fs.readFileSync(normal, 'utf8')).toBe('ok\n');
+
+      for (const denied of [preCommit, zshrc, npmrc]) {
+        const deniedWrap = wrapCommandForSandbox(`echo evil > ${JSON.stringify(denied)}`, opts);
+        const r1 = await run(deniedWrap.command, projectDir);
+        deniedWrap.cleanup();
+        expect(r1.code).not.toBe(0);
+        expect(r1.stderr).toMatch(/Operation not permitted/);
+        expect(fs.readFileSync(denied, 'utf8')).not.toContain('evil');
+      }
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
   it('引号/管道命令经 shell-quote 包装后语义正确', async () => {
     const { command, cleanup } = wrapCommandForSandbox(
       `echo 'a b c' | tr ' ' '-'`,

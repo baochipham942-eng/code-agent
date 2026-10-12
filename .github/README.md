@@ -14,6 +14,7 @@
 | 能力与 provider | `capability-evidence.yml`、`provider-symmetry.yml` | 能力证据和 provider 对称性合同 |
 | 云与数据 | `vercel-control-plane.yml`、`supabase-migrate.yml`、`supabase-keepalive.yml` | 控制面部署、数据库迁移和保活 |
 | 仓库治理 | `repository-structure.yml` | 导航链接、目录边界和增长 ratchet |
+| 密钥扫描 | `security.yml` | 公开仓泄漏门：全历史 gitleaks、源码快照、构建后的 dist，以及仓外盐的敏感串 HMAC。不设 paths，泄漏可以出现在任意路径或提交说明里 |
 
 ## 维护规则
 

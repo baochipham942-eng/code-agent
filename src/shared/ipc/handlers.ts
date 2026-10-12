@@ -19,7 +19,7 @@ import type { SkillRegistryListItem } from '../contract/skillRegistry';
 
 import type { InAppValidationRequest, InAppValidationResultPayload } from '../contract/browserInteraction';
 
-import type { MemoryItem, MemoryCategory, MemoryStats as MemoryStatsNew, MemoryExport, MemoryLearnedEvent, MemoryConfirmRequest, MemoryExportV2Bundle, MemoryEntryBatchReviewResult, MemoryEntryDeleteResult, MemoryEntryListResult, MemoryEntryUpdateResult, MemoryImportApplyResult, MemoryImportDirectiveConfirmResult, MemoryImportDryRunResult, MemoryImportV2ApplyResult, MemoryImportV2DryRunResult, MemoryMirrorRebuildResult, MemoryPackRequest, MemoryPackResult } from '../contract/memory';
+import type { MemoryItem, MemoryCategory, MemoryStats as MemoryStatsNew, MemoryExport, MemoryLearnedEvent, MemoryConfirmRequest, MemoryExportV2Bundle, MemoryEntryBatchReviewResult, MemoryEntryDeleteResult, MemoryEntryListResult, MemoryEntryUpdateResult, MemoryImportApplyResult, MemoryImportDirectiveConfirmResult, MemoryImportDryRunResult, MemoryImportV2ApplyResult, MemoryImportV2DryRunResult, MemoryMirrorRebuildResult, MemoryPackRequest, MemoryPackResult, ProjectMemoryDraftResult } from '../contract/memory';
 
 import type { ContextCompressionChannelState, ContextCompressionConfigPatch, ContextHealthState, ContextHealthUpdateEvent } from '../contract/contextHealth';
 import type { ModelFallbackStrategy, ModelFallbackTraceStep } from '../contract/modelDecision';
@@ -31,6 +31,7 @@ import type { SurfaceLiveFrameV1 } from '../contract/surfaceExecution';
 import type { DAGVisualizationEvent } from '../contract/dagVisualization';
 import type { ScriptRunEvent, WorkflowLaunchEvent } from '../contract/scriptRun';
 import { DAG_CHANNELS, SKILL_CHANNELS } from './channels';
+import type { SideChatFailureCause } from './schemas';
 
 import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetrySessionListOptions, TelemetryToolStat, TelemetryIntentStat, TelemetryCostBucket, TelemetryCostByPeriodOptions, TelemetryPushEvent, TelemetryHealth, ComputerSurfaceReliabilitySummary, TelemetryFeedbackSubmitRequest, TelemetryFeedbackSubmitResult, TelemetryFeedbackRating } from '../contract/telemetry';
 
@@ -39,6 +40,7 @@ import type { ChannelAccount, ChannelConversationListResponse, ChannelInboxItem,
 import type { LabProjectType, LabProjectStatus, PythonEnvStatus, TrainingProgressEvent, DownloadProjectRequest, DownloadProjectResponse, UploadDataRequest, UploadDataResponse, StartTrainingRequest, StartTrainingResponse, InferenceRequest, InferenceResult } from '../contract/lab';
 
 import type { MarketplaceInfo, MarketplacePluginEntry, InstalledPlugin, MarketplaceResult, PluginInstallResult } from '../contract/marketplace';
+import type { SkillCautionConfirmationRequired, SkillInstallCautionHit } from '../contract/skillInstallCaution';
 import type {
   CapabilityPackageInstallResult,
   CapabilityPackagePreview,
@@ -231,9 +233,9 @@ export interface IpcInvokeHandlers {
   }>;
 
   // Memory (Phase 2/3)
-  [IPC_CHANNELS.MEMORY]: (payload: { action: 'list' | 'update' | 'delete' | 'deleteByCategory' | 'export' | 'import' | 'getStats' | 'add' | 'getLearningInsights' | 'lightList' | 'lightRead' | 'lightDelete' | 'lightStats' | 'lightHealth' | 'lightRebuildIndex' | 'memoryAudit' | 'memoryInboxResolve' | 'memoryEntries' | 'memoryRebuildMirror' | 'memoryEntryUpdate' | 'memoryEntryDelete' | 'memoryEntryBatchReview' | 'memoryPack' | 'memoryExportV2' | 'memoryImportV2DryRun' | 'memoryImportV2Apply' | 'memoryHarnessImportDryRun' | 'memoryHarnessImportApply' | 'memoryHarnessImportConfirmDirective'; category?: MemoryCategory; id?: string; content?: string; data?: MemoryExport; bundle?: MemoryExportV2Bundle; allowConflicts?: boolean; query?: string; request?: MemoryPackRequest; item?: Partial<MemoryItem>; filename?: string; candidateId?: string; candidateIds?: string[]; instructionId?: string; decision?: 'approve' | 'reject'; title?: string; source?: string; reason?: string; kind?: string; projectPath?: string | null; sessionId?: string | null; limit?: number; entryId?: string; entryIds?: string[]; adapterIds?: Array<'codex-local-custom' | 'claude-code' | 'grok-build' | 'qwen-code' | 'gemini-cli'>; modelProvider?: 'zai' | 'deepseek' | null }) => Promise<{
+  [IPC_CHANNELS.MEMORY]: (payload: { action: 'list' | 'update' | 'delete' | 'deleteByCategory' | 'export' | 'import' | 'getStats' | 'add' | 'getLearningInsights' | 'lightList' | 'lightRead' | 'lightDelete' | 'lightStats' | 'lightHealth' | 'lightRebuildIndex' | 'memoryAudit' | 'memoryInboxResolve' | 'memoryEntries' | 'memoryRebuildMirror' | 'memoryEntryUpdate' | 'memoryEntryDelete' | 'memoryEntryBatchReview' | 'memoryPack' | 'memoryExportV2' | 'memoryImportV2DryRun' | 'memoryImportV2Apply' | 'memoryHarnessImportDryRun' | 'memoryHarnessImportApply' | 'memoryHarnessImportConfirmDirective' | 'memoryInitProjectDraft'; category?: MemoryCategory; id?: string; content?: string; data?: MemoryExport; bundle?: MemoryExportV2Bundle; allowConflicts?: boolean; query?: string; request?: MemoryPackRequest; item?: Partial<MemoryItem>; filename?: string; candidateId?: string; candidateIds?: string[]; instructionId?: string; decision?: 'approve' | 'reject'; title?: string; source?: string; reason?: string; kind?: string; projectPath?: string | null; projectDir?: string; sessionId?: string | null; limit?: number; entryId?: string; entryIds?: string[]; adapterIds?: Array<'codex-local-custom' | 'claude-code' | 'grok-build' | 'qwen-code' | 'gemini-cli'>; modelProvider?: 'zai' | 'deepseek' | null }) => Promise<{
     success: boolean;
-    data?: MemoryItem[] | MemoryStatsNew | MemoryExport | MemoryExportV2Bundle | MemoryEntryListResult | MemoryMirrorRebuildResult | MemoryEntryUpdateResult | MemoryEntryDeleteResult | MemoryEntryBatchReviewResult | MemoryImportDryRunResult | MemoryImportApplyResult | MemoryImportDirectiveConfirmResult | MemoryImportV2DryRunResult | MemoryImportV2ApplyResult | MemoryPackResult | { deleted: number } | { imported: number; skipped: number } | MemoryItem | unknown;
+    data?: MemoryItem[] | MemoryStatsNew | MemoryExport | MemoryExportV2Bundle | MemoryEntryListResult | MemoryMirrorRebuildResult | MemoryEntryUpdateResult | MemoryEntryDeleteResult | MemoryEntryBatchReviewResult | MemoryImportDryRunResult | MemoryImportApplyResult | MemoryImportDirectiveConfirmResult | MemoryImportV2DryRunResult | MemoryImportV2ApplyResult | MemoryPackResult | ProjectMemoryDraftResult | { deleted: number } | { imported: number; skipped: number } | MemoryItem | unknown;
     error?: string;
   }>;
   [IPC_CHANNELS.MEMORY_CONFIRM_RESPONSE]: (payload: { id: string; confirmed: boolean }) => Promise<void>;
@@ -242,6 +244,11 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.CONTEXT_HEALTH_GET]: (sessionId?: string) => Promise<ContextHealthState>;
   [IPC_CHANNELS.CONTEXT_COMPRESSION_CONFIG_GET]: () => Promise<ContextCompressionChannelState>;
   [IPC_CHANNELS.CONTEXT_COMPRESSION_CONFIG_SET]: (patch: ContextCompressionConfigPatch) => Promise<ContextCompressionChannelState>;
+
+  // Read-only side chat. The answer is not a session message. On failure the
+  // handler resolves `{ failure: { cause } }` instead of throwing — see schemas/sideChat.
+  [IPC_CHANNELS.SIDE_CHAT_ASK]: (payload: { sessionId: string; question: string; requestId: string }) => Promise<{ answer?: string; failure?: { cause: SideChatFailureCause } }>;
+  [IPC_CHANNELS.SIDE_CHAT_ABORT]: (payload: { requestId: string }) => Promise<{ aborted: boolean }>;
 
   // Skills
   [SKILL_CHANNELS.REPO_LIST]: () => Promise<LocalSkillLibrary[]>;
@@ -253,7 +260,7 @@ export interface IpcInvokeHandlers {
   [SKILL_CHANNELS.REPO_CONFIRM]: (stageId: string) => Promise<DownloadResult>;
   [SKILL_CHANNELS.REPO_CANCEL]: (stageId: string) => Promise<void>;
   [SKILL_CHANNELS.REGISTRY_LIST]: () => Promise<{ items: SkillRegistryListItem[]; error?: string }>;
-  [SKILL_CHANNELS.REGISTRY_INSTALL]: (name: string) => Promise<{ success: boolean; error?: string }>;
+  [SKILL_CHANNELS.REGISTRY_INSTALL]: (name: string) => Promise<{ success: boolean; error?: string; cautionHits?: SkillInstallCautionHit[] }>;
   [SKILL_CHANNELS.SKILL_LIST]: (workspacePath?: string) => Promise<Array<ParsedSkill & {
     globalEnabled: boolean;
     projectOverride: boolean | null;
@@ -278,12 +285,13 @@ export interface IpcInvokeHandlers {
   [SKILL_CHANNELS.SKILL_INSTALL_LOCAL_ZIP]: (payload: {
     zipPath?: string;
     archiveBase64?: string;
+    cautionConfirmationToken?: string;
   }) => Promise<{
     success: boolean;
     skillName?: string;
     pluginSpec?: string;
     error?: string;
-  }>;
+  } | SkillCautionConfirmationRequired>;
   [SKILL_CHANNELS.SESSION_MOUNT]: (sessionId: string, skillName: string, libraryId: string) => Promise<boolean>;
   [SKILL_CHANNELS.SESSION_UNMOUNT]: (sessionId: string, skillName: string) => Promise<boolean>;
   [SKILL_CHANNELS.SESSION_LIST]: (sessionId: string) => Promise<SessionSkillMount[]>;
@@ -370,7 +378,7 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.MARKETPLACE_INFO]: (id: string) => Promise<MarketplaceResult<MarketplaceInfo>>;
   [IPC_CHANNELS.MARKETPLACE_LIST_PLUGINS]: (marketplaceId?: string) => Promise<MarketplaceResult<MarketplacePluginEntry[]>>;
   [IPC_CHANNELS.MARKETPLACE_SEARCH_PLUGINS]: (query: string) => Promise<MarketplaceResult<MarketplacePluginEntry[]>>;
-  [IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN]: (spec: string, options?: { scope?: 'user' | 'project'; projectPath?: string }) => Promise<PluginInstallResult>;
+  [IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN]: (spec: string, options?: { scope?: 'user' | 'project'; projectPath?: string; cautionConfirmationToken?: string }) => Promise<PluginInstallResult | SkillCautionConfirmationRequired>;
   [IPC_CHANNELS.MARKETPLACE_CANCEL_INSTALL]: (spec: string) => Promise<MarketplaceResult<{ cancelled: boolean }>>;
   [IPC_CHANNELS.MARKETPLACE_UNINSTALL_PLUGIN]: (pluginId: string, scope?: 'user' | 'project') => Promise<MarketplaceResult<void>>;
   [IPC_CHANNELS.MARKETPLACE_LIST_INSTALLED]: (scope?: 'user' | 'project' | 'all') => Promise<MarketplaceResult<InstalledPlugin[]>>;

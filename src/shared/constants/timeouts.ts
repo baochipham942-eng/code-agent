@@ -220,6 +220,8 @@ export const NETWORK_TOOL_TIMEOUTS = {
   GIT_OPERATION: 30_000,
   /** 本地 pdftotext 抽取超时（无 OpenRouter 时的 read_pdf 回退） */
   PDF_TEXT_EXTRACT: 30_000,
+  /** decide 批量判定单趟 Jev systemOne 超时（最多 32 题，比 JEV_TIMEOUT_MS 默认值宽） */
+  DECIDE_JEV: 20_000,
 } as const;
 
 /** 资料库学习管线超时（N-LIBRARY-LEARN-STATUS） */

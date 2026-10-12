@@ -1,7 +1,9 @@
 import type { LanInvitation } from '../companion/lanProtocol';
 export type CompanionManagementRequest = { action: 'status' } | { action: 'invite'; scope: string[] } | { action: 'revoke'; deviceId: string }
   /** relay 找回配对（N-COMPANION-RELAY-ACCOUNT-RECOVER）：桌面卡片对 pair-request 的表态。 */
-  | { action: 'pair.respond'; requestId: string; approve: boolean };
+  | { action: 'pair.respond'; requestId: string; approve: boolean }
+  /** 远程访问总闸。关 = 暂停，不撤销已配对设备。 */
+  | { action: 'setRemote'; enabled: boolean };
 /** Status-only device fields. Pairing write path still stores deviceId + scope. scopeEpoch feeds relay routeToken derivation. */
 export type CompanionPairedDevice = { deviceId: string; scope: string[]; scopeEpoch: number; name?: string; pairedAt?: number };
 /**
@@ -14,9 +16,16 @@ export type CompanionRelayStatus = {
   /** 账号通道：off=没配中继；signedOut=没登录 Neo 账号；connecting=已登录未连上；connected=已连上。 */
   account: 'off' | 'signedOut' | 'connecting' | 'connected';
   accountError?: string;
+  /**
+   * 共享凭据通道的存量使用统计（N-COMPANION-RELAY-LEGACY-COUNT）：还在经旧凭据到达的设备数
+   * （按 deviceId 去重）与最近一次到达时间。可选字段：共享通道没起或旧 host 不带，消费方需容忍缺省。
+   */
+  legacyUsage?: CompanionRelayLegacyUsage;
 };
+/** 见 CompanionRelayStatus.legacyUsage；独立命名供 Host 侧存取与状态块共用同一形状。 */
+export type CompanionRelayLegacyUsage = { devices: number; lastSeenAt: number | null };
 export type CompanionManagementResult =
-  | { kind: 'status'; sessions: { id: string; title: string }[]; projects?: { id: string; name: string }[]; devices: CompanionPairedDevice[]; relay?: CompanionRelayStatus }
+  | { kind: 'status'; sessions: { id: string; title: string }[]; projects?: { id: string; name: string }[]; devices: CompanionPairedDevice[]; relay?: CompanionRelayStatus; remoteEnabled?: boolean }
   | { kind: 'invitation'; invitation: LanInvitation }
   | { kind: 'revoked' }
   /** pair.respond 的回执：ok=false 表示挂起态已没了（超时/连接断），卡片应自行收起。 */

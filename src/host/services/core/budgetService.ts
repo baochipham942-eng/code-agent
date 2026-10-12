@@ -9,6 +9,7 @@ import {
   getCuratedModelPricing,
   DEFAULT_CACHE_READ_PRICE_RATIO,
   DEFAULT_CACHE_WRITE_PRICE_RATIO,
+  computeUsageCostUsd,
   type ModelPricingEntry,
 } from '../../../shared/constants';
 import { getDatabase } from './databaseService';
@@ -306,13 +307,7 @@ export class BudgetService {
    */
   private calculateCost(usage: TokenUsage): number {
     const pricing = this.getModelPricing(usage.model, usage.provider);
-    const cacheReadPrice = pricing.cacheRead ?? pricing.input * DEFAULT_CACHE_READ_PRICE_RATIO;
-    const cacheWritePrice = pricing.cacheWrite ?? pricing.input * DEFAULT_CACHE_WRITE_PRICE_RATIO;
-    const inputCost = (usage.inputTokens / 1_000_000) * pricing.input;
-    const outputCost = (usage.outputTokens / 1_000_000) * pricing.output;
-    const cacheReadCost = ((usage.cacheReadTokens ?? 0) / 1_000_000) * cacheReadPrice;
-    const cacheWriteCost = ((usage.cacheCreationTokens ?? 0) / 1_000_000) * cacheWritePrice;
-    return inputCost + outputCost + cacheReadCost + cacheWriteCost;
+    return computeUsageCostUsd(pricing, usage);
   }
 
   /**

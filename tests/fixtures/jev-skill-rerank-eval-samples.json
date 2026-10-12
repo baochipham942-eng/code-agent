@@ -1,0 +1,459 @@
+[
+  {
+    "id": "skill-neg-xlsx-translation",
+    "prompt": "把下面这段通知翻译成英文，直接给译文：「各位同事：第四季度全员会定于 11 月 14 日下午两点在三号会议室召开，请提前十分钟入场。」",
+    "expected": null,
+    "kind": "negative",
+    "origin": "bank"
+  },
+  {
+    "id": "skill-neg-meeting-summary-ad-copy",
+    "prompt": "我们下周要发布一款桌面便签应用 StickyNote Air，帮我写一条 50 字以内的朋友圈发布文案，语气轻快一点。",
+    "expected": null,
+    "kind": "negative",
+    "origin": "bank"
+  },
+  {
+    "id": "skill-neg-contract-review-polish",
+    "prompt": "帮我润色这段官网宣传稿，让语气更专业，别改事实：「蓝海厨具与星野物流达成战略合作，双方签署年度框架协议，将为全国 300 家门店提供次日达配送。」",
+    "expected": null,
+    "kind": "negative",
+    "origin": "bank",
+    "adjacent": true
+  },
+  {
+    "id": "skill-imp-xlsx-sales-table",
+    "prompt": "这是我们门店上周的流水：周一 3200、周二 2850、周三 4100、周四 3900、周五 4600、周六 7200、周日 6800。整理成一个 Excel 表格放当前目录，一行一天，最后加一行合计。",
+    "expected": "xlsx",
+    "kind": "implicit",
+    "origin": "bank"
+  },
+  {
+    "id": "skill-imp-meeting-summary-transcript",
+    "prompt": "这是今早项目例会的转写：「甲：支付网关联调还差两个接口，周三前给。乙：官网文案我今晚定稿。丙：测试用例覆盖率还差 8 个点，周五前补完。」帮我整理成纪要，列出每个人的待办和截止时间。",
+    "expected": "meeting-summary",
+    "kind": "implicit",
+    "origin": "bank"
+  },
+  {
+    "id": "skill-imp-data-cleaning-messy-csv",
+    "prompt": "把这份数据洗干净再给我：「姓名,分数\n李雷,88\n韩梅,\n李雷,88\n王芳,91\n,67」。去掉重复行，空分数的行标出来单独列，别把空值当 0 分算进平均。",
+    "expected": "data-cleaning",
+    "kind": "implicit",
+    "origin": "bank"
+  },
+  {
+    "id": "syn-imp-xlsx-budget",
+    "prompt": "请做一份带 公式 的三个月房租水电人工表，最后一行算合计。",
+    "expected": "xlsx",
+    "kind": "implicit",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-imp-xlsx-inventory",
+    "prompt": "把库存做成表，单价乘数量得到金额，低于安全库存的行用 公式 标出。面粉二十袋，糖八袋。",
+    "expected": "xlsx",
+    "kind": "implicit",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-imp-meeting-standup",
+    "prompt": "这是站会转写：「甲：登录接口今天修完。乙：海报文案还差一句。丙：埋点明天补。」请整理成 会议纪要 ，列出待办。",
+    "expected": "meeting-summary",
+    "kind": "implicit",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-imp-meeting-retro",
+    "prompt": "例会文字稿如下：「决定下周三冻结需求。甲负责回归，乙负责公告。」请出 会议总结 和行动项。",
+    "expected": "meeting-summary",
+    "kind": "implicit",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-imp-clean-dupes",
+    "prompt": "这份表有重复行和空值。请做 数据清洗 ：去掉重复，空数量单独列出来，不要当成零。",
+    "expected": "data-cleaning",
+    "kind": "implicit",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-imp-clean-dates",
+    "prompt": "表里的日期写法不一致，城市名还有全角空格。请做 数据清洗 ，把格式和 缺失值 处理好，别直接删行。",
+    "expected": "data-cleaning",
+    "kind": "implicit",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-imp-contract-lease",
+    "prompt": "请做 合同审查 。房屋租赁：租期一年，押一付三，甲方可提前七日收回房屋且不退押金。标出风险条款和修改建议。",
+    "expected": "contract-review",
+    "kind": "implicit",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-imp-contract-nda",
+    "prompt": "请做 协议审查 ：接受方离职后五年内不得从事任何相关行业，违约金为年营收的三成。指出不公平条款。",
+    "expected": "contract-review",
+    "kind": "implicit",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-imp-commit-readme",
+    "prompt": "我只改了说明文档的安装命令。请创建 commit ，并写出提交说明。",
+    "expected": "commit",
+    "kind": "implicit",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-imp-commit-staged",
+    "prompt": "测试已经通过，变更都在暂存区。请写 commit ，不要改代码。",
+    "expected": "commit",
+    "kind": "implicit",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-imp-review-parser",
+    "prompt": "请对日期解析函数做 代码审查 ，重点看空指针、越界和异常处理，按严重程度列出问题。",
+    "expected": "review",
+    "kind": "implicit",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-imp-review-auth",
+    "prompt": "这段登录校验我担心有安全问题。请做 代码审查 ：输入验证、错误处理和边界条件。",
+    "expected": "review",
+    "kind": "implicit",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-imp-explain-debounce",
+    "prompt": "请说明下面这段防抖逻辑的 工作原理 ，不要改它：收到调用后等一小段时间再执行，期间又来了就重新计时。",
+    "expected": "explain",
+    "kind": "implicit",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-imp-explain-middleware",
+    "prompt": "我没写过中间件。请说明这段逻辑的 工作原理 ：请求进来时先生成一个编号，再交给下一个处理步骤。",
+    "expected": "explain",
+    "kind": "implicit",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-imp-docker-ps",
+    "prompt": "名为web的容器退出了。请查看 Docker 的状态和最近日志，并说明要不要重建镜像。",
+    "expected": "docker",
+    "kind": "implicit",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-imp-docker-prune",
+    "prompt": "请处理本机 Docker ：列出镜像，删掉没有容器在用的悬空镜像，别动正在跑的。",
+    "expected": "docker",
+    "kind": "implicit",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-imp-lit-picking",
+    "prompt": "我收集了五篇仓库拣货路径的论文。请写 文献综述 大纲：主题归纳、方法对比、研究空白。",
+    "expected": "literature-review",
+    "kind": "implicit",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-imp-lit-cache",
+    "prompt": "请做 文献调研 ，比较三篇关于本地缓存一致性的文章，输出综述结构，不要只摘要一篇。",
+    "expected": "literature-review",
+    "kind": "implicit",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-imp-paper-one",
+    "prompt": "请对这一篇论文做 论文精读 ：核心论点、方法创新点、局限，并标出页码。不要扩成多篇综述。",
+    "expected": "paper-distillation",
+    "kind": "implicit",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-imp-paper-table",
+    "prompt": "这篇论文第四页有一张结果表。请做 论文蒸馏 ，把数据表的发现和实验设置写成我能核对的文字。",
+    "expected": "paper-distillation",
+    "kind": "implicit",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-imp-house-disk",
+    "prompt": "电脑越来越卡。请 清理缓存 ，告诉我磁盘还能释放多少空间。",
+    "expected": "computer-housekeeper",
+    "kind": "implicit",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-imp-house-net",
+    "prompt": "家里网络时好时坏。请做 网络修复 ，看看是不是 DNS 的问题。",
+    "expected": "computer-housekeeper",
+    "kind": "implicit",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-imp-analysis-weekly",
+    "prompt": "这是门店十二周的销售情况。请做 数据分析 ：按周汇总客单价，给出三条洞察，不要改原始表。",
+    "expected": "data-analysis-helper",
+    "kind": "implicit",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-imp-analysis-channel",
+    "prompt": "请对这份业务情况做 数据洞察 ：渠道、城市、新老客。文件是逗号分隔的表。",
+    "expected": "data-analysis-helper",
+    "kind": "implicit",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-imp-ocr-receipt",
+    "prompt": "这张小票照片有点糊。请 读截图 ，把金额和单号抄出来。",
+    "expected": "image-ocr-search",
+    "kind": "implicit",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-imp-brainstorm-cafe",
+    "prompt": "我想给独立咖啡店做会员功能。先做 需求探索 ，把用户场景和边界问清楚，先别写实现。",
+    "expected": "brainstorm",
+    "kind": "implicit",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-imp-debug-flake",
+    "prompt": "保存按钮偶发没反应，刷新就好。请做 系统化调试 ，先查 根因 再改，不要先猜一个补丁。",
+    "expected": "debug",
+    "kind": "implicit",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-neg-adj-contract-translate",
+    "prompt": "把这段 协议审查 材料译成英文，不要评价条款：「甲方蓝海厨具与乙方星野物流签署年度框架协议。」",
+    "expected": null,
+    "kind": "negative",
+    "origin": "synthetic",
+    "adjacent": true
+  },
+  {
+    "id": "syn-neg-adj-meeting-lunch",
+    "prompt": "下午的会改到食堂。帮我写一条群通知，两点吃面。文中的 会议纪要 只是提醒：这不是纪要，也不要列待办。",
+    "expected": null,
+    "kind": "negative",
+    "origin": "synthetic",
+    "adjacent": true
+  },
+  {
+    "id": "syn-neg-adj-excel-font",
+    "prompt": "海报标题要用艺术字。请推荐三种字体，不要做表格，也不要 公式",
+    "expected": null,
+    "kind": "negative",
+    "origin": "synthetic",
+    "adjacent": true
+  },
+  {
+    "id": "syn-neg-adj-paper-cake",
+    "prompt": "生日蛋糕上写 论文精读 四个字。请排一下奶油字号，不要读论文，也不要写综述。",
+    "expected": null,
+    "kind": "negative",
+    "origin": "synthetic",
+    "adjacent": true
+  },
+  {
+    "id": "syn-neg-adj-clean-kitchen",
+    "prompt": "厨房水槽堵住了。我说的是洗碗，不是 数据清洗 。告诉我家里可以怎么疏通。",
+    "expected": null,
+    "kind": "negative",
+    "origin": "synthetic",
+    "adjacent": true
+  },
+  {
+    "id": "syn-neg-adj-docker-story",
+    "prompt": "孩子问 Docker 的鲸鱼图标为什么微笑。用两句话讲个故事，不要管理容器，也不要动镜像。",
+    "expected": null,
+    "kind": "negative",
+    "origin": "synthetic",
+    "adjacent": true
+  },
+  {
+    "id": "syn-neg-adj-commit-poem",
+    "prompt": "写一首四行小诗，标题就叫 commit ，内容是周末去爬山。不要执行提交。",
+    "expected": null,
+    "kind": "negative",
+    "origin": "synthetic",
+    "adjacent": true
+  },
+  {
+    "id": "syn-neg-adj-review-blurb",
+    "prompt": "朋友写了本小说，书名是 代码审查 。请写一段推荐语。不要检查源代码，也不要谈代码质量。",
+    "expected": null,
+    "kind": "negative",
+    "origin": "synthetic",
+    "adjacent": true
+  },
+  {
+    "id": "syn-neg-birthday",
+    "prompt": "帮我写一张给同事的生日贺卡，语气温暖，40 字左右，不要安排任何任务。",
+    "expected": null,
+    "kind": "negative",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-neg-menu",
+    "prompt": "把食堂今天的三道菜译成英文：番茄鸡蛋、青椒土豆、米饭。",
+    "expected": null,
+    "kind": "negative",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-neg-lunch",
+    "prompt": "中午想吃得快一点。给三个不需要排队的主意。",
+    "expected": null,
+    "kind": "negative",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-neg-checkers",
+    "prompt": "用三句话讲清跳棋怎么走，对象是没玩过的人。",
+    "expected": null,
+    "kind": "negative",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-neg-plant",
+    "prompt": "绿萝叶子发黄，可能是浇水太多吗？给一个家庭养护建议。",
+    "expected": null,
+    "kind": "negative",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-neg-riddle",
+    "prompt": "出一道不需要专业知识的谜语，并在下一行给答案。",
+    "expected": null,
+    "kind": "negative",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-neg-umbrella",
+    "prompt": "从地铁站走到图书馆，如果下雨，提醒我带伞。写一段出门备忘。",
+    "expected": null,
+    "kind": "negative",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-neg-recipe",
+    "prompt": "用鸡蛋和番茄做一份家常菜，写出步骤，两个人的量。",
+    "expected": null,
+    "kind": "negative",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-neg-gift",
+    "prompt": "预算 50 元，给喜欢喝茶的人一个礼物主意。",
+    "expected": null,
+    "kind": "negative",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-neg-music",
+    "prompt": "推荐三首适合散步时听的轻音乐，不要解释乐理。",
+    "expected": null,
+    "kind": "negative",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-neg-season",
+    "prompt": "东京现在大概是什么季节？用一句话回答。",
+    "expected": null,
+    "kind": "negative",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-chat-hello",
+    "prompt": "你好呀。",
+    "expected": null,
+    "kind": "chitchat",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-chat-thanks",
+    "prompt": "谢谢，今天帮大忙了。",
+    "expected": null,
+    "kind": "chitchat",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-chat-weekend",
+    "prompt": "周末愉快。",
+    "expected": null,
+    "kind": "chitchat",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-chat-mood",
+    "prompt": "我今天心情不错。",
+    "expected": null,
+    "kind": "chitchat",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-chat-joke",
+    "prompt": "讲一个不涉及工作的冷笑话。",
+    "expected": null,
+    "kind": "chitchat",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-chat-bye",
+    "prompt": "那我先走了，回头聊。",
+    "expected": null,
+    "kind": "chitchat",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-chat-sun",
+    "prompt": "窗外阳光很好。",
+    "expected": null,
+    "kind": "chitchat",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-chat-how",
+    "prompt": "你今天过得怎么样？",
+    "expected": null,
+    "kind": "chitchat",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-chat-ok",
+    "prompt": "好的，知道了。",
+    "expected": null,
+    "kind": "chitchat",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-chat-haha",
+    "prompt": "哈哈哈。",
+    "expected": null,
+    "kind": "chitchat",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-chat-morning",
+    "prompt": "早上好。",
+    "expected": null,
+    "kind": "chitchat",
+    "origin": "synthetic"
+  },
+  {
+    "id": "syn-chat-water",
+    "prompt": "我去倒杯水，马上回来。",
+    "expected": null,
+    "kind": "chitchat",
+    "origin": "synthetic"
+  }
+]

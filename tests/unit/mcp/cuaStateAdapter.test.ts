@@ -139,6 +139,96 @@ describe('CuaStateAdapter', () => {
     });
   });
 
+  describe('state gate', () => {
+    it('rejects a stateId after its first act consumes it', async () => {
+      const driver = new FakeDriver();
+      driver.observations.push(snapshot('before-click', [element(1, 'Submit')]));
+      const adapter = new CuaStateAdapter(driver);
+      const state = await observe(adapter);
+
+      await adapter.execute({
+        operation: 'act',
+        stateId: state.stateId,
+        mutation: { kind: 'click', elementRef: 'e1' },
+      }, context);
+      const second = await adapter.execute({
+        operation: 'act',
+        stateId: state.stateId,
+        mutation: { kind: 'click', elementRef: 'e1' },
+      }, context);
+
+      if (second.response.operation !== 'act') throw new Error('expected act');
+      expect(second.response.result.error?.kind).toBe('stale_state');
+      expect(driver.calls.filter((call) => call.toolName === 'click')).toHaveLength(1);
+    });
+
+    it('accepts an act at the TTL boundary and rejects one beyond it', async () => {
+      let t = 1_000_000;
+      const boundaryDriver = new FakeDriver();
+      boundaryDriver.observations.push(
+        snapshot('ttl-boundary-before', [element(1, 'Submit')]),
+        snapshot('ttl-boundary-after', [element(1, 'Submit')]),
+      );
+      const boundaryAdapter = new CuaStateAdapter(boundaryDriver, () => t);
+      const boundaryState = await observe(boundaryAdapter);
+
+      // Mirrors STATE_TTL_MS in src/host/mcp/cuaStateAdapter.ts.
+      t += 120_000;
+      await boundaryAdapter.execute({
+        operation: 'act',
+        stateId: boundaryState.stateId,
+        mutation: { kind: 'click', elementRef: 'e1' },
+      }, context);
+      expect(boundaryDriver.calls.filter((call) => call.toolName === 'click')).toHaveLength(1);
+
+      let expiredT = 1_000_000;
+      const expiredDriver = new FakeDriver();
+      expiredDriver.observations.push(snapshot('ttl-expired-before', [element(1, 'Submit')]));
+      const expiredAdapter = new CuaStateAdapter(expiredDriver, () => expiredT);
+      const expiredState = await observe(expiredAdapter);
+
+      // Mirrors STATE_TTL_MS in src/host/mcp/cuaStateAdapter.ts.
+      expiredT += 120_001;
+      const expired = await expiredAdapter.execute({
+        operation: 'act',
+        stateId: expiredState.stateId,
+        mutation: { kind: 'click', elementRef: 'e1' },
+      }, context);
+
+      if (expired.response.operation !== 'act') throw new Error('expected act');
+      expect(expired.response.result.error?.kind).toBe('stale_state');
+      expect(expiredDriver.calls.filter((call) => call.toolName === 'click')).toHaveLength(0);
+    });
+
+    it('rejects a stateId superseded by a newer observe', async () => {
+      const driver = new FakeDriver();
+      driver.observations.push(
+        snapshot('superseded-old', [element(1, 'Submit')]),
+        snapshot('superseded-new', [element(1, 'Submit')]),
+        snapshot('superseded-after-click', [element(1, 'Submit')]),
+      );
+      const adapter = new CuaStateAdapter(driver);
+      const firstState = await observe(adapter);
+      const secondState = await observe(adapter);
+
+      const rejected = await adapter.execute({
+        operation: 'act',
+        stateId: firstState.stateId,
+        mutation: { kind: 'click', elementRef: 'e1' },
+      }, context);
+      if (rejected.response.operation !== 'act') throw new Error('expected act');
+      expect(rejected.response.result.error?.kind).toBe('stale_state');
+      expect(driver.calls.filter((call) => call.toolName === 'click')).toHaveLength(0);
+
+      await adapter.execute({
+        operation: 'act',
+        stateId: secondState.stateId,
+        mutation: { kind: 'click', elementRef: 'e1' },
+      }, context);
+      expect(driver.calls.filter((call) => call.toolName === 'click')).toHaveLength(1);
+    });
+  });
+
   it('maps public element refs to opaque provider tokens and returns a successor state', async () => {
     const driver = new FakeDriver();
     driver.observations.push(

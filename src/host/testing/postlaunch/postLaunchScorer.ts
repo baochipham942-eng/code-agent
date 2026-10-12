@@ -23,9 +23,8 @@ import {
   type PostLaunchScoringResult,
   type PostLaunchTurnScore,
 } from '../../../shared/contract/postLaunchScore';
-import { JEV_JUDGE_MODEL, JEV_MODEL } from '../../../shared/constants/jevQuestions';
-import { resolveProviderApiKey } from '../../model/providers/providerResolution';
-import { systemOne } from '../../model/providers/typesafeProvider';
+import { JEV_JUDGE_MODEL } from '../../../shared/constants/jevQuestions';
+import { resolveJevRoute, systemOne, type JevRoute } from '../../model/providers/typesafeProvider';
 import { classifyFailure, type FailureCodebook } from '../failureCodes';
 import {
   buildPostLaunchJudgePrompt,
@@ -193,8 +192,9 @@ function readUserPrompt(blocks: ReplayBlock[]): string | undefined {
 }
 
 /**
- * Jev 判官初筛开关（默认关，与 CODE_AGENT_PERMISSION_LLM_CLASSIFIER /
- * CODEX_SANDBOX_ENABLED 同一惯例：能力默认关，显式开启）。
+ * Jev 判官初筛开关（默认关，与 CODEX_SANDBOX_ENABLED 同一惯例：能力默认关，
+ * 显式开启。注意 CODE_AGENT_PERMISSION_LLM_CLASSIFIER 等四特性自 N-JEV-DEFAULT-ON
+ * 起默认开，不再是本惯例的例子）。
  */
 function isPostLaunchJevPrescreenEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.CODE_AGENT_POSTLAUNCH_JEV_PRESCREEN === '1';
@@ -207,8 +207,8 @@ const PRESCREEN_MISSING_KEY_WARN
 function resolveJudgePrescreen(deps: PostLaunchScorerDeps): PostLaunchJudgePrescreen | undefined {
   if (deps.prescreen) return deps.prescreen;
   if (!isPostLaunchJevPrescreenEnabled()) return undefined;
-  const apiKey = resolveProviderApiKey({ provider: 'typesafe', model: JEV_MODEL });
-  if (!apiKey) {
+  const route: JevRoute | null = resolveJevRoute();
+  if (route === null) {
     console.warn(PRESCREEN_MISSING_KEY_WARN);
     deps.onWarn?.(PRESCREEN_MISSING_KEY_WARN);
     return undefined;

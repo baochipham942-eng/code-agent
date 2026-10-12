@@ -222,5 +222,13 @@ Parameters:
       whenValues: ['edit', 'automate'],
     },
   ],
+  // r3：file_path 既是读入（read/list_sheets/get_range）也是写目标（edit），readwrite 声明；
+  // 两个路径相互独立，拆开声明。多动作工具没有按动作的条件声明：任一路径参数缺席
+  // （每个动作都缺其一）即落未知域串行，与 pre-PR 行为一致；automate 的 xlwings
+  // 活动工作簿也由此档住。
+  accesses: [
+    { kind: 'readwrite', argumentNames: ['file_path'] },
+    { kind: 'write', argumentNames: ['output_path'] },
+  ],
   readOnly: false,
 };

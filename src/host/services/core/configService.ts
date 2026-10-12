@@ -35,6 +35,7 @@ import {
   migrateQuickFreeTierToOkiFlash,
 } from './configHelpers';
 import { devSlotFromDataDirName } from '../../../shared/devSlot';
+import { assertValidUserPermissionRules } from '../../../shared/permissionRuleSyntax';
 
 const logger = createLogger('ConfigService');
 
@@ -45,6 +46,12 @@ const CONFIG_SELF_WRITE_WINDOW_MS = 1500;
 const SHARED_SEARCH_SERVICE_KEYS = ['brave', 'exa', 'firecrawl', 'openai', 'perplexity', 'tavily'] as const;
 // 接受托管 key 的内置 provider 白名单（先开 xiaomi/MiMo；控制面下发清单之外的一律拒收）
 const SHARED_MODEL_PROVIDER_KEYS = ['xiaomi'] as const;
+const DISCLOSURE_LEVELS = ['simple', 'standard', 'advanced', 'expert'] as const;
+type PersistedDisclosureLevel = (typeof DISCLOSURE_LEVELS)[number];
+
+function isPersistedDisclosureLevel(value: unknown): value is PersistedDisclosureLevel {
+  return typeof value === 'string' && (DISCLOSURE_LEVELS as readonly string[]).includes(value);
+}
 
 const moduleDir = typeof __dirname === 'string'
   ? __dirname
@@ -123,8 +130,14 @@ import { app as electronApp } from '../../platform';
 
 function loadEnvFile(): void {
   // Try multiple paths for .env file
-  const appPath = electronApp?.getAppPath?.() || '';
-  const userDataPath = electronApp?.getPath?.('userData') || '';
+  let appPath = '';
+  let userDataPath = '';
+  try {
+    appPath = electronApp?.getAppPath?.() || '';
+    userDataPath = electronApp?.getPath?.('userData') || '';
+  } catch {
+    // 平台层未就绪（如测试 mock 缺 app 导出）：import 期不能因此炸，只走 cwd/.env 路径
+  }
 
   // For packaged app, Resources folder is at appPath/../
   const resourcesPath = appPath ? path.join(appPath, '..') : '';
@@ -222,8 +235,10 @@ export class ConfigService implements IReadConfigService {
   /**
    * 把 settings.permissions.{deny, ask, allow} 注入 PolicyEngine，供 UserConfigSource 使用。
    * 启动期间调用一次；用户在 UI 上更新规则时通过 reloadUserPermissionRules 重新调用。
+   * source（N-PERM-POLICYVERSION）：updateSettings（UI 保存）传 'user-ui'，外部热重载/
+   * 启动装载走缺省 'external'——外部来源的放宽不作用于已开始的 run。
    */
-  private applyUserPermissionRules(): void {
+  private applyUserPermissionRules(source: 'user-ui' | 'external' = 'external'): void {
     try {
       const policy = getPolicyEngine();
       const perms = this.settings.permissions;
@@ -231,7 +246,7 @@ export class ConfigService implements IReadConfigService {
         deny: perms.deny,
         ask: perms.ask,
         allow: perms.allow,
-      });
+      }, source);
       logger.info('User permission rules applied', {
         deny: perms.deny?.length ?? 0,
         ask: perms.ask?.length ?? 0,
@@ -245,9 +260,10 @@ export class ConfigService implements IReadConfigService {
 
   /**
    * 公开接口：UI 改了 permissions.deny/ask/allow 后调一次，重新生效。
+   * source 缺省 'external'（fail-closed）；UI 路径应传 'user-ui'。
    */
-  reloadUserPermissionRules(): void {
-    this.applyUserPermissionRules();
+  reloadUserPermissionRules(source: 'user-ui' | 'external' = 'external'): void {
+    this.applyUserPermissionRules(source);
   }
 
   /** 订阅设置写入（updateSettings 与外部编辑热重载都会触发）。privacyGate 等运行时重放用。 */
@@ -599,17 +615,9 @@ export class ConfigService implements IReadConfigService {
           this.settings.ui.fontSize = keychainSettings.fontSize;
         }
 
-        // Restore showToolCalls
-        if (typeof keychainSettings.showToolCalls === 'boolean') {
-          this.settings.ui.showToolCalls = keychainSettings.showToolCalls;
-        }
-
-        // Restore disclosureLevel
-        if (keychainSettings.disclosureLevel && typeof keychainSettings.disclosureLevel === 'string') {
-          const validLevels = ['simple', 'standard', 'advanced', 'expert'];
-          if (validLevels.includes(keychainSettings.disclosureLevel)) {
-            this.settings.ui.disclosureLevel = keychainSettings.disclosureLevel as 'simple' | 'standard' | 'advanced' | 'expert';
-          }
+        // 不认识的键直接跳过。非法级别不覆盖磁盘上已经有效的值。
+        if (isPersistedDisclosureLevel(keychainSettings.disclosureLevel)) {
+          this.settings.ui.disclosureLevel = keychainSettings.disclosureLevel;
         }
 
         // === 超时配置 ===
@@ -731,6 +739,7 @@ export class ConfigService implements IReadConfigService {
       }
     }
 
+    assertValidUserPermissionRules(updates.permissions, this.settings.permissions);
     this.settings = this.mergeAppSettings(this.settings, updates);
     await this.save();
 
@@ -740,7 +749,7 @@ export class ConfigService implements IReadConfigService {
       updates.permissions.ask !== undefined ||
       updates.permissions.allow !== undefined
     )) {
-      this.applyUserPermissionRules();
+      this.applyUserPermissionRules('user-ui');
     }
 
     // 用户在模型配置页改了 provider（含 maxConcurrent / proxyMode）后热更新
@@ -1241,7 +1250,6 @@ export class ConfigService implements IReadConfigService {
         language: this.settings.ui.language,
         theme: this.settings.ui.theme,
         fontSize: this.settings.ui.fontSize,
-        showToolCalls: this.settings.ui.showToolCalls,
         disclosureLevel: this.settings.ui.disclosureLevel,
         // 超时配置
         timeoutComplexity: this.settings.timeouts?.complexity,
@@ -1265,6 +1273,13 @@ export class ConfigService implements IReadConfigService {
 
   private mergeAppSettings(base: AppSettings, updates: Partial<AppSettings>): AppSettings {
     const merged = this.mergeSettings(base, updates);
+    // 先拷贝再改，避免浅合并时写穿 DEFAULT_SETTINGS。
+    const mergedUi = merged.ui ?? DEFAULT_SETTINGS.ui;
+    if (!isPersistedDisclosureLevel(mergedUi.disclosureLevel)) {
+      merged.ui = { ...mergedUi, disclosureLevel: 'standard' };
+    } else if (merged.ui == null) {
+      merged.ui = { ...mergedUi };
+    }
     const persistedRules = updates.models?.taskStrategy?.rules;
     const defaultRules = DEFAULT_SETTINGS.models.taskStrategy?.rules;
     if (!persistedRules || !defaultRules || !merged.models.taskStrategy) {

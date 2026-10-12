@@ -42,11 +42,14 @@ import {
 import { BoundedDedupeSet } from '../inboundDedupe';
 import { checkOutboundTarget } from '../outboundAllowlist';
 import { checkInboundAccess, type InboundAccessDecision } from '../inboundAccess';
+import { hasChannelListenBinding } from '../channelListenRegistry';
+import { buildFeishuListenChannelMessage } from './feishuListenMessage';
 import { inboundAccessText } from '../inboundAccessI18n';
 import type { InboundPairingRequest } from '../inboundPairingService';
 import { CHANNEL_INGRESS } from '../../../shared/constants';
 import { getAuditLogger } from '../../security/auditLogger';
 import { buildFeishuCardActionPayload } from './feishuCardAction';
+import { openFeishuWebSocket, type FeishuWsSession } from './feishuWsSession';
 
 const logger = createLogger('FeishuChannel');
 type FeishuPlatform = 'feishu' | 'lark';
@@ -258,6 +261,7 @@ export class FeishuChannel extends BaseChannelPlugin {
   private privacyMode: ChannelPrivacyMode = 'local-redact';
   private client: lark.Client | null = null;
   private wsClient: lark.WSClient | null = null;
+  private wsSession: FeishuWsSession | null = null;
   private botOpenId: string | null = null;
 
   // Webhook 服务器
@@ -324,18 +328,18 @@ export class FeishuChannel extends BaseChannelPlugin {
 
     try {
       if (this.feishuConfig.useWebSocket === true) {
-        // 使用 WebSocket 长连接 (需要飞书后台配置)
         await this.connectWebSocket();
       } else {
-        // 默认使用 Webhook 模式
         await this.startWebhookServer();
+        this.setStatus('connected');
       }
-
-      this.setStatus('connected');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       logger.error(`Failed to connect ${this.meta.name}Channel`, { error: message });
-      this.setStatus('error', message);
+      // onError 已经写过 error；disconnect 之后也不要把状态打回 error。
+      if (this.status === 'connecting') {
+        this.setStatus('error', message);
+      }
       throw error;
     }
   }
@@ -348,10 +352,9 @@ export class FeishuChannel extends BaseChannelPlugin {
     }
     this.reconnectAttempts = 0;
 
-    // 关闭 WebSocket 连接
-    if (this.wsClient) {
-      this.wsClient = null;
-    }
+    const session = this.wsSession;
+    this.wsSession = null;
+    session?.detachAndClose();
 
     // 关闭 Webhook 服务器
     if (this.webhookServer) {
@@ -365,6 +368,7 @@ export class FeishuChannel extends BaseChannelPlugin {
 
     this.setStatus('disconnected');
     logger.info(`${this.meta.name}Channel disconnected`);
+    session?.cancel(new Error('WebSocket disconnected'));
   }
 
   async destroy(): Promise<void> {
@@ -921,27 +925,21 @@ export class FeishuChannel extends BaseChannelPlugin {
       throw new Error('Client not initialized');
     }
 
-    // 创建 WebSocket 客户端
-    this.wsClient = new lark.WSClient({
-      appId: this.feishuConfig.appId,
-      appSecret: this.feishuConfig.appSecret,
+    const session = openFeishuWebSocket({
+      config: this.feishuConfig,
       domain: this.getSdkDomain(),
+      channelName: this.meta.name,
+      onStatus: (status, message) => {
+        if (status === 'connected') this.reconnectAttempts = 0;
+        this.setStatus(status, message);
+      },
+      onEvent: (data) => this.handleMessageEvent(data as unknown as FeishuMessageEvent),
+      attach: (client) => { this.wsClient = client; },
+      detach: () => { this.wsClient = null; },
+      isCurrent: (client) => this.wsClient === client,
     });
-
-    // 注册消息事件处理器
-    this.wsClient.start({
-      eventDispatcher: new lark.EventDispatcher({
-        encryptKey: this.feishuConfig.encryptKey,
-        verificationToken: this.feishuConfig.verificationToken,
-      }).register({
-        'im.message.receive_v1': async (data) => {
-          await this.handleMessageEvent(data as unknown as FeishuMessageEvent);
-        },
-      }),
-    });
-
-    logger.info(`${this.meta.name} WebSocket connected`);
-    this.reconnectAttempts = 0; // Reset on successful connect
+    this.wsSession = session;
+    await session.done;
   }
 
   private scheduleReconnect(): void {
@@ -1015,6 +1013,9 @@ export class FeishuChannel extends BaseChannelPlugin {
         mentionedBot,
         paired,
         groupAccessMode: this.feishuConfig?.groupAccessMode,
+        hasListenBinding: msg.chat_type === 'group' && !mentionedBot
+          ? hasChannelListenBinding(this._accountId, msg.chat_id)
+          : undefined,
       });
 
       if (ingress.action === 'pair') {
@@ -1040,6 +1041,22 @@ export class FeishuChannel extends BaseChannelPlugin {
             content: inboundAccessText(this.feishuConfig?.inboundLocale, 'unauthorized'),
           });
         }
+        return;
+      }
+      if (ingress.action === 'listen') {
+        // 监听事件与正常入站分流：同一套组装（映射在 helper 内），只走 'listen_message'。
+        this.auditIngress(ingress, msg.chat_id, senderId);
+        const listenMessage = await buildFeishuListenChannelMessage({
+          client: this.client,
+          accountId: this._accountId,
+          platform: this.platform,
+          privacyMode: this.privacyMode,
+          parentRead,
+          msg,
+          sender,
+          raw: event,
+        });
+        this.emit('listen_message', listenMessage);
         return;
       }
       if (ingress.action === 'guest') {
@@ -1120,11 +1137,11 @@ export class FeishuChannel extends BaseChannelPlugin {
   }
 
   private auditIngress(
-    decision: Extract<InboundAccessDecision, { action: 'deny' | 'pair' | 'guest' }>,
+    decision: Extract<InboundAccessDecision, { action: 'deny' | 'pair' | 'guest' | 'listen' }>,
     chatId: string,
     senderId: string,
   ): void {
-    const outcome = decision.action === 'guest' ? 'guest' : 'denied';
+    const outcome = decision.action === 'guest' ? 'guest' : decision.action === 'listen' ? 'listen' : 'denied';
     logger.info(`[feishu-ingress] ${outcome}`, {
       accountId: this._accountId,
       chatId,
@@ -1139,8 +1156,8 @@ export class FeishuChannel extends BaseChannelPlugin {
         input: { accountId: this._accountId, chatId, senderId },
         output: `${outcome}:${decision.reason}`,
         duration: 0,
-        success: decision.action === 'guest',
-        riskLevel: decision.action === 'guest' ? 'low' : 'high',
+        success: decision.action === 'guest' || decision.action === 'listen',
+        riskLevel: decision.action === 'deny' || decision.action === 'pair' ? 'high' : 'low',
       });
     } catch (error) {
       logger.warn('Failed to persist Feishu ingress audit entry', { error });

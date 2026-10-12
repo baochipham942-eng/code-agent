@@ -8,7 +8,7 @@ const logger = createLogger('ModelPayloadDump');
 interface ModelPayloadDumpInput {
   body: unknown;
   provider?: string;
-  protocol: 'chat-completions' | 'responses';
+  protocol: 'chat-completions' | 'responses' | 'anthropic-messages';
   url: string;
 }
 

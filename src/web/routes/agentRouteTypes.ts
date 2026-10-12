@@ -6,8 +6,6 @@ export interface AgentSessionManagerLike {
   getSession?(sessionId: string, limit?: number): Promise<Session | null>;
   addMessageToSession?(sessionId: string, message: Message): Promise<void>;
   invalidateSessionCache?(sessionId: string): void;
-  /** 持久层运行期是否可用（infra SessionManager 与 CLISessionManager 均实现）；缺省视为可用 */
-  isPersistent?(): Promise<boolean>;
 }
 
 interface SupabaseQueryResult<T = unknown> {

@@ -17,6 +17,7 @@ import { agentRunSseLimiter, extractRequestToken } from '../helpers/sseConnectio
 import { formatError } from '../helpers/utils';
 import {
   dbAvailable,
+  getPersistenceHealth,
   type CachedMessage,
 } from '../helpers/sessionCache';
 import { createWebSessionStore, isPlaceholderSessionTitle } from '../helpers/webSessionStore';
@@ -533,19 +534,11 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     let persistedSession: Session | null = null;
     let sessionManagerForRun: AgentSessionManagerLike | null = null;
     let sessionPreflightReadFailed = false;
-    // getSession 在持久层不可用时返回 null（与「行不存在」同形）：infra SessionManager
-    // 查不到行，cli/session.ts 走 ensureDbReady 失败路径。null 不能直接当新会话判据，
-    // 用 isPersistent 探测运行期实况——infra 实现探 web 持久化健康态（rework r3：生产
-    // 线路此前恒不触发，app.ts 注入的 infra SM 当时还没有这个方法）。
-    let sessionManagerCannotPersist = false;
     try {
       const sm = await tryGetSessionManager();
       sessionManagerForRun = sm ?? null;
       if (sm?.getSession) {
         persistedSession = await sm.getSession(sessionId, 1);
-        if (!persistedSession && sm.isPersistent) {
-          sessionManagerCannotPersist = !(await sm.isPersistent());
-        }
       }
     } catch (err) {
       sessionPreflightReadFailed = true;
@@ -569,14 +562,18 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // 消息——本轮 user message 要到下方 SSE 之后的 pre-persist 才落库，此处读到的就是
       // 首轮前状态）首轮开按会话产出子目录 任务_MMDD_<标题>，并经下方回写粘住；已有
       // 消息的存量会话保持扁平默认目录，既有文件永不挪动。
-      // 只在「确知零消息且目录选择粘得住」（preflight 读成功 + 持久层运行期可用，行能
-      // 随建行带上目录/回写落库）时才开新目录：读失败=新旧状态未知；持久层运行期死亡
-      // （启动后 readonly/磁盘满/初始化失败，getSession 返回 null 而非抛错，dbAvailable
-      // 启动时写死看不见）=行建不出来也读不回——都开的话每轮各开一个 任务_x-N 目录，
-      // 垃圾逐轮累积（rework r1/r2），一律回落扁平默认目录。
+      // 只在「确知零消息且目录选择粘得住」（preflight 读成功、持久化健康态明确可写、
+      // 且会话行已经存在）时才开新目录：读失败/行不存在/运行期降级都保持扁平默认。
+      // 持久化健康态的 durable 字段在 degraded 时会保留历史值，所以同时检查 status；
+      // 否则 readonly/quick_check 失败会被误判为可持久化，每轮各开一个 任务_x-N 目录。
+      const persistenceHealth = getPersistenceHealth();
+      const persistenceIsDurable = persistenceHealth.durable === true
+        && (persistenceHealth.status === 'available' || persistenceHealth.status === 'recovered');
       const firstRunNoFolderSession = dbAvailable
         && !sessionPreflightReadFailed
-        && !sessionManagerCannotPersist
+        && persistenceIsDurable
+        && persistedSession !== null
+        && !persistedSession.workingDirectory?.trim()
         && !persistedSessionHasMessages(persistedSession);
       try {
         resolvedProject = firstRunNoFolderSession

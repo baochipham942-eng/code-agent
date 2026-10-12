@@ -16,6 +16,7 @@ import type { PendingOperation, RunCheckpoint, RunEngineRef, RunOwnerLease } fro
 import type { DurableCheckpointInput, PrepareOperationInput, PrepareToolOperationInput } from '../../../src/host/runtime/durableRunKernel';
 import {
   markPersistenceDegraded,
+  getPersistenceHealth,
   setDbAvailable,
 } from '../../../src/web/helpers/sessionCache';
 import {
@@ -71,7 +72,7 @@ const forkContextBuilderMocks = vi.hoisted(() => ({
 }));
 const mockDb = vi.hoisted(() => ({
   getDb: vi.fn(() => ({})),
-  getSession: vi.fn<() => { id: string; title: string; metadata?: Record<string, unknown> } | null>(() => ({
+  getSession: vi.fn<() => { id: string; title: string; metadata?: Record<string, unknown>; messages?: unknown[] } | null>(() => ({
     id: 'session-existing',
     title: 'Existing',
   })),
@@ -80,6 +81,8 @@ const mockDb = vi.hoisted(() => ({
   addMessage: vi.fn(),
   updateMessage: vi.fn(),
   getMessages: vi.fn(() => []),
+  getRecentMessages: vi.fn(() => []),
+  getTodos: vi.fn(() => []),
   getSessionForkLineage: vi.fn<() => unknown>(() => null),
   getSessionForkContextSource: vi.fn<() => unknown>(() => null),
   getSessionForkContextHandoff: vi.fn<() => unknown>(() => null),
@@ -491,6 +494,8 @@ describe('createAgentRouter', () => {
       title: 'Existing',
     });
     mockDb.getMessages.mockReturnValue([]);
+    mockDb.getRecentMessages.mockReturnValue([]);
+    mockDb.getTodos.mockReturnValue([]);
     mockDb.getDb.mockReturnValue({});
     mockDb.getSessionForkLineage.mockReturnValue(null);
     mockDb.getSessionForkContextSource.mockReturnValue(null);
@@ -4220,8 +4225,8 @@ describe('createAgentRouter', () => {
     await startAgentApi({
       tryGetSessionManager: async () => ({
         getMessages: vi.fn(async () => []),
-        // preflight：会话行不存在（新会话，零历史消息）
-        getSession: vi.fn(async () => null),
+        // preflight：renderer 已创建会话行，但还没有历史消息
+        getSession: vi.fn(async () => ({ messages: [] })),
         updateSession: vi.fn(async () => undefined),
       }),
     });
@@ -4414,7 +4419,7 @@ describe('createAgentRouter', () => {
     await startAgentApi({
       tryGetSessionManager: async () => ({
         getMessages: vi.fn(async () => []),
-        getSession: vi.fn(async () => null),
+        getSession: vi.fn(async () => ({ messages: [] })),
         updateSession: vi.fn(async () => undefined),
       }),
     });
@@ -4459,9 +4464,8 @@ describe('createAgentRouter', () => {
     expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: `${tempDataDir}-work` }));
   });
 
-  // rework r1：preflight 时会话行还不存在（服务端生成 sessionId / 建行失败的渲染端）的会话，
-  // 回写守卫（要求 persistedSession 非空）永远跳过——目录必须随建行落库，否则第二轮起掉回扁平默认。
-  it('persists the per-session folder on the row born mid-run, so round 2 reuses it instead of falling back to the flat default (rework r1)', async () => {
+  // rework r1：renderer 先建好零消息会话行，首轮目录回写后第二轮沿用同一路径。
+  it('persists the per-session folder on a zero-message row, so round 2 reuses it instead of falling back to the flat default (rework r1)', async () => {
     await closeServer();
     setDbAvailable(true);
     mockCreateAgentLoop.mockImplementation(() => ({
@@ -4469,8 +4473,10 @@ describe('createAgentRouter', () => {
       cancel: mockCancel,
     }));
 
-    // 状态镜像真实 DB：行不存在 → pre-persist 建行（带 createOptions）→ 之后 getSession 读回该行
+    // 状态镜像真实 DB：renderer 先建零消息行 → 首轮 pre-persist 回写目录 → 之后 getSession 读回该行
     const sessionRows = new Map<string, { workingDirectory?: string; messages: Array<Record<string, unknown>> }>();
+    const sessionId = 'session-row-born-midrun';
+    sessionRows.set(sessionId, { messages: [] });
     const addMessageToSession = vi.fn(async (
       sessionId: string,
       _message: unknown,
@@ -4484,12 +4490,14 @@ describe('createAgentRouter', () => {
       tryGetSessionManager: async () => ({
         getMessages: vi.fn(async () => []),
         getSession: vi.fn(async (sessionId: string) => sessionRows.get(sessionId) ?? null),
-        updateSession: vi.fn(async () => undefined),
+        updateSession: vi.fn(async (_sessionId: string, updates: { workingDirectory?: string }) => {
+          const row = sessionRows.get(_sessionId);
+          if (row && updates.workingDirectory) row.workingDirectory = updates.workingDirectory;
+        }),
         addMessageToSession,
       }),
     });
 
-    const sessionId = 'session-row-born-midrun';
     for (const prompt of ['帮我出一份季度总结', '第二轮补充数据']) {
       const response = await fetch(`${baseUrl}/api/run`, {
         method: 'POST',
@@ -4503,12 +4511,8 @@ describe('createAgentRouter', () => {
     const now = new Date();
     const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
     const expectedDir = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
-    // 建行那一刻目录随行落库（缺这步 → 第二轮行里没目录、有消息 → 扁平默认，同会话产物分裂）
-    expect(addMessageToSession).toHaveBeenCalledWith(
-      sessionId,
-      expect.anything(),
-      expect.objectContaining({ workingDirectory: expectedDir }),
-    );
+    // 首轮目录回写到已存在的会话行（缺这步 → 第二轮行里没目录、有消息 → 扁平默认，同会话产物分裂）
+    expect(sessionRows.get(sessionId)?.workingDirectory).toBe(expectedDir);
     // 两轮都跑在同一个按会话目录里，且只开了这一个目录
     expect(createCLIAgent).toHaveBeenCalledTimes(2);
     expect(createCLIAgent).toHaveBeenNthCalledWith(1, expect.objectContaining({ project: expectedDir }));
@@ -4589,12 +4593,13 @@ describe('createAgentRouter', () => {
   // rework r2：DB 启动后运行期死亡（readonly/磁盘满/初始化失败，_initPromise 拒绝被
   // 永久缓存）时 getSession 走 ensureDbReady 失败路径**返回 null** 而非抛错，web 层
   // dbAvailable 又是启动时写死的标志——存量会话（有历史消息）每轮都被读成 null、
-  // 判成「新会话首轮」，每轮 mint 一个 任务_x-N 且落库粘不住。isPersistent 探测的是
-  // 持久层运行期实况，死亡期间不开目录，逐轮回落扁平默认。
+  // 判成「新会话首轮」，每轮 mint 一个 任务_x-N 且落库粘不住。持久化健康态是
+  // 运行期实况，死亡期间不开目录，逐轮回落扁平默认。
   it('does not mint a per-session folder when persistence died at runtime (getSession null via dead backend); every run falls back to the flat default (rework r2)', async () => {
     await closeServer();
     // 启动时 DB 健康：web 层 dbAvailable 已写死为 true，看不见运行期死亡
     setDbAvailable(true);
+    markPersistenceDegraded('quick-check-failed');
     mockCreateAgentLoop.mockImplementation(() => ({
       run: vi.fn(async () => undefined),
       cancel: mockCancel,
@@ -4606,7 +4611,6 @@ describe('createAgentRouter', () => {
         // ensureDbReady 失败路径：null 而非 throw（cli/session.ts getSession），
         // 会话行即使在库里也读不回来
         getSession: vi.fn(async () => null),
-        isPersistent: vi.fn(async () => false),
         updateSession: vi.fn(async () => undefined),
         addMessageToSession: vi.fn(async () => undefined),
       }),
@@ -4635,9 +4639,9 @@ describe('createAgentRouter', () => {
     expect(flatEntries.some((entry) => entry.startsWith('任务_') || entry.startsWith('Task_'))).toBe(false);
   });
 
-  // rework r2 反向保护：探测健康 + 行确实不存在（DB 可用的新会话）→ 仍然开按会话目录，
+  // rework r2 反向保护：持久化健康 + 零消息行确实存在（DB 可用的新会话）→ 仍然开按会话目录，
   // 收口不能把特性本身关死。
-  it('still mints the per-session folder for a genuinely-new session when the persistence probe is healthy (rework r2)', async () => {
+  it('still mints the per-session folder for a genuinely-new zero-message session when persistence is healthy (rework r2)', async () => {
     await closeServer();
     setDbAvailable(true);
     mockCreateAgentLoop.mockImplementation(() => ({
@@ -4648,8 +4652,7 @@ describe('createAgentRouter', () => {
     await startAgentApi({
       tryGetSessionManager: async () => ({
         getMessages: vi.fn(async () => []),
-        getSession: vi.fn(async () => null),
-        isPersistent: vi.fn(async () => true),
+        getSession: vi.fn(async () => ({ messages: [] })),
         updateSession: vi.fn(async () => undefined),
       }),
     });
@@ -4669,22 +4672,22 @@ describe('createAgentRouter', () => {
     expect(existsSync(expectedDir)).toBe(true);
   });
 
-  // rework r3：r2 的探测在生产线路恒不触发——app.ts 的 tryGetSessionManager 注入的是
-  // infra SessionManager，当时没有 isPersistent，sessionManagerCannotPersist 恒 false。
-  // 生产同款 infra SessionManager（真实单例，不是带 isPersistent 的假对象）现已实现
-  // 该探测（读 web 持久化健康态）：运行期降级（quick_check 失败/readonly，dbAvailable
-  // 还是启动时写死的 true，旧判据看不见）后，新会话不铸按会话目录，回落扁平默认。
-  it('does not mint a per-session folder when persistence degrades at runtime, probed via the production infra SessionManager (rework r3)', async () => {
+  // rework r3：生产线路注入的 infra SessionManager 不带测试专用探针；路由直接消费
+  // web/sessionCache 的持久化健康态。运行期降级后，新会话不铸按会话目录，回落扁平默认。
+  it('does not mint a per-session folder when persistence degrades at runtime through production wiring (rework r3)', async () => {
     await closeServer();
     // 启动时 DB 健康：dbAvailable 写死 true，运行期才降级
     setDbAvailable(true);
     markPersistenceDegraded('quick-check-failed');
     const { getSessionManager } = await import('../../../src/host/services/infra/sessionManager');
     const infraSessionManager = getSessionManager();
-    // 探测本身钉住：降级后 false（dbAvailable 仍 true——恰好证明它不再是判据）
-    expect(await infraSessionManager.isPersistent()).toBe(false);
-    // 新会话：真实读路径查不到行 → infra getSession 返回 null → 才会进入探测分支
-    mockDb.getSession.mockReturnValue(null);
+    // renderer 在降级前已经建好零消息行；真实读路径仍返回该行，但不能铸目录。
+    mockDb.getSession.mockReturnValue({
+      id: 'session-degraded-persistence-r3',
+      title: '降级前创建',
+      messages: [],
+    });
+    mockDb.getRecentMessages.mockReturnValue([]);
     mockCreateAgentLoop.mockImplementation(() => ({
       run: vi.fn(async () => undefined),
       cancel: mockCancel,
@@ -4694,28 +4697,32 @@ describe('createAgentRouter', () => {
       tryGetSessionManager: async () => infraSessionManager,
     });
 
-    const response = await fetch(`${baseUrl}/api/run`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ prompt: '帮我出一份季度总结', sessionId: 'session-degraded-persistence-r3' }),
-    });
-
-    expect(response.ok).toBe(true);
-    await response.text();
+    const sessionId = 'session-degraded-persistence-r3';
+    for (const prompt of ['第一轮', '第二轮', '第三轮']) {
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt, sessionId }),
+      });
+      expect(response.ok).toBe(true);
+      await response.text();
+    }
     expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: `${tempDataDir}-work` }));
     const flatEntries = readdirSync(`${tempDataDir}-work`);
     expect(flatEntries.some((entry) => entry.startsWith('任务_') || entry.startsWith('Task_'))).toBe(false);
   });
 
-  // rework r3 反向保护：健康态下生产同款 infra SessionManager 的探测返回 true，新会话
-  // 照常铸目录——修的是「探测不触发」，不能顺手把特性本身关死（钉死恒 false 的实现）。
-  it('still mints the per-session folder for a new session when the production infra SessionManager probe is healthy (rework r3)', async () => {
+  // rework r3 反向保护：健康态下生产同款 infra SessionManager 读到零消息行，新会话
+  // 照常铸目录——持久化健康不能被误判为永远不可用。
+  it('still mints the per-session folder for a new zero-message session through production wiring (rework r3)', async () => {
     await closeServer();
     setDbAvailable(true);
+    expect(getPersistenceHealth()).toMatchObject({ status: 'available', durable: true });
     const { getSessionManager } = await import('../../../src/host/services/infra/sessionManager');
     const infraSessionManager = getSessionManager();
-    expect(await infraSessionManager.isPersistent()).toBe(true);
-    mockDb.getSession.mockReturnValue(null);
+    mockDb.getSession.mockReturnValue({ id: 'session-infra-probe-healthy-r3', title: '新对话', messages: [] });
+    mockDb.getRecentMessages.mockReturnValue([]);
+    expect(await infraSessionManager.getSession('session-infra-probe-healthy-r3', 1)).not.toBeNull();
     mockCreateAgentLoop.mockImplementation(() => ({
       run: vi.fn(async () => undefined),
       cancel: mockCancel,
@@ -4730,13 +4737,15 @@ describe('createAgentRouter', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ prompt: '帮我出一份季度总结', sessionId: 'session-infra-probe-healthy-r3' }),
     });
-
     expect(response.ok).toBe(true);
     await response.text();
     const now = new Date();
     const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
     const expectedDir = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
     expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: expectedDir }));
+    expect(readdirSync(`${tempDataDir}-work`).filter((entry) => entry.startsWith('任务_'))).toEqual([
+      `任务_${mmdd}_帮我出一份季度总结`,
+    ]);
     expect(existsSync(expectedDir)).toBe(true);
   });
 

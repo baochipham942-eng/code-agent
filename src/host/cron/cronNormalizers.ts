@@ -250,6 +250,30 @@ export function normalizeSchedule(value: unknown): CronScheduleConfig | null {
     }
 
     case 'event': {
+      if (value.source === 'connector') {
+        // connector 源（N-TRIGGER-CONNECTOR-MAIL）：目前只有 mail；mailbox 缺省由
+        // 轮询器按 DEFAULT_MAILBOX 兜底，这里只收显式非空值。
+        if (
+          value.connector !== 'mail'
+          || value.eventName !== 'message'
+          || typeof value.accountId !== 'string'
+          || !value.accountId.trim()
+        ) {
+          return null;
+        }
+        const mailbox = typeof value.mailbox === 'string' && value.mailbox.trim() ? value.mailbox : undefined;
+        return {
+          type: 'event',
+          source: 'connector',
+          connector: 'mail',
+          accountId: value.accountId,
+          ...(mailbox ? { mailbox } : {}),
+          eventName: 'message',
+          pollIntervalSec: clampPollIntervalSec(readNumberField(value, 'pollIntervalSec')),
+          batchWindowSec: clampBatchWindowSec(readNumberField(value, 'batchWindowSec')),
+          minRunIntervalSec: clampMinRunIntervalSec(readNumberField(value, 'minRunIntervalSec')),
+        };
+      }
       if (
         value.source !== 'channel'
         || value.eventName !== 'message'
@@ -289,6 +313,14 @@ function clampMinRunIntervalSec(value: number | undefined): number {
     return CRON_EVENT_TRIGGER.DEFAULT_MIN_RUN_INTERVAL_SEC;
   }
   return Math.max(value, CRON_EVENT_TRIGGER.MIN_MIN_RUN_INTERVAL_SEC);
+}
+
+/** mail 源轮询间隔夹取：不低于下限，非法/缺省取缺省。 */
+function clampPollIntervalSec(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value) || value <= 0) {
+    return CRON_EVENT_TRIGGER.DEFAULT_POLL_INTERVAL_SEC;
+  }
+  return Math.max(value, CRON_EVENT_TRIGGER.MIN_POLL_INTERVAL_SEC);
 }
 
 export function assertSupportedEveryScheduleUnit(schedule: CronScheduleConfig): void {
@@ -506,9 +538,12 @@ export function parseCronExecutionTrigger(raw: unknown): CronExecutionTrigger | 
     : undefined;
   // 监听标记（N-TRIGGER-GROUP-LISTEN）：只认显式 true，坏值按无标记处理。
   const listen = value.listen === true;
+  // connector 源（N-TRIGGER-CONNECTOR-MAIL）：source 'connector' 携带 connector 'mail'。
+  const connector = readStringField(value, 'connector');
   return {
     kind: value.kind,
-    ...(source === 'channel' ? { source } : {}),
+    ...(source === 'channel' || source === 'connector' ? { source } : {}),
+    ...(source === 'connector' && connector === 'mail' ? { connector: 'mail' } : {}),
     ...(accountId ? { accountId } : {}),
     ...(eventCount !== undefined ? { eventCount } : {}),
     ...(droppedCount !== undefined ? { droppedCount } : {}),

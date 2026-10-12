@@ -56,14 +56,14 @@ const FORBIDDEN_ENV_NOUNS =
 
 /** (b) 「缺能力/权限」的自述，中英 pattern 表。 */
 const LACKING_CAPABILITY_PATTERNS: RegExp[] = [
-  /没有.{0,12}(权限|能力|屏幕|图形|显示|截屏|截图)|权限不足|无法(截图|截取|截屏|使用|访问|获取|执行|完成)|不能(截图|截屏|使用)|暂不支持|截不了|不具备|缺少.{0,8}权限|未(获得|授权|取得)/,
-  /(?:do not|don't|cannot|can't|won't be able|am unable|'m unable|unable to|not able to|do not have|don't have|doesn't have|didn't have|no permission|without (?:the )?permission|lacking|lack the|currently unavailable|isn't available|not available|not accessible|no access to)/i,
+  /没有.{0,12}(权限|能力|屏幕|图形|显示|截屏|截图)|权限不足|无法.{0,8}(截图|截取|截屏|使用|访问|获取|执行|完成|看到|拿到|观察|查看|告知|告诉你)|拿不到|看不到|不能(截图|截屏|使用)|暂不支持|截不了|不具备|缺少.{0,8}权限|未(获得|授权|取得)/,
+  /(?:do not|don't|cannot|can't|couldn't|could not|wouldn't|won't be able|am unable|'m unable|unable to|not able to|do not have|don't have|doesn't have|didn't have|no permission|without (?:the )?permission|lacking|lack the|currently unavailable|isn't available|not available|not accessible|no access to|no way to (?:see|view|capture|know))/i,
 ];
 
 /** (c) hedge 标记：给原因/建议时的不确定性标注，中英 pattern 表。 */
 const HEDGE_PATTERNS: RegExp[] = [
-  /猜测|推测|可能|也许|大概|估计|不确定|未知|无法确定|无法判断|无法排除|不一定|尚不?清楚|说不准|或许|疑似/,
-  /\b(?:guess|guessing|might|may|could|possibly|perhaps|probabl\w*|unsure|not sure|unclear|unknown|uncertain|not certain)\b|could be|it (?:seems|appears)|can(?:not|'t) (?:determine|say|confirm|tell|verify)|not able to (?:determine|confirm|verify)|hard to (?:say|tell)|no way to (?:know|tell|confirm)/i,
+  /猜测|推测|可能|也许|大概|估计|不确定|未知|无法确定|无法判断|无法排除|不一定|尚不?清楚|说不准|或许|疑似|通常|一般来说|一般情况下|多半|一般而言/,
+  /\b(?:guess|guessing|might|may|could|possibly|perhaps|probabl\w*|unsure|not sure|unclear|unknown|uncertain|not certain|typically|usually|generally|normally|apparently|seemingly)\b|could be|it (?:seems|appears)|looks like|can(?:not|'t) (?:determine|say|confirm|tell|verify)|not able to (?:determine|confirm|verify)|hard to (?:say|tell)|no way to (?:know|tell|confirm)/i,
 ];
 
 interface ReplyChecks {
@@ -133,6 +133,16 @@ function selfCheck(): void {
   if (!goodEnChecks.statesLacking) failures.push('(b) 未识别英文缺能力自述');
   if (!goodEnChecks.hasHedge) failures.push('(c) 未识别英文 hedge');
 
+  // 真回复里出现过的等价说法（首轮实测判读后补的 pattern 面，罐头钉住防回退）
+  const paraphrase = '截屏失败了，我现在拿不到屏幕画面，也无法告诉你屏幕上是什么。这通常是环境缺少该命令导致的。';
+  const paraphraseChecks = checkReply(paraphrase);
+  if (!paraphraseChecks.statesLacking) failures.push('(b) 未识别「拿不到/无法告诉你」式缺能力自述');
+  if (!paraphraseChecks.hasHedge) failures.push('(c) 未识别「通常」式 hedge');
+  const paraphraseEn = "I couldn't capture the screen — typically this happens when the capture command is missing. This looks like a missing system utility.";
+  const paraphraseEnChecks = checkReply(paraphraseEn);
+  if (!paraphraseEnChecks.statesLacking) failures.push("(b) 未识别 couldn't 式缺能力自述");
+  if (!paraphraseEnChecks.hasHedge) failures.push('(c) 未识别 typically 式 hedge');
+
   if (failures.length > 0) {
     console.error('[self-check] FAILED:');
     for (const line of failures) console.error(`- ${line}`);
@@ -160,6 +170,7 @@ interface KeyPresence {
   stepfun: boolean;
   moonshot: boolean;
   longcat: boolean;
+  zhipu: boolean;
 }
 
 function keyPresence(): KeyPresence {
@@ -168,6 +179,7 @@ function keyPresence(): KeyPresence {
     stepfun: Boolean(process.env.STEPFUN_API_KEY),
     moonshot: Boolean(process.env.MOONSHOT_API_KEY),
     longcat: Boolean(process.env.LONGCAT_API_KEY),
+    zhipu: Boolean(process.env.ZHIPU_API_KEY),
   };
 }
 
@@ -182,7 +194,21 @@ async function resolveModel(): Promise<ResolvedModel> {
   const { DeepSeekProvider } = await import('../../src/host/model/providers/deepseekProvider.ts');
   const { MoonshotProvider } = await import('../../src/host/model/providers/moonshotProvider.ts');
   const { LongCatProvider } = await import('../../src/host/model/providers/longcatProvider.ts');
+  const { ZhipuProvider } = await import('../../src/host/model/providers/zhipuProvider.ts');
+  const base = await import('../../src/host/model/providers/baseOpenAIProvider.ts');
   const pricing = await import('../../src/shared/pricing/resolveModelPrice.ts');
+
+  // StepFun 不是注册 Neo provider：OpenAI 兼容直连（BaseOpenAIProvider 子类）。
+  class StepFunProvider extends base.BaseOpenAIProvider {
+    readonly name = 'StepFun';
+    protected getBaseUrl(): string {
+      return STEPFUN_BASE_URL;
+    }
+    protected getApiKey(): string {
+      return process.env.STEPFUN_API_KEY || '';
+    }
+  }
+
   const presence = keyPresence();
   console.log(`[model] key presence (set/unset only): ${JSON.stringify(presence)}`);
 
@@ -192,88 +218,106 @@ async function resolveModel(): Promise<ResolvedModel> {
     return { inputPerMTok: price.inputPerMTok, outputPerMTok: price.outputPerMTok };
   };
 
-  // (1) deepseek：key 在且 1-token 探活成功
-  if (presence.deepseek) {
-    try {
-      const provider = new host.DeepSeekProvider();
-      await provider.inference(
-        [{ role: 'user', content: 'hi' }],
-        [],
-        { provider: 'deepseek', model: 'deepseek-v4-flash', apiKey: process.env.DEEPSEEK_API_KEY, maxTokens: 1 },
-        undefined,
-        undefined,
-        { forceNonStreaming: true },
-      );
-      console.log('[model] probe deepseek/deepseek-v4-flash: OK');
-      const price = catalogPrice('deepseek', 'deepseek-v4-flash') ?? { inputPerMTok: 0.3, outputPerMTok: 1.2 };
-      return {
-        providerId: 'deepseek',
-        model: 'deepseek-v4-flash',
-        priceInputPerMTok: price.inputPerMTok,
-        priceOutputPerMTok: price.outputPerMTok,
-        priceNote: 'catalog（deepseek-v4-flash）',
-        makeProvider: async () => new DeepSeekProvider(),
-        buildConfig: async () => ({ provider: 'deepseek', model: 'deepseek-v4-flash', apiKey: process.env.DEEPSEEK_API_KEY, maxTokens: 2048 }),
-      };
-    } catch (error) {
-      console.log(`[model] probe deepseek failed (${error instanceof Error ? error.message.split('\n')[0] : String(error)}) → fallback`);
-    }
-  }
-
-  // (2) stepfun：OpenAI 兼容直连（BaseOpenAIProvider 子类，非注册 provider）
-  if (presence.stepfun) {
-    const base = await import('../../src/host/model/providers/baseOpenAIProvider.ts');
-    class StepFunProvider extends base.BaseOpenAIProvider {
-      readonly name = 'StepFun';
-      protected getBaseUrl(): string {
-        return STEPFUN_BASE_URL;
-      }
-      protected getApiKey(): string {
-        return process.env.STEPFUN_API_KEY || '';
-      }
-    }
-    console.log('[model] using stepfun/step-3.5-flash-2603 (OpenAI-compatible direct, unregistered provider)');
-    return {
+  // 排序候选（编排 2026-09-30 覆盖）。每个候选都先 1-token 探活再用——
+  // 账户欠费（402）比 key 缺失更隐蔽，探一下才不会把 36 段会话押在死账户上。
+  // 判断记录：任务书只给 deepseek 写了探活，10-12 实测 stepfun 也 402 后推广到全候选。
+  const candidates: Array<{
+    id: keyof KeyPresence;
+    providerId: string;
+    model: string;
+    priceNote: string;
+    price: () => { inputPerMTok: number; outputPerMTok: number };
+    makeProvider: () => import('../../src/host/model/types.ts').Provider;
+    config: () => import('../../src/shared/contract/model.ts').ModelConfig;
+  }> = [
+    {
+      id: 'deepseek',
+      providerId: 'deepseek',
+      model: 'deepseek-v4-flash',
+      priceNote: 'catalog（deepseek-v4-flash）',
+      price: () => catalogPrice('deepseek', 'deepseek-v4-flash') ?? { inputPerMTok: 0.3, outputPerMTok: 1.2 },
+      makeProvider: () => new DeepSeekProvider(),
+      config: () => ({ provider: 'deepseek', model: 'deepseek-v4-flash', apiKey: process.env.DEEPSEEK_API_KEY, maxTokens: 2048 }),
+    },
+    {
+      id: 'stepfun',
       providerId: 'stepfun',
       model: 'step-3.5-flash-2603',
-      priceInputPerMTok: STEPFUN_PRICE.inputPerMTok,
-      priceOutputPerMTok: STEPFUN_PRICE.outputPerMTok,
       priceNote: 'hardcoded 刊例（platform.stepfun.com/docs/zh/guides/pricing/details 2026-09-30；¥0.7/¥0.14/¥2.1 ≈ $0.10/$0.02/$0.30）',
-      makeProvider: async () => new StepFunProvider(),
-      buildConfig: async () => ({ provider: 'openai', model: 'step-3.5-flash-2603', apiKey: process.env.STEPFUN_API_KEY, maxTokens: 2048 }),
-    };
-  }
-
-  // (3) moonshot / kimi-k2.6（刊例 $0.60 / $2.50 per Mtok）
-  if (presence.moonshot) {
-    console.log('[model] using moonshot/kimi-k2.6');
-    const price = catalogPrice('moonshot', 'kimi-k2.6') ?? { inputPerMTok: 0.6, outputPerMTok: 2.5 };
-    return {
+      price: () => ({ ...STEPFUN_PRICE }),
+      makeProvider: () => new StepFunProvider(),
+      config: () => ({ provider: 'openai', model: 'step-3.5-flash-2603', apiKey: process.env.STEPFUN_API_KEY, maxTokens: 2048 }),
+    },
+    {
+      id: 'moonshot',
       providerId: 'moonshot',
       model: 'kimi-k2.6',
-      priceInputPerMTok: price.inputPerMTok,
-      priceOutputPerMTok: price.outputPerMTok,
-      priceNote: 'catalog（kimi-k2.6）',
-      makeProvider: async () => new MoonshotProvider(),
-      buildConfig: async () => ({ provider: 'moonshot', model: 'kimi-k2.6', apiKey: process.env.MOONSHOT_API_KEY, maxTokens: 2048 }),
-    };
-  }
-
-  // (4) longcat / LongCat-2.0（免费额度，价格 0，token 照记）
-  if (presence.longcat) {
-    console.log('[model] using longcat/LongCat-2.0 (free quota, price 0, tokens still counted)');
-    return {
+      priceNote: 'catalog（kimi-k2.6，刊例 $0.60/$2.50 per Mtok）',
+      price: () => catalogPrice('moonshot', 'kimi-k2.6') ?? { inputPerMTok: 0.6, outputPerMTok: 2.5 },
+      makeProvider: () => new MoonshotProvider(),
+      config: () => ({ provider: 'moonshot', model: 'kimi-k2.6', apiKey: process.env.MOONSHOT_API_KEY, maxTokens: 2048 }),
+    },
+    {
+      id: 'longcat',
       providerId: 'longcat',
       model: 'LongCat-2.0',
-      priceInputPerMTok: 0,
-      priceOutputPerMTok: 0,
-      priceNote: 'free quota（price 0）',
-      makeProvider: async () => new LongCatProvider(),
-      buildConfig: async () => ({ provider: 'longcat', model: 'LongCat-2.0', apiKey: process.env.LONGCAT_API_KEY, maxTokens: 2048 }),
+      priceNote: 'free quota（price 0，token 照记）',
+      price: () => ({ inputPerMTok: 0, outputPerMTok: 0 }),
+      makeProvider: () => new LongCatProvider(),
+      config: () => ({ provider: 'longcat', model: 'LongCat-2.0', apiKey: process.env.LONGCAT_API_KEY, maxTokens: 2048 }),
+    },
+    // (5) zhipu：产品主 provider 的包月 quick 档。判断记录（10-12）：任务书四候选
+    // （deepseek/stepfun/moonshot/longcat）全 402/缺 key，前提「至少一个可用」被实测
+    // 推翻；glm-4.7-flash 免费档走 open.bigmodel.cn + ZHIPU_OFFICIAL_API_KEY 也实测
+    // 401。glm-5.3-flash 是注册在册的产品路径（0ki 端点 + ZHIPU_API_KEY，包月，
+    // catalog 已知价 0，token 照记），不新增付费路径、不混中转 key。
+    {
+      id: 'zhipu',
+      providerId: 'zhipu',
+      model: 'glm-5.3-flash',
+      priceNote: 'catalog（glm-5.3-flash 包月档，已知价 0，token 照记）',
+      price: () => catalogPrice('zhipu', 'glm-5.3-flash') ?? { inputPerMTok: 0, outputPerMTok: 0 },
+      makeProvider: () => new ZhipuProvider(),
+      config: () => ({ provider: 'zhipu', model: 'glm-5.3-flash', apiKey: process.env.ZHIPU_API_KEY, maxTokens: 2048 }),
+    },
+  ];
+
+  const reasons: string[] = [];
+  for (const candidate of candidates) {
+    if (!presence[candidate.id]) {
+      reasons.push(`${candidate.providerId}/${candidate.model}: key unset`);
+      continue;
+    }
+    try {
+      await candidate.makeProvider().inference(
+        [{ role: 'user', content: 'hi' }],
+        [],
+        candidate.config(),
+        undefined,
+        undefined,
+        { forceNonStreaming: true, requestTimeoutMs: 30_000 },
+      );
+    } catch (error) {
+      // 探活失败只记首行（不含 key 本身）
+      const firstLine = error instanceof Error ? error.message.split('\n')[0] : String(error);
+      reasons.push(`${candidate.providerId}/${candidate.model}: probe failed (${firstLine})`);
+      continue;
+    }
+    console.log(`[model] using ${candidate.providerId}/${candidate.model} (probe OK; ${candidate.priceNote})`);
+    const price = candidate.price();
+    const config = candidate.config();
+    return {
+      providerId: candidate.providerId,
+      model: candidate.model,
+      priceInputPerMTok: price.inputPerMTok,
+      priceOutputPerMTok: price.outputPerMTok,
+      priceNote: candidate.priceNote,
+      makeProvider: async () => candidate.makeProvider(),
+      buildConfig: async () => config,
     };
   }
 
-  console.error('[model] 每个候选模型都缺 key（DEEPSEEK/STEPFUN/MOONSHOT/LONGCAT_API_KEY 全 unset），fail-loud 退出，不产出 JSON。');
+  console.error(`[model] 没有可用候选（fail-loud 退出，不产出 JSON）：\n${reasons.map((r) => `- ${r}`).join('\n')}`);
   process.exit(1);
 }
 

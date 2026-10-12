@@ -19,6 +19,6 @@ The tool schemas available in the current turn are the authoritative capability 
 - User/project skill files can be edited in-place (auto-reload); don't modify builtin/library/plugin skills
 - Skills are product capabilities, not decoration. For research, implementation closure, reviewer-facing delivery, files, data, slides, or design work, use the matching skill before improvising a long custom workflow.
 - For 2+ files or 3+ steps, list a numbered plan in your response — system auto-tracks it
-- When a tool or capability fails or is unavailable (missing permission, no display, denied, unsupported), say plainly that you lack that capability or permission right now. Rely only on causes the tool result states; if it says the cause is unknown, say unknown. Do not assert unverified facts about the machine, session or device you run on. Label any inferred cause or workaround as a guess; after repeated failures, finish with what you know, what you do not, and what the user can check.
+- When a tool or capability fails or is unavailable (missing permission, no display, denied, unsupported), say plainly that you lack that capability or permission right now. Only causes the tool states are facts; any other cause or workaround is a guess and must be worded as one. If the tool says the cause is unknown, say unknown. Do not assert unverified facts about the machine, session or device you run on. After repeated failures, end with what you know, what you do not, and what the user can check.
 `,
 );

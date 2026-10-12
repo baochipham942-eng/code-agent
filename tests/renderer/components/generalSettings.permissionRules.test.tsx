@@ -16,6 +16,7 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 }));
 
 import { GeneralSettings, resolvePermissionRulesBlur } from '../../../src/renderer/components/features/settings/tabs/GeneralSettings';
+import { useAuthStore } from '../../../src/renderer/stores/authStore';
 
 const invalidCopy = enSettingsCore.general.permissions.userRules.invalid;
 const zhInvalid = zh.settings.general.permissions.userRules.invalid;
@@ -54,6 +55,10 @@ describe('GeneralSettings permission rule editor', () => {
     invoke.mockReset();
     invokeDomain.mockReset();
     invoke.mockResolvedValue(undefined);
+    // 规则编辑现在按 isAdmin 门禁（host 侧 settings set 对 'permissions' 恒 403，
+    // N-PERMRULES-UI-FIX-ADMIN）——这里的用例全是管理员编辑行为，把渲染态对齐
+    // 真实登录管理员，不再依赖「未登录也能编」这个从不存在的状态。
+    useAuthStore.setState({ user: { id: 'test-admin', email: 'admin@test.dev', isAdmin: true } });
     invokeDomain.mockImplementation((domain: string, action: string) => {
       if (domain === IPC_DOMAINS.SETTINGS && action === 'get') {
         return Promise.resolve({
@@ -115,5 +120,24 @@ describe('GeneralSettings permission rule editor', () => {
     expect(allow.value).toBe('Bash(*)');
     expect(screen.getByText(`Bash(*): ${zhInvalid.allowAllBash}`)).toBeTruthy();
     expect(setCalls()).toEqual([]);
+  });
+
+  it('saves an admin-edited allow rule with exactly one set call and a success toast (N-PERMRULES-UI-FIX-ADMIN)', async () => {
+    const allow = await renderEditor();
+    const success = vi.spyOn(toast, 'success');
+
+    fireEvent.change(allow, { target: { value: 'Bash(npm test)' } });
+    fireEvent.blur(allow);
+
+    await waitFor(() => {
+      expect(success).toHaveBeenCalledTimes(1);
+    });
+    expect(setCalls()).toHaveLength(1);
+    expect(invokeDomain).toHaveBeenCalledWith(IPC_DOMAINS.SETTINGS, 'set', {
+      permissions: { allow: ['Bash(npm test)'] },
+    });
+    expect(success).toHaveBeenCalledWith(
+      `allow${zh.settings.general.permissions.ruleSavedPrefix}1${zh.settings.general.permissions.ruleSavedSuffix}`,
+    );
   });
 });

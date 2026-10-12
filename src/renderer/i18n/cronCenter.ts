@@ -197,6 +197,9 @@ export const cronCenterZh = {
     weekdays: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'],
     simpleCreateCta: '创建自动化',
     simpleCreateFailed: '创建失败',
+    // 手动编辑器 Agent 动作：自定义紧急判据（N-CRON-MORNING-TRIAGE-URGENCY-RULE）
+    urgencyCriteriaLabel: '紧急判据（可选）',
+    urgencyCriteriaPlaceholder: '例如：只有老板发来的邮件算今天必须处理',
     inboxTitle: '{count} 条待过目',
     inboxAllClear: '都过目完了 ✓',
     inboxOpenResult: '查看结果',
@@ -441,6 +444,8 @@ export const cronCenterEn: typeof cronCenterZh = {
     weekdays: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
     simpleCreateCta: 'Create automation',
     simpleCreateFailed: 'Failed to create',
+    urgencyCriteriaLabel: 'Urgency rule (optional)',
+    urgencyCriteriaPlaceholder: 'e.g. only mail from my boss counts as must-do today',
     inboxTitle: '{count} to review',
     inboxAllClear: 'All reviewed ✓',
     inboxOpenResult: 'View result',

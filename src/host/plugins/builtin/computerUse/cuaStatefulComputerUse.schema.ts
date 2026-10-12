@@ -1,4 +1,5 @@
 import type { UntrustedContentToolSchema } from '../../../protocol/tools';
+import { isCuaJevStepEnabled } from '../../../../shared/constants/jevQuestions';
 
 export const cuaStatefulComputerUseSchema: UntrustedContentToolSchema = {
   name: 'computer_use',
@@ -113,3 +114,67 @@ Element mutations must use elementRef from the state. Pixel mutations must use a
   permissionLevel: 'execute',
   readsUntrustedContent: 'block',
 };
+
+const CUA_JEV_STEP_DESCRIPTION_SUFFIX = `
+
+## Goal execution (execute_goal):
+- execute_goal: Run a natural-language \`task\` through the Host-verified desktop step loop over accessibility candidates. Every act still goes through the existing confirmation gate; Jev can never skip or pre-approve it. If this operation returns fallback=true, continue yourself with list_roots / observe / act from the returned observation (point+screenshotId is only available after an empty_ax fallback). Jev done is only a signal; the loop stops on its own evidence.
+- task: Natural-language desktop goal for execute_goal
+- target: Optional {pid, windowId} root for execute_goal; without it the loop matches the task against window titles, and 0 or multiple matches hand back with the roots listed
+- jevBudgetUsd: Optional per-task Jev USD budget`;
+
+/** execute_goal 专属参数：与 operation 枚举同步绑开关，关时从 schema 面一并裁掉（与浏览器步选同形）。 */
+const CUA_JEV_STEP_PARAM_KEYS: readonly string[] = ['task', 'jevBudgetUsd'];
+
+/**
+ * N-JEV-CU-STEP-LOOP：仅在调用方确认 armed（V2 + CODE_AGENT_CUA_JEV_STEP=1 +
+ * typesafe key 可解析）时给 operation 枚举加 execute_goal 并补 task/jevBudgetUsd
+ * 参数与描述后缀；开关关时返回的 schema 与既有静态 schema 逐字节一致。
+ * 镜像 withBrowserJevStepActionEnum 的裁剪语义。
+ */
+export function withCuaJevStepOperation(
+  schema: UntrustedContentToolSchema,
+  env: NodeJS.ProcessEnv = process.env,
+): UntrustedContentToolSchema {
+  const input = schema.inputSchema;
+  const operation = input.properties?.operation;
+  if (!operation || !Array.isArray(operation.enum)) return schema;
+  const enabled = isCuaJevStepEnabled(env);
+  const without = operation.enum.filter((value) => value !== 'execute_goal');
+  const properties = { ...input.properties };
+  if (!enabled) {
+    for (const key of CUA_JEV_STEP_PARAM_KEYS) delete properties[key];
+  } else {
+    properties.task = {
+      type: 'string',
+      description: '[execute_goal] Natural-language desktop goal for the Host-verified step loop.',
+    };
+    properties.jevBudgetUsd = {
+      type: 'number',
+      description: '[execute_goal] Optional per-task Jev USD budget.',
+    };
+    if (properties.target && typeof properties.target === 'object') {
+      properties.target = {
+        ...properties.target,
+        description:
+          '[observe] Root returned by list_roots. [execute_goal] Optional preselected root; otherwise the loop matches the task against window titles and hands back with roots listed on 0 or multiple matches.',
+      };
+    }
+  }
+  return {
+    ...schema,
+    ...(enabled
+      ? { description: `${schema.description}${CUA_JEV_STEP_DESCRIPTION_SUFFIX}` }
+      : {}),
+    inputSchema: {
+      ...input,
+      properties: {
+        ...properties,
+        operation: {
+          ...operation,
+          enum: enabled ? [...without, 'execute_goal'] : without,
+        },
+      },
+    },
+  };
+}

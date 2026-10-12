@@ -265,6 +265,13 @@ export interface AgentAction {
    * 任务行为零扰动（A6 D6）。填了才在跑完后复用 LibraryService 归档，标签「定稿」。
    */
   libraryProjectId?: string;
+  /**
+   * 用户自定义的「今天必须处理」判据（一句话，trim 后非空才生效，上限
+   * CRON_URGENCY_CRITERIA.MAX_CHARS）。设置后 cron agent prompt 里 urgency 分档的
+   * must_today 定义替换为这句话；缺省用内置定义，产出 prompt 字节不变
+   * （N-CRON-MORNING-TRIAGE-URGENCY-RULE）。
+   */
+  urgencyCriteria?: string;
 }
 
 /**

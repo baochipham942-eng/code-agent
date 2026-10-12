@@ -5,7 +5,7 @@ import type { CompanionRelayStatus } from '../../../../../src/shared/contract/co
 import { LanCompanionManager } from '../../../../../src/host/services/companion/LanCompanionManager';
 import type { CompanionGateway } from '../../../../../src/host/services/companion/CompanionGateway';
 
-const gateway = { pairedDevices: () => [] } as unknown as CompanionGateway;
+const gateway = { pairedDevices: () => [], remoteEnabled: () => true } as unknown as CompanionGateway;
 const loadIdentity = vi.fn(async () => ({ publicKey: Buffer.alloc(32), secretKey: Buffer.alloc(32) }));
 const listSessions = vi.fn(async () => [{ id: 's1', title: 'Talk' }]);
 
@@ -18,6 +18,7 @@ describe('LanCompanionManager status relay block', () => {
       sessions: [{ id: 's1', title: 'Talk' }],
       projects: [],
       devices: [],
+      remoteEnabled: true,
       relay,
     });
   });

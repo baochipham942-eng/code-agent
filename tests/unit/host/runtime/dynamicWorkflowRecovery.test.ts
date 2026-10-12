@@ -126,7 +126,13 @@ describe('Dynamic Workflow startup recovery', () => {
     expect(vi.mocked(runScriptInSandbox).mock.calls[0][0]).toMatchObject({
       nestedGraph: { workflowRunId: 'logical-workflow', parentGraphId: 'dynamic-graph', parentNodeId: 'workflow-node' },
     });
-    expect((currentRegistry.value.terminalDurable as ReturnType<typeof vi.fn>)).toHaveBeenCalledOnce();
+    // N-WF-SETTLEMENT-DEDUPE：恢复路径的终态通知走 terminalDurable（owner/attempt fence
+    // 保证一次），不经 workflow 工具的 claimWorkflowSettlement——上个进程没到 settlement
+    // 就没有 claim 行，恢复 run 的终态宣告既不需要、也不被任何 durable claim 抑制。
+    const terminal = currentRegistry.value.terminalDurable as ReturnType<typeof vi.fn>;
+    expect(terminal).toHaveBeenCalledOnce();
+    expect(terminal.mock.calls[0][0]).toBe('run-dynamic');
+    expect(terminal.mock.calls[0][1]).toMatchObject({ status: 'completed', event: { type: 'dynamic_graph_completed' } });
   });
 
   it('does not execute an already completed Graph node or manufacture a second Graph terminal', async () => {

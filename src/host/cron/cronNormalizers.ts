@@ -12,7 +12,7 @@ import type {
   CronJobAction,
   CronExecutionTrigger,
 } from '../../shared/contract/cron';
-import { CRON_GUARDRAILS, CRON_EVENT_TRIGGER } from '../../shared/constants';
+import { CRON_GUARDRAILS, CRON_EVENT_TRIGGER, CRON_URGENCY_CRITERIA } from '../../shared/constants';
 import { parseCronRunDigest, type CronRunDigest } from '../../shared/cronRunDigest';
 import { parseUrgencyHeader } from '../../shared/cronUrgency';
 import type { CronUrgency } from '../../shared/contract/sessionAutomation';
@@ -182,6 +182,19 @@ export function normalizeStringRecord(value: unknown): Record<string, string> | 
 
 export function normalizeUnknownRecord(value: unknown): Record<string, unknown> | undefined {
   return isRecord(value) ? value : undefined;
+}
+
+/**
+ * 用户自定义紧急判据（N-CRON-MORNING-TRIAGE-URGENCY-RULE）：非字符串/空白 → undefined；
+ * 超长 → 截断到 CRON_URGENCY_CRITERIA.MAX_CHARS（不拒绝整个 action——它只是
+ * 提示词里的一句话修饰，为它毙掉任务归一化会让既存任务突然加载不出来）。
+ * 不导出：外部经 normalizeAction 走到这里的归一化。
+ */
+function normalizeUrgencyCriteria(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return trimmed.slice(0, CRON_URGENCY_CRITERIA.MAX_CHARS);
 }
 
 export function normalizeTags(value: unknown): string[] | undefined {
@@ -359,6 +372,7 @@ export function normalizeAction(value: unknown): CronJobAction | null {
         roleId: typeof value.roleId === 'string' ? value.roleId : undefined,
         libraryProjectId:
           typeof value.libraryProjectId === 'string' ? value.libraryProjectId : undefined,
+        urgencyCriteria: normalizeUrgencyCriteria(value.urgencyCriteria),
       };
     }
 

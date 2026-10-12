@@ -48,6 +48,8 @@ export interface CronJobDraft {
   agentContextText: string;
   agentRoleId?: string;
   agentLibraryProjectId?: string;
+  /** agent 动作：用户自定义 must_today 判据（N-CRON-MORNING-TRIAGE-URGENCY-RULE）。 */
+  agentUrgencyCriteria?: string;
   webhookUrl: string;
   webhookMethod: WebhookAction['method'];
   webhookHeadersText: string;
@@ -90,6 +92,7 @@ export function createDefaultCronJobDraft(): CronJobDraft {
     agentContextText: '{}',
     agentRoleId: '',
     agentLibraryProjectId: '',
+    agentUrgencyCriteria: '',
     webhookUrl: '',
     webhookMethod: 'POST',
     webhookHeadersText: '{}',
@@ -175,6 +178,7 @@ export function buildDraftFromJob(job: CronJobDefinition): CronJobDraft {
       draft.agentContextText = stringifyJson(action.context);
       draft.agentRoleId = action.roleId ?? '';
       draft.agentLibraryProjectId = action.libraryProjectId ?? '';
+      draft.agentUrgencyCriteria = action.urgencyCriteria ?? '';
       break;
     }
     case 'webhook': {
@@ -322,6 +326,7 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
       context: parseJsonValue(draft.agentContextText, 'Agent context') as Record<string, unknown>,
       roleId: draft.agentRoleId?.trim() || undefined,
       libraryProjectId: draft.agentLibraryProjectId?.trim() || undefined,
+      urgencyCriteria: draft.agentUrgencyCriteria?.trim() || undefined,
     };
   } else if (draft.actionType === 'webhook') {
     if (!draft.webhookUrl.trim()) {

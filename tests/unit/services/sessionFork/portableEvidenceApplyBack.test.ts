@@ -1039,3 +1039,35 @@ describe('applyPortableEvidenceToWorkspace · rework r4 regressions', () => {
     ))).toBe(true);
   });
 });
+
+describe('applyPortableEvidenceToWorkspace · rework r5 regressions', () => {
+  it('captures a/ b/ prefixed patches under diff.noprefix and applies them back', async () => {
+    const repositoryRoot = await initTempRepository();
+    git(repositoryRoot, 'config', 'diff.noprefix', 'true');
+    await writeFile(path.join(repositoryRoot, 'tracked.txt'), 'base\n');
+    git(repositoryRoot, 'add', '.');
+    git(repositoryRoot, 'commit', '-m', 'base');
+    const baseCommit = git(repositoryRoot, 'rev-parse', 'HEAD');
+    await writeFile(path.join(repositoryRoot, 'tracked.txt'), 'staged\n');
+    git(repositoryRoot, 'add', 'tracked.txt');
+    await writeFile(path.join(repositoryRoot, 'tracked.txt'), CLOUD_TRACKED);
+    const fixture = await captureFixture({ repositoryRoot, baseCommit });
+
+    // Without pinned prefixes, diff.noprefix makes both patches header-less
+    // (`--- tracked.txt`), which plain `git apply` later refuses to parse.
+    const stagedPatch = Buffer.from(fixture.sourceEvidence.payload.stagedPatchBase64, 'base64').toString('utf8');
+    const unstagedPatch = Buffer.from(fixture.sourceEvidence.payload.unstagedPatchBase64, 'base64').toString('utf8');
+    expect(stagedPatch).toContain('--- a/tracked.txt');
+    expect(stagedPatch).toContain('+++ b/tracked.txt');
+    expect(unstagedPatch).toContain('--- a/tracked.txt');
+    expect(unstagedPatch).toContain('+++ b/tracked.txt');
+
+    const applied = await applyPortableEvidenceToWorkspace({
+      evidence: fixture.portableEvidence,
+      workspaceRoot: fixture.repositoryRoot,
+      mode: 'apply',
+    });
+    expect(applied.outcome).toBe('success');
+    expect(await readFile(path.join(fixture.repositoryRoot, 'tracked.txt'), 'utf8')).toBe(CLOUD_TRACKED);
+  });
+});

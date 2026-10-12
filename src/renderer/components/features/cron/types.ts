@@ -10,7 +10,7 @@ import type {
   WebhookAction,
 } from '@shared/contract';
 import { validateEventScheduleConstraints } from '@shared/cronEventValidation';
-import { humanizeCronExpression, humanizeEverySchedule, type CronHumanLang } from '../../../utils/cronHumanize';
+import { humanizeCronExpression, humanizeEverySchedule, type CronHumanLang } from '@shared/cronHumanize';
 
 export interface CronJobDraft {
   runsOn: CronJobDefinition['runsOn'];

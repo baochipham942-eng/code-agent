@@ -317,6 +317,9 @@ jobs:
 
       - name: ESLint error/warning ratchet
         # errors / warnings 双独立基线棘轮；任一超基线即阻塞，清理后只能下调。
+        # 全仓 lint 堆已贴 4G 默认上限（10-12 两个 PR 撞 OOM），与 main-full-gate 同给 6G。
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
         run: node scripts/eslint-ratchet.mjs
 
       - name: Architecture effective-line gate

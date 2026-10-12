@@ -528,4 +528,135 @@ describe('bashModule directory escalation', () => {
       rmSync(child, { recursive: true, force: true });
     }
   });
+
+  // N-SANDBOX-ESCALATE-DIR-TESTS：三条边界的 bash 模块级反例。写目录本体被拒用
+  // EPERM open 形（现存目录）、mkdir 被拒用 `mkdir: <path>:` 形，均与真实 seatbelt 文案一致。
+  const escalationCardCount = async (
+    handler: Awaited<ReturnType<typeof bashModule.createHandler>>,
+    denial: string,
+    command: string,
+    ctx = makeCtx(),
+  ): Promise<number> => {
+    wrapMock.mockReset();
+    wrapMock.mockReturnValue({ command: denial, cleanup: cleanupMock });
+    const canUse = vi.fn().mockResolvedValue({ allow: true as const });
+    await handler.execute({ command }, ctx, canUse);
+    return canUse.mock.calls.filter(([toolName]) => toolName === 'bash').length;
+  };
+
+  it('never opens a directory card for /, the home ancestor, home itself, or a symlink alias of home (end to end)', async () => {
+    // 边界三 bash 级：gate 级已钉（refuses root, home, home ancestors...），这里从失败文案
+    // 提取路径一路走到出卡判定，四个形状都不得出卡。别名拼写 lstat 见软链拒之，canonical
+    // 化后也落回 home 本尊——两层判据都得拒绝它。
+    const home = resolveCanonicalRunPath(homedir());
+    const linkParent = tmp('escalate-dir-home-e2e-');
+    const homeAlias = join(linkParent, 'home-alias');
+    symlinkSync(home, homeAlias);
+    const handler = await bashModule.createHandler();
+    try {
+      for (const candidate of ['/', dirname(home), home, homeAlias]) {
+        wrapMock.mockReset();
+        wrapMock.mockReturnValue({
+          command: `printf '%s\\n' "EPERM: operation not permitted, open '${candidate}'" >&2; exit 1`,
+          cleanup: cleanupMock,
+        });
+        const canUse = vi.fn().mockResolvedValue({ allow: true as const });
+        const result = await handler.execute({ command: `touch ${join(candidate, 'probe')}` }, makeCtx(), canUse);
+        expect(canUse.mock.calls.filter(([toolName]) => toolName === 'bash'), candidate).toHaveLength(0);
+        expect(canUse, candidate).toHaveBeenCalledTimes(1);
+        expect(result.ok, candidate).toBe(false);
+        if (!result.ok) expect(result.meta?.sandboxEscalation).toBeUndefined();
+      }
+    } finally {
+      rmSync(linkParent, { recursive: true, force: true });
+    }
+  });
+
+  it('never opens a directory card for a policy-denied directory body (end to end)', async () => {
+    // 边界二 bash 级：审批不能覆盖 denyConcreteShellWritePath——active policy denied_paths
+    // 或用户 Edit deny 命中目录本体时，从失败文案到出卡判定全程零卡；未被点名的子孙照常
+    // 出卡（D2 本体照旧查、子孙不预判），兼作策略真在起作用的阳性对照。
+    const project = tmp('escalate-dir-epolicy-project-');
+    const dir = tmp('escalate-dir-epolicy-');
+    writeFileSync(join(project, 'code-agent-policy.toml'), [
+      '[filesystem]',
+      `writable_paths = ["./**", "${dir}/**"]`,
+      `denied_paths = ["${dir}"]`,
+      '',
+    ].join('\n'));
+    resetPolicyEnforcer();
+    const policyEnforcer = getPolicyEnforcer(project);
+    expect(policyEnforcer?.isActive).toBe(true);
+    const handler = await bashModule.createHandler();
+    const boundCtx = makeCtx({ policyEnforcer });
+    try {
+      expect(await escalationCardCount(
+        handler,
+        `printf '%s\\n' "EPERM: operation not permitted, open '${dir}'" >&2; exit 1`,
+        `touch ${join(dir, 'x')}`,
+        boundCtx,
+      )).toBe(0);
+      const userDenied = join(dir, 'user-denied');
+      mkdirSync(userDenied);
+      resetPolicyEngine();
+      getPolicyEngine().loadUserRules({ deny: [`Edit(${userDenied})`] });
+      expect(await escalationCardCount(
+        handler,
+        `printf '%s\\n' "EPERM: operation not permitted, open '${userDenied}'" >&2; exit 1`,
+        `touch ${join(userDenied, 'x')}`,
+        boundCtx,
+      )).toBe(0);
+      resetPolicyEngine();
+      const grandchild = join(dir, 'sub', 'deep');
+      mkdirSync(grandchild, { recursive: true });
+      expect(await escalationCardCount(
+        handler,
+        `printf '%s\\n' "EPERM: operation not permitted, open '${grandchild}'" >&2; exit 1`,
+        `touch ${join(grandchild, 'x')}`,
+        boundCtx,
+      )).toBe(1);
+    } finally {
+      resetPolicyEngine();
+      resetPolicyEnforcer();
+    }
+  });
+
+  it('mkdir-denied missing directories follow the platform capability; the grant root is exactly the denied path', async () => {
+    // D3 平台差 bash 级自洽版：同一 missing 路径，new-path 授权关（bwrap 形）永不 out 卡、
+    // 开（seatbelt 形）出卡且重跑写根恰是该路径；现存目录不受能力开关影响；父链缺失的
+    // 嵌套 missing（mkdir -p 形）无论开关都不出卡。mkdir 重跑同时必须带禁写名清单（边界一）。
+    const parent = tmp('escalate-dir-capability-');
+    const missing = join(parent, 'new-dir');
+    const deep = join(parent, 'a', 'b');
+    const existing = tmp('escalate-dir-capability-exists-');
+    const handler = await bashModule.createHandler();
+    const mkdirDenial = (path: string) => `printf '%s\\n' 'mkdir: ${path}: Operation not permitted' >&2; exit 1`;
+    try {
+      newFileGrantSpy?.mockReturnValue(false);
+      expect(await escalationCardCount(
+        handler,
+        `printf '%s\\n' "EPERM: operation not permitted, open '${existing}'" >&2; exit 1`,
+        `touch ${join(existing, 'x')}`,
+      )).toBe(1);
+      expect(await escalationCardCount(handler, mkdirDenial(missing), `mkdir ${missing}`)).toBe(0);
+      expect(await escalationCardCount(handler, mkdirDenial(deep), `mkdir -p ${deep}`)).toBe(0);
+
+      newFileGrantSpy?.mockReturnValue(true);
+      wrapMock.mockReset();
+      wrapMock
+        .mockReturnValueOnce({ command: mkdirDenial(missing), cleanup: cleanupMock })
+        .mockReturnValueOnce({ command: "printf 'retried\\n'", cleanup: cleanupMock });
+      const canUse = vi.fn().mockResolvedValue({ allow: true as const });
+      const result = await handler.execute({ command: `mkdir ${missing}` }, makeCtx(), canUse);
+      expect(result.ok).toBe(true);
+      expect(canUse.mock.calls.filter(([toolName]) => toolName === 'bash')).toHaveLength(1);
+      const retryOptions = wrapMock.mock.calls[1]?.[1] as { readWriteRoots?: string[]; forbiddenWriteUnder?: string[] };
+      expect(retryOptions.readWriteRoots).toEqual([resolveCanonicalRunPath(process.cwd()), missing]);
+      expect(retryOptions.forbiddenWriteUnder).toEqual([missing]);
+      // 父链缺失（mkdir -p 的深层拼写）：能力开也不出卡
+      expect(await escalationCardCount(handler, mkdirDenial(deep), `mkdir -p ${deep}`)).toBe(0);
+    } finally {
+      newFileGrantSpy?.mockReturnValue(true);
+    }
+  });
 });

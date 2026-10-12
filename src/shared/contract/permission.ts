@@ -205,6 +205,8 @@ export interface PermissionRequest {
   resolved?: boolean;
   /** 用户选择或 host 的 timeout 结果；仅 resolved=true 时有意义。 */
   decision?: PermissionDecision;
+  /** 裁决来自另一个面（手机 companion）；桌面据此收卡，不记成本机点击。 */
+  resolvedBy?: 'companion';
 }
 
 // 权限响应（兼容旧版）

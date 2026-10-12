@@ -85,6 +85,14 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
             <CronRunsOnPill runsOn={runsOn} localLabel={cc.locationLocal} cloudLabel={cc.locationCloud} />
           </div>
         </div>
+        {execution.trigger?.kind === 'event' && (
+          // 事件 run 的触发源标签（N-TRIGGER-CONNECTOR-MAIL）：channel = 通道消息，connector:mail = 邮件。
+          <Info
+            label={cc.execTriggerSource}
+            value={execution.trigger.source === 'connector' ? cc.triggerSourceMail : cc.triggerSourceChannel}
+            testId="cron-exec-trigger-source"
+          />
+        )}
         <Info label={cc.colScheduledAt} value={formatDateTime(execution.scheduledAt)} />
         <Info label={cc.colStartedAt} value={formatDateTime(execution.startedAt)} />
         <Info label={cc.execCompletedAt} value={formatDateTime(execution.completedAt)} />
@@ -112,8 +120,8 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
   );
 };
 
-const Info: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-3">
+const Info: React.FC<{ label: string; value: string; testId?: string }> = ({ label, value, testId }) => (
+  <div className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-3" data-testid={testId}>
     <div className="text-xs text-zinc-500">{label}</div>
     <div className="mt-1 text-sm text-zinc-200">{value}</div>
   </div>

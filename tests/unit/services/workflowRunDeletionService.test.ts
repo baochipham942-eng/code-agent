@@ -68,6 +68,23 @@ function createSchema(db: BetterSqlite3.Database): void {
       FOREIGN KEY (run_id) REFERENCES workflow_runs(run_id) ON DELETE CASCADE
     )
   `);
+  // 与 schema.ts 逐字一致（N-WF-SETTLEMENT-DEDUPE）：deleteRun 会显式清这张表。
+  db.exec(`
+    CREATE TABLE workflow_settlement_claims (
+      run_id TEXT NOT NULL,
+      terminal_status TEXT NOT NULL,
+      claimed_at INTEGER NOT NULL,
+      PRIMARY KEY (run_id, terminal_status)
+    )
+  `);
+  db.exec(`
+    CREATE TABLE workflow_stall_notices (
+      run_id TEXT NOT NULL,
+      epoch INTEGER NOT NULL,
+      announced_at INTEGER NOT NULL,
+      PRIMARY KEY (run_id, epoch)
+    )
+  `);
 }
 
 function git(repo: string, args: string): void {

@@ -6,7 +6,7 @@ import type {
   BuildInfo,
   PersistenceHealth,
   RendererServeDecision,
-  WebHealthResponse,
+  WebHealthDetail,
 } from '../../../src/shared/contract';
 
 let server: http.Server | undefined;
@@ -51,7 +51,7 @@ afterEach(async () => {
 });
 
 describe('createHealthRouter persistence health', () => {
-  it('includes persistence status in /api/health', async () => {
+  it('includes persistence status in authenticated /api/health/detail', async () => {
     const persistence = {
       status: 'unavailable',
       mode: 'memory',
@@ -63,8 +63,8 @@ describe('createHealthRouter persistence health', () => {
 
     await startHealthApi(persistence);
 
-    const response = await fetch(`${baseUrl}/api/health`);
-    const body = await response.json() as WebHealthResponse;
+    const response = await fetch(`${baseUrl}/api/health/detail`);
+    const body = await response.json() as WebHealthDetail;
 
     expect(response.status).toBe(200);
     expect(body.persistence).toEqual(persistence);
@@ -90,8 +90,8 @@ describe('createHealthRouter persistence health', () => {
 
     await startHealthApi(persistence, rendererServe);
 
-    const response = await fetch(`${baseUrl}/api/health`);
-    const body = await response.json() as WebHealthResponse;
+    const response = await fetch(`${baseUrl}/api/health/detail`);
+    const body = await response.json() as WebHealthDetail;
 
     expect(response.status).toBe(200);
     expect(body.rendererServe).toEqual(rendererServe);
@@ -118,8 +118,8 @@ describe('createHealthRouter persistence health', () => {
 
     await startHealthApi(persistence, undefined, build);
 
-    const response = await fetch(`${baseUrl}/api/health`);
-    const body = await response.json() as WebHealthResponse;
+    const response = await fetch(`${baseUrl}/api/health/detail`);
+    const body = await response.json() as WebHealthDetail;
 
     expect(body.build).toEqual(build);
   });
@@ -137,7 +137,7 @@ describe('createHealthRouter persistence health', () => {
 
     await startHealthApi(persistence, undefined, null, false);
 
-    const body = await (await fetch(`${baseUrl}/api/health`)).json() as WebHealthResponse;
+    const body = await (await fetch(`${baseUrl}/api/health/detail`)).json() as WebHealthDetail;
 
     expect(body.status).toBe('ok');
     expect(body.durableRunReady).toBe(false);

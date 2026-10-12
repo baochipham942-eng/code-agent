@@ -114,6 +114,12 @@ function withAgentIntentForSnapshot(
   };
 }
 
+/** 输入框预填请求：text = 要填进输入框的整句；nonce 让同句连点也各触发一次消费。 */
+interface PendingComposerPrefill {
+  text: string;
+  nonce: number;
+}
+
 interface ComposerState extends ComposerSlotSnapshot {
   /** 能力选择与所属会话的单调版本；同一轮草稿移交到新会话时保持不变。 */
   selectionRevision: number;
@@ -128,6 +134,13 @@ interface ComposerState extends ComposerSlotSnapshot {
    * hydrateFromSession 仍可写，语义 = activateScope(session|draft)。
    */
   hydratedSessionId: string | null;
+  /**
+   * 输入框预填（只填不发）：专家团快捷句等入口把句子放进来，ChatInput 消费后
+   * 填进输入框并聚焦，发不发给用户自己决定。不进 slot 快照（跨槽存活）：
+   * ChatInput 在能力中心等二级页打开期间是卸载的，窗口事件会丢，走 store
+   * 才能在挂载后接住。nonce 让同句连点也各触发一次消费。
+   */
+  pendingComposerPrefill: PendingComposerPrefill | null;
   activateScope: (
     key: ComposerScopeKey,
     options?: { workingDirectory?: string | null },
@@ -154,17 +167,23 @@ interface ComposerState extends ComposerSlotSnapshot {
   setSelectedTeamRecipeId: (id: string | null) => void;
   setStandbyExcludedMemberKeys: (keys: string[]) => void;
   setPendingCommand: (command: PendingCommandSelection | null) => void;
+  /** null = 消费/清除；带文本时分配新 nonce。 */
+  setPendingComposerPrefill: (prefill: { text: string } | null) => void;
   resetForSuccessfulSend: (expectedRevision?: number) => void;
   buildContext: () => ConversationEnvelopeContext | undefined;
 }
 
 const initialSlot = emptyComposerSlot();
 
+let _prefillTick = 0;
+const nextPrefillNonce = () => ++_prefillTick;
+
 const initialComposerState = {
   ...initialSlot,
   activeScopeKey: DRAFT_SCOPE_KEY as ComposerScopeKey,
   slots: {} as Record<string, ComposerSlotSnapshot>,
   hydratedSessionId: null as string | null,
+  pendingComposerPrefill: null as PendingComposerPrefill | null,
 };
 
 function getWorkbenchPresetContext(
@@ -397,6 +416,10 @@ export const useComposerStore = create<ComposerState>((set, get) => ({
     selectionRevision: state.selectionRevision + 1,
     pendingCommand: command,
   })),
+
+  setPendingComposerPrefill: (prefill) => set({
+    pendingComposerPrefill: prefill ? { text: prefill.text, nonce: nextPrefillNonce() } : null,
+  }),
 
   resetForSuccessfulSend: (expectedRevision) =>
     set((state) => {

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* global clearInterval, fetch, process, setInterval, setTimeout, URL */
 // N-L7-PREVGEN-MUTE: one paid real-runtime call. Never retries a call.
 
 import fs from 'node:fs';
@@ -66,7 +67,9 @@ function waitUntil(predicate, timeoutMs, label) {
 let ws;
 let sessionId;
 try {
-  const health = await fetch(`${url}/api/health`).then((response) => response.json());
+  const health = await fetch(`${url}/api/health/detail`, {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then((response) => response.json());
   evidence.health = {
     status: health.status,
     build: health.build,
@@ -150,7 +153,7 @@ try {
 } finally {
   if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'end' }));
   await new Promise((resolve) => setTimeout(resolve, 1_500));
-  try { ws?.close(); } catch {}
+  try { ws?.close(); } catch { /* already closed */ }
   evidence.finishedAt = new Date().toISOString();
   evidence.durationMs = Date.now() - startedAt;
   fs.mkdirSync(path.dirname(outPath), { recursive: true });

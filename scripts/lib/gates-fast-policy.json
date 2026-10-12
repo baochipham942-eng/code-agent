@@ -302,6 +302,33 @@
       "files": [
         "tests/unit/security/rendererTokenBoundary.test.ts"
       ]
+    },
+    {
+      "id": "frontend-slides-packaging",
+      "paths": [
+        "resources/skills/frontend-slides/**",
+        "resources/skill-sources/frontend-slides/**",
+        "scripts/bundle-frontend-slides-skill.mjs",
+        "src-tauri/tauri.conf.json",
+        "eslint.config.js"
+      ],
+      "files": [
+        "tests/scripts/frontendSlidesSkillPackaging.test.ts"
+      ]
+    },
+    {
+      "id": "jev-real-sites",
+      "note": "Real-site Jev A/B runner: pure helpers + committed case bank and result record are pinned hermetically; the live browser run stays outside gates:fast.",
+      "paths": [
+        "scripts/acceptance/_jev-real-sites-lib.ts",
+        "scripts/acceptance/jev-browser-step-real-sites.ts",
+        "tests/fixtures/jev-browser-step/real-sites.json",
+        "docs/research/assets/2026-09-30-jev-eval/browser-real-sites.json"
+      ],
+      "files": [
+        "tests/unit/scripts/acceptance/jevRealSitesLib.test.ts",
+        "tests/unit/scripts/acceptance/jevRealSitesArtifact.test.ts"
+      ]
     }
   ],
   "sharedPackageInputs": [

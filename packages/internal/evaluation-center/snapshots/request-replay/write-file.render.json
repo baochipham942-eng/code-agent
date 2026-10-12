@@ -1,0 +1,38 @@
+{
+  "caseId": "write-file",
+  "locale": "zh",
+  "turns": [
+    {
+      "turnNumber": 1,
+      "status": "completed",
+      "nodes": [
+        {
+          "type": "user",
+          "text": "E2E_SNAPSHOT_REPLAY_WRITE：把快照便签写进工作区。"
+        },
+        {
+          "type": "assistant_text",
+          "text": "Writing the snapshot note through the real Write tool."
+        },
+        {
+          "type": "tool_call",
+          "tool": "Write",
+          "label": "写入了 …/write-file/snapshot-write-note.txt",
+          "success": true
+        },
+        {
+          "type": "assistant_text",
+          "text": "E2E snapshot replay write completed. Created file: <RECORD_DATA_DIR>/workspace/write-file/snapshot-write-note.txt (33 chars)"
+        }
+      ],
+      "fileChanges": [
+        {
+          "path": "…/write-file/snapshot-write-note.txt",
+          "added": 1,
+          "removed": 0,
+          "isNewFile": true
+        }
+      ]
+    }
+  ]
+}

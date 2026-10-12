@@ -957,7 +957,11 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
           {nativeDesktopText.audioRetention.clear}
         </DangerButton>
       </div>
-      {audioStatus?.retention && audioStatus.retention.failedTotal > 0 ? (
+      {/* 失败行只在目录里还有可清理文件时出现：成功重试后 fileCount 归零
+          （host 侧零失败的 clear/sweep 同样清掉 failedTotal 旧账），旧行不再残留 */}
+      {audioStatus?.retention
+        && audioStatus.retention.failedTotal > 0
+        && (audioStatus.retention.fileCount ?? 0) > 0 ? (
         <AudioRetentionFailureLine
           failedTotal={audioStatus.retention.failedTotal}
           lastError={audioStatus.retention.lastError}

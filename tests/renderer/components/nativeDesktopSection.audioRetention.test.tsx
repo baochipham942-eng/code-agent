@@ -53,7 +53,7 @@ import { NativeDesktopSection } from '../../../src/renderer/components/features/
 const AUDIO_DIR = '/tmp/audio-retention';
 const EACCES_RAW = `EACCES: permission denied, unlink '${AUDIO_DIR}/seg-1.wav'`;
 
-function status(failedTotal: number, lastError?: string) {
+function status(failedTotal: number, lastError?: string, fileCount = 2) {
   return {
     capturing: false,
     captureMode: 'microphone' as const,
@@ -70,7 +70,7 @@ function status(failedTotal: number, lastError?: string) {
       deletedTotal: 0,
       failedTotal,
       lastError,
-      fileCount: 2,
+      fileCount,
       bytes: 18,
     },
   };
@@ -169,6 +169,43 @@ describe('NativeDesktopSection audio retention', () => {
     const main = await findFailureMain(/个录音删不掉/);
     expect(main.textContent).toBe('有 3 个录音删不掉，这次清理没有完成。可稍后重试');
     expect(main.textContent).not.toContain('not a regular file');
+  });
+
+  it('hides the failure line when no clearable file remains, keeps it while files remain', async () => {
+    // 一次成功重试/手动清空后目录已空（fileCount=0）：即使状态里还挂着旧 failedTotal，失败行也不出现
+    services.getAudioCaptureStatus.mockResolvedValue(status(3, EACCES_RAW, 0));
+    render(React.createElement(NativeDesktopSection));
+    // openClearConfirm 先取最新状态再弹框：弹框出现即状态已落地，此时断言"无失败行"才可靠
+    fireEvent.click(await screen.findByRole('button', { name: '清空录音' }));
+    expect(await screen.findByRole('dialog', { name: '清空录音' })).toBeTruthy();
+    expect(screen.queryByText(/个录音删不掉/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+
+    // 目录里还有删不掉的文件（fileCount=3）：失败行保留
+    cleanup();
+    services.getAudioCaptureStatus.mockResolvedValue(status(3, EACCES_RAW, 3));
+    render(React.createElement(NativeDesktopSection));
+    expect(await findFailureMain(/个录音删不掉/)).toBeTruthy();
+  });
+
+  it('drops the failure line after a successful retry clears everything', async () => {
+    // 验收场景回放：重试成功后回执可见，失败行与重试按钮消失
+    services.getAudioCaptureStatus.mockResolvedValueOnce(status(3, EACCES_RAW));
+    services.getAudioCaptureStatus.mockResolvedValueOnce(status(3, EACCES_RAW));
+    // 重试成功后的刷新状态：目录已空；这里故意保留一笔旧 failedTotal，
+    // 单独钉死 renderer 守卫（host 侧零失败清空的清账另有 host 测试覆盖）
+    services.getAudioCaptureStatus.mockResolvedValue(status(3, EACCES_RAW, 0));
+    services.clearAudioRecordings.mockResolvedValue({ deleted: 3, freedBytes: 27, failed: 0 });
+    render(React.createElement(NativeDesktopSection));
+
+    expect(await findFailureMain(/个录音删不掉/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    fireEvent.click(await screen.findByRole('button', { name: '确认清空' }));
+    await waitFor(() => expect(services.clearAudioRecordings).toHaveBeenCalledOnce());
+    expect(await screen.findByText('已删除 3 个文件，释放 27 字节。')).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText(/个录音删不掉/)).toBeNull());
+    expect(screen.queryByRole('button', { name: '重试' })).toBeNull();
+    expect(screen.queryByText(EACCES_RAW)).toBeNull();
   });
 
   it('classifies EACCES as permission and keeps raw error out of the main line', async () => {

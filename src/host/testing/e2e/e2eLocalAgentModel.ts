@@ -52,6 +52,8 @@ const E2E_SNAPSHOT_READ_DEDUPE_SECOND_CALL_ID = 'e2e-snapshot-replay-read-dedupe
 const E2E_SNAPSHOT_WRITE_CALL_ID = 'e2e-snapshot-replay-write';
 const E2E_SNAPSHOT_BASH_CALL_ID = 'e2e-snapshot-replay-bash';
 const E2E_SNAPSHOT_BASH_COMMAND = 'echo E2E_SNAPSHOT_REPLAY_BASH_OUTPUT';
+/** 快照 Write 路由发给真 Write 工具的正文。持久层证据从账本读回它再走真工具重放。 */
+const SNAPSHOT_REPLAY_WRITE_PAYLOAD = 'E2E_SNAPSHOT_REPLAY_WRITE_PAYLOAD\n';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -658,7 +660,7 @@ function buildSnapshotReplayE2EResponse(
     name: 'Write',
     arguments: {
       file_path: resolveSnapshotWritePath(env),
-      content: 'E2E_SNAPSHOT_REPLAY_WRITE_PAYLOAD\n',
+      content: SNAPSHOT_REPLAY_WRITE_PAYLOAD,
     },
   };
   const writeResult = findToolResultContent(messages, E2E_SNAPSHOT_WRITE_CALL_ID);

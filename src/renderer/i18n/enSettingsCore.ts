@@ -176,6 +176,15 @@ export const enSettingsCore = {
       },
       developerMode: 'Developer mode',
       developerModeDesc: 'Show turn quality scores, routing details, and other debug info in the chat stream',
+      disclosureLevel: 'Work detail',
+      disclosureLevelDescription: 'Choose how much process detail the chat shows',
+      disclosureLevels: {
+        simple: 'Simple',
+        standard: 'Standard',
+        advanced: 'Detailed',
+        expert: 'Full',
+      },
+      disclosureLevelSaveFailed: 'Failed to save work detail. Previous setting restored.',
       themeSaveFailed: 'Failed to save theme. Previous setting restored.',
       languageSaveFailed: 'Failed to save language. Previous setting restored.',
       developerModeSaveFailed: 'Failed to save developer mode. Previous setting restored.',
@@ -200,6 +209,7 @@ export const enSettingsCore = {
         ruleCountSuffix: ' rules',
         highestPriorityPrefix: 'Highest priority: ',
         adminOnlySwitchHint: 'Switching permission mode requires admin access; the current account cannot make this change.',
+        adminManagedNote: 'Managed by your administrator',
         permissionModes: {
           default: {
             title: permissionVocabularyEn.ask,

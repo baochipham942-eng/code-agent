@@ -65,6 +65,15 @@ describe('companion device boundary (HTTP + persistent SQLite)', () => {
     expect(response.status).toBe(403);
     expect(executions).toBe(0);
   });
+  it('answers a coded remote-off refusal on sync and command status while the switch is off', async () => {
+    gateway.setRemoteEnabled(false);
+    const sync = await request('/sync?epoch=1&afterSeq=0');
+    expect(sync.status).toBe(403);
+    await expect(sync.json()).resolves.toMatchObject({ success: false, error: { code: 'COMPANION_REMOTE_OFF' } });
+    const status = await request('/commands/command-1');
+    expect(status.status).toBe(403);
+    await expect(status.json()).resolves.toMatchObject({ success: false, error: { code: 'COMPANION_REMOTE_OFF' } });
+  });
   it('filters the sync stream and still advances over unshared events', async () => {
     gateway.publish('session-1', 'message', { text: 'shared' });
     gateway.publish('session-2', 'message', { text: 'private-marker' });

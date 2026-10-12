@@ -25,6 +25,11 @@ import { resolveSidebarGroupExpansionView } from '../../../utils/sidebarGroupExp
 import { SidebarProjectDetail } from './SidebarProjectDetail';
 import { SidebarProjectDrawer, type SidebarProjectDrawerSession } from './SidebarProjectDrawer';
 import { SidebarSessionItem, type SidebarSessionItemSharedProps } from './SidebarSessionItem';
+import { GhostButton } from '../../primitives';
+import {
+  getSidebarCronRunFoldingDecision,
+  getSidebarCronTaskId,
+} from './sidebarCronRunFolding';
 import type { SidebarDerivedSessions } from './useSidebarDerivedSessions';
 import type { SidebarSessionActions } from './useSidebarSessionActions';
 import { useI18n } from '../../../hooks/useI18n';
@@ -102,9 +107,11 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
     hasNeedsInputForSession,
     reviewItemsBySessionId,
     currentSessionId,
+    cronRunAggregatesByTaskId,
   } = sessionItemProps;
 
   const [showAllRows, setShowAllRows] = useState(false);
+  const [expandedCronRunTasks, setExpandedCronRunTasks] = useState<Record<string, boolean>>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
   // 项目行「⋯」菜单开合态（2026-07-28 侧栏工作区入口重构：hover 图标簇收敛为 ⋯+新建）。
   const [menuOpen, setMenuOpen] = useState(false);
@@ -428,12 +435,36 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
       {expanded && (() => {
         // 折叠长列表：默认只平铺前 SESSION_ROW_CAP 条。搜索态或手动展开时全显；
         // 当前会话若排在 cap 之后，只把窗口扩到「刚好露出它」，其余仍折叠（不会因此把整列摊开）。
-        const currentIndexInGroup = group.sessions.findIndex((session) => session.id === currentSessionId);
-        const effectiveCap = hasSearchFilters || showAllRows
-          ? group.sessions.length
+        // cron/heartbeat 重复运行另有按任务折叠；搜索态始终跳过折叠，当前会话始终保留。
+        const cronTaskIds = Array.from(new Set(
+          group.sessions
+            .map((session) => getSidebarCronTaskId(session))
+            .filter((taskId): taskId is string => {
+              const aggregate = taskId ? cronRunAggregatesByTaskId?.[taskId] : undefined;
+              return Boolean(aggregate && aggregate.runCount > 1 && !hasSearchFilters);
+            }),
+        ));
+        const expandedCronTaskIds = new Set(
+          cronTaskIds.filter((taskId) => expandedCronRunTasks[taskId]),
+        );
+        const foldingVisibleSessions = group.sessions.filter((session) => {
+          const taskId = getSidebarCronTaskId(session);
+          const aggregate = taskId ? cronRunAggregatesByTaskId?.[taskId] : undefined;
+          return !getSidebarCronRunFoldingDecision({
+            session,
+            aggregate,
+            currentSessionId,
+            hasSearchFilters,
+            expanded: Boolean(taskId && expandedCronTaskIds.has(taskId)),
+          }).shouldHide;
+        });
+        const currentIndexInGroup = foldingVisibleSessions.findIndex((session) => session.id === currentSessionId);
+        const showAllForExpandedCron = expandedCronTaskIds.size > 0 && !hasSearchFilters;
+        const effectiveCap = hasSearchFilters || showAllRows || showAllForExpandedCron
+          ? foldingVisibleSessions.length
           : Math.max(SESSION_ROW_CAP, currentIndexInGroup + 1);
-        const visibleSessions = group.sessions.slice(0, effectiveCap);
-        const hiddenCount = group.sessions.length - visibleSessions.length;
+        const visibleSessions = foldingVisibleSessions.slice(0, effectiveCap);
+        const hiddenCount = foldingVisibleSessions.length - visibleSessions.length;
         const canToggle = !hasSearchFilters && (hiddenCount > 0 || showAllRows);
         return (
           <div
@@ -444,7 +475,8 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
               <div className="px-3 py-1 text-xs text-zinc-600">{p.noSessions}</div>
             ) : (
               <>
-                {visibleSessions.map((session, index) => (
+                {visibleSessions.map((session, index) => {
+                  return (
                   <div
                     key={session.id}
                     className="sidebar-project-row"
@@ -457,7 +489,26 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
                       {...sessionItemProps}
                     />
                   </div>
-                ))}
+                  );
+                })}
+                {cronTaskIds.map((taskId) => {
+                  const isExpanded = expandedCronTaskIds.has(taskId);
+                  return (
+                    <GhostButton
+                      key={`cron-runs-${taskId}`}
+                      type="button"
+                      data-testid="sidebar-cron-run-toggle"
+                      data-task-id={taskId}
+                      aria-expanded={isExpanded}
+                      aria-label={isExpanded ? p.cronRunsCollapse : p.cronRunsExpand}
+                      onClick={() => setExpandedCronRunTasks((current) => ({ ...current, [taskId]: !isExpanded }))}
+                      size="sm"
+                      className="w-full justify-start pl-6 pr-3 py-1 text-left text-[11px] text-zinc-500 transition-colors hover:text-zinc-300"
+                    >
+                      {isExpanded ? p.cronRunsCollapse : p.cronRunsExpand}
+                    </GhostButton>
+                  );
+                })}
                 {canToggle && (
                   <button
                     type="button"

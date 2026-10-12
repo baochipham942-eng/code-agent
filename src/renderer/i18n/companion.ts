@@ -37,6 +37,18 @@ export const companionText = {
     crossnetConnected: '跨网连接：已开通 · 通过 Neo 账号',
     crossnetConnectedHint: '手机离开这个 Wi‑Fi 也能连回来；内容在手机和电脑之间端到端加密，中继看不到。',
     crossnetLegacyConnected: '旧通道：已连接',
+    // 远程访问总闸（N-COMPANION-KILLSWITCH-UI）：关 = 暂停手机远程连接，不撤销配对。
+    remoteTitle: '远程访问',
+    remoteCount: (count: number) => `关闭后将断开 ${count} 台已配对手机`,
+    remoteCountNone: '还没有已配对手机，关闭不会影响任何设备',
+    remoteOffHint: '远程访问已关闭：手机暂时连不上这台电脑，已配对的手机保持配对。',
+    remoteOffTitle: '关闭远程访问？',
+    remoteOffConfirm: (count: number) => (count > 0
+      ? `关闭后，${count} 台已配对手机会立即断开连接。手机仍保持配对，随时可以重新打开，无需重新扫码。`
+      : '关闭后，手机将无法远程连接这台电脑。目前没有已配对手机受影响，随时可以重新打开，无需重新扫码。'),
+    remoteOffConfirmYes: '关闭远程访问',
+    remoteOffConfirmNo: '先不关闭',
+    errorRemoteOff: '远程访问已关闭，请先打开总闸，再生成配对二维码。',
     // 手机「登录找回电脑」的全局配对卡片（N-COMPANION-RELAY-ACCOUNT-RECOVER）。
     pairRequestTitle: '新手机请求连接',
     pairRequestHint: '有人在用你的 Neo 账号找回这台电脑（换了手机或重装后）。核对手机上显示的数字和下面一致，再点同意。',
@@ -86,6 +98,20 @@ export const companionText = {
     crossnetConnected: 'Cross-network: enabled · via your Neo account',
     crossnetConnectedHint: 'Your phone can reach this computer from other networks; content stays end-to-end encrypted between phone and computer, invisible to the relay.',
     crossnetLegacyConnected: 'Legacy channel: connected',
+    // Remote access master switch (N-COMPANION-KILLSWITCH-UI): off = pause remote connections, pairings stay.
+    remoteTitle: 'Remote access',
+    remoteCount: (count: number) => (count === 1
+      ? 'Turning off disconnects 1 paired phone'
+      : `Turning off disconnects ${count} paired phones`),
+    remoteCountNone: 'No paired phones yet; turning off affects no device',
+    remoteOffHint: 'Remote access is off: phones cannot reach this computer for now. Paired phones stay paired.',
+    remoteOffTitle: 'Turn off remote access?',
+    remoteOffConfirm: (count: number) => (count > 0
+      ? `Turning this off disconnects ${count === 1 ? '1 paired phone' : `${count} paired phones`} right away. Phones stay paired — you can turn it back on anytime, no re-scan needed.`
+      : 'Turning this off keeps phones from reaching this computer. No paired phone is affected, and you can turn it back on anytime, no re-scan needed.'),
+    remoteOffConfirmYes: 'Turn off remote access',
+    remoteOffConfirmNo: 'Keep it on',
+    errorRemoteOff: 'Remote access is currently off. Turn it back on before creating a pairing code.',
     // Global pairing card for "sign in to recover my computer" from a phone.
     pairRequestTitle: 'New phone requesting access',
     pairRequestHint: 'Someone is recovering this computer with your Neo account (after changing phones or reinstalling). Check that the number on the phone matches the one below, then allow.',
@@ -106,6 +132,7 @@ export function companionErrorCopy(text: Copy, detail: string): string {
     : code === 'COMPANION_INVALID_SCOPE' ? text.errorScope
     : code === 'COMPANION_SESSION_NOT_FOUND' ? text.errorSession
     : code === 'COMPANION_UNAVAILABLE' ? text.errorUnavailable
+    : code === 'COMPANION_REMOTE_OFF' ? text.errorRemoteOff
     : text.error;
   return `${mapped} (${code})`;
 }

@@ -37,6 +37,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function readCronReviewDigest(value: unknown): NonNullable<SessionAutomationConfig['pendingReview']>['digest'] | undefined {
+  if (!isRecord(value) || !Array.isArray(value.artifacts)) return undefined;
+  const summary = typeof value.summary === 'string' ? value.summary : undefined;
+  const summaryLine = summary?.split(/\r?\n/).find((line) => line.trim())?.trim().slice(0, 120);
+  if (value.artifacts.length === 0 && !summaryLine) return undefined;
+  return {
+    artifactCount: value.artifacts.length,
+    ...(summaryLine ? { summaryLine } : {}),
+  };
+}
+
 /**
  * 源会话 id；面板/API 创建的任务没有源会话，返回 undefined。
  * 桥接层对 undefined 一律按 null 记录（automation 生命周期与待过目照常，
@@ -231,6 +242,7 @@ export async function recordCronAutomationExecution(
     const urgencyValue = resultRecord?.urgency;
     const urgency = isCronUrgency(urgencyValue) ? urgencyValue : undefined;
     const urgencyRaw = typeof resultRecord?.urgencyRaw === 'string' ? resultRecord.urgencyRaw : undefined;
+    const digest = readCronReviewDigest(resultRecord?.digest);
     const recordStatus: SessionAutomationStatus = keepActive
       ? 'active'
       : reviewable
@@ -248,6 +260,7 @@ export async function recordCronAutomationExecution(
           at: execution.completedAt ?? Date.now(),
           ...(urgency ? { urgency } : {}),
           ...(urgencyRaw ? { urgencyRaw } : {}),
+          ...(digest ? { digest } : {}),
         } } }
         : {}),
       resultSessionId: execution.sessionId,

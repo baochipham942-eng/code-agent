@@ -21,7 +21,7 @@ function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 }
 
-async function createFixture() {
+async function createFixture(options: { diffConfig?: Array<[string, string]> } = {}) {
   const root = await mkdtemp(path.join(tmpdir(), 'neo-imported-portable-anchor-'));
   temporaryDirectories.push(root);
   const repositoryRoot = path.join(root, 'repository');
@@ -31,6 +31,11 @@ async function createFixture() {
   git(repositoryRoot, 'init', '--initial-branch=main');
   git(repositoryRoot, 'config', 'user.email', 'neo-test@example.invalid');
   git(repositoryRoot, 'config', 'user.name', 'Neo Test');
+  // Repository-local diff.* config is shared with every git worktree, so it
+  // reaches both verify replays (isolated service + materializer) too.
+  for (const [key, value] of options.diffConfig ?? []) {
+    git(repositoryRoot, 'config', key, value);
+  }
   await writeFile(path.join(repositoryRoot, 'tracked.txt'), 'base\n');
   git(repositoryRoot, 'add', '.');
   git(repositoryRoot, 'commit', '-m', 'base');
@@ -126,6 +131,40 @@ describe('ImportedPortableAnchorWorkspaceMaterializer', () => {
     expect(JSON.stringify(persisted?.evidence)).not.toContain(
       fixture.portableEvidence.repositoryIdentityDigest,
     );
+  });
+
+  // Rework r7 regression: capture pins `--src-prefix=a/ --dst-prefix=b/`, so the
+  // verify replays must run the identical diff invocation — a plain `git diff`
+  // under these configs emits `i/`/`w/` (mnemonic) or `x/` (custom srcPrefix)
+  // headers and the byte comparison against the captured patch fails.
+  it.each([
+    ['diff.mnemonicPrefix', 'true'],
+    ['diff.srcPrefix', 'x/'],
+  ] as const)('captures, verifies and materializes portable evidence under %s=%s', async (key, value) => {
+    const fixture = await createFixture({ diffConfig: [[key, value]] });
+
+    const prepared = await fixture.materializer.materialize({
+      portableEvidence: fixture.portableEvidence,
+      targetProjectId: 'project-1',
+      workspaceBinding: {
+        projectId: 'project-1',
+        topology: 'single_root_git',
+        identityTrust: 'verified',
+        repositoryRoot: fixture.repositoryRoot,
+        workspaceScopeVersion: 'target-scope-v2',
+      },
+      intentId: `import-intent-${key}`,
+      sourceSessionId: 'imported-parent',
+      proposedChildSessionId: 'imported-child',
+      destinationName: 'imported-child',
+    });
+
+    expect(prepared.advertisable).toBe(true);
+    expect(git(prepared.workspacePath, 'rev-parse', 'HEAD')).toBe(fixture.baseCommit);
+    expect(await readFile(path.join(prepared.workspacePath, 'tracked.txt'), 'utf8'))
+      .toBe('staged\nunstaged\n');
+    expect(await readFile(path.join(prepared.workspacePath, 'new.bin')))
+      .toEqual(Buffer.from([0, 1, 255, 2]));
   });
 
   it('rejects an unavailable base commit and never calls workspace preparation', async () => {

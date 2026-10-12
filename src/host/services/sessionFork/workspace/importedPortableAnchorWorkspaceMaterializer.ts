@@ -8,6 +8,7 @@ import {
 } from '../portability/portableWorkspaceEvidence';
 import {
   AnchorWorkspaceEvidenceService,
+  PORTABLE_DIFF_FORMAT_ARGS,
   digestWorkspaceValue,
 } from './anchorEvidence';
 import { NodeWorkspaceCommandRunner } from './commandRunner';
@@ -328,12 +329,12 @@ export class ImportedPortableAnchorWorkspaceMaterializer {
       }).then((result) => result.stdout.toString('utf8').trim()),
       this.runner.run({
         executable: 'git',
-        args: ['diff', '--binary', '--full-index', '--cached', portable.baseCommit, '--'],
+        args: ['diff', ...PORTABLE_DIFF_FORMAT_ARGS, '--cached', portable.baseCommit, '--'],
         cwd: prepared.workspacePath,
       }).then((result) => result.stdout),
       this.runner.run({
         executable: 'git',
-        args: ['diff', '--binary', '--full-index', '--'],
+        args: ['diff', ...PORTABLE_DIFF_FORMAT_ARGS, '--'],
         cwd: prepared.workspacePath,
       }).then((result) => result.stdout),
       this.runner.run({

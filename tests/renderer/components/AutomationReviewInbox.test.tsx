@@ -150,6 +150,33 @@ describe('AutomationReviewInbox', () => {
     expect(screen.getByText(/你不在的时候跑完的 · 完成于/)).toBeTruthy();
   });
 
+  it('在待审行显示 digest，并只为匹配运行会话的 pending 停车审批显示一个徽标', async () => {
+    listPendingReview.mockResolvedValue([makeRecord({
+      config: {
+        pendingReview: {
+          resultSessionId: 'result-1',
+          at: 1700000000000,
+          digest: { artifactCount: 2, summaryLine: '第一行摘要' },
+        },
+      },
+    })]);
+    listParkedApprovals.mockResolvedValue([
+      makeParked({ id: 'matching-pending', sessionId: 'result-1', status: 'pending' }),
+      makeParked({ id: 'matching-orphaned', sessionId: 'result-1', status: 'orphaned' }),
+      makeParked({ id: 'other-pending', sessionId: 'other-session', status: 'pending' }),
+    ]);
+
+    render(<AutomationReviewInbox />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('automation-review-digest')).toBeTruthy();
+    });
+    expect(screen.getByTestId('automation-review-digest').textContent).toContain('2 个产物');
+    expect(screen.getByTestId('automation-review-digest').textContent).toContain('第一行摘要');
+    expect(screen.getAllByTestId('automation-review-digest-approval')).toHaveLength(1);
+    expect(screen.getByTestId('automation-review-digest-approval').textContent).toBe('有待处理审批');
+  });
+
   it('查看结果：标记已读并跳结果会话', async () => {
     listPendingReview.mockResolvedValue([makeRecord({})]);
     render(<AutomationReviewInbox />);

@@ -57,6 +57,13 @@ describe('connectionDiagnosis：三分类 → 一句人话 + 主动作', () => {
     expect(text.connectionRelayUnavailable).toContain('连不上电脑');
     expect(text.connectionRelayRejected).toContain('电脑');
   });
+
+  it('⑤ 电脑关闭远程访问 → 保留配对并继续重新连接', () => {
+    expect(connectionDiagnosis(text, state('connectionRemoteOff')))
+      .toEqual({ sentence: text.connectionRemoteOff, action: 'reconnect' });
+    expect(text.connectionRemoteOff).toContain('远程');
+    expect(messages('en').connectionRemoteOff).toBe('Remote access is turned off on the computer');
+  });
 });
 
 describe('lastSyncCopy：上次同步 x 分钟前', () => {
@@ -107,7 +114,7 @@ describe('连接失败文案：说人话，且给的动作得做得到', () => {
   const zh = messages('zh');
   const en = messages('en');
   const keys = ['connectionQrInvalid', 'connectionScanFailed', 'connectionRejected',
-    'connectionRefused', 'connectionUnavailable', 'connectionRelayUnavailable', 'connectionRelayRejected', 'connectionRelayNoHost'] as const;
+    'connectionRefused', 'connectionUnavailable', 'connectionRelayUnavailable', 'connectionRelayRejected', 'connectionRelayNoHost', 'connectionRemoteOff'] as const;
 
   it('零内部实现词', () => {
     // 「中继 / 路由 / relay / mDNS / .local / 端口」都是实现细节，用户没有任何办法对它们做事。

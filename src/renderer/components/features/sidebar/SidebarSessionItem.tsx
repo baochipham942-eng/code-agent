@@ -10,6 +10,7 @@ import { getDisplaySessionTitle, getSessionStatusPresentation } from '../../../u
 import { localeForLanguage } from '../../../utils/i18nTime';
 import { useI18n } from '../../../hooks/useI18n';
 import { SidebarMessageHitList } from './SidebarMessageHitList';
+import { getSidebarCronTaskId } from './sidebarCronRunFolding';
 import type { SidebarDerivedSessions } from './useSidebarDerivedSessions';
 import type { SidebarSessionActions } from './useSidebarSessionActions';
 import type { SidebarRowActions } from './useSidebarRowActions';
@@ -54,7 +55,7 @@ export interface SidebarSessionItemProps {
   session: SessionWithMeta;
   unreadSessionIds: Set<string>;
   automationSummariesBySessionId: Record<string, SessionAutomationSessionSummary>;
-  /** cron/heartbeat 任务 id → { runCount, latestSessionId }；按任务折叠行的数据层（渲染暂未消费）。 */
+  /** cron/heartbeat 任务 id → { runCount, latestSessionId }；由 Sidebar.tsx 计算。 */
   cronRunAggregatesByTaskId?: Record<string, CronTaskRunAggregate>;
   currentSessionId: string | null;
   selectedSessionIds: Set<string>;
@@ -99,6 +100,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   session,
   unreadSessionIds,
   currentSessionId,
+  cronRunAggregatesByTaskId,
   selectedSessionIds,
   pinnedSessionIds,
   renamingId,
@@ -156,6 +158,8 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   const hadLiveVoice = session.metadata?.hadLiveVoice === true;
   const titleToneClass = isSelected ? 'text-zinc-100' : isUnread ? 'text-zinc-200' : 'text-zinc-400';
   const forkParentSessionId = getForkParentSessionId(session);
+  const cronTaskId = getSidebarCronTaskId(session);
+  const cronRunAggregate = cronTaskId ? cronRunAggregatesByTaskId?.[cronTaskId] : undefined;
 
   return (
     <div
@@ -209,6 +213,14 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
             className={`min-w-0 flex-1 truncate text-sm ${titleToneClass}`}
           >
             {displayTitle}
+          </span>
+        )}
+        {!isRenaming && cronRunAggregate && cronRunAggregate.runCount > 1 && cronRunAggregate.latestSessionId === session.id && (
+          <span
+            className="shrink-0 text-[11px] tabular-nums text-zinc-500"
+            data-testid="sidebar-cron-run-count"
+          >
+            x{cronRunAggregate.runCount}
           </span>
         )}
 

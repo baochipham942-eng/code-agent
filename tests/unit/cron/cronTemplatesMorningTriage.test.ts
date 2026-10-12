@@ -68,6 +68,16 @@ describe('晨间分诊模板（morning-triage）', () => {
     expect(prompt).toMatch(/缺少哪些连接/);
   });
 
+  it('已连接但读取失败的来源逐一点名「未读取」，不得当成「今早没有需要处理的」（N-CRON-MORNING-TRIAGE-URGENCY-RULE）', () => {
+    const prompt = template('morning-triage').generate({}).agentPrompt;
+    expect(prompt).toContain('「未读取：<来源>」');
+    expect(prompt).toMatch(/逐一点名/);
+    expect(prompt).toMatch(/读取失败绝不能被当成「今早没有需要处理的」上报/);
+    // 既有的「没有内容」与「没有连接」两句保持不动
+    expect(prompt).toContain('今早没有需要处理的');
+    expect(prompt).toContain('缺少哪些连接');
+  });
+
   it('展示文案走 i18n：中英词条都登记，未登记模板回退对象内兜底文案', () => {
     const t = template('morning-triage');
     expect(getTemplateDisplayCopy(t, cronCenterZh.cronCenter.templates)).toEqual({

@@ -36,6 +36,12 @@ export interface BubblewrapConfig {
   readWritePaths: string[];
   /** Existing regular files to mount read-write. A file that does not exist cannot be bound. */
   readWriteFiles?: string[];
+  /**
+   * Forbidden names inside a one-shot escalated write root (DIR-FORBIDDEN): re-covered
+   * read-only with --ro-bind AFTER the rw --bind loops (bwrap applies mounts in argument
+   * order, so a later ro-bind over the same path hides the earlier rw bind).
+   */
+  readOnlyOverlayPaths?: SensitiveSandboxPath[];
   /** Paths to mount as tmpfs (ephemeral) */
   tmpfsPaths: string[];
   /** Unshare all namespaces (default: true) */
@@ -359,6 +365,14 @@ export class Bubblewrap {
     for (const p of config.readWriteFiles ?? []) {
       if (this.isRegularFile(p)) {
         args.push('--bind', p, p);
+      }
+    }
+
+    // DIR-FORBIDDEN：目录子树扩权内的禁写名在 rw bind 之后按参数序补 --ro-bind 盖回只读；
+    // walk 与挂载之间可能消失的条目跳过（bwrap 绑不了不存在的路径）。
+    for (const entry of config.readOnlyOverlayPaths ?? []) {
+      if (this.pathExists(entry.path)) {
+        args.push('--ro-bind', entry.path, entry.path);
       }
     }
 

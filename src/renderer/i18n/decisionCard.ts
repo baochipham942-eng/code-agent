@@ -70,6 +70,7 @@ export const decisionCardZh = {
       optionDenyDesc: '不允许执行',
       computerApp: {
         title: '允许 Neo 操作 {app}？',
+        question: 'Neo 想操作 {app}，你来决定。',
         always: '始终允许',
         alwaysDesc: '以后操作该应用不再询问',
         session: '本次对话允许',
@@ -93,6 +94,7 @@ export const decisionCardZh = {
       settledAllowed: '你已允许',
       settledDenied: '你已拒绝',
       settledTimeout: '已超时',
+      settledElsewhere: '已在其他设备处理',
       retry: '重试',
       retryPrompt: '刚才的审批超时了，请重试',
       expandSettled: '展开审批详情',
@@ -298,6 +300,7 @@ export const decisionCardEn: typeof decisionCardZh = {
       optionDenyDesc: 'Do not run this operation',
       computerApp: {
         title: 'Allow Neo to operate {app}?',
+        question: 'Neo wants to operate {app}. Your call.',
         always: 'Always allow',
         alwaysDesc: 'Operating this app will not ask again',
         session: 'Allow this conversation',
@@ -321,6 +324,7 @@ export const decisionCardEn: typeof decisionCardZh = {
       settledAllowed: 'You allowed',
       settledDenied: 'You denied',
       settledTimeout: 'Timed out',
+      settledElsewhere: 'Already handled on another device',
       retry: 'Retry',
       retryPrompt: 'The approval timed out. Please retry.',
       expandSettled: 'Show approval details',

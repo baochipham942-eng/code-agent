@@ -3,11 +3,14 @@
 // ============================================================================
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { BookMarked, FileText, Folder, Library, Trash2 } from 'lucide-react';
+import { BookMarked, FileText, Folder, Library, Sparkles, Trash2 } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
+import { SKILL_CHANNELS } from '@shared/ipc/channels';
 import type { ExpertBindingKind, ExpertBindingMode, ExpertContextBinding } from '@shared/contract/roleAssets';
+import type { ParsedSkill } from '@shared/contract/agentSkill';
 import type { LibraryItem } from '@shared/contract/library';
 import ipcService from '../../../../services/ipcService';
+import { invokeSkillIPC } from '../../../../services/invokeSkillIPC';
 import { listLibraryItems } from '../../../../services/libraryClient';
 import { useI18n } from '../../../../hooks/useI18n';
 import { toast } from '../../../../hooks/useToast';
@@ -18,10 +21,23 @@ const KIND_ICONS: Record<ExpertBindingKind, React.ReactNode> = {
   file: <FileText className="h-3.5 w-3.5 text-badge-info" />,
   folder: <Folder className="h-3.5 w-3.5 text-badge-warning" />,
   library_item: <Library className="h-3.5 w-3.5 text-badge-success" />,
+  skill: <Sparkles className="h-3.5 w-3.5 text-badge-accent" />,
 };
 
 async function fetchBindings(roleId: string): Promise<ExpertContextBinding[]> {
   return ipcService.invokeDomain<ExpertContextBinding[]>(IPC_DOMAINS.ROLES, 'listBindings', { roleId });
+}
+
+/**
+ * skill 绑定行的展示名：skill 自带的显式展示名（frontmatter metadata，如有）优先，
+ * 否则取 description 首句 —— 内置/角色包 skill 的描述形状是「短标题 — 触发词与范围」，
+ * 破折号/句读之前那截就是面向人的可读名。都取不到时返回 null，由调用方回落 title/target。
+ */
+function resolveSkillDisplayName(skill: ParsedSkill): string | null {
+  const explicit = skill.metadata?.['display-name'] ?? skill.metadata?.['displayName'];
+  if (explicit?.trim()) return explicit.trim();
+  const firstSentence = skill.description?.trim().split(/[。；;！!？?—]/)[0]?.trim();
+  return firstSentence || null;
 }
 
 export const RoleBindingsSection: React.FC<{ roleId: string }> = ({ roleId }) => {
@@ -29,6 +45,7 @@ export const RoleBindingsSection: React.FC<{ roleId: string }> = ({ roleId }) =>
   const text = t.settings.roles.bindings;
 
   const [bindings, setBindings] = useState<ExpertContextBinding[]>([]);
+  const [skillCatalog, setSkillCatalog] = useState<Map<string, ParsedSkill>>(new Map());
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
   const [selectedItemId, setSelectedItemId] = useState('');
   const [pathInput, setPathInput] = useState('');
@@ -47,6 +64,17 @@ export const RoleBindingsSection: React.FC<{ roleId: string }> = ({ roleId }) =>
     void load();
     listLibraryItems().then(setLibraryItems).catch(() => setLibraryItems([]));
   }, [load]);
+
+  // skill 绑定行展示名解析用：拿一份全量 skill 目录（失败静默为空，行内回落 slug）
+  useEffect(() => {
+    let cancelled = false;
+    void invokeSkillIPC(SKILL_CHANNELS.SKILL_LIST).then((list) => {
+      if (!cancelled && list) setSkillCatalog(new Map(list.map((skill) => [skill.name, skill])));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const add = async (kind: ExpertBindingKind, target: string) => {
     if (!target.trim()) return;
@@ -91,29 +119,34 @@ export const RoleBindingsSection: React.FC<{ roleId: string }> = ({ roleId }) =>
         </div>
       ) : (
         <ul className="flex flex-col gap-1">
-          {bindings.map((binding) => (
-            <li
-              key={binding.id}
-              data-testid={`role-binding-${binding.id}`}
-              className="flex items-center gap-2 rounded-md bg-zinc-800/50 px-2 py-1.5"
-            >
-              {KIND_ICONS[binding.kind]}
-              <span className="min-w-0 flex-1 truncate text-xs text-zinc-300" title={binding.target}>
-                {binding.title || binding.target}
-              </span>
-              <span className="rounded bg-zinc-700/60 px-1.5 py-0.5 text-[10px] text-zinc-400">
-                {binding.mode === 'always' ? text.modeAlways : text.modeOnDemand}
-              </span>
-              <IconButton
-                icon={<Trash2 className="h-3.5 w-3.5" />}
-                aria-label={text.remove}
-                title={text.remove}
-                size="sm"
-                variant="ghost"
-                onClick={() => void remove(binding.id)}
-              />
-            </li>
-          ))}
+          {bindings.map((binding) => {
+            // skill 行展示可读名（目录解析到时），slug 只留在 title 悬浮提示里
+            const boundSkill = binding.kind === 'skill' ? skillCatalog.get(binding.target) : undefined;
+            const skillLabel = boundSkill ? resolveSkillDisplayName(boundSkill) : null;
+            return (
+              <li
+                key={binding.id}
+                data-testid={`role-binding-${binding.id}`}
+                className="flex items-center gap-2 rounded-md bg-zinc-800/50 px-2 py-1.5"
+              >
+                {KIND_ICONS[binding.kind]}
+                <span className="min-w-0 flex-1 truncate text-xs text-zinc-300" title={binding.target}>
+                  {binding.kind === 'skill' && skillLabel ? skillLabel : binding.title || binding.target}
+                </span>
+                <span className="rounded bg-zinc-700/60 px-1.5 py-0.5 text-[10px] text-zinc-400">
+                  {binding.mode === 'always' ? text.modeAlways : text.modeOnDemand}
+                </span>
+                <IconButton
+                  icon={<Trash2 className="h-3.5 w-3.5" />}
+                  aria-label={text.remove}
+                  title={text.remove}
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => void remove(binding.id)}
+                />
+              </li>
+            );
+          })}
         </ul>
       )}
 

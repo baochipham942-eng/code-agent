@@ -20,8 +20,9 @@ import { useAppStore } from '../../../../stores/appStore';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { useAppshotsStore } from '../../../../stores/appshotsStore';
 import { useLoopStore } from '../../../../stores/loopStore';
-import { cronClient, type CreateCronJobInput } from '../../../../services/cronClient';
-import type { PendingScheduleDraft, ScheduleDraftController, ScheduleRestatement } from './useScheduleDraft';
+import { cronClient } from '../../../../services/cronClient';
+import type { PendingScheduleDraft, ScheduleDraftController } from './useScheduleDraft';
+import { normalizeScheduleDraft } from './scheduleConfirm';
 import { loopClient } from '../../../../services/loopClient';
 import ipcService, { invoke, DomainInvokeError } from '../../../../services/ipcService';
 import { useComposerStore } from '../../../../stores/composerStore';
@@ -173,23 +174,6 @@ async function settleSendWithinTimeout(
   }
 }
 
-function readScheduleRestatement(value: unknown): ScheduleRestatement | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  const record = value as Record<string, unknown>;
-  const what = typeof record.what === 'string' ? record.what.trim() : '';
-  const notifyWhen = typeof record.notifyWhen === 'string' ? record.notifyWhen.trim() : '';
-  return what && notifyWhen ? { what, notifyWhen } : undefined;
-}
-
-// 草案存进确认卡前先验骨架：schedule/action 各自必须是带字符串 type 的对象，
-// 否则渲染期（formatCronScheduleLabel / action.type）会解引用抛错炸到全局错误页。
-function hasTypedObjectShape(value: unknown): boolean {
-  return Boolean(value)
-    && typeof value === 'object'
-    && !Array.isArray(value)
-    && typeof (value as Record<string, unknown>).type === 'string';
-}
-
 export function useChatInputSubmit(params: UseChatInputSubmitParams) {
   const { t } = useI18n();
   const {
@@ -252,17 +236,14 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     toast.info(cs.scheduleParsingToast);
     try {
       const draft = await cronClient.generateFromPrompt(description);
-      if (!draft || typeof draft !== 'object' || Array.isArray(draft)) {
-        throw new Error(cs.scheduleDraftInvalid);
-      }
-      const { restatement: rawRestatement, ...rawInput } = draft as Record<string, unknown>;
-      if (!hasTypedObjectShape(rawInput.schedule) || !hasTypedObjectShape(rawInput.action)) {
+      const normalized = normalizeScheduleDraft(draft);
+      if (!normalized) {
         throw new Error(cs.scheduleDraftInvalid);
       }
       const handoffPrompt = options.handoffPrompt?.trim();
       const pending: PendingScheduleDraft = {
-        input: rawInput as unknown as CreateCronJobInput,
-        restatement: readScheduleRestatement(rawRestatement),
+        input: normalized.input,
+        restatement: normalized.restatement,
         description,
         handoffPrompt: handoffPrompt || undefined,
         sourceSessionId: currentSessionId,

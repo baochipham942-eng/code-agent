@@ -47,6 +47,11 @@ export interface CommitDelegationInput {
   now: number;
 }
 
+export interface CommitDelegationSupersede {
+  supersededDelegationId: string;
+  retractQueuedInputId?: string | null;
+}
+
 export type CommitDelegationResult =
   | { kind: 'created'; delegationId: string; queuedInputId: string }
   | { kind: 'reused'; delegationId: string; queuedInputId: string }
@@ -63,6 +68,7 @@ export function commitDelegation(
   db: BetterSqlite3.Database,
   input: CommitDelegationInput,
   writeSessionRow?: () => void,
+  supersede?: CommitDelegationSupersede,
 ): CommitDelegationResult {
   const queuedInputId = delegationQueuedInputId(input.submissionKey);
   const envelope: ConversationEnvelope = {
@@ -98,6 +104,12 @@ export function commitDelegation(
         envelope,
         now: input.now,
       });
+      if (supersede?.retractQueuedInputId) {
+        new QueuedInputRepository(db).retract(supersede.retractQueuedInputId, input.now);
+      }
+      if (supersede) {
+        delegations.markSuperseded(supersede.supersededDelegationId, input.now);
+      }
     }
     return { kind: inserted.kind, delegationId: inserted.record.delegationId, queuedInputId };
   });

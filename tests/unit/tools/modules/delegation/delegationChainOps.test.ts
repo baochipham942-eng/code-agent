@@ -76,6 +76,30 @@ describe('delegate_session chain operations', () => {
     db.close();
   });
 
+  it('correct supersede rollback：撤回/置 superseded 任一步失败都不留下半条链', async () => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    const { db, key } = setupCommittedDelegation();
+    const allow = async () => ({ allow: true as const });
+    const supersede = vi.spyOn(SessionDelegationRepository.prototype, 'markSuperseded')
+      .mockImplementation(() => { throw new Error('injected supersede failure'); });
+
+    try {
+      await expect(executeDelegateSession({ action: 'correct', delegationId: 'd-1', text: 'corrected work' }, ctx, allow))
+        .rejects.toThrow('injected supersede failure');
+    } finally {
+      supersede.mockRestore();
+    }
+
+    const delegationRows = new SessionDelegationRepository(db).listByTargetSession('target');
+    const queuedRows = new QueuedInputRepository(db).listBySession('target');
+    expect(delegationRows.filter((row) => row.status === 'active')).toHaveLength(1);
+    expect(delegationRows).toHaveLength(1);
+    expect(delegationRows[0]).toMatchObject({ delegationId: 'd-1', status: 'active' });
+    expect(queuedRows.filter((row) => row.status === 'queued' && row.pausedReason === null)).toHaveLength(1);
+    expect(new QueuedInputRepository(db).getById('delegation:' + key)).toMatchObject({ status: 'queued', pausedReason: null });
+    db.close();
+  });
+
   it('rework r2：同轮并行两个 correct 不同正文，第二个撞提交键必须拒（修正文本不静默丢失）', async () => {
     process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
     const open = () => {
@@ -101,6 +125,8 @@ describe('delegate_session chain operations', () => {
     const originalKey = commitD1(post);
     setRuntime({ ...base, getDb: () => post, notifyEnqueued: () => {} });
     expect((await executeDelegateSession({ action: 'correct', delegationId: 'd-1', text: 'correction A' }, ctx, allow)).ok).toBe(true);
+    const winnerDelegations = new SessionDelegationRepository(post).listByTargetSession('target');
+    const winnerQueuedRows = new QueuedInputRepository(post).listBySession('target');
     // 输家竞态形态：admission（前两次 getDb）看到 d-1 还 active 的 pre 库，
     // 提交（第三次 getDb）撞上 post 库里赢家不同正文的 correct 委托行
     const pre = open();
@@ -117,6 +143,8 @@ describe('delegate_session chain operations', () => {
     const stored = new QueuedInputRepository(post).getById('delegation:' + correctKey);
     expect(JSON.parse(stored?.envelopeJson ?? '{}').content).toBe('correction A');
     expect(new QueuedInputRepository(post).getById('delegation:' + originalKey)?.status).toBe('retracted');
+    expect(new SessionDelegationRepository(post).listByTargetSession('target')).toEqual(winnerDelegations);
+    expect(new QueuedInputRepository(post).listBySession('target')).toEqual(winnerQueuedRows);
     pre.close();
     post.close();
   });

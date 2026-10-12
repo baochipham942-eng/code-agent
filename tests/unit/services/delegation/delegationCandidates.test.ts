@@ -13,7 +13,7 @@ function row(overrides: Partial<SessionCandidateRow> = {}): SessionCandidateRow 
   return {
     id: 'session-a',
     title: '会话 A',
-    workingDirectory: '/Users/leo/work/project-a',
+    workingDirectory: '/tmp/workspace/project-a',
     updatedAt: NOW - 1000,
     ...overrides,
   };
@@ -124,7 +124,7 @@ describe('projectSessionCandidates', () => {
       row({
         id: 'long-title',
         title: 'x'.repeat(60),
-        workingDirectory: '/Users/leo/work/deep/project',
+        workingDirectory: '/tmp/workspace/deep/project',
         updatedAt: NOW - 30 * 60 * 1000,
       }),
       row({ id: 'day-old', title: '', updatedAt: NOW - 3 * 60 * 60 * 1000 }),

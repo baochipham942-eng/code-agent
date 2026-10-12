@@ -357,14 +357,20 @@ async function executeChain(
     const actionFingerprint = deriveActionFingerprint({ action: 'delegate_existing', targetIdentity, content: call.content, attachmentRefs: [] });
     const newId = runtime.randomId('delegation_');
     const envelope: ConversationEnvelope = { ...(oldEnvelope ?? { sessionId: newTarget }), content: call.content, sessionId: newTarget, options: target?.modelConfig ? { modelSpec: target.modelConfig } : oldEnvelope?.options };
-    const committed = commitDelegation(db, { delegationId: newId, originSessionId: ctx.sessionId, originTurnId: ctx.turnId ?? 'unknown-turn', disposition: 'delegate_existing', targetSessionId: newTarget, submissionKey, actionFingerprint, envelope, supersedesDelegationId: row.delegationId, now }, undefined);
+    const committed = commitDelegation(
+      db,
+      { delegationId: newId, originSessionId: ctx.sessionId, originTurnId: ctx.turnId ?? 'unknown-turn', disposition: 'delegate_existing', targetSessionId: newTarget, submissionKey, actionFingerprint, envelope, supersedesDelegationId: row.delegationId, now },
+      undefined,
+      {
+        supersededDelegationId: row.delegationId,
+        retractQueuedInputId: row.targetQueuedInputId && isQueuedRow(row, db) ? row.targetQueuedInputId : null,
+      },
+    );
     // rework r2：correct 与新委托共用提交缝，竞态撞键同样不得回成功；输家在
     // 赢家已完成的撤回/supersede 副作用之前早退。
     if (committed.kind === 'idempotency_conflict') {
       return rejection('idempotency_conflict', 'same submission key with a different payload');
     }
-    if (row.targetQueuedInputId && isQueuedRow(row, db)) queued.retract(row.targetQueuedInputId, now);
-    repository.markSuperseded(row.delegationId, now);
     runtime.notifyEnqueued(newTarget);
     return successfulOutput({ delegationId: committed.delegationId, targetName: target?.title ?? 'session', queuedAhead: 0 });
   }

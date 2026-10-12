@@ -1071,3 +1071,112 @@ describe('applyPortableEvidenceToWorkspace · rework r5 regressions', () => {
     expect(await readFile(path.join(fixture.repositoryRoot, 'tracked.txt'), 'utf8')).toBe(CLOUD_TRACKED);
   });
 });
+
+describe('applyPortableEvidenceToWorkspace · rework r6 regressions', () => {
+  it('captures real patches despite a junk diff.external tool and applies them back', async () => {
+    const repositoryRoot = await initTempRepository();
+    // A user-configured external diff (e.g. difftastic) replaces the patch with
+    // its own output; without --no-ext-diff the evidence payload is that junk.
+    const externalScript = path.join(path.dirname(repositoryRoot), 'junk-ext-diff.sh');
+    await writeFile(externalScript, '#!/bin/sh\necho "EXTERNAL junk output"\n');
+    await chmod(externalScript, 0o755);
+    git(repositoryRoot, 'config', 'diff.external', externalScript);
+    await writeFile(path.join(repositoryRoot, 'tracked.txt'), 'base\n');
+    git(repositoryRoot, 'add', '.');
+    git(repositoryRoot, 'commit', '-m', 'base');
+    const baseCommit = git(repositoryRoot, 'rev-parse', 'HEAD');
+    await writeFile(path.join(repositoryRoot, 'tracked.txt'), 'staged\n');
+    git(repositoryRoot, 'add', 'tracked.txt');
+    await writeFile(path.join(repositoryRoot, 'tracked.txt'), CLOUD_TRACKED);
+    // Sanity: plain `git diff` really is hijacked by the external tool here.
+    expect(git(repositoryRoot, 'diff', '--binary', '--full-index', '--')).toContain('EXTERNAL junk output');
+    const fixture = await captureFixture({ repositoryRoot, baseCommit });
+
+    const stagedPatch = Buffer.from(fixture.sourceEvidence.payload.stagedPatchBase64, 'base64').toString('utf8');
+    expect(stagedPatch).toContain('--- a/tracked.txt');
+    expect(stagedPatch.includes('EXTERNAL')).toBe(false);
+
+    const applied = await applyPortableEvidenceToWorkspace({
+      evidence: fixture.portableEvidence,
+      workspaceRoot: fixture.repositoryRoot,
+      mode: 'apply',
+    });
+    expect(applied.outcome).toBe('success');
+    expect(applied.conflicts).toEqual([]);
+    expect(await readFile(path.join(fixture.repositoryRoot, 'tracked.txt'), 'utf8')).toBe(CLOUD_TRACKED);
+  });
+
+  it('captures a/ b/ prefixed patches under diff.mnemonicPrefix and applies them back', async () => {
+    const repositoryRoot = await initTempRepository();
+    git(repositoryRoot, 'config', 'diff.mnemonicPrefix', 'true');
+    await writeFile(path.join(repositoryRoot, 'tracked.txt'), 'base\n');
+    git(repositoryRoot, 'add', '.');
+    git(repositoryRoot, 'commit', '-m', 'base');
+    const baseCommit = git(repositoryRoot, 'rev-parse', 'HEAD');
+    await writeFile(path.join(repositoryRoot, 'tracked.txt'), 'staged\n');
+    git(repositoryRoot, 'add', 'tracked.txt');
+    await writeFile(path.join(repositoryRoot, 'tracked.txt'), CLOUD_TRACKED);
+    const fixture = await captureFixture({ repositoryRoot, baseCommit });
+
+    // Without pinned prefixes, mnemonicPrefix makes both patches carry `i/`/`w/`
+    // (worktree) and `c/`/`i/` (cached) instead of the standard `a/`/`b/`.
+    const stagedPatch = Buffer.from(fixture.sourceEvidence.payload.stagedPatchBase64, 'base64').toString('utf8');
+    const unstagedPatch = Buffer.from(fixture.sourceEvidence.payload.unstagedPatchBase64, 'base64').toString('utf8');
+    expect(stagedPatch).toContain('--- a/tracked.txt');
+    expect(stagedPatch).toContain('+++ b/tracked.txt');
+    expect(unstagedPatch).toContain('--- a/tracked.txt');
+    expect(unstagedPatch).toContain('+++ b/tracked.txt');
+
+    const applied = await applyPortableEvidenceToWorkspace({
+      evidence: fixture.portableEvidence,
+      workspaceRoot: fixture.repositoryRoot,
+      mode: 'apply',
+    });
+    expect(applied.outcome).toBe('success');
+    expect(await readFile(path.join(fixture.repositoryRoot, 'tracked.txt'), 'utf8')).toBe(CLOUD_TRACKED);
+  });
+
+  it('reports legacy prefix-less sections with the exact re-capture reason', async () => {
+    const fixture = await createSingleFileFixture();
+    // Two legacy shapes: mnemonic `i/`/`w/` prefixes and bare paths — both
+    // captured before prefix pinning; neither parses to a repository path.
+    const legacyPatch = Buffer.from(
+      'diff --git i/tracked.txt w/tracked.txt\n'
+      + 'index 0123456..1234567 100644\n'
+      + '--- i/tracked.txt\n'
+      + '+++ w/tracked.txt\n'
+      + '@@ -1 +1 @@\n'
+      + '-base\n'
+      + '+cloud\n'
+      + 'diff --git tracked2.txt tracked2.txt\n'
+      + 'index 0123456..1234567 100644\n'
+      + '--- tracked2.txt\n'
+      + '+++ tracked2.txt\n'
+      + '@@ -1 +1 @@\n'
+      + '-base\n'
+      + '+cloud\n',
+    );
+    const portable = await buildTamperedPatchEvidence(fixture.sourceEvidence, legacyPatch);
+
+    const dryRun = await applyPortableEvidenceToWorkspace({
+      evidence: portable,
+      workspaceRoot: fixture.repositoryRoot,
+      mode: 'dry-run',
+    });
+    const legacy = dryRun.files.filter((file) => file.status === 'conflict');
+    expect(legacy).toHaveLength(2);
+    expect(legacy.every((file) => file.reason === 'evidence captured with non-standard diff prefix; re-capture needed'))
+      .toBe(true);
+
+    const applied = await applyPortableEvidenceToWorkspace({
+      evidence: portable,
+      workspaceRoot: fixture.repositoryRoot,
+      mode: 'apply',
+    });
+    expect(applied.outcome).toBe('partial');
+    expect(applied.files
+      .filter((file) => file.status === 'conflict')
+      .every((file) => file.reason === 'evidence captured with non-standard diff prefix; re-capture needed'))
+      .toBe(true);
+  });
+});

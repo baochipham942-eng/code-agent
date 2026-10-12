@@ -239,12 +239,12 @@ export class AnchorWorkspaceEvidenceService {
     ] = await Promise.all([
       this.runner.run({
         executable: 'git',
-        args: ['diff', '--binary', '--full-index', '--src-prefix=a/', '--dst-prefix=b/', '--cached', baseCommit, '--'],
+        args: ['diff', '--no-ext-diff', '--binary', '--full-index', '--src-prefix=a/', '--dst-prefix=b/', '--cached', baseCommit, '--'],
         cwd: repositoryIdentity.canonicalRoot,
       }).then((result) => result.stdout),
       this.runner.run({
         executable: 'git',
-        args: ['diff', '--binary', '--full-index', '--src-prefix=a/', '--dst-prefix=b/', '--'],
+        args: ['diff', '--no-ext-diff', '--binary', '--full-index', '--src-prefix=a/', '--dst-prefix=b/', '--'],
         cwd: repositoryIdentity.canonicalRoot,
       }).then((result) => result.stdout),
       this.runner.run({
@@ -326,12 +326,12 @@ export class AnchorWorkspaceEvidenceService {
       }),
       this.runner.run({
         executable: 'git',
-        args: ['diff', '--binary', '--full-index', '--src-prefix=a/', '--dst-prefix=b/', '--cached', baseCommit, '--'],
+        args: ['diff', '--no-ext-diff', '--binary', '--full-index', '--src-prefix=a/', '--dst-prefix=b/', '--cached', baseCommit, '--'],
         cwd: repositoryIdentity.canonicalRoot,
       }),
       this.runner.run({
         executable: 'git',
-        args: ['diff', '--binary', '--full-index', '--src-prefix=a/', '--dst-prefix=b/', '--'],
+        args: ['diff', '--no-ext-diff', '--binary', '--full-index', '--src-prefix=a/', '--dst-prefix=b/', '--'],
         cwd: repositoryIdentity.canonicalRoot,
       }),
       this.runner.run({

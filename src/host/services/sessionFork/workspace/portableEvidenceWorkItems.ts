@@ -111,6 +111,8 @@ interface PatchSectionMeta {
   bPath: string | null;
   /** True for `deleted file mode` sections and `+++ /dev/null` deletions. */
   isDeletion: boolean;
+  /** True when header/`---`/`+++` names exist but lack the standard `a/`/`b/` prefixes. */
+  nonStandardPrefix: boolean;
 }
 
 function sidePath(name: string, prefix: 'a/' | 'b/'): string | null {
@@ -163,6 +165,22 @@ function headerPaths(rest: string): { a: string | null; b: string | null } {
   };
 }
 
+/** Header sides lack standard `a/`/`b/` prefixes — the legacy-evidence shape
+ * (mnemonic `i/ w/`, `c/ i/`, or bare paths from pre-pinning captures). */
+function headerLacksStandardPrefixes(rest: string): boolean {
+  if (rest.startsWith('"')) {
+    const first = readQuoted(rest, 0);
+    if (first === null || rest[first.end] !== ' ') return false;
+    const second = readQuoted(rest, first.end + 1);
+    return second !== null && second.end === rest.length
+      && sidePath(first.value, 'a/') === null && sidePath(second.value, 'b/') === null;
+  }
+  const separator = rest.indexOf(' ');
+  const right = separator > 0 ? rest.slice(separator + 1) : '';
+  return right.length > 0 && !right.startsWith('"')
+    && !rest.startsWith('a/') && !right.startsWith('b/');
+}
+
 /**
  * Extracts both repository paths of one patch section. Metadata lines are only
  * scanned up to the first hunk (`@@`) or binary payload (`GIT binary patch`);
@@ -180,6 +198,7 @@ function parsePatchSectionMeta(section: Buffer): PatchSectionMeta | null {
   let sawPlus = false;
   let plusDevNull = false;
   let deletedMode = false;
+  let nonStandardPrefix = false;
   // git delimits an unquoted `---`/`+++` path from any trailing timestamp with
   // a TAB, so exactly one trailing TAB belongs to the line, never the path.
   const stripTrailingTab = (raw: string): string => (raw.endsWith('\t') ? raw.slice(0, -1) : raw);
@@ -191,10 +210,12 @@ function parsePatchSectionMeta(section: Buffer): PatchSectionMeta | null {
     if (!sawMinus && line.startsWith('--- ')) {
       sawMinus = true;
       minusName = unquoteMetadataName(stripTrailingTab(line.slice(4)));
+      if (minusName !== null && minusName !== '/dev/null' && sidePath(minusName, 'a/') === null) nonStandardPrefix = true;
     } else if (!sawPlus && line.startsWith('+++ ')) {
       sawPlus = true;
       const name = unquoteMetadataName(stripTrailingTab(line.slice(4)));
       if (name === '/dev/null') plusDevNull = true;
+      else if (name !== null && sidePath(name, 'b/') === null) nonStandardPrefix = true;
       else plusName = name;
     } else if (renameFrom === null && line.startsWith('rename from ')) {
       renameFrom = unquoteMetadataName(line.slice('rename from '.length));
@@ -219,7 +240,12 @@ function parsePatchSectionMeta(section: Buffer): PatchSectionMeta | null {
   if (sawPlus && !plusDevNull) bPath = plusName === null ? null : sidePath(plusName, 'b/');
   else if (renameTo !== null) bPath = renameTo;
   else bPath = fallback.b;
-  return { aPath, bPath, isDeletion: deletedMode || plusDevNull };
+  return {
+    aPath,
+    bPath,
+    isDeletion: deletedMode || plusDevNull,
+    nonStandardPrefix: nonStandardPrefix || headerLacksStandardPrefixes(header.slice(DIFF_HEADER.length)),
+  };
 }
 
 /**
@@ -286,7 +312,9 @@ export function buildPortableEvidenceWorkItems(evidence: AnchorWorkspaceEvidence
         invalid.push({
           label: sectionLabel(section),
           source: stream.source,
-          reason: 'patch section header could not be parsed to a repository path',
+          reason: meta?.nonStandardPrefix
+            ? 'evidence captured with non-standard diff prefix; re-capture needed'
+            : 'patch section header could not be parsed to a repository path',
         });
         continue;
       }

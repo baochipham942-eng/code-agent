@@ -10,7 +10,7 @@ import type {
   WebhookAction,
 } from '@shared/contract';
 import { validateEventScheduleConstraints } from '@shared/cronEventValidation';
-import { humanizeCronExpression, humanizeEverySchedule, type CronHumanLang } from '@shared/cronHumanize';
+import { formatCronExpressionLabel, humanizeEverySchedule, type CronHumanLang } from '@shared/cronHumanize';
 
 export interface CronJobDraft {
   runsOn: CronJobDefinition['runsOn'];
@@ -401,11 +401,7 @@ export function formatScheduleSummary(
       return humanizeEverySchedule(job.schedule.interval, job.schedule.unit, lang);
     }
     case 'cron': {
-      const human = humanizeCronExpression(job.schedule.expression, lang);
-      if (human) return human;
-      return job.schedule.timezone
-        ? `${job.schedule.expression} · ${job.schedule.timezone}`
-        : job.schedule.expression;
+      return formatCronExpressionLabel(job.schedule.expression, job.schedule.timezone, lang);
     }
     case 'event': {
       // 显示名优先（通道目录里的账号名/群名），目录没有或还没加载完才回落 id；

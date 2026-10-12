@@ -23,8 +23,9 @@ function parseClock(minute: string, hour: string): string | null {
  * 5 段 cron 表达式 → 人话；不认识的形态返回 null。
  * 覆盖：分钟步进（每 n 分钟）、小时步进（每 n 小时）、
  * `m h * * *`（每天）、`m h * * 1-5`（工作日）、`m h * * d`（每周单天）、`m h D * *`（每月 D 号）。
+ * 模块内构件：生产消费方一律走 formatCronExpressionLabel（含回退），不单独导出。
  */
-export function humanizeCronExpression(expression: string, lang: CronHumanLang): string | null {
+function humanizeCronExpression(expression: string, lang: CronHumanLang): string | null {
   const fields = expression.trim().split(/\s+/);
   if (fields.length !== 5) return null;
   const [minute, hour, dayOfMonth, month, dayOfWeek] = fields;

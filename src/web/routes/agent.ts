@@ -533,8 +533,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     let persistedSession: Session | null = null;
     let sessionManagerForRun: AgentSessionManagerLike | null = null;
     let sessionPreflightReadFailed = false;
-    // getSession 在持久层不可用时返回 null（cli/session.ts ensureDbReady 失败路径），
-    // 与「行不存在」同形——null 不能直接当新会话判据，用 isPersistent 探测运行期实况。
+    // getSession 在持久层不可用时返回 null（与「行不存在」同形）：infra SessionManager
+    // 查不到行，cli/session.ts 走 ensureDbReady 失败路径。null 不能直接当新会话判据，
+    // 用 isPersistent 探测运行期实况——infra 实现探 web 持久化健康态（rework r3：生产
+    // 线路此前恒不触发，app.ts 注入的 infra SM 当时还没有这个方法）。
     let sessionManagerCannotPersist = false;
     try {
       const sm = await tryGetSessionManager();

@@ -15,6 +15,7 @@ import { HostReasonCode, type Message } from '../../../src/shared/contract';
 import type { PendingOperation, RunCheckpoint, RunEngineRef, RunOwnerLease } from '../../../src/shared/contract/durableRun';
 import type { DurableCheckpointInput, PrepareOperationInput, PrepareToolOperationInput } from '../../../src/host/runtime/durableRunKernel';
 import {
+  markPersistenceDegraded,
   setDbAvailable,
 } from '../../../src/web/helpers/sessionCache';
 import {
@@ -70,7 +71,7 @@ const forkContextBuilderMocks = vi.hoisted(() => ({
 }));
 const mockDb = vi.hoisted(() => ({
   getDb: vi.fn(() => ({})),
-  getSession: vi.fn<() => { id: string; title: string; metadata?: Record<string, unknown> }>(() => ({
+  getSession: vi.fn<() => { id: string; title: string; metadata?: Record<string, unknown> } | null>(() => ({
     id: 'session-existing',
     title: 'Existing',
   })),
@@ -4657,6 +4658,77 @@ describe('createAgentRouter', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ prompt: '帮我出一份季度总结', sessionId: 'session-probe-healthy' }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+    const now = new Date();
+    const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const expectedDir = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: expectedDir }));
+    expect(existsSync(expectedDir)).toBe(true);
+  });
+
+  // rework r3：r2 的探测在生产线路恒不触发——app.ts 的 tryGetSessionManager 注入的是
+  // infra SessionManager，当时没有 isPersistent，sessionManagerCannotPersist 恒 false。
+  // 生产同款 infra SessionManager（真实单例，不是带 isPersistent 的假对象）现已实现
+  // 该探测（读 web 持久化健康态）：运行期降级（quick_check 失败/readonly，dbAvailable
+  // 还是启动时写死的 true，旧判据看不见）后，新会话不铸按会话目录，回落扁平默认。
+  it('does not mint a per-session folder when persistence degrades at runtime, probed via the production infra SessionManager (rework r3)', async () => {
+    await closeServer();
+    // 启动时 DB 健康：dbAvailable 写死 true，运行期才降级
+    setDbAvailable(true);
+    markPersistenceDegraded('quick-check-failed');
+    const { getSessionManager } = await import('../../../src/host/services/infra/sessionManager');
+    const infraSessionManager = getSessionManager();
+    // 探测本身钉住：降级后 false（dbAvailable 仍 true——恰好证明它不再是判据）
+    expect(await infraSessionManager.isPersistent()).toBe(false);
+    // 新会话：真实读路径查不到行 → infra getSession 返回 null → 才会进入探测分支
+    mockDb.getSession.mockReturnValue(null);
+    mockCreateAgentLoop.mockImplementation(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => infraSessionManager,
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '帮我出一份季度总结', sessionId: 'session-degraded-persistence-r3' }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: `${tempDataDir}-work` }));
+    const flatEntries = readdirSync(`${tempDataDir}-work`);
+    expect(flatEntries.some((entry) => entry.startsWith('任务_') || entry.startsWith('Task_'))).toBe(false);
+  });
+
+  // rework r3 反向保护：健康态下生产同款 infra SessionManager 的探测返回 true，新会话
+  // 照常铸目录——修的是「探测不触发」，不能顺手把特性本身关死（钉死恒 false 的实现）。
+  it('still mints the per-session folder for a new session when the production infra SessionManager probe is healthy (rework r3)', async () => {
+    await closeServer();
+    setDbAvailable(true);
+    const { getSessionManager } = await import('../../../src/host/services/infra/sessionManager');
+    const infraSessionManager = getSessionManager();
+    expect(await infraSessionManager.isPersistent()).toBe(true);
+    mockDb.getSession.mockReturnValue(null);
+    mockCreateAgentLoop.mockImplementation(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => infraSessionManager,
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '帮我出一份季度总结', sessionId: 'session-infra-probe-healthy-r3' }),
     });
 
     expect(response.ok).toBe(true);

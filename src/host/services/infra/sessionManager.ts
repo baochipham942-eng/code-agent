@@ -181,6 +181,21 @@ export class SessionManager implements Disposable {
     return undefined;
   }
 
+  /**
+   * 本管理器背后的持久层运行期是否仍可写。
+   *
+   * web 层 dbAvailable 是启动时写死的标志，看不见运行期降级（readonly / quick_check
+   * 失败 / 账本损坏——webServer 启动接线把它们记进 web/helpers/sessionCache 的持久化
+   * 健康态）。消费方（agent 路由 preflight）以它区分「会话行不存在」与「行建不出来
+   * 也读不回」：后者不得铸造按会话工作目录，否则每轮各开一个新目录且永远粘不住
+   * （N-DELIVERABLE-WORKDIR-DEFAULT rework r2/r3）。
+   */
+  async isPersistent(): Promise<boolean> {
+    const { getPersistenceHealth } = await import('../../../web/helpers/sessionCache');
+    const { status } = getPersistenceHealth();
+    return status === 'available' || status === 'recovered';
+  }
+
   // --------------------------------------------------------------------------
   // Session CRUD
   // --------------------------------------------------------------------------

@@ -61,6 +61,7 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 
 import { ModelOnboardingModal } from '../../../src/renderer/components/onboarding/ModelOnboardingModal';
 import { onboardingZh } from '../../../src/renderer/i18n/onboarding';
+import { interpolate } from '../../../src/renderer/i18n/interpolate';
 
 const text = onboardingZh.onboarding;
 
@@ -133,16 +134,60 @@ describe('onboarding connectors step', () => {
     expect(screen.getByText(text.connectorRows.mail.name)).toBeTruthy();
   });
 
-  it('reuses the existing capability-hub connect entry with the connector id', async () => {
-    render(<ModelOnboardingModal onComplete={vi.fn()} />);
+  it('records the connect intent without deep-linking while the modal is up, then fires once after finishing', async () => {
+    const onComplete = vi.fn();
+    render(<ModelOnboardingModal onComplete={onComplete} />);
     await goToConnectorsStep();
 
     fireEvent.click(screen.getByTestId('onboarding-connect-feishu'));
-    expect(openCapabilitySettingsTarget).toHaveBeenCalledWith({ kind: 'connector', id: 'feishu' });
-    fireEvent.click(screen.getByTestId('onboarding-connect-mail'));
-    expect(openCapabilitySettingsTarget).toHaveBeenCalledWith({ kind: 'connector', id: 'mail' });
+    // 返工 10-12 契约：modal 开着时一次深链都不能发（早发会被遮罩挡住，
+    // 且 App 侧 onComplete 收尾的 setShowSettings(false) 会把刚开的面板关掉）
+    expect(openCapabilitySettingsTarget).not.toHaveBeenCalled();
+    expect(screen.getByText(interpolate(text.connectorsOpenedHint, { name: text.connectorRows.feishu.name }))).toBeTruthy();
     // 步不因点击 Connect 而离开
     expect(screen.getByTestId('onboarding-connectors-step')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('onboarding-connectors-next'));
+    await screen.findByTestId('onboarding-voice-hotkey-step');
+    expect(openCapabilitySettingsTarget).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('onboarding-voice-hotkey-skip'));
+    await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
+    expect(openCapabilitySettingsTarget).toHaveBeenCalledTimes(1);
+    expect(openCapabilitySettingsTarget).toHaveBeenCalledWith({ kind: 'connector', id: 'feishu' });
+    // 深链在 onComplete 之后才发：App 侧 setShowSettings(false) 已同步跑完
+    expect(openCapabilitySettingsTarget.mock.invocationCallOrder[0])
+      .toBeGreaterThan(onComplete.mock.invocationCallOrder[0]);
+  });
+
+  it('keeps only the last clicked connector as the pending deep-link target', async () => {
+    const onComplete = vi.fn();
+    render(<ModelOnboardingModal onComplete={onComplete} />);
+    await goToConnectorsStep();
+
+    fireEvent.click(screen.getByTestId('onboarding-connect-feishu'));
+    fireEvent.click(screen.getByTestId('onboarding-connect-mail'));
+    expect(screen.queryByText(interpolate(text.connectorsOpenedHint, { name: text.connectorRows.feishu.name }))).toBeNull();
+    expect(screen.getByText(interpolate(text.connectorsOpenedHint, { name: text.connectorRows.mail.name }))).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('onboarding-connectors-skip'));
+    await screen.findByTestId('onboarding-voice-hotkey-step');
+    fireEvent.click(screen.getByTestId('onboarding-voice-hotkey-skip'));
+    await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
+    expect(openCapabilitySettingsTarget).toHaveBeenCalledTimes(1);
+    expect(openCapabilitySettingsTarget).toHaveBeenCalledWith({ kind: 'connector', id: 'mail' });
+  });
+
+  it('never deep-links when finishing without any connect click', async () => {
+    const onComplete = vi.fn();
+    render(<ModelOnboardingModal onComplete={onComplete} />);
+    await goToConnectorsStep();
+
+    fireEvent.click(screen.getByTestId('onboarding-connectors-skip'));
+    await screen.findByTestId('onboarding-voice-hotkey-step');
+    fireEvent.click(screen.getByTestId('onboarding-voice-hotkey-skip'));
+    await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
+    expect(openCapabilitySettingsTarget).not.toHaveBeenCalled();
   });
 
   it('skip and next both land on the voice step and complete exactly as before', async () => {

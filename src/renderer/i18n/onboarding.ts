@@ -39,7 +39,7 @@ export const onboardingZh = {
     connectorsSkip: '先不连，继续',
     connectorsNext: '下一步',
     connectorsFootnote: '现在不连也不影响使用，之后在能力中心随时可以连。',
-    connectorsOpenedHint: '连接器面板已打开，完成剩余设置后可在那里继续授权。',
+    connectorsOpenedHint: '已记下，完成引导后会为你打开{name}的连接页。',
     connectorRows: {
       feishu: { name: '飞书', description: '文档、日程与消息，授权后 Neo 可以直接读写' },
       'google-calendar': { name: 'Google 日历', description: '查询和安排你的日程' },
@@ -112,7 +112,7 @@ export const onboardingEn = {
     connectorsSkip: 'Skip for now',
     connectorsNext: 'Next',
     connectorsFootnote: 'Skipping changes nothing — you can connect any time from the Capability Hub.',
-    connectorsOpenedHint: 'The connectors panel is open. Finish the remaining setup to continue there.',
+    connectorsOpenedHint: 'Noted — the {name} connect page will open when you finish setup.',
     connectorRows: {
       feishu: { name: 'Feishu', description: 'Docs, calendar and messages Neo can read and write once authorized' },
       'google-calendar': { name: 'Google Calendar', description: 'Check and schedule your events' },

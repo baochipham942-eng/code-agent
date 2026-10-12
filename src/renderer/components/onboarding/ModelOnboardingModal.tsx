@@ -223,8 +223,11 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
   const [selectedModel, setSelectedModel] = useState('');
   const [status, setStatus] = useState<StepStatus>('idle');
   const [message, setMessage] = useState('');
+  // 连接器步点「去连接」只记意图；深链推迟到 onComplete 之后发（返工 10-12）
+  const [pendingConnectorId, setPendingConnectorId] = useState<string | null>(null);
   const currentModelConfig = useAppStore((state) => state.modelConfig);
   const appWorkingDirectory = useAppStore((state) => state.workingDirectory);
+  const openCapabilitySettingsTarget = useAppStore((state) => state.openCapabilitySettingsTarget);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const currentSession = useSessionStore((state) =>
     state.currentSessionId
@@ -352,6 +355,15 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
     }
   };
 
+  /** 完成向导：先让 App 的 onComplete 同步跑完（内含 setShowSettings(false)），
+      再发连接器深链——早发会被 modal 遮罩挡住、面板也会被收尾逻辑关掉（返工 10-12）。 */
+  const finishWithConfig = (config: ModelConfig) => {
+    onComplete(config);
+    if (pendingConnectorId) {
+      openCapabilitySettingsTarget({ kind: 'connector', id: pendingConnectorId });
+    }
+  };
+
   const completeOnboarding = async () => {
     if (finishingRef.current) return;
     finishingRef.current = true;
@@ -387,7 +399,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
             },
           } : {}),
         } as Partial<AppSettings>);
-        onComplete(currentModelConfig);
+        finishWithConfig(currentModelConfig);
         return;
       }
 
@@ -420,7 +432,7 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
           defaultEngine: 'native',
         },
       } as Partial<AppSettings>);
-      onComplete(selection.modelConfig);
+      finishWithConfig(selection.modelConfig);
     } catch (error) {
       finishingRef.current = false;
       setStatus('error');
@@ -588,7 +600,11 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
             onBound={() => void completeOnboarding()}
           />
         ) : step === 'connectors' ? (
-          <ConnectorsOnboardingStep disabled={isBusy} />
+          <ConnectorsOnboardingStep
+            disabled={isBusy}
+            pendingConnectorId={pendingConnectorId}
+            onConnectIntent={setPendingConnectorId}
+          />
         ) : step === 'source' ? (
           <>
             <div

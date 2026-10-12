@@ -22,6 +22,29 @@ export function connectionBlocksAutoRetry(status: string, connectionError: strin
 }
 
 /**
+ * 连接失败分类（fix4-② 三分类 + relay 档 + 总闸关闭档）：连接层上抛的错误码 → 用户可分辨的
+ * `connectionError`，UI 按 connectionDiagnosis 给一句人话。键名与 i18n 表一一对应。
+ * 总闸关闭档（N-COMPANION-KILLSWITCH-WIRE）：宿主点名的 COMPANION_REMOTE_OFF 说的是「电脑
+ * 关了远程」——host 回过话，不属于离网；配对原样保留，退避自动重试照跑（不进 blocksAutoRetry），
+ * 电脑重新打开后手机自愈。
+ * 从 companionStore 搬来（store 已过 1000 行上限，净行数不得再涨）。
+ */
+export type ConnectionErrorCode = 'connectionQrInvalid' | 'connectionScanFailed' | 'connectionRejected' | 'connectionRefused' | 'connectionUnavailable' | 'connectionFailed'
+  | 'connectionRelayUnavailable' | 'connectionRelayRejected' | 'connectionRelayNoHost' | 'connectionRemoteOff';
+
+export function connectionErrorFromCode(code: string): ConnectionErrorCode {
+  return code === 'COMPANION_INVALID_INVITATION' ? 'connectionQrInvalid'
+    : code === 'COMPANION_SCAN_FAILED' ? 'connectionScanFailed'
+    : code === 'COMPANION_PAIRING_REJECTED' || handshakeNeedsRescan(code) ? 'connectionRejected'
+    : code === 'COMPANION_REMOTE_OFF' ? 'connectionRemoteOff'
+    : code === 'COMPANION_CONNECTION_REFUSED' ? 'connectionRefused'
+    : code === 'COMPANION_RELAY_AUTH_REJECTED' ? 'connectionRelayRejected'
+    : code === 'COMPANION_RELAY_NO_HOST' ? 'connectionRelayNoHost'
+    : code === 'COMPANION_RELAY_UNAVAILABLE' || code === 'COMPANION_RELAY_CONNECT_TIMEOUT' ? 'connectionRelayUnavailable'
+    : code === 'COMPANION_NETWORK_UNAVAILABLE' || code === 'COMPANION_NO_RESPONSE' ? 'connectionUnavailable' : 'connectionFailed';
+}
+
+/**
  * 下一次重试前要等多久。`failedAttempts` 是本轮已经失败的次数（第一次失败后 = 1 → 2s）。
  * 累计满 10 分钟后无论档位都改 60s。
  */

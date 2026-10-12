@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, afterEach } from 'vitest';
 import { buildCronAgentPrompt } from '../../../src/host/cron/cronAgentPrompt';
 import { countPendingReviewByTask, groupRunsByTask, parseCronRunDigest } from '../../../src/shared/cronRunDigest';
 
@@ -62,6 +62,80 @@ describe('buildCronAgentPrompt delivery digest instruction', () => {
     for (const prompt of [enabled, disabled]) {
       expect(prompt).toContain('urgency: must_today|can_wait|fyi');
     }
+  });
+});
+
+describe('buildCronAgentPrompt urgencyCriteria（N-CRON-MORNING-TRIAGE-URGENCY-RULE）', () => {
+  // 冻结时间锚点（mock formatTodayAnchor，与 todayAnchorConsumers 同口径）后整段输出确定。
+  // 期望串的固定段逐字节取自改动前的源码字面量；两个 epoch 数按锚点日期的本地 00:00
+  // 算出（构造式与被测代码同一条 documented 公式，时区无关地跟随运行机）。
+  const ANCHOR = {
+    prompt: "Today's date: 2099-12-31 (Thursday).",
+    isoDate: '2099-12-31',
+    year: 2099,
+    month: 12,
+    day: 31,
+  };
+  const NOW = new Date('2026-09-30T00:00:00.000Z');
+  const todayEpoch = Math.floor(new Date(ANCHOR.year, ANCHOR.month - 1, ANCHOR.day, 0, 0, 0, 0).getTime() / 1000);
+  const tomorrowEpoch = todayEpoch + 86400;
+  const timeAnchor =
+    `【当前时间】2026-09-30T00:00:00.000Z（UTC）。今天本地日期是 2099-12-31。`
+    + `若要按「今天/本地当天」查询时间戳，直接用这两个算好的值，不要自己换算年份：`
+    + `今天本地 00:00 = ${todayEpoch}（Unix 秒），次日本地 00:00 = ${tomorrowEpoch}（Unix 秒）。`
+    + '其他相对时间以【当前时间】为基准，不要用你训练时的日期。';
+  // 改动前的 deliveryDigestInstruction 原文（缺省判据路径必须逐字节复现）。
+  const deliveryDigest =
+    '最后请在回复末尾追加简短的 <cron_summary>...</cron_summary> 块：先写结果摘要；每个生成的文件或可访问产物另起一行，格式为 artifact: <path>。'
+    + '摘要的第一行可以标注紧急程度，格式为 urgency: must_today|can_wait|fyi（must_today = 今天需要用户处理，can_wait = 可以稍后处理，fyi = 仅供参考）。';
+  const snapshotGuidance = '回复末尾请用 <cron_snapshot>...</cron_snapshot> 包住本次需要记住的简短快照，供下次对比。';
+  const expectedEnabled = ['检查', '', timeAnchor, '', snapshotGuidance, '', deliveryDigest].join('\n');
+  const expectedDisabled = ['检查', '', timeAnchor, '', deliveryDigest].join('\n');
+
+  afterEach(() => {
+    vi.doUnmock('../../../src/shared/todayAnchor');
+    vi.resetModules();
+  });
+
+  async function buildWithFrozenAnchor(...args: Parameters<typeof buildCronAgentPrompt>) {
+    // 顶部静态 import 已把 cronAgentPrompt 连同真 todayAnchor 载入缓存；先 resetModules
+    // 再 doMock，动态 import 才会吃到锚点 mock（本文件其余 describe 用的是静态绑定，不受影响）。
+    vi.resetModules();
+    vi.doMock('../../../src/shared/todayAnchor', () => ({ formatTodayAnchor: () => ANCHOR }));
+    const { buildCronAgentPrompt: build } = await import('../../../src/host/cron/cronAgentPrompt');
+    return build(...args);
+  }
+
+  it('缺省 urgencyCriteria 时两种模式的产出与改动前逐字节相同', async () => {
+    expect(await buildWithFrozenAnchor('检查', null, true, NOW)).toBe(expectedEnabled);
+    expect(await buildWithFrozenAnchor('检查', null, false, NOW)).toBe(expectedDisabled);
+  });
+
+  it('带上旧快照时缺省判据的产出同样逐字节相同', async () => {
+    const withSnapshot = await buildWithFrozenAnchor('检查', '旧快照内容', true, NOW);
+    expect(withSnapshot).toBe(
+      ['检查', '', timeAnchor, '', '上次运行看到的快照：', '<previous_snapshot>', '旧快照内容', '</previous_snapshot>', '',
+        '请把上面的快照和本次看到的内容对比，这次只需要说明变化。', '', snapshotGuidance, '', deliveryDigest].join('\n'),
+    );
+  });
+
+  it('自定义判据只替换 must_today 的定义，头格式与其他档位不动', async () => {
+    const enabled = await buildWithFrozenAnchor('检查', null, true, NOW, '只有老板发来的邮件算紧急');
+    const disabled = await buildWithFrozenAnchor('检查', null, false, NOW, '只有老板发来的邮件算紧急');
+
+    for (const prompt of [enabled, disabled]) {
+      expect(prompt).toContain(
+        'urgency: must_today|can_wait|fyi（must_today = 只有老板发来的邮件算紧急，can_wait = 可以稍后处理，fyi = 仅供参考）',
+      );
+      expect(prompt).not.toContain('今天需要用户处理');
+      expect(prompt).toContain('<cron_summary>');
+    }
+    expect(enabled).toContain('<cron_snapshot>');
+  });
+
+  it('空白判据回落缺省定义（逐字节）', async () => {
+    expect(await buildWithFrozenAnchor('检查', null, true, NOW, '   ')).toBe(expectedEnabled);
+    expect(await buildWithFrozenAnchor('检查', null, false, NOW, '')).toBe(expectedDisabled);
   });
 });
 

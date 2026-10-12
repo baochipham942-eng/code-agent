@@ -37,6 +37,12 @@ describe('cron agent 会话拓扑标注接线', () => {
     );
   });
 
+  it('cronService 把 action.urgencyCriteria 接进 buildCronAgentPrompt（N-CRON-MORNING-TRIAGE-URGENCY-RULE）', () => {
+    expect(cronSource).toMatch(
+      /buildCronAgentPrompt\(\s*action\.prompt\s*,\s*previousSnapshot\s*,\s*snapshotTrackingEnabled\s*,\s*undefined\s*,\s*action\.urgencyCriteria\s*\)/,
+    );
+  });
+
   it('AgentOrchestrator.setExecutionTopology 委托 toolExecutor', () => {
     expect(orchestratorSource).toMatch(
       /setExecutionTopology\(topology: ExecutionTopology\): void \{\s*\n\s*this\.toolExecutor\.setExecutionTopology\(topology\);/,

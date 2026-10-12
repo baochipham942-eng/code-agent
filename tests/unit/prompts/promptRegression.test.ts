@@ -211,4 +211,16 @@ describe('prompt regressions', () => {
     expect(nudgeSource).not.toContain('edit_file 或 write_file');
     expect(nudgeSource).not.toContain('请在 <think>');
   });
+
+  // N-CAPGAP-FABRICATED-CAUSE：能力失败的诚实交代规则（FB-218 模拟器冤案的行为侧）。
+  // 四个语义要素各钉一句：缺能力自述 / 工具没点名的因果=猜测 / 原因不明就说明不明 /
+  // 不许断言未验证的环境。删掉或改掉任何一个要素，这里必须红。
+  it('keeps the failed-capability honesty rule in the always-on tools prompt', () => {
+    const prompt = String(TOOLS_PROMPT);
+
+    expect(prompt).toContain('say plainly that you lack that capability or permission right now');
+    expect(prompt).toContain('any other cause or workaround is a guess and must be worded as one');
+    expect(prompt).toContain('If the tool says the cause is unknown, say unknown');
+    expect(prompt).toContain('Do not assert unverified facts about the machine, session or device you run on');
+  });
 });

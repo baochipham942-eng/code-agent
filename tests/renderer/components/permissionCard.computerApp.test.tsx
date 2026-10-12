@@ -83,6 +83,73 @@ describe('PermissionCard computer app grant', () => {
     expect(saveMemory).not.toHaveBeenCalled();
   });
 
+  it('asks about operating the app, not the underlying command wording', () => {
+    state.request = {
+      ...computerRequest(),
+      id: 'permission-app-safari',
+      details: { targetApp: { name: 'Safari' } },
+    };
+    const { container } = render(<PermissionCard />);
+    expect(screen.getByText('Neo 想操作 Safari，你来决定。')).toBeTruthy();
+    expect(container.textContent).not.toContain('执行这条命令');
+  });
+
+  it('renders no command-risk consequence line on the safe app-grant card', () => {
+    // 风险缺省（medium）→ 此前渲染「将执行有风险命令，可能覆盖本机系统或项目状态。」
+    state.request = {
+      ...computerRequest(),
+      id: 'permission-app-safari-medium',
+      details: { targetApp: { name: 'Safari' } },
+    };
+    const medium = render(<PermissionCard />);
+    expect(screen.queryByTestId('permission-consequence')).toBeNull();
+    expect(medium.container.textContent).not.toContain('命令');
+
+    cleanup();
+    // 分类器回退 unknown → 此前渲染「命令风险无法自动判定，需要你确认后才能执行。」
+    state.request = {
+      ...computerRequest(),
+      id: 'permission-app-safari-unknown',
+      details: { targetApp: { name: 'Safari' }, commandRiskLevel: 'unknown' },
+    };
+    const unknown = render(<PermissionCard />);
+    expect(screen.queryByTestId('permission-consequence')).toBeNull();
+    expect(unknown.container.textContent).not.toContain('命令');
+  });
+
+  it('keeps the command consequence line for dangerous and forceConfirm requests', () => {
+    state.request = {
+      ...computerRequest(),
+      id: 'permission-app-dangerous-consequence',
+      type: 'dangerous_command',
+      details: { targetApp: { name: 'Safari' }, command: 'rm -rf /tmp/x' },
+    };
+    render(<PermissionCard />);
+    expect(screen.getByTestId('permission-consequence')).toBeTruthy();
+
+    cleanup();
+    state.request = computerRequest(true);
+    render(<PermissionCard />);
+    expect(screen.getByTestId('permission-consequence')).toBeTruthy();
+  });
+
+  it('keeps the dangerous command wording when the app request itself is dangerous', () => {
+    state.request = {
+      ...computerRequest(),
+      id: 'permission-app-dangerous',
+      type: 'dangerous_command',
+      details: { targetApp: { name: 'Safari' }, command: 'rm -rf /tmp/x' },
+    };
+    const { container } = render(<PermissionCard />);
+    expect(container.textContent).toContain('允许执行这条命令');
+  });
+
+  it('keeps the command wording for forceConfirm requests', () => {
+    state.request = computerRequest(true);
+    const { container } = render(<PermissionCard />);
+    expect(container.textContent).toContain('允许执行这条命令');
+  });
+
   it('maps the three buttons to standing, session, and deny without touching permission memory', () => {
     const { rerender } = render(<PermissionCard />);
     fireEvent.click(screen.getByRole('button', { name: /始终允许/ }));

@@ -112,6 +112,18 @@ vi.mock('../../../src/host/services/sessionAutomation', () => ({
   getSessionAutomationService: () => automationState,
 }));
 
+// N-ARTIFACT-STANDING-REFRESH：常设刷新 begin/finish 接线只验调用契约，
+// 快照/留版/回滚逻辑在 tests/unit/cron/artifactStandingRefresh.test.ts 用真文件系统测。
+const artifactRefreshState = vi.hoisted(() => ({
+  begin: vi.fn((_definition: unknown): unknown => undefined),
+  finish: vi.fn(async (_state: unknown, _outcome: unknown): Promise<void> => undefined),
+}));
+
+vi.mock('../../../src/host/cron/artifactStandingRefresh', () => ({
+  beginArtifactRefresh: artifactRefreshState.begin,
+  finishArtifactRefresh: artifactRefreshState.finish,
+}));
+
 import { CronService } from '../../../src/host/cron/cronService';
 import { deliverCronResultToChannel } from '../../../src/host/cron/cronResultDelivery';
 import { getEventBus, shutdownEventBus } from '../../../src/host/services/eventing/bus';
@@ -1207,5 +1219,95 @@ describe('N-TRIGGER-CHANNEL-EVENT event-triggered jobs', () => {
 
     await service.shutdown();
     vi.useRealTimers();
+  });
+});
+
+describe('N-ARTIFACT-STANDING-REFRESH 常设刷新接线', () => {
+  function refreshAgentJob(path: string) {
+    return {
+      name: 'Refresh dashboard.json',
+      runsOn: 'local' as const,
+      scheduleType: 'every' as const,
+      schedule: { type: 'every' as const, interval: 1, unit: 'hours' as const },
+      action: { type: 'agent' as const, agentType: 'default', prompt: 'work' },
+      enabled: true,
+      metadata: { artifactRefresh: { path, instruction: 'refresh it', cadence: 'hourly' } },
+    };
+  }
+
+  function plainAgentJob() {
+    return {
+      name: '普通 agent 任务',
+      runsOn: 'local' as const,
+      scheduleType: 'every' as const,
+      schedule: { type: 'every' as const, interval: 1, unit: 'hours' as const },
+      action: { type: 'agent' as const, agentType: 'default', prompt: 'work' },
+      enabled: true,
+    };
+  }
+
+  beforeEach(() => {
+    artifactRefreshState.begin.mockReset();
+    artifactRefreshState.begin.mockImplementation(() => undefined);
+    artifactRefreshState.finish.mockReset();
+    artifactRefreshState.finish.mockImplementation(async () => undefined);
+  });
+
+  afterEach(() => {
+    artifactRefreshState.begin.mockReset();
+    artifactRefreshState.begin.mockImplementation(() => undefined);
+    artifactRefreshState.finish.mockReset();
+    artifactRefreshState.finish.mockImplementation(async () => undefined);
+  });
+
+  it('刷新任务一趟执行：begin/finish 各调一次，finish 收到 runFailed=false 与任务更新回调', async () => {
+    const runState = { jobId: 'j', path: '/tmp/dashboard.json', snapshotId: 's', preRunSha256: 'h', metadata: {} };
+    artifactRefreshState.begin.mockReturnValue(runState);
+    const service = new CronService();
+    const job = await service.createJob(refreshAgentJob('/tmp/dashboard.json'));
+
+    const execution = await service.triggerJob(job.id);
+
+    expect(execution?.status).toBe('completed');
+    expect(artifactRefreshState.begin).toHaveBeenCalledTimes(1);
+    expect(artifactRefreshState.begin.mock.calls[0][0]).toMatchObject({ id: job.id });
+    expect(artifactRefreshState.finish).toHaveBeenCalledTimes(1);
+    const finishOutcome = artifactRefreshState.finish.mock.calls[0][1] as unknown as {
+      runFailed: boolean;
+      updateJob: (updates: Record<string, never>) => Promise<unknown>;
+    };
+    expect(finishOutcome.runFailed).toBe(false);
+    await expect(finishOutcome.updateJob({})).resolves.not.toBeNull();
+    await service.shutdown();
+  });
+
+  it('agent 运行失败：finish 仍被调一次且 runFailed=true（结算先于失败上抛）', async () => {
+    const runState = { jobId: 'j', path: '/tmp/dashboard.json', snapshotId: 's', preRunSha256: 'h', metadata: {} };
+    artifactRefreshState.begin.mockReturnValue(runState);
+    agentRunState.sendMessage.mockImplementation(async () => {
+      throw new Error('model exploded');
+    });
+    const service = new CronService();
+    const job = await service.createJob(refreshAgentJob('/tmp/dashboard.json'));
+
+    const execution = await service.triggerJob(job.id);
+
+    expect(execution?.status).toBe('failed');
+    expect(artifactRefreshState.finish).toHaveBeenCalledTimes(1);
+    expect((artifactRefreshState.finish.mock.calls[0][1] as unknown as { runFailed: boolean }).runFailed).toBe(true);
+    await service.shutdown();
+  });
+
+  it('非刷新 agent 任务：begin 被调但返回 undefined，finish 不被调', async () => {
+    const service = new CronService();
+    const job = await service.createJob(plainAgentJob());
+
+    const execution = await service.triggerJob(job.id);
+
+    expect(execution?.status).toBe('completed');
+    expect(artifactRefreshState.begin).toHaveBeenCalledTimes(1);
+    expect(artifactRefreshState.begin).toHaveReturnedWith(undefined);
+    expect(artifactRefreshState.finish).not.toHaveBeenCalled();
+    await service.shutdown();
   });
 });

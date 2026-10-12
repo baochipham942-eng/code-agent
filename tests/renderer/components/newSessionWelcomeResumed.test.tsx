@@ -72,11 +72,11 @@ describe('通用建议卡：有上下文就不摆', () => {
 
   it('纯新会话（无工作区、无 pin 材料）摆建议卡', () => {
     render(<NewSessionWelcome onSend={() => {}} workingDirectory={null} />);
-    expect(screen.queryByText('做个能玩的小游戏')).not.toBeNull();
+    expect(screen.queryByText('写一份本周工作周报')).not.toBeNull();
   });
 
   it('从空间/项目进来（带 workingDirectory）不摆建议卡', () => {
     render(<NewSessionWelcome onSend={() => {}} workingDirectory="/repo/app" />);
-    expect(screen.queryByText('做个能玩的小游戏')).toBeNull();
+    expect(screen.queryByText('写一份本周工作周报')).toBeNull();
   });
 });

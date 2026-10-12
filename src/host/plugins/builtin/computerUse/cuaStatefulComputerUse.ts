@@ -13,7 +13,17 @@ import {
 } from '../../../mcp/cuaStateAdapter';
 import { CuaMcpDriverPort } from '../../../mcp/cuaMcpDriverPort';
 import { subscribeCuaInputLockLifecycle } from '../../../mcp/cuaSessionLock';
-import { cuaStatefulComputerUseSchema as schema } from './cuaStatefulComputerUse.schema';
+import {
+  cuaStatefulComputerUseSchema as schema,
+  withCuaJevStepOperation,
+} from './cuaStatefulComputerUse.schema';
+import {
+  cuaJevStepEmptyTaskResult,
+  cuaJevStepUnarmedResult,
+  resolveCuaJevStep,
+  type CuaJevStepDriver,
+  type CuaJevStepDispatch,
+} from '../../../agent/runtime/desktop/jevCuaStep';
 import type {
   ComputerUseExpectationV1,
   ComputerUseMutationV1,
@@ -30,7 +40,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function parseRequest(args: Record<string, unknown>): CuaStatefulComputerUseRequest {
+/** execute_goal 是 Jev 步选环的入口（N-JEV-CU-STEP-LOOP）；适配器请求类型不收它。 */
+interface CuaExecuteGoalRequest {
+  operation: 'execute_goal';
+  task: string;
+  target?: { pid: number; windowId: number };
+  jevBudgetUsd?: number;
+}
+
+type CuaToolRequest = CuaStatefulComputerUseRequest | CuaExecuteGoalRequest;
+
+function parseRequest(args: Record<string, unknown>): CuaToolRequest {
   if (args.operation === 'list_roots') {
     return { operation: 'list_roots', onScreenOnly: args.onScreenOnly === true };
   }
@@ -63,7 +83,21 @@ function parseRequest(args: Record<string, unknown>): CuaStatefulComputerUseRequ
         : {}),
     };
   }
-  throw new Error('operation must be list_roots, observe, or act');
+  if (args.operation === 'execute_goal') {
+    const target = isRecord(args.target)
+      ? {
+        pid: args.target.pid as number,
+        windowId: args.target.windowId as number,
+      }
+      : undefined;
+    return {
+      operation: 'execute_goal',
+      task: typeof args.task === 'string' ? args.task : '',
+      ...(target ? { target } : {}),
+      ...(typeof args.jevBudgetUsd === 'number' ? { jevBudgetUsd: args.jevBudgetUsd } : {}),
+    };
+  }
+  throw new Error('operation must be list_roots, observe, act, or execute_goal');
 }
 
 function runtimeIdentity(ctx: ToolContext): SurfaceRuntimeIdentityV1 | null {
@@ -100,6 +134,7 @@ implements ToolHandler<Record<string, unknown>, string> {
   constructor(
     private readonly adapter = new CuaStateAdapter(new CuaMcpDriverPort()),
     private readonly surfaceRuntime: SurfaceExecutionRuntime = getSurfaceExecutionRuntime(),
+    private readonly jevStepFactory: (dispatch: CuaJevStepDispatch) => CuaJevStepDriver | undefined = (dispatch) => resolveCuaJevStep(dispatch),
   ) {}
 
   async execute(
@@ -108,7 +143,7 @@ implements ToolHandler<Record<string, unknown>, string> {
     canUseTool: CanUseToolFn,
     onProgress?: ToolProgressFn,
   ): Promise<ToolResult<string>> {
-    let request: CuaStatefulComputerUseRequest;
+    let request: CuaToolRequest;
     try {
       request = parseRequest(args);
     } catch (error) {
@@ -118,6 +153,58 @@ implements ToolHandler<Record<string, unknown>, string> {
         code: 'INVALID_ARGS',
       };
     }
+    if (request.operation === 'execute_goal') {
+      return this.executeGoal(request, ctx, canUseTool);
+    }
+    return this.runOperation(args, request, ctx, canUseTool, onProgress);
+  }
+
+  /**
+   * N-JEV-CU-STEP-LOOP：execute_goal 进 Jev 步选环。环内每个 act 都经
+   * runOperation（含 canUseTool 审批与 Surface 绑定）发回本 handler，环不直连
+   * 适配器；风险升级只把审批升到 forceConfirm，Jev 无权发放许可。
+   */
+  private async executeGoal(
+    request: CuaExecuteGoalRequest,
+    ctx: ToolContext,
+    canUseTool: CanUseToolFn,
+  ): Promise<ToolResult<string>> {
+    if (!request.task.trim()) return cuaJevStepEmptyTaskResult();
+    const identity = runtimeIdentity(ctx);
+    if (!identity) {
+      return {
+        ok: false,
+        error: 'execute_goal requires explicit runId and agentId ownership.',
+        code: 'SURFACE_TARGET_NOT_OWNED',
+      };
+    }
+    const dispatch: CuaJevStepDispatch = async (actArgs, gate) => {
+      const parsed = parseRequest(actArgs);
+      if (parsed.operation === 'execute_goal') {
+        throw new Error('cua jev step loop must not dispatch execute_goal');
+      }
+      return this.runOperation(actArgs, parsed, ctx, canUseTool, undefined, gate);
+    };
+    const driver = this.jevStepFactory(dispatch);
+    if (!driver) return cuaJevStepUnarmedResult();
+    return driver.run(
+      {
+        task: request.task,
+        ...(request.target ? { target: request.target } : {}),
+        ...(request.jevBudgetUsd !== undefined ? { jevBudgetUsd: request.jevBudgetUsd } : {}),
+      },
+      ctx,
+    );
+  }
+
+  private async runOperation(
+    args: Record<string, unknown>,
+    request: CuaStatefulComputerUseRequest,
+    ctx: ToolContext,
+    canUseTool: CanUseToolFn,
+    onProgress: ToolProgressFn | undefined,
+    gate?: { forceConfirm?: boolean },
+  ): Promise<ToolResult<string>> {
     const identity = runtimeIdentity(ctx);
     if (request.operation === 'act' && !identity) {
       return {
@@ -165,6 +252,9 @@ implements ToolHandler<Record<string, unknown>, string> {
           type: 'dangerous_command',
           tool: schema.name,
           reason: 'State-bound desktop input',
+          ...(gate?.forceConfirm
+            ? { forceConfirm: true, details: { cuaJevRiskUpgrade: true } }
+            : {}),
         },
       );
       if (!permit.allow) {
@@ -372,9 +462,18 @@ implements ToolHandler<Record<string, unknown>, string> {
   }
 }
 
-export const cuaStatefulComputerUseModule: ToolModule<Record<string, unknown>, string> = {
-  schema,
-  createHandler() {
-    return new CuaStatefulComputerUseHandler();
-  },
-};
+/**
+ * N-JEV-CU-STEP-LOOP：armed=true 时 schema 才带 execute_goal（operation 枚举 +
+ * task/jevBudgetUsd + 描述后缀）；false 时与既有静态 schema 逐字节一致。
+ * armed 的判定（V2 + CODE_AGENT_CUA_JEV_STEP=1 + typesafe key）在插件装配点做。
+ */
+export function cuaStatefulComputerUseModuleFor(
+  jevStepArmed: boolean,
+): ToolModule<Record<string, unknown>, string> {
+  return {
+    schema: jevStepArmed ? withCuaJevStepOperation(schema) : schema,
+    createHandler() {
+      return new CuaStatefulComputerUseHandler();
+    },
+  };
+}

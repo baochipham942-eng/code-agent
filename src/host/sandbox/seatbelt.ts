@@ -49,6 +49,11 @@ export interface SeatbeltConfig {
   workingDirectory?: string;
   /** Legacy default grants cwd write; multi-root callers disable it and pass explicit writePaths. */
   allowWorkingDirectoryWrite?: boolean;
+  /**
+   * Forbidden names inside a one-shot escalated write root (DIR-FORBIDDEN): re-denied AFTER
+   * every write allow below, so SBPL last-match-wins keeps them read-only despite the grant.
+   */
+  writeDenyPaths?: SensitiveSandboxPath[];
   /** Timeout in milliseconds */
   timeout?: number;
   /** Custom Seatbelt profile (overrides generated profile) */
@@ -193,6 +198,13 @@ export function generateProfile(config: SeatbeltConfig): string {
   // turns it into a directory, nothing inside is writable.
   for (const p of config.writeFiles ?? []) {
     lines.push(`(allow file-write* (literal "${escapeProfileString(realFilePath(p))}"))`);
+  }
+  // DIR-FORBIDDEN：目录子树一次性扩权内的禁写名（凭据/笼子/钩子/shell rc）保持只读。
+  // SBPL 后规则压过先规则，deny 必须排在上面所有 allow file-write 之后才咬得住。
+  for (const entry of config.writeDenyPaths ?? []) {
+    const resolved = entry.kind === 'directory' ? realPath(entry.path) : realFilePath(entry.path);
+    const form = entry.kind === 'directory' ? 'subpath' : 'literal';
+    lines.push(`(deny file-write* (${form} "${escapeProfileString(resolved)}"))`);
   }
   lines.push('');
 

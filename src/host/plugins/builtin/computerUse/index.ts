@@ -28,8 +28,10 @@ import { computerUseModule } from './computerUse';
 import { screenshotModule } from './screenshot';
 import { guiAgentModule } from './guiAgent';
 import { ocrSearchModule } from './ocrSearch';
-import { cuaStatefulComputerUseModule } from './cuaStatefulComputerUse';
+import { cuaStatefulComputerUseModuleFor } from './cuaStatefulComputerUse';
 import { isCuaStateV2Enabled } from '../../../mcp/cuaStateConfig';
+import { isCuaJevStepEnabled } from '../../../../shared/constants/jevQuestions';
+import { resolveJevRoute } from '../../../model/providers/typesafeProvider';
 
 export const manifest: PluginManifest = {
   id: 'builtin.computerUse',
@@ -56,10 +58,14 @@ export async function activate(api: PluginAPI): Promise<void> {
   // 不再作为运行时门；安装状态由 capability package lifecycle 持久化。
   const cuaEnabled = true;
   const cuaStateV2Enabled = isCuaStateV2Enabled();
+  // N-JEV-CU-STEP-LOOP：execute_goal 只在 V2 + CODE_AGENT_CUA_JEV_STEP=1 +
+  // typesafe key 三者同时成立时进 schema；缺一则 schema 与今日逐字节一致。
+  // 旧 Computer / computer_use / gui_agent 的注册逻辑不动。
+  const cuaJevStepArmed = cuaStateV2Enabled && isCuaJevStepEnabled() && resolveJevRoute() !== null;
 
   // opt-out 前缀：保留原工具名，与历史 prompt / cache / eval baseline 兼容
   if (cuaStateV2Enabled) {
-    api.registerToolModule(cuaStatefulComputerUseModule, { prefixWithPluginId: false });
+    api.registerToolModule(cuaStatefulComputerUseModuleFor(cuaJevStepArmed), { prefixWithPluginId: false });
   } else if (!cuaEnabled) {
     api.registerToolModule(computerModule, { prefixWithPluginId: false });
     api.registerToolModule(computerUseModule, { prefixWithPluginId: false });
@@ -70,7 +76,7 @@ export async function activate(api: PluginAPI): Promise<void> {
   api.log(
     'info',
     cuaStateV2Enabled
-      ? `builtin.computerUse activated (cua state v2: ${cuaStatefulComputerUseModule.schema.name})`
+      ? `builtin.computerUse activated (cua state v2: computer_use${cuaJevStepArmed ? ' + jev step execute_goal' : ''})`
       : cuaEnabled
       ? `builtin.computerUse activated (cua mode: 仅 ${screenshotModule.schema.name} / ${ocrSearchModule.schema.name}，桌面控制让位 cua-driver)`
       : `builtin.computerUse activated (tools: ${computerModule.schema.name}, ${computerUseModule.schema.name}, ${screenshotModule.schema.name}, ${guiAgentModule.schema.name}, ${ocrSearchModule.schema.name})`,

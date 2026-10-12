@@ -39,4 +39,12 @@ export function kickoffStartupRetention(): void {
   void import('../host/services/infra/dbRetention')
     .then(({ runDbRetention }) => runDbRetention())
     .catch((error) => logger.warn('DB retention failed (non-blocking):', (error as Error).message));
+  // pptx 逐页预览缓存：启动扫一次 + 每天一次（模块内自带 setInterval，unref 不拖住进程）
+  void import('../host/services/infra/presentationPreviewRetention')
+    .then(({ kickoffPresentationPreviewRetention }) => kickoffPresentationPreviewRetention())
+    .catch((error) => logger.warn('Presentation preview retention failed (non-blocking):', (error as Error).message));
+  // app 自有缓存（channel-media / 托管浏览器截图 / appshots）：同款启动 + 每天一次
+  void import('../host/services/infra/appCacheRetention')
+    .then(({ kickoffAppCacheRetention }) => kickoffAppCacheRetention())
+    .catch((error) => logger.warn('App cache retention failed (non-blocking):', (error as Error).message));
 }

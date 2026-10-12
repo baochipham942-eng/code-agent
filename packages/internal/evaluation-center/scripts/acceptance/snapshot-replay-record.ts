@@ -10,6 +10,12 @@ import path from 'path';
 import process from 'process';
 
 import {
+  assertReplayPersistedState,
+  assertReplayProtocolLayer,
+  assertReplayRenderLayer,
+  writeReplayThreeLayerSidecars,
+} from '../../src/host/evaluation/replayThreeLayerEvidence';
+import {
   buildSnapshotIdMap,
   buildSnapshotScrubRules,
   buildSnapshotTurnFiles,
@@ -32,6 +38,49 @@ import {
 function fail(message: string, details?: unknown): never {
   const suffix = details === undefined ? '' : `\n${JSON.stringify(details, null, 2)}`;
   throw new Error(`[snapshot-replay:record] ${message}${suffix}`);
+}
+
+/**
+ * 持久层对账（录制期）：从真实会话库读回刚录完这条会话的落库终态，与内存
+ * 账本互相咬合——末角色必须一致、权限决策账本必须全是 allow、条数必须等于
+ * 账本去掉用户句后的条数。条数差一条用户消息是已知 harness 缺口：测试适配
+ * 器只把用户句塞进内存账本、不落库（生产 orchestrator 会落，agentOrchestrator
+ * 的 addMessageToSession）；等适配器补上落库那天这里会变红，提醒把基线改成
+ * 直接吃会话库。回放侧是 keyless 纯文件路径（无 DB），基线字节仍由可重推导
+ * 的投影生成，会话库只在这里做录制期对账，不进基线字节。
+ */
+function assertRecordedSessionState(
+  database: {
+    getMessages: (sessionId: string, limit?: number) => { role: string }[];
+    getPermissionDecisionsBySession: (sessionId: string, limit?: number) => {
+      toolName: string;
+      finalOutcome: string;
+    }[];
+  },
+  sessionId: string | undefined,
+  ledgerMessages: readonly { role: string }[],
+): void {
+  if (!sessionId) fail('持久层对账需要会话 id，但适配器没有活动会话');
+  const persisted = database.getMessages(sessionId, 500);
+  if (persisted.length === 0) fail(`持久层对账：会话库读回 0 条消息 ${sessionId}`);
+  const persistedLastRole = persisted[persisted.length - 1].role;
+  const ledgerLastRole = ledgerMessages[ledgerMessages.length - 1].role;
+  if (persistedLastRole !== ledgerLastRole) {
+    fail('持久层对账：会话库末角色与账本不一致', { persistedLastRole, ledgerLastRole, sessionId });
+  }
+  const ledgerNonUserCount = ledgerMessages.filter((message) => message.role !== 'user').length;
+  if (persisted.length !== ledgerNonUserCount) {
+    fail('持久层对账：会话库条数与账本去用户句后的条数不一致', {
+      persistedCount: persisted.length,
+      ledgerNonUserCount,
+      sessionId,
+    });
+  }
+  const decisions = database.getPermissionDecisionsBySession(sessionId, 200);
+  const notAllowed = decisions.filter((decision) => decision.finalOutcome !== 'allow');
+  if (notAllowed.length > 0) {
+    fail('持久层对账：hermetic 语料的权限决策账本出现非 allow 终局', { notAllowed, sessionId });
+  }
 }
 
 async function listTraceFiles(traceDir: string): Promise<Set<string>> {
@@ -218,6 +267,17 @@ export async function recordSnapshotCorpus(options: {
     }
     recordedTurns += selfCheck.verified;
     console.log(`  ✓ 录制 ${spec.caseId}: ${turns.length} 轮（${spec.coverage.join(' + ')}），自验通过`);
+
+    // 三层证据只先钉一条真用例。旁路与用例目录同级，同步门把它们算进快照更新。
+    // 产物哈希来自真 Write 工具对账本参数的重放；录制期另与会话库对账落库终态。
+    if (spec.caseId === 'write-file') {
+      assertRecordedSessionState(database, adapter.activeSessionId, ledgerMessages);
+      await writeReplayThreeLayerSidecars(caseDir);
+      assertReplayProtocolLayer(caseDir);
+      assertReplayRenderLayer(caseDir);
+      await assertReplayPersistedState(caseDir);
+      console.log(`  ✓ 三层旁路 ${spec.caseId}.render.json / ${spec.caseId}.state.json（已与会话库对账）`);
+    }
   }
 
   console.log(`snapshot replay corpus recorded: ${SNAPSHOT_CASES.length} 条会话 ${recordedTurns} 轮 → ${path.relative(repoRoot, options.corpusDir)}`);

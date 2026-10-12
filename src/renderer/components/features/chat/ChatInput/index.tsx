@@ -98,6 +98,7 @@ import { useChatInputEnvelope } from './useChatInputEnvelope';
 import { useChatInputAgentCommand } from './useChatInputAgentCommand';
 import { useChatInputSlashCommands } from './useChatInputSlashCommands';
 import { useComposerFocusRequest } from './useComposerFocusRequest';
+import { useComposerPrefill } from './useComposerPrefill';
 import { useChatInputSubmit } from './useChatInputSubmit';
 import { useChatInputComposerActions } from './useChatInputComposerActions';
 import {
@@ -831,6 +832,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   }, []);
 
   useComposerFocusRequest(focusComposer);
+
+  // 预填只填不发：已有草稿时拼在后面（iact:add 同口径），空草稿直接放进去
+  const applyComposerPrefill = useCallback((text: string) => {
+    setValue((current) => current.trim() ? `${current} ${text}` : text);
+  }, []);
+  useComposerPrefill(applyComposerPrefill, focusComposer);
 
   // Agent 自动补全单元：@ mention 与 /agent 命令的 state / 派生 / 键盘导航 / 选择 handler
   const {

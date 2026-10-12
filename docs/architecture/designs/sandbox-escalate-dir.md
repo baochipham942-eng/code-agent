@@ -1,6 +1,6 @@
 # 沙盒一次性扩权·目录子树版设计稿
 
-- 状态：**草稿·待爸拍板**
+- 状态：**爸 10-11 拍板·全按推荐**
 - 单号：N-SANDBOX-ESCALATE-DIR-DESIGN
 - 基线：`origin/main@a00a39c04`
 - 相关：单文件版已上线（私档证据 N-SANDBOX-DENY-ESCALATE-2026-10-03，PR #2191）；敏感路径清单与「代理不许改自己的笼子」先例在 `src/host/sandbox/sensitivePaths.ts`；版式对照 `docs/architecture/designs/cloud-run-retention.md`
@@ -119,7 +119,7 @@ sequenceDiagram
 | 目录子树（本稿新增） | `沙盒拦截了这一步：它想写入目录 <path>（含其中全部内容）。允许仅这一次写入这个目录及其中内容并重跑？` | `(allow file-write* (subpath "<path>"))`；bwrap `--bind <dir> <dir>` |
 | 不放大（拒绝） | 无卡片，原始失败原样返回 | 无新规则；现拒绝面一个不松 |
 
-`<path>` 一律显示 canonical 绝对路径（锚点 `resolveCanonicalRunPath`；先例测试 `shows and grants the real file when a parent directory is a symlink`）。若 D1 选了带禁写名例外，目录卡在第二句后追加「（其中凭据与配置类文件仍不可写）」——卡面必须如实反映开口子比承诺小，见自检反例。
+`<path>` 一律显示 canonical 绝对路径（锚点 `resolveCanonicalRunPath`；先例测试 `shows and grants the real file when a parent directory is a symlink`）。若 D1 选了带禁写名例外，目录卡在第二句后追加「（其中凭据与配置类文件仍不可写）」——该句随 DIR-FORBIDDEN 的禁写名机制同批落地（先行版不带，见 D5 结论）；卡面必须如实反映开口子与承诺的包含关系，见自检反例。
 
 ## 与单文件版的差异
 
@@ -178,6 +178,8 @@ sequenceDiagram
 
 **推荐 A。** mkdir 拒绝是目录版最高频的触发形状，二话不说放弃等于砍掉一半收益；而 seatbelt `subpath` 是否需要存在没有仓内试验记录，拍脑袋写进合同不如把试验做成实现单的验收第一格。B 是试验失败后的自动回退位，不是独立首选。
 
+结论：darwin: missing-directory grant allowed (mkdir allowed, write-inside allowed)；linux: missing directory 永不 offer（bwrap 绑不了不存在的路径，无试验余地）。试验记录见 `docs/architecture/designs/sandbox-escalate-dir-d3-trial.md`；macOS 27.0.1 (26A434)。
+
 ### D4 [动作名与 meta]：`details.action` 与 `SandboxEscalationMeta` 怎么扩
 
 - 选项 A：**新动作名 `sandbox_escalate_dir_once` + meta 加可选 `granularity: 'file' | 'directory'`**（旧卡不写该字段或写 `'file'`）。
@@ -192,6 +194,8 @@ sequenceDiagram
 - 选项 B：不写，例外失败时靠重跑错误自明。
 
 **推荐 A。** 卡是用户唯一的信息面；不写则用户批的想象范围与实际开口子一致（例外只会更小，方向安全），但重跑在子树内撞禁写名失败时，用户与模型都会困惑「批了整树为何还 EPERM」。写明的成本是一句话，买到的是失败可解释（错题本 2026-08-14：降级必须留可区分的原因）。
+
+结论（r1 2026-10-11）：D5-A 维持，但例外句**随 D1 禁写名例外机制（实现单 DIR-FORBIDDEN 的 deny 行 / ro-bind 盖）同批上卡面**——先行版本（本单）卡面不带该句。铁律「卡片说的就是重跑打开的」双向生效：机制先行、句子后补是静默收窄（本节拒绝的形状）；句子先行、机制后补则是承诺比开口宽——用户基于例外句批准后，重跑沙箱对子树内 `.env*`、`.git/hooks`、`.npmrc`、数据目录笼子文件照写不误，同样被拒绝。
 
 ### D6 [触发形状]：对**文件**拒绝（路径是文件、父目录在笼外）是否也升级为父目录卡
 

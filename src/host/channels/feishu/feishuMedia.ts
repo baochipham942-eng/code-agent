@@ -1,8 +1,8 @@
 import * as fs from 'fs';
-import * as os from 'os';
 import * as path from 'path';
 import { Readable } from 'node:stream';
 import type { ChannelAttachment } from '../../../shared/contract/channel';
+import { getUserConfigDir } from '../../config/configPaths';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('FeishuMedia');
@@ -241,8 +241,19 @@ async function readableToBuffer(stream: Readable): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
+/** 消息媒体转存目录名：写入方与保留清理（appCacheRetention）共用的单一真源 */
+export const CHANNEL_MEDIA_CACHE_DIRNAME = 'channel-media';
+
+/**
+ * 消息媒体转存缺省根：走 getUserConfigDir（尊重 CODE_AGENT_DATA_DIR），与生产库同通道。
+ * 保留清理（appCacheRetention）必须扫同一棵树——两边共用本函数，防止各算各的。
+ */
+export function defaultChannelMediaCacheRoot(): string {
+  return path.join(getUserConfigDir(), 'cache', CHANNEL_MEDIA_CACHE_DIRNAME);
+}
+
 function buildCacheDir(cacheRoot: string | undefined, platform: 'feishu' | 'lark', accountId: string): string {
-  return path.join(cacheRoot ?? path.join(os.homedir(), '.code-agent', 'cache', 'channel-media'), platform, safeSegment(accountId));
+  return path.join(cacheRoot ?? defaultChannelMediaCacheRoot(), platform, safeSegment(accountId));
 }
 
 function safeSegment(value: string): string {

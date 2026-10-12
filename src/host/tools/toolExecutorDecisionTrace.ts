@@ -5,6 +5,13 @@
 
 import type { ToolLedgerOrigin } from '../../shared/constants/toolLedger';
 import { AUTO_MODE_RATE_LIMIT } from '../../shared/constants/timeouts';
+import {
+  createHostReason,
+  HostReasonCode,
+  type PermissionAskResult,
+  type PermissionDenialSource,
+} from '../../shared/contract/permission';
+import type { PermissionRequestData } from './types';
 import { getToolLedgerSink } from './toolLedgerSink';
 import { getPermissionModeManager } from '../permissions/modes';
 import { computePolicyHash } from '../permissions/policyHash';
@@ -67,6 +74,53 @@ export function recordDecision(
 function historyOutcomeToTraceOutcome(outcome: HistoryDecisionOutcome): TraceDecisionOutcome {
   if (outcome === 'auto-approve' || outcome === 'ask-approved' || outcome === 'policy-allow') return 'allow';
   return 'deny';
+}
+
+/**
+ * 工具体内 ask（canUseTool 内联审批，如 bash 的 sandbox_escalate_once）落权限账本。
+ * 外层 ask 由 toolExecutor 权限闸记账（N-APPROVAL-SOURCE-LEDGER #1664 只修了外层）；
+ * 这里补内层，让每一次沙箱扩权事后都能查到是谁批的。来源口径与外层一致：
+ * 批准来源缺省 'unspecified'（机器批准必须自报，不冒名 'user'），拒绝来源缺省
+ * 'user'（裸 boolean 的旧契约语义，normalizePermissionAskResult 已归一）。
+ *
+ * deniedPath / action 在 PermissionDecisionInput 里没有独立列：放进 trace step 的
+ * reason.metadata（随 trace_json 整体落库），step.rule 直接用 action 值（如
+ * 'sandbox_escalate_once'）保证账本行可按动作检索。
+ */
+export function recordInToolPermissionAsk(
+  request: PermissionRequestData,
+  ask: PermissionAskResult & { denialSource: PermissionDenialSource | undefined },
+  startTime: number,
+  sessionId: string | undefined,
+  origin: ToolLedgerOrigin,
+  waitMs: number | undefined,
+): void {
+  const approved = ask.approved;
+  const outcome: HistoryDecisionOutcome = approved ? 'ask-approved' : 'ask-denied';
+  const reason = approved ? (ask.approvalSource ?? 'unspecified') : (ask.denialSource ?? 'user');
+  const action = typeof request.details.action === 'string' ? request.details.action : undefined;
+  const deniedPath = typeof request.details.deniedPath === 'string' ? request.details.deniedPath : undefined;
+  const metadata: Record<string, string> = {};
+  if (deniedPath) metadata.deniedPath = deniedPath;
+  if (action) metadata.action = action;
+  const step = createTraceStep(
+    'plan_approval',
+    action ?? 'in_tool_permission_ask',
+    approved ? 'allow' : 'deny',
+    createHostReason(
+      HostReasonCode.DecisionApproval,
+      approved
+        ? `in-tool ask approved (source: ${reason})`
+        : `in-tool ask denied (source: ${reason})`,
+      Object.keys(metadata).length > 0 ? metadata : undefined,
+    ),
+    startTime,
+  );
+  recordDecision(
+    request.tool, request.details, outcome, reason, startTime,
+    { toolName: request.tool, finalOutcome: approved ? 'allow' : 'deny', steps: [step], totalDurationMs: Date.now() - startTime },
+    sessionId, origin, waitMs,
+  );
 }
 
 function historyOutcomeToLayer(outcome: HistoryDecisionOutcome): DecisionLayer {

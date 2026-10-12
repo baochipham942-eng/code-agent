@@ -19,6 +19,7 @@ import {
   getLatestExecutionStatus,
 } from './types';
 import { CronRunsOnPill } from './CronRunsOnSelector';
+import { useEventScheduleNames } from './useChannelCatalog';
 
 type LocationFilter = 'all' | CronRunsOn;
 
@@ -39,6 +40,8 @@ export const CronJobList: React.FC = () => {
     refresh,
   } = useCronStore();
   const [locationFilter, setLocationFilter] = useState<LocationFilter>('all');
+  // event 行的账号/群显示名（通道目录）；目录没有的回落 id（formatScheduleSummary 兜底）。
+  const eventNamesFor = useEventScheduleNames();
 
   const filteredJobs = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -148,7 +151,7 @@ export const CronJobList: React.FC = () => {
                         <CronRunsOnPill runsOn={job.runsOn} localLabel={cc.locationLocal} cloudLabel={cc.locationCloud} />
                       </div>
                       <div className="mt-1 text-xs text-zinc-500" data-testid="cron-job-schedule-summary">
-                        {formatScheduleSummary(job, language)}
+                        {formatScheduleSummary(job, language, eventNamesFor(job))}
                       </div>
                       {job.enabled && job.nextRunAt != null && (
                         <div className="mt-0.5 text-xs text-zinc-500" data-testid="cron-job-next-run">

@@ -47,7 +47,7 @@ export interface CommitDelegationInput {
   now: number;
 }
 
-export interface CommitDelegationSupersede {
+interface CommitDelegationSupersede {
   supersededDelegationId: string;
   retractQueuedInputId?: string | null;
 }

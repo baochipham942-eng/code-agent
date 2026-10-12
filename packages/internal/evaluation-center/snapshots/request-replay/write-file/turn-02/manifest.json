@@ -3,7 +3,7 @@
   "messageRefs": [
     {
       "kind": "content",
-      "contentHash": "b8e30c920d4819eb7621d2e5c7b2596794ad599ff2231a1d5420ba94274acf3b",
+      "contentHash": "c288120541bbb80f62b4507de069f07f525249c1e21a340dd273c4036f8474f9",
       "reason": "system_prompt_fallback"
     },
     {

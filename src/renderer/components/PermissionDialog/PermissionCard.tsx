@@ -92,6 +92,19 @@ function toMemoryRequest(request: PermissionRequest): PermissionRequestForMemory
   };
 }
 
+/**
+ * 审批应答有没有真的送达宿主。两条投递链的失败形状不同：web → {success:false, error}，
+ * Electron 式 → {outcome: 非 delivered}（AGENT_PERMISSION_RESPONSE 的注册类型写的是
+ * Promise<void>，与实现不符，所以这里按 unknown 收窄）。最常见现场是手机已先答、
+ * island 里这条已不存在——那种点击绝不能记成本机的决定。
+ */
+function isUndeliveredResponse(result: unknown): boolean {
+  if (typeof result !== 'object' || result === null) return false;
+  const record = result as { success?: unknown; outcome?: unknown };
+  if (record.success === false) return true;
+  return typeof record.outcome === 'string' && record.outcome !== 'delivered';
+}
+
 interface PermissionCardProps {
   requestOverride?: ContractPermissionRequest;
   sessionIdOverride?: string | null;
@@ -110,6 +123,7 @@ export function PermissionCard({
     pendingPermissionRequest,
     pendingPermissionSessionId,
     setPendingPermissionRequest,
+    dismissPermissionRequest,
     recordPermissionDecision,
   } = useAppStore();
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
@@ -227,13 +241,21 @@ export function PermissionCard({
         const response = toPermissionResponse(level);
         if (!ipcService.isAvailable()) throw new Error('IPC unavailable');
         // 改过的参数只随 'allow' 一次性放行送出（host 侧同样只认这个组合）
-        await ipcService.invoke(
+        const outcome = await ipcService.invoke(
           IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
           request.id,
           response,
           request.sessionId,
           ...(updatedArgs && response === 'allow' ? [updatedArgs] : []),
         );
+        // 未送达（手机先答 / 已超时删除 / 台账写不进）：不记成本机决定、不留卡，
+        // 明说「已在其他设备处理」——静默吞掉等于让用户对着一张已失效的卡反复点。
+        if (isUndeliveredResponse(outcome)) {
+          releaseApprovalResponse(request.id);
+          dismissPermissionRequest(request.id);
+          toast.error(t.decisionCard.permission.settledElsewhere);
+          return;
+        }
         if (requestSnapshot && recordPermissionDecision) {
           recordPermissionDecision(
             updatedArgs
@@ -270,6 +292,8 @@ export function PermissionCard({
       settled,
       recordPermissionDecision,
       setPendingPermissionRequest,
+      dismissPermissionRequest,
+      t,
     ]
   );
 

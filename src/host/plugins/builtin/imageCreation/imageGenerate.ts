@@ -799,19 +799,34 @@ export async function executeImageGenerate(
     emitLive(output);
     return { ok: true, output, meta };
   } catch (error: unknown) {
-    if (ctx.abortSignal.aborted || (error instanceof Error && error.message === 'aborted')) {
-      const perRequest = params.prompts.map((_, index) => ({
-        index: index + 1,
-        status: 'failed' as const,
-        error: 'aborted',
-      }));
-      const output = '0/' + count + ' saved\nper_request ' + JSON.stringify(perRequest);
-      return { ok: false, error: output, code: 'ABORTED' };
+    const aborted = ctx.abortSignal.aborted || (error instanceof Error && error.message === 'aborted');
+    const message = aborted ? 'aborted' : (error instanceof Error ? error.message : String(error));
+    const perRequest = params.prompts.map((prompt, index) => ({
+      index: index + 1,
+      status: 'failed' as const,
+      error: aborted ? 'aborted' : `${prompt}: ${message}`,
+    }));
+    const summary = '0/' + count + ' saved\nper_request ' + JSON.stringify(perRequest);
+    if (aborted) {
+      return {
+        ok: false,
+        error: summary,
+        code: 'ABORTED',
+        meta: { artifacts: [], per_request: perRequest },
+      };
     }
-    const message = error instanceof Error ? error.message : String(error);
     ctx.logger.warn('image_generate failed', { error: message });
-    if (!briefed) return { ok: false, error: '图片生成失败: ' + message };
-    return { ok: false, error: '图片生成失败：' + message };
+    const detail = briefed
+      ? '上面说要出的那张「' + aspectRatioLabel(params.aspectRatio) + '：' + params.prompts[0]
+        + '」没有出成：' + message + '。没有生成，磁盘上没有新图。'
+      : '图片生成失败: ' + message;
+    const output = summary + '\n' + detail;
+    return {
+      ok: false,
+      error: output,
+      code: 'IMAGE_GENERATION_FAILED',
+      meta: { artifacts: [], per_request: perRequest },
+    };
   }
 }
 

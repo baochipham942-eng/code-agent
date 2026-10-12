@@ -211,4 +211,24 @@ describe('image_generate contract', () => {
     expect(service.generateImage).not.toHaveBeenCalled();
     if (result.ok) expect(result.output).toContain('references used: 1 of 2');
   });
+
+  it('keeps a generated-but-unsaved remote URL in virtual artifact metadata only', async () => {
+    service.generateImage.mockResolvedValue({ imageData: 'https://cdn.example/generated.png', actualModel: 'mock-model' });
+    service.downloadImageAsBase64.mockRejectedValue(new Error('download unavailable'));
+
+    const result = await executeImageGenerate({ prompt: ['remote'] }, ctx(workspace), allow);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toMatch(/^0\/1 saved\nper_request /);
+    expect(result.error).toContain('image was generated but could not be saved');
+    expect(result.error).not.toContain('https://cdn.example/generated.png');
+    const artifacts = collectToolArtifactsFromMetadata(result.meta);
+    expect(artifacts).toHaveLength(1);
+    expect(artifacts[0]).toMatchObject({
+      kind: 'image',
+      url: undefined,
+      metadata: { url: 'https://cdn.example/generated.png' },
+    });
+  });
 });

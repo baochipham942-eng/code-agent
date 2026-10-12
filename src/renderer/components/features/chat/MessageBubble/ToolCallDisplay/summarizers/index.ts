@@ -150,10 +150,24 @@ function summarizePptGenerate(toolCall: ToolCall): string | null {
 function summarizeImageGenerate(toolCall: ToolCall): string | null {
   const metadata = toolCall.result?.metadata;
   if (metadata) {
-    const imagePath = metadata.imagePath as string | undefined;
+    const imagePaths = Array.isArray(metadata.imagePaths)
+      ? metadata.imagePaths.filter((value): value is string => typeof value === 'string')
+      : [];
+    const imagePath = (metadata.imagePath as string | undefined) || imagePaths[0];
     if (imagePath) {
       const fileName = imagePath.split('/').pop() || 'image';
-      return fileName;
+      return imagePaths.length > 1 ? `${fileName} +${imagePaths.length - 1} more` : fileName;
+    }
+    const artifactPaths = Array.isArray(metadata.artifacts)
+      ? metadata.artifacts
+        .map((artifact) => artifact && typeof artifact === 'object' && 'path' in artifact
+          ? (artifact as { path?: unknown }).path
+          : undefined)
+        .filter((value): value is string => typeof value === 'string')
+      : [];
+    if (artifactPaths.length > 0) {
+      const fileName = artifactPaths[0].split('/').pop() || 'image';
+      return artifactPaths.length > 1 ? `${fileName} +${artifactPaths.length - 1} more` : fileName;
     }
     if (metadata.imageBase64) {
       return 'Base64 image';

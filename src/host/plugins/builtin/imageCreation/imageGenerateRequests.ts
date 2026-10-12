@@ -1,9 +1,9 @@
-export interface ImageGenerateRequest {
+interface ImageGenerateRequest {
   index: number;
   prompt: string;
 }
 
-export interface ImageGenerateRequestResult<T> {
+interface ImageGenerateRequestResult<T> {
   index: number;
   status: 'saved' | 'failed';
   value?: T;

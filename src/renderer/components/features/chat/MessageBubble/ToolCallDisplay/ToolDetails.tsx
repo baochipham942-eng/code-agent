@@ -987,11 +987,18 @@ function extractImageResult(toolCall: {
   const metadata = toolCall.result.metadata;
   if (!metadata) return null;
 
-  const artifactCandidates: unknown[] = Array.isArray(metadata.artifacts) ? metadata.artifacts : [];
+  const artifactCandidates: unknown[] = [
+    metadata.artifact,
+    ...(Array.isArray(metadata.artifacts) ? metadata.artifacts : []),
+  ];
   const firstArtifact = artifactCandidates.find((artifact: unknown) => (
       artifact && typeof artifact === 'object' && typeof (artifact as { path?: unknown }).path === 'string'
   ));
+  const imagePaths = Array.isArray(metadata.imagePaths)
+    ? metadata.imagePaths.filter((value): value is string => typeof value === 'string')
+    : [];
   const imagePath = (metadata.imagePath as string | undefined)
+    || imagePaths[0]
     || (firstArtifact && typeof (firstArtifact as { path?: unknown }).path === 'string'
       ? (firstArtifact as { path: string }).path
       : undefined);

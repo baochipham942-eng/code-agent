@@ -1136,6 +1136,34 @@ describe('applyPortableEvidenceToWorkspace · rework r6 regressions', () => {
     expect(await readFile(path.join(fixture.repositoryRoot, 'tracked.txt'), 'utf8')).toBe(CLOUD_TRACKED);
   });
 
+  it('captures a/ b/ prefixed patches under diff.srcPrefix=x/ and applies them back', async () => {
+    const repositoryRoot = await initTempRepository();
+    git(repositoryRoot, 'config', 'diff.srcPrefix', 'x/');
+    await writeFile(path.join(repositoryRoot, 'tracked.txt'), 'base\n');
+    git(repositoryRoot, 'add', '.');
+    git(repositoryRoot, 'commit', '-m', 'base');
+    const baseCommit = git(repositoryRoot, 'rev-parse', 'HEAD');
+    await writeFile(path.join(repositoryRoot, 'tracked.txt'), 'staged\n');
+    git(repositoryRoot, 'add', 'tracked.txt');
+    await writeFile(path.join(repositoryRoot, 'tracked.txt'), CLOUD_TRACKED);
+    const fixture = await captureFixture({ repositoryRoot, baseCommit });
+
+    // Without pinned prefixes, a custom srcPrefix makes every --- header carry
+    // `x/` instead of `a/` (dstPrefix stays `b/`).
+    const stagedPatch = Buffer.from(fixture.sourceEvidence.payload.stagedPatchBase64, 'base64').toString('utf8');
+    const unstagedPatch = Buffer.from(fixture.sourceEvidence.payload.unstagedPatchBase64, 'base64').toString('utf8');
+    expect(stagedPatch).toContain('--- a/tracked.txt');
+    expect(unstagedPatch).toContain('--- a/tracked.txt');
+
+    const applied = await applyPortableEvidenceToWorkspace({
+      evidence: fixture.portableEvidence,
+      workspaceRoot: fixture.repositoryRoot,
+      mode: 'apply',
+    });
+    expect(applied.outcome).toBe('success');
+    expect(await readFile(path.join(fixture.repositoryRoot, 'tracked.txt'), 'utf8')).toBe(CLOUD_TRACKED);
+  });
+
   it('reports legacy prefix-less sections with the exact re-capture reason', async () => {
     const fixture = await createSingleFileFixture();
     // Two legacy shapes: mnemonic `i/`/`w/` prefixes and bare paths — both

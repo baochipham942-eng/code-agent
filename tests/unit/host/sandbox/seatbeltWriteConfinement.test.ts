@@ -10,6 +10,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { generateProfile, type SeatbeltConfig } from '../../../../src/host/sandbox/seatbelt';
+import { getForbiddenWritePathsUnderRoot } from '../../../../src/host/sandbox/sensitivePaths';
 
 function realPath(p: string): string {
   try {
@@ -114,6 +115,44 @@ describe('seatbelt single-file write grant (one-shot escalation)', () => {
     } finally {
       fs.rmSync(alias, { force: true });
       fs.rmSync(real, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('seatbelt write-deny carve-outs inside an escalated directory root (DIR-FORBIDDEN)', () => {
+  it('re-denies forbidden names AFTER the subtree allow so last-match-wins keeps them read-only', () => {
+    const dir = realPath(fs.mkdtempSync(path.join(os.tmpdir(), 'seatbelt-dir-deny-')));
+    const hooks = path.join(dir, '.git', 'hooks');
+    const zshrc = path.join(dir, '.zshrc');
+    const npmrc = path.join(dir, '.npmrc');
+    try {
+      fs.mkdirSync(hooks, { recursive: true });
+      fs.writeFileSync(zshrc, '# rc');
+      fs.writeFileSync(npmrc, 'registry=x');
+
+      const denyEntries = getForbiddenWritePathsUnderRoot(dir);
+      expect(denyEntries).toContainEqual({ kind: 'directory', path: hooks });
+      expect(denyEntries).toContainEqual({ kind: 'file', path: zshrc });
+      expect(denyEntries).toContainEqual({ kind: 'file', path: npmrc });
+
+      const profile = generateProfile(baseConfig({
+        writePaths: [dir],
+        writeDenyPaths: denyEntries,
+      }));
+
+      // 子树 allow 在前，禁写名 deny 在后（SBPL 后规则压过先规则；目录 subpath、文件 literal）
+      const allowIndex = profile.indexOf(`(allow file-write* (subpath "${dir}"))`);
+      expect(allowIndex).toBeGreaterThanOrEqual(0);
+      for (const denyLine of [
+        `(deny file-write* (subpath "${hooks}"))`,
+        `(deny file-write* (literal "${zshrc}"))`,
+        `(deny file-write* (literal "${npmrc}"))`,
+      ]) {
+        const denyIndex = profile.indexOf(denyLine);
+        expect(denyIndex, denyLine).toBeGreaterThan(allowIndex);
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 });

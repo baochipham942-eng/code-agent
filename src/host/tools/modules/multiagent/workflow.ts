@@ -42,6 +42,7 @@ import {
 } from '../../../orchestration';
 import type { RunTraceContext } from '../../../telemetry/runTraceContext';
 import { getWorkflowJournalRepository } from '../../../services/core/repositories/WorkflowJournalRepository';
+import { createLogger } from '../../../services/infra/logger';
 import { validateScript } from '../../../agent/scriptRuntime/scriptValidator';
 import { extractScriptPreview } from '../../../agent/scriptRuntime/scriptPreview';
 import { resolveToolProfile } from '../../../agent/scriptRuntime/toolProfiles';
@@ -52,6 +53,7 @@ import { getEventBus } from '../../../services/eventing/bus';
 import { getWorkflowLaunchApprovalGate, buildWorkflowLaunchRequest } from '../../../agent/workflowLaunchApproval';
 import { getBackgroundSubagentRegistry } from '../../../agent/backgroundSubagentRegistry';
 import { scheduleBackgroundSubagentIdleWake } from '../../../agent/backgroundSubagentIdleWake';
+import { WorkflowStallDetector } from '../../../agent/workflowStallDetector';
 import type { SubagentResult } from '../../../agent/subagentExecutorTypes';
 import { AgentFailureCode } from '../../../../shared/contract/agentFailure';
 import {
@@ -152,12 +154,37 @@ interface WorkflowSettlement {
   recovery: WorkflowFailureRecoveryInput | null;
 }
 
-/** runId + 终态。恢复重跑再次落到同一对时不再排队第二条通知。进程内守卫，重启随注册表一起清空。 */
+const settlementLogger = createLogger('WorkflowSettlement');
+
+/**
+ * runId + 终态。恢复重跑再次落到同一对时不再排队第二条通知。
+ * 进程内 Set 只是快路径/降级兜底——权威键在 workflow_settlement_claims 表里，
+ * 重启后 Set 清空，靠 durable claim 挡住同 runId 同终态的第二条终态通知（D6-A）。
+ */
 const announcedWorkflowSettlements = new Set<string>();
 
 function claimWorkflowSettlement(runId: string, terminalStatus: WorkflowTerminalStatus): boolean {
   const key = `${runId}:${terminalStatus}`;
   if (announcedWorkflowSettlements.has(key)) return false;
+  const repo = getWorkflowJournalRepository();
+  if (!repo) {
+    settlementLogger.warn('workflow settlement dedupe downgraded: journal repository unavailable, falling back to in-process dedupe', { runId, terminalStatus });
+    announcedWorkflowSettlements.add(key);
+    return true;
+  }
+  try {
+    if (!repo.claimSettlement(runId, terminalStatus)) {
+      announcedWorkflowSettlements.add(key);
+      return false;
+    }
+  } catch (error) {
+    // DB 故障不得把异常抛进 settlement 路径：warn 带真因后按进程内答案降级。
+    settlementLogger.warn('workflow settlement dedupe downgraded: durable claim failed, falling back to in-process dedupe', {
+      runId,
+      terminalStatus,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   announcedWorkflowSettlements.add(key);
   return true;
 }
@@ -201,7 +228,8 @@ function publishWorkflowSettlement(settlement: WorkflowSettlement, safeProgress:
 /**
  * 把尚未结束的 graph run 交给后台注册表。
  * 不传 parent runId：那会写一条 durable 子代理账，重启后被报成 interrupted，和 dynamicWorkflowRecovery 抢同一条 run。
- * 同一 runId 已在册时不再 adopt 第二次；终态键已被占则直接丢掉，避免恢复重跑再响一次。
+ * 同一 runId 已在册时不再 adopt 第二次；终态键已被占则直接丢掉，避免恢复重跑再响一次——
+ * 两个分支都含 completion record 入队与 idle wake（branch-1 经闸门对象带到完成时，branch-2 干脆不 adopt）。
  */
 function handWorkflowRunToBackground(
   runId: string,
@@ -210,6 +238,8 @@ function handWorkflowRunToBackground(
     sessionId?: string;
     title: string;
     onClaimed: (settlement: WorkflowSettlement) => void;
+    onAdopted?: () => void;
+    onSettled?: () => void;
     onError?: (error: unknown) => void;
   },
 ): void {
@@ -223,13 +253,25 @@ function handWorkflowRunToBackground(
   };
   const existing = registry.getStatus(runId);
   if (!existing) {
+    // claim 结果要到 pending settle 时才知道；闸门对象按引用穿透 adopt 内部的
+    // options 拷贝，recordCompletion 完成时读最新值——claim 输给上个进程（durable
+    // 行已存在）时 completion record 不入队、idle wake 不响，重启后不再收到第二条
+    // 「workflow finished」。结果仍照常回填注册表，collect_agent 取结果不受影响。
+    const completionGate = { suppress: false };
     registry.adopt(pending.then((settlement) => {
-      if (claimWorkflowSettlement(runId, settlement.terminalStatus)) options.onClaimed(settlement);
+      options.onSettled?.();
+      if (claimWorkflowSettlement(runId, settlement.terminalStatus)) {
+        options.onClaimed(settlement);
+      } else {
+        completionGate.suppress = true;
+      }
       return settlement.result;
-    }), adoptOptions);
+    }), { ...adoptOptions, completionNotificationGate: completionGate });
+    options.onAdopted?.();
     return;
   }
   void pending.then(async (settlement) => {
+    options.onSettled?.();
     if (registry.getStatus(runId)?.status === 'running') await registry.await(runId);
     if (!claimWorkflowSettlement(runId, settlement.terminalStatus)) return;
     options.onClaimed(settlement);
@@ -420,6 +462,24 @@ async function runWorkflow(
     // resumable journal 网关：DB 就绪才有（getWorkflowJournalRepository() 在未就绪时返 null）→
     // 无则不持久化、不重放，workflow 照常全 live 跑（优雅降级）。sessionId 经闭包带入 onRunStart。
     const journalRepo = getWorkflowJournalRepository();
+    // N-WF-STALL-NOTICE：硬停滞的模型面投递。检测器自身不依赖注册表；这里注入
+    // 「recordStallNotice 入队 + idle wake」两步（announce=false 与 journal 降级路径不进来）。
+    // recordStallNotice 不写终态 entry，run 在 collect_agent 下仍报 running。
+    const stallDetector = new WorkflowStallDetector({
+      journal: journalRepo,
+      logger: ctx.logger,
+      onStallNotice: (notice) => {
+        const record = getBackgroundSubagentRegistry().recordStallNotice({
+          runId: notice.runId,
+          sessionId: ctx.sessionId,
+          title: workflowBackgroundTitle(goal, runId),
+          epoch: notice.epoch,
+          idleSeconds: notice.idleSeconds,
+          ...(notice.lastActivity ? { lastActivity: notice.lastActivity } : {}),
+        });
+        scheduleBackgroundSubagentIdleWake(record);
+      },
+    });
     const journal: ScriptRunJournal | undefined = journalRepo
       ? {
           loadPriorRun: (rid) => {
@@ -531,6 +591,7 @@ async function runWorkflow(
       },
       signal: runAbort.signal,
       emit: (event: ScriptRunEvent) => {
+        stallDetector.handleEvent(event);
         // ① 进度树事件通道（P3a）：把【全部】8 类 ScriptRunEvent publish 到 'workflow' domain，
         //    workflow.ipc 的专用 bridge 投递到 renderer 'workflow:event'（Tauri IPC + web SSE 两端）。
         //    bridgeToRenderer:false 避免 Tauri 主进程的通用 EventBridge 再转发一次（重复事件）。
@@ -584,6 +645,10 @@ async function runWorkflow(
       }],
     };
     const compatibility = new GraphEventCompatibilityAdapter({
+      graph: (event) => {
+        if (event.type === 'graph_waiting') stallDetector.setParked(runId, true);
+        else if (event.type === 'graph_started') stallDetector.setParked(runId, false);
+      },
       script: (event) => {
         if (['agent:start', 'agent:done', 'agent:error'].includes(event.type) && event.data?.agentId === parentNodeId) return;
         deps.emit?.({ ...event, runId });
@@ -613,6 +678,8 @@ async function runWorkflow(
       handWorkflowRunToBackground(runId, pending, {
         sessionId: ctx.sessionId,
         title: workflowBackgroundTitle(goal, runId),
+        onAdopted: () => stallDetector.startRun(runId),
+        onSettled: () => stallDetector.stopRun(runId),
         onClaimed: (settlement) => publishWorkflowSettlement(settlement, safeProgress),
         onError: (error) => ctx.logger.debug('workflow background handoff failed', {
           runId,

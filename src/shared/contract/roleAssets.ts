@@ -74,8 +74,6 @@ export interface RolePanelEntry {
 export type ExpertBindingKind = 'file' | 'folder' | 'library_item';
 /** always=索引常驻注入（含摘要）；on_demand=仅列出，正文按需 Read */
 export type ExpertBindingMode = 'always' | 'on_demand';
-/** private=该专家私有（L1 隔离，不进其他专家）；project=同项目专家可共读（跨专家共读后续批次接线，先存字段） */
-export type ExpertBindingScope = 'private' | 'project';
 
 /** 专家 L1 资料架绑定条目，存 roles/<roleId>/bindings.json */
 export interface ExpertContextBinding {
@@ -86,7 +84,6 @@ export interface ExpertContextBinding {
   /** 展示名；library_item 缺省用条目标题，路径类缺省用 basename */
   title?: string;
   mode: ExpertBindingMode;
-  scope: ExpertBindingScope;
   createdAt: number;
 }
 

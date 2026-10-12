@@ -5,7 +5,7 @@ import { cleanup, render } from '@testing-library/react';
 import { createIdentity } from '../../../src/shared/companion/noiseChannel';
 import { toHex } from '../../../src/shared/companion/lanProtocol';
 import { COMPANION_LIMITS } from '../../../src/shared/constants/companion';
-import { connectionBlocksAutoRetry, handshakeNeedsRescan, phoneReconnectDelayMs, phoneReconnectJitterMs } from '../../../packages/mobile/src/app/phoneReconnect';
+import { connectionBlocksAutoRetry, connectionErrorFromCode, handshakeNeedsRescan, phoneReconnectDelayMs, phoneReconnectJitterMs } from '../../../packages/mobile/src/app/phoneReconnect';
 import { connectionDiagnosis } from '../../../packages/mobile/src/app/connectionDiagnosis';
 import { StatusSlot, composerStatusItems } from '../../../packages/mobile/src/app/StatusSlot';
 import { createCompanionStore } from '../../../packages/mobile/src/stores/companionStore';
@@ -124,6 +124,8 @@ describe('phoneReconnectDelayMs 节奏', () => {
     expect(connectionBlocksAutoRetry('offline', 'connectionRejected')).toBe(true);
     expect(connectionBlocksAutoRetry('offline', 'connectionQrInvalid')).toBe(true);
     expect(connectionBlocksAutoRetry('offline', 'connectionUnavailable')).toBe(false);
+    expect(connectionBlocksAutoRetry('offline', 'connectionRemoteOff')).toBe(false);
+    expect(connectionErrorFromCode('COMPANION_REMOTE_OFF')).toBe('connectionRemoteOff');
     expect(handshakeNeedsRescan('COMPANION_HOST_KEY_MISMATCH')).toBe(true);
     expect(handshakeNeedsRescan('COMPANION_BINDING_CHANGED')).toBe(true);
     expect(handshakeNeedsRescan('COMPANION_NO_RESPONSE')).toBe(false);

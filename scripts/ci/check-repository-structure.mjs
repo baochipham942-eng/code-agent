@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/* global console */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -62,9 +61,19 @@ const limits = {
   // 2026-09-30 +1: scripts/bundle-frontend-slides-skill.mjs（N-PPT-SKILL-DEADEND：把
   // frontend-slides skill 的 merge-to-*.mjs 打成自带依赖的 .bundle.mjs，生成物头注释回指此脚本；
   // 与 build-audio-capture.sh / fetch-rtk.sh 同族的构建输入生成器，留在直属层）。
+  // 2026-10-06 +1: scripts/audit-orphan-candidates.mjs（N-ORPHAN-WIRING-AUDIT：只读
+  // 孤儿能力审计候选生成器，读两份 knip 生产基线产三层候选清单，产出被
+  // docs/audits/2026-10-06-orphan-wiring-audit.md 引用；与 gdpval-rubric-score.ts 同族
+  // 的稳定 CLI 入口，任务书按直属路径引用）。
   // 2026-10-07 +1: scripts/check-refactor-bundle-identical.mjs（N-REFACTOR-BUNDLE-GATE：
   // 手工验收入口，用固定 esbuild 选项证明大文件拆分没有改变 bundle 字节内容）。
-  directScriptFiles: 164,
+  // 2026-10-10 +1: scripts/pending-concurrency-baseline.mjs
+  // （N-PENDING-INPLACE-RESOLVE-BASELINE：任务要求的只读基线数据入口，固定直属路径
+  // 供一次性分析与证据复跑；不导出业务模块，也不适合折入 scripts/lib/）。
+  // 2026-10-11 +1: scripts/sandbox-escalate-dir-seatbelt-probe.sh
+  // （N-SANDBOX-ESCALATE-DIR-SEATBELT：macOS seatbelt 真机试验入口，任务书和试验记录
+  // 直接引用直属路径；一次性探针不适合折入 scripts/lib/）。
+  directScriptFiles: 167,
   // 15: the Poppler promotion boundary is split across two workflows on purpose —
   // build-poppler-sidecar.yml only reviews candidates and can never publish, while
   // promote-poppler-sidecar.yml holds the OSS credentials and publishes them.

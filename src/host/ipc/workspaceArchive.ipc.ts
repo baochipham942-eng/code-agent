@@ -350,6 +350,10 @@ interface PresentationPreviewDependencies {
 interface PresentationScreenshotManifest {
   revision: string;
   screenshots: string[];
+  /** 绝对 pptx 路径（保留清理按 deck 归属/重算当前 revision 用）；旧 manifest 无此字段，照常读 */
+  filePath?: string;
+  /** 上次命中缓存的时间（ms）；旧 manifest 无此字段，照常读 */
+  lastUsedAt?: number;
 }
 
 const presentationPreviewInflight = new Map<string, Promise<PresentationPagePreviewResult>>();
@@ -358,14 +362,31 @@ async function readCachedScreenshots(
   manifestPath: string,
   revision: string,
   expectedCount: number,
-): Promise<string[] | null> {
+): Promise<{ screenshots: string[]; manifest: PresentationScreenshotManifest } | null> {
   try {
     const parsed = JSON.parse(await fsp.readFile(manifestPath, 'utf8')) as PresentationScreenshotManifest;
     if (parsed.revision !== revision || parsed.screenshots.length !== expectedCount) return null;
     await Promise.all(parsed.screenshots.map((screenshot) => fsp.access(screenshot)));
-    return parsed.screenshots;
+    return { screenshots: parsed.screenshots, manifest: parsed };
   } catch {
     return null;
+  }
+}
+
+/** 命中缓存时回写 lastUsedAt/filePath（best effort，失败不影响预览）。 */
+async function writeBackManifestUsage(
+  manifestPath: string,
+  manifest: PresentationScreenshotManifest,
+  filePath: string,
+): Promise<void> {
+  try {
+    await fsp.writeFile(
+      manifestPath,
+      JSON.stringify({ ...manifest, filePath, lastUsedAt: Date.now() }),
+      'utf8',
+    );
+  } catch {
+    // 回写失败只意味着下次 sweep 少一个时间戳，不值得打断预览
   }
 }
 
@@ -403,10 +424,11 @@ async function buildPresentationPagePreview(
   const manifestPath = path.join(cacheDir, 'manifest.json');
   const cached = await readCachedScreenshots(manifestPath, revision.value, pages.length);
   if (cached) {
+    await writeBackManifestUsage(manifestPath, cached.manifest, filePath);
     return {
       filePath,
       state: 'ready',
-      pages: pages.map((page, displayIndex) => ({ ...page, screenshotPath: cached[displayIndex] })),
+      pages: pages.map((page, displayIndex) => ({ ...page, screenshotPath: cached.screenshots[displayIndex] })),
     };
   }
 
@@ -419,7 +441,11 @@ async function buildPresentationPagePreview(
     if (screenshots.length !== pages.length) {
       throw new Error(`Expected ${pages.length} screenshots, received ${screenshots.length}`);
     }
-    await fsp.writeFile(manifestPath, JSON.stringify({ revision: revision.value, screenshots }), 'utf8');
+    await fsp.writeFile(
+      manifestPath,
+      JSON.stringify({ revision: revision.value, screenshots, filePath, lastUsedAt: Date.now() }),
+      'utf8',
+    );
     return {
       filePath,
       state: 'ready',

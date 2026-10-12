@@ -12,6 +12,9 @@ keyless 确定性假模型（`CODE_AGENT_E2E_LOCAL_AGENT_MODEL=1`）真会话的
   turn-NN/manifest.json      request_manifest（requestId/账本 id 规范化）
   turn-NN/canonical-request.json   重建请求的 canonical 字节（回放逐字节咬它）
   turn-NN/expected-response.json   假模型 canonical 响应（回放用当前假模型重推导再咬）
+
+<caseId>.render.json         渲染层旁路（与用例目录同级；当前只录 write-file）
+<caseId>.state.json          持久层旁路（与用例目录同级；当前只录 write-file）
 ```
 
 ## 纪律
@@ -22,7 +25,9 @@ keyless 确定性假模型（`CODE_AGENT_E2E_LOCAL_AGENT_MODEL=1`）真会话的
   `src/host/testing/e2e/**`、`requestReplay*.ts`、`contextBuilder.ts`、
   `converter.ts`、`toolDefinitions.ts`、`deferredTools.ts`、`todayAnchor.ts`、
   以及 `src/host/tools/modules/**/*.schema.ts` 这类模型可见行为，必须同 PR
-  重录——`scripts/ci/snapshot-replay-sync-gate.mjs` 守。
+  重录——`scripts/ci/snapshot-replay-sync-gate.mjs` 守。协议层目录、
+  `<caseId>.render.json`、`<caseId>.state.json` 都算这次快照更新。
+  `write-file` 缺任一旁路，门直接红。判据见 `docs/testing/replay-three-layer-evidence.md`。
 - 若改动确认行为不可见（注释/重命名），重录后字节无变化时，在本文件末尾
   「重录确认」追加一行说明（PR 号 + 原因）作为同 PR 快照目录更新。
 - 生成器确定性：同机同代码重录必须字节一致（已双录验证）；id 全规范化、
@@ -55,6 +60,7 @@ keyless 确定性假模型（`CODE_AGENT_E2E_LOCAL_AGENT_MODEL=1`）真会话的
 ## 重录确认
 
 （行为不可见改动在此追加：日期 / PR / 说明）
+- 2026-10-12 / N-REPLAY-THREE-LAYER-EVIDENCE 返修 r3（PR #2255）/ 敏感变更：src/host/testing/e2e/e2eLocalAgentModel.ts（删除 `persistSnapshotReplayWriteArtifact` 导出，唯一调用方三层证据改为真 Write 工具重放，假模型路由行为逐字不变）。本机 `env -u TYPESAFE_API_KEY` `acceptance:snapshot-replay:record` 重录 7 会话 16 轮并自验通过（含三层旁路与会话库对账）。与已提交快照的差异经结构化比对全部为环境项：① `<env>` 的 `Today's date` 2026-10-11→10-12（录制跨 UTC 日界）及其带出的 manifest/blob sha256 轮换；② 延迟工具摘要 `http_request | decide` → `http_request`（已提交语料 keyed，本次 keyless 口径按谓词滤掉 decide）。故语料本体保持已提交版本，只提交 `write-file.state.json`：持久层产物条目新增 `tool: "Write"` 与 `requestSha256`（真 Write 工具落盘字节的哈希 + 账本请求正文哈希，绿态两者相等），落盘 sha256 与字节数不变。
 - 2026-10-09 / N-MEM-CITEBACK-STALEHINT / 模型可见变更：src/host/memory/memoryContextGuidance.ts（MEMORY_BACKGROUND_GUIDANCE 增加 candidate/STALE 须复核并点名 MemoryRead 文末提示行的条款）与 src/host/tools/modules/lightMemory/memoryRead.ts（candidate/stale 记忆文末追加提示行，均不在本门敏感面前缀清单内）。已提交语料 7 会话 16 轮的任何请求字节都不含记忆背景指引（`grep -rl '这些记忆记录的是当时的判断'` 语料目录 0 命中），本次改动对语料零漂移。本机 `env -u TYPESAFE_API_KEY`（keyless 口径）`acceptance:snapshot-replay:record` 重录 7 会话 16 轮自验通过，与已提交快照的差异为：① 日期锚（今天的日期 2026-10-07→10-09、Today's date、WebSearch 描述内嵌日期）及其带出的 sha256 哈希轮换，存量陈旧与本单无关；② 延迟工具摘要行 `http_request | decide` → `http_request`——已提交语料录制时 shell 带 TYPESAFE_API_KEY（keyed），keyless 重录按口径滤掉 decide，属录制环境口径差而非行为漂移。故快照本体不更新，重录字节已丢弃。
 - 2026-10-09 / N-RETENTION-SHOTS-APPDIR / 敏感变更：src/host/tools/modules/network/screenshotPage.schema.ts（output_path 默认落盘位置文案：工作目录→应用数据目录）；screenshot / computer 的 outputPath 默认文案同步改（plugins/builtin 路径不在敏感面清单，一并列出）。录制语料 7 会话 16 轮的工具表不含这三个工具，本机 `acceptance:snapshot-replay:record` 重录与已提交快照的差异经结构化比对全部为日期锚（今天的日期 2026-10-07→10-09、WebSearch 描述内嵌日期）及其引发的 sha256 哈希轮换，schema 文案变更零字节漂移，故快照本体不更新。
 - 2026-10-06 / N-MAXLINES-MINEFIELD-2 / 敏感变更：src/host/services/toolSearch/deferredTools.ts（纯数据表搬移至 deferredToolsData.ts、原路径 re-export 保面，条目内容逐字未动）。本机 `acceptance:snapshot-replay` 回放 7 会话 16 轮逐字节一致（含 `<deferred-tools>` 名录与 canonicalTools），证明搬移行为不可见。本机 keyless 重录（`env -u TYPESAFE_API_KEY`）与已提交快照的差异经 16 个 canonical-request 逐消息归一化比对，全部为环境项、与本 PR 无关：① 系统提示 `Today's date` 2026-10-05→10-06（录制跨 UTC 日界）；② 条件工具 `decide` 从 `<deferred-tools>` 名录消失——已提交语料录制时 Jev 路由可解析（key 在场），keyless 重录按 `decideAvailability` 谓词过滤（toolSearchService 枚举处收敛）。快照本体保持已提交版本（改为 keyless 语料会让带 key 环境的回放变红），以本行作为同 PR 快照目录更新。

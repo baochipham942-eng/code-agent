@@ -18,20 +18,17 @@
 // 与 audioRetention 同一套记账（infra/retentionLedger）：只记日志不抛错。
 // ============================================================================
 
-import { execFile } from 'child_process';
 import { promises as fsp } from 'fs';
 import path from 'path';
-import { promisify } from 'util';
 import { PRESENTATION_PREVIEW_RETENTION } from '@shared/constants/presentationPreview';
 import { getUserConfigDir } from '../../config/configPaths';
 import { PRESENTATION_PREVIEW_CACHE_DIRNAME } from '../../tools/media/ppt/constants';
 import { computeArtifactRevision } from '../../tools/artifacts/artifactLocatorHost';
 import { createLogger } from './logger';
 import { countRetentionFailed, createRetentionLedger, type RetentionFailureCounter } from './retentionLedger';
+import { collectReferenceText } from './retentionReferenceScan';
 
 const logger = createLogger('PresentationPreviewRetention');
-
-const execFileAsync = promisify(execFile);
 
 /** sha256 hex revision 目录名（computeArtifactRevision 的产物形状） */
 const REVISION_DIR_NAME = /^[0-9a-f]{64}$/;
@@ -51,20 +48,9 @@ interface PreviewRevisionDir {
 }
 
 /**
- * 引用扫描覆盖的表和文本列。消息表是主源；其余是任务书点名/排查补充的
- * 「存产物/文件路径」的表，少扫一张就可能删掉仍被引用的目录。
+ * 引用扫描（REFERENCE_SOURCES 表清单、LIKE 预筛、分隔符归一）已抽到
+ * retentionReferenceScan（与 app 缓存保留清理共用），本文件只保留预览特有的判定逻辑。
  */
-const REFERENCE_SOURCES: ReadonlyArray<{ table: string; columns: readonly string[] }> = [
-  { table: 'messages', columns: ['content', 'tool_calls', 'tool_results', 'responses_output', 'attachments', 'compaction', 'metadata'] },
-  { table: 'companion_artifacts', columns: ['path'] },
-  { table: 'tool_executions', columns: ['arguments', 'result'] },
-  { table: 'turn_snapshots', columns: ['context_chunks'] },
-  { table: 'compaction_snapshots', columns: ['pre_messages_summary', 'post_messages_summary'] },
-  { table: 'file_checkpoints', columns: ['file_path', 'original_content'] },
-  { table: 'workflow_runs', columns: ['result_json'] },
-  { table: 'workflow_run_calls', columns: ['result_json'] },
-  { table: 'session_fork_anchor_evidence', columns: ['summary_json', 'evidence_json'] },
-];
 
 const retentionLedger = createRetentionLedger();
 
@@ -92,7 +78,7 @@ export async function sweepPresentationPreviewRetention(input?: {
       if (typeof dbPath !== 'string' || dbPath.length === 0) {
         throw new Error('database path unavailable');
       }
-      referenceText = await collectReferenceText(dbPath);
+      referenceText = await collectReferenceText(dbPath, [`${PRESENTATION_PREVIEW_CACHE_DIRNAME}_`]);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       logger.warn('[预览保留] 引用扫描失败，本轮不删除任何目录', { reason });
@@ -163,46 +149,10 @@ async function listSweepableRevisionDirs(cacheRoot: string): Promise<PreviewRevi
 }
 
 /**
- * 只读引用扫描：对每张表跑一次 LIKE 预筛，把命中行的文本列拼成一段大文本。
- * 任一表查询失败（表缺失 / 库打不开 / 输出超限）→ 抛错，由调用方记 1 次失败并放弃本轮删除。
+ * 只读引用扫描（retentionReferenceScan.collectReferenceText）：needle 用 LIKE 的 `_`
+ * 单字符通配兜住 `/` 与 `\` 两种分隔符（Windows 写入点是 path.join 的反斜杠路径，
+ * JSON 列里还成对转义）——宁可多捞，精筛在 isReferenced。归一也在扫描内完成。
  */
-async function collectReferenceText(dbPath: string): Promise<string> {
-  const chunks: string[] = [];
-  for (const source of REFERENCE_SOURCES) {
-    // 常量目录名不含引号/通配符，直接内插；列名是本文件维护的白名单。
-    // 预筛用 LIKE 的 `_` 单字符通配兜住 `/` 与 `\` 两种分隔符（Windows 写入点是
-    // path.join 的反斜杠路径，JSON 列里还成对转义）——宁可多捞，精筛在 isReferenced。
-    const like = source.columns
-      .map((column) => `${column} LIKE '%${PRESENTATION_PREVIEW_CACHE_DIRNAME}_%'`)
-      .join(' OR ');
-    const sql = `SELECT ${source.columns.join(', ')} FROM ${source.table} WHERE ${like};`;
-    const { stdout } = await execFileAsync('sqlite3', ['-readonly', '-json', dbPath, sql], {
-      encoding: 'utf8',
-      maxBuffer: 256 * 1024 * 1024,
-    });
-    const trimmed = stdout.trim();
-    if (!trimmed) continue;
-    const rows = JSON.parse(trimmed) as unknown;
-    if (!Array.isArray(rows)) {
-      throw new Error(`${source.table} query did not return a JSON array`);
-    }
-    for (const row of rows) {
-      if (typeof row !== 'object' || row === null) continue;
-      for (const value of Object.values(row as Record<string, unknown>)) {
-        if (typeof value === 'string' && value.length > 0) chunks.push(normalizeSeparators(value));
-      }
-    }
-  }
-  return chunks.join('\n');
-}
-
-/**
- * 分隔符归一：反斜杠串（含 JSON 列里成对转义的 `\\`）折叠成单个 `/`，
- * 让 Windows 形状 `presentation-page-previews\<rev>` 与正斜杠判定统一命中。
- */
-function normalizeSeparators(value: string): string {
-  return value.replace(/\\+/g, '/');
-}
 
 /** 引用判定：按子串 `presentation-page-previews/<rev>` 精确匹配（64 位 hex 定长，无前缀误伤；输入已归一分隔符）。 */
 function isReferenced(referenceText: string, dirName: string): boolean {

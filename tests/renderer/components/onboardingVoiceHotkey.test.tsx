@@ -69,6 +69,7 @@ async function goToVoiceStep() {
   fireEvent.click(await screen.findByTestId('onboarding-subscription-sources')
     .then((section) => section.querySelector('[data-onboarding-engine="codex_cli"]')!));
   fireEvent.click(screen.getByTestId('onboarding-continue-to-chat'));
+  fireEvent.click(await screen.findByTestId('onboarding-connectors-next'));
   return screen.findByTestId('onboarding-voice-hotkey-step');
 }
 

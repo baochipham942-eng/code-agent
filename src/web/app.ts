@@ -680,11 +680,13 @@ export function createApp(deps: CreateAppDeps): express.Express {
       };
       remoteTransports.start = startCompanionRemotes;
       remoteTransports.stop = stopCompanionRemotes;
+      // 总闸关着也要起 LAN 面（N-COMPANION-KILLSWITCH-WIRE）：restore 自己看旗标——关着时
+      // 只起固定拒绝应答器（手机要能分清「电脑关了远程」和「电脑不可达」），绝不起真服务。
+      void lan.restore().catch(() => logger.warn('Companion LAN restore unavailable'));
       if (gateway.remoteEnabled()) {
-        void lan.restore().catch(() => logger.warn('Companion LAN restore unavailable'));
         void startCompanionRemotes();
       } else {
-        logger.info('Companion remote access is off; LAN listener and relay sockets stay down');
+        logger.info('Companion remote access is off; relay sockets stay down, LAN answers a fixed refusal');
       }
       app.use('/companion', createCompanionRouter({
         gateway,

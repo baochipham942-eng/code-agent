@@ -5,6 +5,11 @@
 // 快照目录 packages/internal/evaluation-center/snapshots/request-replay/ 必须同 PR 有
 // 更新（重录：`npm run acceptance:snapshot-replay:record`），否则红。
 //
+// 算进「快照更新」的有三层文件：协议层用例目录（canonical-request 等）、
+// 渲染层旁路 `<case>.render.json`、持久层旁路 `<case>.state.json`。后两类与用例
+// 目录同级，由同一次 record 写出。三层用例 write-file 缺任一旁路即红——旁路不算
+// 可有可无的附件。
+//
 // 敏感面清单的选取口径：凡是能改变「发给假模型的字节」或「假模型响应字节」或
 // 「重建/比对语义」的代码——contextAssembly 的拼装/哈希、prompts 文案、E2E 假模型
 // 路由、requestReplay 的重建与比对。快照目录自身的改动天然不算敏感变更；
@@ -24,6 +29,10 @@ import { fileURLToPath } from 'node:url';
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const defaultRepoRoot = path.resolve(scriptDir, '../..');
 const snapshotDir = 'packages/internal/evaluation-center/snapshots/request-replay';
+// 已钉三层证据的用例。旁路文件与用例目录同级：<case>.render.json / <case>.state.json。
+const THREE_LAYER_CASES = ['write-file'];
+const RENDER_SIDECAR_SUFFIX = '.render.json';
+const STATE_SIDECAR_SUFFIX = '.state.json';
 
 // 模型可见行为面：改动这些路径 = 可能改变发给模型的字节 / 假模型响应 / 重建语义。
 // readResultProjection.ts 单列出文件而非整目录：src/host/context/ 下其余模块不进
@@ -58,6 +67,20 @@ function isModelVisiblePath(file) {
     return true;
   }
   return file.startsWith(TOOL_SCHEMA_DIR) && file.endsWith(TOOL_SCHEMA_SUFFIX);
+}
+
+function snapshotLayer(file) {
+  const base = file.slice(file.lastIndexOf('/') + 1);
+  if (base.endsWith(RENDER_SIDECAR_SUFFIX)) return 'render';
+  if (base.endsWith(STATE_SIDECAR_SUFFIX)) return 'state';
+  return 'protocol';
+}
+
+/** 协议层语料、渲染层旁路、持久层旁路都算快照更新。 */
+function isSnapshotSyncPath(file) {
+  if (!file.startsWith(`${snapshotDir}/`)) return false;
+  const layer = snapshotLayer(file);
+  return layer === 'protocol' || layer === 'render' || layer === 'state';
 }
 
 const args = process.argv.slice(2);
@@ -140,9 +163,26 @@ if (caseDirs.length === 0) {
   fail(`快照目录 ${snapshotDir} 没有任何用例——先跑 npm run acceptance:snapshot-replay:record 建语料`);
 }
 
+for (const caseId of THREE_LAYER_CASES) {
+  if (!caseDirs.includes(caseId)) {
+    fail(`三层回放用例 ${caseId} 不在快照语料里`);
+  }
+  for (const suffix of [RENDER_SIDECAR_SUFFIX, STATE_SIDECAR_SUFFIX]) {
+    const relativePath = `${snapshotDir}/${caseId}${suffix}`;
+    if (!fs.existsSync(path.join(repoRoot, relativePath))) {
+      fail(
+        `三层回放旁路缺失：${relativePath}。`
+        + '跑 npm run acceptance:snapshot-replay:record，让渲染层与持久层跟协议层一起落盘。',
+      );
+    }
+  }
+}
+
 const changed = changedPathsSince(baseSha);
 const sensitiveChanged = [...changed].filter((file) => isModelVisiblePath(file));
-const snapshotChanged = [...changed].filter((file) => file.startsWith(`${snapshotDir}/`));
+const snapshotChanged = [...changed].filter((file) => isSnapshotSyncPath(file));
+const renderChanged = snapshotChanged.filter((file) => file.endsWith(RENDER_SIDECAR_SUFFIX));
+const stateChanged = snapshotChanged.filter((file) => file.endsWith(STATE_SIDECAR_SUFFIX));
 
 if (sensitiveChanged.length > 0 && snapshotChanged.length === 0) {
   fail(
@@ -155,5 +195,7 @@ if (sensitiveChanged.length > 0 && snapshotChanged.length === 0) {
 
 console.log(
   `[snapshot-replay-sync-gate] ✓ 快照基线与模型可见行为面同步（base=${baseSha.slice(0, 10)}，`
-  + `敏感变更 ${sensitiveChanged.length} 个，快照变更 ${snapshotChanged.length} 个，用例 ${caseDirs.length} 条）`,
+  + `敏感变更 ${sensitiveChanged.length} 个，快照变更 ${snapshotChanged.length} 个`
+  + `（渲染 ${renderChanged.length}，持久 ${stateChanged.length}），`
+  + `用例 ${caseDirs.length} 条，三层旁路 ${THREE_LAYER_CASES.join(',')} 齐全）`,
 );

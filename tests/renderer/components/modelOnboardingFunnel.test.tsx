@@ -168,6 +168,7 @@ afterEach(cleanup);
 
 async function continuePastModelAndSkipVoiceHotkey() {
   fireEvent.click(screen.getByTestId('onboarding-continue-to-chat'));
+  fireEvent.click(await screen.findByTestId('onboarding-connectors-skip'));
   fireEvent.click(await screen.findByTestId('onboarding-voice-hotkey-skip'));
 }
 

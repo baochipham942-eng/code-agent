@@ -43,4 +43,8 @@ export function kickoffStartupRetention(): void {
   void import('../host/services/infra/presentationPreviewRetention')
     .then(({ kickoffPresentationPreviewRetention }) => kickoffPresentationPreviewRetention())
     .catch((error) => logger.warn('Presentation preview retention failed (non-blocking):', (error as Error).message));
+  // app 自有缓存（channel-media / 托管浏览器截图 / appshots）：同款启动 + 每天一次
+  void import('../host/services/infra/appCacheRetention')
+    .then(({ kickoffAppCacheRetention }) => kickoffAppCacheRetention())
+    .catch((error) => logger.warn('App cache retention failed (non-blocking):', (error as Error).message));
 }

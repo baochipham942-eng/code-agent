@@ -9,7 +9,7 @@ import { createLogger } from '../services/infra/logger';
 import { Bubblewrap, getBubblewrap, type BubblewrapConfig, type BubblewrapStatus } from './bubblewrap';
 import { getSeatbelt, type SeatbeltConfig, type SeatbeltStatus } from './seatbelt';
 import { SANDBOX_TIMEOUTS } from '../../shared/constants';
-import { getSensitiveSandboxPaths } from './sensitivePaths';
+import { getForbiddenWritePathsUnderRoot, getSensitiveSandboxPaths } from './sensitivePaths';
 
 const logger = createLogger('SandboxManager', { lane: 'sandbox' });
 
@@ -105,6 +105,11 @@ export interface SandboxWrapOptions {
   readWriteRoots?: string[];
   /** Exact files allowed for writes, without descendants (one-shot sandbox escalation). */
   readWriteFiles?: string[];
+  /**
+   * Granted write subtrees (one-shot directory escalation, DIR-FORBIDDEN): credential /
+   * cage / hook / shell-rc names existing under these roots stay read-only despite the grant.
+   */
+  forbiddenWriteUnder?: string[];
   /** Host roots that must not be readable from this command. */
   deniedReadRoots?: string[];
   /** 是否放行网络（bypass 档默认 true） */
@@ -354,6 +359,10 @@ export class SandboxManager {
       ...getSensitiveSandboxPaths(),
       ...(opts.deniedReadRoots ?? []).map((root) => ({ kind: 'directory' as const, path: root })),
     ];
+    // DIR-FORBIDDEN：目录子树一次性扩权的禁写名清单（现存路径），平台层在写放行之后回盖只读
+    const writeDenyEntries = (opts.forbiddenWriteUnder ?? []).flatMap(
+      (root) => getForbiddenWritePathsUnderRoot(path.resolve(root)),
+    );
     const allowNetwork = opts.allowNetwork ?? false;
     const npmEnvironment = prepareNpmSandboxEnvironment();
 
@@ -366,6 +375,7 @@ export class SandboxManager {
             readPaths: readOnlyRoots,
             writePaths: [...readWriteRoots, npmEnvironment.npmHome],
             writeFiles: readWriteFiles,
+            writeDenyPaths: writeDenyEntries,
             workingDirectory: resolved,
             allowWorkingDirectoryWrite: false,
             sensitivePaths,
@@ -392,6 +402,7 @@ export class SandboxManager {
             readOnlyPaths: [...(dev.readOnlyPaths ?? []), ...readOnlyRoots],
             readWritePaths: [...readWriteRoots, npmEnvironment.npmHome],
             readWriteFiles,
+            readOnlyOverlayPaths: writeDenyEntries,
             workingDirectory: resolved,
             sensitivePaths,
             customEnv: npmEnvironment.customEnv,

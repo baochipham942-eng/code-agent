@@ -9,6 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import { FAILED_AUDIO_RETENTION_MS } from '@shared/constants/desktopAudio';
 import { createLogger } from '../infra/logger';
+import { countRetentionFailed, createRetentionLedger, type RetentionLedgerStatus } from '../infra/retentionLedger';
 
 const logger = createLogger('AudioRetention');
 
@@ -21,18 +22,8 @@ type RetentionSummary = {
   lastError?: string;
 };
 
-interface RetentionLedger {
-  lastSweepAt: number | null;
-  deletedTotal: number;
-  failedTotal: number;
-  lastError?: string;
-}
-
-const retentionStatus: RetentionLedger = {
-  lastSweepAt: null,
-  deletedTotal: 0,
-  failedTotal: 0,
-};
+// 模块级账本：publish/countFailed 的共用实现抽到 infra/retentionLedger，行为不变
+const retentionLedger = createRetentionLedger();
 
 interface RetentionRow {
   id: string;
@@ -133,16 +124,11 @@ export function clearAllAudioRecordings(input: {
 export function getAudioRetentionStatus(
   audioDir?: string,
   sqlitePath?: string | null,
-): RetentionLedger & {
+): RetentionLedgerStatus & {
   fileCount?: number;
   bytes?: number;
 } {
-  const status: RetentionLedger = {
-    lastSweepAt: retentionStatus.lastSweepAt,
-    deletedTotal: retentionStatus.deletedTotal,
-    failedTotal: retentionStatus.failedTotal,
-  };
-  if (retentionStatus.lastError) status.lastError = retentionStatus.lastError;
+  const status = retentionLedger.read();
   if (!audioDir) return status;
   const counts = countClearableWavs(audioDir, sqlitePath ?? null, Date.now(), FAILED_AUDIO_RETENTION_MS);
   return { ...status, fileCount: counts.fileCount, bytes: counts.bytes };
@@ -178,7 +164,7 @@ function runSweep(
       } catch (error) {
         const reason = errorText(error);
         warnFail(row.wavPath, reason);
-        countFailed(summary, reason);
+        countRetentionFailed(summary, reason);
       }
     }
   }
@@ -205,12 +191,12 @@ function processRow(row: RetentionRow, ctx: SweepContext): void {
   }
   if (inspection.action === 'fail') {
     warnFail(row.wavPath, inspection.reason);
-    countFailed(ctx.summary, inspection.reason);
+    countRetentionFailed(ctx.summary, inspection.reason);
     return;
   }
   const unlinked = unlinkKeptWav(inspection.deletePath, row.wavPath);
   if (!unlinked.ok) {
-    countFailed(ctx.summary, unlinked.reason);
+    countRetentionFailed(ctx.summary, unlinked.reason);
     return;
   }
   ctx.summary.deleted += 1;
@@ -233,7 +219,7 @@ function sweepOrphans(
       if (errorCode(error) === 'ENOENT') continue;
       const reason = errorText(error);
       warnFail(wavPath, reason);
-      countFailed(summary, reason);
+      countRetentionFailed(summary, reason);
       continue;
     }
     // A young file with no row may still be queued for transcription.
@@ -247,12 +233,12 @@ function sweepOrphans(
     }
     if (inspection.action === 'fail') {
       warnFail(wavPath, inspection.reason);
-      countFailed(summary, inspection.reason);
+      countRetentionFailed(summary, inspection.reason);
       continue;
     }
     const unlinked = unlinkKeptWav(inspection.deletePath, wavPath);
     if (!unlinked.ok) {
-      countFailed(summary, unlinked.reason);
+      countRetentionFailed(summary, unlinked.reason);
       continue;
     }
     summary.deleted += 1;
@@ -507,7 +493,7 @@ function runClear(
   const retentionMs = input.failedRetentionMs ?? FAILED_AUDIO_RETENTION_MS;
   const removed = new Set<string>();
   const rows = input.sqlitePath == null ? [] : loadRows(input.sqlitePath);
-  if (rows == null) countFailed(result, 'audio_segments query failed');
+  if (rows == null) countRetentionFailed(result, 'audio_segments query failed');
   const referenced = new Set<string>();
   if (rows) for (const row of rows) addReference(referenced, row.wavPath);
   for (const wavPath of listWavFiles(input.audioDir)) {
@@ -539,12 +525,12 @@ function deleteClearableWav(audioDir: string, wavPath: string, result: ClearAccu
   if (inspection.action === 'missing') return;
   if (inspection.action === 'refuse') {
     warnRefuse(wavPath, inspection.reason);
-    countFailed(result, inspection.reason);
+    countRetentionFailed(result, inspection.reason);
     return;
   }
   if (inspection.action === 'fail') {
     warnFail(wavPath, inspection.reason);
-    countFailed(result, inspection.reason);
+    countRetentionFailed(result, inspection.reason);
     return;
   }
   let size = 0;
@@ -554,13 +540,13 @@ function deleteClearableWav(audioDir: string, wavPath: string, result: ClearAccu
     if (errorCode(error) !== 'ENOENT') {
       const reason = errorText(error);
       warnFail(wavPath, reason);
-      countFailed(result, reason);
+      countRetentionFailed(result, reason);
       return;
     }
   }
   const unlinked = unlinkKeptWav(inspection.deletePath, wavPath);
   if (!unlinked.ok) {
-    countFailed(result, unlinked.reason);
+    countRetentionFailed(result, unlinked.reason);
     return;
   }
   result.deleted += 1;
@@ -586,12 +572,12 @@ function settleClearedRow(
   }
   if (inspection.action === 'refuse') {
     warnRefuse(row.wavPath, inspection.reason);
-    countFailed(result, inspection.reason);
+    countRetentionFailed(result, inspection.reason);
     return;
   }
   if (inspection.action === 'fail') {
     warnFail(row.wavPath, inspection.reason);
-    countFailed(result, inspection.reason);
+    countRetentionFailed(result, inspection.reason);
     return;
   }
   deleteClearableWav(audioDir, row.wavPath, result, removed);
@@ -643,15 +629,7 @@ function countClearableWavs(
 }
 
 function publishRetention(deleted: number, failed: number, lastError: string | undefined, at: number): void {
-  retentionStatus.lastSweepAt = at;
-  retentionStatus.deletedTotal += deleted;
-  retentionStatus.failedTotal += failed;
-  if (lastError) retentionStatus.lastError = lastError;
-}
-
-function countFailed(summary: { failed: number; lastError?: string }, reason: string): void {
-  summary.failed += 1;
-  summary.lastError = reason;
+  retentionLedger.publish(deleted, failed, lastError, at);
 }
 
 function warnRefuse(wavPath: string, reason: string): void {

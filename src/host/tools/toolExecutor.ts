@@ -48,7 +48,7 @@ import type { ConversationExecutionIntent, WorkbenchToolScope } from '../../shar
 import { isBashToolName, normalizeToolName } from './toolNames';
 import { isToolDeniedByRunPolicy } from './runToolPolicy';
 import { finalizeSurfaceAwareToolResult } from './artifacts/surfaceExecutionToolResultPipeline';
-import { recordDecision } from './toolExecutorDecisionTrace';
+import { recordDecision, recordInToolPermissionAsk } from './toolExecutorDecisionTrace';
 import { checkNeoTagToolGuard } from './neoTagToolGuard';
 import type { PermissionMode } from '../permissions/modes';
 import {
@@ -443,12 +443,6 @@ export interface ExecuteOptions {
  */
 export class ToolExecutor {
   private requestPermission: (request: PermissionRequestData) => Promise<RequestPermissionResult>;
-  /**
-   * ToolContext 侧的窄契约：工具内联审批只关心放行与否。富返回值只在本文件的权限闸内
-   * 消费——若把富对象直接交给 `if (!approved)` 那类调用点，`{approved:false}` 恒真会变成
-   * **静默 fail-open**。这一层归一化就是为了让那种事不可能发生。
-   */
-  private readonly requestPermissionForTools: (request: PermissionRequestData) => Promise<boolean>;
   private workingDirectory: string;
   private readonly runContext?: RunContext;
   private readonly restrictWritesToWorkspace: boolean;
@@ -464,9 +458,6 @@ export class ToolExecutor {
   constructor(config: ToolExecutorConfig) {
     this.restrictWritesToWorkspace = config.restrictWritesToWorkspace === true;
     this.requestPermission = config.requestPermission;
-    this.requestPermissionForTools = async (request) => normalizePermissionAskResult(
-      await this.requestPermission(request),
-    ).approved;
     this.workingDirectory = nodePath.resolve(config.workingDirectory);
     this.permissionModeOverride = config.permissionModeOverride;
     this.forcePermissionHandler = config.forcePermissionHandler === true;
@@ -1278,10 +1269,20 @@ export class ToolExecutor {
       workingDirectory: this.executionCwd,
       // 工具内部审批（canUseTool 弹卡）同样记审批等待：否则用户看审批卡的时间会被外层
       // inactivity 预算算作无进展，超过预算把工具 abort 成「假失败」，审批副作用却可能照常执行。
+      // 返回给工具的仍是窄 boolean 契约——富返回值只在这里消费（normalize 后取 .approved），
+      // 直接交富对象会让 `if (!approved)` 那类调用点把 `{approved:false}` 恒真成静默 fail-open。
+      // N-SANDBOX-ESCALATE-APPROVAL-LEDGER：内层 ask 也要落权限账本（外层 ask 在下方权限闸
+      // 已记，#1664 只修了外层）；ask 抛错时不落账、原样上抛，行为与改动前一致。
       requestPermission: async (request) => {
         beginApprovalWait(options.currentToolCallId, effectiveSessionId);
         try {
-          return await this.requestPermissionForTools(request);
+          const askStartedAt = Date.now();
+          const ask = normalizePermissionAskResult(await this.requestPermission(request));
+          recordInToolPermissionAsk(
+            request, ask, askStartedAt, effectiveSessionId, this.ledgerOrigin,
+            getApprovalWaitMs(options.currentToolCallId, Date.now()),
+          );
+          return ask.approved;
         } finally {
           endApprovalWait(options.currentToolCallId, effectiveSessionId);
         }

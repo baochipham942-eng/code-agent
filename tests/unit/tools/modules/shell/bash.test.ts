@@ -1614,12 +1614,30 @@ describe('bashModule sandbox escalation', () => {
     await expectEscalationOffers(ancestor, false);
   });
 
-  it('never offers a directory, whether it exists or is about to be created', async () => {
-    // 卡只授一个文件。目录要整棵子树才有用，而子树里会写出什么没有哪张卡列得清（PR #2191 五轮审查的同一个根）。
+  it('file cards never produce a write root (A12)', async () => {
+    // A12：文件通道永不产出子树。目录拒绝改走目录卡（sandboxEscalationDirectory.test.ts），
+    // 本测试钉文件卡的不变量：action === 'sandbox_escalate_once' 的卡，重跑 wrapper 只加
+    // readWriteFiles（literal 单文件），永远不含新增写根——文件授权永远是 literal。
     const parent = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-dir-')));
+    const deniedPath = join(parent, 'out.txt');
+    const denial = `printf '%s\\n' "EPERM: operation not permitted, open '${deniedPath}'" >&2; exit 1`;
+    wrapMock
+      .mockReturnValueOnce({ command: denial, cleanup: cleanupMock })
+      .mockReturnValueOnce({ command: "printf 'retried\\n'", cleanup: cleanupMock });
+    const canUse = vi.fn().mockResolvedValue({ allow: true as const });
     try {
-      await expectEscalationOffers(parent, false);
-      await expectEscalationOffers(join(parent, 'new-dir'), false, 'mkdir');
+      const handler = await bashModule.createHandler();
+      const result = await handler.execute({ command: `printf x > ${deniedPath}` }, makeCtx(), canUse);
+      expect(result.ok).toBe(true);
+      const escalationCalls = canUse.mock.calls.filter(([toolName]) => toolName === 'bash');
+      expect(escalationCalls).toHaveLength(1);
+      expect(escalationCalls[0]?.[3]).toEqual(expect.objectContaining({
+        details: expect.objectContaining({ action: 'sandbox_escalate_once', deniedPath }),
+      }));
+      const firstOptions = wrapMock.mock.calls[0]?.[1] as { readWriteRoots?: string[]; readWriteFiles?: string[] };
+      const retryOptions = wrapMock.mock.calls[1]?.[1] as { readWriteRoots?: string[]; readWriteFiles?: string[] };
+      expect(retryOptions.readWriteFiles).toEqual([deniedPath]);
+      expect(retryOptions.readWriteRoots).toEqual(firstOptions.readWriteRoots);
     } finally {
       rmSync(parent, { recursive: true, force: true });
     }

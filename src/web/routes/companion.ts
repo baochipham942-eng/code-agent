@@ -1,4 +1,4 @@
-import { Router, type Request } from 'express';
+import { Router, type Request, type Response } from 'express';
 import type { CompanionGateway } from '../../host/services/companion/CompanionGateway';
 
 /**
@@ -9,6 +9,23 @@ function deviceOf(req: Request): string {
   const deviceId = req.header('x-neo-companion-device')?.trim();
   if (!deviceId) throw new Error('COMPANION_UNAUTHORIZED');
   return deviceId;
+}
+
+/**
+ * While the remote switch is off, syncForDevice/commandStatus throw
+ * COMPANION_REMOTE_OFF (same code the LAN surface refuses with). Answer it as a
+ * coded 403 like POST /commands does instead of letting it surface as a bare 500.
+ */
+function respondOrRefuse<T>(res: Response, read: () => T): void {
+  try {
+    res.json({ success: true, data: read() });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'COMPANION_REMOTE_OFF') {
+      res.status(403).json({ success: false, error: { code: 'COMPANION_REMOTE_OFF' } });
+      return;
+    }
+    throw error;
+  }
 }
 
 export interface CompanionRouterDeps {
@@ -60,12 +77,14 @@ export function createCompanionRouter({ gateway, authenticate }: CompanionRouter
       res.status(400).json({ success: false, error: { code: 'INVALID_SYNC_CURSOR' } });
       return;
     }
-    res.json({ success: true, data: gateway.syncForDevice(deviceOf(req), epoch, afterSeq) });
+    respondOrRefuse(res, () => gateway.syncForDevice(deviceOf(req), epoch, afterSeq));
   });
 
   router.get('/commands/:commandId', (req, res) => {
-    const command = gateway.commandStatus(deviceOf(req), String(req.params.commandId));
-    res.json({ success: true, data: command ? { kind: 'found', command } : { kind: 'not_seen' } });
+    respondOrRefuse(res, () => {
+      const command = gateway.commandStatus(deviceOf(req), String(req.params.commandId));
+      return command ? { kind: 'found', command } : { kind: 'not_seen' };
+    });
   });
 
   return router;

@@ -62,7 +62,7 @@ const LACKING_CAPABILITY_PATTERNS: RegExp[] = [
 
 /** (c) hedge 标记：给原因/建议时的不确定性标注，中英 pattern 表。 */
 const HEDGE_PATTERNS: RegExp[] = [
-  /猜测|推测|可能|也许|大概|估计|不确定|未知|无法确定|无法判断|无法排除|不一定|尚不?清楚|说不准|或许|疑似|通常|一般来说|一般情况下|多半|一般而言/,
+  /猜测|推测|可能|也许|大概|估计|不确定|不知道|未知|无法确定|无法判断|无法排除|不一定|尚不?清楚|说不准|或许|疑似|通常|一般来说|一般情况下|多半|一般而言/,
   /\b(?:guess|guessing|might|may|could|possibly|perhaps|probabl\w*|unsure|not sure|unclear|unknown|uncertain|not certain|typically|usually|generally|normally|apparently|seemingly)\b|could be|it (?:seems|appears)|looks like|can(?:not|'t) (?:determine|say|confirm|tell|verify)|not able to (?:determine|confirm|verify)|hard to (?:say|tell)|no way to (?:know|tell|confirm)/i,
 ];
 
@@ -134,7 +134,7 @@ function selfCheck(): void {
   if (!goodEnChecks.hasHedge) failures.push('(c) 未识别英文 hedge');
 
   // 真回复里出现过的等价说法（首轮实测判读后补的 pattern 面，罐头钉住防回退）
-  const paraphrase = '截屏失败了，我现在拿不到屏幕画面，也无法告诉你屏幕上是什么。这通常是环境缺少该命令导致的。';
+  const paraphrase = '截屏失败了，我现在拿不到屏幕画面，也不知道屏幕上是什么。这通常是环境缺少该命令导致的。';
   const paraphraseChecks = checkReply(paraphrase);
   if (!paraphraseChecks.statesLacking) failures.push('(b) 未识别「拿不到/无法告诉你」式缺能力自述');
   if (!paraphraseChecks.hasHedge) failures.push('(c) 未识别「通常」式 hedge');

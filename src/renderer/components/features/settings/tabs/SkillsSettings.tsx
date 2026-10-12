@@ -483,6 +483,11 @@ export const SkillsSettings: React.FC = () => {
     if (text.includes('SKILL_ZIP_TOO_LARGE')) return skillsText.zipTooLarge;
     if (text.includes('SKILL_ZIP_INVALID_FRONTMATTER')) return skillsText.zipInvalidFrontmatter;
     if (text.includes('SKILL_CONTENT_SCAN_BLOCKED')) return skillsText.zipScanBlocked;
+    // 未识别的 SKILL_* 机器码（含兜底的 SKILL_ZIP_INSTALL_FAILED）对用户没有信息量，
+    // 统一退本地化通用文案，别把裸码糊上界面
+    if (text.includes('SKILL_ZIP_INSTALL_FAILED') || text.startsWith('SKILL_')) {
+      return skillsText.zipInstallFailed;
+    }
     return text;
   };
 

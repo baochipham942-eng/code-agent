@@ -13,6 +13,7 @@ export const zhSkillCaution = {
     builtin: '内置',
   },
   hitsCount: '共 {count} 条提醒',
+  ruleHint: '每条提醒左侧的编号是内置检查规则的名称，右侧摘录的是命中的原文；鼠标悬停可查看完整内容。',
   acknowledgeExplanation: '这个技能已从官方市场装好。装前检查发现以下值得留意的内容——它们没有严重到拦截安装，但你有权在装完后知道。',
   confirmExplanation: '这个技能来自未签名来源，装前检查发现以下内容。确认安装后才会真正装进本机；取消则不会安装任何东西。',
   confirmInstall: '确认安装',

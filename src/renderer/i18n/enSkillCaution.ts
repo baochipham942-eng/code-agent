@@ -13,6 +13,7 @@ export const enSkillCaution = {
     builtin: 'Built-in',
   },
   hitsCount: '{count} findings',
+  ruleHint: 'The label on the left of each finding is the name of a built-in check rule; the text on the right quotes what it matched. Hover to see the full content.',
   acknowledgeExplanation: 'This Skill is already installed from the official marketplace. The pre-install check found the items below worth knowing about — they were not serious enough to block the install, but you get to see them now that it is in.',
   confirmExplanation: 'This Skill comes from an unsigned source and the pre-install check found the items below. Nothing is installed until you confirm; cancelling installs nothing.',
   confirmInstall: 'Confirm install',

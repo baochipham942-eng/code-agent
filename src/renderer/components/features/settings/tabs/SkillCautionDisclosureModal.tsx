@@ -99,6 +99,9 @@ export const SkillCautionDisclosureModal: React.FC<SkillCautionDisclosureModalPr
           {interpolate(cautionText.hitsCount, { count: hits.length })}
         </div>
 
+        {/* 规则 id 是英文机器码：配一句白话说明它是什么，别让非程序员对着裸码猜 */}
+        <p className="text-xs leading-5 text-zinc-500">{cautionText.ruleHint}</p>
+
         <div className="space-y-3">
           {[...groupHitsByFile(hits)].map(([file, fileHits]) => (
             <div key={file} className="rounded-lg border border-zinc-700 bg-zinc-800/60">

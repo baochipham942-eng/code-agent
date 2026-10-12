@@ -255,4 +255,20 @@ describe('SkillsSettings caution 披露流程', () => {
     expect(screen.queryByText(cautionText.title)).toBeNull();
     expect(callsFor(SKILL_CHANNELS.SKILL_INSTALL_LOCAL_ZIP)).toEqual([]);
   });
+
+  it('未识别的 SKILL_* 机器码错误：退本地化通用文案，不把裸码糊上界面', async () => {
+    setupInvokeMock({
+      zipResults: [{ success: false, error: 'SKILL_ZIP_INSTALL_FAILED' }],
+    });
+    render(<SkillsSettings />);
+    await startZipInstall();
+
+    expect(await screen.findByText(zh.settings.skills.main.zipInstallFailed)).toBeTruthy();
+    expect(screen.queryByText('SKILL_ZIP_INSTALL_FAILED')).toBeNull();
+    // 未识别的其它 SKILL_* 码同样收口（host 新增错误码时不许裸奔到界面）
+    mockInvoke.mockImplementation(async () => ({ success: false, error: 'SKILL_ZIP_SOMETHING_NEW' }));
+    fireEvent.click(await screen.findByRole('button', { name: zh.settings.skills.installed.installFromZipAria }));
+    expect(await screen.findByText(zh.settings.skills.main.zipInstallFailed)).toBeTruthy();
+    expect(screen.queryByText('SKILL_ZIP_SOMETHING_NEW')).toBeNull();
+  });
 });

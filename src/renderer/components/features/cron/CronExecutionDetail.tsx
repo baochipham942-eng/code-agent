@@ -100,7 +100,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
           <div className="mb-2 flex items-center justify-between gap-2">
             <h5 className="text-xs font-medium uppercase tracking-wide text-badge-danger">{cc.execError}</h5>
             {loginWall && (
-              <button
+              <button /* ds-allow:button: 错误区标题旁紧凑警示色链接按钮（px-2 py-1 text-xs），primitive 无警示色 variant 且最小 sm 内边距更大 */
                 type="button"
                 onClick={() => openCronLoginWallSite(loginWall.siteOrigin)}
                 className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-badge-warning transition-colors hover:bg-amber-500/10"

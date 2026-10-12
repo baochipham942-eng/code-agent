@@ -330,7 +330,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                             </button>
                           )}
                           {record.config?.loginWall?.siteOrigin && (
-                            <button
+                            <button /* ds-allow:button: 收件箱行内超小警示色文本按钮（px-2 py-1 text-xs），与同行「查看结果」同款，primitive 最小 sm 仍更大且无警示色 variant */
                               type="button"
                               onClick={() => handleOpenLoginWallSite(record)}
                               className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-badge-warning transition-colors hover:bg-amber-500/10"

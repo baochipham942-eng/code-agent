@@ -184,6 +184,8 @@ export class CronMailPoller {
   private readonly setTimer: CronMailPollerOptions['setTimer'];
   private readonly states = new Map<string, MailPollState>();
   private pollTimer?: { clear(): void };
+  /** 终态：dispose 后在飞轮询的 finally 不得再排新 tick（实例不重启，cronService 弃后重建）。 */
+  private disposed = false;
 
   constructor(options: CronMailPollerOptions) {
     this.host = options.host;
@@ -199,13 +201,17 @@ export class CronMailPoller {
   }
 
   dispose(): void {
+    // 先立终态标志再清 timer：dispose 只能清掉「当前挂着的」tick，挡不住已进入
+    // list_messages（osascript 秒级）的在飞轮询——那趟 settle 后若再 scheduleTick，
+    // 5s tick 链会复活，事件循环被钉住进程退不出。scheduleTick 与轮询路径都看它。
+    this.disposed = true;
     this.pollTimer?.clear();
     this.pollTimer = undefined;
     this.states.clear();
   }
 
   private scheduleTick(): void {
-    if (this.pollTimer !== undefined) return;
+    if (this.disposed || this.pollTimer !== undefined) return;
     this.pollTimer = this.setTimer(() => {
       this.pollTimer = undefined;
       void this.pollDueJobs();
@@ -222,10 +228,12 @@ export class CronMailPoller {
         return state === undefined || now >= state.nextPollAt;
       });
       for (const definition of due) {
+        // dispose 发生在某个任务轮询在飞时：同趟剩余任务不再发起新轮询。
+        if (this.disposed) return;
         await this.pollJob(definition);
       }
     } finally {
-      // 无论本轮成败，链不断（失败任务的下一次轮询照常到点重试）。
+      // 无论本轮成败，链不断（失败任务的下一次轮询照常到点重试）；dispose 是例外。
       this.scheduleTick();
     }
   }
@@ -250,6 +258,9 @@ export class CronMailPoller {
       console.error(`[CronMailPoller] Mail poll failed for job ${definition.id} (cause: ${cause}): ${mailErrorMessage(error)}`);
       return;
     }
+    // dispose 落在这趟 list_messages 在飞期间：结果作废——不标记已见、不入队
+    //（不往已 dispose 的 CronEventTrigger 喂事件；标记了也只会丢给死实例）。
+    if (this.disposed) return;
     const unread = messages.filter((message) => message.read === false);
     const subscriptionId = mailSubscriptionId(definition.id, schedule);
     // 起播种子：启动后首个成功轮询只登记现有未读、不触发（存量未读不洪水）。

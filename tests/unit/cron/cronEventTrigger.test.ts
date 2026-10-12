@@ -1024,6 +1024,63 @@ describe('CronEventTrigger', () => {
       await vi.advanceTimersByTimeAsync(120_000);
       expect(listMessages).not.toHaveBeenCalled();
     });
+
+    // r2 回归：dispose 只清当前 timer 挡不住「卡在 listMessages 里的那一趟」——
+    // pollDueJobs 的 finally 曾无条件 scheduleTick，在飞轮询期间 dispose 后链复活，
+    // 5s tick 永续（进程退不出），还继续 spawn osascript 轮询并往已 dispose 的
+    // CronEventTrigger 入队。三个断言分别钉：tick 链不复活 / 同趟后续任务不再
+    // 发起新轮询 / 晚 settle 的结果不入队已 dispose 的触发器。
+    it('dispose 打断在飞轮询后 tick 链不复活：settle 后不再排下一趟', async () => {
+      let releasePoll: ((messages: MailSummary[]) => void) | undefined;
+      const listMessages = vi.fn((): Promise<MailSummary[]> => new Promise((resolve) => {
+        releasePoll = resolve;
+      }));
+      const h = createMailHarness([mailEventJob()], { listMessages });
+      await vi.advanceTimersByTimeAsync(5_000); // t=5s 首趟进入 listMessages，卡住（在飞）
+      expect(listMessages).toHaveBeenCalledTimes(1);
+
+      h.trigger.dispose(); // 在飞期间 dispose（osascript 秒级窗口）
+      releasePoll!([]); // 在飞那趟此刻才 settle
+      await vi.advanceTimersByTimeAsync(120_000); // 修复前：finally 复活 5s tick，继续轮询
+      expect(listMessages).toHaveBeenCalledTimes(1);
+      expect(h.runs).toHaveLength(0);
+    });
+
+    it('dispose 后同趟不再发起新轮询，晚 settle 的邮件不入队已 dispose 的触发器', async () => {
+      const icloud: MailSummary[] = [];
+      let icloudPolls = 0;
+      let releaseIcloud: ((messages: MailSummary[]) => void) | undefined;
+      const listMessages = vi.fn((account: string): Promise<MailSummary[]> => {
+        if (account !== '_icloud') return Promise.resolve([]);
+        icloudPolls += 1;
+        if (icloudPolls === 1) return Promise.resolve([...icloud]); // 种子趟：立即返回
+        return new Promise((resolve) => { releaseIcloud = resolve; }); // 之后趟：卡住直到放行
+      });
+      const gmailJob = mailEventJob({
+        id: 'mail-job-gmail',
+        schedule: {
+          type: 'event', source: 'connector', connector: 'mail', accountId: 'gmail',
+          eventName: 'message', pollIntervalSec: 30, batchWindowSec: 10, minRunIntervalSec: 30,
+        },
+      });
+      const h = createMailHarness([mailEventJob(), gmailJob], { listMessages });
+      await vi.advanceTimersByTimeAsync(5_000); // t=5s 两趟种子都完成
+      const seededCalls = listMessages.mock.calls.length;
+
+      icloud.push(mailMsg(2)); // 种子后到达的新邮件
+      await vi.advanceTimersByTimeAsync(30_000); // t=35s：icloud 轮询进飞并卡住
+      h.trigger.dispose(); // gmail 的同趟轮询还没发起
+      releaseIcloud!([...icloud]); // icloud 在飞那趟此刻 settle（带新邮件 m2）
+
+      await vi.advanceTimersByTimeAsync(120_000);
+      // icloud 恰好两趟（种子 + 在飞）；gmail 只剩种子那 1 趟（不被同趟补轮询）；m2 不触发 run
+      const icloudCalls = listMessages.mock.calls.filter((call) => call[0] === '_icloud').length;
+      const gmailCalls = listMessages.mock.calls.filter((call) => call[0] === 'gmail').length;
+      expect(seededCalls).toBe(2); // 种子趟：两任务各一次
+      expect(icloudCalls).toBe(2);
+      expect(gmailCalls).toBe(1);
+      expect(h.runs).toHaveLength(0);
+    });
   });
 
   describe('hasExplicitChatListenBinding（监听绑定纯匹配）', () => {

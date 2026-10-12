@@ -176,7 +176,7 @@ function recountAgents(
  * 多 run 隔离由调用方按 runId 分桶（每个 run 一个快照），本函数只管单 run。
  */
 /** 活动事件（非 run:start 自身、非 run:done/error 终态）——出现即说明 run 已在跑。 */
-const ACTIVITY_TYPES: ReadonlySet<ScriptRunEventType> = new Set([
+export const ACTIVITY_TYPES: ReadonlySet<ScriptRunEventType> = new Set([
   'run:phase', 'run:log', 'agent:start', 'agent:done', 'agent:error',
 ]);
 

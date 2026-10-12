@@ -76,7 +76,7 @@ describe('image_generate contract', () => {
     const prompt = imageGenerateSchema.inputSchema.properties?.prompt;
     expect(prompt).toMatchObject({ type: 'array', items: { type: 'string' } });
     expect(imageGenerateSchema.inputSchema.properties?.reference_images)
-      .toMatchObject({ type: 'array', items: { type: 'string' } });
+      .toMatchObject({ type: 'array', items: { type: 'string' }, maxItems: 1 });
     expect(imageGenerateSchema.inputSchema.properties?.output_file_path?.type).toBe('string');
     expect(imageGenerateSchema.inputSchema.properties?.output_path).toBeUndefined();
   });
@@ -85,7 +85,7 @@ describe('image_generate contract', () => {
     { args: { prompt: [] }, match: /at least one/ },
     { args: { prompt: Array.from({ length: 11 }, () => 'x') }, match: /more than 10/ },
     { args: { prompt: ['ok', 3] }, match: /non-empty strings/ },
-    { args: { prompt: ['ok'], reference_images: ['a.png', 'b.png', 'c.png', 'd.png', 'e.png'] }, match: /more than 4/ },
+    { args: { prompt: ['ok'], reference_images: ['a.png', 'b.png'] }, match: /more than 1/ },
     { args: { prompt: ['ok'], output_path: 'old.png' }, match: /renamed to output_file_path/ },
     { args: { prompt: ['ok'], output_file_path: '../outside.png' }, match: /inside the workspace/ },
   ])('refuses invalid args before any service, fetch, write, or briefing call', async ({ args, match }) => {
@@ -198,18 +198,40 @@ describe('image_generate contract', () => {
     expect(abortedText).toContain('\"error\":\"aborted\"');
   });
 
-  it('uses only the first reference and reports the reference count', async () => {
+  it('uses exactly one reference, forwards the abort signal, and reports the reference count', async () => {
     fs.writeFileSync(path.join(workspace, 'ref.png'), 'reference');
-    fs.writeFileSync(path.join(workspace, 'ref.webp'), 'reference');
+    const controller = new AbortController();
     const result = await executeImageGenerate(
-      { prompt: ['reference result'], reference_images: ['ref.png', 'ref.webp'] },
-      ctx(workspace),
+      { prompt: ['reference result'], reference_images: ['ref.png'] },
+      ctx(workspace, controller),
       allow,
     );
     expect(result.ok).toBe(true);
     expect(service.generateImageFromReference).toHaveBeenCalledTimes(1);
+    expect(service.generateImageFromReference)
+      .toHaveBeenCalledWith(expect.objectContaining({ outerSignal: controller.signal }));
     expect(service.generateImage).not.toHaveBeenCalled();
-    if (result.ok) expect(result.output).toContain('references used: 1 of 2');
+    if (result.ok) expect(result.output).toContain('references used: 1 of 1');
+  });
+
+  it('does not write to disk when the reference request resolves after an abort', async () => {
+    fs.writeFileSync(path.join(workspace, 'ref.png'), 'reference');
+    writeSpy.mockClear();
+    const controller = new AbortController();
+    service.generateImageFromReference.mockImplementation(async () => {
+      controller.abort();
+      return { imageData: IMAGE_DATA, actualModel: 'mock-reference-model' };
+    });
+    const result = await executeImageGenerate(
+      { prompt: ['ref image'], reference_images: ['ref.png'], output_file_path: 'images/ref-out.png' },
+      ctx(workspace, controller),
+      allow,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('ABORTED');
+    expect(result.meta?.per_request).toEqual([{ index: 1, status: 'failed', error: 'aborted' }]);
+    expect(writeSpy).not.toHaveBeenCalled();
+    expect(fs.existsSync(path.join(workspace, 'images/ref-out.png'))).toBe(false);
   });
 
   it('keeps a generated-but-unsaved remote URL in virtual artifact metadata only', async () => {

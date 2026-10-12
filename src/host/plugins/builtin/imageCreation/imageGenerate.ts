@@ -344,8 +344,8 @@ function validateImageGenerateArgs(
     return { ok: false, error: 'reference_images must be an array of workspace paths' };
   }
   const referenceValues = rawReferences === undefined ? [] : rawReferences;
-  if (referenceValues.length > 4) {
-    return { ok: false, error: 'reference_images cannot contain more than 4 items' };
+  if (referenceValues.length > 1) {
+    return { ok: false, error: 'reference_images cannot contain more than 1 item' };
   }
 
   const referencePaths: string[] = [];
@@ -650,6 +650,7 @@ export async function executeImageGenerate(
           ? await generateImageFromReference({
             prompt: finalPrompt,
             referenceImageDataUrl: referenceDataUrl,
+            outerSignal: ctx.abortSignal,
           })
           : await generateImage(engine, fluxModel, finalPrompt, params.aspectRatio, ctx.abortSignal);
         let imageBase64 = generated.imageData;
@@ -674,6 +675,9 @@ export async function executeImageGenerate(
             throw new ImageGenerateRequestFailure('image was generated but could not be saved', remoteArtifact);
           }
         }
+        // 生成返回后、写盘前再查一次中止：参考图链路的远端轮询即使刚返回结果，
+        // 用户已停止的请求也不该再落盘（返修 Important 1）。
+        if (ctx.abortSignal.aborted) throw new Error('aborted');
         const dir = path.dirname(outputPath);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         const imageBuffer = Buffer.from(imageBase64.replace(/^data:image\/\w+;base64,/, ''), 'base64');

@@ -1992,6 +1992,9 @@ export class ToolExecutor {
       permissionRequest.parentToolUseId = options.currentToolCallId;
       // B4：把授权 target 透传给审批层，供无人值守停车审批卡出「每次都允许发 <target>」铸权入口。
       if (standingGrantTarget) permissionRequest.details.standingGrantTarget = standingGrantTarget;
+      // B1：external 工具（离开本机、发出去收不回）在交互审批卡上标作用域（N-APPROVAL-EXTERNAL-SCOPENOTE）。
+      // 只打标：非 external 不写该属性（缺省≠null），不改任何 allow/deny/ask 裁决。
+      if (isExternalSideEffectTool(executionToolName)) permissionRequest.riskClass = 'external';
       if (computerApp) permissionRequest.details.targetApp = computerApp;
 
       // B1 readOnly（审出 HIGH）：最终审批层的自动放行捷径（agentOrchestrator 的

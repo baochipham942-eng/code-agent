@@ -221,6 +221,12 @@ export interface PermissionRequestData {
   reasonCode?: PermissionRequestReason;
   boundary?: PermissionBoundaryRef;
   dangerLevel?: 'normal' | 'warning' | 'danger';
+  /**
+   * B1 EXTERNAL 风险类打标（离开本机、发出去收不回）。由 toolExecutor 在需人工审批时
+   * 按 isExternalSideEffectTool 打上；仅用于审批卡作用域提示，不参与任何 allow/deny/ask 裁决。
+   * 非 external 时属性缺省（≠ null）。
+   */
+  riskClass?: 'external';
   /** Decision trace: why this permission was requested (populated on deny/ask) */
   decisionTrace?: import('../../shared/contract/decisionTrace').DecisionTrace;
 }

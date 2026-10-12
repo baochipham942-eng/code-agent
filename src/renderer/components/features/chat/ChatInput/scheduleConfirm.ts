@@ -8,7 +8,6 @@ interface ScheduleConfirmLabels {
   notifyWhen: string;
   result: string;
   fallbackWhat: string;
-  fallbackWhen: string;
   fallbackNotifyWhen: string;
   reviewInbox: string;
 }
@@ -50,8 +49,9 @@ function readRestatement(value: unknown): ScheduleRestatement | undefined {
 }
 
 // 调度按 type 分支校验：every→interval 数字 + unit 枚举；cron→expression 非空；at→datetime 字符串/数字。
-// 不满足的当缺失处理（when 行走 fallbackWhen），不再把垃圾对象喂给 formatCronScheduleLabel。
-// weeks 是契约遗留单位，展示标签没有对应文案，按缺失处理。
+// 校验失败返回 undefined，由 normalizeScheduleDraft 判草案无效（与缺 action 同等处理）：
+// 缺 schedule 的草案走到确认一步也会被 host 拒掉，不能出卡。
+// weeks 是契约遗留单位，展示标签没有对应文案，按无效处理。
 function readValidSchedule(value: unknown): CreateCronJobInput['schedule'] | undefined {
   if (!isPlainObject(value)) return undefined;
   switch (asTrimmedString(value.type)) {
@@ -90,13 +90,14 @@ function readValidAction(value: unknown): CreateCronJobInput['action'] | null {
   return value as unknown as CreateCronJobInput['action'];
 }
 
-/** LLM 草案进确认卡前的统一规范化。展示字段非字符串一律当缺失；action 结构缺失返回 null。 */
+/** LLM 草案进确认卡前的统一规范化。展示字段非字符串一律当缺失；schedule/action 结构缺失返回 null。 */
 export function normalizeScheduleDraft(raw: unknown): NormalizedScheduleDraft | null {
   if (!isPlainObject(raw)) return null;
   const { restatement: rawRestatement, ...rawInput } = raw;
   const action = readValidAction(rawInput.action);
   if (!action) return null;
   const schedule = readValidSchedule(rawInput.schedule);
+  if (!schedule) return null;
   const input = { ...rawInput, action, schedule } as Record<string, unknown>;
   const name = asTrimmedString(rawInput.name);
   const description = asTrimmedString(rawInput.description);
@@ -107,7 +108,6 @@ export function normalizeScheduleDraft(raw: unknown): NormalizedScheduleDraft | 
   else delete input.description;
   if (resultChannel) input.resultChannel = resultChannel;
   else delete input.resultChannel;
-  if (schedule === undefined) delete input.schedule;
   return {
     input: input as unknown as CreateCronJobInput,
     restatement: readRestatement(rawRestatement),
@@ -137,8 +137,10 @@ export function buildScheduleConfirmRows(
     || labels.fallbackWhat;
   const notifyWhen = asTrimmedString(draft.restatement?.notifyWhen) || labels.fallbackNotifyWhen;
   const result = asTrimmedString(input.resultChannel) || labels.reviewInbox;
+  // 无「按配置」兜底：真实链路里无效 schedule 在 normalizeScheduleDraft 就被拒，到不了这张卡；
+  // 留空串只保证纯函数直喂垃圾时不抛错（生产不可达）。
   const schedule = readValidSchedule(input.schedule);
-  const when = schedule ? formatCronScheduleLabel(schedule) : labels.fallbackWhen;
+  const when = schedule ? formatCronScheduleLabel(schedule) : '';
 
   return [
     { key: 'what', label: labels.what, value: what },

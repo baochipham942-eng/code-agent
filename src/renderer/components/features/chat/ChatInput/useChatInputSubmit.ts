@@ -234,10 +234,12 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     const cs = t.chatInputSubmit;
     setCreatingSchedule(true);
     toast.info(cs.scheduleParsingToast);
+    let draftInvalid = false;
     try {
       const draft = await cronClient.generateFromPrompt(description);
       const normalized = normalizeScheduleDraft(draft);
       if (!normalized) {
+        draftInvalid = true;
         throw new Error(cs.scheduleDraftInvalid);
       }
       const handoffPrompt = options.handoffPrompt?.trim();
@@ -251,8 +253,9 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       const stored = storePendingScheduleDraft(pending);
       if (!stored) return false;
       return true;
-    } catch (err) {
-      toast.error(cs.scheduleCreateFailedPrefix + (err instanceof Error ? err.message : t.chatInput.unknownError));
+    } catch {
+      // 草案无效是我们自己抛的可读文案；其余（IPC/模型）错误不透传内部 message，只给可读提示。
+      toast.error(cs.scheduleCreateFailedPrefix + (draftInvalid ? cs.scheduleDraftInvalid : cs.scheduleGenerateFailedReason));
       return false;
     } finally {
       setCreatingSchedule(false);
@@ -312,8 +315,10 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       toast.success(`${cs.scheduleCreatedToastPrefix}${job.name || cs.unnamedSchedule}${cs.scheduleCreatedToastSuffix}`);
       discardPendingScheduleDraft();
       return true;
-    } catch (err) {
-      toast.error(cs.scheduleCreateFailedPrefix + (err instanceof Error ? err.message : t.chatInput.unknownError));
+    } catch {
+      // host 拒绝时的内部异常 message（如 "Cannot read properties of ..."）不直接上屏：
+      // 走可读文案 + 出路；确认卡保留，用户可重试确认或取消后重新发起。
+      toast.error(cs.scheduleConfirmCreateFailed);
       return false;
     } finally {
       setCreatingSchedule(false);

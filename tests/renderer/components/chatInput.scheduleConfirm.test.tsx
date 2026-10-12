@@ -56,7 +56,6 @@ const rowLabels = {
   notifyWhen: '什么变化值得通知',
   result: '结果送到哪里',
   fallbackWhat: '按任务描述执行并整理结果',
-  fallbackWhen: '按配置',
   fallbackNotifyWhen: '任务完成或发现异常时通知',
   reviewInbox: '自动化审核收件箱',
 };
@@ -135,8 +134,63 @@ describe('scheduled task confirmation', () => {
     expect(mocks.toast.success).toHaveBeenCalledTimes(1);
   });
 
+  it('confirm failure toast stays readable and does not leak the internal error message', async () => {
+    mocks.createJob.mockRejectedValueOnce(new Error('Cannot read properties of undefined (reading type)'));
+    const { result } = renderHook(() => useScheduleSubmitHarness());
+
+    await act(async () => {
+      await result.current.runScheduleCreation('每天早上帮我看邮件');
+    });
+    await act(async () => {
+      await result.current.confirmScheduleCreation();
+    });
+
+    expect(mocks.toast.error).toHaveBeenCalledTimes(1);
+    expect(mocks.toast.error).toHaveBeenCalledWith('确认创建未完成，任务没有创建。可直接重试确认，或取消后重新发起');
+  });
+
+  it('generate failure toast stays readable and does not leak the internal error message', async () => {
+    mocks.generateFromPrompt.mockRejectedValueOnce(new Error('Cannot read properties of undefined (reading type)'));
+    const { result } = renderHook(() => useScheduleSubmitHarness());
+
+    await act(async () => {
+      await result.current.runScheduleCreation('每天早上帮我看邮件');
+    });
+
+    expect(result.current.pendingScheduleDraft).toBeNull();
+    expect(mocks.createJob).not.toHaveBeenCalled();
+    expect(mocks.toast.error).toHaveBeenCalledTimes(1);
+    expect(mocks.toast.error).toHaveBeenCalledWith('创建定时任务失败：草案没有生成成功，请稍后重试');
+  });
+
   it('rejects a draft without action: no card, error toast instead', async () => {
     mocks.generateFromPrompt.mockResolvedValueOnce({ ...generatedDraft, action: undefined });
+    const { result } = renderHook(() => useScheduleSubmitHarness());
+
+    await act(async () => {
+      await result.current.runScheduleCreation('每天早上帮我看邮件');
+    });
+
+    expect(result.current.pendingScheduleDraft).toBeNull();
+    expect(mocks.createJob).not.toHaveBeenCalled();
+    expect(mocks.toast.error).toHaveBeenCalledWith('创建定时任务失败：AI 返回的定时任务草案格式异常，请重试');
+  });
+
+  it('rejects a draft without schedule: no card, error toast instead', async () => {
+    mocks.generateFromPrompt.mockResolvedValueOnce({ ...generatedDraft, schedule: undefined });
+    const { result } = renderHook(() => useScheduleSubmitHarness());
+
+    await act(async () => {
+      await result.current.runScheduleCreation('每天早上帮我看邮件');
+    });
+
+    expect(result.current.pendingScheduleDraft).toBeNull();
+    expect(mocks.createJob).not.toHaveBeenCalled();
+    expect(mocks.toast.error).toHaveBeenCalledWith('创建定时任务失败：AI 返回的定时任务草案格式异常，请重试');
+  });
+
+  it('rejects a draft whose schedule has no string type: no card, error toast instead', async () => {
+    mocks.generateFromPrompt.mockResolvedValueOnce({ ...generatedDraft, schedule: { interval: 1, unit: 'days' } });
     const { result } = renderHook(() => useScheduleSubmitHarness());
 
     await act(async () => {
@@ -265,7 +319,6 @@ describe('untrusted cron draft fields never crash the confirm card', () => {
   const N = '发现高优先级或需要回复的邮件';
   const WHEN = '每 1 天';
   const INBOX = '自动化审核收件箱';
-  const FW = '按配置';
   const FN = '任务完成或发现异常时通知';
 
   // 走真实链路：generateFromPrompt → runScheduleCreation 存草稿 → 确认卡渲染时调 buildScheduleConfirmRows。
@@ -288,13 +341,7 @@ describe('untrusted cron draft fields never crash the confirm card', () => {
     ['restatement.what wrong type', { ...generatedDraft, restatement: { what: 5, notifyWhen: '有新邮件' } }, ['每日邮件巡检', WHEN, FN, INBOX]],
     ['restatement.notifyWhen wrong type', { ...generatedDraft, restatement: { what: '检查新邮件', notifyWhen: [] } }, ['每日邮件巡检', WHEN, FN, INBOX]],
     ['restatement wrong type', { ...generatedDraft, restatement: 'oops' }, ['每日邮件巡检', WHEN, FN, INBOX]],
-    ['schedule missing', { ...generatedDraft, schedule: undefined }, [W, FW, N, INBOX]],
-    ['schedule.type wrong type', { ...generatedDraft, schedule: { type: 9, interval: 1, unit: 'days' } }, [W, FW, N, INBOX]],
-    ['every unit invalid', { ...generatedDraft, schedule: { type: 'every', interval: 1, unit: 'weeks' } }, [W, FW, N, INBOX]],
-    ['every interval wrong type', { ...generatedDraft, schedule: { type: 'every', interval: '1', unit: 'days' } }, [W, FW, N, INBOX]],
-    ['cron expression missing', { ...generatedDraft, schedule: { type: 'cron', timezone: 'Asia/Shanghai' } }, [W, FW, N, INBOX]],
     ['cron timezone wrong type keeps expression', { ...generatedDraft, schedule: { type: 'cron', expression: '17 9 * * *', timezone: 5 } }, [W, '17 9 * * *', N, INBOX]],
-    ['at datetime wrong type', { ...generatedDraft, schedule: { type: 'at', datetime: null } }, [W, FW, N, INBOX]],
     ['webhook without url falls back to description', {
       name: undefined,
       description: '推送结果',
@@ -306,12 +353,28 @@ describe('untrusted cron draft fields never crash the confirm card', () => {
     expect(rows).toEqual(expected);
   });
 
+  // 缺 schedule / schedule 不是带字符串 type 的对象 / 按 type 的必需字段缺失：
+  // 与缺 action 同等处理，草案判无效不出卡（rowsAfterStoring → null），走「草案格式异常」错误提示。
+  it.each([
+    ['schedule missing', { ...generatedDraft, schedule: undefined }],
+    ['schedule.type wrong type', { ...generatedDraft, schedule: { type: 9, interval: 1, unit: 'days' } }],
+    ['every unit invalid', { ...generatedDraft, schedule: { type: 'every', interval: 1, unit: 'weeks' } }],
+    ['every interval wrong type', { ...generatedDraft, schedule: { type: 'every', interval: '1', unit: 'days' } }],
+    ['cron expression missing', { ...generatedDraft, schedule: { type: 'cron', timezone: 'Asia/Shanghai' } }],
+    ['at datetime wrong type', { ...generatedDraft, schedule: { type: 'at', datetime: null } }],
+  ])('rejects a draft when %s: no card rows', async (_label, raw) => {
+    const rows = await rowsAfterStoring(raw);
+    expect(rows).toBeNull();
+  });
+
   it('buildScheduleConfirmRows itself never throws on fully garbage input', () => {
     const rows = buildScheduleConfirmRows({
       input: { name: 7, description: [], resultChannel: {}, schedule: null, action: null } as unknown as CreateCronJobInput,
       restatement: 5 as never,
     }, rowLabels);
-    expect(rows.map((row) => row.value)).toEqual(['按任务描述执行并整理结果', '按配置', '任务完成或发现异常时通知', '自动化审核收件箱']);
+    // when 行不再有「按配置」兜底：真实链路里无效 schedule 在规范化阶段就被拒，
+    // 这里只保证纯函数对垃圾输入不抛错（when 留空，生产不可达）。
+    expect(rows.map((row) => row.value)).toEqual(['按任务描述执行并整理结果', '', '任务完成或发现异常时通知', '自动化审核收件箱']);
   });
 });
 
@@ -324,6 +387,10 @@ describe('normalizeScheduleDraft', () => {
     ['action.type wrong type', { schedule: { type: 'every', interval: 1, unit: 'days' }, action: { type: 42 } }],
     ['action wrong type', { action: 'noop' }],
     ['schedule present but action missing', { schedule: { type: 'at', datetime: '2026-01-01' } }],
+    ['schedule missing', { ...generatedDraft, schedule: undefined }],
+    ['schedule without type', { ...generatedDraft, schedule: { interval: 1, unit: 'days' } }],
+    ['schedule wrong type', { ...generatedDraft, schedule: 'daily' }],
+    ['every unit invalid', { ...generatedDraft, schedule: { type: 'every', interval: 1, unit: 'weeks' } }],
     ['draft not an object', 'nope'],
     ['draft is an array', [{ action: { type: 'agent', prompt: 'x' } }]],
   ])('returns null for %s', (_label, raw) => {
@@ -334,18 +401,16 @@ describe('normalizeScheduleDraft', () => {
     const normalized = normalizeScheduleDraft({ ...generatedDraft, name: '  每日邮件巡检  ', resultChannel: ' feishu:ops ' });
     expect(normalized?.input.name).toBe('每日邮件巡检');
     expect(normalized?.input.resultChannel).toBe('feishu:ops');
+    expect(normalized?.input.schedule).toEqual(generatedDraft.schedule);
     expect(normalized?.restatement).toEqual(generatedDraft.restatement);
   });
 
-  it('drops non-string display fields and invalid schedules instead of keeping them', () => {
+  it('drops non-string display fields instead of keeping them', () => {
     const normalized = normalizeScheduleDraft({ ...generatedDraft, name: 42, description: [], resultChannel: false });
     expect(normalized?.input.name).toBeUndefined();
     expect(normalized?.input.description).toBeUndefined();
     expect(normalized?.input.resultChannel).toBeUndefined();
     expect(normalized?.input.action).toEqual(generatedDraft.action);
-
-    const noSchedule = normalizeScheduleDraft({ ...generatedDraft, schedule: { type: 'every', interval: 1, unit: 'weeks' } });
-    expect(noSchedule?.input.schedule).toBeUndefined();
   });
 });
 
@@ -377,7 +442,7 @@ describe('ScheduleConfirmCard', () => {
   it('renders fallback copy for a degraded draft without crashing', () => {
     const draft: PendingScheduleDraft = {
       input: {
-        schedule: { type: 'every', interval: 1 },
+        schedule: { type: 'every', interval: 1, unit: 'days' },
         action: { type: 'shell', command: 'backup.sh' },
       } as unknown as CreateCronJobInput,
       description: '每天备份数据库',
@@ -386,7 +451,7 @@ describe('ScheduleConfirmCard', () => {
     render(<ScheduleConfirmCard draft={draft} confirming={false} onConfirm={vi.fn()} onDismiss={vi.fn()} />);
 
     expect(screen.getByText('backup.sh')).toBeTruthy();
-    expect(screen.getByText('按配置')).toBeTruthy();
+    expect(screen.getByText('每 1 天')).toBeTruthy();
     expect(screen.getByText('任务完成或发现异常时通知')).toBeTruthy();
     expect(screen.getByText('自动化审核收件箱')).toBeTruthy();
   });

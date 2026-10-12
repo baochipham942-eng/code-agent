@@ -50,6 +50,21 @@ const DEFAULT_MAX_PATCH_BYTES = 64 * 1024 * 1024;
 const DEFAULT_MAX_UNTRACKED_BYTES = 64 * 1024 * 1024;
 const DEFAULT_MAX_UNTRACKED_FILES = 10_000;
 
+/**
+ * The one source of truth for the `git diff` invocation shape behind every
+ * portable anchor-evidence patch. Capture and every verify replay must run the
+ * identical invocation so the byte comparison holds regardless of the user's
+ * diff.* config: `--no-ext-diff` neutralizes diff.external, and the pinned
+ * prefixes neutralize diff.mnemonicPrefix / diff.srcPrefix / diff.dstPrefix.
+ */
+export const PORTABLE_DIFF_FORMAT_ARGS = [
+  '--no-ext-diff',
+  '--binary',
+  '--full-index',
+  '--src-prefix=a/',
+  '--dst-prefix=b/',
+] as const;
+
 function sha256(value: Buffer | string): string {
   return createHash('sha256').update(value).digest('hex');
 }
@@ -239,12 +254,12 @@ export class AnchorWorkspaceEvidenceService {
     ] = await Promise.all([
       this.runner.run({
         executable: 'git',
-        args: ['diff', '--binary', '--full-index', '--cached', baseCommit, '--'],
+        args: ['diff', ...PORTABLE_DIFF_FORMAT_ARGS, '--cached', baseCommit, '--'],
         cwd: repositoryIdentity.canonicalRoot,
       }).then((result) => result.stdout),
       this.runner.run({
         executable: 'git',
-        args: ['diff', '--binary', '--full-index', '--'],
+        args: ['diff', ...PORTABLE_DIFF_FORMAT_ARGS, '--'],
         cwd: repositoryIdentity.canonicalRoot,
       }).then((result) => result.stdout),
       this.runner.run({
@@ -326,12 +341,12 @@ export class AnchorWorkspaceEvidenceService {
       }),
       this.runner.run({
         executable: 'git',
-        args: ['diff', '--binary', '--full-index', '--cached', baseCommit, '--'],
+        args: ['diff', ...PORTABLE_DIFF_FORMAT_ARGS, '--cached', baseCommit, '--'],
         cwd: repositoryIdentity.canonicalRoot,
       }),
       this.runner.run({
         executable: 'git',
-        args: ['diff', '--binary', '--full-index', '--'],
+        args: ['diff', ...PORTABLE_DIFF_FORMAT_ARGS, '--'],
         cwd: repositoryIdentity.canonicalRoot,
       }),
       this.runner.run({

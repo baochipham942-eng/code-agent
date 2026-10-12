@@ -902,7 +902,7 @@ export class CronService implements Disposable {
             // 事件触发时通道载荷只以 untrusted 定界块追加在 prompt 尾部，并给该条
             // 用户消息标 memoryTainted（跳过自动记忆写）。调度触发的 run 字节不变。
             const sendMessage = () => orchestrator.sendMessage(
-              buildCronAgentPrompt(action.prompt, previousSnapshot, snapshotTrackingEnabled)
+              buildCronAgentPrompt(action.prompt, previousSnapshot, snapshotTrackingEnabled, undefined, action.urgencyCriteria)
                 + (eventPayloadBlock === undefined ? '' : `\n\n${eventPayloadBlock}`),
               undefined,
               agentRunOptions,

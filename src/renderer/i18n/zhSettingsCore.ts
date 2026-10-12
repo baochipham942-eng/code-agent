@@ -176,6 +176,15 @@ export const zhSettingsCore = {
       },
       developerMode: '开发者模式',
       developerModeDesc: '在对话流中显示回合质量评分、路由详情等调试信息',
+      disclosureLevel: '对话详略',
+      disclosureLevelDescription: '选择聊天里展示多少过程细节',
+      disclosureLevels: {
+        simple: '简洁',
+        standard: '标准',
+        advanced: '详细',
+        expert: '完整',
+      },
+      disclosureLevelSaveFailed: '对话详略保存失败，已恢复原设置',
       themeSaveFailed: '主题保存失败，已恢复原设置',
       languageSaveFailed: '语言保存失败，已恢复原设置',
       developerModeSaveFailed: '开发者模式保存失败，已恢复原设置',
@@ -200,6 +209,7 @@ export const zhSettingsCore = {
         ruleCountSuffix: ' 条',
         highestPriorityPrefix: '最高优先级：',
         adminOnlySwitchHint: '切换权限模式需要管理员权限，当前账号无法操作。',
+        adminManagedNote: '由管理员管理',
         permissionModes: {
           default: {
             title: permissionVocabularyZh.ask,

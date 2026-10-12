@@ -33,6 +33,7 @@ export interface PermissionQueueEventDeps {
   setLastEventAt: (timestamp: number) => void;
   setPendingPermissionRequest: AgentEffectsProps['setPendingPermissionRequest'];
   recordPermissionDecision: ReturnType<typeof useAppStore.getState>['recordPermissionDecision'];
+  dismissPermissionRequest: ReturnType<typeof useAppStore.getState>['dismissPermissionRequest'];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -99,6 +100,12 @@ export function applyPermissionQueueEvent(
       deps.debug('Permission request received', { data: event.data });
       const permissionRequest = normalizePermissionRequest(event.data);
       if (!permissionRequest) {
+        break;
+      }
+      // 手机（companion）先答的终态回传：桌面只收卡——pending 和队列里这条都撤掉，
+      // 但不进 recordPermissionDecision，那会把别处做的决定记成本机点击的存证。
+      if (permissionRequest.resolved && permissionRequest.resolvedBy === 'companion') {
+        deps.dismissPermissionRequest(permissionRequest.id);
         break;
       }
       if (permissionRequest.resolved && permissionRequest.decision) {
@@ -199,6 +206,7 @@ export const usePermissionQueueEffects = ({
         },
         setPendingPermissionRequest,
         recordPermissionDecision: useAppStore.getState().recordPermissionDecision,
+        dismissPermissionRequest: useAppStore.getState().dismissPermissionRequest,
       });
     });
 

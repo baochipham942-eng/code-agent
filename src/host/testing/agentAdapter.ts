@@ -682,6 +682,14 @@ export class StandaloneAgentAdapter implements AgentInterface {
     return [...this.messages];
   }
 
+  /**
+   * 当前会话 id。快照录制器用它去真实会话库读回持久层终态（会话消息 + 权限
+   * 决策账本），录制期与内存账本对账（见 snapshot-replay-record.ts）。
+   */
+  get activeSessionId(): string | undefined {
+    return this.currentSessionId;
+  }
+
   async getStructuredReplay(sessionId: string) {
     const { TelemetryQueryService, getTelemetryQueryService } = await import('../telemetry/replay/telemetryQueryService');
     return this.database

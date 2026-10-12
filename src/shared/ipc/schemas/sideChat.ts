@@ -13,7 +13,7 @@ const SideChatAskPayloadSchema = z.object({
  * 走成功信封而非异常：web 兜底路由把 handler 返回值原样透传，throw 的
  * message 会在 httpTransport 解包时丢成 undefined，原因到不了渲染层。
  */
-export const SIDE_CHAT_FAILURE_CAUSES = ['auth', 'timeout', 'unknown'] as const;
+export const SIDE_CHAT_FAILURE_CAUSES = ['auth', 'quota', 'timeout', 'network', 'unknown'] as const;
 export type SideChatFailureCause = (typeof SIDE_CHAT_FAILURE_CAUSES)[number];
 
 const SideChatAskResponseSchema = z.object({

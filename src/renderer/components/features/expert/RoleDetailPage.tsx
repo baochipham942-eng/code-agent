@@ -124,7 +124,11 @@ function formatAutomationSchedule(schedule: CronScheduleConfig, text: ReturnType
     return text.automationAt.replace("{time}", time);
   }
   if (schedule.type === "event") {
-    return `事件触发 · ${schedule.accountId}${schedule.chatId ? ` · ${schedule.chatId}` : ''}`;
+    // connector 源（mail）没有 chatId，绑定信息是账号 + 邮箱。
+    const binding = schedule.source === "connector"
+      ? `${schedule.accountId}${schedule.mailbox ? ` · ${schedule.mailbox}` : ''}`
+      : `${schedule.accountId}${schedule.chatId ? ` · ${schedule.chatId}` : ''}`;
+    return `事件触发 · ${binding}`;
   }
   return text.automationCron.replace("{expression}", schedule.timezone ? `${schedule.expression} · ${schedule.timezone}` : schedule.expression);
 }

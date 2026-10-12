@@ -25,6 +25,7 @@ import {
   isCronScheduleType,
   normalizeCronJobRow,
   normalizeSchedule,
+  parseCronExecutionTrigger,
 } from '../../../src/host/cron/cronNormalizers';
 import {
   loadCronExecutionsByJob,
@@ -284,5 +285,132 @@ describe('执行记录 trigger 落库重载（⑥）', () => {
     const reloaded = loadCronExecutionsByJob('job-event-1', 10);
     expect(reloaded).toHaveLength(1);
     expect(reloaded[0].trigger).toBeUndefined();
+  });
+});
+
+describe('connector:mail 事件调度契约（N-TRIGGER-CONNECTOR-MAIL ①⑥）', () => {
+  it('normalizeSchedule 接受合法 connector:mail 配置并落默认值', () => {
+    const schedule = normalizeSchedule({
+      type: 'event', source: 'connector', connector: 'mail', accountId: '_icloud', eventName: 'message',
+    });
+    expect(schedule).toEqual({
+      type: 'event',
+      source: 'connector',
+      connector: 'mail',
+      accountId: '_icloud',
+      eventName: 'message',
+      pollIntervalSec: 60,
+      batchWindowSec: 10,
+      minRunIntervalSec: 60,
+    });
+    // mailbox 未显式设置时保持缺省（轮询器按 DEFAULT_MAILBOX 兜底）
+    expect(schedule && 'mailbox' in schedule).toBe(false);
+  });
+
+  it('normalizeSchedule 保留显式 mailbox 并夹取 pollIntervalSec（下限 30）', () => {
+    const schedule = normalizeSchedule({
+      type: 'event', source: 'connector', connector: 'mail', accountId: '_icloud',
+      mailbox: 'Archive', eventName: 'message', pollIntervalSec: 5,
+    });
+    expect(schedule).toMatchObject({ mailbox: 'Archive', pollIntervalSec: 30 });
+  });
+
+  it.each([
+    ['缺 connector 名', { type: 'event', source: 'connector', accountId: '_icloud', eventName: 'message' }],
+    ['未知 connector', { type: 'event', source: 'connector', connector: 'calendar', accountId: '_icloud', eventName: 'message' }],
+    ['缺 accountId', { type: 'event', source: 'connector', connector: 'mail', eventName: 'message' }],
+    ['非 message 事件', { type: 'event', source: 'connector', connector: 'mail', accountId: '_icloud', eventName: 'sent' }],
+  ])('normalizeSchedule 拒绝非法配置：%s', (_label, value) => {
+    expect(normalizeSchedule(value)).toBeNull();
+  });
+
+  it('connector:mail 任务从数据库行 round-trip（persist/load）', async () => {
+    const db = new Database(':memory:');
+    try {
+      createSchema(db);
+      databaseState.db = db;
+      const row = eventJobRow();
+      row.id = 'job-mail-1';
+      row.schedule = JSON.stringify({
+        type: 'event',
+        source: 'connector',
+        connector: 'mail',
+        accountId: '_icloud',
+        mailbox: 'INBOX',
+        eventName: 'message',
+        pollIntervalSec: 120,
+        batchWindowSec: 30,
+        minRunIntervalSec: 90,
+      });
+      const job = normalizeCronJobRow(row)!;
+      expect(job.schedule).toMatchObject({
+        type: 'event', source: 'connector', connector: 'mail',
+        accountId: '_icloud', mailbox: 'INBOX', pollIntervalSec: 120,
+      });
+      await saveCronJob(job);
+      const persisted = db.prepare('SELECT * FROM cron_jobs WHERE id = ?').get(job.id);
+      expect(normalizeCronJobRow(persisted)).toEqual(job);
+    } finally {
+      databaseState.db = null;
+      db.close();
+    }
+  });
+
+  it('mail run 的 trigger（source connector + connector mail）落库重载不丢（④）', async () => {
+    const db = new Database(':memory:');
+    try {
+      createSchema(db);
+      databaseState.db = db;
+      await saveCronJob(normalizeCronJobRow(eventJobRow())!);
+      await saveCronExecution({
+        id: 'exec-mail-1',
+        jobId: 'job-event-1',
+        runsOn: 'local',
+        status: 'completed',
+        scheduledAt: NOW,
+        startedAt: NOW,
+        completedAt: NOW + 5_000,
+        duration: 5_000,
+        retryAttempt: 0,
+        trigger: {
+          kind: 'event',
+          source: 'connector',
+          connector: 'mail',
+          accountId: '_icloud',
+          eventCount: 2,
+          droppedCount: 0,
+          eventIds: ['_icloud|INBOX|1', '_icloud|INBOX|2'],
+        },
+      });
+
+      const reloaded = loadCronExecutionsByJob('job-event-1', 10);
+      expect(reloaded[0].trigger).toEqual({
+        kind: 'event',
+        source: 'connector',
+        connector: 'mail',
+        accountId: '_icloud',
+        eventCount: 2,
+        droppedCount: 0,
+        eventIds: ['_icloud|INBOX|1', '_icloud|INBOX|2'],
+      });
+    } finally {
+      databaseState.db = null;
+      db.close();
+    }
+  });
+});
+
+describe('parseCronExecutionTrigger 的 connector 源宽容度（N-TRIGGER-CONNECTOR-MAIL）', () => {
+  it('source connector + connector mail 完整保留；未知 connector 值丢弃但 source 保留', () => {
+    expect(parseCronExecutionTrigger(
+      '{"kind":"event","source":"connector","connector":"mail","accountId":"a","eventCount":1}',
+    )).toEqual({
+      kind: 'event', source: 'connector', connector: 'mail', accountId: 'a', eventCount: 1,
+    });
+    expect(parseCronExecutionTrigger(
+      '{"kind":"event","source":"connector","connector":"calendar"}',
+    )).toEqual({ kind: 'event', source: 'connector' });
+    // source 白名单之外的值仍然整体丢弃（坏行按无 trigger 处理）
+    expect(parseCronExecutionTrigger('{"kind":"event","source":"webhook"}')?.source).toBeUndefined();
   });
 });

@@ -1,7 +1,7 @@
 import type { Translations } from '../../hooks/useI18n';
 import type { DecisionCardViewMode } from '../DecisionCard';
 import type { PermissionRequest } from './types';
-import { formatFilePath } from './utils';
+import { formatFilePath, isDangerousCommand } from './utils';
 import { redactCredentialText } from '@shared/security/secretPatterns';
 import { PermissionRequestReason } from '@shared/contract';
 
@@ -62,6 +62,17 @@ export function isSafeDefaultDeny(request: PermissionRequest): boolean {
     || commandRisk === 'critical';
 }
 
+/**
+ * 卡片「危险红卡」判据的请求形状部分（PermissionCard 的 isDangerous 去掉 editable
+ * 与 request-null 两个卡片态）。后果行的按应用抑制必须与标题/正文用同一把尺：
+ * 两处各拼一套条件迟早漂移回「标题说应用、后果行说命令」。
+ */
+export function isDangerousRequestShape(request: PermissionRequest): boolean {
+  return request.dangerLevel === 'danger'
+    || request.type === 'dangerous_command'
+    || (request.type === 'command' && isDangerousCommand(request.details.command));
+}
+
 export function defaultPermissionViewMode(request: PermissionRequest): DecisionCardViewMode {
   if (request.rawArgs || isOutsideWorkspace(request) || isSafeDefaultDeny(request)) return 'expanded';
   return request.type === 'file_read' || request.type === 'file_write' || request.type === 'file_edit'
@@ -112,6 +123,12 @@ function fileCountText(count: number | undefined, t: Translations): string {
 }
 
 export function permissionConsequence(request: PermissionRequest, t: Translations): string | undefined {
+  // 按应用授权卡（appGrantCard && !isDangerous，判据与 PermissionCard 同源）问的是
+  // 「要不要让 Neo 操作这个应用」，命令风险后果行会把刚统一的口径撕回去：标题与
+  // 正文都说应用，后果行回头说命令。该卡不渲染命令后果行——问题句已把授权语义说尽。
+  if (request.details.targetApp?.name && request.forceConfirm !== true && !isDangerousRequestShape(request)) {
+    return undefined;
+  }
   const p = t.decisionCard.permission;
   const commandDeleteTarget = request.details.command?.match(/\brm\s+(?:(?:-[^\s]+|--[^\s]+)\s+)*(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))/u);
   const target = request.details.affectedPath

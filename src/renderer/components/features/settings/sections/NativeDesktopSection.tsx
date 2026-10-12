@@ -55,6 +55,7 @@ import {
 } from './nativeDesktopActivityModel';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { DangerButton } from '../../../primitives/Button';
+import { AudioRetentionFailureLine } from './audioRetentionFailure';
 import { useI18n } from '../../../../hooks/useI18n';
 import { interpolate } from '../../../../i18n/interpolate';
 import { resolveScreenshotUrl } from '../../../../utils/resolveFileUrl';
@@ -956,13 +957,18 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
           {nativeDesktopText.audioRetention.clear}
         </DangerButton>
       </div>
-      {audioStatus?.retention && audioStatus.retention.failedTotal > 0 ? (
-        <div className="px-5 py-1.5 text-[11px] text-badge-danger shrink-0">
-          {interpolate(nativeDesktopText.audioRetention.failed, {
-            count: audioStatus.retention.failedTotal,
-            error: audioStatus.retention.lastError ?? '',
-          })}
-        </div>
+      {/* 失败行只由 failedTotal 驱动：fileCount 只统计可清理的普通文件，
+          名为 *.wav 的目录/符号链接这类结构性删不掉的路径不在其中，拿它当
+          开关会把持续失败藏死；账目归零由 host 侧零失败的 clear/sweep 清账负责 */}
+      {audioStatus?.retention
+        && audioStatus.retention.failedTotal > 0 ? (
+        <AudioRetentionFailureLine
+          failedTotal={audioStatus.retention.failedTotal}
+          lastError={audioStatus.retention.lastError}
+          audioDir={audioStatus.audioDir}
+          text={nativeDesktopText.audioRetention}
+          onRetry={() => { void openClearConfirm(); }}
+        />
       ) : null}
       {clearResult ? (
         <div className="px-5 py-1.5 text-[11px] text-zinc-300 shrink-0">{clearResult}</div>

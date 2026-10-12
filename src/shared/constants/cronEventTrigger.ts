@@ -1,8 +1,9 @@
 /**
  * 'event' 调度（N-TRIGGER-CHANNEL-EVENT）的护栏参数。
  *
- * 事件源只有本机已连接通道的入站消息（Feishu/Telegram via ChannelManager），
- * 不开端口、不挂 HTTP endpoint。这里的常量只管合批/限频/截断/去重的界。
+ * 事件源目前有两类：本机已连接通道的入站消息（Feishu/Telegram via ChannelManager），
+ * 以及本地连接器轮询（N-TRIGGER-CONNECTOR-MAIL 的 macOS Mail）。不开端口、不挂
+ * HTTP endpoint。这里的常量只管合批/限频/轮询/截断/去重的界。
  */
 export const CRON_EVENT_TRIGGER = {
   /** 合批窗缺省（秒）：窗内到达的事件合并成一次 run。 */
@@ -13,6 +14,16 @@ export const CRON_EVENT_TRIGGER = {
   DEFAULT_MIN_RUN_INTERVAL_SEC: 60,
   /** 两次 run 的最小间隔下限（秒）：再小的配置也被抬到这里，绝不放低。 */
   MIN_MIN_RUN_INTERVAL_SEC: 30,
+  /** mail 源轮询间隔缺省（秒）。 */
+  DEFAULT_POLL_INTERVAL_SEC: 60,
+  /** mail 源轮询间隔下限（秒）：再小的配置也被抬到这里。 */
+  MIN_POLL_INTERVAL_SEC: 30,
+  /** mail 源缺省监听的邮箱名（Apple Mail 收件箱）。 */
+  DEFAULT_MAILBOX: 'INBOX',
+  /** mail 源单次轮询拉取的邮件条数上限（list_messages 的 limit）。 */
+  MAIL_POLL_LIST_LIMIT: 25,
+  /** mail 轮询扫描 tick（毫秒）：到期任务的轮询由这个粒度驱动（任务增删改即时生效）。 */
+  MAIL_POLL_TICK_MS: 5_000,
   /** 单次 run 最多携带的事件条数；超出部分计入 droppedCount，不静默丢。 */
   MAX_EVENTS_PER_RUN: 20,
   /** 每任务待处理队列上限；超界挤出最旧并计数（下次 run 报告）。 */

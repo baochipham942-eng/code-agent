@@ -96,6 +96,8 @@ export function useEventScheduleNames(): (job: CronJobDefinition) => EventSchedu
   return useCallback((job: CronJobDefinition): EventScheduleDisplayNames => {
     if (job.schedule?.type !== 'event') return {};
     const schedule = job.schedule;
+    // connector 源（mail）不走通道目录：accountId 就是 Mail 账号名，直接回落显示。
+    if (schedule.source !== 'channel') return {};
     return {
       accountName: accounts.find((account) => account.id === schedule.accountId)?.name,
       chatName: schedule.chatId

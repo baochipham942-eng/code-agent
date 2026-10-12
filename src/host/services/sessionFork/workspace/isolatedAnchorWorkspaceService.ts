@@ -14,6 +14,7 @@ import { deflateSync } from 'node:zlib';
 import {
   AnchorEvidenceError,
   AnchorWorkspaceEvidenceService,
+  PORTABLE_DIFF_FORMAT_ARGS,
   digestWorkspaceValue,
 } from './anchorEvidence';
 import { NodeWorkspaceCommandRunner, WorkspaceCommandError } from './commandRunner';
@@ -710,12 +711,12 @@ export class IsolatedAnchorWorkspaceService {
     const [staged, unstaged, untracked] = await Promise.all([
       this.runner.run({
         executable: 'git',
-        args: ['diff', '--binary', '--full-index', '--cached', intent.evidence.manifest.baseCommit, '--'],
+        args: ['diff', ...PORTABLE_DIFF_FORMAT_ARGS, '--cached', intent.evidence.manifest.baseCommit, '--'],
         cwd: workspacePath,
       }).then((result) => result.stdout),
       this.runner.run({
         executable: 'git',
-        args: ['diff', '--binary', '--full-index', '--'],
+        args: ['diff', ...PORTABLE_DIFF_FORMAT_ARGS, '--'],
         cwd: workspacePath,
       }).then((result) => result.stdout),
       this.runner.run({

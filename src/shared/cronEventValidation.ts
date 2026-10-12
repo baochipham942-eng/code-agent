@@ -14,6 +14,8 @@ export interface EventScheduleValidationSubject {
     source?: unknown;
     eventName?: unknown;
     accountId?: unknown;
+    /** connector 源（N-TRIGGER-CONNECTOR-MAIL）的连接器类别；channel 源不设。 */
+    connector?: unknown;
   };
   runsOn?: unknown;
   action?: { type?: unknown };
@@ -40,12 +42,26 @@ export interface EventScheduleViolation {
  */
 export function validateEventScheduleConstraints(subject: EventScheduleValidationSubject): EventScheduleViolation | null {
   if (subject.schedule?.type !== 'event') return null;
-  if (
+  if (subject.schedule.source === 'connector') {
+    // connector 源（N-TRIGGER-CONNECTOR-MAIL）：连接器类别与账号同受显式绑定约束。
+    if (
+      subject.schedule.connector !== 'mail'
+      || subject.schedule.eventName !== 'message'
+      || typeof subject.schedule.accountId !== 'string'
+      || !subject.schedule.accountId.trim()
+    ) {
+      return {
+        reason: 'invalid-schedule',
+        message: "Invalid event schedule: source 'connector' requires connector 'mail', eventName 'message', and accountId must be a non-empty string.",
+      };
+    }
+  } else if (
     subject.schedule.source !== 'channel'
     || subject.schedule.eventName !== 'message'
     || typeof subject.schedule.accountId !== 'string'
     || !subject.schedule.accountId.trim()
   ) {
+    // channel 源的文案与历史逐字节相同（host 抛错与 renderer 表单共用这一份）。
     return {
       reason: 'invalid-schedule',
       message: "Invalid event schedule: source must be 'channel', eventName must be 'message', and accountId must be a non-empty string.",

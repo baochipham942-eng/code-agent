@@ -523,3 +523,46 @@ describe('deliverable card projection', () => {
     expect(card.contextPack.constraints).toContain('output_file_path:images/result.png');
   });
 });
+
+// N-DELIVERABLE-WORKDIR-DEFAULT：无文件夹新会话的产物落在按会话目录（任务_MMDD_<标题>）。
+// 交付卡「打开文件夹」（reveal-file → workspace.showItemInFolder）取的是交付物自身的绝对
+// 路径（deliverables.ts 不另设目录来源），文件由工具按 cwd（= 按会话目录）写出，所以
+// reveal 落点天然在该目录内——这里钉死这条取径契约，防止将来改成别的目录来源。
+describe('deliverable card open-folder source for per-session task folders', () => {
+  it('keeps reveal-file and file-preview anchored to the artifact path inside the session work folder', () => {
+    const sessionFolder = '/tmp/verify-home/Neo/任务_1011_季度总结';
+    const artifactPath = `${sessionFolder}/report.md`;
+
+    const workspaceItem: WorkspacePreviewItem = {
+      id: `file:${artifactPath}`,
+      kind: 'document',
+      title: '季度总结',
+      subtitle: 'write',
+      status: 'ready',
+      createdAt: 300,
+      source: { kind: 'tool', label: 'write', toolCallId: 'tool-report' },
+      file: { path: artifactPath, name: 'report.md', mimeType: 'text/markdown', size: 42 },
+    };
+
+    const card = buildDeliverableCardFromWorkspaceItem(workspaceItem);
+    expect(card.openTarget).toMatchObject({ kind: 'file-preview', path: artifactPath });
+    const reveal = card.secondaryActions?.find((action) => action.kind === 'reveal-file');
+    expect(reveal).toMatchObject({ kind: 'reveal-file', path: artifactPath });
+    expect(reveal?.path.startsWith(`${sessionFolder}/`)).toBe(true);
+
+    const turnCards = buildTurnArtifactDeliverableCards([
+      {
+        kind: 'file',
+        role: 'deliverable',
+        sourceNodeId: 'turn-node-1',
+        label: '季度总结图表',
+        ownerKind: 'tool',
+        ownerLabel: 'write · Created',
+        path: `${sessionFolder}/chart.png`,
+      },
+    ]);
+    expect(turnCards[0]?.openTarget).toMatchObject({ kind: 'file-preview', path: `${sessionFolder}/chart.png` });
+    expect(turnCards[0]?.secondaryActions?.find((action) => action.kind === 'reveal-file'))
+      .toMatchObject({ kind: 'reveal-file', path: `${sessionFolder}/chart.png` });
+  });
+});

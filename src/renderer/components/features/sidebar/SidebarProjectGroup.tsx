@@ -25,6 +25,7 @@ import { resolveSidebarGroupExpansionView } from '../../../utils/sidebarGroupExp
 import { SidebarProjectDetail } from './SidebarProjectDetail';
 import { SidebarProjectDrawer, type SidebarProjectDrawerSession } from './SidebarProjectDrawer';
 import { SidebarSessionItem, type SidebarSessionItemSharedProps } from './SidebarSessionItem';
+import { GhostButton } from '../../primitives';
 import {
   getSidebarCronRunFoldingDecision,
   getSidebarCronTaskId,
@@ -493,7 +494,7 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
                 {cronTaskIds.map((taskId) => {
                   const isExpanded = expandedCronTaskIds.has(taskId);
                   return (
-                    <button
+                    <GhostButton
                       key={`cron-runs-${taskId}`}
                       type="button"
                       data-testid="sidebar-cron-run-toggle"
@@ -501,10 +502,11 @@ export const SidebarProjectGroup: React.FC<SidebarProjectGroupProps> = ({
                       aria-expanded={isExpanded}
                       aria-label={isExpanded ? p.cronRunsCollapse : p.cronRunsExpand}
                       onClick={() => setExpandedCronRunTasks((current) => ({ ...current, [taskId]: !isExpanded }))}
-                      className="w-full pl-6 pr-3 py-1 text-left text-[11px] text-zinc-500 transition-colors hover:text-zinc-300 focus:outline-hidden"
+                      size="sm"
+                      className="w-full justify-start pl-6 pr-3 py-1 text-left text-[11px] text-zinc-500 transition-colors hover:text-zinc-300"
                     >
                       {isExpanded ? p.cronRunsCollapse : p.cronRunsExpand}
-                    </button>
+                    </GhostButton>
                   );
                 })}
                 {canToggle && (

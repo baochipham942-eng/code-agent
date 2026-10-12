@@ -113,4 +113,87 @@ describe('delegate_session', () => {
     pre.close();
     post.close();
   });
+
+  // rework r3：G4 同指纹重放 ≠ 还能投。行已 stopped/aborted/superseded 时
+  // 载荷永久暂停（INV-6 撤回不复活），回执必须照实报状态，不得硬编码 active。
+  const commitFirstDelegation = (db: InstanceType<typeof Database>) => {
+    const targetIdentity = 'session:target';
+    const submissionKey = deriveSubmissionKey({ originSessionId: 'origin', originTurnId: 'turn-1', action: 'delegate_existing', targetIdentity });
+    commitDelegation(db, {
+      delegationId: 'd-1', originSessionId: 'origin', originTurnId: 'turn-1', disposition: 'delegate_existing',
+      targetSessionId: 'target', submissionKey,
+      actionFingerprint: deriveActionFingerprint({ action: 'delegate_existing', targetIdentity, content: 'do it', attachmentRefs: [] }),
+      envelope: { content: 'do it', sessionId: 'target' }, now: 1,
+    });
+    return { targetIdentity, submissionKey };
+  };
+
+  it('rework r3：同指纹重放遇 active 委托 → 重用回执照实报 active，不重复入队', async () => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    const db = new Database(':memory:');
+    applySchema(db, { info() {}, warn() {}, error() {}, debug() {} } as never);
+    const now = 100;
+    commitFirstDelegation(db);
+    const sessions = [{ id: 'target', title: 'Target', workingDirectory: '/workspace/origin', updatedAt: now, sessionType: 'chat' as const, engineKind: 'native' }];
+    const projection = projectSessionCandidates(sessions, { originSessionId: 'origin', now, secret: getDelegationCandidateSecret() });
+    const notify = vi.fn();
+    setRuntime({
+      getDb: () => db,
+      listSessions: () => sessions,
+      getSessionRow: (id: string) => id === 'target' ? { id, title: 'Target', workingDirectory: '/workspace/origin', sessionType: 'chat', engineKind: 'native', modelConfig: { provider: 'local', model: 'test' } } : null,
+      getWorkspaceRoots: () => ['/workspace'],
+      getRuns: () => [],
+      getRun: () => undefined,
+      getPermissionMode: () => 'default',
+      evaluateFolderTrust: async () => ({ state: 'trusted', blockedItems: 0 }),
+      notifyEnqueued: notify,
+      now: () => now,
+    });
+    const result = await executeDelegateSession({ action: 'delegate_existing', candidateSetId: projection.candidateSetId, candidateRef: projection.candidates[0].candidateRef, text: 'do it' }, ctx, async () => ({ allow: true }));
+    if (result.ok !== true) throw new Error('active reuse must stay a success receipt');
+    expect(result.meta).toMatchObject({ delegationId: 'd-1', status: 'active' });
+    expect(JSON.parse(result.output)).toMatchObject({ delegationId: 'd-1', status: 'active' });
+    expect(db.prepare('SELECT count(*) AS count FROM queued_inputs').get()).toMatchObject({ count: 1 });
+    expect(notify).not.toHaveBeenCalled();
+    db.close();
+  });
+
+  it.each([
+    ['stopped', (repo: SessionDelegationRepository, at: number) => repo.markStopped('d-1', { reason: 'user' }, at)],
+    ['aborted', (repo: SessionDelegationRepository, at: number) => repo.markAborted('d-1', 'retracted_by_user', at)],
+    ['superseded', (repo: SessionDelegationRepository, at: number) => repo.markSuperseded('d-1', at)],
+  ] as const)('rework r3：同指纹重放遇已停委托 %s → 非成功回执照实报状态、不入新队', async (status, stop) => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    const db = new Database(':memory:');
+    applySchema(db, { info() {}, warn() {}, error() {}, debug() {} } as never);
+    const now = 100;
+    commitFirstDelegation(db);
+    stop(new SessionDelegationRepository(db), now + 1);
+    const sessions = [{ id: 'target', title: 'Target', workingDirectory: '/workspace/origin', updatedAt: now, sessionType: 'chat' as const, engineKind: 'native' }];
+    const projection = projectSessionCandidates(sessions, { originSessionId: 'origin', now, secret: getDelegationCandidateSecret() });
+    const notify = vi.fn();
+    setRuntime({
+      getDb: () => db,
+      listSessions: () => sessions,
+      getSessionRow: (id: string) => id === 'target' ? { id, title: 'Target', workingDirectory: '/workspace/origin', sessionType: 'chat', engineKind: 'native', modelConfig: { provider: 'local', model: 'test' } } : null,
+      getWorkspaceRoots: () => ['/workspace'],
+      getRuns: () => [],
+      getRun: () => undefined,
+      getPermissionMode: () => 'default',
+      evaluateFolderTrust: async () => ({ state: 'trusted', blockedItems: 0 }),
+      notifyEnqueued: notify,
+      now: () => now,
+    });
+    const result = await executeDelegateSession({ action: 'delegate_existing', candidateSetId: projection.candidateSetId, candidateRef: projection.candidates[0].candidateRef, text: 'do it' }, ctx, async () => ({ allow: true }));
+    if (result.ok !== false) throw new Error(`${status} reuse must not be reported as a success receipt`);
+    expect(result.code).toBe('DELEGATION_REJECTED');
+    expect(result.error).toContain('delegation_not_active');
+    expect(result.error).toContain(status);
+    // 不复活、不补投：队列与委托行都只有原来那一行，零成功副作用
+    expect(db.prepare('SELECT count(*) AS count FROM queued_inputs').get()).toMatchObject({ count: 1 });
+    expect(new SessionDelegationRepository(db).listByTargetSession('target')).toHaveLength(1);
+    expect(new SessionDelegationRepository(db).get('d-1')?.status).toBe(status);
+    expect(notify).not.toHaveBeenCalled();
+    db.close();
+  });
 });

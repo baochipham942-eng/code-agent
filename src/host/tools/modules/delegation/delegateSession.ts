@@ -223,7 +223,15 @@ export async function executeDelegateSession(
     const admission = await admissionFor(call, ctx, runtime);
     if (admission.result.kind === 'rejected') return rejection(admission.result.code, admission.result.detail);
     if (admission.result.kind === 'reused') {
-      const row = admission.row;
+      // rework r3：同指纹重放只证明「提交过」，不证明「还能投」。行已
+      // stopped/aborted/superseded 时载荷永久暂停（INV-6 撤回不复活），必须
+      // 照实回非成功回执，否则模型以为任务在队里，正文被静默丢弃。回执时点
+      // 重读行，不吃 admission 快照的旧状态。
+      const db = runtime.getDb();
+      const row = (db ? new SessionDelegationRepository(db).get(admission.result.delegationId) : null) ?? admission.row;
+      if (row && row.status !== 'active') {
+        return rejection('delegation_not_active', `existing delegation ${row.delegationId} is ${row.status}; it is not revived on retry, re-issue the task as a new delegation`);
+      }
       return successfulOutput({ delegationId: admission.result.delegationId, targetName: runtime.getSessionRow(row?.targetSessionId ?? '')?.title ?? 'session', queuedAhead: 0 });
     }
     if (call.action === 'stop' || call.action === 'resume' || call.action === 'correct') {

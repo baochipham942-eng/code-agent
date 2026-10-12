@@ -974,8 +974,9 @@ export class CronService implements Disposable {
           tm.cleanup(cronSession.id);
         }
 
-        // runFailed 已知即结算常设刷新：成功走校验+留版（有标注则清），失败回滚快照并标注
-        if (artifactRefresh) await finishArtifactRefresh(artifactRefresh, { runFailed, error: runError, updateJob: (u) => this.updateJob(definition.id, u) });
+        // runFailed 已知即结算常设刷新：成功走校验+留版（有标注则清），失败回滚快照并标注。
+        // loadJob 重读当前定义：标注底稿用最新 metadata，不回退跑中保存的指令/节奏修改。
+        if (artifactRefresh) await finishArtifactRefresh(artifactRefresh, { runFailed, error: runError, updateJob: (u) => this.updateJob(definition.id, u), loadJob: () => this.jobs.get(definition.id)?.definition });
 
         if (action.roleId) {
           try {

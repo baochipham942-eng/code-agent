@@ -132,6 +132,50 @@ it('describes unknown command risk without calling it safe', () => {
   expect(permissionConsequence(request, decisionCardZh as never)).toBe('命令风险无法自动判定，需要你确认后才能执行。');
 });
 
+describe('per-app grant card consequence suppression', () => {
+  const zh = decisionCardZh as never;
+
+  it.each<{ name: string; commandRiskLevel?: 'unknown' }>([
+    { name: '风险缺省（medium）' },
+    { name: '分类器回退 unknown', commandRiskLevel: 'unknown' },
+  ])('安全的按应用授权请求（$name）不渲染命令后果行', ({ commandRiskLevel }) => {
+    const request: PermissionRequest = {
+      ...baseRequest,
+      tool: 'computer_use',
+      type: 'command',
+      details: {
+        targetApp: { name: 'Safari' },
+        ...(commandRiskLevel ? { commandRiskLevel } : {}),
+      },
+    };
+
+    expect(permissionConsequence(request, zh)).toBeUndefined();
+  });
+
+  it('危险形状的按应用请求仍保留命令后果行', () => {
+    const request: PermissionRequest = {
+      ...baseRequest,
+      tool: 'computer_use',
+      type: 'dangerous_command',
+      details: { targetApp: { name: 'Safari' }, command: 'chmod 777 ~/.ssh/id_rsa' },
+    };
+
+    expect(permissionConsequence(request, zh)).toBe('将执行有风险命令，可能覆盖本机系统或项目状态。');
+  });
+
+  it('forceConfirm 的按应用请求（appGrantCard=false）仍保留命令后果行', () => {
+    const request: PermissionRequest = {
+      ...baseRequest,
+      tool: 'computer_use',
+      type: 'command',
+      forceConfirm: true,
+      details: { targetApp: { name: 'Safari' } },
+    };
+
+    expect(permissionConsequence(request, zh)).toBe('将执行有风险命令，可能覆盖本机系统或项目状态。');
+  });
+});
+
 it('shows the deterministic command guard reason instead of generic local-risk copy', () => {
   const request: PermissionRequest = {
     ...baseRequest,

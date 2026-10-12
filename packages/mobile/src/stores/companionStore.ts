@@ -26,7 +26,7 @@ import { companionFileMime, companionFileRetryable, COMPANION_LIMITS } from '../
 import { base64ToBytes, bytesToBase64, sha256Hex, type CacheInspect } from '../platform/fileCache';
 import { HistoryCache } from '../platform/historyCache';
 import { mdnsRefreshedEndpoint } from '../platform/mdnsEndpoint';
-import { connectionBlocksAutoRetry, handshakeNeedsRescan, phoneReconnectDelayMs, phoneReconnectJitterMs } from '../app/phoneReconnect';
+import { connectionBlocksAutoRetry, connectionErrorFromCode, handshakeNeedsRescan, type ConnectionErrorCode, phoneReconnectDelayMs, phoneReconnectJitterMs } from '../app/phoneReconnect';
 import { transcriptionReadinessFromResult } from '../features/sessions/voiceFailure';
 
 interface Saved {
@@ -54,8 +54,8 @@ interface Saved {
 function recoverEntryVisible(record: Saved | null): boolean {
   return isCompanionRelayUrlConfigured(record?.relay?.url ?? record?.relayAccount?.url ?? DEFAULT_COMPANION_RELAY_URL);
 }
-type ConnectionError = 'connectionQrInvalid' | 'connectionScanFailed' | 'connectionRejected' | 'connectionRefused' | 'connectionUnavailable' | 'connectionFailed'
-  | 'connectionRelayUnavailable' | 'connectionRelayRejected' | 'connectionRelayNoHost';
+/** 连接失败分类（键名与 i18n 一一对应）；判表见 phoneReconnect.connectionErrorFromCode。 */
+type ConnectionError = ConnectionErrorCode;
 
 /**
  * 找回流步进（N-COMPANION-RELAY-ACCOUNT-RECOVER，UI 稿 S3-S6）：idle=S4 登录表单（含行内报错），
@@ -981,17 +981,9 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
         // 连接页诊断会从「需要重新扫码」变成「电脑没回应」（ai-review Nit）。
         if (get().status === 'rejected') { set({ connectionError: 'connectionRejected' }); return; }
         const code = error instanceof Error ? error.message : '';
-        // 三分类（fix4-②）+ relay 档（N-MOBILE-RELAY-PHONE）：握手/身份失败、连接被拒绝、
-        // 超时/无响应、relay 路失败（连不上/凭据被拒）——其余网络码都归「没回应」那一类，
-        // UI 按类给人话，不再一律「无法连接电脑」。
-        const connectionError: ConnectionError = code === 'COMPANION_INVALID_INVITATION' ? 'connectionQrInvalid'
-          : code === 'COMPANION_SCAN_FAILED' ? 'connectionScanFailed'
-          : code === 'COMPANION_PAIRING_REJECTED' || handshakeNeedsRescan(code) ? 'connectionRejected'
-          : code === 'COMPANION_CONNECTION_REFUSED' ? 'connectionRefused'
-          : code === 'COMPANION_RELAY_AUTH_REJECTED' ? 'connectionRelayRejected'
-          : code === 'COMPANION_RELAY_NO_HOST' ? 'connectionRelayNoHost'
-          : code === 'COMPANION_RELAY_UNAVAILABLE' || code === 'COMPANION_RELAY_CONNECT_TIMEOUT' ? 'connectionRelayUnavailable'
-          : code === 'COMPANION_NETWORK_UNAVAILABLE' || code === 'COMPANION_NO_RESPONSE' ? 'connectionUnavailable' : 'connectionFailed';
+        // 三分类（fix4-②）+ relay 档 + 总闸关闭档：判表在 phoneReconnect.connectionErrorFromCode
+        // ——握手/身份、拒绝、超时、relay 路、电脑关了远程，UI 按类给人话，不再一律「无法连接电脑」。
+        const connectionError: ConnectionError = connectionErrorFromCode(code);
         // 静默自动重试的传输类失败不接管保留中的「二维码无效/扫码失败」（N-MOBILE-CONN-POLISH-R3 ③）：
         // 宿主停机时一次重试约 10ms 就失败，新码整拍覆盖会把提示寿命压成一个退避首档（爸实测
         // 2.39s）。只有身份类新结论（被拒/新的扫码类失败）才接管；传输类把进场存下的 heldError
@@ -1944,6 +1936,14 @@ export function createCompanionStore(port: PlatformPorts['companion'], onAccepte
           if (error instanceof Error && error.message === 'COMPANION_DEVICE_REVOKED') {
             syncOk = false;
             settleRevoked();
+            return;
+          }
+          // 电脑关了远程（N-COMPANION-KILLSWITCH-WIRE）：host 点名的固定答案不是撤销——不
+          // settleRevoked、不清配对；offline + 专属失败码，退避重试照挂，电脑重开后自愈。
+          if (error instanceof Error && error.message === 'COMPANION_REMOTE_OFF') {
+            syncOk = false;
+            if (get().status !== 'storageError') set({ status: 'offline', connectionError: 'connectionRemoteOff', transport: null });
+            armAutoRetry(true);
             return;
           }
           const escalate = !syncOk;

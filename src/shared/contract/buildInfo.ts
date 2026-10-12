@@ -1,5 +1,6 @@
 export interface BuildInfo {
   appName: string;
+  version?: string;
   branch: string | null;
   commit: string | null;
   commitShort: string | null;

@@ -2,7 +2,11 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { CONFIG_DIR_NEW } from '../../shared/constants/configDir';
+import { ESCALATE_DIR_FORBIDDEN_WALK } from '../../shared/constants/sandbox';
 import { MAX_DEV_SLOT, devSlotDataDirName } from '../../shared/devSlot';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('SensitivePaths', { lane: 'sandbox' });
 
 export type SensitiveSandboxPathKind = 'directory' | 'file';
 
@@ -41,6 +45,21 @@ const HOME_SECRET_FILE_PREFIXES = [
   'id_ecdsa',
   'id_ed25519',
 ];
+
+// DIR-FORBIDDEN 补充的目录版特有禁写名（设计稿 D1-B）：写一次、之后替代理执行的
+// 持久化向量。清单只活在本文件，别处不得复制。
+const HOME_SHELL_RC_FILES = [
+  '.zshrc',
+  '.bashrc',
+  '.profile',
+  '.zprofile',
+  '.bash_profile',
+];
+
+const LAUNCH_AGENTS_DIR_NAMES = ['LaunchAgents'];
+
+const GIT_DIR_NAME = '.git';
+const GIT_HOOKS_DIR_NAME = 'hooks';
 
 const DATA_DIR_SECRET_FILES = [
   '.secure-key',
@@ -320,6 +339,135 @@ function enumerateHomeSecretPrefixMatches(homeDir: string): string[] {
   return fileNames.filter((fileName) => (
     HOME_SECRET_FILE_PREFIXES.some((prefix) => fileName.startsWith(prefix))
   ));
+}
+
+// HOME_SECRET_DIRS 的多段条目（.config/gh 等）拆成「父目录名 → 自身名」的嵌套匹配规则：
+// 子树扫描不给 .config 整目录判敏感，只认其下的 gh / gcloud。
+const HOME_SECRET_DIR_NAMES = HOME_SECRET_DIRS.filter((rel) => !rel.includes(path.sep));
+const HOME_SECRET_NESTED_DIR_NAMES = HOME_SECRET_DIRS
+  .filter((rel) => rel.includes(path.sep))
+  .map((rel) => {
+    const parts = rel.split(path.sep);
+    return { parent: parts[parts.length - 2], name: parts[parts.length - 1] };
+  });
+
+function isForbiddenWriteDirName(name: string, parentName: string): boolean {
+  if (HOME_SECRET_DIR_NAMES.includes(name)) return true;
+  if (HOME_SECRET_NESTED_DIR_NAMES.some((rule) => rule.parent === parentName && rule.name === name)) return true;
+  if (name === GIT_HOOKS_DIR_NAME && parentName === GIT_DIR_NAME) return true;
+  return LAUNCH_AGENTS_DIR_NAMES.includes(name);
+}
+
+function isForbiddenWriteFileName(name: string): boolean {
+  return HOME_SECRET_FILES.includes(name)
+    || HOME_SECRET_FILE_PREFIXES.some((prefix) => name.startsWith(prefix))
+    || HOME_SHELL_RC_FILES.includes(name);
+}
+
+export interface ForbiddenWritePathsUnderRootOptions {
+  homeDir?: string;
+  env?: Partial<Pick<NodeJS.ProcessEnv, 'CODE_AGENT_DATA_DIR'>>;
+}
+
+/**
+ * 一次性目录子树扩权（N-SANDBOX-ESCALATE-DIR-FORBIDDEN）的禁写名清单：授予 grantedRoot
+ * 整树写之后，其中命中凭据/笼子/钩子/shell rc/LaunchAgents 名字的**现存**路径仍保持只读。
+ * 清单不新造：home-secret 名（HOME_SECRET_*）+ 笼子（isProtectedWritePath 以 projectRoot =
+ * root 调用，含数据目录条目）之上，补目录版特有名（.git/hooks、shell rc、LaunchAgents，D1-B）。
+ * 有界 walk 不跟软链（seatbelt 按 realpath、bwrap 按真实挂载点匹配，软链拼写写入会解析回
+ * 真实落点）；深度/条目撞上限只 warn 记名、绝不静默跳过。root 本体落在 home-secret/笼子
+ * 路径内或自身即禁写名时，root 本身就是唯一条目。已知残余（设计稿 D1）：子树内**新建**的
+ * 禁写名拦不住——与工作区执行层现状同律。
+ */
+export function getForbiddenWritePathsUnderRoot(
+  grantedRoot: string,
+  options: ForbiddenWritePathsUnderRootOptions = {},
+): SensitiveSandboxPath[] {
+  const root = path.resolve(grantedRoot);
+  const homeDir = path.resolve(options.homeDir ?? os.homedir());
+  const env = options.env ?? process.env;
+  const rootIsProtected = isSensitiveCredentialPath(root, { homeDir })
+    || isForbiddenWriteDirName(path.basename(root), path.basename(path.dirname(root)))
+    || isProtectedWritePath(root, { homeDir, env, projectRoot: root });
+  if (rootIsProtected) return [{ kind: 'directory', path: root }];
+
+  const entries: SensitiveSandboxPath[] = [];
+  try {
+    walkForbiddenNamesUnderRoot(root, homeDir, env, entries);
+  } catch (error) {
+    // fail-closed：未扫描完的子树绝不整体交出——宁可重跑全拒（失败可见），不放宽开口子
+    logger.warn('Forbidden-name walk failed; denying the whole granted root', {
+      root,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return [{ kind: 'directory', path: root }];
+  }
+  return dedupeSensitivePaths(entries);
+}
+
+function walkForbiddenNamesUnderRoot(
+  root: string,
+  homeDir: string,
+  env: Partial<Pick<NodeJS.ProcessEnv, 'CODE_AGENT_DATA_DIR'>>,
+  entries: SensitiveSandboxPath[],
+): void {
+  let direntsSeen = 0;
+  let entriesCapHit = false;
+  let depthCapHit = false;
+  const queue: Array<{ dirPath: string; depth: number }> = [{ dirPath: root, depth: 0 }];
+  for (let cursor = 0; cursor < queue.length && !entriesCapHit; cursor += 1) {
+    const { dirPath, depth } = queue[cursor];
+    if (depth >= ESCALATE_DIR_FORBIDDEN_WALK.MAX_DEPTH) {
+      depthCapHit = true; // 该目录不再进入：更深的名字按已知残余处理，warn 在收尾统一发
+      continue;
+    }
+    let dirents: fs.Dirent[];
+    try {
+      dirents = fs.readdirSync(dirPath, { withFileTypes: true });
+    } catch {
+      continue; // 读不进来的目录列不了名；同 uid 的沙箱内进程同样写不进去
+    }
+    const parentName = path.basename(dirPath);
+    for (const dirent of dirents) {
+      direntsSeen += 1;
+      if (direntsSeen > ESCALATE_DIR_FORBIDDEN_WALK.MAX_ENTRIES) {
+        entriesCapHit = true;
+        break;
+      }
+      const child = path.join(dirPath, dirent.name);
+      if (dirent.isDirectory()) {
+        if (
+          isForbiddenWriteDirName(dirent.name, parentName)
+          || isProtectedWritePath(child, { homeDir, env, projectRoot: root })
+        ) {
+          entries.push({ kind: 'directory', path: child });
+        }
+        queue.push({ dirPath: child, depth: depth + 1 });
+      } else if (dirent.isFile()) {
+        if (
+          isForbiddenWriteFileName(dirent.name)
+          || isProtectedWritePath(child, { homeDir, env, projectRoot: root })
+        ) {
+          entries.push({ kind: 'file', path: child });
+        }
+      }
+      // 软链/特殊文件不进清单：枚举链接本身会绕过 realpath 语义（见函数 doc）
+    }
+  }
+  if (entriesCapHit) {
+    logger.warn('Forbidden-name walk hit the entry cap; deeper names stay unwalked', {
+      cap: 'ESCALATE_DIR_FORBIDDEN_WALK.MAX_ENTRIES',
+      limit: ESCALATE_DIR_FORBIDDEN_WALK.MAX_ENTRIES,
+      root,
+    });
+  }
+  if (depthCapHit) {
+    logger.warn('Forbidden-name walk hit the depth cap; deeper names stay unwalked', {
+      cap: 'ESCALATE_DIR_FORBIDDEN_WALK.MAX_DEPTH',
+      limit: ESCALATE_DIR_FORBIDDEN_WALK.MAX_DEPTH,
+      root,
+    });
+  }
 }
 
 function getCandidateDataDirs(

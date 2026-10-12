@@ -232,6 +232,40 @@ describe('ExpertPanel', () => {
     expect(within(screen.getByTestId('team-recipe-user-recipe-1')).getByText('详情')).toBeTruthy();
   });
 
+  it('出厂专家团卡显示快捷句，点击预选团队并把句子填进输入框，不自动发送', async () => {
+    const { useComposerStore } = await import('../../../src/renderer/stores/composerStore');
+    useComposerStore.getState().setSelectedTeamRecipeId(null);
+    useComposerStore.getState().setPendingComposerPrefill(null);
+    useAppStore.setState({ showCapabilityHub: true });
+    listTeamRecipes.mockResolvedValue([]);
+    listRoles.mockResolvedValue([makeEntry()]);
+    render(<ExpertPanel />);
+    await waitFor(() => expect(screen.getByTestId('expert-card-牧之')).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId('expert-tab-discover'));
+    const card = screen.getByTestId('team-recipe-product-spec');
+    expect(within(card).getByText('可以直接开口')).toBeTruthy();
+    expect(within(card).getByText('帮我把这个想法拆成一份可落地的产品规格，说清目标用户和功能优先级')).toBeTruthy();
+
+    fireEvent.click(within(card).getByTestId('team-quick-prompt'));
+    // 预选 + 预填两件事都发生：团队进了 composer，句子进了输入框（等 ChatInput 消费）
+    expect(useComposerStore.getState().selectedTeamRecipeId).toBe('product-spec');
+    expect(useComposerStore.getState().pendingComposerPrefill?.text).toBe('帮我把这个想法拆成一份可落地的产品规格，说清目标用户和功能优先级');
+    // 能力中心关掉、回到聊天（ChatInput 挂载后才会消费预填）
+    expect(useAppStore.getState().showCapabilityHub).toBe(false);
+    // 只填不发：不建会话、不启动配方
+    expect(invokeDomain).not.toHaveBeenCalledWith(
+      expect.stringMatching(/session/i),
+      'createSession',
+      expect.anything(),
+    );
+    expect(invokeDomain).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'launchRecipe',
+      expect.anything(),
+    );
+  });
+
   it('「用这个团」把配方预选进 composer，不弹主题输入、不直接发起会话', async () => {
     const { useComposerStore } = await import('../../../src/renderer/stores/composerStore');
     useComposerStore.getState().setSelectedTeamRecipeId(null);

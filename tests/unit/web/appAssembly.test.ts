@@ -74,6 +74,7 @@ function buildDeps(dataDir: string): CreateAppDeps {
 // 有意为之的路由变更，而不是重构/合并时的静默丢失。
 const EXPECTED_ROUTES: Array<[string, string]> = [
   ['get', '/health'],
+  ['get', '/health/detail'],
   ['get', '/events'],
   ['get', '/quit-guard'],
   ['post', '/api/upload/temp'],

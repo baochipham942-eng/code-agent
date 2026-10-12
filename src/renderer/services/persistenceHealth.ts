@@ -1,4 +1,4 @@
-import type { BuildInfo, PersistenceHealth, WebHealthResponse } from '@shared/contract';
+import type { BuildInfo, PersistenceHealth, WebHealthDetail } from '@shared/contract';
 import { SQLITE_FTS, SQLITE_INTEGRITY } from '@shared/constants';
 import { getApiBaseUrl, hasNativeBridge } from '../api/transport';
 
@@ -39,6 +39,14 @@ function isBuildInfo(value: unknown): value is BuildInfo {
 
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, '');
+}
+
+function getHealthAuthHeaders(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  const token = (window as unknown as Record<string, unknown>).__CODE_AGENT_TOKEN__;
+  return typeof token === 'string' && token.length > 0
+    ? { Authorization: `Bearer ${token}` }
+    : {};
 }
 
 export function shouldShowPersistenceWarning(health: PersistenceHealth | null | undefined): health is PersistenceHealth {
@@ -124,25 +132,27 @@ export function describePersistenceBanner(
 export async function fetchWebPersistenceHealth(): Promise<PersistenceHealth | null> {
   if (hasNativeBridge()) return null;
 
-  const response = await fetch(`${normalizeBaseUrl(getApiBaseUrl())}/api/health`, {
+  const response = await fetch(`${normalizeBaseUrl(getApiBaseUrl())}/api/health/detail`, {
     cache: 'no-store',
+    headers: getHealthAuthHeaders(),
   });
   if (!response.ok) {
     throw new Error(`health request failed: ${response.status}`);
   }
 
-  const payload = await response.json() as Partial<WebHealthResponse>;
+  const payload = await response.json() as Partial<WebHealthDetail>;
   return isPersistenceHealth(payload.persistence) ? payload.persistence : null;
 }
 
 export async function fetchWebBuildInfo(): Promise<BuildInfo | null> {
-  const response = await fetch(`${normalizeBaseUrl(getApiBaseUrl())}/api/health`, {
+  const response = await fetch(`${normalizeBaseUrl(getApiBaseUrl())}/api/health/detail`, {
     cache: 'no-store',
+    headers: getHealthAuthHeaders(),
   });
   if (!response.ok) {
     throw new Error(`health request failed: ${response.status}`);
   }
 
-  const payload = await response.json() as Partial<WebHealthResponse>;
+  const payload = await response.json() as Partial<WebHealthDetail>;
   return isBuildInfo(payload.build) ? payload.build : null;
 }

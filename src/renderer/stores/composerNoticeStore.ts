@@ -43,6 +43,7 @@ export type ComposerSlotOccupantId =
   | ComposerNoticeId
   | ComposerInProgressId
   | 'schedule-composer'
+  | 'schedule-confirm'
   | 'goal-confirm'
   | 'seed-composer'
   | 'member-bar'
@@ -57,6 +58,7 @@ export const COMPOSER_SLOT_LAYER: Readonly<Record<ComposerSlotOccupantId, Compos
   'role-draft': 1,
   'team-recipe-draft': 1,
   'schedule-composer': 1,
+  'schedule-confirm': 1,
   'goal-confirm': 1,
   'seed-composer': 1,
   voice: 2,

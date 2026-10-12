@@ -280,6 +280,12 @@ async function executeNewDelegation(
     committed = commitDelegation(db, input);
   }
   if (!committed) return rejection('target_unavailable', 'delegation transaction did not commit');
+  // rework r2：同轮并行提交撞 submission_key 且指纹不同（G4 的竞态形态）——
+  // 新正文没有入队，绝不能回 status:active 的成功回执，否则第二个任务被静默
+  // 丢弃且模型不会重试。与非竞态 G4 拒绝保持同一形状。
+  if (committed.kind === 'idempotency_conflict') {
+    return rejection('idempotency_conflict', 'same submission key with a different payload');
+  }
   runtime.notifyEnqueued(targetId);
   return successfulOutput({ delegationId: committed.delegationId, targetName, queuedAhead: admission.snapshot.userQueuedOrSendingRows });
 }
@@ -344,6 +350,11 @@ async function executeChain(
     const newId = runtime.randomId('delegation_');
     const envelope: ConversationEnvelope = { ...(oldEnvelope ?? { sessionId: newTarget }), content: call.content, sessionId: newTarget, options: target?.modelConfig ? { modelSpec: target.modelConfig } : oldEnvelope?.options };
     const committed = commitDelegation(db, { delegationId: newId, originSessionId: ctx.sessionId, originTurnId: ctx.turnId ?? 'unknown-turn', disposition: 'delegate_existing', targetSessionId: newTarget, submissionKey, actionFingerprint, envelope, supersedesDelegationId: row.delegationId, now }, undefined);
+    // rework r2：correct 与新委托共用提交缝，竞态撞键同样不得回成功；输家在
+    // 赢家已完成的撤回/supersede 副作用之前早退。
+    if (committed.kind === 'idempotency_conflict') {
+      return rejection('idempotency_conflict', 'same submission key with a different payload');
+    }
     if (row.targetQueuedInputId && isQueuedRow(row, db)) queued.retract(row.targetQueuedInputId, now);
     repository.markSuperseded(row.delegationId, now);
     runtime.notifyEnqueued(newTarget);

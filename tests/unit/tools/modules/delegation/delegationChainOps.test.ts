@@ -75,4 +75,49 @@ describe('delegate_session chain operations', () => {
     expect(resumed.error).toContain('failed');
     db.close();
   });
+
+  it('rework r2：同轮并行两个 correct 不同正文，第二个撞提交键必须拒（修正文本不静默丢失）', async () => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    const open = () => {
+      const handle = new Database(':memory:');
+      applySchema(handle, { info() {}, warn() {}, error() {}, debug() {} } as never);
+      return handle;
+    };
+    const commitD1 = (handle: Database.Database) => {
+      const fingerprint = deriveActionFingerprint({ action: 'delegate_existing', targetIdentity: 'session:target', content: 'work', attachmentRefs: [] });
+      const key = deriveSubmissionKey({ originSessionId: 'origin', originTurnId: 'turn', action: 'delegate_existing', targetIdentity: 'session:target' });
+      commitDelegation(handle, { delegationId: 'd-1', originSessionId: 'origin', originTurnId: 'turn', disposition: 'delegate_existing', targetSessionId: 'target', submissionKey: key, actionFingerprint: fingerprint, envelope: { content: 'work', sessionId: 'target' }, now: 1 });
+      return key;
+    };
+    const base = {
+      getSessionRow: () => ({ id: 'target', title: 'Target', workingDirectory: '/workspace', sessionType: 'chat', engineKind: 'native' }),
+      getWorkspaceRoots: () => ['/workspace'], getRuns: () => [], getRun: () => undefined,
+      getPermissionMode: () => 'default', evaluateFolderTrust: async () => ({ state: 'trusted', blockedItems: 0 }),
+      now: () => 2,
+    };
+    const allow = async () => ({ allow: true as const });
+    // 赢家先完整跑完 correct（correction A）：correct 委托行落 post 库、d-1 superseded
+    const post = open();
+    const originalKey = commitD1(post);
+    setRuntime({ ...base, getDb: () => post, notifyEnqueued: () => {} });
+    expect((await executeDelegateSession({ action: 'correct', delegationId: 'd-1', text: 'correction A' }, ctx, allow)).ok).toBe(true);
+    // 输家竞态形态：admission（前两次 getDb）看到 d-1 还 active 的 pre 库，
+    // 提交（第三次 getDb）撞上 post 库里赢家不同正文的 correct 委托行
+    const pre = open();
+    commitD1(pre);
+    const notify = vi.fn();
+    let dbCalls = 0;
+    setRuntime({ ...base, getDb: () => { dbCalls += 1; return dbCalls <= 2 ? pre : post; }, notifyEnqueued: notify });
+    const loser = await executeDelegateSession({ action: 'correct', delegationId: 'd-1', text: 'correction B' }, ctx, allow);
+    if (loser.ok !== false) throw new Error('idempotency_conflict on correct must not be reported as a success receipt');
+    expect(loser.error).toContain('idempotency_conflict');
+    expect(notify).not.toHaveBeenCalled();
+    // 赢家的修正正文仍是唯一入队内容；输家不能把已被赢家撤回的原始行再动一遍
+    const correctKey = deriveSubmissionKey({ originSessionId: 'origin', originTurnId: 'turn', action: 'correct', targetIdentity: 'delegation:d-1' });
+    const stored = new QueuedInputRepository(post).getById('delegation:' + correctKey);
+    expect(JSON.parse(stored?.envelopeJson ?? '{}').content).toBe('correction A');
+    expect(new QueuedInputRepository(post).getById('delegation:' + originalKey)?.status).toBe('retracted');
+    pre.close();
+    post.close();
+  });
 });

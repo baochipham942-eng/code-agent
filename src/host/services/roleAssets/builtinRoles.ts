@@ -528,15 +528,15 @@ export async function installBuiltinRoles(): Promise<InstallBuiltinRolesResult> 
       logger.warn('Failed to install builtin role asset dirs', { roleId: role.id, error: String(err) });
     }
 
-    // 3. 出厂默认资料架：bindings.json 不存在才种入 skill 绑定（mode=always / scope=private，
-    //    只存名字引用）。文件已存在（含用户删空的 []）一律不碰——用户绑定与删除都归用户，
+    // 3. 出厂默认资料架：bindings.json 不存在才种入 skill 绑定（mode=always，只存名字引用）。
+    //    文件已存在（含用户删空的 []）一律不碰——用户绑定与删除都归用户，
     //    重复安装天然幂等。写入走 addRoleBinding 的原子写路径（校验 + 去重复用同一入口）。
     try {
       const hasBindings = await fs.access(getRoleBindingsPath(role.id)).then(() => true, () => false);
       if (!hasBindings) {
         const skillNames = BUILTIN_ROLE_DEFAULT_SKILL_BINDINGS[role.id] ?? [];
         for (const skillName of skillNames) {
-          await addRoleBinding(role.id, { kind: 'skill', target: skillName, mode: 'always', scope: 'private' });
+          await addRoleBinding(role.id, { kind: 'skill', target: skillName, mode: 'always' });
         }
         if (skillNames.length > 0) {
           logger.info('Seeded builtin role default skill bindings', { roleId: role.id, skills: [...skillNames] });

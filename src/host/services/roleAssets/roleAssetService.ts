@@ -301,12 +301,18 @@ export async function loadScopedMemoryIndex(target: ScopedMemoryTarget): Promise
   const dirs = resolveScopeDirs(target.scope, target.roleId, target.workspacePath);
   try {
     const content = await fs.readFile(dirs.indexPath, 'utf-8');
-    if (!content.trim()) return null;
-    const lines = content.split('\n');
+    const trimmedContent = content.trim();
+    if (!trimmedContent) return null;
+    const lines = trimmedContent.split('\n');
     if (lines.length > ROLE_ASSETS.INDEX_MAX_LINES) {
-      return lines.slice(0, ROLE_ASSETS.INDEX_MAX_LINES).join('\n') + '\n\n<!-- Truncated: index exceeds budget. -->';
+      const omitted = lines.length - ROLE_ASSETS.INDEX_MAX_LINES;
+      logger.warn(
+        `Scoped ${target.scope} memory index has ${lines.length} lines, truncating to ${ROLE_ASSETS.INDEX_MAX_LINES} (${omitted} lines omitted this session)`,
+      );
+      return lines.slice(0, ROLE_ASSETS.INDEX_MAX_LINES).join('\n')
+        + `\n\nOmittedMemoryIndexNotice: 省略了 ${omitted} 条记忆索引条目，需要时可使用 MemoryRead 获取。`;
     }
-    return content.trim();
+    return trimmedContent;
   } catch {
     return null;
   }

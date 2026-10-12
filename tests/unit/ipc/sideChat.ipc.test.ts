@@ -13,7 +13,13 @@ vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
   getToolResolver: () => ({ getDefinition: () => undefined }),
 }));
 
+// withTransientRetry（真实重试链路）会打 warn 日志，测试里静音。
+vi.mock('../../../src/host/model/providers/shared', () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
 import { registerSideChatHandlers } from '../../../src/host/ipc/sideChat.ipc';
+import { withTransientRetry } from '../../../src/host/model/providers/retryStrategy';
 import { handlers, ipcHost } from '../../../src/host/platform/ipcRegistry';
 import * as databaseModule from '../../../src/host/services/core/databaseService';
 import { DatabaseService } from '../../../src/host/services/core/databaseService';
@@ -187,6 +193,73 @@ describe('side chat IPC', () => {
     }
   });
 
+  it('classifies quota and network wordings through the executor failure path', async () => {
+    const cases = [
+      { error: '余额不足，请充值后重试', cause: 'quota' },
+      { error: 'Error code: 429 - rate limit exceeded', cause: 'quota' },
+      { error: 'ECONNRESET socket hang up', cause: 'network' },
+      { error: 'fetch failed', cause: 'network' },
+    ] as const;
+    for (const [index, { error, cause }] of cases.entries()) {
+      execute.mockImplementation(async () => ({
+        success: false,
+        output: '',
+        error,
+        toolsUsed: [],
+        iterations: 1,
+      }));
+
+      const result = await askHandler()(null, {
+        sessionId: 's1',
+        question: 'q',
+        requestId: `r-cause-${index}`,
+      });
+
+      expect(result, `expected cause ${cause} for: ${error}`).toEqual({ failure: { cause } });
+    }
+  });
+
+  // UI 验收 2026-10-11：真机上 429/ECONNREFUSED 被 ModelRouter 重试 3 次熔断后，
+  // 执行器抛出的文案只剩「Retry stopped…」，此前全落 unknown。这里用真实
+  // withTransientRetry 产出同型熔断包装、从 executor 抛出，断言 ask 边界按
+  // cause 链上携带的原始错误归类。
+  it('classifies retry-exhausted model failures thrown as the fingerprint wrapper', async () => {
+    const cases = [
+      {
+        label: '429',
+        underlying: () => Object.assign(new Error('Too many requests, slow down'), { statusCode: 429 }),
+        cause: 'quota',
+      },
+      {
+        label: 'ECONNREFUSED',
+        underlying: () => new Error('Cannot connect to API: connect ECONNREFUSED 127.0.0.1:443'),
+        cause: 'network',
+      },
+    ] as const;
+    for (const { label, underlying, cause } of cases) {
+      const wrapper = await withTransientRetry(() => Promise.reject(underlying()), {
+        providerName: `side-chat-ipc-${label}`,
+        model: 'test-model',
+        maxRetries: 4,
+        baseDelay: 1,
+      }).then(
+        () => { throw new Error('expected the fingerprint breaker to trip'); },
+        (err: unknown) => err as Error,
+      );
+      expect(wrapper.name).toBe('RepeatedRetryableFingerprintError');
+      expect(wrapper.message).toMatch(/^Retry stopped: the same retryable error repeated \d+ times\.$/);
+
+      execute.mockRejectedValue(wrapper);
+      const result = await askHandler()(null, {
+        sessionId: 's1',
+        question: 'q',
+        requestId: `r-exhausted-${label}`,
+      });
+
+      expect(result, `expected cause ${cause} for retry-exhausted ${label}`).toEqual({ failure: { cause } });
+    }
+  });
+
   it('keeps an unrelated failure wording unknown', async () => {
     execute.mockImplementation(async () => ({
       success: false,
@@ -232,14 +305,14 @@ describe('side chat IPC', () => {
   });
 
   it('falls back to unknown for unclassified failures, thrown or returned', async () => {
-    execute.mockRejectedValue(new Error('ECONNRESET socket hang up'));
+    execute.mockRejectedValue(new Error('something odd happened'));
     expect(await askHandler()(null, { sessionId: 's1', question: 'q', requestId: 'r-unk1' }))
       .toEqual({ failure: { cause: 'unknown' } });
 
     execute.mockImplementation(async () => ({
       success: false,
       output: '',
-      error: 'something odd happened',
+      error: '模型正忙，请稍后再试',
       toolsUsed: [],
       iterations: 1,
     }));

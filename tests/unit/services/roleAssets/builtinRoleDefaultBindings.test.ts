@@ -65,7 +65,7 @@ describe('installBuiltinRoles 出厂资料架种入', () => {
     await expect(fs.access(getRoleBindingsPath('研究员'))).rejects.toThrow(/ENOENT/);
   });
 
-  it('② 全新安装：各角色 bindings.json 只含 skill 引用（kind/mode/scope），不含 skill 正文', async () => {
+  it('② 全新安装：各角色 bindings.json 只含 skill 引用（kind/mode，无 scope 键），不含 skill 正文', async () => {
     await installBuiltinRoles();
 
     for (const role of BUILTIN_ROLES) {
@@ -75,7 +75,7 @@ describe('installBuiltinRoles 出厂资料架种入', () => {
       for (const b of bindings) {
         expect(b.kind, role.id).toBe('skill');
         expect(b.mode, role.id).toBe('always');
-        expect(b.scope, role.id).toBe('private');
+        expect(b, role.id).not.toHaveProperty('scope');
         expect(typeof b.id, role.id).toBe('string');
         expect(typeof b.createdAt, role.id).toBe('number');
       }
@@ -98,6 +98,7 @@ describe('installBuiltinRoles 出厂资料架种入', () => {
 
   it('③ 已存在的用户绑定不被覆盖（哪怕只有一条）', async () => {
     await ensureRoleAssetDirs('牧之');
+    // 刻意写成带 scope 的存量形状（scope 下线前的真实历史文件），验证种入对老文件也逐字节不碰
     const userBindings = [{
       id: 'user_b1', kind: 'file', target: '/tmp/notes.md', title: 'notes',
       mode: 'on_demand', scope: 'private', createdAt: 42,

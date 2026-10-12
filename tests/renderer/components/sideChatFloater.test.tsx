@@ -31,6 +31,7 @@ import { dismissSideChat } from '../../../src/renderer/components/features/chat/
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useStatusStore } from '../../../src/renderer/stores/statusStore';
 import { useComposerStore } from '../../../src/renderer/stores/composerStore';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 const originalAddMessage = useSessionStore.getState().addMessage;
 
@@ -142,6 +143,7 @@ beforeEach(() => {
   });
   useStatusStore.setState({ isStreaming: false });
   useComposerStore.getState().setPendingCommand(null);
+  useAppStore.setState({ showSettings: false });
   window.codeAgentDomainAPI = undefined;
 });
 
@@ -153,6 +155,7 @@ afterEach(() => {
     currentSessionId: null,
     addMessage: originalAddMessage,
   });
+  useAppStore.setState({ showSettings: false });
   window.codeAgentDomainAPI = undefined;
 });
 
@@ -246,15 +249,17 @@ describe('side chat floater', () => {
 
     await submitBtw();
     await act(async () => {
-      pending.reject(new SideChatRequestError('auth'));
+      pending.reject(new SideChatRequestError('unknown'));
     });
 
     const dialog = await waitFor(() => {
       const node = screen.getByRole('dialog');
-      expect(node.textContent).toContain('模型没有响应：账号未通过授权');
+      expect(node.textContent).toContain('侧聊没有完成');
       return node;
     });
-    expect(dialog.textContent).not.toContain('侧聊没有完成');
+    expect(dialog.textContent).not.toContain('模型没有响应');
+    expect(screen.getByRole('button', { name: '重试' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '检查密钥 / 切换模型' })).toBeTruthy();
     expect(askSideChat).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole('button', { name: '重试' }));
@@ -270,27 +275,106 @@ describe('side chat floater', () => {
     expect(screen.queryByRole('button', { name: '重试' })).toBeNull();
   });
 
-  it('maps timeout and unknown causes to their own fallback wording', async () => {
+  it('offers the settings exit instead of retry for auth and quota failures', async () => {
+    const cases = [
+      { cause: 'auth', line: '模型没有响应：账号未通过授权' },
+      { cause: 'quota', line: '模型没有响应：额度或余额不足' },
+    ] as const;
+    for (const { cause, line } of cases) {
+      askSideChat.mockReset();
+      useAppStore.setState({ showSettings: false });
+      const pending = deferAnswer();
+      const view = render(<SubmitHarness />);
+      await submitBtw();
+      await act(async () => {
+        pending.reject(new SideChatRequestError(cause));
+      });
+
+      await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain(line));
+      expect(screen.queryByRole('button', { name: '重试' })).toBeNull();
+      const checkKey = screen.getByRole('button', { name: '检查密钥 / 切换模型' });
+      expect(useAppStore.getState().showSettings).toBe(false);
+      fireEvent.click(checkKey);
+      expect(useAppStore.getState().showSettings).toBe(true);
+      expect(askSideChat).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(screen.getByRole('button', { name: '关闭侧聊' }));
+      view.unmount();
+    }
+  });
+
+  it('maps timeout and network causes to retry only', async () => {
+    const cases = [
+      { cause: 'timeout', line: '请求超时' },
+      { cause: 'network', line: '网络连接中断' },
+    ] as const;
+    for (const { cause, line } of cases) {
+      askSideChat.mockReset();
+      const pending = deferAnswer();
+      const view = render(<SubmitHarness />);
+      await submitBtw();
+      await act(async () => {
+        pending.reject(new SideChatRequestError(cause));
+      });
+
+      await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain(line));
+      expect(screen.getByRole('dialog').textContent).not.toContain('模型没有响应');
+      expect(screen.getByRole('button', { name: '重试' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: '检查密钥 / 切换模型' })).toBeNull();
+
+      fireEvent.click(screen.getByRole('button', { name: '重试' }));
+      expect(askSideChat).toHaveBeenCalledTimes(2);
+      await act(async () => {
+        pending.resolve('好了');
+      });
+      await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('好了'));
+
+      fireEvent.click(screen.getByRole('button', { name: '关闭侧聊' }));
+      view.unmount();
+      dismissSideChat();
+    }
+  });
+
+  it('keeps the header row outside the scroll container and caps the body height to the space above the input', async () => {
     const pending = deferAnswer();
-    const view = render(<SubmitHarness />);
-    await submitBtw();
-    await act(async () => {
-      pending.reject(new SideChatRequestError('timeout'));
-    });
-    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('请求超时'));
-    expect(screen.getByRole('dialog').textContent).not.toContain('模型没有响应');
-
-    fireEvent.click(screen.getByRole('button', { name: '关闭侧聊' }));
-    view.unmount();
-
-    const second = deferAnswer();
     render(<SubmitHarness />);
     await submitBtw();
     await act(async () => {
-      second.reject(new SideChatRequestError('unknown'));
+      pending.resolve('长答案'.repeat(40));
     });
-    await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain('侧聊没有完成'));
-    expect(screen.getByRole('button', { name: '重试' })).toBeTruthy();
+    const dialog = await waitFor(() => screen.getByRole('dialog'));
+    const body = dialog.querySelector<HTMLDivElement>('div.overflow-y-auto');
+    expect(body).not.toBeNull();
+    // 结构性质：标题行（X 所在行）在滚动容器外，不随正文滚动
+    expect(screen.getByRole('button', { name: '关闭侧聊' }).closest('div.overflow-y-auto')).toBeNull();
+    // 滚动容器有高度帽；jsdom 量不到布局（offsetParent null）时保持 60vh class 兜底、无内联覆盖
+    expect(body?.className).toContain('max-h-[60vh]');
+    expect(body?.style.maxHeight).toBe('');
+
+    // 量得到布局时：正文帽 = min(60vh, 锚点上沿 − mb-2(8) − TitleBar 预留(56) − 标题行高)
+    const anchor = document.createElement('div');
+    document.body.append(anchor);
+    Object.defineProperty(dialog, 'offsetParent', { get: () => anchor, configurable: true });
+    const header = dialog.firstElementChild as HTMLElement;
+    anchor.getBoundingClientRect = () => ({ top: 336.5 }) as DOMRect;
+    header.getBoundingClientRect = () => ({ height: 42 }) as DOMRect;
+    Object.defineProperty(window, 'innerHeight', { value: 600, configurable: true });
+    try {
+      window.dispatchEvent(new Event('resize'));
+      await waitFor(() => expect(body?.style.maxHeight).toBe('230px')); // 336.5 - 8 - 56 - 42 = 230.5 → 230
+      // 空间充裕时仍以 60vh 为帽（900 视口 → 540）
+      anchor.getBoundingClientRect = () => ({ top: 800 }) as DOMRect;
+      Object.defineProperty(window, 'innerHeight', { value: 900, configurable: true });
+      window.dispatchEvent(new Event('resize'));
+      await waitFor(() => expect(body?.style.maxHeight).toBe('540px'));
+      // 空间不足时保底 64px：正文不至于整块塌成只剩标题行
+      anchor.getBoundingClientRect = () => ({ top: 100 }) as DOMRect;
+      window.dispatchEvent(new Event('resize'));
+      await waitFor(() => expect(body?.style.maxHeight).toBe('64px'));
+    } finally {
+      Object.defineProperty(window, 'innerHeight', { value: 768, configurable: true });
+      anchor.remove();
+    }
   });
 
   it('reuses the context health popover shell and adds no new colour or z-index token', () => {

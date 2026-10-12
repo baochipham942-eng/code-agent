@@ -24,9 +24,10 @@ export function connectionDiagnosis(
   if (error === 'connectionRejected' || error === 'connectionQrInvalid' || error === 'connectionScanFailed') {
     return { sentence: text[error], action: 'scan' };
   }
-  // ④ relay 档（N-MOBILE-RELAY-PHONE）：走到这里说明 LAN 已失败、relay 也失败——按 relay
-  // 的失败原因给句子（连不上 / 路由被拒），主动作仍是重连：重连先试 LAN，再落 relay。
-  if (error === 'connectionRelayUnavailable' || error === 'connectionRelayRejected' || error === 'connectionRelayNoHost') {
+  // ④ relay 档（N-MOBILE-RELAY-PHONE）与总闸关闭档（N-COMPANION-KILLSWITCH-WIRE）：走到这里
+  // 说明 LAN 已失败、relay 也失败——按失败原因给句子（连不上 / 路由被拒 / 电脑关了远程），
+  // 主动作仍是重连：关掉的远程在电脑上重新打开后，手机的退避重试自己连回来，无需重扫。
+  if (error === 'connectionRelayUnavailable' || error === 'connectionRelayRejected' || error === 'connectionRelayNoHost' || error === 'connectionRemoteOff') {
     return { sentence: text[error], action: 'reconnect' };
   }
   // ② 连接被拒绝：宿主可达但端口没人听——Neo 没在运行。

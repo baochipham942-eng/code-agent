@@ -58,6 +58,9 @@ export const MEMORY = {
   SKILL_MAX_OMITTED_SUMMARY_CHARS: 1200,
   /** Skill injection: 用户查询的最小 token 数（少于此数直接跳过匹配，避免"a" 之类命中所有） */
   SKILL_MIN_QUERY_TOKENS: 1,
+  /** Seed 注入的用量淘汰窗口：用过但超过该时长未再用的记忆不再自动注入（30 天；
+   * 只影响注入集合，MemoryRead/搜索照常返回，行不删）。N-MEM-CITEBACK-RANK-EVICT */
+  SEED_STALE_USED_MS: 30 * 24 * 60 * 60 * 1000,
 } as const;
 
 /** 向量存储配置 */

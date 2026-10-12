@@ -8,6 +8,11 @@ const gateScript = resolve('scripts/ci/snapshot-replay-sync-gate.mjs');
 const roots: string[] = [];
 const snapshotDir = 'packages/internal/evaluation-center/snapshots/request-replay';
 const caseIndex = `${snapshotDir}/single-turn-qa/index.json`;
+// 门钉的三层用例（THREE_LAYER_CASES）：fixture 必须与真仓同形——用例目录 + 两个旁路都在。
+const threeLayerCaseId = 'write-file';
+const threeLayerCaseIndex = `${snapshotDir}/${threeLayerCaseId}/index.json`;
+const renderSidecar = `${snapshotDir}/${threeLayerCaseId}.render.json`;
+const stateSidecar = `${snapshotDir}/${threeLayerCaseId}.state.json`;
 const sensitiveFile = 'src/host/prompts/builder.ts';
 const readProjectionFile = 'src/host/context/readResultProjection.ts';
 const contextBuilderFile = 'src/host/agent/messageHandling/contextBuilder.ts';
@@ -47,6 +52,9 @@ function makeFixture(): string {
     write(root, file, 'export const MARKER = "v1";\n');
   }
   write(root, caseIndex, '{"version":1,"caseId":"single-turn-qa","turns":["turn-01"]}\n');
+  write(root, threeLayerCaseIndex, '{"version":1,"caseId":"write-file","turns":["turn-01","turn-02"]}\n');
+  write(root, renderSidecar, '{"caseId":"write-file","layer":"render"}\n');
+  write(root, stateSidecar, '{"caseId":"write-file","layer":"state"}\n');
   write(root, 'README.md', '# fixture\n');
   git(root, 'add', '.');
   git(root, 'commit', '-qm', 'baseline');
@@ -138,12 +146,43 @@ describe('snapshot-replay sync gate', () => {
 
   it('快照目录没有任何用例时 fail-loud（门不许空转）', () => {
     const root = makeFixture();
-    // 目录还在、用例的 index.json 没了 ⇒ 0 条用例，不许扫空假绿
+    // 目录还在、用例的 index.json 没了 ⇒ 0 条用例，不许扫空假绿（两条用例都清）
     unlinkSync(join(root, caseIndex));
+    unlinkSync(join(root, threeLayerCaseIndex));
 
     const result = runGate(root);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('没有任何用例');
+  });
+
+  it('三层回放用例不在语料时必须红（旁路不算可有可无的附件）', () => {
+    const root = makeFixture();
+    // index.json 没了 ⇒ write-file 掉出用例名录，但 single-turn-qa 还在，语料非空
+    unlinkSync(join(root, threeLayerCaseIndex));
+
+    const result = runGate(root);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(`三层回放用例 ${threeLayerCaseId} 不在快照语料里`);
+  });
+
+  it('三层回放用例缺渲染层旁路时必须红', () => {
+    const root = makeFixture();
+    unlinkSync(join(root, renderSidecar));
+
+    const result = runGate(root);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('三层回放旁路缺失');
+    expect(result.stderr).toContain(renderSidecar);
+  });
+
+  it('三层回放用例缺持久层旁路时必须红', () => {
+    const root = makeFixture();
+    unlinkSync(join(root, stateSidecar));
+
+    const result = runGate(root);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('三层回放旁路缺失');
+    expect(result.stderr).toContain(stateSidecar);
   });
 
   it.each(provenSensitiveFiles)('改 %s 不同步快照时必须红', (file) => {

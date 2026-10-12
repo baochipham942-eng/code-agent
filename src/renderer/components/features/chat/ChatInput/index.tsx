@@ -98,6 +98,7 @@ import { useChatInputEnvelope } from './useChatInputEnvelope';
 import { useChatInputAgentCommand } from './useChatInputAgentCommand';
 import { useChatInputSlashCommands } from './useChatInputSlashCommands';
 import { useComposerFocusRequest } from './useComposerFocusRequest';
+import { useComposerPrefill } from './useComposerPrefill';
 import { useChatInputSubmit } from './useChatInputSubmit';
 import { useChatInputComposerActions } from './useChatInputComposerActions';
 import {
@@ -679,6 +680,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   }, []);
 
   // IACT protocol: listen for inline interaction events from message bubbles
+  // （!run 不走这里：RunCommandCard 自己就地执行 + 渲染结果，不再发聊天消息。）
   useEffect(() => {
     const handleSend = (e: Event) => {
       const text = (e as CustomEvent<string>).detail;
@@ -693,19 +695,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         inputAreaRef.current?.focus();
       }
     };
-    const handleRun = (e: Event) => {
-      const cmd = (e as CustomEvent<string>).detail;
-      if (cmd?.trim()) {
-        void onSend(buildEnvelope(`Execute this shell command and show the output: \`${cmd.trim()}\``));
-      }
-    };
     window.addEventListener('iact:send', handleSend);
     window.addEventListener('iact:add', handleAdd);
-    window.addEventListener('iact:run', handleRun);
     return () => {
       window.removeEventListener('iact:send', handleSend);
       window.removeEventListener('iact:add', handleAdd);
-      window.removeEventListener('iact:run', handleRun);
     };
   }, [buildEnvelope, onSend, t]);
 
@@ -831,6 +825,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   }, []);
 
   useComposerFocusRequest(focusComposer);
+
+  // 预填只填不发：已有草稿时拼在后面（iact:add 同口径），空草稿直接放进去
+  const applyComposerPrefill = useCallback((text: string) => {
+    setValue((current) => current.trim() ? `${current} ${text}` : text);
+  }, []);
+  useComposerPrefill(applyComposerPrefill, focusComposer);
 
   // Agent 自动补全单元：@ mention 与 /agent 命令的 state / 派生 / 键盘导航 / 选择 handler
   const {

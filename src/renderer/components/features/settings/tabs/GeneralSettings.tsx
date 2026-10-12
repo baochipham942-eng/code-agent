@@ -227,9 +227,12 @@ export function buildPermissionRuleSummary(
   input: PermissionRuleInput,
   noRulesLabel: string = DEFAULT_GENERAL_SETTINGS_TEXT.noRules,
 ): PermissionRuleSummary {
-  const denyCount = parsePermissionRules(input.denyRules).length;
-  const askCount = parsePermissionRules(input.askRules).length;
-  const allowCount = parsePermissionRules(input.allowRules).length;
+  const denyCount = parsePermissionRules(input.denyRules)
+    .filter((line) => validateUserPermissionRule(line, 'deny').ok).length;
+  const askCount = parsePermissionRules(input.askRules)
+    .filter((line) => validateUserPermissionRule(line, 'ask').ok).length;
+  const allowCount = parsePermissionRules(input.allowRules)
+    .filter((line) => validateUserPermissionRule(line, 'allow').ok).length;
 
   return {
     denyCount,
@@ -424,6 +427,9 @@ export const GeneralSettings: React.FC = () => {
   };
 
   const handleInheritanceChange = async (newInheritance: InheritanceMode) => {
+    // 非管理员对 settings set 必 403（settingsActionRequiresAdmin 对 'permissions' 恒门控），
+    // 这里先拦掉，避免任何路径（含 jsdom 对 disabled 元素仍派发的事件）打出必失败的 set。
+    if (!isAdmin) return;
     setInheritance(newInheritance);
     await persistPermissions({
       inheritance: newInheritance,
@@ -434,6 +440,7 @@ export const GeneralSettings: React.FC = () => {
   };
 
   const handleRulesBlur = async (kind: PermissionRuleList, text: string) => {
+    if (!isAdmin) return;
     const decision = resolvePermissionRulesBlur(kind, text, generalText.userRules.invalid);
     if (!decision.ok) {
       setRuleErrors((current) => ({ ...current, [kind]: decision.message }));
@@ -445,6 +452,7 @@ export const GeneralSettings: React.FC = () => {
   };
 
   const handleAckMigration = async () => {
+    if (!isAdmin) return;
     setShowMigrationBanner(false);
     await persistPermissions({ inheritanceMigrationAcked: true });
   };
@@ -609,7 +617,7 @@ export const GeneralSettings: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleAckMigration}
-                  disabled={isWebMode()}
+                  disabled={isWebMode() || !isAdmin}
                   className="rounded border border-badge-info/40 bg-blue-500/10 px-2 py-1 text-xs text-badge-info hover:bg-blue-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {generalText.migration.acknowledge}
@@ -627,7 +635,7 @@ export const GeneralSettings: React.FC = () => {
             <button
               type="button"
               onClick={handleAckMigration}
-              disabled={isWebMode()}
+              disabled={isWebMode() || !isAdmin}
               className="text-badge-info/60 hover:text-badge-info disabled:cursor-not-allowed disabled:opacity-50"
               aria-label={t.common.close}
             >
@@ -760,6 +768,12 @@ export const GeneralSettings: React.FC = () => {
         title={generalText.inheritanceSection.title}
         description={generalText.inheritanceSection.description}
       >
+        {!isAdmin && (
+          <div className="mb-3 flex items-start gap-2 rounded-lg border border-zinc-700/70 bg-zinc-800/60 p-3 text-xs text-zinc-400">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zinc-500" />
+            <span>{generalText.adminManagedNote}</span>
+          </div>
+        )}
         <div className="rounded-lg border border-zinc-700/70 bg-zinc-900/60">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-left text-xs">
@@ -821,7 +835,7 @@ export const GeneralSettings: React.FC = () => {
                         <div className="flex justify-end">
                           <button
                             type="button"
-                            disabled={isWebMode() || row.selected}
+                            disabled={isWebMode() || row.selected || !isAdmin}
                             onClick={() => handleInheritanceChange(row.id)}
                             className="rounded border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-zinc-200 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
                           >
@@ -877,7 +891,7 @@ export const GeneralSettings: React.FC = () => {
                   value={denyRules}
                   onChange={(event) => setDenyRules(event.target.value)}
                   onBlur={(event) => handleRulesBlur('deny', event.target.value)}
-                  disabled={isWebMode()}
+                  disabled={isWebMode() || !isAdmin}
                   placeholder={'Bash(rm -rf *)\nWrite(/etc/*)\nBash(curl *)'}
                   rows={4}
                   className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-hidden focus:border-red-500/50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -892,7 +906,7 @@ export const GeneralSettings: React.FC = () => {
                   value={askRules}
                   onChange={(event) => setAskRules(event.target.value)}
                   onBlur={(event) => handleRulesBlur('ask', event.target.value)}
-                  disabled={isWebMode()}
+                  disabled={isWebMode() || !isAdmin}
                   placeholder={'Bash(git push *)\nWrite(*.env)'}
                   rows={3}
                   className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-hidden focus:border-badge-warning/50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -907,7 +921,7 @@ export const GeneralSettings: React.FC = () => {
                   value={allowRules}
                   onChange={(event) => setAllowRules(event.target.value)}
                   onBlur={(event) => handleRulesBlur('allow', event.target.value)}
-                  disabled={isWebMode()}
+                  disabled={isWebMode() || !isAdmin}
                   placeholder={'Read(*)\nBash(ls *)\nBash(git status)'}
                   rows={3}
                   className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-hidden focus:border-zinc-500 disabled:cursor-not-allowed disabled:opacity-50"

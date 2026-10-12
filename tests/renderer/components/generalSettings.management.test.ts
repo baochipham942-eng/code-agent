@@ -82,4 +82,31 @@ describe('GeneralSettings management helpers', () => {
       highestPriority: 'Allow',
     });
   });
+
+  it('excludes invalid rules from counts and priority', () => {
+    expect(buildPermissionRuleSummary({
+      denyRules: 'Foo((',
+      askRules: '',
+      allowRules: 'Read(*)',
+    })).toMatchObject({
+      denyCount: 0,
+      allowCount: 1,
+      totalCount: 1,
+      highestPriority: 'Allow',
+    });
+  });
+
+  it('validates Bash wildcard rules according to their list', () => {
+    expect(buildPermissionRuleSummary({
+      denyRules: 'Bash(*)',
+      askRules: 'Bash(*)',
+      allowRules: 'Bash(*)',
+    })).toMatchObject({
+      denyCount: 1,
+      askCount: 1,
+      allowCount: 0,
+      totalCount: 2,
+      highestPriority: 'Deny',
+    });
+  });
 });

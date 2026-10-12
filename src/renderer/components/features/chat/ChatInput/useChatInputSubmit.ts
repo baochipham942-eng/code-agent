@@ -181,6 +181,15 @@ function readScheduleRestatement(value: unknown): ScheduleRestatement | undefine
   return what && notifyWhen ? { what, notifyWhen } : undefined;
 }
 
+// 草案存进确认卡前先验骨架：schedule/action 各自必须是带字符串 type 的对象，
+// 否则渲染期（formatCronScheduleLabel / action.type）会解引用抛错炸到全局错误页。
+function hasTypedObjectShape(value: unknown): boolean {
+  return Boolean(value)
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && typeof (value as Record<string, unknown>).type === 'string';
+}
+
 export function useChatInputSubmit(params: UseChatInputSubmitParams) {
   const { t } = useI18n();
   const {
@@ -247,6 +256,9 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
         throw new Error(cs.scheduleDraftInvalid);
       }
       const { restatement: rawRestatement, ...rawInput } = draft as Record<string, unknown>;
+      if (!hasTypedObjectShape(rawInput.schedule) || !hasTypedObjectShape(rawInput.action)) {
+        throw new Error(cs.scheduleDraftInvalid);
+      }
       const handoffPrompt = options.handoffPrompt?.trim();
       const pending: PendingScheduleDraft = {
         input: rawInput as unknown as CreateCronJobInput,

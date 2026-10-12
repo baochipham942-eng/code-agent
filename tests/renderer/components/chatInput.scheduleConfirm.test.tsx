@@ -134,6 +134,32 @@ describe('scheduled task confirmation', () => {
     expect(mocks.toast.success).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects a draft without schedule: no card, error toast instead', async () => {
+    mocks.generateFromPrompt.mockResolvedValueOnce({ ...generatedDraft, schedule: undefined });
+    const { result } = renderHook(() => useScheduleSubmitHarness());
+
+    await act(async () => {
+      await result.current.runScheduleCreation('每天早上帮我看邮件');
+    });
+
+    expect(result.current.pendingScheduleDraft).toBeNull();
+    expect(mocks.createJob).not.toHaveBeenCalled();
+    expect(mocks.toast.error).toHaveBeenCalledWith('创建定时任务失败：AI 返回的定时任务草案格式异常，请重试');
+  });
+
+  it('rejects a draft without action: no card, error toast instead', async () => {
+    mocks.generateFromPrompt.mockResolvedValueOnce({ ...generatedDraft, action: undefined });
+    const { result } = renderHook(() => useScheduleSubmitHarness());
+
+    await act(async () => {
+      await result.current.runScheduleCreation('每天早上帮我看邮件');
+    });
+
+    expect(result.current.pendingScheduleDraft).toBeNull();
+    expect(mocks.createJob).not.toHaveBeenCalled();
+    expect(mocks.toast.error).toHaveBeenCalledWith('创建定时任务失败：AI 返回的定时任务草案格式异常，请重试');
+  });
+
   it('cancel discards the draft without creating, notifying, or showing success', async () => {
     const { result } = renderHook(() => useScheduleSubmitHarness());
 

@@ -3,6 +3,9 @@
 // transcript (NULL or '') keeps the file for failedRetentionMs (default 24h).
 // Only regular .wav files inside audioDir are unlinked. ENOENT counts as already
 // gone. Sweep logs and continues; it does not throw.
+// A clear/sweep that finishes with zero failures resets the failure ledger:
+// the files that used to fail are gone (fixed and retried, or removed by hand),
+// so the status must not keep reporting stale failures.
 
 import { execFileSync } from 'child_process';
 import fs from 'fs';
@@ -91,13 +94,16 @@ export function sweepAudioRetention(input: {
   failedRetentionMs?: number;
 }): RetentionSummary {
   const summary: RetentionSummary = { deleted: 0, failed: 0, rowsUpdated: 0 };
+  let complete = false;
   try {
-    runSweep(input, summary);
+    complete = runSweep(input, summary);
   } catch (error) {
     const reason = errorText(error);
     logger.warn('[音频保留] 清理过程失败', { reason });
     summary.lastError = reason;
   }
+  // 一轮完整跑完且零失败 = 此前删不掉的文件已不在，清掉旧失败账
+  if (complete && summary.failed === 0) retentionLedger.resetFailures();
   publishRetention(summary.deleted, summary.failed, summary.lastError, input.now);
   return summary;
 }
@@ -111,6 +117,8 @@ export function clearAllAudioRecordings(input: {
   const result = { deleted: 0, freedBytes: 0, failed: 0, lastError: undefined as string | undefined };
   try {
     runClear(input, result);
+    // 用户修好权限后重试成功：零失败的清空抹平失败账，失败行不再残留
+    if (result.failed === 0) retentionLedger.resetFailures();
   } catch (error) {
     const reason = errorText(error);
     logger.warn('[音频保留] 清理过程失败', { reason });
@@ -137,14 +145,14 @@ export function getAudioRetentionStatus(
 function runSweep(
   input: { sqlitePath: string | null; audioDir: string; now: number; failedRetentionMs?: number },
   summary: RetentionSummary,
-): void {
+): boolean {
   const retentionMs = input.failedRetentionMs ?? FAILED_AUDIO_RETENTION_MS;
   // No database means no rows. A failed read must not orphan-delete files that
   // may still be referenced by rows we could not see.
   const rows = input.sqlitePath == null ? [] : loadRows(input.sqlitePath);
   if (rows == null) {
     removeEmptyDateDirs(input.audioDir);
-    return;
+    return false;
   }
 
   const referenced = new Set<string>();
@@ -171,6 +179,7 @@ function runSweep(
 
   sweepOrphans(input.audioDir, referenced, input.now, retentionMs, summary);
   removeEmptyDateDirs(input.audioDir);
+  return true;
 }
 
 function processRow(row: RetentionRow, ctx: SweepContext): void {

@@ -324,4 +324,66 @@ describe('clearAllAudioRecordings', () => {
       lastError: 'not a regular file',
     });
   });
+
+  it('resets failedTotal and lastError once a clear or sweep finishes with zero failures', () => {
+    const current = fixture;
+    if (!current) throw new Error('missing fixture');
+    const blocked = path.join(current.audioDir, '2026-09-15', 'audio_blocked.wav');
+    const stageBlocked = () => {
+      fs.mkdirSync(blocked, { recursive: true });
+      fs.writeFileSync(path.join(blocked, 'keep.txt'), 'keep');
+    };
+    stageBlocked();
+    insertSegment(current.sqlitePath, {
+      id: 'blocked',
+      wavPath: blocked,
+      transcript: 'keep me',
+      createdAtMs: 1,
+    });
+
+    // 一段删不掉的路径（非普通文件）把失败账累计起来
+    const failedClear = clearAllAudioRecordings({
+      audioDir: current.audioDir,
+      sqlitePath: current.sqlitePath,
+    });
+    expect(failedClear.failed).toBeGreaterThan(0);
+    expect(getAudioRetentionStatus().failedTotal).toBeGreaterThan(0);
+    expect(getAudioRetentionStatus().lastError).toBe('not a regular file');
+
+    // 用户解决后重试：零失败的清空把失败账清零、lastError 抹掉
+    fs.rmSync(blocked, { recursive: true });
+    const cleanClear = clearAllAudioRecordings({
+      audioDir: current.audioDir,
+      sqlitePath: current.sqlitePath,
+    });
+    expect(cleanClear.failed).toBe(0);
+    expect(getAudioRetentionStatus().failedTotal).toBe(0);
+    expect(getAudioRetentionStatus().lastError).toBeUndefined();
+
+    // sweep 同口径：失败再次累计后，一轮零失败的 sweep 也清账
+    // （前一次 clean clear 已把行的 wav_path 置空，sweep 只看非空行，所以重新指向一个新行）
+    stageBlocked();
+    insertSegment(current.sqlitePath, {
+      id: 'blocked-sweep',
+      wavPath: blocked,
+      transcript: 'keep me too',
+      createdAtMs: 1,
+    });
+    sweepAudioRetention({
+      sqlitePath: current.sqlitePath,
+      audioDir: current.audioDir,
+      now: 1_800_000_000_000,
+    });
+    expect(getAudioRetentionStatus().failedTotal).toBeGreaterThan(0);
+
+    fs.rmSync(blocked, { recursive: true });
+    sweepAudioRetention({
+      sqlitePath: current.sqlitePath,
+      audioDir: current.audioDir,
+      now: 1_800_000_001_000,
+    });
+    expect(getAudioRetentionStatus().failedTotal).toBe(0);
+    expect(getAudioRetentionStatus().lastError).toBeUndefined();
+    expect(getAudioCaptureStatus().retention).toMatchObject({ failedTotal: 0 });
+  });
 });

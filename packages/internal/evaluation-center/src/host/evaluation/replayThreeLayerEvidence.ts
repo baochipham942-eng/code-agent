@@ -1,7 +1,8 @@
 // 一条 hermetic 回放用例的三层证据。三层各算各的，一层变红不能被另外两层的绿盖住。
 // 协议层复用 request-replay 快照的逐字节回放，并要求请求序列仍含当前身份声明。
 // 渲染层走现有账本水合 + turn 投影 + 步骤人话 + turnDiff 卡片，不截图。
-// 持久层重放假模型 Write 的落盘，再跟账本上的会话终态和审批记录拼在一起。
+// 持久层把账本里录下的 Write 调用喂给真 Write 工具执行器（与录制会话同一条
+// 产品路径），哈希落盘字节；录制期另由录制脚本与会话库对账（见 record 脚本）。
 
 import { createHash } from 'crypto';
 import { mkdtempSync, readFileSync, rmSync } from 'fs';
@@ -11,7 +12,8 @@ import path from 'path';
 
 import type { Message } from '@shared/contract';
 import { IDENTITY } from '@host/prompts/identity';
-import { persistSnapshotReplayWriteArtifact } from '@host/testing/e2e/e2eLocalAgentModel';
+import type { CanUseToolFn, Logger, ToolContext } from '@host/protocol/tools';
+import { writeModule } from '@host/tools/modules/file/write';
 import { projectTurns } from '@renderer/hooks/useTurnProjection';
 import { zh } from '@renderer/i18n/zh';
 import { formatDisplayPath } from '@renderer/utils/displayPath';
@@ -27,15 +29,25 @@ import {
 
 const WRITE_TOOLS = new Set(['Write', 'write_file']);
 const APPROVAL_KEYS = ['approval', 'approvalRecord', 'approvalDecision'] as const;
+const REPLAY_WRITE_SESSION_ID = 'replay-three-layer-evidence';
+
+/** 回放期跑真 Write 工具的静音 logger：不留日志副作用，也不把噪声混进断言输出。 */
+const SILENT_LOGGER: Logger = {
+  debug: () => undefined,
+  info: () => undefined,
+  warn: () => undefined,
+  error: () => undefined,
+};
+
+const ALLOW_REPLAY_TOOL: CanUseToolFn = async () => ({ allow: true });
 
 interface SnapshotLedgerFile {
   messages: Message[];
 }
 
 interface ReplayApprovalRecord {
-  toolCallId: string;
-  toolName: string;
-  decision: string;
+  tool: string;
+  outcome: string;
 }
 
 interface ReplayRenderNode {
@@ -108,28 +120,26 @@ function collectApprovalRecords(messages: Message[]): ReplayApprovalRecord[] {
   }
   const records: ReplayApprovalRecord[] = [];
   const seen = new Set<string>();
-  const push = (toolCallId: string, decision: string) => {
-    const toolName = toolNames.get(toolCallId) ?? '';
+  const push = (toolCallId: string, toolName: string, decision: string) => {
     const key = `${toolCallId}\0${toolName}\0${decision}`;
     if (seen.has(key)) return;
     seen.add(key);
-    records.push({ toolCallId, toolName, decision });
+    records.push({ tool: toolName, outcome: decision });
   };
   for (const message of messages) {
     const messageDecision = approvalFromMetadata(message.metadata);
     if (messageDecision) {
       const toolCallId = message.toolCalls?.[0]?.id ?? message.toolResults?.[0]?.toolCallId ?? message.id;
-      push(toolCallId, messageDecision);
+      push(toolCallId, toolNames.get(toolCallId) ?? '', messageDecision);
     }
     for (const result of message.toolResults ?? []) {
       const decision = approvalFromMetadata(result.metadata);
-      if (decision) push(result.toolCallId, decision);
+      if (decision) push(result.toolCallId, toolNames.get(result.toolCallId) ?? '', decision);
     }
   }
   records.sort((left, right) => (
-    left.toolCallId.localeCompare(right.toolCallId)
-    || left.toolName.localeCompare(right.toolName)
-    || left.decision.localeCompare(right.decision)
+    left.tool.localeCompare(right.tool)
+    || left.outcome.localeCompare(right.outcome)
   ));
   return records;
 }
@@ -165,6 +175,18 @@ function projectRender(caseDir: string): unknown {
   };
 }
 
+/** 回放期真 Write 工具的执行上下文：与录制会话同类形状，工作区是临时目录。 */
+function makeReplayToolContext(workingDir: string): ToolContext {
+  return {
+    sessionId: REPLAY_WRITE_SESSION_ID,
+    agentId: REPLAY_WRITE_SESSION_ID,
+    workingDir,
+    abortSignal: new AbortController().signal,
+    logger: SILENT_LOGGER,
+    emit: () => undefined,
+  };
+}
+
 async function projectPersistedState(caseDir: string): Promise<unknown> {
   const index = readCaseIndex(caseDir);
   const messages = readLedgerMessages(caseDir);
@@ -176,24 +198,48 @@ async function projectPersistedState(caseDir: string): Promise<unknown> {
   }
   const workspace = mkdtempSync(path.join(os.tmpdir(), 'replay-three-layer-'));
   try {
+    const handler = await writeModule.createHandler();
     const artifacts = [];
     for (const call of writes) {
+      const recordedContent = call.arguments.content;
+      if (typeof recordedContent !== 'string') {
+        throw new Error(`持久层：${call.name} 调用（${call.id}）的 content 不是字符串，无法重放`);
+      }
       const rawPath = call.arguments.file_path ?? call.arguments.path;
       const name = typeof rawPath === 'string' && rawPath.trim()
         ? path.basename(rawPath.trim())
         : 'snapshot-write-note.txt';
-      const target = path.join(workspace, name);
-      await persistSnapshotReplayWriteArtifact(target);
+      // 与录制会话同一条产品路径：真 Write 工具执行器吃账本里录下的参数
+      // （file_path 取 basename 落进回放临时工作区，content 用录下的正文）。
+      // 工具没写、写错字节、或落盘与请求正文对不上，都在这里变红。
+      const result = await handler.execute(
+        { file_path: path.join(workspace, name), content: recordedContent },
+        makeReplayToolContext(workspace),
+        ALLOW_REPLAY_TOOL,
+      );
+      if (!result.ok) {
+        throw new Error(`持久层：Write 工具执行失败 ${name}：${result.error ?? result.code ?? '未知错误'}`);
+      }
       let bytes: Buffer;
       try {
-        bytes = readFileSync(target);
+        bytes = readFileSync(path.join(workspace, name));
       } catch {
         throw new Error(`持久层：产物未落盘 ${name}`);
       }
+      const writtenSha = createHash('sha256').update(bytes).digest('hex');
+      const requestedSha = createHash('sha256').update(recordedContent, 'utf8').digest('hex');
+      if (writtenSha !== requestedSha) {
+        throw new Error(
+          `持久层：Write 工具落盘字节与账本请求正文不一致 ${name}`
+          + `（落盘 ${bytes.length}B，请求 ${Buffer.byteLength(recordedContent, 'utf8')}B）`,
+        );
+      }
       artifacts.push({
         name,
-        sha256: createHash('sha256').update(bytes).digest('hex'),
+        tool: 'Write',
+        sha256: writtenSha,
         bytes: bytes.length,
+        requestSha256: requestedSha,
       });
     }
     const last = messages[messages.length - 1];

@@ -17,7 +17,7 @@
 
 ### hermetic-protocol 的三层回放
 
-一条 hermetic 回放要同时钉住三层，各自一个断言，不能靠另外两层的绿掩盖：渲染层比用户可见投影（账本水合、`projectTurns`、步骤人话、turnDiff 卡片，不截图），协议层比发往 provider 的请求序列字节，持久层比会话条数与末角色、产物内容哈希、审批记录。基线是 `snapshots/request-replay/<case>.render.json` 与 `<case>.state.json`，和请求快照一起由 `acceptance:snapshot-replay:record` 录出；同步门把这两类文件算进「敏感面前缀一变，快照必须同 PR 更新」，并在三层用例缺旁路时直接红。判据全文见 [三层回放证据](testing/replay-three-layer-evidence.md)。
+一条 hermetic 回放要同时钉住三层，各自一个断言，不能靠另外两层的绿掩盖：渲染层比用户可见投影（账本水合、`projectTurns`、步骤人话、turnDiff 卡片，不截图），协议层比发往 provider 的请求序列字节，持久层比会话条数与末角色、产物内容哈希、审批记录——产物哈希必须是把账本里的 Write 参数重放进真 Write 工具执行器（产品写入路径）后对实际落盘字节算的，不许自写自哈希；录制期另与会话库对账落库终态。基线是 `snapshots/request-replay/<case>.render.json` 与 `<case>.state.json`，和请求快照一起由 `acceptance:snapshot-replay:record` 录出；同步门把这两类文件算进「敏感面前缀一变，快照必须同 PR 更新」，并在三层用例缺旁路时直接红。判据全文见 [三层回放证据](testing/replay-three-layer-evidence.md)。
 
 ## 使用方式
 

@@ -52,17 +52,8 @@ const E2E_SNAPSHOT_READ_DEDUPE_SECOND_CALL_ID = 'e2e-snapshot-replay-read-dedupe
 const E2E_SNAPSHOT_WRITE_CALL_ID = 'e2e-snapshot-replay-write';
 const E2E_SNAPSHOT_BASH_CALL_ID = 'e2e-snapshot-replay-bash';
 const E2E_SNAPSHOT_BASH_COMMAND = 'echo E2E_SNAPSHOT_REPLAY_BASH_OUTPUT';
-/** 快照 Write 路由让真 Write 工具落盘的正文。持久层证据重放同一份字节。 */
+/** 快照 Write 路由发给真 Write 工具的正文。持久层证据从账本读回它再走真工具重放。 */
 const SNAPSHOT_REPLAY_WRITE_PAYLOAD = 'E2E_SNAPSHOT_REPLAY_WRITE_PAYLOAD\n';
-
-/**
- * 假模型 Write 路由的落盘动作。协议层重推导响应不调用它，所以跳过这一写
- * 只让持久层证据变红。
- */
-export async function persistSnapshotReplayWriteArtifact(targetPath: string): Promise<void> {
-  const { atomicWriteFile } = await import('../../tools/utils/atomicWrite');
-  await atomicWriteFile(targetPath, SNAPSHOT_REPLAY_WRITE_PAYLOAD, 'utf-8');
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

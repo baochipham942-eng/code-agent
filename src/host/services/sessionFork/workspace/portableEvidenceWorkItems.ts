@@ -104,45 +104,131 @@ function readQuoted(text: string, start: number): { value: string; end: number }
   return null;
 }
 
-/** Extracts the b-side (post-patch) repository path from a `diff --git` header. */
-function parsePatchPath(section: Buffer): string | null {
-  const lineEnd = section.indexOf('\n');
-  const header = section.subarray(0, lineEnd === -1 ? section.byteLength : lineEnd).toString('utf8');
-  if (!header.startsWith(DIFF_HEADER)) return null;
-  const rest = header.slice(DIFF_HEADER.length);
-  if (!rest.startsWith('"')) {
-    const separator = rest.indexOf(' b/');
-    if (separator === -1) return null;
-    const raw = rest.slice(separator + 3);
-    return raw && !raw.startsWith('"') ? raw : null;
-  }
-  const first = readQuoted(rest, 0);
-  if (first === null) return null;
-  if (rest[first.end] !== ' ') return null;
-  const second = readQuoted(rest, first.end + 1);
-  if (second?.end !== rest.length) return null;
-  return second.value.startsWith('b/') ? second.value.slice(2) : null;
+interface PatchSectionMeta {
+  /** Pre-image repository path; null when absent or `/dev/null` (new file). */
+  aPath: string | null;
+  /** Post-patch repository path; null when no source yields one. */
+  bPath: string | null;
+  /** True for `deleted file mode` sections and `+++ /dev/null` deletions. */
+  isDeletion: boolean;
+}
+
+function sidePath(name: string, prefix: 'a/' | 'b/'): string | null {
+  return name.startsWith(prefix) && name.length > prefix.length ? name.slice(prefix.length) : null;
+}
+
+/** Decodes a metadata-line name: quoted (quotepath escapes) or the raw rest of the line. */
+function unquoteMetadataName(raw: string): string | null {
+  if (!raw.startsWith('"')) return raw.length > 0 ? raw : null;
+  const decoded = readQuoted(raw, 0);
+  return decoded !== null && decoded.end === raw.length ? decoded.value : null;
 }
 
 /**
- * Extracts the a-side (pre-patch) repository path from a `diff --git` header.
- * For rename/copy sections this is a different path than the b-side item, and
+ * The `diff --git` header alone cannot name paths reliably: git leaves paths
+ * containing spaces unquoted, so `diff --git a/docs b/x b/docs b/x` splits
+ * wrongly at the first ` b/`. The `--- a/…` / `+++ b/…` lines and the
+ * `rename from` / `rename to` lines carry whole-line paths and are
+ * unambiguous, so they win; the header is only the fallback, where a split
+ * whose two sides name the same path is preferred over the first ` b/`.
+ */
+function headerPaths(rest: string): { a: string | null; b: string | null } {
+  if (rest.startsWith('"')) {
+    const first = readQuoted(rest, 0);
+    if (first === null || rest[first.end] !== ' ') return { a: null, b: null };
+    const second = readQuoted(rest, first.end + 1);
+    if (second?.end !== rest.length) return { a: null, b: null };
+    return { a: sidePath(first.value, 'a/'), b: sidePath(second.value, 'b/') };
+  }
+  let consistent = -1;
+  let scan = 0;
+  for (;;) {
+    const found = rest.indexOf(' b/', scan);
+    if (found === -1) break;
+    const left = rest.slice(0, found);
+    const right = rest.slice(found + 3);
+    if (left.startsWith('a/') && left.length > 2 && !right.startsWith('"') && left.slice(2) === right) {
+      consistent = found;
+    }
+    scan = found + 1;
+  }
+  const separator = consistent !== -1 ? consistent : rest.indexOf(' b/');
+  if (separator === -1) return { a: null, b: null };
+  // The ` b/` separator already carries the b-side prefix, so the right side
+  // is the bare path (unlike the quoted branch, where names keep their prefix).
+  const right = rest.slice(separator + 3);
+  return {
+    a: sidePath(rest.slice(0, separator), 'a/'),
+    b: right.startsWith('"') || right.length === 0 ? null : right,
+  };
+}
+
+/**
+ * Extracts both repository paths of one patch section. Metadata lines are only
+ * scanned up to the first hunk (`@@`) or binary payload (`GIT binary patch`);
+ * content lines that merely look like headers never reach the parser.
+ */
+function parsePatchSectionMeta(section: Buffer): PatchSectionMeta | null {
+  const newline = section.indexOf('\n');
+  const header = section.subarray(0, newline === -1 ? section.byteLength : newline).toString('utf8');
+  if (!header.startsWith(DIFF_HEADER)) return null;
+  let minusName: string | null = null;
+  let plusName: string | null = null;
+  let renameFrom: string | null = null;
+  let renameTo: string | null = null;
+  let sawMinus = false;
+  let sawPlus = false;
+  let plusDevNull = false;
+  let deletedMode = false;
+  // git delimits an unquoted `---`/`+++` path from any trailing timestamp with
+  // a TAB, so exactly one trailing TAB belongs to the line, never the path.
+  const stripTrailingTab = (raw: string): string => (raw.endsWith('\t') ? raw.slice(0, -1) : raw);
+  for (let offset = newline + 1; offset < section.byteLength;) {
+    const next = section.indexOf('\n', offset);
+    const line = section.subarray(offset, next === -1 ? section.byteLength : next).toString('utf8');
+    offset = next === -1 ? section.byteLength : next + 1;
+    if (line.startsWith('@@') || line === 'GIT binary patch') break;
+    if (!sawMinus && line.startsWith('--- ')) {
+      sawMinus = true;
+      minusName = unquoteMetadataName(stripTrailingTab(line.slice(4)));
+    } else if (!sawPlus && line.startsWith('+++ ')) {
+      sawPlus = true;
+      const name = unquoteMetadataName(stripTrailingTab(line.slice(4)));
+      if (name === '/dev/null') plusDevNull = true;
+      else plusName = name;
+    } else if (renameFrom === null && line.startsWith('rename from ')) {
+      renameFrom = unquoteMetadataName(line.slice('rename from '.length));
+    } else if (renameTo === null && line.startsWith('rename to ')) {
+      renameTo = unquoteMetadataName(line.slice('rename to '.length));
+    } else if (renameFrom === null && line.startsWith('copy from ')) {
+      renameFrom = unquoteMetadataName(line.slice('copy from '.length));
+    } else if (renameTo === null && line.startsWith('copy to ')) {
+      renameTo = unquoteMetadataName(line.slice('copy to '.length));
+    } else if (line.startsWith('deleted file mode ')) {
+      deletedMode = true;
+    }
+  }
+  const fallback = headerPaths(header.slice(DIFF_HEADER.length));
+  let aPath: string | null;
+  if (sawMinus) aPath = minusName === null ? null : sidePath(minusName, 'a/');
+  else if (renameFrom !== null) aPath = renameFrom;
+  else aPath = fallback.a;
+  // A `+++ /dev/null` deletion keeps falling through: the deleted path equals
+  // the a-side name, which the header fallback recovers (`a/f b/f`).
+  let bPath: string | null;
+  if (sawPlus && !plusDevNull) bPath = plusName === null ? null : sidePath(plusName, 'b/');
+  else if (renameTo !== null) bPath = renameTo;
+  else bPath = fallback.b;
+  return { aPath, bPath, isDeletion: deletedMode || plusDevNull };
+}
+
+/**
+ * Extracts the a-side (pre-patch) repository path from a patch section. For
+ * rename/copy sections this is a different path than the b-side item, and
  * `git apply` still needs its pre-image present to run the section at all.
  */
 export function parsePatchPreimagePath(section: Buffer): string | null {
-  const lineEnd = section.indexOf('\n');
-  const header = section.subarray(0, lineEnd === -1 ? section.byteLength : lineEnd).toString('utf8');
-  if (!header.startsWith(DIFF_HEADER)) return null;
-  const rest = header.slice(DIFF_HEADER.length);
-  if (!rest.startsWith('"')) {
-    const separator = rest.indexOf(' b/');
-    if (separator === -1) return null;
-    const raw = rest.slice(0, separator);
-    return raw.startsWith('a/') && raw.length > 2 ? raw.slice(2) : null;
-  }
-  const first = readQuoted(rest, 0);
-  if (first === null) return null;
-  return first.value.startsWith('a/') && first.value.length > 2 ? first.value.slice(2) : null;
+  return parsePatchSectionMeta(section)?.aPath ?? null;
 }
 
 /**
@@ -157,7 +243,10 @@ export function safeRepositoryPath(relative: string): string | null {
   if (!relative || relative.includes('\\') || relative.includes('\0')) return null;
   if (relative.startsWith('/') || /^[A-Za-z]:/u.test(relative)) return null;
   const segments = relative.split('/');
-  if (segments.some((segment) => !segment || segment === '.' || segment === '..' || segment === '.git')) {
+  // `.git` compares case-insensitively: on macOS/Windows volumes a `.GIT`
+  // entry resolves into the real `.git` directory and would write git
+  // metadata; case-sensitive volumes only lose a pathological legit name.
+  if (segments.some((segment) => !segment || segment === '.' || segment === '..' || segment.toLowerCase() === '.git')) {
     return null;
   }
   return relative;
@@ -189,29 +278,29 @@ export function buildPortableEvidenceWorkItems(evidence: AnchorWorkspaceEvidence
   const invalid: PortableEvidenceInvalidSection[] = [];
   const unsafe: PortableEvidenceInvalidSection[] = [];
   const patchByPath = new Map<string, PortableEvidencePatchWorkItem>();
+  const patchDeletionOnly = new Map<string, boolean>();
   for (const stream of streams) {
     for (const section of splitPatchSections(stream.patch)) {
-      const headerPath = parsePatchPath(section);
-      const safePath = headerPath === null ? null : safeRepositoryPath(headerPath);
-      if (safePath === null) {
-        if (headerPath === null) {
-          invalid.push({
-            label: sectionLabel(section),
-            source: stream.source,
-            reason: 'patch section header could not be parsed to a repository path',
-          });
-        } else {
-          unsafe.push({
-            label: sectionLabel(section),
-            source: stream.source,
-            reason: 'patch section targets a path outside the repository safety envelope',
-          });
-        }
+      const meta = parsePatchSectionMeta(section);
+      if (meta?.bPath == null) {
+        invalid.push({
+          label: sectionLabel(section),
+          source: stream.source,
+          reason: 'patch section header could not be parsed to a repository path',
+        });
         continue;
       }
-      const preimagePath = parsePatchPreimagePath(section);
-      const safePreimage = preimagePath === null ? null : safeRepositoryPath(preimagePath);
-      if (preimagePath !== null && safePreimage === null) {
+      const safePath = safeRepositoryPath(meta.bPath);
+      if (safePath === null) {
+        unsafe.push({
+          label: sectionLabel(section),
+          source: stream.source,
+          reason: 'patch section targets a path outside the repository safety envelope',
+        });
+        continue;
+      }
+      const safePreimage = meta.aPath === null ? null : safeRepositoryPath(meta.aPath);
+      if (meta.aPath !== null && safePreimage === null) {
         unsafe.push({
           label: sectionLabel(section),
           source: stream.source,
@@ -222,6 +311,7 @@ export function buildPortableEvidenceWorkItems(evidence: AnchorWorkspaceEvidence
       const existing = patchByPath.get(safePath);
       if (existing) {
         existing.sections.push(section);
+        patchDeletionOnly.set(safePath, (patchDeletionOnly.get(safePath) ?? true) && meta.isDeletion);
         if (safePreimage !== null && safePreimage !== safePath && !existing.preimagePaths.includes(safePreimage)) {
           existing.preimagePaths.push(safePreimage);
         }
@@ -234,6 +324,7 @@ export function buildPortableEvidenceWorkItems(evidence: AnchorWorkspaceEvidence
           preimagePaths: safePreimage !== null && safePreimage !== safePath ? [safePreimage] : [],
         };
         patchByPath.set(safePath, item);
+        patchDeletionOnly.set(safePath, meta.isDeletion);
         items.push(item);
       }
     }
@@ -247,6 +338,25 @@ export function buildPortableEvidenceWorkItems(evidence: AnchorWorkspaceEvidence
         reason: 'untracked entry targets a path outside the repository safety envelope',
       });
       continue;
+    }
+    const overlap = patchByPath.get(safePath);
+    if (overlap) {
+      if (patchDeletionOnly.get(safePath) === true) {
+        // The one shape real capture produces for this overlap: `git rm --cached`
+        // keeps the disk copy, so the manifest lists the path as untracked while
+        // the staged patch deletes it from the index. Apply-back is worktree-only
+        // and the untracked blob IS the cloud disk state, so the patch item is
+        // dropped instead of deleting the file just to recreate it.
+        items.splice(items.indexOf(overlap), 1);
+        patchByPath.delete(safePath);
+      } else {
+        unsafe.push({
+          label: safePath,
+          source: 'untracked',
+          reason: 'untracked entry duplicates a tracked path the patch modifies; evidence is inconsistent',
+        });
+        continue;
+      }
     }
     items.push({
       kind: 'untracked',

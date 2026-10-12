@@ -13,7 +13,7 @@ const MAX_SIDECAR_ATTEMPTS = 64;
 
 type PortableEvidenceFileStatus =
   | 'would-apply' | 'already-present' | 'conflict'
-  | 'applied' | 'kept-local' | 'took-cloud' | 'saved-as-cloud';
+  | 'applied' | 'kept-local' | 'took-cloud' | 'saved-as-cloud' | 'rolled-back';
 
 export interface PortableEvidenceApplyBackFileReport {
   path: string;
@@ -32,7 +32,14 @@ export interface PortableEvidenceClassification {
 type JournalEntry =
   | { kind: 'patch'; section: Buffer }
   | { kind: 'created-file'; target: string; createdDirs: string[] }
-  | { kind: 'restore-file'; target: string; priorBytes: Buffer | null; createdDirs: string[] };
+  | {
+    kind: 'restore-file';
+    target: string;
+    priorBytes: Buffer | null;
+    /** Mode of the file before the overwrite, so rollback is byte-identical. */
+    priorMode: number | null;
+    createdDirs: string[];
+  };
 
 function sha256Hex(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
@@ -212,8 +219,9 @@ export class PortableEvidenceApplyBackEngine {
     const info = await lstat(target).catch(() => null);
     if (info && !info.isFile()) throw new Error(`refusing to overwrite non-regular local path: ${item.path}`);
     const priorBytes = await readFileIfExists(target);
+    const priorMode = info?.isFile() ? info.mode & 0o777 : null;
     const createdDirs = await this.createDirectories(path.dirname(target));
-    this.journal.push({ kind: 'restore-file', target, priorBytes, createdDirs });
+    this.journal.push({ kind: 'restore-file', target, priorBytes, priorMode, createdDirs });
     if (item.kind === 'untracked') {
       await writeFile(target, item.bytes);
       await chmod(target, item.mode);
@@ -243,8 +251,9 @@ export class PortableEvidenceApplyBackEngine {
       throw new Error(`refusing to overwrite non-regular local path: ${preimagePath}`);
     }
     const priorBytes = await readFileIfExists(target);
+    const priorMode = info?.isFile() ? info.mode & 0o777 : null;
     const createdDirs = await this.createDirectories(path.dirname(target));
-    this.journal.push({ kind: 'restore-file', target, priorBytes, createdDirs });
+    this.journal.push({ kind: 'restore-file', target, priorBytes, priorMode, createdDirs });
     await this.restoreBaseContent(preimagePath, target);
   }
 
@@ -291,7 +300,7 @@ export class PortableEvidenceApplyBackEngine {
       if (prior !== null && !prior.equals(bytes)) continue;
       if (prior === null) {
         const createdDirs = await this.createDirectories(path.dirname(target));
-        this.journal.push({ kind: 'restore-file', target, priorBytes: null, createdDirs });
+        this.journal.push({ kind: 'restore-file', target, priorBytes: null, priorMode: null, createdDirs });
         await writeFile(target, bytes);
         if (mode !== undefined) await chmod(target, mode);
       }
@@ -337,6 +346,7 @@ export class PortableEvidenceApplyBackEngine {
         await removeEmptyDirectories(entry.createdDirs);
       } else {
         await writeFile(entry.target, entry.priorBytes);
+        if (entry.priorMode !== null) await chmod(entry.target, entry.priorMode);
       }
     }
   }

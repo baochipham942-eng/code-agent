@@ -133,12 +133,14 @@ export async function applyPortableEvidenceToWorkspace(
     );
   }
   validateResolutions(input.mode, input.resolutions, new Set(items.map((item) => item.path)));
+  // Unparseable sections are reported as conflicts, but their labels are not
+  // resolvable paths, so they deliberately carry no conflict options: a
+  // resolution targeting them would be rejected as INVALID_RESOLUTION anyway.
   const invalidReports: PortableEvidenceApplyBackFileReport[] = invalid.map((entry) => ({
     path: entry.label,
     source: entry.source,
     status: 'conflict',
     reason: entry.reason,
-    options: CONFLICT_OPTIONS,
   }));
   const plans: Array<{ item: PortableEvidenceWorkItem; classification: PortableEvidenceClassification }> = [];
   for (const item of items) plans.push({ item, classification: await classify(engine, item) });
@@ -203,12 +205,20 @@ export async function applyPortableEvidenceToWorkspace(
     } catch (rollbackError) {
       rollbackNote = `; rollback itself failed: ${errorMessage(rollbackError)}`;
     }
+    // Nothing persisted survives a verified rollback, so files that had been
+    // written are re-reported as rolled-back instead of leaving the caller
+    // with no per-file context at all.
+    const rolledBackFiles = files.map((file) => (
+      file.status === 'applied' || file.status === 'took-cloud' || file.status === 'saved-as-cloud'
+        ? { ...file, status: 'rolled-back' as const, reason: `reported ${file.status} before the failure; rolled back with the whole apply` }
+        : file
+    ));
     return {
       mode: 'apply',
       outcome: 'failed',
       workspaceRoot: rebound.repositoryRoot,
       baseCommit: input.evidence.baseCommit,
-      files: [],
+      files: rolledBackFiles,
       wouldChange: [],
       conflicts: [],
       error: `${errorMessage(error)}${rollbackNote}`,

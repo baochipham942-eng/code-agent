@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -79,6 +79,8 @@ async function buildTamperedPortableEvidence(
   const { evidenceDigest: _discarded, ...sourceManifestWithoutDigest } = sourceEvidence.manifest;
   const manifestWithoutDigest = {
     ...sourceManifestWithoutDigest,
+    // The envelope validator rejects unsorted manifests, so the grafted entry
+    // re-sorts into the captured list (localeCompare, like the validator).
     untrackedFiles: [
       {
         path: extraUntracked.path,
@@ -87,7 +89,7 @@ async function buildTamperedPortableEvidence(
         mode: extraUntracked.mode,
       },
       ...sourceEvidence.manifest.untrackedFiles,
-    ],
+    ].sort((left, right) => left.path.localeCompare(right.path)),
   };
   const manifest = {
     ...manifestWithoutDigest,
@@ -855,5 +857,185 @@ describe('applyPortableEvidenceToWorkspace · rework r3 regressions', () => {
     expect(await readFile(sentinel, 'utf8')).toBe('secret key\n');
     await engine.rollback();
     expect(await hashWorktree(repositoryRoot)).toBe(treeBefore);
+  });
+});
+
+describe('applyPortableEvidenceToWorkspace · rework r4 regressions', () => {
+  it('rejects .git targets that differ only by case and never writes git metadata', async () => {
+    const fixture = await createFixture();
+    const hookBytes = Buffer.from('#!/bin/sh\necho injected\n');
+    // On a case-insensitive volume either variant resolves into the real
+    // `.git`, so the lexical gate must fold case before the name check.
+    for (const variant of ['.GIT/hooks/pre-commit', '.Git/hooks/pre-commit']) {
+      const portable = await buildTamperedPortableEvidence(fixture.sourceEvidence, {
+        path: variant,
+        bytes: hookBytes,
+        mode: 0o755,
+      });
+      for (const mode of ['dry-run', 'apply'] as const) {
+        await expect(applyPortableEvidenceToWorkspace({
+          evidence: portable,
+          workspaceRoot: fixture.repositoryRoot,
+          mode,
+        })).rejects.toMatchObject({ code: 'UNSAFE_EVIDENCE_PATH' });
+      }
+    }
+    await expect(readFile(path.join(fixture.repositoryRoot, '.git', 'hooks', 'pre-commit')))
+      .rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('resolves paths containing " b/" from ---/+++ lines instead of the header split', async () => {
+    const repositoryRoot = await initTempRepository();
+    await mkdir(path.join(repositoryRoot, 'docs b'));
+    await writeFile(path.join(repositoryRoot, 'docs b', 'notes.md'), 'base\n');
+    git(repositoryRoot, 'add', '.');
+    git(repositoryRoot, 'commit', '-m', 'base');
+    const baseCommit = git(repositoryRoot, 'rev-parse', 'HEAD');
+    await writeFile(path.join(repositoryRoot, 'docs b', 'notes.md'), 'cloud notes\n');
+    git(repositoryRoot, 'add', 'docs b/notes.md');
+    const fixture = await captureFixture({ repositoryRoot, baseCommit });
+    await writeFile(path.join(repositoryRoot, 'docs b', 'notes.md'), 'local drift\n');
+    // The mis-split pre-image of the old parser was exactly `docs`: a local
+    // file there must survive even the take-cloud path untouched.
+    await writeFile(path.join(repositoryRoot, 'docs'), 'innocent local docs\n');
+
+    const dryRun = await applyPortableEvidenceToWorkspace({
+      evidence: fixture.portableEvidence,
+      workspaceRoot: repositoryRoot,
+      mode: 'dry-run',
+    });
+    expect(dryRun.conflicts).toEqual(['docs b/notes.md']);
+    expect(dryRun.files.map((file) => file.path)).toEqual(['docs b/notes.md']);
+
+    const applied = await applyPortableEvidenceToWorkspace({
+      evidence: fixture.portableEvidence,
+      workspaceRoot: repositoryRoot,
+      mode: 'apply',
+      resolutions: { 'docs b/notes.md': 'take-cloud' },
+    });
+    expect(applied.outcome).toBe('success');
+    expect(applied.files.find((file) => file.path === 'docs b/notes.md')?.status).toBe('took-cloud');
+    expect(await readFile(path.join(repositoryRoot, 'docs b', 'notes.md'), 'utf8')).toBe('cloud notes\n');
+    expect(await readFile(path.join(repositoryRoot, 'docs'), 'utf8')).toBe('innocent local docs\n');
+  });
+
+  it('rejects evidence whose untracked entry duplicates a modified tracked path', async () => {
+    const fixture = await createFixture();
+    const portable = await buildTamperedPortableEvidence(fixture.sourceEvidence, {
+      path: 'tracked.txt',
+      bytes: Buffer.from('evil overlap\n'),
+      mode: 0o644,
+    });
+    const treeBefore = await hashWorktree(fixture.repositoryRoot);
+
+    for (const mode of ['dry-run', 'apply'] as const) {
+      await expect(applyPortableEvidenceToWorkspace({
+        evidence: portable,
+        workspaceRoot: fixture.repositoryRoot,
+        mode,
+      })).rejects.toMatchObject({ code: 'UNSAFE_EVIDENCE_PATH' });
+    }
+    expect(await hashWorktree(fixture.repositoryRoot)).toBe(treeBefore);
+  });
+
+  it('applies a git rm --cached file as one untracked item instead of delete-then-recreate', async () => {
+    const repositoryRoot = await initTempRepository();
+    await writeFile(path.join(repositoryRoot, 'f.txt'), 'base\n');
+    git(repositoryRoot, 'add', '.');
+    git(repositoryRoot, 'commit', '-m', 'base');
+    const baseCommit = git(repositoryRoot, 'rev-parse', 'HEAD');
+    // The only overlap real capture produces: the index deletion keeps the
+    // disk copy, so the manifest lists the path as untracked with its bytes.
+    git(repositoryRoot, 'rm', '--cached', 'f.txt');
+    await writeFile(path.join(repositoryRoot, 'f.txt'), 'cloud kept\n');
+    const fixture = await captureFixture({ repositoryRoot, baseCommit });
+
+    const dryRun = await applyPortableEvidenceToWorkspace({
+      evidence: fixture.portableEvidence,
+      workspaceRoot: repositoryRoot,
+      mode: 'dry-run',
+    });
+    expect(dryRun.conflicts).toEqual(['f.txt']);
+    expect(dryRun.files.filter((file) => file.path === 'f.txt')).toHaveLength(1);
+
+    const applied = await applyPortableEvidenceToWorkspace({
+      evidence: fixture.portableEvidence,
+      workspaceRoot: repositoryRoot,
+      mode: 'apply',
+      resolutions: { 'f.txt': 'take-cloud' },
+    });
+    expect(applied.outcome).toBe('success');
+    expect(applied.files.filter((file) => file.path === 'f.txt')).toHaveLength(1);
+    expect(applied.files.find((file) => file.path === 'f.txt')?.status).toBe('took-cloud');
+    expect(await readFile(path.join(repositoryRoot, 'f.txt'), 'utf8')).toBe('cloud kept\n');
+  });
+
+  it('rolls back file modes together with bytes when a later apply fails', async () => {
+    const repositoryRoot = await initTempRepository();
+    for (const name of ['a.txt', 'z.txt']) {
+      await writeFile(path.join(repositoryRoot, name), 'base\n');
+    }
+    git(repositoryRoot, 'add', '.');
+    git(repositoryRoot, 'commit', '-m', 'base');
+    const baseCommit = git(repositoryRoot, 'rev-parse', 'HEAD');
+    await writeFile(path.join(repositoryRoot, 'a.txt'), 'cloud\n');
+    await chmod(path.join(repositoryRoot, 'a.txt'), 0o755);
+    await writeFile(path.join(repositoryRoot, 'z.txt'), 'cloud z\n');
+    git(repositoryRoot, 'add', 'a.txt', 'z.txt');
+    const fixture = await captureFixture({ repositoryRoot, baseCommit });
+    await writeFile(path.join(repositoryRoot, 'a.txt'), 'local drift\n');
+    await chmod(path.join(repositoryRoot, 'a.txt'), 0o755);
+    const treeBefore = await hashWorktree(repositoryRoot);
+    // Forward `git apply` calls: the take-cloud rebuild of a.txt (1), then
+    // z.txt fails on call 2 — after the mode-changing rebuild was journalled.
+    const runner = createFailingApplyRunner((invocation) => (
+      invocation >= 2 ? 'injected late failure' : null
+    ));
+
+    const failed = await applyPortableEvidenceToWorkspace({
+      evidence: fixture.portableEvidence,
+      workspaceRoot: repositoryRoot,
+      mode: 'apply',
+      resolutions: { 'a.txt': 'take-cloud' },
+    }, { runner });
+    expect(failed.outcome).toBe('failed');
+    expect(failed.rollbackVerified).toBe(true);
+    expect(failed.error).toContain('injected late failure');
+    expect(await hashWorktree(repositoryRoot)).toBe(treeBefore);
+    expect((await lstat(path.join(repositoryRoot, 'a.txt'))).mode & 0o777).toBe(0o755);
+  });
+
+  it('reports rolled-back per-file context instead of an empty file list on failure', async () => {
+    const repositoryRoot = await initTempRepository();
+    for (const name of ['a.txt', 'm.txt', 'z.txt']) {
+      await writeFile(path.join(repositoryRoot, name), 'base\n');
+    }
+    git(repositoryRoot, 'add', '.');
+    git(repositoryRoot, 'commit', '-m', 'base');
+    const baseCommit = git(repositoryRoot, 'rev-parse', 'HEAD');
+    for (const name of ['a.txt', 'm.txt', 'z.txt']) {
+      await writeFile(path.join(repositoryRoot, name), `cloud ${name}\n`);
+    }
+    const fixture = await captureFixture({ repositoryRoot, baseCommit });
+    await writeFile(path.join(repositoryRoot, 'm.txt'), 'local drift\n');
+    // Forward `git apply` calls: a.txt (1), the save-as rebuild of m.txt (2),
+    // then z.txt fails on call 3 — one applied and one saved-as entry exist.
+    const runner = createFailingApplyRunner((invocation) => (
+      invocation >= 3 ? 'injected late failure' : null
+    ));
+
+    const failed = await applyPortableEvidenceToWorkspace({
+      evidence: fixture.portableEvidence,
+      workspaceRoot: repositoryRoot,
+      mode: 'apply',
+      resolutions: { 'm.txt': 'save-as' },
+    }, { runner });
+    expect(failed.outcome).toBe('failed');
+    const statuses = new Map(failed.files.map((file) => [file.path, file.status]));
+    expect(statuses.get('a.txt')).toBe('rolled-back');
+    expect(statuses.get('m.txt')).toBe('rolled-back');
+    expect(failed.files.every((file) => (
+      file.status !== 'applied' && file.status !== 'took-cloud' && file.status !== 'saved-as-cloud'
+    ))).toBe(true);
   });
 });

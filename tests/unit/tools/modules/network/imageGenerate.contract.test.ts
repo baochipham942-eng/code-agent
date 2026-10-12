@@ -29,6 +29,7 @@ vi.mock('../../../../../src/host/utils/safeShell', () => ({
 
 import { executeImageGenerate } from '../../../../../src/host/plugins/builtin/imageCreation/imageGenerate';
 import { imageGenerateSchema } from '../../../../../src/host/plugins/builtin/imageCreation/imageGenerate.schema';
+import { buildToolResultMediaAssets } from '../../../../../src/shared/utils/sessionMediaAssets';
 
 const IMAGE_DATA = 'data:image/png;base64,aW1hZ2U=';
 
@@ -173,6 +174,27 @@ describe('image_generate contract', () => {
       imageBase64: undefined,
       originalPrompt: 'single',
     });
+  });
+
+  it('keeps batch outputs out of the lineage input convention (rework r1)', async () => {
+    const result = await executeImageGenerate(
+      { prompt: ['first', 'second'], output_file_path: 'images/batch.png' },
+      ctx(workspace),
+      allow,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // sessionMediaAssets 的 parentRefsFromMetadata 把 imagePaths 读作输入素材，
+    // 批量输出路径绝不能写进那个字段（返修 r1 Important）。
+    expect(result.meta?.imagePaths).toBeUndefined();
+    expect(result.meta?.outputImagePaths as string[]).toHaveLength(2);
+    const assets = buildToolResultMediaAssets({
+      id: 'tool-batch',
+      name: 'image_generate',
+      arguments: { prompt: ['first', 'second'] },
+      result: { toolCallId: 'tool-batch', success: true, metadata: result.meta },
+    });
+    expect(assets.filter((asset) => (asset.parentAssetIds ?? []).length > 0)).toEqual([]);
   });
 
   it('reports all failures as ok:false and aborts unscheduled work', async () => {

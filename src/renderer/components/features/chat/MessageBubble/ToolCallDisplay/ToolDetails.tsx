@@ -994,8 +994,9 @@ function extractImageResult(toolCall: {
   const firstArtifact = artifactCandidates.find((artifact: unknown) => (
       artifact && typeof artifact === 'object' && typeof (artifact as { path?: unknown }).path === 'string'
   ));
-  const imagePaths = Array.isArray(metadata.imagePaths)
-    ? metadata.imagePaths.filter((value): value is string => typeof value === 'string')
+  // outputImagePaths = 批量输出列表；不读 imagePaths（那是 sessionMediaAssets 的输入素材字段）。
+  const imagePaths = Array.isArray(metadata.outputImagePaths)
+    ? metadata.outputImagePaths.filter((value): value is string => typeof value === 'string')
     : [];
   const imagePath = (metadata.imagePath as string | undefined)
     || imagePaths[0]

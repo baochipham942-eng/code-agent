@@ -794,7 +794,9 @@ export async function executeImageGenerate(
       isAdmin,
     };
     if (count > 1) {
-      meta.imagePaths = saved.map((result) => result.value.absolutePath);
+      // 批量输出路径只能叫 outputImagePaths：sessionMediaAssets 的 parentRefsFromMetadata
+      // 把 imagePaths 读作输入素材（parent refs），写那个字段会把同批输出错挂成血缘输入（返修 r1）。
+      meta.outputImagePaths = saved.map((result) => result.value.absolutePath);
       meta.originalPrompts = params.prompts;
       meta.expandedPrompts = params.expandPrompt
         ? saved.map((result) => result.value.finalPrompt)

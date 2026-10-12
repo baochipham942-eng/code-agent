@@ -150,8 +150,9 @@ function summarizePptGenerate(toolCall: ToolCall): string | null {
 function summarizeImageGenerate(toolCall: ToolCall): string | null {
   const metadata = toolCall.result?.metadata;
   if (metadata) {
-    const imagePaths = Array.isArray(metadata.imagePaths)
-      ? metadata.imagePaths.filter((value): value is string => typeof value === 'string')
+    // outputImagePaths = 批量输出列表；不读 imagePaths（那是 sessionMediaAssets 的输入素材字段）。
+    const imagePaths = Array.isArray(metadata.outputImagePaths)
+      ? metadata.outputImagePaths.filter((value): value is string => typeof value === 'string')
       : [];
     const imagePath = (metadata.imagePath as string | undefined) || imagePaths[0];
     if (imagePath) {

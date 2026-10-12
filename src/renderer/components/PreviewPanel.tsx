@@ -855,7 +855,7 @@ export const PreviewPanel: React.FC = () => {
           </button>
           {moreActionsOpen && (
             <div className="absolute right-0 top-full z-10 mt-1 w-48 rounded-lg bg-zinc-800 p-1 shadow-xl">
-              {!isVirtual && previewFilePath && <button type="button" onClick={() => { standingRefreshRef.current?.open(); setMoreActionsOpen(false); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-700"><RefreshCw className="h-4 w-4" />{pv.standingRefreshSetup}</button>}
+              {!isVirtual && previewFilePath && <button /* ds-allow:button: 文件头溢出菜单紧凑文字项，须与相邻菜单行同形 */ type="button" onClick={() => { standingRefreshRef.current?.open(); setMoreActionsOpen(false); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-700"><RefreshCw className="h-4 w-4" />{pv.standingRefreshSetup}</button>}
               {(hasSourceModes || isCode) && !isVirtual && (
                 <button type="button" onClick={() => { void handleSave(); setMoreActionsOpen(false); }} disabled={!isDirty || isSaving || viewingPublishedVersion} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-700 disabled:opacity-40">
                   <Save className={`h-4 w-4 ${isSaving ? 'animate-pulse' : ''}`} />{isDirty ? pv.saveShortcut : pv.saved}

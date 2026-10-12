@@ -75,8 +75,11 @@ describe('常驻层体量', () => {
     // 从来没下发过，删除时把其中两条真缺的搬进常驻层——硬拒清单（武器/CSAM/欺诈/冒充）
     // 与「确认由权限层负责，别用文字空等代替工具调用」。净增 ~120，换的是安全红线
     // 和一类真实存在的「光说不做」行为缺陷，不接受再用它顶别的膨胀。
+    // 3100 → 3210（2026-10-12，N-CAPGAP-FABRICATED-CAUSE，实测 3204）：TOOLS_PROMPT
+    // Rules 加一条「能力失败时的诚实交代」——只认工具结果写明的原因、推断必须标猜测、
+    // 不许断言未验证的环境（FB-218 模拟器冤案的行为侧）。净增 ~104。
     const total = estimateTokens(IDENTITY_PROMPT) + estimateTokens(TOOLS_PROMPT);
-    expect(total).toBeLessThanOrEqual(3100);
+    expect(total).toBeLessThanOrEqual(3210);
   });
 });
 

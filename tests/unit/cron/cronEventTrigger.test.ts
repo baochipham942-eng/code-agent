@@ -763,6 +763,34 @@ describe('CronEventTrigger', () => {
       expect(h.runs[0].trigger.eventIds).toEqual(['_icloud|INBOX|7']);
     });
 
+    // r3 回归：起播种子曾只按 jobId 键控——updateJob 改绑账号/邮箱后 seeded 仍是
+    // true，新邮箱的存量未读（单趟最多 25 封）被当新邮件触发一次 run 并耗预算，
+    // 绕过存量洪水防护。种子必须按 (accountId, mailbox) 键控：改绑后首轮重新播种。
+    it('① updateJob 改绑账号后重新播种：新邮箱存量未读不触发，之后新到邮件才触发', async () => {
+      const icloud: MailSummary[] = [mailMsg(1)];
+      const gmail: MailSummary[] = [mailMsg(101), mailMsg(102)]; // 改绑目标的存量未读（洪水源）
+      const listMessages = vi.fn(async (account: string): Promise<MailSummary[]> =>
+        account === '_icloud' ? [...icloud] : [...gmail]);
+      const h = createMailHarness([mailEventJob()], { listMessages });
+      await vi.advanceTimersByTimeAsync(5_000); // t=5s 首趟：_icloud 种子
+      expect(h.runs).toHaveLength(0);
+
+      // updateJob：_icloud → gmail（同 jobId 改绑；任务表下一 tick 自然生效）
+      h.jobs[0] = mailEventJob({
+        schedule: {
+          type: 'event', source: 'connector', connector: 'mail', accountId: 'gmail',
+          eventName: 'message', pollIntervalSec: 30, batchWindowSec: 10, minRunIntervalSec: 30,
+        },
+      });
+      await vi.advanceTimersByTimeAsync(40_000); // t=45s 改绑后首趟（35s）+ 合批窗（45s）：只重新播种，不出 run
+      expect(h.runs).toHaveLength(0);
+
+      gmail.push(mailMsg(103));
+      await vi.advanceTimersByTimeAsync(40_000); // t=85s 下一趟（65s）发现 103 → 合批（75s）出 run
+      expect(h.runs).toHaveLength(1);
+      expect(h.runs[0].trigger.eventIds).toEqual(['gmail|INBOX|103']);
+    });
+
     it('mailbox 缺省轮询 INBOX；显式 mailbox 逐字生效', async () => {
       const listMessages = vi.fn(async (_account: string, _mailbox: string) => [] as MailSummary[]);
       const archiveJob = mailEventJob({

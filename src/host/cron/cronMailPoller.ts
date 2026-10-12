@@ -5,7 +5,8 @@
 // 经 connector registry 的 mail 连接器）的未读邮件，把新邮件喂回 CronEventTrigger
 // 的同一条 合批/限频/去重/单 run 上限 链路。仍然只进不出：不开端口、不挂 HTTP
 // endpoint。语义要点：
-//   起播种子 —— 启动后首个「成功」轮询只登记现有未读、不触发（存量未读不洪水）；
+//   起播种子 —— 每个绑定 (accountId, mailbox) 的首个「成功」轮询只登记现有未读、
+//     不触发（存量未读不洪水；updateJob 改绑账号/邮箱后对新绑定重新播种）；
 //   失败不吞 —— 轮询失败只告警（原因可区分：缺连接器 / 未就绪 / 读取失败），
 //     不把任何邮件记为已见、不当「没有新邮件」，下一趟照常把期间到达的送进来；
 //   幂等去重 —— key = mail 订阅 id + account|mailbox|id，共用 BoundedDedupeSet。
@@ -152,12 +153,16 @@ function scheduleMailPollIntervalMs(schedule: EventConnectorMailScheduleConfig):
   return seconds * 1000;
 }
 
-/** mail 源轮询状态（per job；失败轮询不推进 seeded，也不把任何邮件记为已见）。 */
+/** mail 源轮询状态（per job；失败轮询不推进种子，也不把任何邮件记为已见）。 */
 interface MailPollState {
   /** 下次轮询时刻（ms epoch）；到点由轮询 tick 驱动。 */
   nextPollAt: number;
-  /** 起播种子是否完成：启动后首个「成功」轮询只登记现有未读、不触发（防存量未读洪水）。 */
-  seeded: boolean;
+  /**
+   * 已完成起播种子的绑定二元组（`account|mailbox`）；undefined = 尚未播种。种子按
+   * 绑定键控：updateJob 改绑账号/邮箱后二元组变了 → 对新绑定重新播种（只记水位、
+   * 不触发），否则新邮箱的存量未读会被当新邮件触发一次 run 耗预算。
+   */
+  seededFor?: string;
 }
 
 export interface CronMailPollerOptions {
@@ -263,10 +268,13 @@ export class CronMailPoller {
     if (this.disposed) return;
     const unread = messages.filter((message) => message.read === false);
     const subscriptionId = mailSubscriptionId(definition.id, schedule);
-    // 起播种子：启动后首个成功轮询只登记现有未读、不触发（存量未读不洪水）。
-    // 失败轮询不推进 seeded——基线以最终成功的那一趟为准。
-    if (!state.seeded) {
-      state.seeded = true;
+    // 起播种子：每个绑定 (accountId, mailbox) 的首个成功轮询只登记现有未读、不触发
+    // （存量未读不洪水）。种子按绑定键控——updateJob 改绑账号/邮箱后二元组变了，
+    // 对新绑定重新播种（只记水位、不触发）。失败轮询不推进种子——基线以最终成功
+    // 的那一趟为准。
+    const binding = `${schedule.accountId}|${mailbox}`;
+    if (state.seededFor !== binding) {
+      state.seededFor = binding;
       for (const message of unread) {
         this.dedupe.markSeen(`${subscriptionId}:${mailEventKey(schedule.accountId, mailbox, message.id)}`);
       }
@@ -288,7 +296,7 @@ export class CronMailPoller {
   private stateFor(jobId: string): MailPollState {
     let state = this.states.get(jobId);
     if (!state) {
-      state = { nextPollAt: 0, seeded: false };
+      state = { nextPollAt: 0 };
       this.states.set(jobId, state);
     }
     return state;

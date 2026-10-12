@@ -21,7 +21,10 @@ import { parseAgentMd } from '../../agent/hybrid/agentMdLoader';
 import { getAgentsMdDir } from '../../config/configPaths';
 import { createLogger } from '../infra/logger';
 import { ensureRoleAssetDirs } from './roleAssetService';
-import { addRoleBinding, getRoleBindingsPath } from './roleContextBindings';
+// roleContextBindings 刻意不走顶层静态 import（与 roleAssetService 里 buildRoleContextBlock
+// 的懒加载同理）：它静态依赖 libraryService → 数据库/axios 链，静态引入会把整条链拖进
+// role-pack-pin 等只取本模块纯数据的 esbuild bundle，且链上 debug→supports-color 在 ESM
+// bundle 里 require('tty') 直接炸。播种逻辑运行时再动态 import。
 
 const logger = createLogger('BuiltinRoles');
 
@@ -531,7 +534,9 @@ export async function installBuiltinRoles(): Promise<InstallBuiltinRolesResult> 
     // 3. 出厂默认资料架：bindings.json 不存在才种入 skill 绑定（mode=always，只存名字引用）。
     //    文件已存在（含用户删空的 []）一律不碰——用户绑定与删除都归用户，
     //    重复安装天然幂等。写入走 addRoleBinding 的原子写路径（校验 + 去重复用同一入口）。
+    //    import 放块内懒加载：见文件头注释（静态引入会拖爆纯数据 bundle）。
     try {
+      const { addRoleBinding, getRoleBindingsPath } = await import('./roleContextBindings');
       const hasBindings = await fs.access(getRoleBindingsPath(role.id)).then(() => true, () => false);
       if (!hasBindings) {
         const skillNames = BUILTIN_ROLE_DEFAULT_SKILL_BINDINGS[role.id] ?? [];

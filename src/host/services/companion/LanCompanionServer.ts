@@ -139,10 +139,12 @@ export class LanCompanionServer {
     app.use(express.json({ limit: L.maxFrameBytes * L.maxRequestRecords * 2 + 512, strict: true }));
     // socket.localAddress 一路带到 welcome：只有它才是「对面此刻够得到的那张网卡」。
     app.post('/v1/hello', (req, res) => {
-      try { res.json(this.hello(req.body as HelloBody, req.socket.localAddress, req.socket.remoteAddress?.replace(/^::ffff:/, '') ?? '')); } catch { res.status(403).json({ error: 'COMPANION_HANDSHAKE_REJECTED' }); }
+      try { res.json(this.hello(req.body as HelloBody, req.socket.localAddress, req.socket.remoteAddress?.replace(/^::ffff:/, '') ?? '')); }
+      catch { res.status(403).json({ error: 'COMPANION_HANDSHAKE_REJECTED' }); }
     });
     app.post('/v1/finish', (req, res) => {
-      try { res.json(this.finish(req.body as ChannelBody, req.socket.localAddress, req.socket.remoteAddress?.replace(/^::ffff:/, '') ?? '')); } catch { res.status(403).json({ error: 'COMPANION_HANDSHAKE_REJECTED' }); }
+      try { res.json(this.finish(req.body as ChannelBody, req.socket.localAddress, req.socket.remoteAddress?.replace(/^::ffff:/, '') ?? '')); }
+      catch { res.status(403).json({ error: 'COMPANION_HANDSHAKE_REJECTED' }); }
     });
     app.post('/v1/exchange', async (req, res) => {
       // 撤销要能跟「通道没了」分开说：channel 被撤当场关掉后，手机下一次 sync 只能拿到笼统的
@@ -150,7 +152,9 @@ export class LanCompanionServer {
       // 单独回名，手机 sync 直接按 revoked 结算。其余错误形状（含 TTL 过期的 CHANNEL_CLOSED）不动。
       try { res.json(await this.exchange(req.body as ChannelBody)); }
       catch (error) {
-        res.status(403).json({ error: error instanceof Error && error.message === 'COMPANION_DEVICE_REVOKED' ? 'COMPANION_DEVICE_REVOKED' : 'COMPANION_CHANNEL_CLOSED' });
+        const message = error instanceof Error ? error.message : '';
+        const code = message === 'COMPANION_DEVICE_REVOKED' ? message : 'COMPANION_CHANNEL_CLOSED';
+        res.status(403).json({ error: code });
       }
     });
     // Body/parser failures must never echo ciphertext, invitation material, or stack traces.
@@ -233,6 +237,9 @@ export class LanCompanionServer {
     const candidates = addresses.slice(0, L.invitationMaxCandidates).map(a => `http://${a}:${this.listenPort}`);
     return { endpoint, altEndpoint: advertised === address ? null : `http://${advertised}:${this.listenPort}`, candidates };
   }
+
+  /** 此刻实际监听的端口（未监听为 0）：总闸关掉时 RemoteOffResponder 要在同一个端口顶班。 */
+  port(): number { return this.listenPort; }
 
   invite(scope: string[]): LanInvitation {
     if (!this.server || scope.length < 1 || scope.length > L.maxScopeSessions || scope.some(id => !id.trim() || id.length > L.idLength)) {

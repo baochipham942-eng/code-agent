@@ -140,7 +140,7 @@ describe('死主进程路径（src/host/index.ts）', () => {
     }
   });
 
-  // 接线是两跳（webServer → webStartupRetention → 两个 retention 模块），两跳都要钉，
+  // 接线是两跳（webServer → webStartupRetention → 各 retention 模块），两跳都要钉，
   // 断掉任一跳清理都不会执行。
   // 断言用带词边界的「模块路径 + 调用」双要素，不用 toContain：子串匹配会被
   // runDbRetention_MUTANT 这类改名骗过去（本门首版实测就是这么假绿的）。
@@ -155,6 +155,8 @@ describe('死主进程路径（src/host/index.ts）', () => {
   it.each([
     ['logRetention', /\brunLogRetention\s*\(/, '审计日志清理在发行版里不会执行'],
     ['dbRetention', /\brunDbRetention\s*\(/, 'telemetry 表无 TTL，生产库会无限涨（实测 377MB+）'],
+    ['presentationPreviewRetention', /\bkickoffPresentationPreviewRetention\s*\(/, 'pptx 逐页预览缓存旧 revision 目录无回收路径，会无限堆积'],
+    ['appCacheRetention', /\bkickoffAppCacheRetention\s*\(/, 'channel-media/托管浏览器截图/appshots 三个缓存目录无回收路径，会无限堆积'],
   ])('webStartupRetention.ts 真的调了 %s（第二跳）', (moduleName, callPattern, consequence) => {
     const kickoff = readCode(RETENTION_KICKOFF);
     expect(kickoff, `未 import ${moduleName}：${consequence}`)

@@ -88,6 +88,17 @@ function createHarness(overrides: Partial<PermissionQueueState> = {}) {
         setPendingPermissionRequest(null);
       }
     },
+    dismissPermissionRequest: (requestId) => {
+      // 与真实 appStore 的 buildPermissionDismissState 同语义：只收卡，不进已决存证。
+      for (const [key, queue] of Object.entries(state.queuedPermissionRequests)) {
+        const remaining = queue.filter((item) => item.id !== requestId);
+        if (remaining.length > 0) state.queuedPermissionRequests[key] = remaining;
+        else delete state.queuedPermissionRequests[key];
+      }
+      if (state.pendingPermissionRequest?.id === requestId) {
+        setPendingPermissionRequest(null);
+      }
+    },
   };
 
   const reconcile = () => {
@@ -158,6 +169,31 @@ describe('applyPermissionQueueEvent', () => {
       { ...request, resolved: true, decision: 'timeout' },
     ]);
     expect(state.queuedPermissionRequests).toEqual({});
+  });
+
+  // N-COMPANION-APPROVAL-DESKTOP-RESOLVED：手机先答的终态回传只收卡——
+  // pending 与队列里这条都撤掉，且不进 resolvedPermissionRequests（那等于记成本机点击）。
+  it('closes the card without recording a local decision when the companion resolved it', () => {
+    const request = permissionRequest('phone-answered');
+    const queued = permissionRequest('queued-after');
+    const { deps, state } = createHarness({
+      currentSessionId: 'session-current',
+      pendingPermissionRequest: request,
+      pendingPermissionSessionId: 'session-current',
+      queuedPermissionRequests: { 'session-current': [request, queued] },
+    });
+
+    applyPermissionQueueEvent({
+      type: 'permission_request',
+      sessionId: 'session-current',
+      data: { ...request, resolved: true, decision: 'once', resolvedBy: 'companion' },
+    }, deps);
+
+    expect(state.pendingPermissionRequest).toBeNull();
+    expect(state.pendingPermissionSessionId).toBeNull();
+    // 排在后面的别的请求不受牵连，留给 reconcile 晋升。
+    expect(state.queuedPermissionRequests).toEqual({ 'session-current': [queued] });
+    expect(state.resolvedPermissionRequests).toEqual([]);
   });
 
   it('shows an available current-session request and queues occupied or foreign sessions', () => {

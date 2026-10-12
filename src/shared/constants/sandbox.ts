@@ -35,3 +35,16 @@ export type OsSandboxCode = (typeof OS_SANDBOX_CODES)[keyof typeof OS_SANDBOX_CO
 
 /** 灰度翻默认覆盖的日常档。bypass / unattended / write-fence / eval / 多根仍走强制沙箱。 */
 export const OS_SANDBOX_ROLLOUT_MODES = ['default', 'acceptEdits'] as const;
+
+/**
+ * 一次性目录子树扩权（N-SANDBOX-ESCALATE-DIR-FORBIDDEN）的禁写名扫描上限：
+ * 授予写子树前，先枚举其中仍须保持只读的凭据/笼子/钩子名（见 sensitivePaths.ts 的
+ * getForbiddenWritePathsUnderRoot）。walk 不跟软链，按这两条封顶；撞上限 warn 记名、
+ * 绝不静默跳过，未扫到的更深层名字按设计稿 D1 记为已知残余。
+ */
+export const ESCALATE_DIR_FORBIDDEN_WALK = {
+  /** 距授权根的最大名字深度（root=0；只进入 depth < MAX_DEPTH 的目录，名字匹配到 MAX_DEPTH 层）。 */
+  MAX_DEPTH: 6,
+  /** walk 处理的 dirent 总数上限（防 node_modules 型巨树拖慢每次包装）。 */
+  MAX_ENTRIES: 5000,
+} as const;

@@ -25,6 +25,8 @@ export interface RetentionLedger {
   read(): RetentionLedgerStatus;
   /** 累计一次 sweep 的结果并推进 lastSweepAt */
   publish(deleted: number, failed: number, lastError: string | undefined, at: number): void;
+  /** 清零失败累计：一轮零失败的完整清理说明此前失败已消除，失败行不该再报旧账 */
+  resetFailures(): void;
 }
 
 export function createRetentionLedger(): RetentionLedger {
@@ -48,6 +50,10 @@ export function createRetentionLedger(): RetentionLedger {
       status.deletedTotal += deleted;
       status.failedTotal += failed;
       if (lastError) status.lastError = lastError;
+    },
+    resetFailures(): void {
+      status.failedTotal = 0;
+      status.lastError = undefined;
     },
   };
 }

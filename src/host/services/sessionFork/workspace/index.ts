@@ -6,3 +6,4 @@ export * from './isolatedAnchorWorkspaceService';
 export * from './childWorkspaceScopeProjection';
 export * from './resolveSessionWorkspaceScope';
 export * from './importedPortableAnchorWorkspaceMaterializer';
+export * from './portableEvidenceApplyBack';

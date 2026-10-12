@@ -14,12 +14,20 @@ const source = readFileSync('packages/mobile/src/platform/nativeCompanion.ts', '
 describe('nativeCompanion.post 的 403 映射（源码契约）', () => {
   it('exchange 的 403 读 body：error === COMPANION_DEVICE_REVOKED 时上抛同名错误码', () => {
     expect(source).toContain("target.pathname === '/v1/exchange'");
-    expect(source).toContain("(response.data as { error?: unknown } | null)?.error === 'COMPANION_DEVICE_REVOKED'");
+    expect(source).toContain("responseError === 'COMPANION_DEVICE_REVOKED'");
     expect(source).toContain("throw new Error('COMPANION_DEVICE_REVOKED')");
   });
 
+  it('三条 LAN 路径都先读 403 body，再决定是否是配对被拒', () => {
+    expect(source).toContain("const responseError = responseBody && typeof responseBody === 'object'");
+    const remoteOff = source.indexOf("responseError === 'COMPANION_REMOTE_OFF'");
+    const pairingRejected = source.indexOf("throw new Error('COMPANION_PAIRING_REJECTED')");
+    expect(remoteOff).toBeGreaterThan(-1);
+    expect(pairingRejected).toBeGreaterThan(remoteOff);
+  });
+
   it('点名判读在兜底 NETWORK_UNAVAILABLE 之前：其余形状（旧宿主的 CHANNEL_CLOSED）维持「没回应」', () => {
-    const named = source.indexOf("?.error === 'COMPANION_DEVICE_REVOKED'");
+    const named = source.indexOf("responseError === 'COMPANION_DEVICE_REVOKED'");
     const fallback = source.indexOf("if (response.status !== 200 || response.url !== url) throw new Error('COMPANION_NETWORK_UNAVAILABLE')");
     expect(named).toBeGreaterThan(-1);
     expect(fallback).toBeGreaterThan(named);

@@ -395,6 +395,54 @@ describe('recordCronAutomationExecution', () => {
     expect(arg.configPatch).toEqual({ pendingReview: { resultSessionId: 'result-sess', at: 1234 } });
   });
 
+  it('透传定时任务结果 digest 的产物数和首行摘要，并省略空 digest', async () => {
+    await recordCronAutomationExecution(
+      def({
+        metadata: { sourceSessionId: 'sess' },
+        scheduleType: 'every',
+        action: { type: 'agent', agentType: 'default', prompt: 'do it' },
+      }),
+      exec({
+        status: 'completed',
+        sessionId: 'result-sess',
+        completedAt: 1234,
+        result: {
+          digest: {
+            artifacts: ['report.md', 'chart.png'],
+            summary: '\n  第一行摘要  \n第二行摘要',
+          },
+        },
+      }),
+      identityRuntime,
+    );
+    expect(service.recordEvent.mock.calls[0][0].configPatch).toEqual({
+      pendingReview: {
+        resultSessionId: 'result-sess',
+        at: 1234,
+        digest: { artifactCount: 2, summaryLine: '第一行摘要' },
+      },
+    });
+
+    service.recordEvent.mockClear();
+    await recordCronAutomationExecution(
+      def({
+        metadata: { sourceSessionId: 'sess' },
+        scheduleType: 'every',
+        action: { type: 'agent', agentType: 'default', prompt: 'do it' },
+      }),
+      exec({
+        status: 'completed',
+        sessionId: 'result-sess',
+        completedAt: 1234,
+        result: { digest: { artifacts: [], summary: ' \n ' } },
+      }),
+      identityRuntime,
+    );
+    expect(service.recordEvent.mock.calls[0][0].configPatch).toEqual({
+      pendingReview: { resultSessionId: 'result-sess', at: 1234 },
+    });
+  });
+
   it('成功的一次性 agent 运行：记录状态落 pending_review', async () => {
     await recordCronAutomationExecution(
       def({

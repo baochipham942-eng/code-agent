@@ -171,30 +171,31 @@ describe('NativeDesktopSection audio retention', () => {
     expect(main.textContent).not.toContain('not a regular file');
   });
 
-  it('hides the failure line when no clearable file remains, keeps it while files remain', async () => {
-    // 一次成功重试/手动清空后目录已空（fileCount=0）：即使状态里还挂着旧 failedTotal，失败行也不出现
-    services.getAudioCaptureStatus.mockResolvedValue(status(3, EACCES_RAW, 0));
+  it('keeps the failure line when only a stuck non-regular path remains (fileCount 0)', async () => {
+    // 评审返修场景：录音目录里卡着一个名为 *.wav 的目录/符号链接（host 夹具
+    // audio_blocked.wav 即此形状），clear/sweep 每轮失败、failedTotal 持续累计，
+    // 但 countClearableWavs 只统计普通文件，fileCount 结构性为 0——
+    // 失败行不能被 fileCount 门藏死，否则用户既看不到失败也拿不到重试入口
+    services.getAudioCaptureStatus.mockResolvedValue(status(2, 'not a regular file', 0));
     render(React.createElement(NativeDesktopSection));
-    // openClearConfirm 先取最新状态再弹框：弹框出现即状态已落地，此时断言"无失败行"才可靠
-    fireEvent.click(await screen.findByRole('button', { name: '清空录音' }));
-    expect(await screen.findByRole('dialog', { name: '清空录音' })).toBeTruthy();
-    expect(screen.queryByText(/个录音删不掉/)).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '取消' }));
 
-    // 目录里还有删不掉的文件（fileCount=3）：失败行保留
-    cleanup();
-    services.getAudioCaptureStatus.mockResolvedValue(status(3, EACCES_RAW, 3));
-    render(React.createElement(NativeDesktopSection));
-    expect(await findFailureMain(/个录音删不掉/)).toBeTruthy();
+    const main = await findFailureMain(/个录音删不掉/);
+    expect(main.textContent).toBe('有 2 个录音删不掉，这次清理没有完成。可稍后重试');
+    expect(main.textContent).not.toContain('not a regular file');
+    // 两个出口仍然在，重试走确认框而不是直接删
+    expect(screen.getByRole('button', { name: '打开文件夹' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(await screen.findByRole('dialog', { name: '清空录音' })).toBeTruthy();
+    expect(services.clearAudioRecordings).not.toHaveBeenCalled();
   });
 
   it('drops the failure line after a successful retry clears everything', async () => {
-    // 验收场景回放：重试成功后回执可见，失败行与重试按钮消失
+    // 验收场景回放：重试成功后回执可见，失败行与重试按钮消失。
+    // 重试成功后的刷新状态是 failedTotal=0：host 侧零失败的 clear 会清账
+    // （audioRetention.ts resetFailures，host 测试单独钉死），renderer 只看账
     services.getAudioCaptureStatus.mockResolvedValueOnce(status(3, EACCES_RAW));
     services.getAudioCaptureStatus.mockResolvedValueOnce(status(3, EACCES_RAW));
-    // 重试成功后的刷新状态：目录已空；这里故意保留一笔旧 failedTotal，
-    // 单独钉死 renderer 守卫（host 侧零失败清空的清账另有 host 测试覆盖）
-    services.getAudioCaptureStatus.mockResolvedValue(status(3, EACCES_RAW, 0));
+    services.getAudioCaptureStatus.mockResolvedValue(status(0, undefined, 0));
     services.clearAudioRecordings.mockResolvedValue({ deleted: 3, freedBytes: 27, failed: 0 });
     render(React.createElement(NativeDesktopSection));
 

@@ -10,6 +10,11 @@ import type { CompanionManagementResult } from '../../../src/shared/contract/com
 const invoke = vi.hoisted(() => vi.fn());
 const toDataURL = vi.hoisted(() => vi.fn(async () => 'data:image/png;base64,qr'));
 const setShowAuthModal = vi.hoisted(() => vi.fn());
+// 可变语言态：总闸弹窗文案要 zh/en 都验；t 只给 ConfirmDialog→Modal 关闭按钮需要的最小真形状。
+const i18nState = vi.hoisted(() => ({
+  language: 'zh' as 'zh' | 'en',
+  t: { common: { close: '关闭', cancel: '取消', confirm: '确认' } },
+}));
 // 极简 zustand 形状的 authStore 替身：selector hook，但登录态变化要能真触发组件重渲染。
 const authMock = vi.hoisted(() => {
   const listeners = new Set<() => void>();
@@ -27,7 +32,7 @@ const authMock = vi.hoisted(() => {
 });
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({ invoke }));
-vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => ({ language: 'zh' }) }));
+vi.mock('../../../src/renderer/hooks/useI18n', () => ({ useI18n: () => i18nState }));
 vi.mock('qrcode', () => ({ default: { toDataURL } }));
 vi.mock('../../../src/renderer/stores/authStore', async () => {
   const { useSyncExternalStore } = await import('react');
@@ -156,9 +161,145 @@ describe('CompanionSection pairing UI', () => {
   });
 });
 
+describe('CompanionSection remote kill switch', () => {
+  afterEach(() => { cleanup(); invoke.mockReset(); toDataURL.mockClear(); authMock.reset(); i18nState.language = 'zh'; });
+
+  /** 按 action 分发结果：setRemote 等写操作不会再误吞成 invitation。 */
+  function mockStatuses(byAction: Record<string, CompanionManagementResult>) {
+    invoke.mockImplementation(async (_channel: string, request: { action: string }) => {
+      const result = byAction[request.action];
+      if (!result) throw new Error(`UNEXPECTED_ACTION_${request.action}`);
+      return result;
+    });
+  }
+
+  function pairedDevices(count: number) {
+    return Array.from({ length: count }, (_, index) => ({
+      deviceId: `phone-${index}`, scope: ['project:one'], scopeEpoch: 1, name: `Pixel ${index}`, pairedAt: 1_700_000_000_000,
+    }));
+  }
+
+  it('renders the switch ON when an older host omits remoteEnabled', async () => {
+    mockManage(status());
+    render(<CompanionSection />);
+    const toggle = await screen.findByRole('switch', { name: text.remoteTitle });
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    // 设备数为 0 时给中性一行，不带「关闭会断开 N 台」的计数警示。
+    expect(screen.getByTestId('companion-remote-count').textContent).toBe(text.remoteCountNone);
+  });
+
+  it('reflects remoteEnabled true/false straight from the host status result', async () => {
+    mockStatuses({ status: status({ remoteEnabled: true, devices: pairedDevices(2) }) });
+    const { unmount } = render(<CompanionSection />);
+    const toggle = await screen.findByRole('switch', { name: text.remoteTitle });
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByTestId('companion-remote-count').textContent).toBe(text.remoteCount(2));
+    unmount();
+
+    mockStatuses({ status: status({ remoteEnabled: false, devices: pairedDevices(2) }) });
+    render(<CompanionSection />);
+    expect((await screen.findByRole('switch', { name: text.remoteTitle })).getAttribute('aria-checked')).toBe('false');
+    expect(screen.getByTestId('companion-remote-off-hint').textContent).toBe(text.remoteOffHint);
+    expect(screen.queryByTestId('companion-remote-count')).toBeNull();
+  });
+
+  it('count line mirrors status.devices.length verbatim', async () => {
+    mockStatuses({ status: status({ remoteEnabled: true, devices: pairedDevices(3) }) });
+    render(<CompanionSection />);
+    await screen.findByRole('switch', { name: text.remoteTitle });
+    expect(screen.getByTestId('companion-remote-count').textContent).toBe(text.remoteCount(3));
+  });
+
+  it('turning off opens a warning dialog, sends nothing until confirmed, then setRemote:false once and never revoke', async () => {
+    const devices = pairedDevices(1);
+    mockStatuses({
+      status: status({ remoteEnabled: true, devices }),
+      setRemote: status({ remoteEnabled: false, devices }),
+    });
+    render(<CompanionSection />);
+    fireEvent.click(await screen.findByRole('switch', { name: text.remoteTitle }));
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.textContent).toContain(text.remoteOffTitle);
+    expect(dialog.textContent).toContain('1');
+    // 弹窗必须讲清三件事：断开 N 台、仍保持配对、随时可重开且无需重新扫码。
+    expect(dialog.textContent).toContain('仍保持配对');
+    expect(dialog.textContent).toContain('无需重新扫码');
+    expect(invoke.mock.calls.filter(call => call[1]?.action !== 'status')).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole('button', { name: text.remoteOffConfirmYes }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith(COMPANION_MANAGE_CHANNEL, { action: 'setRemote', enabled: false }));
+    expect(invoke.mock.calls.filter(call => call[1]?.action === 'setRemote')).toHaveLength(1);
+    expect(invoke.mock.calls.some(call => call[1]?.action === 'revoke')).toBe(false);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    // 开关状态来自 setRemote 返回的 status 结果，不本地硬翻。
+    await waitFor(() => expect(screen.getByRole('switch', { name: text.remoteTitle }).getAttribute('aria-checked')).toBe('false'));
+    expect(screen.getByTestId('companion-remote-off-hint').textContent).toBe(text.remoteOffHint);
+  });
+
+  it('cancel and Esc close the dialog and send nothing; the switch stays ON', async () => {
+    mockStatuses({ status: status({ remoteEnabled: true, devices: pairedDevices(1) }) });
+    render(<CompanionSection />);
+    const toggle = await screen.findByRole('switch', { name: text.remoteTitle });
+    fireEvent.click(toggle);
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: text.remoteOffConfirmNo }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(invoke.mock.calls.filter(call => call[1]?.action !== 'status')).toHaveLength(0);
+    expect(screen.getByRole('switch', { name: text.remoteTitle }).getAttribute('aria-checked')).toBe('true');
+
+    fireEvent.click(toggle);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(invoke.mock.calls.filter(call => call[1]?.action !== 'status')).toHaveLength(0);
+  });
+
+  it('turning on sends setRemote:true straight away, without any dialog', async () => {
+    mockStatuses({ status: status({ remoteEnabled: false }), setRemote: status({ remoteEnabled: true }) });
+    render(<CompanionSection />);
+    fireEvent.click(await screen.findByRole('switch', { name: text.remoteTitle }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith(COMPANION_MANAGE_CHANNEL, { action: 'setRemote', enabled: true }));
+    await waitFor(() => expect(screen.getByRole('switch', { name: text.remoteTitle }).getAttribute('aria-checked')).toBe('true'));
+  });
+
+  it('remounting with a host status of remoteEnabled:false renders OFF', async () => {
+    mockStatuses({ status: status({ remoteEnabled: false }) });
+    const first = render(<CompanionSection />);
+    expect((await first.findByRole('switch', { name: text.remoteTitle })).getAttribute('aria-checked')).toBe('false');
+    first.unmount();
+    render(<CompanionSection />);
+    expect((await screen.findByRole('switch', { name: text.remoteTitle })).getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('while off: shows the off hint and refuses to create a pairing code the host would reject', async () => {
+    mockStatuses({ status: status({ remoteEnabled: false }) });
+    render(<CompanionSection />);
+    await screen.findByTestId('companion-remote-off-hint');
+    const create = screen.getByRole('button', { name: text.create }) as HTMLButtonElement;
+    expect(create.disabled).toBe(true);
+    fireEvent.click(create);
+    expect(invoke.mock.calls.some(call => call[1]?.action === 'invite')).toBe(false);
+  });
+
+  it('the off dialog explains the stay-paired / no-re-scan guarantee in English too', async () => {
+    i18nState.language = 'en';
+    const enText = companionText.en;
+    mockStatuses({ status: status({ remoteEnabled: true, devices: pairedDevices(2) }) });
+    render(<CompanionSection />);
+    fireEvent.click(await screen.findByRole('switch', { name: enText.remoteTitle }));
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.textContent).toContain('2 paired phones');
+    expect(dialog.textContent).toContain('Phones stay paired');
+    expect(dialog.textContent).toContain('no re-scan needed');
+    expect(invoke.mock.calls.filter(call => call[1]?.action !== 'status')).toHaveLength(0);
+  });
+});
+
 describe('companionErrorCopy', () => {
   it('maps known codes and keeps unknown failures on the generic copy', () => {
     expect(companionErrorCopy(text, 'COMPANION_UNAVAILABLE')).toBe(`${text.errorUnavailable} (COMPANION_UNAVAILABLE)`);
+    expect(companionErrorCopy(text, 'COMPANION_REMOTE_OFF')).toBe(`${text.errorRemoteOff} (COMPANION_REMOTE_OFF)`);
     expect(companionErrorCopy(text, 'boom')).toBe(`${text.error} (UNKNOWN_ERROR)`);
   });
 });

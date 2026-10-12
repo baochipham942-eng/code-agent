@@ -331,7 +331,11 @@ export const zhSettingsSystem = {
         confirm: '确认清空',
         cancel: '取消',
         cleared: '已删除 {count} 个文件，释放 {bytes} 字节。',
-        failed: '清理失败 {count} 次，最后一条错误：{error}',
+        failedPermission: '有 {count} 个录音删不掉：没有删除权限。可在访达里检查录音文件夹权限后重试',
+        failedOther: '有 {count} 个录音删不掉，这次清理没有完成。可稍后重试',
+        openFolder: '打开文件夹',
+        retry: '重试',
+        details: '详细信息',
       },
       units: {
         speechSegmentSuffix: ' 段发言',

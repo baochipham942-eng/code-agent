@@ -262,6 +262,12 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                         {tierItems.map((record) => {
                         const isCloud = record.config?.runsOn === 'cloud';
                         const urgencyRaw = record.config?.pendingReview?.urgencyRaw;
+                        const digest = record.config?.pendingReview?.digest;
+                        const resultSessionId = reviewResultSessionId(record);
+                        const hasPendingApproval = Boolean(
+                          resultSessionId
+                          && parked.some((item) => item.status === 'pending' && item.sessionId === resultSessionId),
+                        );
                         return (
                         <div
                           key={record.id}
@@ -286,6 +292,24 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                                 </span>
                               )}
                             </div>
+                            {digest && (
+                              <div className="flex min-w-0 items-center gap-1.5 text-[11px] text-zinc-500" data-testid="automation-review-digest">
+                                <span className="shrink-0">
+                                  {cc.inboxDigestArtifacts.replace('{count}', String(digest.artifactCount))}
+                                </span>
+                                {digest.summaryLine && (
+                                  <span className="min-w-0 truncate">· {digest.summaryLine}</span>
+                                )}
+                                {hasPendingApproval && (
+                                  <span
+                                    className="inline-flex shrink-0 items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] text-badge-warning"
+                                    data-testid="automation-review-digest-approval"
+                                  >
+                                    {cc.inboxDigestApprovalBadge}
+                                  </span>
+                                )}
+                              </div>
+                            )}
                             {urgencyRaw && (
                               <div className="truncate text-[11px] text-zinc-500" data-testid="automation-urgency-raw">
                                 {cc.inboxUrgencyRawPrefix}{urgencyRaw}
@@ -309,7 +333,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                               </div>
                             )}
                           </div>
-                          {reviewResultSessionId(record) && (
+                          {resultSessionId && (
                             <button /* ds-allow:button: 收件箱行内超小文本按钮（py-1 text-xs），primitive 最小 sm 仍更大 */
                               onClick={() => handleOpenResult(record)}
                               disabled={busyId === record.id}

@@ -336,6 +336,57 @@ describe('delegationDelivery（K1C 投递接缝）', () => {
       expect(await evaluateDelegationDelivery(makeDeps({ engineKind: 'grok_cli' }), queuedInputs.getById(queuedInputId)!))
         .toMatchObject({ kind: 'pause', code: 'not_delegatable' });
     });
+
+    it('rework r1：stop 落在 sending 期间，run 普通失败回队后 → pause delegation_stopped，不自动重投', async () => {
+      commitDefaults();
+      // 复盘评审场景：委托 run 在跑（行 sending）→ stop 的 pauseQueued 够不着 →
+      // run 碰一次普通失败（如 429）→ requeueAfterFailure 回 queued 且清空暂停
+      expect(queuedInputs.markSending(queuedInputId, 1_500)).toBe(true);
+      expect(delegations.markStopped('d-1', { reason: 'user' }, 1_600)).toBe(1);
+      expect(queuedInputs.requeueAfterFailure(queuedInputId, 1_700)).toEqual({ retryCount: 1 });
+      const row = queuedInputs.getById(queuedInputId)!;
+      expect(row.status).toBe('queued');
+      expect(row.pausedReason).toBeNull();
+      // 复核必须挡下：stopped 委托不得经 drain 自动重试路径带着标记重投
+      expect(await evaluateDelegationDelivery(makeDeps(), row))
+        .toMatchObject({ kind: 'pause', code: 'delegation_stopped' });
+    });
+
+    it('rework r1：superseded / aborted(retracted_by_user) / terminal_observed → pause delegation_inactive', async () => {
+      const finalize: Array<(id: string) => unknown> = [
+        (id) => delegations.markSuperseded(id, 1_600),
+        (id) => delegations.markAborted(id, 'retracted_by_user', 1_600),
+        (id) => {
+          delegations.backfillTargetRunId(id, `run-${id}`);
+          return delegations.markTerminalObserved(id, 1_600);
+        },
+      ];
+      for (let i = 0; i < finalize.length; i += 1) {
+        const rowId = `delegation:inactive-case-${i}`;
+        queuedInputs.enqueue({ id: rowId, sessionId: targetSessionId, envelope: { content }, now: 100 });
+        delegations.insertOrGet({
+          delegationId: `d-inactive-${i}`,
+          originSessionId,
+          originTurnId,
+          disposition: 'delegate_existing',
+          targetSessionId,
+          targetQueuedInputId: rowId,
+          submissionKey: `sdk-inactive-${i}`,
+          actionFingerprint,
+          createdAt: 1_000,
+        });
+        finalize[i](`d-inactive-${i}`);
+        expect(await evaluateDelegationDelivery(makeDeps(), queuedInputs.getById(rowId)!))
+          .toMatchObject({ kind: 'pause', code: 'delegation_inactive' });
+      }
+    });
+
+    it('rework r1：aborted(delivery_failed) 仍可投（INV-6 重发复活不受生命周期门影响）', async () => {
+      commitDefaults();
+      expect(delegations.markAborted('d-1', 'delivery_failed', 1_500)).toBe(1);
+      expect(await evaluateDelegationDelivery(makeDeps(), queuedInputs.getById(queuedInputId)!))
+        .toMatchObject({ kind: 'deliver', delegationId: 'd-1' });
+    });
   });
 
   describe('collectDeliveryFacts（K1D 复用的事实收集）', () => {

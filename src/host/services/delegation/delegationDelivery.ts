@@ -233,9 +233,20 @@ function envelopeOf(record: { envelopeJson: string }): ConversationEnvelope | nu
   }
 }
 
+/** aborted(delivery_failed) 是唯一可再投的 aborted 形态（INV-6 重发复活）。 */
+export function isDeliveryFailedAbort(row: SessionDelegationRecord): boolean {
+  if (row.status !== 'aborted' || !row.resolutionJson) return false;
+  try {
+    return (JSON.parse(row.resolutionJson) as { reason?: string }).reason === 'delivery_failed';
+  } catch {
+    return false;
+  }
+}
+
 /**
  * 一条排队行的投递决策：无委托行 → 按普通用户消息投（不带标记，N2 剥除后投出）；
- * 有委托行 → INV-5 指纹比对（不符 → pause payload_mismatch，改过的载荷不投出去）
+ * 有委托行 → 生命周期门（只有 active 与 aborted(delivery_failed) 可投）→ INV-5
+ * 指纹比对（不符 → pause payload_mismatch，改过的载荷不投出去）
  * → collectDeliveryFacts + recheckForDelivery（INV-1：必须在 markSending 之前调）。
  */
 export async function evaluateDelegationDelivery(
@@ -247,6 +258,16 @@ export async function evaluateDelegationDelivery(
   const delegation = delegations?.getByTargetQueuedInputId(record.id) ?? null;
   if (!delegation) {
     return { kind: 'deliver' };
+  }
+
+  // 生命周期门（rework r1）：stop/correct 落在 sending 期间时 pauseQueued/retract
+  // 都够不着排队行，run 普通失败经 requeueAfterFailure 回到 queued 之后，这里是
+  // 不让 stopped/superseded 委托被自动重投的最后一道门；stopped 用与 stop 处理器
+  // 相同的暂停码，resume 复核通过后 unpause 复活。
+  if (delegation.status !== 'active' && !isDeliveryFailedAbort(delegation)) {
+    return delegation.status === 'stopped'
+      ? { kind: 'pause', code: 'delegation_stopped', detail: 'delegation is stopped; resume re-checks before delivery' }
+      : { kind: 'pause', code: 'delegation_inactive', detail: `delegation status is ${delegation.status}; not deliverable` };
   }
 
   const envelope = envelopeOf(record);

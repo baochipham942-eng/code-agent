@@ -306,6 +306,16 @@ async function executeChain(
     if (!row.targetQueuedInputId) return rejection('invalid_call', 'delegation has no queued input');
     const targetRecord = queued.getById(row.targetQueuedInputId);
     if (!targetRecord) return rejection('invalid_call', 'queued input is missing');
+    // rework r1：resume 只复活还能投的行。retracted/failed 行永远不进
+    // getNextDispatchable，早拒才能避免「报成功但任务静默丢失、账本滞留 active」。
+    if (targetRecord.status !== 'queued') {
+      const hint = targetRecord.status === 'failed'
+        ? 'requeue the row first, then resume'
+        : targetRecord.status === 'sending'
+          ? 'wait for the in-flight delivery to settle, then resume'
+          : 'a retracted input cannot be revived; delegate the task again';
+      return rejection('invalid_call', `queued input is ${targetRecord.status}, not queued; ${hint}`);
+    }
     const deps: DelegationDeliveryFactDependencies = {
       getDb: runtime.getDb,
       getSessionRow: runtime.getSessionRow,

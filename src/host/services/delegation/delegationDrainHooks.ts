@@ -12,13 +12,13 @@ import type { ConversationEnvelopeContext } from '../../../shared/contract/conve
 import { QueuedInputRepository } from '../core/repositories/QueuedInputRepository';
 import {
   SessionDelegationRepository,
-  type SessionDelegationRecord,
 } from '../core/repositories/SessionDelegationRepository';
 import { getDatabase } from '../core/databaseService';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { evaluateFolderTrust } from '../../security/folderTrustService';
 import {
   evaluateDelegationDelivery,
+  isDeliveryFailedAbort,
   projectTerminalDelegations,
   type DelegationClaimDecision,
   type DelegationRunLike,
@@ -90,15 +90,6 @@ export function createHostDelegationRuntime(input: {
     getActiveRunId: input.getActiveRunId,
     logger: input.logger,
   };
-}
-
-function isDeliveryFailedAbort(row: SessionDelegationRecord): boolean {
-  if (row.status !== 'aborted' || !row.resolutionJson) return false;
-  try {
-    return (JSON.parse(row.resolutionJson) as { reason?: string }).reason === 'delivery_failed';
-  } catch {
-    return false;
-  }
 }
 
 /** drain 的可选 delegation 钩子面（缺省 = 现行为，K1C 起生产装配注入）。 */

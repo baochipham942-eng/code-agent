@@ -44,6 +44,17 @@ function isAlive(pid: number): boolean {
   }
 }
 
+/** 等进程真正消失（僵尸要等父进程收尸后 kill(pid,0) 才开始失败；收尸时机不归
+ * 被测的 CLI 管，断言侧有界等待）。 */
+async function waitUntilReaped(pid: number, timeoutMs = 5_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!isAlive(pid)) return true;
+    await new Promise((resolve) => { setTimeout(resolve, 25); });
+  }
+  return !isAlive(pid);
+}
+
 /** 真实读取进程启动标记（与实现同源口径：`ps lstart`）。 */
 function psLstart(pid: number): string {
   return execFileSync('ps', ['-p', String(pid), '-o', 'lstart='], { encoding: 'utf8' }).trim();
@@ -102,6 +113,31 @@ function spawnFakeDaemon(): Promise<{ pid: number; stop: () => Promise<void> }> 
           stop: () => new Promise((done) => {
             // stop 可能在 daemon stop 命令已经把它杀掉之后才调用：先看是否已退，
             // 已退就不能再等 'exit'（早已发过，再挂监听永远不触发）。
+            if (child.exitCode !== null || child.signalCode !== null) {
+              done();
+              return;
+            }
+            child.once('exit', () => done());
+            child.kill('SIGKILL');
+          }),
+        });
+      }
+    }, 20);
+  });
+}
+
+/** 起一个常驻但**不是 node** 的子进程（/bin/sleep）：命令行不含 node，用来造
+ * 「启动标记吻合、但 pid 已归非 node 进程」的身份不符现场（返修 Important 2）。 */
+function spawnNonNodePid(): Promise<{ pid: number; stop: () => Promise<void> }> {
+  return new Promise((resolve, reject) => {
+    const child: ChildProcess = spawn('/bin/sleep', ['30'], { stdio: 'ignore' });
+    child.on('error', reject);
+    const ready = setInterval(() => {
+      if (child.pid) {
+        clearInterval(ready);
+        resolve({
+          pid: child.pid,
+          stop: () => new Promise((done) => {
             if (child.exitCode !== null || child.signalCode !== null) {
               done();
               return;
@@ -201,7 +237,7 @@ describe('neo daemon stop', () => {
       const io = await runDaemon(['stop']);
       expect(io.stdout()).toContain(`SIGTERM sent to daemon (pid ${fake.pid})`);
       expect(io.stdout()).toContain('Daemon stopped.');
-      expect(isAlive(fake.pid)).toBe(false);
+      expect(await waitUntilReaped(fake.pid)).toBe(true);
     } finally {
       await fake.stop();
     }
@@ -223,6 +259,22 @@ describe('neo daemon stop', () => {
       expect(isAlive(reused.pid)).toBe(true); // 没被误杀
     } finally {
       await reused.stop();
+    }
+  });
+
+  it('活 pid、启动标记吻合但命令行不含 node（pid 已归非 node 进程）：按复用处理，不发信号（返修 Important 2）', async () => {
+    const nonNode = await spawnNonNodePid();
+    try {
+      writePidRecord(dataDir, nonNode.pid, psLstart(nonNode.pid));
+      const stop = await runDaemon(['stop']);
+      expect(stop.stdout()).toContain('reused by another process');
+      expect(stop.stdout()).toContain('nothing to stop');
+      expect(isAlive(nonNode.pid)).toBe(true); // 没被误杀
+      const status = await runDaemon(['status']);
+      expect(status.stdout()).toContain('Daemon: not running');
+      expect(status.stdout()).toContain(`pid ${nonNode.pid} was reused by another process`);
+    } finally {
+      await nonNode.stop();
     }
   });
 

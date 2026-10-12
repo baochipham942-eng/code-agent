@@ -3,7 +3,9 @@
 // ============================================================================
 // 同一数据目录只允许一个执行体（webServer 服务态）。锁文件是 <dataDir>/daemon.pid，
 // 内容是 JSON 记录 { pid, startTime }：startTime 是持锁瞬间 `ps lstart` 的进程
-// 启动标记，用来防 pid 复用——活着的 pid 未必还是当年写文件的那个进程。旧版
+// 启动标记，用来防 pid 复用——活着的 pid 未必还是当年写文件的那个进程。身份核对
+// 在让位/发信号前现场跑 `ps -p <pid> -o lstart=,command=`：启动标记吻合且命令行
+// 含 node 才算 owned（守护是 node 进程），任一不符按 pid 已被复用处理。旧版
 // 纯 pid 文本按 startTime=null 解析。dev 槽各有独立数据目录，pid 文件互不冲突。
 //
 // 语义：
@@ -21,7 +23,7 @@
 //
 // 本模块只管锁，不问端口（端口冲突仍由 portCleanup / EADDRINUSE 路径处理），
 // 也不 kill 任何进程（那是 CLI daemon stop 的事）；唯一的子进程调用是只读的
-// `ps lstart`，用于进程身份比对。
+// `ps lstart=,command=`，用于进程身份比对。
 // ============================================================================
 
 import fs from 'fs';
@@ -42,17 +44,20 @@ interface DaemonPidRecord {
 
 type PidFileContent = { kind: 'ok'; record: DaemonPidRecord } | { kind: 'unreadable' } | { kind: 'missing' };
 
-/** 读进程启动标记（`ps lstart`，macOS/Linux 可用）。pid 被操作系统复用后该值会变，
- * 是「还是同一个进程」的判据；平台不支持 / 读不出 → null，调用方按身份未知
- * fail-closed，不把陌生活进程当成我们的守护。 */
-function readProcessStartTime(pid: number): string | null {
+/** 读进程身份（`ps lstart=,command=`，macOS/Linux 可用）：startTime 是进程启动
+ * 标记，command 是完整命令行。pid 被操作系统复用后 startTime 会变；守护是 node
+ * 进程，command 不含 node 也说明 pid 已归别的进程。平台不支持 / 读不出 → null，
+ * 调用方按身份未知 fail-closed，不把陌生活进程当成我们的守护。 */
+function readProcessIdentity(pid: number): { startTime: string; command: string } | null {
   if (process.platform !== 'darwin' && process.platform !== 'linux') return null;
   try {
-    const start = execFileSync('ps', ['-p', String(pid), '-o', 'lstart='], {
+    const raw = execFileSync('ps', ['-p', String(pid), '-o', 'lstart=,command='], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();
-    return start || null;
+    // lstart 形如 `Sat Oct 11 22:29:33 2026`（日月不足两位补空格），其后跟命令行。
+    const parsed = /^(\w{3}\s+\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})\s+(\S.*)$/.exec(raw);
+    return parsed ? { startTime: parsed[1], command: parsed[2] } : null;
   } catch {
     return null;
   }
@@ -100,14 +105,22 @@ function isDaemonPidAlive(pid: number): boolean {
 type DaemonPidState = 'dead' | 'owned' | 'foreign' | 'unknown';
 
 /** pid 记录四态判别，只读、绝不发信号：
- * dead=进程不在；owned=活着且启动标记吻合（就是写文件的守护）；foreign=活着但
- * 标记不符（pid 已被复用）；unknown=活着但无法验证（无标记 / 平台读不出标记）。 */
+ * dead=进程不在（含已退出未被收尸的僵尸）；owned=活着且启动标记吻合、命令行含
+ * node（就是写文件的守护）；foreign=活着但身份不符（标记不符，或标记撞了同一秒
+ * 但命令行不含 node——pid 已被复用）；unknown=活着但无法验证（无标记 / 平台读
+ * 不出身份）。 */
 export function inspectDaemonPid(record: DaemonPidRecord): DaemonPidState {
   if (!isDaemonPidAlive(record.pid)) return 'dead';
   if (!record.startTime) return 'unknown';
-  const actualStartTime = readProcessStartTime(record.pid);
-  if (!actualStartTime) return 'unknown';
-  return actualStartTime === record.startTime ? 'owned' : 'foreign';
+  const identity = readProcessIdentity(record.pid);
+  if (!identity) return 'unknown';
+  // 僵尸（已退出、未被父进程收尸）：kill(pid,0) 仍成功，macOS ps 的 command 列打
+  // <defunct>（Linux 部分版本打 [comm] <defunct>）。进程已死且 pid 收尸前不会被
+  // 复用，按 dead 处理——否则「命令行不含 node」会把正在退出中的守护误判成
+  // pid 已被复用。
+  if (identity.command.endsWith('<defunct>')) return 'dead';
+  if (identity.startTime !== record.startTime) return 'foreign';
+  return identity.command.includes('node') ? 'owned' : 'foreign';
 }
 
 /** 读 pid 文件记录给客户端面（`neo daemon status/stop`）用：无文件或内容不可读 → null。 */
@@ -129,7 +142,7 @@ export function acquireDaemonLock(dataDir: string, pid: number = process.pid): {
   for (let attempt = 0; attempt < ACQUIRE_ATTEMPTS; attempt += 1) {
     try {
       const fd = fs.openSync(pidPath, 'wx');
-      fs.writeSync(fd, JSON.stringify({ pid, startTime: readProcessStartTime(pid) } satisfies DaemonPidRecord));
+      fs.writeSync(fd, JSON.stringify({ pid, startTime: readProcessIdentity(pid)?.startTime ?? null } satisfies DaemonPidRecord));
       fs.closeSync(fd);
       return { acquired: true, pid };
     } catch (error) {

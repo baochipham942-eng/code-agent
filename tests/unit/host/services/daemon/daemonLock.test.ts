@@ -1,8 +1,10 @@
 // ============================================================================
 // daemonLock 单测（ADR-083 ①）：pid 文件 + 单实例锁 + pid 复用防线
 //   - 两个实例并发抢锁：'wx' 原子创建保证只有一个赢；输家拿到赢家的 pid 让位。
-//   - 活 pid 持锁（标记吻合 = owned / 无标记 = unknown）：第二个实例让位，不抢。
-//   - 死 pid（陈旧锁）与标记不符的活 pid（pid 已被复用 = foreign）：接管成功。
+//   - 活 pid 持锁（标记吻合且命令行含 node = owned / 无标记 = unknown）：第二个
+//     实例让位，不抢。
+//   - 死 pid（陈旧锁）、标记不符的活 pid、标记吻合但命令行不含 node 的活 pid
+//     （pid 已被复用 = foreign）：接管成功。
 //   - 读不出 pid 的锁文件（赢家刚建文件还没写完）：按「有实例正在启动」让位。
 //   - release：本进程写的锁才删；文件指着别人（含接任者）时不删。
 // 夹具用真实子进程取「活 pid / 死 pid」、真实 `ps lstart` 取启动标记，不 mock
@@ -79,6 +81,27 @@ function spawnLivePid(): Promise<{ pid: number; stop: () => Promise<void> }> {
   });
 }
 
+/** 起一个常驻但**不是 node** 的子进程（/bin/sleep）：命令行不含 node，用来造
+ * 「启动标记吻合、但 pid 已归非 node 进程」的身份不符现场（返修 Important 2）。 */
+function spawnNonNodePid(): Promise<{ pid: number; stop: () => Promise<void> }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('/bin/sleep', ['30'], { stdio: 'ignore' });
+    child.on('error', reject);
+    const ready = setInterval(() => {
+      if (child.pid && isAlive(child.pid)) {
+        clearInterval(ready);
+        resolve({
+          pid: child.pid,
+          stop: () => new Promise((done) => {
+            child.once('exit', () => done());
+            child.kill('SIGKILL');
+          }),
+        });
+      }
+    }, 20);
+  });
+}
+
 afterEach(() => {
   while (tempDirs.length > 0) {
     fs.rmSync(tempDirs.pop()!, { recursive: true, force: true });
@@ -94,7 +117,7 @@ describe('inspectDaemonPid', () => {
 
     const live = await spawnLivePid();
     try {
-      // 标记吻合 = owned（就是写文件的守护）
+      // 标记吻合 = owned（就是写文件的守护；node 子进程，命令行含 node）
       expect(inspectDaemonPid({ pid: live.pid, startTime: psLstart(live.pid) })).toBe('owned');
       // 标记不符 = foreign（pid 已被复用，不是写文件的那个进程）
       expect(inspectDaemonPid({ pid: live.pid, startTime: 'Fri Jan  1 00:00:00 1970' })).toBe('foreign');
@@ -102,6 +125,16 @@ describe('inspectDaemonPid', () => {
       expect(inspectDaemonPid({ pid: live.pid, startTime: null })).toBe('unknown');
     } finally {
       await live.stop();
+    }
+
+    // 标记吻合但命令行不含 node（返修 Important 2）：lstart 撞上同一秒内复用该
+    // pid 的非 node 进程，仍按 pid 已被复用 = foreign 处理，绝不认作守护。
+    const nonNode = await spawnNonNodePid();
+    try {
+      expect(psLstart(nonNode.pid)).not.toContain('node');
+      expect(inspectDaemonPid({ pid: nonNode.pid, startTime: psLstart(nonNode.pid) })).toBe('foreign');
+    } finally {
+      await nonNode.stop();
     }
   });
 });
@@ -162,6 +195,19 @@ describe('acquireDaemonLock', () => {
       expect(readDaemonPidRecord(dataDir)?.pid).toBe(333);
     } finally {
       await live.stop();
+    }
+  });
+
+  it('活 pid、启动标记吻合但命令行不含 node（pid 已归非 node 进程）：接管，不让位', async () => {
+    const dataDir = makeTempDir();
+    const nonNode = await spawnNonNodePid();
+    try {
+      writePidRecord(dataDir, nonNode.pid, psLstart(nonNode.pid));
+      const result = acquireDaemonLock(dataDir, 333);
+      expect(result).toEqual({ acquired: true, pid: 333 });
+      expect(readDaemonPidRecord(dataDir)?.pid).toBe(333);
+    } finally {
+      await nonNode.stop();
     }
   });
 

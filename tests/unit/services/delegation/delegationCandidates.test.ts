@@ -1,3 +1,4 @@
+import { createHash, createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -148,5 +149,57 @@ describe('projectSessionCandidates', () => {
     expect(ancient.freshness).toBe('older');
     expect(ancient.workspaceName).toBe('');
     expect(dayOld.status).toBe('idle');
+  });
+});
+
+describe('候选投影金向量（D3/D5 字节级公式，字面量钉死）', () => {
+  const rows = [
+    row({ id: 'session-a', updatedAt: NOW - 1000 }),
+    row({ id: 'session-b', updatedAt: NOW - 2000 }),
+  ];
+  const projection = projectSessionCandidates(rows, {
+    originSessionId: 'origin-1',
+    now: NOW,
+    secret: SECRET,
+  });
+
+  it('candidateSetId = 有序 session id 以 \\0 连接的 sha256 前 16 hex（字面量）', () => {
+    expect(projection.sessionIds).toEqual(['session-a', 'session-b']);
+    expect(projection.candidateSetId).toBe('995bd339aa5855a1');
+    // 顺序是公式的一部分：排序结果不同（b 更新）→ 集合指纹不同。
+    const bNewer = projectSessionCandidates(
+      [row({ id: 'session-a', updatedAt: NOW - 5000 }), row({ id: 'session-b', updatedAt: NOW - 10 })],
+      { originSessionId: 'origin-1', now: NOW, secret: SECRET },
+    );
+    expect(bNewer.sessionIds).toEqual(['session-b', 'session-a']);
+    expect(bNewer.candidateSetId).not.toBe(projection.candidateSetId);
+    // 输入行序打乱不影响排序结果 → 集合指纹不变。
+    const shuffled = projectSessionCandidates([...rows].reverse(), {
+      originSessionId: 'origin-1',
+      now: NOW,
+      secret: SECRET,
+    });
+    expect(shuffled.candidateSetId).toBe(projection.candidateSetId);
+  });
+
+  it('candidateRef = base64url(HMAC-SHA256(secret, setId\\0sessionId)) 前 16 字符（字面量 + 独立重算）', () => {
+    expect(projection.candidates[0].candidateRef).toBe('9uhwlyECHJCSwa5W');
+    const recomputed = createHmac('sha256', SECRET)
+      .update(`${projection.candidateSetId}\0session-a`, 'utf8')
+      .digest('base64url')
+      .slice(0, 16);
+    expect(projection.candidates[0].candidateRef).toBe(recomputed);
+  });
+
+  it('换 secret → 同一会话的 ref 全变；集合指纹不随 secret 变', () => {
+    const other = projectSessionCandidates(rows, {
+      originSessionId: 'origin-1',
+      now: NOW,
+      secret: 'other-secret',
+    });
+    expect(other.candidates[0].candidateRef).not.toBe(projection.candidates[0].candidateRef);
+    expect(other.candidateSetId).toBe(projection.candidateSetId);
+    expect(createHash('sha256').update('session-a\0session-b', 'utf8').digest('hex').slice(0, 16))
+      .toBe(projection.candidateSetId);
   });
 });

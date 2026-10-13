@@ -371,10 +371,10 @@ import type { PendingDevPermissionRequest } from './routes/dev';
 import { createApp, type CreateAppDeps } from './app';
 import { acquireDaemonLock, releaseDaemonLock } from '../host/services/daemon/daemonLock';
 import type { DaemonIdleSnapshot } from '../host/services/daemon/daemonIdle';
-import { shouldStayResidentAfterShellExit } from '../host/services/daemon/shellExit';
+import { createDaemonExitRechecker, shouldStayResidentAfterShellExit } from '../host/services/daemon/shellExit';
 import { drainPendingOpsForShutdown } from '../host/services/daemon/daemonDrain';
 import { getBackgroundTaskLedger } from '../host/task/backgroundTaskLedger';
-import { listForegroundPermissionRequests } from './foregroundPermissionRegistry';
+import { listForegroundPermissionRequests, onForegroundPermissionStateChange } from './foregroundPermissionRegistry';
 import { createWebSessionContext } from './sessionDomainHandler';
 import { startDurableRunStartup } from './durableRunStartup';
 import {
@@ -1300,15 +1300,29 @@ async function main(): Promise<void> {
   // 回调必须定义在守卫块外：gracefulShutdown 静态门用 lazy 正则截守卫块体（到第一个
   // 独行 `}` 为止），监听语句内嵌函数体会把 'end' 监听挤出匹配范围，跨端合同门假红。
   let shellPipeAttached = Boolean(process.env.CODE_AGENT_TAURI_BOOT_TOKEN);
+  let daemonExitRechecker: ReturnType<typeof createDaemonExitRechecker> | undefined;
+  let shellPipeClosedHandled = false;
   const onShellPipeClosed = () => {
+    if (shellPipeClosedHandled) return;
+    shellPipeClosedHandled = true;
     shellPipeAttached = false;
-    if (!shouldStayResidentAfterShellExit(process.platform, daemonIdleSnapshot?.())) {
+    const shouldStay = shouldStayResidentAfterShellExit(process.platform, daemonIdleSnapshot?.());
+    if (daemonExitRechecker?.onShellPipeClosed()) return;
+    if (!shouldStay) {
       void shutdown();
       return;
     }
     logger.info('[daemon] shell exited while busy — staying resident (runs/companion/approval pending)');
   };
   if (process.env.CODE_AGENT_TAURI_BOOT_TOKEN) {
+    daemonExitRechecker = createDaemonExitRechecker({
+      platform: process.platform,
+      getSnapshot: () => daemonIdleSnapshot?.(),
+      shutdown,
+    });
+    runRegistry.onIdleTransition(daemonExitRechecker.recheck);
+    onForegroundPermissionStateChange(daemonExitRechecker.recheck);
+    getTaskManager().on('event', daemonExitRechecker.recheck);
     process.stdin.resume();
     process.stdin.on('end', onShellPipeClosed);
     process.stdin.on('error', onShellPipeClosed);

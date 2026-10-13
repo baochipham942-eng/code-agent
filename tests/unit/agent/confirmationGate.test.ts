@@ -162,6 +162,21 @@ describe('ConfirmationGate', () => {
       expect(preview!.summary).toBeTruthy();
     });
 
+    // N-EDIT-RETRY-KEY-SHAPE — 注册的 Edit 参数形状（multiEdit.schema.ts）是
+    // { file_path, edits: [{ old_text, new_text }] }，没有顶层 old_string/new_string。
+    it('should build diff preview for a real Edit call with edits[]', () => {
+      const preview = gate.buildPreview('Edit', {
+        file_path: '/tmp/a.ts',
+        edits: [{ old_text: 'const x = 1;', new_text: 'const x = 2;' }],
+      });
+      expect(preview).toBeDefined();
+      expect(preview!.type).toBe('diff');
+      expect(preview!.before).toContain('const x = 1;');
+      expect(preview!.after).toContain('const x = 2;');
+      expect(preview!.diff).toContain('-const x = 1;');
+      expect(preview!.diff).toContain('+const x = 2;');
+    });
+
     it('should build command preview for bash', () => {
       const preview = gate.buildPreview('bash', { command: 'npm install' });
       expect(preview).toBeDefined();

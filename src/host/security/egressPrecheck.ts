@@ -284,7 +284,7 @@ function egressToolsFromLenient(command: string): Set<string> {
       if (!commandPosition) continue;
       if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) continue;
       if (inShellOptions && word.startsWith('-')) {
-        // bash 的启动选项；含 c 的簇（-c / -lc / -O 前的形态见 commandParse.shellScript）
+        // bash 的启动选项；含 c 的簇（-c / -lc / -O 前的形态见 shellOptions.isShellCommandOption）
         if (word === '-c' || /^-[^-]*c[^-]*$/.test(word)) {
           scriptNext = true;
           inShellOptions = false;

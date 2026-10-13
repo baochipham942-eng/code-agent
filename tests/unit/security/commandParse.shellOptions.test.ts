@@ -32,6 +32,10 @@ const FORMS: Form[] = [
   { label: '--rcfile /dev/null', build: (s, t) => `${s} --rcfile /dev/null -c "${t}"`, expect: 'target' },
   { label: '-ic', expect: 'target' },
   { label: '-lc', expect: 'target' },
+  // Unknown flag letter with a `c` after it: `zsh -dc '…'` really runs (probed; bash/sh/dash die
+  // on the unknown letter first), so the cluster carries the command string.
+  { label: '-dc', build: (s, t) => `${s} -dc "${t}"`, expect: 'target' },
+  { label: '+dc', build: (s, t) => `${s} +dc "${t}"`, expect: 'target' },
   { label: '-Z (unknown)', build: (s, t) => `${s} -Z -c "${t}"`, expect: 'uncertain' },
 ];
 
@@ -69,7 +73,37 @@ describe('shell wrapper startup options with attached values', () => {
     expect(parsed.uncertain).toContain('unknown-shell-launcher:chronic');
   });
 
-  it.each(['bash -oposix -c "ls"', 'zsh -opipefail -c "ls"', 'bash -Z -c "ls"'])(
+  it('extracts a write hidden behind an unknown launcher and an unknown-letter cluster (r1)', () => {
+    // `zsh -d` is a real flag (probed: `zsh -dc 'echo x'` really runs), and the baseline launcher
+    // probe `/^-[^-]*c[^-]*$/` matched `-dc`. Swapping in the strict letter allowlist made
+    // isShellCommandOption('-dc') false, the launcher scan stopped firing, and the command parsed
+    // to empty/empty — the FB-330 shape again, one wrapper out.
+    const parsed = parseShellCommand("chronic zsh -dc 'echo x > src/x.ts'");
+    expect(parsed.writeTargets).toEqual([expect.objectContaining({ path: 'src/x.ts' })]);
+    expect(parsed.uncertain).toContain('unknown-shell-launcher:chronic');
+  });
+
+  it.each([
+    'chronic zsh -Zc "echo x > src/x.ts"',
+    'chronic zsh +dc "echo x > src/x.ts"',
+    'chronic zsh +c "echo x > src/x.ts"',
+    'doas sh -dc "echo x > src/x.ts"',
+  ])('never reports an empty shell behind an unknown launcher: %s', (command) => {
+    const parsed = parseShellCommand(command);
+    expect(parsed.writeTargets.length + parsed.uncertain.length).toBeGreaterThan(0);
+  });
+
+  it('marks the +c spelling uncertain behind an unknown launcher instead of empty/empty', () => {
+    // `zsh +c '…'` really runs too (probed), but the bare `+c` word stays unclassified by design;
+    // the launcher scan must still fire so the command never parses to empty/empty.
+    const parsed = parseShellCommand('chronic zsh +c "echo x > src/x.ts"');
+    expect(parsed.uncertain).toEqual(expect.arrayContaining([
+      'unknown-shell-launcher:chronic',
+      'shell-option-unknown:zsh',
+    ]));
+  });
+
+  it.each(['bash -oposix -c "ls"', 'zsh -opipefail -c "ls"', 'bash -Z -c "ls"', 'zsh -dc "ls"'])(
     'cannot lend an approval identity through an attached or unclassifiable option: %s',
     (command) => {
       expect(isKnownSafeCommand(command)).toBe(false);

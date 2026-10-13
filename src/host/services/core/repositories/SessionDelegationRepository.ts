@@ -275,13 +275,16 @@ export class SessionDelegationRepository {
   /**
    * stopped → active. Clears resolved_at and resolution_json because the row
    * is unresolved again. No updated_at column, so `now` is only a clock check.
-   * target_run_id stays: this method does not receive a new run id.
+   * target_run_id is cleared too: the stopped run was cancelled, and
+   * backfillTargetRunId only fills when NULL — a stale value would pin
+   * terminal projection and delegatedRunIds to the cancelled run instead of
+   * the run the resumed delivery actually activates.
    */
   markResumed(delegationId: string, now: number): number {
     if (!finiteTimestamp(now)) return 0;
     return this.changes(
       `UPDATE session_delegations
-       SET status = 'active', resolved_at = NULL, resolution_json = NULL
+       SET status = 'active', resolved_at = NULL, resolution_json = NULL, target_run_id = NULL
        WHERE delegation_id = ? AND status = 'stopped'`,
       delegationId,
     );

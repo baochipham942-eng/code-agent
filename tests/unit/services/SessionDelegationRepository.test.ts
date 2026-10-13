@@ -577,7 +577,7 @@ describe('SessionDelegationRepository', () => {
     expectRejected(row.delegationId, () => repo.markStopped(row.delegationId, undefined, 3));
   });
 
-  it('markResumed moves only stopped rows back to active', () => {
+  it('markResumed moves only stopped rows back to active and clears target_run_id (INV-4)', () => {
     const row = create();
     expect(repo.backfillTargetRunId(row.delegationId, 'run-1')).toBe(1);
     expect(repo.markStopped(row.delegationId, { outcome: 'stop_delivered' }, 18)).toBe(1);
@@ -587,8 +587,11 @@ describe('SessionDelegationRepository', () => {
     expect(after.status).toBe('active');
     expect(after.resolved_at).toBeNull();
     expect(after.resolution_json).toBeNull();
-    expect(after.target_run_id).toBe('run-1');
-    expectUntouched(before, after, new Set(['status', 'resolved_at', 'resolution_json']));
+    // rework r7：被停掉的 run 已取消，恢复后必须允许回填新 run id
+    // （backfillTargetRunId 只在 NULL 时写入，旧值滞留会把终态投影和
+    // delegatedRunIds 钉死在已取消的 run 上）。
+    expect(after.target_run_id).toBeNull();
+    expectUntouched(before, after, new Set(['status', 'resolved_at', 'resolution_json', 'target_run_id']));
     expectRejected(row.delegationId, () => repo.markResumed(row.delegationId, 22));
 
     const aborted = create();

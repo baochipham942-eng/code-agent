@@ -477,6 +477,48 @@ describe('delegationDelivery（K1C 投递接缝）', () => {
       expect(delegations.get('d-1')).toMatchObject({ status: 'active', targetRunId: 'run-second' });
     });
 
+    it('rework r7：stop→resume 后 onActivated 记新 run；旧 run 终态不投影、新 run 进 delegatedRunIds（INV-4/G10）', async () => {
+      const { createDelegationDrainHooks } = await import('../../../../src/host/services/delegation/delegationDrainHooks');
+      const logger = { info: () => {}, warn: () => {}, error: () => {} };
+      const hooks = createDelegationDrainHooks({ ...makeDeps(), logger });
+      commitDefaults();
+      // 首次投递：激活回填 run A（排队行仍 queued，停/复用同一批仓储调用）。
+      hooks.onActivated({ id: queuedInputId, sessionId: targetSessionId }, { runId: 'run-a' });
+      expect(delegations.get('d-1')).toMatchObject({ status: 'active', targetRunId: 'run-a' });
+
+      // stop（与 delegateSession 的 stop 处理器同形状：暂停排队行 + markStopped）
+      expect(queuedInputs.pauseQueued(queuedInputId, 'delegation_stopped', 2_000)).toBe(true);
+      expect(delegations.markStopped('d-1', { reason: 'user' }, 2_000)).toBe(1);
+
+      // resume（与 resume 处理器同形状：unpauseQueued + markResumed）——
+      // markResumed 必须清掉指向已取消旧 run 的 target_run_id，否则
+      // backfillTargetRunId 的 only-fill-when-NULL 守卫会让新 run 的回填静默落空。
+      expect(queuedInputs.unpauseQueued(queuedInputId, 2_500)).toBe(true);
+      expect(delegations.markResumed('d-1', 2_500)).toBe(1);
+      expect(delegations.get('d-1')).toMatchObject({ status: 'active', targetRunId: null });
+
+      // 再次投递：onActivated 带新 run B —— 回填必须真的写进去
+      hooks.onActivated({ id: queuedInputId, sessionId: targetSessionId }, { runId: 'run-b' });
+      expect(delegations.get('d-1')?.targetRunId).toBe('run-b');
+
+      // 旧 run A 已终态（cancelled）：投影不得据此把还在跑的委托标成 terminal_observed
+      const observed = await projectTerminalDelegations(db, {
+        getRun: async (runId) => ({ runId, status: runId === 'run-a' ? 'cancelled' : 'running' }),
+        now: 3_000,
+      });
+      expect(observed).toBe(0);
+      expect(delegations.get('d-1')?.status).toBe('active');
+
+      // 新 run B 必须在 delegatedRunIds 里（G10：活跃 run 对不上任何委托 → 误判用户来源/target_busy）
+      const facts = await collectDeliveryFacts(makeDeps({ activeRunId: 'run-b' }), {
+        sessionId: targetSessionId,
+        queuedInputId,
+        originSessionId,
+      });
+      expect(facts.snapshot.delegatedRunIds).toContain('run-b');
+      expect(facts.snapshot.delegatedRunIds).not.toContain('run-a');
+    });
+
     it('onClaimConflict：sending 行 pauseAfterClaim(target_busy)；onRetryExhausted：投影 aborted(delivery_failed)', async () => {
       const { createDelegationDrainHooks } = await import('../../../../src/host/services/delegation/delegationDrainHooks');
       const logger = { info: () => {}, warn: () => {}, error: () => {} };

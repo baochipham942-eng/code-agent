@@ -62,8 +62,10 @@ function extractArtifacts(
       if (tc.name === 'image_generate' && args?.output_file_path) {
         addPath(args.output_file_path as string);
       }
-      if (tc.name === 'video_generate' && args?.output_path) {
-        addPath(args.output_path as string);
+      // video/music：新合同读 output_file_path；旧 output_path 历史消息仍照常展示（N-MEDIA-GEN-PHASE2）。
+      if (tc.name === 'video_generate' || tc.name === 'music_generate') {
+        const mediaOutputPath = (args?.output_file_path ?? args?.output_path) as string | undefined;
+        if (mediaOutputPath) addPath(mediaOutputPath);
       }
       const meta = tc.result?.metadata as Record<string, unknown> | undefined;
       if (meta) {

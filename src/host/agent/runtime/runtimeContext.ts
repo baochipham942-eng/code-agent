@@ -99,6 +99,8 @@ export interface RuntimeContext {
   readonly toolScope?: WorkbenchToolScope;
   readonly executionIntent?: ConversationExecutionIntent;
   readonly neoTag?: import('../../../shared/contract/tag').NeoTagRunContext;
+  /** ADR-072 K1C：投递层校验过的委托来源标记；存在时本轮铸 orchestrator 起源。 */
+  readonly delegationOrigin?: import('../../../shared/contract/queuedInput').DelegationOriginMarker;
 
   // --- Services / modules ---
   readonly circuitBreaker: CircuitBreaker;

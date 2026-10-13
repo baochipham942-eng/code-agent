@@ -48,6 +48,7 @@ type LegacyPermissionLevel = 'read' | 'write' | 'execute' | 'network';
  * ToolSearch 搜到/select，与本注入互补。）
  */
 export const DESIGN_CANVAS_TOOL_NAMES = ['ProposeCanvasOps', 'RequestDesignAutonomy', 'ProposeVideoOps', 'ProposeSlidesOps'] as const;
+const CROSS_SESSION_DELEGATION_TOOL_NAMES = ['delegate_session', 'list_session_candidates'] as const;
 
 function mapPermissionLevel(level: PermissionLevel): LegacyPermissionLevel {
   if (level === 'dangerous') return 'execute';
@@ -250,12 +251,29 @@ export function getDesignCanvasToolDefinitions(): ToolDefinition[] {
 export function withDesignCanvasTools(
   tools: ToolDefinition[],
   designCanvasActive: boolean | undefined,
+  crossSessionDelegationEnabled = false,
 ): ToolDefinition[] {
-  if (!designCanvasActive) return tools;
-  const existing = new Set(tools.map((t) => t.name));
-  const canvasTools = getDesignCanvasToolDefinitions().filter((t) => !existing.has(t.name));
-  if (canvasTools.length === 0) return tools;
-  return [...tools, ...canvasTools];
+  let next = tools;
+  if (designCanvasActive) {
+    const existing = new Set(next.map((t) => t.name));
+    const canvasTools = getDesignCanvasToolDefinitions().filter((t) => !existing.has(t.name));
+    if (canvasTools.length > 0) next = [...next, ...canvasTools];
+  }
+  return withCrossSessionDelegationTools(next, crossSessionDelegationEnabled);
+}
+
+/** Injects K1D tools only for an explicitly enabled turn; they are absent from
+ * core/deferred metadata so the default model-visible tool bytes stay stable. */
+function withCrossSessionDelegationTools(
+  tools: ToolDefinition[],
+  enabled: boolean,
+): ToolDefinition[] {
+  if (!enabled) return tools;
+  const existing = new Set(tools.map((tool) => tool.name));
+  const delegationTools = CROSS_SESSION_DELEGATION_TOOL_NAMES
+    .map((name) => getToolDefinitionWithCloudMeta(name))
+    .filter((tool): tool is ToolDefinition => tool !== undefined && !existing.has(tool.name));
+  return delegationTools.length > 0 ? [...tools, ...delegationTools] : tools;
 }
 
 /**

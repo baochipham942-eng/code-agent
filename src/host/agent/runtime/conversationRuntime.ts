@@ -532,7 +532,8 @@ export class ConversationRuntime {
         // Telemetry: record turn start (only first iteration has the real user prompt)
         // 存的必须是用户原话：这一列会被 sessionManager.backfillUserPromptsFromTelemetry
         // 反向写回用户可见的消息流，存模型面拼装体等于把脚手架直接讲给用户听。
-        this.ctx.telemetryAdapter?.onTurnStart(this.ctx.turn.currentTurnId, iterations, iterations === 1 ? (displayPrompt ?? userMessage) : '', iterations > 1 ? userTurnId : undefined);
+        // turnSource：带外委托标记在（ADR-072 K1C）→ 该轮遥测记 'delegation'。
+        this.ctx.telemetryAdapter?.onTurnStart(this.ctx.turn.currentTurnId, iterations, iterations === 1 ? (displayPrompt ?? userMessage) : '', iterations > 1 ? userTurnId : undefined, this.ctx.delegationOrigin ? 'delegation' : undefined);
 
         // Debug snapshot: 记录 turn 起始时的 messages 快照，post-inference 直接从 response.usage 取 token
         const turnStartMessageSnapshot = this.ctx.messages.slice();

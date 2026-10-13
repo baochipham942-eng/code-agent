@@ -131,6 +131,11 @@ export interface AgentLoopConfig {
   goalRecoverySnapshot?: import('./goalModeController').GoalRecoverySnapshot;
   /** Approved Neo Tag work card context for this run. */
   neoTag?: import('../../shared/contract/tag').NeoTagRunContext;
+  /**
+   * ADR-072 K1C：投递层校验过的委托来源标记（带外）。存在时本轮铸 orchestrator
+   * 起源而非 user，遥测记 turn_source='delegation'；普通用户轮恒为 undefined。
+   */
+  delegationOrigin?: import('../../shared/contract/queuedInput').DelegationOriginMarker;
   /** GAP-013: 启用 Generator-Critic 交付前自动验证（默认读 CODE_AGENT_DELIVERY_CRITIC 环境变量） */
   enableDeliveryCritic?: boolean;
   /** Max Mode（best-of-N，roadmap 3.3）显式开关，默认关（缺省读 CODE_AGENT_MAX_MODE=1 环境变量）。

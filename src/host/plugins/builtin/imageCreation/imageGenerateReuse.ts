@@ -8,14 +8,18 @@
 //
 // 复用判定规则（owner 决策 2026-10-09，option A：按 session + 参数判定）：
 // 调用开始时按 (toolName, sessionId, fingerprint) 查账本，一条已保存产物**仅当**同时满足
-// 下面两条才复用：
+// 下面三条才复用：
 //   (a) 产物文件仍在磁盘上，且大小与记账时一致（防半写 / 被改动 / 被删除）；
 //   (b) 产出它的那次调用**没有把结果送达循环**，二者满足其一：
 //       - 本次 ctx.currentToolCallId 与账目记录的 toolCallId 相同（同一次调用的崩溃重放）；
-//       - 或该 toolCallId 在工具执行事件账本里查不到"已送达"的 complete 事件——
-//         具体指 status 为 success / error 的 complete（结果或错误已被循环看到）；
+//       - 或按该 toolCallId 直查工具执行事件账本（窗口无关）查不到"已送达"的 complete
+//         事件——具体指 status 为 success / error 的 complete（结果或错误已被循环看到）；
 //         status 'recovered' 是崩溃后 acknowledgeRecovery 的行政收口，模型从未看到
 //         真实结果，**不算**已送达。
+//   (c) 账目里的 absolutePath 落在工作区内（workingDir，或 workspaceScope 的可写根）。
+//       账本 JSON 是模型可写的工作区文件，一条指路工作区外的账目（如 ~/.ssh/id_rsa）
+//       若被复用会把任意文件读进来注册成 artifact——必须与 reference/output 的
+//       范围闸对称（返修 r1 安全项）。
 // 若上一次调用已 complete（模型看到了结果），完全相同的参数就是一次明确的
 // "再来一张 / 重新生成"，必须照常出新图（新路径、正常计费）。
 //
@@ -31,14 +35,12 @@ import * as path from 'path';
 import { createHash } from 'crypto';
 import type { ToolContext } from '../../../protocol/tools';
 import { getDatabase } from '../../../services/core/databaseService';
+import { isPathWithinRoot, resolveWorkspacePath } from '../../../runtime/workspaceScope';
 
 const LEDGER_FILENAME = 'generation-ledger.json';
 
 /** 账本条目上限：超了就按 updatedAt 淘汰最旧的，防 JSON 无界增长。 */
 const LEDGER_MAX_ENTRIES = 100;
-
-/** 与 nativeRecoveryHost 的工具执行事件查询同上限。 */
-const TOOL_EXECUTION_EVENT_LOOKUP_LIMIT = 500;
 
 /** 一条已落盘的生成产物（按 prompt 粒度）。 */
 export interface GenerationLedgerSavedOutput {
@@ -173,30 +175,38 @@ function findEntry(ledger: GenerationLedgerFile, input: {
 
 /**
  * 产出该账目的调用是否已把结果送达循环（判定规则 (b) 的第二支）。
- * begin 行带 toolCallId、complete 行只带 executionId（仓储契约），所以先按
- * toolCallId 收集 executionId，再看这些 id 上有没有"已送达"的 complete。
+ * 按 toolCallId 直查（getToolExecutionsBySessionAndToolCallId）：begin 行带
+ * toolCallId、complete 行只带 executionId（仓储契约），查询在 SQL 里按
+ * toolCallId 命中 begin 再带回同 executionId 的 complete，**与会话长度无关**——
+ * 会话窗口查询（ASC+LIMIT）在长会话里只剩最旧事件，近期调用的 begin 会被截出
+ * 窗口，把"已送达"错判成"未送达"（返修 r1）。
  * 查询本身失败（库不可用 / 模块缺件）按"已送达"处理——fail-safe 落回正常生成，
- * 不让异常态悄悄改写计费语义。
+ * 不让异常态悄悄改写计费语义。空结果（连 begin 都没记到）按"未送达"处理。
  */
 function priorCallDeliveredResult(sessionId: string, toolCallId: string | null): boolean {
   if (toolCallId === null) return false;
   let events: ToolExecutionEventLike[];
   try {
-    events = getDatabase().getToolExecutionsBySession(sessionId, TOOL_EXECUTION_EVENT_LOOKUP_LIMIT);
+    events = getDatabase().getToolExecutionsBySessionAndToolCallId(sessionId, toolCallId);
   } catch {
     return true;
   }
-  const executionIds = new Set(
-    events
-      .filter((event) => event.phase === 'begin' && event.toolCallId === toolCallId)
-      .map((event) => event.executionId),
-  );
-  if (executionIds.size === 0) return false;
-  return events.some((event) => (
-    event.phase === 'complete'
-    && executionIds.has(event.executionId)
-    && event.status !== 'recovered'
-  ));
+  return events.some((event) => event.phase === 'complete' && event.status !== 'recovered');
+}
+
+/**
+ * 账目里的绝对路径是否落在工作区内（判定规则 (c)，返修 r1 安全项）。
+ * 与写侧闸（imageGenerate 的 outputPathOutsideWorkspace）同形：必须在 workingDir
+ * 内，或在 workspaceScope 的可写根内。账本是模型可写的工作区文件，工作区外的
+ * 路径一律不认——防"伪造账目 → 复用链路把任意文件读进来注册成 artifact"。
+ */
+function ledgerPathInsideWorkspace(
+  absolutePath: string,
+  ctx: Pick<ToolContext, 'workingDir' | 'workspaceScope'>,
+): boolean {
+  if (isPathWithinRoot(absolutePath, ctx.workingDir)) return true;
+  if (!ctx.workspaceScope) return false;
+  return resolveWorkspacePath(ctx.workspaceScope, absolutePath, 'read_write') !== undefined;
 }
 
 function savedFileIntact(saved: GenerationLedgerSavedOutput): boolean {
@@ -209,11 +219,11 @@ function savedFileIntact(saved: GenerationLedgerSavedOutput): boolean {
 }
 
 /**
- * 调用开始时查可复用产物。返回通过 (a)(b) 两关的条目（可少于账目里的全部）；
+ * 调用开始时查可复用产物。返回通过 (a)(b)(c) 三关的条目（可少于账目里的全部）；
  * 任何异常都返回空数组（正常生成，绝不因账本阻断付费链路之外的行为）。
  */
 export function lookupReusableGenerationOutputs(input: {
-  ctx: Pick<ToolContext, 'sessionId' | 'currentToolCallId'>;
+  ctx: Pick<ToolContext, 'sessionId' | 'currentToolCallId' | 'workingDir' | 'workspaceScope'>;
   ledgerDir: string;
   toolName: string;
   fingerprint: string;
@@ -232,7 +242,9 @@ export function lookupReusableGenerationOutputs(input: {
     ) {
       return [];
     }
-    return entry.saved.filter(savedFileIntact);
+    return entry.saved.filter((saved) => (
+      ledgerPathInsideWorkspace(saved.absolutePath, input.ctx) && savedFileIntact(saved)
+    ));
   } catch {
     return [];
   }

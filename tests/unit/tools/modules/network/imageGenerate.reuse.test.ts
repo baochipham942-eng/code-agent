@@ -23,7 +23,10 @@ const service = vi.hoisted(() => ({
 
 const auth = vi.hoisted(() => ({ getCurrentUser: vi.fn(() => ({ isAdmin: false })) }));
 const config = vi.hoisted(() => ({ getApiKey: vi.fn(), onSettingsUpdated: vi.fn() }));
-const db = vi.hoisted(() => ({ getToolExecutionsBySession: vi.fn(() => [] as unknown[]) }));
+const db = vi.hoisted(() => ({
+  getToolExecutionsBySession: vi.fn(() => [] as unknown[]),
+  getToolExecutionsBySessionAndToolCallId: vi.fn((_sessionId: string, _toolCallId: string) => [] as unknown[]),
+}));
 
 vi.mock('../../../../../src/host/services/media/imageGenerationService', () => service);
 vi.mock('../../../../../src/host/services/auth/authService', () => ({
@@ -40,6 +43,7 @@ vi.mock('../../../../../src/host/services/core/databaseService', () => ({
 }));
 
 import { executeImageGenerate } from '../../../../../src/host/plugins/builtin/imageCreation/imageGenerate';
+import { computeImageGenerateFingerprint } from '../../../../../src/host/plugins/builtin/imageCreation/imageGenerateReuse';
 
 /** 带合法 PNG 头（宽@16 高@20）的产物字节：验收句/复用句能读出真实像素。 */
 function pngBytes(width = 720, height = 1280): Buffer {
@@ -75,6 +79,17 @@ function setExecutionEvents(
   events: Array<{ executionId: string; toolCallId?: string | null; phase: string; status?: string | null }>,
 ): void {
   db.getToolExecutionsBySession.mockReturnValue(events);
+  // 按 toolCallId 直查的仓储语义：begin 行按 tool_call_id 命中，complete 行按 executionId 带回。
+  db.getToolExecutionsBySessionAndToolCallId.mockImplementation(
+    (_sessionId: string, toolCallId: string) => {
+      const executionIds = new Set(
+        events
+          .filter((event) => event.phase === 'begin' && event.toolCallId === toolCallId)
+          .map((event) => event.executionId),
+      );
+      return events.filter((event) => executionIds.has(event.executionId));
+    },
+  );
 }
 
 describe('image_generate 复用账本', () => {
@@ -91,6 +106,8 @@ describe('image_generate 复用账本', () => {
     service.generateImageFromReference.mockImplementation(async () => ({ imageData: PNG_DATA_URL, actualModel: 'mock-reference-model' }));
     db.getToolExecutionsBySession.mockReset();
     db.getToolExecutionsBySession.mockReturnValue([]);
+    db.getToolExecutionsBySessionAndToolCallId.mockReset();
+    db.getToolExecutionsBySessionAndToolCallId.mockReturnValue([]);
     fetchSpy = vi.spyOn(globalThis, 'fetch');
   });
 
@@ -288,5 +305,94 @@ describe('image_generate 复用账本', () => {
     expect(replay.meta).toMatchObject({
       artifact: expect.objectContaining({ metadata: expect.objectContaining({ reused: true }) }),
     });
+  });
+
+  it('④账本被投毒（absolutePath 指向工作区外）：不复用、不读外部文件，照常付费生成', async () => {
+    // 攻击面（返修 r1 安全项）：账本 JSON 是模型可写的工作区文件。伪造一条 absolutePath
+    // 指向工作区外任意文件（如 ~/.ssh/id_rsa）的账目，再以匹配参数调 image_generate——
+    // 复用路径必须与 reference/output 的读范围闸对称，把这种账目拒之门外，
+    // 不把外部文件读进来注册成 image artifact。
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'image-generate-outside-'));
+    try {
+      const secret = path.join(outsideDir, 'secret.png');
+      fs.writeFileSync(secret, pngBytes(99, 99));
+      const args = { prompt: ['一只柯基'], output_file_path: 'images/out.png' };
+      const fingerprint = computeImageGenerateFingerprint({
+        prompts: ['一只柯基'],
+        referencePaths: [],
+        expandPrompt: false,
+        aspectRatio: '1:1',
+        outputFilePath: path.join(workspace, 'images/out.png'),
+      });
+      const ledgerDir = path.join(workspace, '.code-agent', 'artifacts', 'images');
+      fs.mkdirSync(ledgerDir, { recursive: true });
+      fs.writeFileSync(path.join(ledgerDir, 'generation-ledger.json'), JSON.stringify({
+        version: 1,
+        entries: [{
+          toolName: 'image_generate',
+          fingerprint,
+          sessionId: SESSION_ID,
+          toolCallId: 'call-A',
+          updatedAt: 1,
+          saved: [{
+            index: 1,
+            absolutePath: secret,
+            bytes: fs.statSync(secret).size,
+            actualModel: 'mock-model',
+          }],
+        }],
+      }));
+
+      // 同 toolCallId 重放（判定规则 (b) 第一支），唯独路径在工作区外——必须被范围闸拦下
+      const result = await executeImageGenerate(args, ctx(workspace, 'call-A'), allow);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(service.generateImage).toHaveBeenCalledTimes(1);
+      expect(result.output).not.toContain('复用上次生成结果');
+      expect(result.meta?.reused).toBeUndefined();
+      expect(result.meta?.imagePath).not.toBe(secret);
+    } finally {
+      fs.rmSync(outsideDir, { recursive: true, force: true });
+    }
+  });
+
+  it('②长会话（执行事件超窗口）：已 complete 的近期调用仍算已送达，再来一张照常生成', async () => {
+    // 返修 r1 判据：getToolExecutionsBySession 是 ASC+LIMIT 的会话窗口，长会话里只剩
+    // 最旧 500 条，近期调用的 begin/complete 会被截出窗口。送达判定必须按 toolCallId
+    // 直查（窗口无关），否则"再来一张"静默复用旧图、还谎报没有再计费。
+    const args = { prompt: ['一只柯基'] };
+    const first = await executeImageGenerate(args, ctx(workspace, 'call-A'), allow);
+    expect(first.ok).toBe(true);
+    expect(service.generateImage).toHaveBeenCalledTimes(1);
+
+    // 长会话现场：窗口查询只剩 500 条无关的旧事件；call-A 的 begin/complete 只能按
+    // toolCallId 直查拿到。
+    db.getToolExecutionsBySession.mockReturnValue(
+      Array.from({ length: 500 }, (_, i) => ({
+        executionId: 'old-' + i,
+        toolCallId: null,
+        phase: 'begin',
+        status: null,
+      })),
+    );
+    db.getToolExecutionsBySessionAndToolCallId.mockImplementation(
+      (_sessionId: string, toolCallId: string) => (
+        toolCallId === 'call-A'
+          ? [
+            { executionId: 'exec-1', toolCallId: 'call-A', phase: 'begin' },
+            { executionId: 'exec-1', phase: 'complete', status: 'success' },
+          ]
+          : []
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 5)); // 默认时间戳路径隔开，落新路径
+
+    const another = await executeImageGenerate(args, ctx(workspace, 'call-B'), allow);
+    expect(another.ok).toBe(true);
+    expect(service.generateImage).toHaveBeenCalledTimes(2);
+    if (!another.ok || !first.ok) return;
+    expect(another.output).not.toContain('复用上次生成结果');
+    expect(another.meta?.reused).toBeUndefined();
+    expect(another.meta?.imagePath).not.toBe(first.meta?.imagePath);
   });
 });

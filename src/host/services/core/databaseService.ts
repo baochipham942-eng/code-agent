@@ -1045,6 +1045,21 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     }
   }
 
+  /**
+   * 某会话内指定 toolCallId 的执行生命周期事件（begin 按 toolCallId 命中，complete 按
+   * executionId 带回）。按 toolCallId 直查、与会话长度无关——供送达判定用，不能拿
+   * getToolExecutionsBySession 的 ASC+LIMIT 窗口凑（长会话会截掉近期事件，返修 r1）。
+   * fail-safe，失败返回空。
+   */
+  getToolExecutionsBySessionAndToolCallId(sessionId: string, toolCallId: string) {
+    if (!this.db || !this.toolExecutionEventRepo) return [];
+    try {
+      return this.toolExecutionEventRepo.getBySessionAndToolCallId(sessionId, toolCallId);
+    } catch {
+      return [];
+    }
+  }
+
   /** 手机 companion 是否发过某类命令（语音能力迁移把用量当使用证据）。表不存在或库未开则 false。 */
   hasCompanionCommandAction(action: string): boolean {
     if (!this.db) return false;

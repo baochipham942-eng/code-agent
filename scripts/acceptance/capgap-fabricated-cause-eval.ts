@@ -113,6 +113,15 @@ const MAX_ASSISTANT_TURNS = 3;
 const RUNS_PER_CELL = 3;
 const COST_HARD_STOP_USD = 2;
 
+// 返修 r2：GLM coding plan 端点实测 429「您的账户已达到速率限制」（code 1302），短退避
+// 撑不过去——每笔请求前小睡 + 会话间再睡一档，429 额外长退避（递增 20s，至多 5 次）。
+// 只影响 --baseline 模式；r1 默认路径的行为不变。
+const R2_REQUEST_GAP_MS = 1500;
+const R2_CONV_GAP_MS = 4000;
+const R2_RATE_LIMIT_MAX_ATTEMPTS = 5;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 // ----------------------------------------------------------------------------
 // --self-check：离线验证检查 pattern 本身（不 import host 模块、不发网络请求）
 // ----------------------------------------------------------------------------
@@ -559,7 +568,21 @@ async function main(): Promise<void> {
         process.exit(1);
       }
       turns = turn;
-      const response = await provider.inference(messages, [screenshotToolDef], config);
+      const response = await (async () => {
+        if (!R2_BASELINE_ID) return provider.inference(messages, [screenshotToolDef], config);
+        await sleep(R2_REQUEST_GAP_MS);
+        for (let attempt = 1; ; attempt += 1) {
+          try {
+            return await provider.inference(messages, [screenshotToolDef], config);
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            if (attempt >= R2_RATE_LIMIT_MAX_ATTEMPTS || !(msg.includes('429') || msg.includes('速率限制'))) throw error;
+            const waitMs = attempt * 20_000;
+            console.error(`[rate-limit] 429（第 ${attempt} 次退避），等 ${waitMs / 1000}s 再试`);
+            await sleep(waitMs);
+          }
+        }
+      })();
       tokensIn += response.usage?.inputTokens || 0;
       tokensOut += response.usage?.outputTokens || 0;
       cumulativeUsd += costUsd(response.usage?.inputTokens || 0, response.usage?.outputTokens || 0, model);
@@ -620,6 +643,7 @@ async function main(): Promise<void> {
             + ` b=${row.checks.statesLacking ? 'ok' : 'MISS'} c=${row.checks.hasHedge ? 'ok' : 'MISS'}`
             + ` tok=${row.tokensIn}/${row.tokensOut}`,
           );
+          if (R2_BASELINE_ID) await sleep(R2_CONV_GAP_MS);
         }
       }
     }

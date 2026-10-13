@@ -180,8 +180,11 @@ function findEntry(ledger: GenerationLedgerFile, input: {
  * toolCallId 命中 begin 再带回同 executionId 的 complete，**与会话长度无关**——
  * 会话窗口查询（ASC+LIMIT）在长会话里只剩最旧事件，近期调用的 begin 会被截出
  * 窗口，把"已送达"错判成"未送达"（返修 r1）。
- * 查询本身失败（库不可用 / 模块缺件）按"已送达"处理——fail-safe 落回正常生成，
- * 不让异常态悄悄改写计费语义。空结果（连 begin 都没记到）按"未送达"处理。
+ * 查询本身失败（库未开 / 库锁 / 表损坏）按"已送达"处理——fail-safe 落回正常生成，
+ * 不让异常态悄悄改写计费语义。这条依赖服务侧契约：getToolExecutionsBySessionAndToolCallId
+ * 对"无法判定"**显式抛错**而非吞成空数组（返修 r2——服务侧吞错时本函数的 catch 是
+ * 死代码，异常态会全部漏进"未送达 → 复用"支）。空结果（连 begin 都没记到）按"未送达"
+ * 处理：begin 在工具调用的最前面落库，查不到说明该调用从未真正开始执行。
  */
 function priorCallDeliveredResult(sessionId: string, toolCallId: string | null): boolean {
   if (toolCallId === null) return false;

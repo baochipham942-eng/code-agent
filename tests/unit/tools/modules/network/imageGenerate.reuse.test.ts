@@ -395,4 +395,29 @@ describe('image_generate 复用账本', () => {
     expect(another.meta?.reused).toBeUndefined();
     expect(another.meta?.imagePath).not.toBe(first.meta?.imagePath);
   });
+
+  it('②送达判定查询本身失败（库锁/只读态/表损坏）：按"已送达"fail-safe，照常生成不复用', async () => {
+    // 返修 r2：服务侧 getToolExecutionsBySessionAndToolCallId 曾把查询失败吞成空数组，
+    // "无法判定"漏进"未送达 → 复用"支。用户对已送达的图以相同参数说"再来一张"，恰好
+    // 赶上事件账本查询失败时，会静默拿旧图冒充新图、还谎报"没有再计费"。查询失败必须
+    // 显式按"已送达"处理，落回正常付费生成（服务侧"抛错 ≠ 空数组"由
+    // databaseService.toolExecutionLedgerQuery.test.ts 单独钉死）。
+    const args = { prompt: ['一只柯基'], output_file_path: 'images/out.png' };
+    const first = await executeImageGenerate(args, ctx(workspace, 'call-A'), allow);
+    expect(first.ok).toBe(true);
+    expect(service.generateImage).toHaveBeenCalledTimes(1);
+
+    db.getToolExecutionsBySessionAndToolCallId.mockImplementation(() => {
+      throw new Error('SqliteError: database is locked');
+    });
+    service.generateImage.mockClear();
+
+    const another = await executeImageGenerate(args, ctx(workspace, 'call-B'), allow);
+    expect(another.ok).toBe(true);
+    expect(service.generateImage).toHaveBeenCalledTimes(1); // fail-safe：重新付费生成
+    if (!another.ok) return;
+    expect(another.output).not.toContain('复用上次生成结果');
+    expect(another.meta?.reused).toBeUndefined();
+    expect((another.meta?.per_request as Array<{ reused?: boolean }>)[0].reused).toBeUndefined();
+  });
 });

@@ -23,6 +23,11 @@
 // 兼容直连，非注册 provider，价格硬编码本文件）→ moonshot → longcat → 非零退出。
 // Key 只打印 set/unset，绝不进 argv/日志/JSON。
 //
+// 返修 r2（编排 2026-10-13）：`--baseline <zhipu-coding|stepfun-step-plan>` 指定更强
+// 订阅基线（各包月不按量 → 价 0、token 照记；付费 key 一律不用）。只探活并使用指定
+// 基线，JSON 落 fabricated-cause-r2-<id>.json，不覆盖 r1 终评 JSON；场景、n、检查
+// pattern、通过判定与 r1 预登记口径完全同一段代码。
+//
 // 顶层只 import node 内置与 _helpers：CODE_AGENT_DATA_DIR 必须先于一切 host 模块
 // 落定（对齐 snapshot-replay.ts 的 import 纪律，录制材料不落真实 ~/.code-agent）。
 // ============================================================================
@@ -35,7 +40,13 @@ import { fileURLToPath } from 'url';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '../..');
-const OUT_JSON = path.join(repoRoot, 'docs/research/assets/2026-09-30-capgap-eval/fabricated-cause.json');
+
+// 返修 r2：--baseline <zhipu-coding|stepfun-step-plan> 选订阅基线，JSON 按基线分文件。
+const baselineArgIdx = process.argv.indexOf('--baseline');
+const R2_BASELINE_ID = baselineArgIdx >= 0 ? process.argv[baselineArgIdx + 1] : undefined;
+const OUT_JSON = R2_BASELINE_ID
+  ? path.join(repoRoot, `docs/research/assets/2026-09-30-capgap-eval/fabricated-cause-r2-${R2_BASELINE_ID}.json`)
+  : path.join(repoRoot, 'docs/research/assets/2026-09-30-capgap-eval/fabricated-cause.json');
 
 const SCRATCH_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'capgap-eval-'));
 process.env.CODE_AGENT_DATA_DIR = SCRATCH_DATA_DIR;
@@ -189,7 +200,40 @@ function keyPresence(): KeyPresence {
 const STEPFUN_BASE_URL = 'https://api.stepfun.com/v1';
 const STEPFUN_PRICE = { inputPerMTok: 0.1, outputPerMTok: 0.3 };
 
-async function resolveModel(): Promise<ResolvedModel> {
+// ----------------------------------------------------------------------------
+// 返修 r2 订阅基线（编排 2026-10-13）：均包月不按量 → 价 0、token 照记；付费 key
+// （DEEPSEEK/MOONSHOT/LONGCAT/千问）一律不用。
+// ----------------------------------------------------------------------------
+
+interface R2BaselineSpec {
+  providerId: string;
+  model: string;
+  baseUrl: string;
+  apiKeyEnv: string;
+  priceNote: string;
+}
+
+const R2_BASELINES: Record<string, R2BaselineSpec> = {
+  // GLM 订阅 coding 端点。与注册 provider 的 0ki 中转 codingBaseUrl
+  // （src/shared/constants/providers.ts 的 zhipuCoding）不同：编排指定官方 bigmodel 域名。
+  'zhipu-coding': {
+    providerId: 'zhipu',
+    model: 'glm-5.3',
+    baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
+    apiKeyEnv: 'ZHIPU_CODING_API_KEY',
+    priceNote: 'GLM 订阅（open.bigmodel.cn coding 端点，包月不按量，价 0，token 照记）',
+  },
+  // Step Plan 订阅专用端点；同一 key 打普通 api.stepfun.com/v1 会 402 quota_exceeded。
+  'stepfun-step-plan': {
+    providerId: 'stepfun',
+    model: 'step-5-preview',
+    baseUrl: 'https://api.stepfun.com/step_plan/v1',
+    apiKeyEnv: 'STEPFUN_API_KEY',
+    priceNote: 'Step Plan 订阅（api.stepfun.com step_plan 端点，包月不按量，价 0，token 照记）',
+  },
+};
+
+async function resolveModel(r2BaselineId?: string): Promise<ResolvedModel> {
   // LongCatProvider 不在 providers/index.ts 的导出面里，三类都从各自文件直接导入。
   const { DeepSeekProvider } = await import('../../src/host/model/providers/deepseekProvider.ts');
   const { MoonshotProvider } = await import('../../src/host/model/providers/moonshotProvider.ts');
@@ -197,6 +241,63 @@ async function resolveModel(): Promise<ResolvedModel> {
   const { ZhipuProvider } = await import('../../src/host/model/providers/zhipuProvider.ts');
   const base = await import('../../src/host/model/providers/baseOpenAIProvider.ts');
   const pricing = await import('../../src/shared/pricing/resolveModelPrice.ts');
+
+  // ---- 返修 r2：指定订阅基线，只探活这一家（编排 2026-10-13）----
+  if (r2BaselineId) {
+    const spec = R2_BASELINES[r2BaselineId];
+    if (!spec) {
+      console.error(`[model] 未知 --baseline "${r2BaselineId}"（可用：${Object.keys(R2_BASELINES).join(' | ')}）`);
+      process.exit(1);
+    }
+    console.log(`[model] r2 baseline ${spec.providerId}/${spec.model} @ ${spec.baseUrl}；key ${spec.apiKeyEnv} ${process.env[spec.apiKeyEnv] ? 'set' : 'unset'}`);
+    if (!process.env[spec.apiKeyEnv]) {
+      console.error(`[model] ${spec.apiKeyEnv} 未配置（fail-loud 退出，不产出 JSON）`);
+      process.exit(1);
+    }
+    // 订阅端点不是注册 Neo provider：OpenAI 兼容直连（BaseOpenAIProvider 子类）。
+    class SubscriptionProvider extends base.BaseOpenAIProvider {
+      readonly name = `${spec.providerId}-subscription`;
+      protected getBaseUrl(): string {
+        return spec.baseUrl;
+      }
+      protected getApiKey(): string {
+        return process.env[spec.apiKeyEnv] || '';
+      }
+    }
+    const config: import('../../src/shared/contract/model.ts').ModelConfig = {
+      provider: 'openai',
+      model: spec.model,
+      apiKey: process.env[spec.apiKeyEnv],
+      maxTokens: 2048,
+    };
+    try {
+      await new SubscriptionProvider().inference(
+        [{ role: 'user', content: 'hi' }],
+        [],
+        config,
+        undefined,
+        undefined,
+        { forceNonStreaming: true, requestTimeoutMs: 30_000 },
+      );
+    } catch (error) {
+      // 探活失败只记首行（不含 key 本身），fail-loud 退出
+      const firstLine = error instanceof Error ? error.message.split('\n')[0] : String(error);
+      console.error(`[model] ${spec.providerId}/${spec.model}: probe failed (${firstLine})`);
+      process.exit(1);
+    }
+    console.log(`[model] using ${spec.providerId}/${spec.model} (probe OK; ${spec.priceNote})`);
+    return {
+      providerId: spec.providerId,
+      model: spec.model,
+      priceInputPerMTok: 0,
+      priceOutputPerMTok: 0,
+      priceNote: spec.priceNote,
+      makeProvider: async () => new SubscriptionProvider(),
+      buildConfig: async () => ({ ...config, apiKey: process.env[spec.apiKeyEnv] }),
+    };
+  }
+
+  // ---- 以下为 r1 原解析顺序（保留原样；返修 r2 不跑付费 key，不走到这里）----
 
   // StepFun 不是注册 Neo provider：OpenAI 兼容直连（BaseOpenAIProvider 子类）。
   class StepFunProvider extends base.BaseOpenAIProvider {
@@ -419,7 +520,7 @@ async function main(): Promise<void> {
   }
   console.log('[failure-text] S1/S2 注入成功（真实 screenshotTool.execute 产物，下文逐字贴出）');
 
-  const model = await resolveModel();
+  const model = await resolveModel(R2_BASELINE_ID);
   const provider = await model.makeProvider();
   const config = await model.buildConfig();
 

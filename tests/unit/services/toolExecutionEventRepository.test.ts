@@ -140,6 +140,38 @@ describe('ToolExecutionEventRepository（事件账本第二期 · 执行生命�
     }
   });
 
+  it('getBySessionAndToolCallId 按 toolCallId 直查带回完整对（长会话窗口截不断）', () => {
+    const db = freshDb();
+    try {
+      const repo = new ToolExecutionEventRepository(db);
+      // 600 条旧事件把 getBySession 的 500 窗口占满（长会话缺陷现场）
+      for (let i = 0; i < 600; i += 1) {
+        repo.appendBegin({
+          executionId: 'old-' + i, sessionId: 's1', toolName: 'Read',
+          summary: 'r', params: {}, recordedAt: i,
+        });
+      }
+      // 窗口外的近期调用：begin（带 toolCallId）+ 已送达 complete（只带 executionId）
+      repo.appendBegin({
+        executionId: 'recent-1', sessionId: 's1', toolName: 'image_generate',
+        summary: 'img', params: {}, toolCallId: 'call-recent', recordedAt: 1000,
+      });
+      repo.appendComplete({ executionId: 'recent-1', toolName: 'image_generate', status: 'success', recordedAt: 1001 });
+
+      // 会话窗口查询截不到 recent-1（ASC+LIMIT 只剩最旧 500 条）
+      expect(repo.getBySession('s1', 500).some((r) => r.executionId === 'recent-1')).toBe(false);
+      // 按 toolCallId 直查：begin + 同 executionId 的 complete 全带回，与会话长度无关
+      const events = repo.getBySessionAndToolCallId('s1', 'call-recent');
+      expect(events.map((e) => e.phase)).toEqual(['begin', 'complete']);
+      expect(events[1].status).toBe('success');
+      // 别的 toolCallId / 别的会话不串账
+      expect(repo.getBySessionAndToolCallId('s1', 'call-other')).toEqual([]);
+      expect(repo.getBySessionAndToolCallId('s2', 'call-recent')).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
   it('append-only 不变量：仓储不暴露任何 update / delete 方法', () => {
     const repo = new ToolExecutionEventRepository(freshDb());
     const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(repo));

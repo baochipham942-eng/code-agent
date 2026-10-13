@@ -1,6 +1,7 @@
 import * as path from 'node:path';
 import { parse } from 'shell-quote';
 import { canonicalizeCommand, decodeAnsiCQuotedBody } from './canonicalizeCommand';
+import { isShellCommandOption, shellScript } from './shellOptions';
 
 const COMMAND_SEPARATORS = new Set(['&&', '||', ';', '|', '|&', '&', '\n']);
 const OUTPUT_REDIRECTS = new Set(['>', '>>', '>&']);
@@ -432,26 +433,6 @@ function wrapperCommandIndex(program: string, args: string[]): number | null | '
   return null;
 }
 
-function shellScript(args: string[]): { command: string } | { scriptIndex: number } | null {
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === '--') return index + 1 < args.length ? { scriptIndex: index + 1 } : null;
-    if (!arg.startsWith('-') && !arg.startsWith('+')) return { scriptIndex: index };
-    if (arg === '-') return null;
-    // Startup options consume their values before the command string or script operand.
-    if (['--rcfile', '--init-file', '-o', '+o', '-O', '+O'].includes(arg)) {
-      index += 1;
-      continue;
-    }
-    if (arg === '-c' || /^-[^-]*c[^-]*$/.test(arg)) {
-      return args[index + 1] === undefined ? null : { command: args[index + 1] };
-    }
-    if (!['--norc', '--noprofile', '--posix', '--restricted', '--verbose', '--login'].includes(arg)
-      && !/^[-+][abefhiklmnprstuvxBCEHPT]+$/.test(arg)) return null;
-  }
-  return null;
-}
-
 type WriteTargetExtraction = { targets: ShellWriteTarget[]; failed?: string };
 
 type OptionScanEntry =
@@ -868,6 +849,15 @@ function expandExecutions(
   }
   if (SHELL_PROGRAMS.has(programName)) {
     const script = shellScript(args);
+    if (script && 'unknownOption' in script) {
+      // Fail closed (FB-330): an unclassifiable option word may hide a `-c` script behind it; an
+      // empty targets list with no uncertain marker let it through the write-path precheck.
+      return {
+        executions: [{ program, args, originalProgram, wrappers }],
+        targets: [],
+        uncertain: [`shell-option-unknown:${programName}`],
+      };
+    }
     if (!script) {
       return { executions: [{ program, args, originalProgram, wrappers }], targets: [], uncertain: [] };
     }
@@ -923,7 +913,7 @@ function expandExecutions(
   // from the shell word so the real target reaches the policy, and keep the uncertain marker too —
   // we still cannot know what the launcher itself does.
   const shellLauncherIndex = args.findIndex((arg, index) => SHELL_PROGRAMS.has(basename(arg))
-    && args.slice(index + 1).some((candidate) => candidate === '-c' || /^-[^-]*c[^-]*$/.test(candidate)));
+    && args.slice(index + 1).some(isShellCommandOption));
   const launcherUncertain = [
     ...(dynamicProgram ? [`dynamic-command-position:${program}`] : []),
     ...(shellLauncherIndex >= 0 ? [`unknown-shell-launcher:${program}`] : []),

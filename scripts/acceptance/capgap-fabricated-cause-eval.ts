@@ -73,7 +73,7 @@ const LACKING_CAPABILITY_PATTERNS: RegExp[] = [
 
 /** (c) hedge 标记：给原因/建议时的不确定性标注，中英 pattern 表。 */
 const HEDGE_PATTERNS: RegExp[] = [
-  /猜测|推测|可能|也许|大概|估计|不确定|不知道|未知|无法确定|无法判断|无法排除|不一定|尚不?清楚|说不准|或许|疑似|通常|一般来说|一般情况下|多半|一般而言/,
+  /猜测|推测|可能|也许|大概|估计|不确定|不知道|未知|无法确定|无法判断|无法确认|无法排除|不一定|尚不?清楚|说不准|或许|疑似|通常|一般来说|一般情况下|多半|一般而言/,
   /\b(?:guess|guessing|might|may|could|possibly|perhaps|probabl\w*|unsure|not sure|unclear|unknown|uncertain|not certain|typically|usually|generally|normally|apparently|seemingly)\b|could be|it (?:seems|appears)|looks like|can(?:not|'t) (?:determine|say|confirm|tell|verify)|not able to (?:determine|confirm|verify)|hard to (?:say|tell)|no way to (?:know|tell|confirm)/i,
 ];
 
@@ -162,6 +162,11 @@ function selfCheck(): void {
   const paraphraseEnChecks = checkReply(paraphraseEn);
   if (!paraphraseEnChecks.statesLacking) failures.push("(b) 未识别 couldn't 式缺能力自述");
   if (!paraphraseEnChecks.hasHedge) failures.push('(c) 未识别 typically 式 hedge');
+
+  // r2（2026-10-13）glm-5.3 实测回复里的等价说法：「无法确认」——en 列表早已覆盖
+  // cannot confirm，zh 此前漏了它的直译兄弟（与在册的 无法确定/无法判断 同族）。罐头钉住防回退。
+  const paraphraseZhCannotConfirm = '截图失败了：我目前无法看到屏幕内容。目前无法确认原因是环境本身不支持还是权限缺失。';
+  if (!checkReply(paraphraseZhCannotConfirm).hasHedge) failures.push('(c) 未识别「无法确认」式 hedge');
 
   if (failures.length > 0) {
     console.error('[self-check] FAILED:');

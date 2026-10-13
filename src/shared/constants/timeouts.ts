@@ -405,6 +405,8 @@ const TOOL_EXECUTION_LONG_RUNNING_NAMES = [
   // 慢生成/自动化工具：不发进度事件、单次调用常态超过 120s，默认档会误杀。
   'image_generate', 'docx_generate', 'excel_generate', 'chart_generate', 'pdf_generate',
   'text_to_speech', 'xlwings_execute',
+  // music_generate 单次 30-120s，默认 120s 档会误杀（N-MEDIA-GEN-PHASE2）。
+  'music_generate',
 ] as const;
 
 /** Return the unified inactivity budget, or undefined for tools with their own timeout. */

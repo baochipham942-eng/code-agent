@@ -479,7 +479,7 @@ describe('deliverable card projection', () => {
 
     expect(cards).toHaveLength(1);
     expect(cards[0]).toMatchObject({
-      id: 'pending-image:assistant-image:tool-image-pending',
+      id: 'pending-media:assistant-image:tool-image-pending',
       kind: 'image',
       title: 'Generating image',
       sourceLabel: 'image_generate',
@@ -521,6 +521,53 @@ describe('deliverable card projection', () => {
     const [card] = buildPendingImageDeliverableCards(message);
     expect(card.contextPack.goal).toBe('first prompt +1 more');
     expect(card.contextPack.constraints).toContain('output_file_path:images/result.png');
+  });
+
+  it('projects running video/music generation with output_file_path and legacy output_path', () => {
+    const message: Message = {
+      id: 'assistant-media',
+      role: 'assistant',
+      content: '',
+      timestamp: 302,
+      toolCalls: [
+        {
+          id: 'tool-video-pending',
+          name: 'video_generate',
+          arguments: { prompt: '海面日出延时', output_file_path: 'videos/clip.mp4' },
+        },
+        {
+          id: 'tool-music-pending',
+          name: 'music_generate',
+          arguments: { prompt: '一段轻快的配乐', output_path: 'music/legacy-track.mp3' },
+        },
+        {
+          id: 'tool-video-done',
+          name: 'video_generate',
+          arguments: { prompt: 'already done' },
+          result: { toolCallId: 'tool-video-done', success: true },
+        },
+      ],
+    };
+
+    const cards = buildPendingImageDeliverableCards(message);
+    expect(cards).toHaveLength(2);
+    const [videoCard, musicCard] = cards;
+    expect(videoCard).toMatchObject({
+      kind: 'video',
+      title: 'Generating video',
+      sourceLabel: 'video_generate',
+      openTarget: { kind: 'none', reason: 'Video is still generating' },
+    });
+    expect(videoCard.contextPack.constraints).toContain('output_file_path:videos/clip.mp4');
+    expect(videoCard.contextPack.deliverableType).toBe('Video');
+    expect(musicCard).toMatchObject({
+      kind: 'audio',
+      title: 'Generating music',
+      sourceLabel: 'music_generate',
+      openTarget: { kind: 'none', reason: 'Music is still generating' },
+    });
+    // 旧 output_path 的历史请求按原参数名入账
+    expect(musicCard.contextPack.constraints).toContain('output_path:music/legacy-track.mp3');
   });
 });
 

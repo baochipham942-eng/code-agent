@@ -32,7 +32,7 @@ export function createTelemetryAdapter(
   const toolCallContext = new Map<string, { name: string; args?: Record<string, unknown> }>();
 
   return {
-    onTurnStart(turnId: string, turnNumber: number, userPrompt: string, parentTurnId?: string): void {
+    onTurnStart(turnId: string, turnNumber: number, userPrompt: string, parentTurnId?: string, _turnSource?: 'delegation'): void {
       const parentSpanId = parentTurnId ? turnSpans.get(parentTurnId) : undefined;
       const span = svc.startAgentSpan(
         turnId,

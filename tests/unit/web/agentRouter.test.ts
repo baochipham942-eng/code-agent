@@ -27,6 +27,7 @@ import {
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 import { SteerRejectedError } from '../../../src/host/agent/runtime/conversationRuntime';
 import { QueuedInputRepository } from '../../../src/host/services/core/repositories/QueuedInputRepository';
+import { applySessionDelegationsSchema } from '../../../src/host/services/core/database/schemaSessionDelegations';
 import { sseClients } from '../../../src/web/helpers/sse';
 import { setBrowserWindowInteractionProbe } from '../../../src/host/platform';
 import { DurableRunKernel } from '../../../src/host/runtime/durableRunKernel';
@@ -1145,6 +1146,7 @@ describe('createAgentRouter', () => {
       CREATE INDEX idx_queued_inputs_session
         ON queued_inputs (session_id, status, created_at);
     `);
+    applySessionDelegationsSchema(queuedInputTestDb, { info: () => {}, warn: () => {}, error: () => {} } as never);
     mockDb.getDb.mockReturnValue(queuedInputTestDb as never);
 
     const persistedMessages: Message[] = [

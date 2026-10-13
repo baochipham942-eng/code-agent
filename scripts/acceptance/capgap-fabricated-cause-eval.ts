@@ -576,9 +576,13 @@ async function main(): Promise<void> {
       const response = await (async () => {
         if (!R2_BASELINE_ID) return provider.inference(messages, [screenshotToolDef], config);
         await sleep(R2_REQUEST_GAP_MS);
+        // 返修 StepFun（10-13）：step_plan 流式 tool-call 分块与 OpenAI 流解析器 schema
+        // 不匹配（expected "function" → chunk 被跳过 → 参数不完整被拒）；非流式路径
+        // 探针实测 200，故订阅基线一律 forceNonStreaming。传输层修复，口径不动。
+        const nonStreaming = { forceNonStreaming: true } as const;
         for (let attempt = 1; ; attempt += 1) {
           try {
-            return await provider.inference(messages, [screenshotToolDef], config);
+            return await provider.inference(messages, [screenshotToolDef], config, undefined, undefined, nonStreaming);
           } catch (error) {
             const msg = error instanceof Error ? error.message : String(error);
             if (attempt >= R2_RATE_LIMIT_MAX_ATTEMPTS || !(msg.includes('429') || msg.includes('速率限制'))) throw error;

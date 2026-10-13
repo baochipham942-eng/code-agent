@@ -119,6 +119,30 @@ describe('session media assets', () => {
     expect(assets[0]?.sources.map((source) => source.source)).toEqual(['tool_result', 'artifact']);
   });
 
+  it('projects every image_generate artifact from a batch result without sibling lineage', () => {
+    const assets = buildToolResultMediaAssets({
+      id: 'tool-batch',
+      name: 'image_generate',
+      arguments: { prompt: ['one', 'two'] },
+      result: {
+        toolCallId: 'tool-batch',
+        success: true,
+        metadata: {
+          imagePath: '/repo/one.png',
+          outputPath: '/repo/one.png',
+          outputImagePaths: ['/repo/one.png', '/repo/two.png'],
+          artifacts: [
+            { artifactId: 'a1', kind: 'image', path: '/repo/one.png', mimeType: 'image/png' },
+            { artifactId: 'a2', kind: 'image', path: '/repo/two.png', mimeType: 'image/png' },
+          ],
+        },
+      },
+    });
+    expect(assets.map((asset) => asset.path)).toEqual(['/repo/one.png', '/repo/two.png']);
+    // 同批生成的其它图片不是输入素材：批量输出不得挂任何 parent refs（返修 r1）。
+    expect(assets.filter((asset) => (asset.parentAssetIds ?? []).length > 0)).toEqual([]);
+  });
+
   it('marks large inline base64 media so renderers can avoid treating it as an ordinary lightweight src', () => {
     const payload = 'a'.repeat(Math.ceil((LARGE_INLINE_MEDIA_BYTES + 1) * 4 / 3));
     const dataUrl = `data:image/png;base64,${payload}`;

@@ -502,6 +502,26 @@ describe('deliverable card projection', () => {
       },
     });
   });
+
+  it('summarizes batch prompts and the renamed output path', () => {
+    const message: Message = {
+      id: 'assistant-image-batch',
+      role: 'assistant',
+      content: '',
+      timestamp: 301,
+      toolCalls: [{
+        id: 'tool-image-batch',
+        name: 'image_generate',
+        arguments: {
+          prompt: ['first prompt', 'second prompt'],
+          output_file_path: 'images/result.png',
+        },
+      }],
+    };
+    const [card] = buildPendingImageDeliverableCards(message);
+    expect(card.contextPack.goal).toBe('first prompt +1 more');
+    expect(card.contextPack.constraints).toContain('output_file_path:images/result.png');
+  });
 });
 
 // N-DELIVERABLE-WORKDIR-DEFAULT：无文件夹新会话的产物落在按会话目录（任务_MMDD_<标题>）。

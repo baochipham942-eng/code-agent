@@ -20,15 +20,17 @@ import { safeExecDetached } from '../../../utils/safeShell';
 import { getConfigService } from '../../../services';
 import { getAuthService } from '../../../services/auth/authService';
 import { MODEL_API_ENDPOINTS, DEFAULT_MODELS } from '../../../../shared/constants';
+import type { ToolArtifact } from '../../../../shared/contract/artifactBlob';
 import { createFileArtifact, createVirtualArtifact } from '../../../tools/artifacts/artifactMeta';
 import { buildMediaArtifactMetadata } from '../../../tools/artifacts/mediaArtifactMetadata';
 import { imageGenerateSchema as schema } from './imageGenerate.schema';
 import { isPathWithinRoot, resolveWorkspacePath } from '../../../runtime/workspaceScope';
+import { runImageGenerateBatch } from './imageGenerateRequests';
 import {
   determineImageEngine,
   generateImage,
+  generateImageFromReference,
   downloadImageAsBase64,
-  isImageUrl,
   type ImageEngine,
 } from '../../../services/media/imageGenerationService';
 import { readChatCompletionText } from '../typedResponseGuards';
@@ -94,12 +96,45 @@ Subject (with appearance) + Environment + Lighting + Composition/Camera + Style/
 8. **30-80 words sweet spot**: Too short lacks control, too long dilutes attention
 9. **Output only the enhanced prompt, no explanation**`;
 
-interface ImageGenerateParams {
-  prompt: string;
-  expand_prompt?: boolean;
-  aspect_ratio?: '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
-  output_path?: string;
-  style?: 'photo' | 'illustration' | '3d' | 'anime';
+interface ValidatedImageGenerateParams {
+  prompts: string[];
+  referencePaths: string[];
+  expandPrompt: boolean;
+  aspectRatio: string;
+  outputFilePath?: string;
+  style?: string;
+}
+
+interface SavedImage {
+  absolutePath: string;
+  relativePath: string;
+  bytes: number;
+  artifact: ToolArtifact;
+  verdict: string;
+  actualModel: string;
+  finalPrompt: string;
+  imageBase64: string;
+  mimeType: string;
+  generationTimeMs: number;
+  dimensions?: { width: number; height: number };
+}
+
+interface PerRequest {
+  index: number;
+  status: 'saved' | 'failed';
+  bytes?: number;
+  path?: string;
+  error?: string;
+}
+
+class ImageGenerateRequestFailure extends Error {
+  readonly artifact?: ToolArtifact;
+
+  constructor(message: string, artifact?: ToolArtifact) {
+    super(message);
+    this.name = 'ImageGenerateRequestFailure';
+    this.artifact = artifact;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -221,16 +256,150 @@ function getDataUrlMimeType(data: string): string | undefined {
   return match?.[1];
 }
 
-function defaultImageOutputPath(workingDir: string): string {
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 23);
-  return path.join(workingDir, DEFAULT_IMAGE_ARTIFACT_DIR, `generated-${timestamp}.png`);
+function isRemoteImageData(data: string): boolean {
+  return data.startsWith('http://') || data.startsWith('https://');
 }
 
-/** Caller-supplied output_path only. The default artifact path is not passed here. */
+function defaultImageOutputPath(workingDir: string, timestamp: string, index: number): string {
+  return path.join(workingDir, DEFAULT_IMAGE_ARTIFACT_DIR, `generated-${timestamp}-${index}.png`);
+}
+
+/** Caller-supplied output_file_path only. The default artifact path is not passed here. */
 function outputPathOutsideWorkspace(resolved: string, ctx: ToolContext): boolean {
   if (isPathWithinRoot(resolved, ctx.workingDir)) return false;
   if (!ctx.workspaceScope) return true;
   return resolveWorkspacePath(ctx.workspaceScope, resolved, 'read_write') === undefined;
+}
+
+function resolveReadableWorkspacePath(candidate: string, ctx: ToolContext): string | undefined {
+  const resolved = path.resolve(ctx.workingDir, candidate);
+  if (isPathWithinRoot(resolved, ctx.workingDir)) return resolved;
+  if (!ctx.workspaceScope) return undefined;
+  return resolveWorkspacePath(ctx.workspaceScope, resolved, 'read')?.canonicalPath;
+}
+
+function workspaceRelativePath(absolutePath: string, ctx: ToolContext): string {
+  if (ctx.workspaceScope) {
+    const match = resolveWorkspacePath(ctx.workspaceScope, absolutePath, 'read');
+    if (match) return match.relativePath || path.basename(absolutePath);
+  }
+  return path.relative(ctx.workingDir, absolutePath) || path.basename(absolutePath);
+}
+
+function indexedOutputPath(basePath: string, index: number, count: number): string {
+  if (count <= 1) return basePath;
+  const extension = path.extname(basePath);
+  return extension
+    ? `${basePath.slice(0, -extension.length)}-${index}${extension}`
+    : `${basePath}-${index}`;
+}
+
+function referenceMimeType(referencePath: string): string {
+  switch (path.extname(referencePath).toLowerCase()) {
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.webp':
+      return 'image/webp';
+    default:
+      return 'image/png';
+  }
+}
+
+function readReferenceAsDataUrl(referencePath: string): string {
+  return `data:${referenceMimeType(referencePath)};base64,${fs.readFileSync(referencePath).toString('base64')}`;
+}
+
+function validateImageGenerateArgs(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+): { ok: true; params: ValidatedImageGenerateParams } | { ok: false; error: string; meta?: Record<string, unknown> } {
+  if (Object.prototype.hasOwnProperty.call(args, 'output_path')) {
+    return { ok: false, error: 'output_path was renamed to output_file_path; use output_file_path' };
+  }
+
+  const rawPrompt = args.prompt;
+  let prompts: string[];
+  if (typeof rawPrompt === 'string') {
+    prompts = [rawPrompt];
+  } else if (Array.isArray(rawPrompt)) {
+    if (rawPrompt.some((prompt) => typeof prompt !== 'string')) {
+      return { ok: false, error: 'prompt items must be non-empty strings' };
+    }
+    prompts = rawPrompt.reduce<string[]>((items, prompt) => {
+      items.push(prompt as string);
+      return items;
+    }, []);
+  } else {
+    return { ok: false, error: 'prompt must be an array of strings' };
+  }
+  if (prompts.length < 1) return { ok: false, error: 'prompt must contain at least one item' };
+  if (prompts.length > 10) return { ok: false, error: 'prompt cannot contain more than 10 items' };
+  if (prompts.some((prompt) => typeof prompt !== 'string' || prompt.length === 0)) {
+    return { ok: false, error: 'prompt items must be non-empty strings' };
+  }
+
+  const rawReferences = args.reference_images;
+  if (rawReferences !== undefined && !Array.isArray(rawReferences)) {
+    return { ok: false, error: 'reference_images must be an array of workspace paths' };
+  }
+  const referenceValues = rawReferences === undefined ? [] : rawReferences;
+  if (referenceValues.length > 1) {
+    return { ok: false, error: 'reference_images cannot contain more than 1 item' };
+  }
+
+  const referencePaths: string[] = [];
+  for (const reference of referenceValues) {
+    if (typeof reference !== 'string' || reference.length === 0) {
+      return { ok: false, error: 'reference_images items must be non-empty strings' };
+    }
+    const resolved = resolveReadableWorkspacePath(reference, ctx);
+    if (!resolved) return { ok: false, error: `reference image "${reference}" must be inside the workspace` };
+    const extension = path.extname(resolved).toLowerCase();
+    if (!['.png', '.jpg', '.jpeg', '.webp'].includes(extension)) {
+      return { ok: false, error: `reference image "${reference}" must be a png, jpg, jpeg, or webp file` };
+    }
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(resolved);
+    } catch {
+      return { ok: false, error: `reference image "${reference}" does not exist` };
+    }
+    if (!stat.isFile()) return { ok: false, error: `reference image "${reference}" does not exist` };
+    if (stat.size > 10 * 1024 * 1024) {
+      return { ok: false, error: `reference image "${reference}" exceeds the 10 MB limit` };
+    }
+    referencePaths.push(resolved);
+  }
+
+  const outputFilePath = args.output_file_path;
+  if (outputFilePath !== undefined && typeof outputFilePath !== 'string') {
+    return { ok: false, error: 'output_file_path must be a workspace path' };
+  }
+  if (typeof outputFilePath === 'string' && outputFilePath.length > 0) {
+    const resolvedOutputPath = path.resolve(ctx.workingDir, outputFilePath);
+    if (outputPathOutsideWorkspace(resolvedOutputPath, ctx)) {
+      return {
+        ok: false,
+        error: `output_file_path "${resolvedOutputPath}" must be inside the workspace`,
+        meta: { outputPath: resolvedOutputPath },
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    params: {
+      prompts,
+      referencePaths,
+      expandPrompt: args.expand_prompt === true,
+      aspectRatio: typeof args.aspect_ratio === 'string' ? args.aspect_ratio : '1:1',
+      outputFilePath: typeof outputFilePath === 'string' && outputFilePath.length > 0
+        ? path.resolve(ctx.workingDir, outputFilePath)
+        : undefined,
+      style: typeof args.style === 'string' ? args.style : undefined,
+    },
+  };
 }
 
 // expandPromptWithLLM 还需要一个带超时的 fetch helper，独立于 service。
@@ -284,7 +453,7 @@ async function expandPromptWithLLM(
   const fallback = style ? addStyleSuffix(prompt, style) : prompt;
 
   if (engine === 'cogview') {
-    const zhipuApiKey = configService.getApiKey('zhipu')!;
+    const zhipuApiKey = configService.getApiKey('zhipu') ?? '';
     const userPrompt = style ? `风格: ${style}\n描述: ${prompt}` : prompt;
     try {
       const response = await fetchWithAbort(
@@ -385,6 +554,8 @@ async function expandPromptWithLLM(
   return fallback;
 }
 
+
+
 export async function executeImageGenerate(
   args: Record<string, unknown>,
   ctx: ToolContext,
@@ -393,58 +564,24 @@ export async function executeImageGenerate(
 ): Promise<ToolResult<string>> {
   const permit = await canUseTool(schema.name, args);
   if (!permit.allow) {
-    return { ok: false, error: `permission denied: ${permit.reason}`, code: 'PERMISSION_DENIED' };
+    return { ok: false, error: 'permission denied: ' + permit.reason, code: 'PERMISSION_DENIED' };
   }
   if (ctx.abortSignal.aborted) {
     return { ok: false, error: 'aborted', code: 'ABORTED' };
   }
-
+  const validation = validateImageGenerateArgs(args, ctx);
+  if (!validation.ok) {
+    return { ok: false, error: validation.error, code: 'INVALID_ARGS', meta: validation.meta };
+  }
+  const params = validation.params;
+  const count = params.prompts.length;
   onProgress?.({ stage: 'starting', detail: schema.name });
-
-  const params = args as unknown as ImageGenerateParams;
-  if (typeof params.prompt !== 'string' || params.prompt.length === 0) {
-    return { ok: false, error: 'prompt is required and must be a string', code: 'INVALID_ARGS' };
-  }
-
-  // 付费复述、扩写、出图和 artifact_write_started 都在 startTime 之后。越界路径在这里拒绝。
-  if (typeof params.output_path === 'string' && params.output_path.length > 0) {
-    const resolvedOutputPath = path.resolve(ctx.workingDir, params.output_path);
-    if (outputPathOutsideWorkspace(resolvedOutputPath, ctx)) {
-      return {
-        ok: false,
-        error: `output_path "${resolvedOutputPath}" must be inside the workspace`,
-        code: 'INVALID_ARGS',
-        meta: { outputPath: resolvedOutputPath },
-      };
-    }
-  }
-
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 23);
+  const outputPathFor = (index: number): string => params.outputFilePath
+    ? indexedOutputPath(params.outputFilePath, index, count)
+    : defaultImageOutputPath(ctx.workingDir, timestamp, index);
   const startTime = Date.now();
-  const aspectRatio = params.aspect_ratio || '1:1';
-  const expandPrompt = params.expand_prompt ?? false;
-  const style = params.style;
-  const outputPath = params.output_path || defaultImageOutputPath(ctx.workingDir);
-  const isDefaultOutputPath = !params.output_path;
-  // 事件里的 filePath 必须是绝对路径（相对值按 workingDir 归一）——成果回传方不猜进程 cwd。
-  const absoluteOutputPath = path.isAbsolute(outputPath) ? outputPath : path.join(ctx.workingDir, outputPath);
-
-  if (ctx.currentToolCallId) {
-    ctx.emit({
-      type: 'artifact_write_started',
-      data: {
-        toolCallId: ctx.currentToolCallId,
-        toolName: schema.name,
-        filePath: absoluteOutputPath,
-      },
-    });
-  }
-
-  // 复述句里承诺过「出完存到 X」，失败收口要据实说 X 到底有没有落盘，故这里记账。
-  let wroteFile = false;
   let briefed = false;
-
-  // 走 tool_output_delta 而非 'tool_output'：后者不在 AgentEvent 联合类型里
-  // （本文件原先靠 `as never` 强推），renderer 全仓无消费者，等于写给空气。
   const emitLive = (content: string): void => {
     if (!ctx.currentToolCallId) return;
     ctx.emit({
@@ -458,190 +595,243 @@ export async function executeImageGenerate(
       },
     });
   };
-
   try {
     const engine = determineImageEngine();
-    const authService = getAuthService();
-    const user = authService.getCurrentUser();
+    const user = getAuthService().getCurrentUser();
     const isAdmin = user?.isAdmin ?? false;
     const fluxModel = isAdmin ? FLUX_MODELS.pro : FLUX_MODELS.schnell;
-
-    const engineLabel =
-      engine === 'cogview'
-        ? 'CogView-4 (智谱)'
-        : `FLUX (${isAdmin ? 'Pro' : 'Schnell'})`;
-
-    // 复述句在任何付费调用之前发出——包括 prompt 扩写那次文本调用，
-    // 这样用户看到理解错了可以立刻打断，一分钱不花。
-    emitLive(
-      buildBriefing({
-        prompt: params.prompt,
-        aspectRatio,
-        style,
-        expandPrompt,
-        engineLabel,
-        outputPath,
-      }),
-    );
-    briefed = true;
-
-    // 复述句承诺过「会先扩写」。expandPromptWithLLM 在 key 失效/超时时是**静默**回退到
-    // 原 prompt 的（只打一条 warn 日志），那样承诺就悄悄落空了。这里比对回退值，
-    // 一旦落空就当场更正——说出去的话和实际做的事不允许无声分叉。
-    const unexpandedPrompt = style ? addStyleSuffix(params.prompt, style) : params.prompt;
-    let finalPrompt = params.prompt;
-    if (expandPrompt) {
-      finalPrompt = await expandPromptWithLLM(params.prompt, engine, ctx.abortSignal, ctx.logger, style);
-      if (finalPrompt === unexpandedPrompt) {
-        emitLive('更正：扩写没成功（模型没返回可用结果），改为把你的原话原样送去出图。');
-      }
-    } else if (style) {
-      finalPrompt = unexpandedPrompt;
-    }
-
-    const { imageData: rawImageData, actualModel } = await generateImage(
-      engine,
-      fluxModel,
-      finalPrompt,
-      aspectRatio,
-      ctx.abortSignal,
-    );
-
-    let imageBase64: string;
-    if (isImageUrl(rawImageData)) {
-      try {
-        imageBase64 = await downloadImageAsBase64(rawImageData, ctx.abortSignal);
-      } catch (e: unknown) {
-        if (ctx.abortSignal.aborted) throw e;
-        ctx.logger.warn('image_generate download fallback to URL', {
-          error: e instanceof Error ? e.message : String(e),
-        });
-        imageBase64 = rawImageData;
-      }
-    } else {
-      imageBase64 = rawImageData;
-    }
-
-    let imagePath: string | undefined;
-    let savedImageSizeBytes: number | undefined;
-    let dimensions: { width: number; height: number } | undefined;
-    if (!isImageUrl(imageBase64)) {
-      const resolvedPath = absoluteOutputPath;
-
-      const dir = path.dirname(resolvedPath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-
-      const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
-      const imageBuffer = Buffer.from(base64Data, 'base64');
-      fs.writeFileSync(resolvedPath, imageBuffer);
-      imagePath = resolvedPath;
-      wroteFile = true;
-      savedImageSizeBytes = imageBuffer.length;
-      // 验收句要拿实际像素跟所要比例对数，所以量的是落盘字节而不是请求参数。
-      dimensions = parsePngDimensions(imageBuffer);
-
-      if (process.env.CODE_AGENT_CLI_MODE === 'true' && fs.existsSync(resolvedPath)) {
-        const openCmd = process.platform === 'darwin' ? 'open' : 'xdg-open';
-        safeExecDetached(openCmd, [resolvedPath], (err: Error) => {
-          ctx.logger.warn('image_generate auto-open failed', { error: err.message });
-        });
-      }
-    }
-
-    const generationTime = Date.now() - startTime;
-    const mediaArtifactMetadata = buildMediaArtifactMetadata(ctx, {
-      kind: 'generated-image',
-      operation: 'generate',
-      sourcePrompt: params.prompt,
-      fallbackStrategy: imagePath ? 'file-artifact' : 'embedded-base64-artifact',
-    });
-
-    onProgress?.({ stage: 'completing', percent: 100 });
-
-    // 验收句同时是工具 output：用户在转录里看到的、模型读回去的是同一句具体陈述，
-    // 模型没有「已完成」这类可润色的状态词可抄。
-    const verdict = buildVerdict({
-      aspectRatio,
-      actualModel,
+    const engineLabel = engine === 'cogview'
+      ? 'CogView-4 (智谱)'
+      : 'FLUX (' + (isAdmin ? 'Pro' : 'Schnell') + ')';
+    const firstOutputPath = workspaceRelativePath(outputPathFor(1), ctx);
+    emitLive(buildBriefing({
+      prompt: count > 1 ? params.prompts[0] + '（以及另外 ' + (count - 1) + ' 条）' : params.prompts[0],
+      aspectRatio: params.aspectRatio,
+      style: params.style,
+      expandPrompt: params.expandPrompt,
       engineLabel,
-      dimensions,
-      generationTimeMs: generationTime,
-      imagePath,
-      sizeBytes: savedImageSizeBytes,
-    });
-    emitLive(verdict);
-
-    return {
-      ok: true,
-      output: verdict,
-      meta: {
-        artifact: imagePath
-          ? await createFileArtifact(imagePath, schema.name, ctx, {
-            kind: 'image',
-            mimeType: getDataUrlMimeType(imageBase64),
-            sizeBytes: savedImageSizeBytes,
-            metadata: {
-              model: actualModel,
-              engine,
-              aspectRatio,
-              generationTimeMs: generationTime,
-              isAdmin,
-              autoPersisted: isDefaultOutputPath,
-              ...mediaArtifactMetadata,
-            },
-          })
-          : createVirtualArtifact({
-            sourceTool: schema.name,
-            kind: 'image',
-            sessionId: ctx.sessionId,
-            name: 'generated-image',
-            url: isImageUrl(imageBase64) ? imageBase64 : undefined,
-            mimeType: getDataUrlMimeType(imageBase64) ?? 'image/png',
-            contentLength: imageBase64.length,
-            metadata: {
-              model: actualModel,
-              engine,
-              aspectRatio,
-              generationTimeMs: generationTime,
-              isAdmin,
-              embeddedBase64: !isImageUrl(imageBase64),
-              ...mediaArtifactMetadata,
-            },
-          }),
-        model: actualModel,
-        engine,
-        originalPrompt: params.prompt,
-        expandedPrompt: expandPrompt ? finalPrompt : undefined,
-        imagePath,
-        outputPath: imagePath,
-        imageBase64: imagePath ? undefined : imageBase64,
-        aspectRatio,
-        generationTimeMs: generationTime,
-        isAdmin,
-      },
-    };
-  } catch (error: unknown) {
-    if (ctx.abortSignal.aborted) {
-      return { ok: false, error: 'aborted', code: 'ABORTED' };
+      outputPath: firstOutputPath,
+    }));
+    if (ctx.currentToolCallId) {
+      ctx.emit({
+        type: 'artifact_write_started',
+        data: {
+          toolCallId: ctx.currentToolCallId,
+          toolName: schema.name,
+          filePath: outputPathFor(1),
+        },
+      });
     }
-    const message = error instanceof Error ? error.message : String(error);
-    if (message === 'aborted') {
-      return { ok: false, error: 'aborted', code: 'ABORTED' };
+    briefed = true;
+    const referenceDataUrl = params.referencePaths[0]
+      ? readReferenceAsDataUrl(params.referencePaths[0])
+      : undefined;
+    const batch = await runImageGenerateBatch({
+      requests: params.prompts.map((prompt, index) => ({ index: index + 1, prompt })),
+      signal: ctx.abortSignal,
+      concurrency: 3,
+      run: async (request): Promise<SavedImage> => {
+        if (ctx.abortSignal.aborted) throw new Error('aborted');
+        const requestStart = Date.now();
+        const outputPath = outputPathFor(request.index);
+        const unexpandedPrompt = params.style ? addStyleSuffix(request.prompt, params.style) : request.prompt;
+        let finalPrompt = request.prompt;
+        if (params.expandPrompt) {
+          finalPrompt = await expandPromptWithLLM(
+            request.prompt, engine, ctx.abortSignal, ctx.logger, params.style,
+          );
+          if (finalPrompt === unexpandedPrompt) {
+            emitLive('更正：扩写没成功（模型没返回可用结果），改为把你的原话原样送去出图。');
+          }
+        } else if (params.style) {
+          finalPrompt = unexpandedPrompt;
+        }
+        const generated = referenceDataUrl
+          ? await generateImageFromReference({
+            prompt: finalPrompt,
+            referenceImageDataUrl: referenceDataUrl,
+            outerSignal: ctx.abortSignal,
+          })
+          : await generateImage(engine, fluxModel, finalPrompt, params.aspectRatio, ctx.abortSignal);
+        let imageBase64 = generated.imageData;
+        if (isRemoteImageData(imageBase64)) {
+          try {
+            imageBase64 = await downloadImageAsBase64(imageBase64, ctx.abortSignal);
+          } catch (error: unknown) {
+            if (ctx.abortSignal.aborted) throw error;
+            const remoteArtifact = createVirtualArtifact({
+              sourceTool: schema.name,
+              kind: 'image',
+              sessionId: ctx.sessionId,
+              name: 'generated-image-' + request.index,
+              mimeType: 'image/png',
+              contentLength: generated.imageData.length,
+              metadata: {
+                generated: true,
+                url: generated.imageData,
+                error: error instanceof Error ? error.message : String(error),
+              },
+            });
+            throw new ImageGenerateRequestFailure('image was generated but could not be saved', remoteArtifact);
+          }
+        }
+        // 生成返回后、写盘前再查一次中止：参考图链路的远端轮询即使刚返回结果，
+        // 用户已停止的请求也不该再落盘（返修 Important 1）。
+        if (ctx.abortSignal.aborted) throw new Error('aborted');
+        const dir = path.dirname(outputPath);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        const imageBuffer = Buffer.from(imageBase64.replace(/^data:image\/\w+;base64,/, ''), 'base64');
+        fs.writeFileSync(outputPath, imageBuffer);
+        const generationTimeMs = Date.now() - requestStart;
+        const dimensions = parsePngDimensions(imageBuffer);
+        const mimeType = getDataUrlMimeType(imageBase64) ?? referenceMimeType(outputPath);
+        const mediaArtifactMetadata = buildMediaArtifactMetadata(ctx, {
+          kind: 'generated-image',
+          operation: 'generate',
+          sourcePrompt: request.prompt,
+          fallbackStrategy: 'file-artifact',
+        });
+        const artifact = await createFileArtifact(outputPath, schema.name, ctx, {
+          kind: 'image',
+          mimeType,
+          sizeBytes: imageBuffer.length,
+          metadata: {
+            model: generated.actualModel,
+            engine,
+            aspectRatio: params.aspectRatio,
+            generationTimeMs,
+            isAdmin,
+            autoPersisted: !params.outputFilePath,
+            ...(params.referencePaths.length
+              ? { referencesUsed: '1 of ' + params.referencePaths.length }
+              : {}),
+            ...mediaArtifactMetadata,
+          },
+        });
+        const verdict = buildVerdict({
+          aspectRatio: params.aspectRatio,
+          actualModel: generated.actualModel,
+          engineLabel,
+          dimensions,
+          generationTimeMs,
+          imagePath: workspaceRelativePath(outputPath, ctx),
+          sizeBytes: imageBuffer.length,
+        }) + (params.referencePaths.length
+          ? '\n· references used: 1 of ' + params.referencePaths.length
+          : '');
+        if (process.env.CODE_AGENT_CLI_MODE === 'true' && fs.existsSync(outputPath)) {
+          const openCmd = process.platform === 'darwin' ? 'open' : 'xdg-open';
+          safeExecDetached(openCmd, [outputPath], (error: Error) => {
+            ctx.logger.warn('image_generate auto-open failed', { error: error.message });
+          });
+        }
+        return {
+          absolutePath: outputPath,
+          relativePath: workspaceRelativePath(outputPath, ctx),
+          bytes: imageBuffer.length,
+          artifact,
+          verdict,
+          actualModel: generated.actualModel,
+          finalPrompt,
+          imageBase64,
+          mimeType,
+          generationTimeMs,
+          dimensions,
+        };
+      },
+    });
+    const perRequest: PerRequest[] = batch.map((result) => result.status === 'saved'
+      ? { index: result.index, status: 'saved', bytes: result.value?.bytes, path: result.value?.relativePath }
+      : {
+        index: result.index,
+        status: 'failed',
+        error: result.error === 'aborted'
+          ? 'aborted'
+          : params.prompts[result.index - 1] + ': ' + (result.error || 'image generation failed'),
+      });
+    const saved = batch.filter((result): result is typeof result & { value: SavedImage } => (
+      result.status === 'saved' && Boolean(result.value)
+    ));
+    const artifacts = [
+      ...saved.map((result) => result.value.artifact),
+      ...batch.map((result) => result.artifact).filter((artifact): artifact is ToolArtifact => Boolean(artifact)),
+    ];
+    const outputLines = [
+      saved.length + '/' + count + ' saved',
+      'per_request ' + JSON.stringify(perRequest),
+      ...saved.map((result) => result.value.verdict),
+    ];
+    if (saved.length === 0 && perRequest[0]?.error) {
+      outputLines.push(
+        '上面说要出的那张「' + aspectRatioLabel(params.aspectRatio) + '：' + params.prompts[0]
+          + '」没有出成：' + perRequest[0].error + '。没有生成，磁盘上没有新图。',
+      );
+    }
+    const output = outputLines.join('\n');
+    onProgress?.({ stage: 'completing', percent: 100 });
+    if (saved.length === 0) {
+      return {
+        ok: false,
+        error: output,
+        code: ctx.abortSignal.aborted ? 'ABORTED' : 'IMAGE_GENERATION_FAILED',
+        meta: { artifacts, per_request: perRequest },
+      };
+    }
+    const first = saved[0].value;
+    const meta: Record<string, unknown> = {
+      artifact: first.artifact,
+      artifacts,
+      per_request: perRequest,
+      model: first.actualModel,
+      engine,
+      originalPrompt: params.prompts[0],
+      expandedPrompt: params.expandPrompt ? first.finalPrompt : undefined,
+      imagePath: first.absolutePath,
+      outputPath: first.absolutePath,
+      imageBase64: undefined,
+      aspectRatio: params.aspectRatio,
+      generationTimeMs: first.generationTimeMs,
+      isAdmin,
+    };
+    if (count > 1) {
+      // 批量输出路径只能叫 outputImagePaths：sessionMediaAssets 的 parentRefsFromMetadata
+      // 把 imagePaths 读作输入素材（parent refs），写那个字段会把同批输出错挂成血缘输入（返修 r1）。
+      meta.outputImagePaths = saved.map((result) => result.value.absolutePath);
+      meta.originalPrompts = params.prompts;
+      meta.expandedPrompts = params.expandPrompt
+        ? saved.map((result) => result.value.finalPrompt)
+        : undefined;
+    }
+    emitLive(output);
+    return { ok: true, output, meta };
+  } catch (error: unknown) {
+    const aborted = ctx.abortSignal.aborted || (error instanceof Error && error.message === 'aborted');
+    const message = aborted ? 'aborted' : (error instanceof Error ? error.message : String(error));
+    const perRequest = params.prompts.map((prompt, index) => ({
+      index: index + 1,
+      status: 'failed' as const,
+      error: aborted ? 'aborted' : `${prompt}: ${message}`,
+    }));
+    const summary = '0/' + count + ' saved\nper_request ' + JSON.stringify(perRequest);
+    if (aborted) {
+      return {
+        ok: false,
+        error: summary,
+        code: 'ABORTED',
+        meta: { artifacts: [], per_request: perRequest },
+      };
     }
     ctx.logger.warn('image_generate failed', { error: message });
-    // 失败收口：复述句已经说出去了，这里必须回指它，并据实说落盘到底发生了没有——
-    // 不能让用户停在「我这就去出一张 9:16」然后没有下文。
-    if (!briefed) {
-      return { ok: false, error: `图片生成失败: ${message}` };
-    }
-    const landed = wroteFile
-      ? `图片已落盘到 ${outputPath}，但后续步骤失败`
-      : `${outputPath} 没有生成，磁盘上没有新图`;
+    const detail = briefed
+      ? '上面说要出的那张「' + aspectRatioLabel(params.aspectRatio) + '：' + params.prompts[0]
+        + '」没有出成：' + message + '。没有生成，磁盘上没有新图。'
+      : '图片生成失败: ' + message;
+    const output = summary + '\n' + detail;
     return {
       ok: false,
-      error: `上面说要出的那张「${aspectRatioLabel(aspectRatio)}：${params.prompt}」没有出成：${message}。${landed}。`,
+      error: output,
+      code: 'IMAGE_GENERATION_FAILED',
+      meta: { artifacts: [], per_request: perRequest },
     };
   }
 }

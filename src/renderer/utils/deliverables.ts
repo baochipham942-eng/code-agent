@@ -139,13 +139,13 @@ function buildEvidencePack(refs: DeliverableEvidenceRef[]): DeliverableEvidenceP
   };
 }
 
-function promptSummaryFromArgs(args: Record<string, unknown> | undefined): string {
+function promptSummaryFromArgs(args: Record<string, unknown> | undefined, fallback: string): string {
   const rawPrompt = args?.prompt;
   const prompts = Array.isArray(rawPrompt)
     ? rawPrompt.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
     : typeof rawPrompt === 'string' ? [rawPrompt] : [];
   const prompt = prompts[0]?.trim() || '';
-  if (!prompt) return 'Image generation';
+  if (!prompt) return fallback;
   const summary = prompt.length > 72 ? `${prompt.slice(0, 72)}...` : prompt;
   return prompts.length > 1 ? `${summary} +${prompts.length - 1} more` : summary;
 }
@@ -165,51 +165,104 @@ function imageConstraintsFromArgs(args: Record<string, unknown> | undefined): st
   return constraints;
 }
 
+// video/music（N-MEDIA-GEN-PHASE2）：新合同约束读 output_file_path；旧 output_path 历史请求按原名入账。
+function mediaConstraintsFromArgs(args: Record<string, unknown> | undefined): string[] {
+  const constraints: string[] = [];
+  const outputFile = typeof args?.output_file_path === 'string' ? args.output_file_path : undefined;
+  if (outputFile) constraints.push(`output_file_path:${outputFile}`);
+  else {
+    const legacyOutput = typeof args?.output_path === 'string' ? args.output_path : undefined;
+    if (legacyOutput) constraints.push(`output_path:${legacyOutput}`);
+  }
+  return constraints;
+}
+
+// 媒体生成家族的待完成卡描述（image 沿用既有文案；video/music 随 N-MEDIA-GEN-PHASE2 合同接入）。
+const PENDING_MEDIA_TOOL_INFO = {
+  image_generate: {
+    kind: 'image',
+    deliverableType: 'Image',
+    title: 'Generating image',
+    generatingReason: 'Image is still generating',
+    runningNote: 'Image generation is still running',
+    progressSummary: 'Image generation in progress',
+    promptFallback: 'Image generation',
+    expectedOutput: 'Image file artifact persisted to the workspace',
+    acceptance: [
+      'Generated image is persisted as a file artifact',
+      'Inline base64 is omitted after persistence',
+    ],
+  },
+  video_generate: {
+    kind: 'video',
+    deliverableType: 'Video',
+    title: 'Generating video',
+    generatingReason: 'Video is still generating',
+    runningNote: 'Video generation is still running',
+    progressSummary: 'Video generation in progress',
+    promptFallback: 'Video generation',
+    expectedOutput: 'Video file artifact persisted to the workspace',
+    acceptance: ['Generated video is persisted as a file artifact'],
+  },
+  music_generate: {
+    kind: 'audio',
+    deliverableType: 'Audio',
+    title: 'Generating music',
+    generatingReason: 'Music is still generating',
+    runningNote: 'Music generation is still running',
+    progressSummary: 'Music generation in progress',
+    promptFallback: 'Music generation',
+    expectedOutput: 'Audio file artifact persisted to the workspace',
+    acceptance: ['Generated audio is persisted as a file artifact'],
+  },
+} as const;
+
 export function buildPendingImageDeliverableCards(
   message: Pick<Message, 'id' | 'timestamp' | 'toolCalls'>,
 ): DeliverableCardView[] {
-  const pendingImageCalls = (message.toolCalls ?? []).filter((toolCall) => (
-    toolCall.name === 'image_generate' && !toolCall.result
+  const pendingMediaCalls = (message.toolCalls ?? []).filter((toolCall) => (
+    toolCall.name in PENDING_MEDIA_TOOL_INFO && !toolCall.result
   ));
-  return pendingImageCalls.map((toolCall) => {
-    const promptSummary = promptSummaryFromArgs(toolCall.arguments);
+  return pendingMediaCalls.map((toolCall) => {
+    const info = PENDING_MEDIA_TOOL_INFO[toolCall.name as keyof typeof PENDING_MEDIA_TOOL_INFO];
+    const promptSummary = promptSummaryFromArgs(toolCall.arguments, info.promptFallback);
+    const constraints = toolCall.name === 'image_generate'
+      ? imageConstraintsFromArgs(toolCall.arguments)
+      : mediaConstraintsFromArgs(toolCall.arguments);
     const sourceOfTruth = [`message:${message.id}`, `tool-call:${toolCall.id}`];
     const contextPack: DeliverableContextPack = {
       goal: promptSummary,
-      deliverableType: 'Image',
+      deliverableType: info.deliverableType,
       sourceOfTruth,
-      constraints: imageConstraintsFromArgs(toolCall.arguments),
+      constraints,
       priorArtifacts: [],
-      acceptance: [
-        'Generated image is persisted as a file artifact',
-        'Inline base64 is omitted after persistence',
-      ],
-      riskNotes: ['Image generation is still running'],
+      acceptance: [...info.acceptance],
+      riskNotes: [info.runningNote],
     };
     const refs: DeliverableEvidenceRef[] = [
       {
         id: `${message.id}:${toolCall.id}:pending`,
         kind: 'tool_result',
         status: 'metadata',
-        summary: 'Image generation in progress',
+        summary: info.progressSummary,
         ref: toolCall.id,
       },
     ];
     const evidencePack = buildEvidencePack(refs);
 
     return {
-      id: `pending-image:${message.id}:${toolCall.id}`,
-      kind: 'image',
-      title: 'Generating image',
-      description: `Image · image_generate · ${promptSummary}`,
-      sourceLabel: 'image_generate',
+      id: `pending-media:${message.id}:${toolCall.id}`,
+      kind: info.kind,
+      title: info.title,
+      description: `${info.deliverableType} · ${toolCall.name} · ${promptSummary}`,
+      sourceLabel: toolCall.name,
       status: evidencePack.status,
       createdAt: message.timestamp,
-      openTarget: { kind: 'none', reason: 'Image is still generating' },
+      openTarget: { kind: 'none', reason: info.generatingReason },
       contextPack,
       contract: {
-        purpose: `Generate image: ${promptSummary}`,
-        expectedOutput: 'Image file artifact persisted to the workspace',
+        purpose: `Generate ${info.deliverableType.toLowerCase()}: ${promptSummary}`,
+        expectedOutput: info.expectedOutput,
         inputRefs: sourceOfTruth,
         requiredChecks: contextPack.acceptance,
       },

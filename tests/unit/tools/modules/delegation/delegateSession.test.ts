@@ -197,3 +197,190 @@ describe('delegate_session', () => {
     db.close();
   });
 });
+
+// ============================================================================
+// 逐码拒绝表（④）：每个拒绝码都走完整 executeDelegateSession 管线，断言
+// 结构化拒绝 + AskUserQuestion 追问话术 + 零落行（不产出 create_new、不绑定会话）。
+// 纯门（K1B admitDelegation）已有逐码单测；这里钉的是工具边界把它们全部翻成
+// 同一个结构化拒绝形状，任何一条路径都不静默转成 create_new。
+// ============================================================================
+describe('delegate_session rejection codes (per-code, full pipeline)', () => {
+  const bareCtx = {
+    sessionId: 'origin', turnId: 'turn-1', workingDir: '/workspace/origin',
+    modelConfig: { provider: 'local', model: 'test' },
+    abortSignal: new AbortController().signal,
+  } as never;
+  const setBareRuntime = (value: unknown) => {
+    (bareCtx as unknown as { delegationRuntime?: unknown }).delegationRuntime = value;
+  };
+
+  function fixture(overrides: Record<string, unknown> = {}) {
+    const db = new Database(':memory:');
+    applySchema(db, { info() {}, warn() {}, error() {}, debug() {} } as never);
+    const now = 100;
+    const sessions = [{ id: 'target', title: 'Target', workingDirectory: '/workspace/origin', updatedAt: now, sessionType: 'chat' as const, engineKind: 'native' }];
+    const runtime = {
+      getDb: () => db,
+      listSessions: () => sessions,
+      getSessionRow: (id: string) => (id === 'target' || id === 'origin')
+        ? { id, title: id === 'target' ? 'Target' : 'Origin', workingDirectory: '/workspace/origin', sessionType: 'chat', engineKind: 'native' }
+        : null,
+      getWorkspaceRoots: () => ['/workspace'],
+      getRuns: () => [] as Array<{ context: { sessionId: string; workspace?: string } }>,
+      getRun: () => undefined,
+      getPermissionMode: () => 'default',
+      evaluateFolderTrust: async () => ({ state: 'trusted', blockedItems: 0 }),
+      notifyEnqueued: () => {},
+      now: () => now,
+      ...overrides,
+    };
+    const projection = projectSessionCandidates(sessions, { originSessionId: 'origin', now, secret: getDelegationCandidateSecret() });
+    return { db, now, runtime, projection };
+  }
+
+  type Case = {
+    code: string;
+    /** 在哪个 ctx 上调（bareCtx 无 workspaceScope，供 G8 用）。 */
+    useBareCtx?: boolean;
+    /** 预置的委托行数（self_route 的 correct 需要一行 active 目标=origin 的链）。 */
+    presetRows?: number;
+    build: (fixed: ReturnType<typeof fixture>) => { args: Record<string, unknown>; runtime: Record<string, unknown> };
+  };
+
+  const cases: Case[] = [
+    {
+      code: 'ambiguous',
+      build: (fixed) => ({ args: { action: 'delegate_existing', candidateRef: 'no-such-ref', text: 'do it' }, runtime: fixed.runtime }),
+    },
+    {
+      code: 'candidate_set_stale',
+      build: (fixed) => ({ args: { action: 'delegate_existing', candidateSetId: 'stale-set', candidateRef: 'whatever', text: 'do it' }, runtime: fixed.runtime }),
+    },
+    {
+      code: 'invalid_call',
+      build: (fixed) => ({ args: { action: 'restart', delegationId: 'd-1' }, runtime: fixed.runtime }),
+    },
+    {
+      code: 'invalid_call',
+      build: (fixed) => ({ args: { action: 'delegate_existing', sessionId: 'target', candidateRef: 'r', text: 'do it' }, runtime: fixed.runtime }),
+    },
+    {
+      code: 'invalid_call',
+      build: (fixed) => ({ args: { action: 'create_new', workspace: '/etc', text: 'do it' }, runtime: fixed.runtime }),
+    },
+    {
+      code: 'invalid_call',
+      build: (fixed) => ({ args: { action: 'stop' }, runtime: fixed.runtime }),
+    },
+    {
+      code: 'target_unavailable',
+      build: (fixed) => ({
+        args: { action: 'delegate_existing', candidateRef: fixed.projection.candidates[0].candidateRef, text: 'do it' },
+        runtime: { ...fixed.runtime, getSessionRow: (id: string) => (id === 'target' ? { id, workingDirectory: '/workspace/origin', sessionType: 'chat', engineKind: 'native', isArchived: true } : null) },
+      }),
+    },
+    {
+      code: 'not_delegatable',
+      build: (fixed) => ({
+        args: { action: 'delegate_existing', candidateRef: fixed.projection.candidates[0].candidateRef, text: 'do it' },
+        runtime: { ...fixed.runtime, getSessionRow: (id: string) => (id === 'target' ? { id, workingDirectory: '/workspace/origin', sessionType: 'chat', engineKind: 'codex_cli' } : null) },
+      }),
+    },
+    {
+      code: 'workspace_boundary',
+      build: (fixed) => ({
+        args: { action: 'delegate_existing', candidateRef: fixed.projection.candidates[0].candidateRef, text: 'do it' },
+        runtime: {
+          ...fixed.runtime,
+          listSessions: () => [{ id: 'target', title: 'Target', workingDirectory: '/outside/target', updatedAt: fixed.now, sessionType: 'chat' as const, engineKind: 'native' }],
+          getSessionRow: (id: string) => (id === 'target' ? { id, workingDirectory: '/outside/target', sessionType: 'chat', engineKind: 'native' } : null),
+        },
+      }),
+    },
+    {
+      code: 'write_conflict',
+      build: (fixed) => ({
+        args: { action: 'delegate_existing', candidateRef: fixed.projection.candidates[0].candidateRef, text: 'do it' },
+        runtime: { ...fixed.runtime, getRuns: () => [{ context: { sessionId: 'bystander', workspace: '/workspace/origin' } }] },
+      }),
+    },
+    {
+      // create_new 缺 host 受信工作区根：G5（根不可解析）排在 G8 前面先红，
+      // 工具边界上这个形态落到 workspace_boundary；G8 的 unauthorized_workspace
+      // 码由 K1B admitDelegation 逐码单测直接覆盖（见 delegationAdmission.test.ts）。
+      code: 'workspace_boundary',
+      useBareCtx: true,
+      build: (fixed) => ({ args: { action: 'create_new', text: 'fresh work' }, runtime: fixed.runtime }),
+    },
+    {
+      code: 'target_busy',
+      build: (fixed) => ({
+        args: { action: 'delegate_existing', candidateRef: fixed.projection.candidates[0].candidateRef, text: 'do it' },
+        runtime: { ...fixed.runtime, getRun: (id: string) => (id === 'target' ? { context: { sessionId: 'target', runId: 'user-run' } } : undefined) },
+      }),
+    },
+    {
+      code: 'target_permission_mode',
+      build: (fixed) => ({
+        args: { action: 'delegate_existing', candidateRef: fixed.projection.candidates[0].candidateRef, text: 'do it' },
+        runtime: { ...fixed.runtime, getPermissionMode: () => 'bypassPermissions' },
+      }),
+    },
+    {
+      code: 'untrusted_workspace',
+      build: (fixed) => ({
+        args: { action: 'delegate_existing', candidateRef: fixed.projection.candidates[0].candidateRef, text: 'do it' },
+        runtime: { ...fixed.runtime, evaluateFolderTrust: async () => ({ state: 'quarantined', blockedItems: 3 }) },
+      }),
+    },
+    {
+      code: 'self_route',
+      presetRows: 1,
+      build: (fixed) => ({ args: { action: 'correct', delegationId: 'd-self', text: 'again' }, runtime: fixed.runtime }),
+    },
+    {
+      code: 'invalid_call',
+      build: (fixed) => ({ args: { action: 'delegate_existing', candidateRef: 'r', text: 'do it' }, runtime: { ...fixed.runtime, listSessions: () => { throw new Error('sessions table is unavailable'); } } }),
+    },
+  ];
+
+  it.each(cases)('$code → 结构化拒绝 + AskUserQuestion 话术 + 零落行', async (testCase) => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    const fixed = fixture();
+    const { args, runtime } = testCase.build(fixed);
+    const target = testCase.useBareCtx ? bareCtx : ctx;
+    const setTargetRuntime = testCase.useBareCtx ? setBareRuntime : setRuntime;
+    setTargetRuntime(runtime);
+    if (testCase.presetRows) {
+      const identity = 'session:origin';
+      commitDelegation(fixed.db, {
+        delegationId: 'd-self', originSessionId: 'origin', originTurnId: 'turn-1', disposition: 'delegate_existing',
+        targetSessionId: 'origin', submissionKey: deriveSubmissionKey({ originSessionId: 'origin', originTurnId: 'turn-1', action: 'delegate_existing', targetIdentity: identity }),
+        actionFingerprint: deriveActionFingerprint({ action: 'delegate_existing', targetIdentity: identity, content: 'do it', attachmentRefs: [] }),
+        envelope: { content: 'do it', sessionId: 'origin' }, now: 1,
+      });
+    }
+    try {
+      const result = await executeDelegateSession(args, target, async () => ({ allow: true }));
+      expect(result.ok, `${testCase.code} must be a rejection`).toBe(false);
+      expect((result as { code?: string }).code).toBe('DELEGATION_REJECTED');
+      const error = (result as { error: string }).error;
+      expect(error.startsWith(`${testCase.code}:`)).toBe(true);
+      expect(error).toContain('AskUserQuestion');
+      expect(error).toContain('do not retry with create_new');
+      // 零落行：委托行与排队行都只有预置的存量（预置提交各带一行排队），本调用不新增任何行
+      const expectedRows = testCase.presetRows ?? 0;
+      expect(fixed.db.prepare('SELECT count(*) AS count FROM session_delegations').get()).toMatchObject({ count: expectedRows });
+      expect(fixed.db.prepare('SELECT count(*) AS count FROM queued_inputs').get()).toMatchObject({ count: expectedRows });
+      expect(fixed.db.prepare('SELECT count(*) AS count FROM sessions').get()).toMatchObject({ count: 0 });
+    } finally {
+      setTargetRuntime(undefined);
+      fixed.db.close();
+    }
+  });
+
+  afterEach(() => {
+    delete process.env.CODE_AGENT_CROSS_SESSION_DELEGATION;
+    setBareRuntime(undefined);
+  });
+});

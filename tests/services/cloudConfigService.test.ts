@@ -134,6 +134,13 @@ describe('CloudConfigService', () => {
       expect(typeof flags.maxIterations).toBe('number');
       expect(flags.maxIterations).toBeGreaterThan(0);
     });
+
+    it('crossSessionDelegation 内置默认 false，isEnabled 关档回落 false（ADR-072 D6 协议落地不接电）', () => {
+      expect(getBuiltinConfig().featureFlags.crossSessionDelegation).toBe(false);
+      const service = getCloudConfigService();
+      expect(service.getFeatureFlag('crossSessionDelegation')).toBe(false);
+      expect(new FeatureFlagService(service).isEnabled('crossSessionDelegation')).toBe(false);
+    });
   });
 
   // --------------------------------------------------------------------------

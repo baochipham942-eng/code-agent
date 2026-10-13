@@ -52,6 +52,19 @@ async function drainAndStop(deps: DaemonDrainDeps): Promise<'drained' | 'force-s
 }
 
 /**
+ * drain 档位判据：停机这一刻壳看门狗（Rust 侧到点强杀）是否还悬在头上。
+ * macOS/Linux：stdin 管道断开 = 壳已死，没人再兜底杀我们 → 无看门狗，可用完整
+ * 宽限。win32 相反：stdin EOF 本身就是 terminate_child 的「请退出」指令（关写端
+ * 后 3s 即 TerminateProcess），管道断开恰恰意味着看门狗刚启动——EOF 触发的停机
+ * 必须留在看门狗档（宽限压档 + withCap），否则 60s 完整宽限会被 TerminateProcess
+ * 拦腰截断，closeAllDatabaseConnections 轮不到，每次退出都留陈旧 -wal/-shm
+ * （返修 Important 1，跨端合同由 gracefulShutdown 静态门钉住）。
+ */
+export function isDrainWatchdogActive(shellPipeAttached: boolean): boolean {
+  return shellPipeAttached || process.platform === 'win32';
+}
+
+/**
  * webServer.shutdown 的排空步骤（模块唯一出口）：按「壳看门狗是否还挂着」选宽限
  * 档位，看门狗在时还要套 withCap（关库前步骤的预算封顶器）——排空绝不允许吃穿
  * 关库预算（Rust 侧 3s 到点 SIGKILL，陈旧 -wal/-shm 的老坑见 webShutdownFinalizers

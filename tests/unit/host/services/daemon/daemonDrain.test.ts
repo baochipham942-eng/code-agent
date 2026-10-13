@@ -6,23 +6,24 @@
 //   - 壳看门狗在时套 withCap（预算封顶优先于宽限），无看门狗不套。
 // ============================================================================
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { drainPendingOpsForShutdown } from '../../../../../src/host/services/daemon/daemonDrain';
+import { drainPendingOpsForShutdown, isDrainWatchdogActive } from '../../../../../src/host/services/daemon/daemonDrain';
 import { WEB_DAEMON } from '../../../../../src/shared/constants/webServer';
 
+/** withCap 侦查件：手写闭包记录调用（vi.fn 对泛型签名的 Mock 类型对不上真签名）。 */
+function spyWithCap(): { withCap: <T>(p: Promise<T>, label: string) => Promise<T | void>; calls: Array<[Promise<unknown>, string]> } {
+  const calls: Array<[Promise<unknown>, string]> = [];
+  return {
+    calls,
+    withCap: <T,>(p: Promise<T>, label: string): Promise<T | void> => {
+      calls.push([p, label]);
+      return p;
+    },
+  };
+}
+
 describe('drainPendingOpsForShutdown（ADR-083 ③ 排空语义）', () => {
-  /** withCap 侦查件：手写闭包记录调用（vi.fn 对泛型签名的 Mock 类型对不上真签名）。 */
-  function spyWithCap(): { withCap: <T>(p: Promise<T>, label: string) => Promise<T | void>; calls: Array<[Promise<unknown>, string]> } {
-    const calls: Array<[Promise<unknown>, string]> = [];
-    return {
-      calls,
-      withCap: <T,>(p: Promise<T>, label: string): Promise<T | void> => {
-        calls.push([p, label]);
-        return p;
-      },
-    };
-  }
 
   it('入口处未决已归零 → 立即返回，零日志（正常空闲停机零延迟）', async () => {
     const log = vi.fn();
@@ -86,5 +87,60 @@ describe('drainPendingOpsForShutdown（ADR-083 ③ 排空语义）', () => {
     expect(WEB_DAEMON.STOP_WAIT_MS).toBeGreaterThanOrEqual(WEB_DAEMON.DRAIN_GRACE_MS);
     // 壳档必须留在关库预算量级内（Rust 侧 3s SIGKILL 看门狗，见 webShutdownFinalizers 头注）。
     expect(WEB_DAEMON.DRAIN_GRACE_UNDER_SHELL_MS).toBeLessThanOrEqual(2_000);
+  });
+});
+
+// ── win32 EOF 停机档位（返修 2026-10-13 Important 1）─────────────────────────
+// win32 的 stdin EOF 是 Rust「请退出」指令（terminate_child 关写端，3s 后
+// TerminateProcess），管道断开恰恰意味着看门狗刚启动——EOF 触发的停机必须留在
+// 带 cap 的看门狗档，否则完整宽限被拦腰截断、关库轮不到（陈旧 -wal/-shm）。
+// 调用点接线由 tests/unit/main/gracefulShutdown.static.test.ts 钉住（win32 分支
+// 在 mac/linux 机器上跑不出运行时行为），这里测档位判据本身 + 判据流入 drain 的档位。
+describe('isDrainWatchdogActive（win32 EOF 停机留在看门狗档）', () => {
+  const originalPlatform = process.platform;
+  function stubPlatform(platform: NodeJS.Platform): void {
+    Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+  }
+  afterEach(() => {
+    stubPlatform(originalPlatform);
+  });
+
+  it('win32：管道已断（EOF 触发停机）仍在看门狗档；管道在自然也在', () => {
+    stubPlatform('win32');
+    expect(isDrainWatchdogActive(false)).toBe(true);
+    expect(isDrainWatchdogActive(true)).toBe(true);
+  });
+
+  it('darwin / linux：管道断开 = 壳已死，看门狗确实没了；管道在 = 还挂着', () => {
+    stubPlatform('darwin');
+    expect(isDrainWatchdogActive(false)).toBe(false);
+    expect(isDrainWatchdogActive(true)).toBe(true);
+    stubPlatform('linux');
+    expect(isDrainWatchdogActive(false)).toBe(false);
+    expect(isDrainWatchdogActive(true)).toBe(true);
+  });
+
+  it('档位经判据流入 drain：win32 EOF（管道断）也套 withCap（带 cap 档）', async () => {
+    stubPlatform('win32');
+    const spy = spyWithCap();
+    await drainPendingOpsForShutdown({
+      getPendingOps: () => 0,
+      watchdogActive: isDrainWatchdogActive(false),
+      withCap: spy.withCap,
+      log: vi.fn(),
+    });
+    expect(spy.calls.map(([, label]) => label)).toEqual(['daemon.drain']);
+  });
+
+  it('档位经判据流入 drain：darwin 管道断（壳已死）不套 withCap（完整宽限档）', async () => {
+    stubPlatform('darwin');
+    const spy = spyWithCap();
+    await drainPendingOpsForShutdown({
+      getPendingOps: () => 0,
+      watchdogActive: isDrainWatchdogActive(false),
+      withCap: spy.withCap,
+      log: vi.fn(),
+    });
+    expect(spy.calls).toHaveLength(0);
   });
 });

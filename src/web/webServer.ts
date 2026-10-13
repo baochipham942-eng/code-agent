@@ -373,7 +373,7 @@ import { createApp, type CreateAppDeps } from './app';
 import { acquireDaemonLock, releaseDaemonLock } from '../host/services/daemon/daemonLock';
 import type { DaemonIdleSnapshot } from '../host/services/daemon/daemonIdle';
 import { createDaemonExitRechecker, shouldStayResidentAfterShellExit } from '../host/services/daemon/shellExit';
-import { drainPendingOpsForShutdown } from '../host/services/daemon/daemonDrain';
+import { drainPendingOpsForShutdown, isDrainWatchdogActive } from '../host/services/daemon/daemonDrain';
 import { getBackgroundTaskLedger } from '../host/task/backgroundTaskLedger';
 import { listForegroundPermissionRequests, onForegroundPermissionStateChange } from './foregroundPermissionRegistry';
 import { createWebSessionContext } from './sessionDomainHandler';
@@ -1222,10 +1222,12 @@ async function main(): Promise<void> {
     // ADR-083 daemon 排空：先给在跑的 run 自然收口窗口（未决口径 = 与防闲睡同一份
     // 「在跑 run」信号）。壳的 3s SIGKILL 看门狗还挂着（stdin 管道未断）时宽限压进
     // 预算并套 withCap；无看门狗（独立 daemon / 壳已死 / neo daemon stop）才用完整
-    // 宽限。强停后的真取消由下面的 reap 步骤执行。
+    // 宽限。win32 例外：stdin EOF 就是 Rust 的「请退出」指令（3s 后 TerminateProcess），
+    // 管道断开时也必须留在看门狗档，档位判据在 isDrainWatchdogActive。
+    // 强停后的真取消由下面的 reap 步骤执行。
     await drainPendingOpsForShutdown({
       getPendingOps: () => runRegistry.size + (getBackgroundTaskLedger().hasActiveTasks() ? 1 : 0),
-      watchdogActive: shellPipeAttached,
+      watchdogActive: isDrainWatchdogActive(shellPipeAttached),
       withCap,
     });
     // companion 的 LAN 监听器最先撤，但必须在预算之内：restore() 可能正卡在

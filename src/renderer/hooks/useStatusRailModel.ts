@@ -59,13 +59,23 @@ function extractArtifacts(
         const fp = (args?.path || args?.file_path) as string | undefined;
         if (fp) addPath(fp);
       }
-      if (['image_generate', 'video_generate'].includes(tc.name) && args?.output_path) {
+      if (tc.name === 'image_generate' && args?.output_file_path) {
+        addPath(args.output_file_path as string);
+      }
+      if (tc.name === 'video_generate' && args?.output_path) {
         addPath(args.output_path as string);
       }
       const meta = tc.result?.metadata as Record<string, unknown> | undefined;
       if (meta) {
         for (const key of ['filePath', 'imagePath', 'videoPath', 'outputPath', 'pptxPath', 'pdfPath']) {
           if (meta[key] && typeof meta[key] === 'string') addPath(meta[key] as string);
+        }
+        if (Array.isArray(meta.artifacts)) {
+          for (const artifact of meta.artifacts) {
+            if (artifact && typeof artifact === 'object' && typeof (artifact as { path?: unknown }).path === 'string') {
+              addPath((artifact as { path: string }).path);
+            }
+          }
         }
       }
       if (files.length >= limit) break;

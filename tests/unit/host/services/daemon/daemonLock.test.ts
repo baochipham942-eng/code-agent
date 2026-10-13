@@ -20,6 +20,7 @@ import path from 'path';
 import {
   acquireDaemonLock,
   inspectDaemonPid,
+  isDaemonLockSupported,
   readDaemonPidRecord,
   releaseDaemonLock,
 } from '../../../../../src/host/services/daemon/daemonLock';
@@ -256,6 +257,54 @@ describe('releaseDaemonLock', () => {
       expect(readDaemonPidRecord(dataDir)?.pid).toBe(live.pid);
     } finally {
       await live.stop();
+    }
+  });
+});
+
+// ── win32 平台裁剪（返修 2026-10-13 Important 2）────────────────────────────
+// win32 没有进程身份源（readProcessIdentity 返 null）→ 每个活 pid 都是 unknown →
+// 硬杀 + pid 复用后 acquire 永远让位，app 再也起不来，CLI 也清不掉。裁剪：win32
+// 根本不取锁——acquire 直接成功且不写 daemon.pid，release no-op。
+describe('win32：不取锁也不执行锁（平台裁剪）', () => {
+  it('acquire 直接成功：活 pid 持锁文件在场也不让位，且不写/不碰 daemon.pid', async () => {
+    const dataDir = makeTempDir();
+    const live = await spawnLivePid();
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    try {
+      // 现场还原返修前的死锁：pid 文件指着一个活进程（win32 下身份永远 unknown）。
+      writePidRecord(dataDir, live.pid, psLstart(live.pid));
+      expect(acquireDaemonLock(dataDir, 555)).toEqual({ acquired: true, pid: 555 });
+      // 「writes nothing」：文件还是持锁者那一份，没被改写、没被删。
+      expect(readDaemonPidRecord(dataDir)?.pid).toBe(live.pid);
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+      await live.stop();
+    }
+  });
+
+  it('release 是 no-op：本进程写的无标记记录也不删（win32 下没人取锁，无锁可放）', () => {
+    const dataDir = makeTempDir();
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    try {
+      writePidRecord(dataDir, process.pid, null);
+      releaseDaemonLock(dataDir);
+      expect(readDaemonPidRecord(dataDir)?.pid).toBe(process.pid);
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+    }
+  });
+
+  it('isDaemonLockSupported：mac/linux 真、win32 假（平台判据单一真源）', () => {
+    const originalPlatform = process.platform;
+    try {
+      for (const platform of ['darwin', 'linux', 'win32'] as const) {
+        Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+        expect(isDaemonLockSupported()).toBe(platform !== 'win32');
+      }
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
     }
   });
 });

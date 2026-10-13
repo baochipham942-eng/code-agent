@@ -291,3 +291,43 @@ describe('neo daemon stop', () => {
     }
   });
 });
+
+// ── win32 平台裁剪（返修 2026-10-13 Important 2）────────────────────────────
+// win32 无进程身份源，锁整个不生效；status/stop 得明说「本平台不支持」，而不是
+// 对着身份永远 unknown 的 pid 文件谎称 not running / 拒绝发信号。
+describe('win32：daemon lock 不支持时的客户端口径', () => {
+  it('status：说不支持，不谎称 not running；run 名册照常读（名册与锁无关）', async () => {
+    await seedRosterDb(false);
+    const live = await spawnFakeDaemon();
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    try {
+      writePidRecord(dataDir, live.pid, psLstart(live.pid));
+      const io = await runDaemon(['status']);
+      expect(io.stdout()).toContain('not supported on this platform');
+      expect(io.stdout()).not.toContain('not running');
+      expect(io.stdout()).not.toContain('cannot prove');
+      expect(io.stdout()).toContain('No runs in progress.');
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+      await live.stop();
+    }
+  });
+
+  it('stop：说不支持、没事可停，不发信号也不置错误码', async () => {
+    const live = await spawnFakeDaemon();
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    try {
+      writePidRecord(dataDir, live.pid, psLstart(live.pid));
+      const io = await runDaemon(['stop']);
+      expect(io.stdout()).toContain('not supported on this platform');
+      expect(io.stderr()).toBe('');
+      expect(process.exitCode).toBeUndefined();
+      expect(isAlive(live.pid)).toBe(true); // 没被误杀
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+      await live.stop();
+    }
+  });
+});

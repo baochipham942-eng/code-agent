@@ -20,6 +20,10 @@
 //   - release：只有「文件还是本进程写的、且身份仍吻合」才删——崩溃/重启过的
 //     进程跑迟到的 shutdown 回调也删不掉接任者的锁。失败不挡退出：残留文件
 //     按陈旧锁被下次接管。
+//   - win32：锁整个不生效（acquire 直接成功且不写文件、release no-op）——win32
+//     没有进程身份源，每个活 pid 都是 unknown，取了锁会在硬杀 + pid 复用后变成
+//     永久让位死锁（app 再也起不来，CLI 也清不掉）。平台判据单一真源在
+//     isDaemonLockSupported，别处不要再写平台字面量。
 //
 // 本模块只管锁，不问端口（端口冲突仍由 portCleanup / EADDRINUSE 路径处理），
 // 也不 kill 任何进程（那是 CLI daemon stop 的事）；唯一的子进程调用是只读的
@@ -43,6 +47,17 @@ interface DaemonPidRecord {
 }
 
 type PidFileContent = { kind: 'ok'; record: DaemonPidRecord } | { kind: 'unreadable' } | { kind: 'missing' };
+
+/**
+ * 锁的平台判据（单一真源，acquire/release/CLI 共用）：win32 不取锁也不执行锁。
+ * win32 没有进程身份源（readProcessIdentity 恒 null）→ 每个活 pid 都是 unknown →
+ * 硬杀 + pid 复用后 acquire 永远让位，app 再也起不来，`neo daemon status/stop`
+ * 也清不掉。锁是 ADR-083 「mac 先行」的一部分，Windows 支持另开单据后再补身份源。
+ */
+// win32: no process identity source; lock is mac/linux only until a Windows ticket
+export function isDaemonLockSupported(): boolean {
+  return process.platform === 'darwin' || process.platform === 'linux';
+}
 
 /** 读进程身份（`ps lstart=,command=`，macOS/Linux 可用）：startTime 是进程启动
  * 标记，command 是完整命令行。pid 被操作系统复用后 startTime 会变；守护是 node
@@ -136,6 +151,7 @@ export function readDaemonPidRecord(dataDir: string): DaemonPidRecord | null {
  * 报出 pid 并退出。
  */
 export function acquireDaemonLock(dataDir: string, pid: number = process.pid): { acquired: true; pid: number } | { acquired: false; existingPid: number | null } {
+  if (!isDaemonLockSupported()) return { acquired: true, pid }; // win32：不取锁，见 isDaemonLockSupported
   fs.mkdirSync(dataDir, { recursive: true });
   const pidPath = path.join(dataDir, DAEMON_PID_FILE);
   let lastSeenPid: number | null = null;
@@ -172,6 +188,7 @@ export function acquireDaemonLock(dataDir: string, pid: number = process.pid): {
 
 /** 释放锁（shutdown 用）：删 pid 文件。ENOENT / 其他失败都不挡退出。 */
 export function releaseDaemonLock(dataDir: string): void {
+  if (!isDaemonLockSupported()) return; // win32：没取过锁，无锁可放
   const pidPath = path.join(dataDir, DAEMON_PID_FILE);
   const record = readPidFile(pidPath);
   if (record.kind !== 'ok' || record.record.pid !== process.pid) return;

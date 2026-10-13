@@ -11,7 +11,7 @@
 import { Command } from 'commander';
 import path from 'path';
 import { getUserConfigDir } from '../../host/config/configPaths';
-import { inspectDaemonPid, readDaemonPidRecord } from '../../host/services/daemon/daemonLock';
+import { inspectDaemonPid, isDaemonLockSupported, readDaemonPidRecord } from '../../host/services/daemon/daemonLock';
 import type { ActiveRunRosterEntry } from '../../host/services/core/repositories/DurableRunRepository';
 import { WEB_DAEMON } from '../../shared/constants/webServer';
 
@@ -39,6 +39,11 @@ async function loadActiveRunRoster(): Promise<ActiveRunRosterEntry[]> {
 }
 
 function printDaemonPidState(): void {
+  // win32：锁整个不生效（无进程身份源），别对着永远 unknown 的 pid 文件谎称 not running。
+  if (!isDaemonLockSupported()) {
+    write('Daemon: daemon lock is not supported on this platform (macOS/Linux only); no pid file is kept.');
+    return;
+  }
   const dataDir = getUserConfigDir();
   const record = readDaemonPidRecord(dataDir);
   if (record == null) {
@@ -77,6 +82,10 @@ async function runStatus(): Promise<void> {
 }
 
 async function runStop(): Promise<void> {
+  if (!isDaemonLockSupported()) {
+    write('Daemon: daemon lock is not supported on this platform (macOS/Linux only) — nothing to stop.');
+    return;
+  }
   const dataDir = getUserConfigDir();
   const record = readDaemonPidRecord(dataDir);
   if (record == null) {

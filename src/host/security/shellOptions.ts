@@ -3,6 +3,10 @@
 //     NEXT word as the -o/-O value and then die on it (`bash -oposix -c '…'` errors before
 //     running anything). Reading attached values keeps both safe: the zsh script keeps its
 //     targets, the bash spelling over-reports a script that never runs.
+//   - lowercase `o` is the only value letter that works that way: on zsh `-O`/`+O` are plain
+//     flags (probed: `zsh -O c '…'` treats c as a file operand), so a cluster ending in `c`
+//     (`-Oc`, `+Oc`, `-eOc`) carries the command flag and `zsh -Oc '…'` really runs; bash/sh/
+//     dash die on those spellings first, so reading the command string over-reports safely.
 //   - `c` never carries an attached value (`bash -cecho AAA` makes the trailing `o` of the
 //     cluster eat `AAA` as an option name, on zsh too): the command string is always the word
 //     after the cluster.
@@ -53,6 +57,14 @@ export function shellScript(args: string[]): ShellScriptLookup | null {
       if (letter === 'c' && arg.startsWith('-')) {
         return args[index + 1] === undefined ? null : { command: args[index + 1] };
       }
+      if (letter === 'O' && letters.length > position + 1 && letters.endsWith('c')) {
+        // On zsh `-O`/`+O` are plain flags (probed: `zsh -O c '…'` runs c as a file operand), so a
+        // cluster they end in (`-Oc`, `+Oc`, `-eOc`) carries the command flag and `zsh -Oc '…'`
+        // really runs; bash/sh/dash die on the spelling first. Read the command string: exact on
+        // zsh, safe over-report elsewhere — same call as the unknown-letter case below. Longer
+        // tails keep their -O value reading (FB-330: `-Ocheckwinsize` never reaches this branch).
+        return args[index + 1] === undefined ? null : { command: args[index + 1] };
+      }
       if (VALUE_LETTERS.has(letter)) {
         // Attached value ends the cluster; otherwise the next word is the value.
         if (letters.length > position + 1) break;
@@ -75,10 +87,12 @@ export function shellScript(args: string[]): ShellScriptLookup | null {
 }
 
 // True when `word` is a short option cluster that may be followed by the command string. This is
-// the launcher scan's recall side: a `c` inside an option value (`-Ocheckwinsize`) never counts
-// and a value letter seen first (`-opipefail`) means any later `c` belongs to the value, but a
-// letter outside the flag set may still be a real flag (zsh accepts nearly all, e.g. `-dc`), so
-// the answer is yes and the strict, fail-closed classification is left to shellScript().
+// the launcher scan's recall side and must stay a superset of the `/^-[^-]*c[^-]*$/` baseline:
+// any `-` word containing `c` answers yes (a `c` before the value letters directly, a `c` after
+// them as a possible trailing command flag — on zsh `-O` is a plain flag and `zsh -Oc '…'` runs),
+// and a letter outside the flag set may still be a real flag (zsh accepts nearly all, e.g.
+// `-dc`). Value-only words stay out (`-opipefail`, `-o` awaiting its next-word value); the
+// strict, fail-closed classification is left to shellScript().
 export function isShellCommandOption(word: string): boolean {
   if ((!word.startsWith('-') && !word.startsWith('+')) || word.startsWith('--') || word.length < 2) {
     return false;
@@ -87,7 +101,11 @@ export function isShellCommandOption(word: string): boolean {
   for (let position = 0; position < letters.length; position += 1) {
     const letter = letters[position];
     if (letter === 'c' && word.startsWith('-')) return true;
-    if (VALUE_LETTERS.has(letter)) return false;
+    if (VALUE_LETTERS.has(letter)) {
+      // A value letter mid-word does not close the question: the trailing letters may hold the
+      // command flag (`-Oc`, `-oc`, `+Oc`), which the baseline regex matched from the start.
+      return letters.slice(position + 1).includes('c');
+    }
     if (!FLAG_LETTERS.has(letter)) return true;
   }
   return false;

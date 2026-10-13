@@ -16,7 +16,7 @@ type Form = {
   label: string;
   /** Absent when the option word itself carries the command letter; the script follows directly. */
   build?: (shell: string, script: string) => string;
-  expect: 'target' | 'uncertain';
+  expect: 'target' | 'uncertain' | 'operand';
 };
 
 const FORMS: Form[] = [
@@ -36,6 +36,15 @@ const FORMS: Form[] = [
   // on the unknown letter first), so the cluster carries the command string.
   { label: '-dc', build: (s, t) => `${s} -dc "${t}"`, expect: 'target' },
   { label: '+dc', build: (s, t) => `${s} +dc "${t}"`, expect: 'target' },
+  // r2: on zsh `-O`/`+O` are plain flags (probed: `zsh -O c '…'` treats c as a file operand), so a
+  // cluster ending in `c` (`-Oc`, `+Oc`, `-eOc`) carries the command flag and `zsh -Oc '…'` really
+  // runs; bash/sh/dash die on the spelling first — exact on zsh, safe over-report elsewhere.
+  { label: '-Oc', expect: 'target' },
+  { label: '+Oc', expect: 'target' },
+  { label: '-eOc', expect: 'target' },
+  // Every shell reads the attached `c` as the -o value and errors (probed: `zsh -oc '…'` → "no
+  // such option: c"), so the script word stays a file operand: uncertain, never both-empty.
+  { label: '-oc', expect: 'operand' },
   { label: '-Z (unknown)', build: (s, t) => `${s} -Z -c "${t}"`, expect: 'uncertain' },
 ];
 
@@ -52,6 +61,8 @@ describe('shell wrapper startup options with attached values', () => {
           expect.objectContaining({ path: '/tmp/x' }),
         ]));
         expect(parsed.uncertain).not.toContain(`shell-option-unknown:${shell}`);
+      } else if (form.expect === 'operand') {
+        expect(parsed.uncertain).toContain('shell-script-operand');
       } else {
         expect(parsed.uncertain).toContain(`shell-option-unknown:${shell}`);
       }
@@ -93,6 +104,26 @@ describe('shell wrapper startup options with attached values', () => {
     expect(parsed.writeTargets.length + parsed.uncertain.length).toBeGreaterThan(0);
   });
 
+  // r2: the value-letter clusters the r1 launcher scan dropped. `isShellCommandOption` answered
+  // "not a command option" the moment it saw `o`/`O`, so behind an unknown launcher the scan never
+  // fired and these parsed to empty/empty — for `-Oc`/`-oc` a net regression vs origin/main, whose
+  // `/^-[^-]*c[^-]*$/` baseline matched them; `+Oc` was the same hole on the `+` side.
+  it.each(SHELLS.flatMap((shell) => ['-Oc', '+Oc', '-oc', '-eOc'].map(
+    (form) => `chronic ${shell} ${form} "echo x > src/x.ts"`,
+  )))('never reports an empty shell behind an unknown launcher (value-letter cluster): %s',
+    (command) => {
+      const parsed = parseShellCommand(command);
+      expect(parsed.writeTargets.length + parsed.uncertain.length).toBeGreaterThan(0);
+    });
+
+  it('extracts a write hidden behind an unknown launcher after a value-letter O cluster (r2)', () => {
+    // origin/main extracted src/x.ts here; the r1 scan answered "not a command option" for `-Oc`
+    // and the command parsed to empty/empty, so the write skipped the path policy entirely.
+    const parsed = parseShellCommand('chronic zsh -Oc "echo x > src/x.ts"');
+    expect(parsed.writeTargets).toEqual([expect.objectContaining({ path: 'src/x.ts' })]);
+    expect(parsed.uncertain).toContain('unknown-shell-launcher:chronic');
+  });
+
   it('marks the +c spelling uncertain behind an unknown launcher instead of empty/empty', () => {
     // `zsh +c '…'` really runs too (probed), but the bare `+c` word stays unclassified by design;
     // the launcher scan must still fire so the command never parses to empty/empty.
@@ -103,7 +134,8 @@ describe('shell wrapper startup options with attached values', () => {
     ]));
   });
 
-  it.each(['bash -oposix -c "ls"', 'zsh -opipefail -c "ls"', 'bash -Z -c "ls"', 'zsh -dc "ls"'])(
+  it.each(['bash -oposix -c "ls"', 'zsh -opipefail -c "ls"', 'bash -Z -c "ls"', 'zsh -dc "ls"',
+    'zsh -Oc "ls"', 'zsh +Oc "ls"'])(
     'cannot lend an approval identity through an attached or unclassifiable option: %s',
     (command) => {
       expect(isKnownSafeCommand(command)).toBe(false);

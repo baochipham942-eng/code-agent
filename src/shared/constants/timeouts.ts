@@ -525,7 +525,7 @@ export const RENDERER_POLLING = {
 export const TOOL_TIMEOUT_THRESHOLDS: Record<string, number> = {
   bash: 120_000,            // 2 min（命令可能耗时较长）
   ppt_generate: 180_000,    // 3 min（多步管道）
-  image_generate: 90_000,   // 1.5 min
+  image_generate: 360_000,  // up to four concurrency-3 waves for a ten-image batch
   video_generate: 600_000,  // 10 min（视频生成较慢）
   web_fetch: 30_000,        // 30s
   web_search: 30_000,       // 30s

@@ -22,6 +22,17 @@ describe('artifact follow decisions', () => {
     }, '/workspace')).toBeNull();
   });
 
+  it('follows image_generate output_file_path while preserving image_process output_path', () => {
+    expect(artifactPathFromToolStart({
+      name: 'image_generate',
+      arguments: { prompt: ['a', 'b'], output_file_path: 'images/result.png' },
+    }, '/workspace')).toBe('/workspace/images/result.png');
+    expect(artifactPathFromToolStart({
+      name: 'image_process',
+      arguments: { output_path: 'images/processed.png' },
+    }, '/workspace')).toBe('/workspace/images/processed.png');
+  });
+
   it('auto-activates while idle and degrades to attention after workbench interaction', () => {
     expect(decideArtifactFollowOpen({
       paused: false,

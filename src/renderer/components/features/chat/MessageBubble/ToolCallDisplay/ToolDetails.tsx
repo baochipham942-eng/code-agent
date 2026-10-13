@@ -987,7 +987,22 @@ function extractImageResult(toolCall: {
   const metadata = toolCall.result.metadata;
   if (!metadata) return null;
 
-  const imagePath = metadata.imagePath as string | undefined;
+  const artifactCandidates: unknown[] = [
+    metadata.artifact,
+    ...(Array.isArray(metadata.artifacts) ? metadata.artifacts : []),
+  ];
+  const firstArtifact = artifactCandidates.find((artifact: unknown) => (
+      artifact && typeof artifact === 'object' && typeof (artifact as { path?: unknown }).path === 'string'
+  ));
+  // outputImagePaths = 批量输出列表；不读 imagePaths（那是 sessionMediaAssets 的输入素材字段）。
+  const imagePaths = Array.isArray(metadata.outputImagePaths)
+    ? metadata.outputImagePaths.filter((value): value is string => typeof value === 'string')
+    : [];
+  const imagePath = (metadata.imagePath as string | undefined)
+    || imagePaths[0]
+    || (firstArtifact && typeof (firstArtifact as { path?: unknown }).path === 'string'
+      ? (firstArtifact as { path: string }).path
+      : undefined);
   const imageBase64 = metadata.imageBase64 as string | undefined;
 
   if (imagePath || imageBase64) {

@@ -162,6 +162,8 @@ describe('image_generate 复用账本', () => {
       { executionId: 'exec-1', toolCallId: 'call-A', phase: 'begin' },
       { executionId: 'exec-1', phase: 'complete', status: 'success' },
     ]);
+    // 默认输出路径按毫秒时间戳命名：隔开 ≥5ms，保证"再来一张"落在新路径（真实出图 10s+，无此竞态）
+    await new Promise((resolve) => setTimeout(resolve, 5));
 
     const another = await executeImageGenerate(args, ctx(workspace, 'call-B'), allow);
     expect(another.ok).toBe(true);
@@ -284,7 +286,7 @@ describe('image_generate 复用账本', () => {
     expect(replay.meta?.model).toBe('mock-model'); // 复用不谎报模型
     expect(replay.output).toContain('720×1280'); // 从落盘文件重读的实测像素
     expect(replay.meta).toMatchObject({
-      artifact: expect.objectContaining({ metadata: { reused: true } }),
+      artifact: expect.objectContaining({ metadata: expect.objectContaining({ reused: true }) }),
     });
   });
 });

@@ -1,0 +1,447 @@
+[
+  {
+    "id": "dre-001",
+    "message": "继续把登录页的修复做完，就是之前在改的那个会话。",
+    "candidates": [
+      { "candidateRef": "Lg7FxQ2mZvKpR9dW", "shortName": "登录页修复", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Ap3MqR8tXwKdZ5vN", "shortName": "API 迁移到 v3", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Wk9PdS4nBcXzL2mQ", "shortName": "周报数据整理", "workspaceName": "dataviz-lab", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Dk5WnE3rVmYtU9iO", "shortName": "Pitch deck draft", "workspaceName": "design-studio", "status": "idle", "freshness": "7d" }
+    ],
+    "expected": { "action": "delegate_existing", "candidateRef": "Lg7FxQ2mZvKpR9dW" }
+  },
+  {
+    "id": "dre-002",
+    "message": "Please continue the API migration work in the session that was already doing it.",
+    "candidates": [
+      { "candidateRef": "Ap3MqR8tXwKdZ5vN", "shortName": "API 迁移到 v3", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Fl8QaP1zMbNsR4cX", "shortName": "Flaky test hunt", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Cr6VbH2sJnPqT8rF", "shortName": "爬虫脚本调试", "workspaceName": "ops-scripts", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Lo5NvP9rXcMbT3wS", "shortName": "Logo ideas exploration", "workspaceName": "design-studio", "status": "idle", "freshness": "older" }
+    ],
+    "expected": { "action": "delegate_existing", "candidateRef": "Ap3MqR8tXwKdZ5vN" }
+  },
+  {
+    "id": "dre-003",
+    "message": "周报的数据接着整理吧，上次还差三周没汇总。",
+    "candidates": [
+      { "candidateRef": "Wk9PdS4nBcXzL2mQ", "shortName": "周报数据整理", "workspaceName": "dataviz-lab", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Lg7FxQ2mZvKpR9dW", "shortName": "登录页修复", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "In6BxR4tYcMdW8qV", "shortName": "文档翻译排期", "workspaceName": "docs-site", "status": "idle", "freshness": "1d" }
+    ],
+    "expected": { "action": "delegate_existing", "candidateRef": "Wk9PdS4nBcXzL2mQ" }
+  },
+  {
+    "id": "dre-004",
+    "message": "Pick up the pitch deck draft again — the one from last week, it just needs the closing slides.",
+    "candidates": [
+      { "candidateRef": "Dk5WnE3rVmYtU9iO", "shortName": "Pitch deck draft", "workspaceName": "design-studio", "status": "idle", "freshness": "7d" },
+      { "candidateRef": "Lo5NvP9rXcMbT3wS", "shortName": "Logo ideas exploration", "workspaceName": "design-studio", "status": "idle", "freshness": "older" },
+      { "candidateRef": "Wk9PdS4nBcXzL2mQ", "shortName": "周报数据整理", "workspaceName": "dataviz-lab", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Cr6VbH2sJnPqT8rF", "shortName": "爬虫脚本调试", "workspaceName": "ops-scripts", "status": "running", "freshness": "1h" }
+    ],
+    "expected": { "action": "delegate_existing", "candidateRef": "Dk5WnE3rVmYtU9iO" }
+  },
+  {
+    "id": "dre-005",
+    "message": "爬虫脚本昨晚又挂了，让之前调试它的那个会话继续查。",
+    "candidates": [
+      { "candidateRef": "Cr6VbH2sJnPqT8rF", "shortName": "爬虫脚本调试", "workspaceName": "ops-scripts", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Db8WlK2qZnMtY5rU", "shortName": "数据库备份脚本", "workspaceName": "ops-scripts", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Lg7FxQ2mZvKpR9dW", "shortName": "登录页修复", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "In6BxR4tYcMdW8qV", "shortName": "文档翻译排期", "workspaceName": "docs-site", "status": "idle", "freshness": "1d" }
+    ],
+    "expected": { "action": "delegate_existing", "candidateRef": "Cr6VbH2sJnPqT8rF" }
+  },
+  {
+    "id": "dre-006",
+    "message": "Hand the flaky-test investigation back to the session that owns it — it knows the context.",
+    "candidates": [
+      { "candidateRef": "Fl8QaP1zMbNsR4cX", "shortName": "Flaky test hunt", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Ap3MqR8tXwKdZ5vN", "shortName": "API 迁移到 v3", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Rp9ZnT4kHdQxE3mL", "shortName": "报表修复 v2", "workspaceName": "dataviz-lab", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Py4KdF8wNmLsQ2vB", "shortName": "Payments refactor", "workspaceName": "pay-core", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Lo5NvP9rXcMbT3wS", "shortName": "Logo ideas exploration", "workspaceName": "design-studio", "status": "idle", "freshness": "older" }
+    ],
+    "expected": { "action": "delegate_existing", "candidateRef": "Fl8QaP1zMbNsR4cX" }
+  },
+  {
+    "id": "dre-007",
+    "message": "报表那个任务接着推进就行。",
+    "ambiguous": true,
+    "candidates": [
+      { "candidateRef": "Rp2CmW7yQsXdB6nK", "shortName": "报表修复", "workspaceName": "dataviz-lab", "status": "idle", "freshness": "7d" },
+      { "candidateRef": "Rp9ZnT4kHdQxE3mL", "shortName": "报表修复 v2", "workspaceName": "dataviz-lab", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Wk9PdS4nBcXzL2mQ", "shortName": "周报数据整理", "workspaceName": "dataviz-lab", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Lg7FxQ2mZvKpR9dW", "shortName": "登录页修复", "workspaceName": "neo-web", "status": "running", "freshness": "1h" }
+    ],
+    "expected": { "action": "delegate_existing", "candidateRef": "Rp9ZnT4kHdQxE3mL" }
+  },
+  {
+    "id": "dre-008",
+    "message": "Continue the payments refactor (the long one, not the hotfix).",
+    "ambiguous": true,
+    "candidates": [
+      { "candidateRef": "Py4KdF8wNmLsQ2vB", "shortName": "Payments refactor", "workspaceName": "pay-core", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Py7RtG3xMsLwQ9cD", "shortName": "Payments hotfix", "workspaceName": "pay-core", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Fl8QaP1zMbNsR4cX", "shortName": "Flaky test hunt", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Rp9ZnT4kHdQxE3mL", "shortName": "报表修复 v2", "workspaceName": "dataviz-lab", "status": "running", "freshness": "1h" }
+    ],
+    "expected": { "action": "delegate_existing", "candidateRef": "Py4KdF8wNmLsQ2vB" }
+  },
+  {
+    "id": "dre-009",
+    "message": "数据库那边的事继续做下去。",
+    "ambiguous": true,
+    "candidates": [
+      { "candidateRef": "Db3JqH6pVnMrX7sT", "shortName": "数据库索引优化", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Db8WlK2qZnMtY5rU", "shortName": "数据库备份脚本", "workspaceName": "ops-scripts", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Ap3MqR8tXwKdZ5vN", "shortName": "API 迁移到 v3", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Cr6VbH2sJnPqT8rF", "shortName": "爬虫脚本调试", "workspaceName": "ops-scripts", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Lg7FxQ2mZvKpR9dW", "shortName": "登录页修复", "workspaceName": "neo-web", "status": "running", "freshness": "1h" }
+    ],
+    "expected": { "action": "delegate_existing", "candidateRef": "Db3JqH6pVnMrX7sT" }
+  },
+  {
+    "id": "crn-001",
+    "message": "帮我从头做一个电商首页的设计稿，要全新的风格。",
+    "candidates": [
+      { "candidateRef": "Lg7FxQ2mZvKpR9dW", "shortName": "登录页修复", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Wk9PdS4nBcXzL2mQ", "shortName": "周报数据整理", "workspaceName": "dataviz-lab", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Cr6VbH2sJnPqT8rF", "shortName": "爬虫脚本调试", "workspaceName": "ops-scripts", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Lo5NvP9rXcMbT3wS", "shortName": "Logo ideas exploration", "workspaceName": "design-studio", "status": "idle", "freshness": "older" }
+    ],
+    "expected": { "action": "create_new" }
+  },
+  {
+    "id": "crn-002",
+    "message": "Start a brand-new task: translate our onboarding docs into Japanese.",
+    "candidates": [
+      { "candidateRef": "In6BxR4tYcMdW8qV", "shortName": "文档翻译排期", "workspaceName": "docs-site", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Ap3MqR8tXwKdZ5vN", "shortName": "API 迁移到 v3", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Dk5WnE3rVmYtU9iO", "shortName": "Pitch deck draft", "workspaceName": "design-studio", "status": "idle", "freshness": "7d" },
+      { "candidateRef": "Fl8QaP1zMbNsR4cX", "shortName": "Flaky test hunt", "workspaceName": "neo-web", "status": "running", "freshness": "1h" }
+    ],
+    "expected": { "action": "create_new" }
+  },
+  {
+    "id": "crn-003",
+    "message": "新开一个会话去调研竞品的定价策略，跟手头这些事都无关。",
+    "candidates": [
+      { "candidateRef": "Rp9ZnT4kHdQxE3mL", "shortName": "报表修复 v2", "workspaceName": "dataviz-lab", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Py4KdF8wNmLsQ2vB", "shortName": "Payments refactor", "workspaceName": "pay-core", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Cr6VbH2sJnPqT8rF", "shortName": "爬虫脚本调试", "workspaceName": "ops-scripts", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Db3JqH6pVnMrX7sT", "shortName": "数据库索引优化", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Wk9PdS4nBcXzL2mQ", "shortName": "周报数据整理", "workspaceName": "dataviz-lab", "status": "idle", "freshness": "1d" }
+    ],
+    "expected": { "action": "create_new" }
+  },
+  {
+    "id": "crn-004",
+    "message": "I want a separate session to analyze the customer feedback spreadsheet — keep it independent.",
+    "candidates": [
+      { "candidateRef": "Wk9PdS4nBcXzL2mQ", "shortName": "周报数据整理", "workspaceName": "dataviz-lab", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Lg7FxQ2mZvKpR9dW", "shortName": "登录页修复", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Py7RtG3xMsLwQ9cD", "shortName": "Payments hotfix", "workspaceName": "pay-core", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Db8WlK2qZnMtY5rU", "shortName": "数据库备份脚本", "workspaceName": "ops-scripts", "status": "idle", "freshness": "1d" }
+    ],
+    "expected": { "action": "create_new" }
+  },
+  {
+    "id": "crn-005",
+    "message": "再开个新会话，把上季度所有报销单核对一遍。",
+    "candidates": [
+      { "candidateRef": "In6BxR4tYcMdW8qV", "shortName": "文档翻译排期", "workspaceName": "docs-site", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Dk5WnE3rVmYtU9iO", "shortName": "Pitch deck draft", "workspaceName": "design-studio", "status": "idle", "freshness": "7d" },
+      { "candidateRef": "Lo5NvP9rXcMbT3wS", "shortName": "Logo ideas exploration", "workspaceName": "design-studio", "status": "idle", "freshness": "older" },
+      { "candidateRef": "Rp2CmW7yQsXdB6nK", "shortName": "报表修复", "workspaceName": "dataviz-lab", "status": "idle", "freshness": "7d" }
+    ],
+    "expected": { "action": "create_new" }
+  },
+  {
+    "id": "crn-006",
+    "message": "Fresh start please: explore whether a mobile app version makes sense, nothing existing covers this.",
+    "candidates": [
+      { "candidateRef": "Ap3MqR8tXwKdZ5vN", "shortName": "API 迁移到 v3", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Fl8QaP1zMbNsR4cX", "shortName": "Flaky test hunt", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Cr6VbH2sJnPqT8rF", "shortName": "爬虫脚本调试", "workspaceName": "ops-scripts", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Db3JqH6pVnMrX7sT", "shortName": "数据库索引优化", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Py4KdF8wNmLsQ2vB", "shortName": "Payments refactor", "workspaceName": "pay-core", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Rp9ZnT4kHdQxE3mL", "shortName": "报表修复 v2", "workspaceName": "dataviz-lab", "status": "running", "freshness": "1h" }
+    ],
+    "expected": { "action": "create_new" }
+  },
+  {
+    "id": "nod-001",
+    "message": "帮我解释一下什么是幂等性，用大白话说。",
+    "candidates": [
+      { "candidateRef": "Lg7FxQ2mZvKpR9dW", "shortName": "登录页修复", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Ap3MqR8tXwKdZ5vN", "shortName": "API 迁移到 v3", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Wk9PdS4nBcXzL2mQ", "shortName": "周报数据整理", "workspaceName": "dataviz-lab", "status": "idle", "freshness": "1d" }
+    ],
+    "expected": { "action": "no_delegation" }
+  },
+  {
+    "id": "nod-002",
+    "message": "What's the difference between an inner join and a left join? Quick answer is fine.",
+    "candidates": [
+      { "candidateRef": "Db3JqH6pVnMrX7sT", "shortName": "数据库索引优化", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Db8WlK2qZnMtY5rU", "shortName": "数据库备份脚本", "workspaceName": "ops-scripts", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Fl8QaP1zMbNsR4cX", "shortName": "Flaky test hunt", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "In6BxR4tYcMdW8qV", "shortName": "文档翻译排期", "workspaceName": "docs-site", "status": "idle", "freshness": "1d" }
+    ],
+    "expected": { "action": "no_delegation" }
+  },
+  {
+    "id": "nod-003",
+    "message": "今天先到这里，辛苦了。",
+    "candidates": [
+      { "candidateRef": "Cr6VbH2sJnPqT8rF", "shortName": "爬虫脚本调试", "workspaceName": "ops-scripts", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Wk9PdS4nBcXzL2mQ", "shortName": "周报数据整理", "workspaceName": "dataviz-lab", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Dk5WnE3rVmYtU9iO", "shortName": "Pitch deck draft", "workspaceName": "design-studio", "status": "idle", "freshness": "7d" }
+    ],
+    "expected": { "action": "no_delegation" }
+  },
+  {
+    "id": "nod-004",
+    "message": "Summarize what we have done so far in this conversation.",
+    "candidates": [
+      { "candidateRef": "Ap3MqR8tXwKdZ5vN", "shortName": "API 迁移到 v3", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Lg7FxQ2mZvKpR9dW", "shortName": "登录页修复", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Rp9ZnT4kHdQxE3mL", "shortName": "报表修复 v2", "workspaceName": "dataviz-lab", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Py4KdF8wNmLsQ2vB", "shortName": "Payments refactor", "workspaceName": "pay-core", "status": "running", "freshness": "1h" }
+    ],
+    "expected": { "action": "no_delegation" }
+  },
+  {
+    "id": "nod-005",
+    "message": "帮我把那个东西改一下。",
+    "ambiguous": true,
+    "candidates": [
+      { "candidateRef": "Lg7FxQ2mZvKpR9dW", "shortName": "登录页修复", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Rp9ZnT4kHdQxE3mL", "shortName": "报表修复 v2", "workspaceName": "dataviz-lab", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Cr6VbH2sJnPqT8rF", "shortName": "爬虫脚本调试", "workspaceName": "ops-scripts", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Py4KdF8wNmLsQ2vB", "shortName": "Payments refactor", "workspaceName": "pay-core", "status": "running", "freshness": "1h" }
+    ],
+    "expected": { "action": "no_delegation" }
+  },
+  {
+    "id": "nod-006",
+    "message": "Fix that thing from yesterday, you know the one.",
+    "ambiguous": true,
+    "candidates": [
+      { "candidateRef": "Py7RtG3xMsLwQ9cD", "shortName": "Payments hotfix", "workspaceName": "pay-core", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Db8WlK2qZnMtY5rU", "shortName": "数据库备份脚本", "workspaceName": "ops-scripts", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "In6BxR4tYcMdW8qV", "shortName": "文档翻译排期", "workspaceName": "docs-site", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Lo5NvP9rXcMbT3wS", "shortName": "Logo ideas exploration", "workspaceName": "design-studio", "status": "idle", "freshness": "older" }
+    ],
+    "expected": { "action": "no_delegation" }
+  },
+  {
+    "id": "nod-007",
+    "message": "继续那个修复任务。",
+    "ambiguous": true,
+    "candidates": [
+      { "candidateRef": "Lg7FxQ2mZvKpR9dW", "shortName": "登录页修复", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Rp2CmW7yQsXdB6nK", "shortName": "报表修复", "workspaceName": "dataviz-lab", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Py7RtG3xMsLwQ9cD", "shortName": "Payments hotfix", "workspaceName": "pay-core", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Db3JqH6pVnMrX7sT", "shortName": "数据库索引优化", "workspaceName": "neo-web", "status": "running", "freshness": "1h" }
+    ],
+    "expected": { "action": "no_delegation" }
+  },
+  {
+    "id": "nod-008",
+    "message": "Write me a haiku about servers being cold.",
+    "candidates": [
+      { "candidateRef": "Ap3MqR8tXwKdZ5vN", "shortName": "API 迁移到 v3", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Wk9PdS4nBcXzL2mQ", "shortName": "周报数据整理", "workspaceName": "dataviz-lab", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Dk5WnE3rVmYtU9iO", "shortName": "Pitch deck draft", "workspaceName": "design-studio", "status": "idle", "freshness": "7d" },
+      { "candidateRef": "Lo5NvP9rXcMbT3wS", "shortName": "Logo ideas exploration", "workspaceName": "design-studio", "status": "idle", "freshness": "older" }
+    ],
+    "expected": { "action": "no_delegation" }
+  },
+  {
+    "id": "nod-009",
+    "message": "这个报错是什么意思：ECONNREFUSED 127.0.0.1:5432？跟我大概讲讲就好。",
+    "candidates": [
+      { "candidateRef": "Db3JqH6pVnMrX7sT", "shortName": "数据库索引优化", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Db8WlK2qZnMtY5rU", "shortName": "数据库备份脚本", "workspaceName": "ops-scripts", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Cr6VbH2sJnPqT8rF", "shortName": "爬虫脚本调试", "workspaceName": "ops-scripts", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Fl8QaP1zMbNsR4cX", "shortName": "Flaky test hunt", "workspaceName": "neo-web", "status": "running", "freshness": "1h" }
+    ],
+    "expected": { "action": "no_delegation" }
+  },
+  {
+    "id": "stp-001",
+    "message": "把刚才发给『登录页修复』会话的那个任务停掉，先不要动了。",
+    "candidates": [
+      { "candidateRef": "Lg7FxQ2mZvKpR9dW", "shortName": "登录页修复", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Ap3MqR8tXwKdZ5vN", "shortName": "API 迁移到 v3", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Wk9PdS4nBcXzL2mQ", "shortName": "周报数据整理", "workspaceName": "dataviz-lab", "status": "idle", "freshness": "1d" }
+    ],
+    "activeDelegations": [
+      { "delegationId": "delegation_9fK3xQ7mLp", "targetShortName": "登录页修复", "status": "active" }
+    ],
+    "expected": { "action": "stop" }
+  },
+  {
+    "id": "stp-002",
+    "message": "Stop the delegation to the API migration session — priorities changed.",
+    "candidates": [
+      { "candidateRef": "Ap3MqR8tXwKdZ5vN", "shortName": "API 迁移到 v3", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Fl8QaP1zMbNsR4cX", "shortName": "Flaky test hunt", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Lo5NvP9rXcMbT3wS", "shortName": "Logo ideas exploration", "workspaceName": "design-studio", "status": "idle", "freshness": "older" }
+    ],
+    "activeDelegations": [
+      { "delegationId": "delegation_kQ2wR8tXnZ", "targetShortName": "API 迁移到 v3", "status": "active" }
+    ],
+    "expected": { "action": "stop" }
+  },
+  {
+    "id": "stp-003",
+    "message": "先别跑数据清洗了，那个委托先停一下。",
+    "candidates": [
+      { "candidateRef": "Wk9PdS4nBcXzL2mQ", "shortName": "周报数据整理", "workspaceName": "dataviz-lab", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Rp9ZnT4kHdQxE3mL", "shortName": "报表修复 v2", "workspaceName": "dataviz-lab", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Cr6VbH2sJnPqT8rF", "shortName": "爬虫脚本调试", "workspaceName": "ops-scripts", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Db8WlK2qZnMtY5rU", "shortName": "数据库备份脚本", "workspaceName": "ops-scripts", "status": "idle", "freshness": "1d" }
+    ],
+    "activeDelegations": [
+      { "delegationId": "delegation_pV5nD3sJqL", "targetShortName": "数据清洗（周报）", "status": "active" }
+    ],
+    "expected": { "action": "stop" }
+  },
+  {
+    "id": "stp-004",
+    "message": "Halt the deck task I delegated earlier, we are not presenting that version.",
+    "candidates": [
+      { "candidateRef": "Dk5WnE3rVmYtU9iO", "shortName": "Pitch deck draft", "workspaceName": "design-studio", "status": "idle", "freshness": "7d" },
+      { "candidateRef": "Lo5NvP9rXcMbT3wS", "shortName": "Logo ideas exploration", "workspaceName": "design-studio", "status": "idle", "freshness": "older" },
+      { "candidateRef": "In6BxR4tYcMdW8qV", "shortName": "文档翻译排期", "workspaceName": "docs-site", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Py7RtG3xMsLwQ9cD", "shortName": "Payments hotfix", "workspaceName": "pay-core", "status": "idle", "freshness": "1d" }
+    ],
+    "activeDelegations": [
+      { "delegationId": "delegation_mR7bF2wQxT", "targetShortName": "Pitch deck draft", "status": "active" }
+    ],
+    "expected": { "action": "stop" }
+  },
+  {
+    "id": "res-001",
+    "message": "把刚才停掉的那个爬虫调试任务恢复继续跑。",
+    "candidates": [
+      { "candidateRef": "Cr6VbH2sJnPqT8rF", "shortName": "爬虫脚本调试", "workspaceName": "ops-scripts", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Db8WlK2qZnMtY5rU", "shortName": "数据库备份脚本", "workspaceName": "ops-scripts", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Lg7FxQ2mZvKpR9dW", "shortName": "登录页修复", "workspaceName": "neo-web", "status": "running", "freshness": "1h" }
+    ],
+    "activeDelegations": [
+      { "delegationId": "delegation_xT4cN8mJqP", "targetShortName": "爬虫脚本调试", "status": "stopped" }
+    ],
+    "expected": { "action": "resume" }
+  },
+  {
+    "id": "res-002",
+    "message": "Resume the paused delegation to the payments refactor session.",
+    "candidates": [
+      { "candidateRef": "Py4KdF8wNmLsQ2vB", "shortName": "Payments refactor", "workspaceName": "pay-core", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Py7RtG3xMsLwQ9cD", "shortName": "Payments hotfix", "workspaceName": "pay-core", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Fl8QaP1zMbNsR4cX", "shortName": "Flaky test hunt", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Rp9ZnT4kHdQxE3mL", "shortName": "报表修复 v2", "workspaceName": "dataviz-lab", "status": "running", "freshness": "1h" }
+    ],
+    "activeDelegations": [
+      { "delegationId": "delegation_zW6qJ5rKmB", "targetShortName": "Payments refactor", "status": "stopped" }
+    ],
+    "expected": { "action": "resume" }
+  },
+  {
+    "id": "res-003",
+    "message": "刚才暂停的那条委托继续执行吧，可以跑了。",
+    "candidates": [
+      { "candidateRef": "Wk9PdS4nBcXzL2mQ", "shortName": "周报数据整理", "workspaceName": "dataviz-lab", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Rp9ZnT4kHdQxE3mL", "shortName": "报表修复 v2", "workspaceName": "dataviz-lab", "status": "running", "freshness": "1h" },
+      { "candidateRef": "In6BxR4tYcMdW8qV", "shortName": "文档翻译排期", "workspaceName": "docs-site", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Dk5WnE3rVmYtU9iO", "shortName": "Pitch deck draft", "workspaceName": "design-studio", "status": "idle", "freshness": "7d" }
+    ],
+    "activeDelegations": [
+      { "delegationId": "delegation_bY3hL9wNmK", "targetShortName": "报表修复 v2", "status": "stopped" }
+    ],
+    "expected": { "action": "resume" }
+  },
+  {
+    "id": "res-004",
+    "message": "Unpause the docs translation task I stopped this morning.",
+    "candidates": [
+      { "candidateRef": "In6BxR4tYcMdW8qV", "shortName": "文档翻译排期", "workspaceName": "docs-site", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Lg7FxQ2mZvKpR9dW", "shortName": "登录页修复", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Ap3MqR8tXwKdZ5vN", "shortName": "API 迁移到 v3", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Db3JqH6pVnMrX7sT", "shortName": "数据库索引优化", "workspaceName": "neo-web", "status": "running", "freshness": "1h" }
+    ],
+    "activeDelegations": [
+      { "delegationId": "delegation_cF8jM2qWxR", "targetShortName": "文档翻译排期", "status": "stopped" }
+    ],
+    "expected": { "action": "resume" }
+  },
+  {
+    "id": "cor-001",
+    "message": "刚才发给周报会话的任务写错了：应该是统计近 30 天的数据，不是近 7 天。",
+    "candidates": [
+      { "candidateRef": "Wk9PdS4nBcXzL2mQ", "shortName": "周报数据整理", "workspaceName": "dataviz-lab", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Rp2CmW7yQsXdB6nK", "shortName": "报表修复", "workspaceName": "dataviz-lab", "status": "idle", "freshness": "7d" },
+      { "candidateRef": "Lg7FxQ2mZvKpR9dW", "shortName": "登录页修复", "workspaceName": "neo-web", "status": "running", "freshness": "1h" }
+    ],
+    "activeDelegations": [
+      { "delegationId": "delegation_vN5rT8xQpJ", "targetShortName": "周报数据整理", "status": "active" }
+    ],
+    "expected": { "action": "correct" }
+  },
+  {
+    "id": "cor-002",
+    "message": "I made a typo in the task delegated to the docs session — it must say chapter 3, not chapter 2.",
+    "candidates": [
+      { "candidateRef": "In6BxR4tYcMdW8qV", "shortName": "文档翻译排期", "workspaceName": "docs-site", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Dk5WnE3rVmYtU9iO", "shortName": "Pitch deck draft", "workspaceName": "design-studio", "status": "idle", "freshness": "7d" },
+      { "candidateRef": "Py4KdF8wNmLsQ2vB", "shortName": "Payments refactor", "workspaceName": "pay-core", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Db8WlK2qZnMtY5rU", "shortName": "数据库备份脚本", "workspaceName": "ops-scripts", "status": "idle", "freshness": "1d" }
+    ],
+    "activeDelegations": [
+      { "delegationId": "delegation_gJ7wS4mZxK", "targetShortName": "文档翻译排期", "status": "active" }
+    ],
+    "expected": { "action": "correct" }
+  },
+  {
+    "id": "cor-003",
+    "message": "更正一下刚才那条委托的内容：目标平台改成小红书，不是微博。",
+    "candidates": [
+      { "candidateRef": "Rp9ZnT4kHdQxE3mL", "shortName": "报表修复 v2", "workspaceName": "dataviz-lab", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Lo5NvP9rXcMbT3wS", "shortName": "Logo ideas exploration", "workspaceName": "design-studio", "status": "idle", "freshness": "older" },
+      { "candidateRef": "Cr6VbH2sJnPqT8rF", "shortName": "爬虫脚本调试", "workspaceName": "ops-scripts", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Fl8QaP1zMbNsR4cX", "shortName": "Flaky test hunt", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Db3JqH6pVnMrX7sT", "shortName": "数据库索引优化", "workspaceName": "neo-web", "status": "running", "freshness": "1h" }
+    ],
+    "activeDelegations": [
+      { "delegationId": "delegation_hP2kW9nQrT", "targetShortName": "社媒投放文案", "status": "active" }
+    ],
+    "expected": { "action": "correct" }
+  },
+  {
+    "id": "cor-004",
+    "message": "Update the delegated task: point it at the staging API key instead of production.",
+    "candidates": [
+      { "candidateRef": "Ap3MqR8tXwKdZ5vN", "shortName": "API 迁移到 v3", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Lg7FxQ2mZvKpR9dW", "shortName": "登录页修复", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Py4KdF8wNmLsQ2vB", "shortName": "Payments refactor", "workspaceName": "pay-core", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Rp9ZnT4kHdQxE3mL", "shortName": "报表修复 v2", "workspaceName": "dataviz-lab", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Db3JqH6pVnMrX7sT", "shortName": "数据库索引优化", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Cr6VbH2sJnPqT8rF", "shortName": "爬虫脚本调试", "workspaceName": "ops-scripts", "status": "running", "freshness": "1h" },
+      { "candidateRef": "Fl8QaP1zMbNsR4cX", "shortName": "Flaky test hunt", "workspaceName": "neo-web", "status": "running", "freshness": "1h" },
+      { "candidateRef": "In6BxR4tYcMdW8qV", "shortName": "文档翻译排期", "workspaceName": "docs-site", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Wk9PdS4nBcXzL2mQ", "shortName": "周报数据整理", "workspaceName": "dataviz-lab", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Dk5WnE3rVmYtU9iO", "shortName": "Pitch deck draft", "workspaceName": "design-studio", "status": "idle", "freshness": "7d" },
+      { "candidateRef": "Py7RtG3xMsLwQ9cD", "shortName": "Payments hotfix", "workspaceName": "pay-core", "status": "idle", "freshness": "1d" },
+      { "candidateRef": "Db8WlK2qZnMtY5rU", "shortName": "数据库备份脚本", "workspaceName": "ops-scripts", "status": "idle", "freshness": "1d" }
+    ],
+    "activeDelegations": [
+      { "delegationId": "delegation_qS9xF3mNbV", "targetShortName": "API 迁移到 v3", "status": "active" }
+    ],
+    "expected": { "action": "correct" }
+  }
+]

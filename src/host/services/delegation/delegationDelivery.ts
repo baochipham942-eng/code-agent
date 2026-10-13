@@ -11,6 +11,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import type { ConversationEnvelope } from '../../../shared/contract/conversationEnvelope';
 import type { DelegationOriginMarker } from '../../../shared/contract/queuedInput';
 import { isTerminalRunStatus } from '../../../shared/contract/durableRun';
+import { QUEUED_INPUT_RETRY } from '../../../shared/constants/queuedInput';
 import { QueuedInputRepository } from '../core/repositories/QueuedInputRepository';
 import {
   SessionDelegationRepository,
@@ -340,6 +341,9 @@ export interface DelegationRunLike {
 /**
  * 投影看到目标 run 终态 → markTerminalObserved（幂等、可重放）。
  * run 行消失/读失败不写（下次投影再试），不把 RunStatus 复制进委托行。
+ * 例外（台账③）：run 失败但排队行还会自动重投（requeueAfterFailure 回
+ * queued、预算未尽）时对委托不是终态——只有 run completed/cancelled 与
+ * 重试耗尽（onRetryExhausted → aborted(delivery_failed)）才是终态。
  */
 export async function projectTerminalDelegations(
   db: BetterSqlite3.Database,
@@ -351,6 +355,7 @@ export async function projectTerminalDelegations(
 ): Promise<number> {
   const delegations = new SessionDelegationRepository(db);
   const runs = new DurableRunRepository(db);
+  const queuedInputs = new QueuedInputRepository(db);
   const getRun = input.getRun ?? ((runId: string) => runs.get(runId));
   const pending = delegations.listPendingTerminalObservation(input.targetSessionId);
   let observed = 0;
@@ -362,9 +367,31 @@ export async function projectTerminalDelegations(
     } catch {
       run = null;
     }
-    if (run && isTerminalRunStatus(run.status as never)) {
-      observed += delegations.markTerminalObserved(row.delegationId, input.now);
+    if (!run || !isTerminalRunStatus(run.status as never)) continue;
+    if (run.status === 'failed' && queuedRowPendingRetry(queuedInputs, row)) {
+      // 摘掉旧 run（r7 同形状），让重试投递的 backfillTargetRunId 记新 run；
+      // 否则一次瞬时 429/超时就把委托钉死在 terminal_observed，自动重试/
+      // sendNow/resume 全被生命周期门挡掉。
+      delegations.detachTargetRun(row.delegationId);
+      continue;
     }
+    observed += delegations.markTerminalObserved(row.delegationId, input.now);
   }
   return observed;
+}
+
+/**
+ * rework r8：委托的排队行是否还在自动重试（queued/sending 且重试预算未尽）。
+ * 已暂停的 queued 行（restart/delegation_stopped 等）也算：解停/sendNow 复核
+ * 通过后仍会投，这些路径不能被终态投影提前掐死。
+ */
+function queuedRowPendingRetry(
+  queuedInputs: QueuedInputRepository,
+  row: SessionDelegationRecord,
+): boolean {
+  if (!row.targetQueuedInputId) return false;
+  const linked = queuedInputs.getById(row.targetQueuedInputId);
+  if (!linked) return false;
+  return (linked.status === 'queued' || linked.status === 'sending')
+    && linked.retryCount <= QUEUED_INPUT_RETRY.MAX_RESEND_ATTEMPTS;
 }

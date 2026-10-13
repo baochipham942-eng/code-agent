@@ -290,6 +290,21 @@ export class SessionDelegationRepository {
     );
   }
 
+  /**
+   * rework r8：目标 run 失败但排队行仍在自动重试（requeueAfterFailure 回
+   * queued）时，终态投影摘掉指向旧 run 的 target_run_id——与 markResumed 同
+   * 形状。backfillTargetRunId 只在 NULL 时写入，留着旧值会让重试投递的回填
+   * 静默落空，投影也会一直钉在已失败的旧 run 上。
+   */
+  detachTargetRun(delegationId: string): number {
+    return this.changes(
+      `UPDATE session_delegations
+       SET target_run_id = NULL
+       WHERE delegation_id = ? AND status IN ('active', 'stopped') AND target_run_id IS NOT NULL`,
+      delegationId,
+    );
+  }
+
   markSuperseded(delegationId: string, now: number): number {
     if (!finiteTimestamp(now)) return 0;
     return this.changes(

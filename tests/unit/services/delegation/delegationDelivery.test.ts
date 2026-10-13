@@ -6,6 +6,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 
 import { applySchema } from '../../../../src/host/services/core/database/schema';
 import { applyDurableRunMigrationDraft } from '../../../../src/host/services/core/database/migrations/durableRun';
+import { QUEUED_INPUT_RETRY } from '../../../../src/shared/constants/queuedInput';
 import { QueuedInputRepository } from '../../../../src/host/services/core/repositories/QueuedInputRepository';
 import {
   SessionDelegationRepository,
@@ -460,6 +461,35 @@ describe('delegationDelivery（K1C 投递接缝）', () => {
       expect(await projectTerminalDelegations(db, { now: 5_000 })).toBe(1);
       expect(delegations.get('d-1')?.status).toBe('terminal_observed');
     });
+
+    it('rework r8：run A 正常完成 → terminal_observed 照写（正常路径不变）', async () => {
+      commitDefaults();
+      expect(queuedInputs.markSending(queuedInputId, 1_500)).toBe(true);
+      expect(delegations.backfillTargetRunId('d-1', 'run-a')).toBe(1);
+      expect(queuedInputs.markConsumed(queuedInputId, 1_600)).toBe(true);
+      const observed = await projectTerminalDelegations(db, {
+        getRun: async () => ({ runId: 'run-a', status: 'completed' }),
+        now: 5_000,
+      });
+      expect(observed).toBe(1);
+      expect(delegations.get('d-1'))
+        .toMatchObject({ status: 'terminal_observed', resolvedAt: 5_000, targetRunId: 'run-a' });
+    });
+
+    it('rework r8：run 被取消（stop 路径）→ 即使行停在重试态也照写 terminal_observed', async () => {
+      commitDefaults();
+      expect(queuedInputs.markSending(queuedInputId, 1_500)).toBe(true);
+      expect(delegations.backfillTargetRunId('d-1', 'run-a')).toBe(1);
+      // stop 处理器形状：行带原因回 queued + markStopped，run 被 cancel
+      expect(queuedInputs.pauseAfterClaim(queuedInputId, 'delegation_stopped', 1_600)).toBe(true);
+      expect(delegations.markStopped('d-1', { reason: 'user' }, 1_600)).toBe(1);
+      const observed = await projectTerminalDelegations(db, {
+        getRun: async () => ({ runId: 'run-a', status: 'cancelled' }),
+        now: 5_000,
+      });
+      expect(observed).toBe(1);
+      expect(delegations.get('d-1')?.status).toBe('terminal_observed');
+    });
   });
 
   describe('createDelegationDrainHooks（真实钩子）', () => {
@@ -517,6 +547,73 @@ describe('delegationDelivery（K1C 投递接缝）', () => {
       });
       expect(facts.snapshot.delegatedRunIds).toContain('run-b');
       expect(facts.snapshot.delegatedRunIds).not.toContain('run-a');
+    });
+
+    it('rework r8：run A 可重试失败 → 投影不写终态、委托保持 active，重投回填 run B（台账③）', async () => {
+      const { createDelegationDrainHooks } = await import('../../../../src/host/services/delegation/delegationDrainHooks');
+      const logger = { info: () => {}, warn: () => {}, error: () => {} };
+      const hooks = createDelegationDrainHooks({ ...makeDeps(), logger });
+      commitDefaults();
+      // 首次投递：抢占 → 激活回填 run A
+      expect(queuedInputs.markSending(queuedInputId, 1_500)).toBe(true);
+      hooks.onActivated({ id: queuedInputId, sessionId: targetSessionId }, { runId: 'run-a' });
+      expect(delegations.get('d-1')).toMatchObject({ status: 'active', targetRunId: 'run-a' });
+
+      // run A 一次可重试失败（瞬时 429/超时）→ drain settle：requeueAfterFailure 回 queued
+      expect(queuedInputs.requeueAfterFailure(queuedInputId, 1_700)).toEqual({ retryCount: 1 });
+
+      // drain finally 的终态投影看到 run A failed：对委托不是终态，不得写 terminal_observed
+      const observed = await projectTerminalDelegations(db, {
+        getRun: async (runId) => ({ runId, status: runId === 'run-a' ? 'failed' : 'running' }),
+        now: 2_000,
+      });
+      expect(observed).toBe(0);
+      expect(delegations.get('d-1')).toMatchObject({ status: 'active', targetRunId: null });
+
+      // 行未被生命周期门暂停（delegation_inactive），下一次 drain 会投它
+      const row = queuedInputs.getById(queuedInputId)!;
+      expect(row).toMatchObject({ status: 'queued', pausedReason: null });
+      expect(queuedInputs.getNextDispatchable(targetSessionId)?.id).toBe(queuedInputId);
+      expect(await evaluateDelegationDelivery(makeDeps(), row))
+        .toMatchObject({ kind: 'deliver', delegationId: 'd-1' });
+
+      // 重投激活 run B → 回填记新 run（INV-4：翻回/保持 active 并改记新 run）
+      expect(queuedInputs.markSending(queuedInputId, 1_800)).toBe(true);
+      hooks.onActivated({ id: queuedInputId, sessionId: targetSessionId }, { runId: 'run-b' });
+      expect(delegations.get('d-1')?.targetRunId).toBe('run-b');
+    });
+
+    it('rework r8：重试耗尽 → aborted(delivery_failed)，行不可再投（终态归 onRetryExhausted）', async () => {
+      const { createDelegationDrainHooks } = await import('../../../../src/host/services/delegation/delegationDrainHooks');
+      const logger = { info: () => {}, warn: () => {}, error: () => {} };
+      const hooks = createDelegationDrainHooks({ ...makeDeps(), logger });
+      commitDefaults();
+      expect(queuedInputs.markSending(queuedInputId, 1_500)).toBe(true);
+      hooks.onActivated({ id: queuedInputId, sessionId: targetSessionId }, { runId: 'run-a' });
+
+      // 与 drain settleRunFailure 同形状：每次失败 requeue 回 queued；超预算 → markFailed + onRetryExhausted
+      let exhausted = false;
+      for (let attempt = 1; attempt <= QUEUED_INPUT_RETRY.MAX_RESEND_ATTEMPTS + 1; attempt += 1) {
+        if (attempt > 1) expect(queuedInputs.markSending(queuedInputId, 2_000 + attempt)).toBe(true);
+        const requeued = queuedInputs.requeueAfterFailure(queuedInputId, 2_100 + attempt);
+        expect(requeued).not.toBeNull();
+        if (requeued!.retryCount > QUEUED_INPUT_RETRY.MAX_RESEND_ATTEMPTS) {
+          expect(queuedInputs.markFailed(queuedInputId, 2_900)).toBe(true);
+          hooks.onRetryExhausted({ id: queuedInputId, sessionId: targetSessionId });
+          exhausted = true;
+        }
+      }
+      expect(exhausted).toBe(true);
+      expect(delegations.get('d-1')).toMatchObject({ status: 'aborted' });
+      expect(JSON.parse(delegations.get('d-1')!.resolutionJson!)).toEqual({ reason: 'delivery_failed' });
+      // 行不可再投（failed + send_failed 不进 getNextDispatchable）
+      expect(queuedInputs.getNextDispatchable(targetSessionId)).toBeNull();
+      // 耗尽后的投影对 aborted 行是 no-op
+      expect(await projectTerminalDelegations(db, {
+        getRun: async () => ({ runId: 'run-a', status: 'failed' }),
+        now: 3_000,
+      })).toBe(0);
+      expect(delegations.get('d-1')?.status).toBe('aborted');
     });
 
     it('onClaimConflict：sending 行 pauseAfterClaim(target_busy)；onRetryExhausted：投影 aborted(delivery_failed)', async () => {

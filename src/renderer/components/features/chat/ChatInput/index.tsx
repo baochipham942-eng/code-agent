@@ -84,6 +84,7 @@ import {
 import { goalComposerDraftToParsed } from './parseGoalCommand';
 import { LoopStatusBar } from './LoopStatusBar';
 import { ScheduleComposerCard } from './ScheduleComposerCard';
+import { ScheduleConfirmCard } from './ScheduleConfirmCard';
 import { GoalConfirmCard } from './GoalConfirmCard';
 import { SeedComposerCard, type SeedComposerKind } from './SeedComposerCard';
 import { buildVerifyCandidates } from './goalConfirm';
@@ -100,6 +101,7 @@ import { useChatInputSlashCommands } from './useChatInputSlashCommands';
 import { useComposerFocusRequest } from './useComposerFocusRequest';
 import { useComposerPrefill } from './useComposerPrefill';
 import { useChatInputSubmit } from './useChatInputSubmit';
+import { useScheduleDraft } from './useScheduleDraft';
 import { useChatInputComposerActions } from './useChatInputComposerActions';
 import {
   clearDebugDraftParamsFromCurrentUrl,
@@ -340,9 +342,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     stepCount: number;
     toolNames: string[];
   } | null>(null);
-  // /schedule 不带参数时的对话式创建卡片
-  const [scheduleComposerOpen, setScheduleComposerOpen] = useState(false);
-  const [creatingSchedule, setCreatingSchedule] = useState(false);
+  const { scheduleComposerOpen, setScheduleComposerOpen, creatingSchedule, setCreatingSchedule, pendingScheduleDraft, storePendingScheduleDraft, discardPendingScheduleDraft } = useScheduleDraft(currentSessionId);
   // /goal 安静确认卡（主路径：自然语言 → 提炼草案 → 轻确认启动）
   const [goalConfirm, setGoalConfirm] = useState<{ initialGoal: string } | null>(null);
   const [goalVerifyCandidates, setGoalVerifyCandidates] = useState<string[]>([]);
@@ -903,7 +903,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   }, [inputPlaceholder, isProcessing, placeholder, t]);
 
   // 提交发送管线（schedule/loop/goal/agent 命令分支 + appshot 注入 + ! shell 快捷 + 失败回滚）
-  const { handleSubmit, runScheduleCreation, startGoalRun, submitSeedComposer } = useChatInputSubmit({
+  const { handleSubmit, runScheduleCreation, confirmScheduleCreation, startGoalRun, submitSeedComposer } = useChatInputSubmit({
     value,
     attachments,
     voiceInputContext,
@@ -933,6 +933,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     setSessionReferences,
     setArtifactReferences,
     setScheduleComposerOpen,
+    scheduleDraft: { pendingScheduleDraft, storePendingScheduleDraft, discardPendingScheduleDraft, setCreatingSchedule },
     openGoalConfirm: (initialGoal: string) => setGoalConfirm({ initialGoal }),
     closeGoalConfirm: () => setGoalConfirm(null),
     openSeedComposer: (kind) => setSeedComposer({ kind, initialText: '' }),
@@ -1158,15 +1159,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               <ScheduleComposerCard
                 creating={creatingSchedule}
                 onSubmit={async (description, options) => {
-                  setCreatingSchedule(true);
                   const ok = await runScheduleCreation(description, options);
-                  setCreatingSchedule(false);
                   if (ok) setScheduleComposerOpen(false);
                 }}
                 onDismiss={() => setScheduleComposerOpen(false)}
               />
             )}
           </SlotEntry>
+          <SlotEntry id="schedule-confirm" active={Boolean(pendingScheduleDraft)}>{pendingScheduleDraft && <ScheduleConfirmCard draft={pendingScheduleDraft} confirming={creatingSchedule} onConfirm={confirmScheduleCreation} onDismiss={discardPendingScheduleDraft} />}</SlotEntry>
 
           <SlotEntry id="goal-confirm" active={Boolean(goalConfirm)}>
             {goalConfirm && (

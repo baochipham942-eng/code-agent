@@ -21,6 +21,7 @@ import { buildAgentPointerEvent } from '../../../../../utils/agentPointer';
 import { LiveToolOutput } from './LiveToolOutput';
 import { redactBrowserComputerInputPayloadsInValue } from '@shared/utils/browserComputerRedaction';
 import { getBrowserComputerActionCatalogEntry } from '@shared/utils/browserComputerActionCatalog';
+import { aggregateEditArgsText } from '@shared/utils/editToolArgs';
 import { MemoryCitationGroup } from '../../../../citations/MemoryCitationGroup';
 import { CitationList } from '../../../../citations/CitationList';
 import { LibraryEvidenceDrawer } from '../../../../citations/LibraryEvidenceDrawer';
@@ -175,17 +176,16 @@ export function ToolDetails({ toolCall, compact, mediaContext }: Props) {
     : null;
   const structuredHostReason = isHostReasonPayload(readHostReasonFromMetadata(result?.metadata));
 
-  // Check if this is Edit tool
   const isEditFile = name === 'Edit';
-  const editFileArgs = isEditFile
-    ? {
-        filePath: (args?.file_path as string) || '',
-        oldString: (args?.old_string as string) || '',
-        newString: (args?.new_string as string) || '',
-      }
-    : null;
+  // 注册的 Edit 形状是 edits[]（multiEdit.schema.ts），归一聚合 old/new；legacy 平铺不变
+  const editText = isEditFile ? aggregateEditArgsText(args) : null;
+  const editFileArgs = editText && {
+    filePath: (args?.file_path as string) || '',
+    oldString: editText.oldText,
+    newString: editText.newText,
+  };
 
-  // 空编辑检测：old_string 和 new_string 完全相同
+  // 空编辑检测：聚合后的 old/new 文本完全相同
   const isEmptyEdit = isEditFile && editFileArgs &&
     editFileArgs.oldString === editFileArgs.newString;
 

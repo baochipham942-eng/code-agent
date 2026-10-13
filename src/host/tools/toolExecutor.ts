@@ -13,6 +13,7 @@ import * as nodeFs from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
 import { AgentFailureCode, type ToolDefinition } from '../../shared/contract';
 import type { PermissionBoundaryId } from '../../shared/contract/permissionBoundary';
+import { aggregateEditArgsText } from '../../shared/utils/editToolArgs';
 import {
   createHostReason,
   hostReasonModelText,
@@ -2574,14 +2575,17 @@ export class ToolExecutor {
         };
 
       case 'edit_file':
-      case 'Edit':
+      case 'Edit': {
+        // 注册的 Edit 形状是 edits[]（multiEdit.schema.ts），归一后聚合取文；
+        // legacy 平铺形状输出不变。
+        const editText = aggregateEditArgsText(params);
         return {
           type: 'file_edit',
           tool: tool.name,
           details: {
             path: params.file_path,
-            oldString: params.old_string,
-            newString: params.new_string,
+            oldString: editText.oldText || undefined,
+            newString: editText.newText || undefined,
             ...sourceAttribution(params.file_path),
           },
           reasonCode: this.fileWriteReasonCode(params.file_path),
@@ -2590,6 +2594,7 @@ export class ToolExecutor {
             reason: '编辑操作会修改目标文件内容。',
           },
         };
+      }
 
       case 'web_fetch':
       case 'WebFetch':

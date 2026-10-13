@@ -1297,10 +1297,13 @@ async function main(): Promise<void> {
   // 配对伴侣 / 等审批就留守继续跑。standalone / dev 模式没有这个环境变量，不受影响。
   // 例外：win32 的 stdin EOF 是 Rust「请退出」指令（3s 后 TerminateProcess），
   // 一律立即优雅停机，驻留判据只对 macOS/Linux 成立（见 shellExit 模块头）。
-  // 回调必须定义在守卫块外：gracefulShutdown 静态门用 lazy 正则截守卫块体（到第一个
-  // 独行 `}` 为止），监听语句内嵌函数体会把 'end' 监听挤出匹配范围，跨端合同门假红。
+  // 回调与 rechecker 构造都必须在守卫块外：gracefulShutdown 静态门用 lazy 正则截守卫块
+  // 体（到第一个独行 `}` 为止），块内多行调用的收尾 `});` 会把 'end' 监听挤出匹配（r3/r14
+  // 同型回归）。无 boot token 时 rechecker 为 undefined，订阅与回调空转，行为不变。
   let shellPipeAttached = Boolean(process.env.CODE_AGENT_TAURI_BOOT_TOKEN);
-  let daemonExitRechecker: ReturnType<typeof createDaemonExitRechecker> | undefined;
+  const daemonExitRechecker = process.env.CODE_AGENT_TAURI_BOOT_TOKEN
+    ? createDaemonExitRechecker({ platform: process.platform, getSnapshot: () => daemonIdleSnapshot?.(), shutdown })
+    : undefined;
   let shellPipeClosedHandled = false;
   const onShellPipeClosed = () => {
     if (shellPipeClosedHandled) return;
@@ -1314,15 +1317,12 @@ async function main(): Promise<void> {
     }
     logger.info('[daemon] shell exited while busy — staying resident (runs/companion/approval pending)');
   };
-  if (process.env.CODE_AGENT_TAURI_BOOT_TOKEN) {
-    daemonExitRechecker = createDaemonExitRechecker({
-      platform: process.platform,
-      getSnapshot: () => daemonIdleSnapshot?.(),
-      shutdown,
-    });
+  if (daemonExitRechecker) {
     runRegistry.onIdleTransition(daemonExitRechecker.recheck);
     onForegroundPermissionStateChange(daemonExitRechecker.recheck);
     getTaskManager().on('event', daemonExitRechecker.recheck);
+  }
+  if (process.env.CODE_AGENT_TAURI_BOOT_TOKEN) {
     process.stdin.resume();
     process.stdin.on('end', onShellPipeClosed);
     process.stdin.on('error', onShellPipeClosed);

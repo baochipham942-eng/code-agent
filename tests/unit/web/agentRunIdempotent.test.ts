@@ -4,7 +4,7 @@
 // 200 {replayed:true,...}；该 run 仍活跃时维持现有 409；不同 id 照常新建。
 import express from 'express';
 import http from 'http';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
@@ -25,6 +25,7 @@ import {
 } from '../../../src/web/helpers/webSessionStore';
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 import { QueuedInputRepository, type QueuedInputRecord } from '../../../src/host/services/core/repositories/QueuedInputRepository';
+import { applySessionDelegationsSchema } from '../../../src/host/services/core/database/schemaSessionDelegations';
 import { sseClients } from '../../../src/web/helpers/sse';
 import { DurableRunRepository } from '../../../src/host/services/core/repositories/DurableRunRepository';
 
@@ -72,6 +73,12 @@ const mockDb = vi.hoisted(() => ({
   markSessionForkContextHandoffConsumed: vi.fn(() => ({})),
 }));
 vi.spyOn(QueuedInputRepository.prototype, 'enqueue').mockImplementation(() => undefined);
+
+// ADR-072 K1C：drain 的 beforeClaim 每次投递前反查 session_delegations——真表
+// （生产 DDL 片段），查不到委托行 → 按普通用户行投（不带标记）。{} 会把
+// drainOne 打死。仅 drain 路径用例用它覆盖默认 getDb。
+const delegationLookupDb = new Database(':memory:');
+applySessionDelegationsSchema(delegationLookupDb, { info: () => {}, warn: () => {}, error: () => {} } as never);
 
 vi.mock('../../../src/cli/adapter', () => ({
   createCLIAgent: vi.fn(async () => ({
@@ -367,6 +374,8 @@ describe('POST /run clientMessageId idempotent replay', () => {
     setDbAvailable(true);
     durableStub.getLatestRootRunAsOf.mockImplementation(async () => null);
     durableStub.get.mockImplementation(async () => null);
+    // drain 用例会用 mockReturnValue 指向 delegationLookupDb；这里每轮复位默认值。
+    mockDb.getDb.mockImplementation(() => ({}));
     mockCreateAgentLoop.mockImplementation((_config: unknown, onEvent?: (event: { type: string; data: unknown }) => void) => completingLoop(onEvent));
     await startAgentApi({ tryGetSessionManager: async () => sessionManagerMock() });
   });
@@ -378,6 +387,10 @@ describe('POST /run clientMessageId idempotent replay', () => {
     inMemorySessions.clear();
     sessionMessages.clear();
     setDbAvailable(false);
+  });
+
+  afterAll(() => {
+    delegationLookupDb.close();
   });
 
   it('首发起 run；结束后同 id 重发 → 200 replayed、不建新 run、消息数不变', async () => {
@@ -870,6 +883,7 @@ describe('POST /run clientMessageId idempotent replay', () => {
 
   it('排队 drain 失败重投：failed 轮后同 id 重投真跑一轮，不被静默标 consumed', async () => {
     await closeServer();
+    mockDb.getDb.mockReturnValue(delegationLookupDb);
     let onEnqueued: ((sessionId: string) => void) | undefined;
     await startAgentApi({
       tryGetSessionManager: async () => sessionManagerMock(),

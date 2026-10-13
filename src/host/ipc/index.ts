@@ -87,6 +87,10 @@ import { registerGenerativeUIHandlers } from './generativeUI.ipc';
 import { registerFolderTrustHandlers } from './folderTrust.ipc';
 import { registerTeamHandlers } from './team.ipc';
 import { getApplicationRunRegistry } from '../app/applicationRunRegistry';
+import {
+  createHostDelegationRuntime,
+  createQueuedInputDelegationGuard,
+} from '../services/delegation/delegationDrainHooks';
 
 /**
  * IPC handler 注册所需的依赖
@@ -223,6 +227,11 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
     onEnqueued: deps.onQueuedInputEnqueued,
     hasActiveRun: (sessionId) => getApplicationRunRegistry().hasSession(sessionId),
     sendNow: deps.onQueuedInputSendNow,
+    // ADR-072 K1C：sendNow 先复核再抢占、update/requeue/steer/裸 markSending 的委托行规则。
+    delegation: createQueuedInputDelegationGuard(createHostDelegationRuntime({
+      getActiveRunId: (sessionId) => getApplicationRunRegistry().getBySessionId(sessionId)?.context.runId ?? null,
+      logger,
+    })),
     resolveModelSpec: (sessionId) => {
       const activeRunModelSpec = getApplicationRunRegistry().getModelSpecBySessionId(sessionId);
       if (activeRunModelSpec) return activeRunModelSpec;

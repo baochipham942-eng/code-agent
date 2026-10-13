@@ -41,6 +41,7 @@ export const QueuedInputSchema: z.ZodType<QueuedInput> = z.object({
   pausedReason: z.string().nullable(),
   createdAt: z.number(),
   updatedAt: z.number(),
+  origin: z.literal('delegation').optional(),
 });
 
 const EnqueueQueuedInputRequestSchema = z.object({

@@ -23,6 +23,18 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 
 import { registerQueuedInputHandlers } from '../../../src/host/ipc/queuedInput.ipc';
+import { QueuedInputRepository } from '../../../src/host/services/core/repositories/QueuedInputRepository';
+import { SessionDelegationRepository } from '../../../src/host/services/core/repositories/SessionDelegationRepository';
+import { applySessionDelegationsSchema } from '../../../src/host/services/core/database/schemaSessionDelegations';
+import { commitDelegation } from '../../../src/host/services/delegation/delegationDelivery';
+import { createQueuedInputDelegationGuard } from '../../../src/host/services/delegation/delegationDrainHooks';
+import { deriveActionFingerprint, deriveSubmissionKey } from '../../../src/host/services/delegation/delegationKeys';
+
+const delegationSchemaLogger = {
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+} as unknown as Parameters<typeof applySessionDelegationsSchema>[1];
 
 function createSchema(db: BetterSqlite3.Database): void {
   db.exec(`
@@ -40,6 +52,7 @@ function createSchema(db: BetterSqlite3.Database): void {
     CREATE INDEX idx_queued_inputs_session
       ON queued_inputs (session_id, status, created_at);
   `);
+  applySessionDelegationsSchema(db, delegationSchemaLogger);
 }
 
 describe('queued input IPC', () => {
@@ -422,5 +435,274 @@ describe('queued input IPC', () => {
       success: false,
       error: { code: 'INVALID_PAYLOAD' },
     });
+  });
+});
+
+describe('queued input IPC · 委托守卫（ADR-072 K1C）', () => {
+  const handlers = new Map<string, WebRouteHandler>();
+  let db: BetterSqlite3.Database;
+  let delegations: SessionDelegationRepository;
+  let currentModelSpec: ConversationModelSpec | undefined;
+  let activeRun = false;
+  let permissionMode: string | null = 'default';
+  let activeRunId: string | null = null;
+  const sendNow = vi.fn();
+  const claimOrder: string[] = [];
+  let statusAtRecheck: string | undefined;
+
+  const targetSessionId = 'target-session';
+  const content = '把周报的数据表补完';
+  const submissionKey = deriveSubmissionKey({
+    originSessionId: 'origin-1',
+    originTurnId: 'turn-1',
+    action: 'delegate_existing',
+    targetIdentity: `session:${targetSessionId}`,
+  });
+  const actionFingerprint = deriveActionFingerprint({
+    action: 'delegate_existing',
+    targetIdentity: `session:${targetSessionId}`,
+    content,
+    attachmentRefs: [],
+  });
+  const delegationQueuedInputId = `delegation:${submissionKey}`;
+
+  /** 真守卫（createQueuedInputDelegationGuard）+ 可控事实依赖；recheck 顺序记录在 claimOrder。 */
+  function buildGuard() {
+    const base = createQueuedInputDelegationGuard({
+      getDb: () => db,
+      getSessionRow: () => ({
+        sessionType: 'chat',
+        engineKind: 'native',
+        workingDirectory: '/ws/target',
+        isArchived: false,
+        isDeleted: false,
+      }),
+      getPermissionMode: () => permissionMode,
+      evaluateFolderTrust: async () => ({ state: 'trusted', blockedItems: 0 }),
+      getActiveRunId: () => activeRunId,
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    });
+    return {
+      ...base,
+      async beforeSendNowClaim(record: { id: string; sessionId: string; envelopeJson: string }) {
+        claimOrder.push('recheck');
+        statusAtRecheck = (db.prepare('SELECT status FROM queued_inputs WHERE id = ?')
+          .get(record.id) as { status: string }).status;
+        return base.beforeSendNowClaim(record);
+      },
+    };
+  }
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+    createSchema(db);
+    delegations = new SessionDelegationRepository(db);
+    databaseState.db = db;
+    handlers.clear();
+    currentModelSpec = undefined;
+    activeRun = false;
+    permissionMode = 'default';
+    activeRunId = null;
+    claimOrder.length = 0;
+    statusAtRecheck = undefined;
+    sendNow.mockReset().mockResolvedValue('sent');
+    // claimOrder 记录抢占动作，供 INV-1 顺序断言（recheck 必须在前）。
+    const originalMarkSending = QueuedInputRepository.prototype.markSending;
+    vi.spyOn(QueuedInputRepository.prototype, 'markSending')
+      .mockImplementation(function (this: QueuedInputRepository, id: string, now?: number) {
+        claimOrder.push('markSending');
+        return originalMarkSending.call(this, id, now);
+      });
+    registerQueuedInputHandlers({
+      handle: (channel: string, handler: WebRouteHandler) => handlers.set(channel, handler),
+    } as never, {
+      resolveModelSpec: () => currentModelSpec,
+      hasActiveRun: () => activeRun,
+      sendNow,
+      delegation: buildGuard(),
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    databaseState.db = null;
+    db.close();
+  });
+
+  async function invoke(request: IPCRequest): Promise<IPCResponse> {
+    const handler = handlers.get(IPC_DOMAINS.QUEUED_INPUT);
+    if (!handler) throw new Error('queued input handler not registered');
+    return await handler(null, request) as IPCResponse;
+  }
+
+  /** 经真 commitDelegation 落一条委托行 + 排队行（指纹自洽，recheck 可过）。 */
+  function commitDelegationRow(): void {
+    const result = commitDelegation(db, {
+      delegationId: 'd-1',
+      originSessionId: 'origin-1',
+      originTurnId: 'turn-1',
+      disposition: 'delegate_existing',
+      targetSessionId,
+      submissionKey,
+      actionFingerprint,
+      envelope: { content, sessionId: targetSessionId },
+      now: 1_000,
+    });
+    expect(result.kind).toBe('created');
+  }
+
+  function rowStatus(id: string): { status: string; paused_reason: string | null } {
+    return db.prepare('SELECT status, paused_reason FROM queued_inputs WHERE id = ?').get(id) as {
+      status: string; paused_reason: string | null;
+    };
+  }
+
+  it('update 拒改委托行（INV-5）：envelope 原样，INVALID_STATE', async () => {
+    commitDelegationRow();
+    await expect(invoke({
+      action: 'update',
+      payload: { id: delegationQueuedInputId, content: '被篡改的正文' },
+    })).resolves.toMatchObject({ success: false, error: { code: 'INVALID_STATE' } });
+    const stored = db.prepare('SELECT envelope_json FROM queued_inputs WHERE id = ?')
+      .get(delegationQueuedInputId) as { envelope_json: string };
+    expect(JSON.parse(stored.envelope_json).content).toBe(content);
+  });
+
+  it('requeue failed 委托行：沿用存量载荷，只重盖 modelSpec（INV-5）', async () => {
+    currentModelSpec = { provider: 'moonshot', model: 'kimi-k2.5' };
+    commitDelegationRow();
+    db.prepare(`UPDATE queued_inputs SET status = 'failed', paused_reason = 'send_failed' WHERE id = ?`)
+      .run(delegationQueuedInputId);
+
+    await expect(invoke({
+      action: 'requeue',
+      payload: {
+        id: delegationQueuedInputId,
+        // renderer 传来的 envelope 是攻击面：内容/附件必须被忽略
+        envelope: { content: '改过的正文', attachments: [{ id: 'evil', path: '/tmp/e' }] },
+      },
+    })).resolves.toMatchObject({
+      success: true,
+      data: {
+        id: delegationQueuedInputId,
+        status: 'queued',
+        origin: 'delegation',
+        envelope: {
+          content,
+          options: { modelSpec: { provider: 'moonshot', model: 'kimi-k2.5' } },
+        },
+      },
+    });
+  });
+
+  it('requeue retracted 委托行被拒（INV-6：撤回不可复活）', async () => {
+    commitDelegationRow();
+    await invoke({ action: 'retract', payload: { id: delegationQueuedInputId } });
+
+    await expect(invoke({
+      action: 'requeue',
+      payload: { id: delegationQueuedInputId, envelope: { content } },
+    })).resolves.toMatchObject({ success: false, error: { code: 'INVALID_STATE' } });
+    expect(rowStatus(delegationQueuedInputId).status).toBe('retracted');
+  });
+
+  it('retract 委托行 → 投影 aborted(retracted_by_user)（INV-6）', async () => {
+    commitDelegationRow();
+    await expect(invoke({ action: 'retract', payload: { id: delegationQueuedInputId } }))
+      .resolves.toMatchObject({ success: true, data: { retracted: true } });
+    expect(delegations.get('d-1')).toMatchObject({ status: 'aborted' });
+    expect(JSON.parse(delegations.get('d-1')!.resolutionJson!)).toEqual({ reason: 'retracted_by_user' });
+  });
+
+  it('sendNow：复核先于抢占（INV-1 顺序断言），复核时行仍 queued', async () => {
+    commitDelegationRow();
+    await expect(invoke({ action: 'sendNow', payload: { id: delegationQueuedInputId } }))
+      .resolves.toEqual({ success: true, data: { status: 'consumed', retryCount: 0 } });
+    expect(claimOrder).toEqual(['recheck', 'markSending']);
+    expect(statusAtRecheck).toBe('queued');
+  });
+
+  it('sendNow 空闲投递带校验过的带外标记，路由 idle', async () => {
+    commitDelegationRow();
+    await invoke({ action: 'sendNow', payload: { id: delegationQueuedInputId } });
+    expect(sendNow).toHaveBeenCalledWith(expect.objectContaining({
+      id: delegationQueuedInputId,
+      sessionId: targetSessionId,
+      delegationOrigin: { delegationId: 'd-1', actionFingerprint },
+    }), 'idle');
+  });
+
+  it('sendNow 活跃 run（steer 分支）拒投委托行且不抢占（INV-3）', async () => {
+    activeRun = true;
+    commitDelegationRow();
+    await expect(invoke({ action: 'sendNow', payload: { id: delegationQueuedInputId } }))
+      .resolves.toMatchObject({ success: false, error: { code: 'INVALID_STATE' } });
+    expect(sendNow).not.toHaveBeenCalled();
+    expect(rowStatus(delegationQueuedInputId)).toMatchObject({ status: 'queued' });
+  });
+
+  it('裸 markSending / reportSendOutcome 拒绝委托行（INV-3）', async () => {
+    commitDelegationRow();
+    await expect(invoke({ action: 'markSending', payload: { id: delegationQueuedInputId } }))
+      .resolves.toMatchObject({ success: false, error: { code: 'INVALID_STATE' } });
+    expect(rowStatus(delegationQueuedInputId).status).toBe('queued');
+
+    db.prepare(`UPDATE queued_inputs SET status = 'sending' WHERE id = ?`).run(delegationQueuedInputId);
+    await expect(invoke({
+      action: 'reportSendOutcome',
+      payload: { id: delegationQueuedInputId, outcome: 'success' },
+    })).resolves.toMatchObject({ success: false, error: { code: 'INVALID_STATE' } });
+  });
+
+  it('复核红（权限档）→ 暂停本行并返回 INVALID_STATE，不投', async () => {
+    permissionMode = 'bypassPermissions';
+    commitDelegationRow();
+    await expect(invoke({ action: 'sendNow', payload: { id: delegationQueuedInputId } }))
+      .resolves.toMatchObject({ success: false, error: { code: 'INVALID_STATE' } });
+    expect(sendNow).not.toHaveBeenCalled();
+    expect(rowStatus(delegationQueuedInputId)).toMatchObject({
+      status: 'queued',
+      paused_reason: 'target_permission_mode',
+    });
+  });
+
+  it('另一条委托的 run 在跑（wait）→ 保持 queued 可投，不抢占不投', async () => {
+    delegations.insertOrGet({
+      delegationId: 'd-2',
+      originSessionId: 'origin-2',
+      originTurnId: 'turn-2',
+      disposition: 'delegate_existing',
+      targetSessionId,
+      targetQueuedInputId: 'delegation:sdk-2',
+      submissionKey: 'sdk-2',
+      actionFingerprint: 'a'.repeat(64),
+      createdAt: 1_500,
+    });
+    delegations.backfillTargetRunId('d-2', 'run-d-2');
+    activeRunId = 'run-d-2';
+    commitDelegationRow();
+
+    await expect(invoke({ action: 'sendNow', payload: { id: delegationQueuedInputId } }))
+      .resolves.toEqual({ success: true, data: { status: 'queued', retryCount: 0 } });
+    expect(sendNow).not.toHaveBeenCalled();
+    expect(rowStatus(delegationQueuedInputId)).toMatchObject({ status: 'queued', paused_reason: null });
+  });
+
+  it('list：委托行带 origin=delegation，普通行不带', async () => {
+    commitDelegationRow();
+    await invoke({
+      action: 'enqueue',
+      payload: { id: 'user-row', sessionId: targetSessionId, envelope: { content: '普通行' } },
+    });
+
+    const listed = await invoke({
+      action: 'list',
+      payload: { sessionId: targetSessionId, status: 'queued' },
+    });
+    const rows = listed.data as QueuedInput[];
+    const delegationRow = rows.find((row) => row.id === delegationQueuedInputId);
+    const userRow = rows.find((row) => row.id === 'user-row');
+    expect(delegationRow?.origin).toBe('delegation');
+    expect(userRow && 'origin' in userRow).toBe(false);
   });
 });

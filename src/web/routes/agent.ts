@@ -32,7 +32,6 @@ import {
   isSessionCommandCenterTurn,
   SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
 } from '../../shared/constants/sessionCommandCenter';
-import { getTextForegroundToolNames } from '../../host/tools/protocolRegistry';
 import { AUTO_DELEGATION_TOOL_NAMES } from '../../host/agent/routingToolPolicy';
 import { wrapWithTurnSystemContext } from '../../host/agent/turnScaffold';
 import { buildCapabilityCandidateNotice } from '../../host/agent/capabilityCandidateNotice';

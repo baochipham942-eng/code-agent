@@ -40,7 +40,6 @@ import {
   confirmMemoryHarnessDirective,
   dryRunMemoryHarnessImport,
 } from '../memory/importers';
-import { draftProjectMemory } from '../memory/projectMemoryDraft';
 import {
   KNOWLEDGE_INBOX_DECISION_CATEGORY,
   hashInboxContent,
@@ -61,8 +60,6 @@ import type {
   MemoryImportV2ApplyRequest,
   MemoryMirrorRebuildResult,
   MemoryPackRequest,
-  ProjectMemoryDraftRequest,
-  ProjectMemoryDraftResult,
 } from '../../shared/contract/memory';
 import { respondToDirectiveMemoryConfirmation } from '../memory/directiveMemoryConfirmation';
 
@@ -577,13 +574,6 @@ async function handleMemoryHarnessImportConfirmDirective(payload: MemoryImportDi
   });
 }
 
-async function handleMemoryInitProjectDraft(payload: ProjectMemoryDraftRequest): Promise<ProjectMemoryDraftResult> {
-  if (!payload?.projectDir || typeof payload.projectDir !== 'string') {
-    throw new Error('memory init project draft requires projectDir');
-  }
-  return draftProjectMemory(getDatabase(), { projectDir: payload.projectDir });
-}
-
 async function handleLightMemoryArchive(filename: string): Promise<boolean> {
   const archived = await archiveMemoryFile(filename);
   if (!archived) return false;
@@ -860,8 +850,6 @@ const memoryRoutes = defineDomainRoutes<MemoryDomainRequest, void>(
     memoryHarnessImportApply: (_ctx, payload) => handleMemoryHarnessImportApply(payload as MemoryImportApplyRequest),
     memoryHarnessImportConfirmDirective: (_ctx, payload) =>
       handleMemoryHarnessImportConfirmDirective(payload as MemoryImportDirectiveConfirmRequest),
-    memoryInitProjectDraft: (_ctx, payload) =>
-      handleMemoryInitProjectDraft(payload as ProjectMemoryDraftRequest),
   },
   {
     resolveErrorCode: (error) => {
@@ -963,9 +951,6 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
           break;
         case 'memoryHarnessImportConfirmDirective':
           data = await handleMemoryHarnessImportConfirmDirective(request as unknown as MemoryImportDirectiveConfirmRequest);
-          break;
-        case 'memoryInitProjectDraft':
-          data = await handleMemoryInitProjectDraft(request as unknown as ProjectMemoryDraftRequest);
           break;
         default:
           return { success: false, error: `Unknown action: ${request.action}` };

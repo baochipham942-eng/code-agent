@@ -14,8 +14,6 @@ export { systemCommands } from './definitions/systemCommands';
 export { newCommands } from './definitions/newCommands';
 export { doctorCommands } from './definitions/doctorCommands';
 export { btwCommands } from './definitions/btwCommands';
-// initMemoryCommands 不出 barrel：knip 视角无外部消费者（测试走 definitions 路径），
-// 仅在下方 initializeCommands 内静态引用。
 
 import { getCommandRegistry } from './commandRegistry';
 import { sessionCommands } from './definitions/sessionCommands';
@@ -26,7 +24,6 @@ import { systemCommands } from './definitions/systemCommands';
 import { newCommands } from './definitions/newCommands';
 import { doctorCommands } from './definitions/doctorCommands';
 import { btwCommands } from './definitions/btwCommands';
-import { initMemoryCommands } from './definitions/initMemoryCommands';
 
 let initialized = false;
 
@@ -47,7 +44,6 @@ export function initializeCommands(): void {
     ...newCommands,
     ...doctorCommands,
     ...btwCommands,
-    ...initMemoryCommands,
   ];
 
   for (const def of allDefs) {

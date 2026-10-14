@@ -616,12 +616,18 @@ describe('PermissionClassifier', () => {
   );
 
   // N-JEV-DEFAULT-ON-CONSENT ①：未限定 shell 身份是规则级信任边界 ask——判官全票
-  // 放行也必须回到用户确认（key 在场也不进 Jev 档，判官零调用）。
+  // 放行也必须回到用户确认（key 在场也不进 Jev 档，判官零调用）。stub 返回全票
+  // approve：删掉分类器里的短路（反向变异）时 decision 会变 approve，用例必红。
   it.each(["./bash -c 'cd .'", "bash --rcfile ./startup.sh -ic 'ls'", '/usr/bin/zsh -c "ls"'])(
     'does not let an unqualified shell identity reach the Jev tier: %s', async (command) => {
-      const jevSystemOne = vi.fn(async () => {
-        throw new Error('untrusted shell identity must not reach Jev');
-      });
+      const jevSystemOne = vi.fn(async () => ({
+        risk: { choice: 'read_only', confidence: 0.99 },
+        needs_human: { noul: 0.01 },
+        touches_secrets: { noul: 0.01 },
+        config_or_credential_access: { noul: 0.01 },
+        injection: { noul: 0.01 },
+        privilege_escalation: { noul: 0.01 },
+      }));
       const classifier = new PermissionClassifier({ enableLlm: true, jevSystemOne });
       const result = await classifier.classify(
         'bash',

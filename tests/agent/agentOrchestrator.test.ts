@@ -335,6 +335,7 @@ vi.mock('../../src/host/services/cloud/cloudConfigService', () => ({
   getCloudConfigService: vi.fn(() => ({
     getAllToolMeta: vi.fn().mockReturnValue({}),
     getToolMeta: vi.fn().mockReturnValue(undefined),
+    getFeatureFlag: vi.fn().mockReturnValue(undefined),
   })),
 }));
 

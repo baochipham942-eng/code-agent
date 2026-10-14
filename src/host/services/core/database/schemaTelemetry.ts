@@ -82,7 +82,8 @@ export function applyTelemetrySchema(db: BetterSqlite3.Database, logger: Logger)
       iteration_count INTEGER DEFAULT 1
 ,
       turn_type TEXT NOT NULL DEFAULT 'user',
-      parent_turn_id TEXT
+      parent_turn_id TEXT,
+      turn_source TEXT
     )
   `);
 

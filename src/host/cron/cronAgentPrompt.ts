@@ -13,6 +13,7 @@ export function buildCronAgentPrompt(
   snapshot: unknown,
   enabled: boolean,
   now: Date = new Date(),
+  urgencyCriteria?: string,
 ): string {
   // 注入当前时间锚点：LLM 默认拿训练期日期，会把「今天/明天」算成过去时间。
   // 真机 dogfood(2026-07-24)证明「只给 ISO 时间」不够：GLM-5 认出了今天日期，却仍把
@@ -28,9 +29,14 @@ export function buildCronAgentPrompt(
     + `若要按「今天/本地当天」查询时间戳，直接用这两个算好的值，不要自己换算年份：`
     + `今天本地 00:00 = ${todayEpoch}（Unix 秒），次日本地 00:00 = ${tomorrowEpoch}（Unix 秒）。`
     + '其他相对时间以【当前时间】为基准，不要用你训练时的日期。';
+  // 用户自定义 must_today 判据（N-CRON-MORNING-TRIAGE-URGENCY-RULE）：给了就替换
+  // 括号里 must_today 的内置定义，其余档位定义与 urgency 头格式不动；缺省/空白时
+  // 拼回内置定义，产出与旧版逐字节相同。
+  const trimmedCriteria = urgencyCriteria?.trim();
+  const mustTodayDefinition = trimmedCriteria ? `must_today = ${trimmedCriteria}` : 'must_today = 今天需要用户处理';
   const deliveryDigestInstruction =
     '最后请在回复末尾追加简短的 <cron_summary>...</cron_summary> 块：先写结果摘要；每个生成的文件或可访问产物另起一行，格式为 artifact: <path>。'
-    + '摘要的第一行可以标注紧急程度，格式为 urgency: must_today|can_wait|fyi（must_today = 今天需要用户处理，can_wait = 可以稍后处理，fyi = 仅供参考）。';
+    + `摘要的第一行可以标注紧急程度，格式为 urgency: must_today|can_wait|fyi（${mustTodayDefinition}，can_wait = 可以稍后处理，fyi = 仅供参考）。`;
   if (!enabled) return [prompt, '', timeAnchor, '', deliveryDigestInstruction].join('\n');
 
   const hasSnapshot = typeof snapshot === 'string' && Boolean(snapshot.trim());

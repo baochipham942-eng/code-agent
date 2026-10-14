@@ -80,6 +80,9 @@ describe('unified tool execution timeout policy', () => {
     expect(getToolExecutionTimeoutMs('mcp__server__search')).toBeUndefined();
     expect(getToolExecutionTimeoutMs('mcp_server_search')).toBeUndefined();
     expect(getToolExecutionTimeoutMs('image_generate')).toBe(LONG_RUNNING_BUDGET_MS);
+    expect(getToolExecutionTimeoutMs('video_generate')).toBe(LONG_RUNNING_BUDGET_MS);
+    // music_generate 单次 30-120s，加入长耗时名单不被默认 120s 档误杀（N-MEDIA-GEN-PHASE2）
+    expect(getToolExecutionTimeoutMs('music_generate')).toBe(LONG_RUNNING_BUDGET_MS);
     expect(getToolExecutionTimeoutMs('Task')).toBe(LONG_RUNNING_BUDGET_MS);
     expect(getToolExecutionTimeoutMs('workflow_orchestrate')).toBe(LONG_RUNNING_BUDGET_MS);
     expect(getToolExecutionTimeoutMs('local_speech_to_text')).toBe(LONG_RUNNING_BUDGET_MS);

@@ -3,6 +3,7 @@ import type {
   CronJobDefinition,
   CronJobExecution,
   CronJobStatus,
+  EventConnectorMailScheduleConfig,
   EveryScheduleConfig,
   IpcAction,
   ShellAction,
@@ -10,6 +11,7 @@ import type {
   WebhookAction,
 } from '@shared/contract';
 import { validateEventScheduleConstraints } from '@shared/cronEventValidation';
+import { CRON_EVENT_TRIGGER } from '@shared/constants';
 import { humanizeCronExpression, humanizeEverySchedule, type CronHumanLang } from '../../../utils/cronHumanize';
 
 export interface CronJobDraft {
@@ -36,6 +38,12 @@ export interface CronJobDraft {
   eventAccountId: string;
   /** event 调度：限定群/会话 id；空串 = 该账号任意会话。 */
   eventChatId: string;
+  /**
+   * event 调度（connector:mail 源）：编辑/复制 mail 任务时由 buildDraftFromJob 带出的
+   * 原绑定整份。mail 源的编辑 UI 未开放——通道字段不回填，保存时这份原绑定原样回写，
+   * 防止把 mail 触发回建成 channel 源（空账号保存必炸 / 混入通道账号即静默改绑）。
+   */
+  eventMailSource?: EventConnectorMailScheduleConfig;
   actionType: 'shell' | 'tool' | 'agent' | 'webhook' | 'ipc';
   shellCommand: string;
   shellCwd: string;
@@ -47,6 +55,8 @@ export interface CronJobDraft {
   agentContextText: string;
   agentRoleId?: string;
   agentLibraryProjectId?: string;
+  /** agent 动作：用户自定义 must_today 判据（N-CRON-MORNING-TRIAGE-URGENCY-RULE）。 */
+  agentUrgencyCriteria?: string;
   webhookUrl: string;
   webhookMethod: WebhookAction['method'];
   webhookHeadersText: string;
@@ -89,6 +99,7 @@ export function createDefaultCronJobDraft(): CronJobDraft {
     agentContextText: '{}',
     agentRoleId: '',
     agentLibraryProjectId: '',
+    agentUrgencyCriteria: '',
     webhookUrl: '',
     webhookMethod: 'POST',
     webhookHeadersText: '{}',
@@ -142,8 +153,14 @@ export function buildDraftFromJob(job: CronJobDefinition): CronJobDraft {
     draft.cronExpression = job.schedule.expression;
     draft.cronTimezone = job.schedule.timezone || '';
   } else if (job.schedule.type === 'event') {
-    draft.eventAccountId = job.schedule.accountId;
-    draft.eventChatId = job.schedule.chatId || '';
+    // connector 源（mail）编辑 UI 未开放（N-TRIGGER-CONNECTOR-MAIL 范围外）：
+    // 通道字段不回填 mail 绑定，原绑定整份挂在 eventMailSource 上，保存时原样回写。
+    if (job.schedule.source === 'channel') {
+      draft.eventAccountId = job.schedule.accountId;
+      draft.eventChatId = job.schedule.chatId || '';
+    } else {
+      draft.eventMailSource = job.schedule;
+    }
   }
 
   switch (job.action.type) {
@@ -170,6 +187,7 @@ export function buildDraftFromJob(job: CronJobDefinition): CronJobDraft {
       draft.agentContextText = stringifyJson(action.context);
       draft.agentRoleId = action.roleId ?? '';
       draft.agentLibraryProjectId = action.libraryProjectId ?? '';
+      draft.agentUrgencyCriteria = action.urgencyCriteria ?? '';
       break;
     }
     case 'webhook': {
@@ -272,15 +290,19 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
       timezone: draft.cronTimezone.trim() || undefined,
     };
   } else {
-    // 'event'：显式 (accountId, chatId) 绑定即群监听，chatId 缺省 = 该账号任意会话。
+    // 'event'：connector:mail 草稿（eventMailSource 挂原绑定）原样回写——mail 源编辑
+    // UI 未开放，不回建成 channel 源（空账号保存必炸 / 混入通道账号即静默改绑）。
+    // 通道源照旧：显式 (accountId, chatId) 绑定即群监听，chatId 缺省 = 该账号任意会话。
     // 两个可选窗口（batchWindowSec/minRunIntervalSec）不设值，host normalize 落默认。
-    schedule = {
-      type: 'event',
-      source: 'channel',
-      accountId: draft.eventAccountId.trim(),
-      eventName: 'message',
-      ...(draft.eventChatId.trim() ? { chatId: draft.eventChatId.trim() } : {}),
-    };
+    schedule = draft.eventMailSource
+      ? { ...draft.eventMailSource }
+      : {
+        type: 'event',
+        source: 'channel',
+        accountId: draft.eventAccountId.trim(),
+        eventName: 'message',
+        ...(draft.eventChatId.trim() ? { chatId: draft.eventChatId.trim() } : {}),
+      };
   }
 
   let action: CronJobDefinition['action'];
@@ -317,6 +339,7 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
       context: parseJsonValue(draft.agentContextText, 'Agent context') as Record<string, unknown>,
       roleId: draft.agentRoleId?.trim() || undefined,
       libraryProjectId: draft.agentLibraryProjectId?.trim() || undefined,
+      urgencyCriteria: draft.agentUrgencyCriteria?.trim() || undefined,
     };
   } else if (draft.actionType === 'webhook') {
     if (!draft.webhookUrl.trim()) {
@@ -403,6 +426,12 @@ export function formatScheduleSummary(
         : job.schedule.expression;
     }
     case 'event': {
+      // connector 源（mail）：账号是 Mail 账号名、绑定粒度是邮箱，不查通道目录。
+      if (job.schedule.source === 'connector') {
+        const mailLabel = lang === 'en' ? 'Mail message' : '邮件消息';
+        const mailbox = job.schedule.mailbox ?? CRON_EVENT_TRIGGER.DEFAULT_MAILBOX;
+        return `${mailLabel} · ${job.schedule.accountId} · ${mailbox}`;
+      }
       // 显示名优先（通道目录里的账号名/群名），目录没有或还没加载完才回落 id；
       // chatId 缺省 = 该账号任意会话。
       const eventLabel = lang === 'en' ? 'Channel message' : '通道消息';

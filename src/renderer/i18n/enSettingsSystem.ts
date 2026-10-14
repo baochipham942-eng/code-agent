@@ -329,7 +329,11 @@ export const enSettingsSystem = {
         confirm: 'Clear now',
         cancel: 'Cancel',
         cleared: 'Deleted {count} files and freed {bytes} bytes.',
-        failed: 'Cleanup failed {count} times, last error: {error}',
+        failedPermission: '{count} recordings could not be deleted: no delete permission. Check the recordings folder permissions in Finder and try again',
+        failedOther: '{count} recordings could not be deleted and this cleanup did not finish. You can retry later',
+        openFolder: 'Open folder',
+        retry: 'Retry',
+        details: 'Details',
       },
       units: {
         speechSegmentSuffix: ' speech segments',

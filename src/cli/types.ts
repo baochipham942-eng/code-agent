@@ -110,6 +110,8 @@ export interface CLIConfig {
   toolScope?: WorkbenchToolScope;
   /** 每轮执行意图（含 designCanvasActive 等）；web HTTP 路径据此透传到 RuntimeContext。 */
   executionIntent?: ConversationExecutionIntent;
+  /** ADR-072 K1C：投递层校验过的委托来源标记；存在时该轮铸 orchestrator 起源。 */
+  delegationOrigin?: import('../shared/contract/queuedInput').DelegationOriginMarker;
   /** Per-turn web search switch. Omitted by legacy callers means enabled. */
   searchEnabled?: boolean;
   /** Per-turn provider thinking switch. Omitted by legacy callers means enabled. */

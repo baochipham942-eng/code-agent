@@ -88,6 +88,54 @@ describe('outputs / todos 接线', () => {
     expect(result.current.outputs.files).toEqual([]);
   });
 
+  it('projects image_generate output_file_path from a batch request', () => {
+    state.app = { workingDirectory: '/workspace' };
+    state.session = {
+      todos: [],
+      messages: [{
+        toolCalls: [{
+          name: 'image_generate',
+          arguments: { prompt: ['one', 'two'], output_file_path: 'images/result.png' },
+          result: {},
+        }],
+      }],
+    };
+    const { result } = renderHook(() => useStatusRailModel());
+    expect(result.current.outputs.files.map((file) => file.path)).toContain('/workspace/images/result.png');
+  });
+
+  it('projects video/music output_file_path and keeps legacy output_path visible', () => {
+    state.app = { workingDirectory: '/workspace' };
+    state.session = {
+      todos: [],
+      messages: [{
+        toolCalls: [
+          {
+            name: 'video_generate',
+            arguments: { prompt: 'sunset', output_file_path: 'videos/clip.mp4' },
+            result: {},
+          },
+          {
+            name: 'music_generate',
+            arguments: { prompt: 'jazz', output_file_path: 'music/track.mp3' },
+            result: {},
+          },
+          {
+            name: 'video_generate',
+            arguments: { prompt: 'legacy', output_path: 'videos/legacy.mp4' },
+            result: {},
+          },
+        ],
+      }],
+    };
+    const { result } = renderHook(() => useStatusRailModel());
+    const paths = result.current.outputs.files.map((file) => file.path);
+    expect(paths).toContain('/workspace/videos/clip.mp4');
+    expect(paths).toContain('/workspace/music/track.mp3');
+    // 旧 output_path 的历史消息展示不变
+    expect(paths).toContain('/workspace/videos/legacy.mp4');
+  });
+
   it('todos 委派 deriveStatusRailTodoModel（空 → 不显示）', () => {
     const { result } = renderHook(() => useStatusRailModel());
     expect(result.current.todos).toBeDefined();

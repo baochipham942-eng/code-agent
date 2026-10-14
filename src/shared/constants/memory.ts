@@ -229,6 +229,12 @@ export const CRON_AGENT_SNAPSHOT = {
   MAX_BYTES: 8 * 1024,
 } as const;
 
+/** Agent 型定时任务的用户自定义紧急判据（N-CRON-MORNING-TRIAGE-URGENCY-RULE）。 */
+export const CRON_URGENCY_CRITERIA = {
+  /** urgencyCriteria 字符上限（UTF-16 码元）：编辑器输入 maxLength 与归一化截断共用。 */
+  MAX_CHARS: 200,
+} as const;
+
 /** Cron 结果推送的字面去重（存放在 agent action.context 共享袋中）。 */
 export const CRON_RESULT_PUSH = {
   /**

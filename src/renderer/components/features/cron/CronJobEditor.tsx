@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import type { CronJobDefinition } from '@shared/contract';
 import { isHourAlignedCronExpression, suggestCronStaggerMinute } from '@shared/cronStagger';
 import { validateEventScheduleConstraints, type EventScheduleViolation } from '@shared/cronEventValidation';
+import { CRON_URGENCY_CRITERIA } from '@shared/constants';
 import { ArrowLeft, Clock, Settings, Terminal } from 'lucide-react';
 import { Modal } from '../../primitives/Modal';
 import { Button } from '../../primitives/Button';
@@ -55,8 +56,15 @@ const TABS: { key: EditorTab; label: string; icon: React.ReactNode }[] = [
 /** draft 形状 → shared 校验器口径（与 buildCronJobInput 提交前兜底用同一份判据）。 */
 function eventViolationFromDraft(draft: CronJobDraft): EventScheduleViolation | null {
   const budgetText = draft.maxRunBudget.trim();
+  // connector:mail 草稿（eventMailSource 挂原绑定）直接校验那份 mail 调度；
+  // 通道草稿照旧拼 channel 形状（与 buildCronJobInput 的回建路径同一份输入）。
   return validateEventScheduleConstraints({
-    schedule: { type: 'event', source: 'channel', eventName: 'message', accountId: draft.eventAccountId },
+    schedule: draft.eventMailSource ?? {
+      type: 'event',
+      source: 'channel',
+      eventName: 'message',
+      accountId: draft.eventAccountId,
+    },
     runsOn: draft.runsOn,
     action: { type: draft.actionType },
     maxRunBudget: budgetText === '' ? null : Number(budgetText),
@@ -660,6 +668,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                 <CronEventScheduleFields
                   accountId={draft.eventAccountId}
                   chatId={draft.eventChatId}
+                  mailSource={draft.eventMailSource ?? null}
                   onAccountChange={(eventAccountId) => {
                     setField('eventAccountId', eventAccountId);
                     setEventValidationArmed(true);
@@ -752,6 +761,15 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                   value={draft.agentPrompt}
                   onChange={(e) => setField('agentPrompt', e.target.value)}
                   minRows={5}
+                />
+              </FormField>
+              <FormField label={cc.urgencyCriteriaLabel}>
+                <Input
+                  value={draft.agentUrgencyCriteria ?? ''}
+                  onChange={(e) => setField('agentUrgencyCriteria', e.target.value)}
+                  maxLength={CRON_URGENCY_CRITERIA.MAX_CHARS}
+                  placeholder={cc.urgencyCriteriaPlaceholder}
+                  data-testid="cron-agent-urgency-criteria"
                 />
               </FormField>
               <FormField label="Context (JSON)">

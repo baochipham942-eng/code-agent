@@ -19,7 +19,7 @@ import type { PermissionRequest, ApprovalLevel, PermissionType } from './types';
 import type { PermissionRequest as ContractPermissionRequest, PermissionResponse } from '@shared/contract';
 import { isEditableTool } from '@shared/contract';
 import { IPC_CHANNELS } from '@shared/ipc';
-import { getPermissionConfig, isDangerousCommand } from './utils';
+import { getPermissionConfig } from './utils';
 import { useI18n } from '../../hooks/useI18n';
 import ipcService from '../../services/ipcService';
 import { toast } from '../../hooks/useToast';
@@ -31,7 +31,7 @@ import {
   validateWritebackDraft,
   type WritebackDraft,
 } from './WritebackFields';
-import { defaultPermissionViewMode, isSafeDefaultDeny, permissionSummary } from './permissionPresentation';
+import { defaultPermissionViewMode, isDangerousRequestShape, isSafeDefaultDeny, permissionSummary } from './permissionPresentation';
 
 // 将共享类型的 PermissionRequest 转换为本地类型
 function normalizeRequest(
@@ -92,6 +92,19 @@ function toMemoryRequest(request: PermissionRequest): PermissionRequestForMemory
   };
 }
 
+/**
+ * 审批应答有没有真的送达宿主。两条投递链的失败形状不同：web → {success:false, error}，
+ * Electron 式 → {outcome: 非 delivered}（AGENT_PERMISSION_RESPONSE 的注册类型写的是
+ * Promise<void>，与实现不符，所以这里按 unknown 收窄）。最常见现场是手机已先答、
+ * island 里这条已不存在——那种点击绝不能记成本机的决定。
+ */
+function isUndeliveredResponse(result: unknown): boolean {
+  if (typeof result !== 'object' || result === null) return false;
+  const record = result as { success?: unknown; outcome?: unknown };
+  if (record.success === false) return true;
+  return typeof record.outcome === 'string' && record.outcome !== 'delivered';
+}
+
 interface PermissionCardProps {
   requestOverride?: ContractPermissionRequest;
   sessionIdOverride?: string | null;
@@ -110,6 +123,7 @@ export function PermissionCard({
     pendingPermissionRequest,
     pendingPermissionSessionId,
     setPendingPermissionRequest,
+    dismissPermissionRequest,
     recordPermissionDecision,
   } = useAppStore();
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
@@ -161,9 +175,7 @@ export function PermissionCard({
   const isDangerous =
     request !== null &&
     !editable &&
-    (request.dangerLevel === 'danger' ||
-      request.type === 'dangerous_command' ||
-      (request.type === 'command' && isDangerousCommand(request.details.command)));
+    isDangerousRequestShape(request);
 
   // forceConfirm 该有的职责一点没松：不许走「会话/始终」这类常驻授权，必须逐次点。
   const hideStandingGrants = isDangerous || editable || request?.forceConfirm === true;
@@ -227,13 +239,21 @@ export function PermissionCard({
         const response = toPermissionResponse(level);
         if (!ipcService.isAvailable()) throw new Error('IPC unavailable');
         // 改过的参数只随 'allow' 一次性放行送出（host 侧同样只认这个组合）
-        await ipcService.invoke(
+        const outcome = await ipcService.invoke(
           IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
           request.id,
           response,
           request.sessionId,
           ...(updatedArgs && response === 'allow' ? [updatedArgs] : []),
         );
+        // 未送达（手机先答 / 已超时删除 / 台账写不进）：不记成本机决定、不留卡，
+        // 明说「已在其他设备处理」——静默吞掉等于让用户对着一张已失效的卡反复点。
+        if (isUndeliveredResponse(outcome)) {
+          releaseApprovalResponse(request.id);
+          dismissPermissionRequest(request.id);
+          toast.error(t.decisionCard.permission.settledElsewhere);
+          return;
+        }
         if (requestSnapshot && recordPermissionDecision) {
           recordPermissionDecision(
             updatedArgs
@@ -270,6 +290,8 @@ export function PermissionCard({
       settled,
       recordPermissionDecision,
       setPendingPermissionRequest,
+      dismissPermissionRequest,
+      t,
     ]
   );
 
@@ -413,7 +435,9 @@ export function PermissionCard({
     : isRemindersWrite
       ? <ListTodo size={20} />
       : editable ? <Mail size={20} /> : config.icon;
-  const question = isMeetingCreate
+  const question = appGrantCard && !isDangerous
+    ? p.computerApp.question.replace('{app}', request.details.targetApp?.name ?? '')
+    : isMeetingCreate
     ? (meetingSubject ? w.tmeetCreateQuestion.replace('{subject}', meetingSubject) : w.tmeetCreateQuestionFallback)
     : request.tool === 'calendar_create_event'
       ? (contentTitle ? w.calendarCreateQuestion.replace('{title}', contentTitle) : w.calendarCreateQuestionFallback)

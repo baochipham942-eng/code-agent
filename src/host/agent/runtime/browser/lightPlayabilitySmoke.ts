@@ -131,7 +131,7 @@ export async function runLightPlayabilitySmoke(filePath: string, timeoutMs: numb
   let session: ArtifactPageSession | null = null;
 
   try {
-    const opened = await openArtifactPage(timeoutMs);
+    const opened = await openArtifactPage();
     if (!opened.ok) {
       return {
         attempted: false,

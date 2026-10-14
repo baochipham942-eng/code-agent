@@ -156,11 +156,17 @@ export interface CronExpressionConfig {
 }
 
 /**
- * Event-triggered schedule: the job is fired by inbound messages of a channel
- * account already connected on this machine (ChannelManager), not by time.
- * No listening port, no HTTP endpoint, no public callback is involved.
+ * Event-triggered schedule: the job is fired by local events (channel inbound
+ * messages or connector polling), not by time. No listening port, no HTTP
+ * endpoint, no public callback is involved.
  */
-export interface EventScheduleConfig {
+export type EventScheduleConfig = EventChannelScheduleConfig | EventConnectorMailScheduleConfig;
+
+/**
+ * Channel event schedule: the job is fired by inbound messages of a channel
+ * account already connected on this machine (ChannelManager).
+ */
+export interface EventChannelScheduleConfig {
   type: 'event';
   /** Event source; only locally connected channels exist today. */
   source: 'channel';
@@ -170,6 +176,32 @@ export interface EventScheduleConfig {
   chatId?: string;
   /** Event kind; only inbound 'message' exists today. */
   eventName: 'message';
+  /** Events arriving within this window merge into one run (seconds). Default 10, max 300. */
+  batchWindowSec?: number;
+  /** Minimum spacing between two runs (seconds). Default 60, floor 30. */
+  minRunIntervalSec?: number;
+}
+
+/**
+ * Connector mail event schedule (N-TRIGGER-CONNECTOR-MAIL): the job is fired by
+ * new unread messages found by polling a local Mail account (macOS Mail via the
+ * mail connector). Same local-only stance as channel events: nothing leaves the
+ * machine, mail content only ever enters the untrusted payload block.
+ */
+export interface EventConnectorMailScheduleConfig {
+  type: 'event';
+  /** Event source: locally polled connectors. */
+  source: 'connector';
+  /** Connector kind; only 'mail' exists today. */
+  connector: 'mail';
+  /** Mail account name as listed by the mail connector. No wildcard. */
+  accountId: string;
+  /** Mailbox to watch; default 'INBOX' (ids are per-mailbox numbers). */
+  mailbox?: string;
+  /** Event kind; only 'message' (new mail) exists today. */
+  eventName: 'message';
+  /** Poll cadence (seconds). Default 60, floor 30. */
+  pollIntervalSec?: number;
   /** Events arriving within this window merge into one run (seconds). Default 10, max 300. */
   batchWindowSec?: number;
   /** Minimum spacing between two runs (seconds). Default 60, floor 30. */
@@ -233,6 +265,13 @@ export interface AgentAction {
    * 任务行为零扰动（A6 D6）。填了才在跑完后复用 LibraryService 归档，标签「定稿」。
    */
   libraryProjectId?: string;
+  /**
+   * 用户自定义的「今天必须处理」判据（一句话，trim 后非空才生效，上限
+   * CRON_URGENCY_CRITERIA.MAX_CHARS）。设置后 cron agent prompt 里 urgency 分档的
+   * must_today 定义替换为这句话；缺省用内置定义，产出 prompt 字节不变
+   * （N-CRON-MORNING-TRIAGE-URGENCY-RULE）。
+   */
+  urgencyCriteria?: string;
 }
 
 /**
@@ -283,9 +322,11 @@ export interface RoleWakeAction {
  */
 export interface CronExecutionTrigger {
   kind: 'event' | 'schedule';
-  /** Event source; only 'channel' (locally connected channel messages) exists today. */
-  source?: 'channel';
-  /** Channel account whose messages fired the run. */
+  /** Event source: 'channel' (locally connected channel messages) or 'connector' (local connector polling). */
+  source?: 'channel' | 'connector';
+  /** Connector id; present iff source === 'connector'. Only 'mail' exists today. */
+  connector?: 'mail';
+  /** Channel account or mail account whose messages fired the run. */
   accountId?: string;
   /** Number of events carried into this run. */
   eventCount?: number;

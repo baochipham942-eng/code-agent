@@ -194,6 +194,7 @@ export class AgentLoop {
       toolScope: config.toolScope,
       executionIntent: config.executionIntent,
       neoTag: config.neoTag,
+      delegationOrigin: config.delegationOrigin,
       goalRecoverySnapshot: config.goalRecoverySnapshot,
 
       // Services

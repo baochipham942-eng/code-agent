@@ -148,6 +148,18 @@ function preservesUndeliveredPermissionEnvelope(channel: string): boolean {
   return channel === IPC_CHANNELS.AGENT_PERMISSION_RESPONSE;
 }
 
+/**
+ * skill 装载 caution 门把「待确认」当业务信封原样回给调用方：HTTP 200 +
+ * {success:false, code:'SKILL_CAUTION_CONFIRMATION_REQUIRED', cautionHits,
+ * confirmationToken}（domain 兜底路由原样 sendJson，见 skill.ipc.ts 的 catch）。
+ * renderer 靠这个信封弹确认页并携 token 重发——这里若像普通失败一样坍缩成
+ * undefined 并记 transport failure，确认流在真机上永远打不开（PR #2361 UI
+ * 验收实机撞到）。与审批未送达信封同类：业务信号，不是传输故障。
+ */
+function isSkillCautionConfirmationEnvelope(value: WrappedHttpResponse): boolean {
+  return (value as { code?: unknown }).code === 'SKILL_CAUTION_CONFIRMATION_REQUIRED';
+}
+
 function normalizeIpcResultEnvelope(channel: string, value: unknown): unknown {
   if (!expectsIpcResultEnvelope(channel) || isWrappedHttpResponse(value)) {
     return value;
@@ -852,6 +864,10 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
             if (json.success === false) {
               // 审批应答的失败信封原样透传（宿主侧已逐口留痕），见 helper 注释。
               if (preservesUndeliveredPermissionEnvelope(channel)) {
+                return json as ReturnType<IpcInvokeHandlers[K]>;
+              }
+              // skill caution「待确认」信封同理原样透传（不是传输故障），见 helper 注释。
+              if (isSkillCautionConfirmationEnvelope(json)) {
                 return json as ReturnType<IpcInvokeHandlers[K]>;
               }
               // 错误响应（如 NOT_FOUND）不应作为有效数据透传到前端

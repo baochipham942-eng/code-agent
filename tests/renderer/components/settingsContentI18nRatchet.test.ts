@@ -32,6 +32,8 @@ const MIGRATED: string[] = [
   'tabs/SkillsInstalledTab.tsx',
   'tabs/SkillsDiscoverTab.tsx',
   'tabs/SkillsSettingsCards.tsx',
+  'tabs/SkillCautionDisclosureModal.tsx',
+  'tabs/useSkillCautionFlow.ts',
   'tabs/MCPSettings.tsx',
   'tabs/McpDiscoverTab.tsx',
   'tabs/PluginsSettings.tsx',

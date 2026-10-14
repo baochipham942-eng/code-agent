@@ -141,4 +141,54 @@ describe('N-CRON-BUDGET-EXPOSE 编辑器额度字段', () => {
     await waitFor(() => expect(createJob).toHaveBeenCalledTimes(1), { timeout: 3000 });
     expect(createJob.mock.calls[0]?.[0]).toMatchObject({ runsOn: 'cloud', maxRuns: null });
   });
+
+  it('非法次数/预算在客户端就被拦下：buildCronJobInput 抛中文错，不把 host 英文原文放行到用户脸上（N-CRON-BUDGET-EXPOSE-SHOTS ⑤）', () => {
+    for (const invalid of ['0', '1.5', '-1']) {
+      const draft = createDefaultCronJobDraft();
+      draft.name = '非法次数';
+      draft.shellCommand = 'echo ok';
+      draft.maxRuns = invalid;
+      expect(() => buildCronJobInput(draft)).toThrow('运行次数上限必须是大于等于 1 的整数');
+    }
+
+    const budget = createDefaultCronJobDraft();
+    budget.name = '非法预算';
+    budget.shellCommand = 'echo ok';
+    budget.maxRunBudget = '-1';
+    expect(() => buildCronJobInput(budget)).toThrow('单次预算上限必须是大于等于 0 的数字');
+
+    // 合法值与留空不受影响（空 = null = 不限）。
+    const valid = createDefaultCronJobDraft();
+    valid.name = '合法值';
+    valid.shellCommand = 'echo ok';
+    valid.maxRuns = '5';
+    valid.maxRunBudget = '0.01';
+    expect(() => buildCronJobInput(valid)).not.toThrow();
+  });
+
+  it('编辑器里保存非法次数：表单错误框给出可见中文提示，且不发出 updateJob（⑤ 的 UI 面）', async () => {
+    const updateJob = vi.fn();
+    useCronStore.setState({ updateJob });
+    render(<CronJobEditor isOpen job={makeJob({ maxRuns: 3, maxRunBudget: 0.5 })} onClose={() => undefined} />);
+
+    fireEvent.click(screen.getByText('高级选项'));
+    fireEvent.change(screen.getByDisplayValue('3'), { target: { value: '1.5' } });
+    fireEvent.click(screen.getByText('保存修改'));
+
+    await waitFor(() => expect(screen.getByText('运行次数上限必须是大于等于 1 的整数')).toBeTruthy());
+    expect(updateJob).not.toHaveBeenCalled();
+  });
+
+  it('编辑器里保存非法预算：同款可见中文提示（⑤ 的 UI 面）', async () => {
+    const updateJob = vi.fn();
+    useCronStore.setState({ updateJob });
+    render(<CronJobEditor isOpen job={makeJob({ maxRuns: 3, maxRunBudget: 0.5 })} onClose={() => undefined} />);
+
+    fireEvent.click(screen.getByText('高级选项'));
+    fireEvent.change(screen.getByDisplayValue('0.5'), { target: { value: '-1' } });
+    fireEvent.click(screen.getByText('保存修改'));
+
+    await waitFor(() => expect(screen.getByText('单次预算上限必须是大于等于 0 的数字')).toBeTruthy());
+    expect(updateJob).not.toHaveBeenCalled();
+  });
 });

@@ -1,14 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IPCRequest, IPCResponse } from '../../../src/shared/ipc';
 
-// 验证 diagnostics jevStatus 出口（N-JEV-DEFAULT-ON）：返回四特性开关/生效/降级计数
-// 快照，route 只给类别不给 key。provider mock —— 测试不触网、不读 SecureStorage。
+// 验证 diagnostics jevStatus 出口（N-JEV-DEFAULT-ON / CONSENT 续作）：返回四特性开关/
+// 生效/降级计数快照 + 五态 keySource，route 只给类别不给 key。provider mock ——
+// 测试不触网、不读 SecureStorage。
 const providerState = vi.hoisted(() => ({
   route: null as null | { kind: 'official' | 'openrouter' },
+  keySource: 'none' as 'official' | 'openrouter' | 'openrouter_pending_consent' | 'disabled_by_user' | 'none',
 }));
 
 vi.mock('../../../src/host/model/providers/typesafeProvider', () => ({
   resolveJevRoute: () => providerState.route,
+  probeJevKeySource: () => providerState.keySource,
   systemOne: vi.fn(),
 }));
 
@@ -35,19 +38,22 @@ const call = (): Promise<IPCResponse> =>
 
 beforeEach(() => {
   providerState.route = null;
+  providerState.keySource = 'none';
 });
 
 describe('diagnostics jevStatus', () => {
-  it('返回状态形状：四特性 flagOn/effective/degradedCount + route 类别', async () => {
+  it('返回状态形状：四特性 flagOn/effective/degradedCount + route 类别 + keySource', async () => {
     const res = await call();
     expect(res.success).toBe(true);
     const data = res.data as {
       keyConfigured: boolean;
       route: string | null;
+      keySource: string;
       features: Record<string, { flagOn: boolean; effective: boolean; degradedCount: number }>;
     };
     expect(data.keyConfigured).toBe(false);
     expect(data.route).toBe(null);
+    expect(data.keySource).toBe('none');
     expect(Object.keys(data.features).sort()).toEqual(
       ['compaction', 'injectionScan', 'permissionClassifier', 'router'],
     );
@@ -60,11 +66,24 @@ describe('diagnostics jevStatus', () => {
 
   it("有 key 时 keyConfigured=true、route='official'，且响应永不包含 key 材料", async () => {
     providerState.route = { kind: 'official' };
+    providerState.keySource = 'official';
     const res = await call();
     expect(res.success).toBe(true);
     const serialized = JSON.stringify(res.data);
     expect(serialized).toContain('"keyConfigured":true');
     expect(serialized).toContain('"route":"official"');
+    expect(serialized).toContain('"keySource":"official"');
     expect(serialized).not.toMatch(/apiKey|api_key|sk-|secret/i);
   });
+
+  it.each(['openrouter_pending_consent', 'disabled_by_user'] as const)(
+    '%s 也经 keySource 上报（keyConfigured=false）',
+    async (source) => {
+      providerState.keySource = source;
+      const res = await call();
+      const data = res.data as { keyConfigured: boolean; keySource: string };
+      expect(data.keyConfigured).toBe(false);
+      expect(data.keySource).toBe(source);
+    },
+  );
 });

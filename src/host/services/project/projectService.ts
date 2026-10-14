@@ -408,8 +408,17 @@ export class ProjectService {
   /**
    * D2 隐式懒创建：按 workspace 路径拿/建 project，并接管项目记忆 key。
    * session 创建链路调用它拿 project_id。空路径返回 UNSORTED 项目。
+   *
+   * options.allowMissingDir：显式建项目（createProject）沿既有契约允许指向还没建的
+   * 目录；隐式归桶路径（缺省）不容忍缺失目录——懒开的按会话目录回写时还没落盘，
+   * 此时铸造会把 null identity 铸成 trusted Source，目录一旦建出来 getWorkspaceScope
+   * 就按 identity_changed 硬拒，之后每一轮都 500（真实运行实测）。
    */
-  async ensureProjectForWorkspace(workspacePath: string | undefined, now: number): Promise<Project> {
+  async ensureProjectForWorkspace(
+    workspacePath: string | undefined,
+    now: number,
+    options?: { allowMissingDir?: boolean },
+  ): Promise<Project> {
     const dir = (workspacePath || '').trim();
     if (!dir) return this.ensureUnsorted(now);
 
@@ -424,11 +433,10 @@ export class ProjectService {
       if (repo.listSources(existing.id).length === 0) repo.backfillProjectSources(now);
       return existing;
     }
-    // 懒开的按会话目录（N-DELIVERABLE-WORKDIR-LAZY）在回写时还没落盘：此时铸造会把
-    // null identity 铸成 trusted Source，目录一旦建出来 getWorkspaceScope 就按
-    // identity_changed 硬拒，之后每一轮都 500（真实运行实测）。新建铸造要求目录已在盘上，
-    // 落盘方（workDirectoryMaterializer）建完目录会带着真实 identity 来认领。
-    if (workspacePathIdentity(dir).ino === null) {
+    // 懒开的按会话目录（N-DELIVERABLE-WORKDIR-LAZY）在回写时还没落盘：隐式铸造要求
+    // 目录已在盘上，否则 null identity 的 trusted Source 会在目录落盘后被
+    // getWorkspaceScope 按 identity_changed 硬拒（真实运行实测）。
+    if (!options?.allowMissingDir && workspacePathIdentity(dir).ino === null) {
       logger.info('[ProjectService] workspace not on disk yet, deferring project mint', { dir });
       return this.ensureUnsorted(now);
     }
@@ -583,7 +591,7 @@ export class ProjectService {
     }
 
     requireProjectWorkspaceAuthority(dir, 'create a Project');
-    let project = await this.ensureProjectForWorkspace(dir, now);
+    let project = await this.ensureProjectForWorkspace(dir, now, { allowMissingDir: true });
     if (project.name !== name) {
       project = this.renameProject(project.id, name, now) ?? project;
     }

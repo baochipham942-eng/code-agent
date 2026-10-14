@@ -53,7 +53,7 @@ import { NativeDesktopSection } from '../../../src/renderer/components/features/
 const AUDIO_DIR = '/tmp/audio-retention';
 const EACCES_RAW = `EACCES: permission denied, unlink '${AUDIO_DIR}/seg-1.wav'`;
 
-function status(failedTotal: number, lastError?: string, fileCount = 2) {
+function status(failedTotal: number, lastError?: string, fileCount = 2, failedCurrent = failedTotal) {
   return {
     capturing: false,
     captureMode: 'microphone' as const,
@@ -69,6 +69,7 @@ function status(failedTotal: number, lastError?: string, fileCount = 2) {
       lastSweepAt: null,
       deletedTotal: 0,
       failedTotal,
+      failedCurrent,
       lastError,
       fileCount,
       bytes: 18,
@@ -155,7 +156,7 @@ describe('NativeDesktopSection audio retention', () => {
     });
   });
 
-  it('shows the cleanup failure line only when failedTotal is above zero', async () => {
+  it('shows the cleanup failure line only when failedCurrent is above zero', async () => {
     services.getAudioCaptureStatus.mockResolvedValue(status(0));
     const view = render(React.createElement(NativeDesktopSection));
     expect(await screen.findByRole('button', { name: '清空录音' })).toBeTruthy();
@@ -173,10 +174,11 @@ describe('NativeDesktopSection audio retention', () => {
 
   it('keeps the failure line when only a stuck non-regular path remains (fileCount 0)', async () => {
     // 评审返修场景：录音目录里卡着一个名为 *.wav 的目录/符号链接（host 夹具
-    // audio_blocked.wav 即此形状），clear/sweep 每轮失败、failedTotal 持续累计，
-    // 但 countClearableWavs 只统计普通文件，fileCount 结构性为 0——
-    // 失败行不能被 fileCount 门藏死，否则用户既看不到失败也拿不到重试入口
-    services.getAudioCaptureStatus.mockResolvedValue(status(2, 'not a regular file', 0));
+    // audio_blocked.wav 即此形状），clear/sweep 每轮失败、failedTotal 持续累计
+    // （重试两轮后累计 4），但 countClearableWavs 只统计普通文件，fileCount
+    // 结构性为 0——失败行由 failedCurrent（仍是 2）驱动，不能被 fileCount 门
+    // 藏死，否则用户既看不到失败也拿不到重试入口
+    services.getAudioCaptureStatus.mockResolvedValue(status(4, 'not a regular file', 0, 2));
     render(React.createElement(NativeDesktopSection));
 
     const main = await findFailureMain(/个录音删不掉/);
@@ -187,6 +189,26 @@ describe('NativeDesktopSection audio retention', () => {
     fireEvent.click(screen.getByRole('button', { name: '重试' }));
     expect(await screen.findByRole('dialog', { name: '清空录音' })).toBeTruthy();
     expect(services.clearAudioRecordings).not.toHaveBeenCalled();
+  });
+
+  it('counts the still-undeletable files, not the cumulative retries', async () => {
+    // FB-328：同一批 3 个删不掉的录音重试两次，failedTotal 累计成 6，
+    // 失败行报此刻仍删不掉的 3 个，不报累计账
+    services.getAudioCaptureStatus.mockResolvedValue(status(6, 'not a regular file', 0, 3));
+    render(React.createElement(NativeDesktopSection));
+
+    const main = await findFailureMain(/个录音删不掉/);
+    expect(main.textContent).toBe('有 3 个录音删不掉，这次清理没有完成。可稍后重试');
+    expect(main.textContent).not.toContain('6');
+  });
+
+  it('hides the failure line when failedCurrent is zero even if failedTotal accumulated', async () => {
+    // 失败行只看 failedCurrent：累计账非零但此刻没有删不掉的文件 → 不报失败
+    services.getAudioCaptureStatus.mockResolvedValue(status(6, 'not a regular file', 2, 0));
+    render(React.createElement(NativeDesktopSection));
+
+    expect(await screen.findByRole('button', { name: '清空录音' })).toBeTruthy();
+    expect(screen.queryByText(/个录音删不掉/)).toBeNull();
   });
 
   it('drops the failure line after a successful retry clears everything', async () => {

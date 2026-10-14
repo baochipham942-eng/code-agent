@@ -4,6 +4,7 @@
 
 import { createLogger } from '../services/infra/logger';
 import { getAutoDelegator, type TaskAnalysis } from './autoDelegator';
+import { isBoundedOneTurnComparison } from '../prompts/systemReminders';
 
 const logger = createLogger('AgentRequirementsAnalyzer');
 
@@ -253,7 +254,8 @@ export class AgentRequirementsAnalyzer {
       rawAnalysis,
       taskType,
       executionStrategy,
-      confidence
+      confidence,
+      isBoundedOneTurnComparison(userMessage),
     );
 
     const requirements: AgentRequirements = {
@@ -523,8 +525,13 @@ export class AgentRequirementsAnalyzer {
     analysis: TaskAnalysis,
     taskType: AgentTaskType,
     strategy: ExecutionStrategy,
-    confidence: number
+    confidence: number,
+    boundedOneTurnComparison: boolean,
   ): boolean {
+    if (boundedOneTurnComparison) {
+      return false;
+    }
+
     // 直接执行策略不需要自动生成
     if (strategy === 'direct') {
       return false;

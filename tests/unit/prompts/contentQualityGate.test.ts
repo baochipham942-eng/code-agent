@@ -9,6 +9,7 @@ import {
   detectTaskFeatures,
   getSystemReminders,
 } from '../../../src/host/prompts/systemReminders';
+import { getRemindersForTask } from '../../../src/host/prompts/dynamicReminders';
 import {
   REMINDER_DEFINITIONS,
 } from '../../../src/host/prompts/reminderRegistry';
@@ -95,6 +96,26 @@ describe('detectTaskFeatures — 内容类型识别', () => {
     expect(features.isDataTask).toBe(false);
     expect(features.isDocumentTask).toBe(false);
     expect(features.isImageTask).toBe(false);
+  });
+
+  it('bounded one-turn competitor comparisons do not trigger delegation reminders', () => {
+    const prompt = 'Write a competitor brief: compare exactly Notion, Lark, and DingTalk across 5 dimensions, then deliver the full brief in one turn.';
+    const features = detectTaskFeatures(prompt);
+
+    expect(features.isBoundedComparison).toBe(true);
+    expect(features.isMultiDimension).toBe(false);
+    expect(getSystemReminders(prompt).some((r) => r.includes('委派提醒') || r.includes('并行派发提醒'))).toBe(false);
+    expect(getRemindersForTask(prompt, { includeFewShot: false }).some((r) => r.includes('委派提醒') || r.includes('并行派发'))).toBe(false);
+  });
+
+  it('large multi-dimension tasks still retain parallel and delegation policy signals', () => {
+    const prompt = 'Perform a comprehensive security, performance, quality, frontend, backend, database, and API audit across the entire codebase with independent findings and a complete report.';
+    const features = detectTaskFeatures(prompt);
+
+    expect(features.isBoundedComparison).toBe(false);
+    expect(features.isMultiDimension).toBe(true);
+    expect(getSystemReminders(prompt).some((r) => r.includes('并行派发提醒'))).toBe(true);
+    expect(getRemindersForTask(prompt, { includeFewShot: false }).some((r) => r.includes('并行派发'))).toBe(true);
   });
 });
 

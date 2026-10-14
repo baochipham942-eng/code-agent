@@ -90,8 +90,8 @@ chat: {
   suggestions: {
     weeklyReport: {
       title: '写一份本周工作周报',
-      description: '给要点素材，直接成稿可发送',
-      prompt: '帮我把这周的工作要点写成一份可以直接发给主管的周报：结构含 本周完成 / 数据与进展 / 风险与需协调 / 下周计划，语气专业克制、成果尽量量化。要点（示例素材，请直接基于它成稿）：客户门户 v2 上线，注册转化率从 3.1% 提到 4.6%；处理客诉 37 件，平均响应压到 2 小时内；供应商接口不稳定造成 2 次发货延迟，正在接备份通道；下周准备季度复盘材料并上线积分功能。直接输出完整周报正文，不要问我任何问题。',
+      description: '生成可直接发送的 Word 周报（.docx）',
+      prompt: '帮我把这周的工作要点写成一份可以直接发给主管的周报（Word .docx）：结构含 本周完成 / 数据与进展 / 风险与需协调 / 下周计划，语气专业克制、成果尽量量化。要点（示例素材，请直接基于它成稿）：客户门户 v2 上线，注册转化率从 3.1% 提到 4.6%；处理客诉 37 件，平均响应压到 2 小时内；供应商接口不稳定造成 2 次发货延迟，正在接备份通道；下周准备季度复盘材料并上线积分功能。请写入一个 .docx 文件，并在回复中说明生成的文件名。不要问我任何问题。',
     },
     meetingNotes: {
       title: '整理一份会议纪要',
@@ -100,13 +100,13 @@ chat: {
     },
     sheetAnalysis: {
       title: '分析一组销售数据',
-      description: '示例数据在手，直出汇报结论',
-      prompt: '分析下面这份月度销售数据，给出能直接用于汇报的结论：整体趋势、增长最快与下滑最快的品类、异常点，外加 3 条可执行的改进建议，结论用表格收拢。数据（示例素材，请直接基于它分析）：2024 年 1–6 月销售额（万元）— 1 月：咖啡 42、茶饮 30、烘焙 18；2 月：咖啡 38、茶饮 26、烘焙 17；3 月：咖啡 51、茶饮 33、烘焙 21；4 月：咖啡 55、茶饮 29、烘焙 24；5 月：咖啡 61、茶饮 31、烘焙 19；6 月：咖啡 66、茶饮 28、烘焙 17。直接开始分析，不要问我任何问题。',
+      description: '生成包含原始数据和汇总表的 Excel 文件（.xlsx）',
+      prompt: '分析下面这份月度销售数据，并生成一个 Excel 工作簿（.xlsx）：包含原始数据工作表和汇总表，汇总整体趋势、增长最快与下滑最快的品类、异常点及 3 条可执行的改进建议，结论用表格收拢。数据（示例素材，请直接基于它分析）：2024 年 1–6 月销售额（万元）— 1 月：咖啡 42、茶饮 30、烘焙 18；2 月：咖啡 38、茶饮 26、烘焙 17；3 月：咖啡 51、茶饮 33、烘焙 21；4 月：咖啡 55、茶饮 29、烘焙 24；5 月：咖啡 61、茶饮 31、烘焙 19；6 月：咖啡 66、茶饮 28、烘焙 17。请写入一个 .xlsx 文件，并在回复中说明生成的文件名。不要问我任何问题。',
     },
     competitorBrief: {
       title: '搜一份竞品简报',
       description: '联网调研对手，一张表看清',
-      prompt: '由你本人完成一份竞品简报，不要派出子代理或团队成员，检索和写作都在当前对话里完成（示例场景）：市场以「团队协作工具」为例，只对比 Notion、飞书、钉钉 3 家，各按 5 个维度整理——定位与目标人群 / 核心能力 / 价格带 / AI 能力 / 近半年值得注意的动向；能联网检索就用检索到的公开资料，检索不到或不确定的基于你已掌握的知识写并如实标注，先用一张对比表收拢，再给 3 条简短结论，附来源链接。现在就开始写，一轮内交付完整简报，不要问我任何问题。',
+      prompt: '写一份竞品简报（示例场景）：市场以「团队协作工具」为例，只对比 Notion、飞书、钉钉 3 家，各按 5 个维度整理——定位与目标人群 / 核心能力 / 价格带 / AI 能力 / 近半年值得注意的动向；能联网检索就用检索到的公开资料，检索不到或不确定的基于你已掌握的知识写并如实标注，先用一张对比表收拢，再给 3 条简短结论，附来源链接。现在就开始写，一轮内交付完整简报，不要问我任何问题。',
     },
   },
 },
@@ -590,8 +590,8 @@ chat: {
   suggestions: {
     weeklyReport: {
       title: 'Draft this week’s status report',
-      description: 'Rough bullets in, a sendable report out',
-      prompt: 'Turn this week’s rough bullets into a status report I can send my manager as-is: sections for Done this week / Metrics & progress / Risks & asks / Next week’s plan, professional tone, quantify results where possible. My bullets (sample input — write the report directly from them): shipped Client Portal v2, lifting signup conversion from 3.1% to 4.6%; resolved 37 support tickets with average response under 2 hours; vendor API instability caused 2 shipping delays, backup channel in progress; next week, prepare the quarterly review deck and launch the loyalty-points feature. Output the complete report directly, without asking me any questions.',
+      description: 'Generate a sendable Word status report (.docx)',
+      prompt: 'Turn this week’s rough bullets into a Word status report (.docx) I can send my manager as-is: sections for Done this week / Metrics & progress / Risks & asks / Next week’s plan, professional tone, quantify results where possible. My bullets (sample input — write the report directly from them): shipped Client Portal v2, lifting signup conversion from 3.1% to 4.6%; resolved 37 support tickets with average response under 2 hours; vendor API instability caused 2 shipping delays, backup channel in progress; next week, prepare the quarterly review deck and launch the loyalty-points feature. Write the report to a .docx file and state the generated filename in your reply, without asking me any questions.',
     },
     meetingNotes: {
       title: 'Write up meeting minutes',
@@ -600,13 +600,13 @@ chat: {
     },
     sheetAnalysis: {
       title: 'Analyze a sales spreadsheet',
-      description: 'Sample sales data in, conclusions out',
-      prompt: 'Analyze this monthly sales dataset and produce conclusions I can use in a review: overall trend, fastest-growing and fastest-declining categories, anomalies, plus 3 actionable recommendations, with the conclusions wrapped up in a table. Data (sample input — analyze it directly): Jan–Jun 2024 revenue in 10k CNY — Jan: coffee 42, tea 30, bakery 18; Feb: coffee 38, tea 26, bakery 17; Mar: coffee 51, tea 33, bakery 21; Apr: coffee 55, tea 29, bakery 24; May: coffee 61, tea 31, bakery 19; Jun: coffee 66, tea 28, bakery 17. Start the analysis right away, without asking me any questions.',
+      description: 'Generate an Excel workbook with raw data and a summary table (.xlsx)',
+      prompt: 'Analyze this monthly sales dataset and generate an Excel workbook (.xlsx): include a raw-data worksheet and a summary table covering the overall trend, fastest-growing and fastest-declining categories, anomalies, plus 3 actionable recommendations. Data (sample input — analyze it directly): Jan–Jun 2024 revenue in 10k CNY — Jan: coffee 42, tea 30, bakery 18; Feb: coffee 38, tea 26, bakery 17; Mar: coffee 51, tea 33, bakery 21; Apr: coffee 55, tea 29, bakery 24; May: coffee 61, tea 31, bakery 19; Jun: coffee 66, tea 28, bakery 17. Write the workbook to a .xlsx file and state the generated filename in your reply, without asking me any questions.',
     },
     competitorBrief: {
       title: 'Research a competitor brief',
       description: 'Web-research rivals, one comparison table',
-      prompt: 'Write a competitor brief yourself — do not spawn sub-agents or team members; do all research and writing in this conversation (sample scenario): team-collaboration software market, compare exactly Notion, Lark, and DingTalk across 5 dimensions — positioning and target users / core capabilities / pricing tiers / AI capabilities / notable moves in the last six months. Use web search for public information when available; where you cannot verify, write from what you already know and say so. Wrap it up in one comparison table, then give 3 short conclusions with source links. Start writing now and deliver the full brief in one turn, without asking me any questions.',
+      prompt: 'Write a competitor brief (sample scenario): team-collaboration software market, compare exactly Notion, Lark, and DingTalk across 5 dimensions — positioning and target users / core capabilities / pricing tiers / AI capabilities / notable moves in the last six months. Use web search for public information when available; where you cannot verify, write from what you already know and say so. Wrap it up in one comparison table, then give 3 short conclusions with source links. Start writing now and deliver the full brief in one turn, without asking me any questions.',
     },
   },
 },

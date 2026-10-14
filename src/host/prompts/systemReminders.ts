@@ -341,6 +341,8 @@ skill({
  */
 export interface TaskFeatures {
   isMultiDimension: boolean;
+  /** 小范围、单轮对比：不应触发自动委派或并行派发。 */
+  isBoundedComparison?: boolean;
   isComplexTask: boolean;
   isAuditTask: boolean;
   isReviewTask: boolean;
@@ -388,6 +390,20 @@ function matchesKeyword(normalizedText: string, keyword: string): boolean {
   return new RegExp(`\\b${escaped}\\b`).test(normalizedText);
 }
 
+/**
+ * 小范围、单轮可交付的对比任务不需要自动扇出。
+ *
+ * 这类请求通常同时包含多个 "and" / "then"，会被通用复杂度启发式误判为
+ * complex，继而注入委派提醒。只有明确给出少量实体、单轮交付的对比才豁免；
+ * 真正的大型多维任务仍走原有自动 Agent 路径。
+ */
+export function isBoundedOneTurnComparison(message: string): boolean {
+  const hasComparisonIntent = /\b(?:compare|comparison|competitor|competitors)\b|对比|竞品|比较/i.test(message);
+  const hasSmallBound = /\b(?:3|4|5)\s+(?:companies|vendors|competitors|products|entities|dimensions)\b|[三四五]\s*(?:家|个)/i.test(message);
+  const hasOneTurnDelivery = /\b(?:one|single)\s+turn\b|一轮(?:内|中|完成)?/i.test(message);
+  return hasComparisonIntent && hasSmallBound && hasOneTurnDelivery;
+}
+
 const hasAnyKeyword = (normalizedText: string, keywords: string[]): boolean =>
   keywords.some((k) => matchesKeyword(normalizedText, k));
 
@@ -418,6 +434,7 @@ const VIDEO_FILE_EXTENSIONS = ['.mp4', '.avi', '.mov', '.mkv', '.webm'];
  */
 export function detectTaskFeatures(prompt: string, fileExtensions?: string[]): TaskFeatures {
   const normalizedPrompt = prompt.toLowerCase();
+  const isBoundedComparison = isBoundedOneTurnComparison(prompt);
 
   // 附件扩展名是强证据；正文里的扩展名还要结合产物意图判断。
   const attachmentExtensions = (fileExtensions || []).map(e => e.toLowerCase());
@@ -572,7 +589,8 @@ export function detectTaskFeatures(prompt: string, fileExtensions?: string[]): T
     weakHit(excelAmbiguousOperationKeywords);
 
   return {
-    isMultiDimension: matchedDimensions.length >= 2,
+    isMultiDimension: matchedDimensions.length >= 2 && !isBoundedComparison,
+    isBoundedComparison,
     isComplexTask: complexKeywords.some((k) => normalizedPrompt.includes(k)),
     isAuditTask: auditKeywords.some((k) => normalizedPrompt.includes(k)),
     isReviewTask: reviewKeywords.some((k) => normalizedPrompt.includes(k)),
@@ -627,7 +645,7 @@ export function getSystemReminders(prompt: string, fileExtensions?: string[]): s
   }
 
   // 复杂任务 → 必须委派提醒
-  if (features.isComplexTask && !features.isMultiDimension) {
+  if (features.isComplexTask && !features.isMultiDimension && !features.isBoundedComparison) {
     reminders.push(REMINDERS.MUST_DELEGATE);
   }
 

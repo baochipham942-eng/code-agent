@@ -1,6 +1,6 @@
 import { getToolAttemptTrace, shouldFreezeNonReadWhileAwaitingUser, buildAwaitingUserBlockedResult, AWAITING_USER_FREEZE_NOTICE } from './toolAttemptTrace';
 import { emitBatchTerminatedToolResult, emitForceFinalSkippedToolResult } from './forceFinalSeal';
-import { mintUserTurnOrigin } from '../messageOrigin';
+import { mintDelegatedTurnOrigin, mintUserTurnOrigin } from '../messageOrigin';
 import { attachDocumentOrigin, describeDocumentEvidenceProblems, documentClaimPreflight } from './documentEvidenceBoundary';
 // ============================================================================
 // ToolExecutionEngine — Tool execution with hooks, circuit breaker, content verification
@@ -780,7 +780,10 @@ export class ToolExecutionEngine {
           // 仅轮级确认的持久化角色可写入角色记忆，避免普通预定义 agent 误建角色目录。
           agentRole: this.ctx.persistentRoleId,
           // ADR-067 D3：主代理常规输入铸 user 起源（维度补齐，user 不升档、行为不变）。
-          turnOrigin: mintUserTurnOrigin({ sessionId: this.ctx.sessionId, runId: this.ctx.runId, turnId: this.ctx.turn.currentTurnId }),
+          // ADR-072 K1C：带外委托标记存在时铸 orchestrator 起源（委托文本不是用户权威）。
+          turnOrigin: (this.ctx.delegationOrigin
+            ? mintDelegatedTurnOrigin
+            : mintUserTurnOrigin)({ sessionId: this.ctx.sessionId, runId: this.ctx.runId, turnId: this.ctx.turn.currentTurnId }),
           // 仅轮级确认的持久化角色可写入角色记忆，避免普通预定义 agent 误建角色目录。
           preApprovedTools: this.ctx.control.preApprovedTools,
           skillDiscoveryService: this.ctx.skillDiscoveryService,
@@ -798,6 +801,7 @@ export class ToolExecutionEngine {
           neoTag: this.ctx.neoTag,
           suppressBackgroundSubagentIdleWake: Boolean(this.ctx.goalMode?.isPending()),
           abortSignal: toolAbortController.signal,
+          forceFinalResponse: this.ctx.control.forceFinalResponse.bind(this.ctx.control),
           deniedToolNames: this.ctx.deniedToolNames,
           allowedToolNames: this.ctx.allowedToolNames, foregroundToolFace: this.ctx.foregroundToolFace,
         }

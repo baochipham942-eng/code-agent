@@ -2,6 +2,8 @@
 // Settings namespace translations (zh/Models) — 纯平移拆分（债务门）
 // ============================================================================
 
+import { zhSkillCaution } from './zhSkillCaution';
+
 export const zhSettingsModels = {
     model: {
       title: '模型配置',
@@ -560,6 +562,7 @@ export const zhSettingsModels = {
         confirmFailed: '安装失败',
         alreadyInstalled: '该库已安装。如需重装，请先在「已安装」中删除原库。',
       },
+      caution: zhSkillCaution,
       cards: {
         install: '安装',
         builtinSkill: '内置 Skill',

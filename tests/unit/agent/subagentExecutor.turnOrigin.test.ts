@@ -36,6 +36,14 @@ describe('toolExecutionEngine 主循环 user 起源铸造（ADR-067 D3）', () =
   const source = readFileSync(TOOL_ENGINE_PATH, 'utf8');
 
   it('主代理常规输入经 mintUserTurnOrigin 铸 user 起源进 options', () => {
-    expect(source).toMatch(/turnOrigin:\s*mintUserTurnOrigin\(\{/);
+    // ADR-072 K1C 后该调用带 delegationOrigin 条件（委托轮铸 orchestrator），
+    // 普通路径仍必须是 mintUserTurnOrigin。
+    expect(source)
+      .toMatch(/turnOrigin:\s*\(this\.ctx\.delegationOrigin\s*\?\s*mintDelegatedTurnOrigin\s*:\s*mintUserTurnOrigin\)\(\{/);
+  });
+
+  it('带外委托标记存在时铸 orchestrator 起源而非 user（ADR-072 K1C）', () => {
+    expect(source).toContain('mintDelegatedTurnOrigin');
+    expect(source).toMatch(/delegationOrigin\s*\?\s*mintDelegatedTurnOrigin/);
   });
 });

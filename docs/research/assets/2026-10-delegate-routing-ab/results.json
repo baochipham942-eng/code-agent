@@ -1,0 +1,1384 @@
+{
+  "generatedAt": "2026-10-13T10:52:44.494Z",
+  "gitHead": "a9b3a0d22dda864ed513bcbf9a0cb1899b078a43",
+  "ticket": "N-DELEGATE-SESSION-K1-AB",
+  "fixture": {
+    "path": "tests/fixtures/delegate-routing-ab-samples.json",
+    "samples": 36,
+    "classes": {
+      "delegate_existing": 9,
+      "create_new": 6,
+      "no_delegation": 9,
+      "stop": 4,
+      "resume": 4,
+      "correct": 4
+    },
+    "ambiguous": 6
+  },
+  "params": {
+    "toolChoice": "auto",
+    "temperature": 0,
+    "maxOutputTokens": 2048,
+    "callTimeoutMs": 60000,
+    "concurrency": 4,
+    "maxTransportErrorRate": 0.1,
+    "systemPrompt": "You are the routing brain of a desktop cowork app. For the user message below, decide this turn: answer it yourself in chat, or use the delegate_session tool exactly once.\nThe list_session_candidates result is already included in the user turn — do not call list_session_candidates again.\ndelegate_session actions:\n- delegate_existing: hand the work to one existing candidate session; copy candidateSetId and candidateRef EXACTLY from the candidate list.\n- create_new: a brand-new task that no existing candidate session covers.\n- stop / resume / correct: operate on a delegation you created earlier in this session; use its delegationId.\nDecision rules:\n- Plain questions, chit-chat, explanations, or requests about THIS conversation: reply in chat, call no tool.\n- A request that clearly continues work owned by one existing candidate: delegate_existing with that candidate.\n- An ambiguous request where the target cannot be determined (several equally plausible candidates, or no specifics): do NOT guess a candidate — ask the user in chat instead.\nAnswer with exactly one action: a chat reply, or one delegate_session call. Never invent candidateRefs or delegationIds."
+  },
+  "probeAttempts": [
+    "main glm-5.3: 探针成功",
+    "fast-a glm-5.3-flash: 探针成功（智谱 Coding Plan 端点）"
+  ],
+  "arms": {
+    "main": {
+      "label": "main",
+      "model": "glm-5.3",
+      "endpoint": "https://open.bigmodel.cn/api/coding/paas/v4",
+      "keyEnv": "ZHIPU_CODING_API_KEY",
+      "pricing": {
+        "marginal": "subscription-flat (0 USD per token)",
+        "referenceInputPerMTok": 1.4,
+        "referenceOutputPerMTok": 4.4,
+        "referencePriceSource": "https://open.bigmodel.cn/pricing (2026-10-09)",
+        "usdReferencePerSample": 0.0020659333333333334
+      },
+      "samples": 36,
+      "correct": 35,
+      "harmfulWrongCandidate": 0,
+      "misses": 1,
+      "accuracy": 0.9722222222222222,
+      "harmfulErrorRate": 0,
+      "p50Ms": 6956,
+      "p95Ms": 11918,
+      "avgTokensIn": 784.5,
+      "avgTokensOut": 219.91666666666666,
+      "transportErrors": 0,
+      "transportErrorRate": 0
+    },
+    "fast": {
+      "label": "fast",
+      "model": "glm-5.3-flash",
+      "endpoint": "https://open.bigmodel.cn/api/coding/paas/v4",
+      "keyEnv": "ZHIPU_CODING_API_KEY",
+      "pricing": {
+        "marginal": "subscription-flat (0 USD per token)",
+        "referenceInputPerMTok": 0,
+        "referenceOutputPerMTok": 0,
+        "referencePriceSource": "glm-5.3-flash 是订阅包内的 flash 档，无公开按 token 刊例价（marginal 0）",
+        "usdReferencePerSample": 0
+      },
+      "samples": 36,
+      "correct": 35,
+      "harmfulWrongCandidate": 0,
+      "misses": 1,
+      "accuracy": 0.9722222222222222,
+      "harmfulErrorRate": 0,
+      "p50Ms": 8204,
+      "p95Ms": 21091,
+      "avgTokensIn": 784.5,
+      "avgTokensOut": 212.83333333333334,
+      "transportErrors": 0,
+      "transportErrorRate": 0
+    }
+  },
+  "perSample": [
+    {
+      "arm": "main",
+      "id": "dre-001",
+      "expected": {
+        "action": "delegate_existing",
+        "candidateRef": "Lg7FxQ2mZvKpR9dW"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "delegate_existing",
+        "candidateRef": "Lg7FxQ2mZvKpR9dW",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 7472,
+      "tokensIn": 776,
+      "tokensOut": 170,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "dre-002",
+      "expected": {
+        "action": "delegate_existing",
+        "candidateRef": "Ap3MqR8tXwKdZ5vN"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "delegate_existing",
+        "candidateRef": "Ap3MqR8tXwKdZ5vN",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 6244,
+      "tokensIn": 767,
+      "tokensOut": 212,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "dre-003",
+      "expected": {
+        "action": "delegate_existing",
+        "candidateRef": "Wk9PdS4nBcXzL2mQ"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "delegate_existing",
+        "candidateRef": "Wk9PdS4nBcXzL2mQ",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 6956,
+      "tokensIn": 729,
+      "tokensOut": 241,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "dre-004",
+      "expected": {
+        "action": "delegate_existing",
+        "candidateRef": "Dk5WnE3rVmYtU9iO"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "delegate_existing",
+        "candidateRef": "Dk5WnE3rVmYtU9iO",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 6648,
+      "tokensIn": 777,
+      "tokensOut": 218,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "dre-005",
+      "expected": {
+        "action": "delegate_existing",
+        "candidateRef": "Cr6VbH2sJnPqT8rF"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "delegate_existing",
+        "candidateRef": "Cr6VbH2sJnPqT8rF",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 8572,
+      "tokensIn": 766,
+      "tokensOut": 198,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "dre-006",
+      "expected": {
+        "action": "delegate_existing",
+        "candidateRef": "Fl8QaP1zMbNsR4cX"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "delegate_existing",
+        "candidateRef": "Fl8QaP1zMbNsR4cX",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 6554,
+      "tokensIn": 811,
+      "tokensOut": 192,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "dre-007",
+      "expected": {
+        "action": "delegate_existing",
+        "candidateRef": "Rp9ZnT4kHdQxE3mL"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "delegate_existing",
+        "candidateRef": "Rp9ZnT4kHdQxE3mL",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 23516,
+      "tokensIn": 763,
+      "tokensOut": 1180,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "dre-008",
+      "expected": {
+        "action": "delegate_existing",
+        "candidateRef": "Py4KdF8wNmLsQ2vB"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "delegate_existing",
+        "candidateRef": "Py4KdF8wNmLsQ2vB",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 7271,
+      "tokensIn": 761,
+      "tokensOut": 204,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "dre-009",
+      "expected": {
+        "action": "delegate_existing",
+        "candidateRef": "Db3JqH6pVnMrX7sT"
+      },
+      "predicted": {
+        "kind": "no_tool_call"
+      },
+      "outcome": "miss",
+      "latencyMs": 7918,
+      "tokensIn": 799,
+      "tokensOut": 274,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "crn-001",
+      "expected": {
+        "action": "create_new"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "create_new",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 7043,
+      "tokensIn": 768,
+      "tokensOut": 279,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "crn-002",
+      "expected": {
+        "action": "create_new"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "create_new",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 9140,
+      "tokensIn": 767,
+      "tokensOut": 326,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "crn-003",
+      "expected": {
+        "action": "create_new"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "create_new",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 7566,
+      "tokensIn": 815,
+      "tokensOut": 115,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "crn-004",
+      "expected": {
+        "action": "create_new"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "create_new",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 8113,
+      "tokensIn": 768,
+      "tokensOut": 159,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "crn-005",
+      "expected": {
+        "action": "create_new"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "create_new",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 8128,
+      "tokensIn": 768,
+      "tokensOut": 181,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "crn-006",
+      "expected": {
+        "action": "create_new"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "create_new",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 9217,
+      "tokensIn": 852,
+      "tokensOut": 147,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "nod-001",
+      "expected": {
+        "action": "no_delegation"
+      },
+      "predicted": {
+        "kind": "no_tool_call"
+      },
+      "outcome": "correct",
+      "latencyMs": 9317,
+      "tokensIn": 727,
+      "tokensOut": 314,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "nod-002",
+      "expected": {
+        "action": "no_delegation"
+      },
+      "predicted": {
+        "kind": "no_tool_call"
+      },
+      "outcome": "correct",
+      "latencyMs": 7145,
+      "tokensIn": 763,
+      "tokensOut": 247,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "nod-003",
+      "expected": {
+        "action": "no_delegation"
+      },
+      "predicted": {
+        "kind": "no_tool_call"
+      },
+      "outcome": "correct",
+      "latencyMs": 4979,
+      "tokensIn": 720,
+      "tokensOut": 72,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "nod-004",
+      "expected": {
+        "action": "no_delegation"
+      },
+      "predicted": {
+        "kind": "no_tool_call"
+      },
+      "outcome": "correct",
+      "latencyMs": 7007,
+      "tokensIn": 765,
+      "tokensOut": 315,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "nod-005",
+      "expected": {
+        "action": "no_delegation"
+      },
+      "predicted": {
+        "kind": "no_tool_call"
+      },
+      "outcome": "correct",
+      "latencyMs": 7022,
+      "tokensIn": 756,
+      "tokensOut": 210,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "nod-006",
+      "expected": {
+        "action": "no_delegation"
+      },
+      "predicted": {
+        "kind": "no_tool_call"
+      },
+      "outcome": "correct",
+      "latencyMs": 6774,
+      "tokensIn": 757,
+      "tokensOut": 174,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "nod-007",
+      "expected": {
+        "action": "no_delegation"
+      },
+      "predicted": {
+        "kind": "no_tool_call"
+      },
+      "outcome": "correct",
+      "latencyMs": 4510,
+      "tokensIn": 751,
+      "tokensOut": 140,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "nod-008",
+      "expected": {
+        "action": "no_delegation"
+      },
+      "predicted": {
+        "kind": "no_tool_call"
+      },
+      "outcome": "correct",
+      "latencyMs": 8122,
+      "tokensIn": 767,
+      "tokensOut": 187,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "nod-009",
+      "expected": {
+        "action": "no_delegation"
+      },
+      "predicted": {
+        "kind": "no_tool_call"
+      },
+      "outcome": "correct",
+      "latencyMs": 10717,
+      "tokensIn": 775,
+      "tokensOut": 410,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "stp-001",
+      "expected": {
+        "action": "stop"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "stop",
+        "delegationId": "delegation_9fK3xQ7mLp",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 1907,
+      "tokensIn": 762,
+      "tokensOut": 94,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "stp-002",
+      "expected": {
+        "action": "stop"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "stop",
+        "delegationId": "delegation_kQ2wR8tXnZ",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 5495,
+      "tokensIn": 755,
+      "tokensOut": 108,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "stp-003",
+      "expected": {
+        "action": "stop"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "stop",
+        "delegationId": "delegation_pV5nD3sJqL",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 3626,
+      "tokensIn": 798,
+      "tokensOut": 125,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "stp-004",
+      "expected": {
+        "action": "stop"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "stop",
+        "delegationId": "delegation_mR7bF2wQxT",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 3581,
+      "tokensIn": 793,
+      "tokensOut": 69,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "res-001",
+      "expected": {
+        "action": "resume"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "resume",
+        "delegationId": "delegation_xT4cN8mJqP",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 6863,
+      "tokensIn": 748,
+      "tokensOut": 124,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "res-002",
+      "expected": {
+        "action": "resume"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "resume",
+        "delegationId": "delegation_zW6qJ5rKmB",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 11918,
+      "tokensIn": 785,
+      "tokensOut": 106,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "res-003",
+      "expected": {
+        "action": "resume"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "resume",
+        "delegationId": "delegation_bY3hL9wNmK",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 6345,
+      "tokensIn": 796,
+      "tokensOut": 131,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "res-004",
+      "expected": {
+        "action": "resume"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "resume",
+        "delegationId": "delegation_cF8jM2qWxR",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 5141,
+      "tokensIn": 794,
+      "tokensOut": 124,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "cor-001",
+      "expected": {
+        "action": "correct"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "correct",
+        "delegationId": "delegation_vN5rT8xQpJ",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 6236,
+      "tokensIn": 768,
+      "tokensOut": 238,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "cor-002",
+      "expected": {
+        "action": "correct"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "correct",
+        "delegationId": "delegation_gJ7wS4mZxK",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 6455,
+      "tokensIn": 804,
+      "tokensOut": 237,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "cor-003",
+      "expected": {
+        "action": "correct"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "correct",
+        "delegationId": "delegation_hP2kW9nQrT",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 6348,
+      "tokensIn": 835,
+      "tokensOut": 214,
+      "transportError": false
+    },
+    {
+      "arm": "main",
+      "id": "cor-004",
+      "expected": {
+        "action": "correct"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "correct",
+        "delegationId": "delegation_qS9xF3mNbV",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 5502,
+      "tokensIn": 1136,
+      "tokensOut": 182,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "dre-001",
+      "expected": {
+        "action": "delegate_existing",
+        "candidateRef": "Lg7FxQ2mZvKpR9dW"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "delegate_existing",
+        "candidateRef": "Lg7FxQ2mZvKpR9dW",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 7297,
+      "tokensIn": 776,
+      "tokensOut": 174,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "dre-002",
+      "expected": {
+        "action": "delegate_existing",
+        "candidateRef": "Ap3MqR8tXwKdZ5vN"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "delegate_existing",
+        "candidateRef": "Ap3MqR8tXwKdZ5vN",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 7752,
+      "tokensIn": 767,
+      "tokensOut": 156,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "dre-003",
+      "expected": {
+        "action": "delegate_existing",
+        "candidateRef": "Wk9PdS4nBcXzL2mQ"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "delegate_existing",
+        "candidateRef": "Wk9PdS4nBcXzL2mQ",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 8104,
+      "tokensIn": 729,
+      "tokensOut": 224,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "dre-004",
+      "expected": {
+        "action": "delegate_existing",
+        "candidateRef": "Dk5WnE3rVmYtU9iO"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "delegate_existing",
+        "candidateRef": "Dk5WnE3rVmYtU9iO",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 8397,
+      "tokensIn": 777,
+      "tokensOut": 154,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "dre-005",
+      "expected": {
+        "action": "delegate_existing",
+        "candidateRef": "Cr6VbH2sJnPqT8rF"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "delegate_existing",
+        "candidateRef": "Cr6VbH2sJnPqT8rF",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 8095,
+      "tokensIn": 766,
+      "tokensOut": 214,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "dre-006",
+      "expected": {
+        "action": "delegate_existing",
+        "candidateRef": "Fl8QaP1zMbNsR4cX"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "delegate_existing",
+        "candidateRef": "Fl8QaP1zMbNsR4cX",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 10094,
+      "tokensIn": 811,
+      "tokensOut": 291,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "dre-007",
+      "expected": {
+        "action": "delegate_existing",
+        "candidateRef": "Rp9ZnT4kHdQxE3mL"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "delegate_existing",
+        "candidateRef": "Rp9ZnT4kHdQxE3mL",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 18142,
+      "tokensIn": 763,
+      "tokensOut": 607,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "dre-008",
+      "expected": {
+        "action": "delegate_existing",
+        "candidateRef": "Py4KdF8wNmLsQ2vB"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "delegate_existing",
+        "candidateRef": "Py4KdF8wNmLsQ2vB",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 8161,
+      "tokensIn": 761,
+      "tokensOut": 252,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "dre-009",
+      "expected": {
+        "action": "delegate_existing",
+        "candidateRef": "Db3JqH6pVnMrX7sT"
+      },
+      "predicted": {
+        "kind": "no_tool_call"
+      },
+      "outcome": "miss",
+      "latencyMs": 14187,
+      "tokensIn": 799,
+      "tokensOut": 399,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "crn-001",
+      "expected": {
+        "action": "create_new"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "create_new",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 10997,
+      "tokensIn": 768,
+      "tokensOut": 317,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "crn-002",
+      "expected": {
+        "action": "create_new"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "create_new",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 5713,
+      "tokensIn": 767,
+      "tokensOut": 94,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "crn-003",
+      "expected": {
+        "action": "create_new"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "create_new",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 9420,
+      "tokensIn": 815,
+      "tokensOut": 165,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "crn-004",
+      "expected": {
+        "action": "create_new"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "create_new",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 6775,
+      "tokensIn": 768,
+      "tokensOut": 125,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "crn-005",
+      "expected": {
+        "action": "create_new"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "create_new",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 4291,
+      "tokensIn": 768,
+      "tokensOut": 175,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "crn-006",
+      "expected": {
+        "action": "create_new"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "create_new",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 9784,
+      "tokensIn": 852,
+      "tokensOut": 197,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "nod-001",
+      "expected": {
+        "action": "no_delegation"
+      },
+      "predicted": {
+        "kind": "no_tool_call"
+      },
+      "outcome": "correct",
+      "latencyMs": 15390,
+      "tokensIn": 727,
+      "tokensOut": 394,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "nod-002",
+      "expected": {
+        "action": "no_delegation"
+      },
+      "predicted": {
+        "kind": "no_tool_call"
+      },
+      "outcome": "correct",
+      "latencyMs": 12896,
+      "tokensIn": 763,
+      "tokensOut": 216,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "nod-003",
+      "expected": {
+        "action": "no_delegation"
+      },
+      "predicted": {
+        "kind": "no_tool_call"
+      },
+      "outcome": "correct",
+      "latencyMs": 6644,
+      "tokensIn": 720,
+      "tokensOut": 127,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "nod-004",
+      "expected": {
+        "action": "no_delegation"
+      },
+      "predicted": {
+        "kind": "no_tool_call"
+      },
+      "outcome": "correct",
+      "latencyMs": 9307,
+      "tokensIn": 765,
+      "tokensOut": 226,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "nod-005",
+      "expected": {
+        "action": "no_delegation"
+      },
+      "predicted": {
+        "kind": "no_tool_call"
+      },
+      "outcome": "correct",
+      "latencyMs": 9048,
+      "tokensIn": 756,
+      "tokensOut": 207,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "nod-006",
+      "expected": {
+        "action": "no_delegation"
+      },
+      "predicted": {
+        "kind": "no_tool_call"
+      },
+      "outcome": "correct",
+      "latencyMs": 8962,
+      "tokensIn": 757,
+      "tokensOut": 221,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "nod-007",
+      "expected": {
+        "action": "no_delegation"
+      },
+      "predicted": {
+        "kind": "no_tool_call"
+      },
+      "outcome": "correct",
+      "latencyMs": 7375,
+      "tokensIn": 751,
+      "tokensOut": 169,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "nod-008",
+      "expected": {
+        "action": "no_delegation"
+      },
+      "predicted": {
+        "kind": "no_tool_call"
+      },
+      "outcome": "correct",
+      "latencyMs": 3146,
+      "tokensIn": 767,
+      "tokensOut": 50,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "nod-009",
+      "expected": {
+        "action": "no_delegation"
+      },
+      "predicted": {
+        "kind": "no_tool_call"
+      },
+      "outcome": "correct",
+      "latencyMs": 21091,
+      "tokensIn": 775,
+      "tokensOut": 677,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "stp-001",
+      "expected": {
+        "action": "stop"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "stop",
+        "delegationId": "delegation_9fK3xQ7mLp",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 5770,
+      "tokensIn": 762,
+      "tokensOut": 109,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "stp-002",
+      "expected": {
+        "action": "stop"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "stop",
+        "delegationId": "delegation_kQ2wR8tXnZ",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 6655,
+      "tokensIn": 755,
+      "tokensOut": 108,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "stp-003",
+      "expected": {
+        "action": "stop"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "stop",
+        "delegationId": "delegation_pV5nD3sJqL",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 6122,
+      "tokensIn": 798,
+      "tokensOut": 97,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "stp-004",
+      "expected": {
+        "action": "stop"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "stop",
+        "delegationId": "delegation_mR7bF2wQxT",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 6639,
+      "tokensIn": 793,
+      "tokensOut": 100,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "res-001",
+      "expected": {
+        "action": "resume"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "resume",
+        "delegationId": "delegation_xT4cN8mJqP",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 8293,
+      "tokensIn": 748,
+      "tokensOut": 172,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "res-002",
+      "expected": {
+        "action": "resume"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "resume",
+        "delegationId": "delegation_zW6qJ5rKmB",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 6440,
+      "tokensIn": 785,
+      "tokensOut": 119,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "res-003",
+      "expected": {
+        "action": "resume"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "resume",
+        "delegationId": "delegation_bY3hL9wNmK",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 7908,
+      "tokensIn": 796,
+      "tokensOut": 114,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "res-004",
+      "expected": {
+        "action": "resume"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "resume",
+        "delegationId": "delegation_cF8jM2qWxR",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 8204,
+      "tokensIn": 794,
+      "tokensOut": 94,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "cor-001",
+      "expected": {
+        "action": "correct"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "correct",
+        "delegationId": "delegation_vN5rT8xQpJ",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 10656,
+      "tokensIn": 768,
+      "tokensOut": 205,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "cor-002",
+      "expected": {
+        "action": "correct"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "correct",
+        "delegationId": "delegation_gJ7wS4mZxK",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 11328,
+      "tokensIn": 804,
+      "tokensOut": 186,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "cor-003",
+      "expected": {
+        "action": "correct"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "correct",
+        "delegationId": "delegation_hP2kW9nQrT",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 21399,
+      "tokensIn": 835,
+      "tokensOut": 298,
+      "transportError": false
+    },
+    {
+      "arm": "fast",
+      "id": "cor-004",
+      "expected": {
+        "action": "correct"
+      },
+      "predicted": {
+        "kind": "tool_call",
+        "tool": "delegate_session",
+        "action": "correct",
+        "delegationId": "delegation_qS9xF3mNbV",
+        "argsOk": true
+      },
+      "outcome": "correct",
+      "latencyMs": 15522,
+      "tokensIn": 1136,
+      "tokensOut": 229,
+      "transportError": false
+    }
+  ],
+  "recommendation": {
+    "defaultTier": "fast",
+    "exposeRoutingSetting": false,
+    "rationale": "accuracy 差距 0.0pp（<=5pp）且 harmful 0 <= 0；注意：快速档 P50 8204ms 反而高于主模型 6956ms"
+  }
+}

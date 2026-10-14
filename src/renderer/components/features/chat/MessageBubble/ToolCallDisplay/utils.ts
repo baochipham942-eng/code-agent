@@ -212,8 +212,14 @@ export function formatParams(toolCall: ToolCall): string {
     case 'ppt_generate':
       return String(args.topic || '').slice(0, 30);
 
-    case 'image_generate':
-      return String(args.prompt || '').slice(0, 30);
+    case 'image_generate': {
+      const rawPrompt = args.prompt;
+      const prompts = Array.isArray(rawPrompt)
+        ? rawPrompt.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+        : typeof rawPrompt === 'string' ? [rawPrompt] : [];
+      const first = (prompts[0] || '').slice(0, 30);
+      return prompts.length > 1 ? `${first} +${prompts.length - 1} more` : first;
+    }
 
     case 'todo_write': {
       const todos = args.todos as Array<{ status: string }> | undefined;

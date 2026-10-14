@@ -8,6 +8,7 @@ import type { DesignAcceptanceContract } from './designAcceptanceContract';
 import type { DesignCodeHandoffContext } from './designHandoff';
 import type { CanvasSnapshot } from './canvasProposal';
 import type { EffortLevel } from './agent';
+import type { DelegationOriginMarker } from './queuedInput';
 
 export type ConversationRoutingMode = 'auto' | 'direct' | 'parallel';
 export type BrowserSessionMode = 'none' | 'managed' | 'desktop';
@@ -152,6 +153,12 @@ export interface ConversationEnvelopeContext {
   artifactReferences?: ConversationArtifactReference[];
   /** host 发送前按 sessionReferenceDigest 分档解析；renderer 不得填。 */
   resolvedSessionReferences?: Array<ConversationSessionReference & { content: string }>;
+  /**
+   * ADR-072 D5.1 委托来源标记：仅由 host 单事务提交写入 queued_inputs 的 envelope；
+   * 任何客户端带来的值都会在 buildQueuedAgentRunBody 与 /run 入口被剥掉（N2）。
+   * 投递时经 session_delegations 行 + 指纹校验后走 runAgentTurn 带外 transport。
+   */
+  delegationOrigin?: DelegationOriginMarker;
   // Live Preview 选中的 DOM 元素（iframe 点击写入 appStore 的活动 tab），
   // 用于下游 visual_edit 等工具的 grounding。main 侧消费链路分步接入；
   // 本字段非空仅表示 composer 侧已把当前 selection 随 envelope 带出。

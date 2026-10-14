@@ -47,6 +47,7 @@ import {
   recordCronAutomationArchived,
   recordCronAutomationExecution,
 } from '../../../src/host/cron/cronAutomationBridge';
+import { cronLoginWallMetadata } from '../../../src/host/cron/cronLoginWall';
 import { SessionAutomationService } from '../../../src/host/services/sessionAutomation/sessionAutomationService';
 
 const def = (over: Partial<CronJobDefinition> = {}): CronJobDefinition => ({
@@ -63,6 +64,24 @@ const def = (over: Partial<CronJobDefinition> = {}): CronJobDefinition => ({
 });
 
 const identityRuntime = (d: CronJobDefinition) => d;
+
+describe('cron login-gated site warning detection', () => {
+  it('requires a URL and explicit login-gated hint', () => {
+    expect(cronLoginWallMetadata({
+      action: { type: 'agent', agentType: 'default', prompt: 'Check https://example.test after login' },
+    })).toEqual({ loginGatedSiteOrigin: 'https://example.test' });
+    expect(cronLoginWallMetadata({
+      action: { type: 'agent', agentType: 'default', prompt: 'Read https://example.test public docs' },
+    })).toBeUndefined();
+  });
+
+  it('preserves unrelated metadata while storing the warning origin', () => {
+    expect(cronLoginWallMetadata(
+      { action: { type: 'agent', agentType: 'default', prompt: 'Sign in to https://example.test first' } },
+      { sourceMessageId: 'msg-1' },
+    )).toEqual({ sourceMessageId: 'msg-1', loginGatedSiteOrigin: 'https://example.test' });
+  });
+});
 
 beforeEach(() => {
   service.recordCreated.mockReset();
@@ -378,6 +397,20 @@ describe('recordCronAutomationExecution', () => {
     expect(arg.error).toBe('boom');
     // The seed upsert reflects the one-time schedule, not a recurring one.
     expect(service.upsert.mock.calls[0][0].cadenceLabel).not.toContain('每');
+  });
+
+  it('maps an unattended login wall to the review inbox with the site origin', async () => {
+    await recordCronAutomationExecution(
+      def({ metadata: { sourceSessionId: 'sess' }, action: { type: 'agent', agentType: 'default', prompt: 'visit site' } }),
+      exec({ status: 'failed', error: 'CRON_LOGIN_WALL_STOP|https://example.test; stop this unattended run' }),
+      identityRuntime,
+    );
+    const arg = service.recordEvent.mock.calls[0][0];
+    expect(arg.event).toBe('failed');
+    expect(arg.recordStatus).toBe('active');
+    expect(arg.configPatch).toEqual({
+      loginWall: { siteOrigin: 'https://example.test', at: expect.any(Number) },
+    });
   });
 
   it('成功的 recurring agent 运行：记录保持 active 并打 pendingReview 标记（A4 待过目）', async () => {

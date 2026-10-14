@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import express from 'express';
 import http from 'http';
 import { mkdtemp, rm } from 'fs/promises';
@@ -15,6 +15,8 @@ import { HostReasonCode, type Message } from '../../../src/shared/contract';
 import type { PendingOperation, RunCheckpoint, RunEngineRef, RunOwnerLease } from '../../../src/shared/contract/durableRun';
 import type { DurableCheckpointInput, PrepareOperationInput, PrepareToolOperationInput } from '../../../src/host/runtime/durableRunKernel';
 import {
+  markPersistenceDegraded,
+  getPersistenceHealth,
   setDbAvailable,
 } from '../../../src/web/helpers/sessionCache';
 import {
@@ -25,6 +27,7 @@ import {
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 import { SteerRejectedError } from '../../../src/host/agent/runtime/conversationRuntime';
 import { QueuedInputRepository } from '../../../src/host/services/core/repositories/QueuedInputRepository';
+import { applySessionDelegationsSchema } from '../../../src/host/services/core/database/schemaSessionDelegations';
 import { sseClients } from '../../../src/web/helpers/sse';
 import { setBrowserWindowInteractionProbe } from '../../../src/host/platform';
 import { DurableRunKernel } from '../../../src/host/runtime/durableRunKernel';
@@ -35,15 +38,19 @@ const mockCancel = vi.fn();
 const mockSteer = vi.fn();
 const mockCreateAgentLoop = vi.fn();
 const mockCreateRunToolExecutor = vi.fn((..._args: unknown[]) => ({ execute: vi.fn() }));
+// 基准 settings 抽出来供个别用例按需覆写（如 ui.language=en）再还原——
+// vi.clearAllMocks 不还原 mockImplementation，覆写泄漏会毒化后续用例。
+const baseSettings = vi.hoisted(() => ({
+  permissions: {
+    autoApprove: { read: true, write: false, execute: false, network: false },
+    devModeAutoApprove: false,
+  },
+  models: { default: 'openai', providers: {}, routing: {} },
+  ui: { language: 'zh' },
+}));
 const configServiceMocks = vi.hoisted(() => ({
   onSettingsUpdated: vi.fn(),
-  getSettings: vi.fn(() => ({
-    permissions: {
-      autoApprove: { read: true, write: false, execute: false, network: false },
-      devModeAutoApprove: false,
-    },
-    models: { default: 'openai', providers: {}, routing: {} },
-  })),
+  getSettings: vi.fn(() => baseSettings),
   isDevModeAutoApproveEnabled: vi.fn(() => false),
 }));
 const mockBroadcastSSE = vi.hoisted(() => vi.fn());
@@ -66,7 +73,7 @@ const forkContextBuilderMocks = vi.hoisted(() => ({
 }));
 const mockDb = vi.hoisted(() => ({
   getDb: vi.fn(() => ({})),
-  getSession: vi.fn<() => { id: string; title: string; metadata?: Record<string, unknown> }>(() => ({
+  getSession: vi.fn<() => { id: string; title: string; metadata?: Record<string, unknown>; messages?: unknown[] } | null>(() => ({
     id: 'session-existing',
     title: 'Existing',
   })),
@@ -75,6 +82,8 @@ const mockDb = vi.hoisted(() => ({
   addMessage: vi.fn(),
   updateMessage: vi.fn(),
   getMessages: vi.fn(() => []),
+  getRecentMessages: vi.fn(() => []),
+  getTodos: vi.fn(() => []),
   getSessionForkLineage: vi.fn<() => unknown>(() => null),
   getSessionForkContextSource: vi.fn<() => unknown>(() => null),
   getSessionForkContextHandoff: vi.fn<() => unknown>(() => null),
@@ -461,6 +470,10 @@ describe('createAgentRouter', () => {
     inMemorySessions.clear();
     sessionMessages.clear();
     setDbAvailable(false);
+    // 无目录会话的兜底会 mkdir 默认工作目录（N-DELIVERABLE-WORKDIR-DEFAULT 起还在其下
+    // 开 任务_* 按会话子目录）：统一指到临时数据目录，别往真实主目录 ~/Neo 里写。
+    tempDataDir = await mkdtemp(join(tmpdir(), 'code-agent-data-'));
+    process.env.CODE_AGENT_DATA_DIR = tempDataDir;
     Object.values(mockDb).forEach((mock) => mock.mockClear());
     agentEngineMocks.resolveExternalEngineLaunch.mockImplementation((session, engine, requestedCwd) => ({
       cwd: requestedCwd || session?.workingDirectory || engine?.cwd,
@@ -482,6 +495,8 @@ describe('createAgentRouter', () => {
       title: 'Existing',
     });
     mockDb.getMessages.mockReturnValue([]);
+    mockDb.getRecentMessages.mockReturnValue([]);
+    mockDb.getTodos.mockReturnValue([]);
     mockDb.getDb.mockReturnValue({});
     mockDb.getSessionForkLineage.mockReturnValue(null);
     mockDb.getSessionForkContextSource.mockReturnValue(null);
@@ -506,6 +521,8 @@ describe('createAgentRouter', () => {
 
   afterEach(async () => {
     await closeServer();
+    // 个别用例按需覆写 getSettings（ui.language=en 等），这里统一还原，防泄漏毒化后续用例
+    configServiceMocks.getSettings.mockImplementation(() => baseSettings);
     if (tempDataDir) {
       await rm(tempDataDir, { recursive: true, force: true });
       await rm(`${tempDataDir}-work`, { recursive: true, force: true });
@@ -1129,6 +1146,7 @@ describe('createAgentRouter', () => {
       CREATE INDEX idx_queued_inputs_session
         ON queued_inputs (session_id, status, created_at);
     `);
+    applySessionDelegationsSchema(queuedInputTestDb, { info: () => {}, warn: () => {}, error: () => {} } as never);
     mockDb.getDb.mockReturnValue(queuedInputTestDb as never);
 
     const persistedMessages: Message[] = [
@@ -4196,10 +4214,10 @@ describe('createAgentRouter', () => {
     expect(agentEngineMocks.enqueueReviewSession).not.toHaveBeenCalled();
   });
 
-  it('falls back to the app work directory instead of HOME when no working directory is known', async () => {
+  it('opens a per-session work folder for a first-run session with no working directory (N-DELIVERABLE-WORKDIR-DEFAULT)', async () => {
     await closeServer();
-    tempDataDir = await mkdtemp(join(tmpdir(), 'code-agent-data-'));
-    process.env.CODE_AGENT_DATA_DIR = tempDataDir;
+    // 开按会话目录要求 DB 健康（rework r1：粘不住就不开）
+    setDbAvailable(true);
 
     mockCreateAgentLoop.mockImplementationOnce(() => ({
       run: vi.fn(async () => undefined),
@@ -4209,7 +4227,9 @@ describe('createAgentRouter', () => {
     await startAgentApi({
       tryGetSessionManager: async () => ({
         getMessages: vi.fn(async () => []),
-        getSession: vi.fn(async () => null),
+        // preflight：renderer 已创建会话行，但还没有历史消息
+        getSession: vi.fn(async () => ({ messages: [] })),
+        updateSession: vi.fn(async () => undefined),
       }),
     });
 
@@ -4217,7 +4237,7 @@ describe('createAgentRouter', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        prompt: '普通聊天',
+        prompt: '帮我出一份季度总结',
         sessionId: 'session-safe-fallback',
       }),
     });
@@ -4225,9 +4245,199 @@ describe('createAgentRouter', () => {
     expect(response.ok).toBe(true);
     await response.text();
 
+    // 不再落 HOME，也不再是扁平默认目录本身：嵌套数据目录旁边开按会话子目录
+    //（ui.language=zh 档；无标题 → 首条用户消息前 20 字符）
+    const now = new Date();
+    const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const expectedDir = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
     expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({
-      // 默认目录不在数据目录里（后台写边界按设计拒绝数据目录）：嵌套数据目录放在旁边
+      project: expectedDir,
+    }));
+    expect(existsSync(expectedDir)).toBe(true);
+  });
+
+  it('sanitizes illegal characters from the session title and appends -2 on collision (N-DELIVERABLE-WORKDIR-DEFAULT)', async () => {
+    await closeServer();
+    setDbAvailable(true);
+
+    const now = new Date();
+    const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    // 预占同名目录：验证撞名走 -2 后缀，既有目录内容不动
+    const occupied = `${tempDataDir}-work/任务_${mmdd}_报表2026Q4`;
+    mkdirSync(`${tempDataDir}-work`, { recursive: true });
+    mkdirSync(occupied);
+    writeFileSync(join(occupied, '既有产物.md'), 'keep');
+
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        // 零消息 + 已命名会话：目录名用会话标题，非法字符 / : 洗掉
+        getSession: vi.fn(async () => ({
+          title: '报表/2026:Q4',
+          messages: [],
+        })),
+        updateSession: vi.fn(async () => undefined),
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '继续做报表', sessionId: 'session-sanitized-title' }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({
+      project: `${occupied}-2`,
+    }));
+    expect(readFileSync(join(occupied, '既有产物.md'), 'utf8')).toBe('keep');
+  });
+
+  it('keeps the flat default for an existing session that already has messages (files are never moved)', async () => {
+    await closeServer();
+
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        // 存量会话：有历史消息、没存过目录 → 维持扁平默认目录
+        getSession: vi.fn(async () => ({
+          title: '老会话',
+          messages: [{ id: 'prior-user-1', role: 'user', content: '上一轮', timestamp: 1 }],
+        })),
+        updateSession: vi.fn(async () => undefined),
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '第二轮', sessionId: 'session-existing-flat' }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({
       project: `${tempDataDir}-work`,
+    }));
+    const flatEntries = readdirSync(`${tempDataDir}-work`);
+    expect(flatEntries.some((entry) => entry.startsWith('任务_') || entry.startsWith('Task_'))).toBe(false);
+  });
+
+  it('keeps an explicitly bound folder even for a zero-message session', async () => {
+    await closeServer();
+
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    const explicitFolder = await mkdtemp(join(tmpdir(), 'explicit-bound-folder-'));
+    try {
+      await startAgentApi({
+        tryGetSessionManager: async () => ({
+          getMessages: vi.fn(async () => []),
+          getSession: vi.fn(async () => ({
+            workingDirectory: explicitFolder,
+            messages: [],
+          })),
+          updateSession: vi.fn(async () => undefined),
+        }),
+      });
+
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: '在这个项目里干活', sessionId: 'session-explicit-folder' }),
+      });
+
+      expect(response.ok).toBe(true);
+      await response.text();
+      expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({
+        project: explicitFolder,
+      }));
+    } finally {
+      await rm(explicitFolder, { recursive: true, force: true });
+    }
+  });
+
+  it('reuses the backfilled per-session folder on the next run instead of opening a new one', async () => {
+    await closeServer();
+
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    // 上一轮回写过的按会话目录（resolution 链里 session.workingDirectory 优先于兜底）
+    const stickyFolder = `${tempDataDir}-work/任务_1010_既有任务`;
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        getSession: vi.fn(async () => ({
+          workingDirectory: stickyFolder,
+          messages: [{ id: 'prior-user-1', role: 'user', content: '首轮', timestamp: 1 }],
+        })),
+        updateSession: vi.fn(async () => undefined),
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '第二轮换个说法', sessionId: 'session-sticky-folder' }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({
+      project: stickyFolder,
+    }));
+  });
+
+  it('uses the Task_ prefix when ui.language is en (N-DELIVERABLE-WORKDIR-DEFAULT)', async () => {
+    await closeServer();
+    setDbAvailable(true);
+
+    configServiceMocks.getSettings.mockImplementation(() => ({
+      ...baseSettings,
+      ui: { language: 'en' },
+    }));
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        getSession: vi.fn(async () => ({ messages: [] })),
+        updateSession: vi.fn(async () => undefined),
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: 'quarterly summary', sessionId: 'session-en-ui' }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+    const now = new Date();
+    const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({
+      project: `${tempDataDir}-work/Task_${mmdd}_quarterly summary`,
     }));
   });
 
@@ -4235,13 +4445,16 @@ describe('createAgentRouter', () => {
   it('treats a session still pinned to the legacy <dataDir>/work as having no directory and uses the new default', async () => {
     await closeServer();
     setDbAvailable(true);
-    tempDataDir = await mkdtemp(join(tmpdir(), 'code-agent-data-'));
-    process.env.CODE_AGENT_DATA_DIR = tempDataDir;
     mockCreateAgentLoop.mockImplementationOnce(() => ({ run: vi.fn(async () => undefined), cancel: mockCancel }));
     await startAgentApi({
       tryGetSessionManager: async () => ({
         getMessages: vi.fn(async () => []),
-        getSession: vi.fn(async () => ({ workingDirectory: join(tempDataDir!, 'work') })),
+        // 真实形状：getSession 返回 SessionWithMessages；存过目录的会话必然存过消息
+        //（N-DELIVERABLE-WORKDIR-DEFAULT 起零消息会话首轮开按会话子目录）
+        getSession: vi.fn(async () => ({
+          workingDirectory: join(tempDataDir!, 'work'),
+          messages: [{ id: 'prior-user-1', role: 'user', content: '上一轮', timestamp: 1 }],
+        })),
       }),
     });
     const response = await fetch(`${baseUrl}/api/run`, {
@@ -4251,6 +4464,291 @@ describe('createAgentRouter', () => {
     expect(response.ok).toBe(true);
     await response.text();
     expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: `${tempDataDir}-work` }));
+  });
+
+  // rework r1：renderer 先建好零消息会话行，首轮目录回写后第二轮沿用同一路径。
+  it('persists the per-session folder on a zero-message row, so round 2 reuses it instead of falling back to the flat default (rework r1)', async () => {
+    await closeServer();
+    setDbAvailable(true);
+    mockCreateAgentLoop.mockImplementation(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    // 状态镜像真实 DB：renderer 先建零消息行 → 首轮 pre-persist 回写目录 → 之后 getSession 读回该行
+    const sessionRows = new Map<string, { workingDirectory?: string; messages: Array<Record<string, unknown>> }>();
+    const sessionId = 'session-row-born-midrun';
+    sessionRows.set(sessionId, { messages: [] });
+    const addMessageToSession = vi.fn(async (
+      sessionId: string,
+      _message: unknown,
+      options?: { workingDirectory?: string },
+    ) => {
+      if (!sessionRows.has(sessionId)) {
+        sessionRows.set(sessionId, { workingDirectory: options?.workingDirectory, messages: [{ id: 'msg-1', role: 'user' }] });
+      }
+    });
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        getSession: vi.fn(async (sessionId: string) => sessionRows.get(sessionId) ?? null),
+        updateSession: vi.fn(async (_sessionId: string, updates: { workingDirectory?: string }) => {
+          const row = sessionRows.get(_sessionId);
+          if (row && updates.workingDirectory) row.workingDirectory = updates.workingDirectory;
+        }),
+        addMessageToSession,
+      }),
+    });
+
+    for (const prompt of ['帮我出一份季度总结', '第二轮补充数据']) {
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt, sessionId }),
+      });
+      expect(response.ok).toBe(true);
+      await response.text();
+    }
+
+    const now = new Date();
+    const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const expectedDir = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
+    // 首轮目录回写到已存在的会话行（缺这步 → 第二轮行里没目录、有消息 → 扁平默认，同会话产物分裂）
+    expect(sessionRows.get(sessionId)?.workingDirectory).toBe(expectedDir);
+    // 两轮都跑在同一个按会话目录里，且只开了这一个目录
+    expect(createCLIAgent).toHaveBeenCalledTimes(2);
+    expect(createCLIAgent).toHaveBeenNthCalledWith(1, expect.objectContaining({ project: expectedDir }));
+    expect(createCLIAgent).toHaveBeenNthCalledWith(2, expect.objectContaining({ project: expectedDir }));
+    const perSessionEntries = readdirSync(`${tempDataDir}-work`)
+      .filter((entry) => entry.startsWith('任务_') || entry.startsWith('Task_'));
+    expect(perSessionEntries).toEqual([`任务_${mmdd}_帮我出一份季度总结`]);
+  });
+
+  // rework r1：DB 读失败持续时状态未知——不开新目录（否则每轮各开一个 任务_x-N，垃圾逐轮累积），
+  // 回落扁平默认目录（与特性前行为一致）。
+  it('does not mint a per-session folder when the preflight session read fails; falls back to the flat default (rework r1)', async () => {
+    await closeServer();
+    setDbAvailable(true);
+    mockCreateAgentLoop.mockImplementation(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    let readFailuresLeft = 2; // preflight + 新会话标题重读两处各红一次，之后的读（pre-persist 等）恢复
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        getSession: vi.fn(async () => {
+          if (readFailuresLeft > 0) {
+            readFailuresLeft -= 1;
+            throw new Error('sqlite: disk I/O error');
+          }
+          return null;
+        }),
+        updateSession: vi.fn(async () => undefined),
+        addMessageToSession: vi.fn(async () => undefined),
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '帮我出一份季度总结', sessionId: 'session-preflight-read-failed' }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: `${tempDataDir}-work` }));
+    const flatEntries = readdirSync(`${tempDataDir}-work`);
+    expect(flatEntries.some((entry) => entry.startsWith('任务_') || entry.startsWith('Task_'))).toBe(false);
+  });
+
+  // rework r1：DB 不可用时目录选择无法粘住（行建不出来、回写也落不了库）——同样不开新目录。
+  it('does not mint a per-session folder while the database is unavailable (rework r1)', async () => {
+    await closeServer();
+    mockCreateAgentLoop.mockImplementation(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        getSession: vi.fn(async () => null),
+        updateSession: vi.fn(async () => undefined),
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '帮我出一份季度总结', sessionId: 'session-db-unavailable' }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: `${tempDataDir}-work` }));
+    const flatEntries = readdirSync(`${tempDataDir}-work`);
+    expect(flatEntries.some((entry) => entry.startsWith('任务_') || entry.startsWith('Task_'))).toBe(false);
+  });
+
+  // rework r2：DB 启动后运行期死亡（readonly/磁盘满/初始化失败，_initPromise 拒绝被
+  // 永久缓存）时 getSession 走 ensureDbReady 失败路径**返回 null** 而非抛错，web 层
+  // dbAvailable 又是启动时写死的标志——存量会话（有历史消息）每轮都被读成 null、
+  // 判成「新会话首轮」，每轮 mint 一个 任务_x-N 且落库粘不住。持久化健康态是
+  // 运行期实况，死亡期间不开目录，逐轮回落扁平默认。
+  it('does not mint a per-session folder when persistence died at runtime (getSession null via dead backend); every run falls back to the flat default (rework r2)', async () => {
+    await closeServer();
+    // 启动时 DB 健康：web 层 dbAvailable 已写死为 true，看不见运行期死亡
+    setDbAvailable(true);
+    markPersistenceDegraded('quick-check-failed');
+    mockCreateAgentLoop.mockImplementation(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        // ensureDbReady 失败路径：null 而非 throw（cli/session.ts getSession），
+        // 会话行即使在库里也读不回来
+        getSession: vi.fn(async () => null),
+        updateSession: vi.fn(async () => undefined),
+        addMessageToSession: vi.fn(async () => undefined),
+      }),
+    });
+
+    const sessionId = 'session-runtime-dead-db';
+    for (const prompt of ['帮我出一份季度总结', '第二轮补充数据', '第三轮再补']) {
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt, sessionId }),
+      });
+      expect(response.ok).toBe(true);
+      await response.text();
+    }
+
+    // 三轮全部扁平默认，不开任何 任务_*/Task_* 目录（修复前每轮各 mint 一个 x/-2/-3）
+    expect(createCLIAgent).toHaveBeenCalledTimes(3);
+    for (let i = 1; i <= 3; i += 1) {
+      expect(createCLIAgent).toHaveBeenNthCalledWith(
+        i,
+        expect.objectContaining({ project: `${tempDataDir}-work` }),
+      );
+    }
+    const flatEntries = readdirSync(`${tempDataDir}-work`);
+    expect(flatEntries.some((entry) => entry.startsWith('任务_') || entry.startsWith('Task_'))).toBe(false);
+  });
+
+  // rework r2 反向保护：持久化健康 + 零消息行确实存在（DB 可用的新会话）→ 仍然开按会话目录，
+  // 收口不能把特性本身关死。
+  it('still mints the per-session folder for a genuinely-new zero-message session when persistence is healthy (rework r2)', async () => {
+    await closeServer();
+    setDbAvailable(true);
+    mockCreateAgentLoop.mockImplementation(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        getSession: vi.fn(async () => ({ messages: [] })),
+        updateSession: vi.fn(async () => undefined),
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '帮我出一份季度总结', sessionId: 'session-probe-healthy' }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+    const now = new Date();
+    const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const expectedDir = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: expectedDir }));
+    expect(existsSync(expectedDir)).toBe(true);
+  });
+
+  // rework r3：生产线路注入的 infra SessionManager 不带测试专用探针；路由直接消费
+  // web/sessionCache 的持久化健康态。运行期降级后，新会话不铸按会话目录，回落扁平默认。
+  it('does not mint a per-session folder when persistence degrades at runtime through production wiring (rework r3)', async () => {
+    await closeServer();
+    // 启动时 DB 健康：dbAvailable 写死 true，运行期才降级
+    setDbAvailable(true);
+    markPersistenceDegraded('quick-check-failed');
+    const { getSessionManager } = await import('../../../src/host/services/infra/sessionManager');
+    const infraSessionManager = getSessionManager();
+    // renderer 在降级前已经建好零消息行；真实读路径仍返回该行，但不能铸目录。
+    mockDb.getSession.mockReturnValue({
+      id: 'session-degraded-persistence-r3',
+      title: '降级前创建',
+      messages: [],
+    });
+    mockDb.getRecentMessages.mockReturnValue([]);
+    mockCreateAgentLoop.mockImplementation(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => infraSessionManager,
+    });
+
+    const sessionId = 'session-degraded-persistence-r3';
+    for (const prompt of ['第一轮', '第二轮', '第三轮']) {
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt, sessionId }),
+      });
+      expect(response.ok).toBe(true);
+      await response.text();
+    }
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: `${tempDataDir}-work` }));
+    const flatEntries = readdirSync(`${tempDataDir}-work`);
+    expect(flatEntries.some((entry) => entry.startsWith('任务_') || entry.startsWith('Task_'))).toBe(false);
+  });
+
+  // rework r3 反向保护：健康态下生产同款 infra SessionManager 读到零消息行，新会话
+  // 照常铸目录——持久化健康不能被误判为永远不可用。
+  it('still mints the per-session folder for a new zero-message session through production wiring (rework r3)', async () => {
+    await closeServer();
+    setDbAvailable(true);
+    expect(getPersistenceHealth()).toMatchObject({ status: 'available', durable: true });
+    const { getSessionManager } = await import('../../../src/host/services/infra/sessionManager');
+    const infraSessionManager = getSessionManager();
+    mockDb.getSession.mockReturnValue({ id: 'session-infra-probe-healthy-r3', title: '新对话', messages: [] });
+    mockDb.getRecentMessages.mockReturnValue([]);
+    expect(await infraSessionManager.getSession('session-infra-probe-healthy-r3', 1)).not.toBeNull();
+    mockCreateAgentLoop.mockImplementation(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    await startAgentApi({
+      tryGetSessionManager: async () => infraSessionManager,
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '帮我出一份季度总结', sessionId: 'session-infra-probe-healthy-r3' }),
+    });
+    expect(response.ok).toBe(true);
+    await response.text();
+    const now = new Date();
+    const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const expectedDir = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: expectedDir }));
+    expect(readdirSync(`${tempDataDir}-work`).filter((entry) => entry.startsWith('任务_'))).toEqual([
+      `任务_${mmdd}_帮我出一份季度总结`,
+    ]);
+    expect(existsSync(expectedDir)).toBe(true);
   });
 
   it('persists assistant output when loop message events were not actually stored', async () => {

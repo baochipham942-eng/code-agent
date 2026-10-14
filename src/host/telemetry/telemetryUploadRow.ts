@@ -55,6 +55,7 @@ export function buildTelemetryTurnUploadRow(
     user_id: scrub(userId, homeDir),
     turn_number: turn.turnNumber,
     turn_type: scrub(turn.turnType, homeDir),
+    turn_source: turn.turnSource ? scrub(turn.turnSource, homeDir) : null,
     agent_id: turn.agentId == null ? null : scrub(turn.agentId, homeDir),
     intent: turn.intent?.primary == null ? null : scrub(turn.intent.primary, homeDir),
     outcome_status: turn.outcome?.status == null ? null : scrub(turn.outcome.status, homeDir),

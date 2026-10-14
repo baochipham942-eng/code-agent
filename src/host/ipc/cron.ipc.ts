@@ -85,7 +85,11 @@ const CRON_GENERATION_SYSTEM_PROMPT = `你是一个定时任务配置助手。�
   },
   "tags": ["标签"],
   "maxRetries": 0,
-  "timeout": null
+  "timeout": null,
+  "restatement": {
+    "what": "用一句平实的话说明会检查什么",
+    "notifyWhen": "用一句平实的话说明什么变化值得通知"
+  }
 }
 
 注意：
@@ -93,6 +97,7 @@ const CRON_GENERATION_SYSTEM_PROMPT = `你是一个定时任务配置助手。�
 - 时区默认 Asia/Shanghai
 - 尽量从描述中推断合理的调度方式和参数
 - 错峰：小时级/天级的循环任务避免落在整点（分钟=0）扎堆触发——除非用户明确要求整点，cron 表达式的分钟位默认用一个非 0 值（如 17），"every" 间隔类型不受影响（会自动错峰）
+- 可选地返回 restatement；其中 what 和 notifyWhen 都必须是面向用户的平实完整句子。若无法可靠推断，可省略整个 restatement 对象。
 - 只返回 JSON，不要任何解释`;
 
 /**

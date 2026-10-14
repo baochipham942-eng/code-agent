@@ -198,8 +198,8 @@ describe('image_generate — execute', () => {
     }
   });
 
-  it('emits artifact_write_started with an absolute path for relative output_path', async () => {
-    // 相对 output_path（schema 示例 './product.png'）必须先按 workingDir 归一再进事件——
+  it('emits artifact_write_started with an absolute path for relative output_file_path', async () => {
+    // 相对 output_file_path（schema 示例 './product.png'）必须先按 workingDir 归一再进事件——
     // 成果回传消费方不猜宿主进程 cwd（N-MOBILE-FILES 修正轮 9 回归钉）。
     process.env.ZHIPU_OFFICIAL_API_KEY = 'official-key';
     const events: { type: string; data: Record<string, unknown> }[] = [];
@@ -216,7 +216,7 @@ describe('image_generate — execute', () => {
     });
 
     const result = await executeImageGenerate(
-      { prompt: 'cat', output_path: './product.png' },
+      { prompt: 'cat', output_file_path: './product.png' },
       makeCtx({ currentToolCallId: 'tc-1', emit: ((event: unknown) => { events.push(event as { type: string; data: Record<string, unknown> }); }) as ToolContext['emit'] }),
       allowAll,
     );
@@ -225,7 +225,7 @@ describe('image_generate — execute', () => {
     expect(started?.data.filePath).toBe('/tmp/work/product.png');
   });
 
-  it('saves to file when output_path given', async () => {
+  it('saves to file when output_file_path given', async () => {
     process.env.ZHIPU_OFFICIAL_API_KEY = 'official-key';
     let callCount = 0;
     global.fetch = vi.fn().mockImplementation(() => {
@@ -244,7 +244,7 @@ describe('image_generate — execute', () => {
     });
 
     const result = await executeImageGenerate(
-      { prompt: 'cat', output_path: '/tmp/work/out.png' },
+      { prompt: 'cat', output_file_path: '/tmp/work/out.png' },
       makeCtx(),
       allowAll,
     );
@@ -396,7 +396,7 @@ describe('image_generate — execute', () => {
     expect(onProgress).toHaveBeenCalledWith({ stage: 'completing', percent: 100 });
   });
 
-  it('CLI mode auto-generates output_path and triggers safeExecDetached', async () => {
+  it('CLI mode auto-generates output_file_path and triggers safeExecDetached', async () => {
     process.env.ZHIPU_OFFICIAL_API_KEY = 'k';
     process.env.CODE_AGENT_CLI_MODE = 'true';
     let callCount = 0;
@@ -830,7 +830,7 @@ describe('image_generate — flux SSE 扩写', () => {
   });
 });
 
-describe('image_generate — output_path stays inside the workspace', () => {
+describe('image_generate — output_file_path stays inside the workspace', () => {
   const origEnv = { ...process.env };
   const workingDir = '/tmp/work';
 
@@ -896,7 +896,7 @@ describe('image_generate — output_path stays inside the workspace', () => {
     const resolved = path.resolve(workingDir, outputPath);
     try {
       const result = await executeImageGenerate(
-        { prompt: 'cat', output_path: outputPath, expand_prompt: true },
+        { prompt: 'cat', output_file_path: outputPath, expand_prompt: true },
         makeCtx({ workingDir, emit, currentToolCallId: 'tc-refuse', ...ctxOverrides }),
         allowAll,
       );
@@ -950,7 +950,7 @@ describe('image_generate — output_path stays inside the workspace', () => {
     const generateSpy = vi.spyOn(imageGenerationService, 'generateImage');
     try {
       const result = await executeImageGenerate(
-        { prompt: 'cat', output_path: 'a/b/c.png' },
+        { prompt: 'cat', output_file_path: 'a/b/c.png' },
         makeCtx({ workingDir, currentToolCallId: 'tc-nested' }),
         allowAll,
       );
@@ -970,7 +970,7 @@ describe('image_generate — output_path stays inside the workspace', () => {
       { sourceId: 'extra', path: '/tmp/other', role: 'additional', access: 'read_write' },
     ]);
     const result = await executeImageGenerate(
-      { prompt: 'cat', output_path: '/tmp/other/ok.png' },
+      { prompt: 'cat', output_file_path: '/tmp/other/ok.png' },
       makeCtx({ workingDir, workspaceScope, currentToolCallId: 'tc-extra-root' }),
       allowAll,
     );

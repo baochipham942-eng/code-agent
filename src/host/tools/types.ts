@@ -61,6 +61,8 @@ export interface ToolContext {
 
   requestPermission: (request: PermissionRequestData) => Promise<boolean>;
   abortSignal?: AbortSignal;
+  /** Runtime stop hook used by terminal browser guards. */
+  forceFinalResponse?: (reason: string, prompt?: string) => void;
   /** 当前 run 的工具拒绝集；动态工具发现同样必须遵守。 */
   deniedToolNames?: readonly string[];
   /** 当前 run 的工具白名单（CLI --tools 等）；非空 = 精确白名单，spawn_agent 据此收窄子代理面。 */

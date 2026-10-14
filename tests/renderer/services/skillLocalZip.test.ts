@@ -12,6 +12,7 @@ vi.mock('../../../src/renderer/services/invokeSkillIPC', () => ({
 }));
 
 import { divertDroppedSkillZips, pickWebZipFile } from '../../../src/renderer/services/skillLocalZip';
+import { SKILL_CHANNELS } from '../../../src/shared/ipc/channels';
 
 describe('divertDroppedSkillZips', () => {
   beforeEach(() => {
@@ -75,6 +76,35 @@ describe('divertDroppedSkillZips', () => {
 
     expect(leftover).toEqual([zip]);
     expect(toast.error).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
+  it('fail-closed on a caution confirmation-required answer: error toast, no attachment, no mount', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    // 拖拽路径没有确认面可弹：SKILL_CAUTION_CONFIRMATION_REQUIRED 按失败收口
+    invokeSkillIPCOrThrow.mockResolvedValueOnce({
+      success: false,
+      code: 'SKILL_CAUTION_CONFIRMATION_REQUIRED',
+      pluginSpec: 'demo@local-zip',
+      sourceTrust: 'local-marketplace',
+      cautionHits: [{ file: 'demo/SKILL.md', ruleId: 'git_clean', snippet: 'git clean -fd' }],
+      confirmationToken: 'token-1',
+    });
+    const zip = new File(['PK'], 'demo.zip', { type: 'application/zip' });
+
+    const leftover = await divertDroppedSkillZips([zip], {
+      sessionId: 's1',
+      successPrefix: 'ok ',
+      failPrefix: 'fail ',
+      confirmPrompt: 'Install {name}?',
+    });
+
+    // 不当普通附件回流，也不挂载；只有失败提示（确认流在设置页）
+    expect(leftover).toEqual([]);
+    expect(toast.error).toHaveBeenCalledWith('fail demo.zip');
+    expect(toast.success).not.toHaveBeenCalled();
+    const mountCalls = invokeSkillIPC.mock.calls.filter(([channel]) => channel === SKILL_CHANNELS.SESSION_MOUNT);
+    expect(mountCalls).toEqual([]);
     confirm.mockRestore();
   });
 });

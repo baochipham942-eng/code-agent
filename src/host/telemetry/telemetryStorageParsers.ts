@@ -239,7 +239,8 @@ export function rowToTurn(row: Record<string, unknown>): TelemetryTurn {
     compactionSavedTokens: row.compaction_saved_tokens as number | undefined,
     iterationCount: row.iteration_count as number,
     turnType: (row.turn_type as 'user' | 'iteration') ?? 'user',
-    parentTurnId: row.parent_turn_id as string | undefined
+    parentTurnId: row.parent_turn_id as string | undefined,
+    turnSource: (row.turn_source as 'delegation' | undefined) ?? undefined
   };
 }
 

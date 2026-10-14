@@ -185,11 +185,11 @@ import {
   taskStatusSchema,
 } from './commandCenter/sessionCommandCenter.schema';
 import { wakeNoopSchema } from './commandCenter/wakeNoop.schema';
+import { isCrossSessionDelegationEnabled } from '../../services/delegation/crossSessionDelegationFlag';
+import { registerCrossSessionDelegationTools } from './delegation/registration';
 
-export function registerMigratedTools(
-  registry: ToolRegistry,
-  platform: NodeJS.Platform = process.platform,
-): void {
+export function registerMigratedTools(registry: ToolRegistry, platform: NodeJS.Platform = process.platform,
+  crossSessionDelegationEnabled: boolean = isCrossSessionDelegationEnabled()): void {
   registry.register(
     delegateTaskSchema,
     async () => (await import('./commandCenter/sessionCommandCenter')).delegateTaskModule,
@@ -210,6 +210,8 @@ export function registerMigratedTools(
     wakeNoopSchema,
     async () => (await import('./commandCenter/wakeNoop')).wakeNoopModule,
   );
+
+  if (crossSessionDelegationEnabled) registerCrossSessionDelegationTools(registry);
 
   // ── file/ batch 1 ─────────────────────────────────────────────────────
   registry.register(

@@ -4,6 +4,8 @@
 // 成功路径：解析端点 → generateMusic → 写盘 → audio file artifact。
 // 付费守门：缺 key / 未知 model → resolveMusicModelEndpoint 抛错，generateMusic 零调用。
 // 空 prompt → INVALID_ARGS（generateMusic 零调用）。
+// N-MEDIA-GEN-PHASE2：output_path → output_file_path；内置模型缺 MiniMax key 在付费前
+// 报 INVALID_ARGS（getMinimaxApiKey 唯一 key 通路）；桥接模型的端点解析失败保持原样。
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -19,11 +21,17 @@ const { existsSyncMock, mkdirSyncMock, writeFileSyncMock } = vi.hoisted(() => ({
   writeFileSyncMock: vi.fn(),
 }));
 
-vi.mock('fs', () => ({
-  existsSync: (...args: unknown[]) => existsSyncMock(...args),
-  mkdirSync: (...args: unknown[]) => mkdirSyncMock(...args),
-  writeFileSync: (...args: unknown[]) => writeFileSyncMock(...args),
-}));
+// workspaceScope.ts reads realpathSync/lstatSync/readlinkSync/statSync from node:fs.
+// A partial fs mock makes isPathWithinRoot fail closed and would refuse in-workspace paths.
+vi.mock('fs', async () => {
+  const actual = await vi.importActual<typeof import('node:fs')>('node:fs');
+  return {
+    ...actual,
+    existsSync: (...args: unknown[]) => existsSyncMock(...args),
+    mkdirSync: (...args: unknown[]) => mkdirSyncMock(...args),
+    writeFileSync: (...args: unknown[]) => writeFileSyncMock(...args),
+  };
+});
 
 const { getConfigServiceMock } = vi.hoisted(() => ({
   getConfigServiceMock: vi.fn(() => ({ onSettingsUpdated: vi.fn(), getSettings: () => null })),
@@ -31,6 +39,14 @@ const { getConfigServiceMock } = vi.hoisted(() => ({
 
 vi.mock('../../../../../src/host/services', () => ({
   getConfigService: () => getConfigServiceMock(),
+}));
+
+const { getMinimaxApiKeyMock } = vi.hoisted(() => ({
+  getMinimaxApiKeyMock: vi.fn(),
+}));
+
+vi.mock('../../../../../src/host/services/media/imageGenerationService', () => ({
+  getMinimaxApiKey: () => getMinimaxApiKeyMock(),
 }));
 
 const { generateMusicMock, resolveMusicModelEndpointMock } = vi.hoisted(() => ({
@@ -84,6 +100,7 @@ describe('music_generate — execute', () => {
     vi.clearAllMocks();
     existsSyncMock.mockReturnValue(true);
     getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(), getSettings: () => null });
+    getMinimaxApiKeyMock.mockReturnValue('test-minimax-key');
     resolveMusicModelEndpointMock.mockReturnValue({
       baseUrl: 'https://api.minimax.chat/v1',
       apiKey: 'sk',
@@ -124,9 +141,9 @@ describe('music_generate — execute', () => {
     expect(arg).toMatchObject({ baseUrl: 'https://api.minimax.chat/v1', apiKey: 'sk', modelName: 'music-2.6', prompt: '轻快的钢琴背景音乐' });
   });
 
-  it('saves to file when output_path given', async () => {
+  it('saves to file when output_file_path given', async () => {
     const result = await executeMusicGenerate(
-      { prompt: 'jazz', lyrics: 'la la la', output_path: '/tmp/work/song.mp3' },
+      { prompt: 'jazz', lyrics: 'la la la', output_file_path: 'song.mp3' },
       makeCtx(),
       allowAll,
     );
@@ -139,18 +156,54 @@ describe('music_generate — execute', () => {
     expect(arg.lyrics).toBe('la la la');
   });
 
-  it('resolver throws (missing key / unknown model) → error result, generateMusic NOT called', async () => {
-    resolveMusicModelEndpointMock.mockImplementation(() => {
-      throw new Error('音乐生成需要 MiniMax API Key。');
-    });
+  it('refuses legacy output_path with INVALID_ARGS, generateMusic NOT called', async () => {
     const result = await executeMusicGenerate(
-      { prompt: 'pop' },
+      { prompt: 'pop', output_path: '/tmp/work/song.mp3' },
       makeCtx(),
       allowAll,
     );
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error).toContain('音乐生成失败');
+      expect(result.code).toBe('INVALID_ARGS');
+      expect(result.error).toContain('renamed to output_file_path');
+    }
+    expect(generateMusicMock).not.toHaveBeenCalled();
+    expect(writeFileSyncMock).not.toHaveBeenCalled();
+  });
+
+  it('missing MiniMax key (built-in model) → INVALID_ARGS before any paid call', async () => {
+    getMinimaxApiKeyMock.mockReturnValue(undefined);
+    const emit = vi.fn();
+    const result = await executeMusicGenerate(
+      { prompt: 'pop' },
+      makeCtx({ emit: emit as unknown as ToolContext['emit'] }),
+      allowAll,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('INVALID_ARGS');
+      expect(result.error).toContain('MiniMax API key is missing');
+    }
+    expect(resolveMusicModelEndpointMock).not.toHaveBeenCalled();
+    expect(generateMusicMock).not.toHaveBeenCalled();
+    expect(writeFileSyncMock).not.toHaveBeenCalled();
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it('bridged resolver throws (unknown model / missing key) → error result, generateMusic NOT called', async () => {
+    resolveMusicModelEndpointMock.mockImplementation(() => {
+      throw new Error('未知或不支持的桥接音乐模型 bridge:music-x');
+    });
+    const result = await executeMusicGenerate(
+      { prompt: 'pop', model: 'bridge:music-x' },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      // N-MEDIA-GEN-PHASE2 合同：失败走 0/1 saved + per_request，resolver 的原始报错如实进 error
+      expect(result.error).toMatch(/^0\/1 saved\nper_request /);
+      expect(result.error).toContain('未知或不支持的桥接音乐模型 bridge:music-x');
     }
     expect(generateMusicMock).not.toHaveBeenCalled();
     expect(writeFileSyncMock).not.toHaveBeenCalled();

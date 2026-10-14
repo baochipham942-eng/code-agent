@@ -72,7 +72,7 @@ export async function runRuntimeSmoke(filePath: string, timeoutMs: number): Prom
   let session: ArtifactPageSession | null = null;
 
   try {
-    const opened = await openArtifactPage(timeoutMs);
+    const opened = await openArtifactPage();
     if (!opened.ok) {
       return {
         attempted: false,

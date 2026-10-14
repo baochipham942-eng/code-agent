@@ -141,6 +141,15 @@ describe('settleCronRunLimit count rules', () => {
       event: 'completed',
       recordStatus: 'paused',
       eventId: 'max_runs:job-1',
+      summary: expect.stringMatching(/^已达运行次数上限（2 次），任务已自动停用。/),
+      configPatch: expect.objectContaining({
+        pendingReview: expect.objectContaining({
+          maxRunsReached: {
+            maxRuns: 2,
+            summary: expect.stringMatching(/^已达运行次数上限（2 次），任务已自动停用。/),
+          },
+        }),
+      }),
     }));
   });
 

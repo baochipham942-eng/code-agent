@@ -263,6 +263,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                         const isCloud = record.config?.runsOn === 'cloud';
                         const urgencyRaw = record.config?.pendingReview?.urgencyRaw;
                         const digest = record.config?.pendingReview?.digest;
+                        const maxRunsReached = record.config?.pendingReview?.maxRunsReached;
                         const resultSessionId = reviewResultSessionId(record);
                         const hasPendingApproval = Boolean(
                           resultSessionId
@@ -308,6 +309,11 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                                     {cc.inboxDigestApprovalBadge}
                                   </span>
                                 )}
+                              </div>
+                            )}
+                            {maxRunsReached && (
+                              <div className="truncate text-[11px] text-badge-warning" data-testid="automation-review-max-runs">
+                                {maxRunsReached.summary ?? cc.inboxMaxRunsReached.replace('{count}', String(maxRunsReached.maxRuns))}
                               </div>
                             )}
                             {urgencyRaw && (

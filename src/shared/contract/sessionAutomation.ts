@@ -102,6 +102,8 @@ export interface SessionAutomationConfig extends Record<string, unknown> {
     urgency?: CronUrgency;
     urgencyRaw?: string;
     digest?: { artifactCount: number; summaryLine?: string };
+    /** 到达运行次数上限后由 cron 记录的待过目原因。 */
+    maxRunsReached?: { maxRuns: number; summary?: string };
   };
   /** 启动时发现漏跑且无法回写源会话时，由自动化收件箱承接。 */
   missedNotice?: { scheduledAt: number; reason: CronMissedReason };

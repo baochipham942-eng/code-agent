@@ -1,6 +1,8 @@
 import { SKILL_CHANNELS } from '@shared/ipc/channels';
+import type { SkillCautionConfirmationRequired } from '@shared/contract/skillInstallCaution';
 import { toast } from '../hooks/useToast';
 import { invokeSkillIPC, invokeSkillIPCOrThrow } from './invokeSkillIPC';
+import { isSkillCautionConfirmationRequired } from './skillInstallCaution';
 
 export function isSkillZipFileName(name: string): boolean {
   return name.toLowerCase().endsWith('.zip');
@@ -47,10 +49,23 @@ function isNotASkillPackError(error?: string): boolean {
   return unwrapSkillZipError(error).includes('SKILL_ZIP_MISSING_SKILL_MD');
 }
 
+export interface SkillZipInstallResult {
+  success: boolean;
+  skillName?: string;
+  pluginSpec?: string;
+  error?: string;
+}
+
+/**
+ * 本地 ZIP 装 skill。host 侧 caution 门开着时，未签名来源命中 caution 会返回
+ * SkillCautionConfirmationRequired（未安装）——确认面在设置页，重发时把
+ * confirmationToken 原样带上即可。
+ */
 export async function installLocalSkillZip(payload: {
   zipPath?: string;
   archiveBase64?: string;
-}): Promise<{ success: boolean; skillName?: string; pluginSpec?: string; error?: string }> {
+  cautionConfirmationToken?: string;
+}): Promise<SkillZipInstallResult | SkillCautionConfirmationRequired> {
   try {
     const result = await invokeSkillIPCOrThrow(SKILL_CHANNELS.SKILL_INSTALL_LOCAL_ZIP, payload);
     return result ?? { success: false, error: 'SKILL_ZIP_INSTALL_FAILED' };
@@ -83,6 +98,12 @@ export async function divertDroppedSkillZips(
         continue;
       }
       const result = await installLocalSkillZip(await fileToLocalZipPayload(file));
+      if (isSkillCautionConfirmationRequired(result)) {
+        // 拖拽路径没有确认面可弹：caution 待确认按失败收口（fail-closed），
+        // 不装也不当普通附件回流——要走确认流去设置页装
+        toast.error(`${args.failPrefix}${file.name}`);
+        continue;
+      }
       if (!result.success && isNotASkillPackError(result.error)) {
         leftover.push(file);
         continue;

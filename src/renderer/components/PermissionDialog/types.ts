@@ -76,6 +76,8 @@ export interface PermissionRequest {
   reason?: string;
   /** 结构化原因码（来源 @shared/contract，禁止本地复制枚举以防漂移） */
   reasonCode?: PermissionRequestReason;
+  /** 停车审批参数预览（host 已脱敏 + 截断）；缺省不渲染该块。 */
+  argsPreview?: string;
   boundary?: PermissionBoundaryRef;
   details: PermissionRequestDetails;
   /** N-WRITEBACK-EDIT：host 默认分支把工具原参数整份放在 details 里；可编辑工具的查看/编辑态读这份 */

@@ -506,6 +506,8 @@ export class SessionAutomationService {
         sessionId: payload.sessionId ?? row.coordinatorId,
         tool: payload.tool ?? 'unknown',
         displayTool: payload.displayTool,
+        // N-PARKED-APPROVAL-SURVIVE-RESTART-PERSIST：老行没有该字段，undefined 照常透传（①）。
+        argsPreview: payload.argsPreview,
         requestedAt: payload.requestedAt ?? row.submittedAt,
         status: row.status === 'orphaned' ? 'orphaned' : 'pending',
         riskClass: payload.riskClass ?? null,

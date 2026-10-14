@@ -193,6 +193,16 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                             {scopeNote}
                           </div>
                         )}
+                        {/* 参数预览（host 已脱敏 + 截断）：一眼看清这步要干什么；老行没有该字段不渲染 */}
+                        {!isPairing && item.argsPreview && (
+                          <div
+                            className="truncate text-[11px] text-zinc-400"
+                            data-testid="parked-args-preview"
+                            title={item.argsPreview}
+                          >
+                            {cc.parkedArgsPreviewLabel}{item.argsPreview}
+                          </div>
+                        )}
                         <div className="text-[11px] text-zinc-500">
                           {isOrphaned ? cc.parkedOrphaned : cc.parkedWaiting.replace('{duration}', formatWaiting(item.requestedAt))}
                         </div>

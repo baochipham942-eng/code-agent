@@ -79,6 +79,7 @@ import { startCompanionRelayIfConfigured } from '../host/services/companion/Comp
 import { startCompanionRelayAccountIfConfigured } from '../host/services/companion/companionRelayAccount';
 import { getAuthService } from '../host/services/auth/authService';
 import { IdleSleepInhibitor } from '../host/services/desktop/idleSleepInhibitor';
+import type { DaemonIdleSnapshot } from '../host/services/daemon/daemonIdle';
 import { getBackgroundTaskLedger } from '../host/task/backgroundTaskLedger';
 import { loadLanIdentity } from '../host/services/companion/lanIdentity';
 import { COMPANION_LIMITS, COMPANION_MANAGE_CHANNEL } from '../shared/constants/companion';
@@ -113,6 +114,8 @@ export interface CreateAppDeps {
     pluginsDir: string;
   };
   getPendingPermissionRequests?: () => PermissionRequest[];
+  /** ADR-083 常驻宿主空闲去留快照（与 IdleSleepInhibitor 同源的三信号），webServer 注册回调收取。 */
+  registerDaemonIdleSnapshot?: (getSnapshot: () => DaemonIdleSnapshot) => void;
   registerQueuedInputStartupSweep?: (runStartupSweep: () => void) => void;
   deliverCompanionPermission?: (requestId: string, response: PermissionResponse, sessionId: string) => { success: boolean; data?: { closed?: boolean } };
   registerCompanionShutdown?: (stop: () => Promise<void>) => void;
@@ -313,12 +316,18 @@ export function createApp(deps: CreateAppDeps): express.Express {
   } | undefined;
   let companionRelayAbandoned = false;
   let companionRelayAccount: ReturnType<typeof startCompanionRelayAccountIfConfigured> | null = null;
-  const idleSleepInhibitor = new IdleSleepInhibitor(
-    () => runRegistry.size > 0 || getBackgroundTaskLedger().hasActiveTasks(),
-    () => inhibitorGateway?.remoteEnabled() === true && inhibitorGateway.pairedDevices().length > 0,
-    { logger },
-  );
+  // ADR-083 空闲去留的前两个信号与 IdleSleepInhibitor 同源（在跑 run / 配对伴侣）：
+  // 常驻宿主的 shouldDaemonExit 读同一份判据，不另造第二套。
+  const hasRunningRun = () => runRegistry.size > 0 || getBackgroundTaskLedger().hasActiveTasks();
+  const hasPairedCompanion = () => inhibitorGateway?.remoteEnabled() === true
+    && inhibitorGateway.pairedDevices().length > 0;
+  const idleSleepInhibitor = new IdleSleepInhibitor(hasRunningRun, hasPairedCompanion, { logger });
   idleSleepInhibitor.start();
+  deps.registerDaemonIdleSnapshot?.(() => ({
+    runningRuns: hasRunningRun(),
+    pairedCompanion: hasPairedCompanion(),
+    awaitingApproval: (deps.getPendingPermissionRequests?.().length ?? 0) > 0,
+  }));
   let cleanupQuestionRoute: () => void = () => {};
   deps.registerCompanionShutdown?.(async () => {
     cleanupQuestionRoute();

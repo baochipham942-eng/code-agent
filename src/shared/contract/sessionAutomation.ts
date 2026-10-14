@@ -102,7 +102,11 @@ export interface SessionAutomationConfig extends Record<string, unknown> {
     urgency?: CronUrgency;
     urgencyRaw?: string;
     digest?: { artifactCount: number; summaryLine?: string };
+    /** 到达运行次数上限后由 cron 记录的待过目原因。 */
+    maxRunsReached?: { maxRuns: number; summary?: string };
   };
+  /** 最近一次无人值守运行遇到登录墙；用户过目后清除。 */
+  loginWall?: { siteOrigin: string; at: number };
   /** 启动时发现漏跑且无法回写源会话时，由自动化收件箱承接。 */
   missedNotice?: { scheduledAt: number; reason: CronMissedReason };
   /** B4：本 automation 上人工铸造的 target 粒度长期授权规则。删/archive 即失效（消费时按 status 钳制）。 */

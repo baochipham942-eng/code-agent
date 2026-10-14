@@ -93,6 +93,7 @@ Agent Neo 是本地优先的人机协作（cowork）产品：用户给目标，N
 - **ship 硬规**：推分支、开 PR、合并 main 一律走机器级命令 `ship`（`ship --help` 看全量）。串行合并队列 = 无冲突 + CI 全绿 + 不落后 main（落后自动 update-branch 重验，最多 3 轮）。一切失败 fail-closed：ship 报错就停下如实汇报，禁止手工 `git push origin main`、`gh pr merge`、`--force` 类绕过；同因连挂 2 次转人工。
 - **汇报格式**：测试证词后加一行 `证据档位：<档位组合>`，四档定义在 `docs/testing-evidence-classes.md`；只有 static-contract + hermetic-protocol 时不许说「已验证」。汇报必须带全量测试计数与档位，缺一不可。
 - **多 agent 并行**：认领前 `git fetch origin`，工作分支基于 `origin/main` 新建；更新本地 main 只允许 `git merge --ff-only origin/main`，拒绝 ff 说明本地 main 已脏，另起分支不要 forward-fix。push 后在交接里写明 `git rev-parse HEAD` 的 sha，接力以 sha 对齐。验收一律 `origin/main` 新鲜构建，逐层核对产物指纹；禁止拿本地残留构建、renderer 热更新缓存、旧安装包下验证结论。
+- **桌面包启动红线**：禁止直接 exec `*.app/Contents/MacOS/code-agent-tauri`——沙箱里拿不到 WindowServer，`_RegisterApplication` abort 必崩（2026-09-25 实录）。构建+安装+启动只走 `scripts/run-dev-slot.sh`；`open` 被沙箱拦就把启动交回用户终端。细则见 `CLAUDE.md`「本地 dogfood 打包」。
 
 ## 7. 开工前检查清单
 

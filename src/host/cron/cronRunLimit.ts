@@ -128,14 +128,27 @@ async function writeCronRunCountNarrow(
  */
 async function recordMaxRunsReachedEvent(definition: CronJobDefinition): Promise<void> {
   try {
-    await getSessionAutomationService().recordEvent({
+    const service = getSessionAutomationService();
+    const existing = service.getBySourceRef(getCronAutomationType(definition), definition.id);
+    const summary = `已达运行次数上限（${definition.maxRuns ?? '?'} 次），任务已自动停用。`
+      + '可在「自动化中心 → 定时任务」重新启用，重新启用后计数清零。';
+    await service.recordEvent({
       type: getCronAutomationType(definition),
       sourceRefId: definition.id,
       event: 'completed',
       status: 'completed',
       recordStatus: 'paused',
-      summary: `已达运行次数上限（${definition.maxRuns ?? '?'} 次），任务已自动停用。`
-        + '可在「自动化中心 → 定时任务」重新启用，重新启用后计数清零。',
+      summary,
+      configPatch: {
+        pendingReview: {
+          ...(existing?.config?.pendingReview ?? {}),
+          at: Date.now(),
+          maxRunsReached: {
+            maxRuns: definition.maxRuns ?? 0,
+            summary,
+          },
+        },
+      },
       eventId: `max_runs:${definition.id}`,
     });
   } catch (error) {

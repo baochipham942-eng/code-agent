@@ -28,6 +28,11 @@ type RetentionSummary = {
 // 模块级账本：publish/countFailed 的共用实现抽到 infra/retentionLedger，行为不变
 const retentionLedger = createRetentionLedger();
 
+// 此刻仍删不掉的文件数。failedTotal 是历史累计，同一批文件重试 N 次会翻 N 倍；
+// 完整一轮 clear/sweep 用本轮 failed 覆盖这里，finalize 单文件失败追加，
+// 零失败清账时归零——UI 失败行的数字取这份，不随重试虚增
+let failedCurrentCount = 0;
+
 interface RetentionRow {
   id: string;
   wavPath: string;
@@ -83,6 +88,8 @@ export function finalizeSegmentAudio(input: {
     outcome.failed += 1;
     outcome.lastError = reason;
   } finally {
+    // finalize 只碰这一个文件：失败追加（+1），成功不动上一轮的计数
+    failedCurrentCount += outcome.failed;
     publishRetention(outcome.deleted, outcome.failed, outcome.lastError, Date.now());
   }
 }
@@ -104,6 +111,8 @@ export function sweepAudioRetention(input: {
   }
   // 一轮完整跑完且零失败 = 此前删不掉的文件已不在，清掉旧失败账
   if (complete && summary.failed === 0) retentionLedger.resetFailures();
+  // 完整一轮用本轮 failed 覆盖"仍在失败"计数；不完整的一轮看不出全貌，保持原值
+  if (complete) failedCurrentCount = summary.failed;
   publishRetention(summary.deleted, summary.failed, summary.lastError, input.now);
   return summary;
 }
@@ -125,6 +134,8 @@ export function clearAllAudioRecordings(input: {
     result.failed += 1;
     result.lastError = reason;
   }
+  // clear 无论成败都是一整轮：计数用本轮 failed 覆盖（含 catch 路径的 failed=1）
+  failedCurrentCount = result.failed;
   publishRetention(result.deleted, result.failed, result.lastError, Date.now());
   return { deleted: result.deleted, freedBytes: result.freedBytes, failed: result.failed };
 }
@@ -135,11 +146,12 @@ export function getAudioRetentionStatus(
 ): RetentionLedgerStatus & {
   fileCount?: number;
   bytes?: number;
+  failedCurrent: number;
 } {
   const status = retentionLedger.read();
-  if (!audioDir) return status;
+  if (!audioDir) return { ...status, failedCurrent: failedCurrentCount };
   const counts = countClearableWavs(audioDir, sqlitePath ?? null, Date.now(), FAILED_AUDIO_RETENTION_MS);
-  return { ...status, fileCount: counts.fileCount, bytes: counts.bytes };
+  return { ...status, fileCount: counts.fileCount, bytes: counts.bytes, failedCurrent: failedCurrentCount };
 }
 
 function runSweep(

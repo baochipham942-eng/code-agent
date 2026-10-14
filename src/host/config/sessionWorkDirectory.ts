@@ -10,7 +10,8 @@
 // （materializeSessionWorkDirectory，幂等）。目录只创建、永不删除/改名；标题洗掉
 // 文件系统非法字符，撞名追加 -2/-3 后缀。首轮智能标题还没算完，目录名回退到
 // 首条用户消息的第一个分句；标题就位后目录仍未落盘时，可按标题重规划一次
-// （maybeReplanSessionWorkDirectory），盘上零改动。
+// （maybeReplanSessionWorkDirectory），盘上零改动。标题本身也先按分句切再截 40 字
+// （截断停在分句/词边界）；降级标题（消息前缀 / 以 `...` 结尾）不重规划。
 // ============================================================================
 
 import * as fs from 'fs/promises';
@@ -37,6 +38,8 @@ export interface ReplanSessionWorkDirectoryOptions {
   workingDirectory: string;
   /** 会话当前标题；占位/缺失视为不可用，不重规划 */
   sessionTitle?: string;
+  /** 首条用户消息；标题若只是它的降级截断（前缀 / 派生 / 以 `...` 结尾）则不重规划 */
+  userMessage?: string;
   env?: NodeJS.ProcessEnv;
 }
 
@@ -69,22 +72,78 @@ function usableSessionTitle(sessionTitle: string | undefined): string | undefine
   return trimmed;
 }
 
-/** 洗目录名：去非法字符与控制符、去前导点、折叠空白、截 40 字符。洗完为空返回 undefined。 */
+/** 第一个分句：到第一个句读/换行即止（整句没有分句符则取整句）。 */
+function firstClause(text: string): string {
+  return text.split(CLAUSE_DELIMITERS)[0] ?? '';
+}
+
+/**
+ * 40 字上限停在窗口内最后一个分句符，没有分句符则停在最后一个空白（完整词）；
+ * 都没有才硬切。截断可能留下尾空白/尾点（Windows 目录名不允许），一并收掉。
+ */
+function capFolderTitle(text: string): string {
+  const chars = Array.from(text);
+  const window = chars.length <= TITLE_MAX_CHARS
+    ? text
+    : chars.slice(0, TITLE_MAX_CHARS).join('');
+  if (chars.length > TITLE_MAX_CHARS) {
+    let lastClause = -1;
+    const windowChars = Array.from(window);
+    for (let i = 0; i < windowChars.length; i++) {
+      if (CLAUSE_DELIMITERS.test(windowChars[i]!)) lastClause = i;
+    }
+    if (lastClause > 0) {
+      const cut = windowChars.slice(0, lastClause).join('').replace(/[\s.]+$/, '');
+      if (cut) return cut;
+    }
+    const lastSpace = window.lastIndexOf(' ');
+    if (lastSpace > 0) {
+      const cut = window.slice(0, lastSpace).replace(/[\s.]+$/, '');
+      if (cut) return cut;
+    }
+  }
+  return window.replace(/[\s.]+$/, '');
+}
+
+/** 洗目录名：去前导点后再取第一个分句，再去非法字符与控制符、折叠空白、按边界截 40 字符。洗完为空返回 undefined。 */
 function sanitizeFolderTitle(raw: string): string | undefined {
-  const stripped = raw.replace(ILLEGAL_FOLDER_CHARS, '').replace(/^\.+/, '');
+  // 前导点先剥掉，避免 `..foo` 被 `.` 分句符切成空串；句中 `.` 仍按分句切。
+  const prepared = raw.trim().replace(/^\.+/, '');
+  const clause = firstClause(prepared);
+  const stripped = clause.replace(ILLEGAL_FOLDER_CHARS, '');
   const collapsed = stripped.replace(/\s+/g, ' ').trim();
   if (!collapsed) return undefined;
-  const capped = Array.from(collapsed)
-    .slice(0, TITLE_MAX_CHARS)
-    .join('')
-    // 截断可能留下尾空白/尾点（Windows 目录名不允许），一并收掉
-    .replace(/[\s.]+$/, '');
+  const capped = capFolderTitle(collapsed);
   return capped || undefined;
 }
 
-/** 首条用户消息的第一个分句：到第一个句读/换行即止（整句没有分句符则取整句）。 */
-function firstClauseOfUserMessage(userMessage: string | undefined): string {
-  return (userMessage ?? '').split(CLAUSE_DELIMITERS)[0] ?? '';
+/**
+ * 降级标题（小模型不可用时 deriveFallbackSessionTitle 的产物）不是人话摘要：
+ * 以 `...` 结尾，或只是首条消息的前缀/派生。此时首轮分句名已经更好，不重规划。
+ */
+function isDegradedFallbackTitle(
+  title: string,
+  options: { userMessage?: string; currentFolderName: string },
+): boolean {
+  const trimmed = title.trim();
+  if (trimmed.endsWith('...')) return true;
+
+  const message = options.userMessage?.trim();
+  if (message) {
+    const firstLine = message.split('\n')[0] ?? '';
+    if (message.startsWith(trimmed) || firstLine.startsWith(trimmed)) return true;
+    const firstLinePrefix = Array.from(firstLine).slice(0, 50).join('');
+    if (trimmed === firstLinePrefix || trimmed === `${firstLinePrefix}...`) return true;
+  }
+
+  const currentTitlePart = options.currentFolderName
+    .replace(PLANNED_FOLDER_NAME_PATTERN, '')
+    .replace(/-\d+$/, '');
+  return Boolean(
+    currentTitlePart
+    && trimmed.startsWith(currentTitlePart)
+    && trimmed.length > currentTitlePart.length,
+  );
 }
 
 function buildSessionFolderBaseName(options: SessionWorkDirectoryOptions): string {
@@ -92,7 +151,7 @@ function buildSessionFolderBaseName(options: SessionWorkDirectoryOptions): strin
   const mmdd = `${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
   const prefix = (options.language ?? readUiLanguage()) === 'en' ? 'Task' : '任务';
   const title = sanitizeFolderTitle(usableSessionTitle(options.sessionTitle) ?? '')
-    ?? sanitizeFolderTitle(firstClauseOfUserMessage(options.userMessage))
+    ?? sanitizeFolderTitle(options.userMessage ?? '')
     ?? 'untitled';
   return `${prefix}_${mmdd}_${title}`;
 }
@@ -138,8 +197,8 @@ export async function materializeSessionWorkDirectory(dir: string): Promise<void
  * 智能标题就位后的改名收口（N-DELIVERABLE-WORKDIR-LAZY）：首轮规划名用的是首条
  * 消息的第一个分句（智能标题要几十秒后才落库）。目录仍未落盘且标题可用时，按标题
  * 重新规划，由调用方回写会话——盘上零改动。以下任一情况直接返回 undefined（什么都不用做）：
- * 标题不可用；路径不是本模块规划的形状；不在默认工作根之内（含根本身）；目录已落盘；
- * 按标题重规划出来的路径没有变化。
+ * 标题不可用；标题只是首条消息的降级截断（前缀/派生/以 `...` 结尾）；路径不是本模块
+ * 规划的形状；不在默认工作根之内（含根本身）；目录已落盘；按标题重规划出来的路径没有变化。
  */
 export async function maybeReplanSessionWorkDirectory(
   options: ReplanSessionWorkDirectoryOptions,
@@ -147,7 +206,12 @@ export async function maybeReplanSessionWorkDirectory(
   const title = usableSessionTitle(options.sessionTitle);
   const current = options.workingDirectory.trim();
   if (!title || !current) return undefined;
-  if (!PLANNED_FOLDER_NAME_PATTERN.test(path.basename(current))) return undefined;
+  const currentFolderName = path.basename(current);
+  if (!PLANNED_FOLDER_NAME_PATTERN.test(currentFolderName)) return undefined;
+  if (isDegradedFallbackTitle(title, {
+    userMessage: options.userMessage,
+    currentFolderName,
+  })) return undefined;
   const root = getDefaultWorkDirectory(options.env);
   if (!isPathWithinRoot(current, root) || path.resolve(current) === path.resolve(root)) return undefined;
   if (await existsOnDisk(current)) return undefined;

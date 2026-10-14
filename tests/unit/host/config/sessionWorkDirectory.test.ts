@@ -89,7 +89,8 @@ describe('planSessionWorkDirectory (lazy planning)', () => {
 
   it('sanitizes illegal characters, control chars, leading dots and collapses whitespace', async () => {
     const dir = await planSessionWorkDirectory({
-      sessionTitle: '  ..a/b\\c:d*e?f"g<h>i|j\u0007k\u007f  双  空白  ',
+      // `?` 既是非法字符也是分句符，先分句会在此处切开；非法字符集的其余成员放在同一分句里洗
+      sessionTitle: '  ..a/b\\c:d*ef"g<h>i|j\u0007k\u007f  双  空白  ',
       now: fixedNow,
       language: 'zh',
       env,
@@ -105,6 +106,39 @@ describe('planSessionWorkDirectory (lazy planning)', () => {
       env,
     });
     expect(path.basename(dir)).toBe(`任务_1011_${'零'.repeat(40)}`);
+  });
+
+  it('cuts a >40-char title at a clause boundary, never mid-clause (N-DELIVERABLE-WORKDIR-LAZY rework r1)', async () => {
+    // 整标题 >40，第一个分句 ≤40：目录名必须停在分句符，不能把后半句拦腰截进名字
+    const title = '请把本周客户反馈整理成一份完整的季度复盘报告，重点覆盖转化漏斗留存口碑以及下一步行动计划';
+    expect(Array.from(title).length).toBeGreaterThan(40);
+    const dir = await planSessionWorkDirectory({
+      sessionTitle: title,
+      now: fixedNow,
+      language: 'zh',
+      env,
+    });
+    expect(path.basename(dir)).toBe('任务_1011_请把本周客户反馈整理成一份完整的季度复盘报告');
+    expect(path.basename(dir)).not.toContain('重点覆盖');
+  });
+
+  it('caps a >40-char first clause at the last word boundary rather than mid-word', async () => {
+    // 40 字符硬切落在 reviews 的 'r' 上（Write comprehensive quarterly business r）
+    const title = 'Write comprehensive quarterly business reviews now please thanks';
+    expect(Array.from(title).length).toBeGreaterThan(40);
+    const dir = await planSessionWorkDirectory({
+      sessionTitle: title,
+      now: fixedNow,
+      language: 'en',
+      env,
+    });
+    const name = path.basename(dir);
+    expect(name.startsWith('Task_1011_')).toBe(true);
+    const body = name.slice('Task_1011_'.length);
+    expect(Array.from(body).length).toBeLessThanOrEqual(40);
+    expect(body).toBe('Write comprehensive quarterly business');
+    expect(body.endsWith(' r')).toBe(false);
+    expect(body.endsWith('r')).toBe(false);
   });
 
   it('falls back to the first clause of the user message, not a mid-sentence cut', async () => {
@@ -328,5 +362,90 @@ describe('maybeReplanSessionWorkDirectory (smart-title rename before materializa
       sessionTitle: '季度总结报告',
       env,
     })).resolves.toBeUndefined();
+  });
+
+  it('does not re-plan a fallback-style title that is a prefix of the first message (N-DELIVERABLE-WORKDIR-LAZY rework r1)', async () => {
+    // 真跑事故：小模型不可用时标题 = 首条消息（或 50 字硬切），重规划把好的分句名
+    // 换成拦腰截断的降级标题。分句名已经更好，必须保持。
+    const message = '用一句话说明什么是二分查找，直接回答，不要使用任何工具，不要写代码';
+    const current = await planSessionWorkDirectory({
+      userMessage: message,
+      now: fixedNow,
+      language: 'zh',
+      env,
+    });
+    expect(path.basename(current)).toBe('任务_1011_用一句话说明什么是二分查找');
+
+    const replanned = await maybeReplanSessionWorkDirectory({
+      workingDirectory: current,
+      sessionTitle: message,
+      env,
+    });
+    if (replanned !== undefined) {
+      expect(path.basename(replanned)).toBe('任务_1011_用一句话说明什么是二分查找');
+    }
+    expect(replanned).toBeUndefined();
+  });
+
+  it('does not re-plan a fallback-style title that is a 50-char prefix plus ellipsis', async () => {
+    const message = '用一句话说明什么是二分查找，直接回答，不要使用任何工具，不要写代码也不要展开解释并且请保持在三句话以内';
+    expect(Array.from(message).length).toBeGreaterThan(50);
+    const fallbackTitle = `${Array.from(message).slice(0, 50).join('')}...`;
+    const current = await planSessionWorkDirectory({
+      userMessage: message,
+      now: fixedNow,
+      language: 'zh',
+      env,
+    });
+    expect(path.basename(current)).toBe('任务_1011_用一句话说明什么是二分查找');
+
+    const replanned = await maybeReplanSessionWorkDirectory({
+      workingDirectory: current,
+      sessionTitle: fallbackTitle,
+      env,
+    });
+    // 允许 undefined（保持分句名）或分句切名；禁止把 50 字硬切 / 40 字拦腰切写进路径
+    if (replanned !== undefined) {
+      const name = path.basename(replanned);
+      expect(name).toBe('任务_1011_用一句话说明什么是二分查找');
+      expect(name).not.toContain('...');
+      expect(name).not.toContain('不要写代码');
+    }
+    expect(replanned).toBeUndefined();
+  });
+
+  it('does not re-plan a message-prefix title even when the planned folder name does not share that prefix', async () => {
+    const message = '用一句话说明什么是二分查找，直接回答，不要使用任何工具，不要写代码';
+    const current = await planSessionWorkDirectory({
+      now: fixedNow,
+      language: 'zh',
+      env,
+    });
+    expect(path.basename(current)).toBe('任务_1011_untitled');
+    const replanned = await maybeReplanSessionWorkDirectory({
+      workingDirectory: current,
+      sessionTitle: message,
+      userMessage: message,
+      env,
+    });
+    expect(replanned).toBeUndefined();
+  });
+
+  it('still re-plans when the smart title is a real summary, not a message prefix', async () => {
+    const current = await planSessionWorkDirectory({
+      userMessage: '帮我出一份季度总结，要带图表',
+      now: fixedNow,
+      language: 'zh',
+      env,
+    });
+    const replanned = await maybeReplanSessionWorkDirectory({
+      workingDirectory: current,
+      sessionTitle: '季度总结报告',
+      userMessage: '帮我出一份季度总结，要带图表',
+      env,
+    });
+    const now = new Date();
+    const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    expect(replanned).toBe(path.join(root, `任务_${mmdd}_季度总结报告`));
   });
 });

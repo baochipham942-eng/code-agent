@@ -25,12 +25,12 @@ function classifyRetentionError(lastError: string | undefined): 'permission' | '
 }
 
 export const AudioRetentionFailureLine: React.FC<{
-  failedTotal: number;
+  failedCount: number;
   lastError?: string;
   audioDir: string;
   text: AudioRetentionFailureText;
   onRetry: () => void;
-}> = ({ failedTotal, lastError, audioDir, text, onRetry }) => {
+}> = ({ failedCount, lastError, audioDir, text, onRetry }) => {
   const handleOpenFolder = () => {
     // 打开失败只留痕不打断（fail-open 但不静默：错题本 2026-08-14）
     openNativePath(audioDir).catch((error) => {
@@ -39,7 +39,7 @@ export const AudioRetentionFailureLine: React.FC<{
   };
   const main = interpolate(
     classifyRetentionError(lastError) === 'permission' ? text.failedPermission : text.failedOther,
-    { count: failedTotal },
+    { count: failedCount },
   );
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-1.5 text-[11px] text-badge-danger shrink-0">

@@ -107,19 +107,21 @@ export function WorkflowInlineMonitor() {
           <GitBranch size={14} className={snap.status === 'failed' ? 'text-badge-danger' : 'text-badge-info'} />
           <span className="text-zinc-300">workflow</span>
           {snap.goal && <span className="text-zinc-500 truncate max-w-[40%]" title={snap.goal}>· {snap.goal}</span>}
+          {/* 右侧计数/停顿徽标全部 nowrap+shrink-0：卡头空间不够时由左侧 goal（truncate）吸收， */}
+          {/* 计数与徽标自身永不换行（en 'long' 长文案曾把「N running」挤成两行，N-WF-STALL-UI rework）。 */}
           <div className="ml-auto flex items-center gap-2 text-zinc-500">
-            {timeline.totals.running > 0 && <span className="text-badge-success">{timeline.totals.running} running</span>}
-            {timeline.totals.done > 0 && <span>{timeline.totals.done} done</span>}
-            {timeline.totals.error > 0 && <span className="text-badge-danger">{timeline.totals.error} error</span>}
-            {durationSec !== undefined && <span>{durationSec}s</span>}
+            {timeline.totals.running > 0 && <span className="text-badge-success whitespace-nowrap shrink-0">{timeline.totals.running} running</span>}
+            {timeline.totals.done > 0 && <span className="whitespace-nowrap shrink-0">{timeline.totals.done} done</span>}
+            {timeline.totals.error > 0 && <span className="text-badge-danger whitespace-nowrap shrink-0">{timeline.totals.error} error</span>}
+            {durationSec !== undefined && <span className="whitespace-nowrap shrink-0">{durationSec}s</span>}
             {stallLevel !== 'none' && (
               <Badge
                 dot={stallLevel === 'long' ? 'bg-badge-warning' : undefined}
-                className={
+                className={`text-[10px] whitespace-nowrap shrink-0 ${
                   stallLevel === 'long'
-                    ? 'text-badge-warning border-badge-warning/50 text-[10px]'
-                    : 'text-zinc-400 border-zinc-600/60 text-[10px]'
-                }
+                    ? 'text-badge-warning border-badge-warning/50'
+                    : 'text-zinc-400 border-zinc-600/60'
+                }`}
                 data-stall-level={stallLevel}
               >
                 {stallLevel === 'long' ? t.workflowStall.long : t.workflowStall.quiet}

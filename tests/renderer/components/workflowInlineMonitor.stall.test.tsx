@@ -114,7 +114,7 @@ describe('WorkflowInlineMonitor stall hint（N-WF-STALL-UI）', () => {
     expect(stallBadgeText(view.container)).toBe('暂无进展');
   });
 
-  it('③ 英文界面同阈值同语义（No progress for a while / Neo has been notified）', () => {
+  it('③ 英文界面同阈值同语义（No progress for a while / Stalled for a long time; Neo notified）', () => {
     useAppStore.setState({ language: 'en' });
     const view = mount();
     elapse(WORKFLOW_STALL_THRESHOLDS.N_SOFT_MS + 2000);
@@ -125,7 +125,8 @@ describe('WorkflowInlineMonitor stall hint（N-WF-STALL-UI）', () => {
       activeRunId: 'wf-stall',
     });
     elapse(WORKFLOW_STALL_THRESHOLDS.N_HARD_MS + 2000);
-    expect(stallBadgeText(view.container)).toBe('No progress for a long time; Neo has been notified');
+    // en 'long' 文案收短到单行量级（卡头 743px 内不换行、不挤计数，N-WF-STALL-UI rework）。
+    expect(stallBadgeText(view.container)).toBe('Stalled for a long time; Neo notified');
   });
 
   it('刷新节拍清理：unmount 后 interval 不再 fire（无泄漏定时器）', () => {

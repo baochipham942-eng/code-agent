@@ -1,5 +1,5 @@
 // N-MODELCAT-SERVICE-TIER-WIRE：Responses 请求的 service_tier 下发与档位拒绝回落。
-// 全程 mock electronFetch（零真机调用）；拒绝信号集 UNVERIFIED 的说明见
+// 全程 mock electronFetch（零网络调用）；真调用错误体与未验证信号的范围见
 // src/shared/constants/serviceTier.ts。
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -13,6 +13,17 @@ import { SERVICE_TIER_REJECTION, UNATTENDED_SERVICE_TIER } from '../../../src/sh
 // 改动前（HEAD 8eebf5f95 实测抓取）的逐字节请求体——默认路径必须与它一字不差。
 const PRECHANGE_OPENAI_BODY = '{"model":"gpt-6.1-sol","input":[{"role":"user","content":"hi"}],"store":false,"include":["reasoning.encrypted_content"]}';
 const PRECHANGE_DEEPSEEK_BODY = '{"model":"deepseek-v4-flash","input":[{"role":"user","content":"hi"}],"store":false,"tools":[{"type":"web_search"}]}';
+
+// Exact HTTP 400 body captured from POST /v1/responses on 2026-10-14.
+// N-MODELCAT-SERVICE-TIER-REALCALL: gpt-6.1-sol, service_tier=flex_invalid.
+const REAL_TIER_REJECTION_BODY = `{
+  "error": {
+    "message": "Invalid value: 'flex_invalid'. Supported values are: 'auto', 'default', 'fast', 'flex', and 'priority'.",
+    "type": "invalid_request_error",
+    "param": "service_tier",
+    "code": "invalid_value"
+  }
+}`;
 
 function okResponse() {
   return { ok: true, status: 200, json: vi.fn().mockResolvedValue({ output: [] }), text: vi.fn() };
@@ -78,6 +89,39 @@ describe('ResponsesProvider service_tier (N-MODELCAT-SERVICE-TIER-WIRE)', () => 
         code: (error as Record<string, unknown>).code ?? (error as Record<string, unknown>).param,
       }),
     );
+  });
+
+  it.each(['flex_invalid', UNATTENDED_SERVICE_TIER])('replays the exact real rejection for %s and retries once without the tier', async (tier) => {
+    const rejected = new Response(REAL_TIER_REJECTION_BODY, { status: 400 });
+    const readError = vi.spyOn(rejected, 'text');
+    electronFetch
+      .mockResolvedValueOnce(rejected)
+      .mockResolvedValueOnce(okResponse());
+
+    const bodies = await sentBodies({
+      provider: 'openai', model: 'gpt-6.1-sol', apiKey: 'k', protocol: 'responses', serviceTier: tier,
+    });
+
+    expect(electronFetch).toHaveBeenCalledTimes(2);
+    expect(readError).toHaveBeenCalledTimes(1);
+    expect(bodies[0]).toBe(PRECHANGE_OPENAI_BODY.slice(0, -1) + `,"service_tier":"${tier}"}`);
+    expect(bodies[1]).toBe(PRECHANGE_OPENAI_BODY);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[ResponsesProvider] service_tier rejected; retrying once at the standard tier',
+      { provider: 'openai', model: 'gpt-6.1-sol', status: 400, code: 'invalid_value', serviceTier: tier },
+    );
+  });
+
+  it('stops after one retry when the exact real rejection repeats', async () => {
+    electronFetch.mockImplementation(async () => new Response(REAL_TIER_REJECTION_BODY, { status: 400 }));
+
+    await expect(sentBodies({
+      provider: 'openai', model: 'gpt-6.1-sol', apiKey: 'k', protocol: 'responses', serviceTier: UNATTENDED_SERVICE_TIER,
+    })).rejects.toThrow(`Responses API (400): ${REAL_TIER_REJECTION_BODY}`);
+    expect(electronFetch).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(electronFetch.mock.calls[1][1].body)).not.toHaveProperty('service_tier');
+    expect(warnSpy).toHaveBeenCalledTimes(1);
   });
 
   it('重试后的标准档请求仍失败 → 原样抛第二个错误，不再重试', async () => {

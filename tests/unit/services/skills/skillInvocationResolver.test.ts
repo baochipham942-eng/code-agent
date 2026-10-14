@@ -4,7 +4,9 @@ import {
   buildSkillInvocationContext,
   getSkillInvocationAliases,
   resolveSkillInvocationFromSkills,
+  retainSkillInvocationForTurn,
 } from '../../../../src/host/services/skills/skillInvocationResolver';
+import { chatTranscriptEn, chatTranscriptZh } from '../../../../src/renderer/i18n/chatTranscript';
 import { BUILTIN_SKILLS } from '../../../../src/host/services/skills/builtinSkills';
 
 function skill(overrides: Partial<ParsedSkill> & Pick<ParsedSkill, 'name' | 'description'>): ParsedSkill {
@@ -21,6 +23,35 @@ function skill(overrides: Partial<ParsedSkill> & Pick<ParsedSkill, 'name' | 'des
 }
 
 describe('skillInvocationResolver', () => {
+  it('单轮文件交付丢掉扩展名别名命中的办公 skill，显式斜杠调用保留', () => {
+    const docx = skill({
+      name: 'docx',
+      description: 'Word 文档 AI 助手',
+      allowedTools: ['Bash', 'Read', 'docx_generate'],
+    });
+    const xlsx = skill({
+      name: 'xlsx',
+      description: 'Excel spreadsheets',
+      allowedTools: ['Bash', 'Write'],
+    });
+    const weekly = resolveSkillInvocationFromSkills(
+      chatTranscriptZh.chat.suggestions.weeklyReport.prompt,
+      [docx],
+    );
+    const sheet = resolveSkillInvocationFromSkills(
+      chatTranscriptEn.chat.suggestions.sheetAnalysis.prompt,
+      [xlsx],
+    );
+    expect(weekly?.matchKind).toBe('alias');
+    expect(sheet?.matchKind).toBe('alias');
+    expect(retainSkillInvocationForTurn(weekly, true)).toBeNull();
+    expect(retainSkillInvocationForTurn(sheet, true)).toBeNull();
+    const slash = resolveSkillInvocationFromSkills('/docx 生成一份周报', [docx]);
+    expect(slash?.matchKind).toBe('slash');
+    expect(retainSkillInvocationForTurn(slash, true)?.skill.name).toBe('docx');
+    expect(retainSkillInvocationForTurn(weekly, false)?.skill.name).toBe('docx');
+  });
+
   it('建团队和建改角色都可查询权威专家名册', () => {
     for (const name of ['create-team', 'create-role', 'edit-role']) {
       expect(BUILTIN_SKILLS.find((skill) => skill.name === name)?.allowedTools).toContain('list_experts');

@@ -64,6 +64,7 @@ import { getGoalArtifactRepairReleaseReason } from './toolArtifactRepairPolicy';
 import {
   buildSkillInvocationContext,
   resolveSkillInvocation,
+  retainSkillInvocationForTurn,
 } from '../../services/skills/skillInvocationResolver';
 import {
   hasActiveSessionTodos,
@@ -868,10 +869,14 @@ export class ConversationRuntime {
       !startupTaskFeatures.isFuzzyTroubleshooting;
     preloadToolsForIntent(startupTaskFeatures, this.ctx.sessionId);
     try {
-      const skillInvocation =
+      const resolvedSkill =
         await raceStartupStep(this.ctx, resolveSkillInvocation(userRequest, this.ctx.workingDirectory))
         ?? await raceStartupStep(this.ctx, resolveStickyStrictSkillInvocation(this.ctx, userRequest));
       if (isStartupAborted(this.ctx)) return null;
+      const skillInvocation = retainSkillInvocationForTurn(
+        resolvedSkill,
+        startupTaskFeatures.isOneTurnFileDeliverable === true,
+      );
       if (skillInvocation) {
         const skillContext = await raceStartupStep(
           this.ctx,

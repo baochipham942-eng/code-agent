@@ -85,7 +85,7 @@ describe('PermissionCard 付费生成工具参考价行（N-MEDIA-GEN-PRICE-CARD
   });
 
   it('image_generate 批量：出「N 张 × 单价 ≈ 总价」，zh/en 数字都与成本函数输出相等', () => {
-    const request = baseRequest({ details: { prompt: ['一只猫', '一只狗', '一条鱼'] } });
+    const request = baseRequest({ details: { prompt: ['一只猫', '一只狗', '一条鱼'] } as ContractPermissionRequest['details'] });
     const zh = renderInLanguage(request, 'zh');
     const en = renderInLanguage(request, 'en');
     expect(zh).toContain('data-testid="permission-media-price"');
@@ -99,7 +99,7 @@ describe('PermissionCard 付费生成工具参考价行（N-MEDIA-GEN-PRICE-CARD
   });
 
   it('image_generate 单条 prompt：出「参考价 ¥x / 张」，zh/en 都在', () => {
-    const request = baseRequest({ details: { prompt: '一只猫的插画' } });
+    const request = baseRequest({ details: { prompt: '一只猫的插画' } as ContractPermissionRequest['details'] });
     const zh = renderInLanguage(request, 'zh');
     const en = renderInLanguage(request, 'en');
     expect(zh).toContain(`按次计费 · 参考价 ${formatCny(IMAGE_UNIT)} / 张`);
@@ -107,7 +107,7 @@ describe('PermissionCard 付费生成工具参考价行（N-MEDIA-GEN-PRICE-CARD
   });
 
   it('video_generate：出每条参考价并复述默认时长（6 秒 / 6 s），价格=单价/秒 × 时长', () => {
-    const request = baseRequest({ tool: 'video_generate', details: { prompt: '一段海浪' } });
+    const request = baseRequest({ tool: 'video_generate', details: { prompt: '一段海浪' } as ContractPermissionRequest['details'] });
     const zh = renderInLanguage(request, 'zh');
     const en = renderInLanguage(request, 'en');
     expect(zh).toContain(
@@ -119,7 +119,7 @@ describe('PermissionCard 付费生成工具参考价行（N-MEDIA-GEN-PRICE-CARD
   });
 
   it('music_generate：出每首参考价，zh/en 都在', () => {
-    const request = baseRequest({ tool: 'music_generate', details: { prompt: '轻快的钢琴配乐' } });
+    const request = baseRequest({ tool: 'music_generate', details: { prompt: '轻快的钢琴配乐' } as ContractPermissionRequest['details'] });
     const zh = renderInLanguage(request, 'zh');
     const en = renderInLanguage(request, 'en');
     expect(zh).toContain(`按次计费 · 参考价 ${formatCny(MUSIC_TOTAL)} / 首`);
@@ -129,7 +129,7 @@ describe('PermissionCard 付费生成工具参考价行（N-MEDIA-GEN-PRICE-CARD
   it('普通 network 卡（http_request 式）不出价格行，URL 详情行照旧', () => {
     const request = baseRequest({
       tool: 'http_request',
-      details: { url: 'https://example.com/api', method: 'GET' },
+      details: { url: 'https://example.com/api', method: 'GET' } as ContractPermissionRequest['details'],
     });
     for (const language of ['zh', 'en'] as const) {
       const html = renderInLanguage(request, language);

@@ -190,6 +190,10 @@ const WRITE_TOOLS = new Set([
   'Append',
   'edit_file',
   'Edit',
+  // 表格卡第二张工作表走 DocEdit（file_path）。它不在 Jev 扩桶里，规则落空就
+  // 一律 ask；无工作区的新会话没有人点批准。与 Edit 同一条路径判据：工作区内放行，
+  // 区外和受保护路径仍 ask。
+  'DocEdit',
 ]);
 
 const HOME_DIR = os.homedir();

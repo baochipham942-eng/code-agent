@@ -137,6 +137,28 @@ describe('PermissionClassifier', () => {
     }
   });
 
+  it('approves in-workspace DocEdit and still asks outside the workspace', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'docedit-fence-'));
+    try {
+      const inside = await classifyPermission(
+        'DocEdit',
+        { file_path: path.join(root, '销售数据分析.xlsx'), operations: [] },
+        { workingDirectory: root, workspaceRoot: root, permissionLevel: 'write' },
+      );
+      expect(inside.decision).toBe('approve');
+      expect(inside.reason).toBe('写入项目目录内');
+
+      const outside = await classifyPermission(
+        'DocEdit',
+        { file_path: path.join(os.homedir(), 'Documents', '销售数据分析.xlsx'), operations: [] },
+        { workingDirectory: root, workspaceRoot: root, permissionLevel: 'write' },
+      );
+      expect(outside.decision).toBe('ask');
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('keeps direct writes to the temporary directory auto-approved', async () => {
     const result = await classifyPermission(
       'Write',

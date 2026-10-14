@@ -7,25 +7,42 @@ import type { ParkedApprovalInboxItem } from '../../../src/shared/contract/pendi
 
 const listPendingReview = vi.fn<() => Promise<SessionAutomationRecord[]>>();
 const listParkedApprovals = vi.fn<() => Promise<ParkedApprovalInboxItem[]>>();
+const countPendingReview = vi.fn<() => Promise<number | undefined>>();
 const markReviewed = vi.fn().mockResolvedValue(null);
 const switchSession = vi.fn().mockResolvedValue(undefined);
 const ipcInvoke = vi.fn().mockResolvedValue(undefined);
+const invokeDomain = vi.fn().mockResolvedValue(undefined);
 const toastInfo = vi.fn();
 const toastError = vi.fn();
+const toastSuccess = vi.fn();
+const webMode = vi.hoisted(() => ({ value: false }));
+const copyPathToClipboard = vi.hoisted(() => vi.fn(async (_text: string) => true));
 
 vi.mock('../../../src/renderer/hooks/useToast', () => ({
   toast: {
     info: (...args: unknown[]) => toastInfo(...args),
     error: (...args: unknown[]) => toastError(...args),
-    success: vi.fn(),
+    success: (...args: unknown[]) => toastSuccess(...args),
     warning: vi.fn(),
   },
 }));
+
+vi.mock('../../../src/renderer/utils/platform', async () => {
+  const actual = await vi.importActual<typeof import('../../../src/renderer/utils/platform')>(
+    '../../../src/renderer/utils/platform',
+  );
+  return {
+    ...actual,
+    isWebMode: () => webMode.value,
+    copyPathToClipboard: (text: string) => copyPathToClipboard(text),
+  };
+});
 
 vi.mock('../../../src/renderer/services/sessionAutomationClient', () => ({
   sessionAutomationClient: {
     listPendingReview: () => listPendingReview(),
     listParkedApprovals: () => listParkedApprovals(),
+    countPendingReview: () => countPendingReview(),
     markReviewed: (id: string) => markReviewed(id),
   },
 }));
@@ -33,6 +50,7 @@ vi.mock('../../../src/renderer/services/sessionAutomationClient', () => ({
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: {
     invoke: (...args: unknown[]) => ipcInvoke(...args),
+    invokeDomain: (...args: unknown[]) => invokeDomain(...args),
     isAvailable: () => true,
   },
 }));
@@ -65,9 +83,17 @@ afterEach(() => {
 
 beforeEach(() => {
   // 默认两路都空；具体用例按需 override。
+  webMode.value = false;
+  copyPathToClipboard.mockClear();
+  copyPathToClipboard.mockResolvedValue(true);
   listPendingReview.mockResolvedValue([]);
   listParkedApprovals.mockResolvedValue([]);
+  countPendingReview.mockResolvedValue(undefined);
   ipcInvoke.mockResolvedValue(undefined);
+  invokeDomain.mockReset();
+  invokeDomain.mockResolvedValue(undefined);
+  toastSuccess.mockClear();
+  toastError.mockClear();
 });
 
 function makeParked(over: Partial<ParkedApprovalInboxItem>): ParkedApprovalInboxItem {
@@ -173,8 +199,85 @@ describe('AutomationReviewInbox', () => {
     });
     expect(screen.getByTestId('automation-review-digest').textContent).toContain('2 个产物');
     expect(screen.getByTestId('automation-review-digest').textContent).toContain('第一行摘要');
+    expect(screen.queryByTestId('automation-review-digest-toggle')).toBeNull();
     expect(screen.getAllByTestId('automation-review-digest-approval')).toHaveLength(1);
     expect(screen.getByTestId('automation-review-digest-approval').textContent).toBe('有待处理审批');
+  });
+
+  it('有路径的产物行可展开：桌面打开绝对路径，拒绝则该行显示文件已移走且不弹错误', async () => {
+    listPendingReview.mockResolvedValue([makeRecord({
+      config: {
+        pendingReview: {
+          resultSessionId: 'result-1',
+          at: 1700000000000,
+          digest: {
+            artifactCount: 2,
+            summaryLine: '第一行摘要',
+            artifacts: [
+              { path: '/work/run/report.md', openable: true },
+              { path: 'notes.md', openable: false },
+            ],
+          },
+        },
+      },
+    })]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('automation-review-digest-toggle')).toBeTruthy();
+    });
+    expect(screen.queryByTestId('cron-artifact-row')).toBeNull();
+    fireEvent.click(screen.getByTestId('automation-review-digest-toggle'));
+    expect(screen.getByTestId('cron-artifact-open').textContent).toContain('report.md');
+    expect(screen.getByTestId('cron-artifact-open').getAttribute('title')).toBe('/work/run/report.md');
+    expect(screen.getByTestId('cron-artifact-text').textContent).toContain('notes.md');
+    expect(screen.queryAllByTestId('cron-artifact-open')).toHaveLength(1);
+
+    fireEvent.click(screen.getByTestId('cron-artifact-open'));
+    await waitFor(() => {
+      expect(invokeDomain).toHaveBeenCalledWith('domain:workspace', 'openPath', { filePath: '/work/run/report.md' });
+    });
+    expect(toastError).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('cron-artifact-reveal'));
+    await waitFor(() => {
+      expect(invokeDomain).toHaveBeenCalledWith('domain:workspace', 'showItemInFolder', { filePath: '/work/run/report.md' });
+    });
+
+    invokeDomain.mockRejectedValueOnce(new Error('Path does not exist'));
+    fireEvent.click(screen.getByTestId('cron-artifact-open'));
+    await waitFor(() => {
+      expect(screen.getByTestId('cron-artifact-moved').textContent).toBe('文件已移走');
+    });
+    expect(toastError).not.toHaveBeenCalled();
+    expect(toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it('web 模式点击产物复制路径并提示，不调用打开 IPC', async () => {
+    webMode.value = true;
+    listPendingReview.mockResolvedValue([makeRecord({
+      config: {
+        pendingReview: {
+          resultSessionId: 'result-1',
+          at: 1700000000000,
+          digest: {
+            artifactCount: 1,
+            artifacts: [{ path: '/work/run/report.md', openable: true }],
+          },
+        },
+      },
+    })]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('automation-review-digest-toggle')).toBeTruthy();
+    });
+    fireEvent.click(screen.getByTestId('automation-review-digest-toggle'));
+    fireEvent.click(screen.getByTestId('cron-artifact-open'));
+    await waitFor(() => {
+      expect(copyPathToClipboard).toHaveBeenCalledWith('/work/run/report.md');
+      expect(toastSuccess).toHaveBeenCalledWith('已复制路径');
+    });
+    expect(invokeDomain).not.toHaveBeenCalled();
+    expect(toastError).not.toHaveBeenCalled();
   });
 
   it('运行次数上限停用记录在收件箱显示停用原因', async () => {

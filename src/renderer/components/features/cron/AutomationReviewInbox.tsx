@@ -6,8 +6,8 @@
 // 空档不渲染；档位来自结果头部行（shared/cronUrgency），老记录归 fyi。
 // 呈现：有内容时是琥珀描边卡片（与侧栏待过目角标同一视觉语言），「已过目」为
 // 品牌色主操作；无内容时渲染安静空态「都过目完了 ✓」（不再整块隐藏）。
-// onPendingCountChange 把待过目条数回传给页首状态条（语义同服务侧 countPendingReview，
-// 只数待过目、不数停车审批）。
+// onPendingCountChange 通知页首「列表变了，重取 countPendingReview」。回传值是记录数，
+// 只作刷新信号；标题与 tile 都读服务侧按任务折算的 countPendingReview。
 // ============================================================================
 
 import React, { useCallback, useEffect, useState } from 'react';
@@ -24,6 +24,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';
 import { Button } from '../../primitives/Button';
 import { openCronLoginWallSite } from './cronLoginWallNotice';
+import { CronReviewDigest } from './CronReviewDigest';
 
 function reviewResultSessionId(record: SessionAutomationRecord): string | undefined {
   return record.config?.pendingReview?.resultSessionId ?? record.resultSessionId;
@@ -57,6 +58,8 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
   const [items, setItems] = useState<SessionAutomationRecord[]>([]);
   const [parked, setParked] = useState<ParkedApprovalInboxItem[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // 标题与页首 tile 同一口径：服务侧 countPendingReview（按任务折算）。失败时回落到记录数。
+  const [reviewCount, setReviewCount] = useState<number | null>(null);
 
   const load = useCallback(() => {
     sessionAutomationClient.listPendingReview()
@@ -69,6 +72,11 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
         setItems([]);
         onPendingCountChange?.(0);
       });
+    sessionAutomationClient.countPendingReview()
+      .then((count) => {
+        setReviewCount(typeof count === 'number' ? count : null);
+      })
+      .catch(() => setReviewCount(null));
     sessionAutomationClient.listParkedApprovals()
       .then((rows) => setParked(rows ?? []))
       .catch(() => setParked([]));
@@ -245,9 +253,9 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
           )}
           {items.length > 0 && (
             <>
-              <div className="mb-2 flex items-center gap-2 text-xs font-medium text-badge-warning">
+              <div className="mb-2 flex items-center gap-2 text-xs font-medium text-badge-warning" data-testid="automation-review-inbox-title">
                 <Inbox className="h-3.5 w-3.5" />
-                {cc.inboxTitle.replace('{count}', String(items.length))}
+                {cc.inboxTitle.replace('{count}', String(reviewCount ?? items.length))}
               </div>
               <div className="space-y-2.5">
                 {URGENCY_SECTION_ORDER.map((tier) => {
@@ -300,22 +308,17 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                               )}
                             </div>
                             {digest && (
-                              <div className="flex min-w-0 items-center gap-1.5 text-[11px] text-zinc-500" data-testid="automation-review-digest">
-                                <span className="shrink-0">
-                                  {cc.inboxDigestArtifacts.replace('{count}', String(digest.artifactCount))}
-                                </span>
-                                {digest.summaryLine && (
-                                  <span className="min-w-0 truncate">· {digest.summaryLine}</span>
-                                )}
-                                {hasPendingApproval && (
+                              <CronReviewDigest
+                                digest={digest}
+                                trailing={hasPendingApproval ? (
                                   <span
                                     className="inline-flex shrink-0 items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] text-badge-warning"
                                     data-testid="automation-review-digest-approval"
                                   >
                                     {cc.inboxDigestApprovalBadge}
                                   </span>
-                                )}
-                              </div>
+                                ) : undefined}
+                              />
                             )}
                             {maxRunsReached && (
                               <div className="truncate text-[11px] text-badge-warning" data-testid="automation-review-max-runs">

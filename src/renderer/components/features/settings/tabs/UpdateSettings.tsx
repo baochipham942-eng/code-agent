@@ -648,6 +648,10 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
       }
     } catch (err) {
       setRuntimeAssetsError(updateText.runtimeAssets.optionalPrepareFailed);
+      // prepareRuntimeAssets rejects after the host has recorded the terminal failure.
+      // Refresh before clearing the polling key so the row cannot remain stuck at
+      // the last installing percentage when the interval is torn down.
+      await refreshRuntimeAssetsStatus();
       logger.error('Runtime assets prepare failed', err);
     } finally {
       setPreparingRuntimeAssetId(null);

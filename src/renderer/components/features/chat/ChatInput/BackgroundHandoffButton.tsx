@@ -8,6 +8,7 @@
 
 import React from 'react';
 import { ArrowDownToLine } from 'lucide-react';
+import { Button } from '../../../primitives/Button';
 import { useI18n } from '../../../../hooks/useI18n';
 
 /** 可见性单真源（纯函数）：正在跑 + 有可发草稿 + 有会话 + 不在队列编辑态。 */
@@ -46,16 +47,18 @@ export const BackgroundHandoffButton: React.FC<BackgroundHandoffButtonProps> = (
     return null;
   }
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
+      size="sm"
       data-testid="background-handoff-button"
       onClick={onTrigger}
-      className="flex h-7 shrink-0 items-center gap-1 rounded-full px-2 text-xs text-zinc-400 transition-colors hover:bg-zinc-700/60 hover:text-zinc-200 focus-visible:outline-hidden"
+      className="h-7 shrink-0"
       aria-label={t.chatInput.backgroundHandoffAria}
       title={t.chatInput.backgroundHandoffLabel}
+      leftIcon={<ArrowDownToLine className="h-3.5 w-3.5" />}
     >
-      <ArrowDownToLine className="h-3.5 w-3.5" />
-      <span>{t.chatInput.backgroundHandoffLabel}</span>
-    </button>
+      {t.chatInput.backgroundHandoffLabel}
+    </Button>
   );
 };

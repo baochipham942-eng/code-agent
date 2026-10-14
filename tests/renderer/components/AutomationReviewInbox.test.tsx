@@ -204,6 +204,29 @@ describe('AutomationReviewInbox', () => {
     expect(screen.getByTestId('automation-review-digest-approval').textContent).toBe('有待处理审批');
   });
 
+  it('收件箱摘要丢掉 urgency 机器行，留下人话', async () => {
+    listPendingReview.mockResolvedValue([makeRecord({
+      config: {
+        pendingReview: {
+          resultSessionId: 'result-1',
+          at: 1700000000000,
+          digest: {
+            artifactCount: 1,
+            summaryLine: 'urgency: fyi\n结果已写入',
+            artifacts: [{ path: '/work/run/report.md', openable: true }],
+          },
+        },
+      },
+    })]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('automation-review-digest')).toBeTruthy();
+    });
+    const text = screen.getByTestId('automation-review-digest').textContent ?? '';
+    expect(text).toContain('结果已写入');
+    expect(text).not.toContain('urgency');
+  });
+
   it('有路径的产物行可展开：桌面打开绝对路径，拒绝则该行显示文件已移走且不弹错误', async () => {
     listPendingReview.mockResolvedValue([makeRecord({
       config: {

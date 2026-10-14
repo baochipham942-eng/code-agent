@@ -13,6 +13,16 @@ import { CronArtifactRows } from './CronArtifactRows';
 
 type ReviewDigest = NonNullable<NonNullable<SessionAutomationConfig['pendingReview']>['digest']>;
 
+function visibleSummary(summaryLine: string | undefined): string | undefined {
+  if (!summaryLine) return undefined;
+  const kept = summaryLine
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*urgency\s*:/i.test(line))
+    .join('\n')
+    .trim();
+  return kept || undefined;
+}
+
 function storedArtifacts(digest: ReviewDigest): CronStoredArtifact[] {
   if (!Array.isArray(digest.artifacts)) return [];
   const stored: CronStoredArtifact[] = [];
@@ -30,6 +40,7 @@ export const CronReviewDigest: React.FC<{
   const { t } = useI18n();
   const cc = t.cronCenter;
   const artifacts = storedArtifacts(digest);
+  const summary = visibleSummary(digest.summaryLine);
   const [open, setOpen] = useState(false);
   const label = cc.inboxDigestArtifacts.replace('{count}', String(digest.artifactCount));
 
@@ -51,8 +62,8 @@ export const CronReviewDigest: React.FC<{
         ) : (
           <span className="shrink-0">{label}</span>
         )}
-        {digest.summaryLine && (
-          <span className="min-w-0 truncate">· {digest.summaryLine}</span>
+        {summary && (
+          <span className="min-w-0 truncate">· {summary}</span>
         )}
         {trailing}
       </div>

@@ -583,10 +583,15 @@ const settingsHandlers: DomainRouteHandlers<SettingsDomainRequest, SettingsRoute
     return null;
   },
   setJevSettings: async (getConfigService, payload) => {
-    await handleSetJevSettings(
-      getConfigService,
-      (payload ?? {}) as { enabled?: boolean; openRouterConsent?: boolean },
-    );
+    const body = (payload ?? {}) as {
+      enabled?: boolean;
+      openRouterConsent?: boolean;
+      timestamp?: number;
+    };
+    const timestamp = typeof body.timestamp === 'number' && Number.isFinite(body.timestamp)
+      ? body.timestamp
+      : undefined;
+    await handleSetJevSettings(getConfigService, body, timestamp);
     return null;
   },
   checkApiKeyConfigured: async (getConfigService) => {

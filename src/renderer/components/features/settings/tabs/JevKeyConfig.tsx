@@ -21,7 +21,6 @@ const TYPESAFE_SERVICE: ServiceApiKey = 'typesafe';
 
 const maskApiKey = (key: string) => (key.length > 8 ? `${key.substring(0, 8)}...` : key);
 
-
 export const JevKeyConfig: React.FC = () => {
   const { t } = useI18n();
   const text = t.settings.general.jevKey;
@@ -52,6 +51,25 @@ export const JevKeyConfig: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    void ipcService.invokeDomain<Record<string, string | undefined>>(IPC_DOMAINS.SETTINGS, 'getAllServiceKeys')
+      .then((keys) => {
+        if (cancelled) return;
+        const masked = keys?.typesafe;
+        if (typeof masked === 'string' && masked.length > 0) {
+          setMaskedKey(masked);
+          setConfigured(true);
+        }
+      })
+      .catch(() => {
+        // Keep the empty input. Saving still writes the service slot.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     void loadJudgeState();
   }, [loadJudgeState]);
 
@@ -76,7 +94,9 @@ export const JevKeyConfig: React.FC = () => {
     .reduce((sum, feature) => sum + (feature?.degradedCount ?? 0), 0);
   const disclosureProvider = keySource === 'official'
     ? judgeText.disclosureOfficial
-    : judgeText.disclosureOpenrouter;
+    : keySource === 'openrouter' || keySource === 'openrouter_pending_consent'
+      ? judgeText.disclosureOpenrouter
+      : judgeText.disclosureEither;
 
   const handleSaveKey = async () => {
     const draft = keyDraft.trim();

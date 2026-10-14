@@ -92,11 +92,61 @@ describe('JevKeyConfig 判官区块', () => {
     expect(toggle?.getAttribute('aria-checked')).toBe('false');
     expect(screen.getByTestId('jev-judge-status').textContent).toContain('已关闭');
     expect(screen.getByTestId('jev-off-hint').textContent).toContain('重启后仍保持关闭');
+    expect(screen.getByTestId('jev-disclosure').textContent).toContain('api.typesafe.ai');
+    expect(screen.getByTestId('jev-disclosure').textContent).toContain('OpenRouter');
+    expect(screen.getByTestId('jev-disclosure').textContent).toContain('命令文本');
     fireEvent.click(toggle!);
     await waitFor(() => {
       expect(ipcService.invokeDomain).toHaveBeenCalledWith(IPC_DOMAINS.SETTINGS, 'setJevSettings', {
         enabled: true,
       });
+    });
+  });
+
+  it('已保存的 TypeSafe key 在打开设置时直接显示打码', async () => {
+    stubIpc({ enabled: true }, statusOf('official'));
+    vi.mocked(ipcService.invokeDomain).mockImplementation(async (_domain, action) => {
+      if (action === 'getAllServiceKeys') return { typesafe: 'ts-key12...' };
+      if (action === 'get') return { jev: { enabled: true } };
+      if (action === 'jevStatus') return statusOf('official');
+      return undefined;
+    });
+    render(<JevKeyConfig />);
+    expect((await screen.findByTestId('jev-key-masked')).textContent).toBe('ts-key12...');
+    expect(screen.queryByTestId('jev-key-input')).toBeNull();
+  });
+
+  it('保存调用 setServiceApiKey，空保存已配置 key 要先确认才清除', async () => {
+    vi.mocked(ipcService.invokeDomain).mockImplementation(async (_domain, action) => {
+      if (action === 'getAllServiceKeys') return { typesafe: 'ts-key12...' };
+      if (action === 'get') return { jev: { enabled: true } };
+      if (action === 'jevStatus') return statusOf('none');
+      return undefined;
+    });
+    render(<JevKeyConfig />);
+    expect(await screen.findByTestId('jev-key-masked')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('jev-key-change'));
+    fireEvent.change(screen.getByTestId('jev-key-input'), { target: { value: 'ts-live-secret-value' } });
+    fireEvent.click(screen.getByTestId('jev-key-save'));
+    await waitFor(() => {
+      expect(ipcService.invokeDomain).toHaveBeenCalledWith(
+        IPC_DOMAINS.SETTINGS,
+        'setServiceApiKey',
+        { service: 'typesafe', apiKey: 'ts-live-secret-value' },
+      );
+    });
+    expect((await screen.findByTestId('jev-key-masked')).textContent).toBe('ts-live-...');
+
+    fireEvent.click(screen.getByTestId('jev-key-change'));
+    fireEvent.click(screen.getByTestId('jev-key-save'));
+    expect(await screen.findByText('清除 TypeSafe API Key？')).toBeTruthy();
+    fireEvent.click(screen.getByText('清除'));
+    await waitFor(() => {
+      expect(ipcService.invokeDomain).toHaveBeenCalledWith(
+        IPC_DOMAINS.SETTINGS,
+        'setServiceApiKey',
+        { service: 'typesafe', apiKey: '' },
+      );
     });
   });
 

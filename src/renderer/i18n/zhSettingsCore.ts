@@ -371,6 +371,7 @@ export const zhSettingsCore = {
           disclosurePrefix: '开启后，需要确认的命令和工具调用会先脱敏（只保留命令文本、工具名、工作目录），再发送给 ',
           disclosureOfficial: 'TypeSafe（api.typesafe.ai）',
           disclosureOpenrouter: 'OpenRouter',
+          disclosureEither: 'TypeSafe（api.typesafe.ai）或 OpenRouter',
           disclosureSuffix: ' 的小模型判断是否安全，减少重复确认；它不会替你放行危险操作。',
           allowButton: '允许使用我的 OpenRouter key',
           allowedToast: '已允许使用 OpenRouter key',

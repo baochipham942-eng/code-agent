@@ -188,6 +188,13 @@ describe('setJevSettings（N-JEV-DEFAULT-ON-CONSENT）', () => {
     expect(defaults.jev).toEqual({});
   });
 
+  it('调用方传入的 timestamp 原样写入，不回落 Date.now()', async () => {
+    env.config.getSettings.mockReturnValue({});
+    await callSettings('setJevSettings', { openRouterConsent: true, timestamp: 1_700_000_000_000 });
+    const update = env.config.updateSettings.mock.calls[0][0] as { jev: { openRouterConsentAt?: number } };
+    expect(update.jev.openRouterConsentAt).toBe(1_700_000_000_000);
+  });
+
   it('不触发管理员门控（用户级设置）', async () => {
     env.adminAccessError = { success: false, error: { code: 'ADMIN_REQUIRED', message: 'no' } };
     const res = await callSettings('setJevSettings', { enabled: true });

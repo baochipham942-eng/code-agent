@@ -371,6 +371,7 @@ export const enSettingsCore = {
           disclosurePrefix: 'When on, commands and tool calls that need confirmation are redacted first (only command text, tool name, and working directory remain), then sent to ',
           disclosureOfficial: 'TypeSafe (api.typesafe.ai)',
           disclosureOpenrouter: 'OpenRouter',
+          disclosureEither: 'TypeSafe (api.typesafe.ai) or OpenRouter',
           disclosureSuffix: "'s small model to judge safety, reducing repeated confirmations. It never approves dangerous operations for you.",
           allowButton: 'Allow using my OpenRouter key',
           allowedToast: 'OpenRouter key allowed',

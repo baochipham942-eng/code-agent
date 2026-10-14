@@ -20,7 +20,7 @@ import {
 } from '../../../src/host/cron/cronFailurePolicy';
 import { buildCronAgentActionResult } from '../../../src/host/cron/cronNormalizers';
 import { CRON_GUARDRAILS } from '../../../src/shared/constants';
-import type { CronJobExecution } from '../../../src/shared/contract/cron';
+import type { CronJobDefinition, CronJobExecution } from '../../../src/shared/contract/cron';
 import { buildCronLoginWallStopCode } from '../../../src/shared/utils/browserLoginWall';
 
 describe('cronRetryBackoffMs：指数退避序列', () => {

@@ -130,7 +130,7 @@ function getActionDescription(action: unknown): string {
  * 不复用 automationNotice.formatCronScheduleLabel——那边硬编码 zh 且属自动化记录文案
  * （N-CRON-RESTATE-HUMAN-WHEN 的分工约束）。
  */
-export function formatScheduleWhenLabel(
+function formatScheduleWhenLabel(
   schedule: CreateCronJobInput['schedule'],
   lang: CronHumanLang,
 ): string {

@@ -13,6 +13,7 @@ import {
   type RunCheckpoint,
   type RunEnvelope,
   type RunOwnerLease,
+  type RunStatus,
 } from '../../../../shared/contract/durableRun';
 import type {
   CheckpointCommit,
@@ -92,6 +93,14 @@ function rowToOperation(row: Row): PendingOperation {
     preparedAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
   };
+}
+
+/** daemon 客户端面（`neo daemon status`）消费的名册行；ownerId 可空（老行无属主）。 */
+export interface ActiveRunRosterEntry {
+  runId: string;
+  sessionId: string;
+  status: RunStatus;
+  ownerId: string | null;
 }
 
 function rowToChild(row: Row): ChildRunRef {
@@ -198,6 +207,20 @@ export class DurableRunRepository implements DurableRunStores {
         AND created_at <= ?
       ORDER BY created_at DESC, rowid DESC LIMIT 1`).get(sessionId, createdBefore) as Row | undefined;
     return row ? rowToEnvelope(row) : null;
+  }
+
+  /** `neo daemon status` 的名册行（ADR-083）：id / 状态 / 属主，供客户端面直读。 */
+  async listActiveRunRoster(): Promise<ActiveRunRosterEntry[]> {
+    // 活跃状态集与 getLatestActiveRootBySession 同口径（非终态全集）。
+    const rows = this.db.prepare(`SELECT run_id, session_id, status, owner_id FROM durable_runs
+      WHERE status IN ('created','running','waiting','paused','recovering')
+      ORDER BY created_at ASC, rowid ASC`).all() as Row[];
+    return rows.map((row) => ({
+      runId: String(row.run_id),
+      sessionId: String(row.session_id),
+      status: row.status as RunStatus,
+      ownerId: row.owner_id == null ? null : String(row.owner_id),
+    }));
   }
 
   async listRecoverable(now: number, limit: number): Promise<RunEnvelope[]> {

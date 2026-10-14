@@ -12,7 +12,7 @@ import type {
 } from '@shared/contract';
 import { validateEventScheduleConstraints } from '@shared/cronEventValidation';
 import { CRON_EVENT_TRIGGER } from '@shared/constants';
-import { humanizeCronExpression, humanizeEverySchedule, type CronHumanLang } from '../../../utils/cronHumanize';
+import { formatCronExpressionLabel, humanizeEverySchedule, type CronHumanLang } from '@shared/cronHumanize';
 
 export interface CronJobDraft {
   runsOn: CronJobDefinition['runsOn'];
@@ -428,11 +428,7 @@ export function formatScheduleSummary(
       return humanizeEverySchedule(job.schedule.interval, job.schedule.unit, lang);
     }
     case 'cron': {
-      const human = humanizeCronExpression(job.schedule.expression, lang);
-      if (human) return human;
-      return job.schedule.timezone
-        ? `${job.schedule.expression} · ${job.schedule.timezone}`
-        : job.schedule.expression;
+      return formatCronExpressionLabel(job.schedule.expression, job.schedule.timezone, lang);
     }
     case 'event': {
       // connector 源（mail）：账号是 Mail 账号名、绑定粒度是邮箱，不查通道目录。

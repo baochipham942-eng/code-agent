@@ -341,7 +341,7 @@ describe('untrusted cron draft fields never crash the confirm card', () => {
     ['restatement.what wrong type', { ...generatedDraft, restatement: { what: 5, notifyWhen: '有新邮件' } }, ['每日邮件巡检', WHEN, FN, INBOX]],
     ['restatement.notifyWhen wrong type', { ...generatedDraft, restatement: { what: '检查新邮件', notifyWhen: [] } }, ['每日邮件巡检', WHEN, FN, INBOX]],
     ['restatement wrong type', { ...generatedDraft, restatement: 'oops' }, ['每日邮件巡检', WHEN, FN, INBOX]],
-    ['cron timezone wrong type keeps expression', { ...generatedDraft, schedule: { type: 'cron', expression: '17 9 * * *', timezone: 5 } }, [W, '17 9 * * *', N, INBOX]],
+    ['cron timezone wrong type humanizes expression', { ...generatedDraft, schedule: { type: 'cron', expression: '17 9 * * *', timezone: 5 } }, [W, '每天 09:17', N, INBOX]],
     ['webhook without url falls back to description', {
       name: undefined,
       description: '推送结果',

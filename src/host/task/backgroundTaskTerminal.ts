@@ -5,15 +5,20 @@
 // （12/22 分钟不落，reload 后依旧）——task_complete 只在收尾文本路径发，失败/取消/
 // 中断/撞顶轮没有它。agent_complete / agent_cancelled 是 runFinalizer 对**每种**终态
 // 都恰好发一次的锚事件；到点仍是 running 的后台条目 = 没被 task_complete 收口的终态，
-// 在这里按记账的 run 级 error（失败/撞顶）或取消语义收线。从 TaskManager 抽出独立
-// 模块也是 effective-line 硬限所迫（该文件贴 1000 行门）。
+// 在这里收线。从 TaskManager 抽出独立模块也是 effective-line 硬限所迫（该文件贴
+// 1000 行门）。
+// 2026-10-14 r4：只从显式终态信号分类，不再拿「缺信号」猜结局——research/auto-agent
+// 成功轮只发 agent_complete（无 task_complete 无 error），旧表把它猜成「已停止」；
+// 中段可恢复 error（terminal:false / warning 级）不再单独决定失败。判据与
+// createTerminalEventTracker（durableRunTerminal）同形：isTerminalAgentError。
 
 import type { AgentEvent } from '../../shared/contract';
+import { isTerminalAgentError } from '../../shared/utils/agentErrorClassification';
 import { resolveBackgroundRunSettlement, settleBackgroundRun } from '../session/backgroundRunSettlement';
 import { getBackgroundTaskManager } from '../session/backgroundTaskManager';
 import { getSessionManager, notificationService } from '../services';
 
-/** run 级 error 事件的记账（message 展示用、code 优先给 renderer 翻译）。 */
+/** run 级终态 error 事件的记账（message 展示用、code 优先给 renderer 翻译）。 */
 export interface BackgroundRunErrorRecord {
   message?: string;
   code?: string;
@@ -46,13 +51,17 @@ export async function settleBackgroundOnTaskComplete(
   }
 }
 
-/** run 级 error 事件记账（非 warning 的 error 事件到达时调用；agent_complete 收线时消费）。 */
-export function trackBackgroundRunError(
+/**
+ * run 级终态 error 事件记账（error 事件到达时调用；agent_complete 收线时消费）。
+ * 只记终态 error（isTerminalAgentError）：中段可恢复 error（terminal:false / warning
+ * 级，run 会继续）不进账——进了就会在 agent_complete 收线时把成功轮误报成失败（r4）。
+ */
+export function trackBackgroundRunTerminalError(
   errors: Map<string, BackgroundRunErrorRecord>,
   sessionId: string,
   data: AgentEvent['data'],
 ): void {
-  if (!data || typeof data !== 'object') return;
+  if (!data || typeof data !== 'object' || !isTerminalAgentError(data)) return;
   const { message, code } = data as { message?: unknown; code?: unknown };
   errors.set(sessionId, {
     message: typeof message === 'string' ? message : undefined,
@@ -61,11 +70,13 @@ export function trackBackgroundRunError(
 }
 
 /**
- * agent_complete / agent_cancelled 的收线：后台条目仍 running（= 没走 task_complete
- * 收口的终态）→ 失败/撞顶按记账 error 收 markFailed，取消/中断收 markCompleted +
- * USER_CANCELLED 标记。agent_cancelled 必然是用户取消：取消语义压过 run 级 error
- * 记账——中段可恢复 error（如图片超限发 error 后继续跑，inference.ts）不改变
- * 「用户主动停」的事实，与 web 路径 runCancelled→interrupted 的优先级一致（r2）。
+ * agent_complete / agent_cancelled 的收线，决策表与 web 直连轮（agent.ts 的
+ * finalStatus = runCancelled ? interrupted : hadTerminalError ? error : completed）
+ * 同一份分类，优先级也一致：
+ * 1. agent_cancelled（用户取消压过一切，含此前有终态 error 记账的场合——r2）；
+ * 2. 有终态 error 记账（isTerminalAgentError 筛过）→ markFailed（失败/撞顶）；
+ * 3. 其余 agent_complete（有无 task_complete、有无中段可恢复 error 均不论）→
+ *    markCompleted，成功通知由 markCompleted 内发（research/auto-agent 成功形状，r4）。
  * 已被 task_complete 收过的条目被 running-guard 挡住，天然幂等。
  */
 export async function closeBackgroundRunAtTerminal(
@@ -80,8 +91,25 @@ export async function closeBackgroundRunAtTerminal(
     return;
   }
   await settleBackgroundRun(backgroundManager, sessionId, resolveBackgroundRunSettlement(
-    eventType === 'agent_cancelled' || !runError
+    eventType === 'agent_cancelled'
       ? { status: 'interrupted' }
-      : { status: 'error', errorMessage: runError.message, errorCode: runError.code },
+      : runError
+        ? { status: 'error', errorMessage: runError.message, errorCode: runError.code }
+        : { status: 'completed' },
   ));
+}
+
+/**
+ * run promise 整体 reject（事件流没来得及收线的失败，如起跑前异常）的兜底收线：
+ * 决策表第 2 条的「或 run promise rejected」腿。markFailed 自带 running-guard，
+ * 与事件流收线互为幂等；用户取消在调用方（两个 run 入口的 catch）更早的取消分支
+ * 返回，不会走到这里。
+ */
+export function settleBackgroundRunOnRejection(sessionId: string, errorMessage: string): void {
+  const backgroundManager = getBackgroundTaskManager();
+  if (!backgroundManager.isInBackground(sessionId) || !backgroundManager.isTaskRunning(sessionId)) return;
+  backgroundManager.markFailed(
+    sessionId,
+    resolveBackgroundRunSettlement({ status: 'error', errorMessage }).message,
+  );
 }

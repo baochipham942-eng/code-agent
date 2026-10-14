@@ -216,6 +216,41 @@ describe('agent 终态事件的后台收线（失败/取消/中断/max-step 撞�
     expect(backgroundManagerState.markFailed).not.toHaveBeenCalled();
   });
 
+  it('仅 agent_complete（research/auto-agent 成功形状，无 task_complete 无 error）：按完成收线，不再误报「已停止」（r4）', async () => {
+    const persist = getPersist(newManager());
+
+    await persist('session-1', { type: 'agent_complete', data: null }, undefined, 'session-1');
+
+    expect(backgroundManagerState.markCompleted).toHaveBeenCalledWith('session-1', undefined);
+    expect(backgroundManagerState.markFailed).not.toHaveBeenCalled();
+  });
+
+  it('中段可恢复 error（terminal:false 标记）后 agent_complete：仍按完成收线，可恢复 error 不决定终态（r4）', async () => {
+    const persist = getPersist(newManager());
+
+    await persist('session-1', {
+      type: 'error',
+      data: { message: 'Image payload exceeded 10MB limit', terminal: false },
+    }, undefined, 'session-1');
+    await persist('session-1', { type: 'agent_complete', data: null }, undefined, 'session-1');
+
+    expect(backgroundManagerState.markCompleted).toHaveBeenCalledWith('session-1', undefined);
+    expect(backgroundManagerState.markFailed).not.toHaveBeenCalled();
+  });
+
+  it('中段可恢复 error（terminal:false 标记）后用户取消：按停止收线，不报失败（r4，r2 回归）', async () => {
+    const persist = getPersist(newManager());
+
+    await persist('session-1', {
+      type: 'error',
+      data: { message: 'Image payload exceeded 10MB limit', terminal: false },
+    }, undefined, 'session-1');
+    await persist('session-1', { type: 'agent_cancelled', data: null }, undefined, 'session-1');
+
+    expect(backgroundManagerState.markCompleted).toHaveBeenCalledWith('session-1', BACKGROUND_TASK_CANCELLED);
+    expect(backgroundManagerState.markFailed).not.toHaveBeenCalled();
+  });
+
   it('成功轮（task_complete 已收口）后再到 agent_complete：running-guard 挡住，不双收线', async () => {
     backgroundManagerState.isTaskRunning.mockReturnValue(false); // task_complete 收口后
     const persist = getPersist(newManager());

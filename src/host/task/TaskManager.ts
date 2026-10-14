@@ -32,7 +32,7 @@ import type { WorkspaceScope } from '../../shared/contract/project';
 import { getModelSessionState } from '../session/modelSessionState';
 import type { RunRegistry } from '../runtime/runRegistry';
 import { getProjectSourceTrustFailureMarker } from '../services/project/projectSourceTrustError';
-import { closeBackgroundRunAtTerminal, settleBackgroundOnTaskComplete, trackBackgroundRunError, type BackgroundRunErrorRecord } from './backgroundTaskTerminal';
+import { closeBackgroundRunAtTerminal, settleBackgroundOnTaskComplete, settleBackgroundRunOnRejection, trackBackgroundRunTerminalError, type BackgroundRunErrorRecord } from './backgroundTaskTerminal';
 import { getModelAuthFailureMarker } from '../model/errorClassifier';
 import { MULTIAGENT_TOOL_NAMES } from '../../shared/constants/tools';
 import { SESSION_COMMAND_CENTER_TOOL_NAMES } from '../../shared/constants/sessionCommandCenter';
@@ -173,8 +173,8 @@ export class TaskManager extends EventEmitter {
   private backgroundRuns = new Map<string, BackgroundTaskRun>();
   /** permission requestId → 后台 taskId，保证审批只回到发起它的 run。 */
   private backgroundPermissionOwners = new Map<string, string>();
-  /** 主 run 的 run 级 error 记账（agent 终态收线用；见 backgroundTaskTerminal）。 */
-  private backgroundRunErrors = new Map<string, BackgroundRunErrorRecord>();
+  /** 主 run 的 run 级终态 error 记账（agent 终态收线用；可恢复 error 不记，见 backgroundTaskTerminal）。 */
+  private backgroundRunTerminalErrors = new Map<string, BackgroundRunErrorRecord>();
   private activeModelSpecs = new Map<string, ConversationModelSpec>();
   private sessionStates: Map<string, SessionState> = new Map();
   private waitingQueue: string[] = [];
@@ -344,7 +344,7 @@ export class TaskManager extends EventEmitter {
       }
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       const failure = getProjectSourceTrustFailureMarker(error) ?? getModelAuthFailureMarker(error);
-      this.updateSessionState(sessionId, { status: 'error', error: errorMessage });
+      this.updateSessionState(sessionId, { status: 'error', error: errorMessage }); settleBackgroundRunOnRejection(sessionId, errorMessage);
       this.emitEvent('task_error', sessionId, {
         runId,
         error: errorMessage,
@@ -1015,7 +1015,7 @@ export class TaskManager extends EventEmitter {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       // 结构化失败标记：message 已被归一成字符串，能救回来的原因只剩生产者带的字段。
       const failure = getProjectSourceTrustFailureMarker(error) ?? getModelAuthFailureMarker(error);
-      this.updateSessionState(sessionId, { status: 'error', error: errorMessage });
+      this.updateSessionState(sessionId, { status: 'error', error: errorMessage }); settleBackgroundRunOnRejection(sessionId, errorMessage);
       this.emitEvent('task_error', sessionId, {
         error: errorMessage,
         ...(failure ? { failure } : {}),
@@ -1347,13 +1347,12 @@ export class TaskManager extends EventEmitter {
       if (event.type === 'task_complete' && event.data) {
         await settleBackgroundOnTaskComplete(sessionId, eventKey, event.data);
       }
-      // run 级 error 记账；agent 终态到点仍 running（无收尾文本的终态：失败/取消/中断/
-      // max-step 撞顶）→ 收线，spinner 必须停（2026-10-11 验收：撞顶轮 12/22 分钟不落）。
+      // run 级终态 error 记账（可恢复 error 不记）；agent 终态到点仍 running → 收线（r4 决策表见 backgroundTaskTerminal）。
       if (event.type === 'error' && eventKey === sessionId) {
-        trackBackgroundRunError(this.backgroundRunErrors, sessionId, event.data);
+        trackBackgroundRunTerminalError(this.backgroundRunTerminalErrors, sessionId, event.data);
       }
       if ((event.type === 'agent_complete' || event.type === 'agent_cancelled') && eventKey === sessionId) {
-        await closeBackgroundRunAtTerminal(sessionId, event.type, this.backgroundRunErrors);
+        await closeBackgroundRunAtTerminal(sessionId, event.type, this.backgroundRunTerminalErrors);
       }
     } catch (error) {
       logger.error(`Failed to persist event for session ${sessionId}`, error);

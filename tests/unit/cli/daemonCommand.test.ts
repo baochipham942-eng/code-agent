@@ -24,6 +24,7 @@ import Database from 'better-sqlite3';
 import { daemonCliCommand } from '../../../src/cli/commands/daemon';
 import { DurableRunKernel } from '../../../src/host/runtime/durableRunKernel';
 import { DurableRunRepository } from '../../../src/host/services/core/repositories/DurableRunRepository';
+import { WEB_DAEMON } from '../../../src/shared/constants/webServer';
 
 const tempDirs: string[] = [];
 let dataDir: string;
@@ -227,6 +228,23 @@ describe('neo daemon status', () => {
       await reused.stop();
     }
   });
+
+  it('新鲜的空 pid 文件：明确说仍可能有实例正在启动', async () => {
+    fs.writeFileSync(path.join(dataDir, 'daemon.pid'), '');
+    const io = await runDaemon(['status']);
+    expect(io.stdout()).toContain('pid file is unreadable');
+    expect(io.stdout()).toContain('may be starting');
+  });
+
+  it('过期的空 pid 文件：明确说陈旧且可在下次启动时恢复', async () => {
+    const pidPath = path.join(dataDir, 'daemon.pid');
+    fs.writeFileSync(pidPath, '');
+    const staleAt = new Date(Date.now() - WEB_DAEMON.UNREADABLE_PID_GRACE_MS - 1_000);
+    fs.utimesSync(pidPath, staleAt, staleAt);
+    const io = await runDaemon(['status']);
+    expect(io.stdout()).toContain('stale unreadable pid file');
+    expect(io.stdout()).toContain('can be recovered');
+  });
 });
 
 describe('neo daemon stop', () => {
@@ -289,6 +307,25 @@ describe('neo daemon stop', () => {
     } finally {
       await live.stop();
     }
+  });
+
+  it('新鲜的空 pid 文件：无法安全发信号并明确仍可能有实例正在启动', async () => {
+    fs.writeFileSync(path.join(dataDir, 'daemon.pid'), '');
+    const io = await runDaemon(['stop']);
+    expect(io.stderr()).toContain('pid file is unreadable');
+    expect(io.stderr()).toContain('may be starting');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('过期的空 pid 文件：明说没有可停的 daemon 且下次启动可恢复', async () => {
+    const pidPath = path.join(dataDir, 'daemon.pid');
+    fs.writeFileSync(pidPath, '');
+    const staleAt = new Date(Date.now() - WEB_DAEMON.UNREADABLE_PID_GRACE_MS - 1_000);
+    fs.utimesSync(pidPath, staleAt, staleAt);
+    const io = await runDaemon(['stop']);
+    expect(io.stdout()).toContain('stale unreadable pid file');
+    expect(io.stdout()).toContain('nothing to stop');
+    expect(process.exitCode).toBeUndefined();
   });
 });
 

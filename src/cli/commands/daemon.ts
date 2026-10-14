@@ -11,7 +11,12 @@
 import { Command } from 'commander';
 import path from 'path';
 import { getUserConfigDir } from '../../host/config/configPaths';
-import { inspectDaemonPid, isDaemonLockSupported, readDaemonPidRecord } from '../../host/services/daemon/daemonLock';
+import {
+  inspectDaemonPid,
+  isDaemonLockSupported,
+  readDaemonPidFileState,
+  readDaemonPidRecord,
+} from '../../host/services/daemon/daemonLock';
 import type { ActiveRunRosterEntry } from '../../host/services/core/repositories/DurableRunRepository';
 import { WEB_DAEMON } from '../../shared/constants/webServer';
 
@@ -47,6 +52,15 @@ function printDaemonPidState(): void {
   const dataDir = getUserConfigDir();
   const record = readDaemonPidRecord(dataDir);
   if (record == null) {
+    const state = readDaemonPidFileState(dataDir);
+    if (state.kind === 'unreadable') {
+      if (state.stale) {
+        write('Daemon: not running (stale unreadable pid file; can be recovered on the next start)');
+      } else {
+        write('Daemon: pid file is unreadable; daemon may be starting, so its state cannot be determined');
+      }
+      return;
+    }
     write(`Daemon: not running (no readable pid file in ${dataDir})`);
     return;
   }
@@ -89,6 +103,16 @@ async function runStop(): Promise<void> {
   const dataDir = getUserConfigDir();
   const record = readDaemonPidRecord(dataDir);
   if (record == null) {
+    const state = readDaemonPidFileState(dataDir);
+    if (state.kind === 'unreadable') {
+      if (state.stale) {
+        write('Daemon: stale unreadable pid file; nothing to stop (it can be recovered on the next start).');
+      } else {
+        process.stderr.write('Daemon: pid file is unreadable; daemon may be starting — refusing to signal it.\n');
+        process.exitCode = 1;
+      }
+      return;
+    }
     write(`Daemon: no readable pid file in ${dataDir} — nothing to stop.`);
     return;
   }

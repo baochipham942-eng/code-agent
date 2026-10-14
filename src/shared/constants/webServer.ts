@@ -25,6 +25,11 @@ export const WEB_SERVER_SERVICE = {
  * 竞品「崩溃不自动恢复」口径）。
  */
 export const WEB_DAEMON = {
+  /**
+   * 空/截断 pid 文件被视为「实例刚创建文件、尚未写完记录」的宽限（ms）。
+   * 超过这段时间仍不可读即可按崩溃残留接管，避免半写文件永久阻塞启动。
+   */
+  UNREADABLE_PID_GRACE_MS: 2_000,
   /** 优雅停排空宽限（ms）。60s 对齐竞品默认（per ADR-083 ticket text, not re-verified）。 */
   DRAIN_GRACE_MS: 60_000,
   /**

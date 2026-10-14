@@ -33,6 +33,7 @@
 import fs from 'fs';
 import { execFileSync } from 'child_process';
 import path from 'path';
+import { WEB_DAEMON } from '../../../shared/constants/webServer';
 
 /** pid 文件名（落在数据目录根下，与 .dev-token 同级）。 */
 const DAEMON_PID_FILE = 'daemon.pid';
@@ -40,13 +41,24 @@ const DAEMON_PID_FILE = 'daemon.pid';
 /** 接管陈旧锁的重试次数：每次循环要么赢下 wx、要么明确让位，3 次足够覆盖并发窗口。 */
 const ACQUIRE_ATTEMPTS = 3;
 
-interface DaemonPidRecord {
+export interface DaemonPidRecord {
   pid: number;
   /** 持锁时捕获的进程启动标记；旧版文件 / 读不出的平台为 null。 */
   startTime: string | null;
 }
 
 type PidFileContent = { kind: 'ok'; record: DaemonPidRecord } | { kind: 'unreadable' } | { kind: 'missing' };
+
+export type DaemonPidFileState =
+  | { kind: 'ok'; record: DaemonPidRecord }
+  | { kind: 'unreadable'; stale: boolean }
+  | { kind: 'missing' };
+
+interface PidFileFingerprint {
+  ino: number;
+  mtimeMs: number;
+  size: number;
+}
 
 /**
  * 锁的平台判据（单一真源，acquire/release/CLI 共用）：win32 不取锁也不执行锁。
@@ -107,6 +119,26 @@ function readPidFile(pidPath: string): PidFileContent {
     : { kind: 'unreadable' };
 }
 
+function fingerprintPidFile(pidPath: string): PidFileFingerprint | null {
+  try {
+    const stat = fs.statSync(pidPath);
+    return { ino: stat.ino, mtimeMs: stat.mtimeMs, size: stat.size };
+  } catch {
+    // A file disappearing during a concurrent release is not stale evidence.
+    return null;
+  }
+}
+
+function samePidFileFingerprint(a: PidFileFingerprint, b: PidFileFingerprint): boolean {
+  return a.ino === b.ino && a.mtimeMs === b.mtimeMs && a.size === b.size;
+}
+
+function isUnreadablePidFileStale(pidPath: string): boolean {
+  const fingerprint = fingerprintPidFile(pidPath);
+  if (!fingerprint) return false;
+  return Date.now() - fingerprint.mtimeMs > WEB_DAEMON.UNREADABLE_PID_GRACE_MS;
+}
+
 /** pid 是否活着。EPERM = 进程在、只是不归我们管（见 webShutdownFinalizers 同款判据）。 */
 function isDaemonPidAlive(pid: number): boolean {
   try {
@@ -138,10 +170,20 @@ export function inspectDaemonPid(record: DaemonPidRecord): DaemonPidState {
   return identity.command.includes('node') ? 'owned' : 'foreign';
 }
 
-/** 读 pid 文件记录给客户端面（`neo daemon status/stop`）用：无文件或内容不可读 → null。 */
-export function readDaemonPidRecord(dataDir: string): DaemonPidRecord | null {
+/** 读 pid 文件状态给客户端面（`neo daemon status/stop`）用。 */
+export function readDaemonPidFileState(dataDir: string): DaemonPidFileState {
   const content = readPidFile(path.join(dataDir, DAEMON_PID_FILE));
-  return content.kind === 'ok' ? content.record : null;
+  if (content.kind === 'missing') return { kind: 'missing' };
+  if (content.kind === 'unreadable') {
+    return { kind: 'unreadable', stale: isUnreadablePidFileStale(path.join(dataDir, DAEMON_PID_FILE)) };
+  }
+  return content;
+}
+
+/** 读 pid 文件记录给需要兼容旧调用方的客户端面：无记录 → null。 */
+export function readDaemonPidRecord(dataDir: string): DaemonPidRecord | null {
+  const state = readDaemonPidFileState(dataDir);
+  return state.kind === 'ok' ? state.record : null;
 }
 
 /**
@@ -166,7 +208,25 @@ export function acquireDaemonLock(dataDir: string, pid: number = process.pid): {
     }
     const existing = readPidFile(pidPath);
     if (existing.kind === 'missing') continue; // 持有者刚好释放，重试 wx
-    if (existing.kind === 'unreadable') return { acquired: false, existingPid: null };
+    if (existing.kind === 'unreadable') {
+      // A winner can hold the freshly-created file between open('wx') and write.
+      // Keep that concurrent-start protection for the short grace. Once the file
+      // is older, verify it stayed the same while reading, then use the same
+      // read-verify-unlink takeover path as other stale locks.
+      const before = fingerprintPidFile(pidPath);
+      if (!before || !isUnreadablePidFileStale(pidPath)) {
+        return { acquired: false, existingPid: null };
+      }
+      const current = readPidFile(pidPath);
+      const after = fingerprintPidFile(pidPath);
+      if (current.kind !== 'unreadable' || !after || !samePidFileFingerprint(before, after)) continue;
+      try {
+        fs.unlinkSync(pidPath);
+      } catch {
+        continue;
+      }
+      continue;
+    }
     lastSeenPid = existing.record.pid;
     const state = inspectDaemonPid(existing.record);
     // owned：活守护在场，让位。unknown：活 pid 但证明不了身份——fail-closed 让位，

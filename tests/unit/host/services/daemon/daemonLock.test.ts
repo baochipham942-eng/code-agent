@@ -24,6 +24,7 @@ import {
   readDaemonPidRecord,
   releaseDaemonLock,
 } from '../../../../../src/host/services/daemon/daemonLock';
+import { WEB_DAEMON } from '../../../../../src/shared/constants/webServer';
 
 const tempDirs: string[] = [];
 
@@ -228,6 +229,18 @@ describe('acquireDaemonLock', () => {
     const result = acquireDaemonLock(dataDir, 444);
     expect(result).toEqual({ acquired: false, existingPid: null });
     expect(fs.existsSync(path.join(dataDir, 'daemon.pid'))).toBe(true);
+  });
+
+  it.each(['', '{"pid":'])('过期的空/截断锁文件可被接管并重写记录（ADR-083 r6）：%j', (raw) => {
+    const dataDir = makeTempDir();
+    const pidPath = path.join(dataDir, 'daemon.pid');
+    fs.writeFileSync(pidPath, raw);
+    const staleAt = new Date(Date.now() - WEB_DAEMON.UNREADABLE_PID_GRACE_MS - 1_000);
+    fs.utimesSync(pidPath, staleAt, staleAt);
+
+    const result = acquireDaemonLock(dataDir, 445);
+    expect(result).toEqual({ acquired: true, pid: 445 });
+    expect(readDaemonPidRecord(dataDir)?.pid).toBe(445);
   });
 });
 

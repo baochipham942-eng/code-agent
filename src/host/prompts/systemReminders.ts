@@ -399,7 +399,7 @@ function matchesKeyword(normalizedText: string, keyword: string): boolean {
  */
 export function isBoundedOneTurnComparison(message: string): boolean {
   const hasComparisonIntent = /\b(?:compare|comparison|competitor|competitors)\b|对比|竞品|比较/i.test(message);
-  const hasSmallBound = /\b(?:3|4|5)\s+(?:companies|vendors|competitors|products|entities|dimensions)\b|[三四五]\s*(?:家|个)/i.test(message);
+  const hasSmallBound = /\b(?:3|4|5)\s+(?:companies|vendors|competitors|products|entities|dimensions)\b|(?:3|4|5|三|四|五)\s*(?:家|个)/i.test(message);
   const hasOneTurnDelivery = /\b(?:one|single)\s+turn\b|一轮(?:内|中|完成)?/i.test(message);
   return hasComparisonIntent && hasSmallBound && hasOneTurnDelivery;
 }

@@ -121,6 +121,11 @@ import {
   createWebQueuedInputDrain,
   releaseThenTriggerWebQueuedInputDrain,
 } from './webQueuedInputDrain';
+import {
+  createDelegationDrainHooks,
+  createHostDelegationRuntime,
+  stripDelegationOriginContext,
+} from '../../host/services/delegation/delegationDrainHooks';
 
 export type { PendingLocalToolCall } from './agentBridgeToolDispatch';
 
@@ -133,7 +138,9 @@ export function buildQueuedAgentRunBody(envelope: ConversationEnvelope): AgentRu
     searchEnabled: envelope.searchEnabled,
     thinkingEnabled: envelope.thinkingEnabled,
     effortLevel: envelope.effortLevel,
-    context: envelope.context,
+    // N2：envelope 里的 delegationOrigin 只是存储形态，不是权威——一律剥掉，
+    // 权威标记只经 runAgentTurn 带外 transport（投递层校验后注入）。
+    context: envelope.context ? stripDelegationOriginContext(envelope.context) : undefined,
     goal: envelope.options?.goal,
     model: envelope.options?.modelSpec?.model,
     provider: envelope.options?.modelSpec?.provider,
@@ -157,6 +164,7 @@ interface AgentRouterDeps extends AgentDurableRouteDeps {
     id: string;
     sessionId: string;
     envelope: ConversationEnvelope;
+    delegationOrigin?: import('../../shared/contract/queuedInput').DelegationOriginMarker;
   }, route: 'active' | 'idle') => Promise<'sent' | 'steered' | 'queued'>) => void;
   registerCompanionRun?: (run: (body: AgentRunBody) => Promise<{ runId: string }>) => void;
   hasCompanionApprovalUi?: (sessionId: string, request: PermissionRequest) => boolean;
@@ -341,6 +349,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     ),
   });
 
+  const delegationHooks = createDelegationDrainHooks(createHostDelegationRuntime({
+    getActiveRunId: (sessionId) => runRegistry.getBySessionId(sessionId)?.context.runId ?? null,
+    logger,
+  }));
   const queuedInputDrain = createWebQueuedInputDrain({
     getRepository: () => {
       const db = getDatabase().getDb();
@@ -350,10 +362,11 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       return new QueuedInputRepository(db);
     },
     hasActiveRun: (sessionId) => Boolean(runRegistry.getBySessionId(sessionId)),
-    runEnvelope: async (envelope, response, onActivated) => {
+    runEnvelope: async (envelope, response, onActivated, options) => {
       await runAgentTurn(buildQueuedAgentRunBody(envelope), response, {
         connectedClient: false,
         onDurableActivated: onActivated,
+        ...(options?.delegationOrigin ? { delegationOrigin: options.delegationOrigin } : {}),
       });
     },
     emitAgentEvent: (sessionId, event) => {
@@ -365,11 +378,12 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     notifyQueuedInputActivated: (activated) => {
       broadcastSSE(IPC_CHANNELS.QUEUED_INPUT_ACTIVATED, activated);
     },
+    delegation: delegationHooks,
     logger,
   });
   deps.registerQueuedInputStartupSweep?.(() => queuedInputDrain.runStartupSweep());
   deps.registerQueuedInputEnqueueHook?.((sessionId) => queuedInputDrain.handleEnqueued(sessionId));
-  deps.registerQueuedInputSendNowHook?.(async ({ id, sessionId, envelope }, route) => {
+  deps.registerQueuedInputSendNowHook?.(async ({ id, sessionId, envelope, delegationOrigin }, route) => {
     if (route === 'idle') {
       await runAgentTurn(
         buildQueuedAgentRunBody({
@@ -378,7 +392,12 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           sessionId,
         }),
         createOfflineAgentRunResponseSink(),
-        { connectedClient: false },
+        {
+          connectedClient: false,
+          ...(delegationOrigin ? { delegationOrigin } : {}),
+          // I2/INV-4：sendNow 空闲分支也要回填 target_run_id（此前漏传 onDurableActivated）。
+          onDurableActivated: ({ runId }) => delegationHooks.onActivated({ id, sessionId }, { runId }),
+        },
       );
       return 'sent';
     }
@@ -420,6 +439,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       | { connectedClient: true; requestToken: string }
       | {
           connectedClient: false;
+          /** ADR-072 K1C：投递层校验过的委托来源标记（带外，客户端永远给不了）。 */
+          delegationOrigin?: import('../../shared/contract/queuedInput').DelegationOriginMarker;
           onDurableActivated?: (activation: { runId: string; activatedAt: number }) => void;
           /**
            * 幂等重放命中：不建新 run，调用方按既有 runId 收口回执（不再发 run_started）。
@@ -1017,6 +1038,11 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       if (body.context?.executionIntent) {
         config.executionIntent = { ...body.context.executionIntent };
       }
+      // ADR-072 K1C：带外委托标记 → AgentLoop config → RuntimeContext，工具引擎据此
+      // 铸 orchestrator 起源、遥测记 turn_source='delegation'（connectedClient 路径无此字段）。
+      if (!transport.connectedClient && transport.delegationOrigin) {
+        config.delegationOrigin = { ...transport.delegationOrigin };
+      }
       config.toolScope = buildWorkbenchToolScope(body.context);
 
       // 自动模式标志透传：adaptiveRouter 简单任务路由 + vision capability fallback 的总闸门
@@ -1591,7 +1617,11 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       res.status(400).json({ error: 'Missing prompt' });
       return;
     }
-    await runAgentTurn(parsedBody.data, res, {
+    // N2：/run 的 context 是 passthrough，客户端可伪造 delegationOrigin——一律剥掉。
+    const body = parsedBody.data.context
+      ? { ...parsedBody.data, context: stripDelegationOriginContext(parsedBody.data.context) }
+      : parsedBody.data;
+    await runAgentTurn(body, res, {
       connectedClient: true,
       requestToken: extractRequestToken(req),
     });

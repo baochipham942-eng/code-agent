@@ -18,7 +18,9 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v76：N-WF-STALL-NOTICE 后台 workflow 硬停滞新增 'stalled' 非终态完成通知（模型可见面变化）。
 // sys-v77：N-MEDIA-GEN-CONTRACT 将 image_generate 改为批量 prompt/reference/output_file_path 合同（模型可见面变化）。
 // sys-v78：N-MEDIA-GEN-CONTRACT 返修把 reference_images 收紧到最多 1 张（maxItems，模型可见面变化）。
-export const PROMPT_VERSION = 'sys-v78' as const;
+// sys-v79：N-MEDIA-GEN-PHASE2 把 video_generate/music_generate 对齐 image 合同（output_file_path、
+// video 新增 model/image_path、描述加计费与参考单价；模型可见面变化）。
+export const PROMPT_VERSION = 'sys-v79' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

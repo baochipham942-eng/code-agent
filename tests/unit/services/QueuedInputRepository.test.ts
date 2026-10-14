@@ -400,3 +400,65 @@ describe('steer 回退入队走同一套同 id 状态机', () => {
     expect(repo.getNextDispatchable('session-1')?.id).toBe('same-id');
   });
 });
+
+describe('QueuedInputRepository 委托暂停方法（ADR-072 K1C N1）', () => {
+  let pauseRepo: QueuedInputRepository;
+  let pauseDb: BetterSqlite3.Database;
+
+  beforeEach(() => {
+    pauseDb = new Database(':memory:');
+    createSchema(pauseDb);
+    pauseRepo = new QueuedInputRepository(pauseDb);
+  });
+
+  afterEach(() => {
+    pauseDb.close();
+  });
+
+  it('pauseQueued：queued 且未暂停 → 写入原因；已暂停/非 queued 不动', () => {
+    pauseRepo.enqueue({ id: 'q-1', sessionId: 's-1', envelope: { content: 'x' }, now: 100 });
+    pauseRepo.enqueue({ id: 'q-2', sessionId: 's-1', envelope: { content: 'y' }, now: 101 });
+
+    expect(pauseRepo.pauseQueued('q-1', 'target_busy', 200)).toBe(true);
+    expect(pauseRepo.getById('q-1')).toMatchObject({ status: 'queued', pausedReason: 'target_busy', updatedAt: 200 });
+    // 已有原因的行不可覆盖
+    expect(pauseRepo.pauseQueued('q-1', 'payload_mismatch', 300)).toBe(false);
+    expect(pauseRepo.getById('q-1')?.pausedReason).toBe('target_busy');
+
+    pauseRepo.markSending('q-2', 400);
+    expect(pauseRepo.pauseQueued('q-2', 'target_busy', 401)).toBe(false);
+    expect(pauseRepo.getById('q-2')).toMatchObject({ status: 'sending', pausedReason: null });
+  });
+
+  it('pauseQueued 后该行不再可投（getNextDispatchable 跳过）', () => {
+    pauseRepo.enqueue({ id: 'q-1', sessionId: 's-1', envelope: { content: 'x' }, now: 100 });
+    pauseRepo.enqueue({ id: 'q-2', sessionId: 's-1', envelope: { content: 'y' }, now: 101 });
+    expect(pauseRepo.pauseQueued('q-1', 'target_busy', 200)).toBe(true);
+    expect(pauseRepo.getNextDispatchable('s-1')?.id).toBe('q-2');
+    // 两行都暂停后，启动扫不再看到该会话
+    expect(pauseRepo.pauseQueued('q-2', 'target_busy', 300)).toBe(true);
+    expect(pauseRepo.listSessionsWithQueuedInputs()).toEqual([]);
+  });
+
+  it('pauseAfterClaim：sending → queued + 原因；非 sending 不动', () => {
+    pauseRepo.enqueue({ id: 'q-1', sessionId: 's-1', envelope: { content: 'x' }, now: 100 });
+    expect(pauseRepo.pauseAfterClaim('q-1', 'target_busy', 150)).toBe(false);
+    expect(pauseRepo.getById('q-1')).toMatchObject({ status: 'queued', pausedReason: null });
+
+    expect(pauseRepo.markSending('q-1', 200)).toBe(true);
+    expect(pauseRepo.pauseAfterClaim('q-1', 'target_busy', 250)).toBe(true);
+    expect(pauseRepo.getById('q-1')).toMatchObject({ status: 'queued', pausedReason: 'target_busy', updatedAt: 250 });
+  });
+
+  it('unpauseQueued：queued + 任意原因 → NULL；无原因的行不动', () => {
+    pauseRepo.enqueue({ id: 'q-1', sessionId: 's-1', envelope: { content: 'x' }, now: 100 });
+    expect(pauseRepo.unpauseQueued('q-1', 150)).toBe(false);
+
+    pauseRepo.pauseQueued('q-1', 'restart', 200);
+    expect(pauseRepo.unpauseQueued('q-1', 300)).toBe(true);
+    expect(pauseRepo.getById('q-1')).toMatchObject({ status: 'queued', pausedReason: null, updatedAt: 300 });
+
+    pauseRepo.markSending('q-1', 400);
+    expect(pauseRepo.unpauseQueued('q-1', 450)).toBe(false);
+  });
+});

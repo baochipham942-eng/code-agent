@@ -63,6 +63,8 @@ export function applyTelemetryTurnsMigrations(db: BetterSqlite3.Database, logger
   safeExec(db, "ALTER TABLE telemetry_turns ADD COLUMN agent_id TEXT DEFAULT 'main'", logger);
   safeExec(db, "ALTER TABLE telemetry_turns ADD COLUMN turn_type TEXT NOT NULL DEFAULT 'user'", logger);
   safeExec(db, "ALTER TABLE telemetry_turns ADD COLUMN parent_turn_id TEXT", logger);
+  // ADR-072 Q5/K1C：轮来源标记（委托轮='delegation'，其余 NULL），随上传行输出。
+  safeExec(db, 'ALTER TABLE telemetry_turns ADD COLUMN turn_source TEXT', logger);
 
   // Fleet observability: 标记会话遥测是否已回传到云端（NULL = 未上传），镜像 sessions.synced_at
   safeExec(db, 'ALTER TABLE telemetry_sessions ADD COLUMN synced_at INTEGER', logger);

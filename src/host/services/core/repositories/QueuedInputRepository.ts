@@ -253,6 +253,42 @@ export class QueuedInputRepository {
     return result.changes;
   }
 
+  /** ADR-072 施工前置 N1：queued 且未暂停的行写暂停原因（投递复核红 / 指纹不符）。 */
+  pauseQueued(id: string, reason: string, now?: number): boolean {
+    const result = this.db
+      .prepare(
+        `UPDATE queued_inputs
+         SET paused_reason = ?, updated_at = ?
+         WHERE id = ? AND status = 'queued' AND paused_reason IS NULL`,
+      )
+      .run(reason, now ?? Date.now(), id);
+    return result.changes === 1;
+  }
+
+  /** 抢占后发现目标被占（RunSessionConflictError 等）：sending 直接带原因回 queued，不进自动重试。 */
+  pauseAfterClaim(id: string, reason: string, now?: number): boolean {
+    const result = this.db
+      .prepare(
+        `UPDATE queued_inputs
+         SET status = 'queued', paused_reason = ?, updated_at = ?
+         WHERE id = ? AND status = 'sending'`,
+      )
+      .run(reason, now ?? Date.now(), id);
+    return result.changes === 1;
+  }
+
+  /** 解停：显式 sendNow / 发起侧 resume 复核通过后清掉暂停原因。 */
+  unpauseQueued(id: string, now?: number): boolean {
+    const result = this.db
+      .prepare(
+        `UPDATE queued_inputs
+         SET paused_reason = NULL, updated_at = ?
+         WHERE id = ? AND status = 'queued' AND paused_reason IS NOT NULL`,
+      )
+      .run(now ?? Date.now(), id);
+    return result.changes === 1;
+  }
+
   requeueRedirectedInput(id: string, now?: number): boolean {
     const result = this.db.prepare(
       `UPDATE queued_inputs

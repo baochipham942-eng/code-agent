@@ -45,6 +45,8 @@ export interface PermissionRequestDetails {
   affectedFileCount?: number;
   /** Host 对写入目标的 stat 结论；渲染层只消费，缺省按 regular。 */
   targetKind?: FileTargetKind;
+  /** B4：external 工具的授权 target 精确串（收件人/频道 id）；有值时审批卡点一行去向。 */
+  standingGrantTarget?: string;
   /** computer_use 目标应用。有值且非 forceConfirm 时，审批卡按应用给三个选项。 */
   targetApp?: { bundleId?: string; name: string };
   /** ADR-067 D3：host 透传的 peer 消息触发标注；渲染层只消费，缺省不显示。 */
@@ -81,6 +83,8 @@ export interface PermissionRequest {
   /** N-WRITEBACK-EDIT：host 默认分支把工具原参数整份放在 details 里；可编辑工具的查看/编辑态读这份 */
   rawArgs?: Record<string, unknown>;
   dangerLevel?: DangerLevel;
+  /** B1：EXTERNAL 风险类（离开本机、发出去收不回）；有值时审批卡出作用域提示。 */
+  riskClass?: 'external';
   timestamp?: number;
   /** Decision trace: why this permission was requested */
   decisionTrace?: import('@shared/contract').DecisionTrace;

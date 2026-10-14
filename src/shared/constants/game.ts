@@ -47,4 +47,12 @@ export const GAME_VALIDATION_TIMEOUTS = {
   BROWSER_VISUAL_SMOKE_MS: 10000,
   /** light 契约可玩性冒烟（真实加载+按键，只抓硬崩溃/全黑画面） */
   LIGHT_PLAYABILITY_SMOKE_MS: 6000,
+  /**
+   * 产物冒烟页面启动预算：system Chrome CDP 等待 + 回退 bundled launch 共用的
+   * 独立预算，不占用调用方的 smoke deadline（deadline 从页面就绪后才起算）。
+   * 冷启动+CPU 饥饿的 CI runner 上 chrome 首次起 CDP 可到 6-8s+，此预算给了
+   * 冒烟预算（如 800ms squeeze 用例）之外的自有额度，避免把「启动慢」误算进
+   * 「产物跑不动」。N-TEST-GAMESMOKE-FLAKY。
+   */
+  ARTIFACT_PAGE_LAUNCH_MS: 8000,
 } as const;

@@ -96,6 +96,19 @@ export function mintUserTurnOrigin(ids: {
 }
 
 /**
+ * ADR-072 D5.1/K1C：委托触发的目标会话轮铸 orchestrator 起源而非 user——
+ * 委托文本不是用户亲手打的，权限判定不得按 user 档信任（防洗白）。
+ * 标记由投递层经带外 transport 校验后注入，客户端伪造不了。
+ */
+export function mintDelegatedTurnOrigin(ids: {
+  sessionId?: string;
+  runId?: string;
+  turnId?: string;
+}): AgentMessageOrigin[] {
+  return [{ senderKind: 'orchestrator', ...ids }];
+}
+
+/**
  * 子代理 loop drain 注入时收集本轮 origin 链（ADR-067 D3）。
  * shutdown_request 不注入上下文，不计入；存量无 origin 的消息经 resolveMessageOrigin
  * 从严视同 peer-agent。本轮回空（无注入）返回 undefined，调用方保持上一轮的链

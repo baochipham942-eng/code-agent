@@ -14,8 +14,12 @@ import type { CronJobDefinition, CronJobExecution } from '../../shared/contract/
 import { normalizeErrorMessage } from '../lightMemory/failureJournal';
 import { getConfigService } from '../services/core/configService';
 import { notificationService } from '../services/infra/notificationService';
+import {
+  CRON_LOGIN_WALL_STOP,
+  parseCronLoginWallStop,
+} from '../../shared/utils/browserLoginWall';
 
-export type CronFailureKind = 'transient' | 'permanent' | 'capacity-wait';
+export type CronFailureKind = 'transient' | 'permanent' | 'capacity-wait' | 'login-wall';
 
 // ----------------------------------------------------------------------------
 // 错误分类（集中一处，判据写死在这里，别处只看分类不看原文）
@@ -65,6 +69,7 @@ function errorMessage(error: unknown): string {
 
 export function classifyCronFailure(error: unknown | string): CronFailureKind {
   const message = typeof error === 'string' ? error : errorMessage(error);
+  if (message.startsWith(`${CRON_LOGIN_WALL_STOP}|`)) return 'login-wall';
   if (CAPACITY_WAIT_PATTERNS.some((pattern) => pattern.test(message))) return 'capacity-wait';
   if (SHELL_EXEC_FAILED_PATTERN.test(message)) return 'transient';
   if (PERMANENT_PATTERNS.some((pattern) => pattern.test(message))) return 'permanent';
@@ -178,14 +183,20 @@ export function notifyCronAgentExecution(
       && !noticeGate.shouldNotify(definition.id, execution.error ?? '未知错误')) {
       return; // 同因失败冷却中：这次不重复告警
     }
+    const loginWall = parseCronLoginWallStop(execution.error);
     notificationService.notifyTaskComplete(
       {
         sessionId: execution.sessionId,
         sessionTitle: `[定时] ${definition.name}`,
-        summary: succeeded ? '定时任务已完成' : `定时任务失败：${execution.error ?? '未知错误'}`,
+        summary: succeeded
+          ? '定时任务已完成'
+          : loginWall
+            ? undefined
+            : `定时任务失败：${execution.error ?? '未知错误'}`,
         duration: execution.duration ?? 0,
         toolsUsed: [],
         succeeded,
+        ...(loginWall ? { code: CRON_LOGIN_WALL_STOP, siteOrigin: loginWall.siteOrigin } : {}),
       },
       { force: true }, // 后台定时任务完成：绕过焦点门，app 前台/后台都提醒
     );
@@ -204,6 +215,7 @@ export function countTrailingCronFailures(history: readonly CronJobExecution[]):
   for (let i = history.length - 1; i >= 0; i--) {
     const status = history[i].status;
     if (status === 'cancelled') continue;
+    if (status === 'failed' && parseCronLoginWallStop(history[i].error)) continue;
     if (status !== 'failed') break;
     count++;
   }

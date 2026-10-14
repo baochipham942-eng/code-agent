@@ -25,6 +25,8 @@ export interface FeatureFlags {
   enableExperimentalTools: boolean;
   nativeGenerativeUI: boolean;
   executionManifestV1: boolean;
+  /** Cross-session delegation remains opt-in until keyed acceptance. */
+  crossSessionDelegation: boolean;
   /** Jev skill/tool rerank rollout; absent in older remote configs means off. */
   jev_skill_rerank?: boolean;
 }
@@ -264,6 +266,7 @@ const BUILTIN_FEATURE_FLAGS: FeatureFlags = {
   enableExperimentalTools: false,
   nativeGenerativeUI: false,
   executionManifestV1: false,
+  crossSessionDelegation: false,
   jev_skill_rerank: false,
 };
 

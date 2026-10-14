@@ -27,6 +27,12 @@ import { imageGenerateSchema as schema } from './imageGenerate.schema';
 import { isPathWithinRoot, resolveWorkspacePath } from '../../../runtime/workspaceScope';
 import { runImageGenerateBatch } from './imageGenerateRequests';
 import {
+  computeImageGenerateFingerprint,
+  lookupReusableGenerationOutputs,
+  recordGenerationSavedOutput,
+  type GenerationLedgerSavedOutput,
+} from './imageGenerateReuse';
+import {
   determineImageEngine,
   generateImage,
   generateImageFromReference,
@@ -125,6 +131,8 @@ interface PerRequest {
   bytes?: number;
   path?: string;
   error?: string;
+  /** 本条产物来自复用账本（未再次付费生成）。 */
+  reused?: boolean;
 }
 
 class ImageGenerateRequestFailure extends Error {
@@ -245,6 +253,84 @@ function buildVerdict(params: {
   }
 
   return `出图结果（请对照图核对）：\n${lines.join('\n')}`;
+}
+
+// ---------------------------------------------------------------------------
+// 复用已落盘的生成结果（N-MEDIA-GEN-IDEMPOTENT-RETRY，规则见 imageGenerateReuse.ts）：
+// 崩溃/打断后的同参数重试不再二次付费，直接复用账本里已落盘的文件。
+// ---------------------------------------------------------------------------
+
+const REUSED_RESULT_LINE = '复用上次生成结果 (reused previous result, no new charge)';
+
+/** 复用产物的验收句：同样只说可核对的实测值，外加一行明示复用（没有再付费）。 */
+function buildReuseVerdict(params: {
+  imagePath: string;
+  sizeBytes: number;
+  dimensions?: { width: number; height: number };
+}): string {
+  const lines: string[] = [];
+  if (params.dimensions) lines.push(`· 实际尺寸 ${params.dimensions.width}×${params.dimensions.height}`);
+  lines.push(`· 落盘 ${params.imagePath}，${formatBytes(params.sizeBytes)}`);
+  return `${REUSED_RESULT_LINE}\n${lines.join('\n')}`;
+}
+
+/** 从磁盘上的复用产物重建 SavedImage（不调扩写、不调生成服务），并把账目归属改到本次调用。 */
+async function buildReusedSavedImage(input: {
+  ctx: ToolContext;
+  saved: GenerationLedgerSavedOutput;
+  prompt: string;
+  engine: ImageEngine;
+  aspectRatio: string;
+  autoPersisted: boolean;
+  ledger: { ledgerDir: string; toolName: string; fingerprint: string };
+}): Promise<SavedImage> {
+  const { ctx, saved } = input;
+  const imageBuffer = fs.readFileSync(saved.absolutePath);
+  const dimensions = parsePngDimensions(imageBuffer);
+  const relativePath = workspaceRelativePath(saved.absolutePath, ctx);
+  const mimeType = referenceMimeType(saved.absolutePath);
+  const mediaArtifactMetadata = buildMediaArtifactMetadata(ctx, {
+    kind: 'generated-image',
+    operation: 'generate',
+    sourcePrompt: input.prompt,
+    fallbackStrategy: 'file-artifact',
+  });
+  const artifact = await createFileArtifact(saved.absolutePath, input.ledger.toolName, ctx, {
+    kind: 'image',
+    mimeType,
+    sizeBytes: imageBuffer.length,
+    metadata: {
+      model: saved.actualModel,
+      engine: input.engine,
+      aspectRatio: input.aspectRatio,
+      reused: true,
+      autoPersisted: input.autoPersisted,
+      ...mediaArtifactMetadata,
+    },
+  });
+  recordGenerationSavedOutput({
+    ctx,
+    ...input.ledger,
+    saved: {
+      index: saved.index,
+      absolutePath: saved.absolutePath,
+      bytes: imageBuffer.length,
+      actualModel: saved.actualModel,
+    },
+  });
+  return {
+    absolutePath: saved.absolutePath,
+    relativePath,
+    bytes: imageBuffer.length,
+    artifact,
+    verdict: buildReuseVerdict({ imagePath: relativePath, sizeBytes: imageBuffer.length, dimensions }),
+    actualModel: saved.actualModel,
+    finalPrompt: input.prompt,
+    imageBase64: '',
+    mimeType,
+    generationTimeMs: 0,
+    dimensions,
+  };
 }
 
 function addStyleSuffix(prompt: string, style: string): string {
@@ -603,24 +689,40 @@ export async function executeImageGenerate(
     const engineLabel = engine === 'cogview'
       ? 'CogView-4 (智谱)'
       : 'FLUX (' + (isAdmin ? 'Pro' : 'Schnell') + ')';
-    const firstOutputPath = workspaceRelativePath(outputPathFor(1), ctx);
-    emitLive(buildBriefing({
-      prompt: count > 1 ? params.prompts[0] + '（以及另外 ' + (count - 1) + ' 条）' : params.prompts[0],
-      aspectRatio: params.aspectRatio,
-      style: params.style,
-      expandPrompt: params.expandPrompt,
-      engineLabel,
-      outputPath: firstOutputPath,
-    }));
-    if (ctx.currentToolCallId) {
-      ctx.emit({
-        type: 'artifact_write_started',
-        data: {
-          toolCallId: ctx.currentToolCallId,
-          toolName: schema.name,
-          filePath: outputPathFor(1),
-        },
-      });
+    // 复用判定在复述句之前：整批复用时没有任何付费调用，复述句的「真实付费调用」
+    // 预告就成了谎话，改为直接预告复用；部分复用时仍照常复述（还有要付费的条目）。
+    const ledger = {
+      ledgerDir: path.join(ctx.workingDir, DEFAULT_IMAGE_ARTIFACT_DIR),
+      toolName: schema.name,
+      fingerprint: computeImageGenerateFingerprint(params),
+    };
+    const reusable = new Map(
+      lookupReusableGenerationOutputs({ ctx, ...ledger })
+        .map((saved) => [saved.index, saved]),
+    );
+    const fullReuse = reusable.size === count;
+    if (fullReuse) {
+      emitLive(REUSED_RESULT_LINE);
+    } else {
+      const firstOutputPath = workspaceRelativePath(outputPathFor(1), ctx);
+      emitLive(buildBriefing({
+        prompt: count > 1 ? params.prompts[0] + '（以及另外 ' + (count - 1) + ' 条）' : params.prompts[0],
+        aspectRatio: params.aspectRatio,
+        style: params.style,
+        expandPrompt: params.expandPrompt,
+        engineLabel,
+        outputPath: firstOutputPath,
+      }));
+      if (ctx.currentToolCallId) {
+        ctx.emit({
+          type: 'artifact_write_started',
+          data: {
+            toolCallId: ctx.currentToolCallId,
+            toolName: schema.name,
+            filePath: outputPathFor(1),
+          },
+        });
+      }
     }
     briefed = true;
     const referenceDataUrl = params.referencePaths[0]
@@ -632,6 +734,18 @@ export async function executeImageGenerate(
       concurrency: 3,
       run: async (request): Promise<SavedImage> => {
         if (ctx.abortSignal.aborted) throw new Error('aborted');
+        const reusableOutput = reusable.get(request.index);
+        if (reusableOutput) {
+          return buildReusedSavedImage({
+            ctx,
+            saved: reusableOutput,
+            prompt: request.prompt,
+            engine,
+            aspectRatio: params.aspectRatio,
+            autoPersisted: !params.outputFilePath,
+            ledger,
+          });
+        }
         const requestStart = Date.now();
         const outputPath = outputPathFor(request.index);
         const unexpandedPrompt = params.style ? addStyleSuffix(request.prompt, params.style) : request.prompt;
@@ -682,6 +796,18 @@ export async function executeImageGenerate(
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         const imageBuffer = Buffer.from(imageBase64.replace(/^data:image\/\w+;base64,/, ''), 'base64');
         fs.writeFileSync(outputPath, imageBuffer);
+        // 文件完整落盘后立刻记账（N-MEDIA-GEN-IDEMPOTENT-RETRY）：批次中途崩溃时，
+        // 已保存的条目仍能被同参数重试复用，不再二次付费。
+        recordGenerationSavedOutput({
+          ctx,
+          ...ledger,
+          saved: {
+            index: request.index,
+            absolutePath: outputPath,
+            bytes: imageBuffer.length,
+            actualModel: generated.actualModel,
+          },
+        });
         const generationTimeMs = Date.now() - requestStart;
         const dimensions = parsePngDimensions(imageBuffer);
         const mimeType = getDataUrlMimeType(imageBase64) ?? referenceMimeType(outputPath);
@@ -741,7 +867,13 @@ export async function executeImageGenerate(
       },
     });
     const perRequest: PerRequest[] = batch.map((result) => result.status === 'saved'
-      ? { index: result.index, status: 'saved', bytes: result.value?.bytes, path: result.value?.relativePath }
+      ? {
+        index: result.index,
+        status: 'saved',
+        bytes: result.value?.bytes,
+        path: result.value?.relativePath,
+        ...(reusable.has(result.index) ? { reused: true } : {}),
+      }
       : {
         index: result.index,
         status: 'failed',
@@ -778,6 +910,7 @@ export async function executeImageGenerate(
       };
     }
     const first = saved[0].value;
+    const reusedAny = saved.some((result) => reusable.has(result.index));
     const meta: Record<string, unknown> = {
       artifact: first.artifact,
       artifacts,
@@ -785,13 +918,17 @@ export async function executeImageGenerate(
       model: first.actualModel,
       engine,
       originalPrompt: params.prompts[0],
-      expandedPrompt: params.expandPrompt ? first.finalPrompt : undefined,
+      // 复用条目没有过扩写链路，不谎报扩写结果。
+      expandedPrompt: params.expandPrompt && !reusable.has(saved[0].index)
+        ? first.finalPrompt
+        : undefined,
       imagePath: first.absolutePath,
       outputPath: first.absolutePath,
       imageBase64: undefined,
       aspectRatio: params.aspectRatio,
       generationTimeMs: first.generationTimeMs,
       isAdmin,
+      ...(reusedAny ? { reused: true } : {}),
     };
     if (count > 1) {
       // 批量输出路径只能叫 outputImagePaths：sessionMediaAssets 的 parentRefsFromMetadata
@@ -799,7 +936,7 @@ export async function executeImageGenerate(
       meta.outputImagePaths = saved.map((result) => result.value.absolutePath);
       meta.originalPrompts = params.prompts;
       meta.expandedPrompts = params.expandPrompt
-        ? saved.map((result) => result.value.finalPrompt)
+        ? saved.map((result) => (reusable.has(result.index) ? undefined : result.value.finalPrompt))
         : undefined;
     }
     emitLive(output);

@@ -102,6 +102,8 @@ export interface SessionAutomationConfig extends Record<string, unknown> {
     urgency?: CronUrgency;
     urgencyRaw?: string;
     digest?: { artifactCount: number; summaryLine?: string };
+    /** 到达运行次数上限后由 cron 记录的待过目原因。 */
+    maxRunsReached?: { maxRuns: number; summary?: string };
   };
   /** 最近一次无人值守运行遇到登录墙；用户过目后清除。 */
   loginWall?: { siteOrigin: string; at: number };

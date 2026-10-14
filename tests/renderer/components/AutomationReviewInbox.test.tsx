@@ -193,6 +193,28 @@ describe('AutomationReviewInbox', () => {
     expect(screen.getByTestId('automation-review-digest-approval').textContent).toBe('有待处理审批');
   });
 
+  it('运行次数上限停用记录在收件箱显示停用原因', async () => {
+    listPendingReview.mockResolvedValue([makeRecord({
+      status: 'paused',
+      config: {
+        pendingReview: {
+          at: 1700000000000,
+          maxRunsReached: {
+            maxRuns: 2,
+            summary: '已达运行次数上限（2 次），任务已自动停用。可重新启用。',
+          },
+        },
+      },
+    })]);
+
+    render(<AutomationReviewInbox />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('automation-review-max-runs').textContent)
+        .toMatch(/已达运行次数上限（\d+ 次）/);
+    });
+  });
+
   it('查看结果：标记已读并跳结果会话', async () => {
     listPendingReview.mockResolvedValue([makeRecord({})]);
     render(<AutomationReviewInbox />);

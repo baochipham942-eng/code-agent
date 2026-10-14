@@ -63,7 +63,10 @@ export function trackBackgroundRunError(
 /**
  * agent_complete / agent_cancelled 的收线：后台条目仍 running（= 没走 task_complete
  * 收口的终态）→ 失败/撞顶按记账 error 收 markFailed，取消/中断收 markCompleted +
- * USER_CANCELLED 标记。已被 task_complete 收过的条目被 running-guard 挡住，天然幂等。
+ * USER_CANCELLED 标记。agent_cancelled 必然是用户取消：取消语义压过 run 级 error
+ * 记账——中段可恢复 error（如图片超限发 error 后继续跑，inference.ts）不改变
+ * 「用户主动停」的事实，与 web 路径 runCancelled→interrupted 的优先级一致（r2）。
+ * 已被 task_complete 收过的条目被 running-guard 挡住，天然幂等。
  */
 export async function closeBackgroundRunAtTerminal(
   sessionId: string,
@@ -77,8 +80,8 @@ export async function closeBackgroundRunAtTerminal(
     return;
   }
   await settleBackgroundRun(backgroundManager, sessionId, resolveBackgroundRunSettlement(
-    runError
-      ? { status: 'error', errorMessage: runError.message, errorCode: runError.code }
-      : { status: 'interrupted' },
+    eventType === 'agent_cancelled' || !runError
+      ? { status: 'interrupted' }
+      : { status: 'error', errorMessage: runError.message, errorCode: runError.code },
   ));
 }

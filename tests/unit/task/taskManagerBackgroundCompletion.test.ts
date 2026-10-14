@@ -203,6 +203,19 @@ describe('agent 终态事件的后台收线（失败/取消/中断/max-step 撞�
     expect(backgroundManagerState.markFailed).not.toHaveBeenCalled();
   });
 
+  it('中段可恢复 error（如图片超限发 error 后继续跑）记账后用户取消：仍按取消收线，不报失败（r2）', async () => {
+    const persist = getPersist(newManager());
+
+    await persist('session-1', {
+      type: 'error',
+      data: { message: 'Image payload exceeded 10MB limit' },
+    }, undefined, 'session-1');
+    await persist('session-1', { type: 'agent_cancelled', data: null }, undefined, 'session-1');
+
+    expect(backgroundManagerState.markCompleted).toHaveBeenCalledWith('session-1', BACKGROUND_TASK_CANCELLED);
+    expect(backgroundManagerState.markFailed).not.toHaveBeenCalled();
+  });
+
   it('成功轮（task_complete 已收口）后再到 agent_complete：running-guard 挡住，不双收线', async () => {
     backgroundManagerState.isTaskRunning.mockReturnValue(false); // task_complete 收口后
     const persist = getPersist(newManager());

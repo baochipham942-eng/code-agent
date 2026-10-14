@@ -21,6 +21,9 @@ function readSandboxDeniedWritePath(failureText: string): string | undefined {
   const nodeWritePath = /\bEPERM\b[^\r\n]*?\b(?:open|mkdir|rmdir|unlink|rename|chmod|chown|copyfile|symlink|link|truncate|utimes)\s+['"]([^'"\r\n]+)['"]/i.exec(failureText)?.[1];
   if (nodeWritePath) return nodeWritePath;
 
+  const pythonWritePath = /\bPermissionError:\s*\[Errno\s+1\]\s+Operation not permitted:\s*['"]([^'"\r\n]+)['"]/i.exec(failureText)?.[1];
+  if (pythonWritePath) return pythonWritePath;
+
   const npmErrorPath = /(?:^|\n)(?:npm (?:error|ERR!)\s+)?path\s+([^\r\n]+)/im.exec(failureText)?.[1]?.trim();
   if (npmErrorPath) return npmErrorPath;
 

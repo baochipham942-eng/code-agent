@@ -1,4 +1,7 @@
 import type { CronJobDefinition, CronJobExecution } from '../../shared/contract/cron';
+import { ROLE_PROACTIVITY } from '../../shared/constants/memory';
+import { isExternalSideEffectTool } from '../tools/externalSideEffect';
+import { validateRoleWakeCloudPayload } from './roleWakeCloudPayload';
 
 export interface CronApiConfig {
   baseUrl: string;
@@ -120,9 +123,28 @@ function actionToCronApiPayload(definition: CronJobDefinition): Record<string, u
         ].join('\n'),
         ...(timeoutSeconds == null ? {} : { timeoutSeconds }),
       };
+    case 'role-wake': {
+      // 云端未接线：先用 draft 校验器钉住协议形状，把拒因带进错误消息；
+      // 校验通过也照样拒绝发射 payload。工具面由 resolveWakeRunToolScope 异步解析，
+      // 云端声明路径落地前先按空面校验；只读判定沿用醒来链路同款
+      // isExternalSideEffectTool 口径（resolveWakeRunToolScope 丢对外副作用工具的判据）。
+      const validation = validateRoleWakeCloudPayload({
+        roleId: action.roleId,
+        environmentId: action.environmentId,
+        readOnlyToolScope: [],
+        maxWakesPerDay: ROLE_PROACTIVITY.MAX_WAKES_PER_DAY,
+        isToolReadOnly: (toolName) => !isExternalSideEffectTool(toolName),
+      });
+      if (!validation.ok) {
+        throw new Error(
+          `Cloud cron does not support the role-wake action type: ${validation.reason}`
+          + (validation.toolName ? ` (${validation.toolName})` : '') + '.',
+        );
+      }
+      throw new Error('Cloud cron does not support the role-wake action type: not wired yet.');
+    }
     case 'ipc':
     case 'memory-consolidation':
-    case 'role-wake':
       throw new Error(`Cloud cron does not support the ${action.type} action type.`);
   }
 }

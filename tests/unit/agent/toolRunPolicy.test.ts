@@ -95,6 +95,23 @@ describe('toolRunPolicy', () => {
     ], ctx).map((item) => item.name)).toEqual(['Read', 'mcp__github__search_issues']);
   });
 
+  it('removes delegation tools for a bounded one-turn competitor comparison', () => {
+    const ctx = {
+      messages: [{
+        role: 'user',
+        content: '写一份竞品简报，只对比 Notion、飞书、钉钉 3 家，按 5 个维度整理，一轮内交付。',
+      }],
+    } as any;
+
+    expect(filterToolsByRunPolicy([
+      tool('spawn_agent'),
+      tool('AgentSpawn'),
+      tool('delegate_task'),
+      tool('workflow_orchestrate'),
+      tool('Read'),
+    ], ctx).map((item) => item.name)).toEqual(['Read']);
+  });
+
   // 2026-08-09 委派入口歧义单：收窄日志只打数量时，「24 -> 9 砍掉了谁」在日志里查不到，
   // 只能翻真库反推。这三条钉住「名字必须打出来」，别再退回纯数量。
   describe('收窄可观测性', () => {

@@ -9,8 +9,24 @@ import { POSTHOG_EVENTS } from '../../../shared/observability/posthog-events';
 import {
   isToolDeniedByRunPolicy,
 } from '../../tools/runToolPolicy';
+import { detectTaskFeatures } from '../../prompts/systemReminders';
 
 const logger = createLogger('AgentLoop');
+
+const BOUNDED_COMPARISON_DELEGATION_TOOLS = new Set([
+  'task',
+  'delegate_task',
+  'spawn_agent',
+  'agentspawn',
+  'workflow',
+  'workflow_orchestrate',
+]);
+
+function isBoundedComparisonDelegationTool(toolName: string, ctx: RuntimeContext): boolean {
+  if (!BOUNDED_COMPARISON_DELEGATION_TOOLS.has(toolName.trim().toLowerCase())) return false;
+  const prompt = [...(ctx.messages ?? [])].reverse().find((message) => message.role === 'user')?.content ?? '';
+  return detectTaskFeatures(prompt).isBoundedComparison === true;
+}
 
 export function isToolDeniedForRun(ctx: RuntimeContext, toolName: string): boolean {
   return isToolDeniedByRunPolicy(ctx, toolName);
@@ -35,10 +51,14 @@ export function filterToolsByRunPolicy(
   // 信号复用现有 unattendedTurn（originKind==='headless' / 会话级无人值守标记），
   // 不新造平行判定；有人值守轮原样保留，交互行为不变。
   const askUnattended = ctx.unattendedTurn === true;
+  const boundedComparison = (ctx.messages ?? []).some((message) => (
+    message.role === 'user' && detectTaskFeatures(message.content).isBoundedComparison === true
+  ));
   const hasPolicy = (ctx.deniedToolNames?.length ?? 0) > 0 || (ctx.allowedToolNames?.length ?? 0) > 0;
-  if (!hasPolicy && !askUnattended) return tools;
+  if (!hasPolicy && !askUnattended && !boundedComparison) return tools;
   return tools.filter((tool) => {
     if (askUnattended && ASK_USER_QUESTION_TOOL_NAMES.some((name) => name === tool.name)) return false;
+    if (isBoundedComparisonDelegationTool(tool.name, ctx)) return false;
     return !isToolDeniedByRunPolicy(ctx, tool.name);
   });
 }

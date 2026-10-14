@@ -22,7 +22,8 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // video 新增 model/image_path、描述加计费与参考单价；模型可见面变化）。
 // sys-v80：N-HOME-STARTER-CARDS-FILES bounded starter-card routing removes delegate reminders for small one-turn comparisons.
 // sys-v81：N-HOME-STARTER-CARDS-FILES recognizes Arabic counts in Chinese bounded comparisons.
-export const PROMPT_VERSION = 'sys-v81' as const;
+// sys-v82：N-HOME-STARTER-CARDS-FILES removes delegation tools from bounded comparison turns.
+export const PROMPT_VERSION = 'sys-v82' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

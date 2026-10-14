@@ -329,6 +329,8 @@ export interface ModalFooterProps {
   cancelDisabled?: boolean;
   /** Whether confirm is the initial keyboard focus */
   confirmAutoFocus?: boolean;
+  /** Whether cancel is the initial keyboard focus（危险确认弹窗默认落在安全侧） */
+  cancelAutoFocus?: boolean;
   /** Whether to hide cancel button */
   hideCancel?: boolean;
   /** Custom content (replaces default buttons) */
@@ -344,6 +346,7 @@ export const ModalFooter: React.FC<ModalFooterProps> = ({
   confirmDisabled = false,
   cancelDisabled = false,
   confirmAutoFocus = false,
+  cancelAutoFocus = false,
   hideCancel = false,
   children,
 }) => {
@@ -360,6 +363,7 @@ export const ModalFooter: React.FC<ModalFooterProps> = ({
         <button
           onClick={onCancel}
           disabled={cancelDisabled}
+          data-modal-autofocus={cancelAutoFocus || undefined}
           className={`px-4 py-2 text-sm rounded-lg transition-colors ${
             cancelDisabled
               ? 'cursor-not-allowed text-zinc-600'

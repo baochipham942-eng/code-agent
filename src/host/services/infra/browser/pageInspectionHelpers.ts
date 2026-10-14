@@ -3,9 +3,10 @@ import type {
   ElementInfo,
   PageContent,
 } from './types';
+import { pageHasLoginForm } from '../../../../shared/utils/browserLoginWall';
 
 export async function getBrowserPageContent(tab: BrowserTab): Promise<PageContent> {
-  const [text, links] = await Promise.all([
+  const [text, links, passwordInputPresent, loginFormPresent] = await Promise.all([
     tab.page.innerText('body').catch(() => ''),
     tab.page.$$eval('a[href]', (anchors) =>
       anchors.slice(0, 50).map((a) => ({
@@ -13,6 +14,27 @@ export async function getBrowserPageContent(tab: BrowserTab): Promise<PageConten
         href: (a as HTMLAnchorElement).href,
       }))
     ).catch(() => []),
+    tab.page.locator('input[type="password"], input[autocomplete*="password" i]').count()
+      .then((count) => count > 0)
+      .catch(() => false),
+    // 任意 <form> 不算登录证据（JD/淘宝式首页搜索表单会误停无人值守运行）：
+    // 页内只做属性序列化，分类走 shared 的严格 isLoginFormEvidence。
+    tab.page.$$eval('form', (forms) => forms.map((form) => ({
+      role: form.getAttribute('role'),
+      action: form.getAttribute('action'),
+      inputs: Array.from(form.querySelectorAll('input')).map((input) => ({
+        type: input.type,
+        autocomplete: input.getAttribute('autocomplete'),
+      })),
+      submitTexts: Array.from(form.querySelectorAll('button, input[type="submit"], input[type="button"]')).map((el) => [
+        el.textContent ?? '',
+        el.getAttribute('value') ?? '',
+        el.getAttribute('aria-label') ?? '',
+        el.getAttribute('title') ?? '',
+      ].join(' ')),
+    })))
+      .then(pageHasLoginForm)
+      .catch(() => false),
   ]);
 
   return {
@@ -20,6 +42,8 @@ export async function getBrowserPageContent(tab: BrowserTab): Promise<PageConten
     title: await tab.page.title(),
     text: text.substring(0, 10000),
     links,
+    passwordInputPresent,
+    loginFormPresent,
   };
 }
 

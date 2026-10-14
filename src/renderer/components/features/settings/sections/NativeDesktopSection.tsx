@@ -957,13 +957,13 @@ export const NativeDesktopSection: React.FC<NativeDesktopSectionProps> = ({
           {nativeDesktopText.audioRetention.clear}
         </DangerButton>
       </div>
-      {/* 失败行只由 failedTotal 驱动：fileCount 只统计可清理的普通文件，
-          名为 *.wav 的目录/符号链接这类结构性删不掉的路径不在其中，拿它当
-          开关会把持续失败藏死；账目归零由 host 侧零失败的 clear/sweep 清账负责 */}
+      {/* 失败行由 failedCurrent（此刻仍删不掉的文件数）驱动：host 完整一轮
+          clear/sweep 用本轮 failed 覆盖、零失败清账，重试不虚增；fileCount 只统计
+          可清理的普通文件，名为 *.wav 的目录/符号链接不在其中，不能当开关 */}
       {audioStatus?.retention
-        && audioStatus.retention.failedTotal > 0 ? (
+        && audioStatus.retention.failedCurrent > 0 ? (
         <AudioRetentionFailureLine
-          failedTotal={audioStatus.retention.failedTotal}
+          failedCount={audioStatus.retention.failedCurrent}
           lastError={audioStatus.retention.lastError}
           audioDir={audioStatus.audioDir}
           text={nativeDesktopText.audioRetention}

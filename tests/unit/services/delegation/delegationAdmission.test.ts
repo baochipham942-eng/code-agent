@@ -557,3 +557,84 @@ describe('workspacesOverlap（G6 判据）', () => {
     expect(workspacesOverlap('/ws/a', null)).toBe(false);
   });
 });
+
+describe('门序全链（settled 决策：先红先赢，G3→G4→G1→G2→G5→G6→G8→G10→G11→G12）', () => {
+  // 一份「全门皆红」的快照，再逐层剥红：每剥一层，下一个门才浮出来。
+  // 钉的是求值顺序本身——门序重排（如 G11 提到 G6 前）会让对应层返回错误的码。
+  function layerSnapshot(peeled: string[]): DelegationAdmissionSnapshot {
+    const target = {
+      ...healthySnapshot().target,
+      isArchived: !peeled.includes('G1'),
+      sessionType: peeled.includes('G2') ? 'chat' : 'subagent',
+      workspaceAuthorized: peeled.includes('G5'),
+      permissionMode: peeled.includes('G11') ? 'default' : 'bypassPermissions',
+      folderTrust: (peeled.includes('G12')
+        ? { state: 'trusted', blockedItems: 0 }
+        : null) as DelegationAdmissionSnapshot['target']['folderTrust'],
+    };
+    return healthySnapshot({
+      target,
+      runningTurns: peeled.includes('G6') ? [] : [{ sessionId: 'user-session', workspaceRoot: '/ws/target-a/nested' }],
+      targetActiveRunId: peeled.includes('G10') ? null : 'run-user',
+    });
+  }
+  const call = parseOkCall(delegateExistingCall());
+
+  it('逐层剥红：G1→G2→G5→G6→G10→G11→G12→admitted', () => {
+    const chain: ReadonlyArray<{ gate: string; code: string; peeled: string[] }> = [
+      { gate: 'G1', code: 'target_unavailable', peeled: [] },
+      { gate: 'G2', code: 'not_delegatable', peeled: ['G1'] },
+      { gate: 'G5', code: 'workspace_boundary', peeled: ['G1', 'G2'] },
+      { gate: 'G6', code: 'write_conflict', peeled: ['G1', 'G2', 'G5'] },
+      { gate: 'G10', code: 'target_busy', peeled: ['G1', 'G2', 'G5', 'G6'] },
+      { gate: 'G11', code: 'target_permission_mode', peeled: ['G1', 'G2', 'G5', 'G6', 'G10'] },
+      { gate: 'G12', code: 'untrusted_workspace', peeled: ['G1', 'G2', 'G5', 'G6', 'G10', 'G11'] },
+    ];
+    for (const layer of chain) {
+      expect(admitDelegation(call, layerSnapshot(layer.peeled)))
+        .toMatchObject({ kind: 'rejected', gate: layer.gate, code: layer.code });
+    }
+    expect(admitDelegation(call, layerSnapshot(['G1', 'G2', 'G5', 'G6', 'G10', 'G11', 'G12'])))
+      .toMatchObject({ kind: 'admitted', targetSessionId: 'target-a' });
+  });
+
+  it('G3 在 G4 之前：候选集过期 + 同键异指纹 → candidate_set_stale 而非 idempotency_conflict', () => {
+    const result = admitDelegation(
+      parseOkCall(delegateExistingCall({ candidateSetId: 'set-old' })),
+      healthySnapshot({
+        existingDelegation: {
+          delegationId: 'd-1',
+          originSessionId: 'origin-1',
+          targetSessionId: 'target-a',
+          actionFingerprint: '0'.repeat(64),
+          status: 'active',
+        },
+      }),
+    );
+    expect(result).toMatchObject({ kind: 'rejected', code: 'candidate_set_stale', gate: 'G3' });
+  });
+
+  it('create_new 侧：G6 在 G8 前（重叠写冲突先于缺受信根），G8 在 G12 前（缺根先于信任缺失）', () => {
+    const createNew = parseOkCall({ action: 'create_new', content: '新活' });
+    const target = {
+      ...healthySnapshot().target,
+      sessionId: null,
+      sessionExists: false,
+      permissionMode: null,
+      workspaceRoot: '/authorized/root',
+      folderTrust: null as DelegationAdmissionSnapshot['target']['folderTrust'],
+    };
+    const overlapNoRoot = healthySnapshot({
+      target,
+      runningTurns: [{ sessionId: 'user-session', workspaceRoot: '/authorized/root/sub' }],
+    });
+    delete overlapNoRoot.hostWorkspaceRoot;
+    expect(admitDelegation(createNew, overlapNoRoot))
+      .toMatchObject({ kind: 'rejected', code: 'write_conflict', gate: 'G6' });
+
+    const noRoot = healthySnapshot({ target, runningTurns: [] });
+    delete noRoot.hostWorkspaceRoot;
+    expect(admitDelegation(createNew, noRoot))
+      .toMatchObject({ kind: 'rejected', code: 'unauthorized_workspace', gate: 'G8' });
+  });
+});

@@ -61,6 +61,8 @@ export interface ToolContext {
 
   requestPermission: (request: PermissionRequestData) => Promise<boolean>;
   abortSignal?: AbortSignal;
+  /** Runtime stop hook used by terminal browser guards. */
+  forceFinalResponse?: (reason: string, prompt?: string) => void;
   /** 当前 run 的工具拒绝集；动态工具发现同样必须遵守。 */
   deniedToolNames?: readonly string[];
   /** 当前 run 的工具白名单（CLI --tools 等）；非空 = 精确白名单，spawn_agent 据此收窄子代理面。 */
@@ -221,6 +223,12 @@ export interface PermissionRequestData {
   reasonCode?: PermissionRequestReason;
   boundary?: PermissionBoundaryRef;
   dangerLevel?: 'normal' | 'warning' | 'danger';
+  /**
+   * B1 EXTERNAL 风险类打标（离开本机、发出去收不回）。由 toolExecutor 在需人工审批时
+   * 按 isExternalSideEffectTool 打上；仅用于审批卡作用域提示，不参与任何 allow/deny/ask 裁决。
+   * 非 external 时属性缺省（≠ null）。
+   */
+  riskClass?: 'external';
   /** Decision trace: why this permission was requested (populated on deny/ask) */
   decisionTrace?: import('../../shared/contract/decisionTrace').DecisionTrace;
 }

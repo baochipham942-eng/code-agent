@@ -13,6 +13,7 @@
 import { getConfigService } from '../core/configService';
 import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
 import { IMAGE_PRICING_CNY } from '../../../shared/constants/pricing';
+import { GENERATION_TOOL_DEFAULT_MODELS } from '../../../shared/media/generationToolDefaults';
 import { isPrivateOrLocalHost } from '../../security/ssrfGuard';
 import { createLogger } from '../infra/logger';
 
@@ -37,7 +38,7 @@ const TIMEOUT_MS = {
 };
 
 const ZHIPU_IMAGE_MODELS = {
-  standard: 'cogview-4-250304',
+  standard: GENERATION_TOOL_DEFAULT_MODELS.image,
   legacy: 'cogview-3-flash',
 } as const;
 

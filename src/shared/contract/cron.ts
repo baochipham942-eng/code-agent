@@ -272,6 +272,16 @@ export interface AgentAction {
    * （N-CRON-MORNING-TRIAGE-URGENCY-RULE）。
    */
   urgencyCriteria?: string;
+  /**
+   * 用户设定的「什么变化才值得通知」判据（一句话，trim 后非空才生效，上限
+   * CRON_URGENCY_CRITERIA.MAX_CHARS——与 urgencyCriteria 同一收口）。设置后：
+   * 运行 prompt 追加「仅当满足该判据才输出 <cron_alert>」的指令；成功运行的
+   * 最终正文无该标记时跳过完成系统通知与通道推送（执行仍 completed、仍进
+   * 历史与待过目收件箱，标记为 notifySuppressed）。失败与登录墙通知永不受
+   * 此门约束。缺省时 prompt 与通知行为与旧版逐字节相同
+   * （N-CRON-RESTATE-HUMAN-WHEN）。
+   */
+  notifyWhen?: string;
 }
 
 /**

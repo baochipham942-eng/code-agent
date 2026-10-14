@@ -347,7 +347,7 @@ describe('untrusted cron draft fields never crash the confirm card', () => {
       description: '推送结果',
       schedule: { type: 'every', interval: 1, unit: 'days' },
       action: { type: 'webhook' },
-    }, ['推送结果', WHEN, FN, INBOX]],
+    }, ['推送结果', WHEN, INBOX]],
   ])('renders fallback copy when %s', async (_label, raw, expected) => {
     const rows = await rowsAfterStoring(raw);
     expect(rows).toEqual(expected);
@@ -374,7 +374,8 @@ describe('untrusted cron draft fields never crash the confirm card', () => {
     }, rowLabels);
     // when 行不再有「按配置」兜底：真实链路里无效 schedule 在规范化阶段就被拒，
     // 这里只保证纯函数对垃圾输入不抛错（when 留空，生产不可达）。
-    expect(rows.map((row) => row.value)).toEqual(['按任务描述执行并整理结果', '', '任务完成或发现异常时通知', '自动化审核收件箱']);
+    // notifyWhen 行只对 agent 动作出（判据无法生效就不给假口子），garbage action=null → 不出。
+    expect(rows.map((row) => row.value)).toEqual(['按任务描述执行并整理结果', '', '自动化审核收件箱']);
   });
 });
 
@@ -439,7 +440,7 @@ describe('ScheduleConfirmCard', () => {
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 
-  it('renders fallback copy for a degraded draft without crashing', () => {
+  it('renders fallback copy for a degraded draft without crashing (notifyWhen row only for agent actions)', () => {
     const draft: PendingScheduleDraft = {
       input: {
         schedule: { type: 'every', interval: 1, unit: 'days' },
@@ -452,7 +453,9 @@ describe('ScheduleConfirmCard', () => {
 
     expect(screen.getByText('backup.sh')).toBeTruthy();
     expect(screen.getByText('每 1 天')).toBeTruthy();
-    expect(screen.getByText('任务完成或发现异常时通知')).toBeTruthy();
+    // shell 动作没有可生效的通知判据（prompt 注入与通知门都在 agent 执行链上）：
+    // notifyWhen 整行不出，不给「看起来可配置」的假口子。
+    expect(screen.queryByText('任务完成或发现异常时通知')).toBeNull();
     expect(screen.getByText('自动化审核收件箱')).toBeTruthy();
   });
 });

@@ -14,6 +14,7 @@ import type {
 import type { SteerOrQueueOutcome } from '@shared/contract/appService';
 import { buildAppshotXml, buildAppshotAttachment } from '@shared/contract/appshot';
 import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
+import { CRON_URGENCY_CRITERIA } from '@shared/constants';
 import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useAppStore } from '../../../../stores/appStore';
@@ -270,15 +271,24 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     try {
       const input = pending.input;
       const handoffPrompt = pending.handoffPrompt;
-      const action = input.action.type === 'agent' && currentSessionId
+      // 通知判据（N-CRON-RESTATE-HUMAN-WHEN）：确认时把（可能已在卡内编辑过的）
+      // restatement.notifyWhen 写进 agent action——host 侧 prompt 注入 + 通知门都读它。
+      // 空判据不写字段：保持「每次都通知」的旧行为，prompt 字节不变。截断口径与
+      // host normalizeAction 相同（CRON_URGENCY_CRITERIA.MAX_CHARS）。
+      const notifyWhenRule = pending.restatement?.notifyWhen?.trim()
+        .slice(0, CRON_URGENCY_CRITERIA.MAX_CHARS);
+      const actionBase = input.action.type === 'agent' && notifyWhenRule
+        ? { ...input.action, notifyWhen: notifyWhenRule }
+        : input.action;
+      const action = actionBase.type === 'agent' && currentSessionId
         ? {
-            ...input.action,
+            ...actionBase,
             context: {
-              ...(input.action.context ?? {}),
+              ...(actionBase.context ?? {}),
               sourceSessionId: currentSessionId,
             },
           }
-        : input.action;
+        : actionBase;
       const job = await cronClient.createJob({
         ...input,
         action,

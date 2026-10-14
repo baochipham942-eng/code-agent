@@ -1166,7 +1166,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
               />
             )}
           </SlotEntry>
-          <SlotEntry id="schedule-confirm" active={Boolean(pendingScheduleDraft)}>{pendingScheduleDraft && <ScheduleConfirmCard draft={pendingScheduleDraft} confirming={creatingSchedule} onConfirm={confirmScheduleCreation} onDismiss={discardPendingScheduleDraft} />}</SlotEntry>
+          <SlotEntry id="schedule-confirm" active={Boolean(pendingScheduleDraft)}>{pendingScheduleDraft && <ScheduleConfirmCard draft={pendingScheduleDraft} confirming={creatingSchedule} onConfirm={confirmScheduleCreation} onDismiss={discardPendingScheduleDraft} onDraftChange={storePendingScheduleDraft} />}</SlotEntry>
 
           <SlotEntry id="goal-confirm" active={Boolean(goalConfirm)}>
             {goalConfirm && (

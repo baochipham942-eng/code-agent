@@ -36,13 +36,20 @@ export const SESSION_COMMAND_CENTER_BRAIN_CONTEXT = [
  * Excel 交付进面——多工作表（原始数据 + 汇总）靠它 add_sheet/set_range 追加。
  * 命中时这几个名字进 allowedToolNames，deferred 预载层会照白名单把 schema 送上轮。
  */
+// 与 systemReminders 的 OFFICE_*_DELIVERABLE_RE 保持同一判据。种类看扩展名本身，
+// 不看 isDocumentTask / isExcelTask：后者会被正文里的代码语境词一票否决
+// （中文周报卡示例素材含「供应商接口」，isDocumentTask 为 false），提醒已经点名
+// docx_generate，模型可见工具表里却没有它（r2b 真机）。
+const OFFICE_DOC_DELIVERABLE_RE = /\.docx\b|\bword\s*文档|\bword\s+(?:document|file|report)\b/i;
+const OFFICE_SHEET_DELIVERABLE_RE = /\.xlsx\b|\bexcel\s*(?:工作簿|表格|文件)|\bexcel\s+(?:workbook|spreadsheet|file)\b/i;
+
 export function getTextForegroundToolNamesForPrompt(prompt: string): string[] {
   const base = getTextForegroundToolNames();
   const features = detectTaskFeatures(prompt);
-  if (!features.isOfficeFileDeliverable) return base;
+  if (!features.isOneTurnFileDeliverable) return base;
   const extras: string[] = [];
-  if (features.isDocumentTask) extras.push('docx_generate');
-  if (features.isExcelTask) extras.push('excel_generate', 'DocEdit');
+  if (OFFICE_DOC_DELIVERABLE_RE.test(prompt)) extras.push('docx_generate');
+  if (OFFICE_SHEET_DELIVERABLE_RE.test(prompt)) extras.push('excel_generate', 'DocEdit');
   return extras.length > 0 ? [...base, ...extras] : base;
 }
 

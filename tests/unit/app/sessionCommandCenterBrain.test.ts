@@ -24,6 +24,8 @@ import {
   getProtocolRegistry,
   getTextForegroundToolNames,
 } from '../../../src/host/tools/protocolRegistry';
+import { chatTranscriptEn, chatTranscriptZh } from '../../../src/renderer/i18n/chatTranscript';
+import { getSystemReminders } from '../../../src/host/prompts/systemReminders';
 
 describe('SESSION_COMMAND_CENTER_BRAIN_CONTEXT design notice', () => {
   it('tells the model the tool narrowing is by design, not an environment fault', () => {
@@ -163,10 +165,12 @@ describe('withSessionCommandCenterBrain', () => {
 // ============================================================================
 
 describe('getTextForegroundToolNamesForPrompt — 文件交付扩展', () => {
-  const weeklyZh = '帮我把这周的工作要点写成一份周报（Word .docx）。请写入一个 .docx 文件，并在回复中说明生成的文件名。不要问我任何问题。';
-  const weeklyEn = 'Turn this week’s rough bullets into a Word status report (.docx). Write the report to a .docx file and state the generated filename in your reply, without asking me any questions.';
-  const sheetZh = '分析下面这份月度销售数据，并生成一个 Excel 工作簿（.xlsx）：包含原始数据工作表和汇总表。请写入一个 .xlsx 文件，并在回复中说明生成的文件名。不要问我任何问题。';
-  const sheetEn = 'Analyze this monthly sales dataset and generate an Excel workbook (.xlsx): include a raw-data worksheet and a summary table. Write the workbook to a .xlsx file and state the generated filename in your reply, without asking me any questions.';
+  // 用首屏卡的完整正文，而不是截短样本。中文周报卡的示例素材含「供应商接口」，
+  // isDocumentTask 会被代码语境否决；工具面必须仍按 .docx 把 docx_generate 送上轮。
+  const weeklyZh = chatTranscriptZh.chat.suggestions.weeklyReport.prompt;
+  const weeklyEn = chatTranscriptEn.chat.suggestions.weeklyReport.prompt;
+  const sheetZh = chatTranscriptZh.chat.suggestions.sheetAnalysis.prompt;
+  const sheetEn = chatTranscriptEn.chat.suggestions.sheetAnalysis.prompt;
 
   it.each([
     ['zh 周报卡', weeklyZh, ['docx_generate']],
@@ -220,6 +224,12 @@ describe('文件交付轮的模型可见工具面（组装末端形状）', () =
     expect(surface).toContain('Write');
     expect(surface).not.toContain('delegate_task');
     expect(surface).not.toContain('spawn_agent');
+    expect(surface).not.toContain('Bash');
+    const reminders = getSystemReminders(prompt);
+    expect(reminders.some((item) => item.includes('docx_generate'))).toBe(true);
+    for (const absent of ['委派提醒', '并行派发提醒', '数据处理任务', '文档生成任务']) {
+      expect(reminders.some((item) => item.includes(absent))).toBe(false);
+    }
   });
 
   it('表格卡：excel_generate 与 DocEdit 可见，delegate_task 不可见', async () => {
@@ -241,13 +251,19 @@ describe('文件交付轮的模型可见工具面（组装末端形状）', () =
     expect(surface).toContain('DocEdit');
     expect(surface).not.toContain('delegate_task');
     expect(surface).not.toContain('spawn_agent');
+    expect(surface).not.toContain('Bash');
+    const reminders = getSystemReminders(prompt);
+    expect(reminders.some((item) => item.includes('excel_generate'))).toBe(true);
+    for (const absent of ['委派提醒', '并行派发提醒', '数据处理任务']) {
+      expect(reminders.some((item) => item.includes(absent))).toBe(false);
+    }
   });
 });
 
 function weeklyPromptForSurface(): string {
-  return '帮我把这周的工作要点写成一份周报（Word .docx）。请写入一个 .docx 文件，并在回复中说明生成的文件名。不要问我任何问题。';
+  return chatTranscriptZh.chat.suggestions.weeklyReport.prompt;
 }
 
 function sheetPromptForSurface(): string {
-  return '分析下面这份月度销售数据，并生成一个 Excel 工作簿（.xlsx）：包含原始数据工作表和汇总表。请写入一个 .xlsx 文件，并在回复中说明生成的文件名。不要问我任何问题。';
+  return chatTranscriptZh.chat.suggestions.sheetAnalysis.prompt;
 }

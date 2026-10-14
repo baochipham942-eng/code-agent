@@ -1,8 +1,8 @@
 import React from 'react';
-import { Archive, ArchiveRestore, AudioLines, CheckSquare, GitFork, Loader2, Pin, Square } from 'lucide-react';
+import { Archive, ArchiveRestore, AudioLines, CheckSquare, ChevronRight, GitFork, Loader2, Pin, Square } from 'lucide-react';
 import type { SessionRuntimeSummary } from '@shared/ipc';
 import type { SessionAutomationSessionSummary } from '@shared/contract';
-import { IconButton } from '../../primitives';
+import { GhostButton, IconButton } from '../../primitives';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import type { CronTaskRunAggregate } from '../../../hooks/useCronRunGroups';
 import type { SessionState } from '../../../stores/taskStore';
@@ -84,6 +84,10 @@ export interface SidebarSessionItemProps {
   handleOpenReplayEvidence: SidebarRowActions['handleOpenReplayEvidence'];
   handleSelectMessageSearchHit: SidebarSessionActions['handleSelectMessageSearchHit'];
   handleArchiveSession: SidebarSessionActions['handleArchiveSession'];
+  /** 该任务的旧运行是否已展开。只有最新一行上的 xN 会用到。 */
+  cronRunsExpanded?: boolean;
+  /** 搜索态不传：xN 保持纯文本，不充当开关。 */
+  onToggleCronRuns?: (taskId: string) => void;
 }
 
 /** SidebarSessionItem 除 `session` 外的共享 props，供 SidebarProjectGroup 按会话批量透传。 */
@@ -121,9 +125,12 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   handleDoubleClick,
   handleSelectMessageSearchHit,
   handleArchiveSession,
+  cronRunsExpanded = false,
+  onToggleCronRuns,
 }) => {
   const { t, language } = useI18n();
   const s = t.sidebarSession;
+  const projectCopy = t.sidebarProject;
   const isUnread = unreadSessionIds.has(session.id);
   const isSelected = currentSessionId === session.id;
   const isChecked = selectedSessionIds.has(session.id);
@@ -216,12 +223,32 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
           </span>
         )}
         {!isRenaming && cronRunAggregate && cronRunAggregate.runCount > 1 && cronRunAggregate.latestSessionId === session.id && (
-          <span
-            className="shrink-0 text-[11px] tabular-nums text-zinc-500"
-            data-testid="sidebar-cron-run-count"
-          >
-            x{cronRunAggregate.runCount}
-          </span>
+          onToggleCronRuns && cronTaskId ? (
+            <GhostButton
+              type="button"
+              size="sm"
+              data-testid="sidebar-cron-run-toggle"
+              data-task-id={cronTaskId}
+              aria-expanded={cronRunsExpanded}
+              aria-label={cronRunsExpanded ? projectCopy.cronRunsCollapse : projectCopy.cronRunsExpand}
+              title={cronRunsExpanded ? projectCopy.cronRunsCollapse : projectCopy.cronRunsExpand}
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggleCronRuns(cronTaskId);
+              }}
+              leftIcon={<ChevronRight className={`h-3 w-3 transition-transform ${cronRunsExpanded ? 'rotate-90' : ''}`} />}
+              className="h-auto shrink-0 px-1 py-0 text-[11px] tabular-nums text-zinc-500"
+            >
+              <span data-testid="sidebar-cron-run-count">x{cronRunAggregate.runCount}</span>
+            </GhostButton>
+          ) : (
+            <span
+              className="shrink-0 text-[11px] tabular-nums text-zinc-500"
+              data-testid="sidebar-cron-run-count"
+            >
+              x{cronRunAggregate.runCount}
+            </span>
+          )
         )}
 
         {/* 行尾状态轴：**一个**固定 16px 槽，内容按优先级互斥 ——

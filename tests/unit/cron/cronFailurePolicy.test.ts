@@ -3,9 +3,14 @@
 // 退避序列 / 错误分类判据 / 失败通知去重+冷却 / 连败计数
 // + notifyWhen 通知门（N-CRON-RESTATE-HUMAN-WHEN）
 // ============================================================================
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const configState = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
 const notifyState = vi.hoisted(() => ({ notifyTaskComplete: vi.fn() }));
+
+vi.mock('../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: () => ({ ui: { language: configState.language } }) }),
+}));
 vi.mock('../../../src/host/services/infra/notificationService', () => ({
   notificationService: { notifyTaskComplete: notifyState.notifyTaskComplete },
 }));
@@ -16,13 +21,20 @@ import {
   cronNotifyQuietRound,
   cronRetryBackoffMs,
   CronFailureNoticeGate,
+  cronDisableReasonForFailure,
   notifyCronAgentExecution,
+  notifyCronJobDisabled,
 } from '../../../src/host/cron/cronFailurePolicy';
 import { buildCronAgentActionResult, cronAgentRunHasAlert } from '../../../src/host/cron/cronNormalizers';
 import { CRON_GUARDRAILS } from '../../../src/shared/constants';
 import type { CronJobDefinition, CronJobExecution } from '../../../src/shared/contract/cron';
 import { buildCronLoginWallStopCode } from '../../../src/shared/utils/browserLoginWall';
 import { CRON_CLOUD_UNAVAILABLE_MESSAGE_EN } from '../../../src/shared/utils/cronCloudUnavailable';
+
+afterEach(() => {
+  configState.language = 'zh';
+  notifyState.notifyTaskComplete.mockClear();
+});
 
 describe('cronRetryBackoffMs：指数退避序列', () => {
   it('30s → 60s → 120s → 240s（BASE×FACTOR^(n-1)）', () => {
@@ -50,6 +62,12 @@ describe('classifyCronFailure：错误分类判据（集中一处）', () => {
     expect(classifyCronFailure('Request was cancelled while waiting')).toBe('capacity-wait');
     expect(classifyCronFailure('agent call aborted while queued')).toBe('capacity-wait');
     expect(classifyCronFailure('agent call aborted before admission')).toBe('capacity-wait');
+  });
+
+  it('budget permanent failures select the budget notification branch, including legacy messages', () => {
+    expect(cronDisableReasonForFailure(new Error('Cron job run exceeded its $0.01 budget limit (spent $0.0234).'))).toBe('budget');
+    expect(cronDisableReasonForFailure('Cron job run exceeded its $0.01 budget limit.')).toBe('budget');
+    expect(cronDisableReasonForFailure(new Error('unsupported_action'))).toBe('permanent');
   });
 
   it('自有错误码/配置校验/预算/无人值守停车 → permanent（重试无用）', () => {
@@ -107,6 +125,58 @@ describe('classifyCronFailure：错误分类判据（集中一处）', () => {
     // 展示层新增 cloud_unavailable 后，host 策略分类口径不变：英文固定句同样走 transient 退避。
     expect(classifyCronFailure(CRON_CLOUD_UNAVAILABLE_MESSAGE_EN)).toBe('transient');
     expect(classifyCronFailure(new Error('Command failed: exit 1'))).toBe('transient');
+  });
+});
+
+describe('notifyCronJobDisabled：预算 / permanent / max_runs 文案', () => {
+  const definition = {
+    id: 'job-budget',
+    name: '预算任务',
+    scheduleType: 'every' as const,
+    schedule: { type: 'every' as const, interval: 1, unit: 'hours' as const },
+    action: { type: 'shell' as const, command: 'echo ok' },
+    runsOn: 'local' as const,
+    maxRunBudget: 0.01,
+    maxRuns: 2,
+    enabled: true,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const execution = (error?: string): CronJobExecution => ({
+    id: 'execution-budget',
+    jobId: definition.id,
+    status: 'failed',
+    scheduledAt: 1,
+    retryAttempt: 0,
+    ...(error ? { error } : {}),
+  });
+
+  it.each([
+    ['zh', '本次运行花费 $0.0234，超过了你设的单次预算上限 $0.01，任务已自动停用。可在「自动化中心 → 定时任务」编辑该任务，调高「单次预算上限 (USD)」后重新启用。'],
+    ['en', 'This run spent $0.0234, over your per-run budget cap of $0.01, so the task was disabled. Raise "Per-run budget cap (USD)" under Automation Center → Scheduled tasks and re-enable it.'],
+  ] as const)('%s budget copy includes spend, cap, and re-enable path', (language, expected) => {
+    configState.language = language;
+    notifyCronJobDisabled(
+      definition,
+      execution('Cron job run exceeded its $0.01 budget limit (spent $0.0234).'),
+      'budget',
+    );
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledWith(
+      expect.objectContaining({ summary: expected }),
+      { force: true },
+    );
+    expect(expected).not.toContain('config/auth');
+    expect(expected).not.toContain('exceeded its $');
+  });
+
+  it('legacy budget copy drops the unparseable spend and the other branches keep their copy', () => {
+    notifyCronJobDisabled(definition, execution('Cron job run exceeded its $0.01 budget limit.'), 'budget');
+    notifyCronJobDisabled(definition, execution('unsupported_action'), 'permanent');
+    notifyCronJobDisabled(definition, execution(), 'max_runs');
+    const summaries = notifyState.notifyTaskComplete.mock.calls.map((call) => String(call[0]?.summary));
+    expect(summaries[0]).toBe('本次运行超过了你设的单次预算上限 $0.01，任务已自动停用。可在「自动化中心 → 定时任务」编辑该任务，调高「单次预算上限 (USD)」后重新启用。');
+    expect(summaries[1]).toContain('因配置/鉴权类错误停用');
+    expect(summaries[2]).toContain('已达运行次数上限（2 次）已自动停用');
   });
 });
 

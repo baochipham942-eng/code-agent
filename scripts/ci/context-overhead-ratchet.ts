@@ -82,11 +82,12 @@ const measureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ctx-overhead-ratchet-'
 process.env.CODE_AGENT_DATA_DIR = measureDir;
 
 // 环境里的 Jev key（官方 TYPESAFE_API_KEY / OpenRouter OPENROUTER_API_KEY）会把条件工具
-// decide 翻进 <deferred-tools> 折叠索引，同一份代码在有 key / 无 key 的机器上量出不同的数，
+// decide 翻进 <deferred-tools> 折叠索引；智谱 key（ZHIPU_API_KEY / ZHIPU_OFFICIAL_API_KEY）
+// 会拿掉折叠索引末尾的「未开启能力」行。同一份代码在有 key / 无 key 的机器上量出不同的数，
 // 违反本脚本「同配置两次运行必须逐字节同数」的口径。基线钉的是 keyless 默认档
-// （builtin-only、无 MCP），与空数据目录同一类环境钉死：测量前摘掉这两把 ambient key。
-for (const jevKeyEnv of ['TYPESAFE_API_KEY', 'OPENROUTER_API_KEY']) {
-  delete process.env[jevKeyEnv];
+// （builtin-only、无 MCP、未开启能力行在），与空数据目录同一类环境钉死：测量前摘掉这些 ambient key。
+for (const ambientKeyEnv of ['TYPESAFE_API_KEY', 'OPENROUTER_API_KEY', 'ZHIPU_API_KEY', 'ZHIPU_OFFICIAL_API_KEY']) {
+  delete process.env[ambientKeyEnv];
 }
 
 const RealDate = Date;

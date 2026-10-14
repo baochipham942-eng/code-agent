@@ -1279,6 +1279,10 @@
             "danger"
           ]
         },
+        "riskClass": {
+          "type": "string",
+          "const": "external"
+        },
         "decisionTrace": {
           "$ref": "#/$defs/__schema5"
         }

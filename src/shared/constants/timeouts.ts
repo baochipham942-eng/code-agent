@@ -405,6 +405,8 @@ const TOOL_EXECUTION_LONG_RUNNING_NAMES = [
   // 慢生成/自动化工具：不发进度事件、单次调用常态超过 120s，默认档会误杀。
   'image_generate', 'docx_generate', 'excel_generate', 'chart_generate', 'pdf_generate',
   'text_to_speech', 'xlwings_execute',
+  // music_generate 单次 30-120s，默认 120s 档会误杀（N-MEDIA-GEN-PHASE2）。
+  'music_generate',
 ] as const;
 
 /** Return the unified inactivity budget, or undefined for tools with their own timeout. */
@@ -525,7 +527,7 @@ export const RENDERER_POLLING = {
 export const TOOL_TIMEOUT_THRESHOLDS: Record<string, number> = {
   bash: 120_000,            // 2 min（命令可能耗时较长）
   ppt_generate: 180_000,    // 3 min（多步管道）
-  image_generate: 90_000,   // 1.5 min
+  image_generate: 360_000,  // up to four concurrency-3 waves for a ten-image batch
   video_generate: 600_000,  // 10 min（视频生成较慢）
   web_fetch: 30_000,        // 30s
   web_search: 30_000,       // 30s

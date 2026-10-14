@@ -1107,6 +1107,54 @@ describe('bashModule OS 沙箱 gating（bypassPermissions）', () => {
     }
   });
 
+  // N-DELIVERABLE-WORKDIR-DEFAULT：无文件夹新会话的默认 cwd 不再是 HOME，而是
+  // getDefaultWorkDirectory() 下的按会话目录（任务_MMDD_<标题>）。「jail 默认 = cwd 子树」
+  // 的既有语义不变——cwd 换成按会话目录后写根随之收窄到该目录（不是 HOME、也不是扁平
+  // ~/Neo 根）；git/pip 往 HOME 写缓存被拒的代价与项目 cwd 同侧（#1997 既有口径）。
+  it('N-DELIVERABLE-WORKDIR-DEFAULT：cwd = 按会话任务目录时写根收窄到该目录', async () => {
+    const homeRoot = mkdtempSync(join(tmpdir(), 'sandbox-task-home-'));
+    const taskFolder = join(homeRoot, 'Neo', '任务_1011_季度总结');
+    mkdirSync(taskFolder, { recursive: true });
+    try {
+      const handler = await bashModule.createHandler();
+      await handler.execute(
+        { command: 'echo deliverable' },
+        makeCtx({ workingDir: taskFolder, workspace: taskFolder }),
+        allowAll,
+      );
+      expect(wrapMock).toHaveBeenCalledTimes(1);
+      // 不显式传写根 ⇒ sandbox manager 兜底 [cwd]（manager.ts: readWriteRoots ?? [resolved]）
+      expect(wrapMock.mock.calls[0][1].workingDirectory).toBe(resolveCanonicalRunPath(taskFolder));
+      expect(wrapMock.mock.calls[0][1].readWriteRoots).toBeUndefined();
+    } finally {
+      rmSync(homeRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('N-DELIVERABLE-WORKDIR-DEFAULT：cwd 仍是 HOME 时，workspace = 按会话目录 ⇒ 收紧到任务目录子树', async () => {
+    const homeRoot = mkdtempSync(join(tmpdir(), 'sandbox-task-confine-'));
+    const taskFolder = join(homeRoot, 'Neo', '任务_1011_季度总结');
+    mkdirSync(taskFolder, { recursive: true });
+    try {
+      const handler = await bashModule.createHandler();
+      await handler.execute(
+        { command: 'echo deliverable' },
+        makeCtx({ workingDir: homeRoot, workspace: taskFolder }),
+        allowAll,
+      );
+      expect(wrapMock).toHaveBeenCalledTimes(1);
+      expect(wrapMock).toHaveBeenCalledWith(
+        'echo deliverable',
+        expect.objectContaining({
+          workingDirectory: resolveCanonicalRunPath(homeRoot),
+          readWriteRoots: [resolveCanonicalRunPath(taskFolder)],
+        }),
+      );
+    } finally {
+      rmSync(homeRoot, { recursive: true, force: true });
+    }
+  });
+
   it('acceptEdits 档：包装命令', async () => {
     modeMgr.setMode('acceptEdits', true);
     const handler = await bashModule.createHandler();

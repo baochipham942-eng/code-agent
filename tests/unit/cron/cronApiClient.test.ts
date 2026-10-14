@@ -113,6 +113,43 @@ describe('CronApiClient event recovery', () => {
   });
 });
 
+describe('role-wake cloud declaration', () => {
+  // 云端未接线（N-CLOUD-ROLE-WAKE-PROTO）：role-wake 仍被拒绝发射，但先过 draft
+  // 校验器，拒因要带进错误消息；校验通过也仍是 not wired yet。
+  function roleWakeJob(): CronJobDefinition {
+    return {
+      ...cloudJob(),
+      action: { type: 'role-wake', roleId: 'role-analyst' },
+    };
+  }
+
+  it('still throws and carries the validator reason when environmentId is missing', () => {
+    expect(() => buildCronApiAddParams(roleWakeJob())).toThrowError(
+      'Cloud cron does not support the role-wake action type: missing-environment-id.',
+    );
+  });
+
+  it('still throws not-wired-yet when the action passes draft validation', () => {
+    const job: CronJobDefinition = {
+      ...cloudJob(),
+      action: { type: 'role-wake', roleId: 'role-analyst', environmentId: 'env-prod' },
+    };
+    expect(() => buildCronApiAddParams(job)).toThrowError(
+      'Cloud cron does not support the role-wake action type: not wired yet.',
+    );
+  });
+
+  it('keeps ipc and memory-consolidation on the shared unsupported message', () => {
+    const ipcJob: CronJobDefinition = {
+      ...cloudJob(),
+      action: { type: 'ipc', channel: 'x', payload: null },
+    };
+    expect(() => buildCronApiAddParams(ipcJob)).toThrowError(
+      'Cloud cron does not support the ipc action type.',
+    );
+  });
+});
+
 describe('cloud run projection', () => {
   // 云端 run 的 session 活在服务端；本地 cron_executions.session_id 是指向 sessions(id)
   // 的外键，把远端 sessionId 照抄进来会让整行 INSERT 撞 SQLITE_CONSTRAINT_FOREIGNKEY，

@@ -22,6 +22,37 @@ describe('artifact follow decisions', () => {
     }, '/workspace')).toBeNull();
   });
 
+  it('follows image_generate output_file_path while preserving image_process output_path', () => {
+    expect(artifactPathFromToolStart({
+      name: 'image_generate',
+      arguments: { prompt: ['a', 'b'], output_file_path: 'images/result.png' },
+    }, '/workspace')).toBe('/workspace/images/result.png');
+    expect(artifactPathFromToolStart({
+      name: 'image_process',
+      arguments: { output_path: 'images/processed.png' },
+    }, '/workspace')).toBe('/workspace/images/processed.png');
+  });
+
+  it('follows video/music output_file_path and keeps legacy output_path readable', () => {
+    expect(artifactPathFromToolStart({
+      name: 'video_generate',
+      arguments: { prompt: 'cat', output_file_path: 'videos/clip.mp4' },
+    }, '/workspace')).toBe('/workspace/videos/clip.mp4');
+    expect(artifactPathFromToolStart({
+      name: 'music_generate',
+      arguments: { prompt: 'song', output_file_path: 'music/track.mp3' },
+    }, '/workspace')).toBe('/workspace/music/track.mp3');
+    // 旧 output_path 的历史消息展示不变：同一路径照常跟随
+    expect(artifactPathFromToolStart({
+      name: 'video_generate',
+      arguments: { prompt: 'cat', output_path: 'videos/legacy.mp4' },
+    }, '/workspace')).toBe('/workspace/videos/legacy.mp4');
+    expect(artifactPathFromToolStart({
+      name: 'music_generate',
+      arguments: { prompt: 'song', output_path: 'music/legacy.mp3' },
+    }, '/workspace')).toBe('/workspace/music/legacy.mp3');
+  });
+
   it('auto-activates while idle and degrades to attention after workbench interaction', () => {
     expect(decideArtifactFollowOpen({
       paused: false,

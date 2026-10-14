@@ -20,6 +20,7 @@ import type {
 } from '../../shared/contract/sessionAutomation';
 import { isCronUrgency } from '../../shared/cronUrgency';
 import { formatCronExpressionLabel } from '../../shared/cronHumanize';
+import { parseCronLoginWallStop } from '../../shared/utils/browserLoginWall';
 
 /**
  * 解析定时任务对应的「运行时定义」（带最新 nextRunAt）。
@@ -227,6 +228,7 @@ export async function recordCronAutomationExecution(
       });
     }
     const skipped = execution.status === 'completed' && isSkippedResult(execution.result);
+    const loginWall = parseCronLoginWallStop(execution.error);
     const event = skipped ? 'skipped' : execution.status === 'failed' ? 'failed' : 'completed';
     const eventStatus: SessionAutomationStatus = skipped
       ? 'skipped'
@@ -264,7 +266,9 @@ export async function recordCronAutomationExecution(
           ...(urgencyRaw ? { urgencyRaw } : {}),
           ...(digest ? { digest } : {}),
         } } }
-        : {}),
+        : loginWall
+          ? { configPatch: { loginWall: { siteOrigin: loginWall.siteOrigin, at: execution.completedAt ?? Date.now() } } }
+          : {}),
       resultSessionId: execution.sessionId,
       summary: skipped
         ? '当前触发被跳过。'

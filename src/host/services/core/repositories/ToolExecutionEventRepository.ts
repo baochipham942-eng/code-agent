@@ -193,6 +193,24 @@ export class ToolExecutionEventRepository {
     return rows.map(rowToRecord);
   }
 
+  /**
+   * 某会话内指定 toolCallId 的完整生命周期：begin 行按 tool_call_id 命中，
+   * complete 行（无 tool_call_id）按 execution_id 带回。按 toolCallId 直查、
+   * 不走会话窗口——getBySession 的 ASC+LIMIT 在长会话里只剩最旧事件，
+   * 近期调用会被截出窗口（返修 r1：送达判定不能依赖窗口覆盖）。
+   */
+  getBySessionAndToolCallId(sessionId: string, toolCallId: string): ToolExecutionEventRecord[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM tool_execution_events
+      WHERE execution_id IN (
+        SELECT execution_id FROM tool_execution_events
+        WHERE session_id = ? AND tool_call_id = ?
+      )
+      ORDER BY recorded_at ASC, id ASC
+    `).all(sessionId, toolCallId) as SQLiteRow[];
+    return rows.map(rowToRecord);
+  }
+
   count(): number {
     const row = this.db.prepare(`SELECT COUNT(*) AS c FROM tool_execution_events`).get() as { c?: number };
     return Number(row?.c ?? 0);

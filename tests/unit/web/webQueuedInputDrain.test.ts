@@ -252,7 +252,7 @@ describe('web queued input drain', () => {
     expect(runEnvelope).toHaveBeenCalledWith(expect.objectContaining({
       clientMessageId: 'queued-idle',
       sessionId: 'session-idle',
-    }), expect.anything(), expect.any(Function));
+    }), expect.anything(), expect.any(Function), undefined);
   });
 
   it('startup sweep 把 sending 孤儿复位为 queued 并标记 restart，且不自动重发', async () => {
@@ -437,4 +437,216 @@ describe('web queued input drain', () => {
       expect(settled.some((event) => event.id === 'q2' && event.status === 'failed')).toBe(true);
     });
   });
+
+describe('web queued input drain · 委托钩子（ADR-072 K1C）', () => {
+  interface DelegationHooksStub {
+    calls: string[];
+    beforeClaimDecision: (record: { id: string }) => import('../../../src/host/services/delegation/delegationDelivery').DelegationClaimDecision;
+  }
+
+  function createDelegationDrain(input: {
+    repository: QueuedInputRepository;
+    runEnvelope: WebQueuedInputDrainDependenciesForTest['runEnvelope'];
+    stub: DelegationHooksStub;
+    order?: string[];
+    settled?: import('../../../src/shared/contract/queuedInput').QueuedInputSettledEvent[];
+    activated?: QueuedInputActivatedEvent[];
+  }): WebQueuedInputDrain {
+    const delegation = {
+      beforeClaim: async (record: { id: string }) => {
+        input.order?.push(`beforeClaim:${record.id}`);
+        return input.stub.beforeClaimDecision(record);
+      },
+      onActivated: (record: { id: string }, activation: { runId: string; activatedAt: number }) => {
+        input.stub.calls.push(`onActivated:${record.id}:${activation.runId}`);
+      },
+      onClaimConflict: (record: { id: string }) => {
+        input.stub.calls.push(`onClaimConflict:${record.id}`);
+        // 真钩子（createDelegationDrainHooks）在这里做 pauseAfterClaim(target_busy)
+        input.repository.pauseAfterClaim(record.id, 'target_busy');
+      },
+      onRetryExhausted: (record: { id: string }) => {
+        input.stub.calls.push(`onRetryExhausted:${record.id}`);
+      },
+      projectTerminal: (sessionId?: string) => {
+        input.stub.calls.push(`projectTerminal:${sessionId ?? '*'}`);
+      },
+    };
+    return createWebQueuedInputDrain({
+      getRepository: () => input.repository,
+      hasActiveRun: () => false,
+      runEnvelope: input.runEnvelope,
+      emitAgentEvent: () => {},
+      notifyQueuedInputActivated: (event) => input.activated?.push(event),
+      notifyQueuedInputSettled: (event) => input.settled?.push(event),
+      delegation,
+      logger,
+    });
+  }
+
+  type WebQueuedInputDrainDependenciesForTest = Parameters<typeof createWebQueuedInputDrain>[0];
+
+  it('INV-1：beforeClaim 先于 markSending（调用顺序断言）', async () => {
+    const repository = createRepository();
+    repository.enqueue({ id: 'delegation-1', sessionId: 'session-d', envelope: { content: '委托任务' }, now: 1 });
+    const order: string[] = [];
+    const originalMarkSending = repository.markSending.bind(repository);
+    repository.markSending = (id: string, now?: number) => {
+      order.push(`markSending:${id}`);
+      return originalMarkSending(id, now);
+    };
+
+    const drain = createDelegationDrain({
+      repository,
+      order,
+      stub: { calls: [], beforeClaimDecision: () => ({ kind: 'deliver' }) },
+      runEnvelope: async () => {},
+    });
+    drain.handleEnqueued('session-d');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(order).toEqual(['beforeClaim:delegation-1', 'markSending:delegation-1']);
+  });
+
+  it('复核 deliver 带标记 → runEnvelope 收到带外 marker，普通行不传', async () => {
+    const repository = createRepository();
+    repository.enqueue({ id: 'delegation-1', sessionId: 'session-d', envelope: { content: '委托任务' }, now: 1 });
+    const optionsSeen: Array<unknown> = [];
+    const drain = createDelegationDrain({
+      repository,
+      stub: { calls: [], beforeClaimDecision: () => ({ kind: 'deliver', delegationOrigin: { delegationId: 'd-1', actionFingerprint: 'ff' } }) },
+      runEnvelope: async (_envelope, _response, _onActivated, options) => { optionsSeen.push(options); },
+    });
+    drain.handleEnqueued('session-d');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(optionsSeen).toEqual([{ delegationOrigin: { delegationId: 'd-1', actionFingerprint: 'ff' } }]);
+  });
+
+  it('复核 pause（gap I4）：本行写 paused_reason、settled 回 queued、drain 继续抽下一行', async () => {
+    const repository = createRepository();
+    repository.enqueue({ id: 'delegation-1', sessionId: 'session-d', envelope: { content: '忙的委托' }, now: 1 });
+    repository.enqueue({ id: 'user-2', sessionId: 'session-d', envelope: { content: '后面的用户行' }, now: 2 });
+    const settled: import('../../../src/shared/contract/queuedInput').QueuedInputSettledEvent[] = [];
+    const ran: string[] = [];
+    const drain = createDelegationDrain({
+      repository,
+      settled,
+      stub: {
+        calls: [],
+        beforeClaimDecision: (record) => (record.id === 'delegation-1'
+          ? { kind: 'pause', code: 'target_busy' }
+          : { kind: 'deliver' }),
+      },
+      runEnvelope: async (envelope) => { ran.push(envelope.content); },
+    });
+    drain.handleEnqueued('session-d');
+    await new Promise((resolve) => setTimeout(resolve, 40));
+
+    expect(repository.getById('delegation-1')).toMatchObject({ status: 'queued', pausedReason: 'target_busy' });
+    expect(settled).toContainEqual({ sessionId: 'session-d', id: 'delegation-1', status: 'queued' });
+    expect(ran).toEqual(['后面的用户行']);
+    expect(repository.getById('user-2')?.status).toBe('consumed');
+  });
+
+  it('复核 wait：本行保持 queued 且不投，不重排（等 release 再抽）', async () => {
+    const repository = createRepository();
+    repository.enqueue({ id: 'delegation-1', sessionId: 'session-d', envelope: { content: '排队的委托' }, now: 1 });
+    const ran: string[] = [];
+    const drain = createDelegationDrain({
+      repository,
+      stub: { calls: [], beforeClaimDecision: () => ({ kind: 'wait' }) },
+      runEnvelope: async (envelope) => { ran.push(envelope.content); },
+    });
+    drain.handleEnqueued('session-d');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(ran).toEqual([]);
+    expect(repository.getById('delegation-1')).toMatchObject({ status: 'queued', pausedReason: null });
+  });
+
+  it('抢占后 RunSessionConflictError：pauseAfterClaim(target_busy)，不进自动重试', async () => {
+    const { RunSessionConflictError } = await import('../../../src/host/runtime/runRegistry');
+    const repository = createRepository();
+    repository.enqueue({ id: 'delegation-1', sessionId: 'session-d', envelope: { content: '撞车的委托' }, now: 1 });
+    const calls: string[] = [];
+    const settled: import('../../../src/shared/contract/queuedInput').QueuedInputSettledEvent[] = [];
+    let attempts = 0;
+
+    const drain = createDelegationDrain({
+      repository,
+      settled,
+      stub: { calls, beforeClaimDecision: () => ({ kind: 'deliver', delegationOrigin: { delegationId: 'd-1', actionFingerprint: 'ff' } }) },
+      runEnvelope: async () => {
+        attempts += 1;
+        throw new RunSessionConflictError('session-d', 'run-existing');
+      },
+    });
+    drain.handleEnqueued('session-d');
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(attempts).toBe(1);
+    expect(calls).toContain('onClaimConflict:delegation-1');
+    expect(repository.getById('delegation-1')).toMatchObject({ status: 'queued', pausedReason: 'target_busy' });
+    expect(settled).toContainEqual({ sessionId: 'session-d', id: 'delegation-1', status: 'queued' });
+  });
+
+  it('普通行撞 RunSessionConflictError 仍走既有重试语义（不因委托钩子改变）', async () => {
+    const { RunSessionConflictError } = await import('../../../src/host/runtime/runRegistry');
+    const repository = createRepository();
+    repository.enqueue({ id: 'user-1', sessionId: 'session-d', envelope: { content: '普通行' }, now: 1 });
+    let attempts = 0;
+    const drain = createDrain({
+      repository,
+      runEnvelope: async () => {
+        attempts += 1;
+        throw new RunSessionConflictError('session-d', 'run-existing');
+      },
+    });
+    drain.handleEnqueued('session-d');
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    // 既有语义：一次触发一次尝试，失败 requeueAfterFailure 回 queued（无 paused_reason）等下次触发
+    expect(attempts).toBe(1);
+    expect(repository.getById('user-1')).toMatchObject({ status: 'queued', pausedReason: null, retryCount: 1 });
+  });
+
+  it('重试耗尽 markFailed 后 → onRetryExhausted（委托行投影 aborted(delivery_failed) 的钩子）', async () => {
+    const repository = createRepository();
+    repository.enqueue({ id: 'delegation-1', sessionId: 'session-d', envelope: { content: '耗尽的委托' }, now: 1 });
+    const calls: string[] = [];
+    const drain = createDelegationDrain({
+      repository,
+      stub: { calls, beforeClaimDecision: () => ({ kind: 'deliver', delegationOrigin: { delegationId: 'd-1', actionFingerprint: 'ff' } }) },
+      runEnvelope: async () => { throw new Error('send failed'); },
+    });
+    // 一次触发一次尝试：重试由再次触发驱动，直到超过 MAX_RESEND_ATTEMPTS 后 markFailed
+    for (let attempt = 0; attempt <= QUEUED_INPUT_RETRY.MAX_RESEND_ATTEMPTS; attempt += 1) {
+      drain.handleEnqueued('session-d');
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    }
+
+    expect(repository.getById('delegation-1')).toMatchObject({ status: 'failed', retryCount: QUEUED_INPUT_RETRY.MAX_RESEND_ATTEMPTS + 1 });
+    expect(calls).toContain('onRetryExhausted:delegation-1');
+  });
+
+  it('onActivated 透传 + 启动扫触发 projectTerminal 全量投影', async () => {
+    const repository = createRepository();
+    repository.enqueue({ id: 'delegation-1', sessionId: 'session-d', envelope: { content: '激活回填' }, now: 1 });
+    const activated: QueuedInputActivatedEvent[] = [];
+    const calls: string[] = [];
+    const drain = createDelegationDrain({
+      repository,
+      activated,
+      stub: { calls, beforeClaimDecision: () => ({ kind: 'deliver' }) },
+      runEnvelope: async (_envelope, _response, onActivated) => {
+        onActivated({ runId: 'run-77', activatedAt: 5 });
+      },
+    });
+    drain.handleEnqueued('session-d');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(calls).toContain('onActivated:delegation-1:run-77');
+    expect(activated).toEqual([{ id: 'delegation-1', sessionId: 'session-d', runId: 'run-77', activatedAt: 5 }]);
+
+    drain.runStartupSweep();
+    expect(calls).toContain('projectTerminal:*');
+  });
+});
 });

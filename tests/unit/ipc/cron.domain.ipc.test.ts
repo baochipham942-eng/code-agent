@@ -109,6 +109,7 @@ describe('generateFromPrompt', () => {
     expect(req.messages[1]).toEqual({ role: 'user', content: '每天早上八点给我简报' });
     expect(req.messages[0].role).toBe('system');
     expect(req.messages[0].content).toContain('【当前时间】');
+    expect(req.messages[0].content).toContain('"restatement"');
   });
 
   it('回复里没有 JSON → PARSE_ERROR 格式异常；JSON 解析失败 → PARSE_ERROR 解析失败；content 缺省按空串', async () => {

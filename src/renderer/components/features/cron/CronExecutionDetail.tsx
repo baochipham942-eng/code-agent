@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { CronJobDefinition, CronJobExecution } from '@shared/contract';
-import { MessageSquareText } from 'lucide-react';
+import { ExternalLink, MessageSquareText } from 'lucide-react';
 import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
@@ -11,6 +11,7 @@ import {
   prettyJson,
 } from './types';
 import { CronRunsOnPill } from './CronRunsOnSelector';
+import { cronLoginWallCopy, openCronLoginWallSite } from './cronLoginWallNotice';
 
 interface CronExecutionDetailProps {
   execution: CronJobExecution | null;
@@ -33,14 +34,15 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
   }
 
   const statusMeta = getExecutionStatusMeta(execution.status);
-  const displayError = execution.error === 'unsupported_action'
+  const loginWall = cronLoginWallCopy(execution.error, { error: cc.loginWallError });
+  const displayError = loginWall?.message ?? (execution.error === 'unsupported_action'
     ? cc.unsupportedAction
     : execution.error === 'Cloud execution is not wired yet (N-L3-MINLOOP-SRV).'
     ? cc.cloudExecutionNotWired
     : execution.error?.replace(
       /Cron job run exceeded its \$(\d+(?:\.\d+)?) budget limit\./,
       (_match, amount: string) => cc.runBudgetExceeded.replace('{amount}', amount),
-    );
+    ));
   const handleOpenSession = async () => {
     if (!execution.sessionId || isOpeningSession) return;
     setIsOpeningSession(true);
@@ -85,6 +87,14 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
             <CronRunsOnPill runsOn={runsOn} localLabel={cc.locationLocal} cloudLabel={cc.locationCloud} />
           </div>
         </div>
+        {execution.trigger?.kind === 'event' && (
+          // 事件 run 的触发源标签（N-TRIGGER-CONNECTOR-MAIL）：channel = 通道消息，connector:mail = 邮件。
+          <Info
+            label={cc.execTriggerSource}
+            value={execution.trigger.source === 'connector' ? cc.triggerSourceMail : cc.triggerSourceChannel}
+            testId="cron-exec-trigger-source"
+          />
+        )}
         <Info label={cc.colScheduledAt} value={formatDateTime(execution.scheduledAt)} />
         <Info label={cc.colStartedAt} value={formatDateTime(execution.startedAt)} />
         <Info label={cc.execCompletedAt} value={formatDateTime(execution.completedAt)} />
@@ -95,7 +105,20 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
 
       {displayError && (
         <section className="mt-4">
-          <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-badge-danger">{cc.execError}</h5>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h5 className="text-xs font-medium uppercase tracking-wide text-badge-danger">{cc.execError}</h5>
+            {loginWall && (
+              <button /* ds-allow:button: 错误区标题旁紧凑警示色链接按钮（px-2 py-1 text-xs），primitive 无警示色 variant 且最小 sm 内边距更大 */
+                type="button"
+                onClick={() => openCronLoginWallSite(loginWall.siteOrigin)}
+                className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-badge-warning transition-colors hover:bg-amber-500/10"
+                data-testid="cron-execution-open-login-site"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                {cc.loginWallOpenSite}
+              </button>
+            )}
+          </div>
           <pre className="max-h-40 overflow-auto rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-badge-danger whitespace-pre-wrap">
             {displayError}
           </pre>
@@ -112,8 +135,8 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
   );
 };
 
-const Info: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-3">
+const Info: React.FC<{ label: string; value: string; testId?: string }> = ({ label, value, testId }) => (
+  <div className="rounded-lg border border-zinc-800 bg-zinc-900/70 p-3" data-testid={testId}>
     <div className="text-xs text-zinc-500">{label}</div>
     <div className="mt-1 text-sm text-zinc-200">{value}</div>
   </div>

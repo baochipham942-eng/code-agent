@@ -196,9 +196,9 @@ export function composeTelemetryAdapters(
     }
   };
   return {
-    onTurnStart(turnId, turnNumber, userPrompt, parentTurnId) {
-      safely(() => primary.onTurnStart(turnId, turnNumber, userPrompt, parentTurnId));
-      safely(() => secondary.onTurnStart(turnId, turnNumber, userPrompt, parentTurnId));
+    onTurnStart(turnId, turnNumber, userPrompt, parentTurnId, turnSource) {
+      safely(() => primary.onTurnStart(turnId, turnNumber, userPrompt, parentTurnId, turnSource));
+      safely(() => secondary.onTurnStart(turnId, turnNumber, userPrompt, parentTurnId, turnSource));
     },
     onModelCall(turnId, call) {
       safely(() => primary.onModelCall(turnId, call));

@@ -4,7 +4,7 @@
 // 两种入口合一：
 //   - 模板库：每日简报 / 缺陷扫描 / 周回顾，点选→填空→创建
 //   - 自定义：自由文本描述
-// 创建统一回调 onSubmit(description)，由 ChatInput 走 cron:generateFromPrompt → createJob。
+// 提交统一回调 onSubmit(description)，由 ChatInput 走 cron:generateFromPrompt → 确认卡。
 // ============================================================================
 
 import React, { useMemo, useState } from 'react';

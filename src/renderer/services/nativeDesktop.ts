@@ -407,6 +407,7 @@ export interface AudioCaptureStatus {
     lastSweepAt: number | null;
     deletedTotal: number;
     failedTotal: number;
+    failedCurrent: number;
     lastError?: string;
     fileCount?: number;
     bytes?: number;

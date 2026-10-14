@@ -47,6 +47,7 @@ function normalizeRequest(
     reasonCode: request.reasonCode,
     argsPreview: request.argsPreview,
     dangerLevel: request.dangerLevel,
+    riskClass: request.riskClass,
     boundary: request.boundary,
     details: {
       pluginId: request.details.pluginId,
@@ -62,6 +63,7 @@ function normalizeRequest(
       affectedPath: request.details.affectedPath,
       affectedFileCount: request.details.affectedFileCount,
       targetKind: request.details.targetKind,
+      standingGrantTarget: request.details.standingGrantTarget,
       targetApp: request.details.targetApp,
       triggeredByAgentMessage: request.details.triggeredByAgentMessage,
       path: request.details.path,

@@ -7,6 +7,16 @@ import type { OrchestratorPermissionIsland } from '../host/agent/orchestratorPer
  * without letting an older concurrent run unregister the newer one.
  */
 const foregroundPermissionIslands = new Map<string, OrchestratorPermissionIsland>();
+const permissionStateListeners = new Set<() => void>();
+
+export function onForegroundPermissionStateChange(listener: () => void): () => void {
+  permissionStateListeners.add(listener);
+  return () => { permissionStateListeners.delete(listener); };
+}
+
+function notifyPermissionStateChange(): void {
+  for (const listener of [...permissionStateListeners]) listener();
+}
 
 export function registerForegroundPermissionIsland(
   sessionId: string,
@@ -21,6 +31,7 @@ export function unregisterForegroundPermissionIsland(
 ): void {
   if (foregroundPermissionIslands.get(sessionId) === island) {
     foregroundPermissionIslands.delete(sessionId);
+    notifyPermissionStateChange();
   }
 }
 
@@ -41,5 +52,9 @@ export function deliverForegroundPermissionResponse(
   if (!island.listPendingRequests().some((request) => request.id === requestId)) {
     return undefined;
   }
-  return island.handlePermissionResponse(requestId, response);
+  const outcome = island.handlePermissionResponse(requestId, response);
+  if (outcome !== 'unknown_request' && outcome !== 'storage_unavailable') {
+    notifyPermissionStateChange();
+  }
+  return outcome;
 }

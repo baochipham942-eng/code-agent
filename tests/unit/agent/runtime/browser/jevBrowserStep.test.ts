@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const loginWallPermission = vi.hoisted(() => ({ unattended: false }));
+vi.mock('../../../../../src/host/permissions/modes', () => ({
+  getPermissionModeManager: () => ({
+    isUnattendedSession: () => loginWallPermission.unattended,
+  }),
+}));
+
 // 本文件的装配断言走环境变量。typesafe 读钥匙串时若打到共享的 mock userData，
 // 别的用例留下的槽会把「缺 key」误判成已装配；缺官方 key 时 resolveJevRoute 还会读 OpenRouter key。
 // 这里把 typesafe 槽钉成空，并让 getApiKey 永远返回 undefined——单测不碰真实钥匙串。
@@ -26,7 +33,7 @@ vi.mock('../../../../../src/host/services/core/configService', async (importOrig
 import type { JevAnswers, JevSystemOneCall } from '../../../../../src/shared/constants/jevQuestions';
 import { BROWSER_STEP_OPERATIONS } from '../../../../../src/shared/constants/jevQuestions';
 import type { JevCapturedSnapshot } from '../../../../../src/host/services/infra/browser/jevBrowserSnapshotPrep';
-import { BrowserTargetRefError, type BrowserDomSnapshot, type BrowserTargetRef } from '../../../../../src/host/services/infra/browser/types';
+import { BrowserTargetRefError, type BrowserDomSnapshot, type BrowserTargetRef, type PageContent } from '../../../../../src/host/services/infra/browser/types';
 import {
   resolveBrowserJevStep,
 } from '../../../../../src/host/agent/runtime/browser/jevBrowserStep';
@@ -77,6 +84,7 @@ function textbox(
 describe('jevBrowserStep', () => {
   beforeEach(() => {
     vi.unstubAllEnvs();
+    loginWallPermission.unattended = false;
   });
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -337,6 +345,22 @@ describe('jevBrowserStep', () => {
     page.extras.push({ inputType: 'password', autocomplete: 'current-password', accept: null });
     const host = new FakeHost([page]);
     host.visibleText = '请登录后继续';
+    const systemOne = stubSystemOne(() => answers());
+    const result = await runLoop(host, systemOne, { task: 'read the page title' });
+    expect(result.status).toBe('needs_review');
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('login_required');
+    expect(systemOne).toHaveBeenCalledTimes(0);
+    expect(host.clicks).toEqual([]);
+  });
+
+  it('登录墙仅手机号文本输入（无 form 无 password）仍 needs_review', async () => {
+    const page = snapshot('请先登录', [
+      textbox('tref_phone', '手机号', '请输入手机号'),
+      button('tref_go', 'Submit', 80),
+    ]);
+    const host = new FakeHost([page]);
+    host.visibleText = '请先登录后再操作';
     const systemOne = stubSystemOne(() => answers());
     const result = await runLoop(host, systemOne, { task: 'read the page title' });
     expect(result.status).toBe('needs_review');
@@ -798,6 +822,46 @@ describe('jevBrowserStep', () => {
     }
   });
 
+  it('browserAction execute_goal 无人值守遇到登录墙时终止，而交互 JEV 仍由自身处理', async () => {
+    vi.stubEnv('CODE_AGENT_BROWSER_JEV_STEP', '1');
+    vi.stubEnv('TYPESAFE_API_KEY', 'test-key-not-used');
+    loginWallPermission.unattended = true;
+
+    const service = makePoolStubService();
+    service.getPageContent.mockResolvedValue({
+      url: 'http://127.0.0.1:4123/login?next=1',
+      title: 'Please sign in',
+      text: 'Please sign in to continue',
+      passwordInputPresent: true,
+      loginFormPresent: true,
+    });
+    const acquireSpy = vi.spyOn(browserPool, 'acquire').mockReturnValue(service as unknown as BrowserService);
+    const forceFinalResponse = vi.fn();
+    const ctx: ToolContext = {
+      ...context(),
+      sessionId: 'cron-browser-login-wall',
+      runId: 'run-browser-login-wall',
+      agentId: 'agent-browser-login-wall',
+      forceFinalResponse,
+    };
+
+    try {
+      const result = await browserActionTool.execute({ action: 'execute_goal', task: 'open the account page' }, ctx);
+      expect(result).toMatchObject({
+        success: false,
+        metadata: {
+          code: 'CRON_LOGIN_WALL_STOP',
+          siteOrigin: 'http://127.0.0.1:4123',
+          stopRun: true,
+        },
+      });
+      expect(forceFinalResponse).toHaveBeenCalledWith('cron-login-wall-stop', expect.stringContaining('127.0.0.1:4123'));
+      expect(service.captureJevPage).not.toHaveBeenCalled();
+    } finally {
+      acquireSpy.mockRestore();
+    }
+  });
+
   it('choice=toString 形状不对 yield，不空转 click/type', async () => {
     const host = new FakeHost([snapshot('Nav', [button('tref_go', 'Go')])]);
     const systemOne = stubSystemOne(() => answers({ operation: 'toString', target: 'no_target' }));
@@ -1185,7 +1249,7 @@ function makePoolStubService() {
     click: vi.fn(async () => undefined),
     getElementBoundingBox: vi.fn(async () => ({ x: 0, y: 0, width: 10, height: 10 })),
     captureJevPage: vi.fn(async () => emptySnapshot),
-    getPageContent: vi.fn(async () => ({ url: 'http://127.0.0.1/page', title: 'Page', text: '' })),
+    getPageContent: vi.fn(async (): Promise<PageContent> => ({ url: 'http://127.0.0.1/page', title: 'Page', text: '' })),
     getDialogState: vi.fn(() => ({ pending: false })),
     scroll: vi.fn(async () => undefined),
     clickTargetRef: vi.fn(async () => ({})),

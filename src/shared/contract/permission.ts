@@ -204,6 +204,12 @@ export interface PermissionRequest {
   argsPreview?: string;
   timestamp: number;
   dangerLevel?: 'normal' | 'warning' | 'danger';
+  /**
+   * B1：对外可见副作用（EXTERNAL）风险类——离开本机、发出去收不回的动作（发邮件/发 IM 消息）。
+   * 由 toolExecutor 在需人工审批时打上；仅用于审批卡作用域提示（与停车审批收件箱同口径），
+   * 不参与任何 allow/deny/ask 裁决。非 external 时属性缺省（≠ null）。
+   */
+  riskClass?: 'external';
   /** Decision trace: why this permission was requested (populated on deny/ask) */
   decisionTrace?: import('./decisionTrace').DecisionTrace;
   /** host/renderer 已完成本次裁决；同一 permission_request 事件以加法字段回传终态。 */

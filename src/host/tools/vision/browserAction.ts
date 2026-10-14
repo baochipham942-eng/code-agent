@@ -35,6 +35,7 @@ import {
 } from './browserActionResultProjection';
 import { maybeExecuteBrowserSurfaceInteraction } from './browserActionSurfaceInteractions';
 import { enforceBrowserCaptchaTakeoverGate } from './browserCaptchaGate';
+import { enforceBrowserLoginWallStop } from './browserLoginWallGate';
 import {
   jevBrowserStepEmptyTaskResult,
   jevBrowserStepUnarmedResult,
@@ -376,13 +377,23 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
         params,
       });
       try {
+        const loginWallBeforeRun = await enforceBrowserLoginWallStop({ browserService, context });
+        if (loginWallBeforeRun) {
+          const completedTrace = browserService.finishTrace(trace, {
+            success: false,
+            error: loginWallBeforeRun.error || null,
+          });
+          return appendBrowserWorkbenchNote(withWorkbenchTrace(loginWallBeforeRun, completedTrace, context), workbenchNotes);
+        }
         const result = await driver.run({ task, assertions, jevBudgetUsd, browserService }, context);
+        const loginWallAfterRun = await enforceBrowserLoginWallStop({ browserService, context });
+        const finalResult = loginWallAfterRun ?? result;
         const completedTrace = browserService.finishTrace(trace, {
-          success: result.success,
-          error: result.error || null,
-          screenshotPath: getScreenshotPathFromResult(result),
+          success: finalResult.success,
+          error: finalResult.error || null,
+          screenshotPath: getScreenshotPathFromResult(finalResult),
         });
-        return appendBrowserWorkbenchNote(withWorkbenchTrace(result, completedTrace, context), workbenchNotes);
+        return appendBrowserWorkbenchNote(withWorkbenchTrace(finalResult, completedTrace, context), workbenchNotes);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         browserService.logger.log('ERROR', `Action "${action}" failed: ${errorMessage}`);
@@ -409,6 +420,8 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
 
     try {
       const executeManagedProviderAction = async (): Promise<ToolExecutionResult> => {
+        const loginWallStop = await enforceBrowserLoginWallStop({ browserService, tabId, context });
+        if (loginWallStop) return loginWallStop;
         const captchaGate = await enforceBrowserCaptchaTakeoverGate({ action, browserService, tabId, context });
         if (captchaGate) {
           return captchaGate;
@@ -848,7 +861,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
           return { success: false, error: `Unknown action: ${action}` };
         }
       };
-      const rawResult = useManagedSurface && surfaceIdentity
+      let rawResult = useManagedSurface && surfaceIdentity
         ? await managedAdapter.execute({
             identity: surfaceIdentity,
             operationId: createManagedBrowserOperationId(context, action),
@@ -858,6 +871,10 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
             executeProvider: async () => executeManagedProviderAction(),
           })
         : await executeManagedProviderAction();
+      if (rawResult.success) {
+        const loginWallStop = await enforceBrowserLoginWallStop({ browserService, tabId, context });
+        if (loginWallStop) rawResult = loginWallStop;
+      }
       const completedTrace = browserService.finishTrace(trace, {
         success: rawResult.success,
         error: rawResult.error || null,

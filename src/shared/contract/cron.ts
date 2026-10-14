@@ -314,6 +314,11 @@ export interface RoleWakeAction {
   type: 'role-wake';
   /** 持久化角色 ID（roles/<roleId>/ 目录名） */
   roleId: string;
+  /**
+   * 云端调度环境（option A：创建时显式设置，缺失 => 云端声明被拒）。
+   * 只被云端声明链读取；本地醒来行为不读这个字段。
+   */
+  environmentId?: string;
 }
 
 /**

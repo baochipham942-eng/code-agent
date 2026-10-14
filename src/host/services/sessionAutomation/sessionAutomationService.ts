@@ -118,7 +118,9 @@ function shouldTriggerNextStep(record: SessionAutomationRecord, input: RecordAut
 }
 
 function hasPendingReview(record: SessionAutomationRecord): boolean {
-  return record.status === 'pending_review' || record.config?.pendingReview != null;
+  return record.status === 'pending_review'
+    || record.config?.pendingReview != null
+    || record.config?.loginWall != null;
 }
 
 function rowToRecord(row: SessionAutomationRow): SessionAutomationRecord {
@@ -522,6 +524,7 @@ export class SessionAutomationService {
     if (!record) return null;
     const config = { ...(record.config ?? {}) };
     delete config.pendingReview;
+    delete config.loginWall;
     const status: SessionAutomationStatus = record.status === 'pending_review' ? 'archived' : record.status;
     db.prepare('UPDATE session_automations SET status = ?, config_json = ?, updated_at = ? WHERE id = ?')
       .run(status, JSON.stringify(config), Date.now(), automationId);

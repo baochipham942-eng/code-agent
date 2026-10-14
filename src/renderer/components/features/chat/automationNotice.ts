@@ -1,4 +1,5 @@
 import type { CronScheduleConfig } from '@shared/contract';
+import { formatCronExpressionLabel } from '@shared/cronHumanize';
 
 export function formatCronScheduleLabel(schedule: CronScheduleConfig): string {
   switch (schedule.type) {
@@ -18,7 +19,9 @@ export function formatCronScheduleLabel(schedule: CronScheduleConfig): string {
         : '一次性';
     }
     case 'cron':
-      return schedule.timezone ? `${schedule.expression} · ${schedule.timezone}` : schedule.expression;
+      // 与 host 侧 cronAutomationBridge.formatCronScheduleLabel 同一共享实现（FB-326）：
+      // 通知与自动化记录里的频率文案必须一致。
+      return formatCronExpressionLabel(schedule.expression, schedule.timezone, 'zh');
     default:
       return '按配置';
   }

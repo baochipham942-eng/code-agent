@@ -88,6 +88,8 @@ import {
 } from './utils/swarmEventRouting';
 import { openSurfaceForArtifact } from './services/surfaceIntentDispatcher';
 import { useInAppValidationBridge } from './hooks/useInAppValidationBridge';
+import { useI18n } from './hooks/useI18n';
+import { CRON_LOGIN_WALL_STOP } from '@shared/utils/browserLoginWall';
 import { InternalFeatureWorkspaceRegistration, PluginUiActivationPolicyBootstrap, ShellOverlaySlotHost, WorkspacePageSlotHost } from './slots/productSlotHosts';
 
 const logger = createLogger('App');
@@ -147,6 +149,7 @@ function useWindowWidth(): number {
 }
 
 export const App: React.FC = () => {
+  const { t } = useI18n();
   useAppshots(); // 挂载 Appshots 事件监听（热键截图 → composer）
   useSurfaceExecutionPip(); // 当前会话 Browser / Computer 共享的可信实时 PiP
   useAgentHalo(); // CUA 原生驱动时的系统级光晕跟随（单指针共驾聚光灯）
@@ -665,7 +668,13 @@ export const App: React.FC = () => {
       IPC_CHANNELS.NOTIFICATION_SHOW,
       (event: NotificationShowEvent) => {
         lastNotifSessionIdRef.current = event.sessionId;
-        void postOsNotification({ title: event.title, body: event.body });
+        const loginWall = event.code === CRON_LOGIN_WALL_STOP && event.siteOrigin
+          ? {
+              title: t.cronCenter.loginWallNotificationTitle,
+              body: t.cronCenter.loginWallNotificationBody.replace('{site}', event.siteOrigin),
+            }
+          : { title: event.title, body: event.body };
+        void postOsNotification(loginWall);
       }
     );
     void registerNotificationClick(() => {
@@ -679,7 +688,7 @@ export const App: React.FC = () => {
     return () => {
       unsubscribe?.();
     };
-  }, [openWorkbenchTab, setTaskPanelTab]);
+  }, [openWorkbenchTab, setTaskPanelTab, t]);
 
   // 会话级自动化回流消息：主进程写入 automation 通知后实时推过来。
   // 打开中的源会话即时 append（按消息 id 去重；created 通知的唯一发射方就是

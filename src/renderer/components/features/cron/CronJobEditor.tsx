@@ -28,6 +28,7 @@ import {
 } from './cronTemplates';
 import { CronSimpleCreate } from './CronSimpleCreate';
 import { useI18n } from '../../../hooks/useI18n';
+import { showCronLoginWallWarning } from './cronLoginWallNotice';
 import { CronRunsOnSelector } from './CronRunsOnSelector';
 import { CronResultChannelField } from './CronResultChannel';
 import { CronEventScheduleFields } from './CronEventScheduleFields';
@@ -208,7 +209,8 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       const generatedDraft = selectedTemplate.generate(templateValues);
       generatedDraft.runsOn = draft.runsOn;
       const input = buildCronJobInput(generatedDraft);
-      await createJob(input);
+      const created = await createJob(input);
+      showCronLoginWallWarning(created, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
       onClose();
     } catch (error) {
       setErrors({ form: saveErrorMessage(error, cc.simpleCreateFailed) });
@@ -234,9 +236,11 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       }
       const input = buildCronJobInput(draft);
       if (job) {
-        await updateJob(job.id, input);
+        const updated = await updateJob(job.id, input);
+        showCronLoginWallWarning(updated, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
       } else {
-        await createJob(input);
+        const created = await createJob(input);
+        showCronLoginWallWarning(created, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
       }
       onClose();
     } catch (error) {
@@ -881,6 +885,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                     if (draft.scheduleType === 'event') setEventValidationArmed(true);
                   }}
                   placeholder="不限"
+                  data-testid="cron-budget-limit-input"
                 />
               </FormField>
               <FormField
@@ -894,6 +899,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                   value={draft.maxRuns}
                   onChange={(e) => setField('maxRuns', e.target.value)}
                   placeholder="不限"
+                  data-testid="cron-maxruns-limit-input"
                 />
               </FormField>
             </div>

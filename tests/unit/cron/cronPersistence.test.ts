@@ -126,6 +126,30 @@ describe('cronPersistence', () => {
     expect(unlimited).toMatchObject({ maxRunBudget: undefined, maxRuns: undefined, runCount: 0 });
   });
 
+  it('role-wake environmentId round-trips through save and load', async () => {
+    const job = {
+      id: 'cron-rolewake',
+      name: 'Role wake cloud',
+      scheduleType: 'every' as const,
+      schedule: { type: 'every' as const, interval: 1, unit: 'hours' as const },
+      action: { type: 'role-wake' as const, roleId: 'role-analyst', environmentId: 'env-prod' },
+      runsOn: 'cloud' as const,
+      enabled: true,
+      createdAt: 100,
+      updatedAt: 100,
+    };
+
+    await saveCronJob(job);
+    const loaded = normalizeCronJobRow(
+      databaseState.db?.prepare('SELECT * FROM cron_jobs WHERE id = ?').get(job.id),
+    );
+    // N-CLOUD-ROLE-WAKE-PROTO r1: 重启后云端 reconcile 用行重建的定义重声明；
+    // environmentId 若在重载时被剥掉，声明恒被误拒为 missing-environment-id。
+    expect(loaded).toMatchObject({
+      action: { type: 'role-wake', roleId: 'role-analyst', environmentId: 'env-prod' },
+    });
+  });
+
   it('rejects a maxRuns below 1 at the database CHECK constraint', async () => {
     const job = {
       id: 'cron-invalid',

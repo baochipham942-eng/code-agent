@@ -301,6 +301,8 @@ describe('clearAllAudioRecordings', () => {
     const afterFinalize = getAudioRetentionStatus();
     expect(afterFinalize.failedTotal).toBe(before.failedTotal + 1);
     expect(afterFinalize.lastError).toBe('not a regular file');
+    // 同一个删不掉的文件反复入账：累计账 +1，"仍在失败"计数也 +1（finalize 追加）
+    expect(afterFinalize.failedCurrent).toBe(before.failedCurrent + 1);
 
     sweepAudioRetention({
       sqlitePath: current.sqlitePath,
@@ -310,6 +312,8 @@ describe('clearAllAudioRecordings', () => {
     const afterSweep = getAudioRetentionStatus();
     expect(afterSweep.failedTotal).toBe(before.failedTotal + 2);
     expect(afterSweep.lastError).toBe('not a regular file');
+    // 完整一轮 sweep 用本轮 failed 覆盖：还是那 1 个文件，不叠成 2
+    expect(afterSweep.failedCurrent).toBe(1);
 
     clearAllAudioRecordings({
       audioDir: current.audioDir,
@@ -319,6 +323,8 @@ describe('clearAllAudioRecordings', () => {
     expect(afterClear.failedTotal).toBe(before.failedTotal + 3);
     expect(afterClear.lastError).toBe('not a regular file');
     expect(afterClear.lastSweepAt).not.toBeNull();
+    // clear 同口径覆盖：累计账涨到 +3，仍在失败的还是 1 个
+    expect(afterClear.failedCurrent).toBe(1);
     expect(getAudioCaptureStatus().retention).toMatchObject({
       failedTotal: afterClear.failedTotal,
       lastError: 'not a regular file',
@@ -385,5 +391,44 @@ describe('clearAllAudioRecordings', () => {
     expect(getAudioRetentionStatus().failedTotal).toBe(0);
     expect(getAudioRetentionStatus().lastError).toBeUndefined();
     expect(getAudioCaptureStatus().retention).toMatchObject({ failedTotal: 0 });
+  });
+
+  it('reports the still-undeletable count: retries do not inflate failedCurrent', () => {
+    const current = fixture;
+    if (!current) throw new Error('missing fixture');
+    // FB-328：同样 3 个删不掉的录音重试两次，failedTotal 累计成 6，
+    // 但此刻仍删不掉的还是 3 个——失败行的数字取 failedCurrent，不取累计账
+    const blockedDirs = [1, 2, 3].map((n) => {
+      const blocked = path.join(current.audioDir, '2026-09-15', `audio_blocked_${n}.wav`);
+      fs.mkdirSync(blocked, { recursive: true });
+      fs.writeFileSync(path.join(blocked, 'keep.txt'), 'keep');
+      insertSegment(current.sqlitePath, {
+        id: `blocked-${n}`,
+        wavPath: blocked,
+        transcript: 'keep me',
+        createdAtMs: 1,
+      });
+      return blocked;
+    });
+    const before = getAudioRetentionStatus();
+
+    const first = clearAllAudioRecordings({ audioDir: current.audioDir, sqlitePath: current.sqlitePath });
+    expect(first.failed).toBe(3);
+    const afterFirst = getAudioRetentionStatus();
+    expect(afterFirst.failedCurrent).toBe(3);
+    expect(afterFirst.failedTotal).toBe(before.failedTotal + 3);
+
+    const second = clearAllAudioRecordings({ audioDir: current.audioDir, sqlitePath: current.sqlitePath });
+    expect(second.failed).toBe(3);
+    const afterSecond = getAudioRetentionStatus();
+    expect(afterSecond.failedCurrent).toBe(3);
+    expect(afterSecond.failedTotal).toBe(before.failedTotal + 6);
+
+    // 用户解决后一轮零失败清空：failedCurrent 归零，失败行随账一起消失
+    for (const blocked of blockedDirs) fs.rmSync(blocked, { recursive: true });
+    const clean = clearAllAudioRecordings({ audioDir: current.audioDir, sqlitePath: current.sqlitePath });
+    expect(clean.failed).toBe(0);
+    expect(getAudioRetentionStatus().failedCurrent).toBe(0);
+    expect(getAudioCaptureStatus().retention).toMatchObject({ failedCurrent: 0 });
   });
 });

@@ -144,3 +144,23 @@ describe('T1 更新流程优雅停机', () => {
     expect(warmIdx).toBeLessThan(relaunchIdx);
   });
 });
+
+// ── ADR-083 返修 Important 1（2026-10-13 win32 scope cut）────────────────────
+// win32 的 stdin EOF 就是 Rust 的「请退出」指令：terminate_child 关掉 stdin 写端后
+// wait_then_force_kill 只等 3s 就 TerminateProcess。EOF 触发的 shutdown 里
+// onShellPipeClosed 已把 shellPipeAttached 置 false，若 drain 据此走无看门狗档
+// （60s 完整宽限、不套 withCap），必被 TerminateProcess 拦腰截断，
+// closeAllDatabaseConnections 轮不到 → 每次退出都留陈旧 -wal/-shm（下次启动
+// SIGBUS 的老坑）。所以 win32 的 drain 档位必须经 isDrainWatchdogActive
+// （win32 恒为看门狗档 = 带宽限压档 + withCap）；macOS/Linux 管道断开 = 壳已死、
+// 看门狗确实没了，仍走无看门狗档。锚在调用点文本上：这条通路本地/CI 都在
+// mac/Linux 上跑，运行时断言触发不了 win32 分支（与上面 T1 同理）。
+describe('win32 EOF 停机的 drain 档位', () => {
+  it('drain 调用点的 watchdogActive 必须经 isDrainWatchdogActive（win32 留在看门狗档）', () => {
+    const webServer = readSrc('web/webServer.ts');
+
+    expect(webServer).toMatch(/watchdogActive:\s*isDrainWatchdogActive\(shellPipeAttached\)/);
+    // 回归锚：旧写法（裸 shellPipeAttached）在 win32 EOF 路径必然漏到无看门狗档。
+    expect(webServer).not.toMatch(/watchdogActive:\s*shellPipeAttached\b/);
+  });
+});

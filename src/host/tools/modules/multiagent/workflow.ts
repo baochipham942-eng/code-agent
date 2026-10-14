@@ -462,6 +462,22 @@ async function runWorkflow(
     // resumable journal 网关：DB 就绪才有（getWorkflowJournalRepository() 在未就绪时返 null）→
     // 无则不持久化、不重放，workflow 照常全 live 跑（优雅降级）。sessionId 经闭包带入 onRunStart。
     const journalRepo = getWorkflowJournalRepository();
+    // N-WF-STALL-UI：停顿状态（parked/epoch）→ renderer 快照的传输通道。复用既有
+    // `run:log` 事件类型、不带 message（reducer 对它不算进展、不刷 lastActivityAt），
+    // 与下方 emit wrapper 同一 publish 形态。【刻意】不经过 stallDetector.handleEvent /
+    // deps.emit——一旦回流检测器，run:log 会被当进展、把停顿钟清零。
+    const publishStallState = (patch: { parked?: boolean; epoch?: number }, ts: number): void => {
+      try {
+        const event: ScriptRunEvent = {
+          runId,
+          type: 'run:log',
+          ts,
+          sessionId: ctx.sessionId,
+          data: { stall: { ...patch } },
+        };
+        getEventBus().publish('workflow', event.type, event, { sessionId: ctx.sessionId, bridgeToRenderer: false });
+      } catch { /* swallow — 观测面非权威 */ }
+    };
     // N-WF-STALL-NOTICE：硬停滞的模型面投递。检测器自身不依赖注册表；这里注入
     // 「recordStallNotice 入队 + idle wake」两步（announce=false 与 journal 降级路径不进来）。
     // recordStallNotice 不写终态 entry，run 在 collect_agent 下仍报 running。
@@ -478,6 +494,8 @@ async function runWorkflow(
           ...(notice.lastActivity ? { lastActivity: notice.lastActivity } : {}),
         });
         scheduleBackgroundSubagentIdleWake(record);
+        // 同一 epoch 顺带投影给 renderer（快照的 stallNoticeEpoch，长停顿文案依据）。
+        publishStallState({ epoch: notice.epoch }, Date.now());
       },
     });
     const journal: ScriptRunJournal | undefined = journalRepo
@@ -646,8 +664,14 @@ async function runWorkflow(
     };
     const compatibility = new GraphEventCompatibilityAdapter({
       graph: (event) => {
-        if (event.type === 'graph_waiting') stallDetector.setParked(runId, true);
-        else if (event.type === 'graph_started') stallDetector.setParked(runId, false);
+        // parked 翻转同步投影给 renderer（等待审批/审查期间 UI 不报停顿）。
+        if (event.type === 'graph_waiting') {
+          stallDetector.setParked(runId, true);
+          publishStallState({ parked: true }, event.timestamp);
+        } else if (event.type === 'graph_started') {
+          stallDetector.setParked(runId, false);
+          publishStallState({ parked: false }, event.timestamp);
+        }
       },
       script: (event) => {
         if (['agent:start', 'agent:done', 'agent:error'].includes(event.type) && event.data?.agentId === parentNodeId) return;

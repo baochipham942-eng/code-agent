@@ -510,6 +510,46 @@ describe('recordCronAutomationExecution', () => {
     });
   });
 
+  it('收件箱首行摘要跳过 urgency 机器行', async () => {
+    await recordCronAutomationExecution(
+      def({
+        metadata: { sourceSessionId: 'sess' },
+        scheduleType: 'every',
+        action: { type: 'agent', agentType: 'default', prompt: 'do it' },
+      }),
+      exec({
+        status: 'completed',
+        sessionId: 'result-sess',
+        completedAt: 1234,
+        result: {
+          digest: {
+            artifacts: ['report.md'],
+            summary: 'urgency: fyi\n结果已写入',
+          },
+        },
+      }),
+      identityRuntime,
+    );
+    expect(service.recordEvent.mock.calls[0][0].configPatch.pendingReview.digest.summaryLine).toBe('结果已写入');
+
+    service.recordEvent.mockClear();
+    await recordCronAutomationExecution(
+      def({
+        metadata: { sourceSessionId: 'sess' },
+        scheduleType: 'every',
+        action: { type: 'agent', agentType: 'default', prompt: 'do it' },
+      }),
+      exec({
+        status: 'completed',
+        sessionId: 'result-sess',
+        completedAt: 1234,
+        result: { digest: { artifacts: ['report.md'], summary: 'urgency: fyi' } },
+      }),
+      identityRuntime,
+    );
+    expect(service.recordEvent.mock.calls[0][0].configPatch.pendingReview.digest.summaryLine).toBeUndefined();
+  });
+
   it('按运行会话工作目录解析相对产物路径，解析不了的按原文记下且不可点', async () => {
     sessionLookup.byId['result-sess'] = { workingDirectory: '/work/run' };
     await recordCronAutomationExecution(

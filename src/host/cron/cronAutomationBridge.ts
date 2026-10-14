@@ -52,13 +52,22 @@ function readRunSessionWorkingDirectory(sessionId: string | undefined): string |
   }
 }
 
+function readCronReviewSummaryLine(summary: string | undefined): string | undefined {
+  if (!summary) return undefined;
+  const line = summary
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .find((item) => item.length > 0 && !/^urgency\s*:/i.test(item));
+  return line ? line.slice(0, 120) : undefined;
+}
+
 function readCronReviewDigest(
   value: unknown,
   cwd: string | undefined,
 ): NonNullable<SessionAutomationConfig['pendingReview']>['digest'] | undefined {
   if (!isRecord(value) || !Array.isArray(value.artifacts)) return undefined;
   const summary = typeof value.summary === 'string' ? value.summary : undefined;
-  const summaryLine = summary?.split(/\r?\n/).find((line) => line.trim())?.trim().slice(0, 120);
+  const summaryLine = readCronReviewSummaryLine(summary);
   const artifacts = resolveCronArtifactsForReview(value.artifacts, cwd);
   if (artifacts.length === 0 && !summaryLine) return undefined;
   return {

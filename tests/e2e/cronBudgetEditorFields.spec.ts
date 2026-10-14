@@ -16,7 +16,7 @@
 // 手动触发两趟把 runCount 推到 2；编辑器全程用 UI 打开，不绕过呈现层。
 // ============================================================================
 
-import { test, expect, type Page, type Locator } from '@playwright/test';
+import { expect, test, type Page, type Locator } from './fixtures/axeTest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

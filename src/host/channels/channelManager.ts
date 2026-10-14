@@ -32,6 +32,12 @@ import { createLogger } from '../services/infra/logger';
 import { summarizeUserFacingError } from '../security/userFacingError';
 import { summarizeChannelError } from './channelErrorSummary';
 import {
+  ChannelReconnectScheduler,
+  channelConnectFailureText,
+  channelReconnectingStatusText,
+} from './channelReconnectScheduler';
+import { FEISHU_DEFAULT_HOST, LARK_DEFAULT_HOST } from '../../shared/constants';
+import {
   getInboundPairingService,
   type InboundPairingRequest,
 } from './inboundPairingService';
@@ -76,10 +82,21 @@ export class ChannelManager extends EventEmitter {
   // 消息处理器
   private messageHandler: ChannelMessageHandler | null = null;
   private readonly maxInboxItems = 100;
+  // 连接失败自动重试（N-FEISHU-WS-FIRST-RETRY）：按账号退避 + 唤醒/网络恢复立即重试
+  private readonly connectRetries: ChannelReconnectScheduler;
+  // 连接中的账号（connectAccount 从进入到 settle）：保证一账号至多一个活实例
+  private readonly connectingAccounts = new Set<string>();
+  // 手动断开意图：覆盖「连接进行中点断开」的竞态——status 会被随后的失败覆盖，
+  // 只有这个标记能拦住 catch 里的自动重连。新的 connectAccount 意图会消费它。
+  private readonly manualDisconnects = new Set<string>();
 
   private constructor() {
     super();
     this.registerBuiltinPlugins();
+    this.connectRetries = new ChannelReconnectScheduler({
+      onRetry: (accountId, attempt) => this.retryConnect(accountId, attempt),
+      probeHostFor: (accountId) => this.reconnectProbeHost(accountId),
+    });
     getInboundPairingService().configureAdapter({
       addPairedSender: (accountId, senderId) => this.addPairedSender(accountId, senderId),
       sendControlReply: async (accountId, chatId, replyToMessageId, content) => {
@@ -220,6 +237,10 @@ export class ChannelManager extends EventEmitter {
       return null;
     }
 
+    // 手动更新视为重新编排：取消挂起的自动重连（disconnectAccount 只处理已活跃的）
+    this.connectRetries.cancel(accountId);
+    this.manualDisconnects.add(accountId);
+
     // 如果正在连接，先断开
     if (this.activeChannels.has(accountId)) {
       await this.disconnectAccount(accountId);
@@ -251,11 +272,12 @@ export class ChannelManager extends EventEmitter {
    * 删除账号
    */
   async deleteAccount(accountId: string): Promise<boolean> {
-    // 先断开连接
+    // 先断开连接（含取消自动重试）
     await this.disconnectAccount(accountId);
 
     const deleted = this.accounts.delete(accountId);
     if (deleted) {
+      this.manualDisconnects.delete(accountId);
       this.saveAccounts();
       this.emit('accounts_changed', this.getAccounts());
       logger.info('Deleted channel account', { id: accountId });
@@ -279,6 +301,13 @@ export class ChannelManager extends EventEmitter {
       return;
     }
 
+    if (this.connectingAccounts.has(accountId)) {
+      logger.warn('Account connect already in flight', { accountId });
+      return;
+    }
+    // 新的连接意图消费掉旧的手动断开标记
+    this.manualDisconnects.delete(accountId);
+
     const registration = this.pluginRegistry.get(account.type);
     if (!registration) {
       throw new Error(`Unknown channel type: ${account.type}`);
@@ -286,6 +315,7 @@ export class ChannelManager extends EventEmitter {
 
     // 创建通道实例
     const channel = registration.factory(accountId);
+    const channelLabel = this.channelLabel(account);
 
     // 监听事件
     channel.on('message', (message: ChannelMessage) => {
@@ -300,13 +330,18 @@ export class ChannelManager extends EventEmitter {
     });
 
     channel.on('status_change', (status: ChannelAccountStatus, error?: string) => {
-      this.updateAccountStatus(accountId, status, error);
+      // 连接失败原因先翻成人话再落 errorMessage：设置页不出现 SDK 原文（raw 只进日志）
+      this.updateAccountStatus(
+        accountId,
+        status,
+        error === undefined ? undefined : channelConnectFailureText(error, channelLabel),
+      );
     });
 
     channel.on('error', (error: Error) => {
       const { summary } = summarizeUserFacingError(error, { surface: 'channel_reply' });
       logger.error('Channel error', { accountId, error: error.message });
-      this.updateAccountStatus(accountId, 'error', summary);
+      this.updateAccountStatus(accountId, 'error', channelConnectFailureText(summary, channelLabel));
     });
 
     // 卡片按钮回传（B3 审批回批）：透传给上层 relay，带上是哪个账号发来的。
@@ -325,6 +360,7 @@ export class ChannelManager extends EventEmitter {
       });
     });
 
+    this.connectingAccounts.add(accountId);
     try {
       // 初始化并连接
       await channel.initialize(account.config);
@@ -334,21 +370,91 @@ export class ChannelManager extends EventEmitter {
       this.updateAccountStatus(accountId, 'connected');
       account.lastConnectedAt = Date.now();
       this.saveAccounts();
+      this.connectRetries.reset(accountId);
 
       logger.info('Channel connected', { accountId, type: account.type });
     } catch (error) {
-      const { summary } = summarizeUserFacingError(error, { surface: 'channel_reply' });
-      this.updateAccountStatus(accountId, 'error', summary);
+      const raw = error instanceof Error ? error.message : String(error);
+      const humanMessage = channelConnectFailureText(raw, channelLabel);
+      // 原始错误只进日志；errorMessage 落人话文案
+      logger.warn('Channel connect failed', { accountId, type: account.type, error: raw });
+      this.updateAccountStatus(accountId, 'error', humanMessage);
+      // 失败实例显式销毁（无人持有的长连接/webhook 服务器不留孤儿），再决定是否自动重连
+      await this.destroyFailedChannel(accountId, channel);
+      this.scheduleConnectRetry(accountId, humanMessage);
       throw error;
+    } finally {
+      this.connectingAccounts.delete(accountId);
     }
+  }
+
+  /**
+   * 失败后的自动重连：启用中的账号进入退避等待，状态文案带重试序号与人话原因。
+   * 手动断开过（disconnect/update 留下的标记）或已禁用的账号不再自动重连。
+   */
+  private scheduleConnectRetry(accountId: string, humanMessage: string): void {
+    const account = this.accounts.get(accountId);
+    if (!account?.enabled) return;
+    // 手动断开过（disconnect/update）不自动重连；status 不能作判据——失败实例销毁时
+    // 的 status_change 会把账号短暂写成 disconnected，属正常中间态。
+    if (this.manualDisconnects.has(accountId)) return;
+    const attempt = this.connectRetries.schedule(accountId);
+    this.updateAccountStatus(
+      accountId,
+      'connecting',
+      channelReconnectingStatusText(attempt, humanMessage),
+    );
+  }
+
+  /** 调度器到点回调：守护条件不满足时跳过/取消，否则真连一次 */
+  private retryConnect(accountId: string, attempt: number): void {
+    const account = this.accounts.get(accountId);
+    if (!account || !account.enabled || this.manualDisconnects.has(accountId)) {
+      this.connectRetries.cancel(accountId);
+      return;
+    }
+    if (this.activeChannels.has(accountId) || this.connectingAccounts.has(accountId)) return;
+    logger.info('Retrying channel connect', { accountId, attempt });
+    void this.connectAccount(accountId).catch(() => {
+      // connectAccount 失败路径已写状态并排下一轮重试
+    });
+  }
+
+  private async destroyFailedChannel(accountId: string, channel: IChannelPlugin): Promise<void> {
+    try {
+      await channel.destroy();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn('Failed to destroy channel after connect failure', { accountId, error: message });
+    }
+  }
+
+  private channelLabel(account: ChannelAccount): string {
+    return this.getChannelMeta(account.type)?.name ?? account.type;
+  }
+
+  /** 挂起重试期间的 DNS 探测目标：飞书/Lark 开放平台域名，其余通道不探测 */
+  private reconnectProbeHost(accountId: string): string | undefined {
+    const account = this.accounts.get(accountId);
+    if (!account) return undefined;
+    if (account.type === 'feishu') return FEISHU_DEFAULT_HOST;
+    if (account.type === 'lark') return LARK_DEFAULT_HOST;
+    return undefined;
   }
 
   /**
    * 断开账号连接
    */
   async disconnectAccount(accountId: string): Promise<void> {
+    // 手动断开：取消挂起的自动重试（账号可能正在退避等待、不在 activeChannels），
+    // 并记下断开意图，压住「连接进行中点断开」竞态里的失败重连。
+    this.connectRetries.cancel(accountId);
+    this.manualDisconnects.add(accountId);
+
     const channel = this.activeChannels.get(accountId);
     if (!channel) {
+      // 没有活跃实例（从未连上 / 正在退避等待）：也要把状态从「重连中」收殓成已断开
+      this.updateAccountStatus(accountId, 'disconnected');
       return;
     }
 
@@ -393,6 +499,7 @@ export class ChannelManager extends EventEmitter {
    */
   async shutdown(): Promise<void> {
     logger.info('Shutting down channel manager...');
+    this.connectRetries.cancelAll();
     await this.disconnectAll();
     logger.info('Channel manager shut down');
   }

@@ -55,7 +55,7 @@ import { getEventBus } from '../services/eventing/bus';
 import { persistCronMissedTrace } from './cronMissedTrace';
 import { appendCronAgentExpertThreadReceipt } from './cronAgentExpertThreadReceipt';
 import { buildCronAgentPrompt, truncateUtf8Snapshot } from './cronAgentPrompt';
-
+import { beginArtifactRefresh, finishArtifactRefresh } from './artifactStandingRefresh';
 import {
   assertExecutionLocationConstraints,
   computeCronFireJitterMs,
@@ -89,9 +89,8 @@ import {
   notifyCronAgentExecution,
   notifyCronJobDisabled,
 } from './cronFailurePolicy';
-export { computeCronFireJitterMs } from './cronExecutionPolicy';
-
-const execAsync = promisify(exec);
+import { cronLoginWallMetadata } from './cronLoginWall';
+export { computeCronFireJitterMs } from './cronExecutionPolicy'; const execAsync = promisify(exec);
 
 // ============================================================================
 // Types
@@ -255,9 +254,8 @@ export class CronService implements Disposable {
     const job: CronJobDefinition = {
       ...definition,
       runsOn,
-      id: uuidv4(),
-      createdAt: now,
-      updatedAt: now,
+      metadata: cronLoginWallMetadata({ action: definition.action }, definition.metadata),
+      id: uuidv4(), createdAt: now, updatedAt: now,
     };
 
     // Save to database
@@ -301,7 +299,7 @@ export class CronService implements Disposable {
     const updatedJob: CronJobDefinition = {
       ...existingJob.definition,
       ...updates,
-      updatedAt: Date.now(),
+      metadata: cronLoginWallMetadata({ action: updates.action ?? existingJob.definition.action }, updates.metadata ?? existingJob.definition.metadata), updatedAt: Date.now(),
     };
     // 重新启用已停用任务：运行计数清零、摘掉停用原因（N-CRON-BUDGET-EXPOSE）；只改 maxRuns 不动计数。
     if (updates.enabled === true && !existingJob.definition.enabled) rearmCronRunLimit(updatedJob);
@@ -735,6 +733,7 @@ export class CronService implements Disposable {
         console.warn(
           `[CronService] Job ${definition.id} run interrupted while queued for capacity; not counted as failure`,
         );
+      } else if (failureKind === 'login-wall') { execution.status = 'failed';
       } else if (failureKind === 'permanent') {
         // 配置/鉴权类确定性失败：重试无用，直接 failed；停用+告知在 finally 统一处理。
         execution.status = 'failed';
@@ -775,7 +774,7 @@ export class CronService implements Disposable {
           await this.updateJob(definition.id, { enabled: false });
           notifyCronJobDisabled(definition, execution, 'permanent');
           disableNotified = true;
-        } else if (countTrailingCronFailures(this.executions.get(definition.id) ?? []) >= CRON_GUARDRAILS.MAX_CONSECUTIVE_FAILURES) {
+        } else if (finalKind !== 'login-wall' && countTrailingCronFailures(this.executions.get(definition.id) ?? []) >= CRON_GUARDRAILS.MAX_CONSECUTIVE_FAILURES) {
           console.error(
             `[CronService] Job ${definition.id} auto-disabled after `
             + `${CRON_GUARDRAILS.MAX_CONSECUTIVE_FAILURES} consecutive failures`,
@@ -895,6 +894,8 @@ export class CronService implements Disposable {
 
         let result: unknown; let finalAssistantText = '';
         let runError: unknown; let runFailed = false;
+        // 常设刷新（metadata.artifactRefresh）：跑前建快照记基线；非刷新任务返回 undefined 零扰动
+        const artifactRefresh = beginArtifactRefresh(definition);
         try {
           try {
             // 事件触发时通道载荷只以 untrusted 定界块追加在 prompt 尾部，并给该条
@@ -910,13 +911,10 @@ export class CronService implements Disposable {
             const unattendedTimeout = (await import('../agent/unattendedApprovalTerminal')).takeUnattendedApprovalTimeout(cronSession.id);
             if (unattendedTimeout) throw new Error(unattendedTimeout);
 
-            const messages = orchestrator.getMessages();
-            const lastAssistant = [...messages].reverse().find((message) => message.role === 'assistant');
-            finalAssistantText = lastAssistant?.content.trim() ?? '';
-            const snapshotMatch = finalAssistantText.match(CRON_AGENT_SNAPSHOT.TAG_PATTERN);
+            finalAssistantText = [...orchestrator.getMessages()].reverse().find((message) => message.role === 'assistant')?.content.trim() ?? '';
+            const snapshotToPersist = snapshotTrackingEnabled ? finalAssistantText.match(CRON_AGENT_SNAPSHOT.TAG_PATTERN)?.[1]?.trim() : undefined;
             // 只认标记：解析不到就保留上一次的值。拿整段回答顶替会把叙述性文字
             // 当成状态存下来，下一轮再原样注回提示词。
-            const snapshotToPersist = snapshotTrackingEnabled ? snapshotMatch?.[1]?.trim() : undefined;
             if (isExternalWatch) {
               hasAlert = EXTERNAL_WATCH.ALERT_TAG_PATTERN.test(finalAssistantText);
             }
@@ -965,9 +963,7 @@ export class CronService implements Disposable {
             runFailed = true;
             runError = ((code: string | undefined) => code ? new Error(code) : error)((await import('../agent/unattendedApprovalTerminal')).takeUnattendedApprovalTimeout(cronSession.id));
             try {
-              const lastAssistant = [...orchestrator.getMessages()]
-                .reverse()
-                .find((message) => message.role === 'assistant');
+              const lastAssistant = [...orchestrator.getMessages()].reverse().find((message) => message.role === 'assistant');
               finalAssistantText = lastAssistant?.content.trim() ?? '';
             } catch (messageReadError) {
               console.warn('[CronService] Failed to read partial agent conclusion after cron run failure', messageReadError);
@@ -976,6 +972,10 @@ export class CronService implements Disposable {
         } finally {
           tm.cleanup(cronSession.id);
         }
+
+        // runFailed 已知即结算常设刷新：成功走校验+留版（有标注则清），失败回滚快照并标注。
+        // loadJob 重读当前定义：标注底稿用最新 metadata，不回退跑中保存的指令/节奏修改。
+        if (artifactRefresh) await finishArtifactRefresh(artifactRefresh, { runFailed, error: runError, updateJob: (u) => this.updateJob(definition.id, u), loadJob: () => this.jobs.get(definition.id)?.definition });
 
         if (action.roleId) {
           try {
@@ -1165,7 +1165,7 @@ export class CronService implements Disposable {
       adoptFailedAgentSession(execution, error);
 
       // permanent：确定性失败，烧掉剩余重试毫无意义，停在这里等 finally 的停用档。
-      if (classifyCronFailure(execution.error) === 'permanent') return;
+      if (classifyCronFailure(execution.error) === 'permanent' || classifyCronFailure(execution.error) === 'login-wall') return;
 
       // Continue retrying if we haven't reached the limit
       if (execution.retryAttempt < (current.maxRetries || 0)) {

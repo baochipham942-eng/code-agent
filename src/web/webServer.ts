@@ -52,6 +52,7 @@ import { registerMemoryConsolidationJob } from './webStartupMemoryJobs';
 import { setupWebLogBridge } from './webLogBridgeSetup';
 import { kickoffWebStartupServices } from './webStartupServices';
 import { killPortHolder } from './portCleanup';
+import { setDelegationEnqueueSignal } from '../host/services/delegation/delegationEnqueueSignal';
 
 const logger = createLogger('WebServer');
 
@@ -1151,7 +1152,7 @@ async function main(): Promise<void> {
     deliverCompanionPermission,
     getPendingPermissionRequests: () => [...listForegroundPermissionRequests(), ...getTaskManager().listPendingPermissionRequests()],
     registerQueuedInputStartupSweep: (runStartupSweep) => queuedInputStartupSweep.registerTrigger(runStartupSweep),
-    registerQueuedInputEnqueueHook: (onEnqueued) => { onQueuedInputEnqueued = onEnqueued; },
+    registerQueuedInputEnqueueHook: (onEnqueued) => { onQueuedInputEnqueued = onEnqueued; setDelegationEnqueueSignal(onEnqueued); },
     registerQueuedInputSendNowHook: (sendNow) => { onQueuedInputSendNow = sendNow; },
     onRendererReady: () => resolveRendererWindowReady?.(),
   });

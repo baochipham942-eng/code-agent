@@ -1,6 +1,9 @@
 // ============================================================================
 // video_generate (native ToolModule) Tests — P1 Wave 4 D2c
 // ============================================================================
+// N-MEDIA-GEN-PHASE2：默认路由改为 MiniMax 海螺（见 videoGenerate.contract.test.ts），
+// 本文件钉死 cogvideox-* 旧路径行为：提交→轮询→下载落盘（不再返回 URL）。
+// ============================================================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type {
@@ -15,11 +18,17 @@ const { existsSyncMock, mkdirSyncMock, writeFileSyncMock } = vi.hoisted(() => ({
   writeFileSyncMock: vi.fn(),
 }));
 
-vi.mock('fs', () => ({
-  existsSync: (...args: unknown[]) => existsSyncMock(...args),
-  mkdirSync: (...args: unknown[]) => mkdirSyncMock(...args),
-  writeFileSync: (...args: unknown[]) => writeFileSyncMock(...args),
-}));
+// workspaceScope.ts reads realpathSync/lstatSync/readlinkSync/statSync from node:fs.
+// A partial fs mock makes isPathWithinRoot fail closed and would refuse in-workspace paths.
+vi.mock('fs', async () => {
+  const actual = await vi.importActual<typeof import('node:fs')>('node:fs');
+  return {
+    ...actual,
+    existsSync: (...args: unknown[]) => existsSyncMock(...args),
+    mkdirSync: (...args: unknown[]) => mkdirSyncMock(...args),
+    writeFileSync: (...args: unknown[]) => writeFileSyncMock(...args),
+  };
+});
 
 const { getConfigServiceMock } = vi.hoisted(() => ({
   getConfigServiceMock: vi.fn(),
@@ -77,6 +86,40 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
 
 const allowAll: CanUseToolFn = async () => ({ allow: true });
 
+/** cogvideox 提交→立即 SUCCESS→下载 的四段 fetch 序列（扩写 / 提交 / 轮询 / 下载）。 */
+function zhipuFetchSequence(opts: { expanded?: string; videoUrl?: string } = {}) {
+  let callCount = 0;
+  global.fetch = vi.fn().mockImplementation(() => {
+    callCount++;
+    if (callCount === 1) {
+      // prompt expansion
+      return Promise.resolve(jsonChatCompletion(opts.expanded ?? '扩展后的描述'));
+    }
+    if (callCount === 2) {
+      // submit
+      return Promise.resolve({ ok: true, json: async () => ({ id: 'task-abc' }) });
+    }
+    if (callCount === 3) {
+      // poll → SUCCESS
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          id: 'task-abc',
+          model: 'cogvideox-2',
+          task_status: 'SUCCESS',
+          video_result: [{ url: opts.videoUrl ?? 'https://cdn/video.mp4', cover_image_url: 'https://cdn/cover.jpg' }],
+        }),
+      });
+    }
+    // download
+    return Promise.resolve({
+      ok: true,
+      arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+    });
+  });
+  return global.fetch as ReturnType<typeof vi.fn>;
+}
+
 describe('video_generate — schema', () => {
   it('declares correct name and category', () => {
     expect(videoGenerateModule.schema.name).toBe('video_generate');
@@ -105,32 +148,11 @@ describe('video_generate — execute', () => {
     process.env = { ...origEnv };
   });
 
-  it('happy path: submit + immediate SUCCESS without download', async () => {
-    let callCount = 0;
-    global.fetch = vi.fn().mockImplementation(() => {
-      callCount++;
-      if (callCount === 1) {
-        // prompt expansion
-        return Promise.resolve(jsonChatCompletion('扩展后的描述'));
-      }
-      if (callCount === 2) {
-        // submit
-        return Promise.resolve({ ok: true, json: async () => ({ id: 'task-abc' }) });
-      }
-      // poll → SUCCESS
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({
-          id: 'task-abc',
-          model: 'cogvideox-2',
-          task_status: 'SUCCESS',
-          video_result: [{ url: 'https://cdn/video.mp4', cover_image_url: 'https://cdn/cover.jpg' }],
-        }),
-      });
-    });
+  it('happy path: submit + immediate SUCCESS, downloaded and saved (no URL in meta)', async () => {
+    zhipuFetchSequence();
 
     const result = await executeVideoGenerate(
-      { prompt: '一只猫' },
+      { prompt: '一只猫', model: 'cogvideox-2' },
       makeCtx(),
       allowAll,
     );
@@ -143,13 +165,15 @@ describe('video_generate — execute', () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.meta?.videoUrl).toBe('https://cdn/video.mp4');
-      expect(result.meta?.coverUrl).toBe('https://cdn/cover.jpg');
-      expect(result.meta?.aspectRatio).toBe('16:9');
+      expect(result.output).toMatch(/^1\/1 saved\nper_request /);
+      expect(result.meta?.model).toBe('cogvideox-2');
+      expect(typeof result.meta?.videoPath).toBe('string');
+      expect(result.meta?.videoPath).toMatch(/^\/tmp\/work\/\.code-agent\/artifacts\/videos\/generated-.*\.mp4$/);
+      expect(result.meta?.outputPath).toBe(result.meta?.videoPath);
       expect(result.meta?.artifact).toMatchObject({
         kind: 'video',
         sourceTool: 'video_generate',
-        url: 'https://cdn/video.mp4',
+        path: result.meta?.videoPath,
         mimeType: 'video/mp4',
         metadata: {
           taskId: 'task-abc',
@@ -159,39 +183,19 @@ describe('video_generate — execute', () => {
         },
       });
       expect(result.meta?.mediaKind).toBe('video');
-      expect(result.meta?.contentLength).toBe(result.output.length);
-      expect(result.meta?.truncated).toBe(false);
+      // 旧路径也不再把远端 URL 写进 meta（N-MEDIA-GEN-PHASE2 合同）
+      expect(result.meta?.videoUrl).toBeUndefined();
+      expect(result.meta?.coverUrl).toBeUndefined();
+      expect(JSON.stringify(result.meta)).not.toContain('https://cdn');
     }
+    expect(writeFileSyncMock).toHaveBeenCalled();
   });
 
-  it('downloads video when output_path given', async () => {
-    let callCount = 0;
-    global.fetch = vi.fn().mockImplementation(() => {
-      callCount++;
-      if (callCount === 1) {
-        return Promise.resolve(jsonChatCompletion('描述'));
-      }
-      if (callCount === 2) {
-        return Promise.resolve({ ok: true, json: async () => ({ id: 't1' }) });
-      }
-      if (callCount === 3) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({
-            task_status: 'SUCCESS',
-            video_result: [{ url: 'https://cdn/v.mp4', cover_image_url: 'https://cdn/c.jpg' }],
-          }),
-        });
-      }
-      // download
-      return Promise.resolve({
-        ok: true,
-        arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
-      });
-    });
+  it('downloads video when output_file_path given', async () => {
+    zhipuFetchSequence();
 
     const result = await executeVideoGenerate(
-      { prompt: 'test', output_path: '/tmp/work/video.mp4' },
+      { prompt: 'test', model: 'cogvideox-2', output_file_path: 'video.mp4' },
       makeCtx(),
       allowAll,
     );
@@ -206,7 +210,7 @@ describe('video_generate — execute', () => {
         path: '/tmp/work/video.mp4',
         mimeType: 'video/mp4',
         metadata: {
-          taskId: 't1',
+          taskId: 'task-abc',
           mediaKind: 'video',
         },
       });
@@ -230,12 +234,13 @@ describe('video_generate — execute', () => {
     });
 
     const result = await executeVideoGenerate(
-      { prompt: '违规' },
+      { prompt: '违规', model: 'cogvideox-2' },
       makeCtx(),
       allowAll,
     );
     expect(result.ok).toBe(false);
     if (!result.ok) {
+      expect(result.error).toMatch(/^0\/1 saved\nper_request /);
       expect(result.error).toContain('视频生成失败');
       expect(result.error).toContain('内容违规');
     }
@@ -275,13 +280,29 @@ describe('video_generate — execute', () => {
     }
   });
 
+  it('refuses legacy output_path with INVALID_ARGS before any call', async () => {
+    const fetchSpy = vi.fn();
+    global.fetch = fetchSpy as unknown as typeof fetch;
+    const result = await executeVideoGenerate(
+      { prompt: 'cat', model: 'cogvideox-2', output_path: '/tmp/work/video.mp4' },
+      makeCtx(),
+      allowAll,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('INVALID_ARGS');
+      expect(result.error).toContain('renamed to output_file_path');
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it('returns NOT_INITIALIZED when no zhipu key', async () => {
     delete process.env.ZHIPU_OFFICIAL_API_KEY;
     getConfigServiceMock.mockReturnValue({ onSettingsUpdated: vi.fn(),
       getApiKey: vi.fn().mockReturnValue(undefined),
     });
     const result = await executeVideoGenerate(
-      { prompt: 'cat' },
+      { prompt: 'cat', model: 'cogvideox-2' },
       makeCtx(),
       allowAll,
     );
@@ -301,7 +322,7 @@ describe('video_generate — execute', () => {
       getApiKey: vi.fn().mockReturnValue('oki-proxy-key'),
     });
     const result = await executeVideoGenerate(
-      { prompt: 'cat' },
+      { prompt: 'cat', model: 'cogvideox-2' },
       makeCtx(),
       allowAll,
     );
@@ -322,17 +343,23 @@ describe('video_generate — execute', () => {
         submitBodies.push(JSON.parse((opts as RequestInit).body as string) as Record<string, unknown>);
         return Promise.resolve({ ok: true, json: async () => ({ id: 't' }) });
       }
+      if (callCount === 3) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            task_status: 'SUCCESS',
+            video_result: [{ url: 'u', cover_image_url: 'c' }],
+          }),
+        });
+      }
       return Promise.resolve({
         ok: true,
-        json: async () => ({
-          task_status: 'SUCCESS',
-          video_result: [{ url: 'u', cover_image_url: 'c' }],
-        }),
+        arrayBuffer: async () => new Uint8Array([1]).buffer,
       });
     });
 
     await executeVideoGenerate(
-      { prompt: 'vertical', aspect_ratio: '9:16' },
+      { prompt: 'vertical', model: 'cogvideox-2', aspect_ratio: '9:16' },
       makeCtx(),
       allowAll,
     );
@@ -342,22 +369,10 @@ describe('video_generate — execute', () => {
   });
 
   it('emits onProgress', async () => {
-    let callCount = 0;
-    global.fetch = vi.fn().mockImplementation(() => {
-      callCount++;
-      if (callCount === 1) return Promise.resolve(jsonChatCompletion('p'));
-      if (callCount === 2) return Promise.resolve({ ok: true, json: async () => ({ id: 't' }) });
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({
-          task_status: 'SUCCESS',
-          video_result: [{ url: 'u', cover_image_url: 'c' }],
-        }),
-      });
-    });
+    zhipuFetchSequence();
     const onProgress = vi.fn();
     await executeVideoGenerate(
-      { prompt: 'cat' },
+      { prompt: 'cat', model: 'cogvideox-2' },
       makeCtx(),
       allowAll,
       onProgress,
@@ -376,16 +391,22 @@ describe('video_generate — execute', () => {
         submitBodies.push(JSON.parse((opts as RequestInit).body as string) as Record<string, unknown>);
         return Promise.resolve({ ok: true, json: async () => ({ id: 'task-sse' }) });
       }
+      if (callCount === 3) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            task_status: 'SUCCESS',
+            video_result: [{ url: 'https://cdn/video.mp4', cover_image_url: 'https://cdn/cover.jpg' }],
+          }),
+        });
+      }
       return Promise.resolve({
         ok: true,
-        json: async () => ({
-          task_status: 'SUCCESS',
-          video_result: [{ url: 'https://cdn/video.mp4', cover_image_url: 'https://cdn/cover.jpg' }],
-        }),
+        arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
       });
     });
 
-    const result = await executeVideoGenerate({ prompt: '一只猫' }, makeCtx(), allowAll);
+    const result = await executeVideoGenerate({ prompt: '一只猫', model: 'cogvideox-2' }, makeCtx(), allowAll);
     expect(result.ok).toBe(true);
     expect(submitBodies[0]?.prompt).toBe('SSE扩写后的视频描述');
   });
@@ -406,17 +427,23 @@ describe('video_generate — execute', () => {
         submitBodies.push(JSON.parse((opts as RequestInit).body as string) as Record<string, unknown>);
         return Promise.resolve({ ok: true, json: async () => ({ id: 'task-fb' }) });
       }
+      if (callCount === 3) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            task_status: 'SUCCESS',
+            video_result: [{ url: 'https://cdn/video.mp4', cover_image_url: 'https://cdn/cover.jpg' }],
+          }),
+        });
+      }
       return Promise.resolve({
         ok: true,
-        json: async () => ({
-          task_status: 'SUCCESS',
-          video_result: [{ url: 'https://cdn/video.mp4', cover_image_url: 'https://cdn/cover.jpg' }],
-        }),
+        arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
       });
     });
 
     const result = await executeVideoGenerate(
-      { prompt: '一只猫' },
+      { prompt: '一只猫', model: 'cogvideox-2' },
       makeCtx({ logger }),
       allowAll,
     );

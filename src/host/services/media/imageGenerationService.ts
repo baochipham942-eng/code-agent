@@ -482,6 +482,7 @@ export async function editImageByDescription(input: {
 export async function generateImageFromReference(input: {
   prompt: string;
   referenceImageDataUrl: string;
+  outerSignal?: AbortSignal;
 }): Promise<GenerateImageResult> {
   const apiKey = getDashscopeApiKey();
   if (!apiKey) throw new Error('参考图生成需要百炼（DashScope）API Key。');
@@ -489,8 +490,9 @@ export async function generateImageFromReference(input: {
     apiKey,
     prompt: input.prompt,
     baseImageDataUrl: input.referenceImageDataUrl,
+    outerSignal: input.outerSignal,
   });
-  const imageData = isImageUrl(url) ? await downloadImageAsBase64(url) : url;
+  const imageData = isImageUrl(url) ? await downloadImageAsBase64(url, input.outerSignal) : url;
   return { imageData, actualModel: WANX_EDIT_MODEL };
 }
 

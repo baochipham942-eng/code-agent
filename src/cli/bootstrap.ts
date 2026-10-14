@@ -795,6 +795,7 @@ export function createAgentLoop(
     maxIterations: config.maxIterations, // 迭代数硬上限（角色主动性醒来等预算受限场景）
     toolScope: config.toolScope, // web workbench 已选连接器/MCP → 延迟工具预载
     executionIntent: config.executionIntent, // 每轮执行意图（designCanvasActive 等）→ RuntimeContext
+    delegationOrigin: config.delegationOrigin, // ADR-072 K1C 带外委托标记 → orchestrator 起源 + turn_source
     agentId: config.agentOverride?.id ?? 'default',
     agentName: config.agentOverride?.name ?? 'default',
     requestedAgentId: config.requestedAgentId,

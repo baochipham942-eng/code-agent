@@ -221,6 +221,11 @@ export interface TelemetryTurn {
   // Turn granularity: distinguish user-initiated turns from agentic loop iterations
   turnType: 'user' | 'iteration'; // 'user' = triggered by user message; 'iteration' = agentic loop step
   parentTurnId?: string; // set on 'iteration' turns, points to the parent 'user' turn id
+  /**
+   * ADR-072 Q5/K1C：轮来源标记。委托触发的目标会话轮记 'delegation'，其余轮
+   * 不设（落库 NULL）。上传行原样输出；评分分母不剔（委托轮是普通会话普通轮）。
+   */
+  turnSource?: 'delegation';
 }
 
 // ----------------------------------------------------------------------------
@@ -424,7 +429,7 @@ export interface TelemetryRendererBundleAttempt {
 // ----------------------------------------------------------------------------
 
 export interface TelemetryAdapter {
-  onTurnStart(turnId: string, turnNumber: number, userPrompt: string, parentTurnId?: string): void;
+  onTurnStart(turnId: string, turnNumber: number, userPrompt: string, parentTurnId?: string, turnSource?: 'delegation'): void;
   onModelCall(turnId: string, call: TelemetryModelCall): void;
   onToolCallStart(turnId: string, toolCallId: string, name: string, args: unknown, index: number, parallel: boolean): void;
   onToolCallEnd(turnId: string, toolCallId: string, success: boolean, error: string | undefined, durationMs: number, output: string | undefined, metadata?: Record<string, unknown>): void;

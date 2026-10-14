@@ -47,6 +47,7 @@ import {
   recordCronAutomationArchived,
   recordCronAutomationExecution,
 } from '../../../src/host/cron/cronAutomationBridge';
+import { cronLoginWallMetadata } from '../../../src/host/cron/cronLoginWall';
 import { SessionAutomationService } from '../../../src/host/services/sessionAutomation/sessionAutomationService';
 
 const def = (over: Partial<CronJobDefinition> = {}): CronJobDefinition => ({
@@ -63,6 +64,24 @@ const def = (over: Partial<CronJobDefinition> = {}): CronJobDefinition => ({
 });
 
 const identityRuntime = (d: CronJobDefinition) => d;
+
+describe('cron login-gated site warning detection', () => {
+  it('requires a URL and explicit login-gated hint', () => {
+    expect(cronLoginWallMetadata({
+      action: { type: 'agent', agentType: 'default', prompt: 'Check https://example.test after login' },
+    })).toEqual({ loginGatedSiteOrigin: 'https://example.test' });
+    expect(cronLoginWallMetadata({
+      action: { type: 'agent', agentType: 'default', prompt: 'Read https://example.test public docs' },
+    })).toBeUndefined();
+  });
+
+  it('preserves unrelated metadata while storing the warning origin', () => {
+    expect(cronLoginWallMetadata(
+      { action: { type: 'agent', agentType: 'default', prompt: 'Sign in to https://example.test first' } },
+      { sourceMessageId: 'msg-1' },
+    )).toEqual({ sourceMessageId: 'msg-1', loginGatedSiteOrigin: 'https://example.test' });
+  });
+});
 
 beforeEach(() => {
   service.recordCreated.mockReset();
@@ -380,6 +399,20 @@ describe('recordCronAutomationExecution', () => {
     expect(service.upsert.mock.calls[0][0].cadenceLabel).not.toContain('每');
   });
 
+  it('maps an unattended login wall to the review inbox with the site origin', async () => {
+    await recordCronAutomationExecution(
+      def({ metadata: { sourceSessionId: 'sess' }, action: { type: 'agent', agentType: 'default', prompt: 'visit site' } }),
+      exec({ status: 'failed', error: 'CRON_LOGIN_WALL_STOP|https://example.test; stop this unattended run' }),
+      identityRuntime,
+    );
+    const arg = service.recordEvent.mock.calls[0][0];
+    expect(arg.event).toBe('failed');
+    expect(arg.recordStatus).toBe('active');
+    expect(arg.configPatch).toEqual({
+      loginWall: { siteOrigin: 'https://example.test', at: expect.any(Number) },
+    });
+  });
+
   it('成功的 recurring agent 运行：记录保持 active 并打 pendingReview 标记（A4 待过目）', async () => {
     await recordCronAutomationExecution(
       def({
@@ -393,6 +426,54 @@ describe('recordCronAutomationExecution', () => {
     const arg = service.recordEvent.mock.calls[0][0];
     expect(arg.recordStatus).toBe('active');
     expect(arg.configPatch).toEqual({ pendingReview: { resultSessionId: 'result-sess', at: 1234 } });
+  });
+
+  it('透传定时任务结果 digest 的产物数和首行摘要，并省略空 digest', async () => {
+    await recordCronAutomationExecution(
+      def({
+        metadata: { sourceSessionId: 'sess' },
+        scheduleType: 'every',
+        action: { type: 'agent', agentType: 'default', prompt: 'do it' },
+      }),
+      exec({
+        status: 'completed',
+        sessionId: 'result-sess',
+        completedAt: 1234,
+        result: {
+          digest: {
+            artifacts: ['report.md', 'chart.png'],
+            summary: '\n  第一行摘要  \n第二行摘要',
+          },
+        },
+      }),
+      identityRuntime,
+    );
+    expect(service.recordEvent.mock.calls[0][0].configPatch).toEqual({
+      pendingReview: {
+        resultSessionId: 'result-sess',
+        at: 1234,
+        digest: { artifactCount: 2, summaryLine: '第一行摘要' },
+      },
+    });
+
+    service.recordEvent.mockClear();
+    await recordCronAutomationExecution(
+      def({
+        metadata: { sourceSessionId: 'sess' },
+        scheduleType: 'every',
+        action: { type: 'agent', agentType: 'default', prompt: 'do it' },
+      }),
+      exec({
+        status: 'completed',
+        sessionId: 'result-sess',
+        completedAt: 1234,
+        result: { digest: { artifacts: [], summary: ' \n ' } },
+      }),
+      identityRuntime,
+    );
+    expect(service.recordEvent.mock.calls[0][0].configPatch).toEqual({
+      pendingReview: { resultSessionId: 'result-sess', at: 1234 },
+    });
   });
 
   it('成功的一次性 agent 运行：记录状态落 pending_review', async () => {

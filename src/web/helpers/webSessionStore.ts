@@ -170,6 +170,12 @@ interface PrePersistUserMessageInput {
   sessionId: string;
   title: string;
   modelConfig: Pick<ModelConfig, 'provider' | 'model'>;
+  /**
+   * 会话行在本轮才创建（preflight 时行还不存在：服务端生成 sessionId、渲染端建行失败等）
+   * 时随行落库的工作目录。路由的回写守卫要求 persistedSession 非空，行不存在时永远跳过
+   * ——不随建行带上，第二轮起会话就掉回扁平默认目录（rework r1，N-DELIVERABLE-WORKDIR-DEFAULT）。
+   */
+  workingDirectory?: string;
   message: Message;
 }
 
@@ -248,6 +254,7 @@ async function ensureDbSession(
   sessionId: string,
   title: string,
   modelConfig: Pick<ModelConfig, 'provider' | 'model'>,
+  workingDirectory?: string,
 ): Promise<DatabaseService> {
   const db = await getDatabase();
   const existing = db.getSession(sessionId);
@@ -255,6 +262,7 @@ async function ensureDbSession(
     db.createSessionWithId(sessionId, {
       title,
       modelConfig,
+      ...(workingDirectory ? { workingDirectory } : {}),
     });
   } else {
     // renderer 端常用 '新对话' 占位 title 先创建 session 行，再发 user message。
@@ -604,6 +612,7 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
             input.sessionId,
             input.title,
             input.modelConfig,
+            input.workingDirectory,
           );
         await persistMessageToDb(
           sm,
@@ -611,7 +620,11 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
           input.sessionId,
           input.message,
           cliSessionManager && !sessionExists
-            ? { title: input.title, modelConfig: input.modelConfig }
+            ? {
+              title: input.title,
+              modelConfig: input.modelConfig,
+              ...(input.workingDirectory ? { workingDirectory: input.workingDirectory } : {}),
+            }
             : undefined,
         );
         return true;

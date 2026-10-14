@@ -130,9 +130,12 @@ export function QueuedInputTray({
                       >
                         <GitBranch className="h-3.5 w-3.5" aria-hidden />
                       </button>
-                      <button /* ds-allow:button: 普通行内编辑与其他文字动作同密度排列 */ type="button" className="rounded px-1.5 py-1 text-[11px] text-text-secondary hover:text-text-primary" onClick={() => onEdit(item)}>
-                        {copy.edit}
-                      </button>
+                      {/* 委托来源行不可编辑（INV-5）：改内容就另发一条普通用户消息。 */}
+                      {item.origin !== 'delegation' && (
+                        <button /* ds-allow:button: 普通行内编辑与其他文字动作同密度排列 */ type="button" className="rounded px-1.5 py-1 text-[11px] text-text-secondary hover:text-text-primary" onClick={() => onEdit(item)}>
+                          {copy.edit}
+                        </button>
+                      )}
                       <button /* ds-allow:button: 普通行内撤回与其他文字动作同密度排列 */ type="button" className="rounded px-1.5 py-1 text-[11px] text-text-secondary hover:text-text-primary" onClick={() => { void runAction('retract', item.id); }}>
                         {copy.retract}
                       </button>

@@ -96,7 +96,15 @@ export interface SessionAutomationConfig extends Record<string, unknown> {
   /** 最近一次成功运行的待过目标记；用户过目/归档后清除。recurring 任务记录保持 active，靠它进待审收件箱。
    *  urgency/urgencyRaw 自结果头部行透传（N-CRON-INBOX-URGENCY-TIER）；老记录没有这两个字段，按 fyi 呈现，
    *  urgencyRaw 仅在头部行存在但值不合法时保留原文。 */
-  pendingReview?: { resultSessionId?: string; at: number; urgency?: CronUrgency; urgencyRaw?: string };
+  pendingReview?: {
+    resultSessionId?: string;
+    at: number;
+    urgency?: CronUrgency;
+    urgencyRaw?: string;
+    digest?: { artifactCount: number; summaryLine?: string };
+  };
+  /** 最近一次无人值守运行遇到登录墙；用户过目后清除。 */
+  loginWall?: { siteOrigin: string; at: number };
   /** 启动时发现漏跑且无法回写源会话时，由自动化收件箱承接。 */
   missedNotice?: { scheduledAt: number; reason: CronMissedReason };
   /** B4：本 automation 上人工铸造的 target 粒度长期授权规则。删/archive 即失效（消费时按 status 钳制）。 */

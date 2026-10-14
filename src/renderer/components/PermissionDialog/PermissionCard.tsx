@@ -19,7 +19,7 @@ import type { PermissionRequest, ApprovalLevel, PermissionType } from './types';
 import type { PermissionRequest as ContractPermissionRequest, PermissionResponse } from '@shared/contract';
 import { isEditableTool } from '@shared/contract';
 import { IPC_CHANNELS } from '@shared/ipc';
-import { getPermissionConfig, isDangerousCommand } from './utils';
+import { getPermissionConfig } from './utils';
 import { useI18n } from '../../hooks/useI18n';
 import ipcService from '../../services/ipcService';
 import { toast } from '../../hooks/useToast';
@@ -31,7 +31,7 @@ import {
   validateWritebackDraft,
   type WritebackDraft,
 } from './WritebackFields';
-import { defaultPermissionViewMode, isSafeDefaultDeny, permissionSummary } from './permissionPresentation';
+import { defaultPermissionViewMode, isDangerousRequestShape, isSafeDefaultDeny, permissionSummary } from './permissionPresentation';
 
 // 将共享类型的 PermissionRequest 转换为本地类型
 function normalizeRequest(
@@ -175,9 +175,7 @@ export function PermissionCard({
   const isDangerous =
     request !== null &&
     !editable &&
-    (request.dangerLevel === 'danger' ||
-      request.type === 'dangerous_command' ||
-      (request.type === 'command' && isDangerousCommand(request.details.command)));
+    isDangerousRequestShape(request);
 
   // forceConfirm 该有的职责一点没松：不许走「会话/始终」这类常驻授权，必须逐次点。
   const hideStandingGrants = isDangerous || editable || request?.forceConfirm === true;
@@ -437,7 +435,9 @@ export function PermissionCard({
     : isRemindersWrite
       ? <ListTodo size={20} />
       : editable ? <Mail size={20} /> : config.icon;
-  const question = isMeetingCreate
+  const question = appGrantCard && !isDangerous
+    ? p.computerApp.question.replace('{app}', request.details.targetApp?.name ?? '')
+    : isMeetingCreate
     ? (meetingSubject ? w.tmeetCreateQuestion.replace('{subject}', meetingSubject) : w.tmeetCreateQuestionFallback)
     : request.tool === 'calendar_create_event'
       ? (contentTitle ? w.calendarCreateQuestion.replace('{title}', contentTitle) : w.calendarCreateQuestionFallback)

@@ -320,7 +320,7 @@ export class TelemetryCollector {
   // Turn Lifecycle
   // --------------------------------------------------------------------------
 
-  startTurn(sessionId: string, turnId: string, turnNumber: number, userPrompt: string, agentId?: string, parentTurnId?: string): void {
+  startTurn(sessionId: string, turnId: string, turnNumber: number, userPrompt: string, agentId?: string, parentTurnId?: string, turnSource?: 'delegation'): void {
     if (this.activeSession?.id !== sessionId) return;
 
     // 如果上一 turn 还没 endTurn 就开了新 turn（messageProcessor 多个 return
@@ -358,7 +358,8 @@ export class TelemetryCollector {
       totalOutputTokens: 0,
       iterationCount: 1,
       turnType: parentTurnId ? 'iteration' : 'user',
-      parentTurnId: parentTurnId ?? undefined
+      parentTurnId: parentTurnId ?? undefined,
+      ...(turnSource ? { turnSource } : {})
     };
 
     // Reset per-turn counters
@@ -1058,8 +1059,8 @@ export class TelemetryCollector {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const collector = this;
     return {
-      onTurnStart(turnId: string, turnNumber: number, userPrompt: string, parentTurnId?: string) {
-        collector.startTurn(sessionId, turnId, turnNumber, userPrompt, agentId, parentTurnId);
+      onTurnStart(turnId: string, turnNumber: number, userPrompt: string, parentTurnId?: string, turnSource?: 'delegation') {
+        collector.startTurn(sessionId, turnId, turnNumber, userPrompt, agentId, parentTurnId, turnSource);
         if (!collector.hasActiveTurn(sessionId, turnId)) {
           collector.ensureDetachedTurnBuffer(sessionId, turnId, {
             turnNumber,

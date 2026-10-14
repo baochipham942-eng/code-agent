@@ -8,7 +8,8 @@ import { invoke } from '../../../../services/ipcService';
 import { useI18n } from '../../../../hooks/useI18n';
 import { companionErrorCopy, companionText } from '../../../../i18n/companion';
 import { deriveInvitationVerify, formatInvitationVerify } from '@shared/companion/lanProtocol';
-import { Button } from '../../../primitives';
+import { Button, Toggle } from '../../../primitives';
+import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { SettingsSection } from '../SettingsLayout';
 
 type Status = Extract<CompanionManagementResult, { kind: 'status' }>;
@@ -25,10 +26,14 @@ export function CompanionSection() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expired, setExpired] = useState(false);
+  const [confirmRemoteOff, setConfirmRemoteOff] = useState(false);
   const projects = status?.projects ?? [];
   const grants = projectScope(projects).slice(0, COMPANION_LIMITS.maxScopeSessions);
   const capped = (status?.projects?.length ?? 0) > grants.length;
-  const canInvite = !!status && grants.length > 0;
+  // 远程访问总闸：状态只认 host 的 status 结果（旧 host 缺省按开算），不吃本地存储，重启后仍以 host 为准。
+  const remoteOn = status?.remoteEnabled ?? true;
+  const deviceCount = status?.devices.length ?? 0;
+  const canInvite = !!status && grants.length > 0 && remoteOn;
   const refresh = async () => {
     const result = await invoke(COMPANION_MANAGE_CHANNEL, { action: 'status' });
     if (result?.kind !== 'status') throw new Error('COMPANION_UNAVAILABLE');
@@ -54,6 +59,14 @@ export function CompanionSection() {
         ? deriveInvitationVerify(result.invitation.psk, result.invitation.hostKey) : undefined,
     });
   });
+  // 总闸开 = 直发；关 = 先弹确认（见 ConfirmDialog），取消/关闭一律不发请求，也绝不走 revoke。
+  const applyRemote = (enabled: boolean) => void run(async () => {
+    const result = await invoke(COMPANION_MANAGE_CHANNEL, { action: 'setRemote', enabled });
+    if (result?.kind !== 'status') throw new Error('COMPANION_UNAVAILABLE');
+    setStatus(result);
+    // 总闸一关 LAN/relay 都停了，页面上已展示的配对码必死，别留着误导。
+    if (!enabled) { setQr(null); setExpired(false); }
+  });
   useEffect(() => { void run(refresh); }, []);
   // 登录态变化后重拉一次：点「去登录」成功回来，状态块不能还停在「未开通」（也不做轮询）。
   const wasAuthenticated = useRef(isAuthenticated);
@@ -69,6 +82,17 @@ export function CompanionSection() {
   }, [qr]);
   return <SettingsSection title={text.title} description={text.description}>
     <fieldset disabled={busy} className="space-y-4">
+      <div className="flex items-center justify-between gap-3" data-testid="companion-remote-row">
+        <div className="space-y-0.5">
+          <p className="text-sm font-medium text-zinc-200">{text.remoteTitle}</p>
+          <p className="text-xs text-zinc-500" data-testid={remoteOn ? 'companion-remote-count' : 'companion-remote-off-hint'}>
+            {remoteOn ? (deviceCount > 0 ? text.remoteCount(deviceCount) : text.remoteCountNone) : text.remoteOffHint}
+          </p>
+        </div>
+        <span data-testid="companion-remote-toggle">
+          <Toggle checked={remoteOn} onChange={(next) => (next ? applyRemote(true) : setConfirmRemoteOff(true))} aria-label={text.remoteTitle} />
+        </span>
+      </div>
       {status && !projects.length && <p className="text-sm text-zinc-400">{text.empty}</p>}
       {capped && <p role="status">{text.scopeCapped}</p>}
       <div className="flex flex-wrap items-start gap-5">
@@ -108,6 +132,16 @@ export function CompanionSection() {
       </div>
       {error && <p role="alert">{error}</p>}
     </fieldset>
+    <ConfirmDialog
+      isOpen={confirmRemoteOff}
+      title={text.remoteOffTitle}
+      message={text.remoteOffConfirm(deviceCount)}
+      variant="warning"
+      confirmText={text.remoteOffConfirmYes}
+      cancelText={text.remoteOffConfirmNo}
+      onConfirm={() => { setConfirmRemoteOff(false); applyRemote(false); }}
+      onCancel={() => setConfirmRemoteOff(false)}
+    />
   </SettingsSection>;
 }
 

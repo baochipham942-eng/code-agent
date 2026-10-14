@@ -28,6 +28,7 @@ import {
 } from './cronTemplates';
 import { CronSimpleCreate } from './CronSimpleCreate';
 import { useI18n } from '../../../hooks/useI18n';
+import { showCronLoginWallWarning } from './cronLoginWallNotice';
 import { CronRunsOnSelector } from './CronRunsOnSelector';
 import { CronResultChannelField } from './CronResultChannel';
 import { CronEventScheduleFields } from './CronEventScheduleFields';
@@ -55,8 +56,15 @@ const TABS: { key: EditorTab; label: string; icon: React.ReactNode }[] = [
 /** draft 形状 → shared 校验器口径（与 buildCronJobInput 提交前兜底用同一份判据）。 */
 function eventViolationFromDraft(draft: CronJobDraft): EventScheduleViolation | null {
   const budgetText = draft.maxRunBudget.trim();
+  // connector:mail 草稿（eventMailSource 挂原绑定）直接校验那份 mail 调度；
+  // 通道草稿照旧拼 channel 形状（与 buildCronJobInput 的回建路径同一份输入）。
   return validateEventScheduleConstraints({
-    schedule: { type: 'event', source: 'channel', eventName: 'message', accountId: draft.eventAccountId },
+    schedule: draft.eventMailSource ?? {
+      type: 'event',
+      source: 'channel',
+      eventName: 'message',
+      accountId: draft.eventAccountId,
+    },
     runsOn: draft.runsOn,
     action: { type: draft.actionType },
     maxRunBudget: budgetText === '' ? null : Number(budgetText),
@@ -201,7 +209,8 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       const generatedDraft = selectedTemplate.generate(templateValues);
       generatedDraft.runsOn = draft.runsOn;
       const input = buildCronJobInput(generatedDraft);
-      await createJob(input);
+      const created = await createJob(input);
+      showCronLoginWallWarning(created, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
       onClose();
     } catch (error) {
       setErrors({ form: saveErrorMessage(error, cc.simpleCreateFailed) });
@@ -227,9 +236,11 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       }
       const input = buildCronJobInput(draft);
       if (job) {
-        await updateJob(job.id, input);
+        const updated = await updateJob(job.id, input);
+        showCronLoginWallWarning(updated, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
       } else {
-        await createJob(input);
+        const created = await createJob(input);
+        showCronLoginWallWarning(created, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
       }
       onClose();
     } catch (error) {
@@ -657,6 +668,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                 <CronEventScheduleFields
                   accountId={draft.eventAccountId}
                   chatId={draft.eventChatId}
+                  mailSource={draft.eventMailSource ?? null}
                   onAccountChange={(eventAccountId) => {
                     setField('eventAccountId', eventAccountId);
                     setEventValidationArmed(true);

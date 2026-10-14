@@ -173,5 +173,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   daemon: {
     launchAtLogin: false,
   },
+  // Jev 判断面：总开关默认开（N-JEV-DEFAULT-ON 口径不变），借用 OpenRouter key
+  // 默认未同意——未同意前 resolveJevRoute 视同无 key（N-JEV-DEFAULT-ON-CONSENT）。
+  jev: {
+    enabled: true,
+    openRouterConsent: false,
+  },
   keybindings: createDefaultKeybindingsSettings(getKeybindingPlatformFromNodePlatform(process.platform)),
 };

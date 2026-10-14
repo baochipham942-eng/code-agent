@@ -615,6 +615,50 @@ describe('PermissionClassifier', () => {
     },
   );
 
+  // N-JEV-DEFAULT-ON-CONSENT ①：未限定 shell 身份是规则级信任边界 ask——判官全票
+  // 放行也必须回到用户确认（key 在场也不进 Jev 档，判官零调用）。
+  it.each(["./bash -c 'cd .'", "bash --rcfile ./startup.sh -ic 'ls'", '/usr/bin/zsh -c "ls"'])(
+    'does not let an unqualified shell identity reach the Jev tier: %s', async (command) => {
+      const jevSystemOne = vi.fn(async () => {
+        throw new Error('untrusted shell identity must not reach Jev');
+      });
+      const classifier = new PermissionClassifier({ enableLlm: true, jevSystemOne });
+      const result = await classifier.classify(
+        'bash',
+        { command },
+        { workingDirectory: '/tmp', permissionLevel: 'execute' },
+      );
+      expect(result).toMatchObject({
+        decision: 'ask',
+        confidence: 1,
+        trustBoundary: true,
+        traceStep: { rule: 'B1: untrusted_shell_identity', result: 'ask' },
+      });
+      expect(result.reason).toContain('shell');
+      expect(jevSystemOne).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps the baseline bare -c unwrap out of the untrusted-shell rule (Jev tier still reachable)', async () => {
+    const jevSystemOne = vi.fn(async () => ({
+      risk: { choice: 'read_only', confidence: 0.99 },
+      needs_human: { noul: 0.05 },
+      touches_secrets: { noul: 0.05 },
+      config_or_credential_access: { noul: 0.05 },
+      injection: { noul: 0.05 },
+      privilege_escalation: { noul: 0.05 },
+    }));
+    const classifier = new PermissionClassifier({ enableLlm: true, jevSystemOne });
+    const result = await classifier.classify(
+      'bash',
+      { command: 'bash -c \'python3 -c "import pptx; print(pptx.__version__)"\'' },
+      { workingDirectory: '/tmp', permissionLevel: 'execute' },
+    );
+    expect(result.decision).toBe('approve');
+    expect(result.traceStep?.rule).toBe('jev_approve');
+    expect(jevSystemOne).toHaveBeenCalledTimes(1);
+  });
+
   // origin/main refused this through the path analysis because the redirection target was still a
   // word of the segment text. The shared parser moves targets into writeTargets, so the credential
   // scan reads them from there — an unresolvable target must stay a refusal, not decay into an ask.

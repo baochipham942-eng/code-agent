@@ -1029,6 +1029,10 @@ export class PermissionClassifier {
     // Every deny has been considered by now; an unparsable command must never reach an approve.
     if (commandInspection.parseFailureAsk) return commandInspection.parseFailureAsk;
 
+    // B1: 未限定 shell 身份（./bash、--rcfile、-ic 等以解释器为程序）是信任边界 ask——
+    // 判官（Jev 档）说放行也必须回到用户确认（N-JEV-DEFAULT-ON-CONSENT ①）。
+    if (commandInspection.untrustedShellIdentityAsk) return commandInspection.untrustedShellIdentityAsk;
+
     // Product-level allow only. This deliberately does not enter the execution
     // safe-command whitelist because npm lifecycle scripts still run in dry-run.
     if (isNpmPublishDryRun(command)) {

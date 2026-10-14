@@ -529,4 +529,16 @@ export interface AppSettings {
     /** 登录自启（macOS LaunchAgent / Windows Run 键）。默认 false，由后续单子接线生效。 */
     launchAtLogin?: boolean;
   };
+  /**
+   * Jev（TypeSafe System One）判断面用户开关（N-JEV-DEFAULT-ON-CONSENT）。
+   * 开关与同意都持久化在 config.json；关闭后的行为与「无 key」完全一致。
+   */
+  jev?: {
+    /** 总开关。缺省 = 开（N-JEV-DEFAULT-ON 起默认开口径不变）。 */
+    enabled?: boolean;
+    /** 借用 OpenRouter key 的知情同意。缺省 = 未同意：未同意前不借用用户的 key。 */
+    openRouterConsent?: boolean;
+    /** 首次给出同意的时间（epoch ms），审计/同步留痕；重复同意不刷新，撤销不删除。 */
+    openRouterConsentAt?: number;
+  };
 }

@@ -55,7 +55,7 @@ import { getEventBus } from '../services/eventing/bus';
 import { persistCronMissedTrace } from './cronMissedTrace';
 import { appendCronAgentExpertThreadReceipt } from './cronAgentExpertThreadReceipt';
 import { buildCronAgentPrompt, truncateUtf8Snapshot } from './cronAgentPrompt';
-import { beginArtifactRefresh, finishArtifactRefresh } from './artifactStandingRefresh';
+import { beginArtifactRefresh, cronAgentWorkingDirectory, finishArtifactRefresh } from './artifactStandingRefresh';
 import {
   assertExecutionLocationConstraints,
   computeCronFireJitterMs,
@@ -1099,7 +1099,7 @@ export class CronService implements Disposable {
         temperature: settings.model?.temperature ?? baseSession?.modelConfig.temperature ?? 0.7,
         maxTokens: settings.model?.maxTokens ?? baseSession?.modelConfig.maxTokens,
       }),
-      workingDirectory: baseSession?.workingDirectory,
+      workingDirectory: cronAgentWorkingDirectory(definition, baseSession?.workingDirectory),
       type: sessionType,
       origin: {
         kind: originKind,

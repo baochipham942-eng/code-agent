@@ -13,6 +13,7 @@ import { fileURLToPath } from 'url';
 import { getSecureStorage } from './secureStorage';
 import { createLogger } from '../infra/logger';
 import { getPolicyEngine } from '../../permissions/policyEngine';
+import { hydratePersistedPermissionMode } from '../../permissions/modes';
 import { setProviderConcurrencyOverrides } from '../../model/concurrencyLimiter';
 import { setProviderProxyOverrides } from '../../model/providers/shared';
 import type { ProxyMode, ModelEntrySettings } from '../../../shared/contract/settings';
@@ -213,6 +214,10 @@ export class ConfigService implements IReadConfigService {
 
     // Save merged settings
     await this.save();
+
+    // 把持久化的全局权限档灌回运行时 holder（承诺「重启后恢复」，见 modes.ts 的
+    // hydratePersistedPermissionMode 注释；bypassPermissions fail-safe 不灌）。
+    hydratePersistedPermissionMode(this.settings.permissions?.permissionMode);
 
     // 加载用户级权限规则到 PolicyEngine（subagent 继承机制依赖这一步在 spawn 之前完成）
     this.applyUserPermissionRules();

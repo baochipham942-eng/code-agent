@@ -961,7 +961,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     if (providerUsage && providerUsage.inputTokens > 0) {
       ctx.recordTokenUsage(providerUsage.inputTokens, providerUsage.outputTokens, {
         cacheReadTokens: providerUsage.cacheReadTokens,
-        cacheCreationTokens: providerUsage.cacheCreationTokens,
+        cacheCreationTokens: providerUsage.cacheCreationTokens, serviceTier: providerUsage.serviceTier,
       }, 'provider');
       // N-CTXTRUTH: 真源透传给当轮健康更新（turn 末 updateContextHealth 消费；cache 口径在 service 内统一相加）
       ctx.runtime.contextHealth.setLastTurnProviderUsage({ ...providerUsage, provider: ctx.runtime.modelConfig.provider });

@@ -14,6 +14,18 @@
  */
 export const UNATTENDED_SERVICE_TIER = 'flex';
 
+/**
+ * 档位 → 计费倍率（对 computeUsageCostUsd 全项乘算）。表外档位（standard/缺席
+ * 及未知值）一律 1x：只有实测过的折价档才进表，绝不按档位名猜价。
+ *
+ * flex = 0.5：N-MODELCAT-SERVICE-TIER-REALCALL（PR #2406，真调用 gpt-6.1-sol
+ * /v1/responses）——flex 请求返回 service_tier='flex'、usage 9 in / 6 out，
+ * 按 input $1/M、output $5/M 计费，恰为标准价（$2/M、$10/M）的 0.5x。
+ */
+export const SERVICE_TIER_COST_MULTIPLIER: Readonly<Record<string, number>> = {
+  flex: 0.5,
+};
+
 /** JSON error.param 指向 service_tier 且状态码命中 → 判为档位拒绝。 */
 const PARAM_STATUSES: readonly number[] = [400, 422];
 

@@ -20,6 +20,9 @@ const ResponsesSchema = z.object({
     output_tokens: z.number().optional(),
     input_tokens_details: z.object({ cached_tokens: z.number().optional() }).passthrough().nullish(),
   }).passthrough().optional(),
+  // 响应实报的计费档（N-MODELCAT-SERVICE-TIER-COST）：挂在 usage 上流向预算层。
+  // 流式路径由 response.completed 的 response 对象解析，天然走同一 schema。
+  service_tier: z.string().optional(),
 }).passthrough();
 
 type SearchTrace = NonNullable<ModelResponse['searchTrace']>[number];
@@ -127,11 +130,15 @@ export function parseResponsesResponse(raw: unknown): ModelResponse {
     }
   });
 
+  const normalizedUsage = parsed.data.usage ? normalizeResponsesUsage(parsed.data.usage) : undefined;
+
   return {
     type: toolCalls.length ? 'tool_use' : 'text',
     content: text.join(''),
     ...(thinking.length ? { thinking: thinking.join('\n') } : {}),
-    ...(parsed.data.usage ? { usage: normalizeResponsesUsage(parsed.data.usage) } : {}),
+    ...(normalizedUsage
+      ? { usage: parsed.data.service_tier ? { ...normalizedUsage, serviceTier: parsed.data.service_tier } : normalizedUsage }
+      : {}),
     responsesOutput: output,
     ...(toolCalls.length ? { toolCalls } : {}),
     ...(searchTrace.length ? { searchTrace } : {}),

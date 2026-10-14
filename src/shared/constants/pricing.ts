@@ -1,4 +1,5 @@
 import { normalizeProviderId } from './providers';
+import { SERVICE_TIER_COST_MULTIPLIER } from './serviceTier';
 
 /** 改动 MODEL_PRICING_PER_1M 中任一价格时必须同步递增。 */
 export const PRICING_TABLE_VERSION = 3;
@@ -30,6 +31,8 @@ interface UsageCostTokens {
   outputTokens: number;
   cacheReadTokens?: number;
   cacheCreationTokens?: number;
+  /** 该次响应实报的 service_tier（缺席 = standard 计价，见 SERVICE_TIER_COST_MULTIPLIER）。 */
+  serviceTier?: string;
 }
 
 export interface RealtimeVoicePricingEntry {
@@ -66,6 +69,9 @@ export const DEFAULT_CACHE_WRITE_PRICE_RATIO = 1.25;
  * Calculate one request's USD cost from catalogue data and normalized token usage.
  * The arithmetic order matches the existing budget calculation so entries without
  * a long-context tier retain their exact floating-point result.
+ *
+ * serviceTier 折价（flex 半价档）只在非 standard 档对全项合计乘一次倍率；
+ * 档位缺席或表外（= standard 计价）时返回值与无档路径逐位一致，不重排浮点运算。
  */
 export function computeUsageCostUsd(pricing: ModelPricingEntry, usage: UsageCostTokens): number {
   const cacheReadPrice = pricing.cacheRead ?? pricing.input * DEFAULT_CACHE_READ_PRICE_RATIO;
@@ -84,7 +90,9 @@ export function computeUsageCostUsd(pricing: ModelPricingEntry, usage: UsageCost
   const outputCost = (usage.outputTokens / 1_000_000) * outputPrice;
   const cacheReadCost = ((usage.cacheReadTokens ?? 0) / 1_000_000) * effectiveCacheReadPrice;
   const cacheWriteCost = ((usage.cacheCreationTokens ?? 0) / 1_000_000) * effectiveCacheWritePrice;
-  return inputCost + outputCost + cacheReadCost + cacheWriteCost;
+  const total = inputCost + outputCost + cacheReadCost + cacheWriteCost;
+  const serviceTierMultiplier = SERVICE_TIER_COST_MULTIPLIER[usage.serviceTier ?? ''] ?? 1;
+  return serviceTierMultiplier === 1 ? total : total * serviceTierMultiplier;
 }
 
 /** 模型定价（每 1M tokens，美元）— 仅包含 PROVIDER_REGISTRY 中注册的模型 */

@@ -3,8 +3,11 @@ import {
   computeUsageCostUsd,
   DEFAULT_CACHE_READ_PRICE_RATIO,
   DEFAULT_CACHE_WRITE_PRICE_RATIO,
+  MODEL_PRICING_PER_1M,
+  SERVICE_TIER_COST_MULTIPLIER,
+  UNATTENDED_SERVICE_TIER,
   type ModelPricingEntry,
-} from '../../../src/shared/constants/pricing';
+} from '../../../src/shared/constants';
 
 // Test-only catalogue fixtures: deliberately fake identifiers and prices.
 const TEST_FIXTURE_TIERED_MODEL: ModelPricingEntry = {
@@ -113,5 +116,48 @@ describe('computeUsageCostUsd tiered pricing', () => {
       + (usage.cacheCreationTokens / 1_000_000) * pricing.input * DEFAULT_CACHE_WRITE_PRICE_RATIO;
 
     expect(computeUsageCostUsd(pricing, usage)).toBe(expected);
+  });
+});
+
+// N-MODELCAT-SERVICE-TIER-COST：service_tier 档位倍率（flex = 0.5x，实测见
+// src/shared/constants/serviceTier.ts）。REALCALL 口径：gpt-6.1-sol flex 响应
+// usage 9 in / 6 out 按标准价 $2/M、$10/M 的一半计费 = $0.000039。
+describe('computeUsageCostUsd service tier multiplier', () => {
+  // REALCALL（PR #2406）实报的 flex 计费档
+  const REALCALL_FLEX_USAGE = { inputTokens: 9, outputTokens: 6, serviceTier: UNATTENDED_SERVICE_TIER };
+
+  it('flex 档对 gpt-6.1-sol 全项合计乘 0.5（REALCALL 9 in / 6 out = $0.000039）', () => {
+    const standard = computeUsageCostUsd(MODEL_PRICING_PER_1M['gpt-6.1-sol'], {
+      inputTokens: REALCALL_FLEX_USAGE.inputTokens,
+      outputTokens: REALCALL_FLEX_USAGE.outputTokens,
+    });
+    expect(standard).toBe(0.000078);
+
+    const flex = computeUsageCostUsd(MODEL_PRICING_PER_1M['gpt-6.1-sol'], REALCALL_FLEX_USAGE);
+    expect(flex).toBe(standard * 0.5);
+    expect(flex).toBe(0.000039);
+  });
+
+  it('倍率覆盖全项：input + output + cacheRead + cacheWrite（含 longContext 档）一起折半', () => {
+    const usage = { inputTokens: 500, outputTokens: 100, cacheReadTokens: 300, cacheCreationTokens: 50 };
+    const standard = computeUsageCostUsd(TEST_FIXTURE_TIERED_MODEL, usage);
+    const flex = computeUsageCostUsd(TEST_FIXTURE_TIERED_MODEL, { ...usage, serviceTier: 'flex' });
+    expect(flex).toBe(standard * SERVICE_TIER_COST_MULTIPLIER.flex);
+
+    const longContextUsage = { ...usage, inputTokens: 5_000 };
+    const longContextStandard = computeUsageCostUsd(TEST_FIXTURE_TIERED_MODEL, longContextUsage);
+    expect(computeUsageCostUsd(TEST_FIXTURE_TIERED_MODEL, { ...longContextUsage, serviceTier: 'flex' }))
+      .toBe(longContextStandard * SERVICE_TIER_COST_MULTIPLIER.flex);
+  });
+
+  it.each([
+    ['档位缺席（undefined）', undefined],
+    ['standard 档', 'standard'],
+    ['表外档位（priority 等）不猜价', 'priority'],
+  ])('%s → 与无档逐位一致（bit-identical）', (_label, tier) => {
+    const usage = { inputTokens: 123, outputTokens: 45, cacheReadTokens: 67, cacheCreationTokens: 8 };
+    const withoutTier = computeUsageCostUsd(TEST_FIXTURE_TIERED_MODEL, usage);
+    expect(computeUsageCostUsd(TEST_FIXTURE_TIERED_MODEL, { ...usage, ...(tier ? { serviceTier: tier } : {}) }))
+      .toBe(withoutTier);
   });
 });

@@ -13,7 +13,7 @@ const env = vi.hoisted(() => ({
   adminAccessError: null as IPCResponse | null,
   config: {
     getSettings: vi.fn(() => ({}) as Record<string, unknown>),
-    updateSettings: vi.fn(async () => {}),
+    updateSettings: vi.fn(async (_updates: unknown) => {}),
     setServiceApiKey: vi.fn(async () => {}),
     getServiceApiKey: vi.fn((_s: string) => undefined as string | undefined),
     getBudgetConfig: vi.fn(() => ({ enabled: false })),
@@ -151,6 +151,48 @@ describe('语速热刷新', () => {
     await callSettings('set', { settings: { voice: { live: { speechRate: undefined } } } as never });
 
     expect(env.refreshVoiceInstructions).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('setJevSettings（N-JEV-DEFAULT-ON-CONSENT）', () => {
+  it('首次同意记录时间戳（缺省回落 Date.now()），重复同意不刷新，撤销不删除', async () => {
+    env.config.getSettings.mockReturnValue({});
+    const before = Date.now();
+    await callSettings('setJevSettings', { openRouterConsent: true });
+    const first = env.config.updateSettings.mock.calls[0][0] as { jev: { openRouterConsentAt?: number } };
+    expect(first.jev).toMatchObject({ openRouterConsent: true });
+    expect(first.jev.openRouterConsentAt).toBeGreaterThanOrEqual(before);
+    expect(first.jev.openRouterConsentAt).toBeLessThanOrEqual(Date.now());
+
+    // 已同意状态再次同意：时间戳保持首次值（保留原始时间，不被 Date.now() 冲掉）。
+    env.config.getSettings.mockReturnValue({ jev: { enabled: true, openRouterConsent: true, openRouterConsentAt: 111 } });
+    await callSettings('setJevSettings', { openRouterConsent: true });
+    const again = env.config.updateSettings.mock.calls[1][0] as { jev: { openRouterConsentAt?: number } };
+    expect(again.jev.openRouterConsentAt).toBe(111);
+
+    // 撤销：consent=false，时间戳留作历史。
+    await callSettings('setJevSettings', { openRouterConsent: false });
+    const revoked = env.config.updateSettings.mock.calls[2][0] as { jev: { openRouterConsent: boolean; openRouterConsentAt?: number } };
+    expect(revoked.jev).toEqual({ enabled: true, openRouterConsent: false, openRouterConsentAt: 111 });
+  });
+
+  it('总开关切换整块保留其余字段；payload 无关字段被忽略', async () => {
+    env.config.getSettings.mockReturnValue({ jev: { enabled: true, openRouterConsent: true, openRouterConsentAt: 222 } });
+    await callSettings('setJevSettings', { enabled: false, nonsense: 'x' } as never);
+    const update = env.config.updateSettings.mock.calls[0][0] as { jev: Record<string, unknown> };
+    expect(update.jev).toEqual({ enabled: false, openRouterConsent: true, openRouterConsentAt: 222 });
+
+    env.config.getSettings.mockReturnValue({});
+    await callSettings('setJevSettings', {});
+    const defaults = env.config.updateSettings.mock.calls[1][0] as { jev: Record<string, unknown> };
+    expect(defaults.jev).toEqual({});
+  });
+
+  it('不触发管理员门控（用户级设置）', async () => {
+    env.adminAccessError = { success: false, error: { code: 'ADMIN_REQUIRED', message: 'no' } };
+    const res = await callSettings('setJevSettings', { enabled: true });
+    expect(res.success).toBe(true);
+    expect(env.config.updateSettings).toHaveBeenCalled();
   });
 });
 

@@ -347,6 +347,35 @@ async function handleSetDevMode(
   }
 }
 
+/**
+ * Jev 判断面用户开关写入（N-JEV-DEFAULT-ON-CONSENT）：总开关 + 借用 OpenRouter key
+ * 的知情同意。首次同意把 timestamp 记进 openRouterConsentAt（审计/云端同步保留原始
+ * 时间戳），缺省才回落 Date.now()；重复同意不刷新，撤销同意不删除（历史留痕）。
+ */
+async function handleSetJevSettings(
+  getConfigService: () => ConfigService | null,
+  payload: { enabled?: boolean; openRouterConsent?: boolean },
+  timestamp?: number,
+): Promise<void> {
+  const configService = getConfigService();
+  if (!configService) throw new Error('Config service not initialized');
+  const current = configService.getSettings().jev ?? {};
+  const next: NonNullable<AppSettings['jev']> = { ...current };
+  if (typeof payload.enabled === 'boolean') next.enabled = payload.enabled;
+  if (typeof payload.openRouterConsent === 'boolean') {
+    next.openRouterConsent = payload.openRouterConsent;
+    if (payload.openRouterConsent && current.openRouterConsent !== true) {
+      next.openRouterConsentAt = timestamp ?? Date.now();
+    }
+  }
+  logger.info('Jev settings updated', {
+    enabled: next.enabled,
+    openRouterConsent: next.openRouterConsent,
+    openRouterConsentAt: next.openRouterConsentAt,
+  });
+  await configService.updateSettings({ jev: next });
+}
+
 async function handleCheckApiKeyConfigured(getConfigService: () => ConfigService | null): Promise<boolean> {
   const configService = getConfigService();
   const settings = configService ? await handleGet(getConfigService) : undefined;
@@ -551,6 +580,13 @@ const settingsHandlers: DomainRouteHandlers<SettingsDomainRequest, SettingsRoute
   },
   setDevMode: async (getConfigService, payload) => {
     await handleSetDevMode(getConfigService, payload as { enabled: boolean });
+    return null;
+  },
+  setJevSettings: async (getConfigService, payload) => {
+    await handleSetJevSettings(
+      getConfigService,
+      (payload ?? {}) as { enabled?: boolean; openRouterConsent?: boolean },
+    );
     return null;
   },
   checkApiKeyConfigured: async (getConfigService) => {

@@ -22,10 +22,22 @@ const BOUNDED_COMPARISON_DELEGATION_TOOLS = new Set([
   'workflow_orchestrate',
 ]);
 
-function isBoundedComparisonDelegationTool(toolName: string, ctx: RuntimeContext): boolean {
+function latestUserPrompt(ctx: RuntimeContext): string {
+  return [...(ctx.messages ?? [])].reverse().find((message) => message.role === 'user')?.content ?? '';
+}
+
+/**
+ * 委派面收口的两种"单轮可直出"形态：
+ * - 小范围对比（isBoundedComparison，本轮次起）
+ * - 单轮 Office 文件交付（isOneTurnFileDeliverable）——前台没有终端，模型看得见
+ *   delegate_task 时只会「写脚本 + 派后台」，后台 terminal_write 撞审批卡死，
+ *   整轮以「运行失败」收场（N-HOME-STARTER-CARDS-FILES r2 实测）。收掉委派入口，
+ *   工具面上剩下的文件生成路径（docx_generate/excel_generate）就是最短路。
+ */
+function isOneTurnDelegationBypassTool(toolName: string, ctx: RuntimeContext): boolean {
   if (!BOUNDED_COMPARISON_DELEGATION_TOOLS.has(toolName.trim().toLowerCase())) return false;
-  const prompt = [...(ctx.messages ?? [])].reverse().find((message) => message.role === 'user')?.content ?? '';
-  return detectTaskFeatures(prompt).isBoundedComparison === true;
+  const features = detectTaskFeatures(latestUserPrompt(ctx));
+  return features.isBoundedComparison === true || features.isOneTurnFileDeliverable === true;
 }
 
 export function isToolDeniedForRun(ctx: RuntimeContext, toolName: string): boolean {
@@ -54,11 +66,12 @@ export function filterToolsByRunPolicy(
   const boundedComparison = (ctx.messages ?? []).some((message) => (
     message.role === 'user' && detectTaskFeatures(message.content).isBoundedComparison === true
   ));
+  const oneTurnFileDeliverable = detectTaskFeatures(latestUserPrompt(ctx)).isOneTurnFileDeliverable === true;
   const hasPolicy = (ctx.deniedToolNames?.length ?? 0) > 0 || (ctx.allowedToolNames?.length ?? 0) > 0;
-  if (!hasPolicy && !askUnattended && !boundedComparison) return tools;
+  if (!hasPolicy && !askUnattended && !boundedComparison && !oneTurnFileDeliverable) return tools;
   return tools.filter((tool) => {
     if (askUnattended && ASK_USER_QUESTION_TOOL_NAMES.some((name) => name === tool.name)) return false;
-    if (isBoundedComparisonDelegationTool(tool.name, ctx)) return false;
+    if (isOneTurnDelegationBypassTool(tool.name, ctx)) return false;
     return !isToolDeniedByRunPolicy(ctx, tool.name);
   });
 }

@@ -13,6 +13,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   SESSION_COMMAND_CENTER_BRAIN_CONTEXT,
+  getTextForegroundToolNamesForPrompt,
   withSessionCommandCenterBrain,
 } from '../../../src/host/app/sessionCommandCenterBrain';
 import {
@@ -153,3 +154,100 @@ describe('withSessionCommandCenterBrain', () => {
     ]);
   });
 });
+
+// ============================================================================
+// 单轮 Office 文件交付的前台面扩展（N-HOME-STARTER-CARDS-FILES r2）
+// 首屏卡点击的周报/表格轮必须把原生生成工具送进模型可见面，同时委派入口出局——
+// 否则前台没有 Bash，模型只剩「写脚本 + delegate_task 派后台」，后台 terminal_write
+// 撞审批卡死，整轮「运行失败」（r1 真机实录）。
+// ============================================================================
+
+describe('getTextForegroundToolNamesForPrompt — 文件交付扩展', () => {
+  const weeklyZh = '帮我把这周的工作要点写成一份周报（Word .docx）。请写入一个 .docx 文件，并在回复中说明生成的文件名。不要问我任何问题。';
+  const weeklyEn = 'Turn this week’s rough bullets into a Word status report (.docx). Write the report to a .docx file and state the generated filename in your reply, without asking me any questions.';
+  const sheetZh = '分析下面这份月度销售数据，并生成一个 Excel 工作簿（.xlsx）：包含原始数据工作表和汇总表。请写入一个 .xlsx 文件，并在回复中说明生成的文件名。不要问我任何问题。';
+  const sheetEn = 'Analyze this monthly sales dataset and generate an Excel workbook (.xlsx): include a raw-data worksheet and a summary table. Write the workbook to a .xlsx file and state the generated filename in your reply, without asking me any questions.';
+
+  it.each([
+    ['zh 周报卡', weeklyZh, ['docx_generate']],
+    ['en 周报卡', weeklyEn, ['docx_generate']],
+    ['zh 表格卡', sheetZh, ['excel_generate', 'DocEdit']],
+    ['en 表格卡', sheetEn, ['excel_generate', 'DocEdit']],
+  ])('%s：前台面按需纳入生成工具', (_label, prompt, expected) => {
+    const names = getTextForegroundToolNamesForPrompt(prompt);
+    for (const name of expected) {
+      expect(names).toContain(name);
+    }
+    // 基础面前成员原样保留
+    for (const name of ['Read', 'Write', 'Edit', 'AskUserQuestion']) {
+      expect(names).toContain(name);
+    }
+  });
+
+  it('非交付轮的前台面保持基础面不变', () => {
+    expect(getTextForegroundToolNamesForPrompt('你好，帮我看看今天有什么安排'))
+      .toEqual(getTextForegroundToolNames());
+    expect(getTextForegroundToolNamesForPrompt('打开 report.docx 看看结论'))
+      .toEqual(getTextForegroundToolNames());
+  });
+
+  it('withSessionCommandCenterBrain 带 prompt 时把生成工具写进 allowlist', () => {
+    const options = withSessionCommandCenterBrain(undefined, weeklyZh);
+    expect(options.allowedToolNames).toContain('docx_generate');
+    const base = withSessionCommandCenterBrain(undefined);
+    expect(base.allowedToolNames).toEqual(getTextForegroundToolNames());
+  });
+});
+
+describe('文件交付轮的模型可见工具面（组装末端形状）', () => {
+  it('周报卡：docx_generate 可见，delegate_task / spawn_agent 不可见', async () => {
+    const { getCoreToolDefinitions, getLoadedDeferredToolDefinitions } = await import('../../../src/host/tools/dispatch/toolDefinitions');
+    const { getToolSearchService } = await import('../../../src/host/services/toolSearch');
+    const { filterToolsByRunPolicy } = await import('../../../src/host/agent/runtime/toolRunPolicy');
+
+    const prompt = weeklyPromptForSurface();
+    const allowed = getTextForegroundToolNamesForPrompt(prompt);
+    // 与 deferredToolPreload 的白名单预载同语义：非 core 的白名单成员送上轮
+    const service = getToolSearchService();
+    for (const name of allowed) service.preloadTools([name], 'surface-test');
+    const tools = [...getCoreToolDefinitions({}), ...getLoadedDeferredToolDefinitions()];
+    const surface = filterToolsByRunPolicy(tools, {
+      allowedToolNames: allowed,
+      messages: [{ role: 'user', content: prompt }],
+    } as any).map((definition) => definition.name);
+
+    expect(surface).toContain('docx_generate');
+    expect(surface).toContain('Write');
+    expect(surface).not.toContain('delegate_task');
+    expect(surface).not.toContain('spawn_agent');
+  });
+
+  it('表格卡：excel_generate 与 DocEdit 可见，delegate_task 不可见', async () => {
+    const { getCoreToolDefinitions, getLoadedDeferredToolDefinitions } = await import('../../../src/host/tools/dispatch/toolDefinitions');
+    const { getToolSearchService } = await import('../../../src/host/services/toolSearch');
+    const { filterToolsByRunPolicy } = await import('../../../src/host/agent/runtime/toolRunPolicy');
+
+    const prompt = sheetPromptForSurface();
+    const allowed = getTextForegroundToolNamesForPrompt(prompt);
+    const service = getToolSearchService();
+    for (const name of allowed) service.preloadTools([name], 'surface-test');
+    const tools = [...getCoreToolDefinitions({}), ...getLoadedDeferredToolDefinitions()];
+    const surface = filterToolsByRunPolicy(tools, {
+      allowedToolNames: allowed,
+      messages: [{ role: 'user', content: prompt }],
+    } as any).map((definition) => definition.name);
+
+    expect(surface).toContain('excel_generate');
+    expect(surface).toContain('DocEdit');
+    expect(surface).not.toContain('delegate_task');
+    expect(surface).not.toContain('spawn_agent');
+  });
+});
+
+function weeklyPromptForSurface(): string {
+  return '帮我把这周的工作要点写成一份周报（Word .docx）。请写入一个 .docx 文件，并在回复中说明生成的文件名。不要问我任何问题。';
+}
+
+function sheetPromptForSurface(): string {
+  return '分析下面这份月度销售数据，并生成一个 Excel 工作簿（.xlsx）：包含原始数据工作表和汇总表。请写入一个 .xlsx 文件，并在回复中说明生成的文件名。不要问我任何问题。';
+}

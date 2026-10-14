@@ -17,6 +17,7 @@ export type ReminderType =
   | 'PPT_FORMAT_SELECTION'
   | 'DATA_PROCESSING'
   | 'DOCUMENT_GENERATION'
+  | 'FILE_DELIVERABLE'
   | 'IMAGE_GENERATION'
   | 'VIDEO_GENERATION'
   | 'CODE_REVIEW_DIAGNOSIS'
@@ -239,6 +240,25 @@ skill({
 </system-reminder>
 `,
 
+  /**
+   * 单轮 Office 文件交付 - 原生生成工具直达
+   */
+  FILE_DELIVERABLE: `
+<system-reminder>
+**文件交付任务**：用户点名要一份 Office 文件交付物（.docx/.xlsx）。
+
+**工作流程**：
+1. 直接基于会话内素材成稿；素材缺失就基于用户已给出的信息完成，不要为此联网补素材
+2. 用本轮工具表中的原生工具直接生成文件：Word 用 docx_generate（content 传 Markdown，标题/列表/表格照常写），Excel 用 excel_generate（data 传 JSON 数组或 Markdown 表格）
+3. 一个工作簿要多个工作表时：先 excel_generate 生成原始数据表，再用 DocEdit（add_sheet + set_range）追加汇总表
+4. 生成后核对工具返回的文件路径与结构（工作表名、行数、关键内容），在回复中给出确切文件名和一句内容摘要
+
+**禁止**：
+- ❌ 不要为此写 Python（python-docx/openpyxl/pandas）脚本——本轮的文件生成一律走上面的原生工具
+- ❌ 不要派发后台任务或子代理来完成这个单轮文件交付
+</system-reminder>
+`,
+
   IMAGE_GENERATION: `
 <system-reminder>
 **图像生成任务**：检测到图像生成需求。
@@ -343,6 +363,10 @@ export interface TaskFeatures {
   isMultiDimension: boolean;
   /** 小范围、单轮对比：不应触发自动委派或并行派发。 */
   isBoundedComparison?: boolean;
+  /** 用户点名要 Office 文件交付物（.docx/.xlsx 且带生成动词）。 */
+  isOfficeFileDeliverable?: boolean;
+  /** 单轮可直出的文件交付：走原生生成工具直达，不派发、不写脚本。 */
+  isOneTurnFileDeliverable?: boolean;
   isComplexTask: boolean;
   isAuditTask: boolean;
   isReviewTask: boolean;
@@ -402,6 +426,26 @@ export function isBoundedOneTurnComparison(message: string): boolean {
   const hasSmallBound = /\b(?:3|4|5)\s+(?:companies|vendors|competitors|products|entities|dimensions)\b|(?:3|4|5|三|四|五)\s*(?:家|个)/i.test(message);
   const hasOneTurnDelivery = /\b(?:one|single)\s+turn\b|一轮(?:内|中|完成)?/i.test(message);
   return hasComparisonIntent && hasSmallBound && hasOneTurnDelivery;
+}
+
+/**
+ * Office 文件交付意图：用户点名要一份 .docx/.xlsx（或 Word/Excel 文档）产物。
+ *
+ * 必须共现生成动词——裸扩展名会咬到读取诉求（「打开 report.docx 看结论」不是交付），
+ * 与 DOCUMENT_GENERATION 禁止项是同一教训。这类请求的原生路径是 docx_generate /
+ * excel_generate（本地产物工具、免确认桶），提醒与工具面都应把模型引到它们上面：
+ * 文字前台没有终端，按 DATA_PROCESSING/DOCUMENT_GENERATION 的 Python 工作流走只能
+ * 派后台执行脚本，卡在审批上整轮「运行失败」（N-HOME-STARTER-CARDS-FILES r2 实测）。
+ *
+ * 中文结尾不加 \b：JS 的 \b 只认 ASCII 词字符，「文档/工作簿」后的标点不成立边界。
+ */
+const OFFICE_DOC_DELIVERABLE_RE = /\.docx\b|\bword\s*文档|\bword\s+(?:document|file|report)\b/i;
+const OFFICE_SHEET_DELIVERABLE_RE = /\.xlsx\b|\bexcel\s*(?:工作簿|表格|文件)|\bexcel\s+(?:workbook|spreadsheet|file)\b/i;
+const OFFICE_DELIVERABLE_VERB_RE = /生成|写入|导出|输出|保存|做成|写成|转成|整理成|deliver|generate|write|create|save|export|produce/i;
+
+function isOfficeFileDeliverablePrompt(message: string): boolean {
+  if (!OFFICE_DELIVERABLE_VERB_RE.test(message)) return false;
+  return OFFICE_DOC_DELIVERABLE_RE.test(message) || OFFICE_SHEET_DELIVERABLE_RE.test(message);
 }
 
 const hasAnyKeyword = (normalizedText: string, keywords: string[]): boolean =>
@@ -588,10 +632,18 @@ export function detectTaskFeatures(prompt: string, fileExtensions?: string[]): T
     hasAnyKeyword(normalizedPrompt, excelTableContextKeywords) &&
     weakHit(excelAmbiguousOperationKeywords);
 
+  // 单轮文件交付豁免复杂/多维：真正的大型报告仍走既有后台/派发路径，前台直达只收窄
+  // 「点名文件 + 一轮可成」的小交付（与 isBoundedComparison 同一收口哲学）。
+  const isOfficeFileDeliverable = isOfficeFileDeliverablePrompt(prompt);
+  const isComplexTask = complexKeywords.some((k) => normalizedPrompt.includes(k));
+  const isMultiDimension = matchedDimensions.length >= 2 && !isBoundedComparison;
+
   return {
-    isMultiDimension: matchedDimensions.length >= 2 && !isBoundedComparison,
+    isMultiDimension,
     isBoundedComparison,
-    isComplexTask: complexKeywords.some((k) => normalizedPrompt.includes(k)),
+    isOfficeFileDeliverable,
+    isOneTurnFileDeliverable: isOfficeFileDeliverable && !isComplexTask && !isMultiDimension,
+    isComplexTask,
     isAuditTask: auditKeywords.some((k) => normalizedPrompt.includes(k)),
     isReviewTask: reviewKeywords.some((k) => normalizedPrompt.includes(k)),
     isPlanningTask: planningKeywords.some((k) => normalizedPrompt.includes(k)),
@@ -627,6 +679,10 @@ export function getSystemReminders(prompt: string, fileExtensions?: string[]): s
   // isDataTask，但它不是数据处理任务
   if (features.isScreenCaptureTask) {
     reminders.push(REMINDERS.SCREEN_CAPTURE);
+  } else if (features.isOneTurnFileDeliverable) {
+    // 单轮文件交付优先于通用数据/文档工作流：那两条的 Python/终端路径在文字前台
+    // 不可达，照走只会把执行挤到后台脚本上去（见 FILE_DELIVERABLE 头注）。
+    reminders.push(REMINDERS.FILE_DELIVERABLE);
   } else if (features.isPPTTask) {
     reminders.push(REMINDERS.PPT_FORMAT_SELECTION);
   } else if (features.isDataTask) {

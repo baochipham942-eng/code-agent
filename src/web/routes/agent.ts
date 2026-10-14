@@ -27,7 +27,7 @@ import {
   buildWorkbenchCapabilityContextLines,
   buildWorkbenchToolScope,
 } from '../../host/app/workbenchTurnContext';
-import { SESSION_COMMAND_CENTER_BRAIN_CONTEXT } from '../../host/app/sessionCommandCenterBrain';
+import { SESSION_COMMAND_CENTER_BRAIN_CONTEXT, getTextForegroundToolNamesForPrompt } from '../../host/app/sessionCommandCenterBrain';
 import {
   isSessionCommandCenterTurn,
   SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
@@ -1117,7 +1117,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       if (commandCenterBrain) {
         // 文字前台由 web TaskManager 承载，免除 CLI 专用的任务工具禁用表。
         config.taskManagerToolsEnabled = true;
-        config.allowedToolNames = getTextForegroundToolNames();
+        config.allowedToolNames = getTextForegroundToolNamesForPrompt(prompt);
         config.foregroundToolFace = true;
         config.maxIterations = Math.min(
           config.maxIterations ?? SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,

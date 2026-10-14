@@ -112,6 +112,77 @@ describe('toolRunPolicy', () => {
     ], ctx).map((item) => item.name)).toEqual(['Read']);
   });
 
+  // N-HOME-STARTER-CARDS-FILES r2：前台没有 Bash，文件交付轮看得见 delegate_task 时
+  // 模型只会「写脚本 + 派后台」，后台 terminal_write 撞审批卡死，整轮「运行失败」。
+  // 收掉委派入口后，工具面上的原生生成工具（docx_generate/excel_generate）成为最短路。
+  describe('单轮 Office 文件交付轮的委派面收口', () => {
+    const weeklyPrompt = '帮我把这周的工作要点写成一份周报（Word .docx）。请写入一个 .docx 文件，并在回复中说明生成的文件名。不要问我任何问题。';
+    const sheetPrompt = 'Analyze this monthly sales dataset and generate an Excel workbook (.xlsx): include a raw-data worksheet and a summary table. Write the workbook to a .xlsx file and state the generated filename in your reply, without asking me any questions.';
+
+    it.each([
+      ['zh 周报卡', weeklyPrompt],
+      ['en 表格卡', sheetPrompt],
+    ])('%s：委派工具被移出，原生生成工具与读写工具保留', (_label, prompt) => {
+      const ctx = { messages: [{ role: 'user', content: prompt }] } as any;
+
+      const kept = filterToolsByRunPolicy([
+        tool('delegate_task'),
+        tool('spawn_agent'),
+        tool('workflow'),
+        tool('docx_generate'),
+        tool('excel_generate'),
+        tool('DocEdit'),
+        tool('Read'),
+        tool('Write'),
+      ], ctx).map((item) => item.name);
+
+      expect(kept).toContain('docx_generate');
+      expect(kept).toContain('excel_generate');
+      expect(kept).toContain('DocEdit');
+      expect(kept).toContain('Read');
+      expect(kept).toContain('Write');
+      expect(kept).not.toContain('delegate_task');
+      expect(kept).not.toContain('spawn_agent');
+      expect(kept).not.toContain('workflow');
+    });
+
+    it('前台白名单 + 文件交付：生成工具进面，委派工具出局（组装末端形状）', () => {
+      const ctx = {
+        allowedToolNames: [
+          'Read', 'Write', 'Edit', 'Glob', 'Grep', 'ListDirectory', 'AskUserQuestion',
+          'delegate_task', 'task_status', 'steer_task', 'cancel_task', 'spawn_agent',
+          'docx_generate',
+        ],
+        messages: [{ role: 'user', content: weeklyPrompt }],
+      } as any;
+
+      const kept = filterToolsByRunPolicy([
+        tool('Read'), tool('Write'), tool('Edit'), tool('AskUserQuestion'),
+        tool('delegate_task'), tool('task_status'), tool('steer_task'), tool('cancel_task'),
+        tool('spawn_agent'), tool('docx_generate'), tool('Bash'),
+      ], ctx).map((item) => item.name);
+
+      expect(kept).toContain('docx_generate');
+      expect(kept).toContain('Write');
+      expect(kept).not.toContain('delegate_task');
+      expect(kept).not.toContain('spawn_agent');
+      expect(kept).not.toContain('Bash');
+    });
+
+    it.each([
+      ['读取已有 docx（无生成动词）保留委派入口', '打开 report.docx 看看结论'],
+      ['复杂大型交付保留委派入口', '全面深入地研究这个行业，生成一份完整报告 .docx'],
+      ['闲聊保留委派入口', '你好'],
+    ])('%s', (_label, prompt) => {
+      const ctx = { messages: [{ role: 'user', content: prompt }] } as any;
+
+      expect(filterToolsByRunPolicy([
+        tool('delegate_task'),
+        tool('Read'),
+      ], ctx).map((item) => item.name)).toEqual(['delegate_task', 'Read']);
+    });
+  });
+
   // 2026-08-09 委派入口歧义单：收窄日志只打数量时，「24 -> 9 砍掉了谁」在日志里查不到，
   // 只能翻真库反推。这三条钉住「名字必须打出来」，别再退回纯数量。
   describe('收窄可观测性', () => {

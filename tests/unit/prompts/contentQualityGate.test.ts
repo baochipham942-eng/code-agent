@@ -252,8 +252,84 @@ describe('reminderRegistry — 3 个新 P1 提醒定义', () => {
     const taskTypeReminders = REMINDER_DEFINITIONS.filter(
       (r) => r.exclusiveGroup === 'task-type-selection'
     );
-    // PPT + DATA + DOCUMENT + IMAGE + VIDEO + EXCEL = 6
-    expect(taskTypeReminders.length).toBe(6);
+    // FILE_DELIVERABLE + PPT + DATA + DOCUMENT + IMAGE + VIDEO + EXCEL = 7
+    expect(taskTypeReminders.length).toBe(7);
     expect(taskTypeReminders.every((r) => r.priority === 1)).toBe(true);
+  });
+});
+
+// ============================================================================
+// 单轮 Office 文件交付（N-HOME-STARTER-CARDS-FILES r2）
+// 首屏卡点击的周报/表格轮：提醒面指向原生生成工具，不再给 Python 工作流。
+// ============================================================================
+
+describe('单轮 Office 文件交付 — 意图与提醒', () => {
+  const weeklyZh = '帮我把这周的工作要点写成一份可以直接发给主管的周报（Word .docx）：结构含 本周完成 / 数据与进展 / 风险与需协调 / 下周计划。请写入一个 .docx 文件，并在回复中说明生成的文件名。不要问我任何问题。';
+  const weeklyEn = 'Turn this week’s rough bullets into a Word status report (.docx) I can send my manager as-is. Write the report to a .docx file and state the generated filename in your reply, without asking me any questions.';
+  const sheetZh = '分析下面这份月度销售数据，并生成一个 Excel 工作簿（.xlsx）：包含原始数据工作表和汇总表。请写入一个 .xlsx 文件，并在回复中说明生成的文件名。不要问我任何问题。';
+  const sheetEn = 'Analyze this monthly sales dataset and generate an Excel workbook (.xlsx): include a raw-data worksheet and a summary table. Write the workbook to a .xlsx file and state the generated filename in your reply, without asking me any questions.';
+
+  it.each([
+    ['zh 周报卡', weeklyZh],
+    ['en 周报卡', weeklyEn],
+    ['zh 表格卡', sheetZh],
+    ['en 表格卡', sheetEn],
+  ])('文件交付意图命中且判为单轮：%s', (_label, prompt) => {
+    const features = detectTaskFeatures(prompt);
+    expect(features.isOfficeFileDeliverable).toBe(true);
+    expect(features.isOneTurnFileDeliverable).toBe(true);
+  });
+
+  it.each([
+    ['读取已有 docx 不算交付（生成动词门）', '打开 report.docx 看看结论'],
+    ['闲聊不触发', '你好，帮我看看今天有什么安排'],
+    ['普通数据任务仍是数据任务', '帮我分析这个 Excel 文件的销售数据'],
+  ])('非交付意图不触发：%s', (_label, prompt) => {
+    expect(detectTaskFeatures(prompt).isOneTurnFileDeliverable).toBe(false);
+  });
+
+  it('复杂大型文件交付不豁免（仍走既有后台/派发路径）', () => {
+    const prompt = '全面深入地研究这个行业，给我生成一份完整报告 .docx';
+    const features = detectTaskFeatures(prompt);
+    expect(features.isOfficeFileDeliverable).toBe(true);
+    expect(features.isOneTurnFileDeliverable).toBe(false);
+  });
+
+  it.each([
+    ['zh 周报卡', weeklyZh],
+    ['en 周报卡', weeklyEn],
+  ])('%s：注入 FILE_DELIVERABLE，不再注入文档/数据 Python 工作流与委派提醒', (_label, prompt) => {
+    const reminders = getSystemReminders(prompt);
+    expect(reminders.some((r) => r.includes('文件交付任务') && r.includes('docx_generate'))).toBe(true);
+    for (const absent of ['文档生成任务', '数据处理任务', '委派提醒', '并行派发提醒']) {
+      expect(reminders.some((r) => r.includes(absent))).toBe(false);
+    }
+    const gen8 = getRemindersForTask(prompt, { includeFewShot: false });
+    expect(gen8.some((r) => r.includes('文件交付任务') && r.includes('docx_generate'))).toBe(true);
+    for (const absent of ['文档生成必须遵循的流程', '数据处理必须遵循的流程', '委派提醒', '并行派发']) {
+      expect(gen8.some((r) => r.includes(absent))).toBe(false);
+    }
+  });
+
+  it.each([
+    ['zh 表格卡', sheetZh],
+    ['en 表格卡', sheetEn],
+  ])('%s：注入 FILE_DELIVERABLE（excel_generate + DocEdit），Excel/数据 Python 工作流不再注入', (_label, prompt) => {
+    const reminders = getSystemReminders(prompt);
+    expect(reminders.some((r) => r.includes('文件交付任务') && r.includes('excel_generate'))).toBe(true);
+    for (const absent of ['数据处理任务', '文档生成任务', '委派提醒', '并行派发提醒']) {
+      expect(reminders.some((r) => r.includes(absent))).toBe(false);
+    }
+    const gen8 = getRemindersForTask(prompt, { includeFewShot: false });
+    expect(gen8.some((r) => r.includes('文件交付任务') && r.includes('excel_generate'))).toBe(true);
+    for (const absent of ['Excel 数据处理必须遵循的流程', '数据处理必须遵循的流程', '文档生成必须遵循的流程']) {
+      expect(gen8.some((r) => r.includes(absent))).toBe(false);
+    }
+  });
+
+  it('普通数据任务的 DATA_PROCESSING 提醒不受影响（无回归）', () => {
+    const prompt = '帮我分析这个 Excel 文件的销售数据并做个透视表';
+    expect(getSystemReminders(prompt).some((r) => r.includes('数据处理任务'))).toBe(true);
+    expect(getRemindersForTask(prompt, { includeFewShot: false }).some((r) => r.includes('数据处理必须遵循的流程'))).toBe(true);
   });
 });

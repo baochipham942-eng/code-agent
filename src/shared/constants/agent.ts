@@ -23,7 +23,10 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v80：N-HOME-STARTER-CARDS-FILES bounded starter-card routing removes delegate reminders for small one-turn comparisons.
 // sys-v81：N-HOME-STARTER-CARDS-FILES recognizes Arabic counts in Chinese bounded comparisons.
 // sys-v82：N-HOME-STARTER-CARDS-FILES removes delegation tools from bounded comparison turns.
-export const PROMPT_VERSION = 'sys-v82' as const;
+// sys-v83：N-HOME-STARTER-CARDS-FILES r2 one-turn Office file deliverables: FILE_DELIVERABLE
+// reminder replaces the Python-workflow scene reminders, delegation tools are stripped, and the
+// text foreground face conditionally admits docx_generate/excel_generate/DocEdit.
+export const PROMPT_VERSION = 'sys-v83' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

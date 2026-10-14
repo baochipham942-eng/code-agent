@@ -265,10 +265,16 @@ describe('formatCronScheduleLabel', () => {
   });
 
   it('formats cron expressions with optional timezone', () => {
-    expect(formatCronScheduleLabel({ type: 'cron', expression: '0 9 * * *' })).toBe('0 9 * * *');
+    expect(formatCronScheduleLabel({ type: 'cron', expression: '0 9 * * *' })).toBe('每天 09:00');
+    // 人话形态不带时区后缀
     expect(
       formatCronScheduleLabel({ type: 'cron', expression: '0 9 * * *', timezone: 'Asia/Shanghai' })
-    ).toBe('0 9 * * * · Asia/Shanghai');
+    ).toBe('每天 09:00');
+    // 复杂表达式回退「自定义时间 · 原文[ · 时区]」，不瞎猜
+    expect(formatCronScheduleLabel({ type: 'cron', expression: '0 9 1,15 * *' })).toBe('自定义时间 · 0 9 1,15 * *');
+    expect(
+      formatCronScheduleLabel({ type: 'cron', expression: '0 9 1,15 * *', timezone: 'Asia/Shanghai' })
+    ).toBe('自定义时间 · 0 9 1,15 * * · Asia/Shanghai');
   });
 });
 
@@ -290,6 +296,19 @@ describe('recordCronAutomationCreated', () => {
     expect(arg.sourceSessionId).toBe('sess');
     expect(arg.status).toBe('paused');
     expect(arg.cadenceLabel).toBe('每 5 分钟');
+  });
+
+  it('cron 任务（FB-326）cadenceLabel 说人话：17 8 * * * → 每天 08:17', async () => {
+    await recordCronAutomationCreated(
+      def({
+        metadata: { sourceSessionId: 'sess' },
+        scheduleType: 'cron',
+        schedule: { type: 'cron', expression: '17 8 * * *', timezone: 'Asia/Shanghai' },
+      }),
+      identityRuntime
+    );
+    expect(service.recordCreated).toHaveBeenCalledTimes(1);
+    expect(service.recordCreated.mock.calls[0][0].cadenceLabel).toBe('每天 08:17');
   });
 
   it('swallows service errors', async () => {

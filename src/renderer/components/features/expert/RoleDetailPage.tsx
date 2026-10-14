@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { IPC_DOMAINS } from "@shared/ipc";
 import { sanitizeTopicList } from "@shared/roleTopicList";
+import { formatCronExpressionLabel, type CronHumanLang } from "@shared/cronHumanize";
 import type {
   RolePanelDetail,
   RolePanelMemory,
@@ -114,7 +115,7 @@ function definitionBody(definition: string | null): string {
   return match?.[1] ?? "";
 }
 
-function formatAutomationSchedule(schedule: CronScheduleConfig, text: ReturnType<typeof useI18n>["t"]["expert"]["roleDetail"]): string {
+function formatAutomationSchedule(schedule: CronScheduleConfig, text: ReturnType<typeof useI18n>["t"]["expert"]["roleDetail"], lang: CronHumanLang): string {
   if (schedule.type === "every") {
     return text.automationEvery.replace("{interval}", String(schedule.interval)).replace("{unit}", text.automationUnits[schedule.unit]);
   }
@@ -130,11 +131,11 @@ function formatAutomationSchedule(schedule: CronScheduleConfig, text: ReturnType
       : `${schedule.accountId}${schedule.chatId ? ` · ${schedule.chatId}` : ''}`;
     return `事件触发 · ${binding}`;
   }
-  return text.automationCron.replace("{expression}", schedule.timezone ? `${schedule.expression} · ${schedule.timezone}` : schedule.expression);
+  return formatCronExpressionLabel(schedule.expression, schedule.timezone, lang);
 }
 
 const BoundAutomationsSection: React.FC<{ jobs?: RoleBoundCronJob[] }> = ({ jobs = [] }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const text = t.expert.roleDetail;
   const setShowCronCenter = useAppStore((state) => state.setShowCronCenter);
   return <SettingsSection title={text.automationsTitle} description={text.automationsDescription}>
@@ -143,7 +144,7 @@ const BoundAutomationsSection: React.FC<{ jobs?: RoleBoundCronJob[] }> = ({ jobs
         const nextRun = job.nextRunAt ? text.automationNextRun.replace("{time}", new Date(job.nextRunAt).toLocaleString()) : text.automationNoNextRun;
         return <div key={job.id} data-testid={`role-bound-automation-${job.id}`} className="rounded-lg border border-zinc-700/60 bg-zinc-900/40 p-3">
           <div className="flex flex-wrap items-start justify-between gap-2">
-            <div className="min-w-0"><div className="truncate text-sm text-zinc-200">{job.name}</div><div className="mt-1 text-xs text-zinc-500">{formatAutomationSchedule(job.schedule, text)} · {nextRun}</div></div>
+            <div className="min-w-0"><div className="truncate text-sm text-zinc-200">{job.name}</div><div className="mt-1 text-xs text-zinc-500">{formatAutomationSchedule(job.schedule, text, language)} · {nextRun}</div></div>
             <div className="flex flex-wrap items-center gap-1.5 text-[11px]"><span className={`rounded px-1.5 py-0.5 ${job.enabled ? "bg-emerald-500/10 text-badge-success" : "bg-zinc-700/60 text-zinc-400"}`}>{job.enabled ? text.automationStatusEnabled : text.automationStatusDisabled}</span><span className="rounded bg-violet-500/10 px-1.5 py-0.5 text-badge-accent">{job.actionType === "agent" ? text.automationTypeAgent : text.automationTypeRoleWake}</span></div>
           </div>
           {job.actionType === "role_wake" ? <p data-testid={`role-bound-automation-managed-${job.id}`} className="mt-2 text-xs text-badge-warning/80">{text.automationRoleWakeManaged}</p> : null}

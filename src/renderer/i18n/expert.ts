@@ -160,7 +160,6 @@ export const expertZh = {
       automationOpenPanel: '前往自动化面板',
       automationEvery: '每 {interval} {unit}',
       automationAt: '一次性 · {time}',
-      automationCron: 'Cron · {expression}',
       automationUnits: { seconds: '秒', minutes: '分钟', hours: '小时', days: '天' },
     },
     rolePersonalization: {
@@ -454,7 +453,6 @@ export const expertEn: typeof expertZh = {
       automationOpenPanel: 'Open Automations panel',
       automationEvery: 'Every {interval} {unit}',
       automationAt: 'One-time · {time}',
-      automationCron: 'Cron · {expression}',
       automationUnits: { seconds: 'seconds', minutes: 'minutes', hours: 'hours', days: 'days' },
     },
     rolePersonalization: {

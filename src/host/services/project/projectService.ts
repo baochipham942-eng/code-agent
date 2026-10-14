@@ -424,6 +424,14 @@ export class ProjectService {
       if (repo.listSources(existing.id).length === 0) repo.backfillProjectSources(now);
       return existing;
     }
+    // 懒开的按会话目录（N-DELIVERABLE-WORKDIR-LAZY）在回写时还没落盘：此时铸造会把
+    // null identity 铸成 trusted Source，目录一旦建出来 getWorkspaceScope 就按
+    // identity_changed 硬拒，之后每一轮都 500（真实运行实测）。新建铸造要求目录已在盘上，
+    // 落盘方（workDirectoryMaterializer）建完目录会带着真实 identity 来认领。
+    if (workspacePathIdentity(dir).ino === null) {
+      logger.info('[ProjectService] workspace not on disk yet, deferring project mint', { dir });
+      return this.ensureUnsorted(now);
+    }
 
     const project = buildProjectRow(dir, key, now);
     repo.upsertProject(project);

@@ -90,7 +90,8 @@ function capFolderTitle(text: string): string {
     let lastClause = -1;
     const windowChars = Array.from(window);
     for (let i = 0; i < windowChars.length; i++) {
-      if (CLAUSE_DELIMITERS.test(windowChars[i]!)) lastClause = i;
+      const ch = windowChars[i];
+      if (ch !== undefined && CLAUSE_DELIMITERS.test(ch)) lastClause = i;
     }
     if (lastClause > 0) {
       const cut = windowChars.slice(0, lastClause).join('').replace(/[\s.]+$/, '');

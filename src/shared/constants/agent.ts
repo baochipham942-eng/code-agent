@@ -26,7 +26,10 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v83：N-HOME-STARTER-CARDS-FILES r2 one-turn Office file deliverables: FILE_DELIVERABLE
 // reminder replaces the Python-workflow scene reminders, delegation tools are stripped, and the
 // text foreground face conditionally admits docx_generate/excel_generate/DocEdit.
-export const PROMPT_VERSION = 'sys-v83' as const;
+// sys-v84：同一单 r2 返修。delegate_task 的 schema 收回「有原生产物工具就别派后台」那句——
+// 文件交付轮运行策略已经把 delegate_task 移出工具表，这句每轮都计费、适用时模型却看不见。
+// 前台 brain 上下文仍保留同一条分流。
+export const PROMPT_VERSION = 'sys-v84' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

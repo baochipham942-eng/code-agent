@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
 import type { AppSettings } from '../../../src/shared/contract';
 
@@ -11,6 +11,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../../src/host/services/auth', () => ({
   getAuthService: () => ({
     getCurrentUser: () => mocks.currentUser,
+    // 已验证会话 + isAdmin:false —— adminGuard 的 isCurrentUserAdmin 判定为非 admin，
+    // 这正是 N-PERMRULES-LOCAL-OWNER 要放开的「本机本人」身份。
+    hasVerifiedSession: () => true,
   }),
 }));
 
@@ -26,6 +29,8 @@ vi.mock('../../../src/host/services/providerIconAssets', () => ({
 }));
 
 import { registerSettingsHandlers } from '../../../src/host/ipc/settings.ipc';
+import { ConfigService } from '../../../src/host/services/core/configService';
+import { getPolicyEngine, resetPolicyEngine } from '../../../src/host/permissions/policyEngine';
 
 type DomainHandler = (_: unknown, request: IPCRequest) => Promise<IPCResponse>;
 
@@ -123,7 +128,9 @@ function makeSettings(): AppSettings {
 describe('settings.ipc access control', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.currentUser = null;
+    // 已验证的非 admin 用户：既有用例原本隐式按非 admin 走（currentUser 为 null），
+    // 现在显式钉成「本机本人」身份，N-PERMRULES-LOCAL-OWNER 放开的就是这个人群。
+    mocks.currentUser = { id: 'local-owner', email: 'owner@test.dev', isAdmin: false };
     mocks.saveProviderIconAsset.mockResolvedValue({
       icon: 'provider-icon://local/openai-relay-1234.png',
       imageBytes: 5,
@@ -132,6 +139,11 @@ describe('settings.ipc access control', () => {
       icon: 'provider-icon://local/openai-relay-1234.png',
       dataUrl: 'data:image/png;base64,aGVsbG8=',
     });
+  });
+
+  afterEach(() => {
+    // 真实 ConfigService 的用例会把用户规则装进 PolicyEngine 单例，测完复位防串档。
+    resetPolicyEngine();
   });
 
   it('sanitizes raw secrets and policies for non-admin settings reads', async () => {
@@ -150,7 +162,13 @@ describe('settings.ipc access control', () => {
     expect(settings.budget).toBeUndefined();
     expect(settings.permissions.devModeAutoApprove).toBe(false);
     expect(settings.permissions.permissionMode).toBe('default');
-    expect(settings.permissions.deny).toBeUndefined();
+    // N-PERMRULES-LOCAL-OWNER：deny/ask/allow 是用户本人的规则，非 admin 读取原样带回。
+    expect(settings.permissions.deny).toEqual(['Bash(rm -rf *)']);
+    expect(settings.permissions.ask).toEqual(['Write(*)']);
+    expect(settings.permissions.allow).toEqual(['Read(*)']);
+    // 其余 permissions 键照旧脱敏。
+    expect(settings.permissions.blockedCommands).toEqual([]);
+    expect(settings.permissions._legacyPermissions).toBeUndefined();
   });
 
   it('marks cloud-managed providers configured in sanitized settings reads', async () => {
@@ -216,6 +234,69 @@ describe('settings.ipc access control', () => {
       error: { code: 'FORBIDDEN' },
     });
     expect(updateSettings).not.toHaveBeenCalled();
+  });
+
+  // 真实 ConfigService（只 mock 落盘），让 set → updateSettings → applyUserPermissionRules
+  // → PolicyEngine 整条链在测里真跑，证明「保存后立即生效」不依赖重启。
+  function realConfigService(): ConfigService {
+    const created = new ConfigService();
+    vi.spyOn(created as unknown as { save(): Promise<void> }, 'save').mockResolvedValue();
+    return created;
+  }
+
+  it('lets a verified non-admin save their own deny rules; the live PolicyEngine denies without restart (N-PERMRULES-LOCAL-OWNER)', async () => {
+    const config = realConfigService();
+    const ipc = makeFakeIpc();
+    registerSettingsHandlers(ipc as never, () => config as never);
+
+    const response = await ipc.getHandler()({}, {
+      action: 'set',
+      payload: { settings: { permissions: { deny: ['Bash(echo neo-deny-probe*)'] } } },
+    });
+
+    expect(response.success).toBe(true);
+    expect(config.getSettings().permissions.deny).toEqual(['Bash(echo neo-deny-probe*)']);
+
+    const result = getPolicyEngine().evaluate({
+      tool: 'Bash',
+      level: 'execute',
+      description: 'echo probe',
+      command: 'echo neo-deny-probe 42',
+    });
+    expect(result.action).toBe('deny');
+    expect(result.matchedRule?.id).toBe('user-deny-Bash(echo neo-deny-probe*)');
+  });
+
+  it('still blocks a non-admin update that mixes rules with a privileged permissions field', async () => {
+    const updateSettings = vi.fn();
+    const ipc = makeFakeIpc();
+    registerSettingsHandlers(ipc as never, () => ({ updateSettings }) as never);
+
+    const response = await ipc.getHandler()({}, {
+      action: 'set',
+      payload: { settings: { permissions: { deny: ['Bash(rm *)'], devModeAutoApprove: true } } },
+    });
+
+    expect(response).toMatchObject({
+      success: false,
+      error: { code: 'FORBIDDEN' },
+    });
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
+
+  it('keeps rejecting an allow-all Bash rule for a non-admin through the real handler', async () => {
+    const config = realConfigService();
+    const ipc = makeFakeIpc();
+    registerSettingsHandlers(ipc as never, () => config as never);
+
+    const response = await ipc.getHandler()({}, {
+      action: 'set',
+      payload: { settings: { permissions: { allow: ['Bash(*)'] } } },
+    });
+
+    expect(response.success).toBe(false);
+    expect(response.error?.message).toContain('Invalid permission rule in allow: "Bash(*)"');
+    expect(config.getSettings().permissions.allow).toBeUndefined();
   });
 
   // evaluation.feedbackHookCommand 会被宿主用系统 shell 执行（ADR-071 Q4），非管理员写不得。

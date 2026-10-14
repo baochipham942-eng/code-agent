@@ -307,7 +307,7 @@ export const zhSettingsCore = {
           askCaption: '需要确认',
           allowCaption: '允许，最低优先级',
           examplePrefix: '示例：',
-          autoSaveHint: '焦点离开输入框时自动保存，重启 Agent 后生效。',
+          autoSaveHint: '焦点离开输入框时自动保存，保存后立即生效。',
           denyLabel: 'Deny（拒绝，最高优先级）',
           askLabel: 'Ask（询问）',
           allowLabel: 'Allow（允许，最低优先级）',

@@ -224,9 +224,7 @@ function sanitizeSettingsForUser(settings: AppSettings): AppSettings {
       sanitized.permissions.permissionMode = 'default';
     }
     sanitized.permissions.blockedCommands = [];
-    delete sanitized.permissions.deny;
-    delete sanitized.permissions.ask;
-    delete sanitized.permissions.allow;
+    // deny/ask/allow 是用户本人的规则，非 admin 读取要原样带回（N-PERMRULES-LOCAL-OWNER）。
     delete sanitized.permissions._legacyPermissions;
   }
 
@@ -242,9 +240,21 @@ function extractSettingsUpdate(
   return ((payload ?? {}) as Partial<AppSettings>);
 }
 
+/**
+ * permissions 里本地用户可自助保存的键（N-PERMRULES-LOCAL-OWNER）：只开 deny/ask/allow
+ * 三张规则表——admin 门是 Neo 云平台的管理员标记，不是「这台电脑的本人」，普通账号应能管
+ * 自己的规则；其余键（permissionMode / devModeAutoApprove / blockedCommands / inheritance …）
+ * 仍 admin-only，能放开它们就等于放开 bypass 档，超出「规则」的范畴。
+ */
+const USER_SELF_MANAGED_RULE_KEYS: ReadonlySet<string> = new Set(['deny', 'ask', 'allow']);
+
+function permissionsUpdateRequiresAdmin(permissions: unknown): boolean {
+  if (!permissions || typeof permissions !== 'object') return true;
+  return Object.keys(permissions).some((key) => !USER_SELF_MANAGED_RULE_KEYS.has(key));
+}
+
 function settingsUpdateRequiresAdmin(updates: Partial<AppSettings>): boolean {
   const adminOnlyKeys: Array<keyof AppSettings> = [
-    'permissions',
     'cloud',
     'mcp',
     'supabase',
@@ -258,7 +268,14 @@ function settingsUpdateRequiresAdmin(updates: Partial<AppSettings>): boolean {
     'evaluation',
   ];
 
-  return adminOnlyKeys.some((key) => Object.prototype.hasOwnProperty.call(updates, key));
+  if (adminOnlyKeys.some((key) => Object.prototype.hasOwnProperty.call(updates, key))) {
+    return true;
+  }
+  // permissions 按键拆开判：仅 deny/ask/allow 的更新放行给非 admin，其余键仍门控。
+  if (Object.prototype.hasOwnProperty.call(updates, 'permissions')) {
+    return permissionsUpdateRequiresAdmin(updates.permissions);
+  }
+  return false;
 }
 
 function settingsActionRequiresAdmin(action: string, payload: unknown): boolean {

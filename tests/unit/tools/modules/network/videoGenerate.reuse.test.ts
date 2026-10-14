@@ -46,13 +46,13 @@ function logger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
 
-function ctx(workspace: string, toolCallId: string, emit = vi.fn()): ToolContext {
+function ctx(workspace: string, toolCallId: string, emit?: unknown): ToolContext {
   return {
     sessionId: SESSION_ID,
     workingDir: workspace,
     abortSignal: new AbortController().signal,
     logger: logger(),
-    emit,
+    emit: emit ?? vi.fn(),
     currentToolCallId: toolCallId,
   } as unknown as ToolContext;
 }
@@ -82,7 +82,7 @@ describe('video_generate 复用账本', () => {
   function run(
     args: Record<string, unknown>,
     toolCallId: string,
-    hooks?: { emit?: ReturnType<typeof vi.fn>; onProgress?: ToolProgressFn },
+    hooks?: { emit?: unknown; onProgress?: ToolProgressFn },
   ) {
     return executeVideoGenerate(args, ctx(workspace, toolCallId, hooks?.emit), allow, hooks?.onProgress);
   }

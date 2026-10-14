@@ -24,11 +24,12 @@ vi.mock('../../../src/host/services/infra/notificationService', () => ({
 import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
 import { getPermissionModeManager, resetPermissionModeManager } from '../../../src/host/permissions/modes';
 
-const settings = (): AppSettings => ({
+const settings = (overrides: Partial<AppSettings['permissions']> = {}): AppSettings => ({
   permissions: {
     autoApprove: { read: false, write: false, execute: false, network: false },
     blockedCommands: [],
     devModeAutoApprove: false,
+    ...overrides,
   },
 } as AppSettings);
 

@@ -14,6 +14,10 @@ const dbState = vi.hoisted(() => ({
   db: null as import('better-sqlite3').Database | null,
 }));
 
+const sessionLookup = vi.hoisted(() => ({
+  byId: {} as Record<string, { workingDirectory?: string } | null>,
+}));
+
 const service = {
   recordCreated: vi.fn(),
   upsert: vi.fn(),
@@ -26,7 +30,10 @@ vi.mock('../../../src/host/services/sessionAutomation', () => ({
 }));
 
 vi.mock('../../../src/host/services/core/databaseService', () => ({
-  getDatabase: () => ({ getDb: () => dbState.db }),
+  getDatabase: () => ({
+    getDb: () => dbState.db,
+    getSession: (sessionId: string) => sessionLookup.byId[sessionId] ?? null,
+  }),
 }));
 
 vi.mock('../../../src/host/platform', () => ({
@@ -84,6 +91,7 @@ describe('cron login-gated site warning detection', () => {
 });
 
 beforeEach(() => {
+  sessionLookup.byId = {};
   service.recordCreated.mockReset();
   service.upsert.mockReset();
   service.getBySourceRef.mockReset();
@@ -471,7 +479,14 @@ describe('recordCronAutomationExecution', () => {
       pendingReview: {
         resultSessionId: 'result-sess',
         at: 1234,
-        digest: { artifactCount: 2, summaryLine: '第一行摘要' },
+        digest: {
+          artifactCount: 2,
+          summaryLine: '第一行摘要',
+          artifacts: [
+            { path: 'report.md', openable: false },
+            { path: 'chart.png', openable: false },
+          ],
+        },
       },
     });
 
@@ -492,6 +507,45 @@ describe('recordCronAutomationExecution', () => {
     );
     expect(service.recordEvent.mock.calls[0][0].configPatch).toEqual({
       pendingReview: { resultSessionId: 'result-sess', at: 1234 },
+    });
+  });
+
+  it('按运行会话工作目录解析相对产物路径，解析不了的按原文记下且不可点', async () => {
+    sessionLookup.byId['result-sess'] = { workingDirectory: '/work/run' };
+    await recordCronAutomationExecution(
+      def({
+        metadata: { sourceSessionId: 'sess' },
+        scheduleType: 'every',
+        action: { type: 'agent', agentType: 'default', prompt: 'do it' },
+      }),
+      exec({
+        status: 'completed',
+        sessionId: 'result-sess',
+        completedAt: 1234,
+        result: {
+          digest: {
+            artifacts: [
+              'report.md',
+              '/already/abs.txt',
+              '~/kept',
+              '../outside.txt',
+              '   ',
+            ],
+            summary: '摘要',
+          },
+        },
+      }),
+      identityRuntime,
+    );
+    expect(service.recordEvent.mock.calls[0][0].configPatch.pendingReview.digest).toEqual({
+      artifactCount: 4,
+      summaryLine: '摘要',
+      artifacts: [
+        { path: '/work/run/report.md', openable: true },
+        { path: '/already/abs.txt', openable: true },
+        { path: '~/kept', openable: false },
+        { path: '/work/outside.txt', openable: true },
+      ],
     });
   });
 

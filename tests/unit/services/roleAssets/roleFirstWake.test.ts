@@ -26,6 +26,7 @@ const mockSessionManager = vi.hoisted(() => ({
   getCurrentSessionId: vi.fn(() => null),
   getSession: vi.fn(),
   createSession: vi.fn(),
+  updateMessage: vi.fn(),
 }));
 
 const mockSettings = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
@@ -170,6 +171,7 @@ beforeEach(async () => {
   mockSettings.value = {};
   mockSessionManager.getCurrentSessionId.mockReturnValue(null);
   mockSessionManager.getSession.mockReset();
+  mockSessionManager.updateMessage.mockReset().mockResolvedValue(undefined);
   mockSessionManager.createSession.mockReset().mockImplementation(async () => {
     harness.sessionSeq += 1;
     return { id: `fw-${harness.sessionSeq}`, workingDirectory: undefined, messages: [] };
@@ -231,10 +233,13 @@ describe('enqueueFirstWake → runFirstWake 完整链路', () => {
     });
     await vi.waitFor(() => { expect(harness.runnerCalls).toHaveLength(1); });
 
+    expect(mockSessionManager.createSession).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'visible-role · 初次见面',
+    }));
     expect(harness.automationRecordCreated).toHaveBeenCalledWith(expect.objectContaining({
       type: 'role_wake',
       status: 'running',
-      title: 'visible-role · first wake',
+      title: 'visible-role · 初次见面',
       sourceRefId: harness.runnerCalls[0]!.sessionId,
       resultSessionId: harness.runnerCalls[0]!.sessionId,
       config: { roleId: 'visible-role', trigger: 'first_wake' },
@@ -370,6 +375,8 @@ describe('提示词变体', () => {
     const prompt = harness.runnerCalls[0]!.prompt;
     expect(prompt).toContain('没有任何已连接的数据源');
     expect(prompt).toContain('不要编造');
+    expect(prompt).toContain('设置 → 连接器');
+    expect(prompt).not.toContain('设置 → 插件');
     expect(prompt).toContain('first_wake_suggestions');
     await vi.waitFor(async () => { await expect(readState('lonely-role')).resolves.toMatchObject({ state: 'completed' }); });
     expect(await readState('lonely-role')).toMatchObject({ sourcesMode: 'none', suggestions: [] });
@@ -514,7 +521,7 @@ describe('skipFirstWake', () => {
     expect(await readState('skip-running')).toMatchObject({ state: 'skipped', suggestions: [] });
   });
 
-  it('completed 后跳过：no-op，状态与建议原样保留', async () => {
+  it('completed 后跳过：封成 skipped，建议清空', async () => {
     harness.listCapabilities.mockResolvedValue(connectedInventory());
     await enqueueFirstWake('skip-after', {
       runner: async (input) => {
@@ -526,8 +533,8 @@ describe('skipFirstWake', () => {
 
     expect(await skipFirstWake('skip-after')).toEqual({ success: true });
     expect(await readState('skip-after')).toMatchObject({
-      state: 'completed',
-      suggestions: [{ title: 't', prompt: 'p' }],
+      state: 'skipped',
+      suggestions: [],
     });
   });
 
@@ -560,13 +567,17 @@ describe('失败终态：runner 抛错 / 前置步骤抛错', () => {
     });
     expect(harness.automationRecordEvent).toHaveBeenCalledWith(expect.objectContaining({ event: 'failed' }));
     // 快照（IPC 读路径）能区分失败与进行中
-    expect(await getFirstWakeSnapshot('boom-role')).toMatchObject({ state: 'failed' });
-    // failed 是终态：二次入队被 exists 挡住，跳过是 no-op
+    expect(await getFirstWakeSnapshot('boom-role')).toMatchObject({
+      state: 'failed',
+      failureReason: 'model exploded',
+    });
+    expect((await readState('boom-role')).failureReason).not.toMatch(/\n\s+at /);
+    // failed 是终态：二次入队被 exists 挡住；跳过把它封成 skipped
     expect(await enqueueFirstWake('boom-role', {
       runner: async () => { throw new Error('must not rerun'); },
     })).toEqual({ enqueued: false, reason: 'exists' });
     expect(await skipFirstWake('boom-role')).toEqual({ success: true });
-    expect(await readState('boom-role')).toMatchObject({ state: 'failed' });
+    expect(await readState('boom-role')).toMatchObject({ state: 'skipped', suggestions: [] });
   });
 
   it('前置步骤抛错（建会话失败）：pending 也落 failed 终态，runner 从未被调用', async () => {
@@ -580,7 +591,11 @@ describe('失败终态：runner 抛错 / 前置步骤抛错', () => {
     await vi.waitFor(async () => { await expect(readState('early-boom-role')).resolves.toMatchObject({ state: 'failed' }); });
     await settle(50);
     expect(harness.runnerCalls).toHaveLength(0);
-    expect(await getFirstWakeSnapshot('early-boom-role')).toMatchObject({ state: 'failed', sourcesMode: 'none' });
+    expect(await getFirstWakeSnapshot('early-boom-role')).toMatchObject({
+      state: 'failed',
+      sourcesMode: 'none',
+      failureReason: 'no session',
+    });
     expect(await enqueueFirstWake('early-boom-role', {
       runner: async () => { throw new Error('must not rerun'); },
     })).toEqual({ enqueued: false, reason: 'exists' });
@@ -628,11 +643,79 @@ describe('getFirstWakeSnapshot', () => {
       sessionId: harness.runnerCalls[0]!.sessionId,
       sourcesMode: 'connected',
       suggestions: [{ title: 't', prompt: 'p' }],
+      intro: '这是自我介绍，一共两三句。',
     });
   });
 
   it('非法 roleId → null', async () => {
     expect(await getFirstWakeSnapshot('../escape')).toBeNull();
+  });
+});
+
+// ----------------------------------------------------------------------------
+// 自我介绍、失败原因、会话标题
+// ----------------------------------------------------------------------------
+
+describe('intro / 标题', () => {
+  it('intro 去掉建议块并截到 1200 字', async () => {
+    const body = '介'.repeat(1300);
+    harness.listCapabilities.mockResolvedValue(connectedInventory());
+    await enqueueFirstWake('intro-cap', {
+      runner: async () => ({
+        finalOutput: `${body}\n\`\`\`first_wake_suggestions\n[]\n\`\`\``,
+      }),
+    });
+    await vi.waitFor(async () => { await expect(readState('intro-cap')).resolves.toMatchObject({ state: 'completed' }); });
+    const intro = (await readState('intro-cap')).intro;
+    expect(intro).toBe('介'.repeat(1200));
+    expect(String(intro)).not.toContain('first_wake_suggestions');
+  });
+
+  it('会话标题用专家面板同款展示名（agent.md display-name，否则 roleId）', async () => {
+    const agentsDir = path.join(harness.configDir, 'agents');
+    await fs.mkdir(agentsDir, { recursive: true });
+    await fs.writeFile(
+      path.join(agentsDir, 'named-role.md'),
+      '---\ndisplay-name: 小满\n---\n你是小满。\n',
+      'utf-8',
+    );
+    await enqueueFirstWake('named-role', {
+      runner: async (input) => {
+        harness.runnerCalls.push(input);
+        return { finalOutput: '你好' };
+      },
+    });
+    await vi.waitFor(() => { expect(harness.runnerCalls).toHaveLength(1); });
+    expect(mockSessionManager.createSession).toHaveBeenCalledWith(expect.objectContaining({
+      title: '小满 · 初次见面',
+    }));
+  });
+
+  it('预设角色展示名优先于 roleId', async () => {
+    await enqueueFirstWake('数据分析师', {
+      runner: async (input) => {
+        harness.runnerCalls.push(input);
+        return { finalOutput: '你好' };
+      },
+    });
+    await vi.waitFor(() => { expect(harness.runnerCalls).toHaveLength(1); });
+    expect(mockSessionManager.createSession).toHaveBeenCalledWith(expect.objectContaining({
+      title: '知微 · 初次见面',
+    }));
+  });
+
+  it('界面语言 en 时标题后缀是 First meeting', async () => {
+    mockSettings.value = { ui: { language: 'en' } };
+    await enqueueFirstWake('en-role', {
+      runner: async (input) => {
+        harness.runnerCalls.push(input);
+        return { finalOutput: 'hello' };
+      },
+    });
+    await vi.waitFor(() => { expect(harness.runnerCalls).toHaveLength(1); });
+    expect(mockSessionManager.createSession).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'en-role · First meeting',
+    }));
   });
 });
 
@@ -673,6 +756,9 @@ describe('默认执行器', () => {
 
     await vi.waitFor(async () => { await expect(readState('orch-role')).resolves.toMatchObject({ state: 'completed' }); });
     expect(await readState('orch-role')).toMatchObject({ suggestions: [{ title: 't', prompt: 'p' }] });
+    expect(mockSessionManager.updateMessage).toHaveBeenCalledWith('m3', {
+      content: '这是自我介绍，一共两三句。',
+    });
   });
 
   it('headless 分支：allowedToolNames 进 CLI loop config', async () => {

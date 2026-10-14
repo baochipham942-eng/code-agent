@@ -25,7 +25,10 @@ import type {
   RoleFirstWakeSuggestion,
   RoleFirstWakeStateName,
 } from '../../../shared/contract/roleAssets';
+import { getAgentsMdDir } from '../../config/configPaths';
+import { parseAgentMdVisual } from '../../agent/hybrid/agentMdLoader';
 import { getRoleFirstWakePath, isSafeRoleId } from './roleAssetPaths';
+import { getBuiltinRoleVisual } from './builtinRoles';
 import { readRolePersonalization, toRoleBoundaryRunAllowlist } from './rolePersonalization';
 import { resolveWakeRunToolScope } from './roleProactivity';
 
@@ -37,9 +40,12 @@ const SUGGESTIONS_BLOCK_PATTERN = /```first_wake_suggestions\s*([\s\S]*?)```/i;
 const MAX_SUGGESTIONS = 3;
 const TITLE_MAX_CHARS = 80;
 const PROMPT_MAX_CHARS = 500;
+const INTRO_MAX_CHARS = 1200;
+const FAILURE_REASON_MAX_CHARS = 200;
 
-/** 首次醒来会话标题后缀（run list 识别用） */
-const FIRST_WAKE_TITLE = 'first wake';
+/** 会话标题后缀。默认中文；界面语言为 en 时用英文，与设置里的 ui.language 对齐。 */
+const FIRST_WAKE_TITLE_ZH = '初次见面';
+const FIRST_WAKE_TITLE_EN = 'First meeting';
 
 // ----------------------------------------------------------------------------
 // 状态文件
@@ -51,6 +57,57 @@ interface RoleFirstWakeState {
   sessionId?: string;
   sourcesMode: 'connected' | 'none';
   suggestions: RoleFirstWakeSuggestion[];
+  intro?: string;
+  failureReason?: string;
+}
+
+function boundedText(value: unknown, max: number): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return trimmed.length <= max ? trimmed : trimmed.slice(0, max).trim() || undefined;
+}
+
+/** 去掉 ```first_wake_suggestions 围栏。解析用的正则不带 g，避免 lastIndex 串味。 */
+function stripSuggestionsBlock(text: string): string {
+  return text.replace(/```first_wake_suggestions\s*[\s\S]*?```/gi, '').trim();
+}
+
+function extractIntro(finalOutput: string): string | undefined {
+  return boundedText(stripSuggestionsBlock(finalOutput), INTRO_MAX_CHARS);
+}
+
+/** 第一行、无堆栈、截断。空消息不落字段。 */
+function shortFailureReason(error: unknown): string | undefined {
+  const raw = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  const line = raw.split(/\r?\n/, 1)[0]?.trim() ?? '';
+  if (!line || /^\s*at\s+\S+/.test(line)) return undefined;
+  return line.slice(0, FAILURE_REASON_MAX_CHARS);
+}
+
+function firstWakeTitle(displayName: string, language: string | undefined): string {
+  const suffix = language === 'en' ? FIRST_WAKE_TITLE_EN : FIRST_WAKE_TITLE_ZH;
+  return `${displayName} · ${suffix}`;
+}
+
+/**
+ * 与专家面板 RolePanelEntry 同一条展示名：预设视觉优先，其次 agent.md 的 display-name，
+ * 都没有就退回 roleId。
+ */
+async function resolveRoleDisplayName(roleId: string): Promise<string> {
+  const builtin = getBuiltinRoleVisual(roleId)?.displayName?.trim();
+  if (builtin) return builtin;
+  try {
+    const content = await fs.readFile(path.join(getAgentsMdDir().user, `${roleId}.md`), 'utf-8');
+    const fromFile = parseAgentMdVisual(content).displayName?.trim();
+    if (fromFile) return fromFile;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT') {
+      logger.warn('First wake display name lookup failed, using role id', { roleId, error: String(error) });
+    }
+  }
+  return roleId;
 }
 
 /** 临时文件序号：跳过与收尾并发写同一角色时避免 temp 名相撞 */
@@ -79,11 +136,15 @@ export async function getFirstWakeSnapshot(roleId: string): Promise<RoleFirstWak
   if (!isSafeRoleId(roleId)) return null;
   const state = await readFirstWakeState(roleId);
   if (!state) return null;
+  const intro = boundedText(state.intro, INTRO_MAX_CHARS);
+  const failureReason = boundedText(state.failureReason, FAILURE_REASON_MAX_CHARS);
   return {
     state: state.state,
     ...(state.sessionId ? { sessionId: state.sessionId } : {}),
     sourcesMode: state.sourcesMode,
     suggestions: Array.isArray(state.suggestions) ? state.suggestions : [],
+    ...(intro ? { intro } : {}),
+    ...(failureReason ? { failureReason } : {}),
   };
 }
 
@@ -128,7 +189,7 @@ const FIRST_WAKE_PROMPT_NONE = (userExpectation: string): string => [
   '你的任务：',
   '1. 绝对不要编造任务、数据、文件或来源——你没有数据，编造会误导用户。',
   '2. 给用户一段 2-3 句的自我介绍：你是谁、擅长什么。',
-  '3. 根据你的职责说明：哪几类数据源或连接对你最有帮助、连上之后你能多做什么、在哪里连接（设置 → 插件）。',
+  '3. 根据你的职责说明：哪几类数据源或连接对你最有帮助、连上之后你能多做什么、在哪里连接（设置 → 连接器）。',
   `4. 回复末尾必须带一个空建议块（fenced code block，语言标记 ${SUGGESTIONS_BLOCK_TAG}），内容是 []。`,
   '',
   '语言规则：用用户的语言回答；判断不出用户语言时默认中文。',
@@ -369,8 +430,9 @@ export async function skipFirstWake(roleId: string): Promise<{ success: boolean 
   try {
     if (!isSafeRoleId(roleId)) return { success: false };
     const current = await readFirstWakeState(roleId);
-    // completed / skipped / failed / 无状态文件：no-op（跳过的语义是「别再弹」，没有东西可跳也算达成）
-    if (!current || (current.state !== 'pending' && current.state !== 'running')) {
+    // 无文件 / 已经 skipped：没有东西可再封，也算达成。
+    // completed 与 failed 同样封成 skipped（建议清空），否则完成后点跳过下次仍会弹出。
+    if (!current || current.state === 'skipped') {
       return { success: true };
     }
     await writeFirstWakeState(roleId, { ...current, state: 'skipped', suggestions: [] });
@@ -408,6 +470,30 @@ async function recordFirstWakeResult(
 }
 
 /**
+ * 把会话里最后一条带建议块的 assistant 消息改写成去掉围栏后的正文。
+ * 走 SessionManager.updateMessage（写库并同步缓存）。没有这条 API 时才改渲染期剥离。
+ */
+async function stripPersistedSuggestions(sessionId: string): Promise<void> {
+  try {
+    const { getSessionManager } = await import('../infra/sessionManager');
+    const sessionManager = getSessionManager();
+    const stored = await sessionManager.getSession(sessionId);
+    const messages = stored?.messages ?? [];
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message?.role !== 'assistant' || typeof message.content !== 'string') continue;
+      if (!message.content.includes('```first_wake_suggestions') || !message.id) break;
+      const content = stripSuggestionsBlock(message.content);
+      if (content === message.content) break;
+      await sessionManager.updateMessage(message.id, { content });
+      break;
+    }
+  } catch (error) {
+    logger.warn('First wake suggestions block strip failed', { sessionId, error: String(error) });
+  }
+}
+
+/**
  * 跑一次首次醒来。状态不是 pending（用户已跳过 / 已跑过 / 状态丢失）时什么都不做。
  * 注意：主机在 running 中重启不会重跑——状态文件留在 running，直到角色目录被删
  * （重删同 id 重建角色等于新文件、新的一次首次醒来）。
@@ -433,6 +519,7 @@ async function runFirstWake(roleId: string, deps?: FirstWakeDeps): Promise<void>
 
     const sessionManager = getSessionManager();
     const settings = getConfigService().getSettings();
+    const sessionTitle = firstWakeTitle(await resolveRoleDisplayName(roleId), settings.ui?.language);
     const currentSessionId = sessionManager.getCurrentSessionId();
     const currentSession = currentSessionId ? await sessionManager.getSession(currentSessionId) : null;
     // workspace 解析链（与 wakeRole 同序）：当前会话 > CODE_AGENT_WORKING_DIR > 用户偏好。
@@ -444,7 +531,7 @@ async function runFirstWake(roleId: string, deps?: FirstWakeDeps): Promise<void>
       ?? settings.workspace?.defaultDirectory;
 
     session = await sessionManager.createSession({
-      title: `${roleId} · ${FIRST_WAKE_TITLE}`,
+      title: sessionTitle,
       // 不传常量兜底——让 resolver 落到 settings.models.default（headless 无 currentSession）
       modelConfig: resolveSessionDefaultModelConfig({
         provider: settings.model?.provider || currentSession?.modelConfig.provider,
@@ -481,7 +568,7 @@ async function runFirstWake(roleId: string, deps?: FirstWakeDeps): Promise<void>
         sourceSessionId: null,
         type: 'role_wake',
         status: 'running',
-        title: `${roleId} · ${FIRST_WAKE_TITLE}`,
+        title: sessionTitle,
         sourceRefId: session.id,
         resultSessionId: session.id,
         config: { roleId, trigger: 'first_wake' },
@@ -493,6 +580,9 @@ async function runFirstWake(roleId: string, deps?: FirstWakeDeps): Promise<void>
     const runner = deps?.runner ?? defaultFirstWakeRunner;
     const { finalOutput } = await runner({ roleId, sessionId: session.id, prompt, allowedToolNames });
     const suggestions = parseFirstWakeSuggestions(finalOutput, sourcesMode);
+    const intro = extractIntro(finalOutput);
+    // 用户在会话里看到的是正文，不是建议 JSON。跳过路径也剥，避免后台会话留下围栏。
+    await stripPersistedSuggestions(session.id);
 
     // 跑完前用户跳过：状态保持 skipped、不写建议；自动化记录收尾避免卡 running。
     const after = await readFirstWakeState(roleId);
@@ -507,11 +597,13 @@ async function runFirstWake(roleId: string, deps?: FirstWakeDeps): Promise<void>
       sessionId: session.id,
       sourcesMode,
       suggestions,
+      ...(intro ? { intro } : {}),
     });
     await recordFirstWakeResult(session.id, 'completed', `首次醒来完成，给出 ${suggestions.length} 条建议。`);
     logger.info('First wake completed', { roleId, sessionId: session.id, sourcesMode, suggestions: suggestions.length });
   } catch (error) {
     logger.warn('First wake run failed (no retry)', { roleId, error: String(error) });
+    const failureReason = shortFailureReason(error);
     // 失败也要落终态：不写的话状态文件永久停在 running（前置步骤抛错则停在 pending），
     // firstWakeGet 永远报「进行中」，enqueue 又因文件已存在永不重跑。skipped 优先——
     // 用户已跳过的失败不覆盖 skipped（与成功路径同一条规则）。
@@ -523,6 +615,7 @@ async function runFirstWake(roleId: string, deps?: FirstWakeDeps): Promise<void>
           state: 'failed',
           ...(session ? { sessionId: session.id } : {}),
           suggestions: [],
+          ...(failureReason ? { failureReason } : {}),
         });
       }
     } catch (writeError) {

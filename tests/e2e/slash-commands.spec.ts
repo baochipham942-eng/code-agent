@@ -292,7 +292,10 @@ test.describe('/schedule + /loop 斜杠命令', () => {
 
     await submitCommand(page, '/schedule 每天早上8点检查一次部署状态并汇报');
 
-    // generateFromPrompt（LLM 出配置）→ createJob → 成功 toast
+    // generateFromPrompt（LLM 出配置）→ 确认卡 → createJob → 成功 toast
+    const confirmCard = page.locator('[data-schedule-confirm]');
+    await expect(confirmCard).toBeVisible({ timeout: 60_000 });
+    await confirmCard.locator('[data-schedule-confirm-submit]').click();
     const successToast = page.getByText(/已创建定时任务/);
     await expect(successToast).toBeVisible({ timeout: 60_000 });
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'slash-schedule-created.png') });
@@ -410,8 +413,11 @@ test.describe('/schedule + /loop 斜杠命令', () => {
     await expect(topicField).toBeVisible({ timeout: 5_000 });
     await topicField.fill('汇总昨天的部署与告警');
 
-    // 点「创建定时任务」→ generateFromPrompt + createJob → 成功 toast
+    // 点「创建定时任务」→ generateFromPrompt → 确认卡 → createJob → 成功 toast
     await composer.locator('[data-schedule-create]').click();
+    const confirmCard = page.locator('[data-schedule-confirm]');
+    await expect(confirmCard).toBeVisible({ timeout: 60_000 });
+    await confirmCard.locator('[data-schedule-confirm-submit]').click();
     const successToast = page.getByText(/已创建定时任务/);
     await expect(successToast).toBeVisible({ timeout: 60_000 });
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, 'slash-schedule-template-created.png') });

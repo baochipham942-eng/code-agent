@@ -479,7 +479,7 @@ describe('deliverable card projection', () => {
 
     expect(cards).toHaveLength(1);
     expect(cards[0]).toMatchObject({
-      id: 'pending-image:assistant-image:tool-image-pending',
+      id: 'pending-media:assistant-image:tool-image-pending',
       kind: 'image',
       title: 'Generating image',
       sourceLabel: 'image_generate',
@@ -501,5 +501,115 @@ describe('deliverable card projection', () => {
         status: 'unverified',
       },
     });
+  });
+
+  it('summarizes batch prompts and the renamed output path', () => {
+    const message: Message = {
+      id: 'assistant-image-batch',
+      role: 'assistant',
+      content: '',
+      timestamp: 301,
+      toolCalls: [{
+        id: 'tool-image-batch',
+        name: 'image_generate',
+        arguments: {
+          prompt: ['first prompt', 'second prompt'],
+          output_file_path: 'images/result.png',
+        },
+      }],
+    };
+    const [card] = buildPendingImageDeliverableCards(message);
+    expect(card.contextPack.goal).toBe('first prompt +1 more');
+    expect(card.contextPack.constraints).toContain('output_file_path:images/result.png');
+  });
+
+  it('projects running video/music generation with output_file_path and legacy output_path', () => {
+    const message: Message = {
+      id: 'assistant-media',
+      role: 'assistant',
+      content: '',
+      timestamp: 302,
+      toolCalls: [
+        {
+          id: 'tool-video-pending',
+          name: 'video_generate',
+          arguments: { prompt: '海面日出延时', output_file_path: 'videos/clip.mp4' },
+        },
+        {
+          id: 'tool-music-pending',
+          name: 'music_generate',
+          arguments: { prompt: '一段轻快的配乐', output_path: 'music/legacy-track.mp3' },
+        },
+        {
+          id: 'tool-video-done',
+          name: 'video_generate',
+          arguments: { prompt: 'already done' },
+          result: { toolCallId: 'tool-video-done', success: true },
+        },
+      ],
+    };
+
+    const cards = buildPendingImageDeliverableCards(message);
+    expect(cards).toHaveLength(2);
+    const [videoCard, musicCard] = cards;
+    expect(videoCard).toMatchObject({
+      kind: 'video',
+      title: 'Generating video',
+      sourceLabel: 'video_generate',
+      openTarget: { kind: 'none', reason: 'Video is still generating' },
+    });
+    expect(videoCard.contextPack.constraints).toContain('output_file_path:videos/clip.mp4');
+    expect(videoCard.contextPack.deliverableType).toBe('Video');
+    expect(musicCard).toMatchObject({
+      kind: 'audio',
+      title: 'Generating music',
+      sourceLabel: 'music_generate',
+      openTarget: { kind: 'none', reason: 'Music is still generating' },
+    });
+    // 旧 output_path 的历史请求按原参数名入账
+    expect(musicCard.contextPack.constraints).toContain('output_path:music/legacy-track.mp3');
+  });
+});
+
+// N-DELIVERABLE-WORKDIR-DEFAULT：无文件夹新会话的产物落在按会话目录（任务_MMDD_<标题>）。
+// 交付卡「打开文件夹」（reveal-file → workspace.showItemInFolder）取的是交付物自身的绝对
+// 路径（deliverables.ts 不另设目录来源），文件由工具按 cwd（= 按会话目录）写出，所以
+// reveal 落点天然在该目录内——这里钉死这条取径契约，防止将来改成别的目录来源。
+describe('deliverable card open-folder source for per-session task folders', () => {
+  it('keeps reveal-file and file-preview anchored to the artifact path inside the session work folder', () => {
+    const sessionFolder = '/tmp/verify-home/Neo/任务_1011_季度总结';
+    const artifactPath = `${sessionFolder}/report.md`;
+
+    const workspaceItem: WorkspacePreviewItem = {
+      id: `file:${artifactPath}`,
+      kind: 'document',
+      title: '季度总结',
+      subtitle: 'write',
+      status: 'ready',
+      createdAt: 300,
+      source: { kind: 'tool', label: 'write', toolCallId: 'tool-report' },
+      file: { path: artifactPath, name: 'report.md', mimeType: 'text/markdown', size: 42 },
+    };
+
+    const card = buildDeliverableCardFromWorkspaceItem(workspaceItem);
+    expect(card.openTarget).toMatchObject({ kind: 'file-preview', path: artifactPath });
+    const reveal = card.secondaryActions?.find((action) => action.kind === 'reveal-file');
+    expect(reveal).toMatchObject({ kind: 'reveal-file', path: artifactPath });
+    expect(reveal?.path.startsWith(`${sessionFolder}/`)).toBe(true);
+
+    const turnCards = buildTurnArtifactDeliverableCards([
+      {
+        kind: 'file',
+        role: 'deliverable',
+        sourceNodeId: 'turn-node-1',
+        label: '季度总结图表',
+        ownerKind: 'tool',
+        ownerLabel: 'write · Created',
+        path: `${sessionFolder}/chart.png`,
+      },
+    ]);
+    expect(turnCards[0]?.openTarget).toMatchObject({ kind: 'file-preview', path: `${sessionFolder}/chart.png` });
+    expect(turnCards[0]?.secondaryActions?.find((action) => action.kind === 'reveal-file'))
+      .toMatchObject({ kind: 'reveal-file', path: `${sessionFolder}/chart.png` });
   });
 });

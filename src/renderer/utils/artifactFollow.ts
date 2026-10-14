@@ -6,6 +6,8 @@ const ARTIFACT_FOLLOW_INTERACTION_GRACE_MS = 3_000;
 const FOLLOWABLE_EXTENSIONS = new Set([
   'html', 'htm', 'md', 'mdx', 'markdown',
   'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg',
+  // N-MEDIA-GEN-PHASE2：video_generate / music_generate 产物可跟随（PreviewPanel 支持 <video>/<audio>）
+  'mp4', 'mp3',
 ]);
 
 const FILE_PATH_TOOLS = new Set([
@@ -13,6 +15,9 @@ const FILE_PATH_TOOLS = new Set([
 ]);
 
 const IMAGE_OUTPUT_TOOLS = new Set(['image_generate', 'image_process']);
+
+// video/music 媒体生成：新合同用 output_file_path，旧 output_path 历史消息照常读取（N-MEDIA-GEN-PHASE2）。
+const MEDIA_GENERATION_TOOLS = new Set(['video_generate', 'music_generate']);
 
 function stringField(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
@@ -39,7 +44,11 @@ export function artifactPathFromToolStart(
 ): string | null {
   const rawPath = FILE_PATH_TOOLS.has(toolCall.name)
     ? stringField(toolCall.arguments.file_path)
-    : IMAGE_OUTPUT_TOOLS.has(toolCall.name)
+    : toolCall.name === 'image_generate'
+      ? stringField(toolCall.arguments.output_file_path)
+      : MEDIA_GENERATION_TOOLS.has(toolCall.name)
+      ? stringField(toolCall.arguments.output_file_path) ?? stringField(toolCall.arguments.output_path)
+      : IMAGE_OUTPUT_TOOLS.has(toolCall.name)
       ? stringField(toolCall.arguments.output_path)
       : null;
   return rawPath ? resolveFollowableArtifactPath(rawPath, workingDirectory) : null;

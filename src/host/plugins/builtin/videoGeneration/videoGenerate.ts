@@ -1,15 +1,15 @@
 // ============================================================================
 // video_generate (P1 Wave 4 D2c — network/media: native ToolModule)
 //
-// 把 legacy VideoGenerateTool 迁移到 native：智谱 CogVideoX 异步任务（提交
-// → 轮询 → 下载）+ GLM 文生/图生 prompt 双策略扩写。
+// N-MEDIA-GEN-PHASE2 对齐 image 合同（N-MEDIA-GEN-CONTRACT）：
+// - output_path → output_file_path（工作区相对，边界检查沿用同一处 workspaceScope 守卫）
+// - 默认走 MiniMax 海螺（generateVideo：t2v=MiniMax-Hailuo-02 / image_path→i2v=I2V-01）
+// - cogvideox-* 仍走智谱旧路径（提交→轮询→下载），但现在一律落盘，不再返回 URL
+// - 输出首行「N/1 saved」+ per_request JSON；output 与 meta 不出现远端 URL
+//   （下载失败时 URL 只进虚拟产物 metadata，同 image 合同）
 //
 // abort signal 走 race-and-abandon：fetch + 轮询 sleep 都监听 outerSignal，
-// abort 后立即停止轮询并返回 ABORTED。
-//
-// 行为保真：legacy 中文文案、emoji（🎬 ✨ 📝 ⏳ 📥）、CogVideoX 提示词模板
-// （TEXT_TO_VIDEO_PROMPT / IMAGE_TO_VIDEO_PROMPT）、5 种 aspect ratio →
-// 官方 size 映射、metadata 形状 1:1 复刻。
+// abort 后立即停止轮询并返回 ABORTED；生成返回后、写盘前再查一次中止。
 // ============================================================================
 
 import * as fs from 'fs';
@@ -23,8 +23,11 @@ import type {
   ToolResult,
 } from '../../../protocol/tools';
 import { getZhipuOfficialVideoApiKey } from '../../../tools/modules/network/toolAvailability';
+import { getMinimaxApiKey } from '../../../services/media/imageGenerationService';
+import { downloadVideoAsBuffer, generateVideo } from '../../../services/media/videoGenerationService';
 import { MODEL_API_ENDPOINTS, ZHIPU_OFFICIAL_QUICK_MODEL } from '../../../../shared/constants';
 import { createFileArtifact, createVirtualArtifact } from '../../../tools/artifacts/artifactMeta';
+import { isPathWithinRoot, resolveWorkspacePath } from '../../../runtime/workspaceScope';
 import { videoGenerateSchema as schema } from './videoGenerate.schema';
 import { TOOL_DEPENDENCY_HINTS } from '../../../tools/modules/_helpers/dependencyHints';
 import {
@@ -35,6 +38,7 @@ import {
   readStringField,
 } from '../typedResponseGuards';
 import { parseChatCompletionHttpBody } from '../../../model/parseSseChatCompletion';
+import type { ToolArtifact } from '../../../../shared/contract/artifactBlob';
 
 const TIMEOUT_MS = {
   SUBMIT: 30000,
@@ -47,6 +51,15 @@ const ZHIPU_VIDEO_MODELS = {
   legacy: 'cogvideox-flash',
 } as const;
 
+/** MiniMax 海螺默认模型与图生视频模型（visualModels 注册表 id，与 image 合同共用 key 通路）。 */
+const MINIMAX_T2V_MODEL = 'MiniMax-Hailuo-02';
+const MINIMAX_I2V_MODEL = 'I2V-01';
+
+const IMAGE_INPUT_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp'];
+const IMAGE_INPUT_MAX_BYTES = 10 * 1024 * 1024;
+
+const DEFAULT_VIDEO_ARTIFACT_DIR = path.join('.code-agent', 'artifacts', 'videos');
+
 const VIDEO_SIZES = {
   '16:9': '1920x1080',
   '9:16': '1080x1920',
@@ -57,12 +70,34 @@ const VIDEO_SIZES = {
 
 interface VideoGenerateParams {
   prompt: string;
-  image_url?: string;
-  aspect_ratio?: '16:9' | '9:16' | '1:1';
+  zhipuRoute: boolean;
+  model: string;
+  imageDataUrl?: string;
+  imageUrl?: string;
+  aspectRatio?: '16:9' | '9:16' | '1:1';
   quality?: 'quality' | 'speed';
   duration?: 5 | 10;
   fps?: 30 | 60;
-  output_path?: string;
+  outputFilePath: string;
+}
+
+interface PerRequest {
+  index: number;
+  status: 'saved' | 'failed';
+  bytes?: number;
+  path?: string;
+  error?: string;
+}
+
+/** 下载/落盘失败：携带虚拟产物（远端 URL 只进产物 metadata，不进 output/meta 其它位置）。 */
+class VideoSaveFailure extends Error {
+  readonly artifact?: ToolArtifact;
+
+  constructor(message: string, artifact?: ToolArtifact) {
+    super(message);
+    this.name = 'VideoSaveFailure';
+    this.artifact = artifact;
+  }
 }
 
 interface ZhipuVideoTaskResponse {
@@ -151,6 +186,139 @@ function normalizeZhipuVideoTaskResponse(payload: unknown): ZhipuVideoTaskRespon
   }
 
   return response;
+}
+
+// ── 工作区边界守卫（与 image 合同同一处 workspaceScope 助手，N-MEDIA-GEN-CONTRACT） ──
+
+function outputPathOutsideWorkspace(resolved: string, ctx: ToolContext): boolean {
+  if (isPathWithinRoot(resolved, ctx.workingDir)) return false;
+  if (!ctx.workspaceScope) return true;
+  return resolveWorkspacePath(ctx.workspaceScope, resolved, 'read_write') === undefined;
+}
+
+function resolveReadableWorkspacePath(candidate: string, ctx: ToolContext): string | undefined {
+  const resolved = path.resolve(ctx.workingDir, candidate);
+  if (isPathWithinRoot(resolved, ctx.workingDir)) return resolved;
+  if (!ctx.workspaceScope) return undefined;
+  return resolveWorkspacePath(ctx.workspaceScope, resolved, 'read')?.canonicalPath;
+}
+
+function workspaceRelativePath(absolutePath: string, ctx: ToolContext): string {
+  if (ctx.workspaceScope) {
+    const match = resolveWorkspacePath(ctx.workspaceScope, absolutePath, 'read');
+    if (match) return match.relativePath || path.basename(absolutePath);
+  }
+  return path.relative(ctx.workingDir, absolutePath) || path.basename(absolutePath);
+}
+
+function imageInputMimeType(imagePath: string): string {
+  switch (path.extname(imagePath).toLowerCase()) {
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.webp':
+      return 'image/webp';
+    default:
+      return 'image/png';
+  }
+}
+
+function defaultVideoOutputPath(workingDir: string): string {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 23);
+  return path.join(workingDir, DEFAULT_VIDEO_ARTIFACT_DIR, `generated-${timestamp}.mp4`);
+}
+
+/**
+ * 参数校验（全部先于任何付费调用 / 进度事件 / 写盘）：旧 output_path 改名提示、
+ * output_file_path 越界、image_path 越界/缺失/非图片/超 10MB、MiniMax 路由缺 key。
+ */
+function validateVideoGenerateArgs(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+): { ok: true; params: VideoGenerateParams } | { ok: false; error: string; meta?: Record<string, unknown> } {
+  if (Object.prototype.hasOwnProperty.call(args, 'output_path')) {
+    return { ok: false, error: 'output_path was renamed to output_file_path; use output_file_path' };
+  }
+
+  const prompt = args.prompt;
+  if (typeof prompt !== 'string' || prompt.length === 0) {
+    return { ok: false, error: 'prompt is required and must be a string' };
+  }
+
+  const model = typeof args.model === 'string' && args.model.length > 0 ? args.model : MINIMAX_T2V_MODEL;
+  const zhipuRoute = model.startsWith('cogvideox');
+
+  const rawImagePath = args.image_path;
+  let imageDataUrl: string | undefined;
+  if (rawImagePath !== undefined) {
+    if (zhipuRoute) {
+      return { ok: false, error: 'image_path is only supported on MiniMax models; cogvideox-* uses image_url' };
+    }
+    if (typeof rawImagePath !== 'string' || rawImagePath.length === 0) {
+      return { ok: false, error: 'image_path must be a workspace path to a png, jpg, jpeg, or webp image' };
+    }
+    const resolved = resolveReadableWorkspacePath(rawImagePath, ctx);
+    if (!resolved) return { ok: false, error: `image_path "${rawImagePath}" must be inside the workspace` };
+    if (!IMAGE_INPUT_EXTENSIONS.includes(path.extname(resolved).toLowerCase())) {
+      return { ok: false, error: `image_path "${rawImagePath}" must be a png, jpg, jpeg, or webp file` };
+    }
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(resolved);
+    } catch {
+      return { ok: false, error: `image_path "${rawImagePath}" does not exist` };
+    }
+    if (!stat.isFile()) return { ok: false, error: `image_path "${rawImagePath}" does not exist` };
+    if (stat.size > IMAGE_INPUT_MAX_BYTES) {
+      return { ok: false, error: `image_path "${rawImagePath}" exceeds the 10 MB limit` };
+    }
+    imageDataUrl = `data:${imageInputMimeType(resolved)};base64,${fs.readFileSync(resolved).toString('base64')}`;
+  }
+
+  const rawImageUrl = args.image_url;
+  if (rawImageUrl !== undefined && !zhipuRoute) {
+    return { ok: false, error: 'image_url is only valid with cogvideox-* models; use image_path for MiniMax image-to-video' };
+  }
+  const imageUrl = typeof rawImageUrl === 'string' && rawImageUrl.length > 0 ? rawImageUrl : undefined;
+
+  const rawOutputFilePath = args.output_file_path;
+  if (rawOutputFilePath !== undefined && typeof rawOutputFilePath !== 'string') {
+    return { ok: false, error: 'output_file_path must be a workspace path' };
+  }
+  let outputFilePath: string;
+  if (typeof rawOutputFilePath === 'string' && rawOutputFilePath.length > 0) {
+    const resolvedOutputPath = path.resolve(ctx.workingDir, rawOutputFilePath);
+    if (outputPathOutsideWorkspace(resolvedOutputPath, ctx)) {
+      return {
+        ok: false,
+        error: `output_file_path "${resolvedOutputPath}" must be inside the workspace`,
+        meta: { outputPath: resolvedOutputPath },
+      };
+    }
+    outputFilePath = resolvedOutputPath;
+  } else {
+    outputFilePath = defaultVideoOutputPath(ctx.workingDir);
+  }
+
+  if (!zhipuRoute && !getMinimaxApiKey()) {
+    return { ok: false, error: 'MiniMax API key is missing: set MINIMAX_API_KEY or configure the minimax key slot in settings' };
+  }
+
+  return {
+    ok: true,
+    params: {
+      prompt,
+      zhipuRoute,
+      model,
+      imageDataUrl,
+      imageUrl,
+      aspectRatio: typeof args.aspect_ratio === 'string' ? (args.aspect_ratio as VideoGenerateParams['aspectRatio']) : undefined,
+      quality: typeof args.quality === 'string' ? (args.quality as VideoGenerateParams['quality']) : undefined,
+      duration: typeof args.duration === 'number' ? (args.duration as VideoGenerateParams['duration']) : undefined,
+      fps: typeof args.fps === 'number' ? (args.fps as VideoGenerateParams['fps']) : undefined,
+      outputFilePath,
+    },
+  };
 }
 
 const TEXT_TO_VIDEO_PROMPT = `你是专业的 AI 视频提示词工程师。将用户的简短描述扩展为高质量的 CogVideoX 视频生成提示词。
@@ -320,7 +488,7 @@ async function waitForZhipuVideoCompletion(
   taskId: string,
   outerSignal: AbortSignal,
   emit: (msg: string) => void,
-): Promise<{ videoUrl: string; coverUrl: string }> {
+): Promise<{ videoUrl: string }> {
   const startTime = Date.now();
 
   while (Date.now() - startTime < TIMEOUT_MS.MAX_WAIT) {
@@ -332,10 +500,7 @@ async function waitForZhipuVideoCompletion(
       if (!result.video_result || result.video_result.length === 0) {
         throw new Error('视频生成成功但未返回视频 URL');
       }
-      return {
-        videoUrl: result.video_result[0].url,
-        coverUrl: result.video_result[0].cover_image_url,
-      };
+      return { videoUrl: result.video_result[0].url };
     }
 
     if (result.task_status === 'FAIL') {
@@ -353,19 +518,6 @@ async function waitForZhipuVideoCompletion(
   throw new Error(`视频生成超时（${TIMEOUT_MS.MAX_WAIT / 1000}秒）`);
 }
 
-async function downloadVideo(
-  url: string,
-  outputPath: string,
-  outerSignal: AbortSignal,
-): Promise<void> {
-  const response = await fetchWithAbort(url, {}, 60000, outerSignal);
-  if (!response.ok) {
-    throw new Error(`下载视频失败: ${response.status}`);
-  }
-  const buffer = await response.arrayBuffer();
-  fs.writeFileSync(outputPath, Buffer.from(buffer));
-}
-
 export async function executeVideoGenerate(
   args: Record<string, unknown>,
   ctx: ToolContext,
@@ -380,155 +532,195 @@ export async function executeVideoGenerate(
     return { ok: false, error: 'aborted', code: 'ABORTED' };
   }
 
-  onProgress?.({ stage: 'starting', detail: schema.name });
-
-  const params = args as unknown as VideoGenerateParams;
-  if (typeof params.prompt !== 'string' || params.prompt.length === 0) {
-    return { ok: false, error: 'prompt is required and must be a string', code: 'INVALID_ARGS' };
+  const validation = validateVideoGenerateArgs(args, ctx);
+  if (!validation.ok) {
+    return { ok: false, error: validation.error, code: 'INVALID_ARGS', meta: validation.meta };
   }
+  const params = validation.params;
+  const outputPath = params.outputFilePath;
+
+  onProgress?.({ stage: 'starting', detail: schema.name });
 
   const startTime = Date.now();
 
   try {
-    const zhipuApiKey = getZhipuOfficialVideoApiKey();
-    if (!zhipuApiKey) {
-      return {
-        ok: false,
-        error: TOOL_DEPENDENCY_HINTS.videoGenerateZhipuOfficial,
-        code: 'NOT_INITIALIZED',
-      };
+    if (ctx.currentToolCallId) {
+      ctx.emit({
+        type: 'artifact_write_started',
+        data: {
+          toolCallId: ctx.currentToolCallId,
+          toolName: schema.name,
+          filePath: outputPath,
+        },
+      });
     }
 
-    ctx.emit({
-      type: 'tool_output',
-      tool: 'video_generate',
-      message: '🎬 正在生成视频（可能需要 30-180 秒）...',
-    } as never);
+    let remoteUrl: string;
+    let actualModel: string;
+    let durationSec: number | undefined;
+    let zhipuMeta: Record<string, unknown> | undefined;
+    let engineLabel: string;
 
-    const aspectRatio = params.aspect_ratio || '16:9';
-    const size = VIDEO_SIZES[aspectRatio as keyof typeof VIDEO_SIZES] || VIDEO_SIZES['16:9'];
-
-    ctx.emit({
-      type: 'tool_output',
-      tool: 'video_generate',
-      message: '✨ 优化视频描述...',
-    } as never);
-
-    const expandedPrompt = await expandVideoPrompt(
-      zhipuApiKey,
-      params.prompt,
-      ctx.abortSignal,
-      ctx.logger,
-      params.image_url,
-    );
-
-    const taskId = await submitZhipuVideoTask(
-      zhipuApiKey,
-      {
-        prompt: expandedPrompt,
-        imageUrl: params.image_url,
-        size,
-        quality: params.quality || 'quality',
-        duration: params.duration || 5,
-        fps: params.fps || 30,
-      },
-      ctx.abortSignal,
-    );
-
-    ctx.emit({
-      type: 'tool_output',
-      tool: 'video_generate',
-      message: `📝 任务已提交，ID: ${taskId.slice(0, 8)}...`,
-    } as never);
-
-    const taskResult = await waitForZhipuVideoCompletion(
-      zhipuApiKey,
-      taskId,
-      ctx.abortSignal,
-      (message) => {
-        ctx.emit({ type: 'tool_output', tool: 'video_generate', message } as never);
-      },
-    );
-
-    const generationTime = Date.now() - startTime;
-
-    let videoPath: string | undefined;
-    if (params.output_path) {
-      const resolvedPath = path.isAbsolute(params.output_path)
-        ? params.output_path
-        : path.join(ctx.workingDir, params.output_path);
-
-      const dir = path.dirname(resolvedPath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
+    if (params.zhipuRoute) {
+      const zhipuApiKey = getZhipuOfficialVideoApiKey();
+      if (!zhipuApiKey) {
+        return {
+          ok: false,
+          error: TOOL_DEPENDENCY_HINTS.videoGenerateZhipuOfficial,
+          code: 'NOT_INITIALIZED',
+        };
       }
+      engineLabel = 'CogVideoX (智谱)';
 
       ctx.emit({
         type: 'tool_output',
         tool: 'video_generate',
-        message: '📥 正在下载视频...',
+        message: '🎬 正在生成视频（可能需要 30-180 秒）...',
       } as never);
 
-      await downloadVideo(taskResult.videoUrl, resolvedPath, ctx.abortSignal);
-      videoPath = resolvedPath;
+      ctx.emit({
+        type: 'tool_output',
+        tool: 'video_generate',
+        message: '✨ 优化视频描述...',
+      } as never);
+
+      const expandedPrompt = await expandVideoPrompt(
+        zhipuApiKey,
+        params.prompt,
+        ctx.abortSignal,
+        ctx.logger,
+        params.imageUrl,
+      );
+
+      const aspectRatio = params.aspectRatio || '16:9';
+      const size = VIDEO_SIZES[aspectRatio as keyof typeof VIDEO_SIZES] || VIDEO_SIZES['16:9'];
+
+      const taskId = await submitZhipuVideoTask(
+        zhipuApiKey,
+        {
+          prompt: expandedPrompt,
+          imageUrl: params.imageUrl,
+          size,
+          quality: params.quality || 'quality',
+          duration: params.duration || 5,
+          fps: params.fps || 30,
+        },
+        ctx.abortSignal,
+      );
+
+      ctx.emit({
+        type: 'tool_output',
+        tool: 'video_generate',
+        message: `📝 任务已提交，ID: ${taskId.slice(0, 8)}...`,
+      } as never);
+
+      const taskResult = await waitForZhipuVideoCompletion(
+        zhipuApiKey,
+        taskId,
+        ctx.abortSignal,
+        (message) => {
+          ctx.emit({ type: 'tool_output', tool: 'video_generate', message } as never);
+        },
+      );
+
+      remoteUrl = taskResult.videoUrl;
+      actualModel = params.model;
+      zhipuMeta = {
+        expandedPrompt,
+        taskId,
+        aspectRatio,
+        duration: params.duration || 5,
+        fps: params.fps || 30,
+      };
+    } else {
+      engineLabel = 'MiniMax 海螺';
+      ctx.emit({
+        type: 'tool_output',
+        tool: 'video_generate',
+        message: '🎬 正在生成视频（可能需要 30-180 秒）...',
+      } as never);
+
+      const generated = await generateVideo({
+        model: params.imageDataUrl ? MINIMAX_I2V_MODEL : params.model,
+        mode: params.imageDataUrl ? 'i2v' : 't2v',
+        prompt: params.prompt,
+        imageDataUrl: params.imageDataUrl,
+        outerSignal: ctx.abortSignal,
+      });
+      remoteUrl = generated.url;
+      actualModel = generated.actualModel;
+      durationSec = generated.durationSec;
     }
 
-    onProgress?.({ stage: 'completing', percent: 100 });
+    // 生成返回后、写盘前再查一次中止：用户已停止的请求不再落盘（对齐 image 合同返修）。
+    if (ctx.abortSignal.aborted) throw new Error('aborted');
 
-    const output = videoPath
-      ? `视频生成成功，已保存到: ${videoPath}`
-      : `视频生成成功。\n视频 URL: ${taskResult.videoUrl}\n封面 URL: ${taskResult.coverUrl}`;
-    const artifact = videoPath
-      ? await createFileArtifact(videoPath, schema.name, ctx, {
-          kind: 'video',
-          mimeType: 'video/mp4',
-          metadata: {
-            prompt: params.prompt,
-            expandedPrompt,
-            taskId,
-            coverUrl: taskResult.coverUrl,
-            aspectRatio: params.aspect_ratio || '16:9',
-            duration: params.duration || 5,
-            fps: params.fps || 30,
-            mediaKind: 'video',
-          },
-        })
-      : createVirtualArtifact({
-          sourceTool: schema.name,
-          kind: 'video',
-          sessionId: ctx.sessionId,
-          name: `Generated video: ${params.prompt.slice(0, 80)}`,
-          url: taskResult.videoUrl,
-          mimeType: 'video/mp4',
-          contentLength: output.length,
-          preview: output.slice(0, 500),
-          metadata: {
-            prompt: params.prompt,
-            expandedPrompt,
-            taskId,
-            coverUrl: taskResult.coverUrl,
-            aspectRatio: params.aspect_ratio || '16:9',
-            duration: params.duration || 5,
-            fps: params.fps || 30,
-            mediaKind: 'video',
-          },
-        });
+    let videoBuffer: Buffer;
+    try {
+      videoBuffer = await downloadVideoAsBuffer(remoteUrl, ctx.abortSignal);
+      const dir = path.dirname(outputPath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(outputPath, videoBuffer);
+    } catch (error: unknown) {
+      if (ctx.abortSignal.aborted || (error instanceof Error && error.message === 'aborted')) throw error;
+      ctx.logger.warn('video_generate save failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      // 远端 URL 只进虚拟产物 metadata（image 合同同款例外），output/error 与 meta 其它位置不出现。
+      const virtualArtifact = createVirtualArtifact({
+        sourceTool: schema.name,
+        kind: 'video',
+        sessionId: ctx.sessionId,
+        name: 'generated-video-1',
+        mimeType: 'video/mp4',
+        metadata: {
+          generated: true,
+          url: remoteUrl,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+      throw new VideoSaveFailure('video was generated but could not be saved', virtualArtifact);
+    }
+
+    const generationTime = Date.now() - startTime;
+
+    const artifact = await createFileArtifact(outputPath, schema.name, ctx, {
+      kind: 'video',
+      mimeType: 'video/mp4',
+      sizeBytes: videoBuffer.length,
+      metadata: {
+        model: actualModel,
+        engine: engineLabel,
+        prompt: params.prompt,
+        mediaKind: 'video',
+        ...(durationSec !== undefined ? { durationSec } : {}),
+        ...zhipuMeta,
+      },
+    });
+
+    const perRequest: PerRequest[] = [{
+      index: 1,
+      status: 'saved',
+      bytes: videoBuffer.length,
+      path: workspaceRelativePath(outputPath, ctx),
+    }];
+    const output = `1/1 saved\nper_request ${JSON.stringify(perRequest)}`;
+
+    onProgress?.({ stage: 'completing', percent: 100 });
 
     return {
       ok: true,
       output,
       meta: {
         artifact,
-        videoUrl: taskResult.videoUrl,
-        coverUrl: taskResult.coverUrl,
-        videoPath,
-        outputPath: videoPath,
+        artifacts: [artifact],
+        per_request: perRequest,
+        model: actualModel,
+        engine: engineLabel,
+        videoPath: outputPath,
+        outputPath,
         prompt: params.prompt,
-        expandedPrompt,
-        taskId,
-        aspectRatio: params.aspect_ratio || '16:9',
-        duration: params.duration || 5,
-        fps: params.fps || 30,
+        ...(zhipuMeta ?? {}),
         mediaKind: 'video',
         contentLength: output.length,
         truncated: false,
@@ -544,7 +736,15 @@ export async function executeVideoGenerate(
       return { ok: false, error: 'aborted', code: 'ABORTED' };
     }
     ctx.logger.warn('video_generate failed', { error: message });
-    return { ok: false, error: `视频生成失败: ${message}` };
+    const perRequest: PerRequest[] = [{ index: 1, status: 'failed', error: message }];
+    const artifacts = error instanceof VideoSaveFailure && error.artifact ? [error.artifact] : [];
+    const summary = `0/1 saved\nper_request ${JSON.stringify(perRequest)}`;
+    return {
+      ok: false,
+      error: summary,
+      code: 'VIDEO_GENERATION_FAILED',
+      meta: { artifacts, per_request: perRequest },
+    };
   }
 }
 

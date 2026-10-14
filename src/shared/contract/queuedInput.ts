@@ -17,6 +17,19 @@ export interface QueuedInput {
   pausedReason: string | null;
   createdAt: number;
   updatedAt: number;
+  /** ADR-072 K1C：该行由跨会话委托提交（host 判定，不由 renderer 声明）。 */
+  origin?: 'delegation';
+}
+
+/**
+ * ADR-072 D5.1 委托来源标记（带外）：写在 envelope_json.context.delegationOrigin，
+ * 但从 buildQueuedAgentRunBody 与 /run 入口一律剥掉；只有经委托行校验
+ * （session_delegations 反查 + 指纹比对）的投递才把标记经 runAgentTurn 的
+ * transport 字段送进 run。该轮铸 orchestrator 起源、遥测记 turn_source。
+ */
+export interface DelegationOriginMarker {
+  delegationId: string;
+  actionFingerprint: string;
 }
 
 /**

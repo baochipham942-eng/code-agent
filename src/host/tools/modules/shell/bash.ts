@@ -389,11 +389,13 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
         const scopeWriteRoots = ctx.workspaceScope?.roots
           .filter((root) => root.access === 'read_write')
           .map((root) => resolveCanonicalRunPath(root.path));
-        // #1997：workspaceScope 缺省时 jail 默认 = cwd 子树，而默认会话 cwd = HOME
-        // （agentOrchestrator.initializeWorkDirectory）→ 整棵 HOME 可写，产物逃逸
-        // ~/Downloads / HOME 根 / 工作区兄弟目录（ws/gdp-772e7524 截成 ws/gdp-7724）
-        // 全部写成功。run 的授权边界 ctx.workspace 落在 cwd 内时收紧到它（只收紧、
-        // 不放宽：workspace 不在 cwd 内或两者相等时维持 [workingDirectory] 默认）。
+        // #1997：workspaceScope 缺省时 jail 默认 = cwd 子树。无文件夹会话的默认 cwd
+        // 不再是 HOME：聊天主链（agent.ts）新会话首轮兜底到按会话产出目录
+        // 任务_MMDD_<标题>（N-DELIVERABLE-WORKDIR-DEFAULT），jail 随之收窄到该目录；
+        // 仍走到 HOME 的只剩桌面后台链路里从未回写过目录的会话
+        // （agentOrchestrator.initializeWorkDirectory）。run 的授权边界 ctx.workspace
+        // 落在 cwd 内时收紧到它（只收紧、不放宽：workspace 不在 cwd 内或两者相等时
+        // 维持 [workingDirectory] 默认）。
         // 收紧的已知代价：git/pip/uv 等往 HOME 下写缓存/配置会被拒（npm 有白名单
         // 不受影响）——与有项目 cwd 时的既有行为同侧，属「更严」而非新增破坏面。
         const workspaceConfinedRoots = !scopeWriteRoots

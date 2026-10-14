@@ -17,6 +17,7 @@ import {
 } from '../../../../shared/constants/jevQuestions';
 import { resolveJevRoute } from '../../../model/providers/typesafeProvider';
 import { classifyBrowserComputerManualTakeover } from '../../../../shared/utils/browserComputerRedaction';
+import { isBrowserLoginWall } from '../../../../shared/utils/browserLoginWall';
 import type { BrowserService } from '../../../services/infra/browserService';
 import { guardJevBrowserSnapshot, guardJevPromptText } from '../../../services/infra/browser/jevBrowserSnapshotGuard';
 import {
@@ -47,7 +48,6 @@ const NO_PROGRESS_LIMIT = 3;
 const RISK_KEYWORD = /pay|payment|checkout|购买|支付|delete|删除|authorize|oauth|授权|grant access|confirm purchase|unsubscribe/i;
 const UPLOAD_TASK = /upload|上传|file|文件|传上/i;
 const TASK_URL_RE = /https?:\/\/[^\s<>"'`)]+/i;
-const LOGIN_WALL_COPY = /登录后继续|请先登录|请登录|需要登录|sign in to continue|log in to continue|please sign in|please log in|login required|sign in required|not signed in|authentication required|needs login/i;
 const MANUAL_TAKEOVER_COPY = /manual takeover|user takeover|take over manually|requires manual|人工接管|用户接管/i;
 
 const BROWSER_JEV_MISSING_KEY_WARN =
@@ -260,13 +260,16 @@ function capturedHasPasswordOrForm(captured: JevCapturedSnapshot): boolean {
 }
 
 function isJevLoginWall(captured: JevCapturedSnapshot, visibleText: string): boolean {
-  const primary = [
-    captured.snapshot.title,
-    ...captured.snapshot.headings.map((heading) => heading.text),
+  // JEV 交互路径保持 origin/main 的宽证据（password 额外项或任意表单/输入类可交互元素），
+  // 只复用共享谓词的登录文案匹配——宽布尔整体作为表单侧证据传入。严格 login-form 判定
+  // （isLoginFormEvidence）只服务无人值守 cron gate，不回灌 JEV 的交互行为。
+  return isBrowserLoginWall({
+    title: captured.snapshot.title,
+    headings: captured.snapshot.headings.map((heading) => heading.text),
     visibleText,
-  ].join('\n');
-  if (!LOGIN_WALL_COPY.test(primary)) return false;
-  return capturedHasPasswordOrForm(captured);
+    passwordInputPresent: false,
+    loginFormPresent: capturedHasPasswordOrForm(captured),
+  });
 }
 
 function sameUrl(current: string, target: string): boolean {

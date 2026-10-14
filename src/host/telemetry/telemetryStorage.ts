@@ -773,8 +773,8 @@ export class TelemetryStorage {
           intent_primary, intent_secondary, intent_confidence, intent_method, intent_keywords,
           outcome_status, outcome_confidence, outcome_method, quality_signals,
           compaction_occurred, compaction_saved_tokens, iteration_count, agent_id,
-          turn_type, parent_turn_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          turn_type, parent_turn_id, turn_source
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `
       );
       runWithSqliteBusyRetry(() => stmt.run(
@@ -789,7 +789,7 @@ export class TelemetryStorage {
         turn.outcome.status, turn.outcome.confidence, turn.outcome.method,
         stringifyGuardedTelemetry(turn.outcome.signals), turn.compactionOccurred ? 1 : 0,
         turn.compactionSavedTokens ?? null, turn.iterationCount, turn.agentId || 'main',
-        turn.turnType || 'user', turn.parentTurnId ?? null
+        turn.turnType || 'user', turn.parentTurnId ?? null, turn.turnSource ?? null
       ));
     } catch (error) {
       logger.error('Failed to insert telemetry turn', {

@@ -8,8 +8,9 @@
 /**
  * 无人值守 run 默认下发的半价档。
  *
- * UNVERIFIED：档位值 'flex' 来自 OpenAI Responses 协议的 service_tier 语义
- * （flex = 半价慢档），本仓未做付费真调用核对；owner 确认后只改这一处。
+ * 2026-10-14 真调用：gpt-6.1-sol /v1/responses 返回 service_tier='flex'。
+ * 半价倍率来自官方定价文档；usage 已核算，未对账账单。
+ * 证据：N-MODELCAT-SERVICE-TIER-REALCALL（私档）；其他模型仍未真调用核对。
  */
 export const UNATTENDED_SERVICE_TIER = 'flex';
 
@@ -31,8 +32,11 @@ const UNAVAILABLE: { status: number; code: string } = { status: 429, code: 'reso
 /**
  * 档位拒绝信号全集（结构化判据，绝不按报错文本枚举——上游自由文案换版就漏）。
  *
- * UNVERIFIED：这些 status/param/code 组合来自协议阅读，未真机核对；真机核对
- * 留给父单，届时只改本文件。
+ * 2026-10-14 真调用：gpt-6.1-sol /v1/responses，service_tier='flex_invalid'
+ * 返回 HTTP 400 / code='invalid_value' / param='service_tier'，命中 code 分支。
+ * 精确原始错误体由 responsesProvider.serviceTier.test.ts 离线回放。
+ * UNVERIFIED：422、unsupported_value、429/resource_unavailable 尚未真调用核对；
+ * 无效档位拒绝不等于已验证模型不支持 flex 或容量不足。
  */
 export const SERVICE_TIER_REJECTION = {
   paramStatuses: PARAM_STATUSES,

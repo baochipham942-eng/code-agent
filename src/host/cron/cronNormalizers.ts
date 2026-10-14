@@ -420,6 +420,8 @@ export function normalizeAction(value: unknown): CronJobAction | null {
       return {
         type: 'role-wake',
         roleId: value.roleId,
+        environmentId:
+          typeof value.environmentId === 'string' ? value.environmentId : undefined,
       };
     }
 

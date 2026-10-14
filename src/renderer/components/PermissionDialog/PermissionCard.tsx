@@ -65,6 +65,9 @@ function normalizeRequest(
       standingGrantTarget: request.details.standingGrantTarget,
       targetApp: request.details.targetApp,
       triggeredByAgentMessage: request.details.triggeredByAgentMessage,
+      method: request.details.method,
+      body: request.details.body,
+      connectorTokenAttached: request.details.connectorTokenAttached,
       path: request.details.path,
       preview: request.details.preview,
       sandbox: request.details.sandbox,
@@ -120,7 +123,7 @@ export function PermissionCard({
   remainingCount = 0,
   onCollapse,
 }: PermissionCardProps = {}) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const {
     pendingPermissionRequest,
     pendingPermissionSessionId,
@@ -451,7 +454,7 @@ export function PermissionCard({
             ? (contentTitle ? w.remindersUpdateQuestion.replace('{title}', contentTitle) : w.remindersUpdateQuestionFallback)
     : editable
     ? (firstRecipient ? w.mailSendQuestion.replace('{target}', firstRecipient) : w.mailSendQuestionFallback)
-    : permissionSummary(request, t);
+    : permissionSummary(request, t, language);
   const viewMode = viewState?.requestId === request.id
     ? viewState.mode
     : defaultPermissionViewMode(request);

@@ -1183,6 +1183,15 @@
                 "read_write"
               ]
             },
+            "method": {
+              "type": "string"
+            },
+            "body": {
+              "type": "string"
+            },
+            "connectorTokenAttached": {
+              "type": "boolean"
+            },
             "preview": {
               "type": "object",
               "properties": {

@@ -17,7 +17,7 @@ import type {
   ToolResult,
   ToolSchema,
 } from '../../../protocol/tools';
-import { contentHash } from '../../../memory/importers/markdown';
+import { draftEntryId } from '../../../memory/projectMemoryDraft';
 import {
   listUnifiedMemoryEntries,
   rebuildMemoryMirrorFromLightFiles,
@@ -37,10 +37,6 @@ const TOPIC_TITLES: Record<ProjectMemoryDraftTopic, string> = {
 
 function isTopic(value: unknown): value is ProjectMemoryDraftTopic {
   return value === 'purpose' || value === 'key-files' || value === 'conventions';
-}
-
-function draftEntryId(projectDir: string, topic: ProjectMemoryDraftTopic): string {
-  return `initmem_${contentHash(`${projectDir}\n${topic}`)}`;
 }
 
 /** path.relative 对目录内的 `..hidden` 也会以 `..` 开头，不能用 startsWith('..')。 */

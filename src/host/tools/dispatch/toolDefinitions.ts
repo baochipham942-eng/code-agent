@@ -36,7 +36,7 @@ import { DEFERRED_TOOL_LOADING } from '../../../shared/constants/tools';
 import type { InjectedToolSchema } from '../../services/toolSearch/singleInjectionCeiling';
 import { measureSentToolTokens } from '../../services/toolSearch/sentToolSchema';
 import { isDecideToolAvailable } from '../modules/network/decideAvailability';
-import { isToolAvailable } from '../modules/network/toolAvailability';
+import { isToolAvailable, unavailableUnlockHintLine } from '../modules/network/toolAvailability';
 
 type LegacyPermissionLevel = 'read' | 'write' | 'execute' | 'network';
 
@@ -322,7 +322,8 @@ export function getDeferredToolsSummary(
   const denied = new Set(deniedToolNames.map((name) => name.trim().toLowerCase()));
   const budget = Math.max(1, Math.floor(tokenBudget));
   // 这份摘要是模型可见的工具宣传：无可用 Jev 路由时 decide 不列出、外部 key 缺失的
-  // key-gated 工具不列出（列了模型也调不成，与上方 T3b 同一条「不宣传走不通的路」原则）。
+  // key-gated 工具不进可调用索引（列了模型也调不成，与上方 T3b 同一条「不宣传走不通的路」原则）。
+  // 设置页有入口的那几个改在末尾用能力名提示怎么打开，工具名不出现在那一行。
   const summaryMetas = DEFERRED_TOOLS_META
     .filter((meta) => meta.name !== 'decide' || isDecideToolAvailable())
     .filter((meta) => isToolAvailable(meta.name));
@@ -368,19 +369,28 @@ export function getDeferredToolsSummary(
     ...lines,
     `${unlisted} tools unlisted; use ToolSearch to find them`,
   ].join('\n');
-  const full = withUnlistedCount(fullLines, 0);
+  // 未开启能力行算进每一档的 token：全量、只留名字、只留计数都带着它。
+  // 预算装不下时走原来的硬顶，不为了保住这行把摘要撑破。
+  const unlockLine = unavailableUnlockHintLine(deniedToolNames);
+  const withUnlock = (body: string): string => (unlockLine ? `${body}\n${unlockLine}` : body);
+  const full = withUnlock(withUnlistedCount(fullLines, 0));
   if (estimateTokens(full) <= budget) return full;
 
-  const names = withUnlistedCount(nameLines, 0);
+  const names = withUnlock(withUnlistedCount(nameLines, 0));
   if (estimateTokens(names) <= budget) return names;
 
-  const compact = withUnlistedCount(compactLines, visibleCount);
+  const compact = withUnlock(withUnlistedCount(compactLines, visibleCount));
   if (estimateTokens(compact) <= budget) return compact;
 
   // A caller can provide an unusually small budget. Keep the cap hard even then;
   // normal budgets retain every category/server line above.
   const fitted: string[] = [];
-  for (const line of [...compactLines, `${visibleCount} tools unlisted; use ToolSearch to find them`]) {
+  const fittedLines = [
+    ...compactLines,
+    `${visibleCount} tools unlisted; use ToolSearch to find them`,
+  ];
+  if (unlockLine) fittedLines.push(unlockLine);
+  for (const line of fittedLines) {
     const candidate = [...fitted, line].join('\n');
     if (estimateTokens(candidate) <= budget) fitted.push(line);
   }

@@ -8,6 +8,7 @@
 
 import * as fs from 'fs';
 import { createHash } from 'crypto';
+import { dirname, isAbsolute } from 'path';
 import type { CronJobDefinition } from '../../shared/contract/cron';
 import {
   findStandingRefreshJob,
@@ -177,6 +178,25 @@ export async function finishArtifactRefresh(
     at: Date.now(),
     reason: restored ? failure : `${failure}; pre-run snapshot restore also failed`,
   }, outcome.updateJob, metadataBase);
+}
+
+/**
+ * 常设刷新会话的工作目录。产物路径是绝对路径时用其所在目录，否则沿用 fallback
+ * （来源会话或当前焦点会话的目录，两者都没有时为 undefined）。
+ *
+ * fallback 为空时 orchestrator 落到用户主目录。主目录上的信任扫描会走进可能让
+ * readdir 永不返回的子目录，整趟停在 initializeUserHooks，inFlight 把后续 tick 挡住。
+ * 刷新只该扫产物所在目录。
+ */
+export function cronAgentWorkingDirectory(
+  definition: CronJobDefinition,
+  fallback: string | undefined,
+): string | undefined {
+  const refresh = getArtifactRefreshMetadata(definition.metadata);
+  if (!refresh || !isAbsolute(refresh.path)) return fallback;
+  const parent = dirname(refresh.path);
+  if (!parent || parent === refresh.path) return fallback;
+  return parent;
 }
 
 /**

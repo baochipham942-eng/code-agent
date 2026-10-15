@@ -36,7 +36,9 @@ jobs:
     # 语义也随平台漂,首跑 ubuntu 实测 10 个文件环境性红。与开发机同环境
     # 才能让「本地全量绿=门绿」成立。
     runs-on: macos-latest
-    timeout-minutes: 40
+    # 2026-10-15：近 9 次完整跑 24~39 分钟，40 分钟贴边；run 38746094153 跑完 3339/3420 个文件、零失败，
+    # 卡在 40 分钟被超时取消（GitHub 显示 cancelled），main 没拿到判决。放到 60 留余量。
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v5

@@ -70,8 +70,11 @@ export const DEFAULT_CACHE_WRITE_PRICE_RATIO = 1.25;
  * The arithmetic order matches the existing budget calculation so entries without
  * a long-context tier retain their exact floating-point result.
  *
- * serviceTier 折价（flex 半价档）只在非 standard 档对全项合计乘一次倍率；
- * 档位缺席或表外（= standard 计价）时返回值与无档路径逐位一致，不重排浮点运算。
+ * serviceTier 折价（flex 半价档）只作用于 input/output 合计（含 longContext 档的
+ * in/out 计价）——实测证据（REALCALL，见 SERVICE_TIER_COST_MULTIPLIER）只覆盖这
+ * 两项单价折半；cacheRead/cacheWrite 是否随档折价无实测证据，按刊例计不折价
+ * （预算宁高勿低：低估会让 budget 线晚触发）。档位缺席或表外（= standard 计价）
+ * 时返回值与无档路径逐位一致，不重排浮点运算。
  */
 export function computeUsageCostUsd(pricing: ModelPricingEntry, usage: UsageCostTokens): number {
   const cacheReadPrice = pricing.cacheRead ?? pricing.input * DEFAULT_CACHE_READ_PRICE_RATIO;
@@ -92,7 +95,11 @@ export function computeUsageCostUsd(pricing: ModelPricingEntry, usage: UsageCost
   const cacheWriteCost = ((usage.cacheCreationTokens ?? 0) / 1_000_000) * effectiveCacheWritePrice;
   const total = inputCost + outputCost + cacheReadCost + cacheWriteCost;
   const serviceTierMultiplier = SERVICE_TIER_COST_MULTIPLIER[usage.serviceTier ?? ''] ?? 1;
-  return serviceTierMultiplier === 1 ? total : total * serviceTierMultiplier;
+  if (serviceTierMultiplier === 1) {
+    return total;
+  }
+  // 倍率只折 input/output（含 longContext 的 in/out 计价）；cache 项按刊例计。
+  return (inputCost + outputCost) * serviceTierMultiplier + cacheReadCost + cacheWriteCost;
 }
 
 /** 模型定价（每 1M tokens，美元）— 仅包含 PROVIDER_REGISTRY 中注册的模型 */

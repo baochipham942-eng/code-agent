@@ -10,6 +10,7 @@ vi.mock('../../../src/host/model/providers/providerHttp', () => ({ electronFetch
 import { ResponsesProvider } from '../../../src/host/model/providers/responsesProvider';
 import { logger } from '../../../src/host/model/providers/providerRuntime';
 import {
+  SERVICE_TIER_COST_MULTIPLIER,
   SERVICE_TIER_REJECTION,
   UNATTENDED_SERVICE_TIER,
   computeUsageCostUsd,
@@ -227,6 +228,35 @@ describe('ResponsesProvider 响应档位流向 usage（N-MODELCAT-SERVICE-TIER-C
     expect(result.usage).toEqual({ inputTokens: 9, outputTokens: 6, serviceTier: 'flex' });
     expect(computeUsageCostUsd(GPT_6_1_SOL_PRICING, result.usage!)).toBe(0.000039);
     expect(usageChunks).toEqual([{ type: 'usage', inputTokens: 9, outputTokens: 6, serviceTier: 'flex' }]);
+  });
+
+  it('flex 响应带缓存命中：usage 拆出 cacheReadTokens，计价只对 in/out 折 0.5x，cache 按刊例', async () => {
+    electronFetch.mockResolvedValue({
+      ok: true, status: 200,
+      json: vi.fn().mockResolvedValue({
+        output: [],
+        usage: { input_tokens: 9, output_tokens: 6, input_tokens_details: { cached_tokens: 3 } },
+        service_tier: 'flex',
+      }),
+    });
+
+    const result = await new ResponsesProvider().inference(
+      [{ role: 'user', content: 'hi' }], [],
+      { provider: 'openai', model: 'gpt-6.1-sol', apiKey: 'k', protocol: 'responses', serviceTier: UNATTENDED_SERVICE_TIER } as any,
+    );
+
+    expect(result.usage).toEqual({ inputTokens: 6, outputTokens: 6, cacheReadTokens: 3, serviceTier: 'flex' });
+    const p = GPT_6_1_SOL_PRICING;
+    const cost = computeUsageCostUsd(p, result.usage!);
+    // prompt 9 ≤ 272K → 基础价：input 6×$2 + output 6×$10 吃 flex 0.5x；cacheRead 3×$0.1 按刊例
+    expect(cost).toBe(
+      ((6 / 1_000_000) * p.input + (6 / 1_000_000) * p.output) * SERVICE_TIER_COST_MULTIPLIER.flex
+      + (3 / 1_000_000) * p.cacheRead!,
+    );
+    // 不是全项合计 ×0.5（缓存项不折价，rework r1）
+    expect(cost).not.toBe(
+      computeUsageCostUsd(p, { inputTokens: 6, outputTokens: 6, cacheReadTokens: 3 }) * SERVICE_TIER_COST_MULTIPLIER.flex,
+    );
   });
 
   it('被拒摘档重试后：重试响应（无 service_tier）记 standard 价（②验收）', async () => {

@@ -126,7 +126,7 @@ describe('computeUsageCostUsd service tier multiplier', () => {
   // REALCALL（PR #2406）实报的 flex 计费档
   const REALCALL_FLEX_USAGE = { inputTokens: 9, outputTokens: 6, serviceTier: UNATTENDED_SERVICE_TIER };
 
-  it('flex 档对 gpt-6.1-sol 全项合计乘 0.5（REALCALL 9 in / 6 out = $0.000039）', () => {
+  it('flex 档对 gpt-6.1-sol 的 input/output 计 0.5x（REALCALL 9 in / 6 out = $0.000039）', () => {
     const standard = computeUsageCostUsd(MODEL_PRICING_PER_1M['gpt-6.1-sol'], {
       inputTokens: REALCALL_FLEX_USAGE.inputTokens,
       outputTokens: REALCALL_FLEX_USAGE.outputTokens,
@@ -138,16 +138,28 @@ describe('computeUsageCostUsd service tier multiplier', () => {
     expect(flex).toBe(0.000039);
   });
 
-  it('倍率覆盖全项：input + output + cacheRead + cacheWrite（含 longContext 档）一起折半', () => {
+  it('倍率只折 input/output（含 longContext 档计价）：cacheRead/cacheWrite 无实测折价证据，按刊例计', () => {
     const usage = { inputTokens: 500, outputTokens: 100, cacheReadTokens: 300, cacheCreationTokens: 50 };
-    const standard = computeUsageCostUsd(TEST_FIXTURE_TIERED_MODEL, usage);
     const flex = computeUsageCostUsd(TEST_FIXTURE_TIERED_MODEL, { ...usage, serviceTier: 'flex' });
-    expect(flex).toBe(standard * SERVICE_TIER_COST_MULTIPLIER.flex);
+    expect(flex).toBe(
+      ((500 / 1_000_000) * TEST_FIXTURE_TIERED_MODEL.input + (100 / 1_000_000) * TEST_FIXTURE_TIERED_MODEL.output)
+        * SERVICE_TIER_COST_MULTIPLIER.flex
+      + (300 / 1_000_000) * TEST_FIXTURE_TIERED_MODEL.cacheRead!
+      + (50 / 1_000_000) * TEST_FIXTURE_TIERED_MODEL.cacheWrite!,
+    );
+    // 不是全项合计 ×0.5（rework r1）：缓存项折价会把预算压低到真实花费之下，budget 线晚触发
+    expect(flex).not.toBe(computeUsageCostUsd(TEST_FIXTURE_TIERED_MODEL, usage) * SERVICE_TIER_COST_MULTIPLIER.flex);
 
+    // longContext 档（prompt 5350 > 1000 → in ×2 / out ×1.5 / cache ×3）：倍率仍只作用于 in+out 合计
     const longContextUsage = { ...usage, inputTokens: 5_000 };
-    const longContextStandard = computeUsageCostUsd(TEST_FIXTURE_TIERED_MODEL, longContextUsage);
-    expect(computeUsageCostUsd(TEST_FIXTURE_TIERED_MODEL, { ...longContextUsage, serviceTier: 'flex' }))
-      .toBe(longContextStandard * SERVICE_TIER_COST_MULTIPLIER.flex);
+    const lc = TEST_FIXTURE_TIERED_MODEL.longContext!;
+    expect(computeUsageCostUsd(TEST_FIXTURE_TIERED_MODEL, { ...longContextUsage, serviceTier: 'flex' })).toBe(
+      ((5_000 / 1_000_000) * (TEST_FIXTURE_TIERED_MODEL.input * lc.inputMultiplier)
+        + (100 / 1_000_000) * (TEST_FIXTURE_TIERED_MODEL.output * lc.outputMultiplier))
+        * SERVICE_TIER_COST_MULTIPLIER.flex
+      + (300 / 1_000_000) * (TEST_FIXTURE_TIERED_MODEL.cacheRead! * (lc.cacheMultiplier ?? lc.inputMultiplier))
+      + (50 / 1_000_000) * (TEST_FIXTURE_TIERED_MODEL.cacheWrite! * (lc.cacheMultiplier ?? lc.inputMultiplier)),
+    );
   });
 
   it.each([

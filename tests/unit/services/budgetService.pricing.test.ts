@@ -54,6 +54,21 @@ describe('BudgetService service_tier 档位计价', () => {
     expect(flex).toBeCloseTo(19 * SERVICE_TIER_COST_MULTIPLIER.flex, 6);
   });
 
+  it('flex + 缓存命中：cacheRead 按刊例计不折价（无实测证据，预算宁高勿低）', () => {
+    const service = new BudgetService({ enabled: true, maxBudget: 100 });
+    service.recordUsage({
+      ...RECORD,
+      cacheReadTokens: 1_000_000,
+      timestamp: Date.now(),
+      serviceTier: UNATTENDED_SERVICE_TIER,
+    });
+    // 1M in + 1M out + 1M cacheRead，gpt-6.1-sol（prompt 2M > 272K → longContext）：
+    // standard = $2×2 + $10×1.5 + $0.1×2 = $19.2；flex = (4 + 15) × 0.5 + 0.2 = $9.7（cache 不吃倍率）
+    expect(service.getCurrentCost()).toBeCloseTo(9.7, 6);
+    // 全项合计 ×0.5 = $9.6 会低估真实花费（rework r1 修掉的口径）
+    expect(service.getCurrentCost()).not.toBeCloseTo(19.2 * SERVICE_TIER_COST_MULTIPLIER.flex, 6);
+  });
+
   it.each([
     ['档位缺席（绝大多数 provider）', undefined],
     ['实报 standard（被拒摘档重试后的响应）', 'standard'],

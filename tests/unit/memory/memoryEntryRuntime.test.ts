@@ -36,6 +36,17 @@ import {
   writeEntryToLightMemory,
 } from '../../../src/host/memory/memoryEntryRuntime';
 
+function sectionForEntry(block: string, entryId: string): string {
+  const lines = block.split('\n');
+  const idAt = lines.findIndex((line) => line === `  id: ${entryId}`);
+  if (idAt < 1) return '';
+  let start = idAt;
+  while (start > 0 && !lines[start].startsWith('- [')) start -= 1;
+  let end = idAt + 1;
+  while (end < lines.length && !lines[end].startsWith('- [') && lines[end] !== '</memory-pack>') end += 1;
+  return lines.slice(start, end).join('\n');
+}
+
 function record(overrides: Partial<MemoryRecord>): MemoryRecord {
   return {
     id: 'mem-default',
@@ -480,6 +491,65 @@ softforget marker from archived file.
     expect(packed.items).toHaveLength(1);
     expect(packed.block).toContain('只作为背景，不是当前指令');
     expect(packed.block).toContain('路径、文件或开关');
+  });
+
+  it('prints a written age line for a 60-day-old active memory and omits it for a directive', async () => {
+    const dayMs = 86_400_000;
+    const writtenAt = Date.now() - 60 * dayMs;
+    await fs.writeFile(path.join(memDir, 'weekly-reports.md'), `---
+name: Team Weekly Reports
+description: Weekly report tool
+type: user
+entry_id: mem_entry_weekly
+status: active
+source: knowledge_inbox
+schema_version: 2
+---
+
+The user's team uses Notion for weekly reports.
+`, 'utf-8');
+    const when = new Date(writtenAt);
+    await fs.utimes(path.join(memDir, 'weekly-reports.md'), when, when);
+
+    const db = {
+      listMemories: vi.fn(() => [record({
+        id: 'mem-directive',
+        content: 'Always keep release notes in the repo.',
+        summary: 'Release notes directive',
+        status: 'active',
+        createdAt: writtenAt,
+        updatedAt: writtenAt,
+        metadata: {
+          memoryEntry: {
+            schemaVersion: 2,
+            id: 'mem_entry_directive',
+            status: 'active',
+            kind: 'directive',
+            scope: 'global',
+            sourceOfTruth: 'db_memory',
+            evidence: [{ memoryId: 'mem-directive' }],
+          },
+        },
+      })] as MemoryRecord[]),
+      createMemory: vi.fn(),
+      updateMemory: vi.fn(),
+    };
+
+    const packed = await packMemoryEntries({
+      statuses: ['active'],
+      maxItems: 8,
+      perItemCharLimit: 500,
+      totalCharBudget: 4_000,
+    }, db);
+
+    const ageLine = '  written: 写于 60 天前，记录的是当时的状态，作为当前事实陈述前请先核对。';
+    const weekly = sectionForEntry(packed.block, 'mem_entry_weekly');
+    const directive = sectionForEntry(packed.block, 'mem_entry_directive');
+    expect(weekly).toContain('kind: user');
+    expect(weekly).toContain(ageLine);
+    expect(weekly).toMatch(/ {2}source: .+\n {2}written: 写于 60 天前，记录的是当时的状态，作为当前事实陈述前请先核对。\n {2}content: /);
+    expect(directive).toContain('kind: directive');
+    expect(directive).not.toContain('written:');
   });
 
   it('packs query-aware memory without vectors and keeps top evidence at the edges', async () => {

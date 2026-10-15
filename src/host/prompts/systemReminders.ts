@@ -167,7 +167,7 @@ skill({
 1. 先用 ReadDocument/Read 读取源数据，了解结构（列名、数据类型、行数）
 2. 先分析，再决定是否生成或编辑文件；只读查看、定位、摘要不要直接进入 Excel skill
 3. 分析需求，确定处理逻辑（筛选/聚合/透视/时序分析等）
-4. 用 Bash 执行 Python/pandas 脚本处理数据
+4. 用 Bash 执行 "$NEO_PYTHON" Python/pandas 脚本处理数据（Neo 托管解释器，自带 pandas/openpyxl/python-pptx/python-docx/pdfplumber，未装会自动装，勿用 python3）
 5. 输出结果到指定格式（xlsx/csv），并描述关键发现
 6. 生成或编辑 xlsx 后必须回读结构，验证 sheet、行数、关键列、公式和图表相关输出
 
@@ -190,7 +190,7 @@ skill({
 - ❌ 不要先生成 Excel 再补分析；Excel 任务必须先分析数据结构和计算口径
 - ❌ 不要忽略空值处理（NaN/None 必须显式处理）
 - ❌ 不要假设日期格式，必须从数据中推断
-- ❌ 禁止用 excel_generate 内联数据生成 Excel —— 必须用 bash + Python（pandas/openpyxl）从源文件读取数据、计算、写出。内联数据会丢失精度导致数据伪造
+- ❌ 禁止用 excel_generate 内联数据生成 Excel —— 必须用 bash + "$NEO_PYTHON"（pandas/openpyxl）从源文件读取数据、计算、写出。内联数据会丢失精度导致数据伪造
 - ❌ 禁止凭记忆编造数据 —— 所有数值必须来自 pd.read_excel() 读取的源文件，不得手写数据行
 
 **数据清洗检查清单**（当任务涉及"清洗/整理/去重"时）：

@@ -3,11 +3,13 @@ import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import {
   attachAgentErrorToLatestAssistant,
   endsTheTurn,
+  isTerminalAgentError,
+} from '../../../src/renderer/hooks/agent/effects/useSessionLifecycleEffects';
+import {
   classifyAgentError,
   getAgentErrorMessage,
-  isTerminalAgentError,
   normalizeAgentErrorPayload,
-} from '../../../src/renderer/hooks/agent/effects/useSessionLifecycleEffects';
+} from '../../../src/shared/utils/agentErrorClassification';
 
 describe('agent lifecycle error helpers', () => {
   it('treats nested warning payloads as non-terminal', () => {

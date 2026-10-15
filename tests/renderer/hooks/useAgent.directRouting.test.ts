@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ConversationEnvelope } from '../../../src/shared/contract/conversationEnvelope';
-import { resolveDirectRouting } from '../../../src/renderer/hooks/useAgent';
+import { resolveDirectRouting } from '../../../src/renderer/hooks/agent/useAgentIPC';
 
 const agents = [
   { id: 'agent-builder', name: 'builder' },

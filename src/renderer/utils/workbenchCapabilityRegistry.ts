@@ -216,42 +216,6 @@ function buildMcpBlockedReason(server: WorkbenchMcpCapability): WorkbenchCapabil
   };
 }
 
-function isHighRiskCapability(capability: Pick<WorkbenchCapabilityRegistryItem, 'kind' | 'id'>): boolean {
-  if (capability.kind !== 'mcp') {
-    return false;
-  }
-
-  return ['cua-driver', 'computer-use', 'filesystem', 'docker'].includes(capability.id);
-}
-
-export function getWorkbenchCapabilityReadiness(
-  capability: WorkbenchCapabilityRegistryItem,
-): TurnCapabilityReadiness {
-  if (capability.available) {
-    return isHighRiskCapability(capability) ? 'blocked_high_risk' : 'ready';
-  }
-
-  switch (capability.kind) {
-    case 'skill':
-      return capability.installState === 'available' ? 'needs_config' : 'unsupported';
-    case 'connector':
-      if (capability.readiness === 'unchecked' || capability.readiness === 'failed') {
-        return 'needs_permission';
-      }
-      return 'needs_config';
-    case 'mcp':
-      return capability.status === 'error' ? 'offline' : 'needs_config';
-    default:
-      return 'unsupported';
-  }
-}
-
-export function isWorkbenchCapabilityAutoAllowed(
-  capability: WorkbenchCapabilityRegistryItem,
-): boolean {
-  return getWorkbenchCapabilityReadiness(capability) === 'ready';
-}
-
 export function getWorkbenchCapabilityBlockedState(
   capability: WorkbenchCapabilityRegistryItem,
 ): WorkbenchCapabilityBlockedState | undefined {

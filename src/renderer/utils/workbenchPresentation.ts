@@ -123,26 +123,6 @@ export function formatWorkbenchSkillSecondaryText(
   return locale === 'zh' ? `来源: ${skill.source}` : `source: ${skill.source}`;
 }
 
-export function getWorkbenchSkillCapabilityTitle(
-  skill: Pick<WorkbenchSkillCapability, 'label' | 'description' | 'source' | 'installState'>,
-  options?: { locale?: Locale },
-): string | undefined {
-  const locale = options?.locale || 'zh';
-  const parts = [skill.label];
-  const secondary = formatWorkbenchSkillSecondaryText(skill, { locale });
-  if (secondary) {
-    parts.push(secondary);
-  }
-  if (skill.installState !== 'mounted') {
-    parts.push(
-      locale === 'zh'
-        ? `状态: ${skill.installState === 'available' ? '已安装未挂载' : '当前不可用'}`
-        : `status: ${skill.installState === 'available' ? 'installed but not mounted' : 'currently unavailable'}`,
-    );
-  }
-  return parts.join('\n');
-}
-
 export function getWorkbenchCapabilityStatusPresentation(
   capability: WorkbenchCapabilityRegistryItem,
   options?: { locale?: Locale },

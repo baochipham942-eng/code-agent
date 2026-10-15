@@ -7,6 +7,7 @@
 // 独立「实时语音」tab（VoiceLiveSettings 薄壳）；口述输入在「语音转文字」tab。
 // ============================================================================
 
+import { VoiceUserProfileSettings } from './VoiceUserProfileSettings';
 import React, { useEffect, useRef, useState } from 'react';
 import { Check, Keyboard, ShieldCheck } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
@@ -373,6 +374,7 @@ export const VoiceLiveSettingsSection: React.FC = () => {
 
   return (
     <div className="space-y-6" data-testid="voice-live-settings">
+      <VoiceUserProfileSettings />
       <div className="flex items-center justify-between">
         <div className="pr-4">
           <h3 className="mb-1 text-sm font-medium text-zinc-200">{text.enableTitle}</h3>

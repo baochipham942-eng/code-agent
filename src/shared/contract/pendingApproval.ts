@@ -49,6 +49,14 @@ export interface ToolApprovalPayload {
    * 有它 = 该行可铸造 target 粒度长期授权（收件箱审批卡出「每次都允许发 <target>」按钮）。
    */
   standingGrantTarget?: string | null;
+  /**
+   * 跨重启找回这条调用的引用（N-PARKED-APPROVAL-SURVIVE-RESTART-PERSIST）。仅当 sessionId 与
+   * toolCallId（parentToolUseId）都真实存在时写入；messageId 在权限请求路径上没有真源，
+   * 缺省不填——不许为凑形状发明一个。
+   */
+  argsRef?: { sessionId: string; messageId?: string; toolCallId: string };
+  /** 脱敏（密钥/Bearer/.env 值）+ 截断的参数预览：收件箱/审批卡一眼看清这步要干什么。 */
+  argsPreview?: string;
 }
 
 /** 收件箱「等待批准的操作」分组的行数据（B2）。id=requestId，回传 permissionResponse 用。 */
@@ -65,6 +73,8 @@ export interface ParkedApprovalInboxItem {
   riskClass?: string | null;
   /** B4 授权目标精确串；非空 = 可铸造 target 粒度长期授权（出「每次都允许发 <target>」按钮） */
   standingGrantTarget?: string | null;
+  /** 脱敏 + 截断的参数预览；老行没有该字段，收件箱按缺省不渲染。 */
+  argsPreview?: string;
   pairingCode?: string;
   pairingSender?: string;
   pairingChannel?: 'feishu' | 'lark';

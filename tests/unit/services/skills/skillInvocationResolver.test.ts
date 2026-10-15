@@ -34,6 +34,9 @@ describe('skillInvocationResolver', () => {
       description: 'Excel spreadsheets',
       allowedTools: ['Bash', 'Write'],
     });
+    // 合入 main（aaa02413f）后拉丁别名按词边界匹配且点算词内字符：
+    // 卡片提示词只以 `.docx`/`.xlsx` 扩展名点出交付物，别名不再命中，
+    // 文件交付轮从源头就没有 skill 注入。
     const weekly = resolveSkillInvocationFromSkills(
       chatTranscriptZh.chat.suggestions.weeklyReport.prompt,
       [docx],
@@ -42,14 +45,19 @@ describe('skillInvocationResolver', () => {
       chatTranscriptEn.chat.suggestions.sheetAnalysis.prompt,
       [xlsx],
     );
-    expect(weekly?.matchKind).toBe('alias');
-    expect(sheet?.matchKind).toBe('alias');
-    expect(retainSkillInvocationForTurn(weekly, true)).toBeNull();
-    expect(retainSkillInvocationForTurn(sheet, true)).toBeNull();
+    expect(weekly).toBeNull();
+    expect(sheet).toBeNull();
+    // 裸词别名（不带点）仍会命中，由围栏在文件交付轮丢弃。
+    const bareWord = resolveSkillInvocationFromSkills(
+      '请用 docx 排版这份周报，交付 .docx 文件',
+      [docx],
+    );
+    expect(bareWord?.matchKind).toBe('alias');
+    expect(retainSkillInvocationForTurn(bareWord, true)).toBeNull();
+    expect(retainSkillInvocationForTurn(bareWord, false)?.skill.name).toBe('docx');
     const slash = resolveSkillInvocationFromSkills('/docx 生成一份周报', [docx]);
     expect(slash?.matchKind).toBe('slash');
     expect(retainSkillInvocationForTurn(slash, true)?.skill.name).toBe('docx');
-    expect(retainSkillInvocationForTurn(weekly, false)?.skill.name).toBe('docx');
   });
 
   it('建团队和建改角色都可查询权威专家名册', () => {

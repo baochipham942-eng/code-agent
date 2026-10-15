@@ -360,7 +360,8 @@ export const ModelOnboardingModal: React.FC<ModelOnboardingModalProps> = ({ onCo
   const finishWithConfig = (config: ModelConfig) => {
     onComplete(config);
     if (pendingConnectorId) {
-      openCapabilitySettingsTarget({ kind: 'connector', id: pendingConnectorId });
+      // source: 'onboarding' 让落页横幅按引导措辞展示显示名，而不是会话页措辞 + 内部 id
+      openCapabilitySettingsTarget({ kind: 'connector', id: pendingConnectorId, source: 'onboarding' });
     }
   };
 

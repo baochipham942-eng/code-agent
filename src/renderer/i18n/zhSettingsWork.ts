@@ -610,6 +610,14 @@ export const zhSettingsWork = {
         loadFailed: '加载统一记忆失败',
         updateSuccess: '记忆已更新',
         updateFailed: '更新失败',
+        injectionPaused: {
+          badge: '已暂停自动带上',
+          neverUsed: '这条记忆一直没被用到，{date} 起不再自动带进对话。它还在库里，搜索和读取照常可用。',
+          staleUsed: '这条记忆很久没再被用到，{date} 起不再自动带进对话。它还在库里，搜索和读取照常可用。',
+          resume: '恢复自动带上',
+          resumeSuccess: '已恢复，之后的对话会重新自动带上这条记忆',
+          resumeFailed: '恢复失败',
+        },
         deleteSuccess: '记忆已删除',
         deleteFailed: '删除失败',
         statusLabels: {

@@ -7,6 +7,8 @@
 // - action 'detail'         -> 角色详情（定义原文 / 记忆 / 履历 / 主动性配置）
 // - action 'deleteMemory'   -> 删除一条角色记忆
 // - action 'updateMemory'   -> 编辑一条角色记忆（覆盖写）
+// - action 'exportMemories'     -> 全部角色记忆汇成一份 Markdown 落「下载」文件夹
+// - action 'revealMemoryFolder' -> 在文件管理器中定位角色记忆目录
 // - action 'writeProjectMemory' -> 写一条项目层记忆（资料库归档摘要；同名产物覆盖写）
 // - action 'setProactivity' -> 设置角色主动性（写 settings + 立即同步 cadence cron）
 // - action 'listDrafts'     -> 列出待确认的角色草稿（对话式建角色）
@@ -35,6 +37,7 @@ import { addRoleBinding, readRoleBindings, removeRoleBinding } from '../services
 import {
   BUILTIN_ROLE_IDS,
   getBuiltinRoleVisual,
+  getRoleMemoriesDir,
   listPersistentRoles,
   listScopedMemories,
   loadRoleHistory,
@@ -49,7 +52,9 @@ import {
   skipFirstWake,
   isSafeRoleId,
 } from '../services/roleAssets';
+import type { RoleMemoryFile } from '../services/roleAssets/roleAssetService';
 import { sanitizeTopicList } from '../services/roleAssets/wakeRationale';
+import { handleSaveTextToDownloads } from './workspaceSaveExport';
 import { getDatabase } from '../services/core/databaseService';
 import { getCronService } from '../cron/cronService';
 import { normalizeSchedule, parseJsonValue, isRecord } from '../cron/cronNormalizers';
@@ -148,6 +153,50 @@ interface UpdateMemoryPayload extends RoleIdPayload {
   name?: string;
   description?: string;
   content?: string;
+}
+
+/** 导出文件名里允许保留的展示名形态：文件系统元字符压成空格，空白收敛成单空格 */
+function sanitizeMemoryExportStem(displayName: string): string {
+  // eslint-disable-next-line no-control-regex -- 文件名里控制字符正是要剥离的目标，不是误写
+  return displayName.replace(/[<>:"/\\|?*\x00-\x1f]/g, ' ').replace(/\s+/g, ' ').trim() || 'role';
+}
+
+function memoryExportDateStamp(now: Date): string {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+/**
+ * 角色记忆导出摘要（N-ROLE-MEMORY-EXPORT）：条目顺序与 detail 页一致
+ * （同一 listScopedMemories 顺序），字段覆盖 UI 所见（name/description/filename/content）
+ * 加最后修改时间；页眉标注这是本地记忆、不含云端副本。
+ */
+function buildRoleMemoriesMarkdown(
+  displayName: string,
+  roleId: string,
+  memories: readonly RoleMemoryFile[],
+  exportedAt: Date,
+): string {
+  const sections = memories.map((memory) => [
+    `## ${memory.name}`,
+    '',
+    `- Description: ${memory.description}`,
+    `- Last modified: ${memory.updatedAt}`,
+    `- File: ${memory.filename}`,
+    '',
+    memory.content,
+  ].join('\n'));
+  return [
+    `# ${displayName} Memories`,
+    '',
+    `- Role ID: ${roleId}`,
+    `- Exported at: ${exportedAt.toISOString()}`,
+    `- Memories: ${memories.length}`,
+    '- Scope: local memories only; the cloud copy is not included.',
+    '',
+    sections.join('\n\n---\n\n'),
+    '',
+  ].join('\n');
 }
 
 interface WriteProjectMemoryPayload {
@@ -445,6 +494,35 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
       { filename, name, description, content },
     );
     return { success: true, data: { path: filePath } };
+  },
+  exportMemories: async (_ctx, payload) => {
+    const { roleId } = (payload ?? {}) as RoleIdPayload;
+    if (!roleId) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
+    }
+    // 与 detail 页同一来源、同一顺序（listScopedMemories 的 readdir 顺序），导出逐条对得上屏
+    const memories = await listScopedMemories({ scope: 'role', roleId });
+    if (memories.length === 0) {
+      return { success: false, error: { code: 'NOTHING_TO_EXPORT', message: 'This role has no memories to export' } };
+    }
+    const visual = await resolveVisual(roleId);
+    const displayName = visual.displayName?.trim() || roleId;
+    const now = new Date();
+    const { filePath } = await handleSaveTextToDownloads({
+      fileName: `${sanitizeMemoryExportStem(displayName)}-memories-${memoryExportDateStamp(now)}.md`,
+      content: buildRoleMemoriesMarkdown(displayName, roleId, memories, now),
+    });
+    return { success: true, data: { filePath, count: memories.length } };
+  },
+  revealMemoryFolder: async (_ctx, payload) => {
+    const { roleId } = (payload ?? {}) as RoleIdPayload;
+    if (!roleId) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'roleId is required' } };
+    }
+    // 路径由 host 侧 getRoleMemoriesDir 派生（绝对路径）；不安全的 roleId 会在里面直接抛错
+    const { shell } = await import('../platform');
+    shell.showItemInFolder(getRoleMemoriesDir(roleId));
+    return { success: true, data: { revealed: true } };
   },
   writeProjectMemory: async (_ctx, payload) => {
     const { workspacePath, name, description, content } = (payload ?? {}) as WriteProjectMemoryPayload;

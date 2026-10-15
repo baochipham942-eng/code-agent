@@ -24,6 +24,7 @@ vi.mock('../../../src/host/tools/shell/dynamicDescription', () => ({
   generateBashDescription: async () => null,
 }));
 
+import { execFileSync } from 'node:child_process';
 import { getToolCache } from '../../../src/host/services/infra/toolCache';
 import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
@@ -32,6 +33,8 @@ import { getPermissionClassifier } from '../../../src/host/tools/permissionClass
 import { getPolicyEngine, resetPolicyEngine } from '../../../src/host/permissions/policyEngine';
 import type { ExecutionTopology } from '../../../src/host/permissions';
 import { getPermissionModeManager, resetPermissionModeManager } from '../../../src/host/permissions/modes';
+import { getToolLedgerSink, setToolLedgerSink } from '../../../src/host/tools/toolLedgerSink';
+import type { PermissionDecisionInput } from '../../../src/host/services/core/repositories/PermissionDecisionRepository';
 
 // N-PERM-USER-DENY-MAIN：设置里写的 deny Bash(rm *) 必须在审批之前硬拒——哪怕审批处理器
 // 会点「允许」。此前主拓扑没有任何消费方，rm 落到审批卡，点允许就执行（FB-401 真跑实证）。
@@ -202,5 +205,109 @@ describe('ToolExecutor 用户级 deny 规则硬拒（主 Bash 链）', () => {
     expect(permissionEvents).toHaveLength(1);
     expect(result.success).toBe(true);
     await expect(fs.access(target)).resolves.toBeUndefined();
+  });
+});
+
+// N-PERMRULES-LOCAL-OWNER r4 返修：plan/dontAsk 档 execute 默认 deny，PolicyEngine 会把
+// 命中的 user-allow 改写成 action=deny（模式覆盖，policyEngine.ts ~367-374）。执行器层的
+// 用户规则硬拒块若信 result.action，用户 allow 在这两档被硬拒成
+// 「Blocked by user permission rule … User allow: Bash(…)」且账本 reason 记
+// user-permission-rule。硬拒只认 matchedRule 本身是 user-deny（同 guardFabricGate 的
+// evaluateUserDeny）；模式改写的 user-allow 原样落回既有模式/审批链。
+// 用 git tag 而非任务书字面的 git status 作 allow 样例：内置 allow-git-status（同
+// priority 500、稳定排序在前）会抢先成为 matchedRule，user 规则根本轮不上命中，红不出来；
+// git tag 不在内置表里，matchedRule 就是 user-allow 本尊。
+describe('ToolExecutor 模式改写的 user-allow 不得当成用户 deny 硬拒（r4 返修）', () => {
+  let workspace: string;
+  let permissionEvents: PermissionRequestData[];
+  let appendPermissionDecision: ReturnType<typeof vi.fn<(input: PermissionDecisionInput) => void>>;
+  let previousSink: ReturnType<typeof getToolLedgerSink>;
+
+  beforeAll(() => {
+    getProtocolRegistry();
+  });
+
+  beforeEach(async () => {
+    workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'user-allow-mode-rewrite-'));
+    // git status 要真跑通（退出码 0）才能证明落回了既有链而不是被任何一层拦下。
+    execFileSync('git', ['init', '--quiet'], { cwd: workspace });
+    permissionEvents = [];
+    appendPermissionDecision = vi.fn();
+    previousSink = getToolLedgerSink();
+    getToolCache().clear();
+    resetPolicyEngine();
+    getPermissionClassifier({ enableLlm: false });
+    resetPermissionModeManager();
+    setToolLedgerSink({
+      appendPermissionDecision,
+      appendToolExecutionBegin: vi.fn(),
+      appendToolExecutionComplete: vi.fn(),
+    });
+  });
+
+  afterEach(async () => {
+    getPermissionClassifier({ enableLlm: false }).clearCache();
+    resetPermissionModeManager();
+    setToolLedgerSink(previousSink);
+    await fs.rm(workspace, { recursive: true, force: true });
+  });
+
+  const createExecutor = () => {
+    const executor = new ToolExecutor({
+      workingDirectory: workspace,
+      requestPermission: async (request) => {
+        permissionEvents.push(request);
+        return true;
+      },
+    });
+    executor.setAuditEnabled(false);
+    return executor;
+  };
+
+  const ledgerReasons = () => appendPermissionDecision.mock.calls.map(([entry]) => entry.reason);
+
+  it.each(['plan', 'dontAsk'] as const)('%s 档 user-allow Bash(git tag)：不按用户规则硬拒，落回既有链执行', async (mode) => {
+    getPolicyEngine().loadUserRules({ allow: ['Bash(git tag)'] }, 'user-ui');
+    const modes = getPermissionModeManager();
+    const previous = modes.getEffectiveMode();
+    expect(modes.setMode(mode, true)).toBe(true);
+    try {
+      const result = await createExecutor().execute('Bash', { command: 'git tag' }, { sessionId: `user-allow-${mode}-r4` });
+
+      expect(result.error ?? '').not.toContain('Blocked by user permission rule');
+      expect(ledgerReasons()).not.toContain('user-permission-rule');
+      // 落回既有链：git tag 是已知安全命令，原链免审批放行（模式改写不改变这条捷径）。
+      expect(result.success).toBe(true);
+      expect(permissionEvents).toHaveLength(0);
+      expect(ledgerReasons()).toContain('safe-command');
+    } finally {
+      modes.setMode(previous, true);
+    }
+  });
+
+  it.each(['plan', 'dontAsk'] as const)('%s 档用户 deny Bash(echo neo-deny-probe*) 仍硬拒并点名规则', async (mode) => {
+    getPolicyEngine().loadUserRules({ deny: ['Bash(echo neo-deny-probe*)'] }, 'user-ui');
+    const modes = getPermissionModeManager();
+    const previous = modes.getEffectiveMode();
+    expect(modes.setMode(mode, true)).toBe(true);
+    try {
+      const result = await createExecutor().execute('Bash', { command: 'echo neo-deny-probe' }, { sessionId: `user-deny-${mode}-r4` });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('User deny: Bash(echo neo-deny-probe*)');
+      expect(permissionEvents).toHaveLength(0);
+    } finally {
+      modes.setMode(previous, true);
+    }
+  });
+
+  it('default 档 user-allow Bash(git tag) 不受影响：不硬拒也不进审批', async () => {
+    getPolicyEngine().loadUserRules({ allow: ['Bash(git tag)'] }, 'user-ui');
+    const result = await createExecutor().execute('Bash', { command: 'git tag' }, { sessionId: 'user-allow-default-r4' });
+
+    expect(result.error ?? '').not.toContain('Blocked by user permission rule');
+    expect(ledgerReasons()).not.toContain('user-permission-rule');
+    expect(result.success).toBe(true);
+    expect(permissionEvents).toHaveLength(0);
   });
 });

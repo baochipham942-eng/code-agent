@@ -20,6 +20,7 @@ import {
   markRunCommandHandedOff, refuseRunCommand, startRunCommand, useRunCommandHandedOff, useRunCommandPhase,
 } from '../../../../stores/runCommandState';
 import { Button } from '../../../primitives';
+import { stripAnsi } from '../../../../utils/stripAnsi';
 import { buildRunHandoffMessage, type RunHandoffStatus } from './runHandoffMessage';
 
 export function RunCommandCard({ command, label, messageId }: { command: string | null; label?: string; messageId?: string }) {
@@ -45,6 +46,10 @@ export function RunCommandCard({ command, label, messageId }: { command: string 
   };
 
   const finished = phase.kind === 'finished' ? phase.result : null;
+  // PTY 输出带颜色码：卡片给人读，展示前剥掉（N-IACT-RUN-HANDOFF-NEO-FU1）；剥完
+  // 为空（纯转义序列）不渲染输出块。「发给 Neo」仍把原始 output 交给
+  // buildRunHandoffMessage，它自己剥。
+  const displayOutput = finished !== null ? stripAnsi(finished.output) : '';
   // completed 且退出码非零：命令跑过了但没跑成，按 failed 样式呈现退出码行
   const exitFailed = finished?.status === 'completed' && (finished.exitCode ?? 0) !== 0;
   // denied 与无会话的本地 refused 没有可交接的内容：用户自己拒的 / 根本没挂上会话
@@ -108,8 +113,8 @@ export function RunCommandCard({ command, label, messageId }: { command: string 
           {finished.reason !== undefined && finished.reason !== '' && (
             <span className="whitespace-pre-wrap break-all text-zinc-400" data-iact-run-reason="">{finished.reason}</span>
           )}
-          {finished.output !== '' && (
-            <span className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md border border-zinc-700 bg-zinc-950 p-2 font-mono text-xs text-zinc-300" data-iact-run-output="">{finished.output}</span>
+          {displayOutput !== '' && (
+            <span className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md border border-zinc-700 bg-zinc-950 p-2 font-mono text-xs text-zinc-300" data-iact-run-output="">{displayOutput}</span>
           )}
           {handoffEligible && (
             <Button variant="secondary" size="sm" className="w-fit" data-iact-run-handoff=""

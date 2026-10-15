@@ -46,6 +46,26 @@ const hostRuleIds = new Set<string>(
   }),
 );
 
+// ----------------------------------------------------------------------------
+// 运行时审批档位映射棘轮：弹窗的 RUNTIME_APPROVAL_TIER_FOR_RULE 必须覆盖 host 写入点
+// 全量规则 id。漏映射的 id 会让弹窗对「唯一命中是该规则」的技能整段不渲染运行时审批
+// 真相（披露低于拆行前基线，PR 审查 r1 指出的回归）。同样读源码文本收集，不为测试
+// 新开导出面。
+// ----------------------------------------------------------------------------
+
+const MODAL_SOURCE = 'src/renderer/components/features/settings/tabs/SkillCautionDisclosureModal.tsx';
+
+/** 映射表条目行：`  rule_id: 'tier',`（tier 名与弹窗内 RuntimeApprovalTier 联合一致） */
+const TIER_ENTRY_RE = /^\s+([a-z0-9_]+):\s*'(forcedConfirm|askByDefault|readOnly|hardDeny)',?\s*$/gm;
+
+function collectTierMapping(source: string): Map<string, string> {
+  const tierForRule = new Map<string, string>();
+  for (const match of source.matchAll(TIER_ENTRY_RE)) {
+    tierForRule.set(match[1], match[2]);
+  }
+  return tierForRule;
+}
+
 describe('skill caution 规则白话句覆盖（zh/en 逐规则钉死）', () => {
   it('host 规则源里收集到了规则 id（收集器失效时本测试会假绿，先钉住非空）', () => {
     // 已知存量：posix 侧 31 个 flag + windows 侧 21 个 flag，往下只许增不许断崖
@@ -79,5 +99,19 @@ describe('skill caution 规则白话句覆盖（zh/en 逐规则钉死）', () =>
     expect(enSkillCautionRules.embeddedSecret.trim()).not.toBe('');
     expect(zhSkillCautionRules.fallback).toContain('{rule}');
     expect(enSkillCautionRules.fallback).toContain('{rule}');
+  });
+
+  it('弹窗运行时审批档位映射覆盖 host 写入点全量规则 id（新增规则不配档位即红）', () => {
+    const modalSource = readFileSync(path.join(ROOT, MODAL_SOURCE), 'utf8');
+    const tierForRule = collectTierMapping(modalSource);
+
+    // 收集器失效（正则不再命中映射表）时先钉住已知成员，避免假绿
+    expect(tierForRule.get('recursive_delete_targeted')).toBe('forcedConfirm');
+    expect(tierForRule.get('git_force_push')).toBe('forcedConfirm');
+    expect(tierForRule.get('win_recursive_delete')).toBe('askByDefault');
+    expect(tierForRule.get('env_access')).toBe('readOnly');
+
+    const missing = [...hostRuleIds].filter((id) => !tierForRule.has(id));
+    expect(missing, `缺档位映射的规则 id：${missing.join(', ')}`).toEqual([]);
   });
 });

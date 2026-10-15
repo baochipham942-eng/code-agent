@@ -45,6 +45,12 @@ function resetCapabilityStore(): void {
 // runCommandState 是 module 级单例：用例间不重置，靠唯一 messageId 保证组合 key 不串
 let renderSeq = 0;
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => { resolve = res; });
+  return { promise, resolve };
+}
+
 async function renderRunCard(content: string, messageId = `assistant-${++renderSeq}`) {
   const utils = render(<MessageContent content={content} isUser={false} messageId={messageId} />);
   const card = await waitFor(() => {
@@ -151,13 +157,13 @@ describe('!run 卡「发给 Neo」交接', () => {
     const { card } = await renderRunCard(`[跑](${runHref('sleep 5')})`);
     expect(card.querySelector('[data-iact-run-handoff]')).toBeNull();
 
-    let resolveRun!: (value: unknown) => void;
-    runInvoke.mockReturnValue(new Promise((res) => { resolveRun = res; }) as Promise<never>);
+    const gate = deferred<unknown>();
+    runInvoke.mockReturnValue(gate.promise as Promise<never>);
     fireEvent.click(card.querySelector('button:not([data-iact-run-handoff])') as HTMLButtonElement);
     await waitFor(() => expect(card.querySelector('[data-iact-run-status="running"]')).toBeTruthy());
     expect(card.querySelector('[data-iact-run-handoff]')).toBeNull();
 
-    resolveRun(COMPLETED);
+    gate.resolve(COMPLETED);
     await waitFor(() => expect(card.querySelector('[data-iact-run-handoff]')).toBeTruthy());
   });
 
@@ -188,7 +194,7 @@ describe('!run 卡「发给 Neo」交接', () => {
       }
       return Promise.reject(new DomainInvokeError('INTERNAL_ERROR', `${domain}:${action} failed`));
     });
-    const onSend = vi.fn(() => true);
+    const onSend = vi.fn((envelope: { content: string }) => true);
 
     const view = render(
       <>
@@ -199,7 +205,7 @@ describe('!run 卡「发给 Neo」交接', () => {
     const card = await waitFor(() => {
       const el = view.container.querySelector('[data-iact-run-command]');
       expect(el).toBeTruthy();
-      return el.parentElement as HTMLElement;
+      return (el as HTMLElement).parentElement as HTMLElement;
     });
 
     const runButton = card.querySelector('button:not([data-iact-run-handoff])') as HTMLButtonElement;

@@ -19,7 +19,7 @@ import type { Translations } from '../../../../i18n';
 /** 四态里允许交接给 Neo 的三态；denied（用户自己拒的）不发 */
 export type RunHandoffStatus = 'completed' | 'refused' | 'failed';
 
-export interface RunHandoffInput {
+interface RunHandoffInput {
   command: string;
   status: RunHandoffStatus;
   output: string;

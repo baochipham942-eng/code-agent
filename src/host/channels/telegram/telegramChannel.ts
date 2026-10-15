@@ -98,6 +98,8 @@ export class TelegramChannel extends BaseChannelPlugin {
   private telegramConfig: TelegramChannelConfig | null = null;
   private bot: Bot | null = null;
   private isPolling = false;
+  /** Present only after getMe returns a boolean can_read_all_group_messages. */
+  private lastCanReadAllGroupMessages: boolean | undefined;
 
   // 流式编辑节流
   private lastEditTime: Map<string, number> = new Map();
@@ -146,6 +148,11 @@ export class TelegramChannel extends BaseChannelPlugin {
     logger.info('TelegramChannel initialized');
   }
 
+  /** Last successful getMe().can_read_all_group_messages. Undefined until that boolean arrives. */
+  get telegramCanReadAllGroupMessages(): boolean | undefined {
+    return this.lastCanReadAllGroupMessages;
+  }
+
   async connect(): Promise<void> {
     if (!this.bot || !this.telegramConfig) {
       throw new Error('TelegramChannel not initialized');
@@ -154,12 +161,17 @@ export class TelegramChannel extends BaseChannelPlugin {
     this.setStatus('connecting');
 
     try {
-      // 先测试连接 (getMe)
+      // 先测试连接 (getMe)。隐私模式默认开启时 can_read_all_group_messages 为 false，
+      // 群里未 @ 的消息根本不会送到 bot；结果留给账号行提示，连接本身不因此失败。
       const me = await this.bot.api.getMe();
+      if (typeof me.can_read_all_group_messages === 'boolean') {
+        this.lastCanReadAllGroupMessages = me.can_read_all_group_messages;
+      }
       logger.info('Telegram bot connected', {
         id: me.id,
         username: me.username,
         firstName: me.first_name,
+        canReadAllGroupMessages: this.lastCanReadAllGroupMessages,
       });
 
       // 注册消息处理器

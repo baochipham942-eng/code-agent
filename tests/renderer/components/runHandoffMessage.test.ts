@@ -3,7 +3,8 @@
 // 的契约——汇报口吻一条用户消息：intro + 围栏命令 + 状态行（completed 带退出码）+
 // 原因（refused/failed）+ 围栏输出；command/output/reason 都过 redactCredentialText；
 // 输出超 10000 字符保头 2000 + 尾 8000 并注明省略量；围栏比内容里最长的反引号
-// 连跑长（内容不能提前闭合代码块）。
+// 连跑长（内容不能提前闭合代码块）；输出先剥 ANSI 颜色码再进正文（剥在脱敏与
+// 截断之前，纯转义序列剥完为空视同无输出）。
 // ============================================================================
 
 import { describe, expect, it } from 'vitest';
@@ -107,6 +108,59 @@ describe('buildRunHandoffMessage', () => {
     expect(text).toContain('````\necho ```nested```\n````');
     expect(text).toContain('````\n```\ninner block\n```\n````');
     expect(text.match(/```/g)?.length).toBe(8); // 4+4 两个围栏对，全在围栏行上
+  });
+
+  it('带颜色码的输出先剥 ANSI 再进正文：可见字符留下，正文一个 ESC 都不剩', () => {
+    const ESC = String.fromCharCode(0x1b);
+    const text = buildRunHandoffMessage(
+      {
+        command: 'ls work',
+        status: 'completed',
+        output: `${ESC}[34m${ESC}[1mads${ESC}[0m ${ESC}[39;49mbin${ESC}[39;49m${ESC}[0m`,
+        exitCode: 0,
+      },
+      zhRun,
+    );
+    expect(text).not.toContain(ESC);
+    expect(text).toContain('```\nads bin\n```');
+  });
+
+  it('颜色码把密钥切成两半也照样脱敏（剥码在脱敏之前）', () => {
+    const ESC = String.fromCharCode(0x1b);
+    const text = buildRunHandoffMessage(
+      {
+        command: 'env',
+        status: 'completed',
+        output: `token=sk-proj${ESC}[31m1234567890abcdef done`,
+        exitCode: 0,
+      },
+      zhRun,
+    );
+    expect(text).not.toContain(ESC);
+    expect(text).not.toContain('sk-proj1234567890abcdef');
+    expect(text).toContain('sk-***REDACTED***');
+  });
+
+  it('截断只数剥完的可见字符：原始串超 10000 但剥完只剩 2 字符，不触发省略', () => {
+    const ESC = String.fromCharCode(0x1b);
+    const coloured = `${ESC}[34m`.repeat(2000) + 'ok';
+    expect(coloured.length).toBeGreaterThan(10000);
+    const text = buildRunHandoffMessage(
+      { command: 'noisy.sh', status: 'completed', output: coloured, exitCode: 0 },
+      zhRun,
+    );
+    expect(text).toContain('```\nok\n```');
+    expect(text).not.toContain(zhRun.runHandoffTruncationNote.split('{count}')[0]);
+  });
+
+  it('输出只有颜色码：剥完为空，视同无输出（不发输出块）', () => {
+    const ESC = String.fromCharCode(0x1b);
+    const text = buildRunHandoffMessage(
+      { command: 'true', status: 'completed', output: `${ESC}[34m${ESC}[39;49m${ESC}[0m`, exitCode: 0 },
+      zhRun,
+    );
+    expect(text).not.toContain(ESC);
+    expect(text).not.toContain(zhRun.runHandoffOutputLabel);
   });
 
   it('en 文案同链路成立', () => {

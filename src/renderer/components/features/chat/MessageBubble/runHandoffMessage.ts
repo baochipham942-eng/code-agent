@@ -9,11 +9,15 @@
 // 这里的正文本身就是表态，直接发）。
 // - 脱敏：command / output / reason 都过 redactCredentialText（与 host 工具结果
 //   同一规则，redacted 标记同款）；
+// - 去 ANSI（N-IACT-RUN-HANDOFF-NEO-FU1）：output 先剥转义序列再进正文——PTY 的
+//   颜色码对用户和模型都是噪音；剥在脱敏与截断之前，10000 上限只数可见字符，
+//   转义码也不会把密钥切成两半躲过脱敏；剥完为空视同无输出（不发输出块）；
 // - 截断：先脱敏再截断（截断缝里不能漏出半个未脱敏的密钥）；超 10000 字符保
 //   头 2000 + 尾 8000，中间插一行省略说明（上限与 gemini-cli 一致）；
 // - 围栏：比内容里最长的反引号连跑长，否则内容会提前闭合代码块。
 
 import { redactCredentialText } from '@shared/security/secretPatterns';
+import { stripAnsi } from '../../../../utils/stripAnsi';
 import type { Translations } from '../../../../i18n';
 
 /** 四态里允许交接给 Neo 的三态；denied（用户自己拒的）不发 */
@@ -65,9 +69,11 @@ export function buildRunHandoffMessage(input: RunHandoffInput, locale: Translati
   const reason = input.reason !== undefined && input.reason !== ''
     ? redactCredentialText(input.reason, { redacted: REDACTED })
     : null;
-  const output = input.output !== ''
+  // 剥 ANSI 在脱敏与截断之前：上限只数可见字符，转义码也不能把密钥切成两半
+  const strippedOutput = stripAnsi(input.output);
+  const output = strippedOutput !== ''
     ? truncateOutput(
-      redactCredentialText(input.output, { redacted: REDACTED }),
+      redactCredentialText(strippedOutput, { redacted: REDACTED }),
       (omitted) => locale.runHandoffTruncationNote.replace('{count}', String(omitted)),
     )
     : null;

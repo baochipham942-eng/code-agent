@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseCronRunDigest } from '../../../src/shared/cronRunDigest';
 import {
   buildStandingRefreshJobInput,
+  describeStandingRefreshSchedule,
   findStandingRefreshJob,
   getArtifactRefreshMetadata,
   type StandingRefreshRef,
@@ -109,8 +110,7 @@ describe('getArtifactRefreshMetadata（metadata 判读）', () => {
   });
 });
 
-describe('findStandingRefreshJob（job 匹配）', () => {
-  const job = (id: string, path: string, updatedAt: number) => ({
+describe('findStandingRefreshJob（job 匹配）', () => {  const job = (id: string, path: string, updatedAt: number) => ({
     id,
     enabled: true,
     updatedAt,
@@ -134,5 +134,47 @@ describe('findStandingRefreshJob（job 匹配）', () => {
       '/tmp/report.md',
     );
     expect(found?.job.id).toBe('new');
+  });
+});
+
+// 真实调度判定（FU1）：job.schedule 与 metadata cadence 可能不一致（用户在 Cron
+// 中心改过节奏）——chip 按这份判定结果展示，不再拿 cadence 撒谎。
+describe('describeStandingRefreshSchedule（真实调度 → chip 展示判定）', () => {
+  it('预设调度映射回节奏：every 1 hours → hourly，0 9 * * * → daily，0 9 * * 1 → weekly', () => {
+    expect(describeStandingRefreshSchedule({ type: 'every', interval: 1, unit: 'hours' }, 'zh'))
+      .toEqual({ kind: 'preset', cadence: 'hourly' });
+    expect(describeStandingRefreshSchedule({ type: 'cron', expression: '0 9 * * *' }, 'zh'))
+      .toEqual({ kind: 'preset', cadence: 'daily' });
+    expect(describeStandingRefreshSchedule({ type: 'cron', expression: '0 9 * * 1' }, 'zh'))
+      .toEqual({ kind: 'preset', cadence: 'weekly' });
+  });
+
+  it('带时区的 daily 预设表达式仍判 daily（节奏词不带时间，时区只是执行侧细节）', () => {
+    expect(describeStandingRefreshSchedule({ type: 'cron', expression: '0 9 * * *', timezone: 'Asia/Shanghai' }, 'zh'))
+      .toEqual({ kind: 'preset', cadence: 'daily' });
+  });
+
+  it('非预设 every 调度人话化：每 5 分钟 / Every 5 minutes', () => {
+    expect(describeStandingRefreshSchedule({ type: 'every', interval: 5, unit: 'minutes' }, 'zh'))
+      .toEqual({ kind: 'custom', label: '每 5 分钟' });
+    expect(describeStandingRefreshSchedule({ type: 'every', interval: 5, unit: 'minutes' }, 'en'))
+      .toEqual({ kind: 'custom', label: 'Every 5 minutes' });
+    expect(describeStandingRefreshSchedule({ type: 'every', interval: 3, unit: 'hours' }, 'zh'))
+      .toEqual({ kind: 'custom', label: '每 3 小时' });
+  });
+
+  it('非预设 cron 调度走 cron 人话化，认不出的表达式带原文兜底', () => {
+    expect(describeStandingRefreshSchedule({ type: 'cron', expression: '*/5 * * * *' }, 'zh'))
+      .toEqual({ kind: 'custom', label: '每 5 分钟' });
+    expect(describeStandingRefreshSchedule({ type: 'cron', expression: '*/5 * * * *' }, 'en'))
+      .toEqual({ kind: 'custom', label: 'Every 5 minutes' });
+    expect(describeStandingRefreshSchedule({ type: 'cron', expression: '0 8,18 * * *', timezone: 'Asia/Shanghai' }, 'en'))
+      .toEqual({ kind: 'custom', label: 'Custom schedule · 0 8,18 * * * · Asia/Shanghai' });
+  });
+
+  it('schedule 缺席或 at/event 型返回 undefined（调用方回退 metadata cadence 词）', () => {
+    expect(describeStandingRefreshSchedule(undefined, 'zh')).toBeUndefined();
+    expect(describeStandingRefreshSchedule({ type: 'at', datetime: '2026-10-15T09:00:00Z' }, 'zh')).toBeUndefined();
+    expect(describeStandingRefreshSchedule({ type: 'event', source: 'channel', accountId: 'acc-1' }, 'en')).toBeUndefined();
   });
 });

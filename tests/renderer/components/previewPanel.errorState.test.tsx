@@ -305,3 +305,117 @@ describe('ArtifactStandingRefresh chip 状态', () => {
     }
   });
 });
+
+// FU1（N-ARTIFACT-STANDING-REFRESH-REALRUN-FU1）：chip 必须展示任务真实调度——
+// 用户在 Cron 中心把任务改成每 5 分钟后，metadata cadence 不变（还是 daily），
+// chip 不能再按 cadence 显示「每天」。非预设节奏的弹窗不按任何节奏按钮，
+// 不另选就保存则保留现调度（update payload 不带 scheduleType/schedule）。
+describe('ArtifactStandingRefresh 真实调度展示', () => {
+  const EVERY_FIVE_MINUTES = { type: 'every', interval: 5, unit: 'minutes' } as const;
+
+  it('任务被改成每 5 分钟：chip 显示「自动更新·每 5 分钟」（zh）', async () => {
+    mockPublishInfo({
+      jobId: 'job-5min', enabled: true, cadence: 'daily', instruction: 'x',
+      schedule: EVERY_FIVE_MINUTES,
+    });
+    render(<ArtifactStandingRefresh filePath="/tmp/wt/a.json" />);
+    await waitFor(() => expect(screen.getByTestId('artifact-standing-refresh-chip').textContent).toBe('自动更新·每 5 分钟'));
+  });
+
+  it('en 语言：同一任务 chip 是 Auto refresh · Every 5 minutes', async () => {
+    mockPublishInfo({
+      jobId: 'job-5min', enabled: true, cadence: 'daily', instruction: 'x',
+      schedule: EVERY_FIVE_MINUTES,
+    });
+    useAppStore.getState().setLanguage('en');
+    try {
+      render(<ArtifactStandingRefresh filePath="/tmp/wt/a.json" />);
+      await waitFor(() => expect(screen.getByTestId('artifact-standing-refresh-chip').textContent).toBe('Auto refresh · Every 5 minutes'));
+    } finally {
+      useAppStore.getState().setLanguage('zh');
+    }
+  });
+
+  it('cron 表达式型非预设调度同样人话化（*/5 * * * * → 每 5 分钟）', async () => {
+    mockPublishInfo({
+      jobId: 'job-cron5', enabled: true, cadence: 'daily', instruction: 'x',
+      schedule: { type: 'cron', expression: '*/5 * * * *' },
+    });
+    render(<ArtifactStandingRefresh filePath="/tmp/wt/a.json" />);
+    await waitFor(() => expect(screen.getByTestId('artifact-standing-refresh-chip').textContent).toBe('自动更新·每 5 分钟'));
+  });
+
+  it('预设调度仍用节奏词：hourly 预设（every 1 hours）→ 每小时', async () => {
+    mockPublishInfo({
+      jobId: 'job-h', enabled: true, cadence: 'hourly', instruction: 'x',
+      schedule: { type: 'every', interval: 1, unit: 'hours' },
+    });
+    render(<ArtifactStandingRefresh filePath="/tmp/wt/a.json" />);
+    await waitFor(() => expect(screen.getByTestId('artifact-standing-refresh-chip').textContent).toBe('自动更新·每小时'));
+  });
+
+  it('旧载荷（无 schedule 键）回退 cadence 词：chip 每天且弹窗仍预按「每天」', async () => {
+    mockPublishInfo({ jobId: 'job-old', enabled: true, cadence: 'daily', instruction: '旧指令' });
+    render(<ArtifactStandingRefresh filePath="/tmp/wt/a.json" />);
+    await waitFor(() => expect(screen.getByTestId('artifact-standing-refresh-chip').textContent).toBe('自动更新·每天'));
+
+    fireEvent.click(screen.getByTestId('artifact-standing-refresh-chip'));
+    await waitFor(() => screen.getByDisplayValue('旧指令'));
+    expect(screen.getByRole('button', { name: '每天' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.queryByTestId('standing-refresh-current-schedule')).toBeNull();
+  });
+
+  it('非预设节奏弹窗：三个节奏按钮都不按，并展示当前节奏行', async () => {
+    mockPublishInfo({
+      jobId: 'job-5min', enabled: true, cadence: 'daily', instruction: 'x',
+      schedule: EVERY_FIVE_MINUTES,
+    });
+    render(<ArtifactStandingRefresh filePath="/tmp/wt/a.json" />);
+    await waitFor(() => screen.getByTestId('artifact-standing-refresh-chip'));
+    fireEvent.click(screen.getByTestId('artifact-standing-refresh-chip'));
+
+    for (const name of ['每小时', '每天', '每周']) {
+      expect(screen.getByRole('button', { name, exact: true }).getAttribute('aria-pressed')).toBe('false');
+    }
+    expect(screen.getByTestId('standing-refresh-current-schedule').textContent).toBe('当前节奏：每 5 分钟（不另选则保持）');
+  });
+
+  it('不另选节奏就保存：updateJob 不带 scheduleType/schedule，metadata cadence 原样保留', async () => {
+    mockPublishInfo({
+      jobId: 'job-5min', enabled: true, cadence: 'daily', instruction: '旧指令',
+      schedule: EVERY_FIVE_MINUTES,
+    });
+    render(<ArtifactStandingRefresh filePath="/tmp/wt/a.json" />);
+    await waitFor(() => screen.getByTestId('artifact-standing-refresh-chip'));
+    fireEvent.click(screen.getByTestId('artifact-standing-refresh-chip'));
+    fireEvent.change(await screen.findByDisplayValue('旧指令'), { target: { value: '新指令' } });
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => expect(cronCalls.updateJob).toHaveBeenCalledTimes(1));
+    expect(cronCalls.createJob).not.toHaveBeenCalled();
+    const updates = cronCalls.updateJob.mock.calls[0][1] as Record<string, unknown>;
+    expect('scheduleType' in updates).toBe(false);
+    expect('schedule' in updates).toBe(false);
+    expect((updates.metadata as { artifactRefresh: { cadence: string; instruction: string } }).artifactRefresh)
+      .toMatchObject({ cadence: 'daily', instruction: '新指令' });
+  });
+
+  it('另选节奏按钮后保存：照常带该预设的 scheduleType/schedule', async () => {
+    mockPublishInfo({
+      jobId: 'job-5min', enabled: true, cadence: 'daily', instruction: '旧指令',
+      schedule: EVERY_FIVE_MINUTES,
+    });
+    render(<ArtifactStandingRefresh filePath="/tmp/wt/a.json" />);
+    await waitFor(() => screen.getByTestId('artifact-standing-refresh-chip'));
+    fireEvent.click(screen.getByTestId('artifact-standing-refresh-chip'));
+    await screen.findByDisplayValue('旧指令');
+    fireEvent.click(screen.getByRole('button', { name: '每周', exact: true }));
+    fireEvent.click(screen.getByText('保存'));
+
+    await waitFor(() => expect(cronCalls.updateJob).toHaveBeenCalledTimes(1));
+    const updates = cronCalls.updateJob.mock.calls[0][1] as Record<string, unknown>;
+    expect(updates.scheduleType).toBe('cron');
+    expect(updates.schedule).toEqual({ type: 'cron', expression: '0 9 * * 1' });
+    expect((updates.metadata as { artifactRefresh: { cadence: string } }).artifactRefresh.cadence).toBe('weekly');
+  });
+});

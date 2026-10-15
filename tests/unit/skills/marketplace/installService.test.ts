@@ -224,6 +224,11 @@ describe('marketplace install service trust defaults', () => {
         name: 'init',
         source: 'builtin',
       }),
+      // N-INIT-MEMORY-AGENT-DRAFT 新增的内置 /init-memory（候选项目记忆草稿）。
+      expect.objectContaining({
+        name: 'init-memory',
+        source: 'builtin',
+      }),
     ]);
     await expect(enablePlugin('demo@trusted-test')).resolves.toBeUndefined();
 

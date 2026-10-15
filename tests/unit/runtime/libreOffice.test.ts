@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import os from 'os';
 import path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildForArch, LIBREOFFICE_BUILDS } from '../../../src/host/runtime/libreOffice/constants';
+import { buildForArch } from '../../../src/host/runtime/libreOffice/constants';
 import { ensureLibreOffice } from '../../../src/host/runtime/libreOffice/ensure';
 import { getLibreOfficeCandidates } from '../../../src/host/runtime/libreOffice/lookup';
 import { getLibreOfficeState } from '../../../src/host/runtime/libreOffice/state';
@@ -21,8 +21,8 @@ afterEach(() => {
 
 describe('managed LibreOffice runtime', () => {
   it('pins both official macOS builds and selects x86_64 for x64 hosts', () => {
-    expect(LIBREOFFICE_BUILDS.arm64.bytes).toBe(297798926);
-    expect(LIBREOFFICE_BUILDS.x86_64.bytes).toBe(308308875);
+    expect(buildForArch('arm64').bytes).toBe(297798926);
+    expect(buildForArch('x86_64').bytes).toBe(308308875);
     expect(buildForArch('arm64').arch).toBe('arm64');
     expect(buildForArch('x64').arch).toBe('x86_64');
   });
@@ -84,8 +84,9 @@ describe('managed LibreOffice runtime', () => {
     expect(fs.existsSync(download)).toBe(false);
 
     const validBytes = 'valid fake dmg';
-    const expected = LIBREOFFICE_BUILDS.arm64.sha256;
-    LIBREOFFICE_BUILDS.arm64.sha256 = crypto.createHash('sha256').update(validBytes).digest('hex');
+    const arm64Build = buildForArch('arm64');
+    const expected = arm64Build.sha256;
+    arm64Build.sha256 = crypto.createHash('sha256').update(validBytes).digest('hex');
     const failure = await ensureLibreOffice({
       dataDir: tempRoot(),
       platform: 'darwin',
@@ -99,7 +100,7 @@ describe('managed LibreOffice runtime', () => {
         if (file === 'ditto') return;
       },
     });
-    LIBREOFFICE_BUILDS.arm64.sha256 = expected;
+    arm64Build.sha256 = expected;
     expect(failure).toMatchObject({ ok: false, error: { code: 'LIBREOFFICE_RUNTIME_INSTALL_FAILED' } });
     expect(commands.some(([file, ...args]) => file === 'hdiutil' && args[0] === 'detach')).toBe(true);
   });

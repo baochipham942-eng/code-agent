@@ -21,7 +21,7 @@ export interface LibreOfficeBuild {
 const ARM64_FILE = 'LibreOffice_26.2.6_MacOS_aarch64.dmg';
 const X64_FILE = 'LibreOffice_26.2.6_MacOS_x86-64.dmg';
 
-export const LIBREOFFICE_BUILDS: Record<'arm64' | 'x86_64', LibreOfficeBuild> = {
+const LIBREOFFICE_BUILDS: Record<'arm64' | 'x86_64', LibreOfficeBuild> = {
   arm64: {
     arch: 'arm64',
     fileName: ARM64_FILE,

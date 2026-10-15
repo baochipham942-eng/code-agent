@@ -67,6 +67,7 @@ import {
 import { CronCloudRuntime } from './cronCloudRuntime';
 import { CronEventTrigger, assertEventScheduleConstraints, hasExplicitChatListenBinding } from './cronEventTrigger';
 import { setChannelListenResolver } from '../channels/channelListenRegistry';
+import { getChannelManager } from '../channels/channelManager';
 import {
   deleteCronJob,
   loadCronExecutionStatus,
@@ -318,6 +319,7 @@ export class CronService implements Disposable {
     }
 
     syncCronAutomationFromJob(updatedJob, this.resolveAutomationRuntime);
+    if (updates.schedule !== undefined || updates.enabled !== undefined) this.cronEventTrigger?.groupListenChecks.forget(jobId);
 
     if (updatedJob.runsOn === 'cloud') {
       await this.cloudRuntime.updateJob(updatedJob);
@@ -347,6 +349,7 @@ export class CronService implements Disposable {
 
     // Remove from memory
     this.jobs.delete(jobId);
+    this.cronEventTrigger?.groupListenChecks.forget(jobId);
     this.executions.delete(jobId);
 
     // Remove from database
@@ -362,6 +365,13 @@ export class CronService implements Disposable {
   getJob(jobId: string): CronJobDefinition | null {
     const job = this.jobs.get(jobId);
     return job ? this.withRuntimeScheduleState(job) : null;
+  }
+
+  getGroupListenCheck(jobId: string, start = false) {
+    const schedule = this.jobs.get(jobId)?.definition.schedule;
+    if (schedule?.type !== 'event' || schedule.source !== 'channel' || getChannelManager().getAccount(schedule.accountId)?.type !== 'feishu') return null;
+    if (!this.cronEventTrigger) throw new Error('CRON_LISTEN_CHECK_UNAVAILABLE');
+    return this.cronEventTrigger.groupListenChecks.get(jobId, start);
   }
 
   /**
@@ -1113,7 +1123,7 @@ export class CronService implements Disposable {
       },
       parentSessionId: sourceSessionId,
       sourceRunId: executionId,
-      readOnly: true,
+      readOnly: true, memoryMode: sourceSession?.memoryMode === 'off' ? 'off' : undefined,
     });
   }
 

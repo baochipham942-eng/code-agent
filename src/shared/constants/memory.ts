@@ -12,6 +12,21 @@ export const LIGHT_MEMORY = {
   INDEX_MAX_LINES: 200,
 } as const;
 
+/**
+ * memoryMode='off' 会话的启动告知正文（N-TASK-MEMORY-OFF-FU1）。off 档此前只挡
+ * 工具、不注索引，但从不告知模型：真跑里模型把 MemoryRead 被拒误读成「另一个数据
+ * 槽」，还把用户口述的私密信息写进工作区文件当记忆替身。这条告知钉死两件事——
+ * 归因（用户关的，不是权限/槽/工具故障）与替身行为（不许写文件顶替记忆；用户
+ * 明确要的产物文件不受影响）。
+ */
+export const MEMORY_OFF_NOTICE =
+  "Memory is switched off for this task by the user's choice. " +
+  'Do not read, write, or recall long-term memory or earlier conversations for this task. ' +
+  'Do not save the user\'s personal information or secrets to files as a substitute for memory; ' +
+  'files the user explicitly asks for (reports, exports, etc.) are fine. ' +
+  'If asked why you do not remember something, say plainly that memory is switched off for this task; ' +
+  'do not blame permissions, data slots, or tool errors.';
+
 /** session 收尾 LLM 判断（runFinalizer → conversationJudge） */
 export const SESSION_JUDGE = {
   /** quick model max_tokens：需要容纳判断结果与少量长期事实正文 */

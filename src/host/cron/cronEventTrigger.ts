@@ -31,6 +31,7 @@ import { CRON_EVENT_TRIGGER } from '../../shared/constants';
 import { validateEventScheduleConstraints } from '../../shared/cronEventValidation';
 import { BoundedDedupeSet } from '../channels/inboundDedupe';
 import { getChannelManager } from '../channels/channelManager';
+import { CronGroupListenChecks } from './cronGroupListenCheck';
 import {
   CronMailPoller,
   createDefaultMailReader,
@@ -205,6 +206,7 @@ function toEventRecord(message: ChannelMessage, listen: boolean): ChannelEventRe
 }
 
 export class CronEventTrigger {
+  readonly groupListenChecks: CronGroupListenChecks;
   private readonly host: CronEventTriggerHost;
   private readonly channelSource: CronEventChannelSource | undefined;
   private readonly mailReader: CronMailReader;
@@ -221,6 +223,7 @@ export class CronEventTrigger {
     this.host = options.host;
     this.channelSource = options.channelSource;
     this.now = options.now ?? Date.now;
+    this.groupListenChecks = new CronGroupListenChecks(() => this.host.getJobDefinitions(), this.now);
     this.setTimer = options.setTimer ?? ((callback, delayMs) => {
       const handle = setTimeout(callback, delayMs);
       return { clear: () => clearTimeout(handle) };
@@ -257,6 +260,7 @@ export class CronEventTrigger {
 
   /** 退订并清掉所有挂起的合批/轮询定时器（不触发任何 run）。 */
   dispose(): void {
+    this.groupListenChecks.clear();
     if (!this.started) return;
     const source = this.channelSource ?? getChannelManager();
     source.removeListener('message', this.handleChannelMessage);
@@ -281,6 +285,7 @@ export class CronEventTrigger {
     // 监听事件只来自未 @ 的群消息：跳过游客过滤（它们只进 untrusted 块，够不到
     // 任何会话/工具），保留 bot 回声过滤（防自触发环）。
     if (message?.sender?.isBot === true) return;
+    this.groupListenChecks.observe(accountId, message);
     this.dispatchToJobs(accountId, message, true);
   };
 

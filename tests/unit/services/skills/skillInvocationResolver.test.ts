@@ -317,6 +317,20 @@ describe('skillInvocationResolver', () => {
     );
   });
 
+  // 常设刷新真跑：prompt 里的目标路径 status.docx 被当成名为 docx 的 skill 别名。
+  // 命中后 allowed-tools 边界把 DocEdit 挡成人工审批，无人值守停车 24h，版本不落盘。
+  it('a file extension is not a latin alias match', () => {
+    const docx = skill({
+      name: 'docx',
+      description: 'Generate and manipulate Word documents. Use when the user asks to generate docx.',
+    });
+    const prompt = 'Write the updated result back to the SAME file at "/tmp/workspace/status.docx", overwriting it in place.';
+
+    expect(resolveSkillInvocationFromSkills(prompt, [docx])).toBeNull();
+    expect(resolveSkillInvocationFromSkills('请用 docx 生成一份项目状态报告', [docx])?.skill.name).toBe('docx');
+    expect(resolveSkillInvocationFromSkills('/docx /tmp/workspace/status.docx', [docx])?.matchKind).toBe('slash');
+  });
+
   // N-L8-ATT10 回归护栏：真机语音派活说「读取…」时命中了用户级 skill lark-markdown，
   // 整份 SKILL.md（1226 token）以 <required-skill-invocation match="alias"> 进系统提示，
   // 每轮都付且正文要求改用 lark-cli（指令跑偏）。根因是「当用户需要 X」这种场景描述句式

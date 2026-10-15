@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type { CronJobDefinition } from '../../../src/shared/contract/cron';
 import {
   beginArtifactRefresh,
+  cronAgentWorkingDirectory,
   finishArtifactRefresh,
 } from '../../../src/host/cron/artifactStandingRefresh';
 import { listPublishedVersions } from '../../../src/host/tools/document/snapshotManager';
@@ -199,6 +200,15 @@ describe('artifactStandingRefresh host 执行段', () => {
     await writeFile(target, '{"title":"v2"}\n');
     await finishArtifactRefresh(state!, { runFailed: false, updateJob });
     expect(updateJob).not.toHaveBeenCalled();
+  });
+
+  it('常设刷新的会话工作目录是产物所在目录，没有刷新元数据或路径不是绝对路径时沿用回退目录', () => {
+    expect(cronAgentWorkingDirectory(refreshJob(target), '/should-not-use')).toBe(workDir);
+    expect(cronAgentWorkingDirectory(plainJob(), '/fallback')).toBe('/fallback');
+    expect(cronAgentWorkingDirectory(plainJob(), undefined)).toBeUndefined();
+    expect(cronAgentWorkingDirectory(refreshJob('status.md'), '/fallback')).toBe('/fallback');
+    const rootJob = refreshJob('/');
+    expect(cronAgentWorkingDirectory(rootJob, '/fallback')).toBe('/fallback');
   });
 
   it('非刷新任务：begin 返回 undefined，不建快照不碰文件', async () => {

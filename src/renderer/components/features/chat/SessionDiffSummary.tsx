@@ -7,6 +7,7 @@ import React, { useState, useMemo } from 'react';
 import * as Diff from 'diff';
 import { ChevronDown, ChevronRight, GitCommit } from 'lucide-react';
 import type { Message } from '@shared/contract/message';
+import { aggregateEditArgsText } from '@shared/utils/editToolArgs';
 
 const FILE_WRITE_TOOLS = ['Edit', 'Write', 'edit_file', 'write_file'];
 
@@ -53,8 +54,11 @@ export const SessionDiffSummary: React.FC<SessionDiffSummaryProps> = ({ messages
         let isNewFile = false;
 
         if (tc.name === 'Edit' || tc.name === 'edit_file') {
-          oldText = (args.old_string as string) ?? '';
-          newText = (args.new_string as string) ?? '';
+          // 真实注册形状是 edits[]（multiEdit.schema.ts），legacy edit_file 才是平铺——
+          // 归一后聚合取文，两种形状都能 diff。
+          const aggregated = aggregateEditArgsText(args);
+          oldText = aggregated.oldText;
+          newText = aggregated.newText;
         } else {
           newText = (args.content as string) ?? '';
           isNewFile = true;

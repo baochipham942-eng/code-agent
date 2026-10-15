@@ -2,11 +2,13 @@
 // 出厂默认资料架种入测试（N-ROLE-DEFAULT-BINDINGS-SKILL）：
 // 内置专家首启绑 1-3 个自带 skill（引用 only）、幂等、不覆盖用户绑定、注入块可见。
 // 断言全部落在 installBuiltinRoles 的落盘产物上（公开入口），不 import 内部映射常量。
+// N-ROLE-PACKS-PILOT3 追加：存量 5 角色 pinned sha256 字节不变 + 新 3 角色绑定核对。
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { createHash } from 'crypto';
 import os from 'os';
 
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
@@ -43,11 +45,45 @@ function readBindingsFile(roleId: string): Promise<string> {
   return fs.readFile(getRoleBindingsPath(roleId), 'utf-8');
 }
 
+/**
+ * 存量 5 角色的 pinned sha256（N-ROLE-PACKS-PILOT3 施工前 origin/main 42ceb34a6 的
+ * agentMd 全文 / visual 规范化 JSON）。本批只允许追加新角色，存量角色字节不变；
+ * 任一哈希漂移即说明有人顺手改了老角色，必须显式重 pin + 说明理由。
+ */
+const PREEXISTING_ROLE_SHA256: Readonly<Record<string, { agentMd: string; visual: string }>> = {
+  数据分析师: {
+    agentMd: 'c7255fd1b11630faa1bfe04d3bf8864d6af5df5eaa2c30404ecb00dbb813c2b3',
+    visual: '71c55276ee1ae285b6dc24eadd3c5c08a751e01185be29b27fc6199fee9a455b',
+  },
+  牧之: {
+    agentMd: '00924e86767b063d5c7595ce922c5b278ef1010e4ee43b66dbc8761a872e2916',
+    visual: 'eecfbc6413f5aa352fb5b789beb001ceec8f7243de46e1e44117184c71b62c0b',
+  },
+  溯真: {
+    agentMd: '96e5904b3c0f4d122d89726d76c35779fd936f6564e2c81a91786952a9a7c72a',
+    visual: '26dd8d9046d188a68cedb82687953dc4da613a36b8f23fc931651720d7b5edcb',
+  },
+  青禾: {
+    agentMd: '3e3bf52534cdb987f44768bacd12114e13df8d5331b4d87578d359a106478b8d',
+    visual: '4453e375ee3fd869c3ec1f802d889a2251954acd340bb1328c7838f7a2d15851',
+  },
+  明镜: {
+    agentMd: '9efe7399f40200d95b7532cd7d8c9925e361403d7f723f2f9cf7962ad2cd6e91',
+    visual: '57cd8909a26fbb0eaee56eea21e830b0b2a2c6d492224fb0c095dbd03aae6b13',
+  },
+};
+
+const sha256 = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');
+
+/** visual 的规范化形状：键序固定（与源字面量一致），tags/quickPrompts 保序 */
+const visualCanon = (v: { icon: string; category: string; displayName: string; profession: string; tags: string[]; quickPrompts: string[] }) =>
+  JSON.stringify(v, ['icon', 'category', 'displayName', 'profession', 'tags', 'quickPrompts']);
+
 describe('installBuiltinRoles 出厂资料架种入', () => {
   it('① 每个在装内置角色绑 1-3 个随包分发的 skill（isBuiltinSkill 全过），且 = frontmatter skills 前 ≤3（防漂移）', async () => {
     await installBuiltinRoles();
 
-    expect(BUILTIN_ROLES.length).toBe(5);
+    expect(BUILTIN_ROLES.length).toBe(8);
     for (const role of BUILTIN_ROLES) {
       const bindings = JSON.parse(await readBindingsFile(role.id)) as Array<{ target: string }>;
       const names = bindings.map((b) => b.target);
@@ -57,6 +93,32 @@ describe('installBuiltinRoles 出厂资料架种入', () => {
         expect(isBuiltinSkill(name), `${role.id} -> ${name} 不是内置 skill`).toBe(true);
       }
       expect(names, role.id).toEqual(expectedDefaultSkills(role.agentMd, role.id));
+    }
+  });
+
+  it('① 存量 5 角色与施工前 origin/main 字节一致（pinned sha256：本批只追加，不改老角色）', () => {
+    const preexistingIds = Object.keys(PREEXISTING_ROLE_SHA256);
+    expect(preexistingIds.length).toBe(5);
+    for (const id of preexistingIds) {
+      const role = BUILTIN_ROLES.find((r) => r.id === id);
+      expect(role, `${id} 不在装名册`).toBeDefined();
+      const pinned = PREEXISTING_ROLE_SHA256[id]!;
+      expect(sha256(role!.agentMd), `${id} agentMd 相对 origin/main 发生字节漂移`).toBe(pinned.agentMd);
+      expect(sha256(visualCanon(role!.visual)), `${id} visual 相对 origin/main 发生字节漂移`).toBe(pinned.visual);
+    }
+  });
+
+  it('① 本批新增 3 角色（持衡/记言/万卷）种入的默认绑定 = 各自约定的 skill 集（经 installBuiltinRoles 公开入口）', async () => {
+    await installBuiltinRoles();
+
+    const expected: Record<string, string[]> = {
+      持衡: ['contract-review'],
+      记言: ['meeting-summary'],
+      万卷: ['literature-review', 'paper-distillation'],
+    };
+    for (const [id, skills] of Object.entries(expected)) {
+      const bindings = JSON.parse(await readBindingsFile(id)) as Array<{ target: string }>;
+      expect(bindings.map((b) => b.target), id).toEqual(skills);
     }
   });
 

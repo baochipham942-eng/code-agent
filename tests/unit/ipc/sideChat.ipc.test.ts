@@ -196,7 +196,7 @@ describe('side chat IPC', () => {
   it('classifies quota and network wordings through the executor failure path', async () => {
     const cases = [
       { error: '余额不足，请充值后重试', cause: 'quota' },
-      { error: 'Error code: 429 - rate limit exceeded', cause: 'quota' },
+      { error: 'Error code: 429 - rate limit exceeded', cause: 'rate_limit' },
       { error: 'ECONNRESET socket hang up', cause: 'network' },
       { error: 'fetch failed', cause: 'network' },
     ] as const;
@@ -228,7 +228,7 @@ describe('side chat IPC', () => {
       {
         label: '429',
         underlying: () => Object.assign(new Error('Too many requests, slow down'), { statusCode: 429 }),
-        cause: 'quota',
+        cause: 'rate_limit',
       },
       {
         label: 'ECONNREFUSED',

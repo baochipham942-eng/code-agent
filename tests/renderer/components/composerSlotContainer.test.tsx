@@ -106,6 +106,15 @@ describe('ComposerSlot 容器', () => {
     expect(useComposerNoticeStore.getState().inProgress.voice).toBeUndefined();
   });
 
+  it('生产 ChatInput 的上下文圆环可达明细弹层', () => {
+    render(<ChatInput onSend={() => true} sessionless />);
+
+    const ring = screen.getByRole('button', { name: '上下文使用' });
+    act(() => { ring.click(); });
+
+    expect(screen.getByRole('dialog', { name: '上下文健康度明细' })).toBeTruthy();
+  });
+
   it('挂载点声明活跃的 occupant：没活跃不渲染，活跃了才渲染', () => {
     const { rerender } = render(<ComposerSlot>{mountGated('goal-confirm', false)}</ComposerSlot>);
     expect(screen.queryByTestId('occupant-goal-confirm')).toBeNull();

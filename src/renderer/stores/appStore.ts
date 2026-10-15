@@ -338,7 +338,7 @@ export interface AppState {
   taskWorkbenchActivityActive: boolean;
   taskWorkbenchActivityKeysBySession: Record<string, string>;
 
-  // 跨 panel 跳转高亮：ContextPanel → SkillsPanel 点击 source 时设置
+  // 跨 panel 跳转高亮：能力来源跳转到 SkillsPanel 时设置
   // nonce 用于同一目标重复触发时强制 effect 重跑
   workbenchHighlight: WorkbenchHighlight | null;
 

@@ -47,6 +47,7 @@ import { CompanionPairRequestCard } from './components/CompanionPairRequestCard'
 import { VoiceBudgetAlertNotice } from './components/VoiceBudgetAlertNotice';
 import { RuntimeNotices } from './components/RuntimeNotices';
 import { FolderTrustDialog } from './components/FolderTrustDialog';
+import { SkillCautionPromptHost } from './components/SkillCautionPromptHost';
 import { useFolderTrustPrompt } from './hooks/useFolderTrustPrompt';
 import { ModelSetupPendingBanner } from './components/onboarding/ModelSetupPendingBanner';
 import { useTheme } from './hooks/useTheme';
@@ -897,8 +898,7 @@ export const App: React.FC = () => {
     <ErrorBoundary>
       <MemoryLearningProvider>
       <ToastContainer />
-      <ProviderStatusNotice />
-      <BudgetAlertNotice />
+      <ProviderStatusNotice /><BudgetAlertNotice />
       <VoiceBudgetAlertNotice />
       <CompanionPairRequestCard />
       <RuntimeNotices />
@@ -1167,7 +1167,9 @@ export const App: React.FC = () => {
       <MemoFloater />
 
       <PluginUiActivationPolicyBootstrap /><InternalFeatureWorkspaceRegistration featureId={activeInternalFeatureId} />
-      <ShellOverlaySlotHost />
+      {/* skill 安装 caution 确认面（拖拽 ZIP / /plugins install 共用）与 shell overlay
+          同属全局宿主，同行只为守住 App.tsx 的 max-lines 预算 */}
+      <ShellOverlaySlotHost /><SkillCautionPromptHost />
 
       {/* Background Task Panel - 后台任务浮动面板 */}
       <BackgroundSessionPanel />

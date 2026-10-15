@@ -2,7 +2,7 @@ import { SKILL_CHANNELS } from '@shared/ipc/channels';
 import type { SkillCautionConfirmationRequired } from '@shared/contract/skillInstallCaution';
 import { toast } from '../hooks/useToast';
 import { invokeSkillIPC, invokeSkillIPCOrThrow } from './invokeSkillIPC';
-import { isSkillCautionConfirmationRequired } from './skillInstallCaution';
+import { installWithSkillCautionConfirm } from './skillCautionPrompt';
 
 export function isSkillZipFileName(name: string): boolean {
   return name.toLowerCase().endsWith('.zip');
@@ -58,8 +58,8 @@ export interface SkillZipInstallResult {
 
 /**
  * 本地 ZIP 装 skill。host 侧 caution 门开着时，未签名来源命中 caution 会返回
- * SkillCautionConfirmationRequired（未安装）——确认面在设置页，重发时把
- * confirmationToken 原样带上即可。
+ * SkillCautionConfirmationRequired（未安装）——设置页与拖拽入口的确认面各自弹窗，
+ * 重发时把 confirmationToken 原样带上即可。
  */
 export async function installLocalSkillZip(payload: {
   zipPath?: string;
@@ -97,25 +97,30 @@ export async function divertDroppedSkillZips(
         leftover.push(file);
         continue;
       }
-      const result = await installLocalSkillZip(await fileToLocalZipPayload(file));
-      if (isSkillCautionConfirmationRequired(result)) {
-        // 拖拽路径没有确认面可弹：caution 待确认按失败收口（fail-closed），
-        // 不装也不当普通附件回流——要走确认流去设置页装
-        toast.error(`${args.failPrefix}${file.name}`);
-        continue;
-      }
-      if (!result.success && isNotASkillPackError(result.error)) {
-        leftover.push(file);
-        continue;
-      }
-      if (!result.success) {
-        toast.error(`${args.failPrefix}${result.error || file.name}`);
-        continue;
-      }
-      if (args.sessionId && result.skillName) {
-        await mountInstalledSkill(args.sessionId, result.skillName);
-      }
-      toast.success(`${args.successPrefix}${result.skillName || file.name}`);
+      const payload = await fileToLocalZipPayload(file);
+      await installWithSkillCautionConfirm({
+        send: (cautionConfirmationToken) => installLocalSkillZip(
+          cautionConfirmationToken ? { ...payload, cautionConfirmationToken } : payload,
+        ),
+        settle: async (result) => {
+          if (!result.success && isNotASkillPackError(result.error)) {
+            leftover.push(file);
+            return true;
+          }
+          if (!result.success) {
+            toast.error(`${args.failPrefix}${result.error || file.name}`);
+            return true;
+          }
+          if (args.sessionId && result.skillName) {
+            await mountInstalledSkill(args.sessionId, result.skillName);
+          }
+          toast.success(`${args.successPrefix}${result.skillName || file.name}`);
+          return true;
+        },
+        // 确认面宿主（App 级 SkillCautionPromptHost）不在的异常态：按旧 fail-closed
+        // 收口——不装也不当普通附件回流，留一声可区分的失败提示
+        onUnavailable: () => toast.error(`${args.failPrefix}${file.name}`),
+      });
     } catch (error) {
       toast.error(`${args.failPrefix}${error instanceof Error ? error.message : String(error)}`);
     }

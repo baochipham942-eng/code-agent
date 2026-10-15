@@ -403,7 +403,7 @@ export interface IpcInvokeHandlers {
 
   // Unified extensions
   [IPC_CHANNELS.EXTENSION_LIST]: () => Promise<ExtensionInfo[]>;
-  [IPC_CHANNELS.EXTENSION_INSTALL]: (spec: string) => Promise<{ success: boolean; error?: string }>;
+  [IPC_CHANNELS.EXTENSION_INSTALL]: (spec: string, cautionConfirmationToken?: string) => Promise<{ success: boolean; error?: string } | SkillCautionConfirmationRequired>;
   [IPC_CHANNELS.EXTENSION_UNINSTALL]: (id: string) => Promise<{ success: boolean; error?: string }>;
   [IPC_CHANNELS.EXTENSION_ENABLE]: (id: string) => Promise<{ success: boolean; error?: string }>;
   [IPC_CHANNELS.EXTENSION_DISABLE]: (id: string) => Promise<{ success: boolean; error?: string }>;

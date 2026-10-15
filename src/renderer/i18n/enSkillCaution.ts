@@ -19,4 +19,5 @@ export const enSkillCaution = {
   confirmInstall: 'Confirm install',
   confirming: 'Installing…',
   okButton: 'Got it',
+  notInstalledPrefix: 'Not installed: ',
 };

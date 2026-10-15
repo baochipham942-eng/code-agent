@@ -148,3 +148,7 @@ better-harness-out/
 
 # 会话临时工作区（派活守望脚本 / spike 产物），永不入库；留在树里会让 ship pr 判脏树
 scratchpad/
+
+# Codex CLI 本地运行态（codex 交叉验证可能在树内留下的 CODEX_HOME 内容），永不入库；
+# 不忽略会被 check-repository-structure 的根目录棘轮数成多余的顶层目录
+.codex/

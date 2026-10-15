@@ -3,7 +3,9 @@
 import React from 'react';
 import { act, fireEvent, render, renderHook, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Message } from '@shared/contract';
 import type { CreateCronJobInput } from '../../../src/renderer/services/cronClient';
+import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 
 const mocks = vi.hoisted(() => ({
   generateFromPrompt: vi.fn(),
@@ -131,6 +133,62 @@ describe('scheduled task confirmation', () => {
 
     expect(mocks.createJob).toHaveBeenCalledTimes(1);
     expect(mocks.createJob.mock.calls[0]?.[0]).not.toHaveProperty('restatement');
+    expect(mocks.toast.success).toHaveBeenCalledTimes(1);
+  });
+
+  it('one createJob leaves exactly one created notice: the host broadcast copy (FB-327 dedupe)', async () => {
+    // 真实链路（FB-327）：host 在 createJob 内部落库并广播 created 通知（含下次运行），
+    // App.tsx 的 SESSION_AUTOMATION_MESSAGE 监听器按 id 去重后 addMessage；
+    // confirmScheduleCreation 不再乐观插入同 id 的第二条（旧版 job.nextRunAt 常为
+    // undefined，所以第二条还没有「下次运行」行）。
+    useSessionStore.setState({ messages: [], currentSessionId: 'session-1' });
+    // host sessionAutomationService.writeAutomationMessage 的消息形状：
+    // id = `automation:created:${type}:${jobId}`，nextRunAt 来自 resolveRuntime。
+    const hostBroadcast: Message = {
+      id: 'automation:created:cron:job-1',
+      role: 'assistant',
+      source: 'automation',
+      content: '自动化已创建：每日邮件巡检\n频率：每 1 天\n状态：已启用',
+      timestamp: 1_700_000_000_000,
+      isMeta: true,
+      metadata: {
+        automation: {
+          automationId: 'cron:job-1',
+          automationType: 'cron',
+          event: 'created',
+          sourceSessionId: 'session-1',
+          sourceRefId: 'job-1',
+          status: 'active',
+          title: '每日邮件巡检',
+          cadenceLabel: '每 1 天',
+          nextRunAt: 2,
+        },
+      },
+    };
+    mocks.createJob.mockImplementationOnce(async () => {
+      // 广播在 createJob promise resolve 之前落地——照 App.tsx 监听器的写法投递。
+      const store = useSessionStore.getState();
+      if (!store.messages.some((m) => m.id === hostBroadcast.id)) {
+        store.addMessage(hostBroadcast);
+      }
+      return createdJob;
+    });
+
+    const { result } = renderHook(() => useScheduleSubmitHarness());
+    await act(async () => {
+      await result.current.runScheduleCreation('每天早上帮我看邮件');
+    });
+    await act(async () => {
+      await result.current.confirmScheduleCreation();
+    });
+
+    const createdNotices = useSessionStore.getState().messages.filter(
+      (m) => m.metadata?.automation?.event === 'created' && m.metadata?.automation?.automationId === 'cron:job-1',
+    );
+    expect(createdNotices).toHaveLength(1);
+    expect(createdNotices[0]?.id).toBe('automation:created:cron:job-1');
+    // 留下来的必须是 host 那条（带下次运行），不是缺 nextRunAt 的乐观副本。
+    expect(createdNotices[0]?.metadata?.automation?.nextRunAt).toBe(2);
     expect(mocks.toast.success).toHaveBeenCalledTimes(1);
   });
 
@@ -341,7 +399,7 @@ describe('untrusted cron draft fields never crash the confirm card', () => {
     ['restatement.what wrong type', { ...generatedDraft, restatement: { what: 5, notifyWhen: '有新邮件' } }, ['每日邮件巡检', WHEN, FN, INBOX]],
     ['restatement.notifyWhen wrong type', { ...generatedDraft, restatement: { what: '检查新邮件', notifyWhen: [] } }, ['每日邮件巡检', WHEN, FN, INBOX]],
     ['restatement wrong type', { ...generatedDraft, restatement: 'oops' }, ['每日邮件巡检', WHEN, FN, INBOX]],
-    ['cron timezone wrong type keeps expression', { ...generatedDraft, schedule: { type: 'cron', expression: '17 9 * * *', timezone: 5 } }, [W, '17 9 * * *', N, INBOX]],
+    ['cron timezone wrong type humanizes expression', { ...generatedDraft, schedule: { type: 'cron', expression: '17 9 * * *', timezone: 5 } }, [W, '每天 09:17', N, INBOX]],
     ['webhook without url falls back to description', {
       name: undefined,
       description: '推送结果',

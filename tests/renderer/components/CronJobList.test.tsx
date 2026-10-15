@@ -67,12 +67,12 @@ describe('CronJobList 人话副标题 + 触发源 chip', () => {
     expect(screen.getByTestId('cron-job-schedule-summary').textContent).toBe('工作日 15:00');
   });
 
-  it('覆盖不了的 cron 形态回退原表达式', () => {
+  it('覆盖不了的 cron 形态回退「自定义时间 · 原表达式」', () => {
     useCronStore.setState({
       jobs: [makeJob({ schedule: { type: 'cron', expression: '0 9 * * 1,3,5' } })],
     });
     render(<CronJobList />);
-    expect(screen.getByTestId('cron-job-schedule-summary').textContent).toBe('0 9 * * 1,3,5');
+    expect(screen.getByTestId('cron-job-schedule-summary').textContent).toBe('自定义时间 · 0 9 * * 1,3,5');
   });
 
   it('every 调度：每 2 小时 + 循环 chip', () => {

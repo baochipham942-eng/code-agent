@@ -102,6 +102,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
   private readonly durableCheckpointStates = new Map<string, unknown>();
   private readonly modelSpecsByRunId = new Map<string, ConversationModelSpec>();
   private readonly recoveredWaitingCancels = new Map<string, Promise<{ runId: string; sessionId: string }>>();
+  private readonly idleTransitionListeners = new Set<() => void>();
   private readonly serializeDurableMutation = createKeyedSerializer();
   private kernel: RunKernelAdapter | null = null;
 
@@ -820,6 +821,12 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     this.registerHandle(handle, true);
   }
 
+  /** 运行从 registry 消失后通知需要观察宿主空闲转场的调用方。 */
+  onIdleTransition(listener: () => void): () => void {
+    this.idleTransitionListeners.add(listener);
+    return () => { this.idleTransitionListeners.delete(listener); };
+  }
+
   private registerHandle(handle: RunHandle, indexBySession: boolean): void {
     const { runId, sessionId } = handle.context;
     const existingRun = this.handlesByRunId.get(runId);
@@ -955,6 +962,13 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     this.modelSpecsByRunId.delete(runId);
     if (this.runIdBySessionId.get(handle.context.sessionId) === runId) {
       this.runIdBySessionId.delete(handle.context.sessionId);
+    }
+    for (const listener of [...this.idleTransitionListeners]) {
+      try {
+        listener();
+      } catch (error) {
+        logger.warn('Run idle transition listener failed', { error: String(error) });
+      }
     }
     return true;
   }

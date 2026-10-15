@@ -885,6 +885,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                     if (draft.scheduleType === 'event') setEventValidationArmed(true);
                   }}
                   placeholder="不限"
+                  data-testid="cron-budget-limit-input"
                 />
               </FormField>
               <FormField
@@ -898,6 +899,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                   value={draft.maxRuns}
                   onChange={(e) => setField('maxRuns', e.target.value)}
                   placeholder="不限"
+                  data-testid="cron-maxruns-limit-input"
                 />
               </FormField>
             </div>

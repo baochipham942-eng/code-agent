@@ -19,6 +19,7 @@ import type {
   SessionAutomationType,
 } from '../../shared/contract/sessionAutomation';
 import { isCronUrgency } from '../../shared/cronUrgency';
+import { formatCronExpressionLabel } from '../../shared/cronHumanize';
 import { parseCronLoginWallStop } from '../../shared/utils/browserLoginWall';
 
 /**
@@ -116,7 +117,8 @@ export function formatCronScheduleLabel(schedule: CronScheduleConfig): string {
         : '一次性';
     }
     case 'cron':
-      return schedule.timezone ? `${schedule.expression} · ${schedule.timezone}` : schedule.expression;
+      // cron 表达式说人话（FB-326）：`17 8 * * *` → 「每天 08:17」；复杂式回退「自定义时间 · 原文」。
+      return formatCronExpressionLabel(schedule.expression, schedule.timezone, 'zh');
     default:
       return '按配置';
   }

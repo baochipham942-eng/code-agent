@@ -20,6 +20,7 @@ import { CronExecutionDetail } from './CronExecutionDetail';
 import { CronRunsOnPill } from './CronRunsOnSelector';
 import { CronResultChannelSummary } from './CronResultChannel';
 import { useEventScheduleNames } from './useChannelCatalog';
+import { CronGroupListenCheck } from './CronGroupListenCheck';
 
 interface CronJobDetailProps {
   job: CronJobDefinition | null;
@@ -192,6 +193,11 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job }) => {
             </button>
           </div>
         </div>
+
+        {job.enabled && job.runsOn === 'local' && job.schedule.type === 'event'
+          && job.schedule.source === 'channel' && job.schedule.chatId && (
+          <CronGroupListenCheck key={`${job.id}:${job.updatedAt}`} jobId={job.id} />
+        )}
 
         <details className="mt-4 group" data-testid="cron-detail-advanced">
           <summary className="flex cursor-pointer list-none items-center gap-1 text-xs text-zinc-500 transition-colors hover:text-zinc-300 [&::-webkit-details-marker]:hidden">

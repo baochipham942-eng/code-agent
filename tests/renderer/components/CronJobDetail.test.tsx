@@ -6,6 +6,7 @@ import type { CronJobDefinition } from '../../../src/shared/contract/cron';
 
 vi.mock('../../../src/renderer/services/cronClient', () => ({
   cronClient: {
+    getGroupListenCheck: vi.fn().mockResolvedValue({ status: 'idle' }),
     listJobs: vi.fn().mockResolvedValue([]),
     getStats: vi.fn().mockResolvedValue(null),
     getExecutions: vi.fn().mockResolvedValue([]),
@@ -90,4 +91,11 @@ describe('CronJobDetail', () => {
       copyingJobId: 'job-1',
     });
   });
+});
+
+it('offers the self-check in the detail of a newly created group listener', async () => {
+  render(<CronJobDetail job={makeJob({
+    scheduleType: 'event', schedule: { type: 'event', source: 'channel', accountId: 'feishu-1', chatId: 'group-1', eventName: 'message' },
+  })} />);
+  expect(await screen.findByRole('button', { name: '发条测试消息' })).toBeTruthy();
 });

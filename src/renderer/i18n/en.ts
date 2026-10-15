@@ -663,7 +663,6 @@ export const en = {
     title: 'Task Info',
     progress: 'Progress',
     workingFolder: 'Working Folder',
-    context: 'Context',
     connectors: 'Connectors',
     agents: 'Agents',
     skills: 'Skills',
@@ -734,7 +733,6 @@ export const en = {
     sectionReferences: 'References',
     contextEmpty: 'No context yet',
     tabStatus: 'Overview',
-    tabOrchestration: 'Orchestration',
     // WorkingFolder
     inputDirPlaceholder: 'Enter workspace path',
     confirm: 'OK',

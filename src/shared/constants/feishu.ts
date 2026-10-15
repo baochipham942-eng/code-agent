@@ -1,6 +1,9 @@
 /** lark-mcp 上游已近一年未更新，pin 住版本；升级需人工决策（工具名清单只对该版本成立） */
 export const LARK_MCP_PINNED_VERSION = '0.5.1';
 
+export const FEISHU_CONTACT_CACHE_TTL_MS = 60 * 60 * 1000;
+export const FEISHU_CONTACT_LOOKUP_TIMEOUT_MS = 1500;
+
 export const FEISHU_DEFAULT_DOMAIN = 'https://open.feishu.cn';
 
 /**

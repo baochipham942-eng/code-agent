@@ -6,6 +6,9 @@
 //   既有 repairPermission（与设置页"修复权限"同一 host 动作），行内展示结果；
 //   失败时不提供原地重试——系统对 Don't Allow 不会再弹——只记住 id，引导结束
 //   由 ModelOnboardingModal 深链落到该卡片。
+//   这些行仅在 macOS 渲染（返工 r2）：host 非 darwin 时三连接器一律 unavailable
+//   （registry 不注册，能力中心 native 卡也为空），渲染它们只会换来 macOS 专属
+//   指引、永久禁用的死按钮和落到不存在卡片的深链。
 // · Feishu/Google 只记意图（受控 pendingConnectorId），能力中心深链仍由
 //   ModelOnboardingModal 在 onComplete 之后统一发——modal 还开着时早发会被遮罩
 //   挡住，且 App 收尾的 setShowSettings(false) 会把面板再关上（返工 10-12）。
@@ -55,6 +58,12 @@ export const ConnectorsOnboardingStep: React.FC<ConnectorsOnboardingStepProps> =
 }) => {
   const { t } = useI18n();
   const text = t.onboarding;
+  // 与 VoiceInputButton 同款判定，render 时求值（模块级会在测试 stub 前冻结）。
+  // 非 macOS 时本机连接器行整行不渲染，见文件头注释。
+  const isMacPlatform = navigator.platform.toLowerCase().includes('mac');
+  const rowIds = isMacPlatform
+    ? CONNECTOR_ROW_IDS
+    : CONNECTOR_ROW_IDS.filter((id) => !LOCAL_CONNECTOR_ROW_IDS.has(id));
   const [busyConnectorId, setBusyConnectorId] = useState<string | null>(null);
   const [localOutcomes, setLocalOutcomes] = useState<Record<string, LocalConnectorOutcome>>({});
 
@@ -96,7 +105,7 @@ export const ConnectorsOnboardingStep: React.FC<ConnectorsOnboardingStepProps> =
         <p className="mt-1 text-xs leading-5 text-zinc-500">{text.connectorsDescription}</p>
       </div>
       <div className="grid gap-2 md:grid-cols-2">
-        {CONNECTOR_ROW_IDS.map((id) => {
+        {rowIds.map((id) => {
           const row = text.connectorRows[id];
           const FallbackIcon = CONNECTOR_ROW_ICONS[id as keyof typeof CONNECTOR_ROW_ICONS];
           const pending = pendingConnectorId === id;

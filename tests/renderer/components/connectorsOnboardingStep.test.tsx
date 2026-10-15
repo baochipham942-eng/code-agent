@@ -32,6 +32,13 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 
 import { ConnectorsOnboardingStep } from '../../../src/renderer/components/onboarding/ConnectorsOnboardingStep';
 
+// jsdom 的 navigator.platform 是 ''（非 mac）——本机连接器行按平台门控（返工 r2），
+// 默认桩成 macOS 让既有用例维持原行为；Windows 用例单独改写。
+const originalPlatform = navigator.platform;
+function stubNavigatorPlatform(value: string) {
+  Object.defineProperty(navigator, 'platform', { configurable: true, value });
+}
+
 function statusFor(id: string, overrides: Partial<ConnectorStatusSummary> = {}): ConnectorStatusSummary {
   return {
     id,
@@ -54,11 +61,13 @@ function renderStep() {
 
 describe('ConnectorsOnboardingStep', () => {
   beforeEach(() => {
+    stubNavigatorPlatform('MacIntel');
     mockLanguage.value = 'zh';
     mockInvokeDomain.mockReset();
   });
 
   afterEach(() => {
+    stubNavigatorPlatform(originalPlatform);
     cleanup();
   });
 
@@ -236,5 +245,26 @@ describe('ConnectorsOnboardingStep', () => {
       expect(screen.getByTestId('onboarding-connect-result-reminders').textContent)
         .toBe('Not allowed just now. Re-enable it under System Settings › Privacy & Security › Automation; the "Reminders" card will still open after you finish setup.');
     });
+  });
+
+  // 返工 r2：host 非 darwin 时 mail/calendar/reminders 一律 unavailable——这些行在
+  // 非 macOS 上渲染只会换来 macOS 专属授权指引 + 永久禁用的死按钮 + 落到不存在
+  // native 卡的深链。整行不渲染，SaaS 行不受影响。
+  it('非 macOS：本机连接器行整行不渲染，SaaS 行照常记意图', () => {
+    stubNavigatorPlatform('Win32');
+    const { onConnectIntent } = renderStep();
+
+    for (const id of ['mail', 'calendar', 'reminders']) {
+      expect(document.querySelector(`[data-onboarding-connector="${id}"]`)).toBeNull();
+      expect(screen.queryByTestId(`onboarding-connect-${id}`)).toBeNull();
+      expect(screen.queryByTestId(`onboarding-connect-result-${id}`)).toBeNull();
+    }
+    expect(screen.queryByText(/系统设置 › 隐私与安全性/)).toBeNull();
+
+    expect(document.querySelector('[data-onboarding-connector="feishu"]')).toBeTruthy();
+    expect(document.querySelector('[data-onboarding-connector="google-calendar"]')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('onboarding-connect-feishu'));
+    expect(mockInvokeDomain).not.toHaveBeenCalled();
+    expect(onConnectIntent).toHaveBeenCalledWith('feishu');
   });
 });

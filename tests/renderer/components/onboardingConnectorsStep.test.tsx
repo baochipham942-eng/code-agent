@@ -65,6 +65,13 @@ import { interpolate } from '../../../src/renderer/i18n/interpolate';
 
 const text = onboardingZh.onboarding;
 
+// jsdom 的 navigator.platform 是 ''（非 mac）——本机连接器行按平台门控（返工 r2），
+// 本文件用例默认按 macOS 渲染，保持与本机（darwin）一致的行为面。
+const originalPlatform = navigator.platform;
+function stubNavigatorPlatform(value: string) {
+  Object.defineProperty(navigator, 'platform', { configurable: true, value });
+}
+
 /** 默认 IPC 桩：探测到 codex_cli 订阅引擎；连接器步本机行按"授权通过"回包 */
 function defaultInvoke(_domain: string, action: string): Promise<unknown> {
   if (action === 'listSources') return Promise.resolve(sources);
@@ -99,6 +106,7 @@ function defaultInvoke(_domain: string, action: string): Promise<unknown> {
 }
 
 beforeEach(() => {
+  stubNavigatorPlatform('MacIntel');
   appState.workingDirectory = '/workspace';
   sessionState.sessions[0].workingDirectory = '/workspace';
   updateSessionEngine.mockReset();
@@ -108,7 +116,10 @@ beforeEach(() => {
   openCapabilitySettingsTarget.mockReset();
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  stubNavigatorPlatform(originalPlatform);
+  cleanup();
+});
 
 /** 选订阅引擎进模型步，再点到连接器步 */
 async function goToConnectorsStep() {
@@ -251,6 +262,31 @@ describe('onboarding connectors step', () => {
     fireEvent.click(screen.getByTestId('onboarding-voice-hotkey-skip'));
     await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
     expect(openCapabilitySettingsTarget).not.toHaveBeenCalled();
+  });
+
+  // 返工 r2：非 macOS 上本机连接器行不渲染——既不会触发注定 unavailable 的
+  // repairPermission，也不会把深链目标改指到平台上不存在的 native 卡。
+  it('on non-mac platforms the local rows are absent and the deep-link can only target SaaS', async () => {
+    Object.defineProperty(navigator, 'platform', { configurable: true, value: 'Win32' });
+    const onComplete = vi.fn();
+    render(<ModelOnboardingModal onComplete={onComplete} />);
+    await goToConnectorsStep();
+
+    for (const id of ['mail', 'calendar', 'reminders']) {
+      expect(document.querySelector(`[data-onboarding-connector="${id}"]`)).toBeNull();
+    }
+    fireEvent.click(screen.getByTestId('onboarding-connect-feishu'));
+    fireEvent.click(screen.getByTestId('onboarding-connectors-next'));
+    await screen.findByTestId('onboarding-voice-hotkey-step');
+    fireEvent.click(screen.getByTestId('onboarding-voice-hotkey-skip'));
+    await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
+    expect(openCapabilitySettingsTarget).toHaveBeenCalledTimes(1);
+    expect(openCapabilitySettingsTarget).toHaveBeenCalledWith({
+      kind: 'connector',
+      id: 'feishu',
+      source: 'onboarding',
+    });
+    expect(invokeDomain.mock.calls.some((call) => call[1] === 'repairPermission')).toBe(false);
   });
 
   it('skip and next both land on the voice step and complete exactly as before', async () => {

@@ -56,6 +56,7 @@ vi.mock('../../../src/host/services/core/configService', () => ({
 
 vi.mock('../../../src/host/channels/channelManager', () => ({
   getChannelManager: () => ({
+    getAccount: (id: string) => id === 'feishu-account' ? { type: 'feishu' } : { type: 'telegram' },
     getAllAccounts: () => [{ id: 'feishu-account', type: 'feishu', name: '工作飞书' }],
     sendMessage: channelState.sendMessage,
     on: channelState.on,
@@ -1316,5 +1317,33 @@ describe('N-ARTIFACT-STANDING-REFRESH 常设刷新接线', () => {
     expect(artifactRefreshState.begin).toHaveReturnedWith(undefined);
     expect(artifactRefreshState.finish).not.toHaveBeenCalled();
     await service.shutdown();
+  });
+});
+
+describe('Feishu group listen check service wiring', () => {
+  it('scopes checks to Feishu and clears them on disable, edit and delete', async () => {
+    const service = new CronService();
+    await service.initialize();
+    try {
+      const job = await service.createJob({
+        name: 'Group receipt check', runsOn: 'local', enabled: true,
+        scheduleType: 'event', maxRunBudget: 1,
+        schedule: { type: 'event', source: 'channel', accountId: 'feishu-account', chatId: 'group-1', eventName: 'message' },
+        action: { type: 'agent', agentType: 'default', prompt: 'Summarize messages' },
+      });
+      expect(service.getGroupListenCheck(job.id)).toEqual({ status: 'idle' });
+      expect(service.getGroupListenCheck(job.id, true)?.status).toBe('waiting');
+      await service.updateJob(job.id, { enabled: false });
+      expect(service.getGroupListenCheck(job.id)).toBeNull();
+      await service.updateJob(job.id, { enabled: true });
+      expect(service.getGroupListenCheck(job.id)).toEqual({ status: 'idle' });
+      service.getGroupListenCheck(job.id, true);
+      await service.updateJob(job.id, { schedule: { type: 'event', source: 'channel', accountId: 'telegram-account', chatId: 'group-1', eventName: 'message' } });
+      expect(service.getGroupListenCheck(job.id, true)).toBeNull();
+      await service.deleteJob(job.id);
+      expect(service.getGroupListenCheck(job.id)).toBeNull();
+    } finally {
+      await service.shutdown();
+    }
   });
 });

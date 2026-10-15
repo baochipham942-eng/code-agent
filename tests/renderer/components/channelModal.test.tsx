@@ -5,9 +5,19 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ChannelModal } from '../../../src/renderer/components/features/settings/tabs/ChannelsSettings';
+import { en } from '../../../src/renderer/i18n/en';
 import { zh } from '../../../src/renderer/i18n/zh';
 
 const channelsText = zh.settings.channels;
+const enChannelsText = en.settings.channels;
+
+const ZH_ALLOWLIST = '群里需 @ 才回应（默认）';
+const ZH_ALL_MEMBERS = '群里所有消息都回应（访客身份）';
+const ZH_HINT = '访客只能用只读工具；哪些人算信任用户，在上面的「白名单用户 ID」里单独设置';
+const ZH_PREREQUISITE = '需要先在 Telegram 里关闭机器人的隐私模式，连接后这里会告诉你是否已生效。';
+const EN_ALLOWLIST = 'Reply only when @-mentioned in groups (default)';
+const EN_ALL_MEMBERS = 'Reply to every group message (as guest)';
+const EN_HINT = 'Guests only get read-only tools. Who counts as trusted is set separately in the allowlisted user IDs field above.';
 
 afterEach(cleanup);
 
@@ -71,8 +81,13 @@ describe('ChannelModal (Modal primitive 迁移验证)', () => {
     fireEvent.change(screen.getAllByRole('combobox')[0]!, { target: { value: 'telegram' } });
     const modeSelect = screen.getByRole('combobox', { name: channelsText.modal.groupAccessModeLabel });
     expect((modeSelect as HTMLSelectElement).value).toBe('allowlist');
+    expect(screen.getByRole('option', { name: ZH_ALLOWLIST })).toBeTruthy();
+    expect(screen.getByRole('option', { name: ZH_ALL_MEMBERS })).toBeTruthy();
+    expect(screen.getByText(ZH_HINT)).toBeTruthy();
+    expect(screen.queryByText(ZH_PREREQUISITE)).toBeNull();
 
     fireEvent.change(modeSelect, { target: { value: 'all_members' } });
+    expect(screen.getByText(ZH_PREREQUISITE)).toBeTruthy();
     fireEvent.change(screen.getByPlaceholderText(channelsText.modal.botTokenPlaceholder), {
       target: { value: '123:abc' },
     });
@@ -104,5 +119,33 @@ describe('ChannelModal (Modal primitive 迁移验证)', () => {
 
     const modeSelect = screen.getByRole('combobox', { name: channelsText.modal.groupAccessModeLabel });
     expect((modeSelect as HTMLSelectElement).value).toBe('all_members');
+    expect(screen.getByText(ZH_PREREQUISITE)).toBeTruthy();
+
+    fireEvent.change(modeSelect, { target: { value: 'allowlist' } });
+    expect(screen.queryByText(ZH_PREREQUISITE)).toBeNull();
+  });
+
+  it('群准入两档的中英文案按行为命名，说明写明白名单是另一项设置', () => {
+    expect(channelsText.modal.groupAccessModeAllowlist).toBe(ZH_ALLOWLIST);
+    expect(channelsText.modal.groupAccessModeAllMembers).toBe(ZH_ALL_MEMBERS);
+    expect(channelsText.modal.groupAccessModeHint).toBe(ZH_HINT);
+    expect(channelsText.modal.groupAccessModePrivacyPrerequisite).toBe(ZH_PREREQUISITE);
+    expect(enChannelsText.modal.groupAccessModeAllowlist).toBe(EN_ALLOWLIST);
+    expect(enChannelsText.modal.groupAccessModeAllMembers).toBe(EN_ALL_MEMBERS);
+    expect(enChannelsText.modal.groupAccessModeHint).toBe(EN_HINT);
+    for (const warning of [
+      channelsText.modal.telegramPrivacyModeWarning,
+      enChannelsText.modal.telegramPrivacyModeWarning,
+    ]) {
+      expect(warning).toContain('/setprivacy');
+      expect(warning).toContain('Disable');
+    }
+    expect(channelsText.modal.telegramPrivacyModeWarning).toContain('移出群');
+    expect(channelsText.modal.telegramPrivacyModeWarning).toContain('重新拉进来');
+    expect(channelsText.modal.telegramPrivacyModeWarning).toContain('断开再连接');
+    expect(channelsText.modal.telegramPrivacyModeWarning).toContain('群管理员');
+    expect(enChannelsText.modal.telegramPrivacyModeWarning).toContain('Remove the bot from the group and add it back');
+    expect(enChannelsText.modal.telegramPrivacyModeWarning).toContain('disconnect and connect here to re-check');
+    expect(enChannelsText.modal.telegramPrivacyModeWarning).toContain('group admin');
   });
 });

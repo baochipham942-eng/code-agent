@@ -900,9 +900,8 @@ export class CronService implements Disposable {
         const snapshotTrackingEnabled = ctx?.[CRON_AGENT_SNAPSHOT.ENABLED_KEY] === true;
         // external_event（业务事件监听）任务：无 <cron_alert> = 无新料 = 本次安静。
         // notifyWhen 任务同标记判「值得打扰」（N-CRON-RESTATE-HUMAN-WHEN）；其余任务恒响。
-        const isExternalWatch = Boolean(ctx?.[EXTERNAL_WATCH.CONTEXT_KEY]);
-        const alertGated = isExternalWatch || Boolean(action.notifyWhen?.trim());
-        let hasAlert = !alertGated;
+        // hasAlert 不在此初始化：投递门前单点计算（本文件贴 max-lines 线）。
+        const isExternalWatch = Boolean(ctx?.[EXTERNAL_WATCH.CONTEXT_KEY]); const alertGated = isExternalWatch || Boolean(action.notifyWhen?.trim());
 
         let result: unknown; let finalAssistantText = '';
         let runError: unknown; let runFailed = false;
@@ -927,9 +926,6 @@ export class CronService implements Disposable {
             const snapshotToPersist = snapshotTrackingEnabled ? finalAssistantText.match(CRON_AGENT_SNAPSHOT.TAG_PATTERN)?.[1]?.trim() : undefined;
             // 只认标记：解析不到就保留上一次的值。拿整段回答顶替会把叙述性文字
             // 当成状态存下来，下一轮再原样注回提示词。
-            if (alertGated) {
-              hasAlert = EXTERNAL_WATCH.ALERT_TAG_PATTERN.test(finalAssistantText);
-            }
             if (snapshotToPersist) {
               const boundedSnapshot = truncateUtf8Snapshot(snapshotToPersist);
               if (boundedSnapshot.truncated) {
@@ -1019,6 +1015,11 @@ export class CronService implements Disposable {
           }
           throw runError;
         }
+
+        // 安静轮判定单点：gated（external-watch 或 notifyWhen）任务只认最终正文里的
+        // <cron_alert> 标记；非 gated 任务恒有警报。失败路径在上面已 throw，到这里的
+        // 一定是成功轮，finalAssistantText 已定型。
+        const hasAlert = alertGated ? EXTERNAL_WATCH.ALERT_TAG_PATTERN.test(finalAssistantText) : true;
 
         // 无新料的监听轮不投递（FB-239）：skipped 判定必须先于推送，
         // 否则安静轮照样把「没有更新」推到通道，跟 skipped 语义无进收件箱自相矛盾。

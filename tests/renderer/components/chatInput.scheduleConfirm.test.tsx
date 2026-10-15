@@ -635,7 +635,7 @@ describe('ScheduleConfirmCard — 卡内编辑', () => {
 
   it('when 行：改频率+时间 → compileSimpleSchedule 编译进草案（schedule 与 scheduleType 同步）', () => {
     const onDraftChange = vi.fn();
-    const { container } = render(
+    render(
       <ScheduleConfirmCard draft={agentDraft()} confirming={false} onConfirm={vi.fn()} onDismiss={vi.fn()} onDraftChange={onDraftChange} />,
     );
 

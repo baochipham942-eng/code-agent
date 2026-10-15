@@ -63,6 +63,7 @@ import {
   isMcpAuthenticationFailure,
 } from '../../../../utils/mcpRecovery';
 import { useI18n } from '../../../../hooks/useI18n';
+import { useConnectorCardFocus, getConnectorFocusBannerText } from '../../../../hooks/useConnectorCardFocus';
 import { useConnectorInChat } from '../../../../hooks/useConnectorInChat';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { ConnectorLogo } from '../../connectors/ConnectorLogo';
@@ -95,6 +96,8 @@ export const MCPSettings: React.FC = () => {
   const isAdmin = useAuthStore((s) => s.user?.isAdmin === true);
   const settingsCapabilityFocus = useAppStore((s) => s.settingsCapabilityFocus);
   const clearSettingsCapabilityFocus = useAppStore((s) => s.clearSettingsCapabilityFocus);
+  // 连接器深链落点：等目标卡渲染后滚动 + 高亮环（SaaS 卡先 skeleton，hook 内部轮询）
+  useConnectorCardFocus(settingsCapabilityFocus);
   const canManageMcp = true;
   const {
     status: mcpStatus,
@@ -500,12 +503,21 @@ export const MCPSettings: React.FC = () => {
       <WebModeBanner />
 
       {(settingsCapabilityFocus?.kind === 'mcp' || settingsCapabilityFocus?.kind === 'connector') && (
-        <div className="flex flex-col gap-2 rounded-lg border border-badge-info/20 bg-sky-500/[0.06] px-3 py-2 text-sm text-badge-info sm:flex-row sm:items-center sm:justify-between">
+        <div
+          className="flex flex-col gap-2 rounded-lg border border-badge-info/20 bg-sky-500/[0.06] px-3 py-2 text-sm text-badge-info sm:flex-row sm:items-center sm:justify-between"
+          data-testid="capability-focus-banner"
+        >
           <div>
-            {mcpText.focusPromptPrefix}
-            {settingsCapabilityFocus.kind === 'mcp' ? mcpText.focusPromptKindMcp : mcpText.focusPromptKindConnector}
-            {' '}
-            <span className="font-mono">{settingsCapabilityFocus.id}</span>
+            {settingsCapabilityFocus.kind === 'mcp'
+              ? (
+                <>
+                  {mcpText.focusPromptPrefix}
+                  {mcpText.focusPromptKindMcp}
+                  {' '}
+                  <span className="font-mono">{settingsCapabilityFocus.id}</span>
+                </>
+              )
+              : getConnectorFocusBannerText(settingsCapabilityFocus, t)}
           </div>
           <Button
             size="sm"

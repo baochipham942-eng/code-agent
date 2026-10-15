@@ -29,11 +29,15 @@ function initialRemindersReadiness(): NativeReadiness {
 let remindersReadiness: NativeReadiness = initialRemindersReadiness();
 let remindersProbeError: string | undefined;
 let remindersProbeCheckedAt: number | undefined;
+// 最近一次探测拿到的提醒列表是否为空（授权通过但无列表）——getStatus 的
+// ready 分支作为 noAccessibleItems 结构化信号下发，渲染层不做文案匹配
+let remindersProbeListEmpty = false;
 
 export function resetRemindersConnectorReadiness(): void {
   remindersReadiness = initialRemindersReadiness();
   remindersProbeError = undefined;
   remindersProbeCheckedAt = undefined;
+  remindersProbeListEmpty = false;
 }
 
 function parseLine(line: string): string[] {
@@ -61,6 +65,7 @@ function buildRemindersStatus(capabilities: string[]): ConnectorStatus {
       readiness: 'ready',
       checkedAt: remindersProbeCheckedAt,
       detail: 'Reminders connector 已通过本地授权/可用性检查。',
+      noAccessibleItems: remindersProbeListEmpty,
       actions: ['disconnect', 'remove'],
       capabilities,
     };
@@ -118,6 +123,7 @@ async function probeRemindersAccess(): Promise<string[]> {
     remindersReadiness = 'ready';
     remindersProbeCheckedAt = Date.now();
     remindersProbeError = undefined;
+    remindersProbeListEmpty = lists.length === 0;
     return lists;
   } catch (error) {
     remindersReadiness = 'failed';

@@ -19,10 +19,7 @@ import { setProviderProxyOverrides } from '../../model/providers/shared';
 import type { ProxyMode, ModelEntrySettings } from '../../../shared/contract/settings';
 import type { SharedProviderConfig, SharedProviderKeyConfig, SharedServiceKeyConfig } from '../cloud/builtinConfig';
 import { isDynamicCustomProviderId } from '../../../shared/modelRuntime';
-import {
-  MODEL_API_ENDPOINTS,
-  DEFAULT_MODELS,
-} from '../../../shared/constants';
+import { MODEL_API_ENDPOINTS, DEFAULT_MODELS } from '../../../shared/constants';
 import { DEFAULT_SETTINGS } from './configDefaults';
 import {
   getCloudManagedServiceKeyId,

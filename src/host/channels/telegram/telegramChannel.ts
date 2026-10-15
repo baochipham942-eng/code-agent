@@ -162,8 +162,9 @@ export class TelegramChannel extends BaseChannelPlugin {
         firstName: me.first_name,
       });
 
-      // 命令菜单：用户在输入框点「/」就能看到可用命令，不必先知道有哪些。失败只留痕不挡连接。
-      await Promise.all([
+      // 命令菜单：用户在输入框点「/」就能看到可用命令，不必先知道有哪些。不 await：失败或卡住
+      // 都只留痕，不拖住连接和收消息。
+      void Promise.all([
         this.bot.api.setMyCommands([
           { command: 'stop', description: 'Stop the running task' },
           { command: 'new', description: 'Start a new conversation' },

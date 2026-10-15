@@ -199,10 +199,12 @@ export class ChannelAgentBridge {
     }
 
     const parsed = parseChannelCommand(message.content, { chatType: message.context.chatType });
-    if (parsed) {
-      const paired = { ...message, ingressAuth: 'paired' as const };
-      const pairedKey = this.getSessionKey(accountId, paired);
-      const bindingKey = this.getSessionBindingKey(accountId, paired);
+    const paired = { ...message, ingressAuth: 'paired' as const };
+    const pairedKey = this.getSessionKey(accountId, paired);
+    const bindingKey = this.getSessionBindingKey(accountId, paired);
+    const naturalStopIdle = parsed?.natural === true && (message.ingressAuth === 'guest'
+      || !this.isSessionProcessing(this.channelSessions.get(pairedKey) ?? this.bindingStore.get(bindingKey)));
+    if (parsed && !naturalStopIdle) {
       await deliverChannelCommandText({
         guest: message.ingressAuth === 'guest',
         locale: this.config.configService.getSettings().ui.language === 'en' ? 'en-US' : 'zh-CN',
@@ -219,7 +221,8 @@ export class ChannelAgentBridge {
       return;
     }
 
-    if (message.ingressAuth !== 'guest') await this.hintBusySession(accountId, message, sessionKey);
+    // 不 await：提示要等一次 IM 往返，挡在入队前会让同会话后到的消息先入队、顺序颠倒。
+    if (message.ingressAuth !== 'guest') void this.hintBusySession(accountId, message, sessionKey);
 
     // 流式请求直接处理，不走 pipeline（需要保持 HTTP 连接）
     const isStreamingRequest = message.raw &&
@@ -266,11 +269,14 @@ export class ChannelAgentBridge {
     });
   }
 
+  private isSessionProcessing(sessionId: string | undefined): boolean {
+    return !!sessionId && getTaskManager().getOrchestrator(sessionId)?.isProcessing() === true;
+  }
+
   /** 运行中又来一条：告诉用户上一条还在跑、发「停」能中止。提示失败不挡这条消息入队。 */
   private async hintBusySession(accountId: string, message: ChannelMessage, sessionKey: string): Promise<void> {
     const sessionId = this.channelSessions.get(sessionKey);
-    if (!sessionId || this.busyHintedSessions.has(sessionId)) return;
-    if (!getTaskManager().getOrchestrator(sessionId)?.isProcessing()) return;
+    if (!sessionId || this.busyHintedSessions.has(sessionId) || !this.isSessionProcessing(sessionId)) return;
     this.busyHintedSessions.add(sessionId);
     try {
       const locale = this.config.configService.getSettings().ui.language === 'en' ? 'en-US' : 'zh-CN';

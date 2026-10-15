@@ -20,6 +20,7 @@ const sessionManager = vi.hoisted(() => {
 
 const sent = vi.hoisted(() => [] as Array<{ accountId: string; text: string; messageId: string }>);
 const accounts = vi.hoisted(() => new Map<string, { id: string; name: string; type: string }>());
+const sendGate = vi.hoisted(() => ({ wait: null as Promise<void> | null }));
 const settings = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
 
 const orchestrator = vi.hoisted(() => {
@@ -101,6 +102,7 @@ vi.mock('../../../src/host/channels/channelManager', () => ({
     getAccount: (accountId: string) => accounts.get(accountId),
     getResponseCallback: (accountId: string, message: ChannelMessage) => ({
       sendText: async (text: string) => {
+        if (sendGate.wait) await sendGate.wait;
         sent.push({ accountId, text, messageId: message.id });
         return { success: true };
       },
@@ -180,19 +182,26 @@ describe('parseChannelCommand', () => {
     ['/new', 'new', 'p2p'],
     ['/STATUS', 'status', 'channel'],
     ['<at user_id="ou_1">Neo</at> /status', 'status', 'group'],
-    // 整条消息恰好是固定短句（忽略首尾标点和 @）：不知道命令的用户发「停」也能停。
-    ['停', 'stop', 'p2p'],
-    ['停止！', 'stop', 'p2p'],
-    ['别做了。', 'stop', 'p2p'],
-    ['取消', 'stop', 'group'],
-    ['  Stop!  ', 'stop', 'p2p'],
-    ['ABORT', 'stop', 'p2p'],
-    ['@_user_1 停', 'stop', 'group'],
-    ['<at user_id="ou_1">Neo</at> 停下', 'stop', 'group'],
   ];
 
   it.each(accepted)('accepts %j', (text, command, chatType) => {
     expect(parseChannelCommand(text, { chatType })).toEqual({ command });
+  });
+
+  const naturalStops: Array<[string, ChannelMessage['context']['chatType']]> = [
+    // 整条消息恰好是固定短句（忽略首尾标点和 @）：不知道命令的用户发「停」也能停。
+    ['停', 'p2p'],
+    ['停止！', 'p2p'],
+    ['别做了。', 'p2p'],
+    ['取消', 'group'],
+    ['  Stop!  ', 'p2p'],
+    ['ABORT', 'p2p'],
+    ['@_user_1 停', 'group'],
+    ['<at user_id="ou_1">Neo</at> 停下', 'group'],
+  ];
+
+  it.each(naturalStops)('accepts natural stop %j', (text, chatType) => {
+    expect(parseChannelCommand(text, { chatType })).toEqual({ command: 'stop', natural: true });
   });
 
   const rejected = ['/stopwatch', 'hello /stop', '/statuses', '', '   ', 'plain text', '/stopping', '@name hello',
@@ -476,6 +485,26 @@ describe('channel slash commands', () => {
     expect(orchestrator.cancel).toHaveBeenCalledWith('user');
     expect(texts().at(-1)).toContain('已停止');
     expect(orchestrator.sendMessage.mock.calls.map((call) => call[0])).toEqual(['do the work']);
+  });
+
+  it('passes a natural stop phrase to the model when nothing is running', async () => {
+    await deliver('feishu-1', message({ id: 'idle-cancel', content: '取消' }));
+    await flushIngress();
+    expect(orchestrator.sendMessage.mock.calls.map((call) => call[0])).toEqual(['取消']);
+    expect(texts().some((text) => text.includes('没有运行中的任务'))).toBe(false);
+  });
+
+  it('keeps arrival order when the busy hint is slow to send', async () => {
+    await startHeldRun('feishu-1', 'chat-order');
+    const enqueue = vi.spyOn((harness as unknown as { pipeline: { enqueue: (m: { content: string }) => void } }).pipeline, 'enqueue');
+    let releaseHint = () => {};
+    sendGate.wait = new Promise<void>((resolve) => { releaseHint = resolve; });
+    const x = deliver('feishu-1', message({ id: 'order-x', content: 'X', context: { chatId: 'chat-order', chatType: 'p2p' } }));
+    const y = deliver('feishu-1', message({ id: 'order-y', content: 'Y', context: { chatId: 'chat-order', chatType: 'p2p' } }));
+    await Promise.all([x, y]);
+    expect(enqueue.mock.calls.map(([m]) => m.content)).toEqual(['X', 'Y']);
+    sendGate.wait = null;
+    releaseHint();
   });
 
   it('tells the sender once per turn that the previous message is still running', async () => {

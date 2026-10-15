@@ -15,6 +15,7 @@ import {
 import { parseToolSpecifier, matchSpecifier, type ParsedSpecifier } from './specifierParser';
 import { validateUserPermissionRule } from '../../shared/permissionRuleSyntax';
 import { recordPolicyMutation, type PolicyMutationSource } from './policyMutationSource';
+import { normalizeToolName } from '../tools/toolNames';
 
 const logger = createLogger('PolicyEngine');
 
@@ -472,7 +473,9 @@ export class PolicyEngine {
     // Tool matching
     if (matcher.tool) {
       if (typeof matcher.tool === 'string') {
-        if (request.tool !== matcher.tool) return false;
+        // 两侧都按执行器的规范名比：执行器把 Bash 规范成小写 bash，而用户在设置里写的是
+        // Bash(rm *)——按原样比永远对不上，用户拒绝规则形同虚设（N-PERM-USER-DENY-MAIN）。
+        if (normalizeToolName(request.tool) !== normalizeToolName(matcher.tool)) return false;
       } else {
         if (!matcher.tool.test(request.tool)) return false;
       }

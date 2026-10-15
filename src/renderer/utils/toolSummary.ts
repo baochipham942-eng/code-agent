@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { ToolCall } from '@shared/contract';
+import { aggregateEditArgsText } from '@shared/utils/editToolArgs';
 
 /**
  * 工具图标名称映射（使用 Lucide 图标名称）
@@ -143,8 +144,10 @@ export function summarizeToolCall(toolCall: ToolCall): string {
       if (toolCall.result && !toolCall.result.success) {
         return `编辑文件失败: ${fileName}`;
       }
-      const oldStr = (args?.old_string as string) || '';
-      const newStr = (args?.new_string as string) || '';
+      // 注册的 Edit 形状是 edits[]（multiEdit.schema.ts），归一后聚合取文
+      const editText = aggregateEditArgsText(args);
+      const oldStr = editText.oldText;
+      const newStr = editText.newText;
       const oldLines = oldStr.split('\n').length;
       const newLines = newStr.split('\n').length;
       const diff = newLines - oldLines;

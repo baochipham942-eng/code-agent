@@ -127,12 +127,14 @@ export type RuntimeAssetDisplayKind =
   | 'rtk'
   | 'audioInput'
   | 'browserAutomation'
-  | 'imageUnderstanding';
+  | 'imageUnderstanding'
+  | 'pythonEnv';
 
 export function getRuntimeAssetDisplayKind(
   asset: Pick<RuntimeAssetStatusEntry, 'id' | 'label'>,
 ): RuntimeAssetDisplayKind | null {
   const value = `${asset.id} ${asset.label}`.toLowerCase();
+  if (value.includes('python-env')) return 'pythonEnv';
   if (value.includes('computer-use')) return 'computerUse';
   if (value === 'uv uv sidecar binary' || value.includes('uv sidecar')) return 'uv';
   if (value === 'rtk rtk sidecar binary' || value.includes('rtk sidecar')) return 'rtk';
@@ -162,6 +164,10 @@ export interface RuntimeAssetPreparationStatus {
   transferred?: number;
   total?: number;
   error?: string;
+  /** 机器可读失败码（python-env：PYTHON_RUNTIME_*），renderer 据此选本地化文案 */
+  errorCode?: string;
+  /** 安装日志绝对路径（python-env 失败时总有），renderer 提供「查看日志」动作 */
+  logPath?: string;
 }
 
 export type RendererBundleAttemptOutcome = 'applied' | 'staged' | 'rolled-back' | 'skipped' | 'failed';

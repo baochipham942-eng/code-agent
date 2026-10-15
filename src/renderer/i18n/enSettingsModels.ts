@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { enSkillCaution } from './enSkillCaution';
+import { enSkillCautionRules } from './enSkillCautionRules';
 
 export const enSettingsModels = {
     model: {
@@ -560,7 +561,7 @@ export const enSettingsModels = {
         confirmFailed: 'Installation failed',
         alreadyInstalled: 'This library is already installed. To reinstall, remove it from the Installed tab first.',
       },
-      caution: enSkillCaution,
+      caution: { ...enSkillCaution, ...enSkillCautionRules },
       cards: {
         install: 'Install',
         builtinSkill: 'Built-in Skill',

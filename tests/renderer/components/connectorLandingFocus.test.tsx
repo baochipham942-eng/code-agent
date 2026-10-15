@@ -6,11 +6,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SettingsCapabilityFocus } from '../../../src/renderer/stores/appStore';
 import { useConnectorCardFocus } from '../../../src/renderer/hooks/useConnectorCardFocus';
 
-let scrollIntoView: ReturnType<typeof vi.fn>;
+function createScrollSpy() {
+  // jsdom 未实现 scrollIntoView；真实浏览器里由 hook 直接调用
+  return vi.fn((arg?: boolean | ScrollIntoViewOptions) => {
+    void arg;
+  });
+}
+
+let scrollIntoView: ReturnType<typeof createScrollSpy>;
 
 beforeEach(() => {
-  scrollIntoView = vi.fn();
-  // jsdom 未实现 scrollIntoView；真实浏览器里由 hook 直接调用
+  scrollIntoView = createScrollSpy();
   window.HTMLElement.prototype.scrollIntoView = scrollIntoView;
 });
 

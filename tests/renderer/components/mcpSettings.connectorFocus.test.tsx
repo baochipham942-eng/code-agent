@@ -119,13 +119,19 @@ vi.mock('../../../src/renderer/components/features/settings/tabs/McpDiscoverTab'
 
 import { MCPSettings } from '../../../src/renderer/components/features/settings/tabs/MCPSettings';
 
-let scrollIntoView: ReturnType<typeof vi.fn>;
+function createScrollSpy() {
+  return vi.fn((arg?: boolean | ScrollIntoViewOptions) => {
+    void arg;
+  });
+}
+
+let scrollIntoView: ReturnType<typeof createScrollSpy>;
 
 describe('MCPSettings connector focus landing', () => {
   beforeEach(() => {
     mockLanguage.value = 'zh';
     mockInvokeDomain.mockReset();
-    scrollIntoView = vi.fn();
+    scrollIntoView = createScrollSpy();
     window.HTMLElement.prototype.scrollIntoView = scrollIntoView;
   });
 

@@ -17,7 +17,7 @@ const CONNECTOR_CARD_POLL_MS = 100;
 const CONNECTOR_CARD_WAIT_MS = 15_000;
 const CONNECTOR_FOCUS_RING_CLASS = 'connector-focus-ring';
 
-export function findConnectorCardElement(connectorId: string): HTMLElement | null {
+function findConnectorCardElement(connectorId: string): HTMLElement | null {
   const selector = [
     `[data-testid="native-connector-card-${CSS.escape(connectorId)}"]`,
     `[data-testid="saas-connector-${CSS.escape(connectorId)}"]`,

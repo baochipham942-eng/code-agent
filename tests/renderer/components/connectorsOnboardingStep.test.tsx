@@ -154,10 +154,11 @@ describe('ConnectorsOnboardingStep', () => {
   });
 
   it('busy 期间展示连接中文案且本机行全禁用', async () => {
-    let release: ((statuses: ConnectorStatusSummary[]) => void) | null = null;
-    mockInvokeDomain.mockImplementation(() => new Promise<ConnectorStatusSummary[]>((resolve) => {
+    let release!: (statuses: ConnectorStatusSummary[]) => void;
+    const gate = new Promise<ConnectorStatusSummary[]>((resolve) => {
       release = resolve;
-    }));
+    });
+    mockInvokeDomain.mockReturnValue(gate);
     renderStep();
 
     fireEvent.click(screen.getByTestId('onboarding-connect-mail'));
@@ -166,7 +167,7 @@ describe('ConnectorsOnboardingStep', () => {
     expect(screen.getByTestId('onboarding-connect-calendar').hasAttribute('disabled')).toBe(true);
     expect(screen.queryByTestId('onboarding-connect-result-mail')).toBeNull();
 
-    release?.([statusFor('mail', { readiness: 'ready', connected: true })]);
+    release([statusFor('mail', { readiness: 'ready', connected: true })]);
     await waitFor(() => {
       expect(screen.getByTestId('onboarding-connect-result-mail').textContent).toBe('已连接 ✓');
     });

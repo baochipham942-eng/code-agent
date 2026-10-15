@@ -65,33 +65,46 @@ import { interpolate } from '../../../src/renderer/i18n/interpolate';
 
 const text = onboardingZh.onboarding;
 
+/** 默认 IPC 桩：探测到 codex_cli 订阅引擎；连接器步本机行按"授权通过"回包 */
+function defaultInvoke(_domain: string, action: string): Promise<unknown> {
+  if (action === 'listSources') return Promise.resolve(sources);
+  if (action === 'listModels') {
+    return Promise.resolve({
+      catalog: {
+        version: 'fixture',
+        updatedAt: '2026-07-30T00:00:00.000Z',
+        engines: [{
+          kind: 'codex_cli',
+          defaultModel: 'gpt-5.5',
+          models: [{ id: 'gpt-5.5', label: 'GPT-5.5', capabilities: ['code'], recommended: true }],
+        }],
+      },
+      source: 'local_discovery',
+      diagnostics: [],
+    });
+  }
+  if (action === 'get') return Promise.resolve({});
+  if (action === 'set') return Promise.resolve(undefined);
+  if (action === 'repairPermission') {
+    return Promise.resolve([{
+      id: 'mail',
+      label: 'Mail',
+      connected: true,
+      readiness: 'ready',
+      capabilities: [],
+    }]);
+  }
+  if (action === 'listStatuses') return Promise.resolve([]);
+  throw new Error(`Unexpected action: ${action}`);
+}
+
 beforeEach(() => {
   appState.workingDirectory = '/workspace';
   sessionState.sessions[0].workingDirectory = '/workspace';
   updateSessionEngine.mockReset();
   updateSessionEngine.mockResolvedValue(undefined);
   invokeDomain.mockReset();
-  invokeDomain.mockImplementation((_domain: string, action: string) => {
-    if (action === 'listSources') return Promise.resolve(sources);
-    if (action === 'listModels') {
-      return Promise.resolve({
-        catalog: {
-          version: 'fixture',
-          updatedAt: '2026-07-30T00:00:00.000Z',
-          engines: [{
-            kind: 'codex_cli',
-            defaultModel: 'gpt-5.5',
-            models: [{ id: 'gpt-5.5', label: 'GPT-5.5', capabilities: ['code'], recommended: true }],
-          }],
-        },
-        source: 'local_discovery',
-        diagnostics: [],
-      });
-    }
-    if (action === 'get') return Promise.resolve({});
-    if (action === 'set') return Promise.resolve(undefined);
-    throw new Error(`Unexpected action: ${action}`);
-  });
+  invokeDomain.mockImplementation(defaultInvoke);
   openCapabilitySettingsTarget.mockReset();
 });
 
@@ -154,28 +167,78 @@ describe('onboarding connectors step', () => {
     fireEvent.click(screen.getByTestId('onboarding-voice-hotkey-skip'));
     await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
     expect(openCapabilitySettingsTarget).toHaveBeenCalledTimes(1);
-    expect(openCapabilitySettingsTarget).toHaveBeenCalledWith({ kind: 'connector', id: 'feishu' });
+    expect(openCapabilitySettingsTarget).toHaveBeenCalledWith({
+      kind: 'connector',
+      id: 'feishu',
+      source: 'onboarding',
+    });
     // 深链在 onComplete 之后才发：App 侧 setShowSettings(false) 已同步跑完
     expect(openCapabilitySettingsTarget.mock.invocationCallOrder[0])
       .toBeGreaterThan(onComplete.mock.invocationCallOrder[0]);
   });
 
-  it('keeps only the last clicked connector as the pending deep-link target', async () => {
+  it('local row connects inline; a ready mail needs no landing so feishu stays the target', async () => {
     const onComplete = vi.fn();
     render(<ModelOnboardingModal onComplete={onComplete} />);
     await goToConnectorsStep();
 
     fireEvent.click(screen.getByTestId('onboarding-connect-feishu'));
     fireEvent.click(screen.getByTestId('onboarding-connect-mail'));
-    expect(screen.queryByText(interpolate(text.connectorsOpenedHint, { name: text.connectorRows.feishu.name }))).toBeNull();
-    expect(screen.getByText(interpolate(text.connectorsOpenedHint, { name: text.connectorRows.mail.name }))).toBeTruthy();
+    // mail 行内授权通过：展示已连接，不再出现"稍后打开"提示
+    await waitFor(() => {
+      expect(screen.getByTestId('onboarding-connect-result-mail').textContent).toBe(text.connectorReadyHint);
+    });
+    expect(screen.getByText(interpolate(text.connectorsOpenedHint, { name: text.connectorRows.feishu.name }))).toBeTruthy();
 
     fireEvent.click(screen.getByTestId('onboarding-connectors-skip'));
     await screen.findByTestId('onboarding-voice-hotkey-step');
     fireEvent.click(screen.getByTestId('onboarding-voice-hotkey-skip'));
     await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
+    // mail 已连上无需落页，深链仍指向待办的 feishu
     expect(openCapabilitySettingsTarget).toHaveBeenCalledTimes(1);
-    expect(openCapabilitySettingsTarget).toHaveBeenCalledWith({ kind: 'connector', id: 'mail' });
+    expect(openCapabilitySettingsTarget).toHaveBeenCalledWith({
+      kind: 'connector',
+      id: 'feishu',
+      source: 'onboarding',
+    });
+  });
+
+  it('a failed local connect retargets the pending deep-link to that connector', async () => {
+    invokeDomain.mockImplementation((domain: string, action: string) => {
+      if (action === 'repairPermission') {
+        return Promise.resolve([{
+          id: 'mail',
+          label: 'Mail',
+          connected: false,
+          readiness: 'failed',
+          error: 'Not authorized (-1743)',
+          capabilities: [],
+        }]);
+      }
+      return defaultInvoke(domain, action);
+    });
+    const onComplete = vi.fn();
+    render(<ModelOnboardingModal onComplete={onComplete} />);
+    await goToConnectorsStep();
+
+    fireEvent.click(screen.getByTestId('onboarding-connect-feishu'));
+    fireEvent.click(screen.getByTestId('onboarding-connect-mail'));
+    await waitFor(() => {
+      expect(screen.getByTestId('onboarding-connect-result-mail').textContent)
+        .toBe(interpolate(text.connectorDeniedHint, { name: text.connectorRows.mail.name }));
+    });
+
+    fireEvent.click(screen.getByTestId('onboarding-connectors-skip'));
+    await screen.findByTestId('onboarding-voice-hotkey-step');
+    fireEvent.click(screen.getByTestId('onboarding-voice-hotkey-skip'));
+    await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
+    // 失败的 mail 是最新待办：深链改指向 mail（落页高亮它的卡片）
+    expect(openCapabilitySettingsTarget).toHaveBeenCalledTimes(1);
+    expect(openCapabilitySettingsTarget).toHaveBeenCalledWith({
+      kind: 'connector',
+      id: 'mail',
+      source: 'onboarding',
+    });
   });
 
   it('never deep-links when finishing without any connect click', async () => {

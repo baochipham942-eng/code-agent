@@ -135,6 +135,6 @@ describe('settings.jev 持久化（重启读回）', () => {
       openRouterConsent: true,
       openRouterConsentAt: 111,
     });
-    expect(writer.getSettings().daemon.launchAtLogin).toBe(true);
+    expect(writer.getSettings().daemon?.launchAtLogin).toBe(true);
   });
 });

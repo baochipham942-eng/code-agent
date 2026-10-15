@@ -1277,7 +1277,7 @@ describe('ConversationRuntime', () => {
       await runtime.initializeRun('hello');
 
       const noticeCalls = vi.mocked(modules.contextAssembly.injectSystemMessage).mock.calls
-        .filter(([, source]) => source === 'memory-off-notice');
+        .filter((call: unknown[]) => call[1] === 'memory-off-notice');
       expect(noticeCalls).toHaveLength(1);
       expect(noticeCalls[0][0]).toBe(`<memory-off-notice>\n${MEMORY_OFF_NOTICE}\n</memory-off-notice>`);
 
@@ -1310,7 +1310,7 @@ describe('ConversationRuntime', () => {
       // 与 user-memory 同语义：注入块是 run 级临时消息（每 run 新 AgentLoop 重注一次、
       // 不落库），同一次 run 内不得重复注入。
       const noticeCalls = vi.mocked(modules.contextAssembly.injectSystemMessage).mock.calls
-        .filter(([, source]) => source === 'memory-off-notice');
+        .filter((call: unknown[]) => call[1] === 'memory-off-notice');
       expect(noticeCalls).toHaveLength(2);
     });
 

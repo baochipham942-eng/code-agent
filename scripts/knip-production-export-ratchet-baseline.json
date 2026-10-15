@@ -982,51 +982,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/agent/runtime/browser/designPreviewRepair.ts",
-      "name": "DesignPreviewRepairAgent",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/agent/runtime/browser/designPreviewRepair.ts",
-      "name": "DesignPreviewRepairAgentResult",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/agent/runtime/browser/designPreviewRepair.ts",
-      "name": "DesignPreviewRepairFinding",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/agent/runtime/browser/designPreviewRepair.ts",
-      "name": "DesignPreviewRepairResult",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/agent/runtime/browser/designPreviewRepair.ts",
-      "name": "DesignPreviewRepairRound",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/agent/runtime/browser/designPreviewRepair.ts",
-      "name": "DesignPreviewRepairSource",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/agent/runtime/browser/designPreviewRepair.ts",
-      "name": "DesignPreviewRepairStateScope",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/agent/runtime/browser/designPreviewRepair.ts",
-      "name": "DesignPreviewVisionRunner",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/agent/runtime/browser/designPreviewRepair.ts",
-      "name": "runDesignPreviewRepairLoop",
-      "kind": "export"
-    },
-    {
       "file": "src/host/agent/runtime/browser/inAppArtifactPreviewHealth.ts",
       "name": "buildWorkspaceFileUrl",
       "kind": "export"
@@ -5168,11 +5123,6 @@
     },
     {
       "file": "src/host/protocol/tools.ts",
-      "name": "Logger",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/protocol/tools.ts",
       "name": "ModelCallbackFn",
       "kind": "type"
     },
@@ -7732,11 +7682,6 @@
       "kind": "type"
     },
     {
-      "file": "src/host/services/roleAssets/roleContextBindings.ts",
-      "name": "getRoleBindingsPath",
-      "kind": "export"
-    },
-    {
       "file": "src/host/services/roleAssets/roleDraftQueue.ts",
       "name": "generateRoleAgentMd",
       "kind": "export"
@@ -8954,11 +8899,6 @@
     {
       "file": "src/host/tools/document/snapshotManager.ts",
       "name": "listSnapshots",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/tools/document/snapshotManager.ts",
-      "name": "restoreSnapshot",
       "kind": "export"
     },
     {
@@ -12877,11 +12817,6 @@
       "kind": "export"
     },
     {
-      "file": "src/renderer/hooks/useTurnProjection.ts",
-      "name": "projectTurns",
-      "kind": "export"
-    },
-    {
       "file": "src/renderer/hooks/useWorkbenchBrowserSession.ts",
       "name": "BrowserWorkbenchPreview",
       "kind": "type"
@@ -15769,11 +15704,6 @@
     {
       "file": "src/shared/contract/rolePackRegistry.ts",
       "name": "RolePackSkillRef",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/scriptRun.ts",
-      "name": "ScriptRunEventType",
       "kind": "type"
     },
     {

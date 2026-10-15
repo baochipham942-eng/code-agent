@@ -632,31 +632,6 @@
       "kind": "type"
     },
     {
-      "file": "src/host/agent/runtime/browser/designPreviewRepair.ts",
-      "name": "DesignPreviewRepairAgentResult",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/agent/runtime/browser/designPreviewRepair.ts",
-      "name": "DesignPreviewRepairFinding",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/agent/runtime/browser/designPreviewRepair.ts",
-      "name": "DesignPreviewRepairRound",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/agent/runtime/browser/designPreviewRepair.ts",
-      "name": "DesignPreviewRepairSource",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/agent/runtime/browser/designPreviewRepair.ts",
-      "name": "DesignPreviewRepairStateScope",
-      "kind": "type"
-    },
-    {
       "file": "src/host/agent/runtime/browser/playwrightRuntime.ts",
       "name": "PlaywrightChromiumLoadResult",
       "kind": "type"
@@ -3353,11 +3328,6 @@
     },
     {
       "file": "src/host/protocol/tools.ts",
-      "name": "CanUseToolRequestHint",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/protocol/tools.ts",
       "name": "ModelCallbackFn",
       "kind": "type"
     },
@@ -5687,11 +5657,6 @@
       "kind": "export"
     },
     {
-      "file": "src/host/tools/document/snapshotManager.ts",
-      "name": "restoreSnapshot",
-      "kind": "export"
-    },
-    {
       "file": "src/host/tools/fileReadTracker.ts",
       "name": "FileReadRecord",
       "kind": "type"
@@ -6284,11 +6249,6 @@
     {
       "file": "src/host/utils/sanitizeEnv.ts",
       "name": "sanitizeEnvValue",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/App.tsx",
-      "name": "App",
       "kind": "export"
     },
     {
@@ -9879,11 +9839,6 @@
     {
       "file": "src/shared/contract/rolePackRegistry.ts",
       "name": "RolePackSkillRef",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/scriptRun.ts",
-      "name": "ScriptRunEventType",
       "kind": "type"
     },
     {

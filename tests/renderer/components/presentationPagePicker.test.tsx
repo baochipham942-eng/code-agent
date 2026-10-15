@@ -84,7 +84,7 @@ describe('PresentationPagePicker 截图墙与降级链', () => {
   });
 
   it.each([
-    ['libreoffice-missing', '本机没有 LibreOffice'],
+    ['libreoffice-missing', '正在后台准备像素预览组件'],
     ['conversion-failed', '截图转换失败'],
   ] as const)('%s：正向可选页与反馈入口成立后，才断言没有截图', (state, message) => {
     const preview = { ...readyPreview, state, pages: readyPreview.pages.map(({ screenshotPath: _ignored, ...page }) => page) };

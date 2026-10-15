@@ -187,7 +187,7 @@ export const zh = {
     slidesPixelPreview: '像素预览',
     slidesPreviewHint: '渲染当前大纲的真实排版（本地转换，免费）',
     slidesPreviewing: '正在渲染预览…',
-    slidesPreviewMissing: '像素预览需要 LibreOffice。\nmacOS：brew install --cask libreoffice\n装好后回到这里重试。',
+    slidesPreviewMissing: '正在后台准备像素预览组件。请稍候片刻再试；进度可在「设置 > 本机功能」查看。',
     slidesKindCover: '封面',
     slidesKindContent: '内容',
     slidesKindEnd: '结尾',

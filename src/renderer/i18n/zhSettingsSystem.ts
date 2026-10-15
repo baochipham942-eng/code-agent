@@ -187,6 +187,7 @@ export const zhSettingsSystem = {
           browserAutomation: '网页操作',
           imageUnderstanding: '图片理解',
           pythonEnv: 'Python 数据运行时',
+          libreOffice: 'LibreOffice 文档渲染',
         },
         summary: {
           unavailableSuffix: '暂不可用',
@@ -211,6 +212,10 @@ export const zhSettingsSystem = {
           installFailed: '安装没有完成。点「重试」重新安装；仍失败可打开安装日志查看详情。',
           unsupported: '当前平台不支持托管 Python 运行时，数据处理功能暂不可用。',
           fallback: '安装没有完成。点「重试」重新安装。',
+          libreOfficeOffline: '网络不可用：连不上 LibreOffice 下载源，本次安装没有完成。检查网络后点「重试」。',
+          libreOfficeInstallFailed: 'LibreOffice 安装没有完成（可能是校验失败）。点「重试」重新安装；仍失败可打开安装日志查看详情。',
+          libreOfficeUnsupported: '当前平台不支持托管 LibreOffice，文档预览暂不可用。',
+          libreOfficeFallback: 'LibreOffice 尚未准备好，当前显示文字大纲。点「重试」重新安装。',
         },
         openInstallLog: '查看日志',
       },

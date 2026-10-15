@@ -187,7 +187,7 @@ export const en = {
     slidesPixelPreview: 'Pixel preview',
     slidesPreviewHint: 'Render the real layout of the current outline (local, free)',
     slidesPreviewing: 'Rendering preview…',
-    slidesPreviewMissing: 'Pixel preview needs LibreOffice.\nmacOS: brew install --cask libreoffice\nInstall it, then retry here.',
+    slidesPreviewMissing: 'The pixel preview component is being prepared in the background. Retry in a moment; check progress in Settings > Local capabilities.',
     slidesKindCover: 'Cover',
     slidesKindContent: 'Content',
     slidesKindEnd: 'End',

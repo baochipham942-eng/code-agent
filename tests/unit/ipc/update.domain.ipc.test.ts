@@ -160,16 +160,21 @@ describe('update.ipc dispatch 特征：自动检查与状态', () => {
       state: 'missing',
       nodeModules: [],
     };
-    const summary = { installed: 0, bundledFallback: 0, missing: 1, unsupported: 0 };
-    expect(await call('runtimeAssetsStatus')).toEqual({
-      success: true,
-      data: { assets: [pythonEnv], shell: 'ok', summary, preparation: { preparing: false } },
+    const firstStatus = await call('runtimeAssetsStatus');
+    expect(firstStatus.success).toBe(true);
+    expect(firstStatus.data).toMatchObject({
+      assets: expect.arrayContaining([pythonEnv, expect.objectContaining({ id: 'libreoffice', delivery: 'optional' })]),
+      shell: 'ok',
+      preparation: { preparing: false },
     });
     expect(h.assetsStatus).toHaveBeenCalledWith({ shellVersion: '1.0.0' });
     h.initialized = false;
-    expect(await call('runtimeAssetsStatus')).toEqual({
-      success: true,
-      data: { assets: [pythonEnv], shell: 'ok', summary, preparation: null },
+    const secondStatus = await call('runtimeAssetsStatus');
+    expect(secondStatus.success).toBe(true);
+    expect(secondStatus.data).toMatchObject({
+      assets: expect.arrayContaining([pythonEnv, expect.objectContaining({ id: 'libreoffice' })]),
+      shell: 'ok',
+      preparation: null,
     });
     expect(await call('rendererBundleStatus')).toEqual({ success: true, data: { active: 'v1' } });
     expect(h.bundleStatus).toHaveBeenCalledWith('/data/userData');

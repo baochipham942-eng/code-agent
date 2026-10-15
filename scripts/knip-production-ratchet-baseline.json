@@ -13,6 +13,7 @@
     "src/host/cron/index.ts",
     "src/host/errors/errorClassifier.ts",
     "src/host/errors/handler.ts",
+    "src/host/errors/knipProductionAnchor.ts",
     "src/host/errors/recoveryEngine.ts",
     "src/host/errors/recoveryTypes.ts",
     "src/host/errors/types.ts",

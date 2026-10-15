@@ -249,7 +249,11 @@ function extractSettingsUpdate(
 const USER_SELF_MANAGED_RULE_KEYS: ReadonlySet<string> = new Set(['deny', 'ask', 'allow']);
 
 function permissionsUpdateRequiresAdmin(permissions: unknown): boolean {
-  if (!permissions || typeof permissions !== 'object') return true;
+  // 数组不是「规则表更新」：`{permissions: []}` 的 Object.keys 是空集，曾被当成纯
+  // deny/ask/allow 更新放行非 admin 门，随后 mergeSettings 把整个 permissions 替换成
+  // [] 落盘，admin 配置（permissionMode/blockedCommands/inheritance…）全部丢失。
+  // 非普通对象形状一律走 admin 门（r2）。
+  if (!permissions || typeof permissions !== 'object' || Array.isArray(permissions)) return true;
   return Object.keys(permissions).some((key) => !USER_SELF_MANAGED_RULE_KEYS.has(key));
 }
 

@@ -267,6 +267,65 @@ describe('settings.ipc access control', () => {
     expect(result.matchedRule?.id).toBe('user-deny-Bash(echo neo-deny-probe*)');
   });
 
+  // r2：数组形状的 permissions 不是「纯规则表更新」——Object.keys([]) 是空集，曾被
+  // 当成空规则集放行非 admin 门，随后 mergeSettings 把整个 permissions 替换成 [] 落盘，
+  // admin 配置全部丢失。必须照旧走 admin 门（FORBIDDEN），落盘前状态原样。
+  it('treats an array-shaped permissions payload as admin-only: {permissions: []} must not wipe stored config (r2)', async () => {
+    const config = realConfigService();
+    const before = config.getSettings().permissions;
+    const ipc = makeFakeIpc();
+    registerSettingsHandlers(ipc as never, () => config as never);
+
+    const response = await ipc.getHandler()({}, {
+      action: 'set',
+      payload: { settings: { permissions: [] } },
+    });
+
+    expect(response).toMatchObject({
+      success: false,
+      error: { code: 'FORBIDDEN' },
+    });
+    // 门挡在 mergeSettings 之前：permissions 没被 [] 整体替换（admin 配置原样）。
+    const after = config.getSettings().permissions;
+    expect(Array.isArray(after)).toBe(false);
+    expect(after).toEqual(before);
+  });
+
+  // r2：「保存后立即生效」对删除也要成立——删掉规则保存后，旧 user-* 规则必须从
+  // PolicyEngine 卸载，不能继续生效到重启。
+  it('unloads a deleted deny rule on save: deny:[] stops the live PolicyEngine denial without restart (r2)', async () => {
+    const config = realConfigService();
+    const ipc = makeFakeIpc();
+    registerSettingsHandlers(ipc as never, () => config as never);
+
+    const saved = await ipc.getHandler()({}, {
+      action: 'set',
+      payload: { settings: { permissions: { deny: ['Bash(echo neo-deny-probe*)'] } } },
+    });
+    expect(saved.success).toBe(true);
+
+    const engine = getPolicyEngine();
+    const request = {
+      tool: 'Bash',
+      level: 'execute' as const,
+      description: 'echo probe',
+      command: 'echo neo-deny-probe 42',
+    };
+    expect(engine.evaluate(request).action).toBe('deny');
+
+    // 用户在 UI 删掉这条规则（列表清空）保存——同一进程，不重启。
+    const cleared = await ipc.getHandler()({}, {
+      action: 'set',
+      payload: { settings: { permissions: { deny: [] } } },
+    });
+    expect(cleared.success).toBe(true);
+    expect(config.getSettings().permissions.deny).toEqual([]);
+    expect(engine.getRules().some((rule) => rule.id === 'user-deny-Bash(echo neo-deny-probe*)')).toBe(false);
+    const after = engine.evaluate(request);
+    expect(after.action).not.toBe('deny');
+    expect(after.matchedRule?.id).not.toBe('user-deny-Bash(echo neo-deny-probe*)');
+  });
+
   it('still blocks a non-admin update that mixes rules with a privileged permissions field', async () => {
     const updateSettings = vi.fn();
     const ipc = makeFakeIpc();

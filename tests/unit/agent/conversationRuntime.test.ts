@@ -354,9 +354,13 @@ vi.mock('../../../src/host/services/toolSearch', () => ({
   getToolSearchService: vi.fn(),
 }));
 
+// 保留真实模块形状：conversationRuntime 还会调用 retainSkillInvocationForTurn，
+// 缺了这个 key 它就是 undefined，TypeError 被 catch 吞掉后整轮降级为 simple task。
+// 过滤逻辑本身的测试在 skillInvocationResolver.test.ts；这里只透传，测装配。
 vi.mock('../../../src/host/services/skills/skillInvocationResolver', () => ({
   resolveSkillInvocation: vi.fn().mockResolvedValue(null),
   buildSkillInvocationContext: vi.fn(),
+  retainSkillInvocationForTurn: vi.fn((invocation: unknown) => invocation),
 }));
 
 // N-JEV-WARDEN-MOCK：warden 规则/动作逻辑的单测在 jevWarden.test.ts（判官全 mock）；

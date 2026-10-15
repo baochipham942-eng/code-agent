@@ -1932,7 +1932,14 @@ export class ToolExecutor {
         commandValidation,
         commandRiskUnknown ? 'unknown' : knownAskCommandRisk,
       );
-      if (pluginOrigin) Object.assign(permissionRequest.details, pluginOrigin);
+      if (pluginOrigin) {
+        Object.assign(permissionRequest.details, pluginOrigin);
+      } else if (pluginId) {
+        // builtin 工具：参数自带的 pluginId/pluginName 会随 { ...params } 进 details（schema 根上
+        // 不剥额外字段），把审批卡来源伪造成「来自插件《…》」——必须删掉。
+        delete permissionRequest.details.pluginId;
+        delete permissionRequest.details.pluginName;
+      }
       if (
         permissionRequest.type === 'file_read'
         || permissionRequest.type === 'file_write'

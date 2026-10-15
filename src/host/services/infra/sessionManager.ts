@@ -80,9 +80,7 @@ export interface SessionCreateOptions {
 	  metadata?: Session['metadata'];
 	  readOnly?: boolean;
   retryOfSessionId?: string;
-  userId?: string | null;
-  /** 会话级记忆档；缺省 'auto'。'off' = 不读也不写长期记忆（新任务级开关）。 */
-  memoryMode?: Session['memoryMode'];
+  userId?: string | null; memoryMode?: Session['memoryMode'];
 }
 
 export interface SessionListOptions {

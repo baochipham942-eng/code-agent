@@ -14,6 +14,12 @@ const dbState = vi.hoisted(() => ({
   db: null as import('better-sqlite3').Database | null,
 }));
 
+// 稳定的 addMessageToSession 桩：automation 通知消息写入 sessions 消息流都走它，
+// 测试要按次断言「一次创建恰好写一条 created 通知」。
+const sessionMessages = vi.hoisted(() => ({
+  addMessageToSession: vi.fn(),
+}));
+
 const service = {
   recordCreated: vi.fn(),
   upsert: vi.fn(),
@@ -34,7 +40,7 @@ vi.mock('../../../src/host/platform', () => ({
 }));
 
 vi.mock('../../../src/host/services/infra/sessionManager', () => ({
-  getSessionManager: () => ({ addMessageToSession: vi.fn() }),
+  getSessionManager: () => ({ addMessageToSession: sessionMessages.addMessageToSession }),
 }));
 
 import {
@@ -47,6 +53,7 @@ import {
   recordCronAutomationArchived,
   recordCronAutomationExecution,
 } from '../../../src/host/cron/cronAutomationBridge';
+import { cronLoginWallMetadata } from '../../../src/host/cron/cronLoginWall';
 import { SessionAutomationService } from '../../../src/host/services/sessionAutomation/sessionAutomationService';
 
 const def = (over: Partial<CronJobDefinition> = {}): CronJobDefinition => ({
@@ -64,6 +71,24 @@ const def = (over: Partial<CronJobDefinition> = {}): CronJobDefinition => ({
 
 const identityRuntime = (d: CronJobDefinition) => d;
 
+describe('cron login-gated site warning detection', () => {
+  it('requires a URL and explicit login-gated hint', () => {
+    expect(cronLoginWallMetadata({
+      action: { type: 'agent', agentType: 'default', prompt: 'Check https://example.test after login' },
+    })).toEqual({ loginGatedSiteOrigin: 'https://example.test' });
+    expect(cronLoginWallMetadata({
+      action: { type: 'agent', agentType: 'default', prompt: 'Read https://example.test public docs' },
+    })).toBeUndefined();
+  });
+
+  it('preserves unrelated metadata while storing the warning origin', () => {
+    expect(cronLoginWallMetadata(
+      { action: { type: 'agent', agentType: 'default', prompt: 'Sign in to https://example.test first' } },
+      { sourceMessageId: 'msg-1' },
+    )).toEqual({ sourceMessageId: 'msg-1', loginGatedSiteOrigin: 'https://example.test' });
+  });
+});
+
 beforeEach(() => {
   service.recordCreated.mockReset();
   service.upsert.mockReset();
@@ -72,6 +97,7 @@ beforeEach(() => {
   service.getBySourceRef.mockReturnValue(null);
   service.recordCreated.mockResolvedValue(undefined);
   service.recordEvent.mockResolvedValue(undefined);
+  sessionMessages.addMessageToSession.mockReset();
   dbState.db = new Database(':memory:');
   dbState.db.pragma('foreign_keys = ON');
   applySchema(dbState.db, {
@@ -246,10 +272,16 @@ describe('formatCronScheduleLabel', () => {
   });
 
   it('formats cron expressions with optional timezone', () => {
-    expect(formatCronScheduleLabel({ type: 'cron', expression: '0 9 * * *' })).toBe('0 9 * * *');
+    expect(formatCronScheduleLabel({ type: 'cron', expression: '0 9 * * *' })).toBe('每天 09:00');
+    // 人话形态不带时区后缀
     expect(
       formatCronScheduleLabel({ type: 'cron', expression: '0 9 * * *', timezone: 'Asia/Shanghai' })
-    ).toBe('0 9 * * * · Asia/Shanghai');
+    ).toBe('每天 09:00');
+    // 复杂表达式回退「自定义时间 · 原文[ · 时区]」，不瞎猜
+    expect(formatCronScheduleLabel({ type: 'cron', expression: '0 9 1,15 * *' })).toBe('自定义时间 · 0 9 1,15 * *');
+    expect(
+      formatCronScheduleLabel({ type: 'cron', expression: '0 9 1,15 * *', timezone: 'Asia/Shanghai' })
+    ).toBe('自定义时间 · 0 9 1,15 * * · Asia/Shanghai');
   });
 });
 
@@ -273,11 +305,57 @@ describe('recordCronAutomationCreated', () => {
     expect(arg.cadenceLabel).toBe('每 5 分钟');
   });
 
+  it('cron 任务（FB-326）cadenceLabel 说人话：17 8 * * * → 每天 08:17', async () => {
+    await recordCronAutomationCreated(
+      def({
+        metadata: { sourceSessionId: 'sess' },
+        scheduleType: 'cron',
+        schedule: { type: 'cron', expression: '17 8 * * *', timezone: 'Asia/Shanghai' },
+      }),
+      identityRuntime
+    );
+    expect(service.recordCreated).toHaveBeenCalledTimes(1);
+    expect(service.recordCreated.mock.calls[0][0].cadenceLabel).toBe('每天 08:17');
+  });
+
   it('swallows service errors', async () => {
     service.recordCreated.mockRejectedValueOnce(new Error('db down'));
     await expect(
       recordCronAutomationCreated(def({ metadata: { sourceSessionId: 'sess' } }), identityRuntime)
     ).resolves.toBeUndefined();
+  });
+
+  it('one creation writes exactly one created chat notice (FB-327: host is the single emitter)', async () => {
+    // 真实 SessionAutomationService + 真库：createJob 唯一调用一次的
+    // recordCronAutomationCreated 必须恰好写一条 automation:created 消息（含下次运行）。
+    const automationService = new SessionAutomationService();
+    service.recordCreated.mockImplementation(automationService.recordCreated.bind(automationService));
+    service.upsert.mockImplementation(automationService.upsert.bind(automationService));
+    service.getBySourceRef.mockImplementation(automationService.getBySourceRef.bind(automationService));
+    dbState.db?.prepare(`
+      INSERT INTO sessions (id, title, model_provider, model_name, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run('sess', 'Source', 'test', 'test', 1, 1);
+
+    await recordCronAutomationCreated(
+      def({ metadata: { sourceSessionId: 'sess' } }),
+      (d) => ({ ...d, nextRunAt: 123_456 }),
+    );
+
+    expect(service.recordCreated).toHaveBeenCalledTimes(1);
+    expect(sessionMessages.addMessageToSession).toHaveBeenCalledTimes(1);
+    const [sessionId, message] = sessionMessages.addMessageToSession.mock.calls[0];
+    expect(sessionId).toBe('sess');
+    expect(message.id).toBe('automation:created:cron:job-1');
+    expect(message.metadata?.automation).toMatchObject({
+      automationId: 'cron:job-1',
+      event: 'created',
+      status: 'active',
+    });
+    // host 那条带 resolveRuntime 的下次运行——这是渲染端乐观副本缺的信息。
+    expect(message.metadata?.automation?.nextRunAt).toBe(123_456);
+    expect(message.content).toContain('自动化已创建');
+    expect(message.content).toContain('下次运行');
   });
 });
 
@@ -378,6 +456,20 @@ describe('recordCronAutomationExecution', () => {
     expect(arg.error).toBe('boom');
     // The seed upsert reflects the one-time schedule, not a recurring one.
     expect(service.upsert.mock.calls[0][0].cadenceLabel).not.toContain('每');
+  });
+
+  it('maps an unattended login wall to the review inbox with the site origin', async () => {
+    await recordCronAutomationExecution(
+      def({ metadata: { sourceSessionId: 'sess' }, action: { type: 'agent', agentType: 'default', prompt: 'visit site' } }),
+      exec({ status: 'failed', error: 'CRON_LOGIN_WALL_STOP|https://example.test; stop this unattended run' }),
+      identityRuntime,
+    );
+    const arg = service.recordEvent.mock.calls[0][0];
+    expect(arg.event).toBe('failed');
+    expect(arg.recordStatus).toBe('active');
+    expect(arg.configPatch).toEqual({
+      loginWall: { siteOrigin: 'https://example.test', at: expect.any(Number) },
+    });
   });
 
   it('成功的 recurring agent 运行：记录保持 active 并打 pendingReview 标记（A4 待过目）', async () => {

@@ -29,6 +29,7 @@ import type {
   CapabilityPackagePreview,
   InstalledCapabilityPackage,
 } from '@shared/contract/capabilityPackage';
+import type { SkillCautionConfirmationRequired } from '@shared/contract/skillInstallCaution';
 import { useAuthStore } from '../../../../stores/authStore';
 import { useInternalFeatureStore } from '../../../../internalFeatures/internalFeatureStore';
 import { refreshThirdPartyPluginUi } from '../../../../slots/thirdPartyPluginUiLoader';
@@ -43,6 +44,9 @@ import { BundledCapabilitiesTab } from '../../capabilityHub/BundledCapabilitiesT
 import { HubTabHeader } from '../../capabilityHub/HubTabHeader';
 import { Pill, SummaryTile } from './PluginsSettings.ui';
 import { CapabilityPackageCard } from './CapabilityPackageCard';
+import { SkillCautionDisclosureModal } from './SkillCautionDisclosureModal';
+import { getSkillCautionSourceLabel, useSkillCautionFlow } from './useSkillCautionFlow';
+import { isSkillCautionConfirmationRequired } from '../../../../services/skillInstallCaution';
 import {
   PLUGIN_APPROVAL_COMPLETED_EVENT,
   PLUGIN_APPROVAL_REFRESH_EVENT,
@@ -114,6 +118,16 @@ export const PluginsSettings: React.FC = () => {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [installStates, setInstallStates] = useState<Record<string, 'installing' | 'cancelling'>>({});
   const [notice, setNotice] = useState<Notice | null>(null);
+  // skill caution 披露：插件内含 skill 的内容命中 caution（未签名来源）时装前确认，
+  // 文案表在 skills 域（caution 是 skill 装载扫描的概念，marketplace 入口共用）
+  const cautionText = t.settings.skills.caution;
+  const {
+    cautionDisclosure,
+    cautionBusy,
+    requestSkillCautionConfirmation,
+    closeSkillCaution,
+    confirmSkillCaution,
+  } = useSkillCautionFlow();
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -255,6 +269,42 @@ export const PluginsSettings: React.FC = () => {
     });
   }, [pluginsText, runAction]);
 
+  // marketplace 插件的 skill caution 确认流：确认 = 携 host 下发的 token 原样重发
+  // （options 其余不变）；内容变化导致二次 confirmation-required 时，用新命中/新 token
+  // 重开同一弹窗。onConfirm 不会抛（失败按正常安装路径出 notice）
+  const openMarketplaceCautionConfirmation = (
+    required: SkillCautionConfirmationRequired,
+    spec: string,
+    options: { scope: PluginScope; projectPath?: string },
+  ) => {
+    requestSkillCautionConfirmation({
+      pluginName: required.pluginSpec || spec,
+      sourceLabel: getSkillCautionSourceLabel(required.sourceTrust, cautionText.sourceLabels),
+      hits: required.cautionHits,
+      onConfirm: async () => {
+        const retry = await ipcService.invoke(IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN, spec, {
+          ...options,
+          cautionConfirmationToken: required.confirmationToken,
+        });
+        if (retry?.cancelled) return true;
+        if (isSkillCautionConfirmationRequired(retry)) {
+          openMarketplaceCautionConfirmation(retry, spec, options);
+          return false;
+        }
+        if (!retry?.success) {
+          setNotice({ type: 'error', text: getResultError(retry, pluginsText.errors) });
+          return true;
+        }
+        setNotice({
+          type: 'success',
+          text: `${pluginsText.toast.installSuccessPrefix}${spec}${pluginsText.toast.installSuccessSuffix}`,
+        });
+        await reload();
+        return true;
+      },
+    });
+  };
+
   const handleInstall = useCallback((plugin: MarketplacePluginEntry) => {
     const spec = getPluginSpec(plugin);
     setInstallStates((current) => ({ ...current, [spec]: 'installing' }));
@@ -266,6 +316,11 @@ export const PluginsSettings: React.FC = () => {
       try {
         const result = await ipcService.invoke(IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN, spec, options);
         if (result?.cancelled) return;
+        // 插件内含 skill 命中 caution（未签名来源）：host 未落盘，弹确认面；取消即不装
+        if (isSkillCautionConfirmationRequired(result)) {
+          openMarketplaceCautionConfirmation(result, spec, options);
+          return;
+        }
         if (!result?.success) throw new Error(getResultError(result, pluginsText.errors));
         setNotice({
           type: 'success',
@@ -918,6 +973,18 @@ export const PluginsSettings: React.FC = () => {
         </SettingsDetails>
       )}
 
+      {/* skill caution 披露：marketplace 安装的装前确认（confirm 模式） */}
+      {cautionDisclosure && (
+        <SkillCautionDisclosureModal
+          mode={cautionDisclosure.mode}
+          pluginName={cautionDisclosure.pluginName}
+          sourceLabel={cautionDisclosure.sourceLabel}
+          hits={cautionDisclosure.hits}
+          busy={cautionBusy}
+          onConfirm={cautionDisclosure.mode === 'confirm' ? confirmSkillCaution : undefined}
+          onClose={closeSkillCaution}
+        />
+      )}
     </div>
   );
 };

@@ -19,6 +19,8 @@ import type {
   SessionAutomationType,
 } from '../../shared/contract/sessionAutomation';
 import { isCronUrgency } from '../../shared/cronUrgency';
+import { formatCronExpressionLabel } from '../../shared/cronHumanize';
+import { parseCronLoginWallStop } from '../../shared/utils/browserLoginWall';
 
 /**
  * 解析定时任务对应的「运行时定义」（带最新 nextRunAt）。
@@ -115,7 +117,8 @@ export function formatCronScheduleLabel(schedule: CronScheduleConfig): string {
         : '一次性';
     }
     case 'cron':
-      return schedule.timezone ? `${schedule.expression} · ${schedule.timezone}` : schedule.expression;
+      // cron 表达式说人话（FB-326）：`17 8 * * *` → 「每天 08:17」；复杂式回退「自定义时间 · 原文」。
+      return formatCronExpressionLabel(schedule.expression, schedule.timezone, 'zh');
     default:
       return '按配置';
   }
@@ -225,6 +228,7 @@ export async function recordCronAutomationExecution(
       });
     }
     const skipped = execution.status === 'completed' && isSkippedResult(execution.result);
+    const loginWall = parseCronLoginWallStop(execution.error);
     const event = skipped ? 'skipped' : execution.status === 'failed' ? 'failed' : 'completed';
     const eventStatus: SessionAutomationStatus = skipped
       ? 'skipped'
@@ -262,7 +266,9 @@ export async function recordCronAutomationExecution(
           ...(urgencyRaw ? { urgencyRaw } : {}),
           ...(digest ? { digest } : {}),
         } } }
-        : {}),
+        : loginWall
+          ? { configPatch: { loginWall: { siteOrigin: loginWall.siteOrigin, at: execution.completedAt ?? Date.now() } } }
+          : {}),
       resultSessionId: execution.sessionId,
       summary: skipped
         ? '当前触发被跳过。'

@@ -3,6 +3,7 @@ import {
   expect,
   test as base,
   type APIRequestContext,
+  type Locator,
   type Page,
   type Route,
   type TestInfo,
@@ -17,7 +18,7 @@ import {
 } from './axeReport';
 
 export { expect };
-export type { APIRequestContext, Page, Route };
+export type { APIRequestContext, Locator, Page, Route };
 
 interface ScanA11yOptions {
   root?: AxeRoot;

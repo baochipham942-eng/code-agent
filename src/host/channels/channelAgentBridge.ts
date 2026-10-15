@@ -29,6 +29,7 @@ import {
   type ChannelSessionBindingStorage,
 } from './channelSessionBindingStore';
 import { clearStoppedChannelRuns, consumeStoppedChannelRun, deliverChannelCommandText, parseChannelCommand } from './channelCommandRuntime';
+import { channelCommandText } from './channelCommandI18n';
 
 const logger = createLogger('ChannelAgentBridge');
 
@@ -97,6 +98,8 @@ export class ChannelAgentBridge {
   private channelManager = getChannelManager();
   private pipeline: IngressPipeline;
   private channelSessions: Map<string, string> = new Map();
+  /** 本轮已提示过「正在处理上一条」的会话；下一轮开跑时清掉（每轮最多提示一次）。 */
+  private busyHintedSessions = new Set<string>();
   private bindingStore: ChannelSessionBindingStorage;
 
   // 追踪正在处理的消息
@@ -156,6 +159,7 @@ export class ChannelAgentBridge {
   async shutdown(): Promise<void> {
     this.pipeline.shutdown();
     this.channelSessions.clear();
+    this.busyHintedSessions.clear();
     this.pendingChannelMessages.clear();
     await this.channelManager.disconnectAll();
     this.processingMessages.clear();
@@ -215,6 +219,8 @@ export class ChannelAgentBridge {
       return;
     }
 
+    if (message.ingressAuth !== 'guest') await this.hintBusySession(accountId, message, sessionKey);
+
     // 流式请求直接处理，不走 pipeline（需要保持 HTTP 连接）
     const isStreamingRequest = message.raw &&
       typeof message.raw === 'object' &&
@@ -258,6 +264,21 @@ export class ChannelAgentBridge {
         raw: message.raw,
       },
     });
+  }
+
+  /** 运行中又来一条：告诉用户上一条还在跑、发「停」能中止。提示失败不挡这条消息入队。 */
+  private async hintBusySession(accountId: string, message: ChannelMessage, sessionKey: string): Promise<void> {
+    const sessionId = this.channelSessions.get(sessionKey);
+    if (!sessionId || this.busyHintedSessions.has(sessionId)) return;
+    if (!getTaskManager().getOrchestrator(sessionId)?.isProcessing()) return;
+    this.busyHintedSessions.add(sessionId);
+    try {
+      const locale = this.config.configService.getSettings().ui.language === 'en' ? 'en-US' : 'zh-CN';
+      await this.channelManager.getResponseCallback(accountId, message)
+        ?.sendText(withSenderAttribution(message, channelCommandText(locale, 'busyHint')));
+    } catch (error) {
+      logger.warn('Busy hint failed', { error: error instanceof Error ? error.message : String(error) });
+    }
   }
 
   /**
@@ -356,6 +377,7 @@ export class ChannelAgentBridge {
     let fullResponse = '';
     // 出站文本统一在这一处加发起人前缀，覆盖成功/兜底/失败三条 sendText 路径
     const send = (text: string) => responseCallback.sendText(withSenderAttribution(message, text));
+    this.busyHintedSessions.delete(this.channelSessions.get(this.getSessionKey(accountId, message)) ?? '');
     try {
       await this.startTyping(responseCallback);
       // 记录发送前的消息数量，用于识别新的回复

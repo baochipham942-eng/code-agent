@@ -180,13 +180,23 @@ describe('parseChannelCommand', () => {
     ['/new', 'new', 'p2p'],
     ['/STATUS', 'status', 'channel'],
     ['<at user_id="ou_1">Neo</at> /status', 'status', 'group'],
+    // 整条消息恰好是固定短句（忽略首尾标点和 @）：不知道命令的用户发「停」也能停。
+    ['停', 'stop', 'p2p'],
+    ['停止！', 'stop', 'p2p'],
+    ['别做了。', 'stop', 'p2p'],
+    ['取消', 'stop', 'group'],
+    ['  Stop!  ', 'stop', 'p2p'],
+    ['ABORT', 'stop', 'p2p'],
+    ['@_user_1 停', 'stop', 'group'],
+    ['<at user_id="ou_1">Neo</at> 停下', 'stop', 'group'],
   ];
 
   it.each(accepted)('accepts %j', (text, command, chatType) => {
     expect(parseChannelCommand(text, { chatType })).toEqual({ command });
   });
 
-  const rejected = ['/stopwatch', 'hello /stop', '/statuses', '', '   ', 'plain text', '/stopping', '@name hello'];
+  const rejected = ['/stopwatch', 'hello /stop', '/statuses', '', '   ', 'plain text', '/stopping', '@name hello',
+    '帮我查下停车场', '停一下再说', '先别停', '取消订单怎么操作', 'stop the music', 'please stop', '停停停'];
 
   it.each(rejected)('rejects %j', (text) => {
     expect(parseChannelCommand(text, { chatType: 'group' })).toBeNull();
@@ -409,7 +419,7 @@ describe('channel slash commands', () => {
       content: '/new extra',
       context: { chatId: 'chat-busy', chatType: 'p2p' },
     }));
-    expect(texts().at(-1)).toBe('有任务在运行，请先 /stop');
+    expect(texts().at(-1)).toBe('有任务在运行，请先发「停」');
     expect(bindingStore.bindings.size).toBe(1);
     expect(sessionManager.createSession).toHaveBeenCalledTimes(1);
     expect(orchestrator.sendMessage.mock.calls.map((call) => call[0])).toEqual(['do the work']);
@@ -426,28 +436,29 @@ describe('channel slash commands', () => {
     });
     const sends = orchestrator.sendMessage.mock.calls.length;
     await deliver('feishu-1', message({ id: 'status-1', content: '/status' }));
-    expect(texts().at(-1)).toBe('idle 1200/8000 (15%)');
+    expect(texts().at(-1)).toBe('空闲 · 上下文已用 15%');
     expect(orchestrator.sendMessage.mock.calls.length).toBe(sends);
 
     healthBySession.delete('session-1');
     await deliver('feishu-1', message({ id: 'status-empty', content: '/status' }));
-    expect(texts().at(-1)).toBe('idle 还没有上下文数据');
+    expect(texts().at(-1)).toBe('空闲 · 还没有上下文数据');
 
     orchestrator.state.processing = true;
     await deliver('feishu-1', message({ id: 'status-run', content: '/status' }));
-    expect(texts().at(-1)).toContain('running');
+    expect(texts().at(-1)).toBe('正在运行 · 还没有上下文数据');
 
     orchestrator.state.processing = false;
     runRegistry.findRecoveredWaitingRun.mockReturnValue({ runId: 'parked', sessionId: 'session-1' });
     await deliver('feishu-1', message({ id: 'status-paused', content: '/status' }));
-    expect(texts().at(-1)).toContain('paused-resumable');
+    expect(texts().at(-1)).toBe('已暂停，可继续 · 还没有上下文数据');
+    expect(texts().join('\n')).not.toMatch(/idle|running|1200/);
     expect(orchestrator.sendMessage.mock.calls.map((call) => call[0])).not.toContain('/status');
   });
 
   it('uses the English receipt when the UI language is English', async () => {
     settings.language = 'en';
     await deliver('telegram-1', message({ id: 'en-idle', content: '/status', context: { chatId: 'en', chatType: 'p2p' } }));
-    expect(texts().at(-1)).toBe('idle no data yet');
+    expect(texts().at(-1)).toBe('Idle · no context data yet');
     await startHeldRun('telegram-1', 'en');
     await deliver('telegram-1', message({ id: 'en-stop', content: '/stop', context: { chatId: 'en', chatType: 'p2p' } }));
     expect(texts().at(-1)).toBe('stopped');
@@ -456,7 +467,30 @@ describe('channel slash commands', () => {
   it('handles one command delivery once', async () => {
     await deliver('feishu-1', message({ id: 'dup-1', content: '/status' }));
     await deliver('feishu-1', message({ id: 'dup-1', content: '/status' }));
-    expect(texts()).toEqual(['idle 还没有上下文数据']);
+    expect(texts()).toEqual(['空闲 · 还没有上下文数据']);
+  });
+
+  it('stops a running task when the user just sends 停', async () => {
+    await startHeldRun('feishu-1', 'chat-zh');
+    await deliver('feishu-1', message({ id: 'zh-stop', content: '停！', context: { chatId: 'chat-zh', chatType: 'p2p' } }));
+    expect(orchestrator.cancel).toHaveBeenCalledWith('user');
+    expect(texts().at(-1)).toContain('已停止');
+    expect(orchestrator.sendMessage.mock.calls.map((call) => call[0])).toEqual(['do the work']);
+  });
+
+  it('tells the sender once per turn that the previous message is still running', async () => {
+    await startHeldRun('feishu-1', 'chat-hint');
+    const busy = (id: string) => deliver('feishu-1', message({ id, content: '再加一句', context: { chatId: 'chat-hint', chatType: 'p2p' } }));
+    await busy('busy-1');
+    await busy('busy-2');
+    expect(texts().filter((text) => text.includes('正在处理上一条，发「停」可以中止'))).toHaveLength(1);
+    expect(orchestrator.cancel).not.toHaveBeenCalled();
+  });
+
+  it('does not show the busy hint to a guest', async () => {
+    await startHeldRun('feishu-1', 'chat-guest');
+    await deliver('feishu-1', message({ id: 'guest-busy', content: '再加一句', ingressAuth: 'guest', context: { chatId: 'chat-guest', chatType: 'p2p' } }));
+    expect(texts().some((text) => text.includes('正在处理上一条'))).toBe(false);
   });
 
   it('sends a non-command such as /stopwatch to the model', async () => {

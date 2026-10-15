@@ -90,6 +90,7 @@ import {
   notifyCronJobDisabled,
 } from './cronFailurePolicy';
 import { cronLoginWallMetadata } from './cronLoginWall';
+import { cronFailureSourceText } from '../../shared/utils/cronFailureClassification';
 export { computeCronFireJitterMs } from './cronExecutionPolicy'; const execAsync = promisify(exec);
 
 // ============================================================================
@@ -722,7 +723,7 @@ export class CronService implements Disposable {
         }
       }
     } catch (error) {
-      execution.error = error instanceof Error ? error.message : String(error);
+      execution.error = cronFailureSourceText(error);
       adoptFailedAgentSession(execution, error);
       const failureKind = classifyCronFailure(execution.error);
 
@@ -1161,7 +1162,7 @@ export class CronService implements Disposable {
       execution.result = result;
     } catch (error) {
       execution.status = 'failed';
-      execution.error = error instanceof Error ? error.message : String(error);
+      execution.error = cronFailureSourceText(error);
       adoptFailedAgentSession(execution, error);
 
       // permanent：确定性失败，烧掉剩余重试毫无意义，停在这里等 finally 的停用档。

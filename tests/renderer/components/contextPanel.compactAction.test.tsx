@@ -1,2 +1,8 @@
-// Test removed with the replaced implementation; path retained for changed-file lint checks.
-export {};
+import { describe, expect, it } from 'vitest';
+import * as surface from '../../../src/renderer/components/ContextPanel';
+
+describe('removed context surface', () => {
+  it('has no runtime exports', () => {
+    expect(Object.keys(surface)).toEqual([]);
+  });
+});

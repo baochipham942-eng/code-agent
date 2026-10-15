@@ -13,7 +13,14 @@ export const enSkillCaution = {
     builtin: 'Built-in',
   },
   hitsCount: '{count} findings',
-  ruleHint: 'The label on the left of each finding is the name of a built-in check rule; the text on the right quotes what it matched. Hover to see the full content.',
+  // Runtime approval truth (verified against code and by running the classifier; see evidence item 3):
+  // default mode asks every time; rm/git-reset carry forceConfirm which survives "always allow"
+  // memory and autoApprove; env_access is a read-only safe command and never asks; pipe_to_shell
+  // is hard-refused; bypassPermissions auto-approves execute-level asks.
+  runtimeApprovalLine: 'After install, when Neo actually runs a command like these: by default it asks you first every time, and delete/reset commands are hard confirmations that even an “Always allow” memory cannot override. Reading environment variables is a read-only operation and runs without asking; download-and-execute commands are refused outright. Only a session switched to skip-permissions mode (or with execute-level auto-approve turned on) runs them without asking.',
+  hitCount: '{count} hits',
+  detailsShow: 'Show details (file · rule · raw text)',
+  detailsHide: 'Hide details',
   acknowledgeExplanation: 'This Skill is already installed from the official marketplace. The pre-install check found the items below worth knowing about — they were not serious enough to block the install, but you get to see them now that it is in.',
   confirmExplanation: 'This Skill comes from an unsigned source and the pre-install check found the items below. Nothing is installed until you confirm; cancelling installs nothing.',
   confirmInstall: 'Confirm install',

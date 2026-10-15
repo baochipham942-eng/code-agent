@@ -4,8 +4,9 @@
 // 成功路径：解析端点 → generateMusic → 写盘 → audio file artifact。
 // 付费守门：缺 key / 未知 model → resolveMusicModelEndpoint 抛错，generateMusic 零调用。
 // 空 prompt → INVALID_ARGS（generateMusic 零调用）。
-// N-MEDIA-GEN-PHASE2：output_path → output_file_path；内置模型缺 MiniMax key 在付费前
-// 报 INVALID_ARGS（getMinimaxApiKey 唯一 key 通路）；桥接模型的端点解析失败保持原样。
+// N-MEDIA-GEN-PHASE2：output_path → output_file_path；N-MEDIA-GEN-MUSIC-FALLBACK 起
+// 内置模型缺 MiniMax key 在付费前报 MUSIC_SERVICE_UNAVAILABLE(_NO_ALTERNATIVE)
+// （getMinimaxApiKey 唯一 key 通路）；桥接模型的端点解析失败保持原样。
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -54,10 +55,15 @@ const { generateMusicMock, resolveMusicModelEndpointMock } = vi.hoisted(() => ({
   resolveMusicModelEndpointMock: vi.fn(),
 }));
 
-vi.mock('../../../../../src/host/services/media/musicGenerationService', () => ({
-  generateMusic: (...args: unknown[]) => generateMusicMock(...args),
-  resolveMusicModelEndpoint: (...args: unknown[]) => resolveMusicModelEndpointMock(...args),
-}));
+// 部分模块 mock（importActual 透传骨架）：两个函数可控，MusicHttpError 等其余导出保持真实。
+vi.mock('../../../../../src/host/services/media/musicGenerationService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../../src/host/services/media/musicGenerationService')>();
+  return {
+    ...actual,
+    generateMusic: (...args: unknown[]) => generateMusicMock(...args),
+    resolveMusicModelEndpoint: (...args: unknown[]) => resolveMusicModelEndpointMock(...args),
+  };
+});
 
 import {
   musicGenerateModule,
@@ -171,7 +177,9 @@ describe('music_generate — execute', () => {
     expect(writeFileSyncMock).not.toHaveBeenCalled();
   });
 
-  it('missing MiniMax key (built-in model) → INVALID_ARGS before any paid call', async () => {
+  it('missing MiniMax key (built-in model) → MUSIC_SERVICE_UNAVAILABLE_NO_ALTERNATIVE before any paid call', async () => {
+    // N-MEDIA-GEN-MUSIC-FALLBACK：缺 key 从 INVALID_ARGS 改为结构化出路；
+    // settings mock 为 null → 无桥接音乐模型 → NO_ALTERNATIVE 变体。
     getMinimaxApiKeyMock.mockReturnValue(undefined);
     const emit = vi.fn();
     const result = await executeMusicGenerate(
@@ -181,8 +189,9 @@ describe('music_generate — execute', () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.code).toBe('INVALID_ARGS');
+      expect(result.code).toBe('MUSIC_SERVICE_UNAVAILABLE_NO_ALTERNATIVE');
       expect(result.error).toContain('MiniMax API key is missing');
+      expect(result.error).toContain('Do not retry.');
     }
     expect(resolveMusicModelEndpointMock).not.toHaveBeenCalled();
     expect(generateMusicMock).not.toHaveBeenCalled();

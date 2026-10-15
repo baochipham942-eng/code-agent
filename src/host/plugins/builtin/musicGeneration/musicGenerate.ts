@@ -8,7 +8,8 @@
 // N-MEDIA-GEN-PHASE2 对齐 image 合同（N-MEDIA-GEN-CONTRACT）：
 // - output_path → output_file_path（工作区相对，边界检查沿用 workspaceScope 守卫）
 // - 输出首行「N/1 saved」+ per_request JSON；MiniMax 非零 base_resp 如实进 error 且不重试
-// - 缺 MiniMax key 在付费前报 INVALID_ARGS（getMinimaxApiKey 是唯一 key 通路）
+// - N-MEDIA-GEN-MUSIC-FALLBACK：内置默认模型撞 HTTP 410 / 缺 MiniMax key 时返回
+//   MUSIC_SERVICE_UNAVAILABLE(_NO_ALTERNATIVE) 结构化出路（桥接音乐模型列表或告知用户），不重试
 // ============================================================================
 
 import * as fs from 'fs';
@@ -21,10 +22,12 @@ import type {
   ToolProgressFn,
   ToolResult,
 } from '../../../protocol/tools';
+import type { AppSettings } from '../../../../shared/contract';
 import { getConfigService } from '../../../services';
 import { getMinimaxApiKey } from '../../../services/media/imageGenerationService';
 import { createFileArtifact } from '../../../tools/artifacts/artifactMeta';
-import { generateMusic, resolveMusicModelEndpoint } from '../../../services/media/musicGenerationService';
+import { generateMusic, resolveMusicModelEndpoint, MusicHttpError } from '../../../services/media/musicGenerationService';
+import { deriveBridgedVisualModels } from '../../../../shared/visualModelBridge';
 import { estimateMusicCostCny } from '../../../../shared/media/musicCost';
 import { isPathWithinRoot, resolveWorkspacePath } from '../../../runtime/workspaceScope';
 import { musicGenerateSchema as schema } from './musicGenerate.schema';
@@ -59,9 +62,46 @@ function workspaceRelativePath(absolutePath: string, ctx: ToolContext): string {
   return path.relative(ctx.workingDir, absolutePath) || path.basename(absolutePath);
 }
 
+/** 已配置的桥接音乐模型 id（provider:model）——内置 MiniMax 不可用时的出路列表。 */
+function bridgedMusicModelIds(settings: AppSettings | null): string[] {
+  return deriveBridgedVisualModels(settings)
+    .filter((entry) => entry.mediaType === 'music')
+    .map((entry) => entry.id);
+}
+
+/**
+ * 内置默认 MiniMax 音乐服务不可用（HTTP 410 关停 / 缺 key）的结构化出路（N-MEDIA-GEN-MUSIC-FALLBACK）：
+ * 付费音乐 API 2026-08-20 起对新账户关闭，死胡同报错换成可执行动作——不重试；
+ * 有桥接音乐模型时列出可换的 model id，没有则明说当前不可用、让模型转告用户。
+ */
+function musicServiceUnavailableResult(
+  reason: 'HTTP 410' | 'no key',
+  perRequestError: string,
+  alternatives: string[],
+): ToolResult<string> {
+  const perRequest: PerRequest[] = [{ index: 1, status: 'failed', error: perRequestError }];
+  const summary = `0/1 saved\nper_request ${JSON.stringify(perRequest)}`;
+  const head = `The default MiniMax music service is unavailable (${reason}). Do not retry.`;
+  if (alternatives.length > 0) {
+    return {
+      ok: false,
+      error: `${summary}\n${head} Configured music models you can pass as \`model\`: ${alternatives.join(', ')}.`,
+      code: 'MUSIC_SERVICE_UNAVAILABLE',
+      meta: { artifacts: [], per_request: perRequest, alternatives: alternatives.join(', ') },
+    };
+  }
+  return {
+    ok: false,
+    error: `${summary}\n${head} No other music model is configured; tell the user music generation is currently unavailable.`,
+    code: 'MUSIC_SERVICE_UNAVAILABLE_NO_ALTERNATIVE',
+    meta: { artifacts: [], per_request: perRequest },
+  };
+}
+
 /**
  * 参数校验（全部先于任何付费调用 / 进度事件 / 写盘）：旧 output_path 改名提示、
- * output_file_path 越界、内置 MiniMax 模型缺 key（getMinimaxApiKey 是唯一 key 通路）。
+ * output_file_path 越界。内置默认模型缺 MiniMax key 不在这里拦——由 executeMusicGenerate
+ * 的服务不可用出路口处理（getMinimaxApiKey 是唯一 key 通路）。
  */
 function validateMusicGenerateArgs(
   args: Record<string, unknown>,
@@ -78,9 +118,6 @@ function validateMusicGenerateArgs(
   }
 
   const model = typeof args.model === 'string' && args.model.length > 0 ? args.model : DEFAULT_MUSIC_MODEL;
-  if (!model.includes(':') && !getMinimaxApiKey()) {
-    return { ok: false, error: 'MiniMax API key is missing: set MINIMAX_API_KEY or configure the minimax key slot in settings' };
-  }
 
   const rawOutputFilePath = args.output_file_path;
   if (rawOutputFilePath !== undefined && typeof rawOutputFilePath !== 'string') {
@@ -124,6 +161,12 @@ export async function executeMusicGenerate(
   }
   const params = validation.params;
   const outputPath = params.outputFilePath;
+
+  // 服务不可用出路口（N-MEDIA-GEN-MUSIC-FALLBACK）：内置默认模型 + 缺 MiniMax key
+  // （getMinimaxApiKey 唯一 key 通路）在付费前返回结构化出路，先于任何进度事件 / 写盘。
+  if (!params.model.includes(':') && !getMinimaxApiKey()) {
+    return musicServiceUnavailableResult('no key', 'MiniMax API key is missing', bridgedMusicModelIds(getConfigService().getSettings()));
+  }
 
   onProgress?.({ stage: 'starting', detail: schema.name });
 
@@ -227,6 +270,12 @@ export async function executeMusicGenerate(
     const message = error instanceof Error ? error.message : String(error);
     if (message === 'aborted') {
       return { ok: false, error: 'aborted', code: 'ABORTED' };
+    }
+    // 内置默认模型撞 MiniMax 付费音乐 API 关停（HTTP 410，2026-08-20 起对新账户关闭）：
+    // 终态不可重试，走结构化出路（桥接音乐模型列表 / 告知用户），不进通用失败。
+    if (error instanceof MusicHttpError && error.status === 410 && !params.model.includes(':')) {
+      ctx.logger.warn('music_generate default service unavailable (HTTP 410)', { error: message });
+      return musicServiceUnavailableResult('HTTP 410', message, bridgedMusicModelIds(getConfigService().getSettings()));
     }
     ctx.logger.warn('music_generate failed', { error: message });
     const perRequest: PerRequest[] = [{ index: 1, status: 'failed', error: message }];

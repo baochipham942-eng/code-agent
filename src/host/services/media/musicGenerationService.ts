@@ -48,6 +48,19 @@ export interface GenerateMusicArgs {
 }
 
 /**
+ * generateMusic 的 HTTP 非 2xx 失败（N-MEDIA-GEN-MUSIC-FALLBACK）：状态码随错误携带，
+ * message 与历史一致；调用方据此识别 410（付费音乐 API 关停）这类不可重试的终态。
+ */
+export class MusicHttpError extends Error {
+  readonly status: number;
+
+  constructor(status: number) {
+    super(`音乐生成失败 HTTP ${status}`);
+    this.status = status;
+  }
+}
+
+/**
  * MiniMax 音乐：POST {base}/music_generation（同步）。
  * 音频以 hex 字符串在 data.audio 返回（output_format:hex），解码为 Buffer。成功看 base_resp.status_code===0。
  * 付费前置：prompt 与 lyrics 至少一个非空，否则不发请求。
@@ -75,7 +88,7 @@ export async function generateMusic(args: GenerateMusicArgs): Promise<{ audioBuf
     MUSIC_TIMEOUT_MS.GENERATE,
     signal,
   );
-  if (!resp.ok) throw new Error(`音乐生成失败 HTTP ${resp.status}`);
+  if (!resp.ok) throw new MusicHttpError(resp.status);
   const body = (await resp.json()) as { data?: { audio?: string }; base_resp?: { status_code?: number; status_msg?: string } };
   const code = body.base_resp?.status_code;
   if (typeof code === 'number' && code !== 0) {

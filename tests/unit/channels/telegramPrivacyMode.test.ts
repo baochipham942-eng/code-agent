@@ -5,10 +5,13 @@ import { ChannelManager } from '../../../src/host/channels/channelManager';
 import type { ChannelAccount } from '../../../src/shared/contract/channel';
 
 const getMe = vi.hoisted(() => vi.fn());
+// connect() 还会同步调 setMyCommands 注册命令菜单（#2438），stub 缺了它会在
+// Promise.all 的 .catch 兜底之前就同步 TypeError，connect 直接挂。
+const setMyCommands = vi.hoisted(() => vi.fn(async () => true));
 
 vi.mock('grammy', () => ({
   Bot: class FakeTelegramBot {
-    api = { getMe };
+    api = { getMe, setMyCommands };
     on(): this { return this; }
     catch(): this { return this; }
     start(): void {}

@@ -44,3 +44,10 @@ export const WEB_DAEMON = {
   /** `neo daemon stop` 发出 SIGTERM 后等 daemon 退出的上限（ms），须 ≥ DRAIN_GRACE_MS。 */
   STOP_WAIT_MS: 65_000,
 } as const;
+
+/** Tauri boot handshake: a fresh 256-bit lowercase hex nonce per health probe. */
+export const WEB_BOOT_CHALLENGE = {
+  QUERY_PARAM: 'bootChallenge',
+  HEX_LENGTH: 64,
+  NON_HEX_PATTERN: /[^0-9a-f]/,
+} as const;

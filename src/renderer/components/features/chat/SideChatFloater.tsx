@@ -13,10 +13,11 @@ import {
 
 const SHELL_CLASS = 'absolute bottom-full right-0 z-30 mb-2 w-[440px] max-w-[calc(100vw-2rem)] rounded-xl border border-border-hover bg-zinc-900/95 shadow-md dark:shadow-2xl backdrop-blur';
 
-/** cause → 出路按钮。鉴权/配额重试必败，只给「检查密钥」；超时/网络只给重试；未知两条都给。 */
+/** cause → 出路按钮。鉴权/配额重试必败，只给「检查密钥」；限流/超时/网络只给重试；未知两条都给。 */
 const SIDE_CHAT_EXITS: Record<SideChatFailureCause, { retry: boolean; checkKey: boolean }> = {
   auth: { retry: false, checkKey: true },
   quota: { retry: false, checkKey: true },
+  rate_limit: { retry: true, checkKey: false },
   timeout: { retry: true, checkKey: false },
   network: { retry: true, checkKey: false },
   unknown: { retry: true, checkKey: true },
@@ -32,11 +33,12 @@ const BODY_VIEWPORT_GAP_PX = 56;
 const BODY_MIN_HEIGHT_PX = 64; // 极矮视口下正文至少保留的高度（再小整块塌成只剩标题行）
 
 function causeLine(
-  copy: { error: string; errorAuth: string; errorQuota: string; errorTimeout: string; errorNetwork: string },
+  copy: { error: string; errorAuth: string; errorQuota: string; errorRateLimit: string; errorTimeout: string; errorNetwork: string },
   cause: SideChatFailureCause,
 ): string {
   if (cause === 'auth') return copy.errorAuth;
   if (cause === 'quota') return copy.errorQuota;
+  if (cause === 'rate_limit') return copy.errorRateLimit;
   if (cause === 'timeout') return copy.errorTimeout;
   if (cause === 'network') return copy.errorNetwork;
   return copy.error;

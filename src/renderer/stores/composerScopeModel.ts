@@ -39,6 +39,11 @@ export interface ComposerSlotSnapshot {
   pendingPinItemIds: string[];
   /** 草稿/空间专家意图；会话槽通常为空（真源在 activeAgentSessionMap）。 */
   pendingActiveAgentId: string | null;
+  /**
+   * 新任务级「不用记忆」意图（草稿/空间槽）：首句话建会话时随 create 载荷发 'off'。
+   * 会话槽恒 false——会话开始后真源是 host 侧 session.memoryMode，档位锁定。
+   */
+  draftMemoryOff: boolean;
 }
 
 export function sessionScopeKey(sessionId: string): ComposerScopeKey {
@@ -81,6 +86,7 @@ export function emptyComposerSlot(overrides?: Partial<ComposerSlotSnapshot>): Co
     pendingCommand: null,
     pendingPinItemIds: [],
     pendingActiveAgentId: null,
+    draftMemoryOff: false,
     ...overrides,
   };
 }
@@ -101,6 +107,7 @@ export function snapshotComposerSlot(live: ComposerSlotSnapshot): ComposerSlotSn
     pendingCommand: live.pendingCommand ? { ...live.pendingCommand } : null,
     pendingPinItemIds: [...live.pendingPinItemIds],
     pendingActiveAgentId: live.pendingActiveAgentId,
+    draftMemoryOff: live.draftMemoryOff,
   };
 }
 
@@ -124,11 +131,13 @@ export function planScopeHandoffToSession(args: {
   const sourceSnap = snapshotComposerSlot(args.sourceLive);
   const pinItemIds = [...sourceSnap.pendingPinItemIds];
   const activeAgentId = sourceSnap.pendingActiveAgentId;
-  // 会话真源：pin 物化后 pending 清空；专家进 session map 后 pending 也清空
+  // 会话真源：pin 物化后 pending 清空；专家进 session map 后 pending 也清空；
+  // 「不用记忆」意图已随 create 载荷落进 session.memoryMode，槽内标记一并退场
   const sessionSlot = emptyComposerSlot({
     ...sourceSnap,
     pendingPinItemIds: [],
     pendingActiveAgentId: null,
+    draftMemoryOff: false,
   });
   const nextSlots: Record<string, ComposerSlotSnapshot> = {
     ...args.slots,

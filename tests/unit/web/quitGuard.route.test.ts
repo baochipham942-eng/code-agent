@@ -19,7 +19,6 @@ const HEALTH_KEYS = [
   'timestamp',
   'durableRunReady',
   'rendererServe',
-  'tauriBootToken',
   'build',
 ];
 

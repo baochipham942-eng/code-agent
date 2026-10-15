@@ -12,7 +12,7 @@ export const enSkillCaution = {
     'local-marketplace': 'Local source',
     builtin: 'Built-in',
   },
-  hitsCount: '{count} findings',
+  hitsCount: { one: '{count} finding', other: '{count} findings' },
   // Runtime approval truth (default strict, autoApprove.execute off; classifier run in evidence item 3):
   // rm -rf / git reset --hard set forceConfirm: every mode asks except Full access;
   // Always allow and execute-level auto-approve cannot skip them. git clean / private-network
@@ -20,8 +20,17 @@ export const enSkillCaution = {
   // auto-approve, and Full access do not. Reading a secret env var is a known-safe command
   // and does not ask by default; Read only mode still asks. curl|sh is a command-policy hard
   // deny in every mode, including Full access.
-  runtimeApprovalLine: 'After install, when Neo actually runs a command like these: by default it asks you every time; deleting a folder and a hard reset are hard confirmations that neither “Always allow” nor execute-level auto-approve can skip, and only switching this conversation to “Full access” runs them without asking; cleaning untracked files and reaching a private-network address also ask by default, but they run without asking after “Always allow”, with execute-level auto-approve on, or on “Full access”; reading environment variables is treated as read-only and does not ask in the default mode, while “Read only” mode still asks; piping a downloaded script straight into the shell is refused in every permission mode.',
-  hitCount: '{count} hits',
+  // Each sentence renders only when the current scan hit a rule in its tier (the modal
+  // picks tiers per scan, see SkillCautionDisclosureModal); wording is verbatim-equivalent
+  // to the single line this was split from.
+  runtimeApproval: {
+    lead: 'After install, when Neo actually runs a command like these: by default it asks you every time.',
+    forcedConfirm: 'Deleting a folder and a hard reset are hard confirmations that neither “Always allow” nor execute-level auto-approve can skip, and only switching this conversation to “Full access” runs them without asking.',
+    askByDefault: 'Cleaning untracked files and reaching a private-network address also ask by default, but they run without asking after “Always allow”, with execute-level auto-approve on, or on “Full access”.',
+    readOnly: 'Reading environment variables is treated as read-only and does not ask in the default mode, while “Read only” mode still asks.',
+    hardDeny: 'Piping a downloaded script straight into the shell is refused in every permission mode.',
+  },
+  hitCount: { one: '{count} hit', other: '{count} hits' },
   detailsShow: 'Show details (file · rule · raw text)',
   detailsHide: 'Hide details',
   acknowledgeExplanation: 'This Skill is already installed from the official marketplace. The pre-install check found the items below worth knowing about — they were not serious enough to block the install, but you get to see them now that it is in.',

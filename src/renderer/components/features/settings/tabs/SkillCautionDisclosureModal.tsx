@@ -7,8 +7,9 @@
 //   本弹窗 confirm 模式（取消=不装；确认=由调用页携 cautionConfirmationToken 重发）。
 // 正文按 ruleId 分组，每组一句白话风险描述（i18n 叶子 zh/enSkillCautionRules）+ 命中数；
 // ruleId / 文件 / 原文摘录折进「命中明细」折叠区（primitives Button 切换）——非程序员
-// 先读人话再决定，需要核对原始命中时再展开。运行时审批真相一行（runtimeApprovalLine）
-// 的措辞跟本单验证结论锁定，改审批行为需同步改这句。
+// 先读人话再决定，需要核对原始命中时再展开。运行时审批真相（runtimeApproval 的 lead +
+// 档位句）只披露本次扫描命中的档位：提醒行随技能实际带的风险伸缩，没命中任何档位
+// （如仅嵌入密钥命中）则整段不渲染。措辞跟验证结论锁定，改审批行为需同步改这些句。
 // shell 抄同目录 SkillInstallPreviewModal（Modal + ModalFooter / useI18n）；
 // 视觉参照 PluginInstallDisclosure（警示图标、Pill），但不沾 capabilityPackage 信任模型。
 // ============================================================================
@@ -18,7 +19,7 @@ import { AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import type { SkillInstallCautionHit } from '@shared/contract/skillInstallCaution';
 import { Button, Modal, ModalFooter } from '../../../primitives';
 import { useI18n } from '../../../../hooks/useI18n';
-import { interpolate } from '../../../../i18n/interpolate';
+import { interpolate, interpolatePlural } from '../../../../i18n/interpolate';
 import { Pill } from './PluginsSettings.ui';
 
 export interface SkillCautionDisclosureModalProps {
@@ -62,6 +63,36 @@ function groupHitsByFile(hits: SkillInstallCautionHit[]): Map<string, SkillInsta
   return groups;
 }
 
+/** 运行时审批档位句的 key（i18n 叶子 runtimeApproval 下同名），展示顺序即数组顺序 */
+const RUNTIME_APPROVAL_TIER_ORDER = ['forcedConfirm', 'askByDefault', 'readOnly', 'hardDeny'] as const;
+
+type RuntimeApprovalTier = (typeof RUNTIME_APPROVAL_TIER_ORDER)[number];
+
+/**
+ * ruleId → 运行时审批档位：只有命中的档位才披露对应句子。
+ * 档位语义（强确认 / 默认也问 / 只读不问 / 硬拒）与 i18n 叶子里的事实注释一一对应，
+ * 规则 id 真源在 commandSafety.ts / shellRules/windowsRules.ts（覆盖测试钉 id 拼写）。
+ */
+const RUNTIME_APPROVAL_TIER_FOR_RULE: Record<string, RuntimeApprovalTier> = {
+  recursive_delete_targeted: 'forcedConfirm',
+  git_hard_reset: 'forcedConfirm',
+  git_clean: 'askByDefault',
+  egress_private_host: 'askByDefault',
+  env_access: 'readOnly',
+  pipe_to_shell: 'hardDeny',
+  win_remote_exec: 'hardDeny',
+};
+
+/** 本次命中覆盖到的运行时审批档位（去重、按固定展示顺序） */
+function tiersForHits(hits: SkillInstallCautionHit[]): RuntimeApprovalTier[] {
+  const present = new Set(
+    hits
+      .map((hit) => RUNTIME_APPROVAL_TIER_FOR_RULE[hit.ruleId])
+      .filter((tier) => tier !== undefined),
+  );
+  return RUNTIME_APPROVAL_TIER_ORDER.filter((tier) => present.has(tier));
+}
+
 export const SkillCautionDisclosureModal: React.FC<SkillCautionDisclosureModalProps> = ({
   mode,
   pluginName,
@@ -74,6 +105,7 @@ export const SkillCautionDisclosureModal: React.FC<SkillCautionDisclosureModalPr
   const { t } = useI18n();
   const [showDetails, setShowDetails] = useState(false);
   const cautionText = t.settings.skills.caution;
+  const runtimeTiers = tiersForHits(hits);
 
   /** ruleId → 白话风险句：嵌入密钥前缀共用一句；未知 id 走兜底（带出原始规则名） */
   const riskSentenceFor = (ruleId: string): string => {
@@ -119,13 +151,19 @@ export const SkillCautionDisclosureModal: React.FC<SkillCautionDisclosureModalPr
           {mode === 'confirm' ? cautionText.confirmExplanation : cautionText.acknowledgeExplanation}
         </p>
 
-        {/* 装后运行时审批真相（见文件头注释：措辞与已验证行为锁定） */}
-        <p className="rounded-lg border border-zinc-700 bg-zinc-800/60 px-3 py-2 text-xs leading-5 text-zinc-400">
-          {cautionText.runtimeApprovalLine}
-        </p>
+        {/* 装后运行时审批真相（见文件头注释：措辞与已验证行为锁定）。
+            只渲染本次扫描命中的档位句；一个档位都没命中则整段不出现 */}
+        {runtimeTiers.length > 0 && (
+          <p className="space-y-1 rounded-lg border border-zinc-700 bg-zinc-800/60 px-3 py-2 text-xs leading-5 text-zinc-400">
+            <span className="block">{cautionText.runtimeApproval.lead}</span>
+            {runtimeTiers.map((tier) => (
+              <span key={tier} className="block">{cautionText.runtimeApproval[tier]}</span>
+            ))}
+          </p>
+        )}
 
         <div className="text-xs font-medium text-zinc-300">
-          {interpolate(cautionText.hitsCount, { count: hits.length })}
+          {interpolatePlural(cautionText.hitsCount, hits.length)}
         </div>
 
         {/* 正文：按规则分组的一句白话风险 + 命中数；规则名与原文折进明细 */}
@@ -137,7 +175,7 @@ export const SkillCautionDisclosureModal: React.FC<SkillCautionDisclosureModalPr
                   {riskSentenceFor(ruleId)}
                 </span>
                 <span className="shrink-0 text-xs leading-5 text-zinc-500">
-                  {interpolate(cautionText.hitCount, { count: ruleHits.length })}
+                  {interpolatePlural(cautionText.hitCount, ruleHits.length)}
                 </span>
               </li>
             ))}

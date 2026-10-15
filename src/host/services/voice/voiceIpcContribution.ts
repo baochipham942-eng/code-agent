@@ -1,3 +1,5 @@
+import { VoiceSchemas } from '../../../shared/ipc/schemas/voice';
+import { getVoiceUserProfile, setVoiceUserProfile } from './voiceUserProfile';
 import type { IpcMain } from '../../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../shared/ipc';
 import type { RendererVoiceFailureReport, VoiceUserTextInjectionResult } from '../../../shared/contract/voice';
@@ -31,6 +33,18 @@ function isUserTextInjection(payload: unknown): payload is { neoSessionId: strin
 
 export function registerVoiceHandlers(ipcMain: IpcMain): HostCapabilityCleanup {
   ipcMain.handle(IPC_DOMAINS.VOICE, async (_event, request: IPCRequest): Promise<IPCResponse> => {
+    if (request.action === 'getUserProfile' || request.action === 'setUserProfile') {
+      try {
+        if (request.action === 'getUserProfile') return { success: true, data: await getVoiceUserProfile() };
+        const parsed = VoiceSchemas.USER_PROFILE_SET.payload.safeParse(request);
+        if (!parsed.success) return { success: false, error: { code: 'INVALID_ARGS', message: 'Invalid profile settings' } };
+        return { success: true, data: await setVoiceUserProfile(parsed.data.payload) };
+      } catch (error) {
+        const code = error instanceof Error && error.message === 'VOICE_USER_PROFILE_INVALID'
+          ? 'VOICE_USER_PROFILE_INVALID' : 'VOICE_USER_PROFILE_UNAVAILABLE';
+        return { success: false, error: { code, message: code } };
+      }
+    }
     if (request.action === 'injectUserText') {
       if (!isUserTextInjection(request.payload)) {
         return { success: false, error: { code: 'INVALID_ARGS', message: 'Invalid voice user text injection' } };

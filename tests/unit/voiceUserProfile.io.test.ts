@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -11,6 +11,10 @@ vi.mock('../../src/host/config/configPaths', () => ({
 }));
 vi.mock('../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+}));
+
+vi.mock('../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getSettings: () => ({}) }),
 }));
 
 const { loadVoiceUserProfile } = await import('../../src/host/services/voice/voiceUserProfile');
@@ -47,4 +51,23 @@ describe('voice user profile real Light Memory I/O', () => {
     await rm(path.join(tmpDir, 'memory'), { recursive: true, force: true });
     await expect(loadVoiceUserProfile()).resolves.toBe('');
   });
+});
+
+
+it('injects genuine facts and the two latest project titles, never operations or persona memories', async () => {
+  const memoryDir = path.join(tmpDir, 'memory');
+  await cp(path.resolve('tests/fixtures/voice-profile-memory'), memoryDir, { recursive: true });
+  for (const [name, time] of [
+    ['project-old.md', '2026-10-01'],
+    ['project-exhibit.md', '2026-10-12'],
+    ['project-catalog.md', '2026-10-14'],
+  ]) await utimes(path.join(memoryDir, name), new Date(time), new Date(time));
+  const block = await loadVoiceUserProfile();
+  expect(block).toContain('用户从事博物馆策展工作');
+  expect(block).toContain('用户偏好简体中文和简短说明');
+  expect(block).toContain('最近在做：秋季展览图录、海洋主题展');
+  expect(block).not.toMatch(/ROLE_SENTINEL|INTIMACY_SENTINEL|SOUL_SENTINEL|OPERATION_SENTINEL|TYPED_PERSONA_SENTINEL/);
+  expect(block).not.toContain('PROJECT_BODY_SENTINEL');
+  expect(block).not.toContain('往期展览');
+  expect(block.length).toBeLessThanOrEqual(600);
 });

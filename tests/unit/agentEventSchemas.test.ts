@@ -90,6 +90,24 @@ describe('AgentEventSchema', () => {
     },
   ] as const;
 
+  it('keeps sandbox escalation path and action on a permission request', () => {
+    const sample = {
+      type: 'permission_request' as const,
+      data: {
+        id: 'permission-sandbox',
+        type: 'command' as const,
+        tool: 'Bash',
+        details: {
+          command: 'echo hello-neo > /tmp/neo-sandbox/neo-x.txt',
+          deniedPath: '/tmp/neo-sandbox/neo-x.txt',
+          action: 'sandbox_escalate_once',
+        },
+        timestamp: 1,
+      },
+    };
+    expect(AgentEventSchema.parse(sample)).toEqual(sample);
+  });
+
   it('accepts representative legal events across the stable contract', () => {
     for (const sample of legalEvents) {
       expect(AgentEventSchema.parse(sample)).toEqual(sample);

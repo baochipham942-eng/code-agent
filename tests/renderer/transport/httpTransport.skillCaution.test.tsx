@@ -183,12 +183,14 @@ describe('httpTransport keeps the skill caution confirmation envelope intact', (
       await screen.findByRole('button', { name: zh.settings.skills.installed.installFromZipAria }),
     );
 
-    // 确认面带着真 gate 的命中打开（rule id + snippet + 白话说明）
+    // 确认面带着真 gate 的命中打开（正文一句白话 + 运行时审批真相；rule id + snippet 折在明细）
     expect(await screen.findByText(cautionText.title)).toBeTruthy();
     expect(screen.getByText('demo@local-zip')).toBeTruthy();
+    expect(screen.getByText(cautionText.rules.recursive_delete_targeted)).toBeTruthy();
+    expect(screen.getByText(cautionText.runtimeApprovalLine)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: cautionText.detailsShow }));
     expect(screen.getByText('recursive_delete_targeted')).toBeTruthy();
     expect(screen.getByText('rm -rf ./dist')).toBeTruthy();
-    expect(screen.getByText(cautionText.ruleHint)).toBeTruthy();
     expect(localZipCalls(fetchMock)).toEqual([{ zipPath: '/tmp/caution.zip' }]);
 
     // 取消：不安装（无第二次 install 调用），弹窗关闭

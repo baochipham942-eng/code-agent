@@ -175,6 +175,6 @@ describe('describeStandingRefreshSchedule（真实调度 → chip 展示判定�
   it('schedule 缺席或 at/event 型返回 undefined（调用方回退 metadata cadence 词）', () => {
     expect(describeStandingRefreshSchedule(undefined, 'zh')).toBeUndefined();
     expect(describeStandingRefreshSchedule({ type: 'at', datetime: '2026-10-15T09:00:00Z' }, 'zh')).toBeUndefined();
-    expect(describeStandingRefreshSchedule({ type: 'event', source: 'channel', accountId: 'acc-1' }, 'en')).toBeUndefined();
+    expect(describeStandingRefreshSchedule({ type: 'event', source: 'channel', accountId: 'acc-1', eventName: 'message' }, 'en')).toBeUndefined();
   });
 });

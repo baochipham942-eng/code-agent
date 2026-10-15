@@ -375,7 +375,7 @@ describe('ArtifactStandingRefresh 真实调度展示', () => {
     fireEvent.click(screen.getByTestId('artifact-standing-refresh-chip'));
 
     for (const name of ['每小时', '每天', '每周']) {
-      expect(screen.getByRole('button', { name, exact: true }).getAttribute('aria-pressed')).toBe('false');
+      expect(screen.getByRole('button', { name }).getAttribute('aria-pressed')).toBe('false');
     }
     expect(screen.getByTestId('standing-refresh-current-schedule').textContent).toBe('当前节奏：每 5 分钟（不另选则保持）');
   });
@@ -409,7 +409,7 @@ describe('ArtifactStandingRefresh 真实调度展示', () => {
     await waitFor(() => screen.getByTestId('artifact-standing-refresh-chip'));
     fireEvent.click(screen.getByTestId('artifact-standing-refresh-chip'));
     await screen.findByDisplayValue('旧指令');
-    fireEvent.click(screen.getByRole('button', { name: '每周', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: '每周' }));
     fireEvent.click(screen.getByText('保存'));
 
     await waitFor(() => expect(cronCalls.updateJob).toHaveBeenCalledTimes(1));

@@ -659,7 +659,6 @@ export const zh = {
     title: '任务信息',
     progress: '进度',
     workingFolder: '工作目录',
-    context: '上下文',
     connectors: '连接器',
     agents: '智能体',
     skills: '技能',
@@ -731,7 +730,6 @@ export const zh = {
     sectionReferences: '引用',
     contextEmpty: '暂无上下文',
     tabStatus: '概览',
-    tabOrchestration: '编排',
     // WorkingFolder
     inputDirPlaceholder: '输入工作目录路径',
     confirm: '确定',

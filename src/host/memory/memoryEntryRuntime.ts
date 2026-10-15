@@ -36,6 +36,7 @@ import {
 } from './memoryEntryScoring';
 import { sanitizeMemoryContent } from '../utils/sanitizeMemoryContent';
 import { MEMORY } from '../../shared/constants';
+import { formatMemoryAgeLine, withPackedWrittenLine } from './memoryAge';
 import { withMemoryBackgroundGuidance } from './memoryContextGuidance';
 import {
   memoryEntryMetadata,
@@ -189,17 +190,17 @@ function antiLostInMiddleOrder(items: PackedMemoryItem[]): PackedMemoryItem[] {
   return [first, ...rest, second];
 }
 
-function renderPackedMemoryBlock(items: PackedMemoryItem[]): string {
+function renderPackedMemoryBlock(items: PackedMemoryItem[], writtenByEntryId: ReadonlyMap<string, string>): string {
   if (items.length === 0) return '';
   const block = [
     '<memory-pack>',
-    ...items.map((item, index) => [
+    ...items.map((item, index) => withPackedWrittenLine([
       `- [${index + 1}] ${item.title}${item.source.memoryId ? ` [#${item.source.memoryId}]` : ''}`,
       `  id: ${item.entryId}`,
       `  kind: ${item.kind}; scope: ${item.scope}; score: ${Math.round(item.score)}`,
       `  source: ${item.source.label || item.source.filePath || item.source.memoryId || item.source.kind}`,
       `  content: ${item.content.replace(/\n/g, '\n    ')}`,
-    ].join('\n')),
+    ], writtenByEntryId.get(item.entryId)).join('\n')),
     '</memory-pack>',
   ].join('\n');
   return withMemoryBackgroundGuidance(block);
@@ -615,6 +616,8 @@ export async function packMemoryEntries(
     });
 
   const selected: PackedMemoryItem[] = [];
+  const writtenByEntryId = new Map<string, string>();
+  const packedAtMs = Date.now();
   let usedChars = 0;
   for (const candidate of candidates) {
     if (selected.length >= maxItems) break;
@@ -638,6 +641,9 @@ export async function packMemoryEntries(
       packedChars: packed.content.length,
       truncated: packed.truncated,
     };
+    if (candidate.entry.kind !== 'directive') {
+      writtenByEntryId.set(candidate.entry.id, formatMemoryAgeLine(candidate.entry.updatedAt, packedAtMs));
+    }
     selected.push(item);
     usedChars += item.packedChars;
   }
@@ -650,7 +656,7 @@ export async function packMemoryEntries(
     totalChars: ordered.reduce((sum, item) => sum + item.packedChars, 0),
     budget: totalCharBudget,
     items: ordered,
-    block: renderPackedMemoryBlock(ordered),
+    block: renderPackedMemoryBlock(ordered, writtenByEntryId),
   };
 }
 

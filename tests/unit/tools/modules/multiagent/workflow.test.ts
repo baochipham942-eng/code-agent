@@ -11,6 +11,8 @@ import type { ToolContext, CanUseToolFn, Logger, ToolResult } from '../../../../
 import type { ScriptRunSpec, ScriptRunState } from '../../../../../src/host/agent/scriptRuntime';
 import type { ScriptRunHostDeps } from '../../../../../src/host/agent/scriptRuntime';
 import { ORCHESTRATION_CAPABILITIES } from '../../../../../src/host/agent/scriptRuntime/capabilityManifest';
+import type { ScriptRunEvent } from '../../../../../src/shared/contract/scriptRun';
+import { WORKFLOW_STALL_THRESHOLDS } from '../../../../../src/shared/constants';
 
 // ── mock 运行时 facade 的 startRun：捕获 spec/deps，返回可控终态 ──────────────
 const startRunMock = vi.fn();
@@ -569,5 +571,102 @@ describe('workflow tool', () => {
     const deps = startRunMock.mock.calls[0][1] as ScriptRunHostDeps;
     const resolved = deps.resolveModelConfig({ model: 'mimo-lite' } as never);
     expect(resolved.apiKey).toBe('base-key');
+  });
+});
+
+// ── N-WF-STALL-UI：停顿状态（parked/epoch）→ renderer 的直发通道 ──────────────
+// 形态：既有 run:log 类型、无 message、data.stall 载荷，publish 到 'workflow' domain；
+// 刻意不经过 stallDetector.handleEvent / deps.emit——否则 run:log 会被检测器当进展。
+describe('workflow tool stall-state projection (N-WF-STALL-UI)', () => {
+  type StallPayload = { parked?: boolean; epoch?: number };
+
+  const stallOf = (event: ScriptRunEvent): StallPayload | undefined =>
+    event.data?.stall as StallPayload | undefined;
+
+  const stallEvents = (): ScriptRunEvent[] => publishMock.mock.calls
+    .map((c) => c[2] as ScriptRunEvent)
+    .filter((e) => e && e.type === 'run:log' && stallOf(e) !== undefined);
+
+  it('graph_started (run 启动) 投影 parked:false —— 无 message 的 run:log，带 sessionId', async () => {
+    await run({ script: 'return 1' }, makeCtx({ sessionId: 'sess-stall-start' }));
+    const workflowRunId = (startRunMock.mock.calls[0][0] as ScriptRunSpec).runId;
+    const started = stallEvents().find((e) => stallOf(e)?.parked === false);
+    expect(started).toBeDefined();
+    expect(started!.data?.message).toBeUndefined(); // 无 message：reducer 不当进展
+    expect(started!.runId).toBe(workflowRunId);
+    expect(started!.sessionId).toBe('sess-stall-start');
+    expect(typeof started!.ts).toBe('number');
+  });
+
+  it('graph_waiting (checkpoint 等审查) 投影 parked:true，此前必有 parked:false', async () => {
+    startRunMock.mockImplementation(async (rawSpec: ScriptRunSpec, deps: ScriptRunHostDeps) => {
+      const nested = rawSpec.nestedGraph!;
+      deps.emitNestedGraph?.({
+        type: 'nested:node_failed',
+        timestamp: 123,
+        error: 'agent failed after an uncertain write',
+        metadata: {
+          protocolVersion: nested.protocolVersion,
+          workflowRunId: nested.workflowRunId,
+          parentGraphId: nested.parentGraphId,
+          parentNodeId: nested.parentNodeId,
+          nestedGraphId: nested.nestedGraphId,
+          groupId: 'parallel-group',
+          groupKind: 'parallel',
+          itemId: 'risky-agent',
+          nodeId: 'parallel-node:risky-agent',
+          dependencyNodeIds: [],
+          callIndex: 0,
+          sideEffect: 'unknown',
+        },
+      });
+      return completedState({ result: { retained: 'script result' } });
+    });
+    const r = await run({
+      script: 'const values = await parallel([() => agent("risky")]); return values;',
+    }, makeCtx({ sessionId: 'sess-stall-wait' }));
+    expect(r.ok, r.ok ? undefined : `${r.code}: ${r.error}`).toBe(true);
+
+    const events = stallEvents();
+    const waiting = events.find((e) => stallOf(e)?.parked === true);
+    expect(waiting).toBeDefined();
+    expect(waiting!.data?.message).toBeUndefined();
+    const startedIdx = events.findIndex((e) => stallOf(e)?.parked === false);
+    expect(startedIdx).toBeGreaterThanOrEqual(0);
+    expect(events.findIndex((e) => e === waiting)).toBeGreaterThan(startedIdx); // 先启动后等待
+  });
+
+  it('onStallNotice 投影 epoch，且停顿事件不回流检测器的进展钟（epoch2 idle=1200s 而非 600s）', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    let release: (state: ScriptRunState) => void = () => {};
+    startRunMock.mockReturnValue(new Promise<ScriptRunState>((resolve) => { release = resolve; }));
+    try {
+      const r = await launch({ script: 'return 1' }, makeCtx({ sessionId: 'sess-stall-clock' }));
+      expect(r.ok).toBe(true);
+      const runId = backgroundRunId(r);
+
+      // epoch 1：硬停滞公告 → run:log {stall:{epoch:1}} 直发。
+      await vi.advanceTimersByTimeAsync(WORKFLOW_STALL_THRESHOLDS.N_HARD_MS + 10);
+      const epoch1 = stallEvents().find((e) => stallOf(e)?.epoch === 1);
+      expect(epoch1).toBeDefined();
+      expect(epoch1!.data?.message).toBeUndefined();
+      expect(epoch1!.runId).toBe(runId);
+
+      // epoch 2：若 epoch1 的 run:log 回流了检测器（run:log ∈ ACTIVITY_TYPES），
+      // lastProgressAt 会被刷到 epoch1 时刻 → idleSeconds 回落 ~600；
+      // 不回流则锚点仍是 run 起点 → idleSeconds ~1200。
+      await vi.advanceTimersByTimeAsync(WORKFLOW_STALL_THRESHOLDS.N_HARD_MS);
+      const epoch2Record = idleWakeMock.mock.calls
+        .map(([record]) => record as { dedupeKey?: string; summary?: string })
+        .find((record) => record.dedupeKey === `${runId}:stall:2`);
+      expect(epoch2Record).toBeDefined();
+      expect(epoch2Record!.summary).toContain('no progress for 1200s');
+
+      release(completedState());
+      await getBackgroundSubagentRegistry().await(runId);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

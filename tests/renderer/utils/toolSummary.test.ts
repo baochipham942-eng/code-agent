@@ -116,6 +116,37 @@ describe('summarizeToolCall', () => {
     expect(result).toContain('+2');
   });
 
+  // N-EDIT-RETRY-KEY-SHAPE — 注册的 Edit 参数形状（multiEdit.schema.ts）是
+  // { file_path, edits: [{ old_text, new_text }] }，没有顶层 old_string/new_string。
+  it('should summarize Edit tool from the registered edits[] shape', () => {
+    const tc = makeToolCall({
+      name: 'Edit',
+      arguments: {
+        file_path: '/src/app.ts',
+        edits: [{ old_text: 'line1\nline2', new_text: 'line1\nline2\nline3\nline4' }],
+      },
+    });
+    const result = summarizeToolCall(tc);
+    expect(result).toContain('app.ts');
+    expect(result).toContain('+2');
+  });
+
+  it('should aggregate multi-item edits[] into one line delta', () => {
+    const tc = makeToolCall({
+      name: 'Edit',
+      arguments: {
+        file_path: '/src/app.ts',
+        edits: [
+          { old_text: 'a', new_text: 'a\nb\nc' },
+          { old_text: 'x\ny', new_text: 'x\ny' },
+        ],
+      },
+    });
+    // 聚合 old='a\nx\ny'(3 行) → new='a\nb\nc\nx\ny'(5 行)
+    const result = summarizeToolCall(tc);
+    expect(result).toContain('+2');
+  });
+
   it('should show failure message for failed Edit', () => {
     const tc = makeToolCall({
       name: 'Edit',

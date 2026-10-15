@@ -386,6 +386,9 @@ export class ChannelManager extends EventEmitter {
       account.lastConnectedAt = Date.now();
       this.saveAccounts();
       this.connectRetries.reset(accountId);
+      // 连接成功同样消费手动断开标记：断开打在连接进行中、那次连接又最终成功时，
+      // 标记不能带着已连接状态存活——否则此后终态失败被标记拦下，停在死状态永不重连。
+      this.manualDisconnects.delete(accountId);
 
       logger.info('Channel connected', { accountId, type: account.type });
     } catch (error) {

@@ -385,6 +385,38 @@ describe('ChannelManager connect retry', () => {
     expect(wsCaptures.clients[1]?.close).not.toHaveBeenCalled();
   });
 
+  it('r2-1 consumes the manual-disconnect marker when an in-flight connect succeeds: later terminal failure still auto-reconnects', async () => {
+    const manager = ChannelManager.getInstance();
+    const accountId = await addFeishuAccount(manager);
+
+    // 连接进行中（握手等待期）用户点断开：disconnectAccount 记下手动断开标记
+    const first = manager.connectAccount(accountId).catch(() => 'failed');
+    await flushAsync();
+    expect(currentCtorCount()).toBe(1);
+    await manager.disconnectAccount(accountId);
+    expect(manager.getAccount(accountId)?.status).toBe('disconnected');
+
+    // 在飞的那次连接最终成功（断开没能拦下握手）：账号实际上线
+    latestCtor().onReady?.();
+    await first;
+    expect(manager.getAccount(accountId)?.status).toBe('connected');
+
+    // 此后 SDK 终态失败：残留的手动断开标记不得拦下退避——排「重连中（第 1 次）」，
+    // 而不是停死在 error 永不自动重连（r2 review 场景）
+    latestCtor().onError?.(new Error('WebSocket reconnect exhausted after 6 attempts'));
+    await flushAsync();
+    const account = manager.getAccount(accountId);
+    expect(account?.status).toBe('connecting');
+    expect(account?.errorMessage).toBe('重连中（第 1 次）：连不上飞书服务器，正在自动重试');
+
+    // 30s 退避到点重连成功 → 机器人自动回到在线（启用中的账号无停死路径）
+    await expectNextRetryAfter(30_000);
+    latestCtor().onReady?.();
+    await flushAsync();
+    expect(manager.getAccount(accountId)?.status).toBe('connected');
+    expect(wsCaptures.clients[0]?.close).toHaveBeenCalledWith({ force: true });
+  });
+
   it('r1-3 credential failures never enter the backoff: no replay of a bad App Secret', async () => {
     const manager = ChannelManager.getInstance();
     const accountId = await addFeishuAccount(manager);

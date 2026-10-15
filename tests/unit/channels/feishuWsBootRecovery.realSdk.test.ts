@@ -9,7 +9,7 @@
 // ============================================================================
 import * as http from 'node:http';
 import * as net from 'node:net';
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AddressInfo } from 'node:net';
 import { WebSocketServer } from 'ws';
 import { getChannelManager } from '../../../src/host/channels';
@@ -127,9 +127,13 @@ describe('Feishu WS boot recovery (real SDK, local stub)', () => {
   let accountId: string | null = null;
   const savedEnv: Record<string, string | undefined> = {};
   const proxyVars = ['HTTP_PROXY', 'http_proxy', 'HTTPS_PROXY', 'https_proxy', 'ALL_PROXY', 'all_proxy'];
+  let savedRetryInitialMs: string | undefined;
 
   beforeAll(async () => {
-    // 测试内缩短重试起始等待（读于调度器构造，须在单例创建前设置）
+    // 测试内缩短重试起始等待（读于调度器构造，须在单例创建前设置）。
+    // process.env 是进程级状态，不随文件隔离：afterAll 必须归还，
+    // 否则泄漏进同进程的后续测试文件（调度器会以 700ms 起步退避构造）。
+    savedRetryInitialMs = process.env.NEO_CHANNEL_CONNECT_RETRY_INITIAL_MS;
     process.env.NEO_CHANNEL_CONNECT_RETRY_INITIAL_MS = '700';
     for (const key of proxyVars) {
       savedEnv[key] = process.env[key];
@@ -141,6 +145,11 @@ describe('Feishu WS boot recovery (real SDK, local stub)', () => {
 
   beforeEach(() => {
     realSdk.logs.length = 0;
+  });
+
+  afterAll(() => {
+    if (savedRetryInitialMs === undefined) delete process.env.NEO_CHANNEL_CONNECT_RETRY_INITIAL_MS;
+    else process.env.NEO_CHANNEL_CONNECT_RETRY_INITIAL_MS = savedRetryInitialMs;
   });
 
   afterEach(async () => {

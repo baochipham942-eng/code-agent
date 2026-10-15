@@ -14,7 +14,7 @@ import {
 import { hasUntrustedMemoryInput } from '../../../src/host/memory/automaticMemoryPolicy';
 import * as boundary from '../../../src/host/security/untrustedContentBoundary';
 
-import { FEISHU_CONTACT_CACHE_TTL_MS, FEISHU_CONTACT_LOOKUP_TIMEOUT_MS } from '../../../src/shared/constants/feishu';
+import { FEISHU_CONTACT_CACHE_TTL_MS, FEISHU_CONTACT_MISS_TTL_MS, FEISHU_CONTACT_LOOKUP_TIMEOUT_MS } from '../../../src/shared/constants/feishu';
 
 const ACCOUNT_ID = 'feishu-mf-ctx';
 const CACHE_DIR = path.join(os.homedir(), '.code-agent', 'cache', 'channel-media', 'feishu', ACCOUNT_ID);
@@ -209,6 +209,18 @@ describe('Feishu inbound context', () => {
     const denied = await drive({ inboundAllowlist: ['ou_sender'] }, contextEvent('parent'), contextApi('parent'));
     expect(denied.messages[0].content).toContain('GMT+8 成员A]');
     expect(denied.messages[0].content).not.toContain('Example Alpha');
+  });
+
+  it('does not re-query a denied name until the miss cache expires', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const contactGet = vi.fn(async () => ({ code: 99991672, msg: 'Access denied' }));
+    const api = contextApi('parent', contactGet);
+    await drive({ inboundAllowlist: ['ou_sender'] }, contextEvent('parent'), api);
+    await drive({ inboundAllowlist: ['ou_sender'] }, contextEvent('parent'), api);
+    expect(contactGet).toHaveBeenCalledTimes(1);
+    vi.setSystemTime(Date.now() + FEISHU_CONTACT_MISS_TTL_MS + 1);
+    await drive({ inboundAllowlist: ['ou_sender'] }, contextEvent('parent'), api);
+    expect(contactGet).toHaveBeenCalledTimes(2);
   });
 
   it('falls back within the lookup deadline when contact requests never settle', async () => {

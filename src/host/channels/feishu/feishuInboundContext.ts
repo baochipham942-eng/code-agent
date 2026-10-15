@@ -1,7 +1,7 @@
 // Feishu inbound context: merged forwards, topic threads, and quoted parents.
 // Fetches never throw; failures become an explicit block the model can see.
 
-import { FEISHU_CONTACT_CACHE_TTL_MS, FEISHU_CONTACT_LOOKUP_TIMEOUT_MS } from '../../../shared/constants/feishu';
+import { FEISHU_CONTACT_CACHE_TTL_MS, FEISHU_CONTACT_LOOKUP_TIMEOUT_MS, FEISHU_CONTACT_MISS_TTL_MS } from '../../../shared/constants/feishu';
 import type { ChannelAttachment } from '../../../shared/contract/channel';
 import {
   generateBoundaryNonce,
@@ -287,7 +287,8 @@ function unreadableForwardLine(errorCode?: string): string {
 }
 
 const NAME_UNAVAILABLE_NOTICE = '（未获授权或暂时无法读取姓名，部分发言人以成员A/成员B代称）';
-const contactNames = new WeakMap<object, Map<string, { name: string; expiresAt: number }>>();
+// name 为 undefined 是负缓存：没有通讯录权限是多数应用的默认，别每条消息都重打一遍必败的接口。
+const contactNames = new WeakMap<object, Map<string, { name: string | undefined; expiresAt: number }>>();
 
 interface ContactGet {
   (payload: { path: { user_id: string }; params: { user_id_type: 'open_id' } }): Promise<unknown>;
@@ -310,6 +311,10 @@ async function resolveContactName(client: unknown, openId: string): Promise<stri
   }
   const cached = cache.get(openId);
   if (cached) return cached.name;
+  const remember = (name: string | undefined) => {
+    cache.set(openId, { name, expiresAt: Date.now() + (name ? FEISHU_CONTACT_CACHE_TTL_MS : FEISHU_CONTACT_MISS_TTL_MS) });
+    return name;
+  };
 
   if (!isRecord(client.contact) || !isRecord(client.contact.v3)
     || !isRecord(client.contact.v3.user)) return undefined;
@@ -326,16 +331,14 @@ async function resolveContactName(client: unknown, openId: string): Promise<stri
     ]);
     // Permission-denied responses and all other API errors use the same visible fallback.
     if (!isRecord(response) || (response.code !== undefined && response.code !== 0 && response.code !== '0')) {
-      return undefined;
+      return remember(undefined);
     }
     const data = isRecord(response.data) ? response.data : undefined;
     const info = data && isRecord(data.user) ? data.user : undefined;
     const name = info ? readString(info, 'name')?.trim() : undefined;
-    if (!name || name.startsWith('ou_')) return undefined;
-    cache.set(openId, { name, expiresAt: Date.now() + FEISHU_CONTACT_CACHE_TTL_MS });
-    return name;
+    return remember(name && !name.startsWith('ou_') ? name : undefined);
   } catch {
-    return undefined;
+    return remember(undefined);
   } finally {
     if (timer !== undefined) clearTimeout(timer);
   }

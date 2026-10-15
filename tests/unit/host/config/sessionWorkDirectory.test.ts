@@ -9,11 +9,33 @@
 // 必须把「其它会话行已记下的路径（reservedPaths）」与磁盘条目一起当占用——两个
 // 同日同题会话不再共享产出目录；已被双方记下且盘上尚无内容的路径在运行前改道
 // （maybeDivertCollidingSessionWorkDirectory），盘上已有内容的不动。
+//
+// rework r3：回写会话行之前占用列表是空的。两个重叠的 plan 会同时看见空盘。
+// 磁盘检查返回后同步占名，后到的规划拿到 -2；纯问答仍然一个目录都不建。
+// fs/promises 的 stat 包一层钩子，只给重叠用例把两次磁盘检查挡在返回之前。
 // ============================================================================
 import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const fsStatGate = vi.hoisted(() => ({
+  beforeStat: null as null | ((target: string) => Promise<void>),
+  forceMissing: null as null | ((target: string) => boolean),
+}));
+
+vi.mock('fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs/promises')>();
+  const stat = async (...args: Parameters<typeof actual.stat>) => {
+    const target = String(args[0]);
+    if (fsStatGate.beforeStat) await fsStatGate.beforeStat(target);
+    if (fsStatGate.forceMissing?.(target)) {
+      throw Object.assign(new Error(`ENOENT: ${target}`), { code: 'ENOENT' });
+    }
+    return actual.stat(...args);
+  };
+  return { ...actual, stat };
+});
 
 vi.mock('../../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({
@@ -658,6 +680,151 @@ describe('maybeDivertCollidingSessionWorkDirectory (pre-run collision divert, re
       env,
     });
     expect(divertedNext).toBe(path.join(root, '任务_1011_整理会议纪要-2'));
+  });
+});
+
+describe('in-process path claims (rework r3)', () => {
+  let tempHome: string;
+  let env: NodeJS.ProcessEnv;
+  let root: string;
+  const fixedNow = new Date(2026, 9, 11, 20, 30).getTime();
+
+  beforeEach(async () => {
+    mockUiLanguage = 'zh';
+    fsStatGate.beforeStat = null;
+    fsStatGate.forceMissing = null;
+    tempHome = await mkdtemp(path.join(tmpdir(), 'session-work-dir-r3-'));
+    env = { CODE_AGENT_HOME: tempHome, CODE_AGENT_DATA_DIR: path.join(tempHome, '.code-agent') };
+    root = getDefaultWorkDirectory(env);
+  });
+
+  afterEach(async () => {
+    fsStatGate.beforeStat = null;
+    fsStatGate.forceMissing = null;
+    await rm(tempHome, { recursive: true, force: true });
+  });
+
+  it('overlapping planners that both see an empty disk receive different paths; the second is the -2 suffix', async () => {
+    const unsuffixed = path.join(root, '任务_1011_并发规划');
+    const resolvedRoot = path.resolve(root);
+    let entered = 0;
+    let releaseBoth: () => void = () => {};
+    const bothEntered = new Promise<void>((resolve) => {
+      releaseBoth = resolve;
+    });
+    const waiters: Array<() => void> = [];
+    fsStatGate.beforeStat = async (target) => {
+      if (path.resolve(target) !== path.resolve(unsuffixed)) return;
+      entered += 1;
+      if (entered === 2) releaseBoth();
+      await new Promise<void>((resolve) => {
+        waiters.push(resolve);
+      });
+    };
+    // 真 stat 走线程池，完成顺序不稳定。这里在闸门打开后同步抛 ENOENT，
+    // 让两个规划器按调用顺序恢复，先恢复的占住无后缀名。
+    fsStatGate.forceMissing = (target) => {
+      const resolved = path.resolve(target);
+      return resolved === resolvedRoot || resolved.startsWith(`${resolvedRoot}${path.sep}`);
+    };
+
+    const options = {
+      sessionTitle: '并发规划',
+      now: fixedNow,
+      language: 'zh' as const,
+      env,
+      reservedPaths: [] as string[],
+    };
+    let settled = 0;
+    const track = (pending: Promise<string>): Promise<string> => pending.then((value) => {
+      settled += 1;
+      return value;
+    });
+    const firstPromise = track(planSessionWorkDirectory(options));
+    const secondPromise = track(planSessionWorkDirectory(options));
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const bothSawDisk = await Promise.race([
+        bothEntered.then(() => true),
+        new Promise<boolean>((resolve) => {
+          timeout = setTimeout(() => resolve(false), 1000);
+        }),
+      ]);
+      clearTimeout(timeout);
+      expect(bothSawDisk).toBe(true);
+      expect(entered).toBe(2);
+      expect(settled).toBe(0);
+      for (const release of waiters) release();
+      const [firstPath, secondPath] = await Promise.all([firstPromise, secondPromise]);
+      expect(firstPath).toBe(unsuffixed);
+      expect(secondPath).toBe(`${unsuffixed}-2`);
+      expect(firstPath).not.toBe(secondPath);
+    } finally {
+      clearTimeout(timeout);
+      fsStatGate.beforeStat = null;
+      fsStatGate.forceMissing = null;
+      for (const release of waiters) release();
+      await Promise.allSettled([firstPromise, secondPromise]);
+    }
+    await expect(stat(root)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('a later plan treats the in-process claim as taken when reservedPaths is empty and nothing is on disk', async () => {
+    const first = await planSessionWorkDirectory({
+      sessionTitle: '稍后规划',
+      now: fixedNow,
+      language: 'zh',
+      env,
+      reservedPaths: [],
+    });
+    const second = await planSessionWorkDirectory({
+      sessionTitle: '稍后规划',
+      now: fixedNow,
+      language: 'zh',
+      env,
+      reservedPaths: [],
+    });
+    expect(first).toBe(path.join(root, '任务_1011_稍后规划'));
+    expect(second).toBe(path.join(root, '任务_1011_稍后规划-2'));
+    await expect(stat(root)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('re-plan treats an in-process claim as taken even when reservedPaths is empty', async () => {
+    const now = new Date();
+    const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const claimed = await planSessionWorkDirectory({
+      sessionTitle: '季度总结报告',
+      language: 'zh',
+      env,
+      reservedPaths: [],
+    });
+    expect(claimed).toBe(path.join(root, `任务_${mmdd}_季度总结报告`));
+    const current = path.join(root, '任务_1011_帮我出一份季度总结');
+    const replanned = await maybeReplanSessionWorkDirectory({
+      workingDirectory: current,
+      sessionTitle: '季度总结报告',
+      env,
+      reservedPaths: [],
+    });
+    expect(replanned).toBe(path.join(root, `任务_${mmdd}_季度总结报告-2`));
+    await expect(stat(root)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('divert does not keep a path this process already claimed when another session reserved it', async () => {
+    const current = await planSessionWorkDirectory({
+      sessionTitle: '改道不豁免',
+      now: fixedNow,
+      language: 'zh',
+      env,
+    });
+    expect(current).toBe(path.join(root, '任务_1011_改道不豁免'));
+    const diverted = await maybeDivertCollidingSessionWorkDirectory({
+      workingDirectory: current,
+      reservedPaths: [current],
+      env,
+    });
+    expect(diverted).toBe(path.join(root, '任务_1011_改道不豁免-2'));
+    await expect(stat(root)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });
 

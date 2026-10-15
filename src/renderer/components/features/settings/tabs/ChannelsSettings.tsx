@@ -469,6 +469,15 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                 />
                 <p className="mt-1 text-xs text-badge-warning">{channelText.modal.outboundTargetsHint}</p>
               </div>
+              {type === 'feishu' && (
+                <section className="space-y-1 rounded-lg border border-zinc-700 p-3" aria-label={channelText.modal.permissionChecklistTitle}>
+                  <h4 className="text-sm text-zinc-300">{channelText.modal.permissionChecklistTitle}</h4>
+                  <ul className="list-inside list-disc text-xs text-zinc-400">
+                    <li>{channelText.modal.groupListenPermission}</li>
+                  </ul>
+                  <p className="text-xs text-zinc-400">{channelText.modal.groupListenPermissionPath}</p>
+                </section>
+              )}
               {!useWebSocket && (
                 <>
                   <div>

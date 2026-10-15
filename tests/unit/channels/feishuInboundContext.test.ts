@@ -1,22 +1,31 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Server } from 'http';
 import type { AddressInfo } from 'net';
 import type { ChannelMessage, FeishuChannelConfig, Message } from '../../../src/shared/contract';
 import { FeishuChannel } from '../../../src/host/channels/feishu/feishuChannel';
 import {
+  assembleFeishuInbound,
   extractFeishuPostText,
   feishuReplyCountsAsMention,
 } from '../../../src/host/channels/feishu/feishuInboundContext';
 import { hasUntrustedMemoryInput } from '../../../src/host/memory/automaticMemoryPolicy';
 import * as boundary from '../../../src/host/security/untrustedContentBoundary';
 
+import { FEISHU_CONTACT_CACHE_TTL_MS, FEISHU_CONTACT_MISS_TTL_MS, FEISHU_CONTACT_LOOKUP_TIMEOUT_MS } from '../../../src/shared/constants/feishu';
+
 const ACCOUNT_ID = 'feishu-mf-ctx';
 const CACHE_DIR = path.join(os.homedir(), '.code-agent', 'cache', 'channel-media', 'feishu', ACCOUNT_ID);
 
+beforeEach(() => {
+  vi.stubEnv('TZ', 'Asia/Shanghai');
+});
+
 afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.useRealTimers();
   fs.rmSync(CACHE_DIR, { recursive: true, force: true });
 });
 
@@ -32,6 +41,7 @@ function messageApi(options?: {
   get?: ReturnType<typeof vi.fn> | null;
   list?: ReturnType<typeof vi.fn> | null;
   resourceGet?: ReturnType<typeof vi.fn>;
+  contactGet?: ReturnType<typeof vi.fn>;
 }): Api {
   const create = vi.fn(async () => ({ code: 0, data: { message_id: 'om_reply' } }));
   const resourceGet = options?.resourceGet ?? vi.fn(async () => ({ data: Buffer.from('PNGDATA') }));
@@ -43,7 +53,10 @@ function messageApi(options?: {
     get: options?.get ?? undefined,
     list: options?.list ?? undefined,
     resourceGet,
-    client: { im: { message, messageResource: { get: resourceGet } } },
+    client: {
+      im: { message, messageResource: { get: resourceGet } },
+      contact: { v3: { user: { get: options?.contactGet } } },
+    },
   };
 }
 
@@ -128,6 +141,116 @@ async function drive(config: Partial<FeishuChannelConfig>, event: unknown, api: 
 }
 
 describe('Feishu inbound context', () => {
+  const contextItems = (kind: string) => ['ou_alpha', 'ou_beta', 'ou_alpha'].map((senderId, index) => textItem({
+    id: index === 0 ? 'om_parent' : `om_context_${index}`,
+    senderId,
+    text: `context-${index}`,
+    time: String(Date.UTC(2026, 9, 15, 6, index + 3)),
+    upperId: kind === 'forward' ? 'om_context' : undefined,
+  }));
+  const contextEvent = (kind: string) => inbound({
+    id: 'om_context',
+    messageType: kind === 'forward' ? 'merge_forward' : 'text',
+    parentId: kind === 'parent' ? 'om_parent' : undefined,
+    threadId: kind === 'thread' ? 'omt_context' : undefined,
+  });
+  const contextApi = (kind: string, contactGet?: ReturnType<typeof vi.fn>) => {
+    const response = { code: 0, data: { items: contextItems(kind) } };
+    return messageApi({ get: vi.fn(async () => response), list: vi.fn(async () => response), contactGet });
+  };
+
+  it.each(['forward', 'thread', 'parent'])('resolves and caches display names for %s context', async (kind) => {
+    const contactGet = vi.fn(async ({ path: params }) => ({
+      code: 0, data: { user: { name: params.user_id === 'ou_alpha' ? 'Example Alpha' : 'Example Beta' } },
+    }));
+    const api = contextApi(kind, contactGet);
+    for (let run = 0; run < 2; run++) {
+      const result = await drive({ inboundAllowlist: ['ou_sender'] }, contextEvent(kind), api);
+      const content = result.messages[0].content;
+      expect(content).toContain('[2026-10-15 14:03 GMT+8 Example Alpha] context-0');
+      if (kind !== 'parent') {
+        expect(content).toContain('[2026-10-15 14:04 GMT+8 Example Beta] context-1');
+        expect(content).toContain('[2026-10-15 14:05 GMT+8 Example Alpha] context-2');
+      }
+      expect(content).not.toContain('ou_');
+      expect(content).not.toContain('代称');
+    }
+    expect(contactGet).toHaveBeenCalledTimes(kind === 'parent' ? 1 : 2);
+    expect(contactGet).toHaveBeenCalledWith({ path: { user_id: 'ou_alpha' }, params: { user_id_type: 'open_id' } });
+  });
+
+  it.each(['forward', 'thread', 'parent'].flatMap((kind) =>
+    ['missing', 'permission', 'throw', 'invalid-name'].map((failure) => ({ kind, failure })),
+  ))('uses stable pseudonyms and one notice for $kind / $failure', async ({ kind, failure }) => {
+    const contactGet = failure === 'missing' ? undefined : vi.fn(async () => {
+      if (failure === 'throw') throw new Error('contact unavailable');
+      if (failure === 'invalid-name') return { code: 0, data: { user: { name: 'ou_alpha' } } };
+      return { code: 99991672, msg: 'Access denied' };
+    });
+    const result = await drive({ inboundAllowlist: ['ou_sender'] }, contextEvent(kind), contextApi(kind, contactGet));
+    const content = result.messages[0].content;
+    expect(content).toContain('[2026-10-15 14:03 GMT+8 成员A] context-0');
+    if (kind !== 'parent') {
+      expect(content).toContain('[2026-10-15 14:04 GMT+8 成员B] context-1');
+      expect(content).toContain('[2026-10-15 14:05 GMT+8 成员A] context-2');
+    }
+    expect(content).not.toContain('ou_');
+    expect(content.match(/未获授权或暂时无法读取姓名/g)).toHaveLength(1);
+  });
+
+  it('expires cached names and isolates different app clients', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const contactGet = vi.fn(async () => ({ code: 0, data: { user: { name: 'Example Alpha' } } }));
+    const api = contextApi('parent', contactGet);
+    await drive({ inboundAllowlist: ['ou_sender'] }, contextEvent('parent'), api);
+    vi.setSystemTime(Date.now() + FEISHU_CONTACT_CACHE_TTL_MS + 1);
+    await drive({ inboundAllowlist: ['ou_sender'] }, contextEvent('parent'), api);
+    expect(contactGet).toHaveBeenCalledTimes(2);
+    const denied = await drive({ inboundAllowlist: ['ou_sender'] }, contextEvent('parent'), contextApi('parent'));
+    expect(denied.messages[0].content).toContain('GMT+8 成员A]');
+    expect(denied.messages[0].content).not.toContain('Example Alpha');
+  });
+
+  it('does not re-query a denied name until the miss cache expires', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const contactGet = vi.fn(async () => ({ code: 99991672, msg: 'Access denied' }));
+    const api = contextApi('parent', contactGet);
+    await drive({ inboundAllowlist: ['ou_sender'] }, contextEvent('parent'), api);
+    await drive({ inboundAllowlist: ['ou_sender'] }, contextEvent('parent'), api);
+    expect(contactGet).toHaveBeenCalledTimes(1);
+    vi.setSystemTime(Date.now() + FEISHU_CONTACT_MISS_TTL_MS + 1);
+    await drive({ inboundAllowlist: ['ou_sender'] }, contextEvent('parent'), api);
+    expect(contactGet).toHaveBeenCalledTimes(2);
+  });
+
+  it('falls back within the lookup deadline when contact requests never settle', async () => {
+    vi.useFakeTimers();
+    const api = contextApi('thread', vi.fn(() => new Promise(() => {})));
+    const result = assembleFeishuInbound({
+      client: api.client, accountId: ACCOUNT_ID, platform: 'feishu',
+      messageId: 'om_context', messageType: 'text', rawContent: '{"text":"ping"}',
+      threadId: 'omt_context', renderPost: extractFeishuPostText,
+    });
+    await vi.advanceTimersByTimeAsync(FEISHU_CONTACT_LOOKUP_TIMEOUT_MS);
+    expect((await result).content).toContain('GMT+8 成员A] context-0');
+    expect((await result).content).toContain('GMT+8 成员B] context-1');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each([
+    ['America/New_York', Date.UTC(2026, 0, 15, 2, 3), '2026-01-14 21:03 GMT-5'],
+    ['America/New_York', Date.UTC(2026, 6, 15, 2, 3), '2026-07-14 22:03 GMT-4'],
+    ['Asia/Kathmandu', Date.UTC(2026, 9, 15, 6, 3), '2026-10-15 11:48 GMT+5:45'],
+    ['UTC', Date.UTC(2026, 9, 15, 6, 3), '2026-10-15 06:03 GMT+0'],
+  ])('uses the machine timezone %s with an explicit offset', async (zone, time, expected) => {
+    vi.stubEnv('TZ', zone);
+    const api = messageApi({ get: vi.fn(async () => ({ code: 0, data: { items: [
+      textItem({ id: 'om_parent', text: 'local time', time: String(time) }),
+    ] } })) });
+    const result = await drive({ inboundAllowlist: ['ou_sender'] }, contextEvent('parent'), api);
+    expect(result.messages[0].content).toContain(`[${expected} 成员A] local time`);
+  });
+
   it('expands a merged forward into attributed lines and materializes the image', async () => {
     const container = 'om_forward';
     const get = vi.fn(async () => ({
@@ -166,11 +289,11 @@ describe('Feishu inbound context', () => {
 
     expect(result.messages).toHaveLength(1);
     const content = result.messages[0].content;
-    expect(content).toContain('[2026-09-30 08:02 ou_alice] hello text');
-    expect(content).toContain('[2026-09-30 08:03 bot] post body');
-    expect(content).toContain('[2026-09-30 08:04 ou_carol]');
+    expect(content).toContain('[2026-09-30 16:02 GMT+8 成员A] hello text');
+    expect(content).toContain('[2026-09-30 16:03 GMT+8 bot] post body');
+    expect(content).toContain('[2026-09-30 16:04 GMT+8 成员B]');
     expect(content).toContain('photo.png');
-    expect(content.indexOf('ou_alice')).toBeLessThan(content.indexOf('post body'));
+    expect(content.indexOf('] hello text')).toBeLessThan(content.indexOf('post body'));
     expect(content.indexOf('post body')).toBeLessThan(content.indexOf('photo.png'));
     expect(content).not.toContain('Merged and Forwarded Message');
     expect(result.api.resourceGet).toHaveBeenCalledWith({
@@ -458,7 +581,7 @@ describe('Feishu inbound context', () => {
     );
     const content = quoted.messages[0].content;
     expect(content.startsWith('please look')).toBe(true);
-    expect(content).toContain(`ou_q: ${'Q'.repeat(200)}`);
+    expect(content).toContain(`[2026-09-30 15:00 GMT+8 成员A] ${'Q'.repeat(200)}`);
     expect(content).not.toContain('Q'.repeat(201));
     expect(content).toContain('<untrusted-content source="feishu:quoted"');
     expect(get).toHaveBeenCalledTimes(1);
@@ -479,7 +602,7 @@ describe('Feishu inbound context', () => {
       messageApi({ get: forwardGet }),
     );
     expect(replied.messages[0].content.startsWith('see this')).toBe(true);
-    expect(replied.messages[0].content).toContain('[2026-09-30 07:02 ou_inside] inside forward');
+    expect(replied.messages[0].content).toContain('[2026-09-30 15:02 GMT+8 成员A] inside forward');
     expect(replied.messages[0].content).toContain('source="feishu:forwarded"');
     expect(forwardGet).toHaveBeenCalledTimes(1);
   });
@@ -501,7 +624,7 @@ describe('Feishu inbound context', () => {
     expect(mentioned.messages).toHaveLength(1);
     expect(mentioned.messages[0].ingressAuth).toBe('paired');
     expect(mentioned.messages[0].content).toContain('following up');
-    expect(mentioned.messages[0].content).toContain('bot: bot said');
+    expect(mentioned.messages[0].content).toContain('[2026-09-30 14:00 GMT+8 bot] bot said');
     expect(get).toHaveBeenCalledTimes(1);
 
     const humanGet = vi.fn(async () => ({

@@ -4,7 +4,8 @@
 
 import type { DecisionStep, DecisionTrace } from '../../shared/contract/decisionTrace';
 import { getGuardFabric, type ExecutionTopology } from '../permissions';
-import { UserConfigSource } from '../permissions/userConfigSource';
+import { getPolicyEngine } from '../permissions/policyEngine';
+import { resolveEffectivePolicyRules } from '../permissions/runPolicySnapshot';
 import { createLogger } from '../services/infra/logger';
 import { createTraceBuilder } from '../security/decisionTraceBuilder';
 
@@ -29,29 +30,31 @@ export interface GuardFabricGateResult {
   traceStep?: DecisionStep;
 }
 
-const userRules = new UserConfigSource();
-
 /**
  * 用户在设置里写的拒绝规则（如 Bash(rm *)）对所有拓扑都是硬拒，在审批之前生效（N-PERM-USER-DENY-MAIN）。
  * 此前主拓扑直接放行、非主拓扑也只消费 topology 裁决，命令类用户 deny 没有任何消费方——
- * rm 照样落到审批分类器，点允许就执行。只接 deny：用户 ask/allow 的语义不在这里改。
+ * rm 照样落到审批分类器，点允许就执行。
+ * 只认命中规则本身是 user-deny：PolicyEngine 在 plan/dontAsk 等严格模式下会把命中的 user-allow
+ * 改写成 action=deny，那是模式的事、由主链按真实 level 判，不能在这里当成「你的拒绝规则」硬拒。
  */
 function evaluateUserDeny(input: GuardFabricGateInput): GuardFabricGateResult['deny'] | undefined {
-  const verdict = userRules.evaluate({
+  const { matchedRule } = getPolicyEngine().evaluate({
     tool: input.policyToolName,
-    args: input.params,
-    topology: input.topology,
+    level: 'execute',
+    description: `tool: ${input.policyToolName}`,
+    command: input.params.command as string,
+    filePath: (input.params.filePath as string) || (input.params.file_path as string),
     sessionId: input.sessionId,
-    agentId: input.agentId,
-  });
-  if (verdict?.verdict !== 'deny') return undefined;
-  logger.warn('Denied by user permission rule', { toolName: input.executionToolName, reason: verdict.reason });
+  }, resolveEffectivePolicyRules(input.sessionId));
+  if (matchedRule?.action !== 'deny' || !matchedRule.id.startsWith('user-deny-')) return undefined;
+  const reason = `user-config: ${matchedRule.name}`;
+  logger.warn('Denied by user permission rule', { toolName: input.executionToolName, rule: matchedRule.id });
   const trace = createTraceBuilder(input.executionToolName)
-    .addStep('policy_enforcer', 'user-config', 'deny', verdict.reason)
+    .addStep('policy_enforcer', matchedRule.id, 'deny', reason)
     .build('deny');
   return {
-    error: `Blocked by your permission deny rule (${verdict.reason}). This tool call is denied by the user's settings; do not retry it or try to achieve the same effect another way.`,
-    reason: verdict.reason,
+    error: `Blocked by your permission deny rule (${matchedRule.name}). This tool call is denied by the user's settings; do not retry it or try to achieve the same effect another way.`,
+    reason,
     trace,
   };
 }

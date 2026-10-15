@@ -14,6 +14,7 @@ import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import type { PermissionRequestData } from '../../../src/host/tools/types';
 import { getPolicyEngine, resetPolicyEngine } from '../../../src/host/permissions/policyEngine';
 import type { ExecutionTopology } from '../../../src/host/permissions';
+import { getPermissionModeManager } from '../../../src/host/permissions/modes';
 
 // N-PERM-USER-DENY-MAIN：设置里写的 deny Bash(rm *) 必须在审批之前硬拒——哪怕审批处理器
 // 会点「允许」。此前主拓扑没有任何消费方，rm 落到审批卡，点允许就执行（FB-401 真跑实证）。
@@ -73,6 +74,20 @@ describe('ToolExecutor 用户拒绝规则', () => {
     );
     expect(result.success).toBe(false);
     expect(existsSync(path.join(workspace, 'victim.txt'))).toBe(true);
+  });
+
+  it.each(['plan', 'dontAsk'] as const)('%s 模式下用户 allow 规则不会被当成拒绝规则硬拒', async (mode) => {
+    getPolicyEngine().loadUserRules({ allow: ['Bash(printf *)'] }, 'user-ui');
+    const modes = getPermissionModeManager();
+    const previous = modes.getEffectiveMode();
+    expect(modes.setMode(mode, true)).toBe(true);
+    expect(modes.getEffectiveMode()).toBe(mode);
+    try {
+      const result = await approvingExecutor().execute('Bash', { command: 'printf hi' }, { sessionId: `user-allow-${mode}` });
+      expect(result.error ?? '').not.toContain('deny rule');
+    } finally {
+      modes.setMode(previous, true);
+    }
   });
 
   it('无关命令不受 deny 规则影响；没有规则时 rm 走原审批路径', async () => {

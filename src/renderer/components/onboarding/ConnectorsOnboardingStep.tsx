@@ -131,7 +131,7 @@ export const ConnectorsOnboardingStep: React.FC<ConnectorsOnboardingStepProps> =
                   loading={localBusy}
                   onClick={() => (isLocal ? void connectLocal(id) : onConnectIntent(id))}
                 >
-                  {outcome ? text.connectorConnected : text.connectorConnect}
+                  {outcome && outcome !== 'failed' ? text.connectorConnected : text.connectorConnect}
                 </Button>
               </div>
               {localBusy ? (

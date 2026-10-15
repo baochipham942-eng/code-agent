@@ -115,8 +115,10 @@ describe('ConnectorsOnboardingStep', () => {
         .toBe('刚才没获系统授权。可到 系统设置 › 隐私与安全性 › 自动化 里重新允许；完成引导后仍会为你打开「邮件」的连接卡。');
     });
     expect(onConnectIntent).toHaveBeenCalledWith('mail');
-    // Don't Allow 后系统不会再弹：按钮进入终态，不给原地重试
-    expect(screen.getByTestId('onboarding-connect-mail').hasAttribute('disabled')).toBe(true);
+    // Don't Allow 后系统不会再弹：按钮进入终态禁用，不给原地重试，也不谎称已连接
+    const deniedButton = screen.getByTestId('onboarding-connect-mail');
+    expect(deniedButton.hasAttribute('disabled')).toBe(true);
+    expect(deniedButton.textContent).toBe('去连接');
   });
 
   it('repairPermission 整体 reject 时补读 listStatuses 判失败', async () => {

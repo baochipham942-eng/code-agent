@@ -1114,6 +1114,8 @@ export class CronService implements Disposable {
       parentSessionId: sourceSessionId,
       sourceRunId: executionId,
       readOnly: true,
+      // 定时任务的会话档跟随发起会话：源会话「不用记忆」→ 每次运行也不留痕
+      memoryMode: sourceSession?.memoryMode === 'off' ? 'off' : undefined,
     });
   }
 

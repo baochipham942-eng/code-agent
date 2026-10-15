@@ -81,6 +81,8 @@ export interface SessionCreateOptions {
 	  readOnly?: boolean;
   retryOfSessionId?: string;
   userId?: string | null;
+  /** 会话级记忆档；缺省 'auto'。'off' = 不读也不写长期记忆（新任务级开关）。 */
+  memoryMode?: Session['memoryMode'];
 }
 
 export interface SessionListOptions {
@@ -220,7 +222,7 @@ export class SessionManager implements Disposable {
 	      parentSessionId: options.parentSessionId,
       sourceRunId: options.sourceRunId,
       engine: normalizeAgentEngineSession(options.engine),
-      memoryMode: 'auto',
+      memoryMode: options.memoryMode ?? 'auto',
       suppressedMemoryEntryIds: [],
       readOnly: options.readOnly,
       retryOfSessionId: options.retryOfSessionId,

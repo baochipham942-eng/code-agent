@@ -137,6 +137,9 @@ const CLI_TASK_MANAGER_TOOL_DENYLIST = [
   'cancel_task',
   'task_status',
 ] as const;
+// memoryMode='off' 时记忆/历史类工具同样收出工具面（与桌面 orchestrator 同源，
+// 见 routingToolPolicy.assembleTurnDenylist；这条路径不经 orchestrator）
+const { MEMORY_OFF_DENYLIST } = cliRequire('../host/agent/routingToolPolicy') as typeof import('../host/agent/routingToolPolicy');
 
 type AgentLoopMessageSessionManager = Pick<CLISessionManager, 'addMessage' | 'addMessageToSession'>;
 
@@ -799,8 +802,12 @@ export function createAgentLoop(
     agentId: config.agentOverride?.id ?? 'default',
     agentName: config.agentOverride?.name ?? 'default',
     requestedAgentId: config.requestedAgentId,
+    // 会话记忆档透传：AgentLoop ctx 据此关读（注入跳过 + 上面并入的记忆工具 denylist）
+    // 也关写（persistLongTermMemory 强制 false）
+    memoryMode: config.memoryMode,
     deniedToolNames: Array.from(new Set([
       ...(config.taskManagerToolsEnabled ? [] : CLI_TASK_MANAGER_TOOL_DENYLIST),
+      ...(config.memoryMode === 'off' ? MEMORY_OFF_DENYLIST : []),
       ...(config.deniedToolNames ?? []),
       ...(config.agentOverride?.deniedToolNames ?? []),
     ])),

@@ -195,11 +195,14 @@ const SESSION_HANDLERS: DomainRouteHandlers<SessionDomainRequest, SessionCommand
   },
 
   create: async (ctx, payload) => {
-    const p = payload as { title?: string; workingDirectory?: string; expertRoleId?: string } | undefined;
+    const p = payload as { title?: string; workingDirectory?: string; expertRoleId?: string; memoryMode?: unknown } | undefined;
+    // memoryMode 是不可信边界上的枚举：只认 'off'|'auto'，其余静默忽略（落回 'auto'）
+    const memoryMode = p?.memoryMode === 'off' || p?.memoryMode === 'auto' ? p.memoryMode : undefined;
     return (await ctx.sessions()).createSession({
       title: p?.title || 'New Session',
       workingDirectory: typeof p?.workingDirectory === 'string' ? p.workingDirectory : undefined,
       expertRoleId: p?.expertRoleId,
+      memoryMode,
     });
   },
 

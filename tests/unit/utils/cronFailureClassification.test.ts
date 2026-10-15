@@ -41,6 +41,14 @@ describe('classifyCronFailure', () => {
       .toBe(new Date(1760490000 * 1000).toISOString());
   });
 
+  it('GLM 401 中文文案（真机实测原文）归鉴权，不漏成 other', () => {
+    // 2026-10-15 真跑记录的 execution.error 原样：message + responseBody 两段。
+    expect(classifyCronFailure('令牌已过期或验证不正确\n{"error":{"code":"401","message":"令牌已过期或验证不正确"}}'))
+      .toEqual({ kind: 'auth' });
+    expect(classifyCronFailure('{"error":{"code":"401","message":"Invalid API key"}}'))
+      .toEqual({ kind: 'auth' });
+  });
+
   it('402 余额不足归额度，不编时间和窗口', () => {
     const result = classifyCronFailure('402 Payment Required: insufficient balance');
     expect(result).toEqual({ kind: 'quota' });

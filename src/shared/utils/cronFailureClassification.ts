@@ -31,6 +31,10 @@ export interface CronFailureClassification {
 }
 
 const QUOTA_TEXT = /\b1308\b|\b1310\b|usage limit/i;
+// 国内 provider 的 401 文案是中文（GLM 实测「令牌已过期或验证不正确」），classifyAgentError
+// 的英文关键词认不出就会漏成 other。报文里带出的 401 状态码按 host 侧 getModelAuthFailureMarker
+// 的口径（401 即鉴权）一并认掉；额度走 429/1308，与这里不撞。
+const AUTH_TEXT = /\b401\b|令牌已过期|验证不正确|鉴权失败|api\s*key\s*(无效|过期|不正确)/i;
 const LIMIT_TEXT = /(\d+\s*-?\s*hours?(?:\s+window)?)|(\d+\s*小时(?:窗口|额度)?)|(每周|每月|周额度|月额度)|\b(weekly|monthly|per week|per month)\b/i;
 const ISO_LIKE = /(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)/;
 const SOURCE_TEXT_LIMIT = 4000;
@@ -87,6 +91,7 @@ export function classifyCronFailure(error?: string): CronFailureClassification {
   if (parseCronLoginWallStop(text)) return { kind: 'login_wall' };
   // 额度报文经常带着 HTTP 429。先认额度，避免被 classifyAgentError 收成 rate_limited。
   if (QUOTA_TEXT.test(text)) return quotaResult(text);
+  if (AUTH_TEXT.test(text)) return { kind: 'auth' };
 
   const category = classifyAgentError({ message: text })?.category;
   if (category === 'insufficient_balance') return quotaResult(text);

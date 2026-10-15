@@ -184,6 +184,7 @@ export const enSettingsSystem = {
           audioInput: 'Voice input',
           browserAutomation: 'Browser control',
           imageUnderstanding: 'Image understanding',
+          pythonEnv: 'Python data runtime',
         },
         summary: {
           unavailableSuffix: ' unavailable',
@@ -198,7 +199,18 @@ export const enSettingsSystem = {
           firstUseDownload: 'Downloads on first use',
           unsupported: 'Not supported',
           missing: 'Missing',
+          installing: 'Installing',
+          installFailed: 'Install failed',
         },
+        // python-env failure reason copy: selected by host failure code (see pythonEnvAssetRow.ts);
+        // the raw host error stays reachable via the title tooltip, never as the main text.
+        failureReasons: {
+          offline: 'Network unavailable: the Python package index could not be reached, so the install did not finish. Check the network and retry.',
+          installFailed: 'The install did not finish. Retry to install again; if it keeps failing, open the install log for details.',
+          unsupported: 'The managed Python runtime is not supported on this platform; data-processing features are unavailable.',
+          fallback: 'The install did not finish. Retry to install again.',
+        },
+        openInstallLog: 'Open log',
       },
       rendererBundle: {
         title: 'Frontend UI',

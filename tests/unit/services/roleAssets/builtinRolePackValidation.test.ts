@@ -12,6 +12,8 @@ import {
   type BuiltinRoleDefinition,
 } from '../../../../src/host/services/roleAssets/builtinRoles';
 import { BUILTIN_SKILLS } from '../../../../src/host/services/skills/builtinSkillsData';
+import { isBuiltinSkill } from '../../../../src/host/services/skills/builtinSkills';
+import { parseAgentMd } from '../../../../src/host/agent/hybrid/agentMdLoader';
 
 const knownSkillNames = new Set(BUILTIN_SKILLS.map((s) => s.name));
 
@@ -41,6 +43,26 @@ describe('validateBuiltinRolePack', () => {
     for (const role of BUILTIN_ROLES) {
       const issues = validateBuiltinRolePack(role, knownSkillNames);
       expect(issues, `${role.id}: ${issues.map((i) => i.issue).join('; ')}`).toEqual([]);
+    }
+  });
+
+  // N-ROLE-PACKS-PILOT3：纵向职场三包（owner 决议 2026-10-14），只绑既有内置 skill
+  it('3 个新角色（持衡/记言/万卷）逐一通过校验，绑定的 skill 全部可解析且 frontmatter 顺序符合决议', () => {
+    expect(BUILTIN_ROLES.length).toBe(8);
+    const expectedSkills: Record<string, string[]> = {
+      持衡: ['contract-review'],
+      记言: ['meeting-summary'],
+      万卷: ['literature-review', 'paper-distillation'],
+    };
+    for (const [id, skills] of Object.entries(expectedSkills)) {
+      const role = BUILTIN_ROLES.find((r) => r.id === id);
+      expect(role, `${id} 不在装名册`).toBeDefined();
+      expect(validateBuiltinRolePack(role!, knownSkillNames), `${id} 校验未过`).toEqual([]);
+      const parsed = parseAgentMd(role!.agentMd, `${id}.md`);
+      expect(parsed?.skills, `${id} frontmatter skills 顺序漂移`).toEqual(skills);
+      for (const name of skills) {
+        expect(isBuiltinSkill(name), `${id} -> ${name} 不是内置 skill`).toBe(true);
+      }
     }
   });
 });

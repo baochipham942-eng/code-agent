@@ -10,8 +10,13 @@
 //
 // abort signal 走 race-and-abandon：fetch + 轮询 sleep 都监听 outerSignal，
 // abort 后立即停止轮询并返回 ABORTED；生成返回后、写盘前再查一次中止。
+//
+// N-MEDIA-GEN-VIDEO-IDEMPOTENT：校验通过后、任何进度事件和付费调用之前，按
+// imageGenerateReuse 的同一本账、同一套 (a)(b)(c) 规则查可复用产物。崩溃重放或
+// 未送达的同参数重试直接复用已落盘文件，不再向 MiniMax / CogVideoX 二次计费。
 // ============================================================================
 
+import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import type {
@@ -29,6 +34,13 @@ import { MODEL_API_ENDPOINTS, ZHIPU_OFFICIAL_QUICK_MODEL } from '../../../../sha
 import { GENERATION_TOOL_DEFAULT_MODELS } from '../../../../shared/media/generationToolDefaults';
 import { createFileArtifact, createVirtualArtifact } from '../../../tools/artifacts/artifactMeta';
 import { isPathWithinRoot, resolveWorkspacePath } from '../../../runtime/workspaceScope';
+import {
+  lookupReusableGenerationOutputs,
+  recordGenerationSavedOutput,
+  REUSED_RESULT_LINE,
+  sha256File,
+  type GenerationLedgerSavedOutput,
+} from '../imageCreation/imageGenerateReuse';
 import { videoGenerateSchema as schema } from './videoGenerate.schema';
 import { TOOL_DEPENDENCY_HINTS } from '../../../tools/modules/_helpers/dependencyHints';
 import {
@@ -73,12 +85,16 @@ interface VideoGenerateParams {
   zhipuRoute: boolean;
   model: string;
   imageDataUrl?: string;
+  /** 调用方传入的 image_path 解析后的绝对路径。只进复用指纹。 */
+  resolvedImagePath?: string;
   imageUrl?: string;
   aspectRatio?: '16:9' | '9:16' | '1:1';
   quality?: 'quality' | 'speed';
   duration?: 5 | 10;
   fps?: 30 | 60;
   outputFilePath: string;
+  /** 调用方传入的 output_file_path 解析后的绝对路径。未传时不进指纹。 */
+  explicitOutputFilePath?: string;
 }
 
 interface PerRequest {
@@ -87,6 +103,7 @@ interface PerRequest {
   bytes?: number;
   path?: string;
   error?: string;
+  reused?: boolean;
 }
 
 /** 下载/落盘失败：携带虚拟产物（远端 URL 只进产物 metadata，不进 output/meta 其它位置）。 */
@@ -250,6 +267,7 @@ function validateVideoGenerateArgs(
 
   const rawImagePath = args.image_path;
   let imageDataUrl: string | undefined;
+  let resolvedImagePath: string | undefined;
   if (rawImagePath !== undefined) {
     if (zhipuRoute) {
       return { ok: false, error: 'image_path is only supported on MiniMax models; cogvideox-* uses image_url' };
@@ -272,6 +290,7 @@ function validateVideoGenerateArgs(
     if (stat.size > IMAGE_INPUT_MAX_BYTES) {
       return { ok: false, error: `image_path "${rawImagePath}" exceeds the 10 MB limit` };
     }
+    resolvedImagePath = resolved;
     imageDataUrl = `data:${imageInputMimeType(resolved)};base64,${fs.readFileSync(resolved).toString('base64')}`;
   }
 
@@ -286,6 +305,7 @@ function validateVideoGenerateArgs(
     return { ok: false, error: 'output_file_path must be a workspace path' };
   }
   let outputFilePath: string;
+  let explicitOutputFilePath: string | undefined;
   if (typeof rawOutputFilePath === 'string' && rawOutputFilePath.length > 0) {
     const resolvedOutputPath = path.resolve(ctx.workingDir, rawOutputFilePath);
     if (outputPathOutsideWorkspace(resolvedOutputPath, ctx)) {
@@ -296,6 +316,7 @@ function validateVideoGenerateArgs(
       };
     }
     outputFilePath = resolvedOutputPath;
+    explicitOutputFilePath = resolvedOutputPath;
   } else {
     outputFilePath = defaultVideoOutputPath(ctx.workingDir);
   }
@@ -311,12 +332,94 @@ function validateVideoGenerateArgs(
       zhipuRoute,
       model,
       imageDataUrl,
+      resolvedImagePath,
       imageUrl,
       aspectRatio: typeof args.aspect_ratio === 'string' ? (args.aspect_ratio as VideoGenerateParams['aspectRatio']) : undefined,
       quality: typeof args.quality === 'string' ? (args.quality as VideoGenerateParams['quality']) : undefined,
       duration: typeof args.duration === 'number' ? (args.duration as VideoGenerateParams['duration']) : undefined,
       fps: typeof args.fps === 'number' ? (args.fps as VideoGenerateParams['fps']) : undefined,
       outputFilePath,
+      explicitOutputFilePath,
+    },
+  };
+}
+
+/**
+ * 复用指纹：只覆盖会改变这次付费请求的参数。调用方没传 output_file_path 时，
+ * 时间戳默认路径不进指纹——重试靠账本找回上一次的文件。规则见 imageGenerateReuse.ts。
+ */
+function computeVideoGenerateFingerprint(params: VideoGenerateParams): string {
+  const normalized = {
+    prompt: params.prompt,
+    model: params.model,
+    image: params.resolvedImagePath
+      ? { path: params.resolvedImagePath, contentSha256: sha256File(params.resolvedImagePath) }
+      : null,
+    imageUrl: params.imageUrl ?? null,
+    aspectRatio: params.aspectRatio ?? null,
+    quality: params.quality ?? null,
+    duration: params.duration ?? null,
+    fps: params.fps ?? null,
+    outputFilePath: params.explicitOutputFilePath ?? null,
+  };
+  return createHash('sha256').update(JSON.stringify(normalized)).digest('hex');
+}
+
+/** 命中账本：不调付费接口，把已落盘文件重新登记为本次调用的产物，并把账目归属改到本次 toolCallId。 */
+async function deliverReusedVideo(input: {
+  ctx: ToolContext;
+  params: VideoGenerateParams;
+  saved: GenerationLedgerSavedOutput;
+  ledger: { ledgerDir: string; toolName: string; fingerprint: string };
+}): Promise<ToolResult<string>> {
+  const { ctx, saved, params } = input;
+  const bytes = fs.statSync(saved.absolutePath).size;
+  const artifact = await createFileArtifact(saved.absolutePath, input.ledger.toolName, ctx, {
+    kind: 'video',
+    mimeType: 'video/mp4',
+    sizeBytes: bytes,
+    metadata: {
+      model: saved.actualModel,
+      reused: true,
+      prompt: params.prompt,
+      mediaKind: 'video',
+    },
+  });
+  recordGenerationSavedOutput({
+    ctx,
+    ...input.ledger,
+    saved: {
+      index: 1,
+      absolutePath: saved.absolutePath,
+      bytes,
+      actualModel: saved.actualModel,
+    },
+  });
+  const relativePath = workspaceRelativePath(saved.absolutePath, ctx);
+  const perRequest: PerRequest[] = [{
+    index: 1,
+    status: 'saved',
+    bytes,
+    path: relativePath,
+    reused: true,
+  }];
+  const output = `1/1 saved\n${REUSED_RESULT_LINE}\nper_request ${JSON.stringify(perRequest)}`;
+  return {
+    ok: true,
+    output,
+    meta: {
+      artifact,
+      artifacts: [artifact],
+      per_request: perRequest,
+      reused: true,
+      model: saved.actualModel,
+      videoPath: saved.absolutePath,
+      outputPath: saved.absolutePath,
+      prompt: params.prompt,
+      mediaKind: 'video',
+      contentLength: output.length,
+      truncated: false,
+      generationTimeMs: 0,
     },
   };
 }
@@ -538,6 +641,16 @@ export async function executeVideoGenerate(
   }
   const params = validation.params;
   const outputPath = params.outputFilePath;
+  const ledger = {
+    ledgerDir: path.join(ctx.workingDir, DEFAULT_VIDEO_ARTIFACT_DIR),
+    toolName: schema.name,
+    fingerprint: computeVideoGenerateFingerprint(params),
+  };
+  const reusable = lookupReusableGenerationOutputs({ ctx, ...ledger })
+    .find((saved) => saved.index === 1);
+  if (reusable) {
+    return deliverReusedVideo({ ctx, params, saved: reusable, ledger });
+  }
 
   onProgress?.({ stage: 'starting', detail: schema.name });
 
@@ -661,6 +774,16 @@ export async function executeVideoGenerate(
       const dir = path.dirname(outputPath);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(outputPath, videoBuffer);
+      recordGenerationSavedOutput({
+        ctx,
+        ...ledger,
+        saved: {
+          index: 1,
+          absolutePath: outputPath,
+          bytes: videoBuffer.length,
+          actualModel,
+        },
+      });
     } catch (error: unknown) {
       if (ctx.abortSignal.aborted || (error instanceof Error && error.message === 'aborted')) throw error;
       ctx.logger.warn('video_generate save failed', {

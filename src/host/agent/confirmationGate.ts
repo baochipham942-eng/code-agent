@@ -11,6 +11,7 @@ import type {
   ConfirmationContext,
   ToolConfirmationConfig,
 } from '../../shared/contract/confirmation';
+import { aggregateEditArgsText } from '../../shared/utils/editToolArgs';
 import { canonicalizeCommand } from '../security/canonicalizeCommand';
 import { isBashToolName } from '../tools/toolNames';
 
@@ -120,8 +121,11 @@ export class ConfirmationGate {
     switch (toolName) {
       case 'edit_file':
       case 'Edit': {
-        const oldStr = params.old_string as string | undefined;
-        const newStr = params.new_string as string | undefined;
+        // 注册的 Edit 形状是 edits[]（multiEdit.schema.ts），归一后聚合取文；
+        // legacy 平铺形状输出不变。
+        const editText = aggregateEditArgsText(params);
+        const oldStr = editText.oldText;
+        const newStr = editText.newText;
         const filePath = (params.file_path || params.path) as string | undefined;
 
         if (oldStr && newStr) {

@@ -1124,7 +1124,7 @@ export class CronService implements Disposable {
       },
       parentSessionId: sourceSessionId,
       sourceRunId: executionId,
-      readOnly: true,
+      readOnly: true, memoryMode: sourceSession?.memoryMode === 'off' ? 'off' : undefined,
     });
   }
 

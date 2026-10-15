@@ -201,6 +201,8 @@ struct DesktopShellBootDiagnostics {
 #[derive(Default)]
 struct AppState {
     web_server: Mutex<Option<OwnedWebServerChild>>,
+    /// 附着到的常驻守护。没有 Child 句柄，cleanup 按 pid 发信号。
+    attached_daemon: Mutex<Option<resident_host::DaemonPidRecord>>,
 }
 
 struct OwnedWebServerChild {
@@ -262,19 +264,54 @@ impl AppState {
         });
     }
 
-    fn cleanup(&self) -> Option<DesktopShellProcessCleanup> {
-        let mut guard = self.web_server.lock().expect("web_server mutex poisoned");
+    fn store_attached_daemon(&self, record: resident_host::DaemonPidRecord) {
+        let mut guard = self
+            .attached_daemon
+            .lock()
+            .expect("attached_daemon mutex poisoned");
+        *guard = Some(record);
+    }
 
-        let mut owned = guard.take()?;
-        let (exit_reason, wait_status) = terminate_child(&mut owned.child);
+    fn cleanup(&self) -> Option<DesktopShellProcessCleanup> {
+        let spawned = self
+            .web_server
+            .lock()
+            .expect("web_server mutex poisoned")
+            .take();
+        if let Some(mut owned) = spawned {
+            let (exit_reason, wait_status) = terminate_child(&mut owned.child);
+            return Some(DesktopShellProcessCleanup {
+                owner: owned.owner.to_string(),
+                pid: owned.pid,
+                started_at: owned.started_at,
+                cleaned_at: now_millis_string(),
+                exit_reason,
+                wait_status,
+                stdin_eof_cleanup: owned.stdin_eof_cleanup,
+            });
+        }
+
+        let record = self
+            .attached_daemon
+            .lock()
+            .expect("attached_daemon mutex poisoned")
+            .take()?;
+        let exit_reason = resident_host::stop_attached_daemon(
+            &record,
+            GRACEFUL_SHUTDOWN_TIMEOUT,
+            GRACEFUL_SHUTDOWN_POLL_INTERVAL,
+        )?;
         Some(DesktopShellProcessCleanup {
-            owner: owned.owner.to_string(),
-            pid: owned.pid,
-            started_at: owned.started_at,
+            owner: "resident-daemon".to_string(),
+            pid: record.pid,
+            started_at: record
+                .start_time
+                .clone()
+                .unwrap_or_else(|| "attached".to_string()),
             cleaned_at: now_millis_string(),
             exit_reason,
-            wait_status,
-            stdin_eof_cleanup: owned.stdin_eof_cleanup,
+            wait_status: None,
+            stdin_eof_cleanup: false,
         })
     }
 }
@@ -2229,6 +2266,7 @@ fn recreate_main_window(app: &tauri::AppHandle) -> Result<(), String> {
             None
         };
         if let Some(record) = attach_daemon {
+            app.state::<AppState>().store_attached_daemon(record.clone());
             let diagnostics = new_boot_diagnostics(app);
             write_shell_event(
                 app,
@@ -2405,10 +2443,29 @@ fn show_quit_confirm_dialog(
                 MessageDialogResult::Custom(label) => Some(label),
                 _ => None,
             };
-            let plan = quit_guard::quit_exit_plan(quit_guard::dialog_answer_action(
-                custom_label.as_deref(),
-            ));
+            let plan = quit_guard::quit_exit_plan(
+                quit_guard::dialog_answer_action(custom_label.as_deref()),
+                // Windows：stdin EOF 是停机指令，退壳会关掉写端。unix 不是。
+                cfg!(not(unix)),
+            );
             if plan.exit {
+                if plan.arm_detach {
+                    let token = resolve_server_script(&app).ok().and_then(|(_script, root)| {
+                        quit_guard::read_quit_guard_token(&root, real_data_dir().as_deref())
+                    });
+                    if !quit_guard::arm_background_continue_detach(
+                        &server_url(),
+                        token.as_deref(),
+                        quit_guard::QUIT_GUARD_TIMEOUT,
+                    ) {
+                        // 通知没落地就退壳 = Windows 上 EOF 把任务停掉。留在 app 里。
+                        eprintln!(
+                            "background-continue: daemon did not accept detach; staying in the app"
+                        );
+                        coordinator.finish();
+                        return;
+                    }
+                }
                 // 后台继续：不清理（ExitRequested/Exit 按 plan 跳过 cleanup_server），
                 // 常驻宿主接管运行中的任务；停止并退出：照旧清理。
                 if !plan.cleanup_server {
@@ -4266,9 +4323,10 @@ fn main() {
                     DesktopShellBootStage::HealthReady,
                 );
             } else if let Some(record) = attach_daemon {
-                // Attach：不 spawn、不 store_child（后续 cleanup_server 无 child 可清，
-                // 停止并退出对附着守护的处置归 N-RESIDENT-HOST-SHELL-REALRUN）。
-                // 与上方 dev 复用路径汇合：boot token 不适用，窗口照常导航。
+                // Attach：不 spawn。留下 pid，停止并退出 / 更新 / 关机 / 信号的
+                // cleanup_server 才能 SIGTERM 这个守护（进程不是这次 spawn 的，没有 Child）。
+                app.state::<AppState>()
+                    .store_attached_daemon(record.clone());
                 write_shell_event(
                     &app.handle(),
                     &boot_diagnostics,

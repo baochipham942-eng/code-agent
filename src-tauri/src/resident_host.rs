@@ -3,7 +3,9 @@
 //! 上一代壳用「后台继续」退出后，webServer 以守护形态继续跑（Node 侧
 //! N-RESIDENT-HOST-DAEMON 落的 `<dataDir>/daemon.pid` 单实例锁）。这一代壳
 //! 启动时要在 spawn 之前判断：那个守护还活着且健康吗？活着 → 附着（不 spawn、
-//! 不存 child，窗口直接导航到现有服务）；否则 → 按今日路径 spawn 新的。
+//! 记下 pid 供之后的 cleanup 发信号，窗口直接导航到现有服务）；否则 → 按今日
+//! 路径 spawn 新的。附着没有 `Child` 句柄（进程不是这次 spawn 的），停止并退出
+//! 和应用内更新只能按 pid 发 SIGTERM。
 //!
 //! 判据逐条镜像 `src/host/services/daemon/daemonLock.ts`：
 //! - pid 记录：JSON `{pid, startTime}`，旧版纯 pid 文本按 startTime=null；
@@ -206,7 +208,7 @@ fn parse_ps_identity(ps_output: &str) -> Option<(String, String)> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StartupDecision {
-    /// 活守护在场：不 spawn、不存 child，窗口直接导航到现有 webServer。
+    /// 活守护在场：不 spawn。调用方必须留下 pid，cleanup 才能发信号。
     Attach,
     /// 常规路径：spawn 新 webServer（打包态会先清陈旧端口占用）。
     Spawn,
@@ -296,6 +298,85 @@ pub fn decide_startup_io(data_dir: Option<&Path>, health_endpoint: &str) -> Opti
         StartupDecision::Attach => Some(record),
         StartupDecision::Spawn => None,
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 附着守护的停止（停止并退出 / 更新 / 关机 / 信号）
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// cleanup 对「附着到的守护」能做什么。没有 Child 时这是唯一的停止通道。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttachedStop {
+    /// 身份仍是当初那个 node 守护：SIGTERM，超时再 SIGKILL。
+    Signal { pid: u32 },
+    /// 没有记下 pid，或身份已对不上（进程已死 / pid 被复用）：不发信号。
+    Skip,
+}
+
+/// 附着记录在场且身份仍吻合才发信号。丢了记录（附着分支没保存）→ Skip，
+/// 停止并退出和更新清理就没有进程可杀，旧守护继续占端口。
+pub fn decide_attached_stop(record: Option<&DaemonPidRecord>, identity_ok: bool) -> AttachedStop {
+    match record {
+        Some(record) if identity_ok => AttachedStop::Signal { pid: record.pid },
+        _ => AttachedStop::Skip,
+    }
+}
+
+/// 现场再核对一次身份，吻合才发信号。ps 失败 / 僵尸 / pid 复用 → None（不杀）。
+pub fn stop_attached_daemon(
+    record: &DaemonPidRecord,
+    timeout: Duration,
+    poll: Duration,
+) -> Option<String> {
+    let identity_ok = process_identity_matches(record, ps_process_identity(record.pid).as_deref());
+    match decide_attached_stop(Some(record), identity_ok) {
+        AttachedStop::Signal { pid } => Some(terminate_attached_daemon(pid, timeout, poll)),
+        AttachedStop::Skip => None,
+    }
+}
+
+/// 向不是本进程 spawn 出来的守护发 SIGTERM，超时再 SIGKILL。
+/// 不能 `wait`：它的父进程已经不是我们（init/launchd 收尸）。用 `kill(pid, 0)` 探活。
+#[cfg(unix)]
+pub fn terminate_attached_daemon(pid: u32, timeout: Duration, poll: Duration) -> String {
+    let pid = pid as i32;
+    // SAFETY: pid 刚通过 process_identity_matches（lstart 原文相等且命令行含 node）。
+    // SIGTERM 与 spawn 子进程的 terminate_child 是同一条「请自行退出」信号。
+    if unsafe { libc::kill(pid, libc::SIGTERM) } != 0 {
+        if std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
+            return "attached-already-gone".to_string();
+        }
+        // SAFETY: 同上，SIGKILL 只在 SIGTERM 发不出去时兜底。
+        if unsafe { libc::kill(pid, libc::SIGKILL) } != 0 {
+            return format!(
+                "attached-sigterm-send-failed:{}",
+                std::io::Error::last_os_error()
+            );
+        }
+        return "forced-sigkill-sigterm-send-failed".to_string();
+    }
+    let deadline = std::time::Instant::now() + timeout;
+    while std::time::Instant::now() < deadline {
+        // SAFETY: 信号 0 只探活，不投递。
+        if unsafe { libc::kill(pid, 0) } != 0 {
+            return "graceful-sigterm".to_string();
+        }
+        std::thread::sleep(poll);
+    }
+    // SAFETY: 宽限用尽，与 terminate_child 的 forced-sigkill-timeout 同口径。
+    if unsafe { libc::kill(pid, libc::SIGKILL) } != 0 {
+        return format!(
+            "attached-sigkill-send-failed:{}",
+            std::io::Error::last_os_error()
+        );
+    }
+    "forced-sigkill-timeout".to_string()
+}
+
+#[cfg(not(unix))]
+pub fn terminate_attached_daemon(_pid: u32, _timeout: Duration, _poll: Duration) -> String {
+    // 附着判定在 win32 不成立（is_attach_supported）。这里只为两边都能编译。
+    "attached-stop-unsupported".to_string()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -470,5 +551,67 @@ mod tests {
                 "({parsed:?}, identity={identity_ok}, health={health_ok}) 应为 {expected:?}"
             );
         }
+    }
+
+    // ── 附着后的停止：记下的活 pid 必须能被 cleanup 发信号 ────────────────────
+
+    #[test]
+    fn attached_stop_signals_only_a_live_matching_daemon() {
+        let live = record(4242, Some(LSTART));
+        assert_eq!(
+            decide_attached_stop(Some(&live), true),
+            AttachedStop::Signal { pid: 4242 },
+            "身份仍吻合的附着守护必须被发信号，否则停止并退出和更新都杀不掉它"
+        );
+        assert_eq!(
+            decide_attached_stop(Some(&live), false),
+            AttachedStop::Skip,
+            "身份对不上（pid 复用 / 进程已死）不能发信号"
+        );
+        assert_eq!(
+            decide_attached_stop(None, true),
+            AttachedStop::Skip,
+            "没留下 pid 记录时 cleanup 没有进程可杀"
+        );
+        assert_eq!(decide_attached_stop(None, false), AttachedStop::Skip);
+    }
+
+    #[test]
+    fn attach_sites_keep_the_pid_and_quit_arms_detach_before_exit() {
+        let main = include_str!("main.rs");
+        let needle = "let Some(record) = attach_daemon";
+        let mut rest = main;
+        let mut arms = 0;
+        while let Some(index) = rest.find(needle) {
+            let after = &rest[index..];
+            let end = after
+                .find("} else {")
+                .expect("附着分支后面应有 spawn 的 else");
+            let body = &after[..end];
+            assert!(
+                body.contains("store_attached_daemon"),
+                "附着分支必须留下 pid，cleanup 才杀得掉守护:\n{body}"
+            );
+            arms += 1;
+            rest = &after[end + 1..];
+        }
+        assert_eq!(arms, 2, "setup 与 recreate_main_window 都要留下附着 pid");
+        assert!(
+            main.contains("stop_attached_daemon("),
+            "cleanup 必须走到按 pid 发信号的路径"
+        );
+
+        let dialog = main
+            .find("fn show_quit_confirm_dialog")
+            .expect("quit dialog");
+        let dialog_body = &main[dialog..];
+        let arm_at = dialog_body
+            .find("arm_background_continue_detach(")
+            .expect("后台继续在 Windows 上必须先 arm detach");
+        let exit_at = dialog_body.find("app.exit(0)").expect("dialog exits");
+        assert!(
+            arm_at < exit_at,
+            "arm 必须发生在退壳之前，否则 EOF 先到、通知还没落地"
+        );
     }
 }

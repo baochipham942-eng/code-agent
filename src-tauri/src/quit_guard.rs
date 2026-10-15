@@ -16,6 +16,8 @@ use std::time::Duration;
 /// 超时/连接失败/非 200/解析失败一律按「有任务」处理（Unknown → 弹框）。
 pub const QUIT_GUARD_TIMEOUT: Duration = Duration::from_secs(2);
 pub const QUIT_GUARD_PATH: &str = "/api/quit-guard";
+/// Windows 后台继续：退壳前 POST，让 daemon 把随后的 stdin EOF 从停机指令里摘掉。
+pub const QUIT_GUARD_DETACH_PATH: &str = "/api/quit-guard/detach";
 /// 鉴权 token 文件名，与 src/web/middleware/auth.ts 的 .dev-token 生命周期对齐。
 pub const DEV_TOKEN_FILE: &str = ".dev-token";
 
@@ -142,30 +144,42 @@ pub fn dialog_answer_action(custom_label: Option<&str>) -> QuitAnswerAction {
     }
 }
 
-/// 三种应答各自的收尾计划：要不要清理 webServer、要不要退壳。
+/// 三种应答各自的收尾计划：要不要清理 webServer、要不要退壳、
+/// 退壳前要不要先把「stdin EOF = 停机」摘掉。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct QuitExitPlan {
     pub cleanup_server: bool,
     pub exit: bool,
+    /// Windows 上 stdin EOF 就是 terminate_child 的停机指令，进程退出本身也会
+    /// 关掉管道写端。后台继续只跳过 cleanup 挡不住这次 EOF。退壳前必须先
+    /// 通知 daemon（`arm_background_continue_detach`），让这次 EOF 改走
+    /// 「忙则留守」。Unix 的 EOF 本来就是驻留信号，不能发这通通知——
+    /// 发失败时调用方会留在 app 里，unix 会被一次网络失败卡住。
+    pub arm_detach: bool,
 }
 
 /// 纯决策表（N-RESIDENT-HOST-SHELL-RUST）：
 /// - 取消：不清理、不退出，app 原样继续跑；
-/// - 后台继续：**不清理**、只退壳——常驻宿主（ADR-083）接管运行中的任务；
-/// - 停止并退出：清理（SIGTERM→SIGKILL）+ 退出，与三键之前的行为一致。
-pub fn quit_exit_plan(action: QuitAnswerAction) -> QuitExitPlan {
+/// - 后台继续：**不清理**、只退壳——常驻宿主（ADR-083）接管运行中的任务。
+///   `stdin_eof_means_quit`（Windows）时还要先 arm detach；
+/// - 停止并退出：清理（SIGTERM→SIGKILL / Windows 关 stdin）+ 退出，不 arm。
+///   arm 了再关 stdin，daemon 会把停机 EOF 当成驻留，3s 后被硬杀。
+pub fn quit_exit_plan(action: QuitAnswerAction, stdin_eof_means_quit: bool) -> QuitExitPlan {
     match action {
         QuitAnswerAction::StayRunning => QuitExitPlan {
             cleanup_server: false,
             exit: false,
+            arm_detach: false,
         },
         QuitAnswerAction::BackgroundContinue => QuitExitPlan {
             cleanup_server: false,
             exit: true,
+            arm_detach: stdin_eof_means_quit,
         },
         QuitAnswerAction::Quit => QuitExitPlan {
             cleanup_server: true,
             exit: true,
+            arm_detach: false,
         },
     }
 }
@@ -326,6 +340,31 @@ pub fn query_quit_guard(base_url: &str, token: Option<&str>, timeout: Duration) 
     let status = response.status().as_u16();
     let body = response.text().unwrap_or_default();
     parse_guard_response(status, &body)
+}
+
+/// 退壳前通知 daemon：接下来的 stdin EOF 是后台继续，不是 Windows 停机指令。
+/// 无 token、建连失败、非 200 → false。调用方必须就此留在 app 里——
+/// 没通知成功就退壳，Windows 上任务会被 EOF 停掉。
+pub fn arm_background_continue_detach(
+    base_url: &str,
+    token: Option<&str>,
+    timeout: Duration,
+) -> bool {
+    let Some(token) = token else {
+        return false;
+    };
+    let Ok(client) = reqwest::blocking::Client::builder()
+        .timeout(timeout)
+        .no_proxy()
+        .build()
+    else {
+        return false;
+    };
+    let url = format!("{base_url}{QUIT_GUARD_DETACH_PATH}");
+    matches!(
+        client.post(&url).bearer_auth(token).send(),
+        Ok(response) if response.status().as_u16() == 200
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -653,6 +692,35 @@ mod tests {
         );
     }
 
+    #[test]
+    fn arm_detach_posts_bearer_and_refuses_without_token() {
+        let (base_url, requests) = spawn_stub(StubMode::Respond {
+            status: 200,
+            body: r#"{"ok":true}"#,
+        });
+        assert!(arm_background_continue_detach(
+            &base_url,
+            Some(TEST_UUID),
+            TEST_TIMEOUT
+        ));
+        let recorded = requests.lock().expect("stub mutex");
+        let raw = recorded.first().expect("stub 应该看到请求");
+        assert!(
+            raw.starts_with("POST /api/quit-guard/detach HTTP/1.1"),
+            "请求行应是 POST {QUIT_GUARD_DETACH_PATH}，实际：{raw}"
+        );
+        assert!(
+            raw.contains(&format!("authorization: Bearer {TEST_UUID}"))
+                || raw.contains(&format!("Authorization: Bearer {TEST_UUID}")),
+            "必须携带 Authorization: Bearer <token>，实际：{raw}"
+        );
+        drop(recorded);
+        assert!(
+            !arm_background_continue_detach(&base_url, None, TEST_TIMEOUT),
+            "没有 token 不能 arm，否则会无鉴权打到 daemon"
+        );
+    }
+
     // ── token 文件解析 ────────────────────────────────────────────────────────
 
     static TEMP_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -816,27 +884,64 @@ mod tests {
 
     #[test]
     fn quit_exit_plan_table_for_all_three_actions() {
+        // unix：stdin EOF 不是停机指令，后台继续不 arm。
         let cases: &[(QuitAnswerAction, QuitExitPlan)] = &[
             (
                 QuitAnswerAction::StayRunning,
-                QuitExitPlan { cleanup_server: false, exit: false },
+                QuitExitPlan {
+                    cleanup_server: false,
+                    exit: false,
+                    arm_detach: false,
+                },
             ),
             (
                 QuitAnswerAction::BackgroundContinue,
-                QuitExitPlan { cleanup_server: false, exit: true },
+                QuitExitPlan {
+                    cleanup_server: false,
+                    exit: true,
+                    arm_detach: false,
+                },
             ),
             (
                 QuitAnswerAction::Quit,
-                QuitExitPlan { cleanup_server: true, exit: true },
+                QuitExitPlan {
+                    cleanup_server: true,
+                    exit: true,
+                    arm_detach: false,
+                },
             ),
         ];
         for (action, expected) in cases {
             assert_eq!(
-                quit_exit_plan(*action),
+                quit_exit_plan(*action, false),
                 *expected,
                 "动作 {action:?} 的收尾计划应是 {expected:?}"
             );
         }
+    }
+
+    #[test]
+    fn background_continue_arms_detach_when_stdin_eof_is_quit() {
+        // Windows：只跳过 cleanup 不够，退壳前必须 arm，否则 EOF 把任务停掉。
+        assert_eq!(
+            quit_exit_plan(QuitAnswerAction::BackgroundContinue, true),
+            QuitExitPlan {
+                cleanup_server: false,
+                exit: true,
+                arm_detach: true,
+            }
+        );
+        // 停止并退出即使在 Windows 也不 arm：arm 之后关 stdin 会被当成驻留，
+        // 然后 3s TerminateProcess 硬杀。
+        assert_eq!(
+            quit_exit_plan(QuitAnswerAction::Quit, true),
+            QuitExitPlan {
+                cleanup_server: true,
+                exit: true,
+                arm_detach: false,
+            }
+        );
+        assert!(!quit_exit_plan(QuitAnswerAction::StayRunning, true).arm_detach);
     }
 
     #[test]
@@ -855,8 +960,12 @@ mod tests {
             }
         }
         assert_eq!(
-            quit_exit_plan(QuitAnswerAction::Quit),
-            QuitExitPlan { cleanup_server: true, exit: true }
+            quit_exit_plan(QuitAnswerAction::Quit, true),
+            QuitExitPlan {
+                cleanup_server: true,
+                exit: true,
+                arm_detach: false,
+            }
         );
         // 协调器默认不置「后台继续」：豁免路径的 cleanup 不会被跳过
         let coordinator = QuitCoordinator::new();

@@ -293,3 +293,78 @@ describe('scriptRun view-model: applyScriptRunEvent', () => {
     expect(snap.agents[0].promptPreview).toBe('搜'); // 缺字段仍可补
   });
 });
+
+// ── N-WF-STALL-UI：停顿状态事件（无 message 的 run:log 携带 data.stall）+ lastActivityAt ──
+describe('scriptRun view-model: stall state folding (N-WF-STALL-UI)', () => {
+  it('run:start 与真实活动事件（run:phase/run:log/agent:*）都刷 lastActivityAt', () => {
+    const snap = fold('run-1', [
+      ev('run:start', 1000, { scriptHash: 'h' }),
+      ev('run:phase', 1100, { title: 'p' }),
+      ev('run:log', 1200, { message: 'log' }),
+      ev('agent:start', 1300, { agentId: 'a1', label: 'x' }),
+      ev('agent:done', 1400, { agentId: 'a1', label: 'x' }),
+      ev('agent:error', 1500, { agentId: 'a2', label: 'y' }),
+    ]);
+    expect(snap.lastActivityAt).toBe(1500); // 取最新活动事件的 ts
+  });
+
+  it('停顿状态事件折叠 parked/epoch 进快照，不刷 lastActivityAt', () => {
+    const snap = fold('run-1', [
+      ev('run:start', 1000, { scriptHash: 'h' }),
+      ev('run:log', 5000, { message: 'real log' }),
+      ev('run:log', 900_000, { stall: { parked: true } }),
+      ev('run:log', 1200_000, { stall: { epoch: 1 } }),
+    ]);
+    expect(snap.parked).toBe(true);
+    expect(snap.stallNoticeEpoch).toBe(1);
+    expect(snap.lastActivityAt).toBe(5000); // stall 事件不算活动
+    expect(snap.logs).toEqual(['real log']); // stall 事件不进 logs
+  });
+
+  it('停顿状态事件不把 pending 提升为 running（不算活动）', () => {
+    const snap = fold('run-1', [ev('run:log', 900_000, { stall: { parked: false } })]);
+    expect(snap.status).toBe('pending'); // 未被 run:log(活动类型) 误提升
+    expect(snap.parked).toBe(false); // 载荷照常折叠
+  });
+
+  it('epoch 单调：乱序/重复上报不回退 stallNoticeEpoch，parked 可来回翻转', () => {
+    const snap = fold('run-1', [
+      ev('run:start', 1000, { scriptHash: 'h' }),
+      ev('run:log', 600_000, { stall: { epoch: 2 } }),
+      ev('run:log', 700_000, { stall: { epoch: 1 } }), // 乱序迟到
+      ev('run:log', 800_000, { stall: { parked: false } }),
+      ev('run:log', 900_000, { stall: { parked: true } }),
+    ]);
+    expect(snap.stallNoticeEpoch).toBe(2);
+    expect(snap.parked).toBe(true);
+  });
+
+  it('带 message 的 run:log 即便同时带 stall 载荷也按活动处理（不误吞日志）', () => {
+    const snap = fold('run-1', [
+      ev('run:start', 1000, { scriptHash: 'h' }),
+      ev('run:log', 2000, { message: 'hybrid', stall: { epoch: 1 } }),
+    ]);
+    expect(snap.logs).toEqual(['hybrid']);
+    expect(snap.lastActivityAt).toBe(2000);
+    expect(snap.stallNoticeEpoch).toBe(1); // 载荷仍折叠
+  });
+
+  it('畸形 stall 载荷（非对象/空对象/错类型字段）整条事件被忽略', () => {
+    const base = fold('run-1', [ev('run:start', 1000, { scriptHash: 'h' })]);
+    for (const bad of [undefined, 'x', 3, {}, { parked: 'yes' }, { epoch: 'one' }]) {
+      const next = applyScriptRunEvent(base, ev('run:log', 2000, { stall: bad }));
+      expect(next.parked).toBeUndefined();
+      expect(next.stallNoticeEpoch).toBeUndefined();
+      expect(next.lastActivityAt).toBe(1000);
+    }
+  });
+
+  it('终态事件不刷 lastActivityAt（停顿提示只属于 running）', () => {
+    const snap = fold('run-1', [
+      ev('run:start', 1000, { scriptHash: 'h' }),
+      ev('run:log', 2000, { message: 'x' }),
+      ev('run:done', 3000, { result: 1 }),
+    ]);
+    expect(snap.lastActivityAt).toBe(2000);
+  });
+});

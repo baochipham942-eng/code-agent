@@ -10,8 +10,6 @@ import { promisify } from 'util';
 import {
   CRON_AGENT_SNAPSHOT,
   CRON_GUARDRAILS,
-  DEFAULT_MODELS,
-  DEFAULT_PROVIDER,
   EXTERNAL_WATCH,
 } from '../../shared/constants';
 import type {
@@ -28,9 +26,7 @@ import { getDatabase } from '../services/core/databaseService';
 import { getConfigService } from '../services/core/configService';
 import type { Disposable } from '../services/serviceRegistry';
 import { getServiceRegistry } from '../services/serviceRegistry';
-import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 import {
-  readCronSourceSessionId,
   recordCronAutomationCreated,
   syncCronAutomationFromJob,
   recordCronAutomationArchived,
@@ -41,13 +37,12 @@ import {
 } from './cronAutomationBridge';
 import {
   buildCronAgentActionResult,
-  formatCronAgentSessionTitle,
   isCronAgentActionResult,
-  getCronAgentSessionType,
   normalizeCronJobRow,
   assertSupportedEveryScheduleUnit,
   type SupportedEveryTimeUnit,
 } from './cronNormalizers';
+import { createCronAgentSession } from './cronAgentSession';
 import { buildCronAgentRunOptions } from './cronAgentRoleContext';
 import { BACKGROUND_AGENT_EVENT_FILTER } from '../protocol/events/eventFilter';
 import type { AgentRunOptions } from '../research/types';
@@ -55,7 +50,7 @@ import { getEventBus } from '../services/eventing/bus';
 import { persistCronMissedTrace } from './cronMissedTrace';
 import { appendCronAgentExpertThreadReceipt } from './cronAgentExpertThreadReceipt';
 import { buildCronAgentPrompt, truncateUtf8Snapshot } from './cronAgentPrompt';
-import { beginArtifactRefresh, cronAgentWorkingDirectory, finishArtifactRefresh } from './artifactStandingRefresh';
+import { beginArtifactRefresh, finishArtifactRefresh } from './artifactStandingRefresh';
 import {
   assertExecutionLocationConstraints,
   computeCronFireJitterMs,
@@ -876,7 +871,7 @@ export class CronService implements Disposable {
         // 通过 TaskManager 获取 orchestrator（避免 cronService → bootstrap 循环依赖）
         const { getTaskManager } = await import('../task');
         const tm = getTaskManager();
-        const cronSession = await this.createCronAgentSession(definition, action, executionId);
+        const cronSession = await createCronAgentSession(definition, action, executionId);
         const orchestrator = tm.getOrCreateCurrentOrchestrator(cronSession.id) ?? null;
         if (!orchestrator) {
           throw new Error(`AgentOrchestrator not available for cron session ${cronSession.id}`);
@@ -1078,54 +1073,6 @@ export class CronService implements Disposable {
       default:
         throw new Error(`Unknown action type`);
     }
-  }
-
-  private async createCronAgentSession(
-    definition: CronJobDefinition,
-    action: CronJobAction,
-    executionId?: string
-  ) {
-    const { getConfigService, getSessionManager } = await import('../services');
-
-    const configService = getConfigService();
-    const sessionManager = getSessionManager();
-    const currentSessionId = sessionManager.getCurrentSessionId();
-    const sourceSessionId = readCronSourceSessionId(definition, action);
-    const sourceSession = sourceSessionId
-      ? await sessionManager.getSession(sourceSessionId).catch(() => null)
-      : null;
-    const currentSession = currentSessionId
-      ? await sessionManager.getSession(currentSessionId)
-      : null;
-    const baseSession = sourceSession ?? currentSession;
-    const settings = configService.getSettings();
-    const sessionType = getCronAgentSessionType(action);
-    const originKind = sessionType === 'heartbeat' ? 'heartbeat' : 'cron';
-
-    return sessionManager.createSession({
-      title: formatCronAgentSessionTitle(definition, sessionType),
-      modelConfig: resolveSessionDefaultModelConfig({
-        provider: settings.model?.provider || baseSession?.modelConfig.provider || DEFAULT_PROVIDER,
-        model: settings.model?.model || baseSession?.modelConfig.model || DEFAULT_MODELS.chat,
-        temperature: settings.model?.temperature ?? baseSession?.modelConfig.temperature ?? 0.7,
-        maxTokens: settings.model?.maxTokens ?? baseSession?.modelConfig.maxTokens,
-      }),
-      workingDirectory: cronAgentWorkingDirectory(definition, baseSession?.workingDirectory),
-      type: sessionType,
-      origin: {
-        kind: originKind,
-        id: definition.id,
-        name: definition.name,
-        metadata: {
-          scheduleType: definition.scheduleType,
-          actionType: action.type,
-          sourceSessionId,
-        },
-      },
-      parentSessionId: sourceSessionId,
-      sourceRunId: executionId,
-      readOnly: true, memoryMode: sourceSession?.memoryMode === 'off' ? 'off' : undefined,
-    });
   }
 
   /**

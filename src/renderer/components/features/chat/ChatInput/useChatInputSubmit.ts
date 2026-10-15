@@ -31,7 +31,6 @@ import { launchTeamRecipe } from '../../../../utils/launchTeamRecipe';
 import { launchRecipe } from '../../../../services/teamClient';
 import { buildGoalNoticeMessage } from '../goalNotice';
 import { useDoomLoopHandbackStore } from '../DoomLoopHandbackBar';
-import { buildAutomationNoticeMessage, formatCronScheduleLabel, formatLoopIntervalLabel } from '../automationNotice';
 import type { InputAreaRef } from './InputArea';
 import type { BuildEnvelope } from './useChatInputEnvelope';
 import { btwCommand } from '@shared/commands/definitions/btwCommands';
@@ -293,25 +292,8 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
           } : {}),
         },
       });
-      if (currentSessionId) {
-        const automationType = job.action.type === 'agent'
-          ? (job.action.context?.externalWatch ? 'external_event'
-            : job.action.context?.heartbeatTask ? 'heartbeat' : 'cron')
-          : 'cron';
-        useSessionStore.getState().addMessage(buildAutomationNoticeMessage({
-          automationId: `${automationType}:${job.id}`,
-          automationType,
-          event: 'created',
-          sourceSessionId: currentSessionId,
-          sourceRefId: job.id,
-          status: job.enabled ? 'active' : 'paused',
-          title: job.name || cs.unnamedAutomation,
-          cadenceLabel: formatCronScheduleLabel(job.schedule),
-          nextRunAt: job.nextRunAt,
-          handoffPrompt,
-          nextStage: handoffPrompt ? { prompt: handoffPrompt, title: cs.resumeAfterWakeTitle } : undefined,
-        }));
-      }
+      // 创建通知只由 host 侧 recordCronAutomationCreated 落库并广播（含下次运行时间）；
+      // 这里不再乐观插入同 id 通知，否则广播先落、乐观后插会双条（FB-327）。
       toast.success(`${cs.scheduleCreatedToastPrefix}${job.name || cs.unnamedSchedule}${cs.scheduleCreatedToastSuffix}`);
       discardPendingScheduleDraft();
       return true;
@@ -517,19 +499,8 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
           ...(parsed.ephemeral ? { durable: false } : {}),
         });
         useLoopStore.getState().track(state);
-        useSessionStore.getState().addMessage(buildAutomationNoticeMessage({
-          automationId: `loop:${state.id}`,
-          automationType: 'loop',
-          event: 'created',
-          sourceSessionId: currentSessionId,
-          sourceRefId: state.id,
-          status: 'running',
-          title: `${t.chatInputSubmit.loopTitlePrefix}${parsed.prompt.replace(/\s+/g, ' ').trim().slice(0, 40) || t.chatInputSubmit.loopUnnamedTask}`,
-          cadenceLabel: formatLoopIntervalLabel(parsed.intervalMs),
-          nextRunAt: state.nextRunAt,
-          handoffPrompt: parsed.handoffPrompt,
-          nextStage: parsed.handoffPrompt ? { prompt: parsed.handoffPrompt, title: t.chatInputSubmit.loopCompletedContinueTitle } : undefined,
-        }));
+        // 创建通知只由 host 侧 loopController.recordAutomationCreated 落库并广播
+        //（start() 对 durable/--ephemeral 一视同仁都会发）；这里不再乐观插入同 id 通知。
         toast.success(
           parsed.intervalMs
             ? t.chatInputSubmit.loopStartedIntervalToast.replace('{s}', String(Math.round(parsed.intervalMs / 1000)))

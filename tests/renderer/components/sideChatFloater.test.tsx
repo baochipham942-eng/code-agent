@@ -303,6 +303,49 @@ describe('side chat floater', () => {
     }
   });
 
+  it('offers only Retry for a rate limit and keeps Check key for quota', async () => {
+    const cases = [
+      {
+        cause: 'rate_limit' as const,
+        line: '模型没有响应：请求太频繁，稍后再试',
+        retry: true,
+        checkKey: false,
+      },
+      {
+        cause: 'quota' as const,
+        line: '模型没有响应：额度或余额不足',
+        retry: false,
+        checkKey: true,
+      },
+    ];
+    for (const { cause, line, retry, checkKey } of cases) {
+      askSideChat.mockReset();
+      useAppStore.setState({ showSettings: false });
+      const pending = deferAnswer();
+      const view = render(<SubmitHarness />);
+      await submitBtw();
+      await act(async () => {
+        pending.reject(new SideChatRequestError(cause));
+      });
+
+      await waitFor(() => expect(screen.getByRole('dialog').textContent).toContain(line));
+      expect(screen.queryByRole('button', { name: '重试' }) !== null).toBe(retry);
+      expect(screen.queryByRole('button', { name: '检查密钥 / 切换模型' }) !== null).toBe(checkKey);
+      if (retry) {
+        fireEvent.click(screen.getByRole('button', { name: '重试' }));
+        expect(askSideChat).toHaveBeenCalledTimes(2);
+      } else {
+        fireEvent.click(screen.getByRole('button', { name: '检查密钥 / 切换模型' }));
+        expect(useAppStore.getState().showSettings).toBe(true);
+        expect(askSideChat).toHaveBeenCalledTimes(1);
+      }
+
+      fireEvent.click(screen.getByRole('button', { name: '关闭侧聊' }));
+      view.unmount();
+      dismissSideChat();
+    }
+  });
+
   it('maps timeout and network causes to retry only', async () => {
     const cases = [
       { cause: 'timeout', line: '请求超时' },

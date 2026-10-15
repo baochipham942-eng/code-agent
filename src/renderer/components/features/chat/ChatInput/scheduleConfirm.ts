@@ -127,8 +127,8 @@ function getActionDescription(action: unknown): string {
 /**
  * 「什么时候」行的语言感知文案：直走 shared/cronHumanize（每天/每天 08:17/每 3 小时，
  * 复杂表达式带「自定义时间 ·」前缀），at 按 UI 语言本地化日期。
- * 不复用 automationNotice.formatCronScheduleLabel——那边硬编码 zh 且属自动化记录文案
- * （N-CRON-RESTATE-HUMAN-WHEN 的分工约束）。
+ * 直走 shared 实现后，原 automationNotice.formatCronScheduleLabel（硬编码 zh）无生产
+ * 消费方，已随本单删除；host 侧记录文案仍由 cronAutomationBridge 走同一 shared 函数。
  */
 function formatScheduleWhenLabel(
   schedule: CreateCronJobInput['schedule'],

@@ -191,15 +191,14 @@ export class ConfigService implements IReadConfigService {
       const data = await fs.readFile(this.configPath, 'utf-8');
       const loaded = parseJsonValue(data);
       this.settings = isRecord(loaded)
-        ? this.mergeAppSettings(DEFAULT_SETTINGS, loaded as Partial<AppSettings>)
-        : { ...DEFAULT_SETTINGS };
+        ? this.mergeAppSettings(DEFAULT_SETTINGS, loaded as Partial<AppSettings>, true)
+        : { ...DEFAULT_SETTINGS, ui: { ...DEFAULT_SETTINGS.ui, disclosureLevel: 'standard' } };
     } catch (error) {
       const nodeError = error as NodeJS.ErrnoException;
-      if (nodeError.code !== 'ENOENT') {
-        logger.error('Failed to load config:', error);
-      }
-      // Use default settings
-      this.settings = { ...DEFAULT_SETTINGS };
+      if (nodeError.code !== 'ENOENT') logger.error('Failed to load config:', error);
+      // ENOENT 用出厂默认 simple；读失败或文件不是对象则钉回历史默认 standard。拷贝 ui，避免写穿 DEFAULT_SETTINGS。
+      const disclosureLevel = nodeError.code === 'ENOENT' ? DEFAULT_SETTINGS.ui.disclosureLevel : 'standard';
+      this.settings = { ...DEFAULT_SETTINGS, ui: { ...DEFAULT_SETTINGS.ui, disclosureLevel } };
     }
 
     // Try to restore settings from Keychain (survives app reinstall)
@@ -301,7 +300,7 @@ export class ConfigService implements IReadConfigService {
         logger.warn('Config reload skipped: file is not a JSON object');
         return false;
       }
-      this.settings = this.mergeAppSettings(DEFAULT_SETTINGS, loaded as Partial<AppSettings>);
+      this.settings = this.mergeAppSettings(DEFAULT_SETTINGS, loaded as Partial<AppSettings>, true);
       // 与 initialize 末尾保持一致:重新注入需要全局状态的配置
       this.applyUserPermissionRules();
       this.applyProviderConcurrencyOverrides();
@@ -1276,14 +1275,17 @@ export class ConfigService implements IReadConfigService {
     }
   }
 
-  private mergeAppSettings(base: AppSettings, updates: Partial<AppSettings>): AppSettings {
+  // pinMissingDisclosure：已存在的 config.json 缺合法级别时钉回 standard，不吃新默认 simple。
+  private mergeAppSettings(base: AppSettings, updates: Partial<AppSettings>, pinMissingDisclosure = false): AppSettings {
     const merged = this.mergeSettings(base, updates);
     // 先拷贝再改，避免浅合并时写穿 DEFAULT_SETTINGS。
     const mergedUi = merged.ui ?? DEFAULT_SETTINGS.ui;
-    if (!isPersistedDisclosureLevel(mergedUi.disclosureLevel)) {
-      merged.ui = { ...mergedUi, disclosureLevel: 'standard' };
-    } else if (merged.ui == null) {
-      merged.ui = { ...mergedUi };
+    const diskLevel = updates.ui?.disclosureLevel;
+    const disclosureLevel = pinMissingDisclosure
+      ? (isPersistedDisclosureLevel(diskLevel) ? diskLevel : 'standard')
+      : (isPersistedDisclosureLevel(mergedUi.disclosureLevel) ? mergedUi.disclosureLevel : 'standard');
+    if (merged.ui?.disclosureLevel !== disclosureLevel) {
+      merged.ui = { ...mergedUi, disclosureLevel };
     }
     const persistedRules = updates.models?.taskStrategy?.rules;
     const defaultRules = DEFAULT_SETTINGS.models.taskStrategy?.rules;

@@ -6,6 +6,7 @@
 // 注入系统消息，把这两者当参数传入，行为与原私有方法完全一致。
 
 import type { Message } from '../../../shared/contract';
+import { MEMORY_OFF_NOTICE } from '../../../shared/constants';
 import type { RuntimeContext } from './runtimeContext';
 import type { ContextAssembly } from './contextAssembly';
 import {
@@ -186,6 +187,13 @@ async function injectSeedMemory(
     recordTurnMemoryDisabled(ctx, 'session_memory_off');
     recordEmptyAuthorityBlock('user-directives', 'session_memory_off', 'session-memory-mode');
     recordEmptyAuthorityBlock('user-memory', 'session_memory_off', 'session-memory-mode');
+    // N-TASK-MEMORY-OFF-FU1：off 档只挡不告，模型会把 MemoryRead 被拒误读成「另一个
+    // 数据槽」、拿工作区文件当记忆替身。注入任务级告知钉死归因与替身行为；注入块
+    // 与 user-memory 同为 run 级临时消息（不落库），每 run 重注一次、会话内不堆积。
+    contextAssembly.injectSystemMessage(
+      `<memory-off-notice>\n${MEMORY_OFF_NOTICE}\n</memory-off-notice>`,
+      'memory-off-notice',
+    );
   } else {
     try {
       const directives = await buildPackedUserDirectives({

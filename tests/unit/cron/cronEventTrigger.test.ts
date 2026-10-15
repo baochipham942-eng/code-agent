@@ -27,6 +27,8 @@ import {
 import { getConnectorRegistry } from '../../../src/host/connectors/registry';
 import { parseCronExecutionTrigger } from '../../../src/host/cron/cronNormalizers';
 
+import { CRON_EVENT_TRIGGER } from '../../../src/shared/constants/cronEventTrigger';
+
 const NOW = Date.UTC(2026, 8, 30, 8, 0, 0);
 
 function eventJob(overrides: Partial<CronJobDefinition> = {}): CronJobDefinition {
@@ -1159,5 +1161,85 @@ describe('CronEventTrigger', () => {
       expect(parseCronExecutionTrigger('{"kind":"event","listen":"yes"}')?.listen).toBeUndefined();
       expect(parseCronExecutionTrigger('{"kind":"event","listen":false}')?.listen).toBeUndefined();
     });
+  });
+});
+
+describe('Feishu group listening self-check', () => {
+  let h: ReturnType<typeof createHarness>;
+  const windowMs = CRON_EVENT_TRIGGER.GROUP_LISTEN_CHECK_MINUTES * 60_000;
+  const groupMessage = (overrides: Partial<ChannelMessage> = {}) => channelMessage({
+    id: 'test-message', context: { chatId: 'chat-1', chatType: 'group' },
+    timestamp: Date.now(), ...overrides,
+  });
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    h = createHarness([eventJob({ schedule: {
+      type: 'event', source: 'channel', accountId: 'acc-1', chatId: 'chat-1', eventName: 'message',
+    } })]);
+  });
+  afterEach(() => {
+    h.trigger.dispose();
+    vi.useRealTimers();
+  });
+
+  it('offers an idle check and connects on a fresh no-mention inbound event before any run', () => {
+    expect(h.trigger.groupListenChecks.get('job-1')).toEqual({ status: 'idle' });
+    expect(h.trigger.groupListenChecks.get('job-1', true)).toEqual({
+      status: 'waiting', startedAt: NOW, deadlineAt: NOW + windowMs,
+    });
+    h.source.emit('listen_message', 'acc-1', groupMessage());
+    expect(h.trigger.groupListenChecks.get('job-1')?.status).toBe('connected');
+    expect(h.runs).toHaveLength(0);
+    vi.setSystemTime(NOW + windowMs);
+    expect(h.trigger.groupListenChecks.get('job-1')?.status).toBe('connected');
+  });
+
+  it('reports timed_out at the deadline with no inbound message (permission hint path)', () => {
+    h.trigger.groupListenChecks.get('job-1', true);
+    vi.setSystemTime(NOW + windowMs - 1);
+    expect(h.trigger.groupListenChecks.get('job-1')?.status).toBe('waiting');
+    vi.setSystemTime(NOW + windowMs);
+    expect(h.trigger.groupListenChecks.get('job-1')?.status).toBe('timed_out');
+    h.source.emit('listen_message', 'acc-1', groupMessage());
+    expect(h.trigger.groupListenChecks.get('job-1')?.status).toBe('timed_out');
+  });
+
+  it('does not certify other accounts, groups, DMs, bot echoes, old messages or @-message delivery', () => {
+    h.source.emit('listen_message', 'acc-1', groupMessage());
+    h.trigger.groupListenChecks.get('job-1', true);
+    h.source.emit('listen_message', 'other-account', groupMessage());
+    h.source.emit('listen_message', 'acc-1', groupMessage({ context: { chatId: 'other-group', chatType: 'group' } }));
+    h.source.emit('listen_message', 'acc-1', groupMessage({ context: { chatId: 'chat-1', chatType: 'p2p' } }));
+    h.source.emit('listen_message', 'acc-1', groupMessage({ sender: { id: 'bot', name: 'Bot', isBot: true } }));
+    h.source.emit('listen_message', 'acc-1', groupMessage({ timestamp: NOW - 1 }));
+    h.source.emit('message', 'acc-1', groupMessage());
+    expect(h.trigger.groupListenChecks.get('job-1')?.status).toBe('waiting');
+  });
+
+  it('allows a fresh attempt after timeout without reusing a previous receipt', () => {
+    h.trigger.groupListenChecks.get('job-1', true);
+    vi.setSystemTime(NOW + windowMs);
+    expect(h.trigger.groupListenChecks.get('job-1')?.status).toBe('timed_out');
+    expect(h.trigger.groupListenChecks.get('job-1', true)?.status).toBe('waiting');
+    h.source.emit('listen_message', 'acc-1', groupMessage({ id: 'retry-message' }));
+    expect(h.trigger.groupListenChecks.get('job-1')?.status).toBe('connected');
+  });
+
+  it('invalidates changed bindings, disabled/deleted tasks and disposal', () => {
+    h.trigger.groupListenChecks.get('job-1', true);
+    const schedule = h.jobs[0].schedule;
+    if (schedule.type !== 'event' || schedule.source !== 'channel') throw new Error('Expected channel schedule');
+    schedule.chatId = 'other-group';
+    expect(h.trigger.groupListenChecks.get('job-1')).toEqual({ status: 'idle' });
+    h.trigger.groupListenChecks.get('job-1', true);
+    h.jobs[0].enabled = false;
+    expect(h.trigger.groupListenChecks.get('job-1')).toBeNull();
+    h.jobs[0].enabled = true;
+    h.trigger.groupListenChecks.get('job-1', true);
+    h.trigger.dispose();
+    expect(h.trigger.groupListenChecks.get('job-1')).toEqual({ status: 'idle' });
+    h.jobs.splice(0);
+    expect(h.trigger.groupListenChecks.get('job-1', true)).toBeNull();
   });
 });

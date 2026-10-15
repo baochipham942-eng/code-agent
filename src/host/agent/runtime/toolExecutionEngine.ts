@@ -715,9 +715,10 @@ export class ToolExecutionEngine {
     }
 
     // 懒开目录（N-DELIVERABLE-WORKDIR-LAZY）：无文件夹会话的工作目录到首个非只读
-    // 工具派发前才落盘；只读工具不触发，纯问答会话不产生任何目录。
+    // 工具派发前才落盘；只读工具不触发，纯问答会话不产生任何目录。sessionId 用于
+    // 撞名残留的留痕检查（rework r2）。
     if (definition && definition.readOnly !== true) {
-      await materializeRunWorkDirectoryOnce(this.ctx.workingDirectory);
+      await materializeRunWorkDirectoryOnce(this.ctx.workingDirectory, { sessionId: this.ctx.sessionId });
     }
 
     emitToolCallStart();

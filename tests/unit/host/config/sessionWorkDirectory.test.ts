@@ -4,6 +4,11 @@
 // 前缀、MMDD、标题清洗、撞名 -2、无标题回退）；懒开——plan 只算路径不落盘，
 // materialize 幂等补 mkdir；重规划——智能标题就位且目录未落盘时按标题改名，
 // 已落盘/标题不可用/路径不是规划形状时不改。全程临时 HOME/数据目录，不碰真实主目录。
+//
+// rework r2 撞名占用：懒开后路径先记进会话行、纯问答会话的目录永不落盘，撞名判定
+// 必须把「其它会话行已记下的路径（reservedPaths）」与磁盘条目一起当占用——两个
+// 同日同题会话不再共享产出目录；已被双方记下且盘上尚无内容的路径在运行前改道
+// （maybeDivertCollidingSessionWorkDirectory），盘上已有内容的不动。
 // ============================================================================
 import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -20,7 +25,9 @@ vi.mock('../../../../src/host/services/core/configService', () => ({
 let mockUiLanguage = 'zh';
 
 import {
+  isPlannedSessionWorkDirectory,
   materializeSessionWorkDirectory,
+  maybeDivertCollidingSessionWorkDirectory,
   maybeReplanSessionWorkDirectory,
   planSessionWorkDirectory,
 } from '../../../../src/host/config/sessionWorkDirectory';
@@ -447,5 +454,240 @@ describe('maybeReplanSessionWorkDirectory (smart-title rename before materializa
     const now = new Date();
     const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
     expect(replanned).toBe(path.join(root, `任务_${mmdd}_季度总结报告`));
+  });
+});
+
+describe('planSessionWorkDirectory collision reservations (rework r2)', () => {
+  let tempHome: string;
+  let env: NodeJS.ProcessEnv;
+  let root: string;
+  // 2026-10-11 20:30 本地时间 → MMDD=1011
+  const fixedNow = new Date(2026, 9, 11, 20, 30).getTime();
+
+  beforeEach(async () => {
+    mockUiLanguage = 'zh';
+    tempHome = await mkdtemp(path.join(tmpdir(), 'session-work-dir-r2-'));
+    env = { CODE_AGENT_HOME: tempHome, CODE_AGENT_DATA_DIR: path.join(tempHome, '.code-agent') };
+    root = getDefaultWorkDirectory(env);
+  });
+
+  afterEach(async () => {
+    await rm(tempHome, { recursive: true, force: true });
+  });
+
+  it('treats paths recorded by other sessions as occupied even when never materialized on disk', async () => {
+    // 会话 A（纯问答）：规划路径记进会话行，盘上永不出现
+    const first = await planSessionWorkDirectory({
+      sessionTitle: '整理会议纪要',
+      now: fixedNow,
+      language: 'zh',
+      env,
+    });
+    expect(first).toBe(path.join(root, '任务_1011_整理会议纪要'));
+    await expect(stat(first)).rejects.toMatchObject({ code: 'ENOENT' });
+
+    // 会话 B（同日同题）：把 A 已记下的路径当占用 → 拿到 -2，而不是同一条路径
+    const second = await planSessionWorkDirectory({
+      sessionTitle: '整理会议纪要',
+      now: fixedNow,
+      language: 'zh',
+      env,
+      reservedPaths: [first],
+    });
+    expect(second).toBe(path.join(root, '任务_1011_整理会议纪要-2'));
+    await expect(stat(root)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('counts disk entries and recorded reservations together when suffixing', async () => {
+    const first = await planSessionWorkDirectory({
+      sessionTitle: '撞名',
+      now: fixedNow,
+      language: 'zh',
+      env,
+    });
+    // 盘上已有 -2（别的会话已落盘），会话行占用 first → 下一个空闲是 -3
+    await mkdir(path.join(root, '任务_1011_撞名-2'), { recursive: true });
+    const third = await planSessionWorkDirectory({
+      sessionTitle: '撞名',
+      now: fixedNow,
+      language: 'zh',
+      env,
+      reservedPaths: [first],
+    });
+    expect(third).toBe(path.join(root, '任务_1011_撞名-3'));
+  });
+
+  it('ignores reserved paths outside the default work root', async () => {
+    const dir = await planSessionWorkDirectory({
+      sessionTitle: '外部占用',
+      now: fixedNow,
+      language: 'zh',
+      env,
+      reservedPaths: [path.join(tempHome, 'elsewhere', '任务_1011_外部占用')],
+    });
+    expect(dir).toBe(path.join(root, '任务_1011_外部占用'));
+  });
+
+  it('re-plan by smart title avoids names already recorded by other sessions', async () => {
+    // 另一个会话行已记下 任务_MMDD_季度总结报告（未落盘）：按标题重规划要避开它。
+    // 重规划名取实时日期（replan 不接收 now），断言同样按今天算。
+    const now = new Date();
+    const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const reserved = path.join(root, `任务_${mmdd}_季度总结报告`);
+    const current = await planSessionWorkDirectory({
+      userMessage: '帮我出一份季度总结，要带图表',
+      now: fixedNow,
+      language: 'zh',
+      env,
+    });
+    const replanned = await maybeReplanSessionWorkDirectory({
+      workingDirectory: current,
+      sessionTitle: '季度总结报告',
+      userMessage: '帮我出一份季度总结，要带图表',
+      env,
+      reservedPaths: [reserved],
+    });
+    expect(replanned).toBe(path.join(root, `任务_${mmdd}_季度总结报告-2`));
+  });
+
+  it('re-plan does not treat the session\'s own current path as occupied', async () => {
+    const now = new Date();
+    const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const current = await planSessionWorkDirectory({
+      userMessage: '帮我出一份季度总结，要带图表',
+      now: fixedNow,
+      language: 'zh',
+      env,
+    });
+    const replanned = await maybeReplanSessionWorkDirectory({
+      workingDirectory: current,
+      sessionTitle: '季度总结报告',
+      env,
+      reservedPaths: [current],
+    });
+    expect(replanned).toBe(path.join(root, `任务_${mmdd}_季度总结报告`));
+  });
+});
+
+describe('maybeDivertCollidingSessionWorkDirectory (pre-run collision divert, rework r2)', () => {
+  let tempHome: string;
+  let env: NodeJS.ProcessEnv;
+  let root: string;
+
+  beforeEach(async () => {
+    mockUiLanguage = 'zh';
+    tempHome = await mkdtemp(path.join(tmpdir(), 'session-work-dir-divert-'));
+    env = { CODE_AGENT_HOME: tempHome, CODE_AGENT_DATA_DIR: path.join(tempHome, '.code-agent') };
+    root = getDefaultWorkDirectory(env);
+  });
+
+  afterEach(async () => {
+    await rm(tempHome, { recursive: true, force: true });
+  });
+
+  it('diverts a foreign-claimed planned path that has no content on disk yet', async () => {
+    const current = path.join(root, '任务_1011_整理会议纪要');
+    const diverted = await maybeDivertCollidingSessionWorkDirectory({
+      workingDirectory: current,
+      reservedPaths: [current],
+      env,
+    });
+    expect(diverted).toBe(path.join(root, '任务_1011_整理会议纪要-2'));
+    // 改道只是算路径：盘上零改动
+    await expect(stat(root)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('diverts when the foreign-claimed directory exists but is still empty', async () => {
+    const current = path.join(root, '任务_1011_整理会议纪要');
+    await mkdir(current, { recursive: true });
+    const diverted = await maybeDivertCollidingSessionWorkDirectory({
+      workingDirectory: current,
+      reservedPaths: [current],
+      env,
+    });
+    expect(diverted).toBe(path.join(root, '任务_1011_整理会议纪要-2'));
+  });
+
+  it('keeps a foreign-claimed path that already has content — diverting would orphan files', async () => {
+    const current = path.join(root, '任务_1011_整理会议纪要');
+    await mkdir(current, { recursive: true });
+    await writeFile(path.join(current, '别人的产出.md'), 'x');
+    await expect(maybeDivertCollidingSessionWorkDirectory({
+      workingDirectory: current,
+      reservedPaths: [current],
+      env,
+    })).resolves.toBeUndefined();
+  });
+
+  it('does nothing when no other session claims the path (normal reuse)', async () => {
+    const current = path.join(root, '任务_1011_整理会议纪要');
+    await expect(maybeDivertCollidingSessionWorkDirectory({
+      workingDirectory: current,
+      reservedPaths: [],
+      env,
+    })).resolves.toBeUndefined();
+  });
+
+  it('does nothing for paths that are not planned session folders', async () => {
+    const userFolder = path.join(root, '我自己的文件夹');
+    await expect(maybeDivertCollidingSessionWorkDirectory({
+      workingDirectory: userFolder,
+      reservedPaths: [userFolder],
+      env,
+    })).resolves.toBeUndefined();
+    await expect(maybeDivertCollidingSessionWorkDirectory({
+      workingDirectory: path.join(tempHome, 'elsewhere'),
+      reservedPaths: [path.join(tempHome, 'elsewhere')],
+      env,
+    })).resolves.toBeUndefined();
+  });
+
+  it('diverts from an already-suffixed path to the next free suffix of the same base', async () => {
+    const current = path.join(root, '任务_1011_整理会议纪要-3');
+    const diverted = await maybeDivertCollidingSessionWorkDirectory({
+      workingDirectory: current,
+      reservedPaths: [current],
+      env,
+    });
+    // 基础名（去掉 -3）空闲时直接回基础名；基础名被占用则顺延
+    expect(diverted).toBe(path.join(root, '任务_1011_整理会议纪要'));
+    const baseClaimed = path.join(root, '任务_1011_整理会议纪要');
+    const divertedNext = await maybeDivertCollidingSessionWorkDirectory({
+      workingDirectory: current,
+      reservedPaths: [current, baseClaimed],
+      env,
+    });
+    expect(divertedNext).toBe(path.join(root, '任务_1011_整理会议纪要-2'));
+  });
+});
+
+describe('isPlannedSessionWorkDirectory', () => {
+  let tempHome: string;
+  let env: NodeJS.ProcessEnv;
+  let root: string;
+
+  beforeEach(async () => {
+    mockUiLanguage = 'zh';
+    tempHome = await mkdtemp(path.join(tmpdir(), 'session-work-dir-shape-'));
+    env = { CODE_AGENT_HOME: tempHome, CODE_AGENT_DATA_DIR: path.join(tempHome, '.code-agent') };
+    root = getDefaultWorkDirectory(env);
+  });
+
+  afterEach(async () => {
+    await rm(tempHome, { recursive: true, force: true });
+  });
+
+  it('accepts planned folder shapes strictly inside the default work root', () => {
+    expect(isPlannedSessionWorkDirectory(path.join(root, '任务_1011_标题'), env)).toBe(true);
+    expect(isPlannedSessionWorkDirectory(path.join(root, 'Task_1011_title-2'), env)).toBe(true);
+    expect(isPlannedSessionWorkDirectory(path.join(root, '任务_1011_标题') + path.sep, env)).toBe(true);
+  });
+
+  it('rejects the root itself, paths outside it, and non-planned names', () => {
+    expect(isPlannedSessionWorkDirectory(root, env)).toBe(false);
+    expect(isPlannedSessionWorkDirectory(path.join(tempHome, 'elsewhere', '任务_1011_标题'), env)).toBe(false);
+    expect(isPlannedSessionWorkDirectory(path.join(root, '我自己的文件夹'), env)).toBe(false);
+    expect(isPlannedSessionWorkDirectory('', env)).toBe(false);
+    expect(isPlannedSessionWorkDirectory('   ', env)).toBe(false);
   });
 });

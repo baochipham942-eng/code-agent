@@ -12,6 +12,14 @@
 // 首条用户消息的第一个分句；标题就位后目录仍未落盘时，可按标题重规划一次
 // （maybeReplanSessionWorkDirectory），盘上零改动。标题本身也先按分句切再截 40 字
 // （截断停在分句/词边界）；降级标题（消息前缀 / 以 `...` 结尾）不重规划。
+//
+// 撞名占用（rework r2）：懒开后路径先记进会话行、盘上迟迟不出现，纯磁盘判定看不见
+// 这些占用——两个同日同题会话会拿到同一路径，后写的一家把文件混进先写的一家的目录。
+// 候选名判定改为「磁盘已有条目 ∪ 其它会话行已记下的 workingDirectory」（reservedPaths
+// 由调用方从会话库取，见 sessionWorkDirectoryReservations）。运行开始前（agent preflight）
+// 发现行内路径也被其它会话占用且盘上尚无内容时，maybeDivertCollidingSessionWorkDirectory
+// 趁零数据损失改道到同基础名的下一个空闲后缀；盘上已有内容的路径不动（可能是本会话
+// 早前轮次的产出，改道会把文件丢在旧目录）。
 // ============================================================================
 
 import * as fs from 'fs/promises';
@@ -31,6 +39,11 @@ export interface SessionWorkDirectoryOptions {
   /** 语言档：zh → 任务_ 前缀，en → Task_ 前缀；缺省读 ui.language，读失败按 zh */
   language?: 'zh' | 'en';
   env?: NodeJS.ProcessEnv;
+  /**
+   * 已被占用的路径（其它会话行已记下、可能尚未落盘的规划路径）：与磁盘条目一样
+   * 参与撞名判定。懒开后纯问答会话的路径永不落盘，只看磁盘会让两个会话共享目录。
+   */
+  reservedPaths?: readonly string[];
 }
 
 export interface ReplanSessionWorkDirectoryOptions {
@@ -40,6 +53,16 @@ export interface ReplanSessionWorkDirectoryOptions {
   sessionTitle?: string;
   /** 首条用户消息；标题若只是它的降级截断（前缀 / 派生 / 以 `...` 结尾）则不重规划 */
   userMessage?: string;
+  env?: NodeJS.ProcessEnv;
+  /** 其它会话行已记下的占用路径；本会话自己的当前路径会自动从占用集中剔除 */
+  reservedPaths?: readonly string[];
+}
+
+export interface DivertSessionWorkDirectoryOptions {
+  /** 会话行里持久化的工作目录（疑似与其它会话撞名的规划路径） */
+  workingDirectory: string;
+  /** 其它会话行已记下的占用路径（不含本会话自己的） */
+  reservedPaths: readonly string[];
   env?: NodeJS.ProcessEnv;
 }
 
@@ -166,24 +189,56 @@ async function existsOnDisk(target: string): Promise<boolean> {
   }
 }
 
+/** 目录里已经有文件（或任何条目）＝有内容；不存在/为空/读不了都算没内容。 */
+async function directoryHasContent(dir: string): Promise<boolean> {
+  try {
+    return (await fs.readdir(dir)).length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** 占用集：解析到绝对路径后只留默认工作根之内的（之外的永远撞不到候选名）。 */
+function resolveReservationSet(root: string, reservedPaths: readonly string[] | undefined): Set<string> {
+  const reserved = new Set<string>();
+  for (const raw of reservedPaths ?? []) {
+    const trimmed = raw?.trim();
+    if (!trimmed) continue;
+    const resolved = path.resolve(trimmed);
+    if (isPathWithinRoot(resolved, root)) reserved.add(resolved);
+  }
+  return reserved;
+}
+
+async function findFreeSessionWorkDirectory(
+  root: string,
+  baseName: string,
+  reserved: Set<string>,
+): Promise<string> {
+  for (let attempt = 1; attempt <= COLLISION_SUFFIX_LIMIT; attempt++) {
+    const candidate = path.join(root, attempt === 1 ? baseName : `${baseName}-${attempt}`);
+    const resolved = path.resolve(candidate);
+    if (!reserved.has(resolved) && !(await existsOnDisk(resolved))) return candidate;
+  }
+  throw new Error(`session work directory name exhausted after ${COLLISION_SUFFIX_LIMIT} collisions: ${baseName}`);
+}
+
 /**
  * 规划（不落盘）无文件夹新会话的按会话产出目录路径
  * `<getDefaultWorkDirectory()>/任务_MMDD_<标题>`（英文 UI `Task_MMDD_<标题>`）。
  *
- * 撞名后缀按磁盘现状判定：已存在的条目依次试 `-2`、`-3`…；连根目录都还没建时
- * 第一个候选即中。本函数不做任何写盘动作——纯问答会话因此一个目录都不会建出来
- * （N-DELIVERABLE-WORKDIR-LAZY），落盘交给 materializeSessionWorkDirectory。
+ * 撞名后缀按「磁盘已有条目 ∪ 其它会话行已记下的路径（reservedPaths）」判定：
+ * 懒开后路径先记进会话行、纯问答会话的目录永不落盘，只看磁盘会让多个会话
+ * 拿到同一路径（rework r2）。连根目录都还没建时第一个候选即中。本函数不做
+ * 任何写盘动作——纯问答会话因此一个目录都不会建出来（N-DELIVERABLE-WORKDIR-LAZY），
+ * 落盘交给 materializeSessionWorkDirectory。
  */
 export async function planSessionWorkDirectory(
   options: SessionWorkDirectoryOptions = {},
 ): Promise<string> {
   const root = getDefaultWorkDirectory(options.env);
   const baseName = buildSessionFolderBaseName(options);
-  for (let attempt = 1; attempt <= COLLISION_SUFFIX_LIMIT; attempt++) {
-    const candidate = path.join(root, attempt === 1 ? baseName : `${baseName}-${attempt}`);
-    if (!(await existsOnDisk(candidate))) return candidate;
-  }
-  throw new Error(`session work directory name exhausted after ${COLLISION_SUFFIX_LIMIT} collisions: ${baseName}`);
+  return findFreeSessionWorkDirectory(root, baseName, resolveReservationSet(root, options.reservedPaths));
 }
 
 /**
@@ -200,6 +255,7 @@ export async function materializeSessionWorkDirectory(dir: string): Promise<void
  * 重新规划，由调用方回写会话——盘上零改动。以下任一情况直接返回 undefined（什么都不用做）：
  * 标题不可用；标题只是首条消息的降级截断（前缀/派生/以 `...` 结尾）；路径不是本模块
  * 规划的形状；不在默认工作根之内（含根本身）；目录已落盘；按标题重规划出来的路径没有变化。
+ * 重规划同样避开 reservedPaths 里的占用（自己的当前路径除外）。
  */
 export async function maybeReplanSessionWorkDirectory(
   options: ReplanSessionWorkDirectoryOptions,
@@ -216,6 +272,46 @@ export async function maybeReplanSessionWorkDirectory(
   const root = getDefaultWorkDirectory(options.env);
   if (!isPathWithinRoot(current, root) || path.resolve(current) === path.resolve(root)) return undefined;
   if (await existsOnDisk(current)) return undefined;
-  const replanned = await planSessionWorkDirectory({ sessionTitle: title, env: options.env });
+  const reservedForReplan = (options.reservedPaths ?? []).filter(
+    (candidate) => candidate.trim() && path.resolve(candidate) !== path.resolve(current),
+  );
+  const replanned = await planSessionWorkDirectory({
+    sessionTitle: title,
+    env: options.env,
+    reservedPaths: reservedForReplan,
+  });
   return path.resolve(replanned) === path.resolve(current) ? undefined : replanned;
+}
+
+/** 路径是否本模块规划出的按会话产出目录（默认工作根之内、严格小于根、任务_/Task_ 形状）。 */
+export function isPlannedSessionWorkDirectory(dir: string, env?: NodeJS.ProcessEnv): boolean {
+  const trimmed = dir.trim();
+  if (!trimmed) return false;
+  const root = getDefaultWorkDirectory(env);
+  const resolved = path.resolve(trimmed);
+  if (resolved === path.resolve(root) || !isPathWithinRoot(resolved, root)) return false;
+  return PLANNED_FOLDER_NAME_PATTERN.test(path.basename(resolved));
+}
+
+/**
+ * 撞名改道（rework r2）：会话行记下的规划路径同时被其它会话行记下（规划期竞态的
+ * 残留——旧判定只看磁盘，纯问答会话的路径永不落盘），且盘上还没有任何内容
+ * （目录不存在或为空）时，趁零数据损失改道到同基础名的下一个空闲后缀，由调用方
+ * 回写会话。以下任一情况直接返回 undefined：路径不是本模块规划的形状；不在默认
+ * 工作根之内；没有其它会话占用；盘上已有内容（可能是本会话早前轮次的产出，改道
+ * 会把文件丢在旧目录）；没有可用的空闲名。
+ */
+export async function maybeDivertCollidingSessionWorkDirectory(
+  options: DivertSessionWorkDirectoryOptions,
+): Promise<string | undefined> {
+  const current = options.workingDirectory.trim();
+  if (!current || !isPlannedSessionWorkDirectory(current, options.env)) return undefined;
+  const root = getDefaultWorkDirectory(options.env);
+  const currentFolderName = path.basename(current);
+  const reserved = resolveReservationSet(root, options.reservedPaths);
+  if (!reserved.has(path.resolve(current))) return undefined;
+  if (await directoryHasContent(current)) return undefined;
+  const baseName = currentFolderName.replace(/-\d+$/, '');
+  const diverted = await findFreeSessionWorkDirectory(root, baseName, reserved);
+  return path.resolve(diverted) === path.resolve(current) ? undefined : diverted;
 }

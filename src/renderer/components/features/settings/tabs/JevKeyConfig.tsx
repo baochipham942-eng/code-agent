@@ -3,7 +3,7 @@
 // Key row writes the service slot `typesafe` through setServiceApiKey (secure storage);
 // display is masked; an empty save on a configured key clears only after confirm.
 // 判官区块（N-JEV-DEFAULT-ON-CONSENT）：jevStatus 五态状态行 + 降级计数 + 总开关
-// （setJevSettings）+「发什么给谁」披露 + 仅待同意态出现的 Allow 按钮。
+// （settings/set 的 jev 块）+「发什么给谁」披露 + 仅待同意态出现的 Allow 按钮。
 // ============================================================================
 
 import React, { useCallback, useEffect, useState } from 'react';
@@ -77,7 +77,9 @@ export const JevKeyConfig: React.FC = () => {
     if (optimistic) setJevEnabled(!jevEnabled);
     setJevSaving(true);
     try {
-      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'setJevSettings', updates);
+      // jev 不是管理员专属键：走通用 settings/set（settingsUpdateRequiresAdmin 不含 jev），
+      // 不新增 IPC 动作面。时间戳语义在 ConfigService.updateSettings。
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', { settings: { jev: updates } });
       if (updates.openRouterConsent === true) toast.success(judgeText.allowedToast);
     } catch (error) {
       if (optimistic) setJevEnabled(jevEnabled);

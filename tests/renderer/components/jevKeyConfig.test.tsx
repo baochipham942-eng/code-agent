@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // ============================================================================
 // JevKeyConfig 判官区块（N-JEV-DEFAULT-ON-CONSENT ②④）—— 状态行 / 降级计数 / 总开关 /
-// 待同意态 Allow 按钮：消费 diagnostics jevStatus，写入走 settings setJevSettings。
+// 待同意态 Allow 按钮：消费 diagnostics jevStatus，写入走 settings/set 的 jev 块。
 // ipcService 与 toast 全 mock，不触网。
 // ============================================================================
 import React from 'react';
@@ -64,13 +64,13 @@ describe('JevKeyConfig 判官区块', () => {
     expect(screen.getByTestId('jev-consent-allow')).toBeDefined();
   });
 
-  it('点 Allow → setJevSettings 写 openRouterConsent: true', async () => {
+  it('点 Allow → settings/set 写 jev.openRouterConsent: true', async () => {
     stubIpc({ enabled: true, openRouterConsent: false }, statusOf('openrouter_pending_consent'));
     render(<JevKeyConfig />);
     fireEvent.click(await screen.findByTestId('jev-consent-allow'));
     await waitFor(() => {
-      expect(ipcService.invokeDomain).toHaveBeenCalledWith(IPC_DOMAINS.SETTINGS, 'setJevSettings', {
-        openRouterConsent: true,
+      expect(ipcService.invokeDomain).toHaveBeenCalledWith(IPC_DOMAINS.SETTINGS, 'set', {
+        settings: { jev: { openRouterConsent: true } },
       });
     });
     expect(toasts.success).toHaveBeenCalled();
@@ -97,8 +97,8 @@ describe('JevKeyConfig 判官区块', () => {
     expect(screen.getByTestId('jev-disclosure').textContent).toContain('命令文本');
     fireEvent.click(toggle!);
     await waitFor(() => {
-      expect(ipcService.invokeDomain).toHaveBeenCalledWith(IPC_DOMAINS.SETTINGS, 'setJevSettings', {
-        enabled: true,
+      expect(ipcService.invokeDomain).toHaveBeenCalledWith(IPC_DOMAINS.SETTINGS, 'set', {
+        settings: { jev: { enabled: true } },
       });
     });
   });

@@ -24,7 +24,6 @@ const SettingsDomainRequestSchema = z.object({
     'set',
     'setBudgetConfig',
     'setDevMode',
-    'setJevSettings',
     'setServiceApiKey',
     'testApiKey',
   ]),

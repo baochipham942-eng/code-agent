@@ -705,28 +705,3 @@ function BashOutputPreview({ toolCall, status, quietError }: { toolCall: ToolCal
     </div>
   );
 }
-
-// ============================================================================
-// Compact Version for Cowork Mode (kept for backward compatibility)
-// ============================================================================
-
-export function ToolCallDisplayCompact({
-  toolCall,
-  index,
-  total,
-}: Omit<ToolCallDisplayProps, 'compact'>) {
-  return (
-    <ToolCallDisplay
-      toolCall={toolCall}
-      index={index}
-      total={total}
-      compact={true}
-    />
-  );
-}
-
-// Re-export types and utilities
-export type { ToolStatus } from './styles';
-export { getToolStatus, getStatusColor } from './styles';
-export { getToolIcon, formatParams, getToolDisplayName } from './utils';
-export { summarizeTool } from './summarizers';

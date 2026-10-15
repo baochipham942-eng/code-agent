@@ -94,6 +94,72 @@ describe('ConfigService disclosureLevel save/load', () => {
     expect(ui[removedFlag]).toBe(true);
   });
 
+  it('persists simple for a fresh data dir', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'code-agent-disclosure-fresh-'));
+    const { ConfigService } = await loadConfigServiceForDataDir(dataDir);
+    const service = new ConfigService();
+    await service.initialize();
+
+    expect(service.getSettings().ui.disclosureLevel).toBe('simple');
+    const onDisk = JSON.parse(await readFile(join(dataDir, 'config.json'), 'utf-8')) as {
+      ui: { disclosureLevel?: string };
+    };
+    expect(onDisk.ui.disclosureLevel).toBe('simple');
+  });
+
+  it('keeps an existing standard level', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'code-agent-disclosure-standard-'));
+    await writeFile(join(dataDir, 'config.json'), JSON.stringify({
+      ui: { theme: 'dark', disclosureLevel: 'standard' },
+    }));
+
+    const { ConfigService } = await loadConfigServiceForDataDir(dataDir);
+    const service = new ConfigService();
+    await service.initialize();
+
+    expect(service.getSettings().ui.disclosureLevel).toBe('standard');
+    expect(service.getSettings().ui.theme).toBe('dark');
+    const onDisk = JSON.parse(await readFile(join(dataDir, 'config.json'), 'utf-8')) as {
+      ui: { disclosureLevel?: string };
+    };
+    expect(onDisk.ui.disclosureLevel).toBe('standard');
+  });
+
+  it('keeps standard when an existing config has no disclosureLevel', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'code-agent-disclosure-missing-'));
+    await writeFile(join(dataDir, 'config.json'), JSON.stringify({
+      ui: { theme: 'dark' },
+    }));
+
+    const { ConfigService } = await loadConfigServiceForDataDir(dataDir);
+    const service = new ConfigService();
+    await service.initialize();
+
+    expect(service.getSettings().ui.disclosureLevel).toBe('standard');
+    expect(service.getSettings().ui.theme).toBe('dark');
+    const onDisk = JSON.parse(await readFile(join(dataDir, 'config.json'), 'utf-8')) as {
+      ui: { disclosureLevel?: string; theme?: string };
+    };
+    expect(onDisk.ui.disclosureLevel).toBe('standard');
+    expect(onDisk.ui.theme).toBe('dark');
+  });
+
+  it('restores standard from the keychain onto a fresh data dir', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'code-agent-disclosure-keychain-standard-'));
+    const { ConfigService } = await loadConfigServiceForDataDir(dataDir);
+    secureStorageMock.getSettingsFromKeychain.mockResolvedValue({
+      disclosureLevel: 'standard',
+    });
+    const service = new ConfigService();
+    await service.initialize();
+
+    expect(service.getSettings().ui.disclosureLevel).toBe('standard');
+    const onDisk = JSON.parse(await readFile(join(dataDir, 'config.json'), 'utf-8')) as {
+      ui: { disclosureLevel?: string };
+    };
+    expect(onDisk.ui.disclosureLevel).toBe('standard');
+  });
+
   it('falls back to standard when the persisted level is invalid', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'code-agent-disclosure-bad-'));
     const configPath = join(dataDir, 'config.json');
@@ -124,7 +190,8 @@ describe('ConfigService disclosureLevel save/load', () => {
     });
     const service = new ConfigService();
     await expect(service.initialize()).resolves.toBeUndefined();
-    expect(service.getSettings().ui.disclosureLevel).toBe('standard');
+    // 全新目录上非法钥匙串值等于没有值，留下出厂默认 simple。
+    expect(service.getSettings().ui.disclosureLevel).toBe('simple');
     expect(service.getSettings().ui).not.toHaveProperty(removedFlag);
   });
 });

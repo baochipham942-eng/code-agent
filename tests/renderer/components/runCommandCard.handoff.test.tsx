@@ -6,7 +6,9 @@
 //   onSend 走普通发送路径，不套 chip 确认模板（正文本身已是汇报，不是新指令）；
 // - 双击只发一条（store 落交接标记在派发之前）；发过之后按钮变禁用的「已发给 Neo」；
 //   重跑同一张卡重新放开交接入口；
-// - 不点不发：跑完之后 onSend 零调用、零 iact:handoff 派发（无自动注入）。
+// - 不点不发：跑完之后 onSend 零调用、零 iact:handoff 派发（无自动注入）；
+// - 输出的 ANSI 颜色码在两条出口都剥掉（N-IACT-RUN-HANDOFF-NEO-FU1）：卡片 DOM
+//   与派发正文都不含 ESC，纯转义序列的输出视同无输出。
 
 import React from 'react';
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
@@ -122,6 +124,33 @@ describe('!run 卡「发给 Neo」交接', () => {
     fireEvent.click(handoff);
     fireEvent.click(handoff);
     expect(handoffEvents(dispatchSpy)).toHaveLength(1);
+  });
+
+  // N-IACT-RUN-HANDOFF-NEO-FU1：PTY 输出的颜色码不进卡片也不进交接正文
+  const ESC = String.fromCharCode(0x1b);
+
+  it('带颜色码的输出：卡片 DOM 与派发的正文都剥干净，被颜色码切成两半的密钥照样脱敏', async () => {
+    const coloured = `${ESC}[34m${ESC}[1mads${ESC}[0m ${ESC}[39;49mbin${ESC}[39;49m${ESC}[0m\ntoken=sk-proj${ESC}[31m1234567890abcdef`;
+    const { card } = await renderRunCard(`[跑](${runHref('ls work')})`);
+    await runToFinish(card, { status: 'completed', output: coloured, exitCode: 0 });
+
+    const outputEl = card.querySelector('[data-iact-run-output]');
+    expect(outputEl).toBeTruthy();
+    expect(outputEl?.textContent).not.toContain(ESC);
+    expect(outputEl?.textContent).toContain('ads bin');
+
+    fireEvent.click(card.querySelector('[data-iact-run-handoff]') as HTMLButtonElement);
+    const [detail] = handoffEvents(dispatchSpy);
+    expect(detail).not.toContain(ESC);
+    expect(detail).toContain('ads bin');
+    expect(detail).not.toContain('sk-proj1234567890abcdef');
+    expect(detail).toContain('sk-***REDACTED***');
+  });
+
+  it('输出只有颜色码：剥完为空，卡片不渲染输出块', async () => {
+    const { card } = await renderRunCard(`[跑](${runHref('true')})`);
+    await runToFinish(card, { status: 'completed', output: `${ESC}[34m${ESC}[39;49m${ESC}[0m`, exitCode: 0 });
+    expect(card.querySelector('[data-iact-run-output]')).toBeNull();
   });
 
   it.each([

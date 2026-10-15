@@ -732,8 +732,11 @@ export class PermissionClassifier {
       return this.classifyBashCommand(args.command, context, startTime);
     }
 
-    // R6: 文件写入工具 — 按路径判断
-    if (WRITE_TOOLS.has(toolName)) {
+    // R6: 文件写入工具 — 按路径判断。
+    // 生成器只在有权威工作区（新会话首轮起就有 project root）时走确定性写围栏；
+    // 无工作区场景维持既有 Jev 语境判定，不改变后台 run 的审批语义（jev R4 契约）。
+    if (WRITE_TOOLS.has(toolName)
+      && (context.workspaceRoot || !GENERATOR_WRITE_TOOLS.has(toolName))) {
       return this.classifyFileWrite(toolName, args, context, startTime);
     }
 

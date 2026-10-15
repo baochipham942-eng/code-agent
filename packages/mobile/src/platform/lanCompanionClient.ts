@@ -25,6 +25,12 @@ function adoptEndpoint(reported: unknown, dialed: string): string {
   try { return validateLanEndpoint(reported); } catch { return dialed; }
 }
 
+/** 没拿到宿主任何应答的失败：原生 post 的三类分类码（httpFailure.ts）+ fetch 的 TypeError。 */
+const TRANSPORT_FAILURES = new Set(['COMPANION_CONNECTION_REFUSED', 'COMPANION_NO_RESPONSE', 'COMPANION_NETWORK_UNAVAILABLE']);
+function isTransportError(error: unknown): boolean {
+  return error instanceof TypeError || (error instanceof Error && TRANSPORT_FAILURES.has(error.message));
+}
+
 /** All requests on a channel are serialized because Noise records are ordered. */
 export class LanCompanionClient {
   private channel: NoiseChannel | null = null;
@@ -69,7 +75,9 @@ export class LanCompanionClient {
       try { return await attempt(endpoint, alternate); }
       catch (error) {
         if (error instanceof Error && LanCompanionClient.FATAL.has(error.message)) throw error;
-        firstError ??= error;
+        // 宿主的明确应答（HTTP_4xx 等）盖过传输错误：主地址撞上被掐断的旧连接（ECONNRESET）
+        // 而备用地址拿到 403，手机该知道「被拒」而不是当断网无限重试。
+        if (firstError === undefined || (isTransportError(firstError) && !isTransportError(error))) firstError = error;
       }
     }
     throw firstError ?? new Error('COMPANION_NETWORK_UNAVAILABLE');

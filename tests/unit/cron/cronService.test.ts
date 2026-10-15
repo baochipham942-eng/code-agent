@@ -117,11 +117,13 @@ vi.mock('../../../src/host/services/sessionAutomation', () => ({
 const artifactRefreshState = vi.hoisted(() => ({
   begin: vi.fn((_definition: unknown): unknown => undefined),
   finish: vi.fn(async (_state: unknown, _outcome: unknown): Promise<void> => undefined),
+  cwd: vi.fn((_definition: unknown, fallback: string | undefined) => fallback),
 }));
 
 vi.mock('../../../src/host/cron/artifactStandingRefresh', () => ({
   beginArtifactRefresh: artifactRefreshState.begin,
   finishArtifactRefresh: artifactRefreshState.finish,
+  cronAgentWorkingDirectory: artifactRefreshState.cwd,
 }));
 
 import { CronService } from '../../../src/host/cron/cronService';
@@ -1251,6 +1253,8 @@ describe('N-ARTIFACT-STANDING-REFRESH 常设刷新接线', () => {
     artifactRefreshState.begin.mockImplementation(() => undefined);
     artifactRefreshState.finish.mockReset();
     artifactRefreshState.finish.mockImplementation(async () => undefined);
+    artifactRefreshState.cwd.mockReset();
+    artifactRefreshState.cwd.mockImplementation((_definition: unknown, fallback: string | undefined) => fallback);
   });
 
   afterEach(() => {
@@ -1258,6 +1262,8 @@ describe('N-ARTIFACT-STANDING-REFRESH 常设刷新接线', () => {
     artifactRefreshState.begin.mockImplementation(() => undefined);
     artifactRefreshState.finish.mockReset();
     artifactRefreshState.finish.mockImplementation(async () => undefined);
+    artifactRefreshState.cwd.mockReset();
+    artifactRefreshState.cwd.mockImplementation((_definition: unknown, fallback: string | undefined) => fallback);
   });
 
   it('刷新任务一趟执行：begin/finish 各调一次，finish 收到 runFailed=false 与任务更新回调', async () => {
@@ -1269,6 +1275,7 @@ describe('N-ARTIFACT-STANDING-REFRESH 常设刷新接线', () => {
     const execution = await service.triggerJob(job.id);
 
     expect(execution?.status).toBe('completed');
+    expect(artifactRefreshState.cwd).toHaveBeenCalledWith(expect.objectContaining({ id: job.id }), undefined);
     expect(artifactRefreshState.begin).toHaveBeenCalledTimes(1);
     expect(artifactRefreshState.begin.mock.calls[0][0]).toMatchObject({ id: job.id });
     expect(artifactRefreshState.finish).toHaveBeenCalledTimes(1);

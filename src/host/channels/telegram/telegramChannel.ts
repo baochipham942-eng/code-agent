@@ -174,6 +174,21 @@ export class TelegramChannel extends BaseChannelPlugin {
         canReadAllGroupMessages: this.lastCanReadAllGroupMessages,
       });
 
+      // 命令菜单：用户在输入框点「/」就能看到可用命令，不必先知道有哪些。不 await：失败或卡住
+      // 都只留痕，不拖住连接和收消息。
+      void Promise.all([
+        this.bot.api.setMyCommands([
+          { command: 'stop', description: 'Stop the running task' },
+          { command: 'new', description: 'Start a new conversation' },
+          { command: 'status', description: 'Show current status' },
+        ]),
+        this.bot.api.setMyCommands([
+          { command: 'stop', description: '停止正在运行的任务' },
+          { command: 'new', description: '开始新的对话' },
+          { command: 'status', description: '查看当前状态' },
+        ], { language_code: 'zh' }),
+      ]).catch(error => logger.warn('Telegram setMyCommands failed', { error: String(error) }));
+
       // 注册消息处理器
       this.bot.on('message', (ctx) => {
         logger.info('Telegram raw message received', {

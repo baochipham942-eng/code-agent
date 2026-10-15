@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-10-13T06:43:37.551Z",
-  "gitHead": "4cf21553155c6448f167b71664853f2e63583a7d",
-  "promptVersion": "sys-v79",
-  "promptInputsHash": "c82a924cd6bf45a5dc5450bd4d37e183f068423ce62833e2f26e7bcbd756dea7",
+  "generatedAt": "2026-10-15T07:40:12.866Z",
+  "gitHead": "9bd872786440ab67d51352d4ec43dd576901c0ca",
+  "promptVersion": "sys-v80",
+  "promptInputsHash": "de8a24889676e47a0fb05868c5f0e4bcf5383fa96b02367dc30b9bb94bc44a4e",
   "passed": true,
   "steps": {
     "staleScan": {

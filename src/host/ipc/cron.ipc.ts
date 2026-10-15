@@ -107,6 +107,16 @@ const CRON_GENERATION_SYSTEM_PROMPT = `你是一个定时任务配置助手。�
  * UNKNOWN_ACTION `Unknown cron action: <action>`；抛错 → CRON_ERROR + 同款日志。
  */
 const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
+  getGroupListenCheck: async (_ctx, payload) => {
+    const jobId = getStringField(payload, 'jobId');
+    if (!jobId) throw new Error('Invalid cron job id');
+    return { success: true, data: getCronService().getGroupListenCheck(jobId) } satisfies IPCResponse;
+  },
+  startGroupListenCheck: async (_ctx, payload) => {
+    const jobId = getStringField(payload, 'jobId');
+    if (!jobId) throw new Error('Invalid cron job id');
+    return { success: true, data: getCronService().getGroupListenCheck(jobId, true) } satisfies IPCResponse;
+  },
   listJobs: async (_ctx, payload) => {
     const cronService = getCronService();
     const filter = getCronJobFilter(payload);

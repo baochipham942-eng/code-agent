@@ -40,6 +40,14 @@ export const onboardingZh = {
     connectorsNext: '下一步',
     connectorsFootnote: '现在不连也不影响使用，之后在能力中心随时可以连。',
     connectorsOpenedHint: '已记下，完成引导后会为你打开{name}的连接页。',
+    // 本机连接器（邮件/日历/提醒事项）在引导步内直接触发 macOS 授权（A-1），
+    // 行内展示 busy/结果；失败时不提供原地重试（系统弹窗 Don't Allow 后不会再弹），
+    // 只告知去哪改并承诺引导结束后落到该卡片。
+    connectorConnectingHint: '正在请求系统授权…',
+    connectorReadyHint: '已连接 ✓',
+    connectorNoAccountHint: '已连接，但「{name}」里还没有账号，添加后再回来就能用。',
+    connectorDeniedHint: '刚才没获系统授权。可到 系统设置 › 隐私与安全性 › 自动化 里重新允许；完成引导后仍会为你打开「{name}」的连接卡。',
+    focusFromOnboarding: '来自首启引导：连接{name}',
     connectorRows: {
       feishu: { name: '飞书', description: '文档、日程与消息，授权后 Neo 可以直接读写' },
       'google-calendar': { name: 'Google 日历', description: '查询和安排你的日程' },
@@ -113,6 +121,11 @@ export const onboardingEn = {
     connectorsNext: 'Next',
     connectorsFootnote: 'Skipping changes nothing — you can connect any time from the Capability Hub.',
     connectorsOpenedHint: 'Noted — the {name} connect page will open when you finish setup.',
+    connectorConnectingHint: 'Requesting macOS permission…',
+    connectorReadyHint: 'Connected ✓',
+    connectorNoAccountHint: 'Connected, but the {name} app has no account yet — add one and it will work right away.',
+    connectorDeniedHint: 'Not allowed just now. Re-enable it under System Settings › Privacy & Security › Automation; the "{name}" card will still open after you finish setup.',
+    focusFromOnboarding: 'From setup: connect {name}',
     connectorRows: {
       feishu: { name: 'Feishu', description: 'Docs, calendar and messages Neo can read and write once authorized' },
       'google-calendar': { name: 'Google Calendar', description: 'Check and schedule your events' },

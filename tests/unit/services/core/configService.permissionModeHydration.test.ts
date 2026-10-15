@@ -101,6 +101,18 @@ describe('ConfigService 启动灌回持久化权限档', () => {
     expect(getPermissionModeManager().getMode()).toBe('default');
   });
 
+  it('未知的持久化权限档：启动忽略并保持 default', async () => {
+    const dataDir = await createDataDir();
+    await writeFile(join(dataDir, 'config.json'), JSON.stringify({
+      permissions: { permissionMode: 'yolo' },
+    }));
+    const { ConfigService, getPermissionModeManager } = await loadConfigServiceForDataDir(dataDir);
+    const service = new ConfigService();
+
+    await expect(service.initialize()).resolves.toBeUndefined();
+    expect(getPermissionModeManager().getMode()).toBe('default');
+  });
+
   it('未配置权限档：行为不变（default）', async () => {
     const dataDir = await createDataDir();
     const { ConfigService, getPermissionModeManager } = await loadConfigServiceForDataDir(dataDir);

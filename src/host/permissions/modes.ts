@@ -729,6 +729,10 @@ let permissionModeManagerInstance: PermissionModeManager | null = null;
  */
 export function hydratePersistedPermissionMode(persisted: string | undefined): void {
   if (!persisted || persisted === 'default' || persisted === 'bypassPermissions') return;
+  if (!Object.prototype.hasOwnProperty.call(MODE_CONFIGS, persisted)) {
+    logger.warn('Ignoring unknown persisted permission mode', { mode: persisted });
+    return;
+  }
   const manager = getPermissionModeManager();
   if (manager.getMode() === persisted) return;
   if (manager.setMode(persisted as PermissionMode, false, 'external')) {

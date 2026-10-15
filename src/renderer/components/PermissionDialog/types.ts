@@ -66,6 +66,10 @@ export interface PermissionRequestDetails {
     code: string;
     exception?: string;
   };
+  /** 沙盒写放宽被拦路径。 */
+  deniedPath?: string;
+  /** 沙盒写放宽动作：sandbox_escalate_once 或 sandbox_escalate_dir_once。 */
+  action?: string;
 }
 
 // 权限请求

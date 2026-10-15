@@ -71,7 +71,6 @@ import { loadEnginePanelData } from './enginePanelLoader';
 import { ReasoningSegment } from './ReasoningSegment';
 import { SearchToggleSection } from './SearchToggleSection';
 
-export { buildModelSwitcherEngineSelection } from './modelSwitcherHelpers';
 
 interface ModelSwitcherProps {
   currentModel: string;

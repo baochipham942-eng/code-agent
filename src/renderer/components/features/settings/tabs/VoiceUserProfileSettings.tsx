@@ -64,7 +64,7 @@ export function VoiceUserProfileSettings() {
           </div>
         </>}
       </>}
-      {failed && <p role="alert" className="text-sm text-red-400">{text.profileError}</p>}
+      {failed && <p role="alert" className="text-sm text-badge-danger">{text.profileError}</p>}
     </section>
   );
 }

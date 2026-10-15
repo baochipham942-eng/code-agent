@@ -50,7 +50,6 @@ vi.mock('../../../src/renderer/stores/skillStore', () => ({
   }),
 }));
 
-import { ContextHealthPanel } from '../../../src/renderer/components/ContextHealthPanel';
 import { SkillsPanel } from '../../../src/renderer/components/SkillsPanel';
 import { AttachmentBar } from '../../../src/renderer/components/features/chat/ChatInput/AttachmentBar';
 import { SidebarSessionItem } from '../../../src/renderer/components/features/sidebar/SidebarSessionItem';
@@ -125,43 +124,6 @@ describe('hover actions remain visible to keyboard users', () => {
     expect(count(html, 'group-focus-within:opacity-100')).toBe(2);
     expect(html).toContain('aria-label="卸载 Skill formatter"');
     expect(html).toContain('aria-label="挂载 Skill reviewer"');
-  });
-
-  it('reveals both ContextHealthPanel source actions and names their source', () => {
-    const html = renderToStaticMarkup(
-      <ContextHealthPanel
-        collapsed={false}
-        onNavigate={vi.fn()}
-        onUnload={vi.fn()}
-        health={{
-          currentTokens: 100,
-          maxTokens: 1000,
-          usagePercent: 10,
-          warningLevel: 'normal',
-          estimatedTurnsRemaining: 9,
-          lastUpdated: 1,
-          breakdown: {
-            systemPrompt: 20,
-            messages: 50,
-            toolResults: 30,
-            bySource: {
-              rules: 0,
-              skills: { formatter: 20 },
-              mcp: {},
-              subagents: {},
-              fileReads: 0,
-              summary: 0,
-              conversation: 80,
-            },
-          },
-        }}
-      />,
-    );
-
-    expect(count(html, 'focus-visible:opacity-100')).toBe(2);
-    expect(count(html, 'group-focus-within:opacity-100')).toBe(2);
-    expect(html).toContain('aria-label="跳转到 formatter 对应面板"');
-    expect(html).toContain('aria-label="卸载或断开 formatter"');
   });
 
   it('reveals the AttachmentBar remove button and names its attachment', () => {

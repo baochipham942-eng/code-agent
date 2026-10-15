@@ -44,6 +44,14 @@ export interface CronJobDraft {
    * 防止把 mail 触发回建成 channel 源（空账号保存必炸 / 混入通道账号即静默改绑）。
    */
   eventMailSource?: EventConnectorMailScheduleConfig;
+  /**
+   * 编辑任务时由 buildDraftFromJob 带出的原 metadata 整份。编辑器没有 metadata 表单，
+   * 但 host updateJob 对 metadata 是顶层整体替换——不带原值回写，一次「无操作编辑」
+   * 就会把 metadata.artifactRefresh 等结构化载荷清空（常设刷新任务随即停止留版，
+   * N-ARTIFACT-STANDING-REFRESH-REALRUN 真跑实测）。复制分支显式置 undefined：副本是
+   * 新任务，不继承指向原文件路径的刷新绑定。
+   */
+  metadata?: Record<string, unknown>;
   actionType: 'shell' | 'tool' | 'agent' | 'webhook' | 'ipc';
   shellCommand: string;
   shellCwd: string;
@@ -141,6 +149,8 @@ export function buildDraftFromJob(job: CronJobDefinition): CronJobDraft {
   draft.maxRunBudget = job.maxRunBudget != null ? String(job.maxRunBudget) : '';
   draft.maxRuns = job.maxRuns != null ? String(job.maxRuns) : '';
   draft.scheduleType = job.scheduleType;
+  // 编辑器没有 metadata 表单：原 metadata 整份带上，保存时经 buildCronJobInput 原样回写。
+  if (job.metadata) draft.metadata = job.metadata;
 
   if (job.schedule.type === 'at') {
     draft.atDatetime = toInputDateTime(job.schedule.datetime);
@@ -256,7 +266,8 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
       .split(',')
       .map((tag) => tag.trim())
       .filter(Boolean),
-    metadata: {},
+    // 原样回写编辑前的 metadata（编辑器无 metadata 表单）；新建任务没有底稿 → 空。
+    metadata: draft.metadata ?? {},
   };
   if (common.maxRunBudget != null && (!Number.isFinite(common.maxRunBudget) || common.maxRunBudget < 0)) {
     throw new Error('单次预算上限必须是大于等于 0 的数字');

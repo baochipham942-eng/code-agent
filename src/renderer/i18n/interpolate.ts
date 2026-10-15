@@ -15,3 +15,13 @@ export function interpolate(
   }
   return result;
 }
+
+// one/other 复数选形（i18next 惯例的 key_one/key_other，收成显式 { one, other } 对）：
+// count === 1 取 one、其余取 other，再统一走 interpolate 插 {count}。
+// 无复数语言（zh）one 与 other 同文即可，语义不变。
+export function interpolatePlural(
+  templates: { one: string; other: string },
+  count: number,
+): string {
+  return interpolate(count === 1 ? templates.one : templates.other, { count });
+}

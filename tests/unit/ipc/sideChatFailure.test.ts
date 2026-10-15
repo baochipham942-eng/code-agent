@@ -16,7 +16,8 @@ const retryStopped = (underlying: unknown): Error =>
   Object.assign(new Error(RETRY_STOPPED_MESSAGE), { cause: underlying });
 
 // 表驱动：每行是一条 provider/executor 原始文案（含中文），断言归并出的 cause token。
-// 新 cause 的准入在这里扩行，不回改旧行——旧文案的分类漂移是破坏性变更。
+// 新 cause 的准入在这里扩行。429 频率行从 quota 改判 rate_limit 是本单有意重分类
+// （订阅套餐的 429 通常是限流），不是旧文案漂移；429 + insufficient_quota 仍是 quota。
 const TABLE: { expected: ExpectedCause; label: string; input: { message?: string; failureCode?: unknown; error?: unknown } }[] = [
   // ── auth：401/403 状态码与鉴权文案（中英）─────────────────────────────
   { expected: 'auth', label: 'http 401 code', input: { message: 'Error code: 401 - {"error":{"code":"1002","message":"invalid api key"}}' } },
@@ -26,14 +27,22 @@ const TABLE: { expected: ExpectedCause; label: string; input: { message?: string
   { expected: 'auth', label: 'Chinese auth wording', input: { message: '认证失败，请检查访问凭证' } },
   { expected: 'auth', label: 'Chinese permission wording', input: { message: '权限不足 (403)' } },
   { expected: 'auth', label: 'Chinese key wording', input: { message: '鉴权失败：API Key 可能无效或已过期' } },
-  // ── quota：402/429 状态码与配额/账单文案（中英）───────────────────────
+  // ── quota：402 与余额/配额文案（中英）。裸 429 不再进这里。──────────────
   { expected: 'quota', label: 'http 402 code', input: { message: 'Error code: 402 - payment required' } },
-  { expected: 'quota', label: 'http 429 rate', input: { message: 'Error code: 429 - rate limit exceeded, retry after 30s' } },
+  {
+    expected: 'quota',
+    label: '429 insufficient_quota',
+    input: {
+      error: Object.assign(new Error('You exceeded your current quota ... insufficient_quota'), { statusCode: 429 }),
+    },
+  },
   { expected: 'quota', label: 'insufficient balance', input: { message: 'insufficient balance, please recharge' } },
   { expected: 'quota', label: 'quota exceeded', input: { message: 'You exceeded your current quota, please check your plan and billing details' } },
   { expected: 'quota', label: 'Chinese balance wording', input: { message: '余额不足，请充值后重试' } },
   { expected: 'quota', label: 'Chinese quota wording', input: { message: '配额已用尽，今日无法继续调用' } },
   { expected: 'quota', label: 'Chinese arrears wording', input: { message: '账号已欠费，请前往控制台充值' } },
+  // ── rate_limit：429 频率文案。本单从 quota 改判。──────────────────────
+  { expected: 'rate_limit', label: 'http 429 rate', input: { message: 'Error code: 429 - rate limit exceeded, retry after 30s' } },
   // ── timeout：结构化失败码与超时文案（中英）────────────────────────────
   { expected: 'timeout', label: 'structured timeout code', input: { message: '执行中断', failureCode: AgentFailureCode.Timeout } },
   { expected: 'timeout', label: 'timeout wording', input: { message: 'Request timeout after 60000ms' } },
@@ -56,7 +65,7 @@ const TABLE: { expected: ExpectedCause; label: string; input: { message?: string
   // cause 链与保留的 status 上；这些行断言不带原始文案 signal 的底层错误
   // 也能归类（UI 验收 2026-10-11：此前全落 unknown）。
   { expected: 'auth', label: 'carried 401 status, wording-free message', input: { message: RETRY_STOPPED_MESSAGE, error: retryStopped(Object.assign(new Error('provider rejected the request'), { statusCode: 401 })) } },
-  { expected: 'quota', label: 'carried 429 status, wording-free message', input: { message: RETRY_STOPPED_MESSAGE, error: retryStopped(Object.assign(new Error('Too many requests, slow down'), { statusCode: 429 })) } },
+  { expected: 'rate_limit', label: 'carried 429 status, wording-free message', input: { message: RETRY_STOPPED_MESSAGE, error: retryStopped(Object.assign(new Error('Too many requests, slow down'), { statusCode: 429 })) } },
   { expected: 'quota', label: 'carried 402 status, wording-free message', input: { message: RETRY_STOPPED_MESSAGE, error: retryStopped(Object.assign(new Error('provider requires an upgraded plan'), { status: 402 })) } },
   { expected: 'network', label: 'carried AI SDK connect wording', input: { message: RETRY_STOPPED_MESSAGE, error: retryStopped(new Error('Cannot connect to API: connect ECONNREFUSED 127.0.0.1:443')) } },
   { expected: 'network', label: 'carried undici double wrap', input: { message: RETRY_STOPPED_MESSAGE, error: retryStopped(Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:443'), { code: 'ECONNREFUSED' }) })) } },
@@ -67,13 +76,19 @@ describe('classifySideChatFailure', () => {
     expect(classifySideChatFailure(input)).toBe(expected);
   });
 
-  it('keeps the documented precedence: timeout code > auth > quota > timeout wording > network', () => {
+  it('keeps the documented precedence: timeout code > auth > quota > rate_limit > timeout wording > network', () => {
     // 结构化超时码压过一切文案（executor 已判定超时，文案只是残留）。
     expect(classifySideChatFailure({ message: '401 unauthorized', failureCode: AgentFailureCode.Timeout })).toBe('timeout');
     // 鉴权压过配额：换 key 才是第一出路。
     expect(classifySideChatFailure({ message: 'Error code: 401, quota depleted for this key' })).toBe('auth');
+    // 配额压过限流：429 但正文是余额信号时仍是 quota（classifyError 会先看 status 429）。
+    expect(classifySideChatFailure({
+      error: Object.assign(new Error('You exceeded your current quota ... insufficient_quota'), { statusCode: 429 }),
+    })).toBe('quota');
     // 配额压过超时文案：欠费文案里带「超时」字样时，配额是更强的信号。
     expect(classifySideChatFailure({ message: '额度不足，请求已超时放弃' })).toBe('quota');
+    // 限流压过超时文案：稍后再试，而不是当成请求超时。
+    expect(classifySideChatFailure({ message: 'rate limit exceeded, request timeout' })).toBe('rate_limit');
     // 超时文案压过网络：网络栈的 ETIMEDOUT 属超时，不归 network。
     expect(classifySideChatFailure({ message: 'network timeout while dialing provider' })).toBe('timeout');
   });
@@ -89,7 +104,7 @@ describe('classifySideChatFailure — real retry-exhaustion wrapper', () => {
       label: '429 without digits or rate-limit wording in text',
       // AI SDK APICallError 形状：statusCode 是结构化字段，message 只有供应商文案。
       underlying: () => Object.assign(new Error('Too many requests, slow down'), { statusCode: 429 }),
-      expected: 'quota' as const,
+      expected: 'rate_limit' as const,
     },
     {
       label: 'ECONNREFUSED via AI SDK connect wording',

@@ -117,6 +117,9 @@ export async function divertDroppedSkillZips(
           toast.success(`${args.successPrefix}${result.skillName || file.name}`);
           return true;
         },
+        // 被新一次安装顶掉（还没确认完就换了弹窗）：不当已安装也不静默丢，
+        // zip 按附件回流交给聊天
+        onSuperseded: () => leftover.push(file),
         // 确认面宿主（App 级 SkillCautionPromptHost）不在的异常态：按旧 fail-closed
         // 收口——不装也不当普通附件回流，留一声可区分的失败提示
         onUnavailable: () => toast.error(`${args.failPrefix}${file.name}`),

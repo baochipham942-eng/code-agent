@@ -81,7 +81,29 @@ describe('ConnectorsOnboardingStep', () => {
     expect(screen.getByTestId('onboarding-connect-mail').textContent).toBe('已连接');
   });
 
-  it('授权通过但没有账号：行内展示 no-account 文案', async () => {
+  it('授权通过但没有账号：行内展示 no-account 文案（真实 listStatuses 形状，只认结构化信号）', async () => {
+    // 生产路径 repairPermission 的回执是 handleListStatuses() → getStatus()：ready 分支
+    // 的 detail 是固定文案，「没有找到可访问…」只出现在被 host 丢弃的 execute summary 里；
+    // 空列表信号必须走 noAccessibleItems，渲染层不得匹配 detail 文案
+    mockInvokeDomain.mockResolvedValue([
+      statusFor('mail', {
+        readiness: 'ready',
+        connected: true,
+        detail: 'Mail connector 已通过本地授权/可用性检查。',
+        noAccessibleItems: true,
+      }),
+    ]);
+    renderStep();
+
+    fireEvent.click(screen.getByTestId('onboarding-connect-mail'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('onboarding-connect-result-mail').textContent)
+        .toBe('已连接，但「邮件」里还没有账号，添加后再回来就能用。');
+    });
+  });
+
+  it('detail 带旧标记文案但没有结构化信号时仍按已连接渲染', async () => {
     mockInvokeDomain.mockResolvedValue([
       statusFor('mail', {
         readiness: 'ready',
@@ -94,8 +116,7 @@ describe('ConnectorsOnboardingStep', () => {
     fireEvent.click(screen.getByTestId('onboarding-connect-mail'));
 
     await waitFor(() => {
-      expect(screen.getByTestId('onboarding-connect-result-mail').textContent)
-        .toBe('已连接，但「邮件」里还没有账号，添加后再回来就能用。');
+      expect(screen.getByTestId('onboarding-connect-result-mail').textContent).toBe('已连接 ✓');
     });
   });
 

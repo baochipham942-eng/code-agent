@@ -38,15 +38,14 @@ const CONNECTOR_ROW_IDS = ['feishu', 'google-calendar', 'mail', 'calendar', 'rem
 /** 引导步内直接触发系统授权的本机连接器；其余行保持"记住 → 引导后深链" */
 const LOCAL_CONNECTOR_ROW_IDS = new Set(['mail', 'calendar', 'reminders']);
 
-/** host 探测文案里「授权通过但没有内容」的标记（邮件无账号/日历无日程/提醒无列表） */
-const NO_ACCOUNT_MARKER = '没有找到可访问';
-
 type LocalConnectorOutcome = 'ready' | 'no-account' | 'failed';
 
 function resolveLocalOutcome(status: ConnectorStatusSummary | undefined): LocalConnectorOutcome {
   if (status?.readiness !== 'ready') return 'failed';
-  const detail = `${status.detail ?? ''} ${status.error ?? ''}`;
-  return detail.includes(NO_ACCOUNT_MARKER) ? 'no-account' : 'ready';
+  // 「授权通过但没有账号/日历/列表」只认 host 的结构化信号 noAccessibleItems：
+  // detail 在 ready 分支是固定文案，真实标记只出现在被 repairPermission 丢弃的
+  // execute summary 里，文案匹配永远到不了 no-account（返工 r1）
+  return status.noAccessibleItems ? 'no-account' : 'ready';
 }
 
 export const ConnectorsOnboardingStep: React.FC<ConnectorsOnboardingStepProps> = ({

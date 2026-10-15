@@ -105,7 +105,10 @@ function health(overrides: Record<string, unknown> = {}) {
     handlers: 10,
     pid: 200,
     serverRoot: '/app',
+    tauriBootConfigured: true,
+    // Unexpected legacy/secret fields must never survive evidence projection.
     tauriBootToken: '11111111-1111-4111-8111-111111111111',
+    bootProof: 'proof-must-not-appear-in-diagnostics',
     rendererServe: rendererServe(),
     ...overrides,
   };
@@ -127,6 +130,7 @@ describe('desktop shell diagnostics classification', () => {
       webHealth: 'ok',
     });
     expect(JSON.stringify(result)).not.toContain('11111111-1111-4111-8111-111111111111');
+    expect(JSON.stringify(result)).not.toContain('proof-must-not-appear-in-diagnostics');
   });
 
   it('rejects health-only evidence served by a different process', () => {
@@ -164,6 +168,20 @@ describe('desktop shell diagnostics classification', () => {
     });
     expect(result.evidence.health).toMatchObject({ hasTauriBootToken: true });
     expect(JSON.stringify(result)).not.toContain('11111111-1111-4111-8111-111111111111');
+    expect(JSON.stringify(result)).not.toContain('proof-must-not-appear-in-diagnostics');
+  });
+
+  it('redacts proof fields in diagnostic issue evidence', () => {
+    const classification = classifyDesktopShellDiagnostics(desktopShellDiagnostics({
+      renderer: rendererServe({
+        source: 'builtin', reason: 'active-index-missing',
+        activeBundle: { bootProof: 'proof-must-not-appear-in-diagnostics' },
+      }),
+    }));
+    expect(classification.issues).toContainEqual(expect.objectContaining({
+      evidence: expect.objectContaining({ activeBundle: { bootProof: '[redacted]' } }),
+    }));
+    expect(JSON.stringify(classification)).not.toContain('proof-must-not-appear-in-diagnostics');
   });
 
   it('classifies port occupation, boot token mismatch, resource loss, renderer fallback, and runtime asset loss', () => {

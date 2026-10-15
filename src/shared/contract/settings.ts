@@ -268,6 +268,8 @@ export interface AppSettings {
   };
   // 实时语音配置。全部可选，未配置 = 使用 Provider 默认安全档。
   voice?: {
+    /** Call profile: null/absent override regenerates from eligible memories. */
+    userProfile?: { enabled?: boolean; override?: string | null };
     /** 上游断句策略；null 表示手动 commit 模式 */
     turnDetection?: VoiceTurnDetectionConfig;
     /** 口述专名词表；Host 会在注入前统一清洗与限长 */

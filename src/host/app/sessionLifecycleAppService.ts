@@ -67,6 +67,7 @@ export class SessionLifecycleAppService {
       workingDirectory,
       engine: config?.engine ? requestedEngine : undefined,
       metadata: config?.metadata,
+      memoryMode: config?.memoryMode,
     });
 
     const expertRoleId = config?.expertRoleId?.trim();

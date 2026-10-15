@@ -5,6 +5,11 @@ import type { Message } from '../../../src/shared/contract/message';
 const addMessageToSession = vi.fn(async (_sessionId: string, _message: Message) => undefined);
 const recordVoiceCallFailure = vi.fn();
 const injectVoiceUserText = vi.fn();
+const getVoiceUserProfile = vi.fn();
+const setVoiceUserProfile = vi.fn();
+vi.mock('../../../src/host/services/voice/voiceUserProfile', () => ({
+  getVoiceUserProfile, setVoiceUserProfile,
+}));
 
 vi.mock('../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => ({ addMessageToSession }),
@@ -30,6 +35,8 @@ describe('voice IPC failure report', () => {
     addMessageToSession.mockClear();
     recordVoiceCallFailure.mockClear();
     injectVoiceUserText.mockReset();
+    getVoiceUserProfile.mockReset();
+    setVoiceUserProfile.mockReset();
     registerVoiceHandlers({
       handle: (domain: string, registered: Handler) => {
         expect(domain).toBe(IPC_DOMAINS.VOICE);
@@ -93,4 +100,33 @@ describe('voice IPC failure report', () => {
     expect(response).toMatchObject({ success: false, error: { code: 'INVALID_ARGS' } });
     expect(injectVoiceUserText).not.toHaveBeenCalled();
   });
+
+  it('returns the exact profile preview and forwards validated settings', async () => {
+    const view = { enabled: true, override: null, text: '用户负责策展。' };
+    getVoiceUserProfile.mockResolvedValue(view);
+    setVoiceUserProfile.mockResolvedValue(view);
+    await expect(handler({}, { action: 'getUserProfile' })).resolves.toEqual({ success: true, data: view });
+    await expect(handler({}, { action: 'setUserProfile', payload: { enabled: true, override: null } }))
+      .resolves.toEqual({ success: true, data: view });
+    expect(setVoiceUserProfile).toHaveBeenCalledWith({ enabled: true, override: null });
+  });
+
+  it('rejects malformed and oversized profile writes before persistence', async () => {
+    for (const payload of [undefined, { enabled: 'false', override: null }, { enabled: true }, { enabled: true, override: 'x'.repeat(601) }]) {
+      await expect(handler({}, { action: 'setUserProfile', payload }))
+        .resolves.toMatchObject({ success: false, error: { code: 'INVALID_ARGS' } });
+    }
+    expect(setVoiceUserProfile).not.toHaveBeenCalled();
+  });
+
+  it('reports unsafe edits and storage failures as stable codes without leaking profile text', async () => {
+    setVoiceUserProfile.mockRejectedValueOnce(new Error('VOICE_USER_PROFILE_INVALID'));
+    await expect(handler({}, { action: 'setUserProfile', payload: { enabled: true, override: '你是我的儿子' } }))
+      .resolves.toMatchObject({ success: false, error: { code: 'VOICE_USER_PROFILE_INVALID' } });
+    getVoiceUserProfile.mockRejectedValueOnce(new Error('private storage details'));
+    await expect(handler({}, { action: 'getUserProfile' })).resolves.toEqual({
+      success: false, error: { code: 'VOICE_USER_PROFILE_UNAVAILABLE', message: 'VOICE_USER_PROFILE_UNAVAILABLE' },
+    });
+  });
+
 });

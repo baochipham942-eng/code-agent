@@ -73,9 +73,54 @@ function pythonTracebackSourceLines(text: string, errorIndex: number): string[] 
  * a write grant there lies about the cause and re-runs the whole command for
  * nothing (PR #2191 review). That form stays diagnostics-only.
  */
+const NODE_WRITE_ERROR_PATTERN = /\bEPERM\b[^\r\n]*?\b(open|mkdir|rmdir|unlink|rename|chmod|chown|copyfile|symlink|link|truncate|utimes)\s+['"]([^'"\r\n]+)['"]/gi;
+
+/**
+ * Node raises the SAME `Error: EPERM: operation not permitted, open '<path>'`
+ * for a seatbelt read denial and a write denial; only the stack frames under
+ * the error line tell them apart (`at Object.readFileSync` vs
+ * `at Object.writeFileSync`) — the same ambiguity PR #2420 resolved for Python
+ * tracebacks. Frames naming a read API with no write API among them prove the
+ * denied call was a read, and a write grant the still-denied read cannot use
+ * must not be offered (it would point the user at a credential file).
+ */
+const NODE_READ_FRAME_PATTERN = /\b(?:readFile\w*|createReadStream|ReadStream|readdir\w*|opendir\w*)\b/;
+const NODE_WRITE_FRAME_PATTERN = /\b(?:writeFile\w*|appendFile\w*|createWriteStream|WriteStream)\b/;
+
+/**
+ * Stack lines directly under a Node error line: `    at …` frames (sync and
+ * `at async …`), plus the `Emitted 'error' event on <Stream> instance at:`
+ * header an unhandled stream error prints instead — that header names the
+ * stream class (ReadStream / WriteStream), so it counts as a frame. Anything
+ * else (the `errno` property block, a blank line, a re-quoted message) ends
+ * the block; no frames below the error line proves nothing either way.
+ */
+function nodeErrorFramesBelow(text: string, errorIndex: number): string[] | undefined {
+  const lines = text.slice(errorIndex).split(/\r?\n/);
+  const frames: string[] = [];
+  for (let i = 1; i < lines.length; i += 1) {
+    const line = lines[i] ?? '';
+    if (!/^\s*(?:at\s|Emitted\s)/.test(line)) break;
+    frames.push(line);
+  }
+  return frames.length > 0 ? frames : undefined;
+}
+
+function nodeOpenDeniedByRead(text: string, errorIndex: number): boolean {
+  const frames = nodeErrorFramesBelow(text, errorIndex);
+  if (!frames) return false;
+  return frames.some((line) => NODE_READ_FRAME_PATTERN.test(line))
+    && !frames.some((line) => NODE_WRITE_FRAME_PATTERN.test(line));
+}
+
 function readSandboxDeniedWritePath(failureText: string): string | undefined {
-  const nodeWritePath = /\bEPERM\b[^\r\n]*?\b(?:open|mkdir|rmdir|unlink|rename|chmod|chown|copyfile|symlink|link|truncate|utimes)\s+['"]([^'"\r\n]+)['"]/i.exec(failureText)?.[1];
-  if (nodeWritePath) return nodeWritePath;
+  for (const match of failureText.matchAll(NODE_WRITE_ERROR_PATTERN)) {
+    // The `open` shape alone is ambiguous between a read and a write denial;
+    // only proven-read frames (read API and no write API) skip the match. No
+    // frames or ambiguous frames (`at Object.openSync`) keep today's result.
+    if (match[1] === 'open' && match.index !== undefined && nodeOpenDeniedByRead(failureText, match.index)) continue;
+    return match[2];
+  }
 
   const pythonWrite = pythonDeniedWritePath(failureText);
   if (pythonWrite) return pythonWrite.path;

@@ -719,6 +719,28 @@ export class PermissionModeManager {
 let permissionModeManagerInstance: PermissionModeManager | null = null;
 
 /**
+ * 启动灌回持久化的全局权限档（调用方：ConfigService.initialize）。
+ * PERMISSION_SET_MODE 落盘时承诺「重启/重装后恢复」，但 manager 构造默认 default——
+ * 不灌回的话，重启后新会话（含 cron/heartbeat 无人值守）全部静默回落请求批准，
+ * 常设刷新等无人值守 run 的写类工具一路停车挂起、永远收不了尾
+ * （N-ARTIFACT-STANDING-REFRESH-REALRUN 真跑实测）。
+ * bypassPermissions 不灌：它落盘前必须经过用户显式审批，启动时无从分辨原始落盘
+ * 是否走过该审批，fail-safe 留 default（用户在设置里重开一次即恢复）。
+ */
+export function hydratePersistedPermissionMode(persisted: string | undefined): void {
+  if (!persisted || persisted === 'default' || persisted === 'bypassPermissions') return;
+  if (!Object.prototype.hasOwnProperty.call(MODE_CONFIGS, persisted)) {
+    logger.warn('Ignoring unknown persisted permission mode', { mode: persisted });
+    return;
+  }
+  const manager = getPermissionModeManager();
+  if (manager.getMode() === persisted) return;
+  if (manager.setMode(persisted as PermissionMode, false, 'external')) {
+    console.info(`[PermissionModes] Hydrated persisted permission mode at boot: ${persisted}`);
+  }
+}
+
+/**
  * Get or create permission mode manager instance
  */
 export function getPermissionModeManager(): PermissionModeManager {

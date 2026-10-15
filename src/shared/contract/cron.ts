@@ -525,3 +525,9 @@ export interface CronServiceStats {
   /** Healthy heartbeats */
   healthyHeartbeats: number;
 }
+/** Transient receipt check; timeout suggests a permission check, not a confirmed diagnosis. */
+export interface CronGroupListenCheck {
+  status: 'idle' | 'waiting' | 'connected' | 'timed_out';
+  startedAt?: number;
+  deadlineAt?: number;
+}

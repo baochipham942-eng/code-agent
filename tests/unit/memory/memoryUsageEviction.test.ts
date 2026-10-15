@@ -60,7 +60,7 @@ import {
   rebuildMemoryMirrorFromLightFiles,
   storedMemoryToEntry,
 } from '../../../src/host/memory/memoryEntryRuntime';
-import { staleUsedMemoryEntryIds } from '../../../src/host/memory/memoryUsageEviction';
+import { memoryInjectionPauses, resumeMemoryInjection } from '../../../src/host/memory/memoryUsageEviction';
 import { buildPackedSeedMemory } from '../../../src/host/utils/seedMemoryInjector';
 import { memoryReadModule } from '../../../src/host/tools/modules/lightMemory/memoryRead';
 import { memorySearchModule } from '../../../src/host/tools/modules/lightMemory/memorySearch';
@@ -313,13 +313,13 @@ describe('memoryUsageEviction（seed 注入用量淘汰）', () => {
       listMemories: () => {
         throw new Error('boom scan');
       },
-    } as unknown as Parameters<typeof staleUsedMemoryEntryIds>[0];
-    expect(staleUsedMemoryEntryIds(throwing, NOW).size).toBe(0);
+    } as unknown as Parameters<typeof memoryInjectionPauses>[0];
+    expect(memoryInjectionPauses(throwing, NOW).size).toBe(0);
     expect(loggerMock.warn).toHaveBeenCalledWith(
-      '[MemoryUsageEviction] stale-used scan failed, injecting without eviction',
+      '[MemoryUsageEviction] usage scan failed, injecting without eviction',
       expect.objectContaining({ error: expect.stringContaining('boom scan') }),
     );
-    expect(staleUsedMemoryEntryIds(undefined, NOW).size).toBe(0);
+    expect(memoryInjectionPauses(undefined, NOW).size).toBe(0);
 
     // 端到端：扫描抛错（第一次 listMemories）不拖垮注入，条目照常注入
     let calls = 0;
@@ -334,5 +334,69 @@ describe('memoryUsageEviction（seed 注入用量淘汰）', () => {
     dbHolder.current = db;
     const ids = await injectedEntryIds();
     expect(ids).toContain(entry.entryId);
+  });
+
+  // ---- N-MEM-EVICT-NEVER-READ：从没被 MemoryRead 用过的也按宽限期老化（爸 10-14 定 B）----
+  const LAUNCH = MEMORY.NEVER_USED_EVICTION_SINCE;
+  const GRACE = MEMORY.SEED_NEVER_USED_GRACE_MS;
+
+  it('从没用过：自上线日起过了宽限期退出注入；行仍在、MemoryRead 照常可读', async () => {
+    const later = LAUNCH + GRACE + DAY_MS;
+    vi.useFakeTimers({ now: later });
+    const neverOld = await mirrorEntry('nr-old', 'zircfneverold');
+    const used = await mirrorEntry('nr-used', 'zircfused');
+    setUsage(neverOld.rowId, 0, null);
+    backdate(neverOld.rowId, LAUNCH - 400 * DAY_MS);
+    setUsage(used.rowId, 1, later - 2 * DAY_MS);
+    backdate(used.rowId, LAUNCH - 400 * DAY_MS);
+
+    const ids = await injectedEntryIds();
+    expect(ids).toContain(used.entryId);
+    expect(ids).not.toContain(neverOld.entryId);
+    expect(memoryInjectionPauses(currentDb(), later).get(neverOld.entryId)).toEqual({ reason: 'never_used', since: LAUNCH + GRACE });
+
+    const read = await executeRead({ filename: neverOld.filename }, makeCtx({ runId: 'run-never-old' }));
+    expect(read.ok).toBe(true);
+    if (read.ok) expect(read.output).toContain('zircfneverold');
+  });
+
+  it('从没用过：宽限期从创建时间与上线日中较晚者起算；宽限期内与边界照常注入', async () => {
+    const now = LAUNCH + GRACE + 10 * DAY_MS;
+    vi.useFakeTimers({ now });
+    const recent = await mirrorEntry('nr-recent', 'zircfrecent');
+    const boundary = await mirrorEntry('nr-boundary', 'zircfboundary');
+    setUsage(recent.rowId, 0, null);
+    backdate(recent.rowId, now - 5 * DAY_MS);
+    setUsage(boundary.rowId, 0, null);
+    backdate(boundary.rowId, now - GRACE);
+
+    const ids = await injectedEntryIds();
+    expect(ids).toContain(recent.entryId);
+    expect(ids).toContain(boundary.entryId);
+  });
+
+  it('上线当天到宽限期满之前：存量从没用过的记忆一条都不淘汰', async () => {
+    vi.useFakeTimers({ now: LAUNCH + GRACE - DAY_MS });
+    const old = await mirrorEntry('nr-launch', 'zircflaunch');
+    setUsage(old.rowId, 0, null);
+    backdate(old.rowId, LAUNCH - 900 * DAY_MS);
+    expect(memoryInjectionPauses(currentDb(), Date.now()).size).toBe(0);
+    expect(await injectedEntryIds()).toContain(old.entryId);
+  });
+
+  it('恢复自动注入：记一次使用后回到注入集合；找不到的条目返回 false', async () => {
+    const later = LAUNCH + GRACE + DAY_MS;
+    vi.useFakeTimers({ now: later });
+    const paused = await mirrorEntry('nr-resume', 'zircfresume');
+    const keeper = await mirrorEntry('nr-keeper', 'zircfkeeper');
+    setUsage(keeper.rowId, 1, later - DAY_MS);
+    setUsage(paused.rowId, 0, null);
+    backdate(paused.rowId, LAUNCH - 400 * DAY_MS);
+    expect(await injectedEntryIds()).not.toContain(paused.entryId);
+
+    expect(resumeMemoryInjection(currentDb(), paused.entryId)).toBe(true);
+    expect(memoryInjectionPauses(currentDb(), later).has(paused.entryId)).toBe(false);
+    expect(await injectedEntryIds()).toContain(paused.entryId);
+    expect(resumeMemoryInjection(currentDb(), 'no-such-entry')).toBe(false);
   });
 });

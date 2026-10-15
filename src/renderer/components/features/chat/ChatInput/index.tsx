@@ -680,12 +680,20 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   }, []);
 
   // IACT protocol: listen for inline interaction events from message bubbles
-  // （!run 不走这里：RunCommandCard 自己就地执行 + 渲染结果，不再发聊天消息。）
+  // （!run 的执行不走这里：RunCommandCard 自己就地执行 + 渲染结果。但它的「发给 Neo」
+  // 交接走这里的 iact:handoff：正文已是完整的「命令+结果」汇报，直接发，不套
+  // buildIactChipSendText 的表态模板——N-IACT-RUN-HANDOFF-NEO。）
   useEffect(() => {
     const handleSend = (e: Event) => {
       const text = (e as CustomEvent<string>).detail;
       if (text?.trim()) {
         void onSend(buildEnvelope(buildIactChipSendText(t, text.trim())));
+      }
+    };
+    const handleHandoff = (e: Event) => {
+      const text = (e as CustomEvent<string>).detail;
+      if (text?.trim()) {
+        void onSend(buildEnvelope(text.trim()));
       }
     };
     const handleAdd = (e: Event) => {
@@ -696,9 +704,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       }
     };
     window.addEventListener('iact:send', handleSend);
+    window.addEventListener('iact:handoff', handleHandoff);
     window.addEventListener('iact:add', handleAdd);
     return () => {
       window.removeEventListener('iact:send', handleSend);
+      window.removeEventListener('iact:handoff', handleHandoff);
       window.removeEventListener('iact:add', handleAdd);
     };
   }, [buildEnvelope, onSend, t]);

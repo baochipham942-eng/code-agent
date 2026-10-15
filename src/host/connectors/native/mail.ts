@@ -58,11 +58,15 @@ function initialMailReadiness(): NativeReadiness {
 let mailReadiness: NativeReadiness = initialMailReadiness();
 let mailProbeError: string | undefined;
 let mailProbeCheckedAt: number | undefined;
+// 最近一次探测拿到的账户列表是否为空（授权通过但 Mail 无账号）——getStatus 的
+// ready 分支作为 noAccessibleItems 结构化信号下发，渲染层不做文案匹配
+let mailProbeListEmpty = false;
 
 export function resetMailConnectorReadiness(): void {
   mailReadiness = initialMailReadiness();
   mailProbeError = undefined;
   mailProbeCheckedAt = undefined;
+  mailProbeListEmpty = false;
 }
 
 function parseLine(line: string): string[] {
@@ -90,6 +94,7 @@ function buildMailStatus(capabilities: string[]): ConnectorStatus {
       readiness: 'ready',
       checkedAt: mailProbeCheckedAt,
       detail: 'Mail connector 已通过本地授权/可用性检查。',
+      noAccessibleItems: mailProbeListEmpty,
       actions: ['disconnect', 'remove'],
       capabilities,
     };
@@ -183,6 +188,7 @@ async function probeMailAccess(): Promise<MailAccountItem[]> {
     mailReadiness = 'ready';
     mailProbeCheckedAt = Date.now();
     mailProbeError = undefined;
+    mailProbeListEmpty = accounts.length === 0;
     return accounts;
   } catch (error) {
     mailReadiness = 'failed';

@@ -17,6 +17,24 @@ vi.mock('../../src/host/services/core/configService', () => ({
   getConfigService: () => ({ getSettings: () => ({}) }),
 }));
 
+vi.mock('../../src/host/platform', () => ({
+  app: { isPackaged: false, getPath: () => configDir.dir },
+}));
+vi.mock('../../src/host/services/core/secureStorage', () => ({
+  getSecureStorage: () => ({
+    getApiKey: vi.fn(() => undefined),
+    setApiKey: vi.fn(),
+    getSettingsFromKeychain: vi.fn(async () => null),
+    saveSettingsToKeychain: vi.fn(async () => undefined),
+    getStoredApiKeyProviders: vi.fn(() => []),
+  }),
+}));
+vi.mock('../../src/host/permissions/policyEngine', () => ({
+  getPolicyEngine: () => ({ loadUserRules: vi.fn() }),
+}));
+vi.mock('../../src/host/model/concurrencyLimiter', () => ({ setProviderConcurrencyOverrides: vi.fn() }));
+vi.mock('../../src/host/model/providers/shared', () => ({ setProviderProxyOverrides: vi.fn() }));
+
 const { loadVoiceUserProfile } = await import('../../src/host/services/voice/voiceUserProfile');
 
 let tmpDir = '';
@@ -70,4 +88,25 @@ it('injects genuine facts and the two latest project titles, never operations or
   expect(block).not.toContain('PROJECT_BODY_SENTINEL');
   expect(block).not.toContain('往期展览');
   expect(block.length).toBeLessThanOrEqual(600);
+});
+
+
+it('persists profile edits and off across reload, preserves sibling settings, and resets with null', async () => {
+  // Exercise real ConfigService disk persistence; profile loader tests above use
+  // the empty-settings stub so they remain focused on the real memory directory.
+  const { ConfigService } = await vi.importActual<typeof import('../../src/host/services/core/configService')>(
+    '../../src/host/services/core/configService',
+  );
+  const service = new ConfigService();
+  await service.initialize();
+  await service.updateSettings({ voice: { userProfile: { enabled: false, override: '用户负责展览策划。' } } });
+  await service.updateSettings({ voice: { live: { language: 'zh' } } });
+  const reloaded = new ConfigService();
+  await reloaded.initialize();
+  expect(reloaded.getSettings().voice?.userProfile).toEqual({ enabled: false, override: '用户负责展览策划。' });
+  expect(reloaded.getSettings().voice?.live?.language).toBe('zh');
+  await reloaded.updateSettings({ voice: { userProfile: { enabled: true, override: null } } });
+  const reset = new ConfigService();
+  await reset.initialize();
+  expect(reset.getSettings().voice?.userProfile).toEqual({ enabled: true, override: null });
 });

@@ -74,21 +74,4 @@ describe('ConfigService realtime voice default', () => {
 
     expect(service.getSettings().voice?.live?.enabled).toBe(false);
   });
-
-  it('persists profile edits and off across reload, preserves sibling settings, and resets with null', async () => {
-    const dataDir = await createDataDir();
-    const { ConfigService } = await loadConfigServiceForDataDir(dataDir);
-    const service = new ConfigService();
-    await service.initialize();
-    await service.updateSettings({ voice: { userProfile: { enabled: false, override: '用户负责展览策划。' } } });
-    await service.updateSettings({ voice: { live: { language: 'zh' } } });
-    const reloaded = new ConfigService();
-    await reloaded.initialize();
-    expect(reloaded.getSettings().voice?.userProfile).toEqual({ enabled: false, override: '用户负责展览策划。' });
-    expect(reloaded.getSettings().voice?.live?.language).toBe('zh');
-    await reloaded.updateSettings({ voice: { userProfile: { enabled: true, override: null } } });
-    const reset = new ConfigService();
-    await reset.initialize();
-    expect(reset.getSettings().voice?.userProfile).toEqual({ enabled: true, override: null });
-  });
 });

@@ -684,6 +684,9 @@ export class SubagentExecutor {
         pipeline.recordTokenUsage(pipelineContext, {
           inputTokens: modelCall.inputTokens,
           outputTokens: modelCall.outputTokens,
+          // 响应实报档位随记账透传（缺席 = standard 计价）：子代理继承根会话的 flex 档时
+          // 折价不能在这一重建点丢失，否则子代理开销按标准价记账、预算虚高一倍（r2）
+          ...(response.usage?.serviceTier ? { serviceTier: response.usage.serviceTier } : {}),
           model: context.modelConfig.model,
           provider: context.modelConfig.provider,
           timestamp: Date.now(),

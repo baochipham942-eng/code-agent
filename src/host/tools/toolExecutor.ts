@@ -92,6 +92,7 @@ import { type ExecutionTopology } from '../permissions';
 import { boundaryIdForRequestType } from './permissionBoundaryMapping';
 import { connectorWritePermissionRequest, findConnectorTokenWrite } from './connectorTokenWrite';
 import { evaluateGuardFabricGate } from './guardFabricGate';
+import { UserConfigSource } from '../permissions/userConfigSource';
 import { classifyShellDesktopAutomation } from '../permissions/shellDesktopAutomation';
 import { resolveFileTargetKind } from '../permissions/fileTargetKind';
 import { completeArtifactLocatorGuardedWrite } from './artifacts/artifactLocatorHost';
@@ -131,6 +132,13 @@ import type { SkillDiscoveryService } from '../services/skills/skillDiscoverySer
 import type { TelemetryCollector } from '../telemetry/telemetryCollector';
 
 const logger = createLogger('ToolExecutor');
+
+// N-PERMRULES-LOCAL-OWNER r1：主 Bash 链消费用户级规则的出口。UserConfigSource 只在
+// matchedRule.id 带 user- 前缀时给 verdict，内置/platform 规则的归属不受影响。
+const userConfigSource = new UserConfigSource();
+// 规则 matcher.tool 是精确比较：Bash(...) 命令规则只认 'Bash'，用户手写的小写裸
+// 'bash' 规则认 'bash'。两种拼写各评一次，deny 任一命中即拒。
+const BASH_RULE_TOOL_SPELLINGS = ['Bash', 'bash'] as const;
 
 function sandboxAuditMetadata(
   metadata: Record<string, unknown> | undefined,
@@ -1628,6 +1636,35 @@ export class ToolExecutor {
     const argumentForcesClassification = bashArgumentForcesClassification
       || readArgumentForcesClassification
       || connectorTokenWriteForcesClassification;
+
+    // N-PERMRULES-LOCAL-OWNER r1：用户级 deny 规则（settings permissions.deny）先于全部
+    // 自动放行捷径（skill 预授权 / exec-policy allow / 已知安全命令 / lenient）与 ask
+    // 分类链硬拒。已知安全命令不得越过用户显式 deny；非已知安全命令同样在此硬拒，
+    // 不降级成可批的 ask。只消费 deny——user allow 不产生新的放行捷径（内置/platform
+    // deny 命中时 matchedRule 非 user- 前缀，这里拿不到 verdict，deny>ask>allow 优先级
+    // 天然兜底），ask 维持原分类链。
+    if (isBashToolName(policyToolName) && typeof params.command === 'string' && params.command) {
+      for (const ruleToolSpelling of BASH_RULE_TOOL_SPELLINGS) {
+        const userRuleDecision = userConfigSource.evaluate({
+          tool: ruleToolSpelling,
+          args: params,
+          topology: executionTopology,
+          sessionId: effectiveSessionId,
+        });
+        if (userRuleDecision?.verdict === 'deny') {
+          logger.warn('Command denied by user permission rule', {
+            tool: executionToolName,
+            command: params.command.substring(0, 80),
+            reason: userRuleDecision.reason,
+          });
+          recordDecision(executionToolName, params, 'policy-deny', 'user-permission-rule', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
+          return {
+            success: false,
+            error: `Blocked by user permission rule: ${userRuleDecision.reason}. Do not retry or work around it; the user can adjust the rule in Settings.`,
+          };
+        }
+      }
+    }
 
     // Check permission if required
     // Skill 系统：预授权工具跳过普通权限检查（但不能跳过边界违规或 consequence hard deny）

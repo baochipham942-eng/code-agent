@@ -3,7 +3,7 @@
 import type { AgentEvent, ToolCall, ToolDefinition } from '../../../../shared/contract';
 import type { ModelResponse } from '../../../agent/loopTypes';
 import { inferenceViaAiSdk, aiSdkSupportsProvider } from '../../../model/adapters/aiSdkAdapter';
-import { getConfigService, getLangfuseService, getBudgetService } from '../../../services';
+import { getConfigService, getLangfuseService } from '../../../services';
 import { logCollector } from '../../../mcp/logCollector.js';
 import { ContextLengthExceededError } from '../../../model/modelRouter';
 import { createSnapshotHandler } from '../../../session/streamSnapshot';
@@ -47,7 +47,7 @@ import {
   seedArtifactRepairGuardFromContext,
 } from '../artifactRepairGuard';
 import { preloadDeferredToolsForTurn } from './deferredToolPreload';
-import { runMaxModeStep, MaxModeAbortError } from '../maxMode';
+import { runMaxModeStep, MaxModeAbortError, MaxModeStats, recordMaxModeOverheadUsage } from '../maxMode';
 import { createDocumentEvidenceStream } from '../documentEvidenceStream';
 import { applyEffortControls } from './effortControls';
 import { buildCompactArtifactRepairWriteRetryMessages } from './artifactRepairRetryMessages';
@@ -335,20 +335,12 @@ async function runMaxModeInference(
   const candidates = ctx.runtime.maxModeCandidates;
   ctx.taskProgress.emitTaskProgress('thinking', `Max Mode：${candidates} 个候选并行起草中...`);
 
-  // overhead 逐条按实际路由模型分账（adaptive 路由后可能 ≠ 请求模型，Codex R1-M2）；
-  // 不走 ctx.recordTokenUsage——那条路径固定记在请求模型名下
-  const recordOverheadEntries = (entries: Array<{ inputTokens: number; outputTokens: number; actualProvider?: string; actualModel?: string }>) => {
-    for (const entry of entries) {
-      getBudgetService(ctx.runtime.budgetScope).recordUsage({
-        inputTokens: entry.inputTokens,
-        outputTokens: entry.outputTokens,
-        model: entry.actualModel ?? requestConfig.model,
-        provider: entry.actualProvider ?? requestConfig.provider,
-        timestamp: Date.now(),
-        sessionId: ctx.runtime.sessionId,
-      });
-    }
-  };
+  // overhead 逐条折账在 maxMode.ts 的 recordMaxModeOverheadUsage（Codex R1-M2 按
+  // 实际路由模型分账；r2 起响应实报档位随条目透传，缺席 = standard 计价）——
+  // 本文件已压 max-lines 硬限，折账实现不放这里。不走 ctx.recordTokenUsage：
+  // 那条路径固定记在请求模型名下。
+  const recordOverheadEntries = (entries: MaxModeStats['overheadEntries']) =>
+    recordMaxModeOverheadUsage(ctx.runtime.budgetScope, requestConfig, ctx.runtime.sessionId, entries);
 
   let stepResult;
   try {

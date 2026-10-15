@@ -222,6 +222,8 @@ const x = 42;
     // 与 src/host/tools/modules/lightMemory/memoryRead.ts 的 MEMORY_UNVERIFIED_HINT 同字节；
     // 断言落在提示行本身，改文案必须同步这里。
     const HINT = '⚠️ 此记忆状态为 candidate/stale：未经确认或可能已过时，作为事实使用前请先核对当前状态。';
+    // 刚写入的文件 mtime 落在今天，年龄行固定为「今天」。
+    const AGE_TODAY = '写于今天，记录的是当时的状态，作为当前事实陈述前请先核对。';
 
     const candidateContent = `---
 name: Trial Note
@@ -254,7 +256,7 @@ The service used to run on port 3000.
       );
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.output).toBe(`${candidateContent}${HINT}\n`);
+        expect(result.output).toBe(`${candidateContent}${AGE_TODAY}\n${HINT}\n`);
       }
     });
 
@@ -269,11 +271,11 @@ The service used to run on port 3000.
       );
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.output).toBe(`${staleContent}${HINT}\n`);
+        expect(result.output).toBe(`${staleContent}${AGE_TODAY}\n${HINT}\n`);
       }
     });
 
-    it('keeps active memory output byte-identical to the raw content', async () => {
+    it('appends the age line for active memory and does not add the unverified hint', async () => {
       const activeContent = `---
 name: Confirmed Note
 description: Verified memory
@@ -293,11 +295,12 @@ Confirmed fact that was double-checked.
       );
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.output).toBe(activeContent);
+        expect(result.output).toBe(`${activeContent}${AGE_TODAY}\n`);
+        expect(result.output).not.toContain(HINT);
       }
     });
 
-    it('keeps output byte-identical for a file without frontmatter', async () => {
+    it('appends only the age line for a file without frontmatter', async () => {
       const plainContent = 'plain note without any frontmatter\n';
       await fs.writeFile(path.join(memDir, 'plain_note.md'), plainContent, 'utf-8');
 
@@ -309,11 +312,12 @@ Confirmed fact that was double-checked.
       );
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.output).toBe(plainContent);
+        expect(result.output).toBe(`${plainContent}${AGE_TODAY}\n`);
+        expect(result.output).not.toContain(HINT);
       }
     });
 
-    it('does not add the hint for rejected status', async () => {
+    it('appends the age line but not the unverified hint for rejected status', async () => {
       const rejectedContent = `---
 name: Rejected Note
 description: Rejected memory
@@ -333,7 +337,8 @@ Content that was rejected.
       );
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.output).toBe(rejectedContent);
+        expect(result.output).toBe(`${rejectedContent}${AGE_TODAY}\n`);
+        expect(result.output).not.toContain(HINT);
       }
     });
 
@@ -350,7 +355,7 @@ Content that was rejected.
       );
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.output).toBe(`${candidateContent}${HINT}\n`);
+        expect(result.output).toBe(`${candidateContent}${AGE_TODAY}\n${HINT}\n`);
         expect(result.meta).toMatchObject({ scope: 'role' });
       }
     });
@@ -369,7 +374,7 @@ Content that was rejected.
       );
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.output).toBe(`${candidateContent}${HINT}\n`);
+        expect(result.output).toBe(`${candidateContent}${AGE_TODAY}\n${HINT}\n`);
         expect(result.meta).toMatchObject({ scope: 'project' });
       }
     });
@@ -397,8 +402,106 @@ Reach the on-call engineer at ops@example.com when this breaks.
         expect(result.output).not.toContain('ops@example.com');
         expect(result.output).toContain('[email hidden]');
         expect(result.output.endsWith(`${HINT}\n`)).toBe(true);
-        // 提示行在脱敏之后追加：脱敏产物仍在提示行之前
-        expect(result.output.indexOf('[email hidden]')).toBeLessThan(result.output.indexOf(HINT));
+        // 脱敏 → 年龄行 → 未验证提示。提示行在脱敏产物之后。
+        const hiddenAt = result.output.indexOf('[email hidden]');
+        const ageAt = result.output.indexOf(AGE_TODAY);
+        const hintAt = result.output.indexOf(HINT);
+        expect(hiddenAt).toBeGreaterThanOrEqual(0);
+        expect(hiddenAt).toBeLessThan(ageAt);
+        expect(ageAt).toBeLessThan(hintAt);
+      }
+    });
+  });
+
+  describe('age line (every status, no threshold)', () => {
+    const DAY_MS = 86_400_000;
+    const activeBody = `---
+name: Team Weekly Reports
+description: Weekly report tool
+type: user
+status: active
+---
+
+The user's team uses Notion for weekly reports.
+`;
+    const candidateBody = `---
+name: Trial Note
+description: Unverified candidate memory
+type: project
+status: candidate
+---
+
+The deploy command might have changed since this was captured.
+`;
+    const noStatusBody = 'plain note without a status field\n';
+    const HINT = '⚠️ 此记忆状态为 candidate/stale：未经确认或可能已过时，作为事实使用前请先核对当前状态。';
+
+    async function writeAged(filename: string, content: string, daysAgo: number): Promise<void> {
+      const filePath = path.join(memDir, filename);
+      await fs.writeFile(filePath, content, 'utf-8');
+      const when = new Date(Date.now() - daysAgo * DAY_MS);
+      await fs.utimes(filePath, when, when);
+    }
+
+    async function readFile(filename: string) {
+      const handler = await memoryReadModule.createHandler();
+      return handler.execute({ filename }, makeCtx(), allowAll);
+    }
+
+    it('active memory aged 0 days says it was written today', async () => {
+      await writeAged('active-0.md', activeBody, 0);
+      const result = await readFile('active-0.md');
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toBe(`${activeBody}写于今天，记录的是当时的状态，作为当前事实陈述前请先核对。\n`);
+      }
+    });
+
+    it('active memory aged 1 day says it was written 1 day ago', async () => {
+      await writeAged('active-1.md', activeBody, 1);
+      const result = await readFile('active-1.md');
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toBe(`${activeBody}写于 1 天前，记录的是当时的状态，作为当前事实陈述前请先核对。\n`);
+      }
+    });
+
+    it('active memory aged 60 days says it was written 60 days ago', async () => {
+      await writeAged('active-60.md', activeBody, 60);
+      const result = await readFile('active-60.md');
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toBe(`${activeBody}写于 60 天前，记录的是当时的状态，作为当前事实陈述前请先核对。\n`);
+      }
+    });
+
+    it('candidate memory aged 60 days carries the age line and then the unverified hint', async () => {
+      await writeAged('candidate-60.md', candidateBody, 60);
+      const result = await readFile('candidate-60.md');
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toBe(
+          `${candidateBody}写于 60 天前，记录的是当时的状态，作为当前事实陈述前请先核对。\n${HINT}\n`,
+        );
+      }
+    });
+
+    it('memory with no status aged 1 day carries only the age line', async () => {
+      await writeAged('none-1.md', noStatusBody, 1);
+      const result = await readFile('none-1.md');
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toBe(`${noStatusBody}写于 1 天前，记录的是当时的状态，作为当前事实陈述前请先核对。\n`);
+        expect(result.output).not.toContain(HINT);
+      }
+    });
+
+    it('clamps a future mtime to the today line', async () => {
+      await writeAged('future.md', activeBody, -1);
+      const result = await readFile('future.md');
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toBe(`${activeBody}写于今天，记录的是当时的状态，作为当前事实陈述前请先核对。\n`);
       }
     });
   });

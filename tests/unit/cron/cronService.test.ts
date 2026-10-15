@@ -102,7 +102,7 @@ vi.mock('../../../src/host/task', () => ({
 // createSession 收成 spy：N-TASK-MEMORY-OFF 断言「不用记忆」档随源会话继承。
 const cronSessionState = vi.hoisted(() => ({
   sourceSession: null as null | Record<string, unknown>,
-  createSession: vi.fn(async () => ({ id: 'cron-agent-session-1' })),
+  createSession: vi.fn(async (_options: { memoryMode?: string; [key: string]: unknown }) => ({ id: 'cron-agent-session-1' })),
 }));
 vi.mock('../../../src/host/services', () => ({
   getConfigService: () => ({ getSettings: () => ({ ui: { language: 'zh' } }) }),

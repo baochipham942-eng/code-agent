@@ -118,7 +118,7 @@ describe('defineSessionRoutes 表面差异', () => {
   it('create 只认合法 memoryMode 枚举：off 透传、垃圾值静默忽略', async () => {
     const { registered, target } = createTarget();
     const svc = {
-      createSession: vi.fn(async () => ({ id: 's-new' })),
+      createSession: vi.fn(async (_config: Record<string, unknown>) => ({ id: 's-new' })),
     };
     installDomainRoutes(target, defineSessionRoutes('web'), {
       ...createDummyContext(),

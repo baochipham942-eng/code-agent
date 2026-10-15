@@ -305,7 +305,7 @@ describe('createAgentLoop 会话记忆档透传（N-TASK-MEMORY-OFF）', () => {
       memoryMode: 'off',
     }, vi.fn());
 
-    const runtimeConfig = mocks.agentLoopConfigs.at(-1)!;
+    const runtimeConfig = mocks.agentLoopConfigs.at(-1) as { memoryMode?: string; deniedToolNames?: string[] };
     expect(runtimeConfig).toMatchObject({ memoryMode: 'off' });
     expect(runtimeConfig.deniedToolNames).toEqual(expect.arrayContaining(
       ['MemoryRead', 'MemoryWrite', 'History', 'EpisodicRecall'],
@@ -321,7 +321,7 @@ describe('createAgentLoop 会话记忆档透传（N-TASK-MEMORY-OFF）', () => {
       outputFormat: 'text', enablePlanning: false, enableHooks: false, debug: false,
     }, vi.fn());
 
-    const runtimeConfig = mocks.agentLoopConfigs.at(-1)!;
+    const runtimeConfig = mocks.agentLoopConfigs.at(-1) as { memoryMode?: string; deniedToolNames?: string[] };
     expect(runtimeConfig.memoryMode).toBeUndefined();
     expect((runtimeConfig.deniedToolNames ?? []).filter(
       (name: string) => name === 'MemoryRead' || name === 'MemoryWrite' || name === 'History' || name === 'EpisodicRecall',

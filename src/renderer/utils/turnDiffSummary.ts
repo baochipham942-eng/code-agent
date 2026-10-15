@@ -9,6 +9,7 @@
 
 import type { TraceNode, TraceTurn } from '@shared/contract/trace';
 import type { TurnDiffEventData, TurnDiffFileChange } from '@shared/contract/turnDiff';
+import { aggregateEditArgsText } from '@shared/utils/editToolArgs';
 import { measureStreamingPerformanceTiming } from './streamingPerformanceMetrics';
 import { diffLines } from 'diff';
 
@@ -100,8 +101,11 @@ export function buildTurnFileChanges(turn: TraceTurn): FileChange[] {
     const isEdit = tc.name === 'Edit' || tc.name === 'edit_file';
 
     if (isEdit) {
-      oldText = (args.old_string as string) ?? '';
-      newText = (args.new_string as string) ?? '';
+      // 真实注册形状是 edits[]（multiEdit.schema.ts），legacy edit_file 才是平铺——
+      // 归一后聚合取文，两种形状都能 diff。
+      const aggregated = aggregateEditArgsText(args);
+      oldText = aggregated.oldText;
+      newText = aggregated.newText;
     } else {
       // Write / write_file：默认视作新建；若 result 显示 "Updated" 则改为修改
       newText = (args.content as string) ?? '';

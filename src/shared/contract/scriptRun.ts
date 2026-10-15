@@ -136,6 +136,12 @@ export interface ScriptRunSnapshot {
   durationMs?: number;
   result?: unknown;
   error?: string;
+  /** 最近一次真实活动（ACTIVITY_TYPES / run:start）的 event.ts；renderer 停顿提示的计算锚点。 */
+  lastActivityAt?: number;
+  /** run 正在等审批/审查（graph_waiting）。等待期不算停顿，UI 提示隐藏。 */
+  parked?: boolean;
+  /** 已公告的硬停顿 epoch 数（>=1 表示 Neo 已被提醒过）。 */
+  stallNoticeEpoch?: number;
 }
 
 /** 空快照（run 尚未收到任何事件时的初态）。 */
@@ -180,12 +186,52 @@ export const ACTIVITY_TYPES: ReadonlySet<ScriptRunEventType> = new Set([
   'run:phase', 'run:log', 'agent:start', 'agent:done', 'agent:error',
 ]);
 
+/**
+ * 停顿状态载荷（N-WF-STALL-UI）：宿主把 parked/epoch 变化作为【无 message 的 run:log】
+ * 发布（见 workflow.ts 的 stall 直发路径）。这种事件是状态投影不是进展——reducer 折叠
+ * 进快照但不刷 lastActivityAt、不触发 pending→running 提升，也不进检测器的进展时钟。
+ */
+interface ScriptRunStallState {
+  parked?: boolean;
+  epoch?: number;
+}
+
+function parseStallState(value: unknown): ScriptRunStallState | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const record = value as Record<string, unknown>;
+  const parked = typeof record.parked === 'boolean' ? record.parked : undefined;
+  const epoch = typeof record.epoch === 'number' && Number.isFinite(record.epoch) ? record.epoch : undefined;
+  if (parked === undefined && epoch === undefined) return undefined;
+  return { ...(parked !== undefined ? { parked } : {}), ...(epoch !== undefined ? { epoch } : {}) };
+}
+
+/** 无 message、只携带 stall 载荷的 run:log —— 状态投影，不是进展。 */
+function isStallStateEvent(event: ScriptRunEvent): boolean {
+  if (event.type !== 'run:log') return false;
+  const data = event.data ?? {};
+  return typeof data.message !== 'string' && parseStallState(data.stall) !== undefined;
+}
+
+/** 把 stall 载荷折叠成快照 patch（epoch 取 max 防乱序回退）；无载荷返回空 patch。 */
+function foldStallState(prev: ScriptRunSnapshot, value: unknown): Pick<ScriptRunSnapshot, 'parked' | 'stallNoticeEpoch'> {
+  const stall = parseStallState(value);
+  if (!stall) return {};
+  const patch: Pick<ScriptRunSnapshot, 'parked' | 'stallNoticeEpoch'> = {};
+  if (stall.parked !== undefined) patch.parked = stall.parked;
+  if (stall.epoch !== undefined) patch.stallNoticeEpoch = Math.max(prev.stallNoticeEpoch ?? 0, stall.epoch);
+  return patch;
+}
+
 export function applyScriptRunEvent(prev: ScriptRunSnapshot, event: ScriptRunEvent): ScriptRunSnapshot {
   let next = reduceScriptRunEvent(prev, event);
   // run 状态提升（Codex R3 HIGH）：run:start 可能被 best-effort emit 丢掉 / renderer 晚订阅，
   // 此时首个活动事件要把 pending 提升为 running 并补 startedAt，否则 activeSnapshot 的 running 过滤
-  // 会把这个 run 滤掉 → 进度树永远不出来。
-  if (next.status === 'pending' && next !== prev && ACTIVITY_TYPES.has(event.type)) {
+  // 会把这个 run 滤掉 → 进度树永远不出来。停顿状态事件不算活动（无 message 的 run:log），
+  // 不能单凭它把 pending 提升成 running。
+  if (
+    next.status === 'pending' && next !== prev && ACTIVITY_TYPES.has(event.type)
+    && !isStallStateEvent(event)
+  ) {
     next = { ...next, status: 'running', startedAt: next.startedAt ?? event.ts };
   }
   // sessionId latch（Codex R2 HIGH）：任意事件都补 sessionId，不止 run:start——同样防 run:start 丢失。
@@ -205,19 +251,31 @@ function reduceScriptRunEvent(prev: ScriptRunSnapshot, event: ScriptRunEvent): S
         goal: str(data.goal) ?? prev.goal,
         scriptHash: str(data.scriptHash) ?? prev.scriptHash,
         startedAt: prev.startedAt ?? event.ts,
+        lastActivityAt: event.ts,
       };
 
     case 'run:phase': {
       const title = str(data.title);
       if (!title) return prev;
       const phases = prev.phases.includes(title) ? prev.phases : [...prev.phases, title];
-      return { ...prev, phases, currentPhase: title };
+      return { ...prev, phases, currentPhase: title, lastActivityAt: event.ts };
     }
 
     case 'run:log': {
       const message = str(data.message);
-      if (message === undefined) return prev;
-      return { ...prev, logs: [...prev.logs, message] };
+      if (message === undefined) {
+        // 停顿状态事件（无 message、只带 stall 载荷）：折叠 parked/epoch，但不刷
+        // lastActivityAt —— 它是投影不是进展（N-WF-STALL-UI）。
+        const patch = foldStallState(prev, data.stall);
+        if (Object.keys(patch).length === 0) return prev;
+        return { ...prev, ...patch };
+      }
+      return {
+        ...prev,
+        logs: [...prev.logs, message],
+        lastActivityAt: event.ts,
+        ...foldStallState(prev, data.stall),
+      };
     }
 
     case 'agent:start': {
@@ -236,7 +294,7 @@ function reduceScriptRunEvent(prev: ScriptRunSnapshot, event: ScriptRunEvent): S
         startedAt: event.ts,
       };
       const agents = upsertStartAgent(prev.agents, agent);
-      return { ...prev, agents, ...recountAgents(agents) };
+      return { ...prev, agents, ...recountAgents(agents), lastActivityAt: event.ts };
     }
 
     case 'agent:done': {
@@ -251,7 +309,7 @@ function reduceScriptRunEvent(prev: ScriptRunSnapshot, event: ScriptRunEvent): S
         cached: data.cached === true ? true : undefined,
         finishedAt: event.ts,
       });
-      return { ...prev, agents, ...recountAgents(agents) };
+      return { ...prev, agents, ...recountAgents(agents), lastActivityAt: event.ts };
     }
 
     case 'agent:error': {
@@ -263,7 +321,7 @@ function reduceScriptRunEvent(prev: ScriptRunSnapshot, event: ScriptRunEvent): S
         error: str(data.error),
         finishedAt: event.ts,
       });
-      return { ...prev, agents, ...recountAgents(agents) };
+      return { ...prev, agents, ...recountAgents(agents), lastActivityAt: event.ts };
     }
 
     case 'run:done':

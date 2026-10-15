@@ -170,6 +170,15 @@ node scripts/verify-slotless.mjs --stop "$NEO_VERIFY_DATA_DIR"
 
 **桌面行为验证一律默认 Dev 测试包**（`Agent Neo Dev.app`，8181 + `~/.code-agent-dev`）：与生产包同一构建链同一份代码（只差 identifier/端口/数据目录），Tauri 壳/launchd 空 env/bundle resources 全部真实，且与生产 app 并存同跑、生产 DB 零接触。生产包覆盖安装只在需要验**生产 identifier 的签名/LaunchServices/更新链路**时才用。
 
+**红线：禁止直接执行 `*.app/Contents/MacOS/code-agent-tauri`**（2026-09-25 实录：agent 沙箱里直接 exec 刚构建的 bundle，AppKit 拿不到 WindowServer，`_RegisterApplication` abort，连崩三次弹系统崩溃报告；点 Reopen 只是复崩）。构建产物 `src-tauri/target/release/bundle/macos/*.app` 是中间产物，tauri-install-dev.sh 装完即删——看到它还在 = 还没装，不是"可以直接跑的包"。`~/Downloads/ai/acceptance/*/runtime/` 里的归档快照同样禁跑（同 bundle id 多副本扰乱 LaunchServices 注册，目录里已放 `DO-NOT-RUN.txt`）。构建+安装+启动走单一入口：
+
+```bash
+bash scripts/run-dev-slot.sh [NEO_SLOT]              # 构建+安装+open 一条龙
+bash scripts/run-dev-slot.sh [NEO_SLOT] --open-only  # 只拉起已装的槽
+```
+
+agent 沙箱连 `open` 都拦时（Codex 桌面端等），把脚本末尾打出的 `open` 命令交回爸的终端执行，别在沙箱里重试。
+
 ```bash
 # 默认：Dev 测试包（打包+安装 Agent Neo Dev.app，绝不碰生产 Agent Neo.app）
 HTTPS_PROXY=http://127.0.0.1:7897 npm run tauri:build:dev

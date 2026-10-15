@@ -128,7 +128,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     theme: 'system',
     fontSize: 14,
     language: 'zh',
-    disclosureLevel: 'standard',
+    // 只作用于从未写过 config.json 的安装。已有文件缺这个字段时，ConfigService 钉回 standard。
+    disclosureLevel: 'simple',
   },
   // 云端 Agent 配置
   cloud: {
@@ -167,6 +168,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
     live: {
       enabled: VOICE_LIVE_ENABLED_DEFAULT,
     },
+  },
+  // ADR-083：登录自启默认关（拍板记录 2——默认驻留一个能执行命令的进程属于
+  // 要用户知情的选择）；设置位先行，LaunchAgent / 登录项由后续单子接线。
+  daemon: {
+    launchAtLogin: false,
   },
   keybindings: createDefaultKeybindingsSettings(getKeybindingPlatformFromNodePlatform(process.platform)),
 };

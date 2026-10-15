@@ -41,6 +41,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
   const developerMode = useAppStore().developerMode === true;
   const { type, details } = request;
   const labels = t.decisionCard.permission;
+  const cc = t.cronCenter;
 
   // 兼容旧版 API：path -> filePath
   const filePath = details.filePath || details.path;
@@ -57,6 +58,20 @@ export function RequestDetails({ request }: RequestDetailsProps) {
     </p>
   ) : null;
 
+  // N-APPROVAL-EXTERNAL-SCOPENOTE：external（离开本机）工具的交互卡作用域提示——收不回警示，
+  // 有 target 时再点一行去向（与停车审批收件箱同 i18n 组同口径）。mail_send 编辑态的问句已是
+  // w.irreversible（发出后无法撤回），该分支不渲染 RequestDetails，天然不会出第二条收不回提示。
+  const externalScopeNotice = request.riskClass === 'external' ? (
+    <p className="text-xs leading-5 text-badge-warning" data-testid="permission-external-scope">
+      {cc.scopeExternalRecall}
+      {details.standingGrantTarget && (
+        <span className="block" data-testid="permission-external-scope-target">
+          {cc.parkedScopeExternal.replace('{target}', details.standingGrantTarget)}
+        </span>
+      )}
+    </p>
+  ) : null;
+
   // N-WRITEBACK-EDIT：可编辑写回工具把参数全部摊开（含正文），不再用只拼 To/CC 的通用预览，
   // 也不显示按 permissionLevel 推断出来的「修改当前项目文件」边界（对邮件是误导）。
   if (request.rawArgs) {
@@ -64,6 +79,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       <div className="space-y-3">
         {peerOriginNotice}
         {pluginOriginNotice}
+        {externalScopeNotice}
         <WritebackFieldsView tool={request.tool} args={request.rawArgs} />
         {request.boundary?.id === 'connector.external_write' && (
           <BoundaryDisclosure
@@ -88,6 +104,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
     <div className="space-y-3">
       {peerOriginNotice}
       {pluginOriginNotice}
+      {externalScopeNotice}
       {permissionConsequence(request, t) && (
         <p className={`text-xs leading-5 ${type === 'dangerous_command' || request.dangerLevel === 'danger' ? 'text-badge-danger' : 'text-zinc-400'}`} data-testid="permission-consequence">
           {permissionConsequence(request, t)}

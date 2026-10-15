@@ -2,6 +2,8 @@
 // Settings namespace translations (en/Models) — 纯平移拆分（债务门）
 // ============================================================================
 
+import { enSkillCaution } from './enSkillCaution';
+
 export const enSettingsModels = {
     model: {
       title: 'Model configuration',
@@ -558,6 +560,7 @@ export const enSettingsModels = {
         confirmFailed: 'Installation failed',
         alreadyInstalled: 'This library is already installed. To reinstall, remove it from the Installed tab first.',
       },
+      caution: enSkillCaution,
       cards: {
         install: 'Install',
         builtinSkill: 'Built-in Skill',

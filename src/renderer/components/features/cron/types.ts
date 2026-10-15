@@ -12,7 +12,7 @@ import type {
 } from '@shared/contract';
 import { validateEventScheduleConstraints } from '@shared/cronEventValidation';
 import { CRON_EVENT_TRIGGER } from '@shared/constants';
-import { humanizeCronExpression, humanizeEverySchedule, type CronHumanLang } from '../../../utils/cronHumanize';
+import { formatCronExpressionLabel, humanizeEverySchedule, type CronHumanLang } from '@shared/cronHumanize';
 
 export interface CronJobDraft {
   runsOn: CronJobDefinition['runsOn'];
@@ -247,6 +247,9 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
     // undefined 键，而 host updateJob 是 {...existing, ...updates} 合并——缺键=保留旧值，
     // 「清空上限」会静默不生效，编辑带 maxRuns 的任务上云端也会把旧值继承回去
     // （PR#2208 ai-review R4 Important）。云端不支持次数上限（R2）：一律送 null 丢弃。
+    // 客户端门（N-CRON-BUDGET-EXPOSE-SHOTS）：host 同款判据（cronExecutionPolicy 的
+    // assertExecutionLocationConstraints）抛的是英文原文，不经翻译就进表单错误框；
+    // 提交前就地拦下，错误文案与本文件兄弟校验（「间隔必须大于 0」）同风格。
     maxRunBudget: parseOptionalNumber(draft.maxRunBudget) ?? null,
     maxRuns: draft.runsOn === 'cloud' ? null : parseOptionalNumber(draft.maxRuns) ?? null,
     tags: draft.tagsText
@@ -255,6 +258,12 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
       .filter(Boolean),
     metadata: {},
   };
+  if (common.maxRunBudget != null && (!Number.isFinite(common.maxRunBudget) || common.maxRunBudget < 0)) {
+    throw new Error('单次预算上限必须是大于等于 0 的数字');
+  }
+  if (common.maxRuns != null && (!Number.isInteger(common.maxRuns) || common.maxRuns < 1)) {
+    throw new Error('运行次数上限必须是大于等于 1 的整数');
+  }
 
   let schedule: CronJobDefinition['schedule'];
   if (draft.scheduleType === 'at') {
@@ -419,11 +428,7 @@ export function formatScheduleSummary(
       return humanizeEverySchedule(job.schedule.interval, job.schedule.unit, lang);
     }
     case 'cron': {
-      const human = humanizeCronExpression(job.schedule.expression, lang);
-      if (human) return human;
-      return job.schedule.timezone
-        ? `${job.schedule.expression} · ${job.schedule.timezone}`
-        : job.schedule.expression;
+      return formatCronExpressionLabel(job.schedule.expression, job.schedule.timezone, lang);
     }
     case 'event': {
       // connector 源（mail）：账号是 Mail 账号名、绑定粒度是邮箱，不查通道目录。

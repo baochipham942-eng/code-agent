@@ -22,6 +22,7 @@ import type {
 } from '../../../protocol/tools';
 import { getMemoryDir } from '../../../lightMemory/indexLoader';
 import { parseMemoryFileStatus } from '../../../lightMemory/lightMemoryIpc';
+import { formatMemoryAgeLine } from '../../../memory/memoryAge';
 import { recordMemoryReadUsage } from '../../../memory/memoryUsageWriteback';
 import { createFileArtifact } from '../../artifacts/artifactMeta';
 import { guardSensitiveTextAsync } from '../../../security/sensitiveDataGuard';
@@ -39,11 +40,25 @@ const schema: ToolSchema = memoryReadSchema;
 const MEMORY_UNVERIFIED_HINT =
   '⚠️ 此记忆状态为 candidate/stale：未经确认或可能已过时，作为事实使用前请先核对当前状态。';
 
-/** candidate/stale 时在脱敏后的正文末尾追加一行提示；其余状态输出字节不变。 */
+/** candidate/stale 时在脱敏后的正文末尾追加一行提示；其余状态原样返回。 */
 function withUnverifiedHint(safeContent: string, status: MemoryEntryStatus | undefined): string {
   if (status !== 'candidate' && status !== 'stale') return safeContent;
   const base = safeContent.endsWith('\n') ? safeContent : `${safeContent}\n`;
   return `${base}${MEMORY_UNVERIFIED_HINT}\n`;
+}
+
+/**
+ * 每条记忆都在脱敏后追加年龄行（无阈值），换行规则与 withUnverifiedHint 相同。
+ * candidate/stale 再追加未验证提示：先年龄行，后提示行。
+ */
+function withAgeThenUnverifiedHint(
+  safeContent: string,
+  status: MemoryEntryStatus | undefined,
+  writtenAtMs: number,
+  nowMs: number,
+): string {
+  const base = safeContent.endsWith('\n') ? safeContent : `${safeContent}\n`;
+  return withUnverifiedHint(`${base}${formatMemoryAgeLine(writtenAtMs, nowMs)}\n`, status);
 }
 
 /**
@@ -121,14 +136,23 @@ class MemoryReadHandler implements ToolHandler<Record<string, unknown>, string> 
     const filePath = path.join(resolved.dir, sanitized);
 
     try {
-      const content = await fs.readFile(filePath, 'utf-8');
+      const [content, stat] = await Promise.all([
+        fs.readFile(filePath, 'utf-8'),
+        fs.stat(filePath),
+      ]);
       const safeContent = await guardSensitiveTextAsync(content, {
         surface: 'memory',
         mode: 'model-context',
         maxLength: 50_000,
       });
-      // 脱敏后再追加提示；status 解析用原始 content（frontmatter 在文件头，脱敏前最真）
-      const output = withUnverifiedHint(safeContent, parseMemoryFileStatus(content));
+      // 脱敏后再追加年龄行与提示；status 解析用原始 content（frontmatter 在文件头，脱敏前最真）。
+      // 年龄只看文件 mtime：light memory 没有 created/updated frontmatter。
+      const output = withAgeThenUnverifiedHint(
+        safeContent,
+        parseMemoryFileStatus(content),
+        stat.mtime.getTime(),
+        Date.now(),
+      );
       onProgress?.({ stage: 'completing', percent: 100 });
       ctx.logger.debug('MemoryRead done', { filename: sanitized, bytes: content.length });
       const artifact = await createFileArtifact(filePath, schema.name, ctx, {

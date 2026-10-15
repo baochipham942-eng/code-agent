@@ -154,6 +154,18 @@ describe('voice profile controls', () => {
     expect(await loadVoiceUserProfile()).toBe('');
   });
 
+  it('accepts the generated preview back as an edit even when it mentions workflows', async () => {
+    listMemoryFilesMock.mockResolvedValue([
+      file({ description: '用户负责 AI 工作流平台的产品设计', content: '用户负责 AI 工作流平台的产品设计' }),
+      file({ filename: 'project-flow.md', name: 'AI 工作流平台', type: 'project', description: '', content: '' }),
+    ]);
+    const { text } = await getVoiceUserProfile();
+    expect(text).toContain('工作流平台的产品设计');
+    expect(text).toContain('最近在做：AI 工作流平台');
+    const edited = text.replace('产品设计', '产品与设计');
+    await expect(setVoiceUserProfile({ enabled: true, override: edited })).resolves.toMatchObject({ text: edited });
+  });
+
   it('preserves an intentional empty override and does not read memories when disabled', async () => {
     await setVoiceUserProfile({ enabled: true, override: '' });
     expect(await loadVoiceUserProfile()).toBe('');

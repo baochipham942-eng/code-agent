@@ -47,7 +47,7 @@ export function buildUserProfileBlock(files: LightMemoryFile[]): string {
   const projects = [...new Set(candidates
     .filter((file) => file.type === 'project' && file.scope !== 'session')
     .map((file) => file.name.replace(/\s+/gu, ' ').trim())
-    .filter((title) => title && title.length <= VOICE_USER_PROFILE.MAX_PROJECT_TITLE_CHARS && safeText(title)))]
+    .filter((title) => title && title.length <= VOICE_USER_PROFILE.MAX_PROJECT_TITLE_CHARS && allowedText(title)))]
     .slice(0, VOICE_USER_PROFILE.MAX_PROJECTS);
   const projectLines = projects.length ? [`最近在做：${projects.join('、')}`] : [];
   const lines: string[] = [];
@@ -64,10 +64,14 @@ export function buildUserProfileBlock(files: LightMemoryFile[]): string {
   return lines.length || projectLines.length ? [HEADER, ...lines, ...projectLines].join('\n') : '';
 }
 
+// CATEGORY patterns only describe filenames/names; free text uses the narrow TEXT
+// patterns so anything generation emits can be saved back after a small edit.
+function allowedText(text: string): boolean {
+  return safeText(text) && !PERSONA_TEXT.test(text) && !OPERATION_TEXT.test(text);
+}
+
 function validOverride(text: string): boolean {
-  return text.length <= VOICE_USER_PROFILE.MAX_CHARS && safeText(text)
-    && !PERSONA_CATEGORY.test(text) && !PERSONA_TEXT.test(text)
-    && !OPERATION_CATEGORY.test(text) && !OPERATION_TEXT.test(text);
+  return text.length <= VOICE_USER_PROFILE.MAX_CHARS && allowedText(text);
 }
 
 async function resolveProfile(settings: NonNullable<NonNullable<AppSettings['voice']>['userProfile']>): Promise<VoiceUserProfileView> {

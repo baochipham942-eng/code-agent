@@ -19,6 +19,8 @@ export const CHANNEL_RECOVERY_PROBE = {
   TICK_INTERVAL_MS: 5_000,
   /** 墙钟差超过 间隔×该系数 判定为唤醒（正常调度抖动远小于此） */
   WAKE_GAP_FACTOR: 3,
+  /** 单次 DNS 探测的兜底超时：一次挂起的 lookup 不得卡住整轮探测 */
+  LOOKUP_TIMEOUT_MS: 3_000,
 } as const;
 
 /** 测试 / 联调可缩短重试起始等待（正整数毫秒，解析失败回退常量默认值） */

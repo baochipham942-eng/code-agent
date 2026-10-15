@@ -39,9 +39,29 @@ interface RetryState {
   lastLookupOk: boolean | null;
 }
 
-/** SDK 凭据类错误：pullConnectConfig 拿到非零 code，重试无意义 */
-const CREDENTIAL_FAILURE_PATTERN = /pullConnectConfig/i;
-/** 超时 / 网络类错误：换个人话，重试有意义 */
+/**
+ * 连接失败按「失败种类」分类（r3 rework），而不是看某一条消息的子串：
+ * - transient：瞬时失败（网络/超时/平台忙/连接数超限）→ 退避重试
+ * - credentials：凭据/权限类 → 停在 error，提示检查凭据
+ * - permanent：其余永久失败（端口占用、未知平台码…）→ 停在 error，不重放同一配置
+ */
+type ChannelConnectFailureKind = 'transient' | 'credentials' | 'permanent';
+
+/** SDK WSClient.pullConnectConfig 的终态错误原文：`pullConnectConfig failed: code=${code}, msg=${reason}` */
+const PULL_CONFIG_FAILURE = /pullConnectConfig failed: code=(-?\d+), msg=([\s\S]*)/i;
+/**
+ * SDK ErrorCode 枚举里的平台侧瞬时码：system_busy=1、exceed_conn_limit=1000040350。
+ * SDK 对它们 retryable:false，但失败与本地凭据无关：平台恢复 / 连接数降下来即可
+ * 连上，重放同一份凭据有意义。
+ */
+const TRANSIENT_PULL_CODES: ReadonlySet<number> = new Set([1, 1000040350]);
+/** SDK ErrorCode 枚举里的鉴权类码：forbidden=403、auth_failed=514 */
+const AUTH_PULL_CODES: ReadonlySet<number> = new Set([403, 514]);
+/** 枚举外未知非零码按 msg 里的凭据字样兜底归类（如 code=10003, msg=app secret is invalid） */
+const AUTH_MSG_PATTERN = /secret|app_?id|auth|token|permission|forbidden/i;
+/** 令牌/凭据被服务端拒绝（如 grammY 401）：重放同一凭据没有意义 */
+const AUTH_FAILURE_PATTERN = /\b401\b|unauthorized|invalid[_ ]token/i;
+/** 超时 / 网络类错误：重试有意义 */
 const NETWORK_FAILURE_PATTERN = new RegExp(
   [
     'handshake timeout',
@@ -72,13 +92,37 @@ const NETWORK_FAILURE_PATTERN = new RegExp(
 
 const CREDENTIAL_FAILURE_TEXT = '飞书应用凭据或权限有误，请检查 App ID 和 App Secret';
 
+interface ConnectFailureClass {
+  kind: ChannelConnectFailureKind;
+  /** pullConnectConfig 失败携带的平台非零码（文案用） */
+  pullCode?: number;
+}
+
+function classifyConnectFailure(raw: string): ConnectFailureClass {
+  const text = raw || '';
+  const pull = PULL_CONFIG_FAILURE.exec(text);
+  if (pull) {
+    const code = Number.parseInt(pull[1] ?? '', 10);
+    if (TRANSIENT_PULL_CODES.has(code)) return { kind: 'transient', pullCode: code };
+    if (AUTH_PULL_CODES.has(code) || AUTH_MSG_PATTERN.test(pull[2] ?? '')) {
+      return { kind: 'credentials', pullCode: code };
+    }
+    return { kind: 'permanent', pullCode: code };
+  }
+  if (AUTH_FAILURE_PATTERN.test(text)) return { kind: 'credentials' };
+  if (/EADDRINUSE/i.test(text)) return { kind: 'permanent' };
+  if (NETWORK_FAILURE_PATTERN.test(text)) return { kind: 'transient' };
+  // 未知失败默认不重试：无限退避会掩盖永久性配置错误（r3 rework）
+  return { kind: 'permanent' };
+}
+
 /**
- * 这份失败原文是否值得自动重试：pullConnectConfig 非零 code 等 SDK 判定
- * 不可重试（terminalError）的凭据/配置错误，重放同一份凭据没有意义，
- * manager 层同样不排退避，停在 error 等用户改配置。
+ * 这份失败原文是否值得自动重试：只认瞬时失败（网络/超时/平台忙/连接数超限）。
+ * 凭据被拒、端口被占用等永久失败重放同一配置没有意义，manager 层不排退避，
+ * 停在 error 等用户处理。
  */
 export function isChannelConnectFailureRetryable(raw: string): boolean {
-  return !CREDENTIAL_FAILURE_PATTERN.test(raw || '');
+  return classifyConnectFailure(raw).kind === 'transient';
 }
 
 /**
@@ -87,11 +131,19 @@ export function isChannelConnectFailureRetryable(raw: string): boolean {
  */
 export function channelConnectFailureText(raw: string, channelLabel: string): string {
   const text = raw || '';
-  if (CREDENTIAL_FAILURE_PATTERN.test(text)) {
-    return CREDENTIAL_FAILURE_TEXT;
-  }
-  if (NETWORK_FAILURE_PATTERN.test(text)) {
+  const { kind, pullCode } = classifyConnectFailure(text);
+  if (kind === 'transient') {
+    if (pullCode === 1000040350) return `${channelLabel}连接数已达上限，正在自动重试`;
     return `连不上${channelLabel}服务器，正在自动重试`;
+  }
+  if (kind === 'credentials') {
+    // pullConnectConfig 鉴权失败是飞书/Lark 应用凭据；其余通道（如 Telegram 401）用通用凭据文案
+    if (PULL_CONFIG_FAILURE.test(text)) return CREDENTIAL_FAILURE_TEXT;
+    return `${channelLabel}凭据或权限有误，请检查令牌或应用凭据`;
+  }
+  if (/EADDRINUSE/i.test(text)) return '本地端口被占用，请检查占用进程或更换端口';
+  if (pullCode !== undefined) {
+    return `连接${channelLabel}失败（平台返回 code=${pullCode}），请检查应用配置`;
   }
   return `连接${channelLabel}失败，请稍后重试或查看本机诊断`;
 }
@@ -221,6 +273,8 @@ export class ChannelReconnectScheduler {
   /**
    * 轻量 DNS 探测：只对挂起等待（timer 存在）的账号做，失败→成功翻转时
    * 立即重试一次；失败后回到退避节奏（fire 后由调用方失败再 schedule）。
+   * 单次 lookup 带兜底超时：一次挂起的 DNS 查询不得让 probing 永远为 true、
+   * 停掉网络恢复快路径。
    */
   private async probePendingAccounts(): Promise<void> {
     if (this.probing) return;
@@ -230,13 +284,7 @@ export class ChannelReconnectScheduler {
         if (!state.timer) continue;
         const host = this.options.probeHostFor(accountId);
         if (!host) continue;
-        let lookupOk = false;
-        try {
-          await lookup(host);
-          lookupOk = true;
-        } catch {
-          lookupOk = false;
-        }
+        const lookupOk = await this.probeHostOnce(host);
         const wasOk = state.lastLookupOk;
         state.lastLookupOk = lookupOk;
         if (wasOk === false && lookupOk) {
@@ -246,6 +294,24 @@ export class ChannelReconnectScheduler {
       }
     } finally {
       this.probing = false;
+    }
+  }
+
+  private async probeHostOnce(host: string): Promise<boolean> {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        lookup(host),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('probe lookup timeout')), CHANNEL_RECOVERY_PROBE.LOOKUP_TIMEOUT_MS);
+          timer.unref();
+        }),
+      ]);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 }

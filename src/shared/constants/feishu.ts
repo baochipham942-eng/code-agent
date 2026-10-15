@@ -10,7 +10,7 @@ export const FEISHU_DEFAULT_DOMAIN = 'https://open.feishu.cn';
  */
 export const FEISHU_DEFAULT_HOST = new URL(FEISHU_DEFAULT_DOMAIN).hostname;
 
-/** Lark 国际版开放平台域名（模块私有：只用来派生下方 host，暂无独立消费者） */
+/** Lark 国际版开放平台域名（模块私有：只用来派生下方 host） */
 const LARK_DEFAULT_DOMAIN = 'https://open.larksuite.com';
 export const LARK_DEFAULT_HOST = new URL(LARK_DEFAULT_DOMAIN).hostname;
 

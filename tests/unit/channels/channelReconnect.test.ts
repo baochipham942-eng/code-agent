@@ -4,6 +4,8 @@
 // 真 ChannelManager 单例 + 真 FeishuChannel，只把 SDK WSClient 与 dns.lookup
 // 换成假件（mock 风格沿用 feishuWsStatus.test.ts）。全程 fake timers，不出网。
 // 验收编号对应任务书：①退避重试 ②唤醒/网络恢复/手动断开 ③人话错误 ④三连胜。
+// r3 rework：r3-1* 握手期间断开/更新/删除必须赢；r3-2/r3-3 失败按种类分类
+// （永久失败停在 error，平台瞬时码退避重试且不显示凭据文案）。
 // ============================================================================
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChannelManager } from '../../../src/host/channels/channelManager';
@@ -385,36 +387,135 @@ describe('ChannelManager connect retry', () => {
     expect(wsCaptures.clients[1]?.close).not.toHaveBeenCalled();
   });
 
-  it('r2-1 consumes the manual-disconnect marker when an in-flight connect succeeds: later terminal failure still auto-reconnects', async () => {
+  it('r3-1 a manual disconnect during the in-flight handshake wins: the in-flight client is destroyed and a late handshake success never brings the account online', async () => {
     const manager = ChannelManager.getInstance();
     const accountId = await addFeishuAccount(manager);
 
-    // 连接进行中（握手等待期）用户点断开：disconnectAccount 记下手动断开标记
+    // 连接进行中（握手等待期）用户点断开：在飞的握手实例被找到并强关
     const first = manager.connectAccount(accountId).catch(() => 'failed');
     await flushAsync();
     expect(currentCtorCount()).toBe(1);
     await manager.disconnectAccount(accountId);
     expect(manager.getAccount(accountId)?.status).toBe('disconnected');
+    expect(wsCaptures.clients[0]?.close).toHaveBeenCalledWith({ force: true });
 
-    // 在飞的那次连接最终成功（断开没能拦下握手）：账号实际上线
+    // 被销毁实例的握手即使随后成功也不得把账号翻成在线 / 放进活跃表
     latestCtor().onReady?.();
     await first;
-    expect(manager.getAccount(accountId)?.status).toBe('connected');
-
-    // 此后 SDK 终态失败：残留的手动断开标记不得拦下退避——排「重连中（第 1 次）」，
-    // 而不是停死在 error 永不自动重连（r2 review 场景）
-    latestCtor().onError?.(new Error('WebSocket reconnect exhausted after 6 attempts'));
-    await flushAsync();
     const account = manager.getAccount(accountId);
-    expect(account?.status).toBe('connecting');
-    expect(account?.errorMessage).toBe('重连中（第 1 次）：连不上飞书服务器，正在自动重试');
+    expect(account?.status).toBe('disconnected');
+    expect(manager.getActiveChannel(accountId)).toBeUndefined();
 
-    // 30s 退避到点重连成功 → 机器人自动回到在线（启用中的账号无停死路径）
+    // 手动断开后永不自动重连
+    await vi.advanceTimersByTimeAsync(1_800_000);
+    await flushAsync();
+    expect(currentCtorCount()).toBe(1);
+  });
+
+  it('r3-1b an update during the in-flight handshake wins: the old-config client is destroyed and a late handshake cannot bring the stale config online', async () => {
+    const manager = ChannelManager.getInstance();
+    const accountId = await addFeishuAccount(manager);
+
+    // 握手等待期用户保存了新 App Secret：旧凭据的在飞实例必须被销毁
+    const first = manager.connectAccount(accountId).catch(() => 'failed');
+    await flushAsync();
+    await manager.updateAccount(accountId, { config: { appSecret: 'rotated-secret' } });
+    expect(manager.getAccount(accountId)?.status).toBe('disconnected');
+    expect(wsCaptures.clients[0]?.close).toHaveBeenCalledWith({ force: true });
+
+    // 旧实例的握手随后成功：不得用旧凭据上线
+    latestCtor().onReady?.();
+    await first;
+    expect(manager.getAccount(accountId)?.status).toBe('disconnected');
+    expect(manager.getActiveChannel(accountId)).toBeUndefined();
+  });
+
+  it('r3-1c deleting an account mid-handshake leaves no channel behind in activeChannels', async () => {
+    const manager = ChannelManager.getInstance();
+    const accountId = await addFeishuAccount(manager);
+
+    const first = manager.connectAccount(accountId).catch(() => 'failed');
+    await flushAsync();
+    await manager.deleteAccount(accountId);
+    expect(wsCaptures.clients[0]?.close).toHaveBeenCalledWith({ force: true });
+
+    // 账号已删除：晚到的握手成功不得把死账号的通道留在活跃表里继续收消息
+    latestCtor().onReady?.();
+    await first;
+    expect(manager.getAccount(accountId)).toBeUndefined();
+    expect(manager.getActiveChannel(accountId)).toBeUndefined();
+
+    // 已删除账号不排任何重试
+    await vi.advanceTimersByTimeAsync(1_800_000);
+    await flushAsync();
+    expect(currentCtorCount()).toBe(1);
+  });
+
+  it('r3-2 permanent failures stop at error without retry: port in use and a rejected token are never replayed', async () => {
+    const manager = ChannelManager.getInstance();
+
+    // webhook / HTTP API 端口被占用：换网络也救不回来，重放同一配置没有意义
+    const portAccount = await addFeishuAccount(manager);
+    const portAttempt = manager.connectAccount(portAccount).catch(() => 'failed');
+    await vi.advanceTimersByTimeAsync(0);
+    latestCtor().onError?.(new Error('listen EADDRINUSE: address already in use :::9930'));
+    await portAttempt;
+    const portRecord = manager.getAccount(portAccount);
+    expect(portRecord?.status).toBe('error');
+    expect(portRecord?.errorMessage).toBe('本地端口被占用，请检查占用进程或更换端口');
+
+    // 错误的 Telegram token（grammY 401）：停在 error + 人话凭据提示
+    const tokenAccount = await addFeishuAccount(manager);
+    const tokenAttempt = manager.connectAccount(tokenAccount).catch(() => 'failed');
+    await vi.advanceTimersByTimeAsync(0);
+    latestCtor().onError?.(new Error("Call to 'getMe' failed! (401: Unauthorized)"));
+    await tokenAttempt;
+    const tokenRecord = manager.getAccount(tokenAccount);
+    expect(tokenRecord?.status).toBe('error');
+    expect(tokenRecord?.errorMessage).toBe('飞书凭据或权限有误，请检查令牌或应用凭据');
+
+    // 永久失败不排退避：推进远超封顶时间，同一份错误配置不再被重放
+    await vi.advanceTimersByTimeAsync(1_800_000);
+    await flushAsync();
+    expect(currentCtorCount()).toBe(2);
+  });
+
+  it('r3-3 transient platform codes retry with backoff and never show the credential line: system busy and connection limit', async () => {
+    const manager = ChannelManager.getInstance();
+
+    // SDK 对 code=1 (system_busy) 判 retryable:false，但这是平台瞬时忙，不是凭据错
+    const busyAccount = await addFeishuAccount(manager);
+    const busyAttempt = manager.connectAccount(busyAccount).catch(() => 'failed');
+    await vi.advanceTimersByTimeAsync(0);
+    latestCtor().onError?.(new Error('pullConnectConfig failed: code=1, msg=system busy'));
+    await busyAttempt;
+    const busyRecord = manager.getAccount(busyAccount);
+    expect(busyRecord?.status).toBe('connecting');
+    expect(busyRecord?.errorMessage).toBe('重连中（第 1 次）：连不上飞书服务器，正在自动重试');
+    expect(busyRecord?.errorMessage).not.toContain('App ID');
+
+    // 平台恢复后按退避重连成功 → 账号自动回在线
     await expectNextRetryAfter(30_000);
     latestCtor().onReady?.();
     await flushAsync();
-    expect(manager.getAccount(accountId)?.status).toBe('connected');
-    expect(wsCaptures.clients[0]?.close).toHaveBeenCalledWith({ force: true });
+    expect(manager.getAccount(busyAccount)?.status).toBe('connected');
+
+    // code=1000040350 (exceed_conn_limit)：连接数超限单独说明，不提示改 App Secret
+    const limitAccount = await addFeishuAccount(manager);
+    const limitAttempt = manager.connectAccount(limitAccount).catch(() => 'failed');
+    await vi.advanceTimersByTimeAsync(0);
+    latestCtor().onError?.(new Error('pullConnectConfig failed: code=1000040350, msg=exceed connection limit'));
+    await limitAttempt;
+    const limitRecord = manager.getAccount(limitAccount);
+    expect(limitRecord?.status).toBe('connecting');
+    expect(limitRecord?.errorMessage).toBe('重连中（第 1 次）：飞书连接数已达上限，正在自动重试');
+    expect(limitRecord?.errorMessage).not.toContain('App Secret');
+
+    // 连接数降下来后同样按退避自动重连
+    await expectNextRetryAfter(30_000);
+    latestCtor().onReady?.();
+    await flushAsync();
+    expect(manager.getAccount(limitAccount)?.status).toBe('connected');
   });
 
   it('r1-3 credential failures never enter the backoff: no replay of a bad App Secret', async () => {

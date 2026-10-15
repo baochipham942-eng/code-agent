@@ -128,7 +128,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     theme: 'system',
     fontSize: 14,
     language: 'zh',
-    disclosureLevel: 'standard',
+    // 只作用于从未写过 config.json 的安装。已有文件缺这个字段时，ConfigService 钉回 standard。
+    disclosureLevel: 'simple',
   },
   // 云端 Agent 配置
   cloud: {

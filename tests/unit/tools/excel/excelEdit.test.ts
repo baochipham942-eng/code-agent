@@ -4,7 +4,12 @@ import * as os from 'os';
 import * as path from 'path';
 import ExcelJS from 'exceljs';
 import { executeExcelEdit } from '../../../../src/host/tools/excel/excelEdit';
-import type { ToolContext } from '../../../../src/host/protocol/tools';
+import type { ToolContext } from '../../../../src/host/tools/types';
+
+// executeExcelEdit 不读 context；按 excelAutomate.test.ts 的夹具惯例给最小形状。
+function makeCtx(workingDirectory: string): ToolContext {
+  return { workingDirectory } as unknown as ToolContext;
+}
 
 async function makeXlsx(dir: string): Promise<string> {
   const workbook = new ExcelJS.Workbook();
@@ -25,7 +30,7 @@ describe('executeExcelEdit add_sheet 表名别名', () => {
           file_path: file,
           operations: [{ action: 'add_sheet', sheet: '汇总分析' } as never],
         },
-        {} as ToolContext,
+        makeCtx(dir),
       );
       expect(result.success).toBe(true);
 
@@ -46,7 +51,7 @@ describe('executeExcelEdit add_sheet 表名别名', () => {
           file_path: file,
           operations: [{ action: 'add_sheet', name: '汇总分析' } as never],
         },
-        {} as ToolContext,
+        makeCtx(dir),
       );
       expect(result.success).toBe(true);
 
@@ -67,7 +72,7 @@ describe('executeExcelEdit add_sheet 表名别名', () => {
           file_path: file,
           operations: [{ action: 'add_sheet' } as never],
         },
-        {} as ToolContext,
+        makeCtx(dir),
       );
       expect(result.success).toBe(false);
       expect(result.error).toContain('add_sheet requires a sheet name');

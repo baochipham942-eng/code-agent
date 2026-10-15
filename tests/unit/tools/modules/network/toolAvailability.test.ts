@@ -59,6 +59,12 @@ import {
 } from '../../../../../src/host/services/toolSearch/toolSearchService';
 import { resetProtocolRegistry, getProtocolRegistry } from '../../../../../src/host/tools/protocolRegistry';
 import { isToolAvailable } from '../../../../../src/host/tools/modules/network/toolAvailability';
+import { estimateTokens } from '../../../../../src/host/context/tokenEstimator';
+import { enSettingsCore } from '../../../../../src/renderer/i18n/enSettingsCore';
+import { zhSettingsCore } from '../../../../../src/renderer/i18n/zhSettingsCore';
+import { enSettingsModels } from '../../../../../src/renderer/i18n/enSettingsModels';
+import { zhSettingsModels } from '../../../../../src/renderer/i18n/zhSettingsModels';
+import { sidebarEn, sidebarZh } from '../../../../../src/renderer/i18n/sidebar';
 import type { ToolSchema, ToolLoader } from '../../../../../src/host/protocol/tools';
 
 const KEY_GATED_TOOLS = ['visual_edit', 'gui_agent', 'text_to_speech', 'video_generate'] as const;
@@ -246,6 +252,107 @@ describe('key-gated tool availability（N-TOOL-UNAVAILABLE-HINT）', () => {
       configureAllKeys();
       const withKey = await getToolSearchService().searchTools('gui_agent', { maxResults: 20 });
       expect(withKey.tools.map((result) => result.name)).not.toContain('gui_agent');
+    });
+  });
+
+  describe('未开启能力行（deferred summary）', () => {
+    const enPath = `${sidebarEn.sidebar.menuSettings} -> ${enSettingsCore.tabs.model} -> ${enSettingsModels.model.providers.zhipu.name} (${enSettingsModels.model.list.addKey})`;
+    const zhPath = `${sidebarZh.sidebar.menuSettings} -> ${zhSettingsCore.tabs.model} -> ${zhSettingsModels.model.providers.zhipu.name}（${zhSettingsModels.model.list.addKey}）`;
+    const allEn = 'speech synthesis, video generation, click-to-edit in preview';
+    const allZh = '语音合成、视频生成、预览里点选编辑';
+
+    function expectedLine(capabilityEn: string, capabilityZh: string): string {
+      return [
+        `The following capabilities are not enabled (do not call them): ${capabilityEn}.`,
+        `Turn on: ${enPath}.`,
+        `以下能力未开启（不要调用）：${capabilityZh}。`,
+        `开启：${zhPath}。`,
+      ].join(' ');
+    }
+
+    function hintLine(summary: string): string | undefined {
+      const lines = summary.split('\n').filter((line) => line.includes('not enabled'));
+      return lines.length === 1 ? lines[0] : undefined;
+    }
+
+    it('key 缺失：末尾一行给出能力名和中英设置路径，可调用索引里没有工具名', () => {
+      clearAllKeys();
+      const summary = getDeferredToolsSummary();
+      const hint = expectedLine(allEn, allZh);
+      expect(summary.split('\n').at(-1)).toBe(hint);
+      expect(hintLine(summary)).toBe(hint);
+      expect(hint).not.toMatch(/text_to_speech|video_generate|visual_edit|gui_agent/);
+
+      const callable = summary.slice(0, summary.lastIndexOf('\n'));
+      for (const tool of SEARCHABLE_KEY_GATED_TOOLS) {
+        expect(callable).not.toContain(tool);
+      }
+      expect(summary).not.toContain('gui_agent');
+    });
+
+    it('key 配齐：没有未开启行，三个工具回到可调用索引', () => {
+      configureAllKeys();
+      const summary = getDeferredToolsSummary();
+      expect(summary).not.toContain('not enabled');
+      expect(summary).not.toContain('以下能力未开启');
+      for (const tool of SEARCHABLE_KEY_GATED_TOOLS) {
+        expect(summary).toContain(tool);
+      }
+    });
+
+    it('被拒绝的工具不进未开启行；三个都拒绝时整行消失', () => {
+      clearAllKeys();
+      const speechDenied = getDeferredToolsSummary(['text_to_speech']);
+      expect(speechDenied.split('\n').at(-1)).toBe(
+        expectedLine('video generation, click-to-edit in preview', '视频生成、预览里点选编辑'),
+      );
+      expect(speechDenied).not.toContain('speech synthesis');
+      expect(speechDenied).not.toContain('语音合成');
+
+      const allDenied = getDeferredToolsSummary(['text_to_speech', 'video_generate', 'visual_edit']);
+      expect(allDenied).not.toContain('not enabled');
+      expect(allDenied).not.toContain('以下能力未开启');
+    });
+
+    it('只有视频 key 不算数时，行里只剩视频生成，另外两个工具仍可调用', () => {
+      delete process.env.ZHIPU_OFFICIAL_API_KEY;
+      hoisted.getApiKeyMock.mockReset().mockReturnValue('oki-proxy-key');
+      const summary = getDeferredToolsSummary();
+      expect(summary.split('\n').at(-1)).toBe(expectedLine('video generation', '视频生成'));
+      const callable = summary.slice(0, summary.lastIndexOf('\n'));
+      expect(callable).not.toContain('video_generate');
+      expect(callable).toContain('text_to_speech');
+      expect(callable).toContain('visual_edit');
+    });
+
+    it('名字档和计数档仍带着未开启行；预算极小时硬顶不破', () => {
+      clearAllKeys();
+      const wide = getDeferredToolsSummary([], undefined, 100_000);
+      const description = '写入/更新/删除长期记忆文件';
+      expect(wide).toContain(description);
+      expect(wide.split('\n').at(-1)).toContain('not enabled');
+
+      const namesBudget = estimateTokens(wide) - 1;
+      const names = getDeferredToolsSummary([], undefined, namesBudget);
+      expect(estimateTokens(names)).toBeLessThanOrEqual(namesBudget);
+      expect(names).toContain('not enabled');
+      expect(names).toContain('MemoryWrite');
+      expect(names).not.toContain(description);
+
+      let compactBudget = namesBudget;
+      let compact = names;
+      while (compactBudget > 32 && compact.includes('MemoryWrite')) {
+        compactBudget = Math.floor(compactBudget * 0.85);
+        compact = getDeferredToolsSummary([], undefined, compactBudget);
+      }
+      expect(estimateTokens(compact)).toBeLessThanOrEqual(compactBudget);
+      expect(compact).toContain('not enabled');
+      expect(compact).toContain('use ToolSearch to find them');
+      expect(compact).not.toContain('MemoryWrite');
+
+      const tiny = getDeferredToolsSummary([], undefined, 8);
+      expect(estimateTokens(tiny)).toBeLessThanOrEqual(8);
+      expect(tiny.length).toBeLessThan(wide.length);
     });
   });
 });

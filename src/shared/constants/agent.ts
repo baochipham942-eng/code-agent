@@ -20,9 +20,11 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v78：N-MEDIA-GEN-CONTRACT 返修把 reference_images 收紧到最多 1 张（maxItems，模型可见面变化）。
 // sys-v79：N-MEDIA-GEN-PHASE2 把 video_generate/music_generate 对齐 image 合同（output_file_path、
 // video 新增 model/image_path、描述加计费与参考单价；模型可见面变化）。
+// sys-v80：N-PY-RUNTIME-K2 将数据处理 Python 指向托管解释器（模型可见面变化）。
 // sys-v80：N-INIT-MEMORY-AGENT-DRAFT 新增 deferred 工具 ProposeProjectMemory 的 schema
 // （候选项目记忆草稿；默认请求只进折叠索引，ToolSearch 加载后模型可见）。
-export const PROMPT_VERSION = 'sys-v80' as const;
+// sys-v81：两条 sys-v80 合入同一主干，模型可见面组合未在任何一侧记录过，合并后统一升版。
+export const PROMPT_VERSION = 'sys-v81' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

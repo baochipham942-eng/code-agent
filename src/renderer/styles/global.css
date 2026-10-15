@@ -427,6 +427,19 @@ pre code {
   30% { transform: translateY(-3px); }
 }
 
+/* 连接器深链落点高亮环（useConnectorCardFocus 动态挂到目标卡片上；
+   走独立 class 而非 Tailwind JIT，动态 classList 不参与构建期收集） */
+.connector-focus-ring {
+  outline: 2px solid var(--badge-info-fg, #7DD3FC);
+  outline-offset: 3px;
+  animation: connectorFocusPulse 1.6s ease-in-out 3;
+}
+
+@keyframes connectorFocusPulse {
+  0%, 100% { outline-color: var(--badge-info-fg, #7DD3FC); }
+  50% { outline-color: transparent; }
+}
+
 
 .animate-fade-in {
   animation: fadeIn var(--duration-fast) var(--ease-out);

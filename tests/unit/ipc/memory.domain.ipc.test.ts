@@ -26,6 +26,10 @@ const rt = vi.hoisted(() => ({
   dryRunImportMemoryBundleV2: vi.fn(async () => ({ willImport: 1 })),
   applyImportMemoryBundleV2: vi.fn(async () => ({ imported: 1 })),
 }));
+const eviction = vi.hoisted(() => ({
+  memoryInjectionPauses: vi.fn(() => new Map<string, unknown>()),
+  resumeMemoryInjection: vi.fn(() => true),
+}));
 const review = vi.hoisted(() => ({
   batchReviewMemoryEntries: vi.fn(async () => ({ updated: [{ id: 'e1' }], skipped: [] })),
 }));
@@ -57,6 +61,7 @@ vi.mock('../../../src/host/memory/memoryEntryRuntime', () => ({
 }));
 vi.mock('../../../src/host/memory/importers', () => importer);
 vi.mock('../../../src/host/memory/memoryEntryReview', () => review);
+vi.mock('../../../src/host/memory/memoryUsageEviction', () => eviction);
 vi.mock('../../../src/host/memory/memoryInjectionTrace', () => ({ listMemoryInjectionTraces: vi.fn(async () => []) }));
 vi.mock('../../../src/host/memory/knowledgeInboxDecision', () => ({
   KNOWLEDGE_INBOX_DECISION_CATEGORY: 'inbox',
@@ -234,6 +239,31 @@ describe('light memory 委派', () => {
 });
 
 describe('v2 entry 委派', () => {
+  it('memoryEntries 给已暂停自动注入的 active 条目附原因；标注出错不连累列表', async () => {
+    rt.listUnifiedMemoryEntries.mockResolvedValueOnce({ entries: [
+      { id: 'a', status: 'active' }, { id: 'b', status: 'archived' }, { id: 'c', status: 'active' },
+    ], sourceCounts: {} } as never);
+    eviction.memoryInjectionPauses.mockReturnValueOnce(new Map([
+      ['a', { reason: 'never_used', since: 1 }], ['b', { reason: 'stale_used', since: 2 }],
+    ]));
+    const listed = (await call('memoryEntries')).data as { entries: Array<{ id: string; injectionPaused?: unknown }> };
+    expect(listed.entries.map((entry) => [entry.id, entry.injectionPaused])).toEqual([
+      ['a', { reason: 'never_used', since: 1 }], ['b', undefined], ['c', undefined],
+    ]);
+    expect(rt.listUnifiedMemoryEntries).toHaveBeenCalledWith(db);
+
+    rt.listUnifiedMemoryEntries.mockResolvedValueOnce({ entries: [{ id: 'a', status: 'active' }], sourceCounts: {} } as never);
+    eviction.memoryInjectionPauses.mockImplementationOnce(() => { throw new Error('boom'); });
+    expect(((await call('memoryEntries')).data as { entries: unknown[] }).entries).toEqual([{ id: 'a', status: 'active' }]);
+    expect(rt.listUnifiedMemoryEntries).toHaveBeenCalledTimes(2);
+  });
+
+  it('memoryEntryResumeInjection 带 (db, entryId) 委派；缺 entryId 报错', async () => {
+    expect((await call('memoryEntryResumeInjection', { entryId: 'e3' })).data).toEqual({ resumed: true });
+    expect(eviction.resumeMemoryInjection).toHaveBeenCalledWith(db, 'e3');
+    expect(await call('memoryEntryResumeInjection', {})).toMatchObject({ success: false, error: { message: expect.stringContaining('entryId') } });
+  });
+
   it('memoryEntries / memoryExportV2 / memoryRebuildMirror 透传 runtime', async () => {
     expect((await call('memoryEntries')).data).toEqual([{ id: 'e1' }]);
     expect((await call('memoryExportV2')).data).toEqual({ bundle: 'v2' });

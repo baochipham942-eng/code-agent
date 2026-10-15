@@ -37,6 +37,7 @@ import { RoleIcon } from "../shared/RoleIcon";
 import { getRoleAvatarAsset } from "./roleAvatarAssets";
 import { SettingsSection } from "../settings/SettingsLayout";
 import { RoleBindingsSection } from "../settings/tabs/RoleBindingsSection";
+import { RoleMemoryActions } from "./RoleMemoryActions";
 import { useAppStore } from "../../../stores/appStore";
 import { Button } from "../../primitives/Button";
 import { FullScreenPage, FullScreenPageHeader } from "../shared/FullScreenPage";
@@ -941,6 +942,7 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
             title={`${roleText.detail.memoriesTitlePrefix}${detail.memories.length}${roleText.detail.memoriesTitleSuffix}`}
             description={roleText.detail.memoriesDescription}
           >
+            <RoleMemoryActions roleId={roleId} memoryCount={detail.memories.length} />
             {detail.memories.length === 0 ? (
               <div className="rounded-lg border border-dashed border-zinc-700/70 p-4 text-center text-xs text-zinc-500">
                 {roleText.detail.memoriesEmpty}

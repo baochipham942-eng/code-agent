@@ -180,6 +180,10 @@ export function ToolCallDisplay({
     if (statusOverride) return statusOverride;
     if (awaitingApproval) return 'pending';
     if (receipt) return receipt.status === 'failed' ? 'error' : 'success';
+    // 结局优先（投影层标记 recovered）：这次失败已被后续成功收尾（同处 Edit 重试成功等），
+    // 不再按错误行渲染——主文案回完成态、失败原因行撤掉，只留一条安静的「后续修改已成功」
+    // 脚注。回执行不在此列：receipt 自己的成败渲染优先，维持原样。
+    if (toolCall.result?.metadata?.recovered === true) return 'success';
     if (delegationPresentation?.state === 'working') return 'pending';
     if (delegationPresentation?.state === 'completed') return 'success';
     if (delegationPresentation?.state === 'failed') return 'error';
@@ -291,7 +295,7 @@ export function ToolCallDisplay({
         {receipt && (
           <ToolReceiptMeta receipt={receipt} />
         )}
-        {!receipt && status !== 'error' && toolCall.result && !delegationPresentation && !expanded && !isBashTool(toolCall) && status !== 'interrupted' && (
+        {!receipt && status !== 'error' && toolCall.result && toolCall.result.metadata?.recovered !== true && !delegationPresentation && !expanded && !isBashTool(toolCall) && status !== 'interrupted' && (
           <span className="min-w-0 max-w-[220px] shrink truncate text-xs text-zinc-500">
             <ResultSummary toolCall={toolCall} inline />
           </span>
@@ -306,6 +310,14 @@ export function ToolCallDisplay({
               humanizeToolFailureReason）显示「审批被拒绝」——同一件事两处自相矛盾。 */}
           {humanizeToolFailureReason(toolCall, t)}
           {toolCall.result?.metadata?.recovered === true && <span className="ml-2 text-badge-success">{t.deliveryExperience.recovered}</span>}
+        </div>
+      )}
+
+      {/* 已恢复的失败行（recovered ⇒ 非 error）的安静脚注：替代上面那条失败原因行，
+          告诉用户这次失败已被后续成功收尾，不再顶红。 */}
+      {status !== 'error' && toolCall.result?.metadata?.recovered === true && !delegationPresentation && (
+        <div className="ml-6 mt-1 text-xs leading-5 text-badge-success" data-testid="tool-call-recovered-note">
+          {t.deliveryExperience.recovered}
         </div>
       )}
       {getToolPreflightKind(toolCall) === 'question' && (

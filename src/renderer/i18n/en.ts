@@ -8,7 +8,6 @@ import { chatTranscriptEn } from './chatTranscript';
 import { attachmentPreviewEn } from './attachmentPreview';
 import { chatInputEn } from './chatInput';
 import { voiceEn } from './voice';
-import { chatInputModelStrategyEn } from './chatInputModelStrategy';
 import { sidebarEn } from './sidebar';
 import { cronCenterEn } from './cronCenter';
 import { deliveryExperienceEn } from './deliveryExperience';
@@ -930,7 +929,6 @@ export const en = {
   ...attachmentPreviewEn,
   ...chatInputEn,
   ...voiceEn,
-  ...chatInputModelStrategyEn,
   ...sidebarEn,
   ...cronCenterEn,
   ...previewWorkspaceEn,

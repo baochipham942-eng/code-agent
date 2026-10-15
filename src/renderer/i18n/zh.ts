@@ -8,7 +8,6 @@ import { chatTranscriptZh } from './chatTranscript';
 import { attachmentPreviewZh } from './attachmentPreview';
 import { chatInputZh } from './chatInput';
 import { voiceZh } from './voice';
-import { chatInputModelStrategyZh } from './chatInputModelStrategy';
 import { sidebarZh } from './sidebar';
 import { cronCenterZh } from './cronCenter';
 import { deliveryExperienceZh } from './deliveryExperience';
@@ -932,7 +931,6 @@ export const zh = {
   ...attachmentPreviewZh,
   ...chatInputZh,
   ...voiceZh,
-  ...chatInputModelStrategyZh,
   ...sidebarZh,
   ...cronCenterZh,
   ...previewWorkspaceZh,

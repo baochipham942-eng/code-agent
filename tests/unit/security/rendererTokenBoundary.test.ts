@@ -75,6 +75,9 @@ const ALLOWLIST: AllowlistEntry[] = [
   // ---- UI 状态（与凭据无关的同名物）----
   { file: 'src/renderer/components/features/chat/ActiveConversationRewindBanner.tsx', name: 'refreshToken', reason: '同名异物：会话重做后的 UI 重取计数器（number），与认证 token 无关' },
   { file: 'src/renderer/components/StatusBar/modelSwitcherHelpers.tsx', name: 'api_key_payg', reason: '计费模式判别值 api_key_payg（按量付费徽标样式键），非凭据' },
+  // skill caution 弹窗的规则文案键：embedded_secret_medium: 前缀命中的共用句子（string），非凭据数据
+  { file: 'src/renderer/i18n/zhSkillCautionRules.ts', name: 'embeddedSecret', reason: 'i18n 文案键：嵌入密钥类 caution 命中的白话风险句（string），不承载任何凭据值' },
+  { file: 'src/renderer/i18n/enSkillCautionRules.ts', name: 'embeddedSecret', reason: 'i18n 文案键：嵌入密钥类 caution 命中的白话风险句（string），不承载任何凭据值' },
 
   // ---- 设置/接入表单：apiKey 均为用户手输的表单态，写向 host，回显只走掩码/布尔 ----
   { file: 'src/renderer/App.tsx', name: 'apiKey', reason: '读取 settings 契约里的 providerConfig.apiKey 填充模型配置（既有 settings 回传面），非新增暴露' },

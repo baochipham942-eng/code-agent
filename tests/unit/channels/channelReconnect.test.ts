@@ -17,6 +17,7 @@ const ASCII_SENTENCE_PATTERN = /[A-Za-z]{2,}(?:\s+[A-Za-z]{2,}){2,}/;
 interface WsCtorHandlers {
   onReady?: () => void;
   onError?: (err: Error) => void;
+  onReconnecting?: () => void;
 }
 
 const wsCaptures = vi.hoisted(() => ({
@@ -309,5 +310,100 @@ describe('ChannelManager connect retry', () => {
     await failCurrentHandshake();
     await again;
     expect(manager.getAccount(accountId)?.errorMessage).toContain('重连中（第 1 次）');
+  });
+
+  it('r1-1 updateAccount collapses a backoff-waiting account out of connecting before saveAccounts', async () => {
+    const manager = ChannelManager.getInstance();
+    const accountId = await addFeishuAccount(manager);
+
+    // 首连失败 → 退避等待（不在 activeChannels，状态 connecting/重连中）
+    const first = manager.connectAccount(accountId).catch(() => 'failed');
+    await failCurrentHandshake();
+    await first;
+    expect(manager.getAccount(accountId)?.status).toBe('connecting');
+
+    // 用户保存编辑（或关掉 enabled）：取消重试的同时必须把「重连中」收殓成已断开
+    await manager.updateAccount(accountId, { name: 'renamed-r1' });
+    const account = manager.getAccount(accountId);
+    expect(account?.status).toBe('disconnected');
+    expect(account?.errorMessage).toBeUndefined();
+
+    // 重试已取消：推进远超封顶时间不再出现连接尝试
+    await vi.advanceTimersByTimeAsync(1_800_000);
+    await flushAsync();
+    expect(currentCtorCount()).toBe(1);
+  });
+
+  it('r1-2a passes SDK onReconnecting text through: 「重连中」stays 重连中, not a red connect failure', async () => {
+    const manager = ChannelManager.getInstance();
+    const accountId = await addFeishuAccount(manager);
+
+    const first = manager.connectAccount(accountId).catch(() => 'failed');
+    await flushAsync();
+    latestCtor().onReady?.();
+    await first;
+    expect(manager.getAccount(accountId)?.status).toBe('connected');
+
+    // 已建立的连接由 SDK 内部自愈重连（onReconnecting）：这是运行态，不是连接失败
+    latestCtor().onReconnecting?.();
+    await flushAsync();
+    const account = manager.getAccount(accountId);
+    expect(account?.status).toBe('connecting');
+    expect(account?.errorMessage).toBe('重连中');
+    // 连接本身还在（activeChannels 不动），SDK onReconnected 后回到 connected
+    latestCtor().onReady?.();
+    await flushAsync();
+    expect(manager.getAccount(accountId)?.status).toBe('connected');
+    expect(manager.getAccount(accountId)?.errorMessage).toBeUndefined();
+  });
+
+  it('r1-2b takes over an established channel on reconnect-exhausted: dead client closed, backoff retry, back online', async () => {
+    const manager = ChannelManager.getInstance();
+    const accountId = await addFeishuAccount(manager);
+
+    const first = manager.connectAccount(accountId).catch(() => 'failed');
+    await flushAsync();
+    latestCtor().onReady?.();
+    await first;
+    expect(manager.getAccount(accountId)?.status).toBe('connected');
+
+    // SDK 放弃内部重连（onError 终态）：manager 接管，死实例被强关并按退避重连
+    latestCtor().onError?.(new Error('WebSocket reconnect exhausted after 6 attempts'));
+    await flushAsync();
+    expect(wsCaptures.clients[0]?.close).toHaveBeenCalledWith({ force: true });
+    expect(manager.getActiveChannel(accountId)).toBeUndefined();
+    const account = manager.getAccount(accountId);
+    expect(account?.status).toBe('connecting');
+    expect(account?.errorMessage).toBe('重连中（第 1 次）：连不上飞书服务器，正在自动重试');
+
+    // 30s 退避到点重连成功 → 机器人自动回到在线（仅存一个新的活连接）
+    await expectNextRetryAfter(30_000);
+    latestCtor().onReady?.();
+    await flushAsync();
+    expect(manager.getAccount(accountId)?.status).toBe('connected');
+    expect(wsCaptures.clients).toHaveLength(2);
+    expect(wsCaptures.clients[1]?.close).not.toHaveBeenCalled();
+  });
+
+  it('r1-3 credential failures never enter the backoff: no replay of a bad App Secret', async () => {
+    const manager = ChannelManager.getInstance();
+    const accountId = await addFeishuAccount(manager);
+
+    const first = manager.connectAccount(accountId).catch(() => 'failed');
+    await vi.advanceTimersByTimeAsync(0);
+    latestCtor().onError?.(
+      new Error('pullConnectConfig failed: code=10003, msg=app secret is invalid'),
+    );
+    await first;
+
+    // 停在 error + 人话凭据提示，而不是「重连中」
+    const account = manager.getAccount(accountId);
+    expect(account?.status).toBe('error');
+    expect(account?.errorMessage).toBe('飞书应用凭据或权限有误，请检查 App ID 和 App Secret');
+
+    // SDK 判定不可重试的失败不排退避：推进远超封顶时间，同一份错误凭据不再被重放
+    await vi.advanceTimersByTimeAsync(1_800_000);
+    await flushAsync();
+    expect(currentCtorCount()).toBe(1);
   });
 });

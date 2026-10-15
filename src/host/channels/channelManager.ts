@@ -35,6 +35,7 @@ import {
   ChannelReconnectScheduler,
   channelConnectFailureText,
   channelReconnectingStatusText,
+  isChannelConnectFailureRetryable,
 } from './channelReconnectScheduler';
 import { FEISHU_DEFAULT_HOST, LARK_DEFAULT_HOST } from '../../shared/constants';
 import {
@@ -244,6 +245,10 @@ export class ChannelManager extends EventEmitter {
     // 如果正在连接，先断开
     if (this.activeChannels.has(accountId)) {
       await this.disconnectAccount(accountId);
+    } else if (account.status === 'connecting') {
+      // 退避等待中的账号不在 activeChannels：重试已取消，把「重连中」收殓成
+      // 已断开，否则下面的 saveAccounts 会把 connecting 状态写盘、界面停在重连中
+      this.updateAccountStatus(accountId, 'disconnected');
     }
 
     // 更新账号
@@ -330,18 +335,28 @@ export class ChannelManager extends EventEmitter {
     });
 
     channel.on('status_change', (status: ChannelAccountStatus, error?: string) => {
-      // 连接失败原因先翻成人话再落 errorMessage：设置页不出现 SDK 原文（raw 只进日志）
+      // 已建立的连接报 error（SDK onError 只在放弃后触发：reconnect exhausted /
+      // pullConnectConfig 不可重试码）：连接已死且 SDK 不再自愈，死实例留在
+      // activeChannels 只会让通道停在 error——交给 manager 销毁并按退避重连。
+      if (status === 'error' && this.activeChannels.get(accountId) === channel) {
+        this.takeOverDeadChannel(accountId, channel, error ?? '', channelLabel);
+        return;
+      }
+      // 连接失败原因先翻成人话再落 errorMessage：设置页不出现 SDK 原文（raw 只进日志）。
+      // 非失败状态带的消息（SDK onReconnecting 的「重连中」）本来就是人话，原样透传。
       this.updateAccountStatus(
         accountId,
         status,
-        error === undefined ? undefined : channelConnectFailureText(error, channelLabel),
+        status === 'error' && error !== undefined ? channelConnectFailureText(error, channelLabel) : error,
       );
     });
 
     channel.on('error', (error: Error) => {
+      // error 事件是消息处理失败，不是连接失败：不套「正在自动重试」模板、
+      // 也不触发重连，只做脱敏压缩后落 errorMessage。
       const { summary } = summarizeUserFacingError(error, { surface: 'channel_reply' });
       logger.error('Channel error', { accountId, error: error.message });
-      this.updateAccountStatus(accountId, 'error', channelConnectFailureText(summary, channelLabel));
+      this.updateAccountStatus(accountId, 'error', summary);
     });
 
     // 卡片按钮回传（B3 审批回批）：透传给上层 relay，带上是哪个账号发来的。
@@ -381,7 +396,14 @@ export class ChannelManager extends EventEmitter {
       this.updateAccountStatus(accountId, 'error', humanMessage);
       // 失败实例显式销毁（无人持有的长连接/webhook 服务器不留孤儿），再决定是否自动重连
       await this.destroyFailedChannel(accountId, channel);
-      this.scheduleConnectRetry(accountId, humanMessage);
+      if (isChannelConnectFailureRetryable(raw)) {
+        this.scheduleConnectRetry(accountId, humanMessage);
+      } else {
+        // SDK 判定不可重试（凭据/配置类）：重放同一份凭据没有意义，不进无限退避。
+        // destroy 会把状态打回 disconnected，这里重申 error 终态与人话原因。
+        this.updateAccountStatus(accountId, 'error', humanMessage);
+        logger.warn('Channel connect failure is not retryable, skipping auto-reconnect', { accountId });
+      }
       throw error;
     } finally {
       this.connectingAccounts.delete(accountId);
@@ -418,6 +440,34 @@ export class ChannelManager extends EventEmitter {
     void this.connectAccount(accountId).catch(() => {
       // connectAccount 失败路径已写状态并排下一轮重试
     });
+  }
+
+  /**
+   * 已建立连接的终态失败接管：与首连失败同一套收殓——移出活跃表、人话 error、
+   * 销毁死实例、按可重试性决定是否排退避。凭据类失败不排重试，停在 error。
+   */
+  private takeOverDeadChannel(
+    accountId: string,
+    channel: IChannelPlugin,
+    raw: string,
+    channelLabel: string,
+  ): void {
+    const humanMessage = channelConnectFailureText(raw, channelLabel);
+    logger.warn('Established channel failed, taking over reconnect', { accountId, error: raw });
+    void (async () => {
+      this.activeChannels.delete(accountId);
+      this.updateAccountStatus(accountId, 'error', humanMessage);
+      await this.destroyFailedChannel(accountId, channel);
+      // 销毁期间用户可能已手动重连：那时不再排重试
+      if (this.activeChannels.has(accountId) || this.connectingAccounts.has(accountId)) return;
+      if (isChannelConnectFailureRetryable(raw)) {
+        this.scheduleConnectRetry(accountId, humanMessage);
+      } else {
+        // destroy 会把状态打回 disconnected，重申 error 终态与人话原因
+        this.updateAccountStatus(accountId, 'error', humanMessage);
+        logger.warn('Channel failure is not retryable, skipping auto-reconnect', { accountId });
+      }
+    })();
   }
 
   private async destroyFailedChannel(accountId: string, channel: IChannelPlugin): Promise<void> {

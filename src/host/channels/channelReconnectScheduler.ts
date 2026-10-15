@@ -73,6 +73,15 @@ const NETWORK_FAILURE_PATTERN = new RegExp(
 const CREDENTIAL_FAILURE_TEXT = '飞书应用凭据或权限有误，请检查 App ID 和 App Secret';
 
 /**
+ * 这份失败原文是否值得自动重试：pullConnectConfig 非零 code 等 SDK 判定
+ * 不可重试（terminalError）的凭据/配置错误，重放同一份凭据没有意义，
+ * manager 层同样不排退避，停在 error 等用户改配置。
+ */
+export function isChannelConnectFailureRetryable(raw: string): boolean {
+  return !CREDENTIAL_FAILURE_PATTERN.test(raw || '');
+}
+
+/**
  * 把连接失败的原始错误文本翻成用户能懂的中文（设置页 errorMessage 用）。
  * 原始英文只留在 logger；三类出口都不回传原文，天然不带敏感串。
  */

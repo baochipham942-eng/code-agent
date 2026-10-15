@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -178,5 +179,84 @@ describe('document share links', () => {
     await expect(createShareLink(filePath, 604_800)).rejects.toThrow('File exceeds 25 MB');
     expect(fetchMock).not.toHaveBeenCalled();
     expect(await readFile(filePath)).toHaveLength(26_214_401);
+  });
+});
+
+describe('share ownership across a legacy basename-keyed meta', () => {
+  let workDir: string;
+  let mdPath: string;
+  let docxPath: string;
+  let snapshotDir: string;
+  let legacyMetaPath: string;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    workDir = await mkdtemp(join(tmpdir(), 'share-legacy-'));
+    mdPath = join(workDir, 'status.md');
+    docxPath = join(workDir, 'status.docx');
+    await writeFile(mdPath, 'md body');
+    await writeFile(docxPath, 'docx body');
+    snapshotDir = join(workDir, '.doc-snapshots');
+    await mkdir(snapshotDir, { recursive: true });
+    legacyMetaPath = join(snapshotDir, 'status.meta.json');
+    configService.token = 'upload-token';
+    configService.baseUrl = 'https://share.test';
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it('assigns the legacy share to its owning file; a new share lands in the file\'s own meta', async () => {
+    const legacyMeta = {
+      snapshots: [],
+      publishedVersions: [
+        { version: 1, publishedAt: 1_700_000_010_000, snapshotPath: join(snapshotDir, 'status.published-v1.md'), contentHash: 'md-1' },
+        { version: 3, publishedAt: 1_700_000_030_000, snapshotPath: join(snapshotDir, 'status.published-v3.md'), contentHash: 'md-3' },
+        { version: 15, publishedAt: 1_700_000_150_000, snapshotPath: join(snapshotDir, 'status.published-v15.docx'), contentHash: 'docx-15' },
+      ],
+      share: {
+        token: 'legacy-token',
+        url: 'https://share.test/d/legacy-token',
+        expiresAt: null,
+        createdAt: 1_700_000_160_000,
+        ttlSeconds: 604_800,
+        pushedVersion: 15,
+        pushedHash: 'docx-15',
+      },
+    };
+    for (const entry of legacyMeta.publishedVersions) {
+      await writeFile(entry.snapshotPath, `snapshot ${entry.version}`);
+    }
+    await writeFile(legacyMetaPath, JSON.stringify(legacyMeta, null, 2));
+    const legacyBefore = await readFile(legacyMetaPath, 'utf8');
+
+    // share 跟着 pushed v15（docx 条目）走：docx 看得到，md 看不到
+    const docxInfo = getShareLink(docxPath);
+    expect(docxInfo.share?.token).toBe('legacy-token');
+    expect(docxInfo.latestPublishedVersion).toBe(15);
+    expect(docxInfo.stale).toBe(false);
+    expect(getShareLink(mdPath).share).toBeNull();
+    expect(getShareLink(mdPath).latestPublishedVersion).toBe(3);
+
+    // md 建新 share 落 md 自己的新键；docx 的 share 与旧文件都原样
+    fetchMock.mockResolvedValueOnce(jsonResponse({
+      token: 'md-token',
+      url: 'https://share.test/d/md-token',
+      version: 3,
+      expiresAt: null,
+      createdAt: 1_700_000_000_000,
+    }, 201));
+    const created = await createShareLink(mdPath, 604_800);
+
+    expect(created.share?.token).toBe('md-token');
+    expect(loadMeta(mdPath).share).toMatchObject({ token: 'md-token', pushedVersion: 3 });
+    expect(loadMeta(docxPath).share?.token).toBe('legacy-token');
+    expect(existsSync(join(snapshotDir, 'status.md.meta.json'))).toBe(true);
+    expect(await readFile(legacyMetaPath, 'utf8')).toBe(legacyBefore);
   });
 });

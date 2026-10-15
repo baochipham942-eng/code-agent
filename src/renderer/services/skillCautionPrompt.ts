@@ -36,16 +36,17 @@ function emit(): void {
 }
 
 /** 确认面宿主（SkillCautionPromptHost）是否在挂载——不在线时无人能确认 */
-export function isSkillCautionPromptHostMounted(): boolean {
+function isSkillCautionPromptHostMounted(): boolean {
   return listeners.size > 0;
 }
 
 /**
  * 弹确认面，等这一轮的结局。resolve(true) = 确认并收尾（可能经过几次重开）；
  * resolve(false) = 用户取消（host 侧本就未落盘）或宿主未挂载（fail-closed，
- * 调用方按各自入口的失败路径收口）。
+ * 调用方按各自入口的失败路径收口）。模块内消费方是 installWithSkillCautionConfirm
+ * 的首发/重开两处，外部入口一律走那个驱动，故不导出（knip：真有人 import 才导）。
  */
-export function requestSkillCautionConfirm(
+function requestSkillCautionConfirm(
   required: SkillCautionConfirmationRequired,
   retry: (cautionConfirmationToken: string) => Promise<boolean>,
 ): Promise<boolean> {

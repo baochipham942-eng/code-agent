@@ -3,7 +3,8 @@
 // SkillCautionDisclosureModal 弹窗本体测试
 // 覆盖：正文按规则分组渲染白话风险句 + 命中数（en 单复数选形）、ruleId/文件/摘录折进
 // 「命中明细」（展开前不可见）、运行时审批真相行按本次命中的档位裁剪（zh/en 同一套
-// 裁剪逻辑，无档位命中时整段不渲染）、confirm 模式只有确认钮触发 onConfirm、
+// 裁剪逻辑；档位映射全量覆盖 host 写入点规则 id、未映射的非密钥命中保底渲染 lead、
+// 仅嵌入密钥命中时整段不渲染）、confirm 模式只有确认钮触发 onConfirm、
 // ESC/取消走 onClose、acknowledge 模式单按钮、snippet 纯文本渲染。
 // ============================================================================
 
@@ -181,6 +182,28 @@ describe('SkillCautionDisclosureModal', () => {
     expect(screen.getByText(cautionText.runtimeApproval.hardDeny)).toBeTruthy();
     expect(screen.queryByText(cautionText.runtimeApproval.askByDefault)).toBeNull();
     expect(screen.queryByText(cautionText.runtimeApproval.readOnly)).toBeNull();
+  });
+
+  it('运行时审批行裁剪：仅 git_force_push 命中（映射全量覆盖）也出强确认句，整段不消失', () => {
+    // 审查例：档位映射漏掉 host 写入点可产出的规则 id 时，这段运行时审批真相会整段
+    // 不渲染（披露低于拆行前基线）。git push --force 命中 confirmationGate 的
+    // HIGH_RISK_PATTERNS（/git\s+(push|reset|…)/）→ 运行时是真强确认。
+    renderModal({ hits: [{ file: 'a/SKILL.md', ruleId: 'git_force_push', snippet: 'git push --force origin main' }] });
+
+    expect(screen.getByText(cautionText.runtimeApproval.lead)).toBeTruthy();
+    expect(screen.getByText(cautionText.runtimeApproval.forcedConfirm)).toBeTruthy();
+    expect(screen.queryByText(cautionText.runtimeApproval.askByDefault)).toBeNull();
+    expect(screen.queryByText(cautionText.runtimeApproval.readOnly)).toBeNull();
+    expect(screen.queryByText(cautionText.runtimeApproval.hardDeny)).toBeNull();
+  });
+
+  it('运行时审批行保底：非密钥命中但规则 id 未映射（未来新增规则）仍渲染 lead，不凭空加档位句', () => {
+    renderModal({ hits: [{ file: 'a/SKILL.md', ruleId: 'future_rule_unmapped', snippet: 'whatever' }] });
+
+    expect(screen.getByText(cautionText.runtimeApproval.lead)).toBeTruthy();
+    for (const tier of ['forcedConfirm', 'askByDefault', 'readOnly', 'hardDeny'] as const) {
+      expect(screen.queryByText(cautionText.runtimeApproval[tier])).toBeNull();
+    }
   });
 
   it('运行时审批行裁剪：无档位命中（仅嵌入密钥）时整段不渲染', () => {

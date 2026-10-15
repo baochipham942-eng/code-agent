@@ -21,7 +21,10 @@ export const zhSkillCaution = {
   // 读密钥环境变量默认是已知安全命令、不问；「只读」档仍问。
   // curl|sh 被命令策略硬拒，任何权限档（含完全访问）都不放行。
   // 各句只在本次扫描命中对应规则时渲染（弹窗按档位挑句，见 SkillCautionDisclosureModal）；
-  // 措辞与拆行前的整句逐字等义。
+  // 措辞与拆行前的整句逐字等义。档位映射覆盖 host 写入点全量规则 id（强确认档 =
+  // 命中 confirmationGate HIGH_RISK_PATTERNS 的命令族，默认问档 = 其余非白名单命令，
+  // 只读档 = 白名单读取，硬拒档 = curl|sh 与 critical/block 档规则），各句里的命令名
+  // 是示例而非穷举。
   runtimeApproval: {
     lead: '装好后 Neo 真要执行这类命令时：默认每次都会先问你。',
     forcedConfirm: '删除目录和硬重置是强确认，连「始终允许」和执行类自动批准都压不住，只有把这次对话切到「完全访问权限」才不问直接跑。',

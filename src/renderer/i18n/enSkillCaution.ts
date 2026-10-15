@@ -22,7 +22,11 @@ export const enSkillCaution = {
   // deny in every mode, including Full access.
   // Each sentence renders only when the current scan hit a rule in its tier (the modal
   // picks tiers per scan, see SkillCautionDisclosureModal); wording is verbatim-equivalent
-  // to the single line this was split from.
+  // to the single line this was split from. The tier mapping covers every rule id the host
+  // write points can emit (forcedConfirm = command families matching confirmationGate
+  // HIGH_RISK_PATTERNS; askByDefault = other non-allowlisted commands; readOnly =
+  // allowlisted reads; hardDeny = curl|sh and the critical/block-tier rules); command
+  // names inside each sentence are illustrative, not exhaustive.
   runtimeApproval: {
     lead: 'After install, when Neo actually runs a command like these: by default it asks you every time.',
     forcedConfirm: 'Deleting a folder and a hard reset are hard confirmations that neither “Always allow” nor execute-level auto-approve can skip, and only switching this conversation to “Full access” runs them without asking.',

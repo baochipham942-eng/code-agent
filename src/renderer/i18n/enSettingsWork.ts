@@ -608,6 +608,14 @@ export const enSettingsWork = {
         loadFailed: 'Failed to load unified memory',
         updateSuccess: 'Memory updated',
         updateFailed: 'Update failed',
+        injectionPaused: {
+          badge: 'Auto-include paused',
+          neverUsed: 'This memory was never used, so since {date} it is no longer added to conversations automatically. It is still saved and can be searched and read.',
+          staleUsed: 'This memory has not been used for a long time, so since {date} it is no longer added to conversations automatically. It is still saved and can be searched and read.',
+          resume: 'Resume auto-include',
+          resumeSuccess: 'Resumed. Future conversations will include this memory again.',
+          resumeFailed: 'Resume failed',
+        },
         deleteSuccess: 'Memory deleted',
         deleteFailed: 'Delete failed',
         statusLabels: {

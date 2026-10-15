@@ -115,6 +115,28 @@ describe('defineSessionRoutes 表面差异', () => {
     expect(svc.listSessions).toHaveBeenCalledWith({ includeArchived: true });
   });
 
+  it('create 只认合法 memoryMode 枚举：off 透传、垃圾值静默忽略', async () => {
+    const { registered, target } = createTarget();
+    const svc = {
+      createSession: vi.fn(async () => ({ id: 's-new' })),
+    };
+    installDomainRoutes(target, defineSessionRoutes('web'), {
+      ...createDummyContext(),
+      sessions: async () => svc,
+    } as unknown as SessionCommandContext);
+    const invoke = registered.get('domain:session');
+
+    await invoke?.(undefined, { action: 'create', payload: { title: 'T', memoryMode: 'off' } });
+    expect(svc.createSession).toHaveBeenCalledWith(expect.objectContaining({ memoryMode: 'off' }));
+
+    await invoke?.(undefined, { action: 'create', payload: { title: 'T', memoryMode: 'OFF' } });
+    expect(svc.createSession).toHaveBeenLastCalledWith(expect.objectContaining({ memoryMode: undefined }));
+    expect(svc.createSession.mock.calls.at(-1)?.[0]).not.toHaveProperty('memoryMode', 'OFF');
+
+    await invoke?.(undefined, { action: 'create', payload: { title: 'T', memoryMode: { inject: true } } });
+    expect(svc.createSession.mock.calls.at(-1)?.[0]).not.toHaveProperty('memoryMode', { inject: true });
+  });
+
   it('gap action 的 backend 门失败（sessions() 抛 SERVICE_UNAVAILABLE）仍先落 code', async () => {
     const { registered, target } = createTarget();
     const unavailable = Object.assign(new Error('SessionManager not available'), {

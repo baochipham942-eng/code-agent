@@ -99,12 +99,21 @@ vi.mock('../../../src/host/task', () => ({
 
 // executeAction 的 agent 分支用动态 import('../services') 建 cron 会话；
 // 只替身这两个入口，仓内其它模块都不从 barrel 取东西。
+// createSession 收成 spy：N-TASK-MEMORY-OFF 断言「不用记忆」档随源会话继承。
+const cronSessionState = vi.hoisted(() => ({
+  sourceSession: null as null | Record<string, unknown>,
+  createSession: vi.fn(async () => ({ id: 'cron-agent-session-1' })),
+}));
 vi.mock('../../../src/host/services', () => ({
   getConfigService: () => ({ getSettings: () => ({ ui: { language: 'zh' } }) }),
   getSessionManager: () => ({
     getCurrentSessionId: () => null,
-    getSession: async () => null,
-    createSession: async () => ({ id: 'cron-agent-session-1' }),
+    getSession: async (sessionId: string) => (
+      cronSessionState.sourceSession && cronSessionState.sourceSession.id === sessionId
+        ? cronSessionState.sourceSession
+        : null
+    ),
+    createSession: cronSessionState.createSession,
   }),
 }));
 
@@ -164,6 +173,8 @@ afterEach(() => {
   automationState.getBySourceRef.mockClear();
   automationState.getBySourceRef.mockReturnValue(null);
   automationState.upsert.mockClear();
+  cronSessionState.sourceSession = null;
+  cronSessionState.createSession.mockClear();
   shutdownEventBus();
 });
 
@@ -1308,6 +1319,73 @@ describe('N-ARTIFACT-STANDING-REFRESH 常设刷新接线', () => {
     expect(artifactRefreshState.begin).toHaveBeenCalledTimes(1);
     expect(artifactRefreshState.begin).toHaveReturnedWith(undefined);
     expect(artifactRefreshState.finish).not.toHaveBeenCalled();
+    await service.shutdown();
+  });
+});
+
+describe('CronService 会话记忆档继承（N-TASK-MEMORY-OFF）', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function memorySourceJob() {
+    return {
+      name: '源会话不开记忆的定时任务',
+      runsOn: 'local' as const,
+      scheduleType: 'every' as const,
+      schedule: { type: 'every' as const, interval: 1, unit: 'hours' as const },
+      action: { type: 'agent' as const, agentType: 'default', prompt: 'work' },
+      enabled: true,
+      metadata: { sourceSessionId: 'session-src-memory' },
+    };
+  }
+
+  it('源会话 memoryMode=off ⇒ cron 运行会话以 off 建（不留痕承诺跟着任务走）', async () => {
+    cronSessionState.sourceSession = {
+      id: 'session-src-memory',
+      memoryMode: 'off',
+      workingDirectory: '/workspace',
+      modelConfig: { provider: 'zhipu', model: 'glm-5.3' },
+    };
+    const service = new CronService();
+    const job = await service.createJob(memorySourceJob());
+
+    const execution = await service.triggerJob(job.id);
+
+    expect(execution?.status).toBe('completed');
+    expect(cronSessionState.createSession).toHaveBeenCalledTimes(1);
+    expect(cronSessionState.createSession.mock.calls[0][0]).toMatchObject({ memoryMode: 'off' });
+    await service.shutdown();
+  });
+
+  it('源会话是普通档 ⇒ 不传 memoryMode（sessionManager 缺省 auto，不误伤存量任务）', async () => {
+    cronSessionState.sourceSession = {
+      id: 'session-src-memory',
+      memoryMode: 'auto',
+      workingDirectory: '/workspace',
+      modelConfig: { provider: 'zhipu', model: 'glm-5.3' },
+    };
+    const service = new CronService();
+    const job = await service.createJob(memorySourceJob());
+
+    await service.triggerJob(job.id);
+
+    expect(cronSessionState.createSession).toHaveBeenCalledTimes(1);
+    expect(cronSessionState.createSession.mock.calls[0][0].memoryMode).toBeUndefined();
+    await service.shutdown();
+  });
+
+  it('无源会话（老任务/无 sourceSessionId）⇒ 同样不传 memoryMode', async () => {
+    const service = new CronService();
+    const job = await service.createJob({
+      ...memorySourceJob(),
+      metadata: undefined,
+    });
+
+    await service.triggerJob(job.id);
+
+    expect(cronSessionState.createSession).toHaveBeenCalledTimes(1);
+    expect(cronSessionState.createSession.mock.calls[0][0].memoryMode).toBeUndefined();
     await service.shutdown();
   });
 });

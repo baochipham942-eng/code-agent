@@ -293,3 +293,38 @@ describe('initializeCLIServices durable wiring', () => {
     await expect(terminalCLIDurableRun(handle as never, true)).rejects.toThrow(/fenced by stale owner/);
   });
 });
+
+describe('createAgentLoop 会话记忆档透传（N-TASK-MEMORY-OFF）', () => {
+  it('memoryMode=off → AgentLoop config 带 off 且记忆工具收出工具面', async () => {
+    const { createAgentLoop, initializeCLIServices } = await import('../../../src/cli/bootstrap');
+    await initializeCLIServices();
+    createAgentLoop({
+      workingDirectory: process.cwd(),
+      modelConfig: { provider: 'openai', model: 'test-model' },
+      outputFormat: 'text', enablePlanning: false, enableHooks: false, debug: false,
+      memoryMode: 'off',
+    }, vi.fn());
+
+    const runtimeConfig = mocks.agentLoopConfigs.at(-1)!;
+    expect(runtimeConfig).toMatchObject({ memoryMode: 'off' });
+    expect(runtimeConfig.deniedToolNames).toEqual(expect.arrayContaining(
+      ['MemoryRead', 'MemoryWrite', 'History', 'EpisodicRecall'],
+    ));
+  });
+
+  it('缺省档 → 不带 memoryMode，记忆工具不进 denylist', async () => {
+    const { createAgentLoop, initializeCLIServices } = await import('../../../src/cli/bootstrap');
+    await initializeCLIServices();
+    createAgentLoop({
+      workingDirectory: process.cwd(),
+      modelConfig: { provider: 'openai', model: 'test-model' },
+      outputFormat: 'text', enablePlanning: false, enableHooks: false, debug: false,
+    }, vi.fn());
+
+    const runtimeConfig = mocks.agentLoopConfigs.at(-1)!;
+    expect(runtimeConfig.memoryMode).toBeUndefined();
+    expect((runtimeConfig.deniedToolNames ?? []).filter(
+      (name: string) => name === 'MemoryRead' || name === 'MemoryWrite' || name === 'History' || name === 'EpisodicRecall',
+    )).toEqual([]);
+  });
+});

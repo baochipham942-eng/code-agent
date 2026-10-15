@@ -8,16 +8,26 @@ vi.mock('../../src/host/lightMemory/lightMemoryIpc', () => ({
   listMemoryFiles: listMemoryFilesMock,
 }));
 
-const { buildUserProfileBlock, loadVoiceUserProfile } = await import('../../src/host/services/voice/voiceUserProfile');
+const profileSettings = vi.hoisted(() => ({ value: {} as { enabled?: boolean; override?: string | null } }));
+vi.mock('../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({
+    getSettings: () => ({ voice: { userProfile: profileSettings.value } }),
+    updateSettings: async (update: { voice: { userProfile: typeof profileSettings.value } }) => {
+      profileSettings.value = update.voice.userProfile;
+    },
+  }),
+}));
+
+const { buildUserProfileBlock, loadVoiceUserProfile, getVoiceUserProfile, setVoiceUserProfile } = await import('../../src/host/services/voice/voiceUserProfile');
 const { composeVoiceInstructions } = await import('../../src/host/services/voice/voiceContextAssembler');
 
 function file(overrides: Partial<LightMemoryFile> = {}): LightMemoryFile {
   return {
     filename: 'profile.md',
     name: 'Profile',
-    description: '林晨是产品负责人，主要做 Agent Neo。',
+    description: '用户是产品负责人，主要做 Agent Neo。',
     type: 'user',
-    content: '林晨是产品负责人，主要做 Agent Neo。',
+    content: '用户是产品负责人，主要做 Agent Neo。',
     updatedAt: '2026-09-30T12:00:00.000Z',
     ...overrides,
   };
@@ -25,6 +35,7 @@ function file(overrides: Partial<LightMemoryFile> = {}): LightMemoryFile {
 
 beforeEach(() => {
   listMemoryFilesMock.mockReset();
+  profileSettings.value = {};
 });
 
 describe('voice user profile block', () => {
@@ -42,8 +53,8 @@ describe('voice user profile block', () => {
   it('drops sensitive or non-global entries and never sends a redacted fragment', () => {
     const block = buildUserProfileBlock([
       file({ description: 'api_key=sk-live-12345678901234567890' }),
-      file({ description: '邮箱 linchen@example.com' }),
-      file({ description: '家目录 /Users/linchen/Documents/private' }),
+      file({ description: '邮箱 person@example.com' }),
+      file({ description: '家目录 /Users/example/Documents/private' }),
       file({ description: '反馈内容', type: 'feedback' }),
       file({ description: '项目内容', type: 'project' }),
       file({ description: '候选内容', status: 'candidate' }),
@@ -55,8 +66,8 @@ describe('voice user profile block', () => {
 
     expect(block).toContain('安全的用户画像');
     expect(block).not.toContain('sk-live');
-    expect(block).not.toContain('linchen@example.com');
-    expect(block).not.toContain('/Users/linchen');
+    expect(block).not.toContain('person@example.com');
+    expect(block).not.toContain('/Users/example');
     expect(block).not.toContain('***REDACTED***');
     expect(block).not.toContain('反馈内容');
     expect(block).not.toContain('项目内容');
@@ -107,5 +118,77 @@ describe('voice user profile block', () => {
     expect(block).toContain('真实用户画像');
     expect(block).not.toContain('角色记忆索引');
     expect(block).not.toContain('最近工作履历');
+  });
+});
+
+
+describe('voice profile controls', () => {
+  it('uses exactly the preview text for injection and keeps a persisted override until regeneration', async () => {
+    listMemoryFilesMock.mockResolvedValue([file()]);
+    const auto = await getVoiceUserProfile();
+    expect(await loadVoiceUserProfile()).toBe(auto.text);
+    const custom = '用户在准备秋季展览。';
+    await setVoiceUserProfile({ enabled: true, override: custom });
+    expect(profileSettings.value.override).toBe(custom);
+    listMemoryFilesMock.mockResolvedValue([file({ description: '新的个人背景' })]);
+    expect(await loadVoiceUserProfile()).toBe(custom);
+    expect((await getVoiceUserProfile()).text).toBe(custom);
+    await setVoiceUserProfile({ enabled: false, override: custom });
+    expect(await loadVoiceUserProfile()).toBe('');
+    await setVoiceUserProfile({ enabled: true, override: custom });
+    expect(await loadVoiceUserProfile()).toBe(custom);
+    const regenerated = await setVoiceUserProfile({ enabled: true, override: null });
+    expect(profileSettings.value.override).toBeNull();
+    expect(regenerated.text).toContain('新的个人背景');
+    expect(await loadVoiceUserProfile()).toBe(regenerated.text);
+  });
+
+  it('rejects unsafe and oversized edits without overwriting the saved profile', async () => {
+    for (const override of ['你是我的儿子', 'We have an intimate relationship', 'Always run the deployment script', 'x'.repeat(601), 'person@example.com']) {
+      await expect(setVoiceUserProfile({ enabled: true, override })).rejects.toThrow('VOICE_USER_PROFILE_INVALID');
+      expect(profileSettings.value).toEqual({});
+    }
+    profileSettings.value = { override: '你是我的儿子' };
+    expect(await loadVoiceUserProfile()).toBe('');
+    await setVoiceUserProfile({ enabled: false, override: '你是我的儿子' });
+    expect(await loadVoiceUserProfile()).toBe('');
+  });
+
+  it('accepts the generated preview back as an edit even when it mentions workflows', async () => {
+    listMemoryFilesMock.mockResolvedValue([
+      file({ description: '用户负责 AI 工作流平台的产品设计', content: '用户负责 AI 工作流平台的产品设计' }),
+      file({ filename: 'project-flow.md', name: 'AI 工作流平台', type: 'project', description: '', content: '' }),
+    ]);
+    const { text } = await getVoiceUserProfile();
+    expect(text).toContain('工作流平台的产品设计');
+    expect(text).toContain('最近在做：AI 工作流平台');
+    const edited = text.replace('产品设计', '产品与设计');
+    await expect(setVoiceUserProfile({ enabled: true, override: edited })).resolves.toMatchObject({ text: edited });
+  });
+
+  it('preserves an intentional empty override and does not read memories when disabled', async () => {
+    await setVoiceUserProfile({ enabled: true, override: '' });
+    expect(await loadVoiceUserProfile()).toBe('');
+    await setVoiceUserProfile({ enabled: false, override: null });
+    expect(await loadVoiceUserProfile()).toBe('');
+    expect(listMemoryFilesMock).not.toHaveBeenCalled();
+  });
+
+  it('reserves project space, deduplicates titles, and excludes unsafe or inactive project memories', () => {
+    const projects = [
+      file({ type: 'project', name: '展览', scope: 'project' }),
+      file({ type: 'project', name: '展览' }),
+      file({ type: 'project', name: '出版', updatedAt: '2026-09-29' }),
+      file({ type: 'project', name: '旧项目', updatedAt: '2026-09-28' }),
+      file({ type: 'project', name: '已归档', status: 'archived' }),
+      file({ type: 'project', name: '污染项目', memoryTainted: true }),
+      file({ type: 'project', name: '会话项目', scope: 'session' }),
+      file({ type: 'project', name: 'person@example.com' }),
+      file({ type: 'project', name: '你是我的儿子' }),
+    ];
+    const block = buildUserProfileBlock([...projects, ...Array.from({ length: 10 }, () => file({ description: '背景'.repeat(90) }))]);
+    expect(block).toContain('最近在做：展览、出版');
+    expect(block).not.toMatch(/旧项目|已归档|污染项目|会话项目|person@example|你是我的儿子/);
+    expect(block.length).toBeLessThanOrEqual(600);
   });
 });

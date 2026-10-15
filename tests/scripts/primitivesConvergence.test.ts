@@ -38,7 +38,6 @@ describe('primitives convergence (EmptyState/Badge)', () => {
 
   const emptyStateCallSites = [
     'components/features/settings/tabs/PluginsSettings.tsx',
-    'components/PlanningPanel.tsx',
     'components/features/settings/tabs/KnowledgeInboxSection.tsx',
     'components/TaskPanel/RunWorkbenchCards.tsx',
   ];

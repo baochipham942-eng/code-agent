@@ -1,20 +1,13 @@
 // ============================================================================
 
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
-// Task-status 面板域词条（PlanningPanel / RewindPanel / TaskPanel 各卡 / SkillsPanel /
+// Task-status 面板域词条（RewindPanel / TaskPanel 各卡 / SkillsPanel /
 // ContextHealthPanel）—— zh/en 同文件相邻维护。独立文件避免 zh.ts/en.ts 撞
 // max-lines(1000) 门；与既有 t.taskPanel 命名空间并存（组件里两个命名空间并用）。
 // ============================================================================
 
 export const taskStatusPanelsZh = {
   taskStatusPanels: {
-    planning: {
-      taskPlan: '任务计划',
-      noActivePlan: '暂无进行中的计划',
-      noActivePlanHint: '用 todo_write（persist=true）创建计划',
-      blockedCount: '{count} 个受阻',
-      updated: '更新于 {time}',
-    },
     rewind: {
       title: '回到这一轮',
       rewind: '恢复文件',
@@ -355,13 +348,6 @@ export const taskStatusPanelsZh = {
 
 export const taskStatusPanelsEn: typeof taskStatusPanelsZh = {
   taskStatusPanels: {
-    planning: {
-      taskPlan: 'Task Plan',
-      noActivePlan: 'No active plan',
-      noActivePlanHint: 'Use todo_write with persist=true to create a plan',
-      blockedCount: '{count} blocked',
-      updated: 'Updated {time}',
-    },
     rewind: {
       title: 'Go back to this turn',
       rewind: 'Restore files',

@@ -107,6 +107,22 @@ describe('MemoryEntriesManager helpers', () => {
     }).map((row) => row.id)).toEqual(['mem_entry_light']);
   });
 
+  it('marks entries whose auto-include is paused with a visible badge (N-MEM-EVICT-NEVER-READ)', () => {
+    const paused = entry({ id: 'mem_paused', status: 'active', injectionPaused: { reason: 'never_used', since: now } });
+    const normal = entry({ id: 'mem_normal', status: 'active' });
+    const rows = buildMemoryEntryRows({
+      entries: [paused, normal],
+      selectedEntryId: null,
+      searchQuery: '',
+      statusFilter: 'all',
+      kindFilter: 'all',
+      sourceFilter: 'all',
+      now,
+    });
+    expect(rows.find((row) => row.id === 'mem_paused')?.pausedLabel).toBe(zh.settings.memory.entries.injectionPaused.badge);
+    expect(rows.find((row) => row.id === 'mem_normal')?.pausedLabel).toBeUndefined();
+  });
+
   it('directive candidates stay out of the batch-selectable set', () => {
     const normal = entry({ id: 'mem_candidate_user', status: 'candidate', kind: 'user' });
     const directive = entry({ id: 'mem_candidate_directive', status: 'candidate', kind: 'directive' });

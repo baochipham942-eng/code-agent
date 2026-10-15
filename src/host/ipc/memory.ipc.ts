@@ -2,6 +2,7 @@
 // Memory IPC Handlers - memory:* 通道
 // ============================================================================
 
+import { memoryInjectionPauses, resumeMemoryInjection } from '../memory/memoryUsageEviction';
 import type { IpcMain } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { getSessionManager, getDatabase } from '../services';
@@ -63,6 +64,7 @@ import type {
   MemoryPackRequest,
   ProjectMemoryDraftRequest,
   ProjectMemoryDraftResult,
+  MemoryEntryListResult,
 } from '../../shared/contract/memory';
 import { respondToDirectiveMemoryConfirmation } from '../memory/directiveMemoryConfirmation';
 
@@ -527,9 +529,30 @@ async function handleMemoryAudit(payload: MemoryAuditRequest): Promise<{
   };
 }
 
+/**
+ * 面板要看得到「为什么这条不再自动带上」：只给 active 条目标注（其余本来就不注入）。
+ * 标注失败只 warn，不能连累列表本身（否则会退回不带数据库条目的列表）。
+ */
+function annotateInjectionPauses(result: MemoryEntryListResult, db: ReturnType<typeof getDatabase>): void {
+  try {
+    const pauses = memoryInjectionPauses(db);
+    for (const entry of result.entries) {
+      const pause = entry.status === 'active' ? pauses.get(entry.id) : undefined;
+      if (pause) entry.injectionPaused = pause;
+    }
+  } catch (error) {
+    logger.warn('Memory injection pause annotation skipped', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 async function handleListMemoryEntries(): Promise<Awaited<ReturnType<typeof listUnifiedMemoryEntries>>> {
   try {
-    return await listUnifiedMemoryEntries(getDatabase());
+    const db = getDatabase();
+    const result = await listUnifiedMemoryEntries(db);
+    annotateInjectionPauses(result, db);
+    return result;
   } catch (error) {
     logger.warn('Memory entry DB mirror read skipped', {
       error: error instanceof Error ? error.message : String(error),
@@ -545,6 +568,11 @@ async function handleRebuildMemoryMirror(): Promise<MemoryMirrorRebuildResult> {
 async function handleMemoryEntryUpdate(payload: MemoryEntryUpdateRequest): Promise<Awaited<ReturnType<typeof updateMemoryEntry>>> {
   if (!payload?.entryId) throw new Error('memory entry update requires entryId');
   return updateMemoryEntry(getDatabase(), payload);
+}
+
+async function handleMemoryEntryResumeInjection(payload: { entryId?: string }): Promise<{ resumed: boolean }> {
+  if (!payload?.entryId) throw new Error('memory entry resume requires entryId');
+  return { resumed: resumeMemoryInjection(getDatabase(), payload.entryId) };
 }
 
 async function handleMemoryEntryDelete(payload: MemoryEntryDeleteRequest): Promise<Awaited<ReturnType<typeof deleteMemoryEntry>>> {
@@ -851,6 +879,7 @@ const memoryRoutes = defineDomainRoutes<MemoryDomainRequest, void>(
     memoryRebuildMirror: () => handleRebuildMemoryMirror(),
     memoryEntryUpdate: (_ctx, payload) => handleMemoryEntryUpdate(payload as MemoryEntryUpdateRequest),
     memoryEntryDelete: (_ctx, payload) => handleMemoryEntryDelete(payload as MemoryEntryDeleteRequest),
+    memoryEntryResumeInjection: (_ctx, payload) => handleMemoryEntryResumeInjection(payload as { entryId?: string }),
     memoryEntryBatchReview: (_ctx, payload) => handleMemoryEntryBatchReview(payload as MemoryEntryBatchReviewRequest),
     memoryPack: (_ctx, payload) => handleMemoryPack(payload as MemoryPackRequest),
     memoryExportV2: () => handleMemoryExportV2(),
@@ -936,6 +965,9 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
           break;
         case 'memoryEntryUpdate':
           data = await handleMemoryEntryUpdate(request as unknown as MemoryEntryUpdateRequest);
+          break;
+        case 'memoryEntryResumeInjection':
+          data = await handleMemoryEntryResumeInjection(request as { entryId?: string });
           break;
         case 'memoryEntryDelete':
           data = await handleMemoryEntryDelete(request as unknown as MemoryEntryDeleteRequest);

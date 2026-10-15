@@ -71,6 +71,7 @@ function readLiveSlot(state: Pick<ComposerState, keyof ComposerSlotSnapshot>): C
     pendingCommand: state.pendingCommand,
     pendingPinItemIds: state.pendingPinItemIds,
     pendingActiveAgentId: state.pendingActiveAgentId,
+    draftMemoryOff: state.draftMemoryOff,
   });
 }
 
@@ -167,6 +168,8 @@ interface ComposerState extends ComposerSlotSnapshot {
   setSelectedTeamRecipeId: (id: string | null) => void;
   setStandbyExcludedMemberKeys: (keys: string[]) => void;
   setPendingCommand: (command: PendingCommandSelection | null) => void;
+  /** 新任务级「不用记忆」意图开关（只在草稿/空间槽有意义，见 ComposerSlotSnapshot）。 */
+  setDraftMemoryOff: (off: boolean) => void;
   /** null = 消费/清除；带文本时分配新 nonce。 */
   setPendingComposerPrefill: (prefill: { text: string } | null) => void;
   resetForSuccessfulSend: (expectedRevision?: number) => void;
@@ -416,6 +419,8 @@ export const useComposerStore = create<ComposerState>((set, get) => ({
     selectionRevision: state.selectionRevision + 1,
     pendingCommand: command,
   })),
+
+  setDraftMemoryOff: (off) => set({ draftMemoryOff: off }),
 
   setPendingComposerPrefill: (prefill) => set({
     pendingComposerPrefill: prefill ? { text: prefill.text, nonce: nextPrefillNonce() } : null,

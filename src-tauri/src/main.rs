@@ -30,6 +30,7 @@ mod native_app_icon;
 mod native_desktop;
 mod pip;
 mod quit_guard;
+mod resident_host;
 mod traffic_lights;
 
 use appshots::{
@@ -2220,8 +2221,27 @@ fn renderer_navigation_failure_message(error: &str) -> String {
 /// webServer 已死则先重新拉起。保证用户双击图标永远能得到一个窗口。
 fn recreate_main_window(app: &tauri::AppHandle) -> Result<(), String> {
     if !is_server_running() {
-        let child = start_web_server(app)?;
-        app.state::<AppState>().store_child(child);
+        // 与 setup 同一附着判定：is_server_running 偶发失败但守护活着且健康时
+        // 附着而不是 spawn——后者会经 clear_stale_web_server_port kill -9 活守护。
+        let attach_daemon = if !cfg!(debug_assertions) {
+            resident_host::decide_startup_io(real_data_dir().as_deref(), &health_url())
+        } else {
+            None
+        };
+        if let Some(record) = attach_daemon {
+            let diagnostics = new_boot_diagnostics(app);
+            write_shell_event(
+                app,
+                &diagnostics,
+                "info",
+                "desktop-shell-attached-daemon",
+                "attached to resident daemon webServer (window recreate)",
+                Some(serde_json::json!({ "daemonPid": record.pid })),
+            );
+        } else {
+            let child = start_web_server(app)?;
+            app.state::<AppState>().store_child(child);
+        }
     }
 
     let url = boot_server_url()
@@ -2357,15 +2377,16 @@ fn spawn_quit_guard_flow(app: AppHandle, coordinator: Arc<quit_guard::QuitCoordi
     });
 }
 
-/// 原生退出确认框（非阻塞 show，回调在插件自己的线程上跑）。
-/// 默认按钮=取消：OkCancelCustom 第一个参数在 macOS(NSAlert) / Windows(TaskDialog)
+/// 原生退出确认框（非阻塞 show_with_result，回调在插件自己的线程上跑）。
+/// 三个按钮（N-RESIDENT-HOST-SHELL-RUST）：「取消 / 后台继续 / 停止并退出」。
+/// 默认按钮=取消：YesNoCancelCustom 第一个参数在 macOS(NSAlert) / Windows(TaskDialog)
 /// 都是默认（回车）按钮，安全动作「取消」放第一位，见 quit_guard::dialog_answer_action。
 fn show_quit_confirm_dialog(
     app: &AppHandle,
     coordinator: &Arc<quit_guard::QuitCoordinator>,
     message: &str,
 ) {
-    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult};
 
     let app = app.clone();
     let coordinator = coordinator.clone();
@@ -2373,21 +2394,32 @@ fn show_quit_confirm_dialog(
         .message(message)
         .title(quit_guard::QUIT_DIALOG_TITLE)
         .kind(MessageDialogKind::Warning)
-        .buttons(MessageDialogButtons::OkCancelCustom(
+        .buttons(MessageDialogButtons::YesNoCancelCustom(
             quit_guard::QUIT_DIALOG_CANCEL_BUTTON.to_string(),
+            quit_guard::QUIT_DIALOG_BACKGROUND_BUTTON.to_string(),
             quit_guard::QUIT_DIALOG_QUIT_BUTTON.to_string(),
         ))
-        .show(move |answer_is_first_button| {
-            match quit_guard::dialog_answer_action(answer_is_first_button) {
-                quit_guard::QuitAnswerAction::Quit => {
-                    coordinator.allow_exit();
-                    coordinator.finish();
-                    app.exit(0);
+        .show_with_result(move |result| {
+            // Custom(label) 之外（含 Esc/系统取消给的 Cancel）一律 None → 不退出
+            let custom_label = match result {
+                MessageDialogResult::Custom(label) => Some(label),
+                _ => None,
+            };
+            let plan = quit_guard::quit_exit_plan(quit_guard::dialog_answer_action(
+                custom_label.as_deref(),
+            ));
+            if plan.exit {
+                // 后台继续：不清理（ExitRequested/Exit 按 plan 跳过 cleanup_server），
+                // 常驻宿主接管运行中的任务；停止并退出：照旧清理。
+                if !plan.cleanup_server {
+                    coordinator.set_background_continue();
                 }
-                quit_guard::QuitAnswerAction::StayRunning => {
-                    // 取消：什么都不清理（webServer 继续跑），app 继续运行
-                    coordinator.finish();
-                }
+                coordinator.allow_exit();
+                coordinator.finish();
+                app.exit(0);
+            } else {
+                // 取消：什么都不清理（webServer 继续跑），app 继续运行
+                coordinator.finish();
             }
         });
 }
@@ -4208,6 +4240,17 @@ fn main() {
                 );
             }
 
+            // ADR-083 常驻宿主（N-RESIDENT-HOST-SHELL-RUST）：打包态在 spawn **之前**
+            // 判「附着还是新拉」。上一代「后台继续」留下的活守护（pid 记录 + 身份
+            // 吻合 + /health 200）→ Attach；判定必须先于 start_web_server_recording
+            // （也就先于其中的 clear_stale_web_server_port——那条路径对端口占用者
+            // 无差别 kill -9，活守护绝不能被它强杀）。dev 态不判，保持 dev 原行为。
+            let attach_daemon = if !cfg!(debug_assertions) {
+                resident_host::decide_startup_io(real_data_dir().as_deref(), &health_url())
+            } else {
+                None
+            };
+
             if cfg!(debug_assertions) && is_server_running() {
                 // Server already running (e.g. started by Tauri beforeDevCommand in dev mode).
                 // Release builds must not trust an arbitrary healthy localhost:8180 process:
@@ -4215,6 +4258,24 @@ fn main() {
                 println!(
                     "Web server already running on {}, skipping spawn",
                     server_url()
+                );
+                boot_diagnostics.health_matched_boot_token = None;
+                record_boot_stage(
+                    &app.handle(),
+                    &mut boot_diagnostics,
+                    DesktopShellBootStage::HealthReady,
+                );
+            } else if let Some(record) = attach_daemon {
+                // Attach：不 spawn、不 store_child（后续 cleanup_server 无 child 可清，
+                // 停止并退出对附着守护的处置归 N-RESIDENT-HOST-SHELL-REALRUN）。
+                // 与上方 dev 复用路径汇合：boot token 不适用，窗口照常导航。
+                write_shell_event(
+                    &app.handle(),
+                    &boot_diagnostics,
+                    "info",
+                    "desktop-shell-attached-daemon",
+                    "attached to resident daemon webServer, skipping spawn",
+                    Some(serde_json::json!({ "daemonPid": record.pid })),
                 );
                 boot_diagnostics.health_matched_boot_token = None;
                 record_boot_stage(
@@ -4366,7 +4427,11 @@ fn main() {
             let restart_requested = code == Some(tauri::RESTART_EXIT_CODE);
             if restart_requested || coordinator.exit_allowed() || coordinator.current_skip().is_some()
             {
-                cleanup_server(app_handle);
+                // 「后台继续」（N-RESIDENT-HOST-SHELL-RUST）：壳退出但常驻宿主留着跑，
+                // 跳过 cleanup_server。豁免（关机/更新重启/信号）不置此标志，照旧清理。
+                if !coordinator.background_continue() {
+                    cleanup_server(app_handle);
+                }
             } else {
                 api.prevent_exit();
                 // 弹框去重：已开着 → 本次请求并入那个弹框，不重复弹也不直接退出
@@ -4379,7 +4444,14 @@ fn main() {
             }
         }
         RunEvent::Exit => {
-            cleanup_server(app_handle);
+            // 与 ExitRequested 同一判据：后台继续不清理；其余退出照旧收尸。
+            // （AppState::cleanup 是 take 语义，两次调用天然幂等。）
+            if !app_handle
+                .state::<Arc<quit_guard::QuitCoordinator>>()
+                .background_continue()
+            {
+                cleanup_server(app_handle);
+            }
         }
         // quit_app 的唯一消费点：app 菜单（⌘Q/菜单退出）与托盘退出都汇到这里，
         // 统一转 exit(0) → ExitRequested 的受守卫路径。

@@ -1,6 +1,7 @@
 //! 退出守卫（N-QUIT-RUNNING-NATIVE）：Tauri 壳在退出前问一次 webServer 的
 //! `GET /api/quit-guard`（N-QUIT-GUARD-ENDPOINT 落的鉴权路由），有运行中任务
-//! 或已挂定时任务时弹原生确认框，默认按钮是「取消」。
+//! 或已挂定时任务时弹原生确认框。三个按钮「取消 / 后台继续 / 停止并退出」
+//! （N-RESIDENT-HOST-SHELL-RUST），默认按钮是「取消」。
 //!
 //! 纯逻辑（解析/决策/文案/协调器）不依赖 Tauri 类型，可单测；只有
 //! `install_shutdown_observer` 一处碰 objc2（macOS 关机通知）。
@@ -105,7 +106,9 @@ pub fn decide_quit(outcome: GuardOutcome, skip: Option<QuitSkip>) -> QuitDecisio
 
 pub const QUIT_DIALOG_TITLE: &str = "确定要退出 Agent Neo 吗？";
 pub const QUIT_DIALOG_CANCEL_BUTTON: &str = "取消";
-pub const QUIT_DIALOG_QUIT_BUTTON: &str = "退出";
+/// N-RESIDENT-HOST-SHELL-RUST：第三个出口「后台继续」——壳退出，常驻宿主继续跑。
+pub const QUIT_DIALOG_BACKGROUND_BUTTON: &str = "后台继续";
+pub const QUIT_DIALOG_QUIT_BUTTON: &str = "停止并退出";
 
 /// 四种弹框文案，互不相同（有单测钉死）。
 pub fn quit_prompt_text(prompt: QuitPrompt) -> &'static str {
@@ -117,21 +120,53 @@ pub fn quit_prompt_text(prompt: QuitPrompt) -> &'static str {
     }
 }
 
-/// 对话框应答 → 动作。`answer_is_first_button` 是 tauri-plugin-dialog `show`
-/// 回调的 bool：true 表示按下的是第一个自定义按钮。我们把安全动作「取消」
-/// 放在第一个（也是 macOS NSAlert / Windows TaskDialog 的默认回车键）按钮上，
-/// 所以 true → 不退出。
+/// 对话框应答 → 动作。`custom_label` 是 tauri-plugin-dialog `show_with_result`
+/// 回调里从 `MessageDialogResult::Custom(label)` 提取的按钮文案；对话框被关闭
+/// （Esc/系统取消，插件枚举的 `Cancel` 等非 Custom 变体）与一切未知标签 → None。
+/// 我们把安全动作「取消」放在第一个（也是 macOS NSAlert / Windows TaskDialog
+/// 的默认回车键）按钮上；未知标签一律按「取消」处理（fail-safe 不退出）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuitAnswerAction {
     StayRunning,
+    /// 后台继续（N-RESIDENT-HOST-SHELL-RUST）：壳退出，常驻宿主继续跑。
+    BackgroundContinue,
     Quit,
 }
 
-pub fn dialog_answer_action(answer_is_first_button: bool) -> QuitAnswerAction {
-    if answer_is_first_button {
-        QuitAnswerAction::StayRunning
-    } else {
-        QuitAnswerAction::Quit
+pub fn dialog_answer_action(custom_label: Option<&str>) -> QuitAnswerAction {
+    match custom_label {
+        Some(QUIT_DIALOG_BACKGROUND_BUTTON) => QuitAnswerAction::BackgroundContinue,
+        Some(QUIT_DIALOG_QUIT_BUTTON) => QuitAnswerAction::Quit,
+        // 「取消」、关闭对话框（None）与一切未知标签 → 不退出
+        Some(QUIT_DIALOG_CANCEL_BUTTON) | None | Some(_) => QuitAnswerAction::StayRunning,
+    }
+}
+
+/// 三种应答各自的收尾计划：要不要清理 webServer、要不要退壳。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QuitExitPlan {
+    pub cleanup_server: bool,
+    pub exit: bool,
+}
+
+/// 纯决策表（N-RESIDENT-HOST-SHELL-RUST）：
+/// - 取消：不清理、不退出，app 原样继续跑；
+/// - 后台继续：**不清理**、只退壳——常驻宿主（ADR-083）接管运行中的任务；
+/// - 停止并退出：清理（SIGTERM→SIGKILL）+ 退出，与三键之前的行为一致。
+pub fn quit_exit_plan(action: QuitAnswerAction) -> QuitExitPlan {
+    match action {
+        QuitAnswerAction::StayRunning => QuitExitPlan {
+            cleanup_server: false,
+            exit: false,
+        },
+        QuitAnswerAction::BackgroundContinue => QuitExitPlan {
+            cleanup_server: false,
+            exit: true,
+        },
+        QuitAnswerAction::Quit => QuitExitPlan {
+            cleanup_server: true,
+            exit: true,
+        },
     }
 }
 
@@ -149,6 +184,9 @@ pub struct QuitCoordinator {
     system_shutdown: AtomicBool,
     update_restart_confirmed: AtomicBool,
     signal_exit: AtomicBool,
+    /// 「后台继续」置位（N-RESIDENT-HOST-SHELL-RUST）：随后重入的
+    /// ExitRequested 与 RunEvent::Exit 都跳过 cleanup_server，常驻宿主留着跑。
+    background_continue: AtomicBool,
 }
 
 impl QuitCoordinator {
@@ -188,6 +226,16 @@ impl QuitCoordinator {
     /// SIGINT/SIGTERM：install_signal_handler 在 handle.exit(0) 之前置位。
     pub fn set_signal_exit(&self) {
         self.signal_exit.store(true, Ordering::Release);
+    }
+
+    /// 「后台继续」应答置位：非消费语义（ExitRequested 与随后的 RunEvent::Exit
+    /// 都要读到它，各跳过一次 cleanup_server；进程马上就退，不担心粘住）。
+    pub fn set_background_continue(&self) {
+        self.background_continue.store(true, Ordering::Release);
+    }
+
+    pub fn background_continue(&self) -> bool {
+        self.background_continue.load(Ordering::Acquire)
     }
 
     /// 豁免查询（优先级无关行为，只影响上报哪个变体）：最不可逆的先报。
@@ -731,13 +779,102 @@ mod tests {
         assert!(coordinator.exit_allowed());
     }
 
-    // ── 对话框应答映射表 ──────────────────────────────────────────────────────
+    // ── 对话框应答映射表（N-RESIDENT-HOST-SHELL-RUST 三键版） ────────────────
 
     #[test]
-    fn dialog_answer_action_maps_default_button_to_stay_running() {
-        // 第一个按钮（= 默认回车键 =「取消」）→ 不退出
-        assert_eq!(dialog_answer_action(true), QuitAnswerAction::StayRunning);
-        // 第二个按钮（「退出」）→ 退出
-        assert_eq!(dialog_answer_action(false), QuitAnswerAction::Quit);
+    fn dialog_answer_action_maps_all_three_labels() {
+        let cases: &[(Option<&str>, QuitAnswerAction)] = &[
+            // 第一个按钮（= 默认回车键 =「取消」）→ 不退出
+            (Some(QUIT_DIALOG_CANCEL_BUTTON), QuitAnswerAction::StayRunning),
+            (Some(QUIT_DIALOG_BACKGROUND_BUTTON), QuitAnswerAction::BackgroundContinue),
+            (Some(QUIT_DIALOG_QUIT_BUTTON), QuitAnswerAction::Quit),
+            // 关闭对话框（Esc/系统取消 → 非 Custom 变体，main.rs 转 None）→ 不退出
+            (None, QuitAnswerAction::StayRunning),
+            // 未知标签一律按「取消」fail-safe
+            (Some(""), QuitAnswerAction::StayRunning),
+            (Some("退出"), QuitAnswerAction::StayRunning),
+            (Some("whatever"), QuitAnswerAction::StayRunning),
+        ];
+        for (label, expected) in cases {
+            assert_eq!(
+                dialog_answer_action(*label),
+                *expected,
+                "标签 {label:?} 应映射到 {expected:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn quit_dialog_labels_are_pinned() {
+        // 台账验收的三键原文（10-14 负责人拍板），互相必须不同
+        assert_eq!(QUIT_DIALOG_CANCEL_BUTTON, "取消");
+        assert_eq!(QUIT_DIALOG_BACKGROUND_BUTTON, "后台继续");
+        assert_eq!(QUIT_DIALOG_QUIT_BUTTON, "停止并退出");
+    }
+
+    // ── 退出收尾计划（quit_exit_plan） ────────────────────────────────────────
+
+    #[test]
+    fn quit_exit_plan_table_for_all_three_actions() {
+        let cases: &[(QuitAnswerAction, QuitExitPlan)] = &[
+            (
+                QuitAnswerAction::StayRunning,
+                QuitExitPlan { cleanup_server: false, exit: false },
+            ),
+            (
+                QuitAnswerAction::BackgroundContinue,
+                QuitExitPlan { cleanup_server: false, exit: true },
+            ),
+            (
+                QuitAnswerAction::Quit,
+                QuitExitPlan { cleanup_server: true, exit: true },
+            ),
+        ];
+        for (action, expected) in cases {
+            assert_eq!(
+                quit_exit_plan(*action),
+                *expected,
+                "动作 {action:?} 的收尾计划应是 {expected:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn skip_paths_still_exit_now_with_cleanup() {
+        // 豁免（关机/更新重启/信号）不弹框：decide_quit → ExitNow，ExitRequested
+        // 放行分支里 background_continue 未置位 → 照旧 cleanup_server。
+        // 这里钉住纯侧的两件事：豁免永远 ExitNow；豁免路径等效的收尾计划
+        // （= Quit 的计划）是清理 + 退出。
+        for skip in [QuitSkip::SystemShutdown, QuitSkip::UpdateRestart, QuitSkip::SignalExit] {
+            for outcome in [counts(1, 1), GuardOutcome::Unknown] {
+                assert_eq!(
+                    decide_quit(outcome, Some(skip)),
+                    QuitDecision::ExitNow,
+                    "豁免 {skip:?} 遇 {outcome:?} 必须直接退出"
+                );
+            }
+        }
+        assert_eq!(
+            quit_exit_plan(QuitAnswerAction::Quit),
+            QuitExitPlan { cleanup_server: true, exit: true }
+        );
+        // 协调器默认不置「后台继续」：豁免路径的 cleanup 不会被跳过
+        let coordinator = QuitCoordinator::new();
+        assert!(!coordinator.background_continue());
+    }
+
+    // ── 「后台继续」协调器标志 ────────────────────────────────────────────────
+
+    #[test]
+    fn coordinator_background_continue_flag_roundtrip() {
+        let coordinator = QuitCoordinator::new();
+        assert!(!coordinator.background_continue());
+        coordinator.set_background_continue();
+        assert!(coordinator.background_continue(), "置位后应读到 true");
+        // 非消费语义：ExitRequested 读过之后 RunEvent::Exit 仍要读到
+        assert!(coordinator.background_continue());
+        // 独立于豁免标志与一次性放行
+        assert_eq!(coordinator.current_skip(), None);
+        assert!(!coordinator.exit_allowed());
     }
 }

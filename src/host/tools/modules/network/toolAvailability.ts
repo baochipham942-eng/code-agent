@@ -60,6 +60,50 @@ const TOOL_KEY_CHECKS: Record<string, () => boolean> = {
   video_generate: videoGenerateCheck,
 };
 
+/**
+ * 设置页上用户能点到的原文。host 不引 renderer，字面量与这些词条保持一致，
+ * 单测用同一批 i18n 导出拼路径核对：
+ *   sidebarZh/En.sidebar.menuSettings
+ *   zhSettingsCore/enSettingsCore.tabs.model
+ *   zhSettingsModels/enSettingsModels.model.providers.zhipu.name（两种语言都是「智谱 AI」）
+ *   model.list.addKey
+ * gui_agent 只认 env、设置页没有入口，不进这张表。
+ */
+const ZHIPU_SETTINGS_PATH_EN = 'Settings -> General model -> 智谱 AI (Add Key)';
+const ZHIPU_SETTINGS_PATH_ZH = '设置 -> 通用模型 -> 智谱 AI（添加 Key）';
+
+interface ToolUnlockHint {
+  toolName: string;
+  capabilityEn: string;
+  capabilityZh: string;
+  settingsPathEn: string;
+  settingsPathZh: string;
+}
+
+const TOOL_UNLOCK_HINTS: readonly ToolUnlockHint[] = [
+  {
+    toolName: 'text_to_speech',
+    capabilityEn: 'speech synthesis',
+    capabilityZh: '语音合成',
+    settingsPathEn: ZHIPU_SETTINGS_PATH_EN,
+    settingsPathZh: ZHIPU_SETTINGS_PATH_ZH,
+  },
+  {
+    toolName: 'video_generate',
+    capabilityEn: 'video generation',
+    capabilityZh: '视频生成',
+    settingsPathEn: ZHIPU_SETTINGS_PATH_EN,
+    settingsPathZh: ZHIPU_SETTINGS_PATH_ZH,
+  },
+  {
+    toolName: 'visual_edit',
+    capabilityEn: 'click-to-edit in preview',
+    capabilityZh: '预览里点选编辑',
+    settingsPathEn: ZHIPU_SETTINGS_PATH_EN,
+    settingsPathZh: ZHIPU_SETTINGS_PATH_ZH,
+  },
+];
+
 const warnedTools = new Set<string>();
 
 /**
@@ -83,4 +127,36 @@ export function isToolAvailable(name: string): boolean {
     }
     return false;
   }
+}
+
+function uniqueInOrder(values: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const value of values) {
+    if (seen.has(value)) continue;
+    seen.add(value);
+    unique.push(value);
+  }
+  return unique;
+}
+
+/**
+ * 延迟工具摘要末尾的一行：列出尚未配 key、且本轮没有被拒绝的能力（能力名，不是工具名），
+ * 并给出设置页路径。明确写「不要调用」。没有可提示的能力时返回空串。
+ */
+export function unavailableUnlockHintLine(deniedToolNames: readonly string[] = []): string {
+  const denied = new Set(deniedToolNames.map((name) => name.trim().toLowerCase()));
+  const locked = TOOL_UNLOCK_HINTS.filter((hint) =>
+    !denied.has(hint.toolName) && !isToolAvailable(hint.toolName));
+  if (locked.length === 0) return '';
+  const capabilityEn = locked.map((hint) => hint.capabilityEn).join(', ');
+  const capabilityZh = locked.map((hint) => hint.capabilityZh).join('、');
+  const settingsPathEn = uniqueInOrder(locked.map((hint) => hint.settingsPathEn)).join('; ');
+  const settingsPathZh = uniqueInOrder(locked.map((hint) => hint.settingsPathZh)).join('；');
+  return [
+    `The following capabilities are not enabled (do not call them): ${capabilityEn}.`,
+    `Turn on: ${settingsPathEn}.`,
+    `以下能力未开启（不要调用）：${capabilityZh}。`,
+    `开启：${settingsPathZh}。`,
+  ].join(' ');
 }

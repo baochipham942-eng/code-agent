@@ -135,4 +135,34 @@ describe('native office connector lazy status', () => {
     });
     expect(osascriptMocks.runAppleScript).toHaveBeenCalledTimes(1);
   });
+
+  it('flags ready-but-empty listings on the status itself (repairPermission discards the execute summary)', async () => {
+    osascriptMocks.runAppleScript.mockClear();
+
+    if (process.platform !== 'darwin') {
+      await expect(remindersConnector.execute('repair_permissions', {})).rejects.toThrow('仅在 macOS 可用');
+      return;
+    }
+
+    // 授权通过但列表为空：osascript 正常返回空输出（不是抛错）
+    osascriptMocks.runAppleScript.mockResolvedValue('');
+    await remindersConnector.execute('repair_permissions', {});
+
+    // repairPermission 的 IPC 回执是 handleListStatuses() → getStatus()，「没有找到可访问…」
+    // 只在被丢弃的 execute summary 里；空列表信号必须挂在状态上，否则渲染层永远看不到
+    expect(await remindersConnector.getStatus()).toMatchObject({
+      connected: true,
+      readiness: 'ready',
+      noAccessibleItems: true,
+    });
+
+    // 非空列表不许误报
+    osascriptMocks.runAppleScript.mockResolvedValue('Work\nPersonal');
+    await calendarConnector.execute('repair_permissions', {});
+    expect(await calendarConnector.getStatus()).toMatchObject({
+      connected: true,
+      readiness: 'ready',
+      noAccessibleItems: false,
+    });
+  });
 });

@@ -1,6 +1,11 @@
 /** lark-mcp 上游已近一年未更新，pin 住版本；升级需人工决策（工具名清单只对该版本成立） */
 export const LARK_MCP_PINNED_VERSION = '0.5.1';
 
+export const FEISHU_CONTACT_CACHE_TTL_MS = 60 * 60 * 1000;
+export const FEISHU_CONTACT_LOOKUP_TIMEOUT_MS = 1500;
+/** 查不到姓名（多为没开通讯录权限）的负缓存：开通权限后最多等这么久就能显示真名。 */
+export const FEISHU_CONTACT_MISS_TTL_MS = 10 * 60 * 1000;
+
 export const FEISHU_DEFAULT_DOMAIN = 'https://open.feishu.cn';
 
 /**

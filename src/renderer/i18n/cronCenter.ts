@@ -11,6 +11,16 @@ import type { EventScheduleValidationReason } from '@shared/cronEventValidation'
 
 export const cronCenterZh = {
   cronCenter: {
+    groupListenCheck: {
+      title: '检查群消息是否连通',
+      start: '发条测试消息',
+      instructions: '点击“发条测试消息”后，请在这个任务监听的群里发任意一条新消息，不要 @ 机器人。Neo 会等待 {minutes} 分钟。消息也会按任务设置触发执行。',
+      waiting: '正在等待这个群的新消息…',
+      connected: '已连通',
+      timeout: '还没收到测试消息。请确认已在目标群发消息，机器人已加入该群且飞书连接正常。',
+      permissionHint: '应用可能缺少「获取群组中所有消息」权限（im:message.group_msg）。这是敏感权限，需要租户管理员批准。请前往：飞书开放平台 → 应用 → 权限管理 → 搜索该权限 → 申请并发布版本。完成后再试一次。',
+      error: '暂时无法检查，请重试。',
+    },
     title: '自动化',
     subtitle: '按计划执行，结果回来给你过目',
     tabJobs: '定时任务',
@@ -278,6 +288,16 @@ export const cronCenterZh = {
 
 export const cronCenterEn: typeof cronCenterZh = {
   cronCenter: {
+    groupListenCheck: {
+      title: 'Check group message reception',
+      start: 'Send a test message',
+      instructions: 'Click “Send a test message”, then post any new message in the group this task listens to, without @mentioning the bot. Neo will wait {minutes} minutes. The message will also trigger the task as configured.',
+      waiting: 'Waiting for a new message from this group…',
+      connected: 'Connected',
+      timeout: 'No test message received yet. Make sure you posted in the target group, the bot has joined it, and Feishu is connected.',
+      permissionHint: 'The app may lack “Read all messages in groups” (im:message.group_msg). This is a sensitive permission that requires tenant administrator approval. Go to: Feishu Open Platform → App → Permission Management → Search for this permission → Request it and publish a version. Then try again.',
+      error: 'Unable to check right now. Please try again.',
+    },
     title: 'Automations',
     subtitle: 'Runs on schedule, results come back for review',
     tabJobs: 'Scheduled jobs',

@@ -51,7 +51,8 @@ export class UserConfigSource implements GuardSource {
         verdict,
         confidence: 0.9,
         source: 'user-config',
-        reason: `user-config: ${result.matchedRule?.name ?? ruleId}${result.reason ? ` — ${result.reason}` : ''}`,
+        // 只报命中的规则：PolicyEngine 的通用 reason（如 "Denied by default mode"）会误导用户以为是模式拦的。
+        reason: `user-config: ${result.matchedRule?.name ?? ruleId}`,
       };
     } catch (error) {
       logger.debug('UserConfigSource evaluation failed', { error: error instanceof Error ? error.message : error });

@@ -1,4 +1,5 @@
 import { IPC_DOMAINS } from '@shared/ipc';
+import type { CronGroupListenCheck } from '@shared/contract/cron';
 import type {
   CronJobDefinition,
   CronJobExecution,
@@ -23,6 +24,13 @@ async function invokeCron<T>(action: string, payload?: unknown): Promise<T> {
 }
 
 export const cronClient = {
+  getGroupListenCheck(jobId: string) {
+    return invokeCron<CronGroupListenCheck | null>('getGroupListenCheck', { jobId });
+  },
+
+  startGroupListenCheck(jobId: string) {
+    return invokeCron<CronGroupListenCheck | null>('startGroupListenCheck', { jobId });
+  },
   listJobs(filter?: CronJobFilter) {
     return invokeCron<CronJobDefinition[]>('listJobs', { filter });
   },

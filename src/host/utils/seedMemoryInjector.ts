@@ -16,7 +16,7 @@ import {
   type KnowledgeInboxDecisionRecord,
 } from '../memory/knowledgeInboxDecision';
 import { packMemoryEntries } from '../memory/memoryEntryRuntime';
-import { staleUsedMemoryEntryIds } from '../memory/memoryUsageEviction';
+import { memoryInjectionPauses } from '../memory/memoryUsageEviction';
 import type { MemoryPackResult } from '../../shared/contract/memory';
 import { estimateTokens } from '../context/tokenEstimator';
 import { withMemoryBackgroundGuidance } from '../memory/memoryContextGuidance';
@@ -176,15 +176,16 @@ export async function buildPackedSeedMemory(options: {
     const db = getDatabase();
     const memoryDb = db?.isReady ? db : undefined;
 
-    // 用量淘汰（N-MEM-CITEBACK-RANK-EVICT）：用过但 >30 天没再用过的记忆不再自动注入。
-    // 与调用方传入的 excludeEntryIds 取并集；只作用于 packed seed 注入这一条路。
-    const staleUsedEntryIds = staleUsedMemoryEntryIds(memoryDb);
+    // 用量淘汰（N-MEM-CITEBACK-RANK-EVICT + N-MEM-EVICT-NEVER-READ）：用过但 >30 天没再用、
+    // 或从没用过且过了宽限期的记忆不再自动注入。与调用方传入的 excludeEntryIds 取并集；
+    // 只作用于 packed seed 注入这一条路。
+    const pausedEntryIds = memoryInjectionPauses(memoryDb).keys();
 
     const packed = await packMemoryEntries({
       query: options.query,
       projectPath: options.projectPath,
       sessionId: options.sessionId,
-      excludeEntryIds: [...new Set([...(options.excludeEntryIds || []), ...staleUsedEntryIds])],
+      excludeEntryIds: [...new Set([...(options.excludeEntryIds || []), ...pausedEntryIds])],
       statuses: ['active'],
       kinds: [...USER_MEMORY_KINDS],
       maxItems: MAX_SEED_MEMORIES,

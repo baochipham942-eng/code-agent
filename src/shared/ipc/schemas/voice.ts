@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { VOICE_USER_PROFILE } from '../../constants/voice';
 import type { VoiceUserTextInjectionResult } from '../../contract/voice';
 import { IPC_DOMAINS } from '../domains';
 import { IPCResponseSchema, channelSchema } from './core';
@@ -72,7 +73,27 @@ const VoiceRecordingOverviewSchema = z.object({
   limits: z.object({ retentionDays: z.number(), maxBytes: z.number(), maxCalls: z.number() }),
 });
 
+const VoiceUserProfileSchema = z.object({
+  enabled: z.boolean(),
+  override: z.string().max(VOICE_USER_PROFILE.MAX_CHARS).nullable(),
+  text: z.string().max(VOICE_USER_PROFILE.MAX_CHARS),
+});
+
 export const VoiceSchemas = {
+  USER_PROFILE_GET: channelSchema({
+    channel: IPC_DOMAINS.VOICE,
+    payload: voiceprintAction('getUserProfile'),
+    response: IPCResponseSchema(VoiceUserProfileSchema),
+  }),
+  USER_PROFILE_SET: channelSchema({
+    channel: IPC_DOMAINS.VOICE,
+    payload: z.object({
+      action: z.literal('setUserProfile'),
+      payload: VoiceUserProfileSchema.omit({ text: true }).strict(),
+      requestId: z.string().optional(),
+    }),
+    response: IPCResponseSchema(VoiceUserProfileSchema),
+  }),
   RECORDING_OVERVIEW: channelSchema({
     channel: IPC_DOMAINS.VOICE,
     payload: z.object({ action: z.literal('recordingOverview'), requestId: z.string().optional() }),

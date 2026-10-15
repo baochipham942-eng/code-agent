@@ -129,6 +129,7 @@ async function handleListStatuses(): Promise<ConnectorStatusSummary[]> {
       detail: status.detail,
       error: status.error,
       checkedAt: status.checkedAt,
+      noAccessibleItems: status.noAccessibleItems,
       actions: status.actions,
       capabilities: status.capabilities,
     } satisfies ConnectorStatusSummary;

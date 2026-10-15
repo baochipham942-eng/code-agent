@@ -5,7 +5,7 @@
 // confirmRoleDraft 落库新角色后 enqueue 一次只读的首次醒来 run：
 //   - 工具面 = TOOLSCOPE 醒来白名单 ∩ permissionLevel=read（空 = 拒绝全部哨兵）
 //   - 提示词变体由已连接源决定（connector / mcp_template 且 runtime=connected）
-//   - 产出 = 自我介绍 + 最多 3 条可一键委托的建议（first_wake_suggestions 块）
+//   - 产出 = 2-3 句纯文本自我介绍 + 恰好 3 条可一键委托的建议（first_wake_suggestions 块）
 //   - 状态机落 roles/<roleId>/first-wake.json：pending → running → completed/skipped/failed
 //     （run 抛错也封口成 failed 终态，绝不把状态卡在 running/pending）
 //
@@ -41,6 +41,8 @@ const MAX_SUGGESTIONS = 3;
 const TITLE_MAX_CHARS = 80;
 const PROMPT_MAX_CHARS = 500;
 const INTRO_MAX_CHARS = 1200;
+/** 自我介绍预期 2-3 句；超出多半是模型把探查过程/汇报也写进来了，句级封顶兜底 */
+const INTRO_MAX_SENTENCES = 3;
 const FAILURE_REASON_MAX_CHARS = 200;
 
 /** 会话标题后缀。默认中文；界面语言为 en 时用英文，与设置里的 ui.language 对齐。 */
@@ -73,8 +75,51 @@ function stripSuggestionsBlock(text: string): string {
   return text.replace(/```first_wake_suggestions\s*[\s\S]*?```/gi, '').trim();
 }
 
+// ----------------------------------------------------------------------------
+// intro 清洗（提示词已要求纯文本自介；这里是防线：模型仍带 Markdown 标记或把
+// 探查过程/「已完成/未完成」汇报写进来时，卡片上不出现字面 ** 和过程叙述）
+// ----------------------------------------------------------------------------
+
+/** 整行噪声：Markdown 标题 / 列表项 / 整行加粗的伪标题（提示词禁止，模型仍写时整行丢） */
+const INTRO_NOISE_LINE_PATTERN = /^\s*(?:#{1,6}\s|[-*•]\s|\d+[.、)]\s|\*\*[^*]+\*\*\s*:?\s*$)/;
+/** 「已完成的工作：」式汇报标签：短、无句末标点、以冒号收尾 */
+const INTRO_LABEL_PATTERN = /^[^。！？!?]{1,40}[：:]\s*$/;
+/** 过程叙述句：轮数/工具上限、停止探查、done/not-done 汇报（zh 为主，en 只收探查汇报） */
+const INTRO_NARRATION_PATTERN = new RegExp(
+  '(?:工具|迭代|轮)[^。！？!?.]{0,8}(?:上限|耗尽|用完|限制|失败)'
+  + '|停止(?:探查|探索)'
+  + '|(?:已完成|未完成|没完成)的?(?:工作|任务|事项)'
+  + '|tool[-.a-z ]{0,16}(?:limit|budget|exhaust)'
+  + '|stopped (?:probing|exploring)',
+  'i',
+);
+
+/** 去行内强调/代码标记：**x** / __x__ / `x` → x（卡片按纯文本渲染，不留字面星号） */
+function stripIntroMarkers(text: string): string {
+  return text.replace(/\*\*|__|`/g, '');
+}
+
+/** 取前 N 句（。！？!? 收尾，含分隔符）；句子数不超 N 时原样返回 */
+function firstSentences(text: string, max: number): string {
+  const parts = text.split(/(?<=[。！？!?])/);
+  if (parts.length <= max) return text;
+  return parts.slice(0, max).join('').trim();
+}
+
 function extractIntro(finalOutput: string): string | undefined {
-  return boundedText(stripSuggestionsBlock(finalOutput), INTRO_MAX_CHARS);
+  const lines = stripSuggestionsBlock(finalOutput).split(/\r?\n/);
+  const kept: string[] = [];
+  for (const line of lines) {
+    const bare = stripIntroMarkers(line).trim();
+    if (INTRO_NOISE_LINE_PATTERN.test(line)) continue;
+    if (INTRO_LABEL_PATTERN.test(bare)) continue;
+    if (INTRO_NARRATION_PATTERN.test(bare)) continue;
+    if (bare) kept.push(bare);
+  }
+  // 整段全是噪声行时退回原文（不让卡片空 intro）
+  const body = (kept.length > 0 ? kept : lines.map((line) => stripIntroMarkers(line).trim()))
+    .join('\n');
+  return boundedText(firstSentences(body, INTRO_MAX_SENTENCES), INTRO_MAX_CHARS);
 }
 
 /** 第一行、无堆栈、截断。空消息不落字段。 */
@@ -156,7 +201,7 @@ function expectationLine(userExpectation: string): string[] {
   return userExpectation ? [`用户创建你时留下的期望：「${userExpectation}」`, ''] : [];
 }
 
-/** 有已连接源：看真实数据 → 自我介绍 + 最多 3 条可一键委托的建议。 */
+/** 有已连接源：快探查（≤3 次）→ 纯文本自介 + 恰好 3 条可一键委托的建议。 */
 const FIRST_WAKE_PROMPT_CONNECTED = (sourceNames: readonly string[], userExpectation: string): string => [
   '你刚被用户创建为一位持久化专家，这是你的第一次醒来。这不是用户发来的消息，用户现在不在场。',
   '',
@@ -165,30 +210,29 @@ const FIRST_WAKE_PROMPT_CONNECTED = (sourceNames: readonly string[], userExpecta
   ...sourceNames.map((name) => `- ${name}`),
   '',
   '你的任务：',
-  '1. 只用只读工具逐一查看这些已连接的源，弄清里面到底有什么（列表、文件、记录、最近活动）。不发送任何消息，不修改任何内容。',
-  '2. 结合你的职责与刚才实际看到的数据，判断你能帮用户做的三件左右具体的事。',
-  '3. 先给用户一段 2-3 句的自我介绍：你是谁、擅长什么、刚才在已连接的源里看到了什么。',
-  `4. 回复末尾必须带一个建议块（fenced code block，语言标记 ${SUGGESTIONS_BLOCK_TAG}），内容是 JSON 数组，最多 3 项，每项形如 { "title": "...", "prompt": "..." }：`,
+  '1. 探查要快：最多做 3 次左右的只读探查（每次一个工具调用，看列表、文件、记录、最近活动这类概览就够），看完就停。不发送任何消息，不修改任何内容，也不把探查过程写进最终回复。',
+  '2. 结合你的职责与刚才实际看到的数据，想出恰好 3 件你能帮用户做的具体的事；某个源里没有有用数据时，就基于你的职责给通用建议，不许编造任务或数据。',
+  '3. 最终回复就是给用户的自我介绍：2-3 句话，说清你是谁、擅长什么、刚才在已连接的源里看到了什么。用纯文本，不要任何 Markdown 标记（不要 #、**、列表、表格），不要汇报「已完成/未完成」，不要提工具调用上限或轮数，正文里也不要罗列建议——建议只放进建议块。',
+  `4. 回复末尾必须带一个建议块（fenced code block，语言标记 ${SUGGESTIONS_BLOCK_TAG}），内容是 JSON 数组，恰好 3 项，每项形如 { "title": "...", "prompt": "..." }：`,
   '   - title：一句话标题，用户扫一眼就懂',
   '   - prompt：用户点这条建议时直接发给你的完整委托，用用户的口吻写',
-  '   - 每条都必须基于你刚才实际看到的数据，不许编造任务或数据',
-  '   - 实在没有值得建议的，就给空数组 []',
+  '   - 每条都必须基于你刚才实际看到的数据或你的职责，不许编造数据',
   '',
   '语言规则：用用户的语言回答；判断不出用户语言时默认中文。',
   '',
-  `预算约束：你最多有 ${ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS} 轮工具调用，超出会被强制结束，先看最重要的源。`,
+  `预算约束：你最多有 ${ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS} 轮工具调用，超出会被强制结束。3 次左右的探查就够，省下的轮数直接用来写最终回复，不要探查到被强制结束。`,
 ].join('\n');
 
-/** 无已连接源：从职责出发自我介绍 + 引导连接；绝不编造任务或数据。 */
+/** 无已连接源：从职责出发纯文本自介 + 引导连接；绝不编造任务或数据。 */
 const FIRST_WAKE_PROMPT_NONE = (userExpectation: string): string => [
   '你刚被用户创建为一位持久化专家，这是你的第一次醒来。这不是用户发来的消息，用户现在不在场。',
   '',
   ...expectationLine(userExpectation),
-  '当前没有任何已连接的数据源，你没有可查看的真实数据。',
+  '当前没有任何已连接的数据源，你没有可查看的真实数据，也不要做任何工具探查。',
   '',
   '你的任务：',
   '1. 绝对不要编造任务、数据、文件或来源——你没有数据，编造会误导用户。',
-  '2. 给用户一段 2-3 句的自我介绍：你是谁、擅长什么。',
+  '2. 最终回复就是给用户的自我介绍：2-3 句话，说清你是谁、擅长什么。用纯文本，不要任何 Markdown 标记（不要 #、**、列表、表格），不要汇报「已完成/未完成」，不要提工具调用上限或轮数。',
   '3. 根据你的职责说明：哪几类数据源或连接对你最有帮助、连上之后你能多做什么、在哪里连接（设置 → 连接器）。',
   `4. 回复末尾必须带一个空建议块（fenced code block，语言标记 ${SUGGESTIONS_BLOCK_TAG}），内容是 []。`,
   '',

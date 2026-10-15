@@ -103,6 +103,7 @@ import {
   getFirstWakeSnapshot,
 } from '../../../../src/host/services/roleAssets/roleFirstWake';
 import { toRoleBoundaryRunAllowlist } from '../../../../src/host/services/roleAssets/rolePersonalization';
+import { ROLE_PROACTIVITY } from '../../../../src/shared/constants';
 
 // ----------------------------------------------------------------------------
 // 夹具
@@ -412,6 +413,33 @@ describe('提示词变体', () => {
     await vi.waitFor(() => { expect(harness.runnerCalls).toHaveLength(1); });
     expect(harness.runnerCalls[0]!.prompt).toContain('帮我盯竞品动态');
   });
+
+  it('产出形状（返修 r1）：最多 3 次左右只读探查、恰好 3 项建议、2-3 句纯文本自介，不提轮数上限', async () => {
+    harness.listCapabilities.mockResolvedValue(connectedInventory());
+    await enqueueFirstWake('prompt-shape', {
+      runner: async (input) => { harness.runnerCalls.push(input); return { finalOutput: suggestionsBlock([{ title: 't', prompt: 'p' }]) }; },
+    });
+    await vi.waitFor(() => { expect(harness.runnerCalls).toHaveLength(1); });
+    const prompt = harness.runnerCalls[0]!.prompt;
+    expect(prompt).toContain('最多做 3 次左右的只读探查');
+    expect(prompt).toContain('看完就停');
+    expect(prompt).toContain('恰好 3 件');
+    expect(prompt).toContain('恰好 3 项');
+    expect(prompt).toContain('2-3 句');
+    expect(prompt).toContain('不要任何 Markdown 标记');
+    expect(prompt).toContain('不要提工具调用上限或轮数');
+    expect(prompt).toContain(String(ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS));
+
+    harness.listCapabilities.mockResolvedValue({ items: [] });
+    await enqueueFirstWake('prompt-shape-none', {
+      runner: async (input) => { harness.runnerCalls.push(input); return { finalOutput: suggestionsBlock([]) }; },
+    });
+    await vi.waitFor(() => { expect(harness.runnerCalls).toHaveLength(2); });
+    const promptNone = harness.runnerCalls[1]!.prompt;
+    expect(promptNone).toContain('2-3 句');
+    expect(promptNone).toContain('不要任何 Markdown 标记');
+    expect(promptNone).toContain('不要做任何工具探查');
+  });
 });
 
 // ----------------------------------------------------------------------------
@@ -669,6 +697,45 @@ describe('intro / 标题', () => {
     const intro = (await readState('intro-cap')).intro;
     expect(intro).toBe('介'.repeat(1200));
     expect(String(intro)).not.toContain('first_wake_suggestions');
+  });
+
+  it('intro 清洗（返修 r1）：** 标记 / 伪标题 / 汇报标签 / 列表 / 过程叙述行都不进卡片', async () => {
+    const finalOutput = [
+      '**自我介绍**',
+      '已达本轮工具调用上限（15 轮），停止探查。',
+      '**已完成的工作：**',
+      '1. 查看了日历的本周安排',
+      '- code-index 的具体索引状态未能成功读取（工具加载失败）',
+      '**未完成：**',
+      '我是小满，擅长整理日程和会议安排。我刚看过你本周的 5 个会议，可以帮你整理成周报。点下面的建议就能直接开始。',
+      '```first_wake_suggestions',
+      '[]',
+      '```',
+    ].join('\n');
+    harness.listCapabilities.mockResolvedValue(connectedInventory());
+    await enqueueFirstWake('intro-clean', {
+      runner: async () => ({ finalOutput }),
+    });
+    await vi.waitFor(async () => { await expect(readState('intro-clean')).resolves.toMatchObject({ state: 'completed' }); });
+    const intro = String((await readState('intro-clean')).intro);
+    expect(intro).toBe('我是小满，擅长整理日程和会议安排。我刚看过你本周的 5 个会议，可以帮你整理成周报。点下面的建议就能直接开始。');
+    expect(intro).not.toContain('**');
+    expect(intro).not.toContain('探查');
+    expect(intro).not.toContain('已完成');
+    expect(intro).not.toContain('未完成');
+    expect(intro).not.toContain('查看了日历');
+    expect(intro).not.toContain('code-index');
+  });
+
+  it('intro 句数封顶（返修 r1）：超出 3 句只保留前 3 句', async () => {
+    harness.listCapabilities.mockResolvedValue(connectedInventory());
+    await enqueueFirstWake('intro-sentences', {
+      runner: async () => ({
+        finalOutput: '一。二。三。四。五。```first_wake_suggestions\n[]\n```',
+      }),
+    });
+    await vi.waitFor(async () => { await expect(readState('intro-sentences')).resolves.toMatchObject({ state: 'completed' }); });
+    expect(String((await readState('intro-sentences')).intro)).toBe('一。二。三。');
   });
 
   it('会话标题用专家面板同款展示名（agent.md display-name，否则 roleId）', async () => {

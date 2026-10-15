@@ -179,8 +179,9 @@ export const ROLE_ASSETS = {
 
 /** 角色主动性（cadence 触发器 + 醒来循环，内部文档） */
 export const ROLE_PROACTIVITY = {
-  /** 单次醒来最大工具调用轮数（硬约束，传给醒来实例的 maxIterations） */
-  WAKE_MAX_ITERATIONS: 15,
+  /** 单次醒来最大工具调用轮数（硬约束，传给醒来实例的 maxIterations）。
+   *  提示词要求 ≤3 次只读探查后作答；6 = 探查 + 多步读取余量，也掐掉长探查拖慢首次醒来。 */
+  WAKE_MAX_ITERATIONS: 6,
   /** 每角色每天最多醒来次数（cadence + event 合计），超出后本次醒来被 skip */
   MAX_WAKES_PER_DAY: 4,
   /** 长任务门槛：主会话 run 达到这个迭代数才触发 event 醒来（设计 §2.2） */

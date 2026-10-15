@@ -377,6 +377,7 @@ import {
   ConversationRuntime,
   SteerRejectedError,
 } from '../../../src/host/agent/runtime/conversationRuntime';
+import { MEMORY_OFF_NOTICE } from '../../../src/shared/constants';
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
 import type { StructuredOutputConfig } from '../../../src/host/agent/structuredOutput';
 import { GoalModeController } from '../../../src/host/agent/goalModeController';
@@ -1266,6 +1267,61 @@ describe('ConversationRuntime', () => {
           count: 1,
         }),
       );
+    });
+
+    // N-TASK-MEMORY-OFF-FU1：off 档此前只挡不告，真跑里模型把 MemoryRead 被拒误读成
+    // 「另一个数据槽」、拿工作区文件当记忆替身——这里钉注入条件与既有 trace 不回退。
+    it('injects the memory-off notice exactly once per run when memoryMode=off', async () => {
+      ctx.memoryMode = 'off';
+
+      await runtime.initializeRun('hello');
+
+      const noticeCalls = vi.mocked(modules.contextAssembly.injectSystemMessage).mock.calls
+        .filter(([, source]) => source === 'memory-off-notice');
+      expect(noticeCalls).toHaveLength(1);
+      expect(noticeCalls[0][0]).toBe(`<memory-off-notice>\n${MEMORY_OFF_NOTICE}\n</memory-off-notice>`);
+
+      // 既有 off trace 原样保留（disabled 标记 + 两个空权威块）
+      expect(ctx.turnQualityState.memory).toMatchObject({ mode: 'off', offReason: 'session_memory_off' });
+      expect(listMemoryInjectionTraces({ sessionId: 'test-session-1' })).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            blockType: 'user-directives',
+            trigger: 'session_memory_off',
+            injected: false,
+            source: 'session-memory-mode',
+          }),
+          expect.objectContaining({
+            blockType: 'user-memory',
+            trigger: 'session_memory_off',
+            injected: false,
+            source: 'session-memory-mode',
+          }),
+        ]),
+      );
+    });
+
+    it('re-injects the memory-off notice once per run without accumulating calls within a run', async () => {
+      ctx.memoryMode = 'off';
+
+      await runtime.initializeRun('first');
+      await runtime.initializeRun('second');
+
+      // 与 user-memory 同语义：注入块是 run 级临时消息（每 run 新 AgentLoop 重注一次、
+      // 不落库），同一次 run 内不得重复注入。
+      const noticeCalls = vi.mocked(modules.contextAssembly.injectSystemMessage).mock.calls
+        .filter(([, source]) => source === 'memory-off-notice');
+      expect(noticeCalls).toHaveLength(2);
+    });
+
+    it('does not inject the memory-off notice for auto or undefined memoryMode', async () => {
+      ctx.memoryMode = 'auto';
+      await runtime.initializeRun('hello');
+      ctx.memoryMode = undefined;
+      await runtime.initializeRun('hello again');
+
+      expect(vi.mocked(modules.contextAssembly.injectSystemMessage).mock.calls)
+        .not.toContainEqual([expect.anything(), 'memory-off-notice']);
     });
 
     it('promotes explicit skill invocation into required runtime context', async () => {

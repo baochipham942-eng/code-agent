@@ -56,6 +56,8 @@ import {
 } from '../../../src/host/cron/cronAutomationBridge';
 import { cronLoginWallMetadata } from '../../../src/host/cron/cronLoginWall';
 import { SessionAutomationService } from '../../../src/host/services/sessionAutomation/sessionAutomationService';
+import { resolveCronArtifactsForReview } from '../../../src/shared/cronArtifactPath';
+import { splitCronRunMessage } from '../../../src/shared/cronRunMessage';
 
 const def = (over: Partial<CronJobDefinition> = {}): CronJobDefinition => ({
   id: 'job-1',
@@ -761,5 +763,73 @@ describe('recordCronAutomationExecution', () => {
   it('records execution with null sourceSessionId when no source session (panel-created)', async () => {
     await recordCronAutomationExecution(def(), exec(), identityRuntime);
     expect(service.recordEvent).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── 并入自 cronArtifactPath.test.ts 与 cronRunMessage.test.ts（gates-fast 12 文件上限，收编进同面文件）──
+describe('resolveCronArtifactsForReview', () => {
+  it('resolves relative paths against an absolute working directory and caps at ten', () => {
+    const many = Array.from({ length: 12 }, (_, index) => `file-${index}.md`);
+    const stored = resolveCronArtifactsForReview(
+      ['/abs/a.md', 'nested/b.md', '~/nope', '', 3, ...many],
+      '/work/run',
+    );
+    expect(stored).toHaveLength(10);
+    expect(stored[0]).toEqual({ path: '/abs/a.md', openable: true });
+    expect(stored[1]).toEqual({ path: '/work/run/nested/b.md', openable: true });
+    expect(stored[2]).toEqual({ path: '~/nope', openable: false });
+    expect(stored[3]).toEqual({ path: '/work/run/file-0.md', openable: true });
+  });
+
+  it('keeps relative paths as written when the working directory is missing', () => {
+    expect(resolveCronArtifactsForReview(['report.md'], undefined)).toEqual([
+      { path: 'report.md', openable: false },
+    ]);
+    expect(resolveCronArtifactsForReview(['report.md'], 'relative/cwd')).toEqual([
+      { path: 'report.md', openable: false },
+    ]);
+  });
+});
+
+describe('splitCronRunMessage', () => {
+  it('hides snapshots, unwraps alerts, and turns the summary into a card payload', () => {
+    const segments = splitCronRunMessage([
+      '正文开头',
+      '<cron_snapshot>',
+      '内部快照不应出现',
+      '</cron_snapshot>',
+      '<cron_alert>',
+      '新发现的冲突',
+      '</cron_alert>',
+      '正文中间',
+      '<cron_summary>',
+      'urgency: fyi',
+      '本周汇总完成',
+      'artifact: report.md',
+      'artifact: /tmp/extra.txt',
+      '</cron_summary>',
+      '正文结尾',
+    ].join('\n'));
+
+    expect(segments.map((segment) => segment.kind)).toEqual(['text', 'alert', 'text', 'summary', 'text']);
+    expect(segments.map((segment) => segment.text).join('\n')).not.toContain('内部快照');
+    expect(segments.map((segment) => segment.text).join('\n')).not.toContain('urgency:');
+    expect(segments.map((segment) => segment.text).join('\n')).not.toContain('<cron_');
+    expect(segments[1]).toEqual({ kind: 'alert', text: '新发现的冲突', artifacts: [] });
+    expect(segments[3]).toEqual({
+      kind: 'summary',
+      text: '本周汇总完成',
+      artifacts: ['report.md', '/tmp/extra.txt'],
+    });
+  });
+
+  it('drops an unclosed snapshot and keeps an unclosed alert body without the tag', () => {
+    const snapshot = splitCronRunMessage('可见<cron_snapshot>秘密');
+    expect(snapshot).toEqual([{ kind: 'text', text: '可见', artifacts: [] }]);
+    const alert = splitCronRunMessage('前缀<cron_alert>还在写');
+    expect(alert).toEqual([
+      { kind: 'text', text: '前缀', artifacts: [] },
+      { kind: 'alert', text: '还在写', artifacts: [] },
+    ]);
   });
 });

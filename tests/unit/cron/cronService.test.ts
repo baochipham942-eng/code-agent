@@ -56,6 +56,7 @@ vi.mock('../../../src/host/services/core/configService', () => ({
 
 vi.mock('../../../src/host/channels/channelManager', () => ({
   getChannelManager: () => ({
+    getAccount: (id: string) => id === 'feishu-account' ? { type: 'feishu' } : { type: 'telegram' },
     getAllAccounts: () => [{ id: 'feishu-account', type: 'feishu', name: '工作飞书' }],
     sendMessage: channelState.sendMessage,
     on: channelState.on,
@@ -117,11 +118,13 @@ vi.mock('../../../src/host/services/sessionAutomation', () => ({
 const artifactRefreshState = vi.hoisted(() => ({
   begin: vi.fn((_definition: unknown): unknown => undefined),
   finish: vi.fn(async (_state: unknown, _outcome: unknown): Promise<void> => undefined),
+  cwd: vi.fn((_definition: unknown, fallback: string | undefined) => fallback),
 }));
 
 vi.mock('../../../src/host/cron/artifactStandingRefresh', () => ({
   beginArtifactRefresh: artifactRefreshState.begin,
   finishArtifactRefresh: artifactRefreshState.finish,
+  cronAgentWorkingDirectory: artifactRefreshState.cwd,
 }));
 
 import { CronService } from '../../../src/host/cron/cronService';
@@ -1251,6 +1254,8 @@ describe('N-ARTIFACT-STANDING-REFRESH 常设刷新接线', () => {
     artifactRefreshState.begin.mockImplementation(() => undefined);
     artifactRefreshState.finish.mockReset();
     artifactRefreshState.finish.mockImplementation(async () => undefined);
+    artifactRefreshState.cwd.mockReset();
+    artifactRefreshState.cwd.mockImplementation((_definition: unknown, fallback: string | undefined) => fallback);
   });
 
   afterEach(() => {
@@ -1258,6 +1263,8 @@ describe('N-ARTIFACT-STANDING-REFRESH 常设刷新接线', () => {
     artifactRefreshState.begin.mockImplementation(() => undefined);
     artifactRefreshState.finish.mockReset();
     artifactRefreshState.finish.mockImplementation(async () => undefined);
+    artifactRefreshState.cwd.mockReset();
+    artifactRefreshState.cwd.mockImplementation((_definition: unknown, fallback: string | undefined) => fallback);
   });
 
   it('刷新任务一趟执行：begin/finish 各调一次，finish 收到 runFailed=false 与任务更新回调', async () => {
@@ -1269,6 +1276,7 @@ describe('N-ARTIFACT-STANDING-REFRESH 常设刷新接线', () => {
     const execution = await service.triggerJob(job.id);
 
     expect(execution?.status).toBe('completed');
+    expect(artifactRefreshState.cwd).toHaveBeenCalledWith(expect.objectContaining({ id: job.id }), undefined);
     expect(artifactRefreshState.begin).toHaveBeenCalledTimes(1);
     expect(artifactRefreshState.begin.mock.calls[0][0]).toMatchObject({ id: job.id });
     expect(artifactRefreshState.finish).toHaveBeenCalledTimes(1);
@@ -1309,5 +1317,33 @@ describe('N-ARTIFACT-STANDING-REFRESH 常设刷新接线', () => {
     expect(artifactRefreshState.begin).toHaveReturnedWith(undefined);
     expect(artifactRefreshState.finish).not.toHaveBeenCalled();
     await service.shutdown();
+  });
+});
+
+describe('Feishu group listen check service wiring', () => {
+  it('scopes checks to Feishu and clears them on disable, edit and delete', async () => {
+    const service = new CronService();
+    await service.initialize();
+    try {
+      const job = await service.createJob({
+        name: 'Group receipt check', runsOn: 'local', enabled: true,
+        scheduleType: 'event', maxRunBudget: 1,
+        schedule: { type: 'event', source: 'channel', accountId: 'feishu-account', chatId: 'group-1', eventName: 'message' },
+        action: { type: 'agent', agentType: 'default', prompt: 'Summarize messages' },
+      });
+      expect(service.getGroupListenCheck(job.id)).toEqual({ status: 'idle' });
+      expect(service.getGroupListenCheck(job.id, true)?.status).toBe('waiting');
+      await service.updateJob(job.id, { enabled: false });
+      expect(service.getGroupListenCheck(job.id)).toBeNull();
+      await service.updateJob(job.id, { enabled: true });
+      expect(service.getGroupListenCheck(job.id)).toEqual({ status: 'idle' });
+      service.getGroupListenCheck(job.id, true);
+      await service.updateJob(job.id, { schedule: { type: 'event', source: 'channel', accountId: 'telegram-account', chatId: 'group-1', eventName: 'message' } });
+      expect(service.getGroupListenCheck(job.id, true)).toBeNull();
+      await service.deleteJob(job.id);
+      expect(service.getGroupListenCheck(job.id)).toBeNull();
+    } finally {
+      await service.shutdown();
+    }
   });
 });

@@ -410,7 +410,7 @@ export interface MessageMetadata {
    * 预处理读图 / 交付时仍有显式任务未完成。用户回看对话时想看到，不该弹窗打断——挂当前轮。
    */
   agentRecoveryNotice?: {
-    kind: 'vision_tool_unsupported' | 'artifact_stream_retry' | 'vision_preflight_used' | 'unresolved_tasks';
+    kind: 'vision_tool_unsupported' | 'artifact_stream_retry' | 'vision_preflight_used' | 'unresolved_tasks' | 'web_preview_repair';
   };
   /** User-visible audit note for atomic turn checkout / Redo, including partial outcomes. */
   turnCheckoutNote?: {

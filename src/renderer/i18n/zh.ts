@@ -7,6 +7,7 @@ import { sessionReplayZh } from './sessionReplay';
 import { chatTranscriptZh } from './chatTranscript';
 import { attachmentPreviewZh } from './attachmentPreview';
 import { chatInputZh } from './chatInput';
+import { backgroundPanelZh } from './backgroundPanel';
 import { voiceZh } from './voice';
 import { chatInputModelStrategyZh } from './chatInputModelStrategy';
 import { sidebarZh } from './sidebar';
@@ -52,6 +53,7 @@ import { outcomeWordsZh } from './outcomeWords';
 import { engineModelPanelZh } from './engineModelPanel';
 import { jevAdvisoryZh } from './jevAdvisory';
 import { workflowStallZh } from './workflowStall';
+import { roleFirstWakeZh } from './roleFirstWake';
 
 export const zh = {
   ...canvasActorZh, ...activityPanelZh,
@@ -72,6 +74,7 @@ export const zh = {
   ...engineModelPanelZh,
   ...jevAdvisoryZh,
   ...workflowStallZh,
+  ...roleFirstWakeZh,
   // Common
   common: {
     save: '保存',
@@ -935,6 +938,7 @@ export const zh = {
   ...chatTranscriptZh,
   ...attachmentPreviewZh,
   ...chatInputZh,
+  ...backgroundPanelZh,
   ...voiceZh,
   ...chatInputModelStrategyZh,
   ...sidebarZh,

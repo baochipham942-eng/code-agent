@@ -74,7 +74,24 @@ function isLoopbackHost(host: string): boolean {
  * against maxConnections while the HTTP layer would have 403'd it anyway.
  */
 export function isLanPeer(peer: string): boolean {
-  return isPrivateIPv4(peer) || isLoopbackHost(peer);
+  const host = peer.replace(/^::ffff:/i, '');   // IPv4 映射地址（双栈监听下的 IPv4 对端）按 IPv4 判
+  return isPrivateIPv4(host) || isLoopbackHost(host) || isOnLinkIPv6(host);
+}
+/**
+ * IPv6 peers that can only come from the same link or site: link-local fe80::/10 and ULA fc00::/7.
+ * A phone that resolved the .local name to an AAAA record (macOS publishes fe80:: for the host name,
+ * iOS prefers IPv6 via Happy Eyeballs) arrives here — rejecting it 403'd every IPv6-first phone while
+ * the invitation promised "no rescan after a network change" (N-COMPANION-LAN-IPV6). Global unicast
+ * (2000::/3) stays rejected: it is routable from off-link.
+ */
+function isOnLinkIPv6(host: string): boolean {
+  const parts = host.toLowerCase().match(/^([0-9a-f:]+)(?:%([a-z0-9._-]+))?$/);   // zone id（fe80::1%en0）可带，带了就不能为空
+  if (!parts) return false;
+  const bare = parts[1];
+  if (!bare.includes(':')) return false;
+  // ponytail: 只认链路本地 fe80::/10。ULA fc00::/7 可跨站点路由，且 Tailscale 的 fd7a:115c:a1e0::/48 落在其中，
+  // 放行它会抵消基线对 Tailscale 100.x 的拒绝；.local 解析出的就是 fe80，够用。
+  return /^fe[89ab][0-9a-f]:/.test(bare);
 }
 /**
  * RFC 6762 reserves `.local` for mDNS: public DNS never answers it, so such a name can only

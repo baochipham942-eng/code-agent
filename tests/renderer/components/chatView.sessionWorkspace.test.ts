@@ -367,9 +367,9 @@ describe('ChatView session shell', () => {
     expect(enSuggestions).toHaveLength(4);
 
     const deliverablePatterns = [
-      { zh: /周报/, en: /status report/i },
+      { zh: /周报|Word|\.docx/i, en: /status report|Word|\.docx/i },
       { zh: /会议纪要/, en: /minutes/i },
-      { zh: /销售数据/, en: /sales/i },
+      { zh: /销售数据|Excel|\.xlsx/i, en: /sales|Excel|\.xlsx/i },
       { zh: /竞品简报/, en: /competitor brief/i },
     ];
     const packs = [
@@ -390,10 +390,16 @@ describe('ChatView session shell', () => {
       });
     }
 
-    // 竞品简报卡额外契约：显式禁止派子代理/团队（2026-10-11 UI 真机验收缺陷——
-    // glm-5.3 收到「联网调研」类 prompt 会拉起 swarm，触发成员启动审批卡，首轮无交付）。
-    expect(defaultSuggestions[3].prompt).toMatch(/不要派出子代理或团队成员/);
-    expect(enSuggestions[3].prompt).toMatch(/do not spawn sub-agents or team members/);
+    // 卡片文案不暴露内部派发实现；小范围调研由 host 的触发策略收口。
+    const internalDispatchTerms = /子代理|团队成员|sub[- ]?agents?|team members?/i;
+    for (const suggestion of [...defaultSuggestions, ...enSuggestions]) {
+      expect(suggestion.prompt).not.toMatch(internalDispatchTerms);
+    }
+
+    expect(defaultSuggestions[0].description).toMatch(/Word|\.docx/i);
+    expect(defaultSuggestions[2].description).toMatch(/Excel|\.xlsx/i);
+    expect(enSuggestions[0].description).toMatch(/Word|\.docx/i);
+    expect(enSuggestions[2].description).toMatch(/Excel|\.xlsx/i);
   });
 
   it('pending 提问时输入区仍可见可输入，发送继续走普通 ChatView 消息链路', async () => {

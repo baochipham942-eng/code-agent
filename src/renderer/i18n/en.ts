@@ -7,6 +7,7 @@ import { sessionReplayEn } from './sessionReplay';
 import { chatTranscriptEn } from './chatTranscript';
 import { attachmentPreviewEn } from './attachmentPreview';
 import { chatInputEn } from './chatInput';
+import { backgroundPanelEn } from './backgroundPanel';
 import { voiceEn } from './voice';
 import { chatInputModelStrategyEn } from './chatInputModelStrategy';
 import { sidebarEn } from './sidebar';
@@ -52,6 +53,7 @@ import { outcomeWordsEn } from './outcomeWords';
 import { engineModelPanelEn } from './engineModelPanel';
 import { jevAdvisoryEn } from './jevAdvisory';
 import { workflowStallEn } from './workflowStall';
+import { roleFirstWakeEn } from './roleFirstWake';
 // satisfies（而非 `: Translations` 注解）：key 集合必须与 zh 完全一致——zh 多 key /
 // en 缺 key / en 多 key 都在此报红，同时保留 en 自身的推断类型。zh.ts 是形状真源
 //（Translations = typeof zh），与叶子先例 artifactShare.ts 的 satisfies 锁同范式。
@@ -73,6 +75,7 @@ export const en = {
   ...outcomeWordsEn, ...engineModelPanelEn,
   ...jevAdvisoryEn,
   ...workflowStallEn,
+  ...roleFirstWakeEn,
   // Common
   common: {
     save: 'Save',
@@ -933,6 +936,7 @@ export const en = {
   ...chatTranscriptEn,
   ...attachmentPreviewEn,
   ...chatInputEn,
+  ...backgroundPanelEn,
   ...voiceEn,
   ...chatInputModelStrategyEn,
   ...sidebarEn,

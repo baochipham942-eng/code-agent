@@ -83,4 +83,12 @@ describe('estimateMediaPriceCny（审批卡参考价纯函数）', () => {
     expect(estimateMediaPriceCny('music_generate', { prompt: 'x' })?.totalCny).toBe(expected);
     expect(estimateMediaPriceCny('music_generate', { prompt: 'x', model: 'minimax-music-2.6' })?.totalCny).toBe(expected);
   });
+
+  // ai-review r1 返修回归：MUSIC_PRICING_CNY 曾是「价表待补」占位 ¥0.2/首，比 musicGenerate.schema
+  // 同源引用的 MiniMax 官方价目 $0.15/首低约 5 倍且方向为低估——审批卡据低估价误导付费决策。
+  // 锚定官方价折算：$0.15 × 7.2（仓内 USD→CNY 口径，见 pricing.ts Veo 注释）≈ ¥1.08/首。
+  it('music：music-2.6 参考价锚定官方价 $0.15/首 × 7.2 ≈ ¥1.08，不得回落占位 ¥0.2', () => {
+    expect(estimateMusicCostCny(GENERATION_TOOL_DEFAULT_MODELS.music)).toBeCloseTo(0.15 * 7.2, 2);
+    expect(estimateMediaPriceCny('music_generate', { prompt: 'x' })?.totalCny).toBeCloseTo(0.15 * 7.2, 2);
+  });
 });

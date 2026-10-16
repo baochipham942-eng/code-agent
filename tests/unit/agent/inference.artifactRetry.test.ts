@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ContextAssemblyCtx } from '../../../src/host/agent/runtime/contextAssembly';
 import type { AgentEvent } from '../../../src/shared/contract/agent';
 import { inference } from '../../../src/host/agent/runtime/contextAssembly/inference';
+import { handleImagePayloadExceededError } from '../../../src/host/agent/runtime/contextAssembly/inferenceImagePayloadError';
+import { ContextLengthExceededError } from '../../../src/host/model/modelRouter';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
@@ -1319,5 +1321,43 @@ describe('contextAssembly inference artifact retry', () => {
     expect(ctx.inference).toHaveBeenCalledTimes(2);
     expect(ctx.inferenceRecovery._networkRetried).toBe(false);
     expect(ctx.runtime.contextHealth.networkRetryCount).toBe(0);
+  });
+
+  it('marks an image payload rejection as recoverable before background terminal accounting', () => {
+    const ctx = buildCtx();
+    const langfuse = { endGeneration: vi.fn() } as any;
+    const handled = handleImagePayloadExceededError({
+      ctx,
+      error: Object.assign(new Error('request too large'), { status: 413, provider: 'mock', model: 'test-model' }),
+      llmCallId: 'llm-image-1',
+      langfuse,
+    });
+
+    expect(handled).toBe(true);
+    expect(ctx.runtime.onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'error',
+      data: expect.objectContaining({
+        code: 'IMAGE_PAYLOAD_EXCEEDED',
+        terminal: false,
+      }),
+    }));
+  });
+
+  it('marks failed context overflow recovery as recoverable before the run can continue', async () => {
+    const ctx = buildCtx({ compressionPipeline: { handleOverflow: vi.fn() } } as any);
+    const overflow = new ContextLengthExceededError(200, 100, 'mock');
+    ctx.runtime.modelRouter.inference = vi.fn().mockRejectedValue(overflow);
+    ctx.checkAndAutoCompress = vi.fn().mockResolvedValue(undefined);
+    ctx.inference = vi.fn().mockRejectedValue(new Error('recovery failed'));
+
+    await inference(ctx);
+
+    expect(ctx.runtime.onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'error',
+      data: expect.objectContaining({
+        code: 'CONTEXT_LENGTH_EXCEEDED',
+        terminal: false,
+      }),
+    }));
   });
 });

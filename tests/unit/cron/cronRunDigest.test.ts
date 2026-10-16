@@ -139,6 +139,68 @@ describe('buildCronAgentPrompt urgencyCriteria（N-CRON-MORNING-TRIAGE-URGENCY-R
   });
 });
 
+describe('buildCronAgentPrompt notifyWhen（N-CRON-RESTATE-HUMAN-WHEN）', () => {
+  // 与 urgencyCriteria 同一条冻结锚点 harness：期望串的固定段逐字节取自
+  // 改动前（notifyWhen 缺席时）的源码字面量——无判据任务 prompt 字节不变是本单的硬约束。
+  const ANCHOR = {
+    isoDate: '2099-12-31',
+    year: 2099,
+    month: 12,
+    day: 31,
+  };
+  const NOW = new Date('2026-09-30T00:00:00.000Z');
+  const todayEpoch = Math.floor(new Date(ANCHOR.year, ANCHOR.month - 1, ANCHOR.day, 0, 0, 0, 0).getTime() / 1000);
+  const tomorrowEpoch = todayEpoch + 86400;
+  const timeAnchor =
+    `【当前时间】2026-09-30T00:00:00.000Z（UTC）。今天本地日期是 2099-12-31。`
+    + `若要按「今天/本地当天」查询时间戳，直接用这两个算好的值，不要自己换算年份：`
+    + `今天本地 00:00 = ${todayEpoch}（Unix 秒），次日本地 00:00 = ${tomorrowEpoch}（Unix 秒）。`
+    + '其他相对时间以【当前时间】为基准，不要用你训练时的日期。';
+  const deliveryDigest =
+    '最后请在回复末尾追加简短的 <cron_summary>...</cron_summary> 块：先写结果摘要；每个生成的文件或可访问产物另起一行，格式为 artifact: <path>。'
+    + '摘要的第一行可以标注紧急程度，格式为 urgency: must_today|can_wait|fyi（must_today = 今天需要用户处理，can_wait = 可以稍后处理，fyi = 仅供参考）。';
+  const snapshotGuidance = '回复末尾请用 <cron_snapshot>...</cron_snapshot> 包住本次需要记住的简短快照，供下次对比。';
+  const expectedEnabled = ['检查', '', timeAnchor, '', snapshotGuidance, '', deliveryDigest].join('\n');
+  const expectedDisabled = ['检查', '', timeAnchor, '', deliveryDigest].join('\n');
+  const RULE = '只有需要今天处理的紧急事项';
+
+  afterEach(() => {
+    vi.doUnmock('../../../src/shared/todayAnchor');
+    vi.resetModules();
+  });
+
+  async function buildWithFrozenAnchor(...args: Parameters<typeof buildCronAgentPrompt>) {
+    vi.resetModules();
+    vi.doMock('../../../src/shared/todayAnchor', () => ({ formatTodayAnchor: () => ANCHOR }));
+    const { buildCronAgentPrompt: build } = await import('../../../src/host/cron/cronAgentPrompt');
+    return build(...args);
+  }
+
+  it('无 notifyWhen 时两种模式（含快照路径）的产出与改动前逐字节相同', async () => {
+    expect(await buildWithFrozenAnchor('检查', null, true, NOW, undefined, undefined)).toBe(expectedEnabled);
+    expect(await buildWithFrozenAnchor('检查', null, false, NOW, undefined, undefined)).toBe(expectedDisabled);
+  });
+
+  it('空白 notifyWhen 与缺省逐字节相同（空判据 = 每次都通知的旧行为）', async () => {
+    expect(await buildWithFrozenAnchor('检查', null, true, NOW, undefined, '   ')).toBe(expectedEnabled);
+    expect(await buildWithFrozenAnchor('检查', null, false, NOW, undefined, '')).toBe(expectedDisabled);
+  });
+
+  it('设置判据时两种模式都在末尾追加 <cron_alert> 打扰指令，判据原文入 prompt', async () => {
+    const enabled = await buildWithFrozenAnchor('检查', null, true, NOW, undefined, RULE);
+    const disabled = await buildWithFrozenAnchor('检查', null, false, NOW, undefined, RULE);
+    const instruction =
+      `打扰规则（用户设定）：本次运行只有当结果满足「${RULE}」时，才在回复末尾追加一行 <cron_alert>用一句话说明满足了什么</cron_alert>；不满足时不要输出 <cron_alert> 标记（该轮将不打扰用户）。`;
+
+    for (const prompt of [enabled, disabled]) {
+      expect(prompt.endsWith(instruction)).toBe(true);
+      expect(prompt).toContain(deliveryDigest);
+    }
+    expect(enabled).toContain('<cron_snapshot>');
+    expect(disabled).not.toContain('<cron_snapshot>');
+  });
+});
+
 describe('groupRunsByTask', () => {
   it('groups cron and heartbeat runs by origin id, newest first', () => {
     const old = { id: 's-old', updatedAt: 10, origin: { kind: 'cron' as const, id: 'job-a' } };

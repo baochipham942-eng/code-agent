@@ -1,6 +1,7 @@
 import type { AppServiceRunOptions } from '../../shared/contract/appService';
 import { SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS } from '../../shared/constants/sessionCommandCenter';
 import { getTextForegroundToolNames } from '../tools/protocolRegistry';
+import { detectTaskFeatures } from '../prompts/systemReminders';
 
 export const SESSION_COMMAND_CENTER_BRAIN_CONTEXT = [
   '<session_command_center>',
@@ -8,7 +9,7 @@ export const SESSION_COMMAND_CENTER_BRAIN_CONTEXT = [
   '分诊规则：',
   '1. 闲聊、解释、基于现有上下文即可回答的问题，直接回答，不调用工具。',
   '2. 只要读几个文件、搜一下代码、看看目录就能回答的问题，自己用 Read/Grep/Glob/ListDirectory 读完直接答，不要派活——为一次文件读取开一个后台任务是浪费。',
-  '3. 短小的本地文件修改，先 Read 再用 Edit 或 Write 直接完成；运行命令、联网查证、多步骤执行、等待审批，以及写报告或做网页等生成级长任务，调用 delegate_task。读的量大到要翻遍整个仓库时也派活。',
+  '3. 短小的本地文件修改，先 Read 再用 Edit 或 Write 直接完成；写报告/文档/表格时若本轮工具表已有对应生成工具（docx_generate、excel_generate），直接调用它把文件交付掉；运行命令、联网查证、多步骤执行、等待审批，以及做网页等其他生成级长任务，调用 delegate_task。读的量大到要翻遍整个仓库时也派活。',
   '4. 用户点名要某个角色去做（"让溯真去调研 X""这件事交给明镜"），调用 spawn_agent 把活交给那个角色本人，不要用 delegate_task 把角色名写进 prompt 让通用任务扮演——扮演出来的产出不会进那个角色的记忆和履历，下次它回来还是一张白纸。没点名角色时照常用 delegate_task。',
   '5. 用户补充或修正某件正在做的工作，调用 steer_task；要求停止时调用 cancel_task；用户主动追问进度时调用 task_status——没人问就不要查进度，派完活直接结束 turn。',
   '6. 目标任务不唯一、并发槽已满或取消代价较高时，调用 AskUserQuestion 让用户按短名选择，不替用户猜。',
@@ -20,13 +21,41 @@ export const SESSION_COMMAND_CENTER_BRAIN_CONTEXT = [
   // 「Bash/Write/Edit 一概没有」并在同句写「不要说"环境禁用了"」，模型把三个工具名和「禁用」
   // 原样还了回来（session_1786186241326_0bce358d）。删起因优于再加一层反向指令。
   '你本轮可以直接读取并修改本地文件。用户要改标题、改几行文字或写一个短小文件时，先确认目标和现有内容，再用 Edit 或 Write 完成并如实回复结果；folder-trust、权限档和审批链路照常生效。',
-  '用户要求跑命令、联网查证、装依赖、等待审批或完成生成级长任务时，调用 delegate_task 派到后台，再一句话说明它已经开始。这是流程设计，不是权限问题或环境故障。',
+  '用户要求跑命令、联网查证、装依赖、等待审批或完成生成级长任务时，调用 delegate_task 派到后台，再一句话说明它已经开始。这是流程设计，不是权限问题或环境故障。用户要一份 Word/Excel 文件且本轮工具表已有 docx_generate/excel_generate 时除外——直接调用生成工具交付，不派后台。',
   '用户用"这个文件""刚才那个"指代目标时，先从当前会话上下文解析成绝对路径。直接修改时把该路径传给文件工具；派后台时把它写进 delegate_task 的 prompt，因为后台任务读不到你这轮的上下文。',
   '</session_command_center>',
 ].join('\n');
 
+/**
+ * 文字前台工具面（ADR-059）+ 单轮文件交付扩展。
+ *
+ * 点名 .docx/.xlsx 交付物的轮次把原生生成工具直接放进前台面：docx_generate /
+ * excel_generate 是本地产物工具（免确认桶），前台一轮即可交付文件。不扩的话模型
+ * 只剩「写脚本 + delegate_task 派后台」一条路，后台 terminal_write 撞审批卡死，
+ * 整轮以「运行失败」收场（N-HOME-STARTER-CARDS-FILES r2 实测）。DocEdit 只随
+ * Excel 交付进面——多工作表（原始数据 + 汇总）靠它 add_sheet/set_range 追加。
+ * 命中时这几个名字进 allowedToolNames，deferred 预载层会照白名单把 schema 送上轮。
+ */
+// 与 systemReminders 的 OFFICE_*_DELIVERABLE_RE 保持同一判据。种类看扩展名本身，
+// 不看 isDocumentTask / isExcelTask：后者会被正文里的代码语境词一票否决
+// （中文周报卡示例素材含「供应商接口」，isDocumentTask 为 false），提醒已经点名
+// docx_generate，模型可见工具表里却没有它（r2b 真机）。
+const OFFICE_DOC_DELIVERABLE_RE = /\.docx\b|\bword\s*文档|\bword\s+(?:document|file|report)\b/i;
+const OFFICE_SHEET_DELIVERABLE_RE = /\.xlsx\b|\bexcel\s*(?:工作簿|表格|文件)|\bexcel\s+(?:workbook|spreadsheet|file)\b/i;
+
+export function getTextForegroundToolNamesForPrompt(prompt: string): string[] {
+  const base = getTextForegroundToolNames();
+  const features = detectTaskFeatures(prompt);
+  if (!features.isOneTurnFileDeliverable) return base;
+  const extras: string[] = [];
+  if (OFFICE_DOC_DELIVERABLE_RE.test(prompt)) extras.push('docx_generate');
+  if (OFFICE_SHEET_DELIVERABLE_RE.test(prompt)) extras.push('excel_generate', 'DocEdit');
+  return extras.length > 0 ? [...base, ...extras] : base;
+}
+
 export function withSessionCommandCenterBrain(
   options: AppServiceRunOptions | undefined,
+  prompt?: string,
 ): AppServiceRunOptions {
   return {
     ...(options ?? {}),
@@ -37,7 +66,7 @@ export function withSessionCommandCenterBrain(
         : SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
       SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
     ),
-    allowedToolNames: getTextForegroundToolNames(),
+    allowedToolNames: getTextForegroundToolNamesForPrompt(prompt ?? ''),
     foregroundToolFace: true,
     turnSystemContext: [
       ...(options?.turnSystemContext ?? []),

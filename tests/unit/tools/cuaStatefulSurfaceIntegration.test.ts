@@ -97,6 +97,78 @@ function toolContext(input: {
 }
 
 describe('cua_stateful_computer_use Surface integration', () => {
+  function appFixture() {
+    const registry = new RunRegistry();
+    registry.start({ runId: 'run-1', sessionId: 'conversation-1', workspace: process.cwd() });
+    const driver = new SurfaceFakeCuaDriver();
+    const handler = new CuaStatefulComputerUseHandler(
+      new CuaStateAdapter(driver), new SurfaceExecutionRuntime({ runRegistry: registry }),
+    );
+    const ctx = toolContext({ runId: 'run-1', agentId: 'agent-a', events: [], toolCallId: 'app-check' });
+    const permit: CanUseToolFn = async () => ({ allow: true });
+    return { driver, handler, ctx, permit };
+  }
+
+  it.each([undefined, '', '   ', 42])('rejects observe and act with missing/blank targetApp (%s) before any driver call', async (targetApp) => {
+    const { driver, handler, ctx, permit } = appFixture();
+    for (const operation of ['observe', 'act']) {
+      const result = await handler.execute({ operation, targetApp }, ctx, permit);
+      expect(result).toMatchObject({ ok: false, code: 'INVALID_ARGS', error: expect.stringContaining('list_roots') });
+    }
+    expect(driver.calls).toEqual([]);
+  });
+
+  it('list_roots requires no targetApp', async () => {
+    const { driver, handler, ctx, permit } = appFixture();
+    const result = await handler.execute({ operation: 'list_roots' }, ctx, permit);
+    expect(result.ok).toBe(true);
+    expect(driver.calls.map((call) => call.toolName)).toEqual(['list_windows']);
+  });
+
+  it('rejects a spoofed observe app, names the real app, and never reads the window', async () => {
+    const { driver, handler, ctx, permit } = appFixture();
+    const result = await handler.execute({
+      operation: 'observe', targetApp: 'Calculator', target: { pid: 42, windowId: 7 },
+    }, ctx, permit);
+    expect(result).toMatchObject({ ok: false, code: 'INVALID_ARGS', error: expect.stringContaining('Notes') });
+    expect(driver.calls.map((call) => call.toolName)).toEqual(['list_windows']);
+  });
+
+  it('rejects a missing selected root before observing a window', async () => {
+    const { driver, handler, ctx, permit } = appFixture();
+    const result = await handler.execute({
+      operation: 'observe', targetApp: 'Notes', target: { pid: 99, windowId: 99 },
+    }, ctx, permit);
+    expect(result).toMatchObject({ ok: false, code: 'INVALID_ARGS' });
+    expect(driver.calls.map((call) => call.toolName)).toEqual(['list_windows']);
+  });
+
+  it('matches trimmed case-insensitive app names and binds observe and act successor stateIds', async () => {
+    const { driver, handler, ctx, permit } = appFixture();
+    const observed = await handler.execute({
+      operation: 'observe', targetApp: '  nOtEs  ', target: { pid: 42, windowId: 7 },
+    }, ctx, permit);
+    expect(observed.ok).toBe(true);
+    if (!observed.ok) throw new Error(observed.error);
+    let stateId = JSON.parse(observed.output).state.stateId as string;
+    for (let round = 0; round < 2; round += 1) {
+      const callsBefore = driver.calls.length;
+      let permissions = 0;
+      const mismatch = await handler.execute({
+        operation: 'act', targetApp: 'Calculator', stateId, mutation: { kind: 'click', elementRef: 'e1' },
+      }, ctx, async () => { permissions += 1; return { allow: true }; });
+      expect(mismatch).toMatchObject({ ok: false, code: 'INVALID_ARGS', error: expect.stringContaining('Notes') });
+      expect(driver.calls).toHaveLength(callsBefore);
+      expect(permissions).toBe(0);
+      const acted = await handler.execute({
+        operation: 'act', targetApp: ' notes ', stateId, mutation: { kind: 'click', elementRef: 'e1' },
+      }, { ...ctx, currentToolCallId: `act-app-${round}` }, permit);
+      expect(acted.ok).toBe(true);
+      if (!acted.ok) throw new Error(acted.error);
+      stateId = JSON.parse(acted.output).result.successorState.stateId as string;
+    }
+  });
+
   it('routes observe and act through owner, grant, freshness, and successor semantics', async () => {
     const registry = new RunRegistry();
     registry.start({
@@ -115,7 +187,7 @@ describe('cua_stateful_computer_use Surface integration', () => {
     };
 
     const observed = await handler.execute({
-      operation: 'observe',
+      operation: 'observe', targetApp: 'Notes',
       target: { pid: 42, windowId: 7 },
     }, toolContext({ runId: 'run-1', agentId: 'agent-a', events, toolCallId: 'observe-1' }), canUseTool);
 
@@ -158,7 +230,7 @@ describe('cua_stateful_computer_use Surface integration', () => {
     expect(target.windowRef).not.toContain('7');
 
     const acted = await handler.execute({
-      operation: 'act',
+      operation: 'act', targetApp: 'Notes',
       stateId: observedResponse.state.stateId,
       mutation: { kind: 'click', elementRef: 'e1' },
       expect: { kind: 'text_present', text: 'Complete' },
@@ -230,19 +302,19 @@ describe('cua_stateful_computer_use Surface integration', () => {
       return { allow: true };
     };
     const observed = await handler.execute({
-      operation: 'observe',
+      operation: 'observe', targetApp: 'Notes',
       target: { pid: 42, windowId: 7 },
     }, toolContext({ runId: 'run-1', agentId: 'agent-a', events, toolCallId: 'observe-1' }), canUseTool);
     if (!observed.ok) throw new Error(observed.error);
     const stateId = (JSON.parse(observed.output) as { state: { stateId: string } }).state.stateId;
 
     const crossAgent = await handler.execute({
-      operation: 'act',
+      operation: 'act', targetApp: 'Notes',
       stateId,
       mutation: { kind: 'click', elementRef: 'e1' },
     }, toolContext({ runId: 'run-1', agentId: 'agent-b', events, toolCallId: 'act-b' }), canUseTool);
     const ownerless = await handler.execute({
-      operation: 'act',
+      operation: 'act', targetApp: 'Notes',
       stateId,
       mutation: { kind: 'click', elementRef: 'e1' },
     }, toolContext({ events, toolCallId: 'act-ownerless' }), canUseTool);

@@ -87,3 +87,18 @@ export function materializeRunWorkDirectoryOnce(
   attempts.set(dir, attempt);
   return attempt;
 }
+
+/**
+ * 懒开落盘判定（N-DELIVERABLE-WORKDIR-LAZY-FU1）：工具定义已注册、未声明只读、
+ * 且未显式声明「不碰工作目录」时才落盘。readOnly 覆盖面太粗——AskUserQuestion /
+ * confirm_action / MemoryWrite / memory_amend 都不是只读，但 handler 全都不碰 cwd，
+ * 此前会在 ~/Neo 留下空任务夹。精化是 schema 上的显式 opt-out（单一真源），
+ * 这里不枚举工具名；缺省保持落盘（fail-safe：cwd 缺失会让 Bash/Process 派发失败）。
+ */
+export function shouldMaterializeWorkDirectoryForTool(
+  definition: { readOnly?: boolean; touchesWorkDirectory?: false } | undefined,
+): boolean {
+  return definition !== undefined
+    && definition.readOnly !== true
+    && definition.touchesWorkDirectory !== false;
+}

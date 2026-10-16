@@ -1,5 +1,5 @@
 import React from 'react';
-import { Eye, Wrench, Brain, Cpu, Terminal, Code2, Gauge, Plug } from 'lucide-react';
+import { Eye, Wrench, Brain, Code2, Gauge } from 'lucide-react';
 import type { BillingMode, ModelProvider, ModelProviderProtocol, ModelSearchCapabilityOverview } from '@shared/contract';
 import type {
   AgentEngineModelCatalogModel,
@@ -69,36 +69,12 @@ export const ENGINE_SHORT_LABEL: Record<AgentEngineKind, string> = {
   kimi_code_acp: 'Kimi·ACP',
 };
 
-export const ENGINE_ICON: Record<AgentEngineKind, React.ReactNode> = {
-  native: <Cpu className="w-3 h-3" />,
-  codex_cli: <Terminal className="w-3 h-3" />,
-  claude_code: <Terminal className="w-3 h-3" />,
-  mimo_code: <Terminal className="w-3 h-3" />,
-  kimi_code: <Terminal className="w-3 h-3" />,
-  codebuddy_code: <Terminal className="w-3 h-3" />,
-  grok_cli: <Terminal className="w-3 h-3" />,
-  dsh_cli: <Terminal className="w-3 h-3" />,
-  kimi_code_acp: <Plug className="w-3 h-3" />,
-};
-
-export const ENGINE_INSTALL_LABEL: Record<AgentEngineDescriptor['installState'], string> = {
-  builtin: '内置',
-  installed: '已安装',
-  missing: '未安装',
-};
-
 const ENGINE_RUNTIME_LABEL: Record<AgentEngineDescriptor['runtimeState'], string> = {
   ready: 'Ready',
   not_configured: 'Needs config',
   blocked: 'Blocked',
   error: 'Error',
   unknown: 'Unknown',
-};
-
-export const ENGINE_PERMISSION_LABEL: Record<AgentEngineDescriptor['defaultPermissionProfile'], string> = {
-  default: '默认权限',
-  read_only: '只读默认',
-  workspace_write: '工作目录可写',
 };
 
 const ENGINE_RISK_LABEL: Record<AgentEngineDescriptor['riskTier'], string> = {
@@ -538,33 +514,10 @@ export function resolveEngineModelCompatReason(
  * 从签名目录模型列表构造兼容判定上下文：拆出"已启用 / 已停用"模型 id 集合，
  * 喂给 getEngineModelCompat（codex/claude 用）。mimo/kimi 无目录走直传，传空即可。
  */
-export function buildEngineModelCompatContext(
-  models?: readonly { id: string; disabledReason?: string }[] | null,
-): EngineModelCompatContext {
-  if (!models || models.length === 0) return {};
-  const enabled = new Set<string>();
-  const disabled = new Set<string>();
-  for (const model of models) {
-    (model.disabledReason ? disabled : enabled).add(model.id);
-  }
-  return { signedCatalogEnabledModelIds: enabled, signedCatalogDisabledModelIds: disabled };
-}
-
 /**
  * 单个引擎模型的兼容注解文案：disabledReason 是签名目录里更细的原文，优先展示；
  * 否则回落到 getEngineModelCompat 的 reasonCode 经 i18n 派生（mimo/kimi 的"由 CLI 解析"等）。
  */
-export function getEngineModelCompatReasonText(
-  kind: AgentEngineKind,
-  model: { id: string; disabledReason?: string },
-  context: EngineModelCompatContext,
-  t: Translations,
-): string | null {
-  if (model.disabledReason) return model.disabledReason;
-  const compat = getEngineModelCompat(kind, model.id, context);
-  return compat.reasonCode ? resolveEngineModelCompatReason(compat.reasonCode, t) : null;
-}
-
 const ENGINE_RELIABILITY_TONE_CLASS: Record<string, string> = {
   ready: 'border-badge-success/20 bg-emerald-500/[0.08] text-badge-success',
   warning: 'border-badge-warning/20 bg-amber-500/[0.08] text-badge-warning',
@@ -580,33 +533,6 @@ const ENGINE_RELIABILITY_DOT_CLASS: Record<string, string> = {
 };
 
 /** 外部引擎可靠性摘要面板（tone 着色 + 摘要 + 能力/详情行）。 */
-export function EngineReliabilityPanel({ summary }: { summary: EngineReliabilitySummary }) {
-  const toneClass = ENGINE_RELIABILITY_TONE_CLASS[summary.tone] ?? ENGINE_RELIABILITY_TONE_CLASS.info;
-  const dotClass = ENGINE_RELIABILITY_DOT_CLASS[summary.tone] ?? ENGINE_RELIABILITY_DOT_CLASS.info;
-  const secondaryLine = summary.capabilityLine || summary.detail;
-  return (
-    <div className="border-b border-zinc-700/50 px-2 py-1.5">
-      <div
-        className={`rounded-md border px-2 py-1.5 text-[11px] leading-relaxed ${toneClass}`}
-        data-testid="engine-reliability-summary"
-      >
-        <div className="flex min-w-0 items-center gap-1.5">
-          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`} />
-          <span className="shrink-0 font-medium">{summary.label}</span>
-          <span className="min-w-0 truncate text-zinc-200/90" title={summary.summary}>
-            {summary.summary}
-          </span>
-        </div>
-        {secondaryLine && (
-          <div className="mt-0.5 truncate text-[10px] text-zinc-300/70" title={secondaryLine}>
-            {secondaryLine}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export function EngineBillingBadge({ summary }: { summary: EngineBillingSummary }) {
   return (
     <Badge
@@ -751,10 +677,6 @@ export function formatExternalModelSwitcherTooltip(args: {
   ].filter(Boolean).join(' · ');
 }
 
-export function formatEngineCwdPolicy(descriptor: AgentEngineDescriptor): string {
-  return descriptor.cwdPolicy === 'workspace_only' ? '当前工作目录' : descriptor.cwdPolicy;
-}
-
 export function getEngineUnavailableReason(
   descriptor: AgentEngineDescriptor,
   needsWorkspace: boolean,
@@ -766,24 +688,6 @@ export function getEngineUnavailableReason(
     return descriptor.lastError || ENGINE_RUNTIME_LABEL[descriptor.runtimeState];
   }
   return null;
-}
-
-export function formatEngineTooltip(descriptor: AgentEngineDescriptor, needsWorkspace: boolean): string {
-  const unavailableReason = getEngineUnavailableReason(descriptor, needsWorkspace);
-  const reliabilityLine = formatEngineReliabilityContract(descriptor);
-  return [
-    descriptor.label,
-    descriptor.kind === 'native' ? 'Native · 内置 runtime' : '外部 CLI',
-    `${ENGINE_INSTALL_LABEL[descriptor.installState]} / ${ENGINE_RUNTIME_LABEL[descriptor.runtimeState]}`,
-    unavailableReason,
-    reliabilityLine,
-    descriptor.version,
-    ENGINE_PERMISSION_LABEL[descriptor.defaultPermissionProfile],
-    formatEngineCwdPolicy(descriptor),
-    ENGINE_RISK_LABEL[descriptor.riskTier],
-    descriptor.command,
-    descriptor.lastError,
-  ].filter(Boolean).join(' · ');
 }
 
 export type EngineReliabilityTone = 'ready' | 'warning' | 'error' | 'info';

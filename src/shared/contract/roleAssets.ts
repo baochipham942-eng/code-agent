@@ -157,6 +157,10 @@ export interface RoleFirstWakeSnapshot {
   /** connected = 提示词带了已连接源名单；none = 无已连接源（引导连接，不编造建议） */
   sourcesMode: 'connected' | 'none';
   suggestions: RoleFirstWakeSuggestion[];
+  /** 自我介绍正文：最终输出去掉建议块、trim、最多 1200 字。没有正文时缺省。 */
+  intro?: string;
+  /** 失败短因（无堆栈）。仅 failed 时有。 */
+  failureReason?: string;
 }
 
 /** 一次醒来的执行结果（cron 执行记录 / E2E 验收用） */

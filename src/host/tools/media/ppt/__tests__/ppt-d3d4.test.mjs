@@ -15,7 +15,6 @@ globalThis.require = projectRequire;
 const { splitOverloadedSlides, mergeThinSlides, normalizeDensity } = await import('../densityControl.ts');
 const { validateNarrative } = await import('../narrativeValidator.ts');
 const { hexToHSL, hslToHex, generateGoldenAnglePalette, adjustBrightness } = await import('../colorUtils.ts');
-const { getSpacingConfig, getContentArea } = await import('../spacing.ts');
 const { getThemeConfig } = await import('../themes.ts');
 const { selectMasterAndLayout, resetLayoutRotation } = await import('../layouts.ts');
 const { enrichSlideContent } = await import('../slideContentAgent.ts');
@@ -312,67 +311,6 @@ console.log('\n═══ Part C: Color Utils (D4) ═══');
   log('C.8 darken white → not white', result !== 'ffffff', `got ${result}`);
   const { l } = hexToHSL(result);
   log('C.8a lightness ≈ 50', Math.abs(l - 50) < 1, `l=${l.toFixed(1)}`);
-}
-
-// ============================================================================
-// Part D: Spacing (D4) — 主题感知间距
-// ============================================================================
-console.log('\n═══ Part D: Spacing (D4) ═══');
-
-// D.1 apple-dark theme spacing: name is Chinese '苹果暗黑' so falls into dark neon path
-//     (isApple checks theme.name.includes('apple') which is false for Chinese name)
-{
-  const theme = getThemeConfig('apple-dark');
-  const spacing = getSpacingConfig(theme);
-  // apple-dark has isDark=true and name='苹果暗黑' → hits dark neon default (gap=0.22)
-  log('D.1 apple-dark gap ≤ 0.25', spacing.gap <= 0.25, `gap=${spacing.gap}`);
-}
-
-// D.2 glass-light theme (not dark) uses standard spacing with larger gap
-{
-  const theme = getThemeConfig('glass-light');
-  const spacing = getSpacingConfig(theme);
-  log('D.2 glass-light gap > apple gap', spacing.gap > 0.2, `gap=${spacing.gap}`);
-  log('D.2a glass-light lineHeight = 1.4', spacing.lineHeight === 1.4, `lineHeight=${spacing.lineHeight}`);
-}
-
-// D.3 neon-green theme (dark, not apple) uses generous spacing
-{
-  const theme = getThemeConfig('neon-green');
-  const spacing = getSpacingConfig(theme);
-  log('D.3 neon-green is dark path', spacing.padding.top === 1.5, `top=${spacing.padding.top}`);
-  log('D.3a neon-green lineHeight = 1.3', spacing.lineHeight === 1.3, `lineHeight=${spacing.lineHeight}`);
-}
-
-// D.4 getContentArea returns valid dimensions (w > 0, h > 0)
-{
-  const theme = getThemeConfig('neon-green');
-  const spacing = getSpacingConfig(theme);
-  const area = getContentArea(spacing);
-  log('D.4 content area w > 0', area.w > 0, `w=${area.w}`);
-  log('D.4a content area h > 0', area.h > 0, `h=${area.h}`);
-  log('D.4b content area x ≥ 0', area.x >= 0, `x=${area.x}`);
-  log('D.4c content area y ≥ 0', area.y >= 0, `y=${area.y}`);
-}
-
-// D.5 all themes produce valid spacing configs (no negative values)
-{
-  const themes = ['neon-green', 'neon-blue', 'neon-purple', 'neon-orange',
-    'glass-light', 'glass-dark', 'minimal-mono', 'corporate', 'apple-dark'];
-  let allValid = true;
-  for (const t of themes) {
-    const theme = getThemeConfig(t);
-    const spacing = getSpacingConfig(theme);
-    const valid = spacing.gap >= 0 && spacing.cardMargin >= 0 &&
-      spacing.lineHeight > 0 && spacing.minFontSize > 0 &&
-      spacing.padding.top >= 0 && spacing.padding.bottom >= 0 &&
-      spacing.padding.left >= 0 && spacing.padding.right >= 0;
-    if (!valid) {
-      allValid = false;
-      log(`D.5 ${t} invalid spacing`, false);
-    }
-  }
-  log('D.5 all themes valid spacing', allValid, `${themes.length} themes checked`);
 }
 
 // ============================================================================

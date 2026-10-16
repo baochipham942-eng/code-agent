@@ -923,6 +923,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
       switch (event.type) {
         case 'added':
+          // SSE 是 at-least-once（断线按 lastEventId 重放会再投一遍 added），按 sessionId 去重，
+          // 否则后台面板同一条目出现两份（2026-10-09 无槽验证实测）。
+          if (backgroundSessions.some((t) => t.sessionId === event.task.sessionId)) break;
           set({ backgroundSessions: [...backgroundSessions, event.task] });
           break;
         case 'removed':

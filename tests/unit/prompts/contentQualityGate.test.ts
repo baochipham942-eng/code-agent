@@ -10,6 +10,7 @@ import {
   getSystemReminders,
 } from '../../../src/host/prompts/systemReminders';
 import { getRemindersForTask } from '../../../src/host/prompts/dynamicReminders';
+import { chatTranscriptEn, chatTranscriptZh } from '../../../src/renderer/i18n/chatTranscript';
 import {
   REMINDER_DEFINITIONS,
 } from '../../../src/host/prompts/reminderRegistry';
@@ -311,5 +312,62 @@ describe('单轮 Office 文件交付 — 意图与提醒', () => {
     const prompt = '帮我分析这个 Excel 文件的销售数据并做个透视表';
     expect(getSystemReminders(prompt).some((r) => r.includes('数据处理任务'))).toBe(true);
     expect(getRemindersForTask(prompt, { includeFewShot: false }).some((r) => r.includes('数据处理必须遵循的流程'))).toBe(true);
+  });
+
+  // PR review 2026-10-15（rework r2）：office 令牌处于**源位置**的请求（转换的输入、
+  // 另存/复制的对象）不是「从会话内容生成交付物」——生成器做不了 docx→PDF 转换也
+  // 做不了另存桌面，误判会收走委派面并把模型指去重新生成 Word，整轮失败。
+  it.each([
+    ['zh 已有 docx 转 PDF', '把已有 report.docx 转成 PDF 发我'],
+    ['zh 另存到桌面', '帮我把 report.docx 另存到桌面'],
+    ['zh 保存到桌面', '帮我把 report.docx 保存到桌面'],
+    ['zh excel 表格转 csv', '把这份 excel 表格转成 csv'],
+    ['en convert docx to PDF', 'convert report.docx to PDF and send it over'],
+    ['en save xlsx to desktop', 'save the .xlsx to my desktop'],
+  ])('已有文件操作不算单轮交付：%s', (_label, prompt) => {
+    const features = detectTaskFeatures(prompt);
+    expect(features.isOneTurnFileDeliverable).toBe(false);
+    expect(getSystemReminders(prompt).some((r) => r.includes('文件交付任务'))).toBe(false);
+  });
+
+  it.each([
+    ['目标是 office 格式的转换仍算交付（md 转成 .docx）', '把 note.md 的内容整理好，转成一份排版漂亮的 .docx'],
+    ['周报卡仍是交付', weeklyZh],
+  ])('office 令牌在目标位不误伤：%s', (_label, prompt) => {
+    expect(detectTaskFeatures(prompt).isOneTurnFileDeliverable).toBe(true);
+  });
+});
+
+// ============================================================================
+// 小范围单轮对比（bounded comparison）— PR review 2026-10-15（rework r2）
+// 竞品简报卡这类「少量实体 + 单轮交付」的对比，不能被通用复杂度启发式推去
+// 自动委派/并行派发（glm-5.3 收到委派指引会拉起 swarm，成员启动审批卡可再卡死
+// 首轮——2026-10-11 缺陷）。触发策略在 host 侧收口，卡片文案不写内部指令。
+// ============================================================================
+
+describe('小范围单轮对比 — 不触发委派/并行派发', () => {
+  const competitorZh = chatTranscriptZh.chat.suggestions.competitorBrief.prompt;
+  const competitorEn = chatTranscriptEn.chat.suggestions.competitorBrief.prompt;
+
+  it.each([
+    ['zh 竞品卡', competitorZh],
+    ['en 竞品卡', competitorEn],
+    ['en 泛化样本', 'Write a competitor brief: compare exactly Notion, Lark, and DingTalk across 5 dimensions, then deliver the full brief in one turn.'],
+  ])('%s：判为 bounded，不注入委派/并行派发提醒', (_label, prompt) => {
+    const features = detectTaskFeatures(prompt);
+    expect(features.isBoundedComparison).toBe(true);
+    expect(features.isMultiDimension).toBe(false);
+    expect(getSystemReminders(prompt).some((r) => r.includes('委派提醒') || r.includes('并行派发'))).toBe(false);
+    expect(getRemindersForTask(prompt, { includeFewShot: false }).some((r) => r.includes('委派提醒') || r.includes('并行派发'))).toBe(false);
+  });
+
+  it('大型多维任务仍保留并行派发与委派信号（无回归）', () => {
+    const prompt = 'Perform a comprehensive security, performance, quality, frontend, backend, database, and API audit across the entire codebase with independent findings and a complete report.';
+    const features = detectTaskFeatures(prompt);
+
+    expect(features.isBoundedComparison).toBe(false);
+    expect(features.isMultiDimension).toBe(true);
+    expect(getSystemReminders(prompt).some((r) => r.includes('并行派发'))).toBe(true);
+    expect(getRemindersForTask(prompt, { includeFewShot: false }).some((r) => r.includes('并行派发'))).toBe(true);
   });
 });

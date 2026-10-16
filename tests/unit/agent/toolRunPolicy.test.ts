@@ -156,6 +156,9 @@ describe('toolRunPolicy', () => {
       ['读取已有 docx（无生成动词）保留委派入口', '打开 report.docx 看看结论'],
       ['复杂大型交付保留委派入口', '全面深入地研究这个行业，生成一份完整报告 .docx'],
       ['闲聊保留委派入口', '你好'],
+      ['zh 转换已有 docx 保留委派入口（PR review 2026-10-15）', '把已有 report.docx 转成 PDF 发我'],
+      ['zh 保存到桌面保留委派入口', '帮我把 report.docx 保存到桌面'],
+      ['en convert docx to PDF 保留委派入口', 'convert report.docx to PDF and send it over'],
     ])('%s', (_label, prompt) => {
       const ctx = { messages: [{ role: 'user', content: prompt }] } as any;
 
@@ -163,6 +166,45 @@ describe('toolRunPolicy', () => {
         tool('delegate_task'),
         tool('Read'),
       ], ctx).map((item) => item.name)).toEqual(['delegate_task', 'Read']);
+    });
+  });
+
+  // PR review 2026-10-15（rework r2）：竞品简报卡是「少量实体 + 单轮交付」的小范围
+  // 对比，host 触发策略必须收掉委派面——留在面上时委派倾向模型（glm-5.3 类）会把
+  // 首轮改道进 spawn_agent/swarm，用户点卡得到「已派后台」而非对比表（2026-10-11
+  // 缺陷复现路径）。大型多维任务的委派面不受影响（见上下各用例）。
+  describe('小范围单轮对比轮的委派面收口', () => {
+    const competitorZh = '写一份竞品简报（示例场景）：市场以「团队协作工具」为例，只对比 Notion、飞书、钉钉 3 家，各按 5 个维度整理，先用一张对比表收拢，再给 3 条简短结论。现在就开始写，一轮内交付完整简报，不要问我任何问题。';
+    const competitorEn = 'Write a competitor brief: compare exactly Notion, Lark, and DingTalk across 5 dimensions. Start writing now and deliver the full brief in one turn, without asking me any questions.';
+
+    it.each([
+      ['zh 竞品卡形', competitorZh],
+      ['en 竞品卡形', competitorEn],
+    ])('%s：委派工具被移出，读写工具保留', (_label, prompt) => {
+      const ctx = { messages: [{ role: 'user', content: prompt }] } as any;
+
+      expect(filterToolsByRunPolicy([
+        tool('spawn_agent'),
+        tool('AgentSpawn'),
+        tool('delegate_task'),
+        tool('workflow_orchestrate'),
+        tool('Read'),
+      ], ctx).map((item) => item.name)).toEqual(['Read']);
+    });
+
+    it('大型多维任务的委派面不受影响（无回归）', () => {
+      const ctx = {
+        messages: [{
+          role: 'user',
+          content: 'Perform a comprehensive security, performance, quality, frontend, backend, database, and API audit across the entire codebase with independent findings and a complete report.',
+        }],
+      } as any;
+
+      expect(filterToolsByRunPolicy([
+        tool('spawn_agent'),
+        tool('delegate_task'),
+        tool('Read'),
+      ], ctx).map((item) => item.name)).toEqual(['spawn_agent', 'delegate_task', 'Read']);
     });
   });
 

@@ -13,7 +13,7 @@ import { detectTaskFeatures } from '../../prompts/systemReminders';
 
 const logger = createLogger('AgentLoop');
 
-const FILE_DELIVERABLE_DELEGATION_TOOLS = new Set([
+const ONE_TURN_DELEGATION_TOOLS = new Set([
   'task',
   'delegate_task',
   'spawn_agent',
@@ -26,15 +26,27 @@ function latestUserPrompt(ctx: RuntimeContext): string {
   return [...(ctx.messages ?? [])].reverse().find((message) => message.role === 'user')?.content ?? '';
 }
 
+function hasBoundedComparisonMessage(ctx: RuntimeContext): boolean {
+  return (ctx.messages ?? []).some((message) => (
+    message.role === 'user' && detectTaskFeatures(message.content).isBoundedComparison === true
+  ));
+}
+
 /**
- * 单轮 Office 文件交付（isOneTurnFileDeliverable）收掉委派面——前台没有终端，
- * 模型看得见 delegate_task 时只会「写脚本 + 派后台」，后台 terminal_write 撞审批
- * 卡死，整轮以「运行失败」收场（N-HOME-STARTER-CARDS-FILES r2 实测）。收掉委派入口，
- * 工具面上剩下的文件生成路径（docx_generate/excel_generate）就是最短路。
+ * 委派面收口的两种「单轮可直出」形态：
+ * - 单轮 Office 文件交付（isOneTurnFileDeliverable）——前台没有终端，模型看得见
+ *   delegate_task 时只会「写脚本 + 派后台」，后台 terminal_write 撞审批卡死，
+ *   整轮以「运行失败」收场（N-HOME-STARTER-CARDS-FILES r2 实测）。收掉委派入口，
+ *   工具面上剩下的文件生成路径（docx_generate/excel_generate）就是最短路。
+ * - 小范围单轮对比（isBoundedComparison）——「少量实体 + 一轮交付」的调研在文字
+ *   前台一轮即可直出；委派倾向模型（glm-5.3 类）看得见 spawn_agent/delegate_task
+ *   时会把首轮改道进 swarm，成员启动审批卡可再卡死整轮（2026-10-11 缺陷）。
+ *   会话里出现过 bounded 轮即持续收口（按全部 user 消息判，不只看最新一条）。
  */
-function isFileDeliverableDelegationBypassTool(toolName: string, ctx: RuntimeContext): boolean {
-  if (!FILE_DELIVERABLE_DELEGATION_TOOLS.has(toolName.trim().toLowerCase())) return false;
-  return detectTaskFeatures(latestUserPrompt(ctx)).isOneTurnFileDeliverable === true;
+function isOneTurnDelegationBypassTool(toolName: string, ctx: RuntimeContext): boolean {
+  if (!ONE_TURN_DELEGATION_TOOLS.has(toolName.trim().toLowerCase())) return false;
+  if (detectTaskFeatures(latestUserPrompt(ctx)).isOneTurnFileDeliverable === true) return true;
+  return hasBoundedComparisonMessage(ctx);
 }
 
 export function isToolDeniedForRun(ctx: RuntimeContext, toolName: string): boolean {
@@ -61,11 +73,12 @@ export function filterToolsByRunPolicy(
   // 不新造平行判定；有人值守轮原样保留，交互行为不变。
   const askUnattended = ctx.unattendedTurn === true;
   const oneTurnFileDeliverable = detectTaskFeatures(latestUserPrompt(ctx)).isOneTurnFileDeliverable === true;
+  const boundedComparison = hasBoundedComparisonMessage(ctx);
   const hasPolicy = (ctx.deniedToolNames?.length ?? 0) > 0 || (ctx.allowedToolNames?.length ?? 0) > 0;
-  if (!hasPolicy && !askUnattended && !oneTurnFileDeliverable) return tools;
+  if (!hasPolicy && !askUnattended && !oneTurnFileDeliverable && !boundedComparison) return tools;
   return tools.filter((tool) => {
     if (askUnattended && ASK_USER_QUESTION_TOOL_NAMES.some((name) => name === tool.name)) return false;
-    if (isFileDeliverableDelegationBypassTool(tool.name, ctx)) return false;
+    if (isOneTurnDelegationBypassTool(tool.name, ctx)) return false;
     return !isToolDeniedByRunPolicy(ctx, tool.name);
   });
 }

@@ -193,6 +193,15 @@ describe('getTextForegroundToolNamesForPrompt — 文件交付扩展', () => {
       .toEqual(getTextForegroundToolNames());
     expect(getTextForegroundToolNamesForPrompt('打开 report.docx 看看结论'))
       .toEqual(getTextForegroundToolNames());
+    // PR review 2026-10-15（rework r2）：对已有文件的转换/另存不是「从内容生成交付物」，
+    // 生成器进面只会把模型引去重新生成一份 Word；这类轮保持基础面（委派后台可执行
+    // 真实转换）。
+    expect(getTextForegroundToolNamesForPrompt('把已有 report.docx 转成 PDF 发我'))
+      .toEqual(getTextForegroundToolNames());
+    expect(getTextForegroundToolNamesForPrompt('帮我把 report.docx 另存到桌面'))
+      .toEqual(getTextForegroundToolNames());
+    expect(getTextForegroundToolNamesForPrompt('convert report.docx to PDF and send it over'))
+      .toEqual(getTextForegroundToolNames());
   });
 
   it('withSessionCommandCenterBrain 带 prompt 时把生成工具写进 allowlist', () => {

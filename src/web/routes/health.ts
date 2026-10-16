@@ -1,3 +1,5 @@
+import { createHmac } from 'node:crypto';
+import { WEB_BOOT_CHALLENGE } from '../../shared/constants/webServer';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import type { HandlerFn } from '../electronMock';
@@ -54,7 +56,7 @@ function buildHealthPayload(deps: HealthDeps): WebHealthDetail {
     handlers: deps.handlers.size,
     serverRoot: process.cwd(),
     pid: process.pid,
-    tauriBootToken: process.env.CODE_AGENT_TAURI_BOOT_TOKEN || null,
+    tauriBootConfigured: Boolean(process.env.CODE_AGENT_TAURI_BOOT_TOKEN),
     build: deps.getBuildInfo(),
     persistence: deps.getPersistenceHealth(),
     durableRunReady: deps.getDurableRunReady(),
@@ -70,7 +72,6 @@ function projectPublicHealth(payload: WebHealthDetail): WebHealthPublic {
     timestamp: payload.timestamp,
     durableRunReady: payload.durableRunReady,
     rendererServe: payload.rendererServe,
-    tauriBootToken: payload.tauriBootToken,
     build: typeof buildVersion === 'string' ? { version: buildVersion } : null,
   };
 }
@@ -81,7 +82,18 @@ export function createHealthRouter(deps: HealthDeps): Router {
   // ── Health ──────────────────────────────────────────────────────────
   router.get('/health', (req: Request, res: Response) => {
     if (req.query.rendererReady === '1') deps.onRendererReady?.();
-    res.json(projectPublicHealth(buildHealthPayload(deps)));
+    const payload = projectPublicHealth(buildHealthPayload(deps));
+    const nonce = req.query[WEB_BOOT_CHALLENGE.QUERY_PARAM];
+    const bootToken = process.env.CODE_AGENT_TAURI_BOOT_TOKEN;
+    if (
+      bootToken && typeof nonce === 'string'
+      && nonce.length === WEB_BOOT_CHALLENGE.HEX_LENGTH
+      && !WEB_BOOT_CHALLENGE.NON_HEX_PATTERN.test(nonce)
+    ) {
+      payload.bootProof = createHmac('sha256', bootToken).update(nonce).digest('hex');
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(payload);
   });
 
   router.get('/health/detail', (_req: Request, res: Response) => {

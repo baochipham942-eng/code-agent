@@ -119,6 +119,20 @@ function readSandboxDeniedWritePath(failureText: string): string | undefined {
     // only proven-read frames (read API and no write API) skip the match. No
     // frames or ambiguous frames (`at Object.openSync`) keep today's result.
     if (match[1] === 'open' && match.index !== undefined && nodeOpenDeniedByRead(failureText, match.index)) continue;
+    // `copyfile '<src>' -> '<dst>'` prints the FIRST quoted operand as the
+    // source, which is also `req->path` for BOTH errors (libuv uv__fs_copyfile),
+    // so a read-denied source and a write-denied destination are byte-identical
+    // apart from the paths. A write grant can only ever target the destination,
+    // and a grant on the source would ask the user to allow writing a file it
+    // merely fails to read; the destination is therefore the only operand we
+    // return. Residual (accepted): a read-denied source still yields a card
+    // whose retry cannot succeed — misleading, but never a grant on the source.
+    if (match[1] === 'copyfile') {
+      const rest = match.index !== undefined ? failureText.slice(match.index + match[0].length) : '';
+      const dest = /^\s*->\s*['"]([^'"\r\n]+)['"]/.exec(rest)?.[1];
+      if (!dest) continue;
+      return dest;
+    }
     return match[2];
   }
 

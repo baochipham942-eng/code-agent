@@ -149,9 +149,10 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   const isRunning = sessionTurnActive && (status.kind === 'live' || status.kind === 'background');
   const attentionDotClass = getAttentionDotClassName(status.kind);
   const waitingDetail = status.kind === 'approval' ? getWaitingDetailForSession?.(session.id) : undefined;
+  const waitingAppName = waitingDetail?.kind === 'permission' ? waitingDetail.appName : undefined;
   const waitingText = waitingDetail?.kind === 'permission'
-    ? waitingDetail.appName
-      ? s.waitingPermissionApp.replace('{app}', () => waitingDetail.appName!)
+    ? waitingAppName
+      ? s.waitingPermissionApp.replace('{app}', () => waitingAppName)
       : s.waitingPermission
     : s.waitingInput;
   const latestActivityAt = Math.max(

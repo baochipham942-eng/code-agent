@@ -10,14 +10,19 @@
 // ============================================================================
 
 import { CRON_GUARDRAILS } from '../../shared/constants';
-import type { CronJobDefinition, CronJobExecution } from '../../shared/contract/cron';
+import type { AgentAction, CronJobDefinition, CronJobExecution } from '../../shared/contract/cron';
 import { normalizeErrorMessage } from '../lightMemory/failureJournal';
 import { getConfigService } from '../services/core/configService';
 import { notificationService } from '../services/infra/notificationService';
+import { isNotifySuppressedResult } from './cronNormalizers';
 import {
   CRON_LOGIN_WALL_STOP,
   parseCronLoginWallStop,
 } from '../../shared/utils/browserLoginWall';
+import {
+  CRON_FAILURE_CODE,
+  classifyCronFailure as classifyCronFailurePresentation,
+} from '../../shared/utils/cronFailureClassification';
 
 export type CronFailureKind = 'transient' | 'permanent' | 'capacity-wait' | 'login-wall';
 
@@ -165,9 +170,29 @@ export function notifyCronJobDisabled(
 }
 
 /**
+ * notifyWhen 安静轮判定（N-CRON-RESTATE-HUMAN-WHEN）：任务带 notifyWhen 判据且本次
+ * 成功运行的最终正文没有 <cron_alert> 时，这轮不打扰用户——完成系统通知与通道推送
+ * 都跳过（hasAlert 的计算与推送门在 cronService.executeAction；本函数只判 + 留痕）。
+ * 执行本身不受影响：仍 completed、仍进历史与待过目收件箱。判据未设置的任务恒
+ * false，行为零变化；失败/登录墙通知走 notifyCronAgentExecution 的失败分支，
+ * 永不经过本判定（标记只在成功路径打上）。
+ */
+export function cronNotifyQuietRound(
+  action: Pick<AgentAction, 'notifyWhen'>,
+  hasAlert: boolean,
+  jobId: string,
+): boolean {
+  if (!action.notifyWhen?.trim() || hasAlert) return false;
+  console.warn(`[CronService] notify suppressed: notifyWhen not met job=${jobId}`);
+  return true;
+}
+
+/**
  * 定时 agent 任务跑完后发完成通知（从 cronService 平移，逻辑不变）。
  * 只对生成了会话的 agent action 发——点击通知经 NOTIFICATION_CLICKED 跳到该 session。
  * 失败告警走 noticeGate（jobId+归一化错误 去重 + 1h 冷却）；完成通知不受门约束。
+ * notifyWhen 未满足的安静成功轮除外（N-CRON-RESTATE-HUMAN-WHEN）：结果带
+ * notifySuppressed 标记时跳过完成通知——安静正是用户要的行为。
  */
 export function notifyCronAgentExecution(
   definition: CronJobDefinition,
@@ -179,11 +204,17 @@ export function notifyCronAgentExecution(
   if (execution.status !== 'completed' && execution.status !== 'failed') return;
   try {
     const succeeded = execution.status === 'completed';
+    if (succeeded && isNotifySuppressedResult(execution.result)) {
+      return; // notifyWhen 未满足：本轮不打扰（留痕在 cronNotifyQuietRound）
+    }
     if (!succeeded
       && !noticeGate.shouldNotify(definition.id, execution.error ?? '未知错误')) {
       return; // 同因失败冷却中：这次不重复告警
     }
     const loginWall = parseCronLoginWallStop(execution.error);
+    const presentation = !succeeded && !loginWall
+      ? classifyCronFailurePresentation(execution.error)
+      : undefined;
     notificationService.notifyTaskComplete(
       {
         sessionId: execution.sessionId,
@@ -197,6 +228,13 @@ export function notifyCronAgentExecution(
         toolsUsed: [],
         succeeded,
         ...(loginWall ? { code: CRON_LOGIN_WALL_STOP, siteOrigin: loginWall.siteOrigin } : {}),
+        ...(presentation
+          ? {
+              code: CRON_FAILURE_CODE,
+              failureKind: presentation.kind,
+              ...(presentation.resetAt ? { resetAt: presentation.resetAt } : {}),
+            }
+          : {}),
       },
       { force: true }, // 后台定时任务完成：绕过焦点门，app 前台/后台都提醒
     );

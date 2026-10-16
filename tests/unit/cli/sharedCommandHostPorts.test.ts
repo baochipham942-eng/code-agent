@@ -1,5 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { buildSharedCommandHostPorts } from '../../../src/cli/commands/sharedCommandHostPorts';
+
+const extensionOpsHost = vi.hoisted(() => ({
+  install: vi.fn(),
+}));
+
+vi.mock('../../../src/host/services/plugins/extensionOpsService', () => ({
+  getExtensionOpsService: () => ({
+    list: async () => [],
+    install: (...args: unknown[]) => extensionOpsHost.install(...args),
+    uninstall: async () => {},
+    enable: async () => {},
+    disable: async () => {},
+    reload: async () => {},
+    validate: async () => ({ valid: true, errors: [], warnings: [] }),
+  }),
+}));
 
 const LOADER_KEYS = [
   'loadDoctorRunner',
@@ -52,5 +68,58 @@ describe('CLI shared command host ports', () => {
     for (const method of ['list', 'install', 'uninstall', 'enable', 'disable', 'reload', 'validate']) {
       expect(typeof extensionOps[method]).toBe('function');
     }
+  });
+
+  it('extensionOps.install forwards the caution token to the host service', async () => {
+    extensionOpsHost.install.mockResolvedValueOnce(undefined);
+    const ports = buildSharedCommandHostPorts({
+      agent: { getSessionId: () => null },
+      getSessionSkillService: () => ({ getMountedSkills: () => [] }),
+    });
+    const extensionOps = ports.extensionOps as {
+      install: (spec: string, options?: { cautionConfirmationToken?: string }) => Promise<unknown>;
+    };
+
+    await expect(extensionOps.install('demo@local', { cautionConfirmationToken: 'f'.repeat(64) })).resolves.toBeUndefined();
+
+    expect(extensionOpsHost.install).toHaveBeenCalledWith('demo@local', { cautionConfirmationToken: 'f'.repeat(64) });
+  });
+
+  it('extensionOps.install converts a caution confirmation error into its result', async () => {
+    const { SkillCautionConfirmationRequiredError } = await import(
+      '../../../src/host/skills/marketplace/skillInstallCautionGate'
+    );
+    const required = {
+      success: false as const,
+      code: 'SKILL_CAUTION_CONFIRMATION_REQUIRED' as const,
+      pluginSpec: 'demo@local',
+      sourceTrust: 'local-marketplace' as const,
+      cautionHits: [{ file: 'skills/demo/SKILL.md', ruleId: 'recursive_delete_targeted', snippet: 'rm -rf ./build' }],
+      confirmationToken: 'a'.repeat(64),
+    };
+    extensionOpsHost.install.mockRejectedValueOnce(new SkillCautionConfirmationRequiredError(required));
+    const ports = buildSharedCommandHostPorts({
+      agent: { getSessionId: () => null },
+      getSessionSkillService: () => ({ getMountedSkills: () => [] }),
+    });
+    const extensionOps = ports.extensionOps as {
+      install: (spec: string, options?: { cautionConfirmationToken?: string }) => Promise<unknown>;
+    };
+
+    await expect(extensionOps.install('demo@local')).resolves.toEqual(required);
+    expect(extensionOpsHost.install).toHaveBeenCalledWith('demo@local', undefined);
+  });
+
+  it('extensionOps.install keeps rethrowing non-caution errors untouched', async () => {
+    extensionOpsHost.install.mockRejectedValueOnce(new Error('marketplace unreachable'));
+    const ports = buildSharedCommandHostPorts({
+      agent: { getSessionId: () => null },
+      getSessionSkillService: () => ({ getMountedSkills: () => [] }),
+    });
+    const extensionOps = ports.extensionOps as {
+      install: (spec: string, options?: { cautionConfirmationToken?: string }) => Promise<unknown>;
+    };
+
+    await expect(extensionOps.install('demo@local')).rejects.toThrow('marketplace unreachable');
   });
 });

@@ -16,7 +16,7 @@ Tauri Rust shell
   -> spawn webServer child process
   -> initialize local config and persistence
   -> start remote plugins / skills / MCP capability bootstrap in background
-  -> healthcheck /api/health with boot token match
+  -> healthcheck /api/health?bootChallenge=<nonce> with HMAC proof verification
   -> navigate main window to webServer
   -> finish remote capabilities and durable recovery behind a fail-closed readiness flag
   -> expose diagnostics through diagnostics.desktopShell
@@ -38,6 +38,18 @@ Boot performance evidence is split across three clocks: webServer logs structure
 
 The Rust shell writes `desktop-shell-boot-latest.json` under the app log directory. The write is best-effort. If the file cannot be written, the app continues booting and the diagnostics IPC falls back to live checks where possible.
 
+The shell generates a 256-bit boot token using the OS RNG and passes it only to its
+webServer child via `CODE_AGENT_TAURI_BOOT_TOKEN`. Each health probe uses a fresh
+256-bit nonce encoded as exactly 64 lowercase hex characters in `bootChallenge`.
+The server returns `bootProof = HMAC-SHA256(bootToken, nonce)` as lowercase hex;
+the key and message are the UTF-8 strings, not decoded hex. Rust verifies the tag
+in constant time using `ring::hmac::verify`. Missing/invalid nonce or missing token
+means no proof field. Public health is `no-store` and never returns a raw token,
+prefix, or unchallenged token hash. An old raw-token echo is rejected.
+Authenticated health detail exposes only `tauriBootConfigured` for smoke checks;
+API authentication still uses the separate `SERVER_AUTH_TOKEN`. Diagnostics retain
+only the shell's proof-match boolean/fingerprint, never the proof or token itself.
+
 `/api/health` is shell readiness, not proof that every remote capability is connected. Fresh-profile startup must not wait for Cloud config, remote skill repositories, or MCP handshakes before the HTTP listener and first window navigation. Those capabilities initialize in the background; connection failures are warnings and leave the affected capability unavailable without taking down the builtin renderer. Durable recovery waits for capability bootstrap and remains fail-closed until its handlers are ready.
 
 Boot stages are intentionally coarse and stable:
@@ -49,7 +61,7 @@ Boot stages are intentionally coarse and stable:
 | `server-script-resolved` | `dist/web/webServer.cjs` was found. |
 | `node-binary-resolved` | Bundled Node was found and executable. |
 | `web-server-spawned` | Node child process was started. |
-| `health-ready` | `/api/health` responded and matched the expected boot token. |
+| `health-ready` | `/api/health` responded with a valid nonce-bound boot proof. |
 | `window-navigated` | The Tauri window navigated to the running webServer. |
 | `failed` | Boot stopped; `failedStage` and issue codes explain the last known boundary. |
 
@@ -61,7 +73,7 @@ Boot stages are intentionally coarse and stable:
 |---------|--------|---------|
 | `app` | main process env and platform app adapter | Version, mode, bundle id, data directory, web port, pid, and channel. |
 | `boot` | `desktop-shell-boot-latest.json` | Last boot stage, webServer pid, server root, script path, Node path, boot token match state, and previous failure summary. |
-| `webServer` | `GET /api/health` | Live health, pid, server root, persistence health, and transport errors. |
+| `webServer` | Authenticated `GET /api/health/detail` | Live health, pid, server root, persistence health, and transport errors. |
 | `renderer` | `/api/health.rendererServe` or fallback decision | Active/builtin/static renderer source, reason, serve directory, shell version, active bundle metadata, and hot-update disable reason. |
 | `resources` | Tauri preflight or main-process fallback | Required and optional package resource status. |
 | `runtimeAssets` | `runtimeAssetStatus` | Bundled/optional runtime asset availability, version, platform, minimum shell version, and hash summary. |
@@ -71,7 +83,7 @@ Boot stages are intentionally coarse and stable:
 | `repairActions` | diagnostics aggregator | Suggested low-risk recovery actions derived from the current issue set. |
 | `issues` | boot, resource, web, and previous failure records | Reader-facing issue codes, severity, short message, and optional action. |
 
-Diagnostics can expose state and paths. They must not expose raw env, raw boot token, user tokens, provider secrets, cookies, or signing material. The packaged smoke script and post-publish verifier both assert this boundary.
+Diagnostics can expose state and paths. They must not expose raw env, raw boot token or boot proof, user tokens, provider secrets, cookies, or signing material. The packaged smoke script and post-publish verifier both assert this boundary.
 
 ## Resource Preflight
 

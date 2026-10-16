@@ -37,17 +37,6 @@ export interface CodeBlockProps {
   content: string;
 }
 
-// Block types for markdown parsing
-export type BlockType = 'paragraph' | 'heading' | 'table' | 'list' | 'blockquote' | 'hr';
-
-export interface MarkdownBlockData {
-  type: BlockType;
-  content: string;
-  level?: number; // for headings (1-6) and lists
-  items?: string[]; // for lists
-  ordered?: boolean; // for lists
-}
-
 // Tool status
 // - success: 工具执行成功
 // - error: 工具执行失败

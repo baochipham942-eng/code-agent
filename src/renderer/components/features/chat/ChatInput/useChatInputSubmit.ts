@@ -14,6 +14,7 @@ import type {
 import type { SteerOrQueueOutcome } from '@shared/contract/appService';
 import { buildAppshotXml, buildAppshotAttachment } from '@shared/contract/appshot';
 import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
+import { CRON_URGENCY_CRITERIA } from '@shared/constants';
 import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useAppStore } from '../../../../stores/appStore';
@@ -269,15 +270,24 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     try {
       const input = pending.input;
       const handoffPrompt = pending.handoffPrompt;
-      const action = input.action.type === 'agent' && currentSessionId
+      // 通知判据（N-CRON-RESTATE-HUMAN-WHEN）：确认时把（可能已在卡内编辑过的）
+      // restatement.notifyWhen 写进 agent action——host 侧 prompt 注入 + 通知门都读它。
+      // 空判据不写字段：保持「每次都通知」的旧行为，prompt 字节不变。截断口径与
+      // host normalizeAction 相同（CRON_URGENCY_CRITERIA.MAX_CHARS）。
+      const notifyWhenRule = pending.restatement?.notifyWhen?.trim()
+        .slice(0, CRON_URGENCY_CRITERIA.MAX_CHARS);
+      const actionBase = input.action.type === 'agent' && notifyWhenRule
+        ? { ...input.action, notifyWhen: notifyWhenRule }
+        : input.action;
+      const action = actionBase.type === 'agent' && currentSessionId
         ? {
-            ...input.action,
+            ...actionBase,
             context: {
-              ...(input.action.context ?? {}),
+              ...(actionBase.context ?? {}),
               sourceSessionId: currentSessionId,
             },
           }
-        : input.action;
+        : actionBase;
       const job = await cronClient.createJob({
         ...input,
         action,
@@ -358,8 +368,9 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
 
   // 处理提交
   // 运行中允许提交，把新输入排到当前回复结束后发送。
+  // toBackground：「转后台继续聊」——草稿发去新前台会话，按空闲发送处理（不排队不改道）。
   // P3-18: ! prefix executes shell command directly
-  const handleSubmit = async (e?: React.FormEvent, opts?: { steer?: boolean; content?: string }) => {
+  const handleSubmit = async (e?: React.FormEvent, opts?: { steer?: boolean; content?: string; toBackground?: boolean }) => {
     e?.preventDefault();
     discardPendingScheduleDraft();
     const trimmedValue = (opts?.content ?? value).trim();
@@ -598,7 +609,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       }
     }
 
-    const activeRuntimeInputMode: RuntimeInputMode | undefined = isProcessing
+    const activeRuntimeInputMode: RuntimeInputMode | undefined = isProcessing && !opts?.toBackground
       ? (opts?.steer ? 'redirect' : 'supplement')
       : undefined;
     // Appshot：截图作为图片附件追加；窗口文本作为隐藏 XML 前置到消息内容。
@@ -680,7 +691,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
           generateMessageId,
         );
         const stamped: ConversationEnvelope = { ...envelope, clientMessageId };
-        if (isProcessing && !opts?.steer) {
+        if (isProcessing && !opts?.steer && !opts?.toBackground) {
           if (!currentSessionId) return false;
           const queuedEnvelope: ConversationEnvelope = {
             ...stamped,

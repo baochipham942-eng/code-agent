@@ -38,6 +38,5 @@ export const SECONDARY_PAGE_SHOW_EXCLUSIONS = [
   'showCapturePanel', // 截图模态
   'showFileExplorer', // 右侧 workbench 文件视图，不是 App 的二级页分支
   'showOptionalUpdateModal', // 系统更新模态
-  'showPlanningPanel', // 会话内规划面板
   'showDAGPanel', // Workflow overlay
 ] as const;

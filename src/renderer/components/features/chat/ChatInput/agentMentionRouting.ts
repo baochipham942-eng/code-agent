@@ -19,7 +19,7 @@ function isReservedNeoMention(value: string): boolean {
   return normalizeMentionToken(value) === 'neo';
 }
 
-export function normalizeMentionToken(value: string): string {
+function normalizeMentionToken(value: string): string {
   return value
     .trim()
     .toLowerCase()

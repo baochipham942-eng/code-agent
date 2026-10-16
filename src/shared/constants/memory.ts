@@ -190,11 +190,16 @@ export const ROLE_ASSETS = {
   DRAFTS_DIR_NAME: 'role-drafts',
   /** 首次醒来状态文件名：roles/<roleId>/first-wake.json（pending → running → completed/skipped） */
   FIRST_WAKE_FILENAME: 'first-wake.json',
+  /** 首次醒来的工具调用轮数预算（独立于巡检醒来：提示词要求 ≤3 次只读探查后作答，
+   *  6 = 探查 + 多步读取余量，掐掉长探查拖慢首次醒来。不许挪用 ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS，
+   *  那是按「逐个检查产物」多步工作流设计的 15 轮预算，砍它会把巡检醒来掐断在半途）。 */
+  FIRST_WAKE_MAX_ITERATIONS: 6,
 } as const;
 
 /** 角色主动性（cadence 触发器 + 醒来循环，内部文档） */
 export const ROLE_PROACTIVITY = {
-  /** 单次醒来最大工具调用轮数（硬约束，传给醒来实例的 maxIterations） */
+  /** 单次醒来最大工具调用轮数（硬约束，传给醒来实例的 maxIterations）。
+   *  提示词按「读履历 → 逐个检查产物 → 四选一决策」的多步工作流设计，15 轮是完整预算。 */
   WAKE_MAX_ITERATIONS: 15,
   /** 每角色每天最多醒来次数（cadence + event 合计），超出后本次醒来被 skip */
   MAX_WAKES_PER_DAY: 4,

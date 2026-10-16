@@ -9,8 +9,50 @@ import { POSTHOG_EVENTS } from '../../../shared/observability/posthog-events';
 import {
   isToolDeniedByRunPolicy,
 } from '../../tools/runToolPolicy';
+import { detectTaskFeatures } from '../../prompts/systemReminders';
 
 const logger = createLogger('AgentLoop');
+
+const ONE_TURN_DELEGATION_TOOLS = new Set([
+  'task',
+  'delegate_task',
+  'spawn_agent',
+  'agentspawn',
+  'workflow',
+  'workflow_orchestrate',
+]);
+
+function latestUserPrompt(ctx: RuntimeContext): string {
+  return [...(ctx.messages ?? [])].reverse().find((message) => message.role === 'user')?.content ?? '';
+}
+
+// 轮内会再注入 user 角色消息（autoApprovePlan 的合成确认、runtimeSteer 的转向消息），
+// 「最新一条 user」会偏离开跑 prompt，所以按轮判定只认 turn.beginRun 记下的起始 prompt。
+function currentTurnUserPrompt(ctx: RuntimeContext): string {
+  return ctx.turn?.runUserPrompt || latestUserPrompt(ctx);
+}
+
+function isBoundedComparisonTurn(ctx: RuntimeContext): boolean {
+  return detectTaskFeatures(currentTurnUserPrompt(ctx)).isBoundedComparison === true;
+}
+
+/**
+ * 委派面收口的两种「单轮可直出」形态（都只判**本轮**的 prompt，不扫会话历史——
+ * 扫全量 user 消息会让一次竞品卡轮把同会话之后所有轮的委派面永久收掉，
+ * 「跑测试/装依赖/并行调研」再也派不了后台，PR review 2026-10-15）：
+ * - 单轮 Office 文件交付（isOneTurnFileDeliverable）——前台没有终端，模型看得见
+ *   delegate_task 时只会「写脚本 + 派后台」，后台 terminal_write 撞审批卡死，
+ *   整轮以「运行失败」收场（N-HOME-STARTER-CARDS-FILES r2 实测）。收掉委派入口，
+ *   工具面上剩下的文件生成路径（docx_generate/excel_generate）就是最短路。
+ * - 小范围单轮对比（isBoundedComparison）——「少量实体 + 一轮交付」的调研在文字
+ *   前台一轮即可直出；委派倾向模型（glm-5.3 类）看得见 spawn_agent/delegate_task
+ *   时会把首轮改道进 swarm，成员启动审批卡可再卡死整轮（2026-10-11 缺陷）。
+ */
+function isOneTurnDelegationBypassTool(toolName: string, ctx: RuntimeContext): boolean {
+  if (!ONE_TURN_DELEGATION_TOOLS.has(toolName.trim().toLowerCase())) return false;
+  if (detectTaskFeatures(latestUserPrompt(ctx)).isOneTurnFileDeliverable === true) return true;
+  return isBoundedComparisonTurn(ctx);
+}
 
 export function isToolDeniedForRun(ctx: RuntimeContext, toolName: string): boolean {
   return isToolDeniedByRunPolicy(ctx, toolName);
@@ -35,10 +77,13 @@ export function filterToolsByRunPolicy(
   // 信号复用现有 unattendedTurn（originKind==='headless' / 会话级无人值守标记），
   // 不新造平行判定；有人值守轮原样保留，交互行为不变。
   const askUnattended = ctx.unattendedTurn === true;
+  const oneTurnFileDeliverable = detectTaskFeatures(latestUserPrompt(ctx)).isOneTurnFileDeliverable === true;
+  const boundedComparison = isBoundedComparisonTurn(ctx);
   const hasPolicy = (ctx.deniedToolNames?.length ?? 0) > 0 || (ctx.allowedToolNames?.length ?? 0) > 0;
-  if (!hasPolicy && !askUnattended) return tools;
+  if (!hasPolicy && !askUnattended && !oneTurnFileDeliverable && !boundedComparison) return tools;
   return tools.filter((tool) => {
     if (askUnattended && ASK_USER_QUESTION_TOOL_NAMES.some((name) => name === tool.name)) return false;
+    if (isOneTurnDelegationBypassTool(tool.name, ctx)) return false;
     return !isToolDeniedByRunPolicy(ctx, tool.name);
   });
 }

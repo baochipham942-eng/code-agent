@@ -1068,7 +1068,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         data: {
           code: 'CONTEXT_LENGTH_EXCEEDED',
           message: '上下文压缩后仍超限，建议新开会话。',
-          suggestion: '建议新开一个会话继续对话。',
+          suggestion: '建议新开一个会话继续对话。', terminal: false,
           details: {
             requested: error.requestedTokens,
             max: error.maxTokens,

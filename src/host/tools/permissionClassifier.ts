@@ -190,7 +190,20 @@ const WRITE_TOOLS = new Set([
   'Append',
   'edit_file',
   'Edit',
+  // 表格卡第二张工作表走 DocEdit（file_path）。它不在 Jev 扩桶里，规则落空就
+  // 一律 ask；无工作区的新会话没有人点批准。与 Edit 同一条路径判据：工作区内放行，
+  // 区外和受保护路径仍 ask。
+  'DocEdit',
+  // Office 一轮文件交付的原生生成器（output_path）。不进写入桶就落到 LLM 分类器
+  // 兜底 → ask，无头新会话没人点批准（r4 实测 docx_generate 卡审批 34s 后整轮取消）。
+  // 产物路径判据与 Edit 一致：工作区内放行，区外/受保护路径仍 ask。
+  'docx_generate',
+  'excel_generate',
 ]);
+
+// 生成器类写入工具的路径是可选参数：缺省时产物落在会话工作目录（resolveInputPath
+// 对 fileName 的行为），按 workingDirectory 本身参与边界判断即可。
+const GENERATOR_WRITE_TOOLS = new Set(['docx_generate', 'excel_generate']);
 
 const HOME_DIR = os.homedir();
 const CANONICAL_HOME_DIR = resolveCanonicalRunPath(HOME_DIR);
@@ -384,10 +397,23 @@ function recursivelyRemovesPath(command: string): boolean {
 // npm config 语义：同名参数后者覆盖前者，`--no-dry-run` / `--dry-run=false` 会把前面的 `--dry-run` 关掉——
 // `npm publish --dry-run --no-dry-run` 是真发布。只查 includes('--dry-run') 会把它当预览放行（N-APPROVAL-DRYRUN-DD，review-eval 在 #1611 案例上报出）。
 function npmPublishDryRunFlag(words: string[], start: number): boolean {
+  // ponytail: 只认写全的 --dry-run / --no-dry-run（含 =值、紧跟 true/false 取值）。
+  // npm 实测：`--dry-run false` 把 false 吃成取值 ⇒ 真发布；且任意唯一前缀缩写都被展开（--dry、--no-dr、--dry=false），
+  // 缩写形一律当拿不准 ⇒ 不放行（落到 ask），比逐个列举更稳。
   let dryRun = false;
-  for (const word of words.slice(start)) {
-    if (word === '--dry-run' || word === '--dry-run=true') dryRun = true;
-    else if (word === '--no-dry-run' || word === '--dry-run=false') dryRun = false;
+  const rest = words.slice(start);
+  for (let i = 0; i < rest.length; i++) {
+    const word = rest[i];
+    const eq = word.indexOf('=');
+    // nopt 把任意数量的前导短横都当 --（实测 `---no-dry-run` 关掉预览 ⇒ 真发布），先归一再比
+    const flag = (eq === -1 ? word : word.slice(0, eq)).replace(/^-{2,}/, '--');
+    let value = eq === -1 ? undefined : word.slice(eq + 1);
+    if (flag !== '--dry-run' && flag !== '--no-dry-run') {
+      if (/^-+(no-)?d/.test(flag)) return false;
+      continue;
+    }
+    if (value === undefined && (rest[i + 1] === 'true' || rest[i + 1] === 'false')) value = rest[++i];
+    dryRun = flag === '--dry-run' && (value === undefined || value === 'true');
   }
   return dryRun;
 }
@@ -733,8 +759,11 @@ export class PermissionClassifier {
       return this.classifyBashCommand(args.command, context, startTime);
     }
 
-    // R6: 文件写入工具 — 按路径判断
-    if (WRITE_TOOLS.has(toolName)) {
+    // R6: 文件写入工具 — 按路径判断。
+    // 生成器只在有权威工作区（新会话首轮起就有 project root）时走确定性写围栏；
+    // 无工作区场景维持既有 Jev 语境判定，不改变后台 run 的审批语义（jev R4 契约）。
+    if (WRITE_TOOLS.has(toolName)
+      && (context.workspaceRoot || !GENERATOR_WRITE_TOOLS.has(toolName))) {
       return this.classifyFileWrite(toolName, args, context, startTime);
     }
 
@@ -1113,7 +1142,8 @@ export class PermissionClassifier {
     context: ClassificationContext,
     startTime: number
   ): ClassificationResult | null {
-    const filePath = (args.file_path as string) || (args.path as string);
+    const filePath = (args.file_path as string) || (args.path as string) || (args.output_path as string)
+      || (GENERATOR_WRITE_TOOLS.has(toolName) ? '.' : undefined);
     if (!filePath) {
       const reason = '文件路径缺失';
       return {

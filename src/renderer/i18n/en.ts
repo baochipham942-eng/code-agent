@@ -7,6 +7,7 @@ import { sessionReplayEn } from './sessionReplay';
 import { chatTranscriptEn } from './chatTranscript';
 import { attachmentPreviewEn } from './attachmentPreview';
 import { chatInputEn } from './chatInput';
+import { backgroundPanelEn } from './backgroundPanel';
 import { voiceEn } from './voice';
 import { sidebarEn } from './sidebar';
 import { cronCenterEn } from './cronCenter';
@@ -932,6 +933,7 @@ export const en = {
   ...chatTranscriptEn,
   ...attachmentPreviewEn,
   ...chatInputEn,
+  ...backgroundPanelEn,
   ...voiceEn,
   ...sidebarEn,
   ...cronCenterEn,

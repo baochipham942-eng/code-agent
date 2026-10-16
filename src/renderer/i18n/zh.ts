@@ -7,6 +7,7 @@ import { sessionReplayZh } from './sessionReplay';
 import { chatTranscriptZh } from './chatTranscript';
 import { attachmentPreviewZh } from './attachmentPreview';
 import { chatInputZh } from './chatInput';
+import { backgroundPanelZh } from './backgroundPanel';
 import { voiceZh } from './voice';
 import { sidebarZh } from './sidebar';
 import { cronCenterZh } from './cronCenter';
@@ -934,6 +935,7 @@ export const zh = {
   ...chatTranscriptZh,
   ...attachmentPreviewZh,
   ...chatInputZh,
+  ...backgroundPanelZh,
   ...voiceZh,
   ...sidebarZh,
   ...cronCenterZh,

@@ -51,6 +51,25 @@ export const CONTENT_GENERATION_REMINDERS: ReminderDefinition[] = [
     category: 'tool',
   },
   {
+    id: 'FILE_DELIVERABLE_WORKFLOW',
+    priority: 1,
+    content: `<system-reminder>
+**文件交付任务**：用户点名要一份 Office 文件交付物（.docx/.xlsx）。
+
+**流程**：
+1. 直接基于会话内素材成稿，不要为此联网补素材
+2. 用本轮工具表中的原生工具直接生成：Word 用 docx_generate（content 传 Markdown，标题/列表/表格照常写），Excel 用 excel_generate（data 传 JSON 数组或 Markdown 表格）
+3. 一个工作簿要多个工作表时：先 excel_generate 生成原始数据表，再用 DocEdit（add_sheet + set_range）追加汇总表
+4. 生成后核对返回的文件路径与结构（工作表名、行数、关键内容），回复中给出确切文件名和一句内容摘要
+
+**禁止**：不要为此写 Python（python-docx/openpyxl/pandas）脚本——本轮的文件生成一律走上面的原生工具；不要派发后台任务或子代理来完成这个单轮文件交付
+</system-reminder>`,
+    tokens: 250,
+    shouldInclude: (ctx) => ctx.taskFeatures.isOneTurnFileDeliverable && !inAuthoringSkillFlow(ctx) ? 1.0 : 0,
+    exclusiveGroup: 'task-type-selection',
+    category: 'tool',
+  },
+  {
     id: 'DATA_PROCESSING_WORKFLOW',
     priority: 1,
     content: `<system-reminder>
@@ -71,7 +90,9 @@ export const CONTENT_GENERATION_REMINDERS: ReminderDefinition[] = [
 - 模糊指令先用 AskUserQuestion 澄清
 </system-reminder>`,
     tokens: 200,
-    shouldInclude: (ctx) => ctx.taskFeatures.isDataTask ? 1.0 : 0,
+    // 单轮文件交付改走 FILE_DELIVERABLE_WORKFLOW：这里的 Bash+pandas 路径在文字前台
+    // 不可达，照走只会把执行挤到后台脚本上去（N-HOME-STARTER-CARDS-FILES r2 实测）。
+    shouldInclude: (ctx) => ctx.taskFeatures.isDataTask && !ctx.taskFeatures.isOneTurnFileDeliverable ? 1.0 : 0,
     exclusiveGroup: 'task-type-selection',
     category: 'tool',
   },
@@ -97,7 +118,7 @@ export const CONTENT_GENERATION_REMINDERS: ReminderDefinition[] = [
 - 无遗留占位符文本
 </system-reminder>`,
     tokens: 270,
-    shouldInclude: (ctx) => ctx.taskFeatures.isDocumentTask && !inAuthoringSkillFlow(ctx) ? 1.0 : 0,
+    shouldInclude: (ctx) => ctx.taskFeatures.isDocumentTask && !ctx.taskFeatures.isOneTurnFileDeliverable && !inAuthoringSkillFlow(ctx) ? 1.0 : 0,
     exclusiveGroup: 'task-type-selection',
     category: 'tool',
   },
@@ -173,7 +194,7 @@ export const CONTENT_GENERATION_REMINDERS: ReminderDefinition[] = [
 - 输出关键数据摘要（行数、汇总值）供用户确认
 </system-reminder>`,
     tokens: 300,
-    shouldInclude: (ctx) => ctx.taskFeatures.isExcelTask ? 1.0 : 0,
+    shouldInclude: (ctx) => ctx.taskFeatures.isExcelTask && !ctx.taskFeatures.isOneTurnFileDeliverable ? 1.0 : 0,
     exclusiveGroup: 'task-type-selection',
     category: 'tool',
   },

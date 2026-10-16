@@ -34,6 +34,12 @@ const h = vi.hoisted(() => ({
     reused: false,
     root: '/managed/runtimes/python',
   })),
+  loEnsure: vi.fn(async (..._args: unknown[]): Promise<unknown> => ({
+    ok: true,
+    sofficePath: '/managed/runtimes/libreoffice/LibreOffice.app/Contents/MacOS/soffice',
+    reused: false,
+    root: '/managed/runtimes/libreoffice',
+  })),
 }));
 
 vi.mock('../../../src/host/platform', () => ({
@@ -50,6 +56,9 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 }));
 vi.mock('../../../src/host/runtime/pythonEnv/ensure', () => ({
   ensurePythonEnv: (...args: unknown[]) => h.ensure(...args),
+}));
+vi.mock('../../../src/host/runtime/libreOffice/ensure', () => ({
+  ensureLibreOffice: (...args: unknown[]) => h.loEnsure(...args),
 }));
 
 import { registerUpdateHandlers } from '../../../src/host/ipc/update.ipc';
@@ -137,6 +146,39 @@ describe('update.ipc dispatch 特征：下载与打开', () => {
       success: false,
       error: { code: 'INTERNAL_ERROR', message: offline },
     });
+  });
+
+  it('prepareRuntimeAssets libreoffice：失败后重试再次调安装器并回报 assetId（设置页重试路径）', async () => {
+    h.initialized = false;
+    const failure = {
+      ok: false,
+      root: '/managed/runtimes/libreoffice',
+      error: {
+        code: 'LIBREOFFICE_RUNTIME_INSTALL_FAILED',
+        message: 'LibreOffice installation did not finish. See the install log and try again.',
+        retryable: true,
+        logPath: '/managed/runtimes/libreoffice/install.log',
+      },
+    };
+    // 第一次（如后台自动安装）失败
+    h.loEnsure.mockResolvedValueOnce(failure);
+    expect(await call('prepareRuntimeAssets', { assetId: 'libreoffice' })).toEqual({
+      success: false,
+      error: { code: 'INTERNAL_ERROR', message: failure.error.message },
+    });
+    // 设置页重试：prepareRuntimeAssets({assetId:'libreoffice'}) 绕过每进程一次标志，再次安装
+    const retried = await call('prepareRuntimeAssets', { assetId: 'libreoffice' });
+    expect(retried).toEqual({
+      success: true,
+      data: {
+        installed: [{ assetId: 'libreoffice', root: '/managed/runtimes/libreoffice', reusedExistingInstall: false }],
+        skipped: [],
+      },
+    });
+    expect((retried.data as { installed: Array<{ assetId: string }> }).installed[0].assetId).toBe('libreoffice');
+    expect(h.loEnsure).toHaveBeenCalledTimes(2);
+    expect(h.svc.prepareRuntimeAsset).not.toHaveBeenCalled();
+    expect(h.svc.prepareRuntimeAssets).not.toHaveBeenCalled();
   });
 });
 

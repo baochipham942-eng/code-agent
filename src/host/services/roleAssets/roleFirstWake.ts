@@ -18,7 +18,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { createLogger } from '../infra/logger';
 import { getSessionAutomationService } from '../sessionAutomation';
-import { ROLE_PROACTIVITY } from '../../../shared/constants';
+import { ROLE_ASSETS, ROLE_PROACTIVITY } from '../../../shared/constants';
 import { UNATTENDED_TRUST_NOTICE } from '../../../shared/unattendedTrust';
 import type {
   RoleFirstWakeSnapshot,
@@ -220,7 +220,7 @@ const FIRST_WAKE_PROMPT_CONNECTED = (sourceNames: readonly string[], userExpecta
   '',
   '语言规则：用用户的语言回答；判断不出用户语言时默认中文。',
   '',
-  `预算约束：你最多有 ${ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS} 轮工具调用，超出会被强制结束。3 次左右的探查就够，省下的轮数直接用来写最终回复，不要探查到被强制结束。`,
+  `预算约束：你最多有 ${ROLE_ASSETS.FIRST_WAKE_MAX_ITERATIONS} 轮工具调用，超出会被强制结束。3 次左右的探查就够，省下的轮数直接用来写最终回复，不要探查到被强制结束。`,
 ].join('\n');
 
 /** 无已连接源：从职责出发纯文本自介 + 引导连接；绝不编造任务或数据。 */
@@ -365,7 +365,7 @@ async function defaultFirstWakeRunner(input: {
         systemInstructions: [UNATTENDED_TRUST_NOTICE],
         disableAutoAgent: true,
         agentOverrideId: input.roleId,
-        maxIterations: ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS,
+        maxIterations: ROLE_ASSETS.FIRST_WAKE_MAX_ITERATIONS,
         allowedToolNames: input.allowedToolNames,
       });
     } finally {
@@ -392,7 +392,7 @@ async function defaultFirstWakeRunner(input: {
 
     config.systemPrompt = rolePrompt;
     config.systemInstructions = [UNATTENDED_TRUST_NOTICE];
-    config.maxIterations = ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS;
+    config.maxIterations = ROLE_ASSETS.FIRST_WAKE_MAX_ITERATIONS;
     // 首次醒来是无人值守发起，不进上线后评测分母。
     config.originKind = 'headless';
     config.allowedToolNames = input.allowedToolNames;

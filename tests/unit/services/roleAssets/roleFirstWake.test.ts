@@ -18,7 +18,7 @@ const harness = vi.hoisted(() => ({
   automationRecordEvent: vi.fn(),
   sendMessage: vi.fn(),
   orchestratorPresent: true,
-  loops: [] as Array<{ allowedToolNames?: string[] }>,
+  loops: [] as Array<{ allowedToolNames?: string[]; maxIterations?: number }>,
   sessionSeq: 0,
 }));
 
@@ -91,8 +91,11 @@ vi.mock('../../../../src/cli/adapter', () => ({
 }));
 
 vi.mock('../../../../src/cli/bootstrap', () => ({
-  createAgentLoop: vi.fn((config: { allowedToolNames?: string[] }) => {
-    harness.loops.push({ allowedToolNames: config.allowedToolNames ? [...config.allowedToolNames] : undefined });
+  createAgentLoop: vi.fn((config: { allowedToolNames?: string[]; maxIterations?: number }) => {
+    harness.loops.push({
+      allowedToolNames: config.allowedToolNames ? [...config.allowedToolNames] : undefined,
+      maxIterations: config.maxIterations,
+    });
     return { run: vi.fn(async () => undefined) };
   }),
 }));
@@ -103,7 +106,7 @@ import {
   getFirstWakeSnapshot,
 } from '../../../../src/host/services/roleAssets/roleFirstWake';
 import { toRoleBoundaryRunAllowlist } from '../../../../src/host/services/roleAssets/rolePersonalization';
-import { ROLE_PROACTIVITY } from '../../../../src/shared/constants';
+import { ROLE_ASSETS } from '../../../../src/shared/constants';
 
 // ----------------------------------------------------------------------------
 // 夹具
@@ -428,7 +431,8 @@ describe('提示词变体', () => {
     expect(prompt).toContain('2-3 句');
     expect(prompt).toContain('不要任何 Markdown 标记');
     expect(prompt).toContain('不要提工具调用上限或轮数');
-    expect(prompt).toContain(String(ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS));
+    // 首次醒来用独立小预算，不许再借巡检醒来的 ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS（r2 回归钉）
+    expect(prompt).toContain(String(ROLE_ASSETS.FIRST_WAKE_MAX_ITERATIONS));
 
     harness.listCapabilities.mockResolvedValue({ items: [] });
     await enqueueFirstWake('prompt-shape-none', {
@@ -819,7 +823,8 @@ describe('默认执行器', () => {
     expect(options.allowedToolNames).toEqual(['Read']);
     expect(options.agentOverrideId).toBe('orch-role');
     expect(options.inputSource).toBe('automation');
-    expect(typeof options.maxIterations).toBe('number');
+    // r2 回归钉：首次醒来用独立小预算（快探查），不是巡检醒来的 15 轮
+    expect(options.maxIterations).toBe(ROLE_ASSETS.FIRST_WAKE_MAX_ITERATIONS);
 
     await vi.waitFor(async () => { await expect(readState('orch-role')).resolves.toMatchObject({ state: 'completed' }); });
     expect(await readState('orch-role')).toMatchObject({ suggestions: [{ title: 't', prompt: 'p' }] });
@@ -841,6 +846,8 @@ describe('默认执行器', () => {
     await enqueueFirstWake('cli-role');
     await vi.waitFor(() => { expect(harness.loops).toHaveLength(1); });
     expect(harness.loops[0]!.allowedToolNames).toEqual(['Read']);
+    // r2 回归钉：headless 分支同样吃首次醒来独立预算
+    expect(harness.loops[0]!.maxIterations).toBe(ROLE_ASSETS.FIRST_WAKE_MAX_ITERATIONS);
 
     await vi.waitFor(async () => { await expect(readState('cli-role')).resolves.toMatchObject({ state: 'completed' }); });
   });

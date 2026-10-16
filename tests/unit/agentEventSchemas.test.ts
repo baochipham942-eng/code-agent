@@ -62,6 +62,7 @@ describe('AgentEventSchema', () => {
       },
     },
     { type: 'agent_complete', data: null },
+    { type: 'error', data: { message: 'recoverable provider payload', code: 'IMAGE_PAYLOAD_EXCEEDED', terminal: false } },
     { type: 'doom_loop_handback', data: { sessionId: 'session-1' } },
     {
       type: 'plan_approval_update',

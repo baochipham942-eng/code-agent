@@ -13,7 +13,7 @@ import {
 } from './designDiagramTypes';
 
 /** 视频节点的默认时长（秒），当 durationSec 缺失或非正时回退。 */
-export const DEFAULT_VIDEO_DURATION_SEC = 5;
+const DEFAULT_VIDEO_DURATION_SEC = 5;
 
 /** 画布节点公共基础字段（图像节点与视频节点共享）。 */
 export interface CanvasNodeBase extends CanvasAttribution {
@@ -86,7 +86,7 @@ export interface DesignCanvasDoc {
   camera: CanvasCamera;
 }
 
-export const CANVAS_DOC_VERSION = 1 as const;
+const CANVAS_DOC_VERSION = 1 as const;
 
 /** 相机默认值：原点、1:1。 */
 export const DEFAULT_CAMERA: CanvasCamera = { x: 0, y: 0, scale: 1 };

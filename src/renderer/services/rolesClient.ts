@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { IPC_DOMAINS } from '@shared/ipc';
-import type { RolePanelEntry } from '@shared/contract/roleAssets';
+import type { RoleFirstWakeSnapshot, RolePanelEntry } from '@shared/contract/roleAssets';
 import type { RolePackEntry } from '@shared/contract/rolePackRegistry';
 import ipcService from './ipcService';
 
@@ -37,6 +37,16 @@ export interface RolePackActionResult {
 
 export async function listRoles(): Promise<RolePanelEntry[]> {
   return ipcService.invokeDomain<RolePanelEntry[]>(IPC_DOMAINS.ROLES, 'list');
+}
+
+/** roles IPC firstWakeGet。无状态文件时宿主返回 null。 */
+export async function getFirstWake(roleId: string): Promise<RoleFirstWakeSnapshot | null> {
+  return ipcService.invokeDomain<RoleFirstWakeSnapshot | null>(IPC_DOMAINS.ROLES, 'firstWakeGet', { roleId });
+}
+
+/** roles IPC firstWakeSkip。把 pending / running / completed / failed 封成 skipped。 */
+export async function skipFirstWake(roleId: string): Promise<{ success: boolean }> {
+  return ipcService.invokeDomain<{ success: boolean }>(IPC_DOMAINS.ROLES, 'firstWakeSkip', { roleId });
 }
 
 export async function listRolePacks(): Promise<RolePackListItem[]> {

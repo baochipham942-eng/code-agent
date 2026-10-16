@@ -99,7 +99,6 @@ const MIGRATED: string[] = [
   'composites/ConfirmDialog.tsx',
   'ErrorBoundary.tsx',
   'citations/CitationList.tsx',
-  'PlanningPanel.tsx',
   'RewindPanel.tsx',
   'SkillsPanel.tsx',
   'TaskPanel/RunWorkbenchCards.tsx',

@@ -278,6 +278,16 @@ export const MODEL_FEATURES: Record<string, ('tool' | 'vision' | 'reasoning')[]>
 };
 
 /**
+ * quick 车道「不能关思考」的推理模型 — 这些 id 发 reasoning_effort:'low' 控预算，不发 thinking:{type:'disabled'}。
+ * glm-5.3（GLM Coding Plan 的主模型，routing.fast/code 常回落到它）永远思考：无控制时短输出
+ * 额度被 reasoning 吃光（实测 512 max_tokens 里 reasoning 占 326-458，title 拿到空内容走降级档）；
+ * 官方端点对 glm-5.3 直接拒绝 thinking.type=disabled（docs.z.ai/guides/capabilities/thinking）。
+ * 低推理档 coding 端点实测 ~1s、0 reasoning tokens、正文完整。
+ * quick 默认档 glm-5.3-flash 不在此列，请求体保持原样（逐字节不变）。
+ */
+export const QUICK_LANE_LOW_REASONING_EFFORT_MODELS: readonly string[] = ['glm-5.3'];
+
+/**
  * 模型缩写 — 状态栏 ModelIndicator 显示用。
  * 2026-04-28 audit 前散落于 ModelIndicator.tsx，已迁移至此并清理 EOL 条目。
  */

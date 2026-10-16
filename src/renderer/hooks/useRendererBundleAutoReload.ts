@@ -13,9 +13,9 @@ import {
 
 const logger = createLogger('RendererBundleAutoReload');
 
-export const DEFAULT_RENDERER_BUNDLE_AUTO_RELOAD_POLL_MS = 60_000;
-export const DEFAULT_RENDERER_BUNDLE_AUTO_RELOAD_IDLE_MS = 10_000;
-export const DEFAULT_RENDERER_BUNDLE_AUTO_RELOAD_INITIAL_DELAY_MS = 15_000;
+const DEFAULT_RENDERER_BUNDLE_AUTO_RELOAD_POLL_MS = 60_000;
+const DEFAULT_RENDERER_BUNDLE_AUTO_RELOAD_IDLE_MS = 10_000;
+const DEFAULT_RENDERER_BUNDLE_AUTO_RELOAD_INITIAL_DELAY_MS = 15_000;
 
 export interface RendererBundleAutoReloadOptions {
   enabled?: boolean;

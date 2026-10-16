@@ -42,7 +42,6 @@ import { recordStreamingPerformanceCounter } from '../utils/streamingPerformance
 import ipcService from '../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
 
-export { resolveDirectRouting } from './agent/useAgentIPC';
 
 // 流式增量从 accumulator 推进 React state 的节流间隔。
 // 越小 → 文字到达越连续（更平滑）；markdown 重渲染另有 96ms 节流兜底，

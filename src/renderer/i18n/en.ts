@@ -7,8 +7,8 @@ import { sessionReplayEn } from './sessionReplay';
 import { chatTranscriptEn } from './chatTranscript';
 import { attachmentPreviewEn } from './attachmentPreview';
 import { chatInputEn } from './chatInput';
+import { backgroundPanelEn } from './backgroundPanel';
 import { voiceEn } from './voice';
-import { chatInputModelStrategyEn } from './chatInputModelStrategy';
 import { sidebarEn } from './sidebar';
 import { cronCenterEn } from './cronCenter';
 import { deliveryExperienceEn } from './deliveryExperience';
@@ -663,7 +663,6 @@ export const en = {
     title: 'Task Info',
     progress: 'Progress',
     workingFolder: 'Working Folder',
-    context: 'Context',
     connectors: 'Connectors',
     agents: 'Agents',
     skills: 'Skills',
@@ -734,7 +733,6 @@ export const en = {
     sectionReferences: 'References',
     contextEmpty: 'No context yet',
     tabStatus: 'Overview',
-    tabOrchestration: 'Orchestration',
     // WorkingFolder
     inputDirPlaceholder: 'Enter workspace path',
     confirm: 'OK',
@@ -935,8 +933,8 @@ export const en = {
   ...chatTranscriptEn,
   ...attachmentPreviewEn,
   ...chatInputEn,
+  ...backgroundPanelEn,
   ...voiceEn,
-  ...chatInputModelStrategyEn,
   ...sidebarEn,
   ...cronCenterEn,
   ...previewWorkspaceEn,

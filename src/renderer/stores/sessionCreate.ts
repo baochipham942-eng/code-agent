@@ -125,6 +125,11 @@ export async function executeCreateSession(
   options?: CreateSessionOptionsInput,
 ): Promise<Session | null> {
   const { get, set, invalidatePendingSessionSwitches, findReusableNewSessionDraft } = deps;
+  // 新任务级「不用记忆」意图：只在草稿/空间发起时生效（会话内新建是另一台戏，
+  // 档位真源在 host 侧 session.memoryMode）。发起后 handoff 会清掉槽内标记。
+  const composerState = useComposerStore.getState();
+  const memoryOffIntent = isDraftOrSpaceScopeKey(composerState.activeScopeKey)
+    && composerState.draftMemoryOff === true;
   // 普通新建会话回到会话区；工作流创建目标会话时保留宿主页面，
   // 这样后续失败仍能在提交入口显示错误。
   if (!options?.preserveSecondaryPages) {
@@ -175,12 +180,29 @@ export async function executeCreateSession(
           await handoffComposerScopeIfNeeded(reusableSession.id);
         }
         // 复用空白草稿时刷新时间戳，避免侧边栏显示旧草稿的"3 天前"。
+        // 「不用记忆」意图同样要落上：复用绕过了 create 载荷路径，空白会话
+        // （0 消息）尚可改档，直接补一次 update，失败只降级不阻断。
+        let reusedMemoryMode = reusableSession.memoryMode || 'auto';
+        if (memoryOffIntent && reusedMemoryMode !== 'off') {
+          try {
+            await invokeSession('update', {
+              sessionId: reusableSession.id,
+              updates: { memoryMode: 'off' },
+            });
+            reusedMemoryMode = 'off';
+          } catch (error) {
+            logger.warn('Failed to apply memory-off to reused draft', {
+              sessionId: reusableSession.id,
+              error,
+            });
+          }
+        }
         set((state) => ({
           isLoading: false,
           error: null,
           sessions: state.sessions.map((s) => (
             s.id === reusableSession.id
-              ? normalizeSession({ ...s, updatedAt: Date.now() })
+              ? normalizeSession({ ...s, memoryMode: reusedMemoryMode, updatedAt: Date.now() })
               : s
           )),
         }));
@@ -198,6 +220,8 @@ export async function executeCreateSession(
       workingDirectory: inheritedWorkingDirectory,
       engine: options?.engine ?? null,
       ...(options?.expertRoleId ? { expertRoleId: options.expertRoleId } : {}),
+      // 首句话建会话即带 'off'（无竞态）：host 侧 create 白名单校验后落库
+      ...(memoryOffIntent ? { memoryMode: 'off' as const } : {}),
     });
     if (session) {
       const newSessionWithMeta = normalizeSession({

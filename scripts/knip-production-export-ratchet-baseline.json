@@ -11608,11 +11608,6 @@
     },
     {
       "file": "src/renderer/components/PreviewPanel.tsx",
-      "name": "parseDesignPptArtifactContent",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/PreviewPanel.tsx",
       "name": "PresentationPreview",
       "kind": "export"
     },
@@ -11623,17 +11618,7 @@
     },
     {
       "file": "src/renderer/components/PreviewPanel.tsx",
-      "name": "shouldFlashOnDiskLoad",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/PreviewPanel.tsx",
       "name": "StaticHtmlPreview",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/PreviewPanel.tsx",
-      "name": "toPreviewErrorState",
       "kind": "export"
     },
     {

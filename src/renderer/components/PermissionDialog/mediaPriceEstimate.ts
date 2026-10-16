@@ -6,6 +6,7 @@ import { IMAGE_PRICING_CNY, MUSIC_PRICING_CNY, VIDEO_PRICING_CNY_PER_SEC } from 
 import {
   GENERATION_TOOL_DEFAULT_MODELS,
   GENERATION_TOOL_DEFAULT_VIDEO_DURATION_SEC,
+  GENERATION_TOOL_ZHIPU_VIDEO_DEFAULT_DURATION_SEC,
 } from '@shared/media/generationToolDefaults';
 import { estimateImageCostCny } from '@shared/media/imageCost';
 import { estimateMusicCostCny } from '@shared/media/musicCost';
@@ -48,11 +49,18 @@ export function estimateMediaPriceCny(
       return { kind: 'image', count, unitPriceCny, totalCny: unitPriceCny * count };
     }
     case 'video_generate': {
+      // ai-review 返修：duration 只有 cogvideox-* 路由真正生效——host 仅在该路由把
+      // params.duration 传给智谱（videoGenerate.ts submitZhipuVideoTask）；默认 MiniMax
+      // 海螺路由不传 duration、固定 6 秒片（videoGenerationService.ts 海螺 body 无 duration，
+      // schema 亦注明 duration 仅 cogvideox-* 生效）。非 cogvideox 一律按默认 6 秒估，
+      // 不采信 args.duration，否则卡片显示的时长与价格双双失真。
+      const zhipuRoute = typeof args?.model === 'string' && args.model.startsWith('cogvideox');
       const rawDuration = args?.duration;
-      const durationSec =
-        typeof rawDuration === 'number' && Number.isFinite(rawDuration) && rawDuration > 0
+      const durationSec = zhipuRoute
+        ? typeof rawDuration === 'number' && Number.isFinite(rawDuration) && rawDuration > 0
           ? rawDuration
-          : GENERATION_TOOL_DEFAULT_VIDEO_DURATION_SEC;
+          : GENERATION_TOOL_ZHIPU_VIDEO_DEFAULT_DURATION_SEC
+        : GENERATION_TOOL_DEFAULT_VIDEO_DURATION_SEC;
       const model = pricedModelId(args?.model, VIDEO_PRICING_CNY_PER_SEC, GENERATION_TOOL_DEFAULT_MODELS.video);
       const unitPriceCny = estimateVideoCostCny(model, durationSec);
       return { kind: 'video', count: 1, unitPriceCny, totalCny: unitPriceCny, durationSec };

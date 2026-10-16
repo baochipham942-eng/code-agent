@@ -19,3 +19,9 @@ export const GENERATION_TOOL_DEFAULT_MODELS = {
  */
 export const GENERATION_TOOL_DEFAULT_VIDEO_DURATION_SEC: number =
   videoModelById(GENERATION_TOOL_DEFAULT_MODELS.video)?.defaultDurationSec ?? 6;
+
+/**
+ * cogvideox-*（智谱旧路径）的缺省时长/秒——host submitZhipuVideoTask 传
+ * params.duration || 5、schema duration default 5，审批卡 cogvideox 缺 duration 时同按 5 估。
+ */
+export const GENERATION_TOOL_ZHIPU_VIDEO_DEFAULT_DURATION_SEC = 5;

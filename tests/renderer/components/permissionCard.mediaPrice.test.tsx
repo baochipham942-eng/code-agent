@@ -27,13 +27,19 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   return { useI18n: () => ({ t: storeState.language === 'en' ? en : zh, language: storeState.language }) };
 });
 
-vi.mock('../../../src/renderer/stores/appStore', () => ({
-  useAppStore: () => ({
-    pendingPermissionRequest: storeState.request,
-    pendingPermissionSessionId: null,
+vi.mock('../../../src/renderer/stores/appStore', () => {
+  // zustand 两种调用形态都接（无参 = 整个 store，selector = 选取值）：
+  // PermissionCard 用 useAppStore()，MediaPriceNotice 用 useAppStore((s) => s.pendingPermissionRequest)。
+  const store = {
+    pendingPermissionRequest: null as ContractPermissionRequest | null,
+    pendingPermissionSessionId: null as string | null,
     setPendingPermissionRequest: vi.fn(),
-  }),
-}));
+  };
+  return {
+    useAppStore: (selector?: (s: typeof store) => unknown) =>
+      selector ? selector({ ...store, pendingPermissionRequest: storeState.request }) : { ...store, pendingPermissionRequest: storeState.request },
+  };
+});
 
 vi.mock('../../../src/renderer/stores/sessionStore', () => ({
   useSessionStore: (selector: (s: { currentSessionId: string | null }) => unknown) =>
@@ -116,6 +122,25 @@ describe('PermissionCard 付费生成工具参考价行（N-MEDIA-GEN-PRICE-CARD
     expect(en).toContain(
       `Billed per call · reference price ${formatCny(VIDEO_TOTAL)} / clip (${GENERATION_TOOL_DEFAULT_VIDEO_DURATION_SEC} s)`,
     );
+  });
+
+  // ai-review 返修回归：默认海螺路由 host 不传 duration（固定 6 秒片），卡片不得采信
+  // args.duration——模型传 duration:10 时仍显示默认时长与对应价，不出「10 秒」。
+  it('video_generate 默认路由带 duration:10：仍按默认 6 秒计价，不显示 10 秒', () => {
+    const request = baseRequest({
+      tool: 'video_generate',
+      details: { prompt: '一段海浪', duration: 10 } as ContractPermissionRequest['details'],
+    });
+    const zh = renderInLanguage(request, 'zh');
+    expect(zh).toContain(
+      `按次计费 · 参考价 ${formatCny(VIDEO_TOTAL)} / 条（${GENERATION_TOOL_DEFAULT_VIDEO_DURATION_SEC} 秒）`,
+    );
+    expect(zh).not.toContain('（10 秒）');
+    const en = renderInLanguage(request, 'en');
+    expect(en).toContain(
+      `Billed per call · reference price ${formatCny(VIDEO_TOTAL)} / clip (${GENERATION_TOOL_DEFAULT_VIDEO_DURATION_SEC} s)`,
+    );
+    expect(en).not.toContain('(10 s)');
   });
 
   it('music_generate：出每首参考价，zh/en 都在', () => {

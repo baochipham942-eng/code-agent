@@ -3,6 +3,7 @@ import { estimateMediaPriceCny } from '../../../src/renderer/components/Permissi
 import {
   GENERATION_TOOL_DEFAULT_MODELS,
   GENERATION_TOOL_DEFAULT_VIDEO_DURATION_SEC,
+  GENERATION_TOOL_ZHIPU_VIDEO_DEFAULT_DURATION_SEC,
 } from '../../../src/shared/media/generationToolDefaults';
 import { estimateImageCostCny } from '../../../src/shared/media/imageCost';
 import { estimateMusicCostCny } from '../../../src/shared/media/musicCost';
@@ -39,7 +40,7 @@ describe('estimateMediaPriceCny（审批卡参考价纯函数）', () => {
       .toBe(defaultUnit);
   });
 
-  it('video：无 duration 用默认 6 秒；显式 duration 按每秒单价 × 时长', () => {
+  it('video：默认路由无 duration 用默认 6 秒', () => {
     const perCall = estimateVideoCostCny(GENERATION_TOOL_DEFAULT_MODELS.video, GENERATION_TOOL_DEFAULT_VIDEO_DURATION_SEC);
     expect(estimateMediaPriceCny('video_generate', { prompt: 'x' })).toEqual({
       kind: 'video',
@@ -48,13 +49,33 @@ describe('estimateMediaPriceCny（审批卡参考价纯函数）', () => {
       totalCny: perCall,
       durationSec: GENERATION_TOOL_DEFAULT_VIDEO_DURATION_SEC,
     });
-    expect(estimateMediaPriceCny('video_generate', { prompt: 'x', duration: 10 })?.totalCny)
-      .toBe(estimateVideoCostCny(GENERATION_TOOL_DEFAULT_MODELS.video, 10));
   });
 
-  it('video：cogvideox-* 不在价表 → 回落默认模型参考价（保守高估，说「参考」）', () => {
+  // ai-review 返修：duration 只有 cogvideox-* 路由真正生效——host 在默认 MiniMax 海螺路由
+  // 不把 duration 传给 provider（videoGenerate.ts 的 generateVideo 调用不带 durationSec，
+  // videoGenerationService.ts 海螺 body 也不含 duration，固定 6 秒），schema 同文。卡片
+  // 若采信 args.duration，模型传 {prompt, duration:10} 时会显示「10 秒 / ¥4.20」而实际
+  // 出 6 秒片计约 ¥2.52——时长与价格双错。回归断言：默认路由忽略 duration，恒 6 秒。
+  it('video：默认路由（含显式海螺 model）忽略 args.duration，恒默认 6 秒', () => {
+    expect(estimateMediaPriceCny('video_generate', { prompt: 'x', duration: 10 })).toEqual({
+      kind: 'video',
+      count: 1,
+      unitPriceCny: estimateVideoCostCny(GENERATION_TOOL_DEFAULT_MODELS.video, GENERATION_TOOL_DEFAULT_VIDEO_DURATION_SEC),
+      totalCny: estimateVideoCostCny(GENERATION_TOOL_DEFAULT_MODELS.video, GENERATION_TOOL_DEFAULT_VIDEO_DURATION_SEC),
+      durationSec: GENERATION_TOOL_DEFAULT_VIDEO_DURATION_SEC,
+    });
+    expect(estimateMediaPriceCny('video_generate', { prompt: 'x', model: 'MiniMax-Hailuo-02', duration: 10 })?.durationSec)
+      .toBe(GENERATION_TOOL_DEFAULT_VIDEO_DURATION_SEC);
+  });
+
+  it('video：cogvideox-* 不在价表 → 回落默认模型参考价（保守高估，说「参考」）；duration 仅此路由生效', () => {
     const estimate = estimateMediaPriceCny('video_generate', { prompt: 'x', model: 'cogvideox-3', duration: 5 });
     expect(estimate?.unitPriceCny).toBe(estimateVideoCostCny(GENERATION_TOOL_DEFAULT_MODELS.video, 5));
+    // cogvideox 缺 duration：host 传 params.duration || 5 给智谱，缺省按 5 秒估（不是海螺的 6）。
+    const noDuration = estimateMediaPriceCny('video_generate', { prompt: 'x', model: 'cogvideox-3' });
+    expect(noDuration?.durationSec).toBe(GENERATION_TOOL_ZHIPU_VIDEO_DEFAULT_DURATION_SEC);
+    expect(noDuration?.unitPriceCny)
+      .toBe(estimateVideoCostCny(GENERATION_TOOL_DEFAULT_MODELS.video, GENERATION_TOOL_ZHIPU_VIDEO_DEFAULT_DURATION_SEC));
   });
 
   it('music：schema 默认 id minimax-music-2.6 不是价表 key → 按真实 model 名 music-2.6 查价', () => {

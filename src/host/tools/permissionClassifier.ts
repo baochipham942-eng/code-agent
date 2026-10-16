@@ -366,7 +366,9 @@ function credentialReadTarget(command: string, context: ClassificationContext): 
   // uncertain operand is scanned like any other word — dropping it let that read go unasked (round 18).
   const parsed = parseShellCommand(command);
   const targets = [...parsed.writeTargets, ...parsed.segments.flatMap((segment) => segment.reads)].map((o) => o.path);
-  for (const candidate of [...words.filter((word, index) => word && !ignoredIndexes.has(index)), ...targets]) {
+  for (const rawCandidate of [...words.filter((word, index) => word && !ignoredIndexes.has(index)), ...targets]) {
+    // dd 的操作数带 `if=`/`of=` 前缀，整词当路径解析永远不命中——`dd if=.env …` 读的是凭据（N-APPROVAL-DRYRUN-DD）
+    const candidate = /^(?:if|of)=/.test(rawCandidate) ? rawCandidate.slice(3) : rawCandidate;
     const resolved = resolveCandidatePath(candidate, context.workingDirectory, context.pathResolutionCache);
     if (isSensitiveCredentialPath(resolved, { homeDir: CANONICAL_HOME_DIR, projectRoot })) return resolved;
   }
@@ -379,10 +381,20 @@ function recursivelyRemovesPath(command: string): boolean {
   return rmIndex >= 0 && words.slice(rmIndex + 1).some((arg) => arg === '--recursive' || /^-[A-Za-z]*[rR]/.test(arg));
 }
 
+// npm config 语义：同名参数后者覆盖前者，`--no-dry-run` / `--dry-run=false` 会把前面的 `--dry-run` 关掉——
+// `npm publish --dry-run --no-dry-run` 是真发布。只查 includes('--dry-run') 会把它当预览放行（N-APPROVAL-DRYRUN-DD，review-eval 在 #1611 案例上报出）。
+function npmPublishDryRunFlag(words: string[], start: number): boolean {
+  let dryRun = false;
+  for (const word of words.slice(start)) {
+    if (word === '--dry-run' || word === '--dry-run=true') dryRun = true;
+    else if (word === '--no-dry-run' || word === '--dry-run=false') dryRun = false;
+  }
+  return dryRun;
+}
+
 function isNpmPublishDryRun(command: string): boolean {
   const words = anchoredAllowCommandWords(command, 'npm');
-  return words !== null && words[1] === 'publish'
-    && words.slice(2).includes('--dry-run');
+  return words !== null && words[1] === 'publish' && npmPublishDryRunFlag(words, 2);
 }
 
 function ddCopiesWorkspaceFile(command: string, context: ClassificationContext): boolean {
@@ -396,6 +408,8 @@ function ddCopiesWorkspaceFile(command: string, context: ClassificationContext):
   const workspace = resolveCanonicalRunPath(context.workspaceRoot ?? context.workingDirectory);
   const resolvedInput = resolveCandidatePath(input, context.workingDirectory, context.pathResolutionCache);
   const resolvedOutput = resolveCandidatePath(output, context.workingDirectory, context.pathResolutionCache);
+  // 工作区内的 .env* 也是凭据：`dd if=.env of=copy.bin` 是把凭据复制进工作区文件，不是普通文件搬运（N-APPROVAL-DRYRUN-DD）
+  if (isSensitiveCredentialPath(resolvedInput, { homeDir: CANONICAL_HOME_DIR, projectRoot: workspace })) return false;
   return isPathInside(resolvedInput, workspace) && isPathInside(resolvedOutput, workspace);
 }
 
@@ -403,7 +417,7 @@ function hasPositiveAllowCandidate(command: string): boolean {
   const words = commandWords(command);
   if (!words) return false;
   const npmIndex = words.findIndex((word) => commandProgram(word) === 'npm');
-  if (npmIndex >= 0 && words[npmIndex + 1] === 'publish' && words.slice(npmIndex + 2).includes('--dry-run')) return true;
+  if (npmIndex >= 0 && words[npmIndex + 1] === 'publish' && npmPublishDryRunFlag(words, npmIndex + 2)) return true;
 
   const ddIndex = words.findIndex((word) => commandProgram(word) === 'dd');
   return ddIndex >= 0

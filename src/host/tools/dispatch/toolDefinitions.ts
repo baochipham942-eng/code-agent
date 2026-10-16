@@ -367,7 +367,7 @@ export function getDeferredToolsSummary(
   const visibleCount = visibleBuiltinCount + visibleMcpCount;
   const withUnlistedCount = (lines: string[], unlisted: number): string => [
     ...lines,
-    `${unlisted} tools unlisted; use ToolSearch to find them`,
+    ...(unlisted > 0 ? [`${unlisted} tools unlisted; use ToolSearch to find them`] : []),
   ].join('\n');
   // 未开启能力行算进每一档的 token：全量、只留名字、只留计数都带着它。
   // 预算装不下时走原来的硬顶，不为了保住这行把摘要撑破。

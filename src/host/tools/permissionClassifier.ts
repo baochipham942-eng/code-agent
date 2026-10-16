@@ -384,17 +384,22 @@ function recursivelyRemovesPath(command: string): boolean {
 // npm config 语义：同名参数后者覆盖前者，`--no-dry-run` / `--dry-run=false` 会把前面的 `--dry-run` 关掉——
 // `npm publish --dry-run --no-dry-run` 是真发布。只查 includes('--dry-run') 会把它当预览放行（N-APPROVAL-DRYRUN-DD，review-eval 在 #1611 案例上报出）。
 function npmPublishDryRunFlag(words: string[], start: number): boolean {
-  // ponytail: 只认 npm 实测按预览解析的写法，拿不准的一律当没开（落到 ask）。
-  // npm 11 实测：`--dry-run false` 把 false 吃成取值 ⇒ 真发布；`--no-dry` 会展开成 --no-dry-run；`--dry-run=0` 也不是预览。
+  // ponytail: 只认写全的 --dry-run / --no-dry-run（含 =值、紧跟 true/false 取值）。
+  // npm 实测：`--dry-run false` 把 false 吃成取值 ⇒ 真发布；且任意唯一前缀缩写都被展开（--dry、--no-dr、--dry=false），
+  // 缩写形一律当拿不准 ⇒ 不放行（落到 ask），比逐个列举更稳。
   let dryRun = false;
   const rest = words.slice(start);
   for (let i = 0; i < rest.length; i++) {
     const word = rest[i];
-    if (word === '--dry-run' && (rest[i + 1] === 'true' || rest[i + 1] === 'false')) {
-      dryRun = rest[i + 1] === 'true';
-      i++;
-    } else if (word === '--dry-run' || word === '--dry-run=true') dryRun = true;
-    else if (word.startsWith('--no-dry') || word.startsWith('--dry-run=')) dryRun = false;
+    const eq = word.indexOf('=');
+    const flag = eq === -1 ? word : word.slice(0, eq);
+    let value = eq === -1 ? undefined : word.slice(eq + 1);
+    if (flag !== '--dry-run' && flag !== '--no-dry-run') {
+      if (/^--(no-)?d/.test(flag)) return false;
+      continue;
+    }
+    if (value === undefined && (rest[i + 1] === 'true' || rest[i + 1] === 'false')) value = rest[++i];
+    dryRun = flag === '--dry-run' && (value === undefined || value === 'true');
   }
   return dryRun;
 }

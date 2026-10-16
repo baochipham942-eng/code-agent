@@ -1,0 +1,22 @@
+# RISK-PATHS — 按改动路径定风险档（N-SHIP-RISK-TIER，2026-10-16）。
+# 命中任一行 ⇒ 该 PR 是 high 档：ship merge 要 SHIP_RISK_ACK="<谁裁的·理由>" 才合，收活循环不自动合、转要人。
+# 规则取 origin/main 版（PR 改本文件不能给自己放行）。一行一个 glob，`*` 跨目录；`#` 注释。
+# 口径来自 Anthropic 10-15《Claude Code 团队如何做代码评审》：风险由改动定、不由作者定；审批/沙箱/权限、CI 工作流、
+# 自动更新、计费这类路径永远要人。本仓首批清单（10-16 劳拉按目录核过；计费目前无独立模块，有了再加）：
+# —— 审批 / 沙箱 / 权限 ——
+src/host/security/*
+src/host/permissions/*
+src/host/sandbox/*
+src/shared/security/*
+src/host/tools/permissionClassifier.ts
+src/host/tools/toolExecutor.ts
+src/renderer/components/PermissionDialog/*
+src-tauri/permissions/*
+# —— 自动更新 ——
+src/host/services/cloud/updateService.ts
+src/host/app/updateServiceBootstrap.ts
+src/host/ipc/update.ipc.ts
+# —— CI 工作流与门本身 ——
+.github/workflows/*
+RISK-PATHS
+REVIEW.md

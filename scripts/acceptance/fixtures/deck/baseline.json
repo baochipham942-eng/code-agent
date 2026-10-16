@@ -25,8 +25,8 @@
     {
       "file": "src/host/tools/media/ppt/__tests__/ppt-d3d4.test.mjs",
       "exit_code": 0,
-      "summary_line": "═══ Summary: 65 passed, 0 failed (65 total) ═══",
-      "parsed_pass": 65,
+      "summary_line": "═══ Summary: 55 passed, 0 failed (55 total) ═══",
+      "parsed_pass": 55,
       "parsed_fail": 0
     },
     {

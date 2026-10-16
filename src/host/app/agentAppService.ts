@@ -821,7 +821,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       prompt: envelope.content,
       hasGoal: Boolean(optionsWithTurnSettings.goal),
     })
-      ? withSessionCommandCenterBrain(optionsWithTurnSettings)
+      ? withSessionCommandCenterBrain(optionsWithTurnSettings, envelope.content)
       : optionsWithTurnSettings;
 
     // 云货架专家首跑：本轮档位钳到最严，让用户看见它每一步要干什么。
@@ -996,7 +996,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       prompt: envelope.content,
       hasGoal: Boolean(workbenchOptions?.goal),
     })
-      ? withSessionCommandCenterBrain(workbenchOptions)
+      ? withSessionCommandCenterBrain(workbenchOptions, envelope.content)
       : workbenchOptions;
     return tm.interruptAndContinue(
       resolvedSessionId,

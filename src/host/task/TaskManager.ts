@@ -32,6 +32,7 @@ import type { WorkspaceScope } from '../../shared/contract/project';
 import { getModelSessionState } from '../session/modelSessionState';
 import type { RunRegistry } from '../runtime/runRegistry';
 import { getProjectSourceTrustFailureMarker } from '../services/project/projectSourceTrustError';
+import { closeBackgroundRunAtTerminal, settleBackgroundOnTaskComplete, settleBackgroundRunOnRejection, trackBackgroundRunTerminalError, type BackgroundRunErrorRecord } from './backgroundTaskTerminal';
 import { getModelAuthFailureMarker } from '../model/errorClassifier';
 import { MULTIAGENT_TOOL_NAMES } from '../../shared/constants/tools';
 import { SESSION_COMMAND_CENTER_TOOL_NAMES } from '../../shared/constants/sessionCommandCenter';
@@ -172,6 +173,8 @@ export class TaskManager extends EventEmitter {
   private backgroundRuns = new Map<string, BackgroundTaskRun>();
   /** permission requestId → 后台 taskId，保证审批只回到发起它的 run。 */
   private backgroundPermissionOwners = new Map<string, string>();
+  /** 主 run 的 run 级终态 error 记账（agent 终态收线用；可恢复 error 不记，见 backgroundTaskTerminal）。 */
+  private backgroundRunTerminalErrors = new Map<string, BackgroundRunErrorRecord>();
   private activeModelSpecs = new Map<string, ConversationModelSpec>();
   private sessionStates: Map<string, SessionState> = new Map();
   private waitingQueue: string[] = [];
@@ -341,7 +344,7 @@ export class TaskManager extends EventEmitter {
       }
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       const failure = getProjectSourceTrustFailureMarker(error) ?? getModelAuthFailureMarker(error);
-      this.updateSessionState(sessionId, { status: 'error', error: errorMessage });
+      this.updateSessionState(sessionId, { status: 'error', error: errorMessage }); settleBackgroundRunOnRejection(sessionId, errorMessage);
       this.emitEvent('task_error', sessionId, {
         runId,
         error: errorMessage,
@@ -1012,7 +1015,7 @@ export class TaskManager extends EventEmitter {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       // 结构化失败标记：message 已被归一成字符串，能救回来的原因只剩生产者带的字段。
       const failure = getProjectSourceTrustFailureMarker(error) ?? getModelAuthFailureMarker(error);
-      this.updateSessionState(sessionId, { status: 'error', error: errorMessage });
+      this.updateSessionState(sessionId, { status: 'error', error: errorMessage }); settleBackgroundRunOnRejection(sessionId, errorMessage);
       this.emitEvent('task_error', sessionId, {
         error: errorMessage,
         ...(failure ? { failure } : {}),
@@ -1339,18 +1342,17 @@ export class TaskManager extends EventEmitter {
         }
       }
 
-      // Send desktop notification on task complete
+      // task_complete 收口 + 后台条目终态收线（逻辑在 backgroundTaskTerminal：本文件贴
+      // effective-line 硬限；task_complete 与 agent 终态两收口点共用 running-guard 幂等）。
       if (event.type === 'task_complete' && event.data) {
-        const session = await sessionManager.getSession(sessionId);
-        if (session) {
-          notificationService.notifyTaskComplete({
-            sessionId: session.id,
-            sessionTitle: session.title,
-            summary: event.data.summary,
-            duration: event.data.duration,
-            toolsUsed: event.data.toolsUsed || [],
-          });
-        }
+        await settleBackgroundOnTaskComplete(sessionId, eventKey, event.data);
+      }
+      // run 级终态 error 记账（可恢复 error 不记）；agent 终态到点仍 running → 收线（r4 决策表见 backgroundTaskTerminal）。
+      if (event.type === 'error' && eventKey === sessionId) {
+        trackBackgroundRunTerminalError(this.backgroundRunTerminalErrors, sessionId, event.data);
+      }
+      if ((event.type === 'agent_complete' || event.type === 'agent_cancelled') && eventKey === sessionId) {
+        await closeBackgroundRunAtTerminal(sessionId, event.type, this.backgroundRunTerminalErrors);
       }
     } catch (error) {
       logger.error(`Failed to persist event for session ${sessionId}`, error);

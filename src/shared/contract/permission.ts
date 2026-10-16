@@ -175,6 +175,13 @@ export interface PermissionRequest {
      * 「此动作由 agent X 的消息触发」；senderAgentId 缺省 = 来源未铸 id 的 peer 消息。
      */
     triggeredByAgentMessage?: { senderAgentId?: string };
+    /**
+     * N-HTTPREQ-CONNECTOR-CARD-DISCLOSE：http_request 携带已连接 OAuth 连接器令牌的
+     * 写调用透传原始参数（method/body），审批卡据此展示「以你的身份写入」与请求内容。
+     */
+    method?: string;
+    body?: string;
+    connectorTokenAttached?: boolean;
     /** E2: 确认门控预览信息 */
     preview?: {
       type: 'diff' | 'command' | 'network' | 'generic';

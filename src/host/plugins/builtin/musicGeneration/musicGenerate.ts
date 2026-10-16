@@ -72,7 +72,8 @@ function bridgedMusicModelIds(settings: AppSettings | null): string[] {
 /**
  * 内置默认 MiniMax 音乐服务不可用（HTTP 410 关停 / 缺 key）的结构化出路（N-MEDIA-GEN-MUSIC-FALLBACK）：
  * 付费音乐 API 2026-08-20 起对新账户关闭，死胡同报错换成可执行动作——不重试；
- * 有桥接音乐模型时列出可换的 model id，没有则明说当前不可用、让模型转告用户。
+ * 文案必须明说「对新账户关闭、配 MiniMax key 也无用」（r3 返修：否则模型会引着用户去买 key 撞 410）。
+ * 有桥接音乐模型时列出可换的 model id，没有则明说当前不可用、指引用户在设置→模型加音乐模型。
  */
 function musicServiceUnavailableResult(
   reason: 'HTTP 410' | 'no key',
@@ -81,7 +82,7 @@ function musicServiceUnavailableResult(
 ): ToolResult<string> {
   const perRequest: PerRequest[] = [{ index: 1, status: 'failed', error: perRequestError }];
   const summary = `0/1 saved\nper_request ${JSON.stringify(perRequest)}`;
-  const head = `The default MiniMax music service is unavailable (${reason}). Do not retry.`;
+  const head = `The default MiniMax music service is unavailable (${reason}): the MiniMax music API is closed to new accounts (since 2026-08-20), so adding a MiniMax API key will not help. Do not retry.`;
   if (alternatives.length > 0) {
     return {
       ok: false,
@@ -92,7 +93,7 @@ function musicServiceUnavailableResult(
   }
   return {
     ok: false,
-    error: `${summary}\n${head} No other music model is configured; tell the user music generation is currently unavailable.`,
+    error: `${summary}\n${head} No other music model is configured; tell the user music generation is currently unavailable and they can add a music-capable model in Settings → Models.`,
     code: 'MUSIC_SERVICE_UNAVAILABLE_NO_ALTERNATIVE',
     meta: { artifacts: [], per_request: perRequest },
   };
@@ -164,8 +165,9 @@ export async function executeMusicGenerate(
 
   // 服务不可用出路口（N-MEDIA-GEN-MUSIC-FALLBACK）：内置默认模型 + 缺 MiniMax key
   // （getMinimaxApiKey 唯一 key 通路）在付费前返回结构化出路，先于任何进度事件 / 写盘。
+  // per_request 文案同样明说服务已关停——r3 返修：'key is missing' 会让模型引着用户去配 key。
   if (!params.model.includes(':') && !getMinimaxApiKey()) {
-    return musicServiceUnavailableResult('no key', 'MiniMax API key is missing', bridgedMusicModelIds(getConfigService().getSettings()));
+    return musicServiceUnavailableResult('no key', 'MiniMax music service unavailable (no API key; closed to new accounts)', bridgedMusicModelIds(getConfigService().getSettings()));
   }
 
   onProgress?.({ stage: 'starting', detail: schema.name });

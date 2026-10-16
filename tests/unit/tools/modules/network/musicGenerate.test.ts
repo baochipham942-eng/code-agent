@@ -190,7 +190,7 @@ describe('music_generate — execute', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.code).toBe('MUSIC_SERVICE_UNAVAILABLE_NO_ALTERNATIVE');
-      expect(result.error).toContain('MiniMax API key is missing');
+      expect(result.error).toContain('MiniMax music service unavailable (no API key');
       expect(result.error).toContain('Do not retry.');
     }
     expect(resolveMusicModelEndpointMock).not.toHaveBeenCalled();

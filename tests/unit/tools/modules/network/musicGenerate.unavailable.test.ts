@@ -6,6 +6,9 @@
 // / MUSIC_SERVICE_UNAVAILABLE_NO_ALTERNATIVE，error 保持 0/1 saved + per_request 合同
 // 且明说不可重试；generateMusic 恰好一次（410）/ 零次（缺 key），无重试。
 // 非 410 HTTP 错误与桥接模型路径不受影响（保持 MUSIC_GENERATION_FAILED）。
+// r3 返修加钉：模型可见 error 必须明说「closed to new accounts」（配 MiniMax key 无用），
+// 且不得再出现「configure … MiniMax … key / set MINIMAX_API_KEY」式配置指引——
+// 真跑 r4d 实测旧文案让模型引着用户去模型设置配 MiniMax key（新 key 只会撞 410）。
 // ============================================================================
 
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
@@ -117,8 +120,11 @@ describe('music_generate default service unavailable', () => {
       expect(result.code).toBe('MUSIC_SERVICE_UNAVAILABLE');
       expect(result.error).toMatch(/^0\/1 saved\nper_request /);
       expect(result.error).toContain('音乐生成失败 HTTP 410');
-      expect(result.error).toContain('The default MiniMax music service is unavailable (HTTP 410). Do not retry.');
+      expect(result.error).toContain('The default MiniMax music service is unavailable (HTTP 410):');
+      expect(result.error).toContain('closed to new accounts');
+      expect(result.error).toContain('Do not retry.');
       expect(result.error).toContain('Configured music models you can pass as `model`: custom-x:some-music.');
+      expect(result.error).not.toMatch(/configure.*MiniMax.*key|set MINIMAX_API_KEY/i);
     }
     expect(result.meta?.alternatives).toBe('custom-x:some-music');
     const perRequest = result.meta?.per_request as Array<Record<string, unknown>>;
@@ -137,7 +143,10 @@ describe('music_generate default service unavailable', () => {
       expect(result.code).toBe('MUSIC_SERVICE_UNAVAILABLE_NO_ALTERNATIVE');
       expect(result.error).toMatch(/^0\/1 saved\nper_request /);
       expect(result.error).toContain('Do not retry.');
-      expect(result.error).toContain('No other music model is configured; tell the user music generation is currently unavailable.');
+      expect(result.error).toContain('No other music model is configured; tell the user music generation is currently unavailable and they can add a music-capable model in Settings → Models.');
+      // r3 返修钉：明说关停（配 key 无用）且不得出现配 key 指引
+      expect(result.error).toContain('closed to new accounts');
+      expect(result.error).not.toMatch(/configure.*MiniMax.*key|set MINIMAX_API_KEY/i);
     }
     expect(result.meta?.alternatives).toBeUndefined();
     expect(musicService.generateMusic).toHaveBeenCalledTimes(1);
@@ -152,9 +161,12 @@ describe('music_generate default service unavailable', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.code).toBe('MUSIC_SERVICE_UNAVAILABLE');
-      expect(result.error).toContain('The default MiniMax music service is unavailable (no key). Do not retry.');
-      expect(result.error).toContain('MiniMax API key is missing');
+      expect(result.error).toContain('The default MiniMax music service is unavailable (no key):');
+      expect(result.error).toContain('closed to new accounts');
+      expect(result.error).toContain('Do not retry.');
+      expect(result.error).toContain('MiniMax music service unavailable (no API key');
       expect(result.error).toContain('custom-x:some-music');
+      expect(result.error).not.toMatch(/configure.*MiniMax.*key|set MINIMAX_API_KEY/i);
     }
     expect(result.meta?.alternatives).toBe('custom-x:some-music');
     expect(musicService.resolveMusicModelEndpoint).not.toHaveBeenCalled();
@@ -169,8 +181,12 @@ describe('music_generate default service unavailable', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.code).toBe('MUSIC_SERVICE_UNAVAILABLE_NO_ALTERNATIVE');
-      expect(result.error).toContain('(no key). Do not retry.');
-      expect(result.error).toContain('No other music model is configured');
+      expect(result.error).toContain('(no key):');
+      expect(result.error).toContain('Do not retry.');
+      expect(result.error).toContain('No other music model is configured; tell the user music generation is currently unavailable and they can add a music-capable model in Settings → Models.');
+      // r3 返修钉：明说关停（配 key 无用）且不得出现配 key 指引
+      expect(result.error).toContain('closed to new accounts');
+      expect(result.error).not.toMatch(/configure.*MiniMax.*key|set MINIMAX_API_KEY/i);
     }
     expect(musicService.resolveMusicModelEndpoint).not.toHaveBeenCalled();
     expect(musicService.generateMusic).not.toHaveBeenCalled();

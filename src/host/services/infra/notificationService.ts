@@ -5,6 +5,7 @@
 
 import { Notification, AppWindow, broadcastToRenderer } from '../../platform';
 import { IPC_CHANNELS } from '../../../shared/ipc';
+import type { CronFailurePresentationKind } from '../../../shared/utils/cronFailureClassification';
 import { createLogger } from './logger';
 import type { Disposable } from '../serviceRegistry';
 import { getServiceRegistry } from '../serviceRegistry';
@@ -40,6 +41,8 @@ export interface TaskNotificationData {
   succeeded?: boolean;
   code?: string;
   siteOrigin?: string;
+  failureKind?: CronFailurePresentationKind;
+  resetAt?: string;
 }
 
 interface TaskResumingNotificationData {
@@ -131,6 +134,8 @@ class NotificationService implements Disposable {
     markSessionUnread?: boolean;
     code?: string;
     siteOrigin?: string;
+    failureKind?: CronFailurePresentationKind;
+    resetAt?: string;
   }): void {
     if (this.isDryRun()) return;
     broadcastToRenderer(IPC_CHANNELS.NOTIFICATION_SHOW, {
@@ -221,6 +226,8 @@ class NotificationService implements Disposable {
       sessionId: data.sessionId,
       ...(data.code ? { code: data.code } : {}),
       ...(data.siteOrigin ? { siteOrigin: data.siteOrigin } : {}),
+      ...(data.failureKind ? { failureKind: data.failureKind } : {}),
+      ...(data.resetAt ? { resetAt: data.resetAt } : {}),
     });
     logger.info('Notification sent', { sessionTitle });
   }

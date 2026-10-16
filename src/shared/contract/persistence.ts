@@ -21,7 +21,8 @@ export interface WebHealthPublic {
   status: 'ok';
   mode: string;
   timestamp: number;
-  tauriBootToken: string | null;
+  /** Nonce-bound HMAC-SHA256, present only for a valid bootChallenge. */
+  bootProof?: string;
   /** A build version is safe to expose publicly; the rest of build metadata is detail-only. */
   build: { version?: string } | null;
   /**
@@ -37,6 +38,7 @@ export interface WebHealthPublic {
 }
 
 export interface WebHealthDetail extends WebHealthPublic {
+  tauriBootConfigured: boolean;
   handlers: number;
   serverRoot: string;
   pid: number;

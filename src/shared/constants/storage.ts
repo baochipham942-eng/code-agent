@@ -61,6 +61,11 @@ export const MEMORY = {
   /** Seed 注入的用量淘汰窗口：用过但超过该时长未再用的记忆不再自动注入（30 天；
    * 只影响注入集合，MemoryRead/搜索照常返回，行不删）。N-MEM-CITEBACK-RANK-EVICT */
   SEED_STALE_USED_MS: 30 * 24 * 60 * 60 * 1000,
+  /** 从没被 MemoryRead 用过的记忆同样按该宽限期老化（爸 10-14 定 B：「用过」只认 MemoryRead，
+   * 宽限期与用过的同口径 30 天）。起算点 = max(创建时间, NEVER_USED_EVICTION_SINCE)。N-MEM-EVICT-NEVER-READ */
+  SEED_NEVER_USED_GRACE_MS: 30 * 24 * 60 * 60 * 1000,
+  /** 「从没用过也老化」上线日：老库里早就存在的记忆从这天起算宽限期，上线当天注入集合不变。 */
+  NEVER_USED_EVICTION_SINCE: Date.UTC(2026, 9, 16),
 } as const;
 
 /** 向量存储配置 */

@@ -1,6 +1,7 @@
 # ADR-084：人审一次性支付凭据原语（Stripe Link）
 
-- 状态：**草稿·待爸拍板**
+- 状态：**挂起（爸 2026-10-14 定 B：代买方案明确挂起、台账冻结）**
+- 解冻条件：爸明确重启代买线；重启时先按官方最新文档复核审批窗口与限额，再拍板下方六个 Decision 块
 - 单号：N-PAY-ONESHOTCARD
 - 基线：origin/main@8dbf437dbe6586422dca991c32be27a7e413573e
 - 证据：~/work/evidence/N-PAY-ONESHOTCARD.md
@@ -10,7 +11,7 @@
 
 - 2026-08-30 已决定做，但不是 P0；先出 ADR，后续再施工。
 - 连接器包裹官方 @stripe/link-cli，调用 spend-request create --request-approval；实现可落在 MCP 或 skill，但不自行发卡。
-- 依据 2026-09-28 的官方限额研究：单笔/单日上限 500 美元，月上限 20,000 美元，审批窗口 10 分钟。卡号只写入权限 0600 的文件，stdout 脱敏，永不进入对话；status 不是 approved 就不产生可填入的卡。HTTP 402 走 mpp pay，不把 PAN 交给付款端。
+- 依据 2026-09-28 的官方限额研究：单笔/单日上限 500 美元，月上限 20,000 美元。审批窗口按官方为 30 分钟（2026-10-16 更正：此前写 10 分钟，出自一份旧缓存的文档页；官方 link-cli README「Limits」表与 Stripe 文档现均写 30 分钟，见 https://github.com/stripe/link-cli/blob/main/README.md 、https://docs.stripe.com/agentic-commerce/link-cli/use-link-wallet-pay-online）。卡号只写入权限 0600 的文件，stdout 脱敏，永不进入对话；status 不是 approved 就不产生可填入的卡。HTTP 402 走 mpp pay，不把 PAN 交给付款端。
 - 消费者侧只做美国/加拿大。中国大陆支付轨道是另单 N-PAY-ALIPAY-AGENT，但复用本 ADR 的审批卡。
 - 本 ADR 不创建 Stripe 账号、不安装依赖、不调用 Stripe；私档竞品材料 code-agent-private-archive/docs/competitive/2026-08-30-Grok-Bot-0.30-代买小组模板-实现挖潜.html 在本机不可读，以下以任务书摘要和仓内锚点为证据。
 
@@ -146,7 +147,15 @@ credentialRef 只接受 secureref: 句柄，target locator 只选择已观察且
 
 ### 超时、退款与争议
 
-官方审批窗口是 10 分钟。窗口内未完成、Link 需要认证但用户未完成、CLI 无法确认 approved，均不得填表或猜测“已扣款”；应清理 handle，回传稳定失败原因并保持原 run 可继续。商户扣款后的退款/争议属于商户和发卡网络/Link 的既有路径，Neo 只保存不含 PAN 的订单引用和用户可操作的支持入口。
+官方审批窗口是 30 分钟（出处见「已定口径」）。窗口内未完成、Link 需要认证但用户未完成、CLI 无法确认 approved，均不得填表或猜测“已扣款”；应清理 handle，回传稳定失败原因并保持原 run 可继续。商户扣款后的退款/争议属于商户和发卡网络/Link 的既有路径，Neo 只保存不含 PAN 的订单引用和用户可操作的支持入口。
+
+### 两道人审的取舍（Neo 支付卡 + Link App 确认）
+
+一笔支付会经过两道真人确认：先是 Neo 的审批卡（forceConfirm，展示金额、商户、用途），再是 Link App 里对 spend request 的批准（官方 `--request-approval` 推送到用户手机）。
+
+- **两道都保留，不合并。** 两道守的东西不同：Neo 审批卡守的是「这个 agent 此刻要不要花钱」，属于 Neo 自己的权限链，必须留痕、能在无人值守时停车；Link 批准守的是「这张卡的持有人是否授权这笔消费」，由发卡侧掌握，Neo 无权替代，也绕不过去（status 不是 approved 就拿不到凭据）。去掉 Neo 这道，会让支付成为唯一不过 Neo 权限链的高危动作；去掉 Link 这道在官方协议里做不到。
+- **不重复打扰的做法：** 两道之间不再加第三次确认；Neo 审批卡通过后才调 `--request-approval`，用户在 Neo 里拒绝就不会收到 Link 推送；审批卡直接给出 approval_url 并说明「下一步会在 Link App 里再确认一次」，让第二道是预期内的一步而不是意外弹窗；Link 侧等待期间 Neo 只显示一个「等你在 Link 里确认」的状态，不重复弹卡。
+- **不做的：** 不用 allow_standing 把 Neo 这道变成长期授权来「省一次」；不在 Link 已批准后再让用户在 Neo 里确认一次填表。
 
 ### 必须爸爸拍板的块
 
@@ -158,9 +167,9 @@ credentialRef 只接受 secureref: 句柄，target locator 只选择已观察且
 
 > **Decision needed [默认值]**
 >
-> **推荐：** 10 分钟内未得到 status=approved 统一进入 failed，稳定码为 APPROVAL_EXPIRED；不自动重开、不自动重试，用户只能主动创建新的审批卡。needs_auth 保留同一 requestId 并继续原 run，认证取消才进入 denied。
+> **推荐：** 30 分钟内未得到 status=approved 统一进入 failed，稳定码为 APPROVAL_EXPIRED；不自动重开、不自动重试，用户只能主动创建新的审批卡。needs_auth 保留同一 requestId 并继续原 run，认证取消才进入 denied。
 >
-> **证据：** 官方限额研究给出 10 分钟窗口；ALREADY_PENDING 要求单 requestId 幂等；现有停车审批有 fail-closed 计时和稳定裁决口（orchestratorPermissions.ts:507-535）。
+> **证据：** 官方 link-cli README 与 Stripe 文档给出 30 分钟窗口，超时状态为 expired；ALREADY_PENDING 要求单 requestId 幂等；现有停车审批有 fail-closed 计时和稳定裁决口（orchestratorPermissions.ts:507-535）。
 
 > **Decision needed [安全边界]**
 >

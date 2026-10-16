@@ -133,6 +133,8 @@ export interface CLIConfig {
   originKind?: SessionOriginKind;
   /** Current run writes model history but not the visible chat transcript. */
   historyVisibility?: 'visible' | 'meta';
+  /** 会话级记忆档（'off' = 本轮不读也不写长期记忆）；由会话感知入口从持久化会话行读入。 */
+  memoryMode?: import('../shared/contract/session').SessionMemoryMode;
 }
 
 /**

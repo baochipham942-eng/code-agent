@@ -558,3 +558,11 @@ export const VOICE_RECORDING_CLEANUP_LEDGER_LIMIT = 20;
 export const VOICE_RECORDING_RETENTION_DAYS = 7;
 export const VOICE_RECORDING_MAX_BYTES = 500 * 1024 * 1024;
 export const VOICE_RECORDING_MAX_CALLS = 10;
+
+/** Total profile budget includes the wrapper and recent project titles. */
+export const VOICE_USER_PROFILE = {
+  MAX_CHARS: 600,
+  MAX_ENTRIES: 8,
+  MAX_PROJECTS: 2,
+  MAX_PROJECT_TITLE_CHARS: 80,
+} as const;

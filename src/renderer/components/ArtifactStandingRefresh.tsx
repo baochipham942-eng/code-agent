@@ -11,8 +11,10 @@
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from 'react';
 import { AlertTriangle, CalendarClock } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
+import type { CreateCronJobDefinition } from '@shared/contract/cron';
 import {
   buildStandingRefreshJobInput,
+  describeStandingRefreshSchedule,
   type StandingRefreshCadence,
   type StandingRefreshJobView,
 } from '@shared/artifactStandingRefresh';
@@ -28,6 +30,12 @@ const CADENCE_ORDER: StandingRefreshCadence[] = ['hourly', 'daily', 'weekly'];
 
 function parseCadence(value: string | undefined): StandingRefreshCadence {
   return value === 'hourly' || value === 'weekly' ? value : 'daily';
+}
+
+/** 非预设节奏且用户未另选时：摘掉 scheduleType/schedule，updateJob 浅合并保留现调度。 */
+function withoutSchedule(input: CreateCronJobDefinition): Omit<CreateCronJobDefinition, 'scheduleType' | 'schedule'> {
+  const { scheduleType: _scheduleType, schedule: _schedule, ...rest } = input;
+  return rest;
 }
 
 function workingDirectoryOf(filePath: string): string {
@@ -55,7 +63,8 @@ export const ArtifactStandingRefresh = forwardRef<ArtifactStandingRefreshHandle,
   const [standingRefresh, setStandingRefresh] = useState<StandingRefreshJobView | undefined>(undefined);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [instruction, setInstruction] = useState('');
-  const [cadence, setCadence] = useState<StandingRefreshCadence>('daily');
+  // undefined = 真实调度非预设且用户未另选（三个节奏按钮都不按，保存保留现调度）
+  const [cadence, setCadence] = useState<StandingRefreshCadence | undefined>(undefined);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
@@ -73,10 +82,12 @@ export const ArtifactStandingRefresh = forwardRef<ArtifactStandingRefreshHandle,
 
   const openDialog = useCallback(() => {
     setInstruction(standingRefresh?.instruction ?? '');
-    setCadence(parseCadence(standingRefresh?.cadence));
+    // 预设调度按预设按按钮；非预设（Cron 中心改过）不按任何按钮；旧载荷回退 metadata cadence
+    const view = describeStandingRefreshSchedule(standingRefresh?.schedule, language);
+    setCadence(view?.kind === 'preset' ? view.cadence : view ? undefined : parseCadence(standingRefresh?.cadence));
     setSaveError(null);
     setDialogOpen(true);
-  }, [standingRefresh]);
+  }, [standingRefresh, language]);
 
   useImperativeHandle(ref, () => ({ open: openDialog }), [openDialog]);
 
@@ -87,11 +98,15 @@ export const ArtifactStandingRefresh = forwardRef<ArtifactStandingRefreshHandle,
     setSaveError(null);
     try {
       const input = buildStandingRefreshJobInput(
-        { path: filePath, instruction: trimmed, cadence },
+        { path: filePath, instruction: trimmed, cadence: cadence ?? parseCadence(standingRefresh?.cadence) },
         workingDirectoryOf(filePath),
       );
       if (standingRefresh?.jobId) {
-        const updated = await cronClient.updateJob(standingRefresh.jobId, input);
+        // 未另选节奏（非预设调度）：不带 scheduleType/schedule，host 浅合并保留现调度
+        const updated = await cronClient.updateJob(
+          standingRefresh.jobId,
+          cadence === undefined ? withoutSchedule(input) : input,
+        );
         if (!updated) throw new Error('Standing refresh job was not found');
       } else {
         await cronClient.createJob(input);
@@ -111,8 +126,16 @@ export const ArtifactStandingRefresh = forwardRef<ArtifactStandingRefreshHandle,
       : option === 'weekly' ? pv.standingRefreshCadenceWeekly
         : pv.standingRefreshCadenceDaily
   );
+  // chip 节奏词：预设沿用 Hourly/Daily/Weekly；非预设用任务真实调度的人话标签
+  //（每 5 分钟 / Every 5 minutes）；旧载荷（无 schedule）回退 metadata cadence。
+  const scheduleView = describeStandingRefreshSchedule(standingRefresh?.schedule, language);
+  const cadenceText = scheduleView?.kind === 'preset'
+    ? cadenceLabel(scheduleView.cadence)
+    : scheduleView?.kind === 'custom'
+      ? scheduleView.label
+      : cadenceLabel(parseCadence(standingRefresh?.cadence));
   const chipLabel = standingRefresh
-    ? pv.standingRefreshChip.replace('{cadence}', cadenceLabel(parseCadence(standingRefresh.cadence)))
+    ? pv.standingRefreshChip.replace('{cadence}', cadenceText)
     : pv.standingRefreshSetup;
   const failure = standingRefresh?.lastRefreshFailed;
   // 失败态 chip 只放短状态（不含时间——长标签撞上 max-w 会被截掉「已保留上一版」）；
@@ -190,6 +213,12 @@ export const ArtifactStandingRefresh = forwardRef<ArtifactStandingRefreshHandle,
                 </Button>
               ))}
             </div>
+            {/* 真实调度非预设：不按任何按钮，展示现节奏；不另选就保存则保持它 */}
+            {scheduleView?.kind === 'custom' && (
+              <p className="mt-1.5 text-xs text-zinc-500" data-testid="standing-refresh-current-schedule">
+                {pv.standingRefreshCurrentSchedule.replace('{schedule}', scheduleView.label)}
+              </p>
+            )}
           </div>
           <p className="text-xs text-zinc-500">{pv.standingRefreshTargetHint}</p>
           {saveError && (

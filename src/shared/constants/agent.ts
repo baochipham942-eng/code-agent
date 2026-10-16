@@ -21,7 +21,11 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v79：N-MEDIA-GEN-PHASE2 把 video_generate/music_generate 对齐 image 合同（output_file_path、
 // video 新增 model/image_path、描述加计费与参考单价；模型可见面变化）。
 // sys-v80：N-PY-RUNTIME-K2 将数据处理 Python 指向托管解释器（模型可见面变化）。
-export const PROMPT_VERSION = 'sys-v80' as const;
+// sys-v81：N-HOME-STARTER-CARDS-FILES 单轮 Office 文件交付改走原生生成工具：FILE_DELIVERABLE
+// 提醒替代 Python 工作流场景提醒、委派工具收口、文字前台按轮次放行 docx_generate/excel_generate/DocEdit。
+// sys-v82：N-HOME-STARTER-CARDS-FILES rework r2——小范围单轮对比（竞品简报卡形）不再注入
+// 委派/并行派发提醒、委派工具收口；已有文件的转换/另存不再判成单轮文件交付（提醒与工具面变化）。
+export const PROMPT_VERSION = 'sys-v82' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

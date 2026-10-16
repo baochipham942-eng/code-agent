@@ -100,6 +100,12 @@ export interface ToolDefinition {
   readOnly?: boolean;
 
   /**
+   * 该工具声明绝不读写会话工作目录（来自 protocol schema touchesWorkDirectory）。
+   * 懒开目录判定用：派发此类工具前不落盘工作目录，纯问答/记忆会话不产生空目录。
+   */
+  touchesWorkDirectory?: false;
+
+  /**
    * 工具会阻塞执行，等待用户在当前会话界面当场输入或选择。
    * 仅“稍后可审批”、后台等待或普通写操作不属于此能力。
    */

@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import type { CronJobDefinition, CronJobExecution } from '@shared/contract';
+import { classifyCronFailure, type CronFailurePresentationKind } from '@shared/utils/cronFailureClassification';
 import { ExternalLink, MessageSquareText } from 'lucide-react';
 import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
+import { useCronStore } from '../../../stores/cronStore';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { Button } from '../../primitives/Button';
 import {
   formatDateTime,
   formatDuration,
@@ -12,6 +15,17 @@ import {
 } from './types';
 import { CronRunsOnPill } from './CronRunsOnSelector';
 import { cronLoginWallCopy, openCronLoginWallSite } from './cronLoginWallNotice';
+import { cronFailureSentence } from './cronFailureNotice';
+
+const CLOUD_NOT_WIRED = 'Cloud execution is not wired yet (N-L3-MINLOOP-SRV).';
+const BUDGET_LIMIT = /Cron job run exceeded its \$(\d+(?:\.\d+)?) budget limit\./;
+
+function failureAction(kind: CronFailurePresentationKind): 'model' | 'account' | 'rerun' | null {
+  if (kind === 'quota') return 'model';
+  if (kind === 'auth') return 'account';
+  if (kind === 'rate_limit' || kind === 'timeout' || kind === 'network') return 'rerun';
+  return null;
+}
 
 interface CronExecutionDetailProps {
   execution: CronJobExecution | null;
@@ -19,11 +33,12 @@ interface CronExecutionDetailProps {
 }
 
 export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execution, runsOn = 'local' }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const cc = t.cronCenter;
   const switchSession = useSessionStore((state) => state.switchSession);
   const setShowCronCenter = useAppStore((state) => state.setShowCronCenter);
   const [isOpeningSession, setIsOpeningSession] = useState(false);
+  const [isRerunning, setIsRerunning] = useState(false);
 
   if (!execution) {
     return (
@@ -35,14 +50,25 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
 
   const statusMeta = getExecutionStatusMeta(execution.status);
   const loginWall = cronLoginWallCopy(execution.error, { error: cc.loginWallError });
-  const displayError = loginWall?.message ?? (execution.error === 'unsupported_action'
-    ? cc.unsupportedAction
-    : execution.error === 'Cloud execution is not wired yet (N-L3-MINLOOP-SRV).'
-    ? cc.cloudExecutionNotWired
-    : execution.error?.replace(
-      /Cron job run exceeded its \$(\d+(?:\.\d+)?) budget limit\./,
-      (_match, amount: string) => cc.runBudgetExceeded.replace('{amount}', amount),
-    ));
+  const budgetAmount = execution.error?.match(BUDGET_LIMIT)?.[1];
+  const preservedError = loginWall?.message
+    ?? (execution.error === 'unsupported_action' ? cc.unsupportedAction
+      : execution.error === CLOUD_NOT_WIRED ? cc.cloudExecutionNotWired
+        : budgetAmount ? cc.runBudgetExceeded.replace('{amount}', budgetAmount) : undefined);
+  const classified = preservedError || !execution.error ? undefined : classifyCronFailure(execution.error);
+  const failureSentence = classified
+    ? cronFailureSentence(classified.kind, classified, cc, language)
+    : undefined;
+  const action = classified ? failureAction(classified.kind) : null;
+  const handleRerun = async () => {
+    if (isRerunning) return;
+    setIsRerunning(true);
+    try {
+      await useCronStore.getState().triggerJob(execution.jobId);
+    } finally {
+      setIsRerunning(false);
+    }
+  };
   const handleOpenSession = async () => {
     if (!execution.sessionId || isOpeningSession) return;
     setIsOpeningSession(true);
@@ -103,7 +129,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
         <Info label={cc.colExitCode} value={execution.exitCode != null ? String(execution.exitCode) : '—'} />
       </div>
 
-      {displayError && (
+      {preservedError && (
         <section className="mt-4">
           <div className="mb-2 flex items-center justify-between gap-2">
             <h5 className="text-xs font-medium uppercase tracking-wide text-badge-danger">{cc.execError}</h5>
@@ -120,8 +146,58 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
             )}
           </div>
           <pre className="max-h-40 overflow-auto rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-badge-danger whitespace-pre-wrap">
-            {displayError}
+            {preservedError}
           </pre>
+        </section>
+      )}
+
+      {failureSentence && (
+        <section className="mt-4" data-testid="cron-failure-plain">
+          <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-badge-danger">{cc.execError}</h5>
+          <p className="text-sm text-zinc-100" data-testid="cron-failure-sentence">{failureSentence}</p>
+          {action === 'model' && (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="mt-3"
+              data-testid="cron-failure-action"
+              onClick={() => useAppStore.getState().openSettingsTab('model')}
+            >
+              {cc.failureActionSwitchModel}
+            </Button>
+          )}
+          {action === 'account' && (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="mt-3"
+              data-testid="cron-failure-action"
+              onClick={() => useAppStore.getState().openSettingsTab('model')}
+            >
+              {cc.failureActionCheckAccount}
+            </Button>
+          )}
+          {action === 'rerun' && (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="mt-3"
+              data-testid="cron-failure-action"
+              loading={isRerunning}
+              onClick={() => { void handleRerun(); }}
+            >
+              {cc.failureActionRunAgain}
+            </Button>
+          )}
+          <details className="mt-3" data-testid="cron-failure-technical">
+            <summary className="cursor-pointer text-xs text-zinc-400">{cc.failureTechnical}</summary>
+            <pre className="mt-2 max-h-40 overflow-auto rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-xs text-zinc-400 whitespace-pre-wrap">
+              {execution.error}
+            </pre>
+          </details>
         </section>
       )}
 

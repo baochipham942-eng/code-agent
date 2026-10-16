@@ -25,7 +25,11 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // 提醒替代 Python 工作流场景提醒、委派工具收口、文字前台按轮次放行 docx_generate/excel_generate/DocEdit。
 // sys-v82：N-HOME-STARTER-CARDS-FILES rework r2——小范围单轮对比（竞品简报卡形）不再注入
 // 委派/并行派发提醒、委派工具收口；已有文件的转换/另存不再判成单轮文件交付（提醒与工具面变化）。
-export const PROMPT_VERSION = 'sys-v82' as const;
+// sys-v83：N-COMPUTERUSE-GRANT-TARGETAPP 整合合并——本单 computer_use schema 增 targetApp/bundleId、
+// 工具索引空 footer 省略，叠加 main 的 sys-v81/v82 提醒变化；合并面与任一父提交的 v82 面均不同（模型可见面变化）。
+// sys-v84：N-COMPUTERUSE-GRANT-TARGETAPP rework r1——按应用授权的安全收口撤掉模型可声明、Host 门上
+// 无法校验的 bundleId 参数（computer_use schema 只留 targetApp；模型可见面变化）。
+export const PROMPT_VERSION = 'sys-v84' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

@@ -53,6 +53,7 @@ describe('SidebarSessionItem visible waiting text', () => {
     expect(subtitle.title).toBe(appText);
     expect(subtitle.className).toContain('truncate');
     expect(subtitle.className).toContain('text-[11px]');
+    expect(subtitle.className).toContain('text-badge-accent');
     expect(container.querySelector('.bg-mark-accent[aria-label]')).not.toBeNull();
     process.stdout.write(`DOM ${language} app: ${subtitle.textContent}\n`);
 

@@ -226,7 +226,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
             </span>
             {status.kind === 'approval' && (
               <div
-                className="truncate text-[11px] text-mark-accent"
+                className="truncate text-[11px] text-badge-accent"
                 title={waitingText}
                 data-testid="sidebar-session-waiting-text"
               >

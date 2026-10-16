@@ -384,10 +384,17 @@ function recursivelyRemovesPath(command: string): boolean {
 // npm config 语义：同名参数后者覆盖前者，`--no-dry-run` / `--dry-run=false` 会把前面的 `--dry-run` 关掉——
 // `npm publish --dry-run --no-dry-run` 是真发布。只查 includes('--dry-run') 会把它当预览放行（N-APPROVAL-DRYRUN-DD，review-eval 在 #1611 案例上报出）。
 function npmPublishDryRunFlag(words: string[], start: number): boolean {
+  // ponytail: 只认 npm 实测按预览解析的写法，拿不准的一律当没开（落到 ask）。
+  // npm 11 实测：`--dry-run false` 把 false 吃成取值 ⇒ 真发布；`--no-dry` 会展开成 --no-dry-run；`--dry-run=0` 也不是预览。
   let dryRun = false;
-  for (const word of words.slice(start)) {
-    if (word === '--dry-run' || word === '--dry-run=true') dryRun = true;
-    else if (word === '--no-dry-run' || word === '--dry-run=false') dryRun = false;
+  const rest = words.slice(start);
+  for (let i = 0; i < rest.length; i++) {
+    const word = rest[i];
+    if (word === '--dry-run' && (rest[i + 1] === 'true' || rest[i + 1] === 'false')) {
+      dryRun = rest[i + 1] === 'true';
+      i++;
+    } else if (word === '--dry-run' || word === '--dry-run=true') dryRun = true;
+    else if (word.startsWith('--no-dry') || word.startsWith('--dry-run=')) dryRun = false;
   }
   return dryRun;
 }

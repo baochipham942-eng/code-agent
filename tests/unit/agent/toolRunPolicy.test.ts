@@ -206,6 +206,55 @@ describe('toolRunPolicy', () => {
         tool('Read'),
       ], ctx).map((item) => item.name)).toEqual(['spawn_agent', 'delegate_task', 'Read']);
     });
+
+    // rework r3（PR review 2026-10-15）：收口判定按「本轮 prompt」判，不按全会话
+    // 历史扫——扫全量 user 消息会让一次竞品卡轮把同会话**之后所有轮**的委派面
+    // 永久收掉（文字前台没有终端，「跑测试/装依赖/并行调研」再也派不了后台）。
+    describe('收口只作用于当前轮，不跨轮粘住', () => {
+      it('竞品卡轮之后的普通轮：delegate_task 与 spawn_agent 回到工具面', () => {
+        const ctx = {
+          messages: [
+            { role: 'user', content: competitorZh },
+            { role: 'assistant', content: '竞品简报已交付（对比表 + 3 条结论）。' },
+            { role: 'user', content: '帮我跑一下单元测试并修复失败' },
+          ],
+        } as any;
+
+        const kept = filterToolsByRunPolicy([
+          tool('delegate_task'),
+          tool('spawn_agent'),
+          tool('task'),
+          tool('Read'),
+        ], ctx).map((item) => item.name);
+
+        expect(kept).toContain('delegate_task');
+        expect(kept).toContain('spawn_agent');
+        expect(kept).toContain('task');
+        expect(kept).toContain('Read');
+      });
+
+      it('同轮内注入的 user 角色消息不解除收口：判定只认 run 起始 prompt', async () => {
+        const { TurnState } = await import('../../../src/host/agent/runtime/turnState');
+        const turn = new TurnState();
+        turn.beginRun(competitorZh);
+        const ctx = {
+          turn,
+          messages: [
+            { role: 'user', content: competitorZh },
+            { role: 'assistant', content: '开始整理对比表' },
+            // 轮内注入的 user 角色消息（autoApprovePlan 合成确认 / runtimeSteer 同形）：
+            // 它不是本轮开跑的 prompt，不许因为它而漏判 bounded 收口。
+            { role: 'user', content: '确认执行，请按计划开始实现。' },
+          ],
+        } as any;
+
+        expect(filterToolsByRunPolicy([
+          tool('spawn_agent'),
+          tool('delegate_task'),
+          tool('Read'),
+        ], ctx).map((item) => item.name)).toEqual(['Read']);
+      });
+    });
   });
 
   // 2026-08-09 委派入口歧义单：收窄日志只打数量时，「24 -> 9 砍掉了谁」在日志里查不到，

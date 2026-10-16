@@ -3,13 +3,15 @@
 // ChatInput 工具栏只露真正高频的（权限模式 / 上下文 / 模型 / 语音 / 发送）。
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Plus, Image as ImageIcon, MonitorUp, Bot, ChevronRight, Plug, Sparkles, UsersRound } from 'lucide-react';
+import { Plus, Image as ImageIcon, MonitorUp, Bot, ChevronRight, Plug, Sparkles, UsersRound, BookX } from 'lucide-react';
 import type { AppSettings } from '@shared/contract';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { useAppStore } from '../../../../stores/appStore';
 import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
 import { isPanelVisibleAgent } from '../../../../../shared/contract/agentRegistry';
 import { useComposerStore } from '../../../../stores/composerStore';
+import { isSessionScopeKey } from '../../../../stores/composerScopeModel';
+import { useSessionStore } from '../../../../stores/sessionStore';
 import { useTeamRecipeStore } from '../../../../stores/teamRecipeStore';
 import { useWorkbenchCapabilityRegistry } from '../../../../hooks/useWorkbenchCapabilityRegistry';
 import type { WorkbenchCapabilityRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
@@ -21,6 +23,8 @@ import {
   type AppshotsLastFrontApp,
 } from '../../../../services/nativeCommandFacade';
 import ipcService from '../../../../services/ipcService';
+import { Toggle } from '../../../primitives/Toggle';
+import { Badge } from '../../../primitives/Badge';
 import { InputAddSubmenu, type InputAddSubmenuItem } from './InputAddSubmenu';
 
 interface Props {
@@ -64,6 +68,34 @@ export const InputAddMenu: React.FC<Props> = ({
   const selectedTeamRecipeId = useComposerStore((s) => s.selectedTeamRecipeId);
   const setSelectedTeamRecipeId = useComposerStore((s) => s.setSelectedTeamRecipeId);
   const openSettingsTab = useAppStore((s) => s.openSettingsTab);
+  // 本任务「不用记忆」：草稿/空间槽读 composer 意图；会话槽读 host 真源
+  // （session.memoryMode）。会话一旦有消息即锁定档位——这是任务级承诺，不是偏好。
+  const composerActiveScopeKey = useComposerStore((s) => s.activeScopeKey);
+  const draftMemoryOff = useComposerStore((s) => s.draftMemoryOff);
+  const setDraftMemoryOff = useComposerStore((s) => s.setDraftMemoryOff);
+  const currentSessionId = useSessionStore((s) => s.currentSessionId);
+  const currentSessionList = useSessionStore((s) => s.sessions);
+  const currentMessages = useSessionStore((s) => s.messages);
+  const updateSessionMemoryMode = useSessionStore((s) => s.updateSessionMemoryMode);
+  const memoryInSessionScope = isSessionScopeKey(composerActiveScopeKey);
+  const memoryCurrentSession = memoryInSessionScope
+    ? currentSessionList.find((s) => s.id === currentSessionId)
+    : undefined;
+  // messages 是当前会话内存态；messageCount 兜底（会话列表行带的是持久化计数）
+  const memoryLocked = memoryInSessionScope
+    && (currentMessages.length > 0 || (memoryCurrentSession?.messageCount ?? 0) > 0);
+  const memoryOff = memoryInSessionScope
+    ? memoryCurrentSession?.memoryMode === 'off'
+    : draftMemoryOff;
+  const toggleMemoryOff = (next: boolean) => {
+    if (memoryInSessionScope) {
+      // 空白会话（0 消息）尚可改档：直接落 host；有消息则开关已禁用，不应到达
+      if (memoryLocked || !currentSessionId) return;
+      void updateSessionMemoryMode(currentSessionId, next ? 'off' : 'auto');
+      return;
+    }
+    setDraftMemoryOff(next);
+  };
   const [lastFrontApp, setLastFrontApp] = useState<AppshotsLastFrontApp | null>(null);
   const [appshotsEnabled, setAppshotsEnabled] = useState(true);
   const [lastFrontAppLoading, setLastFrontAppLoading] = useState(false);
@@ -239,7 +271,18 @@ export const InputAddMenu: React.FC<Props> = ({
   useEffect(() => () => clearSubmenuCloseTimer(), []);
 
   return (
-    <div className="relative">
+    <div className="relative flex items-center gap-1">
+      {memoryOff && (
+        <Badge
+          data-testid="input-add-memory-chip"
+          aria-label={t.inputAddMenu.memoryOffLabel}
+          title={memoryLocked ? t.inputAddMenu.memoryOffLockedHint : t.inputAddMenu.memoryOffHint}
+          className="max-w-[10rem] shrink-0 truncate border-zinc-700 bg-zinc-800/70 text-[10px] text-zinc-300"
+        >
+          <BookX className="h-3 w-3 shrink-0 text-zinc-400" aria-hidden />
+          {t.inputAddMenu.memoryOffLabel}
+        </Badge>
+      )}
       <button
         ref={triggerRef}
         type="button"
@@ -273,6 +316,29 @@ export const InputAddMenu: React.FC<Props> = ({
           onMouseLeave={scheduleSubmenuClose}
           className="absolute bottom-full left-0 mb-2 min-w-[220px] py-1 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-30"
         >
+          {/* 本任务不用记忆：任务级承诺，放在菜单首行；开始后锁定，只读展示原因 */}
+          <div
+            data-testid="input-add-memory-row"
+            className="flex w-full items-center gap-2 px-3 py-2 text-left"
+          >
+            <BookX className="h-3.5 w-3.5 shrink-0 text-zinc-400" aria-hidden />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-xs text-zinc-200">{t.inputAddMenu.memoryOffLabel}</span>
+              <span className="block truncate text-[10px] text-zinc-500">
+                {memoryLocked ? t.inputAddMenu.memoryOffLockedHint : t.inputAddMenu.memoryOffHint}
+              </span>
+            </span>
+            <Toggle
+              checked={memoryOff}
+              onChange={toggleMemoryOff}
+              disabled={memoryLocked}
+              aria-label={t.inputAddMenu.memoryOffLabel}
+              title={memoryLocked ? t.inputAddMenu.memoryOffLockedHint : undefined}
+            />
+          </div>
+
+          <div className="border-t border-zinc-700/60 mb-1" />
+
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}

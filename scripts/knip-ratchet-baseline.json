@@ -6328,11 +6328,6 @@
     },
     {
       "file": "src/renderer/components/design/canvasCameraInput.ts",
-      "name": "dragEndCamera",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/design/canvasCameraInput.ts",
       "name": "normalizeDelta",
       "kind": "export"
     },
@@ -7062,11 +7057,6 @@
       "kind": "export"
     },
     {
-      "file": "src/renderer/components/features/settings/tabs/ModelSettings.helpers.tsx",
-      "name": "renderModelOptions",
-      "kind": "export"
-    },
-    {
       "file": "src/renderer/components/features/settings/tabs/SkillsInstalledTab.tsx",
       "name": "SkillGroupKind",
       "kind": "type"
@@ -7378,53 +7368,13 @@
     },
     {
       "file": "src/renderer/components/StatusBar/modelSwitcherHelpers.tsx",
-      "name": "buildEngineModelCompatContext",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/StatusBar/modelSwitcherHelpers.tsx",
-      "name": "ENGINE_ICON",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/StatusBar/modelSwitcherHelpers.tsx",
-      "name": "ENGINE_INSTALL_LABEL",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/StatusBar/modelSwitcherHelpers.tsx",
-      "name": "ENGINE_PERMISSION_LABEL",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/StatusBar/modelSwitcherHelpers.tsx",
       "name": "ENGINE_RUNTIME_LABEL",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/StatusBar/modelSwitcherHelpers.tsx",
-      "name": "EngineReliabilityPanel",
       "kind": "export"
     },
     {
       "file": "src/renderer/components/StatusBar/modelSwitcherHelpers.tsx",
       "name": "EngineReliabilityTone",
       "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/StatusBar/modelSwitcherHelpers.tsx",
-      "name": "formatEngineCwdPolicy",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/StatusBar/modelSwitcherHelpers.tsx",
-      "name": "formatEngineTooltip",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/StatusBar/modelSwitcherHelpers.tsx",
-      "name": "getEngineModelCompatReasonText",
-      "kind": "export"
     },
     {
       "file": "src/renderer/components/StatusBar/modelSwitcherHelpers.tsx",
@@ -7562,16 +7512,6 @@
       "kind": "export"
     },
     {
-      "file": "src/renderer/components/TaskPanel/RunWorkbenchCards.tsx",
-      "name": "RunTimeline",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/TaskPanel/RunWorkbenchCards.tsx",
-      "name": "ToolDiscoverySummary",
-      "kind": "export"
-    },
-    {
       "file": "src/renderer/components/UpdateNotification.tsx",
       "name": "default",
       "kind": "export"
@@ -7639,26 +7579,6 @@
     {
       "file": "src/renderer/hooks/useKeybindingsSettings.ts",
       "name": "loadKeybindingsSettings",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/hooks/useKeyboardShortcuts.ts",
-      "name": "default",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/hooks/useKeyboardShortcuts.ts",
-      "name": "DEFAULT_SHORTCUTS",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/hooks/useKeyboardShortcuts.ts",
-      "name": "formatShortcut",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/hooks/useKeyboardShortcuts.ts",
-      "name": "getShortcutsList",
       "kind": "export"
     },
     {
@@ -7882,21 +7802,6 @@
       "kind": "type"
     },
     {
-      "file": "src/renderer/stores/dagStore.ts",
-      "name": "default",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/stores/dagStore.ts",
-      "name": "useActiveDAGCount",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/stores/dagStore.ts",
-      "name": "useDAGVisible",
-      "kind": "export"
-    },
-    {
       "file": "src/renderer/stores/explorerStore.ts",
       "name": "ExplorerTab",
       "kind": "type"
@@ -8112,21 +8017,6 @@
       "kind": "type"
     },
     {
-      "file": "src/renderer/utils/toolGrouping.ts",
-      "name": "groupToolCalls",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/utils/toolGrouping.ts",
-      "name": "ToolGroup",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/utils/toolGrouping.ts",
-      "name": "ToolGroupType",
-      "kind": "type"
-    },
-    {
       "file": "src/renderer/utils/toolStepGrouping.ts",
       "name": "MIN_GROUP_SIZE",
       "kind": "export"
@@ -8139,16 +8029,6 @@
     {
       "file": "src/renderer/utils/workbenchCapabilityRegistry.ts",
       "name": "buildWorkbenchCapabilityRegistryFromCapabilities",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/utils/workbenchCapabilityRegistry.ts",
-      "name": "getWorkbenchCapabilityReadiness",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/utils/workbenchCapabilityRegistry.ts",
-      "name": "isWorkbenchCapabilityAutoAllowed",
       "kind": "export"
     },
     {
@@ -8189,11 +8069,6 @@
     {
       "file": "src/renderer/utils/workbenchPresentation.ts",
       "name": "getWorkbenchConnectorStatusPresentation",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/utils/workbenchPresentation.ts",
-      "name": "getWorkbenchSkillCapabilityTitle",
       "kind": "export"
     },
     {

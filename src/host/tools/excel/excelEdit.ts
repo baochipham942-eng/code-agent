@@ -35,7 +35,7 @@ type ExcelEditOperation =
   | { action: 'delete_columns'; sheet?: string; from: string; count?: number }
   | { action: 'set_style';      sheet?: string; range: string; style: CellStyle }
   | { action: 'rename_sheet';   sheet: string; newName: string }
-  | { action: 'add_sheet';      name: string; after?: string }
+  | { action: 'add_sheet';      name?: string; sheet?: string; after?: string }
   | { action: 'delete_sheet';   sheet: string }
   | { action: 'set_column_width'; sheet?: string; column: string; width: number }
   | { action: 'merge_cells';    sheet?: string; range: string }
@@ -213,8 +213,15 @@ function executeOperation(workbook: ExcelJS.Workbook, op: ExcelEditOperation): s
     }
 
     case 'add_sheet': {
-      workbook.addWorksheet(op.name);
-      return `Added sheet "${op.name}"`;
+      // 表名收 name 或 sheet 两个别名：schema 文档只列了动作名没列参数，模型按
+      // set_cell 的先例猜 sheet；缺别名时 addWorksheet(undefined) 会静默生成
+      // "sheet2" 空表，后续按目标表名的写入全数找不到表（r5 实测 4 次重试才绕过）。
+      const name = op.name ?? op.sheet;
+      if (!name || typeof name !== 'string') {
+        throw new Error('add_sheet requires a sheet name (name or sheet)');
+      }
+      workbook.addWorksheet(name);
+      return `Added sheet "${name}"`;
     }
 
     case 'delete_sheet': {

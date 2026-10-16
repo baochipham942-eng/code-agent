@@ -16,7 +16,6 @@ import {
 } from 'lucide-react';
 import type {
   TaskPlan,
-  TaskPhase,
   TaskStep,
   TaskStepStatus,
   TaskPhaseStatus,
@@ -91,7 +90,7 @@ const StepItem: React.FC<{ step: TaskStep }> = ({ step }) => {
 };
 
 // Phase display with collapsible steps
-const PhaseItem: React.FC<{ phase: TaskPhase; defaultExpanded?: boolean }> = ({
+const PhaseItem: React.FC<{ phase: TaskPlan['phases'][number]; defaultExpanded?: boolean }> = ({
   phase,
   defaultExpanded = true,
 }) => {

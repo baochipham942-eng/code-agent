@@ -6,7 +6,7 @@ import { GhostButton, IconButton } from '../../primitives';
 import type { SessionWithMeta } from '../../../stores/sessionStore';
 import type { CronTaskRunAggregate } from '../../../hooks/useCronRunGroups';
 import type { SessionState } from '../../../stores/taskStore';
-import { getDisplaySessionTitle, getSessionStatusPresentation } from '../../../utils/sessionPresentation';
+import { getDisplaySessionTitle, getSessionStatusPresentation, splitCronSessionTitleParts } from '../../../utils/sessionPresentation';
 import { localeForLanguage } from '../../../utils/i18nTime';
 import { useI18n } from '../../../hooks/useI18n';
 import { SidebarMessageHitList } from './SidebarMessageHitList';
@@ -167,6 +167,9 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   const forkParentSessionId = getForkParentSessionId(session);
   const cronTaskId = getSidebarCronTaskId(session);
   const cronRunAggregate = cronTaskId ? cronRunAggregatesByTaskId?.[cronTaskId] : undefined;
+  // 档位前缀（[Schedule] 等）不进截断段：前缀固定宽，名字才是截断的尾巴，
+  // 行宽吃紧时先省略名字尾部，不让「[Schedule] …」把任务名整个吞掉。
+  const cronTitleParts = splitCronSessionTitleParts(displayTitle);
 
   return (
     <div
@@ -214,6 +217,19 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
             onClick={(e) => e.stopPropagation()}
             className="flex-1 text-sm bg-zinc-600/80 text-zinc-200 px-1.5 py-0.5 rounded border border-zinc-600 focus:border-badge-info focus:outline-hidden"
           />
+        ) : cronTitleParts ? (
+          <span
+            onDoubleClick={(e) => handleDoubleClick(e, session)}
+            className="flex min-w-0 flex-1 items-baseline gap-1"
+          >
+            <span data-testid="sidebar-cron-task-prefix" className="shrink-0 text-[11px] text-zinc-500">{cronTitleParts.prefix}</span>
+            <span
+              data-testid="sidebar-cron-task-name"
+              className={`min-w-0 flex-1 truncate text-sm ${titleToneClass}`}
+            >
+              {cronTitleParts.name}
+            </span>
+          </span>
         ) : (
           <span
             onDoubleClick={(e) => handleDoubleClick(e, session)}
@@ -237,7 +253,9 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
                 onToggleCronRuns(cronTaskId);
               }}
               leftIcon={<ChevronRight className={`h-3 w-3 transition-transform ${cronRunsExpanded ? 'rotate-90' : ''}`} />}
-              className="h-auto shrink-0 px-1 py-0 text-[11px] tabular-nums text-zinc-500"
+              /* 尺寸覆盖必须带 v4 尾缀 !：GhostButton 的 size 样式同场写 px-3/gap-1.5，
+                 平写 px-1 会被样式表顺序压掉（实测 57px 开关就是这样来的），标题被挤成「[Schedule] …」。 */
+              className="h-auto shrink-0 px-0.5! py-0! gap-0.5! text-[11px]! tabular-nums text-zinc-500"
             >
               <span data-testid="sidebar-cron-run-count">x{cronRunAggregate.runCount}</span>
             </GhostButton>

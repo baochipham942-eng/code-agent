@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SidebarProjectGroup } from '../../../src/renderer/components/features/sidebar/SidebarProjectGroup';
 import type { SidebarSessionItemSharedProps } from '../../../src/renderer/components/features/sidebar/SidebarSessionItem';
+import { splitCronSessionTitleParts } from '../../../src/renderer/utils/sessionPresentation';
 import { MessageContent } from '../../../src/renderer/components/features/chat/MessageBubble/MessageContent';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 
@@ -235,6 +236,75 @@ describe('SidebarProjectGroup cron run folding', () => {
     });
     expect(screen.getByTestId('sidebar-session-run-old-2')).toBeTruthy();
     expect(screen.queryByTestId('sidebar-session-run-old-1')).toBeNull();
+  });
+
+  // ── 返工 2026-10-15：57px 开关把标题挤成「[Schedule] …」，任务名整个被截掉 ──
+  it('splits the cron title so only the name truncates and keeps the toggle compact', () => {
+    const job = (id: string, taskId: string, title: string, updatedAt: number) => ({
+      ...session(id, title, updatedAt),
+      origin: { kind: 'cron', id: taskId },
+    });
+    const plain = (id: string, updatedAt: number) => ({
+      ...session(id, id, updatedAt),
+      origin: { kind: 'manual' },
+    });
+    renderGroup({
+      group: {
+        key: 'project:p1',
+        name: 'code-agent',
+        path: '/repo/code-agent',
+        paths: ['/repo/code-agent'],
+        projectId: 'p1',
+        isUncategorized: false,
+        sessions: [
+          job('a-new', 'job-a', '[Schedule] 周报', 10),
+          job('a-old', 'job-a', '[Schedule] 周报', 9),
+          plain('plain-1', 8),
+        ],
+        latestActivityAt: 10,
+      },
+      sessionItemProps: sharedSessionProps({
+        cronRunAggregatesByTaskId: { 'job-a': { runCount: 2, latestSessionId: 'a-new' } },
+      }),
+    });
+
+    // 前缀固定宽（shrink-0），截断只发生在名字段上：行宽吃紧时省略的是名字尾部，
+    // 不再出现整段 truncate 把名字吞成「[Schedule] …」。
+    const name = screen.getByTestId('sidebar-cron-task-name');
+    expect(name.textContent).toBe('周报');
+    expect(name.className).toContain('truncate');
+    expect(name.className).toContain('min-w-0');
+    const prefix = screen.getByTestId('sidebar-cron-task-prefix');
+    expect(prefix.textContent).toBe('[Schedule]');
+    expect(prefix.className).toContain('shrink-0');
+    expect(prefix.contains(name)).toBe(false);
+
+    // 开关必须带 v4 尾缀 ! 的紧凑覆盖：平写 px 会被 GhostButton 的 size 样式
+    // 按样式表顺序压掉（57px 开关的来源）。
+    const toggle = screen.getByTestId('sidebar-cron-run-toggle');
+    expect(toggle.className).toContain('px-0.5!');
+    expect(toggle.className).toContain('gap-0.5!');
+
+    // 展开后的旧运行行同样拆段；非 cron 行不拆。
+    fireEvent.click(toggle);
+    const names = screen.getAllByTestId('sidebar-cron-task-name');
+    expect(names.map((node) => node.textContent)).toEqual(['周报', '周报']);
+    expect(screen.getAllByTestId('sidebar-cron-task-prefix')).toHaveLength(2);
+    expect(screen.getByTestId('sidebar-session-plain-1').querySelector('[data-testid="sidebar-cron-task-name"]')).toBeNull();
+  });
+});
+
+describe('splitCronSessionTitleParts', () => {
+  it('splits schedule, heartbeat and legacy cron prefixes', () => {
+    expect(splitCronSessionTitleParts('[Schedule] 周报')).toEqual({ prefix: '[Schedule]', name: '周报' });
+    expect(splitCronSessionTitleParts('[Heartbeat] 巡检')).toEqual({ prefix: '[Heartbeat]', name: '巡检' });
+    expect(splitCronSessionTitleParts('[Cron] 旧档')).toEqual({ prefix: '[Cron]', name: '旧档' });
+  });
+
+  it('returns null for plain titles or a bare prefix', () => {
+    expect(splitCronSessionTitleParts('周报')).toBeNull();
+    expect(splitCronSessionTitleParts('[Schedule]')).toBeNull();
+    expect(splitCronSessionTitleParts('')).toBeNull();
   });
 });
 

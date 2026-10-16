@@ -332,3 +332,10 @@ export const SUBAGENT_IDLE = {
  * CLI_EXIT_PARTIAL_MAX_ITERATIONS（2），与「正常完成 0 / 异常失败 1」区分。
  */
 export const RUN_ERROR_CODE_MAX_ITERATIONS = 'MAX_ITERATIONS_REACHED';
+
+/**
+ * 后台条目「用户取消/中断」收线标记（稳定 code，renderer 据此翻译面板结果行）。
+ * run 以 interrupted/cancelled 终态收线时作为 completionMessage 传入
+ * BackgroundTaskManager.markCompleted；面板/通知侧不许直接展示这个裸串。
+ */
+export const BACKGROUND_TASK_CANCELLED = 'USER_CANCELLED';

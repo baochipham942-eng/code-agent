@@ -13,8 +13,8 @@ import { isCoreAgent } from './hybrid/coreAgents';
 import { ASK_USER_QUESTION_TOOL_NAMES } from '../../shared/constants/tools';
 import type { SessionMemoryMode } from '../../shared/contract/session';
 
-/** 记忆关闭档额外拒绝的记忆/历史类工具（memoryMode='off'）。 */
-const MEMORY_OFF_DENYLIST: readonly string[] = ['MemoryRead', 'MemoryWrite', 'History', 'EpisodicRecall'];
+/** 记忆关闭档额外拒绝的记忆/历史类工具（memoryMode='off'）。导出供 web /api/run 路径同源复用。 */
+export const MEMORY_OFF_DENYLIST: readonly string[] = ['MemoryRead', 'MemoryWrite', 'History', 'EpisodicRecall'];
 
 /**
  * 组装一轮 run 的工具 denylist（三源去重）：option 显式拒绝（memoryMode=off 时并入记忆类）

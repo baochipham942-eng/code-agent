@@ -192,6 +192,9 @@ export const chatInputZh = {
     manageTeams: '管理团队',
     manageSkills: '管理技能',
     manageConnectors: '管理连接器',
+    memoryOffLabel: '本任务不用记忆',
+    memoryOffHint: '不读取也不保存记忆；任务开始后不可更改',
+    memoryOffLockedHint: '任务开始后不可更改，请新开一个任务',
   },
   modeSwitch: {
     normal: '正常',
@@ -626,6 +629,9 @@ export const chatInputEn: typeof chatInputZh = {
     manageTeams: 'Manage teams',
     manageSkills: 'Manage skills',
     manageConnectors: 'Manage connectors',
+    memoryOffLabel: "Don't use memory for this task",
+    memoryOffHint: "Won't read or save memory; can't change after the task starts",
+    memoryOffLockedHint: "Can't change after the task starts — start a new task",
   },
   modeSwitch: {
     normal: 'Normal',

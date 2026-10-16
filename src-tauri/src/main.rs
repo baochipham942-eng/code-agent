@@ -1867,15 +1867,20 @@ fn is_server_running() -> bool {
     matches!(client.get(health_url()).send(), Ok(resp) if resp.status().as_u16() == 200)
 }
 
-fn make_boot_token() -> String {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or_default();
-    format!("tauri-{}-{now}", std::process::id())
+// Keep the nonce wire shape aligned with WEB_BOOT_CHALLENGE in shared/constants/webServer.ts.
+const BOOT_RANDOM_BYTES: usize = 32;
+const BOOT_PROOF_BYTES: usize = 32;
+
+fn make_boot_token() -> Result<String, String> {
+    use ring::rand::SecureRandom;
+    let mut bytes = [0u8; BOOT_RANDOM_BYTES];
+    ring::rand::SystemRandom::new()
+        .fill(&mut bytes)
+        .map_err(|_| "Failed to obtain boot handshake randomness".to_string())?;
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
-fn health_matches_boot_token(body: &str, expected_token: Option<&str>) -> bool {
+fn health_matches_boot_token(body: &str, expected_token: Option<&str>, nonce: &str) -> bool {
     let Some(expected_token) = expected_token else {
         return true;
     };
@@ -1884,11 +1889,23 @@ fn health_matches_boot_token(body: &str, expected_token: Option<&str>) -> bool {
         Ok(value) => value,
         Err(_) => return false,
     };
-
-    parsed
-        .get("tauriBootToken")
-        .and_then(|value| value.as_str())
-        .is_some_and(|actual| actual == expected_token)
+    let Some(proof) = parsed.get("bootProof").and_then(|value| value.as_str()) else {
+        return false;
+    };
+    if proof.len() != BOOT_PROOF_BYTES * 2
+        || !proof.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return false;
+    }
+    let mut tag = [0u8; BOOT_PROOF_BYTES];
+    for (index, byte) in tag.iter_mut().enumerate() {
+        *byte = match u8::from_str_radix(&proof[index * 2..index * 2 + 2], 16) {
+            Ok(value) => value,
+            Err(_) => return false,
+        };
+    }
+    let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, expected_token.as_bytes());
+    ring::hmac::verify(&key, nonce.as_bytes(), &tag).is_ok()
 }
 
 fn append_segments(root: &Path, segments: &[&str]) -> PathBuf {
@@ -2032,7 +2049,7 @@ fn spawn_web_server_recording(
         DesktopShellBootStage::ServerScriptResolved,
     );
 
-    let boot_token = make_boot_token();
+    let boot_token = make_boot_token()?;
     diagnostics.boot_id = Some(token_fingerprint(&boot_token));
     // Windows: 去掉 `\\?\` 前缀，否则 node 解析脚本路径崩在 lstat 'C:'（见 strip_verbatim_prefix）。
     // script_path/working_dir 来自 candidate_roots（已规整）；此处规整 node 解析另用的 resource_dir。
@@ -2138,10 +2155,12 @@ fn wait_for_healthcheck(
             Err(error) => return Err(format!("Failed to inspect web server process: {error}")),
         }
 
-        match client.get(health_url()).send() {
+        // Never reuse a challenge, including after a failed or stale-server probe.
+        let nonce = make_boot_token()?;
+        match client.get(health_url()).query(&[("bootChallenge", &nonce)]).send() {
             Ok(response) if response.status().as_u16() == 200 => {
                 let body = response.text().unwrap_or_default();
-                if health_matches_boot_token(&body, expected_boot_token) {
+                if health_matches_boot_token(&body, expected_boot_token, &nonce) {
                     return Ok(());
                 }
                 saw_boot_token_mismatch = true;
@@ -3622,22 +3641,57 @@ mod update_url_tests {
         assert!(!up_to_date.check_failed);
     }
 
+    // Same known-answer vector as health.projection.test.ts (Node createHmac).
+    const HEALTH_PROOF: &str = r#"{"status":"ok","bootProof":"2af975b031f020c4f00b0829926ff168ad4b92538516dce0ab56b0669a5a47ea"}"#;
+
+    #[test]
+    fn health_token_match_accepts_matching_proof() {
+        assert!(health_matches_boot_token(HEALTH_PROOF, Some("boot-1"), &"a".repeat(64)));
+        assert!(health_matches_boot_token(r#"{"status":"ok"}"#, None, ""));
+    }
+
     #[test]
     fn health_token_match_detects_stale_or_wrong_web_server() {
-        assert!(health_matches_boot_token(
-            r#"{"status":"ok","tauriBootToken":"boot-1"}"#,
-            Some("boot-1")
-        ));
-        assert!(!health_matches_boot_token(
-            r#"{"status":"ok","tauriBootToken":"boot-2"}"#,
-            Some("boot-1")
-        ));
-        assert!(!health_matches_boot_token(
-            r#"{"status":"ok"}"#,
-            Some("boot-1")
-        ));
-        assert!(health_matches_boot_token(r#"{"status":"ok"}"#, None));
+        assert!(!health_matches_boot_token(HEALTH_PROOF, Some("boot-2"), &"a".repeat(64)));
+        assert!(!health_matches_boot_token(HEALTH_PROOF, Some("boot-1"), &"b".repeat(64)));
+        assert!(!health_matches_boot_token(r#"{"status":"ok"}"#, Some("boot-1"), &"a".repeat(64)));
     }
+
+    #[test]
+    fn health_token_match_rejects_raw_token_echo() {
+        let token = "c".repeat(64);
+        for body in [
+            serde_json::json!({"status": "ok", "tauriBootToken": token}).to_string(),
+            serde_json::json!({"status": "ok", "bootProof": token}).to_string(),
+        ] {
+            assert!(!health_matches_boot_token(&body, Some(&token), &"a".repeat(64)));
+        }
+    }
+
+    #[test]
+    fn health_token_match_rejects_malformed_proofs() {
+        for body in [
+            "not json".to_string(),
+            r#"{"bootProof":null}"#.to_string(),
+            r#"{"bootProof":123}"#.to_string(),
+            serde_json::json!({"bootProof": "a".repeat(63)}).to_string(),
+            serde_json::json!({"bootProof": "a".repeat(65)}).to_string(),
+            serde_json::json!({"bootProof": "z".repeat(64)}).to_string(),
+            serde_json::json!({"bootProof": "é".repeat(32)}).to_string(),
+        ] {
+            assert!(!health_matches_boot_token(&body, Some("boot-1"), &"a".repeat(64)));
+        }
+    }
+
+    #[test]
+    fn boot_randomness_has_wire_shape_and_is_fresh() {
+        let first = super::make_boot_token().unwrap();
+        let second = super::make_boot_token().unwrap();
+        assert_eq!(first.len(), 64);
+        assert!(first.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)));
+        assert!(first != second);
+    }
+
 }
 
 fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {

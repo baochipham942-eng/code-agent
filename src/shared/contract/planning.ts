@@ -304,7 +304,8 @@ export interface TaskStep {
   metadata?: Record<string, unknown>;
 }
 
-export interface TaskPhase {
+// TaskPhase 仅作 TaskPlan.phases 的内部元素类型（2026-10 孤儿清理：名字级导出零消费方，收回）
+interface TaskPhase {
   id: string;
   title: string;
   status: TaskPhaseStatus;

@@ -11057,11 +11057,6 @@
       "kind": "type"
     },
     {
-      "file": "src/renderer/components/features/chat/neoWorkCardPhase.ts",
-      "name": "isInternalCompletedMarker",
-      "kind": "export"
-    },
-    {
       "file": "src/renderer/components/features/chat/NewSessionWelcome.tsx",
       "name": "buildDefaultSuggestions",
       "kind": "export"
@@ -15433,11 +15428,6 @@
     },
     {
       "file": "src/shared/contract/planning.ts",
-      "name": "TaskPhase",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/planning.ts",
       "name": "TaskPhaseStatus",
       "kind": "type"
     },
@@ -15958,17 +15948,17 @@
     },
     {
       "file": "src/shared/contract/update.ts",
-      "name": "RuntimeAssetPreparationStatus",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/update.ts",
       "name": "RuntimeAssetsUpdateAsset",
       "kind": "type"
     },
     {
       "file": "src/shared/contract/update.ts",
       "name": "RuntimeAssetsUpdateInfo",
+      "kind": "type"
+    },
+    {
+      "file": "src/shared/contract/update.ts",
+      "name": "RuntimeAssetPreparationStatus",
       "kind": "type"
     },
     {
@@ -17256,51 +17246,27 @@
     "src/host/tools/dispatch/toolSearchExecutionContract.ts",
     "src/renderer/components/ContextHealthPanel.tsx",
     "src/renderer/components/ContextPanel.tsx",
-    "src/renderer/components/design/designSlidesStore.ts",
     "src/renderer/components/design/slidesOutlineOps.ts",
-    "src/renderer/components/features/admin/AdminUserScopeSelect.tsx",
     "src/renderer/components/features/chat/ChatInput/AbilityMenu.tsx",
-    "src/renderer/components/features/chat/ChatInput/EffortSelector.tsx",
-    "src/renderer/components/features/chat/ChatInput/modelStrategyRecommendation.ts",
-    "src/renderer/components/features/chat/ChatInput/ModelStrategyRecommendationStrip.tsx",
-    "src/renderer/components/features/chat/ChatInput/ModeSwitch.tsx",
     "src/renderer/components/features/chat/ChatInput/ReportStyleSelector.tsx",
-    "src/renderer/components/features/chat/ChatInput/slashCommandDisplayGroups.ts",
-    "src/renderer/components/features/chat/ContextIndicator.tsx",
-    "src/renderer/components/features/chat/ContextUsageIndicator.tsx",
-    "src/renderer/components/features/chat/InlinePlanCard.tsx",
-    "src/renderer/components/features/chat/NeoWorkCardInlineCard.tsx",
-    "src/renderer/components/features/chat/PlanPanel.tsx",
     "src/renderer/components/features/chat/ResearchProgress.tsx",
     "src/renderer/components/features/chat/SessionDiffSummary.tsx",
-    "src/renderer/components/features/chat/ThoughtDisplay.tsx",
     "src/renderer/components/features/export/ExportModal.tsx",
-    "src/renderer/components/features/settings/tabs/ControlPlaneSettings.tsx",
-    "src/renderer/components/features/settings/tabs/InviteCodesSettings.tsx",
-    "src/renderer/components/features/settings/tabs/UserDashboardSettings.tsx",
     "src/renderer/components/features/swarm/AgentWorkRecordDialog.tsx",
-    "src/renderer/components/features/swarm/SwarmMonitor.tsx",
     "src/renderer/components/features/swarm/SwarmTraceHistory.tsx",
     "src/renderer/components/PlanningPanel.tsx",
     "src/renderer/components/QuestionFormPreview.tsx",
     "src/renderer/components/SkillsPanel.tsx",
-    "src/renderer/components/TaskPanel/Context.tsx",
-    "src/renderer/components/TaskPanel/ContextInterventionPanel.tsx",
-    "src/renderer/components/TaskPanel/ContextProvenancePanel.tsx",
-    "src/renderer/components/TaskPanel/Orchestration.tsx",
     "src/renderer/components/TaskPanel/orchestration/components.tsx",
     "src/renderer/components/TaskPanel/orchestration/model.ts",
     "src/renderer/components/TaskPanel/Skills.tsx",
-    "src/renderer/components/TaskPanel/SwarmDependencyMap.tsx",
     "src/renderer/components/TaskPanel/WorkbenchPrimitives.tsx",
     "src/renderer/components/TaskPanel/WorkingFolder.tsx",
     "src/renderer/components/WorkspaceAssets.tsx",
     "src/renderer/components/workspacePreview/helpers.ts",
     "src/renderer/components/workspacePreview/parts.tsx",
     "src/renderer/components/WorkspacePreviewPanel.tsx",
-    "src/renderer/hooks/useComputerUsePip.ts",
     "src/renderer/hooks/useMultiAgentDetection.ts",
-    "src/renderer/services/NetworkMonitor.ts",
     "src/renderer/stores/handoffStore.ts",
     "src/renderer/utils/agentPointerFrame.ts",
     "src/renderer/utils/browserComputerExportRedaction.ts",

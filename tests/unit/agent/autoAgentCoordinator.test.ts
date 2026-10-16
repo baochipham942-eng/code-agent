@@ -84,12 +84,6 @@ vi.mock('../../../src/host/session/sessionStateManager', () => ({
 vi.mock('../../../src/host/agent/resourceLockManager', () => ({
   getResourceLockManager: () => ({}),
 }));
-vi.mock('../../../src/host/agent/progressAggregator', () => ({
-  createProgressAggregator: () => ({}),
-}));
-vi.mock('../../../src/host/agent/parallelErrorHandler', () => ({
-  createParallelErrorHandler: () => ({}),
-}));
 
 // Redirect checkpoint dir to a test tmp dir
 const configDirState = vi.hoisted(() => ({ dir: '' }));

@@ -5,10 +5,7 @@
 // Button
 export {
   Button,
-  PrimaryButton,
-  SecondaryButton,
   GhostButton,
-  DangerButton,
 } from './Button';
 export type { ButtonProps, ButtonVariant, ButtonSize } from './Button';
 

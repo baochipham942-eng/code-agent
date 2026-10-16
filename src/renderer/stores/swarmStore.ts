@@ -326,7 +326,7 @@ function getCompletedRunStatus(
   return agentStatus === 'cancelled' ? 'cancelled' : 'failed';
 }
 
-export function getSwarmRunSnapshotKey(sessionId: string, runId: string): string {
+function getSwarmRunSnapshotKey(sessionId: string, runId: string): string {
   return `${sessionId}::${runId}`;
 }
 

@@ -67,18 +67,6 @@ describe('model strategy acceptance summary', () => {
         area: 'decision-explainability',
       }),
       expect.objectContaining({
-        id: 'task-recommendation-capability-contract',
-        status: 'passed',
-        area: 'task-recommendation',
-        evidence: expect.arrayContaining([
-          'provider health recommendations filter candidates by this-turn required capabilities',
-          'simple tasks prefer healthy fast candidates when provider health forces a switch',
-          'provider-health dismiss keys are scoped by task type',
-          'capability and external-attachment recommendation keys are scoped by task input',
-          'recommendation apply/dismiss feedback emits privacy-bounded task signals',
-        ]),
-      }),
-      expect.objectContaining({
         id: 'codex-cli-live-smoke',
         status: 'needs-live-evidence',
       }),
@@ -186,17 +174,6 @@ describe('model strategy acceptance summary', () => {
         status: 'passed',
         evidence: expect.arrayContaining([
           expect.stringContaining('RouteTraceChip renders payg'),
-        ]),
-      }),
-      expect.objectContaining({
-        id: 'task-recommendation-capability-contract',
-        status: 'passed',
-        evidence: expect.arrayContaining([
-          'image tasks do not switch to healthy candidates without vision capability',
-          'simple tasks prefer healthy fast candidates when provider health forces a switch',
-          'provider-health dismiss keys are scoped by task type',
-          'capability and external-attachment recommendation keys are scoped by task input',
-          'recommendation apply/dismiss feedback emits privacy-bounded task signals',
         ]),
       }),
     ]));

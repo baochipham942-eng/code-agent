@@ -2,7 +2,7 @@
 
 > 给 `ship pr` 自动叫起的审查模型读，也给任何人读。写代码的 agent 不能批准自己的代码：
 > 每个改了代码的 PR 都由另一家模型按本文审一遍，结果落成 `ai-review` 提交状态；
-> 有一条 Important 就红，`ship merge` 拒合。本文的改动走 PR，像代码一样审。
+> 有一条 Important 就红，`ship merge` 拒合；Pre-existing 旧债只记不红。本文的改动走 PR，像代码一样审。
 
 ## 三遍怎么过
 
@@ -44,15 +44,19 @@
   ——机器只查 `consequence` 字段在不在（见下方输出格式），查不出你写的后果是真是假。
 - **Pre-existing（不计判决）**：问题在 `origin/main` **同一位置已经存在**，且本 PR 的 diff **没有触碰那几行**
   ——它不是这次改动引入或暴露的，不该算到作者头上。判定必须读基线（`git show origin/main:<file>` 或
-  `git blame`）确认，不许凭文件名、函数名猜。进 JSON 的 `pre_existing` 数组，不进 `important`/`nits`，
-  不拦门、不计入评论头部的 Important/Nit 计数。边界：本 PR **改过的行**上的旧问题不算 Pre-existing——
+  `git blame`）确认，不许凭文件名、函数名猜；确认不了的也不进 `pre_existing`，按 Important/Nit 正常归类。
+  diff **新暴露**的旧缺陷（新增调用点、放宽前置条件让老问题变可达）同样不算——仍按第一遍「引入或暴露」
+  归 Important/Nit。进 JSON 的 `pre_existing` 数组，不进 `important`/`nits`，不拦门、不计入评论头部的
+  Important/Nit 计数；最多 5 条，多了砍（同 Nit）。边界：本 PR **改过的行**上的旧问题不算 Pre-existing——
   碰了就要负责，按 Important/Nit 正常归类；增量审查模式下上一轮漏报的本 PR 问题也放这里，summary 以
   「上轮漏报：」开头。来源：Anthropic 10-15《Claude Code 团队如何做代码评审》——评审 blame 实测反复判红
   的代码 59% 在第一轮就已存在，评审器多数时候是在翻旧账不是发现新 bug。
 - **按类报，不按行报**：同一判据命中 ≥2 处（同一个正则漏同一类形状、同一个空值检查在三个调用方都缺…）
   只报**一条**，`summary` 以「类：」开头说清判据，`file`/`line` 填第一处，正文里列出**全部** `文件:行号`，
   让作者一次修完所有同类，而不是修一行等下一轮再报下一行。Important/Nit 计数按类计；
-  一条「类」里只要有一处是 Important，整条就是 Important。
+  一条「类」里只要有一处是 Important，整条就是 Important。不同判据的命中不合并成一条。
+  同判据的命中里**有的被 diff 触碰、有的没碰**要拆开报：碰了的进 important/nits 的类条目，
+  没碰的进 `pre_existing` 的类条目。
 
 ## 不要审（CI 或 husky 已机器把关，重复报是噪音）
 - 硬编码常量（provider / 模型 / 超时 / 价格）：`scripts/check-hardcoded-models.sh`。
@@ -77,7 +81,9 @@
 审查器视角：你**不是**在跟作者比谁更坚持。同一条你已经提过、作者驳回过、而你拿不出新证据，就不要再提。
 
 ## 输出格式（机器解析，必须遵守）
-先写中文 markdown 报告：Important 每条给 `文件:行号`、问题、为什么严重、怎么修；Nit 一行一条。
+先写中文 markdown 报告：Important 每条给 `文件:行号`、问题、为什么严重、怎么修；Nit 一行一条；
+Pre-existing 单独一节「Pre-existing（不计判决）」逐条镜像 JSON 数组——不能只在 JSON 里出现，
+报告正文是作者看旧债全貌的地方。
 
 **Important 每条必须带 `consequence`**：一句话写清合入后的具体坏结果（什么输入 → 什么后果）。
 缺这个字段的条目**既不放行也不降级**：判决照旧 failure，PR 评论会点名要求你补上后果重报，

@@ -48,10 +48,6 @@ const INTERNAL_COMPLETED_MARKERS = [
   /^Local Neo runtime run finished/i,
 ];
 
-export function isInternalCompletedMarker(item: string): boolean {
-  return INTERNAL_COMPLETED_MARKERS.some((pattern) => pattern.test(item.trim()));
-}
-
 // 运行时记账文案全集（neoTagRuntimeService 写进 delta 的英文生命周期字符串）。
 // 它们是引擎自言自语，不是执行结果——列表摘要/详情一律不展示给用户。
 const INTERNAL_RUNTIME_TEXT_MARKERS = [

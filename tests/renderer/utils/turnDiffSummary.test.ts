@@ -140,3 +140,60 @@ describe('buildTurnFileChanges — Bug 1: diff line count on truncated Write con
     expect(change.removed).toBe(0);
   });
 });
+
+// ============================================================================
+// N-EDIT-RETRY-KEY-SHAPE — 注册的 Edit 参数形状（multiEdit.schema.ts）是
+// { file_path, edits: [{ old_text, new_text }] }，没有顶层 old_string/new_string。
+// ============================================================================
+describe('buildTurnFileChanges — Edit reads the registered edits[] shape', () => {
+  function turnWithEdit(args: Record<string, unknown>): TraceTurn {
+    return {
+      turnNumber: 1,
+      turnId: 'turn-1',
+      status: 'completed',
+      startTime: 100,
+      endTime: 140,
+      nodes: [
+        {
+          id: 'edit-1',
+          type: 'tool_call',
+          content: '',
+          timestamp: 130,
+          toolCall: {
+            id: 'edit-1',
+            name: 'Edit',
+            args,
+            result: 'Edited /x/report.md: 1 edit(s) applied, 1 total replacement(s).',
+            success: true,
+          },
+        },
+      ],
+    } satisfies TraceTurn;
+  }
+
+  it('counts added/removed lines from edits[] items', () => {
+    const change = buildTurnFileChanges(turnWithEdit({
+      file_path: '/x/report.md',
+      edits: [{ old_text: 'line 1\nline 2\n', new_text: 'line 1\nline 2\nline 3\n' }],
+    }))[0];
+
+    expect(change.filePath).toBe('/x/report.md');
+    expect(change.added).toBe(1);
+    expect(change.removed).toBe(0);
+    expect(change.isNewFile).toBe(false);
+  });
+
+  it('aggregates the joined diff across multi-item edits[]', () => {
+    const change = buildTurnFileChanges(turnWithEdit({
+      file_path: '/x/report.md',
+      edits: [
+        { old_text: 'old1', new_text: 'new1' },
+        { old_text: 'old2', new_text: 'new2' },
+      ],
+    }))[0];
+
+    // 聚合 old='old1\nold2' → new='new1\nnew2'：两行全换
+    expect(change.added).toBe(2);
+    expect(change.removed).toBe(2);
+  });
+});

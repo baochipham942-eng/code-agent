@@ -543,7 +543,11 @@ const ToolCallNode: React.FC<{ node: TraceNode; sessionId?: string }> = ({ node,
       error: node.toolCall.success === false ? node.toolCall.result : undefined,
       duration: node.toolCall.duration,
       outputPath: node.toolCall.outputPath,
-      metadata: node.toolCall.metadata,
+      // 投影层的 recovered 标记要随 result.metadata 带给 ToolCallDisplay（同 ToolStepGroup
+      // 的构造路径），否则已恢复的失败行仍按普通失败渲染「未成功」+ 失败原因行。
+      metadata: node.toolCall.recovered
+        ? { ...(node.toolCall.metadata || {}), recovered: true }
+        : node.toolCall.metadata,
     } : undefined,
     liveOutput: node.toolCall.liveOutput,
   };

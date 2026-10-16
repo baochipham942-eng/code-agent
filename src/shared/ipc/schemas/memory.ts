@@ -30,6 +30,7 @@ const MemoryDomainRequestSchema = z.object({
     'memoryEntries',
     'memoryEntryBatchReview',
     'memoryEntryDelete',
+    'memoryEntryResumeInjection',
     'memoryEntryUpdate',
     'memoryExportV2',
     'memoryHarnessImportApply',

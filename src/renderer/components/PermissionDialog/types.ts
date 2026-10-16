@@ -51,6 +51,10 @@ export interface PermissionRequestDetails {
   targetApp?: { bundleId?: string; name: string };
   /** ADR-067 D3：host 透传的 peer 消息触发标注；渲染层只消费，缺省不显示。 */
   triggeredByAgentMessage?: { senderAgentId?: string };
+  /** N-HTTPREQ-CONNECTOR-CARD-DISCLOSE：http_request 连接器令牌写调用的原始参数与标记。 */
+  method?: string;
+  body?: string;
+  connectorTokenAttached?: boolean;
   path?: string; // 兼容旧版 API
   // E2: 确认门控预览
   preview?: {
@@ -78,6 +82,8 @@ export interface PermissionRequest {
   reason?: string;
   /** 结构化原因码（来源 @shared/contract，禁止本地复制枚举以防漂移） */
   reasonCode?: PermissionRequestReason;
+  /** 停车审批参数预览（host 已脱敏 + 截断）；缺省不渲染该块。 */
+  argsPreview?: string;
   boundary?: PermissionBoundaryRef;
   details: PermissionRequestDetails;
   /** N-WRITEBACK-EDIT：host 默认分支把工具原参数整份放在 details 里；可编辑工具的查看/编辑态读这份 */

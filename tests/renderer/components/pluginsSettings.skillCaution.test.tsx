@@ -102,7 +102,7 @@ describe('PluginsSettings marketplace 安装 caution 确认', () => {
     expect(await screen.findByText(cautionText.title)).toBeTruthy();
     expect(screen.getAllByText(SPEC)).toHaveLength(2);
     expect(screen.getByText(cautionText.sourceLabels['unsigned-github-archive'])).toBeTruthy();
-    expect(screen.getByText('git_clean')).toBeTruthy();
+    expect(screen.getByText(cautionText.rules.git_clean)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: cautionText.confirmInstall }));
 

@@ -142,10 +142,12 @@ describe('SkillsSettings caution 披露流程', () => {
     render(<SkillsSettings />);
     await startZipInstall();
 
-    // 确认面：标题 / 来源标签 / 命中（rule id + snippet）
+    // 确认面：标题 / 来源标签 / 命中（正文一句白话；rule id + snippet 折在明细里）
     expect(await screen.findByText(cautionText.title)).toBeTruthy();
     expect(screen.getByText('demo@local-zip')).toBeTruthy();
     expect(screen.getByText(cautionText.sourceLabels['local-marketplace'])).toBeTruthy();
+    expect(screen.getByText(cautionText.rules.git_clean)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: cautionText.detailsShow }));
     expect(screen.getByText('git_clean')).toBeTruthy();
     expect(screen.getByText('git clean -fd')).toBeTruthy();
 
@@ -193,14 +195,12 @@ describe('SkillsSettings caution 披露流程', () => {
     render(<SkillsSettings />);
     await startZipInstall();
 
-    expect(await screen.findByText('git_clean')).toBeTruthy();
+    expect(await screen.findByText(cautionText.rules.git_clean)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: cautionText.confirmInstall }));
 
-    // 二次确认：弹窗不关，换成新命中/新 token 语义
-    await screen.findByText('rm_rf_dist');
-    expect(screen.getByText('rm -rf ./dist')).toBeTruthy();
-    expect(screen.queryByText('git_clean')).toBeNull();
-    expect(screen.queryByText('git clean -fd')).toBeNull();
+    // 二次确认：弹窗不关，换成新命中/新 token 语义（未知规则走兜底句并带出规则名）
+    await screen.findByText('内置安全检查命中（规则 rm_rf_dist）');
+    expect(screen.queryByText(cautionText.rules.git_clean)).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: cautionText.confirmInstall }));
 
@@ -233,7 +233,7 @@ describe('SkillsSettings caution 披露流程', () => {
     expect(screen.getAllByText('演示技能')).toHaveLength(2);
     // 来源标签与发现页小节标题同名，卡片+弹窗各一处
     expect(screen.getAllByText(cautionText.sourceLabels['official-registry']).length).toBeGreaterThan(0);
-    expect(screen.getByText('git_clean')).toBeTruthy();
+    expect(screen.getByText(cautionText.rules.git_clean)).toBeTruthy();
     // acknowledge：单 OK 按钮，没有确认安装
     expect(screen.getByRole('button', { name: cautionText.okButton })).toBeTruthy();
     expect(screen.queryByRole('button', { name: cautionText.confirmInstall })).toBeNull();

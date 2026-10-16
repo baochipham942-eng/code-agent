@@ -1,4 +1,5 @@
 import type { Translations } from '../../hooks/useI18n';
+import type { Language } from '../../i18n';
 import type { DecisionCardViewMode } from '../DecisionCard';
 import type { PermissionRequest } from './types';
 import { formatFilePath, isDangerousCommand } from './utils';
@@ -80,7 +81,7 @@ export function defaultPermissionViewMode(request: PermissionRequest): DecisionC
     : 'expanded';
 }
 
-export function permissionSummary(request: PermissionRequest, t: Translations): string {
+export function permissionSummary(request: PermissionRequest, t: Translations, language: Language = 'zh'): string {
   const p = t.decisionCard.permission;
   const target = fileTarget(request);
   const compactTarget = target ? compactFileTarget(target) : undefined;
@@ -104,12 +105,21 @@ export function permissionSummary(request: PermissionRequest, t: Translations): 
       return p.questionCommand;
     case 'dangerous_command':
       return p.questionCommand;
-    case 'network':
+    case 'network': {
+      // N-HTTPREQ-CONNECTOR-CARD-DISCLOSE：连接器令牌写不是普通「访问 URL」——请求会以
+      // 用户已连接应用的身份发出，问句必须点名连接器与「以你的身份」，URL 详情交给披露块。
+      const connectorName = request.details.connectorTokenAttached === true && request.boundary?.connectorName
+        ? (language === 'en' ? request.boundary.connectorNameEn ?? request.boundary.connectorName : request.boundary.connectorName)
+        : undefined;
+      if (connectorName) {
+        return p.questionConnectorWrite.replace('{connector}', connectorName);
+      }
       return request.details.server || request.details.toolName
         ? p.questionMcpGeneric
         : request.details.url
           ? p.questionNetwork.replace('{target}', redactCredentialText(request.details.url))
           : p.questionFallback;
+    }
     case 'mcp':
       return p.questionMcpGeneric;
     default:

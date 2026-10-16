@@ -49,8 +49,6 @@ import {
   type PresentationInspection,
 } from './previewPanelModel';
 
-export { parseDesignPptArtifactContent, shouldFlashOnDiskLoad, toPreviewErrorState } from './previewPanelModel';
-
 // 模块级常量：写成内联字面量的话每次渲染都是新引用，ReactMarkdown 整棵重建。
 const REPORT_MARKDOWN_COMPONENTS = {
   table: ({ children }: { children?: React.ReactNode }) => (

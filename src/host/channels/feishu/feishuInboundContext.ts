@@ -1,6 +1,7 @@
 // Feishu inbound context: merged forwards, topic threads, and quoted parents.
 // Fetches never throw; failures become an explicit block the model can see.
 
+import { FEISHU_CONTACT_CACHE_TTL_MS, FEISHU_CONTACT_LOOKUP_TIMEOUT_MS, FEISHU_CONTACT_MISS_TTL_MS } from '../../../shared/constants/feishu';
 import type { ChannelAttachment } from '../../../shared/contract/channel';
 import {
   generateBoundaryNonce,
@@ -285,17 +286,88 @@ function unreadableForwardLine(errorCode?: string): string {
   return `Forwarded content could not be read${code}. The answer must not assume it.`;
 }
 
-function senderLabel(item: FeishuContextItem): string {
-  if (item.senderType === 'app') return 'bot';
-  return item.senderId || 'unknown';
+const NAME_UNAVAILABLE_NOTICE = '（未获授权或暂时无法读取姓名，部分发言人以成员A/成员B代称）';
+// name 为 undefined 是负缓存：没有通讯录权限是多数应用的默认，别每条消息都重打一遍必败的接口。
+const contactNames = new WeakMap<object, Map<string, { name: string | undefined; expiresAt: number }>>();
+
+interface ContactGet {
+  (payload: { path: { user_id: string }; params: { user_id_type: 'open_id' } }): Promise<unknown>;
 }
 
-function formatUtcMinute(createTime: string | undefined): string {
+function isContactGet(value: unknown): value is ContactGet {
+  return typeof value === 'function';
+}
+
+async function resolveContactName(client: unknown, openId: string): Promise<string | undefined> {
+  if (!isRecord(client)) return undefined;
+  let cache = contactNames.get(client);
+  if (!cache) {
+    cache = new Map();
+    contactNames.set(client, cache);
+  }
+  const now = Date.now();
+  for (const [id, entry] of cache) {
+    if (entry.expiresAt <= now) cache.delete(id);
+  }
+  const cached = cache.get(openId);
+  if (cached) return cached.name;
+  const remember = (name: string | undefined) => {
+    cache.set(openId, { name, expiresAt: Date.now() + (name ? FEISHU_CONTACT_CACHE_TTL_MS : FEISHU_CONTACT_MISS_TTL_MS) });
+    return name;
+  };
+
+  if (!isRecord(client.contact) || !isRecord(client.contact.v3)
+    || !isRecord(client.contact.v3.user)) return undefined;
+  const user = client.contact.v3.user;
+  const get = user.get;
+  if (!isContactGet(get)) return undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const response = await Promise.race([
+      get.call(user, { path: { user_id: openId }, params: { user_id_type: 'open_id' } }),
+      new Promise<undefined>((resolve) => {
+        timer = setTimeout(() => resolve(undefined), FEISHU_CONTACT_LOOKUP_TIMEOUT_MS);
+      }),
+    ]);
+    // Permission-denied responses and all other API errors use the same visible fallback.
+    if (!isRecord(response) || (response.code !== undefined && response.code !== 0 && response.code !== '0')) {
+      return remember(undefined);
+    }
+    const data = isRecord(response.data) ? response.data : undefined;
+    const info = data && isRecord(data.user) ? data.user : undefined;
+    const name = info ? readString(info, 'name')?.trim() : undefined;
+    return remember(name && !name.startsWith('ou_') ? name : undefined);
+  } catch {
+    return remember(undefined);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+async function blockSpeakers(items: readonly FeishuContextItem[], client: unknown) {
+  const ids = [...new Set(items.filter((item) => item.senderType !== 'app').map((item) => item.senderId))];
+  const names = await Promise.all(ids.map((id) => id ? resolveContactName(client, id) : undefined));
+  const labels = new Map<string | undefined, string>();
+  let unnamed = 0;
+  ids.forEach((id, index) => {
+    labels.set(id, names[index] ?? `成员${String.fromCharCode(65 + unnamed++)}`);
+  });
+  return {
+    label: (item: FeishuContextItem) => item.senderType === 'app' ? 'bot' : labels.get(item.senderId) ?? 'unknown',
+    notice: unnamed > 0 ? [NAME_UNAVAILABLE_NOTICE] : [],
+  };
+}
+
+function formatLocalMinute(createTime: string | undefined): string {
   const ms = Number(createTime);
   if (!createTime || !Number.isFinite(ms)) return 'unknown-time';
   const date = new Date(ms);
+  if (!Number.isFinite(date.getTime())) return 'unknown-time';
   const pad = (value: number) => String(value).padStart(2, '0');
-  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`;
+  const offset = -date.getTimezoneOffset();
+  const minutes = Math.abs(offset) % 60;
+  const zone = `GMT${offset >= 0 ? '+' : '-'}${Math.floor(Math.abs(offset) / 60)}${minutes ? `:${pad(minutes)}` : ''}`;
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())} ${zone}`;
 }
 
 function messageBody(
@@ -319,8 +391,8 @@ function messageBody(
   return `[${item.msgType} not expanded]`;
 }
 
-function attributedLine(item: FeishuContextItem, body: string): string {
-  return `[${formatUtcMinute(item.createTime)} ${senderLabel(item)}] ${body}`;
+function attributedLine(item: FeishuContextItem, body: string, label: string): string {
+  return `[${formatLocalMinute(item.createTime)} ${label}] ${body}`;
 }
 
 async function materializeChild(
@@ -362,6 +434,7 @@ function orderNewestFirst(items: readonly FeishuContextItem[]): FeishuContextIte
 
 interface CappedRender {
   lines: string[];
+  notice: string[];
   truncated: boolean;
   attachments: ChannelAttachment[];
 }
@@ -373,6 +446,7 @@ async function capContextLines(
 ): Promise<CappedRender> {
   const countCut = itemsNewestFirst.length > CONTEXT_MAX_MESSAGES;
   const selected = itemsNewestFirst.slice(0, CONTEXT_MAX_MESSAGES);
+  const speakers = await blockSpeakers([...selected].reverse(), build.client);
   const keptNewest: string[] = [];
   const attachments: ChannelAttachment[] = [];
   let used = 0;
@@ -381,7 +455,7 @@ async function capContextLines(
   for (const item of selected) {
     const body = messageBody(item, build.renderPost);
     if (!body) continue;
-    const preview = attributedLine(item, body);
+    const preview = attributedLine(item, body, speakers.label(item));
     const separator = keptNewest.length > 0 ? 1 : 0;
     const fits = used + separator + preview.length <= CONTEXT_MAX_CHARS;
     if (!fits && keptNewest.length > 0) {
@@ -391,7 +465,7 @@ async function capContextLines(
     let line = preview;
     if (downloadMedia && isMediaType(item.msgType)) {
       const materialized = await materializeChild(item, build);
-      line = attributedLine(item, materialized.text);
+      line = attributedLine(item, materialized.text, speakers.label(item));
       attachments.push(...materialized.attachments);
     }
     if (!fits) {
@@ -405,6 +479,7 @@ async function capContextLines(
 
   return {
     lines: keptNewest.reverse(),
+    notice: speakers.notice,
     truncated: countCut || charCut,
     attachments,
   };
@@ -416,7 +491,7 @@ function contextLines(
   missing: number,
   total: number,
 ): string[] {
-  const lines = [...rendered.lines];
+  const lines = [...rendered.notice, ...rendered.lines];
   if (rendered.truncated || extraTruncated) {
     lines.push(`truncated to the last ${rendered.lines.length} messages`);
   }
@@ -483,9 +558,9 @@ async function renderQuote(
     };
   }
   const clipped = body.length > QUOTE_MAX_CHARS ? body.slice(0, QUOTE_MAX_CHARS) : body;
-  const label = senderLabel(parent);
+  const speakers = await blockSpeakers([parent], build.client);
   return {
-    block: wrapFeishuUntrustedBlock('feishu:quoted', [`${label}: ${clipped}`]),
+    block: wrapFeishuUntrustedBlock('feishu:quoted', [...speakers.notice, attributedLine(parent, clipped, speakers.label(parent))]),
     attachments: [],
   };
 }

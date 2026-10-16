@@ -93,7 +93,10 @@ function escapeRegExp(value: string): string {
 const LATIN_ALIAS_PATTERN_CACHE = new Map<string, RegExp>();
 
 // CJK 别名无天然分词边界，维持子串匹配；纯拉丁别名子串匹配会误伤标识符
-// （"page" 命中 "page_size"），改用词边界匹配，下划线/数字算作词内字符。
+// （"page" 命中 "page_size"）和文件扩展名（"docx" 命中 "status.docx"），
+// 改用词边界匹配，下划线/数字/点算作词内字符。点必须算进去：常设刷新的
+// 目标路径带 .docx，别名命中后 skill 的 allowed-tools 边界会把 DocEdit
+// 挡成人工审批，无人值守任务停车等 24h，文件不改、版本不落。
 function aliasAppearsInMessage(normalizedMessage: string, normalizedAlias: string): boolean {
   if (!normalizedAlias) return false;
   if (hasCjk(normalizedAlias)) {
@@ -101,7 +104,7 @@ function aliasAppearsInMessage(normalizedMessage: string, normalizedAlias: strin
   }
   let pattern = LATIN_ALIAS_PATTERN_CACHE.get(normalizedAlias);
   if (!pattern) {
-    pattern = new RegExp(`(?<![a-z0-9_])${escapeRegExp(normalizedAlias)}(?![a-z0-9_])`);
+    pattern = new RegExp(`(?<![a-z0-9_.])${escapeRegExp(normalizedAlias)}(?![a-z0-9_])`);
     LATIN_ALIAS_PATTERN_CACHE.set(normalizedAlias, pattern);
   }
   return pattern.test(normalizedMessage);

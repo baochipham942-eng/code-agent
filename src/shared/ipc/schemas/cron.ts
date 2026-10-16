@@ -17,6 +17,8 @@ const CronDomainRequestSchema = z.object({
     'getExecutions',
     'getRecentExecutions',
     'getStats',
+    'getGroupListenCheck',
+    'startGroupListenCheck',
     'listJobs',
     'triggerJob',
     'updateJob',

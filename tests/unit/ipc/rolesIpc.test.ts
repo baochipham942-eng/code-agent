@@ -98,6 +98,14 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
   }),
 }));
 
+// revealMemoryFolder 动态 import host/platform 调 shell.showItemInFolder；
+// 其余导出原样透传，只替这一个方法（打样：vitest-fs-spy-vs-module-mock）。
+const mockShowItemInFolder = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/host/platform', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/host/platform')>();
+  return { ...actual, shell: { ...actual.shell, showItemInFolder: mockShowItemInFolder } };
+});
+
 import { registerRolesHandlers, sanitizeLastWork } from '../../../src/host/ipc/roles.ipc';
 import {
   ensureRoleAssetDirs,
@@ -331,6 +339,109 @@ describe('roles.ipc (domain:roles)', () => {
 
       const memories = await listScopedMemories({ scope: 'role', roleId: '研究员' });
       expect(memories[0].content).toContain('新内容');
+    });
+  });
+
+  describe('exportMemories（N-ROLE-MEMORY-EXPORT：全部记忆汇成一份 Markdown 落「下载」）', () => {
+    // handleSaveTextToDownloads 直写 os.homedir()/Downloads——测试里换成临时目录，别污染真机
+    let fakeHome: string;
+    let homedirSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(async () => {
+      fakeHome = await fs.mkdtemp(path.join(os.tmpdir(), 'roles-export-'));
+      homedirSpy = vi.spyOn(os, 'homedir').mockReturnValue(fakeHome);
+    });
+
+    afterEach(() => {
+      homedirSpy.mockRestore();
+      return fs.rm(fakeHome, { recursive: true, force: true });
+    });
+
+    it('writes one Markdown digest covering every memory, in the order the detail page shows', async () => {
+      await ensureRoleAssetDirs('研究员');
+      await writeScopedMemory(
+        { scope: 'role', roleId: '研究员' },
+        { filename: 'alpha.md', name: 'Alpha 记忆', description: '调研偏好', content: 'alpha 正文' },
+      );
+      await writeScopedMemory(
+        { scope: 'role', roleId: '研究员' },
+        { filename: 'beta.md', name: 'Beta 记忆', description: '写作风格', content: 'beta 正文' },
+      );
+
+      const res = await invoke<{ filePath: string; count: number }>('exportMemories', { roleId: '研究员' });
+      expect(res.success).toBe(true);
+      expect(res.data?.count).toBe(2);
+
+      // 「下载」目录里只落了这一个文件，名字带角色名与日期戳
+      const downloads = await fs.readdir(path.join(fakeHome, 'Downloads'));
+      expect(downloads.length).toBe(1);
+      expect(path.basename(res.data!.filePath)).toMatch(/研究员-memories-\d{4}-\d{2}-\d{2}\.md$/);
+      expect(downloads[0]).toBe(path.basename(res.data!.filePath));
+
+      const text = await fs.readFile(res.data!.filePath, 'utf-8');
+      // 页眉：角色 / 导出时间 / 条数 / 本地范围说明
+      expect(text).toContain('# 研究员 Memories');
+      expect(text).toContain('- Role ID: 研究员');
+      expect(text).toContain('- Memories: 2');
+      expect(text).toMatch(/- Exported at: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+      expect(text).toContain('local memories only; the cloud copy is not included');
+
+      // 逐条字段：与 detail 页同源（listScopedMemories），顺序也一致
+      const listed = await listScopedMemories({ scope: 'role', roleId: '研究员' });
+      expect(listed.length).toBe(2);
+      const headingPositions = listed.map((memory) => text.indexOf(`## ${memory.name}`));
+      expect(headingPositions[0]).toBeGreaterThanOrEqual(0);
+      expect(headingPositions[1]).toBeGreaterThan(headingPositions[0]);
+      for (const memory of listed) {
+        expect(text).toContain(memory.name);
+        expect(text).toContain(memory.description);
+        expect(text).toContain(memory.filename);
+        expect(text).toContain(memory.content);
+        expect(text).toMatch(new RegExp(`- Last modified: ${memory.updatedAt.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+      }
+    });
+
+    it('refuses to export and writes nothing when the role has no memories', async () => {
+      await ensureRoleAssetDirs('研究员');
+
+      const res = await invoke<{ filePath: string }>('exportMemories', { roleId: '研究员' });
+      expect(res.success).toBe(false);
+      expect(res.error?.code).toBe('NOTHING_TO_EXPORT');
+      expect(res.error?.message).toBe('This role has no memories to export');
+
+      const downloads = await fs.readdir(path.join(fakeHome, 'Downloads')).catch(() => [] as string[]);
+      expect(downloads).toEqual([]);
+    });
+
+    it('requires roleId', async () => {
+      const res = await invoke('exportMemories', {});
+      expect(res.success).toBe(false);
+      expect(res.error?.code).toBe('INVALID_ARGS');
+    });
+  });
+
+  describe('revealMemoryFolder（N-ROLE-MEMORY-EXPORT：在文件管理器中定位记忆目录）', () => {
+    it('reveals the absolute role memories dir via shell.showItemInFolder', async () => {
+      await ensureRoleAssetDirs('研究员');
+
+      const res = await invoke('revealMemoryFolder', { roleId: '研究员' });
+      expect(res.success).toBe(true);
+      expect(mockShowItemInFolder).toHaveBeenCalledWith(
+        path.join(mockConfigDir.dir, 'roles', '研究员', 'memories'),
+      );
+    });
+
+    it('rejects missing and path-traversing roleIds without touching the shell', async () => {
+      const missing = await invoke('revealMemoryFolder', {});
+      expect(missing.success).toBe(false);
+      expect(missing.error?.code).toBe('INVALID_ARGS');
+
+      // 路径穿越 roleId：getRoleMemoriesDir 内的 assertSafeRoleId 抛错 → 路由层包成 ROLES_ERROR
+      const traversal = await invoke('revealMemoryFolder', { roleId: '../evil' });
+      expect(traversal.success).toBe(false);
+      expect(traversal.error?.code).toBe('ROLES_ERROR');
+
+      expect(mockShowItemInFolder).not.toHaveBeenCalled();
     });
   });
 

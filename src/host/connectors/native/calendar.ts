@@ -31,11 +31,15 @@ function initialCalendarReadiness(): NativeReadiness {
 let calendarReadiness: NativeReadiness = initialCalendarReadiness();
 let calendarProbeError: string | undefined;
 let calendarProbeCheckedAt: number | undefined;
+// 最近一次探测拿到的日历列表是否为空（授权通过但无日历）——getStatus 的
+// ready 分支作为 noAccessibleItems 结构化信号下发，渲染层不做文案匹配
+let calendarProbeListEmpty = false;
 
 export function resetCalendarConnectorReadiness(): void {
   calendarReadiness = initialCalendarReadiness();
   calendarProbeError = undefined;
   calendarProbeCheckedAt = undefined;
+  calendarProbeListEmpty = false;
 }
 
 function parseLine(line: string): string[] {
@@ -63,6 +67,7 @@ function buildCalendarStatus(capabilities: string[]): ConnectorStatus {
       readiness: 'ready',
       checkedAt: calendarProbeCheckedAt,
       detail: 'Calendar connector 已通过本地授权/可用性检查。',
+      noAccessibleItems: calendarProbeListEmpty,
       actions: ['disconnect', 'remove'],
       capabilities,
     };
@@ -120,6 +125,7 @@ async function probeCalendarAccess(): Promise<string[]> {
     calendarReadiness = 'ready';
     calendarProbeCheckedAt = Date.now();
     calendarProbeError = undefined;
+    calendarProbeListEmpty = calendars.length === 0;
     return calendars;
   } catch (error) {
     calendarReadiness = 'failed';

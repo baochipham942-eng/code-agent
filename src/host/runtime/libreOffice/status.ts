@@ -45,6 +45,28 @@ function libreOfficePreparation(
   return null;
 }
 
+/** preparation 的「在装」相位：downloading/installing 都算安装进行中。 */
+function isInProgress(preparation: NonNullable<RuntimeAssetsStatus['preparation']>): boolean {
+  return preparation.phase === 'installing' || preparation.phase === 'downloading';
+}
+
+/**
+ * 共享 preparation 字段的合并规则（本函数在 IPC 链路里最后应用，排在 python-env 之后）：
+ * 安装进行中（installing/downloading）压过 failed——失败只在没有资产在装时可见，
+ * 否则 python 行的安装进度会被 LibreOffice 自动安装留下的终态失败盖掉。
+ * 两侧同为在装或同为 failed 时，后应用者（LibreOffice）持有；否则保留已有持有者。
+ */
+function mergePreparation(
+  own: RuntimeAssetsStatus['preparation'],
+  existing: RuntimeAssetsStatus['preparation'],
+): RuntimeAssetsStatus['preparation'] {
+  if (!own) return existing ?? null;
+  if (!existing) return own;
+  if (isInProgress(own)) return own;
+  if (isInProgress(existing)) return existing;
+  return own;
+}
+
 export function withLibreOfficeStatus(
   status: RuntimeAssetsStatus,
   options: LibreOfficeLookupOptions = {},
@@ -68,14 +90,12 @@ export function withLibreOfficeStatus(
     if (state.phase === 'installed' && state.sofficePath.startsWith(state.root)) entry.activeRoot = state.root;
   }
   const assets = [...status.assets.filter((asset) => asset.id !== LIBREOFFICE_RUNTIME_ASSET_ID), entry];
-  // Shared preparation has one owner: an installing/failed LibreOffice install wins
-  // over Python or update-service preparation; otherwise preserve the existing owner.
   const ownPreparation = libreOfficePreparation(state);
   return {
     ...status,
     assets,
     summary: summarize(assets),
-    preparation: ownPreparation ?? status.preparation ?? null,
+    preparation: mergePreparation(ownPreparation, status.preparation ?? null),
   };
 }
 

@@ -5,8 +5,13 @@ import path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildForArch } from '../../../src/host/runtime/libreOffice/constants';
 import { ensureLibreOffice } from '../../../src/host/runtime/libreOffice/ensure';
+import { offlineError } from '../../../src/host/runtime/libreOffice/errors';
+import { resolveLibreOfficeRoot } from '../../../src/host/runtime/libreOffice/layout';
 import { getLibreOfficeCandidates } from '../../../src/host/runtime/libreOffice/lookup';
+import { clearInflight, rememberError, setInflight, setInstallPercent } from '../../../src/host/runtime/libreOffice/state';
 import { getLibreOfficeState } from '../../../src/host/runtime/libreOffice/state';
+import { withLibreOfficeStatus } from '../../../src/host/runtime/libreOffice/status';
+import type { RuntimeAssetsStatus } from '../../../src/shared/contract/update';
 
 const tempRoots: string[] = [];
 function tempRoot(): string {
@@ -138,5 +143,64 @@ describe('managed LibreOffice runtime', () => {
       '/usr/local/bin/libreoffice',
     ]);
     expect(candidates).toContain('/which/soffice');
+  });
+
+  describe('shared preparation merge (installing beats failed)', () => {
+    function baseStatus(preparation: RuntimeAssetsStatus['preparation']): RuntimeAssetsStatus {
+      return {
+        runtimeBaseDir: '/tmp/neo-runtime',
+        activeManifestPath: '/tmp/neo-runtime/active.json',
+        assets: [],
+        summary: { installed: 0, bundledFallback: 0, missing: 0, unsupported: 0 },
+        preparation,
+      };
+    }
+
+    function failedLibreOfficeOptions(dataDir: string) {
+      rememberError(resolveLibreOfficeRoot(dataDir), offlineError(resolveLibreOfficeRoot(dataDir)));
+      return { platform: 'darwin' as const, dataDir, existsSync: () => false, which: () => null };
+    }
+
+    it('LibreOffice failed + Python installing ⇒ python-env installing keeps the preparation (progress is not masked)', () => {
+      const dataDir = tempRoot();
+      const status = withLibreOfficeStatus(baseStatus({
+        assetId: 'python-env',
+        phase: 'installing',
+        percent: 42,
+      }), failedLibreOfficeOptions(dataDir));
+      expect(status.preparation).toEqual({ assetId: 'python-env', phase: 'installing', percent: 42 });
+    });
+
+    it('LibreOffice installing + Python failed ⇒ LibreOffice installing owns the preparation', () => {
+      const dataDir = tempRoot();
+      const root = resolveLibreOfficeRoot(dataDir);
+      const pending = new Promise<never>(() => {});
+      setInflight(root, pending);
+      setInstallPercent(root, 37);
+      try {
+        const status = withLibreOfficeStatus(baseStatus({
+          assetId: 'python-env',
+          phase: 'failed',
+          errorCode: 'PYTHON_RUNTIME_OFFLINE',
+          error: 'offline',
+        }), { platform: 'darwin', dataDir, existsSync: () => false, which: () => null });
+        expect(status.preparation).toEqual({ assetId: 'libreoffice', phase: 'installing', percent: 37 });
+      } finally {
+        clearInflight(root);
+      }
+    });
+
+    it('LibreOffice failed with nothing installing ⇒ failed shows with code and logPath', () => {
+      const dataDir = tempRoot();
+      const status = withLibreOfficeStatus(baseStatus(null), failedLibreOfficeOptions(dataDir));
+      expect(status.preparation).toMatchObject({ assetId: 'libreoffice', phase: 'failed', errorCode: 'LIBREOFFICE_RUNTIME_OFFLINE' });
+    });
+
+    it('nothing of LibreOffice ⇒ existing preparation (e.g. update-service) passes through', () => {
+      const dataDir = tempRoot();
+      const existing = { assetId: 'renderer-bundle', phase: 'downloading' as const, percent: 8 };
+      const status = withLibreOfficeStatus(baseStatus(existing), { platform: 'darwin', dataDir, existsSync: () => false, which: () => null });
+      expect(status.preparation).toBe(existing);
+    });
   });
 });

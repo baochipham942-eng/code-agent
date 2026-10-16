@@ -28,7 +28,6 @@ import { DevServerLauncher } from './components/LivePreview/DevServerLauncher';
 import { ExpertWorkbenchAutoOpen, WorkbenchTabs } from './components/WorkbenchTabs';
 import { WorkbenchViewContent } from './components/WorkbenchViewContent';
 import { PromptManagerModal } from './components/features/prompts/PromptManagerModal';
-import { BackgroundSessionPanel } from './components/features/background';
 import { FullScreenPage } from './components/features/shared/FullScreenPage';
 import { RoleDetailPage } from './components/features/expert/RoleDetailPage';
 import { NativeDesktopSection } from './components/features/settings/sections/NativeDesktopSection';
@@ -1168,9 +1167,6 @@ export const App: React.FC = () => {
 
       <PluginUiActivationPolicyBootstrap /><InternalFeatureWorkspaceRegistration featureId={activeInternalFeatureId} />
       <ShellOverlaySlotHost />
-
-      {/* Background Task Panel - 后台任务浮动面板 */}
-      <BackgroundSessionPanel />
 
       {/* Capture Panel - 知识库采集面板 */}
       {useAppStore((s) => s.showCapturePanel) && (

@@ -51,6 +51,10 @@ export interface PermissionRequestDetails {
   targetApp?: { bundleId?: string; name: string };
   /** ADR-067 D3：host 透传的 peer 消息触发标注；渲染层只消费，缺省不显示。 */
   triggeredByAgentMessage?: { senderAgentId?: string };
+  /** N-HTTPREQ-CONNECTOR-CARD-DISCLOSE：http_request 连接器令牌写调用的原始参数与标记。 */
+  method?: string;
+  body?: string;
+  connectorTokenAttached?: boolean;
   path?: string; // 兼容旧版 API
   // E2: 确认门控预览
   preview?: {

@@ -183,6 +183,9 @@ const permissionRequestSchema = typed<PermissionRequest>(z.object({
       name: z.string(),
     }).optional(),
     requestedAccess: z.enum(['read_only', 'read_write']).optional(),
+    method: z.string().optional(),
+    body: z.string().optional(),
+    connectorTokenAttached: z.boolean().optional(),
     preview: z.object({
       type: z.enum(['diff', 'command', 'network', 'generic']),
       before: z.string().optional(),

@@ -28,7 +28,6 @@ import { DevServerLauncher } from './components/LivePreview/DevServerLauncher';
 import { ExpertWorkbenchAutoOpen, WorkbenchTabs } from './components/WorkbenchTabs';
 import { WorkbenchViewContent } from './components/WorkbenchViewContent';
 import { PromptManagerModal } from './components/features/prompts/PromptManagerModal';
-import { BackgroundSessionPanel } from './components/features/background';
 import { FullScreenPage } from './components/features/shared/FullScreenPage';
 import { RoleDetailPage } from './components/features/expert/RoleDetailPage';
 import { NativeDesktopSection } from './components/features/settings/sections/NativeDesktopSection';
@@ -47,6 +46,7 @@ import { CompanionPairRequestCard } from './components/CompanionPairRequestCard'
 import { VoiceBudgetAlertNotice } from './components/VoiceBudgetAlertNotice';
 import { RuntimeNotices } from './components/RuntimeNotices';
 import { FolderTrustDialog } from './components/FolderTrustDialog';
+import { SkillCautionPromptHost } from './components/SkillCautionPromptHost';
 import { useFolderTrustPrompt } from './hooks/useFolderTrustPrompt';
 import { ModelSetupPendingBanner } from './components/onboarding/ModelSetupPendingBanner';
 import { useTheme } from './hooks/useTheme';
@@ -897,8 +897,7 @@ export const App: React.FC = () => {
     <ErrorBoundary>
       <MemoryLearningProvider>
       <ToastContainer />
-      <ProviderStatusNotice />
-      <BudgetAlertNotice />
+      <ProviderStatusNotice /><BudgetAlertNotice />
       <VoiceBudgetAlertNotice />
       <CompanionPairRequestCard />
       <RuntimeNotices />
@@ -1167,10 +1166,9 @@ export const App: React.FC = () => {
       <MemoFloater />
 
       <PluginUiActivationPolicyBootstrap /><InternalFeatureWorkspaceRegistration featureId={activeInternalFeatureId} />
-      <ShellOverlaySlotHost />
-
-      {/* Background Task Panel - 后台任务浮动面板 */}
-      <BackgroundSessionPanel />
+      {/* skill 安装 caution 确认面（拖拽 ZIP / /plugins install 共用）与 shell overlay
+          同属全局宿主，同行只为守住 App.tsx 的 max-lines 预算 */}
+      <ShellOverlaySlotHost /><SkillCautionPromptHost />
 
       {/* Capture Panel - 知识库采集面板 */}
       {useAppStore((s) => s.showCapturePanel) && (

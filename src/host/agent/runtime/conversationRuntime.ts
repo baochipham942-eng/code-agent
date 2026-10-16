@@ -824,7 +824,7 @@ export class ConversationRuntime {
     const langfuse = getLangfuseService();
     const runTraceContext = getActiveRunTraceContext() ?? this.ctx.runTraceContext;
     this.ctx.stats.setTraceId(runTraceContext?.traceId ?? `trace-${this.ctx.sessionId}-${Date.now()}`);
-    this.ctx.turn.beginRun();
+    this.ctx.turn.beginRun(userMessage);
     this.toolEngine.resetRepairGate();
     langfuse.startTrace(this.ctx.stats.traceId, {
       sessionId: this.ctx.sessionId,

@@ -1611,6 +1611,9 @@
         },
         "parentToolUseId": {
           "type": "string"
+        },
+        "terminal": {
+          "type": "boolean"
         }
       },
       "required": [

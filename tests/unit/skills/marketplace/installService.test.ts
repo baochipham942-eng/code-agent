@@ -139,7 +139,6 @@ describe('marketplace install service trust defaults', () => {
       },
     });
     mocks.reloadSkills.mockResolvedValue(undefined);
-    vi.stubEnv('CODE_AGENT_SKILL_CAUTION_CONFIRMATION_ENABLED', '1');
   });
 
   afterEach(async () => {
@@ -875,9 +874,9 @@ describe('marketplace install service trust defaults', () => {
     expect(mocks.logSecurityIncident).toHaveBeenCalledTimes(1);
   });
 
-  describe('confirmation gate off (default until the renderer confirmation surface ships)', () => {
+  describe("confirmation gate opt-out (CODE_AGENT_SKILL_CAUTION_CONFIRMATION_ENABLED='0')", () => {
     beforeEach(() => {
-      vi.unstubAllEnvs();
+      vi.stubEnv('CODE_AGENT_SKILL_CAUTION_CONFIRMATION_ENABLED', '0');
     });
 
     it('installs a local marketplace caution skill without a token and warns with a distinguishable reason', async () => {
@@ -1132,7 +1131,6 @@ describe('installFromLocalZip', () => {
     mocks.userConfigDir = path.join(tempRoot, 'user-config');
     mocks.projectConfigDir = path.join(tempRoot, 'project-config');
     mocks.reloadSkills.mockResolvedValue(undefined);
-    vi.stubEnv('CODE_AGENT_SKILL_CAUTION_CONFIRMATION_ENABLED', '1');
   });
 
   afterEach(async () => {
@@ -1274,9 +1272,9 @@ describe('installFromLocalZip', () => {
     expect(mocks.logSecurityIncident).toHaveBeenCalledTimes(1);
   });
 
-  describe('confirmation gate off (default until the renderer confirmation surface ships)', () => {
+  describe("confirmation gate opt-out (CODE_AGENT_SKILL_CAUTION_CONFIRMATION_ENABLED='0')", () => {
     beforeEach(() => {
-      vi.unstubAllEnvs();
+      vi.stubEnv('CODE_AGENT_SKILL_CAUTION_CONFIRMATION_ENABLED', '0');
     });
 
     it('installs a local-zip caution skill without a token and warns with a distinguishable reason', async () => {

@@ -1,8 +1,10 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { PresentationPreview } from '../../../src/renderer/components/PreviewPanel';
-import { parseDesignPptArtifactContent } from '../../../src/renderer/components/previewPanelModel';
+import {
+  PresentationPreview,
+  parseDesignPptArtifactContent,
+} from '../../../src/renderer/components/PreviewPanel';
 
 const artifactJson = JSON.stringify({
   version: 1,

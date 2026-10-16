@@ -6542,46 +6542,6 @@
       "kind": "export"
     },
     {
-      "file": "src/renderer/components/features/chat/ChatInput/modelStrategyRecommendation.ts",
-      "name": "ModelStrategyModelSpeed",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/features/chat/ChatInput/modelStrategyRecommendation.ts",
-      "name": "ModelStrategyProviderHealthSnapshot",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/features/chat/ChatInput/modelStrategyRecommendation.ts",
-      "name": "ModelStrategyProviderHealthState",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/features/chat/ChatInput/modelStrategyRecommendation.ts",
-      "name": "ModelStrategyRecommendationAction",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/features/chat/ChatInput/modelStrategyRecommendation.ts",
-      "name": "ModelStrategyRecommendationFactor",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/features/chat/ChatInput/modelStrategyRecommendation.ts",
-      "name": "ModelStrategyRecommendationTaskKind",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/features/chat/ChatInput/modelStrategyRecommendation.ts",
-      "name": "ModelStrategyRecommendationTaskSignal",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/features/chat/ChatInput/modelStrategyRecommendation.ts",
-      "name": "ModelStrategyRecommendationTone",
-      "kind": "type"
-    },
-    {
       "file": "src/renderer/components/features/chat/ChatInput/RoleDraftCard.tsx",
       "name": "RoleDraftCard",
       "kind": "export"
@@ -6854,11 +6814,6 @@
     {
       "file": "src/renderer/components/features/chat/MessageBubble/utils.ts",
       "name": "parseMarkdownBlocks",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/chat/PlanPanel.tsx",
-      "name": "default",
       "kind": "export"
     },
     {

@@ -9,7 +9,6 @@ import { attachmentPreviewZh } from './attachmentPreview';
 import { chatInputZh } from './chatInput';
 import { backgroundPanelZh } from './backgroundPanel';
 import { voiceZh } from './voice';
-import { chatInputModelStrategyZh } from './chatInputModelStrategy';
 import { sidebarZh } from './sidebar';
 import { cronCenterZh } from './cronCenter';
 import { deliveryExperienceZh } from './deliveryExperience';
@@ -664,7 +663,6 @@ export const zh = {
     title: '任务信息',
     progress: '进度',
     workingFolder: '工作目录',
-    context: '上下文',
     connectors: '连接器',
     agents: '智能体',
     skills: '技能',
@@ -736,7 +734,6 @@ export const zh = {
     sectionReferences: '引用',
     contextEmpty: '暂无上下文',
     tabStatus: '概览',
-    tabOrchestration: '编排',
     // WorkingFolder
     inputDirPlaceholder: '输入工作目录路径',
     confirm: '确定',
@@ -940,7 +937,6 @@ export const zh = {
   ...chatInputZh,
   ...backgroundPanelZh,
   ...voiceZh,
-  ...chatInputModelStrategyZh,
   ...sidebarZh,
   ...cronCenterZh,
   ...previewWorkspaceZh,

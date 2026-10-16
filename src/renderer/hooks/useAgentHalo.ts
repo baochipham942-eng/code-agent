@@ -35,7 +35,7 @@ const ACTIVE_HOLD_MS = 2200;
  * - 隐藏：owner 的 end_session 或 run 终态；warning error 不算终态。
  * - Tauri 不可用（web 模式）→ 全程静默 no-op。
  *
- * 在 App 顶层挂载一次（与 useComputerUsePip 并列）。
+ * 在 App 顶层挂载一次。
  */
 export function useAgentHalo(): void {
   const lifecycleRef = useRef<{

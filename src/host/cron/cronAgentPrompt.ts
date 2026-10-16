@@ -14,6 +14,7 @@ export function buildCronAgentPrompt(
   enabled: boolean,
   now: Date = new Date(),
   urgencyCriteria?: string,
+  notifyWhen?: string,
 ): string {
   // 注入当前时间锚点：LLM 默认拿训练期日期，会把「今天/明天」算成过去时间。
   // 真机 dogfood(2026-07-24)证明「只给 ISO 时间」不够：GLM-5 认出了今天日期，却仍把
@@ -37,7 +38,16 @@ export function buildCronAgentPrompt(
   const deliveryDigestInstruction =
     '最后请在回复末尾追加简短的 <cron_summary>...</cron_summary> 块：先写结果摘要；每个生成的文件或可访问产物另起一行，格式为 artifact: <path>。'
     + `摘要的第一行可以标注紧急程度，格式为 urgency: must_today|can_wait|fyi（${mustTodayDefinition}，can_wait = 可以稍后处理，fyi = 仅供参考）。`;
-  if (!enabled) return [prompt, '', timeAnchor, '', deliveryDigestInstruction].join('\n');
+  // notifyWhen 打扰判据（N-CRON-RESTATE-HUMAN-WHEN）：设置后让模型自判本次是否
+  // 值得打扰——满足判据才输出 <cron_alert>，host 侧按该标记门通知与推送。
+  // 缺省/空白时这条指令整体缺席，产出与旧版逐字节相同。
+  const trimmedNotifyWhen = notifyWhen?.trim();
+  const notifyGateInstruction = trimmedNotifyWhen
+    ? `打扰规则（用户设定）：本次运行只有当结果满足「${trimmedNotifyWhen}」时，才在回复末尾追加一行 <cron_alert>用一句话说明满足了什么</cron_alert>；不满足时不要输出 <cron_alert> 标记（该轮将不打扰用户）。`
+    : '';
+  if (!enabled) {
+    return [prompt, '', timeAnchor, '', deliveryDigestInstruction, ...(notifyGateInstruction ? ['', notifyGateInstruction] : [])].join('\n');
+  }
 
   const hasSnapshot = typeof snapshot === 'string' && Boolean(snapshot.trim());
   return [
@@ -59,6 +69,7 @@ export function buildCronAgentPrompt(
     '回复末尾请用 <cron_snapshot>...</cron_snapshot> 包住本次需要记住的简短快照，供下次对比。',
     '',
     deliveryDigestInstruction,
+    ...(notifyGateInstruction ? ['', notifyGateInstruction] : []),
   ].join('\n');
 }
 

@@ -41,7 +41,7 @@ import { typedInvokeDomain } from '../../services/typedInvoke';
 import { useAppStore } from '../../stores/appStore';
 import { useRightPanelTabsStore } from '../../stores/rightPanelTabsStore';
 
-export function runStatusClass(status: RunUiStatus): string {
+function runStatusClass(status: RunUiStatus): string {
   switch (status) {
     case 'completed':
       return 'border-badge-success/20 bg-emerald-500/10 text-badge-success';

@@ -422,7 +422,7 @@ function withMissingMcpServers(
   return next;
 }
 
-export function buildWorkbenchCapabilityRegistryFromCapabilities(
+function buildWorkbenchCapabilityRegistryFromCapabilities(
   capabilities: WorkbenchCapabilities,
 ): WorkbenchCapabilityRegistry {
   const skills = capabilities.skills.map(buildWorkbenchSkillRegistryItem);

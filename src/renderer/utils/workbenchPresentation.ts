@@ -85,7 +85,7 @@ export function getWorkbenchStatusPresentation(
   };
 }
 
-export function getWorkbenchConnectorStatusPresentation(
+function getWorkbenchConnectorStatusPresentation(
   connected: boolean,
   options?: { locale?: Locale },
 ): { label: string; colorClass: string } {

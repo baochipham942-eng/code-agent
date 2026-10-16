@@ -11,6 +11,16 @@ import type { EventScheduleValidationReason } from '@shared/cronEventValidation'
 
 export const cronCenterZh = {
   cronCenter: {
+    groupListenCheck: {
+      title: '检查群消息是否连通',
+      start: '发条测试消息',
+      instructions: '点击“发条测试消息”后，请在这个任务监听的群里发任意一条新消息，不要 @ 机器人。Neo 会等待 {minutes} 分钟。消息也会按任务设置触发执行。',
+      waiting: '正在等待这个群的新消息…',
+      connected: '已连通',
+      timeout: '还没收到测试消息。请确认已在目标群发消息，机器人已加入该群且飞书连接正常。',
+      permissionHint: '应用可能缺少「获取群组中所有消息」权限（im:message.group_msg）。这是敏感权限，需要租户管理员批准。请前往：飞书开放平台 → 应用 → 权限管理 → 搜索该权限 → 申请并发布版本。完成后再试一次。',
+      error: '暂时无法检查，请重试。',
+    },
     title: '自动化',
     subtitle: '按计划执行，结果回来给你过目',
     tabJobs: '定时任务',
@@ -79,6 +89,21 @@ export const cronCenterZh = {
     loginWallNotificationBody: '你需要重新登录 {site}，然后下一次定时运行才能继续。',
     loginWallError: '你需要重新登录 {site}，这次定时运行已停止。',
     loginWallOpenSite: '打开网站',
+    // 失败人话（N-CRON-FAIL-PLAIN）：一句原因 + 一个下一步。重置时间由调用方填好，取不到用「以服务商为准」。
+    failureNotificationTitle: '定时任务没跑成 · {name}',
+    failureQuotaWithReset: '模型额度/余额用完了，预计 {when} 恢复（以服务商为准）',
+    failureQuotaWithResetAndLimit: '模型额度/余额用完了（{limit}），预计 {when} 恢复（以服务商为准）',
+    failureQuotaUnknown: '模型额度/余额用完了。恢复时间以服务商为准',
+    failureQuotaUnknownWithLimit: '模型额度/余额用完了（{limit}）。恢复时间以服务商为准',
+    failureRateLimit: '服务商暂时限流，下次运行会自动再试',
+    failureTimeout: '这次运行超时被停了',
+    failureAuth: '模型账号没通过授权（密钥错误或已过期）',
+    failureNetwork: '暂时连不上模型服务',
+    failureOther: '运行失败',
+    failureActionSwitchModel: '换个模型',
+    failureActionRunAgain: '立即重跑',
+    failureActionCheckAccount: '检查账号设置',
+    failureTechnical: '查看技术详情',
     // 触发源 chip（键 = utils/cronHumanize 的 CronTriggerKind，语义对齐 SessionAutomationType）
     triggerKind: {
       cron: '定时',
@@ -234,6 +259,7 @@ export const cronCenterZh = {
     // 交互审批卡（PermissionCard）external 作用域提示；与上面停车审批词条同组维护
     scopeExternalRecall: '离开本机：发出去收不回',
     parkedAlwaysAllow: '每次都允许发 {target}',
+    parkedArgsPreviewLabel: '参数：',
     pairingTitle: '{channel} 私聊配对',
     pairingCode: '配对码 {code}',
     pairingSender: '发送者 {sender}',
@@ -277,6 +303,16 @@ export const cronCenterZh = {
 
 export const cronCenterEn: typeof cronCenterZh = {
   cronCenter: {
+    groupListenCheck: {
+      title: 'Check group message reception',
+      start: 'Send a test message',
+      instructions: 'Click “Send a test message”, then post any new message in the group this task listens to, without @mentioning the bot. Neo will wait {minutes} minutes. The message will also trigger the task as configured.',
+      waiting: 'Waiting for a new message from this group…',
+      connected: 'Connected',
+      timeout: 'No test message received yet. Make sure you posted in the target group, the bot has joined it, and Feishu is connected.',
+      permissionHint: 'The app may lack “Read all messages in groups” (im:message.group_msg). This is a sensitive permission that requires tenant administrator approval. Go to: Feishu Open Platform → App → Permission Management → Search for this permission → Request it and publish a version. Then try again.',
+      error: 'Unable to check right now. Please try again.',
+    },
     title: 'Automations',
     subtitle: 'Runs on schedule, results come back for review',
     tabJobs: 'Scheduled jobs',
@@ -343,6 +379,20 @@ export const cronCenterEn: typeof cronCenterZh = {
     loginWallNotificationBody: 'You need to log in to {site} again before the next scheduled run can continue.',
     loginWallError: 'You need to log in to {site} again. This scheduled run was stopped.',
     loginWallOpenSite: 'Open site',
+    failureNotificationTitle: "Scheduled task didn't finish · {name}",
+    failureQuotaWithReset: 'The model quota or balance is used up. It should be back around {when} (the provider decides).',
+    failureQuotaWithResetAndLimit: 'The model quota or balance is used up ({limit}). It should be back around {when} (the provider decides).',
+    failureQuotaUnknown: 'The model quota or balance is used up. The provider decides when it resets.',
+    failureQuotaUnknownWithLimit: 'The model quota or balance is used up ({limit}). The provider decides when it resets.',
+    failureRateLimit: 'The provider is rate-limiting for now. The next run will try again on its own.',
+    failureTimeout: 'This run was stopped because it timed out.',
+    failureAuth: 'The model account was not authorized (the key is wrong or expired).',
+    failureNetwork: "The model service can't be reached right now.",
+    failureOther: 'The run failed.',
+    failureActionSwitchModel: 'Switch model',
+    failureActionRunAgain: 'Run again now',
+    failureActionCheckAccount: 'Check account settings',
+    failureTechnical: 'Technical details',
     triggerKind: {
       cron: 'Scheduled',
       at: 'One-time',
@@ -490,6 +540,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     parkedScopeExternal: 'Leaves this device → {target}',
     scopeExternalRecall: 'Leaves this device: cannot be recalled once sent',
     parkedAlwaysAllow: 'Always allow sending to {target}',
+    parkedArgsPreviewLabel: 'Arguments: ',
     pairingTitle: '{channel} direct-message pairing',
     pairingCode: 'Pairing code {code}',
     pairingSender: 'Sender {sender}',

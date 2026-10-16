@@ -46,6 +46,7 @@ function normalizeRequest(
     type: request.type as PermissionType,
     reason: request.reason,
     reasonCode: request.reasonCode,
+    argsPreview: request.argsPreview,
     dangerLevel: request.dangerLevel,
     riskClass: request.riskClass,
     boundary: request.boundary,
@@ -66,6 +67,9 @@ function normalizeRequest(
       standingGrantTarget: request.details.standingGrantTarget,
       targetApp: request.details.targetApp,
       triggeredByAgentMessage: request.details.triggeredByAgentMessage,
+      method: request.details.method,
+      body: request.details.body,
+      connectorTokenAttached: request.details.connectorTokenAttached,
       path: request.details.path,
       preview: request.details.preview,
       sandbox: request.details.sandbox,
@@ -123,7 +127,7 @@ export function PermissionCard({
   remainingCount = 0,
   onCollapse,
 }: PermissionCardProps = {}) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const {
     pendingPermissionRequest,
     pendingPermissionSessionId,
@@ -460,7 +464,7 @@ export function PermissionCard({
             ? (contentTitle ? w.remindersUpdateQuestion.replace('{title}', contentTitle) : w.remindersUpdateQuestionFallback)
     : editable
     ? (firstRecipient ? w.mailSendQuestion.replace('{target}', firstRecipient) : w.mailSendQuestionFallback)
-    : permissionSummary(request, t);
+    : permissionSummary(request, t, language);
   const viewMode = viewState?.requestId === request.id
     ? viewState.mode
     : defaultPermissionViewMode(request);
@@ -544,23 +548,24 @@ export function PermissionCard({
       headerEnd={headerEnd}
       question={question}
       details={
-        sandboxEscalation ? (
-          <>
-            {sandboxPath ? (
-              <p
-                className="break-all rounded bg-zinc-800 p-2 font-mono text-xs text-badge-info"
-                data-testid="sandbox-escalation-path"
-              >
-                {sandboxPath}
-              </p>
-            ) : null}
-            <RequestDetails request={request} />
-          </>
-        ) : (
-          <>
-            <RequestDetails request={request} />
-          </>
-        )
+        <>
+          {sandboxPath ? (
+            <p
+              className="break-all rounded bg-zinc-800 p-2 font-mono text-xs text-badge-info"
+              data-testid="sandbox-escalation-path"
+            >
+              {sandboxPath}
+            </p>
+          ) : null}
+          {/* 停车审批参数预览（host 已脱敏 + 截断）：一眼看清这步要干什么，缺省不渲染 */}
+          {request.argsPreview && (
+            <div className="rounded-lg bg-zinc-900/60 px-2.5 py-1.5" data-testid="permission-args-preview">
+              <span className="text-[11px] text-zinc-500">{p.argsPreviewLabel}</span>
+              <p className="mt-0.5 break-all text-xs leading-5 text-zinc-300">{request.argsPreview}</p>
+            </div>
+          )}
+          <RequestDetails request={request} />
+        </>
       }
       options={visibleOptions}
       selectedId={selectedLevel}

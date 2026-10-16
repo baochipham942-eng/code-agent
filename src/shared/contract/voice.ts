@@ -479,3 +479,10 @@ export interface VoiceTransport {
     }) => Promise<string>;
   }): Promise<VoiceTransportHandle>;
 }
+
+/** Exact profile block for the next call, before the existing speaker identity gate. */
+export interface VoiceUserProfileView {
+  enabled: boolean;
+  override: string | null;
+  text: string;
+}

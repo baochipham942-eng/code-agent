@@ -6,6 +6,8 @@ import type { AgentEvent, AppSettings, PermissionRequest, PermissionResponse } f
 import type { PermissionAskResult, PermissionDeliveryOutcome, PermissionDenialSource } from '../../shared/contract/permission';
 import type { ToolApprovalPayload, PendingApprovalKind } from '../../shared/contract/pendingApproval';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
+import { PARKED_APPROVAL_PREVIEW_MAX_CHARS } from '../../shared/constants/pendingApproval';
+import { redactSecrets } from '../security/secretRedaction';
 import { generatePermissionRequestId } from '../../shared/utils/id';
 import type { ExecutionTopology } from '../permissions';
 import { getPermissionModeManager } from '../permissions/modes';
@@ -52,6 +54,26 @@ function toDeliveryOutcome(resolution: ParkedResolution): PermissionDeliveryOutc
 /** 归一化审批响应为「放行/拒绝」。allow_standing（B4 铸权）在放行语义上等价 allow。 */
 function isApproveResponse(response: PermissionResponse): boolean {
   return response === 'allow' || response === 'allow_session' || response === 'allow_standing';
+}
+
+/**
+ * 停车审批的参数预览（N-PARKED-APPROVAL-SURVIVE-RESTART-PERSIST）：argsSummary 的取值字段
+ * 加上 url/changes，脱敏后截断。这里只去密钥形态（redactSecrets：API key / Bearer / .env 值），
+ * 不走 guardSensitiveText 的路径/邮箱掩码——路径与命令本体正是「这步要干什么」要给用户看的信息。
+ */
+function buildParkedArgsPreview(request: PermissionRequest): string | undefined {
+  const parts = [
+    request.details?.command,
+    request.details?.path,
+    request.details?.filePath,
+    request.details?.url,
+    request.details?.changes,
+  ].filter((part): part is string => typeof part === 'string' && part.length > 0);
+  if (parts.length === 0) return undefined;
+  const redacted = redactSecrets(parts.join(' · '));
+  return redacted.length > PARKED_APPROVAL_PREVIEW_MAX_CHARS
+    ? `${redacted.slice(0, PARKED_APPROVAL_PREVIEW_MAX_CHARS - 1)}…`
+    : redacted;
 }
 
 /** 真人点的会话/始终。带 targetApp 时只记该应用，不记工具级放行。plain allow 不记。 */
@@ -553,6 +575,11 @@ export class OrchestratorPermissionIsland {
         }
       }, timeoutMs);
 
+      // 预览先挂到 fullRequest 再登记内存条目：会话卡（permission_request 事件）与
+      // listPendingRequests 快照拿的是同一个对象引用，只算一份。
+      const argsPreview = buildParkedArgsPreview(fullRequest);
+      if (argsPreview) fullRequest.argsPreview = argsPreview;
+
       this.pendingPermissions.set(fullRequest.id, {
         parked: true,
         resolve: (response, machineDenial, _updatedArgs, message) => {
@@ -564,6 +591,10 @@ export class OrchestratorPermissionIsland {
       });
 
       const isDirectoryAccess = kind === 'directory_access';
+      // 跨重启引用只在两个 id 都真实在时写；messageId 权限路径上没有真源，不填（不许发明）。
+      const argsRef = fullRequest.sessionId && fullRequest.parentToolUseId
+        ? { sessionId: fullRequest.sessionId, toolCallId: fullRequest.parentToolUseId }
+        : undefined;
       const payload: ToolApprovalPayload = {
         sessionId: fullRequest.sessionId ?? null,
         ...(fullRequest.parentToolUseId ? { toolCallId: fullRequest.parentToolUseId } : {}),
@@ -575,6 +606,8 @@ export class OrchestratorPermissionIsland {
           ?? fullRequest.details?.path
           ?? fullRequest.details?.filePath
           ?? fullRequest.details?.url,
+        ...(argsRef ? { argsRef } : {}),
+        ...(argsPreview ? { argsPreview } : {}),
         // 目录授权卡直接给人话："访问 <path>（只读/读写）· <agent 理由>"，不用通用 tool 名。
         displayTool: isDirectoryAccess
           ? `目录访问：${fullRequest.details?.path ?? '(unknown path)'}（${

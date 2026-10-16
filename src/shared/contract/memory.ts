@@ -199,6 +199,12 @@ export interface ProjectMemoryDraftResult {
   entries: MemoryEntry[];
 }
 
+/** 已退出自动注入的原因（N-MEM-EVICT-NEVER-READ）：从没被用过 / 用过但很久没再用；since = 开始暂停的时刻。 */
+export interface MemoryEntryInjectionPause {
+  reason: 'never_used' | 'stale_used';
+  since: number;
+}
+
 export interface MemoryEntry {
   id: string;
   schemaVersion: 2;
@@ -217,6 +223,8 @@ export interface MemoryEntry {
   confidence: number;
   createdAt: number;
   updatedAt: number;
+  /** 仅列表接口附带：该条当前不进自动注入（库里仍在，MemoryRead/搜索照常可取）。 */
+  injectionPaused?: MemoryEntryInjectionPause;
 }
 
 export interface MemoryEntryListResult {

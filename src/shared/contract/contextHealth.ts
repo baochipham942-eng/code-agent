@@ -13,19 +13,6 @@ import type { ContextCompressionSignalData } from './agent';
 export type ContextHealthWarningLevel = 'normal' | 'warning' | 'critical';
 
 /**
- * Token 来源标签 — 按产品维度（不是消息结构维度）拆分上下文占用
- * 用于回答"哪个 skill / MCP / subagent 在烧 token"，配合 SkillsPanel 做卸载决策
- */
-export type SourceTag =
-  | { type: 'rule'; name: string }
-  | { type: 'skill'; name: string }
-  | { type: 'mcp'; server: string }
-  | { type: 'subagent'; name: string }
-  | { type: 'fileRead' }
-  | { type: 'summary' }
-  | { type: 'conversation' };
-
-/**
  * 按产品来源拆分的 token 占用
  * 与 TokenBreakdown 的 systemPrompt/messages/toolResults（消息结构维度）正交
  * conversation 字段用扣减法：messages 总数 - 其他 source 之和

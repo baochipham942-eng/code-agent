@@ -25,6 +25,7 @@ import {
   streamInterruptionReasonFromContent,
   stripStreamBreakMarker,
 } from '../utils/streamInterruptionPresentation';
+import { normalizeEditArgs } from '@shared/utils/editToolArgs';
 
 type MessageModelDecision = NonNullable<Message['modelDecision']>;
 
@@ -907,10 +908,11 @@ function markFeedbackEligibleNodes(turns: TraceTurn[]): void {
  * 降级只在两种情况下发生，别的失败一律照原样红着：
  *  1. 【联网检索类工具】（web search / fetch）之后出现任意成功标志——这类"换搜索源/
  *     换抓取方式重试"是常态恢复模式；
- *  2. 【Edit】之后出现**同一处**编辑成功——判据是 editKey（路径 + old_string +
- *     new_string + replace_all 四元组全等），不是"后面有别的成功就算"。Edit 的失败
- *     多半是独立真错误，只有当模型确实把同一处改成功了，那次失败才算被自己收尾。
- *     Bash 及其余工具不参与降级。
+ *  2. 【Edit】之后出现**同一处**编辑成功——判据是 editKey（路径 + 编辑项列表
+ *     （old/new/replace_all，多 item 按序）全等，形状经 normalizeEditArgs 归一，
+ *     兼容注册的 edits[] 形状与 legacy edit_file 平铺形状），不是"后面有别的成功
+ *     就算"。Edit 的失败多半是独立真错误，只有当模型确实把同一处改成功了，那次
+ *     失败才算被自己收尾。Bash 及其余工具不参与降级。
  */
 function isRecoverableRetrievalTool(name: string | undefined): boolean {
   if (!name) return false;
@@ -923,10 +925,12 @@ function markRecoveredFailures(turns: TraceTurn[]): void {
     const successfulEdits = new Set<string>();
     const editKey = (tc: NonNullable<TraceNode['toolCall']>): string | null => {
       if (!/^(edit|edit_file)$/i.test(tc.name)) return null;
-      const args = tc.args;
-      const path = args?.file_path ?? args?.path;
-      if (typeof path !== 'string' || typeof args?.new_string !== 'string' || typeof args?.old_string !== 'string') return null;
-      return JSON.stringify([path.replace(/^\.\//, ''), args.old_string, args.new_string, args.replace_all === true]);
+      const normalized = normalizeEditArgs(tc.args);
+      if (!normalized) return null;
+      return JSON.stringify([
+        normalized.filePath.replace(/^\.\//, ''),
+        normalized.edits.map((item) => [item.oldText, item.newText, item.replaceAll]),
+      ]);
     };
     // 从后往前扫：到达某个失败工具节点时，laterSuccess 已反映它"之后"是否出现过成功标志。
     for (let i = turn.nodes.length - 1; i >= 0; i -= 1) {

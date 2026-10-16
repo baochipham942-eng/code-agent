@@ -40,4 +40,19 @@ describe('RoleInitialAvatar', () => {
     expect(avatar.textContent).toBe('阿');
     expect(avatar.getAttribute('aria-label')).toBe('阿问');
   });
+
+  // N-ROLE-PACKS-PILOT3 r1：无头像资产的新内置角色走 icon 档，必须渲染专属
+  // lucide 字形而非 UserCircle 兜底人形（icon 非空未知名会同时压掉首字档）。
+  it('无头像资产的新内置角色（持衡）icon 档渲染专属图标，不兜底人形', () => {
+    expect(getRoleAvatarAsset('持衡')).toBeUndefined();
+
+    render(<RoleInitialAvatar roleId="持衡" name="持衡" icon="Scale" />);
+
+    const avatar = screen.getByTestId('role-initial-avatar-持衡');
+    expect(avatar.tagName).toBe('SPAN');
+    const svgClass = avatar.querySelector('svg')?.getAttribute('class') ?? '';
+    expect(svgClass).toContain('lucide-scale');
+    expect(svgClass).not.toContain('lucide-circle-user');
+    expect(avatar.textContent).toBe('');
+  });
 });

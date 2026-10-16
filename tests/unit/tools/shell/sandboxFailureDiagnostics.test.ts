@@ -129,6 +129,160 @@ Node.js v24.21.0`;
 // A re-quoted error line without its traceback proves nothing either way.
 const PYTHON_BARE_ERROR_LINE = "PermissionError: [Errno 1] Operation not permitted: '/Users/u/.npmrc'";
 
+// Node raises the same `Error: EPERM: operation not permitted, open '<path>'`
+// for a seatbelt read denial and a write denial; only the frames under the
+// error line tell them apart (N-SANDBOX-ESCALATE-REACHABILITY). All fixtures
+// below were captured with node v24.21.0 against a fresh dir <D> under
+// /private/tmp and the profile (seatbelt resolves /tmp, so /private/tmp it is):
+//   (version 1)(allow default)(deny file-read-data (literal "<D>/cred.txt"))
+//                     (deny file-write* (literal "<D>/w.txt"))
+// via `sandbox-exec -f <profile> node -e '<script>'` with stderr redirected.
+
+// Captured with node -e "require('node:fs').readFileSync('<D>/cred.txt','utf8')".
+const NODE_READ_FILE_SYNC_TRACEBACK = `node:fs:483
+    return binding.readFileUtf8(path, stringToFlags(options.flag));
+                   ^
+
+Error: EPERM: operation not permitted, open '/private/tmp/neo-node-denial-fu3-45633/cred.txt'
+    at Object.readFileSync (node:fs:483:20)
+    at [eval]:1:20
+    at runScriptInThisContext (node:internal/vm:219:10)
+    at node:internal/process/execution:451:12
+    at [eval]-wrapper:6:24
+    at runScriptInContext (node:internal/process/execution:449:60)
+    at evalFunction (node:internal/process/execution:283:30)
+    at evalTypeScript (node:internal/process/execution:295:3)
+    at node:internal/main/eval_string:71:3 {
+  errno: -1,
+  code: 'EPERM',
+  syscall: 'open',
+  path: '/private/tmp/neo-node-denial-fu3-45633/cred.txt'
+}
+
+Node.js v24.21.0`;
+
+// Captured with node -e "(async()=>{ try { await require('node:fs').promises.readFile('<D>/cred.txt','utf8'); } catch(e) { console.error(e); process.exitCode=1; } })()".
+const NODE_PROMISES_READ_FILE_TRACEBACK = `Error: EPERM: operation not permitted, open '/private/tmp/neo-node-denial-fu3-45633/cred.txt'
+    at async open (node:internal/fs/promises:1345:25)
+    at async Object.readFile (node:internal/fs/promises:1996:14)
+    at async [eval]:1:19 {
+  errno: -1,
+  code: 'EPERM',
+  syscall: 'open',
+  path: '/private/tmp/neo-node-denial-fu3-45633/cred.txt'
+}`;
+
+// Captured with node -e "require('node:fs').createReadStream('<D>/cred.txt').resume()" —
+// an unhandled stream 'error' prints the `Emitted 'error' event on ReadStream instance at:`
+// header instead of call frames; the header names the stream class.
+const NODE_CREATE_READ_STREAM_ERROR = `node:events:505
+    throw er; // Unhandled 'error' event
+    ^
+
+Error: EPERM: operation not permitted, open '/private/tmp/neo-node-denial-fu3-45633/cred.txt'
+Emitted 'error' event on ReadStream instance at:
+    at emitErrorNT (node:internal/streams/destroy:170:8)
+    at emitErrorCloseNT (node:internal/streams/destroy:129:3)
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+  errno: -1,
+  code: 'EPERM',
+  syscall: 'open',
+  path: '/private/tmp/neo-node-denial-fu3-45633/cred.txt'
+}
+
+Node.js v24.21.0`;
+
+// Captured with node -e "require('node:fs').appendFileSync('<D>/w.txt','x')" —
+// appendFileSync frames include writeFileSync, so this stays a proven write.
+const NODE_APPEND_WRITE_TRACEBACK = `node:fs:2482
+    return binding.writeFileUtf8(
+                   ^
+
+Error: EPERM: operation not permitted, open '/private/tmp/neo-node-denial-fu3-45633/w.txt'
+    at Object.writeFileSync (node:fs:2482:20)
+    at Object.appendFileSync (node:fs:2564:6)
+    at [eval]:1:20
+    at runScriptInThisContext (node:internal/vm:219:10)
+    at node:internal/process/execution:451:12
+    at [eval]-wrapper:6:24
+    at runScriptInContext (node:internal/process/execution:449:60)
+    at evalFunction (node:internal/process/execution:283:30)
+    at evalTypeScript (node:internal/process/execution:295:3)
+    at node:internal/main/eval_string:71:3 {
+  errno: -1,
+  code: 'EPERM',
+  syscall: 'open',
+  path: '/private/tmp/neo-node-denial-fu3-45633/w.txt'
+}
+
+Node.js v24.21.0`;
+
+// A bare `EPERM … open '<path>'` line (callback-style errors print e.message
+// only) carries no frames, so read vs write is unknowable; returning the path
+// is today's pinned contract, not an accident.
+const NODE_BARE_ERROR_LINE = "Error: EPERM: operation not permitted, open '/Users/u/.npmrc'";
+
+// `fs.copyFileSync` prints `copyfile '<src>' -> '<dst>'` and, per libuv
+// `uv__fs_copyfile`, reports BOTH errors with `req->path` = source. A read
+// denial on the source and a write denial on the destination are therefore
+// byte-identical apart from the two paths (frames are only
+// `at Object.copyFileSync`), so the two cases cannot be told apart from text
+// (N-SANDBOX-ESCALATE-REACHABILITY-FU3-FU2).
+//
+// Captured from a fresh dir <D> under /tmp (the source file MUST exist, else
+// ENOENT), node v24.21.0, with a profile denying the SOURCE read (seatbelt
+// resolves /tmp, so the rule targets /private/tmp/<D>):
+//   sandbox-exec -p '(version 1)(allow default)(deny file-read* (literal "/private/tmp/<D>/src.txt"))' node -e "require('node:fs').copyFileSync('/tmp/<D>/src.txt','/tmp/<D>/out.txt')"
+const NODE_COPYFILE_READ_SOURCE_TRACEBACK = `node:fs:3200
+  binding.copyFile(
+          ^
+
+Error: EPERM: operation not permitted, copyfile '/tmp/neo-node-copyfile-fu2-20021/src.txt' -> '/tmp/neo-node-copyfile-fu2-20021/out.txt'
+    at Object.copyFileSync (node:fs:3200:11)
+    at [eval]:1:20
+    at runScriptInThisContext (node:internal/vm:219:10)
+    at node:internal/process/execution:451:12
+    at [eval]-wrapper:6:24
+    at runScriptInContext (node:internal/process/execution:449:60)
+    at evalFunction (node:internal/process/execution:283:30)
+    at evalTypeScript (node:internal/process/execution:295:3)
+    at node:internal/main/eval_string:71:3 {
+  errno: -1,
+  code: 'EPERM',
+  syscall: 'copyfile',
+  path: '/tmp/neo-node-copyfile-fu2-20021/src.txt',
+  dest: '/tmp/neo-node-copyfile-fu2-20021/out.txt'
+}
+
+Node.js v24.21.0`;
+
+// Captured from the same node v24.21.0 with a profile denying every write, so
+// the DESTINATION is the denied operand while the source (/etc/hosts) is
+// readable:
+//   sandbox-exec -p '(version 1)(allow default)(deny file-write*)' node -e "require('node:fs').copyFileSync('/etc/hosts','/tmp/<D>/out2.txt')"
+const NODE_COPYFILE_WRITE_TARGET_TRACEBACK = `node:fs:3200
+  binding.copyFile(
+          ^
+
+Error: EPERM: operation not permitted, copyfile '/etc/hosts' -> '/tmp/neo-node-copyfile-fu2-20021/out2.txt'
+    at Object.copyFileSync (node:fs:3200:11)
+    at [eval]:1:20
+    at runScriptInThisContext (node:internal/vm:219:10)
+    at node:internal/process/execution:451:12
+    at [eval]-wrapper:6:24
+    at runScriptInContext (node:internal/process/execution:449:60)
+    at evalFunction (node:internal/process/execution:283:30)
+    at evalTypeScript (node:internal/process/execution:295:3)
+    at node:internal/main/eval_string:71:3 {
+  errno: -1,
+  code: 'EPERM',
+  syscall: 'copyfile',
+  path: '/etc/hosts',
+  dest: '/tmp/neo-node-copyfile-fu2-20021/out2.txt'
+}
+
+Node.js v24.21.0`;
+
 describe('sandboxDeniedWritePath', () => {
   it('recognises a Python PermissionError write traceback', () => {
     expect(sandboxDeniedWritePath(PYTHON_OPEN_W_TRACEBACK)).toBe('/System/x');
@@ -167,6 +321,49 @@ describe('sandboxDeniedWritePath', () => {
 
   it('recognises a Node fs.writeFileSync EPERM traceback', () => {
     expect(sandboxDeniedWritePath(NODE_WRITE_TRACEBACK)).toBe('/System/x');
+  });
+
+  it('recognises a Node fs.appendFileSync EPERM traceback (writeFileSync frame among them)', () => {
+    expect(sandboxDeniedWritePath(NODE_APPEND_WRITE_TRACEBACK)).toBe('/private/tmp/neo-node-denial-fu3-45633/w.txt');
+  });
+
+  it('does not treat Node seatbelt read denials as denied writes', () => {
+    expect(sandboxDeniedWritePath(NODE_READ_FILE_SYNC_TRACEBACK)).toBeUndefined();
+    expect(sandboxDeniedWritePath(NODE_PROMISES_READ_FILE_TRACEBACK)).toBeUndefined();
+    expect(sandboxDeniedWritePath(NODE_CREATE_READ_STREAM_ERROR)).toBeUndefined();
+  });
+
+  it('still returns the path for a bare Node EPERM open line with no frames', () => {
+    // A callback-style fs.readFile error printed via e.message (or any re-quoted
+    // line) has no frames, so read vs write is unknowable; the widen card is the
+    // pinned contract for it, kept deliberately (N-SANDBOX-ESCALATE-REACHABILITY).
+    expect(sandboxDeniedWritePath(NODE_BARE_ERROR_LINE)).toBe('/Users/u/.npmrc');
+  });
+
+  it('still returns the path when the frames are ambiguous (a bare openSync frame)', () => {
+    expect(sandboxDeniedWritePath(
+      "Error: EPERM: operation not permitted, open '/Users/u/.npmrc'\n"
+      + '    at Object.openSync (node:fs:483:20)\n'
+      + '    at [eval]:1:1',
+    )).toBe('/Users/u/.npmrc');
+  });
+
+  it('returns the copyfile DESTINATION (never the source) for a read-denied source', () => {
+    const path = sandboxDeniedWritePath(NODE_COPYFILE_READ_SOURCE_TRACEBACK);
+    expect(path).toBe('/tmp/neo-node-copyfile-fu2-20021/out.txt');
+    expect(path).not.toBe('/tmp/neo-node-copyfile-fu2-20021/src.txt');
+  });
+
+  it('returns the copyfile destination, not the readable source, for a write-denied target', () => {
+    const path = sandboxDeniedWritePath(NODE_COPYFILE_WRITE_TARGET_TRACEBACK);
+    expect(path).toBe('/tmp/neo-node-copyfile-fu2-20021/out2.txt');
+    expect(path).not.toBe('/etc/hosts');
+  });
+
+  it('skips a copyfile line with no `-> <dst>` part instead of falling back to the source', () => {
+    expect(
+      sandboxDeniedWritePath("Error: EPERM: operation not permitted, copyfile '/tmp/neo-node-copyfile-fu2-20021/src.txt'"),
+    ).toBeUndefined();
   });
 
   it('does not treat Python EACCES as a sandbox denial', () => {

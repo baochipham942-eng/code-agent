@@ -1183,6 +1183,15 @@
                 "read_write"
               ]
             },
+            "method": {
+              "type": "string"
+            },
+            "body": {
+              "type": "string"
+            },
+            "connectorTokenAttached": {
+              "type": "boolean"
+            },
             "preview": {
               "type": "object",
               "properties": {
@@ -1253,6 +1262,9 @@
         },
         "boundary": {
           "$ref": "#/$defs/__schema5"
+        },
+        "argsPreview": {
+          "type": "string"
         },
         "timestamp": {
           "type": "number"

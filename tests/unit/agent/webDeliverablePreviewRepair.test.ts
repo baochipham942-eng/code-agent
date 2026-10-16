@@ -89,7 +89,7 @@ function makeCtx(overrides: Partial<RuntimeContext> = {}): RuntimeContext {
 }
 
 function makeHarness(filePath: string, toolName = 'Write') {
-  const contextAssembly = { injectSystemMessage: vi.fn() } as unknown as ContextAssembly;
+  const contextAssembly = { injectSystemMessage: vi.fn(), generateId: () => 'preview-notice', addAndPersistMessage: vi.fn() } as unknown as ContextAssembly;
   const runFinalizer = { emitTaskProgress: vi.fn() } as unknown as RunFinalizer;
   const toolCall: ToolCall = {
     id: 'call_write_web',
@@ -192,6 +192,11 @@ describe('webDeliverablePreviewRepair module', () => {
       expect.stringContaining('fixed automatically'),
     );
     expect(second.contextAssembly.injectSystemMessage).not.toHaveBeenCalled();
+    expect(second.contextAssembly.addAndPersistMessage).toHaveBeenCalledWith(expect.objectContaining({
+      role: 'system', content: expect.stringContaining('fixed automatically'),
+      metadata: { agentRecoveryNotice: { kind: 'web_preview_repair' } },
+    }));
+    expect(ctx.onEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'message' }));
     expect(second.toolResult.metadata).toMatchObject({
       designPreviewRepair: { stage: 'recheck-reported', repaired: true, remainingFindings: 0 },
     });
@@ -200,7 +205,7 @@ describe('webDeliverablePreviewRepair module', () => {
   it('reports the still-broken outcome honestly without a second repair', async () => {
     previewRepairState.healthRunner
       .mockResolvedValueOnce(findingsSummary('blank_body_text'))
-      .mockResolvedValueOnce(findingsSummary('blank_body_text', 'broken_image'));
+      .mockResolvedValueOnce(findingsSummary('blank_body_text', 'broken_image', 'broken_image', 'blank_body_text'));
 
     const ctx = makeCtx();
     await runHook({ ctx, filePath: '/tmp/page-c.html' });
@@ -211,6 +216,9 @@ describe('webDeliverablePreviewRepair module', () => {
       expect.stringContaining('2 display problem(s) remain'),
     );
     expect(second.contextAssembly.injectSystemMessage).not.toHaveBeenCalled();
+    expect(second.contextAssembly.addAndPersistMessage).toHaveBeenCalledWith(expect.objectContaining({
+      content: 'page-c.html: 2 display problem(s) remain in the web page: blank page、images cannot be displayed',
+    }));
   });
 
   it('never loops twice: a third write of the same path in the same run does nothing', async () => {
@@ -284,13 +292,20 @@ describe('webDeliverablePreviewRepair module', () => {
       expect(runFinalizer.emitTaskProgress).not.toHaveBeenCalled();
       expect(contextAssembly.injectSystemMessage).not.toHaveBeenCalled();
       expect(toolResult.metadata).toBeUndefined();
+      expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledWith(expect.objectContaining({
+        content: expect.stringContaining('Could not check this web page (preview check unavailable)'),
+      }));
     }
   });
 
-  it('swallows an assessment crash and leaves the turn untouched', async () => {
+  it('reports an assessment crash without injecting a repair', async () => {
     previewRepairState.healthRunner.mockRejectedValueOnce(new Error('health runner exploded'));
 
     const { runFinalizer, contextAssembly, toolResult } = await runHook({ filePath: '/tmp/page-j.html' });
+
+    expect(contextAssembly.addAndPersistMessage).toHaveBeenCalledWith(expect.objectContaining({
+      content: expect.stringContaining('Could not check this web page (preview check unavailable)'),
+    }));
 
     expect(runFinalizer.emitTaskProgress).not.toHaveBeenCalled();
     expect(contextAssembly.injectSystemMessage).not.toHaveBeenCalled();

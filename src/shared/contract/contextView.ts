@@ -110,6 +110,7 @@ export const CONTEXT_INJECTION_SOURCES = [
   'user-directives',
   'user-memory',
   'seed-memory',
+  'memory-off-notice',
   'user-prompt-hook',
   'session-start-hook',
   'stop-hook',

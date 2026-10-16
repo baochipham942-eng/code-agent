@@ -191,7 +191,12 @@ export function openFeishuWebSocket(input: OpenFeishuWebSocketInput): FeishuWsSe
     });
   });
 
+  let closed = false;
   function closeStarted(): void {
+    // 幂等：握手失败路径已强关过一次，ChannelManager 随后销毁失败实例会再走
+    // disconnect→detachAndClose；同一个客户端不得二次 close。
+    if (closed) return;
+    closed = true;
     try {
       started.close({ force: true });
     } catch (error) {

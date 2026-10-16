@@ -267,4 +267,24 @@ describe('workspace getPublishInfo · standingRefresh', () => {
       jobId: 'job-3', enabled: false, lastRefreshFailed: { at: 99, reason: 'agent run failed: boom' },
     });
   });
+
+  // FU1：chip 要展示任务真实调度，视图必须把 job.schedule 带出去（用户在 Cron
+  // 中心改过节奏时它与 metadata cadence 不一致，cadence 只是旧载荷的回退源）。
+  it('视图透出任务真实调度 schedule（被改成每 5 分钟的任务原样带回）', async () => {
+    cronState.jobs = [{
+      id: 'job-sched', enabled: true, updatedAt: 5,
+      scheduleType: 'every',
+      schedule: { type: 'every', interval: 5, unit: 'minutes' },
+      metadata: { artifactRefresh: { path: workspaceTarget, instruction: 'refresh it', cadence: 'daily' } },
+    }];
+    const getPublishInfo = await getPublishInfoRoute();
+    const info = await getPublishInfo(undefined, { filePath: workspaceTarget });
+    expect(info.standingRefresh).toEqual({
+      jobId: 'job-sched',
+      enabled: true,
+      cadence: 'daily',
+      instruction: 'refresh it',
+      schedule: { type: 'every', interval: 5, unit: 'minutes' },
+    });
+  });
 });

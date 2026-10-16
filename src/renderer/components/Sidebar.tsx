@@ -1,8 +1,6 @@
- 
 // ============================================================================
 // Sidebar - Linear-style session list with grouped cards and session management
 // ============================================================================
-
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useSessionStore, initializeSessionStore, type SessionWithMeta } from '../stores/sessionStore';
 import { useSelectionStore } from '../stores/selectionStore';
@@ -66,14 +64,11 @@ import type {
   AgentTrajectoryDatasetRole,
   AgentTrajectorySessionQualitySummary,
 } from '@shared/contract/agentTrajectory';
-
 export { resolveRuntimeLogsDir };
-
 const logger = createLogger('Sidebar');
 const VoiceAuditDialog = React.lazy(() => import('./features/voice/VoiceAuditDialog').then((module) => ({
   default: module.VoiceAuditDialog,
 })));
-
 export function isAccountMenuEventOutside(
   accountMenuElement: { contains: (node: Node) => boolean } | null,
   target: EventTarget | null,
@@ -81,7 +76,6 @@ export function isAccountMenuEventOutside(
   if (!accountMenuElement || !target) return false;
   return !accountMenuElement.contains(target as Node);
 }
-
 export const Sidebar: React.FC = () => {
   const { t } = useI18n();
   // 原生标题栏撤掉后 macOS 红绿灯浮在侧栏头行左端，得给它留死区（Windows/Linux 无此约束）。
@@ -157,7 +151,6 @@ export const Sidebar: React.FC = () => {
     sessionRuntimes,
     renameSession,
   } = useSessionStore();
-
   // 挂断后才落地的语音派活由 host 发一条带 sessionId 的终态通知。
   // 这里只接到既有 unreadSessionIds：圆点与点开即读沿用原行为。
   useEffect(() => {
@@ -171,7 +164,6 @@ export const Sidebar: React.FC = () => {
       unsubscribe?.();
     };
   }, [markSessionUnread]);
-
   const {
     pinnedSessionIds,
     togglePin,
@@ -181,7 +173,6 @@ export const Sidebar: React.FC = () => {
     clearSelection,
     batchDelete,
   } = useSelectionStore();
-
   const {
     searchQuery,
     setSearchQuery,
@@ -200,7 +191,6 @@ export const Sidebar: React.FC = () => {
     expandedWorkspaces,
     setWorkspaceExpanded,
   } = useSessionUIStore();
-
   const {
     user,
     isAuthenticated,
@@ -216,7 +206,6 @@ export const Sidebar: React.FC = () => {
   const adminPendingTitle =
     authBackendAvailable === false ? sb.adminPendingLoginFailed : sb.adminPendingVerifying;
   const sessionStates = useTaskStore((state) => state.sessionStates);
-
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
   const [, setAppVersion] = useState<string>('');
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -231,28 +220,23 @@ export const Sidebar: React.FC = () => {
     showLab || showTimeCapabilityCenter || showDesktopPanel,
   );
   const advancedToolsOpen = showAccountAdvancedTools || hasActiveAdvancedTool;
-
   useEffect(() => {
     if (!showUserMenu) return undefined;
-
     const handlePointerDown = (event: PointerEvent) => {
       if (isAccountMenuEventOutside(accountMenuRef.current, event.target)) {
         setShowUserMenu(false);
       }
     };
-
     const handleFocusIn = (event: FocusEvent) => {
       if (isAccountMenuEventOutside(accountMenuRef.current, event.target)) {
         setShowUserMenu(false);
       }
     };
-
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setShowUserMenu(false);
       }
     };
-
     document.addEventListener('pointerdown', handlePointerDown, true);
     document.addEventListener('focusin', handleFocusIn, true);
     window.addEventListener('keydown', handleKeyDown);
@@ -262,7 +246,6 @@ export const Sidebar: React.FC = () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [showUserMenu]);
-
   // 状态筛选下拉：点外面 / Esc 关闭
   useEffect(() => {
     if (!statusFilterOpen) return undefined;
@@ -281,7 +264,6 @@ export const Sidebar: React.FC = () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [statusFilterOpen]);
-
   // 右键菜单状态
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -298,7 +280,6 @@ export const Sidebar: React.FC = () => {
     sessionTitle: string;
   } | null>(null);
   const voiceLiveInstalled = useBundledCapabilityStore((state) => state.installed['builtin.voice-live']);
-
   // 内联重命名状态
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
@@ -328,6 +309,7 @@ export const Sidebar: React.FC = () => {
     backgroundSessionMap,
     replayEvidenceBySessionId,
     hasNeedsInputForSession,
+    getWaitingDetailForSession,
     currentProjectSearchSessionIds,
     effectiveSearchScope,
     setSearchScope,
@@ -634,6 +616,7 @@ export const Sidebar: React.FC = () => {
     backgroundSessionMap,
     sessionStates,
     hasNeedsInputForSession,
+    getWaitingDetailForSession,
     searchQuery,
     messageSearchHitsBySessionId,
     replayEvidenceBySessionId,

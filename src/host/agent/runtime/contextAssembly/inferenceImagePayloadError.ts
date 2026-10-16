@@ -57,6 +57,8 @@ export function handleImagePayloadExceededError(args: {
     data: {
       code: imagePayloadError.code,
       message: imagePayloadError.message,
+      // 图片请求体超限被归一化后，主循环返回空文本并继续后续 run；它不是 run 终态。
+      terminal: false,
       details: {
         provider: imagePayloadError.provider,
         model: readStringField(error, 'model') ?? ctx.runtime.modelConfig.model,

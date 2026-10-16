@@ -79,6 +79,7 @@ const EXPECTED_ROUTES: Array<[string, string]> = [
   ['get', '/health/detail'],
   ['get', '/events'],
   ['get', '/quit-guard'],
+  ['post', '/quit-guard/detach'],
   ['post', '/api/upload/temp'],
   ['get', '/api/screenshot'],
   // dev router: devCancellableToolSmoke sub-router

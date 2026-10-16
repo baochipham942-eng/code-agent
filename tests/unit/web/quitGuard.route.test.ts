@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import express from 'express';
 import { createApp, type CreateAppDeps } from '../../../src/web/app';
 import { SERVER_AUTH_TOKEN } from '../../../src/web/middleware/auth';
+import { backgroundContinueDetachArmed } from '../../../src/host/services/daemon/shellExit';
 import { createQuitGuardRouter } from '../../../src/web/routes/quitGuard';
 import {
   getApplicationRunRegistry,
@@ -18,7 +19,6 @@ const HEALTH_KEYS = [
   'timestamp',
   'durableRunReady',
   'rendererServe',
-  'tauriBootToken',
   'build',
 ];
 
@@ -81,6 +81,24 @@ function installCronJobs(jobs: Array<{ enabled: boolean }>): ReturnType<typeof v
 }
 
 describe('createQuitGuardRouter', () => {
+  it('POST /quit-guard/detach arms background-continue so the next stdin EOF is not a quit', async () => {
+    expect(backgroundContinueDetachArmed()).toBe(false);
+    const app = express();
+    app.use('/api', createQuitGuardRouter({
+      getSnapshot: async () => ({ activeRuns: 0, armedSchedules: 0 }),
+    }));
+    const server = http.createServer(app);
+    const baseUrl = await listen(server);
+    try {
+      const response = await fetch(`${baseUrl}/api/quit-guard/detach`, { method: 'POST' });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ok: true });
+      expect(backgroundContinueDetachArmed()).toBe(true);
+    } finally {
+      await close(server);
+    }
+  });
+
   it('returns the arranged activeRuns and armedSchedules and no other keys', async () => {
     const app = express();
     app.use('/api', createQuitGuardRouter({

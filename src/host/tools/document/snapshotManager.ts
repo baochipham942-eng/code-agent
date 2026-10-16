@@ -54,8 +54,38 @@ function getSnapshotDir(filePath: string): string {
 }
 
 function getMetaPath(filePath: string): string {
-  const fileHash = path.basename(filePath, path.extname(filePath));
-  return path.join(getSnapshotDir(filePath), `${fileHash}.meta.json`);
+  const fileName = path.basename(filePath);
+  return path.join(getSnapshotDir(filePath), `${fileName}.meta.json`);
+}
+
+/** 旧键：去扩展名的基名（status.md 与 status.docx 共用 status.meta.json）。 */
+function getLegacyMetaPath(filePath: string): string {
+  const baseName = path.basename(filePath, path.extname(filePath));
+  return path.join(getSnapshotDir(filePath), `${baseName}.meta.json`);
+}
+
+/**
+ * 旧版共享 meta 的只读拆分：只留下属于本文件的条目。
+ * 发布版按 snapshotPath 扩展名归属，编辑快照按 filePath 全等归属；
+ * share 归属看 push 到的那个发布版（version === share.pushedVersion）的扩展名，
+ * 对不上号的（找不到该发布版）按现状保留。版本号原样保留，不重排。
+ */
+function filterLegacyMeta(filePath: string, meta: SnapshotMeta): SnapshotMeta {
+  const ext = path.extname(filePath);
+  const publishedVersions = meta.publishedVersions ?? [];
+  const share = meta.share;
+  const shareOwner = share
+    ? publishedVersions.find((item) => item.version === share.pushedVersion)
+    : undefined;
+  return {
+    snapshots: meta.snapshots.filter((item) => item.filePath === filePath),
+    publishedVersions: publishedVersions.filter(
+      (item) => path.extname(item.snapshotPath) === ext,
+    ),
+    ...(share && (!shareOwner || path.extname(shareOwner.snapshotPath) === ext)
+      ? { share }
+      : {}),
+  };
 }
 
 export function loadMeta(filePath: string): SnapshotMeta {
@@ -64,6 +94,16 @@ export function loadMeta(filePath: string): SnapshotMeta {
     try {
       const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8')) as SnapshotMeta;
       return meta;
+    } catch {
+      return { snapshots: [] };
+    }
+  }
+  // 新键不存在时回退读旧键（只读，永不改动旧文件）；首次 saveMeta 落新键。
+  const legacyPath = getLegacyMetaPath(filePath);
+  if (fs.existsSync(legacyPath)) {
+    try {
+      const meta = JSON.parse(fs.readFileSync(legacyPath, 'utf-8')) as SnapshotMeta;
+      return filterLegacyMeta(filePath, meta);
     } catch {
       return { snapshots: [] };
     }

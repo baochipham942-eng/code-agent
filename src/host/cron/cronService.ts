@@ -10,8 +10,6 @@ import { promisify } from 'util';
 import {
   CRON_AGENT_SNAPSHOT,
   CRON_GUARDRAILS,
-  DEFAULT_MODELS,
-  DEFAULT_PROVIDER,
   EXTERNAL_WATCH,
 } from '../../shared/constants';
 import type {
@@ -28,9 +26,7 @@ import { getDatabase } from '../services/core/databaseService';
 import { getConfigService } from '../services/core/configService';
 import type { Disposable } from '../services/serviceRegistry';
 import { getServiceRegistry } from '../services/serviceRegistry';
-import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 import {
-  readCronSourceSessionId,
   recordCronAutomationCreated,
   syncCronAutomationFromJob,
   recordCronAutomationArchived,
@@ -41,13 +37,12 @@ import {
 } from './cronAutomationBridge';
 import {
   buildCronAgentActionResult,
-  formatCronAgentSessionTitle,
   isCronAgentActionResult,
-  getCronAgentSessionType,
   normalizeCronJobRow,
   assertSupportedEveryScheduleUnit,
   type SupportedEveryTimeUnit,
 } from './cronNormalizers';
+import { createCronAgentSession } from './cronAgentSession';
 import { buildCronAgentRunOptions } from './cronAgentRoleContext';
 import { BACKGROUND_AGENT_EVENT_FILTER } from '../protocol/events/eventFilter';
 import type { AgentRunOptions } from '../research/types';
@@ -55,7 +50,7 @@ import { getEventBus } from '../services/eventing/bus';
 import { persistCronMissedTrace } from './cronMissedTrace';
 import { appendCronAgentExpertThreadReceipt } from './cronAgentExpertThreadReceipt';
 import { buildCronAgentPrompt, truncateUtf8Snapshot } from './cronAgentPrompt';
-import { beginArtifactRefresh, cronAgentWorkingDirectory, finishArtifactRefresh } from './artifactStandingRefresh';
+import { beginArtifactRefresh, finishArtifactRefresh } from './artifactStandingRefresh';
 import {
   assertExecutionLocationConstraints,
   computeCronFireJitterMs,
@@ -85,12 +80,14 @@ import {
   adoptFailedAgentSession,
   classifyCronFailure,
   countTrailingCronFailures,
+  cronNotifyQuietRound,
   cronRetryBackoffMs,
   CronFailureNoticeGate,
   notifyCronAgentExecution,
   notifyCronJobDisabled,
 } from './cronFailurePolicy';
 import { cronLoginWallMetadata } from './cronLoginWall';
+import { cronFailureSourceText } from '../../shared/utils/cronFailureClassification';
 export { computeCronFireJitterMs } from './cronExecutionPolicy'; const execAsync = promisify(exec);
 
 // ============================================================================
@@ -732,7 +729,7 @@ export class CronService implements Disposable {
         }
       }
     } catch (error) {
-      execution.error = error instanceof Error ? error.message : String(error);
+      execution.error = cronFailureSourceText(error);
       adoptFailedAgentSession(execution, error);
       const failureKind = classifyCronFailure(execution.error);
 
@@ -875,7 +872,7 @@ export class CronService implements Disposable {
         // 通过 TaskManager 获取 orchestrator（避免 cronService → bootstrap 循环依赖）
         const { getTaskManager } = await import('../task');
         const tm = getTaskManager();
-        const cronSession = await this.createCronAgentSession(definition, action, executionId);
+        const cronSession = await createCronAgentSession(definition, action, executionId);
         const orchestrator = tm.getOrCreateCurrentOrchestrator(cronSession.id) ?? null;
         if (!orchestrator) {
           throw new Error(`AgentOrchestrator not available for cron session ${cronSession.id}`);
@@ -898,9 +895,9 @@ export class CronService implements Disposable {
         const previousSnapshot = ctx?.[CRON_AGENT_SNAPSHOT.CONTEXT_KEY];
         const snapshotTrackingEnabled = ctx?.[CRON_AGENT_SNAPSHOT.ENABLED_KEY] === true;
         // external_event（业务事件监听）任务：无 <cron_alert> = 无新料 = 本次安静。
-        // 只对这类任务生效；普通 agent 任务 hasAlert 恒 true，永不被静音。
-        const isExternalWatch = Boolean(ctx?.[EXTERNAL_WATCH.CONTEXT_KEY]);
-        let hasAlert = !isExternalWatch;
+        // notifyWhen 任务同标记判「值得打扰」（N-CRON-RESTATE-HUMAN-WHEN）；其余任务恒响。
+        // hasAlert 不在此初始化：投递门前单点计算（本文件贴 max-lines 线）。
+        const isExternalWatch = Boolean(ctx?.[EXTERNAL_WATCH.CONTEXT_KEY]); const alertGated = isExternalWatch || Boolean(action.notifyWhen?.trim());
 
         let result: unknown; let finalAssistantText = '';
         let runError: unknown; let runFailed = false;
@@ -911,7 +908,7 @@ export class CronService implements Disposable {
             // 事件触发时通道载荷只以 untrusted 定界块追加在 prompt 尾部，并给该条
             // 用户消息标 memoryTainted（跳过自动记忆写）。调度触发的 run 字节不变。
             const sendMessage = () => orchestrator.sendMessage(
-              buildCronAgentPrompt(action.prompt, previousSnapshot, snapshotTrackingEnabled, undefined, action.urgencyCriteria)
+              buildCronAgentPrompt(action.prompt, previousSnapshot, snapshotTrackingEnabled, undefined, action.urgencyCriteria, action.notifyWhen)
                 + (eventPayloadBlock === undefined ? '' : `\n\n${eventPayloadBlock}`),
               undefined,
               agentRunOptions,
@@ -925,9 +922,6 @@ export class CronService implements Disposable {
             const snapshotToPersist = snapshotTrackingEnabled ? finalAssistantText.match(CRON_AGENT_SNAPSHOT.TAG_PATTERN)?.[1]?.trim() : undefined;
             // 只认标记：解析不到就保留上一次的值。拿整段回答顶替会把叙述性文字
             // 当成状态存下来，下一轮再原样注回提示词。
-            if (isExternalWatch) {
-              hasAlert = EXTERNAL_WATCH.ALERT_TAG_PATTERN.test(finalAssistantText);
-            }
             if (snapshotToPersist) {
               const boundedSnapshot = truncateUtf8Snapshot(snapshotToPersist);
               if (boundedSnapshot.truncated) {
@@ -1018,10 +1012,18 @@ export class CronService implements Disposable {
           throw runError;
         }
 
+        // 安静轮判定单点：gated（external-watch 或 notifyWhen）任务只认最终正文里的
+        // <cron_alert> 标记；非 gated 任务恒有警报。失败路径在上面已 throw，到这里的
+        // 一定是成功轮，finalAssistantText 已定型。
+        const hasAlert = alertGated ? EXTERNAL_WATCH.ALERT_TAG_PATTERN.test(finalAssistantText) : true;
+
         // 无新料的监听轮不投递（FB-239）：skipped 判定必须先于推送，
         // 否则安静轮照样把「没有更新」推到通道，跟 skipped 语义无进收件箱自相矛盾。
+        // notifyWhen 未满足的安静轮同样不投递（N-CRON-RESTATE-HUMAN-WHEN，判定+留痕
+        // 在 cronFailurePolicy.cronNotifyQuietRound）：执行仍 completed、仍进历史与收件箱。
         const quietWatchRound = isExternalWatch && !hasAlert;
-        if (!quietWatchRound) {
+        const notifyQuietRound = cronNotifyQuietRound(action, hasAlert, definition.id);
+        if (!quietWatchRound && !notifyQuietRound) {
           // 推送正文必须是最后一条 assistant 正文：orchestrator.sendMessage 是 Promise<void>，
           // result 恒 undefined，推它等于永远不推（PR#2060 ai-review Important）。
           await this.deliverCronResult(definition, finalAssistantText || result, executionId);
@@ -1031,7 +1033,8 @@ export class CronService implements Disposable {
         // 让它不进待过目收件箱、不写会话回流（快照已在上面照常写回）。
         // 结果组装（digest + 紧急档位 N-CRON-INBOX-URGENCY-TIER）在 cronNormalizers：
         // cronService 贴 max-lines 线，档位优先读摘要头部行、无摘要块读正文头部。
-        return buildCronAgentActionResult(action, result, cronSession.id, finalAssistantText, quietWatchRound);
+        // notifyQuietRound 只打 notifySuppressed 标记（通知门），不进 skipped 形状。
+        return buildCronAgentActionResult(action, result, cronSession.id, finalAssistantText, quietWatchRound, notifyQuietRound);
       }
 
       case 'webhook': {
@@ -1079,54 +1082,6 @@ export class CronService implements Disposable {
     }
   }
 
-  private async createCronAgentSession(
-    definition: CronJobDefinition,
-    action: CronJobAction,
-    executionId?: string
-  ) {
-    const { getConfigService, getSessionManager } = await import('../services');
-
-    const configService = getConfigService();
-    const sessionManager = getSessionManager();
-    const currentSessionId = sessionManager.getCurrentSessionId();
-    const sourceSessionId = readCronSourceSessionId(definition, action);
-    const sourceSession = sourceSessionId
-      ? await sessionManager.getSession(sourceSessionId).catch(() => null)
-      : null;
-    const currentSession = currentSessionId
-      ? await sessionManager.getSession(currentSessionId)
-      : null;
-    const baseSession = sourceSession ?? currentSession;
-    const settings = configService.getSettings();
-    const sessionType = getCronAgentSessionType(action);
-    const originKind = sessionType === 'heartbeat' ? 'heartbeat' : 'cron';
-
-    return sessionManager.createSession({
-      title: formatCronAgentSessionTitle(definition, sessionType),
-      modelConfig: resolveSessionDefaultModelConfig({
-        provider: settings.model?.provider || baseSession?.modelConfig.provider || DEFAULT_PROVIDER,
-        model: settings.model?.model || baseSession?.modelConfig.model || DEFAULT_MODELS.chat,
-        temperature: settings.model?.temperature ?? baseSession?.modelConfig.temperature ?? 0.7,
-        maxTokens: settings.model?.maxTokens ?? baseSession?.modelConfig.maxTokens,
-      }),
-      workingDirectory: cronAgentWorkingDirectory(definition, baseSession?.workingDirectory),
-      type: sessionType,
-      origin: {
-        kind: originKind,
-        id: definition.id,
-        name: definition.name,
-        metadata: {
-          scheduleType: definition.scheduleType,
-          actionType: action.type,
-          sourceSessionId,
-        },
-      },
-      parentSessionId: sourceSessionId,
-      sourceRunId: executionId,
-      readOnly: true, memoryMode: sourceSession?.memoryMode === 'off' ? 'off' : undefined,
-    });
-  }
-
   /**
    * 供 automation 桥接复用：解析定时任务的运行时定义（带最新 nextRunAt）。
    * 从内存 job 表取实时调度状态，取不到回退到原始 definition。
@@ -1171,7 +1126,7 @@ export class CronService implements Disposable {
       execution.result = result;
     } catch (error) {
       execution.status = 'failed';
-      execution.error = error instanceof Error ? error.message : String(error);
+      execution.error = cronFailureSourceText(error);
       adoptFailedAgentSession(execution, error);
 
       // permanent：确定性失败，烧掉剩余重试毫无意义，停在这里等 finally 的停用档。

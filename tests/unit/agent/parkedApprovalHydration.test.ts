@@ -124,4 +124,44 @@ describe('parkedApprovalHydration', () => {
     expect(counts.parked).toBe(1);
     expect(repo.getById('tool-old-orphan')?.status).toBe('rejected');
   });
+
+  // ③（N-PARKED-APPROVAL-SURVIVE-RESTART-PERSIST）：停车行新增 argsRef/argsPreview 只加数据，
+  // 不改重启收口语义——带新字段的残留 pending 照样 fail-closed 拒绝，
+  // 收件箱里它只能以 orphaned 灰态出现，点了也不能复活（clickable but rejected）。
+  it('带 argsRef/argsPreview 的残留 pending 重启后照样自动拒绝', () => {
+    repo.insert({
+      id: 'tool-preview-1',
+      kind: 'tool_approval',
+      agentId: null,
+      agentName: null,
+      coordinatorId: 'session-1',
+      payload: {
+        sessionId: 'session-1',
+        toolCallId: 'toolu_restart',
+        argsRef: { sessionId: 'session-1', toolCallId: 'toolu_restart' },
+        argsPreview: 'curl https://api.example.com/v1 · Bearer ***REDACTED***',
+        tool: 'Bash',
+        type: 'command',
+        permissionLevel: 'medium',
+        requestedAt: 1_500,
+      },
+      submittedAt: 1_500,
+    });
+
+    const counts = hydrateApprovalGatesAtBoot(repo, 2_000);
+
+    expect(counts.parked).toBe(1);
+    expect(repo.getById('tool-preview-1')).toMatchObject({
+      status: 'rejected',
+      resolvedAt: 2_000,
+    });
+    // 数据原样保留（供跨重启续跑的未来单据用），不因收口而清字段
+    const row = repo.getById('tool-preview-1');
+    expect(JSON.parse(row!.payloadJson).argsRef).toEqual({
+      sessionId: 'session-1',
+      toolCallId: 'toolu_restart',
+    });
+    // 已收口的行不能再被点击复活（clickable but rejected 回归守卫）
+    expect(closeDeadParkedApproval('tool-preview-1', 2_100)).toBe(false);
+  });
 });

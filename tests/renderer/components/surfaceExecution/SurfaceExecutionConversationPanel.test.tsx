@@ -2,7 +2,7 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SurfaceExecutionConversationPanel } from '../../../../src/renderer/components/features/surfaceExecution';
+import { SurfaceExecutionConversationPanel } from '../../../../src/renderer/components/features/surfaceExecution/SurfaceExecutionConversationPanel';
 import { surfaceExecutionZh } from '../../../../src/renderer/i18n/surfaceExecution';
 import { useAppStore } from '../../../../src/renderer/stores/appStore';
 import { surfaceEvent, surfaceEvidence, surfaceScope, surfaceSession } from './fixtures';

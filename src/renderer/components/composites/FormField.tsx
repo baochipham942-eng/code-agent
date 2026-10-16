@@ -4,8 +4,8 @@
 
 import React, { type ReactElement, cloneElement, isValidElement } from 'react';
 import { Input, type InputProps } from '../primitives/Input';
-import { Textarea, type TextareaProps } from '../primitives/Textarea';
-import { Select, type SelectProps } from '../primitives/Select';
+import type { TextareaProps } from '../primitives/Textarea';
+import type { SelectProps } from '../primitives/Select';
 
 export interface FormFieldProps {
   /** Field label */
@@ -71,7 +71,5 @@ export const FormField: React.FC<FormFieldProps> = ({
 };
 
 // Re-export primitives for convenience
-export { Input, Textarea, Select };
+export { Input };
 export type { InputProps, TextareaProps, SelectProps };
-
-export default FormField;

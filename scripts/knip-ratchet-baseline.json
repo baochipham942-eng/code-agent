@@ -6263,28 +6263,13 @@
     },
     {
       "file": "src/renderer/components/composites/FormField.tsx",
-      "name": "default",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/composites/FormField.tsx",
       "name": "InputProps",
       "kind": "type"
     },
     {
       "file": "src/renderer/components/composites/FormField.tsx",
-      "name": "Select",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/composites/FormField.tsx",
       "name": "SelectProps",
       "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/composites/FormField.tsx",
-      "name": "Textarea",
-      "kind": "export"
     },
     {
       "file": "src/renderer/components/composites/FormField.tsx",
@@ -6490,46 +6475,6 @@
       "file": "src/renderer/components/features/chat/ChatInput/LoopStatusBar.tsx",
       "name": "default",
       "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/chat/ChatInput/modelStrategyRecommendation.ts",
-      "name": "ModelStrategyModelSpeed",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/features/chat/ChatInput/modelStrategyRecommendation.ts",
-      "name": "ModelStrategyProviderHealthSnapshot",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/features/chat/ChatInput/modelStrategyRecommendation.ts",
-      "name": "ModelStrategyProviderHealthState",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/features/chat/ChatInput/modelStrategyRecommendation.ts",
-      "name": "ModelStrategyRecommendationAction",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/features/chat/ChatInput/modelStrategyRecommendation.ts",
-      "name": "ModelStrategyRecommendationFactor",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/features/chat/ChatInput/modelStrategyRecommendation.ts",
-      "name": "ModelStrategyRecommendationTaskKind",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/features/chat/ChatInput/modelStrategyRecommendation.ts",
-      "name": "ModelStrategyRecommendationTaskSignal",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/features/chat/ChatInput/modelStrategyRecommendation.ts",
-      "name": "ModelStrategyRecommendationTone",
-      "kind": "type"
     },
     {
       "file": "src/renderer/components/features/chat/ChatInput/RoleDraftCard.tsx",
@@ -6797,11 +6742,6 @@
       "kind": "export"
     },
     {
-      "file": "src/renderer/components/features/chat/PlanPanel.tsx",
-      "name": "default",
-      "kind": "export"
-    },
-    {
       "file": "src/renderer/components/features/chat/TaskStatusBar.tsx",
       "name": "default",
       "kind": "export"
@@ -6924,31 +6864,6 @@
     {
       "file": "src/renderer/components/features/settings/sections/index.ts",
       "name": "NativeDesktopSection",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/settings/sections/localBridge/index.ts",
-      "name": "InstallGuide",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/settings/sections/localBridge/index.ts",
-      "name": "SecurityLevelConfig",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/settings/sections/localBridge/index.ts",
-      "name": "StatusIndicator",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/settings/sections/localBridge/index.ts",
-      "name": "VersionInfo",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/settings/sections/localBridge/index.ts",
-      "name": "WorkingDirectoryPicker",
       "kind": "export"
     },
     {
@@ -7148,11 +7063,6 @@
     },
     {
       "file": "src/renderer/components/primitives/index.ts",
-      "name": "DangerButton",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/primitives/index.ts",
       "name": "EmptyStateProps",
       "kind": "type"
     },
@@ -7205,16 +7115,6 @@
       "file": "src/renderer/components/primitives/index.ts",
       "name": "ModalSize",
       "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/primitives/index.ts",
-      "name": "PrimaryButton",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/primitives/index.ts",
-      "name": "SecondaryButton",
-      "kind": "export"
     },
     {
       "file": "src/renderer/components/primitives/index.ts",

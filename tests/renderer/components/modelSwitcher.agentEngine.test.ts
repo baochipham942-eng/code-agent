@@ -4,12 +4,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { AppSettings } from '../../../src/shared/contract';
 import type { AgentEngineDescriptor } from '../../../src/shared/contract/agentEngine';
 import {
-  buildModelSwitcherEngineSelection,
   computeModelSwitcherMenuPosition,
   shouldShowNativeReasoningSegment,
   shouldShowModelSettingsPrompt,
 } from '../../../src/renderer/components/StatusBar/ModelSwitcher';
 import {
+  buildModelSwitcherEngineSelection,
   buildEngineReliabilitySummary,
   buildProviderBillingSummary,
   buildProviderHealthSummary,

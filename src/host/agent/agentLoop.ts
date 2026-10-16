@@ -165,7 +165,13 @@ export class AgentLoop {
       userId: config.userId,
       memoryMode: config.memoryMode ?? 'auto',
       suppressedMemoryEntryIds: config.suppressedMemoryEntryIds,
-      persistLongTermMemory: config.persistLongTermMemory ?? AGENT_RUNTIME_DEFAULTS.persistLongTermMemory,
+      // memoryMode='off' 是「本任务不留痕」的用户承诺：读写一起关。写侧收口在这里
+      // （chat / cron / CLI / web 所有入口的唯一汇聚点），显式 persistLongTermMemory
+      // 也不得越过它——runFinalizer 的 recordSessionEnd / writeDurableFacts /
+      // runSessionEndLearning 全部只看这一个闸。
+      persistLongTermMemory: config.memoryMode === 'off'
+        ? false
+        : config.persistLongTermMemory ?? AGENT_RUNTIME_DEFAULTS.persistLongTermMemory,
       includeRecentConversations: config.includeRecentConversations ?? AGENT_RUNTIME_DEFAULTS.includeRecentConversations,
       maxSystemPromptTokens: config.maxSystemPromptTokens,
       skillDiscoveryService: config.skillDiscoveryService,

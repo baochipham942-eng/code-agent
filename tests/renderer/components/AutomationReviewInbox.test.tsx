@@ -18,6 +18,10 @@ const toastSuccess = vi.fn();
 const webMode = vi.hoisted(() => ({ value: false }));
 const copyPathToClipboard = vi.hoisted(() => vi.fn(async (_text: string) => true));
 
+// 语言可切换的 useI18n mock：默认 zh（与原真实 hook 的默认一致，存量断言不变），
+// 参数预览词条用例临时切 en（N-PARKED-APPROVAL-SURVIVE-RESTART-PERSIST ④）。
+const i18nState = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
+
 vi.mock('../../../src/renderer/hooks/useToast', () => ({
   toast: {
     info: (...args: unknown[]) => toastInfo(...args),
@@ -59,6 +63,17 @@ vi.mock('../../../src/renderer/stores/sessionStore', () => ({
   useSessionStore: (selector: (state: { switchSession: typeof switchSession }) => unknown) =>
     selector({ switchSession }),
 }));
+
+vi.mock('../../../src/renderer/hooks/useI18n', async () => {
+  const { zh } = await import('../../../src/renderer/i18n/zh');
+  const { en } = await import('../../../src/renderer/i18n/en');
+  return {
+    useI18n: () => ({
+      t: i18nState.language === 'en' ? en : zh,
+      language: i18nState.language,
+    }),
+  };
+});
 
 // parity 用例（见文末）渲染整个 CronCenterPanel：cron 数据走 cronClient mock，
 // 重子组件置空避免把编辑器/列表细节拖进这个文件。
@@ -108,6 +123,7 @@ function makeRecord(over: Partial<SessionAutomationRecord>): SessionAutomationRe
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  i18nState.language = 'zh';
 });
 
 beforeEach(() => {
@@ -436,6 +452,43 @@ describe('AutomationReviewInbox', () => {
     });
     expect(screen.queryByTestId('parked-approve')).toBeNull();
     expect(screen.queryByTestId('parked-reject')).toBeNull();
+  });
+
+  // N-PARKED-APPROVAL-SURVIVE-RESTART-PERSIST ④：停车审批行带参数预览（host 已脱敏）
+  it('item.argsPreview 在时渲染参数预览行（zh 词条）', async () => {
+    listParkedApprovals.mockResolvedValue([
+      makeParked({ id: 'perm_prev', argsPreview: 'curl https://api.example.com/v1 · Bearer ***REDACTED***' }),
+    ]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('parked-args-preview')).toBeTruthy();
+    });
+    expect(screen.getByTestId('parked-args-preview').textContent).toBe(
+      '参数：curl https://api.example.com/v1 · Bearer ***REDACTED***',
+    );
+  });
+
+  it('item.argsPreview 在时渲染参数预览行（en 词条）', async () => {
+    i18nState.language = 'en';
+    listParkedApprovals.mockResolvedValue([
+      makeParked({ id: 'perm_prev', argsPreview: 'curl https://api.example.com/v1 · Bearer ***REDACTED***' }),
+    ]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('parked-args-preview')).toBeTruthy();
+    });
+    expect(screen.getByTestId('parked-args-preview').textContent).toBe(
+      'Arguments: curl https://api.example.com/v1 · Bearer ***REDACTED***',
+    );
+  });
+
+  it('item.argsPreview 缺省（老行）不渲染参数预览行', async () => {
+    listParkedApprovals.mockResolvedValue([makeParked({ id: 'perm_noprev' })]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('parked-approval-item')).toBeTruthy();
+    });
+    expect(screen.queryByTestId('parked-args-preview')).toBeNull();
   });
 
   // 三档分组（N-CRON-INBOX-URGENCY-TIER）

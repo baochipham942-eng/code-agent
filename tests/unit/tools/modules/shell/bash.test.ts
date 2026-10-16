@@ -1836,6 +1836,100 @@ describe('bashModule sandbox escalation', () => {
     }
   });
 
+  it('does not offer the write card for a Node read-denial traceback, only for a write one', async () => {
+    // N-SANDBOX-ESCALATE-REACHABILITY：Node 的读写拒绝共用同一行
+    // `Error: EPERM: operation not permitted, open '<path>'`，只有 error 行下面的栈帧能分辨。
+    // 帧名是 read API（readFileSync…）＝读拒绝，不弹「允许写入此文件」卡；帧名是 writeFileSync 才弹。
+    // 两段 stderr 都是真实 seatbelt 输出的原样粘贴（sandbox-exec + node v24.21.0，采集命令见
+    // sandboxFailureDiagnostics.test.ts 的 NODE_READ_FILE_SYNC_TRACEBACK 注释），路径换成运行时目标。
+    const parent = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-node-read-')));
+    const cred = join(parent, 'cred.txt');
+    writeFileSync(cred, 'x');
+    const readDenial = [
+      'node:fs:483',
+      '    return binding.readFileUtf8(path, stringToFlags(options.flag));',
+      '                   ^',
+      '',
+      `Error: EPERM: operation not permitted, open '${cred}'`,
+      '    at Object.readFileSync (node:fs:483:20)',
+      '    at [eval]:1:20',
+      '    at runScriptInThisContext (node:internal/vm:219:10)',
+      '    at node:internal/process/execution:451:12',
+      '    at [eval]-wrapper:6:24',
+      '    at runScriptInContext (node:internal/process/execution:449:60)',
+      '    at evalFunction (node:internal/process/execution:283:30)',
+      '    at evalTypeScript (node:internal/process/execution:295:3)',
+      '    at node:internal/main/eval_string:71:3 {',
+      '  errno: -1,',
+      "  code: 'EPERM',",
+      "  syscall: 'open',",
+      `  path: '${cred}'`,
+      '}',
+      '',
+      'Node.js v24.21.0',
+      '',
+    ].join('\n');
+    const writeDenial = [
+      'node:fs:2482',
+      '    return binding.writeFileUtf8(',
+      '                   ^',
+      '',
+      `Error: EPERM: operation not permitted, open '${cred}'`,
+      '    at Object.writeFileSync (node:fs:2482:20)',
+      '    at [eval]:1:20',
+      '    at runScriptInThisContext (node:internal/vm:219:10)',
+      '    at node:internal/process/execution:451:12',
+      '    at [eval]-wrapper:6:24',
+      '    at runScriptInContext (node:internal/process/execution:449:60)',
+      '    at evalFunction (node:internal/process/execution:283:30)',
+      '    at evalTypeScript (node:internal/process/execution:295:3)',
+      '    at node:internal/main/eval_string:71:3 {',
+      '  errno: -1,',
+      "  code: 'EPERM',",
+      "  syscall: 'open',",
+      `  path: '${cred}'`,
+      '}',
+      '',
+      'Node.js v24.21.0',
+      '',
+    ].join('\n');
+    const readStderrFile = join(parent, 'read-denial.stderr');
+    writeFileSync(readStderrFile, readDenial);
+    const writeStderrFile = join(parent, 'write-denial.stderr');
+    writeFileSync(writeStderrFile, writeDenial);
+    const canUse = vi.fn().mockResolvedValue({ allow: true as const });
+    const handler = await bashModule.createHandler();
+    try {
+      wrapMock.mockReturnValue({ command: `cat '${readStderrFile}' >&2; exit 1`, cleanup: cleanupMock });
+      const result = await handler.execute(
+        { command: `node -e "require('node:fs').readFileSync('${cred}','utf8')"` },
+        makeCtx(),
+        canUse,
+      );
+      expect(canUse.mock.calls.filter(([toolName]) => toolName === 'bash')).toHaveLength(0);
+      expect(canUse).toHaveBeenCalledTimes(1);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.meta?.sandboxEscalation).toBeUndefined();
+      canUse.mockClear();
+
+      wrapMock.mockReturnValue({ command: `cat '${writeStderrFile}' >&2; exit 1`, cleanup: cleanupMock });
+      await handler.execute(
+        { command: `node -e "require('node:fs').writeFileSync('${cred}','x')"` },
+        makeCtx(),
+        canUse,
+      );
+      const escalationCalls = canUse.mock.calls.filter(([toolName]) => toolName === 'bash');
+      expect(escalationCalls).toHaveLength(1);
+      expect(escalationCalls[0]?.[2]).toContain(cred);
+      expect(escalationCalls[0]?.[3]).toEqual(expect.objectContaining({
+        details: expect.objectContaining({ action: 'sandbox_escalate_once', deniedPath: cred }),
+      }));
+      expect(canUse).toHaveBeenCalledTimes(2);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
   it('does not offer escalation for an npm path line that is not a sandbox denial', async () => {
     const target = `/tmp/sandbox-npm-enoent-${process.pid}/package.json`;
     wrapMock.mockReturnValue({

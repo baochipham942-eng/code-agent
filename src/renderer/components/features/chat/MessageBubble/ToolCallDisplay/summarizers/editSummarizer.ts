@@ -3,15 +3,17 @@
 // ============================================================================
 
 import type { ToolCall } from '@shared/contract';
+import { aggregateEditArgsText } from '@shared/utils/editToolArgs';
 
 export function summarizeEdit(toolCall: ToolCall): string | null {
   // For successful edit_file, show Done or line change info
   if (toolCall.result?.success) {
-    // Try to calculate line diff from arguments
-    const oldString = toolCall.arguments?.old_string as string | undefined;
-    const newString = toolCall.arguments?.new_string as string | undefined;
+    // 注册的 Edit 形状是 edits[]（multiEdit.schema.ts），legacy 平铺形状归一后聚合
+    const aggregated = aggregateEditArgsText(toolCall.arguments);
+    const oldString = aggregated.oldText;
+    const newString = aggregated.newText;
 
-    // 空编辑检测：old_string 和 new_string 完全相同或都为空
+    // 空编辑检测：聚合后的 old/new 文本完全相同或都为空
     if (oldString !== undefined && newString !== undefined && oldString === newString) {
       return '无变化';
     }

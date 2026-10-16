@@ -10,7 +10,7 @@
 // 成功/取消的 run 收尾后隐藏（最终结果已进聊天）。多 run 时显示 activeRunId 指向的当前 run。
 // ============================================================================
 
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { GitBranch, ChevronUp, ChevronDown, Loader2, Check, X, Circle, MinusCircle, Zap, Square } from 'lucide-react';
 import { useWorkflowStore } from '../../../stores/workflowStore';
 import { useSessionStore } from '../../../stores/sessionStore';
@@ -18,6 +18,12 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import ipcService from '../../../services/ipcService';
 import type { ScriptRunAgentSnapshot, ScriptRunAgentStatus, ScriptRunSnapshot } from '@shared/contract/scriptRun';
 import { buildWorkflowTimeline, WORKFLOW_TIMELINE_NO_PHASE } from '../../../utils/workflowTimeline';
+import { deriveWorkflowStallLevel } from '../../../utils/workflowStallLevel';
+import { useI18n } from '../../../hooks/useI18n';
+import { Badge } from '../../primitives';
+
+/** 停顿提示的「现在」刷新节拍（UI 本地节拍，阈值本身在 WORKFLOW_STALL_THRESHOLDS）。 */
+const STALL_HINT_TICK_MS = 1000;
 
 function StatusIcon({ status }: { status: ScriptRunAgentStatus }) {
   switch (status) {
@@ -42,6 +48,16 @@ export function WorkflowInlineMonitor() {
   const snap = useWorkflowStore((s) => s.activeSnapshot(currentSessionId));
   const [collapsed, setCollapsed] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const { t } = useI18n();
+  // 停顿提示需要一个会走的「现在」。组件常驻挂载（无快照时 return null），节拍只在
+  // run 进行中开，unmount / 停跑即清，不给空闲会话留定时器。
+  const isRunning = snap?.status === 'running';
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!isRunning) return;
+    const timer = window.setInterval(() => setNow(Date.now()), STALL_HINT_TICK_MS);
+    return () => window.clearInterval(timer);
+  }, [isRunning]);
   // One roster swap per snapshot object. Parent re-renders keep the same snap reference.
   const pinMemory = useRef<{
     runId: string;
@@ -53,6 +69,7 @@ export function WorkflowInlineMonitor() {
   if (!snap) return null;
   // running / failed 显示（失败保留报错可见）；completed / cancelled / pending 不显示。
   if (snap.status !== 'running' && snap.status !== 'failed') return null;
+  const stallLevel = deriveWorkflowStallLevel(snap, now);
 
   const cached = pinMemory.current;
   const timeline = cached?.snap === snap
@@ -90,11 +107,26 @@ export function WorkflowInlineMonitor() {
           <GitBranch size={14} className={snap.status === 'failed' ? 'text-badge-danger' : 'text-badge-info'} />
           <span className="text-zinc-300">workflow</span>
           {snap.goal && <span className="text-zinc-500 truncate max-w-[40%]" title={snap.goal}>· {snap.goal}</span>}
+          {/* 右侧计数/停顿徽标全部 nowrap+shrink-0：卡头空间不够时由左侧 goal（truncate）吸收， */}
+          {/* 计数与徽标自身永不换行（en 'long' 长文案曾把「N running」挤成两行，N-WF-STALL-UI rework）。 */}
           <div className="ml-auto flex items-center gap-2 text-zinc-500">
-            {timeline.totals.running > 0 && <span className="text-badge-success">{timeline.totals.running} running</span>}
-            {timeline.totals.done > 0 && <span>{timeline.totals.done} done</span>}
-            {timeline.totals.error > 0 && <span className="text-badge-danger">{timeline.totals.error} error</span>}
-            {durationSec !== undefined && <span>{durationSec}s</span>}
+            {timeline.totals.running > 0 && <span className="text-badge-success whitespace-nowrap shrink-0">{timeline.totals.running} running</span>}
+            {timeline.totals.done > 0 && <span className="whitespace-nowrap shrink-0">{timeline.totals.done} done</span>}
+            {timeline.totals.error > 0 && <span className="text-badge-danger whitespace-nowrap shrink-0">{timeline.totals.error} error</span>}
+            {durationSec !== undefined && <span className="whitespace-nowrap shrink-0">{durationSec}s</span>}
+            {stallLevel !== 'none' && (
+              <Badge
+                dot={stallLevel === 'long' ? 'bg-badge-warning' : undefined}
+                className={`text-[10px] whitespace-nowrap shrink-0 ${
+                  stallLevel === 'long'
+                    ? 'text-badge-warning border-badge-warning/50'
+                    : 'text-zinc-400 border-zinc-600/60'
+                }`}
+                data-stall-level={stallLevel}
+              >
+                {stallLevel === 'long' ? t.workflowStall.long : t.workflowStall.quiet}
+              </Badge>
+            )}
             {snap.status === 'running' && (
               <button
                 type="button"

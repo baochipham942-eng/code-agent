@@ -26,8 +26,8 @@
 // 写账时机：文件完整写盘（fs.writeFileSync 之后）才记/更新账目，半写产物永远不会
 // 被复用；批量按 prompt 粒度记账，崩溃在批次中途时已保存的条目仍可复用。
 //
-// 账本刻意做成工具无关（toolName + fingerprint 作为键，文件操作全部参数化），
-// video_generate 等其它付费媒体工具（N-MEDIA-GEN-PHASE2 之后）可直接采用。
+// 账本刻意做成工具无关（toolName + fingerprint 作为键，文件操作全部参数化）。
+// image_generate 与 video_generate 共用这一本账和同一套 (a)(b)(c) 规则。
 // 账本读写全部 fail-safe：任何异常都不阻断正常生成（宁可重新计费，不可坏一次出图）。
 
 import * as fs from 'fs';
@@ -38,6 +38,9 @@ import { getDatabase } from '../../../services/core/databaseService';
 import { isPathWithinRoot, resolveWorkspacePath } from '../../../runtime/workspaceScope';
 
 const LEDGER_FILENAME = 'generation-ledger.json';
+
+/** 复用交付写进 output 的明示行。image_generate 与 video_generate 共用，措辞不许漂移。 */
+export const REUSED_RESULT_LINE = '复用上次生成结果 (reused previous result, no new charge)';
 
 /** 账本条目上限：超了就按 updatedAt 淘汰最旧的，防 JSON 无界增长。 */
 const LEDGER_MAX_ENTRIES = 100;
@@ -91,7 +94,7 @@ function sha256Hex(data: Buffer | string): string {
   return createHash('sha256').update(data).digest('hex');
 }
 
-function sha256File(absolutePath: string): string {
+export function sha256File(absolutePath: string): string {
   try {
     return sha256Hex(fs.readFileSync(absolutePath));
   } catch {

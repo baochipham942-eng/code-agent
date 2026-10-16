@@ -10,6 +10,8 @@
 //   4. ADR-066 刀 2：被剥名字注入 secureref:env.<NAME> 占位，真值留内存快照；
 //      仅放网跳（refill.allowNetwork）按需回填；解不开且命令文本引用 →
 //      fail-closed 不 exec，稳定 code，错误串只带 env.NAME。
+//   5. 托管 Python：已装 ⇒ 注入 NEO_PYTHON；未装且命令引用 ⇒ fail-closed
+//      结构化错误并后台按需安装（N-PY-RUNTIME-K2，见 managedPythonEnv.ts）。
 // ============================================================================
 
 import type { ToolContext } from '../../../protocol/tools';
@@ -17,6 +19,7 @@ import { createSanitizedEnv } from '../../../utils/sanitizeEnv';
 import { filterSecretEnvVars } from '../../../utils/envSecretFilter';
 import { injectEnvSecretRefs, backfillEnvSecretRefs } from '../../../utils/envSecretRefs';
 import { getEnvFilterPolicy } from '../../../security/policyLoader';
+import { applyManagedPython } from './managedPythonEnv';
 
 export interface EvalSafeShellEnvRefill {
   /** 这一跳是否放网（resolveSandboxNetworkPolicy）；放网才把引用解回真值。 */
@@ -30,6 +33,24 @@ export type EvalSafeShellEnvResult =
   | { ok: false; error: string; code: string };
 
 export function createEvalSafeShellEnv(
+  extra: Record<string, string | undefined> | undefined,
+  projectDir: string,
+  logger?: ToolContext['logger'],
+  refill?: EvalSafeShellEnvRefill,
+): EvalSafeShellEnvResult {
+  const result = buildEvalSafeShellEnv(extra, projectDir, logger, refill);
+  if (!result.ok) return result;
+  // 末位统一挂托管 Python（N-PY-RUNTIME-K2）：已装 ⇒ 只加 NEO_PYTHON 一个变量；
+  // 未装且命令引用 ⇒ fail-closed 不 exec，结构化 code + 后台按需装一次。
+  const managedBlock = applyManagedPython(result.env, refill?.command ?? '', logger);
+  if (managedBlock) {
+    logger?.warn('Bash child env: managed Python not ready, refusing to exec', { code: managedBlock.code });
+    return managedBlock;
+  }
+  return result;
+}
+
+function buildEvalSafeShellEnv(
   extra: Record<string, string | undefined> | undefined,
   projectDir: string,
   logger?: ToolContext['logger'],

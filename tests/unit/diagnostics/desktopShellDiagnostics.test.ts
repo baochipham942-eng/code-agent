@@ -197,7 +197,8 @@ describe('desktop shell diagnostics aggregator', () => {
       handlers: 10,
       serverRoot: '/app',
       pid: 200,
-      tauriBootToken: 'tauri-secret-token',
+      tauriBootConfigured: true,
+      bootProof: 'proof-must-not-appear-in-diagnostics',
       persistence: {
         status: 'available',
         mode: 'database',
@@ -256,7 +257,12 @@ describe('desktop shell diagnostics aggregator', () => {
       severity: 'warning',
       code: 'desktop-shell-optional-resource-missing',
     }));
+    expect(globalThis.fetch).toHaveBeenCalledWith('http://localhost:8180/api/health/detail', expect.objectContaining({
+      headers: { Authorization: expect.stringMatching(/^Bearer .+/) },
+    }));
     expect(JSON.stringify(diagnostics)).not.toContain('tauri-secret-token');
+    expect(JSON.stringify(diagnostics)).not.toContain('proof-must-not-appear-in-diagnostics');
+    expect(diagnostics).not.toHaveProperty('bootProof');
   });
 
   it('reports packaged dev channel isolation separately from production', async () => {

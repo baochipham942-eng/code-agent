@@ -30,6 +30,7 @@ import {
   computeImageGenerateFingerprint,
   lookupReusableGenerationOutputs,
   recordGenerationSavedOutput,
+  REUSED_RESULT_LINE,
   type GenerationLedgerSavedOutput,
 } from './imageGenerateReuse';
 import {
@@ -259,8 +260,6 @@ function buildVerdict(params: {
 // 复用已落盘的生成结果（N-MEDIA-GEN-IDEMPOTENT-RETRY，规则见 imageGenerateReuse.ts）：
 // 崩溃/打断后的同参数重试不再二次付费，直接复用账本里已落盘的文件。
 // ---------------------------------------------------------------------------
-
-const REUSED_RESULT_LINE = '复用上次生成结果 (reused previous result, no new charge)';
 
 /** 复用产物的验收句：同样只说可核对的实测值，外加一行明示复用（没有再付费）。 */
 function buildReuseVerdict(params: {

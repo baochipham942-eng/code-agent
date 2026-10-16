@@ -238,6 +238,8 @@ export interface ConnectorStatusSummary {
   detail?: string;
   error?: string;
   checkedAt?: number;
+  /** 授权通过但账号/日历/列表为空（mail/calendar/reminders），见 host ConnectorStatus 同名字段 */
+  noAccessibleItems?: boolean;
   actions?: ConnectorLifecycleAction[];
   capabilities: string[];
 }

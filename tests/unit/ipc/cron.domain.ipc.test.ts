@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
   logError: vi.fn(),
   chat: vi.fn(async (..._a: unknown[]) => ({ content: '{"name":"日报"}' as string | undefined })),
   service: {
+    getGroupListenCheck: vi.fn((..._a: unknown[]) => ({ status: 'waiting' })),
     listJobs: vi.fn((..._a: unknown[]) => ['job']),
     createJob: vi.fn(async (..._a: unknown[]) => ({ id: 'j1' })),
     updateJob: vi.fn(async (..._a: unknown[]) => ({ id: 'j1', updated: true })),
@@ -74,7 +75,7 @@ describe('任务管理委派', () => {
     expect(h.service.updateJob).toHaveBeenCalledWith('j1', { enabled: false });
   });
 
-  it.each(['deleteJob', 'triggerJob', 'getExecutions'])('%s：缺 jobId → CRON_ERROR Invalid cron job id', async (action) => {
+  it.each(['deleteJob', 'triggerJob', 'getExecutions', 'getGroupListenCheck', 'startGroupListenCheck'])('%s：缺 jobId → CRON_ERROR Invalid cron job id', async (action) => {
     expect(await call(action, {})).toEqual({ success: false, error: { code: 'CRON_ERROR', message: 'Invalid cron job id' } });
   });
 
@@ -144,4 +145,12 @@ describe('dispatch 兜底', () => {
     });
     expect(await call('getStats')).toEqual({ success: false, error: { code: 'CRON_ERROR', message: 'Unknown error' } });
   });
+});
+
+it('routes receipt checks without executing the cron task', async () => {
+  expect(await call('getGroupListenCheck', { jobId: 'j1' })).toEqual({ success: true, data: { status: 'waiting' } });
+  expect(h.service.getGroupListenCheck).toHaveBeenLastCalledWith('j1');
+  expect(await call('startGroupListenCheck', { jobId: 'j1' })).toEqual({ success: true, data: { status: 'waiting' } });
+  expect(h.service.getGroupListenCheck).toHaveBeenLastCalledWith('j1', true);
+  expect(h.service.triggerJob).not.toHaveBeenCalled();
 });

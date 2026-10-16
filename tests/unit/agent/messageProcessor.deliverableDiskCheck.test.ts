@@ -290,8 +290,9 @@ describe('MessageProcessor deliverable disk check (#1998)', () => {
 
   it('declared deliverable (declare_deliverables this run) missing → same repair round', async () => {
     const artifact = ArtifactState.forTest();
-    artifact.declareDeliverables({ finalArtifacts: ['declared-missing.html'], declaredAtMs: Date.now() });
     const ctx = buildCtx({ artifact });
+    // 必须在 buildCtx 之后声明：user-1 的 timestamp 在 buildCtx 内取 Date.now()，防陈旧账本守卫要求 declaredAtMs 不早于它。
+    artifact.declareDeliverables({ finalArtifacts: ['declared-missing.html'], declaredAtMs: Date.now() });
     const contextAssembly = buildContextAssembly(ctx);
     const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, contextAssembly, buildRunFinalizer());
 

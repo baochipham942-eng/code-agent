@@ -372,7 +372,7 @@ import type { PendingDevPermissionRequest } from './routes/dev';
 import { createApp, type CreateAppDeps } from './app';
 import { acquireDaemonLock, releaseDaemonLock } from '../host/services/daemon/daemonLock';
 import type { DaemonIdleSnapshot } from '../host/services/daemon/daemonIdle';
-import { createDaemonExitRechecker, shouldStayResidentAfterShellExit } from '../host/services/daemon/shellExit';
+import { backgroundContinueDetachArmed, createDaemonExitRechecker, shouldStayResidentAfterShellExit, stdinEofIsQuitCommand } from '../host/services/daemon/shellExit';
 import { drainPendingOpsForShutdown, isDrainWatchdogActive } from '../host/services/daemon/daemonDrain';
 import { getBackgroundTaskLedger } from '../host/task/backgroundTaskLedger';
 import { listForegroundPermissionRequests, onForegroundPermissionStateChange } from './foregroundPermissionRegistry';
@@ -1298,21 +1298,32 @@ async function main(): Promise<void> {
   // 3s SIGKILL 看门狗才悬在头上；管道断开后没人再兜底杀我们，排空才可以用完整
   // 宽限，去留也改由空闲判据说了算：全空闲随壳退出（拍板记录 2），还有 run /
   // 配对伴侣 / 等审批就留守继续跑。standalone / dev 模式没有这个环境变量，不受影响。
-  // 例外：win32 的 stdin EOF 是 Rust「请退出」指令（3s 后 TerminateProcess），
-  // 一律立即优雅停机，驻留判据只对 macOS/Linux 成立（见 shellExit 模块头）。
+  // 例外：win32 的 stdin EOF 默认是 Rust「请退出」指令（3s 后 TerminateProcess），
+  // 驻留判据不成立。后台继续会先 POST /api/quit-guard/detach，把这次 EOF 从停机
+  // 指令里摘掉，之后与 macOS/Linux 一样：忙则留守，空闲随壳退出（见 shellExit）。
   // 回调与 rechecker 构造都必须在守卫块外：gracefulShutdown 静态门用 lazy 正则截守卫块
   // 体（到第一个独行 `}` 为止），块内多行调用的收尾 `});` 会把 'end' 监听挤出匹配（r3/r14
   // 同型回归）。无 boot token 时 rechecker 为 undefined，订阅与回调空转，行为不变。
   let shellPipeAttached = Boolean(process.env.CODE_AGENT_TAURI_BOOT_TOKEN);
+  const eofIsQuitCommand = () => stdinEofIsQuitCommand(process.platform, backgroundContinueDetachArmed());
   const daemonExitRechecker = process.env.CODE_AGENT_TAURI_BOOT_TOKEN
-    ? createDaemonExitRechecker({ platform: process.platform, getSnapshot: () => daemonIdleSnapshot?.(), shutdown })
+    ? createDaemonExitRechecker({
+      platform: process.platform,
+      getSnapshot: () => daemonIdleSnapshot?.(),
+      shutdown,
+      stdinEofIsQuitCommand: eofIsQuitCommand,
+    })
     : undefined;
   let shellPipeClosedHandled = false;
   const onShellPipeClosed = () => {
     if (shellPipeClosedHandled) return;
     shellPipeClosedHandled = true;
     shellPipeAttached = false;
-    const shouldStay = shouldStayResidentAfterShellExit(process.platform, daemonIdleSnapshot?.());
+    const shouldStay = shouldStayResidentAfterShellExit(
+      process.platform,
+      daemonIdleSnapshot?.(),
+      eofIsQuitCommand(),
+    );
     if (daemonExitRechecker?.onShellPipeClosed()) return;
     if (!shouldStay) {
       void shutdown();

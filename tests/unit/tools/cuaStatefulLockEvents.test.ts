@@ -115,7 +115,7 @@ async function observeState(
   events: AgentEvent[],
 ): Promise<{ stateId: string; surfaceSessionId: string }> {
   const result = await handler.execute({
-    operation: 'observe',
+    operation: 'observe', targetApp: 'Notes',
     target: { pid: 42, windowId: 7 },
   }, toolContext({ events, agentId: 'agent-a', toolCallId: 'observe-lock' }), async () => ({ allow: true }));
   if (!result.ok) throw new Error(result.error);
@@ -158,7 +158,7 @@ describe('stateful CUA input lock Surface events', () => {
     const events: AgentEvent[] = [];
     const observed = await observeState(handler, events);
     const acted = await handler.execute({
-      operation: 'act',
+      operation: 'act', targetApp: 'Notes',
       stateId: observed.stateId,
       mutation: { kind: 'click', elementRef: 'e1' },
     }, toolContext({ events, agentId: 'agent-a', toolCallId: 'act-lock' }), async () => ({ allow: true }));
@@ -198,7 +198,7 @@ describe('stateful CUA input lock Surface events', () => {
     writeFileSync(lockPath, 'surface-secret-canary-corrupt-lock{{{');
 
     const acted = await handler.execute({
-      operation: 'act',
+      operation: 'act', targetApp: 'Notes',
       stateId: observed.stateId,
       mutation: { kind: 'click', elementRef: 'e1' },
     }, toolContext({ events, agentId: 'agent-a', toolCallId: 'act-recover' }), async () => ({ allow: true }));
@@ -232,7 +232,7 @@ describe('stateful CUA input lock Surface events', () => {
     }));
 
     const acted = await handler.execute({
-      operation: 'act',
+      operation: 'act', targetApp: 'Notes',
       stateId: observed.stateId,
       mutation: { kind: 'click', elementRef: 'e1' },
     }, toolContext({ events, agentId: 'agent-a', toolCallId: 'act-blocked' }), async () => ({ allow: true }));
@@ -277,7 +277,7 @@ describe('stateful CUA input lock Surface events', () => {
     };
 
     const result = await handler.execute({
-      operation: 'act',
+      operation: 'act', targetApp: 'Notes',
       stateId: observed.stateId,
       mutation: { kind: 'click', elementRef: 'e1' },
     }, toolContext({ events, agentId: 'agent-b', toolCallId: 'act-cross-agent' }), canUseTool);

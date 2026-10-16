@@ -163,7 +163,27 @@ describe('sandbox escalation approval card', () => {
     expect(buttonLabel(fallback, '允许仅这一次', 'y')).toBe(true);
   });
 
-  it('uses the English title and buttons while keeping the host reason verbatim', () => {
+  it('redacts credentials embedded in the host reason question line (review r1: reason 内嵌被拦路径原文)', () => {
+    // 宿主 reason 模板把被拦路径原文嵌进问句（bash.ts），路径来自沙盒失败输出、
+    // 模型可控；命令行与路径行都脱敏，问句不能是例外。夹具让 secret 同时进
+    // reason / deniedPath / command，和真实链路一致，不许再解耦盖住。
+    const secret = 'sk-ant-api03-DeadBeef1234567890';
+    const reason = `沙盒拦截了这一步：它想写入文件 /tmp/${secret}/neo-x.txt。允许仅这一次写入这个文件并重跑？`;
+    const html = render(baseRequest({
+      forceConfirm: true,
+      dangerLevel: 'warning',
+      reason,
+      details: {
+        command: `echo hi > /tmp/${secret}/neo-x.txt`,
+        deniedPath: `/tmp/${secret}/neo-x.txt`,
+        action: 'sandbox_escalate_once',
+      },
+    }));
+    expect(html).not.toContain(secret);
+    expect(html).toContain('沙盒拦截了这一步：它想写入文件 /tmp/sk-[REDACTED]/neo-x.txt。允许仅这一次写入这个文件并重跑？');
+  });
+
+  it('uses the English title and buttons while showing the host reason redacted the same way', () => {
     storeState.language = 'en';
     const html = render(baseRequest({
       forceConfirm: true,

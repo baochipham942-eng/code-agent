@@ -13,9 +13,9 @@ export function isSandboxEscalation(request: Pick<PermissionRequest, 'details'>)
   return typeof action === 'string' && SANDBOX_ESCALATION_ACTIONS.has(action);
 }
 
-/** 问句用宿主 reason 原文；空 reason 才退回通用问句。 */
+/** 问句用宿主 reason，凭据脱敏口径与卡内其他插值一致（reason 模板内嵌被拦路径原文）；空 reason 才退回通用问句。 */
 export function sandboxEscalationQuestion(reason: string | undefined, fallback: string): string {
-  if (typeof reason === 'string' && reason.trim().length > 0) return reason;
+  if (typeof reason === 'string' && reason.trim().length > 0) return redactCredentialText(reason);
   return fallback;
 }
 

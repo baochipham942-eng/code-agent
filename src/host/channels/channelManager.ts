@@ -32,6 +32,13 @@ import { createLogger } from '../services/infra/logger';
 import { summarizeUserFacingError } from '../security/userFacingError';
 import { summarizeChannelError } from './channelErrorSummary';
 import {
+  ChannelReconnectScheduler,
+  channelConnectFailureText,
+  channelReconnectingStatusText,
+  isChannelConnectFailureRetryable,
+} from './channelReconnectScheduler';
+import { FEISHU_DEFAULT_HOST, LARK_DEFAULT_HOST } from '../../shared/constants';
+import {
   getInboundPairingService,
   type InboundPairingRequest,
 } from './inboundPairingService';
@@ -76,10 +83,20 @@ export class ChannelManager extends EventEmitter {
   // 消息处理器
   private messageHandler: ChannelMessageHandler | null = null;
   private readonly maxInboxItems = 100;
+  // 连接失败自动重试（N-FEISHU-WS-FIRST-RETRY）：按账号退避 + 唤醒/网络恢复立即重试
+  private readonly connectRetries: ChannelReconnectScheduler;
+  // 连接中的账号 → 在飞实例：一账号至多一个活实例；disconnectAccount 经它销毁在飞握手（r3）
+  private readonly connectingChannels = new Map<string, IChannelPlugin>();
+  // 手动断开意图：拦住「连接进行中点断开」竞态里的自动重连；新的连接意图会消费它
+  private readonly manualDisconnects = new Set<string>();
 
   private constructor() {
     super();
     this.registerBuiltinPlugins();
+    this.connectRetries = new ChannelReconnectScheduler({
+      onRetry: (accountId, attempt) => this.retryConnect(accountId, attempt),
+      probeHostFor: (accountId) => this.reconnectProbeHost(accountId),
+    });
     getInboundPairingService().configureAdapter({
       addPairedSender: (accountId, senderId) => this.addPairedSender(accountId, senderId),
       sendControlReply: async (accountId, chatId, replyToMessageId, content) => {
@@ -220,9 +237,16 @@ export class ChannelManager extends EventEmitter {
       return null;
     }
 
-    // 如果正在连接，先断开
-    if (this.activeChannels.has(accountId)) {
+    // 手动更新视为重新编排：取消挂起的自动重连；活跃或在飞的实例先断开销毁，
+    // 晚到的握手成功不得把旧凭据的连接带上线（r3）
+    this.connectRetries.cancel(accountId);
+    this.manualDisconnects.add(accountId);
+
+    if (this.activeChannels.has(accountId) || this.connectingChannels.has(accountId)) {
       await this.disconnectAccount(accountId);
+    } else if (account.status === 'connecting') {
+      // 退避等待中的账号：重试已取消，把「重连中」收殓成已断开，否则 connecting 会落盘
+      this.updateAccountStatus(accountId, 'disconnected');
     }
 
     // 更新账号
@@ -251,11 +275,12 @@ export class ChannelManager extends EventEmitter {
    * 删除账号
    */
   async deleteAccount(accountId: string): Promise<boolean> {
-    // 先断开连接
+    // 先断开连接（含取消自动重试）
     await this.disconnectAccount(accountId);
 
     const deleted = this.accounts.delete(accountId);
     if (deleted) {
+      this.manualDisconnects.delete(accountId);
       this.saveAccounts();
       this.emit('accounts_changed', this.getAccounts());
       logger.info('Deleted channel account', { id: accountId });
@@ -279,6 +304,13 @@ export class ChannelManager extends EventEmitter {
       return;
     }
 
+    if (this.connectingChannels.has(accountId)) {
+      logger.warn('Account connect already in flight', { accountId });
+      return;
+    }
+    // 新的连接意图消费掉旧的手动断开标记
+    this.manualDisconnects.delete(accountId);
+
     const registration = this.pluginRegistry.get(account.type);
     if (!registration) {
       throw new Error(`Unknown channel type: ${account.type}`);
@@ -286,6 +318,7 @@ export class ChannelManager extends EventEmitter {
 
     // 创建通道实例
     const channel = registration.factory(accountId);
+    const channelLabel = this.channelLabel(account);
 
     // 监听事件
     channel.on('message', (message: ChannelMessage) => {
@@ -300,10 +333,23 @@ export class ChannelManager extends EventEmitter {
     });
 
     channel.on('status_change', (status: ChannelAccountStatus, error?: string) => {
-      this.updateAccountStatus(accountId, status, error);
+      // 已建立的连接报 error（SDK onError 只在放弃后触发）：连接已死且 SDK 不再自愈，
+      // 死实例留在 activeChannels 只会让通道停在 error——交给 manager 销毁并按退避重连。
+      if (status === 'error' && this.activeChannels.get(accountId) === channel) {
+        this.takeOverDeadChannel(accountId, channel, error ?? '', channelLabel);
+        return;
+      }
+      // 失败原因先翻成人话再落 errorMessage（raw 只进日志）；非失败消息（onReconnecting
+      // 的「重连中」）本来就是人话，原样透传。
+      this.updateAccountStatus(
+        accountId,
+        status,
+        status === 'error' && error !== undefined ? channelConnectFailureText(error, channelLabel) : error,
+      );
     });
 
     channel.on('error', (error: Error) => {
+      // error 事件是消息处理失败，不是连接失败：不套重试模板、不触发重连，只脱敏落 errorMessage
       const { summary } = summarizeUserFacingError(error, { surface: 'channel_reply' });
       logger.error('Channel error', { accountId, error: error.message });
       this.updateAccountStatus(accountId, 'error', summary);
@@ -325,30 +371,151 @@ export class ChannelManager extends EventEmitter {
       });
     });
 
+    this.connectingChannels.set(accountId, channel);
     try {
       // 初始化并连接
       await channel.initialize(account.config);
       await channel.connect();
 
+      // 断开/更新/删除可以打在握手完成前：意图必须赢——刚握上的实例直接销毁，不进
+      // activeChannels、保持 disconnected；标记由下一次连接意图消费。
+      if (this.manualDisconnects.has(accountId) || !this.accounts.has(accountId)) {
+        logger.info('Channel connected but account was disconnected/deleted during handshake, discarding', { accountId });
+        await this.destroyFailedChannel(accountId, channel);
+        this.updateAccountStatus(accountId, 'disconnected');
+        return;
+      }
+
       this.activeChannels.set(accountId, channel);
       this.updateAccountStatus(accountId, 'connected');
       account.lastConnectedAt = Date.now();
       this.saveAccounts();
+      this.connectRetries.reset(accountId);
 
       logger.info('Channel connected', { accountId, type: account.type });
     } catch (error) {
-      const { summary } = summarizeUserFacingError(error, { surface: 'channel_reply' });
-      this.updateAccountStatus(accountId, 'error', summary);
+      const raw = error instanceof Error ? error.message : String(error);
+      // 握手期间被断开/更新/删除：销毁在飞实例引发的失败是用户意图的预期后果，
+      // 不写 error、不排重试，收殓成 disconnected（r3）。
+      if (this.manualDisconnects.has(accountId) || !this.accounts.has(accountId)) {
+        logger.info('Channel connect aborted by manual disconnect/delete', { accountId, error: raw });
+        await this.destroyFailedChannel(accountId, channel);
+        this.updateAccountStatus(accountId, 'disconnected');
+        throw error;
+      }
+      const humanMessage = channelConnectFailureText(raw, channelLabel);
+      logger.warn('Channel connect failed', { accountId, type: account.type, error: raw });
+      this.updateAccountStatus(accountId, 'error', humanMessage);
+      // 失败实例显式销毁（无人持有的长连接/webhook 服务器不留孤儿），再决定是否自动重连
+      await this.destroyFailedChannel(accountId, channel);
+      if (isChannelConnectFailureRetryable(raw)) {
+        this.scheduleConnectRetry(accountId, humanMessage);
+      } else {
+        // 永久失败（凭据/端口占用/未知平台码）：重放同一配置没有意义，不进无限退避
+        this.updateAccountStatus(accountId, 'error', humanMessage);
+        logger.warn('Channel connect failure is not retryable, skipping auto-reconnect', { accountId });
+      }
       throw error;
+    } finally {
+      if (this.connectingChannels.get(accountId) === channel) {
+        this.connectingChannels.delete(accountId);
+      }
     }
+  }
+
+  /**
+   * 失败后的自动重连：启用中的账号进入退避等待；手动断开过或已禁用的不再自动重连。
+   */
+  private scheduleConnectRetry(accountId: string, humanMessage: string): void {
+    const account = this.accounts.get(accountId);
+    if (!account?.enabled) return;
+    // 手动断开过（disconnect/update）不自动重连；status 不能作判据——失败实例销毁时的
+    // status_change 会把账号短暂写成 disconnected，属正常中间态。
+    if (this.manualDisconnects.has(accountId)) return;
+    const attempt = this.connectRetries.schedule(accountId);
+    this.updateAccountStatus(
+      accountId,
+      'connecting',
+      channelReconnectingStatusText(attempt, humanMessage),
+    );
+  }
+
+  /** 调度器到点回调：守护条件不满足时跳过/取消，否则真连一次 */
+  private retryConnect(accountId: string, attempt: number): void {
+    const account = this.accounts.get(accountId);
+    if (!account || !account.enabled || this.manualDisconnects.has(accountId)) {
+      this.connectRetries.cancel(accountId);
+      return;
+    }
+    if (this.activeChannels.has(accountId) || this.connectingChannels.has(accountId)) return;
+    logger.info('Retrying channel connect', { accountId, attempt });
+    void this.connectAccount(accountId).catch(() => {
+      // connectAccount 失败路径已写状态并排下一轮重试
+    });
+  }
+
+  /**
+   * 已建立连接的终态失败接管：与首连失败同一套收殓——移出活跃表、人话 error、销毁
+   * 死实例、按失败种类决定是否排退避（瞬时重试，凭据/永久停在 error）。
+   */
+  private takeOverDeadChannel(
+    accountId: string,
+    channel: IChannelPlugin,
+    raw: string,
+    channelLabel: string,
+  ): void {
+    const humanMessage = channelConnectFailureText(raw, channelLabel);
+    logger.warn('Established channel failed, taking over reconnect', { accountId, error: raw });
+    void (async () => {
+      this.activeChannels.delete(accountId);
+      this.updateAccountStatus(accountId, 'error', humanMessage);
+      await this.destroyFailedChannel(accountId, channel);
+      // 销毁期间用户可能已手动重连：那时不再排重试
+      if (this.activeChannels.has(accountId) || this.connectingChannels.has(accountId)) return;
+      if (isChannelConnectFailureRetryable(raw)) {
+        this.scheduleConnectRetry(accountId, humanMessage);
+      } else {
+        this.updateAccountStatus(accountId, 'error', humanMessage);
+        logger.warn('Channel failure is not retryable, skipping auto-reconnect', { accountId });
+      }
+    })();
+  }
+
+  private async destroyFailedChannel(accountId: string, channel: IChannelPlugin): Promise<void> {
+    try {
+      await channel.destroy();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn('Failed to destroy channel after connect failure', { accountId, error: message });
+    }
+  }
+
+  private channelLabel(account: ChannelAccount): string {
+    return this.getChannelMeta(account.type)?.name ?? account.type;
+  }
+
+  /** 挂起重试期间的 DNS 探测目标：飞书/Lark 开放平台域名，其余通道不探测 */
+  private reconnectProbeHost(accountId: string): string | undefined {
+    const account = this.accounts.get(accountId);
+    if (!account) return undefined;
+    if (account.type === 'feishu') return FEISHU_DEFAULT_HOST;
+    if (account.type === 'lark') return LARK_DEFAULT_HOST;
+    return undefined;
   }
 
   /**
    * 断开账号连接
    */
   async disconnectAccount(accountId: string): Promise<void> {
-    const channel = this.activeChannels.get(accountId);
+    // 手动断开：取消挂起的自动重试、记下断开意图；活跃与在飞握手的实例都要销毁——
+    // 只改状态拦不住晚到的握手成功（r3）
+    this.connectRetries.cancel(accountId);
+    this.manualDisconnects.add(accountId);
+
+    const channel = this.activeChannels.get(accountId) ?? this.connectingChannels.get(accountId);
     if (!channel) {
+      // 没有活跃实例（从未连上 / 正在退避等待）：也要把状态从「重连中」收殓成已断开
+      this.updateAccountStatus(accountId, 'disconnected');
       return;
     }
 
@@ -359,6 +526,9 @@ export class ChannelManager extends EventEmitter {
     }
 
     this.activeChannels.delete(accountId);
+    if (this.connectingChannels.get(accountId) === channel) {
+      this.connectingChannels.delete(accountId);
+    }
     this.updateAccountStatus(accountId, 'disconnected');
     logger.info('Channel disconnected', { accountId });
   }
@@ -393,6 +563,7 @@ export class ChannelManager extends EventEmitter {
    */
   async shutdown(): Promise<void> {
     logger.info('Shutting down channel manager...');
+    this.connectRetries.cancelAll();
     await this.disconnectAll();
     logger.info('Channel manager shut down');
   }

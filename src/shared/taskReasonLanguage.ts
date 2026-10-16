@@ -49,9 +49,9 @@ function collapseWhitespace(text: string): string {
  * 类别识别只认英文机器特征——中文散文原因会落到 unknown，正是我们想要的：
  * 认不出来就别猜，保留模型自己的话。
  *
- * 没有复用 src/host/errors/errorClassifier.ts：那整个 errors/ 模块目前是死代码
- * （knip unused files），为了一次类别查表把 484 行无人维护的模式表拖进活引用图
- * 不划算。这里只需要展示层用得上的这几类。
+ * 没有复用已删除的 src/host/errors/errorClassifier.ts：那整个 errors/ 模块当年就是
+ * 死代码（knip unused files，2026-10 孤儿清理已删），为了一次类别查表把 484 行
+ * 无人维护的模式表拖进活引用图不划算。这里只需要展示层用得上的这几类。
  */
 const CATEGORY_PATTERNS: Array<[TaskBlockedCategory, RegExp]> = [
   ['rate_limit', /\b429\b|rate.?limit|too many requests|quota/i],

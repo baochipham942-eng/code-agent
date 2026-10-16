@@ -33,6 +33,7 @@ export { buildDefaultSuggestions } from './features/chat/NewSessionWelcome';
 import { SurfaceExecutionChatPanel } from './features/surfaceExecution/SurfaceExecutionChatPanel';
 import { PinnedTodoBar } from './features/chat/PinnedTodoBar';
 import { SessionRecapBanner } from './features/chat/SessionRecapBanner';
+import { RoleFirstWakeThreadBanner } from './features/chat/RoleFirstWakeCard';
 import { ForkSourceHint } from './features/chat/ForkSourceHint';
 import { ChatTraceFallback } from './features/chat/ChatTraceFallback';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -970,6 +971,8 @@ export const ChatView: React.FC = () => {
         />
 
         <SurfaceExecutionChatPanel conversationId={currentSessionId} />
+
+        <RoleFirstWakeThreadBanner />
 
         {/* Messages - Turn-based trace view（查看某位成员时整块换成他的对话）
             负 margin 把主栏让出的滚动条窄带要回：Virtuoso 滚动条摆进窄带，

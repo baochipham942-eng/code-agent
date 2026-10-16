@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -32,6 +32,13 @@ function knipResult(overrides: Record<string, unknown> = {}) {
 }
 
 describe('knip production ratchet fail-loud parsing', () => {
+  it('anchor fixtures exist on disk — deleting one without updating ANCHOR must fail loudly', () => {
+    // parseKnipResult 的锚点检查带 existsSync 守卫：锚点文件不在时整条跳过（静默失锚，
+    // 2026-08-14 的坑）。这条断言把"锚点文件必须存在"钉死，删夹具不改常量会在这里红。
+    expect(existsSync(ANCHOR), `${ANCHOR} 锚点夹具不存在（删除/移动必须同步改 ANCHOR 常量）`).toBe(true);
+    expect(existsSync(TEST_ONLY_ANCHOR), `${TEST_ONLY_ANCHOR} 锚点夹具不存在`).toBe(true);
+  });
+
   it('accepts Knip exit 1 when the JSON report is healthy', () => {
     expect(parseKnipResult(knipResult(), 'knip.test.json')).toEqual([
       'src/example/dead.ts',
@@ -81,6 +88,14 @@ describe('strict incremental reachability', () => {
       [ANCHOR, 'src/example/new-dead.ts', 'src/example/old-dead.ts'],
       ['src/example/live.ts', 'src/example/new-dead.ts'],
     )).toEqual(['src/example/new-dead.ts']);
+  });
+
+  it('exempts the gate anchor fixtures from the new-file check', () => {
+    // 锚点夹具是故意新增的不可达文件（门的自证机制），不能被 strict 检查自己拦下。
+    expect(findNewStrictlyUnreachable(
+      [ANCHOR, TEST_ONLY_ANCHOR, 'src/example/new-dead.ts'],
+      [ANCHOR, TEST_ONLY_ANCHOR],
+    )).toEqual([]);
   });
 });
 

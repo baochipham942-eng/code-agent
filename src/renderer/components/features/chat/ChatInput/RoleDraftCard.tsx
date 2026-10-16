@@ -12,6 +12,8 @@ import ipcService from '../../../../services/ipcService';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
+import { useSessionStore } from '../../../../stores/sessionStore';
+import { RoleFirstWakeCard } from '../RoleFirstWakeCard';
 
 export interface RoleDraftSummary {
   id: string;
@@ -27,8 +29,58 @@ export interface RoleDraftSummary {
  * 自包含的草稿通知容器：订阅 agent:event 里的 role_draft_pending 事件，
  * 有待确认草稿时渲染确认卡片。ChatInput 只需挂载 <RoleDraftNotifications />。
  */
+const CREATION_WAKE_STORAGE_KEY = 'neo.roleFirstWake.creation';
+
+function readCreationWakeMap(): Record<string, string> {
+  try {
+    if (typeof sessionStorage === 'undefined') return {};
+    const raw = sessionStorage.getItem(CREATION_WAKE_STORAGE_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : {};
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter(
+        (entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1].length > 0,
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function rememberCreationFirstWake(sessionId: string, roleId: string): void {
+  const map = readCreationWakeMap();
+  map[sessionId] = roleId;
+  try {
+    sessionStorage.setItem(CREATION_WAKE_STORAGE_KEY, JSON.stringify(map));
+  } catch {
+    // sessionStorage unavailable: the in-memory role id still covers this view
+  }
+}
+
+function readCreationFirstWake(sessionId: string | null): string | null {
+  if (!sessionId) return null;
+  return readCreationWakeMap()[sessionId] ?? null;
+}
+
+function forgetCreationFirstWake(sessionId: string): void {
+  const map = readCreationWakeMap();
+  if (!(sessionId in map)) return;
+  delete map[sessionId];
+  try {
+    sessionStorage.setItem(CREATION_WAKE_STORAGE_KEY, JSON.stringify(map));
+  } catch {
+    // ignore
+  }
+}
+
 export const RoleDraftNotifications: React.FC = () => {
   const [drafts, setDrafts] = useState<RoleDraftSummary[]>([]);
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const [wakeRoleId, setWakeRoleId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setWakeRoleId(readCreationFirstWake(currentSessionId));
+  }, [currentSessionId]);
 
   useEffect(() => {
     const unsubscribe = ipcService.on('agent:event', (event: { type: string; data: unknown }) => {
@@ -47,20 +99,38 @@ export const RoleDraftNotifications: React.FC = () => {
   }, []);
 
   // 确认卡是阻塞性决策，占住输入框上方那一格（成员条会据此收成极窄摘要）
+  const handleCreated = useCallback((roleId: string) => {
+    if (currentSessionId) rememberCreationFirstWake(currentSessionId, roleId);
+    setWakeRoleId(roleId);
+  }, [currentSessionId]);
+
+  const handleWakeDismissed = useCallback(() => {
+    if (currentSessionId) forgetCreationFirstWake(currentSessionId);
+    setWakeRoleId(null);
+  }, [currentSessionId]);
+
   useEffect(() => {
     const setNotice = useComposerNoticeStore.getState().setNotice;
-    setNotice('role-draft', drafts.length > 0);
+    setNotice('role-draft', drafts.length > 0 || wakeRoleId !== null);
     return () => setNotice('role-draft', false);
-  }, [drafts.length]);
+  }, [drafts.length, wakeRoleId]);
 
-  if (drafts.length === 0) return null;
+  if (drafts.length === 0 && !wakeRoleId) return null;
 
   return (
-    <RoleDraftCard
-      drafts={drafts}
-      onResolved={(draftId) => setDrafts((prev) => prev.filter((draft) => draft.id !== draftId))}
-      onDismiss={() => setDrafts([])}
-    />
+    <>
+      {drafts.length > 0 && (
+        <RoleDraftCard
+          drafts={drafts}
+          onResolved={(draftId) => setDrafts((prev) => prev.filter((draft) => draft.id !== draftId))}
+          onDismiss={() => setDrafts([])}
+          onCreated={handleCreated}
+        />
+      )}
+      {wakeRoleId && (
+        <RoleFirstWakeCard roleId={wakeRoleId} expectLive onDismissed={handleWakeDismissed} />
+      )}
+    </>
   );
 };
 
@@ -68,9 +138,11 @@ interface RoleDraftCardProps {
   drafts: RoleDraftSummary[];
   onResolved: (draftId: string) => void;
   onDismiss: () => void;
+  /** 新建（不是修改）确认成功后，在原位换成首次醒来卡 */
+  onCreated?: (roleId: string) => void;
 }
 
-export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved, onDismiss }) => {
+export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved, onDismiss, onCreated }) => {
   const { t } = useI18n();
   const r = t.roleDraft;
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -89,6 +161,7 @@ export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved
       );
       if (result?.success) {
         onResolved(draftId);
+        if (!isEdit && result.roleId) onCreated?.(result.roleId);
         toast.success(`${r.updatedToastPrefix}${result.roleId ?? ''}${r.updatedToastSuffix}${verb}`);
       } else {
         toast.error(`${r.actionFailedPrefix}${verb}${r.actionFailedSuffix}`);

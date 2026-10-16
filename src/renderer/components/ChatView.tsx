@@ -41,6 +41,7 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { ActiveConversationRewindBanner } from './features/chat/ActiveConversationRewindBanner';
 import { ChatInput } from './features/chat/ChatInput';
 import { applyVoicePartialsToProjection } from '../utils/voicePartialOverlay';
+import { compareVersions } from '../utils/versionCompare';
 import { useVoiceLiveRuntime } from '../hooks/useVoiceLiveRuntime';
 import { GoalStatusBar } from './features/chat/GoalStatusBar';
 import { DoomLoopHandbackBar } from './features/chat/DoomLoopHandbackBar';
@@ -376,17 +377,6 @@ export const ChatView: React.FC = () => {
   // Bridge 最低版本要求
   const MIN_BRIDGE_VERSION = '0.1.0';
 
-  // 简单 semver 比较
-  const compareVersions = useCallback((a: string, b: string): number => {
-    const pa = a.split('.').map(Number);
-    const pb = b.split('.').map(Number);
-    for (let i = 0; i < 3; i++) {
-      const diff = (pa[i] || 0) - (pb[i] || 0);
-      if (diff !== 0) return diff;
-    }
-    return 0;
-  }, []);
-
   // 前往设置页 MCP tab
   const handleGoToSettings = useCallback(() => {
     setBridgePrompt(null);
@@ -432,7 +422,7 @@ export const ChatView: React.FC = () => {
 
     window.addEventListener('bridge-tool-call', handler);
     return () => window.removeEventListener('bridge-tool-call', handler);
-  }, [bridgeStatus, bridgeVersion, workingDirectory, compareVersions, t]);
+  }, [bridgeStatus, bridgeVersion, workingDirectory, t]);
 
   const { requireAuthAsync } = useRequireAuth();
 

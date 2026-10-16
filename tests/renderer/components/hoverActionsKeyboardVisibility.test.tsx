@@ -84,6 +84,7 @@ describe('hover actions remain visible to keyboard users', () => {
           sessionStates: {},
           hasPendingApprovalForSession: () => false,
           hasNeedsInputForSession: () => false,
+          getWaitingDetailForSession: () => undefined,
           searchQuery: '',
           messageSearchHitsBySessionId: {},
           replayEvidenceBySessionId: new Map(),

@@ -354,6 +354,9 @@ export const sidebarZh = {
   },
   sidebarSession: {
     unread: '未读',
+    waitingPermissionApp: '等你批准：操作《{app}》',
+    waitingPermission: '等你批准',
+    waitingInput: '等你确认',
     forkedFrom: '分支任务，源任务：{sessionId}',
     openForkParent: '返回源任务 {sessionId}',
     openSession: '打开会话 {title}',
@@ -694,6 +697,9 @@ export const sidebarEn: typeof sidebarZh = {
   },
   sidebarSession: {
     unread: 'Unread',
+    waitingPermissionApp: 'Waiting for your approval: operate "{app}"',
+    waitingPermission: 'Waiting for your approval',
+    waitingInput: 'Waiting for you',
     forkedFrom: 'Forked task, source task: {sessionId}',
     openForkParent: 'Open source task {sessionId}',
     openSession: 'Open session {title}',

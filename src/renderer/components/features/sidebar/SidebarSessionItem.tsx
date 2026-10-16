@@ -65,6 +65,7 @@ export interface SidebarSessionItemProps {
   backgroundSessionMap: SidebarDerivedSessions['backgroundSessionMap'];
   sessionStates: Record<string, SessionState>;
   hasNeedsInputForSession: SidebarDerivedSessions['hasNeedsInputForSession'];
+  getWaitingDetailForSession: SidebarDerivedSessions['getWaitingDetailForSession'];
   searchQuery: string;
   messageSearchHitsBySessionId: SidebarDerivedSessions['messageSearchHitsBySessionId'];
   replayEvidenceBySessionId: SidebarDerivedSessions['replayEvidenceBySessionId'];
@@ -108,6 +109,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   backgroundSessionMap,
   sessionStates,
   hasNeedsInputForSession,
+  getWaitingDetailForSession,
   searchQuery,
   messageSearchHitsBySessionId,
   multiSelectMode,
@@ -146,6 +148,12 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
     status.kind === 'error' ? t.common.error : status.kind === 'incomplete' ? t.common.incomplete : status.label;
   const isRunning = sessionTurnActive && (status.kind === 'live' || status.kind === 'background');
   const attentionDotClass = getAttentionDotClassName(status.kind);
+  const waitingDetail = status.kind === 'approval' ? getWaitingDetailForSession(session.id) : undefined;
+  const waitingText = waitingDetail?.kind === 'permission'
+    ? waitingDetail.appName
+      ? s.waitingPermissionApp.replace('{app}', () => waitingDetail.appName!)
+      : s.waitingPermission
+    : s.waitingInput;
   const latestActivityAt = Math.max(
     session.updatedAt || 0,
     sessionRuntime?.lastActivityAt || 0,
@@ -208,12 +216,23 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
             className="flex-1 text-sm bg-zinc-600/80 text-zinc-200 px-1.5 py-0.5 rounded border border-zinc-600 focus:border-badge-info focus:outline-hidden"
           />
         ) : (
-          <span
-            onDoubleClick={(e) => handleDoubleClick(e, session)}
-            className={`min-w-0 flex-1 truncate text-sm ${titleToneClass}`}
-          >
-            {displayTitle}
-          </span>
+          <div className="min-w-0 flex-1">
+            <span
+              onDoubleClick={(e) => handleDoubleClick(e, session)}
+              className={`block min-w-0 flex-1 truncate text-sm ${titleToneClass}`}
+            >
+              {displayTitle}
+            </span>
+            {status.kind === 'approval' && (
+              <div
+                className="truncate text-[11px] text-mark-accent"
+                title={waitingText}
+                data-testid="sidebar-session-waiting-text"
+              >
+                {waitingText}
+              </div>
+            )}
+          </div>
         )}
         {!isRenaming && cronRunAggregate && cronRunAggregate.runCount > 1 && cronRunAggregate.latestSessionId === session.id && (
           <span

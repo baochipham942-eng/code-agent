@@ -29,6 +29,7 @@ function renderRow(session: Record<string, unknown>, overrides: Record<string, u
         backgroundSessionMap: new Map(),
         sessionStates: {},
         hasNeedsInputForSession: () => false,
+        getWaitingDetailForSession: () => undefined,
         searchQuery: '',
         messageSearchHitsBySessionId: {},
         replayEvidenceBySessionId: new Map(),

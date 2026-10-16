@@ -88,6 +88,7 @@ function renderList(overrides: Record<string, unknown> = {}): string {
       sessionRuntimes: new Map(),
       sessionStates: {},
       hasNeedsInputForSession: () => false,
+      getWaitingDetailForSession: () => undefined,
       replayEvidenceBySessionId: new Map(),
       reviewItemsBySessionId: {},
       currentSessionId: null,

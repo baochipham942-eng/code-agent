@@ -222,6 +222,67 @@ Node.js v24.21.0`;
 // is today's pinned contract, not an accident.
 const NODE_BARE_ERROR_LINE = "Error: EPERM: operation not permitted, open '/Users/u/.npmrc'";
 
+// `fs.copyFileSync` prints `copyfile '<src>' -> '<dst>'` and, per libuv
+// `uv__fs_copyfile`, reports BOTH errors with `req->path` = source. A read
+// denial on the source and a write denial on the destination are therefore
+// byte-identical apart from the two paths (frames are only
+// `at Object.copyFileSync`), so the two cases cannot be told apart from text
+// (N-SANDBOX-ESCALATE-REACHABILITY-FU3-FU2).
+//
+// Captured from a fresh dir <D> under /tmp (the source file MUST exist, else
+// ENOENT), node v24.21.0, with a profile denying the SOURCE read (seatbelt
+// resolves /tmp, so the rule targets /private/tmp/<D>):
+//   sandbox-exec -p '(version 1)(allow default)(deny file-read* (literal "/private/tmp/<D>/src.txt"))' node -e "require('node:fs').copyFileSync('/tmp/<D>/src.txt','/tmp/<D>/out.txt')"
+const NODE_COPYFILE_READ_SOURCE_TRACEBACK = `node:fs:3200
+  binding.copyFile(
+          ^
+
+Error: EPERM: operation not permitted, copyfile '/tmp/neo-node-copyfile-fu2-20021/src.txt' -> '/tmp/neo-node-copyfile-fu2-20021/out.txt'
+    at Object.copyFileSync (node:fs:3200:11)
+    at [eval]:1:20
+    at runScriptInThisContext (node:internal/vm:219:10)
+    at node:internal/process/execution:451:12
+    at [eval]-wrapper:6:24
+    at runScriptInContext (node:internal/process/execution:449:60)
+    at evalFunction (node:internal/process/execution:283:30)
+    at evalTypeScript (node:internal/process/execution:295:3)
+    at node:internal/main/eval_string:71:3 {
+  errno: -1,
+  code: 'EPERM',
+  syscall: 'copyfile',
+  path: '/tmp/neo-node-copyfile-fu2-20021/src.txt',
+  dest: '/tmp/neo-node-copyfile-fu2-20021/out.txt'
+}
+
+Node.js v24.21.0`;
+
+// Captured from the same node v24.21.0 with a profile denying every write, so
+// the DESTINATION is the denied operand while the source (/etc/hosts) is
+// readable:
+//   sandbox-exec -p '(version 1)(allow default)(deny file-write*)' node -e "require('node:fs').copyFileSync('/etc/hosts','/tmp/<D>/out2.txt')"
+const NODE_COPYFILE_WRITE_TARGET_TRACEBACK = `node:fs:3200
+  binding.copyFile(
+          ^
+
+Error: EPERM: operation not permitted, copyfile '/etc/hosts' -> '/tmp/neo-node-copyfile-fu2-20021/out2.txt'
+    at Object.copyFileSync (node:fs:3200:11)
+    at [eval]:1:20
+    at runScriptInThisContext (node:internal/vm:219:10)
+    at node:internal/process/execution:451:12
+    at [eval]-wrapper:6:24
+    at runScriptInContext (node:internal/process/execution:449:60)
+    at evalFunction (node:internal/process/execution:283:30)
+    at evalTypeScript (node:internal/process/execution:295:3)
+    at node:internal/main/eval_string:71:3 {
+  errno: -1,
+  code: 'EPERM',
+  syscall: 'copyfile',
+  path: '/etc/hosts',
+  dest: '/tmp/neo-node-copyfile-fu2-20021/out2.txt'
+}
+
+Node.js v24.21.0`;
+
 describe('sandboxDeniedWritePath', () => {
   it('recognises a Python PermissionError write traceback', () => {
     expect(sandboxDeniedWritePath(PYTHON_OPEN_W_TRACEBACK)).toBe('/System/x');
@@ -285,6 +346,24 @@ describe('sandboxDeniedWritePath', () => {
       + '    at Object.openSync (node:fs:483:20)\n'
       + '    at [eval]:1:1',
     )).toBe('/Users/u/.npmrc');
+  });
+
+  it('returns the copyfile DESTINATION (never the source) for a read-denied source', () => {
+    const path = sandboxDeniedWritePath(NODE_COPYFILE_READ_SOURCE_TRACEBACK);
+    expect(path).toBe('/tmp/neo-node-copyfile-fu2-20021/out.txt');
+    expect(path).not.toBe('/tmp/neo-node-copyfile-fu2-20021/src.txt');
+  });
+
+  it('returns the copyfile destination, not the readable source, for a write-denied target', () => {
+    const path = sandboxDeniedWritePath(NODE_COPYFILE_WRITE_TARGET_TRACEBACK);
+    expect(path).toBe('/tmp/neo-node-copyfile-fu2-20021/out2.txt');
+    expect(path).not.toBe('/etc/hosts');
+  });
+
+  it('skips a copyfile line with no `-> <dst>` part instead of falling back to the source', () => {
+    expect(
+      sandboxDeniedWritePath("Error: EPERM: operation not permitted, copyfile '/tmp/neo-node-copyfile-fu2-20021/src.txt'"),
+    ).toBeUndefined();
   });
 
   it('does not treat Python EACCES as a sandbox denial', () => {

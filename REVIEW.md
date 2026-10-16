@@ -26,7 +26,7 @@
 - 新增 `export default` 或 barrel 再导出而无消费方；新增依赖而同能力已在仓内 → Nit。
 - 未上线模块出现 legacy / fallback / 兼容分支（CLAUDE.md 禁令）→ Important。
 
-## Important 与 Nit
+## Important、Nit 与 Pre-existing
 - **Important**：合入后会出错、会丢数据、会放宽安全、会让门变瞎、或超出工单范围。一条就红。
 - **Nit**：命名、注释、可读性、非必要的小重复。只列不拦；每个 PR 最多 5 条，多了砍。
 - **门比需要的更严 → Nit，不是 Important**：误报、多问一次确认、扫描面比最小必要宽、白名单不够精细——
@@ -42,6 +42,17 @@
   `ponytail:` 注释（写清天花板与升级路径），不是拦门，也不是开新单。
 - 拿不准归哪类：先写清「合入后的后果」再定；**说不出后果的自己降 Nit，别塞进 Important 让机器去挡**
   ——机器只查 `consequence` 字段在不在（见下方输出格式），查不出你写的后果是真是假。
+- **Pre-existing（不计判决）**：问题在 `origin/main` **同一位置已经存在**，且本 PR 的 diff **没有触碰那几行**
+  ——它不是这次改动引入或暴露的，不该算到作者头上。判定必须读基线（`git show origin/main:<file>` 或
+  `git blame`）确认，不许凭文件名、函数名猜。进 JSON 的 `pre_existing` 数组，不进 `important`/`nits`，
+  不拦门、不计入评论头部的 Important/Nit 计数。边界：本 PR **改过的行**上的旧问题不算 Pre-existing——
+  碰了就要负责，按 Important/Nit 正常归类；增量审查模式下上一轮漏报的本 PR 问题也放这里，summary 以
+  「上轮漏报：」开头。来源：Anthropic 10-15《Claude Code 团队如何做代码评审》——评审 blame 实测反复判红
+  的代码 59% 在第一轮就已存在，评审器多数时候是在翻旧账不是发现新 bug。
+- **按类报，不按行报**：同一判据命中 ≥2 处（同一个正则漏同一类形状、同一个空值检查在三个调用方都缺…）
+  只报**一条**，`summary` 以「类：」开头说清判据，`file`/`line` 填第一处，正文里列出**全部** `文件:行号`，
+  让作者一次修完所有同类，而不是修一行等下一轮再报下一行。Important/Nit 计数按类计；
+  一条「类」里只要有一处是 Important，整条就是 Important。
 
 ## 不要审（CI 或 husky 已机器把关，重复报是噪音）
 - 硬编码常量（provider / 模型 / 超时 / 价格）：`scripts/check-hardcoded-models.sh`。
@@ -77,7 +88,8 @@
 **最后一行必须是且只能是一行 JSON**：
 
 ```
-{"important":[{"file":"src/x.ts","line":12,"summary":"…","consequence":"…"}],"nits":[{"file":"src/y.ts","line":3,"summary":"…"}]}
+{"important":[{"file":"src/x.ts","line":12,"summary":"类：…","consequence":"…"}],"nits":[{"file":"src/y.ts","line":3,"summary":"…"}],"pre_existing":[{"file":"src/z.ts","line":40,"summary":"…"}]}
 ```
 
-没有问题也要输出 `{"important":[],"nits":[]}`。不要在这行 JSON 之后再写任何字。
+`pre_existing` 只有 `file`/`line`/`summary`（不要 `consequence`，它不拦门）。
+没有问题也要输出 `{"important":[],"nits":[],"pre_existing":[]}`。不要在这行 JSON 之后再写任何字。

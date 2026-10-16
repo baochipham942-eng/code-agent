@@ -93,7 +93,7 @@ describe('SkillCautionPromptHost（拖拽 ZIP 入口）', () => {
     // 确认面带命中打开（设置页同款弹窗），首发安装已经发生但未装上
     expect(await screen.findByText(cautionText.title)).toBeTruthy();
     expect(screen.getByText('demo@local-zip')).toBeTruthy();
-    expect(screen.getByText('git_clean')).toBeTruthy();
+    expect(screen.getByText(cautionText.rules.git_clean)).toBeTruthy();
     expect(localZipCalls()).toHaveLength(1);
     expect(mountCalls()).toEqual([]);
 
@@ -148,8 +148,8 @@ describe('SkillCautionPromptHost（拖拽 ZIP 入口）', () => {
     fireEvent.click(screen.getByRole('button', { name: cautionText.confirmInstall }));
 
     // 二次确认面带新命中重开，token 也换成新一轮的
-    expect(await screen.findByText('history_clear')).toBeTruthy();
-    expect(screen.queryByText('git_clean')).toBeNull();
+    expect(await screen.findByText(cautionText.rules.history_clear)).toBeTruthy();
+    expect(screen.queryByText(cautionText.rules.git_clean)).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: cautionText.confirmInstall }));
 
     expect(await leftover).toEqual([]);
@@ -263,7 +263,7 @@ describe('SkillCautionPromptHost（/plugins install 入口）', () => {
     fireEvent.click(screen.getByRole('button', { name: cautionText.confirmInstall }));
 
     // 二次确认面已带新命中重开，但流程没走到终态——命令层不得提前看到 Installed
-    expect(await screen.findByText('history_clear')).toBeTruthy();
+    expect(await screen.findByText(cautionText.rules.history_clear)).toBeTruthy();
     expect(outcome).toBeUndefined();
     expect(ipcInvoke.mock.calls).toHaveLength(2);
 
@@ -286,7 +286,7 @@ describe('SkillCautionPromptHost（/plugins install 入口）', () => {
     const install = installExtensionWithSkillCautionConfirm('demo@trusted');
     expect(await screen.findByText(cautionText.title)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: cautionText.confirmInstall }));
-    expect(await screen.findByText('history_clear')).toBeTruthy();
+    expect(await screen.findByText(cautionText.rules.history_clear)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: zh.common.cancel }));
     await expect(install).rejects.toThrow('Skill install cancelled before confirmation');
@@ -350,7 +350,7 @@ describe('SkillCautionPromptHost（/plugins install 入口）', () => {
     landA2(reqA2);
     await screen.findByRole('button', { name: cautionText.confirmInstall });
     expect(screen.getByText('b-skill@local-zip')).toBeTruthy();
-    expect(screen.queryByText('history_clear')).toBeNull();
+    expect(screen.queryByText(cautionText.rules.history_clear)).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: cautionText.confirmInstall }));
     await expect(installB).resolves.toBeUndefined();

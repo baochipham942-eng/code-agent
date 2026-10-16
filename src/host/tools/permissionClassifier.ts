@@ -392,10 +392,11 @@ function npmPublishDryRunFlag(words: string[], start: number): boolean {
   for (let i = 0; i < rest.length; i++) {
     const word = rest[i];
     const eq = word.indexOf('=');
-    const flag = eq === -1 ? word : word.slice(0, eq);
+    // nopt 把任意数量的前导短横都当 --（实测 `---no-dry-run` 关掉预览 ⇒ 真发布），先归一再比
+    const flag = (eq === -1 ? word : word.slice(0, eq)).replace(/^-{2,}/, '--');
     let value = eq === -1 ? undefined : word.slice(eq + 1);
     if (flag !== '--dry-run' && flag !== '--no-dry-run') {
-      if (/^--(no-)?d/.test(flag)) return false;
+      if (/^-+(no-)?d/.test(flag)) return false;
       continue;
     }
     if (value === undefined && (rest[i + 1] === 'true' || rest[i + 1] === 'false')) value = rest[++i];

@@ -200,6 +200,21 @@ describe('CLI session titles', () => {
 
     expect(readTitle(sessionId)).toBe('CLI Session');
   });
+
+  it('replaces the web-provisional prompt-head title with the derived title (web route pre-write tier)', async () => {
+    const longPrompt = 'organize the quarterly customer feedback into a complete retrospective report';
+    // web 预写层（webSessionStore.ensureDbSession/prepareCliSessionForWrite）在首条消息
+    // 落库前把占位标题升成 buildSessionTitle 的 30 字截断临时档，再走 addMessageToSession
+    const session = await manager.createSession({
+      title: longPrompt.slice(0, 30) + '...',
+      modelConfig,
+      workingDirectory: tempDir,
+    });
+    await manager.addMessageToSession(session.id, userMessage('msg-provisional', longPrompt));
+    await settle();
+
+    expect(readTitle(session.id)).toBe(deriveFallbackSessionTitle(longPrompt));
+  });
 });
 
 describe('placeholder predicate call sites', () => {
@@ -274,18 +289,47 @@ describe('placeholder predicate call sites', () => {
 
   it('the four production call sites import the shared predicate', () => {
     const files = [
-      'src/host/services/infra/sessionManager.ts',
-      'src/web/helpers/webSessionStore.ts',
-      'src/host/telemetry/telemetrySessionTitleBackfill.ts',
-      'src/cli/session.ts',
-    ];
-    for (const file of files) {
+      // 两个起名门槛（host sessionManager + CLISessionManager）都升级为
+      // isProvisionalAutoTitle：web 预写层的「prompt 头 + ...」临时档也可被智能
+      // 标题替换（N-DELIVERABLE-WORKDIR-LAZY-FU3）
+      ['src/host/services/infra/sessionManager.ts', 'isProvisionalAutoTitle'],
+      ['src/web/helpers/webSessionStore.ts', 'isPlaceholderSessionTitle'],
+      ['src/host/telemetry/telemetrySessionTitleBackfill.ts', 'isPlaceholderSessionTitle'],
+      ['src/cli/session.ts', 'isProvisionalAutoTitle'],
+    ] as const;
+    for (const [file, predicate] of files) {
       const source = fs.readFileSync(path.join(repoRoot, file), 'utf8');
-      expect(source, file).toContain('isPlaceholderSessionTitle');
+      expect(source, file).toContain(predicate);
       expect(source, file).not.toContain("startsWith('CLI Session");
       expect(source, file).not.toContain("startsWith('Session ");
       expect(source, file).not.toContain("title === 'New Chat'");
       expect(source, file).not.toContain("named === 'New Chat'");
+    }
+  });
+
+  it('web-provisional prompt-head titles stay upgradeable; foreign ellipsis titles do not', async () => {
+    const longText = 'please summarize the quarterly roadmap in two sentences for me';
+    const provisional = longText.slice(0, 30) + '...'; // web 预写层 buildSessionTitle 的临时档
+    const foreign = 'Totally unrelated user title...';
+
+    const host = new SessionManager();
+    for (const [title, shouldWrite] of [[provisional, true], [foreign, false]] as const) {
+      const written: string[] = [];
+      vi.spyOn(host, 'getSession').mockResolvedValue({
+        id: 'host-session',
+        title,
+        messageCount: 1,
+        messages: [],
+        todos: [],
+      } as never);
+      vi.spyOn(host, 'updateSession').mockImplementation(async (_id, updates) => {
+        if (typeof updates.title === 'string') written.push(updates.title);
+      });
+      await (host as unknown as {
+        maybeUpdateTitleForSession: (sessionId: string, firstMessage: string) => Promise<void>;
+      }).maybeUpdateTitleForSession('host-session', longText);
+      expect(written.includes(deriveFallbackSessionTitle(longText)), `title=${JSON.stringify(title)}`).toBe(shouldWrite);
+      vi.restoreAllMocks();
     }
   });
 });

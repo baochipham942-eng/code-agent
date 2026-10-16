@@ -11608,11 +11608,6 @@
     },
     {
       "file": "src/renderer/components/PreviewPanel.tsx",
-      "name": "parseDesignPptArtifactContent",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/PreviewPanel.tsx",
       "name": "PresentationPreview",
       "kind": "export"
     },
@@ -11623,17 +11618,7 @@
     },
     {
       "file": "src/renderer/components/PreviewPanel.tsx",
-      "name": "shouldFlashOnDiskLoad",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/PreviewPanel.tsx",
       "name": "StaticHtmlPreview",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/PreviewPanel.tsx",
-      "name": "toPreviewErrorState",
       "kind": "export"
     },
     {
@@ -16829,7 +16814,6 @@
     "src/renderer/components/features/export/ExportModal.tsx",
     "src/renderer/components/features/swarm/AgentWorkRecordDialog.tsx",
     "src/renderer/components/features/swarm/SwarmTraceHistory.tsx",
-    "src/renderer/components/PlanningPanel.tsx",
     "src/renderer/components/QuestionFormPreview.tsx",
     "src/renderer/components/SkillsPanel.tsx",
     "src/renderer/components/TaskPanel/orchestration/components.tsx",

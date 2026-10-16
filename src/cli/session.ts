@@ -13,7 +13,7 @@ import { stampAssistantMessageCorrelation } from '../host/session/assistantCorre
 import { readSqliteErrorCode } from '../host/services/core/database/sqliteErrors';
 import {
   deriveFallbackSessionTitle,
-  isPlaceholderSessionTitle,
+  isProvisionalAutoTitle,
   sessionTitleSource,
 } from '../shared/sessionTitlePlaceholder';
 import crypto from 'crypto';
@@ -507,14 +507,15 @@ export class CLISessionManager {
   private async maybeUpdateTitle(sessionId: string, firstMessage: string): Promise<void> {
     const session = await this.getSession(sessionId);
     if (!session) return;
-    if (!isPlaceholderSessionTitle(session.title) || session.messageCount > 1) return;
-
     const titleSource = sessionTitleSource(firstMessage);
+    // web 预写层的「prompt 头 + ...」临时档也是自动产物，智能标题照常替换。
+    if (session.messageCount > 1 || !isProvisionalAutoTitle(session.title, titleSource)) return;
+
     let title = await this.generateSmartTitle(titleSource);
     if (!title) title = deriveFallbackSessionTitle(firstMessage);
 
     const latest = await this.getSession(sessionId);
-    if (!latest || !isPlaceholderSessionTitle(latest.title)) return;
+    if (!latest || !isProvisionalAutoTitle(latest.title, titleSource)) return;
 
     await this.updateSession(sessionId, { title });
   }

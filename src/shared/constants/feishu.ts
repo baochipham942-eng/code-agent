@@ -15,6 +15,10 @@ export const FEISHU_DEFAULT_DOMAIN = 'https://open.feishu.cn';
  */
 export const FEISHU_DEFAULT_HOST = new URL(FEISHU_DEFAULT_DOMAIN).hostname;
 
+/** Lark 国际版开放平台域名（模块私有：只用来派生下方 host） */
+const LARK_DEFAULT_DOMAIN = 'https://open.larksuite.com';
+export const LARK_DEFAULT_HOST = new URL(LARK_DEFAULT_DOMAIN).hostname;
+
 /** 日历接口现行 page_size 最小值，传 20 会 99992402 field validation failed（2026-07-24 真机实测） */
 export const FEISHU_CALENDAR_MIN_PAGE_SIZE = 50;
 

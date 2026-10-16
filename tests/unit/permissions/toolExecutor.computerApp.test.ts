@@ -66,12 +66,53 @@ describe('ToolExecutor computer app grants', () => {
     db.close();
   });
 
-  it('V2 observe schema accepts targetApp and optional bundleId without opening additionalProperties', () => {
+  it('V2 observe schema accepts targetApp and keeps additionalProperties closed: model-declared bundleId is not a declared param', () => {
+    // rework r1：Host 无法在门上校验 bundleId（门跑在工具之前，拿不到真实 bundle），
+    // 模型可伪造 bundle 铸跨 app 授权——schema 不再声明它，executor 的未声明参数
+    // 剥离（toolExecutor.ts validateToolInputSchema + stripUndeclaredToolParams）
+    // 在权限门之前就把它拿掉。
+    expect(validateToolInputSchema(cuaStatefulComputerUseSchema.inputSchema, {
+      operation: 'observe', targetApp: 'Notes', target: { pid: 42, windowId: 7 },
+    })).toEqual([]);
     expect(validateToolInputSchema(cuaStatefulComputerUseSchema.inputSchema, {
       operation: 'observe', targetApp: 'Notes', bundleId: 'com.example.notes', target: { pid: 42, windowId: 7 },
-    })).toEqual([]);
+    })).toEqual([
+      expect.objectContaining({ category: 'additional_property', field_path: 'bundleId' }),
+    ]);
     expect(cuaStatefulComputerUseSchema.inputSchema.additionalProperties).toBe(false);
     expect(cuaStatefulComputerUseSchema.inputSchema.properties?.targetApp).toMatchObject({ type: 'string' });
+    expect(cuaStatefulComputerUseSchema.inputSchema.properties?.bundleId).toBeUndefined();
+  });
+
+  it('a grant recorded with a bundleId never authorizes a different app name (fabricated-bundle portable grant)', async () => {
+    // 评审攻击链：首次获批带编造 bundleId x 铸出 bundle:x 授权；之后对未同意的
+    // app 传其真实 appName + bundleId:x，bundle 命中自动放行。名字是唯一锚点。
+    mintAppGrantStanding({ name: 'Calculator', bundleId: 'evil fabricated bundle' }, 1);
+    const requestPermission = vi.fn().mockResolvedValue(true);
+    const executor = new ToolExecutor({ requestPermission, workingDirectory: '/tmp/workbench' });
+    const result = await executor.execute('computer_use', {
+      operation: 'observe', targetApp: 'Bank', bundleId: 'evil fabricated bundle', target: { pid: 42, windowId: 7 },
+    }, { sessionId: 's1' });
+    expect(result.success).toBe(true);
+    expect(requestPermission).toHaveBeenCalledTimes(1);
+    expect(requestPermission.mock.calls[0][0].details.targetApp).toEqual({
+      name: 'Bank', bundleId: 'evil fabricated bundle',
+    });
+    expect(resolverState.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('same name with the recorded bundle still matches, and a different bundle re-asks', async () => {
+    mintAppGrantStanding({ name: 'Calculator', bundleId: 'com.apple.calculator' }, 1);
+    const requestPermission = vi.fn().mockResolvedValue(true);
+    const executor = new ToolExecutor({ requestPermission, workingDirectory: '/tmp/workbench' });
+    await executor.execute('computer_use', {
+      operation: 'observe', targetApp: 'calculator', bundleId: 'com.apple.calculator', target: { pid: 42, windowId: 7 },
+    }, { sessionId: 's1' });
+    expect(requestPermission).not.toHaveBeenCalled();
+    await executor.execute('computer_use', {
+      operation: 'observe', targetApp: 'Calculator', bundleId: 'other.bundle', target: { pid: 42, windowId: 7 },
+    }, { sessionId: 's1' });
+    expect(requestPermission).toHaveBeenCalledTimes(1);
   });
 
   it('V2 observe unauthorized app asks with details.targetApp before execution', async () => {

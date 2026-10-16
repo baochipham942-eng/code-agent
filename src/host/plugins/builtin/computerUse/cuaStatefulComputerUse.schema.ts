@@ -28,10 +28,6 @@ Element mutations must use elementRef from the state. Pixel mutations must use a
         type: 'string',
         description: '[observe, act] Required. Use the appName shown by list_roots for the selected window.',
       },
-      bundleId: {
-        type: 'string',
-        description: '[observe, act] Optional application bundle identifier; targetApp must still match list_roots appName.',
-      },
       target: {
         type: 'object',
         properties: {

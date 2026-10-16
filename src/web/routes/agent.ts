@@ -1031,6 +1031,13 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // WorkspaceScope may be absent on this web-native route, so bind the persisted row.
       config.projectId = persistedSession?.projectId ?? null;
 
+      // 会话「不用记忆」档透传（web HTTP 路径）：真源是持久化会话行。不接这条线，
+      // 桌面/手机界面会话的 memoryMode='off' 在本路径静默失效（读注入照发、写落盘照跑）。
+      // AgentLoop ctx 据此关读（bootstrap 侧同时并入 MEMORY_OFF_DENYLIST）也关写。
+      if (persistedSession?.memoryMode === 'off') {
+        config.memoryMode = 'off';
+      }
+
       // 每轮执行意图透传（web HTTP 路径）：renderer 的 context.executionIntent 必须进 AgentLoop
       // config → RuntimeContext.executionIntent，否则设计会话的 designCanvasActive 丢失，画布工具
       // 不会提进工具表、shell 代码画图守卫也不触发（桌面 Electron 路径经 agentAppService 已透传，

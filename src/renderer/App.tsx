@@ -691,8 +691,9 @@ export const App: React.FC = () => {
   }, [openWorkbenchTab, setTaskPanelTab, t]);
 
   // 会话级自动化回流消息：主进程写入 automation 通知后实时推过来。
-  // 打开中的源会话即时 append（去重，乐观插入的 created 通知会命中去重），
-  // 其他会话标记未读由侧栏徽标提示，无需等切换重载才可见。
+  // 打开中的源会话即时 append（按消息 id 去重；created 通知的唯一发射方就是
+  // host 这条广播，渲染端不再乐观插入），其他会话标记未读由侧栏徽标提示，
+  // 无需等切换重载才可见。
   useEffect(() => {
     const unsubscribe = ipcService.on(
       IPC_CHANNELS.SESSION_AUTOMATION_MESSAGE,

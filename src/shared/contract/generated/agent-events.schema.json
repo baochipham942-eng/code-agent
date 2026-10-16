@@ -1257,6 +1257,9 @@
         "boundary": {
           "$ref": "#/$defs/__schema5"
         },
+        "argsPreview": {
+          "type": "string"
+        },
         "timestamp": {
           "type": "number"
         },

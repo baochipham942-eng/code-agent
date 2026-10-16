@@ -37,6 +37,7 @@ import type { ModelConfig, Message, AgentEvent } from '../shared/contract';
 import type { TelemetryAdapter } from '../shared/contract/telemetry';
 import type { PlanningService } from '../host/planning';
 import { SYSTEM_PROMPT } from '../host/prompts/builder';
+import { MEMORY_OFF_DENYLIST } from '../host/agent/routingToolPolicy';
 import { applyProviderVariant } from '../host/prompts/providerVariants';
 import { DEFAULT_MODELS, DEFAULT_PROVIDER, getModelMaxOutputTokens } from '../shared/constants';
 import { resolveConfiguredDefaultProvider } from '../shared/modelDefaults';
@@ -799,8 +800,14 @@ export function createAgentLoop(
     agentId: config.agentOverride?.id ?? 'default',
     agentName: config.agentOverride?.name ?? 'default',
     requestedAgentId: config.requestedAgentId,
+    // 会话记忆档透传：AgentLoop ctx 据此关读（注入跳过 + 上面并入的记忆工具 denylist）
+    // 也关写（persistLongTermMemory 强制 false）
+    memoryMode: config.memoryMode,
     deniedToolNames: Array.from(new Set([
       ...(config.taskManagerToolsEnabled ? [] : CLI_TASK_MANAGER_TOOL_DENYLIST),
+      // memoryMode='off' 时记忆/历史类工具同样收出工具面（与桌面 orchestrator 的
+      // assembleTurnDenylist 同源；这条公共路径不经 orchestrator）
+      ...(config.memoryMode === 'off' ? MEMORY_OFF_DENYLIST : []),
       ...(config.deniedToolNames ?? []),
       ...(config.agentOverride?.deniedToolNames ?? []),
     ])),

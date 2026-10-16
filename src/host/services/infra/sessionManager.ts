@@ -80,7 +80,7 @@ export interface SessionCreateOptions {
 	  metadata?: Session['metadata'];
 	  readOnly?: boolean;
   retryOfSessionId?: string;
-  userId?: string | null;
+  userId?: string | null; memoryMode?: Session['memoryMode'];
 }
 
 export interface SessionListOptions {
@@ -220,7 +220,7 @@ export class SessionManager implements Disposable {
 	      parentSessionId: options.parentSessionId,
       sourceRunId: options.sourceRunId,
       engine: normalizeAgentEngineSession(options.engine),
-      memoryMode: 'auto',
+      memoryMode: options.memoryMode ?? 'auto',
       suppressedMemoryEntryIds: [],
       readOnly: options.readOnly,
       retryOfSessionId: options.retryOfSessionId,

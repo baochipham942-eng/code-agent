@@ -89,7 +89,9 @@ function isOnLinkIPv6(host: string): boolean {
   if (!parts) return false;
   const bare = parts[1];
   if (!bare.includes(':')) return false;
-  return /^fe[89ab][0-9a-f]:/.test(bare) || /^f[cd][0-9a-f]{2}:/.test(bare);
+  // ponytail: 只认链路本地 fe80::/10。ULA fc00::/7 可跨站点路由，且 Tailscale 的 fd7a:115c:a1e0::/48 落在其中，
+  // 放行它会抵消基线对 Tailscale 100.x 的拒绝；.local 解析出的就是 fe80，够用。
+  return /^fe[89ab][0-9a-f]:/.test(bare);
 }
 /**
  * RFC 6762 reserves `.local` for mDNS: public DNS never answers it, so such a name can only

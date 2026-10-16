@@ -1136,12 +1136,12 @@ describe('LAN protocol validation', () => {
     // request: an off-link caller never gets to occupy maxConnections or idle out requestTimeout.
     for (const peer of ['192.168.1.2', '10.0.0.7', '172.16.3.4', '127.0.0.1', '127.5.5.5', '::1',
       // IPv6 on-link: link-local (with and without zone id), ULA, and an IPv4-mapped private peer off a dual-stack listener
-      'fe80::1c2a:3b4c:5d6e:7f80', 'fe80::1%en0', 'FE80::ABCD', 'fd12:3456:789a::1', 'fc00::1', '::ffff:192.168.1.2']) {
+      'fe80::1c2a:3b4c:5d6e:7f80', 'fe80::1%en0', 'FE80::ABCD', '::ffff:192.168.1.2']) {
       expect(isLanPeer(peer)).toBe(true);
     }
     for (const peer of ['100.83.97.48', '198.18.0.1', '8.8.8.8', '169.254.169.254', '172.32.1.1', '', 'localhost',
       // IPv6 off-link: global unicast, deprecated site-local (not fe80::/10), mapped public IPv4, junk
-      '2001:db8::1', '2400:3200::1', 'fec0::1', '::ffff:8.8.8.8', 'fe80', 'fe80::1%', 'fe80:zz::1']) {
+      '2001:db8::1', '2400:3200::1', 'fec0::1', 'fd12:3456:789a::1', 'fc00::1', 'fd7a:115c:a1e0::1', '::ffff:8.8.8.8', 'fe80', 'fe80::1%', 'fe80:zz::1']) {
       expect(isLanPeer(peer)).toBe(false);
     }
   });

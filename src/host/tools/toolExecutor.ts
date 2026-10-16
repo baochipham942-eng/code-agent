@@ -22,7 +22,7 @@ import {
 } from '../../shared/contract/permission';
 import { getToolCache } from '../services/infra/toolCache';
 import { extractComputerTargetApp } from '../permissions/computerAppTarget';
-import { cuaAppContentReadForcesClassification, resolveCuaAppTarget } from '../permissions/cuaAppTarget';
+import { cuaToolNeedsAppGrant, resolveCuaAppTarget } from '../permissions/cuaAppTarget';
 import { resolvePreAskGrant } from '../permissions/preAskGrant';
 import { createLogger } from '../services/infra/logger';
 import { getAuditLogger, maskSensitiveData, isKnownSafeCommand, validateCommand, getShellSafetyMode, getExecPolicyStore, getPolicyEnforcer, type PolicyEnforcer, type PolicyCheckResult, type ValidationResult } from '../security';
@@ -1630,9 +1630,10 @@ export class ToolExecutor {
     const argumentForcesClassification = bashArgumentForcesClassification
       || readArgumentForcesClassification
       || connectorTokenWriteForcesClassification;
-    // cua-driver 应用内容读取（get_window_state/zoom）requiresPermission=false，但按应用
-    // 授权必须进审批链（skill 预授权不得绕过），与 readArgumentForcesClassification 同位。
-    const cuaAppReadForcesClassification = cuaAppContentReadForcesClassification(executionToolName);
+    // cua-driver 需要「按应用授权」的工具（app-content read requiresPermission=false 要
+    // force 进审批链；app action 要挡 skill 预授权绕过按应用卡），与
+    // readArgumentForcesClassification 同位且同样从 isPreApproved 排除。
+    const cuaAppGrantForcesClassification = cuaToolNeedsAppGrant(executionToolName);
 
     // Check permission if required
     // Skill 系统：预授权工具跳过普通权限检查（但不能跳过边界违规或 consequence hard deny）
@@ -1645,7 +1646,7 @@ export class ToolExecutor {
       && !shellDesktopAutomation
       && !consequenceForcesClassification
       && !argumentForcesClassification
-      && !cuaAppReadForcesClassification
+      && !cuaAppGrantForcesClassification
       && !this.forcePermissionHandler
       && !unresolvedWriteTargetForcesAsk
       && options.preApprovedTools !== undefined
@@ -1707,7 +1708,7 @@ export class ToolExecutor {
       }
     }
 
-    if ((toolDef.requiresPermission || readArgumentForcesClassification || cuaAppReadForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk) && (commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || (!isPreApproved && !isSafeCommand))) {
+    if ((toolDef.requiresPermission || readArgumentForcesClassification || cuaAppGrantForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk) && (commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || (!isPreApproved && !isSafeCommand))) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
       // 信任边界 ask（W3 写边界）→ forceConfirm：终审层便利放行必须让路（同 directory_access）。

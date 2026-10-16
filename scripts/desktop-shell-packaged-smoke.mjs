@@ -168,7 +168,7 @@ function sanitizeHealthEvidence(health) {
     serverRoot: health.serverRoot,
     persistence: health.persistence,
     rendererServe: health.rendererServe,
-    hasTauriBootToken: typeof health.tauriBootToken === 'string' && health.tauriBootToken.length > 0,
+    hasTauriBootToken: health.tauriBootConfigured === true,
   };
 }
 

@@ -104,7 +104,6 @@ const MIGRATED: string[] = [
   'citations/CitationList.tsx',
   'RewindPanel.tsx',
   'SkillsPanel.tsx',
-  'ContextHealthPanel.tsx',
   'TaskPanel/Orchestration.tsx',
   'TaskPanel/RunWorkbenchCards.tsx',
   'TaskPanel/orchestration/model.ts',

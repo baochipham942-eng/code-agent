@@ -197,6 +197,11 @@ export interface PermissionRequest {
   reasonCode?: PermissionRequestReason;
   /** User-facing data boundary shown in permission and privacy surfaces. */
   boundary?: import('./permissionBoundary').PermissionBoundaryRef;
+  /**
+   * 停车审批的参数预览（已脱敏 + 截断，N-PARKED-APPROVAL-SURVIVE-RESTART-PERSIST）。
+   * 由 parkApproval 构建后随 permission_request 事件下发给会话内审批卡；交互审批路径不产此字段。
+   */
+  argsPreview?: string;
   timestamp: number;
   dangerLevel?: 'normal' | 'warning' | 'danger';
   /**

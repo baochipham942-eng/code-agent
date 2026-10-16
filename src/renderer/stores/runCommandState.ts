@@ -19,6 +19,8 @@ interface RunCommandResult {
   output: string;
   exitCode?: number;
   reason?: string;
+  /** 仅本地 refuse（无会话）置位：这张卡没有「发给 Neo」入口，host 数据不带此字段 */
+  noSession?: boolean;
 }
 
 export type RunCommandPhase =
@@ -51,17 +53,25 @@ function runCardKey(messageId: string | undefined, command: string): string {
 
 interface RunCommandState {
   entries: Record<string, RunCommandPhase>;
+  /** 「发给 Neo」已交接过的卡（同 entries 一样内存态，刷新即清；重跑一条命令即重置） */
+  handedOff: Record<string, true>;
   start: (messageId: string | undefined, command: string, sessionId: string) => void;
-  refuse: (messageId: string | undefined, command: string, reason: string) => void;
+  refuse: (messageId: string | undefined, command: string, reason: string, options?: { noSession?: boolean }) => void;
+  markHandedOff: (messageId: string | undefined, command: string) => void;
 }
 
 const useRunCommandStore = create<RunCommandState>()((set, get) => ({
   entries: {},
+  handedOff: {},
   start: (messageId, command, sessionId) => {
     const key = runCardKey(messageId, command);
     // running 守卫在 store 层：remount 换出来的新实例再点一次，也绝不能并发第二条 IPC
     if (get().entries[key]?.kind === 'running') return;
-    set((state) => ({ entries: { ...state.entries, [key]: { kind: 'running' } } }));
+    // 重跑产生新结果，交接入口重新放开（旧结果已发过不影响新结果再发）
+    set((state) => {
+      const { [key]: _sent, ...handedOff } = state.handedOff;
+      return { entries: { ...state.entries, [key]: { kind: 'running' } }, handedOff };
+    });
     void (async () => {
       let phase: RunCommandPhase;
       try {
@@ -81,14 +91,21 @@ const useRunCommandStore = create<RunCommandState>()((set, get) => ({
       set((state) => ({ entries: { ...state.entries, [key]: phase } }));
     })();
   },
-  // 没有当前会话就没有审批链可挂：就地 refused（reason 由组件层 i18n 生成），不碰 IPC
-  refuse: (messageId, command, reason) => {
+  // 没有当前会话就没有审批链可挂：就地 refused（reason 由组件层 i18n 生成），不碰 IPC；
+  // noSession 标记让卡片区分「本地没会话」与「host 安全规则拒」——前者不给「发给 Neo」
+  refuse: (messageId, command, reason, options) => {
     set((state) => ({
       entries: {
         ...state.entries,
-        [runCardKey(messageId, command)]: { kind: 'finished', result: { status: 'refused', output: '', reason } },
+        [runCardKey(messageId, command)]: {
+          kind: 'finished',
+          result: { status: 'refused', output: '', reason, noSession: options?.noSession },
+        },
       },
     }));
+  },
+  markHandedOff: (messageId, command) => {
+    set((state) => ({ handedOff: { ...state.handedOff, [runCardKey(messageId, command)]: true } }));
   },
 }));
 
@@ -97,10 +114,28 @@ export function useRunCommandPhase(messageId: string | undefined, command: strin
   return useRunCommandStore((state) => state.entries[runCardKey(messageId, command)]) ?? IDLE;
 }
 
+export function useRunCommandHandedOff(messageId: string | undefined, command: string): boolean {
+  return useRunCommandStore((state) => state.handedOff[runCardKey(messageId, command)] === true);
+}
+
 export function startRunCommand(messageId: string | undefined, command: string, sessionId: string): void {
   useRunCommandStore.getState().start(messageId, command, sessionId);
 }
 
-export function refuseRunCommand(messageId: string | undefined, command: string, reason: string): void {
-  useRunCommandStore.getState().refuse(messageId, command, reason);
+export function refuseRunCommand(
+  messageId: string | undefined,
+  command: string,
+  reason: string,
+  options?: { noSession?: boolean },
+): void {
+  useRunCommandStore.getState().refuse(messageId, command, reason, options);
+}
+
+/** 标记已交接；返回是否首次标记——双击时同一 tick 内第二次调用返回 false，只发一条 */
+export function markRunCommandHandedOff(messageId: string | undefined, command: string): boolean {
+  const key = runCardKey(messageId, command);
+  const state = useRunCommandStore.getState();
+  if (state.handedOff[key]) return false;
+  state.markHandedOff(messageId, command);
+  return true;
 }

@@ -8,7 +8,7 @@ const SEVERITY_RANK = {
   error: 2,
 };
 
-const SECRET_KEY_RE = /(authorization|cookie|password|secret|token|private[_-]?key|api[_-]?key)/i;
+const SECRET_KEY_RE = /(authorization|cookie|password|secret|token|bootProof|private[_-]?key|api[_-]?key)/i;
 const SECRET_VALUE_RE = /\b(?:bearer\s+)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 
 function isRecord(value) {

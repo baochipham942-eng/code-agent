@@ -30,6 +30,8 @@
     "src/host/tools/media/ppt/spacing.ts",
     "src/host/tools/modules/_helpers/invokeNativeFromLegacy.ts",
     "src/host/tools/web/WebFetchUnifiedTool.ts",
+    "src/renderer/components/ContextHealthPanel.tsx",
+    "src/renderer/components/ContextPanel.tsx",
     "src/renderer/components/TaskPanel/Context.tsx",
     "src/renderer/components/TaskPanel/ContextInterventionPanel.tsx",
     "src/renderer/components/TaskPanel/ContextProvenancePanel.tsx",

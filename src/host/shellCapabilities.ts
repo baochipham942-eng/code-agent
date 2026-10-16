@@ -135,6 +135,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   // capture 域：派生自 schema action 集合（== capture 表 keys，parity 门三面对账），手工清单已删
   [IPC_DOMAINS.CAPTURE]: CaptureSchemas.ACTIONS,
   [IPC_DOMAINS.VOICE]: [
+    'getUserProfile',
+    'setUserProfile',
     'injectUserText',
     'reportFailure',
     // 通话录音（N-L7-REC）：设置页与导出勾选框都读它，旧壳不认识要降级。

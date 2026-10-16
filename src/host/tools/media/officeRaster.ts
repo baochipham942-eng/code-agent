@@ -37,7 +37,9 @@ function whichSync(bin: string): string | null {
 
 export function isLibreOfficeAvailable(): boolean {
   const available = getLibreOfficeCandidates({ which: whichSync }).length > 0;
-  if (!available && process.platform === 'darwin' && process.env.CODE_AGENT_NO_RUNTIME_AUTOINSTALL !== '1') {
+  // darwin 判定归 ensureLibreOffice（非 darwin 立即落定 unsupported，零副作用）；
+  // 这里不重复设平台门，否则非 darwin 平台上该触发契约不可测（CI Linux shard 红）。
+  if (!available && process.env.CODE_AGENT_NO_RUNTIME_AUTOINSTALL !== '1') {
     triggerLibreOfficeInstallOnce();
   }
   return available;

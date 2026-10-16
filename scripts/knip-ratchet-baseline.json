@@ -6702,88 +6702,13 @@
       "kind": "export"
     },
     {
-      "file": "src/renderer/components/features/chat/MessageBubble/MessageContent.tsx",
-      "name": "InlineTextWithCode",
-      "kind": "export"
-    },
-    {
       "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/bashOutputPreview.ts",
       "name": "BASH_PREVIEW_LINES_PENDING",
       "kind": "export"
     },
     {
-      "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/index.tsx",
-      "name": "formatParams",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/index.tsx",
-      "name": "getStatusColor",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/index.tsx",
-      "name": "getToolDisplayName",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/index.tsx",
-      "name": "getToolIcon",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/index.tsx",
-      "name": "getToolStatus",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/index.tsx",
-      "name": "summarizeTool",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/index.tsx",
-      "name": "ToolCallDisplayCompact",
-      "kind": "export"
-    },
-    {
       "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/styles.ts",
       "name": "getNameColor",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/summarizers/index.ts",
-      "name": "summarizeBash",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/summarizers/index.ts",
-      "name": "summarizeDefault",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/summarizers/index.ts",
-      "name": "summarizeEdit",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/summarizers/index.ts",
-      "name": "summarizeGlob",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/summarizers/index.ts",
-      "name": "summarizeGrep",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/summarizers/index.ts",
-      "name": "summarizeRead",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/chat/MessageBubble/ToolCallDisplay/summarizers/index.ts",
-      "name": "summarizeWrite",
       "kind": "export"
     },
     {
@@ -6794,11 +6719,6 @@
     {
       "file": "src/renderer/components/features/chat/MessageBubble/types.ts",
       "name": "AttachmentCategory",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/features/chat/MessageBubble/types.ts",
-      "name": "BlockType",
       "kind": "type"
     },
     {
@@ -6849,11 +6769,6 @@
     {
       "file": "src/renderer/components/features/chat/MessageBubble/utils.ts",
       "name": "languageConfig",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/chat/MessageBubble/utils.ts",
-      "name": "parseMarkdownBlocks",
       "kind": "export"
     },
     {

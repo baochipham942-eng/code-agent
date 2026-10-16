@@ -161,6 +161,51 @@ describe('SkillCautionPromptHost（拖拽 ZIP 入口）', () => {
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('ok demo'));
   });
 
+  it('确认重发在途被顶掉、重发最终成功：A 按已装收口不回流，B 的确认窗不被迟到回调关掉', async () => {
+    const reqA = { ...confirmationRequired, pluginSpec: 'a-skill@local-zip', confirmationToken: 'token-a' };
+    const reqB = { ...confirmationRequired, pluginSpec: 'b-skill@local-zip', confirmationToken: 'token-b' };
+    let landAResend: (value: { success: true; skillName: string; pluginSpec: string }) => void = () => {};
+    const aResendPending = new Promise<{ success: true; skillName: string; pluginSpec: string }>((resolve) => {
+      landAResend = resolve;
+    });
+    invokeSkillIPCOrThrow.mockImplementation(async (_channel, payload) => {
+      if (payload.cautionConfirmationToken === 'token-a') return aResendPending;
+      return reqA;
+    });
+    ipcInvoke.mockImplementation(async (_channel, spec, token) => {
+      if (token) return { success: true };
+      return reqB;
+    });
+    render(<SkillCautionPromptHost />);
+
+    const zipA = new File(['A'], 'a.zip', { type: 'application/zip' });
+    const leftoverA = divertDroppedSkillZips([zipA], dropArgs());
+    expect(await screen.findByText('a-skill@local-zip')).toBeTruthy();
+
+    // A 点确认 → 重发在途（busy），此时 /plugins install B 顶掉 A 的窗口
+    fireEvent.click(screen.getByRole('button', { name: cautionText.confirmInstall }));
+    const installB = installExtensionWithSkillCautionConfirm('b@market');
+    expect(await screen.findByText('b-skill@local-zip')).toBeTruthy();
+
+    // A 的重发最终成功：A 按真实结局收口（挂载 + 成功提示），不当附件回流
+    landAResend({ success: true, skillName: 'a-skill', pluginSpec: 'a-skill@local-zip' });
+    expect(await leftoverA).toEqual([]);
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('ok a-skill'));
+    expect(mountCalls()).toEqual([[SKILL_CHANNELS.SESSION_MOUNT, 's1', 'a-skill', 'local-zip']]);
+    // B 的确认窗原样还在（迟到的 A 回调不得关掉别人的弹窗/清掉别人的确认回调）；
+    // A 的 busy 闸异步落定后按钮名回到「确认安装」
+    expect(screen.getByText('b-skill@local-zip')).toBeTruthy();
+    await screen.findByRole('button', { name: cautionText.confirmInstall });
+
+    // B 确认后正常收尾：/plugins 不悬挂
+    fireEvent.click(screen.getByRole('button', { name: cautionText.confirmInstall }));
+    await expect(installB).resolves.toBeUndefined();
+    expect(ipcInvoke.mock.calls.filter(([, spec]) => spec === 'b@market')).toEqual([
+      [IPC_CHANNELS.EXTENSION_INSTALL, 'b@market', undefined],
+      [IPC_CHANNELS.EXTENSION_INSTALL, 'b@market', 'token-b'],
+    ]);
+  });
+
   it('第二次拖入顶掉未确认完的第一次：第一个 zip 未安装、按附件回流（leftover），第二个正常装', async () => {
     const reqA = { ...confirmationRequired, pluginSpec: 'a-skill@local-zip', confirmationToken: 'token-a' };
     const reqB = { ...confirmationRequired, pluginSpec: 'b-skill@local-zip', confirmationToken: 'token-b' };
@@ -322,6 +367,37 @@ describe('SkillCautionPromptHost（/plugins install 入口）', () => {
     ]);
   });
 
+  it('确认重发在途被顶掉、重发最终普通失败：按真实错误收口（不是取消），B 不受影响', async () => {
+    const reqA = { ...confirmationRequired, pluginSpec: 'a-skill@local-zip', confirmationToken: 'token-a' };
+    const reqB = { ...confirmationRequired, pluginSpec: 'b-skill@local-zip', confirmationToken: 'token-b' };
+    let landAResend: (value: { success: false; error: string }) => void = () => {};
+    const aResendPending = new Promise<{ success: false; error: string }>((resolve) => {
+      landAResend = resolve;
+    });
+    ipcInvoke.mockImplementation(async (_channel, spec, token) => {
+      if (spec === 'a@market') return token ? aResendPending : reqA;
+      return token ? { success: true } : reqB;
+    });
+    render(<SkillCautionPromptHost />);
+
+    const installA = installExtensionWithSkillCautionConfirm('a@market');
+    const installARejected = expect(installA).rejects.toThrow('install boom');
+    expect(await screen.findByText('a-skill@local-zip')).toBeTruthy();
+    // A 点确认 → 重发在途（busy），B 顶掉
+    fireEvent.click(screen.getByRole('button', { name: cautionText.confirmInstall }));
+    const installB = installExtensionWithSkillCautionConfirm('b@market');
+    expect(await screen.findByText('b-skill@local-zip')).toBeTruthy();
+
+    // A 的重发以普通失败落地：按真实错误 reject，不是「取消」；B 的窗口仍在
+    landAResend({ success: false, error: 'install boom' });
+    await installARejected;
+    expect(screen.getByText('b-skill@local-zip')).toBeTruthy();
+
+    // A 的 busy 闸异步落定后按钮名回到「确认安装」，此时确认 B 才生效
+    fireEvent.click(await screen.findByRole('button', { name: cautionText.confirmInstall }));
+    await expect(installB).resolves.toBeUndefined();
+  });
+
   it('被顶掉流程迟到的二次 confirmation-required 不得抢走活流程的确认窗', async () => {
     const reqA = { ...confirmationRequired, pluginSpec: 'a-skill@local-zip', confirmationToken: 'token-a' };
     const reqA2 = {
@@ -340,14 +416,16 @@ describe('SkillCautionPromptHost（/plugins install 入口）', () => {
     const installA = installExtensionWithSkillCautionConfirm('a@market');
     const installARejected = expect(installA).rejects.toThrow('Skill install cancelled before confirmation');
     expect(await screen.findByText('a-skill@local-zip')).toBeTruthy();
-    // A 的确认重发挂在途（busy），此时 B 顶掉 A
+    // A 的确认重发挂在途（busy），此时 B 顶掉 A：重发在途不抢先结算，结局以重发
+    // 落地为准
     fireEvent.click(screen.getByRole('button', { name: cautionText.confirmInstall }));
     const installB = installExtensionWithSkillCautionConfirm('b@market');
     expect(await screen.findByText('b-skill@local-zip')).toBeTruthy();
-    await installARejected;
 
-    // A 的迟到二次确认要求落地：窗口必须仍是 B 的，不得被死流程换掉
+    // A 的迟到二次确认要求落地：A 这才按未安装结算（已无确认面可走）；窗口必须
+    // 仍是 B 的，不得被死流程换掉
     landA2(reqA2);
+    await installARejected;
     await screen.findByRole('button', { name: cautionText.confirmInstall });
     expect(screen.getByText('b-skill@local-zip')).toBeTruthy();
     expect(screen.queryByText(cautionText.rules.history_clear)).toBeNull();

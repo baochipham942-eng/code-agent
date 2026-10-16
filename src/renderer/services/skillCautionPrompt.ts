@@ -7,11 +7,14 @@
 // SkillCautionPromptHost.tsx）弹设置页同款 SkillCautionDisclosureModal。
 // 放 services 层：调用方是 service（skillLocalZip）与 component
 // （SlashCommandPopover），方向只能 component → service。
-// 结算模型（r1）：一次安装流程（installWithSkillCautionConfirm 的一趟）= 一条
-// chain，chain 独占外层 Promise 的结算权，可跨多轮确认——内容变化重开只换弹窗
-// 内容不动结算，resolve(true) 只在最后一轮 settle 跑完后发生；取消、被新流程
-// 顶掉、宿主未挂载一律 resolve(false)=未安装，让调用方走各自入口的失败路径，
-// 绝不把「已确认」冒充「已安装」。模块级单例 + 监听器，一次只挂一个请求。
+// 结算模型（r1，r3 修顶掉竞态）：一次安装流程（installWithSkillCautionConfirm
+// 的一趟）= 一条 chain，chain 独占外层 Promise 的结算权，只结算一次，可跨多轮
+// 确认——内容变化重开只换弹窗内容不动结算；确认重发落地的一拍内按真实结局结算
+// （settle 回调跑完 = done，chain 结算 true，成败都算「流程收尾」）；取消、被
+// 新流程顶掉时重发不在途、宿主未挂载一律结算 false=未安装，让调用方走各自入口
+// 的失败路径，绝不把「已确认」冒充「已安装」。被顶掉时重发在途的 chain 不抢先
+// 结算——重发马上落地，装成功却被报取消/回流附件是谎报，结局以重发落地为准。
+// 模块级单例 + 监听器，一次只挂一个请求。
 // ============================================================================
 
 import { IPC_CHANNELS } from '@shared/ipc';
@@ -25,8 +28,14 @@ import { isSkillCautionConfirmationRequired } from './skillInstallCaution';
  */
 interface SkillCautionChain {
   settle: (confirmed: boolean) => void;
-  /** 被新流程顶掉时补一口（拖拽入口把 zip 按附件回流，不当已安装也不静默丢） */
+  /** 被顶掉且按未安装结算时补一口（拖拽入口把 zip 按附件回流，不当已安装也不静默丢） */
   onSuperseded?: () => void;
+  /** 确认重发已发出未返回：被顶掉时结算推迟到重发落地，按真实结局收口 */
+  pendingRetry?: boolean;
+  /** 已被新流程顶掉（死流程，确认窗口易主） */
+  superseded?: boolean;
+  /** 已结算：整条 chain 只结算一次，onSuperseded 只补一口 */
+  settled?: boolean;
 }
 
 export interface SkillCautionPromptRequest {
@@ -34,13 +43,15 @@ export interface SkillCautionPromptRequest {
   required: SkillCautionConfirmationRequired;
   /**
    * 确认 = 携 host 下发的 token 原样重发。返回 true = 流程收尾（成功/失败都已
-   * 按正常路径处理）→ 关窗；返回 false = 已携新命中重开（内容变化的二次确认）。
+   * 按正常路径处理，chain 已在重发落地的一拍内结算）→ 关窗；返回 false = 已携
+   * 新命中重开（内容变化的二次确认），或本轮已被新流程顶掉（宿主回调据此不关
+   * 当前显示着的别人的窗）。
    */
   retry: (cautionConfirmationToken: string) => Promise<boolean>;
   /**
-   * 结算整个安装流程的结局（chain 级，跨重开轮次共享）：true 仅在最后一轮
-   * settle 跑完后由宿主调用；false = 用户取消或被新流程顶掉（host 侧本就未
-   * 落盘）→ 调用方按未安装收口。
+   * 结算整个安装流程的结局（chain 级，跨重开轮次共享，幂等只结算一次）：false =
+   * 用户取消（确认重发落地后的收尾不走这里，chain 已在重发内结算）→ 调用方按
+   * 未安装收口。
    */
   resolve: (confirmed: boolean) => void;
 }
@@ -62,43 +73,76 @@ function isSkillCautionPromptHostMounted(): boolean {
   return listeners.size > 0;
 }
 
+/**
+ * chain 级结算（幂等，只结算一次）。onSuperseded 只在被顶掉且按未安装收口时补：
+ * 在途重发后来落地的流程是正常收尾（成功/失败都已按真实路径处理），不算被丢下，
+ * 不得回流附件。
+ */
+function settleChain(chain: SkillCautionChain, confirmed: boolean): void {
+  if (chain.settled) return;
+  chain.settled = true;
+  chain.settle(confirmed);
+  if (!confirmed && chain.superseded) chain.onSuperseded?.();
+}
+
 function mountRound(
   required: SkillCautionConfirmationRequired,
   retry: (cautionConfirmationToken: string) => Promise<boolean>,
   chain: SkillCautionChain,
 ): void {
   seq += 1;
-  current = { id: seq, required, retry, resolve: chain.settle, chain };
+  current = {
+    id: seq,
+    required,
+    // 重发在途标记在这里包：宿主回调 → 真正发出 send 之间没有间隙，顶掉判断
+    // （openSkillCautionPrompt）不会漏看在途重发
+    retry: async (cautionConfirmationToken: string) => {
+      chain.pendingRetry = true;
+      try {
+        return await retry(cautionConfirmationToken);
+      } finally {
+        chain.pendingRetry = false;
+      }
+    },
+    resolve: (confirmed: boolean) => settleChain(chain, confirmed),
+    chain,
+  };
   emit();
 }
 
 /**
- * 新流程开窗（首发 confirmation-required）。已在挂的旧流程被顶掉时按「未安装」
- * 结算（false）：它要么还没等到用户确认、要么确认重发在途未落盘，调用方必须
- * 走失败路径收口，不能当已确认/已安装。
+ * 新流程开窗（首发 confirmation-required）。已在挂的旧流程被顶掉：还没等到用户
+ * 确认的立即按「未安装」结算（false），调用方走失败路径收口，不能当已确认/已安装；
+ * 确认重发在途的不抢先结算——重发马上落地，真实结局可能是已装上，装成功却被报
+ * 取消/回流附件是谎报，留给重发落地（成功/失败/二次确认被丢弃/重发炸了）结算。
  */
 function openSkillCautionPrompt(
   required: SkillCautionConfirmationRequired,
   retry: (cautionConfirmationToken: string) => Promise<boolean>,
   chain: SkillCautionChain,
 ): void {
-  // settle 是 promise resolve，幂等：已结算过的链再调一次是无害 no-op
-  current?.chain.settle(false);
-  current?.chain.onSuperseded?.();
+  const prev = current?.chain;
+  if (prev) {
+    prev.superseded = true;
+    if (!prev.pendingRetry) settleChain(prev, false);
+  }
   mountRound(required, retry, chain);
 }
 
 /**
  * 同流程重开（确认后内容变化，携新命中再来一轮）：只换弹窗内容，外层结算不动，
- * 留给最后一轮 settle。窗口已易主（本流程被新流程顶掉、已按未安装结算）时直接
- * 丢弃——死流程的迟到重开不得抢走活流程的确认窗。
+ * 留给最后一轮 settle。窗口已易主（本流程被新流程顶掉）时直接丢弃——死流程的
+ * 迟到重开不得抢走活流程的确认窗；这条流程已无确认面可走，按未安装结算收口。
  */
 function reopenSkillCautionPrompt(
   required: SkillCautionConfirmationRequired,
   retry: (cautionConfirmationToken: string) => Promise<boolean>,
   chain: SkillCautionChain,
 ): void {
-  if (current?.chain !== chain) return;
+  if (current?.chain !== chain) {
+    if (chain.superseded) settleChain(chain, false);
+    return;
+  }
   mountRound(required, retry, chain);
 }
 
@@ -150,12 +194,23 @@ export async function installWithSkillCautionConfirm(args: {
   return new Promise<boolean>((settle) => {
     const chain: SkillCautionChain = { settle, onSuperseded: args.onSuperseded };
     const retry = async (cautionConfirmationToken: string): Promise<boolean> => {
-      const result = await args.send(cautionConfirmationToken);
-      if (isSkillCautionConfirmationRequired(result)) {
-        reopenSkillCautionPrompt(result, retry, chain);
-        return false;
+      try {
+        const result = await args.send(cautionConfirmationToken);
+        if (isSkillCautionConfirmationRequired(result)) {
+          reopenSkillCautionPrompt(result, retry, chain);
+          return false;
+        }
+        const done = await args.settle(result);
+        // 收尾在重发落地的一拍内结算，不留给宿主回调的下一拍：这一拍里被新流程
+        // 顶掉也不能把已发生的真实结局改写成未安装
+        if (done) settleChain(chain, true);
+        return done;
+      } catch (err) {
+        // 重发/收尾炸了：已被顶掉的死流程没人能再替它确认或取消，按未安装收口，
+        // 不让外层 promise 悬空；活流程保持未结算，弹窗开着等用户重试或取消
+        if (chain.superseded) settleChain(chain, false);
+        throw err;
       }
-      return args.settle(result);
     };
     openSkillCautionPrompt(first, retry, chain);
   });

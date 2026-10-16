@@ -1134,16 +1134,20 @@ describe('LAN protocol validation', () => {
   it('admits only on-link peers, and cuts the rest before they can hold a socket', () => {
     // Binding every interface is only safe because this predicate runs on 'connection', not per
     // request: an off-link caller never gets to occupy maxConnections or idle out requestTimeout.
-    for (const peer of ['192.168.1.2', '10.0.0.7', '172.16.3.4', '127.0.0.1', '127.5.5.5', '::1']) {
+    for (const peer of ['192.168.1.2', '10.0.0.7', '172.16.3.4', '127.0.0.1', '127.5.5.5', '::1',
+      // IPv6 on-link: link-local (with and without zone id), ULA, and an IPv4-mapped private peer off a dual-stack listener
+      'fe80::1c2a:3b4c:5d6e:7f80', 'fe80::1%en0', 'FE80::ABCD', 'fd12:3456:789a::1', 'fc00::1', '::ffff:192.168.1.2']) {
       expect(isLanPeer(peer)).toBe(true);
     }
-    for (const peer of ['100.83.97.48', '198.18.0.1', '8.8.8.8', '169.254.169.254', '172.32.1.1', '', 'localhost']) {
+    for (const peer of ['100.83.97.48', '198.18.0.1', '8.8.8.8', '169.254.169.254', '172.32.1.1', '', 'localhost',
+      // IPv6 off-link: global unicast, deprecated site-local (not fe80::/10), mapped public IPv4, junk
+      '2001:db8::1', '2400:3200::1', 'fec0::1', '::ffff:8.8.8.8', 'fe80', 'fe80::1%', 'fe80:zz::1']) {
       expect(isLanPeer(peer)).toBe(false);
     }
   });
   it('advertises the mDNS name when the host has one, the literal when it does not', () => {
     // The literal is what dies on a network change; the name is why a paired phone need not rescan.
-    expect(lanAdvertisedHost('192.168.1.2', 'Linchens-MacBook-Pro.local')).toBe('linchens-macbook-pro.local');
+    expect(lanAdvertisedHost('192.168.1.2', 'Dev-Host.local')).toBe('dev-host.local');
     expect(lanAdvertisedHost('192.168.1.2', 'ubuntu-box')).toBe('192.168.1.2');
     expect(lanAdvertisedHost('192.168.1.2', 'host.localdomain')).toBe('192.168.1.2');
     expect(validateLanEndpoint(`http://${lanAdvertisedHost('192.168.1.2', 'neo.local')}:8182`)).toBe('http://neo.local:8182');

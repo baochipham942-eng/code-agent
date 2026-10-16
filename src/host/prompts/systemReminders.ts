@@ -17,6 +17,7 @@ export type ReminderType =
   | 'PPT_FORMAT_SELECTION'
   | 'DATA_PROCESSING'
   | 'DOCUMENT_GENERATION'
+  | 'FILE_DELIVERABLE'
   | 'IMAGE_GENERATION'
   | 'VIDEO_GENERATION'
   | 'CODE_REVIEW_DIAGNOSIS'
@@ -239,6 +240,25 @@ skill({
 </system-reminder>
 `,
 
+  /**
+   * 单轮 Office 文件交付 - 原生生成工具直达
+   */
+  FILE_DELIVERABLE: `
+<system-reminder>
+**文件交付任务**：用户点名要一份 Office 文件交付物（.docx/.xlsx）。
+
+**工作流程**：
+1. 直接基于会话内素材成稿；素材缺失就基于用户已给出的信息完成，不要为此联网补素材
+2. 用本轮工具表中的原生工具直接生成文件：Word 用 docx_generate（content 传 Markdown，标题/列表/表格照常写），Excel 用 excel_generate（data 传 JSON 数组或 Markdown 表格）
+3. 一个工作簿要多个工作表时：先 excel_generate 生成原始数据表，再用 DocEdit（add_sheet + set_range）追加汇总表
+4. 生成后核对工具返回的文件路径与结构（工作表名、行数、关键内容），在回复中给出确切文件名和一句内容摘要
+
+**禁止**：
+- ❌ 不要为此写 Python（python-docx/openpyxl/pandas）脚本——本轮的文件生成一律走上面的原生工具
+- ❌ 不要派发后台任务或子代理来完成这个单轮文件交付
+</system-reminder>
+`,
+
   IMAGE_GENERATION: `
 <system-reminder>
 **图像生成任务**：检测到图像生成需求。
@@ -341,6 +361,12 @@ skill({
  */
 export interface TaskFeatures {
   isMultiDimension: boolean;
+  /** 小范围、单轮对比：不应触发自动委派或并行派发。 */
+  isBoundedComparison?: boolean;
+  /** 用户点名要 Office 文件交付物（.docx/.xlsx 且带生成动词）。 */
+  isOfficeFileDeliverable?: boolean;
+  /** 单轮可直出的文件交付：走原生生成工具直达，不派发、不写脚本。 */
+  isOneTurnFileDeliverable?: boolean;
   isComplexTask: boolean;
   isAuditTask: boolean;
   isReviewTask: boolean;
@@ -388,6 +414,59 @@ function matchesKeyword(normalizedText: string, keyword: string): boolean {
   return new RegExp(`\\b${escaped}\\b`).test(normalizedText);
 }
 
+/**
+ * 小范围、单轮可交付的对比任务不需要自动扇出。
+ *
+ * 这类请求通常同时包含多个 "and" / "then"，会被通用复杂度启发式误判为
+ * complex，继而注入委派提醒。只有明确给出少量实体、单轮交付的对比才豁免；
+ * 真正的大型多维任务仍走原有自动 Agent 路径。
+ */
+export function isBoundedOneTurnComparison(message: string): boolean {
+  const hasComparisonIntent = /\b(?:compare|comparison|competitor|competitors)\b|对比|竞品|比较/i.test(message);
+  const hasSmallBound = /\b(?:3|4|5)\s+(?:companies|vendors|competitors|products|entities|dimensions)\b|(?:3|4|5|三|四|五)\s*(?:家|个)/i.test(message);
+  const hasOneTurnDelivery = /\b(?:one|single)\s+turn\b|一轮(?:内|中|完成)?/i.test(message);
+  return hasComparisonIntent && hasSmallBound && hasOneTurnDelivery;
+}
+
+/**
+ * Office 文件交付意图：用户点名要一份 .docx/.xlsx（或 Word/Excel 文档）产物。
+ *
+ * 必须共现生成动词——裸扩展名会咬到读取诉求（「打开 report.docx 看结论」不是交付），
+ * 与 DOCUMENT_GENERATION 禁止项是同一教训。这类请求的原生路径是 docx_generate /
+ * excel_generate（本地产物工具、免确认桶），提醒与工具面都应把模型引到它们上面：
+ * 文字前台没有终端，按 DATA_PROCESSING/DOCUMENT_GENERATION 的 Python 工作流走只能
+ * 派后台执行脚本，卡在审批上整轮「运行失败」（N-HOME-STARTER-CARDS-FILES r2 实测）。
+ *
+ * 中文结尾不加 \b：JS 的 \b 只认 ASCII 词字符，「文档/工作簿」后的标点不成立边界。
+ */
+const OFFICE_DOC_DELIVERABLE_RE = /\.docx\b|\bword\s*文档|\bword\s+(?:document|file|report)\b/i;
+const OFFICE_SHEET_DELIVERABLE_RE = /\.xlsx\b|\bexcel\s*(?:工作簿|表格|文件)|\bexcel\s+(?:workbook|spreadsheet|file)\b/i;
+const OFFICE_DELIVERABLE_VERB_RE = /生成|写入|导出|输出|保存|做成|写成|转成|整理成|deliver|generate|write|create|save|export|produce/i;
+
+/**
+ * 已有文件操作：office 令牌在这类请求里处于**源位置**——转换的输入、另存/复制/
+ * 移动的对象，不是要从会话内容生成的交付物。docx_generate / excel_generate 只能
+ * 从内容重新生成：做不了 docx→PDF 的格式转换，也做不了另存到桌面。误判成单轮
+ * 文件交付会收走委派面（后台本可用终端执行真实转换）、再把模型指去重新生成一份
+ * Word，整轮失败或产出错误交付物（PR review 2026-10-15）。
+ *
+ * 位置判据：office 令牌在文件操作动词**之前**＝源；在动词之后＝目标——
+ * 「把 note.md 转成 .docx」的 .docx 是交付物，正是生成器该出的东西，不收口。
+ * 窗口用 [^.] 限长，不跨过下一个扩展名点，防止隔着别的文件名隔空连接。
+ */
+const OFFICE_FILE_OPERATION_RE = new RegExp([
+  // 中文把字句/将字句：「把 report.docx 转成 PDF」「把 excel 表格转成 csv」
+  String.raw`(?:\.docx|\.xlsx|word\s*文档|excel\s*(?:工作簿|表格|文件))[^.]{0,48}?(?:转成|转换为|转为|导出为|导出成|另存|保存到|导出到|复制到|移动到)`,
+  // 英文源在动词与 to/into 之间：「convert report.docx to PDF」「save the .xlsx to my desktop」
+  String.raw`(?:convert|export|save|copy|move)\b[^.]{0,64}?\.(?:docx|xlsx)\b[^.]{0,32}?\b(?:to|into)\b`,
+].join('|'), 'i');
+
+function isOfficeFileDeliverablePrompt(message: string): boolean {
+  if (OFFICE_FILE_OPERATION_RE.test(message)) return false;
+  if (!OFFICE_DELIVERABLE_VERB_RE.test(message)) return false;
+  return OFFICE_DOC_DELIVERABLE_RE.test(message) || OFFICE_SHEET_DELIVERABLE_RE.test(message);
+}
+
 const hasAnyKeyword = (normalizedText: string, keywords: string[]): boolean =>
   keywords.some((k) => matchesKeyword(normalizedText, k));
 
@@ -418,6 +497,7 @@ const VIDEO_FILE_EXTENSIONS = ['.mp4', '.avi', '.mov', '.mkv', '.webm'];
  */
 export function detectTaskFeatures(prompt: string, fileExtensions?: string[]): TaskFeatures {
   const normalizedPrompt = prompt.toLowerCase();
+  const isBoundedComparison = isBoundedOneTurnComparison(prompt);
 
   // 附件扩展名是强证据；正文里的扩展名还要结合产物意图判断。
   const attachmentExtensions = (fileExtensions || []).map(e => e.toLowerCase());
@@ -571,9 +651,18 @@ export function detectTaskFeatures(prompt: string, fileExtensions?: string[]): T
     hasAnyKeyword(normalizedPrompt, excelTableContextKeywords) &&
     weakHit(excelAmbiguousOperationKeywords);
 
+  // 单轮文件交付豁免复杂/多维：真正的大型报告仍走既有后台/派发路径，前台直达只收窄
+  // 「点名文件 + 一轮可成」的小交付。
+  const isOfficeFileDeliverable = isOfficeFileDeliverablePrompt(prompt);
+  const isComplexTask = complexKeywords.some((k) => normalizedPrompt.includes(k));
+  const isMultiDimension = matchedDimensions.length >= 2 && !isBoundedComparison;
+
   return {
-    isMultiDimension: matchedDimensions.length >= 2,
-    isComplexTask: complexKeywords.some((k) => normalizedPrompt.includes(k)),
+    isMultiDimension,
+    isBoundedComparison,
+    isOfficeFileDeliverable,
+    isOneTurnFileDeliverable: isOfficeFileDeliverable && !isComplexTask && !isMultiDimension,
+    isComplexTask,
     isAuditTask: auditKeywords.some((k) => normalizedPrompt.includes(k)),
     isReviewTask: reviewKeywords.some((k) => normalizedPrompt.includes(k)),
     isPlanningTask: planningKeywords.some((k) => normalizedPrompt.includes(k)),
@@ -609,6 +698,10 @@ export function getSystemReminders(prompt: string, fileExtensions?: string[]): s
   // isDataTask，但它不是数据处理任务
   if (features.isScreenCaptureTask) {
     reminders.push(REMINDERS.SCREEN_CAPTURE);
+  } else if (features.isOneTurnFileDeliverable) {
+    // 单轮文件交付优先于通用数据/文档工作流：那两条的 Python/终端路径在文字前台
+    // 不可达，照走只会把执行挤到后台脚本上去（见 FILE_DELIVERABLE 头注）。
+    reminders.push(REMINDERS.FILE_DELIVERABLE);
   } else if (features.isPPTTask) {
     reminders.push(REMINDERS.PPT_FORMAT_SELECTION);
   } else if (features.isDataTask) {
@@ -626,8 +719,9 @@ export function getSystemReminders(prompt: string, fileExtensions?: string[]): s
     reminders.push(REMINDERS.PARALLEL_DISPATCH);
   }
 
-  // 复杂任务 → 必须委派提醒
-  if (features.isComplexTask && !features.isMultiDimension) {
+  // 复杂任务 → 必须委派提醒（小范围单轮对比除外：委派倾向模型会被这条指引
+  // 推去拉 swarm，成员启动审批卡可卡死首轮——竞品简报卡 2026-10-11 缺陷）
+  if (features.isComplexTask && !features.isMultiDimension && !features.isBoundedComparison) {
     reminders.push(REMINDERS.MUST_DELEGATE);
   }
 

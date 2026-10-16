@@ -21,7 +21,7 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v79：N-MEDIA-GEN-PHASE2 把 video_generate/music_generate 对齐 image 合同（output_file_path、
 // video 新增 model/image_path、描述加计费与参考单价；模型可见面变化）。
 // sys-v80：N-PY-RUNTIME-K2 将数据处理 Python 指向托管解释器（模型可见面变化）。
-export const PROMPT_VERSION = 'sys-v80' as const;
+export const PROMPT_VERSION = 'sys-v81' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

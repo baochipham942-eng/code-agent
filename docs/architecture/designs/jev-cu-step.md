@@ -74,6 +74,8 @@ stateDiagram-v2
 
 | 术语 | 含义 |
 |---|---|
+| 工具搜索 | `ToolSearch` 的 `select:computer_use` 加载已注册的 V2 工具；`select:Computer` 是同一工具的别名。V2 未注册时只返回可搜索元数据，不声称已加载。 |
+| 按应用授权 | `observe` / `act` 必须带 `targetApp`，值取 `list_roots` 的 `appName`。Host 在读取窗口前和执行 stateId 动作前校验身份；不匹配时返回真实应用名并要求重新申请。`bundleId` 可选。 |
 | 有状态路径 | `computer_use` 的 `list_roots` / `observe` / `act`。`act` 必须带上一次 observe 的 `stateId`。 |
 | `elementRef` | observe 发给调用方的不透明 ref（`e1` 这种）。只在产生它的那个 `stateId` 里有效。 |
 | `element_token` | 适配器留在内部、act 时交给 cua-driver 的令牌。Jev 和主模型都看不见。 |

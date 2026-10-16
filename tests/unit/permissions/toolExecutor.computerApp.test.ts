@@ -26,9 +26,13 @@ import { applyAppGrantsSchema } from '../../../src/host/services/core/database/s
 import {
   bindAppGrantDatabase,
   mintAppGrantStanding,
+  mintAppGrantSession,
 } from '../../../src/host/permissions/appGrantStore';
 import { appGrantKey } from '../../../src/host/permissions/computerAppTarget';
 import { getPermissionModeManager, resetPermissionModeManager } from '../../../src/host/permissions/modes';
+
+import { cuaStatefulComputerUseSchema } from '../../../src/host/plugins/builtin/computerUse/cuaStatefulComputerUse.schema';
+import { validateToolInputSchema } from '../../../src/host/tools/toolSchemaValidator';
 
 const logger = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} };
 
@@ -60,6 +64,53 @@ describe('ToolExecutor computer app grants', () => {
   afterEach(() => {
     resetPermissionModeManager();
     db.close();
+  });
+
+  it('V2 observe schema accepts targetApp and optional bundleId without opening additionalProperties', () => {
+    expect(validateToolInputSchema(cuaStatefulComputerUseSchema.inputSchema, {
+      operation: 'observe', targetApp: 'Notes', bundleId: 'com.example.notes', target: { pid: 42, windowId: 7 },
+    })).toEqual([]);
+    expect(cuaStatefulComputerUseSchema.inputSchema.additionalProperties).toBe(false);
+    expect(cuaStatefulComputerUseSchema.inputSchema.properties?.targetApp).toMatchObject({ type: 'string' });
+  });
+
+  it('V2 observe unauthorized app asks with details.targetApp before execution', async () => {
+    const requestPermission = vi.fn(async (request) => {
+      expect(request.details.targetApp).toEqual({ name: 'Notes' });
+      expect(resolverState.execute).not.toHaveBeenCalled();
+      return true;
+    });
+    const executor = new ToolExecutor({ requestPermission, workingDirectory: '/tmp/workbench' });
+    const result = await executor.execute('computer_use', {
+      operation: 'observe', targetApp: 'Notes', target: { pid: 42, windowId: 7 },
+    }, { sessionId: 's1' });
+    expect(result.success).toBe(true);
+    expect(requestPermission).toHaveBeenCalledTimes(1);
+    expect(resolverState.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['session', 'always'] as const)('V2 observe authorized app (%s) runs without asking', async (scope) => {
+    if (scope === 'session') mintAppGrantSession('s1', { name: 'Notes' });
+    else mintAppGrantStanding({ name: 'Notes' }, 1);
+    const requestPermission = vi.fn().mockResolvedValue(true);
+    const executor = new ToolExecutor({ requestPermission, workingDirectory: '/tmp/workbench' });
+    const result = await executor.execute('computer_use', {
+      operation: 'observe', targetApp: 'Notes', target: { pid: 42, windowId: 7 },
+    }, { sessionId: 's1' });
+    expect(result.success).toBe(true);
+    expect(requestPermission).not.toHaveBeenCalled();
+    expect(resolverState.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('V2 observe denied app never executes the handler', async () => {
+    const requestPermission = vi.fn().mockResolvedValue(false);
+    const executor = new ToolExecutor({ requestPermission, workingDirectory: '/tmp/workbench' });
+    const result = await executor.execute('computer_use', {
+      operation: 'observe', targetApp: 'Notes', target: { pid: 42, windowId: 7 },
+    }, { sessionId: 's1' });
+    expect(result.success).toBe(false);
+    expect(requestPermission).toHaveBeenCalledTimes(1);
+    expect(resolverState.execute).not.toHaveBeenCalled();
   });
 
   it('asks with the target app before a grant exists', async () => {

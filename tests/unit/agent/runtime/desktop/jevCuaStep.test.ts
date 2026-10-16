@@ -940,6 +940,8 @@ describe('cua execute_goal arming and schema', () => {
     expect(properties.stateId).toBeTruthy();
     expect(properties.mutation).toBeTruthy();
     expect(properties.target).toBeTruthy();
+    expect(properties.targetApp).toMatchObject({ type: 'string' });
+    expect(properties.bundleId).toMatchObject({ type: 'string' });
     expect(cuaStatefulComputerUseModuleFor(true).schema.description).toContain('execute_goal');
   });
 });

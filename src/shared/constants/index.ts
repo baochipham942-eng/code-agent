@@ -51,3 +51,4 @@ export * from './capabilityCandidates';
 export * from './shareService';
 export * from './cronEventTrigger';
 export * from './serviceTier';
+export * from './pendingApproval';

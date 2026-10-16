@@ -12,15 +12,27 @@ export const zhSkillCaution = {
     'local-marketplace': '本地来源',
     builtin: '内置',
   },
-  hitsCount: '共 {count} 条提醒',
+  // zh 无复数：one/other 同文（结构对齐 en，interpolatePlural 见 interpolate.ts）
+  hitsCount: { one: '共 {count} 条提醒', other: '共 {count} 条提醒' },
   // 运行时审批真相（默认 strict，autoApprove.execute 默认关；分类器实跑见证据档③）：
   // rm -rf / git reset --hard 带 forceConfirm：各档都问，只有「完全访问权限」不问；
   // 「始终允许」和执行类自动批准都压不住。git clean / 内网请求无 forceConfirm：
   // 默认也问，但「始终允许」、执行类自动批准、「完全访问权限」不问。
   // 读密钥环境变量默认是已知安全命令、不问；「只读」档仍问。
   // curl|sh 被命令策略硬拒，任何权限档（含完全访问）都不放行。
-  runtimeApprovalLine: '装好后 Neo 真要执行这类命令时：默认每次都会先问你；删除目录和硬重置是强确认，连「始终允许」和执行类自动批准都压不住，只有把这次对话切到「完全访问权限」才不问直接跑；清理未跟踪文件和访问内网在默认档也会问，但点过「始终允许」、开了执行类自动批准，或切到「完全访问权限」就不会再问；读取环境变量在默认档属于只读、不会询问，切到「只读」仍会问；把网上下载的脚本直接送进命令行执行会被直接拒绝，任何权限档都不放行。',
-  hitCount: '{count} 处',
+  // 各句只在本次扫描命中对应规则时渲染（弹窗按档位挑句，见 SkillCautionDisclosureModal）；
+  // 措辞与拆行前的整句逐字等义。档位映射覆盖 host 写入点全量规则 id（强确认档 =
+  // 命中 confirmationGate HIGH_RISK_PATTERNS 的命令族，默认问档 = 其余非白名单命令，
+  // 只读档 = 白名单读取，硬拒档 = curl|sh 与 critical/block 档规则），各句里的命令名
+  // 是示例而非穷举。
+  runtimeApproval: {
+    lead: '装好后 Neo 真要执行这类命令时：默认每次都会先问你。',
+    forcedConfirm: '删除目录和硬重置是强确认，连「始终允许」和执行类自动批准都压不住，只有把这次对话切到「完全访问权限」才不问直接跑。',
+    askByDefault: '清理未跟踪文件和访问内网在默认档也会问，但点过「始终允许」、开了执行类自动批准，或切到「完全访问权限」就不会再问。',
+    readOnly: '读取环境变量在默认档属于只读、不会询问，切到「只读」仍会问。',
+    hardDeny: '把网上下载的脚本直接送进命令行执行会被直接拒绝，任何权限档都不放行。',
+  },
+  hitCount: { one: '{count} 处', other: '{count} 处' },
   detailsShow: '展开命中明细（文件 · 规则 · 原文）',
   detailsHide: '收起命中明细',
   acknowledgeExplanation: '这个技能已从官方市场装好。装前检查发现以下值得留意的内容——它们没有严重到拦截安装，但你有权在装完后知道。',

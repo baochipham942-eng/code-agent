@@ -9,8 +9,33 @@ import { POSTHOG_EVENTS } from '../../../shared/observability/posthog-events';
 import {
   isToolDeniedByRunPolicy,
 } from '../../tools/runToolPolicy';
+import { detectTaskFeatures } from '../../prompts/systemReminders';
 
 const logger = createLogger('AgentLoop');
+
+const FILE_DELIVERABLE_DELEGATION_TOOLS = new Set([
+  'task',
+  'delegate_task',
+  'spawn_agent',
+  'agentspawn',
+  'workflow',
+  'workflow_orchestrate',
+]);
+
+function latestUserPrompt(ctx: RuntimeContext): string {
+  return [...(ctx.messages ?? [])].reverse().find((message) => message.role === 'user')?.content ?? '';
+}
+
+/**
+ * 单轮 Office 文件交付（isOneTurnFileDeliverable）收掉委派面——前台没有终端，
+ * 模型看得见 delegate_task 时只会「写脚本 + 派后台」，后台 terminal_write 撞审批
+ * 卡死，整轮以「运行失败」收场（N-HOME-STARTER-CARDS-FILES r2 实测）。收掉委派入口，
+ * 工具面上剩下的文件生成路径（docx_generate/excel_generate）就是最短路。
+ */
+function isFileDeliverableDelegationBypassTool(toolName: string, ctx: RuntimeContext): boolean {
+  if (!FILE_DELIVERABLE_DELEGATION_TOOLS.has(toolName.trim().toLowerCase())) return false;
+  return detectTaskFeatures(latestUserPrompt(ctx)).isOneTurnFileDeliverable === true;
+}
 
 export function isToolDeniedForRun(ctx: RuntimeContext, toolName: string): boolean {
   return isToolDeniedByRunPolicy(ctx, toolName);
@@ -35,10 +60,12 @@ export function filterToolsByRunPolicy(
   // 信号复用现有 unattendedTurn（originKind==='headless' / 会话级无人值守标记），
   // 不新造平行判定；有人值守轮原样保留，交互行为不变。
   const askUnattended = ctx.unattendedTurn === true;
+  const oneTurnFileDeliverable = detectTaskFeatures(latestUserPrompt(ctx)).isOneTurnFileDeliverable === true;
   const hasPolicy = (ctx.deniedToolNames?.length ?? 0) > 0 || (ctx.allowedToolNames?.length ?? 0) > 0;
-  if (!hasPolicy && !askUnattended) return tools;
+  if (!hasPolicy && !askUnattended && !oneTurnFileDeliverable) return tools;
   return tools.filter((tool) => {
     if (askUnattended && ASK_USER_QUESTION_TOOL_NAMES.some((name) => name === tool.name)) return false;
+    if (isFileDeliverableDelegationBypassTool(tool.name, ctx)) return false;
     return !isToolDeniedByRunPolicy(ctx, tool.name);
   });
 }

@@ -389,8 +389,18 @@ export class ChannelManager extends EventEmitter {
       this.activeChannels.set(accountId, channel);
       this.updateAccountStatus(accountId, 'connected');
       account.lastConnectedAt = Date.now();
+      if (channel instanceof TelegramChannel) {
+        const canReadAllGroupMessages = channel.telegramCanReadAllGroupMessages;
+        if (typeof canReadAllGroupMessages === 'boolean') {
+          account.telegramCanReadAllGroupMessages = canReadAllGroupMessages;
+        }
+      }
       this.saveAccounts();
       this.connectRetries.reset(accountId);
+      // 状态事件不带这个运行时字段；Telegram 连接成功后单独把账号列表推给设置页。
+      if (channel instanceof TelegramChannel) {
+        this.emit('accounts_changed', this.getAccounts());
+      }
 
       logger.info('Channel connected', { accountId, type: account.type });
     } catch (error) {

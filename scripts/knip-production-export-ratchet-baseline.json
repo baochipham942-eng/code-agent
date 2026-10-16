@@ -10013,17 +10013,7 @@
     },
     {
       "file": "src/renderer/components/design/canvasCameraInput.ts",
-      "name": "CANVAS_SCALE_STEP",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/design/canvasCameraInput.ts",
       "name": "dragEndCamera",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/design/canvasCameraInput.ts",
-      "name": "normalizeDelta",
       "kind": "export"
     },
     {
@@ -10063,22 +10053,12 @@
     },
     {
       "file": "src/renderer/components/design/designCanvasTypes.ts",
-      "name": "CANVAS_DOC_VERSION",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/design/designCanvasTypes.ts",
       "name": "CanvasNodeBase",
       "kind": "type"
     },
     {
       "file": "src/renderer/components/design/designCanvasTypes.ts",
       "name": "DEFAULT_CAMERA",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/design/designCanvasTypes.ts",
-      "name": "DEFAULT_VIDEO_DURATION_SEC",
       "kind": "export"
     },
     {
@@ -10129,11 +10109,6 @@
     {
       "file": "src/renderer/components/design/designDocPersistence.ts",
       "name": "canvasDocToDesignDoc",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/design/designDocPersistence.ts",
-      "name": "DESIGN_DOC_FILE",
       "kind": "export"
     },
     {
@@ -10363,11 +10338,6 @@
     },
     {
       "file": "src/renderer/components/design/variantSpine.ts",
-      "name": "SPINE_VERSION",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/design/variantSpine.ts",
       "name": "VariantKind",
       "kind": "type"
     },
@@ -10429,11 +10399,6 @@
     {
       "file": "src/renderer/components/features/chat/ChatInput/agentMentionRouting.ts",
       "name": "buildDirectRoutingHint",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/chat/ChatInput/agentMentionRouting.ts",
-      "name": "normalizeMentionToken",
       "kind": "export"
     },
     {
@@ -10504,21 +10469,6 @@
     {
       "file": "src/renderer/components/features/chat/ChatInput/debugDraftUrl.ts",
       "name": "clearDebugDraftParamsFromUrl",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/chat/ChatInput/debugDraftUrl.ts",
-      "name": "DEBUG_DRAFT_PARAM",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/chat/ChatInput/debugDraftUrl.ts",
-      "name": "DEBUG_DRAFT_SUBMIT_PARAM",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/chat/ChatInput/debugDraftUrl.ts",
-      "name": "isLocalDebugDraftHost",
       "kind": "export"
     },
     {
@@ -10754,16 +10704,6 @@
     {
       "file": "src/renderer/components/features/chat/MessageBubble/MediaAssetControls.tsx",
       "name": "getMediaAssetAvailableActions",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/chat/MessageBubble/MediaAssetControls.tsx",
-      "name": "getMediaAssetParentLabels",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/chat/MessageBubble/MediaAssetControls.tsx",
-      "name": "getMediaAssetSourceLabels",
       "kind": "export"
     },
     {
@@ -11360,51 +11300,6 @@
       "file": "src/renderer/components/features/projectSpace/projectSpaceData.ts",
       "name": "PROJECT_ACTIVITY_FEED_LIMIT",
       "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/settings/index.ts",
-      "name": "AboutSettings",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/settings/index.ts",
-      "name": "AppearanceSettings",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/settings/index.ts",
-      "name": "DataSettings",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/settings/index.ts",
-      "name": "DataStats",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/features/settings/index.ts",
-      "name": "ModelConfig",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/features/settings/index.ts",
-      "name": "ModelSettings",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/settings/index.ts",
-      "name": "ModelSettingsProps",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/components/features/settings/index.ts",
-      "name": "UpdateSettings",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/features/settings/index.ts",
-      "name": "UpdateSettingsProps",
-      "kind": "type"
     },
     {
       "file": "src/renderer/components/features/settings/McpServerEditor.tsx",
@@ -12103,11 +11998,6 @@
     },
     {
       "file": "src/renderer/components/StatusBar/modelSwitcherHelpers.tsx",
-      "name": "ENGINE_RUNTIME_LABEL",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/StatusBar/modelSwitcherHelpers.tsx",
       "name": "EngineReliabilityPanel",
       "kind": "export"
     },
@@ -12139,11 +12029,6 @@
     {
       "file": "src/renderer/components/StatusBar/modelSwitcherHelpers.tsx",
       "name": "getEngineModelCompatReasonText",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/StatusBar/modelSwitcherHelpers.tsx",
-      "name": "HEALTH_DOT_COLOR",
       "kind": "export"
     },
     {
@@ -12239,11 +12124,6 @@
     {
       "file": "src/renderer/components/TaskPanel/RunWorkbenchCards.tsx",
       "name": "RunOverview",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/components/TaskPanel/RunWorkbenchCards.tsx",
-      "name": "runStatusClass",
       "kind": "export"
     },
     {
@@ -12512,11 +12392,6 @@
       "kind": "export"
     },
     {
-      "file": "src/renderer/hooks/useCurrentTurnCapabilityScope.ts",
-      "name": "extractCurrentTurnWorkbenchSnapshot",
-      "kind": "export"
-    },
-    {
       "file": "src/renderer/hooks/useDisclosure.tsx",
       "name": "DisclosureGate",
       "kind": "export"
@@ -12574,21 +12449,6 @@
     {
       "file": "src/renderer/hooks/useOpenPreviewBridge.ts",
       "name": "shouldOpenPreview",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/hooks/useRendererBundleAutoReload.ts",
-      "name": "DEFAULT_RENDERER_BUNDLE_AUTO_RELOAD_IDLE_MS",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/hooks/useRendererBundleAutoReload.ts",
-      "name": "DEFAULT_RENDERER_BUNDLE_AUTO_RELOAD_INITIAL_DELAY_MS",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/hooks/useRendererBundleAutoReload.ts",
-      "name": "DEFAULT_RENDERER_BUNDLE_AUTO_RELOAD_POLL_MS",
       "kind": "export"
     },
     {
@@ -13014,11 +12874,6 @@
     {
       "file": "src/renderer/stores/streamingMessageAccumulatorStore.ts",
       "name": "STREAMING_VISIBLE_PUBLISH_INTERVAL_MS",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/stores/swarmStore.ts",
-      "name": "getSwarmRunSnapshotKey",
       "kind": "export"
     },
     {
@@ -13453,11 +13308,6 @@
     },
     {
       "file": "src/renderer/utils/workbenchCapabilityRegistry.ts",
-      "name": "buildWorkbenchCapabilityRegistryFromCapabilities",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/utils/workbenchCapabilityRegistry.ts",
       "name": "getWorkbenchCapabilityReadiness",
       "kind": "export"
     },
@@ -13509,11 +13359,6 @@
     {
       "file": "src/renderer/utils/workbenchPresentation.ts",
       "name": "getBrowserWorkbenchReadinessTone",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/utils/workbenchPresentation.ts",
-      "name": "getWorkbenchConnectorStatusPresentation",
       "kind": "export"
     },
     {

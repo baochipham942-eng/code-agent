@@ -87,7 +87,7 @@ export const ENGINE_INSTALL_LABEL: Record<AgentEngineDescriptor['installState'],
   missing: '未安装',
 };
 
-export const ENGINE_RUNTIME_LABEL: Record<AgentEngineDescriptor['runtimeState'], string> = {
+const ENGINE_RUNTIME_LABEL: Record<AgentEngineDescriptor['runtimeState'], string> = {
   ready: 'Ready',
   not_configured: 'Needs config',
   blocked: 'Blocked',
@@ -282,7 +282,7 @@ export const CAPABILITY_CONFIG: Record<string, { icon: React.ReactNode; color: s
   },
 };
 
-export const HEALTH_DOT_COLOR: Record<string, string> = {
+const HEALTH_DOT_COLOR: Record<string, string> = {
   healthy: 'bg-mark-success',
   degraded: 'bg-mark-warning',
   unavailable: 'bg-mark-danger',

@@ -14,7 +14,7 @@ import type { AgentAction, CronJobDefinition, CronJobExecution } from '../../sha
 import { normalizeErrorMessage } from '../lightMemory/failureJournal';
 import { getConfigService } from '../services/core/configService';
 import { notificationService } from '../services/infra/notificationService';
-import { isNotifySuppressedResult } from './cronNormalizers';
+import { isNotifySuppressedResult, readCronAlertReason } from './cronNormalizers';
 import {
   CRON_LOGIN_WALL_STOP,
   parseCronLoginWallStop,
@@ -193,6 +193,8 @@ export function cronNotifyQuietRound(
  * 失败告警走 noticeGate（jobId+归一化错误 去重 + 1h 冷却）；完成通知不受门约束。
  * notifyWhen 未满足的安静成功轮除外（N-CRON-RESTATE-HUMAN-WHEN）：结果带
  * notifySuppressed 标记时跳过完成通知——安静正是用户要的行为。
+ * 满足判据的成功轮（N-CRON-RESTATE-HUMAN-WHEN-FU1）正文改用结果里的 alertReason
+ * 一句话原因；没有原因的（无 notifyWhen、external-watch、空 alert 标签）保持通用文案。
  */
 export function notifyCronAgentExecution(
   definition: CronJobDefinition,
@@ -220,7 +222,7 @@ export function notifyCronAgentExecution(
         sessionId: execution.sessionId,
         sessionTitle: `[定时] ${definition.name}`,
         summary: succeeded
-          ? '定时任务已完成'
+          ? readCronAlertReason(execution.result) ?? '定时任务已完成'
           : loginWall
             ? undefined
             : `定时任务失败：${execution.error ?? '未知错误'}`,

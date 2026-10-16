@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { buildCronAgentPrompt } from '../../../src/host/cron/cronAgentPrompt';
-import { countPendingReviewByTask, groupRunsByTask, parseCronRunDigest } from '../../../src/shared/cronRunDigest';
+import { countPendingReviewByTask, extractCronAlertText, groupRunsByTask, parseCronRunDigest } from '../../../src/shared/cronRunDigest';
 
 describe('parseCronRunDigest', () => {
   it('extracts the summary and multiple artifact links from the first block', () => {
@@ -271,5 +271,33 @@ describe('countPendingReviewByTask', () => {
       { resultSessionId: 'run-new' },
       { resultSessionId: 'run-old' },
     ], sessionsById)).toBe(2);
+  });
+});
+
+// N-CRON-RESTATE-HUMAN-WHEN-FU1: <cron_alert> 提取单一出口——完成系统通知与推送清洗
+// 共用。这里钉它的提取规则；「推送正文等于它」的对接钉在 cronResultDelivery.test.ts。
+describe('extractCronAlertText', () => {
+  it('returns the trimmed inner text of a single alert, tags stripped', () => {
+    expect(extractCronAlertText('巡检完成。<cron_alert>\n  生产服务器宕机  </cron_alert>'))
+      .toBe('生产服务器宕机');
+  });
+
+  it('joins multiple alert blocks with newlines and drops blank ones', () => {
+    expect(extractCronAlertText(
+      '<cron_alert>冲突 A</cron_alert> 说明 <cron_alert> </cron_alert> 尾注 <cron_alert>冲突 B</cron_alert>',
+    )).toBe('冲突 A\n冲突 B');
+  });
+
+  it('strips <cron_snapshot> blocks before matching: alerts inside a snapshot do not count', () => {
+    expect(extractCronAlertText(
+      '<cron_snapshot>state <cron_alert>快照里的不算</cron_alert></cron_snapshot><cron_alert>真告警</cron_alert>',
+    )).toBe('真告警');
+  });
+
+  it('returns an empty string when there is no alert or the tag is empty', () => {
+    expect(extractCronAlertText('普通正文，没有标记')).toBe('');
+    expect(extractCronAlertText('<cron_snapshot>only-state</cron_snapshot>')).toBe('');
+    expect(extractCronAlertText('<cron_alert></cron_alert>')).toBe('');
+    expect(extractCronAlertText('<cron_alert>   </cron_alert>')).toBe('');
   });
 });

@@ -1,8 +1,8 @@
 import type { CronJobAction, CronJobDefinition, CronJobExecution } from '../../shared/contract/cron';
-import { CRON_AGENT_SNAPSHOT, CRON_RESULT_PUSH, EXTERNAL_WATCH } from '../../shared/constants';
+import { CRON_AGENT_SNAPSHOT, CRON_RESULT_PUSH } from '../../shared/constants';
 import { saveCronExecution, upsertCronExecutionInMemory } from './cronPersistence';
 import { truncateUtf8Snapshot } from './cronAgentPrompt';
-import { CRON_SUMMARY_TAG_PATTERN } from '../../shared/cronRunDigest';
+import { CRON_SUMMARY_TAG_PATTERN, extractCronAlertText } from '../../shared/cronRunDigest';
 
 interface CronResultDeliveryOutcome {
   delivered: boolean;
@@ -42,16 +42,14 @@ function parseTarget(raw: string): { account: string; chatId?: string } {
  * 规则：任何推送先剥全部 <cron_snapshot> 块；出现 <cron_alert> 时只推标签内正文
  * （多块拼接），摘要块不参与这条路径。没有 alert 时再剥 <cron_summary>；
  * 剥完为空才回退成去掉标签的摘要正文。剥完仍为空 = 没东西要发，按安静处理不推。
- * 快照/告警正则复用 shared/constants 里的既有 pattern source，只加 global 旗标。
+ * alert 分支走 shared/cronRunDigest.extractCronAlertText（与完成系统通知共用同一提取，
+ * N-CRON-RESTATE-HUMAN-WHEN-FU1）；快照正则复用 shared/constants 的 pattern source。
  */
 function sanitizePushBody(raw: string): string {
+  const alerts = extractCronAlertText(raw);
+  if (alerts) return alerts;
   const snapshotBlocks = new RegExp(CRON_AGENT_SNAPSHOT.TAG_PATTERN.source, 'gi');
   const withoutSnapshots = raw.replace(snapshotBlocks, '');
-  const alertBlocks = new RegExp(EXTERNAL_WATCH.ALERT_TAG_PATTERN.source, 'gi');
-  const alerts = [...withoutSnapshots.matchAll(alertBlocks)]
-    .map((match) => match[1].trim())
-    .filter(Boolean);
-  if (alerts.length > 0) return alerts.join('\n').trim();
   const summaryBlocks = new RegExp(CRON_SUMMARY_TAG_PATTERN.source, 'gi');
   const summaries = [...withoutSnapshots.matchAll(summaryBlocks)]
     .map((match) => match[1].trim())

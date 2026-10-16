@@ -383,25 +383,3 @@ export const useCurrentDAG = () => {
     return state.dags.get(state.currentDagId) ?? null;
   });
 };
-
-/**
- * 获取 DAG 可见性
- */
-export const useDAGVisible = () => {
-  return useDAGStore((state) => state.isVisible);
-};
-
-/**
- * 获取活跃的 DAG 数量
- */
-export const useActiveDAGCount = () => {
-  return useDAGStore((state) => {
-    let count = 0;
-    state.dags.forEach((dag) => {
-      if (dag.status === 'running') count++;
-    });
-    return count;
-  });
-};
-
-export default useDAGStore;

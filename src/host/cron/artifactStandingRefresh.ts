@@ -214,6 +214,8 @@ export async function resolveArtifactStandingRefresh(filePath: string): Promise<
     enabled: found.job.enabled,
     cadence: found.refresh.cadence,
     instruction: found.refresh.instruction,
+    // 真实调度透出（chip 按 job.schedule 展示，metadata cadence 只做旧载荷回退）
+    ...(found.job.schedule ? { schedule: found.job.schedule } : {}),
     ...(lastRunAt !== undefined ? { lastRunAt } : {}),
     ...(found.refresh.lastRefreshFailed ? { lastRefreshFailed: found.refresh.lastRefreshFailed } : {}),
   };

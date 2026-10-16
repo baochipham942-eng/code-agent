@@ -48,7 +48,7 @@ export interface VariantSpine {
   variants: Variant[];
 }
 
-export const SPINE_VERSION = 1 as const;
+const SPINE_VERSION = 1 as const;
 
 const KINDS: readonly VariantKind[] = ['canvas-image', 'proto-html'];
 

@@ -130,6 +130,7 @@ function resultMeta(execution: CuaStatefulExecutionResult): Record<string, unkno
 export class CuaStatefulComputerUseHandler
 implements ToolHandler<Record<string, unknown>, string> {
   readonly schema = schema;
+  private readonly stateApps = new Map<string, { appName: string; expiresAtMs: number }>();
 
   constructor(
     private readonly adapter = new CuaStateAdapter(new CuaMcpDriverPort()),
@@ -145,6 +146,10 @@ implements ToolHandler<Record<string, unknown>, string> {
   ): Promise<ToolResult<string>> {
     let request: CuaToolRequest;
     try {
+      if ((args.operation === 'observe' || args.operation === 'act')
+        && (typeof args.targetApp !== 'string' || !args.targetApp.trim())) {
+        throw new Error('observe and act require targetApp: use the appName shown by list_roots.');
+      }
       request = parseRequest(args);
     } catch (error) {
       return {
@@ -238,6 +243,15 @@ implements ToolHandler<Record<string, unknown>, string> {
         error: 'Computer state is stale or owned by another Surface session.',
         code: 'SURFACE_STATE_STALE',
       };
+    }
+    if (request.operation === 'act' && typeof args.targetApp === 'string') {
+      const app = this.stateApps.get(request.stateId);
+      if (!app || app.expiresAtMs < Date.now()) {
+        return { ok: false, code: 'INVALID_ARGS', error: 'App identity for stateId is unavailable; observe again with targetApp from list_roots.' };
+      }
+      if (args.targetApp.trim().toLowerCase() !== app.appName.trim().toLowerCase()) {
+        return { ok: false, code: 'INVALID_ARGS', error: `Target app mismatch: state belongs to ${app.appName}; retry with targetApp set to that appName.` };
+      }
     }
     if (request.operation === 'act') {
       const permit = await canUseTool(
@@ -365,6 +379,18 @@ implements ToolHandler<Record<string, unknown>, string> {
           toolCallId: operationId,
           abortSignal: ctx.abortSignal,
         };
+        if (request.operation === 'observe' && typeof args.targetApp === 'string') {
+          const listed = await this.adapter.execute({ operation: 'list_roots' }, driverContext);
+          const root = listed.response.operation === 'list_roots'
+            ? listed.response.roots.find((item) => item.pid === request.target.pid && item.windowId === request.target.windowId)
+            : undefined;
+          if (!root?.appName?.trim()) {
+            return { ok: false, code: 'INVALID_ARGS', error: 'Target has no app identity; list_roots and select a current window.' };
+          }
+          if (args.targetApp.trim().toLowerCase() !== root.appName.trim().toLowerCase()) {
+            return { ok: false, code: 'INVALID_ARGS', error: `Target app mismatch: window belongs to ${root.appName}; retry with targetApp set to that appName.` };
+          }
+        }
         if (prepared) {
           await this.adapter.startSurfaceSession(driverContext);
           const cleanupContext = {
@@ -405,6 +431,14 @@ implements ToolHandler<Record<string, unknown>, string> {
       }
       onProgress?.({ stage: 'completing', percent: 100 });
       const response = execution.response;
+      const state = response.operation === 'observe' ? response.state
+        : response.operation === 'act' ? response.result.successorState : undefined;
+      for (const [stateId, app] of this.stateApps) {
+        if (app.expiresAtMs < Date.now()) this.stateApps.delete(stateId);
+      }
+      if (state?.root.appName) {
+        this.stateApps.set(state.stateId, { appName: state.root.appName, expiresAtMs: state.expiresAtMs });
+      }
       const output = JSON.stringify(response);
       const meta = {
         ...resultMeta(execution),

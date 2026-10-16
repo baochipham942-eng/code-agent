@@ -7,8 +7,8 @@ export const cuaStatefulComputerUseSchema: UntrustedContentToolSchema = {
 
 Use one operation at a time:
 1. list_roots to discover pid/windowId.
-2. observe to obtain an immutable stateId, opaque element refs, and screenshotId.
-3. act with that stateId and exactly one mutation. The state is single-use.
+2. observe with targetApp from list_roots appName to obtain an immutable stateId, opaque element refs, and screenshotId.
+3. act with the same targetApp and that stateId and exactly one mutation. The state is single-use.
 
 Element mutations must use elementRef from the state. Pixel mutations must use a point whose screenshotId exactly matches the state. Never reuse a state after act, a new observe, expiry, or provider restart. An act result reports delivery and verification separately and returns a full successor state when available. A satisfied postcondition never upgrades rejected or unknown delivery to confirmed. Treat overall=ambiguous as non-retriable until you inspect the successor state; never replay click/type/drag automatically.`,
   outputSchema: { type: 'string' },
@@ -23,6 +23,10 @@ Element mutations must use elementRef from the state. Pixel mutations must use a
       onScreenOnly: {
         type: 'boolean',
         description: '[list_roots] Only return windows on the current visible Space.',
+      },
+      targetApp: {
+        type: 'string',
+        description: '[observe, act] Required. Use the appName shown by list_roots for the selected window.',
       },
       target: {
         type: 'object',

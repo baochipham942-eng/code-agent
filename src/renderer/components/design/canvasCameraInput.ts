@@ -115,7 +115,3 @@ export function classifyCanvasPointerMode(event: CanvasPointerModeLike): CanvasP
   if (event.regionDrawing) return 'region';
   return 'selection';
 }
-
-export function dragEndCamera(camera: CanvasCamera, position: { x: number; y: number }): CanvasCamera {
-  return { ...camera, x: position.x, y: position.y };
-}

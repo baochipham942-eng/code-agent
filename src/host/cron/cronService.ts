@@ -80,6 +80,7 @@ import {
   adoptFailedAgentSession,
   classifyCronFailure,
   countTrailingCronFailures,
+  cronNotifyQuietRound,
   cronRetryBackoffMs,
   CronFailureNoticeGate,
   notifyCronAgentExecution,
@@ -894,9 +895,9 @@ export class CronService implements Disposable {
         const previousSnapshot = ctx?.[CRON_AGENT_SNAPSHOT.CONTEXT_KEY];
         const snapshotTrackingEnabled = ctx?.[CRON_AGENT_SNAPSHOT.ENABLED_KEY] === true;
         // external_event（业务事件监听）任务：无 <cron_alert> = 无新料 = 本次安静。
-        // 只对这类任务生效；普通 agent 任务 hasAlert 恒 true，永不被静音。
-        const isExternalWatch = Boolean(ctx?.[EXTERNAL_WATCH.CONTEXT_KEY]);
-        let hasAlert = !isExternalWatch;
+        // notifyWhen 任务同标记判「值得打扰」（N-CRON-RESTATE-HUMAN-WHEN）；其余任务恒响。
+        // hasAlert 不在此初始化：投递门前单点计算（本文件贴 max-lines 线）。
+        const isExternalWatch = Boolean(ctx?.[EXTERNAL_WATCH.CONTEXT_KEY]); const alertGated = isExternalWatch || Boolean(action.notifyWhen?.trim());
 
         let result: unknown; let finalAssistantText = '';
         let runError: unknown; let runFailed = false;
@@ -907,7 +908,7 @@ export class CronService implements Disposable {
             // 事件触发时通道载荷只以 untrusted 定界块追加在 prompt 尾部，并给该条
             // 用户消息标 memoryTainted（跳过自动记忆写）。调度触发的 run 字节不变。
             const sendMessage = () => orchestrator.sendMessage(
-              buildCronAgentPrompt(action.prompt, previousSnapshot, snapshotTrackingEnabled, undefined, action.urgencyCriteria)
+              buildCronAgentPrompt(action.prompt, previousSnapshot, snapshotTrackingEnabled, undefined, action.urgencyCriteria, action.notifyWhen)
                 + (eventPayloadBlock === undefined ? '' : `\n\n${eventPayloadBlock}`),
               undefined,
               agentRunOptions,
@@ -921,9 +922,6 @@ export class CronService implements Disposable {
             const snapshotToPersist = snapshotTrackingEnabled ? finalAssistantText.match(CRON_AGENT_SNAPSHOT.TAG_PATTERN)?.[1]?.trim() : undefined;
             // 只认标记：解析不到就保留上一次的值。拿整段回答顶替会把叙述性文字
             // 当成状态存下来，下一轮再原样注回提示词。
-            if (isExternalWatch) {
-              hasAlert = EXTERNAL_WATCH.ALERT_TAG_PATTERN.test(finalAssistantText);
-            }
             if (snapshotToPersist) {
               const boundedSnapshot = truncateUtf8Snapshot(snapshotToPersist);
               if (boundedSnapshot.truncated) {
@@ -1014,10 +1012,18 @@ export class CronService implements Disposable {
           throw runError;
         }
 
+        // 安静轮判定单点：gated（external-watch 或 notifyWhen）任务只认最终正文里的
+        // <cron_alert> 标记；非 gated 任务恒有警报。失败路径在上面已 throw，到这里的
+        // 一定是成功轮，finalAssistantText 已定型。
+        const hasAlert = alertGated ? EXTERNAL_WATCH.ALERT_TAG_PATTERN.test(finalAssistantText) : true;
+
         // 无新料的监听轮不投递（FB-239）：skipped 判定必须先于推送，
         // 否则安静轮照样把「没有更新」推到通道，跟 skipped 语义无进收件箱自相矛盾。
+        // notifyWhen 未满足的安静轮同样不投递（N-CRON-RESTATE-HUMAN-WHEN，判定+留痕
+        // 在 cronFailurePolicy.cronNotifyQuietRound）：执行仍 completed、仍进历史与收件箱。
         const quietWatchRound = isExternalWatch && !hasAlert;
-        if (!quietWatchRound) {
+        const notifyQuietRound = cronNotifyQuietRound(action, hasAlert, definition.id);
+        if (!quietWatchRound && !notifyQuietRound) {
           // 推送正文必须是最后一条 assistant 正文：orchestrator.sendMessage 是 Promise<void>，
           // result 恒 undefined，推它等于永远不推（PR#2060 ai-review Important）。
           await this.deliverCronResult(definition, finalAssistantText || result, executionId);
@@ -1027,7 +1033,8 @@ export class CronService implements Disposable {
         // 让它不进待过目收件箱、不写会话回流（快照已在上面照常写回）。
         // 结果组装（digest + 紧急档位 N-CRON-INBOX-URGENCY-TIER）在 cronNormalizers：
         // cronService 贴 max-lines 线，档位优先读摘要头部行、无摘要块读正文头部。
-        return buildCronAgentActionResult(action, result, cronSession.id, finalAssistantText, quietWatchRound);
+        // notifyQuietRound 只打 notifySuppressed 标记（通知门），不进 skipped 形状。
+        return buildCronAgentActionResult(action, result, cronSession.id, finalAssistantText, quietWatchRound, notifyQuietRound);
       }
 
       case 'webhook': {

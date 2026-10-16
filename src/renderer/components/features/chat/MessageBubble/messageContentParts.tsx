@@ -93,17 +93,6 @@ const languageConfig: Record<string, { color: string; name: string }> = {
   neo_ui: { color: 'text-badge-accent', name: 'Neo Interactive UI' },
 };
 
-// MermaidDiagram 及其缩放/标注/高度缓存已拆到独立文件（大文件门），原有消费者从这里 re-export
-export {
-  MermaidDiagram,
-  findMermaidSelectable,
-  clampMermaidScale,
-  zoomMermaidViewAt,
-  mermaidWheelZoomFactor,
-  rememberMermaidHeight,
-  getCachedMermaidHeight,
-  type MermaidView,
-} from './MermaidDiagram';
 
 // Threshold for collapsible code blocks
 const CODE_COLLAPSE_LINES = 25;

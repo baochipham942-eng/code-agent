@@ -23,14 +23,10 @@ const logger = createLogger('useAgent');
 type AgentEvent = AgentEventEnvelope | { type: 'stream_end'; data: null; sessionId?: string };
 
 // 分类逻辑已迁 @shared/utils/agentErrorClassification（host 侧落库失败终态要用同一份，
-// 两边漂移会让同一次失败在刷新前后显示不同的出路）。这里 re-export 维持既有
-// import 路径（useAgentHalo / 测试）不动。
-export {
-  classifyAgentError,
-  getAgentErrorMessage,
-  isTerminalAgentError,
-  normalizeAgentErrorPayload,
-};
+// 两边漂移会让同一次失败在刷新前后显示不同的出路）。仅保 isTerminalAgentError 的
+// re-export（useAgentHalo 在用）；其余三个转发 2026-10 孤儿清理删除，消费方直连
+// @shared 真源。
+export { isTerminalAgentError };
 
 /**
  * 把结构化错误挂到最后一条 assistant 消息的 metadata 上（AgentErrorCard 渲染源）。

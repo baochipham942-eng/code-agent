@@ -22,7 +22,7 @@ import { CronRunsOnSelector } from './CronRunsOnSelector';
 import { CronResultChannelField } from './CronResultChannel';
 import { showCronLoginWallWarning } from './cronLoginWallNotice';
 
-type SimpleFrequency = 'daily' | 'weekdays' | 'weekly' | 'hourly' | 'once';
+export type SimpleFrequency = 'daily' | 'weekdays' | 'weekly' | 'hourly' | 'once';
 
 export interface SimpleScheduleInput {
   freq: SimpleFrequency;

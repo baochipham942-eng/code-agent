@@ -1,5 +1,5 @@
 import type { CreateCronJobInput } from '../../../../services/cronClient';
-import { formatCronScheduleLabel } from '../automationNotice';
+import { formatCronExpressionLabel, humanizeEverySchedule, type CronHumanLang } from '@shared/cronHumanize';
 import type { PendingScheduleDraft, ScheduleRestatement } from './useScheduleDraft';
 
 interface ScheduleConfirmLabels {
@@ -124,9 +124,40 @@ function getActionDescription(action: unknown): string {
   }
 }
 
+/**
+ * 「什么时候」行的语言感知文案：直走 shared/cronHumanize（每天/每天 08:17/每 3 小时，
+ * 复杂表达式带「自定义时间 ·」前缀），at 按 UI 语言本地化日期。
+ * 直走 shared 实现后，原 automationNotice.formatCronScheduleLabel（硬编码 zh）无生产
+ * 消费方，已随本单删除；host 侧记录文案仍由 cronAutomationBridge 走同一 shared 函数。
+ */
+function formatScheduleWhenLabel(
+  schedule: CreateCronJobInput['schedule'],
+  lang: CronHumanLang,
+): string {
+  switch (schedule.type) {
+    case 'every':
+      return humanizeEverySchedule(schedule.interval, schedule.unit, lang);
+    case 'at': {
+      const ts = typeof schedule.datetime === 'number'
+        ? schedule.datetime
+        : Date.parse(String(schedule.datetime));
+      return Number.isFinite(ts)
+        ? new Date(ts).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US', {
+          month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+        })
+        : (lang === 'zh' ? '一次性' : 'Once');
+    }
+    case 'cron':
+      return formatCronExpressionLabel(schedule.expression, schedule.timezone, lang);
+    default:
+      return '';
+  }
+}
+
 export function buildScheduleConfirmRows(
   draft: Pick<PendingScheduleDraft, 'input' | 'restatement'>,
   labels: ScheduleConfirmLabels,
+  lang: CronHumanLang = 'zh',
 ): readonly ScheduleConfirmRow[] {
   // 草案已经过 normalizeScheduleDraft，但这里仍按不可信输入读：任何字段非字符串都当缺失，不抛错。
   const input = draft.input as unknown as Record<string, unknown>;
@@ -140,12 +171,15 @@ export function buildScheduleConfirmRows(
   // 无「按配置」兜底：真实链路里无效 schedule 在 normalizeScheduleDraft 就被拒，到不了这张卡；
   // 留空串只保证纯函数直喂垃圾时不抛错（生产不可达）。
   const schedule = readValidSchedule(input.schedule);
-  const when = schedule ? formatCronScheduleLabel(schedule) : '';
+  const when = schedule ? formatScheduleWhenLabel(schedule, lang) : '';
+  // 通知判据只有 agent 动作能生效（prompt 注入 + 通知门都挂在 agent 执行链上）：
+  // 非 agent 草案整行不出，不给「看起来可配置」的假口子（N-CRON-RESTATE-HUMAN-WHEN）。
+  const isAgentAction = isPlainObject(input.action) && asTrimmedString(input.action.type) === 'agent';
 
   return [
     { key: 'what', label: labels.what, value: what },
     { key: 'when', label: labels.when, value: when },
-    { key: 'notifyWhen', label: labels.notifyWhen, value: notifyWhen },
+    ...(isAgentAction ? [{ key: 'notifyWhen' as const, label: labels.notifyWhen, value: notifyWhen }] : []),
     { key: 'result', label: labels.result, value: result },
   ];
 }

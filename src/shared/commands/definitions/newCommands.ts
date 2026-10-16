@@ -5,11 +5,12 @@
 import type { CommandDefinition } from '../types';
 import { MODEL_PRICING_PER_1M } from '../../constants';
 import type { ExtensionInfo, ExtensionValidationResult } from '../../contract/extension';
+import type { SkillCautionConfirmationRequired } from '../../contract/skillInstallCaution';
 import { loadCommandPort } from '../loadCommandPort';
 
 interface ExtensionOpsCommandService {
   list(): Promise<ExtensionInfo[]>;
-  install(spec: string): Promise<void>;
+  install(spec: string, options?: { cautionConfirmationToken?: string }): Promise<void | SkillCautionConfirmationRequired>;
   uninstall(id: string): Promise<void>;
   enable(id: string): Promise<void>;
   disable(id: string): Promise<void>;
@@ -341,12 +342,41 @@ export const pluginsCommand: CommandDefinition = {
 
       // -- install --------------------------------------------------------------
       if (sub === 'install') {
-        const spec = args[1];
+        // --confirm-caution <token> 是 skill caution 门的 CLI 确认面：host 拦下安装
+        // 后打印的携 token 重发行。flag 可出现在 install 之后的任意位置，取值后剩余
+        // 的第一个位置参数才是 spec；flag 缺值按用法错误收口，什么都不装。
+        let cautionConfirmationToken: string | undefined;
+        const positional: string[] = [];
+        for (let i = 1; i < args.length; i++) {
+          if (args[i] === '--confirm-caution') {
+            const value = args[i + 1];
+            if (!value) {
+              ctx.output.error('Usage: /plugins install <spec> [--confirm-caution <token>]');
+              return { success: false };
+            }
+            cautionConfirmationToken = value;
+            i++;
+          } else {
+            positional.push(args[i]);
+          }
+        }
+        const spec = positional[0];
         if (!spec) {
           ctx.output.error('Usage: /plugins install <spec>');
           return { success: false };
         }
-        await svc.install(spec);
+        const result = await svc.install(spec, cautionConfirmationToken ? { cautionConfirmationToken } : undefined);
+        if (result?.code === 'SKILL_CAUTION_CONFIRMATION_REQUIRED') {
+          // 不带 message 返回——chat.ts 会把 message 原样再打一遍
+          const lines = [
+            `Skill install paused: ${result.pluginSpec} (${result.sourceTrust}) contains caution hits. Nothing was installed.`,
+            ...result.cautionHits.map((hit) => `  ${hit.file} · ${hit.ruleId} · ${hit.snippet}`),
+            'Review the hits above, then confirm by re-running:',
+            `/plugins install ${result.pluginSpec} --confirm-caution ${result.confirmationToken}`,
+          ];
+          ctx.output.warn(lines.join('\n'));
+          return { success: false };
+        }
         ctx.output.success(`Installed: ${spec}`);
         return { success: true };
       }

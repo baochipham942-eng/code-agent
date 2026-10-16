@@ -37,9 +37,27 @@ describe('cron agent 会话拓扑标注接线', () => {
     );
   });
 
-  it('cronService 把 action.urgencyCriteria 接进 buildCronAgentPrompt（N-CRON-MORNING-TRIAGE-URGENCY-RULE）', () => {
+  it('cronService 把 action.urgencyCriteria 与 action.notifyWhen 接进 buildCronAgentPrompt（N-CRON-MORNING-TRIAGE-URGENCY-RULE / N-CRON-RESTATE-HUMAN-WHEN）', () => {
     expect(cronSource).toMatch(
-      /buildCronAgentPrompt\(\s*action\.prompt\s*,\s*previousSnapshot\s*,\s*snapshotTrackingEnabled\s*,\s*undefined\s*,\s*action\.urgencyCriteria\s*\)/,
+      /buildCronAgentPrompt\(\s*action\.prompt\s*,\s*previousSnapshot\s*,\s*snapshotTrackingEnabled\s*,\s*undefined\s*,\s*action\.urgencyCriteria\s*,\s*action\.notifyWhen\s*\)/,
+    );
+  });
+
+  it('cronService 把 notifyWhen 安静轮接进投递门与结果标记（N-CRON-RESTATE-HUMAN-WHEN）', () => {
+    // 判定走 cronFailurePolicy.cronNotifyQuietRound（含留痕）；推送门同时看
+    // quietWatchRound（external-watch）与 notifyQuietRound（notifyWhen 未满足）；
+    // 结果组装带上 notifyQuietRound（→ notifySuppressed 标记，通知门用）。
+    expect(cronSource).toMatch(
+      /const alertGated = isExternalWatch \|\| Boolean\(action\.notifyWhen\?\.trim\(\)\)/,
+    );
+    expect(cronSource).toMatch(
+      /const notifyQuietRound = cronNotifyQuietRound\(action, hasAlert, definition\.id\)/,
+    );
+    expect(cronSource).toMatch(
+      /if \(!quietWatchRound && !notifyQuietRound\) \{[\s\S]{0,400}deliverCronResult\(/,
+    );
+    expect(cronSource).toMatch(
+      /buildCronAgentActionResult\(action, result, cronSession\.id, finalAssistantText, quietWatchRound, notifyQuietRound\)/,
     );
   });
 

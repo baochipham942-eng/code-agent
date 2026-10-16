@@ -32,28 +32,29 @@ function cautionConfirmationToken(args: {
 }
 
 /**
- * Confirmation hard-gate switch for unsigned sources, default OFF (same
- * convention as CODEX_SANDBOX_ENABLED / CODE_AGENT_PERMISSION_LLM_CLASSIFIER:
- * ship dark, flip on when the surface exists). The renderer confirmation modal
- * (part B) is not merged yet, so no caller can obtain or echo a
- * confirmationToken: with the gate enforced, any skill whose content trips a
- * caution rule (`rm -rf ./dist`, `curl localhost`, prose `shutdown`, ...) from
- * GitHub marketplace or a local zip fails with "install failed" and no retry
- * path. Default-off keeps those installs working on the official-registry
- * policy (proceed + distinguishable warn + cautionHits in the result). Part B
- * flips this default to enforced.
+ * Confirmation hard-gate switch for unsigned sources, default ON since the
+ * renderer confirmation surface (part B, PR #2361) merged and every GUI install
+ * entry can echo a confirmationToken (settings pages, chat drag-drop and
+ * /plugins install share SkillCautionDisclosureModal). Only an explicit '0'
+ * opts out — same shape as a kill switch, opposite of the old ship-dark
+ * default. With the gate enforced, any skill whose content trips a caution rule
+ * (`rm -rf ./dist`, `curl localhost`, prose `shutdown`, ...) from GitHub
+ * marketplace or a local zip stalls at SKILL_CAUTION_CONFIRMATION_REQUIRED
+ * until the caller repeats the install with the scanned token; with '0' those
+ * installs take the official-registry policy (proceed + distinguishable warn +
+ * cautionHits in the result).
  */
 function isSkillCautionConfirmationGateEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.CODE_AGENT_SKILL_CAUTION_CONFIRMATION_ENABLED === '1';
+  return env.CODE_AGENT_SKILL_CAUTION_CONFIRMATION_ENABLED !== '0';
 }
 
 /**
  * Empty hits and builtin skip the gate. official-registry proceeds with a warn
  * and no audit. Unsigned archive and local marketplace throw until the caller
- * repeats the install with the token from the latest scan — but only while the
- * confirmation gate is enabled; with it off (see above) they take the
- * official-registry policy. `force` is not an input: overwrite never satisfies
- * this gate.
+ * repeats the install with the token from the latest scan — the confirmation
+ * gate is on by default; only CODE_AGENT_SKILL_CAUTION_CONFIRMATION_ENABLED='0'
+ * restores the proceed-with-warn policy for those sources. `force` is not an
+ * input: overwrite never satisfies this gate.
  */
 export async function applySkillCautionGate(args: {
   pluginSpec: string;

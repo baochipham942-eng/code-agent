@@ -16,6 +16,7 @@ import { useI18n } from '../../hooks/useI18n';
 import { useAppStore } from '../../stores/appStore';
 import { resolveHostReasonCopy } from '../../utils/hostReasonPresentation';
 import { permissionConsequence } from './permissionPresentation';
+import { ConnectorWriteDisclosure } from './ConnectorWriteDisclosure';
 import { OS_SANDBOX_CODES } from '@shared/constants/sandbox';
 
 interface RequestDetailsProps {
@@ -136,6 +137,23 @@ export function RequestDetails({ request }: RequestDetailsProps) {
 
       {/* URL */}
       {details.url && <DetailItem label="URL" value={details.url} isUrl />}
+
+      {/* 连接器令牌写：方法 + 路径 + 请求内容摘要 + 隐私边界（与 rawArgs 分支同款披露） */}
+      {request.boundary?.id === 'connector.external_write' && (
+        <>
+          <ConnectorWriteDisclosure method={details.method} url={details.url} body={details.body} />
+          <BoundaryDisclosure
+            boundary={getPermissionBoundary(request.boundary.id, {
+              language,
+              connectorName: language === 'en'
+                ? request.boundary.connectorNameEn ?? request.boundary.connectorName
+                : request.boundary.connectorName,
+            })}
+            reason={language === 'en' ? request.boundary.reasonEn ?? request.boundary.reason : request.boundary.reason}
+            label={labels.privacyDetails}
+          />
+        </>
+      )}
 
       {/* MCP 工具 */}
       {details.server && details.toolName && (

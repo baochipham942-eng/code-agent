@@ -40,4 +40,5 @@ export const zhSkillCaution = {
   confirmInstall: '确认安装',
   confirming: '安装中…',
   okButton: '我知道了',
+  notInstalledPrefix: '未安装：',
 };

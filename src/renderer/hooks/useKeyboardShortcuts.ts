@@ -133,16 +133,6 @@ function isTauriRuntime(): boolean {
 // Default Shortcuts
 // ============================================================================
 
-export const DEFAULT_SHORTCUTS: KeyboardShortcut[] = KEYBINDING_DEFINITIONS.map((definition) => ({
-  id: definition.id,
-  label: definition.label,
-  keyMac: formatShortcutForDisplay(definition.defaultHotkeys.darwin, 'darwin'),
-  keyWin: formatShortcutForDisplay(definition.defaultHotkeys.win32, 'win32'),
-  description: definition.description,
-  category: SHORTCUT_CATEGORY_BY_KEYBINDING_CATEGORY[definition.category],
-  enabled: definition.enabledByDefault,
-}));
-
 // ============================================================================
 // Hook
 // ============================================================================
@@ -655,21 +645,3 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
     };
   }, [handleKeyDown]);
 }
-
-/**
- * 获取快捷键列表（用于帮助/设置展示）
- */
-export function getShortcutsList(): KeyboardShortcut[] {
-  return DEFAULT_SHORTCUTS;
-}
-
-/**
- * 格式化快捷键显示（根据平台）
- */
-export function formatShortcut(shortcut: KeyboardShortcut): string {
-  const isMac = typeof navigator !== 'undefined' &&
-                navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-  return isMac ? shortcut.keyMac : shortcut.keyWin;
-}
-
-export default useKeyboardShortcuts;

@@ -26,6 +26,7 @@ import { directionTokens } from '@/design/direction-tokens';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { VoiceSchemas } from '@shared/ipc/schemas';
 import type { SwarmAgentState } from '@shared/contract/swarm';
+import { formatDesignCanvasSessionReminder } from '@shared/design/canvasSessionReminder';
 import { createLogger } from '../../utils/logger';
 import { useAppStore } from '../../stores/appStore';
 import { useDesignCanvasStore } from '../../components/design/designCanvasStore';
@@ -98,16 +99,6 @@ function formatDesignAcceptanceContractReminder(contract: DesignAcceptanceContra
  * 别用 shell / python / 写文件等方式绕开画布。修补 dogfood 暴露的缺口——空画布不注入
  * canvasSnapshot，系统提示零引导，agent 不知道该走画布工具。
  */
-export function formatDesignCanvasSessionReminder(canvasEmpty: boolean): string {
-  const canvasState = canvasEmpty ? '为空' : '已有元素';
-  return [
-    '<system-reminder kind="design-canvas-session">',
-    `你正在一个「设计画布」协作会话中，右侧画布是与用户共同迭代的产物面（画布当前${canvasState}）。`,
-    '要在画布上创建或修改任何视觉内容（生成图片、添加/排布节点、连线、标注、出多个变体等），必须调用 ProposeCanvasOps 工具提议画布操作，由用户在画布上审批后落地；需要一次性产出多个变体供用户挑选时用 RequestDesignAutonomy。',
-    '严禁用 shell / python / 写文件等方式生成图片或绕开画布——画布是本会话唯一的视觉产物面。',
-    '</system-reminder>',
-  ].join('\n');
-}
 
 function applyDesignAcceptanceContractToContent(
   content: string,

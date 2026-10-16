@@ -31,7 +31,10 @@ import { getZhipuOfficialVideoApiKey } from '../../../tools/modules/network/tool
 import { getMinimaxApiKey } from '../../../services/media/imageGenerationService';
 import { downloadVideoAsBuffer, generateVideo } from '../../../services/media/videoGenerationService';
 import { MODEL_API_ENDPOINTS, ZHIPU_OFFICIAL_QUICK_MODEL } from '../../../../shared/constants';
-import { GENERATION_TOOL_DEFAULT_MODELS } from '../../../../shared/media/generationToolDefaults';
+import {
+  GENERATION_TOOL_DEFAULT_MODELS,
+  GENERATION_TOOL_ZHIPU_VIDEO_DEFAULT_DURATION_SEC,
+} from '../../../../shared/media/generationToolDefaults';
 import { createFileArtifact, createVirtualArtifact } from '../../../tools/artifacts/artifactMeta';
 import { isPathWithinRoot, resolveWorkspacePath } from '../../../runtime/workspaceScope';
 import {
@@ -715,7 +718,7 @@ export async function executeVideoGenerate(
           imageUrl: params.imageUrl,
           size,
           quality: params.quality || 'quality',
-          duration: params.duration || 5,
+          duration: params.duration || GENERATION_TOOL_ZHIPU_VIDEO_DEFAULT_DURATION_SEC,
           fps: params.fps || 30,
         },
         ctx.abortSignal,
@@ -742,7 +745,7 @@ export async function executeVideoGenerate(
         expandedPrompt,
         taskId,
         aspectRatio,
-        duration: params.duration || 5,
+        duration: params.duration || GENERATION_TOOL_ZHIPU_VIDEO_DEFAULT_DURATION_SEC,
         fps: params.fps || 30,
       };
     } else {

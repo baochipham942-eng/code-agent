@@ -285,7 +285,7 @@ function DecisionTraceView({ trace }: { trace: DecisionTrace }) {
 function MediaPriceNotice({ request }: { request: PermissionRequest }) {
   const { t } = useI18n();
   const labels = t.decisionCard.permission;
-  const pending = useAppStore().pendingPermissionRequest;
+  const pending = useAppStore((s) => s.pendingPermissionRequest);
   const args =
     pending?.id === request.id && pending.tool === request.tool
       ? (pending.details as Record<string, unknown>)

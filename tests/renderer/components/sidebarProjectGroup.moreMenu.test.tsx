@@ -30,7 +30,6 @@ function sharedSessionProps(): SidebarSessionItemSharedProps {
     backgroundSessionMap: new Map(),
     sessionStates: {},
     hasNeedsInputForSession: () => false,
-    getWaitingDetailForSession: () => undefined,
     searchQuery: '',
     messageSearchHitsBySessionId: {},
     replayEvidenceBySessionId: new Map(),

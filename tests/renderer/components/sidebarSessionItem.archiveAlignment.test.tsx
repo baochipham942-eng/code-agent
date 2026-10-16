@@ -47,7 +47,6 @@ function renderRow(id: string, options: { unread?: boolean; badge?: boolean } = 
       backgroundSessionMap={new Map()}
       sessionStates={{}}
       hasNeedsInputForSession={() => false}
-      getWaitingDetailForSession={() => undefined}
       searchQuery=""
       messageSearchHitsBySessionId={{}}
       replayEvidenceBySessionId={new Map()}

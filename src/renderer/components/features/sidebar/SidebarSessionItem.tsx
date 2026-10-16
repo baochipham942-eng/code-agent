@@ -65,7 +65,7 @@ export interface SidebarSessionItemProps {
   backgroundSessionMap: SidebarDerivedSessions['backgroundSessionMap'];
   sessionStates: Record<string, SessionState>;
   hasNeedsInputForSession: SidebarDerivedSessions['hasNeedsInputForSession'];
-  getWaitingDetailForSession: SidebarDerivedSessions['getWaitingDetailForSession'];
+  getWaitingDetailForSession?: SidebarDerivedSessions['getWaitingDetailForSession'];
   searchQuery: string;
   messageSearchHitsBySessionId: SidebarDerivedSessions['messageSearchHitsBySessionId'];
   replayEvidenceBySessionId: SidebarDerivedSessions['replayEvidenceBySessionId'];
@@ -148,7 +148,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
     status.kind === 'error' ? t.common.error : status.kind === 'incomplete' ? t.common.incomplete : status.label;
   const isRunning = sessionTurnActive && (status.kind === 'live' || status.kind === 'background');
   const attentionDotClass = getAttentionDotClassName(status.kind);
-  const waitingDetail = status.kind === 'approval' ? getWaitingDetailForSession(session.id) : undefined;
+  const waitingDetail = status.kind === 'approval' ? getWaitingDetailForSession?.(session.id) : undefined;
   const waitingText = waitingDetail?.kind === 'permission'
     ? waitingDetail.appName
       ? s.waitingPermissionApp.replace('{app}', () => waitingDetail.appName!)

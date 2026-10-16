@@ -29,7 +29,6 @@ function sharedSessionProps(currentSessionId: string | null = null): SidebarSess
     backgroundSessionMap: new Map(),
     sessionStates: {},
     hasNeedsInputForSession: () => false,
-    getWaitingDetailForSession: () => undefined,
     searchQuery: '',
     messageSearchHitsBySessionId: {},
     replayEvidenceBySessionId: new Map(),

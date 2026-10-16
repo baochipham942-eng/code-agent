@@ -34,7 +34,6 @@ describe('SidebarSessionItem Evidence Control quietness', () => {
         backgroundSessionMap={new Map()}
         sessionStates={{}}
         hasNeedsInputForSession={() => false}
-        getWaitingDetailForSession={() => undefined}
         searchQuery=""
         messageSearchHitsBySessionId={{}}
         replayEvidenceBySessionId={new Map()}

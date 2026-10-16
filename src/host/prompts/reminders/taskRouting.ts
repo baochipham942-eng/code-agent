@@ -26,7 +26,7 @@ export const TASK_ROUTING_REMINDERS: ReminderDefinition[] = [
 \`\`\`
 </system-reminder>`,
     tokens: 70,
-    shouldInclude: (ctx) => ctx.taskFeatures.isMultiDimension ? 1 : 0,
+    shouldInclude: (ctx) => ctx.taskFeatures.isMultiDimension && !ctx.taskFeatures.isBoundedComparison ? 1 : 0,
     category: 'efficiency',
   },
   {
@@ -43,7 +43,9 @@ export const TASK_ROUTING_REMINDERS: ReminderDefinition[] = [
 </system-reminder>`,
     tokens: 90,
     shouldInclude: (ctx) =>
-      ctx.taskFeatures.isComplexTask && !ctx.taskFeatures.isMultiDimension ? 1 : 0,
+      ctx.taskFeatures.isComplexTask
+      && !ctx.taskFeatures.isMultiDimension
+      && !ctx.taskFeatures.isBoundedComparison ? 1 : 0,
     category: 'efficiency',
   },
   {

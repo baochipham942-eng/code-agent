@@ -43,6 +43,13 @@ export class TurnState {
   private _currentIterationSpanId = '';
   private _turnStartTime = 0;
   private _toolsUsedInTurn: string[] = [];
+  /**
+   * 本轮 run 开跑时的用户 prompt（initializeRun 的 userMessage）。
+   * 轮内还会追加 user 角色消息（autoApprovePlan 合成确认、runtimeSteer 转向），
+   * 「历史里最新一条 user」会偏离开跑 prompt——按轮判定的消费方（如
+   * toolRunPolicy 的委派面收口）读这里，不扫 messages。
+   */
+  private _runUserPrompt = '';
 
   // --- 推理流转 ---
   private _lastStreamedContent = '';
@@ -81,6 +88,7 @@ export class TurnState {
   }
 
   get currentTurnId(): string { return this._currentTurnId; }
+  get runUserPrompt(): string { return this._runUserPrompt; }
   get messageDeltaSeq(): number { return this._messageDeltaSeq; }
   get currentIterationSpanId(): string { return this._currentIterationSpanId; }
   get turnStartTime(): number { return this._turnStartTime; }
@@ -105,10 +113,11 @@ export class TurnState {
       .filter((block): block is string => block !== undefined);
   }
 
-  /** run 开始：清 turn 标识与上一轮 run 残留的 advisory 注记（原 conversationRuntime#run 起始段语义） */
-  beginRun(): void {
+  /** run 开始：清 turn 标识与上一轮 run 残留的 advisory 注记，并记下本轮开跑 prompt */
+  beginRun(runUserPrompt?: string): void {
     this._currentTurnId = '';
     this._advisoryTailBlocks.clear();
+    this._runUserPrompt = runUserPrompt ?? '';
   }
 
   setAdvisoryTailBlock(key: AdvisoryTailKey, content: string): void {

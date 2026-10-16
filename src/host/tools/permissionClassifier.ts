@@ -190,7 +190,20 @@ const WRITE_TOOLS = new Set([
   'Append',
   'edit_file',
   'Edit',
+  // 表格卡第二张工作表走 DocEdit（file_path）。它不在 Jev 扩桶里，规则落空就
+  // 一律 ask；无工作区的新会话没有人点批准。与 Edit 同一条路径判据：工作区内放行，
+  // 区外和受保护路径仍 ask。
+  'DocEdit',
+  // Office 一轮文件交付的原生生成器（output_path）。不进写入桶就落到 LLM 分类器
+  // 兜底 → ask，无头新会话没人点批准（r4 实测 docx_generate 卡审批 34s 后整轮取消）。
+  // 产物路径判据与 Edit 一致：工作区内放行，区外/受保护路径仍 ask。
+  'docx_generate',
+  'excel_generate',
 ]);
+
+// 生成器类写入工具的路径是可选参数：缺省时产物落在会话工作目录（resolveInputPath
+// 对 fileName 的行为），按 workingDirectory 本身参与边界判断即可。
+const GENERATOR_WRITE_TOOLS = new Set(['docx_generate', 'excel_generate']);
 
 const HOME_DIR = os.homedir();
 const CANONICAL_HOME_DIR = resolveCanonicalRunPath(HOME_DIR);
@@ -746,8 +759,11 @@ export class PermissionClassifier {
       return this.classifyBashCommand(args.command, context, startTime);
     }
 
-    // R6: 文件写入工具 — 按路径判断
-    if (WRITE_TOOLS.has(toolName)) {
+    // R6: 文件写入工具 — 按路径判断。
+    // 生成器只在有权威工作区（新会话首轮起就有 project root）时走确定性写围栏；
+    // 无工作区场景维持既有 Jev 语境判定，不改变后台 run 的审批语义（jev R4 契约）。
+    if (WRITE_TOOLS.has(toolName)
+      && (context.workspaceRoot || !GENERATOR_WRITE_TOOLS.has(toolName))) {
       return this.classifyFileWrite(toolName, args, context, startTime);
     }
 
@@ -1126,7 +1142,8 @@ export class PermissionClassifier {
     context: ClassificationContext,
     startTime: number
   ): ClassificationResult | null {
-    const filePath = (args.file_path as string) || (args.path as string);
+    const filePath = (args.file_path as string) || (args.path as string) || (args.output_path as string)
+      || (GENERATOR_WRITE_TOOLS.has(toolName) ? '.' : undefined);
     if (!filePath) {
       const reason = '文件路径缺失';
       return {

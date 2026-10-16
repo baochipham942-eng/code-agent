@@ -45,6 +45,7 @@ function normalizeRequest(
     type: request.type as PermissionType,
     reason: request.reason,
     reasonCode: request.reasonCode,
+    argsPreview: request.argsPreview,
     dangerLevel: request.dangerLevel,
     riskClass: request.riskClass,
     boundary: request.boundary,
@@ -531,6 +532,13 @@ export function PermissionCard({
       question={question}
       details={
         <>
+          {/* 停车审批参数预览（host 已脱敏 + 截断）：一眼看清这步要干什么，缺省不渲染 */}
+          {request.argsPreview && (
+            <div className="rounded-lg bg-zinc-900/60 px-2.5 py-1.5" data-testid="permission-args-preview">
+              <span className="text-[11px] text-zinc-500">{p.argsPreviewLabel}</span>
+              <p className="mt-0.5 break-all text-xs leading-5 text-zinc-300">{request.argsPreview}</p>
+            </div>
+          )}
           <RequestDetails request={request} />
         </>
       }

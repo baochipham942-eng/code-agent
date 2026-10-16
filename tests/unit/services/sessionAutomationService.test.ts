@@ -457,5 +457,47 @@ describe('SessionAutomationService', () => {
       expect(dirItem?.displayTool).toContain('/tmp/other-project');
       expect(dirItem?.status).toBe('pending');
     });
+
+    // ①（N-PARKED-APPROVAL-SURVIVE-RESTART-PERSIST）：新字段全 optional，
+    // 不带 argsPreview/argsRef 的旧行 payload 照旧解析，收件箱行为不变。
+    it('旧 payload（无 argsPreview/argsRef 字段）照旧解析，argsPreview 为 undefined', () => {
+      state.parkedRows.set('perm_old', {
+        id: 'perm_old',
+        kind: 'tool_approval',
+        status: 'pending',
+        submittedAt: 1000,
+        coordinatorId: 'session-old',
+        payloadJson: JSON.stringify({
+          sessionId: 'session-old',
+          tool: 'Bash',
+          requestedAt: 1000,
+          argsSummary: 'npm test',
+        }),
+      });
+      const items = new SessionAutomationService().listParkedApprovals();
+      expect(items).toHaveLength(1);
+      expect(items[0].tool).toBe('Bash');
+      expect(items[0].argsPreview).toBeUndefined();
+    });
+
+    it('payload 带 argsPreview 时透传给收件箱行', () => {
+      state.parkedRows.set('perm_prev', {
+        id: 'perm_prev',
+        kind: 'tool_approval',
+        status: 'pending',
+        submittedAt: 1000,
+        coordinatorId: 'session-prev',
+        payloadJson: JSON.stringify({
+          sessionId: 'session-prev',
+          tool: 'Bash',
+          requestedAt: 1000,
+          argsRef: { sessionId: 'session-prev', toolCallId: 'toolu_prev' },
+          argsPreview: 'npm run gates:fast · ***REDACTED***',
+        }),
+      });
+      const items = new SessionAutomationService().listParkedApprovals();
+      expect(items).toHaveLength(1);
+      expect(items[0].argsPreview).toBe('npm run gates:fast · ***REDACTED***');
+    });
   });
 });

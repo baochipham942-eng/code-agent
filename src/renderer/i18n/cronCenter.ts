@@ -244,6 +244,7 @@ export const cronCenterZh = {
     // 交互审批卡（PermissionCard）external 作用域提示；与上面停车审批词条同组维护
     scopeExternalRecall: '离开本机：发出去收不回',
     parkedAlwaysAllow: '每次都允许发 {target}',
+    parkedArgsPreviewLabel: '参数：',
     pairingTitle: '{channel} 私聊配对',
     pairingCode: '配对码 {code}',
     pairingSender: '发送者 {sender}',
@@ -510,6 +511,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     parkedScopeExternal: 'Leaves this device → {target}',
     scopeExternalRecall: 'Leaves this device: cannot be recalled once sent',
     parkedAlwaysAllow: 'Always allow sending to {target}',
+    parkedArgsPreviewLabel: 'Arguments: ',
     pairingTitle: '{channel} direct-message pairing',
     pairingCode: 'Pairing code {code}',
     pairingSender: 'Sender {sender}',

@@ -13,7 +13,7 @@ import type {
   CronExecutionTrigger,
 } from '../../shared/contract/cron';
 import { CRON_GUARDRAILS, CRON_EVENT_TRIGGER, CRON_URGENCY_CRITERIA } from '../../shared/constants';
-import { parseCronRunDigest, type CronRunDigest } from '../../shared/cronRunDigest';
+import { extractCronAlertText, parseCronRunDigest, type CronRunDigest } from '../../shared/cronRunDigest';
 import { parseUrgencyHeader } from '../../shared/cronUrgency';
 import type { CronUrgency } from '../../shared/contract/sessionAutomation';
 
@@ -33,11 +33,25 @@ export interface CronAgentActionResult {
    * 收件箱，只是不打扰。只在成功路径打上；失败通知永不受它约束。
    */
   notifySuppressed?: boolean;
+  /**
+   * notifyWhen 满足轮从 <cron_alert> 提取的一句话原因（N-CRON-RESTATE-HUMAN-WHEN-FU1）：
+   * 完成系统通知正文用它替代通用「定时任务已完成」，让被打断的用户直接看到为何而通知。
+   * 只在判据设置、非安静轮且提取非空时打上；空 <cron_alert></cron_alert> 不落键，
+   * 通知回落通用文案（永不空正文）。无 notifyWhen 的任务（含 external-watch）恒无此键。
+   */
+  alertReason?: string;
 }
 
 /** 执行结果是否带「notifyWhen 未满足」的安静标记（通知门用，见 cronFailurePolicy）。 */
 export function isNotifySuppressedResult(value: unknown): boolean {
   return isCronAgentActionResult(value) && value.notifySuppressed === true;
+}
+
+/** 读 notifyWhen 满足轮的一句话原因（完成通知正文用）；非 agent 形状或没有时为 undefined。 */
+export function readCronAlertReason(value: unknown): string | undefined {
+  if (!isCronAgentActionResult(value)) return undefined;
+  const reason = typeof value.alertReason === 'string' ? value.alertReason.trim() : undefined;
+  return reason || undefined;
 }
 
 /**
@@ -55,6 +69,9 @@ export function buildCronAgentActionResult(
 ): CronAgentActionResult & { skipped?: boolean; reason?: string } {
   const digest = parseCronRunDigest(finalAssistantText);
   const { urgency, raw: urgencyRaw } = parseUrgencyHeader(digest.summary ?? finalAssistantText);
+  const alertReason = !notifyQuietRound && action.notifyWhen?.trim()
+    ? extractCronAlertText(finalAssistantText)
+    : '';
   return {
     agentType: action.agentType,
     prompt: action.prompt,
@@ -65,6 +82,7 @@ export function buildCronAgentActionResult(
     ...(urgencyRaw ? { urgencyRaw } : {}),
     ...(quietWatchRound ? { skipped: true, reason: 'no_new_event' } : {}),
     ...(notifyQuietRound ? { notifySuppressed: true } : {}),
+    ...(alertReason ? { alertReason } : {}),
   };
 }
 

@@ -1,9 +1,25 @@
+import { CRON_AGENT_SNAPSHOT, EXTERNAL_WATCH } from './constants';
 import type { SessionOriginKind } from './contract/session';
 
 const CRON_SUMMARY_BLOCK_PATTERN = /<cron_summary\s*>([\s\S]*?)<\/cron_summary\s*>/i;
 
 /** The tag pattern is shared by the parser and push-body sanitizer. */
 export const CRON_SUMMARY_TAG_PATTERN = CRON_SUMMARY_BLOCK_PATTERN;
+
+/**
+ * 提取 <cron_alert> 内文（N-CRON-RESTATE-HUMAN-WHEN-FU1）：完成系统通知与推送清洗
+ * 共用同一出口，先剥全部 <cron_snapshot> 块再收集 alert 内文（多块去空后用 "\n"
+ * 拼接），没有 alert 时返回空串。正则复用 shared/constants 里的既有 pattern
+ * source，只加 global 旗标——两处消费方对同一正文的提取结果逐字一致。
+ */
+export function extractCronAlertText(raw: string): string {
+  const snapshotBlocks = new RegExp(CRON_AGENT_SNAPSHOT.TAG_PATTERN.source, 'gi');
+  const alertBlocks = new RegExp(EXTERNAL_WATCH.ALERT_TAG_PATTERN.source, 'gi');
+  const alerts = [...raw.replace(snapshotBlocks, '').matchAll(alertBlocks)]
+    .map((match) => match[1].trim())
+    .filter(Boolean);
+  return alerts.join('\n').trim();
+}
 
 export interface CronRunDigest {
   summary?: string;

@@ -32,9 +32,12 @@ export interface CronFailureClassification {
 
 const QUOTA_TEXT = /\b1308\b|\b1310\b|usage limit/i;
 // 国内 provider 的 401 文案是中文（GLM 实测「令牌已过期或验证不正确」），classifyAgentError
-// 的英文关键词认不出就会漏成 other。报文里带出的 401 状态码按 host 侧 getModelAuthFailureMarker
-// 的口径（401 即鉴权）一并认掉；额度走 429/1308，与这里不撞。
-const AUTH_TEXT = /\b401\b|令牌已过期|验证不正确|鉴权失败|api\s*key\s*(无效|过期|不正确)/i;
+// 的英文关键词认不出就会漏成 other，这里补认这些**成句的鉴权措辞**。裸 401 不扫：错误原文是
+// 上游自由文本（R2 教训），「请 401 秒后重试」/回显的 URL、shell 输出都可能带独立 401，裸扫会把
+// 限流误判成鉴权、引着用户去改没坏的 key。401 的结构化判定在 host 侧 getModelAuthFailureMarker
+// （只读 status/code 字段）；落到文本层时 classifyAgentError 也只在 401 搭配 invalid api key /
+// unauthorized 等措辞时才认 auth，两边口径一致。
+const AUTH_TEXT = /令牌已过期|验证不正确|鉴权失败|api\s*key\s*(无效|过期|不正确)/i;
 const LIMIT_TEXT = /(\d+\s*-?\s*hours?(?:\s+window)?)|(\d+\s*小时(?:窗口|额度)?)|(每周|每月|周额度|月额度)|\b(weekly|monthly|per week|per month)\b/i;
 const ISO_LIKE = /(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)/;
 const SOURCE_TEXT_LIMIT = 4000;

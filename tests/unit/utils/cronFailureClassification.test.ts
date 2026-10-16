@@ -49,6 +49,15 @@ describe('classifyCronFailure', () => {
       .toEqual({ kind: 'auth' });
   });
 
+  it('独立 401 数字不是鉴权信号（自由文本可能带无关的 401）', () => {
+    // 服务商限流文案「请 401 秒后重试」：裸扫 \b401\b 会把限流吞成鉴权，
+    // 引导用户去改没坏的 key。鉴权要靠成句措辞或结构化状态码（R2 教训）。
+    expect(classifyCronFailure('429 Too Many Requests，请 401 秒后重试')).toEqual({ kind: 'rate_limit' });
+    // 回显的 URL / shell 输出里带 401 同理，不得误判成鉴权。
+    expect(classifyCronFailure('curl https://api.test/v1/chat?page=401 failed: fetch failed'))
+      .toEqual({ kind: 'network' });
+  });
+
   it('402 余额不足归额度，不编时间和窗口', () => {
     const result = classifyCronFailure('402 Payment Required: insufficient balance');
     expect(result).toEqual({ kind: 'quota' });

@@ -63,7 +63,19 @@ export function buildSharedCommandHostPorts(deps: {
     },
     extensionOps: {
       list: async () => (await extensionOpsService()).list(),
-      install: async (spec: string) => (await extensionOpsService()).install(spec),
+      install: async (spec: string, options?: { cautionConfirmationToken?: string }) => {
+        try {
+          return await (await extensionOpsService()).install(spec, options);
+        } catch (error) {
+          // skill caution 门按异常上抛；CLI 命令层要的是 .result（命中清单 + 重发
+          // token），其余错误保持原样上抛
+          const { SkillCautionConfirmationRequiredError } = await import(
+            '../../host/skills/marketplace/skillInstallCautionGate'
+          );
+          if (error instanceof SkillCautionConfirmationRequiredError) return error.result;
+          throw error;
+        }
+      },
       uninstall: async (id: string) => (await extensionOpsService()).uninstall(id),
       enable: async (id: string) => (await extensionOpsService()).enable(id),
       disable: async (id: string) => (await extensionOpsService()).disable(id),

@@ -2,7 +2,7 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { SurfaceEvidenceCard } from '../../../../src/renderer/components/features/surfaceExecution';
+import { SurfaceEvidenceCard } from '../../../../src/renderer/components/features/surfaceExecution/SurfaceEvidenceCard';
 import { surfaceExecutionZh } from '../../../../src/renderer/i18n/surfaceExecution';
 import { surfaceEvidence, surfaceScope } from './fixtures';
 

@@ -21,7 +21,6 @@ import { EmptyState } from '../primitives';
 import { Button } from '../primitives/Button';
 import { WorkbenchPill } from '../workbench/WorkbenchPrimitives';
 import type {
-  LoopDecisionView,
   MemoryActivityEvent,
   RunWorkbenchModel,
   RunUiState,
@@ -29,7 +28,6 @@ import type {
   SubagentRunView,
   TaskRecord,
   TaskRecordOutputRef,
-  ToolCapabilityView,
 } from '../../types/runWorkbench';
 import { isLiveRunStatus } from '../../utils/overviewRunHeader';
 import {
@@ -43,7 +41,7 @@ import { typedInvokeDomain } from '../../services/typedInvoke';
 import { useAppStore } from '../../stores/appStore';
 import { useRightPanelTabsStore } from '../../stores/rightPanelTabsStore';
 
-export function runStatusClass(status: RunUiStatus): string {
+function runStatusClass(status: RunUiStatus): string {
   switch (status) {
     case 'completed':
       return 'border-badge-success/20 bg-emerald-500/10 text-badge-success';
@@ -714,69 +712,6 @@ const TaskRailStepRow = ({ step, muted = false }: { step: TaskRailStepView; mute
           {t.sessionInspector.viewProcess}
         </Button>
       </div>
-    </div>
-  );
-};
-
-export const RunTimeline = ({ decisions }: { decisions: LoopDecisionView[] }) => {
-  const { t } = useI18n();
-  if (decisions.length === 0) return <EmptyState variant="inline" text={t.taskStatusPanels.runWorkbench.noRunEvents} />;
-
-  return (
-    <div className="space-y-1.5">
-      {decisions.map((decision) => (
-        <div key={`${decision.runId}-${decision.step}-${decision.action}`} className="flex gap-2 rounded-md bg-black/10 px-2.5 py-2">
-          <div className="mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border border-white/[0.08] text-[10px] text-zinc-500">
-            {decision.step}
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs text-zinc-200">{decision.action}</span>
-              {decision.blockedReason && <AlertTriangle className="h-3 w-3 text-badge-warning" />}
-            </div>
-            <div className="mt-0.5 text-[11px] text-zinc-500">{decision.reason}</div>
-            {decision.expectedNextAction && (
-              <div className="mt-0.5 text-[11px] text-zinc-600">{decision.expectedNextAction}</div>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-};
-
-function sourceTone(source: ToolCapabilityView['source']): 'skill' | 'connector' | 'mcp' | 'neutral' | 'info' {
-  if (source === 'skill') return 'skill';
-  if (source === 'connector') return 'connector';
-  if (source === 'mcp') return 'mcp';
-  if (source === 'computer' || source === 'memory') return 'info';
-  return 'neutral';
-}
-
-export const ToolDiscoverySummary = ({ tools }: { tools: ToolCapabilityView[] }) => {
-  const { t } = useI18n();
-  if (tools.length === 0) return <EmptyState variant="inline" text={t.taskStatusPanels.runWorkbench.noToolActivity} />;
-
-  return (
-    <div className="space-y-1.5">
-      {tools.map((tool) => (
-        <div key={tool.id} className="flex items-center gap-2 rounded-md bg-black/10 px-2.5 py-2">
-          <WorkbenchPill tone={sourceTone(tool.source)}>{tool.source}</WorkbenchPill>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-xs text-zinc-200">{tool.label}</div>
-            {/* 同上：工具失败原因也不把 raw 输出怼给用户 */}
-            {(tool.blockedReason || tool.blockedReasonCategory) && (
-              <div className="truncate text-[11px] text-badge-warning">
-                {tool.blockedReason
-                  || (tool.blockedReasonCategory ? t.taskPanel.taskBlockedReason[tool.blockedReasonCategory] : '')}
-              </div>
-            )}
-          </div>
-          <span className={`text-[10px] ${tool.callable ? 'text-badge-success' : 'text-badge-warning'}`}>
-            {tool.callable ? 'callable' : 'blocked'}
-          </span>
-        </div>
-      ))}
     </div>
   );
 };

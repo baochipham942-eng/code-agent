@@ -13,7 +13,7 @@ import {
   type DesignDocProvenance,
 } from './designDocTypes';
 
-export const DESIGN_DOC_FILE = 'design-doc.json';
+const DESIGN_DOC_FILE = 'design-doc.json';
 
 function cleanRunDir(runDir: string): string {
   return runDir.replace(/\/+$/, '');

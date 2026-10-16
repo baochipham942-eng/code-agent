@@ -7,6 +7,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BACKGROUND_TASK_CANCELLED, RUN_ERROR_CODE_MAX_ITERATIONS } from '../../../src/shared/constants';
+import { handleImagePayloadExceededError } from '../../../src/host/agent/runtime/contextAssembly/inferenceImagePayloadError';
 
 const sessionManagerState = vi.hoisted(() => ({
   addMessageToSession: vi.fn(),
@@ -47,6 +48,10 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
     error: vi.fn(),
     debug: vi.fn(),
   }),
+}));
+
+vi.mock('../../../src/host/mcp/logCollector.js', () => ({
+  logCollector: { agent: vi.fn() },
 }));
 
 vi.mock('../../../src/host/agent/agentOrchestrator', () => ({
@@ -156,6 +161,22 @@ describe('agent 终态事件的后台收线（失败/取消/中断/max-step 撞�
     return (manager as unknown as { persistEventToSession: Persist }).persistEventToSession.bind(manager);
   }
 
+  function imagePayloadRecoveryEvent(): unknown {
+    const onEvent = vi.fn();
+    handleImagePayloadExceededError({
+      ctx: {
+        runtime: {
+          modelConfig: { provider: 'mock', model: 'test-model' },
+          onEvent,
+        },
+      } as never,
+      error: Object.assign(new Error('request too large'), { status: 413, provider: 'mock', model: 'test-model' }),
+      llmCallId: 'llm-image-1',
+      langfuse: { endGeneration: vi.fn() } as never,
+    });
+    return onEvent.mock.calls[0]?.[0];
+  }
+
   beforeEach(() => {
     sessionManagerState.getSession.mockReset().mockResolvedValue({
       id: 'session-1',
@@ -203,13 +224,10 @@ describe('agent 终态事件的后台收线（失败/取消/中断/max-step 撞�
     expect(backgroundManagerState.markFailed).not.toHaveBeenCalled();
   });
 
-  it('中段可恢复 error（如图片超限发 error 后继续跑）记账后用户取消：仍按取消收线，不报失败（r2）', async () => {
+  it('生产图片超限事件带 terminal:false，随后用户取消仍按取消收线（r2）', async () => {
     const persist = getPersist(newManager());
 
-    await persist('session-1', {
-      type: 'error',
-      data: { message: 'Image payload exceeded 10MB limit' },
-    }, undefined, 'session-1');
+    await persist('session-1', imagePayloadRecoveryEvent(), undefined, 'session-1');
     await persist('session-1', { type: 'agent_cancelled', data: null }, undefined, 'session-1');
 
     expect(backgroundManagerState.markCompleted).toHaveBeenCalledWith('session-1', BACKGROUND_TASK_CANCELLED);
@@ -225,29 +243,13 @@ describe('agent 终态事件的后台收线（失败/取消/中断/max-step 撞�
     expect(backgroundManagerState.markFailed).not.toHaveBeenCalled();
   });
 
-  it('中段可恢复 error（terminal:false 标记）后 agent_complete：仍按完成收线，可恢复 error 不决定终态（r4）', async () => {
+  it('生产图片超限事件后 agent_complete：可恢复 error 不决定终态（r4）', async () => {
     const persist = getPersist(newManager());
 
-    await persist('session-1', {
-      type: 'error',
-      data: { message: 'Image payload exceeded 10MB limit', terminal: false },
-    }, undefined, 'session-1');
+    await persist('session-1', imagePayloadRecoveryEvent(), undefined, 'session-1');
     await persist('session-1', { type: 'agent_complete', data: null }, undefined, 'session-1');
 
     expect(backgroundManagerState.markCompleted).toHaveBeenCalledWith('session-1', undefined);
-    expect(backgroundManagerState.markFailed).not.toHaveBeenCalled();
-  });
-
-  it('中段可恢复 error（terminal:false 标记）后用户取消：按停止收线，不报失败（r4，r2 回归）', async () => {
-    const persist = getPersist(newManager());
-
-    await persist('session-1', {
-      type: 'error',
-      data: { message: 'Image payload exceeded 10MB limit', terminal: false },
-    }, undefined, 'session-1');
-    await persist('session-1', { type: 'agent_cancelled', data: null }, undefined, 'session-1');
-
-    expect(backgroundManagerState.markCompleted).toHaveBeenCalledWith('session-1', BACKGROUND_TASK_CANCELLED);
     expect(backgroundManagerState.markFailed).not.toHaveBeenCalled();
   });
 

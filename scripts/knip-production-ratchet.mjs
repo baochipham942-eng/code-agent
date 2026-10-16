@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/* global console */
 // ============================================================================
 // knip-production-ratchet — 生产可达性棘轮门（knip 的第二 profile）
 // ============================================================================
@@ -55,7 +54,9 @@ export const BASELINE_PATH = resolve(scriptDir, BASELINE_FILE);
 // 🔴 删除锚点文件时**必须同时改这一行**：下面的检查带 existsSync 守卫，锚点文件一旦不在，
 // 检查会被整条跳过，本门就静默失去了自证能力（2026-08-14 N-DSH-STOP2 删 app/lifecycle.ts
 // 时亲历：ratchet 照样打 ✓，只有 knipProductionRatchet 单测把它抓了出来）。
-export const ANCHOR = 'src/host/errors/recoveryEngine.ts';
+// 锚点是专用夹具 knipProductionAnchor.ts（零导出、禁止 import），不是业务代码——换锚
+// 只动这一行 + 单测锚点断言；前任锚点 recoveryEngine.ts 随孤儿清理删除（2026-10）。
+export const ANCHOR = 'src/host/errors/knipProductionAnchor.ts';
 // 第二锚点只有测试消费者，专门防 Vitest/Playwright 或未来插件把测试重新注入 strict 入口。
 export const TEST_ONLY_ANCHOR = 'src/host/app/desktopQueuedInputDrain.ts';
 
@@ -240,7 +241,10 @@ export function collectAddedSourceFiles(env = process.env) {
 
 export function findNewStrictlyUnreachable(strictFiles, addedFiles) {
   const added = new Set(addedFiles);
-  return strictFiles.filter((file) => added.has(file)).sort();
+  // 两个锚点本身就是"故意新增的不可达文件"（门的自证夹具），不属于 strict 口径要拦的
+  // 新债；不豁免的话，换锚提交会被自己的 strict 检查拦死。
+  const gateAnchors = new Set([ANCHOR, TEST_ONLY_ANCHOR]);
+  return strictFiles.filter((file) => !gateAnchors.has(file) && added.has(file)).sort();
 }
 
 export function main(args = process.argv.slice(2)) {

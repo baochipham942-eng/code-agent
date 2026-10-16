@@ -19,6 +19,10 @@ import {
   CRON_LOGIN_WALL_STOP,
   parseCronLoginWallStop,
 } from '../../shared/utils/browserLoginWall';
+import {
+  CRON_FAILURE_CODE,
+  classifyCronFailure as classifyCronFailurePresentation,
+} from '../../shared/utils/cronFailureClassification';
 
 export type CronFailureKind = 'transient' | 'permanent' | 'capacity-wait' | 'login-wall';
 
@@ -208,6 +212,9 @@ export function notifyCronAgentExecution(
       return; // 同因失败冷却中：这次不重复告警
     }
     const loginWall = parseCronLoginWallStop(execution.error);
+    const presentation = !succeeded && !loginWall
+      ? classifyCronFailurePresentation(execution.error)
+      : undefined;
     notificationService.notifyTaskComplete(
       {
         sessionId: execution.sessionId,
@@ -221,6 +228,13 @@ export function notifyCronAgentExecution(
         toolsUsed: [],
         succeeded,
         ...(loginWall ? { code: CRON_LOGIN_WALL_STOP, siteOrigin: loginWall.siteOrigin } : {}),
+        ...(presentation
+          ? {
+              code: CRON_FAILURE_CODE,
+              failureKind: presentation.kind,
+              ...(presentation.resetAt ? { resetAt: presentation.resetAt } : {}),
+            }
+          : {}),
       },
       { force: true }, // 后台定时任务完成：绕过焦点门，app 前台/后台都提醒
     );

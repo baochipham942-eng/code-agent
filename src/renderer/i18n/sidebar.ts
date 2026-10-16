@@ -697,7 +697,7 @@ export const sidebarEn: typeof sidebarZh = {
   },
   sidebarSession: {
     unread: 'Unread',
-    waitingPermissionApp: 'Waiting for your approval: operate "{app}"',
+    waitingPermissionApp: 'Approve: "{app}"',
     waitingPermission: 'Waiting for your approval',
     waitingInput: 'Waiting for you',
     forkedFrom: 'Forked task, source task: {sessionId}',

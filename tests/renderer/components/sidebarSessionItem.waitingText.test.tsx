@@ -36,7 +36,7 @@ afterEach(() => {
 describe('SidebarSessionItem visible waiting text', () => {
   it.each([
     ['zh', '等你批准：操作《Calculator》', '等你批准', '等你确认'],
-    ['en', 'Waiting for your approval: operate "Calculator"', 'Waiting for your approval', 'Waiting for you'],
+    ['en', 'Approve: "Calculator"', 'Waiting for your approval', 'Waiting for you'],
   ] as const)('renders actual %s text nodes for app permission, generic permission and other input', (language, appText, permissionText, otherText) => {
     useAppStore.setState({ language });
     const sources: SessionNeedsInputSources = { permissionState: {
@@ -51,7 +51,8 @@ describe('SidebarSessionItem visible waiting text', () => {
     expect(subtitle.textContent).toBe(appText);
     expect(subtitle.hidden).toBe(false);
     expect(subtitle.title).toBe(appText);
-    expect(subtitle.className).toContain('truncate');
+    expect(subtitle.className).toContain('line-clamp-2');
+    expect(subtitle.className).toContain('break-words');
     expect(subtitle.className).toContain('text-[11px]');
     expect(subtitle.className).toContain('text-badge-accent');
     expect(container.querySelector('.bg-mark-accent[aria-label]')).not.toBeNull();

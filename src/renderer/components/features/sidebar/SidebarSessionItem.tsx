@@ -225,8 +225,10 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
               {displayTitle}
             </span>
             {status.kind === 'approval' && (
+              /* 审批副标题：应用名必须留在视野内，放不下就折行（最多 2 行截断），
+                  不用单行 truncate——英文长文案会把应用名整段吃掉（2026-10-16 返修）。 */
               <div
-                className="truncate text-[11px] text-badge-accent"
+                className="line-clamp-2 break-words text-[11px] text-badge-accent"
                 title={waitingText}
                 data-testid="sidebar-session-waiting-text"
               >

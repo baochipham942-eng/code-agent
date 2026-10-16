@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from './fixtures/axeTest';
 import type { AgentEvent } from '../../src/shared/contract';
 
 // N-HTTPREQ-CONNECTOR-CARD-DISCLOSE：http_request 携带已连接连接器令牌的写调用，

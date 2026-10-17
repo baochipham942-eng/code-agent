@@ -214,6 +214,27 @@ describe('parked approval resume from message ledger', () => {
     expect(executions).toBe(0);
   });
 
+  it('认领输家（另一进程/并发投递已把行翻成 approved）→ 本路绝不执行', async () => {
+    seedSurvivorRow();
+    // 跨进程竞态的确定性等价物：本路读到的还是 pending，但认领 UPDATE 的 changes==0
+    // （对方先翻走了行）。认领门必须挡在执行之前——否则两边各执行一次。
+    const realResolve = repo.resolve.bind(repo);
+    const racedRepo = {
+      ...(repo as object),
+      getById: repo.getById.bind(repo),
+      resolve: (input: Parameters<PendingApprovalRepository['resolve']>[0]) => (
+        input.status === 'approved' ? 0 : realResolve(input)
+      ),
+    } as unknown as typeof repo;
+    const ports = { ...buildPorts(), repo: racedRepo };
+
+    const outcome = await resumeSurvivingParkedApproval({ requestId: 'resume-1', response: 'allow', now, ports });
+
+    expect(outcome).toEqual({ handled: true, status: 'lost_race' });
+    expect(executions).toBe(0);
+    expect(sideEffectLog).toEqual([]);
+  });
+
   it('过期（24h 外到达的迟到点击）→ 非候选不接手，交回旧收口路径，什么都不执行', async () => {
     seedSurvivorRow({ requestedAt: 0 });
     const late = now + 25 * 3_600_000;

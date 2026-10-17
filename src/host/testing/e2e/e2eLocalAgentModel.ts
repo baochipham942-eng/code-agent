@@ -158,7 +158,6 @@ function buildBackgroundToolApprovalE2EResponse(
   onStream?: StreamCallback,
 ): ModelResponse | null {
   if (!messages.some((message) => getMessageText(message).includes(E2E_BACKGROUND_TOOL_APPROVAL_MARKER))) return null;
-  if (hasTool(tools, 'delegate_task')) return null;
   const actualProvider = 'acceptance';
   const actualModel = 'e2e-local-agent-model';
   const target = latestUserText(messages).match(/E2E_BACKGROUND_TOOL_APPROVAL\s+(\S+)/)?.[1];

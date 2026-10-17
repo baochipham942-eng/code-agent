@@ -184,6 +184,51 @@ describe('TurnCard 末轮收尾折叠（simple 默认折，standard 保持展开
     expect(toolGroupLabel()).not.toBeNull();
   });
 
+  // r1：goal 多轮任务的轮间空档——轮已 completed、会话还在跑（isSessionProcessing=true，
+  // 目标进度条还在走、停止键还在）。此时不许折（折了就丢正在跑的过程现场），会话闲下来
+  // 才折；standard 任何时刻都不折。
+  it('会话还在跑时已完成的末轮不折：simple 保持展开，会话闲下来才折', () => {
+    useAppStore.setState({ disclosureLevel: 'simple', language: 'zh' });
+    const view = render(
+      <TurnCard turn={foldableTurn('completed')} defaultExpanded={false} isLastTurn isSessionProcessing />,
+    );
+    expect(foldRow().getAttribute('aria-expanded')).toBe('true');
+    expect(toolGroupLabel()).not.toBeNull();
+
+    view.rerender(
+      <TurnCard turn={foldableTurn('completed')} defaultExpanded={false} isLastTurn isSessionProcessing={false} />,
+    );
+    expect(foldRow().getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('tool-group-head-label')).toBeNull();
+  });
+
+  it('流式收尾落在轮间空档：simple 空档期保持展开、闲下来才折；standard 全程不折', () => {
+    useAppStore.setState({ disclosureLevel: 'simple', language: 'zh' });
+    const simple = render(
+      <TurnCard turn={foldableTurn('streaming')} defaultExpanded isLastTurn isSessionProcessing />,
+    );
+    expect(toolGroupLabel()).not.toBeNull();
+    // 收尾了，但会话还在跑下一轮 → 不折
+    simple.rerender(<TurnCard turn={foldableTurn('completed')} defaultExpanded isLastTurn isSessionProcessing />);
+    expect(foldRow().getAttribute('aria-expanded')).toBe('true');
+    expect(toolGroupLabel()).not.toBeNull();
+    // 会话闲下来 → 折
+    simple.rerender(<TurnCard turn={foldableTurn('completed')} defaultExpanded isLastTurn isSessionProcessing={false} />);
+    expect(foldRow().getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByTestId('tool-group-head-label')).toBeNull();
+    simple.unmount();
+
+    useAppStore.setState({ disclosureLevel: 'standard', language: 'zh' });
+    const standard = render(
+      <TurnCard turn={foldableTurn('streaming')} defaultExpanded isLastTurn isSessionProcessing />,
+    );
+    standard.rerender(<TurnCard turn={foldableTurn('completed')} defaultExpanded isLastTurn isSessionProcessing />);
+    expect(foldRow().getAttribute('aria-expanded')).toBe('true');
+    standard.rerender(<TurnCard turn={foldableTurn('completed')} defaultExpanded isLastTurn isSessionProcessing={false} />);
+    expect(foldRow().getAttribute('aria-expanded')).toBe('true');
+    expect(toolGroupLabel()).not.toBeNull();
+  });
+
   it('收尾自动折叠后手动展开能站住：用户点过就不再被自动收', () => {
     const view = renderLastTurn('simple', foldableTurn('streaming'), true);
     view.rerender(<TurnCard turn={foldableTurn('completed')} defaultExpanded isLastTurn />);

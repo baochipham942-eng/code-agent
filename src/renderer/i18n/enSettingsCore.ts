@@ -307,7 +307,7 @@ export const enSettingsCore = {
           askCaption: 'Requires confirmation',
           allowCaption: 'Allow, lowest priority',
           examplePrefix: 'Example:',
-          autoSaveHint: 'Rules save automatically when the input loses focus and take effect after restarting the Agent.',
+          autoSaveHint: 'Rules save automatically when the input loses focus and take effect immediately.',
           denyLabel: 'Deny (highest priority)',
           askLabel: 'Ask',
           allowLabel: 'Allow (lowest priority)',

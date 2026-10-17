@@ -14,6 +14,10 @@ const dbState = vi.hoisted(() => ({
   db: null as import('better-sqlite3').Database | null,
 }));
 
+const sessionLookup = vi.hoisted(() => ({
+  byId: {} as Record<string, { workingDirectory?: string } | null>,
+}));
+
 // 稳定的 addMessageToSession 桩：automation 通知消息写入 sessions 消息流都走它，
 // 测试要按次断言「一次创建恰好写一条 created 通知」。
 const sessionMessages = vi.hoisted(() => ({
@@ -32,7 +36,10 @@ vi.mock('../../../src/host/services/sessionAutomation', () => ({
 }));
 
 vi.mock('../../../src/host/services/core/databaseService', () => ({
-  getDatabase: () => ({ getDb: () => dbState.db }),
+  getDatabase: () => ({
+    getDb: () => dbState.db,
+    getSession: (sessionId: string) => sessionLookup.byId[sessionId] ?? null,
+  }),
 }));
 
 vi.mock('../../../src/host/platform', () => ({
@@ -55,6 +62,8 @@ import {
 } from '../../../src/host/cron/cronAutomationBridge';
 import { cronLoginWallMetadata } from '../../../src/host/cron/cronLoginWall';
 import { SessionAutomationService } from '../../../src/host/services/sessionAutomation/sessionAutomationService';
+import { resolveCronArtifactsForReview } from '../../../src/shared/cronArtifactPath';
+import { splitCronRunMessage } from '../../../src/shared/cronRunMessage';
 
 const def = (over: Partial<CronJobDefinition> = {}): CronJobDefinition => ({
   id: 'job-1',
@@ -90,6 +99,7 @@ describe('cron login-gated site warning detection', () => {
 });
 
 beforeEach(() => {
+  sessionLookup.byId = {};
   service.recordCreated.mockReset();
   service.upsert.mockReset();
   service.getBySourceRef.mockReset();
@@ -511,7 +521,14 @@ describe('recordCronAutomationExecution', () => {
       pendingReview: {
         resultSessionId: 'result-sess',
         at: 1234,
-        digest: { artifactCount: 2, summaryLine: '第一行摘要' },
+        digest: {
+          artifactCount: 2,
+          summaryLine: '第一行摘要',
+          artifacts: [
+            { path: 'report.md', openable: false },
+            { path: 'chart.png', openable: false },
+          ],
+        },
       },
     });
 
@@ -532,6 +549,85 @@ describe('recordCronAutomationExecution', () => {
     );
     expect(service.recordEvent.mock.calls[0][0].configPatch).toEqual({
       pendingReview: { resultSessionId: 'result-sess', at: 1234 },
+    });
+  });
+
+  it('收件箱首行摘要跳过 urgency 机器行', async () => {
+    await recordCronAutomationExecution(
+      def({
+        metadata: { sourceSessionId: 'sess' },
+        scheduleType: 'every',
+        action: { type: 'agent', agentType: 'default', prompt: 'do it' },
+      }),
+      exec({
+        status: 'completed',
+        sessionId: 'result-sess',
+        completedAt: 1234,
+        result: {
+          digest: {
+            artifacts: ['report.md'],
+            summary: 'urgency: fyi\n结果已写入',
+          },
+        },
+      }),
+      identityRuntime,
+    );
+    expect(service.recordEvent.mock.calls[0][0].configPatch.pendingReview.digest.summaryLine).toBe('结果已写入');
+
+    service.recordEvent.mockClear();
+    await recordCronAutomationExecution(
+      def({
+        metadata: { sourceSessionId: 'sess' },
+        scheduleType: 'every',
+        action: { type: 'agent', agentType: 'default', prompt: 'do it' },
+      }),
+      exec({
+        status: 'completed',
+        sessionId: 'result-sess',
+        completedAt: 1234,
+        result: { digest: { artifacts: ['report.md'], summary: 'urgency: fyi' } },
+      }),
+      identityRuntime,
+    );
+    expect(service.recordEvent.mock.calls[0][0].configPatch.pendingReview.digest.summaryLine).toBeUndefined();
+  });
+
+  it('按运行会话工作目录解析相对产物路径，解析不了的按原文记下且不可点', async () => {
+    sessionLookup.byId['result-sess'] = { workingDirectory: '/work/run' };
+    await recordCronAutomationExecution(
+      def({
+        metadata: { sourceSessionId: 'sess' },
+        scheduleType: 'every',
+        action: { type: 'agent', agentType: 'default', prompt: 'do it' },
+      }),
+      exec({
+        status: 'completed',
+        sessionId: 'result-sess',
+        completedAt: 1234,
+        result: {
+          digest: {
+            artifacts: [
+              'report.md',
+              '/already/abs.txt',
+              '~/kept',
+              '../outside.txt',
+              '   ',
+            ],
+            summary: '摘要',
+          },
+        },
+      }),
+      identityRuntime,
+    );
+    expect(service.recordEvent.mock.calls[0][0].configPatch.pendingReview.digest).toEqual({
+      artifactCount: 4,
+      summaryLine: '摘要',
+      artifacts: [
+        { path: '/work/run/report.md', openable: true },
+        { path: '/already/abs.txt', openable: true },
+        { path: '~/kept', openable: false },
+        { path: '/work/outside.txt', openable: true },
+      ],
     });
   });
 
@@ -707,5 +803,73 @@ describe('recordCronAutomationExecution', () => {
   it('records execution with null sourceSessionId when no source session (panel-created)', async () => {
     await recordCronAutomationExecution(def(), exec(), identityRuntime);
     expect(service.recordEvent).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── 并入自 cronArtifactPath.test.ts 与 cronRunMessage.test.ts（gates-fast 12 文件上限，收编进同面文件）──
+describe('resolveCronArtifactsForReview', () => {
+  it('resolves relative paths against an absolute working directory and caps at ten', () => {
+    const many = Array.from({ length: 12 }, (_, index) => `file-${index}.md`);
+    const stored = resolveCronArtifactsForReview(
+      ['/abs/a.md', 'nested/b.md', '~/nope', '', 3, ...many],
+      '/work/run',
+    );
+    expect(stored).toHaveLength(10);
+    expect(stored[0]).toEqual({ path: '/abs/a.md', openable: true });
+    expect(stored[1]).toEqual({ path: '/work/run/nested/b.md', openable: true });
+    expect(stored[2]).toEqual({ path: '~/nope', openable: false });
+    expect(stored[3]).toEqual({ path: '/work/run/file-0.md', openable: true });
+  });
+
+  it('keeps relative paths as written when the working directory is missing', () => {
+    expect(resolveCronArtifactsForReview(['report.md'], undefined)).toEqual([
+      { path: 'report.md', openable: false },
+    ]);
+    expect(resolveCronArtifactsForReview(['report.md'], 'relative/cwd')).toEqual([
+      { path: 'report.md', openable: false },
+    ]);
+  });
+});
+
+describe('splitCronRunMessage', () => {
+  it('hides snapshots, unwraps alerts, and turns the summary into a card payload', () => {
+    const segments = splitCronRunMessage([
+      '正文开头',
+      '<cron_snapshot>',
+      '内部快照不应出现',
+      '</cron_snapshot>',
+      '<cron_alert>',
+      '新发现的冲突',
+      '</cron_alert>',
+      '正文中间',
+      '<cron_summary>',
+      'urgency: fyi',
+      '本周汇总完成',
+      'artifact: report.md',
+      'artifact: /tmp/extra.txt',
+      '</cron_summary>',
+      '正文结尾',
+    ].join('\n'));
+
+    expect(segments.map((segment) => segment.kind)).toEqual(['text', 'alert', 'text', 'summary', 'text']);
+    expect(segments.map((segment) => segment.text).join('\n')).not.toContain('内部快照');
+    expect(segments.map((segment) => segment.text).join('\n')).not.toContain('urgency:');
+    expect(segments.map((segment) => segment.text).join('\n')).not.toContain('<cron_');
+    expect(segments[1]).toEqual({ kind: 'alert', text: '新发现的冲突', artifacts: [] });
+    expect(segments[3]).toEqual({
+      kind: 'summary',
+      text: '本周汇总完成',
+      artifacts: ['report.md', '/tmp/extra.txt'],
+    });
+  });
+
+  it('drops an unclosed snapshot and keeps an unclosed alert body without the tag', () => {
+    const snapshot = splitCronRunMessage('可见<cron_snapshot>秘密');
+    expect(snapshot).toEqual([{ kind: 'text', text: '可见', artifacts: [] }]);
+    const alert = splitCronRunMessage('前缀<cron_alert>还在写');
+    expect(alert).toEqual([
+      { kind: 'text', text: '前缀', artifacts: [] },
+      { kind: 'alert', text: '还在写', artifacts: [] },
+    ]);
   });
 });

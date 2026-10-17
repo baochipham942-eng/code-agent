@@ -82,6 +82,19 @@ export function getDisplaySessionTitle(title?: string | null): string {
   return rawTitle || '未命名会话';
 }
 
+// cron/heartbeat 会话标题的档位前缀，形状与 host 侧 formatCronAgentSessionTitle
+// （src/host/cron/cronNormalizers.ts）一致：[Schedule] / [Heartbeat]，历史 [Cron]。
+// renderer 不能 import host，侧栏行排版时按这个前缀把标题拆成两段。
+const CRON_SESSION_TITLE_PREFIX_PATTERN = /^(\[(?:Cron|Schedule|Heartbeat)\])\s+/i;
+
+/** 把「[Schedule] 周报」拆成 prefix + name；没有档位前缀或前缀后没有名字时返回 null。 */
+export function splitCronSessionTitleParts(title: string): { prefix: string; name: string } | null {
+  const match = CRON_SESSION_TITLE_PREFIX_PATTERN.exec(title);
+  if (!match) return null;
+  const name = title.slice(match[0].length);
+  return name ? { prefix: match[1], name } : null;
+}
+
 /**
  * Classify a session's status for sidebar display.
  *

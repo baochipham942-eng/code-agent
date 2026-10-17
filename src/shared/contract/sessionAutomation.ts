@@ -101,7 +101,16 @@ export interface SessionAutomationConfig extends Record<string, unknown> {
     at: number;
     urgency?: CronUrgency;
     urgencyRaw?: string;
-    digest?: { artifactCount: number; summaryLine?: string };
+    /**
+     * artifactCount + summaryLine 是老记录就有的。artifacts 在落库时写入（最多 10 条）：
+     * 相对路径按运行会话工作目录解析成绝对路径；解析不了的 openable=false，原文保留。
+     * 没有 artifacts 的老记录只渲染计数行。
+     */
+    digest?: {
+      artifactCount: number;
+      summaryLine?: string;
+      artifacts?: Array<{ path: string; openable: boolean }>;
+    };
     /** 到达运行次数上限后由 cron 记录的待过目原因。 */
     maxRunsReached?: { maxRuns: number; summary?: string };
   };

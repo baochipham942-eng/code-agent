@@ -127,3 +127,98 @@ describe('executeExcelEdit set_column_width missing column', () => {
     }
   });
 });
+
+describe('executeExcelEdit insert_columns missing after', () => {
+  it('returns an explicit error instead of a bare toUpperCase TypeError', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'excel-edit-inscol-'));
+    try {
+      const file = await makeXlsx(dir);
+      // schema 文档未列 insert_columns 参数：模型漏传 after 时工具回 undefined.toUpperCase 的 TypeError
+      const result = await executeExcelEdit(
+        {
+          file_path: file,
+          operations: [{ action: 'insert_columns', count: 2 }],
+        },
+        makeCtx(dir),
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('insert_columns requires after');
+      expect(result.error).not.toContain('toUpperCase');
+      // 失败后快照回滚，磁盘文件保持原样
+      await expect(readSheetNames(file)).resolves.toEqual(['原始数据']);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('still inserts the column when after is provided', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'excel-edit-inscol-ok-'));
+    try {
+      const file = await makeXlsx(dir);
+      const result = await executeExcelEdit(
+        {
+          file_path: file,
+          operations: [
+            { action: 'set_cell', cell: 'A1', value: '名称' },
+            { action: 'insert_columns', after: 'A', headers: ['新增'] },
+          ],
+        },
+        makeCtx(dir),
+      );
+      expect(result.success).toBe(true);
+      const reread = new ExcelJS.Workbook();
+      await reread.xlsx.readFile(file);
+      expect(reread.getWorksheet('原始数据')!.getCell('A1').value).toBe('名称');
+      expect(reread.getWorksheet('原始数据')!.getCell('B1').value).toBe('新增');
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('executeExcelEdit delete_columns missing from', () => {
+  it('returns an explicit error instead of a bare toUpperCase TypeError', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'excel-edit-delcol-'));
+    try {
+      const file = await makeXlsx(dir);
+      const result = await executeExcelEdit(
+        {
+          file_path: file,
+          operations: [{ action: 'delete_columns', count: 1 }],
+        },
+        makeCtx(dir),
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('delete_columns requires from');
+      expect(result.error).not.toContain('toUpperCase');
+      // 失败后快照回滚，磁盘文件保持原样
+      await expect(readSheetNames(file)).resolves.toEqual(['原始数据']);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('still deletes the column when from is provided', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'excel-edit-delcol-ok-'));
+    try {
+      const file = await makeXlsx(dir);
+      const result = await executeExcelEdit(
+        {
+          file_path: file,
+          operations: [
+            { action: 'set_cell', cell: 'A1', value: '名称' },
+            { action: 'set_cell', cell: 'B1', value: '单价' },
+            { action: 'delete_columns', from: 'A', count: 1 },
+          ],
+        },
+        makeCtx(dir),
+      );
+      expect(result.success).toBe(true);
+      const reread = new ExcelJS.Workbook();
+      await reread.xlsx.readFile(file);
+      expect(reread.getWorksheet('原始数据')!.getCell('A1').value).toBe('单价');
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+});

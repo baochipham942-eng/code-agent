@@ -766,7 +766,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                   minRows={5}
                 />
               </FormField>
-              <FormField label={cc.urgencyCriteriaLabel}>
+              <FormField label={cc.urgencyCriteriaLabel} hint={cc.urgencyCriteriaHint}>
                 <Input
                   value={draft.agentUrgencyCriteria ?? ''}
                   onChange={(e) => setField('agentUrgencyCriteria', e.target.value)}

@@ -5,6 +5,7 @@ import type { ContextCompressionSignalData, Message, ToolCall } from '@shared/co
 import type { PlanApprovalRecord } from '@shared/contract/planApproval';
 import { applyPlanApprovalToMessage } from '../../../utils/planApprovalView';
 import { createLogger } from '../../../utils/logger';
+import { stripStreamRecoveryMarker } from '../../../utils/streamRecoveryMessage';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useStreamResumeStore } from '../../../stores/streamResumeStore';
 import { userMessageReplacement } from '../../../utils/optimisticUserSend';
@@ -598,6 +599,9 @@ export function applyConversationStreamEvent(
           }
 
           actions.updateMessage(targetMessage.id, {
+            // commit 落到 recovery 回填消息上 = 这一轮在宿主侧真实跑完了，重启中断
+            // 标记必须随 commit 撤掉（快照重灌留下的标记会让成功工具步报「应用重启时中断」）。
+            ...stripStreamRecoveryMarker(targetMessage),
             content: mergeCommittedAssistantContent(existingContent, newContent),
             toolCalls: mergedToolCalls,
             ...(messageData.reasoning !== undefined ? { reasoning: messageData.reasoning } : {}),

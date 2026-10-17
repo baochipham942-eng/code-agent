@@ -382,3 +382,154 @@ describe('event schedule creation through the chat input pipeline', () => {
     expect(payload.schedule).not.toHaveProperty('chatId');
   });
 });
+
+// ============================================================================
+// rework r1（2026-10-17 PR review Important 1-3）—— 三条回归钉子：
+// 1) 同会话旧卡未确认时再次 /schedule 会整体替换草案（挂载点无 key、卡片不重挂），
+//    卡内 event 编辑态必须随草案身份（draftId）重置，不得残留上一份草案的账号/群/预算。
+// 2) 按群名预选只尝试一次：用户把群改回「任意会话」后不能被弹回同名群。
+// 3) 「监听哪个群」行摘要随卡内实际绑定走（目录显示名），不再恒显原话群名快照。
+// ============================================================================
+
+/** 复刻 index.tsx 挂载点：草案经 storePendingScheduleDraft 覆盖时卡片不重挂（无 key）。 */
+let panelStore: ((draft: PendingScheduleDraft) => boolean) | undefined;
+function SchedulePanel() {
+  const schedule = useScheduleDraft('session-1');
+  panelStore = schedule.storePendingScheduleDraft;
+  if (!schedule.pendingScheduleDraft) return null;
+  return (
+    <ScheduleConfirmCard
+      draft={schedule.pendingScheduleDraft}
+      confirming={false}
+      onConfirm={() => undefined}
+      onDismiss={() => undefined}
+      onDraftChange={schedule.storePendingScheduleDraft}
+    />
+  );
+}
+
+/** 「监听哪个群」行的值单元格（行 div 下内层 div 里的值 span）。 */
+function groupRowValue(): string {
+  return document.querySelector('[data-schedule-row="group"] div span')?.textContent ?? '';
+}
+
+const eventRowLabels = {
+  what: '检查什么', when: '什么时候', notifyWhen: '什么变化值得通知', result: '结果送到哪里',
+  fallbackWhat: '按任务描述执行', fallbackNotifyWhen: '完成时通知', reviewInbox: '自动化审核收件箱',
+};
+
+describe('event confirm card — rework r1 regressions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockChannelCatalog();
+    panelStore = undefined;
+  });
+
+  it('Important 1: 草案被同会话再次 /schedule 替换时，卡内编辑态随草案身份重置', async () => {
+    render(<SchedulePanel />);
+
+    await act(async () => {
+      panelStore?.(makeEventPending());
+    });
+
+    // 第一份草案：选账号 → 按名预选发布群，预算改 2（制造有编辑态的现场），确认可用。
+    fireEvent.change(await screen.findByLabelText(/^触发账号/), { target: { value: feishuAccount.id } });
+    const chatSelect = await screen.findByLabelText('限定会话 / 群（可选）') as HTMLSelectElement;
+    await waitFor(() => expect(chatSelect.value).toBe('oc_release'));
+    fireEvent.change(screen.getByLabelText(/^单次预算上限/), { target: { value: '2' } });
+    await waitFor(() => expect(confirmButton().disabled).toBe(false));
+
+    // 第二次 /schedule：storePendingScheduleDraft 直接覆盖草案，卡片不重挂、不重放挂载态。
+    await act(async () => {
+      panelStore?.(makeEventPending({ description: '再盯一次发布群' }));
+    });
+
+    // 字段区回到新草案初始态：账号未选、预算回预填 0.5、确认重新禁用。
+    const accountSelect = screen.getByLabelText(/^触发账号/) as HTMLSelectElement;
+    expect(accountSelect.value).toBe('');
+    expect((screen.getByLabelText(/^单次预算上限/) as HTMLInputElement).value).toBe('0.5');
+    expect(confirmButton().disabled).toBe(true);
+    // 摘要行回到新草案的原话提示（无绑定可陈述）。
+    expect(groupRowValue()).toBe('发布群');
+
+    // 新草案重新选账号：预选已为本群名尝试过不再弹回 → 任意会话；旧草案的
+    // chatId/accountId 没有残进新草案，确认在合法绑定（任意会话）下可用。
+    fireEvent.change(accountSelect, { target: { value: feishuAccount.id } });
+    const chatSelectAfterReplace = await screen.findByLabelText('限定会话 / 群（可选）') as HTMLSelectElement;
+    expect(chatSelectAfterReplace.value).toBe('');
+    await waitFor(() => expect(confirmButton().disabled).toBe(false));
+  });
+
+  it('Important 2: 用户把群改回「任意会话」后，按名预选不会把选择弹回同名群', async () => {
+    render(<DraftHost initial={makeEventPending()} />);
+
+    fireEvent.change(await screen.findByLabelText(/^触发账号/), { target: { value: feishuAccount.id } });
+    const chatSelect = await screen.findByLabelText('限定会话 / 群（可选）') as HTMLSelectElement;
+    await waitFor(() => expect(chatSelect.value).toBe('oc_release'));
+
+    fireEvent.change(chatSelect, { target: { value: '' } });
+    await act(async () => {});
+    expect(chatSelect.value).toBe('');
+    // 任意会话是合法绑定：账号已选、预算为正 → 确认可用，不被预选搅回。
+    await waitFor(() => expect(confirmButton().disabled).toBe(false));
+  });
+
+  it('Important 3: 卡内改选群 / 改回任意会话后，「监听哪个群」行摘要跟着实际绑定走', async () => {
+    render(<DraftHost initial={makeEventPending()} />);
+
+    fireEvent.change(await screen.findByLabelText(/^触发账号/), { target: { value: feishuAccount.id } });
+    const chatSelect = await screen.findByLabelText('限定会话 / 群（可选）') as HTMLSelectElement;
+    await waitFor(() => expect(chatSelect.value).toBe('oc_release'));
+    // 预选后行值 = 选中的群（目录名），与原话提示同名是巧合，值来自绑定。
+    await waitFor(() => expect(groupRowValue()).toBe('发布群'));
+
+    // 改选闲聊群：行摘要必须跟着换，不能还写原话「发布群」。
+    fireEvent.change(chatSelect, { target: { value: 'oc_random' } });
+    await waitFor(() => expect(groupRowValue()).toBe('闲聊群'));
+
+    // 改回「任意会话」：行摘要陈述 账号名 · 任意会话（账号名来自目录，不是内部 id）。
+    fireEvent.change(chatSelect, { target: { value: '' } });
+    await waitFor(() => expect(groupRowValue())
+      .toBe(`工作飞书 · ${cronCenterZh.cronCenter.eventConfirmGroupAnyChat}`));
+  });
+
+  it('Important 3（纯函数侧）: buildScheduleConfirmRows 的群行值随绑定与显示名走', () => {
+    const eventLabels = {
+      group: cronCenterZh.cronCenter.eventConfirmGroup,
+      groupFallback: cronCenterZh.cronCenter.eventConfirmGroupFallback,
+      groupAnyChat: cronCenterZh.cronCenter.eventConfirmGroupAnyChat,
+      budget: cronCenterZh.cronCenter.eventBudgetLabel,
+    };
+    const binding = (accountId: string, chatId?: string) => ({
+      type: 'event',
+      source: 'channel',
+      eventName: 'message',
+      accountId,
+      ...(chatId ? { chatId } : {}),
+    }) as CreateCronJobInput['schedule'];
+    const rowsOf = (draft: PendingScheduleDraft) => buildScheduleConfirmRows(draft, eventRowLabels, 'zh', eventLabels);
+    const groupOf = (draft: PendingScheduleDraft) => rowsOf(draft).find((row) => row.key === 'group')?.value;
+
+    // 有绑定 + 目录名：陈述实际选中的群，不引用原话提示。
+    expect(groupOf({
+      ...makeEventPending(),
+      input: { ...makeEventPending().input, schedule: binding('account-feishu', 'oc_random') },
+      eventBindingNames: { accountName: '工作飞书', chatName: '闲聊群' },
+    })).toBe('闲聊群');
+    // 任意会话：账号名（目录名，非内部 id）· 任意会话。
+    expect(groupOf({
+      ...makeEventPending(),
+      input: { ...makeEventPending().input, schedule: binding('account-feishu') },
+      eventBindingNames: { accountName: '工作飞书' },
+    })).toBe(`工作飞书 · ${cronCenterZh.cronCenter.eventConfirmGroupAnyChat}`);
+    // 有绑定但目录名缺席（手输/模型带 id）：回落 id 陈述，不假装是原话群名。
+    expect(groupOf({
+      ...makeEventPending(),
+      input: { ...makeEventPending().input, schedule: binding('account-feishu', 'oc_random') },
+    })).toBe('oc_random');
+    // 无绑定：原话提示兜底；无提示再落「还没选」文案。
+    expect(groupOf(makeEventPending())).toBe('发布群');
+    expect(groupOf({ ...makeEventPending(), eventGroupName: undefined }))
+      .toBe(cronCenterZh.cronCenter.eventConfirmGroupFallback);
+  });
+});

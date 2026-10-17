@@ -200,7 +200,7 @@ function formatScheduleWhenLabel(
 }
 
 export function buildScheduleConfirmRows(
-  draft: Pick<PendingScheduleDraft, 'input' | 'restatement' | 'eventGroupName'>,
+  draft: Pick<PendingScheduleDraft, 'input' | 'restatement' | 'eventGroupName' | 'eventBindingNames'>,
   labels: ScheduleConfirmLabels,
   lang: CronHumanLang = 'zh',
   eventLabels?: ScheduleEventConfirmLabels,
@@ -227,10 +227,17 @@ export function buildScheduleConfirmRows(
   if (schedule?.type === 'event' && schedule.source === 'channel') {
     const accountId = asTrimmedString(schedule.accountId);
     const chatId = asTrimmedString(schedule.chatId);
-    const groupValue = draft.eventGroupName
-      || (accountId ? `${accountId} · ${chatId || eventLabels?.groupAnyChat || ''}` : '')
-      || eventLabels?.groupFallback
-      || '';
+    // 行值随当前绑定走（rework r1 Important 3）：账号/群一旦在卡内选定，行值就陈述
+    // 实际绑定（选择回调带上来的目录显示名，缺了回落 id），不再引用草案级
+    // eventGroupName 快照——用户改选其他群或改回「任意会话」后，摘要行不能还写着
+    // 原话群名。原话提示只在还没选账号（无绑定可陈述）时兜底。
+    const accountName = asTrimmedString(draft.eventBindingNames?.accountName);
+    const chatName = asTrimmedString(draft.eventBindingNames?.chatName);
+    const groupValue = accountId
+      ? (chatId
+        ? (chatName || chatId)
+        : `${accountName || accountId} · ${eventLabels?.groupAnyChat || ''}`)
+      : (draft.eventGroupName || eventLabels?.groupFallback || '');
     const budget = input.maxRunBudget;
     return [
       { key: 'what', label: labels.what, value: what },

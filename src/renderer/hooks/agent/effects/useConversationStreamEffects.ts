@@ -14,6 +14,7 @@ import { useTurnExecutionStore } from '../../../stores/turnExecutionStore';
 import { applyRoutingDegradationSignal } from '../../../utils/routingDegradation';
 import { useAppStore } from '../../../stores/appStore';
 import { useTaskStore } from '../../../stores/taskStore';
+import { useTerminalRunGuardStore } from '../../../stores/terminalRunGuardStore';
 import { languages } from '../../../i18n';
 import { resolveHostReasonCopy } from '../../../utils/hostReasonPresentation';
 import {
@@ -681,9 +682,19 @@ export const useConversationStreamEffects = ({
       // 往往在 SSE 连上之前就广播完了，新页面只接得到中段的增量事件（2026-08-01 C3 真机：
       // 刷新后宿主 drain 起的那一轮全程在写库，屏幕却一直空闲、排队卡还邀请你「立即发送」）。
       // 终态事件不在此列——它们由各自分支负责把运行态放下。
+      //
+      // 终态粘滞（2026-10-16 表格卡真跑）：终局已应用后，run 自己的尾巴（收尾钩子
+      // hook_started、关流 stream_end）不是「还在跑」的证据——它们来得比 agent_complete
+      // 还晚，重淋一次 running 就没人再收（Stop/侧栏 spinner/整理行三面卡死到 reload）。
+      // turn_start 是新 run 的第一个事件，也是唯一的再武装信号；刷新重附着不受影响
+      // （新页面没应用过终局，守卫放行，C3 语义保留）。
+      if (event.type === 'turn_start' && eventSessionId) {
+        useTerminalRunGuardStore.getState().rearmForNewRun(eventSessionId);
+      }
       if (
         eventSessionId
         && !LIVE_STATE_NEUTRAL_AGENT_EVENTS.has(event.type)
+        && !useTerminalRunGuardStore.getState().hasTerminal(eventSessionId)
         && !useAppStore.getState().isSessionProcessing(eventSessionId)
       ) {
         useAppStore.getState().setSessionProcessing(eventSessionId, true);

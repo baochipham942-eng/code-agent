@@ -48,6 +48,24 @@ export function hasFoldHiddenMiddle(
   return displayNodes.some((display) => (
     display.kind === 'tool_group'
       ? display.tools.length > 0
-      : !isNodeSkippedInMiddle(display.node, userNode, finalTextNode, true)
+      : !rendersNothingInMiddle(display.node)
+        && !isNodeSkippedInMiddle(display.node, userNode, finalTextNode, true)
   ));
+}
+
+// 中间区里「投影存在但渲染恒为 null」的时间线节点：TraceNodeRenderer 对这些 kind
+// 不画任何像素（workbench_snapshot / capability_scope 已移出聊天主流；routing_evidence
+// 仅 warning/error 且非 autoFallback 时才出告警卡）。折叠藏不住它们，不能算进
+// 「折得住东西」——否则带路由证据的纯问答轮被顶出「用时」空开关（r1 真跑实录：
+// enrichTurn 给每条有 routingEvents 的轮尾挂 routing_evidence，info 档渲染 null）。
+// 渲染规则真源在 TraceNodeRenderer 的 TurnTimelineNodeRenderer，改那边必须同步这里。
+function rendersNothingInMiddle(node: TraceNode): boolean {
+  const timeline = node.turnTimeline;
+  if (!timeline) return false;
+  if (timeline.kind === 'workbench_snapshot' || timeline.kind === 'capability_scope') return true;
+  if (timeline.kind === 'routing_evidence') {
+    if (timeline.routingEvidence?.autoFallbackToDefault) return true;
+    return timeline.tone !== 'warning' && timeline.tone !== 'error';
+  }
+  return false;
 }

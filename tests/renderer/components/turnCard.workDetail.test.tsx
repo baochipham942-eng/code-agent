@@ -274,4 +274,52 @@ describe('TurnCard 末轮收尾折叠（simple 默认折，standard 保持展开
     expect(screen.queryByRole('button', { name: /用时/ })).toBeNull();
     expect(screen.getByText('你好')).not.toBeNull();
   });
+
+  // r1 真跑实录：useTurnExecutionClarity 给有 routingEvents 的轮尾挂 routing_evidence
+  // 时间线节点，TraceNodeRenderer 对 info/autoFallback 渲染 null——真机上的「纯问答轮」
+  // 是三节点。r0 的 hasFoldHiddenMiddle 把这个不渲染的节点当「折得住」，出了点了没
+  // 反应的「用时」空开关。这里钉住真机形状：不渲染的路由证据不许顶出折叠行。
+  it('带不渲染路由证据节点的纯问答轮仍不出「用时」空折叠行（真机三节点形状）', () => {
+    const routingTail = (tone: 'info' | 'warning', autoFallback: boolean) => ({
+      id: 'turn-qa-routing-evidence',
+      type: 'turn_timeline',
+      content: '',
+      timestamp: 2_500,
+      turnTimeline: {
+        id: 'turn-qa-routing-evidence',
+        kind: 'routing_evidence',
+        timestamp: 2_500,
+        tone,
+        routingEvidence: {
+          mode: 'auto',
+          autoFallbackToDefault: autoFallback,
+          summary: 'Auto 未命中特定 agent，已回落默认执行',
+          steps: [{ status: 'fallback', label: '保持 default 执行', tone, timestamp: 2_500 }],
+        },
+      },
+    } as TraceNode);
+    const qaTurn = (tail: TraceNode): TraceTurn => ({
+      turnNumber: 1,
+      turnId: 'turn-qa',
+      status: 'completed',
+      startTime: 1_000,
+      endTime: 2_500,
+      nodes: [
+        { id: 'user-1', type: 'user', content: '你好', timestamp: 1_000 } as TraceNode,
+        { id: 'assistant-1', type: 'assistant_text', content: '你好，有什么可以帮你？', timestamp: 2_000 } as TraceNode,
+        tail,
+      ],
+    });
+
+    // info 档 + autoFallback（default-model 路由的常见形态）：渲染 null，折叠藏不住
+    // 任何像素 → 不出折叠行，结论照常跟在提问后面
+    const { unmount } = renderLastTurn('simple', qaTurn(routingTail('info', true)), false);
+    expect(screen.queryByRole('button', { name: /用时/ })).toBeNull();
+    expect(screen.getByText('你好，有什么可以帮你？')).not.toBeNull();
+    unmount();
+
+    // warning 档且非 autoFallback：中间区真渲染告警卡 → 折叠藏得住它，折叠行在场
+    renderLastTurn('simple', qaTurn(routingTail('warning', false)), false);
+    expect(screen.queryByRole('button', { name: /用时/ })).not.toBeNull();
+  });
 });

@@ -31,8 +31,8 @@ type ExcelEditOperation =
   | { action: 'set_formula';    sheet?: string; cell: string; formula: string }
   | { action: 'insert_rows';    sheet?: string; after: number; count?: number; data?: (string | number | boolean | null)[][] }
   | { action: 'delete_rows';    sheet?: string; from: number; count?: number }
-  | { action: 'insert_columns'; sheet?: string; after: string; count?: number; headers?: string[] }
-  | { action: 'delete_columns'; sheet?: string; from: string; count?: number }
+  | { action: 'insert_columns'; sheet?: string; after?: string; count?: number; headers?: string[] }
+  | { action: 'delete_columns'; sheet?: string; from?: string; count?: number }
   | { action: 'set_style';      sheet?: string; range: string; style: CellStyle }
   | { action: 'rename_sheet';   sheet: string; newName: string }
   | { action: 'add_sheet';      name?: string; sheet?: string; after?: string }
@@ -171,6 +171,10 @@ function executeOperation(workbook: ExcelJS.Workbook, op: ExcelEditOperation): s
     }
 
     case 'insert_columns': {
+      // after 是未信任的模型输入：缺失时 op.after.toUpperCase() 抛裸 TypeError，模型只能盲猜。同 set_column_width fail-loud 先例。
+      if (!op.after || typeof op.after !== 'string') {
+        throw new Error('insert_columns requires after (a column letter such as "C")');
+      }
       const ws = getWorksheet(workbook, op.sheet);
       const colNum = columnLetterToNumber(op.after.toUpperCase());
       const count = op.count || 1;
@@ -181,6 +185,10 @@ function executeOperation(workbook: ExcelJS.Workbook, op: ExcelEditOperation): s
     }
 
     case 'delete_columns': {
+      // from 是未信任的模型输入：缺失时 op.from.toUpperCase() 抛裸 TypeError，模型只能盲猜。同 set_column_width fail-loud 先例。
+      if (!op.from || typeof op.from !== 'string') {
+        throw new Error('delete_columns requires from (a column letter such as "D")');
+      }
       const ws = getWorksheet(workbook, op.sheet);
       const colNum = columnLetterToNumber(op.from.toUpperCase());
       const count = op.count || 1;

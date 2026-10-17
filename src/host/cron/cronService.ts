@@ -37,6 +37,7 @@ import {
 } from './cronAutomationBridge';
 import {
   buildCronAgentActionResult,
+  cronAgentRunHasAlert,
   isCronAgentActionResult,
   normalizeCronJobRow,
   assertSupportedEveryScheduleUnit,
@@ -895,9 +896,8 @@ export class CronService implements Disposable {
         const previousSnapshot = ctx?.[CRON_AGENT_SNAPSHOT.CONTEXT_KEY];
         const snapshotTrackingEnabled = ctx?.[CRON_AGENT_SNAPSHOT.ENABLED_KEY] === true;
         // external_event（业务事件监听）任务：无 <cron_alert> = 无新料 = 本次安静。
-        // notifyWhen 任务同标记判「值得打扰」（N-CRON-RESTATE-HUMAN-WHEN）；其余任务恒响。
-        // hasAlert 不在此初始化：投递门前单点计算（本文件贴 max-lines 线）。
-        const isExternalWatch = Boolean(ctx?.[EXTERNAL_WATCH.CONTEXT_KEY]); const alertGated = isExternalWatch || Boolean(action.notifyWhen?.trim());
+        // notifyWhen / urgencyCriteria 的「值得打扰」判据收口在 cronAgentRunHasAlert。
+        const isExternalWatch = Boolean(ctx?.[EXTERNAL_WATCH.CONTEXT_KEY]);
 
         let result: unknown; let finalAssistantText = '';
         let runError: unknown; let runFailed = false;
@@ -1012,10 +1012,10 @@ export class CronService implements Disposable {
           throw runError;
         }
 
-        // 安静轮判定单点：gated（external-watch 或 notifyWhen）任务只认最终正文里的
-        // <cron_alert> 标记；非 gated 任务恒有警报。失败路径在上面已 throw，到这里的
-        // 一定是成功轮，finalAssistantText 已定型。
-        const hasAlert = alertGated ? EXTERNAL_WATCH.ALERT_TAG_PATTERN.test(finalAssistantText) : true;
+        // 安静轮判定单点：hasAlert 走 cronAgentRunHasAlert——gated（external-watch/
+        // notifyWhen）任务只认 <cron_alert>；仅 urgencyCriteria 的任务只认显式
+        // can_wait/fyi 头；其余恒有警报。失败路径在上面已 throw，到这里必是成功轮。
+        const hasAlert = cronAgentRunHasAlert(action, { isExternalWatch, finalAssistantText });
 
         // 无新料的监听轮不投递（FB-239）：skipped 判定必须先于推送，
         // 否则安静轮照样把「没有更新」推到通道，跟 skipped 语义无进收件箱自相矛盾。

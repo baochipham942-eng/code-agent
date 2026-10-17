@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import type { CronJobDefinition } from '@shared/contract';
 import { isHourAlignedCronExpression, suggestCronStaggerMinute } from '@shared/cronStagger';
 import { validateEventScheduleConstraints, type EventScheduleViolation } from '@shared/cronEventValidation';
-import { CRON_URGENCY_CRITERIA } from '@shared/constants';
+import { CRON_EVENT_TRIGGER, CRON_URGENCY_CRITERIA } from '@shared/constants';
 import { ArrowLeft, Clock, Settings, Terminal } from 'lucide-react';
 import { Modal } from '../../primitives/Modal';
 import { Button } from '../../primitives/Button';
@@ -193,6 +193,19 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
     const initial: Record<string, string> = {};
     for (const f of tpl.fields) initial[f.key] = '';
     setTemplateValues(initial);
+    // event 模板（群监听）：填参步骤直接渲染事件字段，先把护栏前置项和预算预填好
+    //（预算缺省 0.5 可改，owner 裁定；账号/群等用户选）。
+    if (tpl.event) {
+      setDraft((current) => ({
+        ...current,
+        scheduleType: 'event',
+        actionType: 'agent',
+        runsOn: 'local',
+        maxRunBudget: current.maxRunBudget.trim() === ''
+          ? String(CRON_EVENT_TRIGGER.DEFAULT_RUN_BUDGET_USD)
+          : current.maxRunBudget,
+      }));
+    }
     setStep('fill');
   };
 
@@ -206,11 +219,29 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       return;
     }
 
+    // event 模板（群监听）：账号/群/预算是填参步骤的 live 草稿字段，提交前先过共享
+    // 校验器（reason → 本地化文案），再把它们注入 generate —— 模板字段本身不出现这些键。
+    if (selectedTemplate.event) {
+      const violation = eventViolationFromDraft(draft);
+      if (violation) {
+        setErrors({ form: cc.eventValidation[violation.reason] });
+        return;
+      }
+    }
+
     setSubmitting(true);
     setErrors({});
     try {
-      const generatedDraft = selectedTemplate.generate(templateValues);
-      generatedDraft.runsOn = draft.runsOn;
+      const generatedDraft = selectedTemplate.event
+        ? selectedTemplate.generate({
+          ...templateValues,
+          accountId: draft.eventAccountId,
+          chatId: draft.eventChatId,
+          budget: draft.maxRunBudget,
+        })
+        : selectedTemplate.generate(templateValues);
+      // event 任务钉本机（填参步骤不渲染运行位置选择）；其余模板沿用用户的选择。
+      generatedDraft.runsOn = selectedTemplate.event ? 'local' : draft.runsOn;
       const input = buildCronJobInput(generatedDraft);
       const created = await createJob(input);
       showCronLoginWallWarning(created, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
@@ -442,10 +473,25 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
             </FormField>
           ))}
 
-          <CronRunsOnSelector
-            value={draft.runsOn}
-            onChange={(runsOn) => setField('runsOn', runsOn)}
-          />
+          {selectedTemplate.event ? (
+            <CronEventScheduleFields
+              accountId={draft.eventAccountId}
+              chatId={draft.eventChatId}
+              onAccountChange={(eventAccountId) => setField('eventAccountId', eventAccountId)}
+              onChatChange={(eventChatId) => setField('eventChatId', eventChatId)}
+              maxRunBudget={draft.maxRunBudget}
+              onBudgetChange={(maxRunBudget) => setField('maxRunBudget', maxRunBudget)}
+              validationMessage={(() => {
+                const violation = eventViolationFromDraft(draft);
+                return violation ? cc.eventValidation[violation.reason] : null;
+              })()}
+            />
+          ) : (
+            <CronRunsOnSelector
+              value={draft.runsOn}
+              onChange={(runsOn) => setField('runsOn', runsOn)}
+            />
+          )}
         </div>
       </Modal>
     );

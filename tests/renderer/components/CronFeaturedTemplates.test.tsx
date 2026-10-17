@@ -97,6 +97,9 @@ describe('cowork cron templates', () => {
       'web-change-watch',
       'feishu-calendar-conflict',
       'feishu-table-change',
+      // 群监听模板（N-CRON-EVENT-CREATE-CHAT）：event 调度，载荷契约见
+      // tests/unit/cron/cronTemplatesGroupListen.test.tsx。
+      'group-listen',
     ]);
     for (const id of DELETED_TEMPLATE_IDS) {
       expect(templateIds).not.toContain(id);

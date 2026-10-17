@@ -308,3 +308,13 @@ Round 2 把「Stop 必须清空待续队列」收成可执行合同：代码里�
 2. **成功推进一轮后自动续跑计数清零**（③.2 / Q2 已拍板「清零」，此前生产未实现，只有手动继续 `resetDurableResumeBudget` 会清）。「一轮」判定点 = live 路径的进展落账：`runRegistry.checkpointNativeModelOperation(status='succeeded')`（一次模型调用成功结束）或 `checkpointNativeToolOperation(status='succeeded')`（一个 tool complete），即该笔 checkpoint 带 `native_model_operation` / `native_tool_operation` 且 `status='succeeded'` 的事件。清零写在 `checkpointNow @ durableRunKernel.ts`，与这笔进展**同一事务**落盘；只在计数 >0（即恢复后）时生效，首跑本就是 0。显式传入 `autoResumeCount` 的写（派发前 fence、手动继续）以调用方为准，派发前计数与 fence 同笔落盘的约束不变；恢复宿主自己的收口/物化（`native_recovery_*`、`approval_recovered` 等事件）不算进展，崩溃循环仍有顶。清零后再崩溃重新从 1 计、可再自动续跑。
 
 K2（`user_stop` / `guard_halt` 永不进崩溃自动续跑）与修订二（`budget_exhausted` 标记、等审批 `waiting` 不让位、不出「继续」）语义不变。合同测试：`tests/unit/host/runtime/durableResumeBudgetApproval.test.ts`（真实 SQLite + RunRegistry + kernel；web 出口走真实 express `/api/cancel` 与 `createAgentDurableRouteRunLifecycle`）。
+
+## 修订四（2026-10-17）：停车工具审批的人工批准就是 resume 触发器，不是自动 resume
+
+N-PARKED-APPROVAL-SURVIVE-RESTART-RESUME（A′，owner 10-17 拍板：foundation + 批准即执行一次同一个 PR，绝不发「可点却被拒」的卡；不动 durable kernel 的语义）：
+
+1. **幸存判定在数据面**。无人值守停车挂起的 `tool_approval` 行在**停车时**落三样原料：`argsRef{sessionId,toolCallId}`（既有）、`argsFingerprint`（账本形参数——`sanitizeToolCallsForHistory` 输出——的 canonical sha256）、`ledgerFaithful`（原始 args deep-equal 账本形；Write/Edit 大文本被截断即 false）。重启时判据（单一真源 `parkedApprovalSurvival.ts`，startupMaintenance / hydrate / 点击恢复三处共用）：距 `requestedAt` 不足 24h（与停车 24h 兜底同一常量）+ 三样原料齐全 + 台账里真有承载该 toolCallId 的 assistant 消息且无 tool result。
+2. **人工批准是 resume 触发器**。幸存行重启后保持 pending（收件箱标题「重启前发起 · <tool>」）；用户点「允许」→ 原子认领（`pending→approved`，UPDATE changes==1 者赢）→ 从消息台账重读该调用 → 重算指纹（不符 → `args_unavailable` 收口，绝不执行）→ 经与 `approval.dispatchPrepared` 共享的执行器**执行一次**、结果消息落回原会话。拒绝/过期（`expired_after_restart_24h`）→ 行收口 + 台账落 denied 结果，什么都不执行。并发/重复点击只有认领赢家执行；认领后、结果落盘前崩溃 → 行已 approved、后续点击按非候选直接返回，**永不二次执行**。
+3. **不自动 resume**。幸存行所属会话的 durable run 在启动 hydrate 时停靠成 `waiting + guard_halt`（复用 `replaceRecoveryProjection` 既有路径，不新增仓储方法），`listRecoverable` 的既有谓词把它挡在崩溃自动续跑之外（K2）；「继续」仍由用户手动触发，批准执行完**不**自动回 loop——run 停在那等用户决定。启动清算（`startupMaintenance` 的 orphan-toolcall-closure）跳过幸存 toolCall，不写 INTERRUPTED 占位去毒化它。
+
+K2 与修订二/三的停靠标记、等审批 `waiting` 认领、预算语义全部不变；`directory_access` / `channel_pairing` 仍 fail-closed 全拒。合同测试：`tests/unit/agent/parkedApprovalSurvival.hydrate.test.ts`（真实 SQLite + 假时钟 23h59m/24h01m + startupMaintenance→hydrate 链）、`tests/unit/agent/parkedApprovalResume.test.ts`（认领幂等/指纹拒绝/拒绝不执行）、`tests/unit/host/runtime/parkedApprovalDurableRunParking.test.ts`（guard_halt 停靠不进 listRecoverable）；真机档：`tests/e2e/recovery-matrix.spec.ts` 的 G 单元格（SIGKILL + 同数据目录重启 + 收件箱批准）。

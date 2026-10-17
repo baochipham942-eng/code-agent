@@ -251,6 +251,32 @@ export async function seedOrphanToolCall(dataDir: string, variant: 'D1' | 'D2'):
   return { sessionId };
 }
 
+export interface ParkedApprovalDbRow {
+  id: string;
+  kind: string;
+  status: string;
+  feedback: string | null;
+  payloadJson: string;
+}
+
+/** 幸存停车审批行（N-PARKED-APPROVAL-SURVIVE-RESTART-RESUME G 单元格）：只读读回 pending_approvals。 */
+export async function readParkedApprovals(dataDir: string): Promise<ParkedApprovalDbRow[]> {
+  if (process.env.RECOVERY_MATRIX_DB_CHILD !== '1') {
+    return runDbChild<ParkedApprovalDbRow[]>('parked', dataDir, '-');
+  }
+  const { default: Database } = await import('better-sqlite3');
+  const db = new Database(path.join(dataDir, 'code-agent.db'), { readonly: true, fileMustExist: true });
+  try {
+    return db.prepare(`
+      SELECT id, kind, status, feedback, payload_json AS payloadJson
+      FROM pending_approvals
+      ORDER BY submitted_at
+    `).all() as ParkedApprovalDbRow[];
+  } finally {
+    db.close();
+  }
+}
+
 export async function readSessionDb(dataDir: string, sessionId: string): Promise<DbReadback> {
   if (process.env.RECOVERY_MATRIX_DB_CHILD !== '1') {
     return runDbChild<DbReadback>('read', dataDir, sessionId);
@@ -594,12 +620,14 @@ function runDbChild<T>(command: string, dataDir: string, extra: string): Promise
 }
 
 const dbChildCommand = process.env.RECOVERY_MATRIX_DB_CHILD === '1' ? process.argv[2] : undefined;
-if (dbChildCommand === 'seed' || dbChildCommand === 'read') {
+if (dbChildCommand === 'seed' || dbChildCommand === 'read' || dbChildCommand === 'parked') {
   const dataDir = process.argv[3] ?? '';
   const extra = process.argv[4] ?? '';
   const pending = dbChildCommand === 'seed'
     ? seedOrphanToolCall(dataDir, extra === 'D2' ? 'D2' : 'D1')
-    : readSessionDb(dataDir, extra);
+    : dbChildCommand === 'parked'
+      ? readParkedApprovals(dataDir)
+      : readSessionDb(dataDir, extra);
   pending.then(
     (result) => {
       process.stdout.write(JSON.stringify(result));

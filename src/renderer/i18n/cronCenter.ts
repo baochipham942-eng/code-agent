@@ -232,6 +232,7 @@ export const cronCenterZh = {
     // 手动编辑器 Agent 动作：自定义紧急判据（N-CRON-MORNING-TRIAGE-URGENCY-RULE）
     urgencyCriteriaLabel: '紧急判据（可选）',
     urgencyCriteriaPlaceholder: '例如：只有老板发来的邮件算今天必须处理',
+    urgencyCriteriaHint: '设置后，非今日必办（可以稍后 / 仅供参考）的运行不再弹通知，安静等在待过目列表里。',
     inboxTitle: '{count} 条待过目',
     inboxAllClear: '都过目完了 ✓',
     inboxOpenResult: '查看结果',
@@ -514,6 +515,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     simpleCreateFailed: 'Failed to create',
     urgencyCriteriaLabel: 'Urgency rule (optional)',
     urgencyCriteriaPlaceholder: 'e.g. only mail from my boss counts as must-do today',
+    urgencyCriteriaHint: 'With a rule set, non-urgent runs (can wait / FYI) skip notifications and wait quietly in the review list.',
     inboxTitle: '{count} to review',
     inboxAllClear: 'All reviewed ✓',
     inboxOpenResult: 'View result',

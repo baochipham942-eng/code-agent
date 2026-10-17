@@ -827,11 +827,15 @@ describe('TurnBasedTraceView 不向虚拟列表灌入每渲染变身份的 props
 
 describe('TurnBasedTraceView 末轮默认展开随详略档（N-WORKDETAIL-DEFAULT-SIMPLE-FU2）', () => {
   // TurnCard 被 mock 成 null，直接从 itemContent 产物里读它拿到的 defaultExpanded。
+  // itemContent 返回 外层div > 内层div > [TurnCard, ConversationTurnTailSlot]，按此结构取型。
   function turnCardDefaultExpanded(index: number): boolean | undefined {
     const { firstItemIndex, itemContent } = mocks.virtuosoProps;
-    const wrapper = itemContent(firstItemIndex + index, makeTurn(index)) as React.ReactElement;
-    const inner = wrapper.props.children as React.ReactElement;
-    const card = (inner.props.children as React.ReactElement[])[0];
+    const wrapper = itemContent(firstItemIndex + index, makeTurn(index)) as React.ReactElement<{
+      children: React.ReactElement<{
+        children: [React.ReactElement<{ defaultExpanded?: boolean }>, unknown];
+      }>;
+    }>;
+    const card = wrapper.props.children.props.children[0];
     return card.props.defaultExpanded;
   }
 

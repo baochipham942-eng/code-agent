@@ -11,7 +11,7 @@
 // 选完调度类型不立刻报）。
 // ============================================================================
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import type { EventConnectorMailScheduleConfig } from '@shared/contract';
 import { CRON_EVENT_TRIGGER } from '@shared/constants';
 import { Button } from '../../primitives/Button';
@@ -36,6 +36,11 @@ interface CronEventScheduleFieldsProps {
   onBudgetChange: (value: string) => void;
   /** 按校验器 reason 映射出的本地化违规文案；null = 合规或未到显示时机。 */
   validationMessage: string | null;
+  /**
+   * 按群名预选（/schedule event 草案的用户原话群名）：选中账号的会话目录加载完、
+   * 且用户还没手选群（chatId 空）时，目录里有同名群就自动选上。编辑器不传 = 行为不变。
+   */
+  preferredChatName?: string;
 }
 
 export const CronEventScheduleFields: React.FC<CronEventScheduleFieldsProps> = ({
@@ -47,11 +52,25 @@ export const CronEventScheduleFields: React.FC<CronEventScheduleFieldsProps> = (
   maxRunBudget,
   onBudgetChange,
   validationMessage,
+  preferredChatName,
 }) => {
   const { t } = useI18n();
   const cc = t.cronCenter;
   const openSettingsTab = useAppStore((state) => state.openSettingsTab);
   const { accounts, accountsLoading, conversationsByAccount } = useChannelCatalog();
+
+  // 按群名预选：回调走 ref，避免调用方内联箭头让本效应随每次渲染重跑。
+  const onChatChangeRef = useRef(onChatChange);
+  onChatChangeRef.current = onChatChange;
+  useEffect(() => {
+    if (!preferredChatName || chatId) return;
+    const state = conversationsByAccount[accountId];
+    if (!state || state.loading) return;
+    const match = state.conversations.find(
+      (conversation) => conversation.name.trim() === preferredChatName.trim(),
+    );
+    if (match) onChatChangeRef.current(match.id);
+  }, [preferredChatName, chatId, accountId, conversationsByAccount]);
 
   const selectedAccount = accounts.find((account) => account.id === accountId);
   const staleAccount = Boolean(accountId && !accountsLoading && !selectedAccount);

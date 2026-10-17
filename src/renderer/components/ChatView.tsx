@@ -726,9 +726,9 @@ export const ChatView: React.FC = () => {
         }));
         return;
       }
-      if (eventType === 'error' || eventType === 'agent_cancelled' || eventType === 'stream_end') {
+      if (eventType === 'error' || eventType === 'agent_cancelled' || eventType === 'stream_end' || eventType === 'agent_complete') {
         setPendingAssistantFeedback((current) => transitionAssistantFeedback(current, {
-          type: 'send_failed',
+          type: eventType === 'agent_complete' ? 'run_finished' : 'send_failed',
           sessionId: eventSessionId,
         }));
       }

@@ -691,85 +691,46 @@ describe('NudgeManager', () => {
   });
 
   // ────────────────────────────────────────────────────────────────────────
-  // P2b: 长活一个任务都没建时提醒一次（L8 N-L8-SLIM2）
+  // P2b（task-tracking hint）已撤（N-HOME-STARTER-CARDS-FILES-FU3-FU1）：
+  // runNudgeChecks 只在模型交出纯文本收尾后才被调用，注入 hint 并重入会把
+  // 已流式展示的收尾正文挡在落库之前（孤儿草稿），模型看不到自己的总结、
+  // 下一轮重写一遍（FU3 真跑双重总结根因）。
   // ────────────────────────────────────────────────────────────────────────
 
-  describe('P2b: task-tracking hint', () => {
-    /** 让 P1/P3 都不触发：用过写工具、没有 targetFiles、userMessage 不含任务类关键词 */
+  describe('P2b retired: closing text must not trigger a second generation', () => {
+    /** 长活收尾形状：非简单模式、无 targetFiles、userMessage 不含任务类关键词，P1/P3 都不触发 */
     function longRunCtx(overrides: Partial<NudgeCheckContext> = {}): NudgeCheckContext {
       return createMockContext({
         isSimpleTaskMode: false,
-        iterations: 6,
+        iterations: 7,
         toolsUsedInTurn: ['Edit'],
         ...overrides,
       });
     }
 
-    function hintTexts(inject: unknown): string[] {
-      return (inject as { mock: { calls: unknown[][] } }).mock.calls
-        .map((call) => String(call[0]))
-        .filter((text) => text.includes('<task-tracking-hint>'));
-    }
-
-    it('长活 + 任务清单为空 → 注入一次建议，并指明先 select 加载 TaskManager', () => {
+    it('长活（iterations ≥ 6）+ 任务清单为空 → 不注入 <task-tracking-hint>，返回 false', () => {
       manager.reset([], '把这段代码改一下', '/tmp/test', []);
       const ctx = longRunCtx();
 
-      expect(manager.runNudgeChecks(ctx)).toBe(true);
-
-      const hints = hintTexts(ctx.injectSystemMessage);
-      expect(hints).toHaveLength(1);
-      // TaskManager 已挪出 CORE，提示必须告诉模型怎么把它拉回来，否则它找不到工具
-      expect(hints[0]).toContain('select:TaskManager');
-      // 抄 Kimi 的 Avoid churn：小事别为了记账而记账
-      expect(hints[0]).toContain('忽略这条');
+      expect(manager.runNudgeChecks(ctx)).toBe(false);
+      expect(ctx.injectSystemMessage).not.toHaveBeenCalled();
     });
 
-    it('整个 run 只提醒一次，不反复打扰', () => {
+    it('纯文本收尾（本轮无工具）也一样放过——双重总结正是从这个形状来的', () => {
+      manager.reset([], '把这段代码改一下', '/tmp/test', []);
+      const ctx = longRunCtx({ toolsUsedInTurn: [] });
+
+      expect(manager.runNudgeChecks(ctx)).toBe(false);
+      expect(ctx.injectSystemMessage).not.toHaveBeenCalled();
+    });
+
+    it('反复检查也不会延迟触发', () => {
       manager.reset([], '把这段代码改一下', '/tmp/test', []);
       const ctx = longRunCtx();
 
-      manager.runNudgeChecks(ctx);
-      manager.runNudgeChecks(longRunCtx({ injectSystemMessage: ctx.injectSystemMessage, iterations: 12 }));
-
-      expect(hintTexts(ctx.injectSystemMessage)).toHaveLength(1);
-    });
-
-    it('轮次不够（短活）不提醒', () => {
-      manager.reset([], '把这段代码改一下', '/tmp/test', []);
-      const ctx = longRunCtx({ iterations: 3 });
-
-      manager.runNudgeChecks(ctx);
-
-      expect(hintTexts(ctx.injectSystemMessage)).toHaveLength(0);
-    });
-
-    it('简单任务模式不提醒', () => {
-      manager.reset([], '把这段代码改一下', '/tmp/test', []);
-      const ctx = longRunCtx({ isSimpleTaskMode: true });
-
-      manager.runNudgeChecks(ctx);
-
-      expect(hintTexts(ctx.injectSystemMessage)).toHaveLength(0);
-    });
-
-    it('已经有未收口任务时不提醒——那是 P2 收口检查的地盘', () => {
-      mockGetIncompleteTasks.mockReturnValue([{ id: '1', subject: '已经在跑的任务' }]);
-      manager.reset([], '把这段代码改一下', '/tmp/test', []);
-      const ctx = longRunCtx();
-
-      manager.runNudgeChecks(ctx);
-
-      expect(hintTexts(ctx.injectSystemMessage)).toHaveLength(0);
-    });
-
-    it('用户消息本来就在讲任务时不提醒——走 P2 的 enforceTaskCompletion 路径', () => {
-      manager.reset([], '帮我把这些待办列个计划', '/tmp/test', []);
-      const ctx = longRunCtx();
-
-      manager.runNudgeChecks(ctx);
-
-      expect(hintTexts(ctx.injectSystemMessage)).toHaveLength(0);
+      expect(manager.runNudgeChecks(ctx)).toBe(false);
+      expect(manager.runNudgeChecks(longRunCtx({ injectSystemMessage: ctx.injectSystemMessage, iterations: 12 }))).toBe(false);
+      expect(ctx.injectSystemMessage).not.toHaveBeenCalled();
     });
   });
 });

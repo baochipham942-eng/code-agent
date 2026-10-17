@@ -17,6 +17,8 @@ import { useAppStore } from '../../stores/appStore';
 import { resolveHostReasonCopy } from '../../utils/hostReasonPresentation';
 import { permissionConsequence } from './permissionPresentation';
 import { ConnectorWriteDisclosure } from './ConnectorWriteDisclosure';
+import { estimateMediaPriceCny } from './mediaPriceEstimate';
+import { formatCny } from '@shared/media/imageCost';
 import { OS_SANDBOX_CODES } from '@shared/constants/sandbox';
 
 interface RequestDetailsProps {
@@ -111,6 +113,9 @@ export function RequestDetails({ request }: RequestDetailsProps) {
           {permissionConsequence(request, t)}
         </p>
       )}
+
+      {/* N-MEDIA-GEN-PRICE-CARD：付费生成工具（image/video/music_generate）的按次计费参考价 */}
+      <MediaPriceNotice request={request} />
 
       {/* 文件路径 */}
       {filePath && <DetailItem label={labels.detailFile} value={filePath} isPath />}
@@ -284,6 +289,48 @@ function DecisionTraceView({ trace }: { trace: DecisionTrace }) {
         </div>
       )}
     </div>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// MediaPriceNotice - 付费生成工具的按次计费参考价（N-MEDIA-GEN-PRICE-CARD）
+// ----------------------------------------------------------------------------
+
+// 价格经 mediaPriceEstimate 查 shared/media/*Cost 单一真源；文案走 decisionCard.permission
+// 词条（zh/en 同 key）。取参说明：PermissionCard.normalizeRequest 的 details 白名单不透传
+// 生成工具的 prompt/model/duration（N-WRITEBACK-EDIT 的「其余不背这份」），而审批期间
+// store 里的原始请求（host 默认分支 details = {...params}）按 id+tool 对齐后就是整份参数。
+function MediaPriceNotice({ request }: { request: PermissionRequest }) {
+  const { t } = useI18n();
+  const labels = t.decisionCard.permission;
+  const pending = useAppStore((s) => s.pendingPermissionRequest);
+  const args =
+    pending?.id === request.id && pending.tool === request.tool
+      ? (pending.details as Record<string, unknown>)
+      : undefined;
+  const estimate = estimateMediaPriceCny(request.tool, args);
+  if (!estimate) return null;
+
+  let text: string;
+  if (estimate.kind === 'video') {
+    text = labels.mediaPriceVideo
+      .replace('{price}', formatCny(estimate.totalCny))
+      .replace('{duration}', String(estimate.durationSec));
+  } else if (estimate.kind === 'music') {
+    text = labels.mediaPriceMusic.replace('{price}', formatCny(estimate.totalCny));
+  } else if (estimate.count > 1) {
+    text = labels.mediaPriceImageBatch
+      .replace('{count}', String(estimate.count))
+      .replace('{unitPrice}', formatCny(estimate.unitPriceCny))
+      .replace('{total}', formatCny(estimate.totalCny));
+  } else {
+    text = labels.mediaPriceImage.replace('{price}', formatCny(estimate.unitPriceCny));
+  }
+
+  return (
+    <p className="text-xs leading-5 text-badge-warning" data-testid="permission-media-price">
+      {text}
+    </p>
   );
 }
 

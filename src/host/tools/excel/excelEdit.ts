@@ -37,7 +37,7 @@ type ExcelEditOperation =
   | { action: 'rename_sheet';   sheet: string; newName: string }
   | { action: 'add_sheet';      name?: string; sheet?: string; after?: string }
   | { action: 'delete_sheet';   sheet: string }
-  | { action: 'set_column_width'; sheet?: string; column: string; width: number }
+  | { action: 'set_column_width'; sheet?: string; column?: string; width: number }
   | { action: 'merge_cells';    sheet?: string; range: string }
   | { action: 'auto_filter';    sheet?: string; range: string };
 
@@ -231,6 +231,11 @@ function executeOperation(workbook: ExcelJS.Workbook, op: ExcelEditOperation): s
     }
 
     case 'set_column_width': {
+      // column 是未信任的模型输入：缺列时 op.column.toUpperCase() 抛裸 TypeError，
+      // 模型只能盲猜缺失参数（starter-card 实测五连返工）。同 add_sheet 的 fail-loud 先例。
+      if (!op.column || typeof op.column !== 'string') {
+        throw new Error('set_column_width requires column (a column letter such as "A")');
+      }
       const ws = getWorksheet(workbook, op.sheet);
       const colNum = columnLetterToNumber(op.column.toUpperCase());
       ws.getColumn(colNum).width = op.width;

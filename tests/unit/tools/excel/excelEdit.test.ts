@@ -83,3 +83,47 @@ describe('executeExcelEdit add_sheet 表名别名', () => {
     }
   });
 });
+
+describe('executeExcelEdit set_column_width missing column', () => {
+  it('returns an explicit error instead of a bare toUpperCase TypeError', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'excel-edit-colwidth-'));
+    try {
+      const file = await makeXlsx(dir);
+      // starter-card 实测失败形态：模型漏传 column，工具回 undefined.toUpperCase 的 TypeError
+      const result = await executeExcelEdit(
+        {
+          file_path: file,
+          operations: [{ action: 'set_column_width', width: 20 } as never],
+        },
+        makeCtx(dir),
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('set_column_width requires column');
+      expect(result.error).not.toContain('toUpperCase');
+      // 失败后快照回滚，磁盘文件保持原样
+      await expect(readSheetNames(file)).resolves.toEqual(['原始数据']);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('still sets the width when column is provided', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'excel-edit-colwidth-ok-'));
+    try {
+      const file = await makeXlsx(dir);
+      const result = await executeExcelEdit(
+        {
+          file_path: file,
+          operations: [{ action: 'set_column_width', column: 'A', width: 20 }],
+        },
+        makeCtx(dir),
+      );
+      expect(result.success).toBe(true);
+      const reread = new ExcelJS.Workbook();
+      await reread.xlsx.readFile(file);
+      expect(reread.getWorksheet('原始数据')!.getColumn('A').width).toBe(20);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+});

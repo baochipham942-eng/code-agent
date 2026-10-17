@@ -43,12 +43,13 @@ describe('cron agent 会话拓扑标注接线', () => {
     );
   });
 
-  it('cronService 把 notifyWhen 安静轮接进投递门与结果标记（N-CRON-RESTATE-HUMAN-WHEN）', () => {
-    // 判定走 cronFailurePolicy.cronNotifyQuietRound（含留痕）；推送门同时看
-    // quietWatchRound（external-watch）与 notifyQuietRound（notifyWhen 未满足）；
+  it('cronService 把 notifyWhen / urgencyCriteria 安静轮接进投递门与结果标记（N-CRON-RESTATE-HUMAN-WHEN / N-CRON-URGENCY-NOTIFY）', () => {
+    // 判定走 cronFailurePolicy.cronNotifyQuietRound（含留痕）；hasAlert 的「值得
+    // 打扰」矩阵收口在 cronNormalizers.cronAgentRunHasAlert；推送门同时看
+    // quietWatchRound（external-watch）与 notifyQuietRound（判据未满足的安静轮）；
     // 结果组装带上 notifyQuietRound（→ notifySuppressed 标记，通知门用）。
     expect(cronSource).toMatch(
-      /const alertGated = isExternalWatch \|\| Boolean\(action\.notifyWhen\?\.trim\(\)\)/,
+      /const hasAlert = cronAgentRunHasAlert\(action, \{ isExternalWatch, finalAssistantText \}\)/,
     );
     expect(cronSource).toMatch(
       /const notifyQuietRound = cronNotifyQuietRound\(action, hasAlert, definition\.id\)/,

@@ -1,14 +1,16 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Check, Clock3, Pencil, X } from 'lucide-react';
 import { Button } from '../../../primitives/Button';
 import { Input } from '../../../primitives/Input';
 import { Select } from '../../../primitives/Select';
 import { useI18n } from '../../../../hooks/useI18n';
 import { CRON_URGENCY_CRITERIA } from '@shared/constants';
+import { validateEventScheduleConstraints } from '@shared/cronEventValidation';
 import {
   compileSimpleSchedule,
   type SimpleFrequency,
 } from '../../cron/CronSimpleCreate';
+import { CronEventScheduleFields } from '../../cron/CronEventScheduleFields';
 import type { CreateCronJobInput } from '../../../../services/cronClient';
 import type { PendingScheduleDraft } from './useScheduleDraft';
 import { buildScheduleConfirmRows } from './scheduleConfirm';
@@ -99,7 +101,66 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
 }) => {
   const { t, language } = useI18n();
   const labels = t.scheduleConfirm;
-  const rows = useMemo(() => buildScheduleConfirmRows(draft, labels, language), [draft, labels, language]);
+  const cc = t.cronCenter;
+  const rows = useMemo(
+    () => buildScheduleConfirmRows(draft, labels, language, {
+      group: cc.eventConfirmGroup,
+      groupFallback: cc.eventConfirmGroupFallback,
+      groupAnyChat: cc.eventConfirmGroupAnyChat,
+      budget: cc.eventBudgetLabel,
+    }),
+    [draft, labels, language, cc],
+  );
+
+  // event 草案（N-CRON-EVENT-CREATE-CHAT）：没有「什么时候」行/时间编辑器，
+  // 换成 CronEventScheduleFields（账号/群选择 + 预算输入）；确认按钮挂共享校验器。
+  // normalize 只放行 channel 源，这里按 source 收窄拿 chatId 字段。
+  const eventSchedule = draft.input.schedule.type === 'event' && draft.input.schedule.source === 'channel'
+    ? draft.input.schedule
+    : null;
+  const eventViolation = useMemo(() => {
+    if (!eventSchedule) return null;
+    return validateEventScheduleConstraints({
+      schedule: eventSchedule,
+      runsOn: draft.input.runsOn,
+      action: draft.input.action,
+      maxRunBudget: draft.input.maxRunBudget,
+    });
+  }, [eventSchedule, draft.input.runsOn, draft.input.action, draft.input.maxRunBudget]);
+
+  // event 编辑态放本地（含 ref：同一次账号切换会连续触发 onAccountChange + onChatChange
+  // 两次写回，第二次的 draft 闭包是旧的，只有 ref 合并才不丢账号补丁），每次变更整体写回草案。
+  const [eventEdit, setEventEdit] = useState(() => ({
+    accountId: eventSchedule?.accountId ?? '',
+    chatId: eventSchedule?.chatId ?? '',
+  }));
+  const eventEditRef = useRef(eventEdit);
+  const [budgetEdit, setBudgetEdit] = useState(() => String(draft.input.maxRunBudget ?? ''));
+
+  const writeEventEdit = (patch: { accountId?: string; chatId?: string }) => {
+    if (!eventSchedule || !onDraftChange) return;
+    const next = { ...eventEditRef.current, ...patch };
+    eventEditRef.current = next;
+    setEventEdit(next);
+    // chatId 空串 = 任意会话：写回时不落键，别把 '' 送进 createJob（空串会绑死一个
+    // 不存在的会话，任务静默永不触发）。
+    const { chatId, ...scheduleWithoutChat } = { ...eventSchedule, ...next };
+    const schedule = chatId ? { ...scheduleWithoutChat, chatId } : scheduleWithoutChat;
+    onDraftChange({ ...draft, input: { ...draft.input, schedule } as CreateCronJobInput });
+  };
+
+  const handleEventBudgetChange = (value: string) => {
+    if (!eventSchedule || !onDraftChange) return;
+    setBudgetEdit(value);
+    const parsed = Number(value);
+    onDraftChange({
+      ...draft,
+      input: {
+        ...draft.input,
+        maxRunBudget: value.trim() !== '' && Number.isFinite(parsed) ? parsed : null,
+      },
+    });
+  };
 
   const [editingWhen, setEditingWhen] = useState(false);
   const [whenEdit, setWhenEdit] = useState<WhenEditState>(() => initialWhenEditState(draft.input.schedule));
@@ -148,7 +209,7 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
     setEditingNotify(false);
   };
 
-  const renderRowValue = (key: 'what' | 'when' | 'notifyWhen' | 'result') => {
+  const renderRowValue = (key: 'what' | 'when' | 'notifyWhen' | 'result' | 'group' | 'budget') => {
     const row = rows.find((candidate) => candidate.key === key);
     const value = row?.value ?? '';
     return (
@@ -206,6 +267,21 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
             </div>
           </div>
         ))}
+
+        {eventSchedule && (
+          <div data-schedule-event-fields className="rounded-md bg-indigo-500/5 px-2.5 py-2">
+            <CronEventScheduleFields
+              accountId={eventEdit.accountId}
+              chatId={eventEdit.chatId}
+              onAccountChange={(accountId) => writeEventEdit({ accountId, chatId: '' })}
+              onChatChange={(chatId) => writeEventEdit({ chatId })}
+              maxRunBudget={budgetEdit}
+              onBudgetChange={handleEventBudgetChange}
+              validationMessage={eventViolation ? cc.eventValidation[eventViolation.reason] : null}
+              preferredChatName={draft.eventGroupName}
+            />
+          </div>
+        )}
 
         {editingWhen && (
           <div
@@ -318,6 +394,7 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
           size="sm"
           onClick={() => void onConfirm()}
           loading={confirming}
+          disabled={Boolean(eventViolation)}
           leftIcon={<Check className="h-3 w-3" />}
         >
           {labels.confirm}

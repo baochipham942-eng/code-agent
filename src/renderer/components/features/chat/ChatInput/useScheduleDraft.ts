@@ -12,6 +12,11 @@ export interface PendingScheduleDraft {
   description: string;
   handoffPrompt?: string;
   sourceSessionId: string | null;
+  /**
+   * event 草案（N-CRON-EVENT-CREATE-CHAT）：用户原话里的群名提示。
+   * 只供确认卡在选完账号后按群名预选群，不进 createJob 载荷。
+   */
+  eventGroupName?: string;
 }
 
 export interface ScheduleDraftController {

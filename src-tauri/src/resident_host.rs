@@ -380,12 +380,83 @@ pub fn terminate_attached_daemon(_pid: u32, _timeout: Duration, _poll: Duration)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 退出确认框按钮组（N-RESIDENT-HOST-SHELL-RUST-FU1）
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// 退出确认框用哪套按钮。Windows 没有守护 pid 锁/附着（[`is_attach_supported`]
+/// = false），重启必然 Spawn 并先跑 `clear_stale_web_server_port`，把「后台继续」
+/// 特意留下的守护 taskkill /F 掉——按钮承诺了兑现不了的事，就不给（owner 10-17
+/// 选 B：先藏按钮；pid 锁 + attach 是单独的 WIN-ATTACH 单）。判据只看附着是否
+/// 成立，不写平台分支；WIN-ATTACH 落地后 `is_attach_supported()` 翻 true，
+/// 三键自动回来。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuitDialogButtonSet {
+    /// 取消 / 停止并退出。「取消」第一位 = NSAlert / TaskDialog 的默认（回车）键。
+    Two {
+        cancel: &'static str,
+        quit: &'static str,
+    },
+    /// 取消 / 后台继续 / 停止并退出（mac/linux 现状）。
+    Three {
+        cancel: &'static str,
+        background_continue: &'static str,
+        quit: &'static str,
+    },
+}
+
+/// 纯判据：退出框要不要提供「后台继续」。
+pub fn quit_dialog_offers_background_continue(attach_supported: bool) -> bool {
+    attach_supported
+}
+
+/// 纯构造：附着成立 → 三键；不成立 → 两键（「取消」仍第一位当默认键）。
+pub fn quit_dialog_button_set(attach_supported: bool) -> QuitDialogButtonSet {
+    if quit_dialog_offers_background_continue(attach_supported) {
+        QuitDialogButtonSet::Three {
+            cancel: crate::quit_guard::QUIT_DIALOG_CANCEL_BUTTON,
+            background_continue: crate::quit_guard::QUIT_DIALOG_BACKGROUND_BUTTON,
+            quit: crate::quit_guard::QUIT_DIALOG_QUIT_BUTTON,
+        }
+    } else {
+        QuitDialogButtonSet::Two {
+            cancel: crate::quit_guard::QUIT_DIALOG_CANCEL_BUTTON,
+            quit: crate::quit_guard::QUIT_DIALOG_QUIT_BUTTON,
+        }
+    }
+}
+
+/// 现场用哪套按钮：唯一判据 [`is_attach_supported`]，无平台分支。
+pub fn quit_dialog_button_set_current() -> QuitDialogButtonSet {
+    quit_dialog_button_set(is_attach_supported())
+}
+
+/// 防御（fail-safe）：这套按钮没提供「后台继续」时，即使该标签不知何故到达
+/// （插件回归/未来改动），也绝不能行动成 BackgroundContinue——按取消处理，
+/// 不退壳、不清理。
+pub fn dialog_answer_action_gated(
+    custom_label: Option<&str>,
+    button_set: QuitDialogButtonSet,
+) -> crate::quit_guard::QuitAnswerAction {
+    match (
+        crate::quit_guard::dialog_answer_action(custom_label),
+        button_set,
+    ) {
+        (
+            crate::quit_guard::QuitAnswerAction::BackgroundContinue,
+            QuitDialogButtonSet::Two { .. },
+        ) => crate::quit_guard::QuitAnswerAction::StayRunning,
+        (action, _) => action,
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 测试
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::quit_guard::QuitAnswerAction;
 
     const LSTART: &str = "Sat Oct 11 22:29:33 2026";
     const PS_NODE_LINE: &str = concat!(
@@ -612,6 +683,86 @@ mod tests {
         assert!(
             arm_at < exit_at,
             "arm 必须发生在退壳之前，否则 EOF 先到、通知还没落地"
+        );
+    }
+
+    // ── 退出确认框按钮组（N-RESIDENT-HOST-SHELL-RUST-FU1） ──────────────────────
+
+    #[test]
+    fn quit_dialog_button_set_two_buttons_when_attach_unsupported() {
+        // Windows：附着不成立 → 只给 [取消, 停止并退出]，取消第一位（默认键）
+        assert_eq!(
+            quit_dialog_button_set(false),
+            QuitDialogButtonSet::Two {
+                cancel: "取消",
+                quit: "停止并退出",
+            },
+            "附着不成立时不得提供「后台继续」——重启首跑端口清扫会把它留下的守护 taskkill 掉"
+        );
+    }
+
+    #[test]
+    fn quit_dialog_button_set_three_buttons_when_attach_supported() {
+        // mac/linux：三键照旧，顺序 取消 / 后台继续 / 停止并退出
+        assert_eq!(
+            quit_dialog_button_set(true),
+            QuitDialogButtonSet::Three {
+                cancel: "取消",
+                background_continue: "后台继续",
+                quit: "停止并退出",
+            },
+            "附着成立时按钮组必须与既有三键版完全一致"
+        );
+    }
+
+    #[test]
+    fn two_button_answer_mapping_never_yields_background_continue() {
+        // 两键版：取消 → StayRunning，停止并退出 → Quit；
+        // 「后台继续」标签即使不知何故到达（插件回归/未来改动）也绝不行动。
+        let set = quit_dialog_button_set(false);
+        assert_eq!(
+            dialog_answer_action_gated(Some("取消"), set),
+            QuitAnswerAction::StayRunning
+        );
+        assert_eq!(
+            dialog_answer_action_gated(Some("停止并退出"), set),
+            QuitAnswerAction::Quit
+        );
+        assert_eq!(
+            dialog_answer_action_gated(Some("后台继续"), set),
+            QuitAnswerAction::StayRunning,
+            "没提供「后台继续」按钮时，该标签绝不能行动成 BackgroundContinue"
+        );
+        // 关闭对话框（None）与未知标签照旧不退出
+        assert_eq!(
+            dialog_answer_action_gated(None, set),
+            QuitAnswerAction::StayRunning
+        );
+        assert_eq!(
+            dialog_answer_action_gated(Some("whatever"), set),
+            QuitAnswerAction::StayRunning
+        );
+    }
+
+    #[test]
+    fn three_button_answer_mapping_unchanged() {
+        // 三键版（mac/linux）：逐标签与既有 dialog_answer_action 一致，行为不变
+        let set = quit_dialog_button_set(true);
+        assert_eq!(
+            dialog_answer_action_gated(Some("取消"), set),
+            QuitAnswerAction::StayRunning
+        );
+        assert_eq!(
+            dialog_answer_action_gated(Some("后台继续"), set),
+            QuitAnswerAction::BackgroundContinue
+        );
+        assert_eq!(
+            dialog_answer_action_gated(Some("停止并退出"), set),
+            QuitAnswerAction::Quit
+        );
+        assert_eq!(
+            dialog_answer_action_gated(None, set),
+            QuitAnswerAction::StayRunning
         );
     }
 }

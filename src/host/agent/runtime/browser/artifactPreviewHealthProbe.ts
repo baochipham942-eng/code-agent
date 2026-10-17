@@ -2,9 +2,10 @@ import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import type { ConsoleMessage, Page } from 'playwright';
 import { ARTIFACT_PREVIEW_HEALTH } from '../../../../shared/constants/previewHealth';
-import { createLogger } from '../../../services/infra/logger';
-
-const logger = createLogger('ArtifactPreviewHealth', { lane: 'browser' });
+import {
+  probeArtifactButtonClick,
+  type ArtifactPreviewHealthButtonClickDiagnostics,
+} from './artifactPreviewHealthButtonClick';
 
 export interface ArtifactPreviewHealthViewportDiagnostics {
   name: string;
@@ -30,15 +31,6 @@ export interface ArtifactPreviewHealthViewportDiagnostics {
     naturalWidth: number;
     naturalHeight: number;
   }>;
-}
-
-interface ArtifactPreviewHealthButtonClickDiagnostics {
-  /** false = 页面没有可见且启用的 <button>（不是缺陷）；探针异常时整个字段缺省。 */
-  checked: boolean;
-  responded?: boolean;
-  mutations?: number;
-  textChanged?: boolean;
-  clickError?: string;
 }
 
 export interface ArtifactPreviewHealthDiagnostics {
@@ -319,100 +311,11 @@ export async function collectArtifactPreviewHealthDiagnosticsFromPage(
     }
 
     // button_no_response 探针（anti-Potemkin）：viewport 循环只读不点，这里回到
-    // 第一个 viewport、重载页面拿干净状态，点击第一个可见且启用的 <button> 一次。
-    // 绝不点 <a>（导航副作用不可控）。探针自身异常 => warn 带可区分原因、不发
-    // finding（fail-open 但不静默）。
-    let buttonClick: ArtifactPreviewHealthButtonClickDiagnostics | undefined;
-    if (viewports.length > 0) {
-      const firstViewport = viewports[0];
-      try {
-        await page.setViewportSize({ width: firstViewport.width, height: firstViewport.height });
-        await page.goto(url, {
-          waitUntil: 'domcontentloaded',
-          timeout: remaining(),
-        });
-        await page.waitForTimeout(ARTIFACT_PREVIEW_HEALTH.SETTLE_MS);
-        buttonClick = await page.evaluate(({ settleMs, minVisibleSize }) => {
-          // 注意：这个回调会被整体序列化进页面执行，函数体里不许出现「具名函数绑定」——
-          // 见上方 viewport 探针的 __name 踩坑注释；可见性判据保持内联箭头。
-          const visibleEnabledButtons = [...document.querySelectorAll('button')].filter((element) => {
-            if (element.disabled) return false;
-            const rect = element.getBoundingClientRect();
-            const style = window.getComputedStyle(element);
-            return rect.width > minVisibleSize
-              && rect.height > minVisibleSize
-              && style.visibility !== 'hidden'
-              && style.display !== 'none'
-              && Number(style.opacity || '1') !== 0
-              && rect.bottom >= 0
-              && rect.right >= 0
-              && rect.top <= window.innerHeight
-              && rect.left <= window.innerWidth;
-          });
-          if (visibleEnabledButtons.length === 0) {
-            return { checked: false };
-          }
-
-          const target = visibleEnabledButtons[0];
-          const textBefore = document.body?.innerText ?? '';
-          let mutations = 0;
-          const observer = new MutationObserver((records) => {
-            for (const record of records) {
-              // class/style/data-*/aria-* 属性变化是 :focus/:active/hover 衍生的
-              // 伪 mutation，不算 meaningful state change。
-              if (record.type === 'attributes') {
-                const name = record.attributeName ?? '';
-                if (
-                  name === 'class'
-                  || name === 'style'
-                  || name.startsWith('data-')
-                  || name.startsWith('aria-')
-                ) {
-                  continue;
-                }
-              }
-              mutations += 1;
-            }
-          });
-          observer.observe(document.body, {
-            childList: true,
-            subtree: true,
-            attributes: true,
-            characterData: true,
-          });
-
-          let clickError: string | undefined;
-          try {
-            target.click();
-          } catch (error) {
-            clickError = error instanceof Error ? error.message : String(error);
-          }
-
-          return new Promise<ArtifactPreviewHealthButtonClickDiagnostics>((resolve) => {
-            window.setTimeout(() => {
-              observer.disconnect();
-              const textAfter = document.body?.innerText ?? '';
-              const textChanged = textBefore !== textAfter;
-              resolve({
-                checked: true,
-                responded: mutations > 0 || textChanged,
-                mutations,
-                textChanged,
-                ...(clickError ? { clickError } : {}),
-              });
-            }, settleMs);
-          });
-        }, {
-          settleMs: ARTIFACT_PREVIEW_HEALTH.BUTTON_CLICK_SETTLE_MS,
-          minVisibleSize: ARTIFACT_PREVIEW_HEALTH.VISIBLE_ELEMENT_MIN_SIZE_PX,
-        });
-      } catch (error) {
-        logger.warn('Artifact preview health button click probe failed; check skipped (fail-open)', {
-          reason: error instanceof Error ? error.message : String(error),
-        });
-        buttonClick = undefined;
-      }
-    }
+    // 第一个 viewport 点击第一个可见且启用的 <button> 一次，实现与失败语义见
+    // artifactPreviewHealthButtonClick.ts（fail-open 但不静默）。
+    const buttonClick = viewports.length > 0
+      ? await probeArtifactButtonClick({ page, url, viewport: viewports[0], remainingMs: remaining })
+      : undefined;
 
     return {
       title: latestTitle,

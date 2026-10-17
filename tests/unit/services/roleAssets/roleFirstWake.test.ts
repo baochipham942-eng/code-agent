@@ -107,6 +107,11 @@ import {
 } from '../../../../src/host/services/roleAssets/roleFirstWake';
 import { toRoleBoundaryRunAllowlist } from '../../../../src/host/services/roleAssets/rolePersonalization';
 import { ROLE_ASSETS } from '../../../../src/shared/constants';
+import { capabilityHubZh } from '../../../../src/renderer/i18n/capabilityHub';
+import { sidebarZh } from '../../../../src/renderer/i18n/sidebar';
+
+/** none 变体指路文案必须逐字复用 UI 词条：侧栏「能力中心」+ hub 内「连接器」tab。 */
+const CONNECT_LOCATION = `${sidebarZh.sidebar.capabilityZone.capabilityHub} → ${capabilityHubZh.capabilityHub.tabConnectors}`;
 
 // ----------------------------------------------------------------------------
 // 夹具
@@ -127,15 +132,16 @@ const DEFAULT_TOOL_DEFINITIONS = [
   { name: 'mcp__lark__docs.update', permissionLevel: 'write' },
 ];
 
-function connectedInventory(): { items: Array<{ kind: string; name: string; state: { runtime: string } }> } {
+function connectedInventory(): { items: Array<{ kind: string; name: string; source: { kind: string }; tags: string[]; state: { runtime: string } }> } {
   return {
     items: [
-      { kind: 'connector', name: '日历', state: { runtime: 'connected' } },
-      { kind: 'mcp_template', name: 'Lark 文档', state: { runtime: 'connected' } },
+      // 形状对齐真实 listMcpServers / listConnectors 产出（source.kind + tags）
+      { kind: 'connector', name: '日历', source: { kind: 'builtin' }, tags: ['connector', 'native', 'calendar'], state: { runtime: 'connected' } },
+      { kind: 'mcp_template', name: 'Lark 文档', source: { kind: 'user' }, tags: ['mcp', 'stdio', 'user'], state: { runtime: 'connected' } },
       // 非目标条目：skill / 未连接的 mcp / 未连接的 connector 都不算已连接源
-      { kind: 'skill', name: 'ppt 技能', state: { runtime: 'connected' } },
-      { kind: 'mcp_template', name: '未连接 mcp', state: { runtime: 'lazy' } },
-      { kind: 'connector', name: '未连接连接器', state: { runtime: 'not_configured' } },
+      { kind: 'skill', name: 'ppt 技能', source: { kind: 'project' }, tags: ['skill'], state: { runtime: 'connected' } },
+      { kind: 'mcp_template', name: '未连接 mcp', source: { kind: 'user' }, tags: ['mcp', 'stdio', 'user'], state: { runtime: 'lazy' } },
+      { kind: 'connector', name: '未连接连接器', source: { kind: 'builtin' }, tags: ['connector', 'native', 'photos'], state: { runtime: 'not_configured' } },
     ],
   };
 }
@@ -379,8 +385,8 @@ describe('提示词变体', () => {
     const prompt = harness.runnerCalls[0]!.prompt;
     expect(prompt).toContain('没有任何已连接的数据源');
     expect(prompt).toContain('不要编造');
-    expect(prompt).toContain('设置 → 连接器');
-    expect(prompt).not.toContain('设置 → 插件');
+    expect(prompt).toContain(CONNECT_LOCATION);
+    expect(prompt).not.toContain('设置 → 连接器');
     expect(prompt).toContain('first_wake_suggestions');
     await vi.waitFor(async () => { await expect(readState('lonely-role')).resolves.toMatchObject({ state: 'completed' }); });
     expect(await readState('lonely-role')).toMatchObject({ sourcesMode: 'none', suggestions: [] });

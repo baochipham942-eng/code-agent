@@ -4,7 +4,7 @@
 //
 // confirmRoleDraft 落库新角色后 enqueue 一次只读的首次醒来 run：
 //   - 工具面 = TOOLSCOPE 醒来白名单 ∩ permissionLevel=read（空 = 拒绝全部哨兵）
-//   - 提示词变体由已连接源决定（connector / mcp_template 且 runtime=connected）
+//   - 提示词变体由已连接源决定（用户自连的 connector / MCP；内置与云端下发不算）
 //   - 产出 = 2-3 句纯文本自我介绍 + 恰好 3 条可一键委托的建议（first_wake_suggestions 块）
 //   - 状态机落 roles/<roleId>/first-wake.json：pending → running → completed/skipped/failed
 //     （run 抛错也封口成 failed 终态，绝不把状态卡在 running/pending）
@@ -25,6 +25,7 @@ import type {
   RoleFirstWakeSuggestion,
   RoleFirstWakeStateName,
 } from '../../../shared/contract/roleAssets';
+import type { CapabilityCenterItem } from '../../../shared/contract/capability';
 import { getAgentsMdDir } from '../../config/configPaths';
 import { parseAgentMdVisual } from '../../agent/hybrid/agentMdLoader';
 import { getRoleFirstWakePath, isSafeRoleId } from './roleAssetPaths';
@@ -233,7 +234,7 @@ const FIRST_WAKE_PROMPT_NONE = (userExpectation: string): string => [
   '你的任务：',
   '1. 绝对不要编造任务、数据、文件或来源——你没有数据，编造会误导用户。',
   '2. 最终回复就是给用户的自我介绍：2-3 句话，说清你是谁、擅长什么。用纯文本，不要任何 Markdown 标记（不要 #、**、列表、表格），不要汇报「已完成/未完成」，不要提工具调用上限或轮数。',
-  '3. 根据你的职责说明：哪几类数据源或连接对你最有帮助、连上之后你能多做什么、在哪里连接（设置 → 连接器）。',
+  '3. 根据你的职责说明：哪几类数据源或连接对你最有帮助、连上之后你能多做什么、在哪里连接（能力中心 → 连接器）。',
   `4. 回复末尾必须带一个空建议块（fenced code block，语言标记 ${SUGGESTIONS_BLOCK_TAG}），内容是 []。`,
   '',
   '语言规则：用用户的语言回答；判断不出用户语言时默认中文。',
@@ -304,14 +305,29 @@ async function resolveFirstWakeAllowedToolNames(roleId: string): Promise<string[
 // 已连接源
 // ----------------------------------------------------------------------------
 
-/** 已连接源 = 能力中心里 kind connector / mcp_template 且 runtime=connected 的条目名。 */
+/**
+ * 用户自己连上的源才算「已连接」（owner ruling 2026-10-17）：
+ * - connector：native 连接器（Calendar/Mail/…）runtime=connected 即算——用户不启用不会到 connected；
+ * - mcp_template：只认 user/project/local/runtime scope；builtin（deepwiki 等默认清单）与
+ *   cloud（云端下发）不是用户主动连的，不算；in-process（memory-kv / code-index）虽以
+ *   runtime scope 露面，但 transport 标签是 in-process，同样不算。
+ */
+function isUserConnectedSource(item: CapabilityCenterItem): boolean {
+  if (item.state.runtime !== 'connected') return false;
+  if (item.kind === 'connector') return true;
+  if (item.kind !== 'mcp_template') return false;
+  const scope = item.source.kind;
+  return (scope === 'user' || scope === 'project' || scope === 'local' || scope === 'runtime')
+    && !item.tags.includes('in-process');
+}
+
+/** 已连接源 = 能力中心里用户自连的 connector / mcp_template（判据见 isUserConnectedSource）。 */
 async function listConnectedSourceNames(): Promise<string[]> {
   try {
     const { getCapabilityCenterService } = await import('../capabilities/capabilityCenterService');
     const inventory = await getCapabilityCenterService().listCapabilities();
     return inventory.items
-      .filter((item) => (item.kind === 'connector' || item.kind === 'mcp_template')
-        && item.state.runtime === 'connected')
+      .filter(isUserConnectedSource)
       .map((item) => item.name);
   } catch (error) {
     // 能力中心不可用 → 按「无已连接源」处理（none 变体，绝不编造）

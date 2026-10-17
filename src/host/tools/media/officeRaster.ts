@@ -9,7 +9,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execFile, execFileSync } from 'child_process';
 import { resolveHelperBinary } from '../../runtime/runtimeAssetResolver';
-import { LIBREOFFICE_SEARCH_PATHS, LIBREOFFICE_PATH_ENV, CONVERT_TIMEOUTS, PDF_RENDER } from './ppt/constants';
+import { CONVERT_TIMEOUTS, PDF_RENDER } from './ppt/constants';
+import { ensureLibreOffice } from '../../runtime/libreOffice/ensure';
+import { findLibreOfficePath, getLibreOfficeCandidates } from '../../runtime/libreOffice/lookup';
 
 function execFileAsync(
   file: string,
@@ -34,25 +36,27 @@ function whichSync(bin: string): string | null {
 }
 
 export function isLibreOfficeAvailable(): boolean {
-  const envPath = process.env[LIBREOFFICE_PATH_ENV];
-  if (envPath && fs.existsSync(envPath)) return true;
-
-  for (const p of LIBREOFFICE_SEARCH_PATHS) {
-    if (fs.existsSync(p)) return true;
+  const available = getLibreOfficeCandidates({ which: whichSync }).length > 0;
+  // darwin 判定归 ensureLibreOffice（非 darwin 立即落定 unsupported，零副作用）；
+  // 这里不重复设平台门，否则非 darwin 平台上该触发契约不可测（CI Linux shard 红）。
+  if (!available && process.env.CODE_AGENT_NO_RUNTIME_AUTOINSTALL !== '1') {
+    triggerLibreOfficeInstallOnce();
   }
-  return whichSync('soffice') !== null || whichSync('libreoffice') !== null;
+  return available;
+}
+
+let autoInstallTriggered = false;
+
+function triggerLibreOfficeInstallOnce(): void {
+  if (autoInstallTriggered) return;
+  autoInstallTriggered = true;
+  void ensureLibreOffice().catch(() => undefined);
 }
 
 function getLibreOfficePath(): string {
-  const envPath = process.env[LIBREOFFICE_PATH_ENV];
-  if (envPath && fs.existsSync(envPath)) return envPath;
-
-  for (const p of LIBREOFFICE_SEARCH_PATHS) {
-    if (fs.existsSync(p)) return p;
-  }
-  const resolved = whichSync('soffice') ?? whichSync('libreoffice');
+  const resolved = findLibreOfficePath({ which: whichSync });
   if (resolved) return resolved;
-  throw new Error(`LibreOffice not found. Install: brew install --cask libreoffice, or set ${LIBREOFFICE_PATH_ENV} env var`);
+  throw new Error('LibreOffice preview is being prepared in the background. Retry in a moment.');
 }
 
 /** 从页图文件名尾部抽页码：`deck-7.jpg` → 7、`deck-07.jpg` → 7。抽不到的排到末尾。 */

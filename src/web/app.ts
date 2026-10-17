@@ -117,7 +117,7 @@ export interface CreateAppDeps {
   /** ADR-083 常驻宿主空闲去留快照（与 IdleSleepInhibitor 同源的三信号），webServer 注册回调收取。 */
   registerDaemonIdleSnapshot?: (getSnapshot: () => DaemonIdleSnapshot) => void;
   registerQueuedInputStartupSweep?: (runStartupSweep: () => void) => void;
-  deliverCompanionPermission?: (requestId: string, response: PermissionResponse, sessionId: string) => { success: boolean; data?: { closed?: boolean } };
+  deliverCompanionPermission?: (requestId: string, response: PermissionResponse, sessionId: string) => { success: boolean; data?: { closed?: boolean } } | Promise<{ success: boolean; data?: { closed?: boolean } }>;
   registerCompanionShutdown?: (stop: () => Promise<void>) => void;
   registerQueuedInputEnqueueHook?: (onEnqueued: (sessionId: string) => void) => void;
   registerQueuedInputSendNowHook?: (sendNow: (input: {

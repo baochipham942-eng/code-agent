@@ -5,7 +5,8 @@
 // action is visible, lineage is not quarantined). The full visible list is
 // recorded; starter cards and expand toggles do not count as an exit.
 import { expect, test, type Page } from './fixtures/axeTest';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
+import path from 'node:path';
 
 import { dismissFirstRunDialogs } from './firstRunDialogs';
 import {
@@ -14,6 +15,7 @@ import {
   CELL_LOG,
   makeFreshDirs,
   orderMatches,
+  readParkedApprovals,
   readSessionDb,
   recordCell,
   restartServer,
@@ -286,6 +288,158 @@ test('D1 orphan tool call without a begin row', async ({ page }) => {
 test('D2 orphan tool call with a begin row', async ({ page }) => {
   await runOrphanCell(page, 'D2', 'D2-with-begin');
 });
+
+// N-PARKED-APPROVAL-SURVIVE-RESTART-RESUME ⑦：真进程档。cron 派无人值守会话停车一条真
+// Bash 追加写（append 可数：执行两次就有两行）→ SIGKILL → 同数据目录重启 → 幸存卡仍可批 →
+// 按收件箱同款投递口批准 → 副作用恰好发生一次；再点一次不重复。
+test('G parked tool approval survives SIGKILL restart and runs exactly once', async ({ page }) => {
+  current = await boot('G');
+  await installSettingsStub(page);
+  await preparePage(page, current.baseUrl);
+  const token = await getAuthToken(page);
+  const effectFile = path.join(current.dirs.workspace, 'parked-approval-effect.txt');
+  // 无人值守来源：cron agent 任务（origin=cron 的会话才会真走 B2 停车挂起）。
+  const job = await api(current.baseUrl, token, 'POST', '/api/domain/cron/createJob', {
+    payload: {
+      name: 'G 停车审批跨重启',
+      description: 'N-PARKED-APPROVAL-SURVIVE-RESTART-RESUME recovery matrix cell G',
+      scheduleType: 'every',
+      schedule: { type: 'every', interval: 60, unit: 'minutes' },
+      runsOn: 'local',
+      enabled: true,
+      maxRetries: 0,
+      maxRunBudget: 1,
+      maxRuns: 5,
+      action: { type: 'agent', agentType: 'default', prompt: `E2E_BACKGROUND_TOOL_APPROVAL ${effectFile}` },
+    },
+  });
+  expect(job.ok, `createJob failed: ${job.status} ${job.text.slice(0, 400)}`).toBe(true);
+  const jobId = (JSON.parse(job.text) as { data?: { id?: string } }).data?.id;
+  expect(jobId, 'cron job id missing').toBeTruthy();
+  // triggerJob 会等整轮 agent run 收口——而这轮就是要停在停车审批上的，所以不 await：
+  // 发出去就转而轮询 DB 等停车行落库（api 的 90s abort 也要吞掉）。
+  void api(current.baseUrl, token, 'POST', '/api/domain/cron/triggerJob', { payload: { jobId } })
+    .catch(() => undefined);
+
+  // 等停车行真落库（无人值守会话的工具审批走 B2 停车，带 argsRef + 指纹原料才算可存活）。
+  const parkedBefore = await waitForParkedToolApproval(current.dirs.dataDir, 60_000);
+  expect(parkedBefore.status).toBe('pending');
+  const payloadBefore = JSON.parse(parkedBefore.payloadJson) as {
+    sessionId?: string; argsRef?: { toolCallId: string }; displayTool?: string;
+  };
+  expect(payloadBefore.argsRef?.toolCallId, 'parked row must carry argsRef').toBeTruthy();
+
+  // SIGKILL + 同数据目录重启（restartServer 内部 killServer = SIGKILL）。
+  const restarted = await restartServer(requireServer('G'));
+  current = restarted;
+  await installSettingsStub(page);
+  await preparePage(page, restarted.baseUrl);
+  const afterToken = await getAuthToken(page);
+
+  // ① 幸存：仍 pending、标题带「重启前发起」。
+  const rowsAfter = await readParkedApprovals(restarted.dirs.dataDir);
+  const survivor = rowsAfter.find((row) => row.id === parkedBefore.id);
+  expect(survivor, 'survivor row must still exist after restart').toBeDefined();
+  expect(survivor?.status).toBe('pending');
+  const payloadAfter = JSON.parse(survivor?.payloadJson ?? '{}') as { displayTool?: string; sessionId?: string | null };
+  expect(payloadAfter.displayTool ?? '').toContain('重启前发起');
+  const parkedSessionId = payloadAfter.sessionId ?? payloadBefore.sessionId ?? '';
+
+  // ④ 该会话 durable run 停靠 waiting/guard_halt（不被启动清扫自动续跑）；无 durable 行也如实记录。
+  const readbackAfterRestart = await readSessionDb(restarted.dirs.dataDir, parkedSessionId);
+  const memberRun = readbackAfterRestart.durableRuns.find((run) => run.sessionId === parkedSessionId);
+  if (memberRun) {
+    expect(memberRun.status, 'survivor session run must be parked waiting').toBe('waiting');
+    expect(memberRun.interruptCause, 'survivor session run must be guard_halt').toBe('guard_halt');
+  }
+
+  // ⑦ 收件箱同款投递口批准（AutomationReviewInbox 的点击 = agent:permission-response）。
+  const approve = await api(restarted.baseUrl, afterToken, 'POST', '/api/agent/permission-response', [
+    survivor?.id ?? parkedBefore.id, 'allow', parkedSessionId,
+  ]);
+  expect(approve.ok, `approve failed: ${approve.status} ${approve.text.slice(0, 400)}`).toBe(true);
+
+  // 副作用恰好一次：effect 文件出现且只追加了一行。
+  const effectOccurrences = await waitForEffectOccurrences(effectFile, 30_000);
+  const exactlyOnce = effectOccurrences === 1;
+  await page.screenshot({ path: shotPath('G-parked-approval'), fullPage: false });
+
+  // 再点一次：不重复执行。
+  await api(restarted.baseUrl, afterToken, 'POST', '/api/agent/permission-response', [
+    survivor?.id ?? parkedBefore.id, 'allow', parkedSessionId,
+  ]).catch(() => undefined);
+  await page.waitForTimeout(3_000);
+  const finalOccurrences = await countEffectOccurrences(effectFile);
+
+  const rowsFinal = await readParkedApprovals(restarted.dirs.dataDir);
+  const finalRow = rowsFinal.find((row) => row.id === parkedBefore.id);
+  const apiIds = await messageIds(page, restarted, parkedSessionId);
+  const finished = await finishReadback(restarted, parkedSessionId, apiIds);
+  current = null;
+  const resultLine = [
+    `pendingAfterRestart=${survivor?.status}`,
+    `title=${payloadAfter.displayTool ?? '(none)'}`,
+    `durable=${memberRun ? `${memberRun.status}/${memberRun.interruptCause ?? '-'}` : 'none'}`,
+    `approveHttp=${approve.status}`,
+    `effectOccurrences=${finalOccurrences}`,
+    `rowFinal=${finalRow?.status ?? 'missing'}`,
+  ].join(' ');
+  await publish({
+    cell: 'G-parked-tool-approval',
+    injection: 'E2E_BACKGROUND_TOOL_APPROVAL via cron agent job (unattended session parks a real Bash append), SIGKILL, restart same data dir',
+    statusText: resultLine,
+    actions: ['批准（收件箱同款 agent:permission-response 投递）'],
+    actionTaken: 'approve parked card after restart',
+    result: exactlyOnce && finalOccurrences === 1
+      ? `side effect happened exactly once (${finalOccurrences} line); row=${finalRow?.status}`
+      : `side effect count=${finalOccurrences} (expected exactly 1); row=${finalRow?.status}`,
+    screenshot: 'test-results/recovery-matrix/G-parked-approval.png',
+    notes: `parked session ${parkedSessionId}; toolCall ${payloadBefore.argsRef?.toolCallId}`,
+    ...finished,
+  }, true, exactlyOnce && finalOccurrences === 1);
+});
+
+async function waitForParkedToolApproval(dataDir: string, timeoutMs: number): Promise<{ id: string; status: string; payloadJson: string }> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const rows = await readParkedApprovals(dataDir);
+    const hit = rows.find((row) => {
+      if (row.kind !== 'tool_approval' || row.status !== 'pending') return false;
+      try {
+        const payload = JSON.parse(row.payloadJson) as { argsRef?: unknown; argsFingerprint?: unknown };
+        return Boolean(payload.argsRef) && typeof payload.argsFingerprint === 'string';
+      } catch {
+        return false;
+      }
+    });
+    if (hit) return hit;
+    if (Date.now() > deadline) throw new Error(`no survivable parked tool_approval row appeared within ${timeoutMs}ms`);
+    await pageIndependentDelay(1_000);
+  }
+}
+
+async function waitForEffectOccurrences(file: string, timeoutMs: number): Promise<number> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const count = await countEffectOccurrences(file);
+    if (count > 0) return count;
+    if (Date.now() > deadline) return count;
+    await pageIndependentDelay(500);
+  }
+}
+
+async function countEffectOccurrences(file: string): Promise<number> {
+  try {
+    const content = await readFile(file, 'utf8');
+    return content.split('E2E_BACKGROUND_TOOL_APPROVAL_EFFECT_LINE').length - 1;
+  } catch {
+    return 0;
+  }
+}
+
+function pageIndependentDelay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 test('E stream break keeps the segment and continues', async ({ page }) => {
   current = await boot('E');

@@ -30,7 +30,7 @@ export class CompanionApprovalService {
 
   constructor(private readonly gateway: CompanionGateway,
     private readonly pending: () => PermissionRequest[],
-    private readonly deliver: (requestId: string, response: PermissionResponse, sessionId: string) => { success: boolean; data?: { closed?: boolean } }) {
+    private readonly deliver: (requestId: string, response: PermissionResponse, sessionId: string) => { success: boolean; data?: { closed?: boolean } } | Promise<{ success: boolean; data?: { closed?: boolean } }>) {
     bindCompanionApprovalListener(event => this.settleFromHost(event));
   }
 
@@ -107,7 +107,7 @@ export class CompanionApprovalService {
     this.publishedEpoch.delete(event.requestId);
   }
 
-  respond(command: Extract<CompanionCommand, { action: 'approval.respond' }>): CompanionSubmitResult {
+  async respond(command: Extract<CompanionCommand, { action: 'approval.respond' }>): Promise<CompanionSubmitResult> {
     this.refresh();
     const current = this.gateway.getDecision(command.payload.requestId);
     if (current?.sessionId !== command.sessionId) return { kind: 'rejected', reason: 'scope_denied' };
@@ -117,7 +117,8 @@ export class CompanionApprovalService {
     markCompanionApprovalResponding(current.requestId);
     let outcome: { success: boolean; data?: { closed?: boolean } };
     try {
-      outcome = this.deliver(current.requestId, command.payload.decision === 'approved' ? 'allow' : 'deny', current.sessionId);
+      // 幸存停车审批的重启恢复在投递链内部 await（台账单发执行一次），这里跟着异步化。
+      outcome = await this.deliver(current.requestId, command.payload.decision === 'approved' ? 'allow' : 'deny', current.sessionId);
     } finally {
       unmarkCompanionApprovalResponding(current.requestId);
     }

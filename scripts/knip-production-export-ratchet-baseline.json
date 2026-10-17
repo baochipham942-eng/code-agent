@@ -16808,7 +16808,6 @@
     "src/renderer/components/ContextPanel.tsx",
     "src/renderer/components/design/slidesOutlineOps.ts",
     "src/renderer/components/features/chat/ChatInput/AbilityMenu.tsx",
-    "src/renderer/components/features/chat/ChatInput/ReportStyleSelector.tsx",
     "src/renderer/components/features/chat/ResearchProgress.tsx",
     "src/renderer/components/features/chat/SessionDiffSummary.tsx",
     "src/renderer/components/features/export/ExportModal.tsx",

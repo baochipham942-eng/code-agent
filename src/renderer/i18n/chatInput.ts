@@ -162,17 +162,6 @@ export const chatInputZh = {
     save: '保存',
     ignore: '忽略',
   },
-  reportStyle: {
-    selectorLabel: '报告风格:',
-    options: {
-      default: { label: '默认', description: '通用报告格式' },
-      academic: { label: '学术论文', description: '正式、引用规范' },
-      popular_science: { label: '科普文章', description: '通俗易懂、有趣' },
-      news: { label: '新闻报道', description: '倒金字塔、简洁' },
-      social_media: { label: '社交媒体', description: '简短、列表化' },
-      strategic_investment: { label: '投资分析', description: '深度、量化数据' },
-    },
-  },
   loopStatusBar: {
     runningPrefix: '循环中 · 第 ',
     runningSuffix: ' 轮',
@@ -612,17 +601,6 @@ export const chatInputEn: typeof chatInputZh = {
     saveAsSuffix: '"',
     save: 'Save',
     ignore: 'Dismiss',
-  },
-  reportStyle: {
-    selectorLabel: 'Report style:',
-    options: {
-      default: { label: 'Default', description: 'General report format' },
-      academic: { label: 'Academic paper', description: 'Formal, with citations' },
-      popular_science: { label: 'Popular science', description: 'Accessible and engaging' },
-      news: { label: 'News article', description: 'Inverted pyramid, concise' },
-      social_media: { label: 'Social media', description: 'Short, list-driven' },
-      strategic_investment: { label: 'Investment analysis', description: 'In-depth, data-driven' },
-    },
   },
   loopStatusBar: {
     runningPrefix: 'Looping · turn ',

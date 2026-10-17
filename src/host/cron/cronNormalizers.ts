@@ -12,9 +12,9 @@ import type {
   CronJobAction,
   CronExecutionTrigger,
 } from '../../shared/contract/cron';
-import { CRON_GUARDRAILS, CRON_EVENT_TRIGGER, CRON_URGENCY_CRITERIA } from '../../shared/constants';
+import { CRON_GUARDRAILS, CRON_EVENT_TRIGGER, CRON_URGENCY_CRITERIA, EXTERNAL_WATCH } from '../../shared/constants';
 import { extractCronAlertText, parseCronRunDigest, type CronRunDigest } from '../../shared/cronRunDigest';
-import { parseUrgencyHeader } from '../../shared/cronUrgency';
+import { declaresCronUrgencyQuiet, parseUrgencyHeader } from '../../shared/cronUrgency';
 import type { CronUrgency } from '../../shared/contract/sessionAutomation';
 
 export interface CronAgentActionResult {
@@ -52,6 +52,30 @@ export function readCronAlertReason(value: unknown): string | undefined {
   if (!isCronAgentActionResult(value)) return undefined;
   const reason = typeof value.alertReason === 'string' ? value.alertReason.trim() : undefined;
   return reason || undefined;
+}
+
+/**
+ * 成功运行是否「值得打扰」（N-CRON-RESTATE-HUMAN-WHEN / N-CRON-URGENCY-NOTIFY，
+ * 原 cronService 内联三元收口至此）：external-watch 或 notifyWhen 任务只认最终
+ * 正文里的 <cron_alert> 标记（两者同设时 notifyWhen 语义已是全部）；仅设
+ * urgencyCriteria 的任务只认结果显式声明的 can_wait/fyi 头——must_today、
+ * 缺头、乱头都算要响（漏一条今日必办比多弹一次代价大）；什么判据都没设的
+ * 任务恒有警报（每轮照常通知）。档位声明与 buildCronAgentActionResult 的
+ * urgency 解析同源：优先读 <cron_summary> 摘要头部，无摘要块读正文头部。
+ */
+export function cronAgentRunHasAlert(
+  action: { notifyWhen?: string; urgencyCriteria?: string },
+  run: { isExternalWatch: boolean; finalAssistantText: string },
+): boolean {
+  if (run.isExternalWatch || action.notifyWhen?.trim()) {
+    return EXTERNAL_WATCH.ALERT_TAG_PATTERN.test(run.finalAssistantText);
+  }
+  if (action.urgencyCriteria?.trim()) {
+    return !declaresCronUrgencyQuiet(
+      parseCronRunDigest(run.finalAssistantText).summary ?? run.finalAssistantText,
+    );
+  }
+  return true;
 }
 
 /**

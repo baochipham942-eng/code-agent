@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'child_process';
-import { mkdtemp, rm } from 'fs/promises';
+import { mkdtemp, readFile, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
 import {
@@ -260,8 +260,9 @@ export async function runArtifactPreviewHealth(
   options: ArtifactPreviewHealthOptions = {},
 ): Promise<ArtifactPreviewHealthSummary> {
   const locale = getPreviewHealthLocale(options);
+  let summary: ArtifactPreviewHealthSummary;
   try {
-    return await runInAppArtifactPreviewHealth(filePath, {
+    summary = await runInAppArtifactPreviewHealth(filePath, {
       ...options,
       locale,
     });
@@ -276,7 +277,7 @@ export async function runArtifactPreviewHealth(
       reason: isInAppArtifactPreviewHealthUnavailable(error) ? error.reasonCode : 'in_app_runner_error',
     });
     const fallback = await runSelfStartedArtifactPreviewHealth(filePath, options);
-    return {
+    summary = {
       ...fallback,
       checks: [
         formatPreviewHealthMessage('routeFallback', { reason }, locale),
@@ -287,4 +288,51 @@ export async function runArtifactPreviewHealth(
       fallbackReason: reason,
     };
   }
+  return appendHtmlTruncationFinding(filePath, summary);
+}
+
+/** 只报截断：有 <html>/<body> 开标签但缺配对闭标签；两种标签都没有的片段不报。 */
+const HTML_CONTAINER_TAG_PATTERNS = {
+  html: { open: /<html(?:\s[^>]*)?>/i, close: /<\/html\s*>/i },
+  body: { open: /<body(?:\s[^>]*)?>/i, close: /<\/body\s*>/i },
+} as const;
+
+async function detectUnclosedHtmlContainerTag(filePath: string): Promise<'html' | 'body' | null> {
+  let content: string;
+  try {
+    content = await readFile(filePath, 'utf8');
+  } catch (error) {
+    // 静态截断检查读不了文件 = 检查器问题而非产物缺陷：warn 带可区分原因后放行。
+    logger.warn('Artifact preview health could not read the deliverable for the truncation check; check skipped (fail-open)', {
+      filePath,
+      reason: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+  if (HTML_CONTAINER_TAG_PATTERNS.html.open.test(content) && !HTML_CONTAINER_TAG_PATTERNS.html.close.test(content)) {
+    return 'html';
+  }
+  if (HTML_CONTAINER_TAG_PATTERNS.body.open.test(content) && !HTML_CONTAINER_TAG_PATTERNS.body.close.test(content)) {
+    return 'body';
+  }
+  return null;
+}
+
+async function appendHtmlTruncationFinding(
+  filePath: string,
+  summary: ArtifactPreviewHealthSummary,
+): Promise<ArtifactPreviewHealthSummary> {
+  // 只有浏览器检查真跑过才叠加静态判定：skipped（无浏览器）/checkerFailed
+  // （检查器自崩）时页面证据缺失，静态结论不独立出场。
+  if (summary.skipped || summary.checkerFailed) return summary;
+  const unclosedTag = await detectUnclosedHtmlContainerTag(filePath);
+  if (!unclosedTag) return summary;
+  const message = `Preview HTML document is truncated: <${unclosedTag}> is opened but never closed.`;
+  const finding = createArtifactPreviewHealthFinding('html_incomplete', message, undefined, { unclosedTag });
+  return {
+    ...summary,
+    passed: false,
+    findings: [...summary.findings, finding],
+    failures: [...summary.failures, message],
+  };
 }

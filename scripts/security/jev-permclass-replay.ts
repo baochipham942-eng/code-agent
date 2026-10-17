@@ -8,7 +8,11 @@
 // 不重复实现 state 构造——decision 与数值同源，不会各说各话。
 //
 // 用法：set -a; source ~/.code-agent/.env; set +a   # TYPESAFE_API_KEY
-//       npx tsx scripts/security/jev-permclass-replay.ts <samples.json>
+//       npx tsx scripts/security/jev-permclass-replay.ts [--without-guards] [--llm-off] <samples.json>
+//
+// --llm-off（N-JEV-DEFAULT-ON-CONSENT ④）：enableLlm:false 跑同一份样本——判官整档
+// 关闭（等价「用户关掉 Jev 总开关」），供 on/off 同语料对比（询问数/误放行数/延迟）。
+// off 轮里判官调用必须为 0，出现即 FAIL（关掉还打网络=闸门漏了）。
 //
 // 样本来源：本机生产库「fallback→ask」脱敏样本（参照=history_outcome）+
 // tests/fixtures/jev-permclass-samples.json（20 放行 + 8 拒绝照抄 + destructive）。
@@ -19,6 +23,7 @@
 // ppt_generate 等）传空 args，buildJevState 与生产一样回落到工具名。扩桶工具由
 // 分类器自动换 PERMWIDE_QUESTIONS（含 beyond_scope），脚本不手搓问句。
 import fs from 'node:fs';
+import { performance } from 'node:perf_hooks';
 
 import { getPermissionClassifier } from '../../src/host/tools/permissionClassifier';
 import { systemOne } from '../../src/host/model/providers/typesafeProvider';
@@ -36,9 +41,10 @@ interface ReplaySample {
 }
 
 const withoutGuards = process.argv.includes('--without-guards');
+const llmOff = process.argv.includes('--llm-off');
 const file = process.argv.slice(2).find((arg) => !arg.startsWith('--'));
 if (!file) {
-  console.error('用法：npx tsx scripts/security/jev-permclass-replay.ts [--without-guards] <samples.json>');
+  console.error('用法：npx tsx scripts/security/jev-permclass-replay.ts [--without-guards] [--llm-off] <samples.json>');
   process.exit(1);
 }
 const rows = JSON.parse(fs.readFileSync(file, 'utf8')) as ReplaySample[];
@@ -71,7 +77,7 @@ const spySystemOne: typeof systemOne = async (state, questions, options) => {
   }
 };
 
-const classifier = getPermissionClassifier({ enableLlm: true, jevSystemOne: spySystemOne });
+const classifier = getPermissionClassifier({ enableLlm: !llmOff, jevSystemOne: spySystemOne });
 
 interface Outcome {
   id: number | string;
@@ -102,6 +108,7 @@ function replayArgs(row: ReplaySample): Record<string, unknown> {
 }
 
 const outcomes: Outcome[] = [];
+const classifyStartedAt = performance.now();
 for (const row of rows) {
   currentId = row.id;
   classifier.clearCache(); // 同命令样本（探针重复）不复用缓存，逐条真跑
@@ -154,7 +161,10 @@ const cell = (reference: string, decision: string) =>
   outcomes.filter((o) => o.reference === reference && o.decision === decision).length;
 const approvedWrongly = outcomes.filter((o) => o.reference === 'ask-denied' && o.decision === 'approve');
 
-console.log(`mode=${withoutGuards ? 'without-guards' : 'guards'} n=${outcomes.length} jevReached=${jevReached.length} errors=${outcomes.filter((o) => o.decision === 'error').length}`);
+console.log(`mode=${withoutGuards ? 'without-guards' : 'guards'}${llmOff ? ' llm-off' : ''} n=${outcomes.length} jevReached=${jevReached.length} errors=${outcomes.filter((o) => o.decision === 'error').length}`);
+const totalMs = performance.now() - classifyStartedAt;
+console.log(`询问数(decision=ask): ${outcomes.filter((o) => o.decision === 'ask').length}/${outcomes.length}`
+  + ` 延迟: total=${Math.round(totalMs)}ms avg=${(totalMs / Math.max(outcomes.length, 1)).toFixed(1)}ms`);
 for (const origin of [...new Set(rows.map((r) => r.origin ?? 'unknown'))]) {
   const ids = new Set(rows.filter((r) => (r.origin ?? 'unknown') === origin).map((r) => r.id));
   const sub = outcomes.filter((o) => ids.has(o.id));
@@ -204,6 +214,11 @@ if (nonWhitelisted.some((o) => o.jevCalled)) {
 }
 if (nonWhitelistedFallback.some((o) => o.decision !== 'ask')) {
   console.error('FAIL: 非白名单 fallback 样本没有保持 ask');
+  process.exit(1);
+}
+// --llm-off 的不变量：判官调用必须为 0（enableLlm=false 下任何 Jev 调用都是闸门泄漏）。
+if (llmOff && outcomes.some((o) => o.jevCalled)) {
+  console.error('FAIL: --llm-off 轮发生 Jev 调用（enableLlm=false 下判官必须零调用）');
   process.exit(1);
 }
 

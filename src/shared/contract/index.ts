@@ -58,6 +58,7 @@ export * from './admin';
 export * from './sync';
 export * from './device';
 export * from './settings';
+export * from './jev';
 export * from './speech';
 export * from './configScope';
 // IReadConfigService / ServiceApiKey 直接从 './configService' 子路径导入

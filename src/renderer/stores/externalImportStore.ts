@@ -11,7 +11,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import type { ExternalImportDetectResult } from '@shared/contract/externalImport';
 import ipcService from '../services/ipcService';
 
-export type ExternalImportDetectionStatus = 'idle' | 'checking' | 'available' | 'unavailable';
+type ExternalImportDetectionStatus = 'idle' | 'checking' | 'available' | 'unavailable';
 
 interface ExternalImportState {
   status: ExternalImportDetectionStatus;

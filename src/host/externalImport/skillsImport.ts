@@ -11,7 +11,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { getHomeDir, getSkillsDir } from '../config';
 import { hasSkillMd } from '../services/skills/skillParser';
-import { getSkillDiscoveryService } from '../services/skills/skillDiscoveryService';
+import { createLogger } from '../services/infra/logger';
 import {
   readClaudeLegacySkillsPreference,
   writeClaudeLegacySkillsPreference,
@@ -32,6 +32,8 @@ const SKILL_COPY_SOURCE_DIRS: Record<ExternalSkillCopySourceId, string> = {
   codex: path.join('.codex', 'skills'),
   cursor: path.join('.cursor', 'skills'),
 };
+
+const logger = createLogger('ExternalSkillsImport');
 
 const ALL_SKILL_COPY_SOURCES: ExternalSkillCopySourceId[] = ['codex', 'cursor'];
 
@@ -156,9 +158,19 @@ export async function applyExternalSkillsImport(
 /**
  * 设置页「Claude 技能原地读取」开关：写持久化偏好并让发现服务即时重扫。
  * 返回落盘后回读的生效值（写失败时可能与请求值不同，UI 以此为准）。
+ * 发现服务按需动态加载：IPC 层静态引入它会把整个 skills 依赖图拖进每个
+ * memory IPC 测试的 mock 面。
  */
 export async function setClaudeLegacySkillsEnabled(enabled: boolean): Promise<ExternalImportSetClaudeLegacySkillsResult> {
   writeClaudeLegacySkillsPreference(enabled);
-  getSkillDiscoveryService().refreshClaudeLegacySkillsInclusion();
+  try {
+    const { getSkillDiscoveryService } = await import('../services/skills/skillDiscoveryService');
+    getSkillDiscoveryService().refreshClaudeLegacySkillsInclusion();
+  } catch (error) {
+    // 开关本体已落盘；重扫失败只降级为「下次初始化生效」，不阻断设置保存。
+    logger.warn('claude legacy skills preference saved but discovery reschedule failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   return { enabled: readClaudeLegacySkillsPreference() !== false };
 }

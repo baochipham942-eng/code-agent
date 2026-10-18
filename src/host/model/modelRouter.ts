@@ -21,7 +21,8 @@ import { resolveModelMaxOutputTokens } from './modelLimits';
 import { createLogger } from '../services/infra/logger';
 import { getInferenceCache } from './inferenceCache';
 import { getAdaptiveRouter } from './adaptiveRouter';
-import { buildModelProviderIdentity, resolveModelDecision, resolveProviderBillingMode, type BillingMode, type ModelDecisionProviderSettings } from './modelDecision';
+import { resolveModelDecision, resolveProviderBillingMode, type BillingMode, type ModelDecisionProviderSettings } from './modelDecision';
+import { fallbackTargetLabel, getFallbackProviderIdentity, fallbackTraceStep } from './modelRouterFallbackTrace';
 import { getConfigService } from '../services/core/configService';
 import { getProviderHealthMonitor, persistentProviderMarkKind } from './providerHealthMonitor';
 import { resolveModelCapabilities } from './modelCapabilityMatrix';
@@ -67,37 +68,6 @@ import type { InferenceOptions, ModelMessage, ModelResponse, StreamCallback, Mes
 import { observeInferenceCache } from './inferenceCacheTelemetry';
 import { sanitizeModelReplayForModelInfo } from './modelReplaySanitizer';
 export { ContextLengthExceededError } from './types';
-
-function fallbackTargetLabel(provider: string, model?: string): string {
-  return model ? `${provider}/${model}` : provider;
-}
-
-function getFallbackProviderIdentity(provider: string): ModelFallbackTraceStep['providerIdentity'] {
-  try {
-    return buildModelProviderIdentity(provider, getConfigService().getSettings().models?.providers);
-  } catch {
-    return undefined;
-  }
-}
-
-function fallbackTraceStep(
-  provider: string,
-  model: string | undefined,
-  status: ModelFallbackTraceStep['status'],
-  reason: string,
-  category?: string,
-  detail?: string,
-): ModelFallbackTraceStep {
-	return {
-	  provider,
-	  ...(model ? { model } : {}),
-	  ...(getFallbackProviderIdentity(provider) ? { providerIdentity: getFallbackProviderIdentity(provider) } : {}),
-	  status,
-    reason,
-    ...(category ? { category } : {}),
-    ...(detail ? { detail: formatFallbackReason(detail) } : {}),
-  };
-}
 
 // Import provider implementations
 import type { Provider } from './types';

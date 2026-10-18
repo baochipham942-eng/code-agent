@@ -27,6 +27,8 @@ import {
   type CronTemplate,
 } from './cronTemplates';
 import { CronSimpleCreate } from './CronSimpleCreate';
+import { isRoleBoundJob } from './savedRoutineRows';
+import { SavedRoutineRestate } from './SavedRoutineRestate';
 import { useI18n } from '../../../hooks/useI18n';
 import { showCronLoginWallWarning } from './cronLoginWallNotice';
 import { CronRunsOnSelector } from './CronRunsOnSelector';
@@ -104,6 +106,8 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
   const [step, setStep] = useState<CreationStep>('simple');
   const [selectedTemplate, setSelectedTemplate] = useState<CronTemplate | null>(null);
   const [templateValues, setTemplateValues] = useState<Record<string, string>>({});
+  // 保存成功且角色绑定的任务：不直接关闭，切换到只读复述视图（Done 才关闭）。
+  const [savedJob, setSavedJob] = useState<CronJobDefinition | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -130,6 +134,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
     setErrors({});
     setEventValidationArmed(false);
     setActiveTab('basic');
+    setSavedJob(null);
   }, [isOpen, job, copySource, cc.locationCloud, cc.locationLocal]);
 
   const title = job
@@ -214,6 +219,10 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       const input = buildCronJobInput(generatedDraft);
       const created = await createJob(input);
       showCronLoginWallWarning(created, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
+      if (isRoleBoundJob(created)) {
+        setSavedJob(created);
+        return;
+      }
       onClose();
     } catch (error) {
       setErrors({ form: saveErrorMessage(error, cc.simpleCreateFailed) });
@@ -241,9 +250,17 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       if (job) {
         const updated = await updateJob(job.id, input);
         showCronLoginWallWarning(updated, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
+        if (updated && isRoleBoundJob(updated)) {
+          setSavedJob(updated);
+          return;
+        }
       } else {
         const created = await createJob(input);
         showCronLoginWallWarning(created, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
+        if (isRoleBoundJob(created)) {
+          setSavedJob(created);
+          return;
+        }
       }
       onClose();
     } catch (error) {
@@ -254,6 +271,15 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       setSubmitting(false);
     }
   };
+
+  // ── Saved restate view（角色绑定任务保存成功后）─────────────────────
+  if (savedJob) {
+    return (
+      <Modal isOpen={isOpen} onClose={onClose} title={title}>
+        <SavedRoutineRestate job={savedJob} onDone={onClose} />
+      </Modal>
+    );
+  }
 
   // ── Simple create step (default) ───────────────────────────────────
   if (!job && step === 'simple') {

@@ -7,7 +7,10 @@ import { cronAgentWorkingDirectory } from './artifactStandingRefresh';
 import { siteOriginFromUrl } from '../../shared/utils/browserLoginWall';
 
 function cronLoginGatedSiteOrigin(definition: CronJobDefinition): string | undefined {
-  const candidate = definition.metadata?.loginGatedSiteOrigin;
+  // Only the explicit renderer consent action writes this field. The
+  // loginGatedSiteOrigin candidate used for create/edit warnings is not a
+  // pass-through grant and must never reach unattended browser sessions.
+  const candidate = definition.metadata?.loginPassThroughOrigin;
   if (typeof candidate !== 'string' || !candidate.trim()) return undefined;
   const normalized = siteOriginFromUrl(candidate.trim());
   try {

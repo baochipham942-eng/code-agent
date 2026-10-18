@@ -567,7 +567,7 @@ describe('ManagedBrowserProviderAdapter', () => {
       clearConversation: vi.fn(async () => undefined),
       activateConversation: vi.fn(),
     };
-    const resumeLogger = { error: vi.fn() };
+    const resumeLogger = { warn: vi.fn(), error: vi.fn() };
     const adapter = new ManagedBrowserProviderAdapter(
       runtime,
       () => fake.service,
@@ -663,7 +663,7 @@ describe('ManagedBrowserProviderAdapter', () => {
     });
     const source = createFakeBrowser(undefined, { cookies: ['login'] });
     const target = createFakeBrowser();
-    const resumeLogger = { error: vi.fn() };
+    const resumeLogger = { warn: vi.fn(), error: vi.fn() };
 
     try {
       await resumeStore.exportForConversation('conversation-a', source.service);

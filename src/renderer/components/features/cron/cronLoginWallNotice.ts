@@ -1,9 +1,9 @@
 import type { CronJobDefinition } from '@shared/contract';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { NotificationShowEvent } from '@shared/ipc';
-import { CRON_LOGIN_WALL_STOP } from '@shared/utils/browserLoginWall';
-import { parseCronLoginWallStop } from '@shared/utils/browserLoginWall';
+import { CRON_LOGIN_WALL_STOP, parseCronLoginWallStop } from '@shared/utils/browserLoginWall';
 import { toast, type ToastAction } from '../../../hooks/useToast';
+import cronClient from '../../../services/cronClient';
 import ipcService from '../../../services/ipcService';
 
 function openSite(siteOrigin: string): void {
@@ -27,7 +27,10 @@ export function showCronLoginWallWarning(
 ): void {
   const siteOrigin = loginGatedSiteOrigin(job);
   if (!siteOrigin) return;
-  const action: ToastAction = { label: copy.openSite, onClick: () => openSite(siteOrigin) };
+  const action: ToastAction = {
+    label: copy.openSite,
+    onClick: () => openCronLoginWallSite(siteOrigin, job?.id),
+  };
   toast.warning(copy.warning.replace('{site}', siteOrigin), action);
 }
 
@@ -41,7 +44,14 @@ export function cronLoginWallCopy(
     : undefined;
 }
 
-export function openCronLoginWallSite(siteOrigin: string): void {
+export function openCronLoginWallSite(siteOrigin: string, jobId?: string): void {
+  if (jobId) {
+    // The click itself is the consent boundary. Runtime wall detection never
+    // grants pass-through on its own.
+    void cronClient.rememberLoginPassThroughOrigin(jobId, siteOrigin).catch((error) => {
+      console.warn('[cronLoginWall] Failed to persist login pass-through consent', error);
+    });
+  }
   openSite(siteOrigin);
 }
 

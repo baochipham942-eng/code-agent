@@ -137,7 +137,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
               <div className="flex items-center gap-2">
                 <button /* ds-allow:button: 错误区标题旁紧凑警示色链接按钮（px-2 py-1 text-xs），primitive 无警示色 variant 且最小 sm 内边距更大 */
                   type="button"
-                  onClick={() => openCronLoginWallSite(loginWall.siteOrigin)}
+                  onClick={() => openCronLoginWallSite(loginWall.siteOrigin, execution.jobId)}
                   className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-badge-warning transition-colors hover:bg-amber-500/10"
                   data-testid="cron-execution-open-login-site"
                 >

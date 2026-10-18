@@ -172,6 +172,27 @@ describe('AutomationReviewInbox', () => {
     });
   });
 
+  it('立即重跑失败时在收件箱提示失败并恢复可操作状态', async () => {
+    const triggerJob = vi.fn().mockRejectedValue(new Error('trigger failed'));
+    useCronStore.setState({ triggerJob });
+    listPendingReview.mockResolvedValue([makeRecord({
+      sourceRefId: 'job-login-wall',
+      config: {
+        loginWall: { siteOrigin: 'https://example.test', at: 1700000000000 },
+      },
+    })]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('automation-review-login-wall-rerun')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId('automation-review-login-wall-rerun'));
+    await waitFor(() => {
+      expect(toastError).toHaveBeenCalledWith('运行失败');
+    });
+    expect(triggerJob).toHaveBeenCalledWith('job-login-wall');
+  });
+
   it('目标会话已删除时，在收件箱显示本地化漏跑原因', async () => {
     listPendingReview.mockResolvedValue([makeRecord({
       sourceSessionId: 'deleted-session',

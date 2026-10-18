@@ -15,6 +15,10 @@ export function useCronOsNotification(
   copy: CronNotificationCopy,
   onOpenSession: (sessionId: string) => void,
 ): void {
+  const copyRef = useRef(copy);
+  const onOpenSessionRef = useRef(onOpenSession);
+  copyRef.current = copy;
+  onOpenSessionRef.current = onOpenSession;
   const lastSessionIdRef = useRef<string | null>(null);
   const lastEventRef = useRef<NotificationShowEvent | null>(null);
 
@@ -26,18 +30,30 @@ export function useCronOsNotification(
         lastEventRef.current = event;
         void postOsNotification(translateCronOsNotification(
           event,
-          copy,
+          copyRef.current,
           useAppStore.getState().language,
         ));
       },
     );
+    let disposed = false;
+    let unregister: (() => Promise<void>) | undefined;
     void registerNotificationClick(() => {
       const event = lastEventRef.current;
       const siteOrigin = event && cronLoginWallSiteOriginFromNotification(event);
-      if (siteOrigin) openCronLoginWallSite(siteOrigin);
+      if (siteOrigin) openCronLoginWallSite(siteOrigin, event?.jobId);
       const sessionId = lastSessionIdRef.current;
-      if (sessionId) onOpenSession(sessionId);
+      if (sessionId) onOpenSessionRef.current(sessionId);
+    }).then((cleanup) => {
+      if (disposed) {
+        void cleanup?.();
+      } else {
+        unregister = cleanup;
+      }
     });
-    return () => unsubscribe?.();
-  }, [copy, onOpenSession]);
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+      void unregister?.();
+    };
+  }, []);
 }

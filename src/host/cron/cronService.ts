@@ -88,9 +88,8 @@ import {
   notifyCronJobDisabled,
 } from './cronFailurePolicy';
 import { cronLoginWallMetadata } from './cronLoginWall';
-import { rememberCronLoginGatedSiteOrigin } from './cronLoginWallPersistence';
+import { rememberCronLoginPassThroughOrigin } from './cronLoginWallPersistence';
 import { cronFailureSourceText } from '../../shared/utils/cronFailureClassification';
-import { parseCronLoginWallStop } from '../../shared/utils/browserLoginWall';
 export { computeCronFireJitterMs } from './cronExecutionPolicy'; const execAsync = promisify(exec);
 
 // ============================================================================
@@ -287,6 +286,20 @@ export class CronService implements Disposable {
   ): Promise<CronJobDefinition | null> {
     const existingJob = this.jobs.get(jobId);
     if (!existingJob) return null;
+
+    // The renderer's explicit "在 Neo 浏览器中登录" action reuses the
+    // existing updateJob IPC route. This narrow metadata-only marker is
+    // handled by the consent helper so it cannot overwrite the rest of the
+    // job definition or be reached from runtime login-wall detection.
+    const consentOrigin = updates.metadata?.loginPassThroughOrigin;
+    if (typeof consentOrigin === 'string') {
+      await rememberCronLoginPassThroughOrigin(
+        existingJob,
+        consentOrigin,
+        (job) => this.persistJob(job),
+      );
+      return existingJob.definition;
+    }
 
     if (updates.runsOn !== undefined && updates.runsOn !== existingJob.definition.runsOn) {
       throw new Error('runsOn is immutable after creation; create a new job to change execution location.');
@@ -733,16 +746,6 @@ export class CronService implements Disposable {
       }
     } catch (error) {
       execution.error = cronFailureSourceText(error);
-      const loginWall = parseCronLoginWallStop(error);
-      if (loginWall) {
-        await rememberCronLoginGatedSiteOrigin(
-          this.jobs.get(definition.id),
-          loginWall.siteOrigin,
-          (job) => this.persistJob(job),
-        ).catch((persistError) => {
-          console.error(`[CronService] Failed to persist login-wall origin for ${definition.id}:`, persistError);
-        });
-      }
       adoptFailedAgentSession(execution, error);
       const failureKind = classifyCronFailure(execution.error);
 

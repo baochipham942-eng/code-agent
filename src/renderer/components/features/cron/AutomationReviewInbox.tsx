@@ -65,6 +65,10 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
     setBusyId(record.id);
     try {
       await useCronStore.getState().triggerJob(jobId);
+    } catch {
+      // A failed manual retry must be visible; otherwise the finally refresh
+      // makes the click look like it succeeded while the job remains parked.
+      toast.error(cc.failureOther);
     } finally {
       setBusyId(null);
       load();
@@ -139,7 +143,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
 
   const handleOpenLoginWallSite = (record: SessionAutomationRecord) => {
     const siteOrigin = record.config?.loginWall?.siteOrigin;
-    if (siteOrigin) openCronLoginWallSite(siteOrigin);
+    if (siteOrigin) openCronLoginWallSite(siteOrigin, record.sourceRefId);
   };
 
   const hasContent = items.length > 0 || parked.length > 0;

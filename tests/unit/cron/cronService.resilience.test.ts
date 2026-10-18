@@ -301,6 +301,36 @@ describe('①③ 同因失败去重后告警：单次告警 + 冷却窗', () => 
     await service.shutdown();
   });
 
+  it('N-CRON-LOGINWALL-RELOGIN：登录墙不自动授予 pass-through，用户点击后才持久化且单 origin 隔离', async () => {
+    const service = new CronService();
+    const job = await service.createJob({
+      ...agentJob(),
+      action: { type: 'agent' as const, agentType: 'default', prompt: 'Please login at https://a.example.test first' },
+    });
+    const beforeWall = service.getJob(job.id)?.metadata;
+    const loginWallError = Object.assign(
+      new Error(buildCronLoginWallStopCode('https://b.example.test')),
+      { cronSessionId: 'cron-login-wall-consent-session' },
+    );
+    patchExecuteAction(service, async () => { throw loginWallError; });
+
+    await service.triggerJob(job.id);
+
+    // Detection only stops the run. It must not persist a pass-through grant
+    // for the navigated origin (or mutate the job metadata at all).
+    expect(service.getJob(job.id)?.metadata).toEqual(beforeWall);
+    expect(service.getJob(job.id)?.metadata).not.toHaveProperty('loginPassThroughOrigin');
+
+    await service.updateJob(job.id, {
+      metadata: { loginPassThroughOrigin: 'https://a.example.test/login' },
+    });
+    expect(service.getJob(job.id)?.metadata).toEqual(expect.objectContaining({
+      loginPassThroughOrigin: 'https://a.example.test',
+    }));
+    expect(service.getJob(job.id)?.metadata?.loginPassThroughOrigin).not.toBe('https://b.example.test');
+    await service.shutdown();
+  });
+
   it('N-CRON-LOGINWALL-STOP：重试途中遇到登录墙也不再继续退避', async () => {
     vi.useFakeTimers();
     const service = new CronService();

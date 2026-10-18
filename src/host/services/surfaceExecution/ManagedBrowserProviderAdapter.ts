@@ -38,6 +38,7 @@ const DEFAULT_PROVIDER = 'system-chrome-cdp';
 const SURFACE_PROFILE_TTL_MS = 30 * 60_000;
 
 interface BrowserResumeLogger {
+  warn?(message: string, metadata?: unknown): void;
   error(message: string, metadata?: unknown): void;
 }
 
@@ -103,6 +104,7 @@ function originFromUrl(value: string): string | undefined {
 
 async function cronLoginGatedSiteOrigin(
   identity: SurfaceRuntimeIdentityV1,
+  resumeLogger: Pick<BrowserResumeLogger, 'warn'>,
 ): Promise<string | undefined> {
   if (isUserBrowserSurfaceIdentity(identity)) return undefined;
   try {
@@ -110,9 +112,18 @@ async function cronLoginGatedSiteOrigin(
     const session = await getSessionManager().getSession(identity.conversationId);
     const origin = session?.origin;
     if (origin?.kind !== 'cron' && origin?.kind !== 'heartbeat') return undefined;
-    const candidate = origin.metadata?.loginGatedSiteOrigin;
+    // Only explicit renderer consent grants unattended pass-through. The
+    // loginGatedSiteOrigin field is a create/edit warning candidate and is not
+    // an authorization to import personal browser state.
+    const candidate = origin.metadata?.loginPassThroughOrigin;
     return typeof candidate === 'string' ? originFromUrl(candidate) : undefined;
-  } catch {
+  } catch (error) {
+    // A missing/invalid session record should be diagnosable without making a
+    // degraded run fail; the login-state pass-through below remains best effort.
+    resumeLogger.warn?.('Failed to read cron login-gated site origin', {
+      conversationIdHash: hashIdentity([identity.conversationId]),
+      error: error instanceof Error ? error.message : String(error),
+    });
     return undefined;
   }
 }
@@ -410,15 +421,22 @@ export class ManagedBrowserProviderAdapter {
       leaseOwner,
       leaseTtlMs: SURFACE_PROFILE_TTL_MS,
     });
-    const loginGatedSiteOrigin = await cronLoginGatedSiteOrigin(identity);
+    const loginGatedSiteOrigin = await cronLoginGatedSiteOrigin(identity, this.resumeLogger);
     if (loginGatedSiteOrigin && !isUserRun(identity)) {
+      const personalBrowser = this.acquireBrowser(null);
+      const personalBrowserWasRunning = personalBrowser.isRunning();
       try {
-        const personalBrowser = this.acquireBrowser(null);
-        await personalBrowser.ensureSession('about:blank', {
-          profileMode: 'persistent',
-          leaseOwner: 'cron-login-state-export',
-          leaseTtlMs: MANAGED_BROWSER_DEFAULT_LEASE_TTL_MS,
-        });
+        // Export an already-running personal profile in place so we do not
+        // renew the user's lease under a different owner. If it is stopped,
+        // use a hidden/headless lease for the one export and release it below.
+        if (!personalBrowserWasRunning) {
+          await personalBrowser.ensureSession('about:blank', {
+            mode: 'headless',
+            profileMode: 'persistent',
+            leaseOwner: 'cron-login-state-export',
+            leaseTtlMs: MANAGED_BROWSER_DEFAULT_LEASE_TTL_MS,
+          });
+        }
         await importBrowserStorageStateForOrigin(
           personalBrowser,
           browserService,
@@ -430,6 +448,19 @@ export class ManagedBrowserProviderAdapter {
           siteOrigin: loginGatedSiteOrigin,
           error: error instanceof Error ? error.message : String(error),
         });
+      } finally {
+        if (!personalBrowserWasRunning) {
+          await personalBrowser.close().catch((error) => {
+            this.resumeLogger.error('Failed to close personal browser after cron login state export', {
+              error: error instanceof Error ? error.message : String(error),
+            });
+          });
+          await this.releaseBrowser(MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY).catch((error) => {
+            this.resumeLogger.error('Failed to release personal browser after cron login state export', {
+              error: error instanceof Error ? error.message : String(error),
+            });
+          });
+        }
       }
     }
     try {

@@ -1,20 +1,24 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { IPC_DOMAINS } from '../../../src/shared/ipc';
 
 const mocks = vi.hoisted(() => ({
   warning: vi.fn(),
-  openExternalLink: vi.fn(() => true),
+  invokeDomain: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../../../src/renderer/hooks/useToast', () => ({
   toast: { warning: mocks.warning },
 }));
-vi.mock('../../../src/renderer/utils/platform', () => ({
-  openExternalLink: mocks.openExternalLink,
+vi.mock('../../../src/renderer/services/ipcService', () => ({
+  default: {
+    invokeDomain: mocks.invokeDomain,
+  },
 }));
 
 import {
   cronLoginWallCopy,
+  cronLoginWallSiteOriginFromNotification,
   openCronLoginWallSite,
   showCronLoginWallWarning,
 } from '../../../src/renderer/components/features/cron/cronLoginWallNotice';
@@ -22,7 +26,7 @@ import {
 describe('cron login-wall renderer surface', () => {
   beforeEach(() => {
     mocks.warning.mockClear();
-    mocks.openExternalLink.mockClear();
+    mocks.invokeDomain.mockClear();
   });
 
   it('formats the localized login-again message with the site origin', () => {
@@ -47,8 +51,23 @@ describe('cron login-wall renderer surface', () => {
     );
     const action = mocks.warning.mock.calls[0][1] as { onClick: () => void };
     action.onClick();
-    expect(mocks.openExternalLink).toHaveBeenCalledWith('https://example.test');
+    expect(mocks.invokeDomain).toHaveBeenCalledWith(
+      IPC_DOMAINS.DESKTOP,
+      'openManagedBrowserUrl',
+      { url: 'https://example.test', mode: 'visible', profileMode: 'persistent' },
+    );
     openCronLoginWallSite('https://example.test');
-    expect(mocks.openExternalLink).toHaveBeenCalledTimes(2);
+    expect(mocks.invokeDomain).toHaveBeenCalledTimes(2);
+  });
+
+  it('recognizes login-wall notification actions', () => {
+    expect(cronLoginWallSiteOriginFromNotification({
+      code: 'CRON_LOGIN_WALL_STOP',
+      siteOrigin: 'https://example.test',
+    })).toBe('https://example.test');
+    expect(cronLoginWallSiteOriginFromNotification({
+      code: 'CRON_FAILURE',
+      siteOrigin: 'https://example.test',
+    })).toBeUndefined();
   });
 });

@@ -67,7 +67,7 @@ export async function createCronAgentSession(
         scheduleType: definition.scheduleType,
         actionType: action.type,
         sourceSessionId,
-        ...(loginGatedSiteOrigin ? { loginGatedSiteOrigin } : {}),
+        ...(loginGatedSiteOrigin ? { loginPassThroughOrigin: loginGatedSiteOrigin } : {}),
       },
     },
     parentSessionId: sourceSessionId,

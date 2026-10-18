@@ -31,6 +31,8 @@ import {
   SecureBrowserResumeStateStore,
   type BrowserResumeStateStore,
 } from './BrowserResumeStateStore';
+import { importBrowserStorageStateForOrigin } from './CronBrowserLoginState';
+import { MANAGED_BROWSER_DEFAULT_LEASE_TTL_MS } from '../infra/browser/managedBrowserHelpers';
 
 const DEFAULT_PROVIDER = 'system-chrome-cdp';
 const SURFACE_PROFILE_TTL_MS = 30 * 60_000;
@@ -94,6 +96,22 @@ function originFromUrl(value: string): string | undefined {
   try {
     const url = new URL(value);
     return url.protocol === 'http:' || url.protocol === 'https:' ? url.origin : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function cronLoginGatedSiteOrigin(
+  identity: SurfaceRuntimeIdentityV1,
+): Promise<string | undefined> {
+  if (isUserBrowserSurfaceIdentity(identity)) return undefined;
+  try {
+    const { getSessionManager } = await import('../infra/sessionManager');
+    const session = await getSessionManager().getSession(identity.conversationId);
+    const origin = session?.origin;
+    if (origin?.kind !== 'cron' && origin?.kind !== 'heartbeat') return undefined;
+    const candidate = origin.metadata?.loginGatedSiteOrigin;
+    return typeof candidate === 'string' ? originFromUrl(candidate) : undefined;
   } catch {
     return undefined;
   }
@@ -392,6 +410,28 @@ export class ManagedBrowserProviderAdapter {
       leaseOwner,
       leaseTtlMs: SURFACE_PROFILE_TTL_MS,
     });
+    const loginGatedSiteOrigin = await cronLoginGatedSiteOrigin(identity);
+    if (loginGatedSiteOrigin && !isUserRun(identity)) {
+      try {
+        const personalBrowser = this.acquireBrowser(null);
+        await personalBrowser.ensureSession('about:blank', {
+          profileMode: 'persistent',
+          leaseOwner: 'cron-login-state-export',
+          leaseTtlMs: MANAGED_BROWSER_DEFAULT_LEASE_TTL_MS,
+        });
+        await importBrowserStorageStateForOrigin(
+          personalBrowser,
+          browserService,
+          loginGatedSiteOrigin,
+        );
+      } catch (error) {
+        this.resumeLogger.error('Failed to pass through cron site login state', {
+          conversationIdHash: hashIdentity([identity.conversationId]),
+          siteOrigin: loginGatedSiteOrigin,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
     try {
       await this.resumeStateStore.importForConversation(identity.conversationId, browserService);
     } catch (error) {

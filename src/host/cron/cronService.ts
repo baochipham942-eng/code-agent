@@ -88,7 +88,9 @@ import {
   notifyCronJobDisabled,
 } from './cronFailurePolicy';
 import { cronLoginWallMetadata } from './cronLoginWall';
+import { rememberCronLoginGatedSiteOrigin } from './cronLoginWallPersistence';
 import { cronFailureSourceText } from '../../shared/utils/cronFailureClassification';
+import { parseCronLoginWallStop } from '../../shared/utils/browserLoginWall';
 export { computeCronFireJitterMs } from './cronExecutionPolicy'; const execAsync = promisify(exec);
 
 // ============================================================================
@@ -731,6 +733,16 @@ export class CronService implements Disposable {
       }
     } catch (error) {
       execution.error = cronFailureSourceText(error);
+      const loginWall = parseCronLoginWallStop(error);
+      if (loginWall) {
+        await rememberCronLoginGatedSiteOrigin(
+          this.jobs.get(definition.id),
+          loginWall.siteOrigin,
+          (job) => this.persistJob(job),
+        ).catch((persistError) => {
+          console.error(`[CronService] Failed to persist login-wall origin for ${definition.id}:`, persistError);
+        });
+      }
       adoptFailedAgentSession(execution, error);
       const failureKind = classifyCronFailure(execution.error);
 

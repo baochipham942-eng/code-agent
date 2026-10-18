@@ -4,6 +4,19 @@ import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaul
 import { readCronSourceSessionId } from './cronAutomationBridge';
 import { formatCronAgentSessionTitle, getCronAgentSessionType } from './cronNormalizers';
 import { cronAgentWorkingDirectory } from './artifactStandingRefresh';
+import { siteOriginFromUrl } from '../../shared/utils/browserLoginWall';
+
+function cronLoginGatedSiteOrigin(definition: CronJobDefinition): string | undefined {
+  const candidate = definition.metadata?.loginGatedSiteOrigin;
+  if (typeof candidate !== 'string' || !candidate.trim()) return undefined;
+  const normalized = siteOriginFromUrl(candidate.trim());
+  try {
+    const parsed = new URL(normalized);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.origin : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Create the dedicated agent session for a cron run. Resolution order:
@@ -31,6 +44,7 @@ export async function createCronAgentSession(
   const settings = configService.getSettings();
   const sessionType = getCronAgentSessionType(action);
   const originKind = sessionType === 'heartbeat' ? 'heartbeat' : 'cron';
+  const loginGatedSiteOrigin = cronLoginGatedSiteOrigin(definition);
 
   return sessionManager.createSession({
     title: formatCronAgentSessionTitle(definition, sessionType),
@@ -50,6 +64,7 @@ export async function createCronAgentSession(
         scheduleType: definition.scheduleType,
         actionType: action.type,
         sourceSessionId,
+        ...(loginGatedSiteOrigin ? { loginGatedSiteOrigin } : {}),
       },
     },
     parentSessionId: sourceSessionId,

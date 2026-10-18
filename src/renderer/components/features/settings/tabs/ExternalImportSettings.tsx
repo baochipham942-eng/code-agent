@@ -19,6 +19,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import type {
+  MemoryConfirmRequest,
   MemoryImportApplyResult,
   MemoryImportDirectiveConfirmResult,
   MemoryImportDryRunResult,
@@ -30,11 +31,12 @@ import type {
   ExternalSkillsApplyResult,
   ExternalSkillsPreviewResult,
 } from '@shared/contract/externalImport';
-import { IPC_DOMAINS } from '@shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useExternalImportStore } from '../../../../stores/externalImportStore';
 import { Button, Toggle } from '../../../primitives';
+import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { SettingsSection } from '../SettingsLayout';
 
 /** 页面类别列：新类别（K1B 的 MCP servers）在此加一档 + 对应 host handler。 */
@@ -71,10 +73,33 @@ export const ExternalImportSettings: React.FC = () => {
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<Set<string>>(new Set());
   const [directiveStates, setDirectiveStates] = useState<Record<string, DirectiveState>>({});
   const [results, setResults] = useState<ImportResults | null>(null);
+  // directive 确认的宿主回执走全局 memory 确认卡（z 阶梯低于设置页遮罩，会被盖住），
+  // 设置页内就地接同一个 MEMORY_CONFIRM_REQUEST / _RESPONSE 通道，不新增宿主面。
+  const [pendingConfirm, setPendingConfirm] = useState<MemoryConfirmRequest | null>(null);
 
   useEffect(() => {
     void ensureChecked();
   }, [ensureChecked]);
+
+  useEffect(() => {
+    const unsubscribe = ipcService.on(IPC_CHANNELS.MEMORY_CONFIRM_REQUEST, (request) => {
+      if (request?.id) setPendingConfirm(request);
+    });
+    return () => {
+      unsubscribe?.();
+    };
+  }, []);
+
+  const respondPendingConfirm = async (confirmed: boolean): Promise<void> => {
+    if (!pendingConfirm?.id) return;
+    const id = pendingConfirm.id;
+    setPendingConfirm(null);
+    try {
+      await ipcService.invoke(IPC_CHANNELS.MEMORY_CONFIRM_RESPONSE, { id, confirmed });
+    } catch (error) {
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : copy.directiveFailed });
+    }
+  };
 
   const detectedSources = useMemo(
     () => (detectionResult?.sources ?? []).filter((source) => source.detected),
@@ -395,6 +420,20 @@ export const ExternalImportSettings: React.FC = () => {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        isOpen={pendingConfirm !== null}
+        title={copy.directiveDialogTitle}
+        message={
+          <pre data-testid="external-import-directive-content" className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-xs text-zinc-300">
+            {pendingConfirm?.content ?? ''}
+          </pre>
+        }
+        confirmText={copy.directiveDialogConfirm}
+        cancelText={copy.directiveDialogCancel}
+        onConfirm={() => void respondPendingConfirm(true)}
+        onCancel={() => void respondPendingConfirm(false)}
+      />
     </SettingsSection>
   );
 };

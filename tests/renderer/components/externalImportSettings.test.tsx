@@ -15,14 +15,24 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { MemoryImportDryRunResult } from '../../../src/shared/contract/memory';
 import type { ExternalImportDetectResult } from '../../../src/shared/contract/externalImport';
 import { IPC_DOMAINS } from '../../../src/shared/ipc/domains';
+import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
 const invokeDomain = vi.hoisted(() => vi.fn());
+const invokeChannel = vi.hoisted(() => vi.fn());
+const ipcEventHandlers = vi.hoisted(() => new Map<string, (payload: unknown) => void>());
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: {
     isAvailable: () => false,
-    invoke: vi.fn(),
+    invoke: invokeChannel,
     invokeDomain,
+    on: (channel: string, handler: (payload: unknown) => void) => {
+      ipcEventHandlers.set(channel, handler);
+      return () => {
+        ipcEventHandlers.delete(channel);
+      };
+    },
+    off: vi.fn(),
   },
 }));
 
@@ -157,6 +167,8 @@ function dryRunResult(overrides: Partial<MemoryImportDryRunResult> = {}): Memory
 
 beforeEach(() => {
   invokeDomain.mockReset();
+  invokeChannel.mockReset();
+  ipcEventHandlers.clear();
   useAppStore.setState({ language: 'zh' });
   useExternalImportStore.setState({
     status: 'idle',
@@ -350,18 +362,31 @@ describe('ExternalImportSettings 导入与结果（验收④）', () => {
     );
   });
 
-  it('逐条确认走既有 memoryHarnessImportConfirmDirective（验收③）', async () => {
+  it('逐条确认走既有 confirm IPC + 既有 MEMORY_CONFIRM_RESPONSE 回执通道（验收③）', async () => {
     stubDetect(detectResult());
     render(<ExternalImportSettings />);
     await screen.findByTestId('external-import-sources');
 
+    let resolveConfirm: (value: { instructionId: string; confirmed: boolean; imported: boolean }) => void = () => {};
     invokeDomain.mockImplementation((_domain: string, action: string) => {
       if (action === 'memoryHarnessImportDryRun') return Promise.resolve(dryRunResult());
       if (action === 'externalImportSkillsPreview') {
         return Promise.resolve({ items: [], summary: { copy: 0, skip: 0 } });
       }
       if (action === 'memoryHarnessImportConfirmDirective') {
-        return Promise.resolve({ instructionId: 'instruction:hash1', confirmed: true, imported: true });
+        // 宿主侧确认门：广播 MEMORY_CONFIRM_REQUEST，等页面回执后再 resolve
+        ipcEventHandlers.get(IPC_CHANNELS.MEMORY_CONFIRM_REQUEST)?.({
+          id: 'directive-1',
+          content: '所有回复第一行必须是固定标记',
+          category: 'import',
+          type: 'directive',
+          authority: 'directive',
+          confidence: 1,
+          timestamp: Date.now(),
+        });
+        return new Promise((resolve) => {
+          resolveConfirm = resolve;
+        });
       }
       return Promise.resolve(undefined);
     });
@@ -370,14 +395,24 @@ describe('ExternalImportSettings 导入与结果（验收④）', () => {
     await screen.findByTestId('external-import-preview');
 
     fireEvent.click(screen.getByText('逐条确认'));
+    // 就地确认弹窗（全局确认卡会被设置页遮罩盖住）：内容可见 + 确认回执走既有通道
+    await screen.findByTestId('external-import-directive-content');
+    expect(screen.getByTestId('external-import-directive-content').textContent)
+      .toContain('固定标记');
+    fireEvent.click(screen.getByText('确认导入'));
     await waitFor(() => {
-      expect(invokeDomain).toHaveBeenCalledWith(
-        IPC_DOMAINS.MEMORY,
-        'memoryHarnessImportConfirmDirective',
-        expect.objectContaining({ instructionId: 'instruction:hash1' }),
-      );
+      expect(invokeChannel).toHaveBeenCalledWith(IPC_CHANNELS.MEMORY_CONFIRM_RESPONSE, {
+        id: 'directive-1',
+        confirmed: true,
+      });
     });
+    resolveConfirm({ instructionId: 'instruction:hash1', confirmed: true, imported: true });
     await screen.findByText('已确认并写入');
+    expect(invokeDomain).toHaveBeenCalledWith(
+      IPC_DOMAINS.MEMORY,
+      'memoryHarnessImportConfirmDirective',
+      expect.objectContaining({ instructionId: 'instruction:hash1' }),
+    );
   });
 
   it('Claude 开关切换调用 set action 并刷新检测（验收⑤ UI 半）', async () => {

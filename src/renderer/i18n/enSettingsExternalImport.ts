@@ -46,6 +46,9 @@ export const enSettingsExternalImport = {
       confirmDirective: 'Confirm',
       confirmingDirective: 'Waiting for confirmation…',
       directiveImported: 'Confirmed and imported',
+      directiveDialogTitle: 'Confirm importing this instruction',
+      directiveDialogConfirm: 'Import it',
+      directiveDialogCancel: 'Not now',
       directiveNotImported: 'Not confirmed; nothing was written',
       directiveFailed: 'Confirmation failed',
       candidateReasonLabels: {

@@ -45,6 +45,9 @@ export const zhSettingsExternalImport = {
       confirmDirective: '逐条确认',
       confirmingDirective: '等待确认…',
       directiveImported: '已确认并写入',
+      directiveDialogTitle: '确认导入这条说明',
+      directiveDialogConfirm: '确认导入',
+      directiveDialogCancel: '暂不导入',
       directiveNotImported: '未获确认，没有写入',
       directiveFailed: '确认失败',
       candidateReasonLabels: {

@@ -82,7 +82,15 @@ export function buildSavedRoutineRestateRows(input: SavedRoutineRestateInput): r
     },
     lang,
   );
-  const baseWhat = confirmRows.find((row) => row.key === 'what')?.value ?? labels.fallbackWhat;
+  // what 的底文优先用保存记录里的完整目标（agent prompt）：简易创建在用户没起名时拿
+  // goal 前 48 字当任务名（buildSimpleDraft 的 name 兜底），what 若跟 name 走，长目标
+  // 会被截在词中间（rework r1 实录：en 目标复述止于 "turn th"）。goal 才是复述语义源；
+  // role-wake 没有 prompt、prompt 空白时回落 buildScheduleConfirmRows 的既有口径
+  // （name / 动作描述 / 兜底）。
+  const savedGoal = job.action.type === 'agent' ? job.action.prompt.trim() : '';
+  const baseWhat = savedGoal
+    || confirmRows.find((row) => row.key === 'what')?.value
+    || labels.fallbackWhat;
   const roleName = roleDisplayName.trim();
   const what = roleName
     ? `${labels.savedRolePrefix.replace('{role}', roleName)}${baseWhat}`

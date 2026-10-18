@@ -139,7 +139,7 @@ describe('CronSimpleCreate 保存后复述', () => {
     });
     expect(onDone).not.toHaveBeenCalled();
     await waitFor(() => {
-      expect(rowValue('what')).toBe('由 小星 执行：记录里的任务名');
+      expect(rowValue('what')).toBe('由 小星 执行：记录里的目标');
     });
     expect(rowValue('what')).not.toContain('表单里填的目标');
     expect(rowValue('when')).toBe('每天 09:00');
@@ -190,7 +190,7 @@ describe('CronJobEditor 保存后复述', () => {
     });
     expect(onClose).not.toHaveBeenCalled();
     await waitFor(() => {
-      expect(rowValue('what')).toBe('由 小星 执行：记录里的任务名');
+      expect(rowValue('what')).toBe('由 小星 执行：记录里的目标');
     });
     expect(rowValue('when')).toBe('每天 09:00');
     expect(rowValue('result')).toBe('工作飞书 · 项目群');
@@ -213,7 +213,7 @@ describe('CronJobEditor 保存后复述', () => {
     });
     expect(onClose).not.toHaveBeenCalled();
     await waitFor(() => {
-      expect(rowValue('what')).toBe('由 小星 执行：记录里的任务名');
+      expect(rowValue('what')).toBe('由 小星 执行：记录里的目标');
     });
 
     fireEvent.click(screen.getByTestId('cron-saved-routine-done'));

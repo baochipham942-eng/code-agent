@@ -111,7 +111,7 @@ describe('buildSavedRoutineRestateRows', () => {
       labels,
     });
     expect(rows.map((row) => row.key)).toEqual(['what', 'when', 'result']);
-    expect(rows[0].value).toBe('由 小星 执行：每日巡检');
+    expect(rows[0].value).toBe('由 小星 执行：看一圈邮件并汇总重点');
     expect(rows[1].value).toBe('每天 09:00');
     expect(rows[1].value).not.toContain('*');
     expect(rows[2].value).toBe('工作飞书 · 项目群');
@@ -176,7 +176,7 @@ describe('buildSavedRoutineRestateRows', () => {
       },
       lang: 'en',
     });
-    expect(enRows[0].value).toBe('Run by Nova: 每日巡检');
+    expect(enRows[0].value).toBe('Run by Nova: 看一圈邮件并汇总重点');
     expect(enRows[1].value).toBe('Daily at 09:00');
   });
 
@@ -205,7 +205,7 @@ describe('buildSavedRoutineRestateRows', () => {
     expect(mailEvent[1].value).toBe('有新消息到达时');
   });
 
-  it('行内容跟随保存的记录：record 的 name 与调度是什么就显示什么', () => {
+  it('行内容跟随保存的记录：record 的 goal 与调度是什么就显示什么', () => {
     const rows = buildSavedRoutineRestateRows({
       job: agentJob({
         name: '记录里的名字',
@@ -215,8 +215,40 @@ describe('buildSavedRoutineRestateRows', () => {
       channelLabel: '备用通道',
       labels,
     });
-    expect(rows[0].value).toBe('由 小星 执行：记录里的名字');
+    expect(rows[0].value).toBe('由 小星 执行：看一圈邮件并汇总重点');
     expect(rows[1].value).toBe('工作日 08:30');
     expect(rows[2].value).toBe('备用通道');
+  });
+
+  it('rework r1 回归：goal 超过 name 的 48 字截断时，what 显示完整 goal（跟记录的 prompt，不跟截断名）', () => {
+    const goal = 'Read the competitor updates I follow and turn them into a one-page brief';
+    expect(goal.length).toBeGreaterThan(48);
+    const rows = buildSavedRoutineRestateRows({
+      job: agentJob({
+        // 复刻 buildSimpleDraft 的 name 兜底：用户没起名时 name = goal 前 48 字（截在词中间）
+        name: goal.slice(0, 48),
+        action: { type: 'agent', agentType: 'default', prompt: goal, roleId: 'role-x' },
+      }),
+      roleDisplayName: 'Nova',
+      channelLabel: '',
+      labels: { ...labels, savedRolePrefix: 'Run by {role}: ' },
+    });
+    expect(rows[0].value).toBe(`Run by Nova: ${goal}`);
+    expect(rows[0].value.endsWith('one-page brief')).toBe(true);
+    // 48 字截断名「…and turn th」绝不能充当复述文本
+    expect(rows[0].value).not.toBe(`Run by Nova: ${goal.slice(0, 48)}`);
+  });
+
+  it('agent 记录 prompt 空白时 what 回落到任务名（buildScheduleConfirmRows 既有口径）', () => {
+    const rows = buildSavedRoutineRestateRows({
+      job: agentJob({
+        name: '记录里的名字',
+        action: { type: 'agent', agentType: 'default', prompt: '   ', roleId: 'role-x' },
+      }),
+      roleDisplayName: '小星',
+      channelLabel: '',
+      labels,
+    });
+    expect(rows[0].value).toBe('由 小星 执行：记录里的名字');
   });
 });

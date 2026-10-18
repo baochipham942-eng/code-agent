@@ -24,7 +24,7 @@ import {
 
 const cronMocks = vi.hoisted(() => ({
   getSession: vi.fn(async () => undefined),
-  importBrowserStorageStateForOrigin: vi.fn(async () => undefined),
+  importBrowserStorageStateForOrigin: vi.fn(async (..._args: [BrowserService, BrowserService, string]) => undefined),
 }));
 
 vi.mock('../../../../src/host/services/infra/sessionManager', () => ({

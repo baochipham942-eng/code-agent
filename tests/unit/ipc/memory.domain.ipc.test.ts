@@ -119,8 +119,16 @@ describe('harness import and batch review dispatch', () => {
       .toEqual({ confirmed: true, imported: true });
     expect((await call('memoryEntryBatchReview', { entryIds: ['import:1'], decision: 'approve' })).data)
       .toEqual({ updated: [{ id: 'e1' }], skipped: [] });
-    expect(importer.applyMemoryHarnessImport).toHaveBeenCalledWith(db, { candidateIds: ['import:1'] });
-    expect(importer.confirmMemoryHarnessDirective).toHaveBeenCalledWith(db, 'instruction:1', { adapterIds: undefined });
+    // N-EXTHISTORY-IMPORT-K1A：harness 导入的 home 基准与 externalImport 检测对齐（getHomeDir）
+    expect(importer.applyMemoryHarnessImport).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ homeDir: expect.any(String), candidateIds: ['import:1'] }),
+    );
+    expect(importer.confirmMemoryHarnessDirective).toHaveBeenCalledWith(
+      db,
+      'instruction:1',
+      expect.objectContaining({ homeDir: expect.any(String) }),
+    );
     expect(review.batchReviewMemoryEntries).toHaveBeenCalledWith(db, { entryIds: ['import:1'], decision: 'approve' });
   });
 

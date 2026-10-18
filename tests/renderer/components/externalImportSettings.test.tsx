@@ -251,7 +251,7 @@ describe('ExternalImportSettings 来源选择（验收①②）', () => {
     expect(screen.getByTestId('external-import-preview-memory').textContent).toContain('内容与现有记忆重复');
     expect(screen.getByTestId('external-import-preview-skills').textContent).toContain('codex-skill');
     expect(screen.getByTestId('external-import-instructions').textContent)
-      .toContain('说明类内容需逐条确认（1 条）');
+      .toContain('说明类内容（1 条）');
   });
 });
 
@@ -306,6 +306,48 @@ describe('ExternalImportSettings 导入与结果（验收④）', () => {
       .toContain('记忆：导入 1 条，跳过 1 条');
     expect(screen.getByTestId('external-import-results-skills').textContent)
       .toContain('技能：复制 1 个，跳过 0 个');
+  });
+
+  it('instruction-file（AGENTS.md 类）只供对照：无确认钮、不写记忆', async () => {
+    stubDetect(detectResult());
+    render(<ExternalImportSettings />);
+    await screen.findByTestId('external-import-sources');
+
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action === 'memoryHarnessImportDryRun') {
+        return Promise.resolve(dryRunResult({
+          instructions: [
+            {
+              id: 'instruction:agents',
+              adapterId: 'codex-local-custom',
+              title: 'AGENTS.md',
+              content: 'rules',
+              sourcePath: '~/.codex/AGENTS.md',
+              reason: 'instruction-file',
+              contentHash: 'agents-hash',
+              sourceMetadata: {},
+            },
+          ],
+        }));
+      }
+      if (action === 'externalImportSkillsPreview') {
+        return Promise.resolve({ items: [], summary: { copy: 0, skip: 0 } });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    fireEvent.click(screen.getByText('预览要导入的内容'));
+    await screen.findByTestId('external-import-preview');
+
+    expect(screen.getByTestId('external-import-instructions').textContent)
+      .toContain('~/.codex/AGENTS.md');
+    expect(screen.getByText('只供对照，不写入')).toBeTruthy();
+    expect(screen.queryByText('逐条确认')).toBeNull();
+    expect(invokeDomain).not.toHaveBeenCalledWith(
+      IPC_DOMAINS.MEMORY,
+      'memoryHarnessImportConfirmDirective',
+      expect.anything(),
+    );
   });
 
   it('逐条确认走既有 memoryHarnessImportConfirmDirective（验收③）', async () => {

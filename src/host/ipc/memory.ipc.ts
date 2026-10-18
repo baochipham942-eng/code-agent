@@ -6,6 +6,7 @@ import { memoryInjectionPauses, resumeMemoryInjection } from '../memory/memoryUs
 import type { IpcMain } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { getSessionManager, getDatabase } from '../services';
+import { getHomeDir } from '../config/configPaths';
 import type { MemoryRecord as StoredMemoryRecord } from '../services/core/repositories';
 import type { MemoryItem, MemoryCategory, MemoryExport, MemoryStats } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
@@ -602,16 +603,17 @@ async function handleMemoryEntryBatchReview(payload: MemoryEntryBatchReviewReque
 }
 
 async function handleMemoryHarnessImportDryRun(payload: MemoryImportDryRunRequest): Promise<Awaited<ReturnType<typeof dryRunMemoryHarnessImport>>> {
-  return dryRunMemoryHarnessImport(getDatabase(), payload || {});
+  return dryRunMemoryHarnessImport(getDatabase(), { homeDir: getHomeDir(), ...(payload || {}) });
 }
 
 async function handleMemoryHarnessImportApply(payload: MemoryImportApplyRequest): Promise<Awaited<ReturnType<typeof applyMemoryHarnessImport>>> {
-  return applyMemoryHarnessImport(getDatabase(), payload || {});
+  return applyMemoryHarnessImport(getDatabase(), { homeDir: getHomeDir(), ...(payload || {}) });
 }
 
 async function handleMemoryHarnessImportConfirmDirective(payload: MemoryImportDirectiveConfirmRequest): Promise<Awaited<ReturnType<typeof confirmMemoryHarnessDirective>>> {
   if (!payload?.instructionId) throw new Error('directive import confirmation requires instructionId');
   return confirmMemoryHarnessDirective(getDatabase(), payload.instructionId, {
+    homeDir: getHomeDir(),
     adapterIds: payload.adapterIds,
   });
 }

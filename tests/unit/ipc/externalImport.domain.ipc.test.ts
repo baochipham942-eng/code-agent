@@ -127,10 +127,16 @@ describe('externalImport* 域 action 分发', () => {
   });
 
   it('记忆/说明仍走既有 memoryHarnessImport* 域 action（同表同装配，无第二管线）', async () => {
-    await call('memoryHarnessImportDryRun', { adapterIds: ['codex-local-custom'] });
-    expect(importer.dryRunMemoryHarnessImport).toHaveBeenCalledWith(db, {
-      adapterIds: ['codex-local-custom'],
-    });
+    vi.stubEnv('CODE_AGENT_HOME', '/tmp/k1a-fixture-home');
+    try {
+      await call('memoryHarnessImportDryRun', { adapterIds: ['codex-local-custom'] });
+      expect(importer.dryRunMemoryHarnessImport).toHaveBeenCalledWith(db, {
+        homeDir: '/tmp/k1a-fixture-home',
+        adapterIds: ['codex-local-custom'],
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('未知 action → INVALID_ACTION（域表兜底不受新 action 影响）', async () => {

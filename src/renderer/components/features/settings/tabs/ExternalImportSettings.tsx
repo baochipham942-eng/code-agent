@@ -560,7 +560,10 @@ function PreviewStep({
             {instructions.map((item) => (
               <div key={item.id} className="flex items-center justify-between gap-2">
                 <div className="min-w-0 truncate font-mono">{item.sourcePath}</div>
-                {directiveStates[item.id] === 'imported' ? (
+                {item.reason !== 'directive-confirmation-required' ? (
+                  // instruction-file（如 AGENTS.md/CLAUDE.md）：既有管线定性为只供对照，不给确认钮
+                  <span className="shrink-0 text-zinc-500">{copy.instructionCompareOnly}</span>
+                ) : directiveStates[item.id] === 'imported' ? (
                   <span className="shrink-0 text-badge-success">{copy.directiveImported}</span>
                 ) : directiveStates[item.id] === 'not-imported' ? (
                   <span className="shrink-0 text-zinc-500">{copy.directiveNotImported}</span>

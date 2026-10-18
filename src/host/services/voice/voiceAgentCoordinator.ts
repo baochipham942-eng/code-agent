@@ -14,20 +14,18 @@
 // ============================================================================
 
 import type { TaskManagerEvent } from '../../task/TaskManager';
-import type { AgentEvent, ToolResult } from '../../../shared/contract';
+import type { AgentEvent } from '../../../shared/contract';
 import type { SessionTask, TodoItem } from '../../../shared/contract/planning';
-import type { VoiceFocusContext, VoiceToolCallOrigin, VoiceWorkFailureMarker, VoiceWorkItem, VoiceWorkItemStatus, VoiceWorkNarration } from '../../../shared/contract/voice';
+import type { VoiceFocusContext, VoiceToolCallOrigin, VoiceWorkFailureMarker, VoiceWorkItem, VoiceWorkNarration } from '../../../shared/contract/voice';
 import type { AppshotCapture } from '../../../shared/contract/appshot';
 import { buildAppshotAttachment, buildAppshotXml } from '../../../shared/contract/appshot';
 import {
   VOICE_CONCLUSION_LOOKBACK_MESSAGES,
-  VOICE_RECENT_FILE_LIMIT,
   VOICE_SCREEN_CONTEXT_TTL_MS,
   VOICE_SPAWN_TASK_MAX_ITERATIONS,
   VOICE_STOP_CONFIRM_RETRIES,
   VOICE_STOP_CONFIRM_TIMEOUT_MS,
 } from '../../../shared/constants/voice';
-import { getIncompleteTasks } from '../planning/taskStore';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
 import { buildRoleContextBlock } from '../roleAssets/roleAssetService';
@@ -43,11 +41,9 @@ import { captureVoiceScreenContext } from './voiceScreenContext';
 import { screenCaptureFailureSpeech, screenCapturedSpeech } from './voiceScreenSpeech';
 import { projectVoiceTaskTerminalResult, type VoiceTaskTerminalStatus } from './voiceTaskResultProjector';
 import { VoiceTaskSlotLedger, getVoiceTaskConcurrencyPool } from './voiceTaskSlotLedger';
-import {
-  resolveHistoricalVoiceTask,
-  resolveVoiceTaskReference,
-  voiceTaskOrdinal,
-} from './voiceTaskReference';
+import { resolveHistoricalVoiceTask, resolveVoiceTaskReference } from './voiceTaskReference';
+import { TERMINAL, type LedgerState, type PendingStop, type SettledOutcome, type VoiceDispatchBinding, type VoiceIntent } from './voiceDispatchTypes';
+import { describeCurrentTime, describeFocusedFiles, describeStatus, liveWorkCount, statusText } from './voiceDispatchQueries';
 import { promptUserInChat } from '../../tools/utils/userQuestionPrompt';
 import { diffCompletedVoiceTodos, readVoiceFailureMarker } from './voiceTaskEventProjection';
 import {
@@ -68,165 +64,9 @@ import { cancelVoiceManagedTask, getVoiceTaskManager } from './voiceTaskManagerB
 
 const logger = createLogger('VoiceCoordinator');
 
-/** 方案 §6.3。share_context 归批 H 的焦点上报（文本焦点，不含像素）。 */
-export type VoiceIntent = { origin?: VoiceToolCallOrigin } & (
-  | { kind: 'status' }
-  | { kind: 'recent_files' }
-  /**
-   * 看屏（Appshots Phase 3）：采一张用户此刻的屏幕，**不给通话 brain 看**，
-   * 挂在账本上等下一次派活捎给执行侧。通话 brain 零写权限的底线没变——
-   * 这个动作只往临时目录写一张自己的截图，不碰用户的任何文件。
-   */
-  | { kind: 'capture_screen' }
-  /**
-   * `replaceCurrent`：用户说的是「别等 X 了，改做 Y」——弃掉手上那件、换成这件。
-   * 与 steer_task（改方向、不弃活）是两件事，路由判别写在 voiceRouting 的 prompt 里。
-   */
-  | {
-      kind: 'delegate_task';
-      title: string;
-      prompt: string;
-      shortName?: string;
-      laneKey?: string;
-      submissionKey?: string;
-      replaceCurrent?: boolean;
-    }
-  /**
-   * `target`：用户点名了要作用在哪一件活上（task_status 列出的编号）。
-   * 不给 = 手上正在跑的那件（原语义，零行为变化）。给了但对不上就拒绝，见 rejectMismatchedTarget。
-   */
-  | { kind: 'steer_task'; instruction: string; target?: string }
-  | { kind: 'cancel_task'; target?: string }
-  | { kind: 'end_call' }
-  | { kind: 'current_time' }
-);
-
-export interface VoiceDispatchBinding {
-  neoSessionId: string;
-  /**
-   * 这通电话的 id（`voice-<ts>-<seq>`，合成串不含用户内容）。
-   * 只作遥测/日志维度：看屏这类动作发生在派活**之前**，没有 workItemId 可挂，
-   * 不给它一个维度就等于这条链在观测上不存在。
-   */
-  voiceSessionId: string;
-  /** 派活时带上的专家身份；undefined = 会话默认 agent（自动路由） */
-  activeAgentId?: string;
-  /** work item 变化推给 Renderer 的 Active Work 条 */
-  onWorkItem: (item: VoiceWorkItem) => void;
-  /**
-   * 一件活落到 failed。与 onWorkItem **不同寿命**：`onWorkItem` 是通话态的 UI 回流，
-   * 挂断即断（emit 置 null）；失败留痕必须活到最后一件活落地——语音派出的 run 常常
-   * 比通话活得久，而「挂断之后才死」正是最需要留痕的场景（G1，2026-07-28）。
-   */
-  onWorkFailed: (item: VoiceWorkItem) => void;
-  /**
-   * 模型自己收线（end_call 工具）。真机 2026-07-28：用户说「挂断当前通话」，
-   * 模型答「好，通话已挂断」——而日志里 `reason: client-end` 说明是用户自己点的 X，
-   * 模型只是嘴上说。语音层此前压根没有挂断这个动作，这是第二例「说了没做」。
-   */
-  onEndCall: () => void;
-  /**
-   * 发言人协议（W6-1）：一件活落 done/failed 时「该念哪句、以谁的身份念」。
-   *
-   * 与 onWorkItem **同寿命**（挂断即断）而不是跟着 onWorkFailed：电话都挂了，
-   * 念给谁听。挂断之后才死的那种失败仍走 onWorkFailed 落屏，不重复。
-   */
-  onWorkNarration: (narration: VoiceWorkNarration) => void;
-}
-
-const TERMINAL: readonly VoiceWorkItemStatus[] = ['done', 'unverified', 'failed', 'cancelled'];
-
-/**
- * 一次「先把手上那件停下来」的在途请求（§1 打断原子性）。
- *
- * 存在的唯一理由是那道硬门：**确认旧的落终态之前，绝不 startRun**。所以「要停谁」
- * 和「停稳之后要派什么」必须一起记着，等终态事件来了在同一处兑现——把它拆成
- * 「先 cancel，然后在别处 setTimeout 里派新活」就等于把门开在两个地方。
- */
-interface PendingStop {
-  /** 正在等它落终态的那件活 */
-  workItemId: string;
-  /** 那件活的标题，超时回报时要说清是谁没停稳 */
-  title: string;
-  /** 停稳后要派的新活；undefined = 纯 cancel_task，不派新活 */
-  next?: VoiceSpawnRequest;
-  timer: NodeJS.Timeout;
-  /** 已重发 cancel 的次数，上限 VOICE_STOP_CONFIRM_RETRIES */
-  attempts: number;
-}
-
-interface LedgerState {
-  neoSessionId: string;
-  voiceSessionId: string;
-  activeAgentId?: string;
-  /** 通话挂断后置 null：只记账、不再往已关闭的 WS 推。 */
-  emit: ((item: VoiceWorkItem) => void) | null;
-  /** 失败留痕；**挂断不清**（见 VoiceDispatchBinding.onWorkFailed）。 */
-  onFailed: (item: VoiceWorkItem) => void;
-  /** 终态回流；与 emit 同寿命，挂断置 null。 */
-  narrate: ((narration: VoiceWorkNarration) => void) | null;
-  endCall: () => void;
-  items: Map<string, VoiceWorkItem>;
-  slots: VoiceTaskSlotLedger;
-  runRequests: Map<string, VoiceSpawnRequest>;
-  pendingStartedAtById: Map<string, number>;
-  runConclusions: Map<string, { content: string; messageId: string }>;
-  runToolResults: Map<string, ToolResult[]>;
-  /** 兼容旧 runtime 不带 taskId 的事件；生产后台 run 一律按事件里的 taskId 路由。 */
-  legacyEventFallbackId: string | null;
-  /** 旧事件兼容任务的派出时刻；真实任务使用 pendingStartedAtById。 */
-  legacyEventFallbackStartedAt: number;
-  listener: (event: TaskManagerEvent) => void;
-  listenerAttached: boolean;
-  /** 绑定 listener 的确切实例；解绑必须回到同一个 manager，避免跨 dispatch 串台。 */
-  taskManagerRef: Awaited<ReturnType<typeof getVoiceTaskManager>> | null;
-  /** 用户此刻在看什么（§6.5 焦点上报）；决定 get_current_file_summary 答什么。 */
-  focus: VoiceFocusContext | null;
-  /** 近窗字幕原文（voiceSessionService 每落一条 final 就推一次），派活时随 run 一起交给执行侧。 */
-  transcript: VoiceTranscriptEntry[];
-  /**
-   * 已经采到、还没跟着任何一次派活出去的屏幕截图（Phase 3）。
-   *
-   * **一次性**：附到某一轮 run 上就清掉。不这么做的话，用户指过一次屏，之后每一件活
-   * 都会拖着同一张旧图——执行侧会拿它当「用户现在看的东西」，那是在悄悄喂错事实。
-   */
-  pendingScreen: AppshotCapture | null;
-  /** 在途的「停旧的」请求；同时只可能有一件（通话是单路，手上也只有一件活）。 */
-  pendingStops: Map<string, PendingStop>;
-  /**
-   * 被顶掉的活：终态**不念给用户听**（他刚亲口说「别做那个了」，回头再播一遍它的结局
-   * 是噪音）。只压播报——onWorkFailed 留痕与落库照旧，屏幕那一路仍然说实话。
-   * 停不下来时会从这里移除：那件活还活着，它的结局就还该被念。
-   */
-  supersededIds: Set<string>;
-  /**
-   * 上一次看到的 plan entries 快照（按 content 索引 status）。milestone 靠它做差分。
-   *
-   * 用 content 当键是因为 `TodoItem` 没有 id（`{content, status, activeForm}`）。
-   * 同一轮里两条同文案的 entry 会被折成一条——可接受:代价是少播一条进度,
-   * 而不是播一条错的。
-   */
-  todoSnapshots: Map<string, Map<string, string>>;
-  /**
-   * 上一次看到的执行侧任务轨快照（按 task id 索引 status）。worth-hearing 靠它认
-   * 「刚刚卡住」这个跃迁——task_update 每次带全量列表，不做差分就会把同一条卡点
-   * 在后续每个事件里反复念一遍。
-   */
-  taskSnapshots: Map<string, Map<string, string>>;
-  /** milestone 去重键的单调计数器。注入通道按 workItemId 去重，撞键就会静默丢播报。 */
-  milestoneSeqById: Map<string, number>;
-  /** 同一审批可能从实时、SSE replay、host snapshot 多次到达；电话里只告知一次。 */
-  announcedPermissionRequestIds: Set<string>;
-  /** agent 事件流的退订函数；与 listener 同寿命，落终态时一起摘。 */
-  unobserveAgentEvents: (() => void) | null;
-}
-
 // ponytail: 通话是全局单路（voiceSessionService 的互斥），一个模块级账本就够，
 // 不为「将来可能多路」预建 Map。
 let ledger: LedgerState | null = null;
-
-/** 会被念出来 / 落屏 / 发通知的那三档终态。cancelled 不在其中（用户自己叫停的）。 */
-type SettledOutcome = 'done' | 'unverified' | 'failed';
 
 async function notifyVoiceWorkSettledAfterHangup(
   state: LedgerState,
@@ -1176,17 +1016,6 @@ async function captureScreenContext(state: LedgerState): Promise<string> {
 // 定向（R2）：编号 → 那件活，对不上就拒绝
 // ============================================================================
 
-/**
- * 播给用户的编号 = 这件活在账本里的**登记次序**（items 只 set 不 delete，一通电话里恒定）。
- *
- * 刻意不用「当前存活项里的第几个」：活会陆续落终态，那种编号每落一件就整体前移——
- * 用户听到的「2 号」和他下一句说出口的「2 号」可能已经不是同一件事，而这条链上编错号
- * 的代价是停错活。代价是号码会有断档（3 件跑完后新的一件是「4」），听着略怪但不会指错。
- */
-function ordinalOf(state: LedgerState, workItemId: string): number {
-  return voiceTaskOrdinal([...state.items.values()], workItemId);
-}
-
 async function steerTask(state: LedgerState, instruction: string, target?: string): Promise<string> {
   const resolution = resolveVoiceTaskReference([...state.items.values()], target);
   if (resolution.outcome === 'missing') {
@@ -1305,100 +1134,4 @@ function offerTaskChoice(
     const selected = candidates.find((item) => (item.shortName ?? item.title) === answer);
     if (selected) await onSelected(selected);
   });
-}
-
-// ============================================================================
-// 只读查询
-// ============================================================================
-
-/**
- * 现在几点（真机 2026-07-28：用户问「现在几点了？」，通话 brain 答「我这边看不到具体时间」，
- * 用户只好说「通过 computer use 来看」才绕出去——语音层拿不到时间是产品缺陷不是模型笨）。
- * 走工具而不是往 instructions 里注入时间：instructions 只在建连和焦点变化时刷新，
- * 注进去的时间会随通话变旧，而这是个「问了就该准」的问题。
- */
-function describeCurrentTime(): string {
-  const now = new Date();
-  const text = now.toLocaleString('zh-CN', {
-    year: 'numeric', month: 'long', day: 'numeric',
-    weekday: 'long', hour: '2-digit', minute: '2-digit',
-  });
-  return `现在是${text}。`;
-}
-
-/**
- * 「现在在跑什么」。分两组，因为这两组**能不能被指挥是不一样的**：
- *
- * 上面一组是我派出去的 run，带编号，可以拿编号定向 steer / cancel；下面一组是执行侧
- * 计划里的条目，它们不是 run，停不了也改不了。上一版把两组平铺成同一串 `- xxx`，
- * 通话 brain 无从分辨，只能把「停掉那个」翻译成「停手上那件」——指挥台的第一课是
- * 先让人看清哪些东西是可以被指的。
- */
-function describeStatus(state: LedgerState): string {
-  const lines: string[] = [];
-  const live = [...state.items.values()].filter((item) => !TERMINAL.includes(item.status));
-  if (live.length) {
-    lines.push('我派出去的活（要改方向或叫停，把编号传给 target）：');
-    for (const item of live) {
-      lines.push(`${ordinalOf(state, item.id)}. ${item.title}（${statusText(item.status)}）`);
-    }
-  }
-  const planned = getIncompleteTasks(state.neoSessionId);
-  if (planned.length) {
-    lines.push('执行侧计划里还没做完的（这些不是我派的活，改不了也停不了）：');
-    for (const task of planned) lines.push(`- ${task.subject}（${task.status}）`);
-  }
-  if (!lines.length) return '当前没有进行中的任务。';
-  return lines.join('\n');
-}
-
-/** 此刻有几件活还没落终态。>1 时口播必须点名是哪件的进度，否则用户不知道在讲谁。 */
-function liveWorkCount(state: LedgerState): number {
-  let count = 0;
-  for (const item of state.items.values()) if (!TERMINAL.includes(item.status)) count += 1;
-  return count;
-}
-
-function statusText(status: VoiceWorkItemStatus): string {
-  switch (status) {
-    case 'queued': return '排队中';
-    case 'running': return '进行中';
-    case 'done': return '已完成';
-    // 终态项已被 describeStatus 滤掉，这几支只为穷尽联合；措辞仍按「不可润色」写，
-    // 免得哪天有人把终态也列进去，就地变成一句可以被润成「做完了」的话。
-    case 'unverified': return '跑完了但没看到产物，不能算做完';
-    case 'failed': return '失败';
-    case 'cancelled': return '已取消';
-  }
-}
-
-/**
- * 「你在动哪些文件」。真焦点优先——用户问的是「我现在看的这个」，不是「这轮碰过的一堆」。
- * 没有焦点（CLI 态 / 右栏没开东西）时退回刮会话里发生过的文件动作。
- */
-async function describeFocusedFiles(state: LedgerState): Promise<string> {
-  const focus = state.focus;
-  if (focus?.filePath) {
-    const lines = [`当前打开的是 ${focus.filePath}${focus.unsaved ? '（有未保存改动）' : ''}`];
-    if (focus.selectedElement) lines.push(`选中的元素：${focus.selectedElement}`);
-    return lines.join('\n');
-  }
-  if (focus?.view && !focus.view.startsWith('preview:')) {
-    return `右栏现在看的是${focus.view}，没有打开具体文件。`;
-  }
-  return describeRecentFiles(state.neoSessionId);
-}
-
-/** 兜底：从会话消息里工具调用的 file_path 反推「这轮动过什么」。 */
-async function describeRecentFiles(neoSessionId: string): Promise<string> {
-  const session = await getSessionManager().getSession(neoSessionId, 30);
-  const paths = new Set<string>();
-  for (const message of session?.messages ?? []) {
-    for (const call of message.toolCalls ?? []) {
-      const filePath = (call.arguments as Record<string, unknown> | undefined)?.file_path;
-      if (typeof filePath === 'string' && filePath) paths.add(filePath);
-    }
-  }
-  if (!paths.size) return '本次会话还没有读写过文件。';
-  return [...paths].slice(-VOICE_RECENT_FILE_LIMIT).map((path) => `- ${path}`).join('\n');
 }

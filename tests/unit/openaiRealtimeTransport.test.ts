@@ -70,8 +70,11 @@ vi.mock('../../src/host/services/core/configService', () => ({
   getConfigService: () => ({ onSettingsUpdated: vi.fn(), getSettings: () => ({}) }),
 }));
 
-const { createRealtimeTransport, resamplePcm16Mono } = await import(
+const { createRealtimeTransport } = await import(
   '../../src/host/services/voice/realtimeTransport'
+);
+const { resamplePcm16Mono } = await import(
+  '../../src/host/services/voice/realtimeAudioResample'
 );
 
 describe('OpenAI Realtime provider profile', () => {

@@ -42,6 +42,12 @@ import {
   dryRunMemoryHarnessImport,
 } from '../memory/importers';
 import { draftProjectMemory } from '../memory/projectMemoryDraft';
+import { detectExternalImportSources } from '../externalImport/detectSources';
+import {
+  applyExternalSkillsImport,
+  previewExternalSkillsImport,
+  setClaudeLegacySkillsEnabled,
+} from '../externalImport/skillsImport';
 import {
   KNOWLEDGE_INBOX_DECISION_CATEGORY,
   hashInboxContent,
@@ -66,6 +72,11 @@ import type {
   ProjectMemoryDraftResult,
   MemoryEntryListResult,
 } from '../../shared/contract/memory';
+import type {
+  ExternalImportSetClaudeLegacySkillsRequest,
+  ExternalSkillsApplyRequest,
+  ExternalSkillsPreviewRequest,
+} from '../../shared/contract/externalImport';
 import { respondToDirectiveMemoryConfirmation } from '../memory/directiveMemoryConfirmation';
 
 const logger = createLogger('MemoryIPC');
@@ -891,6 +902,13 @@ const memoryRoutes = defineDomainRoutes<MemoryDomainRequest, void>(
       handleMemoryHarnessImportConfirmDirective(payload as MemoryImportDirectiveConfirmRequest),
     memoryInitProjectDraft: (_ctx, payload) =>
       handleMemoryInitProjectDraft(payload as ProjectMemoryDraftRequest),
+    externalImportDetectSources: () => detectExternalImportSources(getDatabase()),
+    externalImportSkillsPreview: (_ctx, payload) =>
+      previewExternalSkillsImport(payload as ExternalSkillsPreviewRequest),
+    externalImportSkillsApply: (_ctx, payload) =>
+      applyExternalSkillsImport(payload as ExternalSkillsApplyRequest),
+    externalImportSetClaudeLegacySkills: (_ctx, payload) =>
+      setClaudeLegacySkillsEnabled((payload as ExternalImportSetClaudeLegacySkillsRequest).enabled),
   },
   {
     resolveErrorCode: (error) => {

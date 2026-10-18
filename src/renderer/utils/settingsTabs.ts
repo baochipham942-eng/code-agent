@@ -37,6 +37,8 @@ const BUILT_IN_SETTINGS_TAB_IDS = [
   'hooks',
   'memory',
   'openchronicle',
+  // 从其他 AI 应用导入（N-EXTHISTORY-IMPORT-K1A）：检测到来源才出现在导航
+  'external-import',
   'privacy',
   'update',
   'about',
@@ -165,6 +167,7 @@ export const SETTINGS_TAB_GROUP_BY_TAB: Record<SettingsTab, SettingsTabGroupId> 
   // 记忆与隐私
   memory: 'memory',
   openchronicle: 'memory',
+  'external-import': 'memory',
   privacy: 'memory',
   // 系统
   update: 'system',

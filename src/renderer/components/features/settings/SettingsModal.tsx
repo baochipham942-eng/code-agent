@@ -33,6 +33,7 @@ import {
   Shield,
   MessageSquare,
   Webhook,
+  FolderInput,
   FolderOpen,
   Camera,
   Keyboard,
@@ -45,6 +46,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useAuthStore } from '../../../stores/authStore';
+import { useExternalImportStore } from '../../../stores/externalImportStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { IconButton } from '../../primitives';
 import { ConfirmDialog } from '../../composites/ConfirmDialog';
@@ -129,6 +131,9 @@ const UpdateSettings = React.lazy(() => import('./tabs/UpdateSettings').then(({ 
 const MemoryTab = React.lazy(() => import('./tabs/MemoryTab').then(({ MemoryTab: component }) => ({
   default: component,
 })));
+const ExternalImportSettings = React.lazy(() => import('./tabs/ExternalImportSettings').then(({ ExternalImportSettings: component }) => ({
+  default: component,
+})));
 const ChannelsSettings = React.lazy(() => import('./tabs/ChannelsSettings').then(({ ChannelsSettings: component }) => ({
   default: component,
 })));
@@ -186,6 +191,8 @@ interface BuildSettingsTabsOptions {
   showScreenMemoryTab: boolean;
   showUpdateTab: boolean;
   hasOptionalUpdate: boolean;
+  /** 检测到其他 AI 应用来源才出现「从其他 AI 应用导入」入口（N-EXTHISTORY-IMPORT-K1A） */
+  showExternalImportTab: boolean;
   access?: AccessSubject | null;
   installedCapabilities?: ReadonlySet<BundledHostCapabilityId>;
 }
@@ -195,6 +202,7 @@ export function buildSettingsTabGroups({
   showScreenMemoryTab,
   showUpdateTab,
   hasOptionalUpdate,
+  showExternalImportTab,
   access,
   installedCapabilities,
 }: BuildSettingsTabsOptions): SettingsTabGroupConfig[] {
@@ -239,6 +247,7 @@ export function buildSettingsTabGroups({
     // 记忆与隐私
     { id: 'memory', label: t.settings.tabs.memory, icon: <BrainCircuit className="w-4 h-4" /> },
     ...(showScreenMemoryTab ? [{ id: 'openchronicle' as const, label: t.settings.tabs.openchronicle, icon: <Eye className="w-4 h-4" /> }] : []),
+    ...(showExternalImportTab ? [{ id: 'external-import' as const, label: t.settings.tabs.externalImport, icon: <FolderInput className="w-4 h-4" /> }] : []),
     { id: 'privacy', label: t.settings.tabs.privacy, icon: <ShieldCheck className="w-4 h-4" /> },
     // 系统
     ...(showUpdateTab ? [{ id: 'update' as const, label: t.settings.tabs.update, icon: <Download className="w-4 h-4" />, badge: hasOptionalUpdate }] : []),
@@ -419,16 +428,23 @@ export const SettingsModal: React.FC = () => {
   }, []);
 
   const showUpdateTab = isDesktopShellMode();
+  // 「从其他 AI 应用导入」入口：检测到来源才进导航；打开设置即触发一次幂等检测
+  const externalImportStatus = useExternalImportStore((state) => state.status);
+  const ensureExternalImportChecked = useExternalImportStore((state) => state.ensureChecked);
+  useEffect(() => {
+    void ensureExternalImportChecked();
+  }, [ensureExternalImportChecked]);
   const tabGroups = useMemo(
     () => buildSettingsTabGroups({
       t,
       showScreenMemoryTab: isDesktopShellMode(),
       showUpdateTab,
       hasOptionalUpdate: !!optionalUpdateInfo?.hasUpdate,
+      showExternalImportTab: externalImportStatus === 'available',
       access: accessSubject,
       installedCapabilities,
     }),
-    [t, showUpdateTab, optionalUpdateInfo?.hasUpdate, accessSubject, installedCapabilities]
+    [t, showUpdateTab, optionalUpdateInfo?.hasUpdate, externalImportStatus, accessSubject, installedCapabilities]
   );
   const tabs = useMemo(
     () => tabGroups.flatMap((group) => group.tabs),
@@ -452,8 +468,10 @@ export const SettingsModal: React.FC = () => {
 
   useEffect(() => {
     if (tabs.some((tab) => tab.id === activeTab)) return;
+    // 深链 external-import 可能先于检测落位：检测未定论时先不回退默认 tab
+    if (activeTab === 'external-import' && externalImportStatus === 'checking') return;
     setActiveTab(DEFAULT_SETTINGS_TAB);
-  }, [activeTab, tabs]);
+  }, [activeTab, tabs, externalImportStatus]);
 
   return (
     <FullScreenPage
@@ -596,6 +614,7 @@ export const SettingsModal: React.FC = () => {
               {activeTab === 'channels' && <ChannelsSettings />}
               {activeTab === 'hooks' && <HooksSettings />}
               {activeTab === 'memory' && <MemoryTab />}
+              {activeTab === 'external-import' && <ExternalImportSettings />}
               {activeTab === 'openchronicle' && <ScreenMemorySettings />}
               {activeTab === 'privacy' && <PrivacySettings onNavigateSettings={handleSearchNavigate} />}
               {showUpdateTab && activeTab === 'update' && (

@@ -12,19 +12,6 @@ import type { CronHumanLang } from '@shared/cronHumanize';
 import { buildScheduleConfirmRows } from '../chat/ChatInput/scheduleConfirm';
 import { findTargetAccount, parseResultTarget } from './CronResultChannel';
 
-/** 角色绑定判据：AgentAction.roleId 或 role-wake（其 roleId 必填）。 */
-export function isRoleBoundJob(job: Pick<CronJobDefinition, 'action'>): boolean {
-  if (job.action.type === 'role-wake') return Boolean(job.action.roleId);
-  return job.action.type === 'agent' && Boolean(job.action.roleId?.trim());
-}
-
-/** 保存定义里的 roleId（非角色绑定动作给空串）。 */
-export function savedRoutineRoleId(job: Pick<CronJobDefinition, 'action'>): string {
-  if (job.action.type === 'role-wake') return job.action.roleId;
-  if (job.action.type === 'agent') return job.action.roleId?.trim() ?? '';
-  return '';
-}
-
 /** 通道目录的最小结构（useChannelCatalog 的返回值可直接喂进来）。 */
 export interface SavedRoutineChannelCatalog {
   accounts: ChannelAccount[];

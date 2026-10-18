@@ -17,6 +17,25 @@ const mocks = vi.hoisted(() => ({
   listProjects: vi.fn(),
 }));
 
+// 传输层 mock、store 动作走真实现：createJob/updateJob 成功后是否误关编辑器
+// （isEditorOpen）是本单踩过的真集成坑，必须在入口测试里被钉住。
+vi.mock('../../../src/renderer/services/cronClient', () => {
+  const transport = {
+    listJobs: vi.fn().mockResolvedValue([]),
+    createJob: mocks.createJob,
+    updateJob: mocks.updateJob,
+    deleteJob: vi.fn().mockResolvedValue(true),
+    triggerJob: vi.fn().mockResolvedValue(null),
+    getExecutions: vi.fn().mockResolvedValue([]),
+    getRecentExecutions: vi.fn().mockResolvedValue([]),
+    getStats: vi.fn().mockResolvedValue(null),
+    generateFromPrompt: vi.fn(),
+    getGroupListenCheck: vi.fn(),
+    startGroupListenCheck: vi.fn(),
+    grantLoginPassThrough: vi.fn(),
+  };
+  return { cronClient: transport, default: transport };
+});
 vi.mock('../../../src/renderer/services/rolesClient', () => ({
   listRoles: mocks.listRoles,
 }));
@@ -78,18 +97,22 @@ function rowValue(key: string): string {
 beforeEach(() => {
   mocks.listRoles.mockResolvedValue([{ roleId: 'role-x', displayName: '小星' }]);
   mocks.listProjects.mockResolvedValue([]);
+  // store 动作保持真实现（createJob/updateJob 走上面的传输层 mock），
+  // 只复位数据字段；isEditorOpen 由用例显式摆位后断言 store 的开合。
   useCronStore.setState({
     jobs: [],
     stats: null,
     latestExecutions: {},
     executionsByJobId: {},
+    recentExecutions: [],
     selectedJobId: null,
+    filterMode: 'all',
+    searchQuery: '',
     isLoading: false,
     isEditorOpen: false,
     editingJobId: null,
+    copyingJobId: null,
     error: null,
-    createJob: mocks.createJob,
-    updateJob: mocks.updateJob,
   });
 });
 
@@ -102,6 +125,7 @@ describe('CronSimpleCreate 保存后复述', () => {
   it('角色绑定任务保存后：三行跟保存返回的记录（不是表单值），Done 才关闭', async () => {
     mocks.createJob.mockResolvedValue(savedRoleJob());
     const onDone = vi.fn();
+    useCronStore.setState({ isEditorOpen: true });
     render(<CronSimpleCreate onDone={onDone} />);
 
     // 表单里填的是另一套值；createJob 返回的记录与之不同。
@@ -120,6 +144,8 @@ describe('CronSimpleCreate 保存后复述', () => {
     expect(rowValue('what')).not.toContain('表单里填的目标');
     expect(rowValue('when')).toBe('每天 09:00');
     expect(rowValue('result')).toBe('工作飞书 · 项目群');
+    // 真集成钉子：store 不得把编辑器关掉（否则 Modal 连带复述视图卸载）。
+    expect(useCronStore.getState().isEditorOpen).toBe(true);
 
     fireEvent.click(screen.getByTestId('cron-saved-routine-done'));
     expect(onDone).toHaveBeenCalledTimes(1);
@@ -131,6 +157,7 @@ describe('CronSimpleCreate 保存后复述', () => {
       resultChannel: undefined,
     }));
     const onDone = vi.fn();
+    useCronStore.setState({ isEditorOpen: true });
     render(<CronSimpleCreate onDone={onDone} />);
 
     fireEvent.change(screen.getByPlaceholderText('例如：读一遍我关注的竞品动态，整理成简报'), {
@@ -142,6 +169,10 @@ describe('CronSimpleCreate 保存后复述', () => {
       expect(onDone).toHaveBeenCalledTimes(1);
     });
     expect(screen.queryByTestId('cron-saved-routine-restate')).toBeNull();
+    // 非角色任务：store 照旧关掉编辑器。
+    await waitFor(() => {
+      expect(useCronStore.getState().isEditorOpen).toBe(false);
+    });
   });
 });
 
@@ -149,6 +180,7 @@ describe('CronJobEditor 保存后复述', () => {
   it('update 路径：保存角色绑定任务后切换复述视图，行跟 updateJob 返回的记录', async () => {
     mocks.updateJob.mockResolvedValue(savedRoleJob({ id: 'job-edit' }));
     const onClose = vi.fn();
+    useCronStore.setState({ isEditorOpen: true });
     render(<CronJobEditor isOpen job={existingRoleJob()} onClose={onClose} />);
 
     fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
@@ -162,6 +194,7 @@ describe('CronJobEditor 保存后复述', () => {
     });
     expect(rowValue('when')).toBe('每天 09:00');
     expect(rowValue('result')).toBe('工作飞书 · 项目群');
+    expect(useCronStore.getState().isEditorOpen).toBe(true);
 
     fireEvent.click(screen.getByTestId('cron-saved-routine-done'));
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -170,6 +203,7 @@ describe('CronJobEditor 保存后复述', () => {
   it('create 路径（复制角色绑定任务）：createJob 返回角色绑定时切换复述视图', async () => {
     mocks.createJob.mockResolvedValue(savedRoleJob());
     const onClose = vi.fn();
+    useCronStore.setState({ isEditorOpen: true });
     render(<CronJobEditor isOpen job={null} copySource={existingRoleJob()} onClose={onClose} />);
 
     fireEvent.click(screen.getByRole('button', { name: '创建任务' }));
@@ -192,6 +226,7 @@ describe('CronJobEditor 保存后复述', () => {
       action: { type: 'agent', agentType: 'default', prompt: '记录里的目标' },
     }));
     const onClose = vi.fn();
+    useCronStore.setState({ isEditorOpen: true });
     render(
       <CronJobEditor
         isOpen
@@ -210,5 +245,8 @@ describe('CronJobEditor 保存后复述', () => {
       expect(onClose).toHaveBeenCalledTimes(1);
     });
     expect(screen.queryByTestId('cron-saved-routine-restate')).toBeNull();
+    await waitFor(() => {
+      expect(useCronStore.getState().isEditorOpen).toBe(false);
+    });
   });
 });

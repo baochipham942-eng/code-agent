@@ -3,6 +3,7 @@ import type { CronJobDefinition } from '@shared/contract';
 import { isHourAlignedCronExpression, suggestCronStaggerMinute } from '@shared/cronStagger';
 import { validateEventScheduleConstraints, type EventScheduleViolation } from '@shared/cronEventValidation';
 import { CRON_URGENCY_CRITERIA } from '@shared/constants';
+import { isRoleBoundCronJob } from '@shared/cronRoleBinding';
 import { ArrowLeft, Clock, Settings, Terminal } from 'lucide-react';
 import { Modal } from '../../primitives/Modal';
 import { Button } from '../../primitives/Button';
@@ -27,7 +28,7 @@ import {
   type CronTemplate,
 } from './cronTemplates';
 import { CronSimpleCreate } from './CronSimpleCreate';
-import { isRoleBoundJob } from './savedRoutineRows';
+
 import { SavedRoutineRestate } from './SavedRoutineRestate';
 import { useI18n } from '../../../hooks/useI18n';
 import { showCronLoginWallWarning } from './cronLoginWallNotice';
@@ -219,7 +220,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       const input = buildCronJobInput(generatedDraft);
       const created = await createJob(input);
       showCronLoginWallWarning(created, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
-      if (isRoleBoundJob(created)) {
+      if (isRoleBoundCronJob(created)) {
         setSavedJob(created);
         return;
       }
@@ -250,14 +251,14 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       if (job) {
         const updated = await updateJob(job.id, input);
         showCronLoginWallWarning(updated, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
-        if (updated && isRoleBoundJob(updated)) {
+        if (updated && isRoleBoundCronJob(updated)) {
           setSavedJob(updated);
           return;
         }
       } else {
         const created = await createJob(input);
         showCronLoginWallWarning(created, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
-        if (isRoleBoundJob(created)) {
+        if (isRoleBoundCronJob(created)) {
           setSavedJob(created);
           return;
         }

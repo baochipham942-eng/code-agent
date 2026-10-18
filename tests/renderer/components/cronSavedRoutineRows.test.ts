@@ -7,10 +7,12 @@ import type { ChannelAccount } from '@shared/contract/channel';
 import type { CronJobDefinition } from '../../../src/shared/contract';
 import {
   buildSavedRoutineRestateRows,
-  isRoleBoundJob,
   resolveSavedRoutineChannelLabel,
-  savedRoutineRoleId,
 } from '../../../src/renderer/components/features/cron/savedRoutineRows';
+import {
+  cronJobBoundRoleId,
+  isRoleBoundCronJob,
+} from '../../../src/shared/cronRoleBinding';
 
 const labels = {
   what: '检查什么',
@@ -50,30 +52,30 @@ const catalog = {
   },
 };
 
-describe('isRoleBoundJob / savedRoutineRoleId', () => {
+describe('isRoleBoundCronJob / cronJobBoundRoleId', () => {
   it('agent + roleId 是角色绑定；roleId 空白不算', () => {
-    expect(isRoleBoundJob(agentJob())).toBe(true);
-    expect(isRoleBoundJob(agentJob({ action: { type: 'agent', agentType: 'default', prompt: 'p' } }))).toBe(false);
-    expect(isRoleBoundJob(agentJob({ action: { type: 'agent', agentType: 'default', prompt: 'p', roleId: '   ' } }))).toBe(false);
+    expect(isRoleBoundCronJob(agentJob())).toBe(true);
+    expect(isRoleBoundCronJob(agentJob({ action: { type: 'agent', agentType: 'default', prompt: 'p' } }))).toBe(false);
+    expect(isRoleBoundCronJob(agentJob({ action: { type: 'agent', agentType: 'default', prompt: 'p', roleId: '   ' } }))).toBe(false);
   });
 
   it('role-wake 是角色绑定（roleId 必填）；shell/tool 不是', () => {
-    expect(isRoleBoundJob(agentJob({
+    expect(isRoleBoundCronJob(agentJob({
       action: { type: 'role-wake', roleId: 'role-x' },
       scheduleType: 'every',
       schedule: { type: 'every', interval: 1, unit: 'days' },
     }))).toBe(true);
-    expect(isRoleBoundJob(agentJob({ action: { type: 'shell', command: 'echo ok' } }))).toBe(false);
+    expect(isRoleBoundCronJob(agentJob({ action: { type: 'shell', command: 'echo ok' } }))).toBe(false);
   });
 
-  it('savedRoutineRoleId 取动作里的 roleId，非角色动作给空串', () => {
-    expect(savedRoutineRoleId(agentJob())).toBe('role-x');
-    expect(savedRoutineRoleId(agentJob({
+  it('cronJobBoundRoleId 取动作里的 roleId，非角色动作给空串', () => {
+    expect(cronJobBoundRoleId(agentJob())).toBe('role-x');
+    expect(cronJobBoundRoleId(agentJob({
       action: { type: 'role-wake', roleId: 'role-y' },
       scheduleType: 'every',
       schedule: { type: 'every', interval: 1, unit: 'days' },
     }))).toBe('role-y');
-    expect(savedRoutineRoleId(agentJob({ action: { type: 'shell', command: 'echo ok' } }))).toBe('');
+    expect(cronJobBoundRoleId(agentJob({ action: { type: 'shell', command: 'echo ok' } }))).toBe('');
   });
 });
 

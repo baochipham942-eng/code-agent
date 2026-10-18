@@ -7,6 +7,7 @@
 import React, { useEffect, useState } from 'react';
 import type { CronJobDefinition } from '@shared/contract';
 import type { RolePanelEntry } from '@shared/contract/roleAssets';
+import { isRoleBoundCronJob } from '@shared/cronRoleBinding';
 import type { Project } from '@shared/contract/project';
 import { suggestCronStaggerMinute } from '@shared/cronStagger';
 import { Button } from '../../primitives/Button';
@@ -22,7 +23,6 @@ import { buildCronJobInput, createDefaultCronJobDraft, type CronJobDraft } from 
 import { CronRunsOnSelector } from './CronRunsOnSelector';
 import { CronResultChannelField } from './CronResultChannel';
 import { showCronLoginWallWarning } from './cronLoginWallNotice';
-import { isRoleBoundJob } from './savedRoutineRows';
 import { SavedRoutineRestate } from './SavedRoutineRestate';
 
 export type SimpleFrequency = 'daily' | 'weekdays' | 'weekly' | 'hourly' | 'once';
@@ -132,7 +132,7 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
       );
       const created = await createJob(buildCronJobInput(draft));
       showCronLoginWallWarning(created, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
-      if (isRoleBoundJob(created)) {
+      if (isRoleBoundCronJob(created)) {
         setSavedJob(created);
         return;
       }

@@ -8,6 +8,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 import type { CronJobDefinition } from '@shared/contract';
+import { cronJobBoundRoleId } from '@shared/cronRoleBinding';
 import { Button } from '../../primitives/Button';
 import { useI18n } from '../../../hooks/useI18n';
 import { listRoles } from '../../../services/rolesClient';
@@ -15,7 +16,6 @@ import { useChannelCatalog } from './useChannelCatalog';
 import {
   buildSavedRoutineRestateRows,
   resolveSavedRoutineChannelLabel,
-  savedRoutineRoleId,
 } from './savedRoutineRows';
 
 interface SavedRoutineRestateProps {
@@ -29,7 +29,7 @@ export const SavedRoutineRestate: React.FC<SavedRoutineRestateProps> = ({ job, o
   const { t, language } = useI18n();
   const sc = t.scheduleConfirm;
   const cc = t.cronCenter;
-  const roleId = savedRoutineRoleId(job);
+  const roleId = cronJobBoundRoleId(job);
   // 角色显示名：listRoles 命中用花名；没等到（或角色已删）回落 roleId，与创建入口的
   // 选择器回落同口径，行内容不闪空。
   const [roleDisplayName, setRoleDisplayName] = useState(roleId);

@@ -79,6 +79,7 @@ const EXPECTED_ROUTES: Array<[string, string]> = [
   ['get', '/health/detail'],
   ['get', '/events'],
   ['get', '/quit-guard'],
+  ['post', '/quit-intent'],
   ['post', '/quit-guard/detach'],
   ['post', '/api/upload/temp'],
   ['get', '/api/screenshot'],
@@ -199,9 +200,10 @@ describe('web app assembly (createApp)', () => {
 
     expect(getSnapshot).toBeTypeOf('function');
     // 装配测试环境：runRegistry / 后台任务台账 / companion gateway 都为空 → 前两个
-    // 信号 false；审批信号直接来自 deps（有等审批 → 不许随壳退出）。
+    // 信号 false；审批信号直接来自 deps（有等审批 → 不许随壳退出）。armed 计数走
+    // getCronService()（与 quit-guard 同源，append 2026-10-18），空任务集合 → 0。
     const snapshot = getSnapshot!();
-    expect(snapshot).toEqual({ runningRuns: false, pairedCompanion: false, awaitingApproval: true });
+    expect(snapshot).toEqual({ runningRuns: false, pairedCompanion: false, awaitingApproval: true, armedSchedules: 0 });
     expect(shouldDaemonExit(snapshot)).toBe(false);
   });
 

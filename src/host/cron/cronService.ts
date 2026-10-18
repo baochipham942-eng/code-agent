@@ -118,6 +118,8 @@ export class CronService implements Disposable {
   private readonly failureNoticeGate = new CronFailureNoticeGate();
   /** 正在执行（含退避重试链）的 jobId：系统侧触发互斥，见 runScheduledJob。 */
   private readonly inFlightJobIds = new Set<string>();
+  /** 任务集合变化监听器（onJobsChanged 登记，notifyJobsChanged 派发）。 */
+  private readonly jobsChangedListeners = new Set<() => void>();
   private cloudRuntime = new CronCloudRuntime(
     () => {
       const config = getConfigService().getSettings().cronCloud;
@@ -274,6 +276,7 @@ export class CronService implements Disposable {
       await this.cloudRuntime.addJob(job);
     }
 
+    this.notifyJobsChanged();
     return job;
   }
 
@@ -325,6 +328,7 @@ export class CronService implements Disposable {
       await this.cloudRuntime.updateJob(updatedJob);
     }
 
+    this.notifyJobsChanged();
     return updatedJob;
   }
 
@@ -399,6 +403,7 @@ export class CronService implements Disposable {
     await deleteCronJob(jobId);
     await recordCronAutomationArchived(job.definition);
 
+    this.notifyJobsChanged();
     return true;
   }
 
@@ -448,6 +453,18 @@ export class CronService implements Disposable {
    */
   async disableJob(jobId: string): Promise<boolean> {
     return !!(await this.updateJob(jobId, { enabled: false }));
+  }
+
+  /** ADR-083 schedule-keepalive：任务增/删/改/启停后通知（daemon 据此重算去留）。返回取消订阅。 */
+  onJobsChanged(listener: () => void): () => void {
+    this.jobsChangedListeners.add(listener);
+    return () => this.jobsChangedListeners.delete(listener);
+  }
+
+  private notifyJobsChanged(): void {
+    for (const listener of this.jobsChangedListeners) {
+      try { listener(); } catch (error) { console.error('[CronService] jobs-changed listener failed:', error); }
+    }
   }
 
   /**

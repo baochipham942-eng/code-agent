@@ -71,11 +71,12 @@ export async function importBrowserStorageStateForOrigin(
     const filteredState = filterBrowserStorageStateForOrigin(rawState, siteOrigin);
     if ((!Array.isArray(filteredState.cookies) || filteredState.cookies.length === 0)
       && (!Array.isArray(filteredState.origins) || filteredState.origins.length === 0)) {
-      return false;
+      imported = false;
+    } else {
+      await fs.promises.writeFile(filteredPath, JSON.stringify(filteredState), { encoding: 'utf8', mode: 0o600 });
+      await targetBrowser.importStorageState(filteredPath);
+      imported = true;
     }
-    await fs.promises.writeFile(filteredPath, JSON.stringify(filteredState), { encoding: 'utf8', mode: 0o600 });
-    await targetBrowser.importStorageState(filteredPath);
-    imported = true;
   } catch (error) {
     primaryError = error;
   }

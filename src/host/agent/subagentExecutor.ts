@@ -531,7 +531,9 @@ export class SubagentExecutor {
         // so that partial transcript + metadata get persisted via
         // AgentTask.saveToDisk before we return failure.
         if (effectiveSignal.aborted) {
-          return handleSubagentAbort(completionDeps, { iterations, latestContextSnapshot });
+          // return await：finally 的 endRun(terminal.status) 必须在 flush 完成并把
+          // terminal 置为 'cancelled' 之后才跑；漏 await 会让取消 run 记成 failed。
+          return await handleSubagentAbort(completionDeps, { iterations, latestContextSnapshot });
         }
 
         // 预算不过就不排空：补话留在队列里，收尾才能记成未送达。

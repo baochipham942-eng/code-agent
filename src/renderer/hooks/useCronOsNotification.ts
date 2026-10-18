@@ -39,6 +39,8 @@ export function useCronOsNotification(
     let unregister: (() => Promise<void>) | undefined;
     void registerNotificationClick(() => {
       const event = lastEventRef.current;
+      // The native notification is a consent boundary only for login-wall stops;
+      // other cron notifications must never grant browser pass-through.
       const siteOrigin = event && cronLoginWallSiteOriginFromNotification(event);
       if (siteOrigin) openCronLoginWallSite(siteOrigin, event?.jobId);
       const sessionId = lastSessionIdRef.current;

@@ -287,20 +287,6 @@ export class CronService implements Disposable {
     const existingJob = this.jobs.get(jobId);
     if (!existingJob) return null;
 
-    // The renderer's explicit "在 Neo 浏览器中登录" action reuses the
-    // existing updateJob IPC route. This narrow metadata-only marker is
-    // handled by the consent helper so it cannot overwrite the rest of the
-    // job definition or be reached from runtime login-wall detection.
-    const consentOrigin = updates.metadata?.loginPassThroughOrigin;
-    if (typeof consentOrigin === 'string') {
-      await rememberCronLoginPassThroughOrigin(
-        existingJob,
-        consentOrigin,
-        (job) => this.persistJob(job),
-      );
-      return existingJob.definition;
-    }
-
     if (updates.runsOn !== undefined && updates.runsOn !== existingJob.definition.runsOn) {
       throw new Error('runsOn is immutable after creation; create a new job to change execution location.');
     }
@@ -310,10 +296,11 @@ export class CronService implements Disposable {
       existingJob.cronInstance.stop();
     }
 
+    const metadata = this.sanitizeLoginPassThroughMetadata(existingJob.definition.metadata, updates.metadata);
     const updatedJob: CronJobDefinition = {
       ...existingJob.definition,
       ...updates,
-      metadata: cronLoginWallMetadata({ action: updates.action ?? existingJob.definition.action }, updates.metadata ?? existingJob.definition.metadata), updatedAt: Date.now(),
+      metadata: cronLoginWallMetadata({ action: updates.action ?? existingJob.definition.action }, metadata), updatedAt: Date.now(),
     };
     // 重新启用已停用任务：运行计数清零、摘掉停用原因（N-CRON-BUDGET-EXPOSE）；只改 maxRuns 不动计数。
     if (updates.enabled === true && !existingJob.definition.enabled) rearmCronRunLimit(updatedJob);
@@ -339,6 +326,49 @@ export class CronService implements Disposable {
     }
 
     return updatedJob;
+  }
+
+  /**
+   * Persist login pass-through only for an explicit user consent action.
+   * updateJob deliberately filters this metadata field so routine edits cannot
+   * grant a new origin by smuggling it through a full metadata update.
+   */
+  async grantLoginPassThrough(jobId: string, siteOrigin: string): Promise<CronJobDefinition | null> {
+    const active = this.jobs.get(jobId);
+    if (!active) return null;
+    await rememberCronLoginPassThroughOrigin(
+      active,
+      siteOrigin,
+      (job) => this.persistJob(job),
+    );
+    return active.definition;
+  }
+
+  private sanitizeLoginPassThroughMetadata(
+    existingMetadata: Record<string, unknown> | undefined,
+    incomingMetadata: Record<string, unknown> | undefined,
+  ): Record<string, unknown> | undefined {
+    // JSON callers can still send null despite the TypeScript input type;
+    // retain the historical nullish-merge behavior instead of crashing while
+    // inspecting the consent marker.
+    if (!incomingMetadata || typeof incomingMetadata !== 'object' || Array.isArray(incomingMetadata)) {
+      return existingMetadata;
+    }
+
+    const existingOrigin = existingMetadata?.loginPassThroughOrigin;
+    const hasIncomingOrigin = Object.prototype.hasOwnProperty.call(incomingMetadata, 'loginPassThroughOrigin');
+    if (!hasIncomingOrigin) return incomingMetadata;
+
+    const nextMetadata = { ...incomingMetadata };
+    if (typeof existingOrigin === 'string') {
+      // Consent can be kept by an editor round-trip, but never changed through
+      // updateJob. A different value is ignored while all other fields apply.
+      nextMetadata.loginPassThroughOrigin = existingOrigin;
+    } else {
+      // No stored consent means this update cannot create one.
+      delete nextMetadata.loginPassThroughOrigin;
+    }
+    return Object.keys(nextMetadata).length > 0 ? nextMetadata : undefined;
   }
 
   /**

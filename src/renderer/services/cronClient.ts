@@ -47,11 +47,8 @@ export const cronClient = {
     return invokeCron<boolean>('deleteJob', { jobId });
   },
 
-  rememberLoginPassThroughOrigin(jobId: string, siteOrigin: string) {
-    return invokeCron<CronJobDefinition | null>('updateJob', {
-      jobId,
-      updates: { metadata: { loginPassThroughOrigin: siteOrigin } },
-    });
+  grantLoginPassThrough(jobId: string, siteOrigin: string) {
+    return invokeCron<CronJobDefinition | null>('grantLoginPassThrough', { jobId, siteOrigin });
   },
 
   triggerJob(jobId: string) {

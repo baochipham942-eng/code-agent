@@ -322,12 +322,54 @@ describe('①③ 同因失败去重后告警：单次告警 + 冷却窗', () => 
     expect(service.getJob(job.id)?.metadata).not.toHaveProperty('loginPassThroughOrigin');
 
     await service.updateJob(job.id, {
-      metadata: { loginPassThroughOrigin: 'https://a.example.test/login' },
+      metadata: { loginPassThroughOrigin: 'https://b.example.test', lastRefreshFailed: true },
     });
+    expect(service.getJob(job.id)?.metadata).not.toHaveProperty('loginPassThroughOrigin');
+    expect(service.getJob(job.id)?.metadata).toEqual(expect.objectContaining({ lastRefreshFailed: true }));
+
+    await service.grantLoginPassThrough(job.id, 'https://a.example.test/login');
     expect(service.getJob(job.id)?.metadata).toEqual(expect.objectContaining({
       loginPassThroughOrigin: 'https://a.example.test',
     }));
+
+    const editorMetadata = {
+      ...(service.getJob(job.id)?.metadata ?? {}),
+      lastRefreshFailed: true,
+      artifactRefresh: {
+        path: '/tmp/report.md',
+        instruction: 'Refresh report',
+        cadence: 'daily',
+        lastRefreshFailed: { at: 123, reason: 'artifact refresh failed' },
+      },
+    };
+    const edited = await service.updateJob(job.id, {
+      name: '编辑后的任务',
+      schedule: { type: 'every' as const, interval: 24, unit: 'hours' as const },
+      action: { type: 'agent' as const, agentType: 'default', prompt: 'Updated prompt' },
+      metadata: editorMetadata,
+    });
+    expect(edited).toEqual(expect.objectContaining({
+      name: '编辑后的任务',
+      schedule: { type: 'every', interval: 24, unit: 'hours' },
+      action: expect.objectContaining({ prompt: 'Updated prompt' }),
+      metadata: expect.objectContaining({
+        loginPassThroughOrigin: 'https://a.example.test',
+        lastRefreshFailed: true,
+        artifactRefresh: expect.objectContaining({
+          lastRefreshFailed: { at: 123, reason: 'artifact refresh failed' },
+        }),
+      }),
+    }));
+
+    // updateJob cannot grant or change consent, but still persists unrelated metadata.
+    await service.updateJob(job.id, {
+      metadata: { loginPassThroughOrigin: 'https://b.example.test', lastRefreshFailed: false },
+    });
     expect(service.getJob(job.id)?.metadata?.loginPassThroughOrigin).not.toBe('https://b.example.test');
+    expect(service.getJob(job.id)?.metadata).toEqual(expect.objectContaining({
+      loginPassThroughOrigin: 'https://a.example.test',
+      lastRefreshFailed: false,
+    }));
     await service.shutdown();
   });
 

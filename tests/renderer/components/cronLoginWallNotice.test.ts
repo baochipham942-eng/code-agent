@@ -65,6 +65,7 @@ describe('cron login-wall renderer surface', () => {
     mocks.notificationUnsubscribe.mockClear();
     mocks.notificationUnregister.mockClear();
     mocks.postOsNotification.mockClear();
+    mocks.registerNotificationClick.mockClear();
     mocks.registerNotificationClick.mockImplementation(async (handler: () => void) => {
       mocks.clickHandler = handler;
       return async () => {
@@ -122,8 +123,8 @@ describe('cron login-wall renderer surface', () => {
     await Promise.resolve();
     expect(mocks.domainInvoke).toHaveBeenCalledWith(
       IPC_DOMAINS.CRON,
-      'updateJob',
-      { jobId: 'job-1', updates: { metadata: { loginPassThroughOrigin: 'https://example.test/path' } } },
+      'grantLoginPassThrough',
+      { jobId: 'job-1', siteOrigin: 'https://example.test/path' },
     );
   });
 
@@ -147,5 +148,27 @@ describe('cron login-wall renderer surface', () => {
     expect(firstCallback).not.toHaveBeenCalled();
     view.unmount();
     await waitFor(() => expect(mocks.notificationUnregister).toHaveBeenCalledTimes(1));
+  });
+
+  it('does not grant pass-through when a non-login-wall cron notification is clicked', async () => {
+    const onOpenSession = vi.fn();
+    renderHook(() => useCronOsNotification(notificationCopy, onOpenSession));
+
+    await waitFor(() => expect(mocks.registerNotificationClick).toHaveBeenCalledTimes(1));
+    act(() => {
+      mocks.notificationHandler?.({
+        id: 'notice-2',
+        title: 'title',
+        body: 'body',
+        sessionId: 'session-2',
+        jobId: 'job-2',
+        code: 'CRON_FAILURE',
+        siteOrigin: 'https://example.test',
+      });
+      mocks.clickHandler?.();
+    });
+
+    expect(mocks.domainInvoke).not.toHaveBeenCalled();
+    expect(onOpenSession).toHaveBeenCalledWith('session-2');
   });
 });

@@ -36,6 +36,7 @@ import { MANAGED_BROWSER_DEFAULT_LEASE_TTL_MS } from '../infra/browser/managedBr
 
 const DEFAULT_PROVIDER = 'system-chrome-cdp';
 const SURFACE_PROFILE_TTL_MS = 30 * 60_000;
+const CRON_LOGIN_STATE_EXPORT_LEASE_OWNER = 'cron-login-state-export';
 
 interface BrowserResumeLogger {
   warn?(message: string, metadata?: unknown): void;
@@ -433,7 +434,7 @@ export class ManagedBrowserProviderAdapter {
           await personalBrowser.ensureSession('about:blank', {
             mode: 'headless',
             profileMode: 'persistent',
-            leaseOwner: 'cron-login-state-export',
+            leaseOwner: CRON_LOGIN_STATE_EXPORT_LEASE_OWNER,
             leaseTtlMs: MANAGED_BROWSER_DEFAULT_LEASE_TTL_MS,
           });
         }
@@ -450,11 +451,17 @@ export class ManagedBrowserProviderAdapter {
         });
       } finally {
         if (!personalBrowserWasRunning) {
-          await personalBrowser.close().catch((error) => {
-            this.resumeLogger.error('Failed to close personal browser after cron login state export', {
-              error: error instanceof Error ? error.message : String(error),
+          // A user can open the personal browser while the export is in flight.
+          // Only close the session while our temporary lease is still active;
+          // a different owner means the browser was taken over and must remain open.
+          const lease = personalBrowser.getSessionState().lease;
+          if (lease?.status === 'active' && lease.owner === CRON_LOGIN_STATE_EXPORT_LEASE_OWNER) {
+            await personalBrowser.close().catch((error) => {
+              this.resumeLogger.error('Failed to close personal browser after cron login state export', {
+                error: error instanceof Error ? error.message : String(error),
+              });
             });
-          });
+          }
           await this.releaseBrowser(MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY).catch((error) => {
             this.resumeLogger.error('Failed to release personal browser after cron login state export', {
               error: error instanceof Error ? error.message : String(error),

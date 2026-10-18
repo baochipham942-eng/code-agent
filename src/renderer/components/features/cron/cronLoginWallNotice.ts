@@ -48,7 +48,7 @@ export function openCronLoginWallSite(siteOrigin: string, jobId?: string): void 
   if (jobId) {
     // The click itself is the consent boundary. Runtime wall detection never
     // grants pass-through on its own.
-    void cronClient.rememberLoginPassThroughOrigin(jobId, siteOrigin).catch((error) => {
+    void cronClient.grantLoginPassThrough(jobId, siteOrigin).catch((error) => {
       console.warn('[cronLoginWall] Failed to persist login pass-through consent', error);
     });
   }

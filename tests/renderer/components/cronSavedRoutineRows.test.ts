@@ -10,10 +10,9 @@ import {
   isRoleBoundJob,
   resolveSavedRoutineChannelLabel,
   savedRoutineRoleId,
-  type SavedRoutineRestateLabels,
 } from '../../../src/renderer/components/features/cron/savedRoutineRows';
 
-const labels: SavedRoutineRestateLabels = {
+const labels = {
   what: '检查什么',
   when: '什么时候',
   result: '结果送到哪里',

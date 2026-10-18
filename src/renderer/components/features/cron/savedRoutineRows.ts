@@ -49,7 +49,7 @@ export function resolveSavedRoutineChannelLabel(
   return conversation ? `${account.name} · ${conversation.name}` : account.name;
 }
 
-export interface SavedRoutineRestateLabels {
+interface SavedRoutineRestateLabels {
   /** 复用 scheduleConfirm 的行标签与兜底（what/when/result/fallbackWhat/reviewInbox）。 */
   what: string;
   when: string;

@@ -31,12 +31,10 @@ import type { PlanningService } from '../planning';
 import { DeepResearchMode, SemanticResearchOrchestrator } from '../research';
 import { analyzeTask } from './hybrid/taskRouter';
 import { getSessionStateManager } from '../session/sessionStateManager';
-import { getContextHealthService } from '../context/contextHealthService';
 import { generateMessageId } from '../../shared/utils/id';
 import { createLogger } from '../services/infra/logger';
 import { getAgentRequirementsAnalyzer } from './agentRequirementsAnalyzer';
-import { getRoutingService } from '../routing';
-import type { RoutingContext, RoutingResolution } from '../../shared/contract/agentRouting';
+import type { RoutingResolution } from '../../shared/contract/agentRouting';
 import { getTelemetryCollector } from '../telemetry';
 import { isPlaceholderSessionTitle } from '../../shared/sessionTitlePlaceholder';
 import { taskComplexityAnalyzer } from '../planning/taskComplexityAnalyzer';
@@ -44,7 +42,6 @@ import type { EffortLevel } from '../../shared/contract/agent';
 import { getTaskListManager, type TaskListManager } from './taskList';
 import { getEventBus } from '../services/eventing';
 import { getComboRecorder } from '../services/skills/comboRecorder';
-import { getSessionSkillService } from '../services/skills/sessionSkillService';
 import { resolveAgent as registryResolveAgent } from './agentRegistry';
 import { buildRoutingResolvedEventData } from './routingResolvedEvent';
 import { assembleTurnDenylist } from './routingToolPolicy';
@@ -64,7 +61,7 @@ import {
 import { seedGoalContractForRun } from './orchestratorGoalSeed';
 import { resolveRoleToolBoundary, toRoleBoundaryRunAllowlist } from '../services/roleAssets/rolePersonalization';
 // Sub-modules
-import { type AgentOrchestratorConfig } from './orchestrator/types';
+import { type AgentOrchestratorConfig, type PendingSteerMessage } from './orchestrator/types';
 import {
   resolveModelConfig,
   resolveRunModelConfig,
@@ -83,36 +80,15 @@ import { resolveWorkspacePath } from '../runtime/workspaceScope';
 import { resolveSessionWorkspaceScope } from '../services/sessionFork/workspace';
 import { getAuthService } from '../services/auth/authService';
 import { getDatabase } from '../services/core/databaseService';
-import { IPC_CHANNELS } from '../../shared/ipc';
-import type { AgentNoticeEvent } from '../../shared/ipc/handlers';
 import type { WorkspaceScope } from '../../shared/contract/project';
+import { broadcastAgentNotice } from './orchestrator/agentNotice';
+import { updateContextHealthSnapshot } from './orchestrator/contextHealthSnapshot';
+import { initializeLSP, updateSkillWatcher } from './orchestrator/workspaceServices';
+import { resolveAgentRouting } from './orchestrator/agentRoutingResolver';
 
 export type { AgentOrchestratorConfig } from './orchestrator/types';
 
 const logger = createLogger('AgentOrchestrator');
-
-/**
- * agent:notice 广播（比照 inferenceProviderFallback.ts 的 broadcastAiSdkProviderFallback）。
- * 动态 import windowBridge，best-effort，不影响主链路。
- */
-async function broadcastAgentNotice(event: AgentNoticeEvent): Promise<void> {
-  try {
-    const { broadcastToRenderer } = await import('../platform/windowBridge');
-    broadcastToRenderer?.(IPC_CHANNELS.AGENT_NOTICE, event);
-  } catch {
-    /* toast 是 best-effort，不影响主链路 */
-  }
-}
-
-interface PendingSteerMessage {
-  content: string;
-  /** 用户原话；`content` 可能带 turnSystemContext 脚手架，那份只给模型。 */
-  displayContent?: string;
-  clientMessageId?: string;
-  attachments?: MessageAttachment[];
-  messageMetadata?: MessageMetadata;
-  expectedTurnId?: string;
-}
 
 // ----------------------------------------------------------------------------
 // Agent Orchestrator
@@ -265,7 +241,7 @@ export class AgentOrchestrator {
       options?.modelSpec,
     );
     if (sessionId) {
-      this.updateContextHealthSnapshot(sessionId, modelConfig.model);
+      updateContextHealthSnapshot(sessionId, modelConfig.model, this.messageHistory.getMessagesForRun());
     }
 
     // Session-aware event handler with telemetry
@@ -507,7 +483,7 @@ export class AgentOrchestrator {
     logger.info('Working directory changed to:', path);
     if (options.syncWorkspaceServices !== false) {
       // 仍然不阻塞调用方；链串到实例上，排空出口（drainWorkspaceServices）可等。
-      this.workspaceServicesChain = this.workspaceServicesChain.then(() => Promise.all([this.initializeLSP(path), this.updateSkillWatcher(path)]));
+      this.workspaceServicesChain = this.workspaceServicesChain.then(() => Promise.all([initializeLSP(path), updateSkillWatcher(path)]));
     }
   }
 
@@ -607,35 +583,6 @@ export class AgentOrchestrator {
 
   private applyHistoryVisibility(message: Message, options?: AgentRunOptions): Message {
     return this.messageHistory.applyHistoryVisibility(message, options);
-  }
-
-  private updateContextHealthSnapshot(sessionId: string, model: string): void {
-    try {
-      getContextHealthService().update(
-        sessionId,
-        this.messageHistory.getMessagesForRun().map((message) => ({
-          role: message.role,
-          content: message.content || '',
-          toolCalls: message.toolCalls,
-          toolResults: message.toolResults?.map((result) => ({
-            // N-CTXCURRENT: toolCallId 透传，构成算法据此把结果按工具名归桶
-            toolCallId: result.toolCallId,
-            output: result.output,
-            error: result.error,
-          })),
-          compaction: message.compaction,
-        })),
-        SYSTEM_PROMPT,
-        model,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        { skills: getSessionSkillService().getMountedSkillTokens(sessionId) },
-      );
-    } catch (error) {
-      logger.warn('Failed to update context health after user message:', error);
-    }
   }
 
   private async resolveSessionId(): Promise<string | null> {
@@ -986,11 +933,11 @@ export class AgentOrchestrator {
       // 会和主 run 互抢全局指针；真机上 LSP 重建还会卡住实时语音心跳。
       // 辅助 run 仍然拿到独立 runContext 和正确 cwd，只是不改写这两个全局服务。
       if (workspaceScope && options?.runRegistration !== 'auxiliary') {
-        this.initializeLSP(
+        initializeLSP(
           workspaceScope.primaryRoot,
           workspaceScope.roots.map((root) => root.path),
         );
-        this.updateSkillWatcher(workspaceScope.primaryRoot);
+        updateSkillWatcher(workspaceScope.primaryRoot);
       }
       const runLoopRef: { current?: AgentLoop } = {}; const runContext = sessionId
         ? createRunContext({
@@ -1131,36 +1078,6 @@ export class AgentOrchestrator {
     return buildLiveVoicePermissionNotice(sessionId);
   }
 
-  private async resolveAgentRouting(
-    userMessage: string,
-    sessionId?: string
-  ): Promise<RoutingResolution | null> {
-    try {
-      const routingService = getRoutingService();
-
-      if (!routingService.isInitialized()) {
-        await routingService.initialize(this.workingDirectory);
-      }
-
-      const context: RoutingContext = {
-        workingDirectory: this.workingDirectory,
-        userMessage,
-        sessionId,
-      };
-
-      const resolution = routingService.resolve(context);
-
-      if (resolution.agent.id === 'default' && resolution.score <= 0) {
-        return null;
-      }
-
-      return resolution;
-    } catch (error) {
-      logger.warn('Agent routing failed, using default', { error });
-      return null;
-    }
-  }
-
   /**
    * 一轮对话的路由解析单入口：显式选择（agentOverrideId）优先，解析失败回落自动路由，
    * 但 requestedAgentId 必须保留——它是 routing_resolved 事件里降级信号的判定依据
@@ -1180,11 +1097,11 @@ export class AgentOrchestrator {
         return { resolution: explicit, requestedAgentId };
       }
       return {
-        resolution: await this.resolveAgentRouting(content, sessionId),
+        resolution: await resolveAgentRouting(content, sessionId, this.workingDirectory),
         requestedAgentId,
       };
     }
-    return { resolution: await this.resolveAgentRouting(content, sessionId) };
+    return { resolution: await resolveAgentRouting(content, sessionId, this.workingDirectory) };
   }
 
   private resolveExplicitAgentRouting(agentId: string): RoutingResolution | null {
@@ -1197,38 +1114,5 @@ export class AgentOrchestrator {
 
   private syncAutoAgentDAGStatus(dagId: string, agentId: string, status: string): void {
     syncAutoAgentDAGStatus(dagId, agentId, status, this.broadcastDAGEvent);
-  }
-
-  // --------------------------------------------------------------------------
-  // LSP & SkillWatcher (async, non-blocking)
-  // --------------------------------------------------------------------------
-
-  private initializeLSP(workspaceRoot: string, workspaceFolders: string[] = [workspaceRoot]): Promise<void> {
-    return import('../lsp').then(async ({ initializeLSPManager, getLSPManager }) => {
-      try {
-        const existingManager = getLSPManager();
-        if (existingManager) {
-          logger.debug('LSP manager already exists, reinitializing for new workspace');
-        }
-        await initializeLSPManager(workspaceRoot, workspaceFolders);
-        logger.info('LSP initialized for workspace:', workspaceRoot);
-      } catch (error) {
-        logger.warn('LSP initialization failed (non-blocking)', { error });
-      }
-    }).catch((error: unknown) => logger.warn('Failed to import LSP module', { error }));
-  }
-
-  private updateSkillWatcher(workingDirectory: string): Promise<void> {
-    return import('../services/skills').then(async ({ getSkillWatcher }) => {
-      try {
-        const watcher = getSkillWatcher();
-        if (watcher.isInitialized()) {
-          await watcher.updateProjectDirectory(workingDirectory);
-          logger.debug('SkillWatcher updated for workspace:', workingDirectory);
-        }
-      } catch (error) {
-        logger.warn('SkillWatcher update failed (non-blocking)', { error });
-      }
-    }).catch((error: unknown) => logger.warn('Failed to import skills module', { error }));
   }
 }

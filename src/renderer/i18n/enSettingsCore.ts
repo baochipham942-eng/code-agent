@@ -34,7 +34,7 @@ export const enSettingsCore = {
       channels: 'Channels',
       roles: 'Roles',
       openchronicle: 'Screen memory',
-      externalImport: 'Import from other AI apps',
+      'external-import': 'Import from other AI apps',
       privacy: 'Privacy guard',
       mcp: 'MCP',
       plugins: 'Plugins',

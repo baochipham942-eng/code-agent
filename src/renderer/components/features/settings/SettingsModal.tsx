@@ -191,8 +191,8 @@ interface BuildSettingsTabsOptions {
   showScreenMemoryTab: boolean;
   showUpdateTab: boolean;
   hasOptionalUpdate: boolean;
-  /** 检测到其他 AI 应用来源才出现「从其他 AI 应用导入」入口（N-EXTHISTORY-IMPORT-K1A） */
-  showExternalImportTab: boolean;
+  /** 检测到其他 AI 应用来源才出现「从其他 AI 应用导入」入口（N-EXTHISTORY-IMPORT-K1A）；缺省不出现 */
+  showExternalImportTab?: boolean;
   access?: AccessSubject | null;
   installedCapabilities?: ReadonlySet<BundledHostCapabilityId>;
 }
@@ -202,7 +202,7 @@ export function buildSettingsTabGroups({
   showScreenMemoryTab,
   showUpdateTab,
   hasOptionalUpdate,
-  showExternalImportTab,
+  showExternalImportTab = false,
   access,
   installedCapabilities,
 }: BuildSettingsTabsOptions): SettingsTabGroupConfig[] {
@@ -247,7 +247,7 @@ export function buildSettingsTabGroups({
     // 记忆与隐私
     { id: 'memory', label: t.settings.tabs.memory, icon: <BrainCircuit className="w-4 h-4" /> },
     ...(showScreenMemoryTab ? [{ id: 'openchronicle' as const, label: t.settings.tabs.openchronicle, icon: <Eye className="w-4 h-4" /> }] : []),
-    ...(showExternalImportTab ? [{ id: 'external-import' as const, label: t.settings.tabs.externalImport, icon: <FolderInput className="w-4 h-4" /> }] : []),
+    ...(showExternalImportTab ? [{ id: 'external-import' as const, label: t.settings.tabs['external-import'], icon: <FolderInput className="w-4 h-4" /> }] : []),
     { id: 'privacy', label: t.settings.tabs.privacy, icon: <ShieldCheck className="w-4 h-4" /> },
     // 系统
     ...(showUpdateTab ? [{ id: 'update' as const, label: t.settings.tabs.update, icon: <Download className="w-4 h-4" />, badge: hasOptionalUpdate }] : []),

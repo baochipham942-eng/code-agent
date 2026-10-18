@@ -34,7 +34,7 @@ export const zhSettingsCore = {
       channels: '通道',
       roles: '角色',
       openchronicle: '屏幕记忆',
-      externalImport: '从其他 AI 应用导入',
+      'external-import': '从其他 AI 应用导入',
       privacy: '隐私防线',
       mcp: 'MCP',
       plugins: '插件',

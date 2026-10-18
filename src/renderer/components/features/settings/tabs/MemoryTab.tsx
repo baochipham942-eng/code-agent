@@ -344,7 +344,7 @@ async function invokeLightMemory<T>(request: LightMemoryRequest): Promise<LightM
 // ============================================================================
 
 /** 检测到其他 AI 应用来源时的导入页入口（替换原 MemoryHarnessImportSection 块）。 */
-const ExternalImportLinkSection: React.FC = () => {
+export const ExternalImportLinkSection: React.FC = () => {
   const { t } = useI18n();
   const linkText = t.settings.externalImport.memoryLink;
   const detectionStatus = useExternalImportStore((state) => state.status);

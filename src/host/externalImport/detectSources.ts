@@ -57,6 +57,12 @@ const SOURCES: SourceDescriptor[] = [
   { sourceId: 'gemini-cli', markerDir: '.gemini', adapterId: 'gemini-cli' },
 ];
 
+function skillsCategory(count: number, readOnly: boolean | undefined): ExternalImportCategoryCount {
+  return readOnly === true
+    ? { category: 'skills', count, readOnly: true }
+    : { category: 'skills', count };
+}
+
 async function directoryExists(dir: string): Promise<boolean> {
   try {
     return (await fs.stat(dir)).isDirectory();
@@ -105,11 +111,7 @@ export async function detectExternalImportSources(
         ];
         if (descriptor.skillsDir) {
           const skillCount = await countSkillFolders(path.join(homeDir, descriptor.skillsDir));
-          categories.push({
-            category: 'skills',
-            count: skillCount,
-            readOnly: descriptor.skillsReadOnly === true,
-          });
+          categories.push(skillsCategory(skillCount, descriptor.skillsReadOnly));
         }
         status.categories = categories;
       } catch (error) {
@@ -118,11 +120,10 @@ export async function detectExternalImportSources(
         status.excludedReason = `adapter-unavailable: ${error instanceof Error ? error.message : String(error)}`;
       }
     } else if (descriptor.skillsDir && status.detected) {
-      status.categories = [{
-        category: 'skills',
-        count: await countSkillFolders(path.join(homeDir, descriptor.skillsDir)),
-        readOnly: descriptor.skillsReadOnly === true,
-      }];
+      status.categories = [skillsCategory(
+        await countSkillFolders(path.join(homeDir, descriptor.skillsDir)),
+        descriptor.skillsReadOnly,
+      )];
     }
 
     sources.push(status);

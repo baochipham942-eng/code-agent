@@ -27,7 +27,7 @@ function cookieBelongsToHost(cookie: BrowserStorageStateCookie, host: string): b
 }
 
 /** 仅保留作用域属于指定站点 origin 的 cookie 与 Web Storage。 */
-export function filterBrowserStorageStateForOrigin(
+function filterBrowserStorageStateForOrigin(
   state: BrowserStorageStateLike,
   siteOrigin: string,
 ): BrowserStorageStateLike {

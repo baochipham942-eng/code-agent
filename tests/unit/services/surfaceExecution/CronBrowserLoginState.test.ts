@@ -1,14 +1,30 @@
 import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import type { BrowserService } from '../../../../src/host/services/infra/browserService';
-import {
-  filterBrowserStorageStateForOrigin,
-  importBrowserStorageStateForOrigin,
-} from '../../../../src/host/services/surfaceExecution/CronBrowserLoginState';
+import { importBrowserStorageStateForOrigin } from '../../../../src/host/services/surfaceExecution/CronBrowserLoginState';
+
+// 过滤函数不导出（knip 生产死导出棘轮）：一律经 importBrowserStorageStateForOrigin 的真实导出→过滤→导入路径测
+async function importThroughFence(exported: unknown, siteOrigin: string): Promise<Record<string, unknown> | undefined> {
+  const source = {
+    exportStorageState: vi.fn(async (filePath: string) => {
+      await fs.promises.writeFile(filePath, JSON.stringify(exported));
+      return { path: filePath, accountState: {} };
+    }),
+  } as unknown as BrowserService;
+  let imported: Record<string, unknown> | undefined;
+  const target = {
+    importStorageState: vi.fn(async (filePath: string) => {
+      imported = JSON.parse(await fs.promises.readFile(filePath, 'utf8')) as Record<string, unknown>;
+      return {};
+    }),
+  } as unknown as BrowserService;
+  await importBrowserStorageStateForOrigin(source, target, siteOrigin);
+  return imported;
+}
 
 describe('cron browser login state origin fence', () => {
-  it('keeps only the requested origin cookies and Web Storage', () => {
-    const filtered = filterBrowserStorageStateForOrigin({
+  it('keeps only the requested origin cookies and Web Storage', async () => {
+    const filtered = await importThroughFence({
       cookies: [
         { name: 'target', value: 'yes', domain: 'example.test', path: '/' },
         { name: 'leading-dot-host', value: 'yes', domain: '.example.test', path: '/' },

@@ -97,6 +97,25 @@ export function validateReport(expected, report, root) {
 }
 
 /**
+ * FB-409：vitest 红时从 json 报告摘出失败用例（文件::用例: 首行信息），供 FAIL 行与回执 error 直接定位。
+ * 报告缺失或读不了返回 []，不掩盖原始失败。
+ */
+export function summarizeVitestFailures(report, root, limit = 3) {
+  const lines = [];
+  for (const result of report?.testResults ?? []) {
+    const file = path.relative(root, result.name ?? '').split(path.sep).join('/');
+    const failed = (result.assertionResults ?? []).filter((test) => test.status === 'failed');
+    for (const test of failed) {
+      const first = String(test.failureMessages?.[0] ?? '').split('\n').find((line) => line.trim()) ?? '';
+      lines.push(`${file}::${test.fullName ?? test.title}: ${first.trim().slice(0, 200)}`);
+    }
+    if (!failed.length && result.status === 'failed') lines.push(`${file}: ${String(result.message ?? 'suite failed').split('\n')[0].trim().slice(0, 200)}`);
+  }
+  for (const error of report?.unhandledErrors ?? []) lines.push(`unhandled: ${String(error?.message ?? error).slice(0, 200)}`);
+  return lines.length > limit ? [...lines.slice(0, limit), `…+${lines.length - limit} more`] : lines;
+}
+
+/**
  * Run-start vs run-end snapshot comparison. baseSha in both snapshots is the
  * SHA resolved once at start-up and then frozen — the base ref is never
  * re-resolved — so a concurrent `git fetch` fast-forwarding the shared

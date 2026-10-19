@@ -77,8 +77,8 @@ const DEFAULT_CONFIG: ToolConfirmationConfig = {
 
 export class ConfirmationGate {
   private config: ToolConfirmationConfig;
-  /** sessionId -> Set<toolNameOrPattern> */
-  private sessionApprovals = new Map<string, Set<string>>();
+  /** sessionId -> (toolNameOrPattern -> 批准时刻)。台账（N-PERM-GRANT-LEDGER）要显示日期。 */
+  private sessionApprovals = new Map<string, Map<string, number>>();
 
   constructor(config?: Partial<ToolConfirmationConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -309,13 +309,29 @@ export class ConfirmationGate {
   }
 
   /**
-   * 记录用户批准
+   * 记录用户批准。approvedAt 可注入（时间戳纪律：缺省才落 Date.now()）。
    */
-  recordApproval(sessionId: string, toolName: string): void {
+  recordApproval(sessionId: string, toolName: string, approvedAt: number = Date.now()): void {
     if (!this.sessionApprovals.has(sessionId)) {
-      this.sessionApprovals.set(sessionId, new Set());
+      this.sessionApprovals.set(sessionId, new Map());
     }
-    this.sessionApprovals.get(sessionId)!.add(toolName);
+    this.sessionApprovals.get(sessionId)!.set(toolName, approvedAt);
+  }
+
+  /** 台账消费（N-PERM-GRANT-LEDGER）：摊平列出所有会话内工具放行。 */
+  listSessionApprovals(): Array<{ sessionId: string; tool: string; grantedAt: number }> {
+    const items: Array<{ sessionId: string; tool: string; grantedAt: number }> = [];
+    for (const [sessionId, tools] of this.sessionApprovals) {
+      for (const [tool, grantedAt] of tools) {
+        items.push({ sessionId, tool, grantedAt });
+      }
+    }
+    return items;
+  }
+
+  /** 台账撤权（N-PERM-GRANT-LEDGER）：撤掉一条会话内放行，下一次同类操作重新询问。 */
+  revokeSessionApproval(sessionId: string, tool: string): boolean {
+    return this.sessionApprovals.get(sessionId)?.delete(tool) ?? false;
   }
 
   /**

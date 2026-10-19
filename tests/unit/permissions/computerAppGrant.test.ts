@@ -15,10 +15,12 @@ import {
 import {
   bindAppGrantDatabase,
   listAppGrants,
+  listAppSessionGrants,
   matchAppGrant,
   mintAppGrantSession,
   mintAppGrantStanding,
   revokeAppGrant,
+  revokeAppSessionGrant,
 } from '../../../src/host/permissions/appGrantStore';
 import { resolvePreAskGrant } from '../../../src/host/permissions/preAskGrant';
 import { hasNeedsInputForSession, isToolCallAwaitingApproval } from '../../../src/renderer/utils/sessionNeedsInput';
@@ -116,6 +118,59 @@ describe('app grant store', () => {
     const row = full.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'app_permission_grants'").get() as { name: string };
     expect(row.name).toBe('app_permission_grants');
     full.close();
+  });
+
+  it('expired standing grants are neither matched nor listed (injected clock)', () => {
+    const T0 = 1_700_000_000_000;
+    const EXPIRY = T0 + 10_000;
+    mintAppGrantStanding({ name: 'Notes' }, T0, EXPIRY);
+    mintAppGrantStanding({ name: 'Safari' }, T0);
+    expect(matchAppGrant('s1', { name: 'Notes' }, T0 + 5_000)).toBe(true);
+    expect(matchAppGrant('s1', { name: 'Notes' }, EXPIRY)).toBe(false);
+    expect(listAppGrants(T0 + 5_000).map((row) => row.name)).toEqual(['Notes', 'Safari']);
+    expect(listAppGrants(EXPIRY).map((row) => row.name)).toEqual(['Safari']);
+  });
+
+  it('session-map entries are listed and revocable without touching the standing table', () => {
+    const T0 = 1_700_000_000_000;
+    mintAppGrantSession('conv-1', { name: 'Notes' }, T0);
+    mintAppGrantStanding({ name: 'Safari' }, T0);
+    expect(listAppSessionGrants()).toEqual([
+      { sessionId: 'conv-1', appKey: 'name:notes', name: 'Notes', grantedAt: T0 },
+    ]);
+    expect(revokeAppSessionGrant('conv-1', 'name:notes')).toBe(true);
+    expect(revokeAppSessionGrant('conv-1', 'name:notes')).toBe(false);
+    expect(matchAppGrant('conv-1', { name: 'Notes' }, T0 + 1)).toBe(false);
+    // 撤会话授权不碰常驻表。
+    expect(listAppGrants(T0 + 1).map((row) => row.name)).toEqual(['Safari']);
+  });
+
+  it('expires_at migration is idempotent on a database created before the column existed', () => {
+    // 老库形状：建表没有 expires_at。
+    const legacy = new Database(':memory:');
+    legacy.exec(`
+      CREATE TABLE app_permission_grants (
+        app_key TEXT PRIMARY KEY,
+        bundle_id TEXT,
+        app_name TEXT NOT NULL,
+        granted_at INTEGER NOT NULL
+      )
+    `);
+    legacy.prepare(`
+      INSERT INTO app_permission_grants (app_key, bundle_id, app_name, granted_at)
+      VALUES ('name:notes', NULL, 'Notes', 1)
+    `).run();
+    // 升级跑两遍（幂等），不抛错、列只补一次。
+    expect(() => applyAppGrantsSchema(legacy, logger)).not.toThrow();
+    expect(() => applyAppGrantsSchema(legacy, logger)).not.toThrow();
+    const columns = legacy.prepare('PRAGMA table_info(app_permission_grants)').all() as Array<{ name: string }>;
+    expect(columns.filter((column) => column.name === 'expires_at')).toHaveLength(1);
+    // 老行可读，expiresAt 为 null（不过期）。
+    bindAppGrantDatabase(legacy, true);
+    expect(listAppGrants(Date.now())).toEqual([
+      { appKey: 'name:notes', name: 'Notes', grantedAt: 1, expiresAt: null },
+    ]);
+    legacy.close();
   });
 });
 

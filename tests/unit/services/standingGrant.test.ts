@@ -147,4 +147,42 @@ describe('B4 standing grant — match / mint / 撤权', () => {
     state.db!.prepare('UPDATE session_automations SET status = ? WHERE source_ref_id = ?').run('completed', SOURCE_REF);
     expect(svc.matchStandingGrant(RUN_SESSION, TOOL, TARGET)).toBe(false);
   });
+
+  it('④ 带 expiresAt 的规则到期即不命中（注入时钟），未到期照常命中', () => {
+    insertAutomation(state.db!, 'active', {
+      standingGrants: [{ tool: TOOL, target: TARGET, grantedAt: 1000, expiresAt: 5000 }],
+    });
+    expect(svc.matchStandingGrant(RUN_SESSION, TOOL, TARGET, 4999)).toBe(true);
+    expect(svc.matchStandingGrant(RUN_SESSION, TOOL, TARGET, 5000)).toBe(false);
+  });
+
+  it('listStandingGrantEntries 摊平列出 active automation 的规则，过期与非活跃不列', () => {
+    insertAutomation(state.db!, 'active', {
+      standingGrants: [
+        { tool: TOOL, target: TARGET, grantedAt: 1000 },
+        { tool: TOOL, target: 'expired@x.com', grantedAt: 1000, expiresAt: 2000 },
+      ],
+    });
+    state.db!.prepare(`
+      INSERT INTO session_automations
+        (id, source_session_id, type, status, title, source_ref_id, config_json, created_at, updated_at)
+      VALUES ('cron:archived', 'src-session', 'cron', 'archived', 'demo2', 'cron-def-2', ?, 1, 1)
+    `).run(JSON.stringify({ standingGrants: [{ tool: TOOL, target: 'gone@x.com', grantedAt: 1000 }] }));
+    const entries = svc.listStandingGrantEntries(3000);
+    expect(entries).toEqual([
+      { automationId: 'cron:cron-def-1', title: 'demo', grant: { tool: TOOL, target: TARGET, grantedAt: 1000 } },
+    ]);
+  });
+
+  it('revokeStandingGrant 按 (automationId, tool, target) 删一条，幂等返回 false', () => {
+    insertAutomation(state.db!, 'active');
+    svc.mintStandingGrant(RUN_SESSION, TOOL, TARGET, 1000);
+    const id = svc.getBySourceRefId(SOURCE_REF)!.id;
+    expect(svc.revokeStandingGrant(id, TOOL, TARGET)).toBe(true);
+    expect(svc.matchStandingGrant(RUN_SESSION, TOOL, TARGET)).toBe(false);
+    expect(svc.revokeStandingGrant(id, TOOL, TARGET)).toBe(false);
+    // config_json 里不再残留空数组。
+    const config = svc.getBySourceRefId(SOURCE_REF)!.config;
+    expect(config && 'standingGrants' in config).toBe(false);
+  });
 });

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BrowserService } from '../../../../src/host/services/infra/browserService';
 import { RunRegistry } from '../../../../src/host/runtime/runRegistry';
 import {
@@ -21,6 +21,23 @@ import {
   SecureBrowserResumeStateStore,
   type BrowserResumeStateStore,
 } from '../../../../src/host/services/surfaceExecution/BrowserResumeStateStore';
+
+const cronMocks = vi.hoisted(() => ({
+  getSession: vi.fn(async () => undefined),
+  importBrowserStorageStateForOrigin: vi.fn(async (..._args: [BrowserService, BrowserService, string]) => undefined),
+}));
+
+vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
+  getSessionManager: () => ({ getSession: cronMocks.getSession }),
+}));
+vi.mock('../../../../src/host/services/surfaceExecution/CronBrowserLoginState', () => ({
+  importBrowserStorageStateForOrigin: cronMocks.importBrowserStorageStateForOrigin,
+}));
+
+afterEach(() => {
+  cronMocks.getSession.mockReset().mockResolvedValue(undefined);
+  cronMocks.importBrowserStorageStateForOrigin.mockReset().mockResolvedValue(undefined);
+});
 
 function createMemorySecureStorage() {
   const values = new Map<string, string>();
@@ -47,13 +64,16 @@ function createFakeBrowser(failSnapshotAt?: number, options?: {
   cookies?: string[];
 }) {
   let running = false;
+  let leaseOwner: string | undefined;
   let snapshot = 0;
-  const ensureSession = vi.fn(async () => {
+  const ensureSession = vi.fn(async (_url?: string, launchOptions?: { leaseOwner?: string }) => {
     running = true;
+    leaseOwner = launchOptions?.leaseOwner || 'managed-browser';
     return {};
   });
   const close = vi.fn(async () => {
     running = false;
+    leaseOwner = undefined;
   });
   const sessionChangedListeners = new Set<(reason: string) => void>();
   const cookies = new Set(options?.cookies || []);
@@ -83,6 +103,17 @@ function createFakeBrowser(failSnapshotAt?: number, options?: {
       provider: 'system-chrome-cdp',
       running,
       tabCount: running ? 1 : 0,
+      lease: leaseOwner
+        ? {
+          leaseId: 'lease-for-test',
+          owner: leaseOwner,
+          acquiredAtMs: 1,
+          lastHeartbeatAtMs: 1,
+          expiresAtMs: Number.MAX_SAFE_INTEGER,
+          ttlMs: 30 * 60_000,
+          status: 'active' as const,
+        }
+        : null,
       activeTab: running
         ? {
           id: 'managed-tab-1',
@@ -567,7 +598,7 @@ describe('ManagedBrowserProviderAdapter', () => {
       clearConversation: vi.fn(async () => undefined),
       activateConversation: vi.fn(),
     };
-    const resumeLogger = { error: vi.fn() };
+    const resumeLogger = { warn: vi.fn(), error: vi.fn() };
     const adapter = new ManagedBrowserProviderAdapter(
       runtime,
       () => fake.service,
@@ -663,7 +694,7 @@ describe('ManagedBrowserProviderAdapter', () => {
     });
     const source = createFakeBrowser(undefined, { cookies: ['login'] });
     const target = createFakeBrowser();
-    const resumeLogger = { error: vi.fn() };
+    const resumeLogger = { warn: vi.fn(), error: vi.fn() };
 
     try {
       await resumeStore.exportForConversation('conversation-a', source.service);
@@ -721,6 +752,58 @@ describe('ManagedBrowserProviderAdapter', () => {
     expect(resumeStore.importForConversation).toHaveBeenCalledWith(identity.conversationId, fake.service);
     expect(fake.importStorageState).not.toHaveBeenCalled();
     expect(fake.ensureSession).toHaveBeenCalledOnce();
+  });
+
+  it('does not close a personal browser taken over by the user during cron state export', async () => {
+    const registry = new RunRegistry();
+    registry.start({ runId: 'run-a', sessionId: 'conversation-a', workspace: process.cwd() });
+    const runtime = new SurfaceExecutionRuntime({ runRegistry: registry });
+    const managed = createFakeBrowser();
+    const personal = createFakeBrowser();
+    const identity: SurfaceRuntimeIdentityV1 = {
+      conversationId: 'conversation-a',
+      runId: 'run-a',
+      agentId: 'agent-a',
+    };
+    const release = vi.fn(async () => undefined);
+    const acquire = vi.fn((serviceKey: string | null) => (
+      serviceKey === null ? personal.service : managed.service
+    ));
+    cronMocks.getSession.mockResolvedValue({
+      origin: {
+        kind: 'cron',
+        metadata: { loginPassThroughOrigin: 'https://example.test' },
+      },
+    } as never);
+    cronMocks.importBrowserStorageStateForOrigin.mockImplementationOnce(async (source) => {
+      // The user opens Neo Browser while the export is still in progress. The
+      // user lease takes over the shared service before our cleanup runs.
+      await source.ensureSession('about:blank', {
+        profileMode: 'persistent',
+        leaseOwner: 'user-personal-browser',
+      });
+    });
+    const adapter = new ManagedBrowserProviderAdapter(
+      runtime,
+      acquire,
+      release,
+      createNoopResumeStore(),
+    );
+
+    const result = await adapter.execute({
+      identity,
+      operationId: 'cron-login-wall',
+      action: 'get_dom_snapshot',
+      params: { action: 'get_dom_snapshot' },
+      async executeProvider(_signal, browserService) {
+        return { success: true, metadata: { domSnapshot: await browserService.getDomSnapshot() } };
+      },
+    });
+
+    expect(result.success).toBe(true);
+    expect(cronMocks.importBrowserStorageStateForOrigin).toHaveBeenCalledOnce();
+    expect(personal.close).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledWith(MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY);
   });
 
   it('shares one physical browser within a conversation while preserving separate run owners', async () => {

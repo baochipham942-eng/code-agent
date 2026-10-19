@@ -42,7 +42,6 @@ Artifact / replay / eval evidence
 | Eval adapter | `src/host/evaluation/experimentAdapter.ts` | replay-backed case 转成 quality report，并把 artifact issues 绑到 `UnifiedTraceIdentity` |
 | Game verifier | `src/host/agent/runtime/game/*` | generated game subtype checker、runtime evidence 和 repair issue codes |
 | Deck verifier | `src/host/agent/runtime/deck/DeckVerifier.ts` | deck schema / narrative probes |
-| Dashboard verifier | `src/host/agent/runtime/dashboard/DashboardVerifier.ts` | HTML probes、browser visual smoke、interaction probes |
 | Browser visual smoke | `src/host/agent/runtime/browser/visualSmoke.ts` | desktop/mobile viewport、console/page errors、canvas 非空、overflow |
 | Repair guard | `src/host/agent/runtime/repair/*` | repair scope、monotonicity、prompt limit 和修复轮次限制 |
 
@@ -52,8 +51,8 @@ Artifact / replay / eval evidence
 |------|----------|----------|------|
 | game | `gameArtifactValidator.ts` + `runtime/game/*` | subtype checker + runtime evidence + repair codes | Platformer / Runner / Breakout 通过 registry 扩展；game skill loader 只按 subtype 暴露规则 |
 | deck | `runtime/deck/DeckVerifier.ts` | schema probe + declarative / imperative narrative probes | 替代旧 `validateNarrative`，并接入 `pptGenerate` |
-| dashboard / interactive app | `runtime/dashboard/*` + `GeneralDashboardChecker` | HTML probes + browser visual smoke + interaction probes | `state_change_on_click` 用来拦截只长得像可交互的假 dashboard |
-| browser visual smoke | `runtime/browser/visualSmoke.ts` | desktop/mobile viewport、console/page errors、canvas 非空、overflow | 供 dashboard 和 game 共享真实浏览器证据 |
+| dashboard / interactive app | 共享 `runtime/browser/artifactPreviewHealth*` 预览体检 | 多 viewport 确定性检查 | `html_incomplete`（截断）与 `button_no_response`（反 Potemkin 点击探针）并入共享预览体检；独立 dashboard verifier 已删除 |
+| browser visual smoke | `runtime/browser/visualSmoke.ts` | desktop/mobile viewport、console/page errors、canvas 非空、overflow | 供 game 等共享真实浏览器证据 |
 
 ## 评测侧：artifact_runnable 断言家族
 

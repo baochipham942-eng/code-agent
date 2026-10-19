@@ -154,6 +154,65 @@ describe('button_no_response click probe', () => {
     expect(summary.findings.map((finding) => finding.code)).not.toContain('button_no_response');
   }, 60_000);
 
+  it('does not flag an anchor-nav button that only smooth-scrolls the window (scroll arm)', async () => {
+    const filePath = await writeFixture('anchor-nav.html', [
+      '<!doctype html><html><head><title>anchor nav</title></head><body>',
+      '<main data-preview-root">',
+      '<h1>Anchor nav page</h1>',
+      '<nav><button id="nav-far">Jump to far section</button></nav>',
+      '<section id="sec-intro"><p>Intro section text.</p></section>',
+      '<div style="height:2000px">tall filler</div>',
+      '<section id="far"><h2>Far target</h2><p>Target section text.</p></section>',
+      '<div style="height:2000px">tall filler</div>',
+      '</main>',
+      '<script>',
+      'document.getElementById("nav-far").addEventListener("click", function () {',
+      '  document.getElementById("far").scrollIntoView({ behavior: "smooth" });',
+      '});',
+      '</script>',
+      '</body></html>',
+    ].join('\n'));
+
+    const summary = await runHealth(filePath);
+
+    expect(summary.diagnostics?.buttonClick?.checked).toBe(true);
+    expect(summary.diagnostics?.buttonClick?.mutations).toBe(0);
+    expect(summary.diagnostics?.buttonClick?.textChanged).toBe(false);
+    expect(summary.diagnostics?.buttonClick?.responded).toBe(true);
+    expect(summary.diagnostics?.buttonClick?.scrollDelta).toBeGreaterThanOrEqual(2);
+    expect(summary.findings.map((finding) => finding.code)).not.toContain('button_no_response');
+  }, 60_000);
+
+  it('does not flag a button that only scrolls an overflow:auto ancestor (scroll arm)', async () => {
+    const filePath = await writeFixture('pane-nav.html', [
+      '<!doctype html><html><head><title>pane nav</title></head><body>',
+      '<main data-preview-root">',
+      '<h1>Inner scroller page</h1>',
+      '<div id="pane" style="height:300px; overflow:auto;">',
+      '<nav><button id="nav-in">Jump inside pane</button></nav>',
+      '<div style="height:400px">pane filler</div>',
+      '<p id="far-pane">Target paragraph inside pane.</p>',
+      '<div style="height:400px">pane filler</div>',
+      '</div>',
+      '</main>',
+      '<script>',
+      'document.getElementById("nav-in").addEventListener("click", function () {',
+      '  document.getElementById("far-pane").scrollIntoView({ behavior: "smooth" });',
+      '});',
+      '</script>',
+      '</body></html>',
+    ].join('\n'));
+
+    const summary = await runHealth(filePath);
+
+    expect(summary.diagnostics?.buttonClick?.checked).toBe(true);
+    expect(summary.diagnostics?.buttonClick?.mutations).toBe(0);
+    expect(summary.diagnostics?.buttonClick?.textChanged).toBe(false);
+    expect(summary.diagnostics?.buttonClick?.responded).toBe(true);
+    expect(summary.diagnostics?.buttonClick?.scrollDelta).toBeGreaterThanOrEqual(2);
+    expect(summary.findings.map((finding) => finding.code)).not.toContain('button_no_response');
+  }, 60_000);
+
   it('does not flag a page with no <button> at all', async () => {
     const filePath = await writeFixture('no-button.html', [
       '<!doctype html><html><head><title>none</title></head><body>',

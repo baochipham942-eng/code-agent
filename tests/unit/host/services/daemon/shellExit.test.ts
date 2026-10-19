@@ -74,6 +74,13 @@ describe('webServer 接线（静态钉，win32 真机不可达）', () => {
     expect(src).toContain('stdinEofIsQuitCommand: eofIsQuitCommand');
     expect(src).toContain('backgroundContinueDetachArmed()');
   });
+
+  it('EOF 判据与 rechecker 都带上壳声明的退出意图，留守状态文件也接线（append 2026-10-18）', () => {
+    const src = fs.readFileSync(path.join(process.cwd(), 'src/web/webServer.ts'), 'utf8');
+    expect(src).toContain('getQuitIntent: getDaemonQuitIntent');
+    expect(src).toContain('getDaemonQuitIntent())');
+    expect(src).toContain('createDaemonResidencyReporter({');
+  });
 });
 
 describe('createDaemonExitRechecker（返修 Important 1 回归）', () => {
@@ -121,6 +128,53 @@ describe('createDaemonExitRechecker（返修 Important 1 回归）', () => {
     expect(shutdown).not.toHaveBeenCalled();
     snapshot = idle;
     expect(rechecker.recheck()).toBe(true);
+    expect(shutdown).toHaveBeenCalledOnce();
+  });
+});
+
+describe('createDaemonExitRechecker + 退出意图（ADR-083 append 2026-10-18）', () => {
+  const scheduleOnly = { runningRuns: false, pairedCompanion: false, awaitingApproval: false, armedSchedules: 1 };
+
+  it('stop + run 在忙：EOF 立即优雅停机（排空交给 shutdown，不留守）', () => {
+    const shutdown = vi.fn();
+    const rechecker = createDaemonExitRechecker({
+      platform: 'darwin',
+      getSnapshot: () => busy,
+      shutdown,
+      stdinEofIsQuitCommand: () => false,
+      getQuitIntent: () => 'stop',
+    });
+    expect(rechecker.onShellPipeClosed()).toBe(true);
+    expect(shutdown).toHaveBeenCalledOnce();
+  });
+
+  it('background + 只有 armed schedules：EOF 留守；最后一个任务消失后 recheck 停机（⑤决策层）', () => {
+    let snapshot = scheduleOnly;
+    const shutdown = vi.fn();
+    const rechecker = createDaemonExitRechecker({
+      platform: 'darwin',
+      getSnapshot: () => snapshot,
+      shutdown,
+      stdinEofIsQuitCommand: () => false,
+      getQuitIntent: () => 'background',
+    });
+    expect(rechecker.onShellPipeClosed()).toBe(false);
+    expect(shutdown).not.toHaveBeenCalled();
+    snapshot = { ...scheduleOnly, armedSchedules: 0 };
+    expect(rechecker.recheck()).toBe(true);
+    expect(shutdown).toHaveBeenCalledOnce();
+  });
+
+  it('无意图（none）+ 只有 armed schedules：EOF 随壳退出（今日行为回归钉）', () => {
+    const shutdown = vi.fn();
+    const rechecker = createDaemonExitRechecker({
+      platform: 'darwin',
+      getSnapshot: () => scheduleOnly,
+      shutdown,
+      stdinEofIsQuitCommand: () => false,
+      getQuitIntent: () => 'none',
+    });
+    expect(rechecker.onShellPipeClosed()).toBe(true);
     expect(shutdown).toHaveBeenCalledOnce();
   });
 });

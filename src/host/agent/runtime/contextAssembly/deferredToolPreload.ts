@@ -75,12 +75,12 @@ export function getDeferredToolsToPreloadForTurn(
     COMPUTER_INTENT_RE.test(userText) ||
     MEETING_DESKTOP_CONTEXT_RE.test(userText)
   ) {
-    tools.add('Computer');
+    tools.add('computer_use');
   }
 
   if (intent?.browserSessionMode === 'managed' && intent.allowBrowserAutomation !== false) {
     tools.add('Browser');
-    tools.add('Computer');
+    tools.add('computer_use');
   } else if (intent?.allowBrowserAutomation !== false && BROWSER_INTERACTIVE_INTENT_RE.test(userText)) {
     tools.add('Browser');
   }

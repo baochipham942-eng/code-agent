@@ -1,3 +1,4 @@
+import * as path from 'path';
 import type { DecisionStep } from '../../shared/contract/decisionTrace';
 import { createTraceStep } from '../security/decisionTraceBuilder';
 import { parseShellCommand, qualificationExecutions, type ShellExecution } from '../security/commandParse';
@@ -9,17 +10,28 @@ interface ImmediateAsk {
   cached: false;
   riskUnknown?: true;
   traceStep: DecisionStep;
+  trustBoundary?: true;
 }
 
 interface PermissionCommandInspection {
   execution?: ShellExecution;
   outputRedirectionAsk?: ImmediateAsk;
   parseFailureAsk?: ImmediateAsk;
+  untrustedShellIdentityAsk?: ImmediateAsk;
   packageManager: boolean;
   changeDirectory: boolean;
 }
 
 const PACKAGE_MANAGER_PROGRAMS = new Set(['npm', 'npx', 'pnpm', 'yarn']);
+
+/**
+ * Shell interpreters that reach qualification as the executed program (basename view).
+ * qualifySegments only unwraps a bare `bash|sh|zsh -c/-lc`; any other spelling — `./bash`,
+ * `/usr/bin/bash`, `bash --rcfile … -ic …` — keeps the interpreter itself as the program.
+ * Such a command runs arbitrary caller-chosen shell startup/code paths, so it is a rule-level
+ * trust-boundary ask and must never be narrowed by the Jev tier (N-JEV-DEFAULT-ON-CONSENT ①).
+ */
+const UNTRUSTED_SHELL_BASENAMES = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'fish']);
 
 /**
  * Failing to understand a command is not evidence that it is safe. A verdict reached on the whole
@@ -45,6 +57,11 @@ export function inspectPermissionCommand(command: string, startTime: number): Pe
     target.source === 'redirect' && target.path !== '/dev/null')
     ? '命令包含文件输出重定向，需要用户确认'
     : undefined;
+  const untrustedShell = qualified?.find((candidate) =>
+    UNTRUSTED_SHELL_BASENAMES.has(path.posix.basename(candidate.program)));
+  const shellIdentityReason = untrustedShell
+    ? `未限定的 shell 解释器身份需要用户确认: ${untrustedShell.program}`
+    : undefined;
   return {
     execution,
     packageManager: Boolean(execution && PACKAGE_MANAGER_PROGRAMS.has(execution.program)),
@@ -63,6 +80,15 @@ export function inspectPermissionCommand(command: string, startTime: number): Pe
         traceStep: createTraceStep(
           'permission_classifier', 'B0: shared_shell_parse', 'ask', parseReason, startTime,
         ),
+      },
+    } : {}),
+    ...(shellIdentityReason ? {
+      untrustedShellIdentityAsk: {
+        decision: 'ask', reason: shellIdentityReason, confidence: 1, cached: false,
+        traceStep: createTraceStep(
+          'permission_classifier', 'B1: untrusted_shell_identity', 'ask', shellIdentityReason, startTime,
+        ),
+        trustBoundary: true,
       },
     } : {}),
   };

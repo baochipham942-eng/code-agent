@@ -50,7 +50,7 @@ export function extractCurrentTurnCapabilityScope(
   };
 }
 
-export function extractCurrentTurnWorkbenchSnapshot(
+function extractCurrentTurnWorkbenchSnapshot(
   projection: TraceProjection,
 ): TurnWorkbenchSnapshot | null {
   const currentTurn = projection.turns[projection.turns.length - 1];

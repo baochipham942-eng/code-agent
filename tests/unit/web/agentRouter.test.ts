@@ -4214,7 +4214,7 @@ describe('createAgentRouter', () => {
     expect(agentEngineMocks.enqueueReviewSession).not.toHaveBeenCalled();
   });
 
-  it('opens a per-session work folder for a first-run session with no working directory (N-DELIVERABLE-WORKDIR-DEFAULT)', async () => {
+  it('plans (without creating) a per-session work folder for a first-run session with no working directory (N-DELIVERABLE-WORKDIR-LAZY)', async () => {
     await closeServer();
     // 开按会话目录要求 DB 健康（rework r1：粘不住就不开）
     setDbAvailable(true);
@@ -4245,15 +4245,17 @@ describe('createAgentRouter', () => {
     expect(response.ok).toBe(true);
     await response.text();
 
-    // 不再落 HOME，也不再是扁平默认目录本身：嵌套数据目录旁边开按会话子目录
-    //（ui.language=zh 档；无标题 → 首条用户消息前 20 字符）
+    // 不再落 HOME，也不再是扁平默认目录本身：嵌套数据目录旁边**规划**按会话子目录
+    //（ui.language=zh 档；无标题 → 首条用户消息第一个分句）
     const now = new Date();
     const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
     const expectedDir = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
     expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({
       project: expectedDir,
     }));
-    expect(existsSync(expectedDir)).toBe(true);
+    // 懒开：纯规划不落盘——本轮没有写工具（loop 被 mock），连默认根都不出现
+    expect(existsSync(expectedDir)).toBe(false);
+    expect(existsSync(`${tempDataDir}-work`)).toBe(false);
   });
 
   it('sanitizes illegal characters from the session title and appends -2 on collision (N-DELIVERABLE-WORKDIR-DEFAULT)', async () => {
@@ -4405,6 +4407,98 @@ describe('createAgentRouter', () => {
     }));
   });
 
+  // N-DELIVERABLE-WORKDIR-LAZY：首轮目录名取首条消息的第一个分句（智能标题要几十秒后才
+  // 落库）。目录仍未落盘且智能标题已可用时，后续轮次按标题重规划并回写（「只补空」规则
+  // 的唯一例外），盘上零改动；本轮运行目录切到新规划路径。
+  it('re-plans an unmaterialized per-session folder with the smart title on a later turn (N-DELIVERABLE-WORKDIR-LAZY)', async () => {
+    await closeServer();
+    setDbAvailable(true);
+
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    const now = new Date();
+    const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    // 首轮按分句规划、已回写、还没落盘；第二轮智能标题已就位
+    const plannedFromClause = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
+    const replanned = `${tempDataDir}-work/任务_${mmdd}_季度总结报告`;
+    const updateSession = vi.fn(async () => undefined);
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        getSession: vi.fn(async () => ({
+          workingDirectory: plannedFromClause,
+          title: '季度总结报告',
+          messages: [{ id: 'prior-user-1', role: 'user', content: '帮我出一份季度总结', timestamp: 1 }],
+        })),
+        updateSession,
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '第二轮补充数据', sessionId: 'session-replan-title' }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+    expect(updateSession).toHaveBeenCalledWith('session-replan-title', expect.objectContaining({
+      workingDirectory: replanned,
+    }));
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({
+      project: replanned,
+    }));
+    // 重规划不落盘：盘上仍然一个目录都没有
+    expect(existsSync(`${tempDataDir}-work`)).toBe(false);
+  });
+
+  // 已落盘的目录名是最终名：智能标题就位也不改写（盘上有产物，改名等于断链）。
+  it('keeps a materialized per-session folder name even after the smart title arrives (N-DELIVERABLE-WORKDIR-LAZY)', async () => {
+    await closeServer();
+    setDbAvailable(true);
+
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(async () => undefined),
+      cancel: mockCancel,
+    }));
+
+    const now = new Date();
+    const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const materializedFolder = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
+    mkdirSync(materializedFolder, { recursive: true });
+    writeFileSync(join(materializedFolder, '既有产物.md'), 'keep');
+    const updateSession = vi.fn(async (_sessionId: string, _updates: Record<string, unknown>) => undefined);
+    await startAgentApi({
+      tryGetSessionManager: async () => ({
+        getMessages: vi.fn(async () => []),
+        getSession: vi.fn(async () => ({
+          workingDirectory: materializedFolder,
+          title: '季度总结报告',
+          messages: [{ id: 'prior-user-1', role: 'user', content: '帮我出一份季度总结', timestamp: 1 }],
+        })),
+        updateSession,
+      }),
+    });
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '第二轮补充数据', sessionId: 'session-replan-materialized' }),
+    });
+
+    expect(response.ok).toBe(true);
+    await response.text();
+    // 状态更新（running/completed）照常，但目录值绝不被改写
+    expect(updateSession.mock.calls.every(([, updates]) => !('workingDirectory' in (updates ?? {})))).toBe(true);
+    expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({
+      project: materializedFolder,
+    }));
+    expect(readFileSync(join(materializedFolder, '既有产物.md'), 'utf8')).toBe('keep');
+  });
+
   it('uses the Task_ prefix when ui.language is en (N-DELIVERABLE-WORKDIR-DEFAULT)', async () => {
     await closeServer();
     setDbAvailable(true);
@@ -4515,13 +4609,12 @@ describe('createAgentRouter', () => {
     const expectedDir = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
     // 首轮目录回写到已存在的会话行（缺这步 → 第二轮行里没目录、有消息 → 扁平默认，同会话产物分裂）
     expect(sessionRows.get(sessionId)?.workingDirectory).toBe(expectedDir);
-    // 两轮都跑在同一个按会话目录里，且只开了这一个目录
+    // 两轮都跑在同一个按会话目录里；两轮都是纯对话（loop 被 mock、无写工具），
+    // 懒开不落盘——目录一个都没建
     expect(createCLIAgent).toHaveBeenCalledTimes(2);
     expect(createCLIAgent).toHaveBeenNthCalledWith(1, expect.objectContaining({ project: expectedDir }));
     expect(createCLIAgent).toHaveBeenNthCalledWith(2, expect.objectContaining({ project: expectedDir }));
-    const perSessionEntries = readdirSync(`${tempDataDir}-work`)
-      .filter((entry) => entry.startsWith('任务_') || entry.startsWith('Task_'));
-    expect(perSessionEntries).toEqual([`任务_${mmdd}_帮我出一份季度总结`]);
+    expect(existsSync(`${tempDataDir}-work`)).toBe(false);
   });
 
   // rework r1：DB 读失败持续时状态未知——不开新目录（否则每轮各开一个 任务_x-N，垃圾逐轮累积），
@@ -4671,9 +4764,10 @@ describe('createAgentRouter', () => {
     const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
     const expectedDir = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
     expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: expectedDir }));
-    expect(existsSync(expectedDir)).toBe(true);
+    // 懒开：只规划不落盘
+    expect(existsSync(expectedDir)).toBe(false);
+    expect(existsSync(`${tempDataDir}-work`)).toBe(false);
   });
-
   // rework r3：生产线路注入的 infra SessionManager 不带测试专用探针；路由直接消费
   // web/sessionCache 的持久化健康态。运行期降级后，新会话不铸按会话目录，回落扁平默认。
   it('does not mint a per-session folder when persistence degrades at runtime through production wiring (rework r3)', async () => {
@@ -4745,10 +4839,9 @@ describe('createAgentRouter', () => {
     const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
     const expectedDir = `${tempDataDir}-work/任务_${mmdd}_帮我出一份季度总结`;
     expect(createCLIAgent).toHaveBeenCalledWith(expect.objectContaining({ project: expectedDir }));
-    expect(readdirSync(`${tempDataDir}-work`).filter((entry) => entry.startsWith('任务_'))).toEqual([
-      `任务_${mmdd}_帮我出一份季度总结`,
-    ]);
-    expect(existsSync(expectedDir)).toBe(true);
+    // 懒开：只规划不落盘（loop 被 mock、无写工具，本轮不该有任何目录出现）
+    expect(existsSync(expectedDir)).toBe(false);
+    expect(existsSync(`${tempDataDir}-work`)).toBe(false);
   });
 
   it('persists assistant output when loop message events were not actually stored', async () => {

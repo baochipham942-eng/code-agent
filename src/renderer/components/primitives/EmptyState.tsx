@@ -6,7 +6,7 @@ import { PlanetSphere, type PlanetKind } from '../brand/PlanetSphere';
  * 空态视觉变体——逐一对应迁移前各调用点的既有形态（视觉保真，不新造样式）：
  * - box    : 虚线边框卡片，仅文本（原 PluginsSettings 局部定义）
  * - panel  : 虚线边框面板，图标+标题+文本（原 KnowledgeMemoryPanel.parts 局部定义）
- * - plain  : 无边框居中，图标+标题+文本（原 PlanningPanel 局部定义）
+ * - plain  : 无边框居中，图标+标题+文本
  * - inline : 单行浅色文本（原 TaskPanel/Card 的 CardEmptyState）
  */
 export type EmptyStateVariant = 'box' | 'panel' | 'plain' | 'inline';

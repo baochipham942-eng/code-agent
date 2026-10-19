@@ -41,6 +41,8 @@ function makeManifest(id: string): PluginManifest {
     name: id,
     version: '1.0.0',
     main: 'index.js',
+    // 第三方插件注册 fs 类工具必须声明 filesystem 权限(pluginRegistry.assertPermission)
+    permissions: ['filesystem'],
   };
 }
 
@@ -87,9 +89,11 @@ async function getPluginApi(
       captured = api;
     },
   };
+  // 第三方插件语义(rootPath 为磁盘路径)。builtin 语义由真实 catalog 测试覆盖
+  // (pluginToolOrigin.builtinHide.test.ts),不在这里伪造 `builtin:` rootPath。
   const loadedPlugin: LoadedPlugin = {
     manifest: { ...makeManifest(pluginId), ...manifestOverrides },
-    rootPath: `builtin:${pluginId}`,
+    rootPath: `/plugins/${pluginId}`,
     state: 'inactive',
     entry,
     registeredTools: [],

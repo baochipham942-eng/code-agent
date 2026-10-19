@@ -1,31 +1,9 @@
 {
   "schemaVersion": 1,
   "files": [
-    "src/host/agent/runtime/dashboard/registry.ts",
     "src/host/errors/knipProductionAnchor.ts",
     "src/renderer/components/ContextHealthPanel.tsx",
     "src/renderer/components/ContextPanel.tsx",
-    "src/renderer/components/PlanningPanel.tsx",
-    "src/renderer/components/TaskPanel/Context.tsx",
-    "src/renderer/components/TaskPanel/ContextInterventionPanel.tsx",
-    "src/renderer/components/TaskPanel/ContextProvenancePanel.tsx",
-    "src/renderer/components/TaskPanel/Orchestration.tsx",
-    "src/renderer/components/TaskPanel/SwarmDependencyMap.tsx",
-    "src/renderer/components/design/designSlidesStore.ts",
-    "src/renderer/components/features/admin/AdminUserScopeSelect.tsx",
-    "src/renderer/components/features/chat/ChatInput/EffortSelector.tsx",
-    "src/renderer/components/features/chat/ChatInput/ModeSwitch.tsx",
-    "src/renderer/components/features/chat/ChatInput/ReportStyleSelector.tsx",
-    "src/renderer/components/features/chat/ContextIndicator.tsx",
-    "src/renderer/components/features/chat/ContextUsageIndicator.tsx",
-    "src/renderer/components/features/chat/InlinePlanCard.tsx",
-    "src/renderer/components/features/chat/ResearchProgress.tsx",
-    "src/renderer/components/features/chat/ThoughtDisplay.tsx",
-    "src/renderer/components/features/settings/tabs/ControlPlaneSettings.tsx",
-    "src/renderer/components/features/settings/tabs/InviteCodesSettings.tsx",
-    "src/renderer/components/features/settings/tabs/UserDashboardSettings.tsx",
-    "src/renderer/components/features/swarm/SwarmMonitor.tsx",
-    "src/renderer/hooks/useComputerUsePip.ts",
-    "src/renderer/services/NetworkMonitor.ts"
+    "src/renderer/components/features/chat/ResearchProgress.tsx"
   ]
 }

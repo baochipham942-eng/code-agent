@@ -64,8 +64,7 @@ import { useSurfaceExecutionPip } from './hooks/useSurfaceExecutionPip';
 import { useSurfaceExecutionEffects } from './hooks/agent/effects/useSurfaceExecutionEffects';
 import { useAgentHalo } from './hooks/useAgentHalo';
 import { useRendererBundleAutoReload } from './hooks/useRendererBundleAutoReload';
-import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type NotificationShowEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
-import { postOsNotification, registerNotificationClick } from './utils/osNotification';
+import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
 import type { AppSettings, ModelConfig, UserQuestionRequest, MCPElicitationRequest, MCPOAuthConsentRequest, UpdateInfo, Message } from '@shared/contract';
 import { isOpenTaskStatus } from '@shared/contract/planning';
 import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL, getProviderEndpointForProtocol } from '@shared/constants';
@@ -89,7 +88,7 @@ import {
 import { openSurfaceForArtifact } from './services/surfaceIntentDispatcher';
 import { useInAppValidationBridge } from './hooks/useInAppValidationBridge';
 import { useI18n } from './hooks/useI18n';
-import { translateCronOsNotification } from './components/features/cron/cronFailureNotice';
+import { useCronOsNotification } from './hooks/useCronOsNotification';
 import { InternalFeatureWorkspaceRegistration, PluginUiActivationPolicyBootstrap, ShellOverlaySlotHost, WorkspacePageSlotHost } from './slots/productSlotHosts';
 
 const logger = createLogger('App');
@@ -662,32 +661,11 @@ export const App: React.FC = () => {
 
   // 主进程请求发原生系统通知（Tauri 通知插件，带 Agent Neo 图标/身份）。
   // 点击经 onAction best-effort 跳到最近一条通知对应的会话。
-  const lastNotifSessionIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    const unsubscribe = ipcService.on(
-      IPC_CHANNELS.NOTIFICATION_SHOW,
-      (event: NotificationShowEvent) => {
-        lastNotifSessionIdRef.current = event.sessionId;
-        const notice = translateCronOsNotification(
-          event,
-          t.cronCenter,
-          useAppStore.getState().language,
-        );
-        void postOsNotification(notice);
-      }
-    );
-    void registerNotificationClick(() => {
-      const sessionId = lastNotifSessionIdRef.current;
-      if (!sessionId) return;
-      void useSessionStore.getState().switchSession(sessionId);
-      openWorkbenchTab('task');
-      setTaskPanelTab('monitor');
-    });
-
-    return () => {
-      unsubscribe?.();
-    };
-  }, [openWorkbenchTab, setTaskPanelTab, t]);
+  useCronOsNotification(t.cronCenter, (sessionId) => {
+    void useSessionStore.getState().switchSession(sessionId);
+    openWorkbenchTab('task');
+    setTaskPanelTab('monitor');
+  });
 
   // 会话级自动化回流消息：主进程写入 automation 通知后实时推过来。
   // 打开中的源会话即时 append（按消息 id 去重；created 通知的唯一发射方就是

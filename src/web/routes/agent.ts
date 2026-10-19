@@ -95,7 +95,14 @@ import { QueuedInputRepository } from '../../host/services/core/repositories/Que
 import { getDatabase } from '../../host/services/core/databaseService';
 import { getLogsPath } from '../../host/platform/appPaths';
 import { getDefaultWorkDirectory, isLegacyDefaultWorkDirectory } from '../../host/config/configPaths';
-import { createSessionWorkDirectory } from '../../host/config/sessionWorkDirectory';
+import {
+  isPlannedSessionWorkDirectory,
+  maybeDivertCollidingSessionWorkDirectory,
+  maybeReplanSessionWorkDirectory,
+  planSessionWorkDirectory,
+} from '../../host/config/sessionWorkDirectory';
+import { listSessionWorkDirectoryReservations } from '../../host/config/sessionWorkDirectoryReservations';
+import { materializeRunWorkDirectoryOnce } from '../../host/agent/runtime/workDirectoryMaterializer';
 import { hasInteractiveUi } from '../../host/platform';
 import { getProjectService } from '../../host/services/project/projectService';
 import { getAuthService } from '../../host/services/auth/authService';
@@ -579,13 +586,22 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     }
     // 旧默认目录 <dataDir>/work 已经存进了一批会话（请求里也可能原样带回来）：按没有目录处理，走下面的新默认目录
     if (resolvedProject && isLegacyDefaultWorkDirectory(resolvedProject)) resolvedProject = undefined;
+    // 撞名占用集（rework r2）：其它会话行已记下（可能尚未落盘）的工作目录。懒开后
+    // 只看磁盘会让两个同日同题会话共享产出目录；只在要规划/重规划/撞名改道时才查这一次。
+    const needsWorkDirReservations = !resolvedProject
+      || isPlannedSessionWorkDirectory(persistedSession?.workingDirectory ?? '');
+    const workDirReservations = needsWorkDirReservations && dbAvailable && !sessionPreflightReadFailed
+      ? await listSessionWorkDirectoryReservations({ exceptSessionId: sessionId })
+      : [];
     if (!resolvedProject) {
       // 无文件夹会话分两档（N-DELIVERABLE-WORKDIR-DEFAULT）：新会话（preflight 时零历史
       // 消息——本轮 user message 要到下方 SSE 之后的 pre-persist 才落库，此处读到的就是
-      // 首轮前状态）首轮开按会话产出子目录 任务_MMDD_<标题>，并经下方回写粘住；已有
-      // 消息的存量会话保持扁平默认目录，既有文件永不挪动。
+      // 首轮前状态）首轮**规划**按会话产出子目录 任务_MMDD_<标题> 并经下方回写粘住；
+      // 已有消息的存量会话保持扁平默认目录，既有文件永不挪动。
+      // 懒开（N-DELIVERABLE-WORKDIR-LAZY）：首轮只算路径不落盘，纯问答会话不产生任何
+      // 目录；到首个非只读工具派发前（toolExecutionEngine）或外部引擎 preflight 才补 mkdir。
       // 只在「确知零消息且目录选择粘得住」（preflight 读成功、持久化健康态明确可写、
-      // 且会话行已经存在）时才开新目录：读失败/行不存在/运行期降级都保持扁平默认。
+      // 且会话行已经存在）时才规划新目录：读失败/行不存在/运行期降级都保持扁平默认。
       // 持久化健康态的 durable 字段在 degraded 时会保留历史值，所以同时检查 status；
       // 否则 readonly/quick_check 失败会被误判为可持久化，每轮各开一个 任务_x-N 目录。
       const persistenceHealth = getPersistenceHealth();
@@ -599,9 +615,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         && !persistedSessionHasMessages(persistedSession);
       try {
         resolvedProject = firstRunNoFolderSession
-          ? await createSessionWorkDirectory({
+          ? await planSessionWorkDirectory({
             sessionTitle: persistedSession?.title,
             userMessage: prompt,
+            reservedPaths: workDirReservations,
           })
           : await ensureDefaultWebWorkingDirectory();
         logger.info(`[AgentRouter] No project/sessionDir/context workingDirectory, falling back to app work dir ${resolvedProject}`);
@@ -611,6 +628,47 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           return;
         }
         throw error;
+      }
+    }
+
+    // 懒开目录的改名收口（N-DELIVERABLE-WORKDIR-LAZY）：首轮规划名取首条消息的
+    // 第一个分句（智能标题要几十秒后才落库）。目录值来自会话行、仍是未落盘的规划
+    // 路径、且智能标题已可用时，按标题重新规划并回写——「只补空」回写规则的唯一
+    // 例外，盘上零改动；已落盘/标题不可用/路径不是规划形状时 maybeReplan 返回
+    // undefined，什么都不发生。回写粘不住（无 updateSession）就不改，避免行与运行分叉。
+    // 撞名改道（rework r2）：行内路径同时被其它会话行记下（规划期竞态残留）且盘上
+    // 还没内容时，趁运行还没开始改道到下一个空闲后缀——运行中 cwd 不可变（run-scoped
+    // ToolExecutor），落盘那一刻才改道已经晚了，必须在 preflight 收口。
+    const sessionRowWorkingDirectory = persistedSession?.workingDirectory?.trim();
+    if (
+      sessionRowWorkingDirectory
+      && resolvedProject === sessionRowWorkingDirectory
+      && sessionManagerForRun?.updateSession
+    ) {
+      const replanned = await maybeReplanSessionWorkDirectory({
+        workingDirectory: sessionRowWorkingDirectory,
+        sessionTitle: persistedSession?.title,
+        reservedPaths: workDirReservations,
+      });
+      const diverted = replanned
+        ? undefined
+        : await maybeDivertCollidingSessionWorkDirectory({
+          workingDirectory: sessionRowWorkingDirectory,
+          reservedPaths: workDirReservations,
+        });
+      const nextWorkingDirectory = replanned ?? diverted;
+      if (nextWorkingDirectory) {
+        try {
+          await sessionManagerForRun.updateSession(sessionId, {
+            workingDirectory: nextWorkingDirectory,
+            updatedAt: Date.now(),
+          });
+          // 回写成功才切运行目录：粘不住就保持原路径，本轮与行内值不分叉
+          resolvedProject = nextWorkingDirectory;
+          logger.info(`[AgentRouter] Re-planned colliding session work dir for ${sessionId}: ${sessionRowWorkingDirectory} -> ${nextWorkingDirectory}`);
+        } catch (err) {
+          logger.warn(`[AgentRouter] Failed to persist re-planned workingDirectory for ${sessionId}:`, err);
+        }
       }
     }
 
@@ -627,6 +685,11 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // run lifecycle, including Native RunContext/tool execution. Request
       // context and the legacy session cwd are only source provenance here.
       resolvedProject = runWorkspaceScope.primaryRoot;
+    }
+    // 外部引擎把 resolvedProject 当子进程 cwd，缺失会被 assertWorkspaceCwd 硬拒
+    // （"must exist"）——懒开目录对它们没有「等首个写工具」的余地，preflight 落盘。
+    if (isExternalAgentEngine(selectedEngine.kind) && resolvedProject) {
+      await materializeRunWorkDirectoryOnce(resolvedProject, { sessionId });
     }
     // 会话有真实 Project scope 时把 native run（durable 与非 durable 同一份）的写边界钉成该项目，
     // 与 orchestrator 路径（cron/唤醒/IPC）和外部引擎一致。此前只传 workspace 字符串，

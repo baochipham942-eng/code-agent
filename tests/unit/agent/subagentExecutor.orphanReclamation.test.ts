@@ -21,6 +21,11 @@ const SUBAGENT_EXECUTOR_PATH = path.resolve(
   __dirname,
   '../../../src/host/agent/subagentExecutor.ts',
 );
+// 取消/异常/正常完成三条收尾出口搬到 completion 模块（N-MAXLINES-MINEFIELD-2-FU1-S2 纯搬移）
+const SUBAGENT_COMPLETION_PATH = path.resolve(
+  __dirname,
+  '../../../src/host/agent/subagentExecutorCompletion.ts',
+);
 const SUBAGENT_TYPES_PATH = path.resolve(
   __dirname,
   '../../../src/host/agent/subagentExecutorTypes.ts',
@@ -56,7 +61,9 @@ describe('subagentExecutor 主循环探活', () => {
   });
 
   it('自身取消或异常时只清理自己的后代子树', () => {
-    expect(source).toMatch(/cancelDescendants\(\s*context\.spawnGuardId/);
+    // cancelDescendants 收尾调用随取消/失败/完成出口搬入 completion 模块（纯搬移）
+    const completion = readFileSync(SUBAGENT_COMPLETION_PATH, 'utf8');
+    expect(completion).toMatch(/cancelDescendants\(\s*context\.spawnGuardId/);
   });
 });
 

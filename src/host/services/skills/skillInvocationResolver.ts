@@ -312,6 +312,22 @@ export function resolveSkillInvocationFromSkills(
   return best;
 }
 
+/**
+ * 单轮 Office 文件交付不采纳裸词别名命中的 skill。
+ * 技能名 `docx` / `excel` 的词边界会咬住「请用 docx …」这类点名，
+ * 把 python-docx / openpyxl 的脚本说明灌进本轮，并给工具边界套上 Bash，
+ * 挤掉 docx_generate / excel_generate 的原生直达路径。
+ * 显式 `/docx`（slash / inline-slash）仍保留。
+ */
+export function retainSkillInvocationForTurn(
+  invocation: ResolvedSkillInvocation | null | undefined,
+  nativeFileDeliverable: boolean,
+): ResolvedSkillInvocation | null {
+  if (!invocation) return null;
+  if (nativeFileDeliverable && invocation.matchKind === 'alias') return null;
+  return invocation;
+}
+
 export async function resolveSkillInvocation(
   message: string,
   workingDirectory: string,

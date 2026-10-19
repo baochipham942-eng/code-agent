@@ -113,9 +113,18 @@ describe('admin 门控', () => {
     expect(await callSettings('setDevMode', { enabled: true })).toEqual(env.adminAccessError);
   });
 
-  it("set 含 admin-only key（permissions）触发门控", async () => {
+  it("set 的 permissions 含非规则键（permissionMode）触发门控", async () => {
     env.adminAccessError = { success: false, error: { code: 'ADMIN_REQUIRED', message: 'no' } };
-    expect(await callSettings('set', { settings: { permissions: {} } })).toEqual(env.adminAccessError);
+    expect(await callSettings('set', { settings: { permissions: { permissionMode: 'bypassPermissions' } } }))
+      .toEqual(env.adminAccessError);
+    expect(env.config.updateSettings).not.toHaveBeenCalled();
+  });
+
+  it('set 的 permissions 仅含 deny/ask/allow 时不触发门控（N-PERMRULES-LOCAL-OWNER）', async () => {
+    env.adminAccessError = { success: false, error: { code: 'ADMIN_REQUIRED', message: 'no' } };
+    const res = await callSettings('set', { settings: { permissions: { deny: ['Bash(rm *)'], allow: ['Read'] } } });
+    expect(res.success).toBe(true);
+    expect(env.config.updateSettings).toHaveBeenCalledWith({ permissions: { deny: ['Bash(rm *)'], allow: ['Read'] } });
   });
 
   it('set 第三方界面插件总开关触发管理员门控', async () => {
@@ -192,7 +201,8 @@ describe('get + 脱敏', () => {
     expect(perms.permissionMode).toBe('default'); // bypassPermissions 被降级
     expect(perms.devModeAutoApprove).toBe(false);
     expect(perms.blockedCommands).toEqual([]);
-    expect((perms as Record<string, unknown>).deny).toBeUndefined();
+    // N-PERMRULES-LOCAL-OWNER：deny/ask/allow 是本人规则，非 admin 读取原样带回。
+    expect((perms as Record<string, unknown>).deny).toEqual(['x']);
   });
 });
 

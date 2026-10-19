@@ -11,10 +11,20 @@
 //   - Windows「后台继续」是例外：壳在退进程之前 POST /api/quit-guard/detach，
 //     armBackgroundContinueDetach() 把「EOF = 停机指令」摘掉。随后的 EOF
 //     与 macOS/Linux 一样交给空闲判据。停止并退出不会 arm，关 stdin 仍是停机。
-// 纯函数：platform / detach 由调用方传入，便于表驱动单测。
+//   - 2026-10-18 append：壳改走 POST /api/quit-intent 声明 background / stop
+//     （旧 detach 路由是 background 的别名）。stop 把 EOF 变成全平台停机指令；
+//     background 让 armed schedules 构成留守原因（daemonStayReasons）。
+// 纯函数：platform / detach / intent 由调用方传入，便于表驱动单测。
 // ============================================================================
 
-import { shouldDaemonExit, type DaemonIdleSnapshot } from './daemonIdle';
+import { daemonStayReasons, shouldDaemonExit, type DaemonIdleSnapshot, type DaemonQuitIntent } from './daemonIdle';
+
+/** EOF 后的留守判据：老三信号任一在忙（shouldDaemonExit 取反），或意图加挂的
+ * armed-schedules 原因（background 且 armed>0）——意图只能新增这一个留守原因，
+ * 不能削弱老三信号（none/stop 下 armed 单独永不留守）。 */
+function staysForShellExit(snapshot: DaemonIdleSnapshot, intent: DaemonQuitIntent): boolean {
+  return !shouldDaemonExit(snapshot) || daemonStayReasons(snapshot, intent).includes('armed-schedules');
+}
 
 interface DaemonExitRechecker {
   /** 标记 stdin 已断开并立即按当前空闲快照决定是否停机。 */
@@ -34,22 +44,31 @@ export function backgroundContinueDetachArmed(): boolean {
   return detachArmed;
 }
 
-/** win32 且尚未 arm detach → stdin EOF 是停机指令。其余情况不是。 */
-export function stdinEofIsQuitCommand(platform: NodeJS.Platform, detachArmedNow: boolean): boolean {
+/** win32 且尚未 arm detach → stdin EOF 是停机指令。intent=stop 全平台都是停机
+ * 指令（壳已明说「停止并退出」，留守只会把优雅窗耗在被硬杀上）。其余情况不是。 */
+export function stdinEofIsQuitCommand(
+  platform: NodeJS.Platform,
+  detachArmedNow: boolean,
+  intent: DaemonQuitIntent = 'none',
+): boolean {
+  if (intent === 'stop') return true;
   return platform === 'win32' && !detachArmedNow;
 }
 
 /** stdin EOF 后 daemon 是否留守（false = 走优雅停机）。
  * `eofIsQuitCommand` 缺省按平台：win32 为 true（立即停机），其余为 false。
  * 后台继续把第三次参数传 false，win32 才改走空闲判据。
+ * 留守判据 = daemonStayReasons 非空（老三信号任一在忙，或 background+armed）。
  * 拿不到空闲快照也按不留守处理，与「无快照随壳退出」的既有口径一致。 */
 export function shouldStayResidentAfterShellExit(
   platform: NodeJS.Platform,
   snapshot: DaemonIdleSnapshot | undefined,
   eofIsQuitCommand = platform === 'win32',
+  intent: DaemonQuitIntent = 'none',
 ): boolean {
   if (eofIsQuitCommand) return false;
-  return snapshot !== undefined && !shouldDaemonExit(snapshot);
+  if (snapshot === undefined) return false;
+  return staysForShellExit(snapshot, intent);
 }
 
 /**
@@ -64,6 +83,8 @@ export function createDaemonExitRechecker(input: {
   shutdown: () => void | Promise<void>;
   /** 缺省：win32 的 stdin EOF 是停机指令。后台继续把这个关掉。 */
   stdinEofIsQuitCommand?: () => boolean;
+  /** 壳声明的退出意图（quit-intent 路由写入）；缺省 none = 既有行为。 */
+  getQuitIntent?: () => DaemonQuitIntent;
 }): DaemonExitRechecker {
   let shellPipeAttached = true;
   let shutdownStarted = false;
@@ -72,9 +93,13 @@ export function createDaemonExitRechecker(input: {
   const recheck = (): boolean => {
     if (shellPipeAttached || shutdownStarted) return false;
     const snapshot = input.getSnapshot();
-    const shouldExit = eofIsQuitCommand()
+    const intent = input.getQuitIntent?.() ?? 'none';
+    // stop 在这里单独成条（与 stdinEofIsQuitCommand 同一语义）：壳明说「停止并退出」，
+    // EOF 就是停机指令，不依赖调用方的 eof 闭包有没有把意图带进去。
+    const shouldExit = intent === 'stop'
+      || eofIsQuitCommand()
       || snapshot === undefined
-      || shouldDaemonExit(snapshot);
+      || !staysForShellExit(snapshot, intent);
     if (!shouldExit) return false;
     shutdownStarted = true;
     void input.shutdown();

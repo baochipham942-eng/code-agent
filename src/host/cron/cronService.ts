@@ -1,4 +1,3 @@
-import { UNATTENDED_TRUST_NOTICE } from '../../shared/unattendedTrust';
 // ============================================================================
 // CronService - Scheduled task execution service
 // ============================================================================
@@ -7,11 +6,7 @@ import { Cron } from 'croner';
 import { v4 as uuidv4 } from 'uuid';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import {
-  CRON_AGENT_SNAPSHOT,
-  CRON_GUARDRAILS,
-  EXTERNAL_WATCH,
-} from '../../shared/constants';
+import { CRON_GUARDRAILS } from '../../shared/constants';
 import type {
   CronJobDefinition,
   CronJobExecution,
@@ -36,27 +31,19 @@ import {
   type ResolveRuntimeDefinition,
 } from './cronAutomationBridge';
 import {
-  buildCronAgentActionResult,
   isCronAgentActionResult,
   normalizeCronJobRow,
   assertSupportedEveryScheduleUnit,
   type SupportedEveryTimeUnit,
 } from './cronNormalizers';
-import { createCronAgentSession } from './cronAgentSession';
-import { buildCronAgentRunOptions } from './cronAgentRoleContext';
-import { BACKGROUND_AGENT_EVENT_FILTER } from '../protocol/events/eventFilter';
-import type { AgentRunOptions } from '../research/types';
+import { executeCronAgentAction } from './cronAgentAction';
 import { getEventBus } from '../services/eventing/bus';
 import { persistCronMissedTrace } from './cronMissedTrace';
-import { appendCronAgentExpertThreadReceipt } from './cronAgentExpertThreadReceipt';
-import { buildCronAgentPrompt, truncateUtf8Snapshot } from './cronAgentPrompt';
-import { beginArtifactRefresh, finishArtifactRefresh } from './artifactStandingRefresh';
 import {
   assertExecutionLocationConstraints,
   computeCronFireJitterMs,
   decideOneTimeJobStartup,
   intervalToCron,
-  runWithCronJobBudget,
   scheduleBoundToDate,
 } from './cronExecutionPolicy';
 import { CronCloudRuntime } from './cronCloudRuntime';
@@ -80,13 +67,13 @@ import {
   adoptFailedAgentSession,
   classifyCronFailure,
   countTrailingCronFailures,
-  cronNotifyQuietRound,
   cronRetryBackoffMs,
   CronFailureNoticeGate,
   notifyCronAgentExecution,
   notifyCronJobDisabled,
 } from './cronFailurePolicy';
 import { cronLoginWallMetadata } from './cronLoginWall';
+import { rememberCronLoginPassThroughOrigin } from './cronLoginWallPersistence';
 import { cronFailureSourceText } from '../../shared/utils/cronFailureClassification';
 export { computeCronFireJitterMs } from './cronExecutionPolicy'; const execAsync = promisify(exec);
 
@@ -294,10 +281,11 @@ export class CronService implements Disposable {
       existingJob.cronInstance.stop();
     }
 
+    const metadata = this.sanitizeLoginPassThroughMetadata(existingJob.definition.metadata, updates.metadata);
     const updatedJob: CronJobDefinition = {
       ...existingJob.definition,
       ...updates,
-      metadata: cronLoginWallMetadata({ action: updates.action ?? existingJob.definition.action }, updates.metadata ?? existingJob.definition.metadata), updatedAt: Date.now(),
+      metadata: cronLoginWallMetadata({ action: updates.action ?? existingJob.definition.action }, metadata), updatedAt: Date.now(),
     };
     // 重新启用已停用任务：运行计数清零、摘掉停用原因（N-CRON-BUDGET-EXPOSE）；只改 maxRuns 不动计数。
     if (updates.enabled === true && !existingJob.definition.enabled) rearmCronRunLimit(updatedJob);
@@ -323,6 +311,49 @@ export class CronService implements Disposable {
     }
 
     return updatedJob;
+  }
+
+  /**
+   * Persist login pass-through only for an explicit user consent action.
+   * updateJob deliberately filters this metadata field so routine edits cannot
+   * grant a new origin by smuggling it through a full metadata update.
+   */
+  async grantLoginPassThrough(jobId: string, siteOrigin: string): Promise<CronJobDefinition | null> {
+    const active = this.jobs.get(jobId);
+    if (!active) return null;
+    await rememberCronLoginPassThroughOrigin(
+      active,
+      siteOrigin,
+      (job) => this.persistJob(job),
+    );
+    return active.definition;
+  }
+
+  private sanitizeLoginPassThroughMetadata(
+    existingMetadata: Record<string, unknown> | undefined,
+    incomingMetadata: Record<string, unknown> | undefined,
+  ): Record<string, unknown> | undefined {
+    // JSON callers can still send null despite the TypeScript input type;
+    // retain the historical nullish-merge behavior instead of crashing while
+    // inspecting the consent marker.
+    if (!incomingMetadata || typeof incomingMetadata !== 'object' || Array.isArray(incomingMetadata)) {
+      return existingMetadata;
+    }
+
+    const existingOrigin = existingMetadata?.loginPassThroughOrigin;
+    const hasIncomingOrigin = Object.prototype.hasOwnProperty.call(incomingMetadata, 'loginPassThroughOrigin');
+    if (!hasIncomingOrigin) return incomingMetadata;
+
+    const nextMetadata = { ...incomingMetadata };
+    if (typeof existingOrigin === 'string') {
+      // Consent can be kept by an editor round-trip, but never changed through
+      // updateJob. A different value is ignored while all other fields apply.
+      nextMetadata.loginPassThroughOrigin = existingOrigin;
+    } else {
+      // No stored consent means this update cannot create one.
+      delete nextMetadata.loginPassThroughOrigin;
+    }
+    return Object.keys(nextMetadata).length > 0 ? nextMetadata : undefined;
   }
 
   /**
@@ -858,183 +889,11 @@ export class CronService implements Disposable {
       }
 
       case 'agent': {
-        const runStartedAt = Date.now();
-        // Heartbeat 任务: 检查 active_hours 窗口
-        const ctx = action.context as Record<string, unknown> | undefined;
-        if (ctx?.heartbeatTask && ctx?.activeHours) {
-          const { isWithinActiveHours } = await import('./heartbeatTaskLoader');
-          if (!isWithinActiveHours(ctx.activeHours as string)) {
-            console.error(`[CronService] Heartbeat task skipped (outside active hours: ${ctx.activeHours})`);
-            return { skipped: true, reason: 'outside_active_hours' };
-          }
-        }
-
-        // 通过 TaskManager 获取 orchestrator（避免 cronService → bootstrap 循环依赖）
-        const { getTaskManager } = await import('../task');
-        const tm = getTaskManager();
-        const cronSession = await createCronAgentSession(definition, action, executionId);
-        const orchestrator = tm.getOrCreateCurrentOrchestrator(cronSession.id) ?? null;
-        if (!orchestrator) {
-          throw new Error(`AgentOrchestrator not available for cron session ${cronSession.id}`);
-        }
-        // cron/heartbeat 无人值守会话标 async_agent（2026-07-13 拍板）：bash 走
-        // ask+forceConfirm，无人应答由 requestPermission 60s 超时 deny 兜底，
-        // 与 readOnly 会话档双保险。必须在 sendMessage 前标注。
-        orchestrator.setExecutionTopology('async_agent');
-        if (cronSession.workingDirectory) {
-          tm.setWorkingDirectory(cronSession.id, cronSession.workingDirectory);
-        }
-        const agentRunOptions: AgentRunOptions = {
-          inputSource: 'automation',
-          disableAutoAgent: true,
-          mode: 'normal',
-          ...await buildCronAgentRunOptions(action.roleId, cronSession.workingDirectory),
-          eventFilter: BACKGROUND_AGENT_EVENT_FILTER,
-        };
-        agentRunOptions.systemInstructions = [UNATTENDED_TRUST_NOTICE];
-        const previousSnapshot = ctx?.[CRON_AGENT_SNAPSHOT.CONTEXT_KEY];
-        const snapshotTrackingEnabled = ctx?.[CRON_AGENT_SNAPSHOT.ENABLED_KEY] === true;
-        // external_event（业务事件监听）任务：无 <cron_alert> = 无新料 = 本次安静。
-        // notifyWhen 任务同标记判「值得打扰」（N-CRON-RESTATE-HUMAN-WHEN）；其余任务恒响。
-        // hasAlert 不在此初始化：投递门前单点计算（本文件贴 max-lines 线）。
-        const isExternalWatch = Boolean(ctx?.[EXTERNAL_WATCH.CONTEXT_KEY]); const alertGated = isExternalWatch || Boolean(action.notifyWhen?.trim());
-
-        let result: unknown; let finalAssistantText = '';
-        let runError: unknown; let runFailed = false;
-        // 常设刷新（metadata.artifactRefresh）：跑前建快照记基线；非刷新任务返回 undefined 零扰动
-        const artifactRefresh = beginArtifactRefresh(definition);
-        try {
-          try {
-            // 事件触发时通道载荷只以 untrusted 定界块追加在 prompt 尾部，并给该条
-            // 用户消息标 memoryTainted（跳过自动记忆写）。调度触发的 run 字节不变。
-            const sendMessage = () => orchestrator.sendMessage(
-              buildCronAgentPrompt(action.prompt, previousSnapshot, snapshotTrackingEnabled, undefined, action.urgencyCriteria, action.notifyWhen)
-                + (eventPayloadBlock === undefined ? '' : `\n\n${eventPayloadBlock}`),
-              undefined,
-              agentRunOptions,
-              eventPayloadBlock === undefined ? undefined : { memoryTainted: true },
-            );
-            result = await runWithCronJobBudget(definition.maxRunBudget, sendMessage);
-            const unattendedTimeout = (await import('../agent/unattendedApprovalTerminal')).takeUnattendedApprovalTimeout(cronSession.id);
-            if (unattendedTimeout) throw new Error(unattendedTimeout);
-
-            finalAssistantText = [...orchestrator.getMessages()].reverse().find((message) => message.role === 'assistant')?.content.trim() ?? '';
-            const snapshotToPersist = snapshotTrackingEnabled ? finalAssistantText.match(CRON_AGENT_SNAPSHOT.TAG_PATTERN)?.[1]?.trim() : undefined;
-            // 只认标记：解析不到就保留上一次的值。拿整段回答顶替会把叙述性文字
-            // 当成状态存下来，下一轮再原样注回提示词。
-            if (snapshotToPersist) {
-              const boundedSnapshot = truncateUtf8Snapshot(snapshotToPersist);
-              if (boundedSnapshot.truncated) {
-                console.warn(
-                  `[CronService] Agent snapshot exceeded ${CRON_AGENT_SNAPSHOT.MAX_BYTES} UTF-8 bytes; truncated`,
-                );
-              }
-              const latestDefinition = this.jobs.get(definition.id)?.definition;
-              const latestAction = latestDefinition?.action.type === 'agent'
-                ? latestDefinition.action
-                : action;
-              await this.updateJob(definition.id, {
-                action: {
-                  ...latestAction,
-                  context: {
-                    ...latestAction.context,
-                    [CRON_AGENT_SNAPSHOT.CONTEXT_KEY]: boundedSnapshot.value,
-                  },
-                },
-              });
-            }
-
-            if (action.libraryProjectId) {
-              try {
-                const { getLibraryService } = await import('../services/library/libraryService');
-                if (finalAssistantText) {
-                  getLibraryService().archiveText({
-                    projectId: action.libraryProjectId,
-                    title: definition.name,
-                    text: finalAssistantText,
-                    tags: ['定稿'],
-                    sourceSessionId: cronSession.id,
-                    sourceRoleId: action.roleId,
-                  });
-                  console.error(`[CronService] agent 产出已归档到资料库 project=${action.libraryProjectId}`);
-                }
-              } catch (archiveError) {
-                // 归档是增量能力，失败不拖垮任务（fail-loud 日志，不中断）
-                console.warn('[CronService] agent 产出归档失败（任务本身已完成）', archiveError);
-              }
-            }
-          } catch (error) {
-            runFailed = true;
-            runError = ((code: string | undefined) => code ? new Error(code) : error)((await import('../agent/unattendedApprovalTerminal')).takeUnattendedApprovalTimeout(cronSession.id));
-            try {
-              const lastAssistant = [...orchestrator.getMessages()].reverse().find((message) => message.role === 'assistant');
-              finalAssistantText = lastAssistant?.content.trim() ?? '';
-            } catch (messageReadError) {
-              console.warn('[CronService] Failed to read partial agent conclusion after cron run failure', messageReadError);
-            }
-          }
-        } finally {
-          tm.cleanup(cronSession.id);
-        }
-
-        // runFailed 已知即结算常设刷新：成功走校验+留版（有标注则清），失败回滚快照并标注。
-        // loadJob 重读当前定义：标注底稿用最新 metadata，不回退跑中保存的指令/节奏修改。
-        if (artifactRefresh) await finishArtifactRefresh(artifactRefresh, { runFailed, error: runError, updateJob: (u) => this.updateJob(definition.id, u), loadJob: () => this.jobs.get(definition.id)?.definition });
-
-        if (action.roleId) {
-          try {
-            await appendCronAgentExpertThreadReceipt({
-              definition,
-              roleId: action.roleId,
-              cronSessionId: cronSession.id,
-              executionId,
-              startedAt: runStartedAt,
-              succeeded: !runFailed,
-              finalAssistantText,
-              error: runError,
-              automationType: getCronAutomationType(definition),
-              workingDirectory: cronSession.workingDirectory,
-            });
-          } catch (receiptError) {
-            console.warn(
-              `[CronService] Failed to append named-agent cron receipt; cron result preserved `
-              + `(job=${definition.id}, role=${action.roleId}, cronSession=${cronSession.id})`,
-              receiptError,
-            );
-          }
-        }
-        if (runFailed) {
-          // 失败也把 cron 会话带出去（挂在 error 上）：失败告警（去重+冷却后）要能
-          // 点击跳到这个半成品会话，执行台账也能关联到它。成功路径走 result.sessionId。
-          if (runError instanceof Error && !('cronSessionId' in runError)) {
-            (runError as Error & { cronSessionId?: string }).cronSessionId = cronSession.id;
-          }
-          throw runError;
-        }
-
-        // 安静轮判定单点：gated（external-watch 或 notifyWhen）任务只认最终正文里的
-        // <cron_alert> 标记；非 gated 任务恒有警报。失败路径在上面已 throw，到这里的
-        // 一定是成功轮，finalAssistantText 已定型。
-        const hasAlert = alertGated ? EXTERNAL_WATCH.ALERT_TAG_PATTERN.test(finalAssistantText) : true;
-
-        // 无新料的监听轮不投递（FB-239）：skipped 判定必须先于推送，
-        // 否则安静轮照样把「没有更新」推到通道，跟 skipped 语义无进收件箱自相矛盾。
-        // notifyWhen 未满足的安静轮同样不投递（N-CRON-RESTATE-HUMAN-WHEN，判定+留痕
-        // 在 cronFailurePolicy.cronNotifyQuietRound）：执行仍 completed、仍进历史与收件箱。
-        const quietWatchRound = isExternalWatch && !hasAlert;
-        const notifyQuietRound = cronNotifyQuietRound(action, hasAlert, definition.id);
-        if (!quietWatchRound && !notifyQuietRound) {
-          // 推送正文必须是最后一条 assistant 正文：orchestrator.sendMessage 是 Promise<void>，
-          // result 恒 undefined，推它等于永远不推（PR#2060 ai-review Important）。
-          await this.deliverCronResult(definition, finalAssistantText || result, executionId);
-        }
-
-        // 无新料的监听运行整成 skipped 形状：复用 isSkippedResult 门，
-        // 让它不进待过目收件箱、不写会话回流（快照已在上面照常写回）。
-        // 结果组装（digest + 紧急档位 N-CRON-INBOX-URGENCY-TIER）在 cronNormalizers：
-        // cronService 贴 max-lines 线，档位优先读摘要头部行、无摘要块读正文头部。
-        // notifyQuietRound 只打 notifySuppressed 标记（通知门），不进 skipped 形状。
-        return buildCronAgentActionResult(action, result, cronSession.id, finalAssistantText, quietWatchRound, notifyQuietRound);
+        return executeCronAgentAction({
+          loadJob: (jobId) => this.jobs.get(jobId)?.definition,
+          updateJob: (jobId, updates) => this.updateJob(jobId, updates),
+          deliverCronResult: (job, result, execId) => this.deliverCronResult(job, result, execId),
+        }, definition, action, executionId, eventPayloadBlock);
       }
 
       case 'webhook': {

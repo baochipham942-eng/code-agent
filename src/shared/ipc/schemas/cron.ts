@@ -13,6 +13,7 @@ const CronDomainRequestSchema = z.object({
   action: z.enum([
     'createJob',
     'deleteJob',
+    'grantLoginPassThrough',
     'generateFromPrompt',
     'getExecutions',
     'getRecentExecutions',

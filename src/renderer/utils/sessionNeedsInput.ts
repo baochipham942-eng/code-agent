@@ -21,6 +21,7 @@ export function hasPendingPermissionForSession(
 ): boolean {
   return Boolean(
     state.pendingPermissionRequest &&
+    state.pendingPermissionRequest.resolved !== true &&
     state.pendingPermissionSessionId === sessionId
   );
 }
@@ -29,7 +30,7 @@ export function hasQueuedPermissionForSession(
   sessionId: string,
   state: SessionPermissionNeedsInputState = {},
 ): boolean {
-  return (state.queuedPermissionRequests?.[sessionId]?.length ?? 0) > 0;
+  return (state.queuedPermissionRequests?.[sessionId] ?? []).some((request) => request.resolved !== true);
 }
 
 /** Exact approval correlation: renderer status changes only when the approval names this tool call. */
@@ -82,4 +83,21 @@ export function hasNeedsInputForSession(
     hasPendingUserQuestionForSession(sessionId, sources.pendingUserQuestionsBySessionId) ||
     hasDurableWaitingApprovalForSession(sessionId, sources.durableWaitingApprovalSessionIds)
   );
+}
+
+export function getSessionWaitingDetail(
+  sessionId: string,
+  sources: SessionNeedsInputSources = {},
+): { kind: 'permission'; appName?: string } | { kind: 'other' } | undefined {
+  if (!hasNeedsInputForSession(sessionId, sources)) return undefined;
+
+  const state = sources.permissionState;
+  const request = hasPendingPermissionForSession(sessionId, state)
+    ? state?.pendingPermissionRequest
+    : state?.queuedPermissionRequests?.[sessionId]?.find((entry) => entry.resolved !== true);
+  if (request) {
+    const appName = request.details?.targetApp?.name.trim();
+    return appName ? { kind: 'permission', appName } : { kind: 'permission' };
+  }
+  return { kind: 'other' };
 }

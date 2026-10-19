@@ -623,3 +623,95 @@ describe('B2 断流续接的 live-tail 合并：续答段带 correlation 配对�
     expect(merged.filter((m) => m.role === 'assistant')).toHaveLength(3);
   });
 });
+
+// FU3-FU1-FU1：活 run 中途的快照重灌（AGENT_STREAM_SNAPSHOT_REQUIRED → switchSession
+// force）会把非 final 快照回填成 recovery 消息，随 mergeSnapshotWithLiveTail 与同 id
+// 活草稿合并。合并即证明这一轮仍在直播——重启中断标记不得骑着活草稿活到收尾，
+// 否则成功的工具步整段被渲染成「应用重启时中断」。
+describe('快照重灌的 recovery 标记随 live 合并撤掉（FU3-FU1-FU1）', () => {
+  const user = (id: string): Message => ({ id, role: 'user', content: '分析一组销售数据', timestamp: 1 });
+
+  it('recovery 消息与同 id 活草稿合并后不再携带 streamRecovery 标记', () => {
+    const snapshotMessages = mergeStreamSnapshotIntoMessages(
+      [user('u-1')],
+      {
+        sessionId: SESSION_ID,
+        turnId: LIVE_TURN_ID,
+        content: '先重试一次生成。',
+        reasoning: '',
+        toolCalls: [{ id: 'call-retry', name: 'excel_generate', arguments: '{"data":"..."}' }],
+        estimatedTokens: 8,
+        timestamp: 30,
+        isFinal: false,
+        streamStatus: 'incomplete',
+        stableForExecution: false,
+        incompleteToolCallIds: [],
+      },
+      true,
+    );
+    // 回填消息在场且带标记（active run：无 streamInterruptionReason）
+    const recovery = snapshotMessages.find((message) => message.id === LIVE_TURN_ID);
+    expect(recovery?.metadata?.streamRecovery).toEqual({ turnId: LIVE_TURN_ID });
+
+    const live = [
+      user('u-1'),
+      {
+        id: LIVE_TURN_ID,
+        role: 'assistant' as const,
+        content: '先重试一次生成。',
+        timestamp: 30,
+        toolCalls: [{ id: 'call-retry', name: 'excel_generate', arguments: {} }] as never,
+        metadata: { correlation: { turnId: LIVE_TURN_ID } },
+      },
+    ];
+    const merged = mergeSnapshotWithLiveTail(snapshotMessages, live).messages;
+    const mergedDraft = merged.find((message) => message.id === LIVE_TURN_ID);
+
+    // 合并成一条（不双份），且标记已撤：correlation 等活草稿键保留
+    expect(merged.filter((message) => message.id === LIVE_TURN_ID)).toHaveLength(1);
+    expect(mergedDraft?.metadata?.streamRecovery).toBeUndefined();
+    expect(mergedDraft?.metadata?.streamInterruptionReason).toBeUndefined();
+    expect(mergedDraft?.metadata?.correlation).toEqual({ turnId: LIVE_TURN_ID });
+    expect(mergedDraft?.toolCalls?.map((toolCall) => toolCall.id)).toEqual(['call-retry']);
+  });
+
+  it('commit 落到 recovery 消息上时标记随 commit 撤掉（切走再切回、无 live 尾的路径）', () => {
+    const committed: Message = {
+      id: LIVE_TURN_ID,
+      role: 'assistant',
+      content: '准备写入',
+      timestamp: 30,
+      toolCalls: [{ id: 'call-retry', name: 'excel_generate', arguments: {} }],
+      metadata: { streamRecovery: { turnId: LIVE_TURN_ID }, correlation: { turnId: LIVE_TURN_ID } },
+    };
+    let messages = [
+      user('u-1'),
+      committed,
+    ];
+    const state = streamState();
+    state.currentTurnMessageId = LIVE_TURN_ID;
+    const getMessages = () => messages;
+    const setMessages = (next: Message[]) => { messages = next; };
+
+    applyConversationStreamEvent(
+      {
+        type: 'message',
+        sessionId: SESSION_ID,
+        data: {
+          id: 'host-committed-1',
+          role: 'assistant',
+          turnId: LIVE_TURN_ID,
+          content: '准备写入',
+          toolCalls: [{ id: 'call-retry', name: 'excel_generate', arguments: {} }],
+        },
+      },
+      state,
+      streamActions(getMessages, setMessages),
+    );
+
+    const target = messages.find((message) => message.id === LIVE_TURN_ID);
+    expect(target?.metadata?.streamRecovery).toBeUndefined();
+    expect(target?.metadata?.streamInterruptionReason).toBeUndefined();
+    expect(target?.metadata?.correlation).toEqual({ turnId: LIVE_TURN_ID });
+  });
+});

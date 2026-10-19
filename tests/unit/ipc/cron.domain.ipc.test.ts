@@ -16,6 +16,7 @@ const h = vi.hoisted(() => ({
     listJobs: vi.fn((..._a: unknown[]) => ['job']),
     createJob: vi.fn(async (..._a: unknown[]) => ({ id: 'j1' })),
     updateJob: vi.fn(async (..._a: unknown[]) => ({ id: 'j1', updated: true })),
+    grantLoginPassThrough: vi.fn(async (..._a: unknown[]) => ({ id: 'j1', granted: true })),
     deleteJob: vi.fn(async (..._a: unknown[]) => true),
     triggerJob: vi.fn(async (..._a: unknown[]) => ({ executionId: 'e1' })),
     getJobExecutions: vi.fn((..._a: unknown[]) => ['exec']),
@@ -73,6 +74,22 @@ describe('任务管理委派', () => {
     expect(await call('updateJob', { jobId: 'j1', updates: 'x' })).toEqual(invalid);
     expect(await call('updateJob', { jobId: 'j1', updates: { enabled: false } })).toEqual({ success: true, data: { id: 'j1', updated: true } });
     expect(h.service.updateJob).toHaveBeenCalledWith('j1', { enabled: false });
+  });
+
+  it('grantLoginPassThrough：需要 jobId + siteOrigin，并走独立服务动作', async () => {
+    expect(await call('grantLoginPassThrough', { jobId: 'j1' })).toEqual({
+      success: false,
+      error: { code: 'CRON_ERROR', message: 'Invalid cron login pass-through origin' },
+    });
+    expect(await call('grantLoginPassThrough', { siteOrigin: 'https://example.test' })).toEqual({
+      success: false,
+      error: { code: 'CRON_ERROR', message: 'Invalid cron job id' },
+    });
+    expect(await call('grantLoginPassThrough', { jobId: 'j1', siteOrigin: 'https://example.test/path' })).toEqual({
+      success: true,
+      data: { id: 'j1', granted: true },
+    });
+    expect(h.service.grantLoginPassThrough).toHaveBeenCalledWith('j1', 'https://example.test/path');
   });
 
   it.each(['deleteJob', 'triggerJob', 'getExecutions', 'getGroupListenCheck', 'startGroupListenCheck'])('%s：缺 jobId → CRON_ERROR Invalid cron job id', async (action) => {

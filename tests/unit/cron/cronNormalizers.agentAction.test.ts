@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildCronAgentActionResult,
+  cronAgentRunHasAlert,
   isNotifySuppressedResult,
   normalizeAction,
   readCronAlertReason,
@@ -219,5 +220,67 @@ describe('readCronAlertReason 守卫读取', () => {
     expect(readCronAlertReason({ sessionId: 's1' })).toBeUndefined();
     expect(readCronAlertReason({ sessionId: 's1', alertReason: '  ' })).toBeUndefined();
     expect(readCronAlertReason({ sessionId: 's1', alertReason: 42 })).toBeUndefined();
+  });
+});
+
+// ============================================================================
+// cronAgentRunHasAlert — 成功运行「值得打扰」矩阵（N-CRON-URGENCY-NOTIFY）。
+// 原 cronService 内联三元收口至此：gated（external-watch / notifyWhen）任务只认
+// <cron_alert>；仅设 urgencyCriteria 的任务只认结果显式声明的 can_wait/fyi 头
+// （must_today/缺头/乱头都响）；什么判据都没设恒响（每轮照常通知）。
+// ============================================================================
+describe('cronAgentRunHasAlert — 值得打扰矩阵', () => {
+  const quiet = 'urgency: can_wait\n一切照旧';
+  const must = 'urgency: must_today\n老板来信';
+
+  it('无任何判据：任何结果（含 can_wait 头）都响（无判据任务行为零变化）', () => {
+    expect(cronAgentRunHasAlert({}, { isExternalWatch: false, finalAssistantText: quiet })).toBe(true);
+    expect(cronAgentRunHasAlert({}, { isExternalWatch: false, finalAssistantText: must })).toBe(true);
+  });
+
+  it('notifyWhen 判据：只认 <cron_alert>（N-CRON-RESTATE-HUMAN-WHEN 行为零变化）', () => {
+    const action = { notifyWhen: '只有紧急事项' };
+    expect(cronAgentRunHasAlert(action, { isExternalWatch: false, finalAssistantText: '<cron_alert>紧急</cron_alert>' })).toBe(true);
+    expect(cronAgentRunHasAlert(action, { isExternalWatch: false, finalAssistantText: must })).toBe(false);
+  });
+
+  it('仅 urgencyCriteria：显式 can_wait/fyi 不响；must_today/缺头/乱头照响', () => {
+    const action = { urgencyCriteria: '只有老板发来的邮件算今天必须处理' };
+    expect(cronAgentRunHasAlert(action, { isExternalWatch: false, finalAssistantText: quiet })).toBe(false);
+    expect(cronAgentRunHasAlert(action, { isExternalWatch: false, finalAssistantText: 'urgency: fyi\n天气速览' })).toBe(false);
+    expect(cronAgentRunHasAlert(action, { isExternalWatch: false, finalAssistantText: must })).toBe(true);
+    expect(cronAgentRunHasAlert(action, { isExternalWatch: false, finalAssistantText: '普通正文没有头部行' })).toBe(true);
+    expect(cronAgentRunHasAlert(action, { isExternalWatch: false, finalAssistantText: 'urgency: maybe\n正文' })).toBe(true);
+  });
+
+  it('档位头与 buildCronAgentActionResult 的 urgency 解析同源：优先读 <cron_summary> 摘要', () => {
+    const action = { urgencyCriteria: '只有老板发来的邮件算今天必须处理' };
+    // 摘要块首行 can_wait → 安静（正文里的 must_today 字样不参与）
+    const summaryQuiet = 'urgency: must_today\n<cron_summary>\nurgency: can_wait\n周报照旧\n</cron_summary>';
+    expect(cronAgentRunHasAlert(action, { isExternalWatch: false, finalAssistantText: summaryQuiet })).toBe(false);
+    // 有摘要块但档位头只写在正文（不在摘要里）→ 不算声明，照常响
+    const headOutsideSummary = 'urgency: can_wait\n<cron_summary>\n周报照旧\n</cron_summary>';
+    expect(cronAgentRunHasAlert(action, { isExternalWatch: false, finalAssistantText: headOutsideSummary })).toBe(true);
+    // 无摘要块时读正文头部
+    expect(cronAgentRunHasAlert(action, { isExternalWatch: false, finalAssistantText: quiet })).toBe(false);
+  });
+
+  it('notifyWhen + urgencyCriteria 同设：notifyWhen 独自决定，urgency 头不参与', () => {
+    const action = { urgencyCriteria: '只有老板发来的邮件算今天必须处理', notifyWhen: '只有紧急事项' };
+    // 有 alert 标记 → 响（即使档位是 must_today 或 can_wait 都无所谓）
+    expect(cronAgentRunHasAlert(action, { isExternalWatch: false, finalAssistantText: `${must}\n<cron_alert>紧急</cron_alert>` })).toBe(true);
+    // 无 alert 标记 → 安静（即使正文显式 can_wait）
+    expect(cronAgentRunHasAlert(action, { isExternalWatch: false, finalAssistantText: quiet })).toBe(false);
+  });
+
+  it('external-watch：只认 <cron_alert>，urgency 规则对监听任务不生效', () => {
+    const action = { urgencyCriteria: '只有老板发来的邮件算今天必须处理' };
+    expect(cronAgentRunHasAlert(action, { isExternalWatch: true, finalAssistantText: '<cron_alert>日历新冲突</cron_alert>' })).toBe(true);
+    expect(cronAgentRunHasAlert(action, { isExternalWatch: true, finalAssistantText: quiet })).toBe(false);
+  });
+
+  it('空白判据视为未设置（与 normalizeCriteriaSentence 的 trim 语义一致）', () => {
+    expect(cronAgentRunHasAlert({ urgencyCriteria: '   ' }, { isExternalWatch: false, finalAssistantText: quiet })).toBe(true);
+    expect(cronAgentRunHasAlert({ notifyWhen: '   ' }, { isExternalWatch: false, finalAssistantText: '普通正文' })).toBe(true);
   });
 });

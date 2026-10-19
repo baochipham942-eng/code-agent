@@ -22,7 +22,7 @@ import { normalizeAgentEngineSession } from '../../../shared/contract/agentEngin
 import { MODEL_OVERRIDE_METADATA_KEY } from '../../session/modelOverridePersistence';
 import {
   deriveFallbackSessionTitle,
-  isPlaceholderSessionTitle,
+  isProvisionalAutoTitle,
   sessionTitleSource,
 } from '../../../shared/sessionTitlePlaceholder';
 import { deriveSessionWorkbenchSnapshot, toSessionWorkbenchProvenance } from '../../../shared/contract/sessionWorkspace';
@@ -1256,17 +1256,17 @@ export class SessionManager implements Disposable {
     const session = await this.getSession(sessionId);
     if (!session) return;
 
-    if (!(isPlaceholderSessionTitle(session.title) && session.messageCount <= 1)) return;
-
     const titleSource = sessionTitleSource(firstMessage);
+    if (session.messageCount > 1 || !isProvisionalAutoTitle(session.title, titleSource)) return;
+
     let title = await this.generateSmartTitle(titleSource);
     if (!title) title = deriveFallbackSessionTitle(firstMessage);
 
     // generateSmartTitle 要调小模型，实测能拖几十秒。这段窗口里目标会话可能已被
     // 改名（用户手动重命名，或它先被别的路径命名过），此时再写就是覆盖用户的标题。
-    // 回来后重新读一次，仍是占位标题才落笔。
+    // 回来后重新读一次，仍是未定档标题才落笔。
     const latest = await this.getSession(sessionId);
-    if (!latest || !isPlaceholderSessionTitle(latest.title)) return;
+    if (!latest || !isProvisionalAutoTitle(latest.title, titleSource)) return;
 
     await this.updateSession(sessionId, { title });
   }

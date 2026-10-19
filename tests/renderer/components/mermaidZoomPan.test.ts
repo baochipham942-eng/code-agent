@@ -5,7 +5,7 @@ import {
   zoomMermaidViewAt,
   mermaidWheelZoomFactor,
   type MermaidView,
-} from '../../../src/renderer/components/features/chat/MessageBubble/messageContentParts';
+} from '../../../src/renderer/components/features/chat/MessageBubble/MermaidDiagram';
 
 describe('clampMermaidScale', () => {
   it('低于下限收到 0.1，高于上限收到 4', () => {
@@ -63,7 +63,7 @@ describe('mermaidWheelZoomFactor', () => {
 describe('mermaid 高度缓存（历史会话零跳动占位）', () => {
   it('量过的高度可按图源码取回，没量过的返回 null', async () => {
     const { rememberMermaidHeight, getCachedMermaidHeight } = await import(
-      '../../../src/renderer/components/features/chat/MessageBubble/messageContentParts'
+      '../../../src/renderer/components/features/chat/MessageBubble/MermaidDiagram'
     );
     expect(getCachedMermaidHeight('graph TD; X-->Y')).toBeNull();
     rememberMermaidHeight('graph TD; X-->Y', 321);
@@ -74,7 +74,7 @@ describe('mermaid 高度缓存（历史会话零跳动占位）', () => {
 
   it('超出容量时淘汰最早的条目，新条目仍可取回', async () => {
     const { rememberMermaidHeight, getCachedMermaidHeight } = await import(
-      '../../../src/renderer/components/features/chat/MessageBubble/messageContentParts'
+      '../../../src/renderer/components/features/chat/MessageBubble/MermaidDiagram'
     );
     for (let i = 0; i < 205; i++) {
       rememberMermaidHeight(`graph TD; N${i}`, 100 + i);

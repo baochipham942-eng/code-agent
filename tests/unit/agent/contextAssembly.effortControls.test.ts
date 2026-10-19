@@ -33,7 +33,7 @@ describe('applyEffortControls', () => {
     });
   });
 
-  it('keeps per-model config when the session EffortSelector requests another level', () => {
+  it('keeps per-model config when the session requests another effort level', () => {
     const modelConfigured: ModelConfig = {
       ...baseConfig,
       thinkingBudget: 32768,

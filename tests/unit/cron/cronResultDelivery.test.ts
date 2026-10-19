@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CronJobAction, CronJobDefinition } from '../../../src/shared/contract/cron';
 import { CRON_AGENT_SNAPSHOT } from '../../../src/shared/constants';
 import { truncateUtf8Snapshot } from '../../../src/host/cron/cronAgentPrompt';
+import { extractCronAlertText } from '../../../src/shared/cronRunDigest';
 
 const sendMessage = vi.fn();
 const getAllAccounts = vi.fn();
@@ -237,5 +238,21 @@ describe('deliverCronResultToChannel push body sanitization (PR#2060 round 2)', 
     const result = await deliver(job('feishu:oc_group1'), raw).outcome;
 
     expect(result).toEqual({ delivered: true, pushedBody: '冲突 A\n冲突 B' });
+  });
+
+  // N-CRON-RESTATE-HUMAN-WHEN-FU1: alert 分支改走 shared/cronRunDigest.extractCronAlertText
+  // （与完成系统通知共用同一提取）。推送正文必须与该出口的输出逐字一致——通知和推送
+  // 对同一轮运行说的是同一句话。
+  it('pushes exactly what extractCronAlertText returns for a two-alert text', async () => {
+    const raw = '例行巡检。<cron_snapshot>{"fingerprint":"abc"}</cron_snapshot>'
+      + '<cron_alert> 数据库连接池耗尽 </cron_alert> 中间说明 '
+      + '<cron_alert>磁盘水位超 90%</cron_alert> 结尾';
+    const expected = extractCronAlertText(raw);
+
+    expect(expected).toBe('数据库连接池耗尽\n磁盘水位超 90%');
+    const result = await deliver(job('feishu:oc_group1'), raw).outcome;
+
+    expect(result).toEqual({ delivered: true, pushedBody: expected });
+    expect(sendMessage).toHaveBeenCalledWith('account-uuid', 'oc_group1', expected);
   });
 });

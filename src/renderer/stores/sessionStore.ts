@@ -30,6 +30,7 @@ import { bumpSessionsLocalVersion, executeLoadOlderSessions, executeLoadSessions
 import { mergeSnapshotWithLiveTail } from './sessionSnapshotMerge';
 import { groupRunsByTask, type CronRunGroups } from '@shared/cronRunDigest';
 import { recoveryLoadLightsTurn, runtimeStatusCountsAsRunning } from './parkedContinueTurn';
+import { hostStampPredatesTerminal } from './terminalRunGuardStore';
 import { bindInitializedSessionBroadcasts } from './sessionStoreBroadcasts';
 
 const logger = createLogger('SessionStore');
@@ -436,11 +437,10 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
               item.id === sessionId ? deriveCurrentSessionMeta(normalizedSession, loadedMessages) : item
             ),
           });
-          // 宿主说这个会话还有活跃 run（刷新/切回来时最常见）：前端的运行态是纯内存的，
-          // 不从宿主接回来就会显示空闲——而后台还在跑，停止按钮消失、排队卡还邀请你「立即发送」，
-          // 一点就跟正在跑的那轮撞车（2026-08-01 C3 真机）。终态由 run 收尾时广播的
-          // session:updated 负责清（见 sessionStoreBroadcasts）。
-          if (recoveryLoadLightsTurn(session)) {
+          // 宿主说这个会话还有活跃 run（刷新/切回来最常见）：前端运行态纯内存，不接回来
+          // 就显示空闲——后台还在跑时停止按钮消失、排队卡邀请「立即发送」，一点就撞车
+          //（2026-08-01 C3 真机）。终态由收尾广播的 session:updated 清；终局已应用后，读库停在终局前的旧 load 残影不得再点亮（terminalRunGuardStore）。
+          if (recoveryLoadLightsTurn(session) && !hostStampPredatesTerminal(sessionId, session.updatedAt)) {
             useAppStore.getState().setSessionProcessing(sessionId, true);
             useTaskStore.getState().updateSessionState(sessionId, { status: 'running' });
           } else if (isTerminalRecoverySessionStatus(session.status) && !preserveLiveRunState) {
@@ -923,6 +923,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
       switch (event.type) {
         case 'added':
+          // SSE 是 at-least-once（断线按 lastEventId 重放会再投一遍 added），按 sessionId 去重，
+          // 否则后台面板同一条目出现两份（2026-10-09 无槽验证实测）。
+          if (backgroundSessions.some((t) => t.sessionId === event.task.sessionId)) break;
           set({ backgroundSessions: [...backgroundSessions, event.task] });
           break;
         case 'removed':

@@ -125,11 +125,14 @@ class ExtensionOpsService {
   // Install (marketplace only)
   // --------------------------------------------------------------------------
 
-  async install(spec: string): Promise<void> {
+  async install(spec: string, options?: { cautionConfirmationToken?: string }): Promise<void> {
     const { installPlugin } = await import(
       '../../skills/marketplace/installService'
     );
-    await installPlugin(spec);
+    await installPlugin(
+      spec,
+      options?.cautionConfirmationToken ? { cautionConfirmationToken: options.cautionConfirmationToken } : undefined,
+    );
     this.typeCache = null; // invalidate
   }
 

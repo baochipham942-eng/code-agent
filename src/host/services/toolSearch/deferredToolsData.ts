@@ -349,7 +349,7 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     source: 'builtin',
   },
   {
-    name: 'Computer',
+    name: 'computer_use',
     shortDescription: '计算机控制（截图/鼠标/键盘）',
     tags: ['vision'],
     aliases: [
@@ -1100,8 +1100,8 @@ export const TOOL_ALIASES: Record<string, string> = {
   web_search: 'WebSearch',
   web_fetch: 'WebFetch',
   browser_action: 'Browser',
-  computer_use: 'Computer',
-  screenshot: 'Computer',
+  Computer: 'computer_use',
+  screenshot: 'computer_use',
   ask_user_question: 'AskUserQuestion',
   session_manager: 'SessionManager',
   create_session: 'SessionManager',

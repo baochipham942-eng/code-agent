@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isCronUrgency, parseUrgencyHeader } from '../../../src/shared/cronUrgency';
+import { declaresCronUrgencyQuiet, isCronUrgency, parseUrgencyHeader } from '../../../src/shared/cronUrgency';
 
 describe('parseUrgencyHeader', () => {
   it('reads each of the three valid tiers from the first line', () => {
@@ -51,5 +51,37 @@ describe('isCronUrgency', () => {
     expect(isCronUrgency('maybe')).toBe(false);
     expect(isCronUrgency(undefined)).toBe(false);
     expect(isCronUrgency({ urgency: 'fyi' })).toBe(false);
+  });
+});
+
+// N-CRON-URGENCY-NOTIFY：通知门的「显式安静声明」判读——与 parseUrgencyHeader 的
+// 排序兜底不同，这里缺头/乱头都不算说了「不急」（宁可多响一次，不吞今日必办）。
+describe('declaresCronUrgencyQuiet', () => {
+  it('显式 can_wait / fyi 头 → true（大小写与空格不敏感，剥开头空行）', () => {
+    expect(declaresCronUrgencyQuiet('urgency: can_wait\n周报照旧')).toBe(true);
+    expect(declaresCronUrgencyQuiet('urgency: fyi\n天气速览')).toBe(true);
+    expect(declaresCronUrgencyQuiet('URGENCY: FYI')).toBe(true);
+    expect(declaresCronUrgencyQuiet('  Urgency :  Can_Wait  ')).toBe(true);
+    expect(declaresCronUrgencyQuiet('\n\n\nurgency: fyi\n正文')).toBe(true);
+  });
+
+  it('must_today / 缺头 / 乱值头 / 伪头 / 窗口外 → false（都保持通知）', () => {
+    expect(declaresCronUrgencyQuiet('urgency: must_today\n老板来信')).toBe(false);
+    expect(declaresCronUrgencyQuiet('普通正文，没有头部行')).toBe(false);
+    expect(declaresCronUrgencyQuiet('')).toBe(false);
+    // 乱值：parseUrgencyHeader 归 fyi 只是收件箱排序兜底，不算模型说了「不急」
+    expect(declaresCronUrgencyQuiet('urgency: maybe\n正文')).toBe(false);
+    expect(declaresCronUrgencyQuiet('URGENCY:  今日')).toBe(false);
+    // 空值/带多余内容的行不构成匹配（与 parseUrgencyHeader 的伪头语义同源）
+    expect(declaresCronUrgencyQuiet('urgency:')).toBe(false);
+    expect(declaresCronUrgencyQuiet('urgency: fyi extra')).toBe(false);
+    // 3 行窗口之外的头部行不认
+    expect(declaresCronUrgencyQuiet('第一行\n第二行\n第三行\nurgency: fyi')).toBe(false);
+  });
+
+  it('非字符串输入不炸，按未声明处理', () => {
+    expect(declaresCronUrgencyQuiet(undefined)).toBe(false);
+    expect(declaresCronUrgencyQuiet(null as unknown as string)).toBe(false);
+    expect(declaresCronUrgencyQuiet(123 as unknown as string)).toBe(false);
   });
 });

@@ -9,6 +9,7 @@
 // ============================================================================
 
 import type { AgentAction, CreateCronJobDefinition, CronScheduleConfig } from './contract/cron';
+import { formatCronExpressionLabel, humanizeEverySchedule, type CronHumanLang } from './cronHumanize';
 
 export type StandingRefreshCadence = 'hourly' | 'daily' | 'weekly';
 
@@ -32,6 +33,11 @@ export interface StandingRefreshJobView {
   jobId: string;
   enabled: boolean;
   cadence: string;
+  /**
+   * 任务当前真实调度（job.schedule 原样透出）。用户在 Cron 中心改过节奏时它与
+   * metadata cadence 不一致——chip/弹窗以这份为准；旧载荷不带该键时回退 cadence。
+   */
+  schedule?: CronScheduleConfig;
   /** 当前生效的指令原文（编辑弹窗回填用）。 */
   instruction: string;
   lastRunAt?: number;
@@ -46,6 +52,39 @@ const CADENCE_PRESETS: Record<StandingRefreshCadence, {
   daily: { scheduleType: 'cron', schedule: { type: 'cron', expression: '0 9 * * *' } },
   weekly: { scheduleType: 'cron', schedule: { type: 'cron', expression: '0 9 * * 1' } },
 };
+
+/**
+ * 真实调度 → chip/弹窗的展示判定（N-ARTIFACT-STANDING-REFRESH-REALRUN-FU1）。
+ * preset：与某个节奏预设一致，沿用 Hourly/Daily/Weekly 文案（词表在 renderer i18n）；
+ * custom：用户在 Cron 中心改过的其他 every/cron 调度，label 已按语言人话化。
+ * schedule 缺席（旧载荷）或 at/event 型返回 undefined，调用方回退 metadata cadence。
+ */
+export type StandingRefreshScheduleView =
+  | { kind: 'preset'; cadence: StandingRefreshCadence }
+  | { kind: 'custom'; label: string };
+
+export function describeStandingRefreshSchedule(
+  schedule: CronScheduleConfig | undefined,
+  lang: CronHumanLang,
+): StandingRefreshScheduleView | undefined {
+  if (!schedule || (schedule.type !== 'every' && schedule.type !== 'cron')) return undefined;
+  if (schedule.type === 'every') {
+    const hourly = CADENCE_PRESETS.hourly.schedule;
+    if (hourly.type === 'every' && schedule.interval === hourly.interval && schedule.unit === hourly.unit) {
+      return { kind: 'preset', cadence: 'hourly' };
+    }
+    return { kind: 'custom', label: humanizeEverySchedule(schedule.interval, schedule.unit, lang) };
+  }
+  const daily = CADENCE_PRESETS.daily.schedule;
+  if (daily.type === 'cron' && schedule.expression === daily.expression) {
+    return { kind: 'preset', cadence: 'daily' };
+  }
+  const weekly = CADENCE_PRESETS.weekly.schedule;
+  if (weekly.type === 'cron' && schedule.expression === weekly.expression) {
+    return { kind: 'preset', cadence: 'weekly' };
+  }
+  return { kind: 'custom', label: formatCronExpressionLabel(schedule.expression, schedule.timezone, lang) };
+}
 
 function fileNameOf(filePath: string): string {
   const parts = filePath.replace(/\\/g, '/').split('/');
@@ -133,6 +172,7 @@ export interface StandingRefreshJobLike {
   enabled: boolean;
   updatedAt: number;
   metadata?: Record<string, unknown>;
+  schedule?: CronScheduleConfig;
 }
 
 /** 在 job 列表里找同一文件路径的常设刷新任务；多条时取 updatedAt 最新的那条。 */

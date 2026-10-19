@@ -32,6 +32,7 @@ import type { DAGVisualizationEvent } from '../contract/dagVisualization';
 import type { ScriptRunEvent, WorkflowLaunchEvent } from '../contract/scriptRun';
 import { DAG_CHANNELS, SKILL_CHANNELS } from './channels';
 import type { SideChatFailureCause } from './schemas';
+import type { CronFailurePresentationKind } from '../utils/cronFailureClassification';
 
 import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetrySessionListOptions, TelemetryToolStat, TelemetryIntentStat, TelemetryCostBucket, TelemetryCostByPeriodOptions, TelemetryPushEvent, TelemetryHealth, ComputerSurfaceReliabilitySummary, TelemetryFeedbackSubmitRequest, TelemetryFeedbackSubmitResult, TelemetryFeedbackRating } from '../contract/telemetry';
 
@@ -405,7 +406,7 @@ export interface IpcInvokeHandlers {
 
   // Unified extensions
   [IPC_CHANNELS.EXTENSION_LIST]: () => Promise<ExtensionInfo[]>;
-  [IPC_CHANNELS.EXTENSION_INSTALL]: (spec: string) => Promise<{ success: boolean; error?: string }>;
+  [IPC_CHANNELS.EXTENSION_INSTALL]: (spec: string, cautionConfirmationToken?: string) => Promise<{ success: boolean; error?: string } | SkillCautionConfirmationRequired>;
   [IPC_CHANNELS.EXTENSION_UNINSTALL]: (id: string) => Promise<{ success: boolean; error?: string }>;
   [IPC_CHANNELS.EXTENSION_ENABLE]: (id: string) => Promise<{ success: boolean; error?: string }>;
   [IPC_CHANNELS.EXTENSION_DISABLE]: (id: string) => Promise<{ success: boolean; error?: string }>;
@@ -614,6 +615,8 @@ export interface NotificationShowEvent {
   title: string;
   body: string;
   sessionId: string;
+  /** Source cron job for explicit login-wall consent from the notification. */
+  jobId?: string;
   /**
    * 这条通知同时代表目标会话出现了用户尚未查看的新结果。
    * Renderer 只把它接到既有 session unread 状态，不另建通知账本。
@@ -621,6 +624,10 @@ export interface NotificationShowEvent {
   markSessionUnread?: boolean;
   code?: string;
   siteOrigin?: string;
+  /** 定时失败人话分类。renderer 按界面语言翻译，host 不拼中文。 */
+  failureKind?: CronFailurePresentationKind;
+  /** ISO-8601。只有报文写明重置时间才带。 */
+  resetAt?: string;
 }
 
 export type MCPEventType = 'connection_errors' | 'server_connected' | 'server_disconnected' | 'capabilities_changed';

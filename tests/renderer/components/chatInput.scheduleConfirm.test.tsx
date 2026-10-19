@@ -346,6 +346,47 @@ describe('scheduled task confirmation', () => {
   });
 });
 
+// ①（N-CRON-RESTATE-HUMAN-WHEN）：when 行按 UI 语言走 cronHumanize 人话文案；
+// 复杂表达式带「自定义时间 / Custom schedule」前缀，at 按语言本地化日期。
+describe('buildScheduleConfirmRows — when 行按 UI 语言说人话', () => {
+  const draftOf = (schedule: CreateCronJobInput['schedule']) => ({ input: { ...rowInput, schedule } });
+  const whenRow = (schedule: CreateCronJobInput['schedule'], lang: 'zh' | 'en') =>
+    buildScheduleConfirmRows(draftOf(schedule), rowLabels, lang).find((row) => row.key === 'when')?.value;
+
+  it.each([
+    { lang: 'zh', schedule: { type: 'cron', expression: '17 8 * * *' }, expected: '每天 08:17' },
+    { lang: 'en', schedule: { type: 'cron', expression: '17 8 * * *' }, expected: 'Daily at 08:17' },
+    { lang: 'zh', schedule: { type: 'cron', expression: '0 9 * * 1' }, expected: '每周一 09:00' },
+    { lang: 'en', schedule: { type: 'cron', expression: '0 9 * * 1' }, expected: 'Weekly on Monday at 09:00' },
+    { lang: 'zh', schedule: { type: 'cron', expression: '30 8 * * 1-5' }, expected: '工作日 08:30' },
+    { lang: 'en', schedule: { type: 'cron', expression: '30 8 * * 1-5' }, expected: 'Weekdays at 08:30' },
+    { lang: 'zh', schedule: { type: 'every', interval: 3, unit: 'hours' }, expected: '每 3 小时' },
+    { lang: 'en', schedule: { type: 'every', interval: 3, unit: 'hours' }, expected: 'Every 3 hours' },
+    { lang: 'zh', schedule: { type: 'every', interval: 1, unit: 'days' }, expected: '每 1 天' },
+    { lang: 'en', schedule: { type: 'every', interval: 1, unit: 'days' }, expected: 'Every day' },
+    { lang: 'zh', schedule: { type: 'cron', expression: '7 3 * * 2-4' }, expected: '自定义时间 · 7 3 * * 2-4' },
+    { lang: 'en', schedule: { type: 'cron', expression: '7 3 * * 2-4' }, expected: 'Custom schedule · 7 3 * * 2-4' },
+  ])('cronHumanize 人话：$expected（$lang）', ({ schedule, lang, expected }) => {
+    expect(whenRow(schedule as CreateCronJobInput['schedule'], lang as 'zh' | 'en')).toBe(expected);
+  });
+
+  it('at 按语言本地化日期（zh/en 形状不同）；解析不了的 datetime 给一次性/Once', () => {
+    const ts = Date.UTC(2026, 11, 25, 1, 30);
+    const zhLabel = whenRow({ type: 'at', datetime: ts }, 'zh');
+    const enLabel = whenRow({ type: 'at', datetime: ts }, 'en');
+    // 数字随运行机时区漂，只锁形状与「两种语言确实不同」
+    expect(zhLabel).toMatch(/^\d{2}\/\d{2} \d{2}:\d{2}$/);
+    expect(enLabel).toMatch(/^\d{2}\/\d{2}, \d{2}:\d{2} (AM|PM)$/);
+    expect(zhLabel).not.toBe(enLabel);
+    expect(whenRow({ type: 'at', datetime: 'garbage' }, 'zh')).toBe('一次性');
+    expect(whenRow({ type: 'at', datetime: 'garbage' }, 'en')).toBe('Once');
+  });
+
+  it('缺省 lang 保持 zh（既有调用方零扰动）', () => {
+    expect(whenRow({ type: 'cron', expression: '17 8 * * *' }, undefined as never)).toBe('每天 08:17');
+  });
+});
+
 describe('buildScheduleConfirmRows', () => {
   it('builds the four plain-language rows from the draft restatement', () => {
     expect(buildScheduleConfirmRows({
@@ -405,7 +446,7 @@ describe('untrusted cron draft fields never crash the confirm card', () => {
       description: '推送结果',
       schedule: { type: 'every', interval: 1, unit: 'days' },
       action: { type: 'webhook' },
-    }, ['推送结果', WHEN, FN, INBOX]],
+    }, ['推送结果', WHEN, INBOX]],
   ])('renders fallback copy when %s', async (_label, raw, expected) => {
     const rows = await rowsAfterStoring(raw);
     expect(rows).toEqual(expected);
@@ -432,7 +473,8 @@ describe('untrusted cron draft fields never crash the confirm card', () => {
     }, rowLabels);
     // when 行不再有「按配置」兜底：真实链路里无效 schedule 在规范化阶段就被拒，
     // 这里只保证纯函数对垃圾输入不抛错（when 留空，生产不可达）。
-    expect(rows.map((row) => row.value)).toEqual(['按任务描述执行并整理结果', '', '任务完成或发现异常时通知', '自动化审核收件箱']);
+    // notifyWhen 行只对 agent 动作出（判据无法生效就不给假口子），garbage action=null → 不出。
+    expect(rows.map((row) => row.value)).toEqual(['按任务描述执行并整理结果', '', '自动化审核收件箱']);
   });
 });
 
@@ -497,7 +539,7 @@ describe('ScheduleConfirmCard', () => {
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 
-  it('renders fallback copy for a degraded draft without crashing', () => {
+  it('renders fallback copy for a degraded draft without crashing (notifyWhen row only for agent actions)', () => {
     const draft: PendingScheduleDraft = {
       input: {
         schedule: { type: 'every', interval: 1, unit: 'days' },
@@ -510,7 +552,209 @@ describe('ScheduleConfirmCard', () => {
 
     expect(screen.getByText('backup.sh')).toBeTruthy();
     expect(screen.getByText('每 1 天')).toBeTruthy();
-    expect(screen.getByText('任务完成或发现异常时通知')).toBeTruthy();
+    // shell 动作没有可生效的通知判据（prompt 注入与通知门都在 agent 执行链上）：
+    // notifyWhen 整行不出，不给「看起来可配置」的假口子。
+    expect(screen.queryByText('任务完成或发现异常时通知')).toBeNull();
     expect(screen.getByText('自动化审核收件箱')).toBeTruthy();
+  });
+});
+
+// ②（N-CRON-RESTATE-HUMAN-WHEN）：确认时把（可能已在卡内编辑过的）通知判据写进
+// action.notifyWhen；空判据不写字段 = 「每次都通知」的旧行为、prompt 字节不变。
+describe('confirmScheduleCreation — notifyWhen 落进任务', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.generateFromPrompt.mockResolvedValue(generatedDraft);
+    mocks.createJob.mockResolvedValue(createdJob);
+  });
+
+  it('restatement.notifyWhen 写进 action.notifyWhen（与 sourceSessionId 合并共存）', async () => {
+    const { result } = renderHook(() => useScheduleSubmitHarness());
+
+    await act(async () => {
+      await result.current.runScheduleCreation('每天早上帮我看邮件');
+    });
+    await act(async () => {
+      await result.current.confirmScheduleCreation();
+    });
+
+    expect(mocks.createJob).toHaveBeenCalledTimes(1);
+    expect(mocks.createJob.mock.calls[0]?.[0].action).toMatchObject({
+      type: 'agent',
+      notifyWhen: '发现高优先级或需要回复的邮件',
+      context: { sourceSessionId: 'session-1' },
+    });
+  });
+
+  it('restatement 缺席 → action 不带 notifyWhen 字段（旧行为，零扰动）', async () => {
+    mocks.generateFromPrompt.mockResolvedValueOnce({ ...generatedDraft, restatement: undefined });
+    const { result } = renderHook(() => useScheduleSubmitHarness());
+
+    await act(async () => {
+      await result.current.runScheduleCreation('每天早上帮我看邮件');
+    });
+    await act(async () => {
+      await result.current.confirmScheduleCreation();
+    });
+
+    expect(mocks.createJob.mock.calls[0]?.[0].action).not.toHaveProperty('notifyWhen');
+  });
+
+  it('空白判据同样不写字段（空 = 每次都通知）', async () => {
+    mocks.generateFromPrompt.mockResolvedValueOnce({
+      ...generatedDraft,
+      restatement: { what: '检查新邮件', notifyWhen: '   ' },
+    });
+    const { result } = renderHook(() => useScheduleSubmitHarness());
+
+    await act(async () => {
+      await result.current.runScheduleCreation('每天早上帮我看邮件');
+    });
+    await act(async () => {
+      await result.current.confirmScheduleCreation();
+    });
+
+    expect(mocks.createJob.mock.calls[0]?.[0].action).not.toHaveProperty('notifyWhen');
+  });
+});
+
+// ③（N-CRON-RESTATE-HUMAN-WHEN）：卡内可改时间（compileSimpleSchedule 五档）与通知判据。
+describe('ScheduleConfirmCard — 卡内编辑', () => {
+  function agentDraft(overrides: Partial<PendingScheduleDraft['input']> = {}): PendingScheduleDraft {
+    return {
+      input: {
+        ...rowInput,
+        schedule: { type: 'cron', expression: '17 8 * * *' },
+        ...overrides,
+      } as CreateCronJobInput,
+      restatement: { what: '检查新邮件和需要跟进的事项', notifyWhen: '发现高优先级或需要回复的邮件' },
+      description: '每天早上帮我看邮件',
+      sourceSessionId: 'session-1',
+    };
+  }
+
+  it('when 行：改频率+时间 → compileSimpleSchedule 编译进草案（schedule 与 scheduleType 同步）', () => {
+    const onDraftChange = vi.fn();
+    render(
+      <ScheduleConfirmCard draft={agentDraft()} confirming={false} onConfirm={vi.fn()} onDismiss={vi.fn()} onDraftChange={onDraftChange} />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑 什么时候' }));
+    fireEvent.change(screen.getByLabelText('什么时候'), { target: { value: 'daily' } });
+    fireEvent.change(screen.getByLabelText('时间'), { target: { value: '08:30' } });
+    fireEvent.click(screen.getByText('保存'));
+
+    expect(onDraftChange).toHaveBeenCalledTimes(1);
+    const next = onDraftChange.mock.calls[0]?.[0] as PendingScheduleDraft;
+    expect(next.input.schedule).toEqual({ type: 'cron', expression: '30 8 * * *' });
+    expect(next.input.scheduleType).toBe('cron');
+    // 只动调度，其余字段原样带回
+    expect(next.restatement).toEqual(agentDraft().restatement);
+  });
+
+  it('when 行：每周档带星期选择；每小时档编译成 every hours', () => {
+    const onDraftChange = vi.fn();
+    render(
+      <ScheduleConfirmCard draft={agentDraft()} confirming={false} onConfirm={vi.fn()} onDismiss={vi.fn()} onDraftChange={onDraftChange} />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑 什么时候' }));
+    fireEvent.change(screen.getByLabelText('什么时候'), { target: { value: 'weekly' } });
+    fireEvent.change(screen.getByLabelText('时间'), { target: { value: '09:00' } });
+    fireEvent.change(screen.getByLabelText('星期几'), { target: { value: '3' } });
+    fireEvent.click(screen.getByText('保存'));
+    expect((onDraftChange.mock.calls[0]?.[0] as PendingScheduleDraft).input.schedule)
+      .toEqual({ type: 'cron', expression: '0 9 * * 3' });
+
+    onDraftChange.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: '编辑 什么时候' }));
+    fireEvent.change(screen.getByLabelText('什么时候'), { target: { value: 'hourly' } });
+    fireEvent.change(screen.getByLabelText('间隔（小时）'), { target: { value: '4' } });
+    fireEvent.click(screen.getByText('保存'));
+    expect((onDraftChange.mock.calls[0]?.[0] as PendingScheduleDraft).input.schedule)
+      .toEqual({ type: 'every', interval: 4, unit: 'hours' });
+  });
+
+  it('when 行：复杂表达式保持原样（keep 档），选了频率才可应用', () => {
+    const onDraftChange = vi.fn();
+    const { container } = render(
+      <ScheduleConfirmCard
+        draft={agentDraft({ schedule: { type: 'cron', expression: '7 3 * * 2-4' } })}
+        confirming={false}
+        onConfirm={vi.fn()}
+        onDismiss={vi.fn()}
+        onDraftChange={onDraftChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑 什么时候' }));
+    const apply = container.querySelector('[data-schedule-when-apply]') as HTMLButtonElement;
+    expect(apply.hasAttribute('disabled')).toBe(true);
+    expect(screen.getByLabelText('什么时候')).toHaveProperty('value', 'keep');
+
+    // 选「每天」后输入出现、应用可用，应用即覆盖复杂表达式
+    fireEvent.change(screen.getByLabelText('什么时候'), { target: { value: 'daily' } });
+    fireEvent.change(screen.getByLabelText('时间'), { target: { value: '09:15' } });
+    fireEvent.click(screen.getByText('保存'));
+    expect((onDraftChange.mock.calls[0]?.[0] as PendingScheduleDraft).input.schedule)
+      .toEqual({ type: 'cron', expression: '15 9 * * *' });
+  });
+
+  it('when 行：取消编辑不改草案', () => {
+    const onDraftChange = vi.fn();
+    render(
+      <ScheduleConfirmCard draft={agentDraft()} confirming={false} onConfirm={vi.fn()} onDismiss={vi.fn()} onDraftChange={onDraftChange} />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑 什么时候' }));
+    fireEvent.change(screen.getByLabelText('时间'), { target: { value: '23:59' } });
+    fireEvent.click(screen.getByText('不改了'));
+    expect(onDraftChange).not.toHaveBeenCalled();
+  });
+
+  it('notify 行：判据可编辑，maxLength 与 urgencyCriteria 同上限；保存写回 restatement', () => {
+    const onDraftChange = vi.fn();
+    const { container } = render(
+      <ScheduleConfirmCard draft={agentDraft()} confirming={false} onConfirm={vi.fn()} onDismiss={vi.fn()} onDraftChange={onDraftChange} />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑 什么变化值得通知' }));
+    const input = container.querySelector('[data-schedule-notify-input]') as HTMLInputElement;
+    expect(input.maxLength).toBe(200); // CRON_URGENCY_CRITERIA.MAX_CHARS
+    fireEvent.change(input, { target: { value: '只有生产事故才通知我' } });
+    fireEvent.click(screen.getByText('保存'));
+
+    expect(onDraftChange).toHaveBeenCalledWith(expect.objectContaining({
+      restatement: { what: '检查新邮件和需要跟进的事项', notifyWhen: '只有生产事故才通知我' },
+    }));
+  });
+
+  it('notify 行：草案没有 restatement 时编辑，what 行展示值兜底进合成 restatement', () => {
+    const onDraftChange = vi.fn();
+    render(
+      <ScheduleConfirmCard
+        draft={{ ...agentDraft(), restatement: undefined }}
+        confirming={false}
+        onConfirm={vi.fn()}
+        onDismiss={vi.fn()}
+        onDraftChange={onDraftChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑 什么变化值得通知' }));
+    const input = screen.getByLabelText('什么变化值得通知');
+    expect(input).toHaveProperty('value', '');
+    fireEvent.change(input, { target: { value: '有升级故障才通知' } });
+    fireEvent.click(screen.getByText('保存'));
+
+    expect(onDraftChange).toHaveBeenCalledWith(expect.objectContaining({
+      restatement: { what: '邮件巡检', notifyWhen: '有升级故障才通知' },
+    }));
+  });
+
+  it('未传 onDraftChange 时不出编辑钮（只读卡片，旧调用方零扰动）', () => {
+    render(<ScheduleConfirmCard draft={agentDraft()} confirming={false} onConfirm={vi.fn()} onDismiss={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: '编辑 什么时候' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '编辑 什么变化值得通知' })).toBeNull();
   });
 });

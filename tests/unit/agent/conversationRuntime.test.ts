@@ -33,6 +33,14 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
     error: vi.fn(),
     debug: vi.fn(),
   }),
+  // vi.importActual 拉 resolver 真模块时会连带装载 skillDiscoveryService →
+  // skillRepositoryService，它们用默认 logger 实例；mock 缺这个导出会直接抛错。
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  },
 }));
 
 vi.mock('../../../src/host/mcp/logCollector', () => ({
@@ -354,9 +362,13 @@ vi.mock('../../../src/host/services/toolSearch', () => ({
   getToolSearchService: vi.fn(),
 }));
 
+// 保留真实模块形状：conversationRuntime 还会调用 retainSkillInvocationForTurn，
+// 缺了这个 key 它就是 undefined，TypeError 被 catch 吞掉后整轮降级为 simple task。
+// 过滤逻辑本身的测试在 skillInvocationResolver.test.ts；这里默认透传，只测装配。
 vi.mock('../../../src/host/services/skills/skillInvocationResolver', () => ({
   resolveSkillInvocation: vi.fn().mockResolvedValue(null),
   buildSkillInvocationContext: vi.fn(),
+  retainSkillInvocationForTurn: vi.fn((invocation: unknown) => invocation),
 }));
 
 // N-JEV-WARDEN-MOCK：warden 规则/动作逻辑的单测在 jevWarden.test.ts（判官全 mock）；
@@ -393,6 +405,8 @@ import {
 import {
   buildSkillInvocationContext,
   resolveSkillInvocation,
+  retainSkillInvocationForTurn,
+  type ResolvedSkillInvocation,
 } from '../../../src/host/services/skills/skillInvocationResolver';
 import { buildRecentConversationsBlock } from '../../../src/host/lightMemory/recentConversations';
 
@@ -1361,6 +1375,55 @@ describe('ConversationRuntime', () => {
       });
       expect(ctx.turn.activeSkillContextBlock).toContain('required-skill-invocation');
       expect(markSemanticProgress).toHaveBeenCalledWith('skill invocation resolved: lobster');
+    });
+
+    it('drops a bare-word alias skill injection on a one-turn file-deliverable turn', async () => {
+      // 模块 mock 默认透传 retainSkillInvocationForTurn；这里换上真实现来测装配围栏。
+      // 消费侧过滤语义本身的断言在 skillInvocationResolver.test.ts。
+      const actual = await vi.importActual<
+        typeof import('../../../src/host/services/skills/skillInvocationResolver')
+      >('../../../src/host/services/skills/skillInvocationResolver');
+      const aliasInvocation: ResolvedSkillInvocation = {
+        skill: {
+          name: 'docx',
+          description: 'Word 文档 AI 助手 — 读取、编辑、生成、审阅 DOCX 文件',
+          promptContent: '',
+          basePath: '/tmp/docx',
+          allowedTools: ['Bash', 'Read', 'docx_generate'],
+          disableModelInvocation: false,
+          userInvocable: true,
+          executionContext: 'inline',
+          source: 'user',
+        },
+        matchKind: 'alias',
+        matchedText: 'docx',
+        args: '请用 docx 生成一份周报 .docx 文件，不要问我问题',
+        confidence: 0.87,
+        aliases: ['docx'],
+        reason: 'name alias matched',
+      };
+      const passthrough = vi.mocked(retainSkillInvocationForTurn).getMockImplementation();
+      vi.mocked(retainSkillInvocationForTurn).mockImplementation(actual.retainSkillInvocationForTurn);
+      vi.mocked(resolveSkillInvocation)
+        .mockResolvedValueOnce(aliasInvocation)
+        .mockResolvedValueOnce(aliasInvocation);
+      try {
+        // 文件交付轮（含 .docx + 生成动词）：围栏丢弃裸词别名注入，不装配 skill 上下文
+        await runtime.initializeRun('请用 docx 生成一份周报 .docx 文件，不要问我问题');
+        expect(buildSkillInvocationContext).not.toHaveBeenCalled();
+        expect(ctx.turn.activeSkillInvocation).toBeUndefined();
+
+        // 非交付轮：同一别名命中保留，正常装配
+        vi.mocked(buildSkillInvocationContext).mockResolvedValueOnce({
+          block: '<required-skill-invocation name="docx">...</required-skill-invocation>',
+          contextModifier: {},
+        });
+        await runtime.initializeRun('请用 docx 帮我看看这份周报的排版建议');
+        expect(buildSkillInvocationContext).toHaveBeenCalledTimes(1);
+        expect(ctx.turn.activeSkillInvocation).toMatchObject({ skillName: 'docx', matchKind: 'alias' });
+      } finally {
+        vi.mocked(retainSkillInvocationForTurn).mockImplementation(passthrough!);
+      }
     });
 
     it('restores strict role-edit skill context from a prior slash seed on follow-up turns', async () => {

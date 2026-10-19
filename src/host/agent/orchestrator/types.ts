@@ -2,7 +2,7 @@
 // Agent Orchestrator - Types & Constants
 // ============================================================================
 
-import type { AgentEvent, PermissionRequest } from '../../../shared/contract';
+import type { AgentEvent, MessageAttachment, MessageMetadata, PermissionRequest } from '../../../shared/contract';
 import type { ConfigService } from '../../services/core/configService';
 import type { PlanningService } from '../../planning';
 import type { DAGVisualizationEvent } from '../../../shared/contract/dagVisualization';
@@ -31,6 +31,16 @@ export interface AgentOrchestratorConfig {
    * 测试注入 :memory: repo，避免真库依赖。
    */
   pendingApprovalRepo?: PendingApprovalRepository;
+}
+
+export interface PendingSteerMessage {
+  content: string;
+  /** 用户原话；`content` 可能带 turnSystemContext 脚手架，那份只给模型。 */
+  displayContent?: string;
+  clientMessageId?: string;
+  attachments?: MessageAttachment[];
+  messageMetadata?: MessageMetadata;
+  expectedTurnId?: string;
 }
 
 /** 消息历史最大长度（内存管理） */

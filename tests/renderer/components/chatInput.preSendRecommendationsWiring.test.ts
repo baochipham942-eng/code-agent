@@ -13,8 +13,6 @@ describe('ChatInput pre-send recommendation wiring', () => {
     const source = readFileSync(CHAT_INPUT_PATH, 'utf8');
 
     expect(source).not.toContain('buildCapabilitySemanticSuggestions');
-    expect(source).not.toContain('ModelStrategyRecommendationStrip');
-    expect(source).not.toContain('buildModelStrategyRecommendation({');
     expect(source).toContain('CapabilitySuggestionStrip');
     expect(source).toContain('useSkillRecommendations(currentSessionId, value)');
     expect(source).not.toContain("useSkillRecommendations(currentSessionId, '')");

@@ -57,6 +57,16 @@ describe('delegate_task 的描述承载路由契约', () => {
     expect(description).toContain('短小的本地文件读写由文字前台直接完成');
   });
 
+  it('生成类任务以「长任务」限定才落后台槽——单轮文件交付不被描述引向委派', () => {
+    // N-HOME-STARTER-CARDS-FILES-FU3 ①：单轮 Office 文件交付轮的收口由 toolRunPolicy
+    // （委派工具移出工具面）+ brain 白名单（docx_generate/excel_generate 进前台）承担。
+    // 描述不点名原生生成工具——一旦点名，schema 与 system prompt 冲突时模型信 schema，
+    // 收口被描述反向抵消。
+    expect(description).toContain('生成报告/网页等长任务');
+    expect(description).not.toContain('docx_generate');
+    expect(description).not.toContain('excel_generate');
+  });
+
   it('说明它产出什么，而不是说它管理什么', () => {
     // Zed 的 create_thread / Cline 的 switch_to_act_mode 同理：以产出命名与描述。
     expect(description).toContain('带完整工具面的后台任务');

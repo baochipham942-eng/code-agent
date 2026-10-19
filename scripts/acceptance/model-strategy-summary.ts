@@ -349,21 +349,6 @@ export function buildModelStrategyAcceptanceSummary(args: {
       failedChecks: surfaceVisibility.failedChecks,
     },
     {
-      id: 'task-recommendation-capability-contract',
-      area: 'task-recommendation',
-      status: 'passed',
-      command: 'npx vitest run tests/renderer/components/chatInput.modelStrategyRecommendation.test.ts',
-      evidence: [
-        'provider health recommendations filter candidates by this-turn required capabilities',
-        'image tasks do not switch to healthy candidates without vision capability',
-        'simple tasks prefer healthy fast candidates when provider health forces a switch',
-        'provider-health dismiss keys are scoped by task type',
-        'capability and external-attachment recommendation keys are scoped by task input',
-        'recommendation apply/dismiss feedback emits privacy-bounded task signals',
-        'recommendation factors expose the required task capability',
-      ],
-    },
-    {
       id: 'model-strategy-e2e-in-app-browser',
       area: 'task-recommendation',
       status: browserAccepted ? 'passed' : 'needs-live-evidence',

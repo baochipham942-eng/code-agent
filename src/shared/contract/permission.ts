@@ -175,6 +175,13 @@ export interface PermissionRequest {
      * 「此动作由 agent X 的消息触发」；senderAgentId 缺省 = 来源未铸 id 的 peer 消息。
      */
     triggeredByAgentMessage?: { senderAgentId?: string };
+    /**
+     * N-HTTPREQ-CONNECTOR-CARD-DISCLOSE：http_request 携带已连接 OAuth 连接器令牌的
+     * 写调用透传原始参数（method/body），审批卡据此展示「以你的身份写入」与请求内容。
+     */
+    method?: string;
+    body?: string;
+    connectorTokenAttached?: boolean;
     /** E2: 确认门控预览信息 */
     preview?: {
       type: 'diff' | 'command' | 'network' | 'generic';
@@ -197,6 +204,11 @@ export interface PermissionRequest {
   reasonCode?: PermissionRequestReason;
   /** User-facing data boundary shown in permission and privacy surfaces. */
   boundary?: import('./permissionBoundary').PermissionBoundaryRef;
+  /**
+   * 停车审批的参数预览（已脱敏 + 截断，N-PARKED-APPROVAL-SURVIVE-RESTART-PERSIST）。
+   * 由 parkApproval 构建后随 permission_request 事件下发给会话内审批卡；交互审批路径不产此字段。
+   */
+  argsPreview?: string;
   timestamp: number;
   dangerLevel?: 'normal' | 'warning' | 'danger';
   /**

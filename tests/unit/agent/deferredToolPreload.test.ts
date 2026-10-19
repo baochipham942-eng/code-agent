@@ -8,7 +8,7 @@ vi.mock('../../../src/host/tools/protocolRegistry', async () => {
       ...actual,
       isProtocolToolName: (name: string) =>
         name === 'Browser'
-        || name === 'Computer'
+        || name === 'computer_use'
         || name === 'workflow'
         || name === 'workflow_orchestrate'
         || name === 'MCPUnified'
@@ -56,7 +56,7 @@ function runtime(
   };
 }
 
-function registerProtocolToolForPreload(name: 'Browser' | 'Computer' | 'workflow' | 'workflow_orchestrate' | 'MCPUnified'): void {
+function registerProtocolToolForPreload(name: 'Browser' | 'computer_use' | 'workflow' | 'workflow_orchestrate' | 'MCPUnified'): void {
   const schema: ToolSchema = {
     name,
     description: `${name} test schema`,
@@ -89,7 +89,7 @@ describe('deferred tool preload', () => {
   beforeEach(() => {
     resetProtocolRegistry();
     registerProtocolToolForPreload('Browser');
-    registerProtocolToolForPreload('Computer');
+    registerProtocolToolForPreload('computer_use');
     registerProtocolToolForPreload('workflow');
     registerProtocolToolForPreload('workflow_orchestrate');
     registerProtocolToolForPreload('MCPUnified');
@@ -109,13 +109,13 @@ describe('deferred tool preload', () => {
       sessionId: 'session-preload',
     });
 
-    expect(loaded).toEqual(['Computer']);
+    expect(loaded).toEqual(['computer_use']);
     const service = getToolSearchService();
     for (let round = 0; round < 3; round += 1) service.beginRound('session-preload');
-    expect(service.evictIdleDeferredToolsAtCompactionBoundary(3, 'session-preload')).toEqual(['Computer']);
+    expect(service.evictIdleDeferredToolsAtCompactionBoundary(3, 'session-preload')).toEqual(['computer_use']);
   });
 
-  it('preloads Computer for explicit computer use requests', () => {
+  it('preloads computer_use for explicit computer use requests', () => {
     const loaded = preloadDeferredToolsForTurn(runtime({
       messages: [{
         id: 'm1',
@@ -125,15 +125,15 @@ describe('deferred tool preload', () => {
       }],
     }));
 
-    expect(loaded).toEqual(['Computer']);
-    expect(getToolSearchService().isToolLoaded('Computer')).toBe(true);
+    expect(loaded).toEqual(['computer_use']);
+    expect(getToolSearchService().isToolLoaded('computer_use')).toBe(true);
   });
 
   it.each([
     '帮我记录当前腾讯会议的内容',
     '请整理会议内容',
     '帮我记录当前会议',
-  ])('preloads Computer for desktop meeting context keywords: %s', (content) => {
+  ])('preloads computer_use for desktop meeting context keywords: %s', (content) => {
     const loaded = preloadDeferredToolsForTurn(runtime({
       messages: [{
         id: 'm1',
@@ -143,11 +143,11 @@ describe('deferred tool preload', () => {
       }],
     }));
 
-    expect(loaded).toEqual(['Computer']);
-    expect(getToolSearchService().isToolLoaded('Computer')).toBe(true);
+    expect(loaded).toEqual(['computer_use']);
+    expect(getToolSearchService().isToolLoaded('computer_use')).toBe(true);
   });
 
-  it('preloads Computer for English screenshot requests', () => {
+  it('preloads computer_use for English screenshot requests', () => {
     const loaded = preloadDeferredToolsForTurn(runtime({
       messages: [{
         id: 'm1',
@@ -157,8 +157,8 @@ describe('deferred tool preload', () => {
       }],
     }));
 
-    expect(loaded).toEqual(['Computer']);
-    expect(getToolSearchService().isToolLoaded('Computer')).toBe(true);
+    expect(loaded).toEqual(['computer_use']);
+    expect(getToolSearchService().isToolLoaded('computer_use')).toBe(true);
   });
 
   it('preloads Computer when Desktop workbench is selected', () => {
@@ -170,7 +170,7 @@ describe('deferred tool preload', () => {
         content: '帮我记录当前会议内容',
         timestamp: 1,
       }],
-    }))).toEqual(['Computer']);
+    }))).toEqual(['computer_use']);
   });
 
   it('preloads Browser and Computer for Managed workbench automation', () => {
@@ -182,7 +182,7 @@ describe('deferred tool preload', () => {
         content: '打开网页并填写表单',
         timestamp: 1,
       }],
-    }))).toEqual(['Browser', 'Computer']);
+    }))).toEqual(['Browser', 'computer_use']);
   });
 
   it('keeps plain URL reading on the lightweight path', () => {
@@ -383,10 +383,10 @@ describe('deferred tool preload', () => {
     });
 
     // 收窄后真意图必须保留
-    it('still preloads Computer for explicit Notes app intent', () => {
+    it('still preloads computer_use for explicit Notes app intent', () => {
       expect(getDeferredToolsToPreloadForTurn(runtime({
         messages: [{ id: 'm1', role: 'user', content: 'open the Notes app and jot this down', timestamp: 1 }],
-      }))).toEqual(['Computer']);
+      }))).toEqual(['computer_use']);
     });
 
     it.each([
@@ -398,10 +398,10 @@ describe('deferred tool preload', () => {
       }))).toEqual(['Browser']);
     });
 
-    it('still preloads Computer for live meeting notes intent', () => {
+    it('still preloads computer_use for live meeting notes intent', () => {
       expect(getDeferredToolsToPreloadForTurn(runtime({
         messages: [{ id: 'm1', role: 'user', content: 'capture the current meeting notes for me', timestamp: 1 }],
-      }))).toEqual(['Computer']);
+      }))).toEqual(['computer_use']);
     });
   });
 

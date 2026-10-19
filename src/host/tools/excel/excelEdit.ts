@@ -31,13 +31,13 @@ type ExcelEditOperation =
   | { action: 'set_formula';    sheet?: string; cell: string; formula: string }
   | { action: 'insert_rows';    sheet?: string; after: number; count?: number; data?: (string | number | boolean | null)[][] }
   | { action: 'delete_rows';    sheet?: string; from: number; count?: number }
-  | { action: 'insert_columns'; sheet?: string; after: string; count?: number; headers?: string[] }
-  | { action: 'delete_columns'; sheet?: string; from: string; count?: number }
+  | { action: 'insert_columns'; sheet?: string; after?: string; count?: number; headers?: string[] }
+  | { action: 'delete_columns'; sheet?: string; from?: string; count?: number }
   | { action: 'set_style';      sheet?: string; range: string; style: CellStyle }
   | { action: 'rename_sheet';   sheet: string; newName: string }
-  | { action: 'add_sheet';      name: string; after?: string }
+  | { action: 'add_sheet';      name?: string; sheet?: string; after?: string }
   | { action: 'delete_sheet';   sheet: string }
-  | { action: 'set_column_width'; sheet?: string; column: string; width: number }
+  | { action: 'set_column_width'; sheet?: string; column?: string; width: number }
   | { action: 'merge_cells';    sheet?: string; range: string }
   | { action: 'auto_filter';    sheet?: string; range: string };
 
@@ -171,6 +171,10 @@ function executeOperation(workbook: ExcelJS.Workbook, op: ExcelEditOperation): s
     }
 
     case 'insert_columns': {
+      // after 是未信任的模型输入：缺失时 op.after.toUpperCase() 抛裸 TypeError，模型只能盲猜。同 set_column_width fail-loud 先例。
+      if (!op.after || typeof op.after !== 'string') {
+        throw new Error('insert_columns requires after (a column letter such as "C")');
+      }
       const ws = getWorksheet(workbook, op.sheet);
       const colNum = columnLetterToNumber(op.after.toUpperCase());
       const count = op.count || 1;
@@ -181,6 +185,10 @@ function executeOperation(workbook: ExcelJS.Workbook, op: ExcelEditOperation): s
     }
 
     case 'delete_columns': {
+      // from 是未信任的模型输入：缺失时 op.from.toUpperCase() 抛裸 TypeError，模型只能盲猜。同 set_column_width fail-loud 先例。
+      if (!op.from || typeof op.from !== 'string') {
+        throw new Error('delete_columns requires from (a column letter such as "D")');
+      }
       const ws = getWorksheet(workbook, op.sheet);
       const colNum = columnLetterToNumber(op.from.toUpperCase());
       const count = op.count || 1;
@@ -213,8 +221,15 @@ function executeOperation(workbook: ExcelJS.Workbook, op: ExcelEditOperation): s
     }
 
     case 'add_sheet': {
-      workbook.addWorksheet(op.name);
-      return `Added sheet "${op.name}"`;
+      // 表名收 name 或 sheet 两个别名：schema 文档只列了动作名没列参数，模型按
+      // set_cell 的先例猜 sheet；缺别名时 addWorksheet(undefined) 会静默生成
+      // "sheet2" 空表，后续按目标表名的写入全数找不到表（r5 实测 4 次重试才绕过）。
+      const name = op.name ?? op.sheet;
+      if (!name || typeof name !== 'string') {
+        throw new Error('add_sheet requires a sheet name (name or sheet)');
+      }
+      workbook.addWorksheet(name);
+      return `Added sheet "${name}"`;
     }
 
     case 'delete_sheet': {
@@ -224,6 +239,11 @@ function executeOperation(workbook: ExcelJS.Workbook, op: ExcelEditOperation): s
     }
 
     case 'set_column_width': {
+      // column 是未信任的模型输入：缺列时 op.column.toUpperCase() 抛裸 TypeError，
+      // 模型只能盲猜缺失参数（starter-card 实测五连返工）。同 add_sheet 的 fail-loud 先例。
+      if (!op.column || typeof op.column !== 'string') {
+        throw new Error('set_column_width requires column (a column letter such as "A")');
+      }
       const ws = getWorksheet(workbook, op.sheet);
       const colNum = columnLetterToNumber(op.column.toUpperCase());
       ws.getColumn(colNum).width = op.width;

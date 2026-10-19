@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { shouldFlashOnDiskLoad } from '../../../src/renderer/components/PreviewPanel';
+import { shouldFlashOnDiskLoad } from '../../../src/renderer/components/previewPanelModel';
 
 // Grok Build 借鉴 T7：产物更新回执——只有"agent 改了正在预览的文件"才闪现。
 describe('shouldFlashOnDiskLoad（产物更新闪现判据）', () => {

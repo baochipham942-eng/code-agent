@@ -19,15 +19,31 @@ import { isModelFallbackNoticeContent } from '../components/features/chat/fallba
 import { isContextCompressionSignalContent } from '../components/features/chat/contextCompressionSignal';
 import { measureStreamingPerformanceTiming } from '../utils/streamingPerformanceMetrics';
 import { isToolResultEcho } from '../utils/toolResultEcho';
-import { isStreamRecoveryMessage } from '../utils/streamRecoveryMessage';
+import { isStreamRecoveryMessage, stripStreamRecoveryMarker } from '../utils/streamRecoveryMessage';
 import {
   isPersistedStreamInterruptionMessage,
   streamInterruptionReasonFromContent,
   stripStreamBreakMarker,
 } from '../utils/streamInterruptionPresentation';
 import { normalizeEditArgs } from '@shared/utils/editToolArgs';
+import { isToolInterruptionPlaceholder } from '../utils/toolExecutionPresentation';
 
 type MessageModelDecision = NonNullable<Message['modelDecision']>;
+
+/**
+ * 一条持久化工具结果是否代表「真的执行过并给出了结局」（护栏判据）。
+ * 取消/崩溃清算占位（host 侧 cancelledToolCallClosure 家族）是给后续模型的上下文
+ * 补丁，不是执行结局——它们仍由 recovery 中断信号接管。
+ */
+function isPersistedExecutionResult(
+  result: NonNullable<Message['toolResults']>[number] | undefined,
+): boolean {
+  if (!result) return false;
+  if (result.success !== false) return true;
+  if (isToolInterruptionPlaceholder(result.error)) return false;
+  if (typeof result.metadata?.cancellationReason === 'string') return false;
+  return !/\b(?:cancel(?:led|ing)?|interrupt(?:ed|ing)?|crash(?:ed)?)\b/i.test(result.error ?? '');
+}
 
 function buildModelDecisionProjectionKey(decision: MessageModelDecision): string {
   const health = decision.providerHealthSnapshot;
@@ -243,6 +259,30 @@ export function projectTurns(
       .filter((message) => isStreamRecoveryMessage(message))
       .flatMap((message) => (message.toolCalls ?? []).map((toolCall) => toolCall.id)),
   );
+  // 护栏：recovery 节点只接管「没有任何持久化执行结果」的工具调用。活 run 中途的
+  // 快照重灌会给仍在直播的轮挂上 recovery 标记，其中已真实执行完（成功或真失败）的
+  // 调用以真身渲染，不得被「应用重启时中断」顶掉。取消/崩溃清算占位
+  // （cancelledToolCallClosure，success=false 的 cancel 家族）不算执行结果——那正是
+  // 上方「snapshot 是未执行的展示权威源」要收口的形状，维持 recovery 接管。
+  const executedToolCallIds = new Set<string>();
+  const realCarrierToolCallIds = new Set<string>();
+  for (const message of messages) {
+    if (!isStreamRecoveryMessage(message)) {
+      for (const toolCall of message.toolCalls ?? []) {
+        if (toolCall.id) realCarrierToolCallIds.add(toolCall.id);
+      }
+    }
+    for (const toolCall of message.toolCalls ?? []) {
+      if (toolCall.id && isPersistedExecutionResult(toolCall.result)) {
+        executedToolCallIds.add(toolCall.id);
+      }
+    }
+    for (const result of message.toolResults ?? []) {
+      if (result.toolCallId && isPersistedExecutionResult(result)) {
+        executedToolCallIds.add(result.toolCallId);
+      }
+    }
+  }
   // 反悔结果卡按展示层替换：账本仍每条独立 id（被 rewind 隐藏的旧卡不能同 id 更新），
   // 投影只留最新一张，避免时间线堆叠。
   const latestTurnCheckoutNoteId = [...messages]
@@ -626,9 +666,18 @@ export function projectTurns(
       };
 
       const pushToolCallNode = (tc: NonNullable<Message['toolCalls']>[number]) => {
-        if (!recoveryMessage && interruptedToolCallIds.has(tc.id)) return;
+        if (!recoveryMessage && interruptedToolCallIds.has(tc.id)
+          && !executedToolCallIds.has(tc.id)) return;
+        // 真身消息已携带同一调用（且已执行）时，recovery 侧让位不重复成行。
+        if (recoveryMessage && executedToolCallIds.has(tc.id)
+          && realCarrierToolCallIds.has(tc.id)) return;
         if (recoveryMessage && recoveryToolProjected) return;
         if (recoveryMessage) recoveryToolProjected = true;
+        // recovery 侧的调用若已有持久化执行结局（如重灌后由 tool 消息水合进来的
+        // result），按真实结局渲染，剥掉中断标记；否则维持中断单信号。
+        const nodeMetadata = recoveryMessage && executedToolCallIds.has(tc.id)
+          ? stripStreamRecoveryMarker(msg).metadata
+          : projectedMetadata;
         turn.nodes.push({
           id: `${msg.id}-tc-${tc.id}`,
           type: 'tool_call',
@@ -650,7 +699,7 @@ export function projectTurns(
             targetContext: tc.targetContext,
             expectedOutcome: tc.expectedOutcome,
           },
-          metadata: projectedMetadata,
+          metadata: nodeMetadata,
         });
       };
 

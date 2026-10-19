@@ -291,7 +291,6 @@ export interface AppState {
   taskPlan: TaskPlan | null;
   findings: Finding[];
   errors: ErrorRecord[];
-  showPlanningPanel: boolean;
 
   // DAG Visualization State (任务执行图可视化)
   showDAGPanel: boolean;
@@ -431,7 +430,6 @@ export interface AppState {
   setTaskPlan: (plan: TaskPlan | null) => void;
   setFindings: (findings: Finding[]) => void;
   setErrors: (errors: ErrorRecord[]) => void;
-  setShowPlanningPanel: (show: boolean) => void;
   setShowDAGPanel: (show: boolean) => void;
   setShowLab: (show: boolean) => void;
   setShowLibraryPanel: (show: boolean) => void;
@@ -563,7 +561,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
   taskPlan: null,
   findings: [],
   errors: [],
-  showPlanningPanel: false,
 
   // Initial DAG Visualization State
   showDAGPanel: false,
@@ -772,8 +769,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setFindings: (findings) => set({ findings }),
 
   setErrors: (errors) => set({ errors }),
-
-  setShowPlanningPanel: (show) => set({ showPlanningPanel: show }),
 
   setShowDAGPanel: (show) => set({ showDAGPanel: show }),
   setShowLab: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showLab: show }),

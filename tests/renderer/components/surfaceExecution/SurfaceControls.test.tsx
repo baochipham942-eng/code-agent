@@ -2,7 +2,7 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { SurfaceControls } from '../../../../src/renderer/components/features/surfaceExecution';
+import { SurfaceControls } from '../../../../src/renderer/components/features/surfaceExecution/SurfaceControls';
 import { surfaceExecutionZh } from '../../../../src/renderer/i18n/surfaceExecution';
 import { surfaceSession } from './fixtures';
 

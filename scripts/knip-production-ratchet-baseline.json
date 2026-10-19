@@ -1,12 +1,9 @@
 {
   "schemaVersion": 1,
   "files": [
-    "src/host/agent/runtime/dashboard/registry.ts",
     "src/host/errors/knipProductionAnchor.ts",
     "src/renderer/components/ContextHealthPanel.tsx",
     "src/renderer/components/ContextPanel.tsx",
-    "src/renderer/components/PlanningPanel.tsx",
-    "src/renderer/components/features/chat/ChatInput/ReportStyleSelector.tsx",
     "src/renderer/components/features/chat/ResearchProgress.tsx"
   ]
 }

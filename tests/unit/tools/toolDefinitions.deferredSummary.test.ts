@@ -86,9 +86,13 @@ describe('getDeferredToolsSummary MCP name index (GAP-008)', () => {
   });
 
   it('drops descriptions before falling back to category counts', () => {
-    const summary = getDeferredToolsSummary([], undefined, 600);
+    // 压测预算须卡在名字档与全量档之间：keyless 环境（CI）的未开启能力行带上回复语言指令
+    // （N-TOOL-UNAVAILABLE-UNLOCK-HINT-FU1）后名字档 ~606、全量档 ~2621。600 是 #2052
+    // 在能力行出现之前定的值，行按单据有意识加长后随之重校准到 700；本机配了 key 时
+    // 该行缺席、名字档更小，同一预算仍落在名字档。
+    const summary = getDeferredToolsSummary([], undefined, 700);
 
-    expect(estimateTokens(summary)).toBeLessThanOrEqual(600);
+    expect(estimateTokens(summary)).toBeLessThanOrEqual(700);
     expect(summary).toContain('[memory]');
     expect(summary).toContain('MemoryWrite');
     expect(summary).not.toContain('写入/更新/删除长期记忆文件');

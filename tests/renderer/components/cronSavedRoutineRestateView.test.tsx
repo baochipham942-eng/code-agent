@@ -6,11 +6,12 @@
 // 非角色任务照旧立即关闭。
 // ============================================================================
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CronJobDefinition } from '../../../src/shared/contract';
 
 const mocks = vi.hoisted(() => ({
+  listJobs: vi.fn(),
   createJob: vi.fn(),
   updateJob: vi.fn(),
   listRoles: vi.fn(),
@@ -21,7 +22,7 @@ const mocks = vi.hoisted(() => ({
 // （isEditorOpen）是本单踩过的真集成坑，必须在入口测试里被钉住。
 vi.mock('../../../src/renderer/services/cronClient', () => {
   const transport = {
-    listJobs: vi.fn().mockResolvedValue([]),
+    listJobs: mocks.listJobs,
     createJob: mocks.createJob,
     updateJob: mocks.updateJob,
     deleteJob: vi.fn().mockResolvedValue(true),
@@ -95,6 +96,7 @@ function rowValue(key: string): string {
 }
 
 beforeEach(() => {
+  mocks.listJobs.mockResolvedValue([]);
   mocks.listRoles.mockResolvedValue([{ roleId: 'role-x', displayName: '小星' }]);
   mocks.listProjects.mockResolvedValue([]);
   // store 动作保持真实现（createJob/updateJob 走上面的传输层 mock），
@@ -176,6 +178,33 @@ describe('CronSimpleCreate 保存后复述', () => {
   });
 });
 
+/** 与 CronCenterPanel 同形的最小挂载：job/copySource 从 store 的 jobs 派生。
+ * 静态字面量 props 测不出「保存后 refresh() 用 IPC 新对象换掉 prop 身份」的形状
+ * （r2 返修根因），必须走真 store 订阅让身份抖动真实传进编辑器。 */
+function EditorFromStore() {
+  const isEditorOpen = useCronStore((s) => s.isEditorOpen);
+  const jobs = useCronStore((s) => s.jobs);
+  const editingJobId = useCronStore((s) => s.editingJobId);
+  const copyingJobId = useCronStore((s) => s.copyingJobId);
+  const closeEditor = useCronStore((s) => s.closeEditor);
+  const editingJob = React.useMemo(
+    () => jobs.find((j) => j.id === editingJobId) || null,
+    [jobs, editingJobId],
+  );
+  const copyingJob = React.useMemo(
+    () => jobs.find((j) => j.id === copyingJobId) || null,
+    [jobs, copyingJobId],
+  );
+  return (
+    <CronJobEditor
+      isOpen={isEditorOpen}
+      job={editingJob}
+      copySource={copyingJob}
+      onClose={closeEditor}
+    />
+  );
+}
+
 describe('CronJobEditor 保存后复述', () => {
   it('update 路径：保存角色绑定任务后切换复述视图，行跟 updateJob 返回的记录', async () => {
     mocks.updateJob.mockResolvedValue(savedRoleJob({ id: 'job-edit' }));
@@ -245,6 +274,77 @@ describe('CronJobEditor 保存后复述', () => {
       expect(onClose).toHaveBeenCalledTimes(1);
     });
     expect(screen.queryByTestId('cron-saved-routine-restate')).toBeNull();
+    await waitFor(() => {
+      expect(useCronStore.getState().isEditorOpen).toBe(false);
+    });
+  });
+});
+
+describe('CronJobEditor 保存后复述 · refresh 换 prop 身份（r2 回归）', () => {
+  it('update 路径：保存后 jobs 被新对象替换（prop 换身份），复述视图不被重置', async () => {
+    // listJobs 每次调用都返回全新对象（模拟 IPC 往返），每次 refresh prop 身份必换。
+    const updatedFromServer = () => savedRoleJob({ id: 'job-edit', name: '更新后的任务名' });
+    mocks.updateJob.mockImplementation(async () => updatedFromServer());
+    mocks.listJobs.mockImplementation(async () => [updatedFromServer()]);
+    const initialJob = existingRoleJob();
+    useCronStore.setState({ jobs: [initialJob], isEditorOpen: true, editingJobId: 'job-edit' });
+    render(<EditorFromStore />);
+
+    fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('cron-saved-routine-restate')).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(rowValue('what')).toBe('由 小星 执行：记录里的目标');
+    });
+
+    // 复述视图在场时再触发一次 store refresh（编辑器开着时面板级刷新/挂载刷新
+    // 都会换掉 jobs 身份）：reset effect 因 job prop 换身份重跑，旧实现无条件
+    // setSavedJob(null) 会把视图重置回编辑表单——此处即 r2 红点。
+    const jobWhileViewShown = useCronStore.getState().jobs[0];
+    await act(async () => {
+      await useCronStore.getState().refresh();
+    });
+    expect(useCronStore.getState().jobs[0]).not.toBe(jobWhileViewShown);
+    await act(async () => {});
+    expect(screen.getByTestId('cron-saved-routine-restate')).toBeTruthy();
+    expect(rowValue('what')).toBe('由 小星 执行：记录里的目标');
+    expect(useCronStore.getState().isEditorOpen).toBe(true);
+
+    fireEvent.click(screen.getByTestId('cron-saved-routine-done'));
+    await waitFor(() => {
+      expect(useCronStore.getState().isEditorOpen).toBe(false);
+    });
+  });
+
+  it('copy 路径：保存后 jobs 被新对象替换（copySource 换身份），复述视图不被重置', async () => {
+    const createdFromServer = () => savedRoleJob();
+    mocks.createJob.mockImplementation(async () => createdFromServer());
+    mocks.listJobs.mockImplementation(async () => [existingRoleJob(), createdFromServer()]);
+    const initialSource = existingRoleJob();
+    useCronStore.setState({ jobs: [initialSource], isEditorOpen: true, copyingJobId: 'job-edit' });
+    render(<EditorFromStore />);
+
+    fireEvent.click(screen.getByRole('button', { name: '创建任务' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('cron-saved-routine-restate')).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(rowValue('what')).toBe('由 小星 执行：记录里的目标');
+    });
+
+    const sourceWhileViewShown = useCronStore.getState().jobs[0];
+    await act(async () => {
+      await useCronStore.getState().refresh();
+    });
+    expect(useCronStore.getState().jobs[0]).not.toBe(sourceWhileViewShown);
+    await act(async () => {});
+    expect(screen.getByTestId('cron-saved-routine-restate')).toBeTruthy();
+    expect(rowValue('what')).toBe('由 小星 执行：记录里的目标');
+
+    fireEvent.click(screen.getByTestId('cron-saved-routine-done'));
     await waitFor(() => {
       expect(useCronStore.getState().isEditorOpen).toBe(false);
     });

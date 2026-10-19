@@ -9,7 +9,7 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
-import { DEFAULT_MODELS, MODEL_FEATURES, QUICK_MODEL_AUTH_BLACKLIST_MS } from '../../shared/constants';
+import { DEFAULT_MODELS, MODEL_FEATURES, QUICK_LANE_LOW_REASONING_EFFORT_MODELS, QUICK_MODEL_AUTH_BLACKLIST_MS } from '../../shared/constants';
 import { getConfigService } from '../services/core/configService';
 import { normalizeApiKey } from '../services/core/configHelpers';
 import { getProviderLimiter } from './concurrencyLimiter';
@@ -79,6 +79,8 @@ interface QuickModelConfig {
   provider: string;
   /** thinking 模型（如 mimo）当 quick model 时需关闭思考，否则短输出额度被 reasoning 吃光返回空 */
   disableThinking: boolean;
+  /** 不能关思考的推理模型（如 glm-5.3，见 QUICK_LANE_LOW_REASONING_EFFORT_MODELS）改发低推理档 */
+  reasoningEffort?: 'low';
   routeSource: 'memory' | 'fast' | 'code' | 'env';
 }
 
@@ -172,6 +174,15 @@ function isThinkingModel(model: string): boolean {
   return (MODEL_FEATURES[model] ?? []).includes('reasoning');
 }
 
+/**
+ * quick 车道低推理档：不能关思考的推理模型（如 glm-5.3）用 reasoning_effort:'low'
+ * 保住短输出预算。置位时 disableThinking 必须为 false —— 官方端点对这些 id 拒绝
+ * thinking.type=disabled，两把控制不能同时上请求体。
+ */
+function quickLaneReasoningEffort(model: string): 'low' | undefined {
+  return QUICK_LANE_LOW_REASONING_EFFORT_MODELS.includes(model) ? 'low' : undefined;
+}
+
 function isProviderExplicitlyDisabled(provider: string): boolean {
   try {
     return getConfigService().getSettings().models.providers?.[provider]?.enabled === false;
@@ -213,7 +224,16 @@ function resolveRole(
   const baseUrl = resolveProviderBaseUrl({ ...modelConfig, apiKey });
   if (!baseUrl) return null;
 
-  return { apiKey, baseUrl, model, provider, disableThinking: isThinkingModel(model), routeSource };
+  const reasoningEffort = quickLaneReasoningEffort(model);
+  return {
+    apiKey,
+    baseUrl,
+    model,
+    provider,
+    disableThinking: reasoningEffort === undefined && isThinkingModel(model),
+    reasoningEffort,
+    routeSource,
+  };
 }
 
 function resolveMemoryOverride(override: MemoryModelOverride): QuickModelConfig | null {
@@ -228,12 +248,14 @@ function resolveMemoryOverride(override: MemoryModelOverride): QuickModelConfig 
   if (!apiKey || isAuthBlacklisted(override.provider, override.model, apiKey)) return null;
   const baseUrl = override.baseUrl ?? resolveProviderBaseUrl({ ...modelConfig, apiKey });
   if (!baseUrl) return null;
+  const reasoningEffort = quickLaneReasoningEffort(override.model);
   return {
     apiKey,
     baseUrl,
     model: override.model,
     provider: override.provider,
-    disableThinking: isThinkingModel(override.model),
+    disableThinking: reasoningEffort === undefined && isThinkingModel(override.model),
+    reasoningEffort,
     routeSource: 'memory',
   };
 }
@@ -300,6 +322,7 @@ function initializeQuickModelCandidates(route: 'quick' | 'memory' = 'quick'): Qu
           model: DEFAULT_MODELS.quick,
           provider: 'zhipu',
           disableThinking: false,
+          reasoningEffort: quickLaneReasoningEffort(DEFAULT_MODELS.quick),
           routeSource: 'env',
         });
       }
@@ -401,6 +424,9 @@ async function executeQuickAttempt(
     };
     if (config.disableThinking) {
       body.thinking = { type: 'disabled' };
+    }
+    if (config.reasoningEffort) {
+      body.reasoning_effort = config.reasoningEffort;
     }
 
     const response = await fetch(`${config.baseUrl}/chat/completions`, {

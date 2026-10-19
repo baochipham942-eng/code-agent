@@ -532,7 +532,7 @@ export class ToolSearchService {
   private getNotCallableReason(meta: DeferredToolMeta): string {
     if (meta.source === 'builtin') {
       if (meta.name.startsWith('desktop_context') || meta.name.startsWith('desktop_activity')) {
-        return 'searchable metadata has no registered protocol tool; desktop context metadata is injected through the Desktop workbench/activity context; use Computer for live screen/window actions';
+        return 'searchable metadata has no registered protocol tool; desktop context metadata is injected through the Desktop workbench/activity context; use computer_use for live screen/window actions';
       }
       return 'searchable metadata has no registered protocol tool';
     }

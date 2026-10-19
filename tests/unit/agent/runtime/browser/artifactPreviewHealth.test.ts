@@ -190,4 +190,47 @@ describe('artifactPreviewHealth deterministic findings', () => {
       expect.objectContaining({ code: 'responsive_breakpoint_failure' }),
     ]);
   });
+
+  it('flags the first button when the click probe reports no response', () => {
+    const findings = evaluateArtifactPreviewHealthDiagnostics(baseDiagnostics({
+      buttonClick: { checked: true, responded: false, mutations: 0, textChanged: false },
+    }));
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        code: 'button_no_response',
+        viewport: 'desktop',
+        evidence: expect.objectContaining({ mutations: 0, textChanged: false }),
+      }),
+    ]);
+  });
+
+  it('includes the scroll delta beside mutations/textChanged in the button_no_response evidence', () => {
+    const findings = evaluateArtifactPreviewHealthDiagnostics(baseDiagnostics({
+      buttonClick: { checked: true, responded: false, mutations: 0, textChanged: false, scrollDelta: 1 },
+    }));
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        code: 'button_no_response',
+        evidence: { mutations: 0, textChanged: false, scrollDelta: 1 },
+      }),
+    ]);
+  });
+
+  it('does not flag buttons when the click probe reports a response, no button, or nothing', () => {
+    expect(evaluateArtifactPreviewHealthDiagnostics(baseDiagnostics({
+      buttonClick: { checked: true, responded: true, mutations: 2, textChanged: true },
+    }))).toEqual([]);
+    expect(evaluateArtifactPreviewHealthDiagnostics(baseDiagnostics({
+      buttonClick: { checked: true, responded: true, mutations: 0, textChanged: true },
+    }))).toEqual([]);
+    expect(evaluateArtifactPreviewHealthDiagnostics(baseDiagnostics({
+      buttonClick: { checked: true, responded: true, mutations: 0, textChanged: false, scrollDelta: 415 },
+    }))).toEqual([]);
+    expect(evaluateArtifactPreviewHealthDiagnostics(baseDiagnostics({
+      buttonClick: { checked: false },
+    }))).toEqual([]);
+    expect(evaluateArtifactPreviewHealthDiagnostics(baseDiagnostics())).toEqual([]);
+  });
 });

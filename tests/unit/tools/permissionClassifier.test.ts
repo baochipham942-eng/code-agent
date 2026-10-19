@@ -137,6 +137,66 @@ describe('PermissionClassifier', () => {
     }
   });
 
+  it('approves in-workspace DocEdit and still asks outside the workspace', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'docedit-fence-'));
+    try {
+      const inside = await classifyPermission(
+        'DocEdit',
+        { file_path: path.join(root, '销售数据分析.xlsx'), operations: [] },
+        { workingDirectory: root, workspaceRoot: root, permissionLevel: 'write' },
+      );
+      expect(inside.decision).toBe('approve');
+      expect(inside.reason).toBe('写入项目目录内');
+
+      const outside = await classifyPermission(
+        'DocEdit',
+        { file_path: path.join(os.homedir(), 'Documents', '销售数据分析.xlsx'), operations: [] },
+        { workingDirectory: root, workspaceRoot: root, permissionLevel: 'write' },
+      );
+      expect(outside.decision).toBe('ask');
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('approves in-workspace office generators by output_path and asks outside', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'office-gen-fence-'));
+    try {
+      // 卡片真实形态：output_path 是相对文件名，解析到会话工作目录内
+      const weekly = await classifyPermission(
+        'docx_generate',
+        { title: '工作周报', content: '# 周报', output_path: '周报_20261015.docx' },
+        { workingDirectory: root, workspaceRoot: root, permissionLevel: 'write' },
+      );
+      expect(weekly.decision).toBe('approve');
+      expect(weekly.reason).toBe('写入项目目录内');
+
+      const sheet = await classifyPermission(
+        'excel_generate',
+        { data: [], output_path: path.join(root, '销售数据分析.xlsx') },
+        { workingDirectory: root, workspaceRoot: root, permissionLevel: 'write' },
+      );
+      expect(sheet.decision).toBe('approve');
+
+      // output_path 可选：缺省时产物落在会话工作目录，不能落 W0 ask
+      const defaulted = await classifyPermission(
+        'docx_generate',
+        { title: '工作周报', content: '# 周报' },
+        { workingDirectory: root, workspaceRoot: root, permissionLevel: 'write' },
+      );
+      expect(defaulted.decision).toBe('approve');
+
+      const outside = await classifyPermission(
+        'excel_generate',
+        { data: [], output_path: path.join(os.homedir(), 'Documents', '销售数据分析.xlsx') },
+        { workingDirectory: root, workspaceRoot: root, permissionLevel: 'write' },
+      );
+      expect(outside.decision).toBe('ask');
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('keeps direct writes to the temporary directory auto-approved', async () => {
     const result = await classifyPermission(
       'Write',

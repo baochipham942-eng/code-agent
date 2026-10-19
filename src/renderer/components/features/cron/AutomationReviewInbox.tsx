@@ -20,6 +20,7 @@ import ipcService from '../../../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useAppStore } from '../../../stores/appStore';
+import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';
 import { Button } from '../../primitives/Button';
@@ -57,6 +58,22 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
   const [items, setItems] = useState<SessionAutomationRecord[]>([]);
   const [parked, setParked] = useState<ParkedApprovalInboxItem[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  const handleRerunLoginWall = async (record: SessionAutomationRecord) => {
+    const jobId = record.sourceRefId;
+    if (!jobId || busyId === record.id) return;
+    setBusyId(record.id);
+    try {
+      await useCronStore.getState().triggerJob(jobId);
+    } catch {
+      // A failed manual retry must be visible; otherwise the finally refresh
+      // makes the click look like it succeeded while the job remains parked.
+      toast.error(cc.failureOther);
+    } finally {
+      setBusyId(null);
+      load();
+    }
+  };
 
   const load = useCallback(() => {
     sessionAutomationClient.listPendingReview()
@@ -126,7 +143,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
 
   const handleOpenLoginWallSite = (record: SessionAutomationRecord) => {
     const siteOrigin = record.config?.loginWall?.siteOrigin;
-    if (siteOrigin) openCronLoginWallSite(siteOrigin);
+    if (siteOrigin) openCronLoginWallSite(siteOrigin, record.sourceRefId);
   };
 
   const hasContent = items.length > 0 || parked.length > 0;
@@ -370,15 +387,29 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                             </button>
                           )}
                           {record.config?.loginWall?.siteOrigin && (
-                            <button /* ds-allow:button: 收件箱行内超小警示色文本按钮（px-2 py-1 text-xs），与同行「查看结果」同款，primitive 最小 sm 仍更大且无警示色 variant */
-                              type="button"
-                              onClick={() => handleOpenLoginWallSite(record)}
-                              className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-badge-warning transition-colors hover:bg-amber-500/10"
-                              data-testid="automation-review-open-login-site"
-                            >
-                              <ExternalLink className="h-3.5 w-3.5" />
-                              {cc.loginWallOpenSite}
-                            </button>
+                            <>
+                              <button /* ds-allow:button: 收件箱行内超小警示色文本按钮（px-2 py-1 text-xs），与同行「查看结果」同款，primitive 最小 sm 仍更大且无警示色 variant */
+                                type="button"
+                                onClick={() => handleOpenLoginWallSite(record)}
+                                className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-badge-warning transition-colors hover:bg-amber-500/10"
+                                data-testid="automation-review-open-login-site"
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                                {cc.loginWallOpenSite}
+                              </button>
+                              {record.sourceRefId && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="secondary"
+                                  loading={busyId === record.id}
+                                  onClick={() => { void handleRerunLoginWall(record); }}
+                                  data-testid="automation-review-login-wall-rerun"
+                                >
+                                  {cc.failureActionRunAgain}
+                                </Button>
+                              )}
+                            </>
                           )}
                           {/* 「已过目」是收件箱的主操作（每条都要点的闭环动作），用品牌色主按钮；
                               「查看结果」是跳走的次操作，保持行内文本按钮。 */}

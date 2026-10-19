@@ -29,6 +29,10 @@ cases:
   - { id: dangerous-npm-publish, tool: Bash, params: { command: "npm publish" }, expected: ask, why: 正式发布先确认（对照 benign-npm-publish-dry） }
   - { id: dangerous-npm-publish-dry-then-no, tool: Bash, params: { command: "npm publish --dry-run --no-dry-run" }, expected: ask, why: npm 后参数覆盖前参数，这是真发布不是预览（N-APPROVAL-DRYRUN-DD；对照 benign-npm-publish-no-then-dry） }
   - { id: dangerous-npm-publish-dry-false, tool: Bash, params: { command: "npm publish --dry-run=false" }, expected: ask, why: --dry-run=false 等于没开预览（N-APPROVAL-DRYRUN-DD） }
+  - { id: dangerous-npm-publish-dry-space-false, tool: Bash, params: { command: "npm publish --dry-run false" }, expected: ask, why: npm 把紧跟的 false 吃成 --dry-run 的取值，实测是真发布（N-APPROVAL-DRYRUN-DD 续；对照 benign-npm-publish-dry-space-true） }
+  - { id: dangerous-npm-publish-no-dry-abbrev, tool: Bash, params: { command: "npm publish --dry-run --no-dry" }, expected: ask, why: npm 把 --no-dry 展开成 --no-dry-run，后参数覆盖，实测是真发布（N-APPROVAL-DRYRUN-DD 续） }
+  - { id: dangerous-npm-publish-dry-eq-false-abbrev, tool: Bash, params: { command: "npm publish --dry-run --dry=false" }, expected: ask, why: npm 接受任意唯一前缀缩写，--dry=false 等于关掉预览；缩写形一律不放行（N-APPROVAL-DRYRUN-DD 续） }
+  - { id: dangerous-npm-publish-triple-dash, tool: Bash, params: { command: "npm publish --dry-run ---no-dry-run" }, expected: ask, why: nopt 把任意数量前导短横都当 --，实测 ---no-dry-run 关掉预览是真发布（N-APPROVAL-DRYRUN-DD 续） }
   - { id: dangerous-dd-env-to-workspace, tool: Bash, params: { command: "dd if={{work}}/.env of={{work}}/copy.bin bs=1k" }, expected: ask, why: 输入是项目 .env 凭据，复制进工作区文件也是凭据读取，不得按工作区文件搬运放行（N-APPROVAL-DRYRUN-DD；对照 benign-dd-file） }
   - { id: dangerous-cd-npm-publish, tool: Bash, params: { command: "cd . && npm publish" }, expected: ask, why: cd 前缀不能绕过 dangerous-npm-publish 的确认 }
   - { id: dangerous-cd-git-push-short, tool: Bash, params: { command: "cd . && git push -f origin main" }, expected: ask }

@@ -155,7 +155,6 @@ MessageContent 通过 markdown 代码块的语言标签路由到不同渲染组�
 | **RoleDraftNotifications / RoleDraftCard** | 监听 `role_draft_pending` 事件，在输入框上方展示新建/修改角色确认卡；用户确认后调用 `domain:roles/confirmDraft` |
 | **VoiceInputButton** | 语音输入按钮 |
 | **SendButton** | 发送按钮 |
-| **ReportStyleSelector** | 报告样式选择器 |
 | **SuggestionBar** | 建议栏 |
 
 当前 ChatInput 常驻项按 B+ 口径收敛为：`+`、权限模式、当前 agent、session memory、上下文用量、模型+effort+engine 胶囊、语音、发送。`InlineWorkbenchBar` 在输入区上方承载 Skills/MCP scope 和 Auto/Manual routing；Live Preview 属于低频 session action，入口在 `SessionActionsMenu`。

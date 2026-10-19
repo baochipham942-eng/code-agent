@@ -1,7 +1,5 @@
-// ============================================================================
 // Settings namespace translations (en/Work) — 纯平移拆分（债务门）
-// ============================================================================
-
+import { permissionGrantsEn } from './permissionGrants';
 export const enSettingsWork = {
     workspace: {
       description: 'Manage the current working directory, recent directories, local bridge status, and default browser-tool behavior.',
@@ -813,6 +811,7 @@ export const enSettingsWork = {
     privacy: {
       webDescription: 'The local PII guard redacts named entities such as names, addresses, and medical IDs before collaboration content goes to a cloud LLM.',
       pageDescription: 'Overview of permissions and data boundaries. Local-first by default; cloud paths, channel credentials, and diagnostic packages are shown separately.',
+      permissionGrants: permissionGrantsEn,
       setupState: {
         idle: 'Not enabled',
         running: 'Installing...',

@@ -229,6 +229,11 @@ export const cronCenterZh = {
     weekdays: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'],
     simpleCreateCta: '创建自动化',
     simpleCreateFailed: '创建失败',
+    // 保存后复述视图（N-ROLE-ROUTINE-RESTATE）：行标签复用 chatInput 的 scheduleConfirm
+    savedRestateTitle: '已保存 · 这个自动化会这样做',
+    savedRestateDone: '完成',
+    savedRestateWhenEvent: '有新消息到达时',
+    savedRestateRolePrefix: '由 {role} 执行：',
     // 手动编辑器 Agent 动作：自定义紧急判据（N-CRON-MORNING-TRIAGE-URGENCY-RULE）
     urgencyCriteriaLabel: '紧急判据（可选）',
     urgencyCriteriaPlaceholder: '例如：只有老板发来的邮件算今天必须处理',
@@ -513,6 +518,10 @@ export const cronCenterEn: typeof cronCenterZh = {
     weekdays: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
     simpleCreateCta: 'Create automation',
     simpleCreateFailed: 'Failed to create',
+    savedRestateTitle: 'Saved · what this automation will do',
+    savedRestateDone: 'Done',
+    savedRestateWhenEvent: 'When a new message arrives',
+    savedRestateRolePrefix: 'Run by {role}: ',
     urgencyCriteriaLabel: 'Urgency rule (optional)',
     urgencyCriteriaPlaceholder: 'e.g. only mail from my boss counts as must-do today',
     urgencyCriteriaHint: 'With a rule set, non-urgent runs (can wait / FYI) skip notifications and wait quietly in the review list.',

@@ -11,7 +11,9 @@ export type ArtifactPreviewHealthFindingCode =
   | 'broken_image'
   | 'missing_main_element'
   | 'primary_button_not_visible'
-  | 'responsive_breakpoint_failure';
+  | 'responsive_breakpoint_failure'
+  | 'html_incomplete'
+  | 'button_no_response';
 
 export interface ArtifactPreviewHealthFinding {
   code: ArtifactPreviewHealthFindingCode;
@@ -115,6 +117,24 @@ export function evaluateArtifactPreviewHealthDiagnostics(
 
   for (const error of uniqueStrings(diagnostics.pageErrors).slice(0, 5)) {
     findings.push(createArtifactPreviewHealthFinding('page_error', `Preview runtime page error: ${error}`, undefined, { text: error }));
+  }
+
+  // button_no_response：探针只在第一个 viewport 点击了一次第一个可见可用按钮；
+  // responded=false（settle 窗口内无 meaningful mutation、innerText 无变化、且滚动
+  // 位移低于门槛）才算缺陷。
+  const buttonClick = diagnostics.buttonClick;
+  if (buttonClick?.checked === true && buttonClick.responded === false) {
+    findings.push(createArtifactPreviewHealthFinding(
+      'button_no_response',
+      'First visible enabled button does not respond to a click (no meaningful DOM change).',
+      diagnostics.viewports[0]?.name,
+      {
+        mutations: buttonClick.mutations ?? 0,
+        textChanged: buttonClick.textChanged ?? false,
+        scrollDelta: buttonClick.scrollDelta ?? 0,
+        ...(buttonClick.clickError ? { clickError: buttonClick.clickError } : {}),
+      },
+    ));
   }
 
   const viewportSpecificCodes = new Set<ArtifactPreviewHealthFindingCode>();

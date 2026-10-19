@@ -5,6 +5,7 @@ import type { PermissionRequest } from './types';
 import { formatFilePath, isDangerousCommand } from './utils';
 import { redactCredentialText } from '@shared/security/secretPatterns';
 import { PermissionRequestReason } from '@shared/contract';
+import { isSandboxEscalation } from './sandboxEscalationPresentation';
 
 function fileTarget(request: PermissionRequest): string | undefined {
   return request.details.filePath || request.details.path;
@@ -133,6 +134,8 @@ function fileCountText(count: number | undefined, t: Translations): string {
 }
 
 export function permissionConsequence(request: PermissionRequest, t: Translations): string | undefined {
+  // 沙盒放宽卡的问句已经说明放开哪一个文件或目录，不再叠命令后果行。
+  if (isSandboxEscalation(request)) return undefined;
   // 按应用授权卡（appGrantCard && !isDangerous，判据与 PermissionCard 同源）问的是
   // 「要不要让 Neo 操作这个应用」，命令风险后果行会把刚统一的口径撕回去：标题与
   // 正文都说应用，后果行回头说命令。该卡不渲染命令后果行——问题句已把授权语义说尽。

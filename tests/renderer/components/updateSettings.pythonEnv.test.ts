@@ -22,6 +22,16 @@ function pythonEnvAsset(state: RuntimeAssetStatusEntry['state']): RuntimeAssetSt
   };
 }
 
+function libreOfficeAsset(state: RuntimeAssetStatusEntry['state']): RuntimeAssetStatusEntry {
+  return {
+    id: 'libreoffice',
+    label: 'LibreOffice document renderer',
+    delivery: 'optional',
+    state,
+    nodeModules: [],
+  };
+}
+
 describe('python-env settings row', () => {
   it('maps the python-env asset to its own display kind', () => {
     expect(getRuntimeAssetDisplayKind(pythonEnvAsset('missing'))).toBe('pythonEnv');
@@ -130,5 +140,28 @@ describe('python-env settings row', () => {
       nodeModules: [],
     };
     expect(getPythonEnvAssetRowDisplay(asset, null, zh.settings.update.runtimeAssets)).toBeNull();
+  });
+
+  it('LibreOffice gets the same four states with LibreOffice-specific failure reasons', () => {
+    for (const text of [zh.settings.update.runtimeAssets, en.settings.update.runtimeAssets]) {
+      expect(getPythonEnvAssetRowDisplay(libreOfficeAsset('installed'), null, text)?.statusText)
+        .toBe(text.status.available);
+      expect(getPythonEnvAssetRowDisplay(libreOfficeAsset('missing'), null, text)?.statusText)
+        .toBe(text.status.firstUseDownload);
+      expect(getPythonEnvAssetRowDisplay(
+        libreOfficeAsset('missing'),
+        { assetId: 'libreoffice', phase: 'installing', percent: 37 },
+        text,
+      )?.statusText).toBe(`${text.status.installing} 37%`);
+      const failed = getPythonEnvAssetRowDisplay(
+        libreOfficeAsset('missing'),
+        { assetId: 'libreoffice', phase: 'failed', errorCode: 'LIBREOFFICE_RUNTIME_INSTALL_FAILED', error: 'host detail' },
+        text,
+      );
+      expect(failed?.statusText).toBe(text.status.installFailed);
+      expect(failed?.failure?.reasonText).toBe(text.failureReasons.libreOfficeInstallFailed);
+      expect(failed?.failure?.reasonText).not.toBe('host detail');
+      expect(failed?.action).toBe('retry');
+    }
   });
 });

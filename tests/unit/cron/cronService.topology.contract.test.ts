@@ -21,24 +21,26 @@ import path from 'node:path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const CRON_SERVICE_PATH = path.resolve(__dirname, '../../../src/host/cron/cronService.ts');
+// agent 分支执行体自 cronService.ts 搬到 cronAgentAction.ts
+// （N-MAXLINES-MINEFIELD-2-FU1-S9 move-only 抽取）；分支内部的接线契约随迁盯新文件。
+const CRON_AGENT_ACTION_PATH = path.resolve(__dirname, '../../../src/host/cron/cronAgentAction.ts');
 const ORCHESTRATOR_PATH = path.resolve(__dirname, '../../../src/host/agent/agentOrchestrator.ts');
 // 超时实现属于权限岛；搬文件时须同步更新这里的源码契约路径。
 const PERMISSIONS_PATH = path.resolve(__dirname, '../../../src/host/agent/orchestratorPermissions.ts');
 
 describe('cron agent 会话拓扑标注接线', () => {
-  const cronSource = readFileSync(CRON_SERVICE_PATH, 'utf8');
+  const cronAgentActionSource = readFileSync(CRON_AGENT_ACTION_PATH, 'utf8');
   const orchestratorSource = readFileSync(ORCHESTRATOR_PATH, 'utf8');
   const permissionsSource = readFileSync(PERMISSIONS_PATH, 'utf8');
 
   it('cronService 在 sendMessage 前把 orchestrator 标为 async_agent', () => {
-    expect(cronSource).toMatch(
+    expect(cronAgentActionSource).toMatch(
       /setExecutionTopology\('async_agent'\)[\s\S]{0,1600}sendMessage\(\s*buildCronAgentPrompt\(\s*action\.prompt\s*,/,
     );
   });
 
   it('cronService 把 action.urgencyCriteria 与 action.notifyWhen 接进 buildCronAgentPrompt（N-CRON-MORNING-TRIAGE-URGENCY-RULE / N-CRON-RESTATE-HUMAN-WHEN）', () => {
-    expect(cronSource).toMatch(
+    expect(cronAgentActionSource).toMatch(
       /buildCronAgentPrompt\(\s*action\.prompt\s*,\s*previousSnapshot\s*,\s*snapshotTrackingEnabled\s*,\s*undefined\s*,\s*action\.urgencyCriteria\s*,\s*action\.notifyWhen\s*\)/,
     );
   });
@@ -48,16 +50,16 @@ describe('cron agent 会话拓扑标注接线', () => {
     // 打扰」矩阵收口在 cronNormalizers.cronAgentRunHasAlert；推送门同时看
     // quietWatchRound（external-watch）与 notifyQuietRound（判据未满足的安静轮）；
     // 结果组装带上 notifyQuietRound（→ notifySuppressed 标记，通知门用）。
-    expect(cronSource).toMatch(
+    expect(cronAgentActionSource).toMatch(
       /const hasAlert = cronAgentRunHasAlert\(action, \{ isExternalWatch, finalAssistantText \}\)/,
     );
-    expect(cronSource).toMatch(
+    expect(cronAgentActionSource).toMatch(
       /const notifyQuietRound = cronNotifyQuietRound\(action, hasAlert, definition\.id\)/,
     );
-    expect(cronSource).toMatch(
+    expect(cronAgentActionSource).toMatch(
       /if \(!quietWatchRound && !notifyQuietRound\) \{[\s\S]{0,400}deliverCronResult\(/,
     );
-    expect(cronSource).toMatch(
+    expect(cronAgentActionSource).toMatch(
       /buildCronAgentActionResult\(action, result, cronSession\.id, finalAssistantText, quietWatchRound, notifyQuietRound\)/,
     );
   });

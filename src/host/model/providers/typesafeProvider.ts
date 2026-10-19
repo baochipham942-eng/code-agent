@@ -10,6 +10,8 @@
 // - 官方 key 只经 providerResolution（typesafe→TYPESAFE_API_KEY）打官方端点。
 //   没有官方 key 时才读 getConfigService().getApiKey('openrouter')，只打 OpenRouter decisions。
 //   两把 key 不交叉。都没有则 null / TYPESAFE_KEY_MISSING，本层不发请求。
+// - 借用 OpenRouter key 受知情同意闸门（N-JEV-DEFAULT-ON-CONSENT）：用户总开关关、或
+//   只有 OpenRouter key 且未同意 → 视同无 key（null），与「无 key」行为完全一致。
 // - 400/404/422 → TYPESAFE_ROUTE_REJECTED；其余非 2xx → TYPESAFE_HTTP_ERROR。
 //   超时 / JSON 形状不对仍抛带 code 的 Error。fail-closed 动作由调用方决定。
 // ============================================================================
@@ -21,11 +23,15 @@ import {
   type JevAnswers,
   type JevQuestionSpec,
 } from '../../../shared/constants/jevQuestions';
+import type { JevKeySource } from '../../../shared/contract/jev';
+import { createLogger } from '../../services/infra/logger';
 import { getConfigService } from '../../services/core/configService';
 import { buildJevDecisionRequestBody, postJevDecision, type JevRoute } from './jevDecisionRequest';
 import { resolveProviderApiKey } from './providerResolution';
 
 export type { JevRoute };
+
+const logger = createLogger('TypeSafe');
 
 /** 抛错时挂在 Error.code 上的稳定码（调用方按码决定 warn 口径，不用于重试）。 */
 const TYPESAFE_ERROR_CODES = {
@@ -70,28 +76,86 @@ function redactSecret(text: string, secret: string): string {
 }
 
 /**
- * 官方 key 优先。没有官方 key 才用 OpenRouter key。都没有返回 null。
+ * Jev 用户开关（config.json settings.jev）：总开关缺省开、OpenRouter 借用同意缺省未给。
+ * configService 不可用（CLI/测试骨架）按缺省处理——缺省口径下官方 key 照常可用。
+ */
+function readJevUserSwitches(): { enabled: boolean; openRouterConsent: boolean } {
+  try {
+    const jev = getConfigService().getSettings().jev;
+    return {
+      enabled: jev?.enabled !== false,
+      openRouterConsent: jev?.openRouterConsent === true,
+    };
+  } catch {
+    return { enabled: true, openRouterConsent: false };
+  }
+}
+
+interface JevKeyResolution {
+  source: JevKeySource;
+  officialKey: string | null;
+  openrouterKey: string | null;
+}
+
+function resolveJevKeys(): JevKeyResolution {
+  const switches = readJevUserSwitches();
+  if (!switches.enabled) return { source: 'disabled_by_user', officialKey: null, openrouterKey: null };
+  const officialKey = presentKey(resolveProviderApiKey({ provider: 'typesafe', model: JEV_MODEL }));
+  if (officialKey) return { source: 'official', officialKey, openrouterKey: null };
+  const openrouterKey = presentKey(getConfigService().getApiKey('openrouter'));
+  return {
+    source: !openrouterKey ? 'none' : switches.openRouterConsent ? 'openrouter' : 'openrouter_pending_consent',
+    officialKey: null,
+    openrouterKey,
+  };
+}
+
+const NULL_ROUTE_REASON_TEXT: Record<Exclude<JevKeySource, 'official' | 'openrouter'>, string> = {
+  none: 'TYPESAFE_API_KEY 与 OpenRouter key 均未配置',
+  disabled_by_user: '用户已在设置中关闭 Jev 总开关',
+  openrouter_pending_consent: '检测到 OpenRouter key，但用户尚未允许借用（不借用用户 key）',
+};
+const warnedNullSources = new Set<keyof typeof NULL_ROUTE_REASON_TEXT>();
+
+/** 路由不可用的可区分留痕：每个原因每进程至多一条 warn（降级必须留痕，错题本 2026-08-14）。 */
+function warnNullRouteOnce(source: keyof typeof NULL_ROUTE_REASON_TEXT): void {
+  if (warnedNullSources.has(source)) return;
+  warnedNullSources.add(source);
+  logger.warn(`[typesafe] Jev 路由不可用（${source}）：${NULL_ROUTE_REASON_TEXT[source]}，本进程仅此一条`);
+}
+
+/**
+ * 状态探针（只读、无副作用、不 warn）：settings 页与诊断用。
+ * official | openrouter | openrouter_pending_consent | disabled_by_user | none。
+ */
+export function probeJevKeySource(): JevKeySource {
+  return resolveJevKeys().source;
+}
+
+/**
+ * 官方 key 优先。没有官方 key 才用 OpenRouter key（须用户已同意借用）。
+ * 总开关关 / 未同意借用 / 都没有 → null，行为与「无 key」完全一致。
  * 官方 key 存在时不读取 OpenRouter key。
  */
 export function resolveJevRoute(): JevRoute | null {
-  const officialKey = presentKey(resolveProviderApiKey({ provider: 'typesafe', model: JEV_MODEL }));
-  if (officialKey) {
+  const resolution = resolveJevKeys();
+  if (resolution.source === 'official' && resolution.officialKey) {
     return {
       kind: 'official',
       endpoint: MODEL_API_ENDPOINTS.typesafeSystemOne,
       model: JEV_MODEL,
-      apiKey: officialKey,
+      apiKey: resolution.officialKey,
     };
   }
-  const openrouterKey = presentKey(getConfigService().getApiKey('openrouter'));
-  if (openrouterKey) {
+  if (resolution.source === 'openrouter' && resolution.openrouterKey) {
     return {
       kind: 'openrouter',
       endpoint: MODEL_API_ENDPOINTS.openrouterDecisions,
       model: JEV_OPENROUTER_MODEL,
-      apiKey: openrouterKey,
+      apiKey: resolution.openrouterKey,
     };
   }
+  warnNullRouteOnce(resolution.source as keyof typeof NULL_ROUTE_REASON_TEXT);
   return null;
 }
 

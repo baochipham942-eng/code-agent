@@ -21,11 +21,8 @@ import type { DomainRouteHandlers } from '../../shared/ipc/domainRoutes';
 import { SettingsSchemas, type SettingsDomainRequest } from '../../shared/ipc/schemas/settings';
 import { WindowSchemas, type WindowDomainRequest } from '../../shared/ipc/schemas/window';
 import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
-import {
-  bindAppGrantDatabase,
-  listAppGrants as readAppGrantList,
-  revokeAppGrant as revokeStoredAppGrant,
-} from '../permissions/appGrantStore';
+import { bindAppGrantDatabase } from '../permissions/appGrantStore';
+import { listGrants as listLedgerGrants, revokeGrant as revokeLedgerGrant } from '../permissions/grantLedger';
 import { extractDocxParagraphsFromBuffer } from '../tools/artifacts/docxParagraphLocator';
 import {
   resolveSheetCoordinate,
@@ -604,16 +601,16 @@ const settingsHandlers: DomainRouteHandlers<SettingsDomainRequest, SettingsRoute
     await handleSetBudgetConfig(getConfigService, payload as Parameters<typeof handleSetBudgetConfig>[1]);
     return null;
   },
-  listAppGrants: async () => {
+  listPermissionGrants: async () => {
     bindLiveAppGrantDatabase();
-    return readAppGrantList();
+    return listLedgerGrants();
   },
-  revokeAppGrant: async (_getConfigService, payload) => {
+  revokePermissionGrant: async (_getConfigService, payload) => {
     bindLiveAppGrantDatabase();
-    const appKey = payload && typeof payload === 'object' && typeof (payload as { appKey?: unknown }).appKey === 'string'
-      ? (payload as { appKey: string }).appKey
+    const id = payload && typeof payload === 'object' && typeof (payload as { id?: unknown }).id === 'string'
+      ? (payload as { id: string }).id
       : '';
-    return { revoked: revokeStoredAppGrant(appKey) };
+    return { revoked: revokeLedgerGrant(id) };
   },
 };
 

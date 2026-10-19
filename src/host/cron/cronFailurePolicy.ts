@@ -173,17 +173,23 @@ export function notifyCronJobDisabled(
  * notifyWhen 安静轮判定（N-CRON-RESTATE-HUMAN-WHEN）：任务带 notifyWhen 判据且本次
  * 成功运行的最终正文没有 <cron_alert> 时，这轮不打扰用户——完成系统通知与通道推送
  * 都跳过（hasAlert 的计算与推送门在 cronService.executeAction；本函数只判 + 留痕）。
- * 执行本身不受影响：仍 completed、仍进历史与待过目收件箱。判据未设置的任务恒
- * false，行为零变化；失败/登录墙通知走 notifyCronAgentExecution 的失败分支，
- * 永不经过本判定（标记只在成功路径打上）。
+ * 仅带 urgencyCriteria 的任务同门（N-CRON-URGENCY-NOTIFY）：结果显式声明 can_wait/fyi
+ * 的成功轮同样安静；notifyWhen 与 urgencyCriteria 同设时 notifyWhen 独自决定
+ * （hasAlert 只看 alert 标记，urgency 头不参与）。执行本身不受影响：仍 completed、
+ * 仍进历史与待过目收件箱。判据未设置的任务恒 false，行为零变化；失败/登录墙通知
+ * 走 notifyCronAgentExecution 的失败分支，永不经过本判定（标记只在成功路径打上）。
  */
 export function cronNotifyQuietRound(
-  action: Pick<AgentAction, 'notifyWhen'>,
+  action: Pick<AgentAction, 'notifyWhen' | 'urgencyCriteria'>,
   hasAlert: boolean,
   jobId: string,
 ): boolean {
-  if (!action.notifyWhen?.trim() || hasAlert) return false;
-  console.warn(`[CronService] notify suppressed: notifyWhen not met job=${jobId}`);
+  if (hasAlert) return false;
+  const reason = action.notifyWhen?.trim()
+    ? 'notifyWhen not met'
+    : action.urgencyCriteria?.trim() ? 'urgency can_wait/fyi' : null;
+  if (!reason) return false;
+  console.warn(`[CronService] notify suppressed: ${reason} job=${jobId}`);
   return true;
 }
 
@@ -221,6 +227,7 @@ export function notifyCronAgentExecution(
       {
         sessionId: execution.sessionId,
         sessionTitle: `[定时] ${definition.name}`,
+        jobId: definition.id,
         summary: succeeded
           ? readCronAlertReason(execution.result) ?? '定时任务已完成'
           : loginWall

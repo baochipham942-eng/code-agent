@@ -5,6 +5,13 @@ export const ARTIFACT_PREVIEW_HEALTH = {
   WEB_SERVER_FILE_TIMEOUT_MS: 2_000,
   IN_APP_BROWSER_LEASE_TTL_MS: 60_000,
   SETTLE_MS: 350,
+  /** button_no_response 探针：点击后等 DOM mutation / innerText 变化 / 滚动位移的窗口 */
+  BUTTON_CLICK_SETTLE_MS: 600,
+  /**
+   * button_no_response 探针 scroll 臂的位移门槛（px）：window 或按钮最近可滚动祖先
+   * 在 settle 窗口内的最大绝对位移 ≥ 此值即算 responded（锚点导航常只滚动不碰 DOM）。
+   */
+  BUTTON_CLICK_SCROLL_DELTA_PX: 2,
   OVERFLOW_TOLERANCE_PX: 4,
   VISIBLE_ELEMENT_MIN_SIZE_PX: 4,
   STDERR_LIMIT: 12_000,

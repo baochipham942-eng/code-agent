@@ -12,6 +12,7 @@ import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useStreamResumeStore } from '../../../stores/streamResumeStore';
 import { useTaskStore, type SessionStatus } from '../../../stores/taskStore';
+import { useTerminalRunGuardStore } from '../../../stores/terminalRunGuardStore';
 import ipcService from '../../../services/ipcService';
 import type { AgentEffectsProps } from '../useAgentEffects';
 import { getAgentEventSessionId, isAgentEventForCurrentSession } from '../agentEventSession';
@@ -205,6 +206,9 @@ export const useSessionLifecycleEffects = ({
           // ADR-068 刀 4：预算耗尽转 error——断流续接信号让位给错误呈现（AgentErrorCard
           // 带重试动作衔接既有错误呈现，partial 刀 3 已带标记落库）。
           useStreamResumeStore.getState().clear();
+          if (eventSessionId) {
+            useTerminalRunGuardStore.getState().markTerminal(eventSessionId);
+          }
           clearSessionProcessing();
           refreshContextHealth();
           break;
@@ -213,6 +217,11 @@ export const useSessionLifecycleEffects = ({
         case 'agent_cancelled':
           lastEventAtRef.current = Date.now();
           logHandledEvent();
+          // 终态粘滞：终局一旦应用，这个 run 的尾巴事件/旧响应不得再点亮运行态
+          //（守卫与判据见 terminalRunGuardStore）。
+          if (eventSessionId) {
+            useTerminalRunGuardStore.getState().markTerminal(eventSessionId);
+          }
           // ADR-068 刀 4：run 终态——断流续接信号兜底消除（正常恢复早在续答 delta 到达时消过）
           useStreamResumeStore.getState().clear();
           if (isCurrentSessionEvent) {

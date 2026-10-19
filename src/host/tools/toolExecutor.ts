@@ -22,6 +22,7 @@ import {
 } from '../../shared/contract/permission';
 import { getToolCache } from '../services/infra/toolCache';
 import { extractComputerTargetApp } from '../permissions/computerAppTarget';
+import { cuaToolNeedsAppGrant, resolveCuaAppTarget } from '../permissions/cuaAppTarget';
 import { resolvePreAskGrant } from '../permissions/preAskGrant';
 import { createLogger } from '../services/infra/logger';
 import { getAuditLogger, maskSensitiveData, isKnownSafeCommand, validateCommand, getShellSafetyMode, getExecPolicyStore, getPolicyEnforcer, type PolicyEnforcer, type PolicyCheckResult, type ValidationResult } from '../security';
@@ -1634,6 +1635,10 @@ export class ToolExecutor {
     const argumentForcesClassification = bashArgumentForcesClassification
       || readArgumentForcesClassification
       || connectorTokenWriteForcesClassification;
+    // cua-driver 需要「按应用授权」的工具（app-content read requiresPermission=false 要
+    // force 进审批链；app action 要挡 skill 预授权绕过按应用卡），与
+    // readArgumentForcesClassification 同位且同样从 isPreApproved 排除。
+    const cuaAppGrantForcesClassification = cuaToolNeedsAppGrant(executionToolName);
 
     // N-PERMRULES-LOCAL-OWNER r1：用户级 deny 规则（settings permissions.deny）先于全部
     // 自动放行捷径（skill 预授权 / exec-policy allow / 已知安全命令 / lenient）与 ask
@@ -1680,6 +1685,7 @@ export class ToolExecutor {
       && !shellDesktopAutomation
       && !consequenceForcesClassification
       && !argumentForcesClassification
+      && !cuaAppGrantForcesClassification
       && !this.forcePermissionHandler
       && !unresolvedWriteTargetForcesAsk
       && options.preApprovedTools !== undefined
@@ -1741,7 +1747,7 @@ export class ToolExecutor {
       }
     }
 
-    if ((toolDef.requiresPermission || readArgumentForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk) && (commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || (!isPreApproved && !isSafeCommand))) {
+    if ((toolDef.requiresPermission || readArgumentForcesClassification || cuaAppGrantForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk) && (commandAnalysisFailedReason || this.forcePermissionHandler || writeWithoutWorkspaceAuthority || guardFabricForcesApproval || protectedWriteForcesConfirmation || policyForcesConfirmation || unresolvedWriteTargetForcesAsk || boundaryViolation || readOnlyForcesConfirmation || shellDesktopAutomation || consequenceForcesClassification || argumentForcesClassification || peerOriginForcesConfirmation || launderRetryForcesAsk || (!isPreApproved && !isSafeCommand))) {
       // P1: Auto-approve classifier — 规则+LLM 自动判断安全性
       let needsUserApproval = true;
       // 信任边界 ask（W3 写边界）→ forceConfirm：终审层便利放行必须让路（同 directory_access）。
@@ -1751,7 +1757,21 @@ export class ToolExecutor {
       const standingGrantTarget = isExternalSideEffectTool(executionToolName)
         ? extractStandingGrantTarget(executionToolName, params)
         : null;
-      const computerApp = extractComputerTargetApp(executionToolName, params);
+      // cua-driver 原生工具的按应用授权目标（N-COMPUTERUSE-CUADRIVER-APPGRANT）：host 侧
+      // 解析（绝不采信模型自报），解析不出目标时 fail-closed——不碰驱动，给模型出路。
+      const cuaApp = await resolveCuaAppTarget(executionToolName, params);
+      if (cuaApp.kind === 'unresolved') {
+        recordDecision(executionToolName, params, 'policy-deny', 'cua-app-target-unresolved', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
+        return {
+          success: false,
+          error: cuaApp.reason,
+          metadata: {
+            code: 'CUA_APP_TARGET_UNRESOLVED',
+            failureCode: AgentFailureCode.PermissionDenied,
+          },
+        };
+      }
+      const computerApp = cuaApp.kind === 'app' ? cuaApp.app : extractComputerTargetApp(executionToolName, params);
       // Lazy trace: only created when needed (deny/ask path)
       const traceBuilder = createTraceBuilder(executionToolName);
       if (pluginId) {
@@ -1972,7 +1992,14 @@ export class ToolExecutor {
         commandValidation,
         commandRiskUnknown ? 'unknown' : knownAskCommandRisk,
       );
-      if (pluginOrigin) Object.assign(permissionRequest.details, pluginOrigin);
+      if (pluginOrigin) {
+        Object.assign(permissionRequest.details, pluginOrigin);
+      } else if (pluginId) {
+        // builtin 工具：参数自带的 pluginId/pluginName 会随 { ...params } 进 details（schema 根上
+        // 不剥额外字段），把审批卡来源伪造成「来自插件《…》」——必须删掉。
+        delete permissionRequest.details.pluginId;
+        delete permissionRequest.details.pluginName;
+      }
       if (
         permissionRequest.type === 'file_read'
         || permissionRequest.type === 'file_write'

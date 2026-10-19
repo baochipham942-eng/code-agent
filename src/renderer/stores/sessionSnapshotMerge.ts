@@ -1,5 +1,6 @@
 import type { ContentPart, Message } from '@shared/contract';
 import { hydrateToolCallResults } from '../utils/messageHydration';
+import { isStreamRecoveryMessage, stripStreamRecoveryMarker } from '../utils/streamRecoveryMessage';
 
 /** 短前言（「好的。」）不能当成同一条流式草稿的前缀。 */
 const STREAMING_COUNTERPART_MIN_PREFIX = 32;
@@ -198,12 +199,22 @@ function mergeAssistantPair(snapshotMessage: Message, liveMessage: Message): Mes
     // live 草稿的 metadata 可能只有 correlation 一个键（turn_start 建的草稿就是），
     // 整体铺开会把 snapshot 落库的 agentError / turnQuality 等键抹掉——按键合并，
     // live 提供的键赢，snapshot 独有的键保留（ai-review #1706）。
-    metadata: (snapshotMessage.metadata || liveMessage.metadata)
-      ? { ...snapshotMessage.metadata, ...liveMessage.metadata }
-      : undefined,
+    metadata: mergeMetadata(snapshotMessage, liveMessage),
     // 所有数组载荷统一处理，不逐个点名（见 mergeArrayPayloads 的注释）。
     ...mergeArrayPayloads(snapshotMessage, liveMessage),
   };
+}
+
+/**
+ * 快照侧是 recovery 回填消息时，与活草稿合并即证明这一轮仍在直播——重启中断标记
+ * （streamRecovery / streamInterruptionReason）不再成立，随合并一并撤掉，否则标记
+ * 会骑着活草稿活到收尾，成功的工具步整段被渲染成「应用重启时中断」。
+ */
+function mergeMetadata(snapshotMessage: Message, liveMessage: Message): Message['metadata'] {
+  if (!snapshotMessage.metadata && !liveMessage.metadata) return undefined;
+  const merged = { ...snapshotMessage.metadata, ...liveMessage.metadata };
+  if (!isStreamRecoveryMessage(snapshotMessage)) return merged;
+  return stripStreamRecoveryMarker({ metadata: merged }).metadata;
 }
 
 export function mergeSnapshotWithLiveTail(snapshot: Message[], live: Message[]) {

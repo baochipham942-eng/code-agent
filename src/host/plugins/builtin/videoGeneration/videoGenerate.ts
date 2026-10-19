@@ -31,6 +31,10 @@ import { getZhipuOfficialVideoApiKey } from '../../../tools/modules/network/tool
 import { getMinimaxApiKey } from '../../../services/media/imageGenerationService';
 import { downloadVideoAsBuffer, generateVideo } from '../../../services/media/videoGenerationService';
 import { MODEL_API_ENDPOINTS, ZHIPU_OFFICIAL_QUICK_MODEL } from '../../../../shared/constants';
+import {
+  GENERATION_TOOL_DEFAULT_MODELS,
+  GENERATION_TOOL_ZHIPU_VIDEO_DEFAULT_DURATION_SEC,
+} from '../../../../shared/media/generationToolDefaults';
 import { createFileArtifact, createVirtualArtifact } from '../../../tools/artifacts/artifactMeta';
 import { isPathWithinRoot, resolveWorkspacePath } from '../../../runtime/workspaceScope';
 import {
@@ -63,8 +67,7 @@ const ZHIPU_VIDEO_MODELS = {
   legacy: 'cogvideox-flash',
 } as const;
 
-/** MiniMax 海螺默认模型与图生视频模型（visualModels 注册表 id，与 image 合同共用 key 通路）。 */
-const MINIMAX_T2V_MODEL = 'MiniMax-Hailuo-02';
+/** MiniMax 海螺图生视频模型（visualModels 注册表 id；默认文生视频模型在 shared/media/generationToolDefaults）。 */
 const MINIMAX_I2V_MODEL = 'I2V-01';
 
 const IMAGE_INPUT_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp'];
@@ -262,7 +265,7 @@ function validateVideoGenerateArgs(
     return { ok: false, error: 'prompt is required and must be a string' };
   }
 
-  const model = typeof args.model === 'string' && args.model.length > 0 ? args.model : MINIMAX_T2V_MODEL;
+  const model = typeof args.model === 'string' && args.model.length > 0 ? args.model : GENERATION_TOOL_DEFAULT_MODELS.video;
   const zhipuRoute = model.startsWith('cogvideox');
 
   const rawImagePath = args.image_path;
@@ -715,7 +718,7 @@ export async function executeVideoGenerate(
           imageUrl: params.imageUrl,
           size,
           quality: params.quality || 'quality',
-          duration: params.duration || 5,
+          duration: params.duration || GENERATION_TOOL_ZHIPU_VIDEO_DEFAULT_DURATION_SEC,
           fps: params.fps || 30,
         },
         ctx.abortSignal,
@@ -742,7 +745,7 @@ export async function executeVideoGenerate(
         expandedPrompt,
         taskId,
         aspectRatio,
-        duration: params.duration || 5,
+        duration: params.duration || GENERATION_TOOL_ZHIPU_VIDEO_DEFAULT_DURATION_SEC,
         fps: params.fps || 30,
       };
     } else {

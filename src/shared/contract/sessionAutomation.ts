@@ -51,6 +51,8 @@ export interface StandingGrant {
   target: string;
   /** 铸造时间戳（epoch ms） */
   grantedAt: number;
+  /** 可选过期时刻（epoch ms）；过期的授权不列出也不匹配。铸造面（过期档 UI）是后续单。 */
+  expiresAt?: number;
 }
 
 /**

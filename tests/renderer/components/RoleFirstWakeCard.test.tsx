@@ -136,6 +136,31 @@ describe('RoleFirstWakeCard', () => {
     expect(openCapabilityHub).toHaveBeenCalledWith('connectors');
   });
 
+  it('真实清单路径产出的 none 快照（内置源不算，建议被硬闸清空）渲染连接引导，无建议按钮', async () => {
+    // 快照镜像 roleFirstWake.sourcesFilter.test.ts「只有内置源」场景经真实
+    // CapabilityCenterService.listCapabilities() 跑出的落盘结果：
+    // state=completed / sourcesMode=none / suggestions=[]（host 硬闸丢弃模型产出）。
+    getFirstWake.mockResolvedValue({
+      state: 'completed',
+      sessionId: 'fw-1',
+      sourcesMode: 'none',
+      suggestions: [],
+      intro: '我是小满，擅长整理日程。连上数据源之后我能帮你看真实的安排。',
+    });
+    render(<RoleFirstWakeCard roleId="role-1" />);
+
+    expect(await screen.findByText('我是小满，擅长整理日程。连上数据源之后我能帮你看真实的安排。')).toBeTruthy();
+    expect(screen.getByText('连上数据源后我能帮你更多')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '去连接' })).toBeTruthy();
+    expect(screen.queryAllByRole('button').map((button) => button.textContent)).toEqual(
+      expect.arrayContaining(['去连接', '去 TA 的会话', '跳过']),
+    );
+    // none 模式没有建议按钮：卡片上的按钮只有引导/导航/跳过三类
+    expect(screen.queryByTestId('role-first-wake-card')!.getAttribute('data-sources-mode')).toBe('none');
+    fireEvent.click(screen.getByRole('button', { name: '去连接' }));
+    expect(openCapabilityHub).toHaveBeenCalledWith('connectors');
+  });
+
   it('失败态展示原因和出路，不是空卡', async () => {
     getFirstWake.mockResolvedValue({
       state: 'failed',

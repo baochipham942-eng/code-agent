@@ -47,6 +47,27 @@ export function isStreamRecoveryMessage(message: Message, turnId?: string): bool
   return turnId === undefined || marker.turnId === turnId;
 }
 
+/**
+ * 撤掉一条消息上的 streamRecovery / streamInterruptionReason 标记，返回可直接并进
+ * updateMessage 的局部更新。没标记时返回空对象（无操作）。
+ *
+ * 标记只在「这轮流真的断了、只剩快照回放」时有效。活 run 中途的快照重灌
+ * （AGENT_STREAM_SNAPSHOT_REQUIRED）会把非 final 快照回填成 recovery 消息，之后
+ * 同一轮继续出 delta、正常 commit —— commit/与活草稿合并就是「这轮没断」的铁证，
+ * 标记再留着会把成功的工具步渲染成「应用重启时中断」。
+ */
+export function stripStreamRecoveryMarker(
+  message: Pick<Message, 'metadata'>,
+): Partial<Message> {
+  if (!message.metadata?.[STREAM_RECOVERY_META_KEY]) return {};
+  const {
+    streamInterruptionReason: _reason,
+    [STREAM_RECOVERY_META_KEY]: _marker,
+    ...rest
+  } = message.metadata;
+  return { metadata: Object.keys(rest).length > 0 ? rest : undefined };
+}
+
 /** snapshot.toolCalls[].arguments 是原始字符串，流式中断时可能是半截 JSON。 */
 function parseSnapshotToolArguments(raw: string): Record<string, unknown> {
   try {

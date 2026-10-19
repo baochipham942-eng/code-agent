@@ -359,6 +359,77 @@ describe('thinking 模型回落时自动关闭思考', () => {
   });
 });
 
+describe('quick 车道低推理档（glm-5.3 不能关思考）', () => {
+  it('glm-5.3 作为 routing.fast 时请求体带 reasoning_effort:low，不带任何 thinking 控制', async () => {
+    mockConfig({
+      fast: { provider: 'zhipu', model: 'glm-5.3' },
+      keys: { zhipu: 'zk' },
+    });
+    const fetchMock = mockFetchOnce('费曼学习法的简要解释');
+
+    const res = await quickTask('生成标题');
+
+    expect(res.success).toBe(true);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.model).toBe('glm-5.3');
+    expect(body.reasoning_effort).toBe('low');
+    expect(body.thinking).toBeUndefined();
+  });
+
+  it('glm-5.3 用作 run-scoped 记忆模型时同样带 reasoning_effort:low', async () => {
+    mockConfig({ keys: {} });
+    const fetchMock = mockFetchOnce('organized');
+
+    const scoped = await runWithMemoryModelOverride({
+      provider: 'customglmcoding',
+      model: 'glm-5.3',
+      apiKey: 'coding-key',
+      baseUrl: 'https://coding.example/api/coding/paas/v4',
+    }, () => memoryTask('整理'));
+
+    expect(scoped).toMatchObject({ success: true, provider: 'customglmcoding', model: 'glm-5.3' });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.reasoning_effort).toBe('low');
+    expect(body.thinking).toBeUndefined();
+  });
+
+  it('glm-5.3-flash（默认 fast 档）请求体逐字段不变：不带 thinking 也不带 reasoning_effort', async () => {
+    mockConfig({ keys: { zhipu: 'zk' } });
+    const fetchMock = mockFetchOnce('ok');
+
+    await quickTask('hi');
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.model).toBe(DEFAULT_MODELS.quick);
+    expect(body.thinking).toBeUndefined();
+    expect(body.reasoning_effort).toBeUndefined();
+    expect(Object.keys(body).sort()).toEqual(['max_tokens', 'messages', 'model', 'stream', 'temperature']);
+  });
+
+  it('env 兜底路由（zhipu/glm-5.3-flash）同样两者都不带', async () => {
+    mockConfig({ keys: {} });
+    getConfigServiceMock.mockImplementation(() => {
+      throw new Error('config unavailable');
+    });
+    const prevOfficial = process.env.ZHIPU_OFFICIAL_API_KEY;
+    const prevOki = process.env.ZHIPU_API_KEY;
+    delete process.env.ZHIPU_OFFICIAL_API_KEY;
+    process.env.ZHIPU_API_KEY = 'env-oki-key';
+    const fetchMock = mockFetchOnce('env fallback');
+    try {
+      await quickTask('hi');
+      const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+      expect(body.model).toBe(DEFAULT_MODELS.quick);
+      expect(body.thinking).toBeUndefined();
+      expect(body.reasoning_effort).toBeUndefined();
+    } finally {
+      if (prevOfficial === undefined) delete process.env.ZHIPU_OFFICIAL_API_KEY;
+      else process.env.ZHIPU_OFFICIAL_API_KEY = prevOfficial;
+      if (prevOki === undefined) delete process.env.ZHIPU_API_KEY;
+      else process.env.ZHIPU_API_KEY = prevOki;
+    }
+  });
+});
+
 describe('JSON / SSE 响应兼容', () => {
   it('JSON 响应保持原有 content 解析行为', async () => {
     mockConfig({ keys: { zhipu: 'zk' } });

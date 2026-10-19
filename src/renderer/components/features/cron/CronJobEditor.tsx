@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { CronJobDefinition } from '@shared/contract';
 import { isHourAlignedCronExpression, suggestCronStaggerMinute } from '@shared/cronStagger';
 import { validateEventScheduleConstraints, type EventScheduleViolation } from '@shared/cronEventValidation';
 import { CRON_URGENCY_CRITERIA } from '@shared/constants';
+import { isRoleBoundCronJob } from '@shared/cronRoleBinding';
 import { ArrowLeft, Clock, Settings, Terminal } from 'lucide-react';
 import { Modal } from '../../primitives/Modal';
 import { Button } from '../../primitives/Button';
@@ -27,6 +28,8 @@ import {
   type CronTemplate,
 } from './cronTemplates';
 import { CronSimpleCreate } from './CronSimpleCreate';
+
+import { SavedRoutineRestate } from './SavedRoutineRestate';
 import { useI18n } from '../../../hooks/useI18n';
 import { showCronLoginWallWarning } from './cronLoginWallNotice';
 import { CronRunsOnSelector } from './CronRunsOnSelector';
@@ -104,9 +107,20 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
   const [step, setStep] = useState<CreationStep>('simple');
   const [selectedTemplate, setSelectedTemplate] = useState<CronTemplate | null>(null);
   const [templateValues, setTemplateValues] = useState<Record<string, string>>({});
+  // 保存成功且角色绑定的任务：不直接关闭，切换到只读复述视图（Done 才关闭）。
+  const [savedJob, setSavedJob] = useState<CronJobDefinition | null>(null);
 
+  // savedJob 只在弹窗「关→开」转换时清：保存成功后 store 的 createJob/updateJob
+  // 会 await refresh()，jobs 数组被 IPC 新对象整体替换，CronCenterPanel 派生的
+  // job/copySource prop 随之换身份并重跑下面的 reset effect——若每次重跑都清，
+  // update/copy 路径刚设上的复述视图会被立即重置回编辑表单（r2）。ref 记上一次
+  // isOpen，身份抖动不碰 savedJob。
+  const wasOpenRef = useRef(false);
   useEffect(() => {
+    const reopened = !wasOpenRef.current;
+    wasOpenRef.current = isOpen;
     if (!isOpen) return;
+    if (reopened) setSavedJob(null);
     if (job) {
       setDraft(buildDraftFromJob(job));
       setStep('manual');
@@ -214,6 +228,10 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       const input = buildCronJobInput(generatedDraft);
       const created = await createJob(input);
       showCronLoginWallWarning(created, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
+      if (isRoleBoundCronJob(created)) {
+        setSavedJob(created);
+        return;
+      }
       onClose();
     } catch (error) {
       setErrors({ form: saveErrorMessage(error, cc.simpleCreateFailed) });
@@ -241,9 +259,17 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       if (job) {
         const updated = await updateJob(job.id, input);
         showCronLoginWallWarning(updated, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
+        if (updated && isRoleBoundCronJob(updated)) {
+          setSavedJob(updated);
+          return;
+        }
       } else {
         const created = await createJob(input);
         showCronLoginWallWarning(created, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
+        if (isRoleBoundCronJob(created)) {
+          setSavedJob(created);
+          return;
+        }
       }
       onClose();
     } catch (error) {
@@ -254,6 +280,15 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       setSubmitting(false);
     }
   };
+
+  // ── Saved restate view（角色绑定任务保存成功后）─────────────────────
+  if (savedJob) {
+    return (
+      <Modal isOpen={isOpen} onClose={onClose} title={title}>
+        <SavedRoutineRestate job={savedJob} onDone={onClose} />
+      </Modal>
+    );
+  }
 
   // ── Simple create step (default) ───────────────────────────────────
   if (!job && step === 'simple') {
@@ -766,7 +801,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                   minRows={5}
                 />
               </FormField>
-              <FormField label={cc.urgencyCriteriaLabel}>
+              <FormField label={cc.urgencyCriteriaLabel} hint={cc.urgencyCriteriaHint}>
                 <Input
                   value={draft.agentUrgencyCriteria ?? ''}
                   onChange={(e) => setField('agentUrgencyCriteria', e.target.value)}

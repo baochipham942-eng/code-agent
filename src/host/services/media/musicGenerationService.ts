@@ -4,6 +4,7 @@
 import type { AppSettings } from '../../../shared/contract';
 import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
 import { deriveBridgedVisualModels } from '../../../shared/visualModelBridge';
+import { GENERATION_TOOL_DEFAULT_MODELS } from '../../../shared/media/generationToolDefaults';
 import { fetchWithAbort, getMinimaxApiKey } from './imageGenerationService';
 import { resolveBridgedEndpoint } from './bridgedEndpoint';
 
@@ -35,7 +36,7 @@ export function resolveMusicModelEndpoint(
   if (model !== BUILTIN_MINIMAX_MUSIC_ID) throw new Error(`未知音乐模型 ${model}`);
   const apiKey = getMinimaxApiKey();
   if (!apiKey) throw new Error('音乐生成需要 MiniMax API Key。');
-  return { baseUrl: MODEL_API_ENDPOINTS.minimax, apiKey, modelName: 'music-2.6' };
+  return { baseUrl: MODEL_API_ENDPOINTS.minimax, apiKey, modelName: GENERATION_TOOL_DEFAULT_MODELS.music };
 }
 
 export interface GenerateMusicArgs {

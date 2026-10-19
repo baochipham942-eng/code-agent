@@ -1,16 +1,26 @@
 // ============================================================================
 // CronFailurePolicy 单测（N-CRON-RESILIENCE ①②③）：
 // 退避序列 / 错误分类判据 / 失败通知去重+冷却 / 连败计数
+// + notifyWhen 通知门（N-CRON-RESTATE-HUMAN-WHEN）
 // ============================================================================
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const notifyState = vi.hoisted(() => ({ notifyTaskComplete: vi.fn() }));
+vi.mock('../../../src/host/services/infra/notificationService', () => ({
+  notificationService: { notifyTaskComplete: notifyState.notifyTaskComplete },
+}));
+
 import {
   classifyCronFailure,
   countTrailingCronFailures,
+  cronNotifyQuietRound,
   cronRetryBackoffMs,
   CronFailureNoticeGate,
+  notifyCronAgentExecution,
 } from '../../../src/host/cron/cronFailurePolicy';
+import { buildCronAgentActionResult, cronAgentRunHasAlert } from '../../../src/host/cron/cronNormalizers';
 import { CRON_GUARDRAILS } from '../../../src/shared/constants';
-import type { CronJobExecution } from '../../../src/shared/contract/cron';
+import type { CronJobDefinition, CronJobExecution } from '../../../src/shared/contract/cron';
 import { buildCronLoginWallStopCode } from '../../../src/shared/utils/browserLoginWall';
 
 describe('cronRetryBackoffMs：指数退避序列', () => {
@@ -158,5 +168,238 @@ describe('countTrailingCronFailures：末尾连续失败', () => {
     const loginWall = buildCronLoginWallStopCode('https://example.test');
     expect(countTrailingCronFailures([exec('failed', loginWall), exec('failed', loginWall)])).toBe(0);
     expect(countTrailingCronFailures([exec('failed'), exec('failed', loginWall)])).toBe(1);
+  });
+});
+
+// ============================================================================
+// notifyWhen 通知门（N-CRON-RESTATE-HUMAN-WHEN）：
+// 判据未满足的成功轮不发声（完成通知与通道推送都跳过，推送门在 cronService 源码
+// 契约里钉死）；失败/登录墙通知永不被该门静音。
+// ============================================================================
+describe('cronNotifyQuietRound：notifyWhen 安静轮判定', () => {
+  it('判据设置且无 <cron_alert> → true，并留一行可归因日志（含 job id）', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(cronNotifyQuietRound({ notifyWhen: '只有紧急事项' }, false, 'job-9')).toBe(true);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith('[CronService] notify suppressed: notifyWhen not met job=job-9');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('有 alert / 未设判据 / 空白判据 → false（既有任务行为零变化）', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(cronNotifyQuietRound({ notifyWhen: '只有紧急事项' }, true, 'job-9')).toBe(false);
+      expect(cronNotifyQuietRound({}, false, 'job-9')).toBe(false);
+      expect(cronNotifyQuietRound({ notifyWhen: '   ' }, false, 'job-9')).toBe(false);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
+describe('notifyCronAgentExecution：notifySuppressed 完成通知门', () => {
+  const agentDefinition = {
+    id: 'job-nw',
+    name: '晨报',
+    action: { type: 'agent', agentType: 'default', prompt: '汇总', notifyWhen: '只有紧急事项' },
+  } as unknown as CronJobDefinition;
+  const action = { agentType: 'default', prompt: '汇总', notifyWhen: '只有紧急事项' };
+
+  function execution(status: 'completed' | 'failed', result?: unknown, error?: string): CronJobExecution {
+    return {
+      id: `exec-${status}`,
+      jobId: 'job-nw',
+      status,
+      scheduledAt: 0,
+      startedAt: 0,
+      completedAt: 1,
+      duration: 1,
+      retryAttempt: 0,
+      sessionId: 'sess-1',
+      ...(result !== undefined ? { result } : {}),
+      ...(error ? { error } : {}),
+    } as CronJobExecution;
+  }
+
+  beforeEach(() => {
+    notifyState.notifyTaskComplete.mockClear();
+  });
+
+  it('成功 + notifySuppressed 标记（判据未满足的安静轮）→ 不发完成通知', () => {
+    notifyCronAgentExecution(
+      agentDefinition,
+      execution('completed', buildCronAgentActionResult(action, undefined, 'sess-1', '一切照旧', false, true)),
+      new CronFailureNoticeGate(),
+    );
+    expect(notifyState.notifyTaskComplete).not.toHaveBeenCalled();
+  });
+
+  it('成功 + 无标记（判据满足/未设判据）→ 完成通知照发（force 直达）', () => {
+    notifyCronAgentExecution(
+      agentDefinition,
+      execution('completed', buildCronAgentActionResult(action, undefined, 'sess-1', '<cron_alert>紧急</cron_alert>', false, false)),
+      new CronFailureNoticeGate(),
+    );
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(1);
+    expect(notifyState.notifyTaskComplete.mock.calls[0]?.[1]).toEqual({ force: true });
+  });
+
+  it('失败告警永不被该门静音：失败执行照发（标记只可能出现在成功路径）', () => {
+    notifyCronAgentExecution(agentDefinition, execution('failed', undefined, 'provider 500'), new CronFailureNoticeGate());
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(1);
+    const payload = notifyState.notifyTaskComplete.mock.calls[0]?.[0] as { succeeded: boolean; summary: string };
+    expect(payload.succeeded).toBe(false);
+    expect(payload.summary).toContain('provider 500');
+  });
+
+  it('同因失败冷却照旧生效（与安静门正交）', () => {
+    const gate = new CronFailureNoticeGate();
+    notifyCronAgentExecution(agentDefinition, execution('failed', undefined, 'boom'), gate);
+    notifyCronAgentExecution(agentDefinition, execution('failed', undefined, 'boom'), gate);
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ============================================================================
+// urgencyCriteria 通知门矩阵（N-CRON-URGENCY-NOTIFY）：沿真实接线
+// cronAgentRunHasAlert → cronNotifyQuietRound → buildCronAgentActionResult →
+// notifyCronAgentExecution 数 notifyTaskComplete 调用次数（推送门与结果标记同走
+// notifyQuietRound，接线由 topology 源码契约钉死）。仅设紧急判据的任务：显式
+// can_wait/fyi 成功轮无系统通知；must_today/缺头/乱头照常通知；失败与登录墙
+// 永不被该门静音（标记只在成功路径打上）。
+// ============================================================================
+describe('notifyCronAgentExecution：urgencyCriteria 通知门矩阵（N-CRON-URGENCY-NOTIFY）', () => {
+  const CRITERIA = '只有老板发来的邮件算今天必须处理';
+
+  function runCompleted(
+    action: { urgencyCriteria?: string; notifyWhen?: string },
+    finalAssistantText: string,
+    isExternalWatch = false,
+  ): void {
+    const hasAlert = cronAgentRunHasAlert(action, { isExternalWatch, finalAssistantText });
+    const quietWatchRound = isExternalWatch && !hasAlert;
+    const notifyQuietRound = cronNotifyQuietRound(action, hasAlert, 'job-urg');
+    const result = buildCronAgentActionResult(
+      { agentType: 'default', prompt: '汇总', ...action },
+      undefined,
+      'sess-1',
+      finalAssistantText,
+      quietWatchRound,
+      notifyQuietRound,
+    );
+    notifyCronAgentExecution(
+      {
+        id: 'job-urg',
+        name: '晨报',
+        action: { type: 'agent', agentType: 'default', prompt: '汇总', ...action },
+      } as unknown as CronJobDefinition,
+      {
+        id: 'exec-1',
+        jobId: 'job-urg',
+        status: 'completed',
+        scheduledAt: 0,
+        startedAt: 0,
+        completedAt: 1,
+        duration: 1,
+        retryAttempt: 0,
+        sessionId: 'sess-1',
+        result,
+      } as CronJobExecution,
+      new CronFailureNoticeGate(),
+    );
+  }
+
+  beforeEach(() => {
+    notifyState.notifyTaskComplete.mockClear();
+  });
+
+  it('无判据：每轮都通知（can_wait 头也不例外，判据空白任务行为零变化）', () => {
+    runCompleted({}, 'urgency: can_wait\n一切照旧');
+    runCompleted({}, '普通正文');
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(2);
+  });
+
+  it('紧急判据 + must_today → 通知', () => {
+    runCompleted({ urgencyCriteria: CRITERIA }, 'urgency: must_today\n老板来信');
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('紧急判据 + can_wait / fyi → 不通知（can_wait 两轮共 0 次调用）', () => {
+    runCompleted({ urgencyCriteria: CRITERIA }, 'urgency: can_wait\n周报照旧');
+    runCompleted({ urgencyCriteria: CRITERIA }, 'urgency: fyi\n天气速览');
+    expect(notifyState.notifyTaskComplete).not.toHaveBeenCalled();
+  });
+
+  it('紧急判据 + 缺头 / 乱值头 → 照常通知（漏必办比多弹一次代价大）', () => {
+    runCompleted({ urgencyCriteria: CRITERIA }, '普通正文没有头部行');
+    runCompleted({ urgencyCriteria: CRITERIA }, 'urgency: maybe\n正文');
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(2);
+  });
+
+  it('notifyWhen + 紧急判据同设：notifyWhen 独自决定', () => {
+    // 无 alert 标记：即使 must_today 也不通知
+    runCompleted({ urgencyCriteria: CRITERIA, notifyWhen: '只有紧急事项' }, 'urgency: must_today\n正文');
+    expect(notifyState.notifyTaskComplete).not.toHaveBeenCalled();
+    // 有 alert 标记：即使 can_wait 也通知
+    runCompleted({ urgencyCriteria: CRITERIA, notifyWhen: '只有紧急事项' }, 'urgency: can_wait\n<cron_alert>紧急</cron_alert>');
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('external-watch：只认 <cron_alert>，urgency 头不改变监听语义', () => {
+    runCompleted({ urgencyCriteria: CRITERIA }, '<cron_alert>日历新冲突</cron_alert>', true);
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(1);
+    notifyState.notifyTaskComplete.mockClear();
+    // 无新料的监听轮：skipped 形状不带 notifySuppressed，完成通知行为与主线一致
+    runCompleted({}, '无标记正文', true);
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('紧急判据的安静轮留可归因日志（区分 notifyWhen 未满足）', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      cronNotifyQuietRound({ urgencyCriteria: CRITERIA }, false, 'job-urg');
+      expect(warn).toHaveBeenCalledWith('[CronService] notify suppressed: urgency can_wait/fyi job=job-urg');
+      cronNotifyQuietRound({ urgencyCriteria: CRITERIA }, true, 'job-urg');
+      cronNotifyQuietRound({}, false, 'job-urg');
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('失败与登录墙通知永不被紧急判据静音（成功轮的 can_wait 头也拦不住失败告警）', () => {
+    const failedDefinition = {
+      id: 'job-urg',
+      name: '晨报',
+      action: { type: 'agent', agentType: 'default', prompt: '汇总', urgencyCriteria: CRITERIA },
+    } as unknown as CronJobDefinition;
+    const loginWallError = buildCronLoginWallStopCode('https://example.test');
+    notifyCronAgentExecution(
+      failedDefinition,
+      {
+        id: 'exec-f1', jobId: 'job-urg', status: 'failed', scheduledAt: 0,
+        startedAt: 0, completedAt: 1, duration: 1, retryAttempt: 0,
+        sessionId: 'sess-1', error: 'provider 500',
+      } as CronJobExecution,
+      new CronFailureNoticeGate(),
+    );
+    notifyCronAgentExecution(
+      failedDefinition,
+      {
+        id: 'exec-f2', jobId: 'job-urg', status: 'failed', scheduledAt: 0,
+        startedAt: 0, completedAt: 1, duration: 1, retryAttempt: 0,
+        sessionId: 'sess-1', error: loginWallError,
+      } as CronJobExecution,
+      new CronFailureNoticeGate(),
+    );
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(2);
+    const failedPayload = notifyState.notifyTaskComplete.mock.calls[0]?.[0] as { succeeded: boolean };
+    const loginWallPayload = notifyState.notifyTaskComplete.mock.calls[1]?.[0] as { code?: string };
+    expect(failedPayload.succeeded).toBe(false);
+    expect(loginWallPayload.code).toBe('CRON_LOGIN_WALL_STOP');
   });
 });

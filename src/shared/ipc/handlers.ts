@@ -404,7 +404,7 @@ export interface IpcInvokeHandlers {
 
   // Unified extensions
   [IPC_CHANNELS.EXTENSION_LIST]: () => Promise<ExtensionInfo[]>;
-  [IPC_CHANNELS.EXTENSION_INSTALL]: (spec: string) => Promise<{ success: boolean; error?: string }>;
+  [IPC_CHANNELS.EXTENSION_INSTALL]: (spec: string, cautionConfirmationToken?: string) => Promise<{ success: boolean; error?: string } | SkillCautionConfirmationRequired>;
   [IPC_CHANNELS.EXTENSION_UNINSTALL]: (id: string) => Promise<{ success: boolean; error?: string }>;
   [IPC_CHANNELS.EXTENSION_ENABLE]: (id: string) => Promise<{ success: boolean; error?: string }>;
   [IPC_CHANNELS.EXTENSION_DISABLE]: (id: string) => Promise<{ success: boolean; error?: string }>;
@@ -613,6 +613,8 @@ export interface NotificationShowEvent {
   title: string;
   body: string;
   sessionId: string;
+  /** Source cron job for explicit login-wall consent from the notification. */
+  jobId?: string;
   /**
    * 这条通知同时代表目标会话出现了用户尚未查看的新结果。
    * Renderer 只把它接到既有 session unread 状态，不另建通知账本。

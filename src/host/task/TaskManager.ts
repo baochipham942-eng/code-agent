@@ -14,7 +14,7 @@
 
 import { EventEmitter } from 'events';
 import { app, AppWindow, hasInteractiveUi } from '../platform';
-import type { AgentEvent, Message, MessageMetadata, MessageSnapshotData, PermissionRequest, ToolCall } from '../../shared/contract';
+import type { AgentEvent, Message, MessageMetadata, MessageSnapshotData, PermissionRequest } from '../../shared/contract';
 import type { PermissionDeliveryOutcome, PermissionResponse } from '../../shared/contract/permission';
 import { AgentOrchestrator } from '../agent/agentOrchestrator';
 import type { AgentRunOptions } from '../research/types';
@@ -32,108 +32,42 @@ import type { WorkspaceScope } from '../../shared/contract/project';
 import { getModelSessionState } from '../session/modelSessionState';
 import type { RunRegistry } from '../runtime/runRegistry';
 import { getProjectSourceTrustFailureMarker } from '../services/project/projectSourceTrustError';
+import { settleBackgroundRunOnRejection, type BackgroundRunErrorRecord } from './backgroundTaskTerminal';
 import { getModelAuthFailureMarker } from '../model/errorClassifier';
 import { MULTIAGENT_TOOL_NAMES } from '../../shared/constants/tools';
 import { SESSION_COMMAND_CENTER_TOOL_NAMES } from '../../shared/constants/sessionCommandCenter';
-import { TASK_QUEUE_TIMEOUTS } from '../../shared/constants';
 import { collectToolArtifactsFromMetadata } from '../../shared/contract/artifactBlob';
 import { isDeliverableArtifact } from '../../shared/contract/artifactRoleRegistry';
+import { persistTaskManagerEvent, type TurnState } from './taskManagerEventPersistence';
+import {
+  DEFAULT_CONFIG,
+  type BackgroundTaskRun,
+  type BackgroundTaskRunStatus,
+  type OrchestratorWrapper,
+  type SessionState,
+  type TaskManagerConfig,
+  type TaskManagerEvent,
+  type TaskManagerEventType,
+} from './taskManagerTypes';
+
+export type {
+  SessionStatus,
+  SessionState,
+  TaskManagerConfig,
+  TaskManagerEvent,
+  TaskManagerEventType,
+} from './taskManagerTypes';
 
 const logger = createLogger('TaskManager');
-const CONTEXT_ASSEMBLY_PERSISTED_MESSAGE = Symbol.for('code-agent.contextAssembly.persistedMessage');
 const AUXILIARY_RUN_SYSTEM_CONTEXT = [
   '你已经在一个独立后台任务槽里，必须亲自执行这件任务。',
   '禁止调用、搜索或建议 Task、TaskManager、spawn_agent、AgentSpawn、delegate_task、steer_task、cancel_task、task_status 等任务拆分或指挥台工具；上层已经完成任务拆分。',
   'AskUserQuestion 是已经加载的核心工具。用户要求它时，第一步直接调用；不得先用 ToolSearch 查它或任何任务拆分工具，也不要把工具名或 JSON 当文字输出。',
 ].join('\n');
 
-function wasMessagePersistedByContextAssembly(message: Message): boolean {
-  // marker 标记（同 systemContextStack.ts）：以 symbol 键读取，显式收窄到 symbol 索引类型而非 any
-  return Boolean((message as unknown as Record<symbol, unknown>)[CONTEXT_ASSEMBLY_PERSISTED_MESSAGE]);
-}
-
 function isInferenceHistoryMessage(message: Message): boolean {
   return !message.isMeta && message.visibility !== 'rewound';
 }
-// ============================================================================
-// Types
-// ============================================================================
-
-/**
- * 会话运行状态
- */
-export type SessionStatus = 'idle' | 'running' | 'paused' | 'queued' | 'cancelling' | 'error';
-
-/**
- * 会话状态信息
- */
-export interface SessionState {
-  /** 当前状态 */
-  status: SessionStatus;
-  /** 在队列中的位置（仅 queued 状态有效）*/
-  queuePosition?: number;
-  /** 任务开始时间 */
-  startTime?: number;
-  /** 错误信息（仅 error 状态有效）*/
-  error?: string;
-}
-
-/**
- * TaskManager 配置
- */
-export interface TaskManagerConfig {
-  /** 最大并发任务数，默认 3 */
-  maxConcurrentTasks: number;
-  /** 中断超时时间（毫秒），超时后降级为强制取消，默认 5000 */
-  interruptTimeout: number;
-  /** 排队超时时间（毫秒），超时后自动取消，默认 300000 (5分钟) */
-  queueTimeout: number;
-}
-
-/**
- * TaskManager 事件类型
- */
-export type TaskManagerEventType =
-  | 'state_change'      // 会话状态变化
-  | 'queue_update'      // 队列更新
-  | 'task_started'      // 任务开始执行
-  | 'task_completed'    // 任务完成
-  | 'task_error'        // 任务出错
-  | 'task_cancelled';   // 任务取消
-
-export interface TaskManagerEvent {
-  type: TaskManagerEventType;
-  sessionId: string;
-  data?: unknown;
-}
-
-/**
- * 内部 Orchestrator 包装
- */
-interface OrchestratorWrapper {
-  orchestrator: AgentOrchestrator;
-  sessionId: string;
-  createdAt: number;
-}
-
-export type BackgroundTaskRunStatus = 'running' | 'cancelling';
-
-interface BackgroundTaskRun {
-  taskId: string;
-  sessionId: string;
-  orchestrator: AgentOrchestrator;
-  status: BackgroundTaskRunStatus;
-}
-
-// ============================================================================
-// Default Configuration
-// ============================================================================
-
-const DEFAULT_CONFIG: TaskManagerConfig = {
-  maxConcurrentTasks: 3,
-  interruptTimeout: 5000,
-  queueTimeout: TASK_QUEUE_TIMEOUTS.QUEUE_TIMEOUT_MS,
-};
 
 // ============================================================================
 // TaskManager Class
@@ -172,6 +106,8 @@ export class TaskManager extends EventEmitter {
   private backgroundRuns = new Map<string, BackgroundTaskRun>();
   /** permission requestId → 后台 taskId，保证审批只回到发起它的 run。 */
   private backgroundPermissionOwners = new Map<string, string>();
+  /** 主 run 的 run 级终态 error 记账（agent 终态收线用；可恢复 error 不记，见 backgroundTaskTerminal）。 */
+  private backgroundRunTerminalErrors = new Map<string, BackgroundRunErrorRecord>();
   private activeModelSpecs = new Map<string, ConversationModelSpec>();
   private sessionStates: Map<string, SessionState> = new Map();
   private waitingQueue: string[] = [];
@@ -197,13 +133,7 @@ export class TaskManager extends EventEmitter {
   private currentSessionId: string | null = null;
 
   // Per-session turnState for message aggregation (moved from createAgentRuntime)
-  private turnStateBySession: Map<string, {
-    messageId: string;
-    turnId?: string;
-    toolCalls: ToolCall[];
-    content: string;
-    reasoning?: string;
-  }> = new Map();
+  private turnStateBySession: Map<string, TurnState> = new Map();
   private messageDeltaAccumulator = new MessageDeltaAccumulator();
 
   constructor(config: Partial<TaskManagerConfig> = {}) {
@@ -341,7 +271,7 @@ export class TaskManager extends EventEmitter {
       }
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       const failure = getProjectSourceTrustFailureMarker(error) ?? getModelAuthFailureMarker(error);
-      this.updateSessionState(sessionId, { status: 'error', error: errorMessage });
+      this.updateSessionState(sessionId, { status: 'error', error: errorMessage }); settleBackgroundRunOnRejection(sessionId, errorMessage);
       this.emitEvent('task_error', sessionId, {
         runId,
         error: errorMessage,
@@ -1012,7 +942,7 @@ export class TaskManager extends EventEmitter {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       // 结构化失败标记：message 已被归一成字符串，能救回来的原因只剩生产者带的字段。
       const failure = getProjectSourceTrustFailureMarker(error) ?? getModelAuthFailureMarker(error);
-      this.updateSessionState(sessionId, { status: 'error', error: errorMessage });
+      this.updateSessionState(sessionId, { status: 'error', error: errorMessage }); settleBackgroundRunOnRejection(sessionId, errorMessage);
       this.emitEvent('task_error', sessionId, {
         error: errorMessage,
         ...(failure ? { failure } : {}),
@@ -1229,132 +1159,12 @@ export class TaskManager extends EventEmitter {
     snapshot?: MessageSnapshotData | null,
     eventKey = sessionId,
   ): Promise<void> {
-    try {
-      const { getSessionManager, notificationService } = await import('../services');
-
-      const sessionManager = getSessionManager();
-
-      if (event.type === 'turn_start') {
-        this.turnStateBySession.set(eventKey, {
-          messageId: '',
-          turnId: event.data.turnId,
-          toolCalls: [],
-          content: '',
-        });
-      }
-
-      if (event.type === 'message_delta' && event.data.role === 'assistant') {
-        let turnState = this.turnStateBySession.get(eventKey);
-        if (!turnState) {
-          turnState = {
-            messageId: '',
-            turnId: event.data.turnId,
-            toolCalls: [],
-            content: '',
-          };
-          this.turnStateBySession.set(eventKey, turnState);
-        }
-        if (event.data.turnId && !turnState.turnId) turnState.turnId = event.data.turnId;
-        if (event.data.path === 'reasoning') {
-          turnState.reasoning = event.data.op === 'replace'
-            ? event.data.text
-            : (turnState.reasoning || '') + event.data.text;
-        } else {
-          turnState.content = event.data.op === 'replace'
-            ? event.data.text
-            : turnState.content + event.data.text;
-        }
-      }
-
-      // Aggregate assistant messages within a single turn
-      if (event.type === 'message' && event.data?.role === 'assistant') {
-        const message = event.data;
-
-        let turnState = this.turnStateBySession.get(eventKey);
-        if (!turnState) {
-          turnState = { messageId: '', toolCalls: [], content: '' };
-          this.turnStateBySession.set(eventKey, turnState);
-        }
-
-        if (message.toolCalls && message.toolCalls.length > 0) {
-          turnState.toolCalls.push(...message.toolCalls);
-        }
-
-        turnState.content = message.content || snapshot?.content || turnState.content;
-        turnState.reasoning = message.reasoning || snapshot?.reasoning || turnState.reasoning;
-
-        if (!turnState.messageId) {
-          turnState.messageId = message.id;
-          if (!wasMessagePersistedByContextAssembly(message)) {
-            await sessionManager.addMessageToSession(sessionId, {
-              ...message,
-              toolCalls: turnState.toolCalls.length > 0 ? [...turnState.toolCalls] : undefined,
-              content: turnState.content,
-              reasoning: turnState.reasoning,
-            });
-          }
-        } else {
-          await sessionManager.updateMessage(turnState.messageId, {
-            toolCalls: turnState.toolCalls.length > 0 ? [...turnState.toolCalls] : undefined,
-            content: turnState.content,
-            reasoning: turnState.reasoning,
-          });
-        }
-      }
-
-      // Update tool call results
-      if (event.type === 'tool_call_end' && event.data) {
-        const turnState = this.turnStateBySession.get(eventKey);
-        const toolCallId = event.data.toolCallId;
-
-        if (turnState?.messageId) {
-          const idx = turnState.toolCalls.findIndex((tc) => tc.id === toolCallId);
-          if (idx !== -1) {
-            turnState.toolCalls[idx] = { ...turnState.toolCalls[idx], result: event.data };
-          }
-          await sessionManager.updateMessage(turnState.messageId, {
-            toolCalls: [...turnState.toolCalls],
-          });
-        }
-      }
-
-      // Reset turn state when turn ends or agent completes
-      if (event.type === 'turn_end' || event.type === 'agent_complete' || event.type === 'agent_cancelled') {
-        this.turnStateBySession.delete(eventKey);
-        this.messageDeltaAccumulator.clear(eventKey);
-      }
-
-      // Send desktop notification on permission request (needs user input)
-      if (event.type === 'permission_request' && event.data) {
-        const req = event.data as { tool?: string; command?: string; resolved?: boolean };
-        if (!req.resolved) {
-          if (eventKey !== sessionId && 'id' in event.data && typeof event.data.id === 'string') {
-            this.backgroundPermissionOwners.set(event.data.id, eventKey);
-          }
-          notificationService.notifyNeedsInput({
-            sessionId,
-            title: '需要授权',
-            body: req.tool ? `${req.tool}: ${req.command || '请求执行权限'}` : '请求执行权限',
-          });
-        }
-      }
-
-      // Send desktop notification on task complete
-      if (event.type === 'task_complete' && event.data) {
-        const session = await sessionManager.getSession(sessionId);
-        if (session) {
-          notificationService.notifyTaskComplete({
-            sessionId: session.id,
-            sessionTitle: session.title,
-            summary: event.data.summary,
-            duration: event.data.duration,
-            toolsUsed: event.data.toolsUsed || [],
-          });
-        }
-      }
-    } catch (error) {
-      logger.error(`Failed to persist event for session ${sessionId}`, error);
-    }
+    await persistTaskManagerEvent({
+      turnStateBySession: this.turnStateBySession,
+      backgroundPermissionOwners: this.backgroundPermissionOwners,
+      backgroundRunTerminalErrors: this.backgroundRunTerminalErrors,
+      messageDeltaAccumulator: this.messageDeltaAccumulator,
+    }, sessionId, event, snapshot, eventKey);
   }
 
   /**

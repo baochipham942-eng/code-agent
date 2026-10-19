@@ -344,6 +344,8 @@ export interface ChannelAccount {
   createdAt: number;
   /** 最后连接时间 */
   lastConnectedAt?: number;
+  /** 最近一次 Telegram 连接读到的 getMe().can_read_all_group_messages；从未连上则为空 */
+  telegramCanReadAllGroupMessages?: boolean;
   /** 关联的 Agent ID (路由到特定 Agent) */
   defaultAgentId?: string;
 }

@@ -2,7 +2,7 @@
 import React from 'react';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { SurfaceSemanticTimeline } from '../../../../src/renderer/components/features/surfaceExecution';
+import { SurfaceSemanticTimeline } from '../../../../src/renderer/components/features/surfaceExecution/SurfaceSemanticTimeline';
 import { surfaceExecutionZh } from '../../../../src/renderer/i18n/surfaceExecution';
 import { surfaceEvent, surfaceScope } from './fixtures';
 

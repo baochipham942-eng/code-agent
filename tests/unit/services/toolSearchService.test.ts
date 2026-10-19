@@ -59,7 +59,7 @@ describe('ToolSearchService loadable results', () => {
   beforeEach(() => {
     resetProtocolRegistry();
     registerProtocolToolForSearch('Browser');
-    registerProtocolToolForSearch('Computer');
+    registerProtocolToolForSearch('computer_use');
     resetToolSearchService();
     mcpClientMocks.discoverLazyServersForSearch.mockReset();
     mcpClientMocks.discoverLazyServersForSearch.mockResolvedValue([]);
@@ -76,6 +76,25 @@ describe('ToolSearchService loadable results', () => {
     expect(desktopContext?.notCallableReason).toMatch(/no registered protocol tool/i);
     expect(result.loadedTools).not.toContain('desktop_context_now');
     expect(service.isToolLoaded('desktop_context_now')).toBe(false);
+  });
+
+  it.each(['Computer', 'computer_use'])('select:%s loads the registered live computer_use', async (alias) => {
+    const service = new ToolSearchService();
+    const result = await service.searchTools(`select:${alias}`);
+    expect(isProtocolToolName('computer_use')).toBe(true);
+    expect(isProtocolToolName('Computer')).toBe(false);
+    expect(result.loadedTools).toEqual(['computer_use']);
+    expect(result.tools[0]).toMatchObject({ name: 'computer_use', loadable: true, canonicalInvocation: 'computer_use' });
+  });
+
+  it.each(['Computer', 'computer_use'])('select:%s honestly reports an unregistered live computer_use', async (alias) => {
+    getProtocolRegistry().unregister('computer_use');
+    const service = new ToolSearchService();
+    const result = await service.searchTools(`select:${alias}`);
+    expect(result.loadedTools).toEqual([]);
+    expect(result.tools[0]).toMatchObject({ name: 'computer_use', loadable: false });
+    expect(result.tools[0]?.notCallableReason).toMatch(/no registered protocol tool/i);
+    expect(service.getLoadedDeferredTools()).not.toContain('computer_use');
   });
 
   it('marks builtin deferred tools as loaded only when protocol schema exists', () => {
@@ -337,21 +356,21 @@ describe('ToolSearchService loadable results', () => {
     expect(browserResult.tools[0]?.canonicalInvocation).toBe('Browser');
     expect(service.isToolLoaded('Browser')).toBe(true);
 
-    expect(computerResult.loadedTools).toEqual(['Computer']);
-    expect(computerResult.tools[0]?.canonicalInvocation).toBe('Computer');
-    expect(service.isToolLoaded('Computer')).toBe(true);
+    expect(computerResult.loadedTools).toEqual(['computer_use']);
+    expect(computerResult.tools[0]?.canonicalInvocation).toBe('computer_use');
+    expect(service.isToolLoaded('computer_use')).toBe(true);
 
-    expect(screenshotResult.loadedTools).toEqual(['Computer']);
-    expect(screenshotResult.tools[0]?.canonicalInvocation).toBe('Computer');
+    expect(screenshotResult.loadedTools).toEqual(['computer_use']);
+    expect(screenshotResult.tools[0]?.canonicalInvocation).toBe('computer_use');
   });
 
-  it('ranks Computer first but does not unlock a tied result', async () => {
+  it('ranks computer_use first but does not unlock a tied result', async () => {
     const service = new ToolSearchService();
 
     const result = await service.searchTools('screenshot', { maxResults: 3, includeMCP: false });
 
-    expect(result.tools[0]?.name).toBe('Computer');
-    expect(result.loadedTools).not.toContain('Computer');
+    expect(result.tools[0]?.name).toBe('computer_use');
+    expect(result.loadedTools).not.toContain('computer_use');
   });
 
   it('does not treat maxResults truncation as a unique match for auto-loading', async () => {
@@ -361,7 +380,7 @@ describe('ToolSearchService loadable results', () => {
 
     expect(result.tools).toHaveLength(1);
     expect(result.loadedTools).toEqual([]);
-    expect(service.isToolLoaded('Computer')).toBe(false);
+    expect(service.isToolLoaded('computer_use')).toBe(false);
   });
 
   it('explains desktop context metadata as workbench context instead of callable tools', () => {
@@ -372,7 +391,7 @@ describe('ToolSearchService loadable results', () => {
     expect(result.loadedTools).toEqual([]);
     expect(result.tools[0]?.loadable).toBe(false);
     expect(result.tools[0]?.notCallableReason).toContain('Desktop workbench');
-    expect(result.tools[0]?.notCallableReason).toContain('Computer');
+    expect(result.tools[0]?.notCallableReason).toContain('computer_use');
   });
 
   it('exposes canonical Skill invocation without pretending the skill is a direct tool', async () => {

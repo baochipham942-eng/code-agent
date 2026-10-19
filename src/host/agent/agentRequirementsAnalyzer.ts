@@ -4,6 +4,7 @@
 
 import { createLogger } from '../services/infra/logger';
 import { getAutoDelegator, type TaskAnalysis } from './autoDelegator';
+import { isBoundedOneTurnComparison } from '../prompts/systemReminders';
 
 const logger = createLogger('AgentRequirementsAnalyzer');
 
@@ -253,7 +254,8 @@ export class AgentRequirementsAnalyzer {
       rawAnalysis,
       taskType,
       executionStrategy,
-      confidence
+      confidence,
+      isBoundedOneTurnComparison(userMessage),
     );
 
     const requirements: AgentRequirements = {
@@ -523,8 +525,15 @@ export class AgentRequirementsAnalyzer {
     analysis: TaskAnalysis,
     taskType: AgentTaskType,
     strategy: ExecutionStrategy,
-    confidence: number
+    confidence: number,
+    boundedOneTurnComparison: boolean,
   ): boolean {
+    // 小范围单轮对比不需要自动生成：通用复杂度启发式会把「3 家 × 5 维度 + 一轮交付」
+    // 误判成 complex，自动代理一拉 swarm，成员启动审批卡就能卡死首轮（2026-10-11 缺陷）。
+    if (boundedOneTurnComparison) {
+      return false;
+    }
+
     // 直接执行策略不需要自动生成
     if (strategy === 'direct') {
       return false;

@@ -227,6 +227,7 @@ export function notifyCronAgentExecution(
       {
         sessionId: execution.sessionId,
         sessionTitle: `[定时] ${definition.name}`,
+        jobId: definition.id,
         summary: succeeded
           ? readCronAlertReason(execution.result) ?? '定时任务已完成'
           : loginWall

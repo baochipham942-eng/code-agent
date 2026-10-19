@@ -100,12 +100,18 @@ export async function postOsNotification(opts: { title: string; body: string }):
  * 注册一次通知点击回调（Tauri onAction）。桌面端点击支持有限，作 best-effort 跳转用；
  * 即便回调不触发，点击通知也会由系统把 app 带到前台。
  */
-export async function registerNotificationClick(handler: () => void): Promise<void> {
-  if (!isTauriMode()) return;
+export async function registerNotificationClick(
+  handler: () => void,
+): Promise<(() => Promise<void>) | undefined> {
+  if (!isTauriMode()) return undefined;
   try {
     const mod = await loadModule();
-    await mod.onAction(() => handler());
+    const listener = await mod.onAction(() => handler());
+    // Tauri returns a PluginListener so callers can release the native callback
+    // when the owning React effect unmounts.
+    return () => listener.unregister();
   } catch (err) {
     console.warn('[osNotification] onAction 不支持（桌面端常见），点击仅前置 app', err);
+    return undefined;
   }
 }

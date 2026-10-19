@@ -4,14 +4,17 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionAutomationRecord } from '../../../src/shared/contract/sessionAutomation';
 import type { ParkedApprovalInboxItem } from '../../../src/shared/contract/pendingApproval';
+import { useCronStore } from '../../../src/renderer/stores/cronStore';
 
 const listPendingReview = vi.fn<() => Promise<SessionAutomationRecord[]>>();
 const listParkedApprovals = vi.fn<() => Promise<ParkedApprovalInboxItem[]>>();
 const markReviewed = vi.fn().mockResolvedValue(null);
 const switchSession = vi.fn().mockResolvedValue(undefined);
 const ipcInvoke = vi.fn().mockResolvedValue(undefined);
+const ipcInvokeDomain = vi.fn().mockResolvedValue(undefined);
 const toastInfo = vi.fn();
 const toastError = vi.fn();
+const originalTriggerJob = useCronStore.getState().triggerJob;
 
 // 语言可切换的 useI18n mock：默认 zh（与原真实 hook 的默认一致，存量断言不变），
 // 参数预览词条用例临时切 en（N-PARKED-APPROVAL-SURVIVE-RESTART-PERSIST ④）。
@@ -37,6 +40,7 @@ vi.mock('../../../src/renderer/services/sessionAutomationClient', () => ({
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: {
     invoke: (...args: unknown[]) => ipcInvoke(...args),
+    invokeDomain: (...args: unknown[]) => ipcInvokeDomain(...args),
     isAvailable: () => true,
   },
 }));
@@ -76,6 +80,7 @@ function makeRecord(over: Partial<SessionAutomationRecord>): SessionAutomationRe
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  useCronStore.setState({ triggerJob: originalTriggerJob });
   i18nState.language = 'zh';
 });
 
@@ -84,6 +89,7 @@ beforeEach(() => {
   listPendingReview.mockResolvedValue([]);
   listParkedApprovals.mockResolvedValue([]);
   ipcInvoke.mockResolvedValue(undefined);
+  ipcInvokeDomain.mockResolvedValue(undefined);
 });
 
 function makeParked(over: Partial<ParkedApprovalInboxItem>): ParkedApprovalInboxItem {
@@ -135,6 +141,56 @@ describe('AutomationReviewInbox', () => {
     await waitFor(() => {
       expect(screen.queryByTestId('automation-review-item')).toBeNull();
     });
+  });
+
+  it('登录墙收件箱同时提供 Neo 浏览器登录和立即重跑', async () => {
+    const triggerJob = vi.fn().mockResolvedValue(null);
+    useCronStore.setState({ triggerJob });
+    listPendingReview.mockResolvedValue([makeRecord({
+      sourceRefId: 'job-login-wall',
+      config: {
+        loginWall: { siteOrigin: 'https://example.test', at: 1700000000000 },
+      },
+    })]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('automation-review-open-login-site')).toBeTruthy();
+    });
+
+    expect(screen.getByTestId('automation-review-open-login-site').textContent)
+      .toContain('在 Neo 浏览器中登录');
+    fireEvent.click(screen.getByTestId('automation-review-open-login-site'));
+    expect(ipcInvokeDomain).toHaveBeenCalledWith(
+      'domain:desktop',
+      'openManagedBrowserUrl',
+      { url: 'https://example.test', mode: 'visible', profileMode: 'persistent' },
+    );
+
+    fireEvent.click(screen.getByTestId('automation-review-login-wall-rerun'));
+    await waitFor(() => {
+      expect(triggerJob).toHaveBeenCalledWith('job-login-wall');
+    });
+  });
+
+  it('立即重跑失败时在收件箱提示失败并恢复可操作状态', async () => {
+    const triggerJob = vi.fn().mockRejectedValue(new Error('trigger failed'));
+    useCronStore.setState({ triggerJob });
+    listPendingReview.mockResolvedValue([makeRecord({
+      sourceRefId: 'job-login-wall',
+      config: {
+        loginWall: { siteOrigin: 'https://example.test', at: 1700000000000 },
+      },
+    })]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('automation-review-login-wall-rerun')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId('automation-review-login-wall-rerun'));
+    await waitFor(() => {
+      expect(toastError).toHaveBeenCalledWith('运行失败');
+    });
+    expect(triggerJob).toHaveBeenCalledWith('job-login-wall');
   });
 
   it('目标会话已删除时，在收件箱显示本地化漏跑原因', async () => {

@@ -34,6 +34,8 @@ function readNotificationLocale(): DurableResumeNotificationLocale {
 export interface TaskNotificationData {
   sessionId: string;
   sessionTitle: string;
+  /** Source cron job for explicit login-wall consent from the notification. */
+  jobId?: string;
   summary?: string;
   duration: number;
   toolsUsed: string[];
@@ -131,6 +133,7 @@ class NotificationService implements Disposable {
     title: string;
     body: string;
     sessionId: string;
+    jobId?: string;
     markSessionUnread?: boolean;
     code?: string;
     siteOrigin?: string;
@@ -224,6 +227,7 @@ class NotificationService implements Disposable {
       title: entry.title,
       body: entry.body,
       sessionId: data.sessionId,
+      ...(data.jobId ? { jobId: data.jobId } : {}),
       ...(data.code ? { code: data.code } : {}),
       ...(data.siteOrigin ? { siteOrigin: data.siteOrigin } : {}),
       ...(data.failureKind ? { failureKind: data.failureKind } : {}),

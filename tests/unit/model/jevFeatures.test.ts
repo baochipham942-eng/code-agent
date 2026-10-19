@@ -12,11 +12,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const providerState = vi.hoisted(() => ({
   route: null as null | { kind: 'official' | 'openrouter' },
+  keySource: 'none' as 'official' | 'openrouter' | 'openrouter_pending_consent' | 'disabled_by_user' | 'none',
   systemOne: vi.fn(),
 }));
 
 vi.mock('../../../src/host/model/providers/typesafeProvider', () => ({
   resolveJevRoute: () => providerState.route,
+  probeJevKeySource: () => providerState.keySource,
   systemOne: providerState.systemOne,
 }));
 
@@ -94,6 +96,7 @@ function approveAnswers() {
 beforeEach(() => {
   vi.unstubAllEnvs();
   providerState.route = null;
+  providerState.keySource = 'none';
   providerState.systemOne.mockReset();
   loggerWarns.length = 0;
 });
@@ -123,7 +126,7 @@ describe('isJevFeatureOn 语义（四 flag 逐个）', () => {
 // ---------------------------------------------------------------------------
 
 describe('createProductionJevCall', () => {
-  it('无 key：抛 code=TYPESAFE_KEY_MISSING、不触达 systemOne、计数逐次累加、warn 只留一条', async () => {
+  it('无 key：抛 code=TYPESAFE_KEY_MISSING、不触达 systemOne、计数逐次累加、warn 只留一条（说 key 未配置）', async () => {
     const call = createProductionJevCall('router');
     const before = getJevStatus().features.router.degradedCount;
     for (let index = 0; index < 3; index++) {
@@ -133,6 +136,7 @@ describe('createProductionJevCall', () => {
     expect(getJevStatus().features.router.degradedCount).toBe(before + 3);
     const degradeWarns = loggerWarns.filter((args) => String(args[0]).includes('CODE_AGENT_JEV_ROUTER'));
     expect(degradeWarns).toHaveLength(1);
+    expect(String(degradeWarns[0][0])).toContain('均未配置');
   });
 
   it('有 key：装载并委托 provider systemOne，透传 state/questions/options', async () => {
@@ -298,10 +302,11 @@ describe('权限分类契约（默认开）', () => {
 // ---------------------------------------------------------------------------
 
 describe('getJevStatus', () => {
-  it('无 key：keyConfigured=false、route=null、四特性 flagOn/effective=false', () => {
+  it('无 key：keyConfigured=false、route=null、keySource=none、四特性 flagOn/effective=false', () => {
     const status = getJevStatus();
     expect(status.keyConfigured).toBe(false);
     expect(status.route).toBe(null);
+    expect(status.keySource).toBe('none');
     expect(Object.keys(status.features).sort()).toEqual(['compaction', 'injectionScan', 'permissionClassifier', 'router']);
     for (const feature of Object.keys(status.features) as JevFeature[]) {
       expect(status.features[feature].flagOn, feature).toBe(true);
@@ -310,16 +315,35 @@ describe('getJevStatus', () => {
     }
   });
 
-  it("有 key：keyConfigured=true、route='official'、effective=true", () => {
-    providerState.route = { kind: 'official' };
+  it.each([
+    ['official', 'official'],
+    ['openrouter', 'openrouter'],
+  ] as const)('有可用路由（%s）：keyConfigured=true、route 一致、effective=true', (source, route) => {
+    providerState.keySource = source;
+    providerState.route = { kind: route };
     const status = getJevStatus();
     expect(status.keyConfigured).toBe(true);
-    expect(status.route).toBe('official');
+    expect(status.route).toBe(route);
+    expect(status.keySource).toBe(source);
     expect(status.features.router.effective).toBe(true);
   });
 
+  it.each(['openrouter_pending_consent', 'disabled_by_user'] as const)(
+    '不可用但可解释的状态（%s）：keyConfigured=false、route=null、keySource 原样上报',
+    (source) => {
+      providerState.keySource = source;
+      providerState.route = null;
+      const status = getJevStatus();
+      expect(status.keyConfigured).toBe(false);
+      expect(status.route).toBe(null);
+      expect(status.keySource).toBe(source);
+      expect(status.features.router.effective).toBe(false);
+    },
+  );
+
   it("flag '0'：flagOn=false 且 effective=false（flag 关优先于 key 在）", () => {
     providerState.route = { kind: 'official' };
+    providerState.keySource = 'official';
     vi.stubEnv('CODE_AGENT_JEV_ROUTER', '0');
     const status = getJevStatus();
     expect(status.features.router.flagOn).toBe(false);
@@ -328,6 +352,7 @@ describe('getJevStatus', () => {
 
   it('快照永不包含 key 材料', () => {
     providerState.route = { kind: 'openrouter' };
+    providerState.keySource = 'openrouter';
     const serialized = JSON.stringify(getJevStatus());
     expect(serialized).not.toMatch(/apiKey|api_key|sk-|secret/i);
     expect(serialized).toContain('"route":"openrouter"');

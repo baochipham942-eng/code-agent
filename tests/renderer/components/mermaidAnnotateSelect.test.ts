@@ -6,7 +6,7 @@ import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   findMermaidSelectable,
   MermaidDiagram,
-} from '../../../src/renderer/components/features/chat/MessageBubble/messageContentParts';
+} from '../../../src/renderer/components/features/chat/MessageBubble/MermaidDiagram';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useMessageActionStore } from '../../../src/renderer/stores/messageActionStore';
 

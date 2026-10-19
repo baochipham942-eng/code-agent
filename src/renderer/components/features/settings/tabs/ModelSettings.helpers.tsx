@@ -1,4 +1,3 @@
-import React from 'react';
 import type {
   AppSettings,
   ModelConfig,
@@ -192,34 +191,6 @@ export function buildDefaultModelSettingsUpdate(
       },
     },
   } as Partial<AppSettings>;
-}
-
-export function renderModelOptions(models: Array<Pick<ProviderModelEntry, 'id' | 'label' | 'group'>>): React.ReactNode {
-  const hasGroups = models.some((model) => model.group);
-  if (!hasGroups) {
-    return models.map((model) => (
-      <option key={model.id} value={model.id}>{model.label}</option>
-    ));
-  }
-
-  const groups: { label: string; items: ProviderModelEntry[] }[] = [];
-  const seen = new Set<string>();
-  for (const model of models) {
-    const groupLabel = model.group || '';
-    if (!seen.has(groupLabel)) {
-      seen.add(groupLabel);
-      groups.push({ label: groupLabel, items: [] });
-    }
-    groups.find((group) => group.label === groupLabel)?.items.push(model as ProviderModelEntry);
-  }
-
-  return groups.map((group) => (
-    <optgroup key={group.label} label={group.label}>
-      {group.items.map((model) => (
-        <option key={model.id} value={model.id}>{model.label}</option>
-      ))}
-    </optgroup>
-  ));
 }
 
 export function getModelLabel(models: ProviderModelEntry[], modelId: string): string {

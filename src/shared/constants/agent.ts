@@ -21,7 +21,15 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v79：N-MEDIA-GEN-PHASE2 把 video_generate/music_generate 对齐 image 合同（output_file_path、
 // video 新增 model/image_path、描述加计费与参考单价；模型可见面变化）。
 // sys-v80：N-PY-RUNTIME-K2 将数据处理 Python 指向托管解释器（模型可见面变化）。
-export const PROMPT_VERSION = 'sys-v80' as const;
+// sys-v81：N-HOME-STARTER-CARDS-FILES 单轮 Office 文件交付改走原生生成工具：FILE_DELIVERABLE
+// 提醒替代 Python 工作流场景提醒、委派工具收口、文字前台按轮次放行 docx_generate/excel_generate/DocEdit。
+// sys-v82：N-HOME-STARTER-CARDS-FILES rework r2——小范围单轮对比（竞品简报卡形）不再注入
+// 委派/并行派发提醒、委派工具收口；已有文件的转换/另存不再判成单轮文件交付（提醒与工具面变化）。
+// sys-v83：N-COMPUTERUSE-GRANT-TARGETAPP 整合合并——本单 computer_use schema 增 targetApp/bundleId、
+// 工具索引空 footer 省略，叠加 main 的 sys-v81/v82 提醒变化；合并面与任一父提交的 v82 面均不同（模型可见面变化）。
+// sys-v84：N-COMPUTERUSE-GRANT-TARGETAPP rework r1——按应用授权的安全收口撤掉模型可声明、Host 门上
+// 无法校验的 bundleId 参数（computer_use schema 只留 targetApp；模型可见面变化）。
+export const PROMPT_VERSION = 'sys-v84' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =
@@ -328,3 +336,10 @@ export const SUBAGENT_IDLE = {
  * CLI_EXIT_PARTIAL_MAX_ITERATIONS（2），与「正常完成 0 / 异常失败 1」区分。
  */
 export const RUN_ERROR_CODE_MAX_ITERATIONS = 'MAX_ITERATIONS_REACHED';
+
+/**
+ * 后台条目「用户取消/中断」收线标记（稳定 code，renderer 据此翻译面板结果行）。
+ * run 以 interrupted/cancelled 终态收线时作为 completionMessage 传入
+ * BackgroundTaskManager.markCompleted；面板/通知侧不许直接展示这个裸串。
+ */
+export const BACKGROUND_TASK_CANCELLED = 'USER_CANCELLED';

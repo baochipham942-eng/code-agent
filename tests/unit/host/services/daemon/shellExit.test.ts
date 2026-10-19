@@ -17,6 +17,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   createDaemonExitRechecker,
   shouldStayResidentAfterShellExit,
+  stdinEofIsQuitCommand,
 } from '../../../../../src/host/services/daemon/shellExit';
 import { RunRegistry } from '../../../../../src/host/runtime/runRegistry';
 
@@ -46,6 +47,18 @@ describe('shouldStayResidentAfterShellExit（表驱动，返修 Important 1）',
       expect(shouldStayResidentAfterShellExit(platform, snapshot)).toBe(expected);
     });
   }
+
+  it('win32 后台继续摘掉停机指令后，忙则留守、空闲仍退出', () => {
+    expect(stdinEofIsQuitCommand('win32', false)).toBe(true);
+    expect(stdinEofIsQuitCommand('win32', true)).toBe(false);
+    expect(stdinEofIsQuitCommand('darwin', true)).toBe(false);
+    expect(shouldStayResidentAfterShellExit('win32', busy, false)).toBe(true);
+    expect(shouldStayResidentAfterShellExit('win32', allBusy, false)).toBe(true);
+    expect(shouldStayResidentAfterShellExit('win32', idle, false)).toBe(false);
+    expect(shouldStayResidentAfterShellExit('win32', undefined, false)).toBe(false);
+    // 未摘掉时忙也停机（停止并退出关 stdin 的合同）
+    expect(shouldStayResidentAfterShellExit('win32', busy, true)).toBe(false);
+  });
 });
 
 describe('webServer 接线（静态钉，win32 真机不可达）', () => {
@@ -53,8 +66,13 @@ describe('webServer 接线（静态钉，win32 真机不可达）', () => {
     const src = fs.readFileSync(path.join(process.cwd(), 'src/web/webServer.ts'), 'utf8');
     const callback = /const onShellPipeClosed = \(\) => \{[\s\S]*?\n {2}\};/.exec(src);
     expect(callback, 'onShellPipeClosed 回调锚点失效').not.toBeNull();
-    expect(callback![0]).toContain('shouldStayResidentAfterShellExit(process.platform');
+    // r1 起调用是三参多行形状：单行子串钉不住，钉「函数名 + platform 实参」两条。
+    expect(callback![0]).toContain('shouldStayResidentAfterShellExit(');
+    expect(callback![0]).toContain('process.platform,');
+    expect(callback![0]).toContain('eofIsQuitCommand()');
     expect(callback![0]).toMatch(/void shutdown\(\)/);
+    expect(src).toContain('stdinEofIsQuitCommand: eofIsQuitCommand');
+    expect(src).toContain('backgroundContinueDetachArmed()');
   });
 });
 
@@ -76,6 +94,33 @@ describe('createDaemonExitRechecker（返修 Important 1 回归）', () => {
 
     snapshot = idle;
     expect(runRegistry.unregister(runHandle.context.runId, runHandle)).toBe(true);
+    expect(shutdown).toHaveBeenCalledOnce();
+  });
+
+  it('win32 未 detach 时 EOF 即使在忙也立即停机', () => {
+    const shutdown = vi.fn();
+    const rechecker = createDaemonExitRechecker({
+      platform: 'win32',
+      getSnapshot: () => busy,
+      shutdown,
+    });
+    expect(rechecker.onShellPipeClosed()).toBe(true);
+    expect(shutdown).toHaveBeenCalledOnce();
+  });
+
+  it('win32 detach 之后忙则留守，变空闲再停机', () => {
+    let snapshot = busy;
+    const shutdown = vi.fn();
+    const rechecker = createDaemonExitRechecker({
+      platform: 'win32',
+      getSnapshot: () => snapshot,
+      shutdown,
+      stdinEofIsQuitCommand: () => false,
+    });
+    expect(rechecker.onShellPipeClosed()).toBe(false);
+    expect(shutdown).not.toHaveBeenCalled();
+    snapshot = idle;
+    expect(rechecker.recheck()).toBe(true);
     expect(shutdown).toHaveBeenCalledOnce();
   });
 });

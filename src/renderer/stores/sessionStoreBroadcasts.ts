@@ -10,6 +10,7 @@ import { runningBroadcastLightsTurn } from './parkedContinueTurn';
 import { useSessionStore, type SessionWithMeta } from './sessionStore';
 import { useStatusStore } from './statusStore';
 import { useTaskStore } from './taskStore';
+import { hostStampPredatesTerminal, useTerminalRunGuardStore } from './terminalRunGuardStore';
 
 type NormalizableSession = Session & { messageCount?: number; turnCount?: number };
 
@@ -32,12 +33,21 @@ export async function bindInitializedSessionBroadcasts(
     // switchSession 里按 activeRun 点亮的运行态会永远亮着（那一轮的 SSE 已经跟着旧页面断了，
     // agent_complete 到不了这个新页面）。
     if (isTerminalRecoverySessionStatus(updates?.status)) {
+      // 终态粘滞：记下宿主戳，拦住终局前读库的旧 load 响应与开跑时的旧 running 广播。
+      useTerminalRunGuardStore.getState().markTerminal(
+        sessionId,
+        typeof updates?.updatedAt === 'number' ? updates.updatedAt : null,
+      );
       useAppStore.getState().setSessionProcessing(sessionId, false);
       useTaskStore.getState().updateSessionState(sessionId, { status: 'idle' });
     }
 
-    // 宿主说开始跑了就点亮。可继续的停靠不能被更旧的 running 广播重新点亮。
-    if (runningBroadcastLightsTurn({ updates, previous })) {
+    // 宿主说开始跑了就点亮。可继续的停靠不能被更旧的 running 广播重新点亮；
+    // 已应用过终局的会话，宿主戳早于终态广播的 running 是旧 run 的回声，不点亮。
+    if (
+      runningBroadcastLightsTurn({ updates, previous })
+      && !hostStampPredatesTerminal(sessionId, updates?.updatedAt)
+    ) {
       useAppStore.getState().setSessionProcessing(sessionId, true);
       useTaskStore.getState().updateSessionState(sessionId, { status: 'running' });
     }

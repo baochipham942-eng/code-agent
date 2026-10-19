@@ -873,3 +873,45 @@ describe('splitCronRunMessage', () => {
     ]);
   });
 });
+
+// N-CRON-URGENCY-NOTIFY：紧急判据的安静成功轮（notifySuppressed，非 skipped）
+// 仍进待过目收件箱——通知静音不等于结果蒸发，安静轮照常带 pendingReview 标记
+// 与档位（can_wait），第二天早上用户在收件箱里看得到。
+describe('recordCronAutomationExecution — urgencyCriteria 安静轮仍进待过目收件箱', () => {
+  it('notifySuppressed 的 can_wait 成功轮：completed 事件 + pendingReview 标记齐全', async () => {
+    await recordCronAutomationExecution(
+      def({
+        metadata: { sourceSessionId: 'sess' },
+        scheduleType: 'every',
+        action: {
+          type: 'agent',
+          agentType: 'default',
+          prompt: '汇总邮件',
+          urgencyCriteria: '只有老板发来的邮件算今天必须处理',
+        },
+      }),
+      {
+        id: 'exec-quiet',
+        jobId: 'job-1',
+        status: 'completed',
+        scheduledAt: 0,
+        retryAttempt: 0,
+        sessionId: 'result-sess',
+        completedAt: 1234,
+        result: {
+          sessionId: 'result-sess',
+          urgency: 'can_wait',
+          notifySuppressed: true,
+        },
+      },
+      identityRuntime,
+    );
+    const arg = service.recordEvent.mock.calls[0][0];
+    expect(arg.event).toBe('completed');
+    expect(arg.status).toBe('completed');
+    expect(arg.recordStatus).toBe('active');
+    expect(arg.configPatch).toEqual({
+      pendingReview: { resultSessionId: 'result-sess', at: 1234, urgency: 'can_wait' },
+    });
+  });
+});

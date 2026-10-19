@@ -28,7 +28,6 @@ import { DevServerLauncher } from './components/LivePreview/DevServerLauncher';
 import { ExpertWorkbenchAutoOpen, WorkbenchTabs } from './components/WorkbenchTabs';
 import { WorkbenchViewContent } from './components/WorkbenchViewContent';
 import { PromptManagerModal } from './components/features/prompts/PromptManagerModal';
-import { BackgroundSessionPanel } from './components/features/background';
 import { FullScreenPage } from './components/features/shared/FullScreenPage';
 import { RoleDetailPage } from './components/features/expert/RoleDetailPage';
 import { NativeDesktopSection } from './components/features/settings/sections/NativeDesktopSection';
@@ -47,6 +46,7 @@ import { CompanionPairRequestCard } from './components/CompanionPairRequestCard'
 import { VoiceBudgetAlertNotice } from './components/VoiceBudgetAlertNotice';
 import { RuntimeNotices } from './components/RuntimeNotices';
 import { FolderTrustDialog } from './components/FolderTrustDialog';
+import { SkillCautionPromptHost } from './components/SkillCautionPromptHost';
 import { useFolderTrustPrompt } from './hooks/useFolderTrustPrompt';
 import { ModelSetupPendingBanner } from './components/onboarding/ModelSetupPendingBanner';
 import { useTheme } from './hooks/useTheme';
@@ -64,8 +64,7 @@ import { useSurfaceExecutionPip } from './hooks/useSurfaceExecutionPip';
 import { useSurfaceExecutionEffects } from './hooks/agent/effects/useSurfaceExecutionEffects';
 import { useAgentHalo } from './hooks/useAgentHalo';
 import { useRendererBundleAutoReload } from './hooks/useRendererBundleAutoReload';
-import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type NotificationShowEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
-import { postOsNotification, registerNotificationClick } from './utils/osNotification';
+import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
 import type { AppSettings, ModelConfig, UserQuestionRequest, MCPElicitationRequest, MCPOAuthConsentRequest, UpdateInfo, Message } from '@shared/contract';
 import { isOpenTaskStatus } from '@shared/contract/planning';
 import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL, getProviderEndpointForProtocol } from '@shared/constants';
@@ -89,7 +88,7 @@ import {
 import { openSurfaceForArtifact } from './services/surfaceIntentDispatcher';
 import { useInAppValidationBridge } from './hooks/useInAppValidationBridge';
 import { useI18n } from './hooks/useI18n';
-import { CRON_LOGIN_WALL_STOP } from '@shared/utils/browserLoginWall';
+import { useCronOsNotification } from './hooks/useCronOsNotification';
 import { InternalFeatureWorkspaceRegistration, PluginUiActivationPolicyBootstrap, ShellOverlaySlotHost, WorkspacePageSlotHost } from './slots/productSlotHosts';
 
 const logger = createLogger('App');
@@ -662,33 +661,11 @@ export const App: React.FC = () => {
 
   // 主进程请求发原生系统通知（Tauri 通知插件，带 Agent Neo 图标/身份）。
   // 点击经 onAction best-effort 跳到最近一条通知对应的会话。
-  const lastNotifSessionIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    const unsubscribe = ipcService.on(
-      IPC_CHANNELS.NOTIFICATION_SHOW,
-      (event: NotificationShowEvent) => {
-        lastNotifSessionIdRef.current = event.sessionId;
-        const loginWall = event.code === CRON_LOGIN_WALL_STOP && event.siteOrigin
-          ? {
-              title: t.cronCenter.loginWallNotificationTitle,
-              body: t.cronCenter.loginWallNotificationBody.replace('{site}', event.siteOrigin),
-            }
-          : { title: event.title, body: event.body };
-        void postOsNotification(loginWall);
-      }
-    );
-    void registerNotificationClick(() => {
-      const sessionId = lastNotifSessionIdRef.current;
-      if (!sessionId) return;
-      void useSessionStore.getState().switchSession(sessionId);
-      openWorkbenchTab('task');
-      setTaskPanelTab('monitor');
-    });
-
-    return () => {
-      unsubscribe?.();
-    };
-  }, [openWorkbenchTab, setTaskPanelTab, t]);
+  useCronOsNotification(t.cronCenter, (sessionId) => {
+    void useSessionStore.getState().switchSession(sessionId);
+    openWorkbenchTab('task');
+    setTaskPanelTab('monitor');
+  });
 
   // 会话级自动化回流消息：主进程写入 automation 通知后实时推过来。
   // 打开中的源会话即时 append（按消息 id 去重；created 通知的唯一发射方就是
@@ -898,8 +875,7 @@ export const App: React.FC = () => {
     <ErrorBoundary>
       <MemoryLearningProvider>
       <ToastContainer />
-      <ProviderStatusNotice />
-      <BudgetAlertNotice />
+      <ProviderStatusNotice /><BudgetAlertNotice />
       <VoiceBudgetAlertNotice />
       <CompanionPairRequestCard />
       <RuntimeNotices />
@@ -1168,10 +1144,9 @@ export const App: React.FC = () => {
       <MemoFloater />
 
       <PluginUiActivationPolicyBootstrap /><InternalFeatureWorkspaceRegistration featureId={activeInternalFeatureId} />
-      <ShellOverlaySlotHost />
-
-      {/* Background Task Panel - 后台任务浮动面板 */}
-      <BackgroundSessionPanel />
+      {/* skill 安装 caution 确认面（拖拽 ZIP / /plugins install 共用）与 shell overlay
+          同属全局宿主，同行只为守住 App.tsx 的 max-lines 预算 */}
+      <ShellOverlaySlotHost /><SkillCautionPromptHost />
 
       {/* Capture Panel - 知识库采集面板 */}
       {useAppStore((s) => s.showCapturePanel) && (

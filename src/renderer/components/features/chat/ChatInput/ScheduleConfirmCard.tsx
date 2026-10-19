@@ -1,7 +1,15 @@
-import React, { useMemo } from 'react';
-import { Check, Clock3, X } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Check, Clock3, Pencil, X } from 'lucide-react';
 import { Button } from '../../../primitives/Button';
+import { Input } from '../../../primitives/Input';
+import { Select } from '../../../primitives/Select';
 import { useI18n } from '../../../../hooks/useI18n';
+import { CRON_URGENCY_CRITERIA } from '@shared/constants';
+import {
+  compileSimpleSchedule,
+  type SimpleFrequency,
+} from '../../cron/CronSimpleCreate';
+import type { CreateCronJobInput } from '../../../../services/cronClient';
 import type { PendingScheduleDraft } from './useScheduleDraft';
 import { buildScheduleConfirmRows } from './scheduleConfirm';
 
@@ -10,6 +18,76 @@ interface ScheduleConfirmCardProps {
   confirming: boolean;
   onConfirm: () => void | Promise<unknown>;
   onDismiss: () => void;
+  /** 卡内编辑（时间/通知判据）写回待确认草案；缺省时卡片只读（与旧行为一致）。 */
+  onDraftChange?: (next: PendingScheduleDraft) => void;
+}
+
+/** 时间编辑器的频率档：五档人话频率 + keep（复杂表达式保持原样，直到用户选频率）。 */
+type EditableFrequency = SimpleFrequency | 'keep';
+
+interface WhenEditState {
+  freq: EditableFrequency;
+  time: string;
+  weekday: string;
+  intervalHours: string;
+  onceAt: string;
+}
+
+/** epoch/ISO → datetime-local 输入值（yyyy-MM-ddTHH:mm，本地时区）。解析不了给空串。 */
+function toLocalDateTimeValue(datetime: string | number): string {
+  const date = typeof datetime === 'number' ? new Date(datetime) : new Date(datetime);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
+
+function isClockPair(hour: unknown, minute: unknown): boolean {
+  return /^\d{1,2}$/.test(String(hour)) && /^\d{1,2}$/.test(String(minute))
+    && Number(hour) <= 23 && Number(minute) <= 59;
+}
+
+/** 当前 schedule → 编辑器初值：认识的人话形态（每天/工作日/每周/每小时/一次）回填，复杂表达式 keep。 */
+function initialWhenEditState(schedule: CreateCronJobInput['schedule']): WhenEditState {
+  const base: WhenEditState = { freq: 'keep', time: '09:00', weekday: '1', intervalHours: '1', onceAt: '' };
+  if (schedule.type === 'every' && schedule.unit === 'hours' && schedule.interval >= 1) {
+    return { ...base, freq: 'hourly', intervalHours: String(schedule.interval) };
+  }
+  if (schedule.type === 'at') {
+    return { ...base, freq: 'once', onceAt: toLocalDateTimeValue(schedule.datetime) };
+  }
+  if (schedule.type === 'cron') {
+    const [minute, hour, dayOfMonth, month, dayOfWeek] = schedule.expression.trim().split(/\s+/);
+    if (dayOfMonth === '*' && month === '*' && isClockPair(hour, minute)) {
+      const time = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+      if (dayOfWeek === '*') return { ...base, freq: 'daily', time };
+      if (dayOfWeek === '1-5') return { ...base, freq: 'weekdays', time };
+      if (/^[0-6]$/.test(dayOfWeek)) return { ...base, freq: 'weekly', time, weekday: dayOfWeek };
+    }
+  }
+  return base;
+}
+
+/** 编辑器值 → 契约 schedule（compileSimpleSchedule 的确定性编译）；keep/输入不完整 → null（不落）。 */
+function compileWhenEditState(edit: WhenEditState): CreateCronJobInput['schedule'] | null {
+  if (edit.freq === 'keep') return null;
+  if (edit.freq !== 'hourly' && edit.freq !== 'once' && !/^\d{1,2}:\d{2}$/.test(edit.time)) return null;
+  const compiled = compileSimpleSchedule({
+    freq: edit.freq,
+    time: edit.time,
+    weekday: edit.weekday,
+    intervalHours: edit.intervalHours,
+    onceAt: edit.onceAt,
+  });
+  if (compiled.scheduleType === 'cron' && compiled.cronExpression) {
+    return { type: 'cron', expression: compiled.cronExpression };
+  }
+  if (compiled.scheduleType === 'every' && compiled.everyUnit
+    && compiled.everyInterval && Number.isFinite(Number(compiled.everyInterval)) && Number(compiled.everyInterval) >= 1) {
+    return { type: 'every', interval: Number(compiled.everyInterval), unit: compiled.everyUnit };
+  }
+  if (compiled.scheduleType === 'at' && compiled.atDatetime) {
+    return { type: 'at', datetime: compiled.atDatetime };
+  }
+  return null;
 }
 
 export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
@@ -17,10 +95,80 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
   confirming,
   onConfirm,
   onDismiss,
+  onDraftChange,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const labels = t.scheduleConfirm;
-  const rows = useMemo(() => buildScheduleConfirmRows(draft, labels), [draft, labels]);
+  const rows = useMemo(() => buildScheduleConfirmRows(draft, labels, language), [draft, labels, language]);
+
+  const [editingWhen, setEditingWhen] = useState(false);
+  const [whenEdit, setWhenEdit] = useState<WhenEditState>(() => initialWhenEditState(draft.input.schedule));
+  const [editingNotify, setEditingNotify] = useState(false);
+  const [notifyEdit, setNotifyEdit] = useState(() => draft.restatement?.notifyWhen ?? '');
+
+  const compiledWhen = useMemo(() => compileWhenEditState(whenEdit), [whenEdit]);
+  const freqOptions = useMemo(() => [
+    { value: 'keep', label: labels.whenKeep },
+    { value: 'daily', label: labels.freqDaily },
+    { value: 'weekdays', label: labels.freqWeekdays },
+    { value: 'weekly', label: labels.freqWeekly },
+    { value: 'hourly', label: labels.freqHourly },
+    { value: 'once', label: labels.freqOnce },
+  ], [labels]);
+  const weekdayOptions = useMemo(
+    () => labels.weekdays.map((name, index) => ({ value: String(index), label: name })),
+    [labels],
+  );
+
+  const startWhenEdit = () => {
+    setWhenEdit(initialWhenEditState(draft.input.schedule));
+    setEditingWhen(true);
+  };
+
+  const applyWhenEdit = () => {
+    if (!compiledWhen || !onDraftChange) return;
+    onDraftChange({
+      ...draft,
+      input: { ...draft.input, schedule: compiledWhen, scheduleType: compiledWhen.type },
+    });
+    setEditingWhen(false);
+  };
+
+  const startNotifyEdit = () => {
+    setNotifyEdit(draft.restatement?.notifyWhen ?? '');
+    setEditingNotify(true);
+  };
+
+  const applyNotifyEdit = () => {
+    if (!onDraftChange) return;
+    // what 行的当前展示值（含兜底文案）作为 restatement.what——草案本来没有 restatement
+    // 时也保得住 what 行不跳变；notifyWhen 空串 = 每次都通知（confirm 侧不写字段）。
+    const what = rows.find((row) => row.key === 'what')?.value ?? '';
+    onDraftChange({ ...draft, restatement: { what, notifyWhen: notifyEdit } });
+    setEditingNotify(false);
+  };
+
+  const renderRowValue = (key: 'what' | 'when' | 'notifyWhen' | 'result') => {
+    const row = rows.find((candidate) => candidate.key === key);
+    const value = row?.value ?? '';
+    return (
+      <>
+        <span className="flex-1 min-w-0 text-[11px] leading-relaxed text-zinc-200">{value}</span>
+        {(key === 'when' || key === 'notifyWhen') && onDraftChange && !confirming && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="shrink-0"
+            data-schedule-edit={key}
+            onClick={key === 'when' ? startWhenEdit : startNotifyEdit}
+            aria-label={`${labels.edit} ${row?.label ?? ''}`}
+            leftIcon={<Pencil className="h-3 w-3" />}
+          />
+        )}
+      </>
+    );
+  };
 
   return (
     <div
@@ -47,11 +195,110 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
 
       <div className="mt-2.5 space-y-1.5">
         {rows.map((row) => (
-          <div key={row.key} className="grid grid-cols-[auto_1fr] gap-3 rounded-md bg-indigo-500/5 px-2.5 py-1.5">
+          <div
+            key={row.key}
+            className="grid grid-cols-[auto_1fr] gap-3 rounded-md bg-indigo-500/5 px-2.5 py-1.5"
+            data-schedule-row={row.key}
+          >
             <span className="text-[10px] text-badge-accent/55">{row.label}</span>
-            <span className="min-w-0 text-[11px] leading-relaxed text-zinc-200">{row.value}</span>
+            <div className="flex min-w-0 items-center gap-1.5">
+              {renderRowValue(row.key)}
+            </div>
           </div>
         ))}
+
+        {editingWhen && (
+          <div
+            data-schedule-when-editor
+            className="flex flex-wrap items-center gap-1.5 rounded-md bg-indigo-500/5 px-2.5 py-1.5"
+          >
+            <Select
+              selectSize="sm"
+              fullWidth={false}
+              className="!w-auto"
+              aria-label={labels.when}
+              value={whenEdit.freq}
+              options={freqOptions}
+              onChange={(event) => setWhenEdit({ ...whenEdit, freq: event.target.value as EditableFrequency })}
+            />
+            {(whenEdit.freq === 'daily' || whenEdit.freq === 'weekdays' || whenEdit.freq === 'weekly') && (
+              <Input
+                type="time"
+                inputSize="sm"
+                fullWidth={false}
+                className="!w-auto"
+                aria-label={labels.timeLabel}
+                value={whenEdit.time}
+                onChange={(event) => setWhenEdit({ ...whenEdit, time: event.target.value })}
+              />
+            )}
+            {whenEdit.freq === 'weekly' && (
+              <Select
+                selectSize="sm"
+                fullWidth={false}
+                className="!w-auto"
+                aria-label={labels.weekdayLabel}
+                value={whenEdit.weekday}
+                options={weekdayOptions}
+                onChange={(event) => setWhenEdit({ ...whenEdit, weekday: event.target.value })}
+              />
+            )}
+            {whenEdit.freq === 'hourly' && (
+              <Input
+                type="number"
+                inputSize="sm"
+                fullWidth={false}
+                className="!w-20"
+                aria-label={labels.intervalHoursLabel}
+                min={1}
+                value={whenEdit.intervalHours}
+                onChange={(event) => setWhenEdit({ ...whenEdit, intervalHours: event.target.value })}
+              />
+            )}
+            {whenEdit.freq === 'once' && (
+              <Input
+                type="datetime-local"
+                inputSize="sm"
+                fullWidth={false}
+                className="!w-auto"
+                aria-label={labels.onceAtLabel}
+                value={whenEdit.onceAt}
+                onChange={(event) => setWhenEdit({ ...whenEdit, onceAt: event.target.value })}
+              />
+            )}
+            <Button type="button" size="sm" data-schedule-when-apply disabled={!compiledWhen} onClick={applyWhenEdit}>
+              {labels.saveEdit}
+            </Button>
+            <Button type="button" variant="ghost" size="sm" data-schedule-when-cancel onClick={() => setEditingWhen(false)}>
+              {labels.cancelEdit}
+            </Button>
+          </div>
+        )}
+
+        {editingNotify && (
+          <div
+            data-schedule-notify-editor
+            className="flex flex-col gap-1.5 rounded-md bg-indigo-500/5 px-2.5 py-1.5"
+          >
+            <Input
+              inputSize="sm"
+              data-schedule-notify-input
+              aria-label={labels.notifyWhen}
+              placeholder={labels.notifyEditPlaceholder}
+              maxLength={CRON_URGENCY_CRITERIA.MAX_CHARS}
+              value={notifyEdit}
+              onChange={(event) => setNotifyEdit(event.target.value)}
+            />
+            <div className="flex items-center justify-end gap-2">
+              <Button type="button" variant="ghost" size="sm" data-schedule-notify-cancel onClick={() => setEditingNotify(false)}>
+                {labels.cancelEdit}
+              </Button>
+              <Button type="button" size="sm" data-schedule-notify-apply onClick={applyNotifyEdit}>
+                {labels.saveEdit}
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center justify-end gap-2 pt-2.5">

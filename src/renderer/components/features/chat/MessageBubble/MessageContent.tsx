@@ -33,8 +33,8 @@ import {
   getDeferredContentStyle,
   shouldDeferTurnContentLayout,
 } from '../../../../utils/turnContentVisibility';
+import { MermaidDiagram } from './MermaidDiagram';
 import {
-  MermaidDiagram,
   CodeBlock,
   InlineCode,
   IACTCopyButton,
@@ -660,4 +660,4 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
 });
 
 // Re-export for backward compatibility
-export { CodeBlock, InlineCode as InlineTextWithCode };
+export { CodeBlock };

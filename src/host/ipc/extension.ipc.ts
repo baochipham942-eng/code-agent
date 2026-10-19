@@ -5,7 +5,9 @@
 import type { IpcMain } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import type { ExtensionInfo, ExtensionValidationResult } from '../../shared/contract/extension';
+import type { SkillCautionConfirmationRequired } from '../../shared/contract/skillInstallCaution';
 import { getExtensionOpsService } from '../services/plugins/extensionOpsService';
+import { SkillCautionConfirmationRequiredError } from '../skills/marketplace/skillInstallCautionGate';
 import { createLogger } from '../services/infra/logger';
 import { isCurrentUserAdmin } from './adminGuard';
 
@@ -63,9 +65,30 @@ export function registerExtensionHandlers(ipcMain: IpcMain): void {
     });
   };
 
-  handleMutation(IPC_CHANNELS.EXTENSION_INSTALL, async (spec) => {
-    await getExtensionOpsService().install(String(spec));
-  });
+  // Install 不能走 handleMutation 的通用 catch：skill caution 确认门抛的
+  // SkillCautionConfirmationRequiredError 要按契约整包返回（mirror marketplace.ipc.ts），
+  // 坍缩成 {success:false,error} 会让 /plugins install 丢失重发用的 token
+  ipcMain.handle(
+    IPC_CHANNELS.EXTENSION_INSTALL,
+    async (_event, spec: unknown, cautionConfirmationToken?: unknown): Promise<ExtensionMutationResult | SkillCautionConfirmationRequired> => {
+      if (!isCurrentUserAdmin()) {
+        return adminDenied();
+      }
+      try {
+        await getExtensionOpsService().install(
+          String(spec),
+          typeof cautionConfirmationToken === 'string' && cautionConfirmationToken
+            ? { cautionConfirmationToken }
+            : undefined,
+        );
+        return { success: true };
+      } catch (error) {
+        if (error instanceof SkillCautionConfirmationRequiredError) return error.result;
+        logger.error('Extension operation failed', { channel: IPC_CHANNELS.EXTENSION_INSTALL, error });
+        return { success: false, error: errorMessage(error) };
+      }
+    },
+  );
 
   handleMutation(IPC_CHANNELS.EXTENSION_UNINSTALL, async (id) => {
     await getExtensionOpsService().uninstall(String(id));

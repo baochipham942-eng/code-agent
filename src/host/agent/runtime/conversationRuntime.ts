@@ -64,6 +64,7 @@ import { getGoalArtifactRepairReleaseReason } from './toolArtifactRepairPolicy';
 import {
   buildSkillInvocationContext,
   resolveSkillInvocation,
+  retainSkillInvocationForTurn,
 } from '../../services/skills/skillInvocationResolver';
 import {
   hasActiveSessionTodos,
@@ -824,7 +825,7 @@ export class ConversationRuntime {
     const langfuse = getLangfuseService();
     const runTraceContext = getActiveRunTraceContext() ?? this.ctx.runTraceContext;
     this.ctx.stats.setTraceId(runTraceContext?.traceId ?? `trace-${this.ctx.sessionId}-${Date.now()}`);
-    this.ctx.turn.beginRun();
+    this.ctx.turn.beginRun(userMessage);
     this.toolEngine.resetRepairGate();
     langfuse.startTrace(this.ctx.stats.traceId, {
       sessionId: this.ctx.sessionId,
@@ -868,10 +869,15 @@ export class ConversationRuntime {
       !startupTaskFeatures.isFuzzyTroubleshooting;
     preloadToolsForIntent(startupTaskFeatures, this.ctx.sessionId);
     try {
-      const skillInvocation =
+      const resolvedSkill =
         await raceStartupStep(this.ctx, resolveSkillInvocation(userRequest, this.ctx.workingDirectory))
         ?? await raceStartupStep(this.ctx, resolveStickyStrictSkillInvocation(this.ctx, userRequest));
       if (isStartupAborted(this.ctx)) return null;
+      // 单轮文件交付轮丢弃裸词别名注入（sticky 来源只可能是 slash 种子，不受影响）
+      const skillInvocation = retainSkillInvocationForTurn(
+        resolvedSkill,
+        startupTaskFeatures.isOneTurnFileDeliverable === true,
+      );
       if (skillInvocation) {
         const skillContext = await raceStartupStep(
           this.ctx,

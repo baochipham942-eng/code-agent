@@ -65,6 +65,7 @@ export interface SidebarSessionItemProps {
   backgroundSessionMap: SidebarDerivedSessions['backgroundSessionMap'];
   sessionStates: Record<string, SessionState>;
   hasNeedsInputForSession: SidebarDerivedSessions['hasNeedsInputForSession'];
+  getWaitingDetailForSession?: SidebarDerivedSessions['getWaitingDetailForSession'];
   searchQuery: string;
   messageSearchHitsBySessionId: SidebarDerivedSessions['messageSearchHitsBySessionId'];
   replayEvidenceBySessionId: SidebarDerivedSessions['replayEvidenceBySessionId'];
@@ -112,6 +113,7 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
   backgroundSessionMap,
   sessionStates,
   hasNeedsInputForSession,
+  getWaitingDetailForSession,
   searchQuery,
   messageSearchHitsBySessionId,
   multiSelectMode,
@@ -153,6 +155,13 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
     status.kind === 'error' ? t.common.error : status.kind === 'incomplete' ? t.common.incomplete : status.label;
   const isRunning = sessionTurnActive && (status.kind === 'live' || status.kind === 'background');
   const attentionDotClass = getAttentionDotClassName(status.kind);
+  const waitingDetail = status.kind === 'approval' ? getWaitingDetailForSession?.(session.id) : undefined;
+  const waitingAppName = waitingDetail?.kind === 'permission' ? waitingDetail.appName : undefined;
+  const waitingText = waitingDetail?.kind === 'permission'
+    ? waitingAppName
+      ? s.waitingPermissionApp.replace('{app}', () => waitingAppName)
+      : s.waitingPermission
+    : s.waitingInput;
   const latestActivityAt = Math.max(
     session.updatedAt || 0,
     sessionRuntime?.lastActivityAt || 0,
@@ -231,12 +240,25 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
             </span>
           </span>
         ) : (
-          <span
-            onDoubleClick={(e) => handleDoubleClick(e, session)}
-            className={`min-w-0 flex-1 truncate text-sm ${titleToneClass}`}
-          >
-            {displayTitle}
-          </span>
+          <div className="min-w-0 flex-1">
+            <span
+              onDoubleClick={(e) => handleDoubleClick(e, session)}
+              className={`block min-w-0 flex-1 truncate text-sm ${titleToneClass}`}
+            >
+              {displayTitle}
+            </span>
+            {status.kind === 'approval' && (
+              /* 审批副标题：应用名必须留在视野内，放不下就折行（最多 2 行截断），
+                  不用单行 truncate——英文长文案会把应用名整段吃掉（2026-10-16 返修）。 */
+              <div
+                className="line-clamp-2 break-words text-[11px] text-badge-accent"
+                title={waitingText}
+                data-testid="sidebar-session-waiting-text"
+              >
+                {waitingText}
+              </div>
+            )}
+          </div>
         )}
         {!isRenaming && cronRunAggregate && cronRunAggregate.runCount > 1 && cronRunAggregate.latestSessionId === session.id && (
           onToggleCronRuns && cronTaskId ? (

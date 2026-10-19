@@ -13,6 +13,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   SESSION_COMMAND_CENTER_BRAIN_CONTEXT,
+  getTextForegroundToolNamesForPrompt,
   withSessionCommandCenterBrain,
 } from '../../../src/host/app/sessionCommandCenterBrain';
 import {
@@ -23,6 +24,8 @@ import {
   getProtocolRegistry,
   getTextForegroundToolNames,
 } from '../../../src/host/tools/protocolRegistry';
+import { chatTranscriptEn, chatTranscriptZh } from '../../../src/renderer/i18n/chatTranscript';
+import { getSystemReminders } from '../../../src/host/prompts/systemReminders';
 
 describe('SESSION_COMMAND_CENTER_BRAIN_CONTEXT design notice', () => {
   it('tells the model the tool narrowing is by design, not an environment fault', () => {
@@ -153,3 +156,123 @@ describe('withSessionCommandCenterBrain', () => {
     ]);
   });
 });
+
+// ============================================================================
+// 单轮 Office 文件交付的前台面扩展（N-HOME-STARTER-CARDS-FILES r2）
+// 首屏卡点击的周报/表格轮必须把原生生成工具送进模型可见面，同时委派入口出局——
+// 否则前台没有 Bash，模型只剩「写脚本 + delegate_task 派后台」，后台 terminal_write
+// 撞审批卡死，整轮「运行失败」（r1 真机实录）。
+// ============================================================================
+
+describe('getTextForegroundToolNamesForPrompt — 文件交付扩展', () => {
+  // 用首屏卡的完整正文，而不是截短样本。中文周报卡的示例素材含「供应商接口」，
+  // isDocumentTask 会被代码语境否决；工具面必须仍按 .docx 把 docx_generate 送上轮。
+  const weeklyZh = chatTranscriptZh.chat.suggestions.weeklyReport.prompt;
+  const weeklyEn = chatTranscriptEn.chat.suggestions.weeklyReport.prompt;
+  const sheetZh = chatTranscriptZh.chat.suggestions.sheetAnalysis.prompt;
+  const sheetEn = chatTranscriptEn.chat.suggestions.sheetAnalysis.prompt;
+
+  it.each([
+    ['zh 周报卡', weeklyZh, ['docx_generate']],
+    ['en 周报卡', weeklyEn, ['docx_generate']],
+    ['zh 表格卡', sheetZh, ['excel_generate', 'DocEdit']],
+    ['en 表格卡', sheetEn, ['excel_generate', 'DocEdit']],
+  ])('%s：前台面按需纳入生成工具', (_label, prompt, expected) => {
+    const names = getTextForegroundToolNamesForPrompt(prompt);
+    for (const name of expected) {
+      expect(names).toContain(name);
+    }
+    // 基础面前成员原样保留
+    for (const name of ['Read', 'Write', 'Edit', 'AskUserQuestion']) {
+      expect(names).toContain(name);
+    }
+  });
+
+  it('非交付轮的前台面保持基础面不变', () => {
+    expect(getTextForegroundToolNamesForPrompt('你好，帮我看看今天有什么安排'))
+      .toEqual(getTextForegroundToolNames());
+    expect(getTextForegroundToolNamesForPrompt('打开 report.docx 看看结论'))
+      .toEqual(getTextForegroundToolNames());
+    // PR review 2026-10-15（rework r2）：对已有文件的转换/另存不是「从内容生成交付物」，
+    // 生成器进面只会把模型引去重新生成一份 Word；这类轮保持基础面（委派后台可执行
+    // 真实转换）。
+    expect(getTextForegroundToolNamesForPrompt('把已有 report.docx 转成 PDF 发我'))
+      .toEqual(getTextForegroundToolNames());
+    expect(getTextForegroundToolNamesForPrompt('帮我把 report.docx 另存到桌面'))
+      .toEqual(getTextForegroundToolNames());
+    expect(getTextForegroundToolNamesForPrompt('convert report.docx to PDF and send it over'))
+      .toEqual(getTextForegroundToolNames());
+  });
+
+  it('withSessionCommandCenterBrain 带 prompt 时把生成工具写进 allowlist', () => {
+    const options = withSessionCommandCenterBrain(undefined, weeklyZh);
+    expect(options.allowedToolNames).toContain('docx_generate');
+    const base = withSessionCommandCenterBrain(undefined);
+    expect(base.allowedToolNames).toEqual(getTextForegroundToolNames());
+  });
+});
+
+describe('文件交付轮的模型可见工具面（组装末端形状）', () => {
+  it('周报卡：docx_generate 可见，delegate_task / spawn_agent 不可见', async () => {
+    const { getCoreToolDefinitions, getLoadedDeferredToolDefinitions } = await import('../../../src/host/tools/dispatch/toolDefinitions');
+    const { getToolSearchService } = await import('../../../src/host/services/toolSearch');
+    const { filterToolsByRunPolicy } = await import('../../../src/host/agent/runtime/toolRunPolicy');
+
+    const prompt = weeklyPromptForSurface();
+    const allowed = getTextForegroundToolNamesForPrompt(prompt);
+    // 与 deferredToolPreload 的白名单预载同语义：非 core 的白名单成员送上轮
+    const service = getToolSearchService();
+    for (const name of allowed) service.preloadTools([name], 'surface-test');
+    const tools = [...getCoreToolDefinitions({}), ...getLoadedDeferredToolDefinitions()];
+    const surface = filterToolsByRunPolicy(tools, {
+      allowedToolNames: allowed,
+      messages: [{ role: 'user', content: prompt }],
+    } as any).map((definition) => definition.name);
+
+    expect(surface).toContain('docx_generate');
+    expect(surface).toContain('Write');
+    expect(surface).not.toContain('delegate_task');
+    expect(surface).not.toContain('spawn_agent');
+    expect(surface).not.toContain('Bash');
+    const reminders = getSystemReminders(prompt);
+    expect(reminders.some((item) => item.includes('docx_generate'))).toBe(true);
+    for (const absent of ['委派提醒', '并行派发提醒', '数据处理任务', '文档生成任务']) {
+      expect(reminders.some((item) => item.includes(absent))).toBe(false);
+    }
+  });
+
+  it('表格卡：excel_generate 与 DocEdit 可见，delegate_task 不可见', async () => {
+    const { getCoreToolDefinitions, getLoadedDeferredToolDefinitions } = await import('../../../src/host/tools/dispatch/toolDefinitions');
+    const { getToolSearchService } = await import('../../../src/host/services/toolSearch');
+    const { filterToolsByRunPolicy } = await import('../../../src/host/agent/runtime/toolRunPolicy');
+
+    const prompt = sheetPromptForSurface();
+    const allowed = getTextForegroundToolNamesForPrompt(prompt);
+    const service = getToolSearchService();
+    for (const name of allowed) service.preloadTools([name], 'surface-test');
+    const tools = [...getCoreToolDefinitions({}), ...getLoadedDeferredToolDefinitions()];
+    const surface = filterToolsByRunPolicy(tools, {
+      allowedToolNames: allowed,
+      messages: [{ role: 'user', content: prompt }],
+    } as any).map((definition) => definition.name);
+
+    expect(surface).toContain('excel_generate');
+    expect(surface).toContain('DocEdit');
+    expect(surface).not.toContain('delegate_task');
+    expect(surface).not.toContain('spawn_agent');
+    expect(surface).not.toContain('Bash');
+    const reminders = getSystemReminders(prompt);
+    expect(reminders.some((item) => item.includes('excel_generate'))).toBe(true);
+    for (const absent of ['委派提醒', '并行派发提醒', '数据处理任务']) {
+      expect(reminders.some((item) => item.includes(absent))).toBe(false);
+    }
+  });
+});
+
+function weeklyPromptForSurface(): string {
+  return chatTranscriptZh.chat.suggestions.weeklyReport.prompt;
+}
+
+function sheetPromptForSurface(): string {
+  return chatTranscriptZh.chat.suggestions.sheetAnalysis.prompt;
+}

@@ -71,9 +71,12 @@ describe('app grant store', () => {
     db.close();
   });
 
-  it('matches bundleId when both sides have one, otherwise the trimmed name ignoring case', () => {
+  it('requires the app name to match; bundleId can only narrow, never authorize another name', () => {
+    // rework r1：bundleId 是模型可声明、Host 在门上无法校验的值——bundle 命中
+    // 不能越过名字差异放行，否则一个编造 bundle 就铸出跨 app 便携授权。
     mintAppGrantStanding({ name: 'Safari', bundleId: 'com.apple.Safari' }, 1_700_000_000_000);
-    expect(matchAppGrant('s1', { name: 'Safari Browser', bundleId: 'com.apple.Safari' })).toBe(true);
+    expect(matchAppGrant('s1', { name: 'Safari', bundleId: 'com.apple.Safari' })).toBe(true);
+    expect(matchAppGrant('s1', { name: 'Safari Browser', bundleId: 'com.apple.Safari' })).toBe(false);
     expect(matchAppGrant('s1', { name: 'safari' })).toBe(true);
     expect(matchAppGrant('s1', { name: 'Safari', bundleId: 'com.apple.Other' })).toBe(false);
 

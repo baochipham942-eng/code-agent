@@ -142,7 +142,9 @@ function uniqueInOrder(values: readonly string[]): string[] {
 
 /**
  * 延迟工具摘要末尾的一行：列出尚未配 key、且本轮没有被拒绝的能力（能力名，不是工具名），
- * 并给出设置页路径。明确写「不要调用」。没有可提示的能力时返回空串。
+ * 并给出设置页路径。明确写「不要调用」，并钉死回复语言跟随用户最新消息、引用同语言的
+ * 路径（N-TOOL-UNAVAILABLE-UNLOCK-HINT-FU1：英文提问曾整段中文回复 + 只给中文路径）。
+ * 没有可提示的能力时返回空串。
  */
 export function unavailableUnlockHintLine(deniedToolNames: readonly string[] = []): string {
   const denied = new Set(deniedToolNames.map((name) => name.trim().toLowerCase()));
@@ -158,5 +160,7 @@ export function unavailableUnlockHintLine(deniedToolNames: readonly string[] = [
     `Turn on: ${settingsPathEn}.`,
     `以下能力未开启（不要调用）：${capabilityZh}。`,
     `开启：${settingsPathZh}。`,
+    'When you tell the user a capability is not enabled, reply in the language of the user\'s latest message and quote the Turn-on path above in that same language.',
+    '告知用户某能力未开启时，用用户最新一条消息的语言回复，并引用上面对应语言的开启路径。',
   ].join(' ');
 }

@@ -291,8 +291,11 @@ describe('ExternalImportSettings 导入与结果（验收④）', () => {
         return Promise.resolve({
           targetDir: '/tmp/data/skills',
           copied: 1,
-          skipped: 0,
-          items: [{ sourceId: 'codex', name: 'codex-skill', action: 'copied' }],
+          skipped: 1,
+          items: [
+            { sourceId: 'codex', name: 'codex-skill', action: 'copied' },
+            { sourceId: 'cursor', name: 'cursor-skill', action: 'skipped', reason: 'target-name-exists' },
+          ],
         });
       }
       if (action === 'externalImportDetectSources') return Promise.resolve(detectResult());
@@ -317,7 +320,12 @@ describe('ExternalImportSettings 导入与结果（验收④）', () => {
     expect(screen.getByTestId('external-import-results-memory').textContent)
       .toContain('记忆：导入 1 条，跳过 1 条');
     expect(screen.getByTestId('external-import-results-skills').textContent)
-      .toContain('技能：复制 1 个，跳过 0 个');
+      .toContain('技能：复制 1 个，跳过 1 个');
+    // 状态词本地化：中文界面不得出现裸 copied/skipped（返修钉子）
+    const skillsRows = screen.getByTestId('external-import-results-skills').textContent ?? '';
+    expect(skillsRows).toContain('已复制');
+    expect(skillsRows).toContain('已跳过');
+    expect(skillsRows).not.toMatch(/\b(copied|skipped)\b/);
   });
 
   it('instruction-file（AGENTS.md 类）只供对照：无确认钮、不写记忆', async () => {
@@ -394,7 +402,11 @@ describe('ExternalImportSettings 导入与结果（验收④）', () => {
     fireEvent.click(screen.getByText('预览要导入的内容'));
     await screen.findByTestId('external-import-preview');
 
-    fireEvent.click(screen.getByText('逐条确认'));
+    // 返修钉子：确认钮不换行（nowrap + 不收缩），把换行让给路径截断
+    const confirmButton = screen.getByText('逐条确认').closest('button');
+    expect(confirmButton?.className).toContain('whitespace-nowrap');
+    expect(confirmButton?.className).toContain('shrink-0');
+    fireEvent.click(confirmButton as HTMLButtonElement);
     // 就地确认弹窗（全局确认卡会被设置页遮罩盖住）：内容可见 + 确认回执走既有通道
     await screen.findByTestId('external-import-directive-content');
     expect(screen.getByTestId('external-import-directive-content').textContent)

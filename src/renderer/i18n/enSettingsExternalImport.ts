@@ -59,6 +59,10 @@ export const enSettingsExternalImport = {
         'new-skill': 'Will be copied',
         'target-name-exists': 'A skill with this name already exists in Neo; skipped',
       },
+      skillActionLabels: {
+        copied: 'Copied',
+        skipped: 'Skipped',
+      },
       applyCta: 'Start import',
       applyFailed: 'Import failed',
       resultsTitle: 'Import finished',

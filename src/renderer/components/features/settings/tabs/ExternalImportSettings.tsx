@@ -399,7 +399,7 @@ export const ExternalImportSettings: React.FC = () => {
                 <div className="mt-2 space-y-1 text-[11px] text-zinc-500">
                   {results.skills.items.map((item) => (
                     <div key={`${item.sourceId}:${item.name}`} className="truncate font-mono">
-                      {item.sourceId} · {item.name} · {item.action}
+                      {item.sourceId} · {item.name} · {copy.skillActionLabels[item.action]}
                       {item.reason === 'target-name-exists' ? ` · ${copy.skillReasonLabels['target-name-exists']}` : ''}
                       {item.reason === 'copy-failed' && item.error ? ` · ${item.error}` : ''}
                     </div>
@@ -610,6 +610,7 @@ function PreviewStep({
                   <Button
                     variant="secondary"
                     size="sm"
+                    className="shrink-0 whitespace-nowrap"
                     disabled={busy !== null}
                     onClick={() => onConfirmDirective(item.id)}
                   >

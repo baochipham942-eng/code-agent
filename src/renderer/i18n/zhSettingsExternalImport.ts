@@ -58,6 +58,10 @@ export const zhSettingsExternalImport = {
         'new-skill': '将复制',
         'target-name-exists': 'Neo 已有同名技能，跳过',
       },
+      skillActionLabels: {
+        copied: '已复制',
+        skipped: '已跳过',
+      },
       applyCta: '开始导入',
       applyFailed: '导入失败',
       resultsTitle: '导入完成',

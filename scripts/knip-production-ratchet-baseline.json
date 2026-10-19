@@ -1,7 +1,6 @@
 {
   "schemaVersion": 1,
   "files": [
-    "src/host/agent/runtime/dashboard/registry.ts",
     "src/host/errors/knipProductionAnchor.ts",
     "src/renderer/components/ContextHealthPanel.tsx",
     "src/renderer/components/ContextPanel.tsx",

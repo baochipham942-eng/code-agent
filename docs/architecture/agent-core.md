@@ -450,7 +450,6 @@ Eval 不再只看 final answer。`TelemetryQueryService` 会构建 structured re
 | Admin review route | `src/web/routes/adminReviewQueue.ts` | app-host 本地 review queue API |
 | Game verifier | `src/host/agent/runtime/game/*` | game subtype checker、runtime evidence 和 repair issue codes |
 | DeckVerifier | `src/host/agent/runtime/deck/DeckVerifier.ts` | deck schema / narrative probes |
-| DashboardVerifier | `src/host/agent/runtime/dashboard/DashboardVerifier.ts` | HTML probes、browser visual smoke、interaction probes |
 | Repair guard | `src/host/agent/runtime/repair/*` | 控制 repair scope、修复轮次和单调性 |
 
 ### Artifact verifier family
@@ -461,7 +460,7 @@ artifact 验收分成通用 runner 和 kind-specific verifier 两层。当前不
 |------|--------|------|
 | Game | `src/host/agent/runtime/gameArtifactValidator.ts` + `runtime/game/*` | subtype registry、Platformer/Runner/Breakout checker、skill loader、verb taxonomy、repair codes |
 | Deck | `src/host/agent/runtime/deck/DeckVerifier.ts` | schemaProbe + declarative / imperative narrative probes，替代旧 `validateNarrative` |
-| Dashboard / interactive app | `src/host/agent/runtime/dashboard/*` | HTML probes、browser visual smoke、interaction probes、state_change_on_click 反 Potemkin |
+| Dashboard / interactive app | 共享 web preview health：`src/host/agent/runtime/browser/artifactPreviewHealth*` | 多 viewport 确定性体检；`html_incomplete` 截断检查与 `button_no_response` 反 Potemkin 点击探针并入通用网页交付物体检（独立 dashboard verifier 已删除） |
 | Browser visual smoke | `src/host/agent/runtime/browser/visualSmoke.ts` | desktop/mobile viewport、console/page errors、canvas 非空、overflow 等探针 |
 | Repair toolkit | `src/host/agent/runtime/repair/*` | scope guards、monotonicity tracker、repair cap、Best-of-N 支撑 |
 

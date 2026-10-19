@@ -7,7 +7,7 @@
 // 冒号已转义，split(':') 无歧义（grantLedger.ts 是 id 的唯一拼/拆点）。
 
 /** 授权条目的种类：按应用的操作授权 / automation 上的 (tool,target) 长期授权 / 会话内工具放行。 */
-export type PermissionGrantKind = 'app' | 'tool-target' | 'tool-session';
+type PermissionGrantKind = 'app' | 'tool-target' | 'tool-session';
 
 /**
  * 归一化授权条目。

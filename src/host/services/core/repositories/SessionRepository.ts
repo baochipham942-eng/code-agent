@@ -10,11 +10,7 @@ import { normalizeAgentEngineSession } from '../../../../shared/contract/agentEn
 import type { ContextInterventionAction, ContextInterventionSnapshot } from '../../../../shared/contract/contextView';
 import type { TranscriptKind } from '../../../../shared/transcriptFts.sql';
 import type { StoredSession, StoredMessage } from '../../../protocol/types';
-import {
-  ConversationBranchError,
-  type ConversationBoundary,
-  type ConversationMessageSnapshot,
-} from '../../../../shared/contract/conversationBranch';
+import type { ConversationMessageSnapshot } from '../../../../shared/contract/conversationBranch';
 import {
   activeMessageWhere,
   loopInternalMessageWhere,
@@ -54,6 +50,12 @@ import {
   reconcileMessageProjectionOrderWithLedger,
   shouldAppendMessageToConversationLedger,
 } from './sessionRepositoryMessageLedger';
+import {
+  assertRemoteSessionBoundaryCompatible,
+  forkProtectedProjection,
+  protectedForkMessageIds,
+  readConversationBoundary,
+} from './sessionRepositoryBoundary';
 import { runTransactionWithFtsRepair, runWithFtsWriteRepair } from '../database/ftsRepair';
 import { runWithSqliteBusyRetry } from '../database/sqliteBusyRetry';
 
@@ -108,94 +110,12 @@ export class SessionRepository {
     ).some((column) => column.name === 'project_id');
   }
 
-  private readConversationBoundary(sessionId: string): ConversationBoundary {
-    const row = this.db.prepare(`
-      SELECT user_id, ${this.sessionsHaveProjectId ? 'project_id' : 'NULL AS project_id'}
-      FROM sessions
-      WHERE id = ?
-      LIMIT 1
-    `).get(sessionId) as { user_id: string | null; project_id: string | null } | undefined;
-    if (!row) throw new Error(`Session not found: ${sessionId}`);
-    return {
-      ownerUserId: typeof row.user_id === 'string' ? row.user_id : null,
-      projectId: typeof row.project_id === 'string' ? row.project_id : null,
-    };
+  private readConversationBoundary(sessionId: string) {
+    return readConversationBoundary(this.db, this.sessionsHaveProjectId, sessionId);
   }
 
   private toConversationMessage(message: Message): ConversationMessageSnapshot {
     return sanitizeConversationMessageSnapshot(message);
-  }
-
-  private assertRemoteSessionBoundaryCompatible(
-    sessionId: string,
-    incoming: ConversationBoundary,
-  ): void {
-    if (!sqliteTableExists(this.db, 'conversation_branches')) return;
-    const branch = this.db.prepare(`
-      SELECT id, owner_user_id, project_id
-      FROM conversation_branches
-      WHERE session_id = ?
-      LIMIT 1
-    `).get(sessionId) as {
-      id: string;
-      owner_user_id: string | null;
-      project_id: string | null;
-    } | undefined;
-    if (!branch) return;
-    if (branch.owner_user_id !== incoming.ownerUserId) {
-      throw new ConversationBranchError(
-        'OWNER_MISMATCH',
-        `remote session ${sessionId} cannot change immutable branch ${branch.id} owner`,
-      );
-    }
-    if (branch.project_id !== incoming.projectId) {
-      throw new ConversationBranchError(
-        'PROJECT_MISMATCH',
-        `remote session ${sessionId} cannot change immutable branch ${branch.id} project`,
-      );
-    }
-  }
-
-  private protectedForkMessageIds(sessionId: string): Set<string> {
-    if (
-      !sqliteTableExists(this.db, 'session_forks')
-      || !sqliteTableExists(this.db, 'session_fork_message_map')
-    ) {
-      return new Set();
-    }
-    const rows = this.db.prepare(`
-      SELECT map.source_message_id AS message_id
-      FROM session_forks AS fork
-      JOIN session_fork_message_map AS map ON map.fork_id = fork.id
-      WHERE fork.source_session_id = ?
-        AND fork.status IN ('workspace_ready', 'completed')
-      UNION
-      SELECT map.child_message_id AS message_id
-      FROM session_forks AS fork
-      JOIN session_fork_message_map AS map ON map.fork_id = fork.id
-      WHERE fork.child_session_id = ?
-        AND fork.status IN ('workspace_ready', 'completed')
-    `).all(sessionId, sessionId) as Array<{ message_id: string }>;
-    return new Set(rows.map((row) => String(row.message_id)));
-  }
-
-  private forkProtectedProjection(message: Message): Record<string, unknown> {
-    return {
-      id: message.id,
-      role: message.role,
-      content: message.content,
-      timestamp: message.timestamp,
-      toolCalls: message.toolCalls ?? null,
-      toolResults: message.toolResults ?? null,
-      responsesOutput: message.responsesOutput ?? null,
-      attachments: message.attachments ?? null,
-      thinking: message.thinking ?? message.reasoning ?? null,
-      effortLevel: message.effortLevel ?? null,
-      contentParts: message.contentParts ?? null,
-      metadata: message.metadata ?? null,
-      isMeta: Boolean(message.isMeta),
-      compaction: message.compaction ?? null,
-    };
   }
 
   private resolveSyncedAt(options?: SessionWriteOptions | MessageWriteOptions): number | null {
@@ -316,7 +236,7 @@ export class SessionRepository {
 
     this.db.transaction(() => {
       if (options?.syncOrigin === 'remote') {
-        this.assertRemoteSessionBoundaryCompatible(id, {
+        assertRemoteSessionBoundaryCompatible(this.db, id, {
           ownerUserId: data.userId ?? null,
           projectId: data.projectId ?? null,
         });
@@ -635,7 +555,7 @@ export class SessionRepository {
 
   replaceMessages(sessionId: string, messages: Message[], updatedAt: number = Date.now()): void {
     const replaceBody = (): void => {
-      const protectedIds = this.protectedForkMessageIds(sessionId);
+      const protectedIds = protectedForkMessageIds(this.db, sessionId);
       if (protectedIds.size > 0) {
         const desiredById = new Map(messages.map((message) => [message.id, message]));
         for (const protectedId of protectedIds) {
@@ -649,8 +569,8 @@ export class SessionRepository {
           if (
             !desired
             || !currentRow
-            || JSON.stringify(this.forkProtectedProjection(desired))
-              !== JSON.stringify(this.forkProtectedProjection(rowToMessage(currentRow)))
+            || JSON.stringify(forkProtectedProjection(desired))
+              !== JSON.stringify(forkProtectedProjection(rowToMessage(currentRow)))
           ) {
             throw new Error(
               `FORK_PREFIX_PROTECTED: replaceMessages cannot remove or rewrite mapped message ${protectedId}`,

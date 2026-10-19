@@ -5,7 +5,9 @@
 // ============================================================================
 
 import React, { useEffect, useState } from 'react';
+import type { CronJobDefinition } from '@shared/contract';
 import type { RolePanelEntry } from '@shared/contract/roleAssets';
+import { isRoleBoundCronJob } from '@shared/cronRoleBinding';
 import type { Project } from '@shared/contract/project';
 import { suggestCronStaggerMinute } from '@shared/cronStagger';
 import { Button } from '../../primitives/Button';
@@ -21,6 +23,7 @@ import { buildCronJobInput, createDefaultCronJobDraft, type CronJobDraft } from 
 import { CronRunsOnSelector } from './CronRunsOnSelector';
 import { CronResultChannelField } from './CronResultChannel';
 import { showCronLoginWallWarning } from './cronLoginWallNotice';
+import { SavedRoutineRestate } from './SavedRoutineRestate';
 
 export type SimpleFrequency = 'daily' | 'weekdays' | 'weekly' | 'hourly' | 'once';
 
@@ -102,6 +105,8 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
   const [projects, setProjects] = useState<Project[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 保存成功且角色绑定的任务：不直接关闭，切换到只读复述视图（Done 才关闭）。
+  const [savedJob, setSavedJob] = useState<CronJobDefinition | null>(null);
 
   useEffect(() => {
     listRoles().then(setRoles).catch(() => setRoles([]));
@@ -127,6 +132,10 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
       );
       const created = await createJob(buildCronJobInput(draft));
       showCronLoginWallWarning(created, { warning: cc.loginWallWarning, openSite: cc.loginWallOpenSite });
+      if (isRoleBoundCronJob(created)) {
+        setSavedJob(created);
+        return;
+      }
       onDone();
     } catch (err) {
       const message = err instanceof Error ? err.message : '';
@@ -141,6 +150,10 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
   };
 
   const needTime = freq === 'daily' || freq === 'weekdays' || freq === 'weekly';
+
+  if (savedJob) {
+    return <SavedRoutineRestate job={savedJob} onDone={onDone} />;
+  }
 
   return (
     <div className="space-y-4" data-testid="cron-simple-create">

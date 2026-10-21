@@ -72,6 +72,7 @@ import { captureTurnDiff } from '../../services/checkpoint/turnDiffService';
 import { emitGoalAbort } from './goalAbort';
 import { finalizeWebDeliverablePreviewRepairs } from './webDeliverablePreviewRepair';
 import { clearAskUserQuestionReplay } from '../../tools/modules/planning/askUserQuestionReplay';
+import { clearToolRunGrants } from '../../permissions/toolGrantStore';
 
 const logger = createLogger('AgentLoop');
 
@@ -332,6 +333,10 @@ export class RunFinalizer {
     // AskUserQuestion 同 run 重复问句回放缓存随 run 结束精确清空（N-ASKUSER-REPEAT-REPLAY）。
     // runId 缺省时退化为 session 级整清（评测/旧路径无 runId，缓存本就随 run 生灭）。
     clearAskUserQuestionReplay(this.ctx.sessionId, this.ctx.runId?.trim() || undefined);
+
+    // 「到这次做完为止」run 档工具授权随 run 结束失效（N-PERM-GRANT-TIERS）：
+    // 本轮结束 = 承诺兑现，该会话下一次同类操作重新询问。内存操作，不会抛。
+    clearToolRunGrants(this.ctx.sessionId);
 
     let terminalStatus = terminal.status
       ?? (this.ctx.control.isCancelled

@@ -101,6 +101,15 @@ export const INTERACTION_TIMEOUTS = {
 } as const;
 
 /**
+ * 工具授权两档时长（N-PERM-GRANT-TIERS）。run 档随 run 结束即失效（无固定时长，
+ * 不在此表）；24h 档 expiresAt = grantedAt + TIER_24H_MS，重启不破坏承诺。
+ */
+export const TOOL_GRANT_TIERS = {
+  /** 24 小时档的有效期 */
+  TIER_24H_MS: 86_400_000,
+} as const;
+
+/**
  * 自动档限流阈值（写死，不进设置面、不读 config）。
  * 同一会话连续自动拦截达到 CONSECUTIVE，或 WINDOW_MS 内累计达到 WINDOW_COUNT，
  * 该会话免确认档钳到 default；无人值守审批不再走 60s 终态，改走上面的 PARKED_APPROVAL。

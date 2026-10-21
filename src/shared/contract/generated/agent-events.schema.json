@@ -1279,6 +1279,8 @@
             "deny",
             "session",
             "always",
+            "run",
+            "24h",
             "never",
             "timeout"
           ]

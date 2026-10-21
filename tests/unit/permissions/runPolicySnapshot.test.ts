@@ -131,6 +131,21 @@ describe('run 中途的外部放宽不作用于已开始的 run', () => {
     endRunPolicy('run-2');
   });
 
+  // r2（N-PERMRULES-LOCAL-OWNER）：删掉的规则必须从 PolicyEngine 卸载——loadUserRules
+  // 是「对齐」不是「追加」，否则用户删 deny 保存后旧规则继续生效到重启。
+  it('外部经 loadUserRules 热重载删 deny（config.json 编辑形状）：本 run 冻结仍 deny，下个 run 放行', () => {
+    loadP1Baseline();
+    beginRunPolicy('run-1', SESSION);
+    const engine = getPolicyEngine();
+    engine.loadUserRules({}); // 默认 external：reloadFromDisk → applyUserPermissionRules 的形状（表被清空）
+    expect(engine.evaluate(rmRequest()).action).toBe('prompt'); // 活状态已放宽（P2）
+    expect(engine.evaluate(rmRequest(), resolveEffectivePolicyRules(SESSION)).action).toBe('deny'); // run 内按 P1
+    endRunPolicy('run-1');
+    beginRunPolicy('run-2', SESSION);
+    expect(engine.evaluate(rmRequest(), resolveEffectivePolicyRules(SESSION)).action).toBe('prompt'); // 下个 run 生效
+    endRunPolicy('run-2');
+  });
+
   it('hook/plugin 形状（默认来源 addRule 加 allow 规则）：本 run 冻结', () => {
     beginRunPolicy('run-1', SESSION);
     const engine = getPolicyEngine();
@@ -213,6 +228,14 @@ describe('用户 UI 来源的放宽对进行中的 run 立即生效', () => {
       audit: false,
     }, 'user-ui');
     expect(resolveEffectivePolicyRules(SESSION).some((rule) => rule.id === 'ui-allow-ls')).toBe(true);
+    endRunPolicy('run-1');
+  });
+
+  it("UI 删除的 deny 规则（loadUserRules 携 'user-ui'）：立即生效（r2）", () => {
+    loadP1Baseline();
+    beginRunPolicy('run-1', SESSION);
+    getPolicyEngine().loadUserRules({}, 'user-ui'); // updateSettings → applyUserPermissionRules('user-ui') 的形状（表被清空）
+    expect(getPolicyEngine().evaluate(rmRequest(), resolveEffectivePolicyRules(SESSION)).action).toBe('prompt');
     endRunPolicy('run-1');
   });
 

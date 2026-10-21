@@ -1,9 +1,6 @@
-// ============================================================================
-
 import { outcomeWordsZh } from './outcomeWords';
+import { permissionGrantsZh } from './permissionGrants';
 // Settings namespace translations (zh/Work) — 纯平移拆分（债务门）
-// ============================================================================
-
 export const zhSettingsWork = {
     workspace: {
       description: '管理当前工作目录、最近打开的目录、本地桥状态，以及浏览器工具的默认行为。',
@@ -844,6 +841,7 @@ export const zhSettingsWork = {
     privacy: {
       webDescription: '本地 PII 防线，启用后协作内容进入云端 LLM 前自动脱敏命名实体（姓名/地址/医疗 ID 等）。',
       pageDescription: '权限与数据边界总览。默认本地优先；会出云端的路径、通道凭证和诊断包单独表达。',
+      permissionGrants: permissionGrantsZh,
       setupState: {
         idle: '未启用',
         running: '安装中…',

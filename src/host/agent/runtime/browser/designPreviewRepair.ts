@@ -121,6 +121,8 @@ const DETERMINISTIC_REPAIR_DIRECTIVES: Record<ArtifactPreviewHealthFindingCode, 
   missing_main_element: 'Add a visible main artifact root such as main, data-preview-root, or data-design-root.',
   primary_button_not_visible: 'Make the primary action button visible and reachable at every tested viewport; restore hidden or clipped controls.',
   responsive_breakpoint_failure: 'Fix the breakpoint-specific failure without regressing healthy viewports.',
+  html_incomplete: 'Finish the truncated HTML document so the opened <html>/<body> tags are closed with the full intended content; do not ship a cut-off page.',
+  button_no_response: 'Wire the first visible button to a working handler that changes visible page state on click; remove decorative dead buttons.',
 };
 
 const SUBJECTIVE_REPAIR_DIRECTIVES: Record<ArtifactPreviewVisionFindingCode, string> = {

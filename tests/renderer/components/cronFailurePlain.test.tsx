@@ -101,7 +101,7 @@ describe('cron failure notification copy', () => {
     }, cronCenterZh.cronCenter, 'zh');
     expect(notice).toEqual({
       title: '需要重新登录',
-      body: '你需要重新登录 https://example.test，然后下一次定时运行才能继续。',
+      body: '请在 Neo 浏览器中登录 https://example.test，然后下一次定时运行才能继续。',
     });
   });
 
@@ -188,13 +188,19 @@ describe('CronExecutionDetail 人话失败', () => {
     expect(triggerJob).toHaveBeenCalledWith('job-1');
   });
 
-  it('登录墙、不支持、云端未接线仍走原有文案', () => {
+  it('登录墙提供 Neo 浏览器登录和立即重跑动作', async () => {
     useAppStore.setState({ language: 'zh' });
+    const triggerJob = vi.fn().mockResolvedValue(null);
+    useCronStore.setState({ triggerJob });
     const { unmount } = render(
       <CronExecutionDetail execution={execution(buildCronLoginWallStopCode('https://example.test'))} />,
     );
-    expect(screen.getByText('你需要重新登录 https://example.test，这次定时运行已停止。')).toBeTruthy();
-    expect(screen.getByTestId('cron-execution-open-login-site').textContent).toContain('打开网站');
+    expect(screen.getByText('你需要在 Neo 浏览器中登录 https://example.test，这次定时运行已停止。')).toBeTruthy();
+    expect(screen.getByTestId('cron-execution-open-login-site').textContent).toContain('在 Neo 浏览器中登录');
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('cron-login-wall-rerun'));
+    });
+    expect(triggerJob).toHaveBeenCalledWith('job-1');
     expect(screen.queryByTestId('cron-failure-plain')).toBeNull();
     unmount();
 

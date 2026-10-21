@@ -137,6 +137,15 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
     const job = await cronService.updateJob(jobId, updates);
     return { success: true, data: job } satisfies IPCResponse;
   },
+  grantLoginPassThrough: async (_ctx, payload) => {
+    const cronService = getCronService();
+    const jobId = getStringField(payload, 'jobId');
+    if (!jobId) throw new Error('Invalid cron job id');
+    const siteOrigin = getStringField(payload, 'siteOrigin');
+    if (!siteOrigin) throw new Error('Invalid cron login pass-through origin');
+    const job = await cronService.grantLoginPassThrough(jobId, siteOrigin);
+    return { success: true, data: job } satisfies IPCResponse;
+  },
   deleteJob: async (_ctx, payload) => {
     const cronService = getCronService();
     const jobId = getStringField(payload, 'jobId');

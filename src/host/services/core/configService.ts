@@ -19,10 +19,7 @@ import { setProviderProxyOverrides } from '../../model/providers/shared';
 import type { ProxyMode, ModelEntrySettings } from '../../../shared/contract/settings';
 import type { SharedProviderConfig, SharedProviderKeyConfig, SharedServiceKeyConfig } from '../cloud/builtinConfig';
 import { isDynamicCustomProviderId } from '../../../shared/modelRuntime';
-import {
-  MODEL_API_ENDPOINTS,
-  DEFAULT_MODELS,
-} from '../../../shared/constants';
+import { MODEL_API_ENDPOINTS, DEFAULT_MODELS } from '../../../shared/constants';
 import { DEFAULT_SETTINGS } from './configDefaults';
 import {
   getCloudManagedServiceKeyId,
@@ -744,6 +741,13 @@ export class ConfigService implements IReadConfigService {
     }
 
     assertValidUserPermissionRules(updates.permissions, this.settings.permissions);
+    // Jev 借用 OpenRouter key 的同意时间戳（N-JEV-DEFAULT-ON-CONSENT）：仅首次把
+    // openRouterConsent 翻成 true 时落 openRouterConsentAt（调用方显式时间戳优先，
+    // 缺省才回落 Date.now()）；重复同意不刷新、撤销同意不删除（历史留痕）；patch 不含
+    // jev 块时不在此处理。未提及字段由深合并保留。
+    if (updates.jev?.openRouterConsent === true && this.settings.jev?.openRouterConsent !== true) {
+      updates.jev.openRouterConsentAt = updates.jev.openRouterConsentAt ?? Date.now();
+    }
     this.settings = this.mergeAppSettings(this.settings, updates);
     await this.save();
 

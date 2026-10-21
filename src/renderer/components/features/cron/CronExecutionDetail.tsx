@@ -134,15 +134,27 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
           <div className="mb-2 flex items-center justify-between gap-2">
             <h5 className="text-xs font-medium uppercase tracking-wide text-badge-danger">{cc.execError}</h5>
             {loginWall && (
-              <button /* ds-allow:button: 错误区标题旁紧凑警示色链接按钮（px-2 py-1 text-xs），primitive 无警示色 variant 且最小 sm 内边距更大 */
-                type="button"
-                onClick={() => openCronLoginWallSite(loginWall.siteOrigin)}
-                className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-badge-warning transition-colors hover:bg-amber-500/10"
-                data-testid="cron-execution-open-login-site"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-                {cc.loginWallOpenSite}
-              </button>
+              <div className="flex items-center gap-2">
+                <button /* ds-allow:button: 错误区标题旁紧凑警示色链接按钮（px-2 py-1 text-xs），primitive 无警示色 variant 且最小 sm 内边距更大 */
+                  type="button"
+                  onClick={() => openCronLoginWallSite(loginWall.siteOrigin, execution.jobId)}
+                  className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-badge-warning transition-colors hover:bg-amber-500/10"
+                  data-testid="cron-execution-open-login-site"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  {cc.loginWallOpenSite}
+                </button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  loading={isRerunning}
+                  data-testid="cron-login-wall-rerun"
+                  onClick={() => { void handleRerun(); }}
+                >
+                  {cc.failureActionRunAgain}
+                </Button>
+              </div>
             )}
           </div>
           <pre className="max-h-40 overflow-auto rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-badge-danger whitespace-pre-wrap">

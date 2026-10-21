@@ -427,8 +427,8 @@ export const GeneralSettings: React.FC = () => {
   };
 
   const handleInheritanceChange = async (newInheritance: InheritanceMode) => {
-    // 非管理员对 settings set 必 403（settingsActionRequiresAdmin 对 'permissions' 恒门控），
-    // 这里先拦掉，避免任何路径（含 jsdom 对 disabled 元素仍派发的事件）打出必失败的 set。
+    // 非管理员对 settings set 必 403（settingsActionRequiresAdmin 对 permissions 的非规则
+    // 字段仍门控），这里先拦掉，避免任何路径（含 jsdom 对 disabled 元素仍派发的事件）打出必失败的 set。
     if (!isAdmin) return;
     setInheritance(newInheritance);
     await persistPermissions({
@@ -440,7 +440,8 @@ export const GeneralSettings: React.FC = () => {
   };
 
   const handleRulesBlur = async (kind: PermissionRuleList, text: string) => {
-    if (!isAdmin) return;
+    // deny/ask/allow 对所有登录用户开放（N-PERMRULES-LOCAL-OWNER）：host 侧只对
+    // permissions 的其余键门控，规则保存不再需要 admin。
     const decision = resolvePermissionRulesBlur(kind, text, generalText.userRules.invalid);
     if (!decision.ok) {
       setRuleErrors((current) => ({ ...current, [kind]: decision.message }));
@@ -891,7 +892,7 @@ export const GeneralSettings: React.FC = () => {
                   value={denyRules}
                   onChange={(event) => setDenyRules(event.target.value)}
                   onBlur={(event) => handleRulesBlur('deny', event.target.value)}
-                  disabled={isWebMode() || !isAdmin}
+                  disabled={isWebMode()}
                   placeholder={'Bash(rm -rf *)\nWrite(/etc/*)\nBash(curl *)'}
                   rows={4}
                   className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-hidden focus:border-red-500/50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -906,7 +907,7 @@ export const GeneralSettings: React.FC = () => {
                   value={askRules}
                   onChange={(event) => setAskRules(event.target.value)}
                   onBlur={(event) => handleRulesBlur('ask', event.target.value)}
-                  disabled={isWebMode() || !isAdmin}
+                  disabled={isWebMode()}
                   placeholder={'Bash(git push *)\nWrite(*.env)'}
                   rows={3}
                   className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-hidden focus:border-badge-warning/50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -921,7 +922,7 @@ export const GeneralSettings: React.FC = () => {
                   value={allowRules}
                   onChange={(event) => setAllowRules(event.target.value)}
                   onBlur={(event) => handleRulesBlur('allow', event.target.value)}
-                  disabled={isWebMode() || !isAdmin}
+                  disabled={isWebMode()}
                   placeholder={'Read(*)\nBash(ls *)\nBash(git status)'}
                   rows={3}
                   className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-hidden focus:border-zinc-500 disabled:cursor-not-allowed disabled:opacity-50"

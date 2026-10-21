@@ -4,19 +4,21 @@
 // N-JEV-DEFAULT-ON：CODE_AGENT_PERMISSION_LLM_CLASSIFIER / CODE_AGENT_JEV_INJECTION_SCAN /
 // CODE_AGENT_JEV_COMPACTION / CODE_AGENT_JEV_ROUTER 默认开（unset = on；
 // '0' / 'false'，trim 后大小写不敏感 = off；其余任意值 = on）。
-// 运行时没有可用 key（resolveJevRoute() === null）时对应特性静默降级为关：
-// 不向用户报错、每特性每进程至多一条 warn、降级计数经 diagnostics jevStatus 可观测。
+// 运行时没有可用路由（resolveJevRoute() === null：无 key / 用户关总开关 / OpenRouter
+// 未同意借用）时对应特性静默降级为关：不向用户报错、每特性每进程至多一条 warn（可区分
+// 到具体原因）、降级计数经 diagnostics jevStatus 可观测（N-JEV-DEFAULT-ON-CONSENT）。
 // key 只在这里探测（providerResolution/configService），本模块永不持有或外发 key 本体。
 // 测试注入的 systemOne 替身在各站点用 ?? 优先注入，天然绕过 key 检查。
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
 import type { JevSystemOneCall } from '../../shared/constants/jevQuestions';
-import { resolveJevRoute } from './providers/typesafeProvider';
+import type { JevFeature, JevKeySource, JevStatus } from '../../shared/contract/jev';
+import { probeJevKeySource, resolveJevRoute } from './providers/typesafeProvider';
 
 const logger = createLogger('JevFeatures');
 
-export type JevFeature = 'permissionClassifier' | 'injectionScan' | 'compaction' | 'router';
+export type { JevFeature, JevStatus };
 
 /** 特性 → 环境变量名（唯一登记处，新特性只在这里加）。 */
 const JEV_FEATURE_ENV_FLAGS: Record<JevFeature, string> = {
@@ -45,17 +47,26 @@ const degradedCounts: Record<JevFeature, number> = {
 };
 const degradedWarned = new Set<JevFeature>();
 
-/** 无 key 降级：计数逐次累加，warn 每特性每进程只留一条（可区分到具体 flag）。 */
+/** 路由不可用的可区分原因（错题本 2026-08-14：fail-open 不等于失败不留痕）。 */
+const DEGRADE_REASON_TEXT: Record<JevKeySource, string> = {
+  official: 'Jev 路由已可用',
+  openrouter: 'Jev 路由已可用（借用 OpenRouter key）',
+  none: 'TYPESAFE_API_KEY 与 OpenRouter key 均未配置',
+  disabled_by_user: '用户已在设置中关闭 Jev 总开关',
+  openrouter_pending_consent: '检测到 OpenRouter key，但用户尚未允许借用',
+};
+
+/** 路由不可用降级：计数逐次累加，warn 每特性每进程只留一条（可区分到具体原因）。 */
 function missingKeyError(feature: JevFeature): Error & { code: string } {
   degradedCounts[feature] += 1;
   if (!degradedWarned.has(feature)) {
     degradedWarned.add(feature);
     logger.warn(
-      `${JEV_FEATURE_ENV_FLAGS[feature]} 已开启但 TYPESAFE_API_KEY 与 OpenRouter key 均未配置，`
+      `${JEV_FEATURE_ENV_FLAGS[feature]} 已开启但 ${DEGRADE_REASON_TEXT[probeJevKeySource()]}，`
       + `Jev ${feature} 静默降级为关（本进程仅此一条）`,
     );
   }
-  const error = new Error('[typesafe] TYPESAFE_API_KEY and OpenRouter key are both unset') as Error & { code: string };
+  const error = new Error('[typesafe] Jev route unavailable (no key, disabled by user, or OpenRouter consent not given)') as Error & { code: string };
   error.code = 'TYPESAFE_KEY_MISSING';
   return error;
 }
@@ -73,20 +84,10 @@ export function createProductionJevCall(feature: JevFeature): JevSystemOneCall {
   };
 }
 
-export interface JevStatus {
-  keyConfigured: boolean;
-  route: 'official' | 'openrouter' | null;
-  features: Record<JevFeature, {
-    flagOn: boolean;
-    effective: boolean;
-    degradedCount: number;
-  }>;
-}
-
-/** 诊断快照（diagnostics jevStatus）：只读，永不包含 key 材料。 */
+/** 诊断快照（diagnostics jevStatus）：只读，永不包含 key 材料。形状真源 shared/contract/jev.ts。 */
 export function getJevStatus(): JevStatus {
-  const route = resolveJevRoute();
-  const keyConfigured = route !== null;
+  const keySource = probeJevKeySource();
+  const keyConfigured = keySource === 'official' || keySource === 'openrouter';
   const features = {} as JevStatus['features'];
   for (const feature of Object.keys(JEV_FEATURE_ENV_FLAGS) as JevFeature[]) {
     const flagOn = isJevFeatureOn(feature);
@@ -96,5 +97,10 @@ export function getJevStatus(): JevStatus {
       degradedCount: degradedCounts[feature],
     };
   }
-  return { keyConfigured, route: route?.kind ?? null, features };
+  return {
+    keyConfigured,
+    route: keyConfigured ? keySource : null,
+    keySource,
+    features,
+  };
 }

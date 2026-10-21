@@ -94,6 +94,7 @@ import { type ExecutionTopology } from '../permissions';
 import { boundaryIdForRequestType } from './permissionBoundaryMapping';
 import { connectorWritePermissionRequest, findConnectorTokenWrite } from './connectorTokenWrite';
 import { evaluateGuardFabricGate } from './guardFabricGate';
+import { getPolicyEngine } from '../permissions/policyEngine';
 import { classifyShellDesktopAutomation } from '../permissions/shellDesktopAutomation';
 import { resolveFileTargetKind } from '../permissions/fileTargetKind';
 import { completeArtifactLocatorGuardedWrite } from './artifacts/artifactLocatorHost';
@@ -133,6 +134,10 @@ import type { SkillDiscoveryService } from '../services/skills/skillDiscoverySer
 import type { TelemetryCollector } from '../telemetry/telemetryCollector';
 
 const logger = createLogger('ToolExecutor');
+
+// 规则 matcher.tool 是精确比较：Bash(...) 命令规则只认 'Bash'，用户手写的小写裸
+// 'bash' 规则认 'bash'。两种拼写各评一次，deny 任一命中即拒。
+const BASH_RULE_TOOL_SPELLINGS = ['Bash', 'bash'] as const;
 
 function sandboxAuditMetadata(
   metadata: Record<string, unknown> | undefined,
@@ -1634,6 +1639,40 @@ export class ToolExecutor {
     // force 进审批链；app action 要挡 skill 预授权绕过按应用卡），与
     // readArgumentForcesClassification 同位且同样从 isPreApproved 排除。
     const cuaAppGrantForcesClassification = cuaToolNeedsAppGrant(executionToolName);
+
+    // N-PERMRULES-LOCAL-OWNER r1：用户级 deny 规则（settings permissions.deny）先于全部
+    // 自动放行捷径（skill 预授权 / exec-policy allow / 已知安全命令 / lenient）与 ask
+    // 分类链硬拒。已知安全命令不得越过用户显式 deny；非已知安全命令同样在此硬拒，
+    // 不降级成可批的 ask。r4 返修：只认 matchedRule 本身是 user-deny（同 guardFabricGate
+    // 的 evaluateUserDeny）——plan/dontAsk 等严格档下 PolicyEngine 会把命中的 user-allow
+    // 改写成 action=deny（模式覆盖，result.action 不可信），那是模式的事、由后续主链按
+    // 真实 level 判，不能当成「你的拒绝规则」硬拒。user allow 不产生新的放行捷径
+    // （内置/platform deny 命中时 matchedRule 非 user-deny- 前缀，deny>ask>allow 优先级
+    // 天然兜底），ask 维持原分类链。
+    if (isBashToolName(policyToolName) && typeof params.command === 'string' && params.command) {
+      for (const ruleToolSpelling of BASH_RULE_TOOL_SPELLINGS) {
+        const matchedUserRule = getPolicyEngine().evaluate({
+          tool: ruleToolSpelling,
+          level: 'execute',
+          description: `tool: ${ruleToolSpelling}`,
+          command: params.command,
+          sessionId: effectiveSessionId,
+        }, resolveEffectivePolicyRules(effectiveSessionId)).matchedRule;
+        if (matchedUserRule?.id.startsWith('user-deny-') && matchedUserRule.action === 'deny') {
+          const reason = `user-config: ${matchedUserRule.name}`;
+          logger.warn('Command denied by user permission rule', {
+            tool: executionToolName,
+            command: params.command.substring(0, 80),
+            reason,
+          });
+          recordDecision(executionToolName, params, 'policy-deny', 'user-permission-rule', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
+          return {
+            success: false,
+            error: `Blocked by user permission rule: ${reason}. Do not retry or work around it; the user can adjust the rule in Settings.`,
+          };
+        }
+      }
+    }
 
     // Check permission if required
     // Skill 系统：预授权工具跳过普通权限检查（但不能跳过边界违规或 consequence hard deny）

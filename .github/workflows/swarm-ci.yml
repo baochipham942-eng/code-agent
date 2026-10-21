@@ -128,7 +128,11 @@ jobs:
   # ---------------------------------------------------------------------------
   smoke:
     name: Swarm smoke (unit + integration)
-    runs-on: ubuntu-latest
+    # 固定 ubuntu-24.04，别改回 latest：ubuntu-latest 已切 ubuntu-26.04 镜像（2026-10-18 起），
+    # Playwright 1.60 没有 ubuntu26 的 chromium 构建，playwright install 在装浏览器一步就红
+    # （2026-10-21 PR #2417 七个 job 全挂在 Install Playwright browsers，测试一步都没跑到）。
+    # 想回 latest 必须先升级 Playwright（连带视觉基线重录），单独改这里必红。
+    runs-on: ubuntu-24.04
     # 15 而非 10：主链路子集 ~200s + 新增的 playwright 浏览器安装 ~1-2min，
     # 原上限对满载 runner 已经偏紧（实测单轮跑到失败就用了 5m25s）。
     # 35 而非 25：主链路子集已涨到 1813 文件 / 1.5w 例、单测步 ~13min，整job在 main 实测
@@ -356,7 +360,8 @@ jobs:
   # ---------------------------------------------------------------------------
   unit:
     name: Unit + renderer vitest (shard ${{ matrix.shard }}/4)
-    runs-on: ubuntu-latest
+    # 固定 ubuntu-24.04：Playwright 1.60 无 ubuntu26 构建，原因见 smoke job 注释。
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -432,7 +437,8 @@ jobs:
     # 2026-09-05 去掉 `needs: smoke`：full 不复用 smoke 的任何产物（自己 checkout、自己
     # npm ci、自己再跑一遍 smoke suite），串在后面只是把它那 3min 加在 smoke 的 19min 后面。
     # 代价是 smoke 注定要红的 PR 也会白跑一轮 e2e——公有仓 runner 免费，换 3min wall clock 值。
-    runs-on: ubuntu-latest
+    # 固定 ubuntu-24.04：Playwright 1.60 无 ubuntu26 构建，原因见 smoke job 注释。
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     outputs:
       status: ${{ steps.result.outputs.status }}
@@ -547,7 +553,8 @@ jobs:
   perf-journey-ratchet:
     name: Perf journey ratchet (post-merge)
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    # 固定 ubuntu-24.04：Playwright 1.60 无 ubuntu26 构建，原因见 smoke job 注释。
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Checkout

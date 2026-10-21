@@ -1,9 +1,9 @@
 // ============================================================================
-// pythonEnvAssetRow - 「本机功能」python-env 行的展示态映射（N-PY-RUNTIME-K2）
+// pythonEnvAssetRow - 「本机功能」可下载运行资产行的展示态映射（Python + LibreOffice）
 //
 // asset.state 只表达 installed/missing/unsupported；安装中与失败态来自
 // preparation（K1 状态机经 withPythonEnvStatus 附在 IPC 状态上）。映射集中在
-// 这个纯函数里，不进 UpdateSettings.tsx（god-file 限行）。非 python 资产返回
+// 这个纯函数里，不进 UpdateSettings.tsx（god-file 限行）。非托管运行资产返回
 // null，落回通用渲染路径。
 // ============================================================================
 
@@ -22,6 +22,11 @@ const FAILURE_CODE_KEYS: Record<string, keyof UpdateSettingsText['runtimeAssets'
   PYTHON_RUNTIME_OFFLINE: 'offline',
   PYTHON_RUNTIME_INSTALL_FAILED: 'installFailed',
   PYTHON_RUNTIME_UNSUPPORTED: 'unsupported',
+  LIBREOFFICE_RUNTIME_OFFLINE: 'libreOfficeOffline',
+  LIBREOFFICE_RUNTIME_CHECKSUM_MISMATCH: 'libreOfficeInstallFailed',
+  LIBREOFFICE_RUNTIME_INSTALL_FAILED: 'libreOfficeInstallFailed',
+  LIBREOFFICE_RUNTIME_UNSUPPORTED: 'libreOfficeUnsupported',
+  LIBREOFFICE_RUNTIME_FALLBACK: 'libreOfficeFallback',
 };
 
 /**
@@ -43,12 +48,13 @@ export interface PythonEnvAssetRowDisplay {
   action: 'hide' | 'retry' | 'default';
 }
 
-export function getPythonEnvAssetRowDisplay(
+function getRuntimeAssetRowDisplay(
   asset: Pick<RuntimeAssetStatusEntry, 'id' | 'label' | 'state'>,
   preparation: RuntimeAssetPreparationStatus | null,
   text: UpdateSettingsText['runtimeAssets'] = DEFAULT_RUNTIME_ASSETS_TEXT,
 ): PythonEnvAssetRowDisplay | null {
-  if (getRuntimeAssetDisplayKind(asset) !== 'pythonEnv') return null;
+  const kind = getRuntimeAssetDisplayKind(asset);
+  if (kind !== 'pythonEnv' && kind !== 'libreOffice') return null;
 
   if (preparation?.phase === 'installing') {
     const percent = preparation.percent !== undefined ? Math.round(preparation.percent) : null;
@@ -64,8 +70,8 @@ export function getPythonEnvAssetRowDisplay(
       statusText: text.status.installFailed,
       tone: 'text-badge-warning bg-amber-500/10 border-badge-warning/30',
       failure: {
-        reasonText: text.failureReasons[reasonKey ?? 'fallback'],
-        detail: preparation.error ?? text.failureReasons.fallback,
+        reasonText: text.failureReasons[reasonKey ?? (kind === 'libreOffice' ? 'libreOfficeFallback' : 'fallback')],
+        detail: preparation.error ?? text.failureReasons[kind === 'libreOffice' ? 'libreOfficeFallback' : 'fallback'],
         logPath: preparation.logPath,
       },
       action: 'retry',
@@ -91,3 +97,6 @@ export function getPythonEnvAssetRowDisplay(
     action: 'default',
   };
 }
+
+/** Existing imports keep this name; the mapper now covers both managed assets. */
+export const getPythonEnvAssetRowDisplay = getRuntimeAssetRowDisplay;

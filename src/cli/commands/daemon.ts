@@ -17,6 +17,7 @@ import {
   readDaemonPidFileState,
   readDaemonPidRecord,
 } from '../../host/services/daemon/daemonLock';
+import { formatDaemonStayStatus, readDaemonStateFile } from '../../host/services/daemon/daemonStateFile';
 import type { ActiveRunRosterEntry } from '../../host/services/core/repositories/DurableRunRepository';
 import { WEB_DAEMON } from '../../shared/constants/webServer';
 
@@ -43,6 +44,13 @@ async function loadActiveRunRoster(): Promise<ActiveRunRosterEntry[]> {
   }
 }
 
+/** pid 行下方的留守原因行（ADR-083 append 2026-10-18）。只有 owned 时调用；
+ * 状态文件 pid 不吻合/读不出 = 陈旧残留，按「无留守原因」口径打印。 */
+function printDaemonStayStatus(dataDir: string, record: { pid: number }): void {
+  const state = readDaemonStateFile(dataDir);
+  write(formatDaemonStayStatus(state !== null && state.pid === record.pid ? state : null));
+}
+
 function printDaemonPidState(): void {
   // win32：锁整个不生效（无进程身份源），别对着永远 unknown 的 pid 文件谎称 not running。
   if (!isDaemonLockSupported()) {
@@ -67,6 +75,7 @@ function printDaemonPidState(): void {
   const state = inspectDaemonPid(record);
   if (state === 'owned') {
     write(`Daemon: running (pid ${record.pid})`);
+    printDaemonStayStatus(dataDir, record);
   } else if (state === 'dead') {
     write(`Daemon: not running (stale pid file, pid ${record.pid})`);
   } else if (state === 'foreign') {

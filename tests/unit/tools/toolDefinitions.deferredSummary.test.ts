@@ -3,13 +3,24 @@
 // 验收：接入 ≥2 个 MCP server 后，系统提示词中 MCP 工具只有名字索引，schema 按需加载
 // ============================================================================
 
-import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { getDeferredToolsSummary } from '../../../src/host/tools/dispatch/toolDefinitions';
 import {
   getToolSearchService,
   resetToolSearchService,
 } from '../../../src/host/services/toolSearch/toolSearchService';
 import { estimateTokens } from '../../../src/host/context/tokenEstimator';
+
+// 智谱 key 状态钉死在 mock 上，测试不读真机（secure storage / legacy config / env
+// ZHIPU_API_KEY 任一来源的真 key 都不再影响分档结果）——本机绿 = CI 绿。
+// 同形封法见 toolAvailability.test.ts。
+const hoisted = vi.hoisted(() => ({
+  getApiKeyMock: vi.fn<(provider: string) => string | undefined>(),
+}));
+
+vi.mock('../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({ getApiKey: hoisted.getApiKeyMock }),
+}));
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   logger: {
@@ -41,6 +52,14 @@ vi.mock('../../../src/host/tools/protocolToolRegistration', () => ({
 describe('getDeferredToolsSummary MCP name index (GAP-008)', () => {
   beforeEach(() => {
     resetToolSearchService();
+    // 默认 keyless（CI 形）：video_generate 的 env 查找路径也一并堵死。
+    hoisted.getApiKeyMock.mockReset().mockReturnValue(undefined);
+    vi.stubEnv('ZHIPU_API_KEY', '');
+    vi.stubEnv('ZHIPU_OFFICIAL_API_KEY', '');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it('lists builtin deferred tools and no MCP groups when no server is connected', () => {
@@ -85,17 +104,26 @@ describe('getDeferredToolsSummary MCP name index (GAP-008)', () => {
     expect(getDeferredToolsSummary([], [])).toContain('Browser');
   });
 
-  it('drops descriptions before falling back to category counts', () => {
-    // 压测预算须卡在名字档与全量档之间：keyless 环境（CI）的未开启能力行带上回复语言指令
-    // （N-TOOL-UNAVAILABLE-UNLOCK-HINT-FU1）后名字档 ~606、全量档 ~2621。600 是 #2052
-    // 在能力行出现之前定的值，行按单据有意识加长后随之重校准到 700；本机配了 key 时
-    // 该行缺席、名字档更小，同一预算仍落在名字档。
+  // 压测预算须卡在名字档与全量档之间，且对 keyless（CI 形）与 keyed 两态都成立
+  // （2026-10-17 实测：名字档两态 ~604 / ~476，全量档两态均 ~2.5k+；600→700 的
+  // 重校准史见 #2495）。key 状态由文件级 configService mock 钉死，本测试不读真机。
+  it.each([
+    { keyed: false },
+    { keyed: true },
+  ])('drops descriptions before falling back to category counts (zhipu key: $keyed)', ({ keyed }) => {
+    hoisted.getApiKeyMock.mockReset().mockReturnValue(keyed ? 'sk-test-zhipu' : undefined);
+
     const summary = getDeferredToolsSummary([], undefined, 700);
 
     expect(estimateTokens(summary)).toBeLessThanOrEqual(700);
     expect(summary).toContain('[memory]');
     expect(summary).toContain('MemoryWrite');
     expect(summary).not.toContain('写入/更新/删除长期记忆文件');
+    if (keyed) {
+      expect(summary).not.toContain('are not enabled');
+    } else {
+      expect(summary).toContain('are not enabled');
+    }
   });
 
   it('appends MCP tool name index grouped by server (names only, no schema)', () => {

@@ -250,4 +250,51 @@ describe('PolicyEngine user rules', () => {
     expect(rm.action).not.toBe('allow');
     expect(rm.matchedRule?.id).not.toBe('user-allow-Bash(*)');
   });
+
+  // r2（N-PERMRULES-LOCAL-OWNER）：「保存后立即生效」对删除也要成立——loadUserRules
+  // 是「对齐」不是「追加」，不在新列表里的 user-* 规则要卸载，未变的不叠副本。
+  it('unloads rules absent from the new list: a deleted deny stops denying, a deleted allow is gone', () => {
+    const engine = freshEngine();
+    engine.loadUserRules({ deny: ['Bash(rm *)'], allow: ['Bash(git *)'] });
+    const rmRequest = { tool: 'Bash', level: 'execute' as const, description: 'rm x', command: 'rm x' };
+    expect(engine.evaluate(rmRequest).action).toBe('deny');
+
+    // 用户在 UI 删掉 deny 规则保存（allow 保留）。
+    engine.loadUserRules({ allow: ['Bash(git *)'] });
+
+    const ids = engine.getRules().map((rule) => rule.id);
+    expect(ids).not.toContain('user-deny-Bash(rm *)');
+    expect(ids).toContain('user-allow-Bash(git *)');
+    expect(engine.evaluate(rmRequest).action).not.toBe('deny');
+    expect(engine.evaluate(rmRequest).matchedRule?.id).not.toBe('user-deny-Bash(rm *)');
+  });
+
+  it('clearing the whole table unloads every user rule', () => {
+    const engine = freshEngine();
+    engine.loadUserRules({ deny: ['Bash(rm *)'], ask: ['Bash(npm *)'], allow: ['Read(*)'] });
+    engine.loadUserRules({});
+    expect(engine.getRules().some((rule) => rule.id.startsWith('user-'))).toBe(false);
+  });
+
+  it('re-loading the same table does not stack duplicate copies', () => {
+    const engine = freshEngine();
+    engine.loadUserRules({ deny: ['Bash(rm *)'] });
+    engine.loadUserRules({ deny: ['Bash(rm *)'] });
+    expect(engine.getRules().filter((rule) => rule.id === 'user-deny-Bash(rm *)')).toHaveLength(1);
+  });
+
+  it('leaves manually added plugin/hook rules alone', () => {
+    const engine = freshEngine();
+    engine.addRule({
+      id: 'plugin-allow-curl',
+      name: 'plugin allow curl',
+      priority: 500,
+      matcher: { tool: 'Bash' },
+      action: 'allow',
+      overridable: true,
+      audit: false,
+    });
+    engine.loadUserRules({ deny: ['Bash(rm *)'] });
+    expect(engine.getRules().some((rule) => rule.id === 'plugin-allow-curl')).toBe(true);
+  });
 });

@@ -199,6 +199,8 @@ const permissionRequestSchema = typed<PermissionRequest>(z.object({
       code: z.string(),
       exception: z.string().optional(),
     }).optional(),
+    deniedPath: z.string().optional(),
+    action: z.string().optional(),
   }),
   reason: z.string().optional(),
   reasonCode: z.string().optional(),

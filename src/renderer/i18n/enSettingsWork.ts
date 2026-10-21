@@ -1,7 +1,5 @@
-// ============================================================================
 // Settings namespace translations (en/Work) — 纯平移拆分（债务门）
-// ============================================================================
-
+import { permissionGrantsEn } from './permissionGrants';
 export const enSettingsWork = {
     workspace: {
       description: 'Manage the current working directory, recent directories, local bridge status, and default browser-tool behavior.',
@@ -282,6 +280,9 @@ export const enSettingsWork = {
         outboundTargetsPlaceholder: 'Separate conversation IDs with commas, e.g. oc_abc123def',
         outboundTargetsHint: 'This is the outbound allowlist. Leaving it blank blocks all outgoing messages; only listed conversations can receive results.',
         configTipsTitle: 'Configuration tips:',
+        permissionChecklistTitle: 'Permission checklist',
+        groupListenPermission: 'Read all messages in groups (im:message.group_msg): only needed for group listening without @mentions. This sensitive permission requires tenant administrator approval and a published app version.',
+        groupListenPermissionPath: 'Feishu Open Platform → App → Permission Management → Search for this permission → Request it and publish a version',
         larkLocalWebhookPrefix: 'Local Webhook URL after connection: ',
         ngrokPrefix: 'Expose publicly with ngrok: ',
         callbackUrlPrefix: 'Enter the ngrok URL in ',
@@ -296,9 +297,11 @@ export const enSettingsWork = {
         allowedUserIdsLabel: 'Allowlisted user IDs (optional)',
         allowedUserIdsPlaceholder: 'Comma-separated; blank = strangers get guest access (read-only tools), groups need @ or a reply',
         groupAccessModeLabel: 'Group access mode',
-        groupAccessModeAllowlist: 'Allowlist (default) — groups trigger only on @ or a reply to the bot',
-        groupAccessModeAllMembers: 'All members — everyone in the group reaches the bot as a guest, no @ needed',
-        groupAccessModeHint: 'Guests get read-only tools; allowlisted users are unaffected',
+        groupAccessModeAllowlist: 'Reply only when @-mentioned in groups (default)',
+        groupAccessModeAllMembers: 'Reply to every group message (as guest)',
+        groupAccessModeHint: 'Guests only get read-only tools. Who counts as trusted is set separately in the allowlisted user IDs field above.',
+        groupAccessModePrivacyPrerequisite: 'Turn off the bot\'s privacy mode in Telegram first. After connecting, this page will tell you whether it is working.',
+        telegramPrivacyModeWarning: 'Unmentioned group messages still do not arrive: Telegram leaves bot privacy mode on by default. Open @BotFather, send /setprivacy, choose this bot, and choose Disable. Remove the bot from the group and add it back, then disconnect and connect here to re-check. Or make the bot a group admin; if it is already a group admin, ignore this hint.',
         telegramTipSearchPrefix: 'Search ',
         telegramTipSearchSuffix: ' in Telegram to create a Bot',
         telegramTipNewBotPrefix: 'Send ',
@@ -463,6 +466,12 @@ export const enSettingsWork = {
         memoriesTitleSuffix: ')',
         memoriesDescription: 'Professional knowledge this role has accumulated across projects. Deleted memories are no longer referenced by instances.',
         memoriesEmpty: 'No memories yet - the role will save them after it completes work',
+        memoriesExport: 'Export all',
+        memoriesExportEmptyHint: 'No memories to export yet',
+        memoriesExportDone: 'Exported to {path}',
+        memoriesExportFailed: 'Export failed: {message}',
+        memoriesRevealFolder: 'Show in Finder',
+        memoriesRevealFolderFailed: 'Could not open the folder: {message}',
         historyTitle: 'Work history',
         historyDescription: 'Artifacts this role has contributed to, oldest to newest.',
         historyEmpty: 'No work history yet',
@@ -608,6 +617,14 @@ export const enSettingsWork = {
         loadFailed: 'Failed to load unified memory',
         updateSuccess: 'Memory updated',
         updateFailed: 'Update failed',
+        injectionPaused: {
+          badge: 'Auto-include paused',
+          neverUsed: 'This memory was never used, so since {date} it is no longer added to conversations automatically. It is still saved and can be searched and read.',
+          staleUsed: 'This memory has not been used for a long time, so since {date} it is no longer added to conversations automatically. It is still saved and can be searched and read.',
+          resume: 'Resume auto-include',
+          resumeSuccess: 'Resumed. Future conversations will include this memory again.',
+          resumeFailed: 'Resume failed',
+        },
         deleteSuccess: 'Memory deleted',
         deleteFailed: 'Delete failed',
         statusLabels: {
@@ -823,6 +840,7 @@ export const enSettingsWork = {
     privacy: {
       webDescription: 'The local PII guard redacts named entities such as names, addresses, and medical IDs before collaboration content goes to a cloud LLM.',
       pageDescription: 'Overview of permissions and data boundaries. Local-first by default; cloud paths, channel credentials, and diagnostic packages are shown separately.',
+      permissionGrants: permissionGrantsEn,
       setupState: {
         idle: 'Not enabled',
         running: 'Installing...',

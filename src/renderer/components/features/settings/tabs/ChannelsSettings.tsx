@@ -38,6 +38,7 @@ import ipcService from '../../../../services/ipcService';
 import { useI18n } from '../../../../hooks/useI18n';
 import { zh } from '../../../../i18n/zh';
 import { CompanionSection } from '../sections/CompanionSection';
+import { TelegramGroupAccessPrerequisite, TelegramPrivacyModeHint } from './TelegramPrivacyModeHint';
 
 const logger = createLogger('ChannelsSettings');
 
@@ -468,6 +469,15 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                 />
                 <p className="mt-1 text-xs text-badge-warning">{channelText.modal.outboundTargetsHint}</p>
               </div>
+              {type === 'feishu' && (
+                <section className="space-y-1 rounded-lg border border-zinc-700 p-3" aria-label={channelText.modal.permissionChecklistTitle}>
+                  <h4 className="text-sm text-zinc-300">{channelText.modal.permissionChecklistTitle}</h4>
+                  <ul className="list-inside list-disc text-xs text-zinc-400">
+                    <li>{channelText.modal.groupListenPermission}</li>
+                  </ul>
+                  <p className="text-xs text-zinc-400">{channelText.modal.groupListenPermissionPath}</p>
+                </section>
+              )}
               {!useWebSocket && (
                 <>
                   <div>
@@ -585,6 +595,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
                   </select>
                 </label>
                 <p className="text-xs text-zinc-500 mt-1">{channelText.modal.groupAccessModeHint}</p>
+                <TelegramGroupAccessPrerequisite mode={tgGroupAccessMode} />
               </div>
               <div className="p-3 bg-zinc-800 rounded-lg border border-zinc-700">
                 <p className="text-xs text-zinc-400">
@@ -937,6 +948,7 @@ export const ChannelsSettings: React.FC = () => {
                           {channelText.modal.approvalCardSecurityWarning}
                         </div>
                       )}
+                      <TelegramPrivacyModeHint account={account} />
                     </div>
 
                     <div className="min-w-0 text-xs text-zinc-400">

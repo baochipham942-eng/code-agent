@@ -4,7 +4,9 @@ import {
   buildSkillInvocationContext,
   getSkillInvocationAliases,
   resolveSkillInvocationFromSkills,
+  retainSkillInvocationForTurn,
 } from '../../../../src/host/services/skills/skillInvocationResolver';
+import { chatTranscriptEn, chatTranscriptZh } from '../../../../src/renderer/i18n/chatTranscript';
 import { BUILTIN_SKILLS } from '../../../../src/host/services/skills/builtinSkills';
 
 function skill(overrides: Partial<ParsedSkill> & Pick<ParsedSkill, 'name' | 'description'>): ParsedSkill {
@@ -284,6 +286,67 @@ describe('skillInvocationResolver', () => {
     expect(resolveSkillInvocationFromSkills('把 page 参数改一下', [shortAlias])?.skill.name).toBe(
       'short-alias-tool',
     );
+  });
+
+  // 常设刷新真跑：prompt 里的目标路径 status.docx 被当成名为 docx 的 skill 别名。
+  // 命中后 allowed-tools 边界把 DocEdit 挡成人工审批，无人值守停车 24h，版本不落盘。
+  it('a file extension is not a latin alias match', () => {
+    const docx = skill({
+      name: 'docx',
+      description: 'Generate and manipulate Word documents. Use when the user asks to generate docx.',
+    });
+    const prompt = 'Write the updated result back to the SAME file at "/tmp/workspace/status.docx", overwriting it in place.';
+
+    expect(resolveSkillInvocationFromSkills(prompt, [docx])).toBeNull();
+    expect(resolveSkillInvocationFromSkills('请用 docx 生成一份项目状态报告', [docx])?.skill.name).toBe('docx');
+    expect(resolveSkillInvocationFromSkills('/docx /tmp/workspace/status.docx', [docx])?.matchKind).toBe('slash');
+  });
+
+  // N-HOME-STARTER-CARDS-FILES-FU2：单轮 Office 文件交付轮丢弃裸词别名注入。
+  // 起始卡片提示词只以 `.docx`/`.xlsx` 扩展名点出交付物——合入 main（aaa02413f）
+  // 后拉丁别名按词边界匹配且点算词内字符，这类提示词从源头就不产生 skill 注入；
+  // 但「请用 docx …」这种裸词点名仍会命中技能名别名，注入后 allowed-tools 边界
+  // （含 Bash）会把本轮从 docx_generate 原生直达挤去脚本工作流。
+  it('裸词别名在单轮文件交付轮被围栏丢弃，非交付轮与显式 /docx 保留', () => {
+    const docx = skill({
+      name: 'docx',
+      description: 'Word 文档 AI 助手 — 读取、编辑、生成、审阅 DOCX 文件',
+      allowedTools: ['Bash', 'Read', 'docx_generate'],
+    });
+    const xlsx = skill({
+      name: 'xlsx',
+      description: 'Excel AI 助手 — 读取、清洗、分析、生成 Excel 数据',
+      allowedTools: ['Bash', 'Read', 'excel_generate'],
+    });
+
+    // 起始卡片真实提示词：只含扩展名点出的交付物，main 上本来就不命中。
+    expect(resolveSkillInvocationFromSkills(
+      chatTranscriptZh.chat.suggestions.weeklyReport.prompt,
+      [docx],
+    )).toBeNull();
+    expect(resolveSkillInvocationFromSkills(
+      chatTranscriptEn.chat.suggestions.sheetAnalysis.prompt,
+      [xlsx],
+    )).toBeNull();
+
+    // (a) 裸词别名命中 + 文件交付轮 → 围栏丢弃
+    const bareWord = resolveSkillInvocationFromSkills(
+      '请用 docx 排版这份周报，交付 .docx 文件',
+      [docx],
+    );
+    expect(bareWord?.matchKind).toBe('alias');
+    expect(bareWord?.skill.name).toBe('docx');
+    expect(retainSkillInvocationForTurn(bareWord, true)).toBeNull();
+
+    // (b) 同一命中 + 非交付轮 → 保留
+    expect(retainSkillInvocationForTurn(bareWord, false)?.skill.name).toBe('docx');
+
+    // (c) 显式 /docx 斜杠调用 → 文件交付轮也保留
+    const slash = resolveSkillInvocationFromSkills('/docx 生成一份周报', [docx]);
+    expect(slash?.matchKind).toBe('slash');
+    expect(retainSkillInvocationForTurn(slash, true)?.skill.name).toBe('docx');
+
+    expect(retainSkillInvocationForTurn(null, true)).toBeNull();
   });
 
   // N-L8-ATT10 回归护栏：真机语音派活说「读取…」时命中了用户级 skill lark-markdown，

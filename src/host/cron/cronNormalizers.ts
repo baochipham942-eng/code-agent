@@ -12,9 +12,9 @@ import type {
   CronJobAction,
   CronExecutionTrigger,
 } from '../../shared/contract/cron';
-import { CRON_GUARDRAILS, CRON_EVENT_TRIGGER, CRON_URGENCY_CRITERIA } from '../../shared/constants';
-import { parseCronRunDigest, type CronRunDigest } from '../../shared/cronRunDigest';
-import { parseUrgencyHeader } from '../../shared/cronUrgency';
+import { CRON_GUARDRAILS, CRON_EVENT_TRIGGER, CRON_URGENCY_CRITERIA, EXTERNAL_WATCH } from '../../shared/constants';
+import { extractCronAlertText, parseCronRunDigest, type CronRunDigest } from '../../shared/cronRunDigest';
+import { declaresCronUrgencyQuiet, parseUrgencyHeader } from '../../shared/cronUrgency';
 import type { CronUrgency } from '../../shared/contract/sessionAutomation';
 
 export interface CronAgentActionResult {
@@ -27,6 +27,55 @@ export interface CronAgentActionResult {
   urgency?: CronUrgency;
   /** 头部行存在但值不合法时的整行原文（归 fyi 时保留给用户看）。 */
   urgencyRaw?: string;
+  /**
+   * notifyWhen 判据未满足的安静成功轮（N-CRON-RESTATE-HUMAN-WHEN）：跳过完成
+   * 系统通知与通道推送。与 skipped 不同——执行仍 completed、仍进历史与待过目
+   * 收件箱，只是不打扰。只在成功路径打上；失败通知永不受它约束。
+   */
+  notifySuppressed?: boolean;
+  /**
+   * notifyWhen 满足轮从 <cron_alert> 提取的一句话原因（N-CRON-RESTATE-HUMAN-WHEN-FU1）：
+   * 完成系统通知正文用它替代通用「定时任务已完成」，让被打断的用户直接看到为何而通知。
+   * 只在判据设置、非安静轮且提取非空时打上；空 <cron_alert></cron_alert> 不落键，
+   * 通知回落通用文案（永不空正文）。无 notifyWhen 的任务（含 external-watch）恒无此键。
+   */
+  alertReason?: string;
+}
+
+/** 执行结果是否带「notifyWhen 未满足」的安静标记（通知门用，见 cronFailurePolicy）。 */
+export function isNotifySuppressedResult(value: unknown): boolean {
+  return isCronAgentActionResult(value) && value.notifySuppressed === true;
+}
+
+/** 读 notifyWhen 满足轮的一句话原因（完成通知正文用）；非 agent 形状或没有时为 undefined。 */
+export function readCronAlertReason(value: unknown): string | undefined {
+  if (!isCronAgentActionResult(value)) return undefined;
+  const reason = typeof value.alertReason === 'string' ? value.alertReason.trim() : undefined;
+  return reason || undefined;
+}
+
+/**
+ * 成功运行是否「值得打扰」（N-CRON-RESTATE-HUMAN-WHEN / N-CRON-URGENCY-NOTIFY，
+ * 原 cronService 内联三元收口至此）：external-watch 或 notifyWhen 任务只认最终
+ * 正文里的 <cron_alert> 标记（两者同设时 notifyWhen 语义已是全部）；仅设
+ * urgencyCriteria 的任务只认结果显式声明的 can_wait/fyi 头——must_today、
+ * 缺头、乱头都算要响（漏一条今日必办比多弹一次代价大）；什么判据都没设的
+ * 任务恒有警报（每轮照常通知）。档位声明与 buildCronAgentActionResult 的
+ * urgency 解析同源：优先读 <cron_summary> 摘要头部，无摘要块读正文头部。
+ */
+export function cronAgentRunHasAlert(
+  action: { notifyWhen?: string; urgencyCriteria?: string },
+  run: { isExternalWatch: boolean; finalAssistantText: string },
+): boolean {
+  if (run.isExternalWatch || action.notifyWhen?.trim()) {
+    return EXTERNAL_WATCH.ALERT_TAG_PATTERN.test(run.finalAssistantText);
+  }
+  if (action.urgencyCriteria?.trim()) {
+    return !declaresCronUrgencyQuiet(
+      parseCronRunDigest(run.finalAssistantText).summary ?? run.finalAssistantText,
+    );
+  }
+  return true;
 }
 
 /**
@@ -35,14 +84,18 @@ export interface CronAgentActionResult {
  * 正文的头部（N-CRON-INBOX-URGENCY-TIER；解析逻辑在 shared/cronUrgency）。
  */
 export function buildCronAgentActionResult(
-  action: { agentType: string; prompt: string },
+  action: { agentType: string; prompt: string; notifyWhen?: string },
   result: unknown,
   sessionId: string,
   finalAssistantText: string,
   quietWatchRound: boolean,
+  notifyQuietRound = false,
 ): CronAgentActionResult & { skipped?: boolean; reason?: string } {
   const digest = parseCronRunDigest(finalAssistantText);
   const { urgency, raw: urgencyRaw } = parseUrgencyHeader(digest.summary ?? finalAssistantText);
+  const alertReason = !notifyQuietRound && action.notifyWhen?.trim()
+    ? extractCronAlertText(finalAssistantText)
+    : '';
   return {
     agentType: action.agentType,
     prompt: action.prompt,
@@ -52,6 +105,8 @@ export function buildCronAgentActionResult(
     urgency,
     ...(urgencyRaw ? { urgencyRaw } : {}),
     ...(quietWatchRound ? { skipped: true, reason: 'no_new_event' } : {}),
+    ...(notifyQuietRound ? { notifySuppressed: true } : {}),
+    ...(alertReason ? { alertReason } : {}),
   };
 }
 
@@ -185,12 +240,13 @@ export function normalizeUnknownRecord(value: unknown): Record<string, unknown> 
 }
 
 /**
- * 用户自定义紧急判据（N-CRON-MORNING-TRIAGE-URGENCY-RULE）：非字符串/空白 → undefined；
+ * 用户自定义一句话判据（urgencyCriteria N-CRON-MORNING-TRIAGE-URGENCY-RULE /
+ * notifyWhen N-CRON-RESTATE-HUMAN-WHEN，同一收口同一上限）：非字符串/空白 → undefined；
  * 超长 → 截断到 CRON_URGENCY_CRITERIA.MAX_CHARS（不拒绝整个 action——它只是
  * 提示词里的一句话修饰，为它毙掉任务归一化会让既存任务突然加载不出来）。
  * 不导出：外部经 normalizeAction 走到这里的归一化。
  */
-function normalizeUrgencyCriteria(value: unknown): string | undefined {
+function normalizeCriteriaSentence(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
   if (!trimmed) return undefined;
@@ -372,7 +428,8 @@ export function normalizeAction(value: unknown): CronJobAction | null {
         roleId: typeof value.roleId === 'string' ? value.roleId : undefined,
         libraryProjectId:
           typeof value.libraryProjectId === 'string' ? value.libraryProjectId : undefined,
-        urgencyCriteria: normalizeUrgencyCriteria(value.urgencyCriteria),
+        urgencyCriteria: normalizeCriteriaSentence(value.urgencyCriteria),
+        notifyWhen: normalizeCriteriaSentence(value.notifyWhen),
       };
     }
 

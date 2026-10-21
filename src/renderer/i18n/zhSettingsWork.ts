@@ -1,9 +1,6 @@
-// ============================================================================
-
 import { outcomeWordsZh } from './outcomeWords';
+import { permissionGrantsZh } from './permissionGrants';
 // Settings namespace translations (zh/Work) — 纯平移拆分（债务门）
-// ============================================================================
-
 export const zhSettingsWork = {
     workspace: {
       description: '管理当前工作目录、最近打开的目录、本地桥状态，以及浏览器工具的默认行为。',
@@ -284,6 +281,9 @@ export const zhSettingsWork = {
         outboundTargetsPlaceholder: '多个会话 ID 用逗号分隔，例如 oc_abc123def',
         outboundTargetsHint: '这是出站白名单。不填写就不能发送任何消息；只有列表里的会话可以收到结果。',
         configTipsTitle: '配置提示：',
+        permissionChecklistTitle: '权限清单',
+        groupListenPermission: '获取群组中所有消息（im:message.group_msg）：仅在无需 @ 的群监听中需要。这是敏感权限，须经租户管理员批准，并发布应用版本后生效。',
+        groupListenPermissionPath: '飞书开放平台 → 应用 → 权限管理 → 搜索该权限 → 申请并发布版本',
         larkLocalWebhookPrefix: '连接后本地 Webhook 地址：',
         ngrokPrefix: '使用 ngrok 暴露公网：',
         callbackUrlPrefix: '将 ngrok URL 填入',
@@ -298,9 +298,11 @@ export const zhSettingsWork = {
         allowedUserIdsLabel: '白名单用户 ID (可选)',
         allowedUserIdsPlaceholder: '逗号分隔；留空=陌生人仅访客档（只读工具），群内需 @ 或回复 Bot',
         groupAccessModeLabel: '群准入档',
-        groupAccessModeAllowlist: '白名单档（默认）— 群里需 @ 或回复 Bot 才触发',
-        groupAccessModeAllMembers: '全体成员档 — 群成员无需 @，以访客身份触发',
-        groupAccessModeHint: '访客档只能用只读工具；白名单内的用户不受此限',
+        groupAccessModeAllowlist: '群里需 @ 才回应（默认）',
+        groupAccessModeAllMembers: '群里所有消息都回应（访客身份）',
+        groupAccessModeHint: '访客只能用只读工具；哪些人算信任用户，在上面的「白名单用户 ID」里单独设置',
+        groupAccessModePrivacyPrerequisite: '需要先在 Telegram 里关闭机器人的隐私模式，连接后这里会告诉你是否已生效。',
+        telegramPrivacyModeWarning: '群里还收不到未 @ 的消息：Telegram 默认开着机器人隐私模式。去 @BotFather 发 /setprivacy → 选这个机器人 → Disable，再把机器人移出群、重新拉进来，然后在这里断开再连接检查。也可以把机器人设为群管理员；已经是群管理员的话，忽略这条提示。',
         telegramTipSearchPrefix: '在 Telegram 中搜索 ',
         telegramTipSearchSuffix: ' 创建 Bot',
         telegramTipNewBotPrefix: '发送 ',
@@ -465,6 +467,12 @@ export const zhSettingsWork = {
         memoriesTitleSuffix: '）',
         memoriesDescription: '该角色跨项目积累的专业知识。删除后实例不再引用。',
         memoriesEmpty: '暂无记忆 — 角色完成工作后会自动沉淀',
+        memoriesExport: '导出全部记忆',
+        memoriesExportEmptyHint: '暂无记忆可导出',
+        memoriesExportDone: '已导出到 {path}',
+        memoriesExportFailed: '导出失败：{message}',
+        memoriesRevealFolder: '在 Finder 中显示',
+        memoriesRevealFolderFailed: '打开文件夹失败：{message}',
         historyTitle: '工作履历',
         historyDescription: '该角色参与过的产物清单（最新在后）。',
         historyEmpty: '暂无履历',
@@ -610,6 +618,14 @@ export const zhSettingsWork = {
         loadFailed: '加载统一记忆失败',
         updateSuccess: '记忆已更新',
         updateFailed: '更新失败',
+        injectionPaused: {
+          badge: '已暂停自动带上',
+          neverUsed: '这条记忆一直没被用到，{date} 起不再自动带进对话。它还在库里，搜索和读取照常可用。',
+          staleUsed: '这条记忆很久没再被用到，{date} 起不再自动带进对话。它还在库里，搜索和读取照常可用。',
+          resume: '恢复自动带上',
+          resumeSuccess: '已恢复，之后的对话会重新自动带上这条记忆',
+          resumeFailed: '恢复失败',
+        },
         deleteSuccess: '记忆已删除',
         deleteFailed: '删除失败',
         statusLabels: {
@@ -825,6 +841,7 @@ export const zhSettingsWork = {
     privacy: {
       webDescription: '本地 PII 防线，启用后协作内容进入云端 LLM 前自动脱敏命名实体（姓名/地址/医疗 ID 等）。',
       pageDescription: '权限与数据边界总览。默认本地优先；会出云端的路径、通道凭证和诊断包单独表达。',
+      permissionGrants: permissionGrantsZh,
       setupState: {
         idle: '未启用',
         running: '安装中…',

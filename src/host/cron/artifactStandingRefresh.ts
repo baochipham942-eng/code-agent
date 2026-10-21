@@ -8,6 +8,7 @@
 
 import * as fs from 'fs';
 import { createHash } from 'crypto';
+import { dirname, isAbsolute } from 'path';
 import type { CronJobDefinition } from '../../shared/contract/cron';
 import {
   findStandingRefreshJob,
@@ -180,6 +181,25 @@ export async function finishArtifactRefresh(
 }
 
 /**
+ * 常设刷新会话的工作目录。产物路径是绝对路径时用其所在目录，否则沿用 fallback
+ * （来源会话或当前焦点会话的目录，两者都没有时为 undefined）。
+ *
+ * fallback 为空时 orchestrator 落到用户主目录。主目录上的信任扫描会走进可能让
+ * readdir 永不返回的子目录，整趟停在 initializeUserHooks，inFlight 把后续 tick 挡住。
+ * 刷新只该扫产物所在目录。
+ */
+export function cronAgentWorkingDirectory(
+  definition: CronJobDefinition,
+  fallback: string | undefined,
+): string | undefined {
+  const refresh = getArtifactRefreshMetadata(definition.metadata);
+  if (!refresh || !isAbsolute(refresh.path)) return fallback;
+  const parent = dirname(refresh.path);
+  if (!parent || parent === refresh.path) return fallback;
+  return parent;
+}
+
+/**
  * getPublishInfo 的 standingRefresh 视图：扫 cron 任务里 metadata.artifactRefresh.path
  * 与给定文件路径一致的那条。cronService 经动态 import 取用，避免静态环。
  */
@@ -194,6 +214,8 @@ export async function resolveArtifactStandingRefresh(filePath: string): Promise<
     enabled: found.job.enabled,
     cadence: found.refresh.cadence,
     instruction: found.refresh.instruction,
+    // 真实调度透出（chip 按 job.schedule 展示，metadata cadence 只做旧载荷回退）
+    ...(found.job.schedule ? { schedule: found.job.schedule } : {}),
     ...(lastRunAt !== undefined ? { lastRunAt } : {}),
     ...(found.refresh.lastRefreshFailed ? { lastRefreshFailed: found.refresh.lastRefreshFailed } : {}),
   };

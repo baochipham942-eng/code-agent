@@ -33,6 +33,14 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
     error: vi.fn(),
     debug: vi.fn(),
   }),
+  // vi.importActual 拉 resolver 真模块时会连带装载 skillDiscoveryService →
+  // skillRepositoryService，它们用默认 logger 实例；mock 缺这个导出会直接抛错。
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  },
 }));
 
 vi.mock('../../../src/host/mcp/logCollector', () => ({
@@ -354,9 +362,13 @@ vi.mock('../../../src/host/services/toolSearch', () => ({
   getToolSearchService: vi.fn(),
 }));
 
+// 保留真实模块形状：conversationRuntime 还会调用 retainSkillInvocationForTurn，
+// 缺了这个 key 它就是 undefined，TypeError 被 catch 吞掉后整轮降级为 simple task。
+// 过滤逻辑本身的测试在 skillInvocationResolver.test.ts；这里默认透传，只测装配。
 vi.mock('../../../src/host/services/skills/skillInvocationResolver', () => ({
   resolveSkillInvocation: vi.fn().mockResolvedValue(null),
   buildSkillInvocationContext: vi.fn(),
+  retainSkillInvocationForTurn: vi.fn((invocation: unknown) => invocation),
 }));
 
 // N-JEV-WARDEN-MOCK：warden 规则/动作逻辑的单测在 jevWarden.test.ts（判官全 mock）；
@@ -377,6 +389,7 @@ import {
   ConversationRuntime,
   SteerRejectedError,
 } from '../../../src/host/agent/runtime/conversationRuntime';
+import { MEMORY_OFF_NOTICE } from '../../../src/shared/constants';
 import type { RuntimeContext } from '../../../src/host/agent/runtime/runtimeContext';
 import type { StructuredOutputConfig } from '../../../src/host/agent/structuredOutput';
 import { GoalModeController } from '../../../src/host/agent/goalModeController';
@@ -392,6 +405,8 @@ import {
 import {
   buildSkillInvocationContext,
   resolveSkillInvocation,
+  retainSkillInvocationForTurn,
+  type ResolvedSkillInvocation,
 } from '../../../src/host/services/skills/skillInvocationResolver';
 import { buildRecentConversationsBlock } from '../../../src/host/lightMemory/recentConversations';
 
@@ -1268,6 +1283,61 @@ describe('ConversationRuntime', () => {
       );
     });
 
+    // N-TASK-MEMORY-OFF-FU1：off 档此前只挡不告，真跑里模型把 MemoryRead 被拒误读成
+    // 「另一个数据槽」、拿工作区文件当记忆替身——这里钉注入条件与既有 trace 不回退。
+    it('injects the memory-off notice exactly once per run when memoryMode=off', async () => {
+      ctx.memoryMode = 'off';
+
+      await runtime.initializeRun('hello');
+
+      const noticeCalls = vi.mocked(modules.contextAssembly.injectSystemMessage).mock.calls
+        .filter((call: unknown[]) => call[1] === 'memory-off-notice');
+      expect(noticeCalls).toHaveLength(1);
+      expect(noticeCalls[0][0]).toBe(`<memory-off-notice>\n${MEMORY_OFF_NOTICE}\n</memory-off-notice>`);
+
+      // 既有 off trace 原样保留（disabled 标记 + 两个空权威块）
+      expect(ctx.turnQualityState.memory).toMatchObject({ mode: 'off', offReason: 'session_memory_off' });
+      expect(listMemoryInjectionTraces({ sessionId: 'test-session-1' })).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            blockType: 'user-directives',
+            trigger: 'session_memory_off',
+            injected: false,
+            source: 'session-memory-mode',
+          }),
+          expect.objectContaining({
+            blockType: 'user-memory',
+            trigger: 'session_memory_off',
+            injected: false,
+            source: 'session-memory-mode',
+          }),
+        ]),
+      );
+    });
+
+    it('re-injects the memory-off notice once per run without accumulating calls within a run', async () => {
+      ctx.memoryMode = 'off';
+
+      await runtime.initializeRun('first');
+      await runtime.initializeRun('second');
+
+      // 与 user-memory 同语义：注入块是 run 级临时消息（每 run 新 AgentLoop 重注一次、
+      // 不落库），同一次 run 内不得重复注入。
+      const noticeCalls = vi.mocked(modules.contextAssembly.injectSystemMessage).mock.calls
+        .filter((call: unknown[]) => call[1] === 'memory-off-notice');
+      expect(noticeCalls).toHaveLength(2);
+    });
+
+    it('does not inject the memory-off notice for auto or undefined memoryMode', async () => {
+      ctx.memoryMode = 'auto';
+      await runtime.initializeRun('hello');
+      ctx.memoryMode = undefined;
+      await runtime.initializeRun('hello again');
+
+      expect(vi.mocked(modules.contextAssembly.injectSystemMessage).mock.calls)
+        .not.toContainEqual([expect.anything(), 'memory-off-notice']);
+    });
+
     it('promotes explicit skill invocation into required runtime context', async () => {
       const markSemanticProgress = vi.fn();
       ctx.antiPatternDetector = { ...ctx.antiPatternDetector, markSemanticProgress } as any;
@@ -1305,6 +1375,55 @@ describe('ConversationRuntime', () => {
       });
       expect(ctx.turn.activeSkillContextBlock).toContain('required-skill-invocation');
       expect(markSemanticProgress).toHaveBeenCalledWith('skill invocation resolved: lobster');
+    });
+
+    it('drops a bare-word alias skill injection on a one-turn file-deliverable turn', async () => {
+      // 模块 mock 默认透传 retainSkillInvocationForTurn；这里换上真实现来测装配围栏。
+      // 消费侧过滤语义本身的断言在 skillInvocationResolver.test.ts。
+      const actual = await vi.importActual<
+        typeof import('../../../src/host/services/skills/skillInvocationResolver')
+      >('../../../src/host/services/skills/skillInvocationResolver');
+      const aliasInvocation: ResolvedSkillInvocation = {
+        skill: {
+          name: 'docx',
+          description: 'Word 文档 AI 助手 — 读取、编辑、生成、审阅 DOCX 文件',
+          promptContent: '',
+          basePath: '/tmp/docx',
+          allowedTools: ['Bash', 'Read', 'docx_generate'],
+          disableModelInvocation: false,
+          userInvocable: true,
+          executionContext: 'inline',
+          source: 'user',
+        },
+        matchKind: 'alias',
+        matchedText: 'docx',
+        args: '请用 docx 生成一份周报 .docx 文件，不要问我问题',
+        confidence: 0.87,
+        aliases: ['docx'],
+        reason: 'name alias matched',
+      };
+      const passthrough = vi.mocked(retainSkillInvocationForTurn).getMockImplementation();
+      vi.mocked(retainSkillInvocationForTurn).mockImplementation(actual.retainSkillInvocationForTurn);
+      vi.mocked(resolveSkillInvocation)
+        .mockResolvedValueOnce(aliasInvocation)
+        .mockResolvedValueOnce(aliasInvocation);
+      try {
+        // 文件交付轮（含 .docx + 生成动词）：围栏丢弃裸词别名注入，不装配 skill 上下文
+        await runtime.initializeRun('请用 docx 生成一份周报 .docx 文件，不要问我问题');
+        expect(buildSkillInvocationContext).not.toHaveBeenCalled();
+        expect(ctx.turn.activeSkillInvocation).toBeUndefined();
+
+        // 非交付轮：同一别名命中保留，正常装配
+        vi.mocked(buildSkillInvocationContext).mockResolvedValueOnce({
+          block: '<required-skill-invocation name="docx">...</required-skill-invocation>',
+          contextModifier: {},
+        });
+        await runtime.initializeRun('请用 docx 帮我看看这份周报的排版建议');
+        expect(buildSkillInvocationContext).toHaveBeenCalledTimes(1);
+        expect(ctx.turn.activeSkillInvocation).toMatchObject({ skillName: 'docx', matchKind: 'alias' });
+      } finally {
+        vi.mocked(retainSkillInvocationForTurn).mockImplementation(passthrough!);
+      }
     });
 
     it('restores strict role-edit skill context from a prior slash seed on follow-up turns', async () => {

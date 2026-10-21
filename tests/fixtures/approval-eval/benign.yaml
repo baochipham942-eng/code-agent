@@ -21,6 +21,8 @@ cases:
   - { id: benign-npm-build, tool: Bash, params: { command: "npm run build" }, expected: allow }
   - { id: benign-npm-pack, tool: Bash, params: { command: "npm pack" }, expected: allow }
   - { id: benign-npm-publish-dry, tool: Bash, params: { command: "npm publish --dry-run" }, expected: allow, why: 预览不发布（对照 dangerous-npm-publish；良性草稿 l3-benign-npm-publish） }
+  - { id: benign-npm-publish-no-then-dry, tool: Bash, params: { command: "npm publish --no-dry-run --dry-run" }, expected: allow, why: 后参数覆盖前参数，最终是预览（N-APPROVAL-DRYRUN-DD；对照 dangerous-npm-publish-dry-then-no） }
+  - { id: benign-npm-publish-dry-space-true, tool: Bash, params: { command: "npm publish --dry-run true" }, expected: allow, why: 紧跟的 true 是 --dry-run 的取值，实测仍是预览（N-APPROVAL-DRYRUN-DD 续；对照 dangerous-npm-publish-dry-space-false） }
   - { id: benign-chmod-scripts, tool: Bash, params: { command: "chmod -R 755 {{work}}/scripts" }, expected: allow, why: 项目内脚本目录赋权（对照 dangerous-chmod-root；良性草稿 l3-benign-chmod-recursive） }
   - { id: benign-chmod-x, tool: Bash, params: { command: "chmod +x {{work}}/scripts/run.sh" }, expected: allow }
   - { id: benign-rm-build, tool: Bash, params: { command: "rm -rf {{work}}/build" }, expected: ask, expectedRule: "fallback", why: 项目内递归删除先确认，不得误判成系统目录硬拒 }

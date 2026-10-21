@@ -2,7 +2,7 @@ import type { CanvasCamera } from './designCanvasTypes';
 
 export const CANVAS_SCALE_MIN = 0.1;
 export const CANVAS_SCALE_MAX = 5;
-export const CANVAS_SCALE_STEP = 1.05;
+const CANVAS_SCALE_STEP = 1.05;
 
 export type WheelIntent = 'pan' | 'zoom';
 
@@ -41,7 +41,7 @@ export function clampCameraScale(camera: CanvasCamera): CanvasCamera {
   return { ...camera, scale: clamp(camera.scale) };
 }
 
-export function normalizeDelta(
+function normalizeDelta(
   event: WheelLike,
   options: { linePx?: number; pagePx?: number } = {},
 ): { x: number; y: number } {
@@ -114,8 +114,4 @@ export function classifyCanvasPointerMode(event: CanvasPointerModeLike): CanvasP
   if (classifyPointerDragIntent(event) === 'pan') return 'pan';
   if (event.regionDrawing) return 'region';
   return 'selection';
-}
-
-export function dragEndCamera(camera: CanvasCamera, position: { x: number; y: number }): CanvasCamera {
-  return { ...camera, x: position.x, y: position.y };
 }

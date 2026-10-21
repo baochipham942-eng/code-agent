@@ -14,10 +14,7 @@ import { resetCuaBudget } from '../../mcp/cuaTrajectoryBudget';
 import type { SurfaceGrantSubjectV1 } from './SurfaceAccessGrantService';
 import { SurfaceAccessGrantService } from './SurfaceAccessGrantService';
 import { assertBrowserElementRefsOwned } from './BrowserElementRefFence';
-import {
-  BrowserTabLeaseService,
-  type BrowserTabLeaseSubjectV1,
-} from './BrowserTabLeaseService';
+import { BrowserTabLeaseService } from './BrowserTabLeaseService';
 import { SurfaceCapabilityRegistry } from './SurfaceCapabilityRegistry';
 import { SurfaceConversationControlService } from './SurfaceConversationControlService';
 import {
@@ -64,9 +61,15 @@ import {
 } from './surfaceComputerRuntimeHelpers';
 import { publishSurfaceContinuationEvent } from './surfaceContinuationRuntime';
 import { assertSurfaceRunOwner } from './surfaceRunOwnership';
-import { createLogger } from '../infra/logger';
-
-const surfaceOwnershipLogger = createLogger('SurfaceExecutionRuntime.ownership');
+import {
+  assertSurfaceSessionOwnershipForLog,
+  browserBindingKey,
+  browserLeaseSubjectFor,
+  computerBindingKey,
+  findBrowserSessionId,
+  findComputerSessionId,
+  subjectFor,
+} from './surfaceRuntimeHelpers';
 
 export interface SurfaceRuntimeIdentityV1 {
   conversationId: string;
@@ -186,7 +189,7 @@ export class SurfaceExecutionRuntime {
       input.provider || DEFAULT_BROWSER_PROVIDER,
       input.switchReason,
     );
-    return { session, subject: this.subjectFor(session) };
+    return { session, subject: subjectFor(session) };
   }
 
   recordBrowserObservation(
@@ -220,11 +223,11 @@ export class SurfaceExecutionRuntime {
       );
     }
     this.bindEmitter(session.sessionId, input.identity.emitSurfaceEvent);
-    const subject = this.subjectFor(session);
+    const subject = subjectFor(session);
     if (provider === RELAY_BROWSER_PROVIDER) {
       this.browserTabLeases.authorize({
         leaseId: input.leaseId || '',
-        subject: this.browserLeaseSubjectFor(session),
+        subject: browserLeaseSubjectFor(session),
         target: input.target,
         action: input.leaseAction || 'observe',
       });
@@ -243,7 +246,7 @@ export class SurfaceExecutionRuntime {
       ...(input.ttlMs !== undefined ? { ttlMs: input.ttlMs } : {}),
     });
     this.browserBindings.set(
-      this.browserBindingKey(input.identity, provider, session.sessionId, observation.stateId),
+      browserBindingKey(input.identity, provider, session.sessionId, observation.stateId),
       { provider, subject, surfaceStateId: observation.stateId },
     );
     this.events.publish(subject, {
@@ -273,7 +276,7 @@ export class SurfaceExecutionRuntime {
       || session.surface !== 'browser'
       || session.provider !== provider) return null;
     const binding = this.browserBindings.get(
-      this.browserBindingKey(
+      browserBindingKey(
         input.identity,
         provider,
         input.surfaceSessionId,
@@ -305,7 +308,7 @@ export class SurfaceExecutionRuntime {
     }
     this.assertBrowserSessionReady(session, input.operationId);
     const binding = this.browserBindings.get(
-      this.browserBindingKey(
+      browserBindingKey(
         input.identity,
         provider,
         input.surfaceSessionId,
@@ -345,7 +348,7 @@ export class SurfaceExecutionRuntime {
     if (provider === RELAY_BROWSER_PROVIDER) {
       this.browserTabLeases.authorize({
         leaseId: input.leaseId || '',
-        subject: this.browserLeaseSubjectFor(session),
+        subject: browserLeaseSubjectFor(session),
         target: observation.target,
         action: input.action,
       });
@@ -418,8 +421,8 @@ export class SurfaceExecutionRuntime {
         `cleanup:${input.leaseId}`,
       );
     }
-    const subject = this.subjectFor(session);
-    const leaseSubject = this.browserLeaseSubjectFor(session);
+    const subject = subjectFor(session);
+    const leaseSubject = browserLeaseSubjectFor(session);
     this.browserTabLeases.getOwned(input.leaseId, leaseSubject);
     return this.interrupts.registerCleanup(subject, async () => {
       const returnRequired = this.browserTabLeases.listReturnRequired(leaseSubject)
@@ -443,7 +446,7 @@ export class SurfaceExecutionRuntime {
       input.provider || 'cua-driver',
       input.switchReason,
     );
-    return { session, subject: this.subjectFor(session) };
+    return { session, subject: subjectFor(session) };
   }
 
   recordComputerInputLockLifecycle(input: {
@@ -492,7 +495,7 @@ export class SurfaceExecutionRuntime {
       );
     }
     this.bindEmitter(session.sessionId, input.identity.emitSurfaceEvent);
-    const subject = this.subjectFor(session);
+    const subject = subjectFor(session);
     const beforeSequence = this.events.listOwned(subject).at(-1)?.sequence || 0;
     const target = computerTargetFromState(input.state, input.metadata);
     const observation = this.observations.register({
@@ -519,7 +522,7 @@ export class SurfaceExecutionRuntime {
       ttlMs: Math.max(1, input.state.expiresAtMs - Date.now()),
     });
     this.computerBindings.set(
-      this.computerBindingKey(input.identity, provider, input.state.stateId),
+      computerBindingKey(input.identity, provider, input.state.stateId),
       {
         provider,
         providerStateId: input.state.stateId,
@@ -566,7 +569,7 @@ export class SurfaceExecutionRuntime {
     const provider = input.provider || 'cua-driver';
     this.assertActiveRun(input.identity);
     const binding = this.computerBindings.get(
-      this.computerBindingKey(input.identity, provider, input.providerStateId),
+      computerBindingKey(input.identity, provider, input.providerStateId),
     );
     if (!binding) {
       throw this.errorForIdentity(
@@ -655,7 +658,7 @@ export class SurfaceExecutionRuntime {
   }): { subject: SurfaceGrantSubjectV1; observation: SurfaceObservationV1 } | null {
     const provider = input.provider || 'cua-driver';
     const binding = this.computerBindings.get(
-      this.computerBindingKey(input.identity, provider, input.providerStateId),
+      computerBindingKey(input.identity, provider, input.providerStateId),
     );
     if (!binding) return null;
     const observation = this.observations.getOwned(binding.surfaceStateId, binding.subject);
@@ -762,20 +765,8 @@ export class SurfaceExecutionRuntime {
     return projectSurfaceComputerError(input, this.findComputerSessionId(input.identity, provider));
   }
 
-  // 症状 4（跨会话状态泄漏）取证探针（排查报告 §4）：现行三层过滤代码本身是干净的，
-  // 泄漏源头未定。这里不改行为、不拦截——只在 surface 会话创建入口校验
-  // identity.conversationId（= 工具上下文的 context.sessionId）非空、且与该 runId
-  // 已登记的发起会话一致，不一致/为空时打一条结构化 error 日志（带两个 ID + 调用栈），
-  // 把「下次泄漏」从看得见但复现不了，变成可取证。
   private assertSurfaceSessionOwnershipForLog(identity: SurfaceRuntimeIdentityV1): void {
-    const claimedConversationId = identity.conversationId?.trim();
-    const registeredConversationId = claimedConversationId ? this.runRegistry.get(identity.runId)?.context.sessionId : undefined;
-    if (!claimedConversationId || (registeredConversationId && registeredConversationId !== claimedConversationId)) {
-      surfaceOwnershipLogger.error(
-        claimedConversationId ? 'surface 会话归属与该 runId 登记的发起会话不一致' : 'surface 会话创建时 conversationId 为空',
-        { claimedConversationId, registeredConversationId, runId: identity.runId, agentId: identity.agentId, stack: new Error().stack },
-      );
-    }
+    assertSurfaceSessionOwnershipForLog(this.runRegistry, identity);
   }
 
   private ensureBrowserSession(
@@ -825,14 +816,14 @@ export class SurfaceExecutionRuntime {
           },
         }),
       });
-      session = this.sessions.transition(session.sessionId, this.subjectFor(session), 'running');
+      session = this.sessions.transition(session.sessionId, subjectFor(session), 'running');
       if (continuation) {
         this.bindEmitter(session.sessionId, identity.emitSurfaceEvent);
-        publishSurfaceContinuationEvent(this.events, session, this.subjectFor(session));
+        publishSurfaceContinuationEvent(this.events, session, subjectFor(session));
       }
     }
     this.bindEmitter(session.sessionId, identity.emitSurfaceEvent);
-    this.knownSubjects.set(session.sessionId, this.subjectFor(session));
+    this.knownSubjects.set(session.sessionId, subjectFor(session));
     this.switches.activate(session, identity, switchReason);
     return session;
   }
@@ -877,20 +868,16 @@ export class SurfaceExecutionRuntime {
           },
         }),
       });
-      session = this.sessions.transition(session.sessionId, this.subjectFor(session), 'running');
+      session = this.sessions.transition(session.sessionId, subjectFor(session), 'running');
       if (continuation) {
         this.bindEmitter(session.sessionId, identity.emitSurfaceEvent);
-        publishSurfaceContinuationEvent(this.events, session, this.subjectFor(session));
+        publishSurfaceContinuationEvent(this.events, session, subjectFor(session));
       }
     }
     this.bindEmitter(session.sessionId, identity.emitSurfaceEvent);
-    this.knownSubjects.set(session.sessionId, this.subjectFor(session));
+    this.knownSubjects.set(session.sessionId, subjectFor(session));
     this.switches.activate(session, identity, switchReason);
     return session;
-  }
-
-  private subjectFor(session: InteractiveSurfaceSessionV1): SurfaceGrantSubjectV1 {
-    return { sessionId: session.sessionId, runId: session.runId, agentId: session.agentId };
   }
 
   private bindEmitter(
@@ -914,41 +901,8 @@ export class SurfaceExecutionRuntime {
     });
   }
 
-  private browserBindingKey(
-    identity: SurfaceRuntimeIdentityV1,
-    provider: string,
-    surfaceSessionId: string,
-    surfaceStateId: string,
-  ): string {
-    return JSON.stringify([
-      identity.conversationId,
-      identity.runId,
-      identity.agentId,
-      provider,
-      surfaceSessionId,
-      surfaceStateId,
-    ]);
-  }
-
-  private browserLeaseSubjectFor(
-    session: InteractiveSurfaceSessionV1,
-  ): BrowserTabLeaseSubjectV1 {
-    return {
-      conversationId: session.conversationId,
-      sessionId: session.sessionId,
-      runId: session.runId,
-      agentId: session.agentId,
-    };
-  }
-
   private findBrowserSessionId(identity: SurfaceRuntimeIdentityV1, provider: string): string {
-    return this.sessions.findActive({
-      conversationId: identity.conversationId,
-      runId: identity.runId,
-      agentId: identity.agentId,
-      surface: 'browser',
-      provider,
-    })?.sessionId || 'unbound';
+    return findBrowserSessionId(this.sessions, identity, provider);
   }
 
   private browserIdentityError(
@@ -992,28 +946,8 @@ export class SurfaceExecutionRuntime {
     });
   }
 
-  private computerBindingKey(
-    identity: SurfaceRuntimeIdentityV1,
-    provider: string,
-    providerStateId: string,
-  ): string {
-    return JSON.stringify([
-      identity.conversationId,
-      identity.runId,
-      identity.agentId,
-      provider,
-      providerStateId,
-    ]);
-  }
-
   private findComputerSessionId(identity: SurfaceRuntimeIdentityV1, provider: string): string {
-    return this.sessions.findActive({
-      conversationId: identity.conversationId,
-      runId: identity.runId,
-      agentId: identity.agentId,
-      surface: 'computer',
-      provider,
-    })?.sessionId || 'unbound';
+    return findComputerSessionId(this.sessions, identity, provider);
   }
 
   private errorForIdentity(

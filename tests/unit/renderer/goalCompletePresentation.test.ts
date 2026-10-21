@@ -4,7 +4,7 @@ import {
   HostReasonCode,
 } from '../../../src/shared/contract';
 import { zh } from '../../../src/renderer/i18n/zh';
-import { classifyAgentError } from '../../../src/renderer/hooks/agent/effects/useSessionLifecycleEffects';
+import { classifyAgentError } from '../../../src/shared/utils/agentErrorClassification';
 import { projectGoalCompletePresentation } from '../../../src/renderer/utils/goalCompletePresentation';
 
 const run = {

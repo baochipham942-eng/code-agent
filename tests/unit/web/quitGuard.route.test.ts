@@ -4,6 +4,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import express from 'express';
 import { createApp, type CreateAppDeps } from '../../../src/web/app';
 import { SERVER_AUTH_TOKEN } from '../../../src/web/middleware/auth';
+import { backgroundContinueDetachArmed } from '../../../src/host/services/daemon/shellExit';
+import { getDaemonQuitIntent } from '../../../src/host/services/daemon/quitIntent';
 import { createQuitGuardRouter } from '../../../src/web/routes/quitGuard';
 import {
   getApplicationRunRegistry,
@@ -18,7 +20,6 @@ const HEALTH_KEYS = [
   'timestamp',
   'durableRunReady',
   'rendererServe',
-  'tauriBootToken',
   'build',
 ];
 
@@ -81,6 +82,63 @@ function installCronJobs(jobs: Array<{ enabled: boolean }>): ReturnType<typeof v
 }
 
 describe('createQuitGuardRouter', () => {
+  it('POST /quit-guard/detach arms background-continue so the next stdin EOF is not a quit', async () => {
+    expect(backgroundContinueDetachArmed()).toBe(false);
+    const app = express();
+    app.use('/api', createQuitGuardRouter({
+      getSnapshot: async () => ({ activeRuns: 0, armedSchedules: 0 }),
+    }));
+    const server = http.createServer(app);
+    const baseUrl = await listen(server);
+    try {
+      const response = await fetch(`${baseUrl}/api/quit-guard/detach`, { method: 'POST' });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ok: true });
+      expect(backgroundContinueDetachArmed()).toBe(true);
+      // 别名合同（ADR-083 append 2026-10-18）：detach 等价 quit-intent background
+      expect(getDaemonQuitIntent()).toBe('background');
+    } finally {
+      await close(server);
+    }
+  });
+
+  it('POST /quit-intent routes background and stop; other bodies get 400', async () => {
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createQuitGuardRouter({
+      getSnapshot: async () => ({ activeRuns: 0, armedSchedules: 0 }),
+    }));
+    const server = http.createServer(app);
+    const baseUrl = await listen(server);
+    try {
+      const post = (body: unknown) => fetch(`${baseUrl}/api/quit-intent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const background = await post({ mode: 'background' });
+      expect(background.status).toBe(200);
+      expect(await background.json()).toEqual({ ok: true, mode: 'background' });
+      expect(getDaemonQuitIntent()).toBe('background');
+      expect(backgroundContinueDetachArmed()).toBe(true);
+
+      const stop = await post({ mode: 'stop' });
+      expect(stop.status).toBe(200);
+      expect(await stop.json()).toEqual({ ok: true, mode: 'stop' });
+      expect(getDaemonQuitIntent()).toBe('stop');
+
+      for (const bad of [{ mode: 'restart' }, { mode: 42 }, {}, { intent: 'stop' }]) {
+        const response = await post(bad);
+        expect(response.status, `body ${JSON.stringify(bad)} should be rejected`).toBe(400);
+        expect(await response.json()).toEqual({ error: 'invalid-quit-intent' });
+      }
+      expect(getDaemonQuitIntent()).toBe('stop');
+    } finally {
+      await close(server);
+    }
+  });
+
   it('returns the arranged activeRuns and armedSchedules and no other keys', async () => {
     const app = express();
     app.use('/api', createQuitGuardRouter({
@@ -241,6 +299,23 @@ describe('GET /api/quit-guard on createApp', () => {
     expect(result.text).not.toContain('activeRuns');
     expect(result.text).not.toContain('armedSchedules');
     expect(Object.values(result.body).some((value) => typeof value === 'number')).toBe(false);
+  });
+
+  it('POST /api/quit-intent sits behind the same auth as quit-guard (401 without token, 200 with)', async () => {
+    const post = (authorization?: string) => fetch(`${baseUrl}/api/quit-intent`, {
+      method: 'POST',
+      headers: {
+        ...(authorization ? { Authorization: authorization } : {}),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ mode: 'stop' }),
+    });
+    const missing = await post();
+    expect(missing.status).toBe(401);
+    expect(await missing.json()).toEqual({ error: 'Missing or invalid Authorization header' });
+    const ok = await post(`Bearer ${SERVER_AUTH_TOKEN}`);
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toEqual({ ok: true, mode: 'stop' });
   });
 
   it('keeps unauthenticated GET /api/health free of quit-guard keys', async () => {

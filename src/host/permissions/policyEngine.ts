@@ -15,6 +15,7 @@ import {
 import { parseToolSpecifier, matchSpecifier, type ParsedSpecifier } from './specifierParser';
 import { validateUserPermissionRule } from '../../shared/permissionRuleSyntax';
 import { recordPolicyMutation, type PolicyMutationSource } from './policyMutationSource';
+import { normalizeToolName } from '../tools/toolNames';
 
 const logger = createLogger('PolicyEngine');
 
@@ -407,6 +408,8 @@ export class PolicyEngine {
   /**
    * Load user-defined permission rules from config (allow/deny/ask arrays).
    * Creates PolicyRules with specifier parsing from Tool(glob) syntax.
+   * 对齐语义（r2）：引擎里的 user-* 规则收敛到本次列表——删掉的规则立即卸载，
+   * 未变的规则不重复添加，所以「保存后立即生效」对新增和删除都成立。
    * @param source 变更来源（N-PERM-POLICYVERSION）：UI 保存路径传 'user-ui'（放宽立即
    * 生效），config 热重载走缺省 'external'（放宽冻结到下一个 run）。
    */
@@ -429,21 +432,44 @@ export class PolicyEngine {
       ruleEntries.push({ ruleStr: r, action: 'allow', priority: 500 });
     }
 
-    for (const entry of ruleEntries) {
-      const list = entry.action === 'allow' ? 'allow' : entry.action === 'deny' ? 'deny' : 'ask';
-      const ruleStr = entry.ruleStr.trim();
-      const verdict = validateUserPermissionRule(ruleStr, list);
-      if (!verdict.ok) {
-        logger.warn(`Skipping invalid user permission rule: ${entry.ruleStr}`, {
-          list,
-          reason: verdict.reason,
-        });
-        continue;
+    const validEntries = ruleEntries
+      .map((entry) => ({ ...entry, ruleStr: entry.ruleStr.trim() }))
+      .filter((entry) => {
+        const list = entry.action === 'allow' ? 'allow' : entry.action === 'deny' ? 'deny' : 'ask';
+        const verdict = validateUserPermissionRule(entry.ruleStr, list);
+        if (!verdict.ok) {
+          logger.warn(`Skipping invalid user permission rule: ${entry.ruleStr}`, {
+            list,
+            reason: verdict.reason,
+          });
+        }
+        return verdict.ok;
+      });
+
+    // 装载是「对齐」不是「追加」（r2）：不在新列表里的旧 user-* 规则先卸载——用户删掉
+    // 规则保存后必须立即不再生效，不能等重启。user- 前缀是本方法管理规则的 id 约定
+    // （userConfigSource 同款），插件/hook 手工 addRule 的规则不归这里动。卸载走
+    // removeRule：外部来源删 deny/prompt 对已开始的 run 仍冻结在起点（N-PERM-POLICYVERSION）。
+    const desiredIds = new Set(validEntries.map((entry) => `user-${entry.action}-${entry.ruleStr}`));
+    const presentIds = new Set<string>();
+    for (const rule of this.getRules()) {
+      if (!rule.id.startsWith('user-')) continue;
+      if (desiredIds.has(rule.id)) {
+        presentIds.add(rule.id);
+      } else {
+        this.removeRule(rule.id, source);
       }
-      const parsed = parseToolSpecifier(ruleStr);
+    }
+
+    for (const entry of validEntries) {
+      const id = `user-${entry.action}-${entry.ruleStr}`;
+      // 同 id 已在引擎里（重复保存/热重载同一张表）不叠副本、不写冗余流水。
+      if (presentIds.has(id)) continue;
+      presentIds.add(id);
+      const parsed = parseToolSpecifier(entry.ruleStr);
       const rule: PolicyRule = {
-        id: `user-${entry.action}-${ruleStr}`,
-        name: `User ${entry.action}: ${ruleStr}`,
+        id,
+        name: `User ${entry.action}: ${entry.ruleStr}`,
         priority: entry.priority,
         matcher: {
           tool: parsed.toolName,
@@ -472,7 +498,9 @@ export class PolicyEngine {
     // Tool matching
     if (matcher.tool) {
       if (typeof matcher.tool === 'string') {
-        if (request.tool !== matcher.tool) return false;
+        // 两侧都按执行器的规范名比：执行器把 Bash 规范成小写 bash，而用户在设置里写的是
+        // Bash(rm *)——按原样比永远对不上，用户拒绝规则形同虚设（N-PERM-USER-DENY-MAIN）。
+        if (normalizeToolName(request.tool) !== normalizeToolName(matcher.tool)) return false;
       } else {
         if (!matcher.tool.test(request.tool)) return false;
       }

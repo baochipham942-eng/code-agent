@@ -6,6 +6,9 @@
  * HTTP endpoint。这里的常量只管合批/限频/轮询/截断/去重的界。
  */
 export const CRON_EVENT_TRIGGER = {
+  /** 群监听自检窗口（分钟）；只观察用户主动发送的消息。 */
+  GROUP_LISTEN_CHECK_MINUTES: 2,
+  GROUP_LISTEN_CHECK_POLL_MS: 1_000,
   /** 合批窗缺省（秒）：窗内到达的事件合并成一次 run。 */
   DEFAULT_BATCH_WINDOW_SEC: 10,
   /** 合批窗上限（秒）：再大的配置也被压到这里。 */

@@ -22,6 +22,7 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 
 import { daemonCliCommand } from '../../../src/cli/commands/daemon';
+import { writeDaemonStateFile } from '../../../src/host/services/daemon/daemonStateFile';
 import { DurableRunKernel } from '../../../src/host/runtime/durableRunKernel';
 import { DurableRunRepository } from '../../../src/host/services/core/repositories/DurableRunRepository';
 import { WEB_DAEMON } from '../../../src/shared/constants/webServer';
@@ -205,6 +206,67 @@ describe('neo daemon status', () => {
       expect(io.stdout()).toContain('status=running');
       expect(io.stdout()).toContain('session=sess-1');
       expect(io.stdout()).toContain('owner=owner-alpha');
+    } finally {
+      await fake.stop();
+    }
+  });
+
+  it('身份吻合的活 pid + 状态文件有留守原因：pid 行下列出原因（ADR-083 append 2026-10-18）', async () => {
+    await seedRosterDb(false);
+    const fake = await spawnFakeDaemon();
+    try {
+      writePidRecord(dataDir, fake.pid, psLstart(fake.pid));
+      writeDaemonStateFile(dataDir, {
+        pid: fake.pid,
+        intent: 'background',
+        reasons: ['armed-schedules', 'awaiting-approval'],
+        armedSchedules: 2,
+        updatedAt: Date.now(),
+      });
+      const io = await runDaemon(['status']);
+      expect(io.stdout()).toContain(`Daemon: running (pid ${fake.pid})`);
+      expect(io.stdout()).toContain('Staying alive because: 2 armed schedules, pending approval');
+    } finally {
+      await fake.stop();
+    }
+  });
+
+  it('身份吻合的活 pid + 无留守原因（状态文件空原因）：明说壳走就退', async () => {
+    await seedRosterDb(false);
+    const fake = await spawnFakeDaemon();
+    try {
+      writePidRecord(dataDir, fake.pid, psLstart(fake.pid));
+      writeDaemonStateFile(dataDir, {
+        pid: fake.pid, intent: 'none', reasons: [], armedSchedules: 0, updatedAt: Date.now(),
+      });
+      const io = await runDaemon(['status']);
+      expect(io.stdout()).toContain(`Daemon: running (pid ${fake.pid})`);
+      expect(io.stdout()).toContain('No reason to stay alive: exits once the shell is gone');
+    } finally {
+      await fake.stop();
+    }
+  });
+
+  it('陈旧状态文件（pid 不吻合 / 读不出）按无留守原因口径打印；非 owned 不打原因行', async () => {
+    await seedRosterDb(false);
+    const fake = await spawnFakeDaemon();
+    try {
+      writePidRecord(dataDir, fake.pid, psLstart(fake.pid));
+      // pid 不吻合：上一个 daemon 的残留
+      writeDaemonStateFile(dataDir, {
+        pid: fake.pid + 1, intent: 'background', reasons: ['armed-schedules'], armedSchedules: 5, updatedAt: Date.now(),
+      });
+      const stalePid = await runDaemon(['status']);
+      expect(stalePid.stdout()).toContain(`Daemon: running (pid ${fake.pid})`);
+      expect(stalePid.stdout()).toContain('No reason to stay alive: exits once the shell is gone');
+      expect(stalePid.stdout()).not.toContain('armed schedule');
+
+      // 非 owned（陈旧死 pid 文件）：不打留守原因行
+      fs.writeFileSync(path.join(dataDir, 'daemon.pid'), '999999999');
+      const notOwned = await runDaemon(['status']);
+      expect(notOwned.stdout()).toContain('Daemon: not running');
+      expect(notOwned.stdout()).not.toContain('Staying alive because');
+      expect(notOwned.stdout()).not.toContain('No reason to stay alive');
     } finally {
       await fake.stop();
     }

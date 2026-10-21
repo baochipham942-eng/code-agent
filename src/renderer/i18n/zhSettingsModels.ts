@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { zhSkillCaution } from './zhSkillCaution';
+import { zhSkillCautionRules } from './zhSkillCautionRules';
 
 export const zhSettingsModels = {
     model: {
@@ -565,7 +566,7 @@ export const zhSettingsModels = {
         confirmFailed: '安装失败',
         alreadyInstalled: '该库已安装。如需重装，请先在「已安装」中删除原库。',
       },
-      caution: zhSkillCaution,
+      caution: { ...zhSkillCaution, ...zhSkillCautionRules },
       cards: {
         install: '安装',
         builtinSkill: '内置 Skill',

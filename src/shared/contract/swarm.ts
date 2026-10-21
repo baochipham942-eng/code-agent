@@ -328,7 +328,7 @@ export type SwarmEventType =
   | 'swarm:context:update';       // SharedContext 协作过程（发现/决策/人话状态）→ 讨论流
 
 /**
- * SharedContext 协作过程的一条变更，用于 SwarmMonitor「讨论流」渲染（P1-3）。
+ * SharedContext 协作过程的一条变更，用于协作过程「讨论流」渲染（P1-3）。
  * - `finding`：子代理产出的发现（coordinator `discovery` 事件桥接而来）
  * - `decision`：关键方案选择 / agent 分歧（子代理自报，渲染时高亮）
  * - `status`：子代理自报的一句人话状态（"Planning completed. No product code modified."）

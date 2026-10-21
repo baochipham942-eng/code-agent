@@ -40,7 +40,8 @@ type MemorySettingsText = typeof zh.settings.memory;
 type MemoryEntryCommand =
   | { action: 'memoryEntries' }
   | ({ action: 'memoryEntryUpdate' } & MemoryEntryUpdateRequest)
-  | { action: 'memoryEntryBatchReview'; entryIds: string[]; decision: 'approve' | 'reject' };
+  | { action: 'memoryEntryBatchReview'; entryIds: string[]; decision: 'approve' | 'reject' }
+  | { action: 'memoryEntryResumeInjection'; entryId: string };
 
 interface MemoryEntryCommandResponse<T> {
   success: boolean;
@@ -62,6 +63,8 @@ export interface MemoryEntryManagerRow {
   title: string;
   summary: string;
   statusLabel: string;
+  /** 已暂停自动带进对话时的徽标文案（N-MEM-EVICT-NEVER-READ） */
+  pausedLabel?: string;
   kindLabel: string;
   sourceLabel: string;
   updatedAtLabel: string;
@@ -146,6 +149,7 @@ export function buildMemoryEntryRows({
       title: entry.title,
       summary: entry.summary,
       statusLabel: getMemoryEntryStatusLabel(entry.status, labels.entries.statusLabels),
+      ...(entry.injectionPaused ? { pausedLabel: labels.entries.injectionPaused.badge } : {}),
       kindLabel: getMemoryEntryKindLabel(entry.kind, labels.entries.kindLabels),
       sourceLabel: getMemoryEntrySourceLabel(entry.source.sourceOfTruth, labels.sourceLabels),
       updatedAtLabel: formatMemoryEntryUpdatedAt(entry.updatedAt, now, labels.relativeDate, locale),
@@ -283,6 +287,23 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
   useEffect(() => {
     setDraft(selectedEntry ? createDraft(selectedEntry) : null);
   }, [selectedEntry?.id]);
+
+  const resumeInjection = async () => {
+    if (!selectedEntry) return;
+    setBusy('save');
+    const response = await invokeMemoryEntryCommand<{ resumed: boolean }>({
+      action: 'memoryEntryResumeInjection',
+      entryId: selectedEntry.id,
+    });
+    if (response.success && response.data?.resumed) {
+      setMessage({ type: 'success', text: memoryText.entries.injectionPaused.resumeSuccess });
+      await loadEntries();
+      await onChanged?.();
+    } else {
+      setMessage({ type: 'error', text: response.error || memoryText.entries.injectionPaused.resumeFailed });
+    }
+    setBusy(null);
+  };
 
   const saveDraft = async (patch: Partial<MemoryEntryDraft> = {}) => {
     if (!selectedEntry || !draft) return;
@@ -511,7 +532,12 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                           <div className="max-w-[340px] truncate text-sm font-medium text-zinc-200">{row.title}</div>
                           <div className="mt-1 max-w-[380px] truncate text-zinc-500">{row.summary || row.id}</div>
                         </td>
-                        <td className="px-3 py-3 align-top text-zinc-300">{row.statusLabel}</td>
+                        <td className="px-3 py-3 align-top text-zinc-300">
+                          {row.statusLabel}
+                          {row.pausedLabel && (
+                            <div className="mt-1 text-[11px] text-badge-warning" data-testid="memory-entry-paused-badge">{row.pausedLabel}</div>
+                          )}
+                        </td>
                         <td className="px-3 py-3 align-top text-zinc-300">{row.kindLabel}</td>
                         <td className="px-3 py-3 align-top text-zinc-400">{row.sourceLabel}</td>
                         <td className="px-3 py-3 align-top text-zinc-400">{row.updatedAtLabel}</td>
@@ -554,6 +580,26 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                     {memoryText.entries.refresh}
                   </button>
                 </div>
+
+                {selectedEntry.injectionPaused && (
+                  <div className="rounded border border-zinc-700 bg-zinc-800/60 px-3 py-2 text-xs text-zinc-300" data-testid="memory-entry-paused-notice">
+                    <div>
+                      {(selectedEntry.injectionPaused.reason === 'never_used'
+                        ? memoryText.entries.injectionPaused.neverUsed
+                        : memoryText.entries.injectionPaused.staleUsed
+                      ).replace('{date}', new Date(selectedEntry.injectionPaused.since).toLocaleDateString(localeForLanguage(language)))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={resumeInjection}
+                      disabled={busy !== null}
+                      className="mt-2 inline-flex items-center gap-1 rounded border border-zinc-600 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-700 disabled:opacity-50"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      {memoryText.entries.injectionPaused.resume}
+                    </button>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-2">
                   <label className="text-xs text-zinc-500">

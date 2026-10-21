@@ -30,6 +30,7 @@ mod native_app_icon;
 mod native_desktop;
 mod pip;
 mod quit_guard;
+mod resident_host;
 mod traffic_lights;
 
 use appshots::{
@@ -200,6 +201,8 @@ struct DesktopShellBootDiagnostics {
 #[derive(Default)]
 struct AppState {
     web_server: Mutex<Option<OwnedWebServerChild>>,
+    /// 附着到的常驻守护。没有 Child 句柄，cleanup 按 pid 发信号。
+    attached_daemon: Mutex<Option<resident_host::DaemonPidRecord>>,
 }
 
 struct OwnedWebServerChild {
@@ -261,19 +264,54 @@ impl AppState {
         });
     }
 
-    fn cleanup(&self) -> Option<DesktopShellProcessCleanup> {
-        let mut guard = self.web_server.lock().expect("web_server mutex poisoned");
+    fn store_attached_daemon(&self, record: resident_host::DaemonPidRecord) {
+        let mut guard = self
+            .attached_daemon
+            .lock()
+            .expect("attached_daemon mutex poisoned");
+        *guard = Some(record);
+    }
 
-        let mut owned = guard.take()?;
-        let (exit_reason, wait_status) = terminate_child(&mut owned.child);
+    fn cleanup(&self) -> Option<DesktopShellProcessCleanup> {
+        let spawned = self
+            .web_server
+            .lock()
+            .expect("web_server mutex poisoned")
+            .take();
+        if let Some(mut owned) = spawned {
+            let (exit_reason, wait_status) = terminate_child(&mut owned.child);
+            return Some(DesktopShellProcessCleanup {
+                owner: owned.owner.to_string(),
+                pid: owned.pid,
+                started_at: owned.started_at,
+                cleaned_at: now_millis_string(),
+                exit_reason,
+                wait_status,
+                stdin_eof_cleanup: owned.stdin_eof_cleanup,
+            });
+        }
+
+        let record = self
+            .attached_daemon
+            .lock()
+            .expect("attached_daemon mutex poisoned")
+            .take()?;
+        let exit_reason = resident_host::stop_attached_daemon(
+            &record,
+            GRACEFUL_SHUTDOWN_TIMEOUT,
+            GRACEFUL_SHUTDOWN_POLL_INTERVAL,
+        )?;
         Some(DesktopShellProcessCleanup {
-            owner: owned.owner.to_string(),
-            pid: owned.pid,
-            started_at: owned.started_at,
+            owner: "resident-daemon".to_string(),
+            pid: record.pid,
+            started_at: record
+                .start_time
+                .clone()
+                .unwrap_or_else(|| "attached".to_string()),
             cleaned_at: now_millis_string(),
             exit_reason,
-            wait_status,
-            stdin_eof_cleanup: owned.stdin_eof_cleanup,
+            wait_status: None,
+            stdin_eof_cleanup: false,
         })
     }
 }
@@ -1867,15 +1905,20 @@ fn is_server_running() -> bool {
     matches!(client.get(health_url()).send(), Ok(resp) if resp.status().as_u16() == 200)
 }
 
-fn make_boot_token() -> String {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or_default();
-    format!("tauri-{}-{now}", std::process::id())
+// Keep the nonce wire shape aligned with WEB_BOOT_CHALLENGE in shared/constants/webServer.ts.
+const BOOT_RANDOM_BYTES: usize = 32;
+const BOOT_PROOF_BYTES: usize = 32;
+
+fn make_boot_token() -> Result<String, String> {
+    use ring::rand::SecureRandom;
+    let mut bytes = [0u8; BOOT_RANDOM_BYTES];
+    ring::rand::SystemRandom::new()
+        .fill(&mut bytes)
+        .map_err(|_| "Failed to obtain boot handshake randomness".to_string())?;
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
-fn health_matches_boot_token(body: &str, expected_token: Option<&str>) -> bool {
+fn health_matches_boot_token(body: &str, expected_token: Option<&str>, nonce: &str) -> bool {
     let Some(expected_token) = expected_token else {
         return true;
     };
@@ -1884,11 +1927,23 @@ fn health_matches_boot_token(body: &str, expected_token: Option<&str>) -> bool {
         Ok(value) => value,
         Err(_) => return false,
     };
-
-    parsed
-        .get("tauriBootToken")
-        .and_then(|value| value.as_str())
-        .is_some_and(|actual| actual == expected_token)
+    let Some(proof) = parsed.get("bootProof").and_then(|value| value.as_str()) else {
+        return false;
+    };
+    if proof.len() != BOOT_PROOF_BYTES * 2
+        || !proof.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return false;
+    }
+    let mut tag = [0u8; BOOT_PROOF_BYTES];
+    for (index, byte) in tag.iter_mut().enumerate() {
+        *byte = match u8::from_str_radix(&proof[index * 2..index * 2 + 2], 16) {
+            Ok(value) => value,
+            Err(_) => return false,
+        };
+    }
+    let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, expected_token.as_bytes());
+    ring::hmac::verify(&key, nonce.as_bytes(), &tag).is_ok()
 }
 
 fn append_segments(root: &Path, segments: &[&str]) -> PathBuf {
@@ -2032,7 +2087,7 @@ fn spawn_web_server_recording(
         DesktopShellBootStage::ServerScriptResolved,
     );
 
-    let boot_token = make_boot_token();
+    let boot_token = make_boot_token()?;
     diagnostics.boot_id = Some(token_fingerprint(&boot_token));
     // Windows: 去掉 `\\?\` 前缀，否则 node 解析脚本路径崩在 lstat 'C:'（见 strip_verbatim_prefix）。
     // script_path/working_dir 来自 candidate_roots（已规整）；此处规整 node 解析另用的 resource_dir。
@@ -2138,10 +2193,12 @@ fn wait_for_healthcheck(
             Err(error) => return Err(format!("Failed to inspect web server process: {error}")),
         }
 
-        match client.get(health_url()).send() {
+        // Never reuse a challenge, including after a failed or stale-server probe.
+        let nonce = make_boot_token()?;
+        match client.get(health_url()).query(&[("bootChallenge", &nonce)]).send() {
             Ok(response) if response.status().as_u16() == 200 => {
                 let body = response.text().unwrap_or_default();
-                if health_matches_boot_token(&body, expected_boot_token) {
+                if health_matches_boot_token(&body, expected_boot_token, &nonce) {
                     return Ok(());
                 }
                 saw_boot_token_mismatch = true;
@@ -2220,8 +2277,28 @@ fn renderer_navigation_failure_message(error: &str) -> String {
 /// webServer 已死则先重新拉起。保证用户双击图标永远能得到一个窗口。
 fn recreate_main_window(app: &tauri::AppHandle) -> Result<(), String> {
     if !is_server_running() {
-        let child = start_web_server(app)?;
-        app.state::<AppState>().store_child(child);
+        // 与 setup 同一附着判定：is_server_running 偶发失败但守护活着且健康时
+        // 附着而不是 spawn——后者会经 clear_stale_web_server_port kill -9 活守护。
+        let attach_daemon = if !cfg!(debug_assertions) {
+            resident_host::decide_startup_io(real_data_dir().as_deref(), &health_url())
+        } else {
+            None
+        };
+        if let Some(record) = attach_daemon {
+            app.state::<AppState>().store_attached_daemon(record.clone());
+            let diagnostics = new_boot_diagnostics(app);
+            write_shell_event(
+                app,
+                &diagnostics,
+                "info",
+                "desktop-shell-attached-daemon",
+                "attached to resident daemon webServer (window recreate)",
+                Some(serde_json::json!({ "daemonPid": record.pid })),
+            );
+        } else {
+            let child = start_web_server(app)?;
+            app.state::<AppState>().store_child(child);
+        }
     }
 
     let url = boot_server_url()
@@ -2357,15 +2434,16 @@ fn spawn_quit_guard_flow(app: AppHandle, coordinator: Arc<quit_guard::QuitCoordi
     });
 }
 
-/// 原生退出确认框（非阻塞 show，回调在插件自己的线程上跑）。
-/// 默认按钮=取消：OkCancelCustom 第一个参数在 macOS(NSAlert) / Windows(TaskDialog)
+/// 原生退出确认框（非阻塞 show_with_result，回调在插件自己的线程上跑）。
+/// 三个按钮（N-RESIDENT-HOST-SHELL-RUST）：「取消 / 后台继续 / 停止并退出」。
+/// 默认按钮=取消：YesNoCancelCustom 第一个参数在 macOS(NSAlert) / Windows(TaskDialog)
 /// 都是默认（回车）按钮，安全动作「取消」放第一位，见 quit_guard::dialog_answer_action。
 fn show_quit_confirm_dialog(
     app: &AppHandle,
     coordinator: &Arc<quit_guard::QuitCoordinator>,
     message: &str,
 ) {
-    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult};
 
     let app = app.clone();
     let coordinator = coordinator.clone();
@@ -2373,21 +2451,51 @@ fn show_quit_confirm_dialog(
         .message(message)
         .title(quit_guard::QUIT_DIALOG_TITLE)
         .kind(MessageDialogKind::Warning)
-        .buttons(MessageDialogButtons::OkCancelCustom(
+        .buttons(MessageDialogButtons::YesNoCancelCustom(
             quit_guard::QUIT_DIALOG_CANCEL_BUTTON.to_string(),
+            quit_guard::QUIT_DIALOG_BACKGROUND_BUTTON.to_string(),
             quit_guard::QUIT_DIALOG_QUIT_BUTTON.to_string(),
         ))
-        .show(move |answer_is_first_button| {
-            match quit_guard::dialog_answer_action(answer_is_first_button) {
-                quit_guard::QuitAnswerAction::Quit => {
-                    coordinator.allow_exit();
-                    coordinator.finish();
-                    app.exit(0);
+        .show_with_result(move |result| {
+            // Custom(label) 之外（含 Esc/系统取消给的 Cancel）一律 None → 不退出
+            let custom_label = match result {
+                MessageDialogResult::Custom(label) => Some(label),
+                _ => None,
+            };
+            let plan = quit_guard::quit_exit_plan(
+                quit_guard::dialog_answer_action(custom_label.as_deref()),
+                // Windows：stdin EOF 是停机指令，退壳会关掉写端。unix 不是。
+                cfg!(not(unix)),
+            );
+            if plan.exit {
+                if plan.arm_detach {
+                    let token = resolve_server_script(&app).ok().and_then(|(_script, root)| {
+                        quit_guard::read_quit_guard_token(&root, real_data_dir().as_deref())
+                    });
+                    if !quit_guard::arm_background_continue_detach(
+                        &server_url(),
+                        token.as_deref(),
+                        quit_guard::QUIT_GUARD_TIMEOUT,
+                    ) {
+                        // 通知没落地就退壳 = Windows 上 EOF 把任务停掉。留在 app 里。
+                        eprintln!(
+                            "background-continue: daemon did not accept detach; staying in the app"
+                        );
+                        coordinator.finish();
+                        return;
+                    }
                 }
-                quit_guard::QuitAnswerAction::StayRunning => {
-                    // 取消：什么都不清理（webServer 继续跑），app 继续运行
-                    coordinator.finish();
+                // 后台继续：不清理（ExitRequested/Exit 按 plan 跳过 cleanup_server），
+                // 常驻宿主接管运行中的任务；停止并退出：照旧清理。
+                if !plan.cleanup_server {
+                    coordinator.set_background_continue();
                 }
+                coordinator.allow_exit();
+                coordinator.finish();
+                app.exit(0);
+            } else {
+                // 取消：什么都不清理（webServer 继续跑），app 继续运行
+                coordinator.finish();
             }
         });
 }
@@ -3622,22 +3730,57 @@ mod update_url_tests {
         assert!(!up_to_date.check_failed);
     }
 
+    // Same known-answer vector as health.projection.test.ts (Node createHmac).
+    const HEALTH_PROOF: &str = r#"{"status":"ok","bootProof":"2af975b031f020c4f00b0829926ff168ad4b92538516dce0ab56b0669a5a47ea"}"#;
+
+    #[test]
+    fn health_token_match_accepts_matching_proof() {
+        assert!(health_matches_boot_token(HEALTH_PROOF, Some("boot-1"), &"a".repeat(64)));
+        assert!(health_matches_boot_token(r#"{"status":"ok"}"#, None, ""));
+    }
+
     #[test]
     fn health_token_match_detects_stale_or_wrong_web_server() {
-        assert!(health_matches_boot_token(
-            r#"{"status":"ok","tauriBootToken":"boot-1"}"#,
-            Some("boot-1")
-        ));
-        assert!(!health_matches_boot_token(
-            r#"{"status":"ok","tauriBootToken":"boot-2"}"#,
-            Some("boot-1")
-        ));
-        assert!(!health_matches_boot_token(
-            r#"{"status":"ok"}"#,
-            Some("boot-1")
-        ));
-        assert!(health_matches_boot_token(r#"{"status":"ok"}"#, None));
+        assert!(!health_matches_boot_token(HEALTH_PROOF, Some("boot-2"), &"a".repeat(64)));
+        assert!(!health_matches_boot_token(HEALTH_PROOF, Some("boot-1"), &"b".repeat(64)));
+        assert!(!health_matches_boot_token(r#"{"status":"ok"}"#, Some("boot-1"), &"a".repeat(64)));
     }
+
+    #[test]
+    fn health_token_match_rejects_raw_token_echo() {
+        let token = "c".repeat(64);
+        for body in [
+            serde_json::json!({"status": "ok", "tauriBootToken": token}).to_string(),
+            serde_json::json!({"status": "ok", "bootProof": token}).to_string(),
+        ] {
+            assert!(!health_matches_boot_token(&body, Some(&token), &"a".repeat(64)));
+        }
+    }
+
+    #[test]
+    fn health_token_match_rejects_malformed_proofs() {
+        for body in [
+            "not json".to_string(),
+            r#"{"bootProof":null}"#.to_string(),
+            r#"{"bootProof":123}"#.to_string(),
+            serde_json::json!({"bootProof": "a".repeat(63)}).to_string(),
+            serde_json::json!({"bootProof": "a".repeat(65)}).to_string(),
+            serde_json::json!({"bootProof": "z".repeat(64)}).to_string(),
+            serde_json::json!({"bootProof": "é".repeat(32)}).to_string(),
+        ] {
+            assert!(!health_matches_boot_token(&body, Some("boot-1"), &"a".repeat(64)));
+        }
+    }
+
+    #[test]
+    fn boot_randomness_has_wire_shape_and_is_fresh() {
+        let first = super::make_boot_token().unwrap();
+        let second = super::make_boot_token().unwrap();
+        assert_eq!(first.len(), 64);
+        assert!(first.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)));
+        assert!(first != second);
+    }
+
 }
 
 fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
@@ -4208,6 +4351,17 @@ fn main() {
                 );
             }
 
+            // ADR-083 常驻宿主（N-RESIDENT-HOST-SHELL-RUST）：打包态在 spawn **之前**
+            // 判「附着还是新拉」。上一代「后台继续」留下的活守护（pid 记录 + 身份
+            // 吻合 + /health 200）→ Attach；判定必须先于 start_web_server_recording
+            // （也就先于其中的 clear_stale_web_server_port——那条路径对端口占用者
+            // 无差别 kill -9，活守护绝不能被它强杀）。dev 态不判，保持 dev 原行为。
+            let attach_daemon = if !cfg!(debug_assertions) {
+                resident_host::decide_startup_io(real_data_dir().as_deref(), &health_url())
+            } else {
+                None
+            };
+
             if cfg!(debug_assertions) && is_server_running() {
                 // Server already running (e.g. started by Tauri beforeDevCommand in dev mode).
                 // Release builds must not trust an arbitrary healthy localhost:8180 process:
@@ -4215,6 +4369,25 @@ fn main() {
                 println!(
                     "Web server already running on {}, skipping spawn",
                     server_url()
+                );
+                boot_diagnostics.health_matched_boot_token = None;
+                record_boot_stage(
+                    &app.handle(),
+                    &mut boot_diagnostics,
+                    DesktopShellBootStage::HealthReady,
+                );
+            } else if let Some(record) = attach_daemon {
+                // Attach：不 spawn。留下 pid，停止并退出 / 更新 / 关机 / 信号的
+                // cleanup_server 才能 SIGTERM 这个守护（进程不是这次 spawn 的，没有 Child）。
+                app.state::<AppState>()
+                    .store_attached_daemon(record.clone());
+                write_shell_event(
+                    &app.handle(),
+                    &boot_diagnostics,
+                    "info",
+                    "desktop-shell-attached-daemon",
+                    "attached to resident daemon webServer, skipping spawn",
+                    Some(serde_json::json!({ "daemonPid": record.pid })),
                 );
                 boot_diagnostics.health_matched_boot_token = None;
                 record_boot_stage(
@@ -4366,7 +4539,11 @@ fn main() {
             let restart_requested = code == Some(tauri::RESTART_EXIT_CODE);
             if restart_requested || coordinator.exit_allowed() || coordinator.current_skip().is_some()
             {
-                cleanup_server(app_handle);
+                // 「后台继续」（N-RESIDENT-HOST-SHELL-RUST）：壳退出但常驻宿主留着跑，
+                // 跳过 cleanup_server。豁免（关机/更新重启/信号）不置此标志，照旧清理。
+                if !coordinator.background_continue() {
+                    cleanup_server(app_handle);
+                }
             } else {
                 api.prevent_exit();
                 // 弹框去重：已开着 → 本次请求并入那个弹框，不重复弹也不直接退出
@@ -4379,7 +4556,14 @@ fn main() {
             }
         }
         RunEvent::Exit => {
-            cleanup_server(app_handle);
+            // 与 ExitRequested 同一判据：后台继续不清理；其余退出照旧收尸。
+            // （AppState::cleanup 是 take 语义，两次调用天然幂等。）
+            if !app_handle
+                .state::<Arc<quit_guard::QuitCoordinator>>()
+                .background_continue()
+            {
+                cleanup_server(app_handle);
+            }
         }
         // quit_app 的唯一消费点：app 菜单（⌘Q/菜单退出）与托盘退出都汇到这里，
         // 统一转 exit(0) → ExitRequested 的受守卫路径。

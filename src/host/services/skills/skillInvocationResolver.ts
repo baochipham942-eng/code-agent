@@ -93,7 +93,10 @@ function escapeRegExp(value: string): string {
 const LATIN_ALIAS_PATTERN_CACHE = new Map<string, RegExp>();
 
 // CJK 别名无天然分词边界，维持子串匹配；纯拉丁别名子串匹配会误伤标识符
-// （"page" 命中 "page_size"），改用词边界匹配，下划线/数字算作词内字符。
+// （"page" 命中 "page_size"）和文件扩展名（"docx" 命中 "status.docx"），
+// 改用词边界匹配，下划线/数字/点算作词内字符。点必须算进去：常设刷新的
+// 目标路径带 .docx，别名命中后 skill 的 allowed-tools 边界会把 DocEdit
+// 挡成人工审批，无人值守任务停车等 24h，文件不改、版本不落。
 function aliasAppearsInMessage(normalizedMessage: string, normalizedAlias: string): boolean {
   if (!normalizedAlias) return false;
   if (hasCjk(normalizedAlias)) {
@@ -101,7 +104,7 @@ function aliasAppearsInMessage(normalizedMessage: string, normalizedAlias: strin
   }
   let pattern = LATIN_ALIAS_PATTERN_CACHE.get(normalizedAlias);
   if (!pattern) {
-    pattern = new RegExp(`(?<![a-z0-9_])${escapeRegExp(normalizedAlias)}(?![a-z0-9_])`);
+    pattern = new RegExp(`(?<![a-z0-9_.])${escapeRegExp(normalizedAlias)}(?![a-z0-9_])`);
     LATIN_ALIAS_PATTERN_CACHE.set(normalizedAlias, pattern);
   }
   return pattern.test(normalizedMessage);
@@ -307,6 +310,22 @@ export function resolveSkillInvocationFromSkills(
   }
 
   return best;
+}
+
+/**
+ * 单轮 Office 文件交付不采纳裸词别名命中的 skill。
+ * 技能名 `docx` / `excel` 的词边界会咬住「请用 docx …」这类点名，
+ * 把 python-docx / openpyxl 的脚本说明灌进本轮，并给工具边界套上 Bash，
+ * 挤掉 docx_generate / excel_generate 的原生直达路径。
+ * 显式 `/docx`（slash / inline-slash）仍保留。
+ */
+export function retainSkillInvocationForTurn(
+  invocation: ResolvedSkillInvocation | null | undefined,
+  nativeFileDeliverable: boolean,
+): ResolvedSkillInvocation | null {
+  if (!invocation) return null;
+  if (nativeFileDeliverable && invocation.matchKind === 'alias') return null;
+  return invocation;
 }
 
 export async function resolveSkillInvocation(

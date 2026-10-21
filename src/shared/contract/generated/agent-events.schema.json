@@ -1183,6 +1183,15 @@
                 "read_write"
               ]
             },
+            "method": {
+              "type": "string"
+            },
+            "body": {
+              "type": "string"
+            },
+            "connectorTokenAttached": {
+              "type": "boolean"
+            },
             "preview": {
               "type": "object",
               "properties": {
@@ -1235,6 +1244,12 @@
                 "code"
               ],
               "additionalProperties": false
+            },
+            "deniedPath": {
+              "type": "string"
+            },
+            "action": {
+              "type": "string"
             }
           },
           "additionalProperties": false
@@ -1247,6 +1262,9 @@
         },
         "boundary": {
           "$ref": "#/$defs/__schema5"
+        },
+        "argsPreview": {
+          "type": "string"
         },
         "timestamp": {
           "type": "number"
@@ -1593,6 +1611,9 @@
         },
         "parentToolUseId": {
           "type": "string"
+        },
+        "terminal": {
+          "type": "boolean"
         }
       },
       "required": [

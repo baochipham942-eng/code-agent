@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type { CronJobDefinition } from '../../../src/shared/contract/cron';
 import {
   beginArtifactRefresh,
+  cronAgentWorkingDirectory,
   finishArtifactRefresh,
 } from '../../../src/host/cron/artifactStandingRefresh';
 import { listPublishedVersions } from '../../../src/host/tools/document/snapshotManager';
@@ -201,6 +202,15 @@ describe('artifactStandingRefresh host 执行段', () => {
     expect(updateJob).not.toHaveBeenCalled();
   });
 
+  it('常设刷新的会话工作目录是产物所在目录，没有刷新元数据或路径不是绝对路径时沿用回退目录', () => {
+    expect(cronAgentWorkingDirectory(refreshJob(target), '/should-not-use')).toBe(workDir);
+    expect(cronAgentWorkingDirectory(plainJob(), '/fallback')).toBe('/fallback');
+    expect(cronAgentWorkingDirectory(plainJob(), undefined)).toBeUndefined();
+    expect(cronAgentWorkingDirectory(refreshJob('status.md'), '/fallback')).toBe('/fallback');
+    const rootJob = refreshJob('/');
+    expect(cronAgentWorkingDirectory(rootJob, '/fallback')).toBe('/fallback');
+  });
+
   it('非刷新任务：begin 返回 undefined，不建快照不碰文件', async () => {
     const before = await readFile(target, 'utf-8');
     expect(beginArtifactRefresh(plainJob())).toBeUndefined();
@@ -255,6 +265,26 @@ describe('workspace getPublishInfo · standingRefresh', () => {
     const info = await getPublishInfo(undefined, { filePath: workspaceTarget });
     expect(info.standingRefresh).toMatchObject({
       jobId: 'job-3', enabled: false, lastRefreshFailed: { at: 99, reason: 'agent run failed: boom' },
+    });
+  });
+
+  // FU1：chip 要展示任务真实调度，视图必须把 job.schedule 带出去（用户在 Cron
+  // 中心改过节奏时它与 metadata cadence 不一致，cadence 只是旧载荷的回退源）。
+  it('视图透出任务真实调度 schedule（被改成每 5 分钟的任务原样带回）', async () => {
+    cronState.jobs = [{
+      id: 'job-sched', enabled: true, updatedAt: 5,
+      scheduleType: 'every',
+      schedule: { type: 'every', interval: 5, unit: 'minutes' },
+      metadata: { artifactRefresh: { path: workspaceTarget, instruction: 'refresh it', cadence: 'daily' } },
+    }];
+    const getPublishInfo = await getPublishInfoRoute();
+    const info = await getPublishInfo(undefined, { filePath: workspaceTarget });
+    expect(info.standingRefresh).toEqual({
+      jobId: 'job-sched',
+      enabled: true,
+      cadence: 'daily',
+      instruction: 'refresh it',
+      schedule: { type: 'every', interval: 5, unit: 'minutes' },
     });
   });
 });

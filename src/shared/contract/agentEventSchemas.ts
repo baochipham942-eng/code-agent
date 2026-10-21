@@ -183,6 +183,9 @@ const permissionRequestSchema = typed<PermissionRequest>(z.object({
       name: z.string(),
     }).optional(),
     requestedAccess: z.enum(['read_only', 'read_write']).optional(),
+    method: z.string().optional(),
+    body: z.string().optional(),
+    connectorTokenAttached: z.boolean().optional(),
     preview: z.object({
       type: z.enum(['diff', 'command', 'network', 'generic']),
       before: z.string().optional(),
@@ -196,10 +199,13 @@ const permissionRequestSchema = typed<PermissionRequest>(z.object({
       code: z.string(),
       exception: z.string().optional(),
     }).optional(),
+    deniedPath: z.string().optional(),
+    action: z.string().optional(),
   }),
   reason: z.string().optional(),
   reasonCode: z.string().optional(),
   boundary: unknownRecordSchema.optional(),
+  argsPreview: z.string().optional(),
   timestamp: z.number(),
   resolved: z.boolean().optional(),
   decision: z.enum(['once', 'deny', 'session', 'always', 'never', 'timeout']).optional(),
@@ -542,7 +548,7 @@ const HookTriggerEventSchema = event('hook_trigger', typed<HookTriggerEventData>
 const HookStartedEventSchema = event('hook_started', typed<HookStartedEventData>(z.object({
   timestamp: z.number(), event: z.string(), names: stringArraySchema.optional(), sessionId: z.string().optional(), turnId: z.string().optional(), toolName: z.string().optional(), matcher: z.string().optional(),
 })));
-const ErrorEventSchema = event('error', z.object({ message: z.string(), code: z.string().optional(), suggestion: z.string().optional(), details: unknownRecordSchema.optional(), goalAbort: z.boolean().optional(), parentToolUseId: z.string().optional() }));
+const ErrorEventSchema = event('error', z.object({ message: z.string(), code: z.string().optional(), suggestion: z.string().optional(), details: unknownRecordSchema.optional(), goalAbort: z.boolean().optional(), parentToolUseId: z.string().optional(), terminal: z.boolean().optional() }));
 const MessageDeltaEventSchema = event('message_delta', messageDeltaSchema);
 const MessageSnapshotEventSchema = event('message_snapshot', messageSnapshotSchema);
 const StreamChunkEventSchema = event('stream_chunk', typed<{ content: string | undefined; turnId?: string; parentToolUseId?: string }>(z.object({ content: z.string().optional(), turnId: z.string().optional(), parentToolUseId: z.string().optional() })));

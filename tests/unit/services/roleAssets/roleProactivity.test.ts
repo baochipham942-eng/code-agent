@@ -387,7 +387,10 @@ describe('roleProactivity', () => {
       const wakePrompt = mockOrchestrator.sendMessage.mock.calls[0][0];
       expect(wakePrompt).toContain('出现 TODO');
       expect(wakePrompt).toContain('必须选择 advance');
-      expect(callOptions.maxIterations).toBe(ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS);
+      // r2 回归钉：巡检醒来的提示词按「逐个检查产物」的多步工作流设计，15 轮是它的完整预算。
+      // 字面量钉死，防止首次醒来的小预算（ROLE_ASSETS.FIRST_WAKE_MAX_ITERATIONS）再次通过共享常量砍到这里。
+      expect(callOptions.maxIterations).toBe(15);
+      expect(ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS).toBe(15);
       expect(callOptions.agentOverrideId).toBe(RESEARCHER);
       // 非沉默 → 会话不归档
       expect(mockSessionManager.archiveSession).not.toHaveBeenCalled();

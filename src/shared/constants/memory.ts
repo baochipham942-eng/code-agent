@@ -12,6 +12,21 @@ export const LIGHT_MEMORY = {
   INDEX_MAX_LINES: 200,
 } as const;
 
+/**
+ * memoryMode='off' 会话的启动告知正文（N-TASK-MEMORY-OFF-FU1）。off 档此前只挡
+ * 工具、不注索引，但从不告知模型：真跑里模型把 MemoryRead 被拒误读成「另一个数据
+ * 槽」，还把用户口述的私密信息写进工作区文件当记忆替身。这条告知钉死两件事——
+ * 归因（用户关的，不是权限/槽/工具故障）与替身行为（不许写文件顶替记忆；用户
+ * 明确要的产物文件不受影响）。
+ */
+export const MEMORY_OFF_NOTICE =
+  "Memory is switched off for this task by the user's choice. " +
+  'Do not read, write, or recall long-term memory or earlier conversations for this task. ' +
+  'Do not save the user\'s personal information or secrets to files as a substitute for memory; ' +
+  'files the user explicitly asks for (reports, exports, etc.) are fine. ' +
+  'If asked why you do not remember something, say plainly that memory is switched off for this task; ' +
+  'do not blame permissions, data slots, or tool errors.';
+
 /** session 收尾 LLM 判断（runFinalizer → conversationJudge） */
 export const SESSION_JUDGE = {
   /** quick model max_tokens：需要容纳判断结果与少量长期事实正文 */
@@ -175,11 +190,16 @@ export const ROLE_ASSETS = {
   DRAFTS_DIR_NAME: 'role-drafts',
   /** 首次醒来状态文件名：roles/<roleId>/first-wake.json（pending → running → completed/skipped） */
   FIRST_WAKE_FILENAME: 'first-wake.json',
+  /** 首次醒来的工具调用轮数预算（独立于巡检醒来：提示词要求 ≤3 次只读探查后作答，
+   *  6 = 探查 + 多步读取余量，掐掉长探查拖慢首次醒来。不许挪用 ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS，
+   *  那是按「逐个检查产物」多步工作流设计的 15 轮预算，砍它会把巡检醒来掐断在半途）。 */
+  FIRST_WAKE_MAX_ITERATIONS: 6,
 } as const;
 
 /** 角色主动性（cadence 触发器 + 醒来循环，内部文档） */
 export const ROLE_PROACTIVITY = {
-  /** 单次醒来最大工具调用轮数（硬约束，传给醒来实例的 maxIterations） */
+  /** 单次醒来最大工具调用轮数（硬约束，传给醒来实例的 maxIterations）。
+   *  提示词按「读履历 → 逐个检查产物 → 四选一决策」的多步工作流设计，15 轮是完整预算。 */
   WAKE_MAX_ITERATIONS: 15,
   /** 每角色每天最多醒来次数（cadence + event 合计），超出后本次醒来被 skip */
   MAX_WAKES_PER_DAY: 4,

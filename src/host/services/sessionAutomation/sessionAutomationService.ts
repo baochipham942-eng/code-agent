@@ -70,6 +70,11 @@ export interface RecordAutomationEventInput {
 const ACTIVE_STATUSES = new Set<SessionAutomationStatus>(['active', 'running', 'paused']);
 const RUNNING_STATUSES = new Set<SessionAutomationStatus>(['running']);
 
+/** 带 expiresAt 的长期授权到期即失效（不匹配、不列出）。无 expiresAt = 永久。 */
+function standingGrantExpired(grant: StandingGrant, now: number): boolean {
+  return typeof grant.expiresAt === 'number' && Number.isFinite(grant.expiresAt) && now >= grant.expiresAt;
+}
+
 function parseJsonRecord(raw: unknown): SessionAutomationConfig {
   if (typeof raw !== 'string' || raw.trim().length === 0) return {};
   try {
@@ -334,13 +339,16 @@ export class SessionAutomationService {
   /**
    * B4 消费：本次 (tool, target) 调用是否命中该会话所属 automation 上铸造的长期授权规则。
    * 只认 ACTIVE_STATUSES（active/running/paused）——归档/取消/删除即失效（撤权靠状态钳制，
-   * 不需删规则）。精确串匹配，无 glob。命中仅代表「可免这一层询问」，绝不越过更高优先级
-   * 的 deny/policy 硬门（调用方在分类器 deny 之后、真人询问之前才查此函数）。
+   * 不需删规则）。精确串匹配，无 glob。带 expiresAt 的规则到期即失效（不命中）。
+   * 命中仅代表「可免这一层询问」，绝不越过更高优先级的 deny/policy 硬门（调用方在分类器
+   * deny 之后、真人询问之前才查此函数）。now 可注入（台账/测试用同一判据）。
    */
-  matchStandingGrant(sessionId: string | null | undefined, tool: string, target: string): boolean {
+  matchStandingGrant(sessionId: string | null | undefined, tool: string, target: string, now: number = Date.now()): boolean {
     const record = this.resolveAutomationForSession(sessionId);
     if (!record || !ACTIVE_STATUSES.has(record.status)) return false;
-    return (record.config?.standingGrants ?? []).some((g) => g.tool === tool && g.target === target);
+    return (record.config?.standingGrants ?? []).some(
+      (g) => g.tool === tool && g.target === target && !standingGrantExpired(g, now),
+    );
   }
 
   /**
@@ -348,7 +356,13 @@ export class SessionAutomationService {
    * 触发（no-self-grant）。幂等（已存在同 (tool,target) 不重复写）。automation 不可解析或已非
    * active 时不铸造（返回 false）。grantedAt 由调用方传入（仓储层时间戳纪律）。
    */
-  mintStandingGrant(sessionId: string | null | undefined, tool: string, target: string, grantedAt: number): boolean {
+  mintStandingGrant(
+    sessionId: string | null | undefined,
+    tool: string,
+    target: string,
+    grantedAt: number,
+    updatedAt: number = Date.now(),
+  ): boolean {
     const db = getDb();
     if (!db) return false;
     const record = this.resolveAutomationForSession(sessionId);
@@ -359,7 +373,55 @@ export class SessionAutomationService {
     grants.push({ tool, target, grantedAt });
     config.standingGrants = grants;
     db.prepare('UPDATE session_automations SET config_json = ?, updated_at = ? WHERE id = ?')
-      .run(JSON.stringify(config), Date.now(), record.id);
+      .run(JSON.stringify(config), updatedAt, record.id);
+    return true;
+  }
+
+  /**
+   * 台账消费（N-PERM-GRANT-LEDGER）：所有仍生效（ACTIVE_STATUSES）automation 上的长期授权
+   * 规则摊平列出。已过期的规则不返回。库不可用时返回空表（列表路径不许抛）。
+   */
+  listStandingGrantEntries(now: number = Date.now()): Array<{
+    automationId: string;
+    title: string;
+    grant: StandingGrant;
+  }> {
+    const db = getDb();
+    if (!db) return [];
+    const entries: Array<{ automationId: string; title: string; grant: StandingGrant }> = [];
+    for (const record of this.listAll()) {
+      if (!ACTIVE_STATUSES.has(record.status)) continue;
+      for (const grant of record.config?.standingGrants ?? []) {
+        if (standingGrantExpired(grant, now)) continue;
+        entries.push({ automationId: record.id, title: record.title, grant });
+      }
+    }
+    return entries;
+  }
+
+  /**
+   * 台账撤权（N-PERM-GRANT-LEDGER）：按 (automation id, tool, target) 删一条长期授权规则。
+   * 只动 ACTIVE_STATUSES 记录（非活跃记录的规则本来就不生效，无需删）。找不到返回 false。
+   * now 由调用方可选注入（updated_at 时间戳纪律）。
+   */
+  revokeStandingGrant(
+    automationId: string,
+    tool: string,
+    target: string,
+    updatedAt: number = Date.now(),
+  ): boolean {
+    const db = getDb();
+    if (!db) return false;
+    const record = this.getById(automationId);
+    if (!record || !ACTIVE_STATUSES.has(record.status)) return false;
+    const grants = record.config?.standingGrants ?? [];
+    const next = grants.filter((g) => !(g.tool === tool && g.target === target));
+    if (next.length === grants.length) return false;
+    const config: SessionAutomationConfig = { ...(record.config ?? {}) };
+    if (next.length > 0) config.standingGrants = next;
+    else delete config.standingGrants;
+    db.prepare('UPDATE session_automations SET config_json = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify(config), updatedAt, record.id);
     return true;
   }
 
@@ -508,6 +570,8 @@ export class SessionAutomationService {
         sessionId: payload.sessionId ?? row.coordinatorId,
         tool: payload.tool ?? 'unknown',
         displayTool: payload.displayTool,
+        // N-PARKED-APPROVAL-SURVIVE-RESTART-PERSIST：老行没有该字段，undefined 照常透传（①）。
+        argsPreview: payload.argsPreview,
         requestedAt: payload.requestedAt ?? row.submittedAt,
         status: row.status === 'orphaned' ? 'orphaned' : 'pending',
         riskClass: payload.riskClass ?? null,

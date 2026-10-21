@@ -13,15 +13,13 @@ import { fileURLToPath } from 'url';
 import { getSecureStorage } from './secureStorage';
 import { createLogger } from '../infra/logger';
 import { getPolicyEngine } from '../../permissions/policyEngine';
+import { hydratePersistedPermissionMode } from '../../permissions/modes';
 import { setProviderConcurrencyOverrides } from '../../model/concurrencyLimiter';
 import { setProviderProxyOverrides } from '../../model/providers/shared';
 import type { ProxyMode, ModelEntrySettings } from '../../../shared/contract/settings';
 import type { SharedProviderConfig, SharedProviderKeyConfig, SharedServiceKeyConfig } from '../cloud/builtinConfig';
 import { isDynamicCustomProviderId } from '../../../shared/modelRuntime';
-import {
-  MODEL_API_ENDPOINTS,
-  DEFAULT_MODELS,
-} from '../../../shared/constants';
+import { MODEL_API_ENDPOINTS, DEFAULT_MODELS } from '../../../shared/constants';
 import { DEFAULT_SETTINGS } from './configDefaults';
 import {
   getCloudManagedServiceKeyId,
@@ -212,6 +210,10 @@ export class ConfigService implements IReadConfigService {
 
     // Save merged settings
     await this.save();
+
+    // 把持久化的全局权限档灌回运行时 holder（承诺「重启后恢复」，见 modes.ts 的
+    // hydratePersistedPermissionMode 注释；bypassPermissions fail-safe 不灌）。
+    hydratePersistedPermissionMode(this.settings.permissions?.permissionMode);
 
     // 加载用户级权限规则到 PolicyEngine（subagent 继承机制依赖这一步在 spawn 之前完成）
     this.applyUserPermissionRules();
@@ -739,6 +741,13 @@ export class ConfigService implements IReadConfigService {
     }
 
     assertValidUserPermissionRules(updates.permissions, this.settings.permissions);
+    // Jev 借用 OpenRouter key 的同意时间戳（N-JEV-DEFAULT-ON-CONSENT）：仅首次把
+    // openRouterConsent 翻成 true 时落 openRouterConsentAt（调用方显式时间戳优先，
+    // 缺省才回落 Date.now()）；重复同意不刷新、撤销同意不删除（历史留痕）；patch 不含
+    // jev 块时不在此处理。未提及字段由深合并保留。
+    if (updates.jev?.openRouterConsent === true && this.settings.jev?.openRouterConsent !== true) {
+      updates.jev.openRouterConsentAt = updates.jev.openRouterConsentAt ?? Date.now();
+    }
     this.settings = this.mergeAppSettings(this.settings, updates);
     await this.save();
 

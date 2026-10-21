@@ -260,9 +260,11 @@ export const DESIGN_VIDEO_MODELS = {
 /**
  * 音乐生成定价（每首，人民币元）。单一真源——禁在业务代码散落音乐价格字面量。
  * key 为音乐模型 id（与 generateMusic 返回的 actualModel 对齐）。
- * MiniMax 音乐单价未公开，先取保守默认 ¥0.2/首，待真实账单校正。
+ * MiniMax music-2.6 官方价目 $0.15/首（musicGenerate.schema 同源引用），按仓内
+ * USD→CNY≈7.2 口径折 ≈¥1.08/首，待真实账单到手后校正。default 同价：桥接/未知
+ * 音乐模型无独立价目，按已知唯一音乐市价兜底（宁高勿低，方向与 IMAGE 表保守口径一致）。
  */
 export const MUSIC_PRICING_CNY: Record<string, number> = {
-  'music-2.6': 0.2, // MiniMax 音乐，价表待补（保守默认）
-  default: 0.2,
+  'music-2.6': 1.08, // MiniMax 音乐，官方 $0.15/首 × 7.2
+  default: 1.08,
 };

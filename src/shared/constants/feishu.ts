@@ -1,6 +1,11 @@
 /** lark-mcp 上游已近一年未更新，pin 住版本；升级需人工决策（工具名清单只对该版本成立） */
 export const LARK_MCP_PINNED_VERSION = '0.5.1';
 
+export const FEISHU_CONTACT_CACHE_TTL_MS = 60 * 60 * 1000;
+export const FEISHU_CONTACT_LOOKUP_TIMEOUT_MS = 1500;
+/** 查不到姓名（多为没开通讯录权限）的负缓存：开通权限后最多等这么久就能显示真名。 */
+export const FEISHU_CONTACT_MISS_TTL_MS = 10 * 60 * 1000;
+
 export const FEISHU_DEFAULT_DOMAIN = 'https://open.feishu.cn';
 
 /**
@@ -9,6 +14,10 @@ export const FEISHU_DEFAULT_DOMAIN = 'https://open.feishu.cn';
  * 注意国际版 open.larksuite.com 反而可能需要代理，所以只放行当前域名这一个 host。
  */
 export const FEISHU_DEFAULT_HOST = new URL(FEISHU_DEFAULT_DOMAIN).hostname;
+
+/** Lark 国际版开放平台域名（模块私有：只用来派生下方 host） */
+const LARK_DEFAULT_DOMAIN = 'https://open.larksuite.com';
+export const LARK_DEFAULT_HOST = new URL(LARK_DEFAULT_DOMAIN).hostname;
 
 /** 日历接口现行 page_size 最小值，传 20 会 99992402 field validation failed（2026-07-24 真机实测） */
 export const FEISHU_CALENDAR_MIN_PAGE_SIZE = 50;

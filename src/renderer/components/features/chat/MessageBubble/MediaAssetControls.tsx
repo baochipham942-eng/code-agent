@@ -36,11 +36,11 @@ function labelFromMediaRef(ref: string): string {
   return clean.split('/').filter(Boolean).pop() || value;
 }
 
-export function getMediaAssetParentLabels(asset: SessionMediaAsset): string[] {
+function getMediaAssetParentLabels(asset: SessionMediaAsset): string[] {
   return Array.from(new Set((asset.parentAssetIds || []).map(labelFromMediaRef)));
 }
 
-export function getMediaAssetSourceLabels(asset: SessionMediaAsset): string[] {
+function getMediaAssetSourceLabels(asset: SessionMediaAsset): string[] {
   return Array.from(new Set(asset.sources.map((source) => {
     const label = source.label
       || source.attachmentId

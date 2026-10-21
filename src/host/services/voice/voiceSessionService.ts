@@ -13,7 +13,7 @@ import {
   resolveRealtimeVoiceSelection,
   type RealtimeVoiceProviderProfile,
 } from '../../../shared/constants/realtimeVoiceProviders';
-import type { VoiceClientCommand, VoiceEvent, VoiceFocusContext, VoiceTokenUsage, VoiceTransport, VoiceTransportHandle, VoiceUserTextInjectionResult } from '../../../shared/contract/voice';
+import type { VoiceClientCommand, VoiceFocusContext, VoiceTokenUsage, VoiceTransport, VoiceTransportHandle, VoiceUserTextInjectionResult } from '../../../shared/contract/voice';
 import { getDashscopeApiKey } from '../media/imageGenerationService';
 import { createLogger } from '../infra/logger';
 import { emitVoiceCallHook, markSessionHadLiveVoice } from './voiceCallHooks';
@@ -21,11 +21,10 @@ import { getSessionManager } from '../infra/sessionManager';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { qwenOmniTransport } from './qwenOmniTransport';
 import { createRealtimeTransport } from './realtimeTransport';
-import { createVoiceCallRecorder, isVoiceCallRecordingEnabled, type VoiceCallRecorder } from './voiceCallRecorder';
+import { createVoiceCallRecorder, isVoiceCallRecordingEnabled } from './voiceCallRecorder';
 import { runVoiceRecordingRetention } from './voiceRecordingRetention';
 import { getRealtimeVoiceProviderApiKey, resolveConfiguredRealtimeVoiceProfile } from './customRealtimeVoiceProviders';
-import { buildVoiceTurnPrompt, detectVoiceReceptionAmbiguity, requiresVoiceActionTool,
-  resolveVoiceActionRoute, resolveVoiceRouting } from './voiceRouting';
+import { detectVoiceReceptionAmbiguity, resolveVoiceRouting } from './voiceRouting';
 import { beginVoiceDispatch, endVoiceDispatch, setVoiceDispatchFocus } from './voiceAgentCoordinator';
 import {
   composeVoiceInstructions,
@@ -33,7 +32,6 @@ import {
   loadVoiceContinuity,
   readVoiceLiveSettings,
   withLanguageDirective,
-  type VoiceContinuityContext,
 } from './voiceContextAssembler';
 import { isVoiceScreenContextSupported } from './voiceScreenContext';
 import { addTokenUsage, recordVoiceCall } from './voiceUsageLedger';
@@ -46,14 +44,8 @@ import { detectHangupIntent, detectHangupIntentNearMiss } from './hangupIntent';
 import {
   findVoiceInterruptCandidateByItemId,
   resolveInterruptCandidate,
-  type VoiceInterruptCandidate,
 } from './voiceInterruptCandidates';
-import {
-  evaluateVoiceInterruptDecision,
-  logVoiceInterruptDecision,
-  recordVoiceInterruptDecisionSample,
-} from './voiceInterruptDecision';
-import { beginFalseInterruptionWindow, clearFalseInterruptionWindow, confirmHeldInterrupt } from './voiceFalseInterruption';
+import { clearFalseInterruptionWindow, confirmHeldInterrupt } from './voiceFalseInterruption';
 import { shouldDisarmHangup } from './voiceTurnTaking';
 import {
   createNarrationState,
@@ -65,7 +57,6 @@ import {
   handleNarrationPlaybackStarted,
   markNarrationUserTurn,
   settleNarrationsForTeardown,
-  type NarrationState,
 } from './voiceNarrationQueue';
 import {
   beginVoiceQuestionSession,
@@ -73,73 +64,14 @@ import {
   handleVoiceQuestionTranscript,
 } from './voiceQuestionBridge';
 import { isPureToolTagText, persistTranscript, type TranscriptMergeState } from './voiceTranscriptPersistence';
-import { prepareVoiceprintForCall, releaseVoiceprintForCall, type VoiceprintCallState } from './voiceprintService';
-import { createVoiceSayDoGuard, type VoiceSayDoGuard } from './voiceSayDoGuard';
+import { prepareVoiceprintForCall, releaseVoiceprintForCall } from './voiceprintService';
+import { createVoiceSayDoGuard } from './voiceSayDoGuard';
+import type { ActiveSession } from './voiceSessionTypes';
+import { evaluateInterrupt, rememberCancelledResponse, send } from './voiceInterruptEvaluation';
 import { recordNarrationResponse, shouldPersistNarrationTranscript,
   type NarrationResponseLedger } from './voiceNarrationTranscript';
 
 const logger = createLogger('VoiceSession');
-
-/** 读设置页「实时通话」组；读不到一律 undefined（= 全部走默认），绝不让设置读写炸掉通话。 */
-interface ActiveSession {
-  id: string;
-  neoSessionId: string;
-  startedAt: number;
-  /**
-   * 当前这条 Renderer WS。重连会**换掉它**而不换通话——所以上游回调必须通过这个
-   * 可变引用发，不能闭包捕获建连那一刻的 socket。
-   */
-  clientRef: { current: WsSocket };
-  upstream: VoiceTransportHandle;
-  /** 上游是否真实收下了通话工具；VOICE_TOOLS_DROPPED 后 fail-closed。 */
-  voiceToolsAvailable: boolean;
-  /** 用户轮、工具账本与语义审计状态；只活在本通电话内。 */
-  sayDoGuard: VoiceSayDoGuard;
-  /** teardown 已开始时，新的打字注入必须回退，不能再抢这通电话。 */
-  ending: boolean;
-  maxDurationTimer: NodeJS.Timeout;
-  /** 非 null = 客户端断了，正在宽限窗里等它回来 */
-  graceTimer: NodeJS.Timeout | null;
-  /** relay 媒体面首帧健康探针；重连沿用同一份计数，不重复报警。 */
-  inboundAudioFrames: number;
-  inboundAudioWatchdogTimer: NodeJS.Timeout | null;
-  /** 本次通话派出去的任务数，进通话摘要 */
-  workItemCount: number;
-  /** 本次通话成功落库的字幕条数，进通话摘要（旧记录没有 = 旧版本通话的判据） */
-  transcriptCounter: { count: number };
-  /** 助手字幕按 response 隔离；旧轮晚到不能拼进下一轮。 */
-  transcriptBuf: { assistantByResponse: Map<string, string> };
-  /** 上一条落库的用户字幕，供 R5 连续字幕并入上一条 */
-  transcriptMerge: TranscriptMergeState;
-  /** 通话身份的短人设，焦点刷新时要和 Focus 段一起重拼；userProfile 同样受声纹闸保护。 */
-  personaInstructions: string; userProfile: string;
-  /** 当前已下发给上游的完整 instructions，用于语速/焦点刷新去重。 */
-  instructions: string;
-  /** 本次通话真用的上游模型（设置白名单解析后），挂断摘要如实记它 */
-  conversationModel: string;
-  /** 新拨号时从 DB + TaskManager 取到的上一通上下文；焦点刷新重拼 instructions 时必须保留。 */
-  continuity: VoiceContinuityContext | null;
-  /** 用户此刻在看什么（Renderer 节流上报） */
-  focus: VoiceFocusContext | null;
-  interruption: {
-    currentCandidateId: string | null;
-    candidates: Map<string, VoiceInterruptCandidate>;
-  };
-  /** 上游 cancel 后仍可能把旧 delta/final/done 发完；Host 与 Renderer 各自 fail-closed。 */
-  cancelledResponseIds: Set<string>;
-  /** assistant final 先暂存，到 response.done 且未取消时才落库。 */
-  pendingAssistantFinals: Map<string, { text: string; itemId?: string }>;
-  /** 注入播报的 responseId → narrationId/source message，供主消息流去重与三 ID 留证。 */
-  narrationResponses: NarrationResponseLedger;
-  /** 一通电话可有多轮 response；排水窗结束前到达的 provider usage 都归入本通。 */
-  tokenUsage: { value?: VoiceTokenUsage; accepting: boolean };
-  /** 终态播报只属于这通电话：压住、去重与已播记录都随 active 一起销毁。 */
-  narration: NarrationState;
-  /** 声纹身份（N-L7-SPK）：全内存，teardown 即丢。生命周期与判定语义见 voiceprintService。 */
-  speaker: VoiceprintCallState;
-  /** 通话录音（N-L7-REC）：开关关（默认）时为 null；teardown 时收尾并跑一次三重上限。 */
-  recorder: VoiceCallRecorder | null;
-}
 
 // ponytail: 单进程内一个模块级变量就是「全局单路」的全部实现（方案 §2.6）。
 // 多进程/多窗口场景真出现时再抬到共享状态。
@@ -215,132 +147,6 @@ export async function injectVoiceUserText(
       message: error instanceof Error ? error.message : 'unknown',
     });
     return { outcome: 'fallback', reason: 'injection_rejected' };
-  }
-}
-
-function send(client: WsSocket, event: VoiceEvent): void {
-  if (client.readyState === client.OPEN) client.send(JSON.stringify(event));
-}
-
-function rememberCancelledResponse(session: ActiveSession, responseId: string): void {
-  session.cancelledResponseIds.add(responseId);
-  session.pendingAssistantFinals.delete(responseId);
-  session.transcriptBuf.assistantByResponse.delete(responseId);
-  session.narrationResponses.delete(responseId);
-  while (session.cancelledResponseIds.size > 32) {
-    const oldest = session.cancelledResponseIds.values().next().value as string | undefined;
-    if (!oldest) break;
-    session.cancelledResponseIds.delete(oldest);
-  }
-}
-
-async function requestResponse(session: ActiveSession, userFinal: string): Promise<void> {
-  if (session.upstream.kind !== 'relay') return;
-  const latest = userFinal.trim();
-  const ambiguity = detectVoiceReceptionAmbiguity(latest);
-  const route = ambiguity ? undefined : resolveVoiceActionRoute(latest);
-  if (route && session.voiceToolsAvailable) {
-    logger.info('voice action tool accepted', { provider: session.upstream.provider, origin: 'host_routed', toolName: route.toolName });
-    const output = await executeVoiceTool(route.toolName, route.rawArguments, 'host_routed');
-    if (active?.id !== session.id || session.ending || session.upstream.kind !== 'relay') return;
-    session.upstream.respond(`Host 已按用户最新一句话执行了对应工具。只简短说明工具结果，不要再次调用工具。\n用户最新一句话：${latest}\n工具结果：${output}`, 'auto'); return;
-  }
-  session.upstream.respond(
-    buildVoiceTurnPrompt(latest),
-    !ambiguity && requiresVoiceActionTool(latest) ? 'required' : 'auto',
-  );
-}
-
-function evaluateInterrupt(
-  session: ActiveSession,
-  text: string,
-  stage: 'partial' | 'final',
-  identity: { candidateId?: string; itemId?: string; classificationSource?: 'empty-text-fallback' | 'transcript' } = {},
-): void {
-  const resolved = resolveInterruptCandidate(session.interruption, identity);
-  const candidateId = resolved?.candidateId;
-  if (!candidateId) {
-    if (stage === 'final' && text.trim()) void requestResponse(session, text);
-    return;
-  }
-  const candidate = resolved.candidate;
-  if (stage === 'final' && candidate.finalGraceTimer) {
-    clearTimeout(candidate.finalGraceTimer);
-    candidate.finalGraceTimer = undefined;
-  }
-  const assistantPlaying = candidate.assistantPlaying
-    ?? (session.upstream.kind === 'relay' && session.upstream.isResponding());
-  const { decision, evidence: interruptEvidence, priorStartedAt } = evaluateVoiceInterruptDecision({
-    candidate,
-    candidates: session.interruption.candidates.values(),
-    assistantPlaying,
-    text,
-    stage,
-    speakerMismatch: session.speaker.tracker?.verdictFor(candidateId) === 'mismatch',
-  });
-
-  // L2 证据闸：判定与遥测消费同一份 evidence，避免「量的一套、判的另一套」。
-  if (decision.terminal && !candidate.decided) {
-    recordVoiceInterruptDecisionSample({
-      provider: session.upstream.provider,
-      voiceSessionId: session.id,
-      candidateId,
-      candidate,
-      assistantPlaying,
-      priorStartedAt,
-      text,
-      decision,
-      evidence: interruptEvidence,
-    });
-  }
-
-  // 用途一读图重点：在 no_playback 轮真的开口对话的人，当场纳入活跃集，不设观察期
-  // ——中途换人第一句就被接纳（判据 4），电视永远不参与对话轮所以进不来。
-  if (decision.classification === 'no_playback' && stage === 'final' && text.trim()) {
-    session.speaker.tracker?.admitCandidate(candidateId);
-  }
-
-  if (decision.terminal && !candidate.decided) {
-    candidate.decided = true;
-    candidate.classification = decision.classification;
-    candidate.classificationSource = identity.classificationSource ?? 'transcript';
-    let cancelledResponseId: string | null = null;
-    if (decision.cancel) {
-      cancelledResponseId = session.upstream.interrupt();
-      if (cancelledResponseId) {
-        candidate.cancelledResponseId = cancelledResponseId;
-        rememberCancelledResponse(session, cancelledResponseId);
-      }
-    }
-    const action = decision.cancel ? 'hold' : 'resume';
-    send(session.clientRef.current, {
-      type: 'interrupt.decision',
-      candidateId,
-      classification: decision.classification,
-      action,
-      ...(cancelledResponseId ? { responseId: cancelledResponseId } : {}),
-    });
-    if (decision.cancel) {
-      beginFalseInterruptionWindow(session, candidateId, candidate, () => active?.id === session.id);
-    }
-    logVoiceInterruptDecision({
-      voiceSessionId: session.id,
-      candidateId,
-      transcriptStage: stage,
-      action,
-      responseId: cancelledResponseId ?? undefined,
-      decision,
-      evidence: interruptEvidence,
-    });
-  }
-
-  // partial 先触发 hold 时，后续 final 是「用户确实继续说」的确认信号；此时才真丢。
-  if (stage === 'final' && text.trim()) {
-    confirmHeldInterrupt(session, candidateId, candidate, 'final_transcript');
-  }
-  if (stage === 'final' && decision.shouldRespond && !candidate.responseRequested) {
-    candidate.responseRequested = true;
-    void requestResponse(session, text);
   }
 }
 
@@ -743,7 +549,7 @@ async function connectAndBind(
               candidate.finalGraceTimer = undefined;
               if (active?.id !== id || candidate.decided) return;
               candidate.emptyTextFallbackObserved = true;
-              evaluateInterrupt(active, '', 'partial', {
+              evaluateInterrupt((session) => active?.id === session.id, active, '', 'partial', {
                 ...(candidateId ? { candidateId } : {}),
                 classificationSource: 'empty-text-fallback',
               });
@@ -781,7 +587,7 @@ async function connectAndBind(
             });
             if (event.itemId && transcriptCandidate) transcriptCandidate.candidate.itemId ??= event.itemId;
             if (!voiceQuestionConsumed) {
-              evaluateInterrupt(active, event.text, event.done ? 'final' : 'partial', {
+              evaluateInterrupt((session) => active?.id === session.id, active, event.text, event.done ? 'final' : 'partial', {
                 candidateId: event.candidateId,
                 itemId: event.itemId,
               });

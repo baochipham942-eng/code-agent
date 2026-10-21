@@ -32,6 +32,7 @@ import type { DAGVisualizationEvent } from '../contract/dagVisualization';
 import type { ScriptRunEvent, WorkflowLaunchEvent } from '../contract/scriptRun';
 import { DAG_CHANNELS, SKILL_CHANNELS } from './channels';
 import type { SideChatFailureCause } from './schemas';
+import type { CronFailurePresentationKind } from '../utils/cronFailureClassification';
 
 import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetrySessionListItem, TelemetrySessionListOptions, TelemetryToolStat, TelemetryIntentStat, TelemetryCostBucket, TelemetryCostByPeriodOptions, TelemetryPushEvent, TelemetryHealth, ComputerSurfaceReliabilitySummary, TelemetryFeedbackSubmitRequest, TelemetryFeedbackSubmitResult, TelemetryFeedbackRating } from '../contract/telemetry';
 
@@ -233,7 +234,7 @@ export interface IpcInvokeHandlers {
   }>;
 
   // Memory (Phase 2/3)
-  [IPC_CHANNELS.MEMORY]: (payload: { action: 'list' | 'update' | 'delete' | 'deleteByCategory' | 'export' | 'import' | 'getStats' | 'add' | 'getLearningInsights' | 'lightList' | 'lightRead' | 'lightDelete' | 'lightStats' | 'lightHealth' | 'lightRebuildIndex' | 'memoryAudit' | 'memoryInboxResolve' | 'memoryEntries' | 'memoryRebuildMirror' | 'memoryEntryUpdate' | 'memoryEntryDelete' | 'memoryEntryBatchReview' | 'memoryPack' | 'memoryExportV2' | 'memoryImportV2DryRun' | 'memoryImportV2Apply' | 'memoryHarnessImportDryRun' | 'memoryHarnessImportApply' | 'memoryHarnessImportConfirmDirective' | 'memoryInitProjectDraft'; category?: MemoryCategory; id?: string; content?: string; data?: MemoryExport; bundle?: MemoryExportV2Bundle; allowConflicts?: boolean; query?: string; request?: MemoryPackRequest; item?: Partial<MemoryItem>; filename?: string; candidateId?: string; candidateIds?: string[]; instructionId?: string; decision?: 'approve' | 'reject'; title?: string; source?: string; reason?: string; kind?: string; projectPath?: string | null; projectDir?: string; sessionId?: string | null; limit?: number; entryId?: string; entryIds?: string[]; adapterIds?: Array<'codex-local-custom' | 'claude-code' | 'grok-build' | 'qwen-code' | 'gemini-cli'>; modelProvider?: 'zai' | 'deepseek' | null }) => Promise<{
+  [IPC_CHANNELS.MEMORY]: (payload: { action: 'list' | 'update' | 'delete' | 'deleteByCategory' | 'export' | 'import' | 'getStats' | 'add' | 'getLearningInsights' | 'lightList' | 'lightRead' | 'lightDelete' | 'lightStats' | 'lightHealth' | 'lightRebuildIndex' | 'memoryAudit' | 'memoryInboxResolve' | 'memoryEntries' | 'memoryRebuildMirror' | 'memoryEntryUpdate' | 'memoryEntryDelete' | 'memoryEntryResumeInjection' | 'memoryEntryBatchReview' | 'memoryPack' | 'memoryExportV2' | 'memoryImportV2DryRun' | 'memoryImportV2Apply' | 'memoryHarnessImportDryRun' | 'memoryHarnessImportApply' | 'memoryHarnessImportConfirmDirective' | 'memoryInitProjectDraft'; category?: MemoryCategory; id?: string; content?: string; data?: MemoryExport; bundle?: MemoryExportV2Bundle; allowConflicts?: boolean; query?: string; request?: MemoryPackRequest; item?: Partial<MemoryItem>; filename?: string; candidateId?: string; candidateIds?: string[]; instructionId?: string; decision?: 'approve' | 'reject'; title?: string; source?: string; reason?: string; kind?: string; projectPath?: string | null; projectDir?: string; sessionId?: string | null; limit?: number; entryId?: string; entryIds?: string[]; adapterIds?: Array<'codex-local-custom' | 'claude-code' | 'grok-build' | 'qwen-code' | 'gemini-cli'>; modelProvider?: 'zai' | 'deepseek' | null }) => Promise<{
     success: boolean;
     data?: MemoryItem[] | MemoryStatsNew | MemoryExport | MemoryExportV2Bundle | MemoryEntryListResult | MemoryMirrorRebuildResult | MemoryEntryUpdateResult | MemoryEntryDeleteResult | MemoryEntryBatchReviewResult | MemoryImportDryRunResult | MemoryImportApplyResult | MemoryImportDirectiveConfirmResult | MemoryImportV2DryRunResult | MemoryImportV2ApplyResult | MemoryPackResult | ProjectMemoryDraftResult | { deleted: number } | { imported: number; skipped: number } | MemoryItem | unknown;
     error?: string;
@@ -403,7 +404,7 @@ export interface IpcInvokeHandlers {
 
   // Unified extensions
   [IPC_CHANNELS.EXTENSION_LIST]: () => Promise<ExtensionInfo[]>;
-  [IPC_CHANNELS.EXTENSION_INSTALL]: (spec: string) => Promise<{ success: boolean; error?: string }>;
+  [IPC_CHANNELS.EXTENSION_INSTALL]: (spec: string, cautionConfirmationToken?: string) => Promise<{ success: boolean; error?: string } | SkillCautionConfirmationRequired>;
   [IPC_CHANNELS.EXTENSION_UNINSTALL]: (id: string) => Promise<{ success: boolean; error?: string }>;
   [IPC_CHANNELS.EXTENSION_ENABLE]: (id: string) => Promise<{ success: boolean; error?: string }>;
   [IPC_CHANNELS.EXTENSION_DISABLE]: (id: string) => Promise<{ success: boolean; error?: string }>;
@@ -612,6 +613,8 @@ export interface NotificationShowEvent {
   title: string;
   body: string;
   sessionId: string;
+  /** Source cron job for explicit login-wall consent from the notification. */
+  jobId?: string;
   /**
    * 这条通知同时代表目标会话出现了用户尚未查看的新结果。
    * Renderer 只把它接到既有 session unread 状态，不另建通知账本。
@@ -619,6 +622,10 @@ export interface NotificationShowEvent {
   markSessionUnread?: boolean;
   code?: string;
   siteOrigin?: string;
+  /** 定时失败人话分类。renderer 按界面语言翻译，host 不拼中文。 */
+  failureKind?: CronFailurePresentationKind;
+  /** ISO-8601。只有报文写明重置时间才带。 */
+  resetAt?: string;
 }
 
 export type MCPEventType = 'connection_errors' | 'server_connected' | 'server_disconnected' | 'capabilities_changed';

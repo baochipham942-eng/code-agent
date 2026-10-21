@@ -197,6 +197,10 @@ export interface PermissionRequest {
       code: string;
       exception?: string;
     };
+    /** 沙盒写放宽被拦路径。渲染层单独一行展示，不并进命令后果。 */
+    deniedPath?: string;
+    /** 沙盒写放宽动作：sandbox_escalate_once 或 sandbox_escalate_dir_once。 */
+    action?: string;
   };
   /** 人类可读原因文案（向后兼容，旧路径仍只读此字段） */
   reason?: string;

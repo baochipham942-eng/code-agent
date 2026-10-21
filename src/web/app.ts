@@ -39,6 +39,7 @@ import {
 // Route modules
 import { createHealthRouter } from './routes/health';
 import { createQuitGuardRouter } from './routes/quitGuard';
+import { getCronService } from '../host/cron/cronService';
 import { isDurableRunGateOpen } from './routes/agentDurableRouteLifecycle';
 import { createSettingsRouter } from './routes/settings';
 import { createExtractRouter } from './routes/extract';
@@ -151,16 +152,36 @@ async function tryGetSessionManager() {
 }
 
 /**
+ * 「已启用定时任务」计数的唯一口径：quit-guard 计数与 daemon 空闲快照
+ * （armedSchedules 信号）共用同一个 listJobs({ enabled: true }).length，
+ * 不另造第二套「armed」定义。cron 是懒加载单例，失败上抛给调用方。
+ */
+function countArmedSchedules(): number {
+  return getCronService().listJobs({ enabled: true }).length;
+}
+
+/**
+ * daemon 空闲快照里的 armed 计数：失败按 0 并留痕（fail-open——去留判据宁
+ * 退出不隐形驻留，与 quit-guard 路由的 fail-closed 500 各行其是）。
+ */
+function safeCountArmedSchedules(): number {
+  try {
+    return countArmedSchedules();
+  } catch (error) {
+    console.error('[app] armed-schedule count failed for daemon idle snapshot:', error);
+    return 0;
+  }
+}
+
+/**
  * 退出确认用的计数。登记表未配置时 activeRuns 为 0；已配置则取 list() 长度。
- * cron 与登记表都懒加载，失败原样抛给路由，不在这里吞成 0。
+ * 登记表懒加载，失败原样抛给路由，不在这里吞成 0。
  */
 async function readQuitGuardSnapshot(): Promise<{ activeRuns: number; armedSchedules: number }> {
   const { getConfiguredApplicationRunRegistry } = await import('../host/app/applicationRunRegistry');
   const registry = getConfiguredApplicationRunRegistry();
   const activeRuns = registry === null ? 0 : registry.list().length;
-  const { getCronService } = await import('../host/cron/cronService');
-  const armedSchedules = getCronService().listJobs({ enabled: true }).length;
-  return { activeRuns, armedSchedules };
+  return { activeRuns, armedSchedules: countArmedSchedules() };
 }
 
 /**
@@ -327,6 +348,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
     runningRuns: hasRunningRun(),
     pairedCompanion: hasPairedCompanion(),
     awaitingApproval: (deps.getPendingPermissionRequests?.().length ?? 0) > 0,
+    armedSchedules: safeCountArmedSchedules(),
   }));
   let cleanupQuestionRoute: () => void = () => {};
   deps.registerCompanionShutdown?.(async () => {

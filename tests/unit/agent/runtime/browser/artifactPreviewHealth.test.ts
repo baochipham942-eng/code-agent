@@ -205,12 +205,28 @@ describe('artifactPreviewHealth deterministic findings', () => {
     ]);
   });
 
+  it('includes the scroll delta beside mutations/textChanged in the button_no_response evidence', () => {
+    const findings = evaluateArtifactPreviewHealthDiagnostics(baseDiagnostics({
+      buttonClick: { checked: true, responded: false, mutations: 0, textChanged: false, scrollDelta: 1 },
+    }));
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        code: 'button_no_response',
+        evidence: { mutations: 0, textChanged: false, scrollDelta: 1 },
+      }),
+    ]);
+  });
+
   it('does not flag buttons when the click probe reports a response, no button, or nothing', () => {
     expect(evaluateArtifactPreviewHealthDiagnostics(baseDiagnostics({
       buttonClick: { checked: true, responded: true, mutations: 2, textChanged: true },
     }))).toEqual([]);
     expect(evaluateArtifactPreviewHealthDiagnostics(baseDiagnostics({
       buttonClick: { checked: true, responded: true, mutations: 0, textChanged: true },
+    }))).toEqual([]);
+    expect(evaluateArtifactPreviewHealthDiagnostics(baseDiagnostics({
+      buttonClick: { checked: true, responded: true, mutations: 0, textChanged: false, scrollDelta: 415 },
     }))).toEqual([]);
     expect(evaluateArtifactPreviewHealthDiagnostics(baseDiagnostics({
       buttonClick: { checked: false },

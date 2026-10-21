@@ -40,17 +40,23 @@ import type {
 import { isStdioConfig, isInProcessConfig, isHttpStreamableConfig, CUA_DRIVER_SERVER_NAME } from './types';
 import { isMcpStatusUsableForScope, setInProcessMcpServerIdsProvider, setMcpConnectionProbe } from './mcpConnectionProbe';
 import { buildCuaAgentCursorCapabilityForToolCall } from './cuaAgentCursor';
-import { CUA_READONLY_TOOLS, gateCuaToolCall } from './cuaSessionLock';
+import { gateCuaToolCall } from './cuaSessionLock';
 import { gateCuaBudget } from './cuaTrajectoryBudget';
 import { recordCuaFailure } from './cuaFailureStats';
 import { recordCuaResult } from './cuaNarration';
-import { isCuaStateV2Enabled } from './cuaStateConfig';
-import { getTelemetryService } from '../telemetry/telemetryService';
+import { withRunTraceContext } from '../telemetry/runTraceContext';
 import {
-  createChildRunTraceContext,
-  getActiveRunTraceContext,
-  withRunTraceContext,
-} from '../telemetry/runTraceContext';
+  buildCancelledToolResult,
+  isAbortError,
+  shouldBlockRawCuaInvocation,
+  shouldSuppressCuaAutoReplay,
+  type MCPToolCallOptions,
+} from './mcpClientHelpers';
+import {
+  endMcpToolSpan,
+  endMcpToolSpanAsError,
+  startMcpToolCallSpan,
+} from './mcpCallTrace';
 
 // Import sub-modules
 import {
@@ -109,61 +115,15 @@ export { isStdioConfig } from './types';
 export { isSSEConfig } from './types';
 export { isHttpStreamableConfig } from './types';
 export { isInProcessConfig } from './types';
+export { shouldBlockRawCuaInvocation, shouldSuppressCuaAutoReplay } from './mcpClientHelpers';
+export type { MCPToolCallOptions } from './mcpClientHelpers';
 
 const logger = createLogger('MCPClient', { lane: 'mcp' });
 type OAuthFinishAuthTransport = Transport & {
   finishAuth?: (authorizationCode: string) => Promise<void>;
 };
 
-export interface MCPToolCallOptions {
-  timeoutMs?: number;
-  abortSignal?: AbortSignal;
-  /** 会话 ID（GAP-009: 超阈值输出落盘到 session 临时目录） */
-  sessionId?: string;
-  /** Internal capability: only the stateful CUA facade may invoke raw driver tools. */
-  cuaStatefulFacade?: boolean;
-  cuaLockScope?: string; // Surface Session owner for input lock and trajectory budget.
-}
-
 export interface MCPClientOptions { idleReaping?: McpIdleReapingOptions; now?: () => number; }
-
-function isAbortError(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-  return error.name === 'AbortError' || error.message.toLowerCase().includes('abort');
-}
-
-function buildCancelledToolResult(toolCallId: string): ToolResult {
-  return {
-    toolCallId,
-    success: false,
-    error: 'cancelled',
-    metadata: {
-      cancelledByRun: true,
-    },
-  };
-}
-
-export function shouldSuppressCuaAutoReplay(
-  serverName: string,
-  toolName: string,
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
-  return serverName === CUA_DRIVER_SERVER_NAME
-    && isCuaStateV2Enabled(env)
-    && !CUA_READONLY_TOOLS.has(toolName);
-}
-
-export function shouldBlockRawCuaInvocation(
-  serverName: string,
-  options: MCPToolCallOptions | number,
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
-  return serverName === CUA_DRIVER_SERVER_NAME
-    && isCuaStateV2Enabled(env)
-    && (typeof options === 'number' || options.cuaStatefulFacade !== true);
-}
 
 /**
  * MCPClient 发出的事件
@@ -928,51 +888,22 @@ export class MCPClient extends EventEmitter {
     args: Record<string, unknown>,
     options: MCPToolCallOptions | number = {},
   ): Promise<ToolResult> {
-    const parentTraceContext = getActiveRunTraceContext();
-    const childTraceContext = parentTraceContext
-      ? createChildRunTraceContext(parentTraceContext)
-      : undefined;
-    let spanId: string | undefined;
-    try {
-      const parentToolSpan = getTelemetryService().findActiveSpanByAttribute('tool.call_id', toolCallId);
-      spanId = getTelemetryService().startSpan(
-        `mcp:${serverName}/${toolName}`,
-        'mcp',
-        {
-          'mcp.server': serverName,
-          'mcp.tool': toolName,
-          'mcp.transport': this.inProcessServers.has(serverName) ? 'in-process' : 'client',
-        },
-        parentToolSpan?.spanId ?? parentTraceContext?.spanId,
-        childTraceContext,
-      ).spanId;
-    } catch {
-      // MCP execution is independent from tracing availability.
-    }
+    const { spanId, childTraceContext } = startMcpToolCallSpan(
+      toolCallId,
+      serverName,
+      toolName,
+      this.inProcessServers.has(serverName),
+    );
 
     const invoke = async (): Promise<ToolResult> => {
       try {
         // 派发前把模型的已知参数姿势坑焊成确定性（如飞书 field.list 的 path 重嵌）。
         // callTool 是唯一 chokepoint，所有调用路径都经此；非命中工具原样透传。
         const result = await this.callToolInternal(toolCallId, serverName, toolName, this.registry.normalizeToolArgs(serverName, toolName, args), options);
-        try {
-          if (spanId) {
-            const cancelled = result.metadata?.cancelledByRun === true || /cancel|abort/i.test(result.error ?? '');
-            getTelemetryService().endSpan(spanId, result.success ? 'ok' : cancelled ? 'cancelled' : 'error', {
-              'mcp.result_status': result.success ? 'success' : cancelled ? 'cancelled' : 'failed',
-              ...(result.duration !== undefined ? { 'mcp.duration_ms': result.duration } : {}),
-            });
-          }
-        } catch {
-          // MCP results are independent from tracing availability.
-        }
+        endMcpToolSpan(spanId, result);
         return this.idleReaper.applyRestartNotice(serverName, result);
       } catch (error) {
-        try {
-          if (spanId) getTelemetryService().endSpan(spanId, 'error', { 'mcp.result_status': 'failed' });
-        } catch {
-          // Preserve the original MCP error.
-        }
+        endMcpToolSpanAsError(spanId);
         throw error;
       }
     };

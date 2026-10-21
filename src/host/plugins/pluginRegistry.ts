@@ -359,6 +359,7 @@ export class PluginRegistry {
             plugin.manifest.name,
             plugin.manifest.displayName,
           ),
+          plugin.rootPath.startsWith('builtin:'),
         );
         pluginTools.push(prefixedTool.name);
         plugin.registeredTools.push(prefixedTool.name);
@@ -472,6 +473,7 @@ export class PluginRegistry {
             plugin.manifest.name,
             plugin.manifest.displayName,
           ),
+          plugin.rootPath.startsWith('builtin:'),
         );
         plugin.registeredTools.push(finalName);
         logger.info(`Plugin ${plugin.manifest.id} registered tool module: ${finalName}`);

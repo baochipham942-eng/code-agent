@@ -7,6 +7,7 @@ import type {
 import { IPC_DOMAINS } from '@shared/ipc';
 import { resolveFileUrl } from '../utils/resolveFileUrl';
 import { LocalityFeedbackBar } from './LivePreview/LocalityFeedbackBar';
+import { useI18n } from '../hooks/useI18n';
 
 interface PresentationOutlinePage {
   index: number;
@@ -42,6 +43,7 @@ function outlineText(page: PresentationOutlinePage): string[] {
 }
 
 export const PresentationPagePicker: React.FC<Props> = ({ title, filePath, outlinePages = [], preview }) => {
+  const { t } = useI18n();
   const [resolved, setResolved] = useState<PresentationPagePreviewResult | undefined>(preview);
   const [loading, setLoading] = useState(Boolean(filePath && !preview));
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -111,7 +113,7 @@ export const PresentationPagePicker: React.FC<Props> = ({ title, filePath, outli
         <div className="mt-3 flex items-center gap-2 rounded border border-badge-warning/20 bg-amber-500/[0.05] px-2.5 py-2 text-xs text-badge-warning">
           <ImageOff className="h-3.5 w-3.5 shrink-0" />
           {resolved?.state === 'libreoffice-missing'
-            ? '本机没有 LibreOffice，已切换为可选文字大纲。'
+            ? t.design.slidesPreviewMissing
             : '截图转换失败，已切换为可选文字大纲。'}
         </div>
       )}

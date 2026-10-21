@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
 import { tsImport } from 'tsx/esm/api';
-import { digest, selectTests, validateFiles, validateReport, renderReceipt, extractGateIds, validateGateBudgetCoverage, commandDeadline, budgetFailure, changedInputs } from './lib/gates-fast-contract.mjs';
+import { digest, selectTests, validateFiles, validateReport, summarizeVitestFailures, renderReceipt, extractGateIds, validateGateBudgetCoverage, commandDeadline, budgetFailure, changedInputs } from './lib/gates-fast-contract.mjs';
 import { createOwnedTmp } from './lib/tmp-sandbox.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -184,7 +184,14 @@ try {
   await gate('vitest', true, async () => {
     const manifest = path.join(temp, 'selection.json'); const report = path.join(temp, 'vitest.json');
     fs.writeFileSync(manifest, JSON.stringify({ files: receipt.selectedFiles, maxFiles: policy.maxFiles }));
-    await command([process.execPath, 'node_modules/vitest/vitest.mjs', 'run', '--config', 'vitest.fast.config.ts'], { GATES_FAST_MANIFEST: manifest, GATES_FAST_REPORT: report });
+    try {
+      await command([process.execPath, 'node_modules/vitest/vitest.mjs', 'run', '--config', 'vitest.fast.config.ts'], { GATES_FAST_MANIFEST: manifest, GATES_FAST_REPORT: report });
+    } catch (error) {
+      let failures = [];
+      try { failures = summarizeVitestFailures(JSON.parse(fs.readFileSync(report, 'utf8')), root); } catch { /* 报告没写出来时保留原始失败 */ }
+      if (!failures.length) throw error;
+      throw new Error(`${error instanceof Error ? error.message : String(error)}; failed: ${failures.join(' | ')}`);
+    }
     receipt.report = validateReport(receipt.selectedFiles, JSON.parse(fs.readFileSync(report, 'utf8')), root);
   });
   await gate('package-typechecks', receipt.packageChecks.length > 0, async () => {

@@ -8,6 +8,9 @@ const routeKeys = vi.hoisted(() => ({
   typesafe: '',
   openrouter: undefined as string | undefined,
   openrouterReads: 0,
+  // settings.jev 状态（N-JEV-DEFAULT-ON-CONSENT）。缺省「开 + 已同意」保持本文件
+  // 既有「OpenRouter-only 即可用」的口径；同意闸门有专门用例翻状态。
+  jev: { enabled: true, openRouterConsent: true } as { enabled?: boolean; openRouterConsent?: boolean },
 }));
 
 const featureFlags = vi.hoisted(() => ({ jevSkillRerank: false }));
@@ -35,6 +38,7 @@ vi.mock('../../../src/host/services/core/configService', () => ({
       routeKeys.openrouterReads += 1;
       return routeKeys.openrouter;
     },
+    getSettings: () => ({ jev: routeKeys.jev }),
   }),
 }));
 
@@ -55,7 +59,7 @@ import {
   JEV_MODEL,
   PERMCLASS_QUESTIONS,
 } from '../../../src/shared/constants/jevQuestions';
-import { resolveJevRoute, systemOne } from '../../../src/host/model/providers/typesafeProvider';
+import { probeJevKeySource, resolveJevRoute, systemOne } from '../../../src/host/model/providers/typesafeProvider';
 import { resolveBrowserJevStep } from '../../../src/host/agent/runtime/browser/jevBrowserStep';
 import { scanWithJevInjection } from '../../../src/host/security/jevInjectionScan';
 import { resetInputSanitizer } from '../../../src/host/security/inputSanitizer';
@@ -144,6 +148,7 @@ describe('typesafeProvider jev route', () => {
     routeKeys.typesafe = '';
     routeKeys.openrouter = undefined;
     routeKeys.openrouterReads = 0;
+    routeKeys.jev = { enabled: true, openRouterConsent: true };
     featureFlags.jevSkillRerank = false;
     quickTask.mockClear();
     vi.unstubAllEnvs();
@@ -219,6 +224,7 @@ describe('typesafeProvider jev route', () => {
     const officialBody = JSON.parse(String(officialCaptured[0].init.body));
 
     routeKeys.typesafe = '';
+    routeKeys.jev = { enabled: true, openRouterConsent: true };
     routeKeys.openrouter = OPENROUTER;
     const openrouterCaptured = installFetch(ANSWERS);
     await systemOne(STATE, QUESTIONS);
@@ -235,6 +241,7 @@ describe('typesafeProvider jev route', () => {
     const official = await systemOne(STATE, QUESTIONS);
 
     routeKeys.typesafe = '';
+    routeKeys.jev = { enabled: true, openRouterConsent: true };
     routeKeys.openrouter = OPENROUTER;
     installFetch(ANSWERS);
     const openrouter = await systemOne(STATE, QUESTIONS);
@@ -298,11 +305,62 @@ describe('typesafeProvider jev route', () => {
     expect(error.message).toContain(MODEL_API_ENDPOINTS.openrouterDecisions);
     expect(error.message).not.toContain(OPENROUTER);
   });
+
+  // -------------------------------------------------------------------------
+  // 知情同意闸门（N-JEV-DEFAULT-ON-CONSENT ③）：未同意借用 / 用户关总开关 ⇒ 视同无 key
+  // -------------------------------------------------------------------------
+
+  it('OpenRouter key without consent: null route, no fetch, probe reports pending consent', () => {
+    routeKeys.openrouter = OPENROUTER;
+    routeKeys.jev = { enabled: true, openRouterConsent: false };
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    expect(probeJevKeySource()).toBe('openrouter_pending_consent');
+    expect(resolveJevRoute()).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('consent given: OpenRouter route works again', async () => {
+    routeKeys.openrouter = OPENROUTER;
+    routeKeys.jev = { enabled: true, openRouterConsent: true };
+    const captured = installFetch(ANSWERS);
+    expect(resolveJevRoute()?.kind).toBe('openrouter');
+    const answers = await systemOne(STATE, QUESTIONS);
+    expect(answers).toEqual(ANSWERS.answers);
+    expect(captured[0].url).toBe(MODEL_API_ENDPOINTS.openrouterDecisions);
+  });
+
+  it('master switch off: null even with the official key, probe reports disabled_by_user', () => {
+    routeKeys.typesafe = OFFICIAL;
+    routeKeys.jev = { enabled: false, openRouterConsent: true };
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    expect(probeJevKeySource()).toBe('disabled_by_user');
+    expect(resolveJevRoute()).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+    // 官方 key 存在时仍不读取 OpenRouter key（读序不变）。
+    expect(routeKeys.openrouterReads).toBe(0);
+  });
+
+  it('official key does not need OpenRouter consent', () => {
+    routeKeys.typesafe = OFFICIAL;
+    routeKeys.jev = { enabled: true, openRouterConsent: false };
+    expect(probeJevKeySource()).toBe('official');
+    expect(resolveJevRoute()?.kind).toBe('official');
+  });
+
+  it('probe distinguishes none from pending consent', () => {
+    routeKeys.jev = { enabled: true, openRouterConsent: false };
+    expect(probeJevKeySource()).toBe('none');
+    routeKeys.openrouter = OPENROUTER;
+    expect(probeJevKeySource()).toBe('openrouter_pending_consent');
+  });
 });
 
 describe('pre-checks treat an OpenRouter-only key as available', () => {
   beforeEach(() => {
     routeKeys.typesafe = '';
+    routeKeys.jev = { enabled: true, openRouterConsent: true };
     routeKeys.openrouter = undefined;
     routeKeys.openrouterReads = 0;
     featureFlags.jevSkillRerank = false;
@@ -457,6 +515,7 @@ describe('jev-route-probe', () => {
     lines.length = 0;
     errors.length = 0;
     routeKeys.typesafe = '';
+    routeKeys.jev = { enabled: true, openRouterConsent: true };
     routeKeys.openrouter = undefined;
     routeKeys.openrouterReads = 0;
     vi.unstubAllEnvs();

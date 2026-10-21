@@ -185,6 +185,7 @@ export const enSettingsSystem = {
           browserAutomation: 'Browser control',
           imageUnderstanding: 'Image understanding',
           pythonEnv: 'Python data runtime',
+          libreOffice: 'LibreOffice document rendering',
         },
         summary: {
           unavailableSuffix: ' unavailable',
@@ -209,6 +210,10 @@ export const enSettingsSystem = {
           installFailed: 'The install did not finish. Retry to install again; if it keeps failing, open the install log for details.',
           unsupported: 'The managed Python runtime is not supported on this platform; data-processing features are unavailable.',
           fallback: 'The install did not finish. Retry to install again.',
+          libreOfficeOffline: 'Network unavailable: the LibreOffice download source could not be reached, so the install did not finish. Check the network and retry.',
+          libreOfficeInstallFailed: 'LibreOffice installation did not finish (the checksum may have failed). Retry; if it keeps failing, open the install log.',
+          libreOfficeUnsupported: 'Managed LibreOffice is not supported on this platform; document previews are unavailable.',
+          libreOfficeFallback: 'LibreOffice is not ready yet, so the text outline is shown. Retry the install.',
         },
         openInstallLog: 'Open log',
       },

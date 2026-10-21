@@ -6,8 +6,9 @@
 // 「你授权过的权限」列表消费。id 是撤销键：`<variant>:<uri-encoded 分段>`，段内
 // 冒号已转义，split(':') 无歧义（grantLedger.ts 是 id 的唯一拼/拆点）。
 
-/** 授权条目的种类：按应用的操作授权 / automation 上的 (tool,target) 长期授权 / 会话内工具放行。 */
-type PermissionGrantKind = 'app' | 'tool-target' | 'tool-session';
+/** 授权条目的种类：按应用的操作授权 / automation 上的 (tool,target) 长期授权 / 会话内工具放行 /
+ * 工具授权两档（N-PERM-GRANT-TIERS，source 区分 run / 24h）。 */
+type PermissionGrantKind = 'app' | 'tool-target' | 'tool-session' | 'tool-timed';
 
 /**
  * 归一化授权条目。

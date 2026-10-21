@@ -22,13 +22,24 @@ type PermissionGrantsText = typeof zh.settings.privacy.permissionGrants;
 function scopeLabel(source: string, copy: PermissionGrantsText['scope']): string {
   if (source === 'conversation') return copy.conversation;
   if (source === 'settings') return copy.always;
+  // N-PERM-GRANT-TIERS 两档工具授权（toolGrantStore）的固定 source。
+  if (source === 'run') return copy.run;
+  if (source === '24h') return copy.hours24;
   return copy.automation.replace('{title}', source);
 }
 
 function kindLabel(kind: PermissionGrantEntry['kind'], copy: PermissionGrantsText['kind']): string {
   if (kind === 'app') return copy.app;
   if (kind === 'tool-target') return copy.toolTarget;
+  if (kind === 'tool-timed') return copy.toolTimed;
   return copy.toolSession;
+}
+
+/** 有到期时刻的条目显示「剩余 N 小时/分钟」（N-PERM-GRANT-TIERS）；不足 1 小时按分钟。 */
+function remainingLabel(expiresAt: number, now: number, copy: PermissionGrantsText): string {
+  const minutes = Math.max(1, Math.ceil((expiresAt - now) / 60_000));
+  if (minutes < 60) return copy.remainingMinutes.replace('{n}', String(minutes));
+  return copy.remainingHours.replace('{n}', String(Math.ceil(minutes / 60)));
 }
 
 const PermissionGrantList: React.FC = () => {
@@ -84,9 +95,11 @@ const PermissionGrantList: React.FC = () => {
                   {scopeLabel(grant.source, copy.scope)}
                   {' · '}
                   {copy.grantedOn.replace('{date}', new Date(grant.grantedAt).toLocaleDateString())}
-                  {grant.expiresAt !== null ? ` · ${copy.expiresOn.replace('{date}', new Date(grant.expiresAt).toLocaleDateString())}` : ''}
+                  {grant.expiresAt !== null
+                    ? ` · ${remainingLabel(grant.expiresAt, Date.now(), copy)}`
+                    : ''}
                 </div>
-                {grant.kind === 'tool-target' && grant.detail ? (
+                {(grant.kind === 'tool-target' || grant.kind === 'tool-timed') && grant.detail ? (
                   <div className="mt-0.5 truncate text-xs text-zinc-400">{copy.targetLabel.replace('{target}', grant.detail)}</div>
                 ) : null}
               </div>

@@ -38,7 +38,7 @@ concurrency:
 jobs:
   boot-gate:
     name: WebServer 打包启动闸
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Checkout

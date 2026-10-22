@@ -22,11 +22,6 @@ permissions:
 jobs:
   correctness:
     name: Long-session scroll correctness
-    # Pinned to ubuntu-24.04, not ubuntu-latest: the latest label flipped to the
-    # ubuntu-26.04 image (2026-10-18) and Playwright 1.60 ships no ubuntu-26.04
-    # chromium build, so `playwright install` fails before any test runs
-    # (2026-10-21: every job of this PR's runs died at browser install). Unpin
-    # only together with a Playwright upgrade.
     runs-on: ubuntu-24.04
     # A cold Playwright cache can spend most of 10 minutes downloading browser
     # inputs before the correctness test starts. Keep a bounded ceiling, but

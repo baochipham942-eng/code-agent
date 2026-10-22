@@ -30,6 +30,7 @@ import type {
 import type { SessionStatus, TaskManager } from '../task';
 import type { PermissionDeliveryOutcome } from '../../shared/contract/permission';
 import { closeDeadParkedApproval } from '../agent/parkedApprovalHydration';
+import { kickSurvivingParkedApprovalResume } from '../agent/parkedApprovalResume';
 import type { ConfigService } from '../services';
 import { getSessionManager, type SessionWithMessages } from '../services';
 import { createLogger } from '../services/infra/logger';
@@ -952,6 +953,8 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     // 停车审批的宿主可能已随进程重启消失（D0 根因，2026-07-27）：
     // 找不到宿主/内存 pending 已丢时，把 DB 行 fail-closed 拒绝收尾，
     // 返回类型化结果而不是裸抛或静默丢弃。
+    // N-PARKED-APPROVAL-SURVIVE-RESTART-RESUME：幸存行不再拒绝——接手给
+    // parkedApprovalResume 从台账执行一次（异步），本次点击按已送达回报。
     let outcome: PermissionDeliveryOutcome;
     try {
       const resolvedSessionId = this.resolveSessionId(sessionId);
@@ -959,10 +962,14 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         ? this.getTaskManager().handlePermissionResponse(resolvedSessionId, requestId, response, updatedArgs)
         : 'no_session';
     } catch (err) {
+      if (kickSurvivingParkedApprovalResume(requestId, response)) return 'delivered';
       if (closeDeadParkedApproval(requestId)) return 'no_orchestrator';
       throw err;
     }
-    if (outcome === 'unknown_request') closeDeadParkedApproval(requestId);
+    if (outcome === 'unknown_request' || outcome === 'no_orchestrator') {
+      if (kickSurvivingParkedApprovalResume(requestId, response)) return 'delivered';
+      closeDeadParkedApproval(requestId);
+    }
     return outcome;
   }
 

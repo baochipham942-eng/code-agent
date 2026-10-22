@@ -15,7 +15,8 @@
 import type { VoiceToolCallOrigin, VoiceToolDefinition } from '../../../shared/contract/voice';
 import { normalizeSpokenFileName } from '../../../shared/utils/normalizeSpokenFileName';
 import { createLogger } from '../infra/logger';
-import { dispatchVoiceIntent, type VoiceIntent } from './voiceAgentCoordinator';
+import { dispatchVoiceIntent } from './voiceAgentCoordinator';
+import type { VoiceIntent } from './voiceDispatchTypes';
 
 const logger = createLogger('VoiceTools');
 

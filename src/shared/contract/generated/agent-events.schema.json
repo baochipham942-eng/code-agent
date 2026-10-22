@@ -1244,6 +1244,12 @@
                 "code"
               ],
               "additionalProperties": false
+            },
+            "deniedPath": {
+              "type": "string"
+            },
+            "action": {
+              "type": "string"
             }
           },
           "additionalProperties": false

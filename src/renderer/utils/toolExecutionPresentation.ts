@@ -452,9 +452,19 @@ function mapToolFailureCodeCopy(
  * Folded-row failure reason. Structured code/reason wins; absent structured evidence is stated
  * explicitly instead of filling the row with a generic claim that the tool failed.
  */
+function isDeclinedSandboxEscalation(metadata: Record<string, unknown> | null | undefined): boolean {
+  const escalation = metadata?.sandboxEscalation;
+  if (!escalation || typeof escalation !== 'object' || Array.isArray(escalation)) return false;
+  return (escalation as { decision?: unknown }).decision === 'declined';
+}
+
 export function humanizeToolFailureReason(toolCall: Pick<ToolCall, 'name' | 'result'>, t: Translations): string {
   const result = toolCall.result;
   const metadata = result?.metadata;
+  // 拒绝放宽沙盒的出路必须盖过 FS_ERROR 的「错误码」行。
+  if (isDeclinedSandboxEscalation(metadata)) {
+    return t.decisionCard.permission.sandboxEscalationDeclined;
+  }
   const error = result?.error || (typeof result?.output === 'string' ? result.output : undefined);
   const mappedFailureCode = mapToolFailureCodeCopy(metadata, t);
   if (mappedFailureCode) return mappedFailureCode;

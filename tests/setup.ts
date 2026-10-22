@@ -9,6 +9,8 @@ import { configureFolderTrustService } from '../src/host/security/folderTrustSer
 // 标记为 CLI 模式，跳过 secureStorage.ts 中的 require('keytar')
 // keytar 为 Electron headers 编译，在系统 Node.js 中 SIGSEGV (exit 139)
 process.env.CODE_AGENT_CLI_MODE = '1';
+// Runtime availability tests opt in explicitly; existing tests must never start a network install.
+process.env.CODE_AGENT_NO_RUNTIME_AUTOINSTALL = '1';
 
 // Most existing unit tests predate the folder trust gate and exercise loaders in a
 // "project config is readable" test context. Security gate tests explicitly clear

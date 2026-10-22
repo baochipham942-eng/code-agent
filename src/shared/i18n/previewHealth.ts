@@ -21,7 +21,9 @@ export type PreviewHealthMessageKey =
   | 'broken_image'
   | 'missing_main_element'
   | 'primary_button_not_visible'
-  | 'responsive_breakpoint_failure';
+  | 'responsive_breakpoint_failure'
+  | 'html_incomplete'
+  | 'button_no_response';
 
 const messages: Record<PreviewHealthLocale, Record<PreviewHealthMessageKey, string>> = {
   zh: {
@@ -33,6 +35,8 @@ const messages: Record<PreviewHealthLocale, Record<PreviewHealthMessageKey, stri
     missing_main_element: '缺少主要内容',
     primary_button_not_visible: '主要按钮不可见',
     responsive_breakpoint_failure: '部分屏幕尺寸下显示异常',
+    html_incomplete: 'HTML 文档被截断',
+    button_no_response: '按钮点击无响应',
     webRepairUnavailable: '未能体检这个网页（预览检查不可用）',
 
     skipped: 'artifact preview health 已跳过：{reason}',
@@ -57,6 +61,8 @@ const messages: Record<PreviewHealthLocale, Record<PreviewHealthMessageKey, stri
     missing_main_element: 'main content missing',
     primary_button_not_visible: 'main button not visible',
     responsive_breakpoint_failure: 'display problems at some screen sizes',
+    html_incomplete: 'HTML document truncated',
+    button_no_response: 'button does not respond',
     webRepairUnavailable: 'Could not check this web page (preview check unavailable)',
 
     skipped: 'artifact preview health skipped: {reason}',

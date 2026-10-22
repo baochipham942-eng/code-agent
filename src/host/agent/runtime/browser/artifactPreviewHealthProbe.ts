@@ -2,6 +2,10 @@ import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import type { ConsoleMessage, Page } from 'playwright';
 import { ARTIFACT_PREVIEW_HEALTH } from '../../../../shared/constants/previewHealth';
+import {
+  probeArtifactButtonClick,
+  type ArtifactPreviewHealthButtonClickDiagnostics,
+} from './artifactPreviewHealthButtonClick';
 
 export interface ArtifactPreviewHealthViewportDiagnostics {
   name: string;
@@ -34,6 +38,7 @@ export interface ArtifactPreviewHealthDiagnostics {
   consoleErrors: string[];
   pageErrors: string[];
   viewports: ArtifactPreviewHealthViewportDiagnostics[];
+  buttonClick?: ArtifactPreviewHealthButtonClickDiagnostics;
 }
 
 export interface ArtifactPreviewHealthOptions {
@@ -305,11 +310,19 @@ export async function collectArtifactPreviewHealthDiagnosticsFromPage(
       });
     }
 
+    // button_no_response 探针（anti-Potemkin）：viewport 循环只读不点，这里回到
+    // 第一个 viewport 点击第一个可见且启用的 <button> 一次，实现与失败语义见
+    // artifactPreviewHealthButtonClick.ts（fail-open 但不静默）。
+    const buttonClick = viewports.length > 0
+      ? await probeArtifactButtonClick({ page, url, viewport: viewports[0], remainingMs: remaining })
+      : undefined;
+
     return {
       title: latestTitle,
       consoleErrors: consoleErrors.slice(0, 10),
       pageErrors: pageErrors.slice(0, 10),
       viewports: viewportDiagnostics,
+      ...(buttonClick ? { buttonClick } : {}),
     };
   } finally {
     page.off('console', onConsole);

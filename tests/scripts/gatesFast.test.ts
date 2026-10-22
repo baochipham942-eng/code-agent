@@ -7,7 +7,7 @@ import policy from '../../scripts/lib/gates-fast-policy.json';
 import {
   assertExactFiles, selectTests, validateFiles, validateReport, renderReceipt, digest,
   validateBudgetPolicy, validateGateBudgetCoverage, extractGateIds, commandDeadline, budgetFailure,
-  changedInputs,
+  changedInputs, summarizeVitestFailures,
 } from '../../scripts/lib/gates-fast-contract.mjs';
 
 const root = path.resolve(__dirname, '../..');
@@ -115,6 +115,23 @@ describe('fast gate fail-closed contracts', () => {
       { ...good, testResults: [{ ...good.testResults[0], assertionResults: [] }] },
       { ...good, testResults: [{ ...good.testResults[0], assertionResults: [{ status: 'pending' }] }] },
     ]) expect(() => validateReport([policy.baseline[0]], bad, root)).toThrow();
+  });
+  it('summarizes failed tests from a vitest report so a red fast gate names the culprit (FB-409)', () => {
+    const file = path.join(root, 'tests/unit/a.test.ts');
+    const report = { testResults: [
+      { name: file, status: 'failed', assertionResults: [
+        { status: 'passed', fullName: 'ok' },
+        { status: 'failed', fullName: 'suite > breaks', failureMessages: ['\nAssertionError: expected 1 to be 2\n    at x'] },
+      ] },
+      { name: path.join(root, 'tests/unit/b.test.ts'), status: 'failed', message: 'Cannot find module ./gone', assertionResults: [] },
+    ], unhandledErrors: [{ message: 'orphan rejection' }] };
+    expect(summarizeVitestFailures(report, root)).toEqual([
+      'tests/unit/a.test.ts::suite > breaks: AssertionError: expected 1 to be 2',
+      'tests/unit/b.test.ts: Cannot find module ./gone',
+      'unhandled: orphan rejection',
+    ]);
+    expect(summarizeVitestFailures(report, root, 1)).toEqual(['tests/unit/a.test.ts::suite > breaks: AssertionError: expected 1 to be 2', '…+2 more']);
+    expect(summarizeVitestFailures(undefined, root)).toEqual([]);
   });
   it('budgets: per-gate cap and total ceiling are separate limits with separate failure wording', () => {
     expect(() => validateBudgetPolicy(policy)).not.toThrow();

@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
-// N-PERMRULES-UI-FIX-ADMIN：非管理员对规则 textarea / 子 Agent 继承按钮 / 迁移确认按钮
-// 这些必走 settings set（host guard 对 'permissions' 恒 403）的控件，应在 UI 层
-// 直接只读并给出提示，而不是让用户填完才吃 saveFailedPrefix 报错。
+// N-PERMRULES-LOCAL-OWNER：非管理员（本机本人）现在可以编辑自己的 deny/ask/allow 规则
+// （host 侧只对 permissions 的非规则键门控），规则框应可编辑、失焦即存；继承按钮 /
+// 迁移确认按钮这些仍走 admin 门控的控件保持只读并给出提示。
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 import { zhSettingsCore } from '../../../src/renderer/i18n/zhSettingsCore';
 import { enSettingsCore } from '../../../src/renderer/i18n/enSettingsCore';
@@ -33,12 +33,14 @@ beforeEach(() => {
   invokeDomain.mockReset();
   invokeDomain.mockImplementation(async (_domain: string, action: string) => {
     if (action === 'get') {
-      // host 对非管理员的 get 本会剥掉 deny/ask/allow/_legacyPermissions
-      // （settings.ipc.ts sanitizeSettingsForUser）；这里故意返回未 ack 的
-      // _legacyPermissions 把迁移横幅拉进场景——被测的是 renderer 门禁，不是 host 剥除。
+      // N-PERMRULES-LOCAL-OWNER 后 host 对非 admin 的 get 原样带回 deny/ask/allow；
+      // 故意返回未 ack 的 _legacyPermissions 把迁移横幅拉进场景。
       return {
         permissions: {
           inheritance: 'strict-inherit',
+          deny: ['Bash(rm -rf *)'],
+          ask: ['Write(/etc/*)'],
+          allow: ['Read'],
           _legacyPermissions: true,
         },
       };
@@ -64,33 +66,54 @@ function actionButtonInRow(rowTitle: string): HTMLButtonElement {
   return button;
 }
 
-describe('GeneralSettings non-admin read-only permission controls (N-PERMRULES-UI-FIX-ADMIN)', () => {
+describe('GeneralSettings non-admin permission controls (N-PERMRULES-LOCAL-OWNER)', () => {
   it('ships the admin-managed note copy in both zh and en', () => {
     expect(zhPerms.adminManagedNote).toBe('由管理员管理');
     expect(enSettingsCore.general.permissions.adminManagedNote).toBe('Managed by your administrator');
   });
 
-  it('disables rules/inheritance/migration controls with a visible note, and fires no settings set nor error toast', async () => {
+  it('states the immediate-effect hint in both zh and en (no restart copy)', () => {
+    expect(zhPerms.userRules.autoSaveHint).toBe('焦点离开输入框时自动保存，保存后立即生效。');
+    expect(enSettingsCore.general.permissions.userRules.autoSaveHint)
+      .toBe('Rules save automatically when the input loses focus and take effect immediately.');
+  });
+
+  it('shows a non-admin their own rules in editable boxes and saves on blur', async () => {
+    const success = vi.spyOn(toast, 'success');
+    const errorToast = vi.spyOn(toast, 'error');
+    render(<GeneralSettings />);
+
+    expect(await screen.findByText(zhPerms.migration.title)).toBeTruthy();
+
+    const deny = ruleTextarea(/^Bash\(rm -rf \*\)/);
+    const ask = ruleTextarea(/^Bash\(git push \*\)/);
+    const allow = ruleTextarea(/^Read\(\*\)/);
+    expect(deny.disabled).toBe(false);
+    expect(ask.disabled).toBe(false);
+    expect(allow.disabled).toBe(false);
+    // 打开页面就能看到已保存的规则（host get 不再剥掉本人规则）。
+    expect(deny.value).toBe('Bash(rm -rf *)');
+    expect(ask.value).toBe('Write(/etc/*)');
+    expect(allow.value).toBe('Read');
+
+    fireEvent.change(deny, { target: { value: 'Bash(echo neo-deny-probe*)' } });
+    fireEvent.blur(deny);
+
+    await waitFor(() => {
+      expect(invokeDomain).toHaveBeenCalledWith(IPC_DOMAINS.SETTINGS, 'set', {
+        permissions: { deny: ['Bash(echo neo-deny-probe*)'] },
+      });
+    });
+    expect(success).toHaveBeenCalledTimes(1);
+    expect(errorToast).not.toHaveBeenCalled();
+  });
+
+  it('keeps inheritance and migration controls admin-only with a visible note, firing no settings set', async () => {
     const errorToast = vi.spyOn(toast, 'error');
     render(<GeneralSettings />);
 
     expect(await screen.findByText(zhPerms.migration.title)).toBeTruthy();
     expect(screen.getByText(zhPerms.adminManagedNote)).toBeTruthy();
-
-    const deny = ruleTextarea(/^Bash\(rm -rf \*\)/);
-    const ask = ruleTextarea(/^Bash\(git push \*\)/);
-    const allow = ruleTextarea(/^Read\(\*\)/);
-    expect(deny.disabled).toBe(true);
-    expect(ask.disabled).toBe(true);
-    expect(allow.disabled).toBe(true);
-
-    // jsdom 对 disabled 元素照样派发事件（真实浏览器也存在合成/边界路径），
-    // 这正是 handler 层还要再拦一道的原因：blur 也必须零 set。
-    fireEvent.change(deny, { target: { value: 'Write(/etc/*)' } });
-    fireEvent.blur(deny);
-    fireEvent.blur(ask);
-    fireEvent.change(allow, { target: { value: 'Bash(npm test)' } });
-    fireEvent.blur(allow);
 
     const childNarrow = actionButtonInRow(zhPerms.inheritanceModes.childNarrow.title);
     const independent = actionButtonInRow(zhPerms.inheritanceModes.independent.title);

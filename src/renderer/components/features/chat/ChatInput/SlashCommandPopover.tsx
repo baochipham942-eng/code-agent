@@ -30,6 +30,7 @@ import type { ExtensionValidationResult } from '@shared/contract/extension';
 import type { AgentListEntry } from '@shared/contract/agentRegistry';
 import { AGENT_NEO_HELP_URL } from '@shared/constants/network';
 import { invoke, invokeDomain, unsafeInvoke } from '../../../../services/ipcService';
+import { installExtensionWithSkillCautionConfirm } from '../../../../services/skillCautionPrompt';
 import type { WorkbenchCapabilityRegistryItem } from '../../../../utils/workbenchCapabilityRegistry';
 import type { SkillRecommendationView } from './CapabilitySuggestionStrip';
 import {
@@ -235,7 +236,9 @@ export const SlashCommandPopover: React.FC<SlashCommandPopoverProps> = ({
   const extensionOps = useMemo(() => ({
     list: async () => invoke(IPC_CHANNELS.EXTENSION_LIST),
     install: async (spec: string) => {
-      ensureExtensionMutation(await invoke(IPC_CHANNELS.EXTENSION_INSTALL, spec));
+      // 确认门契约经 EXTENSION_INSTALL 整包回传，这里分流到 App 级确认面
+      // （确认 = 携 token 重发；取消/失败按抛错走命令层的失败收口）
+      await installExtensionWithSkillCautionConfirm(spec);
     },
     uninstall: async (id: string) => {
       ensureExtensionMutation(await invoke(IPC_CHANNELS.EXTENSION_UNINSTALL, id));

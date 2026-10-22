@@ -3,7 +3,7 @@
   "messageRefs": [
     {
       "kind": "content",
-      "contentHash": "ebcb9f8b198603cb910eca3febc974b0aed27f9b60da47e9b38f2fd2234f2b1b",
+      "contentHash": "023a20242f3b6bf8cc3da00b0a2992e2ef39dfca794b0946a6cc94937af998aa",
       "reason": "system_prompt_fallback"
     },
     {
@@ -19,7 +19,7 @@
       "messageId": "msg-03"
     }
   ],
-  "toolSchemaHash": "62a1ae937465e5c4fed9276f7eb2e582bb6ef15dfea7899a3e289ed440005cfa",
+  "toolSchemaHash": "fbc354aecd5f0472f36f9c9716c1c14f410fda593f1d76bb08fb2883e76ddb1c",
   "toolNames": [
     "AskUserQuestion",
     "Bash",

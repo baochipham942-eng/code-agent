@@ -72,11 +72,12 @@ const CRON_GENERATION_SYSTEM_PROMPT = `你是一个定时任务配置助手。�
   "name": "任务名称",
   "description": "任务描述",
   "enabled": true,
-  "scheduleType": "every" | "cron" | "at",
+  "scheduleType": "every" | "cron" | "at" | "event",
   "schedule": {
     // every 类型: { "type": "every", "interval": 数字, "unit": "seconds"|"minutes"|"hours"|"days" }
     // cron 类型: { "type": "cron", "expression": "cron表达式", "timezone": "Asia/Shanghai" }
     // at 类型: { "type": "at", "datetime": "ISO时间字符串" }
+    // event 类型: { "type": "event", "source": "channel", "eventName": "message" }
   },
   "action": {
     // agent 类型（最常用）: { "type": "agent", "agentType": "default", "prompt": "要让 AI 智能体执行的任务描述" }
@@ -97,6 +98,8 @@ const CRON_GENERATION_SYSTEM_PROMPT = `你是一个定时任务配置助手。�
 - 时区默认 Asia/Shanghai
 - 尽量从描述中推断合理的调度方式和参数
 - 错峰：小时级/天级的循环任务避免落在整点（分钟=0）扎堆触发——除非用户明确要求整点，cron 表达式的分钟位默认用一个非 0 值（如 17），"every" 间隔类型不受影响（会自动错峰）
+- 事件监听：用户想「盯着/监听某个群或会话，来了新消息就做某事」（如「关注发布群，有人提到发布就总结给我」「群里有消息就提醒我」）→ scheduleType 用 "event"，schedule 固定为 { "type": "event", "source": "channel", "eventName": "message" }，并在返回 JSON 顶层加 "groupName": 用户原话提到的群名（字符串；用户没点名具体群就省略这个字段）。不要编造 accountId 或 chatId——账号和群由用户稍后在确认卡里自己选。event 类型的动作必须是 agent。
+- 邮件请求不用 event：用户说「有新邮件时通知我」这类邮件触发暂不支持 event 创建（没有对应的创建界面），改用 every/cron 定时巡检（如每小时查一次邮箱）来近似表达。
 - 可选地返回 restatement；其中 what 和 notifyWhen 都必须是面向用户的平实完整句子。若无法可靠推断，可省略整个 restatement 对象。
 - 只返回 JSON，不要任何解释`;
 
@@ -132,6 +135,15 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
     const cronService = getCronService();
     const { jobId, updates } = getUpdateCronJobRequest(payload);
     const job = await cronService.updateJob(jobId, updates);
+    return { success: true, data: job } satisfies IPCResponse;
+  },
+  grantLoginPassThrough: async (_ctx, payload) => {
+    const cronService = getCronService();
+    const jobId = getStringField(payload, 'jobId');
+    if (!jobId) throw new Error('Invalid cron job id');
+    const siteOrigin = getStringField(payload, 'siteOrigin');
+    if (!siteOrigin) throw new Error('Invalid cron login pass-through origin');
+    const job = await cronService.grantLoginPassThrough(jobId, siteOrigin);
     return { success: true, data: job } satisfies IPCResponse;
   },
   deleteJob: async (_ctx, payload) => {

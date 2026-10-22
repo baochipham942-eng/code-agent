@@ -78,6 +78,7 @@ import {
   ProviderConnectionSection,
 } from './ProviderDetailSections';
 import { TaskStrategySettingsPanel } from './TaskStrategySettingsPanel';
+import { ServiceTierCostNote } from './ServiceTierCostNote';
 import { ProviderModelsSection } from './ProviderModelsSection';
 import { AddProviderCard } from './AddProviderCard';
 import { useModelThinkingSettings } from './useModelThinkingSettings';
@@ -875,6 +876,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange, 
         onChange={persistTaskStrategy}
         onMemoryRouteChange={persistMemoryRouting}
       />
+
+      <ServiceTierCostNote />
 
       {/* ── 模型提供商：左 Provider 列表 + 右详情 ── */}
       <SettingsSection

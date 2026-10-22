@@ -138,3 +138,11 @@ sequenceDiagram
 ## 预期收益
 
 关窗不打断任务：用户让电脑干一个长活儿时，**不必为一个还在跑的任务保持窗口开着**——关掉窗口去干别的，任务继续跑、账本继续写、回来重开窗口就续上（同一条会话、同一个 run）。配对手机上的审批卡照常到达，因为权威进程还活着。配套收益：Quit 不再无声杀任务（N-QUIT-RUNNING-CONFIRM 的确认框有了「后台继续」这个不丢活的出口），升级的停机窗口收窄到排空所需的时间。
+
+## 拍板记录（2026-10-18 append，N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON，只增不改）
+
+上一节的拍板（2026-10-06）不动；本节只追加三条，均由本单落地：
+
+1. **退出意图通道**：壳在退进程之前 `POST /api/quit-intent` 声明本次退出意图——`background`（后台继续）或 `stop`（停止并退出）；旧 `POST /api/quit-guard/detach` 保留为 background 的别名（Rust 壳仍在调用，切换见 N-RESIDENT-QUIT-THREE-BUTTONS）。`stop` 把下一次 stdin EOF 变成**全平台**停机指令：先照常排空在跑 run，再走既有优雅停机（shutdown），即使还有 run 在忙——留守只会把优雅窗耗在被硬杀上。
+2. **armed-schedule 留守规则**：空闲去留快照（daemonIdle）新增第四信号 `armedSchedules`（已启用定时任务数），与退出确认弹窗的 quit-guard 计数**同源同口径**。留守判据 = 老三信号（在跑 run / 配对伴侣 / 等审批）任一在忙，**或**（意图=background 且 armedSchedules>0）。无声明（壳崩了/被杀）时 armed 单独**永不**留守——不留隐形 daemon，拍板记录 2 的「空闲随壳退出」不被推翻。任务增/删/改/启停会触发去留重查（CronService.onJobsChanged → recheck）：删掉最后一个已启用任务，纯为任务留守的 daemon 随之退出。用户预期锚点：竞品的定时任务跑在云端、不依赖桌面 app 存活（Claude Cowork help center）；Neo 只能靠本机常驻兑现同一预期。
+3. **`neo daemon status` 留守原因**：daemon 在 pid 文件旁原子维护 `daemon-state.json`（退出意图 + 留守原因清单，快照/意图/任务变化时重写，写失败仅 warn 不挡运行）。status 在 pid 状态为 owned 时于 pid 行下多打一行：`Staying alive because: <running runs | N armed schedule(s) | paired companion | pending approval>`；无留守原因时明说 `No reason to stay alive: exits once the shell is gone`。陈旧文件（pid 不吻合 / 解析失败）忽略，按无留守原因口径打印。

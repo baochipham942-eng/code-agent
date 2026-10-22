@@ -1,9 +1,11 @@
 import type { Translations } from '../../hooks/useI18n';
+import type { Language } from '../../i18n';
 import type { DecisionCardViewMode } from '../DecisionCard';
 import type { PermissionRequest } from './types';
 import { formatFilePath, isDangerousCommand } from './utils';
 import { redactCredentialText } from '@shared/security/secretPatterns';
 import { PermissionRequestReason } from '@shared/contract';
+import { isSandboxEscalation } from './sandboxEscalationPresentation';
 
 function fileTarget(request: PermissionRequest): string | undefined {
   return request.details.filePath || request.details.path;
@@ -80,7 +82,7 @@ export function defaultPermissionViewMode(request: PermissionRequest): DecisionC
     : 'expanded';
 }
 
-export function permissionSummary(request: PermissionRequest, t: Translations): string {
+export function permissionSummary(request: PermissionRequest, t: Translations, language: Language = 'zh'): string {
   const p = t.decisionCard.permission;
   const target = fileTarget(request);
   const compactTarget = target ? compactFileTarget(target) : undefined;
@@ -104,12 +106,21 @@ export function permissionSummary(request: PermissionRequest, t: Translations): 
       return p.questionCommand;
     case 'dangerous_command':
       return p.questionCommand;
-    case 'network':
+    case 'network': {
+      // N-HTTPREQ-CONNECTOR-CARD-DISCLOSE：连接器令牌写不是普通「访问 URL」——请求会以
+      // 用户已连接应用的身份发出，问句必须点名连接器与「以你的身份」，URL 详情交给披露块。
+      const connectorName = request.details.connectorTokenAttached === true && request.boundary?.connectorName
+        ? (language === 'en' ? request.boundary.connectorNameEn ?? request.boundary.connectorName : request.boundary.connectorName)
+        : undefined;
+      if (connectorName) {
+        return p.questionConnectorWrite.replace('{connector}', connectorName);
+      }
       return request.details.server || request.details.toolName
         ? p.questionMcpGeneric
         : request.details.url
           ? p.questionNetwork.replace('{target}', redactCredentialText(request.details.url))
           : p.questionFallback;
+    }
     case 'mcp':
       return p.questionMcpGeneric;
     default:
@@ -123,6 +134,8 @@ function fileCountText(count: number | undefined, t: Translations): string {
 }
 
 export function permissionConsequence(request: PermissionRequest, t: Translations): string | undefined {
+  // 沙盒放宽卡的问句已经说明放开哪一个文件或目录，不再叠命令后果行。
+  if (isSandboxEscalation(request)) return undefined;
   // 按应用授权卡（appGrantCard && !isDangerous，判据与 PermissionCard 同源）问的是
   // 「要不要让 Neo 操作这个应用」，命令风险后果行会把刚统一的口径撕回去：标题与
   // 正文都说应用，后果行回头说命令。该卡不渲染命令后果行——问题句已把授权语义说尽。

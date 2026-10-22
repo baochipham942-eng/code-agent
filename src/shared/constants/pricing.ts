@@ -1,4 +1,5 @@
 import { normalizeProviderId } from './providers';
+import { SERVICE_TIER_COST_MULTIPLIER } from './serviceTier';
 
 /** 改动 MODEL_PRICING_PER_1M 中任一价格时必须同步递增。 */
 export const PRICING_TABLE_VERSION = 3;
@@ -30,6 +31,8 @@ interface UsageCostTokens {
   outputTokens: number;
   cacheReadTokens?: number;
   cacheCreationTokens?: number;
+  /** 该次响应实报的 service_tier（缺席 = standard 计价，见 SERVICE_TIER_COST_MULTIPLIER）。 */
+  serviceTier?: string;
 }
 
 export interface RealtimeVoicePricingEntry {
@@ -66,6 +69,12 @@ export const DEFAULT_CACHE_WRITE_PRICE_RATIO = 1.25;
  * Calculate one request's USD cost from catalogue data and normalized token usage.
  * The arithmetic order matches the existing budget calculation so entries without
  * a long-context tier retain their exact floating-point result.
+ *
+ * serviceTier 折价（flex 半价档）只作用于 input/output 合计（含 longContext 档的
+ * in/out 计价）——实测证据（REALCALL，见 SERVICE_TIER_COST_MULTIPLIER）只覆盖这
+ * 两项单价折半；cacheRead/cacheWrite 是否随档折价无实测证据，按刊例计不折价
+ * （预算宁高勿低：低估会让 budget 线晚触发）。档位缺席或表外（= standard 计价）
+ * 时返回值与无档路径逐位一致，不重排浮点运算。
  */
 export function computeUsageCostUsd(pricing: ModelPricingEntry, usage: UsageCostTokens): number {
   const cacheReadPrice = pricing.cacheRead ?? pricing.input * DEFAULT_CACHE_READ_PRICE_RATIO;
@@ -84,7 +93,13 @@ export function computeUsageCostUsd(pricing: ModelPricingEntry, usage: UsageCost
   const outputCost = (usage.outputTokens / 1_000_000) * outputPrice;
   const cacheReadCost = ((usage.cacheReadTokens ?? 0) / 1_000_000) * effectiveCacheReadPrice;
   const cacheWriteCost = ((usage.cacheCreationTokens ?? 0) / 1_000_000) * effectiveCacheWritePrice;
-  return inputCost + outputCost + cacheReadCost + cacheWriteCost;
+  const total = inputCost + outputCost + cacheReadCost + cacheWriteCost;
+  const serviceTierMultiplier = SERVICE_TIER_COST_MULTIPLIER[usage.serviceTier ?? ''] ?? 1;
+  if (serviceTierMultiplier === 1) {
+    return total;
+  }
+  // 倍率只折 input/output（含 longContext 的 in/out 计价）；cache 项按刊例计。
+  return (inputCost + outputCost) * serviceTierMultiplier + cacheReadCost + cacheWriteCost;
 }
 
 /** 模型定价（每 1M tokens，美元）— 仅包含 PROVIDER_REGISTRY 中注册的模型 */
@@ -245,9 +260,11 @@ export const DESIGN_VIDEO_MODELS = {
 /**
  * 音乐生成定价（每首，人民币元）。单一真源——禁在业务代码散落音乐价格字面量。
  * key 为音乐模型 id（与 generateMusic 返回的 actualModel 对齐）。
- * MiniMax 音乐单价未公开，先取保守默认 ¥0.2/首，待真实账单校正。
+ * MiniMax music-2.6 官方价目 $0.15/首（musicGenerate.schema 同源引用），按仓内
+ * USD→CNY≈7.2 口径折 ≈¥1.08/首，待真实账单到手后校正。default 同价：桥接/未知
+ * 音乐模型无独立价目，按已知唯一音乐市价兜底（宁高勿低，方向与 IMAGE 表保守口径一致）。
  */
 export const MUSIC_PRICING_CNY: Record<string, number> = {
-  'music-2.6': 0.2, // MiniMax 音乐，价表待补（保守默认）
-  default: 0.2,
+  'music-2.6': 1.08, // MiniMax 音乐，官方 $0.15/首 × 7.2
+  default: 1.08,
 };

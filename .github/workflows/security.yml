@@ -25,7 +25,7 @@ concurrency:
 jobs:
   full-history:
     name: Gitleaks full history
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -61,7 +61,7 @@ jobs:
 
   source-snapshot:
     name: Gitleaks source snapshot
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -97,7 +97,7 @@ jobs:
 
   built-dist:
     name: Gitleaks built dist
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - name: Checkout

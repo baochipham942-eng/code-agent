@@ -20,7 +20,7 @@ import {
   getSessionStatusPresentation,
   matchesSessionStatusFilter,
 } from '../../../utils/sessionPresentation';
-import { hasNeedsInputForSession as deriveHasNeedsInputForSession } from '../../../utils/sessionNeedsInput';
+import { getSessionWaitingDetail } from '../../../utils/sessionNeedsInput';
 import { sortSidebarSessionsForRecovery } from '../../../utils/sidebarSessionOrdering';
 import { hasSessionDeliverySignals } from '../../../utils/sessionRecoveryHints';
 import { useI18n } from '../../../hooks/useI18n';
@@ -57,6 +57,7 @@ export interface SidebarDerivedSessions {
   backgroundSessionMap: Map<string, BackgroundSessionInfo>;
   replayEvidenceBySessionId: ReturnType<typeof buildSessionReplayEvidenceMap>;
   hasNeedsInputForSession: (sessionId: string) => boolean;
+  getWaitingDetailForSession: (sessionId: string) => ReturnType<typeof getSessionWaitingDetail>;
   hasPendingApprovalForSession: (sessionId: string) => boolean;
   currentProjectSearchSessionIds: Set<string>;
   effectiveSearchScope: SidebarSearchScope;
@@ -118,9 +119,9 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
     [sessions],
   );
 
-  const hasNeedsInputForSession = useCallback(
+  const getWaitingDetailForSession = useCallback(
     (sessionId: string) =>
-      deriveHasNeedsInputForSession(sessionId, {
+      getSessionWaitingDetail(sessionId, {
         permissionState: {
           pendingPermissionRequest,
           pendingPermissionSessionId,
@@ -138,6 +139,10 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
       pendingUserQuestionsBySessionId,
       queuedPermissionRequests,
     ],
+  );
+  const hasNeedsInputForSession = useCallback(
+    (sessionId: string) => getWaitingDetailForSession(sessionId) !== undefined,
+    [getWaitingDetailForSession],
   );
   const hasPendingApprovalForSession = hasNeedsInputForSession;
 
@@ -582,6 +587,7 @@ export function useSidebarDerivedSessions(params: UseSidebarDerivedSessionsParam
     replayEvidenceBySessionId,
     hasNeedsInputForSession,
     hasPendingApprovalForSession,
+    getWaitingDetailForSession,
     currentProjectSearchSessionIds,
     effectiveSearchScope,
     searchScope,

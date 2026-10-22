@@ -21,7 +21,7 @@ concurrency:
 jobs:
   deploy:
     name: Deploy Vercel control-plane
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}

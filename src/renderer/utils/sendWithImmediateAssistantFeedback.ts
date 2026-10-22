@@ -15,6 +15,7 @@ export type AssistantFeedbackEvent =
   | { type: 'enqueue_succeeded'; clientMessageId: string; sessionId: string }
   | { type: 'durable_activated'; clientMessageId: string; sessionId: string }
   | { type: 'model_delta'; sessionId: string }
+  | { type: 'run_finished'; sessionId: string }
   | { type: 'send_failed'; clientMessageId?: string; sessionId?: string };
 
 const PHASE_ORDER: Record<AssistantFeedbackPhase, number> = {
@@ -43,10 +44,11 @@ export function transitionAssistantFeedback(
   if (event.sessionId && event.sessionId !== current.sessionId) return current;
   if ('clientMessageId' in event && event.clientMessageId
     && event.clientMessageId !== current.clientMessageId) return current;
-  if (event.type === 'send_failed') return null;
-  if (event.type === 'model_delta') {
-    return current.phase === 'waiting_model' ? null : current;
-  }
+  if (event.type === 'send_failed' || event.type === 'run_finished') return null;
+  // 首个模型 delta 不论占位处于哪个阶段都收掉：直接投递（非 durable 队列）的发送
+  // 永远等不到 durable_activated，占位若只认 waiting_model 档会整个 run 停浮在
+  // 「正在发送消息…」上盖住收尾正文（starter 卡真跑实录）。
+  if (event.type === 'model_delta') return null;
   const nextPhase: AssistantFeedbackPhase = event.type === 'enqueue_succeeded'
     ? 'queued'
     : 'waiting_model';

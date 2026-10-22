@@ -7,8 +7,8 @@ import { sessionReplayZh } from './sessionReplay';
 import { chatTranscriptZh } from './chatTranscript';
 import { attachmentPreviewZh } from './attachmentPreview';
 import { chatInputZh } from './chatInput';
+import { backgroundPanelZh } from './backgroundPanel';
 import { voiceZh } from './voice';
-import { chatInputModelStrategyZh } from './chatInputModelStrategy';
 import { sidebarZh } from './sidebar';
 import { cronCenterZh } from './cronCenter';
 import { deliveryExperienceZh } from './deliveryExperience';
@@ -52,6 +52,7 @@ import { outcomeWordsZh } from './outcomeWords';
 import { engineModelPanelZh } from './engineModelPanel';
 import { jevAdvisoryZh } from './jevAdvisory';
 import { workflowStallZh } from './workflowStall';
+import { roleFirstWakeZh } from './roleFirstWake';
 
 export const zh = {
   ...canvasActorZh, ...activityPanelZh,
@@ -72,6 +73,7 @@ export const zh = {
   ...engineModelPanelZh,
   ...jevAdvisoryZh,
   ...workflowStallZh,
+  ...roleFirstWakeZh,
   // Common
   common: {
     save: '保存',
@@ -187,7 +189,7 @@ export const zh = {
     slidesPixelPreview: '像素预览',
     slidesPreviewHint: '渲染当前大纲的真实排版（本地转换，免费）',
     slidesPreviewing: '正在渲染预览…',
-    slidesPreviewMissing: '像素预览需要 LibreOffice。\nmacOS：brew install --cask libreoffice\n装好后回到这里重试。',
+    slidesPreviewMissing: '正在后台准备像素预览组件。请稍候片刻再试；进度可在「设置 > 本机功能」查看。',
     slidesKindCover: '封面',
     slidesKindContent: '内容',
     slidesKindEnd: '结尾',
@@ -661,7 +663,6 @@ export const zh = {
     title: '任务信息',
     progress: '进度',
     workingFolder: '工作目录',
-    context: '上下文',
     connectors: '连接器',
     agents: '智能体',
     skills: '技能',
@@ -733,7 +734,6 @@ export const zh = {
     sectionReferences: '引用',
     contextEmpty: '暂无上下文',
     tabStatus: '概览',
-    tabOrchestration: '编排',
     // WorkingFolder
     inputDirPlaceholder: '输入工作目录路径',
     confirm: '确定',
@@ -935,8 +935,8 @@ export const zh = {
   ...chatTranscriptZh,
   ...attachmentPreviewZh,
   ...chatInputZh,
+  ...backgroundPanelZh,
   ...voiceZh,
-  ...chatInputModelStrategyZh,
   ...sidebarZh,
   ...cronCenterZh,
   ...previewWorkspaceZh,

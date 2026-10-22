@@ -1,9 +1,6 @@
-// ============================================================================
-
 import { outcomeWordsZh } from './outcomeWords';
+import { permissionGrantsZh } from './permissionGrants';
 // Settings namespace translations (zh/Work) — 纯平移拆分（债务门）
-// ============================================================================
-
 export const zhSettingsWork = {
     workspace: {
       description: '管理当前工作目录、最近打开的目录、本地桥状态，以及浏览器工具的默认行为。',
@@ -301,9 +298,11 @@ export const zhSettingsWork = {
         allowedUserIdsLabel: '白名单用户 ID (可选)',
         allowedUserIdsPlaceholder: '逗号分隔；留空=陌生人仅访客档（只读工具），群内需 @ 或回复 Bot',
         groupAccessModeLabel: '群准入档',
-        groupAccessModeAllowlist: '白名单档（默认）— 群里需 @ 或回复 Bot 才触发',
-        groupAccessModeAllMembers: '全体成员档 — 群成员无需 @，以访客身份触发',
-        groupAccessModeHint: '访客档只能用只读工具；白名单内的用户不受此限',
+        groupAccessModeAllowlist: '群里需 @ 才回应（默认）',
+        groupAccessModeAllMembers: '群里所有消息都回应（访客身份）',
+        groupAccessModeHint: '访客只能用只读工具；哪些人算信任用户，在上面的「白名单用户 ID」里单独设置',
+        groupAccessModePrivacyPrerequisite: '需要先在 Telegram 里关闭机器人的隐私模式，连接后这里会告诉你是否已生效。',
+        telegramPrivacyModeWarning: '群里还收不到未 @ 的消息：Telegram 默认开着机器人隐私模式。去 @BotFather 发 /setprivacy → 选这个机器人 → Disable，再把机器人移出群、重新拉进来，然后在这里断开再连接检查。也可以把机器人设为群管理员；已经是群管理员的话，忽略这条提示。',
         telegramTipSearchPrefix: '在 Telegram 中搜索 ',
         telegramTipSearchSuffix: ' 创建 Bot',
         telegramTipNewBotPrefix: '发送 ',
@@ -842,6 +841,7 @@ export const zhSettingsWork = {
     privacy: {
       webDescription: '本地 PII 防线，启用后协作内容进入云端 LLM 前自动脱敏命名实体（姓名/地址/医疗 ID 等）。',
       pageDescription: '权限与数据边界总览。默认本地优先；会出云端的路径、通道凭证和诊断包单独表达。',
+      permissionGrants: permissionGrantsZh,
       setupState: {
         idle: '未启用',
         running: '安装中…',

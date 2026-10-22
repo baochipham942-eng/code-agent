@@ -267,6 +267,8 @@ describe('key-gated tool availability（N-TOOL-UNAVAILABLE-HINT）', () => {
         `Turn on: ${enPath}.`,
         `以下能力未开启（不要调用）：${capabilityZh}。`,
         `开启：${zhPath}。`,
+        'When you tell the user a capability is not enabled, reply in the language of the user\'s latest message and quote the Turn-on path above in that same language.',
+        '告知用户某能力未开启时，用用户最新一条消息的语言回复，并引用上面对应语言的开启路径。',
       ].join(' ');
     }
 

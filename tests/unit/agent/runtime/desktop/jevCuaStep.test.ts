@@ -940,6 +940,9 @@ describe('cua execute_goal arming and schema', () => {
     expect(properties.stateId).toBeTruthy();
     expect(properties.mutation).toBeTruthy();
     expect(properties.target).toBeTruthy();
+    expect(properties.targetApp).toMatchObject({ type: 'string' });
+    // rework r1：bundleId 是模型可声明、Host 门上无法校验的值，schema 不再收
+    expect(properties.bundleId).toBeUndefined();
     expect(cuaStatefulComputerUseModuleFor(true).schema.description).toContain('execute_goal');
   });
 });

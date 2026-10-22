@@ -5,6 +5,7 @@
 
 import { Notification, AppWindow, broadcastToRenderer } from '../../platform';
 import { IPC_CHANNELS } from '../../../shared/ipc';
+import type { CronFailurePresentationKind } from '../../../shared/utils/cronFailureClassification';
 import { createLogger } from './logger';
 import type { Disposable } from '../serviceRegistry';
 import { getServiceRegistry } from '../serviceRegistry';
@@ -33,6 +34,8 @@ function readNotificationLocale(): DurableResumeNotificationLocale {
 export interface TaskNotificationData {
   sessionId: string;
   sessionTitle: string;
+  /** Source cron job for explicit login-wall consent from the notification. */
+  jobId?: string;
   summary?: string;
   duration: number;
   toolsUsed: string[];
@@ -40,6 +43,8 @@ export interface TaskNotificationData {
   succeeded?: boolean;
   code?: string;
   siteOrigin?: string;
+  failureKind?: CronFailurePresentationKind;
+  resetAt?: string;
 }
 
 interface TaskResumingNotificationData {
@@ -128,9 +133,12 @@ class NotificationService implements Disposable {
     title: string;
     body: string;
     sessionId: string;
+    jobId?: string;
     markSessionUnread?: boolean;
     code?: string;
     siteOrigin?: string;
+    failureKind?: CronFailurePresentationKind;
+    resetAt?: string;
   }): void {
     if (this.isDryRun()) return;
     broadcastToRenderer(IPC_CHANNELS.NOTIFICATION_SHOW, {
@@ -219,8 +227,11 @@ class NotificationService implements Disposable {
       title: entry.title,
       body: entry.body,
       sessionId: data.sessionId,
+      ...(data.jobId ? { jobId: data.jobId } : {}),
       ...(data.code ? { code: data.code } : {}),
       ...(data.siteOrigin ? { siteOrigin: data.siteOrigin } : {}),
+      ...(data.failureKind ? { failureKind: data.failureKind } : {}),
+      ...(data.resetAt ? { resetAt: data.resetAt } : {}),
     });
     logger.info('Notification sent', { sessionTitle });
   }

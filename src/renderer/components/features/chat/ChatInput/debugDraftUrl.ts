@@ -1,12 +1,12 @@
-export const DEBUG_DRAFT_PARAM = '__neoDraft';
-export const DEBUG_DRAFT_SUBMIT_PARAM = '__neoSubmit';
+const DEBUG_DRAFT_PARAM = '__neoDraft';
+const DEBUG_DRAFT_SUBMIT_PARAM = '__neoSubmit';
 
 export interface DebugDraftUrlPayload {
   content: string;
   autoSubmit: boolean;
 }
 
-export function isLocalDebugDraftHost(hostname: string): boolean {
+function isLocalDebugDraftHost(hostname: string): boolean {
   return hostname === '127.0.0.1'
     || hostname === 'localhost'
     || hostname === '::1'

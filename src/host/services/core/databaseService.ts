@@ -74,6 +74,7 @@ import type { RecoverySnapshot } from './crashRecovery';
 import { createInitStepTimer, runStartupMaintenance } from './database/startupMaintenance';
 import { readProjectionSchemaBeforeBoot } from './database/projectionCheckGate';
 import { createSwarmTraceRepo } from './repositories/swarmTraceFactory';
+import { listRecordedWorkingDirectories } from './repositories/sessionRepositoryWorkingDirectories';
 import type { SwarmTraceRepo, SwarmRunEventRecord } from '../../../shared/contract/swarmTrace';
 import { buildSessionLedger, type LedgerSources } from './sessionLedgerProjection';
 import { readSessionCost, readSwarmRunsForSession } from './sessionLedgerSources';
@@ -3238,6 +3239,11 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   listArchivedSessions(limit: number = 50, offset: number = 0, userId?: string | null): import('./repositories').StoredSession[] {
     this.ensureDb();
     return this.sessionRepo.listArchivedSessions(limit, offset, userId);
+  }
+  /** 懒开目录撞名判定用的名字占用表：未删除会话行已记下的工作目录（DISTINCT）。 */
+  listRecordedWorkingDirectories(exceptSessionId?: string): string[] {
+    this.ensureDb();
+    return listRecordedWorkingDirectories(this.db, exceptSessionId);
   }
   archiveSession(sessionId: string): import('./repositories').StoredSession | null {
     this.ensureDb();

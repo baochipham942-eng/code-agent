@@ -14,6 +14,8 @@ import type {
 import type { SteerOrQueueOutcome } from '@shared/contract/appService';
 import { buildAppshotXml, buildAppshotAttachment } from '@shared/contract/appshot';
 import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
+import { CRON_URGENCY_CRITERIA } from '@shared/constants';
+import { validateEventScheduleConstraints } from '@shared/cronEventValidation';
 import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useAppStore } from '../../../../stores/appStore';
@@ -248,6 +250,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
         description,
         handoffPrompt: handoffPrompt || undefined,
         sourceSessionId: currentSessionId,
+        eventGroupName: normalized.eventGroupName || undefined,
       };
       const stored = storePendingScheduleDraft(pending);
       if (!stored) return false;
@@ -267,17 +270,47 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     const cs = t.chatInputSubmit;
     setCreatingSchedule(true);
     try {
-      const input = pending.input;
+      let input = pending.input;
       const handoffPrompt = pending.handoffPrompt;
-      const action = input.action.type === 'agent' && currentSessionId
+      // event 草案（N-CRON-EVENT-CREATE-CHAT）确认前的纵深防御：卡上已按共享校验器
+      // 禁用确认按钮，这里再拦一次（卡不可交互/草案被外部改写的路径）。同时剥掉
+      // chatId 空串（= 任意会话；空串下发给 host 会绑死一个不存在的会话，静默永不触发）。
+      if (input.schedule.type === 'event') {
+        let schedule = input.schedule;
+        if (schedule.source === 'channel' && !schedule.chatId) {
+          const { chatId: _droppedEmptyChatId, ...channelSchedule } = schedule;
+          schedule = channelSchedule;
+        }
+        input = { ...input, schedule };
+        const violation = validateEventScheduleConstraints({
+          schedule,
+          runsOn: input.runsOn,
+          action: input.action,
+          maxRunBudget: input.maxRunBudget,
+        });
+        if (violation) {
+          toast.error(t.cronCenter.eventValidation[violation.reason]);
+          return false;
+        }
+      }
+      // 通知判据（N-CRON-RESTATE-HUMAN-WHEN）：确认时把（可能已在卡内编辑过的）
+      // restatement.notifyWhen 写进 agent action——host 侧 prompt 注入 + 通知门都读它。
+      // 空判据不写字段：保持「每次都通知」的旧行为，prompt 字节不变。截断口径与
+      // host normalizeAction 相同（CRON_URGENCY_CRITERIA.MAX_CHARS）。
+      const notifyWhenRule = pending.restatement?.notifyWhen?.trim()
+        .slice(0, CRON_URGENCY_CRITERIA.MAX_CHARS);
+      const actionBase = input.action.type === 'agent' && notifyWhenRule
+        ? { ...input.action, notifyWhen: notifyWhenRule }
+        : input.action;
+      const action = actionBase.type === 'agent' && currentSessionId
         ? {
-            ...input.action,
+            ...actionBase,
             context: {
-              ...(input.action.context ?? {}),
+              ...(actionBase.context ?? {}),
               sourceSessionId: currentSessionId,
             },
           }
-        : input.action;
+        : actionBase;
       const job = await cronClient.createJob({
         ...input,
         action,
@@ -358,8 +391,9 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
 
   // 处理提交
   // 运行中允许提交，把新输入排到当前回复结束后发送。
+  // toBackground：「转后台继续聊」——草稿发去新前台会话，按空闲发送处理（不排队不改道）。
   // P3-18: ! prefix executes shell command directly
-  const handleSubmit = async (e?: React.FormEvent, opts?: { steer?: boolean; content?: string }) => {
+  const handleSubmit = async (e?: React.FormEvent, opts?: { steer?: boolean; content?: string; toBackground?: boolean }) => {
     e?.preventDefault();
     discardPendingScheduleDraft();
     const trimmedValue = (opts?.content ?? value).trim();
@@ -598,7 +632,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       }
     }
 
-    const activeRuntimeInputMode: RuntimeInputMode | undefined = isProcessing
+    const activeRuntimeInputMode: RuntimeInputMode | undefined = isProcessing && !opts?.toBackground
       ? (opts?.steer ? 'redirect' : 'supplement')
       : undefined;
     // Appshot：截图作为图片附件追加；窗口文本作为隐藏 XML 前置到消息内容。
@@ -680,7 +714,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
           generateMessageId,
         );
         const stamped: ConversationEnvelope = { ...envelope, clientMessageId };
-        if (isProcessing && !opts?.steer) {
+        if (isProcessing && !opts?.steer && !opts?.toBackground) {
           if (!currentSessionId) return false;
           const queuedEnvelope: ConversationEnvelope = {
             ...stamped,

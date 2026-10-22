@@ -7,7 +7,8 @@ import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
 import { useChannelCatalog } from './useChannelCatalog';
 
-function parseResultTarget(value: string): { accountKey: string; conversationId: string } | null {
+// 导出供 savedRoutineRestate 复用（保存后复述的通道标签与表单字段同一份解析口径）。
+export function parseResultTarget(value: string): { accountKey: string; conversationId: string } | null {
   const separator = value.indexOf(':');
   if (separator <= 0) return null;
   const accountKey = value.slice(0, separator).trim();
@@ -15,7 +16,7 @@ function parseResultTarget(value: string): { accountKey: string; conversationId:
   return accountKey && conversationId ? { accountKey, conversationId } : null;
 }
 
-function findTargetAccount(accounts: ChannelAccount[], accountKey: string): ChannelAccount | undefined {
+export function findTargetAccount(accounts: ChannelAccount[], accountKey: string): ChannelAccount | undefined {
   return accounts.find((account) => account.type === accountKey || account.name === accountKey);
 }
 

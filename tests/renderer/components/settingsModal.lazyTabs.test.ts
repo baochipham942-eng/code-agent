@@ -119,7 +119,7 @@ describe("SettingsModal tab loading contract", () => {
     }
   });
 
-  it("keeps the app entry from eagerly traversing the settings barrel", () => {
+  it("keeps the app entry from eagerly traversing the settings barrel; the barrel holds no tab loaders", () => {
     const entrySource = fs.readFileSync(SETTINGS_ENTRY_SOURCE, "utf8");
     const featureIndexSource = fs.readFileSync(
       SETTINGS_FEATURE_INDEX_SOURCE,
@@ -132,6 +132,6 @@ describe("SettingsModal tab loading contract", () => {
     expect(featureIndexSource).not.toMatch(
       /^\s*export\s+\{[^}]+\}\s+from ['"]\.\/tabs\//m,
     );
-    expect(featureIndexSource.match(/React\.lazy\(/g) ?? []).toHaveLength(5);
+    expect(featureIndexSource.match(/React\.lazy\(/g) ?? []).toHaveLength(0);
   });
 });

@@ -32,6 +32,7 @@ import {
   type WritebackDraft,
 } from './WritebackFields';
 import { defaultPermissionViewMode, isDangerousRequestShape, isSafeDefaultDeny, permissionSummary } from './permissionPresentation';
+import { isSandboxEscalation, sandboxEscalationDeniedPath, sandboxEscalationQuestion } from './sandboxEscalationPresentation';
 
 // 将共享类型的 PermissionRequest 转换为本地类型
 function normalizeRequest(
@@ -66,9 +67,14 @@ function normalizeRequest(
       standingGrantTarget: request.details.standingGrantTarget,
       targetApp: request.details.targetApp,
       triggeredByAgentMessage: request.details.triggeredByAgentMessage,
+      method: request.details.method,
+      body: request.details.body,
+      connectorTokenAttached: request.details.connectorTokenAttached,
       path: request.details.path,
       preview: request.details.preview,
       sandbox: request.details.sandbox,
+      deniedPath: request.details.deniedPath,
+      action: request.details.action,
     },
     // 可编辑工具才带原参数（host 默认分支 details = {...params} + 透传字段）；其余不背这份
     rawArgs: isEditableTool(request.tool) ? (request.details as Record<string, unknown>) : undefined,
@@ -121,7 +127,7 @@ export function PermissionCard({
   remainingCount = 0,
   onCollapse,
 }: PermissionCardProps = {}) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const {
     pendingPermissionRequest,
     pendingPermissionSessionId,
@@ -147,6 +153,7 @@ export function PermissionCard({
   )
     ? normalizeRequest(sourceRequest)
     : null;
+  const sandboxEscalation = request !== null && isSandboxEscalation(request);
   const settled = request?.resolved === true && request.decision !== undefined;
   const safeDefaultDeny = request !== null && isSafeDefaultDeny(request);
   const appGrantCard = Boolean(request?.details.targetApp?.name) && request?.forceConfirm !== true;
@@ -181,7 +188,7 @@ export function PermissionCard({
     isDangerousRequestShape(request);
 
   // forceConfirm 该有的职责一点没松：不许走「会话/始终」这类常驻授权，必须逐次点。
-  const hideStandingGrants = isDangerous || editable || request?.forceConfirm === true;
+  const hideStandingGrants = isDangerous || editable || request?.forceConfirm === true || sandboxEscalation;
 
   const memoryRequest = request ? toMemoryRequest(request) : null;
   const isNewRequest = request !== null && !settled && processedRequestRef.current !== request.id;
@@ -369,6 +376,7 @@ export function PermissionCard({
   // 如果没有当前会话可见的待处理权限请求，不渲染
   if (!request) return null;
 
+  const sandboxPath = sandboxEscalation ? sandboxEscalationDeniedPath(request) : undefined;
   const config = getPermissionConfig(request.type);
 
   const p = t.decisionCard.permission;
@@ -420,7 +428,9 @@ export function PermissionCard({
   const contentTitle = editable && typeof request.rawArgs?.title === 'string'
     ? request.rawArgs.title.trim()
     : '';
-  const title = appGrantCard
+  const title = sandboxEscalation
+    ? p.sandboxEscalationTitle
+    : appGrantCard
     ? p.computerApp.title.replace('{app}', request.details.targetApp?.name ?? '')
     : isMeetingCreate
     ? w.tmeetCreateTitle
@@ -438,7 +448,9 @@ export function PermissionCard({
     : isRemindersWrite
       ? <ListTodo size={20} />
       : editable ? <Mail size={20} /> : config.icon;
-  const question = appGrantCard && !isDangerous
+  const question = sandboxEscalation
+    ? sandboxEscalationQuestion(request.reason, permissionSummary(request, t))
+    : appGrantCard && !isDangerous
     ? p.computerApp.question.replace('{app}', request.details.targetApp?.name ?? '')
     : isMeetingCreate
     ? (meetingSubject ? w.tmeetCreateQuestion.replace('{subject}', meetingSubject) : w.tmeetCreateQuestionFallback)
@@ -452,7 +464,7 @@ export function PermissionCard({
             ? (contentTitle ? w.remindersUpdateQuestion.replace('{title}', contentTitle) : w.remindersUpdateQuestionFallback)
     : editable
     ? (firstRecipient ? w.mailSendQuestion.replace('{target}', firstRecipient) : w.mailSendQuestionFallback)
-    : permissionSummary(request, t);
+    : permissionSummary(request, t, language);
   const viewMode = viewState?.requestId === request.id
     ? viewState.mode
     : defaultPermissionViewMode(request);
@@ -466,7 +478,12 @@ export function PermissionCard({
       {pendingHeaderEnd}
     </span>
   ) : undefined;
-  const visibleOptions: DecisionOption[] = isDangerous
+  const visibleOptions: DecisionOption[] = sandboxEscalation
+    ? [
+        { id: 'once', label: p.sandboxEscalationAllowOnce, shortcut: 'y' },
+        { id: 'deny', label: p.optionDeny, shortcut: 'n' },
+      ]
+    : isDangerous
     ? [
         { id: 'once', label: t.decisionCard.stillExecute, shortcut: 'y' },
         { id: 'deny', label: p.optionDeny, shortcut: 'n' },
@@ -532,6 +549,14 @@ export function PermissionCard({
       question={question}
       details={
         <>
+          {sandboxPath ? (
+            <p
+              className="break-all rounded bg-zinc-800 p-2 font-mono text-xs text-badge-info"
+              data-testid="sandbox-escalation-path"
+            >
+              {sandboxPath}
+            </p>
+          ) : null}
           {/* 停车审批参数预览（host 已脱敏 + 截断）：一眼看清这步要干什么，缺省不渲染 */}
           {request.argsPreview && (
             <div className="rounded-lg bg-zinc-900/60 px-2.5 py-1.5" data-testid="permission-args-preview">

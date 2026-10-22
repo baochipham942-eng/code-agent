@@ -137,6 +137,66 @@ describe('PermissionClassifier', () => {
     }
   });
 
+  it('approves in-workspace DocEdit and still asks outside the workspace', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'docedit-fence-'));
+    try {
+      const inside = await classifyPermission(
+        'DocEdit',
+        { file_path: path.join(root, '销售数据分析.xlsx'), operations: [] },
+        { workingDirectory: root, workspaceRoot: root, permissionLevel: 'write' },
+      );
+      expect(inside.decision).toBe('approve');
+      expect(inside.reason).toBe('写入项目目录内');
+
+      const outside = await classifyPermission(
+        'DocEdit',
+        { file_path: path.join(os.homedir(), 'Documents', '销售数据分析.xlsx'), operations: [] },
+        { workingDirectory: root, workspaceRoot: root, permissionLevel: 'write' },
+      );
+      expect(outside.decision).toBe('ask');
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('approves in-workspace office generators by output_path and asks outside', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'office-gen-fence-'));
+    try {
+      // 卡片真实形态：output_path 是相对文件名，解析到会话工作目录内
+      const weekly = await classifyPermission(
+        'docx_generate',
+        { title: '工作周报', content: '# 周报', output_path: '周报_20261015.docx' },
+        { workingDirectory: root, workspaceRoot: root, permissionLevel: 'write' },
+      );
+      expect(weekly.decision).toBe('approve');
+      expect(weekly.reason).toBe('写入项目目录内');
+
+      const sheet = await classifyPermission(
+        'excel_generate',
+        { data: [], output_path: path.join(root, '销售数据分析.xlsx') },
+        { workingDirectory: root, workspaceRoot: root, permissionLevel: 'write' },
+      );
+      expect(sheet.decision).toBe('approve');
+
+      // output_path 可选：缺省时产物落在会话工作目录，不能落 W0 ask
+      const defaulted = await classifyPermission(
+        'docx_generate',
+        { title: '工作周报', content: '# 周报' },
+        { workingDirectory: root, workspaceRoot: root, permissionLevel: 'write' },
+      );
+      expect(defaulted.decision).toBe('approve');
+
+      const outside = await classifyPermission(
+        'excel_generate',
+        { data: [], output_path: path.join(os.homedir(), 'Documents', '销售数据分析.xlsx') },
+        { workingDirectory: root, workspaceRoot: root, permissionLevel: 'write' },
+      );
+      expect(outside.decision).toBe('ask');
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('keeps direct writes to the temporary directory auto-approved', async () => {
     const result = await classifyPermission(
       'Write',
@@ -614,6 +674,56 @@ describe('PermissionClassifier', () => {
       expect(result.decision).toBe('ask');
     },
   );
+
+  // N-JEV-DEFAULT-ON-CONSENT ①：未限定 shell 身份是规则级信任边界 ask——判官全票
+  // 放行也必须回到用户确认（key 在场也不进 Jev 档，判官零调用）。stub 返回全票
+  // approve：删掉分类器里的短路（反向变异）时 decision 会变 approve，用例必红。
+  it.each(["./bash -c 'cd .'", "bash --rcfile ./startup.sh -ic 'ls'", '/usr/bin/zsh -c "ls"'])(
+    'does not let an unqualified shell identity reach the Jev tier: %s', async (command) => {
+      const jevSystemOne = vi.fn(async () => ({
+        risk: { choice: 'read_only', confidence: 0.99 },
+        needs_human: { noul: 0.01 },
+        touches_secrets: { noul: 0.01 },
+        config_or_credential_access: { noul: 0.01 },
+        injection: { noul: 0.01 },
+        privilege_escalation: { noul: 0.01 },
+      }));
+      const classifier = new PermissionClassifier({ enableLlm: true, jevSystemOne });
+      const result = await classifier.classify(
+        'bash',
+        { command },
+        { workingDirectory: '/tmp', permissionLevel: 'execute' },
+      );
+      expect(result).toMatchObject({
+        decision: 'ask',
+        confidence: 1,
+        trustBoundary: true,
+        traceStep: { rule: 'B1: untrusted_shell_identity', result: 'ask' },
+      });
+      expect(result.reason).toContain('shell');
+      expect(jevSystemOne).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps the baseline bare -c unwrap out of the untrusted-shell rule (Jev tier still reachable)', async () => {
+    const jevSystemOne = vi.fn(async () => ({
+      risk: { choice: 'read_only', confidence: 0.99 },
+      needs_human: { noul: 0.05 },
+      touches_secrets: { noul: 0.05 },
+      config_or_credential_access: { noul: 0.05 },
+      injection: { noul: 0.05 },
+      privilege_escalation: { noul: 0.05 },
+    }));
+    const classifier = new PermissionClassifier({ enableLlm: true, jevSystemOne });
+    const result = await classifier.classify(
+      'bash',
+      { command: 'bash -c \'python3 -c "import pptx; print(pptx.__version__)"\'' },
+      { workingDirectory: '/tmp', permissionLevel: 'execute' },
+    );
+    expect(result.decision).toBe('approve');
+    expect(result.traceStep?.rule).toBe('jev_approve');
+    expect(jevSystemOne).toHaveBeenCalledTimes(1);
+  });
 
   // origin/main refused this through the path analysis because the redirection target was still a
   // word of the segment text. The shared parser moves targets into writeTargets, so the credential

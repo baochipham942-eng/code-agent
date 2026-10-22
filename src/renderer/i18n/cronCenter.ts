@@ -216,6 +216,10 @@ export const cronCenterZh = {
       'agent-only': '事件触发任务只支持 Agent 动作，请把动作类型换成 Agent 任务。',
       'requires-budget': '事件触发任务必须设置单次预算上限：在上方「单次预算上限 (USD)」里填一个大于 0 的数，单次运行花费超过它就会停车并自动停用。',
     } satisfies Record<EventScheduleValidationReason, string>,
+    // /schedule 确认卡的 event 草案行（N-CRON-EVENT-CREATE-CHAT）：群行/预算行的标签与兜底。
+    eventConfirmGroup: '监听哪个群',
+    eventConfirmGroupFallback: '还没选：在下方选择触发账号和群',
+    eventConfirmGroupAnyChat: '该账号的任意会话',
     simpleFreqLabel: '何时执行',
     freqDaily: '每天',
     freqWeekdays: '工作日',
@@ -286,6 +290,11 @@ export const cronCenterZh = {
         name: '晨间分诊',
         description: '汇总昨晚到现在的未读邮件、消息和日历变动',
         scheduleLabel: '工作日 08:30',
+      },
+      'group-listen': {
+        name: '群监听',
+        description: '盯住一个群，来了新消息就按你的一句话处理',
+        scheduleLabel: '群里有新消息时',
       },
     },
     // 模板连接器依赖状态
@@ -505,6 +514,10 @@ export const cronCenterEn: typeof cronCenterZh = {
       'agent-only': 'Event-triggered jobs only support agent actions — switch the action type to Agent.',
       'requires-budget': 'Event-triggered jobs need a per-run budget cap: enter a number greater than 0 in "Per-run budget cap (USD)" above; a run stops and the job is disabled once spending exceeds it.',
     } satisfies Record<EventScheduleValidationReason, string>,
+    // /schedule confirm-card rows for event drafts (N-CRON-EVENT-CREATE-CHAT).
+    eventConfirmGroup: 'Which group to watch',
+    eventConfirmGroupFallback: 'Not chosen yet — pick the account and group below',
+    eventConfirmGroupAnyChat: 'any chat on this account',
     simpleFreqLabel: 'When to run',
     freqDaily: 'Daily',
     freqWeekdays: 'Weekdays',
@@ -569,6 +582,11 @@ export const cronCenterEn: typeof cronCenterZh = {
         name: 'Morning triage',
         description: 'Round up unread mail, messages, and calendar changes since last night',
         scheduleLabel: 'Weekdays 08:30',
+      },
+      'group-listen': {
+        name: 'Group listen',
+        description: 'Watch one group and handle new messages with your one-liner',
+        scheduleLabel: 'When a new message arrives',
       },
     },
     connectorConnected: 'Connected',

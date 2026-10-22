@@ -2438,8 +2438,10 @@ fn spawn_quit_guard_flow(app: AppHandle, coordinator: Arc<quit_guard::QuitCoordi
 /// 按钮组两套（N-RESIDENT-HOST-SHELL-RUST-FU1）：附着成立（mac/linux）→
 /// 「取消 / 后台继续 / 停止并退出」；不成立（Windows）→「取消 / 停止并退出」，
 /// 判据唯一来自 resident_host::quit_dialog_button_set_current()（无平台分支）。
-/// 默认按钮=取消：YesNoCancelCustom / OkCancelCustom 第一个参数在 macOS(NSAlert) /
-/// Windows(TaskDialog) 都是默认（回车）按钮，安全动作「取消」放第一位，
+/// 槽位：三键组「取消」仍是默认（回车）键；两键组把「取消」放 cancel 槽
+/// （OkCancelCustom 第二参）——Esc/标题栏 X 会被 tauri-plugin-dialog 无条件
+/// 映射成 cancel 槽位文案（ai-review #2497），安全动作必须占这个槽，回车
+/// 默认键因此指向「停止并退出」（rfd 无独立于槽位的默认键入口），
 /// 见 quit_guard::dialog_answer_action。
 fn show_quit_confirm_dialog(
     app: &AppHandle,
@@ -2466,12 +2468,16 @@ fn show_quit_confirm_dialog(
                 background_continue.to_string(),
                 quit.to_string(),
             ),
-            resident_host::QuitDialogButtonSet::Two { cancel, quit } => {
-                MessageDialogButtons::OkCancelCustom(cancel.to_string(), quit.to_string())
+            resident_host::QuitDialogButtonSet::Two { .. } => {
+                let (ok_slot, cancel_slot) = button_set
+                    .ok_cancel_slots()
+                    .expect("两键组必有 ok/cancel 槽位");
+                MessageDialogButtons::OkCancelCustom(ok_slot.to_string(), cancel_slot.to_string())
             }
         })
         .show_with_result(move |result| {
-            // Custom(label) 之外（含 Esc/系统取消给的 Cancel）一律 None → 不退出
+            // Esc/系统取消在自定义按钮组下到达的也是 Custom(cancel 槽位文案)
+            // （槽位序保证它=取消）；Custom 之外（插件内部失败等）→ None → 不退出
             let custom_label = match result {
                 MessageDialogResult::Custom(label) => Some(label),
                 _ => None,

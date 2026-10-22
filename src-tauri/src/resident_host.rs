@@ -391,7 +391,9 @@ pub fn terminate_attached_daemon(_pid: u32, _timeout: Duration, _poll: Duration)
 /// 三键自动回来。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuitDialogButtonSet {
-    /// 取消 / 停止并退出。「取消」第一位 = NSAlert / TaskDialog 的默认（回车）键。
+    /// 取消 / 停止并退出。槽位序见 [`QuitDialogButtonSet::ok_cancel_slots`]：
+    /// 「取消」必须占 cancel 槽（Esc/标题栏 X 到达的文案），回车默认键因此
+    /// 指向「停止并退出」。
     Two {
         cancel: &'static str,
         quit: &'static str,
@@ -404,12 +406,30 @@ pub enum QuitDialogButtonSet {
     },
 }
 
+impl QuitDialogButtonSet {
+    /// 两键组喂给 `MessageDialogButtons::OkCancelCustom(ok, cancel)` 的槽位序。
+    /// cancel 槽位必须放安全动作「取消」：Esc / 标题栏 X（rfd `Cancel`，Windows
+    /// TaskDialog 的 TDF_ALLOW_DIALOG_CANCELLATION 无条件开）会被
+    /// tauri-plugin-dialog 2.7.1 的 desktop.rs 无条件映射成 cancel 槽位文案的
+    /// `Custom`，非按钮手势绝不能落到退出路径（ai-review #2497）。代价：回车
+    /// 默认键随 ok 槽位指向「停止并退出」——rfd 0.16 没有独立于槽位选默认键的
+    /// 入口（NSAlert 首按钮 / TaskDialog nDefaultButton=0），两害相权，
+    /// 误按 Esc/X 退出更危险。三键组不走 OkCancelCustom，返回 None。
+    pub fn ok_cancel_slots(&self) -> Option<(&'static str, &'static str)> {
+        match self {
+            QuitDialogButtonSet::Two { cancel, quit } => Some((*quit, *cancel)),
+            QuitDialogButtonSet::Three { .. } => None,
+        }
+    }
+}
+
 /// 纯判据：退出框要不要提供「后台继续」。
 pub fn quit_dialog_offers_background_continue(attach_supported: bool) -> bool {
     attach_supported
 }
 
-/// 纯构造：附着成立 → 三键；不成立 → 两键（「取消」仍第一位当默认键）。
+/// 纯构造：附着成立 → 三键；不成立 → 两键（槽位序见
+/// [`QuitDialogButtonSet::ok_cancel_slots`]）。
 pub fn quit_dialog_button_set(attach_supported: bool) -> QuitDialogButtonSet {
     if quit_dialog_offers_background_continue(attach_supported) {
         QuitDialogButtonSet::Three {
@@ -690,7 +710,7 @@ mod tests {
 
     #[test]
     fn quit_dialog_button_set_two_buttons_when_attach_unsupported() {
-        // Windows：附着不成立 → 只给 [取消, 停止并退出]，取消第一位（默认键）
+        // Windows：附着不成立 → 只给 取消 / 停止并退出 两键
         assert_eq!(
             quit_dialog_button_set(false),
             QuitDialogButtonSet::Two {
@@ -741,6 +761,29 @@ mod tests {
         assert_eq!(
             dialog_answer_action_gated(Some("whatever"), set),
             QuitAnswerAction::StayRunning
+        );
+    }
+
+    #[test]
+    fn two_button_dismiss_result_is_stay_running() {
+        // ai-review #2497：Esc / 标题栏 X（Windows TaskDialog 的
+        // TDF_ALLOW_DIALOG_CANCELLATION 无条件开 → rfd `Cancel`）被
+        // tauri-plugin-dialog 2.7.1 无条件映射成 cancel 槽位文案的 `Custom`。
+        // 两键组的 cancel 槽位（OkCancelCustom 第二参）必须放安全动作「取消」，
+        // 非按钮手势才不会落到退出路径。
+        let set = quit_dialog_button_set(false);
+        let slots = set.ok_cancel_slots().expect("两键组必有 ok/cancel 槽位");
+        // 槽位序钉死：退出动作占 ok 槽，「取消」占 cancel 槽
+        assert_eq!(
+            slots,
+            ("停止并退出", "取消"),
+            "cancel 槽位（OkCancelCustom 第二参）必须是「取消」：Esc/X 到达的就是这个文案"
+        );
+        // dismiss 到达应用侧的 payload = cancel 槽位文案，走闭包同一条 gated 映射
+        assert_eq!(
+            dialog_answer_action_gated(Some(slots.1), set),
+            QuitAnswerAction::StayRunning,
+            "非按钮手势（Esc/标题栏 X）绝不能退出"
         );
     }
 

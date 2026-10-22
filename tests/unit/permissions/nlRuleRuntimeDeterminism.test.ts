@@ -26,6 +26,10 @@ function freshEngine(): PolicyEngine {
   return engine;
 }
 
+function bashRequest(command: string) {
+  return { tool: 'Bash', level: 'execute' as const, command, description: `run ${command}` };
+}
+
 afterEach(() => {
   resetPermissionModeManager();
 });
@@ -50,11 +54,11 @@ describe('验收①：翻译 → 确认 → loadUserRules → evaluate', () => {
     const engine = freshEngine();
     engine.loadUserRules({ ask: [result.rule!] });
 
-    const hit = engine.evaluate({ tool: 'Bash', level: 'execute', command: 'rm -rf ./build' });
+    const hit = engine.evaluate(bashRequest('rm -rf ./build'));
     expect(hit.action).toBe('prompt');
     expect(hit.matchedRule?.id).toBe('user-prompt-Bash(rm *)');
 
-    const miss = engine.evaluate({ tool: 'Bash', level: 'execute', command: 'ls -la' });
+    const miss = engine.evaluate(bashRequest('ls -la'));
     // miss 不命中用户规则（ls 走的是内置 allow-ls，与本条翻译规则无关）
     expect(miss.matchedRule?.id?.startsWith('user-')).toBeFalsy();
   });
@@ -62,22 +66,22 @@ describe('验收①：翻译 → 确认 → loadUserRules → evaluate', () => {
   it('deny 与 allow 同形：deny 直接拒；allow 在 bypass 档下放行 hit', async () => {
     const engine = freshEngine();
     engine.loadUserRules({ deny: ['Bash(rm *)'] });
-    expect(engine.evaluate({ tool: 'Bash', level: 'execute', command: 'rm notes.txt' }).action).toBe('deny');
+    expect(engine.evaluate(bashRequest('rm notes.txt')).action).toBe('deny');
 
     expect(getPermissionModeManager().setMode('bypassPermissions', true)).toBe(true);
     const allowEngine = freshEngine();
     allowEngine.loadUserRules({ allow: ['Bash(npm test)'] });
-    const hit = allowEngine.evaluate({ tool: 'Bash', level: 'execute', command: 'npm test' });
+    const hit = allowEngine.evaluate(bashRequest('npm test'));
     expect(hit.action).toBe('allow');
     expect(hit.matchedRule?.id).toBe('user-allow-Bash(npm test)');
-    const miss = allowEngine.evaluate({ tool: 'Bash', level: 'execute', command: 'npm publish' });
+    const miss = allowEngine.evaluate(bashRequest('npm publish'));
     expect(miss.matchedRule?.id).toBeUndefined();
   });
 });
 
 describe('验收②：运行时只走确定性规则，与 Jev 分类器开关无关', () => {
-  const RULES = { ask: ['Bash(rm *)'] } as const;
-  const REQUEST = { tool: 'Bash', level: 'execute' as const, command: 'rm -rf ./build' };
+  const RULES = { ask: ['Bash(rm *)'] };
+  const REQUEST = bashRequest('rm -rf ./build');
 
   it('CODE_AGENT_PERMISSION_LLM_CLASSIFIER 开/关判定逐字相同', () => {
     const evaluateUnder = (flag: string | undefined) => {
@@ -110,14 +114,14 @@ describe('验收②：运行时只走确定性规则，与 Jev 分类器开关�
     // 同步返回 + 结果是纯规则产物；这里再判一次 miss 保持对照
     expect(Date.now() - startedAt).toBeLessThan(1000);
     expect(result.matchedRule?.id).toBe('user-prompt-Bash(rm *)');
-    expect(engine.evaluate({ tool: 'Bash', level: 'execute', command: 'ls' }).matchedRule?.id).toBeUndefined();
+    expect(engine.evaluate(bashRequest('ls')).matchedRule?.id).toBeUndefined();
   });
 });
 
 function freshEngineAndAsk() {
   const engine = freshEngine();
   engine.loadUserRules({ ask: ['Bash(rm *)'] });
-  return engine.evaluate({ tool: 'Bash', level: 'execute', command: 'rm -rf ./build' });
+  return engine.evaluate(bashRequest('rm -rf ./build'));
 }
 
 describe('验收③：受保护动作不能被放行、冲突先问/取严', () => {
@@ -148,7 +152,7 @@ describe('验收③：受保护动作不能被放行、冲突先问/取严', () 
   it('已存 deny + 新 allow 并存：引擎判 deny（更严的赢），翻译层把行为档上调', () => {
     const engine = freshEngine();
     engine.loadUserRules({ deny: ['Bash(rm *)'], allow: ['Bash(rm *)'] });
-    expect(engine.evaluate({ tool: 'Bash', level: 'execute', command: 'rm notes.txt' }).action).toBe('deny');
+    expect(engine.evaluate(bashRequest('rm notes.txt')).action).toBe('deny');
 
     // 翻译层同口径：冲突时报更严并默认更严档
     expect(describeRule('Bash(rm *)', 'deny')).toBe('用终端运行 rm 开头的命令时 → 一律禁止');
@@ -157,7 +161,7 @@ describe('验收③：受保护动作不能被放行、冲突先问/取严', () 
   it('已存 ask + 新 allow 并存：引擎判 prompt', () => {
     const engine = freshEngine();
     engine.loadUserRules({ ask: ['Bash(git push *)'], allow: ['Bash(git push origin main)'] });
-    const verdict = engine.evaluate({ tool: 'Bash', level: 'execute', command: 'git push origin main' });
+    const verdict = engine.evaluate(bashRequest('git push origin main'));
     expect(verdict.action).toBe('prompt');
     expect(verdict.matchedRule?.id).toBe('user-prompt-Bash(git push *)');
   });

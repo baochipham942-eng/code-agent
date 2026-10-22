@@ -4,6 +4,7 @@ import type {
   CronJobExecution,
   CronServiceStats,
 } from '@shared/contract';
+import { isRoleBoundCronJob } from '@shared/cronRoleBinding';
 import {
   cronClient,
   type CreateCronJobInput,
@@ -175,9 +176,12 @@ export const useCronStore = create<CronState>()((set, get) => ({
     await get().refresh();
     set({
       selectedJobId: created.id,
-      isEditorOpen: false,
-      editingJobId: null,
-      copyingJobId: null,
+      // 角色绑定任务保存后编辑器保持打开：组件切到「已保存」复述视图，Done 才关
+      // （N-ROLE-ROUTINE-RESTATE）。这里若照旧落 isEditorOpen:false，Modal 会连带
+      // 复述视图一起卸载，视图永远出不来。
+      ...(isRoleBoundCronJob(created)
+        ? {}
+        : { isEditorOpen: false, editingJobId: null, copyingJobId: null }),
     });
     return created;
   },
@@ -186,9 +190,9 @@ export const useCronStore = create<CronState>()((set, get) => ({
     const updated = await cronClient.updateJob(jobId, updates);
     await get().refresh();
     set({
-      isEditorOpen: false,
-      editingJobId: null,
-      copyingJobId: null,
+      ...(updated && isRoleBoundCronJob(updated)
+        ? {}
+        : { isEditorOpen: false, editingJobId: null, copyingJobId: null }),
     });
     return updated;
   },

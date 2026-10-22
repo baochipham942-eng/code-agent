@@ -8,14 +8,11 @@
 import WebSocket from 'ws';
 import {
   VOICE_INJECTION_ACK_WINDOW_MS,
-  VOICE_UPSTREAM_CONNECT_TIMEOUT_MS,
-  VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS,
   VOICE_UPSTREAM_RESPONSE_SILENCE_DEGRADED_FACTOR,
   VOICE_UPSTREAM_RESPONSE_SILENCE_MIN_TIMEOUT_MS,
   VOICE_UPSTREAM_RESPONSE_SILENCE_MULTIPLIER,
   VOICE_UPSTREAM_RESPONSE_SILENCE_SAMPLE_WINDOW,
   VOICE_UPSTREAM_RESPONSE_TIMEOUT_MS,
-  VOICE_UPSTREAM_SILENCE_TIMEOUT_MS,
 } from '../../../shared/constants/voice';
 import type { RealtimeVoiceProviderProfile } from '../../../shared/constants/realtimeVoiceProviders';
 import type {
@@ -31,45 +28,16 @@ import {
   toUpstreamTurnDetection,
 } from './realtimeSessionConfig';
 import { createLogger } from '../infra/logger';
-import { getHttpsAgent } from '../../model/providers/providerHttp';
 import { recordVoiceToolCall, recordVoiceWatchdogTakeover } from './voiceTelemetry';
 import { mayBeVoiceXmlFallback, parseVoiceXmlToolFallback, validateVoiceToolArguments } from './voiceXmlToolFallback';
 import { createAssistantItemDeletionQueue } from './assistantContextSanitizer';
+import { resamplePcm16Mono } from './realtimeAudioResample';
+import { createInitialSessionHandshake, resolveProxyAgent, startUpstreamHeartbeat, waitForWebSocketOpen } from './realtimeUpstreamSocket';
 
 const logger = createLogger('RealtimeVoice');
 const RESPONSE_IDLE_TIMEOUT_CODE = 'response_idle_timeout';
-// Realtime 协议族的 provider 不保证必发 session.updated；超时降级是预期路径，不是建连失败。
-const INITIAL_SESSION_HANDSHAKE_TIMEOUT_MS = 8_000;
 
 
-
-function resolveProxyAgent(profile: RealtimeVoiceProviderProfile, url: string) {
-  if (!profile.needsProxy) return undefined;
-  // Built-in providers retain their provider-level direct/proxy override.
-  // Custom realtime IDs are not part of the model-provider registry, so passing
-  // their ID would classify them as direct. Let the target URL and global proxy
-  // settings decide instead.
-  return profile.id === 'openai-realtime'
-    ? getHttpsAgent(url, profile.keyProvider)
-    : getHttpsAgent(url);
-}
-
-/** Renderer/原生采集链固定给 16k PCM16；OpenAI 当前 Realtime WS 要求 24k。 */
-export function resamplePcm16Mono(frame: Buffer, fromRate: number, toRate: number): Buffer {
-  if (fromRate === toRate || frame.byteLength < 4) return frame;
-  const input = new Int16Array(frame.buffer, frame.byteOffset, Math.floor(frame.byteLength / 2));
-  const outputLength = Math.max(1, Math.round(input.length * toRate / fromRate));
-  const output = Buffer.allocUnsafe(outputLength * 2);
-  for (let index = 0; index < outputLength; index += 1) {
-    const source = index * fromRate / toRate;
-    const leftIndex = Math.min(input.length - 1, Math.floor(source));
-    const rightIndex = Math.min(input.length - 1, leftIndex + 1);
-    const weight = source - leftIndex;
-    const sample = Math.round(input[leftIndex] * (1 - weight) + input[rightIndex] * weight);
-    output.writeInt16LE(Math.max(-32768, Math.min(32767, sample)), index * 2);
-  }
-  return output;
-}
 
 export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): VoiceTransport {
   return {
@@ -99,56 +67,9 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
       ...(profile.needsProxy ? { agent: resolveProxyAgent(profile, url) } : {}),
     });
 
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        ws.terminate();
-        reject(new Error('VOICE_UPSTREAM_CONNECT_TIMEOUT'));
-      }, VOICE_UPSTREAM_CONNECT_TIMEOUT_MS);
-      ws.once('open', () => {
-        clearTimeout(timer);
-        resolve();
-      });
-      ws.once('error', (err: Error) => {
-        clearTimeout(timer);
-        reject(err);
-      });
-    });
+    await waitForWebSocketOpen(ws);
 
-    let lastUpstreamSignalAt = Date.now();
-    let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-    const clearHeartbeat = () => {
-      if (!heartbeatTimer) return;
-      clearInterval(heartbeatTimer);
-      heartbeatTimer = null;
-    };
-    const markUpstreamSignal = () => {
-      lastUpstreamSignalAt = Date.now();
-    };
-
-    ws.on('pong', markUpstreamSignal);
-    heartbeatTimer = setInterval(() => {
-      if (ws.readyState !== WebSocket.OPEN) {
-        clearHeartbeat();
-        return;
-      }
-      const silenceMs = Date.now() - lastUpstreamSignalAt;
-      if (silenceMs >= VOICE_UPSTREAM_SILENCE_TIMEOUT_MS) {
-        clearHeartbeat();
-        // missedBeats 是判因用的：1 拍 = 丢包/迟到，连丢三拍才是这条链真死了。
-        logger.warn('upstream heartbeat timed out', {
-          silenceMs,
-          missedBeats: Math.floor(silenceMs / VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS),
-        });
-        onEvent({
-          type: 'error',
-          code: 'UPSTREAM_ERROR',
-          message: '上游连接已断开（长时间无响应）',
-        });
-        ws.terminate();
-        return;
-      }
-      ws.ping();
-    }, VOICE_UPSTREAM_HEARTBEAT_INTERVAL_MS);
+    const upstreamHeartbeat = startUpstreamHeartbeat(ws, onEvent);
 
     const initialSessionUpdate = buildSessionUpdate(profile, {
       model,
@@ -617,7 +538,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
     let confirmInitialSessionHandshake: (() => void) | null = null;
     ws.on('message', (raw) => {
       // 合法事件、未知事件和偶发非 JSON 帧都证明链路仍有下行信号。
-      markUpstreamSignal();
+      upstreamHeartbeat.markSignal();
       const event = parseEvent(raw);
       if (!event) return;
       if (event.type === 'input_audio_buffer.speech_started') {
@@ -980,7 +901,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
     });
 
     ws.on('close', () => {
-      clearHeartbeat();
+      upstreamHeartbeat.clear();
       clearAllResponseWatchdogs();
       watchdogCancelledResponseIds.clear();
       rejectPendingInjection('voice upstream closed during injection');
@@ -1000,21 +921,11 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
     // 不会重复走这道 8s 闸。session.created 只证明 socket 会话存在，不能证明上面的
     // session.update 已生效；仓内 provider 连接测试同样以 session.updated 回显作为确认。
     const handshakeStartedAt = Date.now();
-    const initialSessionHandshake = new Promise<boolean>((resolve) => {
-      let settled = false;
-      const finish = (confirmed: boolean) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        confirmInitialSessionHandshake = null;
-        resolve(confirmed);
-      };
-      const timer = setTimeout(() => finish(false), INITIAL_SESSION_HANDSHAKE_TIMEOUT_MS);
-      confirmInitialSessionHandshake = () => finish(true);
-    });
+    const initialSessionHandshake = createInitialSessionHandshake();
+    confirmInitialSessionHandshake = initialSessionHandshake.confirm;
     ws.send(JSON.stringify(initialSessionUpdate));
 
-    const handshakeConfirmed = await initialSessionHandshake;
+    const handshakeConfirmed = await initialSessionHandshake.promise;
     const handshakeWaitMs = Date.now() - handshakeStartedAt;
     if (handshakeConfirmed) {
       logger.info('initial session handshake confirmed', {
@@ -1093,7 +1004,7 @@ export function createRealtimeTransport(profile: RealtimeVoiceProviderProfile): 
         return responseId;
       },
       async close() {
-        clearHeartbeat();
+        upstreamHeartbeat.clear();
         clearAllResponseWatchdogs();
         if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close();
       },

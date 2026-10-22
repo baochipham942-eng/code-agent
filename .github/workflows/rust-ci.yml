@@ -36,7 +36,7 @@ jobs:
   test-and-lint:
     name: cargo test + clippy (src-tauri)
     # release.yml 的两个 Rust 构建 job（build-mac / build-windows）分别钉在 macos-15 /
-    # windows-latest；这里选 macos-15 而非更便宜的 ubuntu-latest，因为 tauri crate 的
+    # windows-latest；这里选 macos-15 而非更便宜的 ubuntu-24.04，因为 tauri crate 的
     # webview 后端在 Linux 上需要额外的 apt 系统库（webkit2gtk/gtk3 等）而本项目从未
     # 验证过、也不发 Linux 版——用与真实目标平台一致的 macos-15，不引入一套没人验过的
     # Linux 编译前置条件。

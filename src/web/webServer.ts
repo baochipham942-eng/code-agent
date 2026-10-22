@@ -372,6 +372,8 @@ import type { PendingDevPermissionRequest } from './routes/dev';
 import { createApp, type CreateAppDeps } from './app';
 import { acquireDaemonLock, releaseDaemonLock } from '../host/services/daemon/daemonLock';
 import type { DaemonIdleSnapshot } from '../host/services/daemon/daemonIdle';
+import { createDaemonResidencyReporter } from '../host/services/daemon/daemonStateReporter';
+import { getDaemonQuitIntent } from '../host/services/daemon/quitIntent';
 import { backgroundContinueDetachArmed, createDaemonExitRechecker, shouldStayResidentAfterShellExit, stdinEofIsQuitCommand } from '../host/services/daemon/shellExit';
 import { drainPendingOpsForShutdown, isDrainWatchdogActive } from '../host/services/daemon/daemonDrain';
 import { getBackgroundTaskLedger } from '../host/task/backgroundTaskLedger';
@@ -1305,13 +1307,22 @@ async function main(): Promise<void> {
   // 体（到第一个独行 `}` 为止），块内多行调用的收尾 `});` 会把 'end' 监听挤出匹配（r3/r14
   // 同型回归）。无 boot token 时 rechecker 为 undefined，订阅与回调空转，行为不变。
   let shellPipeAttached = Boolean(process.env.CODE_AGENT_TAURI_BOOT_TOKEN);
-  const eofIsQuitCommand = () => stdinEofIsQuitCommand(process.platform, backgroundContinueDetachArmed());
+  const eofIsQuitCommand = () => stdinEofIsQuitCommand(process.platform, backgroundContinueDetachArmed(), getDaemonQuitIntent());
   const daemonExitRechecker = process.env.CODE_AGENT_TAURI_BOOT_TOKEN
     ? createDaemonExitRechecker({
       platform: process.platform,
       getSnapshot: () => daemonIdleSnapshot?.(),
       shutdown,
       stdinEofIsQuitCommand: eofIsQuitCommand,
+      getQuitIntent: getDaemonQuitIntent,
+    })
+    : undefined;
+  // 留守状态文件（daemon-state.json，`neo daemon status` 读）：快照/意图/cron 变化时重写。
+  const daemonResidency = daemonExitRechecker
+    ? createDaemonResidencyReporter({
+      dataDir: resolveCodeAgentDataDir(),
+      getSnapshot: () => daemonIdleSnapshot?.(),
+      recheck: daemonExitRechecker.recheck,
     })
     : undefined;
   let shellPipeClosedHandled = false;
@@ -1319,22 +1330,19 @@ async function main(): Promise<void> {
     if (shellPipeClosedHandled) return;
     shellPipeClosedHandled = true;
     shellPipeAttached = false;
-    const shouldStay = shouldStayResidentAfterShellExit(
-      process.platform,
-      daemonIdleSnapshot?.(),
-      eofIsQuitCommand(),
-    );
+    const shouldStay = shouldStayResidentAfterShellExit(process.platform, daemonIdleSnapshot?.(), eofIsQuitCommand(), getDaemonQuitIntent());
     if (daemonExitRechecker?.onShellPipeClosed()) return;
     if (!shouldStay) {
       void shutdown();
       return;
     }
-    logger.info('[daemon] shell exited while busy — staying resident (runs/companion/approval pending)');
+    logger.info('[daemon] shell exited while busy — staying resident (runs/companion/approval/armed schedules)');
   };
   if (daemonExitRechecker) {
-    runRegistry.onIdleTransition(daemonExitRechecker.recheck);
-    onForegroundPermissionStateChange(daemonExitRechecker.recheck);
-    getTaskManager().on('event', daemonExitRechecker.recheck);
+    const onResidencySignal = () => { daemonExitRechecker.recheck(); daemonResidency?.report(); };
+    runRegistry.onIdleTransition(onResidencySignal);
+    onForegroundPermissionStateChange(onResidencySignal);
+    getTaskManager().on('event', onResidencySignal);
   }
   if (process.env.CODE_AGENT_TAURI_BOOT_TOKEN) {
     process.stdin.resume();

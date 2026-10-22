@@ -5,6 +5,7 @@
 // 宿主进程重启后，幸存的 tool_approval 行没有内存 Promise 可 resolve；这里的语义是
 // A′（owner 10-17 拍板）：不投 durable approval op、不续跑 run——
 //   允许：重读台账调用 → 重算指纹（不符 → args_unavailable 收口）→ 结果已存在则跳过 →
+//         会话工作目录可恢复（解析不出 → args_unavailable 收口，绝不回退家目录）→
 //         原子认领（pending→approved，UPDATE changes==1 者赢）→ 经与
 //         nativeRecoveryHost.approval.dispatchPrepared 共享的执行器真执行一次 →
 //         结果消息落回原会话。
@@ -13,12 +14,10 @@
 // 认领后、结果落盘前崩溃：行已是 approved，后续点击按非候选直接返回，永不二次执行。
 // ============================================================================
 
-import os from 'node:os';
 import type { Message, PermissionResponse } from '../../shared/contract';
 import type { PendingApprovalRecord } from '../../shared/contract/pendingApproval';
 import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
 import { getDatabase } from '../services/core/databaseService';
-import { getSessionManager } from '../services/infra/sessionManager';
 import { createLogger } from '../services/infra/logger';
 import { ToolExecutor } from '../tools/toolExecutor';
 import {
@@ -41,7 +40,12 @@ const logger = createLogger('ParkedApprovalResume');
 export interface ParkedApprovalResumePorts extends LedgerToolExecutionPorts {
   repo: PendingApprovalRepository;
   loadMessages(sessionId: string): Message[] | null;
-  resolveWorkingDirectory(sessionId: string): string | Promise<string>;
+  /**
+   * 解析会话工作目录。null = 解析不出安全的工作目录（会话记录缺失 / 没落过
+   * workingDirectory / 查询失败）——上层必须 fail-closed 拒绝执行，绝不能静默
+   * 回退家目录：相对路径命令会以错误的 cwd 落副作用（rework r1）。
+   */
+  resolveWorkingDirectory(sessionId: string): string | null | Promise<string | null>;
 }
 
 export type ParkedApprovalResumeOutcome =
@@ -70,10 +74,17 @@ function defaultPorts(nowFn: () => number): ParkedApprovalResumePorts | null {
     },
     async resolveWorkingDirectory(sessionId) {
       try {
-        const session = await getSessionManager().getSession(sessionId);
-        return session?.workingDirectory || os.homedir();
-      } catch {
-        return os.homedir();
+        // 与判据链同口径直读会话记录（loadMessages→getMessages 不带 owner 过滤）：
+        // owner-scoped 查询在重启后可能因当前 owner 不匹配而错失会话，把可执行的
+        // 行误判成「没有工作目录」；解析不出就返回 null 交给上层 fail-closed。
+        const session = getDatabase().getSession(sessionId);
+        return session?.workingDirectory || null;
+      } catch (error) {
+        logger.warn('Session working directory lookup failed for parked approval resume', {
+          sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return null;
       }
     },
     // 用户已在收件箱批准——审批就是权限，这里的 requestPermission 恒 true
@@ -252,6 +263,23 @@ export async function resumeSurvivingParkedApproval(input: {
       : { handled: true, status: 'already_present', resultRef: existingEvidence.resultRef };
   }
 
+  // 工作目录必须可恢复才允许执行：解析不出会话工作目录（记录缺失 / 没落过 cwd）就
+  // fail-closed 收口 args_unavailable，绝不静默回退家目录——相对路径命令会落错目录。
+  // 放在原子认领之前：resolve 是 pending-only，认领后再想拒只会 lost_race 收不了口。
+  const workingDirectory = await ports.resolveWorkingDirectory(sessionId);
+  if (!workingDirectory) {
+    logger.warn('Surviving parked approval cannot resolve session working directory; refusing to execute', {
+      requestId: input.requestId,
+      sessionId,
+    });
+    return deny(
+      'Auto-rejected after restart: args_unavailable',
+      'approval rejected: session working directory unavailable after restart (args_unavailable)',
+      'closed',
+      'args_unavailable',
+    );
+  }
+
   // 原子认领（pending→approved，UPDATE changes==1 者赢）：认领必须先于执行——
   // 并发/重复点击里只有赢家走到 dispatchLedgerToolApproval，at-most-once 由此保证。
   // 认领后、结果落盘前崩溃：行已是 approved，后续点击按非候选直接返回，永不重执行。
@@ -272,7 +300,7 @@ export async function resumeSurvivingParkedApproval(input: {
       messages,
       toolCallId,
       sessionId,
-      workingDirectory: await ports.resolveWorkingDirectory(sessionId),
+      workingDirectory,
     });
   } catch (error) {
     // 执行层抛错（非工具级失败）：行已认领，给台账补一条失败结果，别让 toolCall 悬空。

@@ -140,12 +140,13 @@ describe('parked approval resume from message ledger', () => {
     expect(executions).toBe(1);
   });
 
-  it('并发批准：两路同时进，认领 changes==1 者赢 → 只执行一次；输家此时已见非 pending，不接手不执行', async () => {
+  it('并发批准：两路同时进，认领 changes==1 者赢 → 只执行一次；输家 lost_race 不执行', async () => {
     seedSurvivorRow();
     const ports = buildPorts();
 
-    // 认领发生在同步前缀（better-sqlite3 原子 UPDATE），第二路进入时行已 approved：
-    // 按非候选返回 {handled:false}，落到调用方的旧收口路径——两路加起来恰好执行一次。
+    // 工作目录解析（await，rework r1 起在认领前 fail-closed）让两路都进到认领门：
+    // better-sqlite3 原子 UPDATE 保证 changes==1 者赢——赢家执行一次，输家 lost_race
+    // 不执行（调用方按 handled:true 送达回报），两路加起来恰好执行一次。
     const [a, b] = await Promise.all([
       resumeSurvivingParkedApproval({ requestId: 'resume-1', response: 'allow', now, ports }),
       resumeSurvivingParkedApproval({ requestId: 'resume-1', response: 'allow', now, ports }),
@@ -153,7 +154,7 @@ describe('parked approval resume from message ledger', () => {
     const statuses = [a, b].map((outcome) => (outcome.handled ? outcome.status : 'not_candidate'));
 
     expect(statuses.filter((status) => status === 'executed')).toHaveLength(1);
-    expect(statuses).toContain('not_candidate');
+    expect(statuses).toContain('lost_race');
     expect(executions).toBe(1);
   });
 

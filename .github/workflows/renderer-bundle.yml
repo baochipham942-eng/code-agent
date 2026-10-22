@@ -123,7 +123,7 @@ permissions:
 jobs:
   renderer-capability-diff:
     if: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -155,7 +155,7 @@ jobs:
 
   renderer-hot-update-smoke:
     if: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -188,7 +188,7 @@ jobs:
   # 漏检直到 push/tag 才在「Build + sign」炸）。dry-run 无需控制面签名 key，不上传 OSS。
   renderer-bundle-dry-run:
     if: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -220,7 +220,7 @@ jobs:
 
   publish-renderer-bundle:
     if: ${{ github.event_name != 'pull_request' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # release:neo pushes main and the formal tag back-to-back. Both events can
     # target latest/, so keep one OSS writer per channel and never cancel a
     # publisher after it may have started replacing the object set.

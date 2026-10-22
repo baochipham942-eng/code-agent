@@ -6,6 +6,11 @@
  * HTTP endpoint。这里的常量只管合批/限频/轮询/截断/去重的界。
  */
 export const CRON_EVENT_TRIGGER = {
+  /**
+   * 事件任务单次预算缺省（USD）：/schedule 确认卡与群监听模板的预填值
+   * （owner 裁定 10-14：预填 0.5、可改），业务代码不写 0.5 字面量。
+   */
+  DEFAULT_RUN_BUDGET_USD: 0.5,
   /** 群监听自检窗口（分钟）；只观察用户主动发送的消息。 */
   GROUP_LISTEN_CHECK_MINUTES: 2,
   GROUP_LISTEN_CHECK_POLL_MS: 1_000,

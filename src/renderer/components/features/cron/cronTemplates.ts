@@ -1,6 +1,7 @@
 import { CRON_AGENT_SNAPSHOT } from '@shared/constants/memory';
 import { EXTERNAL_WATCH, type ExternalWatchConfig } from '@shared/constants/feishu';
 import { findRecommendedMcpServer } from '@shared/constants/mcpCatalog';
+import { CRON_EVENT_TRIGGER } from '@shared/constants';
 import type { CronJobDraft } from './types';
 import { createDefaultCronJobDraft } from './types';
 
@@ -26,6 +27,12 @@ export interface CronTemplate {
   fields: TemplateField[];
   /** 依赖的连接器 id（对齐 mcpCatalog RECOMMENDED_MCP_SERVERS.id，如 'lark'），只给真有依赖的模板填 */
   requiredConnectors?: string[];
+  /**
+   * event 调度模板（群监听，N-CRON-EVENT-CREATE-CHAT）：填参步骤渲染
+   * CronEventScheduleFields（账号/群/预算）替代运行位置选择，创建钉在本机。
+   * generate 的 values 里 accountId/chatId/budget 三键由编辑器在提交时注入。
+   */
+  event?: boolean;
   generate: (values: Record<string, string>) => CronJobDraft;
 }
 
@@ -278,6 +285,33 @@ export const CRON_TEMPLATES: CronTemplate[] = [
         ...cron,
       });
     },
+  },
+  {
+    id: 'group-listen',
+    name: '群监听',
+    emoji: '💬',
+    description: '盯住一个群，来了新消息就按你的一句话处理',
+    scheduleLabel: '群里有新消息时',
+    event: true,
+    fields: [
+      { key: 'task', label: '要做什么', placeholder: '例如：有人提到发布就总结给我', required: true, type: 'textarea' },
+    ],
+    // accountId/chatId/budget 由编辑器提交时从填参步骤的 live 草稿注入（模板字段里不出现，
+    // 用户永远看不到 Agent 类型或 JSON 档）；预算没填就用缺省（owner 裁定：预填 0.5 可改）。
+    generate: (v) =>
+      makeDraft({
+        name: '群监听',
+        description: `监听群消息：${v.task}`,
+        tagsText: '群监听, 事件触发',
+        scheduleType: 'event',
+        runsOn: 'local',
+        eventAccountId: v.accountId ?? '',
+        eventChatId: v.chatId ?? '',
+        maxRunBudget: v.budget?.trim() ? v.budget : String(CRON_EVENT_TRIGGER.DEFAULT_RUN_BUDGET_USD),
+        actionType: 'agent',
+        agentType: 'default',
+        agentPrompt: v.task,
+      }),
   },
 ];
 

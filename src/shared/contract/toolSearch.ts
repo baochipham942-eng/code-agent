@@ -124,6 +124,9 @@ export interface DeferredToolMeta {
   /** MCP 服务器名称 */
   mcpServer?: string;
 
+  /** 插件 id（插件注册的工具元数据携带，deferred-tools 摘要按它分组） */
+  pluginId?: string;
+
   /** 搜索提示关键词（MCP 工具可通过 _meta['anthropic/searchHint'] 提供） */
   searchHint?: string[];
 

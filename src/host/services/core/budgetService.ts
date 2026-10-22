@@ -10,6 +10,7 @@ import {
   DEFAULT_CACHE_READ_PRICE_RATIO,
   DEFAULT_CACHE_WRITE_PRICE_RATIO,
   computeUsageCostUsd,
+  SERVICE_TIER_COST_MULTIPLIER,
   type ModelPricingEntry,
 } from '../../../shared/constants';
 import { getDatabase } from './databaseService';
@@ -582,11 +583,15 @@ export class BudgetService {
   /**
    * Estimate cost for a planned operation
    */
-  estimateCost(inputTokens: number, outputTokens: number, model: string, provider: string): number {
+  estimateCost(inputTokens: number, outputTokens: number, model: string, provider: string, serviceTier?: string): number {
     const pricing = this.getModelPricing(model, provider);
     const inputCost = (inputTokens / 1_000_000) * pricing.input;
     const outputCost = (outputTokens / 1_000_000) * pricing.output;
-    return inputCost + outputCost;
+    const total = inputCost + outputCost;
+    // 档位折价与 calculateCost/computeUsageCostUsd 同源：表外/缺席 = 1x，原浮点结果
+    // 逐位不变（不重排运算）；倍率只折 input/output。
+    const multiplier = SERVICE_TIER_COST_MULTIPLIER[serviceTier ?? ''] ?? 1;
+    return multiplier === 1 ? total : total * multiplier;
   }
 
   /**

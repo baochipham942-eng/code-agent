@@ -15,6 +15,7 @@ import type { SteerOrQueueOutcome } from '@shared/contract/appService';
 import { buildAppshotXml, buildAppshotAttachment } from '@shared/contract/appshot';
 import { buildGoalSeedTodos } from '@shared/utils/goalTodos';
 import { CRON_URGENCY_CRITERIA } from '@shared/constants';
+import { validateEventScheduleConstraints } from '@shared/cronEventValidation';
 import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useAppStore } from '../../../../stores/appStore';
@@ -249,6 +250,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
         description,
         handoffPrompt: handoffPrompt || undefined,
         sourceSessionId: currentSessionId,
+        eventGroupName: normalized.eventGroupName || undefined,
       };
       const stored = storePendingScheduleDraft(pending);
       if (!stored) return false;
@@ -268,8 +270,29 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     const cs = t.chatInputSubmit;
     setCreatingSchedule(true);
     try {
-      const input = pending.input;
+      let input = pending.input;
       const handoffPrompt = pending.handoffPrompt;
+      // event 草案（N-CRON-EVENT-CREATE-CHAT）确认前的纵深防御：卡上已按共享校验器
+      // 禁用确认按钮，这里再拦一次（卡不可交互/草案被外部改写的路径）。同时剥掉
+      // chatId 空串（= 任意会话；空串下发给 host 会绑死一个不存在的会话，静默永不触发）。
+      if (input.schedule.type === 'event') {
+        let schedule = input.schedule;
+        if (schedule.source === 'channel' && !schedule.chatId) {
+          const { chatId: _droppedEmptyChatId, ...channelSchedule } = schedule;
+          schedule = channelSchedule;
+        }
+        input = { ...input, schedule };
+        const violation = validateEventScheduleConstraints({
+          schedule,
+          runsOn: input.runsOn,
+          action: input.action,
+          maxRunBudget: input.maxRunBudget,
+        });
+        if (violation) {
+          toast.error(t.cronCenter.eventValidation[violation.reason]);
+          return false;
+        }
+      }
       // 通知判据（N-CRON-RESTATE-HUMAN-WHEN）：确认时把（可能已在卡内编辑过的）
       // restatement.notifyWhen 写进 agent action——host 侧 prompt 注入 + 通知门都读它。
       // 空判据不写字段：保持「每次都通知」的旧行为，prompt 字节不变。截断口径与

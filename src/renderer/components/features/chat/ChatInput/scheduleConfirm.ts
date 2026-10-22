@@ -1,4 +1,5 @@
 import type { CreateCronJobInput } from '../../../../services/cronClient';
+import { CRON_EVENT_TRIGGER } from '@shared/constants';
 import { formatCronExpressionLabel, humanizeEverySchedule, type CronHumanLang } from '@shared/cronHumanize';
 import type { PendingScheduleDraft, ScheduleRestatement } from './useScheduleDraft';
 
@@ -12,8 +13,16 @@ interface ScheduleConfirmLabels {
   reviewInbox: string;
 }
 
+/** event 草案专属行（监听哪个群 / 单次预算）的文案：确认卡从 cronCenter 组进来传。 */
+export interface ScheduleEventConfirmLabels {
+  group: string;
+  groupFallback: string;
+  groupAnyChat: string;
+  budget: string;
+}
+
 interface ScheduleConfirmRow {
-  key: 'what' | 'when' | 'notifyWhen' | 'result';
+  key: 'what' | 'when' | 'notifyWhen' | 'result' | 'group' | 'budget';
   label: string;
   value: string;
 }
@@ -21,6 +30,8 @@ interface ScheduleConfirmRow {
 export interface NormalizedScheduleDraft {
   input: CreateCronJobInput;
   restatement: ScheduleRestatement | undefined;
+  /** event 草案：用户原话里的群名提示（从草案顶层剥离，不进 createJob 载荷）。 */
+  eventGroupName: string | undefined;
 }
 
 // LLM 草案是不可信 JSON，确认卡渲染路径不允许直接解引用草案字段（会 TypeError 炸到全局错误页）。
@@ -48,7 +59,9 @@ function readRestatement(value: unknown): ScheduleRestatement | undefined {
   return what && notifyWhen ? { what, notifyWhen } : undefined;
 }
 
-// 调度按 type 分支校验：every→interval 数字 + unit 枚举；cron→expression 非空；at→datetime 字符串/数字。
+// 调度按 type 分支校验：every→interval 数字 + unit 枚举；cron→expression 非空；at→datetime 字符串/数字；
+// event→channel 源 + message 事件（accountId 允许为空：草稿期用户还没在卡里选，
+// 选没选由共享校验器在确认按钮上把关）。connector:mail 源没有创建 UI，一律拒绝。
 // 校验失败返回 undefined，由 normalizeScheduleDraft 判草案无效（与缺 action 同等处理）：
 // 缺 schedule 的草案走到确认一步也会被 host 拒掉，不能出卡。
 // weeks 是契约遗留单位，展示标签没有对应文案，按无效处理。
@@ -74,6 +87,22 @@ function readValidSchedule(value: unknown): CreateCronJobInput['schedule'] | und
       else delete schedule.timezone;
       return schedule as unknown as CreateCronJobInput['schedule'];
     }
+    case 'event': {
+      if (asTrimmedString(value.source) !== 'channel' || asTrimmedString(value.eventName) !== 'message') {
+        return undefined;
+      }
+      // accountId 恒为 string（草稿期可为空串 = 还没选，共享校验器据此禁确认）；
+      // chatId 空串不落键（= 任意会话，空串下发给 host 会绑死不存在的会话）。
+      const accountId = asTrimmedString(value.accountId);
+      const chatId = asTrimmedString(value.chatId);
+      return {
+        type: 'event',
+        source: 'channel',
+        eventName: 'message',
+        accountId,
+        ...(chatId ? { chatId } : {}),
+      };
+    }
     default:
       return undefined;
   }
@@ -93,11 +122,14 @@ function readValidAction(value: unknown): CreateCronJobInput['action'] | null {
 /** LLM 草案进确认卡前的统一规范化。展示字段非字符串一律当缺失；schedule/action 结构缺失返回 null。 */
 export function normalizeScheduleDraft(raw: unknown): NormalizedScheduleDraft | null {
   if (!isPlainObject(raw)) return null;
-  const { restatement: rawRestatement, ...rawInput } = raw;
+  const { restatement: rawRestatement, groupName: rawGroupName, ...rawInput } = raw;
   const action = readValidAction(rawInput.action);
   if (!action) return null;
   const schedule = readValidSchedule(rawInput.schedule);
   if (!schedule) return null;
+  // event 草案只支持 agent 动作（host 护栏同款）：非 agent 直接判无效，
+  // 不给「看起来能确认」的假口子（模型也不该产出，双保险）。
+  if (schedule.type === 'event' && asTrimmedString(action.type) !== 'agent') return null;
   const input = { ...rawInput, action, schedule } as Record<string, unknown>;
   const name = asTrimmedString(rawInput.name);
   const description = asTrimmedString(rawInput.description);
@@ -108,9 +140,22 @@ export function normalizeScheduleDraft(raw: unknown): NormalizedScheduleDraft | 
   else delete input.description;
   if (resultChannel) input.resultChannel = resultChannel;
   else delete input.resultChannel;
+  // event 草案的固定口径：scheduleType 标 event、钉在本机、预算预填缺省
+  //（owner 裁定 10-14：0.5 可改；模型给的非法/非正值也压回缺省）。
+  // groupName 是草稿级提示（供卡里按群名预选），不进 createJob 载荷。
+  if (schedule.type === 'event') {
+    input.scheduleType = 'event';
+    input.runsOn = 'local';
+    const rawBudget = rawInput.maxRunBudget;
+    input.maxRunBudget = typeof rawBudget === 'number' && Number.isFinite(rawBudget) && rawBudget > 0
+      ? rawBudget
+      : CRON_EVENT_TRIGGER.DEFAULT_RUN_BUDGET_USD;
+  }
+  const eventGroupName = asTrimmedString(rawGroupName);
   return {
     input: input as unknown as CreateCronJobInput,
     restatement: readRestatement(rawRestatement),
+    eventGroupName: schedule.type === 'event' && eventGroupName ? eventGroupName : undefined,
   };
 }
 
@@ -155,9 +200,10 @@ function formatScheduleWhenLabel(
 }
 
 export function buildScheduleConfirmRows(
-  draft: Pick<PendingScheduleDraft, 'input' | 'restatement'>,
+  draft: Pick<PendingScheduleDraft, 'input' | 'restatement' | 'eventGroupName' | 'eventBindingNames'>,
   labels: ScheduleConfirmLabels,
   lang: CronHumanLang = 'zh',
+  eventLabels?: ScheduleEventConfirmLabels,
 ): readonly ScheduleConfirmRow[] {
   // 草案已经过 normalizeScheduleDraft，但这里仍按不可信输入读：任何字段非字符串都当缺失，不抛错。
   const input = draft.input as unknown as Record<string, unknown>;
@@ -175,6 +221,32 @@ export function buildScheduleConfirmRows(
   // 通知判据只有 agent 动作能生效（prompt 注入 + 通知门都挂在 agent 执行链上）：
   // 非 agent 草案整行不出，不给「看起来可配置」的假口子（N-CRON-RESTATE-HUMAN-WHEN）。
   const isAgentAction = isPlainObject(input.action) && asTrimmedString(input.action.type) === 'agent';
+
+  // event 草案没有「什么时候」：换成「监听哪个群」+「单次预算」两行（值随卡内编辑走），
+  // 交互本体（账号/群选择、预算输入）由 CronEventScheduleFields 渲染，行值只做当前状态陈述。
+  if (schedule?.type === 'event' && schedule.source === 'channel') {
+    const accountId = asTrimmedString(schedule.accountId);
+    const chatId = asTrimmedString(schedule.chatId);
+    // 行值随当前绑定走（rework r1 Important 3）：账号/群一旦在卡内选定，行值就陈述
+    // 实际绑定（选择回调带上来的目录显示名，缺了回落 id），不再引用草案级
+    // eventGroupName 快照——用户改选其他群或改回「任意会话」后，摘要行不能还写着
+    // 原话群名。原话提示只在还没选账号（无绑定可陈述）时兜底。
+    const accountName = asTrimmedString(draft.eventBindingNames?.accountName);
+    const chatName = asTrimmedString(draft.eventBindingNames?.chatName);
+    const groupValue = accountId
+      ? (chatId
+        ? (chatName || chatId)
+        : `${accountName || accountId} · ${eventLabels?.groupAnyChat || ''}`)
+      : (draft.eventGroupName || eventLabels?.groupFallback || '');
+    const budget = input.maxRunBudget;
+    return [
+      { key: 'what', label: labels.what, value: what },
+      { key: 'group', label: eventLabels?.group ?? '', value: groupValue },
+      ...(isAgentAction ? [{ key: 'notifyWhen' as const, label: labels.notifyWhen, value: notifyWhen }] : []),
+      { key: 'budget', label: eventLabels?.budget ?? '', value: typeof budget === 'number' ? String(budget) : '' },
+      { key: 'result', label: labels.result, value: result },
+    ];
+  }
 
   return [
     { key: 'what', label: labels.what, value: what },

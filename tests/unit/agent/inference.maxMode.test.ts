@@ -421,6 +421,45 @@ describe('inference Max Mode wiring', () => {
     expect(decisionEvents).toHaveLength(0);
   });
 
+  // r2（N-MODELCAT-SERVICE-TIER-COST）：候选/judge 响应实报 service_tier='flex' 时，
+  // overhead 条目必须带档进 budgetService——折价不能在 TokenUsage 重建点丢失，
+  // 否则 maxMode 扇出开销按标准价记账、预算虚高约 2 倍。
+  it('候选/judge 响应实报档位 → overhead 逐条带档记账，赢家带档走主链路', async () => {
+    const ctx = buildCtx({ maxMode: true, maxModeCandidates: 2 } as any);
+    let candidateCount = 0;
+    ctx.runtime.modelRouter.inference = vi.fn().mockImplementation(
+      async (_messages: unknown, tools: unknown[]) => {
+        if (tools.length === 0) {
+          // judge 调用
+          return { type: 'text', content: '候选 0 提议了 Edit(a.ts)。\nWINNER: 0', finishReason: 'stop', usage: { inputTokens: 200, outputTokens: 8, serviceTier: 'flex' } };
+        }
+        candidateCount++;
+        return {
+          type: 'tool_use',
+          toolCalls: [{ id: `c${candidateCount}`, name: 'Edit', arguments: { path: 'a.ts', n: candidateCount } }],
+          finishReason: 'tool_calls',
+          usage: { inputTokens: 100, outputTokens: candidateCount * 10, serviceTier: 'flex' },
+        };
+      },
+    );
+
+    const response = await inference(ctx);
+
+    // 落选候选(100+10) + judge(200+8) 逐条进 budgetService，每条都带响应实报的 flex 档
+    const overheadRecorded = mockRecordUsage.mock.calls.map((c) => c[0]);
+    expect(overheadRecorded).toHaveLength(2);
+    for (const entry of overheadRecorded) {
+      expect(entry.serviceTier).toBe('flex');
+    }
+    // 赢家（候选 0，100/10）带档走主链路记账
+    expect(response.usage).toEqual({ inputTokens: 100, outputTokens: 10, serviceTier: 'flex' });
+    expect(ctx.recordTokenUsage).toHaveBeenCalledWith(100, 10, {
+      cacheReadTokens: undefined,
+      cacheCreationTokens: undefined,
+      serviceTier: 'flex',
+    }, 'provider');
+  });
+
   it('全候选失败 → 降级单次流式调用，用户无感、无 overhead', async () => {
     const ctx = buildCtx({ maxMode: true, maxModeCandidates: 2 } as any);
     let calls = 0;

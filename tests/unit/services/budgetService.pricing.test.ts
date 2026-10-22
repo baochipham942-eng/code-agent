@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BudgetService } from '../../../src/host/services/core/budgetService';
+import { SERVICE_TIER_COST_MULTIPLIER, UNATTENDED_SERVICE_TIER } from '../../../src/shared/constants';
 
 function recordOneMillionTokens(provider: string, model: string): number {
   const service = new BudgetService({ enabled: true, maxBudget: 100 });
@@ -30,5 +31,48 @@ describe('BudgetService 策展价判定', () => {
 
   it('内置 provider 的未知模型继续回落 default 档', () => {
     expect(recordOneMillionTokens('deepseek', 'unknown-model')).toBeCloseTo(4, 6);
+  });
+});
+
+// N-MODELCAT-SERVICE-TIER-COST：usage 带 serviceTier → calculateCost 按档位倍率
+// 折价，run 总额（getCurrentCost）与档位缺失时逐位一致地保持原价。
+describe('BudgetService service_tier 档位计价', () => {
+  const RECORD = { inputTokens: 1_000_000, outputTokens: 1_000_000, model: 'gpt-6.1-sol', provider: 'openai' };
+
+  function recordCost(serviceTier?: string): number {
+    const service = new BudgetService({ enabled: true, maxBudget: 100 });
+    service.recordUsage({ ...RECORD, timestamp: Date.now(), ...(serviceTier ? { serviceTier } : {}) });
+    return service.getCurrentCost();
+  }
+
+  it('serviceTier=flex → 总额乘 0.5（含 longContext 档，无人值守 run 的真实花费）', () => {
+    const standard = recordCost();
+    const flex = recordCost(UNATTENDED_SERVICE_TIER);
+    // 1M in + 1M out 超 gpt-6.1-sol 272K 阈值 → longContext 计价 $2×2 + $10×1.5 = $19；
+    // flex 倍率在 longContext 之上再乘 0.5 = $9.5（item 3：long-context math included）
+    expect(standard).toBeCloseTo(19, 6);
+    expect(flex).toBeCloseTo(19 * SERVICE_TIER_COST_MULTIPLIER.flex, 6);
+  });
+
+  it('flex + 缓存命中：cacheRead 按刊例计不折价（无实测证据，预算宁高勿低）', () => {
+    const service = new BudgetService({ enabled: true, maxBudget: 100 });
+    service.recordUsage({
+      ...RECORD,
+      cacheReadTokens: 1_000_000,
+      timestamp: Date.now(),
+      serviceTier: UNATTENDED_SERVICE_TIER,
+    });
+    // 1M in + 1M out + 1M cacheRead，gpt-6.1-sol（prompt 2M > 272K → longContext）：
+    // standard = $2×2 + $10×1.5 + $0.1×2 = $19.2；flex = (4 + 15) × 0.5 + 0.2 = $9.7（cache 不吃倍率）
+    expect(service.getCurrentCost()).toBeCloseTo(9.7, 6);
+    // 全项合计 ×0.5 = $9.6 会低估真实花费（rework r1 修掉的口径）
+    expect(service.getCurrentCost()).not.toBeCloseTo(19.2 * SERVICE_TIER_COST_MULTIPLIER.flex, 6);
+  });
+
+  it.each([
+    ['档位缺席（绝大多数 provider）', undefined],
+    ['实报 standard（被拒摘档重试后的响应）', 'standard'],
+  ])('%s → 与改动前逐位一致', (_label, tier) => {
+    expect(recordCost(tier)).toBe(recordCost());
   });
 });

@@ -16,8 +16,10 @@
 
 import { MAX_MODE } from '../../../shared/constants';
 import { createLogger } from '../../services/infra/logger';
+import { getBudgetService } from '../../services';
+import type { BudgetScope } from '../../services/core/budgetService';
 import type { ModelResponse, ModelMessage } from '../loopTypes';
-import type { ToolDefinition } from '../../../shared/contract';
+import type { ToolDefinition, ModelConfig } from '../../../shared/contract';
 
 const logger = createLogger('MaxMode');
 
@@ -70,6 +72,8 @@ export interface MaxModeStats {
     outputTokens: number;
     actualProvider?: string;
     actualModel?: string;
+    /** 响应实报 service_tier（缺席 = standard 计价）：候选/judge 的折价随条目透传给预算（r2） */
+    serviceTier?: string;
   }>;
 }
 
@@ -99,9 +103,36 @@ function toOverheadEntries(responses: Array<ModelResponse | undefined>): MaxMode
       outputTokens: response.usage.outputTokens,
       actualProvider: response.actualProvider,
       actualModel: response.actualModel,
+      serviceTier: response.usage.serviceTier,
     });
   }
   return entries;
+}
+
+/**
+ * overhead 逐条折账（调用方：contextAssembly/inference 的 runMaxModeInference）。
+ * 按实际路由模型分账（adaptive 路由/降级后可能 ≠ 请求配置，Codex R1-M2），并透传
+ * 响应实报档位（缺席 = standard 计价，N-MODELCAT-SERVICE-TIER-COST r2）——maxMode
+ * 的扇出开销同样按实报档折价，不在 TokenUsage 重建路上丢档。不走
+ * ctx.recordTokenUsage——那条路径固定记在请求模型名下。
+ */
+export function recordMaxModeOverheadUsage(
+  scope: BudgetScope,
+  requestConfig: Pick<ModelConfig, 'model' | 'provider'>,
+  sessionId: string,
+  entries: MaxModeStats['overheadEntries'],
+): void {
+  for (const entry of entries) {
+    getBudgetService(scope).recordUsage({
+      inputTokens: entry.inputTokens,
+      outputTokens: entry.outputTokens,
+      serviceTier: entry.serviceTier,
+      model: entry.actualModel ?? requestConfig.model,
+      provider: entry.actualProvider ?? requestConfig.provider,
+      timestamp: Date.now(),
+      sessionId,
+    });
+  }
 }
 
 /**

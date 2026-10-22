@@ -103,6 +103,8 @@ export interface TokenUsage {
   sessionId?: string;
   /** provider 原始 response 的 usage，或本地估算；评测报告只接受前者。 */
   source?: 'provider' | 'estimated';
+  /** 响应实报的 service_tier（缺席 = standard 计价）；calculateCost 按档位倍率折价。 */
+  serviceTier?: string;
 }
 
 // Pricing sourced from shared constants (per 1M tokens, USD)

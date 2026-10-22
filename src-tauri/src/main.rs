@@ -2438,11 +2438,13 @@ fn spawn_quit_guard_flow(app: AppHandle, coordinator: Arc<quit_guard::QuitCoordi
 /// 按钮组两套（N-RESIDENT-HOST-SHELL-RUST-FU1）：附着成立（mac/linux）→
 /// 「取消 / 后台继续 / 停止并退出」；不成立（Windows）→「取消 / 停止并退出」，
 /// 判据唯一来自 resident_host::quit_dialog_button_set_current()（无平台分支）。
-/// 槽位：三键组「取消」仍是默认（回车）键；两键组把「取消」放 cancel 槽
-/// （OkCancelCustom 第二参）——Esc/标题栏 X 会被 tauri-plugin-dialog 无条件
-/// 映射成 cancel 槽位文案（ai-review #2497），安全动作必须占这个槽，回车
-/// 默认键因此指向「停止并退出」（rfd 无独立于槽位的默认键入口），
-/// 见 quit_guard::dialog_answer_action。
+/// 槽位（N-RESIDENT-HOST-SHELL-RUST-FU3）：两组都把「取消」放 cancel 槽
+/// （三键组 YesNoCancelCustom 第三参 / 两键组 OkCancelCustom 第二参）——
+/// Esc/标题栏 X 会被 tauri-plugin-dialog 无条件映射成 cancel 槽位文案
+/// （ai-review #2497），安全动作必须占这个槽，回车默认键因此指向 yes/ok 槽
+/// （三键组「后台继续」、两键组「停止并退出」；rfd 无独立于槽位的默认键
+/// 入口），槽位序单一来源 resident_host 的 yes_no_cancel_slots /
+/// ok_cancel_slots，见 quit_guard::dialog_answer_action。
 fn show_quit_confirm_dialog(
     app: &AppHandle,
     coordinator: &Arc<quit_guard::QuitCoordinator>,
@@ -2459,15 +2461,16 @@ fn show_quit_confirm_dialog(
         .title(quit_guard::QUIT_DIALOG_TITLE)
         .kind(MessageDialogKind::Warning)
         .buttons(match button_set {
-            resident_host::QuitDialogButtonSet::Three {
-                cancel,
-                background_continue,
-                quit,
-            } => MessageDialogButtons::YesNoCancelCustom(
-                cancel.to_string(),
-                background_continue.to_string(),
-                quit.to_string(),
-            ),
+            resident_host::QuitDialogButtonSet::Three { .. } => {
+                let (yes_slot, no_slot, cancel_slot) = button_set
+                    .yes_no_cancel_slots()
+                    .expect("三键组必有 yes/no/cancel 槽位");
+                MessageDialogButtons::YesNoCancelCustom(
+                    yes_slot.to_string(),
+                    no_slot.to_string(),
+                    cancel_slot.to_string(),
+                )
+            }
             resident_host::QuitDialogButtonSet::Two { .. } => {
                 let (ok_slot, cancel_slot) = button_set
                     .ok_cancel_slots()

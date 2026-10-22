@@ -398,7 +398,9 @@ pub enum QuitDialogButtonSet {
         cancel: &'static str,
         quit: &'static str,
     },
-    /// 取消 / 后台继续 / 停止并退出（mac/linux 现状）。
+    /// 取消 / 后台继续 / 停止并退出（mac/linux 现状）。字段是语义清单，
+    /// 对话框槽位序另见 [`QuitDialogButtonSet::yes_no_cancel_slots`]
+    /// （N-RESIDENT-HOST-SHELL-RUST-FU3 起 cancel 槽改放「取消」）。
     Three {
         cancel: &'static str,
         background_continue: &'static str,
@@ -414,11 +416,33 @@ impl QuitDialogButtonSet {
     /// `Custom`，非按钮手势绝不能落到退出路径（ai-review #2497）。代价：回车
     /// 默认键随 ok 槽位指向「停止并退出」——rfd 0.16 没有独立于槽位选默认键的
     /// 入口（NSAlert 首按钮 / TaskDialog nDefaultButton=0），两害相权，
-    /// 误按 Esc/X 退出更危险。三键组不走 OkCancelCustom，返回 None。
+    /// 误按 Esc/X 退出更危险。三键组不走 OkCancelCustom，返回 None（三键组的
+    /// 槽位序见 [`QuitDialogButtonSet::yes_no_cancel_slots`]）。
     pub fn ok_cancel_slots(&self) -> Option<(&'static str, &'static str)> {
         match self {
             QuitDialogButtonSet::Two { cancel, quit } => Some((*quit, *cancel)),
             QuitDialogButtonSet::Three { .. } => None,
+        }
+    }
+
+    /// 三键组喂给 `MessageDialogButtons::YesNoCancelCustom(yes, no, cancel)` 的
+    /// 槽位序（N-RESIDENT-HOST-SHELL-RUST-FU3）。与两键组同理，cancel 槽位
+    /// （第三参）必须放安全动作「取消」：Esc / 标题栏 X 到 rfd 是裸 `Cancel`
+    /// （gtk3 `GTK_RESPONSE_DELETE_EVENT => Cancel` 及 `_ => Cancel` 尾、macOS
+    /// `dialog_result` 的 `_ => Cancel` 尾），被 tauri-plugin-dialog 2.7.1
+    /// desktop.rs 无条件改写成 cancel 槽位文案的 `Custom`——旧序把「停止并退出」
+    /// 放在这个槽，Linux 上误按 Esc/X 会停掉运行中的任务。代价：回车默认键随
+    /// yes 槽位指向「后台继续」（NSAlert 首按钮 / gtk 默认响应），rfd 0.16 没有
+    /// 独立于槽位选默认键的入口，与两键组同一取舍。两键组不走
+    /// YesNoCancelCustom，返回 None。
+    pub fn yes_no_cancel_slots(&self) -> Option<(&'static str, &'static str, &'static str)> {
+        match self {
+            QuitDialogButtonSet::Three {
+                cancel,
+                background_continue,
+                quit,
+            } => Some((*background_continue, *quit, *cancel)),
+            QuitDialogButtonSet::Two { .. } => None,
         }
     }
 }
@@ -429,7 +453,8 @@ pub fn quit_dialog_offers_background_continue(attach_supported: bool) -> bool {
 }
 
 /// 纯构造：附着成立 → 三键；不成立 → 两键（槽位序见
-/// [`QuitDialogButtonSet::ok_cancel_slots`]）。
+/// [`QuitDialogButtonSet::ok_cancel_slots`] 与
+/// [`QuitDialogButtonSet::yes_no_cancel_slots`]）。
 pub fn quit_dialog_button_set(attach_supported: bool) -> QuitDialogButtonSet {
     if quit_dialog_offers_background_continue(attach_supported) {
         QuitDialogButtonSet::Three {
@@ -723,7 +748,8 @@ mod tests {
 
     #[test]
     fn quit_dialog_button_set_three_buttons_when_attach_supported() {
-        // mac/linux：三键照旧，顺序 取消 / 后台继续 / 停止并退出
+        // mac/linux：三键枚举照旧（字段为语义清单，对话框槽位序另见
+        // yes_no_cancel_slots 的测试）
         assert_eq!(
             quit_dialog_button_set(true),
             QuitDialogButtonSet::Three {
@@ -806,6 +832,69 @@ mod tests {
         assert_eq!(
             dialog_answer_action_gated(None, set),
             QuitAnswerAction::StayRunning
+        );
+    }
+
+    // ── 三键组槽位序（N-RESIDENT-HOST-SHELL-RUST-FU3） ────────────────────────
+
+    #[test]
+    fn three_button_cancel_slot_is_the_safe_label() {
+        // (a) cancel 槽位（YesNoCancelCustom 第三参）必须是「取消」：
+        // Esc / 标题栏 X 经 rfd 裸 Cancel + 插件改写，到达的就是这个槽的文案。
+        let set = quit_dialog_button_set(true);
+        let slots = set
+            .yes_no_cancel_slots()
+            .expect("三键组必有 yes/no/cancel 槽位");
+        assert_eq!(
+            slots.2,
+            crate::quit_guard::QUIT_DIALOG_CANCEL_BUTTON,
+            "cancel 槽位必须是「取消」：旧序放的是「停止并退出」，Esc/X 会停掉运行中的任务"
+        );
+    }
+
+    #[test]
+    fn three_button_slots_are_a_permutation_of_the_labels() {
+        // (b) 重排槽位不得丢掉或新增任何按钮
+        let set = quit_dialog_button_set(true);
+        let slots = set
+            .yes_no_cancel_slots()
+            .expect("三键组必有 yes/no/cancel 槽位");
+        let mut got = [slots.0, slots.1, slots.2];
+        got.sort_unstable();
+        let mut want = [
+            crate::quit_guard::QUIT_DIALOG_CANCEL_BUTTON,
+            crate::quit_guard::QUIT_DIALOG_BACKGROUND_BUTTON,
+            crate::quit_guard::QUIT_DIALOG_QUIT_BUTTON,
+        ];
+        want.sort_unstable();
+        assert_eq!(got, want, "三个槽位必须是三个标签的排列，不许多不许少");
+    }
+
+    #[test]
+    fn three_button_dismiss_result_is_stay_running() {
+        // (c) 复刻 tauri-plugin-dialog 2.7.1 desktop.rs 的改写：裸 rfd Cancel
+        // （Esc/标题栏 X：gtk3 GTK_RESPONSE_DELETE_EVENT 与 `_ => Cancel` 尾、
+        // macOS dialog_result 的 `_ => Cancel` 尾）被改写成
+        // Custom(cancel 槽位文案)。dismiss 到达应用侧的 payload = cancel 槽位
+        // 文案，走闭包同一条 gated 映射，绝不能停掉运行中的任务。
+        let set = quit_dialog_button_set(true);
+        let slots = set
+            .yes_no_cancel_slots()
+            .expect("三键组必有 yes/no/cancel 槽位");
+        assert_eq!(
+            dialog_answer_action_gated(Some(slots.2), set),
+            QuitAnswerAction::StayRunning,
+            "非按钮手势（Esc/标题栏 X）绝不能落到「停止并退出」"
+        );
+    }
+
+    #[test]
+    fn two_button_has_no_yes_no_cancel_slots() {
+        // (d) 两键组不走 YesNoCancelCustom，必须返回 None
+        assert_eq!(
+            quit_dialog_button_set(false).yes_no_cancel_slots(),
+            None,
+            "两键组的槽位序唯一来源是 ok_cancel_slots"
         );
     }
 }

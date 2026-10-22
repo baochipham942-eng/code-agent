@@ -5,14 +5,13 @@
 // action is visible, lineage is not quarantined). The full visible list is
 // recorded; starter cards and expand toggles do not count as an exit.
 import { expect, test, type Page } from './fixtures/axeTest';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { dismissFirstRunDialogs } from './firstRunDialogs';
 import {
   allocatePort,
   assertRecoveryInvariants,
-  CELL_LOG,
   makeFreshDirs,
   orderMatches,
   readParkedApprovals,
@@ -291,14 +290,24 @@ test('D2 orphan tool call with a begin row', async ({ page }) => {
 
 // N-PARKED-APPROVAL-SURVIVE-RESTART-RESUME ⑦：真进程档。cron 派无人值守会话停车一条真
 // Bash 追加写（append 可数：执行两次就有两行）→ SIGKILL → 同数据目录重启 → 幸存卡仍可批 →
-// 按收件箱同款投递口批准 → 副作用恰好发生一次；再点一次不重复。
+// 真 UI 批准（自动化收件箱 AutomationReviewInbox 的「批准」按钮，rework r2：不许绕 UI 直
+// POST 投递口）→ 副作用恰好发生一次；打开原会话转录能看到执行结果；再点一次不重复。
 test('G parked tool approval survives SIGKILL restart and runs exactly once', async ({ page }) => {
   current = await boot('G');
   await installSettingsStub(page);
   await preparePage(page, current.baseUrl);
   const token = await getAuthToken(page);
   const effectFile = path.join(current.dirs.workspace, 'parked-approval-effect.txt');
-  // 无人值守来源：cron agent 任务（origin=cron 的会话才会真走 B2 停车挂起）。
+  // 无人值守来源：cron agent 任务（origin=cron 的会话才会真走 B2 停车挂起）。带 sourceSessionId
+  // 指向一个有工作目录的来源会话——真实产品形状（从会话派生的任务继承 cwd）；无 cwd 的会话
+  // 在 r1 修复后批准会 fail-closed 收口 args_unavailable，那是另一条被单测钉住的路径。
+  const sourceSession = await api(current.baseUrl, token, 'POST', '/api/sessions', {
+    title: 'G 停车审批来源会话',
+    workingDirectory: current.dirs.workspace,
+  });
+  expect(sourceSession.ok, `source session failed: ${sourceSession.status} ${sourceSession.text.slice(0, 300)}`).toBe(true);
+  const sourceSessionId = (JSON.parse(sourceSession.text) as { data?: { id?: string } }).data?.id;
+  expect(sourceSessionId, 'source session id missing').toBeTruthy();
   const job = await api(current.baseUrl, token, 'POST', '/api/domain/cron/createJob', {
     payload: {
       name: 'G 停车审批跨重启',
@@ -310,7 +319,12 @@ test('G parked tool approval survives SIGKILL restart and runs exactly once', as
       maxRetries: 0,
       maxRunBudget: 1,
       maxRuns: 5,
-      action: { type: 'agent', agentType: 'default', prompt: `E2E_BACKGROUND_TOOL_APPROVAL ${effectFile}` },
+      action: {
+        type: 'agent',
+        agentType: 'default',
+        prompt: `E2E_BACKGROUND_TOOL_APPROVAL ${effectFile}`,
+        context: { sourceSessionId },
+      },
     },
   });
   expect(job.ok, `createJob failed: ${job.status} ${job.text.slice(0, 400)}`).toBe(true);
@@ -353,18 +367,49 @@ test('G parked tool approval survives SIGKILL restart and runs exactly once', as
     expect(memberRun.interruptCause, 'survivor session run must be guard_halt').toBe('guard_halt');
   }
 
-  // ⑦ 收件箱同款投递口批准（AutomationReviewInbox 的点击 = agent:permission-response）。
-  const approve = await api(restarted.baseUrl, afterToken, 'POST', '/api/agent/permission-response', [
-    survivor?.id ?? parkedBefore.id, 'allow', parkedSessionId,
-  ]);
-  expect(approve.ok, `approve failed: ${approve.status} ${approve.text.slice(0, 400)}`).toBe(true);
+  // ⑦ r2 用户路径：重启后走真 UI——自动化收件箱里应有一张「重启前发起 · Bash」幸存卡，
+  // 截图后点它的「批准」（parked-approve）。不再用直连 POST 代替第一下点击。
+  await page.getByTestId('sidebar-capability-automation').click();
+  await expect(page.getByTestId('cron-center-panel')).toBeVisible({ timeout: 15_000 });
+  // 收件箱挂在「运行记录」tab 下（常驻挂载、jobs tab 用 CSS hidden 藏住），先切 tab。
+  await page.getByTestId('cron-center-tab-runs').click();
+  const survivorCard = page.getByTestId('parked-approval-item').filter({ hasText: '重启前发起' }).first();
+  await expect(survivorCard, 'survivor card must be visible in the automation review inbox').toBeVisible({ timeout: 15_000 });
+  await expect(survivorCard).toContainText('重启前发起 · Bash');
+  await page.screenshot({ path: shotPath('G-inbox-survivor'), fullPage: false });
+  await survivorCard.getByTestId('parked-approve').click();
 
   // 副作用恰好一次：effect 文件出现且只追加了一行。
   const effectOccurrences = await waitForEffectOccurrences(effectFile, 30_000);
   const exactlyOnce = effectOccurrences === 1;
-  await page.screenshot({ path: shotPath('G-parked-approval'), fullPage: false });
 
-  // 再点一次：不重复执行。
+  // 批准的结果在原会话转录里可见：打开该会话，Bash 步骤行是完成形（「运行了命令 …」，
+  // 失败形才带「未成功」），展开后能看到执行输出（Bash output 的 [cwd: …] 前缀）。
+  // 先落一份页面全文快照再断言，红的时候有现场可查。
+  await preparePage(page, restarted.baseUrl);
+  await openSession(page, parkedSessionId);
+  const expandedToolGroup = await expandToolGroup(page);
+  await page.waitForTimeout(1_500);
+  await writeFile(
+    path.join(SHOT_DIR, 'G-session-transcript.txt'),
+    await page.evaluate(() => document.body.innerText),
+    'utf8',
+  );
+  const bashRow = page.getByTestId('tool-call-row-Bash').first();
+  await expect(bashRow, 'approved Bash step must be visible in the parked session transcript').toBeVisible({ timeout: 20_000 });
+  // 完成形动词是「运行了命令 …」；失败形会带「未成功」——批准成功的结果绝不能渲染成失败。
+  await expect(bashRow, 'approved Bash step must render completed, not failed').toContainText('运行了命令', { timeout: 10_000 });
+  await expect(bashRow).not.toContainText('未成功');
+  // 展开行内详情，批准执行的真实输出（Bash output 带 [cwd: …] 前缀）必须可见。
+  await bashRow.click();
+  await expect(
+    page.getByText('[cwd:', { exact: false }).first(),
+    'expanded Bash step must show the executed result output',
+  ).toBeVisible({ timeout: 10_000 });
+  const resultVisibleInSession = true; // 到这里三道 expect 已过，进 jsonl 记录用
+  await page.screenshot({ path: shotPath('G-session-result'), fullPage: false });
+
+  // 再点一次（API 投递口等价第二次点击）：不重复执行。
   await api(restarted.baseUrl, afterToken, 'POST', '/api/agent/permission-response', [
     survivor?.id ?? parkedBefore.id, 'allow', parkedSessionId,
   ]).catch(() => undefined);
@@ -380,7 +425,8 @@ test('G parked tool approval survives SIGKILL restart and runs exactly once', as
     `pendingAfterRestart=${survivor?.status}`,
     `title=${payloadAfter.displayTool ?? '(none)'}`,
     `durable=${memberRun ? `${memberRun.status}/${memberRun.interruptCause ?? '-'}` : 'none'}`,
-    `approveHttp=${approve.status}`,
+    `inboxApproveClicked=1`,
+    `resultVisibleInSession=${resultVisibleInSession}`,
     `effectOccurrences=${finalOccurrences}`,
     `rowFinal=${finalRow?.status ?? 'missing'}`,
   ].join(' ');
@@ -388,13 +434,13 @@ test('G parked tool approval survives SIGKILL restart and runs exactly once', as
     cell: 'G-parked-tool-approval',
     injection: 'E2E_BACKGROUND_TOOL_APPROVAL via cron agent job (unattended session parks a real Bash append), SIGKILL, restart same data dir',
     statusText: resultLine,
-    actions: ['批准（收件箱同款 agent:permission-response 投递）'],
-    actionTaken: 'approve parked card after restart',
+    actions: ['批准（AutomationReviewInbox 幸存卡 parked-approve 按钮）'],
+    actionTaken: 'click 批准 on the survivor card in the automation review inbox',
     result: exactlyOnce && finalOccurrences === 1
-      ? `side effect happened exactly once (${finalOccurrences} line); row=${finalRow?.status}`
+      ? `inbox approve ran the tool exactly once (${finalOccurrences} line); result visible in session transcript; row=${finalRow?.status}`
       : `side effect count=${finalOccurrences} (expected exactly 1); row=${finalRow?.status}`,
-    screenshot: 'test-results/recovery-matrix/G-parked-approval.png',
-    notes: `parked session ${parkedSessionId}; toolCall ${payloadBefore.argsRef?.toolCallId}`,
+    screenshot: 'test-results/recovery-matrix/G-inbox-survivor.png',
+    notes: `parked session ${parkedSessionId}; toolCall ${payloadBefore.argsRef?.toolCallId}; session transcript shot test-results/recovery-matrix/G-session-result.png; toolGroupExpanded=${expandedToolGroup}`,
     ...finished,
   }, true, exactlyOnce && finalOccurrences === 1);
 });

@@ -108,6 +108,17 @@ describe('BudgetService cache-aware cost accounting (WP2-1)', () => {
     const cost = svc.estimateCost(1_000_000, 1_000_000, 'claude-sonnet-4-20250514', 'claude');
     expect(cost).toBeCloseTo(18, 6);
   });
+
+  it('estimateCost applies the flex service tier at 0.5x; absent tier stays 18 (N-MODELCAT-SERVICE-TIER-COST-FU2)', () => {
+    const svc = makeService();
+    const tierless = svc.estimateCost(1_000_000, 1_000_000, 'claude-sonnet-4-20250514', 'claude');
+    const flex = svc.estimateCost(1_000_000, 1_000_000, 'claude-sonnet-4-20250514', 'claude', 'flex');
+    const unknown = svc.estimateCost(1_000_000, 1_000_000, 'claude-sonnet-4-20250514', 'claude', 'priority');
+    expect(tierless).toBeCloseTo(18, 6);
+    expect(flex).toBeCloseTo(9, 6);
+    // 表外档位 = 1x：与无档调用逐位一致，不重排浮点运算
+    expect(unknown).toBe(tierless);
+  });
 });
 
 describe('BudgetService.getCacheSavingsSummary (WP2-2a)', () => {

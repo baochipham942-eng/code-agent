@@ -32,7 +32,7 @@ concurrency:
 jobs:
   symmetry:
     name: Provider id 三锚点对称性
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
       - name: Checkout

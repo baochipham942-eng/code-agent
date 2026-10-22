@@ -80,21 +80,19 @@ export const CORE_TOOLS: string[] = [
  * 用于搜索匹配，不包含完整的工具定义
  */
 export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
-  // ============================================================================
-  // 2026-08-14 从 CORE_TOOLS 挪出（L8 注意力预算 N-L8-SLIM2）
-  // ----------------------------------------------------------------------------
-  // 这六个此前每轮全额下发 schema，而真库 4748 次工具调用里合计只被用到 5 次
-  // （MemoryRead 4 / Append 1，其余四个 0）。挪进按需加载后每轮只占名字索引，成本以
-  // cl100k_base BPE 实测值为准（见 injection-panorama），模型要用时 `select:<name>` 拉全量。
-  //
-  // aliases 中英都给：ToolSearch 的关键词召回是纯词法匹配，没有语义理解——中文提问
-  // 命不中英文 shortDescription，实测有会话为找一个工具换六种说法搜了 8 次。
-  // ============================================================================
+  // 2026-08-14 从 CORE 挪出的低频工具。aliases 中英都给（ToolSearch 是词法匹配）；要用时 select:<name>。
   {
     name: 'MemoryWrite',
     shortDescription: '写入/更新/删除长期记忆文件（markdown + frontmatter）',
     tags: ['memory', 'file'],
     aliases: ['memory_write', 'save memory', 'remember this', '记住', '写入记忆', '存记忆'],
+    source: 'builtin',
+  },
+  {
+    name: 'ProposeProjectMemory',
+    shortDescription: '把当前目录的项目记忆草稿写成待确认候选，不覆盖已有',
+    tags: ['memory'],
+    aliases: ['init-memory', '项目记忆', '记忆草稿', 'propose project memory'],
     source: 'builtin',
   },
   {

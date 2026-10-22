@@ -22,7 +22,7 @@ permissions:
 jobs:
   correctness:
     name: Long-session scroll correctness
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # A cold Playwright cache can spend most of 10 minutes downloading browser
     # inputs before the correctness test starts. Keep a bounded ceiling, but
     # leave enough room for the actual gate to run on a cold runner.
@@ -42,7 +42,7 @@ jobs:
           npm ci --ignore-scripts
 
       - name: Install Chromium
-        # ubuntu-latest already carries the browser system dependencies. Avoid
+        # ubuntu-24.04 already carries the browser system dependencies. Avoid
         # a second apt pass here; the browser install itself stays unconditional.
         uses: ./.github/actions/setup-playwright
 

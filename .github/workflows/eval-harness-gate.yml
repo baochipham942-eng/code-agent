@@ -111,7 +111,7 @@ concurrency:
 jobs:
   harness:
     name: 评测 harness 完整性（typecheck + 单测）
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout

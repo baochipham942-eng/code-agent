@@ -114,6 +114,8 @@ export interface CLIConfig {
   delegationOrigin?: import('../shared/contract/queuedInput').DelegationOriginMarker;
   /** Per-turn web search switch. Omitted by legacy callers means enabled. */
   searchEnabled?: boolean;
+  /** 工具延迟加载开关；缺省跟随 AGENT_RUNTIME_DEFAULTS.toolMode（AgentLoop 同一真源）。 */
+  enableToolDeferredLoading?: boolean;
   /** Per-turn provider thinking switch. Omitted by legacy callers means enabled. */
   thinkingEnabled?: boolean;
   /** Explicit user effort choice; omission keeps complexity-based automatic effort. */

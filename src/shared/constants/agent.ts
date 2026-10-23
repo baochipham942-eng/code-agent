@@ -21,6 +21,8 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v79：N-MEDIA-GEN-PHASE2 把 video_generate/music_generate 对齐 image 合同（output_file_path、
 // video 新增 model/image_path、描述加计费与参考单价；模型可见面变化）。
 // sys-v80：N-PY-RUNTIME-K2 将数据处理 Python 指向托管解释器（模型可见面变化）。
+// sys-v80：N-INIT-MEMORY-AGENT-DRAFT 新增 deferred 工具 ProposeProjectMemory 的 schema
+// （候选项目记忆草稿；默认请求只进折叠索引，ToolSearch 加载后模型可见）。
 // sys-v81：N-HOME-STARTER-CARDS-FILES 单轮 Office 文件交付改走原生生成工具：FILE_DELIVERABLE
 // 提醒替代 Python 工作流场景提醒、委派工具收口、文字前台按轮次放行 docx_generate/excel_generate/DocEdit。
 // sys-v82：N-HOME-STARTER-CARDS-FILES rework r2——小范围单轮对比（竞品简报卡形）不再注入
@@ -29,7 +31,9 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // 工具索引空 footer 省略，叠加 main 的 sys-v81/v82 提醒变化；合并面与任一父提交的 v82 面均不同（模型可见面变化）。
 // sys-v84：N-COMPUTERUSE-GRANT-TARGETAPP rework r1——按应用授权的安全收口撤掉模型可声明、Host 门上
 // 无法校验的 bundleId 参数（computer_use schema 只留 targetApp；模型可见面变化）。
-export const PROMPT_VERSION = 'sys-v84' as const;
+// sys-v85：整合合并——本单 sys-v80 的 ProposeProjectMemory schema 叠加 main 的 sys-v81–v84 面
+// （含 N-TOOL-UNAVAILABLE-UNLOCK-HINT-FU1 折叠索引行），合并面未在任何一侧记录过，升版。
+export const PROMPT_VERSION = 'sys-v85' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

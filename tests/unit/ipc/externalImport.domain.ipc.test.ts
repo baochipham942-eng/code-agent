@@ -66,9 +66,6 @@ vi.mock('../../../src/host/memory/memoryUsageEviction', () => ({
 vi.mock('../../../src/host/memory/memoryInjectionTrace', () => ({
   listMemoryInjectionTraces: vi.fn(async () => []),
 }));
-vi.mock('../../../src/host/memory/projectMemoryDraft', () => ({
-  draftProjectMemory: vi.fn(async () => ({ written: 0 })),
-}));
 vi.mock('../../../src/host/memory/knowledgeInboxDecision', () => ({
   KNOWLEDGE_INBOX_DECISION_CATEGORY: 'inbox',
   hashInboxContent: vi.fn(() => 'hash'),

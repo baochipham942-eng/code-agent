@@ -193,7 +193,7 @@ export interface ModelResponse {
   responsesOutput?: unknown[];
   searchTrace?: Array<{ id?: string; action?: string; query?: string; url?: string }>;
   // Token usage from API response
-  usage?: { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheCreationTokens?: number; providerReportedSavedTokens?: number };
+  usage?: { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheCreationTokens?: number; providerReportedSavedTokens?: number; serviceTier?: string };
   // 内容块顺序（text 和 tool_call 的交错顺序）
   contentParts?: Array<{ type: 'text'; text: string } | { type: 'tool_call'; toolCallId: string }>;
   runtimeDiagnostics?: {

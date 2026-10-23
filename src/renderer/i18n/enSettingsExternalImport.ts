@@ -58,6 +58,7 @@ export const enSettingsExternalImport = {
       skillReasonLabels: {
         'new-skill': 'Will be copied',
         'target-name-exists': 'A skill with this name already exists in Neo; skipped',
+        'copy-failed': 'Copy failed; skipped',
       },
       skillActionLabels: {
         copied: 'Copied',
@@ -67,9 +68,10 @@ export const enSettingsExternalImport = {
       applyFailed: 'Import failed',
       resultsTitle: 'Import finished',
       resultsMemory: 'Memories: imported {imported}, skipped {skipped}',
-      resultsSkills: 'Skills: copied {copied}, skipped {skipped} (target: {targetDir})',
+      resultsSkills: 'Skills: copied {copied}, skipped {skipped}, placed in the Neo skills library',
       resultsDirectives: 'Instructions: {imported} confirmed and imported',
       resultsAgain: 'Import again (already-imported items are skipped)',
+      viewSkillsCta: 'View skills',
       memoryLink: {
         title: 'Import from other AI apps',
         description: 'When data from other AI tools is detected (instructions / memories / skills), import it here; original app files are never modified.',

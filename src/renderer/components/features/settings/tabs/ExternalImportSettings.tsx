@@ -34,6 +34,7 @@ import type {
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
 import { useI18n } from '../../../../hooks/useI18n';
+import { useAppStore } from '../../../../stores/appStore';
 import { useExternalImportStore } from '../../../../stores/externalImportStore';
 import { Button, Toggle } from '../../../primitives';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
@@ -393,15 +394,15 @@ export const ExternalImportSettings: React.FC = () => {
                 <div>
                   {copy.resultsSkills
                     .replace('{copied}', String(results.skills.copied))
-                    .replace('{skipped}', String(results.skills.skipped))
-                    .replace('{targetDir}', results.skills.targetDir)}
+                    .replace('{skipped}', String(results.skills.skipped))}
                 </div>
                 <div className="mt-2 space-y-1 text-[11px] text-zinc-500">
                   {results.skills.items.map((item) => (
-                    <div key={`${item.sourceId}:${item.name}`} className="truncate font-mono">
-                      {item.sourceId} · {item.name} · {copy.skillActionLabels[item.action]}
-                      {item.reason === 'target-name-exists' ? ` · ${copy.skillReasonLabels['target-name-exists']}` : ''}
-                      {item.reason === 'copy-failed' && item.error ? ` · ${item.error}` : ''}
+                    // 只显大白话：来源用显示名（非裸 id），原因走 i18n 标签（裸 error
+                    // 只进宿主日志），路径不出现在结果页。
+                    <div key={`${item.sourceId}:${item.name}`} className="truncate">
+                      {copy.sourceNames[item.sourceId]} · {item.name} ·{' '}
+                      {item.reason ? copy.skillReasonLabels[item.reason] : copy.skillActionLabels[item.action]}
                     </div>
                   ))}
                 </div>
@@ -413,6 +414,15 @@ export const ExternalImportSettings: React.FC = () => {
               </div>
             )}
             <div className="flex items-center gap-2">
+              {results.skills && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => useAppStore.getState().openCapabilityHub('skills')}
+                >
+                  {copy.viewSkillsCta}
+                </Button>
+              )}
               <Button variant="secondary" size="sm" leftIcon={<ArrowLeft className="h-3.5 w-3.5" />} onClick={() => void restartFlow()}>
                 {copy.resultsAgain}
               </Button>

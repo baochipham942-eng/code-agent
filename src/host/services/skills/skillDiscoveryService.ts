@@ -15,6 +15,7 @@ import { getBuiltinConfig } from '../cloud/builtinConfig';
 import { createLogger } from '../infra/logger';
 import { CORE_TOOLS, DEFERRED_TOOLS_META, getToolSearchService } from '../toolSearch';
 import { getSkillsDir, getUserConfigDir } from '../../config';
+import { readClaudeLegacySkillsPreference } from './claudeLegacySkillsPreference';
 import { isProjectConfigTrusted, isProjectConfigTrustedSync } from '../../security/folderTrustService';
 import {
   createSkillApplicabilityContext,
@@ -54,7 +55,8 @@ function shouldIncludeClaudeLegacySkills(options: SkillDiscoveryServiceOptions):
   const envValue = process.env[INCLUDE_CLAUDE_LEGACY_SKILLS_ENV];
   if (isTruthyEnv(envValue)) return true;
   if (isFalsyEnv(envValue)) return false;
-  return true;
+  // 持久化用户设置（设置页「从其他 AI 应用导入」开关）；缺省 = 默认纳入。
+  return readClaudeLegacySkillsPreference() !== false;
 }
 
 /**
@@ -118,7 +120,9 @@ class SkillDiscoveryService {
    * 本单例这一处守门。
    */
   private builtinOnly = false;
-  private readonly includeClaudeLegacySkills: boolean;
+  /** Claude legacy 目录是否参与发现：显式 options > 环境变量 > 持久化设置页开关；doInitialize 时重算。 */
+  private includeClaudeLegacySkills: boolean;
+  private readonly options: SkillDiscoveryServiceOptions;
   private readonly allowedSkillNames?: ReadonlySet<string>;
   private readonly applicabilityOptions: SkillApplicabilityOptions;
   private lastApplicabilityFilterReport: SkillApplicabilityFilterReport = {
@@ -145,6 +149,7 @@ class SkillDiscoveryService {
   private projectSkillPreferencesTrust: { trusted: boolean; at: number } | undefined;
 
   constructor(options: SkillDiscoveryServiceOptions = {}) {
+    this.options = options;
     this.includeClaudeLegacySkills = shouldIncludeClaudeLegacySkills(options);
     this.allowedSkillNames = options.skillNames === undefined
       ? undefined
@@ -192,6 +197,8 @@ class SkillDiscoveryService {
 
   private async doInitialize(normalizedDir: string): Promise<void> {
     this.workingDirectory = normalizedDir;
+    // 持久化开关可能在服务长存期间被设置页改过：每次重扫前重算生效值。
+    this.includeClaudeLegacySkills = shouldIncludeClaudeLegacySkills(this.options);
     this.projectSkillPreferencesTrust = undefined;
     this.skills.clear();
     this.protectedOfficialSkillNames.clear();
@@ -308,6 +315,18 @@ class SkillDiscoveryService {
 
   isBuiltinOnly(): boolean {
     return this.builtinOnly;
+  }
+
+  /**
+   * 设置页切换「Claude 技能原地读取」开关后强制重扫：置未初始化，
+   * 下一次 ensureInitialized 会按新的持久化值重新发现（拍板 A：开关即时生效）。
+   */
+  refreshClaudeLegacySkillsInclusion(): void {
+    this.includeClaudeLegacySkills = shouldIncludeClaudeLegacySkills(this.options);
+    this.skills.clear();
+    this.protectedOfficialSkillNames.clear();
+    this.skillConflicts = [];
+    this.initialized = false;
   }
 
   /**

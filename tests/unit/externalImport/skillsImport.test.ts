@@ -12,16 +12,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const discoveryMocks = vi.hoisted(() => ({
   refreshClaudeLegacySkillsInclusion: vi.fn(),
+  throwOnGet: false,
 }));
 
 vi.mock('../../../src/host/services/skills/skillDiscoveryService', () => ({
-  getSkillDiscoveryService: () => ({
-    refreshClaudeLegacySkillsInclusion: discoveryMocks.refreshClaudeLegacySkillsInclusion,
-  }),
+  getSkillDiscoveryService: () => {
+    if (discoveryMocks.throwOnGet) throw new Error('discovery unavailable');
+    return {
+      refreshClaudeLegacySkillsInclusion: discoveryMocks.refreshClaudeLegacySkillsInclusion,
+    };
+  },
+}));
+
+const loggerMocks = vi.hoisted(() => ({
+  warn: vi.fn(),
 }));
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+  createLogger: () => ({ info: vi.fn(), warn: loggerMocks.warn, error: vi.fn(), debug: vi.fn() }),
 }));
 
 import {
@@ -48,6 +56,8 @@ let userSkillsDir: string;
 
 beforeEach(async () => {
   discoveryMocks.refreshClaudeLegacySkillsInclusion.mockReset();
+  discoveryMocks.throwOnGet = false;
+  loggerMocks.warn.mockReset();
   tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'external-skills-import-'));
   homeDir = path.join(tmpRoot, 'home');
   dataDir = path.join(tmpRoot, 'data');
@@ -135,6 +145,66 @@ describe('applyExternalSkillsImport no-overwrite invariant', () => {
       action: 'skipped',
       reason: 'target-name-exists',
     });
+  });
+
+  it('复制成功后触发发现服务重扫（Skills hub 免重启可见）', async () => {
+    await writeSkill(path.join(homeDir, '.codex', 'skills'), 'codex-skill');
+
+    const result = await applyExternalSkillsImport({});
+
+    expect(result.copied).toBe(1);
+    expect(discoveryMocks.refreshClaudeLegacySkillsInclusion).toHaveBeenCalledTimes(1);
+  });
+
+  it('零复制（全跳过）不触发重扫', async () => {
+    await writeSkill(path.join(homeDir, '.codex', 'skills'), 'codex-skill');
+    await writeSkill(userSkillsDir, 'codex-skill');
+
+    const result = await applyExternalSkillsImport({});
+
+    expect(result.copied).toBe(0);
+    expect(discoveryMocks.refreshClaudeLegacySkillsInclusion).not.toHaveBeenCalled();
+  });
+
+  it('copy-failed：结果保留原始 error 字段，logger.warn 带技能名与来源', async () => {
+    const sourceDir = path.join(homeDir, '.codex', 'skills');
+    await writeSkill(sourceDir, 'locked-skill');
+    // 目录收走读权限：hasSkillMd（access）仍过、fs.cp（readdir）EACCES——真失败注入
+    await fs.chmod(path.join(sourceDir, 'locked-skill'), 0o111);
+    try {
+      const result = await applyExternalSkillsImport({});
+
+      expect(result.copied).toBe(0);
+      expect(result.items[0]).toMatchObject({
+        sourceId: 'codex',
+        name: 'locked-skill',
+        action: 'skipped',
+        reason: 'copy-failed',
+      });
+      expect(result.items[0].error).toMatch(/EACCES/);
+      expect(loggerMocks.warn).toHaveBeenCalledWith(
+        expect.stringContaining('copy failed'),
+        expect.objectContaining({ sourceId: 'codex', name: 'locked-skill', error: expect.stringContaining('EACCES') }),
+      );
+      // 复制零成功 → 不重扫
+      expect(discoveryMocks.refreshClaudeLegacySkillsInclusion).not.toHaveBeenCalled();
+    } finally {
+      // afterEach 的 rm -rf 需要读权限回来
+      await fs.chmod(path.join(sourceDir, 'locked-skill'), 0o755);
+    }
+  });
+
+  it('重扫失败只 warn 不抛（fail-open，导入结果照常返回）', async () => {
+    await writeSkill(path.join(homeDir, '.codex', 'skills'), 'codex-skill');
+    discoveryMocks.throwOnGet = true;
+
+    const result = await applyExternalSkillsImport({});
+
+    expect(result.copied).toBe(1);
+    expect(loggerMocks.warn).toHaveBeenCalledWith(
+      expect.stringContaining('rescan failed'),
+      expect.objectContaining({ error: 'discovery unavailable' }),
+    );
   });
 });
 

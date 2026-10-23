@@ -138,11 +138,26 @@ export async function applyExternalSkillsImport(
       copied += 1;
       results.push({ sourceId: item.sourceId, name: item.name, action: 'copied' });
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // 裸报错只进日志（UI 只显 i18n 标签），带技能名/来源便于判因。
+      logger.warn('external skill copy failed', { sourceId: item.sourceId, name: item.name, error: message });
       results.push({
         sourceId: item.sourceId,
         name: item.name,
         action: 'skipped',
         reason: 'copy-failed',
+        error: message,
+      });
+    }
+  }
+  if (copied > 0) {
+    // 复制出了新技能：让发现服务重扫，Skills hub 无需重启即可见。动态加载 +
+    // 失败降级为「下次初始化生效」，对齐 setClaudeLegacySkillsEnabled。
+    try {
+      const { getSkillDiscoveryService } = await import('../services/skills/skillDiscoveryService');
+      getSkillDiscoveryService().refreshClaudeLegacySkillsInclusion();
+    } catch (error) {
+      logger.warn('skills copied but discovery rescan failed', {
         error: error instanceof Error ? error.message : String(error),
       });
     }

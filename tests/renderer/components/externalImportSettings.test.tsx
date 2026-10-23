@@ -6,6 +6,8 @@
 // 2. 无来源 → 空态，不出来源表（验收①的页面半）
 // 3. 预览/导入走既有 memoryHarnessImport* 域 action + externalImportSkills*，
 //    结果页给出导入/跳过计数与原因；再次导入全跳过（验收③④的 UI 半）
+//    FU2 加钉：结果页技能摘要/明细只显大白话——无路径、无裸 error、无裸来源 id，
+//    copy-failed 走 i18n 标签（zh/en 双语），「查看技能」开能力中心技能页。
 // 4. Claude 技能只读展示「已在原位使用 N」+ 开关（验收⑤的 UI 半）
 // ============================================================================
 
@@ -268,7 +270,7 @@ describe('ExternalImportSettings 来源选择（验收①②）', () => {
 });
 
 describe('ExternalImportSettings 导入与结果（验收④）', () => {
-  it('导入走既有 apply action；结果页给导入/跳过计数与技能原因', async () => {
+  it('导入走既有 apply action；结果页给导入/跳过计数与技能原因（FU2 验收①：无路径）', async () => {
     stubDetect(detectResult());
     render(<ExternalImportSettings />);
     await screen.findByTestId('external-import-sources');
@@ -293,8 +295,8 @@ describe('ExternalImportSettings 导入与结果（验收④）', () => {
           copied: 1,
           skipped: 1,
           items: [
-            { sourceId: 'codex', name: 'codex-skill', action: 'copied' },
-            { sourceId: 'cursor', name: 'cursor-skill', action: 'skipped', reason: 'target-name-exists' },
+            { sourceId: 'codex', name: 'alpha', action: 'copied' },
+            { sourceId: 'cursor', name: 'beta', action: 'skipped', reason: 'target-name-exists' },
           ],
         });
       }
@@ -319,13 +321,140 @@ describe('ExternalImportSettings 导入与结果（验收④）', () => {
     );
     expect(screen.getByTestId('external-import-results-memory').textContent)
       .toContain('记忆：导入 1 条，跳过 1 条');
-    expect(screen.getByTestId('external-import-results-skills').textContent)
-      .toContain('技能：复制 1 个，跳过 1 个');
+    // FU2 验收①：摘要说「已放进 Neo 技能库」，不再出现任何绝对路径
+    const skillsBlock = screen.getByTestId('external-import-results-skills').textContent ?? '';
+    expect(skillsBlock).toContain('技能：复制 1 个，跳过 1 个，已放进 Neo 技能库');
+    expect(skillsBlock).not.toContain('/tmp');
+    // 行内容：来源显示名（非裸 id）+ 大白话原因
+    expect(skillsBlock).toContain('Codex · alpha · 已复制');
+    expect(skillsBlock).toContain('Cursor · beta · Neo 已有同名技能，跳过');
     // 状态词本地化：中文界面不得出现裸 copied/skipped（返修钉子）
-    const skillsRows = screen.getByTestId('external-import-results-skills').textContent ?? '';
-    expect(skillsRows).toContain('已复制');
-    expect(skillsRows).toContain('已跳过');
-    expect(skillsRows).not.toMatch(/\b(copied|skipped)\b/);
+    expect(skillsBlock).not.toMatch(/\b(copied|skipped)\b/);
+  });
+
+  it('copy-failed 行只显 i18n 标签：裸错误、路径、来源 id 都不出现（FU2 验收②）', async () => {
+    stubDetect(detectResult());
+    render(<ExternalImportSettings />);
+    await screen.findByTestId('external-import-sources');
+
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action === 'memoryHarnessImportDryRun') return Promise.resolve(dryRunResult());
+      if (action === 'externalImportSkillsPreview') {
+        return Promise.resolve({ items: [], summary: { copy: 0, skip: 0 } });
+      }
+      if (action === 'externalImportSkillsApply') {
+        return Promise.resolve({
+          targetDir: '/tmp/data/skills',
+          copied: 1,
+          skipped: 1,
+          items: [
+            { sourceId: 'codex', name: 'alpha', action: 'copied' },
+            {
+              sourceId: 'codex',
+              name: 'broken-one',
+              action: 'skipped',
+              reason: 'copy-failed',
+              error: "EACCES: permission denied, open '/tmp/data/skills/broken-one/SKILL.md'",
+            },
+          ],
+        });
+      }
+      if (action === 'externalImportDetectSources') return Promise.resolve(detectResult());
+      return Promise.resolve(undefined);
+    });
+
+    fireEvent.click(screen.getByText('预览要导入的内容'));
+    await screen.findByTestId('external-import-preview');
+    fireEvent.click(screen.getByText('开始导入'));
+    await screen.findByTestId('external-import-results');
+
+    const skillsBlock = screen.getByTestId('external-import-results-skills').textContent ?? '';
+    expect(skillsBlock).toContain('复制失败，已跳过');
+    expect(skillsBlock).not.toContain('EACCES');
+    expect(skillsBlock).not.toContain('/tmp');
+    // 来源 id 裸串不出现（显示名 Codex 是大写，不与小写 id 冲突）
+    expect(skillsBlock).not.toContain('codex');
+    expect(skillsBlock).not.toContain('cursor');
+  });
+
+  it('en 文案同样齐备：copy-failed 标签与无路径摘要（FU2 验收② en 半）', async () => {
+    useAppStore.setState({ language: 'en' });
+    stubDetect(detectResult());
+    render(<ExternalImportSettings />);
+    await screen.findByTestId('external-import-sources');
+
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action === 'memoryHarnessImportDryRun') return Promise.resolve(dryRunResult());
+      if (action === 'externalImportSkillsPreview') {
+        return Promise.resolve({ items: [], summary: { copy: 0, skip: 0 } });
+      }
+      if (action === 'externalImportSkillsApply') {
+        return Promise.resolve({
+          targetDir: '/tmp/data/skills',
+          copied: 1,
+          skipped: 1,
+          items: [
+            { sourceId: 'codex', name: 'alpha', action: 'copied' },
+            {
+              sourceId: 'cursor',
+              name: 'broken-one',
+              action: 'skipped',
+              reason: 'copy-failed',
+              error: "EACCES: permission denied, open '/tmp/data/skills/broken-one/SKILL.md'",
+            },
+          ],
+        });
+      }
+      if (action === 'externalImportDetectSources') return Promise.resolve(detectResult());
+      return Promise.resolve(undefined);
+    });
+
+    fireEvent.click(screen.getByText('Preview what will be imported'));
+    await screen.findByTestId('external-import-preview');
+    fireEvent.click(screen.getByText('Start import'));
+    await screen.findByTestId('external-import-results');
+
+    const skillsBlock = screen.getByTestId('external-import-results-skills').textContent ?? '';
+    expect(skillsBlock).toContain('Skills: copied 1, skipped 1, placed in the Neo skills library');
+    expect(skillsBlock).toContain('Copy failed; skipped');
+    expect(skillsBlock).not.toContain('/tmp');
+    expect(skillsBlock).not.toContain('EACCES');
+  });
+
+  it('「查看技能」打开能力中心技能页并关掉设置（FU2 验收③ UI 半）', async () => {
+    stubDetect(detectResult());
+    render(<ExternalImportSettings />);
+    await screen.findByTestId('external-import-sources');
+
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action === 'memoryHarnessImportDryRun') return Promise.resolve(dryRunResult());
+      if (action === 'externalImportSkillsPreview') {
+        return Promise.resolve({ items: [], summary: { copy: 0, skip: 0 } });
+      }
+      if (action === 'externalImportSkillsApply') {
+        return Promise.resolve({
+          targetDir: '/tmp/data/skills',
+          copied: 1,
+          skipped: 0,
+          items: [{ sourceId: 'codex', name: 'alpha', action: 'copied' }],
+        });
+      }
+      if (action === 'externalImportDetectSources') return Promise.resolve(detectResult());
+      return Promise.resolve(undefined);
+    });
+
+    fireEvent.click(screen.getByText('预览要导入的内容'));
+    await screen.findByTestId('external-import-preview');
+    fireEvent.click(screen.getByText('开始导入'));
+    await screen.findByTestId('external-import-results');
+
+    useAppStore.setState({ showSettings: true, showCapabilityHub: false, capabilityHubTab: 'experts' });
+    fireEvent.click(screen.getByText('查看技能'));
+
+    const state = useAppStore.getState();
+    expect(state.showCapabilityHub).toBe(true);
+    expect(state.capabilityHubTab).toBe('skills');
+    expect(state.showSettings).toBe(false);
   });
 
   it('instruction-file（AGENTS.md 类）只供对照：无确认钮、不写记忆', async () => {

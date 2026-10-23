@@ -57,6 +57,7 @@ export const zhSettingsExternalImport = {
       skillReasonLabels: {
         'new-skill': '将复制',
         'target-name-exists': 'Neo 已有同名技能，跳过',
+        'copy-failed': '复制失败，已跳过',
       },
       skillActionLabels: {
         copied: '已复制',
@@ -66,9 +67,10 @@ export const zhSettingsExternalImport = {
       applyFailed: '导入失败',
       resultsTitle: '导入完成',
       resultsMemory: '记忆：导入 {imported} 条，跳过 {skipped} 条',
-      resultsSkills: '技能：复制 {copied} 个，跳过 {skipped} 个（目标目录：{targetDir}）',
+      resultsSkills: '技能：复制 {copied} 个，跳过 {skipped} 个，已放进 Neo 技能库',
       resultsDirectives: '说明类：已确认写入 {imported} 条',
       resultsAgain: '再导一次（已有的内容不会重复导入）',
+      viewSkillsCta: '查看技能',
       memoryLink: {
         title: '从其他 AI 应用导入',
         description: '检测到其他 AI 工具的数据（说明 / 记忆 / 技能）时，可在这里一并导入；原应用文件不会被修改。',

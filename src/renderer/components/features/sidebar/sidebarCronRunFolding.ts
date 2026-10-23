@@ -80,9 +80,21 @@ export function assembleSidebarCronRows<T extends SidebarCronRunSession & { id: 
     if (!decision.shouldHide) flat.push(session);
   }
   const currentIndex = flat.findIndex((session) => session.id === args.currentSessionId);
+  // 当前会话是展开任务的旧运行时已不在 flat 里（缩进挂到该任务最新行下），
+  // cap 的保护点改落在那条最新行上；否则回落 rowCap 会把最新行连同
+  // 缩进旧行（含当前会话）和 xN 开关一起截掉。
+  let anchorIndex = currentIndex;
+  if (anchorIndex === -1 && args.currentSessionId) {
+    const currentSession = args.sessions.find((session) => session.id === args.currentSessionId);
+    const currentTaskId = currentSession ? getSidebarCronTaskId(currentSession) : undefined;
+    const latestSessionId = currentTaskId && args.expandedTaskIds.has(currentTaskId)
+      ? args.aggregatesByTaskId?.[currentTaskId]?.latestSessionId
+      : undefined;
+    if (latestSessionId) anchorIndex = flat.findIndex((session) => session.id === latestSessionId);
+  }
   const cap = args.hasSearchFilters || args.showAllRows
     ? flat.length
-    : Math.max(args.rowCap, currentIndex + 1);
+    : Math.max(args.rowCap, anchorIndex + 1);
   const rows: Array<SidebarCronVisibleRow<T>> = [];
   for (const session of flat.slice(0, cap)) {
     rows.push({ session, indented: false });

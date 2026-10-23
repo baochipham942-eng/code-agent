@@ -224,6 +224,57 @@ describe('SidebarProjectGroup cron run folding', () => {
     expect(screen.queryByTestId('sidebar-session-a-old')).toBeNull();
   });
 
+  // ── 返工 2026-10-22：当前会话是展开任务的旧运行时，cap 回落 rowCap 会把
+  // 任务最新行连同缩进旧行（含当前会话）一起截掉，xN 开关也跟着消失。
+  it('keeps the expanded task latest row anchored when the open session is one of its older runs', () => {
+    const job = (id: string, taskId: string, title: string, updatedAt: number) => ({
+      ...session(id, title, updatedAt),
+      origin: { kind: 'cron', id: taskId },
+    });
+    const plain = (id: string, updatedAt: number) => ({
+      ...session(id, id, updatedAt),
+      origin: { kind: 'manual' },
+    });
+    renderGroup({
+      group: {
+        key: 'project:p1',
+        name: 'code-agent',
+        path: '/repo/code-agent',
+        paths: ['/repo/code-agent'],
+        projectId: 'p1',
+        isUncategorized: false,
+        sessions: [
+          plain('plain-1', 15),
+          plain('plain-2', 14),
+          plain('plain-3', 13),
+          plain('plain-4', 12),
+          plain('plain-5', 11),
+          job('a-new', 'job-a', '周报最新', 10),
+          job('a-old', 'job-a', '周报旧', 9),
+        ],
+        latestActivityAt: 15,
+      },
+      sessionItemProps: sharedSessionProps({
+        currentSessionId: 'a-old',
+        cronRunAggregatesByTaskId: { 'job-a': { runCount: 2, latestSessionId: 'a-new' } },
+      }),
+    });
+
+    // 折叠态：当前打开的旧运行排在 cap 外，靠 currentIndex 保护露出。
+    expect(screen.getByTestId('sidebar-session-a-old')).toBeTruthy();
+
+    const toggle = screen.getByTestId('sidebar-session-a-new').querySelector('[data-testid="sidebar-cron-run-toggle"]');
+    expect(toggle).toBeTruthy();
+    fireEvent.click(toggle as Element);
+
+    // 展开后当前会话缩进挂到最新行下面：最新行、当前会话和 xN 开关都得还在，
+    // 不能因为旧运行移出 flat 使 cap 回落 rowCap 而整段消失。
+    expect(screen.getByTestId('sidebar-session-a-new')).toBeTruthy();
+    expect(screen.getByTestId('sidebar-session-a-old').closest('[data-testid="sidebar-cron-older-run"]')).toBeTruthy();
+    const toggleAfter = screen.getByTestId('sidebar-session-a-new').querySelector('[data-testid="sidebar-cron-run-toggle"]');
+    expect(toggleAfter?.getAttribute('aria-expanded')).toBe('true');
+  });
+
   it('does not fold while search filters are active and never hides the open run', () => {
     const { unmount } = renderGroup({ hasSearchFilters: true });
     expect(screen.getByTestId('sidebar-session-run-old-1')).toBeTruthy();

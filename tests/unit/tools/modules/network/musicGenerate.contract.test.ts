@@ -1,9 +1,11 @@
 // ============================================================================
 // music_generate contract tests — N-MEDIA-GEN-PHASE2
 //
-// 对齐 image 合同：output_file_path 工作区相对、越界/旧参数/缺 key 在任何付费调用与写盘
-// 之前 INVALID_ARGS；generateMusic 全 mock（fetch 从未被真实调用）；1/1 saved + per_request；
+// 对齐 image 合同：output_file_path 工作区相对、越界/旧参数在任何付费调用与写盘之前
+// INVALID_ARGS；generateMusic 全 mock（fetch 从未被真实调用）；1/1 saved + per_request；
 // 非零 base_resp 的原始报错如实进 error 且不重试；保留旧 meta 键（outputPath/audioPath/costCny）。
+// N-MEDIA-GEN-MUSIC-FALLBACK：内置模型缺 key 改走 MUSIC_SERVICE_UNAVAILABLE(_NO_ALTERNATIVE)
+// 出路（410/桥接变体另见 musicGenerate.unavailable.test.ts）。
 // ============================================================================
 
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
@@ -13,13 +15,34 @@ import path from 'node:path';
 import type { ToolContext, CanUseToolFn, Logger } from '../../../../../src/host/protocol/tools';
 import { collectToolArtifactsFromMetadata } from '../../../../../src/shared/contract/artifactBlob';
 
+// 部分模块 mock（importActual 透传骨架）：两个函数可控，MusicHttpError 保持真实类
+// （vi.hoisted 返回值里的 class 声明会被本版 vitest 丢成 undefined，不能走那条路）。
 const musicService = vi.hoisted(() => ({
   generateMusic: vi.fn(),
   resolveMusicModelEndpoint: vi.fn(),
 }));
 
+vi.mock('../../../../../src/host/services/media/musicGenerationService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../../src/host/services/media/musicGenerationService')>();
+  return {
+    ...actual,
+    generateMusic: musicService.generateMusic,
+    resolveMusicModelEndpoint: musicService.resolveMusicModelEndpoint,
+  };
+});
+
 const imageService = vi.hoisted(() => ({
   getMinimaxApiKey: vi.fn(),
+}));
+
+// 服务不可用出路口读 settings 派生桥接音乐模型——mock 掉读取入口保证确定性
+// （真实机器 settings 里有没有音乐模型不该影响本文件断言）。
+const settingsState = vi.hoisted(() => ({ settings: null as unknown }));
+vi.mock('../../../../../src/host/services', () => ({
+  getConfigService: () => ({
+    onSettingsUpdated: vi.fn(),
+    getSettings: () => settingsState.settings,
+  }),
 }));
 
 // fs 走「真实透传 + 记录 + 可注入写失败」的模块级 mock（同 videoGenerate.contract.test.ts）。
@@ -40,7 +63,6 @@ vi.mock('fs', async () => {
   };
 });
 
-vi.mock('../../../../../src/host/services/media/musicGenerationService', () => musicService);
 vi.mock('../../../../../src/host/services/media/imageGenerationService', () => imageService);
 
 import { executeMusicGenerate } from '../../../../../src/host/plugins/builtin/musicGeneration/musicGenerate';
@@ -122,7 +144,9 @@ describe('music_generate contract', () => {
     }
   });
 
-  it('refuses a missing MiniMax key before any paid call or write', async () => {
+  it('reports service unavailability (no alternative) when the MiniMax key is missing, before any paid call or write', async () => {
+    // N-MEDIA-GEN-MUSIC-FALLBACK：缺 key 从 INVALID_ARGS 改为结构化出路；
+    // 本文件 settings 恒为 null → 无桥接音乐模型 → NO_ALTERNATIVE 变体。
     imageService.getMinimaxApiKey.mockReturnValue(undefined);
     const emit = vi.fn();
     const result = await executeMusicGenerate(
@@ -132,8 +156,9 @@ describe('music_generate contract', () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.code).toBe('INVALID_ARGS');
-      expect(result.error).toContain('MiniMax API key is missing');
+      expect(result.code).toBe('MUSIC_SERVICE_UNAVAILABLE_NO_ALTERNATIVE');
+      expect(result.error).toContain('MiniMax music service unavailable (no API key');
+      expect(result.error).toContain('Do not retry.');
     }
     expect(musicService.resolveMusicModelEndpoint).not.toHaveBeenCalled();
     expect(musicService.generateMusic).not.toHaveBeenCalled();

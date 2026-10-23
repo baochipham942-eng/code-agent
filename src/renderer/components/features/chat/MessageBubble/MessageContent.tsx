@@ -45,6 +45,7 @@ import {
   sanitizePlainTextFallback,
   stripRawHtmlOutsideCode,
 } from './messageContentParts';
+import { CronRunMessageFrame, useIsCronRunSession } from './CronRunMessageFrame';
 
 /**
  * 把"本地 HTML 文件"的 href 解析成可预览的路径；非本地 HTML 返回 null。
@@ -102,6 +103,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
   const openPreview = useAppStore((state) => state.openPreview);
   const workingDirectory = useAppStore((state) => state.workingDirectory);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const isCronRunSession = useIsCronRunSession(mediaContext?.sessionId);
   const streamingNeedsMarkdown = !isUser && isStreaming && shouldRenderStreamingContentAsMarkdown(content);
   const markdownSource = useThrottledStreamingContent(content, streamingNeedsMarkdown);
   const deferCompletedLayout = shouldDeferTurnContentLayout({
@@ -173,12 +175,13 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
 
   // Filter out system tags, auto-link ticket IDs, wrap file paths,
   // then close incomplete markdown tokens for streaming-safe rendering
-  const preparedContent = useMemo(() => {
-    const cleaned = filterSystemTags(markdownSource);
+  const prepareSlice = useCallback((raw: string) => {
+    const cleaned = filterSystemTags(raw);
     const noRawHtml = stripRawHtmlOutsideCode(cleaned);
     const withTickets = wrapTicketsAsLinks(noRawHtml);
     return dedupeCodeCopyLinks(wrapFilePathsInBackticks(withTickets));
-  }, [markdownSource]);
+  }, []);
+  const preparedContent = useMemo(() => prepareSlice(markdownSource), [markdownSource, prepareSlice]);
   const filteredContent = useMemo(
     () => isStreaming ? preparedContent : remend(preparedContent),
     [isStreaming, preparedContent],
@@ -581,6 +584,20 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
     );
   }
 
+  if (isStreaming && !streamingNeedsMarkdown && isCronRunSession) {
+    return (
+      <div className="text-sm leading-[1.7] break-words prose prose-invert prose-sm max-w-none streaming-text">
+        <CronRunMessageFrame
+          source={content}
+          sessionId={mediaContext?.sessionId}
+          renderSlice={(slice) => (
+            <span className="whitespace-pre-wrap">{sanitizePlainTextFallback(filterSystemTags(slice))}</span>
+          )}
+        />
+      </div>
+    );
+  }
+
   if (isStreaming && !streamingNeedsMarkdown) {
     const plainText = sanitizePlainTextFallback(filterSystemTags(content));
     // 尾段淡入（工单 2026-08-01）：hook 每 ~120ms 落一个「词/短段」，把最新一段
@@ -619,11 +636,25 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
       data-deferred-content-kind={deferCompletedLayout ? deferredAssistantContentKind : undefined}
       style={deferCompletedLayout ? getDeferredContentStyle(deferredAssistantContentKind) : undefined}
     >
-      <MarkdownRenderer
-        content={isStreaming ? preparedContent : filteredContent}
-        components={components}
-        isStreaming={isStreaming}
-      />
+      {isCronRunSession ? (
+        <CronRunMessageFrame
+          source={markdownSource}
+          sessionId={mediaContext?.sessionId}
+          renderSlice={(slice) => (
+            <MarkdownRenderer
+              content={isStreaming ? prepareSlice(slice) : remend(prepareSlice(slice))}
+              components={components}
+              isStreaming={isStreaming}
+            />
+          )}
+        />
+      ) : (
+        <MarkdownRenderer
+          content={isStreaming ? preparedContent : filteredContent}
+          components={components}
+          isStreaming={isStreaming}
+        />
+      )}
     </div>
   );
 });

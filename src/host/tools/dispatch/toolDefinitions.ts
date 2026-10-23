@@ -100,6 +100,8 @@ function schemaToDefinition(
     emission: schema.emission,
     // readOnly 探索档判定依赖：network 档只读工具直通，非只读强制确认
     readOnly: schema.readOnly === true,
+    // 懒开目录判定依赖：显式声明不碰工作目录的工具派发前不落盘（缺省 = 会写，fail-safe）
+    touchesWorkDirectory: schema.touchesWorkDirectory,
     requiresUserPresence: schema.requiresUserPresence === true,
     aliases: schema.aliases ? [...schema.aliases] : undefined,
   };

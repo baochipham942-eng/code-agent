@@ -8,12 +8,16 @@ import { useCronStore } from '../../../src/renderer/stores/cronStore';
 
 const listPendingReview = vi.fn<() => Promise<SessionAutomationRecord[]>>();
 const listParkedApprovals = vi.fn<() => Promise<ParkedApprovalInboxItem[]>>();
+const countPendingReview = vi.fn<() => Promise<number | undefined>>();
 const markReviewed = vi.fn().mockResolvedValue(null);
 const switchSession = vi.fn().mockResolvedValue(undefined);
 const ipcInvoke = vi.fn().mockResolvedValue(undefined);
 const ipcInvokeDomain = vi.fn().mockResolvedValue(undefined);
 const toastInfo = vi.fn();
 const toastError = vi.fn();
+const toastSuccess = vi.fn();
+const webMode = vi.hoisted(() => ({ value: false }));
+const copyPathToClipboard = vi.hoisted(() => vi.fn(async (_text: string) => true));
 const originalTriggerJob = useCronStore.getState().triggerJob;
 
 // 语言可切换的 useI18n mock：默认 zh（与原真实 hook 的默认一致，存量断言不变），
@@ -24,15 +28,27 @@ vi.mock('../../../src/renderer/hooks/useToast', () => ({
   toast: {
     info: (...args: unknown[]) => toastInfo(...args),
     error: (...args: unknown[]) => toastError(...args),
-    success: vi.fn(),
+    success: (...args: unknown[]) => toastSuccess(...args),
     warning: vi.fn(),
   },
 }));
+
+vi.mock('../../../src/renderer/utils/platform', async () => {
+  const actual = await vi.importActual<typeof import('../../../src/renderer/utils/platform')>(
+    '../../../src/renderer/utils/platform',
+  );
+  return {
+    ...actual,
+    isWebMode: () => webMode.value,
+    copyPathToClipboard: (text: string) => copyPathToClipboard(text),
+  };
+});
 
 vi.mock('../../../src/renderer/services/sessionAutomationClient', () => ({
   sessionAutomationClient: {
     listPendingReview: () => listPendingReview(),
     listParkedApprovals: () => listParkedApprovals(),
+    countPendingReview: () => countPendingReview(),
     markReviewed: (id: string) => markReviewed(id),
   },
 }));
@@ -61,7 +77,38 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   };
 });
 
+// parity 用例（见文末）渲染整个 CronCenterPanel：cron 数据走 cronClient mock，
+// 重子组件置空避免把编辑器/列表细节拖进这个文件。真模块同时有具名与 default
+// 两个导出（cronLoginWallNotice 走 default），mock 面保持同形，别只给具名。
+vi.mock('../../../src/renderer/services/cronClient', () => {
+  const mocked = {
+    listJobs: vi.fn().mockResolvedValue([]),
+    getStats: vi.fn().mockResolvedValue(null),
+    getExecutions: vi.fn().mockResolvedValue([]),
+    getRecentExecutions: vi.fn().mockResolvedValue([]),
+    grantLoginPassThrough: vi.fn().mockResolvedValue(null),
+  };
+  return { cronClient: mocked, default: mocked };
+});
+vi.mock('../../../src/renderer/components/features/cron/CronFeaturedTemplates', () => ({
+  CronFeaturedTemplates: () => null,
+}));
+vi.mock('../../../src/renderer/components/features/cron/CronJobList', () => ({
+  CronJobList: () => null,
+}));
+vi.mock('../../../src/renderer/components/features/cron/CronJobDetail', () => ({
+  CronJobDetail: () => null,
+}));
+vi.mock('../../../src/renderer/components/features/cron/CronJobEditor', () => ({
+  CronJobEditor: () => null,
+}));
+vi.mock('../../../src/renderer/components/features/settings/WebModeBanner', () => ({
+  WebModeBanner: () => null,
+}));
+
 import { AutomationReviewInbox } from '../../../src/renderer/components/features/cron/AutomationReviewInbox';
+import { CronCenterPanel } from '../../../src/renderer/components/features/cron/CronCenterPanel';
+import { countPendingReviewByTask } from '../../../src/shared/cronRunDigest';
 
 function makeRecord(over: Partial<SessionAutomationRecord>): SessionAutomationRecord {
   return {
@@ -86,10 +133,17 @@ afterEach(() => {
 
 beforeEach(() => {
   // 默认两路都空；具体用例按需 override。
+  webMode.value = false;
+  copyPathToClipboard.mockClear();
+  copyPathToClipboard.mockResolvedValue(true);
   listPendingReview.mockResolvedValue([]);
   listParkedApprovals.mockResolvedValue([]);
+  countPendingReview.mockResolvedValue(undefined);
   ipcInvoke.mockResolvedValue(undefined);
+  ipcInvokeDomain.mockReset();
   ipcInvokeDomain.mockResolvedValue(undefined);
+  toastSuccess.mockClear();
+  toastError.mockClear();
 });
 
 function makeParked(over: Partial<ParkedApprovalInboxItem>): ParkedApprovalInboxItem {
@@ -245,8 +299,108 @@ describe('AutomationReviewInbox', () => {
     });
     expect(screen.getByTestId('automation-review-digest').textContent).toContain('2 个产物');
     expect(screen.getByTestId('automation-review-digest').textContent).toContain('第一行摘要');
+    expect(screen.queryByTestId('automation-review-digest-toggle')).toBeNull();
     expect(screen.getAllByTestId('automation-review-digest-approval')).toHaveLength(1);
     expect(screen.getByTestId('automation-review-digest-approval').textContent).toBe('有待处理审批');
+  });
+
+  it('收件箱摘要丢掉 urgency 机器行，留下人话', async () => {
+    listPendingReview.mockResolvedValue([makeRecord({
+      config: {
+        pendingReview: {
+          resultSessionId: 'result-1',
+          at: 1700000000000,
+          digest: {
+            artifactCount: 1,
+            summaryLine: 'urgency: fyi\n结果已写入',
+            artifacts: [{ path: '/work/run/report.md', openable: true }],
+          },
+        },
+      },
+    })]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('automation-review-digest')).toBeTruthy();
+    });
+    const text = screen.getByTestId('automation-review-digest').textContent ?? '';
+    expect(text).toContain('结果已写入');
+    expect(text).not.toContain('urgency');
+  });
+
+  it('有路径的产物行可展开：桌面打开绝对路径，拒绝则该行显示文件已移走且不弹错误', async () => {
+    listPendingReview.mockResolvedValue([makeRecord({
+      config: {
+        pendingReview: {
+          resultSessionId: 'result-1',
+          at: 1700000000000,
+          digest: {
+            artifactCount: 2,
+            summaryLine: '第一行摘要',
+            artifacts: [
+              { path: '/work/run/report.md', openable: true },
+              { path: 'notes.md', openable: false },
+            ],
+          },
+        },
+      },
+    })]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('automation-review-digest-toggle')).toBeTruthy();
+    });
+    expect(screen.queryByTestId('cron-artifact-row')).toBeNull();
+    fireEvent.click(screen.getByTestId('automation-review-digest-toggle'));
+    expect(screen.getByTestId('cron-artifact-open').textContent).toContain('report.md');
+    expect(screen.getByTestId('cron-artifact-open').getAttribute('title')).toBe('/work/run/report.md');
+    expect(screen.getByTestId('cron-artifact-text').textContent).toContain('notes.md');
+    expect(screen.queryAllByTestId('cron-artifact-open')).toHaveLength(1);
+
+    fireEvent.click(screen.getByTestId('cron-artifact-open'));
+    await waitFor(() => {
+      expect(ipcInvokeDomain).toHaveBeenCalledWith('domain:workspace', 'openPath', { filePath: '/work/run/report.md' });
+    });
+    expect(toastError).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('cron-artifact-reveal'));
+    await waitFor(() => {
+      expect(ipcInvokeDomain).toHaveBeenCalledWith('domain:workspace', 'showItemInFolder', { filePath: '/work/run/report.md' });
+    });
+
+    ipcInvokeDomain.mockRejectedValueOnce(new Error('Path does not exist'));
+    fireEvent.click(screen.getByTestId('cron-artifact-open'));
+    await waitFor(() => {
+      expect(screen.getByTestId('cron-artifact-moved').textContent).toBe('文件已移走');
+    });
+    expect(toastError).not.toHaveBeenCalled();
+    expect(toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it('web 模式点击产物复制路径并提示，不调用打开 IPC', async () => {
+    webMode.value = true;
+    listPendingReview.mockResolvedValue([makeRecord({
+      config: {
+        pendingReview: {
+          resultSessionId: 'result-1',
+          at: 1700000000000,
+          digest: {
+            artifactCount: 1,
+            artifacts: [{ path: '/work/run/report.md', openable: true }],
+          },
+        },
+      },
+    })]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('automation-review-digest-toggle')).toBeTruthy();
+    });
+    fireEvent.click(screen.getByTestId('automation-review-digest-toggle'));
+    fireEvent.click(screen.getByTestId('cron-artifact-open'));
+    await waitFor(() => {
+      expect(copyPathToClipboard).toHaveBeenCalledWith('/work/run/report.md');
+      expect(toastSuccess).toHaveBeenCalledWith('已复制路径');
+    });
+    expect(ipcInvokeDomain).not.toHaveBeenCalled();
+    expect(toastError).not.toHaveBeenCalled();
   });
 
   it('运行次数上限停用记录在收件箱显示停用原因', async () => {
@@ -456,5 +610,73 @@ describe('AutomationReviewInbox', () => {
     });
     expect(screen.queryByTestId('automation-urgency-section-must_today')).toBeNull();
     expect(screen.getByTestId('automation-urgency-raw').textContent).toBe('原文：urgency: maybe');
+  });
+});
+
+// ── 并入自 cronPendingReviewCountParity.test.tsx（gates-fast 12 文件上限，收编进同面文件）──
+// 页首「待过目」tile 与收件箱标题都走 countPendingReview（按任务折算）。
+// 同一任务两条记录 → 两处都显示 1。
+const parityRecords: SessionAutomationRecord[] = [
+  {
+    id: 'review-a',
+    sourceSessionId: null,
+    type: 'cron',
+    status: 'active',
+    title: '每日周报',
+    resultSessionId: 'run-a',
+    config: { pendingReview: { resultSessionId: 'run-a', at: 1 } },
+    createdAt: 1,
+    updatedAt: 2,
+  },
+  {
+    id: 'review-b',
+    sourceSessionId: null,
+    type: 'cron',
+    status: 'active',
+    title: '每日周报',
+    resultSessionId: 'run-b',
+    config: { pendingReview: { resultSessionId: 'run-b', at: 2 } },
+    createdAt: 1,
+    updatedAt: 1,
+  },
+];
+
+const paritySessionsById = {
+  'run-a': { origin: { kind: 'cron' as const, id: 'job-1' } },
+  'run-b': { origin: { kind: 'cron' as const, id: 'job-1' } },
+};
+
+describe('pending review count parity', () => {
+  beforeEach(() => {
+    listPendingReview.mockResolvedValue(parityRecords);
+    countPendingReview.mockResolvedValue(countPendingReviewByTask(parityRecords, paritySessionsById));
+    ipcInvokeDomain.mockResolvedValue({
+      scopes: { unattended: { currentCost: 0, maxBudget: 1, usagePercentage: 0 } },
+    });
+    useCronStore.setState({
+      jobs: [],
+      stats: { jobsByStatus: { running: 0 }, successRate: 100 } as never,
+      latestExecutions: {},
+      executionsByJobId: {},
+      selectedJobId: null,
+      filterMode: 'all',
+      searchQuery: '',
+      isLoading: false,
+      isEditorOpen: false,
+      editingJobId: null,
+      error: null,
+      recentExecutions: [],
+    });
+  });
+
+  it('shows 1 on the tile and the inbox title when two records belong to one task', async () => {
+    expect(countPendingReviewByTask(parityRecords, paritySessionsById)).toBe(1);
+    render(<CronCenterPanel onClose={() => undefined} />);
+    await waitFor(() => {
+      expect(screen.getByTestId('cron-status-pending').querySelector('.text-2xl')?.textContent).toBe('1');
+      expect(screen.getByTestId('automation-review-inbox-title').textContent).toContain('1 条待过目');
+    });
+    expect(screen.getAllByTestId('automation-review-item')).toHaveLength(2);
+    expect(screen.getByTestId('automation-review-inbox-title').textContent).not.toContain('2 条');
   });
 });

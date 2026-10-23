@@ -19,8 +19,10 @@ import type {
   SessionAutomationType,
 } from '../../shared/contract/sessionAutomation';
 import { isCronUrgency } from '../../shared/cronUrgency';
+import { resolveCronArtifactsForReview } from '../../shared/cronArtifactPath';
 import { formatCronExpressionLabel } from '../../shared/cronHumanize';
 import { parseCronLoginWallStop } from '../../shared/utils/browserLoginWall';
+import { getDatabase } from '../services/core/databaseService';
 
 /**
  * 解析定时任务对应的「运行时定义」（带最新 nextRunAt）。
@@ -39,14 +41,39 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function readCronReviewDigest(value: unknown): NonNullable<SessionAutomationConfig['pendingReview']>['digest'] | undefined {
+function readRunSessionWorkingDirectory(sessionId: string | undefined): string | undefined {
+  if (!sessionId) return undefined;
+  try {
+    const session = getDatabase().getSession?.(sessionId);
+    const cwd = session?.workingDirectory;
+    return typeof cwd === 'string' && cwd.trim() ? cwd.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function readCronReviewSummaryLine(summary: string | undefined): string | undefined {
+  if (!summary) return undefined;
+  const line = summary
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .find((item) => item.length > 0 && !/^urgency\s*:/i.test(item));
+  return line ? line.slice(0, 120) : undefined;
+}
+
+function readCronReviewDigest(
+  value: unknown,
+  cwd: string | undefined,
+): NonNullable<SessionAutomationConfig['pendingReview']>['digest'] | undefined {
   if (!isRecord(value) || !Array.isArray(value.artifacts)) return undefined;
   const summary = typeof value.summary === 'string' ? value.summary : undefined;
-  const summaryLine = summary?.split(/\r?\n/).find((line) => line.trim())?.trim().slice(0, 120);
-  if (value.artifacts.length === 0 && !summaryLine) return undefined;
+  const summaryLine = readCronReviewSummaryLine(summary);
+  const artifacts = resolveCronArtifactsForReview(value.artifacts, cwd);
+  if (artifacts.length === 0 && !summaryLine) return undefined;
   return {
-    artifactCount: value.artifacts.length,
+    artifactCount: artifacts.length > 0 ? artifacts.length : value.artifacts.length,
     ...(summaryLine ? { summaryLine } : {}),
+    ...(artifacts.length > 0 ? { artifacts } : {}),
   };
 }
 
@@ -246,7 +273,10 @@ export async function recordCronAutomationExecution(
     const urgencyValue = resultRecord?.urgency;
     const urgency = isCronUrgency(urgencyValue) ? urgencyValue : undefined;
     const urgencyRaw = typeof resultRecord?.urgencyRaw === 'string' ? resultRecord.urgencyRaw : undefined;
-    const digest = readCronReviewDigest(resultRecord?.digest);
+    const digest = readCronReviewDigest(
+      resultRecord?.digest,
+      readRunSessionWorkingDirectory(execution.sessionId),
+    );
     const recordStatus: SessionAutomationStatus = keepActive
       ? 'active'
       : reviewable

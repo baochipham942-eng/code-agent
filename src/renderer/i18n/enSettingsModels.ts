@@ -10,6 +10,9 @@ export const enSettingsModels = {
       title: 'Model configuration',
       description: 'Optionally enable task-based switching first, then connect Providers and configure models below.',
       unknownError: 'Unknown error',
+      // Unattended half-price tier note (N-MODELCAT-SERVICE-TIER-COST): the multiplier
+      // value is injected from the SERVICE_TIER_COST_MULTIPLIER constant, never a literal.
+      serviceTierCostNote: 'Unattended tasks automatically use the half-price tier (about {multiplier}x); if it is declined, they fall back to the standard price.',
       providers: {
         deepseek: {
           name: 'DeepSeek',

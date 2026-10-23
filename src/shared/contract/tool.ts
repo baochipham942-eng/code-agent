@@ -16,6 +16,7 @@ export type ToolTag =
   | 'shell'      // Shell/命令执行
   | 'network'    // 网络请求
   | 'mcp'        // MCP 协议
+  | 'plugin'     // 插件注册的工具
   | 'planning'   // 规划和任务管理
   | 'memory'     // 记忆系统
   | 'vision'     // 视觉/截图

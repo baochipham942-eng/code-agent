@@ -53,6 +53,7 @@ export class ToolSearchService {
   private readonly lastUsedBySession = new Map<string, Map<string, number>>();
   private deferredToolIndex: Map<string, DeferredToolMeta>;
   private mcpToolsMeta: Map<string, DeferredToolMeta> = new Map();
+  private pluginToolsMeta: Map<string, DeferredToolMeta> = new Map();
   private skillsMeta: Map<string, DeferredToolMeta> = new Map();
 
   constructor() {
@@ -232,7 +233,9 @@ export class ToolSearchService {
       };
     }
 
-    const meta = this.deferredToolIndex.get(normalizedToolName) || this.mcpToolsMeta.get(normalizedToolName);
+    const meta = this.deferredToolIndex.get(normalizedToolName)
+      || this.mcpToolsMeta.get(normalizedToolName)
+      || this.pluginToolsMeta.get(normalizedToolName);
 
     if (!meta) {
       logger.warn(`Tool not found: ${normalizedToolName}`);
@@ -310,6 +313,45 @@ export class ToolSearchService {
     if (removed > 0) {
       logger.debug(`Unregistered ${removed} MCP tools from ${serverName}`);
     }
+  }
+
+  /**
+   * 注册插件工具元数据
+   *
+   * 第三方/builtin 插件激活时由 PluginRegistry 调用（registerTool /
+   * registerToolModule 两条路径都走这里），让默认 deferred 工具表面下
+   * 模型能通过 ToolSearch 搜到并加载插件工具——与 MCP 的注册面对称。
+   * 名字已进静态索引或核心工具表的不重复登记（builtin 插件用
+   * prefixWithPluginId=false 保留原工具名，静态索引就是它们的真源）。
+   */
+  registerPluginTool(meta: DeferredToolMeta): void {
+    if (isCoreToolName(meta.name) || this.deferredToolIndex.has(meta.name)) {
+      logger.debug(`Plugin tool ${meta.name} already has a static entry; skipping dynamic registration`);
+      return;
+    }
+    this.pluginToolsMeta.set(meta.name, meta);
+    logger.debug(`Registered plugin tool: ${meta.name} from ${meta.pluginId}`);
+  }
+
+  /**
+   * 注销插件工具元数据（deactivate / 激活失败清理 / unregisterTool）。
+   * 同时把它从已加载集合里卸下，停用后不残留 ghost 条目。
+   */
+  unregisterPluginTool(toolName: string): boolean {
+    const removed = this.pluginToolsMeta.delete(toolName);
+    if (removed) {
+      this.unloadDeferredTool(toolName);
+      logger.debug(`Unregistered plugin tool: ${toolName}`);
+    }
+    return removed;
+  }
+
+  /**
+   * 获取所有已注册的插件工具元数据
+   * （deferred-tools 提示块按插件分组注入名字索引，schema 仍按需加载）
+   */
+  getPluginToolsMeta(): DeferredToolMeta[] {
+    return Array.from(this.pluginToolsMeta.values());
   }
 
   /**
@@ -419,7 +461,9 @@ export class ToolSearchService {
         this.touchTool(ownerSession, normalized);
         continue;
       }
-      const meta = this.deferredToolIndex.get(normalized) || this.mcpToolsMeta.get(normalized);
+      const meta = this.deferredToolIndex.get(normalized)
+        || this.mcpToolsMeta.get(normalized)
+        || this.pluginToolsMeta.get(normalized);
       if (!meta || !this.canExposeLoadedTool(meta)) continue;
       this.markToolLoaded(meta.name, ownerSession);
       loaded.push(meta.name);
@@ -509,6 +553,10 @@ export class ToolSearchService {
       }
     }
 
+    for (const meta of this.pluginToolsMeta.values()) {
+      result.push(meta);
+    }
+
     for (const meta of this.skillsMeta.values()) {
       result.push(meta);
     }
@@ -520,12 +568,15 @@ export class ToolSearchService {
    * ToolSearch 只能把下一轮真的能进入 tool definitions 的工具标为 loaded。
    * - builtin 必须有 protocol schema
    * - MCP 动态工具由 MCPToolRegistry 提供真实 ToolDefinition
+   * - 插件工具由 PluginRegistry 经 registerProtocolTool 登记 schema，
+   *   元数据在场 + protocol schema 在场才可加载
    * - skill 等虚拟搜索项只返回结果，不制造可调用假象
    */
   private canExposeLoadedTool(meta: DeferredToolMeta): boolean {
     if (isCoreToolName(meta.name)) return true;
     if (meta.source === 'mcp') return this.mcpToolsMeta.has(meta.name);
     if (meta.source === 'builtin') return protocolToolNameChecker(meta.name);
+    if (this.pluginToolsMeta.has(meta.name)) return protocolToolNameChecker(meta.name);
     return false;
   }
 
@@ -535,6 +586,9 @@ export class ToolSearchService {
         return 'searchable metadata has no registered protocol tool; desktop context metadata is injected through the Desktop workbench/activity context; use computer_use for live screen/window actions';
       }
       return 'searchable metadata has no registered protocol tool';
+    }
+    if (this.pluginToolsMeta.has(meta.name)) {
+      return 'plugin tool metadata has no registered protocol tool';
     }
     if (meta.source === 'dynamic' && meta.name.startsWith('skill:')) {
       const skillName = meta.name.slice('skill:'.length);

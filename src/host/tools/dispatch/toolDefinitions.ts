@@ -366,7 +366,26 @@ export function getDeferredToolsSummary(
   }
 
   const visibleMcpCount = [...byServer.values()].reduce((sum, names) => sum + names.length, 0);
-  const visibleCount = visibleBuiltinCount + visibleMcpCount;
+
+  // 第三方插件工具名索引：按插件分组，只列名字不带 schema（与 MCP 同一条 GAP-008 原则）
+  const byPlugin = new Map<string, string[]>();
+  for (const meta of getToolSearchService().getPluginToolsMeta()) {
+    if (denied.has(meta.name.toLowerCase())) continue;
+    const pluginId = meta.pluginId || 'unknown';
+    if (!byPlugin.has(pluginId)) byPlugin.set(pluginId, []);
+    byPlugin.get(pluginId)!.push(meta.name);
+  }
+  // 按插件 id / 工具名字节序稳定排序：该 summary 进 system 稳定前缀，
+  // 插件激活时序跨进程不确定，顺序漂移会弱化跨会话前缀复用（同 MCP 侧）
+  for (const pluginId of [...byPlugin.keys()].sort()) {
+    const names = [...(byPlugin.get(pluginId) ?? [])].sort();
+    fullLines.push(`[plugin:${pluginId}] ${names.join(' | ')}`);
+    nameLines.push(`[plugin:${pluginId}] ${names.join(' | ')}`);
+    compactLines.push(`[plugin:${pluginId}] ${names.length} tools; use ToolSearch to find them`);
+  }
+
+  const visiblePluginCount = [...byPlugin.values()].reduce((sum, names) => sum + names.length, 0);
+  const visibleCount = visibleBuiltinCount + visibleMcpCount + visiblePluginCount;
   const withUnlistedCount = (lines: string[], unlisted: number): string => [
     ...lines,
     ...(unlisted > 0 ? [`${unlisted} tools unlisted; use ToolSearch to find them`] : []),

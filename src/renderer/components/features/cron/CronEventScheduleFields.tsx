@@ -11,7 +11,7 @@
 // 选完调度类型不立刻报）。
 // ============================================================================
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import type { EventConnectorMailScheduleConfig } from '@shared/contract';
 import { CRON_EVENT_TRIGGER } from '@shared/constants';
 import { Button } from '../../primitives/Button';
@@ -29,13 +29,20 @@ interface CronEventScheduleFieldsProps {
   chatId: string;
   /** connector:mail 源的原绑定（编辑/复制 mail 任务时）：锁定只读展示，不渲染通道选择。 */
   mailSource?: EventConnectorMailScheduleConfig | null;
-  onAccountChange: (accountId: string) => void;
-  onChatChange: (chatId: string) => void;
+  /** 选定账号；第二参带回通道目录里的账号显示名（确认卡行摘要用，编辑器等调用方可忽略）。 */
+  onAccountChange: (accountId: string, accountName?: string) => void;
+  /** 选定会话/群（空 = 任意会话）；第二参带回目录里的群显示名（同上，可忽略）。 */
+  onChatChange: (chatId: string, chatName?: string) => void;
   /** 单次预算上限（USD，draft 字符串）；event 任务必填 > 0。 */
   maxRunBudget: string;
   onBudgetChange: (value: string) => void;
   /** 按校验器 reason 映射出的本地化违规文案；null = 合规或未到显示时机。 */
   validationMessage: string | null;
+  /**
+   * 按群名预选（/schedule event 草案的用户原话群名）：选中账号的会话目录加载完、
+   * 且用户还没手选群（chatId 空）时，目录里有同名群就自动选上。编辑器不传 = 行为不变。
+   */
+  preferredChatName?: string;
 }
 
 export const CronEventScheduleFields: React.FC<CronEventScheduleFieldsProps> = ({
@@ -47,11 +54,31 @@ export const CronEventScheduleFields: React.FC<CronEventScheduleFieldsProps> = (
   maxRunBudget,
   onBudgetChange,
   validationMessage,
+  preferredChatName,
 }) => {
   const { t } = useI18n();
   const cc = t.cronCenter;
   const openSettingsTab = useAppStore((state) => state.openSettingsTab);
   const { accounts, accountsLoading, conversationsByAccount } = useChannelCatalog();
+
+  // 按群名预选：回调走 ref，避免调用方内联箭头让本效应随每次渲染重跑。
+  const onChatChangeRef = useRef(onChatChange);
+  onChatChangeRef.current = onChatChange;
+  // 预选每个群名只尝试一次（rework r1 Important 2）：目录就绪后为本 preferredChatName
+  // 做过一次判定（选中同名群或确认没有）就记下——用户随后把群改回「任意会话」、或
+  // 换账号清空选择时，不能因为 chatId 又空了就把显式选择弹回同名群。
+  const preselectedChatNamesRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!preferredChatName || chatId) return;
+    if (preselectedChatNamesRef.current.has(preferredChatName)) return;
+    const state = conversationsByAccount[accountId];
+    if (!state || state.loading) return;
+    preselectedChatNamesRef.current.add(preferredChatName);
+    const match = state.conversations.find(
+      (conversation) => conversation.name.trim() === preferredChatName.trim(),
+    );
+    if (match) onChatChangeRef.current(match.id, match.name);
+  }, [preferredChatName, chatId, accountId, conversationsByAccount]);
 
   const selectedAccount = accounts.find((account) => account.id === accountId);
   const staleAccount = Boolean(accountId && !accountsLoading && !selectedAccount);
@@ -59,7 +86,7 @@ export const CronEventScheduleFields: React.FC<CronEventScheduleFieldsProps> = (
 
   const handleAccountChange = (value: string) => {
     if (value === '__unavailable__') return;
-    onAccountChange(value);
+    onAccountChange(value, accounts.find((account) => account.id === value)?.name);
     // 会话/群隶属于账号：换账号时旧绑定不再有意义，清掉回到「任意会话」。
     onChatChange('');
   };
@@ -144,7 +171,10 @@ export const CronEventScheduleFields: React.FC<CronEventScheduleFieldsProps> = (
                   id="cron-event-chat"
                   value={chatId}
                   options={chatOptions}
-                  onChange={(event) => onChatChange(event.target.value)}
+                  onChange={(event) => onChatChange(
+                    event.target.value,
+                    conversationState.conversations.find((conversation) => conversation.id === event.target.value)?.name,
+                  )}
                 />
               </FormField>
               <p className="mt-1 text-xs text-zinc-500">{cc.eventChatHint}</p>

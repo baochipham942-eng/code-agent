@@ -543,6 +543,16 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     source: 'builtin',
   },
   {
+    // N-MEDIA-GEN-MUSIC-FALLBACK：music_generate 由 builtin.musicGeneration 插件注册，
+    // 注册即可发现门（toolRegistrationDiscoverability）只扫 registerMigratedTools，
+    // 漏登索引时工具「已注册但模型够不着」——真跑实测 select:music_generate 0 命中。
+    name: 'music_generate',
+    shortDescription: 'AI 生成音乐',
+    tags: ['media'],
+    aliases: ['music', 'bgm', 'song', 'melody'],
+    source: 'builtin',
+  },
+  {
     name: 'image_analyze',
     shortDescription: '分析图片内容',
     tags: ['vision', 'media'],

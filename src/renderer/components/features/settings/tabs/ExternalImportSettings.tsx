@@ -418,7 +418,9 @@ export const ExternalImportSettings: React.FC = () => {
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={() => useAppStore.getState().openCapabilityHub('skills')}
+                  onClick={() =>
+                    useAppStore.getState().openCapabilitySettingsTarget({ kind: 'skill', id: '', source: 'external-import' })
+                  }
                 >
                   {copy.viewSkillsCta}
                 </Button>

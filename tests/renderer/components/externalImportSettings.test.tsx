@@ -171,7 +171,7 @@ beforeEach(() => {
   invokeDomain.mockReset();
   invokeChannel.mockReset();
   ipcEventHandlers.clear();
-  useAppStore.setState({ language: 'zh' });
+  useAppStore.setState({ language: 'zh', settingsCapabilityFocus: null });
   useExternalImportStore.setState({
     status: 'idle',
     result: null,
@@ -455,6 +455,9 @@ describe('ExternalImportSettings 导入与结果（验收④）', () => {
     expect(state.showCapabilityHub).toBe(true);
     expect(state.capabilityHubTab).toBe('skills');
     expect(state.showSettings).toBe(false);
+    // FU1：不再裸开 hub，而是带 external-import 深链焦（技能页内层落「已安装」且落页即清）
+    expect(state.settingsCapabilityFocus).toMatchObject({ kind: 'skill', source: 'external-import' });
+    useAppStore.setState({ settingsCapabilityFocus: null });
   });
 
   it('instruction-file（AGENTS.md 类）只供对照：无确认钮、不写记忆', async () => {

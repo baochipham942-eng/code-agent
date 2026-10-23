@@ -38,5 +38,6 @@ This is a real write action and must pass the write permission gate.`,
   category: 'mcp',
   permissionLevel: 'write',
   readOnly: false,
+  touchesWorkDirectory: false,
   allowInPlanMode: false,
 };

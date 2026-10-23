@@ -61,6 +61,7 @@ import { initializeDurableRun, type DurableRunApplicationRuntime } from '../host
 import { DurableRunRepository } from '../host/services/core/repositories/DurableRunRepository';
 import { SERVICE_TIMEOUTS } from '../shared/constants/timeouts';
 import { isComputerUseCapabilityInstalledSync } from '../host/plugins/builtin/computerUse/installState';
+import { AGENT_RUNTIME_DEFAULTS } from '../host/agent/agentRuntimeDefaults';
 import { parseToolNameListFlag } from './utils/toolListFlags';
 import type { ToolExecutionDelegate, ToolExecutorConfig } from '../host/tools/toolExecutor';
 import {
@@ -791,7 +792,8 @@ export function createAgentLoop(
     // 逐轮设置随载荷走（QE-01）：此路径无复杂度 analyzer，effortLevel 缺省=TurnState 默认 high
     thinkingEnabled: config.thinkingEnabled ?? true,
     effortLevel: config.effortLevel,
-    enableToolDeferredLoading: true, // 延迟加载非核心工具，减少 tool overhead
+    enableToolDeferredLoading: config.enableToolDeferredLoading
+      ?? (AGENT_RUNTIME_DEFAULTS.toolMode === 'deferred'), // 与 agentLoop 同一默认真源，不旁路 agentRuntimeDefaults
     goalContract: config.goalContract, // /goal 自治模式契约（透传给 ctx.goalMode）
     maxIterations: config.maxIterations, // 迭代数硬上限（角色主动性醒来等预算受限场景）
     toolScope: config.toolScope, // web workbench 已选连接器/MCP → 延迟工具预载

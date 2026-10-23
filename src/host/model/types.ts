@@ -88,6 +88,8 @@ export interface ModelResponse {
     cacheReadTokens?: number;
     cacheCreationTokens?: number;
     providerReportedSavedTokens?: number;
+    /** 响应实报的 service_tier（缺席 = standard 计价，见 SERVICE_TIER_COST_MULTIPLIER） */
+    serviceTier?: string;
   };
   // 内容块顺序（text 和 tool_call 的交错顺序，用于前端渲染）
   contentParts?: ResponseContentPart[];

@@ -19,7 +19,6 @@ vi.mock('../../../src/host/services/plugins/extensionOpsService', () => ({
 
 const LOADER_KEYS = [
   'loadDoctorRunner',
-  'loadProjectMemoryDrafter',
   'loadReadOnlySideChat',
   'loadToolResolver',
   'loadSubagentExecutor',

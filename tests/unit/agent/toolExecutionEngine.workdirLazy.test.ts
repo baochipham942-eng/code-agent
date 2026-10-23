@@ -20,7 +20,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ToolCall, ToolResult } from '../../../src/shared/contract';
 import { ToolExecutionEngine } from '../../../src/host/agent/runtime/toolExecutionEngine';
 import { AntiPatternDetector } from '../../../src/host/agent/antiPattern/detector';
@@ -36,6 +36,20 @@ import { getToolDefinitionWithCloudMeta } from '../../../src/host/tools/dispatch
 import {
   shouldMaterializeWorkDirectoryForTool,
 } from '../../../src/host/agent/runtime/workDirectoryMaterializer';
+import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
+import {
+  hasProtocolTool,
+  registerProtocolTool,
+  unregisterProtocolTool,
+} from '../../../src/host/tools/protocolToolRegistration';
+import { calendarCreateEventSchema } from '../../../src/host/tools/modules/connectors/calendarCreateEvent.schema';
+import { calendarUpdateEventSchema } from '../../../src/host/tools/modules/connectors/calendarUpdateEvent.schema';
+import { calendarDeleteEventSchema } from '../../../src/host/tools/modules/connectors/calendarDeleteEvent.schema';
+import { mailDraftSchema } from '../../../src/host/tools/modules/connectors/mailDraft.schema';
+import { mailSendSchema } from '../../../src/host/tools/modules/connectors/mailSend.schema';
+import { remindersCreateSchema } from '../../../src/host/tools/modules/connectors/remindersCreate.schema';
+import { remindersUpdateSchema } from '../../../src/host/tools/modules/connectors/remindersUpdate.schema';
+import { remindersDeleteSchema } from '../../../src/host/tools/modules/connectors/remindersDelete.schema';
 
 const serviceMocks = vi.hoisted(() => ({
   langfuse: {
@@ -343,6 +357,12 @@ describe('ToolExecutionEngine lazy work directory (N-DELIVERABLE-WORKDIR-LAZY)',
 // schemaToDefinition（toolDefinitions.ts）→ 引擎内 getToolDefinitionWithCloudMeta，
 // 不手搓 plain object。github_pr 的 handler 拿会话目录当 git/gh 子进程 cwd
 // （network/githubPr.ts execGh），必须保持落盘——它是「非只读但绝不豁免」的对照位。
+//
+// 连接器组（calendar/mail/reminders，8 个）在 modules/index.ts 是 darwin-only 注册
+// （AppleScript 依赖，windows-support.md §1.5），Linux CI 注册表里没有它们。本
+// describe 钉的是 schema→definition 转换与引擎判定，与平台无关：非 darwin 上把
+// 真实 schema 补注册进真实注册表（executor 是 mock，loader 不应被调起），跑完注销
+// ——沿用 toolAccessCoverageInvariant.test.ts 的补注册模式。
 // ============================================================================
 describe('connector/network tools declared cwd-free (N-DELIVERABLE-WORKDIR-LAZY-FU1-FU1)', () => {
   const markedTools: Array<[name: string, args: Record<string, unknown>]> = [
@@ -359,6 +379,37 @@ describe('connector/network tools declared cwd-free (N-DELIVERABLE-WORKDIR-LAZY-
     ['http_request', { url: 'https://example.com' }],
   ];
   const cwdBoundTools = ['github_pr', 'Bash'] as const;
+
+  const darwinOnlySchemas = [
+    calendarCreateEventSchema,
+    calendarUpdateEventSchema,
+    calendarDeleteEventSchema,
+    mailDraftSchema,
+    mailSendSchema,
+    remindersCreateSchema,
+    remindersUpdateSchema,
+    remindersDeleteSchema,
+  ] as const;
+  let registeredForTest: string[] = [];
+
+  beforeAll(() => {
+    // 端口懒初始化（resolveToolCallAccess 首次调用才建单例）：先强制初始化，
+    // 再补注册非 darwin 平台缺席的连接器 schema
+    getProtocolRegistry();
+    registeredForTest = darwinOnlySchemas
+      .filter((schema) => !hasProtocolTool(schema.name))
+      .map((schema) => {
+        registerProtocolTool(schema, async () => {
+          throw new Error(`loader for ${schema.name} must not run in workdirLazy tests`);
+        });
+        return schema.name;
+      });
+  });
+
+  afterAll(() => {
+    for (const name of registeredForTest) unregisterProtocolTool(name);
+    registeredForTest = [];
+  });
 
   let tempDataDir: string;
   let defaultRoot: string;

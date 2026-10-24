@@ -109,6 +109,41 @@ describe('background task ledger typed IPC', () => {
     });
   });
 
+  // N-MEDIA-GEN-MUSIC-FALLBACK-FU1：终局工具失败出路走 tasks:list IPC，字段可选、旧载荷照常通过
+  it('keeps lastToolFailure in the typed progress schema and still accepts payloads without it', () => {
+    expect(TaskProgressSchema.parse({
+      current: 2,
+      lastToolStep: { tool: 'music_generate', at: 123 },
+      lastToolFailure: {
+        tool: 'music_generate',
+        code: 'MUSIC_SERVICE_UNAVAILABLE',
+        alternatives: 'zhipu:glm-5.3',
+        at: 456,
+      },
+    })).toMatchObject({
+      lastToolFailure: {
+        tool: 'music_generate',
+        code: 'MUSIC_SERVICE_UNAVAILABLE',
+        alternatives: 'zhipu:glm-5.3',
+        at: 456,
+      },
+    });
+    // 旧载荷（无新字段）不被新 schema 拒绝：升级对既有客户端零破坏
+    expect(TaskProgressSchema.parse({
+      current: 1,
+      total: 3,
+      percent: 33,
+      label: '执行中',
+      lastToolStep: { tool: 'Read', at: 1 },
+    })).toEqual({
+      current: 1,
+      total: 3,
+      percent: 33,
+      label: '执行中',
+      lastToolStep: { tool: 'Read', at: 1 },
+    });
+  });
+
   it('lists tasks through the typed domain request schema', async () => {
     const ledger = getBackgroundTaskLedger();
     ledger.upsertTask({

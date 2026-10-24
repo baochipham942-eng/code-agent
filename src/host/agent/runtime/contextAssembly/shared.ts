@@ -162,7 +162,7 @@ export interface ContextAssemblyCtx {
   recordTokenUsage(
     inputTokens: number,
     outputTokens: number,
-    cache?: { cacheReadTokens?: number; cacheCreationTokens?: number },
+    cache?: { cacheReadTokens?: number; cacheCreationTokens?: number; serviceTier?: string },
     source?: 'provider' | 'estimated',
   ): void;
   inference(): Promise<ModelResponse>;

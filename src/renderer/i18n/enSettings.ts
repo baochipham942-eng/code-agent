@@ -6,6 +6,7 @@ import { enSettingsCore } from './enSettingsCore';
 import { enSettingsModels } from './enSettingsModels';
 import { enSettingsWork } from './enSettingsWork';
 import { enSettingsSystem } from './enSettingsSystem';
+import { enSettingsExternalImport } from './enSettingsExternalImport';
 
 export const enSettings = {
     title: 'Settings',
@@ -16,4 +17,5 @@ export const enSettings = {
   ...enSettingsModels,
   ...enSettingsWork,
   ...enSettingsSystem,
+  ...enSettingsExternalImport,
 };

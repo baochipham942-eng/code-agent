@@ -6,6 +6,7 @@ import { zhSettingsCore } from './zhSettingsCore';
 import { zhSettingsModels } from './zhSettingsModels';
 import { zhSettingsWork } from './zhSettingsWork';
 import { zhSettingsSystem } from './zhSettingsSystem';
+import { zhSettingsExternalImport } from './zhSettingsExternalImport';
 
 export const zhSettings = {
     title: '设置',
@@ -16,4 +17,5 @@ export const zhSettings = {
   ...zhSettingsModels,
   ...zhSettingsWork,
   ...zhSettingsSystem,
+  ...zhSettingsExternalImport,
 };

@@ -10,6 +10,9 @@ export const zhSettingsModels = {
       title: '模型配置',
       description: '先（可选）开启「按任务自动切换」，再到下方接入 Provider、配置模型。',
       unknownError: '未知错误',
+      // 无人值守半价档说明行（N-MODELCAT-SERVICE-TIER-COST）：倍率数字由组件从
+      // SERVICE_TIER_COST_MULTIPLIER 常量注入 {multiplier}，文案里不落字面量。
+      serviceTierCostNote: '无人值守任务自动用半价档（约 {multiplier}×，被拒自动回标准价）',
       providers: {
         deepseek: {
           name: 'DeepSeek',

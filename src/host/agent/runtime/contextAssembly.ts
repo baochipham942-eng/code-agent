@@ -134,7 +134,7 @@ export class ContextAssembly {
   recordTokenUsage(
     inputTokens: number,
     outputTokens: number,
-    cache?: { cacheReadTokens?: number; cacheCreationTokens?: number },
+    cache?: { cacheReadTokens?: number; cacheCreationTokens?: number; serviceTier?: string },
     source: 'provider' | 'estimated' = 'provider',
   ): void {
     const budgetService = getBudgetService(this.ctx.budgetScope);
@@ -143,6 +143,7 @@ export class ContextAssembly {
       outputTokens,
       ...(cache?.cacheReadTokens ? { cacheReadTokens: cache.cacheReadTokens } : {}),
       ...(cache?.cacheCreationTokens ? { cacheCreationTokens: cache.cacheCreationTokens } : {}),
+      ...(cache?.serviceTier ? { serviceTier: cache.serviceTier } : {}),
       model: this.ctx.modelConfig.model,
       provider: this.ctx.modelConfig.provider,
       timestamp: Date.now(),

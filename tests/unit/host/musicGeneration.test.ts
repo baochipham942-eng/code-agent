@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { generateMusic } from '../../../src/host/services/media/musicGenerationService';
+import { generateMusic, MusicHttpError } from '../../../src/host/services/media/musicGenerationService';
 
 describe('generateMusic（MiniMax）', () => {
   it('POST /music_generation，hex 音频解码为 Buffer', async () => {
@@ -11,6 +11,14 @@ describe('generateMusic（MiniMax）', () => {
     expect(r.actualModel).toBe('music-2.6');
     expect(Buffer.isBuffer(r.audioBuffer)).toBe(true);
     expect(r.audioBuffer.toString()).toBe('FAKE-MP3-BYTES');
+  });
+  it('HTTP 非 2xx 抛 MusicHttpError：message 与历史一致，status 可读（N-MEDIA-GEN-MUSIC-FALLBACK）', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ ok: false, status: 410 })));
+    const rejection = await generateMusic({ baseUrl: 'https://api.minimax.io/v1', apiKey: 'sk', modelName: 'music-2.6', prompt: 'x' })
+      .then(() => undefined, (error: unknown) => error);
+    expect(rejection).toBeInstanceOf(MusicHttpError);
+    expect((rejection as MusicHttpError).status).toBe(410);
+    expect((rejection as MusicHttpError).message).toBe('音乐生成失败 HTTP 410');
   });
   it('base_resp.status_code 非 0 抛错', async () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({

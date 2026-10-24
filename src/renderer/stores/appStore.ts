@@ -178,7 +178,7 @@ export interface SettingsCapabilityFocus {
   id: string;
   nonce: number;
   /** 深链来源：'onboarding' = 首启引导（落页横幅按引导措辞、只展示显示名）；缺省 = 会话页 */
-  source?: 'onboarding';
+  source?: 'onboarding' | 'external-import';
 }
 
 const GLOBAL_PERMISSION_REQUEST_SESSION_ID = 'global';

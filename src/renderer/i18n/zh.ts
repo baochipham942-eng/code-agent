@@ -53,6 +53,7 @@ import { engineModelPanelZh } from './engineModelPanel';
 import { jevAdvisoryZh } from './jevAdvisory';
 import { workflowStallZh } from './workflowStall';
 import { roleFirstWakeZh } from './roleFirstWake';
+import { permissionRuleNlZh } from './permissionRuleNl';
 
 export const zh = {
   ...canvasActorZh, ...activityPanelZh,
@@ -74,6 +75,7 @@ export const zh = {
   ...jevAdvisoryZh,
   ...workflowStallZh,
   ...roleFirstWakeZh,
+  ...permissionRuleNlZh,
   // Common
   common: {
     save: '保存',

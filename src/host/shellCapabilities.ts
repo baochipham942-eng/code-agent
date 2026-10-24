@@ -53,6 +53,7 @@ import { CaptureSchemas } from '../shared/ipc/schemas/capture';
 import { AgentRegistrySchemas } from '../shared/ipc/schemas/agentRegistry';
 import { LivePreviewSchemas } from '../shared/ipc/schemas/livePreview';
 import { UpdateSchemas } from '../shared/ipc/schemas/update';
+import { PermissionTranslateSchemas } from '../shared/ipc/schemas/permissionTranslate';
 
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
@@ -180,6 +181,8 @@ const CAPABILITY_DOMAIN_ACTIONS = {
   [IPC_DOMAINS.OPENCHRONICLE]: OpenchronicleSchemas.ACTIONS,
   // pii 域：派生自 schema action 集合（== pii 表 keys，parity 门三面对账），手工清单已删
   [IPC_DOMAINS.PII]: PiiSchemas.ACTIONS,
+  // permissionTranslate 域：派生自 schema action 集合（== permissionTranslate 表 keys，parity 门三面对账）
+  [IPC_DOMAINS.PERMISSION_TRANSLATE]: PermissionTranslateSchemas.ACTIONS,
   // planning 域：派生自 schema action 集合（== planning 表 keys，parity 门三面对账），手工清单已删
   [IPC_DOMAINS.PLANNING]: PlanningSchemas.ACTIONS,
   // project 域：派生自 schema action 集合（== project 表 keys，parity 门三面对账），手工清单已删

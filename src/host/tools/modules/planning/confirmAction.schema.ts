@@ -61,6 +61,7 @@ Example:
   },
   category: 'planning',
   permissionLevel: 'execute',
+  touchesWorkDirectory: false,
   accesses: [
     { kind: 'readwrite', expression: 'resource(session, confirm)' },
   ],

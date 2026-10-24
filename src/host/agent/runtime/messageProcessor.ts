@@ -65,8 +65,8 @@ import {
 import { concludeForceFinalAfterToolBatch, sealToolCallsDuringForceFinal, abortPendingGoalOnForcedFinalBreak } from './forceFinalSeal';
 import { handleUnavailableToolCalls } from './messageProcessorUnavailableTools';
 import { recordMessageProcessorModelCallTelemetry } from './messageProcessorTelemetry';
+import { handleTruncatedToolCalls } from './messageProcessorToolTruncation';
 import { noteStagnationFingerprint } from '../../model/cacheHitObservation';
-import { generateTruncationWarning } from './truncationPrompts';
 import { deniedToolRetryGuidance, isToolDeniedForRun } from './toolRunPolicy';
 import { attachTurnQualityMetadata } from './turnQuality';
 import { wasMessagePersistedByContextAssembly } from './contextAssembly/systemContextStack';
@@ -744,96 +744,8 @@ export class MessageProcessor {
     });
 
     // Handle truncation warning + 动态 maxTokens 提升
-    if (response.truncated) {
-      logger.warn('[AgentLoop] ⚠️ Tool call was truncated due to max_tokens limit!');
-      logCollector.agent('WARN', 'Tool call truncated - content may be incomplete');
-
-      // 提高 maxTokens 防止后续截断
-      const currentMax = this.ctx.modelConfig.maxTokens || MODEL_MAX_TOKENS.DEFAULT;
-      const boostedMax = Math.max(currentMax, getModelMaxOutputTokens(this.ctx.modelConfig.model));
-      if (boostedMax > currentMax) {
-        this.ctx.modelConfig.maxTokens = boostedMax;
-        logger.info(`[AgentLoop] Tool truncation: boosted maxTokens ${currentMax} → ${boostedMax}`);
-      }
-
-      const writeFileCall = toolCalls.find((tc: ToolCall) =>
-        tc.name === 'write_file' ||
-        tc.name === 'Write' ||
-        tc.name === 'append_file' ||
-        tc.name === 'Append'
-      );
-      if (writeFileCall) {
-        const content = writeFileCall.arguments?.content as string;
-        if (content) {
-          logger.warn(`${writeFileCall.name} content length: ${content.length} chars - may be truncated!`);
-          this.contextAssembly.injectSystemMessage(generateTruncationWarning(), 'truncation-recovery');
-        }
-      } else {
-        // 检测截断的 bash heredoc
-        const truncatedBashHeredocs = toolCalls.filter((tc: ToolCall) =>
-          (tc.name === 'bash' || tc.name === 'Bash') &&
-          typeof tc.arguments?.command === 'string' &&
-          /<<\s*['"]?\w+['"]?/.test(tc.arguments.command as string)
-        );
-
-        if (truncatedBashHeredocs.length > 0) {
-          logger.warn(`[AgentLoop] Skipping ${truncatedBashHeredocs.length} truncated bash heredoc(s) to avoid SyntaxError`);
-
-          const truncAssistantMsg: Message = {
-            id: this.contextAssembly.generateId(),
-            role: 'assistant',
-            content: response.content || '',
-            timestamp: Date.now(),
-            toolCalls: sanitizeToolCallsForHistory(toolCalls),
-            thinking: response.thinking,
-            responsesOutput: response.responsesOutput,
-            effortLevel: this.ctx.turn.effortLevel,
-            inputTokens: response.usage?.inputTokens,
-            outputTokens: response.usage?.outputTokens,
-            metadata: attachTurnQualityMetadata(this.ctx, undefined, response),
-          };
-          await this.contextAssembly.addAndPersistMessage(truncAssistantMsg);
-          this.ctx.onEvent({ type: 'message', data: truncAssistantMsg });
-
-          const syntheticResults: ToolResult[] = toolCalls.map((tc: ToolCall) => ({
-            toolCallId: tc.id,
-            success: false,
-            output: '',
-            error: (tc.name === 'bash' || tc.name === 'Bash') && /<<\s*['"]?\w+['"]?/.test((tc.arguments?.command as string) || '')
-              ? '⚠️ 此 bash heredoc 命令因 max_tokens 截断而不完整，已跳过执行以避免 SyntaxError。请重新生成完整命令。'
-              : '⚠️ 此工具调用因同批次存在截断的 heredoc 而被跳过。',
-            duration: 0,
-          }));
-
-          const toolMsg: Message = {
-            id: this.contextAssembly.generateId(),
-            role: 'tool',
-            content: JSON.stringify(syntheticResults),
-            timestamp: Date.now(),
-            toolResults: syntheticResults,
-          };
-          await this.contextAssembly.addAndPersistMessage(toolMsg);
-
-          this.contextAssembly.injectSystemMessage(
-            `<truncation-recovery>\n` +
-            `上一次的 bash 命令包含 heredoc（<<EOF...EOF），但因 max_tokens 限制被截断，命令不完整。\n` +
-            `已跳过执行以避免 SyntaxError。请重新生成完整的命令。\n` +
-            `提示：如果内联脚本很长，考虑先用 write_file 写入临时文件再用 bash 执行，而不是使用 heredoc。\n` +
-            `</truncation-recovery>`,
-            'truncation-recovery',
-          );
-
-          return 'continue';
-        }
-
-        this.contextAssembly.injectSystemMessage(
-          `<truncation-recovery>\n` +
-          `上一次输出因 max_tokens 限制被截断。请继续完成未完成的操作。\n` +
-          `</truncation-recovery>`,
-          'truncation-recovery',
-        );
-      }
-    }
+    const truncationOutcome = await handleTruncatedToolCalls(this.ctx, this.contextAssembly, response, toolCalls);
+    if (truncationOutcome) return truncationOutcome;
 
     toolCalls.forEach((tc: ToolCall, i: number) => {
       logger.debug(`   Tool ${i + 1}: ${tc.name}, args keys: ${Object.keys(tc.arguments || {}).join(', ')}`);

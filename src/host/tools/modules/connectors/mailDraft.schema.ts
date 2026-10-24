@@ -54,5 +54,6 @@ Use this when the user wants a real email draft prepared locally, but not sent y
   category: 'mcp',
   permissionLevel: 'write',
   readOnly: false,
+  touchesWorkDirectory: false,
   allowInPlanMode: false,
 };

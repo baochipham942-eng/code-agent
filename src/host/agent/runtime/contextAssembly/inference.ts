@@ -3,7 +3,7 @@
 import type { AgentEvent, ToolCall, ToolDefinition } from '../../../../shared/contract';
 import type { ModelResponse } from '../../../agent/loopTypes';
 import { inferenceViaAiSdk, aiSdkSupportsProvider } from '../../../model/adapters/aiSdkAdapter';
-import { getConfigService, getLangfuseService, getBudgetService } from '../../../services';
+import { getConfigService, getLangfuseService } from '../../../services';
 import { logCollector } from '../../../mcp/logCollector.js';
 import { ContextLengthExceededError } from '../../../model/modelRouter';
 import { createSnapshotHandler } from '../../../session/streamSnapshot';
@@ -41,13 +41,13 @@ import type { ContextAssemblyCtx } from './shared';
 import { logger } from './shared';
 import { isCrossSessionDelegationEnabled } from '../../../services/delegation/crossSessionDelegationFlag';
 import { noteStreamProgress } from '../../stallObserver';
-import { cacheOptionsForMaxModeCall, maxModeBudgetHeadroomOk } from './maxModePolicy';
+import { maxModeBudgetHeadroomOk } from './maxModePolicy';
 import { emitOverflowRecoverySignal } from './compressionSignal';
 import {
   seedArtifactRepairGuardFromContext,
 } from '../artifactRepairGuard';
 import { preloadDeferredToolsForTurn } from './deferredToolPreload';
-import { runMaxModeStep, MaxModeAbortError } from '../maxMode';
+import { runMaxModeInference } from './inferenceMaxMode';
 import { createDocumentEvidenceStream } from '../documentEvidenceStream';
 import { applyEffortControls } from './effortControls';
 import { buildCompactArtifactRepairWriteRetryMessages } from './artifactRepairRetryMessages';
@@ -305,96 +305,6 @@ function assertInputTokenBudget(
       `Inference input token budget exceeded before provider request: estimated ${estimatedInputTokens} > max ${maxInputTokens}`,
     );
   }
-}
-
-/**
- * Max Mode（best-of-N，roadmap 3.3）分支：N 并发 propose-only 候选 → judge 选索引 →
- * 赢家 replay（由主链路下游正常执行其工具调用）。
- *
- * 副作用隔离：候选与 judge 走无流式回调、无快照（onSnapshot 剥离）的静默引擎调用——
- * 不发 UI 流事件、不写 stream snapshot、不执行任何工具。全候选失败时降级为带
- * streamCallback 的正常单次调用，用户无感。
- *
- * 成本约束（roadmap 3.3.d）：落选候选 + judge 的 usage 作为 overhead 记入成本统计
- * （ctx.recordTokenUsage → budgetService），但不进上下文长度估算——上下文路径
- * （streamHandler 累计 ctx.stats.totalInputTokens/totalOutputTokens、line ~820 的赢家估算）
- * 只见到赢家的 response.usage。
- */
-async function runMaxModeInference(
-  ctx: ContextAssemblyCtx,
-  messages: ModelMessage[],
-  tools: ToolDefinition[],
-  requestConfig: ModelConfig,
-  streamCallback: StreamCallback,
-  engineOptions: InferenceOptions,
-): Promise<ModelResponse> {
-  const { onSnapshot: _onSnapshot, ...restOptions } = engineOptions;
-  const silentOptions: InferenceOptions = { ...restOptions, suppressModelDecisionEvent: true };
-  const judgeOptions = cacheOptionsForMaxModeCall(silentOptions, 'judge');
-  const signal = ctx.runtime.control.abortController?.signal;
-  const candidates = ctx.runtime.maxModeCandidates;
-  ctx.taskProgress.emitTaskProgress('thinking', `Max Mode：${candidates} 个候选并行起草中...`);
-
-  // overhead 逐条按实际路由模型分账（adaptive 路由后可能 ≠ 请求模型，Codex R1-M2）；
-  // 不走 ctx.recordTokenUsage——那条路径固定记在请求模型名下
-  const recordOverheadEntries = (entries: Array<{ inputTokens: number; outputTokens: number; actualProvider?: string; actualModel?: string }>) => {
-    for (const entry of entries) {
-      getBudgetService(ctx.runtime.budgetScope).recordUsage({
-        inputTokens: entry.inputTokens,
-        outputTokens: entry.outputTokens,
-        model: entry.actualModel ?? requestConfig.model,
-        provider: entry.actualProvider ?? requestConfig.provider,
-        timestamp: Date.now(),
-        sessionId: ctx.runtime.sessionId,
-      });
-    }
-  };
-
-  let stepResult;
-  try {
-    stepResult = await runMaxModeStep(
-      {
-        silentEngine: (msgs, tls, kind) =>
-          runEngineInference(
-            ctx,
-            msgs,
-            tls,
-            requestConfig,
-            undefined,
-            signal,
-            kind === 'judge' ? judgeOptions : silentOptions,
-          ),
-        streamingEngine: (msgs, tls) =>
-          runEngineInference(ctx, msgs, tls, requestConfig, streamCallback, signal, engineOptions),
-        // 取消/转向/中断时丢弃整个 step（含已完成的部分赢家），走外层既有取消语义
-        isAborted: () =>
-          Boolean(ctx.runtime.control.isCancelled || ctx.runtime.control.isInterrupted || ctx.runtime.turn.needsReinference),
-      },
-      { messages, tools, candidates },
-    );
-  } catch (error) {
-    // 中止丢弃整个 step，但已完成候选/judge 的 token 是真实花费——
-    // 先记沉没成本再重抛，由外层取消语义接管（Codex R2-M1）
-    if (error instanceof MaxModeAbortError) {
-      recordOverheadEntries(error.overheadEntries);
-    }
-    throw error;
-  }
-  const { response, stats } = stepResult;
-  recordOverheadEntries(stats.overheadEntries);
-  response.runtimeDiagnostics = {
-    ...response.runtimeDiagnostics,
-    maxMode: {
-      candidates: stats.candidates,
-      survivors: stats.survivors,
-      winner: stats.winner,
-      degraded: stats.degraded,
-      judgeParsed: stats.judgeParsed,
-      overheadInputTokens: stats.overhead.inputTokens,
-      overheadOutputTokens: stats.overhead.outputTokens,
-    },
-  };
-  return response;
 }
 
 export async function inference(ctx: ContextAssemblyCtx): Promise<ModelResponse> {
@@ -911,7 +821,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
         // 收尾轮（步数/预算/墙钟耗尽后的 forceFinalResponse）只许一次推理：
         // Max Mode 的 N 候选 + judge 会把已经超支的资源再放大 N+1 倍。
         ctx.runtime.maxMode && !ctx.runtime.control.forceFinalResponseReason && maxModeBudgetHeadroomOk(ctx)
-          ? runMaxModeInference(ctx, modelMessages, effectiveTools, requestConfig, streamCallback, engineOptions)
+          ? runMaxModeInference(ctx, modelMessages, effectiveTools, requestConfig, streamCallback, engineOptions, runEngineInference)
           : runEngineInference(ctx, modelMessages, effectiveTools, requestConfig, streamCallback, inferenceAbortController.signal, engineOptions)
       ));
       roundSucceeded = true;
@@ -961,7 +871,7 @@ async function inferenceInternal(ctx: ContextAssemblyCtx): Promise<ModelResponse
     if (providerUsage && providerUsage.inputTokens > 0) {
       ctx.recordTokenUsage(providerUsage.inputTokens, providerUsage.outputTokens, {
         cacheReadTokens: providerUsage.cacheReadTokens,
-        cacheCreationTokens: providerUsage.cacheCreationTokens,
+        cacheCreationTokens: providerUsage.cacheCreationTokens, serviceTier: providerUsage.serviceTier,
       }, 'provider');
       // N-CTXTRUTH: 真源透传给当轮健康更新（turn 末 updateContextHealth 消费；cache 口径在 service 内统一相加）
       ctx.runtime.contextHealth.setLastTurnProviderUsage({ ...providerUsage, provider: ctx.runtime.modelConfig.provider });

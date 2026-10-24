@@ -80,21 +80,19 @@ export const CORE_TOOLS: string[] = [
  * 用于搜索匹配，不包含完整的工具定义
  */
 export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
-  // ============================================================================
-  // 2026-08-14 从 CORE_TOOLS 挪出（L8 注意力预算 N-L8-SLIM2）
-  // ----------------------------------------------------------------------------
-  // 这六个此前每轮全额下发 schema，而真库 4748 次工具调用里合计只被用到 5 次
-  // （MemoryRead 4 / Append 1，其余四个 0）。挪进按需加载后每轮只占名字索引，成本以
-  // cl100k_base BPE 实测值为准（见 injection-panorama），模型要用时 `select:<name>` 拉全量。
-  //
-  // aliases 中英都给：ToolSearch 的关键词召回是纯词法匹配，没有语义理解——中文提问
-  // 命不中英文 shortDescription，实测有会话为找一个工具换六种说法搜了 8 次。
-  // ============================================================================
+  // 2026-08-14 从 CORE 挪出的低频工具。aliases 中英都给（ToolSearch 是词法匹配）；要用时 select:<name>。
   {
     name: 'MemoryWrite',
     shortDescription: '写入/更新/删除长期记忆文件（markdown + frontmatter）',
     tags: ['memory', 'file'],
     aliases: ['memory_write', 'save memory', 'remember this', '记住', '写入记忆', '存记忆'],
+    source: 'builtin',
+  },
+  {
+    name: 'ProposeProjectMemory',
+    shortDescription: '把当前目录的项目记忆草稿写成待确认候选，不覆盖已有',
+    tags: ['memory'],
+    aliases: ['init-memory', '项目记忆', '记忆草稿', 'propose project memory'],
     source: 'builtin',
   },
   {
@@ -542,6 +540,16 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     shortDescription: 'AI 生成视频',
     tags: ['media'],
     aliases: ['video', 'movie', 'animation'],
+    source: 'builtin',
+  },
+  {
+    // N-MEDIA-GEN-MUSIC-FALLBACK：music_generate 由 builtin.musicGeneration 插件注册，
+    // 注册即可发现门（toolRegistrationDiscoverability）只扫 registerMigratedTools，
+    // 漏登索引时工具「已注册但模型够不着」——真跑实测 select:music_generate 0 命中。
+    name: 'music_generate',
+    shortDescription: 'AI 生成音乐',
+    tags: ['media'],
+    aliases: ['music', 'bgm', 'song', 'melody'],
     source: 'builtin',
   },
   {

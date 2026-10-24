@@ -18,7 +18,7 @@ import {
   FileCheck2,
   ShieldAlert,
 } from 'lucide-react';
-import { Input } from '../../../primitives';
+import { Input, Button } from '../../../primitives';
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { IPC_DOMAINS } from '@shared/ipc/domains';
@@ -34,8 +34,8 @@ import { WebModeBanner } from '../WebModeBanner';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import ipcService from '../../../../services/ipcService';
 import { useAppStore, type SettingsMemoryFocus } from '../../../../stores/appStore';
+import { useExternalImportStore } from '../../../../stores/externalImportStore';
 import { MemoryEntriesManager } from './MemoryEntriesManager';
-import { MemoryHarnessImportSection } from './MemoryHarnessImportSection';
 import { MemoryConsolidationSection } from './MemoryConsolidationSection';
 import { KnowledgeInboxSection } from './KnowledgeInboxSection';
 import { MemoryDiagnosticsSection } from './MemoryDiagnosticsSections';
@@ -343,6 +343,33 @@ async function invokeLightMemory<T>(request: LightMemoryRequest): Promise<LightM
 // Component
 // ============================================================================
 
+/** 检测到其他 AI 应用来源时的导入页入口（替换原 MemoryHarnessImportSection 块）。 */
+export const ExternalImportLinkSection: React.FC = () => {
+  const { t } = useI18n();
+  const linkText = t.settings.externalImport.memoryLink;
+  const detectionStatus = useExternalImportStore((state) => state.status);
+  const ensureChecked = useExternalImportStore((state) => state.ensureChecked);
+  useEffect(() => {
+    void ensureChecked();
+  }, [ensureChecked]);
+  if (detectionStatus !== 'available') return null;
+  return (
+    <SettingsSection title={linkText.title} description={linkText.description}>
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-700/70 bg-zinc-900/60 px-3 py-3">
+        <div className="min-w-0 text-xs text-zinc-500">{t.settings.externalImport.unaffectedLine}</div>
+        <Button
+          variant="secondary"
+          size="sm"
+          leftIcon={<FileCheck2 className="h-3.5 w-3.5" />}
+          onClick={() => useAppStore.getState().openSettingsTab('external-import')}
+        >
+          {linkText.button}
+        </Button>
+      </div>
+    </SettingsSection>
+  );
+};
+
 export const MemoryTab: React.FC = () => {
   const { t, language } = useI18n();
   const memoryText = t.settings.memory;
@@ -602,7 +629,7 @@ export const MemoryTab: React.FC = () => {
 
       <MemoryConsolidationSection />
 
-      <MemoryHarnessImportSection onChanged={loadData} />
+      <ExternalImportLinkSection />
 
       <MemoryEntriesManager onChanged={loadData} />
 

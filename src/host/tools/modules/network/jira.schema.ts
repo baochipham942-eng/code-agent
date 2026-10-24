@@ -95,6 +95,7 @@ jira {
   permissionLevel: 'network',
   readsUntrustedContent: 'annotate',
   readOnly: false,
+  touchesWorkDirectory: false,
   allowInPlanMode: false,
   accesses: [
     { kind: 'readwrite', expression: 'resource(jira, issues)' },

@@ -59,5 +59,6 @@ Use this only when the user explicitly wants to send an email now.`,
     compensationAction: 'send_correction_or_recall_message_when_supported',
   },
   readOnly: false,
+  touchesWorkDirectory: false,
   allowInPlanMode: false,
 };

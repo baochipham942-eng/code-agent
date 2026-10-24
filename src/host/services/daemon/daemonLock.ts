@@ -20,10 +20,12 @@
 //   - release：只有「文件还是本进程写的、且身份仍吻合」才删——崩溃/重启过的
 //     进程跑迟到的 shutdown 回调也删不掉接任者的锁。失败不挡退出：残留文件
 //     按陈旧锁被下次接管。
-//   - win32：锁整个不生效（acquire 直接成功且不写文件、release no-op）——win32
-//     没有进程身份源，每个活 pid 都是 unknown，取了锁会在硬杀 + pid 复用后变成
-//     永久让位死锁（app 再也起不来，CLI 也清不掉）。平台判据单一真源在
-//     isDaemonLockSupported，别处不要再写平台字面量。
+//   - win32：身份源是 PowerShell CIM 探针（windowsIdentityProbeScript，镜像
+//     resident_host_windows.rs 同一字符串），但锁的启用开关
+//     WEB_DAEMON.WINDOWS_LOCK_ENABLED 保持 false——探针输出形状是文档口径，
+//     还没在真 Windows 机上验过（WIN-ATTACH-REALDEVICE 翻开关 + 真机检查）。
+//     开关关闭期间 acquire 直接成功且不写文件、release no-op，与裁剪前一致。
+//     平台判据单一真源在 isDaemonLockSupported，别处不要再写平台字面量。
 //
 // 本模块只管锁，不问端口（端口冲突仍由 portCleanup / EADDRINUSE 路径处理），
 // 也不 kill 任何进程（那是 CLI daemon stop 的事）；唯一的子进程调用是只读的
@@ -61,21 +63,67 @@ interface PidFileFingerprint {
 }
 
 /**
- * 锁的平台判据（单一真源，acquire/release/CLI 共用）：win32 不取锁也不执行锁。
- * win32 没有进程身份源（readProcessIdentity 恒 null）→ 每个活 pid 都是 unknown →
- * 硬杀 + pid 复用后 acquire 永远让位，app 再也起不来，`neo daemon status/stop`
- * 也清不掉。锁是 ADR-083 「mac 先行」的一部分，Windows 支持另开单据后再补身份源。
+ * 锁的平台判据（单一真源，acquire/release/CLI 共用）：mac/linux 恒真；win32 看
+ * WEB_DAEMON.WINDOWS_LOCK_ENABLED（默认 false：身份探针的输出形状还没在真
+ * Windows 机上验过，WIN-ATTACH-REALDEVICE 翻开关）。开关关闭期间 win32 不取锁
+ * 也不执行锁——每个活 pid 都当 unknown，取了锁会在硬杀 + pid 复用后变成永久
+ * 让位死锁（app 再也起不来，`neo daemon status/stop` 也清不掉）。
  */
-// win32: no process identity source; lock is mac/linux only until a Windows ticket
 export function isDaemonLockSupported(): boolean {
-  return process.platform === 'darwin' || process.platform === 'linux';
+  if (process.platform === 'darwin' || process.platform === 'linux') return true;
+  return process.platform === 'win32' && WEB_DAEMON.WINDOWS_LOCK_ENABLED;
 }
 
-/** 读进程身份（`ps lstart=,command=`，macOS/Linux 可用）：startTime 是进程启动
- * 标记，command 是完整命令行。pid 被操作系统复用后 startTime 会变；守护是 node
- * 进程，command 不含 node 也说明 pid 已归别的进程。平台不支持 / 读不出 → null，
- * 调用方按身份未知 fail-closed，不把陌生活进程当成我们的守护。 */
-function readProcessIdentity(pid: number): { startTime: string; command: string } | null {
+/** 身份读出结果：startTime 是启动标记原文（unix 为 ps lstart、win32 为 CIM
+ * CreationDate 的 ISO-8601），command 是完整命令行；nodeMatchIgnoreCase 标记
+ * 命令行来自 win32 探针（镜像名大小写不固定，node 判据按小写比对）。 */
+interface ProcessIdentity {
+  startTime: string;
+  command: string;
+  nodeMatchIgnoreCase: boolean;
+}
+
+/**
+ * win32 身份探针脚本（与 src-tauri/src/resident_host_windows.rs 的
+ * windows_identity_probe_script 是同一字符串，改就两边一起改）。stdout 形如
+ * `2026-10-23T08:15:42.1234567Z C:\...\node.exe ...`：CreationDate 转 UTC 后
+ * 按 ISO-8601 round-trip（'o'）输出，空格后跟 CommandLine。pid 不存在时 `if
+ * ($p)` 不成立、输出为空；CommandLine 为 null 时只有时间戳没有命令段。
+ */
+function windowsIdentityProbeScript(pid: number): string {
+  return `$p = Get-CimInstance Win32_Process -Filter "ProcessId=${pid}"; if ($p) { $p.CreationDate.ToUniversalTime().ToString('o') + ' ' + $p.CommandLine }`;
+}
+
+/** 探针输出形状：ISO-8601 时间戳（'o' 档固定 7 位小数；容忍 0-7 位变体）+ 空格
+ * 分隔 + 非空命令行。空输出 / 只有时间戳（CommandLine 为 null）/ 形状不对 →
+ * null（身份未知，fail-closed）。 */
+const WINDOWS_IDENTITY_PATTERN = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?Z)\s+(\S.*)$/;
+
+/** 纯解析 win32 探针 stdout（镜像 resident_host_windows.rs parse_windows_identity）：
+ * trim 后按上面的形状取 (startTime, command)；解析不出 → null。 */
+function parseWindowsIdentityOutput(raw: string): { startTime: string; command: string } | null {
+  const parsed = WINDOWS_IDENTITY_PATTERN.exec(raw.trim());
+  return parsed ? { startTime: parsed[1], command: parsed[2] } : null;
+}
+
+/** 读进程身份：darwin/linux 走 `ps lstart=,command=`，win32 走 PowerShell CIM
+ * 探针。startTime 是进程启动标记，command 是完整命令行。pid 被操作系统复用后
+ * startTime 会变；守护是 node 进程，command 不含 node 也说明 pid 已归别的进程。
+ * 平台不支持 / 读不出 → null，调用方按身份未知 fail-closed，不把陌生活进程
+ * 当成我们的守护。 */
+function readProcessIdentity(pid: number): ProcessIdentity | null {
+  if (process.platform === 'win32') {
+    try {
+      const raw = execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', windowsIdentityProbeScript(pid)], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      const parsed = parseWindowsIdentityOutput(raw);
+      return parsed ? { ...parsed, nodeMatchIgnoreCase: true } : null;
+    } catch {
+      return null;
+    }
+  }
   if (process.platform !== 'darwin' && process.platform !== 'linux') return null;
   try {
     const raw = execFileSync('ps', ['-p', String(pid), '-o', 'lstart=,command='], {
@@ -84,10 +132,18 @@ function readProcessIdentity(pid: number): { startTime: string; command: string 
     }).trim();
     // lstart 形如 `Sat Oct 11 22:29:33 2026`（日月不足两位补空格），其后跟命令行。
     const parsed = /^(\w{3}\s+\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})\s+(\S.*)$/.exec(raw);
-    return parsed ? { startTime: parsed[1], command: parsed[2] } : null;
+    return parsed ? { startTime: parsed[1], command: parsed[2], nodeMatchIgnoreCase: false } : null;
   } catch {
     return null;
   }
+}
+
+/** 守护是 node 进程：命令行含 node 才算 owned。win32 命令行的镜像名大小写不
+ * 固定（node.exe / NODE.EXE），按小写比对；unix 命令行保持原样精确子串
+ * （大小写敏感，行为与既有 darwin/linux 判据一致）。 */
+function commandContainsNode(identity: ProcessIdentity): boolean {
+  const command = identity.nodeMatchIgnoreCase ? identity.command.toLowerCase() : identity.command;
+  return command.includes('node');
 }
 
 function readPidFile(pidPath: string): PidFileContent {
@@ -167,7 +223,7 @@ export function inspectDaemonPid(record: DaemonPidRecord): DaemonPidState {
   // pid 已被复用。
   if (identity.command.endsWith('<defunct>')) return 'dead';
   if (identity.startTime !== record.startTime) return 'foreign';
-  return identity.command.includes('node') ? 'owned' : 'foreign';
+  return commandContainsNode(identity) ? 'owned' : 'foreign';
 }
 
 /** 读 pid 文件状态给客户端面（`neo daemon status/stop`）用。 */

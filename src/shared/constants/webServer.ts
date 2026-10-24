@@ -43,6 +43,14 @@ export const WEB_DAEMON = {
   POLL_INTERVAL_MS: 250,
   /** `neo daemon stop` 发出 SIGTERM 后等 daemon 退出的上限（ms），须 ≥ DRAIN_GRACE_MS。 */
   STOP_WAIT_MS: 65_000,
+  /**
+   * win32 进程身份源/单实例锁的启用开关（N-RESIDENT-HOST-SHELL-WIN-ATTACH）。
+   * 逻辑（PowerShell CIM 身份探针 + 解析 + 判别）已落地并被测试钉住，但开关
+   * 保持 false：身份探针的输出形状是文档口径的夹具，还没在真 Windows 机上验过
+   * （WIN-ATTACH-REALDEVICE 单独翻 true 并做三项真机检查）。放常量而不是
+   * 函数内字面量，测试才能 vi.mock 整个常量模块来翻转。
+   */
+  WINDOWS_LOCK_ENABLED: false,
 } as const;
 
 /** Tauri boot handshake: a fresh 256-bit lowercase hex nonce per health probe. */

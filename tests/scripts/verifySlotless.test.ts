@@ -331,10 +331,18 @@ describe('slotless verification scripts', () => {
       pid: 2_147_483_647,
       marker,
     }));
+    // 夹具 pid 必须落在系统不会分配的区间：低位固定 pid 在全新 CI 容器里可能恰好
+    // 等于本 vitest worker 的 pid，被 findOwnedResidualProcesses 的自保删除
+    // （candidatePids.delete(process.pid)）剔出回收名单，断言就少一个 SIGTERM
+    // （Swarm CI run 40050328572 实录，本地低位 pid 环境难复现）。state.pid 用
+    // 2^31-1 是同一手法。
+    const cuaPid = 2_000_000_101;
+    const chromePid = 2_000_000_102;
+    const siblingPid = 2_000_000_103;
     const commands = new Map([
-      [4101, `${path.resolve('.tauri-resources.noindex/scripts/Agent Neo Computer Use.app/Contents/MacOS/cua-driver')} serve --socket ${dir}/runtime-tmp/cua.sock`],
-      [4102, `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --user-data-dir=${dir}/playwright-profile`],
-      [4103, '/opt/ms-playwright/chromium --user-data-dir=/tmp/neo-verify-sibling/playwright-profile'],
+      [cuaPid, `${path.resolve('.tauri-resources.noindex/scripts/Agent Neo Computer Use.app/Contents/MacOS/cua-driver')} serve --socket ${dir}/runtime-tmp/cua.sock`],
+      [chromePid, `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --user-data-dir=${dir}/playwright-profile`],
+      [siblingPid, '/opt/ms-playwright/chromium --user-data-dir=/tmp/neo-verify-sibling/playwright-profile'],
     ]);
     const alive = new Set(commands.keys());
     const signals: Array<{ pid: number; signal: string }> = [];
@@ -357,10 +365,10 @@ describe('slotless verification scripts', () => {
     await stopRun(dir, { residualRuntime });
 
     expect(signals).toEqual([
-      { pid: 4101, signal: 'SIGTERM' },
-      { pid: 4102, signal: 'SIGTERM' },
+      { pid: cuaPid, signal: 'SIGTERM' },
+      { pid: chromePid, signal: 'SIGTERM' },
     ]);
-    expect(alive.has(4103)).toBe(true);
+    expect(alive.has(siblingPid)).toBe(true);
     expect(pgrepCalls).toBeGreaterThanOrEqual(4);
     expect(existsSync(dir)).toBe(false);
   });
@@ -375,8 +383,9 @@ describe('slotless verification scripts', () => {
     }));
     let clock = 0;
     const signals: string[] = [];
+    const survivorPid = 2_000_000_201; // 同上：避开 process.pid 自保删除的可分配区间
     const residualRuntime = {
-      pgrep: () => [4201],
+      pgrep: () => [survivorPid],
       command: () => `/opt/ms-playwright/chromium --user-data-dir=${dir}/playwright-profile`,
       isAlive: () => true,
       signal: (_pid: number, signal: string) => signals.push(signal),
@@ -384,7 +393,7 @@ describe('slotless verification scripts', () => {
       now: () => clock,
     };
 
-    await expect(stopRun(dir, { residualRuntime })).rejects.toThrow('slotless residual processes remain after cleanup: 4201');
+    await expect(stopRun(dir, { residualRuntime })).rejects.toThrow(`slotless residual processes remain after cleanup: ${survivorPid}`);
 
     expect(signals).toEqual(['SIGTERM', 'SIGKILL']);
     expect(existsSync(dir)).toBe(true);

@@ -55,5 +55,6 @@ Use this when the user wants to edit or complete a real local reminder.`,
   category: 'mcp',
   permissionLevel: 'write',
   readOnly: false,
+  touchesWorkDirectory: false,
   allowInPlanMode: false,
 };

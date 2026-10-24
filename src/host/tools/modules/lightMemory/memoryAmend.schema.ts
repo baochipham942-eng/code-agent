@@ -37,5 +37,6 @@ export const memoryAmendSchema: ToolSchema = {
   category: 'fs',
   permissionLevel: 'write',
   readOnly: false,
+  touchesWorkDirectory: false,
   allowInPlanMode: true,
 };

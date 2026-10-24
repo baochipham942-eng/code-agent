@@ -143,6 +143,7 @@ import { memoryWriteSchema } from './lightMemory/memoryWrite.schema';
 import { episodicRecallSchema } from './lightMemory/episodicRecall.schema';
 import { memorySearchSchema } from './lightMemory/memorySearch.schema';
 import { memoryAmendSchema } from './lightMemory/memoryAmend.schema';
+import { proposeProjectMemorySchema } from './lightMemory/proposeProjectMemory.schema';
 // selfwake/
 import { sleepUntilSchema, wakeOnEventSchema, wakeOnSchema } from './selfwake/selfWake.schema';
 import { historySchema } from './lightMemory/history.schema';
@@ -772,6 +773,10 @@ export function registerMigratedTools(registry: ToolRegistry, platform: NodeJS.P
   registry.register(
     memoryAmendSchema,
     async () => (await import('./lightMemory/memoryAmend')).memoryAmendModule,
+  );
+  registry.register(
+    proposeProjectMemorySchema,
+    async () => (await import('./lightMemory/proposeProjectMemory')).proposeProjectMemoryModule,
   );
 
   // selfwake (3): agent 自发挂起-续跑

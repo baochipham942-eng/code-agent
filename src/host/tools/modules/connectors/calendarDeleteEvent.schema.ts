@@ -28,5 +28,6 @@ Use this only when the user explicitly wants to remove a real local calendar eve
   category: 'mcp',
   permissionLevel: 'write',
   readOnly: false,
+  touchesWorkDirectory: false,
   allowInPlanMode: false,
 };

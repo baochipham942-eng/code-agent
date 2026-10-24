@@ -1,1 +1,1 @@
-export const RENDERER_INTERNAL_SDK_VERSION = '4cb7132f';
+export const RENDERER_INTERNAL_SDK_VERSION = '7b8ae811';

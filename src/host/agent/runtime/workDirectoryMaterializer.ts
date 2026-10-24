@@ -87,3 +87,25 @@ export function materializeRunWorkDirectoryOnce(
   attempts.set(dir, attempt);
   return attempt;
 }
+
+/**
+ * 懒开落盘判定（N-DELIVERABLE-WORKDIR-LAZY-FU1）：工具定义已注册、未声明只读、
+ * 且未显式声明「不碰工作目录」时才落盘。readOnly 覆盖面太粗——AskUserQuestion /
+ * confirm_action / MemoryWrite / memory_amend 都不是只读，但 handler 全都不碰 cwd，
+ * 此前会在 ~/Neo 留下空任务夹。精化是 schema 上的显式 opt-out（单一真源），
+ * 这里不枚举工具名；缺省保持落盘（fail-safe：cwd 缺失会让 Bash/Process 派发失败）。
+ *
+ * Bash 决策（N-DELIVERABLE-WORKDIR-LAZY-FU1-FU1，刻意保持永远落盘、不做逐调用豁免）：
+ * ① Bash 以会话目录为 spawn cwd，目录缺失 = ENOENT，无法事后补救；② 现成的
+ * isReadOnlyShellCommand（agent/antiPattern/detector.ts）只是文件读取启发式，拿它当
+ * 豁免门会把 `pwd`（依赖 cwd 存在）与 `echo x > f`（看似无害实则写盘）这类形状
+ * 误分类；③ schema 标志是按工具粒度、不是按调用粒度——Bash 单工具内读写混合，
+ * 唯一安全档就是全部落盘，也不在此枚举工具名单。
+ */
+export function shouldMaterializeWorkDirectoryForTool(
+  definition: { readOnly?: boolean; touchesWorkDirectory?: false } | undefined,
+): boolean {
+  return definition !== undefined
+    && definition.readOnly !== true
+    && definition.touchesWorkDirectory !== false;
+}

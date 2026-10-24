@@ -235,9 +235,9 @@ function isArtifactValidationFailure(metadata?: Record<string, unknown> | null):
 }
 
 /**
- * host 侧已下发 metadata.code 的门（toolExecutor.ts / toolResolver.ts），与 i18n
- * `toolErrors.codes` 的键一一对应——本单只登记、不新造 code。登记的都是运行内
- * agent 可自行恢复的门（换路径/换工具/重新发起确认），一律不升级全局 banner。
+ * host 侧已下发 metadata.code 的门（toolExecutor.ts / toolResolver.ts / 内置工具），与 i18n
+ * `toolErrors.codes` 的键一一对应——新造 code 时 host 下发方与两侧 i18n 同步登记。登记的都是
+ * 运行内 agent 可自行恢复的门（换路径/换工具/重新发起确认），一律不升级全局 banner。
  */
 type RegisteredToolErrorCode = keyof Translations['toolErrors']['codes'];
 
@@ -257,6 +257,8 @@ const REGISTERED_TOOL_ERROR_CODES: ReadonlySet<RegisteredToolErrorCode> = new Se
   'BROWSER_RESUME_STATE_IMPORT_FAILED',
   'BROWSER_COMPUTER_HIGH_RISK_BLOCKED',
   'INJECTION_CEILING',
+  'MUSIC_SERVICE_UNAVAILABLE',
+  'MUSIC_SERVICE_UNAVAILABLE_NO_ALTERNATIVE',
 ]);
 
 /**

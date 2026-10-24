@@ -6,6 +6,7 @@ import { memoryInjectionPauses, resumeMemoryInjection } from '../memory/memoryUs
 import type { IpcMain } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { getSessionManager, getDatabase } from '../services';
+import { getHomeDir } from '../config/configPaths';
 import type { MemoryRecord as StoredMemoryRecord } from '../services/core/repositories';
 import type { MemoryItem, MemoryCategory, MemoryExport, MemoryStats } from '../../shared/contract';
 import { createLogger } from '../services/infra/logger';
@@ -41,7 +42,12 @@ import {
   confirmMemoryHarnessDirective,
   dryRunMemoryHarnessImport,
 } from '../memory/importers';
-import { draftProjectMemory } from '../memory/projectMemoryDraft';
+import { detectExternalImportSources } from '../externalImport/detectSources';
+import {
+  applyExternalSkillsImport,
+  previewExternalSkillsImport,
+  setClaudeLegacySkillsEnabled,
+} from '../externalImport/skillsImport';
 import {
   KNOWLEDGE_INBOX_DECISION_CATEGORY,
   hashInboxContent,
@@ -62,10 +68,13 @@ import type {
   MemoryImportV2ApplyRequest,
   MemoryMirrorRebuildResult,
   MemoryPackRequest,
-  ProjectMemoryDraftRequest,
-  ProjectMemoryDraftResult,
   MemoryEntryListResult,
 } from '../../shared/contract/memory';
+import type {
+  ExternalImportSetClaudeLegacySkillsRequest,
+  ExternalSkillsApplyRequest,
+  ExternalSkillsPreviewRequest,
+} from '../../shared/contract/externalImport';
 import { respondToDirectiveMemoryConfirmation } from '../memory/directiveMemoryConfirmation';
 
 const logger = createLogger('MemoryIPC');
@@ -591,25 +600,19 @@ async function handleMemoryEntryBatchReview(payload: MemoryEntryBatchReviewReque
 }
 
 async function handleMemoryHarnessImportDryRun(payload: MemoryImportDryRunRequest): Promise<Awaited<ReturnType<typeof dryRunMemoryHarnessImport>>> {
-  return dryRunMemoryHarnessImport(getDatabase(), payload || {});
+  return dryRunMemoryHarnessImport(getDatabase(), { homeDir: getHomeDir(), ...(payload || {}) });
 }
 
 async function handleMemoryHarnessImportApply(payload: MemoryImportApplyRequest): Promise<Awaited<ReturnType<typeof applyMemoryHarnessImport>>> {
-  return applyMemoryHarnessImport(getDatabase(), payload || {});
+  return applyMemoryHarnessImport(getDatabase(), { homeDir: getHomeDir(), ...(payload || {}) });
 }
 
 async function handleMemoryHarnessImportConfirmDirective(payload: MemoryImportDirectiveConfirmRequest): Promise<Awaited<ReturnType<typeof confirmMemoryHarnessDirective>>> {
   if (!payload?.instructionId) throw new Error('directive import confirmation requires instructionId');
   return confirmMemoryHarnessDirective(getDatabase(), payload.instructionId, {
+    homeDir: getHomeDir(),
     adapterIds: payload.adapterIds,
   });
-}
-
-async function handleMemoryInitProjectDraft(payload: ProjectMemoryDraftRequest): Promise<ProjectMemoryDraftResult> {
-  if (!payload?.projectDir || typeof payload.projectDir !== 'string') {
-    throw new Error('memory init project draft requires projectDir');
-  }
-  return draftProjectMemory(getDatabase(), { projectDir: payload.projectDir });
 }
 
 async function handleLightMemoryArchive(filename: string): Promise<boolean> {
@@ -889,8 +892,13 @@ const memoryRoutes = defineDomainRoutes<MemoryDomainRequest, void>(
     memoryHarnessImportApply: (_ctx, payload) => handleMemoryHarnessImportApply(payload as MemoryImportApplyRequest),
     memoryHarnessImportConfirmDirective: (_ctx, payload) =>
       handleMemoryHarnessImportConfirmDirective(payload as MemoryImportDirectiveConfirmRequest),
-    memoryInitProjectDraft: (_ctx, payload) =>
-      handleMemoryInitProjectDraft(payload as ProjectMemoryDraftRequest),
+    externalImportDetectSources: () => detectExternalImportSources(getDatabase()),
+    externalImportSkillsPreview: (_ctx, payload) =>
+      previewExternalSkillsImport(payload as ExternalSkillsPreviewRequest),
+    externalImportSkillsApply: (_ctx, payload) =>
+      applyExternalSkillsImport(payload as ExternalSkillsApplyRequest),
+    externalImportSetClaudeLegacySkills: (_ctx, payload) =>
+      setClaudeLegacySkillsEnabled((payload as ExternalImportSetClaudeLegacySkillsRequest).enabled),
   },
   {
     resolveErrorCode: (error) => {
@@ -995,9 +1003,6 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
           break;
         case 'memoryHarnessImportConfirmDirective':
           data = await handleMemoryHarnessImportConfirmDirective(request as unknown as MemoryImportDirectiveConfirmRequest);
-          break;
-        case 'memoryInitProjectDraft':
-          data = await handleMemoryInitProjectDraft(request as unknown as ProjectMemoryDraftRequest);
           break;
         default:
           return { success: false, error: `Unknown action: ${request.action}` };

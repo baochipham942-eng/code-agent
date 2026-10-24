@@ -85,7 +85,7 @@ import {
 import { applyReadLoopHardLimit, isReadLikeToolCall, releaseReadLoopSealAfterSuccessfulWrite } from './readLoopSeal';
 import { getArtifactLocatorPreflightBlock } from '../../tools/artifacts/artifactLocatorHost';
 import { createToolExecutionWatchdog } from './toolExecutionTimeout';
-import { materializeRunWorkDirectoryOnce } from './workDirectoryMaterializer';
+import { materializeRunWorkDirectoryOnce, shouldMaterializeWorkDirectoryForTool } from './workDirectoryMaterializer';
 import { getBackgroundSubagentRegistry } from '../backgroundSubagentRegistry';
 import { formatSystemReminderForCompletions } from '../subagentCompletionNotification';
 import { planContextTag } from './planApprovalRunBoundary';
@@ -714,10 +714,10 @@ export class ToolExecutionEngine {
       return emitBlockedToolResult(blockedResult);
     }
 
-    // 懒开目录（N-DELIVERABLE-WORKDIR-LAZY）：无文件夹会话的工作目录到首个非只读
-    // 工具派发前才落盘；只读工具不触发，纯问答会话不产生任何目录。sessionId 用于
-    // 撞名残留的留痕检查（rework r2）。
-    if (definition && definition.readOnly !== true) {
+    // 懒开目录（N-DELIVERABLE-WORKDIR-LAZY/FU1）：无文件夹会话的工作目录到首个
+    // 会写工作目录的工具派发前才落盘；只读与显式声明不碰 cwd 的工具（问答/记忆类，
+    // shouldMaterializeWorkDirectoryForTool）不触发。sessionId 用于撞名残留留痕（r2）。
+    if (shouldMaterializeWorkDirectoryForTool(definition)) {
       await materializeRunWorkDirectoryOnce(this.ctx.workingDirectory, { sessionId: this.ctx.sessionId });
     }
 

@@ -18,8 +18,8 @@ import { classifyIntent, evaluateOutcome } from './intentClassifier';
 import type { TelemetrySession, TelemetryTurn, TelemetryModelCall, TelemetryToolCall, TelemetryTimelineEvent, TelemetryAdapter, QualitySignals, TelemetryPushEvent, DiagnosticTriggerReason } from '../../shared/contract/telemetry';
 import type { AgentEvent } from '../../shared/contract';
 import { INCOMPLETE_TOOL_RESULT_MARKER } from '../../shared/contract/agentTrajectory';
-import { redactCredentialText } from '../../shared/security/secretPatterns';
 import { sanitizeBrowserComputerToolResult } from '../../shared/utils/browserComputerRedaction';
+import { getErrorSummary, getToolPerformance, redactTelemetryModelCall, redactTelemetryToolCall } from './telemetryCollectorQueries';
 import {
   classifyError,
   extractComputerSurfaceFields,
@@ -38,29 +38,6 @@ export { classifyError } from './telemetryCollectorInternal';
 
 
 const logger = createLogger('TelemetryCollector');
-
-function redactTelemetryString(value: string | undefined): string | undefined {
-  return typeof value === 'string' ? redactCredentialText(value) : value;
-}
-
-function redactTelemetryModelCall(call: TelemetryModelCall): TelemetryModelCall {
-  return {
-    ...call,
-    prompt: redactTelemetryString(call.prompt),
-    completion: redactTelemetryString(call.completion),
-    error: redactTelemetryString(call.error),
-  };
-}
-
-function redactTelemetryToolCall<T extends TelemetryToolCall>(call: T): T {
-  return {
-    ...call,
-    arguments: redactCredentialText(call.arguments),
-    actualArguments: redactTelemetryString(call.actualArguments),
-    resultSummary: redactCredentialText(call.resultSummary),
-    error: redactTelemetryString(call.error),
-  };
-}
 
 
 export class TelemetryCollector {
@@ -1118,19 +1095,7 @@ export class TelemetryCollector {
     avgDurationMs: number;
     successRate: number;
   }> {
-    try {
-      const storage = this.storage;
-      const stats = storage.getToolUsageStats(sessionId);
-      return stats.map((s: { name: string; callCount: number; successCount: number; avgDurationMs: number; successRate: number }) => ({
-        name: s.name,
-        total: s.callCount,
-        success: s.successCount,
-        avgDurationMs: s.avgDurationMs,
-        successRate: s.successRate
-      }));
-    } catch {
-      return [];
-    }
+    return getToolPerformance(this.storage, sessionId);
   }
 
   /**
@@ -1141,37 +1106,7 @@ export class TelemetryCollector {
     errorsByTool: Record<string, number>;
     topErrors: Array<{ error: string; count: number }>;
   } {
-    const result = {
-      totalErrors: 0,
-      errorsByTool: {} as Record<string, number>,
-      topErrors: [] as Array<{ error: string; count: number }>
-    };
-
-    try {
-      const storage = this.storage;
-      const toolCalls = storage.getToolCallsBySession(sessionId);
-
-      const failedCalls = toolCalls.filter((tc: { success: boolean }) => !tc.success);
-      result.totalErrors = failedCalls.length;
-
-      const errorCounts = new Map<string, number>();
-      for (const tc of failedCalls) {
-        const name = (tc as { name: string }).name;
-        result.errorsByTool[name] = (result.errorsByTool[name] || 0) + 1;
-
-        const errorKey = ((tc as { error?: string }).error || 'unknown').substring(0, 100);
-        errorCounts.set(errorKey, (errorCounts.get(errorKey) || 0) + 1);
-      }
-
-      result.topErrors = [...errorCounts.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
-        .map(([error, count]) => ({ error, count }));
-    } catch {
-      // Storage not available
-    }
-
-    return result;
+    return getErrorSummary(this.storage, sessionId);
   }
 
   // --------------------------------------------------------------------------

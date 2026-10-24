@@ -31,6 +31,7 @@ mod native_desktop;
 mod pip;
 mod quit_guard;
 mod resident_host;
+mod resident_host_windows;
 mod traffic_lights;
 
 use appshots::{

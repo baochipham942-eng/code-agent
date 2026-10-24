@@ -11,7 +11,9 @@
 //! - pid 记录：JSON `{pid, startTime}`，旧版纯 pid 文本按 startTime=null；
 //! - 身份核对：`ps -p <pid> -o lstart=,command=` 现场读，lstart 与持锁记录相等
 //!   且命令行含 node（守护是 node 进程）才算「就是写文件的那个守护」；
-//! - 平台：锁只在 mac/linux 生效（isDaemonLockSupported），其余平台恒 Spawn。
+//! - 平台：锁在 mac/linux 生效（isDaemonLockSupported）；win32 的身份源与判定
+//!   已在 resident_host_windows 落地，开关保持关闭（WINDOWS_ATTACH_ENABLED
+//!   = false），开关关闭期间 Windows 恒 Spawn，行为与今日一致。
 //!
 //! 红线（台账 10-14）：本判定必须跑在 `clear_stale_web_server_port` **之前**——
 //! 那条路径对端口占用者无差别 `kill -9`，活守护会被当陈旧占用者强杀。附着
@@ -106,11 +108,16 @@ fn parse_legacy_pid(trimmed: &str) -> Option<DaemonPidRecord> {
 // 进程身份核对（纯，镜像 daemonLock.ts readProcessIdentity / inspectDaemonPid）
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// 记录是否仍是「写这份 pid 文件的守护」：ps 输出读得出、lstart 与持锁记录
-/// 相等、命令行含 node。任一不满足（含 startTime 缺失的旧版记录、ps 无输出、
-/// 僵尸进程）→ false。镜像 inspectDaemonPid 的 owned 判据；这里只回答
-/// 「算不算我们的守护」，发信号/删除都归 Node 侧。
+/// 记录是否仍是「写这份 pid 文件的守护」：身份源输出读得出、启动标记与持锁
+/// 记录相等、命令行含 node。身份源按平台取（win32 为 PowerShell CIM 探针，
+/// 见 resident_host_windows；其余为 ps lstart），判据同构。任一不满足（含
+/// startTime 缺失的旧版记录、身份源无输出、僵尸进程）→ false。镜像
+/// inspectDaemonPid 的 owned 判据；这里只回答「算不算我们的守护」，
+/// 发信号/删除都归 Node 侧。
 pub fn process_identity_matches(record: &DaemonPidRecord, ps_output: Option<&str>) -> bool {
+    if cfg!(windows) {
+        return crate::resident_host_windows::windows_identity_matches(record, ps_output);
+    }
     let Some(start_time) = record.start_time.as_deref() else {
         return false;
     };
@@ -232,10 +239,16 @@ pub fn decide_startup(
 // I/O helpers（薄封装，判据都在上面的纯函数里）
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// 锁的平台判据，镜像 daemonLock.ts isDaemonLockSupported：win32 没有进程身份
-/// 源（锁整个不生效），恒走 Spawn，Windows 行为与今日一致。
+/// 锁的平台判据，镜像 daemonLock.ts isDaemonLockSupported：unix 恒真；win32 看
+/// resident_host_windows::WINDOWS_ATTACH_ENABLED（保持 false：Windows 身份源的
+/// 输出形状还没在真机上验过，WIN-ATTACH-REALDEVICE 翻开关）。开关关闭期间
+/// Windows 恒走 Spawn，行为与今日一致。
 pub fn is_attach_supported() -> bool {
-    cfg!(any(target_os = "macos", target_os = "linux"))
+    crate::resident_host_windows::attach_supported_on(
+        cfg!(any(target_os = "macos", target_os = "linux")),
+        cfg!(target_os = "windows"),
+        crate::resident_host_windows::WINDOWS_ATTACH_ENABLED,
+    )
 }
 
 /// 读 `<data_dir>/daemon.pid` 并解析。缺失/读不出/形状不对 → None。
@@ -246,9 +259,13 @@ pub fn read_daemon_pid_record(data_dir: &Path) -> Option<DaemonPidRecord> {
     parse_daemon_pid_record(&raw)
 }
 
-/// 现场跑 `ps -p <pid> -o lstart=,command=`（只读，绝不发信号）。失败/空输出
-/// → None（身份未知，按不匹配处理）。
+/// 现场读进程身份（只读，绝不发信号）：win32 走 PowerShell CIM 探针
+/// （resident_host_windows），其余平台 `ps -p <pid> -o lstart=,command=`。
+/// 失败/空输出 → None（身份未知，按不匹配处理）。
 pub fn ps_process_identity(pid: u32) -> Option<String> {
+    if cfg!(windows) {
+        return crate::resident_host_windows::windows_process_identity(pid);
+    }
     let output = Command::new("ps")
         .args(["-p", &pid.to_string(), "-o", "lstart=,command="])
         .output()
@@ -307,7 +324,8 @@ pub fn decide_startup_io(data_dir: Option<&Path>, health_endpoint: &str) -> Opti
 /// cleanup 对「附着到的守护」能做什么。没有 Child 时这是唯一的停止通道。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttachedStop {
-    /// 身份仍是当初那个 node 守护：SIGTERM，超时再 SIGKILL。
+    /// 身份仍是当初那个 node 守护：unix 发 SIGTERM 超时再 SIGKILL，windows 走
+    /// taskkill 优雅 → 强杀（见 terminate_attached_daemon）。
     Signal { pid: u32 },
     /// 没有记下 pid，或身份已对不上（进程已死 / pid 被复用）：不发信号。
     Skip,
@@ -335,10 +353,20 @@ pub fn stop_attached_daemon(
     }
 }
 
-/// 向不是本进程 spawn 出来的守护发 SIGTERM，超时再 SIGKILL。
+/// 向不是本进程 spawn 出来的守护发「请退出」信号，超时再强杀：unix 是
+/// SIGTERM → poll → SIGKILL，windows 是 taskkill /T → poll tasklist → /T /F
+/// （resident_host_windows）。运行时平台分支，两边都在 macOS CI 上编译。
+pub fn terminate_attached_daemon(pid: u32, timeout: Duration, poll: Duration) -> String {
+    if cfg!(windows) {
+        return crate::resident_host_windows::terminate_attached_daemon_windows(pid, timeout, poll);
+    }
+    terminate_attached_daemon_unix(pid, timeout, poll)
+}
+
+/// unix 实现：SIGTERM 发不出去（ESRCH 之外）时立即 SIGKILL 兜底。
 /// 不能 `wait`：它的父进程已经不是我们（init/launchd 收尸）。用 `kill(pid, 0)` 探活。
 #[cfg(unix)]
-pub fn terminate_attached_daemon(pid: u32, timeout: Duration, poll: Duration) -> String {
+fn terminate_attached_daemon_unix(pid: u32, timeout: Duration, poll: Duration) -> String {
     let pid = pid as i32;
     // SAFETY: pid 刚通过 process_identity_matches（lstart 原文相等且命令行含 node）。
     // SIGTERM 与 spawn 子进程的 terminate_child 是同一条「请自行退出」信号。
@@ -374,8 +402,9 @@ pub fn terminate_attached_daemon(pid: u32, timeout: Duration, poll: Duration) ->
 }
 
 #[cfg(not(unix))]
-pub fn terminate_attached_daemon(_pid: u32, _timeout: Duration, _poll: Duration) -> String {
-    // 附着判定在 win32 不成立（is_attach_supported）。这里只为两边都能编译。
+fn terminate_attached_daemon_unix(_pid: u32, _timeout: Duration, _poll: Duration) -> String {
+    // 非 unix 目标走上面的 cfg!(windows) 分支；这个存根只覆盖「既非 unix 又非
+    // windows」的假想目标，让 terminate_attached_daemon 两边都能编译。
     "attached-stop-unsupported".to_string()
 }
 

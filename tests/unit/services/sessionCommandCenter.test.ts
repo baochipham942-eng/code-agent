@@ -446,4 +446,132 @@ describe('SessionCommandCenter', () => {
     expect(center.list('session-a').find((task) => task.id === queued.task.id)?.prompt).toContain('补充要求：顺便把页码加上');
     center.dispose();
   });
+
+  // ── N-MEDIA-GEN-MUSIC-FALLBACK-FU1：终局工具失败出路（progress.lastToolFailure）──
+
+  function musicFailureEnd(alternatives?: string): AgentEvent {
+    return {
+      type: 'tool_call_end',
+      data: {
+        toolCallId: 'call-music-1',
+        success: false,
+        error: 'The default MiniMax music service is unavailable (no key)',
+        metadata: {
+          code: 'MUSIC_SERVICE_UNAVAILABLE',
+          ...(alternatives ? { alternatives } : {}),
+        },
+      },
+    } as AgentEvent;
+  }
+
+  it('writes progress.lastToolFailure from an allow-listed tool_call_end failure', async () => {
+    const manager = new FakeTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn(),
+    });
+    const spawned = await center.spawn(input(1, 'media'));
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+
+    manager.emitAgent('session-a', {
+      type: 'tool_call_start',
+      data: { id: 'call-music-1', name: 'music_generate', arguments: { prompt: '轻快的背景音乐' } },
+    } as AgentEvent, spawned.task.id);
+    manager.emitAgent('session-a', musicFailureEnd('zhipu:glm-5.3'), spawned.task.id);
+
+    const projected = getBackgroundTaskLedger().listTasks({ sessionId: 'session-a' })
+      .find((task) => task.id === spawned.task.id);
+    expect(projected?.progress?.lastToolFailure).toEqual({
+      tool: 'music_generate',
+      code: 'MUSIC_SERVICE_UNAVAILABLE',
+      alternatives: 'zhipu:glm-5.3',
+      at: expect.any(Number),
+    });
+    center.dispose();
+  });
+
+  it('clears lastToolFailure when the same tool later succeeds, not when another tool does', async () => {
+    const manager = new FakeTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn(),
+    });
+    const spawned = await center.spawn(input(1, 'media'));
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+    manager.emitAgent('session-a', {
+      type: 'tool_call_start',
+      data: { id: 'call-music-1', name: 'music_generate', arguments: {} },
+    } as AgentEvent, spawned.task.id);
+    manager.emitAgent('session-a', musicFailureEnd('zhipu:glm-5.3'), spawned.task.id);
+
+    const projected = () => getBackgroundTaskLedger().listTasks({ sessionId: 'session-a' })
+      .find((task) => task.id === spawned.task.id);
+
+    // 别的工具成功不清：出路针对的是失败的那个工具
+    manager.emitAgent('session-a', {
+      type: 'tool_call_start',
+      data: { id: 'call-read-1', name: 'Read', arguments: {} },
+    } as AgentEvent, spawned.task.id);
+    manager.emitAgent('session-a', {
+      type: 'tool_call_end',
+      data: { toolCallId: 'call-read-1', success: true, output: 'ok' },
+    } as AgentEvent, spawned.task.id);
+    expect(projected()?.progress?.lastToolFailure?.code).toBe('MUSIC_SERVICE_UNAVAILABLE');
+
+    // 用户按出路补配后重跑：同名工具成功即清除，提示要消失
+    manager.emitAgent('session-a', {
+      type: 'tool_call_start',
+      data: { id: 'call-music-2', name: 'music_generate', arguments: { model: 'zhipu:glm-5.3' } },
+    } as AgentEvent, spawned.task.id);
+    manager.emitAgent('session-a', {
+      type: 'tool_call_end',
+      data: { toolCallId: 'call-music-2', success: true, output: '1/1 saved' },
+    } as AgentEvent, spawned.task.id);
+    expect(projected()?.progress?.lastToolFailure).toBeUndefined();
+    center.dispose();
+  });
+
+  it('does not record failures whose code is outside the allow-list', async () => {
+    const manager = new FakeTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn(),
+    });
+    const spawned = await center.spawn(input(1, 'media'));
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+
+    manager.emitAgent('session-a', {
+      type: 'tool_call_start',
+      data: { id: 'call-shell-1', name: 'Bash', arguments: {} },
+    } as AgentEvent, spawned.task.id);
+    manager.emitAgent('session-a', {
+      type: 'tool_call_end',
+      data: {
+        toolCallId: 'call-shell-1',
+        success: false,
+        error: 'command not found',
+        metadata: { code: 'ENV_DEPENDENCY_MISSING' },
+      },
+    } as AgentEvent, spawned.task.id);
+
+    const projected = getBackgroundTaskLedger().listTasks({ sessionId: 'session-a' })
+      .find((task) => task.id === spawned.task.id);
+    expect(projected?.progress?.lastToolFailure).toBeUndefined();
+    center.dispose();
+  });
+
+  it('does not write lastToolFailure after the task already reached a terminal status', async () => {
+    const manager = new FakeTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn(),
+    });
+    const spawned = await center.spawn(input(1, 'media'));
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+
+    manager.emitTask({ type: 'task_error', sessionId: 'session-a', data: { taskId: spawned.task.id, error: '上游超时' } });
+    manager.emitAgent('session-a', musicFailureEnd('zhipu:glm-5.3'), spawned.task.id);
+
+    const projected = getBackgroundTaskLedger().listTasks({ sessionId: 'session-a' })
+      .find((task) => task.id === spawned.task.id);
+    expect(projected?.status).toBe('failed');
+    expect(projected?.progress?.lastToolFailure).toBeUndefined();
+    center.dispose();
+  });
 });

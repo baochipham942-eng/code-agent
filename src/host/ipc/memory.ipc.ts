@@ -38,6 +38,12 @@ import {
 } from '../memory/memoryEntryRuntime';
 import { batchReviewMemoryEntries } from '../memory/memoryEntryReview';
 import {
+  deleteProjectScopedMemoryEntry,
+  isProjectScopedEntryId,
+  overlayProjectScopedEntries,
+  updateProjectScopedMemoryEntry,
+} from '../memory/projectScopedMemoryEntries';
+import {
   applyMemoryHarnessImport,
   confirmMemoryHarnessDirective,
   dryRunMemoryHarnessImport,
@@ -561,12 +567,12 @@ async function handleListMemoryEntries(): Promise<Awaited<ReturnType<typeof list
     const db = getDatabase();
     const result = await listUnifiedMemoryEntries(db);
     annotateInjectionPauses(result, db);
-    return result;
+    return overlayProjectScopedEntries(result);
   } catch (error) {
     logger.warn('Memory entry DB mirror read skipped', {
       error: error instanceof Error ? error.message : String(error),
     });
-    return listUnifiedMemoryEntries();
+    return overlayProjectScopedEntries(await listUnifiedMemoryEntries());
   }
 }
 
@@ -576,6 +582,7 @@ async function handleRebuildMemoryMirror(): Promise<MemoryMirrorRebuildResult> {
 
 async function handleMemoryEntryUpdate(payload: MemoryEntryUpdateRequest): Promise<Awaited<ReturnType<typeof updateMemoryEntry>>> {
   if (!payload?.entryId) throw new Error('memory entry update requires entryId');
+  if (isProjectScopedEntryId(payload.entryId)) return updateProjectScopedMemoryEntry(payload);
   return updateMemoryEntry(getDatabase(), payload);
 }
 
@@ -586,6 +593,7 @@ async function handleMemoryEntryResumeInjection(payload: { entryId?: string }): 
 
 async function handleMemoryEntryDelete(payload: MemoryEntryDeleteRequest): Promise<Awaited<ReturnType<typeof deleteMemoryEntry>>> {
   if (!payload?.entryId) throw new Error('memory entry delete requires entryId');
+  if (isProjectScopedEntryId(payload.entryId)) return deleteProjectScopedMemoryEntry(payload);
   return deleteMemoryEntry(getDatabase(), payload);
 }
 

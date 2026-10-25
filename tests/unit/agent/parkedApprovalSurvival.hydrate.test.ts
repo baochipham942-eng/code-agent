@@ -7,6 +7,9 @@
 //      directory_access / channel_pairing 照旧全拒。
 //   ② startupMaintenance 的 orphan-toolcall-closure 不给幸存 toolCall 写 INTERRUPTED 占位
 //      （不毒化 toolCallId），非幸存的照写。
+//   ③（N-...-RESUME-FU1）会话 cwd 解析不出的行（无来源会话的 cron 任务形状）在
+//      maintenance + hydrate 两次判定里都不存活：行收口 args_unavailable 的可区分后缀、
+//      toolCall 写 INTERRUPTED 占位；带 cwd 的会话照常幸存。收件箱不再出现点了必被拒的死卡。
 // ============================================================================
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -27,6 +30,8 @@ import { PendingApprovalRepository } from '../../../src/host/services/core/repos
 import type { createLogger } from '../../../src/host/services/infra/logger';
 import type { Message, Session } from '../../../src/shared/contract';
 import { computeLedgerArgsSurvival } from '../../../src/host/agent/parkedApprovalSurvival';
+import { resumeSurvivingParkedApproval } from '../../../src/host/agent/parkedApprovalResume';
+import type { ParkedApprovalResumePorts } from '../../../src/host/agent/parkedApprovalResume';
 
 const planAttach = vi.fn(() => 0);
 const launchAttach = vi.fn(() => 0);
@@ -36,6 +41,22 @@ vi.mock('../../../src/host/agent/planApproval', () => ({
 vi.mock('../../../src/host/agent/swarmLaunchApproval', () => ({
   getSwarmLaunchApprovalGate: () => ({ attachPersistence: launchAttach }),
 }));
+
+// FU1：hydrate 的缺省 cwd 解析走 getDatabase().getSession（与点击恢复同口径），这里把单例
+// 指到本文件的真实内存库——缺省依赖被真实执行而非绕过；收件箱读径
+// （sessionAutomationService.listParkedApprovals）同样经 getDatabase().getPendingApprovalRepo 取数。
+const dbState = vi.hoisted(() => ({
+  sessionRepo: null as SessionRepository | null,
+  repo: null as PendingApprovalRepository | null,
+}));
+vi.mock('../../../src/host/services/core/databaseService', () => ({
+  getDatabase: () => ({
+    getPendingApprovalRepo: () => dbState.repo,
+    getSession: (sessionId: string) => dbState.sessionRepo?.getSession(sessionId) ?? null,
+  }),
+}));
+// listParkedApprovals 所在模块经 ../../platform 广播；收件箱读径只用它的取数口，广播替身即可。
+vi.mock('../../../src/host/platform', () => ({ broadcastToRenderer: vi.fn() }));
 
 import { hydrateApprovalGatesAtBoot } from '../../../src/host/agent/parkedApprovalHydration';
 
@@ -95,16 +116,20 @@ describe('parked approval survival across restart (hydrate + startupMaintenance)
     applyConversationBranchSchema(db, { backfillLegacy: false });
     sessionRepo = new SessionRepository(db);
     repo = new PendingApprovalRepository(db);
+    dbState.sessionRepo = sessionRepo;
+    dbState.repo = repo;
     parkedRuns = [];
     vi.clearAllMocks();
   });
   afterEach(() => db.close());
 
-  function createCrashedSession(id: string): void {
+  /** 缺省带 cwd（幸存前提，FU1 ④）；传 null 复刻无来源会话的 cron 任务形状（workingDirectory NULL）。 */
+  function createCrashedSession(id: string, workingDirectory: string | null = `/workspace/${id}`): void {
     sessionRepo.createSession({
       id,
       title: id,
       modelConfig: { provider: 'openai', model: 'gpt-5' },
+      ...(workingDirectory ? { workingDirectory } : {}),
       createdAt: 1,
       updatedAt: 1,
       status: 'running',
@@ -328,5 +353,130 @@ describe('parked approval survival across restart (hydrate + startupMaintenance)
 
     expect(sessionRepo.getMessages('legacy-session')).toHaveLength(2);
     expect(sessionRepo.getMessages('legacy-session')[1].toolResults?.[0]?.error).toBe(INTERRUPTED_PLACEHOLDER);
+  });
+
+  // ------------------------------------------------------------------
+  // ③（N-...-RESUME-FU1）会话 cwd 解析不出的行（无来源会话的 cron 任务形状）
+  // ------------------------------------------------------------------
+
+  it('③ cwd-less 会话：maintenance 写 INTERRUPTED 占位 + hydrate 以可区分后缀收口；带 cwd 会话照常幸存', () => {
+    const fresh = Date.now() - 1_000;
+    createCrashedSession('cron-cwdless', null); // workingDirectory NULL（cron agent 任务无来源会话）
+    seedAssistantToolCall('cron-cwdless', 'call-cwdless', 'sleep 30');
+    seedParkedRow({ id: 'cwdless-1', sessionId: 'cron-cwdless', toolCallId: 'call-cwdless', requestedAt: fresh });
+
+    createCrashedSession('cwd-session');
+    seedAssistantToolCall('cwd-session', 'call-cwd', 'sleep 31');
+    seedParkedRow({ id: 'cwd-1', sessionId: 'cwd-session', toolCallId: 'call-cwd', requestedAt: fresh });
+
+    // 重启序：先 maintenance（同一次判据决定占位）再 hydrate（决定行收口）——与 webServer 启动一致。
+    runStartupMaintenance({
+      db,
+      sessionRepo,
+      memoryRepo: new MemoryRepository(db),
+      toolExecutionEventRepo: new ToolExecutionEventRepository(db),
+      permissionDecisionRepo: new PermissionDecisionRepository(db),
+      pendingApprovalRepo: repo,
+      logger,
+      step: vi.fn(),
+    });
+    const counts = hydrate(Date.now());
+
+    expect(repo.getById('cwdless-1')).toMatchObject({
+      status: 'rejected',
+      feedback: 'Auto-rejected after restart: args_unavailable (session working directory unavailable)',
+    });
+    // 它的 toolCall 不悬空：占位照写（maintenance 与 hydrate 同一判据的另一半）
+    const cwdlessMessages = sessionRepo.getMessages('cron-cwdless');
+    expect(cwdlessMessages).toHaveLength(2);
+    expect(cwdlessMessages[1]).toMatchObject({
+      id: 'cron-cwdless-assistant:interrupted-tool-results',
+      role: 'tool',
+      toolResults: [{ toolCallId: 'call-cwdless', error: INTERRUPTED_PLACEHOLDER }],
+    });
+    // 带 cwd 会话：占位不写、行幸存可批
+    expect(sessionRepo.getMessages('cwd-session')).toHaveLength(1);
+    expect(counts.survived).toBe(1);
+    expect(repo.getById('cwd-1')?.status).toBe('pending');
+  });
+
+  it('③ 直接 hydrate（台账无占位）也收口 cwd-less 行——只拆掉 hydrate 侧 cwd 接线的变异会被这条咬红', () => {
+    createCrashedSession('cron-direct', null);
+    seedAssistantToolCall('cron-direct', 'call-direct', 'sleep 30');
+    seedParkedRow({ id: 'direct-1', sessionId: 'cron-direct', toolCallId: 'call-direct', requestedAt: 1_000 });
+
+    const counts = hydrate(2_000);
+
+    expect(counts.survived).toBe(0);
+    expect(repo.getById('direct-1')).toMatchObject({
+      status: 'rejected',
+      feedback: 'Auto-rejected after restart: args_unavailable (session working directory unavailable)',
+    });
+  });
+
+  // ⑥（N-...-RESUME-FU1）真实 SQLite 重启仿真：maintenance → hydrate → 收件箱读径 → 批准执行一次。
+  it('③⑥ 收件箱读径只列带 cwd 会话的幸存卡；批准它恰执行一次，再点不重复', async () => {
+    const fresh = Date.now() - 1_000;
+    createCrashedSession('inbox-cwdless', null);
+    seedAssistantToolCall('inbox-cwdless', 'call-inbox-cwdless', 'sleep 30');
+    seedParkedRow({ id: 'inbox-cwdless-1', sessionId: 'inbox-cwdless', toolCallId: 'call-inbox-cwdless', requestedAt: fresh });
+
+    createCrashedSession('inbox-cwd');
+    seedAssistantToolCall('inbox-cwd', 'call-inbox-cwd', 'echo once >> effect.txt');
+    seedParkedRow({
+      id: 'inbox-cwd-1', sessionId: 'inbox-cwd', toolCallId: 'call-inbox-cwd',
+      requestedAt: fresh, command: 'echo once >> effect.txt',
+    });
+
+    runStartupMaintenance({
+      db,
+      sessionRepo,
+      memoryRepo: new MemoryRepository(db),
+      toolExecutionEventRepo: new ToolExecutionEventRepository(db),
+      permissionDecisionRepo: new PermissionDecisionRepository(db),
+      pendingApprovalRepo: repo,
+      logger,
+      step: vi.fn(),
+    });
+    hydrate(Date.now());
+
+    // 收件箱读径（sessionAutomationService.listParkedApprovals）：cwd-less 卡不再出现
+    const { SessionAutomationService } = await import('../../../src/host/services/sessionAutomation/sessionAutomationService');
+    const inbox = new SessionAutomationService().listParkedApprovals();
+    expect(inbox.map((item) => item.id)).toEqual(['inbox-cwd-1']);
+    expect(inbox[0]).toMatchObject({ sessionId: 'inbox-cwd', tool: 'Bash', status: 'pending' });
+
+    // 批准收件箱里那张卡：从台账执行一次，cwd 用会话工作目录；再点不再执行
+    const executed: Array<{ name: string; workingDirectory: string; command: string }> = [];
+    const ports: ParkedApprovalResumePorts = {
+      repo,
+      loadMessages: (sessionId) => sessionRepo.getMessages(sessionId),
+      resolveWorkingDirectory: (sessionId) => sessionRepo.getSession(sessionId)?.workingDirectory || null,
+      executeTool: async (input) => {
+        executed.push({
+          name: input.name,
+          workingDirectory: input.workingDirectory,
+          command: String(input.arguments.command),
+        });
+        return { success: true, output: 'ran once' };
+      },
+      persistToolMessage: async (sessionId, message) => {
+        sessionRepo.addMessage(sessionId, message);
+      },
+      now: () => Date.now(),
+    };
+    const outcome = await resumeSurvivingParkedApproval({ requestId: 'inbox-cwd-1', response: 'allow', ports });
+    expect(outcome).toMatchObject({ handled: true, status: 'executed' });
+    expect(executed).toEqual([{ name: 'Bash', workingDirectory: '/workspace/inbox-cwd', command: 'echo once >> effect.txt' }]);
+    expect(repo.getById('inbox-cwd-1')?.status).toBe('approved');
+    // 结果落回原会话转录（打开原会话能看到执行结果）
+    expect(sessionRepo.getMessages('inbox-cwd').some((message) => (
+      message.role === 'tool'
+      && message.toolResults?.some((result) => result.toolCallId === 'call-inbox-cwd' && result.success)
+    ))).toBe(true);
+    // 第二次点击：行已非 pending → 不接手、不重复执行
+    const again = await resumeSurvivingParkedApproval({ requestId: 'inbox-cwd-1', response: 'allow', ports });
+    expect(again).toEqual({ handled: false });
+    expect(executed).toHaveLength(1);
   });
 });

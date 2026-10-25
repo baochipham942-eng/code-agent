@@ -12,6 +12,7 @@ import { generatePermissionRequestId } from '../../shared/utils/id';
 import type { ExecutionTopology } from '../permissions';
 import { getPermissionModeManager } from '../permissions/modes';
 import { isUnattendedAllowedReadOnlyTool } from '../permissions/unattendedReadOnlyTools';
+import { approveByScheduleWriteGrant } from '../cron/cronWriteGrant';
 import { getSessionAutomationService } from '../services/sessionAutomation/sessionAutomationService';
 import { notificationService } from '../services/infra/notificationService';
 import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
@@ -415,6 +416,22 @@ export class OrchestratorPermissionIsland {
     const approvalTerminal = getPermissionModeManager().isUnattendedApprovalTerminal(fullRequest.sessionId);
     const unattended = getPermissionModeManager().isUnattendedSession(fullRequest.sessionId);
     const voice = getPermissionModeManager().isLiveVoiceSession(fullRequest.sessionId);
+
+    // 写授权放行（N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1）：用户在任务详情面板预授权过
+    // 工作文件夹的 cron/heartbeat 会话，写文件夹内的 file_write/file_edit 直接放行——
+    // ADR-083「后台继续」场景下壳已退出、没人能应答，不预授权就是整趟静默卡死。
+    // 判定全在 cronWriteGrant（来源/类型/forceConfirm/realpath 界内），Bash 与出界写
+    // 照旧走下面的停车分支；保护路径 ask 带 forceConfirm，在这里天然被排除。
+    if (unattended && !forceConfirm) {
+      const scheduleGrant = await approveByScheduleWriteGrant(request);
+      if (scheduleGrant) {
+        logger.info(
+          `[Permission] Auto-approved via schedule write grant: ${request.type} for ${request.tool}`,
+          { approvalSource: scheduleGrant.approvalSource, sessionId: fullRequest.sessionId },
+        );
+        return scheduleGrant;
+      }
+    }
     // cron/heartbeat/channel/语音派都走停车审批，24h backstop 只负责泄漏兜底；
     // 60s 终态仅保留给显式登记的旧兼容会话。
     if (unattended || voice) {

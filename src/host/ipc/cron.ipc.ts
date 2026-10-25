@@ -146,6 +146,22 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
     const job = await cronService.grantLoginPassThrough(jobId, siteOrigin);
     return { success: true, data: job } satisfies IPCResponse;
   },
+  // N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1：写授权是用户在任务详情面板的显式同意
+  // 动作（同 grantLoginPassThrough 的先例），文件夹解析在 cronWriteGrant.ts。
+  grantWriteScope: async (_ctx, payload) => {
+    const cronService = getCronService();
+    const jobId = getStringField(payload, 'jobId');
+    if (!jobId) throw new Error('Invalid cron job id');
+    const job = await cronService.grantWriteScope(jobId);
+    return { success: true, data: job } satisfies IPCResponse;
+  },
+  revokeWriteScope: async (_ctx, payload) => {
+    const cronService = getCronService();
+    const jobId = getStringField(payload, 'jobId');
+    if (!jobId) throw new Error('Invalid cron job id');
+    const job = await cronService.revokeWriteScope(jobId);
+    return { success: true, data: job } satisfies IPCResponse;
+  },
   deleteJob: async (_ctx, payload) => {
     const cronService = getCronService();
     const jobId = getStringField(payload, 'jobId');

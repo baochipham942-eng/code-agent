@@ -21,6 +21,7 @@ import { CronRunsOnPill } from './CronRunsOnSelector';
 import { CronResultChannelSummary } from './CronResultChannel';
 import { useEventScheduleNames } from './useChannelCatalog';
 import { CronGroupListenCheck } from './CronGroupListenCheck';
+import { CronWriteScopePanel } from './CronWriteScopePanel';
 
 interface CronJobDetailProps {
   job: CronJobDefinition | null;
@@ -197,6 +198,12 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job }) => {
         {job.enabled && job.runsOn === 'local' && job.schedule.type === 'event'
           && job.schedule.source === 'channel' && job.schedule.chatId && (
           <CronGroupListenCheck key={`${job.id}:${job.updatedAt}`} jobId={job.id} />
+        )}
+
+        {/* 写授权面板：只有本地 agent 任务有「agent 写文件」这回事（shell 动作走 Bash、
+            云端任务不在本机写），其余动作面不渲染。 */}
+        {job.runsOn === 'local' && job.action.type === 'agent' && (
+          <CronWriteScopePanel job={job} />
         )}
 
         <details className="mt-4 group" data-testid="cron-detail-advanced">

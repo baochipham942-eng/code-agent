@@ -5,6 +5,7 @@ import { readCronSourceSessionId } from './cronAutomationBridge';
 import { formatCronAgentSessionTitle, getCronAgentSessionType } from './cronNormalizers';
 import { cronAgentWorkingDirectory } from './artifactStandingRefresh';
 import { siteOriginFromUrl } from '../../shared/utils/browserLoginWall';
+import { writeGrantRootFromMetadata } from '../../shared/cronWriteScope';
 
 function cronLoginGatedSiteOrigin(definition: CronJobDefinition): string | undefined {
   // Only the explicit renderer consent action writes this field. The
@@ -48,6 +49,9 @@ export async function createCronAgentSession(
   const sessionType = getCronAgentSessionType(action);
   const originKind = sessionType === 'heartbeat' ? 'heartbeat' : 'cron';
   const loginGatedSiteOrigin = cronLoginGatedSiteOrigin(definition);
+  // 写授权（N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1）：任务详情面板一键授权的文件夹
+  // 随 run 带进会话来源，requestPermission 的放行判定只认这个 host 侧透传值。
+  const writeGrantRoot = writeGrantRootFromMetadata(definition.metadata);
 
   return sessionManager.createSession({
     title: formatCronAgentSessionTitle(definition, sessionType),
@@ -68,6 +72,7 @@ export async function createCronAgentSession(
         actionType: action.type,
         sourceSessionId,
         ...(loginGatedSiteOrigin ? { loginPassThroughOrigin: loginGatedSiteOrigin } : {}),
+        ...(writeGrantRoot ? { writeGrantRoot } : {}),
       },
     },
     parentSessionId: sourceSessionId,

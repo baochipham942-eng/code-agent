@@ -74,6 +74,11 @@ import {
 } from './cronFailurePolicy';
 import { cronLoginWallMetadata } from './cronLoginWall';
 import { rememberCronLoginPassThroughOrigin } from './cronLoginWallPersistence';
+import {
+  grantCronWriteScope,
+  revokeCronWriteScope,
+  stripWriteGrantRoot,
+} from './cronWriteGrant';
 import { cronFailureSourceText } from '../../shared/utils/cronFailureClassification';
 export { computeCronFireJitterMs } from './cronExecutionPolicy'; const execAsync = promisify(exec);
 
@@ -252,7 +257,8 @@ export class CronService implements Disposable {
     const job: CronJobDefinition = {
       ...definition,
       runsOn,
-      metadata: cronLoginWallMetadata({ action: definition.action }, definition.metadata),
+      // 写授权字段只能由专用授权 IPC 写入；创建载荷夹带的一律剥掉（no-self-grant）。
+      metadata: stripWriteGrantRoot(cronLoginWallMetadata({ action: definition.action }, definition.metadata)),
       id: uuidv4(), createdAt: now, updatedAt: now,
     };
 
@@ -297,7 +303,7 @@ export class CronService implements Disposable {
       existingJob.cronInstance.stop();
     }
 
-    const metadata = this.sanitizeLoginPassThroughMetadata(existingJob.definition.metadata, updates.metadata);
+    const metadata = this.sanitizeConsentMetadata(existingJob.definition.metadata, updates.metadata);
     const updatedJob: CronJobDefinition = {
       ...existingJob.definition,
       ...updates,
@@ -348,7 +354,28 @@ export class CronService implements Disposable {
     return active.definition;
   }
 
-  private sanitizeLoginPassThroughMetadata(
+  /**
+   * 写授权（N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1）：任务详情面板一键授权/撤销。
+   * 解析与落库逻辑在 cronWriteGrant.ts（本文件已贴 max-lines 线，只留窄入口）。
+   */
+  async grantWriteScope(jobId: string): Promise<CronJobDefinition | null> {
+    return grantCronWriteScope(jobId, {
+      loadActiveJob: (id) => this.jobs.get(id),
+      persistJob: (job) => this.persistJob(job),
+    });
+  }
+
+  async revokeWriteScope(jobId: string): Promise<CronJobDefinition | null> {
+    return revokeCronWriteScope(jobId, {
+      loadActiveJob: (id) => this.jobs.get(id),
+      persistJob: (job) => this.persistJob(job),
+    });
+  }
+
+  /** 只能由专用授权 IPC 写入的同意类 metadata 字段；updateJob 对它们只保留存量、绝不新建/改值。 */
+  private static readonly CONSENT_METADATA_FIELDS = ['loginPassThroughOrigin', 'writeGrantRoot'] as const;
+
+  private sanitizeConsentMetadata(
     existingMetadata: Record<string, unknown> | undefined,
     incomingMetadata: Record<string, unknown> | undefined,
   ): Record<string, unknown> | undefined {
@@ -359,19 +386,22 @@ export class CronService implements Disposable {
       return existingMetadata;
     }
 
-    const existingOrigin = existingMetadata?.loginPassThroughOrigin;
-    const hasIncomingOrigin = Object.prototype.hasOwnProperty.call(incomingMetadata, 'loginPassThroughOrigin');
-    if (!hasIncomingOrigin) return incomingMetadata;
-
     const nextMetadata = { ...incomingMetadata };
-    if (typeof existingOrigin === 'string') {
-      // Consent can be kept by an editor round-trip, but never changed through
-      // updateJob. A different value is ignored while all other fields apply.
-      nextMetadata.loginPassThroughOrigin = existingOrigin;
-    } else {
-      // No stored consent means this update cannot create one.
-      delete nextMetadata.loginPassThroughOrigin;
+    let droppedAny = false;
+    for (const field of CronService.CONSENT_METADATA_FIELDS) {
+      if (!Object.prototype.hasOwnProperty.call(nextMetadata, field)) continue;
+      const existingValue = existingMetadata?.[field];
+      if (typeof existingValue === 'string') {
+        // Consent can be kept by an editor round-trip, but never changed through
+        // updateJob. A different value is ignored while all other fields apply.
+        nextMetadata[field] = existingValue;
+      } else {
+        // No stored consent means this update cannot create one.
+        delete nextMetadata[field];
+        droppedAny = true;
+      }
     }
+    if (!droppedAny) return nextMetadata;
     return Object.keys(nextMetadata).length > 0 ? nextMetadata : undefined;
   }
 

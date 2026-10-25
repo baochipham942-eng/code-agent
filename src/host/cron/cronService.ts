@@ -268,7 +268,9 @@ export class CronService implements Disposable {
 
     await recordCronAutomationCreated(job, this.resolveAutomationRuntime);
 
-    if (job.runsOn === 'cloud') {
+    // 停用副本（copy-to-cloud 一律 enabled:false）不注册云端：未配置云端时注册必失败，
+    // 会立刻落一条假 failed 执行记录吓到用户（N-ROLE-ROUTINE-RESTATE-FU1-FU1）。
+    if (job.runsOn === 'cloud' && job.enabled) {
       await this.cloudRuntime.addJob(job);
     }
 
@@ -320,7 +322,9 @@ export class CronService implements Disposable {
     syncCronAutomationFromJob(updatedJob, this.resolveAutomationRuntime);
     if (updates.schedule !== undefined || updates.enabled !== undefined) this.cronEventTrigger?.groupListenChecks.forget(jobId);
 
-    if (updatedJob.runsOn === 'cloud') {
+    // existingJob 指向改写前的 map 条目：已注册（有 cloudJobId）的停用任务仍要把停用态
+    // 推给云端；从未注册的停用任务不碰云端（N-ROLE-ROUTINE-RESTATE-FU1-FU1）。
+    if (updatedJob.runsOn === 'cloud' && (updatedJob.enabled || existingJob.cloudJobId)) {
       await this.cloudRuntime.updateJob(updatedJob);
     }
 

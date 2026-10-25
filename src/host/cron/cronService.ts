@@ -88,6 +88,11 @@ interface ActiveJob {
   cloudJobId?: string;
 }
 
+function cronDefinitionFingerprint(definition: CronJobDefinition): string {
+  const { runCount: _runCount, updatedAt: _updatedAt, ...persisted } = definition;
+  return JSON.stringify(persisted);
+}
+
 // ============================================================================
 // CronService
 // ============================================================================
@@ -97,6 +102,8 @@ export class CronService implements Disposable {
   private executions: Map<string, CronJobExecution[]> = new Map();
   private isInitialized = false;
   private disposed = false;
+  private jobsReconcileTimer?: ReturnType<typeof setInterval>;
+  private jobsReconcileInFlight = false;
   private unsubscribeCronMissed?: () => void;
   /** 'event' 调度的本地事件源（通道入站消息 → 合批 → executeJob）。 */
   private cronEventTrigger?: CronEventTrigger;
@@ -172,6 +179,8 @@ export class CronService implements Disposable {
     setChannelListenResolver((accountId, chatId) => hasExplicitChatListenBinding(this.listJobs(), accountId, chatId));
 
     this.isInitialized = true;
+    this.jobsReconcileTimer ??= setInterval(() => { void this.reconcileJobsFromDatabase(); }, CRON_GUARDRAILS.JOB_RECONCILE_TICK_MS);
+    this.jobsReconcileTimer.unref?.();
     console.error('[CronService] Initialized');
   }
 
@@ -179,6 +188,8 @@ export class CronService implements Disposable {
     this.cronEventTrigger?.dispose();
     this.cronEventTrigger = undefined;
     setChannelListenResolver(undefined);
+    if (this.jobsReconcileTimer) clearInterval(this.jobsReconcileTimer);
+    this.jobsReconcileTimer = undefined;
     this.cloudRuntime.stop();
     // Stop all cron jobs
     for (const [jobId, job] of this.jobs) {
@@ -257,7 +268,9 @@ export class CronService implements Disposable {
 
     await recordCronAutomationCreated(job, this.resolveAutomationRuntime);
 
-    if (job.runsOn === 'cloud') {
+    // 停用副本（copy-to-cloud 一律 enabled:false）不注册云端：未配置云端时注册必失败，
+    // 会立刻落一条假 failed 执行记录吓到用户（N-ROLE-ROUTINE-RESTATE-FU1-FU1）。
+    if (job.runsOn === 'cloud' && job.enabled) {
       await this.cloudRuntime.addJob(job);
     }
 
@@ -303,13 +316,15 @@ export class CronService implements Disposable {
     if (updatedJob.enabled) {
       this.registerJob(updatedJob);
     } else {
-      this.jobs.set(jobId, { definition: updatedJob });
+      this.jobs.set(jobId, { definition: updatedJob, cloudJobId: existingJob.cloudJobId });
     }
 
     syncCronAutomationFromJob(updatedJob, this.resolveAutomationRuntime);
     if (updates.schedule !== undefined || updates.enabled !== undefined) this.cronEventTrigger?.groupListenChecks.forget(jobId);
 
-    if (updatedJob.runsOn === 'cloud') {
+    // existingJob 指向改写前的 map 条目：已注册（有 cloudJobId）的停用任务仍要把停用态
+    // 推给云端；从未注册的停用任务不碰云端（N-ROLE-ROUTINE-RESTATE-FU1-FU1）。
+    if (updatedJob.runsOn === 'cloud' && (updatedJob.enabled || existingJob.cloudJobId)) {
       await this.cloudRuntime.updateJob(updatedJob);
     }
 
@@ -1116,6 +1131,47 @@ export class CronService implements Disposable {
     } catch (error) {
       console.error('[CronService] Failed to load jobs from database:', error);
     }
+  }
+
+  /** 另一 webServer 进程写 DB 后，驻留执行器按同一内存任务表重建 timer。 */
+  private async reconcileJobsFromDatabase(): Promise<void> {
+    if (!this.isInitialized || this.jobsReconcileInFlight) return;
+    this.jobsReconcileInFlight = true;
+    let changed = false;
+    try {
+      const db = getDatabase().getDb();
+      if (!db) return;
+      const rows = db.prepare('SELECT * FROM cron_jobs').all() as unknown[];
+      const seen = new Set<string>();
+      for (const row of rows) {
+        const definition = normalizeCronJobRow(row);
+        if (!definition) continue;
+        seen.add(definition.id);
+        const current = this.jobs.get(definition.id);
+        if (current && definition.updatedAt < current.definition.updatedAt) continue;
+        if (current && cronDefinitionFingerprint(current.definition) === cronDefinitionFingerprint(definition)) continue;
+        current?.cronInstance?.stop();
+        if (definition.enabled) this.registerJob(definition);
+        else this.jobs.set(definition.id, { definition });
+        this.cronEventTrigger?.groupListenChecks.forget(definition.id);
+        changed = true;
+        console.error(`[CronService] Reconciled job from database: ${definition.name} (${definition.id})`);
+      }
+      for (const [jobId, current] of this.jobs) {
+        if (seen.has(jobId)) continue;
+        current.cronInstance?.stop();
+        this.jobs.delete(jobId);
+        this.cronEventTrigger?.groupListenChecks.forget(jobId);
+        this.executions.delete(jobId);
+        changed = true;
+        console.error(`[CronService] Removed job deleted from database: ${jobId}`);
+      }
+    } catch (error) {
+      console.error('[CronService] Failed to reconcile jobs from database:', error);
+    } finally {
+      this.jobsReconcileInFlight = false;
+    }
+    if (changed) this.notifyJobsChanged();
   }
 
   private async recordMissedJob(

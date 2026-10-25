@@ -607,6 +607,14 @@ export class OrchestratorPermissionIsland {
           ?? fullRequest.details?.filePath
           ?? fullRequest.details?.url,
         ...(argsRef ? { argsRef } : {}),
+        // 跨重启存活原料（N-PARKED-APPROVAL-SURVIVE-RESTART-RESUME）：指纹 + 忠实标记由
+        // toolExecutor 随请求上抛；不忠实（台账形 ≠ 原始 args）的行照写数据，判据侧拦。
+        ...(argsRef && fullRequest.argsFingerprint
+          ? {
+            argsFingerprint: fullRequest.argsFingerprint,
+            ledgerFaithful: fullRequest.ledgerFaithful === true,
+          }
+          : {}),
         ...(argsPreview ? { argsPreview } : {}),
         // 目录授权卡直接给人话："访问 <path>（只读/读写）· <agent 理由>"，不用通用 tool 名。
         displayTool: isDirectoryAccess

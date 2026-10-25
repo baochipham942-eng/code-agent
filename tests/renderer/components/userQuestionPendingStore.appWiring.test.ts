@@ -7,10 +7,17 @@ import { describe, expect, it } from 'vitest';
 // 卡片自身在回答/跳过成功后出队。
 describe('App/ChatView user question wiring（G2 打断式选项卡）', () => {
   const appSource = readFileSync(resolve(process.cwd(), 'src/renderer/App.tsx'), 'utf8');
+  const appIpcListenersSource = readFileSync(
+    resolve(process.cwd(), 'src/renderer/hooks/useAppIpcListeners.ts'),
+    'utf8',
+  );
   const chatViewSource = readFileSync(resolve(process.cwd(), 'src/renderer/components/ChatView.tsx'), 'utf8');
 
   it('App 收到问题入 pending 队列，不再挂全局 Modal', () => {
-    expect(appSource).toContain('useSessionStore.getState().addPendingUserQuestion(withSession)');
+    // 入队接线自 App.tsx 纯搬移到 hooks/useAppIpcListeners
+    // （N-MAXLINES-MINEFIELD-2-FU1-S10）；App 挂 hook、hook 持有入队行，两处一起钉。
+    expect(appSource).toContain('useAppIpcListeners(');
+    expect(appIpcListenersSource).toContain('useSessionStore.getState().addPendingUserQuestion(withSession)');
     expect(appSource).not.toContain('UserQuestionModal');
   });
 

@@ -586,6 +586,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
         memoryRepo: this.memoryRepo,
         toolExecutionEventRepo: this.toolExecutionEventRepo,
         permissionDecisionRepo: this.permissionDecisionRepo,
+        pendingApprovalRepo: this.pendingApprovalRepo,
         logger,
         step,
         projectionSchemaBeforeBoot,

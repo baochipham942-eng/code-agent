@@ -1,6 +1,6 @@
 // ============================================================================
-// SkillsSettings - Skills 管理 Tab（已安装 / 发现安装；默认落「已安装」，
-// 货架（发现）是第二落点，与能力中心「先我的后货架」的默认口径一致）
+// SkillsSettings - Skills 管理 Tab（已安装 / 发现安装；默认落「发现安装」，
+// 新用户已安装多为空，先逛货架；深链与安装成功后显式切「已安装」）
 // ============================================================================
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -86,9 +86,8 @@ export const SkillsSettings: React.FC = () => {
   const settingsCapabilityFocus = useAppStore((state) => state.settingsCapabilityFocus);
   const clearSettingsCapabilityFocus = useAppStore((state) => state.clearSettingsCapabilityFocus);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
-  // 视图状态（默认「已安装」：先看自己的，再逛货架）
-  // 默认落「发现安装」：新用户「已安装」多为空，发现视角是更好的第一屏；
-  // 深链（settingsCapabilityFocus）与安装成功后仍会显式切到已安装
+  // 视图状态：默认落「发现安装」（新用户已安装多为空，发现是更好的第一屏）；
+  // 深链（settingsCapabilityFocus）与安装成功后显式切到「已安装」
   const [activeTab, setActiveTab] = useState<SkillsViewTab>('discover');
 
   // 数据状态
@@ -133,6 +132,8 @@ export const SkillsSettings: React.FC = () => {
   useEffect(() => {
     if (settingsCapabilityFocus?.kind === 'skill') {
       setActiveTab('installed');
+      // 外部导入深链：落页即清焦（不出横幅），后续自然进入仍是默认「发现安装」
+      if (settingsCapabilityFocus.source === 'external-import') clearSettingsCapabilityFocus();
     }
   }, [settingsCapabilityFocus?.kind, settingsCapabilityFocus?.nonce]);
 
@@ -815,7 +816,7 @@ export const SkillsSettings: React.FC = () => {
       {hubHeader}
       <WebModeBanner />
 
-      {settingsCapabilityFocus?.kind === 'skill' && (
+      {settingsCapabilityFocus?.kind === 'skill' && settingsCapabilityFocus.source !== 'external-import' && (
         <div className="flex flex-col gap-2 rounded-lg border border-badge-info/20 bg-sky-500/[0.06] px-3 py-2 text-sm text-badge-info sm:flex-row sm:items-center sm:justify-between">
           <div>
             {skillsText.focusPromptPrefix}<span className="font-mono">{settingsCapabilityFocus.id}</span>

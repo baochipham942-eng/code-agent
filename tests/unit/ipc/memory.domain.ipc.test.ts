@@ -38,9 +38,6 @@ const importer = vi.hoisted(() => ({
   applyMemoryHarnessImport: vi.fn(async () => ({ imported: 2, skipped: 0 })),
   confirmMemoryHarnessDirective: vi.fn(async () => ({ confirmed: true, imported: true })),
 }));
-const projectDraft = vi.hoisted(() => ({
-  draftProjectMemory: vi.fn(async () => ({ projectDir: '/p', written: 4, skipped: [], entries: [] })),
-}));
 const light = vi.hoisted(() => ({
   listMemoryFiles: vi.fn(async () => ['a.md']),
   readMemoryFile: vi.fn(async () => 'content'),
@@ -63,7 +60,6 @@ vi.mock('../../../src/host/memory/memoryEntryRuntime', () => ({
   writeEntryToLightMemory: vi.fn(),
 }));
 vi.mock('../../../src/host/memory/importers', () => importer);
-vi.mock('../../../src/host/memory/projectMemoryDraft', () => projectDraft);
 vi.mock('../../../src/host/memory/memoryEntryReview', () => review);
 vi.mock('../../../src/host/memory/memoryUsageEviction', () => eviction);
 vi.mock('../../../src/host/memory/memoryInjectionTrace', () => ({ listMemoryInjectionTraces: vi.fn(async () => []) }));
@@ -119,18 +115,17 @@ describe('harness import and batch review dispatch', () => {
       .toEqual({ confirmed: true, imported: true });
     expect((await call('memoryEntryBatchReview', { entryIds: ['import:1'], decision: 'approve' })).data)
       .toEqual({ updated: [{ id: 'e1' }], skipped: [] });
-    expect(importer.applyMemoryHarnessImport).toHaveBeenCalledWith(db, { candidateIds: ['import:1'] });
-    expect(importer.confirmMemoryHarnessDirective).toHaveBeenCalledWith(db, 'instruction:1', { adapterIds: undefined });
+    // N-EXTHISTORY-IMPORT-K1A：harness 导入的 home 基准与 externalImport 检测对齐（getHomeDir）
+    expect(importer.applyMemoryHarnessImport).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({ homeDir: expect.any(String), candidateIds: ['import:1'] }),
+    );
+    expect(importer.confirmMemoryHarnessDirective).toHaveBeenCalledWith(
+      db,
+      'instruction:1',
+      expect.objectContaining({ homeDir: expect.any(String) }),
+    );
     expect(review.batchReviewMemoryEntries).toHaveBeenCalledWith(db, { entryIds: ['import:1'], decision: 'approve' });
-  });
-
-  it('routes /init-memory drafting through the memory domain with a required projectDir', async () => {
-    expect((await call('memoryInitProjectDraft', { projectDir: '/work/app' })).data)
-      .toEqual({ projectDir: '/p', written: 4, skipped: [], entries: [] });
-    expect(projectDraft.draftProjectMemory).toHaveBeenCalledWith(db, { projectDir: '/work/app' });
-
-    expect(await call('memoryInitProjectDraft', {}))
-      .toMatchObject({ success: false, error: { code: 'INTERNAL_ERROR', message: 'memory init project draft requires projectDir' } });
   });
 
   it('rejects malformed batch review before touching storage', async () => {

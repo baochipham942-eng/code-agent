@@ -10,7 +10,7 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
-    sync::{atomic::AtomicBool, Arc, Mutex},
+    sync::{atomic::AtomicBool, Arc, Mutex, OnceLock},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -31,6 +31,7 @@ mod native_desktop;
 mod pip;
 mod quit_guard;
 mod resident_host;
+mod resident_host_windows;
 mod traffic_lights;
 
 use appshots::{
@@ -2409,7 +2410,18 @@ fn install_signal_handler(app: &tauri::AppHandle) {
 
 /// 受守卫退出请求的异步主体：worker 线程里查 quit-guard（2s 总超时），再决定
 /// 直接退出（无任务/已豁免）还是弹原生确认框。HTTP 查询绝不在事件循环线程上跑。
-fn spawn_quit_guard_flow(app: AppHandle, coordinator: Arc<quit_guard::QuitCoordinator>) {
+#[derive(Clone, Copy)]
+enum QuitFlowOrigin {
+    TauriExit,
+    #[cfg(target_os = "macos")]
+    MacApplicationTerminate,
+}
+
+fn spawn_quit_guard_flow(
+    app: AppHandle,
+    coordinator: Arc<quit_guard::QuitCoordinator>,
+    origin: QuitFlowOrigin,
+) {
     thread::spawn(move || {
         // token 解析镜像 auth.ts resolveDevAuthTokenPath：以 webServer 的 cwd 为准，
         // 打包态落在 *.app/Contents/Resources → <数据目录>/.dev-token，dev 态 <cwd>/.dev-token
@@ -2421,14 +2433,25 @@ fn spawn_quit_guard_flow(app: AppHandle, coordinator: Arc<quit_guard::QuitCoordi
             token.as_deref(),
             quit_guard::QUIT_GUARD_TIMEOUT,
         );
-        match quit_guard::decide_quit(outcome, None) {
+        match quit_guard::decide_quit(outcome, coordinator.current_skip()) {
             quit_guard::QuitDecision::ExitNow => {
                 coordinator.allow_exit();
                 coordinator.finish();
-                app.exit(0);
+                match origin {
+                    QuitFlowOrigin::TauriExit => app.exit(0),
+                    #[cfg(target_os = "macos")]
+                    QuitFlowOrigin::MacApplicationTerminate => {
+                        reply_to_mac_application_terminate(&app, true);
+                    }
+                }
             }
             quit_guard::QuitDecision::Confirm(prompt) => {
-                show_quit_confirm_dialog(&app, &coordinator, quit_guard::quit_prompt_text(prompt));
+                show_quit_confirm_dialog(
+                    &app,
+                    &coordinator,
+                    quit_guard::quit_prompt_text(prompt),
+                    origin,
+                );
             }
         }
     });
@@ -2438,15 +2461,18 @@ fn spawn_quit_guard_flow(app: AppHandle, coordinator: Arc<quit_guard::QuitCoordi
 /// 按钮组两套（N-RESIDENT-HOST-SHELL-RUST-FU1）：附着成立（mac/linux）→
 /// 「取消 / 后台继续 / 停止并退出」；不成立（Windows）→「取消 / 停止并退出」，
 /// 判据唯一来自 resident_host::quit_dialog_button_set_current()（无平台分支）。
-/// 槽位：三键组「取消」仍是默认（回车）键；两键组把「取消」放 cancel 槽
-/// （OkCancelCustom 第二参）——Esc/标题栏 X 会被 tauri-plugin-dialog 无条件
-/// 映射成 cancel 槽位文案（ai-review #2497），安全动作必须占这个槽，回车
-/// 默认键因此指向「停止并退出」（rfd 无独立于槽位的默认键入口），
-/// 见 quit_guard::dialog_answer_action。
+/// 槽位（N-RESIDENT-HOST-SHELL-RUST-FU3）：两组都把「取消」放 cancel 槽
+/// （三键组 YesNoCancelCustom 第三参 / 两键组 OkCancelCustom 第二参）——
+/// Esc/标题栏 X 会被 tauri-plugin-dialog 无条件映射成 cancel 槽位文案
+/// （ai-review #2497），安全动作必须占这个槽，回车默认键因此指向 yes/ok 槽
+/// （三键组「后台继续」、两键组「停止并退出」；rfd 无独立于槽位的默认键
+/// 入口），槽位序单一来源 resident_host 的 yes_no_cancel_slots /
+/// ok_cancel_slots，见 quit_guard::dialog_answer_action。
 fn show_quit_confirm_dialog(
     app: &AppHandle,
     coordinator: &Arc<quit_guard::QuitCoordinator>,
     message: &str,
+    origin: QuitFlowOrigin,
 ) {
     use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult};
 
@@ -2459,15 +2485,16 @@ fn show_quit_confirm_dialog(
         .title(quit_guard::QUIT_DIALOG_TITLE)
         .kind(MessageDialogKind::Warning)
         .buttons(match button_set {
-            resident_host::QuitDialogButtonSet::Three {
-                cancel,
-                background_continue,
-                quit,
-            } => MessageDialogButtons::YesNoCancelCustom(
-                cancel.to_string(),
-                background_continue.to_string(),
-                quit.to_string(),
-            ),
+            resident_host::QuitDialogButtonSet::Three { .. } => {
+                let (yes_slot, no_slot, cancel_slot) = button_set
+                    .yes_no_cancel_slots()
+                    .expect("三键组必有 yes/no/cancel 槽位");
+                MessageDialogButtons::YesNoCancelCustom(
+                    yes_slot.to_string(),
+                    no_slot.to_string(),
+                    cancel_slot.to_string(),
+                )
+            }
             resident_host::QuitDialogButtonSet::Two { .. } => {
                 let (ok_slot, cancel_slot) = button_set
                     .ok_cancel_slots()
@@ -2503,6 +2530,10 @@ fn show_quit_confirm_dialog(
                             "background-continue: daemon did not accept detach; staying in the app"
                         );
                         coordinator.finish();
+                        #[cfg(target_os = "macos")]
+                        if matches!(origin, QuitFlowOrigin::MacApplicationTerminate) {
+                            reply_to_mac_application_terminate(&app, false);
+                        }
                         return;
                     }
                 }
@@ -2513,12 +2544,142 @@ fn show_quit_confirm_dialog(
                 }
                 coordinator.allow_exit();
                 coordinator.finish();
-                app.exit(0);
+                match origin {
+                    QuitFlowOrigin::TauriExit => app.exit(0),
+                    #[cfg(target_os = "macos")]
+                    QuitFlowOrigin::MacApplicationTerminate => {
+                        if plan.cleanup_server {
+                            // AppKit 正在等待回复；先清理再批准退出，与 ExitRequested
+                            // 保持相同的优雅停止约定。
+                            cleanup_server(&app);
+                        }
+                        reply_to_mac_application_terminate(&app, true);
+                    }
+                }
             } else {
                 // 取消：什么都不清理（webServer 继续跑），app 继续运行
                 coordinator.finish();
+                #[cfg(target_os = "macos")]
+                if matches!(origin, QuitFlowOrigin::MacApplicationTerminate) {
+                    reply_to_mac_application_terminate(&app, false);
+                }
             }
         });
+}
+
+#[cfg(target_os = "macos")]
+static MAC_QUIT_GUARD_APP: OnceLock<AppHandle> = OnceLock::new();
+
+#[cfg(target_os = "macos")]
+fn reply_to_mac_application_terminate(app: &AppHandle, should_terminate: bool) {
+    if let Err(error) = app.run_on_main_thread(move || {
+        use objc2::MainThreadMarker;
+        use objc2_app_kit::NSApplication;
+
+        let Some(mtm) = MainThreadMarker::new() else {
+            eprintln!("quit guard: failed to acquire macOS main-thread marker");
+            return;
+        };
+        NSApplication::sharedApplication(mtm).replyToApplicationShouldTerminate(should_terminate);
+    }) {
+        eprintln!("quit guard: failed to dispatch macOS termination reply: {error:?}");
+    }
+}
+
+#[cfg(target_os = "macos")]
+unsafe extern "C-unwind" fn mac_application_should_terminate(
+    _delegate: *mut objc2::runtime::AnyObject,
+    _selector: objc2::runtime::Sel,
+    _application: *mut objc2_app_kit::NSApplication,
+) -> objc2_app_kit::NSApplicationTerminateReply {
+    use objc2_app_kit::NSApplicationTerminateReply;
+
+    let Some(app) = MAC_QUIT_GUARD_APP.get().cloned() else {
+        // hook 在 setup 阶段安装；只有 setup 未发布句柄时才直接放行，避免 macOS
+        // 永久等待。
+        return NSApplicationTerminateReply::TerminateNow;
+    };
+    let coordinator = app
+        .state::<Arc<quit_guard::QuitCoordinator>>()
+        .inner()
+        .clone();
+
+    // 系统关机、信号退出和已经批准的程序化退出不能被异步对话框拦住。
+    if coordinator.current_skip().is_some() || coordinator.exit_allowed() {
+        return NSApplicationTerminateReply::TerminateNow;
+    }
+
+    // AppKit 会为 Dock Quit 和 kAEQuitApplication 调用此代理方法。复用自定义
+    // 菜单/托盘入口的 worker 流程，将判定交给 quit_guard::decide_quit。
+    if !coordinator.begin_request() {
+        // 已有退出流程代表同一个用户决定；不能再挂起一个无人回复的请求。
+        return NSApplicationTerminateReply::TerminateCancel;
+    }
+    spawn_quit_guard_flow(
+        app,
+        coordinator,
+        QuitFlowOrigin::MacApplicationTerminate,
+    );
+    NSApplicationTerminateReply::TerminateLater
+}
+
+#[cfg(target_os = "macos")]
+fn install_mac_application_terminate_guard(app: &tauri::App) {
+    use objc2::ffi::{class_addMethod, class_replaceMethod};
+    use objc2::runtime::{AnyClass, AnyObject, Imp, Sel};
+    use objc2::sel;
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSApplication, NSApplicationDelegate};
+
+    let _ = MAC_QUIT_GUARD_APP.set(app.handle().clone());
+    let Some(mtm) = MainThreadMarker::new() else {
+        eprintln!("quit guard: macOS application delegate hook requires the main thread");
+        return;
+    };
+    let ns_application = NSApplication::sharedApplication(mtm);
+    let Some(delegate) = ns_application.delegate() else {
+        eprintln!("quit guard: NSApplication has no delegate; Dock/AppleEvent quit remains unhooked");
+        return;
+    };
+
+    let delegate_object: &AnyObject = <objc2::runtime::ProtocolObject<
+        dyn NSApplicationDelegate,
+    > as AsRef<AnyObject>>::as_ref(delegate.as_ref());
+    let delegate_class = delegate_object.class();
+    let selector = sel!(applicationShouldTerminate:);
+    let implementation: Imp = unsafe {
+        std::mem::transmute(
+            mac_application_should_terminate
+                as unsafe extern "C-unwind" fn(
+                    *mut AnyObject,
+                    Sel,
+                    *mut NSApplication,
+                ) -> objc2_app_kit::NSApplicationTerminateReply,
+        )
+    };
+    let added = unsafe {
+        class_addMethod(
+            delegate_class as *const AnyClass as *mut AnyClass,
+            selector,
+            implementation,
+            c"Q@:@".as_ptr(),
+        )
+    };
+    if !added.as_bool() {
+        // 未来 tao 版本或其他插件可能已经提供此方法；记录后覆盖，避免 Dock/AppleEvent
+        // 请求静默绕过守卫。当前 tao 路径没有该方法，所以才需要这个 hook。
+        eprintln!(
+            "quit guard: NSApplication delegate already implements applicationShouldTerminate:; replacing it"
+        );
+        unsafe {
+            class_replaceMethod(
+                delegate_class as *const AnyClass as *mut AnyClass,
+                selector,
+                implementation,
+                c"Q@:@".as_ptr(),
+            );
+        }
+    }
 }
 
 /// macOS 专用：复制 tauri `Menu::default` 的菜单栏结构（AppName/Edit/View/Window/Help），
@@ -2531,6 +2692,7 @@ fn show_quit_confirm_dialog(
 /// 与托盘退出同一入口。
 #[cfg(target_os = "macos")]
 fn setup_app_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    install_mac_application_terminate_guard(app);
     let handle = app.handle();
     let pkg_info = handle.package_info();
     let about_metadata = AboutMetadata {
@@ -4572,6 +4734,7 @@ fn main() {
                     spawn_quit_guard_flow(
                         app_handle.clone(),
                         coordinator.inner().clone(),
+                        QuitFlowOrigin::TauriExit,
                     );
                 }
             }

@@ -137,6 +137,12 @@ export interface ToolSchema {
   readonly requiresApiKey?: readonly string[];
   /** 幂等 hint（read-only tool），用于缓存和 plan-mode 判断 */
   readonly readOnly?: boolean;
+  /**
+   * 声明该工具绝不读写会话工作目录（纯会话内交互或自维护存储）。缺省 = 未知 =
+   * 懒开目录按会写处理（fail-safe：cwd 缺失会让 Bash/Process 派发失败）。
+   * 仅引擎侧懒开落盘判定消费，不进模型可见工具 schema。
+   */
+  readonly touchesWorkDirectory?: false;
   /** 显式资源访问。缺省时由折叠器从旧标记推导，调度按折叠结果分段。 */
   readonly accesses?: readonly ToolAccessDeclaration[];
   /**

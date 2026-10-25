@@ -40,6 +40,7 @@ import { useDoctorStore } from '../../../../stores/doctorStore';
 import { OS_SANDBOX_DOCTOR_ITEM_NAME } from '@shared/constants/sandbox';
 import { validateUserPermissionRule } from '@shared/permissionRuleSyntax';
 import { JevKeyConfig } from './JevKeyConfig';
+import { NlRuleTranslator } from '../permissions/NlRuleTranslator';
 
 export type PermissionMode = 'default' | 'readOnly' | 'acceptEdits' | 'bypassPermissions';
 export type InheritanceMode = 'strict-inherit' | 'child-narrow' | 'independent';
@@ -885,53 +886,60 @@ export const GeneralSettings: React.FC = () => {
               {generalText.userRules.autoSaveHint}
             </div>
 
-            <div className="grid grid-cols-1 gap-3">
-              <div>
-                <label className="mb-1 block text-xs text-badge-danger">{generalText.userRules.denyLabel}</label>
-                <textarea
-                  value={denyRules}
-                  onChange={(event) => setDenyRules(event.target.value)}
-                  onBlur={(event) => handleRulesBlur('deny', event.target.value)}
-                  disabled={isWebMode()}
-                  placeholder={'Bash(rm -rf *)\nWrite(/etc/*)\nBash(curl *)'}
-                  rows={4}
-                  className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-hidden focus:border-red-500/50 disabled:cursor-not-allowed disabled:opacity-50"
-                />
-                {ruleErrors.deny ? (
-                  <p className="mt-1 text-xs text-badge-danger">{ruleErrors.deny}</p>
-                ) : null}
+            <NlRuleTranslator onSaved={() => void load()} />
+
+            <SettingsDetails
+              title={t.permissionRuleNl.advancedFoldTitle}
+              description={t.permissionRuleNl.advancedFoldDescription}
+            >
+              <div className="grid grid-cols-1 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs text-badge-danger">{generalText.userRules.denyLabel}</label>
+                  <textarea
+                    value={denyRules}
+                    onChange={(event) => setDenyRules(event.target.value)}
+                    onBlur={(event) => handleRulesBlur('deny', event.target.value)}
+                    disabled={isWebMode()}
+                    placeholder={'Bash(rm -rf *)\nWrite(/etc/*)\nBash(curl *)'}
+                    rows={4}
+                    className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-hidden focus:border-red-500/50 disabled:cursor-not-allowed disabled:opacity-50"
+                  />
+                  {ruleErrors.deny ? (
+                    <p className="mt-1 text-xs text-badge-danger">{ruleErrors.deny}</p>
+                  ) : null}
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-badge-warning">{generalText.userRules.askLabel}</label>
+                  <textarea
+                    value={askRules}
+                    onChange={(event) => setAskRules(event.target.value)}
+                    onBlur={(event) => handleRulesBlur('ask', event.target.value)}
+                    disabled={isWebMode()}
+                    placeholder={'Bash(git push *)\nWrite(*.env)'}
+                    rows={3}
+                    className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-hidden focus:border-badge-warning/50 disabled:cursor-not-allowed disabled:opacity-50"
+                  />
+                  {ruleErrors.ask ? (
+                    <p className="mt-1 text-xs text-badge-danger">{ruleErrors.ask}</p>
+                  ) : null}
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-badge-success">{generalText.userRules.allowLabel}</label>
+                  <textarea
+                    value={allowRules}
+                    onChange={(event) => setAllowRules(event.target.value)}
+                    onBlur={(event) => handleRulesBlur('allow', event.target.value)}
+                    disabled={isWebMode()}
+                    placeholder={'Read(*)\nBash(ls *)\nBash(git status)'}
+                    rows={3}
+                    className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-hidden focus:border-zinc-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  />
+                  {ruleErrors.allow ? (
+                    <p className="mt-1 text-xs text-badge-danger">{ruleErrors.allow}</p>
+                  ) : null}
+                </div>
               </div>
-              <div>
-                <label className="mb-1 block text-xs text-badge-warning">{generalText.userRules.askLabel}</label>
-                <textarea
-                  value={askRules}
-                  onChange={(event) => setAskRules(event.target.value)}
-                  onBlur={(event) => handleRulesBlur('ask', event.target.value)}
-                  disabled={isWebMode()}
-                  placeholder={'Bash(git push *)\nWrite(*.env)'}
-                  rows={3}
-                  className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-hidden focus:border-badge-warning/50 disabled:cursor-not-allowed disabled:opacity-50"
-                />
-                {ruleErrors.ask ? (
-                  <p className="mt-1 text-xs text-badge-danger">{ruleErrors.ask}</p>
-                ) : null}
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-badge-success">{generalText.userRules.allowLabel}</label>
-                <textarea
-                  value={allowRules}
-                  onChange={(event) => setAllowRules(event.target.value)}
-                  onBlur={(event) => handleRulesBlur('allow', event.target.value)}
-                  disabled={isWebMode()}
-                  placeholder={'Read(*)\nBash(ls *)\nBash(git status)'}
-                  rows={3}
-                  className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 font-mono text-xs text-zinc-200 outline-hidden focus:border-zinc-500 disabled:cursor-not-allowed disabled:opacity-50"
-                />
-                {ruleErrors.allow ? (
-                  <p className="mt-1 text-xs text-badge-danger">{ruleErrors.allow}</p>
-                ) : null}
-              </div>
-            </div>
+            </SettingsDetails>
           </div>
         )}
       </SettingsDetails>

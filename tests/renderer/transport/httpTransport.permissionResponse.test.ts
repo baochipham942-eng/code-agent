@@ -31,6 +31,7 @@ vi.mock('../../../src/renderer/services/localBridge', () => ({
 };
 
 import { createHttpCodeAgentAPI } from '../../../src/renderer/api/httpTransport';
+import { takeTransportFailure } from '../../../src/renderer/api/transportFailures';
 import { installPermissionResponseHandler } from '../../../src/web/webPermissionResponseHandler';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 
@@ -106,5 +107,85 @@ describe('httpTransport keeps the permission response delivery signal intact', (
       sessionId: 'session-late-click',
       source: 'foreground-permission-island',
     });
+  });
+
+  // N-APPROVAL-LANE-CLICK-DROP：传输故障（fetch 拒绝 / 非 2xx / token 失效 / 非 JSON）
+  // 对审批应答通道必须 REJECT——坍缩成 undefined 会让 PermissionCard 把失败点击当
+  // 已送达处理（FB-419：卡消失、宿主等到超时否认）。transport failure 登记照旧保留。
+  it('a fetch exception rejects for the permission channel and still records the transport failure', async () => {
+    globalThis.fetch = vi.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    }) as unknown as typeof fetch;
+    const api = createHttpCodeAgentAPI('http://localhost:8180');
+
+    await expect(
+      api.invoke(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, 'req-net', 'allow', 'session-late-click'),
+    ).rejects.toThrow('Failed to fetch');
+    expect(takeTransportFailure(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE)).toMatchObject({ status: null });
+  });
+
+  it('a non-ok HTTP status rejects for the permission channel and records the status', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: false,
+      status: 500,
+      headers: new Headers(),
+      text: async () => JSON.stringify({ error: 'boom' }),
+      json: async () => ({}),
+    })) as unknown as typeof fetch;
+    const api = createHttpCodeAgentAPI('http://localhost:8180');
+
+    await expect(
+      api.invoke(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, 'req-500', 'allow', 'session-late-click'),
+    ).rejects.toThrow('500');
+    expect(takeTransportFailure(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE)).toMatchObject({ status: 500 });
+  });
+
+  it('a local auth-token expiry rejects for the permission channel instead of collapsing to undefined', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: false,
+      status: 401,
+      headers: new Headers(),
+      text: async () => JSON.stringify({ error: { message: 'Invalid auth token' } }),
+      json: async () => ({}),
+    })) as unknown as typeof fetch;
+    const api = createHttpCodeAgentAPI('http://localhost:8180');
+
+    await expect(
+      api.invoke(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, 'req-401', 'allow', 'session-late-click'),
+    ).rejects.toThrow('Invalid auth token');
+    expect(takeTransportFailure(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE)).toMatchObject({ status: null });
+  });
+
+  it('a 200 non-JSON body rejects for the permission channel and records the failure', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'text/html' }),
+      text: async () => '<html>gateway error page</html>',
+      json: async () => {
+        throw new Error('not json');
+      },
+    })) as unknown as typeof fetch;
+    const api = createHttpCodeAgentAPI('http://localhost:8180');
+
+    await expect(
+      api.invoke(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, 'req-html', 'allow', 'session-late-click'),
+    ).rejects.toThrow('非 JSON');
+    expect(takeTransportFailure(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE)).toMatchObject({ status: 200 });
+  });
+
+  it('every other channel keeps the silent undefined collapse on transport failure', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: false,
+      status: 500,
+      headers: new Headers(),
+      text: async () => JSON.stringify({ error: 'boom' }),
+      json: async () => ({}),
+    })) as unknown as typeof fetch;
+    const api = createHttpCodeAgentAPI('http://localhost:8180');
+
+    // session:list 是普通通道的代表：失败依旧 resolve undefined（改动面只限审批应答）。
+    const result = await api.invoke('session:list');
+    expect(result).toBeUndefined();
   });
 });

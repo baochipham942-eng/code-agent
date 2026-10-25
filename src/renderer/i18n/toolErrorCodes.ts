@@ -54,6 +54,14 @@ export const toolErrorCodesZh = {
     summary: '这个工具的完整定义超过单次加载上限',
     detail: '{name} 测得 {measured}，上限 {allowed}。没有载入不完整的定义。',
   },
+  MUSIC_SERVICE_UNAVAILABLE: {
+    summary: '默认音乐服务（MiniMax）已不可用',
+    detail: '可改用已配置的音乐模型：{alternatives}',
+  },
+  MUSIC_SERVICE_UNAVAILABLE_NO_ALTERNATIVE: {
+    summary: '当前没有可用的音乐服务',
+    detail: '默认的 MiniMax 音乐接口已对新账户关闭；可在设置的模型页添加支持生成音乐的模型后再试',
+  },
 };
 
 export const toolErrorCodesEn: typeof toolErrorCodesZh = {
@@ -108,5 +116,13 @@ export const toolErrorCodesEn: typeof toolErrorCodesZh = {
   INJECTION_CEILING: {
     summary: 'This tool definition exceeds the single-load limit',
     detail: '{name} measured {measured}; the limit is {allowed}. No partial definition was loaded.',
+  },
+  MUSIC_SERVICE_UNAVAILABLE: {
+    summary: 'The default music service (MiniMax) is unavailable',
+    detail: 'Use a configured music model instead: {alternatives}',
+  },
+  MUSIC_SERVICE_UNAVAILABLE_NO_ALTERNATIVE: {
+    summary: 'No music service is currently available',
+    detail: 'The default MiniMax music API is closed to new accounts; add a music-capable model in Settings → Models, then try again',
   },
 };

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   requestCancelUntilSettled,
   resolveEffectiveSessionIdForSend,
-} from '../../../src/renderer/hooks/agent/useAgentIPC';
+} from '../../../src/renderer/hooks/agent/agentRuntimeFollowup';
 
 describe('resolveEffectiveSessionIdForSend (B4 session-create race)', () => {
   it('awaits in-flight create and binds to the new session, not the pre-create currentSessionId', async () => {

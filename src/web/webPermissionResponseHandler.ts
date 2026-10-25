@@ -15,6 +15,7 @@
 import { IPC_CHANNELS } from '../shared/ipc';
 import { getTaskManager } from '../host/task/TaskManager';
 import { closeDeadParkedApproval } from '../host/agent/parkedApprovalHydration';
+import { resumeSurvivingParkedApproval } from '../host/agent/parkedApprovalResume';
 import { deliverForegroundPermissionResponse } from './foregroundPermissionRegistry';
 import type { PermissionDeliveryOutcome, PermissionResponse } from '../shared/contract/permission';
 import type { PendingDevPermissionRequest } from './routes/dev';
@@ -40,7 +41,7 @@ const FAILURE_CODES: Record<Exclude<PermissionDeliveryOutcome, 'delivered'>, str
 export function installPermissionResponseHandler(deps: PermissionResponseDeps) {
   const { handlers, pendingDevPermissions, getCurrentSessionId, logger } = deps;
 
-  const deliver = (_event: unknown, ...args: unknown[]) => {
+  const deliver = async (_event: unknown, ...args: unknown[]) => {
       const [requestId, response, sessionId] = args as [string, PermissionResponse, string | undefined];
       const pending = pendingDevPermissions.get(requestId);
       if (pending) {
@@ -107,7 +108,21 @@ export function installPermissionResponseHandler(deps: PermissionResponseDeps) {
         };
       }
 
-      // 停车审批的宿主已随进程重启消失：fail-closed 拒绝并从待办收口。
+      // 停车审批的宿主已随进程重启消失：幸存行接手给台账单发执行器（批准执行一次 /
+      // 拒绝落 denied 结果），其余照旧 fail-closed 拒绝并从待办收口。
+      const resumed = await resumeSurvivingParkedApproval({ requestId, response });
+      if (resumed.handled) {
+        logger.info('Parked approval resumed from message ledger (web)', {
+          requestId,
+          response,
+          sessionId: targetSessionId,
+          outcome: resumed.status,
+        });
+        return {
+          success: true,
+          data: { requestId, sessionId: targetSessionId, outcome, resumed: resumed.status },
+        };
+      }
       if (closeDeadParkedApproval(requestId)) {
         logger.warn('Parked approval rejected on dead resolve (web)', { requestId, outcome });
         return {

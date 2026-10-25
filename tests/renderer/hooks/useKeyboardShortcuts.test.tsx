@@ -118,4 +118,19 @@ describe('useKeyboardShortcuts permission response', () => {
     expect(setPendingPermissionRequest).toHaveBeenCalledWith(null);
   });
 
+  // N-APPROVAL-LANE-CLICK-DROP：transport 现在会把审批应答的传输故障 REJECT 出来——
+  // 这条 deny 路径要靠既有 catch 留卡（恢复 pending request + 释放 claim）。
+  it('restores the pending request when the deny send is rejected by the transport', async () => {
+    invoke.mockRejectedValueOnce(new Error('审批应答发送失败 (500): boom'));
+    renderHook(() => useKeyboardShortcuts());
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+
+    await waitFor(() => {
+      expect(setPendingPermissionRequest).toHaveBeenCalledWith(request, 'session-current');
+    });
+  });
+
 });

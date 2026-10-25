@@ -247,7 +247,7 @@ describe('座位清单与宿主接线防退化', () => {
       'general', 'conversation', 'search', 'voiceLive', 'voiceInput', 'keybindings', 'doctor',
       'model', 'visualModels', 'voiceModel', 'agentEngine', 'appearance', 'soul', 'workspace',
       'automation', 'appshots', 'cache', 'capabilities', 'plugins', 'mcp', 'skills', 'roles',
-      'channels', 'hooks', 'memory', 'openchronicle', 'privacy', 'update', 'about',
+      'channels', 'hooks', 'memory', 'openchronicle', 'external-import', 'privacy', 'update', 'about',
     ]);
   });
 });

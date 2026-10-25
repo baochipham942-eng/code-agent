@@ -72,6 +72,9 @@ export * from './gui';
 // Memory types
 export * from './memory';
 
+// External import types（设置页「从其他 AI 应用导入」）
+export * from './externalImport';
+
 // Built-in Agent types
 export * from './builtInAgents';
 

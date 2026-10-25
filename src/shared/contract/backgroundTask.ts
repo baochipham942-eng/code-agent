@@ -80,12 +80,25 @@ export interface LastToolStep {
   at: number;
 }
 
+/**
+ * 终局工具失败（N-MEDIA-GEN-MUSIC-FALLBACK-FU1）：任务收尾后任务行要说清「为什么失败 + 出路」
+ * 的那条结构化记录。host 只对准入码表里的 code 写入（见 SessionCommandCenter），
+ * 同一工具后续成功即清除；渲染端仅在任务终态把它翻成人话。
+ */
+export interface LastToolFailure {
+  tool: string;
+  code: string;
+  alternatives?: string;
+  at: number;
+}
+
 export interface TaskProgress {
   current?: number;
   total?: number;
   percent?: number;
   label?: string;
   lastToolStep?: LastToolStep;
+  lastToolFailure?: LastToolFailure;
 }
 
 export interface TaskNotification {

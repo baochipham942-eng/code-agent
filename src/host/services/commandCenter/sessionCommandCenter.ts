@@ -1,5 +1,6 @@
 import type { AgentEvent, Message, MessageAttachment, TaskProgressData } from '../../../shared/contract';
 import type { TaskProgress } from '../../../shared/contract/backgroundTask';
+import type { ToolResult } from '../../../shared/contract/tool';
 import type { NormalizedToolArtifactMeta } from '../../../shared/contract/artifactBlob';
 import type { WorkspaceScope } from '../../../shared/contract/project';
 import type { AgentRunOptions } from '../../research/types';
@@ -92,6 +93,18 @@ export type SessionTaskReferenceResult =
 const TERMINAL = new Set<SessionCommandTaskStatus>(['completed', 'failed', 'cancelled']);
 const TASK_LIFECYCLE_EVENTS = ['task_started', 'task_completed', 'task_error', 'task_cancelled'] as const;
 
+/**
+ * progress.lastToolFailure 的准入码表（N-MEDIA-GEN-MUSIC-FALLBACK-FU1）：只登记
+ * 「用户能自救」的结构化失败 code，命中才落 lastToolFailure，任务行终态才有人话出路。
+ * 渲染端消费登记表：REGISTERED_TOOL_ERROR_CODES
+ * （src/renderer/utils/toolExecutionPresentation.ts）+ 文案
+ * （src/renderer/i18n/toolErrorCodes.ts）。新增 code 时三处同步。
+ */
+const LAST_TOOL_FAILURE_CODES: ReadonlySet<string> = new Set([
+  'MUSIC_SERVICE_UNAVAILABLE',
+  'MUSIC_SERVICE_UNAVAILABLE_NO_ALTERNATIVE',
+]);
+
 type TerminalTaskStatus = Extract<SessionCommandTaskStatus, 'completed' | 'failed' | 'cancelled'>;
 
 interface SessionCommandCenterDependencies {
@@ -116,6 +129,8 @@ function compactSummary(value: string | undefined, fallback: string): string {
 export class SessionCommandCenter {
   private readonly tasksBySession = new Map<string, Map<string, SessionCommandTask>>();
   private readonly ledgers = new Map<string, SessionTaskSlotLedger>();
+  /** 在途工具调用的名字（`${taskId}:${toolCallId}` → 工具名）；tool_call_end 即删，只活在途调用。 */
+  private readonly toolNamesByCallId = new Map<string, string>();
   private readonly manager: TaskManager;
   private readonly projectTerminalResult: NonNullable<SessionCommandCenterDependencies['projectTerminalResult']>;
   private readonly persistMemberInput: NonNullable<SessionCommandCenterDependencies['persistMemberInput']>;
@@ -340,6 +355,7 @@ export class SessionCommandCenter {
     }
     for (const ledger of this.ledgers.values()) ledger.dispose();
     this.stopAgentEventObservation?.();
+    this.toolNamesByCallId.clear();
   }
 
   private tasks(sessionId: string): Map<string, SessionCommandTask> {
@@ -458,9 +474,24 @@ export class SessionCommandCenter {
   }
 
   private handleAgentProgressEvent(sessionId: string, event: AgentEvent, taskId?: string): void {
-    if (event.type !== 'task_progress' || !taskId) return;
+    if (!taskId) return;
     const task = this.tasksBySession.get(sessionId)?.get(taskId);
     if (!task || TERMINAL.has(task.status)) return;
+
+    // tool_call_start 只记「这个 call id 是哪个工具」，供 tool_call_end 落
+    // lastToolFailure.tool / 对比同名工具的后续成功；end 时即删，map 只活在途调用。
+    if (event.type === 'tool_call_start') {
+      const call = event.data as { id?: unknown; name?: unknown } | undefined;
+      if (typeof call?.id === 'string' && typeof call.name === 'string') {
+        this.toolNamesByCallId.set(`${taskId}:${call.id}`, call.name);
+      }
+      return;
+    }
+    if (event.type === 'tool_call_end') {
+      this.applyToolCallEnd(task, event.data as ToolResult);
+      return;
+    }
+    if (event.type !== 'task_progress') return;
     const data = event.data as TaskProgressData | undefined;
     if (!data?.tool) return;
 
@@ -476,6 +507,47 @@ export class SessionCommandCenter {
         ...(data.toolIndex === undefined ? {} : { toolIndex: data.toolIndex }),
         ...(data.toolTotal === undefined ? {} : { toolTotal: data.toolTotal }),
         ...(data.target ? { target: data.target } : {}),
+        at: Date.now(),
+      },
+    };
+    task.updatedAt = Date.now();
+    this.projectTask(task);
+  }
+
+  /**
+   * 终局工具失败记录（N-MEDIA-GEN-MUSIC-FALLBACK-FU1）：任务收尾后任务行要能说清
+   * 「为什么失败 + 出路」。只对准入码表里的 code 写 progress.lastToolFailure——
+   * 渲染端把 code 翻成已登记的人话（登记表在
+   * src/renderer/utils/toolExecutionPresentation.ts REGISTERED_TOOL_ERROR_CODES，
+   * 文案在 src/renderer/i18n/toolErrorCodes.ts），新增 code 时两边同步。
+   * 同一工具后续成功即清除（用户按出路补配后重跑，提示要消失）。
+   */
+  private applyToolCallEnd(task: SessionCommandTask, result: ToolResult): void {
+    const mapKey = `${task.id}:${result.toolCallId}`;
+    const tool = this.toolNamesByCallId.get(mapKey) ?? task.progress?.lastToolStep?.tool;
+    this.toolNamesByCallId.delete(mapKey);
+
+    if (result.success) {
+      const failure = task.progress?.lastToolFailure;
+      if (failure && failure.tool === tool) {
+        const progress = { ...task.progress };
+        delete progress.lastToolFailure;
+        task.progress = progress;
+        task.updatedAt = Date.now();
+        this.projectTask(task);
+      }
+      return;
+    }
+
+    const code = result.metadata?.code;
+    if (typeof code !== 'string' || !LAST_TOOL_FAILURE_CODES.has(code)) return;
+    const alternatives = result.metadata?.alternatives;
+    task.progress = {
+      ...task.progress,
+      lastToolFailure: {
+        tool: tool ?? 'unknown',
+        code,
+        ...(typeof alternatives === 'string' && alternatives ? { alternatives } : {}),
         at: Date.now(),
       },
     };

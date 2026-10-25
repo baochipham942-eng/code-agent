@@ -1,8 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { formatDesignCanvasSessionReminder } from '../../../src/shared/design/canvasSessionReminder';
-import {
-  applyDesignCanvasSessionToContent,
-} from '../../../src/renderer/hooks/agent/useAgentIPC';
+import { applyDesignCanvasSessionToContent } from '../../../src/renderer/hooks/agent/agentDesignContext';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useDesignCanvasStore } from '../../../src/renderer/components/design/designCanvasStore';
 import type { CanvasNode } from '../../../src/renderer/components/design/designCanvasTypes';

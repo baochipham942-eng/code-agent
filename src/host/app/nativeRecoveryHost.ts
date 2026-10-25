@@ -28,6 +28,13 @@ import { createLogger } from '../services/infra/logger';
 import type { TurnCostEstimateInput } from '../../shared/contract/turnCost';
 import type { GoalRecoverySnapshot } from '../agent/goalModeController';
 import { INTERRUPTED_TOOL_CALL_PLACEHOLDER } from '../agent/runtime/cancelledToolCallClosure';
+import {
+  buildRecoveredToolMessage,
+  dispatchLedgerToolApproval,
+  persistedToolCall,
+  rejectLedgerToolApproval,
+  toolResultEvidence as ledgerToolResultEvidence,
+} from '../runtime/ledgerToolExecution';
 
 interface NativeModelContinuationSessions {
   getMessages(sessionId: string, limit?: number): Promise<Message[]>;
@@ -115,37 +122,7 @@ function toolResultEvidence(
   messages: Message[],
   toolCallId: string,
 ): NativeRecoveryResultEvidence | null {
-  const message = messages.find((candidate) => (
-    candidate.role === 'tool'
-    && candidate.toolResults?.some((result) => result.toolCallId === toolCallId)
-  ));
-  return message ? { resultRef: `message-ledger:${message.id}` } : null;
-}
-
-function persistedToolCall(messages: Message[], toolCallId: string) {
-  for (const message of messages) {
-    if (message.role !== 'assistant') continue;
-    const toolCall = message.toolCalls?.find((candidate) => candidate.id === toolCallId);
-    if (toolCall) return { assistantMessage: message, toolCall };
-  }
-  return null;
-}
-
-function buildRecoveredToolMessage(input: {
-  assistantMessage: Message;
-  toolCallId: string;
-  result: ToolResult;
-  now: number;
-  kind: 'replayed' | 'interrupted' | 'approved' | 'denied';
-}): Message {
-  return {
-    id: `${input.assistantMessage.id}:${input.kind}-tool-result:${input.toolCallId}`,
-    role: 'tool',
-    content: JSON.stringify([input.result]),
-    timestamp: input.now,
-    toolResults: [input.result],
-    ...(input.assistantMessage.isMeta ? { isMeta: true } : {}),
-  };
+  return ledgerToolResultEvidence(messages, toolCallId);
 }
 
 function approvalToolCallIds(input: NativeRecoveryOperationInput): string[] {
@@ -619,33 +596,25 @@ export function createApplicationNativeRecoveryPorts(
         );
         const persisted = findApprovalToolCall(messages, input);
         if (!persisted) throw new Error('native approved approval payload is unavailable');
-        const existing = toolResultEvidence(messages, persisted.toolCall.id);
-        if (existing) return existing;
-        const result = await deps.executeTool({
-          name: persisted.toolCall.name,
-          arguments: persisted.toolCall.arguments,
-          sessionId: input.plan.envelope.sessionId,
-          sourceMessageId: input.descriptor.sourceMessageId,
-          toolCallId: persisted.toolCall.id,
-          workingDirectory: input.descriptor.workspace.cwd,
-        });
-        const toolResult: ToolResult = {
-          toolCallId: persisted.toolCall.id,
-          success: result.success,
-          ...(result.output !== undefined ? { output: result.output } : {}),
-          ...(result.error !== undefined ? { error: result.error } : {}),
-          duration: 0,
-          ...(result.metadata ? { metadata: result.metadata } : {}),
-        };
-        const message = buildRecoveredToolMessage({
-          assistantMessage: persisted.assistantMessage,
-          toolCallId: persisted.toolCall.id,
-          result: toolResult,
-          now: deps.now(),
-          kind: 'approved',
-        });
-        await deps.persistToolMessage(input.plan.envelope.sessionId, message);
-        return { resultRef: `message-ledger:${message.id}` };
+        // 与停车审批重启批准（parkedApprovalResume）共享的台账单发执行器：结果已存在即跳过。
+        const outcome = await dispatchLedgerToolApproval(
+          {
+            executeTool: deps.executeTool,
+            persistToolMessage: deps.persistToolMessage,
+            now: deps.now,
+          },
+          {
+            messages,
+            toolCallId: persisted.toolCall.id,
+            sessionId: input.plan.envelope.sessionId,
+            sourceMessageId: input.descriptor.sourceMessageId,
+            workingDirectory: input.descriptor.workspace.cwd,
+          },
+        );
+        if (outcome.status === 'payload_unavailable') {
+          throw new Error('native approved approval payload is unavailable');
+        }
+        return { resultRef: outcome.resultRef };
       },
       async reject(input, feedback) {
         const deps = dependencies();
@@ -655,23 +624,24 @@ export function createApplicationNativeRecoveryPorts(
         );
         const persisted = findApprovalToolCall(messages, input);
         if (!persisted) throw new Error('native rejected approval payload is unavailable');
-        const existing = toolResultEvidence(messages, persisted.toolCall.id);
-        if (existing) return existing;
         const reason = feedback?.trim() ? `approval rejected: ${feedback.trim()}` : 'approval rejected by user';
-        const message = buildRecoveredToolMessage({
-          assistantMessage: persisted.assistantMessage,
-          toolCallId: persisted.toolCall.id,
-          result: {
-            toolCallId: persisted.toolCall.id,
-            success: false,
-            error: reason,
-            duration: 0,
+        const outcome = await rejectLedgerToolApproval(
+          {
+            executeTool: deps.executeTool,
+            persistToolMessage: deps.persistToolMessage,
+            now: deps.now,
           },
-          now: deps.now(),
-          kind: 'denied',
-        });
-        await deps.persistToolMessage(input.plan.envelope.sessionId, message);
-        return { resultRef: `message-ledger:${message.id}` };
+          {
+            messages,
+            toolCallId: persisted.toolCall.id,
+            sessionId: input.plan.envelope.sessionId,
+            reason,
+          },
+        );
+        if (outcome.status === 'payload_unavailable') {
+          throw new Error('native rejected approval payload is unavailable');
+        }
+        return { resultRef: outcome.resultRef };
       },
     },
   };

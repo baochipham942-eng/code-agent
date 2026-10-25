@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   getAgentSendFailureMessage,
   isSessionBusyRunConflict,
-  getRuntimeFollowupFailureMessage,
   isRuntimeBusyStatus,
-} from '../../../src/renderer/hooks/agent/useAgentIPC';
+} from '../../../src/renderer/hooks/agent/agentRuntimeFollowup';
+import { getRuntimeFollowupFailureMessage } from '../../../src/renderer/hooks/agent/useAgentIPC';
 
 describe('runtime follow-up helpers', () => {
   it('treats active task states as busy', () => {

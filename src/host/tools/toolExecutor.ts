@@ -30,6 +30,7 @@ import { evaluateToolSlotDataDirAccess, FOREIGN_SLOT_DATA_DIR_CODE, type SlotDat
 import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
 import { getFileCheckpointService } from '../services/checkpoint';
 import { getConfirmationGate } from '../agent/confirmationGate';
+import { computeLedgerArgsSurvival } from '../agent/parkedApprovalSurvival';
 import {
   bashCommandRequiresPermission,
   readArgumentsRequirePermission,
@@ -2059,6 +2060,14 @@ export class ToolExecutor {
       // resolved 审批结果回到 renderer 后，靠现成 tool call id 锚到对应步骤旁展示。
       // 只补关联字段，不复制参数或另建历史存储。
       permissionRequest.parentToolUseId = options.currentToolCallId;
+      // N-PARKED-APPROVAL-SURVIVE-RESTART-RESUME：对「现在真会执行的参数」取账本形
+      // （与 messageProcessor 落库同一套 sanitize）算指纹 + 忠实标记，随请求上抛给
+      // parkApproval 落进行 payload——重启批准时从台账重算比对，点的是 A 就绝不执行 B。
+      if (options.currentToolCallId) {
+        const survival = computeLedgerArgsSurvival(requestedToolName, params);
+        permissionRequest.argsFingerprint = survival.argsFingerprint;
+        permissionRequest.ledgerFaithful = survival.ledgerFaithful;
+      }
       // B4：把授权 target 透传给审批层，供无人值守停车审批卡出「每次都允许发 <target>」铸权入口。
       if (standingGrantTarget) permissionRequest.details.standingGrantTarget = standingGrantTarget;
       // B1：external 工具（离开本机、发出去收不回）在交互审批卡上标作用域（N-APPROVAL-EXTERNAL-SCOPENOTE）。

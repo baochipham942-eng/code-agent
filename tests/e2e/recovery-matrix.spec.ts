@@ -5,15 +5,16 @@
 // action is visible, lineage is not quarantined). The full visible list is
 // recorded; starter cards and expand toggles do not count as an exit.
 import { expect, test, type Page } from './fixtures/axeTest';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 
 import { dismissFirstRunDialogs } from './firstRunDialogs';
 import {
   allocatePort,
   assertRecoveryInvariants,
-  CELL_LOG,
   makeFreshDirs,
   orderMatches,
+  readParkedApprovals,
   readSessionDb,
   recordCell,
   restartServer,
@@ -286,6 +287,207 @@ test('D1 orphan tool call without a begin row', async ({ page }) => {
 test('D2 orphan tool call with a begin row', async ({ page }) => {
   await runOrphanCell(page, 'D2', 'D2-with-begin');
 });
+
+// N-PARKED-APPROVAL-SURVIVE-RESTART-RESUME ⑦：真进程档。cron 派无人值守会话停车一条真
+// Bash 追加写（append 可数：执行两次就有两行）→ SIGKILL → 同数据目录重启 → 幸存卡仍可批 →
+// 真 UI 批准（自动化收件箱 AutomationReviewInbox 的「批准」按钮，rework r2：不许绕 UI 直
+// POST 投递口）→ 副作用恰好发生一次；打开原会话转录能看到执行结果；再点一次不重复。
+test('G parked tool approval survives SIGKILL restart and runs exactly once', async ({ page }) => {
+  current = await boot('G');
+  await installSettingsStub(page);
+  await preparePage(page, current.baseUrl);
+  const token = await getAuthToken(page);
+  const effectFile = path.join(current.dirs.workspace, 'parked-approval-effect.txt');
+  // 无人值守来源：cron agent 任务（origin=cron 的会话才会真走 B2 停车挂起）。带 sourceSessionId
+  // 指向一个有工作目录的来源会话——真实产品形状（从会话派生的任务继承 cwd）；无 cwd 的会话
+  // 自 N-PARKED-APPROVAL-SURVIVE-RESTART-RESUME-FU1 起在启动判定就被收口（不进收件箱，
+  // toolCall 写占位），该形状由 tests/unit/agent/parkedApprovalSurvival.hydrate.test.ts 的
+  // 「③ cwd-less 会话」用例钉住，真进程 G 格只验带 cwd 的可执行路径。
+  const sourceSession = await api(current.baseUrl, token, 'POST', '/api/sessions', {
+    title: 'G 停车审批来源会话',
+    workingDirectory: current.dirs.workspace,
+  });
+  expect(sourceSession.ok, `source session failed: ${sourceSession.status} ${sourceSession.text.slice(0, 300)}`).toBe(true);
+  const sourceSessionId = (JSON.parse(sourceSession.text) as { data?: { id?: string } }).data?.id;
+  expect(sourceSessionId, 'source session id missing').toBeTruthy();
+  const job = await api(current.baseUrl, token, 'POST', '/api/domain/cron/createJob', {
+    payload: {
+      name: 'G 停车审批跨重启',
+      description: 'N-PARKED-APPROVAL-SURVIVE-RESTART-RESUME recovery matrix cell G',
+      scheduleType: 'every',
+      schedule: { type: 'every', interval: 60, unit: 'minutes' },
+      runsOn: 'local',
+      enabled: true,
+      maxRetries: 0,
+      maxRunBudget: 1,
+      maxRuns: 5,
+      action: {
+        type: 'agent',
+        agentType: 'default',
+        prompt: `E2E_BACKGROUND_TOOL_APPROVAL ${effectFile}`,
+        context: { sourceSessionId },
+      },
+    },
+  });
+  expect(job.ok, `createJob failed: ${job.status} ${job.text.slice(0, 400)}`).toBe(true);
+  const jobId = (JSON.parse(job.text) as { data?: { id?: string } }).data?.id;
+  expect(jobId, 'cron job id missing').toBeTruthy();
+  // triggerJob 会等整轮 agent run 收口——而这轮就是要停在停车审批上的，所以不 await：
+  // 发出去就转而轮询 DB 等停车行落库（api 的 90s abort 也要吞掉）。
+  void api(current.baseUrl, token, 'POST', '/api/domain/cron/triggerJob', { payload: { jobId } })
+    .catch(() => undefined);
+
+  // 等停车行真落库（无人值守会话的工具审批走 B2 停车，带 argsRef + 指纹原料才算可存活）。
+  const parkedBefore = await waitForParkedToolApproval(current.dirs.dataDir, 60_000);
+  expect(parkedBefore.status).toBe('pending');
+  const payloadBefore = JSON.parse(parkedBefore.payloadJson) as {
+    sessionId?: string; argsRef?: { toolCallId: string }; displayTool?: string;
+  };
+  expect(payloadBefore.argsRef?.toolCallId, 'parked row must carry argsRef').toBeTruthy();
+
+  // SIGKILL + 同数据目录重启（restartServer 内部 killServer = SIGKILL）。
+  const restarted = await restartServer(requireServer('G'));
+  current = restarted;
+  await installSettingsStub(page);
+  await preparePage(page, restarted.baseUrl);
+  const afterToken = await getAuthToken(page);
+
+  // ① 幸存：仍 pending、标题带「重启前发起」。
+  const rowsAfter = await readParkedApprovals(restarted.dirs.dataDir);
+  const survivor = rowsAfter.find((row) => row.id === parkedBefore.id);
+  expect(survivor, 'survivor row must still exist after restart').toBeDefined();
+  expect(survivor?.status).toBe('pending');
+  const payloadAfter = JSON.parse(survivor?.payloadJson ?? '{}') as { displayTool?: string; sessionId?: string | null };
+  expect(payloadAfter.displayTool ?? '').toContain('重启前发起');
+  const parkedSessionId = payloadAfter.sessionId ?? payloadBefore.sessionId ?? '';
+
+  // ④ 该会话 durable run 停靠 waiting/guard_halt（不被启动清扫自动续跑）；无 durable 行也如实记录。
+  const readbackAfterRestart = await readSessionDb(restarted.dirs.dataDir, parkedSessionId);
+  const memberRun = readbackAfterRestart.durableRuns.find((run) => run.sessionId === parkedSessionId);
+  if (memberRun) {
+    expect(memberRun.status, 'survivor session run must be parked waiting').toBe('waiting');
+    expect(memberRun.interruptCause, 'survivor session run must be guard_halt').toBe('guard_halt');
+  }
+
+  // ⑦ r2 用户路径：重启后走真 UI——自动化收件箱里应有一张「重启前发起 · Bash」幸存卡，
+  // 截图后点它的「批准」（parked-approve）。不再用直连 POST 代替第一下点击。
+  await page.getByTestId('sidebar-capability-automation').click();
+  await expect(page.getByTestId('cron-center-panel')).toBeVisible({ timeout: 15_000 });
+  // 收件箱挂在「运行记录」tab 下（常驻挂载、jobs tab 用 CSS hidden 藏住），先切 tab。
+  await page.getByTestId('cron-center-tab-runs').click();
+  const survivorCard = page.getByTestId('parked-approval-item').filter({ hasText: '重启前发起' }).first();
+  await expect(survivorCard, 'survivor card must be visible in the automation review inbox').toBeVisible({ timeout: 15_000 });
+  await expect(survivorCard).toContainText('重启前发起 · Bash');
+  await page.screenshot({ path: shotPath('G-inbox-survivor'), fullPage: false });
+  await survivorCard.getByTestId('parked-approve').click();
+
+  // 副作用恰好一次：effect 文件出现且只追加了一行。
+  const effectOccurrences = await waitForEffectOccurrences(effectFile, 30_000);
+  const exactlyOnce = effectOccurrences === 1;
+
+  // 批准的结果在原会话转录里可见：打开该会话，Bash 步骤行是完成形（「运行了命令 …」，
+  // 失败形才带「未成功」），展开后能看到执行输出（Bash output 的 [cwd: …] 前缀）。
+  // 先落一份页面全文快照再断言，红的时候有现场可查。
+  await preparePage(page, restarted.baseUrl);
+  await openSession(page, parkedSessionId);
+  const expandedToolGroup = await expandToolGroup(page);
+  await page.waitForTimeout(1_500);
+  await writeFile(
+    path.join(SHOT_DIR, 'G-session-transcript.txt'),
+    await page.evaluate(() => document.body.innerText),
+    'utf8',
+  );
+  const bashRow = page.getByTestId('tool-call-row-Bash').first();
+  await expect(bashRow, 'approved Bash step must be visible in the parked session transcript').toBeVisible({ timeout: 20_000 });
+  // 完成形动词是「运行了命令 …」；失败形会带「未成功」——批准成功的结果绝不能渲染成失败。
+  await expect(bashRow, 'approved Bash step must render completed, not failed').toContainText('运行了命令', { timeout: 10_000 });
+  await expect(bashRow).not.toContainText('未成功');
+  // 展开行内详情，批准执行的真实输出（Bash output 带 [cwd: …] 前缀）必须可见。
+  await bashRow.click();
+  await expect(
+    page.getByText('[cwd:', { exact: false }).first(),
+    'expanded Bash step must show the executed result output',
+  ).toBeVisible({ timeout: 10_000 });
+  const resultVisibleInSession = true; // 到这里三道 expect 已过，进 jsonl 记录用
+  await page.screenshot({ path: shotPath('G-session-result'), fullPage: false });
+
+  // 再点一次（API 投递口等价第二次点击）：不重复执行。
+  await api(restarted.baseUrl, afterToken, 'POST', '/api/agent/permission-response', [
+    survivor?.id ?? parkedBefore.id, 'allow', parkedSessionId,
+  ]).catch(() => undefined);
+  await page.waitForTimeout(3_000);
+  const finalOccurrences = await countEffectOccurrences(effectFile);
+
+  const rowsFinal = await readParkedApprovals(restarted.dirs.dataDir);
+  const finalRow = rowsFinal.find((row) => row.id === parkedBefore.id);
+  const apiIds = await messageIds(page, restarted, parkedSessionId);
+  const finished = await finishReadback(restarted, parkedSessionId, apiIds);
+  current = null;
+  const resultLine = [
+    `pendingAfterRestart=${survivor?.status}`,
+    `title=${payloadAfter.displayTool ?? '(none)'}`,
+    `durable=${memberRun ? `${memberRun.status}/${memberRun.interruptCause ?? '-'}` : 'none'}`,
+    `inboxApproveClicked=1`,
+    `resultVisibleInSession=${resultVisibleInSession}`,
+    `effectOccurrences=${finalOccurrences}`,
+    `rowFinal=${finalRow?.status ?? 'missing'}`,
+  ].join(' ');
+  await publish({
+    cell: 'G-parked-tool-approval',
+    injection: 'E2E_BACKGROUND_TOOL_APPROVAL via cron agent job (unattended session parks a real Bash append), SIGKILL, restart same data dir',
+    statusText: resultLine,
+    actions: ['批准（AutomationReviewInbox 幸存卡 parked-approve 按钮）'],
+    actionTaken: 'click 批准 on the survivor card in the automation review inbox',
+    result: exactlyOnce && finalOccurrences === 1
+      ? `inbox approve ran the tool exactly once (${finalOccurrences} line); result visible in session transcript; row=${finalRow?.status}`
+      : `side effect count=${finalOccurrences} (expected exactly 1); row=${finalRow?.status}`,
+    screenshot: 'test-results/recovery-matrix/G-inbox-survivor.png',
+    notes: `parked session ${parkedSessionId}; toolCall ${payloadBefore.argsRef?.toolCallId}; session transcript shot test-results/recovery-matrix/G-session-result.png; toolGroupExpanded=${expandedToolGroup}`,
+    ...finished,
+  }, true, exactlyOnce && finalOccurrences === 1);
+});
+
+async function waitForParkedToolApproval(dataDir: string, timeoutMs: number): Promise<{ id: string; status: string; payloadJson: string }> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const rows = await readParkedApprovals(dataDir);
+    const hit = rows.find((row) => {
+      if (row.kind !== 'tool_approval' || row.status !== 'pending') return false;
+      try {
+        const payload = JSON.parse(row.payloadJson) as { argsRef?: unknown; argsFingerprint?: unknown };
+        return Boolean(payload.argsRef) && typeof payload.argsFingerprint === 'string';
+      } catch {
+        return false;
+      }
+    });
+    if (hit) return hit;
+    if (Date.now() > deadline) throw new Error(`no survivable parked tool_approval row appeared within ${timeoutMs}ms`);
+    await pageIndependentDelay(1_000);
+  }
+}
+
+async function waitForEffectOccurrences(file: string, timeoutMs: number): Promise<number> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const count = await countEffectOccurrences(file);
+    if (count > 0) return count;
+    if (Date.now() > deadline) return count;
+    await pageIndependentDelay(500);
+  }
+}
+
+async function countEffectOccurrences(file: string): Promise<number> {
+  try {
+    const content = await readFile(file, 'utf8');
+    return content.split('E2E_BACKGROUND_TOOL_APPROVAL_EFFECT_LINE').length - 1;
+  } catch {
+    return 0;
+  }
+}
+
+function pageIndependentDelay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 test('E stream break keeps the segment and continues', async ({ page }) => {
   current = await boot('E');

@@ -1,6 +1,6 @@
 import * as path from 'path';
 import { directoryExists, listMarkdownFiles } from './markdown';
-import { instructionItem, memoryItemFromMarkdown } from './adapterHelpers';
+import { instructionItems, memoryItemFromMarkdown } from './adapterHelpers';
 import type { MemoryImporterAdapter, RawMemoryImportItem } from './types';
 
 export const codexLocalCustomAdapter: MemoryImporterAdapter = {
@@ -29,14 +29,14 @@ export const codexLocalCustomAdapter: MemoryImporterAdapter = {
       });
       if (item) items.push(item);
     }
-    const rules = await instructionItem({
+    items.push(...await instructionItems({
       adapterId: 'codex-local-custom',
       sourceVendor: 'OpenAI',
       sourcePath: path.join(root, 'AGENTS.md'),
       sourceScope: 'global',
       verifiedOnDevice: true,
-    });
-    if (rules) items.push(rules);
+      splitRules: true,
+    }));
     return { items, skipped };
   },
 };

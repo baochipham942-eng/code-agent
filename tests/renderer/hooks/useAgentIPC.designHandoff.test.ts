@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { withHandoffContext } from '../../../src/renderer/hooks/agent/useAgentIPC';
+import { withHandoffContext } from '../../../src/renderer/hooks/agent/agentDesignContext';
 import { useDesignCanvasStore } from '../../../src/renderer/components/design/designCanvasStore';
 import type { CanvasNode, DesignCanvasDoc } from '../../../src/renderer/components/design/designCanvasTypes';
 import { DEFAULT_CAMERA } from '../../../src/renderer/components/design/designCanvasTypes';

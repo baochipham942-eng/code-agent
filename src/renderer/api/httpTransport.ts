@@ -148,6 +148,9 @@ function preservesUndeliveredPermissionEnvelope(channel: string): boolean {
   return channel === IPC_CHANNELS.AGENT_PERMISSION_RESPONSE;
 }
 
+/** 审批应答的传输故障必须上抛而非坍缩成 undefined（FB-419：卡消失、宿主等到超时否认）。 */
+class PermissionSendFailure extends Error {}
+
 /**
  * skill 装载 caution 门把「待确认」当业务信封原样回给调用方：HTTP 200 +
  * {success:false, code:'SKILL_CAUTION_CONFIRMATION_REQUIRED', cautionHits,
@@ -850,6 +853,9 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
             errorMessage || errorBody,
           );
           recordTransportFailure(channel, response.status, errorMessage || errorBody);
+          if (preservesUndeliveredPermissionEnvelope(channel)) {
+            throw new PermissionSendFailure(`审批应答发送失败 (${response.status}): ${errorMessage || errorBody}`);
+          }
           return normalizeIpcTransportFailure(
             channel,
             response.status,
@@ -892,11 +898,20 @@ export function createHttpCodeAgentAPI(baseUrl: string): CommandBridgeAPI {
           return json as ReturnType<IpcInvokeHandlers[K]>;
         }
 
+        if (preservesUndeliveredPermissionEnvelope(channel)) {
+          recordTransportFailure(channel, response.status, '审批应答收到非 JSON 响应');
+          throw new PermissionSendFailure(`审批应答发送失败 (${response.status}): 非 JSON 响应`);
+        }
         return undefined as ReturnType<IpcInvokeHandlers[K]>;
       } catch (err) {
-        logTransportErrorThrottled(`${channel}:exception`, `[HttpTransport] ${channel} error:`, err);
         const message = err instanceof Error ? err.message : String(err);
+        if (err instanceof PermissionSendFailure) throw err;
+        logTransportErrorThrottled(`${channel}:exception`, `[HttpTransport] ${channel} error:`, err);
         recordTransportFailure(channel, null, message);
+        // 审批应答的其余传输异常（fetch 拒绝 / token 失效）同样上抛；其余通道照旧坍缩。
+        if (preservesUndeliveredPermissionEnvelope(channel)) {
+          throw new PermissionSendFailure(message);
+        }
         return normalizeIpcTransportFailure(channel, null, message) as ReturnType<IpcInvokeHandlers[K]>;
       }
     }) as CommandBridgeAPI['invoke'],

@@ -39,7 +39,7 @@ type DeliverResult = { success: boolean; error?: { code: string }; data?: { clos
 describe('parked approval survives a transient ledger write failure', () => {
   let db: Database.Database;
   let island: OrchestratorPermissionIsland;
-  let deliver: (requestId: string, response: PermissionResponse, sessionId: string) => DeliverResult;
+  let deliver: (requestId: string, response: PermissionResponse, sessionId: string) => Promise<DeliverResult>;
   const sessionId = 'unattended-session';
   const row = (id: string) =>
     db.prepare('SELECT status, feedback FROM pending_approvals WHERE id = ?').get(id) as { status: string; feedback: string | null };
@@ -87,7 +87,7 @@ describe('parked approval survives a transient ledger write failure', () => {
 
     // 瞬时 SQLITE_BUSY 的等价物：这一次 UPDATE 必然抛错
     db.exec("CREATE TRIGGER fail_resolve BEFORE UPDATE ON pending_approvals BEGIN SELECT RAISE(ABORT, 'SQLITE_BUSY injected'); END");
-    const failed = deliver(id, 'allow', sessionId);
+    const failed = await deliver(id, 'allow', sessionId);
 
     // ① 台账原样留着——没被翻成 rejected，也没被写上「run 已经不在了」这种假理由
     expect(row(id)).toEqual({ status: 'pending', feedback: null });
@@ -100,15 +100,15 @@ describe('parked approval survives a transient ledger write failure', () => {
     expect(island.listPendingRequests().map(request => request.id)).toEqual([id]);
 
     db.exec('DROP TRIGGER fail_resolve');
-    expect(deliver(id, 'allow', sessionId).success).toBe(true);
+    expect((await deliver(id, 'allow', sessionId)).success).toBe(true);
     expect(row(id).status).toBe('approved');
     await expect(promise).resolves.toMatchObject({ approved: true });
   });
 
-  it('真的失去宿主时照旧收口——修的是误判，不是把收口关掉', () => {
+  it('真的失去宿主时照旧收口——修的是误判，不是把收口关掉', async () => {
     mocks.handle.mockImplementation(() => 'unknown_request');
     mocks.closeDeadParkedApproval.mockReturnValue(true);
-    const result = deliver('request-from-a-dead-process', 'allow', sessionId);
+    const result = await deliver('request-from-a-dead-process', 'allow', sessionId);
     expect(mocks.closeDeadParkedApproval).toHaveBeenCalledWith('request-from-a-dead-process');
     expect(result.data?.closed).toBe(true);
   });

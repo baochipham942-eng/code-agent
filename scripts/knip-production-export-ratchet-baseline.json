@@ -16797,8 +16797,6 @@
     "src/host/testing/autoTestHook.ts",
     "src/host/testing/gaiaImporter.ts",
     "src/host/tools/dispatch/toolSearchExecutionContract.ts",
-    "src/renderer/components/ContextHealthPanel.tsx",
-    "src/renderer/components/ContextPanel.tsx",
     "src/renderer/components/design/slidesOutlineOps.ts",
     "src/renderer/components/features/chat/ChatInput/AbilityMenu.tsx",
     "src/renderer/components/features/chat/ResearchProgress.tsx",

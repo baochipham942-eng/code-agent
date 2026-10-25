@@ -40,5 +40,6 @@ Use this only when the user wants to create a real local reminder.`,
   category: 'mcp',
   permissionLevel: 'write',
   readOnly: false,
+  touchesWorkDirectory: false,
   allowInPlanMode: false,
 };

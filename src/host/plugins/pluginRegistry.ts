@@ -31,6 +31,7 @@ import {
 } from './builtin/computerUse/installState';
 import { BUILTIN_PLUGIN_CATALOG, findBuiltinPlugin } from './builtin/catalog';
 import { recordCapabilityPackageLifecycle } from '../services/capabilities/capabilityPackageLifecycle';
+import { getToolSearchService } from '../services/toolSearch/toolSearchService';
 import { createLogger } from '../services/infra/logger';
 import { notificationService } from '../services/infra/notificationService';
 import { getConfigService } from '../services/core/configService';
@@ -351,16 +352,18 @@ export class PluginRegistry {
           permissionLevel: prefixedTool.permissionLevel,
         });
         registerProtocolTool(wrapped.schema, async () => wrapped);
+        const displayName = pluginToolOrigin.resolvePluginDisplayName(
+          plugin.manifest.id,
+          plugin.manifest.name,
+          plugin.manifest.displayName,
+        );
         pluginToolOrigin.register(
           prefixedTool.name,
           plugin.manifest.id,
-          pluginToolOrigin.resolvePluginDisplayName(
-            plugin.manifest.id,
-            plugin.manifest.name,
-            plugin.manifest.displayName,
-          ),
+          displayName,
           plugin.rootPath.startsWith('builtin:'),
         );
+        this.registerToolSearchMeta(prefixedTool.name, tool.name, plugin.manifest, displayName, tool.description);
         pluginTools.push(prefixedTool.name);
         plugin.registeredTools.push(prefixedTool.name);
         logger.info(`Plugin ${plugin.manifest.id} registered tool: ${prefixedTool.name}`);
@@ -370,6 +373,7 @@ export class PluginRegistry {
         const prefixedName = `${plugin.manifest.id}:${toolName}`;
         unregisterProtocolTool(prefixedName);
         pluginToolOrigin.unregister(prefixedName);
+        getToolSearchService().unregisterPluginTool(prefixedName);
         const idx = plugin.registeredTools.indexOf(prefixedName);
         if (idx !== -1) {
           plugin.registeredTools.splice(idx, 1);
@@ -465,16 +469,18 @@ export class PluginRegistry {
         }
         // ToolLoader 签名要求返回 Promise<ToolModule>，registry 内部首次解析时再调 createHandler
         registerProtocolTool(finalModule.schema, async () => finalModule);
+        const displayName = pluginToolOrigin.resolvePluginDisplayName(
+          plugin.manifest.id,
+          plugin.manifest.name,
+          plugin.manifest.displayName,
+        );
         pluginToolOrigin.register(
           finalName,
           plugin.manifest.id,
-          pluginToolOrigin.resolvePluginDisplayName(
-            plugin.manifest.id,
-            plugin.manifest.name,
-            plugin.manifest.displayName,
-          ),
+          displayName,
           plugin.rootPath.startsWith('builtin:'),
         );
+        this.registerToolSearchMeta(finalName, module.schema.name, plugin.manifest, displayName, module.schema.description);
         plugin.registeredTools.push(finalName);
         logger.info(`Plugin ${plugin.manifest.id} registered tool module: ${finalName}`);
       },
@@ -487,6 +493,31 @@ export class PluginRegistry {
    */
   private createPersistentStorage(pluginId: string): PluginStorage {
     return createPluginStorage(pluginId);
+  }
+
+  /**
+   * 把插件工具登记进 ToolSearch 可发现面（registerTool / registerToolModule 共用）。
+   *
+   * 默认 deferred 工具表面下，模型只有在这里看得到名字才能搜到/加载插件工具
+   * （与 MCP 的 registerMCPToolsToSearch 对称）。名字已进静态索引或核心表的
+   * 由 ToolSearchService 侧跳过——builtin 插件 prefixWithPluginId=false 的
+   * 静态名以静态索引为真源，不重复登记。
+   */
+  private registerToolSearchMeta(
+    toolName: string,
+    unprefixedName: string,
+    manifest: PluginManifest,
+    displayName: string,
+    description: string,
+  ): void {
+    getToolSearchService().registerPluginTool({
+      name: toolName,
+      shortDescription: `${displayName}: ${description}`,
+      tags: ['plugin'],
+      aliases: Array.from(new Set([unprefixedName, manifest.id, displayName])),
+      source: 'dynamic',
+      pluginId: manifest.id,
+    });
   }
 
   /**
@@ -646,6 +677,7 @@ export class PluginRegistry {
       for (const toolName of plugin.registeredTools) {
         unregisterProtocolTool(toolName);
         pluginToolOrigin.unregister(toolName);
+        getToolSearchService().unregisterPluginTool(toolName);
       }
       plugin.registeredTools = [];
       plugin.state = 'error';
@@ -659,6 +691,7 @@ export class PluginRegistry {
     for (const toolName of plugin.registeredTools) {
       unregisterProtocolTool(toolName);
       pluginToolOrigin.unregister(toolName);
+      getToolSearchService().unregisterPluginTool(toolName);
     }
     plugin.registeredTools = [];
     plugin.state = 'inactive';

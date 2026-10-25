@@ -58,6 +58,7 @@ export const IPC_DOMAINS = {
   TEAM: 'domain:team', // 组队配方确定性启动
   TERMINAL: 'domain:terminal', // 会话级交互 shell（右栏终端 + Agent 读写同一个 PTY）
   VOICE: 'domain:voice', // renderer 建连/重连失败的最小上报面
+  PERMISSION_TRANSLATE: 'domain:permissionTranslate', // 一句话权限规则翻译（只产草稿，不写设置）
 } as const;
 
 export type IPCDomain = typeof IPC_DOMAINS[keyof typeof IPC_DOMAINS];

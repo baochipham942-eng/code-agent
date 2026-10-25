@@ -168,6 +168,8 @@ export interface MemoryImportDirectiveConfirmResult {
   instructionId: string;
   confirmed: boolean;
   imported: boolean;
+  /** confirmed=false 的原因分流（N-EXTHISTORY-IMPORT-K1A-FU1）：headless 无界面时 UI 提示「去 App 里确认」 */
+  notConfirmedReason?: 'declined' | 'timeout' | 'headless-no-ui';
   entry?: MemoryEntry;
   mirrorRebuild?: MemoryMirrorRebuildResult;
 }
@@ -183,21 +185,7 @@ export interface MemoryEntryBatchReviewResult {
 }
 
 /** /init-memory 产出的固定草稿主题（id = hash(projectDir + topic)，重跑稳定） */
-export type ProjectMemoryDraftTopic = 'tech-stack' | 'directory-layout' | 'common-commands' | 'readme-purpose';
-
-export interface ProjectMemoryDraftRequest {
-  projectDir: string;
-}
-
-export interface ProjectMemoryDraftResult {
-  projectDir: string;
-  /** 本次写入的候选条数 */
-  written: number;
-  /** 跳过的主题：同键已存在（existing-key）或来源缺失（source-absent） */
-  skipped: Array<{ topic: ProjectMemoryDraftTopic; reason: 'existing-key' | 'source-absent' }>;
-  /** 本次写入的候选条目（全部 status: 'candidate'） */
-  entries: MemoryEntry[];
-}
+export type ProjectMemoryDraftTopic = 'purpose' | 'key-files' | 'conventions';
 
 /** 已退出自动注入的原因（N-MEM-EVICT-NEVER-READ）：从没被用过 / 用过但很久没再用；since = 开始暂停的时刻。 */
 export interface MemoryEntryInjectionPause {

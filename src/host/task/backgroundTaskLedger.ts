@@ -390,6 +390,7 @@ function cloneProgress(progress?: TaskProgress): TaskProgress | undefined {
     ? {
       ...progress,
       lastToolStep: progress.lastToolStep ? { ...progress.lastToolStep } : undefined,
+      lastToolFailure: progress.lastToolFailure ? { ...progress.lastToolFailure } : undefined,
     }
     : undefined;
 }

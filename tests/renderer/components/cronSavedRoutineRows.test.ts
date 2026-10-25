@@ -22,6 +22,8 @@ const labels = {
   reviewInbox: '自动化审核收件箱',
   savedWhenEvent: '有新消息到达时',
   savedRolePrefix: '由 {role} 执行：',
+  savedStatusLabel: '状态',
+  savedStatusPaused: '当前已停用，点启用后才会按时跑',
 };
 
 function agentJob(overrides: Partial<CronJobDefinition> = {}): CronJobDefinition {
@@ -250,5 +252,51 @@ describe('buildSavedRoutineRestateRows', () => {
       labels,
     });
     expect(rows[0].value).toBe('由 小星 执行：记录里的名字');
+  });
+
+  // N-ROLE-ROUTINE-RESTATE-FU1-FU1：copy-to-cloud 一律 enabled:false，用户读着
+  // 「每天 09:00」会以为它会跑——停用副本必须出第四行「状态」讲清楚。
+  it('停用副本追加第四行「状态」，启用任务保持恰好三行', () => {
+    const disabled = buildSavedRoutineRestateRows({
+      job: agentJob({ enabled: false }),
+      roleDisplayName: '小星',
+      channelLabel: '',
+      labels,
+    });
+    expect(disabled.map((row) => row.key)).toEqual(['what', 'when', 'result', 'status']);
+    expect(disabled[3]).toEqual({
+      key: 'status',
+      label: '状态',
+      value: '当前已停用，点启用后才会按时跑',
+    });
+
+    const enabled = buildSavedRoutineRestateRows({
+      job: agentJob(),
+      roleDisplayName: '小星',
+      channelLabel: '',
+      labels,
+    });
+    expect(enabled.map((row) => row.key)).toEqual(['what', 'when', 'result']);
+  });
+
+  it('en 语言档：停用副本的第四行是英文停用提示', () => {
+    const rows = buildSavedRoutineRestateRows({
+      job: agentJob({ enabled: false }),
+      roleDisplayName: 'Nova',
+      channelLabel: '',
+      labels: {
+        ...labels,
+        savedRolePrefix: 'Run by {role}: ',
+        savedStatusLabel: 'Status',
+        savedStatusPaused: 'Currently paused — it will only run on schedule after you turn it on.',
+      },
+      lang: 'en',
+    });
+    expect(rows).toHaveLength(4);
+    expect(rows[3]).toEqual({
+      key: 'status',
+      label: 'Status',
+      value: 'Currently paused — it will only run on schedule after you turn it on.',
+    });
   });
 });

@@ -23,6 +23,9 @@ const E2E_TASK_WAKE_NOOP_MARKER = 'E2E_TASK_WAKE_NOOP';
 const E2E_TASK_WAKE_NOOP_CALL_ID = 'e2e-task-wake-noop';
 const E2E_BACKGROUND_APPROVAL_MARKER = 'E2E_BACKGROUND_APPROVAL';
 const E2E_BACKGROUND_APPROVAL_CALL_ID = 'e2e-background-approval';
+const E2E_BACKGROUND_TOOL_APPROVAL_MARKER = 'E2E_BACKGROUND_TOOL_APPROVAL';
+const E2E_BACKGROUND_TOOL_APPROVAL_CALL_ID = 'e2e-background-tool-approval';
+const E2E_BACKGROUND_TOOL_APPROVAL_EFFECT = 'E2E_BACKGROUND_TOOL_APPROVAL_EFFECT_LINE';
 // N-SNAPSHOT-REGRESSION：快照语料录制专用 marker。每条路由都是确定性的
 // 「marker → 固定工具调用/固定文本」，让 request-replay 快照能覆盖 Read 之外的
 // 单轮问答、Write 落盘、Bash、Read→Write 混合路径。改动本段必须同 PR 重录
@@ -142,6 +145,67 @@ function extractCreatedTaskId(messages: ModelMessage[], toolCallId: string): str
 
 function taskManagerCall(id: string, args: Record<string, unknown>) {
   return { id, name: 'TaskManager', arguments: args };
+}
+
+/**
+ * N-PARKED-APPROVAL-SURVIVE-RESTART-RESUME 的真机档注入：无人值守 member 拿到
+ * `E2E_BACKGROUND_TOOL_APPROVAL <file>` 后发一条真 Bash 追加写（append 是为了可数——
+ * 执行两次就有两行）。批准跨重启执行一次 → 目标文件恰好一行 effect marker。
+ */
+function buildBackgroundToolApprovalE2EResponse(
+  messages: ModelMessage[],
+  tools: ToolDefinition[],
+  onStream?: StreamCallback,
+): ModelResponse | null {
+  if (!messages.some((message) => getMessageText(message).includes(E2E_BACKGROUND_TOOL_APPROVAL_MARKER))) return null;
+  const actualProvider = 'acceptance';
+  const actualModel = 'e2e-local-agent-model';
+  const target = latestUserText(messages).match(/E2E_BACKGROUND_TOOL_APPROVAL\s+(\S+)/)?.[1];
+  const result = findToolResultContent(messages, E2E_BACKGROUND_TOOL_APPROVAL_CALL_ID);
+  if (result) {
+    const content = `E2E background tool approval completed. ${result}`;
+    onStream?.({ type: 'text', content });
+    onStream?.({ type: 'complete', finishReason: 'stop' });
+    return {
+      type: 'text', content, finishReason: 'stop', actualProvider, actualModel,
+      usage: { inputTokens: 140, outputTokens: 22 },
+    };
+  }
+  if (!target) {
+    const content = 'E2E background tool approval marker requires a target file path.';
+    onStream?.({ type: 'text', content });
+    onStream?.({ type: 'complete', finishReason: 'stop' });
+    return {
+      type: 'text', content, finishReason: 'stop', actualProvider, actualModel,
+      usage: { inputTokens: 100, outputTokens: 16 },
+    };
+  }
+  if (!hasTool(tools, 'Bash')) {
+    const content = 'E2E background tool approval could not find the Bash tool.';
+    onStream?.({ type: 'text', content });
+    onStream?.({ type: 'complete', finishReason: 'stop' });
+    return {
+      type: 'text', content, finishReason: 'stop', actualProvider, actualModel,
+      usage: { inputTokens: 100, outputTokens: 16 },
+    };
+  }
+  const toolCall = {
+    id: E2E_BACKGROUND_TOOL_APPROVAL_CALL_ID,
+    name: 'Bash',
+    arguments: { command: `echo ${E2E_BACKGROUND_TOOL_APPROVAL_EFFECT} >> ${target}` },
+  };
+  onStream?.({ type: 'tool_call_start', toolCall: { index: 0, id: toolCall.id, name: toolCall.name } });
+  onStream?.({ type: 'complete', finishReason: 'tool_calls' });
+  return {
+    type: 'tool_use',
+    content: 'Waiting for a real background tool approval response.',
+    toolCalls: [toolCall],
+    finishReason: 'tool_calls',
+    actualProvider,
+    actualModel,
+    usage: { inputTokens: 130, outputTokens: 34 },
+    contentParts: [{ type: 'tool_call', toolCallId: toolCall.id }],
+  };
 }
 
 function buildBackgroundApprovalE2EResponse(
@@ -763,6 +827,9 @@ export function buildE2ELocalAgentModelResponse(
 
   const backgroundApprovalResponse = buildBackgroundApprovalE2EResponse(messages, tools, onStream);
   if (backgroundApprovalResponse) return backgroundApprovalResponse;
+
+  const backgroundToolApprovalResponse = buildBackgroundToolApprovalE2EResponse(messages, tools, onStream);
+  if (backgroundToolApprovalResponse) return backgroundToolApprovalResponse;
 
   const taskWakeResponse = buildTaskWakeE2EResponse(messages, tools, onStream);
   if (taskWakeResponse) return taskWakeResponse;

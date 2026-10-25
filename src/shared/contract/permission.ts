@@ -215,6 +215,12 @@ export interface PermissionRequest {
    * 由 parkApproval 构建后随 permission_request 事件下发给会话内审批卡；交互审批路径不产此字段。
    */
   argsPreview?: string;
+  /**
+   * 账本形参数指纹 + 忠实标记（N-PARKED-APPROVAL-SURVIVE-RESTART-RESUME）：由 toolExecutor 在
+   * 需审批时计算并随请求上抛，parkApproval 落进停车 payload；renderer 不消费。
+   */
+  argsFingerprint?: string;
+  ledgerFaithful?: boolean;
   timestamp: number;
   dangerLevel?: 'normal' | 'warning' | 'danger';
   /**

@@ -107,7 +107,7 @@ export function getJevStatus(): JevStatus {
     keyConfigured,
     route: keyConfigured ? keySource : null,
     keySource,
-    ...(hostedEligible ? { hosted: { eligible: hostedEligible, ...readJevHostedBlockForStatus() } } : {}),
+    ...(hostedEligible ? { hosted: readJevHostedBlockForStatus(hostedEligible) } : {}),
     features,
   };
 }

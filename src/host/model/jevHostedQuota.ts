@@ -10,7 +10,7 @@
 // ============================================================================
 
 import { JEV_HOSTED_FUSE_RETRY_AFTER_MS } from '../../shared/constants/jevQuestions';
-import type { JevHostedBlockReason, JevHostedBlockState } from '../../shared/contract/jev';
+import type { JevHostedBlockReason, JevHostedBlockState, JevHostedStatus } from '../../shared/contract/jev';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('JevHostedQuota');
@@ -19,7 +19,7 @@ let blocked: JevHostedBlockState | null = null;
 const warnedReasons = new Set<JevHostedBlockReason>();
 
 /** 下一个 UTC 日界（epoch ms）：用户日限的重置点。 */
-export function nextUtcDayStart(now: number = Date.now()): number {
+function nextUtcDayStart(now: number = Date.now()): number {
   const dayMs = 24 * 60 * 60 * 1000;
   return Math.floor(now / dayMs) * dayMs + dayMs;
 }
@@ -32,9 +32,12 @@ export function getJevHostedBlock(now: number = Date.now()): JevHostedBlockState
   return null;
 }
 
-/** 对外形状（getJevStatus 用）：托管态下总是有值，未退避时两字段为 null。 */
-export function readJevHostedBlockForStatus(now: number = Date.now()): JevHostedBlockState | { blockedUntil: null; blockReason: null } {
-  return getJevHostedBlock(now) ?? { blockedUntil: null, blockReason: null };
+/** 对外形状（getJevStatus.hosted 用）：资格 + 退避状态合并成状态切片。 */
+export function readJevHostedBlockForStatus(eligible: boolean, now: number = Date.now()): JevHostedStatus {
+  const block = getJevHostedBlock(now);
+  return block
+    ? { eligible, blockedUntil: block.blockedUntil, blockReason: block.blockReason }
+    : { eligible, blockedUntil: null, blockReason: null };
 }
 
 /** 进入退避并留痕（每原因每进程至多一条 warn）。 */

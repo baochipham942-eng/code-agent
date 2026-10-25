@@ -104,8 +104,8 @@ export async function resolveJevJudgeUsageStore(env: NodeJS.ProcessEnv): Promise
 export interface JevJudgeHandlerOptions {
   env?: NodeJS.ProcessEnv;
   fetchImpl?: typeof fetch;
-  /** 不传则按 env 解析（postgres / 内存 / null→fail-closed）。 */
-  usageStore?: JevJudgeUsageStore;
+  /** 不传（undefined）则按 env 解析（postgres / 内存 / null→fail-closed）；显式 null = 强制无计数器。 */
+  usageStore?: JevJudgeUsageStore | null;
   now?: () => Date;
 }
 
@@ -179,7 +179,7 @@ export async function handleJevJudgeRequest(
 
   // 3) 原子消费配额。计数不可用（无 DATABASE_URL 且未开内存 store / store 抛错）→
   //    fail-closed 503，绝不绕过计数打上游。
-  const store = options.usageStore ?? await resolveJevJudgeUsageStore(env);
+  const store = options.usageStore !== undefined ? options.usageStore : await resolveJevJudgeUsageStore(env);
   if (!store) {
     sendError(res, 503, 'jev_counter_unavailable', 'Usage counters are unavailable; request refused.');
     return;

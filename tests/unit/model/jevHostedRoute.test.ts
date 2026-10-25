@@ -72,7 +72,6 @@ import {
 } from '../../../src/host/model/providers/typesafeProvider';
 import {
   getJevHostedBlock,
-  nextUtcDayStart,
   resetJevHostedBlockForTests,
 } from '../../../src/host/model/jevHostedQuota';
 import { createProductionJevCall, getJevStatus } from '../../../src/host/model/jevFeatures';
@@ -176,9 +175,11 @@ describe('限流错误码 → blocked-until 映射', () => {
     expect((answers as Error & { code?: string }).code).toBe('JEV_HOSTED_USER_LIMIT');
 
     const now = Date.now();
+    const dayMs = 24 * 60 * 60 * 1000;
+    const nextUtcDayStart = Math.floor(now / dayMs) * dayMs + dayMs;
     const block = getJevHostedBlock(now);
     expect(block?.blockReason).toBe('user_daily_limit');
-    expect(block?.blockedUntil).toBe(nextUtcDayStart(now));
+    expect(block?.blockedUntil).toBe(nextUtcDayStart);
     expect(block!.blockedUntil).toBeGreaterThan(now);
 
     // 退避期内：路由不可用（视同无 key），不再发请求。

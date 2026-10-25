@@ -3892,6 +3892,11 @@
       "kind": "export"
     },
     {
+      "file": "src/host/model/jevHostedQuota.ts",
+      "name": "resetJevHostedBlockForTests",
+      "kind": "export"
+    },
+    {
       "file": "src/host/model/modelDecision.ts",
       "name": "ModelDecision",
       "kind": "type"

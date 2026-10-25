@@ -13,7 +13,7 @@ import {
   estimateJevJudgeCallUsd,
   handleJevJudgeRequest,
 } from '../../../vercel-api/lib/jevJudge';
-import { createInMemoryJevJudgeUsageStore } from '../../../vercel-api/lib/jevJudgeUsageStore';
+import { createInMemoryJevJudgeUsageStore, type JevJudgeUsageStore } from '../../../vercel-api/lib/jevJudgeUsageStore';
 import { resolveControlPlaneSubject } from '../../../vercel-api/lib/controlPlaneEntitlements';
 import type { ControlPlaneRequestLike, ControlPlaneResponseLike } from '../../../vercel-api/lib/controlPlaneEnvelope';
 import { JEV_MODEL } from '../../../src/shared/constants/jevQuestions';
@@ -88,17 +88,15 @@ const GOOD_BODY = { state: { command: 'npm view left-pad version' }, questions: 
 
 async function callHandler(
   env: NodeJS.ProcessEnv,
-  options: { token?: string | null; body?: unknown; fetchImpl?: typeof fetch; store?: object | null } = {},
+  options: { token?: string | null; body?: unknown; fetchImpl?: typeof fetch; store?: JevJudgeUsageStore | null } = {},
 ): Promise<{ statusCode: number; body: unknown }> {
   const res = makeResponse();
   await handleJevJudgeRequest(makeRequest(options.token === undefined ? TOKEN_A : options.token, options.body ?? GOOD_BODY), res, {
     env,
     fetchImpl: options.fetchImpl ?? makeUpstreamFetch([]),
-    ...(options.store === null
-      ? { usageStore: null }
-      : options.store
-        ? { usageStore: options.store as never }
-        : { usageStore: createInMemoryJevJudgeUsageStore() }),
+    ...(options.store === undefined
+      ? { usageStore: createInMemoryJevJudgeUsageStore() }
+      : { usageStore: options.store }),
   });
   return { statusCode: res.statusCode, body: res.body };
 }

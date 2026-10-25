@@ -67,7 +67,8 @@ export function validateDraft(
     return { ok: false, reason: 'shape', detail: 'pattern must be a string when present' };
   }
 
-  const catalog = toolCatalog instanceof Set ? toolCatalog : new Set(toolCatalog);
+  // instanceof Set 收窄 ReadonlySet 会退成 Set<any>（ESLint no-unsafe-* 4 条）；目录有 MAX_CATALOG_SIZE 上限，统一拷一份
+  const catalog = new Set<string>(toolCatalog);
   if (catalog.size === 0 || catalog.size > MAX_CATALOG_SIZE) {
     return { ok: false, reason: 'tool_unknown', detail: `suspicious tool catalog size ${catalog.size}` };
   }

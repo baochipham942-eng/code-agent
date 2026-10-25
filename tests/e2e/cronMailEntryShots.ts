@@ -13,12 +13,10 @@
 import { expect, test, type Page } from './fixtures/axeTest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 test.setTimeout(120_000);
 test.use({ viewport: { width: 1440, height: 900 } });
 
-const REPO_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const SHOT_DIR = path.join(process.cwd(), 'test-results');
 const STATE = process.env.NEO_FAKE_MAIL_STATE ?? 'ready';
 

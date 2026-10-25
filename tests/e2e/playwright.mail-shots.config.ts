@@ -23,7 +23,10 @@ console.error(`  mail-shots web port: ${webPort} state: ${state}`);
 
 export default defineConfig({
   testDir: '.',
-  testMatch: ['**/cronMailEntryShots.spec.ts'],
+  // .ts（非 .spec.ts）：证据采集剧本（单 ⑤ 截图），不进 a11yAxeRatchet 的 33 个
+  // spec 钉数，也不会被 playwright.e2e.config.ts 的 '**/*.spec.ts' 捞进主套件
+  //（它必须配 fakeMailWebServer，共享 webServer 环境里必红）。
+  testMatch: ['**/cronMailEntryShots.ts'],
   fullyParallel: false,
   workers: 1,
   retries: 0,

@@ -231,6 +231,12 @@ export interface PermissionRequestData {
   riskClass?: 'external';
   /** Decision trace: why this permission was requested (populated on deny/ask) */
   decisionTrace?: import('../../shared/contract/decisionTrace').DecisionTrace;
+  /**
+   * 账本形参数指纹 + 忠实标记（N-PARKED-APPROVAL-SURVIVE-RESTART-RESUME）：toolExecutor
+   * 在需审批时计算，随请求上抛，parkApproval 落进停车 payload 供重启批准时比对。
+   */
+  argsFingerprint?: string;
+  ledgerFaithful?: boolean;
 }
 
 export interface ToolExecutionResult {

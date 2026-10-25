@@ -63,6 +63,7 @@ import { registerCaptureHandlers } from '../../src/host/ipc/capture.ipc';
 import { registerAgentRegistryHandlers } from '../../src/host/ipc/agentRegistry.ipc';
 import { registerLivePreviewHandlers } from '../../src/host/ipc/livePreview.ipc';
 import { registerUpdateHandlers } from '../../src/host/ipc/update.ipc';
+import { registerPermissionTranslateHandlers } from '../../src/host/ipc/permissionTranslate.ipc';
 import { getShellCapabilities } from '../../src/host/shellCapabilities';
 
 // 结构枚举器挂既有函数对象上（knip 生产档无测试入口，独立 export 必成 dead export）
@@ -107,6 +108,7 @@ const captureRoutes = registerCaptureHandlers.routes;
 const agentRegistryRoutes = registerAgentRegistryHandlers.routes;
 const livePreviewRoutes = registerLivePreviewHandlers.routes;
 const updateRoutes = registerUpdateHandlers.routes;
+const permissionTranslateRoutes = registerPermissionTranslateHandlers.routes;
 
 /** 门盯的表清单——新域表化后加进来，门即自动覆盖该域（session 三面走 manifestDomain 断言） */
 const ROUTE_TABLES = [
@@ -151,6 +153,7 @@ const ROUTE_TABLES = [
   { table: agentRegistryRoutes, manifestDomain: 'domain:agents' as const },
   { table: livePreviewRoutes, manifestDomain: 'domain:livePreview' as const },
   { table: updateRoutes, manifestDomain: 'domain:update' as const },
+  { table: permissionTranslateRoutes, manifestDomain: 'domain:permissionTranslate' as const },
   { table: inlineFixtureTable(), manifestDomain: undefined },
 ];
 
@@ -416,6 +419,7 @@ function collectActualDomainActions(): Map<string, Set<string>> {
   add(IPC_DOMAINS.AGENT_REGISTRY, new Set(Object.keys(agentRegistryRoutes.actions)));
   add(IPC_DOMAINS.LIVE_PREVIEW, new Set(Object.keys(livePreviewRoutes.actions)));
   add(IPC_DOMAINS.UPDATE, new Set(Object.keys(updateRoutes.actions)));
+  add(IPC_DOMAINS.PERMISSION_TRANSLATE, new Set(Object.keys(permissionTranslateRoutes.actions)));
   return actual;
 }
 

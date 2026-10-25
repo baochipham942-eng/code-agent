@@ -93,6 +93,7 @@ interface IPCResponse<T = unknown> {
 | `domain:task` | task.ipc.ts | 多任务并行 |
 | `domain:error` | error.ipc.ts | 错误与诊断 |
 | `domain:cron` | cron.ipc.ts | 定时任务与心跳 |
+| `domain:permissionTranslate` | permissionTranslate.ipc.ts | 一句话权限规则翻译（模型产草稿 + 确定性校验；只读，不写设置） |
 | `domain:loop` | loop.ipc.ts | 会话内循环 `/loop` 启停、状态查询；后台化后进 task ledger |
 | `domain:notification` | notification.ipc.ts | 桌面通知只读查询与 renderer 投递结果回报 |
 | `domain:capture` | capture.ipc.ts | 浏览器采集 |

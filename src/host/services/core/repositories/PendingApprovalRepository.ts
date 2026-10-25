@@ -137,23 +137,29 @@ export class PendingApprovalRepository {
     return this.markPendingRowsAsOrphaned(`kind = ? AND status = 'pending'`, [kind], now);
   }
 
-  /** 停车审批的宿主 Promise 无法跨进程恢复，启动时直接 fail-closed 收尾。 */
-  rejectPendingAfterRestart(kind: PendingApprovalKind, now: number): PendingApprovalRecord[] {
+  /**
+   * 停车审批的宿主 Promise 无法跨进程恢复，启动时直接 fail-closed 收尾。
+   * keepIds 里的行不动（N-PARKED-APPROVAL-SURVIVE-RESTART-RESUME：跨重启幸存的
+   * tool_approval 保持 pending，批准走台账单发执行器）。
+   */
+  rejectPendingAfterRestart(kind: PendingApprovalKind, now: number, keepIds: string[] = []): PendingApprovalRecord[] {
     const before = this.db
       .prepare(`SELECT * FROM pending_approvals WHERE kind = ? AND status IN ('pending', 'orphaned')`)
       .all(kind) as SQLiteRow[];
-    if (before.length === 0) return [];
+    const toReject = before.filter((row) => !keepIds.includes(String(row.id)));
+    if (toReject.length === 0) return [];
 
     const feedback = 'Auto-rejected after process restart: owning run is no longer alive';
+    const placeholders = toReject.map(() => '?').join(', ');
     this.db
       .prepare(
         `UPDATE pending_approvals
          SET status = 'rejected', resolved_at = ?, feedback = ?
-         WHERE kind = ? AND status IN ('pending', 'orphaned')`,
+         WHERE kind = ? AND status IN ('pending', 'orphaned') AND id IN (${placeholders})`,
       )
-      .run(now, feedback, kind);
+      .run(now, feedback, kind, ...toReject.map((row) => String(row.id)));
 
-    return before.map((row) => rowToRecord({
+    return toReject.map((row) => rowToRecord({
       ...row,
       status: 'rejected',
       resolved_at: now,

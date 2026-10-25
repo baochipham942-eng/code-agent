@@ -2,7 +2,7 @@ import type { SteerOrQueueOutcome } from '@shared/contract/appService';
 import type { ConversationEnvelope } from '@shared/contract/conversationEnvelope';
 import { IPC_DOMAINS } from '@shared/ipc';
 import { generateMessageId } from '@shared/utils/id';
-import { getAgentSendFailureMessage } from '../../../hooks/agent/useAgentIPC';
+import { getAgentSendFailureMessage } from '../../../hooks/agent/agentRuntimeFollowup';
 import ipcService from '../../../services/ipcService';
 import { useSessionStore } from '../../../stores/sessionStore';
 import {

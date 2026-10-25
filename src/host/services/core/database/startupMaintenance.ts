@@ -11,7 +11,9 @@ import type { SessionRepository } from '../repositories/SessionRepository';
 import type { MemoryRepository } from '../repositories/MemoryRepository';
 import type { ToolExecutionEventRepository } from '../repositories/ToolExecutionEventRepository';
 import type { PermissionDecisionRepository } from '../repositories/PermissionDecisionRepository';
+import type { PendingApprovalRepository } from '../repositories/PendingApprovalRepository';
 import type { createLogger } from '../../infra/logger';
+import { listSurvivingParkedToolCallIds } from '../../../agent/parkedApprovalSurvival';
 import {
   persistCancelledToolCallClosures,
   INTERRUPTED_TOOL_CALL_PLACEHOLDER,
@@ -52,6 +54,11 @@ export interface StartupMaintenanceDeps {
   projectionSchemaBeforeBoot?: string | null;
   /** 库经过备份恢复/完整性降级：投影一律完整核对 */
   forceFullProjectionCheck?: boolean;
+  /**
+   * N-PARKED-APPROVAL-SURVIVE-RESTART-RESUME：跨重启幸存的停车审批 repo。提供了它，
+   * 幸存 toolCall 不写 INTERRUPTED 占位（留给批准后从台账真执行一次）；缺省不跳过任何收口。
+   */
+  pendingApprovalRepo?: PendingApprovalRepository;
 }
 
 /** 返回崩溃恢复快照（fail-safe：扫描失败返回 null，不阻塞启动） */
@@ -98,10 +105,21 @@ export function runStartupMaintenance(deps: StartupMaintenanceDeps): RecoverySna
           .filter((operation) => operation.replaySafety === 'automatic' && operation.toolCallId)
           .map((operation) => operation.toolCallId as string) ?? [],
       );
+      // 幸存停车审批的 toolCall 保持「无结果」状态：批准后从台账执行一次才是它的收口。
+      // 判据与启动 hydrate / 点击恢复同一处真源（parkedApprovalSurvival）。
+      const survivingParkedToolCallIds = deps.pendingApprovalRepo
+        ? listSurvivingParkedToolCallIds(
+          deps.pendingApprovalRepo.listByKindAndStatus('tool_approval', 'pending'),
+          sessionId,
+          messages,
+          Date.now(),
+        )
+        : new Set<string>();
       for (const assistantMessage of messages) {
         if (assistantMessage.role !== 'assistant' || !assistantMessage.toolCalls?.length) continue;
         const toolCallsToInterrupt = assistantMessage.toolCalls.filter(
-          (toolCall) => !storedAutomaticToolCallIds.has(toolCall.id),
+          (toolCall) => !storedAutomaticToolCallIds.has(toolCall.id)
+            && !survivingParkedToolCallIds.has(toolCall.id),
         );
         if (toolCallsToInterrupt.length === 0) continue;
         // 不按「账本有无 begin 行」分层（N-CRASH-OUTCOME-TIERS 返修 r1 撤档）：begin 写入

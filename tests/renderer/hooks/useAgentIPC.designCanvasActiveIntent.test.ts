@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { withDesignCanvasActiveIntent } from '../../../src/renderer/hooks/agent/useAgentIPC';
+import { withDesignCanvasActiveIntent } from '../../../src/renderer/hooks/agent/agentDesignContext';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import { useDesignCanvasStore } from '../../../src/renderer/components/design/designCanvasStore';
 import type { ConversationEnvelopeContext } from '../../../src/shared/contract/conversationEnvelope';

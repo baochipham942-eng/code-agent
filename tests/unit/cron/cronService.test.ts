@@ -42,6 +42,23 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
         ),
         run: (...args: unknown[]) => {
           dbState.savedRows.push(args);
+          if (sql.includes('INSERT INTO cron_jobs')) {
+            const [id, name, description, scheduleType, schedule, action, runsOn, maxRunBudget, maxRuns,
+              runCount, minIntervalSeconds, resultChannel, cloudJobId, enabled, maxRetries, retryDelay,
+              timeout, tags, metadata, createdAt, updatedAt] = args;
+            const row = {
+              id, name, description, schedule_type: scheduleType, schedule, action, runs_on: runsOn,
+              max_run_budget: maxRunBudget, max_runs: maxRuns, run_count: runCount,
+              min_interval_seconds: minIntervalSeconds, result_channel: resultChannel,
+              cloud_job_id: cloudJobId, enabled, max_retries: maxRetries, retry_delay: retryDelay,
+              timeout, tags, metadata, created_at: createdAt, updated_at: updatedAt,
+            };
+            const index = dbState.cronRows.findIndex((item) => (
+              !!item && typeof item === 'object' && (item as Record<string, unknown>).id === id
+            ));
+            if (index >= 0) dbState.cronRows[index] = row;
+            else dbState.cronRows.push(row);
+          }
           return { changes: 0 };
         },
       }),
@@ -205,7 +222,18 @@ function installCloudClient(
       if (active) active.cloudJobId = remoteJobId;
       return remoteJobId;
     }),
-    updateJob: vi.fn(overrides.updateJob ?? (async () => undefined)),
+    // 忠实于真实 CronCloudRuntime.updateJob：本地没有 remote id 时懒注册走 addJob，
+    // 只有已注册（map 里有 cloudJobId）的才打远端 update（N-ROLE-ROUTINE-RESTATE-FU1-FU1）。
+    updateJob: vi.fn(async (definition: Definition) => {
+      const jobs = (service as unknown as {
+        jobs: Map<string, { cloudJobId?: string }>;
+      }).jobs;
+      if (!jobs.get(definition.id)?.cloudJobId) {
+        await runtime.addJob(definition);
+        return;
+      }
+      await (overrides.updateJob ?? (async () => undefined))(definition);
+    }),
     removeJob: vi.fn(async (_definition: Definition, remoteJobId?: string) => {
       await (overrides.removeJob ?? (async () => undefined))(remoteJobId ?? 'remote-job-1');
       return true;
@@ -247,21 +275,26 @@ describe('CronService execution location invariants', () => {
 
   it('mirrors cloud create, update, and remove through the remote lifecycle', async () => {
     const service = new CronService();
-    const cloudClient = installCloudClient(service);
+    const remoteUpdate = vi.fn(async () => undefined);
+    const cloudClient = installCloudClient(service, { updateJob: remoteUpdate });
     const job = await service.createJob({
       ...shellJob('hours'),
       runsOn: 'cloud',
       enabled: false,
     });
+    // 停用副本创建时不注册云端（否则未配置云端会立刻落一条假 failed 执行记录）。
+    expect(cloudClient.addJob).not.toHaveBeenCalled();
 
     await service.updateJob(job.id, { name: 'Updated cloud job', enabled: true });
     await expect(service.deleteJob(job.id)).resolves.toBe(true);
 
+    // 启用走懒注册（runtime.updateJob → addJob），远端 update 不会被打到。
     expect(cloudClient.addJob).toHaveBeenCalledTimes(1);
-    expect(cloudClient.updateJob).toHaveBeenCalledWith(expect.objectContaining({
+    expect(cloudClient.addJob).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Updated cloud job',
       enabled: true,
     }));
+    expect(remoteUpdate).not.toHaveBeenCalled();
     expect(cloudClient.removeJob).toHaveBeenCalledWith(
       expect.objectContaining({ id: job.id }),
       'remote-job-1',

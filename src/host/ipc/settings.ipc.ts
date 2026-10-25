@@ -239,11 +239,13 @@ function extractSettingsUpdate(
 
 /**
  * permissions 里本地用户可自助保存的键（N-PERMRULES-LOCAL-OWNER）：只开 deny/ask/allow
- * 三张规则表——admin 门是 Neo 云平台的管理员标记，不是「这台电脑的本人」，普通账号应能管
- * 自己的规则；其余键（permissionMode / devModeAutoApprove / blockedCommands / inheritance …）
- * 仍 admin-only，能放开它们就等于放开 bypass 档，超出「规则」的范畴。
+ * 三张规则表与 K2 的结构化 nlRules（一句话规则的新档/角色域落这里，形状校验见
+ * assertValidNlPermissionRules）——admin 门是 Neo 云平台的管理员标记，不是「这台电脑的
+ * 本人」，普通账号应能管自己的规则；其余键（permissionMode / devModeAutoApprove /
+ * blockedCommands / inheritance …）仍 admin-only，能放开它们就等于放开 bypass 档，
+ * 超出「规则」的范畴。
  */
-const USER_SELF_MANAGED_RULE_KEYS: ReadonlySet<string> = new Set(['deny', 'ask', 'allow']);
+const USER_SELF_MANAGED_RULE_KEYS: ReadonlySet<string> = new Set(['deny', 'ask', 'allow', 'nlRules']);
 
 function permissionsUpdateRequiresAdmin(permissions: unknown): boolean {
   // 数组不是「规则表更新」：`{permissions: []}` 的 Object.keys 是空集，曾被当成纯

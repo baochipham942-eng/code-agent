@@ -227,6 +227,12 @@ export interface PermissionRequest {
    * 不参与任何 allow/deny/ask 裁决。非 external 时属性缺省（≠ null）。
    */
   riskClass?: 'external';
+  /**
+   * N-PERM-NL-RULES-K2：这条审批来自「交回我亲手做」一句话规则（handback）。卡面换
+   * handback 文案与两键（我做完了 / 让 Neo 做这一次）；无人值守停车走同一 flag 进
+   * 收件箱行与通知文案。只改呈现与文案，不改变裁决优先级。
+   */
+  handback?: boolean;
   /** Decision trace: why this permission was requested (populated on deny/ask) */
   decisionTrace?: import('./decisionTrace').DecisionTrace;
   /** host/renderer 已完成本次裁决；同一 permission_request 事件以加法字段回传终态。 */
@@ -241,7 +247,10 @@ export interface PermissionRequest {
 // - allow_standing：批准本次并记住长期授权。external 工具在无人值守 automation 上
 //   铸造 (工具, target)；computer_use 带 targetApp 时记住该应用（交互会话没有 automation
 //   也能记）。铸造只由人工点击触发，模型侧无入口。
-export type PermissionResponse = 'allow' | 'allow_session' | 'allow_standing' | 'deny';
+// - user_did_it（N-PERM-NL-RULES-K2）：handback 审批的「我做完了」裁决——用户按自己的
+//   一句话规则亲自完成了这一步；工具不执行，模型收到「用户会/已亲自做，不要重试，
+//   继续其他工作」的工具结果，run 不进失败态。
+export type PermissionResponse = 'allow' | 'allow_session' | 'allow_standing' | 'deny' | 'user_did_it';
 
 /**
  * 审批响应投递结果——「点了允许之后到底发生了什么」的唯一口径。
@@ -317,6 +326,12 @@ export interface PermissionAskResult {
   approvalSource?: PermissionApprovalSource;
   /** 仅 approved=false 时有意义；缺省按 `'user'` 解释。 */
   denialSource?: PermissionDenialSource;
+  /**
+   * N-PERM-NL-RULES-K2：handback 审批点了「我做完了」（user_did_it）。工具不执行；
+   * message 是回给模型的说明（用户亲自做、不要重试、继续别的活），消费端以成功形
+   * 落结果，不按失败记。
+   */
+  userDidIt?: boolean;
   /** 给模型看的真实原因文案；缺省由 `permissionDenialError` 按 denialSource 生成。 */
   message?: string;
   /**

@@ -33,6 +33,7 @@ import {
   parseParkedApprovalPayload,
 } from './parkedApprovalSurvival';
 import { sanitizeToolCallsForHistory } from './messageHandling/converter';
+import { NL_RULE_K2_TEXT } from '../../shared/nlRuleRestate';
 
 const logger = createLogger('ParkedApprovalResume');
 
@@ -222,6 +223,11 @@ export async function resumeSurvivingParkedApproval(input: {
   };
 
   if (input.response !== 'allow' && input.response !== 'allow_session' && input.response !== 'allow_standing') {
+    // N-PERM-NL-RULES-K2：handback「我做完了」——重启后同样不执行，台账消息用 handback
+    // 口径（用户亲自做、勿重试），不落「已被拒绝」的误导文案。
+    if (input.response === 'user_did_it') {
+      return deny('user did it themselves after restart', NL_RULE_K2_TEXT.handbackDoneModelText(payload.tool));
+    }
     return deny('rejected by user after restart', 'approval rejected by user after restart');
   }
 

@@ -26,6 +26,11 @@ export const permissionRuleNlZh = {
     savedToast: '规则已保存',
     protectedBadge: '不能自动放行',
     unrecognizedBadge: '无法识别',
+    // N-PERM-NL-RULES-K2：角色范围选择与触发短语展示（行为/复述话术在 shared/nlRuleRestate）
+    appliesToLabel: '对谁生效',
+    appliesToEveryone: '所有人',
+    phrasesCardLabel: '约定的话（出现在你那轮开头才直接做）',
+    structuredBadge: '一句话规则',
   },
 };
 
@@ -51,5 +56,9 @@ export const permissionRuleNlEn: typeof permissionRuleNlZh = {
     savedToast: 'Rule saved',
     protectedBadge: 'No auto-allow',
     unrecognizedBadge: 'Not recognized',
+    appliesToLabel: 'Applies to',
+    appliesToEveryone: 'Everyone',
+    phrasesCardLabel: 'Agreed phrases (acts without asking only when one opens your message)',
+    structuredBadge: 'One-sentence rule',
   },
 };

@@ -19,6 +19,7 @@ import type { PermissionRequest, ApprovalLevel, PermissionType } from './types';
 import type { PermissionRequest as ContractPermissionRequest, PermissionResponse } from '@shared/contract';
 import { isEditableTool } from '@shared/contract';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { NL_RULE_K2_TEXT } from '@shared/nlRuleRestate';
 import { getPermissionConfig } from './utils';
 import { useI18n } from '../../hooks/useI18n';
 import ipcService from '../../services/ipcService';
@@ -49,6 +50,7 @@ function normalizeRequest(
     argsPreview: request.argsPreview,
     dangerLevel: request.dangerLevel,
     riskClass: request.riskClass,
+    handback: request.handback,
     boundary: request.boundary,
     details: {
       pluginId: request.details.pluginId,
@@ -138,8 +140,9 @@ export function PermissionCard({
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const { checkMemory, saveMemory } = usePermissionStore();
   const processedRequestRef = useRef<string | null>(null);
-  // 选中的审批级别（DecisionCard 选项行）；字母快捷键直发时不经过它
-  const [selectedLevel, setSelectedLevel] = useState<ApprovalLevel | null>('once');
+  // 选中的审批级别（DecisionCard 选项行）；字母快捷键直发时不经过它。handback 卡多一档
+  // 'user_did_it'（我做完了）——裁决真源在 host，这里只是选中态。
+  const [selectedLevel, setSelectedLevel] = useState<ApprovalLevel | 'user_did_it' | null>('once');
   // N-WRITEBACK-EDIT 编辑态：draft 非 null = 正在改；只有点「按修改后发送」才会送出，Esc/放弃 = 什么都不发
   const [draft, setDraft] = useState<WritebackDraft | null>(null);
   const [viewState, setViewState] = useState<{ requestId: string; mode: DecisionCardViewMode } | null>(null);
@@ -156,6 +159,9 @@ export function PermissionCard({
   const sandboxEscalation = request !== null && isSandboxEscalation(request);
   const settled = request?.resolved === true && request.decision !== undefined;
   const safeDefaultDeny = request !== null && isSafeDefaultDeny(request);
+  // N-PERM-NL-RULES-K2：handback（交回我亲手做）卡——两键（我做完了 / 让 Neo 做这一次），
+  // 不出会话/始终常驻授权，不走记忆直发（host 侧已 forceConfirm）。
+  const handback = request !== null && request.handback === true && !settled;
   const appGrantCard = Boolean(request?.details.targetApp?.name) && request?.forceConfirm !== true;
 
   // 新请求进来时清空选中态（ processedRequestRef 之外的生命周期，独立于记忆直发 ）
@@ -216,7 +222,7 @@ export function PermissionCard({
   };
 
   const handleApproval = useCallback(
-    async (level: ApprovalLevel, updatedArgs?: Record<string, unknown>) => {
+    async (level: ApprovalLevel | 'user_did_it', updatedArgs?: Record<string, unknown>) => {
       if (!request || settled) return;
 
       const requestSnapshot = requestOverride ?? pendingPermissionRequest;
@@ -246,7 +252,7 @@ export function PermissionCard({
           }
         }
 
-        const response = toPermissionResponse(level);
+        const response: PermissionResponse = level === 'user_did_it' ? 'user_did_it' : toPermissionResponse(level);
         if (!ipcService.isAvailable()) throw new Error('IPC unavailable');
         // 改过的参数只随 'allow' 一次性放行送出（host 侧同样只认这个组合）
         const outcome = await ipcService.invoke(
@@ -264,7 +270,7 @@ export function PermissionCard({
           toast.error(t.decisionCard.permission.settledElsewhere);
           return;
         }
-        if (requestSnapshot && recordPermissionDecision) {
+        if (requestSnapshot && recordPermissionDecision && level !== 'user_did_it') {
           recordPermissionDecision(
             updatedArgs
               ? { ...requestSnapshot, details: { ...requestSnapshot.details, ...updatedArgs } }
@@ -341,7 +347,7 @@ export function PermissionCard({
         case 'y':
           e.preventDefault();
           e.stopPropagation();
-          handleApproval(appGrantCard && !isDangerous ? 'session' : 'once');
+          handleApproval(handback ? 'user_did_it' : appGrantCard && !isDangerous ? 'session' : 'once');
           break;
         case 'n':
           e.preventDefault();
@@ -371,7 +377,7 @@ export function PermissionCard({
 
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [request, settled, handleApproval, hideStandingGrants, draft, editable, appGrantCard, isDangerous]);
+  }, [request, settled, handleApproval, hideStandingGrants, draft, editable, appGrantCard, isDangerous, handback]);
 
   // 如果没有当前会话可见的待处理权限请求，不渲染
   if (!request) return null;
@@ -428,7 +434,9 @@ export function PermissionCard({
   const contentTitle = editable && typeof request.rawArgs?.title === 'string'
     ? request.rawArgs.title.trim()
     : '';
-  const title = sandboxEscalation
+  const title = handback
+    ? NL_RULE_K2_TEXT.card.title
+    : sandboxEscalation
     ? p.sandboxEscalationTitle
     : appGrantCard
     ? p.computerApp.title.replace('{app}', request.details.targetApp?.name ?? '')
@@ -448,7 +456,9 @@ export function PermissionCard({
     : isRemindersWrite
       ? <ListTodo size={20} />
       : editable ? <Mail size={20} /> : config.icon;
-  const question = sandboxEscalation
+  const question = handback
+    ? NL_RULE_K2_TEXT.card.question
+    : sandboxEscalation
     ? sandboxEscalationQuestion(request.reason, permissionSummary(request, t))
     : appGrantCard && !isDangerous
     ? p.computerApp.question.replace('{app}', request.details.targetApp?.name ?? '')
@@ -478,7 +488,12 @@ export function PermissionCard({
       {pendingHeaderEnd}
     </span>
   ) : undefined;
-  const visibleOptions: DecisionOption[] = sandboxEscalation
+  const visibleOptions: DecisionOption[] = handback
+    ? [
+        { id: 'user_did_it', label: NL_RULE_K2_TEXT.card.userDidIt, description: NL_RULE_K2_TEXT.card.userDidItDesc, shortcut: 'y' },
+        { id: 'once', label: NL_RULE_K2_TEXT.card.letNeoOnce, description: NL_RULE_K2_TEXT.card.letNeoOnceDesc },
+      ]
+    : sandboxEscalation
     ? [
         { id: 'once', label: p.sandboxEscalationAllowOnce, shortcut: 'y' },
         { id: 'deny', label: p.optionDeny, shortcut: 'n' },
@@ -557,6 +572,12 @@ export function PermissionCard({
               {sandboxPath}
             </p>
           ) : null}
+          {/* N-PERM-NL-RULES-K2 handback：两种选择都不算失败，任务会继续往下走 */}
+          {handback && (
+            <p className="text-xs leading-relaxed text-zinc-400" data-testid="handback-note">
+              {NL_RULE_K2_TEXT.card.note}
+            </p>
+          )}
           {/* 停车审批参数预览（host 已脱敏 + 截断）：一眼看清这步要干什么，缺省不渲染 */}
           {request.argsPreview && (
             <div className="rounded-lg bg-zinc-900/60 px-2.5 py-1.5" data-testid="permission-args-preview">
@@ -574,7 +595,7 @@ export function PermissionCard({
           if (request.rawArgs) setDraft(draftFromArgs(request.tool, request.rawArgs));
           return;
         }
-        setSelectedLevel(id as ApprovalLevel);
+        setSelectedLevel(id as ApprovalLevel | 'user_did_it');
       }}
       onConfirm={() => {
         if (selectedLevel) void handleApproval(selectedLevel);
@@ -586,14 +607,14 @@ export function PermissionCard({
       expandLabel={t.decisionCard.details}
       collapseLabel={t.decisionCard.collapse}
       directActions
-      primaryActionId={appGrantCard && !isDangerous ? 'session' : (safeDefaultDeny ? 'deny' : 'once')}
+      primaryActionId={handback ? 'user_did_it' : appGrantCard && !isDangerous ? 'session' : (safeDefaultDeny ? 'deny' : 'once')}
       dangerActionId={safeDefaultDeny ? 'once' : undefined}
       onDirectAction={(id) => {
         if (id === 'edit') {
           if (request.rawArgs) setDraft(draftFromArgs(request.tool, request.rawArgs));
           return;
         }
-        void handleApproval(id as ApprovalLevel);
+        void handleApproval(id as ApprovalLevel | 'user_did_it');
       }}
       confirmLabel={t.decisionCard.confirm}
     />

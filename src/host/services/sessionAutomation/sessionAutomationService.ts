@@ -572,6 +572,8 @@ export class SessionAutomationService {
         displayTool: payload.displayTool,
         // N-PARKED-APPROVAL-SURVIVE-RESTART-PERSIST：老行没有该字段，undefined 照常透传（①）。
         argsPreview: payload.argsPreview,
+        // N-PERM-NL-RULES-K2：handback 行出「我做完了 / 让 Neo 做这一次」两键。
+        handback: payload.handback,
         requestedAt: payload.requestedAt ?? row.submittedAt,
         status: row.status === 'orphaned' ? 'orphaned' : 'pending',
         riskClass: payload.riskClass ?? null,

@@ -212,6 +212,7 @@ const permissionRequestSchema = typed<PermissionRequest>(z.object({
   resolvedBy: z.enum(['companion']).optional(),
   dangerLevel: z.enum(['normal', 'warning', 'danger']).optional(),
   riskClass: z.literal('external').optional(),
+  handback: z.boolean().optional(),
   decisionTrace: unknownRecordSchema.optional(),
 }));
 

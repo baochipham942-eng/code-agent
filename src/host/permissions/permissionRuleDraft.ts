@@ -13,7 +13,7 @@ import {
   type PermissionRuleDraft,
   type PermissionTranslateConflict,
 } from '../../shared/permissionRuleTranslate';
-import { validateUserPermissionRule } from '../../shared/permissionRuleSyntax';
+import { isValidNlPhrase, validateUserPermissionRule } from '../../shared/permissionRuleSyntax';
 import { normalizeToolName } from '../tools/toolNames';
 import { matchSpecifier, parseToolSpecifier } from './specifierParser';
 
@@ -28,7 +28,8 @@ export type DraftValidation =
   | { ok: false; reason: 'allow_all_bash' | 'shape' | 'tool_unknown' | 'rule_invalid' | 'example_mismatch'; detail?: string };
 
 function isBehavior(value: unknown): value is NlRuleBehavior {
-  return value === 'allow' || value === 'ask' || value === 'deny';
+  return value === 'allow' || value === 'ask' || value === 'deny'
+    || value === 'preapprove' || value === 'handback';
 }
 
 function isNonEmptyStringArray(value: unknown): value is string[] {
@@ -66,6 +67,24 @@ export function validateDraft(
   if (typeof candidate.pattern !== 'string' && candidate.pattern !== undefined) {
     return { ok: false, reason: 'shape', detail: 'pattern must be a string when present' };
   }
+  // K2：preapprove 必带 1-5 条合规触发短语；其余档不许带短语。roleId 只做形状检查，
+  // 是否真存在于角色目录由 ipc 层注入的目录在翻译前核对（这里不拉注册表）。
+  const phrases = candidate.phrases;
+  if (phrases !== undefined && !Array.isArray(phrases)) {
+    return { ok: false, reason: 'shape', detail: 'phrases must be an array when present' };
+  }
+  if (candidate.behavior === 'preapprove') {
+    if (!Array.isArray(phrases) || phrases.length < 1 || phrases.length > 5
+        || !phrases.every((phrase) => isValidNlPhrase(phrase))) {
+      return { ok: false, reason: 'shape', detail: 'preapprove needs 1-5 phrases of 2-12 chars without wildcards' };
+    }
+  } else if (Array.isArray(phrases) && phrases.length > 0) {
+    return { ok: false, reason: 'shape', detail: 'phrases only allowed on preapprove' };
+  }
+  if (candidate.roleId !== undefined
+      && (typeof candidate.roleId !== 'string' || !candidate.roleId.trim() || candidate.roleId.length > 64)) {
+    return { ok: false, reason: 'shape', detail: 'roleId must be a non-empty string (<=64) when present' };
+  }
 
   // instanceof Set 收窄 ReadonlySet 会退成 Set<any>（ESLint no-unsafe-* 4 条）；目录有 MAX_CATALOG_SIZE 上限，统一拷一份
   const catalog = new Set<string>(toolCatalog);
@@ -90,9 +109,15 @@ export function validateDraft(
     ...(candidate.pattern !== undefined ? { pattern: candidate.pattern } : {}),
     behavior: candidate.behavior,
     examples: { hit, miss },
+    ...(Array.isArray(phrases) && phrases.length > 0 ? { phrases } : {}),
+    ...(typeof candidate.roleId === 'string' && candidate.roleId.trim() ? { roleId: candidate.roleId } : {}),
   };
   const rule = buildRuleString(normalizedDraft);
-  const verdict = validateUserPermissionRule(rule, normalizedDraft.behavior);
+  // preapprove 在放行侧把关（等价 allow：不许「放行全部 Bash」形态）；handback 只查形状。
+  const verdict = validateUserPermissionRule(
+    rule,
+    normalizedDraft.behavior === 'allow' || normalizedDraft.behavior === 'preapprove' ? 'allow' : 'ask',
+  );
   if (!verdict.ok) {
     return verdict.reason === 'allow_all_bash'
       ? { ok: false, reason: 'allow_all_bash' }
@@ -101,7 +126,9 @@ export function validateDraft(
 
   const parsed = parseToolSpecifier(rule);
   if (parsed.specifier) {
-    const intent = normalizedDraft.behavior === 'allow' ? 'allow' : 'restrict';
+    const intent = normalizedDraft.behavior === 'allow' || normalizedDraft.behavior === 'preapprove'
+      ? 'allow'
+      : 'restrict';
     for (const example of hit) {
       if (!matchSpecifier(parsed, example, intent)) {
         return { ok: false, reason: 'example_mismatch', detail: `hit example not matched: ${example}` };
@@ -167,30 +194,45 @@ export function isProtectedAllowRule(rule: string): boolean {
 }
 
 // ----------------------------------------------------------------------------
-// 与已存规则的冲突：更严的赢（deny > ask > allow，与 policyEngine 判定序一致）
+// 与已存规则的冲突：更严的赢（deny > handback > ask > preapprove > allow，
+// 与 policyEngine/userRuleOutcome 判定序一致）
 // ----------------------------------------------------------------------------
 
-const BEHAVIOR_STRENGTH: Record<NlRuleBehavior, number> = { deny: 2, ask: 1, allow: 0 };
+const BEHAVIOR_STRENGTH: Record<NlRuleBehavior, number> = {
+  deny: 4,
+  handback: 3,
+  ask: 2,
+  preapprove: 1,
+  allow: 0,
+};
 
 function stricter(a: NlRuleBehavior, b: NlRuleBehavior): NlRuleBehavior {
   return BEHAVIOR_STRENGTH[a] >= BEHAVIOR_STRENGTH[b] ? a : b;
 }
 
+/** K2：nlRules 条目也参与冲突取严（behavior 五档，规则串同 Tool(pattern) 形状）。 */
+export interface NlExistingRuleEntry {
+  behavior: NlRuleBehavior;
+  rule: string;
+}
+
 /**
  * 新规则与已存规则同工具、且已存的更严规则盖住新规则全部 hit 例子时，报冲突：
- * 两条并存实际生效的是更严那条（engine deny > ask > allow）。
+ * 两条并存实际生效的是更严那条（判定序与 userRuleOutcome 一致：deny > handback >
+ * ask > preapprove > allow；K2 起已存的 nlRules 条目同样参与）。
  */
 export function resolveRuleConflict(
   rule: string,
   behavior: NlRuleBehavior,
   hitExamples: readonly string[],
-  existingRules: { deny?: readonly string[]; ask?: readonly string[]; allow?: readonly string[] },
+  existingRules: { deny?: readonly string[]; ask?: readonly string[]; allow?: readonly string[]; nlRules?: readonly NlExistingRuleEntry[] },
 ): PermissionTranslateConflict | undefined {
   const newTool = normalizeToolName(parseToolSpecifier(rule).toolName);
   const lists: Array<{ behavior: NlRuleBehavior; rules: readonly string[] | undefined }> = [
     { behavior: 'deny', rules: existingRules.deny },
     { behavior: 'ask', rules: existingRules.ask },
     { behavior: 'allow', rules: existingRules.allow },
+    ...(existingRules.nlRules ?? []).map((entry) => ({ behavior: entry.behavior, rules: [entry.rule] })),
   ];
   for (const { behavior: savedBehavior, rules } of lists) {
     if (!rules || BEHAVIOR_STRENGTH[savedBehavior] <= BEHAVIOR_STRENGTH[behavior]) continue;

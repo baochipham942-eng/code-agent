@@ -64,6 +64,11 @@ export interface ToolApprovalPayload {
   ledgerFaithful?: boolean;
   /** 脱敏（密钥/Bearer/.env 值）+ 截断的参数预览：收件箱/审批卡一眼看清这步要干什么。 */
   argsPreview?: string;
+  /**
+   * N-PERM-NL-RULES-K2：这步来自「交回我亲手做」规则——收件箱行出「我做完了 /
+   * 让 Neo 做这一次」两键，而非批准/拒绝；通知文案也不同。缺省 = 普通停车审批。
+   */
+  handback?: boolean;
 }
 
 /** 收件箱「等待批准的操作」分组的行数据（B2）。id=requestId，回传 permissionResponse 用。 */
@@ -82,6 +87,8 @@ export interface ParkedApprovalInboxItem {
   standingGrantTarget?: string | null;
   /** 脱敏 + 截断的参数预览；老行没有该字段，收件箱按缺省不渲染。 */
   argsPreview?: string;
+  /** N-PERM-NL-RULES-K2：handback 行（出「我做完了/让 Neo 做这一次」两键）。 */
+  handback?: boolean;
   pairingCode?: string;
   pairingSender?: string;
   pairingChannel?: 'feishu' | 'lark';

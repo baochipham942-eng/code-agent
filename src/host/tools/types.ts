@@ -229,6 +229,12 @@ export interface PermissionRequestData {
    * 非 external 时属性缺省（≠ null）。
    */
   riskClass?: 'external';
+  /**
+   * N-PERM-NL-RULES-K2：这条审批来自「交回我亲手做」一句话规则（handback）。卡面换
+   * handback 文案与两键（我做完了 / 让 Neo 做这一次）；无人值守停车走同一 flag 进
+   * 收件箱行与通知文案。只改呈现与文案，不改变裁决优先级。
+   */
+  handback?: boolean;
   /** Decision trace: why this permission was requested (populated on deny/ask) */
   decisionTrace?: import('../../shared/contract/decisionTrace').DecisionTrace;
   /**

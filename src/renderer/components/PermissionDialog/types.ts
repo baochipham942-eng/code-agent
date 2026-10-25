@@ -95,6 +95,8 @@ export interface PermissionRequest {
   dangerLevel?: DangerLevel;
   /** B1：EXTERNAL 风险类（离开本机、发出去收不回）；有值时审批卡出作用域提示。 */
   riskClass?: 'external';
+  /** N-PERM-NL-RULES-K2：handback（交回我亲手做）审批——卡面换两键（我做完了 / 让 Neo 做这一次）。 */
+  handback?: boolean;
   timestamp?: number;
   /** Decision trace: why this permission was requested */
   decisionTrace?: import('@shared/contract').DecisionTrace;

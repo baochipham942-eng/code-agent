@@ -1,35 +1,43 @@
 // ============================================================================
-// NlRuleTranslator — 一句话权限规则翻译器（N-PERM-NL-RULES-K1）
+// NlRuleTranslator — 一句话权限规则翻译器（N-PERM-NL-RULES-K1 / K2）
 // ----------------------------------------------------------------------------
 // 输入一句中文 → domain:permissionTranslate translate → 复述卡（人话 + 会触发/不会触发
-// 例子 + 行为档切换）→ 用户点确认后才经 domain:settings set 保存；取消则什么都不写。
-// 识别不了（unrecognized）只给说明不给确认；受保护（protected）只提供「先问我/永不」。
-// 已保存规则在本组件下方带代码生成的白话对照（describeRule，与确认卡同一函数）。
+// 例子 + 行为档切换 + 角色范围）→ 用户点确认后才经 domain:settings set 保存；取消则
+// 什么都不写。识别不了（unrecognized）只给说明不给确认；受保护（protected）只提供
+// 「先问我/永不/交回我亲手做」。已保存规则在本组件下方带代码生成的白话对照
+// （describeNlRule，与确认卡同一函数）。
+//
+// K2：preapprove（我说了才做）/ handback（交回我亲手做）与带角色范围的规则落
+// permissions.nlRules 结构化键；纯 K1 形状（allow/ask/deny 且不限角色）仍落三张旧表。
 // ============================================================================
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ShieldAlert, ShieldQuestion } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
-import type { AppSettings } from '@shared/contract';
+import type { AppSettings, NlPermissionRuleEntry } from '@shared/contract';
 import {
   NL_RULE_TEXT,
-  describeRule,
   type NlRuleBehavior,
   type PermissionTranslateResult,
 } from '@shared/permissionRuleTranslate';
+import { NL_RULE_K2_TEXT, describeNlRule } from '@shared/nlRuleRestate';
 import { Badge, Button, Input, Select, type SelectOption } from '../../../primitives';
+import { useAgentRegistryStore } from '../../../../stores/agentRegistryStore';
 import ipcService from '../../../../services/ipcService';
 import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
 
-type SavedRules = { deny: string[]; ask: string[]; allow: string[] };
+type SavedRules = { deny: string[]; ask: string[]; allow: string[]; nlRules: NlPermissionRuleEntry[] };
 
-const EMPTY_SAVED: SavedRules = { deny: [], ask: [], allow: [] };
+const EMPTY_SAVED: SavedRules = { deny: [], ask: [], allow: [], nlRules: [] };
 
-const BEHAVIOR_OPTIONS: SelectOption[] = (['allow', 'ask', 'deny'] as const).map((behavior) => ({
+const BEHAVIOR_OPTIONS: SelectOption[] = (['allow', 'ask', 'deny', 'preapprove', 'handback'] as const).map((behavior) => ({
   value: behavior,
   label: NL_RULE_TEXT.behavior[behavior],
 }));
+
+/** 受保护探针不能放行：allow 与 preapprove（放行语义一致）都拒，其余档可选。 */
+const PROTECTED_ALLOWED: readonly NlRuleBehavior[] = ['ask', 'deny', 'handback'];
 
 export const NlRuleTranslator: React.FC<{ onSaved?: () => void }> = ({ onSaved }) => {
   const { t } = useI18n();
@@ -39,7 +47,24 @@ export const NlRuleTranslator: React.FC<{ onSaved?: () => void }> = ({ onSaved }
   const [errorText, setErrorText] = useState<string | null>(null);
   const [result, setResult] = useState<PermissionTranslateResult | null>(null);
   const [selectedBehavior, setSelectedBehavior] = useState<NlRuleBehavior>('ask');
+  const [selectedRoleId, setSelectedRoleId] = useState('');
   const [savedRules, setSavedRules] = useState<SavedRules>(EMPTY_SAVED);
+  // 角色目录（「对谁生效」的范围）：注册表里标记为角色的条目，与 host 翻译注入同源。
+  const roleEntries = useAgentRegistryStore((state) => state.entries);
+  const refreshRoles = useAgentRegistryStore((state) => state.refresh);
+
+  const roles = useMemo(
+    () => roleEntries.filter((entry) => entry.isRole).map(({ id, name }) => ({ id, name })),
+    [roleEntries],
+  );
+  const roleNameFor = useCallback(
+    (roleId: string): string | undefined => roles.find((role) => role.id === roleId)?.name,
+    [roles],
+  );
+
+  useEffect(() => {
+    void refreshRoles();
+  }, [refreshRoles]);
 
   const loadSavedRules = useCallback(async () => {
     try {
@@ -48,6 +73,7 @@ export const NlRuleTranslator: React.FC<{ onSaved?: () => void }> = ({ onSaved }
         deny: settings?.permissions?.deny ?? [],
         ask: settings?.permissions?.ask ?? [],
         allow: settings?.permissions?.allow ?? [],
+        nlRules: settings?.permissions?.nlRules ?? [],
       });
     } catch {
       // 已存规则读不到时按空表处理：翻译与确认仍可用，只是冲突检测少了输入
@@ -71,8 +97,9 @@ export const NlRuleTranslator: React.FC<{ onSaved?: () => void }> = ({ onSaved }
         { sentence },
       );
       setResult(response);
-      // protected 时草稿的 allow 档被拒，默认落「先问我」；其余落生效档（冲突已被取严）
+      // protected 时草稿的放行档被拒，默认落「先问我」；其余落生效档（冲突已被取严）
       setSelectedBehavior(response.status === 'protected' ? 'ask' : response.behavior ?? 'ask');
+      setSelectedRoleId(response.status === 'ok' ? (response.roleId ?? '') : '');
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : text.translateFailedPrefix);
     } finally {
@@ -82,16 +109,35 @@ export const NlRuleTranslator: React.FC<{ onSaved?: () => void }> = ({ onSaved }
 
   const handleCancel = () => setResult(null);
 
+  // preapprove 必须有触发短语：模型没给（或用户从别的档切过来）就不能按这档保存。
+  const phrases = result?.phrases && result.phrases.length > 0 ? result.phrases : undefined;
+  const preapproveReady = selectedBehavior !== 'preapprove' || phrases !== undefined;
+
   const handleConfirm = async () => {
-    if (!result?.rule) return;
-    const list = selectedBehavior;
-    const existing = savedRules[list];
-    const nextRules = existing.includes(result.rule) ? existing : [...existing, result.rule];
+    if (!result?.rule || !preapproveReady) return;
     try {
-      const patch: Partial<AppSettings['permissions']> = { [list]: nextRules };
-      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
-        permissions: patch,
-      } as Partial<AppSettings>);
+      // K2：新两档或带角色范围 → 结构化 nlRules；纯 K1 形状仍落三张旧表（一字不动）。
+      if (selectedBehavior === 'preapprove' || selectedBehavior === 'handback' || selectedRoleId) {
+        const entry: NlPermissionRuleEntry = {
+          behavior: selectedBehavior,
+          rule: result.rule,
+          ...(selectedRoleId ? { roleId: selectedRoleId } : {}),
+          ...(selectedBehavior === 'preapprove' && phrases ? { phrases: [...phrases] } : {}),
+        };
+        const exists = savedRules.nlRules.some((saved) => saved.behavior === entry.behavior
+          && saved.rule === entry.rule && (saved.roleId ?? '') === (entry.roleId ?? ''));
+        const patch: Partial<AppSettings['permissions']> = {
+          nlRules: exists ? savedRules.nlRules : [...savedRules.nlRules, entry],
+        };
+        await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', { permissions: patch } as Partial<AppSettings>);
+      } else {
+        const list = selectedBehavior;
+        const existing = savedRules[list];
+        const nextRules = existing.includes(result.rule) ? existing : [...existing, result.rule];
+        await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
+          permissions: { [list]: nextRules } as Partial<AppSettings['permissions']>,
+        });
+      }
       toast.success(text.savedToast);
       setResult(null);
       setSentence('');
@@ -103,16 +149,27 @@ export const NlRuleTranslator: React.FC<{ onSaved?: () => void }> = ({ onSaved }
   };
 
   const behaviorOptions = result?.status === 'protected'
-    ? BEHAVIOR_OPTIONS.filter((option) => option.value !== 'allow')
+    ? BEHAVIOR_OPTIONS.filter((option) => PROTECTED_ALLOWED.includes(option.value as NlRuleBehavior))
     : BEHAVIOR_OPTIONS;
+  const roleOptions: SelectOption[] = [
+    { value: '', label: text.appliesToEveryone },
+    ...roles.map((role) => ({ value: role.id, label: role.name })),
+  ];
   const cardRule = result?.rule;
-  const cardRestatement = cardRule ? describeRule(cardRule, selectedBehavior) : null;
+  // 复述随卡上的行为档/角色选择实时重算（与已保存规则的白话对照同一函数）。
+  const cardRestatement = cardRule
+    ? describeNlRule(
+      { behavior: selectedBehavior, rule: cardRule, ...(selectedRoleId ? { roleId: selectedRoleId } : {}), phrases },
+      roleNameFor,
+    )
+    : null;
   const savedEntries: Array<{ list: NlRuleBehavior; rules: string[] }> = [
     { list: 'deny', rules: savedRules.deny },
     { list: 'ask', rules: savedRules.ask },
     { list: 'allow', rules: savedRules.allow },
   ];
-  const savedCount = savedEntries.reduce((total, entry) => total + entry.rules.length, 0);
+  const savedCount = savedEntries.reduce((total, entry) => total + entry.rules.length, 0)
+    + savedRules.nlRules.length;
 
   return (
     <div className="space-y-3" data-testid="nl-rule-translator">
@@ -195,6 +252,13 @@ export const NlRuleTranslator: React.FC<{ onSaved?: () => void }> = ({ onSaved }
                 </div>
               ) : null}
 
+              {phrases ? (
+                <div className="mt-2 rounded border border-zinc-800 bg-zinc-950/40 px-2 py-1.5" data-testid="nl-rule-phrases">
+                  <div className="text-[11px] text-zinc-500">{text.phrasesCardLabel}</div>
+                  <p className="mt-1 text-xs text-zinc-300">{NL_RULE_K2_TEXT.phrasesList(phrases)}</p>
+                </div>
+              ) : null}
+
               {result.reasonText ? (
                 <div className="mt-2 flex items-start gap-2 text-xs leading-relaxed text-badge-warning/90">
                   <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -207,17 +271,33 @@ export const NlRuleTranslator: React.FC<{ onSaved?: () => void }> = ({ onSaved }
                 <Select
                   id="nl-rule-behavior"
                   selectSize="sm"
-                  className="w-32"
+                  className="w-36"
                   options={behaviorOptions}
                   value={selectedBehavior}
                   onChange={(event) => setSelectedBehavior(event.target.value as NlRuleBehavior)}
                   data-testid="nl-rule-behavior"
                 />
+                <label htmlFor="nl-rule-role" className="ml-2 text-xs text-zinc-400">{text.appliesToLabel}</label>
+                <Select
+                  id="nl-rule-role"
+                  selectSize="sm"
+                  className="w-36"
+                  options={roleOptions}
+                  value={selectedRoleId}
+                  onChange={(event) => setSelectedRoleId(event.target.value)}
+                  data-testid="nl-rule-role"
+                />
                 <div className="ml-auto flex items-center gap-2">
                   <Button type="button" size="sm" variant="secondary" onClick={handleCancel} data-testid="nl-rule-cancel">
                     {text.cancelAction}
                   </Button>
-                  <Button type="button" size="sm" onClick={() => void handleConfirm()} data-testid="nl-rule-confirm">
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={!preapproveReady}
+                    onClick={() => void handleConfirm()}
+                    data-testid="nl-rule-confirm"
+                  >
                     {text.confirmAction}
                   </Button>
                 </div>
@@ -244,9 +324,29 @@ export const NlRuleTranslator: React.FC<{ onSaved?: () => void }> = ({ onSaved }
                   {NL_RULE_TEXT.behavior[list]}
                 </Badge>
                 <code className="rounded bg-zinc-800 px-1 py-0.5 font-mono text-[11px] text-zinc-300">{rule}</code>
-                <span className="text-zinc-500">{describeRule(rule, list)}</span>
+                <span className="text-zinc-500">{describeNlRule({ behavior: list, rule }, roleNameFor)}</span>
               </li>
             )))}
+            {savedRules.nlRules.map((entry) => (
+              <li
+                key={`nl:${entry.behavior}:${entry.roleId ?? ''}:${entry.rule}`}
+                className="flex flex-wrap items-baseline gap-x-2 text-xs"
+                data-testid="nl-saved-structured-rule"
+              >
+                <Badge className={entry.behavior === 'deny'
+                  ? 'border-badge-danger/30 bg-red-500/10 text-badge-danger'
+                  : entry.behavior === 'ask'
+                    ? 'border-badge-warning/30 bg-amber-500/10 text-badge-warning'
+                    : 'border-badge-info/30 bg-sky-500/10 text-badge-info'}
+                >
+                  {NL_RULE_TEXT.behavior[entry.behavior]}
+                </Badge>
+                <code className="rounded bg-zinc-800 px-1 py-0.5 font-mono text-[11px] text-zinc-300">{entry.rule}</code>
+                <span className="text-zinc-500">
+                  {describeNlRule({ behavior: entry.behavior, rule: entry.rule, roleId: entry.roleId, phrases: entry.phrases }, roleNameFor)}
+                </span>
+              </li>
+            ))}
           </ul>
         )}
       </div>

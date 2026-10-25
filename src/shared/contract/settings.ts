@@ -17,6 +17,23 @@ import type { SpeechInputSettings } from './speech';
 import type { VoiceTurnDetectionConfig } from './voice';
 import type { KeybindingsSettings } from '../keybindings';
 import type { RealtimeVoiceProviderId } from '../constants/realtimeVoiceProviders';
+import type { NlRuleBehavior } from '../permissionRuleTranslate';
+
+/**
+ * permissions.nlRules 的一条结构化规则（N-PERM-NL-RULES-K2）。行为档与角色范围/触发
+ * 短语一起持久化；rule 仍是 K1 的 Tool(pattern) 规范化串，校验见
+ * shared/permissionRuleSyntax.ts 的 assertValidNlPermissionRules。
+ */
+export interface NlPermissionRuleEntry {
+  /** 五档行为；运行时消费见 host/permissions/userRuleOutcome.ts */
+  behavior: NlRuleBehavior;
+  /** Tool(pattern) 规范化规则串（或裸工具名） */
+  rule: string;
+  /** 只对该角色的 run 生效（run 的 roleId 在 beginRunPolicy 盖章）；缺省 = 全局 */
+  roleId?: string;
+  /** preapprove 触发短语：本轮发起话（聊天消息/定时任务提示词）出现任一条才免询问 */
+  phrases?: string[];
+}
 
 export interface CustomRealtimeVoiceProviderSettings {
   /** Stable user-defined id. Keys are isolated by this id in secure storage. */
@@ -334,6 +351,12 @@ export interface AppSettings {
     ask?: string[];
     /** 用户级 allow 规则（最低优先级，不能压过 deny） */
     allow?: string[];
+    /**
+     * 一句话规则的结构化落点（N-PERM-NL-RULES-K2）：两档新行为（preapprove=我说了才做 /
+     * handback=交回我亲手做）与带角色范围的规则存这里；上面三张旧表一字不动。
+     * 运行时判定序：deny > handback > ask > preapprove 未命中（=ask）> preapprove 命中。
+     */
+    nlRules?: NlPermissionRuleEntry[];
     /**
      * 内部标记：true 表示配置升级到 6.8.x 但用户尚未显式声明 inheritance。
      * UI 检测到该标记会弹一次性引导，提醒用户选择继承策略。

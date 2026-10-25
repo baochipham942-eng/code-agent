@@ -53,6 +53,7 @@ import { registerWorkflowHandlers } from './workflow.ipc';
 import { registerTaskListHandlers } from '../agent/taskList/taskList.ipc';
 import { registerTelemetryHandlers } from './telemetry.ipc';
 import { registerCronHandlers } from './cron.ipc';
+import { registerPermissionTranslateHandlers } from './permissionTranslate.ipc';
 import { registerLoopHandlers } from './loop.ipc';
 import { registerSessionAutomationHandlers } from './sessionAutomation.ipc';
 import { registerNotificationHandlers } from './notification.ipc';
@@ -260,6 +261,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Cron handlers (定时任务)
   registerCronHandlers();
+
+  // Permission translate handlers (一句话权限规则翻译；只读，不写设置)
+  registerPermissionTranslateHandlers();
 
   // Loop handlers (会话内循环 /loop)
   registerLoopHandlers();

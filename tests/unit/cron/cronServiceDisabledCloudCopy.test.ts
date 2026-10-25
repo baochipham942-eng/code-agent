@@ -36,6 +36,11 @@ const automationState = vi.hoisted(() => ({
   upsert: vi.fn(() => undefined),
 }));
 
+/** 云端执行地址/令牌：默认不配置（(a)(b)(c) 与既有行为一致），仅新用例显式设置。 */
+const configState = vi.hoisted(() => ({
+  cronCloud: undefined as { baseUrl: string; token: string } | undefined,
+}));
+
 vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => ({
     getDb: () => ({
@@ -59,8 +64,12 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
 vi.mock('../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({
     onSettingsUpdated: vi.fn(),
-    // 刻意不含 cronCloud：云端执行地址/令牌未配置（真实 CronApiClient.requireConfig 会抛）。
-    getSettings: () => ({ ui: { language: 'zh' } }),
+    // 云端执行地址/令牌默认未配置（真实 CronApiClient.requireConfig 会抛）；
+    // 新用例通过 configState.cronCloud 显式打开，模拟已开通云端的用户。
+    getSettings: () => ({
+      ui: { language: 'zh' },
+      ...(configState.cronCloud ? { cronCloud: configState.cronCloud } : {}),
+    }),
   }),
 }));
 
@@ -151,6 +160,11 @@ function realCloudRuntime(service: CronService): CronCloudRuntime {
   return (service as unknown as { cloudRuntime: CronCloudRuntime }).cloudRuntime;
 }
 
+/** CronApiClient 只读 ok / status / json()，不必构造真 Response。 */
+function fakeOk(result: unknown) {
+  return { ok: true, status: 200, json: async () => ({ ok: true, result }) };
+}
+
 afterEach(() => {
   dbState.cronRows = [];
   dbState.savedRows = [];
@@ -158,6 +172,8 @@ afterEach(() => {
   dbState.sessionIds.clear();
   sessionState.messages.clear();
   sessionState.broadcasts = [];
+  configState.cronCloud = undefined;
+  vi.unstubAllGlobals();
   shutdownEventBus();
 });
 
@@ -216,6 +232,73 @@ describe('CronService 停用云端副本（真实 CronCloudRuntime · 云端未�
       name: '停用态改名',
       enabled: false,
     }));
+    await service.shutdown();
+  });
+});
+
+// ============================================================================
+// N-ROLE-ROUTINE-RESTATE-FU1-FU1-FU1：停用已注册的云端任务不许丢掉 remote 指针。
+// updateJob 的停用分支曾用 `this.jobs.set(jobId, { definition: updatedJob })` 覆盖 map，
+// 把 cloudJobId 抹掉；紧接着的 cloudRuntime.updateJob 查不到 id 就走惰性 addJob，
+// 云端多出一条副本（打桩 id 从 remote-2 起递增；实测停用与改名各再注册一次），
+// DB 指针也被改指过去，旧远端任务成了孤儿。
+// 真 CronService + 真 CronCloudRuntime，只把网关 fetch 打桩。
+// ============================================================================
+describe('CronService 停用/改名已注册的云端任务（真实 CronCloudRuntime · 打桩云端网关）', () => {
+  it('(d) 停用后再改名：只注册一次，改名走 remote-1 的 update，DB 与内存指针都不变', async () => {
+    configState.cronCloud = { baseUrl: 'https://cloud.example.test', token: 'test-token' };
+
+    const calls: Array<{ path: string; method: string; body?: Record<string, unknown> }> = [];
+    let addCount = 0;
+    // 必须在 new CronService() 之前装好：CronApiClient 构造时把 fetch 收成默认参数。
+    vi.stubGlobal('fetch', vi.fn(async (input: unknown, init?: { method?: string; body?: unknown }) => {
+      const path = new URL(String(input)).pathname;
+      const body = init?.body == null
+        ? undefined
+        : JSON.parse(String(init.body)) as Record<string, unknown>;
+      calls.push({ path, method: init?.method ?? 'GET', body });
+      if (path === '/api/cron/add') {
+        addCount += 1;
+        return fakeOk({ id: `remote-${addCount}` });
+      }
+      if (path === '/api/cron/update') return fakeOk({});
+      if (path === '/api/cron/list') return fakeOk({ jobs: [] });
+      throw new Error(`unexpected cloud cron request: ${path}`);
+    }));
+
+    const service = new CronService();
+    const job = await service.createJob({ ...disabledCloudCopy(), enabled: true });
+    expect(job.enabled).toBe(true);
+
+    await service.updateJob(job.id, { enabled: false });
+    const renamed = await service.updateJob(job.id, { name: '停用后改名' });
+    expect(renamed?.name).toBe('停用后改名');
+    expect(renamed?.enabled).toBe(false);
+
+    // 只注册过一条远端任务：停用/改名都不许再 add。
+    const addCalls = calls.filter((call) => call.path === '/api/cron/add');
+    expect(addCalls).toHaveLength(1);
+
+    // 停用后的更新走 remote-1 的 update（不是惰性 add），改名 body 带着 remote-1。
+    const updateCalls = calls.filter((call) => call.path === '/api/cron/update');
+    expect(updateCalls.length).toBeGreaterThanOrEqual(1);
+    const renameUpdate = updateCalls.find(
+      (call) => (call.body?.patch as Record<string, unknown> | undefined)?.name === '停用后改名',
+    );
+    expect(renameUpdate).toBeTruthy();
+    expect(renameUpdate?.body?.id).toBe('remote-1');
+
+    // 最后一次落库的 cron_jobs 行仍指向 remote-1（saveCronJob 第 13 个参数）。
+    const jobRows = dbState.savedRows.filter((row) => row[0] === job.id);
+    expect(jobRows.length).toBeGreaterThan(0);
+    expect(jobRows[jobRows.length - 1]?.[12]).toBe('remote-1');
+
+    // 内存里的活动条目也仍持有 remote-1。
+    const active = (service as unknown as {
+      jobs: Map<string, { cloudJobId?: string }>;
+    }).jobs.get(job.id);
+    expect(active?.cloudJobId).toBe('remote-1');
+
     await service.shutdown();
   });
 });

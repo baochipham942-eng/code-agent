@@ -1,6 +1,6 @@
 // ============================================================================
 // cronWriteGrant 单测（N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1 ①/②）：
-//   - isPathWithinWriteGrantRoot：界内 / 出界 / `..` 逃逸 / 软链逃逸 / 相对路径 / 根不存在
+//   - isPathWithinWriteGrantRoot：界内 / 出界 / `..` 逃逸 / 软链逃逸 / 相对路径（对会话 cwd 归一）/ 根不存在
 //   - approveByScheduleWriteGrant：cron/heartbeat 来源 + 授权 + file_write/file_edit + 界内
 //     才放行；非 cron 来源、无授权、forceConfirm、其余类型一律 undefined（照旧停车）
 //   - grant/revoke 落库与幂等、无文件夹抛 CRON_WRITE_SCOPE_NO_FOLDER
@@ -127,8 +127,35 @@ describe('判界 isPathWithinWriteGrantRoot（经生产消费口 approveBySchedu
     expect(await grantAllows(path.join(grantRoot, 'link-in', 'file.txt'), grantRoot)).toBe(true);
   });
 
-  it('相对路径与不存在的授权根 fail-closed 拒', async () => {
+  it('相对路径目标：有会话工作目录且落界内放行（真模型第一发 Write 的形状），无锚点/出界 fail-closed 拒', async () => {
+    // 真跑实证（2026-10-24 GLM 真跑）：模型对 cwd 下的文件写的是相对路径 `today-note.txt`，
+    // 不是绝对路径——授权若只认绝对路径，最常见的第一发写必然停车。
+    sessionState.sessions['rel-sess'] = {
+      id: 'rel-sess',
+      origin: { kind: 'cron', metadata: { writeGrantRoot: grantRoot } },
+      workingDirectory: grantRoot,
+    };
+    const relative = await approveByScheduleWriteGrant({
+      sessionId: 'rel-sess', type: 'file_write', details: { path: 'today-note.txt' },
+    });
+    expect(relative).toEqual({ approved: true, approvalSource: 'schedule-write-grant' });
+    // `..` 拼接出界的相对路径归一后仍拒
+    const relativeEscape = await approveByScheduleWriteGrant({
+      sessionId: 'rel-sess', type: 'file_write', details: { path: '../stolen.txt' },
+    });
+    expect(relativeEscape).toBeUndefined();
+    // 会话工作目录在授权界外：相对目标解析后出界拒
+    sessionState.sessions['rel-outside'] = {
+      id: 'rel-outside',
+      origin: { kind: 'cron', metadata: { writeGrantRoot: grantRoot } },
+      workingDirectory: path.dirname(grantRoot),
+    };
+    expect(await approveByScheduleWriteGrant({
+      sessionId: 'rel-outside', type: 'file_write', details: { path: 'note.txt' },
+    })).toBeUndefined();
+    // 无工作目录锚点：不猜落点，fail-closed 拒
     expect(await grantAllows('relative/note.txt', grantRoot)).toBe(false);
+    // 不存在的授权根同样拒
     expect(await grantAllows(path.join(grantRoot, 'note.txt'), path.join(grantRoot, 'missing-root'))).toBe(false);
   });
 });

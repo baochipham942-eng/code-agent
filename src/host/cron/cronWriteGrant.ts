@@ -64,7 +64,8 @@ function realpathWithMissingTail(resolved: string): string | undefined {
 /**
  * 判定目标是否落在授权文件夹内。两边都做 realpath 归一：
  * `..` 由 path.resolve 归一，symlink 逃逸由 realpath 归一（授权目录内的软链指向
- * 外部 → 解析后落在界外 → 不放行）。相对路径 / 授权根不存在一律 fail-closed 拒。
+ * 外部 → 解析后落在界外 → 不放行）。只收绝对路径（相对目标由调用方先对会话
+ * workingDirectory 归一）；授权根不存在一律 fail-closed 拒。
  * 模块私有：外部统一走 approveByScheduleWriteGrant（生产消费方只有它）。
  */
 function isPathWithinWriteGrantRoot(target: string, grantRoot: string): boolean {
@@ -153,6 +154,9 @@ export function stripWriteGrantRoot(
  * 无人值守审批的写授权放行判定（orchestratorPermissions 在停车分支之前调用）。
  * 返回 undefined = 不适用（非 cron/heartbeat 来源、非 file_write/file_edit、
  * forceConfirm、无授权、目标出界），调用方照旧走停车/询问。
+ * 相对路径目标（真模型第一发 Write 的自然形状，2026-10-24 GLM 真跑实证：`today-note.txt`）
+ * 对会话工作目录归一后判界——cron 会话 cwd 就是授权根，语义上「写进自己文件夹」；
+ * 会话没有工作目录时维持 fail-closed 拒（不猜落点）。
  */
 export async function approveByScheduleWriteGrant(request: {
   sessionId?: string;
@@ -173,7 +177,8 @@ export async function approveByScheduleWriteGrant(request: {
     request.forceConfirm === true
     && request.reasonCode !== PermissionRequestReason.FileWriteOutsideWorkspace
   ) return undefined;
-  const grantRoot = await scheduleWriteGrantRootForSession(request.sessionId);
+  const grantSession = await scheduleWriteGrantSession(request.sessionId);
+  const grantRoot = grantSession?.root;
   if (!grantRoot) {
     logger.debug('Schedule write grant not applicable (no grant on the session origin)', {
       sessionId: request.sessionId,
@@ -181,12 +186,32 @@ export async function approveByScheduleWriteGrant(request: {
     });
     return undefined;
   }
-  const target = request.details?.path ?? request.details?.filePath;
-  if (!target || !isPathWithinWriteGrantRoot(target, grantRoot)) {
+  const rawTarget = request.details?.path ?? request.details?.filePath;
+  if (!rawTarget) {
+    logger.info('Schedule write grant declined the target (no file path on the request)', {
+      sessionId: request.sessionId,
+      grantRoot,
+    });
+    return undefined;
+  }
+  let target = rawTarget;
+  if (!path.isAbsolute(rawTarget)) {
+    const cwd = grantSession?.workingDirectory;
+    if (!cwd || !path.isAbsolute(cwd)) {
+      logger.info('Schedule write grant declined a relative target (session has no working directory)', {
+        sessionId: request.sessionId,
+        grantRoot,
+        target: rawTarget,
+      });
+      return undefined;
+    }
+    target = path.resolve(cwd, rawTarget);
+  }
+  if (!isPathWithinWriteGrantRoot(target, grantRoot)) {
     logger.info('Schedule write grant declined the target (outside the granted folder)', {
       sessionId: request.sessionId,
       grantRoot,
-      target: target ?? '(none)',
+      target,
     });
     return undefined;
   }
@@ -198,15 +223,22 @@ export async function approveByScheduleWriteGrant(request: {
   return { approved: true, approvalSource: 'schedule-write-grant' };
 }
 
-/** 会话来源带授权才放行：origin.kind 只认 cron/heartbeat，字段只认绝对路径字符串。 */
-async function scheduleWriteGrantRootForSession(sessionId: string | undefined): Promise<string | undefined> {
+/**
+ * 会话来源带授权才放行：origin.kind 只认 cron/heartbeat，授权字段只认绝对路径字符串。
+ * workingDirectory 一并带回（相对路径目标的归一锚点；缺失则相对目标 fail-closed 拒）。
+ */
+async function scheduleWriteGrantSession(sessionId: string | undefined): Promise<
+  { root: string; workingDirectory?: string } | undefined
+> {
   if (!sessionId) return undefined;
   try {
     const { getSessionManager } = await import('../services/infra/sessionManager');
     const session = await getSessionManager().getSession(sessionId).catch(() => null);
     const origin = session?.origin;
     if (origin?.kind !== 'cron' && origin?.kind !== 'heartbeat') return undefined;
-    return writeGrantRootFromMetadata(origin.metadata);
+    const root = writeGrantRootFromMetadata(origin.metadata);
+    if (!root) return undefined;
+    return { root, workingDirectory: session?.workingDirectory };
   } catch (error) {
     logger.warn('Failed to read the session origin, treating the write scope as ungranted', { error });
     return undefined;

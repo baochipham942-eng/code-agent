@@ -11,6 +11,7 @@ import {
   type SimpleFrequency,
 } from '../../cron/CronSimpleCreate';
 import { CronEventScheduleFields } from '../../cron/CronEventScheduleFields';
+import { CronMailEventFields } from '../../cron/CronMailEventFields';
 import type { CreateCronJobInput } from '../../../../services/cronClient';
 import type { PendingScheduleDraft } from './useScheduleDraft';
 import { buildScheduleConfirmRows } from './scheduleConfirm';
@@ -108,25 +109,32 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
       groupFallback: cc.eventConfirmGroupFallback,
       groupAnyChat: cc.eventConfirmGroupAnyChat,
       budget: cc.eventBudgetLabel,
+      mail: cc.eventConfirmMail,
+      mailFallback: cc.eventConfirmMailFallback,
+      mailTrigger: cc.eventMailTriggerPrefix,
     }),
     [draft, labels, language, cc],
   );
 
   // event 草案（N-CRON-EVENT-CREATE-CHAT）：没有「什么时候」行/时间编辑器，
-  // 换成 CronEventScheduleFields（账号/群选择 + 预算输入）；确认按钮挂共享校验器。
-  // normalize 只放行 channel 源，这里按 source 收窄拿 chatId 字段。
+  // 换成 CronEventScheduleFields（账号/群选择 + 预算输入）或 mail 草案的
+  // CronMailEventFields（账号/邮箱选择 + 预算输入，N-TRIGGER-MAIL-CREATE-ENTRY-K1）；
+  // 确认按钮挂共享校验器（判据对两种源同一份）。
   const eventSchedule = draft.input.schedule.type === 'event' && draft.input.schedule.source === 'channel'
     ? draft.input.schedule
     : null;
+  const mailSchedule = draft.input.schedule.type === 'event' && draft.input.schedule.source === 'connector'
+    ? draft.input.schedule
+    : null;
   const eventViolation = useMemo(() => {
-    if (!eventSchedule) return null;
+    if (!eventSchedule && !mailSchedule) return null;
     return validateEventScheduleConstraints({
-      schedule: eventSchedule,
+      schedule: draft.input.schedule,
       runsOn: draft.input.runsOn,
       action: draft.input.action,
       maxRunBudget: draft.input.maxRunBudget,
     });
-  }, [eventSchedule, draft.input.runsOn, draft.input.action, draft.input.maxRunBudget]);
+  }, [eventSchedule, mailSchedule, draft.input.schedule, draft.input.runsOn, draft.input.action, draft.input.maxRunBudget]);
 
   // event 编辑态放本地（含 ref：同一次账号切换会连续触发 onAccountChange + onChatChange
   // 两次写回，第二次的 draft 闭包是旧的，只有 ref 合并才不丢账号补丁），每次变更整体写回草案。
@@ -138,6 +146,12 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
     chatName: '',
   }));
   const eventEditRef = useRef(eventEdit);
+  // mail 草案编辑态同款：accountId + mailbox（空 = 缺省 INBOX，写回不落键）。
+  const [mailEdit, setMailEdit] = useState(() => ({
+    accountId: mailSchedule?.accountId ?? '',
+    mailbox: mailSchedule?.mailbox ?? '',
+  }));
+  const mailEditRef = useRef(mailEdit);
   const [budgetEdit, setBudgetEdit] = useState(() => String(draft.input.maxRunBudget ?? ''));
 
   // 草案身份变化（同会话旧卡未确认时再次 /schedule 整体替换草案，挂载点没有 key、
@@ -153,6 +167,11 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
       chatName: '',
     };
     setEventEdit(eventEditRef.current);
+    mailEditRef.current = {
+      accountId: mailSchedule?.accountId ?? '',
+      mailbox: mailSchedule?.mailbox ?? '',
+    };
+    setMailEdit(mailEditRef.current);
     setBudgetEdit(String(draft.input.maxRunBudget ?? ''));
     // 故意只依赖草案身份：卡内每次编辑都会产生新 draft 引用，重置必须只随「换了一份草案」发生。
   }, [draftId]);
@@ -178,7 +197,7 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
   };
 
   const handleEventBudgetChange = (value: string) => {
-    if (!eventSchedule || !onDraftChange) return;
+    if ((!eventSchedule && !mailSchedule) || !onDraftChange) return;
     setBudgetEdit(value);
     const parsed = Number(value);
     onDraftChange({
@@ -187,6 +206,21 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
         ...draft.input,
         maxRunBudget: value.trim() !== '' && Number.isFinite(parsed) ? parsed : null,
       },
+    });
+  };
+
+  // mail 草案的卡内编辑（账号/邮箱下拉）：与通道版同款走 ref 合并 + 整体写回；
+  // mailbox 空串 = 缺省 INBOX，写回时不落键（空串会被 host 当字面量邮箱名）。
+  const writeMailEdit = (patch: { accountId?: string; mailbox?: string }) => {
+    if (!mailSchedule || !onDraftChange) return;
+    const next = { ...mailEditRef.current, ...patch };
+    mailEditRef.current = next;
+    setMailEdit(next);
+    const { mailbox: _previousMailbox, ...scheduleWithoutMailbox } = { ...mailSchedule, accountId: next.accountId };
+    const schedule = next.mailbox ? { ...scheduleWithoutMailbox, mailbox: next.mailbox } : scheduleWithoutMailbox;
+    onDraftChange({
+      ...draft,
+      input: { ...draft.input, schedule } as CreateCronJobInput,
     });
   };
 
@@ -237,7 +271,7 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
     setEditingNotify(false);
   };
 
-  const renderRowValue = (key: 'what' | 'when' | 'notifyWhen' | 'result' | 'group' | 'budget') => {
+  const renderRowValue = (key: 'what' | 'when' | 'notifyWhen' | 'result' | 'group' | 'budget' | 'mail') => {
     const row = rows.find((candidate) => candidate.key === key);
     const value = row?.value ?? '';
     return (
@@ -307,6 +341,20 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
               onBudgetChange={handleEventBudgetChange}
               validationMessage={eventViolation ? cc.eventValidation[eventViolation.reason] : null}
               preferredChatName={draft.eventGroupName}
+            />
+          </div>
+        )}
+
+        {mailSchedule && (
+          <div data-schedule-event-fields className="rounded-md bg-indigo-500/5 px-2.5 py-2">
+            <CronMailEventFields
+              accountId={mailEdit.accountId}
+              mailbox={mailEdit.mailbox}
+              onAccountChange={(accountId) => writeMailEdit({ accountId, mailbox: '' })}
+              onMailboxChange={(mailbox) => writeMailEdit({ mailbox })}
+              maxRunBudget={budgetEdit}
+              onBudgetChange={handleEventBudgetChange}
+              violation={eventViolation}
             />
           </div>
         )}

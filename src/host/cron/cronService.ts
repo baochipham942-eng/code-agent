@@ -316,7 +316,7 @@ export class CronService implements Disposable {
     if (updatedJob.enabled) {
       this.registerJob(updatedJob);
     } else {
-      this.jobs.set(jobId, { definition: updatedJob });
+      this.jobs.set(jobId, { definition: updatedJob, cloudJobId: existingJob.cloudJobId });
     }
 
     syncCronAutomationFromJob(updatedJob, this.resolveAutomationRuntime);

@@ -4,15 +4,13 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
-  openSync,
   readFileSync,
   readlinkSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { spawn, spawnSync } from 'node:child_process';
-import net from 'node:net';
+import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -21,28 +19,12 @@ import { buildSlotlessConfig, buildSlotlessTemplateProvenance, copySecureStorage
 // @ts-expect-error —— 纯 JS 本机验证入口，无类型声明
 import { parseViewport } from '../../scripts/verify-shot.mjs';
 
-// ── live 形状检查的前置（缺件时整条 skip 并写明原因）────────────────────────
-// N-APPROVAL-LANE-CLICK-DROP-FU1：无头/隔离 HOME（无默认登录钥匙串）下 keytar 的
-// Keychain 写入会卡死在授权 UI 并占满 libuv 线程池，webServer 表现为 `/`、`/assets/*`
-// 零字节与 signInEmail 悬死。keytarAdapter 的加载闸修掉它；这条 live 检查用真
-// webServer + 真狗food 登录复刻「隔离 HOME + signInEmail」的卡死形状，闸回退即红。
-const liveWebServerBundle = path.resolve('dist/web/webServer.cjs');
-const liveRendererIndex = path.resolve('dist/renderer/index.html');
-const liveSecretFile = path.join(os.homedir(), '.ship', 'secrets', 'neo-dogfood.env');
-const liveSourceDataDir = path.join(os.homedir(), '.code-agent-dev');
-function liveShapeReady(): boolean {
-  if (process.platform !== 'darwin') return false;
-  if (!existsSync(liveWebServerBundle) || !existsSync(liveRendererIndex)) return false;
-  if (!existsSync(liveSecretFile) || statSync(liveSecretFile).mode & 0o077) return false;
-  for (const f of ['secure-storage.json', '.secure-key', 'config.json']) {
-    if (!existsSync(path.join(liveSourceDataDir, f))) return false;
-  }
-  return true;
-}
-if (!liveShapeReady()) {
-   
-  console.log('[slotless live check] skipped: requires darwin + built dist/web & dist/renderer + mode-600 dogfood secret + dev-slot config/secure pair (CI has no secret → offline unit tests in keytarAdapter.test.ts cover the guard)');
-}
+// N-APPROVAL-LANE-CLICK-DROP-FU1 rework r1：live 形状检查（真 webServer + scratch
+// HOME + 真狗food signInEmail）曾以 it.skipIf(liveShapeReady) 放在本文件，缺件环境
+// （CI 无 secret、收集树无 dist/）整条 skip——gates:fast 的 vitest 判读器把任何
+// skipped 都判门红，故 live 检查不进 vitest。该形状的回归守卫由
+// tests/unit/services/core/keytarAdapter.test.ts 的离线单测承担；端到端 live 证明
+// 走 `node scripts/verify-slotless.mjs <单号> --reuse-dist` 真跑（见证据档）。
 
 describe('slotless verification scripts', () => {
   const tempDirs: string[] = [];
@@ -434,114 +416,6 @@ describe('slotless verification scripts', () => {
     const defaultPath = path.join(os.homedir(), '.code-agent-dev', 'config.json');
     expect(resolveSourceConfigPath(undefined)).toBe(defaultPath);
     expect(resolveSourceConfigPath('/tmp/explicit-template.json')).toBe('/tmp/explicit-template.json');
-  });
-
-  // N-APPROVAL-LANE-CLICK-DROP-FU1 live 形状检查：真 webServer + 隔离 HOME（无默认
-  // 登录钥匙串）+ 真狗food signInEmail。keytarAdapter 加载闸在位 → 登录毫秒级返回、
-  // `/` 与 /assets/* 始终亚秒；闸被回退 → Keychain 授权 UI 卡死线程池，signInEmail
-  // 悬死无响应、静态路径零字节，本条红。前置缺件（CI 无 secret / 未构建 dist）整条
-  // skip，原因已在文件头打印。
-  it.skipIf(!liveShapeReady())('survives scratch-HOME sign-in: signInEmail returns and / stays sub-second', { timeout: 120_000 }, async () => {
-    const credentials = readDogfoodCredentials();
-    const sourceConfig = JSON.parse(readFileSync(path.join(liveSourceDataDir, 'config.json'), 'utf8'));
-    const config = buildSlotlessConfig(sourceConfig, credentials.tokenRhythmKey);
-    const dataDir = mkdtempSync(path.join(os.tmpdir(), 'neo-verify-live-test-'));
-    const fakeHome = mkdtempSync(path.join(os.tmpdir(), 'neo-verify-live-home-'));
-    tempDirs.push(dataDir, fakeHome);
-    chmodSync(dataDir, 0o700);
-    writeFileSync(path.join(dataDir, 'config.json'), JSON.stringify(config));
-    copySecureStoragePair(liveSourceDataDir, dataDir);
-    const runtimeTmpDir = path.join(dataDir, 'runtime-tmp');
-    mkdirSync(runtimeTmpDir, { mode: 0o700 });
-    const port = await new Promise<number>((resolve, reject) => {
-      const server = net.createServer();
-      server.unref();
-      server.on('error', reject);
-      server.listen(0, '127.0.0.1', () => {
-        const address = server.address();
-        // 必须先 close 再放行端口：webServer 启动会 killPortHolder（lsof -ti :port →
-        // kill -9），本进程若还挂着该端口的 listener，会被自己拉起的实例当场杀掉
-        // （standalone 实测 "Killing zombie process on port …: PID <launcher>"）。
-        server.close(() => {
-          if (!address || typeof address !== 'object') reject(new Error('no port'));
-          else resolve(address.port);
-        });
-      });
-    });
-    const url = `http://127.0.0.1:${port}`;
-    const logFd = openSync(path.join(dataDir, 'webserver.log'), 'a', 0o600);
-    const marker = path.basename(dataDir);
-    const child = spawn(process.execPath, [liveWebServerBundle, `--neo-verify-run=${marker}`], {
-      cwd: dataDir,
-      detached: true,
-      env: {
-        ...process.env,
-        // webServer.cjs 在 VITEST/NODE_ENV=test 下按设计不跑 main()（测试 import 形状），
-        // vitest worker 的 env 会经 ...process.env 漏给子进程，必须显式清掉。
-        VITEST: '',
-        NODE_ENV: '',
-        HOME: fakeHome,
-        CODE_AGENT_HOME: fakeHome,
-        AGENT_NEO_BUNDLED_RUNTIME_ROOT: path.resolve('.'),
-        CODE_AGENT_DATA_DIR: dataDir,
-        CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE: '1',
-        CODE_AGENT_WORKING_DIR: fakeHome,
-        TEMP: runtimeTmpDir,
-        TMP: runtimeTmpDir,
-        TMPDIR: runtimeTmpDir,
-        WEB_HOST: '127.0.0.1',
-        WEB_PORT: String(port),
-      },
-      stdio: ['ignore', logFd, logFd],
-    });
-
-    try {
-      const deadline = Date.now() + 30_000;
-      let healthy = false;
-      while (Date.now() < deadline) {
-        if (child.exitCode !== null) throw new Error(`webServer exited early (${child.exitCode}): ${readFileSync(path.join(dataDir, 'webserver.log'), 'utf8').slice(-500)}`);
-        try {
-          const response = await fetch(`${url}/api/health`, { signal: AbortSignal.timeout(2_000) });
-          const body = await response.json();
-          if (response.ok && body.status === 'ok') { healthy = true; break; }
-        } catch { /* retry */ }
-        await new Promise((resolve) => setTimeout(resolve, 250));
-      }
-      expect(healthy, 'webServer did not become healthy').toBe(true);
-      const token = readFileSync(path.join(dataDir, '.dev-token'), 'utf8').trim();
-
-      const rootStarted = Date.now();
-      const rootResponse = await fetch(`${url}/`, { signal: AbortSignal.timeout(2_000) });
-      const rootBody = await rootResponse.text();
-      expect(rootResponse.status).toBe(200);
-      expect(rootBody.length, 'GET / must return a body').toBeGreaterThan(0);
-      expect(Date.now() - rootStarted).toBeLessThan(2_000);
-
-      const signInStarted = Date.now();
-      const signInResponse = await fetch(`${url}/api/domain/auth/signInEmail`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payload: { email: credentials.email, password: credentials.password } }),
-        signal: AbortSignal.timeout(30_000),
-      });
-      const signInBody = await signInResponse.json().catch(() => null);
-      expect(signInResponse.status, `signInEmail must return (keychain wedge would hang it): ${JSON.stringify(signInBody)}`).toBe(200);
-      expect(Date.now() - signInStarted).toBeLessThan(30_000);
-
-      const assetChunk = readFileSync(liveRendererIndex, 'utf8').match(/assets\/index-[^"']+\.js/)?.[0];
-      expect(assetChunk, 'renderer index must reference a hashed asset').toBeDefined();
-      const assetResponse = await fetch(`${url}/${assetChunk}`, { signal: AbortSignal.timeout(2_000) });
-      expect(assetResponse.status).toBe(200);
-      expect((await assetResponse.text()).length).toBeGreaterThan(0);
-      const rootAgainStarted = Date.now();
-      expect((await fetch(`${url}/`, { signal: AbortSignal.timeout(2_000) })).status).toBe(200);
-      expect(Date.now() - rootAgainStarted).toBeLessThan(2_000);
-    } finally {
-      if (child.pid) {
-        try { process.kill(-child.pid, 'SIGKILL'); } catch { /* already gone */ }
-      }
-      child.unref();
-    }
   });
 
 });

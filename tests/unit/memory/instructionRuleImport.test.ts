@@ -235,8 +235,13 @@ describe('instruction rule import（用户级说明文件拆条）', () => {
     const db = new MemoryDb();
 
     const result = await dryRunMemoryHarnessImport(db, { homeDir, adapterIds: ['gemini-cli'] });
-    const projectFile = result.instructions.find((item) => item.sourcePath.includes('tmp'));
-    const globalFile = result.instructions.find((item) => !item.sourcePath.includes('tmp'));
+    // 精确路径定位：CI（Linux）的 os.tmpdir() 是 /tmp，substring 'tmp' 会把全局文件也命中
+    const projectFile = result.instructions.find(
+      (item) => item.sourcePath === path.join(homeDir, '.gemini', 'tmp', 'repo-one', 'memory', 'GEMINI.md'),
+    );
+    const globalFile = result.instructions.find(
+      (item) => item.sourcePath === path.join(homeDir, '.gemini', 'GEMINI.md'),
+    );
 
     expect(projectFile?.reason).toBe('instruction-file');
     expect(projectFile?.sourceMetadata).toEqual({});

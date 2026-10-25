@@ -238,6 +238,9 @@ export const cronCenterZh = {
     savedRestateDone: '完成',
     savedRestateWhenEvent: '有新消息到达时',
     savedRestateRolePrefix: '由 {role} 执行：',
+    // 停用副本的第四行「状态」（N-ROLE-ROUTINE-RESTATE-FU1-FU1）
+    savedRestateStatusLabel: '状态',
+    savedRestateStatusPaused: '当前已停用，点启用后才会按时跑',
     // 手动编辑器 Agent 动作：自定义紧急判据（N-CRON-MORNING-TRIAGE-URGENCY-RULE）
     urgencyCriteriaLabel: '紧急判据（可选）',
     urgencyCriteriaPlaceholder: '例如：只有老板发来的邮件算今天必须处理',
@@ -539,6 +542,8 @@ export const cronCenterEn: typeof cronCenterZh = {
     savedRestateDone: 'Done',
     savedRestateWhenEvent: 'When a new message arrives',
     savedRestateRolePrefix: 'Run by {role}: ',
+    savedRestateStatusLabel: 'Status',
+    savedRestateStatusPaused: 'Currently paused — it will only run on schedule after you turn it on.',
     urgencyCriteriaLabel: 'Urgency rule (optional)',
     urgencyCriteriaPlaceholder: 'e.g. only mail from my boss counts as must-do today',
     urgencyCriteriaHint: 'With a rule set, non-urgent runs (can wait / FYI) skip notifications and wait quietly in the review list.',

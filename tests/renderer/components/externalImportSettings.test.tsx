@@ -534,8 +534,10 @@ describe('ExternalImportSettings 导入与结果（验收④）', () => {
     fireEvent.click(screen.getByText('预览要导入的内容'));
     await screen.findByTestId('external-import-preview');
 
-    // 返修钉子：确认钮不换行（nowrap + 不收缩），把换行让给路径截断
-    const confirmButton = screen.getByText('逐条确认').closest('button');
+    // K1A-FU1：规则分组默认收起，先展开再逐条导入
+    fireEvent.click(screen.getByRole('button', { name: /找到 1 条规则/ }));
+    // 返修钉子：确认钮不换行（nowrap + 不收缩），把换行让给规则原文
+    const confirmButton = screen.getByText('导入这一条').closest('button');
     expect(confirmButton?.className).toContain('whitespace-nowrap');
     expect(confirmButton?.className).toContain('shrink-0');
     fireEvent.click(confirmButton as HTMLButtonElement);
@@ -551,7 +553,7 @@ describe('ExternalImportSettings 导入与结果（验收④）', () => {
       });
     });
     resolveConfirm({ instructionId: 'instruction:hash1', confirmed: true, imported: true });
-    await screen.findByText('已确认并写入');
+    await screen.findByText('已导入');
     expect(invokeDomain).toHaveBeenCalledWith(
       IPC_DOMAINS.MEMORY,
       'memoryHarnessImportConfirmDirective',

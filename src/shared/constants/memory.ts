@@ -3,6 +3,20 @@
 // 禁止在 lightMemory/cron 业务代码里散布这些字面量，统一从这里引用。
 // ============================================================================
 
+/**
+ * 新会话种子注入预算（seedMemoryInjector 打包与外部导入规则拆分的共用真源）。
+ * 说明文件拆出的单条规则不得超过 PER_ITEM_CHARS——超出会在注入时被截断，
+ * 预览必须展示「真正会被存下/注入」的那一行（N-EXTHISTORY-IMPORT-K1A-FU1）。
+ */
+export const SEED_INJECTION = {
+  /** 每个新会话最多注入的条数（指令与记忆各自计） */
+  MAX_ITEMS: 10,
+  /** 注入块总字符预算 */
+  TOTAL_CHARS: 800,
+  /** 单条注入保留的字符数（超出截断） */
+  PER_ITEM_CHARS: 120,
+} as const;
+
 /** Light Memory 通用预算 */
 export const LIGHT_MEMORY = {
   /**

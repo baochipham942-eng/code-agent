@@ -10,40 +10,44 @@ import type {
 } from '@shared/contract/conversationEnvelope';
 import type { MessageMetadata } from '@shared/contract/message';
 import type { SteerOrQueueOutcome } from '@shared/contract/appService';
-import { normalizeDesignBrief, type DesignBrief } from '@shared/contract/designBrief';
-import {
-  formatDesignAcceptanceContractForPrompt,
-  type DesignAcceptanceContract,
-} from '@shared/contract/designAcceptanceContract';
-import { DESIGN_CODE_HANDOFF } from '@shared/constants/designHandoff';
-import {
-  formatDesignCodeHandoffForPrompt,
-  normalizeDesignCodeHandoffContext,
-  type DesignCodeHandoffContext,
-  type DesignCodeHandoffVariant,
-} from '@shared/contract/designHandoff';
-import { directionTokens } from '@/design/direction-tokens';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { VoiceSchemas } from '@shared/ipc/schemas';
 import type { SwarmAgentState } from '@shared/contract/swarm';
-import { formatDesignCanvasSessionReminder } from '@shared/design/canvasSessionReminder';
 import { createLogger } from '../../utils/logger';
 import { useAppStore } from '../../stores/appStore';
-import { useDesignCanvasStore } from '../../components/design/designCanvasStore';
-import { isDesignCanvasActiveForSession } from '../../components/design/designCanvasSessionGate';
-import { buildCanvasSnapshot } from '../../components/design/buildCanvasSnapshot';
-import { isReferenceNode, isVideoNode, type CanvasNode } from '../../components/design/designCanvasTypes';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useSwarmStore } from '../../stores/swarmStore';
-import { useTaskStore, type SessionStatus as TaskSessionStatus } from '../../stores/taskStore';
+import { useTaskStore } from '../../stores/taskStore';
 import { readInstalledVoiceCall } from '../useVoiceLiveRuntime';
 import { useTurnExecutionStore } from '../../stores/turnExecutionStore';
 import ipcService from '../../services/ipcService';
 import { typedInvokeDomain } from '../../services/typedInvoke';
-import { getApiBaseUrl } from '../../api/transport';
 import { useI18n } from '../useI18n';
 import { interpolate } from '../../i18n/interpolate';
-import { environmentProtocolUnsupportedMessage } from '../../i18n/executionEnvironment';
+import {
+  applyDesignAcceptanceContractToContent,
+  applyDesignBriefToContent,
+  applyDesignCanvasSessionToContent,
+  applyDesignCodeHandoffToContent,
+  enrichDesignBrief,
+  withCanvasSnapshotContext,
+  withDesignBriefContext,
+  withDesignCanvasActiveIntent,
+  withHandoffContext,
+} from './agentDesignContext';
+import {
+  getAgentSendFailureMessage,
+  getRuntimeInputMode,
+  isDurableRunRolloutUnavailable,
+  isRuntimeBusyStatus,
+  isRuntimeCancellingStatus,
+  isSessionBusyRunConflict,
+  markLatestUserMessageRunCancelled,
+  requestCancelUntilSettled,
+  resolveEffectiveSessionIdForSend,
+  waitForDurableRunReady,
+  type CancelSettlementResponse,
+} from './agentRuntimeFollowup';
 import {
   chatSendInflightKey,
   claimSendInflight,
@@ -57,237 +61,6 @@ import {
 } from '../../utils/optimisticUserSend';
 
 const logger = createLogger('useAgent');
-
-/**
- * Direct routing 目前不走 AppService 的 turnSystemContext，所以仍需要把 brief
- * prepend 到发送给目标 agent 的隐藏内容里。普通/interrupt 路径会走 context.designBrief。
- */
-function formatDesignBriefReminder(brief: DesignBrief): string {
-  const lines = [
-    '<system-reminder kind="design-brief-json">',
-    '当前会话已锁定 design brief，按此结构化 JSON 直接出 artifact，不要再 emit question-form。',
-  ];
-  if (brief.referenceScreenshot) {
-    lines.push(
-      '用户选择「匹配参考截图」模式：请查看用户在本轮附带的参考截图，从图中提取配色/字体/版式/间距并尽力复刻，而不是套用预设方向。',
-    );
-  }
-  lines.push(JSON.stringify(brief, null, 2), '</system-reminder>');
-  return lines.join('\n');
-}
-
-function applyDesignBriefToContent(content: string, brief: DesignBrief | undefined): string {
-  if (!brief) return content;
-  const reminder = formatDesignBriefReminder(brief);
-  return `${reminder}\n\n${content}`;
-}
-
-function formatDesignAcceptanceContractReminder(contract: DesignAcceptanceContract): string | null {
-  const payload = formatDesignAcceptanceContractForPrompt(contract);
-  if (!payload) return null;
-  return [
-    '<system-reminder kind="design-acceptance-contract-json">',
-    '当前 turn 携带验收/约束契约：这是给 agent 收敛产物的隐藏意图，用于自检、QA 修复和 handoff，不要把它当成给用户看的开发规格。',
-    payload,
-    '</system-reminder>',
-  ].join('\n');
-}
-
-/**
- * R1（设计 Surface 会话化）冷启动引导：设计会话激活时（即使画布空），给 agent prepend 一段
- * <system-reminder>，明确告诉它用 ProposeCanvasOps / RequestDesignAutonomy 操作画布，
- * 别用 shell / python / 写文件等方式绕开画布。修补 dogfood 暴露的缺口——空画布不注入
- * canvasSnapshot，系统提示零引导，agent 不知道该走画布工具。
- */
-
-function applyDesignAcceptanceContractToContent(
-  content: string,
-  contract: DesignAcceptanceContract | undefined,
-): string {
-  if (!contract) return content;
-  const reminder = formatDesignAcceptanceContractReminder(contract);
-  return reminder ? `${reminder}\n\n${content}` : content;
-}
-
-function formatDesignCodeHandoffReminder(handoff: DesignCodeHandoffContext): string | null {
-  const payload = formatDesignCodeHandoffForPrompt(handoff);
-  if (!payload) return null;
-  return [
-    '<system-reminder kind="design-code-handoff-json">',
-    'Design->Code handoff uses B model: code stays hidden, Preview QA closes fidelity, and the user judges the running artifact.',
-    'Use the selected variant, absolute canvas layout, acceptance contract, locked regions, brand refs, and QA evidence as hidden implementation intent.',
-    payload,
-    '</system-reminder>',
-  ].join('\n');
-}
-
-function applyDesignCodeHandoffToContent(
-  content: string,
-  handoff: DesignCodeHandoffContext | undefined,
-): string {
-  if (!handoff) return content;
-  const reminder = formatDesignCodeHandoffReminder(handoff);
-  return reminder ? `${reminder}\n\n${content}` : content;
-}
-
-/**
- * 设计会话冷启动引导的判定 + 应用。与 withCanvasSnapshotContext 同口径双闸
- * （isSessionDesignActive + 画布属主==当前会话），但**不要求画布非空**——空画布才是真缺口。
- * 命中则把引导 prepend 到 content 前；否则原样返回。
- */
-export function applyDesignCanvasSessionToContent(content: string, sessionId: string | null | undefined): string {
-  if (!isDesignCanvasActiveForSession(sessionId)) return content;
-  const cs = useDesignCanvasStore.getState();
-  const reminder = formatDesignCanvasSessionReminder(cs.nodes.length === 0);
-  return `${reminder}\n\n${content}`;
-}
-
-function enrichDesignBrief(brief: DesignBrief | undefined): DesignBrief | undefined {
-  if (!brief) return undefined;
-  return normalizeDesignBrief({
-    ...brief,
-    directionTokens: brief.directionTokens || (brief.direction ? directionTokens[brief.direction] : undefined),
-  });
-}
-
-function withDesignBriefContext(
-  context: ConversationEnvelopeContext | undefined,
-  brief: DesignBrief | undefined,
-): ConversationEnvelopeContext | undefined {
-  if (!brief) return context;
-  return {
-    ...(context || {}),
-    designBrief: brief,
-  };
-}
-
-// ADR-026 D1-B：design 模式发轮时附带画布快照，供 agent ProposeCanvasOps 引用真实节点 id。
-// R1（设计 Surface 会话化）：双闸守护，避免跨会话泄漏画布——
-//   ① per-session 设计激活闸：当前 session 必须 isSessionDesignActive（不污染普通编码会话）；
-//   ② 画布属主闸：全局单例画布 store 不随 switchSession 重载，故还须校验画布属主==当前会话，
-//      否则会把上一个设计会话的画布误注入当前会话的 agent 上下文（fail-closed）。
-// 两闸都过且画布非空时才附带（避免无谓 prompt 膨胀）；运行时态，不进 DB。
-export function withCanvasSnapshotContext(
-  context: ConversationEnvelopeContext | undefined,
-): ConversationEnvelopeContext | undefined {
-  const sessionId = useSessionStore.getState().currentSessionId;
-  if (!isDesignCanvasActiveForSession(sessionId)) return context;
-  const cs = useDesignCanvasStore.getState();
-  if (cs.nodes.length === 0) return context;
-  const canvasSnapshot = buildCanvasSnapshot({ nodes: cs.nodes, connectors: cs.connectors, shapes: cs.shapes });
-  if (canvasSnapshot.nodes.length === 0) return context;
-  return { ...(context || {}), canvasSnapshot };
-}
-
-/**
- * R1（设计 Surface 会话化）跨进程硬控闸：设计会话激活时，在 envelope 的
- * executionIntent 上打 designCanvasActive=true，main 侧据此：① inference 把画布工具
- * （ProposeCanvasOps/Video/Slides）提进工具表 + 停用通用媒介工具；② shell 工具硬拦
- * "用代码画图"（Python/Pillow/imagemagick 等）并重定向到 ProposeCanvasOps；③ 按轮注入
- * 设计画布会话引导。闸口径与画布注入/affordance 完全一致（isSessionDesignActive + 画布属主==
- * 当前会话），严守"只在设计会话生效，绝不伤普通会话"——非激活时显式置 false。
- * **合并语义**：保留 executionIntent 上已有字段（browserSessionMode 等），只补 designCanvasActive。
- */
-export function withDesignCanvasActiveIntent(
-  context: ConversationEnvelopeContext | undefined,
-  sessionId: string | null | undefined,
-): ConversationEnvelopeContext | undefined {
-  const active = isDesignCanvasActiveForSession(sessionId);
-  return {
-    ...(context || {}),
-    executionIntent: {
-      ...(context?.executionIntent || {}),
-      designCanvasActive: active,
-    },
-  };
-}
-
-function compactSourcePath(runDir: string | null, src: string): string {
-  if (!runDir || src.startsWith('/') || /^[a-z]+:\/\//i.test(src)) return src;
-  return `${runDir.replace(/\/+$/, '')}/${src.replace(/^\/+/, '')}`;
-}
-
-function handoffLabelForNode(node: CanvasNode): string | undefined {
-  const label = node.label?.trim() || node.prompt?.trim();
-  return label ? label.slice(0, DESIGN_CODE_HANDOFF.MAX_TEXT_CHARS) : undefined;
-}
-
-function pickHandoffNodes(nodes: CanvasNode[], selectedIds: readonly string[]): CanvasNode[] {
-  const liveOutputs = nodes.filter((node) => !node.discarded && !isReferenceNode(node));
-  const byId = new Map(liveOutputs.map((node) => [node.id, node]));
-  const selected = selectedIds
-    .map((id) => byId.get(id))
-    .filter((node): node is CanvasNode => Boolean(node));
-  if (selected.length > 0) return selected.slice(0, DESIGN_CODE_HANDOFF.MAX_SELECTED_VARIANTS);
-
-  const chosen = liveOutputs.filter((node) => node.chosen);
-  if (chosen.length > 0) return chosen.slice(0, DESIGN_CODE_HANDOFF.MAX_SELECTED_VARIANTS);
-
-  const latest = [...liveOutputs].sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id))[0];
-  return latest ? [latest] : [];
-}
-
-function handoffVariantFromNode(
-  node: CanvasNode,
-  runDir: string | null,
-  prior?: DesignCodeHandoffVariant,
-): DesignCodeHandoffVariant {
-  const variant: DesignCodeHandoffVariant = {
-    id: node.id,
-    mediaType: isVideoNode(node) ? 'video' : 'image',
-    sourcePath: compactSourcePath(runDir, node.src),
-    chosen: node.chosen === true,
-    bounds: {
-      x: node.x,
-      y: node.y,
-      width: node.width,
-      height: node.height,
-      coordinateSpace: 'canvas_absolute',
-    },
-  };
-  const label = handoffLabelForNode(node);
-  if (label) variant.label = label;
-  if (prior?.interactionStates?.length) {
-    variant.interactionStates = prior.interactionStates;
-  }
-  return variant;
-}
-
-export function buildDesignCodeHandoffContextFromCanvas(
-  context: ConversationEnvelopeContext | undefined,
-): DesignCodeHandoffContext | undefined {
-  const existing = normalizeDesignCodeHandoffContext(context?.designCodeHandoff);
-  const canvas = useDesignCanvasStore.getState();
-  const nodes = pickHandoffNodes(canvas.nodes, canvas.selectedIds);
-  if (nodes.length === 0) return existing;
-
-  const priorById = new Map(existing?.selectedVariants.map((variant) => [variant.id, variant]) ?? []);
-  return normalizeDesignCodeHandoffContext({
-    ...(existing || {}),
-    selectedVariants: nodes.map((node) => handoffVariantFromNode(node, canvas.runDir, priorById.get(node.id))),
-    acceptanceContract: context?.designAcceptanceContract ?? existing?.acceptanceContract,
-    canvasSnapshot: context?.canvasSnapshot ?? buildCanvasSnapshot({
-      nodes: canvas.nodes,
-      connectors: canvas.connectors,
-      shapes: canvas.shapes,
-    }),
-    previewQa: existing?.previewQa,
-    notes: existing?.notes,
-  });
-}
-
-export function withHandoffContext(
-  context: ConversationEnvelopeContext | undefined,
-): ConversationEnvelopeContext | undefined {
-  const sessionId = useSessionStore.getState().currentSessionId;
-  if (!isDesignCanvasActiveForSession(sessionId)) return context;
-  const designCodeHandoff = buildDesignCodeHandoffContextFromCanvas(context);
-  if (!designCodeHandoff) return context;
-  return {
-    ...(context || {}),
-    designCodeHandoff,
-  };
-}
 
 type AppStoreState = ReturnType<typeof useAppStore.getState>;
 type SessionStoreState = ReturnType<typeof useSessionStore.getState>;
@@ -308,38 +81,6 @@ type DirectRoutingResolution =
       missingTargetIds: string[];
     };
 
-export function isRuntimeBusyStatus(status: TaskSessionStatus | undefined): boolean {
-  return status === 'running'
-    || status === 'paused'
-    || status === 'queued';
-}
-
-function isRuntimeCancellingStatus(status: TaskSessionStatus | undefined): boolean {
-  return status === 'cancelling';
-}
-
-function markLatestUserMessageRunCancelled(cancelledAt: number): void {
-  const sessionStore = useSessionStore.getState();
-  const latestUser = [...sessionStore.messages]
-    .reverse()
-    .find((message) => message.role === 'user' && !message.isMeta);
-  if (!latestUser) return;
-
-  sessionStore.updateMessage(latestUser.id, {
-    metadata: {
-      ...latestUser.metadata,
-      workbench: {
-        ...latestUser.metadata?.workbench,
-        runCancellation: {
-          status: 'cancelled',
-          cancelledAt,
-          reason: 'user_cancelled',
-        },
-      },
-    },
-  });
-}
-
 export function getRuntimeFollowupFailureMessage(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error || 'Unknown error');
   if (/already cancelling/i.test(raw)) {
@@ -351,171 +92,8 @@ export function getRuntimeFollowupFailureMessage(error: unknown): string {
   return `引导消息没发出去：${raw}`;
 }
 
-export function getAgentSendFailureMessage(error: unknown): string {
-  const raw = error instanceof Error
-    ? error.message
-    : typeof error === 'string'
-      ? error
-      : '';
-  const message = raw.trim();
-  // ADR-081 协议版本闸：宿主只回稳定码，用户可见句子由 i18n 给，不透传原始报错。
-  return environmentProtocolUnsupportedMessage(error, useAppStore.getState().language)
-    ?? (message
-      ? `Error: ${message}`
-      : 'Error: 消息发送失败，但前端没有收到具体错误。请查看后台日志。');
-}
-
-export function getRuntimeInputMode(context?: ConversationEnvelopeContext): RuntimeInputMode {
-  return context?.runtimeInput?.mode === 'redirect' ? 'redirect' : 'supplement';
-}
-
-/**
- * 「这个 session 还有一轮没收干净」——host 的 RunSessionConflictError 经 HTTP 出来是 409。
- *
- * 它不是失败：模型上一轮已经答完了（用户也看到了），只是 agent_complete 到流关闭之间
- * 还有几秒收尾，run 仍占着 session。撞上这几秒的消息应该排队等下一轮，而不是给用户
- * 弹一条「云端代理请求失败」——真机 2026-08-01：回复答完 3 秒后发下一条就撞上。
- */
-export function isSessionBusyRunConflict(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) return false;
-  if ((error as { status?: unknown }).status === 409) return true;
-  const message = error instanceof Error ? error.message : '';
-  return message.includes('already has active run');
-}
-
-const DURABLE_RUN_ROLLOUT_UNAVAILABLE = 'DURABLE_RUN_ROLLOUT_UNAVAILABLE';
-const DURABLE_RUN_READY_TIMEOUT_MS = 90_000;
-const DURABLE_RUN_READY_POLL_INTERVAL_MS = 1_000;
-
-type DurableRunHealth = { durableRunReady?: unknown };
-
-function isDurableRunHealth(value: unknown): value is DurableRunHealth {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function waitFor(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-function isDurableRunRolloutUnavailable(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) return false;
-  const httpError = error as { status?: unknown; code?: unknown };
-  return httpError.status === 503 && httpError.code === DURABLE_RUN_ROLLOUT_UNAVAILABLE;
-}
-
-async function waitForDurableRunReady(): Promise<boolean> {
-  const deadline = Date.now() + DURABLE_RUN_READY_TIMEOUT_MS;
-  const healthUrl = `${getApiBaseUrl().replace(/\/+$/, '')}/api/health`;
-
-  while (true) {
-    const remainingMs = deadline - Date.now();
-    if (remainingMs <= 0) return false;
-
-    const controller = new AbortController();
-    const abortTimer = setTimeout(() => controller.abort(), remainingMs);
-    try {
-      const response = await fetch(healthUrl, { cache: 'no-store', signal: controller.signal });
-      if (response.ok) {
-        const health = await response.json() as unknown;
-        if (isDurableRunHealth(health) && health.durableRunReady === true) {
-          return true;
-        }
-      }
-    } catch {
-      // The run endpoint just reported its cold-start gate. Keep polling until the bounded deadline.
-    } finally {
-      clearTimeout(abortTimer);
-    }
-
-    const nextWaitMs = Math.min(DURABLE_RUN_READY_POLL_INTERVAL_MS, deadline - Date.now());
-    if (nextWaitMs <= 0) return false;
-    await waitFor(nextWaitMs);
-  }
-}
-
 export function getRuntimeInputSuccessMessage(mode: RuntimeInputMode): string {
   return mode === 'redirect' ? '已改道处理' : '已加入当前任务';
-}
-
-/**
- * Resolve the session a send should bind to.
- * Awaits in-flight createSession so messages land on the new session the user just requested,
- * not the pre-create currentSessionId (cancel-chain B4 race).
- */
-export async function resolveEffectiveSessionIdForSend(input: {
-  envelopeSessionId?: string | null;
-  getCurrentSessionId: () => string | null;
-  getPendingSessionCreate: () => Promise<{ id: string } | null> | null;
-  createFallbackSession: () => Promise<{ id: string } | null>;
-  now?: () => number;
-}): Promise<string> {
-  const pendingCreate = input.getPendingSessionCreate();
-  if (pendingCreate) {
-    const created = await pendingCreate;
-    if (input.envelopeSessionId) {
-      return input.envelopeSessionId;
-    }
-    if (created) {
-      return created.id;
-    }
-  }
-
-  // A failed in-flight create leaves currentSessionId pointing at the session
-  // visible before the user clicked New. Never silently send there: create a
-  // fallback target instead. With no pending create, the current session is valid.
-  let effectiveSessionId = input.envelopeSessionId
-    ?? (pendingCreate ? null : input.getCurrentSessionId());
-  if (!effectiveSessionId) {
-    const created = await input.createFallbackSession();
-    if (created) {
-      effectiveSessionId = created.id;
-    } else {
-      const tempId = `web-session-${(input.now ?? Date.now)()}`;
-      effectiveSessionId = tempId;
-    }
-  }
-  return effectiveSessionId;
-}
-
-interface CancelSettlementResponse {
-  message?: string;
-  runId?: string;
-  sessionId?: string;
-}
-
-/**
- * Keep re-delivering a 202 cancel request until either the route confirms the
- * same run settled or the terminal SSE event has already converged renderer state.
- */
-export async function requestCancelUntilSettled(input: {
-  sessionId: string;
-  requestCancel: (selector: { runId?: string; sessionId?: string }) => Promise<CancelSettlementResponse | undefined>;
-  isCancellationActive: () => boolean;
-  wait: () => Promise<void>;
-}): Promise<boolean> {
-  let selector: { runId?: string; sessionId?: string } = { sessionId: input.sessionId };
-
-  while (true) {
-    const result = await input.requestCancel(selector);
-    if (result?.message !== 'cancel_requested') {
-      return true;
-    }
-
-    // Retrying by session could cancel a follow-up run that starts after the
-    // original one settles. A3 responses include runId so retries stay fenced.
-    if (!result.runId) {
-      return false;
-    }
-    selector = {
-      runId: result.runId,
-      sessionId: result.sessionId ?? input.sessionId,
-    };
-
-    await input.wait();
-    if (!input.isCancellationActive()) {
-      return false;
-    }
-  }
 }
 
 export interface SendMessageOptions {

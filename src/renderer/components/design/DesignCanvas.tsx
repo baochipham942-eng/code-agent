@@ -35,6 +35,14 @@ import { DiagramToolbar } from './DiagramToolbar';
 import { reduceDiagram, type ShapeTool } from './diagramReducer';
 import { DIAGRAM_DEFAULT_COLOR, type CanvasShape } from './designDiagramTypes';
 import { saveCanvasDoc } from './designCanvasPersistence';
+import {
+  makeId,
+  persistDiagram,
+  onUpdateShape,
+  onAddConnector,
+  onDeleteSelectedDiagram,
+} from './designCanvasDiagramActions';
+import { DiagramTextInput, AnnotTextDraftInput } from './DesignCanvasTextInputs';
 import { dispatchCanvasUndoKey } from './canvasUndoKeybinding';
 import { dispatchCanvasDeleteKey } from './canvasDeleteKeybinding';
 import type { ResizeScales } from './designCanvasResizeRatio';
@@ -463,33 +471,8 @@ export const DesignCanvas: React.FC<{
     }
   };
 
-  // —— 图解层辅助 ——
-  const makeId = (): string =>
-    typeof crypto !== 'undefined' && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `d-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  // 图解编辑后落盘（复用既有 canvas.json 写盘链路；无 runDir 时仅内存态，与节点编辑落盘模型一致）。
-  const persistDiagram = (): void => {
-    const rd = useDesignCanvasStore.getState().runDir;
-    if (rd) void saveCanvasDoc(rd, useDesignCanvasStore.getState().toDoc());
-  };
-  const onUpdateShape = (id: string, patch: Partial<CanvasShape>): void => {
-    useDesignCanvasStore.getState().updateShape(id, patch);
-    persistDiagram();
-  };
-  const onAddConnector = (fromNodeId: string, toNodeId: string): void => {
-    useDesignCanvasStore
-      .getState()
-      .addConnector({ id: makeId(), fromNodeId, toNodeId, createdAt: Date.now() });
-    persistDiagram();
-  };
-  const onDeleteSelectedDiagram = (): void => {
-    const sel = useDesignCanvasStore.getState().selectedDiagram;
-    if (!sel) return;
-    if (sel.type === 'shape') useDesignCanvasStore.getState().deleteShape(sel.id);
-    else useDesignCanvasStore.getState().deleteConnector(sel.id);
-    persistDiagram();
-  };
+  // —— 图解层辅助 ——（makeId / persistDiagram / onUpdateShape / onAddConnector /
+  // onDeleteSelectedDiagram 已抽至 designCanvasDiagramActions.ts，此处直接用同名导入。）
   // 文字内联编辑提交：新建 text / 改形状文字 / 改连线 label。
   const commitDiagramText = (): void => {
     if (diagramTextDoneRef.current || !diagramText) return; // 已提交/取消：吃掉卸载触发的二次 blur
@@ -1002,33 +985,19 @@ export const DesignCanvas: React.FC<{
       )}
 
       {/* 图解文字内联编辑（新建 text / 改形状文字 / 改连线 label）。 */}
-      {diagramText &&
-        (() => {
-          const sx = diagramText.target.world.x * camera.scale + camera.x;
-          const sy = diagramText.target.world.y * camera.scale + camera.y;
-          return (
-            <input
-              autoFocus
-              data-testid="diagram-text-input"
-              value={diagramText.value}
-              onChange={(e) => setDiagramText({ ...diagramText, value: e.target.value })}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  commitDiagramText();
-                } else if (e.key === 'Escape') {
-                  e.preventDefault();
-                  diagramTextDoneRef.current = true; // 取消：吃掉卸载触发的 blur 提交
-                  setDiagramText(null);
-                }
-              }}
-              onBlur={commitDiagramText}
-              placeholder={t.design.diagramTextPlaceholder}
-              className="absolute z-10 rounded border border-badge-info/60 bg-zinc-900/95 px-1.5 py-0.5 text-xs text-zinc-100 shadow-lg outline-none placeholder:text-zinc-500"
-              style={{ left: sx, top: sy, minWidth: 120 }}
-            />
-          );
-        })()}
+      {diagramText && (
+        <DiagramTextInput
+          text={diagramText}
+          camera={camera}
+          placeholder={t.design.diagramTextPlaceholder}
+          onValueChange={(value) => setDiagramText({ ...diagramText, value })}
+          onCommit={commitDiagramText}
+          onCancel={() => {
+            diagramTextDoneRef.current = true; // 取消：吃掉卸载触发的 blur 提交
+            setDiagramText(null);
+          }}
+        />
+      )}
 
       {/* 空态引导（2026-08-01 工单③ + K2 返工）：画布刚打开时第一眼对的是主线「AI 生成图 → 精修」——
           一句话说清这块画布是干什么的 + 两条主线入口（对话描述 / 拖入粘贴图）。
@@ -1055,47 +1024,17 @@ export const DesignCanvas: React.FC<{
       )}
 
       {/* 文字标注输入框（画布内，替代原生 window.prompt；落点处定位，Enter 落定 / Esc 取消）。 */}
-      {textDraft &&
-        (() => {
-          const sx = textDraft.world.x * camera.scale + camera.x;
-          const sy = textDraft.world.y * camera.scale + camera.y;
-          const commit = (): void => {
-            const text = textDraft.value.trim();
-            if (text) {
-              setAnnotShapes(
-                reduceAnnot(annotShapes, {
-                  type: 'down',
-                  tool: 'text',
-                  x: textDraft.world.x,
-                  y: textDraft.world.y,
-                  text,
-                }),
-              );
-            }
-            setTextDraft(null);
-          };
-          return (
-            <input
-              autoFocus
-              value={textDraft.value}
-              onChange={(e) => setTextDraft({ ...textDraft, value: e.target.value })}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  commit();
-                } else if (e.key === 'Escape') {
-                  e.preventDefault();
-                  setTextDraft(null);
-                }
-              }}
-              onBlur={commit}
-              placeholder={t.design.annotTextPlaceholder}
-              // ds-allow:viz 标注输入框用红色描边呼应标注色，绝对定位于画布落点
-              className="absolute z-10 rounded border border-badge-danger/60 bg-zinc-900/95 px-1.5 py-0.5 text-xs text-badge-danger shadow-lg outline-none placeholder:text-zinc-500"
-              style={{ left: sx, top: sy, minWidth: 120 }}
-            />
-          );
-        })()}
+      {textDraft && (
+        <AnnotTextDraftInput
+          draft={textDraft}
+          camera={camera}
+          shapes={annotShapes}
+          placeholder={t.design.annotTextPlaceholder}
+          onShapesChange={setAnnotShapes}
+          onValueChange={(value) => setTextDraft({ ...textDraft, value })}
+          onDismiss={() => setTextDraft(null)}
+        />
+      )}
 
       {/* 画布全幅 PPTX 导出已收进画布级工具条（2026-08-01 工单②，见下方 DiagramToolbar 的
           exportPptx 槽）——那条工具条作用对象是整块画布，导出整块画布所有节点属于这里；

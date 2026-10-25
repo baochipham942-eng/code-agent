@@ -289,6 +289,12 @@ jobs:
         # god-file 债务在 main 上红了都没人知道（2026-07-02 抓到 4 文件超线）。整套接入。
         run: node scripts/ci/vitest-with-flake-ledger.mjs --job "Script gates (vitest tests/scripts)" -- npx vitest run tests/scripts --retry=1
 
+      - name: Security guards (vitest tests/security)
+        # tests/security 的静态守卫（HOME 隔离 / 受保护写路径 / 槽数据目录隔离等）此前只在
+        # 合入后的 main-full-gate 跑，PR 全绿也拦不住 HOME-only stub（#2515 合入后主线红 14 次，
+        # #2537 补一行 DATA_DIR 才收口）。接入 PR 门，让这类违规红在 PR 而不是 main。
+        run: node scripts/ci/vitest-with-flake-ledger.mjs --job "Security guards (vitest tests/security)" -- npx vitest run tests/security --retry=1
+
       - name: MCP protocol compatibility (unit + integration)
         run: node scripts/ci/vitest-with-flake-ledger.mjs --job "MCP protocol compatibility" -- npx vitest run tests/unit/mcp tests/integration/mcp --retry=1
 

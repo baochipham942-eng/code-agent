@@ -199,6 +199,11 @@ const gates = [
     args: ['scripts/ci/vitest-with-flake-ledger.mjs', '--job', 'Script gates (vitest tests/scripts)', '--', 'npx', 'vitest', 'run', 'tests/scripts', '--retry=1'],
   },
   {
+    ci: 'swarm-ci / smoke / Security guards (vitest tests/security)',
+    command: 'node',
+    args: ['scripts/ci/vitest-with-flake-ledger.mjs', '--job', 'Security guards (vitest tests/security)', '--', 'npx', 'vitest', 'run', 'tests/security', '--retry=1'],
+  },
+  {
     ci: 'swarm-ci / smoke / Knip dead-export ratchet',
     command: 'node',
     args: ['scripts/knip-ratchet.mjs'],

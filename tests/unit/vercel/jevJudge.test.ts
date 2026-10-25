@@ -97,11 +97,13 @@ async function callHandler(
   } = {},
 ): Promise<{ statusCode: number; body: unknown }> {
   const res = makeResponse();
-  const usageStore = options.store === undefined ? createInMemoryJevJudgeUsageStore() : options.store;
+  const { store } = options;
+  // 'env' = 不传 usageStore，让 handler 按 env 解析；undefined = 缺省注入一次性内存 store。
+  const usageStore = store === undefined ? createInMemoryJevJudgeUsageStore() : store === 'env' ? undefined : store;
   await handleJevJudgeRequest(makeRequest(options.token === undefined ? TOKEN_A : options.token, options.body ?? GOOD_BODY), res, {
     env,
     fetchImpl: options.fetchImpl ?? makeUpstreamFetch([]),
-    ...(options.store === 'env' ? {} : { usageStore }),
+    ...(usageStore !== undefined && { usageStore }),
   });
   return { statusCode: res.statusCode, body: res.body };
 }

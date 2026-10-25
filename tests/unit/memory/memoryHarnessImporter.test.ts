@@ -180,7 +180,8 @@ Always include verification evidence.
       expect.objectContaining({ adapterId: 'claude-code', reason: 'memory-index' }),
     ]));
     expect(result.instructions).toEqual(expect.arrayContaining([
-      expect.objectContaining({ adapterId: 'codex-local-custom', reason: 'instruction-file' }),
+      // K1A-FU1 起 ~/.codex/AGENTS.md 拆成单条规则（reason=directive-confirmation-required）
+      expect.objectContaining({ adapterId: 'codex-local-custom', reason: 'directive-confirmation-required' }),
     ]));
     const profile = result.candidates.find((candidate) => candidate.entry.title === 'Profile');
     expect(profile?.entry).toMatchObject({
@@ -254,7 +255,9 @@ type: directive
 
 Always obey this imported directive.
 `);
-    await write(path.join(homeDir, '.codex/AGENTS.md'), '# Family rules\nAlways do X.');
+    // K1A-FU1 起 AGENTS.md 拆单条规则；这里故意放「拆不出规则」的文件（纯标题+代码块），
+    // 钉住整文件 compare-only 项仍在确认门外。
+    await write(path.join(homeDir, '.codex/AGENTS.md'), '# Family rules\n\n```\ncode only\n```\n');
     const db = new MemoryDb();
 
     const preview = await dryRunMemoryHarnessImport(db, { homeDir });
@@ -273,7 +276,12 @@ Always obey this imported directive.
       homeDir,
       confirmDirective: vi.fn(async () => ({ confirmed: false })),
     });
-    expect(declined).toEqual({ instructionId: directive.id, confirmed: false, imported: false });
+    expect(declined).toEqual({
+      instructionId: directive.id,
+      confirmed: false,
+      imported: false,
+      notConfirmedReason: 'declined',
+    });
     expect(db.records).toHaveLength(0);
 
     const confirmed = await confirmMemoryHarnessDirective(db, directive.id, {

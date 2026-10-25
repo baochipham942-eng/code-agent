@@ -18,9 +18,11 @@ describe('macOS Dock and AppleEvent quit guard', () => {
     );
     expect(hook, 'applicationShouldTerminate hook anchor missing').not.toBeNull();
     expect(hook![0]).toContain('NSApplicationTerminateReply::TerminateLater');
+    expect(hook![0]).toContain('NSApplicationTerminateReply::TerminateCancel');
     expect(hook![0]).toContain('spawn_quit_guard_flow(');
     expect(hook![0]).toContain('QuitFlowOrigin::MacApplicationTerminate');
     expect(main).toContain('replyToApplicationShouldTerminate(should_terminate)');
+    expect(main).toContain('reply_to_mac_application_terminate(&app, false);');
 
     // The worker must call the existing pure decision function. This prevents a
     // second Dock/AppleEvent-specific busy/idle policy from drifting from ⌘Q.

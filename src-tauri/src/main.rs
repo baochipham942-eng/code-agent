@@ -2530,6 +2530,10 @@ fn show_quit_confirm_dialog(
                             "background-continue: daemon did not accept detach; staying in the app"
                         );
                         coordinator.finish();
+                        #[cfg(target_os = "macos")]
+                        if matches!(origin, QuitFlowOrigin::MacApplicationTerminate) {
+                            reply_to_mac_application_terminate(&app, false);
+                        }
                         return;
                     }
                 }
@@ -2545,9 +2549,8 @@ fn show_quit_confirm_dialog(
                     #[cfg(target_os = "macos")]
                     QuitFlowOrigin::MacApplicationTerminate => {
                         if plan.cleanup_server {
-                            // AppKit is waiting for this reply. Clean up before approving
-                            // termination so this path has the same graceful-stop contract
-                            // as ExitRequested.
+                            // AppKit 正在等待回复；先清理再批准退出，与 ExitRequested
+                            // 保持相同的优雅停止约定。
                             cleanup_server(&app);
                         }
                         reply_to_mac_application_terminate(&app, true);
@@ -2569,7 +2572,7 @@ static MAC_QUIT_GUARD_APP: OnceLock<AppHandle> = OnceLock::new();
 
 #[cfg(target_os = "macos")]
 fn reply_to_mac_application_terminate(app: &AppHandle, should_terminate: bool) {
-    let _ = app.run_on_main_thread(move || {
+    if let Err(error) = app.run_on_main_thread(move || {
         use objc2::MainThreadMarker;
         use objc2_app_kit::NSApplication;
 
@@ -2578,7 +2581,9 @@ fn reply_to_mac_application_terminate(app: &AppHandle, should_terminate: bool) {
             return;
         };
         NSApplication::sharedApplication(mtm).replyToApplicationShouldTerminate(should_terminate);
-    });
+    }) {
+        eprintln!("quit guard: failed to dispatch macOS termination reply: {error:?}");
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -2590,8 +2595,8 @@ unsafe extern "C-unwind" fn mac_application_should_terminate(
     use objc2_app_kit::NSApplicationTerminateReply;
 
     let Some(app) = MAC_QUIT_GUARD_APP.get().cloned() else {
-        // The hook is installed during setup; fail open only if setup itself could
-        // not publish the handle, so macOS is never left waiting indefinitely.
+        // hook 在 setup 阶段安装；只有 setup 未发布句柄时才直接放行，避免 macOS
+        // 永久等待。
         return NSApplicationTerminateReply::TerminateNow;
     };
     let coordinator = app
@@ -2599,22 +2604,22 @@ unsafe extern "C-unwind" fn mac_application_should_terminate(
         .inner()
         .clone();
 
-    // System shutdown, signal exit, and an already-approved programmatic exit
-    // must never be held by an asynchronous dialog.
+    // 系统关机、信号退出和已经批准的程序化退出不能被异步对话框拦住。
     if coordinator.current_skip().is_some() || coordinator.exit_allowed() {
         return NSApplicationTerminateReply::TerminateNow;
     }
 
-    // AppKit will call this delegate method for Dock Quit and kAEQuitApplication.
-    // Keep the decision in quit_guard::decide_quit via the same worker flow used by
-    // the custom menu/tray entry point, and defer the AppKit reply until it returns.
-    if coordinator.begin_request() {
-        spawn_quit_guard_flow(
-            app,
-            coordinator,
-            QuitFlowOrigin::MacApplicationTerminate,
-        );
+    // AppKit 会为 Dock Quit 和 kAEQuitApplication 调用此代理方法。复用自定义
+    // 菜单/托盘入口的 worker 流程，将判定交给 quit_guard::decide_quit。
+    if !coordinator.begin_request() {
+        // 已有退出流程代表同一个用户决定；不能再挂起一个无人回复的请求。
+        return NSApplicationTerminateReply::TerminateCancel;
     }
+    spawn_quit_guard_flow(
+        app,
+        coordinator,
+        QuitFlowOrigin::MacApplicationTerminate,
+    );
     NSApplicationTerminateReply::TerminateLater
 }
 
@@ -2661,10 +2666,11 @@ fn install_mac_application_terminate_guard(app: &tauri::App) {
         )
     };
     if !added.as_bool() {
-        // A delegate class may already carry a method supplied by a future tao
-        // release or another plugin. Replace it so the Dock/AppleEvent request
-        // cannot silently bypass the guard; the existing tao path has no such
-        // method today (the reason this hook is needed).
+        // 未来 tao 版本或其他插件可能已经提供此方法；记录后覆盖，避免 Dock/AppleEvent
+        // 请求静默绕过守卫。当前 tao 路径没有该方法，所以才需要这个 hook。
+        eprintln!(
+            "quit guard: NSApplication delegate already implements applicationShouldTerminate:; replacing it"
+        );
         unsafe {
             class_replaceMethod(
                 delegate_class as *const AnyClass as *mut AnyClass,

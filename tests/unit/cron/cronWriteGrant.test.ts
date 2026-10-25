@@ -7,7 +7,7 @@
 //   - stripWriteGrantRoot（createJob 元数据防线）
 // 真实文件系统（tmpdir + 真软链），sessionManager 用注入 mock。
 // ============================================================================
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -33,6 +33,7 @@ import {
   stripWriteGrantRoot,
 } from '../../../src/host/cron/cronWriteGrant';
 import { CRON_WRITE_SCOPE_NO_FOLDER } from '../../../src/shared/cronWriteScope';
+import { PermissionRequestReason } from '../../../src/shared/contract/permission';
 import type { CronJobDefinition } from '../../../src/shared/contract/cron';
 
 let grantRoot: string;
@@ -218,6 +219,51 @@ describe('approveByScheduleWriteGrant（放行判定矩阵）', () => {
     } finally {
       rmSync(outsideRoot, { recursive: true, force: true });
     }
+  });
+
+  it('forceConfirm 的 W3 写边界形态（reasonCode=file_write_outside_workspace）在界内放行', async () => {
+    sessionState.sessions['cron-sess'] = {
+      id: 'cron-sess',
+      origin: { kind: 'cron', metadata: { writeGrantRoot: grantRoot } },
+    };
+    // cron runContext 无 workspace 权威时一切写都带这条边界 ask（e2e 实证），
+    // 授权预先回答的就是它。
+    expect(await approveByScheduleWriteGrant({
+      sessionId: 'cron-sess', type: 'file_write', forceConfirm: true,
+      reasonCode: PermissionRequestReason.FileWriteOutsideWorkspace,
+      details: { path: path.join(grantRoot, 'note.txt') },
+    })).toEqual({ approved: true, approvalSource: 'schedule-write-grant' });
+    // 其余 reasonCode 的 forceConfirm 不归授权管
+    expect(await approveByScheduleWriteGrant({
+      sessionId: 'cron-sess', type: 'file_write', forceConfirm: true,
+      reasonCode: PermissionRequestReason.UncertainWriteTargetWithPathDeny,
+      details: { path: path.join(grantRoot, 'note.txt') },
+    })).toBeUndefined();
+  });
+
+  it('保护路径（~/.npmrc 等约束自改写目标）即使落在授权文件夹内也不放行', async () => {
+    // 用真实家目录当授权根（锚点按真实 HOME 解析，改 env 会撞锚点缓存）：
+    // 模拟「授权根 = 家目录」的退化授权，home 锚点文件落在界内但必须照旧人工。
+    // 只做路径判定，不真写任何文件。isProtectedWritePath 的清单是数据目录策略文件 +
+    // projectRoot git 配置 + ~/.gitconfig / ~/.npmrc（~/.ssh 属另一套沙盒清单）。
+    const homeGrantRoot = realpathSync(os.homedir());
+    sessionState.sessions['cron-sess'] = {
+      id: 'cron-sess',
+      origin: { kind: 'cron', metadata: { writeGrantRoot: homeGrantRoot } },
+    };
+    expect(await approveByScheduleWriteGrant({
+      sessionId: 'cron-sess', type: 'file_write',
+      details: { path: path.join(homeGrantRoot, '.npmrc') },
+    })).toBeUndefined();
+    expect(await approveByScheduleWriteGrant({
+      sessionId: 'cron-sess', type: 'file_write',
+      details: { path: path.join(homeGrantRoot, '.gitconfig') },
+    })).toBeUndefined();
+    // 同一根下的普通文件仍放行（保护排除没有殃及池鱼）
+    expect(await approveByScheduleWriteGrant({
+      sessionId: 'cron-sess', type: 'file_write',
+      details: { path: path.join(homeGrantRoot, 'plain-note.txt') },
+    })).toEqual({ approved: true, approvalSource: 'schedule-write-grant' });
   });
 
   it('无 details.path / filePath 的 file_write（连接器写回载荷）不放行', async () => {

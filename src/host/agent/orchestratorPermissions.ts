@@ -390,6 +390,15 @@ export class OrchestratorPermissionIsland {
     const settings = this.getSettings();
     const permissionLevel = getPermissionLevel(request.type);
     const forceConfirm = request.forceConfirm === true;
+    // 权限入口可见性：裁决树分叉前先留一张请求快照（type/forceConfirm/来源档），
+    // 否则「为什么没走 X 分支」只能靠猜（2026-10-24 写授权 e2e 排查实证）。
+    logger.debug('Permission request received', {
+      type: request.type,
+      tool: request.tool,
+      forceConfirm,
+      topology: this.getExecutionTopology(),
+      path: request.details?.path ?? request.details?.filePath,
+    });
 
     // 无人值守（async_agent）会话：连接器显式声明为只读的 MCP 工具免交互审批直接放行。
     // 这条既有豁免须在停车前生效；否则读飞书日历/表格会被停车等人，无人值守 cron 永远跑不完
@@ -420,10 +429,9 @@ export class OrchestratorPermissionIsland {
     // 写授权放行（N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1）：用户在任务详情面板预授权过
     // 工作文件夹的 cron/heartbeat 会话，写文件夹内的 file_write/file_edit 直接放行——
     // ADR-083「后台继续」场景下壳已退出、没人能应答，不预授权就是整趟静默卡死。
-    // 判定全在 cronWriteGrant（来源/类型/forceConfirm/realpath 界内），Bash 与出界写
-    // 照旧走下面的停车分支；保护路径 ask 带 forceConfirm，在这里天然被排除。
-    // 类型门放在调用侧：非文件写请求不付这次异步查会话的代价。
-    if (unattended && !forceConfirm && (request.type === 'file_write' || request.type === 'file_edit')) {
+    // 判定全在 cronWriteGrant（类型/forceConfirm 形态/来源/realpath 界内/保护路径），Bash
+    // 与出界写照旧走下面的停车分支。类型门放在调用侧：非文件写请求不付这次异步查会话的代价。
+    if (unattended && (request.type === 'file_write' || request.type === 'file_edit')) {
       const scheduleGrant = await approveByScheduleWriteGrant(request);
       if (scheduleGrant) {
         logger.info(

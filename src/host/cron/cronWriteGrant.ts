@@ -14,6 +14,7 @@
 import * as fs from 'fs';
 import path from 'path';
 import type { PermissionAskResult } from '../../shared/contract';
+import { PermissionRequestReason } from '../../shared/contract/permission';
 import type { CronJobDefinition } from '../../shared/contract/cron';
 import {
   CRON_WRITE_GRANT_METADATA_KEY,
@@ -22,6 +23,7 @@ import {
   cronWriteScopeFolder,
   writeGrantRootFromMetadata,
 } from '../../shared/cronWriteScope';
+import { isProtectedWritePath } from '../sandbox/sensitivePaths';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('CronWriteGrant');
@@ -157,15 +159,42 @@ export async function approveByScheduleWriteGrant(request: {
   type: string;
   tool?: string;
   forceConfirm?: boolean;
+  reasonCode?: PermissionRequestReason;
   /** 宽收窄用：只消费 path/file_path；其余键（command/url 等）在场即说明不是文件写目标。 */
   details?: { path?: string; filePath?: string; [key: string]: unknown };
 }): Promise<PermissionAskResult | undefined> {
-  if (request.forceConfirm === true) return undefined;
   if (request.type !== 'file_write' && request.type !== 'file_edit') return undefined;
+  // forceConfirm 只放行「W3 写边界 ask」这一种形态：cron/heartbeat 会话的 runContext 没有
+  // workspace 权威，一切绝对路径写都被判 outside_project（2026-10-24 e2e 实证
+  // boundaryAskForcesConfirmation=true，readOnly/guardFabric/protected/uncertain 均 false），
+  // 而用户点「允许在 <folder> 里保存文件」预先回答的恰恰是这道边界题。其余 forceConfirm
+  // 形态（保护路径、只读档、peer 来源、不确定目标）不归这份授权管，照旧人工。
+  if (
+    request.forceConfirm === true
+    && request.reasonCode !== PermissionRequestReason.FileWriteOutsideWorkspace
+  ) return undefined;
   const grantRoot = await scheduleWriteGrantRootForSession(request.sessionId);
-  if (!grantRoot) return undefined;
+  if (!grantRoot) {
+    logger.debug('Schedule write grant not applicable (no grant on the session origin)', {
+      sessionId: request.sessionId,
+      type: request.type,
+    });
+    return undefined;
+  }
   const target = request.details?.path ?? request.details?.filePath;
-  if (!target || !isPathWithinWriteGrantRoot(target, grantRoot)) return undefined;
+  if (!target || !isPathWithinWriteGrantRoot(target, grantRoot)) {
+    logger.info('Schedule write grant declined the target (outside the granted folder)', {
+      sessionId: request.sessionId,
+      grantRoot,
+      target: target ?? '(none)',
+    });
+    return undefined;
+  }
+  // 保护路径（~/.ssh、策略文件等）不因落在授权文件夹内而放行——授权只覆盖普通文件写。
+  if (isProtectedWritePath(path.resolve(target))) {
+    logger.info('Schedule write grant declined a protected write path', { target });
+    return undefined;
+  }
   return { approved: true, approvalSource: 'schedule-write-grant' };
 }
 

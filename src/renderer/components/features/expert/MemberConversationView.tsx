@@ -20,7 +20,7 @@ import { useAgentTreeSnapshot } from '../../../hooks/useAgentTreeSnapshot';
 import { useBackgroundTaskStore } from '../../../stores/backgroundTaskStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { humanizeToolStep } from '../../../utils/humanizeToolStep';
-import { describeLastToolStep } from '../../../utils/agentActivity';
+import { describeLastToolFailure, describeLastToolStep, isLastToolFailureVisible } from '../../../utils/agentActivity';
 import { RoleInitialAvatar } from './RoleInitialAvatar';
 import { useSessionMembers } from './SessionMemberBar';
 import { MemberInputBar, type MemberInputTarget } from './MemberInputBar';
@@ -158,6 +158,10 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
     const dispatchedTask = plainNode?.task ?? plainTask?.title ?? '';
     const finalOutput = plainNode?.progress ?? plainTask?.summary ?? '';
     const outputRefs = plainTask?.outputRefs ?? [];
+    // 终态工具失败出路（N-MEDIA-GEN-MUSIC-FALLBACK-FU1）：只在任务收尾后亮，运行中不亮
+    const toolFailure = isLastToolFailureVisible(plainTask?.status)
+      ? describeLastToolFailure(plainTask?.progress?.lastToolFailure, t)
+      : undefined;
     const tokens = plainNode?.budgetSummary.tokensUsed;
     const toolCalls = plainNode?.budgetSummary.toolCalls;
     const cost = plainNode?.budgetSummary.costUsd;
@@ -200,6 +204,15 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
               {dispatchedTask || text.noTask}
             </div>
           </section>
+
+          {toolFailure && (
+            <section data-testid="member-tool-failure">
+              <div className="rounded-lg border border-badge-danger/40 bg-red-500/10 px-3 py-2 text-xs leading-relaxed">
+                <div className="text-badge-danger">{toolFailure.summary}</div>
+                {toolFailure.detail && <div className="mt-0.5 text-zinc-300">{toolFailure.detail}</div>}
+              </div>
+            </section>
+          )}
 
           <section data-testid="member-final-output">
             <h3 className="mb-1 text-xs font-medium text-zinc-400">{text.output}</h3>

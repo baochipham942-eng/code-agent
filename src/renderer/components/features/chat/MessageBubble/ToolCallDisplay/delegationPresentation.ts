@@ -1,6 +1,7 @@
 import type { AgentTreeNode } from '@shared/contract/agentTree';
-import type { LastToolStep, Task, TaskOutputRef } from '@shared/contract/backgroundTask';
+import type { LastToolFailure, LastToolStep, Task, TaskOutputRef } from '@shared/contract/backgroundTask';
 import type { ToolCall } from '@shared/contract';
+import { isLastToolFailureVisible } from '../../../../../utils/agentActivity';
 
 type DelegationReceiptState = 'working' | 'completed' | 'failed';
 
@@ -18,6 +19,8 @@ export interface DelegationPresentation {
   stepCount?: number;
   outputs: DelegationReceiptOutput[];
   failure?: string;
+  /** 终态任务的结构化工具失败（N-MEDIA-GEN-MUSIC-FALLBACK-FU1）：回执行人话出路用。 */
+  toolFailure?: LastToolFailure;
 }
 
 const TASK_TERMINAL = new Set(['completed', 'failed', 'cancelled', 'expired', 'orphaned']);
@@ -64,6 +67,7 @@ function fromTask(task: Task): DelegationPresentation {
       return output ? [output] : [];
     }),
     failure: state === 'failed' ? task.failure?.message || task.summary : undefined,
+    toolFailure: isLastToolFailureVisible(task.status) ? task.progress?.lastToolFailure : undefined,
   };
 }
 

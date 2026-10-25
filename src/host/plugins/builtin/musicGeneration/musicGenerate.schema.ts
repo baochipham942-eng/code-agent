@@ -8,7 +8,8 @@ export const musicGenerateSchema: ToolSchema = {
   description: `生成 AI 音乐。当用户想"做音乐 / 做配乐 / 写首歌 / 做一段背景音乐"时调用本工具。
 
 根据文字描述（风格/情绪/乐器/场景）生成一段音乐，也可附歌词。生成结果是一个可播放的音频产物（MP3）。
-本工具为按次付费调用：MiniMax music-2.6 参考单价 $0.15 / 首（最长 5 分钟，MiniMax 官方价目；2026-08-20 起付费音乐 API 对新账户关闭，可能返回不可用）。请在用户确有音乐需求时再使用，不要重复试探。`,
+本工具为按次付费调用：MiniMax music-2.6 参考单价 $0.15 / 首（最长 5 分钟，MiniMax 官方价目；2026-08-20 起付费音乐 API 对新账户关闭，可能返回不可用）。请在用户确有音乐需求时再使用，不要重复试探。
+若返回 MUSIC_SERVICE_UNAVAILABLE：不要重试默认模型——改用 error 中列出的 provider:model 音乐模型，没有列出时如实告知用户当前无法生成音乐。`,
   outputSchema: { type: 'string' },
   inputSchema: {
     type: 'object',

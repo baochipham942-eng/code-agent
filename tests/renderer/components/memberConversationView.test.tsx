@@ -270,6 +270,87 @@ describe('成员对话页', () => {
     expect(screen.queryByTestId('member-current-action')).toBeNull();
   });
 
+  // ── N-MEDIA-GEN-MUSIC-FALLBACK-FU1：终态任务行的工具失败出路 ──
+
+  function musicFallbackTask(status: Task['status']): Task {
+    return {
+      id: 'task-music', sessionId: 'session-1', source: 'delegate_task', title: '给视频配背景音乐',
+      summary: '音乐生成失败，视频先交付了', status, createdAt: 1, updatedAt: 2,
+      events: [], outputRefs: [],
+      progress: {
+        lastToolStep: { tool: 'music_generate', at: 2 },
+        lastToolFailure: {
+          tool: 'music_generate', code: 'MUSIC_SERVICE_UNAVAILABLE',
+          alternatives: 'zhipu:glm-5.3', at: 2,
+        },
+      },
+    };
+  }
+
+  it('终态失败任务带 lastToolFailure：展示中文摘要 + 出路，alternatives 已填', async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue([]);
+    useBackgroundTaskStore.setState({ tasks: [musicFallbackTask('failed')] });
+    useMemberViewStore.setState({ viewingMemberId: 'task-music' });
+
+    render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-conversation-view')).toBeTruthy());
+    const note = screen.getByTestId('member-tool-failure');
+    expect(note.textContent).toContain('默认音乐服务（MiniMax）已不可用');
+    expect(note.textContent).toContain('可改用已配置的音乐模型：zhipu:glm-5.3');
+  });
+
+  it('模型放弃但任务 completed：lastToolFailure 仍在就亮出路', async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue([]);
+    useBackgroundTaskStore.setState({ tasks: [musicFallbackTask('completed')] });
+    useMemberViewStore.setState({ viewingMemberId: 'task-music' });
+
+    render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-conversation-view')).toBeTruthy());
+    expect(screen.getByTestId('member-tool-failure').textContent).toContain('可改用已配置的音乐模型：zhipu:glm-5.3');
+  });
+
+  it('运行中的任务不亮出路提示（中间失败步不给用户看）', async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue([]);
+    useBackgroundTaskStore.setState({ tasks: [musicFallbackTask('running')] });
+    useMemberViewStore.setState({ viewingMemberId: 'task-music' });
+
+    render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-conversation-view')).toBeTruthy());
+    expect(screen.queryByTestId('member-tool-failure')).toBeNull();
+  });
+
+  it('用户主动取消的任务不叠工具失败叙事', async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue([]);
+    useBackgroundTaskStore.setState({ tasks: [musicFallbackTask('cancelled')] });
+    useMemberViewStore.setState({ viewingMemberId: 'task-music' });
+
+    render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-conversation-view')).toBeTruthy());
+    expect(screen.queryByTestId('member-tool-failure')).toBeNull();
+  });
+
+  it('无 lastToolFailure 的终态任务渲染不变：没有出路块', async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue([]);
+    const task = musicFallbackTask('failed');
+    useBackgroundTaskStore.setState({
+      tasks: [{
+        ...task,
+        progress: { lastToolStep: task.progress?.lastToolStep },
+      }],
+    });
+    useMemberViewStore.setState({ viewingMemberId: 'task-music' });
+
+    render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-conversation-view')).toBeTruthy());
+    expect(screen.queryByTestId('member-tool-failure')).toBeNull();
+    expect(screen.getByTestId('member-final-output').textContent).toContain('音乐生成失败，视频先交付了');
+  });
+
   // ── N-SUBAGENT-INPUT：给成员补话 / 改道 / 停掉 ──
 
   function runningMember() {

@@ -16,6 +16,7 @@ export type ToolTag =
   | 'shell'      // Shell/命令执行
   | 'network'    // 网络请求
   | 'mcp'        // MCP 协议
+  | 'plugin'     // 插件注册的工具
   | 'planning'   // 规划和任务管理
   | 'memory'     // 记忆系统
   | 'vision'     // 视觉/截图
@@ -98,6 +99,12 @@ export interface ToolDefinition {
    * 非只读或未声明的 network 工具（httpRequest/jira/无 annotations 的 MCP 写操作）强制确认。
    */
   readOnly?: boolean;
+
+  /**
+   * 该工具声明绝不读写会话工作目录（来自 protocol schema touchesWorkDirectory）。
+   * 懒开目录判定用：派发此类工具前不落盘工作目录，纯问答/记忆会话不产生空目录。
+   */
+  touchesWorkDirectory?: false;
 
   /**
    * 工具会阻塞执行，等待用户在当前会话界面当场输入或选择。

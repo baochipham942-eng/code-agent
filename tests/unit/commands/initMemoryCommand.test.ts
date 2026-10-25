@@ -1,140 +1,35 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { BUILTIN_PROMPT_COMMANDS } from '../../../src/shared/commands/builtinPromptCommands';
 import { initializeCommands } from '../../../src/shared/commands';
 import { getCommandRegistry } from '../../../src/shared/commands/commandRegistry';
-import type { CommandContext, CommandDefinition, CommandOutput } from '../../../src/shared/commands/types';
-import type { ProjectMemoryDraftResult } from '../../../src/shared/contract/memory';
 
-// 单条定义经 registry 取用（公开入口），definitions 文件只导出数组。
-function initMemoryCommand(): CommandDefinition {
-  initializeCommands();
-  const def = getCommandRegistry().get('init-memory');
-  if (!def) throw new Error('init-memory command not registered');
-  return def;
-}
+describe('/init-memory builtin prompt command', () => {
+  it('is registered and tells the agent to use ProposeProjectMemory and Settings -> Memory', () => {
+    const command = BUILTIN_PROMPT_COMMANDS.find((item) => item.name === 'init-memory');
+    expect(command).toMatchObject({
+      name: 'init-memory',
+      source: 'builtin',
+    });
+    expect(command?.template).toContain('ProposeProjectMemory');
+    expect(command?.template).toContain('Settings -> Memory');
+    expect(command?.template).toContain('read_docx');
+    expect(command?.template).toContain('read_xlsx');
+    expect(command?.template).toContain('read_pdf');
+    expect(command?.template).toContain('ReadDocument');
+    expect(command?.template).toContain('exists, not overwritten');
+    expect(command?.description).toBeTruthy();
+  });
 
-const guiMemory = vi.hoisted(() => ({ calls: 0 }));
-
-vi.mock('../../../src/renderer/services/memoryGuiSurface', () => ({
-  initProjectMemoryViaGuiSurface: async () => {
-    guiMemory.calls += 1;
-    return {
-      projectDir: '/gui/work',
-      written: 2,
-      skipped: [{ topic: 'readme-purpose' as const, reason: 'source-absent' as const }],
-      entries: [],
-    } satisfies ProjectMemoryDraftResult;
-  },
-}));
-
-function makeCtx(overrides: Record<string, unknown> = {}): { ctx: CommandContext; lines: string[] } {
-  const lines: string[] = [];
-  const output: CommandOutput = {
-    info: (msg) => lines.push(`info:${msg}`),
-    success: (msg) => lines.push(`success:${msg}`),
-    error: (msg) => lines.push(`error:${msg}`),
-    warn: (msg) => lines.push(`warn:${msg}`),
-  };
-  return { lines, ctx: { surface: 'cli', output, ...overrides } as CommandContext };
-}
-
-const draftResult: ProjectMemoryDraftResult = {
-  projectDir: '/tmp/work',
-  written: 4,
-  skipped: [],
-  entries: [],
-};
-
-describe('/init-memory command', () => {
-  it('registers on both surfaces with a system category', () => {
+  it('is not a handler command', () => {
     initializeCommands();
-    const def = getCommandRegistry().get('init-memory');
-    expect(def?.surfaces).toEqual(['cli', 'gui']);
-    expect(def?.category).toBe('system');
-    expect(getCommandRegistry().list('cli').map((item: CommandDefinition) => item.id)).toContain('init-memory');
-    expect(getCommandRegistry().list('gui').map((item: CommandDefinition) => item.id)).toContain('init-memory');
-  });
-
-  it('runs the injected drafter for the agent working directory and reports counts + review hint', async () => {
-    const seen: string[] = [];
-    const { ctx, lines } = makeCtx({
-      agent: { getConfig: () => ({ workingDirectory: '/tmp/work' }) },
-      loadProjectMemoryDrafter: async () => ({
-        runProjectMemoryDraft: async (projectDir: string) => {
-          seen.push(projectDir);
-          return draftResult;
-        },
-      }),
-    });
-    const result = await initMemoryCommand().handler(ctx, []);
-    expect(seen).toEqual(['/tmp/work']);
-    expect(result).toEqual({ success: true, data: draftResult });
-    expect(lines).toEqual([
-      'info:/init-memory 完成：写入 4 条候选记忆，跳过 0 条主题。\n候选记忆需在记忆管理中人工确认后才会生效。',
-    ]);
-  });
-
-  it('falls back to process.cwd() when the agent config has no working directory', async () => {
-    const seen: string[] = [];
-    const { ctx } = makeCtx({
-      loadProjectMemoryDrafter: async () => ({
-        runProjectMemoryDraft: async (projectDir: string) => {
-          seen.push(projectDir);
-          return { ...draftResult, written: 0, skipped: [{ topic: 'tech-stack', reason: 'source-absent' }] };
-        },
-      }),
-    });
-    const result = await initMemoryCommand().handler(ctx, []);
-    expect(seen).toEqual([process.cwd()]);
-    expect(result.success).toBe(true);
-  });
-
-  it('labels skipped topics by reason without failing the command', async () => {
-    const { ctx, lines } = makeCtx({
-      agent: { getConfig: () => ({ workingDirectory: '/tmp/work' }) },
-      loadProjectMemoryDrafter: async () => ({
-        runProjectMemoryDraft: async () => ({
-          ...draftResult,
-          written: 1,
-          skipped: [
-            { topic: 'tech-stack', reason: 'existing-key' },
-            { topic: 'readme-purpose', reason: 'source-absent' },
-          ],
-        }),
-      }),
-    });
-    const result = await initMemoryCommand().handler(ctx, []);
-    expect(result.success).toBe(true);
-    expect(lines[0]).toContain('写入 1 条候选记忆，跳过 2 条主题');
-    expect(lines[0]).toContain('- 技术栈：同键记忆已存在，未覆盖');
-    expect(lines[0]).toContain('- 项目定位：来源缺失');
-  });
-
-  it('reports a missing drafter port without leaving the handler', async () => {
-    const { ctx, lines } = makeCtx();
-    const result = await initMemoryCommand().handler(ctx, []);
-    expect(result).toMatchObject({ success: false, message: 'loadProjectMemoryDrafter port is not available' });
-    expect(lines).toEqual(['error:/init-memory 失败：loadProjectMemoryDrafter port is not available']);
-  });
-
-  it('keeps the GUI path on the renderer IPC surface', async () => {
-    const load = vi.fn(async () => {
-      throw new Error('cli drafter must not load');
-    });
-    const { ctx, lines } = makeCtx({ surface: 'gui', loadProjectMemoryDrafter: load });
-    const result = await initMemoryCommand().handler(ctx, []);
-    expect(guiMemory.calls).toBe(1);
-    expect(load).not.toHaveBeenCalled();
-    expect(result.success).toBe(true);
-    expect(lines[0]).toContain('写入 2 条候选记忆，跳过 1 条主题');
-    expect(lines[0]).toContain('- 项目定位：来源缺失');
+    expect(getCommandRegistry().get('init-memory')).toBeUndefined();
   });
 });
 
 describe('/init builtin prompt command byte-for-byte pin (N-INIT-PROJECT-MEMORY-CMD)', () => {
-  // /init-memory 是新增的 handler 命令；原 /init prompt 模板命令必须逐字不变。
+  // /init-memory 改成 prompt 命令后，原 /init 模板必须逐字不变。
   it('keeps the init entry and INIT_TEMPLATE unchanged', () => {
-    expect(BUILTIN_PROMPT_COMMANDS).toHaveLength(1);
+    expect(BUILTIN_PROMPT_COMMANDS).toHaveLength(2);
     const init = BUILTIN_PROMPT_COMMANDS.find((command) => command.name === 'init');
     expect(init).toEqual({
       name: 'init',

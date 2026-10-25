@@ -81,6 +81,9 @@ describe('停车判定先于自动批准', () => {
     const island = makeIsland({ autoApprove: { read: false, write: true, execute: false, network: false } }, repo);
 
     const result = island.requestPermission({ type: 'file_write', tool: 'write_file', details: { path: '/Users/linchen/probe.txt' }, sessionId });
+    // 无人值守文件写在停车前先过写授权判定（N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1，
+    // 异步查会话来源），排空微任务链再断言停车。
+    await new Promise((resolve) => { setImmediate(resolve); });
 
     expect(await isStillPending(result)).toBe(true);
     expect(repo.insert).toHaveBeenCalledOnce();

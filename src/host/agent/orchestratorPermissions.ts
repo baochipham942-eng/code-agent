@@ -422,7 +422,8 @@ export class OrchestratorPermissionIsland {
     // ADR-083「后台继续」场景下壳已退出、没人能应答，不预授权就是整趟静默卡死。
     // 判定全在 cronWriteGrant（来源/类型/forceConfirm/realpath 界内），Bash 与出界写
     // 照旧走下面的停车分支；保护路径 ask 带 forceConfirm，在这里天然被排除。
-    if (unattended && !forceConfirm) {
+    // 类型门放在调用侧：非文件写请求不付这次异步查会话的代价。
+    if (unattended && !forceConfirm && (request.type === 'file_write' || request.type === 'file_edit')) {
       const scheduleGrant = await approveByScheduleWriteGrant(request);
       if (scheduleGrant) {
         logger.info(

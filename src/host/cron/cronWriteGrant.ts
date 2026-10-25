@@ -63,8 +63,9 @@ function realpathWithMissingTail(resolved: string): string | undefined {
  * 判定目标是否落在授权文件夹内。两边都做 realpath 归一：
  * `..` 由 path.resolve 归一，symlink 逃逸由 realpath 归一（授权目录内的软链指向
  * 外部 → 解析后落在界外 → 不放行）。相对路径 / 授权根不存在一律 fail-closed 拒。
+ * 模块私有：外部统一走 approveByScheduleWriteGrant（生产消费方只有它）。
  */
-export function isPathWithinWriteGrantRoot(target: string, grantRoot: string): boolean {
+function isPathWithinWriteGrantRoot(target: string, grantRoot: string): boolean {
   if (!path.isAbsolute(target)) return false;
   const realRoot = realpathOrNull(grantRoot);
   if (!realRoot) return false;

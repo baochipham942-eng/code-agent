@@ -29,7 +29,6 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
 import {
   approveByScheduleWriteGrant,
   grantCronWriteScope,
-  isPathWithinWriteGrantRoot,
   revokeCronWriteScope,
   stripWriteGrantRoot,
 } from '../../../src/host/cron/cronWriteGrant';
@@ -46,6 +45,18 @@ beforeEach(() => {
 afterEach(() => {
   rmSync(grantRoot, { recursive: true, force: true });
 });
+
+/** 判界走生产消费口 approveByScheduleWriteGrant（isPathWithinWriteGrantRoot 是模块私有）。 */
+async function grantAllows(target: string, root: string): Promise<boolean> {
+  sessionState.sessions['grant-sess'] = {
+    id: 'grant-sess',
+    origin: { kind: 'cron', metadata: { writeGrantRoot: root } },
+  };
+  const result = await approveByScheduleWriteGrant({
+    sessionId: 'grant-sess', type: 'file_write', details: { path: target },
+  });
+  return result?.approved === true;
+}
 
 function makeJob(overrides: Partial<CronJobDefinition> = {}): CronJobDefinition {
   return {
@@ -75,49 +86,49 @@ function makeHost(definition: CronJobDefinition) {
   };
 }
 
-describe('isPathWithinWriteGrantRoot（realpath 归一判界）', () => {
-  it('界内目标（含尚未存在的新文件）放行', () => {
-    expect(isPathWithinWriteGrantRoot(path.join(grantRoot, 'note.txt'), grantRoot)).toBe(true);
+describe('判界 isPathWithinWriteGrantRoot（经生产消费口 approveByScheduleWriteGrant）', () => {
+  it('界内目标（含尚未存在的新文件）放行', async () => {
+    expect(await grantAllows(path.join(grantRoot, 'note.txt'), grantRoot)).toBe(true);
     mkdirSync(path.join(grantRoot, 'sub'));
-    expect(isPathWithinWriteGrantRoot(path.join(grantRoot, 'sub', 'deep.md'), grantRoot)).toBe(true);
+    expect(await grantAllows(path.join(grantRoot, 'sub', 'deep.md'), grantRoot)).toBe(true);
     // 根本身也算界内（直接写目录级元数据）
-    expect(isPathWithinWriteGrantRoot(grantRoot, grantRoot)).toBe(true);
+    expect(await grantAllows(grantRoot, grantRoot)).toBe(true);
   });
 
-  it('出界目标不放行', () => {
-    expect(isPathWithinWriteGrantRoot(path.join(path.dirname(grantRoot), 'outside.txt'), grantRoot)).toBe(false);
+  it('出界目标不放行', async () => {
+    expect(await grantAllows(path.join(path.dirname(grantRoot), 'outside.txt'), grantRoot)).toBe(false);
   });
 
-  it('`..` 拼接逃逸归一后不放行', () => {
-    expect(isPathWithinWriteGrantRoot(path.join(grantRoot, '..', 'escape.txt'), grantRoot)).toBe(false);
-    expect(isPathWithinWriteGrantRoot(`${grantRoot}/../../etc/passwd`, grantRoot)).toBe(false);
+  it('`..` 拼接逃逸归一后不放行', async () => {
+    expect(await grantAllows(path.join(grantRoot, '..', 'escape.txt'), grantRoot)).toBe(false);
+    expect(await grantAllows(`${grantRoot}/../../etc/passwd`, grantRoot)).toBe(false);
   });
 
-  it('软链逃逸（界内软链指向界外真实目录）不放行', () => {
+  it('软链逃逸（界内软链指向界外真实目录）不放行', async () => {
     const outsideRoot = mkdtempSync(path.join(os.tmpdir(), 'neo-write-grant-out-'));
     try {
       const linkPath = path.join(grantRoot, 'link-out');
       symlinkSync(outsideRoot, linkPath);
       // 目标文件还不存在：missing-tail realpath 也要沿软链解析到界外
-      expect(isPathWithinWriteGrantRoot(path.join(linkPath, 'stolen.txt'), grantRoot)).toBe(false);
+      expect(await grantAllows(path.join(linkPath, 'stolen.txt'), grantRoot)).toBe(false);
       // 界外真实文件已存在时同样不放行
       const realFile = path.join(outsideRoot, 'real.txt');
       writeFileSync(realFile, 'x');
-      expect(isPathWithinWriteGrantRoot(realFile, grantRoot)).toBe(false);
+      expect(await grantAllows(realFile, grantRoot)).toBe(false);
     } finally {
       rmSync(outsideRoot, { recursive: true, force: true });
     }
   });
 
-  it('界内软链（指向界内目录）仍算界内', () => {
+  it('界内软链（指向界内目录）仍算界内', async () => {
     mkdirSync(path.join(grantRoot, 'real-dir'));
     symlinkSync(path.join(grantRoot, 'real-dir'), path.join(grantRoot, 'link-in'));
-    expect(isPathWithinWriteGrantRoot(path.join(grantRoot, 'link-in', 'file.txt'), grantRoot)).toBe(true);
+    expect(await grantAllows(path.join(grantRoot, 'link-in', 'file.txt'), grantRoot)).toBe(true);
   });
 
-  it('相对路径与不存在的授权根 fail-closed 拒', () => {
-    expect(isPathWithinWriteGrantRoot('relative/note.txt', grantRoot)).toBe(false);
-    expect(isPathWithinWriteGrantRoot(path.join(grantRoot, 'note.txt'), path.join(grantRoot, 'missing-root'))).toBe(false);
+  it('相对路径与不存在的授权根 fail-closed 拒', async () => {
+    expect(await grantAllows('relative/note.txt', grantRoot)).toBe(false);
+    expect(await grantAllows(path.join(grantRoot, 'note.txt'), path.join(grantRoot, 'missing-root'))).toBe(false);
   });
 });
 

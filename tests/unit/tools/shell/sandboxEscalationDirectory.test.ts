@@ -309,9 +309,12 @@ describe('bashModule directory escalation', () => {
     dirs.push(dir);
     return dir;
   };
-  // D5-A 例外句已随 DIR-FORBIDDEN 的禁写名机制（deny 行 / ro-bind 盖）同批上卡面。
+  // D5-A 例外句只承诺拒绝时**已存在**的禁写名（deny 行 / ro-bind 盖现存路径，FB-415）：
+  // 已有目录卡带「其中已有的…」句；拒绝时尚不存在的目录（mkdir 拒绝）没有可保护对象，卡面不带该句。
   const DIR_CARD_REASON = (path: string) =>
-    `沙盒拦截了这一步：它想写入目录 ${path}（含其中全部内容）。允许仅这一次写入这个目录及其中内容并重跑？（其中凭据与配置类文件仍不可写）`;
+    `沙盒拦截了这一步：它想写入目录 ${path}（含其中全部内容）。允许仅这一次写入这个目录及其中内容并重跑？（其中已有的凭据与配置类文件仍不可写）`;
+  const MISSING_DIR_CARD_REASON = (path: string) =>
+    `沙盒拦截了这一步：它想写入目录 ${path}（含其中全部内容）。允许仅这一次写入这个目录及其中内容并重跑？`;
 
   beforeEach(() => {
     modeMgr.setMode('default', true);
@@ -367,9 +370,10 @@ describe('bashModule directory escalation', () => {
     }
   });
 
-  it('carries the credential/config exception sentence now that its enforcement landed (D5 + DIR-FORBIDDEN)', async () => {
-    // D5 r1：例外句「（其中凭据与配置类文件仍不可写）」与禁写名机制同批上卡面——deny 行 /
-    // ro-bind 盖落地后，卡面承诺与重跑开口子重新对齐。反向钉死：句子若被单独摘掉，本测试红。
+  it('carries the existing-files credential/config exception sentence (D5 + DIR-FORBIDDEN, FB-415)', async () => {
+    // D5 r1：例外句「（其中已有的凭据与配置类文件仍不可写）」与禁写名机制同批上卡面——
+    // deny 行 / ro-bind 盖只盖**已存在**的禁写名（设计稿 D1 残余：新建名挡不住），措辞如实。
+    // 反向钉死：句子若被单独摘掉，本测试红。
     const dir = tmp('escalate-dir-exception-');
     wrapMock
       .mockReturnValueOnce({
@@ -384,10 +388,35 @@ describe('bashModule directory escalation', () => {
     expect(escalationCalls).toHaveLength(1);
     const reason = escalationCalls[0]?.[2] as string;
     expect(reason).toBe(DIR_CARD_REASON(dir));
-    expect(reason).toContain('（其中凭据与配置类文件仍不可写）');
+    expect(reason).toContain('（其中已有的凭据与配置类文件仍不可写）');
     // 例外句只在目录卡上：机制（forbiddenWriteUnder → deny 行 / ro-bind）只随目录授权下发
     const retryOptions = wrapMock.mock.calls[1]?.[1] as { forbiddenWriteUnder?: string[] };
     expect(retryOptions.forbiddenWriteUnder).toEqual([dir]);
+  });
+
+  it('omits the exception sentence for a directory that does not exist at denial time (FB-415)', async () => {
+    // 禁写名 deny 行 / ro-bind 盖只覆盖子树内已存在的名字；mkdir 拒绝时目录尚不存在，
+    // 没有可保护对象——卡面不得承诺开不出的保护（铁律：重跑开口子 ⊆ 卡面承诺）。
+    // 禁写名机制本身不受措辞影响：missing 目录的重跑同样下发 forbiddenWriteUnder。
+    const parent = tmp('escalate-dir-missing-sentence-');
+    const missing = join(parent, 'new-dir');
+    wrapMock
+      .mockReturnValueOnce({
+        command: `printf '%s\\n' 'mkdir: ${missing}: Operation not permitted' >&2; exit 1`,
+        cleanup: cleanupMock,
+      })
+      .mockReturnValueOnce({ command: "printf 'retried\\n'", cleanup: cleanupMock });
+    const canUse = vi.fn().mockResolvedValue({ allow: true as const });
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute({ command: `mkdir ${missing}` }, makeCtx(), canUse);
+    expect(result.ok).toBe(true);
+    const escalationCalls = canUse.mock.calls.filter(([toolName]) => toolName === 'bash');
+    expect(escalationCalls).toHaveLength(1);
+    expect(escalationCalls[0]?.[2]).toBe(MISSING_DIR_CARD_REASON(missing));
+    expect(escalationCalls[0]?.[2]).not.toContain('仍不可写');
+    const retryOptions = wrapMock.mock.calls[1]?.[1] as { readWriteRoots?: string[]; forbiddenWriteUnder?: string[] };
+    expect(retryOptions.readWriteRoots).toEqual([resolveCanonicalRunPath(process.cwd()), missing]);
+    expect(retryOptions.forbiddenWriteUnder).toEqual([missing]);
   });
 
   it('grants exactly the denied mkdir path and never its nearest existing ancestor (边界二反例)', async () => {
@@ -408,7 +437,8 @@ describe('bashModule directory escalation', () => {
     expect(result.ok).toBe(true);
     const escalationCalls = canUse.mock.calls.filter(([toolName]) => toolName === 'bash');
     expect(escalationCalls).toHaveLength(1);
-    expect(escalationCalls[0]?.[2]).toBe(DIR_CARD_REASON(c));
+    // mkdir 拒绝的 c 拒绝时尚不存在：卡面不带例外句（FB-415）
+    expect(escalationCalls[0]?.[2]).toBe(MISSING_DIR_CARD_REASON(c));
     const retryOptions = wrapMock.mock.calls[1]?.[1] as { readWriteRoots?: string[]; readWriteFiles?: string[] };
     expect(retryOptions.readWriteRoots).toEqual([resolveCanonicalRunPath(process.cwd()), c]);
     expect(retryOptions.readWriteRoots).not.toContain(a);

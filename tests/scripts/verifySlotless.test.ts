@@ -19,6 +19,13 @@ import { buildSlotlessConfig, buildSlotlessTemplateProvenance, copySecureStorage
 // @ts-expect-error —— 纯 JS 本机验证入口，无类型声明
 import { parseViewport } from '../../scripts/verify-shot.mjs';
 
+// N-APPROVAL-LANE-CLICK-DROP-FU1 rework r1：live 形状检查（真 webServer + scratch
+// HOME + 真狗food signInEmail）曾以 it.skipIf(liveShapeReady) 放在本文件，缺件环境
+// （CI 无 secret、收集树无 dist/）整条 skip——gates:fast 的 vitest 判读器把任何
+// skipped 都判门红，故 live 检查不进 vitest。该形状的回归守卫由
+// tests/unit/services/core/keytarAdapter.test.ts 的离线单测承担；端到端 live 证明
+// 走 `node scripts/verify-slotless.mjs <单号> --reuse-dist` 真跑（见证据档）。
+
 describe('slotless verification scripts', () => {
   const tempDirs: string[] = [];
 

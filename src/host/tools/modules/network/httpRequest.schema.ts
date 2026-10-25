@@ -62,6 +62,7 @@ Examples:
   permissionLevel: 'network',
   readsUntrustedContent: 'block',
   readOnly: false,
+  touchesWorkDirectory: false,
   allowInPlanMode: false,
   accesses: [
     { kind: 'readwrite', expression: 'resource(http, args.url)' },

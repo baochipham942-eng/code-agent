@@ -519,7 +519,8 @@ export async function instantiateRole(
 // 内部 helpers
 // ----------------------------------------------------------------------------
 
-function sanitizeMemoryFilename(filename: string): string {
+/** 文件名安全校验（.md 结尾 + 纯 basename）；设置 > 记忆页的项目层 overlay 复用 */
+export function sanitizeMemoryFilename(filename: string): string {
   if (!filename.endsWith('.md')) {
     throw new Error(`Memory filename must end with .md: "${filename}"`);
   }
@@ -549,7 +550,7 @@ async function exists(filePath: string): Promise<boolean> {
 }
 
 /** 索引格式与全局 Light Memory INDEX.md 一致：- [filename](filename) — description */
-async function updateScopedIndex(indexPath: string, filename: string, description: string): Promise<void> {
+export async function updateScopedIndex(indexPath: string, filename: string, description: string): Promise<void> {
   let lines: string[];
   try {
     lines = (await fs.readFile(indexPath, 'utf-8')).split('\n');
@@ -562,7 +563,7 @@ async function updateScopedIndex(indexPath: string, filename: string, descriptio
   await fs.writeFile(indexPath, lines.join('\n'), 'utf-8');
 }
 
-async function removeFromScopedIndex(indexPath: string, filename: string): Promise<void> {
+export async function removeFromScopedIndex(indexPath: string, filename: string): Promise<void> {
   try {
     const existing = await fs.readFile(indexPath, 'utf-8');
     const entryPattern = new RegExp(`^- \\[${escapeRegex(filename)}\\].*$`, 'gm');

@@ -50,5 +50,6 @@ Use this only when the user wants to modify a real local calendar event.`,
   category: 'mcp',
   permissionLevel: 'write',
   readOnly: false,
+  touchesWorkDirectory: false,
   allowInPlanMode: false,
 };

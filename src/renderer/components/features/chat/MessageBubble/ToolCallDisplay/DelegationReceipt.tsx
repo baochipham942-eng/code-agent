@@ -1,7 +1,7 @@
 import React from 'react';
 import { useI18n } from '../../../../../hooks/useI18n';
 import { useAppStore } from '../../../../../stores/appStore';
-import { describeLastToolStep } from '../../../../../utils/agentActivity';
+import { describeLastToolFailure, describeLastToolStep } from '../../../../../utils/agentActivity';
 import { openExternalLink } from '../../../../../utils/platform';
 import type { DelegationPresentation } from './delegationPresentation';
 
@@ -21,6 +21,9 @@ export function DelegationHeader({ presentation }: { presentation: DelegationPre
 export function DelegationReceipt({ presentation }: { presentation: DelegationPresentation }) {
   const { t } = useI18n();
   const openPreview = useAppStore((state) => state.openPreview);
+  const toolFailure = presentation.state === 'working'
+    ? undefined
+    : describeLastToolFailure(presentation.toolFailure, t);
 
   if (presentation.state === 'working') {
     return (
@@ -57,6 +60,12 @@ export function DelegationReceipt({ presentation }: { presentation: DelegationPr
       {presentation.failure && (
         <div className="line-clamp-2 break-words text-badge-danger" data-testid="delegation-failure">
           {presentation.failure}
+        </div>
+      )}
+      {toolFailure && (
+        <div className="break-words" data-testid="delegation-tool-failure">
+          <span className="text-badge-danger">{toolFailure.summary}</span>
+          {toolFailure.detail && <span className="text-zinc-400"> · {toolFailure.detail}</span>}
         </div>
       )}
     </div>

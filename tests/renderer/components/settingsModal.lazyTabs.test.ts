@@ -43,6 +43,7 @@ const SETTINGS_TAB_MODULES = [
   ["DataSettings", "cache"],
   ["UpdateSettings", "update"],
   ["MemoryTab", "memory"],
+  ["ExternalImportSettings", "external-import"],
   ["ChannelsSettings", "channels"],
   ["HooksSettings", "hooks"],
   ["AboutSettings", "about"],
@@ -69,6 +70,7 @@ const SETTINGS_TAB_SMOKE_LOADERS = [
   ["DataSettings", () => import("../../../src/renderer/components/features/settings/tabs/DataSettings"), "DataSettings"],
   ["UpdateSettings", () => import("../../../src/renderer/components/features/settings/tabs/UpdateSettings"), "UpdateSettings"],
   ["MemoryTab", () => import("../../../src/renderer/components/features/settings/tabs/MemoryTab"), "MemoryTab"],
+  ["ExternalImportSettings", () => import("../../../src/renderer/components/features/settings/tabs/ExternalImportSettings"), "ExternalImportSettings"],
   ["ChannelsSettings", () => import("../../../src/renderer/components/features/settings/tabs/ChannelsSettings"), "ChannelsSettings"],
   ["HooksSettings", () => import("../../../src/renderer/components/features/settings/tabs/HooksSettings"), "HooksSettings"],
   ["AboutSettings", () => import("../../../src/renderer/components/features/settings/tabs/AboutSettings"), "AboutSettings"],
@@ -80,7 +82,7 @@ const SETTINGS_TAB_SMOKE_LOADERS = [
 describe("SettingsModal tab loading contract", () => {
   const source = fs.readFileSync(SETTINGS_MODAL_SOURCE, "utf8");
 
-  it("wraps all 23 tab modules in React.lazy without static tab imports", () => {
+  it("wraps all 24 tab modules in React.lazy without static tab imports", () => {
     expect(source).not.toMatch(
       /^\s*import(?:\s+type)?\b[^;\n]*from ['"]\.\/tabs\//m,
     );

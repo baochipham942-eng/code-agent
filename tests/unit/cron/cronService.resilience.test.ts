@@ -659,6 +659,66 @@ describe('⑤ 重启对账幂等：合并已有任务，禁止删旧建新（Cli
   });
 });
 
+describe('跨进程 cron_jobs 编辑对账', () => {
+  it('驻留执行器在另一个 host 写入新表达式后替换内存中的 timer', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const oldExpression = '0 2 * * *';
+    const newExpression = '0 3 * * *';
+    dbState.cronRows = [{
+      id: 'job-cross-host-reschedule',
+      name: '跨 host 重排任务',
+      description: null,
+      schedule_type: 'cron',
+      schedule: JSON.stringify({ type: 'cron', expression: oldExpression }),
+      action: JSON.stringify({ type: 'shell', command: 'echo ok' }),
+      enabled: 1,
+      max_retries: 0,
+      retry_delay: null,
+      timeout: 60_000,
+      tags: null,
+      metadata: '{}',
+      cloud_job_id: null,
+      created_at: NOW - 60 * 60_000,
+      updated_at: NOW - 60 * 60_000,
+    }];
+
+    const editorHost = new CronService();
+    const executingHost = new CronService();
+    await editorHost.initialize();
+    await executingHost.initialize();
+    const before = (executingHost as unknown as {
+      jobs: Map<string, { cronInstance?: unknown }>;
+    }).jobs.get('job-cross-host-reschedule')?.cronInstance;
+
+    // The editor host takes the supported update path; this mock then reflects
+    // saveCronJob's row write so the executing host sees the shared DB change.
+    const edited = await editorHost.updateJob('job-cross-host-reschedule', {
+      schedule: { type: 'cron', expression: newExpression },
+    });
+    expect(edited?.schedule).toEqual({ type: 'cron', expression: newExpression });
+    dbState.cronRows[0] = {
+      ...dbState.cronRows[0] as Record<string, unknown>,
+      schedule: JSON.stringify({ type: 'cron', expression: newExpression }),
+      updated_at: edited?.updatedAt,
+    };
+
+    await vi.advanceTimersByTimeAsync(CRON_GUARDRAILS.JOB_RECONCILE_TICK_MS);
+
+    const after = (executingHost as unknown as {
+      jobs: Map<string, { cronInstance?: unknown }>;
+    }).jobs.get('job-cross-host-reschedule')?.cronInstance;
+    expect(executingHost.getJob('job-cross-host-reschedule')?.schedule).toEqual({
+      type: 'cron',
+      expression: newExpression,
+    });
+    expect(after).toBeDefined();
+    expect(after).not.toBe(before);
+    await editorHost.shutdown();
+    await executingHost.shutdown();
+  });
+});
+
 describe('R2 Nit-3：宽限窗补跑不与紧接的正常 tick 并发执行同一任务', () => {
   it('补跑还没跑完时下一个计划 tick 到点 → 跳过本趟，不堆并发会话', async () => {
     vi.useFakeTimers();

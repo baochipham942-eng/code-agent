@@ -42,6 +42,23 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
         ),
         run: (...args: unknown[]) => {
           dbState.savedRows.push(args);
+          if (sql.includes('INSERT INTO cron_jobs')) {
+            const [id, name, description, scheduleType, schedule, action, runsOn, maxRunBudget, maxRuns,
+              runCount, minIntervalSeconds, resultChannel, cloudJobId, enabled, maxRetries, retryDelay,
+              timeout, tags, metadata, createdAt, updatedAt] = args;
+            const row = {
+              id, name, description, schedule_type: scheduleType, schedule, action, runs_on: runsOn,
+              max_run_budget: maxRunBudget, max_runs: maxRuns, run_count: runCount,
+              min_interval_seconds: minIntervalSeconds, result_channel: resultChannel,
+              cloud_job_id: cloudJobId, enabled, max_retries: maxRetries, retry_delay: retryDelay,
+              timeout, tags, metadata, created_at: createdAt, updated_at: updatedAt,
+            };
+            const index = dbState.cronRows.findIndex((item) => (
+              !!item && typeof item === 'object' && (item as Record<string, unknown>).id === id
+            ));
+            if (index >= 0) dbState.cronRows[index] = row;
+            else dbState.cronRows.push(row);
+          }
           return { changes: 0 };
         },
       }),

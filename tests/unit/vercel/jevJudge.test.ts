@@ -88,15 +88,20 @@ const GOOD_BODY = { state: { command: 'npm view left-pad version' }, questions: 
 
 async function callHandler(
   env: NodeJS.ProcessEnv,
-  options: { token?: string | null; body?: unknown; fetchImpl?: typeof fetch; store?: JevJudgeUsageStore | null } = {},
+  options: {
+    token?: string | null;
+    body?: unknown;
+    fetchImpl?: typeof fetch;
+    /** 缺省注入一次性内存 store；null = 强制无计数器；'env' = 让 handler 按 env 解析。 */
+    store?: JevJudgeUsageStore | null | 'env';
+  } = {},
 ): Promise<{ statusCode: number; body: unknown }> {
   const res = makeResponse();
+  const usageStore = options.store === undefined ? createInMemoryJevJudgeUsageStore() : options.store;
   await handleJevJudgeRequest(makeRequest(options.token === undefined ? TOKEN_A : options.token, options.body ?? GOOD_BODY), res, {
     env,
     fetchImpl: options.fetchImpl ?? makeUpstreamFetch([]),
-    ...(options.store === undefined
-      ? { usageStore: createInMemoryJevJudgeUsageStore() }
-      : { usageStore: options.store }),
+    ...(options.store === 'env' ? {} : { usageStore }),
   });
   return { statusCode: res.statusCode, body: res.body };
 }
@@ -226,6 +231,21 @@ describe('jev-judge handler：配额', () => {
     expect(res.statusCode).toBe(503);
     expect(res.body).toMatchObject({ error: 'jev_counter_unavailable' });
     expect(calls).toHaveLength(0);
+  });
+
+  it('env 解析的内存 store 跨请求复用（限额真实累计）：限 1 次时第 2 次 429', async () => {
+    const calls: CapturedUpstreamCall[] = [];
+    const fetchImpl = makeUpstreamFetch(calls);
+    const env = makeEnv({
+      JEV_JUDGE_ALLOW_MEMORY_STORE: '1',
+      JEV_JUDGE_USER_DAILY_CALLS: '1',
+    });
+    const first = await callHandler(env, { token: TOKEN_A, fetchImpl, store: 'env' });
+    expect(first.statusCode).toBe(200);
+    const second = await callHandler(env, { token: TOKEN_A, fetchImpl, store: 'env' });
+    expect(second.statusCode).toBe(429);
+    expect(second.body).toMatchObject({ error: 'jev_user_daily_limit' });
+    expect(calls).toHaveLength(1);
   });
 
   it('413：序列化 body 超过 JEV_JUDGE_MAX_BODY_BYTES', async () => {

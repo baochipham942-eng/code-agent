@@ -87,8 +87,11 @@ export function utcDayKey(now: Date): string {
 
 /**
  * 从 env 解析计数 store：DATABASE_URL → postgres；显式 JEV_JUDGE_ALLOW_MEMORY_STORE=1 →
- * 内存（仅本地开发/测试）；否则 null（计数不可用，handler fail-closed 拒绝全部调用）。
+ * 内存（仅本地开发/测试，per-process 复用同一实例，否则限额永远不累计）；否则 null
+ * （计数不可用，handler fail-closed 拒绝全部调用）。
  */
+let memoizedMemoryStore: JevJudgeUsageStore | null = null;
+
 export async function resolveJevJudgeUsageStore(env: NodeJS.ProcessEnv): Promise<JevJudgeUsageStore | null> {
   const databaseUrl = readEnv(env, DATABASE_URL_ENV_NAMES);
   if (databaseUrl) {
@@ -96,7 +99,10 @@ export async function resolveJevJudgeUsageStore(env: NodeJS.ProcessEnv): Promise
     return createPostgresJevJudgeUsageStore(databaseUrl, postgres);
   }
   if (readEnv(env, ALLOW_MEMORY_STORE_ENV_NAMES) === '1') {
-    return createInMemoryJevJudgeUsageStore();
+    if (!memoizedMemoryStore) {
+      memoizedMemoryStore = createInMemoryJevJudgeUsageStore();
+    }
+    return memoizedMemoryStore;
   }
   return null;
 }

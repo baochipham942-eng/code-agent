@@ -168,6 +168,8 @@ export interface MemoryImportDirectiveConfirmResult {
   instructionId: string;
   confirmed: boolean;
   imported: boolean;
+  /** confirmed=false 的原因分流（N-EXTHISTORY-IMPORT-K1A-FU1）：headless 无界面时 UI 提示「去 App 里确认」 */
+  notConfirmedReason?: 'declined' | 'timeout' | 'headless-no-ui';
   entry?: MemoryEntry;
   mirrorRebuild?: MemoryMirrorRebuildResult;
 }

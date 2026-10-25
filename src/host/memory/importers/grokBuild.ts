@@ -1,6 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { instructionItem, memoryItemFromMarkdownContent } from './adapterHelpers';
+import { instructionItems, memoryItemFromMarkdownContent } from './adapterHelpers';
 import { directoryExists, readMarkdownFile, splitMarkdownSections } from './markdown';
 import type { MemoryImporterAdapter, RawMemoryImportItem } from './types';
 
@@ -57,14 +57,14 @@ export const grokBuildAdapter: MemoryImporterAdapter = {
       }
     }
     for (const sourcePath of [path.join(grokRoot, 'AGENTS.md')]) {
-      const rules = await instructionItem({
+      items.push(...await instructionItems({
         adapterId: 'grok-build',
         sourceVendor: 'xAI',
         sourcePath,
         sourceScope: 'global',
         verifiedOnDevice: true,
-      });
-      if (rules) items.push(rules);
+        splitRules: true,
+      }));
     }
     return { items, skipped };
   },

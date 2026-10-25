@@ -229,7 +229,11 @@ export async function confirmMemoryHarnessDirective(
   db: MemoryImporterDatabase,
   instructionId: string,
   options: Partial<MemoryImporterDiscoveryOptions> & {
-    confirmDirective?: (input: { content: string; category: string }) => Promise<{ confirmed: boolean }>;
+    confirmDirective?: (input: { content: string; category: string }) => Promise<{
+      confirmed: boolean;
+      headlessNoUi?: boolean;
+      timedOut?: boolean;
+    }>;
   } = {},
 ): Promise<MemoryImportDirectiveConfirmResult> {
   const discoveryOptions: MemoryImporterDiscoveryOptions = {
@@ -248,7 +252,16 @@ export async function confirmMemoryHarnessDirective(
   const confirmer = options.confirmDirective || requestDirectiveMemoryConfirmation;
   const confirmation = await confirmer({ content: raw.content, category: 'import' });
   if (!confirmation.confirmed) {
-    return { instructionId, confirmed: false, imported: false };
+    return {
+      instructionId,
+      confirmed: false,
+      imported: false,
+      notConfirmedReason: confirmation.headlessNoUi
+        ? 'headless-no-ui'
+        : confirmation.timedOut
+          ? 'timeout'
+          : 'declined',
+    };
   }
 
   const entry = memoryEntryFromRaw(raw, discoveryOptions.now ?? Date.now());

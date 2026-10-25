@@ -55,6 +55,13 @@ export interface ToolApprovalPayload {
    * 缺省不填——不许为凑形状发明一个。
    */
   argsRef?: { sessionId: string; messageId?: string; toolCallId: string };
+  /**
+   * 账本形参数（sanitizeToolCallsForHistory 输出）的 canonical sha256——重启批准时从
+   * 台账重算比对，防「点的是 A、执行的是 B」（N-PARKED-APPROVAL-SURVIVE-RESTART-RESUME）。
+   */
+  argsFingerprint?: string;
+  /** 原始 args deep-equal 账本形 args；false（如 Write 大文本被截断加长度字段）= 行不可跨重启存活。 */
+  ledgerFaithful?: boolean;
   /** 脱敏（密钥/Bearer/.env 值）+ 截断的参数预览：收件箱/审批卡一眼看清这步要干什么。 */
   argsPreview?: string;
 }

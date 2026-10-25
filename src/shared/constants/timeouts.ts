@@ -543,6 +543,8 @@ export const TOOL_TIMEOUT_THRESHOLDS: Record<string, number> = {
  * 失败处置分档：transient → 指数退避重试 → 连败停用；permanent → 首次即停用并告知用户。
  */
 export const CRON_GUARDRAILS = {
+  /** 跨 webServer 进程重新读取 cron_jobs 的周期；只对账，不创建第二套调度器。 */
+  JOB_RECONCILE_TICK_MS: 5_000,
   /**
    * 循环任务触发前的随机 jitter 窗口下限 (ms)。分钟级任务保持原有的秒级抖动，
    * 窗口随周期放大（见 FIRE_JITTER_PERIOD_RATIO）但不会低于此值。

@@ -7,6 +7,7 @@ import React, { useEffect, useState } from 'react';
 import type { RoleWakeProposal } from '@shared/contract/roleAssets';
 import { Button } from '../../primitives/Button';
 import { useI18n } from '../../../hooks/useI18n';
+import { DomainInvokeError } from '../../../services/ipcService';
 import { acceptWakeProposal, dismissWakeProposal, listWakeProposals } from '../../../services/rolesClient';
 import { goToExpertThread } from '../../../utils/inviteExpert';
 
@@ -48,6 +49,14 @@ export const RoleWakeProposalsCard: React.FC<RoleWakeProposalsCardProps> = ({ ro
       }
       remove(proposal.title);
       await goToExpertThread(roleId, { seed: accepted.prompt });
+    } catch (error) {
+      // 宿主对已不在 pending 返回 NOT_FOUND。invokeDomain 抛 DomainInvokeError，不是 null。
+      // 这是预期缺席：卡片消失，不开新一轮。其它错误继续抛出。
+      if (error instanceof DomainInvokeError && error.code === 'NOT_FOUND') {
+        remove(proposal.title);
+        return;
+      }
+      throw error;
     } finally {
       setBusy(false);
     }

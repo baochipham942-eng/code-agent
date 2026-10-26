@@ -7,6 +7,7 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RoleWakeProposal } from '../../../src/shared/contract/roleAssets';
+import { DomainInvokeError } from '../../../src/renderer/services/ipcService';
 
 const listWakeProposals = vi.fn<(roleId: string) => Promise<RoleWakeProposal[]>>();
 const acceptWakeProposal = vi.fn<(roleId: string, title: string) => Promise<{ prompt: string } | null>>();
@@ -78,6 +79,17 @@ describe('RoleWakeProposalsCard', () => {
     fireEvent.click(screen.getByText('改期 14:00 的会'));
     await waitFor(() => { expect(screen.queryByText('改期 14:00 的会')).toBeNull(); });
     expect(goToExpertThread).not.toHaveBeenCalled();
+  });
+
+  it('accept 被宿主 NOT_FOUND 拒绝：卡片消失，不走路由，不留下未处理拒绝', async () => {
+    listWakeProposals.mockResolvedValue([PROPOSALS[0]]);
+    acceptWakeProposal.mockRejectedValue(new DomainInvokeError('NOT_FOUND', 'proposal not found'));
+    render(<RoleWakeProposalsCard roleId="role-1" />);
+    await waitFor(() => { expect(screen.getByText('改期 14:00 的会')).toBeTruthy(); });
+    fireEvent.click(screen.getByText('改期 14:00 的会'));
+    await waitFor(() => { expect(screen.queryByText('改期 14:00 的会')).toBeNull(); });
+    expect(goToExpertThread).not.toHaveBeenCalled();
+    expect(skipFirstWake).not.toHaveBeenCalled();
   });
 
   it('dismiss：调 dismissWakeProposal 并移除该卡', async () => {

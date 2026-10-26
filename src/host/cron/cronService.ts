@@ -59,6 +59,7 @@ import {
   loadCronLastRunAt,
   loadRecentCronExecutions,
   markInterruptedCronExecutions,
+  mergeCronExecutionWindow,
   saveCronExecution,
   saveCronJob,
   upsertCronExecutionInMemory,
@@ -562,16 +563,13 @@ export class CronService implements Disposable {
    * Get execution history for a job
    */
   getJobExecutions(jobId: string, limit: number = 10): CronJobExecution[] {
-    const executions = this.executions.get(jobId) || [];
-    if (executions.length > 0) {
-      return executions.slice(-limit);
-    }
-
+    const cached = this.executions.get(jobId) ?? [];
+    // 条数已经盖住请求时才信缓存。任务列表的 limit=1 不能挡住角色页的 limit=20。
+    if (cached.length >= limit) return cached.slice(-limit);
     const persisted = loadCronExecutionsByJob(jobId, limit);
-    if (persisted.length > 0) {
-      this.executions.set(jobId, persisted);
-    }
-    return persisted;
+    const merged = mergeCronExecutionWindow(cached, persisted, limit);
+    if (cached.length === 0 && merged.length > 0) this.executions.set(jobId, merged);
+    return merged;
   }
 
   /**

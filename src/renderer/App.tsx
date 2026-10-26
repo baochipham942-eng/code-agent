@@ -83,6 +83,7 @@ import { signalRendererReady, RENDERER_READY_SETTLE_CAP_MS } from './utils/rende
 import { whenInitialSessionStateSettled } from './stores/sessionStore';
 import { useAppIpcListeners } from './hooks/useAppIpcListeners';
 import { useInAppValidationBridge } from './hooks/useInAppValidationBridge';
+import { useLedgerDeepLink } from './hooks/useLedgerDeepLink';
 import { useI18n } from './hooks/useI18n';
 import { useCronOsNotification } from './hooks/useCronOsNotification';
 import { InternalFeatureWorkspaceRegistration, PluginUiActivationPolicyBootstrap, ShellOverlaySlotHost, WorkspacePageSlotHost } from './slots/productSlotHosts';
@@ -149,6 +150,7 @@ export const App: React.FC = () => {
   useSurfaceExecutionPip(); // 当前会话 Browser / Computer 共享的可信实时 PiP
   useAgentHalo(); // CUA 原生驱动时的系统级光晕跟随（单指针共驾聚光灯）
   useInAppValidationBridge(); // browser-control 共用验证链路，不依赖内部评测包
+  useLedgerDeepLink(); // ?open=automation|role：冷启动切会话会关掉二级页，钩子里补摊一次
   const {
     showSettings,
     showPromptManager,
@@ -186,18 +188,6 @@ export const App: React.FC = () => {
     openWorkbenchTab,
     syncTaskWorkbenchForActivity,
   } = useAppStore();
-
-  // verify-shot 只能打开 URL、不能点 tab。?open=automation|role 把运行账本页直接摊开。
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const open = params.get('open');
-    if (open === 'automation') {
-      useAppStore.getState().setShowCronCenter(true);
-    } else if (open === 'role') {
-      const roleId = params.get('roleId');
-      if (roleId) useAppStore.getState().openExpertRoleDetail(roleId);
-    }
-  }, []);
 
   // 响应式：窄屏先把横向空间让给聊天和右侧状态面板。
   const windowWidth = useWindowWidth();

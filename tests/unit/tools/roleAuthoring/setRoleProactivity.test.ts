@@ -178,8 +178,18 @@ describe('set_role_proactivity（真实 configService，临时数据目录）', 
     expect(reason).toContain('每日简报');
     expect(reason).toContain('每天 09:00');
     expect(reason).toContain('永远别提：+ 天气');
-    expect(reason).not.toContain('免打扰时段'); // quiet hours 未动不出现 diff 行
-    expect((hint as { details?: { before?: unknown; after?: unknown } })?.details).toMatchObject({
+    expect(reason).toContain('免打扰时段：未变');
+    // 真审批请求读的是 hint.reason（shadowAdapter 优先于第 3 参），两处都必须是同一份复述。
+    const hintRecord = hint as {
+      reason?: string;
+      details?: { before?: unknown; after?: unknown; preview?: { summary?: string }; changes?: string };
+    };
+    expect(hintRecord.reason).toBe(reason);
+    expect(hintRecord.reason).toContain('实时介入');
+    expect(hintRecord.reason).toContain('每天 09:00');
+    expect(hintRecord.details?.preview?.summary).toBe(reason);
+    expect(hintRecord.details?.changes).toBe(reason);
+    expect(hintRecord.details).toMatchObject({
       roleId: '研究员',
       before: { level: 'realtime' },
       after: { level: 'daily', cadence: '0 0 9 * * *' },

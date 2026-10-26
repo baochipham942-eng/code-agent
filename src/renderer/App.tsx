@@ -187,6 +187,18 @@ export const App: React.FC = () => {
     syncTaskWorkbenchForActivity,
   } = useAppStore();
 
+  // verify-shot 只能打开 URL、不能点 tab。?open=automation|role 把运行账本页直接摊开。
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const open = params.get('open');
+    if (open === 'automation') {
+      useAppStore.getState().setShowCronCenter(true);
+    } else if (open === 'role') {
+      const roleId = params.get('roleId');
+      if (roleId) useAppStore.getState().openExpertRoleDetail(roleId);
+    }
+  }, []);
+
   // 响应式：窄屏先把横向空间让给聊天和右侧状态面板。
   const windowWidth = useWindowWidth();
   const isNarrowViewport = windowWidth < SIDEBAR_AUTO_COLLAPSE_WIDTH;

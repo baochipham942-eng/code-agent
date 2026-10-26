@@ -4,8 +4,10 @@ import { useI18n } from '../../../hooks/useI18n';
 import {
   formatDateTime,
   formatDuration,
+  formatRunCostUsd,
   getExecutionStatusMeta,
 } from './types';
+import { wakeSkipSentence } from './wakeSkipSentence';
 import { CronRunsOnPill } from './CronRunsOnSelector';
 
 interface CronExecutionListProps {
@@ -46,6 +48,7 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
             <th className="px-3 py-2">{cc.colScheduledAt}</th>
             <th className="px-3 py-2">{cc.colStartedAt}</th>
             <th className="px-3 py-2">{cc.colDuration}</th>
+            <th className="px-3 py-2">{cc.colCost}</th>
             <th className="px-3 py-2">{cc.colRetry}</th>
             <th className="px-3 py-2">{cc.colExitCode}</th>
           </tr>
@@ -53,6 +56,12 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
         <tbody>
           {executions.map((execution) => {
             const statusMeta = getExecutionStatusMeta(execution.status);
+            const wakeSkipText = wakeSkipSentence(execution, {
+              silentLevel: cc.wakeSkipSilentLevel,
+              dailyBudget: cc.wakeSkipDailyBudget,
+              quietHours: cc.wakeSkipQuietHours,
+            });
+            const costRunsOn = execution.runsOn ?? runsOnByJobId?.[execution.jobId];
             const isSelected = execution.id === selectedExecutionId;
             return (
               <tr
@@ -71,6 +80,9 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
                   <span className={`rounded-full px-2 py-1 text-xs ${statusMeta.className}`}>
                     {cc.status[execution.status]}
                   </span>
+                {wakeSkipText && (
+                  <div className="mt-1 text-xs text-zinc-500" data-testid="cron-wake-skip-reason">{wakeSkipText}</div>
+                )}
                 </td>
                 {runsOnByJobId && (
                   <td className="px-3 py-2">
@@ -84,6 +96,7 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
                 <td className="px-3 py-2 text-zinc-300">{formatDateTime(execution.scheduledAt)}</td>
                 <td className="px-3 py-2 text-zinc-400">{formatDateTime(execution.startedAt)}</td>
                 <td className="px-3 py-2 text-zinc-300">{formatDuration(execution.duration)}</td>
+                <td className="px-3 py-2 text-zinc-300 tabular-nums" data-testid="cron-execution-cost-cell">{formatRunCostUsd(execution.cost, costRunsOn)}</td>
                 <td className="px-3 py-2 text-zinc-300">{execution.retryAttempt}</td>
                 <td className="px-3 py-2 text-zinc-300">
                   {execution.exitCode != null ? execution.exitCode : '—'}

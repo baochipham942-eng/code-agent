@@ -452,6 +452,12 @@ export function formatDuration(ms?: number): string {
   return `${(ms / 60_000).toFixed(1)}m`;
 }
 
+/** 单次运行/每日小计的美元显示（保留 4 位小数）。无模型调用与云端运行都是 dash。 */
+export function formatRunCostUsd(value?: number, runsOn?: 'local' | 'cloud'): string {
+  if (runsOn === 'cloud' || value == null || !Number.isFinite(value)) return '—';
+  return `$${value.toFixed(4)}`;
+}
+
 /** event 摘要的显示名（来自通道目录）：有名字用名字，缺了回落 id。 */
 export interface EventScheduleDisplayNames {
   accountName?: string;

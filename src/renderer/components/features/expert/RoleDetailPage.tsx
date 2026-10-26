@@ -36,6 +36,7 @@ import { resolveSessionConnectorIds } from "@shared/contract/expertConnectors";
 import { RoleIcon } from "../shared/RoleIcon";
 import { getRoleAvatarAsset } from "./roleAvatarAssets";
 import { SettingsSection } from "../settings/SettingsLayout";
+import { RoleWakeLedger } from "./RoleWakeLedger";
 import { RoleBindingsSection } from "../settings/tabs/RoleBindingsSection";
 import { RoleMemoryActions } from "./RoleMemoryActions";
 import { useAppStore } from "../../../stores/appStore";
@@ -848,11 +849,17 @@ export interface RoleDetailPageProps {
 type RoleDetailTab = 'basic' | 'personalization' | 'skills' | 'model' | 'security' | 'records';
 const ROLE_DETAIL_TABS: readonly RoleDetailTab[] = ['basic', 'personalization', 'skills', 'model', 'security', 'records'];
 
+function initialRoleDetailTab(): RoleDetailTab {
+  if (typeof window === 'undefined') return 'basic';
+  const requested = new URLSearchParams(window.location.search).get('roleTab');
+  return ROLE_DETAIL_TABS.includes(requested as RoleDetailTab) ? requested as RoleDetailTab : 'basic';
+}
+
 export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
   const { t } = useI18n();
   const roleText = t.settings.roles;
   const expertText = t.expert;
-  const [tab, setTab] = useState<RoleDetailTab>('basic');
+  const [tab, setTab] = useState<RoleDetailTab>(initialRoleDetailTab);
   // selector 必须返回稳定引用：返回新建的闭包会让 zustand 每次 getSnapshot 都不同 → 无限重渲染
   const setShowCapabilityHub = useAppStore((state) => state.setShowCapabilityHub);
   const closeDetail = useCallback(() => setShowCapabilityHub(true), [setShowCapabilityHub]);
@@ -937,6 +944,7 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
             </div>
           </SettingsSection>
           <BoundAutomationsSection jobs={boundCronJobs} />
+          <RoleWakeLedger roleId={roleId} />
           <RoleBindingsSection roleId={roleId} />
           <SettingsSection
             title={`${roleText.detail.memoriesTitlePrefix}${detail.memories.length}${roleText.detail.memoriesTitleSuffix}`}

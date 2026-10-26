@@ -139,4 +139,28 @@ describe('CronCenterPanel 双 tab（批C4 WorkBuddy 式改造）', () => {
       expect(screen.getByText('每日晨报')).toBeTruthy();
     });
   });
+
+  it('运行记录 tab 用同一日归集函数显示今天的成本小计', async () => {
+    const { cronClient } = await import('../../../src/renderer/services/cronClient');
+    const now = Date.now();
+    vi.mocked(cronClient.listJobs).mockResolvedValue([{ id: 'job-1', name: '日报' } as never]);
+    vi.mocked(cronClient.getRecentExecutions).mockResolvedValue([{
+      id: 'exec-cost',
+      jobId: 'job-1',
+      runsOn: 'local',
+      status: 'completed',
+      scheduledAt: now,
+      startedAt: now,
+      duration: 10,
+      retryAttempt: 0,
+      cost: 0.0123,
+    } as never]);
+    render(<CronCenterPanel onClose={() => undefined} />);
+    screen.getByTestId('cron-center-tab-runs').click();
+    await vi.waitFor(() => {
+      const summary = screen.getByTestId('cron-daily-cost-summary');
+      expect(summary.textContent).toContain('今天');
+      expect(summary.textContent).toContain('$0.0123');
+    });
+  });
 });

@@ -15,6 +15,7 @@
 // ============================================================================
 
 import type { Message, PermissionResponse } from '../../shared/contract';
+import { isApprovePermissionResponse } from '../../shared/contract/permission';
 import type { PendingApprovalRecord } from '../../shared/contract/pendingApproval';
 import type { PendingApprovalRepository } from '../services/core/repositories/PendingApprovalRepository';
 import { getDatabase } from '../services/core/databaseService';
@@ -221,7 +222,9 @@ export async function resumeSurvivingParkedApproval(input: {
     return { handled: true, status: 'denied', resultRef: outcome.status === 'payload_unavailable' ? null : outcome.resultRef };
   };
 
-  if (input.response !== 'allow' && input.response !== 'allow_session' && input.response !== 'allow_standing') {
+  // 放行判定单一真源（rework r2）：手写清单曾把 allow_run/allow_24h 当拒绝——
+  // 用户在收件箱点的「到这次做完为止/24 小时内允许」经重启恢复反而落 rejected。
+  if (!isApprovePermissionResponse(input.response)) {
     return deny('rejected by user after restart', 'approval rejected by user after restart');
   }
 

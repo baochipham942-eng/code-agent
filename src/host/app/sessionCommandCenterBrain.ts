@@ -3,7 +3,9 @@ import { SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS } from '../../shared/consta
 import { getTextForegroundToolNames } from '../tools/protocolRegistry';
 import { detectTaskFeatures } from '../prompts/systemReminders';
 
-export const SESSION_COMMAND_CENTER_BRAIN_CONTEXT = [
+// 不导出：web/桌面两条装配路都经 getSessionCommandCenterBrainContextForPrompt 取块，
+// 导出常量只会引回「第二条装配路直接拼常量」的旧形态（rework r1）。
+const SESSION_COMMAND_CENTER_BRAIN_CONTEXT = [
   '<session_command_center>',
   '你是这条文字会话的前台 brain。前台要保持快速流式回复，耗时执行一律交给后台任务槽。',
   '分诊规则：',
@@ -73,6 +75,18 @@ function isMorningBriefSaveDraftReply(prompt: string): boolean {
   return SAVE_DRAFT_REPLY_RE.test(prompt);
 }
 
+/**
+ * 本轮指挥台 brain 的系统上下文块（含回合级附加规则），桌面与 web 两条装配路的单一真源：
+ * 桌面经 withSessionCommandCenterBrain 拼进 turnSystemContext，web 主链
+ * （routes/agent.ts 的 config.systemPrompt）直接展开同一份块——见
+ * shared/constants/sessionCommandCenter.ts 的警告：装配形状各异，判据与内容必须只有一份。
+ */
+export function getSessionCommandCenterBrainContextForPrompt(prompt: string): string[] {
+  const blocks = [SESSION_COMMAND_CENTER_BRAIN_CONTEXT];
+  if (isMorningBriefSaveDraftReply(prompt)) blocks.push(MORNING_BRIEF_SAVE_DRAFT_CONTEXT);
+  return blocks;
+}
+
 export function getTextForegroundToolNamesForPrompt(prompt: string): string[] {
   const base = getTextForegroundToolNames();
   const extras: string[] = [];
@@ -92,11 +106,8 @@ export function withSessionCommandCenterBrain(
   const text = prompt ?? '';
   const turnSystemContext = [
     ...(options?.turnSystemContext ?? []),
-    SESSION_COMMAND_CENTER_BRAIN_CONTEXT,
+    ...getSessionCommandCenterBrainContextForPrompt(text),
   ];
-  if (isMorningBriefSaveDraftReply(text)) {
-    turnSystemContext.push(MORNING_BRIEF_SAVE_DRAFT_CONTEXT);
-  }
   return {
     ...(options ?? {}),
     mode: options?.mode ?? 'normal',

@@ -5,17 +5,21 @@
 // 缺一句"这是流程设计，不是权限问题或环境故障"的说明，模型只能对用户编"环境受限"。
 // 对称应用 skillBoundaryScope.ts 的 buildStrictToolsetNotice 同款声明。
 //
-// 桌面（agentAppService.ts）与 web（web/routes/agent.ts）两条判定通路共用同一份
-// SESSION_COMMAND_CENTER_BRAIN_CONTEXT 常量（web 直接 import 常量，桌面经
-// withSessionCommandCenterBrain 拼进 turnSystemContext），改这一处即两路生效。
+// 桌面（agentAppService.ts）与 web（web/routes/agent.ts）两条装配路共用同一份
+// brain 上下文清单：getSessionCommandCenterBrainContextForPrompt（桌面经
+// withSessionCommandCenterBrain 拼进 turnSystemContext，web 展开进 config.systemPrompt），
+// 改这一处即两路生效。
 // ============================================================================
 
 import { describe, expect, it } from 'vitest';
 import {
-  SESSION_COMMAND_CENTER_BRAIN_CONTEXT,
+  getSessionCommandCenterBrainContextForPrompt,
   getTextForegroundToolNamesForPrompt,
   withSessionCommandCenterBrain,
 } from '../../../src/host/app/sessionCommandCenterBrain';
+// 常量已不导出（防止装配路绕过单一真源直接拼常量），这里从共用函数取基块：
+// 空白轮次不命中任何回合级规则，返回值唯一成员就是 brain 基块。
+const SESSION_COMMAND_CENTER_BRAIN_CONTEXT = getSessionCommandCenterBrainContextForPrompt('')[0];
 import {
   isSessionCommandCenterTurn,
   SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
@@ -217,6 +221,21 @@ describe('晨报回复「存草稿 N」才打开 mail_draft', () => {
     expect(block).toContain('delegate_task');
     expect(block).toContain('一共有几封草稿');
     expect(block).toContain('没有发送');
+  });
+
+  // rework r1：回合规则块的单一真源。桌面（withSessionCommandCenterBrain）和 web 主链
+  // （routes/agent.ts systemPrompt）两条装配路都消费这一个函数——判据或内容改出第二份，
+  // 就是「修了桌面漏了 web」的复发。
+  it('getSessionCommandCenterBrainContextForPrompt 是两条装配路共用的块清单', () => {
+    expect(getSessionCommandCenterBrainContextForPrompt('今天有什么安排'))
+      .toEqual([SESSION_COMMAND_CENTER_BRAIN_CONTEXT]);
+    const blocks = getSessionCommandCenterBrainContextForPrompt('存草稿 2');
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toBe(SESSION_COMMAND_CENTER_BRAIN_CONTEXT);
+    expect(blocks[1]).toContain('<morning_brief_save_draft>');
+    // 与桌面装配路的产物同形：withSessionCommandCenterBrain 的尾部即这份清单
+    const options = withSessionCommandCenterBrain(undefined, '存草稿 2');
+    expect(options.turnSystemContext?.slice(-2)).toEqual(blocks);
   });
 });
 

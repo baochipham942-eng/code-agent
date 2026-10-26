@@ -141,6 +141,19 @@ describe('RoleRoutinesSection', () => {
     expect(screen.getByTestId('role-bound-automation-toggle-daily-report').textContent).toContain('暂停');
   });
 
+  it('labels a webhook event schedule as Webhook', () => {
+    renderSection([{
+      id: 'hook',
+      name: '站点回调',
+      schedule: { type: 'event', source: 'webhook', eventName: 'message' },
+      enabled: true,
+      actionType: 'agent',
+    }]);
+    const row = screen.getByTestId('role-bound-automation-hook');
+    expect(row.textContent).toContain('事件触发 · Webhook');
+    expect(row.textContent).not.toContain('undefined');
+  });
+
   it('shows Run now on a role-wake row and does not show Pause', () => {
     renderSection();
     const wake = screen.getByTestId('role-bound-automation-wake');

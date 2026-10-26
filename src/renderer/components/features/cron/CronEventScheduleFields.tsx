@@ -2,9 +2,8 @@
 // CronEventScheduleFields —— 'event' 调度（通道消息/群监听）的触发源选择。
 // 账号 + 可选会话/群都来自 useChannelCatalog（与结果推送同一份目录）；选了具体
 // 群 = 群监听绑定（未 @ 也触发），留空 = 该账号任意会话。
-// connector:mail 源的草稿（mailSource）不走通道选择：mail 源编辑 UI 未开放，
-// 绑定锁定为只读展示（保存时原样保留），不给「顺手选个通道账号把 mail 触发
-// 静默改绑」留入口。
+// connector:mail 源的草稿不走本组件：mail 源有自己的编辑 UI（CronMailEventFields，
+// N-TRIGGER-MAIL-CREATE-ENTRY-K1 起），draft 级 scheduleType 分型为 'event-mail'。
 // 单次预算上限是 event 任务的必填项，直接摆在触发源旁边（不藏进「高级选项」），
 // 与高级选项里的同一个 draft 字段双向同步。护栏提示按 shared 校验器的 reason
 // 映射出的本地化文案渲染（校验判据与 createJob 同一份；是否显示由外层闸门控制，
@@ -12,8 +11,6 @@
 // ============================================================================
 
 import React, { useEffect, useRef } from 'react';
-import type { EventConnectorMailScheduleConfig } from '@shared/contract';
-import { CRON_EVENT_TRIGGER } from '@shared/constants';
 import { Button } from '../../primitives/Button';
 import { Input } from '../../primitives/Input';
 import { Select } from '../../primitives/Select';
@@ -27,8 +24,6 @@ interface CronEventScheduleFieldsProps {
   accountId: string;
   /** 限定的会话/群 id；空 = 该账号任意会话。 */
   chatId: string;
-  /** connector:mail 源的原绑定（编辑/复制 mail 任务时）：锁定只读展示，不渲染通道选择。 */
-  mailSource?: EventConnectorMailScheduleConfig | null;
   /** 选定账号；第二参带回通道目录里的账号显示名（确认卡行摘要用，编辑器等调用方可忽略）。 */
   onAccountChange: (accountId: string, accountName?: string) => void;
   /** 选定会话/群（空 = 任意会话）；第二参带回目录里的群显示名（同上，可忽略）。 */
@@ -48,7 +43,6 @@ interface CronEventScheduleFieldsProps {
 export const CronEventScheduleFields: React.FC<CronEventScheduleFieldsProps> = ({
   accountId,
   chatId,
-  mailSource,
   onAccountChange,
   onChatChange,
   maxRunBudget,
@@ -113,90 +107,71 @@ export const CronEventScheduleFields: React.FC<CronEventScheduleFieldsProps> = (
 
   return (
     <div className="space-y-3" data-testid="cron-event-schedule-fields">
-      {mailSource ? (
-        <>
-          <FormField label={cc.eventAccountLabel} htmlFor="cron-event-mail-source">
-            <div
-              id="cron-event-mail-source"
-              className="flex h-9 items-center rounded-lg border border-zinc-800 bg-zinc-900/60 px-3 text-sm text-zinc-300"
-              data-testid="cron-event-mail-source"
-            >
-              {mailSource.accountId} · {mailSource.mailbox ?? CRON_EVENT_TRIGGER.DEFAULT_MAILBOX}
-            </div>
-          </FormField>
-          <p className="text-xs text-zinc-500" data-testid="cron-event-mail-locked-hint">
-            {cc.eventMailSourceLockedHint}
-          </p>
-        </>
-      ) : (
-        <>
-          <FormField label={cc.eventAccountLabel} required htmlFor="cron-event-account">
+      <FormField label={cc.eventAccountLabel} required htmlFor="cron-event-account">
+        <Select
+          id="cron-event-account"
+          value={staleAccount ? '__unavailable__' : accountId}
+          options={accountOptions}
+          onChange={(event) => handleAccountChange(event.target.value)}
+          disabled={accountsLoading}
+        />
+      </FormField>
+
+      {accountsLoading && <p className="text-xs text-zinc-500">{cc.resultPushLoading}</p>}
+
+      {!accountsLoading && accounts.length === 0 && !staleAccount && (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+          <span>{cc.eventNoAccounts}</span>
+          <Button size="sm" variant="ghost" onClick={() => openSettingsTab('channels')}>
+            {cc.resultPushConnect}
+          </Button>
+        </div>
+      )}
+
+      {staleAccount && (
+        <div
+          className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-badge-warning"
+          data-testid="cron-event-account-unavailable"
+        >
+          {cc.eventAccountUnavailable.replace('{value}', accountId)}
+        </div>
+      )}
+
+      {selectedAccount && conversationState?.loading && (
+        <p className="text-xs text-zinc-500">{cc.resultPushLoading}</p>
+      )}
+
+      {selectedAccount && conversationState && !conversationState.loading && conversationState.supported && !conversationState.error && (
+        <div>
+          <FormField label={cc.eventChatLabel} htmlFor="cron-event-chat">
             <Select
-              id="cron-event-account"
-              value={staleAccount ? '__unavailable__' : accountId}
-              options={accountOptions}
-              onChange={(event) => handleAccountChange(event.target.value)}
-              disabled={accountsLoading}
+              id="cron-event-chat"
+              value={chatId}
+              options={chatOptions}
+              onChange={(event) => onChatChange(
+                event.target.value,
+                conversationState.conversations.find((conversation) => conversation.id === event.target.value)?.name,
+              )}
             />
           </FormField>
+          <p className="mt-1 text-xs text-zinc-500">{cc.eventChatHint}</p>
+        </div>
+      )}
 
-          {accountsLoading && <p className="text-xs text-zinc-500">{cc.resultPushLoading}</p>}
-
-          {!accountsLoading && accounts.length === 0 && !staleAccount && (
-            <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
-              <span>{cc.eventNoAccounts}</span>
-              <Button size="sm" variant="ghost" onClick={() => openSettingsTab('channels')}>
-                {cc.resultPushConnect}
-              </Button>
-            </div>
-          )}
-
-          {staleAccount && (
-            <div
-              className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-badge-warning"
-              data-testid="cron-event-account-unavailable"
-            >
-              {cc.eventAccountUnavailable.replace('{value}', accountId)}
-            </div>
-          )}
-
-          {selectedAccount && conversationState?.loading && (
-            <p className="text-xs text-zinc-500">{cc.resultPushLoading}</p>
-          )}
-
-          {selectedAccount && conversationState && !conversationState.loading && conversationState.supported && !conversationState.error && (
-            <div>
-              <FormField label={cc.eventChatLabel} htmlFor="cron-event-chat">
-                <Select
-                  id="cron-event-chat"
-                  value={chatId}
-                  options={chatOptions}
-                  onChange={(event) => onChatChange(
-                    event.target.value,
-                    conversationState.conversations.find((conversation) => conversation.id === event.target.value)?.name,
-                  )}
-                />
-              </FormField>
-              <p className="mt-1 text-xs text-zinc-500">{cc.eventChatHint}</p>
-            </div>
-          )}
-
-          {selectedAccount && conversationState && !conversationState.loading && (!conversationState.supported || conversationState.error) && (
-            <div>
-              <FormField label={cc.eventChatManualLabel} htmlFor="cron-event-chat-manual">
-                <Input
-                  id="cron-event-chat-manual"
-                  value={chatId}
-                  placeholder={cc.eventChatManualPlaceholder}
-                  onChange={(event) => onChatChange(event.target.value)}
-                />
-              </FormField>
-              <p className="mt-1 text-xs text-zinc-500">
-                {conversationState.error ? cc.resultPushListFailed : cc.eventChatManualHint}
-              </p>
-            </div>
-          )}
-        </>
+      {selectedAccount && conversationState && !conversationState.loading && (!conversationState.supported || conversationState.error) && (
+        <div>
+          <FormField label={cc.eventChatManualLabel} htmlFor="cron-event-chat-manual">
+            <Input
+              id="cron-event-chat-manual"
+              value={chatId}
+              placeholder={cc.eventChatManualPlaceholder}
+              onChange={(event) => onChatChange(event.target.value)}
+            />
+          </FormField>
+          <p className="mt-1 text-xs text-zinc-500">
+            {conversationState.error ? cc.resultPushListFailed : cc.eventChatManualHint}
+          </p>
+        </div>
       )}
 
       <FormField

@@ -20,6 +20,7 @@ import { cronCenterZh } from '../../../src/renderer/i18n/cronCenter';
 const mocks = vi.hoisted(() => ({
   generateFromPrompt: vi.fn(),
   createJob: vi.fn(),
+  listMailSources: vi.fn(),
   toast: { info: vi.fn(), success: vi.fn(), warning: vi.fn(), error: vi.fn() },
 }));
 
@@ -32,6 +33,7 @@ vi.mock('../../../src/renderer/services/cronClient', () => ({
   cronClient: {
     generateFromPrompt: mocks.generateFromPrompt,
     createJob: mocks.createJob,
+    listMailSources: mocks.listMailSources,
   },
 }));
 vi.mock('../../../src/renderer/services/ipcService', () => ({ default: ipc }));
@@ -81,6 +83,23 @@ const createdJob = {
   updatedAt: 1,
 };
 
+/** mail(connector) 草案（N-TRIGGER-MAIL-CREATE-ENTRY-K1）：模型不编造账号，卡内选。 */
+const mailDraftFromModel = {
+  name: '新邮件变待办',
+  description: '有新邮件就整理成待办',
+  enabled: true,
+  scheduleType: 'event',
+  schedule: { type: 'event', source: 'connector', connector: 'mail', eventName: 'message' },
+  action: { type: 'agent', agentType: 'default', prompt: '把新邮件整理成待办' },
+  restatement: { what: '盯着收件箱的新邮件', notifyWhen: '有新邮件到达时' },
+};
+
+const mailSourcesOk = {
+  ok: true,
+  accounts: [{ name: '_icloud' }, { name: 'gmail' }],
+  mailboxesByAccount: { _icloud: ['INBOX', '归档'], gmail: ['INBOX'] },
+};
+
 function makeEventPending(overrides: Partial<PendingScheduleDraft> = {}): PendingScheduleDraft {
   const normalized = normalizeScheduleDraft(eventDraftFromModel);
   if (!normalized) throw new Error('event draft should normalize');
@@ -90,6 +109,18 @@ function makeEventPending(overrides: Partial<PendingScheduleDraft> = {}): Pendin
     description: '关注发布群，有人提到发布就总结给我',
     sourceSessionId: 'session-1',
     eventGroupName: normalized.eventGroupName,
+    ...overrides,
+  };
+}
+
+function makeMailPending(overrides: Partial<PendingScheduleDraft> = {}): PendingScheduleDraft {
+  const normalized = normalizeScheduleDraft(mailDraftFromModel);
+  if (!normalized) throw new Error('mail draft should normalize');
+  return {
+    input: normalized.input,
+    restatement: normalized.restatement,
+    description: '有新邮件就整理成待办',
+    sourceSessionId: 'session-1',
     ...overrides,
   };
 }
@@ -183,12 +214,42 @@ describe('event schedule draft normalization', () => {
     expect((normalized?.input as Record<string, unknown>).maxRunBudget).toBe(2);
   });
 
-  it('rejects mail-style connector event drafts (no creation UI for that source)', () => {
-    const mailDraft = {
-      ...eventDraftFromModel,
-      schedule: { type: 'event', source: 'connector', connector: 'mail', eventName: 'message', accountId: 'me@local' },
-    };
-    expect(normalizeScheduleDraft(mailDraft)).toBeNull();
+  it('accepts a mail(connector) event draft: empty accountId at draft time, mailbox optional, defaults applied (N-TRIGGER-MAIL-CREATE-ENTRY-K1)', () => {
+    // 模型不带账号（不编造）；accountId 空串 = 卡内还没选，确认按钮由共享校验器把关。
+    const normalized = normalizeScheduleDraft(mailDraftFromModel);
+    expect(normalized).not.toBeNull();
+    expect(normalized?.eventGroupName).toBeUndefined();
+    const input = normalized?.input as Record<string, unknown>;
+    expect(input.schedule).toEqual({
+      type: 'event', source: 'connector', connector: 'mail', eventName: 'message', accountId: '',
+    });
+    expect(input.scheduleType).toBe('event');
+    expect(input.runsOn).toBe('local');
+    expect(input.maxRunBudget).toBe(0.5);
+  });
+
+  it('keeps a model-provided mail account/mailbox and strips an empty mailbox key', () => {
+    const normalized = normalizeScheduleDraft({
+      ...mailDraftFromModel,
+      schedule: {
+        type: 'event', source: 'connector', connector: 'mail', eventName: 'message',
+        accountId: '_icloud', mailbox: '   ',
+      },
+    });
+    const input = normalized?.input as Record<string, unknown>;
+    expect(input.schedule).toMatchObject({ accountId: '_icloud' });
+    expect(input.schedule).not.toHaveProperty('mailbox');
+  });
+
+  it('still rejects non-mail connector sources and non-message mail events', () => {
+    expect(normalizeScheduleDraft({
+      ...mailDraftFromModel,
+      schedule: { type: 'event', source: 'connector', connector: 'calendar', eventName: 'message' },
+    })).toBeNull();
+    expect(normalizeScheduleDraft({
+      ...mailDraftFromModel,
+      schedule: { type: 'event', source: 'connector', connector: 'mail', eventName: 'sent' },
+    })).toBeNull();
   });
 
   it('rejects non-message event names and non-agent actions on event drafts', () => {
@@ -230,10 +291,55 @@ describe('event schedule draft normalization', () => {
       groupFallback: cronCenterZh.cronCenter.eventConfirmGroupFallback,
       groupAnyChat: cronCenterZh.cronCenter.eventConfirmGroupAnyChat,
       budget: cronCenterZh.cronCenter.eventBudgetLabel,
+      mail: cronCenterZh.cronCenter.eventConfirmMail,
+      mailFallback: cronCenterZh.cronCenter.eventConfirmMailFallback,
+      mailTrigger: cronCenterZh.cronCenter.eventMailTriggerPrefix,
     });
     expect(rows.map((row) => row.key)).toEqual(['what', 'group', 'notifyWhen', 'budget', 'result']);
     expect(rows.find((row) => row.key === 'group')?.value).toBe('发布群');
     expect(rows.find((row) => row.key === 'budget')?.value).toBe('0.5');
+  });
+
+  it('builds mail rows: 「监听哪个邮箱」行随绑定走（新邮件 · 账号 · 邮箱），未选账号走兜底文案', () => {
+    const labels = {
+      what: '检查什么', when: '什么时候', notifyWhen: '什么变化值得通知', result: '结果送到哪里',
+      fallbackWhat: '按任务描述执行', fallbackNotifyWhen: '完成时通知', reviewInbox: '自动化审核收件箱',
+    };
+    const mailLabels = {
+      group: cronCenterZh.cronCenter.eventConfirmGroup,
+      groupFallback: cronCenterZh.cronCenter.eventConfirmGroupFallback,
+      groupAnyChat: cronCenterZh.cronCenter.eventConfirmGroupAnyChat,
+      budget: cronCenterZh.cronCenter.eventBudgetLabel,
+      mail: cronCenterZh.cronCenter.eventConfirmMail,
+      mailFallback: cronCenterZh.cronCenter.eventConfirmMailFallback,
+      mailTrigger: cronCenterZh.cronCenter.eventMailTriggerPrefix,
+    };
+    const rowsOf = (draft: PendingScheduleDraft) => buildScheduleConfirmRows(draft, labels, 'zh', mailLabels);
+
+    // 未选账号：兜底文案，不出「什么时候」。
+    const unchosen = rowsOf(makeMailPending());
+    expect(unchosen.map((row) => row.key)).toEqual(['what', 'mail', 'notifyWhen', 'budget', 'result']);
+    expect(unchosen.find((row) => row.key === 'mail')?.value).toBe(cronCenterZh.cronCenter.eventConfirmMailFallback);
+
+    // 卡内选完账号（mailbox 缺省 = INBOX）：行值陈述实际绑定。
+    const withAccount = makeMailPending({
+      input: {
+        ...makeMailPending().input,
+        schedule: {
+          type: 'event', source: 'connector', connector: 'mail', eventName: 'message', accountId: '_icloud',
+        } as CreateCronJobInput['schedule'],
+      },
+    });
+    expect(rowsOf(withAccount).find((row) => row.key === 'mail')?.value).toBe('新邮件 · _icloud · INBOX');
+
+    // 显式选了邮箱：行值跟着换。
+    const withMailbox = makeMailPending({
+      input: {
+        ...withAccount.input,
+        schedule: { ...withAccount.input.schedule, mailbox: '归档' } as CreateCronJobInput['schedule'],
+      },
+    });
+    expect(rowsOf(withMailbox).find((row) => row.key === 'mail')?.value).toBe('新邮件 · _icloud · 归档');
   });
 });
 
@@ -499,6 +605,9 @@ describe('event confirm card — rework r1 regressions', () => {
       groupFallback: cronCenterZh.cronCenter.eventConfirmGroupFallback,
       groupAnyChat: cronCenterZh.cronCenter.eventConfirmGroupAnyChat,
       budget: cronCenterZh.cronCenter.eventBudgetLabel,
+      mail: cronCenterZh.cronCenter.eventConfirmMail,
+      mailFallback: cronCenterZh.cronCenter.eventConfirmMailFallback,
+      mailTrigger: cronCenterZh.cronCenter.eventMailTriggerPrefix,
     };
     const binding = (accountId: string, chatId?: string) => ({
       type: 'event',
@@ -531,5 +640,154 @@ describe('event confirm card — rework r1 regressions', () => {
     expect(groupOf(makeEventPending())).toBe('发布群');
     expect(groupOf({ ...makeEventPending(), eventGroupName: undefined }))
       .toBe(cronCenterZh.cronCenter.eventConfirmGroupFallback);
+  });
+});
+
+// ============================================================================
+// mail(connector) 草案（N-TRIGGER-MAIL-CREATE-ENTRY-K1）—— 确认卡与提交流。
+// 卡内账号/邮箱选择走 CronMailEventFields（数据来自 cron:listMailSources 桩）；
+// 确认按钮在账号未选时由共享校验器禁用；createJob 载荷 mailbox 缺省不落键。
+// ============================================================================
+
+/** 「监听哪个邮箱」行的值单元格（行 div 下内层 div 里的值 span）。 */
+function mailRowValue(): string {
+  return document.querySelector('[data-schedule-row="mail"] div span')?.textContent ?? '';
+}
+
+describe('mail schedule confirm card', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockChannelCatalog();
+    mocks.listMailSources.mockResolvedValue(mailSourcesOk);
+  });
+
+  it('renders the mail row with in-card account/mailbox selects; confirm gated until an account is picked', async () => {
+    render(<DraftHost initial={makeMailPending()} />);
+
+    // 行：what / mail / notifyWhen / budget / result，没有「什么时候」。
+    expect(screen.getByText(cronCenterZh.cronCenter.eventConfirmMail)).toBeTruthy();
+    expect(screen.queryByText('什么时候')).toBeNull();
+    expect(mailRowValue()).toBe(cronCenterZh.cronCenter.eventConfirmMailFallback);
+
+    // 未选账号：确认禁用。
+    expect(confirmButton().disabled).toBe(true);
+
+    // 卡内选账号 → 行值陈述实际绑定（mailbox 缺省 INBOX）→ 确认启用。
+    fireEvent.change(await screen.findByLabelText(/^邮件账号/), { target: { value: '_icloud' } });
+    await waitFor(() => expect(confirmButton().disabled).toBe(false));
+    await waitFor(() => expect(mailRowValue()).toBe('新邮件 · _icloud · INBOX'));
+
+    // 显式换邮箱：行值跟着换，确认仍可用。
+    fireEvent.change(screen.getByLabelText(/^监听邮箱/), { target: { value: '归档' } });
+    await waitFor(() => expect(mailRowValue()).toBe('新邮件 · _icloud · 归档'));
+    expect(confirmButton().disabled).toBe(false);
+  });
+
+  it('mail 草案卡内换账号时邮箱回落缺省（不携带上一账号的邮箱进新绑定）', async () => {
+    render(<DraftHost initial={makeMailPending()} />);
+
+    fireEvent.change(await screen.findByLabelText(/^邮件账号/), { target: { value: '_icloud' } });
+    fireEvent.change(screen.getByLabelText(/^监听邮箱/), { target: { value: '归档' } });
+    await waitFor(() => expect(mailRowValue()).toBe('新邮件 · _icloud · 归档'));
+
+    fireEvent.change(screen.getByLabelText(/^邮件账号/), { target: { value: 'gmail' } });
+    await waitFor(() => expect(mailRowValue()).toBe('新邮件 · gmail · INBOX'));
+  });
+
+  it('connector 不可用（reason 可区分）时字段区给对应提示，确认保持禁用', async () => {
+    mocks.listMailSources.mockResolvedValue({ ok: false, reason: 'not-authorized', detail: 'authorization denied' });
+    render(<DraftHost initial={makeMailPending()} />);
+
+    expect(await screen.findByText(cronCenterZh.cronCenter.eventMailUnavailableNotAuthorized)).toBeTruthy();
+    expect(screen.getByText(cronCenterZh.cronCenter.eventMailGoSettings)).toBeTruthy();
+    expect(confirmButton().disabled).toBe(true);
+  });
+});
+
+describe('mail schedule creation through the chat input pipeline', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockChannelCatalog();
+    mocks.generateFromPrompt.mockResolvedValue(mailDraftFromModel);
+    mocks.createJob.mockResolvedValue({ ...mailDraftFromModel, id: 'job-mail-1', createdAt: 1, updatedAt: 1 });
+  });
+
+  it('stores the normalized mail draft, and confirm ships connector schedule without an empty mailbox key', async () => {
+    const { result } = renderHook(() => useScheduleSubmitHarness());
+
+    await act(async () => {
+      await result.current.runScheduleCreation('有新邮件就整理成待办');
+    });
+    expect(result.current.pendingScheduleDraft).not.toBeNull();
+    expect(mocks.createJob).not.toHaveBeenCalled();
+
+    // 模拟确认卡内选完账号（mailbox 缺省 = INBOX，不落键）。
+    const pending = result.current.pendingScheduleDraft!;
+    act(() => {
+      result.current.storePendingScheduleDraft({
+        ...pending,
+        input: {
+          ...pending.input,
+          schedule: {
+            type: 'event', source: 'connector', connector: 'mail', eventName: 'message', accountId: '_icloud',
+          } as CreateCronJobInput['schedule'],
+        },
+      });
+    });
+    await act(async () => {
+      await result.current.confirmScheduleCreation();
+    });
+
+    expect(mocks.createJob).toHaveBeenCalledTimes(1);
+    const payload = mocks.createJob.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(payload.schedule).toEqual({
+      type: 'event', source: 'connector', connector: 'mail', eventName: 'message', accountId: '_icloud',
+    });
+    expect(payload.scheduleType).toBe('event');
+    expect(payload.runsOn).toBe('local');
+    expect(payload.maxRunBudget).toBe(0.5);
+  });
+
+  it('refuses to confirm a mail draft with no account picked: no createJob, readable toast', async () => {
+    const { result } = renderHook(() => useScheduleSubmitHarness());
+
+    await act(async () => {
+      await result.current.runScheduleCreation('有新邮件就整理成待办');
+    });
+    await act(async () => {
+      await result.current.confirmScheduleCreation();
+    });
+
+    expect(mocks.createJob).not.toHaveBeenCalled();
+    expect(mocks.toast.error).toHaveBeenCalledWith(cronCenterZh.cronCenter.eventValidation['invalid-schedule']);
+    expect(result.current.pendingScheduleDraft).not.toBeNull();
+  });
+
+  it('strips an empty mailbox key from the confirmed payload (default INBOX must not ship as "")', async () => {
+    const { result } = renderHook(() => useScheduleSubmitHarness());
+
+    await act(async () => {
+      await result.current.runScheduleCreation('有新邮件就整理成待办');
+    });
+    const pending = result.current.pendingScheduleDraft!;
+    act(() => {
+      result.current.storePendingScheduleDraft({
+        ...pending,
+        input: {
+          ...pending.input,
+          schedule: {
+            type: 'event', source: 'connector', connector: 'mail', eventName: 'message',
+            accountId: '_icloud', mailbox: '',
+          } as unknown as CreateCronJobInput['schedule'],
+        },
+      });
+    });
+    await act(async () => {
+      await result.current.confirmScheduleCreation();
+    });
+
+    expect(mocks.createJob).toHaveBeenCalledTimes(1);
+    const payload = mocks.createJob.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(payload.schedule).not.toHaveProperty('mailbox');
   });
 });

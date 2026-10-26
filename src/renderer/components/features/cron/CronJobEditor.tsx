@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { CronJobDefinition } from '@shared/contract';
-import { isHourAlignedCronExpression, suggestCronStaggerMinute } from '@shared/cronStagger';
 import { validateEventScheduleConstraints, type EventScheduleViolation } from '@shared/cronEventValidation';
 import { CRON_EVENT_TRIGGER, CRON_URGENCY_CRITERIA } from '@shared/constants';
 import { isRoleBoundCronJob } from '@shared/cronRoleBinding';
@@ -35,6 +34,8 @@ import { showCronLoginWallWarning } from './cronLoginWallNotice';
 import { CronRunsOnSelector } from './CronRunsOnSelector';
 import { CronResultChannelField } from './CronResultChannel';
 import { CronEventScheduleFields } from './CronEventScheduleFields';
+import { CronMailEventFields, mailEventValidationMessage } from './CronMailEventFields';
+import { CronScheduleFields } from './CronScheduleFields';
 
 interface CronJobEditorProps {
   isOpen: boolean;
@@ -59,19 +60,33 @@ const TABS: { key: EditorTab; label: string; icon: React.ReactNode }[] = [
 /** draft 形状 → shared 校验器口径（与 buildCronJobInput 提交前兜底用同一份判据）。 */
 function eventViolationFromDraft(draft: CronJobDraft): EventScheduleViolation | null {
   const budgetText = draft.maxRunBudget.trim();
-  // connector:mail 草稿（eventMailSource 挂原绑定）直接校验那份 mail 调度；
-  // 通道草稿照旧拼 channel 形状（与 buildCronJobInput 的回建路径同一份输入）。
-  return validateEventScheduleConstraints({
-    schedule: draft.eventMailSource ?? {
-      type: 'event',
-      source: 'channel',
-      eventName: 'message',
+  // 'event-mail'（connector:mail）：账号来自下拉（可改绑），直接校验 mail 形状；
+  // 'event'（通道）：照旧拼 channel 形状（与 buildCronJobInput 的回建路径同一份输入）。
+  const schedule = draft.scheduleType === 'event-mail'
+    ? {
+      type: 'event' as const,
+      source: 'connector' as const,
+      connector: 'mail' as const,
+      eventName: 'message' as const,
+      accountId: draft.eventMailAccountId,
+    }
+    : {
+      type: 'event' as const,
+      source: 'channel' as const,
+      eventName: 'message' as const,
       accountId: draft.eventAccountId,
-    },
+    };
+  return validateEventScheduleConstraints({
+    schedule,
     runsOn: draft.runsOn,
     action: { type: draft.actionType },
     maxRunBudget: budgetText === '' ? null : Number(budgetText),
   });
+}
+
+/** event 系调度（通道消息 / 新邮件）：共用的创建期护栏与本地化提示走同一条路。 */
+function isEventScheduleKind(scheduleType: CronJobDraft['scheduleType']): boolean {
+  return scheduleType === 'event' || scheduleType === 'event-mail';
 }
 
 export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copySource, onClose }) => {
@@ -164,13 +179,14 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       { value: 'every', label: '间隔循环' },
       { value: 'cron', label: 'Cron 表达式' },
       { value: 'event', label: cc.eventScheduleOption },
+      { value: 'event-mail', label: cc.eventMailScheduleOption },
     ],
-    [cc.eventScheduleOption]
+    [cc.eventScheduleOption, cc.eventMailScheduleOption]
   );
 
   // event 调度的创建期护栏（host createJob 同款）：只允许本机 + Agent 动作。
   const actionOptions = useMemo(
-    () => (draft.scheduleType === 'event'
+    () => (isEventScheduleKind(draft.scheduleType)
       ? [{ value: 'agent', label: 'Agent 任务' }]
       : [
         { value: 'shell', label: 'Shell 命令' },
@@ -182,10 +198,10 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
     [draft.scheduleType]
   );
 
-  // 从别的调度切到 event（或复制出 event 任务）时钉死护栏前置项：本机 + Agent。
+  // 从别的调度切到 event 系（或复制出 event 任务）时钉死护栏前置项：本机 + Agent。
   // 不静默留一个注定被 createJob 拒绝的组合在表单里。
   useEffect(() => {
-    if (draft.scheduleType === 'event' && (draft.runsOn !== 'local' || draft.actionType !== 'agent')) {
+    if (isEventScheduleKind(draft.scheduleType) && (draft.runsOn !== 'local' || draft.actionType !== 'agent')) {
       setDraft((current) => ({ ...current, runsOn: 'local', actionType: 'agent' }));
     }
   }, [draft.scheduleType, draft.runsOn, draft.actionType]);
@@ -193,7 +209,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
   // event 护栏：判据与 buildCronJobInput/createJob 同一份 shared 校验器，但展示走
   // reason → 本地化文案（用户看到的不是 createJob 的英文原文）；且只在闸门打开
   // （提交过/动过事件字段）后才显示，选完调度类型不立刻报。
-  const eventViolation = draft.scheduleType === 'event' ? eventViolationFromDraft(draft) : null;
+  const eventViolation = isEventScheduleKind(draft.scheduleType) ? eventViolationFromDraft(draft) : null;
   const eventValidationMessage = eventValidationArmed && eventViolation
     ? cc.eventValidation[eventViolation.reason]
     : null;
@@ -277,12 +293,17 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
 
     try {
       // event 护栏先行：本地化文案直接进表单错误框（buildCronJobInput 的英文兜底
-      // 不会再被用户看到），同时打开内联提示的闸门。
-      if (draft.scheduleType === 'event') {
+      // 不会再被用户看到），同时打开内联提示的闸门。mail 源的 invalid-schedule
+      //（还没选账号）用邮件专用文案。
+      if (isEventScheduleKind(draft.scheduleType)) {
         const violation = eventViolationFromDraft(draft);
         if (violation) {
           setEventValidationArmed(true);
-          setErrors({ form: cc.eventValidation[violation.reason] });
+          setErrors({
+            form: draft.scheduleType === 'event-mail'
+              ? mailEventValidationMessage(violation, cc)
+              : cc.eventValidation[violation.reason],
+          });
           return;
         }
       }
@@ -636,7 +657,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           <CronRunsOnSelector
             value={draft.runsOn}
             onChange={(runsOn) => setField('runsOn', runsOn)}
-            readOnly={Boolean(job) || draft.scheduleType === 'event'}
+            readOnly={Boolean(job) || isEventScheduleKind(draft.scheduleType)}
           />
 
           <div className="border-t border-zinc-800 pt-4">
@@ -653,106 +674,12 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                 />
               </FormField>
 
-              {draft.scheduleType === 'at' && (
-                <FormField label="执行时间" required error={errors.atDatetime}>
-                  <Input
-                    type="text"
-                    value={draft.atDatetime}
-                    onChange={(e) => setField('atDatetime', e.target.value)}
-                    placeholder="2026-03-19T09:00"
-                    className="font-mono"
-                  />
-                </FormField>
-              )}
-
-              {draft.scheduleType === 'every' && (
-                <>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <FormField label="间隔值" required error={errors.everyInterval}>
-                      <Input
-                        type="number"
-                        min={draft.runsOn === 'cloud'
-                          ? (draft.everyUnit === 'minutes' ? 60 : 1)
-                          : (draft.everyUnit === 'minutes' ? 5 : 1)}
-                        value={draft.everyInterval}
-                        onChange={(e) => setField('everyInterval', e.target.value)}
-                      />
-                    </FormField>
-                    <FormField label="单位">
-                      <Select
-                        value={draft.everyUnit}
-                        onChange={(e) => setField('everyUnit', e.target.value as CronJobDraft['everyUnit'])}
-                        options={[
-                          { value: 'minutes', label: '分钟' },
-                          { value: 'hours', label: '小时' },
-                          { value: 'days', label: '天' },
-                        ]}
-                      />
-                    </FormField>
-                  </div>
-                  <p className="text-xs text-zinc-500" data-testid="cron-min-interval-hint">
-                    {draft.runsOn === 'cloud' ? cc.cloudIntervalHint : cc.localIntervalHint}
-                  </p>
-                  {(draft.everyUnit === 'hours' || draft.everyUnit === 'days') && (
-                    <p className="text-xs text-zinc-500" data-testid="cron-auto-stagger-hint">
-                      {draft.everyUnit === 'hours' ? '小时' : '天'}级任务会按任务 ID 自动错峰到非整点分钟，避免扎堆触发。
-                    </p>
-                  )}
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <FormField label="开始时间">
-                      <Input
-                        type="text"
-                        value={draft.everyStartAt}
-                        onChange={(e) => setField('everyStartAt', e.target.value)}
-                        placeholder="可选"
-                        className="font-mono"
-                      />
-                    </FormField>
-                    <FormField label="结束时间">
-                      <Input
-                        type="text"
-                        value={draft.everyEndAt}
-                        onChange={(e) => setField('everyEndAt', e.target.value)}
-                        placeholder="可选"
-                        className="font-mono"
-                      />
-                    </FormField>
-                  </div>
-                </>
-              )}
-
-              {draft.scheduleType === 'cron' && (
-                <div className="space-y-3">
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <FormField label="Cron 表达式" required error={errors.cronExpression}>
-                      <Input
-                        value={draft.cronExpression}
-                        onChange={(e) => setField('cronExpression', e.target.value)}
-                        className="font-mono"
-                      />
-                    </FormField>
-                    <FormField label="时区">
-                      <Input
-                        value={draft.cronTimezone}
-                        onChange={(e) => setField('cronTimezone', e.target.value)}
-                        placeholder="Asia/Shanghai"
-                      />
-                    </FormField>
-                  </div>
-                  {isHourAlignedCronExpression(draft.cronExpression) && (
-                    <p className="text-xs text-badge-warning" data-testid="cron-stagger-hint">
-                      整点任务容易和其他任务扎堆触发，建议把分钟位错开到{' '}
-                      {suggestCronStaggerMinute(draft.cronExpression)} 分。
-                    </p>
-                  )}
-                </div>
-              )}
+              <CronScheduleFields draft={draft} setField={setField} errors={errors} />
 
               {draft.scheduleType === 'event' && (
                 <CronEventScheduleFields
                   accountId={draft.eventAccountId}
                   chatId={draft.eventChatId}
-                  mailSource={draft.eventMailSource ?? null}
                   onAccountChange={(eventAccountId) => {
                     setField('eventAccountId', eventAccountId);
                     setEventValidationArmed(true);
@@ -767,6 +694,28 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                     setEventValidationArmed(true);
                   }}
                   validationMessage={eventValidationMessage}
+                />
+              )}
+
+              {draft.scheduleType === 'event-mail' && (
+                <CronMailEventFields
+                  accountId={draft.eventMailAccountId}
+                  mailbox={draft.eventMailMailbox}
+                  onAccountChange={(eventMailAccountId) => {
+                    setField('eventMailAccountId', eventMailAccountId);
+                    setEventValidationArmed(true);
+                  }}
+                  onMailboxChange={(eventMailMailbox) => {
+                    setField('eventMailMailbox', eventMailMailbox);
+                    setEventValidationArmed(true);
+                  }}
+                  maxRunBudget={draft.maxRunBudget}
+                  onBudgetChange={(maxRunBudget) => {
+                    setField('maxRunBudget', maxRunBudget);
+                    setEventValidationArmed(true);
+                  }}
+                  // 与通道分支同一道显示闸门：光选「新邮件」不填不挨红框（r2 口径）。
+                  violation={eventValidationArmed ? eventViolation : null}
                 />
               )}
             </div>
@@ -966,7 +915,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                   onChange={(e) => {
                     setField('maxRunBudget', e.target.value);
                     // event 任务的预算也在这里改（与事件字段同一 draft 字段），同步开闸。
-                    if (draft.scheduleType === 'event') setEventValidationArmed(true);
+                    if (isEventScheduleKind(draft.scheduleType)) setEventValidationArmed(true);
                   }}
                   placeholder="不限"
                   data-testid="cron-budget-limit-input"

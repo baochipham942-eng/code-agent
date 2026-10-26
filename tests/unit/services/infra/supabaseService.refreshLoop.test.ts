@@ -146,7 +146,6 @@ describe('dead refresh token does not loop', () => {
     state.sessionKeys.length = 0;
     state.keychainReads = 0;
     state.keychainHits = 0;
-    state.storage = null;
     state.keychain = JSON.stringify({
       access_token: 'dead-access',
       refresh_token: 'dead-refresh',

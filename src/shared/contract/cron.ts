@@ -157,10 +157,14 @@ export interface CronExpressionConfig {
 
 /**
  * Event-triggered schedule: the job is fired by local events (channel inbound
- * messages or connector polling), not by time. No listening port, no HTTP
- * endpoint, no public callback is involved.
+ * messages, connector polling, or webhook deliveries pushed by the Neo cloud
+ * relay), not by time. No listening port, no HTTP endpoint, no public callback
+ * is involved on this machine.
  */
-export type EventScheduleConfig = EventChannelScheduleConfig | EventConnectorMailScheduleConfig;
+export type EventScheduleConfig =
+  | EventChannelScheduleConfig
+  | EventConnectorMailScheduleConfig
+  | EventWebhookScheduleConfig;
 
 /**
  * Channel event schedule: the job is fired by inbound messages of a channel
@@ -202,6 +206,26 @@ export interface EventConnectorMailScheduleConfig {
   eventName: 'message';
   /** Poll cadence (seconds). Default 60, floor 30. */
   pollIntervalSec?: number;
+  /** Events arriving within this window merge into one run (seconds). Default 10, max 300. */
+  batchWindowSec?: number;
+  /** Minimum spacing between two runs (seconds). Default 60, floor 30. */
+  minRunIntervalSec?: number;
+}
+
+/**
+ * Webhook event schedule (N-CRON-WEBHOOK-CLOUD-HOOK): the job is fired by
+ * deliveries that the Neo cloud relay pushes over the existing cloud event
+ * stream. External systems POST to a per-job hook URL on the relay; Neo never
+ * listens on a port itself, and the request body only ever enters the
+ * untrusted payload block. No accountId: the hook URL/token pair is the
+ * binding (minted per job by the relay, shown once, regenerable).
+ */
+export interface EventWebhookScheduleConfig {
+  type: 'event';
+  /** Event source: deliveries relayed from the Neo cloud webhook relay. */
+  source: 'webhook';
+  /** Event kind; only inbound hook deliveries ('message') exist today. */
+  eventName: 'message';
   /** Events arriving within this window merge into one run (seconds). Default 10, max 300. */
   batchWindowSec?: number;
   /** Minimum spacing between two runs (seconds). Default 60, floor 30. */
@@ -363,8 +387,12 @@ export interface RoleWakeAction {
  */
 export interface CronExecutionTrigger {
   kind: 'event' | 'schedule';
-  /** Event source: 'channel' (locally connected channel messages) or 'connector' (local connector polling). */
-  source?: 'channel' | 'connector';
+  /**
+   * Event source: 'channel' (locally connected channel messages), 'connector'
+   * (local connector polling), or 'webhook' (deliveries pushed by the Neo
+   * cloud webhook relay; these carry no accountId — the hook URL is the binding).
+   */
+  source?: 'channel' | 'connector' | 'webhook';
   /** Connector id; present iff source === 'connector'. Only 'mail' exists today. */
   connector?: 'mail';
   /** Channel account or mail account whose messages fired the run. */

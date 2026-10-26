@@ -127,10 +127,12 @@ function formatAutomationSchedule(schedule: CronScheduleConfig, text: ReturnType
     return text.automationAt.replace("{time}", time);
   }
   if (schedule.type === "event") {
-    // connector 源（mail）没有 chatId，绑定信息是账号 + 邮箱。
+    // connector 源（mail）没有 chatId，绑定信息是账号 + 邮箱；webhook 源的绑定是 hook URL。
     const binding = schedule.source === "connector"
       ? `${schedule.accountId}${schedule.mailbox ? ` · ${schedule.mailbox}` : ''}`
-      : `${schedule.accountId}${schedule.chatId ? ` · ${schedule.chatId}` : ''}`;
+      : schedule.source === "channel"
+        ? `${schedule.accountId}${schedule.chatId ? ` · ${schedule.chatId}` : ''}`
+        : "Webhook";
     return `事件触发 · ${binding}`;
   }
   return formatCronExpressionLabel(schedule.expression, schedule.timezone, lang);

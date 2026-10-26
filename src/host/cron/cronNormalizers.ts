@@ -333,6 +333,23 @@ export function normalizeSchedule(value: unknown): CronScheduleConfig | null {
           minRunIntervalSec: clampMinRunIntervalSec(readNumberField(value, 'minRunIntervalSec')),
         };
       }
+      if (value.source === 'webhook') {
+        // webhook 源（N-CRON-WEBHOOK-CLOUD-HOOK）：无账号绑定（hook URL 即绑定），
+        // 显式 accountId 按非法配置拒绝；可选窗口字段与通道源同一套夹取。
+        if (
+          value.eventName !== 'message'
+          || (typeof value.accountId === 'string' && value.accountId.trim() !== '')
+        ) {
+          return null;
+        }
+        return {
+          type: 'event',
+          source: 'webhook',
+          eventName: 'message',
+          batchWindowSec: clampBatchWindowSec(readNumberField(value, 'batchWindowSec')),
+          minRunIntervalSec: clampMinRunIntervalSec(readNumberField(value, 'minRunIntervalSec')),
+        };
+      }
       if (
         value.source !== 'channel'
         || value.eventName !== 'message'
@@ -605,7 +622,7 @@ export function parseCronExecutionTrigger(raw: unknown): CronExecutionTrigger | 
   const connector = readStringField(value, 'connector');
   return {
     kind: value.kind,
-    ...(source === 'channel' || source === 'connector' ? { source } : {}),
+    ...(source === 'channel' || source === 'connector' || source === 'webhook' ? { source } : {}),
     ...(source === 'connector' && connector === 'mail' ? { connector: 'mail' } : {}),
     ...(accountId ? { accountId } : {}),
     ...(eventCount !== undefined ? { eventCount } : {}),

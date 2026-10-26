@@ -147,7 +147,7 @@ export interface RoleFirstWakeSuggestion {
   prompt: string;
 }
 
-/** 首次醒来状态机取值：pending（已入队待跑）→ running → completed / skipped / failed（终态，不再重入） *//** 每日醒来「外部增量」巡检给出的一键工作提议（wake-proposals.json 的 pending 快照） */
+/** 每日醒来「外部增量」巡检给出的一键工作提议（wake-proposals.json 的 pending 快照） */
 export interface RoleWakeProposal {
   title: string;
   /** 点击后写进专家会话的委托 prompt：从起草/拟计划开始，不直接发送。 */
@@ -156,7 +156,7 @@ export interface RoleWakeProposal {
   createdAt?: string;
 }
 
-
+/** 首次醒来状态机取值：pending（已入队待跑）→ running → completed / skipped / failed（终态，不再重入） */
 export type RoleFirstWakeStateName = 'pending' | 'running' | 'completed' | 'skipped' | 'failed';
 
 /** 首次醒来快照（roles IPC firstWakeGet 的返回；状态文件本体是 host 侧 first-wake.json） */

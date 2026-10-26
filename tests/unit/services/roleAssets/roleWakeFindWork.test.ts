@@ -180,6 +180,7 @@ describe('roleWakeFindWork — ① wakeRole 行为', () => {
     const wakePrompt = harness.mockOrchestrator.sendMessage.mock.calls[0][0] as string;
     expect(wakePrompt).toContain('还没有经手过的产物');
     expect(wakePrompt).toContain('已连接源：mail、calendar');
+    expect(wakePrompt).toContain('新邮件：上次醒来之后新收到的邮件');
     expect(wakePrompt).toContain(`超过 ${ROLE_PROACTIVITY.STALE_REPLY_DAYS} 天`);
     expect(wakePrompt).toContain('未读取');
     expect(wakePrompt).toContain('wake_proposals');

@@ -56,6 +56,7 @@ function buildWakeExternalDeltaSection(input: WakeExternalDeltaInput): string {
     input.lastWakeDate
       ? `- 上次醒来：${input.lastWakeDate}（重点看此后新到的东西）`
       : '- 上次醒来：无记录（看近期情况即可）',
+    '- 新邮件：上次醒来之后新收到的邮件；首次醒来查看近期邮件',
     '- 日程冲突：未来 7 天日历里时间上重叠或安排有问题的日程',
     `- 冷线索：已发出超过 ${ROLE_PROACTIVITY.STALE_REPLY_DAYS} 天还没有收到回复的邮件`,
     '读取规则：某个源读不出来时，必须在回复中点名「未读取：<源名>」，不许静默跳过，更不许编造它的内容。',

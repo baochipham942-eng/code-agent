@@ -303,6 +303,38 @@ export function peermsgLaunderDenialError(
 }
 
 /**
+ * ADR-067 D4 sticky：同一用户消息内，真人刚拒绝过的同指纹动作不再二次出卡。
+ * 判据四条全中才 sticky：登记是真人拒的（byUser）、本轮无 peer 来源、
+ * 两侧 user 消息 id 都在且相同。下一条用户消息（含渠道入站消息）id 即不同，
+ * 恢复正常出卡；缺 id（旧调用方）与非真人拒绝（超时/fail-closed/机器）照旧 ask。
+ */
+export function isStickyUserDenial(
+  priorDenial: { byUser?: boolean; userMessageId?: string } | undefined,
+  input: { peerOriginForcesConfirmation: boolean; sourceMessageId?: string },
+): boolean {
+  return Boolean(
+    priorDenial?.byUser
+      && priorDenial.userMessageId
+      && input.sourceMessageId
+      && priorDenial.userMessageId === input.sourceMessageId
+      && !input.peerOriginForcesConfirmation,
+  );
+}
+
+/**
+ * ADR-067 D4 sticky 拒绝文案：一句话告诉模型用户已拒绝该动作、下一条用户消息前
+ * 不会再被询问，别重试，要在聊天里向用户确认（审批疲劳会把用户逼向 always-allow；
+ * 竞品 Grok v0.75.5 同款语义）。复用 PERMISSION_DENIED_BY_USER，不新造契约码。
+ */
+export function userDeniedStickyError(toolName: string, deniedSummary?: string): HostReasonPayload {
+  const prior = deniedSummary ? ` (${deniedSummary})` : '';
+  const modelText = `${toolName} was not executed: the user already declined this exact action${prior} `
+    + 'earlier in this conversation turn. It will not run and will not be asked again until the user '
+    + 'sends another message, so do not retry it or rephrase it. If the user still wants it, ask them in chat.';
+  return createHostReason(HostReasonCode.PermissionDeniedByUser, modelText, { toolName });
+}
+
+/**
  * 权限分类三分支解析 + 档位改写：
  * 1. policy always_confirm / skill 边界违规 → 直接 ask（跳过 classifier）；
  * 2. 其余走 classifier；

@@ -38,6 +38,16 @@ function segmentCountOf(item: InstructionItem): unknown {
   return (item.sourceMetadata as { segmentCount?: unknown } | undefined)?.segmentCount;
 }
 
+/** 计入「找到 N 条规则」的行：host 拆出的单条规则，整文件对照项不算数。 */
+function isImportableRule(item: InstructionItem): boolean {
+  return item.reason === 'directive-confirmation-required';
+}
+
+/** 预览头部计数与下方分组共用同一口径：只数可逐条导入的规则。 */
+export function countImportableRules(instructions: MemoryImportDryRunResult['instructions']): number {
+  return instructions.filter(isImportableRule).length;
+}
+
 function RuleRow({
   item,
   position,
@@ -130,11 +140,9 @@ function RuleGroupSection({
           className="shrink-0 whitespace-nowrap"
           onClick={() => setExpanded((current) => !current)}
           aria-expanded={expanded}
+          rightIcon={expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         >
           {copyRules.rulesFound.replace('{count}', String(group.rules.length))}
-          {expanded
-            ? <ChevronDown className="h-3.5 w-3.5" />
-            : <ChevronRight className="h-3.5 w-3.5" />}
         </Button>
       </div>
       {expanded && (
@@ -171,7 +179,7 @@ export const ExternalImportInstructionRules: React.FC<{
   const wholeFileItems: InstructionItem[] = [];
   let position = 0;
   for (const item of instructions) {
-    if (item.reason === 'directive-confirmation-required') {
+    if (isImportableRule(item)) {
       position += 1;
       rulePositions.set(item.id, position);
       let group = groups.find((candidate) => candidate.sourcePath === item.sourcePath);

@@ -12,7 +12,7 @@
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../src/host/tools/shell/dynamicDescription', () => ({
   generateBashDescription: async () => null,
@@ -59,6 +59,12 @@ vi.mock('../../../src/host/tools/permissionClassifier', async (importOriginal) =
 
 import { getToolCache } from '../../../src/host/services/infra/toolCache';
 import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
+import {
+  hasProtocolTool,
+  registerProtocolTool,
+  unregisterProtocolTool,
+} from '../../../src/host/tools/protocolToolRegistration';
+import { mailSendSchema } from '../../../src/host/tools/modules/connectors/mailSend.schema';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import type { PermissionRequestData } from '../../../src/host/tools/types';
 import type { RequestPermissionResult } from '../../../src/shared/contract/permission';
@@ -78,10 +84,26 @@ describe('ToolExecutor 权限洗白闸（ADR-067 D4）', () => {
   let workspace: string;
   let permissionRequests: PermissionRequestData[];
   let previousSafetyMode: string | undefined;
+  let mailSendBridged = false;
   let sid = 0;
 
   beforeAll(() => {
     getProtocolRegistry();
+    // mail_send 仅在 darwin 注册（modules/index.ts 平台门，AppleScript connectors）；
+    // Linux CI 上缺席会让 mail 用例在 resolve 阶段就以 unknown-tool 失败，到不了权限闸。
+    // 跨平台补注册真实模块（schema/权限元数据与 darwin 原生注册同源）；用例只在
+    // 权限闸路径消费它，卡被拒后不会触碰 connector，平台无关。
+    if (!hasProtocolTool('mail_send')) {
+      registerProtocolTool(
+        mailSendSchema,
+        async () => (await import('../../../src/host/tools/modules/connectors/mailSend')).mailSendModule,
+      );
+      mailSendBridged = true;
+    }
+  });
+
+  afterAll(() => {
+    if (mailSendBridged) unregisterProtocolTool('mail_send');
   });
 
   beforeEach(async () => {

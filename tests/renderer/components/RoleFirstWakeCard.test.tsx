@@ -9,6 +9,8 @@ const getFirstWake = vi.fn<(roleId: string) => Promise<RoleFirstWakeSnapshot | n
 const skipFirstWake = vi.fn<(roleId: string) => Promise<{ success: boolean }>>();
 const listRoles = vi.fn<() => Promise<RolePanelEntry[]>>();
 const goToExpertThread = vi.fn<(roleId: string, options?: { seed?: string }) => Promise<void>>();
+// 提议卡与首次醒来卡同位渲染：mock 需覆盖其 rolesClient 面（空 pending → 不渲染）
+const listWakeProposals = vi.fn<(roleId: string) => Promise<unknown[]>>(() => Promise.resolve([]));
 const invokeDomain = vi.fn();
 const listeners = new Map<string, (event: unknown) => void>();
 
@@ -16,6 +18,7 @@ vi.mock('../../../src/renderer/services/rolesClient', () => ({
   getFirstWake: (roleId: string) => getFirstWake(roleId),
   skipFirstWake: (roleId: string) => skipFirstWake(roleId),
   listRoles: () => listRoles(),
+  listWakeProposals: (roleId: string) => listWakeProposals(roleId),
 }));
 
 vi.mock('../../../src/renderer/utils/inviteExpert', () => ({

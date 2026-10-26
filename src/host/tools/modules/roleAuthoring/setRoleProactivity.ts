@@ -39,9 +39,12 @@ function levelLabel(level: RoleProactivityLevel): string {
   return LEVEL_LABELS[level] ?? level;
 }
 
+/** cadence 是 croner 6 段表达式（含秒位），humanize 只认 5 段——秒位为 0 时去掉再翻，翻不了回退原文。 */
 function cadenceLabel(cadence: string | undefined): string {
   if (!cadence) return '（无定时）';
-  return formatCronExpressionLabel(cadence, undefined, 'zh');
+  const fields = cadence.trim().split(/\s+/);
+  const fiveField = fields.length === 6 && fields[0] === '0' ? fields.slice(1).join(' ') : cadence;
+  return formatCronExpressionLabel(fiveField, undefined, 'zh');
 }
 
 function toStringArray(value: unknown): string[] | undefined {

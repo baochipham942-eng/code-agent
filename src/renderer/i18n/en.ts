@@ -53,6 +53,7 @@ import { engineModelPanelEn } from './engineModelPanel';
 import { jevAdvisoryEn } from './jevAdvisory';
 import { workflowStallEn } from './workflowStall';
 import { roleFirstWakeEn } from './roleFirstWake';
+import { roleWakeProposalsEn } from './roleWakeProposals';
 import { permissionRuleNlEn } from './permissionRuleNl';
 // satisfies（而非 `: Translations` 注解）：key 集合必须与 zh 完全一致——zh 多 key /
 // en 缺 key / en 多 key 都在此报红，同时保留 en 自身的推断类型。zh.ts 是形状真源
@@ -76,6 +77,7 @@ export const en = {
   ...jevAdvisoryEn,
   ...workflowStallEn,
   ...roleFirstWakeEn,
+  ...roleWakeProposalsEn,
   ...permissionRuleNlEn,
   // Common
   common: {

@@ -17,8 +17,9 @@ export function scheduleBoundToDate(value: string | number): Date {
 
 /**
  * 触发 jitter 窗口按周期长度取（N-CRON-RESILIENCE）：
- * window = clamp(周期 × FIRE_JITTER_PERIOD_RATIO, FIRE_JITTER_MIN_MS, FIRE_JITTER_MAX_MS)。
- * 分钟级任务仍是秒级抖动（2s 下限沿用旧值），小时级任务得到分钟级抖动，天级封顶 15min。
+ * every 任务为 clamp(周期 × FIRE_JITTER_PERIOD_RATIO, FIRE_JITTER_MIN_MS, FIRE_JITTER_MAX_MS)，
+ * cron 表达式再封顶 FIRE_JITTER_CRON_MAX_MS，避免用户选定的分钟被推迟太久。
+ * 分钟级任务仍是秒级抖动（2s 下限沿用旧值），every 小时级任务得到分钟级抖动，天级封顶 15min。
  * 周期算不出来（解析不了的表达式）时退回下限，保持旧的防惊群基线。
  */
 export function computeCronFireJitterMs(
@@ -29,12 +30,15 @@ export function computeCronFireJitterMs(
   const periodSeconds = everyScheduleIntervalSeconds(schedule)
     ?? cronScheduleMinimumIntervalSeconds(schedule);
   const periodMs = periodSeconds != null ? periodSeconds * 1000 : undefined;
-  const windowMs = periodMs == null
+  const baseWindowMs = periodMs == null
     ? CRON_GUARDRAILS.FIRE_JITTER_MIN_MS
     : Math.min(
       Math.max(periodMs * CRON_GUARDRAILS.FIRE_JITTER_PERIOD_RATIO, CRON_GUARDRAILS.FIRE_JITTER_MIN_MS),
       CRON_GUARDRAILS.FIRE_JITTER_MAX_MS,
     );
+  const windowMs = schedule.type === 'cron'
+    ? Math.min(baseWindowMs, CRON_GUARDRAILS.FIRE_JITTER_CRON_MAX_MS)
+    : baseWindowMs;
   return Math.floor(rand() * windowMs);
 }
 

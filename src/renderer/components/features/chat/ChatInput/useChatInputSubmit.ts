@@ -274,12 +274,17 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       const handoffPrompt = pending.handoffPrompt;
       // event 草案（N-CRON-EVENT-CREATE-CHAT）确认前的纵深防御：卡上已按共享校验器
       // 禁用确认按钮，这里再拦一次（卡不可交互/草案被外部改写的路径）。同时剥掉
-      // chatId 空串（= 任意会话；空串下发给 host 会绑死一个不存在的会话，静默永不触发）。
+      // chatId 空串（= 任意会话；空串下发给 host 会绑死一个不存在的会话，静默永不触发）
+      // 与 mail 草案的 mailbox 空串（= 缺省 INBOX；空串会被 host 当字面量邮箱名）。
       if (input.schedule.type === 'event') {
         let schedule = input.schedule;
         if (schedule.source === 'channel' && !schedule.chatId) {
           const { chatId: _droppedEmptyChatId, ...channelSchedule } = schedule;
           schedule = channelSchedule;
+        }
+        if (schedule.source === 'connector' && schedule.connector === 'mail' && !schedule.mailbox) {
+          const { mailbox: _droppedEmptyMailbox, ...mailSchedule } = schedule;
+          schedule = mailSchedule;
         }
         input = { ...input, schedule };
         const violation = validateEventScheduleConstraints({

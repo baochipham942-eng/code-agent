@@ -44,7 +44,6 @@ import {
   deleteScopedMemory,
   writeScopedMemory,
   resolveRoleProactivityConfig,
-  syncCadenceJobs,
   listRoleDrafts,
   confirmRoleDraft,
   rejectRoleDraft,
@@ -52,8 +51,8 @@ import {
   skipFirstWake,
   isSafeRoleId,
 } from '../services/roleAssets';
+import { writeRoleProactivityConfig } from '../services/roleAssets/roleProactivityWrite';
 import type { RoleMemoryFile } from '../services/roleAssets/roleAssetService';
-import { sanitizeTopicList } from '../services/roleAssets/wakeRationale';
 import { handleSaveTextToDownloads } from './workspaceSaveExport';
 import { getDatabase } from '../services/core/databaseService';
 import { getCronService } from '../cron/cronService';
@@ -451,8 +450,8 @@ async function handleRestoreFactory(roleId: string): Promise<void> {
 }
 
 /**
- * 设置角色主动性：写入 settings.roleAssets.proactivity.roles[roleId]（最高优先级），
- * 然后立即同步 cadence cron（开 → 注册闹钟；关 → 删除闹钟），不用等重启。
+ * 设置角色主动性：写 settings 覆盖层 + 立即同步 cadence cron。
+ * 写路径单一真源在 roleProactivityWrite（chat 工具 set_role_proactivity 共用），IPC 层只做参数校验。
  */
 async function handleSetProactivity(
   roleId: string,
@@ -462,32 +461,7 @@ async function handleSetProactivity(
   topicsInclude?: string[],
   topicsExclude?: string[],
 ) {
-  const { getConfigService } = await import('../services/core/configService');
-  await getConfigService().updateSettings({
-    roleAssets: {
-      proactivity: {
-        roles: {
-          [roleId]: {
-            level,
-            ...(cadence ? { cadence } : {}),
-            // null 要写进去（mergeSettings 只对非 null 对象递归，null 直接覆盖 = 清除）；
-            // undefined 才是"本次不动这个字段"。数组整份覆盖（含空数组 = 清除）。
-            ...(quietHours !== undefined ? { quietHours } : {}),
-            ...(topicsInclude !== undefined ? { topicsInclude: sanitizeTopicList(topicsInclude) } : {}),
-            ...(topicsExclude !== undefined ? { topicsExclude: sanitizeTopicList(topicsExclude) } : {}),
-          },
-        },
-      },
-    },
-  });
-
-  // cron 同步失败不阻塞设置保存（headless 测试环境可能没有 cron 服务），下次启动会兜底同步
-  const synced = await syncCadenceJobs().catch((error) => {
-    logger.warn('syncCadenceJobs after setProactivity failed (will sync on next startup)', error);
-    return null;
-  });
-
-  return { proactivity: await resolveRoleProactivityConfig(roleId), synced };
+  return writeRoleProactivityConfig(roleId, { level, cadence, quietHours, topicsInclude, topicsExclude });
 }
 
 // ----------------------------------------------------------------------------

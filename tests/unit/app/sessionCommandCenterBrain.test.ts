@@ -157,6 +157,69 @@ describe('withSessionCommandCenterBrain', () => {
   });
 });
 
+describe('晨报回复「存草稿 N」才打开 mail_draft', () => {
+  const matches = [
+    '存草稿 1',
+    '存草稿1',
+    '保存草稿 2',
+    '存草稿第3',
+    '存草稿 #4',
+    '存草稿 ５',
+    'save draft 6',
+    'Save draft #7',
+    '请存草稿 1',
+    '麻烦帮我存草稿 8',
+    'please save draft 2',
+    '  存草稿 1',
+    '您好，保存草稿第１',
+  ];
+  const misses = [
+    '存草稿箱里有什么',
+    '晨报末尾写着可以存草稿 1',
+    '今天有什么安排',
+    '存草稿',
+    '保存一下草稿 1',
+    '帮我看看草稿 1',
+  ];
+
+  it.each(matches)('命中「%s」：白名单多 mail_draft，并只在这时追加回合规则', (prompt) => {
+    const names = getTextForegroundToolNamesForPrompt(prompt);
+    expect(names).toContain('mail_draft');
+    expect(names.filter((name) => name === 'mail_draft')).toHaveLength(1);
+    const options = withSessionCommandCenterBrain(undefined, prompt);
+    expect(options.allowedToolNames).toContain('mail_draft');
+    const extra = (options.turnSystemContext ?? []).filter((block) => block !== SESSION_COMMAND_CENTER_BRAIN_CONTEXT);
+    expect(extra).toHaveLength(1);
+  });
+
+  it.each(misses)('不命中「%s」：不加 mail_draft，也不追加回合规则', (prompt) => {
+    expect(getTextForegroundToolNamesForPrompt(prompt)).not.toContain('mail_draft');
+    const options = withSessionCommandCenterBrain({
+      turnSystemContext: ['<existing_context>keep me</existing_context>'],
+    }, prompt);
+    expect(options.allowedToolNames).not.toContain('mail_draft');
+    expect(options.turnSystemContext).toEqual([
+      '<existing_context>keep me</existing_context>',
+      SESSION_COMMAND_CENTER_BRAIN_CONTEXT,
+    ]);
+  });
+
+  it('命中时保留已有上下文，规则块写明重复保存和没有邮件权限', () => {
+    const options = withSessionCommandCenterBrain({
+      turnSystemContext: ['<existing_context>keep me</existing_context>'],
+    }, '存草稿 1');
+    expect(options.turnSystemContext?.[0]).toBe('<existing_context>keep me</existing_context>');
+    expect(options.turnSystemContext?.[1]).toBe(SESSION_COMMAND_CENTER_BRAIN_CONTEXT);
+    const block = options.turnSystemContext?.[2] ?? '';
+    expect(block).toContain('已经存过');
+    expect(block).toContain('没有开邮件权限');
+    expect(block).toContain('mail_draft');
+    expect(block).toContain('delegate_task');
+    expect(block).toContain('一共有几封草稿');
+    expect(block).toContain('没有发送');
+  });
+});
+
 // ============================================================================
 // 单轮 Office 文件交付的前台面扩展（N-HOME-STARTER-CARDS-FILES r2）
 // 首屏卡点击的周报/表格轮必须把原生生成工具送进模型可见面，同时委派入口出局——

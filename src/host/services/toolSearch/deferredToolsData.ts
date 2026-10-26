@@ -866,6 +866,13 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     source: 'builtin',
   },
   {
+    name: 'set_role_proactivity',
+    shortDescription: '对话里改角色主动性：打扰频率/每天一次/免打扰时段/话题增删，确认卡复述旧->新后写入',
+    tags: ['planning'],
+    aliases: ['set proactivity', 'role proactivity', '每天只说一次', '一天一次', '别报天气', '少烦我', '太吵了', '别打扰我', '免打扰', '改主动性'],
+    source: 'builtin',
+  },
+  {
     name: 'propose_team_recipe',
     shortDescription: '对话式建配方：把专家团或专家小组定义入队为草稿，等用户确认入库',
     tags: ['planning'],

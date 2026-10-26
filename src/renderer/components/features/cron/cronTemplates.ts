@@ -12,7 +12,8 @@ export interface TemplateField {
   label: string;
   placeholder?: string;
   required?: boolean;
-  type?: 'text' | 'textarea';
+  /** role：填参步骤渲染持久化角色下拉（空选项 = 不绑定）。 */
+  type?: 'text' | 'textarea' | 'role';
 }
 
 // ── Template definition ─────────────────────────────────────────────
@@ -74,6 +75,51 @@ function makeDraft(overrides: Partial<CronJobDraft>): CronJobDraft {
 /** 本机系统时区（晨间分诊这类「本地时间」模板用，不钉死 Asia/Shanghai）。 */
 function localCronTimezone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+}
+
+/**
+ * 晨间分诊未绑定角色时的提示词。绑了角色只在这段后面追加起草块，
+ * 这段本身与未绑定草稿逐字节相同，失败腿「未读取：<来源>」与「今早没有需要处理的」不动。
+ */
+const MORNING_TRIAGE_BASE_PROMPT =
+  '请汇总我从昨晚到现在的未读邮件、即时消息和日历变动，给我一份晨间分诊。' +
+  '先盘点我当前可用的连接（邮箱、IM、日历），有什么用什么。' +
+  '把值得关注的条目按「今天必须处理 / 可等 / 只需知道」三档列出，每档最多 5 条，挑最重要的；每条一句话说明是什么、为什么归到这一档。' + // copy-allow: 「只需知道」是台账原单指定的三档分类标签之一，是分类名而非营销压力词
+  '如果今早没有任何需要处理或值得知道的内容，直接明说「今早没有需要处理的」，不要硬凑条目，也不要产出空列表。' +
+  '已连接但本次读取失败的来源（邮件/IM/日历），要在产出里逐一点名为「未读取：<来源>」，读取失败绝不能被当成「今早没有需要处理的」上报。' +
+  '如果没有任何可用的邮箱/IM/日历连接，不要报错：在产出里说明缺少哪些连接、各自能补上什么信息，并建议我去设置里连接。';
+
+/**
+ * 绑了角色才追加的起草规则。草稿写进晨报正文，不在无人值守运行里调用写邮件或改日程的工具。
+ */
+const MORNING_TRIAGE_DRAFTING_BLOCK =
+  '只为「今天必须处理」里需要回复的邮件起草，最多 3 封，其余档不起草。' +
+  '每封单独成块，块的第一行必须是「草稿（未发送）」，接着写收件人、主题和一段短正文；正文用用户来信的语言，口吻跟随已经注入的角色记忆。' +
+  '每一条的末尾都标来源：邮件写成「（来源：发件人 · 主题）」，日程写成「（来源：日程标题 · 时间）」。' +
+  '把今天的日程两两比较，凡是时间重叠的一对都点名，例如通话落在航班途中时写成「日程冲突：14:00 通话与 13:30 航班重叠（来源：日历）」。' +
+  '不要调用 mail_send 或 mail_draft，也不要调用 calendar_create_event、calendar_update_event、calendar_delete_event，以及任何会新建、修改或删除日程的工具；草稿只写在这份晨报里，不要发出去。' +
+  '最后单独一行告诉用户：想把某一封存进邮箱，在这个对话里回复「存草稿 N」，N 是草稿序号。';
+
+function morningTriageDraft(values: Record<string, string> | undefined): CronJobDraft {
+  const roleId = values?.roleId?.trim() ?? '';
+  const draft = makeDraft({
+    name: '晨间分诊',
+    description: '汇总昨晚到现在的未读邮件、即时消息和日历变动，按轻重缓急分档',
+    tagsText: '晨间分诊, 邮件, 消息, 日程',
+    scheduleType: 'cron',
+    cronExpression: '30 8 * * 1-5',
+    // 本地时区（台账口径）：取运行机器的系统时区，不钉死 Asia/Shanghai
+    cronTimezone: localCronTimezone(),
+    actionType: 'agent',
+    agentType: 'default',
+    agentPrompt: MORNING_TRIAGE_BASE_PROMPT,
+  });
+  if (!roleId) return draft;
+  return {
+    ...draft,
+    agentRoleId: roleId,
+    agentPrompt: `${MORNING_TRIAGE_BASE_PROMPT}\n${MORNING_TRIAGE_DRAFTING_BLOCK}`,
+  };
 }
 
 // ── Template display copy (i18n) ────────────────────────────────────
@@ -169,26 +215,10 @@ export const CRON_TEMPLATES: CronTemplate[] = [
     description: '汇总昨晚到现在的未读邮件、消息和日历变动',
     scheduleLabel: '工作日 08:30',
     featured: true,
-    fields: [],
-    generate: () =>
-      makeDraft({
-        name: '晨间分诊',
-        description: '汇总昨晚到现在的未读邮件、即时消息和日历变动，按轻重缓急分档',
-        tagsText: '晨间分诊, 邮件, 消息, 日程',
-        scheduleType: 'cron',
-        cronExpression: '30 8 * * 1-5',
-        // 本地时区（台账口径）：取运行机器的系统时区，不钉死 Asia/Shanghai
-        cronTimezone: localCronTimezone(),
-        actionType: 'agent',
-        agentType: 'default',
-        agentPrompt:
-          '请汇总我从昨晚到现在的未读邮件、即时消息和日历变动，给我一份晨间分诊。' +
-          '先盘点我当前可用的连接（邮箱、IM、日历），有什么用什么。' +
-          '把值得关注的条目按「今天必须处理 / 可等 / 只需知道」三档列出，每档最多 5 条，挑最重要的；每条一句话说明是什么、为什么归到这一档。' + // copy-allow: 「只需知道」是台账原单指定的三档分类标签之一，是分类名而非营销压力词
-          '如果今早没有任何需要处理或值得知道的内容，直接明说「今早没有需要处理的」，不要硬凑条目，也不要产出空列表。' +
-          '已连接但本次读取失败的来源（邮件/IM/日历），要在产出里逐一点名为「未读取：<来源>」，读取失败绝不能被当成「今早没有需要处理的」上报。' +
-          '如果没有任何可用的邮箱/IM/日历连接，不要报错：在产出里说明缺少哪些连接、各自能补上什么信息，并建议我去设置里连接。',
-      }),
+    fields: [
+      { key: 'roleId', label: '交给哪位角色（可选）', type: 'role' },
+    ],
+    generate: (values) => morningTriageDraft(values),
   },
   {
     id: 'web-change-watch',

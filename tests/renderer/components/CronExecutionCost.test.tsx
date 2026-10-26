@@ -70,10 +70,17 @@ describe('CronExecutionList 成本列', () => {
         onSelectExecution={() => undefined}
       />,
     );
-    const reasons = screen.getAllByTestId('cron-wake-skip-reason').map((node) => node.textContent);
+    const reasonNodes = screen.getAllByTestId('cron-wake-skip-reason');
+    const reasons = reasonNodes.map((node) => node.textContent);
     expect(reasons[0]).toBe('未运行：角色处于静默档，不主动醒来');
     expect(reasons[1]).toBe('未运行：今日唤醒次数已用满（3/3）');
     expect(reasons[2]).toBe('未运行：处于免打扰时段，本次不补');
+    for (const node of reasonNodes) {
+      const cell = node.closest('td');
+      expect(cell?.getAttribute('colspan')).toBe('7');
+      expect(cell?.querySelector('span')).toBeNull();
+    }
+    expect(document.querySelector('[data-testid="cron-execution-table-scroll"]')?.className).toContain('overflow-x-auto');
   });
 
   it('云端运行即使带数字也显示 dash', () => {

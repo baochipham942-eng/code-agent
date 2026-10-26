@@ -753,6 +753,33 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
     }
     return { success: true, data: await getFirstWakeSnapshot(roleId) };
   },
+  // --- 每日醒来的外部增量提议卡（N-ROLE-WAKE-FIND-WORK） ---
+  wakeProposalsList: async (_ctx, payload) => {
+    const { roleId } = (payload ?? {}) as RoleIdPayload;
+    if (!roleId || !isSafeRoleId(roleId)) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'a safe roleId is required' } };
+    }
+    const { listWakeProposals } = await import('../services/roleAssets/roleWakeFindWork');
+    return { success: true, data: await listWakeProposals(roleId) };
+  },
+  wakeProposalsAccept: async (_ctx, payload) => {
+    const { roleId, title } = (payload ?? {}) as RoleIdPayload & { title?: string };
+    if (!roleId || !isSafeRoleId(roleId) || !title?.trim()) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'a safe roleId and title are required' } };
+    }
+    const { acceptWakeProposal } = await import('../services/roleAssets/roleWakeFindWork');
+    const accepted = await acceptWakeProposal(roleId, title);
+    if (!accepted) return { success: false, error: { code: 'NOT_FOUND', message: 'proposal not found' } };
+    return { success: true, data: accepted };
+  },
+  wakeProposalsDismiss: async (_ctx, payload) => {
+    const { roleId, title } = (payload ?? {}) as RoleIdPayload & { title?: string };
+    if (!roleId || !isSafeRoleId(roleId) || !title?.trim()) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'a safe roleId and title are required' } };
+    }
+    const { dismissWakeProposal } = await import('../services/roleAssets/roleWakeFindWork');
+    return { success: true, data: await dismissWakeProposal(roleId, title) };
+  },
   firstWakeSkip: async (_ctx, payload) => {
     const { roleId } = (payload ?? {}) as RoleIdPayload;
     if (!roleId || !isSafeRoleId(roleId)) {

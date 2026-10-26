@@ -5,7 +5,7 @@
 // （permissionStore，进程内存 + localStorage，host 与无人值守面看不见）不同，
 // 这里归 host 持有：cron/停车审批、手机 companion 应答与设置页台账都消费同一份。
 //
-//   run 档：key = sessionId + tool [+ target]，只活在本进程 Map。run 结束由
+//   run 档：key = sessionId + tool [+ target]，只活在本进程。run 结束由
 //           runFinalizer 统一清除（对话里 = 本轮任务做完；cron = 本次运行）。
 //           进程重启即失效 = 下一次询问，fail-safe。
 //   24h 档：key = tool [+ target]，expiresAt = grantedAt + 24h，落
@@ -20,20 +20,16 @@
 
 import type BetterSqlite3 from 'better-sqlite3';
 import { TOOL_GRANT_TIERS } from '../../shared/constants/timeouts';
+import { getDatabase } from '../services/core/databaseService';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('ToolGrantStore');
 
 export type ToolGrantTier = 'run' | '24h';
 
-export interface ToolGrantListItem {
-  tier: ToolGrantTier;
-  tool: string;
-  /** external 工具的精确去向；无 target 的授权为 null */
-  target: string | null;
-  /** run 档：授权所属会话；24h 档：null */
-  sessionId: string | null;
-  grantedAt: number;
-  /** run 档 = null（随 run 结束，无固定时刻）；24h 档 = 到期时刻 */
-  expiresAt: number | null;
-}
+export type ToolGrantListItem =
+  | { tier: 'run'; tool: string; target: string | null; sessionId: string; grantedAt: number; expiresAt: null }
+  | { tier: '24h'; tool: string; target: string | null; sessionId: null; grantedAt: number; expiresAt: number };
 
 interface GrantRow {
   tool_key: string;
@@ -84,73 +80,91 @@ function isExpired(expiresAt: number | null | undefined, now: number): boolean {
   return typeof expiresAt === 'number' && Number.isFinite(expiresAt) && now >= expiresAt;
 }
 
-class ToolGrantStore {
-  /** sessionId → (toolKey → 批准时刻)。run 档全部状态，进程内。 */
-  private readonly runs = new Map<string, Map<string, number>>();
+/** run 档全部状态（sessionId → (toolKey → 批准时刻)），进程内。放模块级而不是
+ * 绑定对象里：db 懒绑定失败不落缓存、每次调用重试（rework r2），db 不可用期间
+ * 铸的 run 档授权不跟着绑定状态一起被丢掉——run 档本就不依赖 db。 */
+const runs = new Map<string, Map<string, number>>();
 
-  constructor(private readonly repo: ToolGrantRepository | null) {}
+let repo: ToolGrantRepository | null = null;
+let boundDb: BetterSqlite3.Database | null = null;
+/** 是否发生过任何绑定（含显式 null）。false = 从未绑定 → 懒解析，失败不置位（下次重试）。 */
+let bindAttempted = false;
 
-  mintRun(sessionId: string, tool: string, target: string | null, grantedAt: number): void {
-    if (!sessionId) return;
-    let bucket = this.runs.get(sessionId);
-    if (!bucket) {
-      bucket = new Map();
-      this.runs.set(sessionId, bucket);
-    }
-    bucket.set(toolKey(tool, target), grantedAt);
-  }
+export function bindToolGrantDatabase(db: BetterSqlite3.Database | null, fresh = false): void {
+  if (!fresh && bindAttempted && boundDb === db) return;
+  // 重绑（fresh 或换 db）沿用既有语义：run 档随旧 store 一起作废。首次绑定不动——
+  // 此前 db 不可用期间铸的 run 档照常活到 run 结束。
+  if (fresh || bindAttempted) runs.clear();
+  boundDb = db;
+  repo = db ? new ToolGrantRepository(db) : null;
+  bindAttempted = true;
+}
 
-  mint24h(tool: string, target: string | null, grantedAt: number): void {
-    this.repo?.upsert(tool, target, grantedAt, grantedAt + TOOL_GRANT_TIERS.TIER_24H_MS);
-  }
-
-  /** run 档优先（更窄）；两档 target 都要求精确一致（null 只匹配 null）。 */
-  match(sessionId: string | null | undefined, tool: string, target: string | null, now: number): ToolGrantTier | null {
-    const key = toolKey(tool, target);
-    if (sessionId && this.runs.get(sessionId)?.has(key)) return 'run';
-    const hit = this.repo?.list().some(
-      (row) => row.tool_key === key && !isExpired(row.expires_at, now),
-    );
-    return hit ? '24h' : null;
-  }
-
-  /** 台账消费：run 档全列（活在本进程 = 本轮任务里）；24h 档未过期的才列。 */
-  list(now: number): ToolGrantListItem[] {
-    const items: ToolGrantListItem[] = [];
-    for (const [sessionId, bucket] of this.runs) {
-      for (const [key, grantedAt] of bucket) {
-        const { tool, target } = splitToolKey(key);
-        items.push({ tier: 'run', tool, target, sessionId, grantedAt, expiresAt: null });
-      }
-    }
-    for (const row of this.repo?.list() ?? []) {
-      if (isExpired(row.expires_at, now)) continue;
-      items.push({
-        tier: '24h',
-        tool: row.tool_name,
-        target: row.target,
-        sessionId: null,
-        grantedAt: row.granted_at,
-        expiresAt: row.expires_at,
+/** 懒绑定（对齐 appGrantStore.currentStore）：失败不缓存，下次调用再试——
+ * db 晚一拍可用时 24h 档不再永久 no-op。db=null → 只剩 run 档内存桶。 */
+function ensureRepoBound(): void {
+  if (bindAttempted) return;
+  try {
+    const db = getDatabase().getDb();
+    if (!db) {
+      logger.warn('toolGrantStore: database not initialised yet; 24h tier skipped this call, will retry', {
+        hasDb: false,
       });
+      return;
     }
-    return items;
+    bindToolGrantDatabase(db);
+  } catch (error) {
+    logger.warn('toolGrantStore: lazy database bind failed; 24h tier skipped this call, will retry', {
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
+}
 
-  revokeRun(sessionId: string, tool: string, target: string | null): boolean {
-    return this.runs.get(sessionId)?.delete(toolKey(tool, target)) ?? false;
+function mintRun(sessionId: string, tool: string, target: string | null, grantedAt: number): void {
+  if (!sessionId) return;
+  let bucket = runs.get(sessionId);
+  if (!bucket) {
+    bucket = new Map();
+    runs.set(sessionId, bucket);
   }
+  bucket.set(toolKey(tool, target), grantedAt);
+}
 
-  revoke24h(tool: string, target: string | null): boolean {
-    return this.repo?.delete(tool, target) ?? false;
-  }
+/** run 档优先（更窄）；两档 target 都要求精确一致（null 只匹配 null）。 */
+function match(sessionId: string | null | undefined, tool: string, target: string | null, now: number): ToolGrantTier | null {
+  const key = toolKey(tool, target);
+  if (sessionId && runs.get(sessionId)?.has(key)) return 'run';
+  const hit = repo?.list().some(
+    (row) => row.tool_key === key && !isExpired(row.expires_at, now),
+  );
+  return hit ? '24h' : null;
+}
 
-  /** run 结束点（runFinalizer）：该会话的 run 档整清——下一轮任务重新询问。 */
-  clearRuns(sessionId: string): number {
-    const cleared = this.runs.get(sessionId)?.size ?? 0;
-    this.runs.delete(sessionId);
-    return cleared;
+/** 台账消费：run 档全列（活在本进程 = 本轮任务里）；24h 档未过期的才列。 */
+function listGrants(now: number): ToolGrantListItem[] {
+  const items: ToolGrantListItem[] = [];
+  for (const [sessionId, bucket] of runs) {
+    for (const [key, grantedAt] of bucket) {
+      const { tool, target } = splitToolKey(key);
+      items.push({ tier: 'run', tool, target, sessionId, grantedAt, expiresAt: null });
+    }
   }
+  for (const row of repo?.list() ?? []) {
+    if (isExpired(row.expires_at, now)) continue;
+    items.push({
+      tier: '24h',
+      tool: row.tool_name,
+      target: row.target,
+      sessionId: null,
+      grantedAt: row.granted_at,
+      expiresAt: row.expires_at,
+    });
+  }
+  return items;
+}
+
+function revokeRun(sessionId: string, tool: string, target: string | null): boolean {
+  return runs.get(sessionId)?.delete(toolKey(tool, target)) ?? false;
 }
 
 function splitToolKey(key: string): { tool: string; target: string | null } {
@@ -159,37 +173,13 @@ function splitToolKey(key: string): { tool: string; target: string | null } {
   return { tool: key.slice(0, separator), target: key.slice(separator + 1) };
 }
 
-let store: ToolGrantStore | null = null;
-let boundDb: BetterSqlite3.Database | null = null;
-
-export function bindToolGrantDatabase(db: BetterSqlite3.Database | null, fresh = false): void {
-  if (!fresh && store && boundDb === db) return;
-  boundDb = db;
-  // db=null → 只剩 run 档内存桶（24h 档不可持久化也不可匹配，fail-safe）。
-  store = new ToolGrantStore(db ? new ToolGrantRepository(db) : null);
-}
-
-function currentStore(): ToolGrantStore {
-  if (!store) {
-    try {
-      // 懒取：静态 import databaseService 会在建表链路里转回来。
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { getDatabase } = require('../services/core/databaseService') as typeof import('../services/core/databaseService');
-      const db = getDatabase().getDb();
-      bindToolGrantDatabase(db ?? null);
-    } catch {
-      bindToolGrantDatabase(null);
-    }
-  }
-  return store!;
-}
-
 export function mintToolRunGrant(sessionId: string, tool: string, target: string | null = null, grantedAt: number = Date.now()): void {
-  currentStore().mintRun(sessionId, tool, target, grantedAt);
+  mintRun(sessionId, tool, target, grantedAt);
 }
 
 export function mintTool24hGrant(tool: string, target: string | null = null, grantedAt: number = Date.now()): void {
-  currentStore().mint24h(tool, target, grantedAt);
+  ensureRepoBound();
+  repo?.upsert(tool, target, grantedAt, grantedAt + TOOL_GRANT_TIERS.TIER_24H_MS);
 }
 
 /** 命中返回档位（ledgerReason 用 tool_grant:<tier>）；不命中 null。 */
@@ -199,22 +189,25 @@ export function matchToolGrant(
   target: string | null = null,
   now: number = Date.now(),
 ): ToolGrantTier | null {
-  return currentStore().match(sessionId, tool, target, now);
+  ensureRepoBound();
+  return match(sessionId, tool, target, now);
 }
 
 export function listToolGrants(now: number = Date.now()): ToolGrantListItem[] {
-  return currentStore().list(now);
+  ensureRepoBound();
+  return listGrants(now);
 }
 
 export function revokeToolRunGrant(sessionId: string, tool: string, target: string | null = null): boolean {
-  return currentStore().revokeRun(sessionId, tool, target);
+  return revokeRun(sessionId, tool, target);
 }
 
 export function revokeTool24hGrant(tool: string, target: string | null = null): boolean {
-  return currentStore().revoke24h(tool, target);
+  ensureRepoBound();
+  return repo?.delete(tool, target) ?? false;
 }
 
 /** run 结束清 run 档（runFinalizer 唯一调用点）。 */
 export function clearToolRunGrants(sessionId: string): void {
-  currentStore().clearRuns(sessionId);
+  runs.delete(sessionId);
 }

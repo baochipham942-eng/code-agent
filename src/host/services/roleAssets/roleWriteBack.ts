@@ -22,6 +22,7 @@ import { ROLE_ASSETS } from '../../../shared/constants';
 import { ensureMemoryDir, getMemoryIndexPath } from '../../lightMemory/indexLoader';
 import {
   appendRoleHistory,
+  guardText,
   isPersistentRole,
   listScopedMemories,
   writeScopedMemory,
@@ -352,13 +353,16 @@ async function writeCandidate(candidate: WriteBackCandidate, input: WriteBackInp
 async function writeGlobalMemory(entry: RoleMemoryEntry): Promise<void> {
   const memDir = await ensureMemoryDir();
   const filename = path.basename(entry.filename);
+  const safeName = guardText(entry.name, 1_000);
+  const safeDescription = guardText(entry.description, 2_000);
+  const safeContent = guardText(entry.content, 50_000);
   const fileContent = `---
-name: ${entry.name}
-description: ${entry.description}
+name: ${safeName}
+description: ${safeDescription}
 type: reference
 ---
 
-${entry.content}
+${safeContent}
 `;
   await fs.writeFile(path.join(memDir, filename), fileContent, 'utf-8');
 
@@ -373,7 +377,7 @@ ${entry.content}
   const escaped = filename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const entryPattern = new RegExp(`^- \\[${escaped}\\]`);
   lines = lines.filter((line) => !entryPattern.test(line));
-  lines.push(`- [${filename}](${filename}) — ${entry.description}`);
+  lines.push(`- [${filename}](${filename}) — ${safeDescription}`);
   await fs.writeFile(indexPath, lines.join('\n'), 'utf-8');
 }
 

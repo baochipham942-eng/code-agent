@@ -531,7 +531,7 @@ export function sanitizeMemoryFilename(filename: string): string {
   return sanitized;
 }
 
-function guardText(value: string, maxLength: number): string {
+export function guardText(value: string, maxLength: number): string {
   const guarded = guardSensitiveText(value, {
     surface: 'memory',
     mode: 'local-persist',

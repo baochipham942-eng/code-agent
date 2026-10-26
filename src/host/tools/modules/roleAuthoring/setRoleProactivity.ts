@@ -200,6 +200,9 @@ export async function executeSetRoleProactivity(
     lines.push(
       `免打扰时段：${current.quietHours ? `${current.quietHours.start} 至 ${current.quietHours.end}` : '未设置'} -> ${nextQuietHours ? `${nextQuietHours.start} 至 ${nextQuietHours.end}` : '未设置'}`,
     );
+  } else {
+    // 没动的免打扰也写明「未变」，避免用户以为这张卡把整份设置换掉了。
+    lines.push('免打扰时段：未变');
   }
   const restatement = lines.join('\n');
 
@@ -212,12 +215,18 @@ export async function executeSetRoleProactivity(
       forceConfirm: true,
       type: 'file_write',
       tool: schema.name,
-      reason: '修改角色主动性设置（写入配置并立即同步定时任务）',
+      // shadowAdapter 优先用 hint.reason 填审批请求；第 3 参只在 hint.reason 缺省时才落到卡上。
+      // 两处都放同一份旧->新复述，确认卡（CLI 直接渲染 reason；桌面卡展开后读 preview）才看得到。
+      reason: restatement,
       dangerLevel: 'normal',
       details: {
         roleId,
         before: { level: current.level, cadence: current.cadence ?? null, quietHours: current.quietHours ?? null, topicsInclude: current.topicsInclude ?? [], topicsExclude: current.topicsExclude ?? [] },
         after: { level: nextLevel, cadence: nextCadence ?? null, quietHours: nextQuietHours ?? null, topicsInclude: nextTopicsInclude, topicsExclude: nextTopicsExclude },
+        // 桌面审批卡不把 reason 画进问句（问句按 type 生成）。展开详情读的是 preview.summary。
+        preview: { type: 'generic' as const, summary: restatement },
+        // 停车收件箱的参数预览只拼 command/path/url/changes，不读 preview。
+        changes: restatement,
       },
     },
   );

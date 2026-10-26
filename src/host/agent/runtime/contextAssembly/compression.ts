@@ -6,6 +6,11 @@ import { CompressionState } from '../../../context/compressionState';
 import { getContextEventLedger } from '../../../context/contextEventLedger';
 import { emitContextCompressionSignal } from './compressionSignal';
 import { compactMessagesWithSummary } from '../../../context/compactionService';
+import { getContextInterventionState } from '../../../context/contextInterventionState';
+import {
+  pinnedPlainTextSurvivors,
+  redactExcludedMessagesForCompaction,
+} from '../../../context/compactionIntervention';
 import type { ToolResultArchiveRef } from '../../../utils/toolResultSpill';
 import { estimateTokens } from '../../../context/tokenOptimizer';
 import { estimateImageTokens } from '../../../context/tokenEstimator';
@@ -190,12 +195,20 @@ async function commitCompactionBlock(
   // Layer 2: only compact the runtime model context. The durable transcript stays
   // append-only below, otherwise old user prompts disappear from session replay.
   const boundary = block.compactedMessageCount;
+  const interventions = getContextInterventionState().getEffectiveSnapshot(
+    ctx.runtime.sessionId,
+    ctx.runtime.agentId,
+  );
+  const pinnedSurvivors = pinnedPlainTextSurvivors(ctx.runtime.messages, boundary, interventions);
+  const survivorIds = new Set(pinnedSurvivors.map((message) => message.id));
   const replacedMessageIds = boundary > 0
-    ? ctx.runtime.messages.slice(0, boundary).map((message) => message.id)
+    ? ctx.runtime.messages.slice(0, boundary)
+      .filter((message) => !survivorIds.has(message.id))
+      .map((message) => message.id)
     : [];
   if (boundary > 0) {
     const preservedCount = ctx.runtime.messages.length - boundary;
-    ctx.runtime.messages.splice(0, boundary, compactionMessage);
+    ctx.runtime.messages.splice(0, boundary, compactionMessage, ...pinnedSurvivors);
     logger.info(`[AgentLoop] Layer 2: spliced ${boundary} old messages, kept ${preservedCount} recent + 1 compaction`);
   } else {
     // 消息太少，仅追加
@@ -578,10 +591,14 @@ export async function checkAndAutoCompress(
     }
 
     const preserveCount = compressorConfig.preserveRecentCount;
+    const interventions = getContextInterventionState().getEffectiveSnapshot(
+      ctx.runtime.sessionId,
+      ctx.runtime.agentId,
+    );
     const compactionResult = await compactMessagesWithSummary({
       sessionId: ctx.runtime.sessionId,
       source: 'auto_threshold',
-      messages: ctx.runtime.messages,
+      messages: redactExcludedMessagesForCompaction(ctx.runtime.messages, interventions),
       preserveRecentCount: preserveCount,
       systemPrompt: ctx.runtime.systemPrompt,
       modelConfig: ctx.runtime.modelConfig,

@@ -460,7 +460,7 @@ export async function wakeRole(
     logger.info('Wake decision forced to silence: excluded topic', { roleId, trigger, parsedDecision });
     decision = 'silence';
   }
-  if (externalDelta?.section) decision = correctDecisionForUnreadableSources({ decision, finalOutput, sourceNames: externalDelta.sourceNames, roleId });
+  if (externalDelta?.section && !excluded) decision = correctDecisionForUnreadableSources({ decision, finalOutput, sourceNames: externalDelta.sourceNames, roleId });
   await storeWakeProposalsFromWake({ roleId, finalOutput, config });
   let summary = stripWakeMarkup(finalOutput)
     .slice(0, ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);

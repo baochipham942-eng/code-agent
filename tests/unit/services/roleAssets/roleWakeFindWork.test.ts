@@ -91,6 +91,7 @@ vi.mock('../../../../src/host/services/capabilities/capabilityCenterService', ()
 }));
 
 import { wakeRole } from '../../../../src/host/services/roleAssets/roleProactivity';
+import { runRoleWriteBack } from '../../../../src/host/services/roleAssets/roleWriteBack';
 import {
   acceptWakeProposal,
   dismissWakeProposal,
@@ -271,6 +272,33 @@ describe('roleWakeFindWork — ① wakeRole 行为', () => {
     primeWakeOutput('mail 读取失败。未读取：mail\n<decision>silence</decision>');
     const result = await wakeRole(RESEARCHER, 'cadence');
     expect(result.decision).toBe('report');
+  });
+
+  it('排除话题命中且全源未读取：保持 silence，不改回 report（不归档失败、不写回记忆、履历不落原文）', async () => {
+    primeConnectedSources(['mail', 'calendar']);
+    harness.mockSettings.value = {
+      roleAssets: {
+        proactivity: {
+          roles: {
+            [RESEARCHER]: { level: 'realtime', topicsExclude: ['八卦'] },
+          },
+        },
+      },
+    };
+    primeWakeOutput(
+      '办公室八卦还没回。未读取：mail\n未读取：calendar\n<decision>suggest</decision>',
+      'wake-exclude-unread',
+    );
+    const result = await wakeRole(RESEARCHER, 'cadence');
+    expect(result.decision).toBe('silence');
+    expect(harness.mockSessionManager.archiveSession).toHaveBeenCalledWith('wake-exclude-unread');
+    expect(vi.mocked(runRoleWriteBack)).not.toHaveBeenCalled();
+    expect(harness.mockSessionManager.updateMessage).not.toHaveBeenCalled();
+    const history = await loadRoleHistory(RESEARCHER, 100);
+    expect(history.some((line) => line.includes('命中排除话题，已停止汇报'))).toBe(true);
+    expect(history.some((line) => line.includes('八卦'))).toBe(false);
+    expect(history.some((line) => line.includes('[report]'))).toBe(false);
+    expect(history.some((line) => line.includes('[suggest]'))).toBe(false);
   });
 
   it('IPC 面：list / accept（返回 prompt 并移除）/ dismiss（移入 dismissed）', async () => {

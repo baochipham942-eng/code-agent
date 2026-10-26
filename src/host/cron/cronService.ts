@@ -656,7 +656,8 @@ export class CronService implements Disposable {
       if (jitter > 0) {
         await new Promise((resolve) => setTimeout(resolve, jitter));
       }
-      // jitter 窗口最长 15min：等待结束必须按 jobId 重取当前 definition（见 runScheduledJob），
+      // jitter 等待结束必须按 jobId 重取当前 definition（见 runScheduledJob）；
+      // every 任务窗口最长 15min，cron 表达式窗口最长 30s。
       // 不能拿这个闭包里注册时的旧 definition——等待期间被停用/删除/编辑过的任务
       // 照跑旧定义会产生模型费用、改过的 prompt 不生效（R2 审查 Important-3）。
       await this.runScheduledJob(id);
@@ -717,7 +718,7 @@ export class CronService implements Disposable {
   /**
    * 系统侧执行入口（croner tick 走完 jitter 等待后 / misfire 宽限窗补跑）：
    * 执行前按 jobId 重取**当前**定义，不存在或已停用则跳过并留痕（不是这次执行的失败，
-   * 不计连败、不发失败告警）——jitter 窗口最长 15min，等待期间任务可能已被停用/删除，
+   * 不计连败、不发失败告警）——every 任务 jitter 窗口最长 15min，等待期间任务可能已被停用/删除，
    * 拿注册时闭包里的旧 definition 照样执行会对已停任务产生模型费用（R2 审查 Important-3）。
    * 手动 triggerJob 不走这里：用户点「立即运行」就该立即运行。
    */
@@ -993,7 +994,7 @@ export class CronService implements Disposable {
 
     await new Promise((resolve) => setTimeout(resolve, delay));
 
-    // 不变量 A（R3）：等待后再执行——按 jobId 重取当前定义。等待期间（最长 15min）任务
+    // 不变量 A（R3）：等待后再执行——按 jobId 重取当前定义。等待期间（every 最长 15min，cron 最长 30s）任务
     // 可能已被停用/删除：拿闭包旧定义照跑是对已停任务再花一笔执行成本。中止重试链，
     // 终态 cancelled（不是这次执行的失败，不计连败；最后一次真实失败仍留在 execution.error）。
     const current = this.jobs.get(definition.id)?.definition;

@@ -688,11 +688,17 @@ export class CLIAgent {
         else messages.splice(insertionIndex, 0, message);
       }
       const { compactMessagesWithSummary } = await import('../host/context/compactionService');
+      const { getContextInterventionState } = await import('../host/context/contextInterventionState');
+      const {
+        commitCompactedMessagesKeepingPinned,
+        redactExcludedMessagesForCompaction,
+      } = await import('../host/context/compactionIntervention');
       const settings = getConfigService().getSettings();
+      const interventions = getContextInterventionState().getEffectiveSnapshot(sessionId);
       const result = await compactMessagesWithSummary({
         sessionId,
         source: 'manual_current',
-        messages,
+        messages: redactExcludedMessagesForCompaction(messages, interventions),
         preserveRecentCount: settings.contextCompression?.preserveRecentCount,
         systemPrompt: this.systemPrompt,
         modelConfig: this.config.modelConfig,
@@ -706,11 +712,17 @@ export class CLIAgent {
       };
       if (!result.success || !result.newMessages) return outcome;
       if (historyChanged()) return unchanged('history_changed');
-      await getSessionManager().replaceMessages(sessionId, result.newMessages);
+      const committedMessages = commitCompactedMessagesKeepingPinned(
+        messages,
+        result.newMessages,
+        result.block?.compactedMessageCount ?? 0,
+        interventions,
+      );
+      await getSessionManager().replaceMessages(sessionId, committedMessages);
       // The target session has committed successfully, even if the user switched away.
       // Retain any context injected while persistence was awaiting completion.
       if (this.sessionId === sessionId && this.messages === history) {
-        this.messages = [...result.newMessages, ...history.slice(snapshot.length)];
+        this.messages = [...committedMessages, ...history.slice(snapshot.length)];
       }
       return outcome;
     } finally {

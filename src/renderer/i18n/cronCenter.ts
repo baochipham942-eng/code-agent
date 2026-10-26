@@ -172,6 +172,9 @@ export const cronCenterZh = {
     simpleNamePlaceholder: '不填就用目标开头',
     simpleRoleLabel: '以谁的身份跑（可选）',
     simpleRoleNone: '不指定',
+    // 晨间分诊填参：可选，把这次分诊交给一位持久化角色
+    templateRoleLabel: '交给哪位角色（可选）',
+    templateRoleNone: '不指定',
     simpleArchiveLabel: '产出归档到（可选）',
     simpleArchiveNone: '不归档',
     resultPushLabel: '结果推送到（可选）',
@@ -500,6 +503,8 @@ export const cronCenterEn: typeof cronCenterZh = {
     simpleNamePlaceholder: 'Defaults to the goal text',
     simpleRoleLabel: 'Run as which expert (optional)',
     simpleRoleNone: 'None',
+    templateRoleLabel: 'Hand this to a role (optional)',
+    templateRoleNone: 'None',
     simpleArchiveLabel: 'Archive output to (optional)',
     simpleArchiveNone: "Don't archive",
     resultPushLabel: 'Push result to (optional)',

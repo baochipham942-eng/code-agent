@@ -11,6 +11,7 @@ import { toast } from '../hooks/useToast';
 import { useI18n } from '../hooks/useI18n';
 import ipcService from '../services/ipcService';
 import { IPC_CHANNELS, type AuthEvent } from '@shared/ipc';
+import { useAuthStore } from '../stores/authStore';
 
 /**
  * 仅在「曾登录但 session 过期」时提示；主动登出（signed_out 无 sessionExpired）不打扰。
@@ -20,11 +21,20 @@ export function shouldShowSessionExpiredToast(event: AuthEvent): boolean {
   return event.type === 'signed_out' && event.sessionExpired === true;
 }
 
+// 一次过期只提示一次。signed_in 重新武装。模块级，组件重挂载不会把同一场风暴再放出来。
+let sessionExpiredToastShown = false;
+
 export function SessionExpiredNotice(): null {
   const { t } = useI18n();
   useEffect(() => {
     const unsubscribe = ipcService.on(IPC_CHANNELS.AUTH_EVENT, (event: AuthEvent) => {
+      if (event.type === 'signed_in') {
+        sessionExpiredToastShown = false;
+        return;
+      }
+      if (sessionExpiredToastShown || useAuthStore.getState().showAuthModal) return;
       if (shouldShowSessionExpiredToast(event)) {
+        sessionExpiredToastShown = true;
         toast.warning(t.common.sessionExpiredReconnect);
       }
     });

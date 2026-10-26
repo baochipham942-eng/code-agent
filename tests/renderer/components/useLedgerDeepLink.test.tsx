@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
-// 冷启动 switchSession 会在 ?open= 摊开二级页之后 closeSecondaryPages。
-// 钩子必须在会话 id 第一次变化时再摊开一次，且不能在之后的切换里把页面钉住。
+// 冷启动会连切两次会话，第二次同 id 只关页。钩子在启动窗口内把页摊开，窗口过后不再钉住。
 import React from 'react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -39,45 +38,45 @@ describe('useLedgerDeepLink', () => {
     expect(app).toMatch(/\buseLedgerDeepLink\(\)/);
   });
 
-  it('自动化深链在会话 id 第一次变化后重新打开，之后不再钉住', () => {
-    window.history.pushState({}, '', '/?open=automation&cronTab=runs');
-    render(<Probe />);
-    expect(useAppStore.getState().showCronCenter).toBe(true);
+  it('启动窗口内自动化页被关掉会再摊开，窗口过后保持关闭', () => {
+    const start = 1_700_000_000_000;
+    const now = vi.spyOn(Date, 'now').mockReturnValue(start);
+    try {
+      window.history.pushState({}, '', '/?open=automation&cronTab=runs');
+      render(<Probe />);
+      expect(useAppStore.getState().showCronCenter).toBe(true);
 
-    act(() => {
-      closePages();
-      useSessionStore.setState({ isLoading: true });
-    });
-    expect(useAppStore.getState().showCronCenter).toBe(false);
+      act(() => closePages());
+      expect(useAppStore.getState().showCronCenter).toBe(true);
 
-    act(() => {
-      useSessionStore.setState({ currentSessionId: 'session-1' });
-    });
-    expect(useAppStore.getState().showCronCenter).toBe(true);
+      act(() => closePages());
+      expect(useAppStore.getState().showCronCenter).toBe(true);
 
-    act(() => {
-      useAppStore.getState().setShowCronCenter(false);
-      useSessionStore.setState({ currentSessionId: 'session-2' });
-    });
-    expect(useAppStore.getState().showCronCenter).toBe(false);
+      now.mockReturnValue(start + 8_001);
+      act(() => closePages());
+      expect(useAppStore.getState().showCronCenter).toBe(false);
+    } finally {
+      now.mockRestore();
+    }
   });
 
-  it('角色深链在同一次启动切换后回到该角色，再次切换不重开', () => {
-    window.history.pushState({}, '', '/?open=role&roleId=ledger-role-a&roleTab=records');
-    render(<Probe />);
-    expect(useAppStore.getState().expertDetailRoleId).toBe('ledger-role-a');
+  it('启动窗口内角色页被关掉会回到该角色，窗口过后保持关闭', () => {
+    const start = 1_700_000_000_000;
+    const now = vi.spyOn(Date, 'now').mockReturnValue(start);
+    try {
+      window.history.pushState({}, '', '/?open=role&roleId=ledger-role-a&roleTab=records');
+      render(<Probe />);
+      expect(useAppStore.getState().expertDetailRoleId).toBe('ledger-role-a');
 
-    act(() => {
-      closePages();
-      useSessionStore.setState({ currentSessionId: 'session-1' });
-    });
-    expect(useAppStore.getState().expertDetailRoleId).toBe('ledger-role-a');
+      act(() => closePages());
+      expect(useAppStore.getState().expertDetailRoleId).toBe('ledger-role-a');
 
-    act(() => {
-      closePages();
-      useSessionStore.setState({ currentSessionId: 'session-2' });
-    });
-    expect(useAppStore.getState().expertDetailRoleId).toBe(null);
+      now.mockReturnValue(start + 8_001);
+      act(() => closePages());
+      expect(useAppStore.getState().expertDetailRoleId).toBe(null);
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it('没有 open 参数时不订阅、不打开', () => {

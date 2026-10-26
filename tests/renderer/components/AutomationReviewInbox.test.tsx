@@ -263,6 +263,24 @@ describe('AutomationReviewInbox', () => {
     });
   });
 
+  it('webhook 过期通告显示丢弃条数，不写成应用离线', async () => {
+    listPendingReview.mockResolvedValue([makeRecord({
+      config: {
+        pendingReview: { at: 1700000000000 },
+        missedNotice: { scheduledAt: 1700000000000, reason: 'webhook-expired', count: 4 },
+      },
+    })]);
+
+    render(<AutomationReviewInbox />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('automation-review-missed').textContent).toContain('4');
+    });
+    const text = screen.getByTestId('automation-review-missed').textContent ?? '';
+    expect(text).toContain('24');
+    expect(text).not.toContain('应用离线');
+  });
+
   it('云端结果显示位置徽标和离线完成副行', async () => {
     listPendingReview.mockResolvedValue([makeRecord({
       config: {

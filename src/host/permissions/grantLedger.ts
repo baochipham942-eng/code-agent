@@ -111,7 +111,7 @@ export function listGrants(now: number = Date.now()): PermissionGrantEntry[] {
   for (const grant of listToolGrants(now)) {
     entries.push({
       id: grant.tier === 'run'
-        ? buildId(ID_VARIANT.toolRun, grant.sessionId ?? '', grant.tool, ...(grant.target ? [grant.target] : []))
+        ? buildId(ID_VARIANT.toolRun, grant.sessionId, grant.tool, ...(grant.target ? [grant.target] : []))
         : buildId(ID_VARIANT.tool24h, grant.tool, ...(grant.target ? [grant.target] : [])),
       kind: 'tool-timed',
       label: grant.tool,

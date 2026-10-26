@@ -314,6 +314,15 @@ describe('审批岛 ②④ 交互与停车路径铸权', () => {
     expect(await run.promise).toMatchObject({ approved: false, denialSource: 'fail-closed' });
     expect(matchToolGrant('chat-edit-1', 'mail_send', null, Date.now())).toBe(null);
   });
+
+  it('allow_run 无 sessionId（重启恢复等无会话应答）→ 不铸造任何 run 档（fail-safe，rework r2 nit）', async () => {
+    const { island, ask } = makeIsland({ sessionId: 'chat-nosession-1' });
+    const { promise, id } = ask({ sessionId: undefined, details: { command: 'echo hi' } });
+    expect(island.handlePermissionResponse(id, 'allow_run')).toBe('delivered');
+    // 本次照常放行，但不落任何 run 档记忆：无处归属的时间盒不放大。
+    expect(await promise).toEqual({ approved: true, approvalSource: 'user' });
+    expect(matchToolGrant('chat-nosession-1', 'Bash', null, Date.now())).toBe(null);
+  });
 });
 
 describe('⑤ 统一授权台账列两档', () => {

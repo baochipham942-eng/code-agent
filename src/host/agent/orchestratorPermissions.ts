@@ -96,8 +96,17 @@ function recordHumanGrant(
     else getConfirmationGate().recordApproval(request.sessionId, request.tool);
   } else if (response === 'allow_standing' && app?.name) {
     mintAppGrantStanding(app);
-  } else if (response === 'allow_run' && request.sessionId && !app?.name) {
-    mintToolRunGrant(request.sessionId, request.tool, request.details?.standingGrantTarget ?? null);
+  } else if (response === 'allow_run' && !app?.name) {
+    // run 档没有会话就无处归属（重启恢复/无会话应答）：不落任何记忆，warn 留痕，
+    // 下一次同类调用照常询问——fail-safe 而非静默放大成全局。
+    if (!request.sessionId) {
+      logger.warn('allow_run response without sessionId: run-tier grant not minted, next call will ask again', {
+        tool: request.tool,
+        requestId: request.id,
+      });
+    } else {
+      mintToolRunGrant(request.sessionId, request.tool, request.details?.standingGrantTarget ?? null);
+    }
   } else if (response === 'allow_24h' && !app?.name) {
     mintTool24hGrant(request.tool, request.details?.standingGrantTarget ?? null);
   }

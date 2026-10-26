@@ -88,6 +88,21 @@ describe('ExternalImportInstructionRules 分组与收起（走查：默认收起
     expect(screen.getByTestId('external-import-rule-row-hb').textContent).toContain('不要自动推送分支');
   });
 
+  it('展开钮的箭头与文案是按钮 inline-flex 行里的兄弟节点，箭头不落进文案 span（FU1 返修验收②）', () => {
+    renderRules([ruleItem({ id: 'instruction:a', content: '规则一', contentHash: 'ha' })]);
+
+    const button = screen.getByRole('button', { name: /找到 1 条规则/ });
+    expect(button.className).toContain('inline-flex');
+    const spans = Array.from(button.children).filter((child) => child.tagName === 'SPAN');
+    expect(spans).toHaveLength(2);
+    const [labelSpan, iconSpan] = spans;
+    expect(labelSpan?.textContent).toBe('找到 1 条规则');
+    // 箭头 svg 不在文案 span 里：它与文案是同一 inline-flex 行的两个 flex 项
+    expect(labelSpan?.querySelector('svg')).toBeNull();
+    expect(iconSpan?.querySelector('svg')).toBeTruthy();
+    expect(iconSpan?.parentElement).toBe(button);
+  });
+
   it('两个来源文件各自分组，路径按 homeDir 缩写为 ~', () => {
     renderRules([
       ruleItem({ id: 'instruction:a', content: '规则一', contentHash: 'h1' }),

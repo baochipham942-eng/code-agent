@@ -37,6 +37,8 @@ import {
   type SupportedEveryTimeUnit,
 } from './cronNormalizers';
 import { executeCronAgentAction } from './cronAgentAction';
+import { attachCronRunCost, createCronRunCostMeter, readCronRunCostUsd } from './cronRunCostMeter';
+import { addCronRunCostUsd } from '../../shared/cronRunLedger';
 import { getEventBus } from '../services/eventing/bus';
 import { persistCronMissedTrace } from './cronMissedTrace';
 import {
@@ -788,6 +790,7 @@ export class CronService implements Disposable {
         }
         execution.status = 'completed';
         execution.result = result;
+        execution.cost = addCronRunCostUsd(execution.cost, readCronRunCostUsd(result));
         if (definition.action.type !== 'agent') {
           await this.deliverCronResult(definition, result, execution.id);
         }
@@ -795,6 +798,7 @@ export class CronService implements Disposable {
     } catch (error) {
       execution.error = cronFailureSourceText(error);
       adoptFailedAgentSession(execution, error);
+      execution.cost = addCronRunCostUsd(execution.cost, readCronRunCostUsd(error));
       const failureKind = classifyCronFailure(execution.error);
 
       if (failureKind === 'capacity-wait') {
@@ -960,13 +964,19 @@ export class CronService implements Disposable {
       case 'role-wake': {
         // 角色主动性：cadence 到点 → 完整醒来循环（内部文档）
         const { wakeRole } = await import('../services/roleAssets/roleProactivity');
-        const wakeResult = await wakeRole(action.roleId, 'cadence');
+        // 只计量不设闸：role-wake 历史上不吃 maxRunBudget（本单不扩权），外层闸仍是全局预算池。
+        const costMeter = createCronRunCostMeter(undefined);
+        const wakeResult = await costMeter.run(() => wakeRole(action.roleId, 'cadence')).catch((error: unknown) => {
+          attachCronRunCost(error, costMeter);
+          throw error;
+        });
+        const wakeCostUsd = costMeter.getCostUsd();
         console.error(
           `[CronService] Role wake ${wakeResult.status}`
           + ` (role=${wakeResult.roleId}, decision=${wakeResult.decision ?? '-'}, session=${wakeResult.sessionId ?? '-'})`
           + (wakeResult.skipReason ? `: ${wakeResult.skipReason}` : ''),
         );
-        return wakeResult;
+        return wakeCostUsd > 0 ? { ...wakeResult, costUsd: wakeCostUsd } : wakeResult;
       }
 
       default:
@@ -1016,11 +1026,12 @@ export class CronService implements Disposable {
       }
       execution.status = 'completed';
       execution.result = result;
+      execution.cost = addCronRunCostUsd(execution.cost, readCronRunCostUsd(result));
     } catch (error) {
       execution.status = 'failed';
       execution.error = cronFailureSourceText(error);
       adoptFailedAgentSession(execution, error);
-
+      execution.cost = addCronRunCostUsd(execution.cost, readCronRunCostUsd(error));
       // permanent：确定性失败，烧掉剩余重试毫无意义，停在这里等 finally 的停用档。
       if (classifyCronFailure(execution.error) === 'permanent' || classifyCronFailure(execution.error) === 'login-wall') return;
 

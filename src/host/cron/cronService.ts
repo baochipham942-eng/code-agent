@@ -333,7 +333,13 @@ export class CronService implements Disposable {
 
     syncCronAutomationFromJob(updatedJob, this.resolveAutomationRuntime);
     if (updates.schedule !== undefined || updates.enabled !== undefined) this.cronEventTrigger?.groupListenChecks.forget(jobId);
-    if (updates.enabled === false) this.cronWebhookRelay?.removeHookForJob(updatedJob);
+    // 停用，或调度离开 webhook：用改写前的定义摘 hook。改写后的 schedule 往往已不是
+    // webhook，removeHookForJob 看到它会直接返回，云端仍收投递并被 ack 丢弃。
+    const previousSchedule = existingJob.definition.schedule;
+    const nextSchedule = updatedJob.schedule;
+    const wasWebhook = previousSchedule?.type === 'event' && previousSchedule.source === 'webhook';
+    const staysLiveWebhook = nextSchedule?.type === 'event' && nextSchedule.source === 'webhook' && updatedJob.enabled;
+    if (wasWebhook && !staysLiveWebhook) this.cronWebhookRelay?.removeHookForJob(existingJob.definition);
 
     // existingJob 指向改写前的 map 条目：已注册（有 cloudJobId）的停用任务仍要把停用态
     // 推给云端；从未注册的停用任务不碰云端（N-ROLE-ROUTINE-RESTATE-FU1-FU1）。

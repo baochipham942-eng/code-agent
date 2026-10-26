@@ -121,8 +121,8 @@ export interface SessionAutomationConfig extends Record<string, unknown> {
   /**
    * 启动时发现漏跑且无法回写源会话时，由自动化收件箱承接。
    * webhook 源（N-CRON-WEBHOOK-CLOUD-HOOK）复用同一承接位：中继排队超 24h 过期的
-   * 投递以 reason 'webhook-expired' + count 落待过目（收件箱只渲染 scheduledAt，
-   * 不区分 reason，无需新 UI）。
+   * 投递以 reason 'webhook-expired' + count 落待过目。收件箱按 reason 分支：
+   * webhook-expired 显示丢弃条数，不复用「应用离线」（应用当时可以一直在线）。
    */
   missedNotice?: {
     scheduledAt: number;

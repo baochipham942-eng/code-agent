@@ -4,6 +4,7 @@ import type {
   CronJobExecution,
   CronJobStatus,
   EventConnectorMailScheduleConfig,
+  EventWebhookScheduleConfig,
   EveryScheduleConfig,
   IpcAction,
   ShellAction,
@@ -27,11 +28,12 @@ export interface CronJobDraft {
   maxRunBudget: string;
   maxRuns: string;
   /**
-   * 调度类型。'event' = 通道消息（群监听）；'event-mail' = 新邮件（connector:mail）——
-   * draft 级的两种事件源分型，保存时统一落 scheduleType 'event' + schedule.source 区分
+   * 调度类型。'event' = 通道消息（群监听）；'event-mail' = 新邮件（connector:mail）；
+   * 'event-webhook' = 已落库的 webhook 任务（编辑回写，创建菜单不提供这一项）——
+   * draft 级的事件源分型，保存时统一落 scheduleType 'event' + schedule.source 区分
    * （buildCronJobInput 负责映射，round-trip：buildDraftFromJob 按 schedule.source 还原）。
    */
-  scheduleType: 'at' | 'every' | 'cron' | 'event' | 'event-mail';
+  scheduleType: 'at' | 'every' | 'cron' | 'event' | 'event-mail' | 'event-webhook';
   atDatetime: string;
   everyInterval: string;
   everyUnit: EveryScheduleConfig['unit'];
@@ -58,6 +60,13 @@ export interface CronJobDraft {
    * minRunIntervalSec），防止一次「无操作编辑」把它们清回默认。
    */
   eventMailSource?: EventConnectorMailScheduleConfig;
+  /**
+   * 'event-webhook' 调度：编辑已有 webhook 任务时由 buildDraftFromJob 带出的原绑定。
+   * 编辑器没有 webhook 表单；只要调度类型还是 event-webhook，保存就整份回写
+   * （含窗口字段），通道账号字段不参与。用户改成别的调度类型后这份原绑定不再回建，
+   * host 在调度离开 webhook 时摘掉云端 hook。
+   */
+  eventWebhookSource?: EventWebhookScheduleConfig;
   /**
    * 编辑任务时由 buildDraftFromJob 带出的原 metadata 整份。编辑器没有 metadata 表单，
    * 但 host updateJob 对 metadata 是顶层整体替换——不带原值回写，一次「无操作编辑」
@@ -182,8 +191,8 @@ export function buildDraftFromJob(job: CronJobDefinition): CronJobDraft {
     // 通道源回填通道字段；connector:mail 源回填 mail 字段（scheduleType 分型为
     // 'event-mail'，编辑器据此渲染账号/邮箱下拉）。原 mail 绑定整份挂在 eventMailSource
     // 上，保存时仅覆盖 accountId/mailbox，可选窗口字段原样保留（round-trip）。
-    // webhook 源（N-CRON-WEBHOOK-CLOUD-HOOK）没有编辑器表单，落到通用 'event' 分支
-    // 只回填公共字段（编辑器 UI 属后续单）。
+    // webhook 源没有账号表单：分型为 'event-webhook' 并带出原绑定。若落进通用 'event'
+    // 分支，保存会当成 channel（没账号存不了；补上账号则 source 被改写、窗口被清掉）。
     if (job.schedule.source === 'channel') {
       draft.eventAccountId = job.schedule.accountId;
       draft.eventChatId = job.schedule.chatId || '';
@@ -192,6 +201,9 @@ export function buildDraftFromJob(job: CronJobDefinition): CronJobDraft {
       draft.eventMailAccountId = job.schedule.accountId;
       draft.eventMailMailbox = job.schedule.mailbox || '';
       draft.eventMailSource = job.schedule;
+    } else if (job.schedule.source === 'webhook') {
+      draft.scheduleType = 'event-webhook';
+      draft.eventWebhookSource = job.schedule;
     }
   }
 
@@ -347,6 +359,17 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
       ...(mailbox ? { mailbox } : {}),
     };
     if (!mailbox) delete schedule.mailbox;
+  } else if (draft.scheduleType === 'event-webhook') {
+    // 已落库的 webhook 任务：整份回写原绑定（含窗口）。通道账号字段不参与——
+    // 补选账号不能把 source 改成 channel。改成别的调度类型则走对应分支，原绑定作废。
+    const source = draft.eventWebhookSource;
+    schedule = {
+      type: 'event',
+      source: 'webhook',
+      eventName: 'message',
+      ...(source?.batchWindowSec !== undefined ? { batchWindowSec: source.batchWindowSec } : {}),
+      ...(source?.minRunIntervalSec !== undefined ? { minRunIntervalSec: source.minRunIntervalSec } : {}),
+    };
   } else {
     // 'event'（通道源）：显式 (accountId, chatId) 绑定即群监听，chatId 缺省 = 该账号
     // 任意会话。两个可选窗口（batchWindowSec/minRunIntervalSec）不设值，host
@@ -434,7 +457,9 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
   return {
     ...common,
     // draft 级 'event-mail' 在契约里就是 'event'（源差异在 schedule.source）。
-    scheduleType: draft.scheduleType === 'event-mail' ? 'event' : draft.scheduleType,
+    scheduleType: draft.scheduleType === 'event-mail' || draft.scheduleType === 'event-webhook'
+      ? 'event'
+      : draft.scheduleType,
     schedule,
     action,
   };

@@ -6,8 +6,8 @@
 //   帧路由 —— cron_hook 帧 → CronEventTrigger.ingestWebhook（绑定过滤/去重/
 //     合批全在触发器里），处置终态后逐帧 ack（at-least-once 的确认侧）；
 //   过期通告 —— cron_hook_expired 帧按 cronMissedTrace 同一套 automation 收件箱
-//     机制落一条待过目（reason 'webhook-expired' + count；只落 host 持久化，
-//     不建新 UI——收件箱本就只渲染 missedNotice.scheduledAt，不区分 reason）；
+//     机制落一条待过目（reason 'webhook-expired' + count）。收件箱按 reason
+//     显示丢弃条数，不复用「应用离线」——排队超时和进程离线不是一回事；
 //   hook 生命周期 —— register/rotate/remove 走 CronApiClient 的 hook 端点，
 //     {url, token} 只作为返回值出现一次，绝不持久化、绝不落日志；
 //   清理 —— 任务删除/停用时 best-effort 摘掉中继侧 hook（失败只告警）。

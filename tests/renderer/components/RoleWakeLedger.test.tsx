@@ -129,4 +129,43 @@ describe('RoleWakeLedger', () => {
       expect(screen.getByTestId('role-wake-ledger-empty')).toBeTruthy();
     });
   });
+
+  // ai-review Important（PR #2556）：角色页「现在运行」结束后，最近唤醒账本仍是点击前的快照。
+  // 回归钉子：refreshToken 变化必须重拉执行记录，且重拉期间旧列表不闪回空态。
+  it('refreshToken 变化后重拉最近唤醒，且重拉期间旧列表不闪空', async () => {
+    listJobs.mockResolvedValue([job('wake-a', { type: 'role-wake', roleId: 'role-a' })]);
+    let releaseSecondFetch: (list: CronJobExecution[]) => void = () => {};
+    const secondFetch = new Promise<CronJobExecution[]>((resolve) => {
+      releaseSecondFetch = resolve;
+    });
+    getExecutions
+      .mockImplementationOnce(() => Promise.resolve([wakeExecution('w1', { cost: 0.03 })]))
+      .mockImplementationOnce(() => secondFetch);
+    const view = render(<RoleWakeLedger roleId="role-a" />);
+    await waitFor(() => {
+      expect(screen.getByTestId('role-wake-ledger-list')).toBeTruthy();
+    });
+    expect(getExecutions).toHaveBeenCalledTimes(1);
+
+    // 「现在运行」结束 → 父级 bump 刷新令牌
+    view.rerender(<RoleWakeLedger roleId="role-a" refreshToken={1} />);
+    await waitFor(() => {
+      expect(getExecutions).toHaveBeenCalledTimes(2);
+    }, { timeout: 2_000 });
+
+    // 第二次拉取还在途：旧列表原样可见，不闪回空态/加载态
+    expect(screen.getAllByTestId('role-wake-ledger-row')).toHaveLength(1);
+    expect(screen.getByTestId('role-wake-ledger-list')).toBeTruthy();
+
+    releaseSecondFetch([
+      wakeExecution('w-new', { cost: 0.05 }),
+      wakeExecution('w1', { cost: 0.03 }),
+    ]);
+    await waitFor(() => {
+      expect(screen.getAllByTestId('role-wake-ledger-row')).toHaveLength(2);
+    });
+    const values = screen.getAllByTestId('role-wake-ledger-value').map((node) => node.textContent);
+    expect(values).toContain('$0.0500');
+    expect(values).toContain('$0.0300');
+  });
 });

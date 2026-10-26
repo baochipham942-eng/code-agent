@@ -24,18 +24,23 @@ async function loadRoleWakeExecutions(roleId: string): Promise<CronJobExecution[
   return lists.flat().sort((a, b) => (b.startedAt ?? b.scheduledAt) - (a.startedAt ?? a.scheduledAt));
 }
 
-export const RoleWakeLedger: React.FC<{ roleId: string }> = ({ roleId }) => {
+export const RoleWakeLedger: React.FC<{ roleId: string; refreshToken?: number }> = ({ roleId, refreshToken = 0 }) => {
   const { t } = useI18n();
   const cc = t.cronCenter;
   const [executions, setExecutions] = useState<CronJobExecution[] | null>(null);
+  const loadedRoleIdRef = React.useRef<string | null>(null);
   useEffect(() => {
     let cancelled = false;
-    setExecutions(null);
+    // 只有换角色才清空重挂；refreshToken 刷新（「现在运行」结束）保留旧列表重拉，不闪空态
+    if (loadedRoleIdRef.current !== roleId) {
+      loadedRoleIdRef.current = roleId;
+      setExecutions(null);
+    }
     void loadRoleWakeExecutions(roleId)
       .then((list) => { if (!cancelled) setExecutions(list); })
       .catch(() => { if (!cancelled) setExecutions([]); });
     return () => { cancelled = true; };
-  }, [roleId]);
+  }, [roleId, refreshToken]);
   if (executions === null) return null;
   return (
     <SettingsSection title={cc.roleWakeRecentTitle} description={cc.roleWakeRecentDescription}>

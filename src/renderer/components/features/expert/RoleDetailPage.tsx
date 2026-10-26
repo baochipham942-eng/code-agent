@@ -824,6 +824,12 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
   const closeDetail = useCallback(() => setShowCapabilityHub(true), [setShowCapabilityHub]);
   const [detail, setDetail] = useState<RolePanelDetail | null>(null);
   const [boundCronJobs, setBoundCronJobs] = useState<RoleBoundCronJob[]>([]);
+  // 行内动作（「现在运行」等）完成后 bump，驱动下方唤醒账本重拉（ai-review Important：曾只在进页时拉一次）
+  const [wakeLedgerToken, setWakeLedgerToken] = useState(0);
+  const handleBoundCronJobsChange = useCallback((jobs: RoleBoundCronJob[]) => {
+    setBoundCronJobs(jobs);
+    setWakeLedgerToken((token) => token + 1);
+  }, []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const loadDetail = useCallback(async () => {
@@ -902,8 +908,8 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
               </div>
             </div>
           </SettingsSection>
-          <RoleRoutinesSection roleId={roleId} jobs={boundCronJobs} onJobsChange={setBoundCronJobs} />
-          <RoleWakeLedger roleId={roleId} />
+          <RoleRoutinesSection roleId={roleId} jobs={boundCronJobs} onJobsChange={handleBoundCronJobsChange} />
+          <RoleWakeLedger roleId={roleId} refreshToken={wakeLedgerToken} />
           <RoleBindingsSection roleId={roleId} />
           <SettingsSection
             title={`${roleText.detail.memoriesTitlePrefix}${detail.memories.length}${roleText.detail.memoriesTitleSuffix}`}

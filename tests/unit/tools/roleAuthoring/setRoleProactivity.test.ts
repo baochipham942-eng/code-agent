@@ -8,6 +8,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import os from 'os';
+import type { RoleProactivityConfig } from '../../../../src/shared/contract/roleAssets';
+import type { CanUseToolFn, ToolResult } from '../../../../src/host/protocol/tools';
 
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
 const mockSession = vi.hoisted(() => ({ value: null as null | { metadata?: Record<string, unknown> } }));
@@ -59,8 +61,8 @@ let configMod: ConfigMod;
 let roleProactivityMod: RoleProactivityMod;
 let modesMod: ModesMod;
 
-const allow = vi.fn(async () => ({ allow: true } as const));
-const deny = vi.fn(async () => ({ allow: false, reason: 'user denied' } as const));
+const allow = vi.fn(async (_toolName: string, _input: Record<string, unknown>, _reason?: string, _hint?: unknown) => ({ allow: true } as const));
+const deny = vi.fn(async (_toolName: string, _input: Record<string, unknown>, _reason?: string, _hint?: unknown) => ({ allow: false, reason: 'user denied' } as const));
 
 function makeCtx(overrides: Record<string, unknown> = {}) {
   return {
@@ -73,7 +75,7 @@ function makeCtx(overrides: Record<string, unknown> = {}) {
   };
 }
 
-async function seedOverride(roleId: string, config: Record<string, unknown>): Promise<void> {
+async function seedOverride(roleId: string, config: RoleProactivityConfig): Promise<void> {
   await configMod.getConfigService().updateSettings({
     roleAssets: { proactivity: { roles: { [roleId]: config } } },
   });
@@ -84,6 +86,12 @@ async function readStoredOverride(roleId: string): Promise<Record<string, unknow
   return (settings as unknown as {
     roleAssets?: { proactivity?: { roles?: Record<string, Record<string, unknown>> } };
   }).roleAssets?.proactivity?.roles?.[roleId];
+}
+
+/** expect(result.ok).toBe(false) 不做类型收窄——统一走这个 helper 拿到收窄后的失败分支 */
+function expectFail(result: ToolResult<string>): Extract<ToolResult<string>, { ok: false }> {
+  expect(result.ok).toBe(false);
+  return result as Extract<ToolResult<string>, { ok: false }>;
 }
 
 async function readConfigJsonBytes(): Promise<Buffer> {
@@ -162,7 +170,7 @@ describe('set_role_proactivity（真实 configService，临时数据目录）', 
     );
 
     expect(allow).toHaveBeenCalledTimes(1);
-    const [toolName, , reason, hint] = allow.mock.calls[0];
+    const [toolName, , reason, hint] = allow.mock.calls[0] as [string, Record<string, unknown>, string | undefined, Parameters<CanUseToolFn>[3] | undefined];
     expect(toolName).toBe('set_role_proactivity');
     expect(hint).toMatchObject({ forceConfirm: true, sessionId: 'sess-attended', type: 'file_write' });
     expect(reason).toContain('角色「研究员」主动性调整');
@@ -171,7 +179,7 @@ describe('set_role_proactivity（真实 configService，临时数据目录）', 
     expect(reason).toContain('每天 09:00');
     expect(reason).toContain('永远别提：+ 天气');
     expect(reason).not.toContain('免打扰时段'); // quiet hours 未动不出现 diff 行
-    expect((hint as { details?: { before?: unknown; after?: unknown } }).details).toMatchObject({
+    expect((hint as { details?: { before?: unknown; after?: unknown } })?.details).toMatchObject({
       roleId: '研究员',
       before: { level: 'realtime' },
       after: { level: 'daily', cadence: '0 0 9 * * *' },
@@ -212,8 +220,8 @@ describe('set_role_proactivity（真实 configService，临时数据目录）', 
       deny,
     );
 
-    expect(result.ok).toBe(false);
-    expect(result.code).toBe('PERMISSION_DENIED');
+    const denied = expectFail(result);
+    expect(denied.code).toBe('PERMISSION_DENIED');
     expect(deny).toHaveBeenCalledTimes(1); // 审批确实被问了（forceConfirm 卡）
     const after = await readConfigJsonBytes();
     expect(after.equals(before)).toBe(true); // 字节级一致 = 什么都没写
@@ -228,11 +236,11 @@ describe('set_role_proactivity（真实 configService，临时数据目录）', 
       allow,
     );
 
-    expect(result.ok).toBe(false);
-    expect(result.code).toBe('INVALID_ARGS');
-    expect(result.error).toContain('未知角色「不存在的角色」');
-    expect(result.error).toContain('研究员');
-    expect(result.error).toContain('写手');
+    const unknown = expectFail(result);
+    expect(unknown.code).toBe('INVALID_ARGS');
+    expect(unknown.error).toContain('Unknown role "不存在的角色"');
+    expect(unknown.error).toContain('研究员');
+    expect(unknown.error).toContain('写手');
     expect(allow).not.toHaveBeenCalled();
   });
 
@@ -240,11 +248,11 @@ describe('set_role_proactivity（真实 configService，临时数据目录）', 
     const handler = await toolModule.setRoleProactivityModule.createHandler();
     const result = await handler.execute({ level: 'daily' }, makeCtx(), allow);
 
-    expect(result.ok).toBe(false);
-    expect(result.code).toBe('INVALID_ARGS');
-    expect(result.error).toContain('roleId is required');
-    expect(result.error).toContain('研究员');
-    expect(result.error).toContain('写手');
+    const missing = expectFail(result);
+    expect(missing.code).toBe('INVALID_ARGS');
+    expect(missing.error).toContain('roleId is required');
+    expect(missing.error).toContain('研究员');
+    expect(missing.error).toContain('写手');
     expect(allow).not.toHaveBeenCalled();
   });
 
@@ -266,8 +274,8 @@ describe('set_role_proactivity（真实 configService，临时数据目录）', 
       allow,
     );
 
-    expect(result.ok).toBe(false);
-    expect(result.code).toBe('UNATTENDED_UNSUPPORTED');
+    const blocked = expectFail(result);
+    expect(blocked.code).toBe('UNATTENDED_UNSUPPORTED');
     expect(allow).not.toHaveBeenCalled();
     expect(await readStoredOverride('研究员')).toBeUndefined();
   });
@@ -279,15 +287,13 @@ describe('set_role_proactivity（真实 configService，临时数据目录）', 
       { roleId: '研究员', quiet_hours: { start: '25:00', end: '08:00' } },
       makeCtx(), allow,
     );
-    expect(bad1.ok).toBe(false);
-    expect(bad1.code).toBe('INVALID_ARGS');
+    expect(expectFail(bad1).code).toBe('INVALID_ARGS');
 
     const bad2 = await handler.execute(
       { roleId: '研究员', quiet_hours: { start: '22:00', end: '22:00' } },
       makeCtx(), allow,
     );
-    expect(bad2.ok).toBe(false);
-    expect(bad2.code).toBe('INVALID_ARGS');
+    expect(expectFail(bad2).code).toBe('INVALID_ARGS');
 
     await seedOverride('研究员', {
       level: 'daily',
@@ -313,15 +319,13 @@ describe('set_role_proactivity（真实 configService，临时数据目录）', 
       { roleId: '研究员', once_a_day: true, level: 'realtime' },
       makeCtx(), allow,
     );
-    expect(conflict.ok).toBe(false);
-    expect(conflict.code).toBe('INVALID_ARGS');
+    expect(expectFail(conflict).code).toBe('INVALID_ARGS');
 
     const badLevel = await handler.execute(
       { roleId: '研究员', level: 'always-on' },
       makeCtx(), allow,
     );
-    expect(badLevel.ok).toBe(false);
-    expect(badLevel.code).toBe('INVALID_ARGS');
+    expect(expectFail(badLevel).code).toBe('INVALID_ARGS');
     expect(allow).not.toHaveBeenCalled();
   });
 
@@ -332,6 +336,6 @@ describe('set_role_proactivity（真实 configService，临时数据目录）', 
 
     expect(result.ok).toBe(true);
     expect(allow).not.toHaveBeenCalled();
-    expect(result.output).toContain('没有需要变更的内容');
+    expect(result.ok === true && result.output).toContain('没有需要变更的内容');
   });
 });

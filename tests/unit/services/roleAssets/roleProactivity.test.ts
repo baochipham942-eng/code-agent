@@ -116,10 +116,10 @@ import {
 import {
   formatTopicPreferencePrompt,
   parseWakeRationale,
-  sanitizeTopicList,
   stripWakeMarkup,
   topicExcludeHits,
 } from '../../../../src/host/services/roleAssets/wakeRationale';
+import { sanitizeTopicList } from '../../../../src/shared/roleTopicList';
 import { ensureRoleAssetDirs, appendRoleHistory, loadRoleHistory } from '../../../../src/host/services/roleAssets/roleAssetService';
 import { getRoleHistoryPath } from '../../../../src/host/services/roleAssets/roleAssetPaths';
 import { ROLE_PROACTIVITY } from '../../../../src/shared/constants';

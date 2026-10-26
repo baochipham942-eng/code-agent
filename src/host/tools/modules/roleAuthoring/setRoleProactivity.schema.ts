@@ -1,10 +1,8 @@
 // Schema-only file (single source of truth) — set_role_proactivity 工具
 import type { ToolSchema } from '../../../protocol/tools';
 
-export const SET_ROLE_PROACTIVITY_TOOL_NAME = 'set_role_proactivity';
-
 export const setRoleProactivitySchema: ToolSchema = {
-  name: SET_ROLE_PROACTIVITY_TOOL_NAME,
+  name: 'set_role_proactivity',
   description:
     "Change how often and about what a persistent role proactively reaches out to the user " +
     "(proactivity level, daily-brief schedule, quiet hours, include/exclude topics). " +

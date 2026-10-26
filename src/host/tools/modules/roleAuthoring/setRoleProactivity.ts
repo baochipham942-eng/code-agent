@@ -112,7 +112,7 @@ export async function executeSetRoleProactivity(
   if (getPermissionModeManager().isUnattendedSession(ctx.sessionId)) {
     return {
       ok: false,
-      error: 'set_role_proactivity 仅在用户亲自参与的会话里可用；定时/巡检/无人值守运行不能修改角色主动性。请向用户说明需要到角色对话里亲手调整。',
+      error: 'set_role_proactivity is only available in sessions the user personally attends; scheduled/wake/unattended runs must not change proactivity. Tell the user to adjust it in the role conversation.',
       code: 'UNATTENDED_UNSUPPORTED',
     };
   }
@@ -125,15 +125,15 @@ export async function executeSetRoleProactivity(
     return {
       ok: false,
       error: persistentRoles.length > 0
-        ? `roleId is required outside an expert thread. 本机可用角色：${persistentRoles.join('、')}`
-        : 'roleId is required outside an expert thread（本机还没有持久化角色）',
+        ? `roleId is required outside an expert thread. Available persistent roles: ${persistentRoles.join(', ')}`
+        : 'roleId is required outside an expert thread (no persistent roles on this machine)',
       code: 'INVALID_ARGS',
     };
   }
   if (!(await isPersistentRole(roleId))) {
     return {
       ok: false,
-      error: `未知角色「${roleId}」。本机可用角色：${persistentRoles.length > 0 ? persistentRoles.join('、') : '（无）'}`,
+      error: `Unknown role "${roleId}". Available persistent roles: ${persistentRoles.length > 0 ? persistentRoles.join(', ') : '(none)'}`,
       code: 'INVALID_ARGS',
     };
   }
@@ -144,7 +144,7 @@ export async function executeSetRoleProactivity(
   }
   const onceADay = args.once_a_day === true;
   if (onceADay && levelArg !== undefined && levelArg !== 'daily') {
-    return { ok: false, error: 'once_a_day 与 level 冲突：once_a_day 意味着 level=daily，请只传其中一个', code: 'INVALID_ARGS' };
+    return { ok: false, error: 'once_a_day conflicts with level: once_a_day implies level=daily, pass only one of them', code: 'INVALID_ARGS' };
   }
   const addExclude = toStringArray(args.add_exclude);
   const removeExclude = toStringArray(args.remove_exclude);

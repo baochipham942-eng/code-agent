@@ -8,8 +8,6 @@ import { ROLE_PROACTIVITY } from '../../../shared/constants';
 import type { RoleProactivityConfig } from '../../../shared/contract/roleAssets';
 import { sanitizeTopicList } from '../../../shared/roleTopicList';
 
-export { sanitizeTopicList };
-
 export interface ParsedWakeRationale {
   /** Why this is worth interrupting the user; absent when the tag is missing/empty. */
   rationale?: string;

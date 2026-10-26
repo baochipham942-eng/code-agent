@@ -155,10 +155,13 @@ function startFakeRelay(): Promise<FakeRelay> {
       }
       const hook = /^\/api\/cron\/hooks\/(register|rotate|remove|ack)$/.exec(url.pathname);
       if (req.method === 'POST' && hook) {
-        const op = hook[1] as keyof FakeRelay['counts'];
-        counts[op] += 1;
-        if (op === 'ack') acks.push(body as { jobId: string; deliveryIds: string[] });
-        if ((op === 'register' || op === 'rotate') && op === 'register' && state.registerStatus !== 200) {
+        const op = hook[1];
+        if (op === 'ack') {
+          acks.push(body as { jobId: string; deliveryIds: string[] });
+        } else if (op === 'register' || op === 'rotate' || op === 'remove') {
+          counts[op] += 1;
+        }
+        if (op === 'register' && state.registerStatus !== 200) {
           res.writeHead(state.registerStatus, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ ok: false, error: 'unauthorized' }));
           return;

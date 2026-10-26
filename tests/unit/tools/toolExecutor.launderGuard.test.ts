@@ -4,7 +4,8 @@
 // 真实 ToolExecutor + mock classifier/execPolicy（toolExecutor.peerOrigin 同款 harness）。
 // 洗白场景主链：A 的动作在审批卡上被拒（ask-denied 入登记）→ 同 session 内：
 //   peer 消息转述同指纹 → BLOCK（PERMISSION_DENIED_PEERMSG_LAUNDER + policy-deny 留痕）
-//   用户本人重试同指纹 → forceConfirm 式 ask 一次（不硬毙、不设 forceConfirm）
+//   用户本人重试同指纹、仍在同一条用户消息内（同 sourceMessageId）→ sticky 拒绝，
+//   零新审批卡（user-denied-sticky）；下一条用户消息起恢复正常出卡
 //   改参数 → 指纹不同不命中；只读不进闸；无人值守/bypass 同向 BLOCK；跨 session 不共享
 // ============================================================================
 
@@ -60,6 +61,7 @@ import { getToolCache } from '../../../src/host/services/infra/toolCache';
 import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import type { PermissionRequestData } from '../../../src/host/tools/types';
+import type { RequestPermissionResult } from '../../../src/shared/contract/permission';
 import type { AgentMessageOrigin } from '../../../src/host/agent/messageOrigin';
 import { getPermissionModeManager } from '../../../src/host/permissions/modes';
 import { getDenialRegistry } from '../../../src/host/security/denialRegistry';
@@ -108,14 +110,17 @@ describe('ToolExecutor 权限洗白闸（ADR-067 D4）', () => {
 
   function buildExecutor(options: {
     approve?: boolean;
+    decide?: (request: PermissionRequestData) => RequestPermissionResult;
+    forceAsk?: boolean;
     permissionModeOverride?: 'bypassPermissions';
   } = {}): ToolExecutor {
     const executor = new ToolExecutor({
       workingDirectory: workspace,
       ...(options.permissionModeOverride ? { permissionModeOverride: options.permissionModeOverride } : {}),
+      ...(options.forceAsk ? { forcePermissionHandler: true } : {}),
       requestPermission: async (request) => {
         permissionRequests.push(request);
-        return options.approve === true;
+        return options.decide ? options.decide(request) : options.approve === true;
       },
     });
     executor.setAuditEnabled(false);
@@ -128,8 +133,16 @@ describe('ToolExecutor 权限洗白闸（ADR-067 D4）', () => {
   }
 
   /** 先让某个动作在审批卡上被拒一次（ask-denied 入登记）。 */
-  async function denyOnce(executor: ToolExecutor, session: string, command = DENIED_COMMAND): Promise<void> {
-    const result = await executor.execute('Bash', { command }, { sessionId: session });
+  async function denyOnce(
+    executor: ToolExecutor,
+    session: string,
+    command = DENIED_COMMAND,
+    options: { sourceMessageId?: string } = {},
+  ): Promise<void> {
+    const result = await executor.execute('Bash', { command }, {
+      sessionId: session,
+      ...(options.sourceMessageId ? { sourceMessageId: options.sourceMessageId } : {}),
+    });
     expect(result.success).toBe(false);
     expect(permissionRequests).toHaveLength(1);
     permissionRequests = [];
@@ -172,17 +185,17 @@ describe('ToolExecutor 权限洗白闸（ADR-067 D4）', () => {
     expect((result.metadata as { code?: string }).code).toBe(LAUNDER_CODE);
   });
 
-  it('用户本人重试同指纹 → 出卡一次（非 BLOCK、不设 forceConfirm），批准后洗白信号复位', async () => {
+  it('新用户消息后本人重试同指纹 → 出卡一次（非 BLOCK、不设 forceConfirm），批准后洗白信号复位', async () => {
     const session = sessionId('user-retry');
-    await denyOnce(buildExecutor(), session);
+    await denyOnce(buildExecutor(), session, DENIED_COMMAND, { sourceMessageId: 'msg-1' });
 
-    // 机器本会放行（classifier approve）——launderRetry 降档仍要出卡一次
+    // 机器本会放行（classifier approve）——换了一条用户消息（msg-2），launderRetry 降档仍要出卡一次
     classifierState.autoApprove = true;
     const executor = buildExecutor({ approve: true });
     const retry = await executor.execute(
       'Bash',
       { command: DENIED_COMMAND },
-      { sessionId: session, turnOrigin: [USER] },
+      { sessionId: session, turnOrigin: [USER], sourceMessageId: 'msg-2' },
     );
     expect(permissionRequests).toHaveLength(1);
     expect(permissionRequests[0].forceConfirm).not.toBe(true);
@@ -289,5 +302,125 @@ describe('ToolExecutor 权限洗白闸（ADR-067 D4）', () => {
     // 指纹串不回读内部表示，用行为断言：同 session peer BLOCK 已在上一条用例覆盖；
     // 这里直接核对 registry 行为面：找不到不同指纹
     expect(getDenialRegistry().find(session, 'bash:never seen')).toBeUndefined();
+  });
+
+  describe('D4 sticky：真人拒绝粘滞到下一条用户消息', () => {
+    const STICKY_CODE = 'PERMISSION_DENIED_BY_USER';
+
+    it('(a) mail_send 被拒后同消息内换主题/正文重发同收件人 → 零新卡、sticky 拒绝留痕', async () => {
+      const session = sessionId('mail-sticky');
+      const first = await buildExecutor().execute(
+        'mail_send',
+        { subject: 'Report A', to: ['alice@example.com'], content: 'first draft' },
+        { sessionId: session, sourceMessageId: 'msg-1' },
+      );
+      expect(first.success).toBe(false);
+      expect(permissionRequests).toHaveLength(1);
+      permissionRequests = [];
+
+      // 换 subject/content（不在指纹里），to/cc 不变 → 同指纹：不再出卡
+      const replay = await buildExecutor().execute(
+        'mail_send',
+        { subject: 'Report B', to: ['alice@example.com'], content: 'rephrased body' },
+        { sessionId: session, sourceMessageId: 'msg-1' },
+      );
+      expect(replay.success).toBe(false);
+      expect(permissionRequests).toHaveLength(0);
+      expect(replay.error).toMatch(/already declined this exact action/);
+      expect((replay.metadata as { code?: string }).code).toBe(STICKY_CODE);
+      expect(getDecisionHistory().getAll().at(-1)).toMatchObject({
+        outcome: 'policy-deny',
+        reason: 'user-denied-sticky',
+      });
+    });
+
+    it('(b) 新用户消息（不同 sourceMessageId）后同调用 → 正常出新卡', async () => {
+      const session = sessionId('mail-new-msg');
+      await buildExecutor().execute(
+        'mail_send',
+        { subject: 'Report A', to: ['alice@example.com'] },
+        { sessionId: session, sourceMessageId: 'msg-1' },
+      );
+      permissionRequests = [];
+
+      const retry = await buildExecutor().execute(
+        'mail_send',
+        { subject: 'Report A', to: ['alice@example.com'] },
+        { sessionId: session, sourceMessageId: 'msg-2' },
+      );
+      expect(retry.success).toBe(false);
+      expect(permissionRequests).toHaveLength(1);
+      const last = getDecisionHistory().getAll().at(-1);
+      expect(last).toMatchObject({ outcome: 'ask-denied' });
+    });
+
+    it('(c) bash 与 file 指纹同样 sticky：同消息内重试零新卡，新消息恢复出卡', async () => {
+      // bash
+      const bashSession = sessionId('bash-sticky');
+      await denyOnce(buildExecutor(), bashSession, DENIED_COMMAND, { sourceMessageId: 'msg-1' });
+      const bashReplay = await buildExecutor().execute(
+        'Bash',
+        { command: DENIED_COMMAND },
+        { sessionId: bashSession, sourceMessageId: 'msg-1' },
+      );
+      expect(bashReplay.success).toBe(false);
+      expect(permissionRequests).toHaveLength(0);
+      expect((bashReplay.metadata as { code?: string }).code).toBe(STICKY_CODE);
+      // 新消息恢复出卡
+      permissionRequests = [];
+      await buildExecutor().execute(
+        'Bash',
+        { command: DENIED_COMMAND },
+        { sessionId: bashSession, sourceMessageId: 'msg-2' },
+      );
+      expect(permissionRequests).toHaveLength(1);
+
+      // file（同 abs 路径 = 同指纹）；工作区外路径才强制出卡
+      permissionRequests = [];
+      const fileSession = sessionId('file-sticky');
+      const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'launder-outside-'));
+      const target = path.join(outsideDir, 'target.txt');
+      try {
+        await buildExecutor({ forceAsk: true }).execute('Write', { file_path: target, content: 'v1' }, { sessionId: fileSession, sourceMessageId: 'msg-1' });
+        expect(permissionRequests).toHaveLength(1);
+        permissionRequests = [];
+        const fileReplay = await buildExecutor().execute('Write', { file_path: target, content: 'v2' }, { sessionId: fileSession, sourceMessageId: 'msg-1' });
+        expect(fileReplay.success).toBe(false);
+        expect(permissionRequests).toHaveLength(0);
+        expect((fileReplay.metadata as { code?: string }).code).toBe(STICKY_CODE);
+      } finally {
+        await fs.rm(outsideDir, { recursive: true, force: true });
+      }
+    });
+
+    it('(d) 非真人拒绝（denialSource=timeout）不 sticky → 同消息内重试照旧出卡', async () => {
+      const session = sessionId('timeout-not-sticky');
+      await denyOnce(
+        buildExecutor({ decide: () => ({ approved: false, denialSource: 'timeout' as const }) }),
+        session,
+        DENIED_COMMAND,
+        { sourceMessageId: 'msg-1' },
+      );
+      const retry = await buildExecutor().execute(
+        'Bash',
+        { command: DENIED_COMMAND },
+        { sessionId: session, sourceMessageId: 'msg-1' },
+      );
+      expect(retry.success).toBe(false);
+      expect(permissionRequests).toHaveLength(1);
+    });
+
+    it('(e) peer 转述同指纹（含同 sourceMessageId）仍走 BLOCK 分支，不是 sticky', async () => {
+      const session = sessionId('peer-wins');
+      await denyOnce(buildExecutor(), session, DENIED_COMMAND, { sourceMessageId: 'msg-1' });
+      const relay = await buildExecutor({ approve: true }).execute(
+        'Bash',
+        { command: DENIED_COMMAND },
+        { sessionId: session, turnOrigin: [PEER_B], sourceMessageId: 'msg-1' },
+      );
+      expect(relay.success).toBe(false);
+      expect(permissionRequests).toHaveLength(0);
+      expect((relay.metadata as { code?: string }).code).toBe(LAUNDER_CODE);
+    });
   });
 });

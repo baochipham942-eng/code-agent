@@ -201,6 +201,8 @@ export const cronCenterZh = {
     eventNoAccounts: '还没有连接消息通道，事件触发无从绑定账号。',
     // 新邮件（邮件触发）调度（N-TRIGGER-MAIL-CREATE-ENTRY-K1）：账号/邮箱下拉 + 不可用三态
     eventMailScheduleOption: '新邮件（邮件触发）',
+    // 已落库的 webhook 任务在编辑器里的调度类型（创建菜单不提供这一项）。
+    eventWebhookScheduleOption: 'Webhook 投递',
     eventMailAccountLabel: '邮件账号',
     eventMailAccountPlaceholder: '选择 Mail 里的一个账号',
     eventMailAccountUnavailable: '之前绑定的邮件账号“{value}”已不在列表里。原配置已保留，重新选择后再保存。',
@@ -278,6 +280,8 @@ export const cronCenterZh = {
     inboxDigestApprovalBadge: '有待处理审批',
     inboxMaxRunsReached: '已达运行次数上限（{count} 次），任务已自动停用。',
     inboxMissedAt: '错过 {time} · 应用离线',
+    // 中继排队超过 24h 丢弃：应用可以一直在线，不能复用「应用离线」。
+    inboxWebhookExpired: '云端排队超过 24 小时，已丢弃 {count} 条投递',
     inboxCloudCompleted: '你不在的时候跑完的 · 完成于 {time}',
     inboxUrgencySectionMustToday: '今日必办',
     inboxUrgencySectionCanWait: '可以稍后',
@@ -527,6 +531,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     eventNoAccounts: 'No messaging channels connected yet — an event trigger needs an account to bind to.',
     // New-mail (mail trigger) schedules (N-TRIGGER-MAIL-CREATE-ENTRY-K1): account/mailbox dropdowns + three unavailable states
     eventMailScheduleOption: 'New mail (mail trigger)',
+    eventWebhookScheduleOption: 'Webhook delivery',
     eventMailAccountLabel: 'Mail account',
     eventMailAccountPlaceholder: 'Pick one of your Mail accounts',
     eventMailAccountUnavailable: 'The saved mail account "{value}" is no longer listed. The original setting is preserved until you pick another account and save.',
@@ -601,6 +606,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     inboxDigestApprovalBadge: 'Approval waiting',
     inboxMaxRunsReached: 'Run limit reached ({count} runs); task was disabled.',
     inboxMissedAt: 'Missed {time} · app offline',
+    inboxWebhookExpired: 'Cloud queue exceeded 24 hours; {count} deliveries were dropped',
     inboxCloudCompleted: 'Finished while you were away · completed at {time}',
     inboxUrgencySectionMustToday: 'Must do today',
     inboxUrgencySectionCanWait: 'Can wait',

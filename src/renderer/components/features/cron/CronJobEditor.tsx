@@ -71,12 +71,18 @@ function eventViolationFromDraft(draft: CronJobDraft): EventScheduleViolation | 
       eventName: 'message' as const,
       accountId: draft.eventMailAccountId,
     }
-    : {
-      type: 'event' as const,
-      source: 'channel' as const,
-      eventName: 'message' as const,
-      accountId: draft.eventAccountId,
-    };
+    : draft.scheduleType === 'event-webhook'
+      ? {
+        type: 'event' as const,
+        source: 'webhook' as const,
+        eventName: 'message' as const,
+      }
+      : {
+        type: 'event' as const,
+        source: 'channel' as const,
+        eventName: 'message' as const,
+        accountId: draft.eventAccountId,
+      };
   return validateEventScheduleConstraints({
     schedule,
     runsOn: draft.runsOn,
@@ -85,9 +91,9 @@ function eventViolationFromDraft(draft: CronJobDraft): EventScheduleViolation | 
   });
 }
 
-/** event 系调度（通道消息 / 新邮件）：共用的创建期护栏与本地化提示走同一条路。 */
+/** event 系调度（通道消息 / 新邮件 / 已落库 webhook）：共用的创建期护栏与本地化提示走同一条路。 */
 function isEventScheduleKind(scheduleType: CronJobDraft['scheduleType']): boolean {
-  return scheduleType === 'event' || scheduleType === 'event-mail';
+  return scheduleType === 'event' || scheduleType === 'event-mail' || scheduleType === 'event-webhook';
 }
 
 export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copySource, onClose }) => {
@@ -181,8 +187,13 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       { value: 'cron', label: 'Cron 表达式' },
       { value: 'event', label: cc.eventScheduleOption },
       { value: 'event-mail', label: cc.eventMailScheduleOption },
+      // 创建菜单不提供 webhook；只有正在编辑一条已落库 webhook 任务时才露出，
+      // 否则下拉的受控值对不上选项，保存前就会被看成通道消息。
+      ...(draft.scheduleType === 'event-webhook'
+        ? [{ value: 'event-webhook', label: cc.eventWebhookScheduleOption }]
+        : []),
     ],
-    [cc.eventScheduleOption, cc.eventMailScheduleOption]
+    [cc.eventScheduleOption, cc.eventMailScheduleOption, cc.eventWebhookScheduleOption, draft.scheduleType]
   );
 
   // event 调度的创建期护栏（host createJob 同款）：只允许本机 + Agent 动作。

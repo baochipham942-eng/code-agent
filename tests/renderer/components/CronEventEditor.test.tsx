@@ -491,6 +491,66 @@ describe('connector:mail 任务可编辑可改绑（N-TRIGGER-MAIL-CREATE-ENTRY-
     });
   });
 
+  it('webhook 任务原样保存：不要求通道账号，补选账号也不改写成 channel，窗口字段保留', async () => {
+    const job = makeEventJob({
+      id: 'job-hook',
+      name: '盯告警',
+      schedule: {
+        type: 'event',
+        source: 'webhook',
+        eventName: 'message',
+        batchWindowSec: 15,
+        minRunIntervalSec: 90,
+      },
+    });
+    const draft = buildDraftFromJob(job);
+    expect(draft.scheduleType).toBe('event-webhook');
+    expect(draft.eventAccountId).toBe('');
+    expect(draft.eventWebhookSource).toEqual(job.schedule);
+    // 旧表单会逼用户补一个通道账号；残留的账号字段不能把 source 改成 channel。
+    const polluted = { ...draft, eventAccountId: 'account-feishu', eventChatId: 'oc_group' };
+    expect(buildCronJobInput(polluted).scheduleType).toBe('event');
+    expect(buildCronJobInput(polluted).schedule).toEqual(job.schedule);
+
+    render(<CronJobEditor isOpen job={job} onClose={() => undefined} />);
+    expect(screen.queryByLabelText(/^触发账号/)).toBeNull();
+    expect((controlForLabel('调度类型') as HTMLSelectElement).value).toBe('event-webhook');
+
+    fireEvent.click(screen.getByText('保存修改'));
+    const updateJob = useCronStore.getState().updateJob as Mock;
+    await waitFor(() => expect(updateJob).toHaveBeenCalledTimes(1));
+    expect(updateJob).toHaveBeenCalledWith('job-hook', expect.objectContaining({
+      scheduleType: 'event',
+      schedule: job.schedule,
+    }));
+  });
+
+  it('把 webhook 调度改成通道后，保存载荷才是 channel（host 据此摘云端 hook）', async () => {
+    const job = makeEventJob({
+      id: 'job-hook',
+      name: '盯告警',
+      schedule: {
+        type: 'event',
+        source: 'webhook',
+        eventName: 'message',
+        batchWindowSec: 15,
+        minRunIntervalSec: 90,
+      },
+    });
+    render(<CronJobEditor isOpen job={job} onClose={() => undefined} />);
+    fireEvent.change(controlForLabel('调度类型'), { target: { value: 'event' } });
+    fireEvent.change(await screen.findByLabelText(/^触发账号/), { target: { value: feishuAccount.id } });
+    fireEvent.click(screen.getByText('保存修改'));
+
+    const updateJob = useCronStore.getState().updateJob as Mock;
+    await waitFor(() => expect(updateJob).toHaveBeenCalledTimes(1));
+    expect(updateJob.mock.calls[0][1].schedule).toMatchObject({
+      type: 'event',
+      source: 'channel',
+      accountId: 'account-feishu',
+    });
+  });
+
   it('mail 草稿清空预算照旧被 requires-budget 拦下（护栏对 mail 源仍生效）', () => {
     const draft = { ...buildDraftFromJob(makeMailEventJob()), maxRunBudget: '' };
     const violation = validateEventScheduleConstraints({

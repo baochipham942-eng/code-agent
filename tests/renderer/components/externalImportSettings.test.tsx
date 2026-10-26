@@ -502,6 +502,107 @@ describe('ExternalImportSettings 导入与结果（验收④）', () => {
     );
   });
 
+  it('预览头部计数 = 各分组「找到 N 条规则」之和：拆不出规则的整文件不计入（FU1 返修验收①）', async () => {
+    stubDetect(detectResult());
+    render(<ExternalImportSettings />);
+    await screen.findByTestId('external-import-sources');
+
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action === 'memoryHarnessImportDryRun') {
+        return Promise.resolve(dryRunResult({
+          instructions: [
+            {
+              id: 'instruction:a',
+              adapterId: 'codex-local-custom',
+              title: 'AGENTS.md',
+              content: '规则一',
+              sourcePath: '~/.codex/AGENTS.md',
+              reason: 'directive-confirmation-required',
+              contentHash: 'ha',
+              sourceMetadata: {},
+            },
+            {
+              id: 'instruction:b',
+              adapterId: 'codex-local-custom',
+              title: 'AGENTS.md',
+              content: '规则二',
+              sourcePath: '~/.codex/AGENTS.md',
+              reason: 'directive-confirmation-required',
+              contentHash: 'hb',
+              sourceMetadata: {},
+            },
+            {
+              id: 'instruction:whole',
+              adapterId: 'claude-code',
+              title: 'CLAUDE.md',
+              content: 'headings and code only',
+              sourcePath: '~/.claude/CLAUDE.md',
+              reason: 'instruction-file',
+              contentHash: 'hwhole',
+              sourceMetadata: { segmentCount: 0 },
+            },
+          ],
+        }));
+      }
+      if (action === 'externalImportSkillsPreview') {
+        return Promise.resolve({ items: [], summary: { copy: 0, skip: 0 } });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    fireEvent.click(screen.getByText('预览要导入的内容'));
+    await screen.findByTestId('external-import-preview');
+
+    const headerCount = Number(
+      screen.getByTestId('external-import-instructions').textContent?.match(/说明类内容（(\d+) 条）/)?.[1],
+    );
+    const groupCounts = screen.getAllByRole('button', { name: /找到 \d+ 条规则/ })
+      .map((button) => Number(button.textContent?.match(/找到 (\d+) 条规则/)?.[1] ?? 0));
+    expect(groupCounts).toEqual([2]);
+    expect(headerCount).toBe(groupCounts.reduce((sum, count) => sum + count, 0));
+    // 拆不出规则的用户级文件（segmentCount 0）仍占自己的一行，但不进头部数字
+    expect(headerCount).not.toBe(3);
+    expect(screen.getByTestId('external-import-rule-norules').textContent).toBe('没有可导入的单条规则');
+  });
+
+  it('只有项目级对照项时头部计 0 但区块仍渲染，对照行文案保留（FU1 返修验收①）', async () => {
+    stubDetect(detectResult());
+    render(<ExternalImportSettings />);
+    await screen.findByTestId('external-import-sources');
+
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action === 'memoryHarnessImportDryRun') {
+        return Promise.resolve(dryRunResult({
+          instructions: [
+            {
+              id: 'instruction:project',
+              adapterId: 'gemini-cli',
+              title: 'GEMINI.md',
+              content: 'project-level whole file',
+              sourcePath: '~/work/repo/GEMINI.md',
+              reason: 'instruction-file',
+              contentHash: 'hproject',
+              sourceMetadata: {},
+            },
+          ],
+        }));
+      }
+      if (action === 'externalImportSkillsPreview') {
+        return Promise.resolve({ items: [], summary: { copy: 0, skip: 0 } });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    fireEvent.click(screen.getByText('预览要导入的内容'));
+    await screen.findByTestId('external-import-preview');
+
+    // 区块照常渲染（instructions.length > 0），头部只数可导入规则 → 0
+    expect(screen.getByTestId('external-import-instructions').textContent)
+      .toContain('说明类内容（0 条）');
+    expect(screen.getByText('只供对照，不写入')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /找到 \d+ 条规则/ })).toBeNull();
+  });
+
   it('逐条确认走既有 confirm IPC + 既有 MEMORY_CONFIRM_RESPONSE 回执通道（验收③）', async () => {
     stubDetect(detectResult());
     render(<ExternalImportSettings />);

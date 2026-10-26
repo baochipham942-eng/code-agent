@@ -182,10 +182,12 @@ export function buildDraftFromJob(job: CronJobDefinition): CronJobDraft {
     // 通道源回填通道字段；connector:mail 源回填 mail 字段（scheduleType 分型为
     // 'event-mail'，编辑器据此渲染账号/邮箱下拉）。原 mail 绑定整份挂在 eventMailSource
     // 上，保存时仅覆盖 accountId/mailbox，可选窗口字段原样保留（round-trip）。
+    // webhook 源（N-CRON-WEBHOOK-CLOUD-HOOK）没有编辑器表单，落到通用 'event' 分支
+    // 只回填公共字段（编辑器 UI 属后续单）。
     if (job.schedule.source === 'channel') {
       draft.eventAccountId = job.schedule.accountId;
       draft.eventChatId = job.schedule.chatId || '';
-    } else {
+    } else if (job.schedule.source === 'connector') {
       draft.scheduleType = 'event-mail';
       draft.eventMailAccountId = job.schedule.accountId;
       draft.eventMailMailbox = job.schedule.mailbox || '';
@@ -476,6 +478,10 @@ export function formatScheduleSummary(
       return formatCronExpressionLabel(job.schedule.expression, job.schedule.timezone, lang);
     }
     case 'event': {
+      // webhook 源：绑定是 hook URL，没有账号/会话维度可陈述。
+      if (job.schedule.source === 'webhook') {
+        return lang === 'en' ? 'Webhook delivery' : 'Webhook 投递';
+      }
       // connector 源（mail）：账号是 Mail 账号名、绑定粒度是邮箱，不查通道目录。
       if (job.schedule.source === 'connector') {
         const mailLabel = lang === 'en' ? 'Mail message' : '邮件消息';

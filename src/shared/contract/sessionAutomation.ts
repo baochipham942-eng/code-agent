@@ -118,8 +118,18 @@ export interface SessionAutomationConfig extends Record<string, unknown> {
   };
   /** 最近一次无人值守运行遇到登录墙；用户过目后清除。 */
   loginWall?: { siteOrigin: string; at: number };
-  /** 启动时发现漏跑且无法回写源会话时，由自动化收件箱承接。 */
-  missedNotice?: { scheduledAt: number; reason: CronMissedReason };
+  /**
+   * 启动时发现漏跑且无法回写源会话时，由自动化收件箱承接。
+   * webhook 源（N-CRON-WEBHOOK-CLOUD-HOOK）复用同一承接位：中继排队超 24h 过期的
+   * 投递以 reason 'webhook-expired' + count 落待过目（收件箱只渲染 scheduledAt，
+   * 不区分 reason，无需新 UI）。
+   */
+  missedNotice?: {
+    scheduledAt: number;
+    reason: CronMissedReason | 'webhook-expired';
+    /** webhook-expired 专属：过期丢弃的投递条数。 */
+    count?: number;
+  };
   /** B4：本 automation 上人工铸造的 target 粒度长期授权规则。删/archive 即失效（消费时按 status 钳制）。 */
   standingGrants?: StandingGrant[];
 }

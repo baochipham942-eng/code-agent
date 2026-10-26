@@ -48,6 +48,7 @@ import {
 } from './cronExecutionPolicy';
 import { CronCloudRuntime } from './cronCloudRuntime';
 import { CronEventTrigger, assertEventScheduleConstraints, hasExplicitChatListenBinding } from './cronEventTrigger';
+import { CronWebhookRelay, assertWebhookScheduleCloudConfigured } from './cronWebhookRelay';
 import { setChannelListenResolver } from '../channels/channelListenRegistry';
 import { getChannelManager } from '../channels/channelManager';
 import {
@@ -107,6 +108,8 @@ export class CronService implements Disposable {
   private unsubscribeCronMissed?: () => void;
   /** 'event' 调度的本地事件源（通道入站消息 → 合批 → executeJob）。 */
   private cronEventTrigger?: CronEventTrigger;
+  /** webhook 事件源的中继接线（cron_hook 帧 → ingestWebhook；hook 生命周期）。 */
+  private cronWebhookRelay?: CronWebhookRelay;
   private readonly failureNoticeGate = new CronFailureNoticeGate();
   /** 正在执行（含退避重试链）的 jobId：系统侧触发互斥，见 runScheduledJob。 */
   private readonly inFlightJobIds = new Set<string>();
@@ -161,10 +164,6 @@ export class CronService implements Disposable {
     await this.loadJobsFromDatabase();
     await this.cloudRuntime.reconcile();
 
-    if (this.cloudRuntime.isConfigured()) {
-      this.cloudRuntime.start();
-    }
-
     this.cronEventTrigger = new CronEventTrigger({
       host: {
         getJobDefinitions: () => this.listJobs(),
@@ -174,6 +173,14 @@ export class CronService implements Disposable {
       },
     });
     this.cronEventTrigger.start();
+    this.cronWebhookRelay = new CronWebhookRelay(this.cloudRuntime.apiClient, {
+      getJobDefinitions: () => this.listJobs(),
+      ingestWebhook: (delivery) => this.cronEventTrigger?.ingestWebhook(delivery) ?? 'ignored',
+    });
+
+    if (this.cloudRuntime.isConfigured()) {
+      this.cloudRuntime.start(this.cronWebhookRelay.handleStreamFrame);
+    }
 
     // 群监听绑定解析器：未 @ 的群消息按 hasExplicitChatListenBinding 判显式 (accountId, chatId) 绑定。
     setChannelListenResolver((accountId, chatId) => hasExplicitChatListenBinding(this.listJobs(), accountId, chatId));
@@ -187,6 +194,7 @@ export class CronService implements Disposable {
   async shutdown(): Promise<void> {
     this.cronEventTrigger?.dispose();
     this.cronEventTrigger = undefined;
+    this.cronWebhookRelay = undefined;
     setChannelListenResolver(undefined);
     if (this.jobsReconcileTimer) clearInterval(this.jobsReconcileTimer);
     this.jobsReconcileTimer = undefined;
@@ -248,6 +256,10 @@ export class CronService implements Disposable {
     const runsOn = definition.runsOn ?? 'local';
     assertExecutionLocationConstraints({ ...definition, runsOn });
     assertEventScheduleConstraints({ ...definition, runsOn });
+    if (definition.schedule?.type === 'event' && definition.schedule.source === 'webhook') {
+      // webhook 源（N-CRON-WEBHOOK-CLOUD-HOOK）：hook 活在云端中继后面，没配置就建不成。
+      assertWebhookScheduleCloudConfigured(this.cloudRuntime.isConfigured());
+    }
 
     const job: CronJobDefinition = {
       ...definition,
@@ -321,6 +333,7 @@ export class CronService implements Disposable {
 
     syncCronAutomationFromJob(updatedJob, this.resolveAutomationRuntime);
     if (updates.schedule !== undefined || updates.enabled !== undefined) this.cronEventTrigger?.groupListenChecks.forget(jobId);
+    if (updates.enabled === false) this.cronWebhookRelay?.removeHookForJob(updatedJob);
 
     // existingJob 指向改写前的 map 条目：已注册（有 cloudJobId）的停用任务仍要把停用态
     // 推给云端；从未注册的停用任务不碰云端（N-ROLE-ROUTINE-RESTATE-FU1-FU1）。
@@ -397,6 +410,7 @@ export class CronService implements Disposable {
     // Remove from memory
     this.jobs.delete(jobId);
     this.cronEventTrigger?.groupListenChecks.forget(jobId);
+    this.cronWebhookRelay?.removeHookForJob(job.definition);
     this.executions.delete(jobId);
 
     // Remove from database

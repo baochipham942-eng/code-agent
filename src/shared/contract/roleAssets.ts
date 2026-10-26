@@ -7,7 +7,7 @@
 
 import type { AgentSource } from './agentRegistry';
 import type { SkillCategory } from './skillRepository';
-import type { CronScheduleConfig } from './cron';
+import type { CronJobStatus, CronScheduleConfig } from './cron';
 
 /** 角色展示元数据；内置角色与云下发角色包共用这一合同。 */
 export interface BuiltinRoleVisual {
@@ -104,6 +104,10 @@ export interface RoleBoundCronJob {
   enabled: boolean;
   nextRunAt?: number;
   lastRunAt?: number;
+  /** 最近一条执行的状态；没有执行记录时缺省 */
+  lastStatus?: CronJobStatus;
+  /** 最近一条执行的错误：只要首行，去掉堆栈并截断；没有错误时缺省 */
+  lastError?: string;
   actionType: 'agent' | 'role_wake';
 }
 

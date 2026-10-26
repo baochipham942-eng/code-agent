@@ -422,5 +422,13 @@ describe('ToolExecutor 权限洗白闸（ADR-067 D4）', () => {
       expect(permissionRequests).toHaveLength(0);
       expect((relay.metadata as { code?: string }).code).toBe(LAUNDER_CODE);
     });
+
+    it('(f) 缺消息 id（旧调用方）→ 不 sticky，照旧 ask 一次', async () => {
+      const session = sessionId('no-msg-id');
+      await denyOnce(buildExecutor(), session, DENIED_COMMAND);
+      const retry = await buildExecutor().execute('Bash', { command: DENIED_COMMAND }, { sessionId: session });
+      expect(retry.success).toBe(false);
+      expect(permissionRequests).toHaveLength(1);
+    });
   });
 });

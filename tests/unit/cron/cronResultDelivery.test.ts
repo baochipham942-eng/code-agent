@@ -268,7 +268,7 @@ describe('deliverCronResultToChannel outbound sensitive guard', () => {
   const MASKED_BODY = '支付卡 [credit card hidden] 已扣款，明细见附件。';
 
   function executionWith(result: unknown): CronJobExecution {
-    return { id: 'exec-1', jobId: 'job-1', status: 'completed', scheduledAt: 1, result };
+    return { id: 'exec-1', jobId: 'job-1', status: 'completed', scheduledAt: 1, retryAttempt: 0, result };
   }
 
   it('delivers the masked body; execution.result and the dedupe key keep the original', async () => {

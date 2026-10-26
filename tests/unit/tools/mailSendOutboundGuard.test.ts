@@ -38,8 +38,8 @@ function makeValidChinaId(): string {
 
 describe('mail_send outbound sensitive guard', () => {
   let permissionRequests: PermissionRequestData[];
-  let connectorExecute: ReturnType<typeof vi.fn>;
-  let fakeConnector: Connector;
+  let connectorExecute: Connector['execute'];
+  let connectorCalls: Array<{ action: string; payload: Record<string, unknown> }>;
   let sid = 0;
 
   beforeAll(() => {
@@ -48,14 +48,19 @@ describe('mail_send outbound sensitive guard', () => {
 
   beforeEach(() => {
     permissionRequests = [];
+    connectorCalls = [];
     sid += 1;
     getToolCache().clear();
-    connectorExecute = vi.fn(async () => ({
-      data: {
-        subject: '已发出', to: ['a@example.com'], cc: [], bcc: [], attachments: [], sent: true,
-      },
-    }));
-    fakeConnector = {
+    const recordedExecute: Connector['execute'] = async (action, payload) => {
+      connectorCalls.push({ action, payload });
+      return {
+        data: {
+          subject: '已发出', to: ['a@example.com'], cc: [], bcc: [], attachments: [], sent: true,
+        },
+      };
+    };
+    connectorExecute = recordedExecute;
+    const fakeConnector: Connector = {
       id: 'mail',
       label: 'Mail',
       capabilities: ['send_message'],
@@ -105,12 +110,12 @@ describe('mail_send outbound sensitive guard', () => {
     expect(request.details.subject).toBe('登记通知');
     expect(request.details.content).toBe(maskedContent);
     // 连接器（真实发送侧）收到的是同一份掩码后正文。
-    expect(connectorExecute).toHaveBeenCalledTimes(1);
-    expect(connectorExecute).toHaveBeenCalledWith('send_message', expect.objectContaining({
-      subject: '登记通知',
-      content: maskedContent,
-    }));
-    expect(JSON.stringify(connectorExecute.mock.calls[0][1])).not.toContain(fakeId);
+    expect(connectorCalls).toHaveLength(1);
+    expect(connectorCalls[0]).toMatchObject({
+      action: 'send_message',
+      payload: { subject: '登记通知', content: maskedContent },
+    });
+    expect(JSON.stringify(connectorCalls)).not.toContain(fakeId);
   });
 
   it('masks card numbers in subject as well', async () => {
@@ -126,9 +131,10 @@ describe('mail_send outbound sensitive guard', () => {
     expect(permissionRequests[0].details.subject).toBe('卡 [credit card hidden] 已扣款');
     expect(permissionRequests[0].details.content).toBe('正文干净。');
     expect(permissionRequests[0].reason).toContain(OUTBOUND_MASK_REASON_LINE);
-    expect(connectorExecute).toHaveBeenCalledWith('send_message', expect.objectContaining({
-      subject: '卡 [credit card hidden] 已扣款',
-    }));
+    expect(connectorCalls[0]).toMatchObject({
+      action: 'send_message',
+      payload: { subject: '卡 [credit card hidden] 已扣款' },
+    });
   });
 
   it('clean mail asks once with no mask note and sends byte-identical text', async () => {
@@ -144,10 +150,10 @@ describe('mail_send outbound sensitive guard', () => {
     expect(permissionRequests).toHaveLength(1);
     expect(permissionRequests[0].reason).not.toContain(OUTBOUND_MASK_REASON_LINE);
     expect(permissionRequests[0].details.content).toBe(content);
-    expect(connectorExecute).toHaveBeenCalledWith('send_message', expect.objectContaining({
-      subject: '季度报告',
-      content,
-    }));
+    expect(connectorCalls[0]).toMatchObject({
+      action: 'send_message',
+      payload: { subject: '季度报告', content },
+    });
   });
 
   it('other tools pass through the mask untouched (scope pin)', async () => {

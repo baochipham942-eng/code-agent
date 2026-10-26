@@ -51,7 +51,8 @@ const FAKE_META = {
 class FakeGenericChannel extends EventEmitter implements IChannelPlugin {
   readonly meta = FAKE_META;
   status = 'disconnected' as const;
-  sendMessage = vi.fn(async () => ({ success: true, messageId: 'om_generic' }));
+  sendMessage = vi.fn(async (_request: { chatId: string; content: string; replyToMessageId?: string }) =>
+    ({ success: true, messageId: 'om_generic' }));
   constructor(readonly accountId: string) {
     super();
   }
@@ -127,8 +128,10 @@ describe('ChannelManager outbound sensitive guard', () => {
 
     await callback!.sendText(DIRTY_TEXT);
     expect(fake.sendMessage).toHaveBeenCalledTimes(1);
-    expectMasked(fake.sendMessage.mock.calls[0][0].content);
-    expect(fake.sendMessage.mock.calls[0][0]).toMatchObject({
+    const sent = fake.sendMessage.mock.calls[0]?.[0];
+    expect(sent).toBeDefined();
+    expectMasked(sent!.content);
+    expect(sent).toMatchObject({
       chatId: 'oc_chat',
       replyToMessageId: 'om_dirty_1',
     });
@@ -160,6 +163,7 @@ describe('ChannelManager outbound sensitive guard', () => {
     const accountId = await connectWithFactory(() => fake);
     const clean = '今日简报：无异常，明细见 https://example.com/r?p=1。';
     await manager.sendMessage(accountId, 'oc_chat', clean);
-    expect(fake.sendMessage.mock.calls[0][0].content).toBe(clean);
+    const sent = fake.sendMessage.mock.calls[0]?.[0];
+    expect(sent?.content).toBe(clean);
   });
 });

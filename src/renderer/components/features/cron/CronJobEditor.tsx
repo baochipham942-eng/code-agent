@@ -36,6 +36,7 @@ import { CronResultChannelField } from './CronResultChannel';
 import { CronEventScheduleFields } from './CronEventScheduleFields';
 import { CronMailEventFields, mailEventValidationMessage } from './CronMailEventFields';
 import { CronScheduleFields } from './CronScheduleFields';
+import { CronTemplateRoleField } from './CronTemplateRoleField';
 
 interface CronJobEditorProps {
   isOpen: boolean;
@@ -506,27 +507,35 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           })()}
 
           {selectedTemplate.fields.map((field) => (
-            <FormField key={field.key} label={field.label} required={field.required}>
-              {field.type === 'textarea' ? (
-                <Textarea
-                  value={templateValues[field.key] || ''}
-                  onChange={(e) =>
-                    setTemplateValues((prev) => ({ ...prev, [field.key]: e.target.value }))
-                  }
-                  placeholder={field.placeholder}
-                  minRows={3}
-                  className="font-mono"
-                />
-              ) : (
-                <Input
-                  value={templateValues[field.key] || ''}
-                  onChange={(e) =>
-                    setTemplateValues((prev) => ({ ...prev, [field.key]: e.target.value }))
-                  }
-                  placeholder={field.placeholder}
-                />
-              )}
-            </FormField>
+            field.type === 'role' ? (
+              <CronTemplateRoleField
+                key={field.key}
+                value={templateValues[field.key] || ''}
+                onChange={(roleId) => setTemplateValues((prev) => ({ ...prev, [field.key]: roleId }))}
+              />
+            ) : (
+              <FormField key={field.key} label={field.label} required={field.required}>
+                {field.type === 'textarea' ? (
+                  <Textarea
+                    value={templateValues[field.key] || ''}
+                    onChange={(e) =>
+                      setTemplateValues((prev) => ({ ...prev, [field.key]: e.target.value }))
+                    }
+                    placeholder={field.placeholder}
+                    minRows={3}
+                    className="font-mono"
+                  />
+                ) : (
+                  <Input
+                    value={templateValues[field.key] || ''}
+                    onChange={(e) =>
+                      setTemplateValues((prev) => ({ ...prev, [field.key]: e.target.value }))
+                    }
+                    placeholder={field.placeholder}
+                  />
+                )}
+              </FormField>
+            )
           ))}
 
           {selectedTemplate.event ? (

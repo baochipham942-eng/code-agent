@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { ModelConfig } from '../../../../shared/contract/model';
 import { getConfiguredApplicationRunRegistry } from '../../../app/applicationRunRegistry';
+import { isQuotaWaitSuspendError } from '../../../model/providers/retryStrategy';
 import { logger, type ContextAssemblyCtx } from './shared';
 
 // 只给同文件的 withNativeModelOperation 用——生命周期四个点收在一处，不再单独对外开口。
@@ -79,7 +80,8 @@ export async function withNativeModelOperation<T>(
   } catch (error) {
     const abandonedByUser = ctx.runtime.control.isCancelled
       || ctx.runtime.control.isInterrupted
-      || signal.aborted;
+      || signal.aborted
+      || isQuotaWaitSuspendError(error);
     await checkpointQuiet('after_model_dispatch', abandonedByUser ? 'abandoned' : 'failed');
     throw error;
   }

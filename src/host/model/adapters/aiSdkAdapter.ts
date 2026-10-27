@@ -61,6 +61,7 @@ import {
   abortableSleep,
   computeRetryBackoffMs,
   extractRetryAfterMs,
+  quotaSuspendErrorFor,
   retryEvents,
 } from '../providers/retryStrategy';
 import { getProviderHealthMonitor } from '../providerHealthMonitor';
@@ -1028,6 +1029,8 @@ async function streamViaAiSdk(params: {
       const timeoutCapHit = watchdogTimedOut && timeoutRetriesUsed >= INFERENCE_TIMEOUTS.TIMEOUT_RETRY_MAX;
       if (timeoutCapHit) logger.warn(`[AiSdkAdapter] 首字节超时重试已达上限 (${INFERENCE_TIMEOUTS.TIMEOUT_RETRY_MAX})，放弃重试: "${msg}"`);
       if (!emittedOutput && attempt < maxRetries && !signal?.aborted && !timeoutCapHit && isRetryableModelCallError(effectiveErr)) {
+        const quotaSuspend = watchdogTimedOut ? null : quotaSuspendErrorFor(err);
+        if (quotaSuspend) throw quotaSuspend;
         if (watchdogTimedOut) timeoutRetriesUsed += 1;
         // B1 续接 attempt 的首字节前瞬态失败：断点态不能随「全新累积器」重置丢掉
         // （resumeSeed 已在循环顶消费）——挂回后再 continue，重试仍是 prefix 形状。

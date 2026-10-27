@@ -14,7 +14,7 @@ import type {
 import type { TaskModelStrategySettings } from '../../shared/contract/settings';
 import { PROVIDER_REGISTRY } from './providerRegistry';
 import { AGENT_DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_MODELS } from '../../shared/constants';
-import { isFallbackEligible, abortableSleep, isCancellationError, describeFallbackError } from './providers/retryStrategy';
+import { isFallbackEligible, abortableSleep, isCancellationError, describeFallbackError, isQuotaWaitSuspendError } from './providers/retryStrategy';
 import { getSettingsProviderBaseUrl } from './providers/providerResolution';
 import { resolveModelInfo } from './modelInfo';
 import { resolveModelMaxOutputTokens } from './modelLimits';
@@ -556,6 +556,7 @@ export class ModelRouter {
           }
           return result;
         } catch (err) {
+          if (isQuotaWaitSuspendError(err)) throw err;
           const errMsg = err instanceof Error ? err.message : String(err);
           // 401/403 是持久性错误（key 过期/无效），禁用 free model 避免重复失败
           if (simpleTaskDecision.decision.reason === 'simple-task-free' && /401|403|unauthorized|forbidden/i.test(errMsg)) {
@@ -587,6 +588,7 @@ export class ModelRouter {
 
       return result;
     } catch (primaryErr) {
+      if (isQuotaWaitSuspendError(primaryErr)) throw primaryErr;
       // ---- Cross-provider fallback chain ----
       // 同指纹熔断的文案不含 502/429。describeFallbackError 取 cause 或保留的 status。
       const described = describeFallbackError(primaryErr);
@@ -864,6 +866,7 @@ export class ModelRouter {
       }
       return response;
     } catch (error) {
+      if (isQuotaWaitSuspendError(error)) throw error;
       if (healthMonitor.getObservationCount(config.provider) === observationCount) {
         healthMonitor.recordFailure(config.provider, { model: config.model, error,
           cancelled: signal?.aborted === true

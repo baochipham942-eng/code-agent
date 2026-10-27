@@ -2446,10 +2446,14 @@ fn spawn_quit_guard_flow(
                 }
             }
             quit_guard::QuitDecision::Confirm(prompt) => {
+                let offers_background_continue = matches!(
+                    resident_host::quit_dialog_button_set_current(),
+                    resident_host::QuitDialogButtonSet::Three { .. }
+                );
                 show_quit_confirm_dialog(
                     &app,
                     &coordinator,
-                    quit_guard::quit_prompt_text(prompt),
+                    quit_guard::quit_prompt_text(prompt, offers_background_continue),
                     origin,
                 );
             }
@@ -2536,6 +2540,23 @@ fn show_quit_confirm_dialog(
                         }
                         return;
                     }
+                }
+                // 后台继续与停止并退出都在退壳 / cleanup 之前声明意图。
+                // Windows 后台继续的 detach 失败仍在上面 return（留在 app）；
+                // 这里的 POST 失败不拦退出：unix 没 token 和请求失败分开记一条警告。
+                let mode = if plan.cleanup_server { "stop" } else { "background" };
+                let token = resolve_server_script(&app).ok().and_then(|(_script, root)| {
+                    quit_guard::read_quit_guard_token(&root, real_data_dir().as_deref())
+                });
+                if token.is_none() {
+                    eprintln!("quit-intent: no token; continuing exit ({mode})");
+                } else if !quit_guard::post_quit_intent(
+                    &server_url(),
+                    token.as_deref(),
+                    mode,
+                    quit_guard::QUIT_GUARD_TIMEOUT,
+                ) {
+                    eprintln!("quit-intent: request failed; continuing exit ({mode})");
                 }
                 // 后台继续：不清理（ExitRequested/Exit 按 plan 跳过 cleanup_server），
                 // 常驻宿主接管运行中的任务；停止并退出：照旧清理。

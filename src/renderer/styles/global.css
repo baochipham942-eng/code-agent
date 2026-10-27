@@ -947,13 +947,13 @@ pre code {
     background-color: var(--elevation-l2);
     border-color: var(--border-hover);
   }
-
   /* composer 上方滚动渐隐：聊天文字「淡入」到框后，而不是被硬切 */
   .chat-scroll-fade {
-    -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 28px), transparent 100%);
-    mask-image: linear-gradient(to bottom, black calc(100% - 28px), transparent 100%);
+    --chat-fade-top: 28px; --chat-fade-bottom: 28px;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, black var(--chat-fade-top), black calc(100% - var(--chat-fade-bottom)), transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, black var(--chat-fade-top), black calc(100% - var(--chat-fade-bottom)), transparent 100%);
   }
-
+  .chat-scroll-fade[data-fade-top='false'] { --chat-fade-top: 0; }
+  .chat-scroll-fade[data-fade-bottom='false'] { --chat-fade-bottom: 0; }
   /* ----------------------------------------
      Modal
      ---------------------------------------- */

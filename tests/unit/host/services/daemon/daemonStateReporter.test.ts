@@ -6,10 +6,14 @@
 // cron 订阅经 vi.mock 替身（真 CronService 的 DB 面在 tests/unit/cron/ 另测）。
 // ============================================================================
 
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import express from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createQuitGuardRouter } from '../../../../../src/web/routes/quitGuard';
 // 注：不回收临时目录——reporter 的意图监听器是进程级单例，回收后残留写入只添
 // warn 噪声；每次测试各用新目录互不串读。
 
@@ -90,5 +94,40 @@ describe('createDaemonResidencyReporter', () => {
   it('拿不到快照（app 未接线）不写文件', () => {
     createDaemonResidencyReporter({ dataDir, getSnapshot: () => undefined, recheck: () => false });
     expect(fs.existsSync(path.join(dataDir, 'daemon-state.json'))).toBe(false);
+  });
+
+  it('POST /api/quit-intent background then stop leaves daemon-state.json intent', async () => {
+    const snapshot: DaemonIdleSnapshot = {
+      runningRuns: false,
+      pairedCompanion: false,
+      awaitingApproval: false,
+      armedSchedules: 1,
+    };
+    createDaemonResidencyReporter({ dataDir, getSnapshot: () => snapshot, recheck: () => false });
+    const app = express();
+    app.use(express.json());
+    app.use('/api', createQuitGuardRouter({
+      getSnapshot: async () => ({ activeRuns: 0, armedSchedules: 1 }),
+    }));
+    const server = http.createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    const post = (mode: 'background' | 'stop') => fetch(`http://127.0.0.1:${port}/api/quit-intent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    });
+    try {
+      // 先落到 stop，避免进程里意图已经是 background 时第一次 POST 被幂等吞掉。
+      expect((await post('stop')).status).toBe(200);
+      expect((await post('background')).status).toBe(200);
+      expect(readDaemonStateFile(dataDir)?.intent).toBe('background');
+      expect((await post('stop')).status).toBe(200);
+      expect(readDaemonStateFile(dataDir)?.intent).toBe('stop');
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()));
+      });
+    }
   });
 });

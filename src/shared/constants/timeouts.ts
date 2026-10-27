@@ -240,6 +240,11 @@ export const BROWSER_TIMEOUTS = {
   WAIT_DEFAULT: 1_000,
   /** Computer Use 等待超时 */
   COMPUTER_USE_WAIT: 5_000,
+  /**
+   * 命名池条目不在使用中、且空闲达到此时长，池满时才允许回收。
+   * 与 surface 租约 TTL 同为 30 分钟。
+   */
+  POOL_IDLE_RECLAIM: 30 * 60_000,
 } as const;
 
 /** artifact_runnable 断言家族超时（浏览器类走 GAME_VALIDATION_TIMEOUTS / ARTIFACT_PREVIEW_HEALTH） */

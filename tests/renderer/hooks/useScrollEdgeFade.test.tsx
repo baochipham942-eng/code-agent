@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useScrollEdgeFade } from '../../../src/renderer/hooks/useScrollEdgeFade';
@@ -64,5 +65,11 @@ describe('useScrollEdgeFade', () => {
     expect(addEventListener).toHaveBeenCalledWith('scroll', expect.any(Function), { passive: true });
     unmount();
     expect(cancelAnimationFrame).toHaveBeenCalledWith(nextFrame);
+  });
+
+  it('uses typed zero for edge-free mask stops', () => {
+    const css = readFileSync('src/renderer/styles/global.css', 'utf8');
+    expect(css).toContain('--chat-fade-top: 0px');
+    expect(css).toContain('--chat-fade-bottom: 0px');
   });
 });

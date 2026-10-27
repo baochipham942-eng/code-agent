@@ -71,8 +71,6 @@ describe('elevation 组装类（global.css）', () => {
 
   it('.chat-scroll-fade 提供 composer 上方渐隐 mask', () => {
     expect(globalCss).toMatch(/\.chat-scroll-fade\s*\{[^}]*mask-image:\s*linear-gradient/);
-    expect(globalCss).toContain("--chat-fade-top: 0px");
-    expect(globalCss).toContain("--chat-fade-bottom: 0px");
   });
 
   it('.popover-enter 浮层入场动画 + reduced-motion 降级', () => {

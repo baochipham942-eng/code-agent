@@ -1,4 +1,4 @@
-const TOOL_TARGET_KEYS = ['file_path', 'path', 'notebook_path', 'command', 'agentId'] as const;
+const TOOL_TARGET_KEYS = ['file_path', 'path', 'notebook_path', 'command', 'agentId', 'targetApp'] as const;
 const COMMAND_PREVIEW_LENGTH = 80;
 
 export function extractToolStepTarget(

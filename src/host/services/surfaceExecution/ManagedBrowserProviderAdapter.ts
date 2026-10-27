@@ -520,6 +520,9 @@ export class ManagedBrowserProviderAdapter {
       },
     };
     this.bindings.set(key, binding);
+    if (binding.serviceKey !== MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY) {
+      browserPool.setInUse(binding.serviceKey, true);
+    }
     this.ensureOrganicNavHook(browserService);
     try {
       const observed = await this.captureObservation(binding, {

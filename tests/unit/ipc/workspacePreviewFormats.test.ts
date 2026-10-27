@@ -310,4 +310,15 @@ describe('handleInspectArchive non-zip', () => {
     expect(locked.fallback).toEqual({ code: 'encrypted' });
     expect(damaged.fallback).toEqual({ code: 'corrupt' });
   });
+
+  it.skipIf(!/bsdtar|libarchive/i.test(tarVersion()))(
+    'classifies a truncated rar header from real bsdtar as corrupt',
+    async () => {
+      const dir = await tempDir();
+      const rar = path.join(dir, 'fake.rar');
+      await writeFile(rar, Buffer.from('Rar!\x1a\x07\x00not-a-real-rar'));
+      const inspection = await handleInspectArchive({ filePath: rar });
+      expect(inspection.fallback).toEqual({ code: 'corrupt' });
+    },
+  );
 });

@@ -28,6 +28,7 @@ describe('SendButton Codex 形态（28px 实心浅色正圆，全状态分支）
     expect(html).toContain('h-7');
     expect(html).toContain('w-7');
     expect(html).toContain('rounded-full');
+    expect(html).toContain('before:-inset-y-2 before:-left-0.5 before:-right-3.5');
     expect(html).not.toContain('h-9');
     expect(html).not.toContain('rounded-xl');
   });
@@ -55,5 +56,11 @@ describe('输入框间距（Codex 参考图像素扫描值）', () => {
   it('容器下边 → app 底部：18.5', () => {
     // 左右内边距已由 px-4 换成 .chat-col-pad（clamp 自适应，同批打磨），这里只钉下边。
     expect(source).toMatch(/chat-col-pad pb-\[18\.5px\] pt-0 transition-colors/);
+  });
+
+  it('+ 保留 32px 可见盒并用伪元素扩到 44px，右侧只延伸到 4px 间隙中点', () => {
+    const addMenuSource = readFileSync(resolve(__dirname, '../../../src/renderer/components/features/chat/ChatInput/InputAddMenu.tsx'), 'utf8');
+    expect(addMenuSource).toContain('w-8 h-8');
+    expect(addMenuSource).toContain('before:-inset-y-1.5 before:-left-2.5 before:-right-0.5');
   });
 });

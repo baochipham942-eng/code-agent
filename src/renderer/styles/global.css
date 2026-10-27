@@ -952,8 +952,8 @@ pre code {
     --chat-fade-top: 28px; --chat-fade-bottom: 28px;
     -webkit-mask-image: linear-gradient(to bottom, transparent 0, black var(--chat-fade-top), black calc(100% - var(--chat-fade-bottom)), transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, black var(--chat-fade-top), black calc(100% - var(--chat-fade-bottom)), transparent 100%);
   }
-  .chat-scroll-fade[data-fade-top='false'] { --chat-fade-top: 0; }
-  .chat-scroll-fade[data-fade-bottom='false'] { --chat-fade-bottom: 0; }
+  .chat-scroll-fade[data-fade-top='false'] { --chat-fade-top: 0px; }
+  .chat-scroll-fade[data-fade-bottom='false'] { --chat-fade-bottom: 0px; }
   /* ----------------------------------------
      Modal
      ---------------------------------------- */

@@ -33,7 +33,8 @@ describe('useScrollEdgeFade', () => {
       scrollHeight: { value: 300 },
     });
     scroller.scrollTop = 0;
-    const { unmount } = renderHook(() => useScrollEdgeFade(scroller));
+    const { result, unmount } = renderHook(() => useScrollEdgeFade());
+    act(() => result.current(scroller));
     flushFrame();
     expect(scroller.dataset.fadeTop).toBe('false');
     expect(scroller.dataset.fadeBottom).toBe('true');
@@ -55,7 +56,8 @@ describe('useScrollEdgeFade', () => {
   it('throttles passive scroll events to one animation frame', () => {
     const scroller = document.createElement('div');
     const addEventListener = vi.spyOn(scroller, 'addEventListener');
-    const { unmount } = renderHook(() => useScrollEdgeFade(scroller));
+    const { result, unmount } = renderHook(() => useScrollEdgeFade());
+    act(() => result.current(scroller));
     flushFrame();
     act(() => {
       scroller.dispatchEvent(new Event('scroll'));

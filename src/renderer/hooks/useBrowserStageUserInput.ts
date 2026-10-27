@@ -9,9 +9,11 @@ import {
   type WheelEvent,
 } from 'react';
 import { BROWSER_STAGE_VIEWPORT } from '@shared/constants';
+import type { SurfaceSessionStateV1 } from '@shared/contract/surfaceExecution';
 import { mapDisplayPointToViewport } from '@shared/utils/browserFrameCoordinateMap';
 import type { UserBrowserInputPayload } from '@shared/utils/userBrowserInputPayload';
 import { dispatchUserBrowserInput } from '../services/userBrowserLink';
+import { requestBrowserHumanTakeover } from './requestBrowserHumanTakeover';
 import {
   resolveBrowserStageInteractionGate,
   shouldDispatchBrowserStageInteraction,
@@ -29,6 +31,8 @@ export interface BrowserStageUserInputOptions {
   contentHeight: number | null;
   /** agent surface 会话 id 变化时重置抢占确认 */
   surfaceSessionId: string | null;
+  /** agent surface 会话状态；离开 waiting_human 后下一次触碰要重新确认 */
+  agentSurfaceState: SurfaceSessionStateV1 | null;
 }
 
 export interface BrowserStageUserInputApi {
@@ -77,12 +81,14 @@ export function useBrowserStageUserInput(
     contentWidth,
     contentHeight,
     surfaceSessionId,
+    agentSurfaceState,
   } = options;
 
   const [stageFocused, setStageFocused] = useState(false);
   const [interactionPreempted, setInteractionPreempted] = useState(false);
   const [pendingPreemptInput, setPendingPreemptInput] = useState<UserBrowserInputPayload | null>(null);
   const preemptSurfaceRef = useRef<string | null>(null);
+  const agentSurfaceStateRef = useRef(agentSurfaceState);
   const gestureRef = useRef<ActivePointerGesture | null>(null);
   /** pointerup 已发过 click/drag 时吞掉随后合成的 click，避免双发 */
   const suppressNextClickRef = useRef(false);
@@ -101,6 +107,16 @@ export function useBrowserStageUserInput(
       preemptSurfaceRef.current = surfaceSessionId;
     }
   }, [agentSurfaceBusy, surfaceSessionId]);
+
+  // 用户点「继续」后会话离开 waiting_human，下一次触碰要再问一次。
+  useEffect(() => {
+    const previous = agentSurfaceStateRef.current;
+    agentSurfaceStateRef.current = agentSurfaceState;
+    if (previous === 'waiting_human' && agentSurfaceState !== 'waiting_human') {
+      setInteractionPreempted(false);
+      preemptSurfaceRef.current = null;
+    }
+  }, [agentSurfaceState]);
 
   const gate = resolveBrowserStageInteractionGate({
     ownedByCurrentSession,
@@ -378,8 +394,11 @@ export function useBrowserStageUserInput(
     setPendingPreemptInput(null);
     setInteractionPreempted(true);
     preemptSurfaceRef.current = surfaceSessionId;
-    if (pending) void send(pending);
-  }, [pendingPreemptInput, send, surfaceSessionId]);
+    void (async () => {
+      await requestBrowserHumanTakeover({ conversationId, surfaceSessionId });
+      if (pending) await send(pending);
+    })();
+  }, [conversationId, pendingPreemptInput, send, surfaceSessionId]);
 
   const cancelPreempt = useCallback(() => {
     setPendingPreemptInput(null);

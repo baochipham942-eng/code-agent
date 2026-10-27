@@ -550,7 +550,7 @@ export class ConversationRuntime {
         // 1. Call model
         logger.debug('[AgentLoop] Calling inference...');
         const inferenceStartTime = Date.now();
-        let response = await this.contextAssembly.inference();
+        let response = await this.contextAssembly.inference(); if (this.ctx.control.isCancelled) break;
         if (this.ctx.cachePromptSample) {
           this.ctx.cachePromptSample.current = sampleWithToolsFingerprint(this.ctx.cachePromptSample, {
             prompt: getCachedDynamicSystemPrompt(this.ctx) ?? this.ctx.systemPrompt,

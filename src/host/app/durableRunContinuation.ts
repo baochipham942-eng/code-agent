@@ -1,16 +1,20 @@
 import type { Message } from '../../shared/contract';
+import { getRunInterruptCause } from '../../shared/contract/durableRun';
 import { getSessionManager } from '../services';
 import type { TaskManager } from '../task';
 import type { RunRegistry } from '../runtime/runRegistry';
 import type { RunRehydrationPlan } from '../runtime/durableRunStores';
 import { isNativeRecoveryDescriptor } from '../runtime/nativeRecoveryHost';
+import { clearQuotaWaitTimer } from '../runtime/quotaWaitTimer';
 
 type DurableContinuationRegistry = Pick<RunRegistry,
   | 'findRecoveredWaitingRun'
   | 'getDurableCheckpointState'
   | 'resetDurableResumeBudget'
   | 'parkDurable'
->;
+> & {
+  getDurableEnvelope?: RunRegistry['getDurableEnvelope'];
+};
 
 type DurableContinuationTaskManager = Pick<TaskManager,
   | 'getSessionState'
@@ -18,6 +22,7 @@ type DurableContinuationTaskManager = Pick<TaskManager,
 >;
 
 const continuingSessions = new Set<string>();
+const continuingRunIds = new Map<string, string>();
 
 /**
  * Continue a parked durable foreground run without creating a new user turn.
@@ -30,15 +35,16 @@ export async function continueParkedDurableRun(input: {
   runRegistry: DurableContinuationRegistry;
   taskManager: DurableContinuationTaskManager;
   getMessages?: (sessionId: string) => Promise<Message[]>;
-}): Promise<{ runId: string }> {
+}): Promise<{ runId: string; alreadyContinuing?: boolean }> {
   const { sessionId, runRegistry, taskManager } = input;
   if (continuingSessions.has(sessionId)) {
-    throw new Error(`Session ${sessionId} is already continuing`);
+    return { runId: continuingRunIds.get(sessionId) ?? '', alreadyContinuing: true };
   }
   continuingSessions.add(sessionId);
   try {
     const recovered = runRegistry.findRecoveredWaitingRun({ sessionId });
     if (!recovered) throw new Error(`No parked durable run is available for session ${sessionId}`);
+    continuingRunIds.set(sessionId, recovered.runId);
     const currentStatus = taskManager.getSessionState(sessionId)?.status;
     if (['running', 'paused', 'queued', 'cancelling'].includes(currentStatus ?? '')) {
       throw new Error(`Session ${sessionId} is already ${currentStatus}`);
@@ -51,6 +57,10 @@ export async function continueParkedDurableRun(input: {
     const messages = await (input.getMessages ?? ((id) => getSessionManager().getMessages(id)))(sessionId);
     const source = messages.find((message) => message.id === checkpointState.sourceMessageId && message.role === 'user');
     if (!source) throw new Error(`Parked durable run ${recovered.runId} source message is unavailable`);
+    const parked = runRegistry.getDurableEnvelope?.(recovered.runId);
+    const parkedCause = parked ? getRunInterruptCause(parked) : undefined;
+    const quotaDueAt = parkedCause === 'quota_wait' ? parked?.quotaWaitDueAt : undefined;
+    clearQuotaWaitTimer(recovered.runId);
     await runRegistry.resetDurableResumeBudget(recovered.runId);
     try {
       await taskManager.resumeExistingDurableRun(
@@ -62,12 +72,18 @@ export async function continueParkedDurableRun(input: {
         source.id,
       );
     } catch (error) {
-      await runRegistry.parkDurable(recovered.runId, { reason: 'user_stop' }).catch(() => undefined);
+      await runRegistry.parkDurable(
+        recovered.runId,
+        parkedCause === 'quota_wait'
+          ? { reason: 'quota_wait', ...(quotaDueAt !== undefined ? { dueAt: quotaDueAt } : {}) }
+          : { reason: 'user_stop' },
+      ).catch(() => undefined);
       throw error;
     }
     return { runId: recovered.runId };
   } finally {
     continuingSessions.delete(sessionId);
+    continuingRunIds.delete(sessionId);
   }
 }
 

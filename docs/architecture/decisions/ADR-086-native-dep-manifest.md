@@ -153,7 +153,7 @@ export function betterSqlite3CandidatePaths(moduleDir: string): string[] {
 
 ### 4.3 谁读、进程怎么知道自己的模式
 
-模式信号已存在，零新发明：Rust 壳起 webServer 时必设 `AGENT_NEO_BUNDLED_RUNTIME_ROOT` 与 `AGENT_NEO_RESOURCE_DIR`（`main.rs:74-75,1202-1213,2138-2140`），源码态两者皆无。`desktopShellDiagnostics.ts:117-127` 已按同一信号判 bundle root。
+模式信号已存在，零新发明：Rust 壳起 webServer 时必设 `AGENT_NEO_BUNDLED_RUNTIME_ROOT` 与 `AGENT_NEO_RESOURCE_DIR`（`main.rs:74-75,1202-1213,2138-2140`），源码态两者皆无。`desktopShellDiagnostics.ts:117-127` 已按同一信号判 bundle root。T2 施工细化：bundle 模式判据收紧为**两变量同时非空**——18 处非壳 harness（scripts/acceptance、tests/e2e、scripts/nightly、verify-slotless.mjs）只设 `AGENT_NEO_BUNDLED_RUNTIME_ROOT` 指向源码 checkout、不设 `AGENT_NEO_RESOURCE_DIR`，单看前者它们会全体误入 bundle 模式并对不存在的清单 throw，而 Rust 壳两变量必同时设置，收紧不漏任何真 bundle 态。
 
 新读取方 `src/host/runtime/nativeDepManifest.ts`（与 runtimeAssetResolver 同层）：
 

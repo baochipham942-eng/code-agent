@@ -31,27 +31,44 @@ function createFakeLogger(): FakeLogger {
   };
 }
 
-function loggedText(logger: FakeLogger): string {
-  const calls = [
-    ...logger.info.mock.calls,
-    ...logger.warn.mock.calls,
-    ...logger.debug.mock.calls,
-    ...logger.error.mock.calls,
-  ];
-  return calls
-    .map((args) => args.map((arg) => (typeof arg === 'string' ? arg : JSON.stringify(arg))).join(' '))
-    .join('\n');
-}
-
-/** 让包回退 require('better-sqlite3') 失败,其余 require 照常。 */
-function failPackageFallback(): void {
+/** 记录加载期全部 require 请求(含 nativeLoader 经 createRequire 发出的),不改行为。 */
+function recordModuleLoads(): string[] {
+  const requests: string[] = [];
   originalLoad = moduleInternals._load;
   moduleInternals._load = (request, parent, isMain) => {
-    if (request === 'better-sqlite3') {
-      throw new Error("Cannot find module 'better-sqlite3'");
-    }
+    requests.push(request);
     return originalLoad!(request, parent, isMain);
   };
+  return requests;
+}
+
+function writeBundleFixture(root: string): string {
+  const entryDir = path.join(root, 'dist', 'native', 'better-sqlite3');
+  fs.mkdirSync(entryDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(entryDir, 'index.js'),
+    'module.exports = class FixtureBetterSqlite3 {};\n',
+    'utf8',
+  );
+  const manifest = {
+    schemaVersion: 1,
+    kind: 'agent_neo_native_dep_manifest',
+    generatedAt: '2026-10-28T00:00:00.000Z',
+    generator: 'scripts/gen-native-dep-manifest.mjs',
+    appVersion: '0.0.0-test',
+    platform: `${process.platform}-${process.arch}`,
+    modules: {
+      'better-sqlite3': {
+        kind: 'node-module',
+        entry: 'dist/native/better-sqlite3',
+        native: 'dist/native/better-sqlite3/prebuilds/darwin-arm64.node',
+        packageVersion: '13.0.3',
+      },
+    },
+  };
+  const manifestPath = path.join(root, 'dist', 'native', 'manifest.json');
+  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+  return manifestPath;
 }
 
 describe('loadBetterSqlite3 logging', () => {
@@ -61,6 +78,8 @@ describe('loadBetterSqlite3 logging', () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'native-loader-logging-'));
     vi.stubEnv('CODE_AGENT_CLI_MODE', '');
     vi.stubEnv('CODE_AGENT_WEB_MODE', '');
+    vi.stubEnv('AGENT_NEO_BUNDLED_RUNTIME_ROOT', '');
+    vi.stubEnv('AGENT_NEO_RESOURCE_DIR', '');
   });
 
   afterEach(() => {
@@ -73,76 +92,85 @@ describe('loadBetterSqlite3 logging', () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it('skips absent candidates without warning when the package fallback loads', () => {
+  it('source mode: single package require, no candidate probes, debug-only logging', () => {
+    const requests = recordModuleLoads();
     const logger = createFakeLogger();
-    const moduleDir = path.join(root, 'host', 'services', 'core', 'database');
-    const cwd = path.join(root, 'cwd');
-    fs.mkdirSync(cwd, { recursive: true });
-    vi.spyOn(process, 'cwd').mockReturnValue(cwd);
 
-    const Database = loadBetterSqlite3(moduleDir, logger as unknown as LoaderLogger);
+    const Database = loadBetterSqlite3(path.join(root, 'a', 'b'), logger as unknown as LoaderLogger);
 
     expect(Database).toBeTruthy();
+    expect(requests.filter((request) => request === 'better-sqlite3')).toHaveLength(1);
+    expect(requests.some((request) => request.includes('dist/native'))).toBe(false);
+    expect(logger.info).not.toHaveBeenCalled();
     expect(logger.warn).not.toHaveBeenCalled();
-    expect(loggedText(logger)).not.toContain('Cannot find module');
-    expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining('candidate not present'));
-  });
-
-  it('warns with the real error when a present candidate fails to load', () => {
-    const logger = createFakeLogger();
-    const moduleDir = path.join(root, 'a', 'b');
-    const brokenCandidate = path.join(root, 'a', 'native', 'better-sqlite3');
-    const cwd = path.join(root, 'cwd');
-    fs.mkdirSync(brokenCandidate, { recursive: true });
-    fs.mkdirSync(cwd, { recursive: true });
-    fs.writeFileSync(
-      path.join(brokenCandidate, 'index.js'),
-      "throw new Error('NODE_MODULE_VERSION 137 mismatch: native binding compiled for a different Node.js');\n",
-      'utf8',
-    );
-    vi.spyOn(process, 'cwd').mockReturnValue(cwd);
-
-    const Database = loadBetterSqlite3(moduleDir, logger as unknown as LoaderLogger);
-
-    expect(Database).toBeTruthy();
-    expect(logger.warn).toHaveBeenCalledTimes(1);
-    const [message, payload] = logger.warn.mock.calls[0] as [
-      string,
-      { failedCandidates: Array<{ path: string; error: string }> },
-    ];
-    expect(message).toContain('Loaded better-sqlite3 from package fallback');
-    expect(payload.failedCandidates).toHaveLength(1);
-    expect(payload.failedCandidates[0].path).toBe(brokenCandidate);
-    expect(payload.failedCandidates[0].error).toContain('NODE_MODULE_VERSION 137');
     expect(logger.debug).toHaveBeenCalledWith(
-      expect.stringContaining('candidate unavailable'),
-      expect.objectContaining({ error: expect.stringContaining('NODE_MODULE_VERSION 137') }),
+      expect.stringContaining('Loaded better-sqlite3 from package resolution (source mode)'),
     );
   });
 
-  it('reports broken and missing candidates when every attempt fails', () => {
-    failPackageFallback();
+  it('source mode: warn and return null when the package require fails', () => {
+    const requests = recordModuleLoads();
+    const recordedLoad = moduleInternals._load;
+    moduleInternals._load = (request, parent, isMain) => {
+      if (request === 'better-sqlite3') {
+        requests.push(request);
+        throw new Error("Cannot find module 'better-sqlite3'");
+      }
+      return recordedLoad(request, parent, isMain);
+    };
     const logger = createFakeLogger();
-    const moduleDir = path.join(root, 'a', 'b');
-    const cwd = path.join(root, 'cwd');
-    fs.mkdirSync(cwd, { recursive: true });
-    vi.spyOn(process, 'cwd').mockReturnValue(cwd);
 
-    const Database = loadBetterSqlite3(moduleDir, logger as unknown as LoaderLogger);
+    const Database = loadBetterSqlite3(path.join(root, 'a', 'b'), logger as unknown as LoaderLogger);
 
     expect(Database).toBeNull();
+    expect(requests.filter((request) => request === 'better-sqlite3')).toHaveLength(1);
     expect(logger.warn).toHaveBeenCalledTimes(1);
-    const [message, payload] = logger.warn.mock.calls[0] as [
-      string,
-      { failedCandidates: unknown[]; missingCandidates: string[]; fallbackError: string },
-    ];
-    expect(message).toContain('better-sqlite3 unavailable after all load attempts');
-    expect(payload.failedCandidates).toEqual([]);
-    expect(payload.missingCandidates).toEqual([
-      path.join(root, 'a', 'native', 'better-sqlite3'),
-      path.join(root, 'native', 'better-sqlite3'),
-      path.join(cwd, 'dist', 'native', 'better-sqlite3'),
-    ]);
-    expect(payload.fallbackError).toContain("Cannot find module 'better-sqlite3'");
+    expect(logger.warn.mock.calls[0][0]).toBe('[DatabaseService] better-sqlite3 unavailable in source mode');
+  });
+
+  it('bundle mode: loads the declared entry once and logs the manifest path at info', () => {
+    const manifestPath = writeBundleFixture(root);
+    vi.stubEnv('AGENT_NEO_BUNDLED_RUNTIME_ROOT', root);
+    vi.stubEnv('AGENT_NEO_RESOURCE_DIR', path.join(root, 'Resources'));
+    const requests = recordModuleLoads();
+    const logger = createFakeLogger();
+
+    const Database = loadBetterSqlite3(path.join(root, 'a', 'b'), logger as unknown as LoaderLogger);
+
+    const entryPath = path.join(root, 'dist', 'native', 'better-sqlite3');
+    expect(Database).toBeTruthy();
+    expect(requests.filter((request) => request === entryPath)).toHaveLength(1);
+    expect(requests.some((request) => request === 'better-sqlite3')).toBe(false);
+    expect(logger.info).toHaveBeenCalledTimes(1);
+    expect(logger.info.mock.calls[0][0]).toBe(
+      `[DatabaseService] Loaded better-sqlite3 from ${entryPath} via native dep manifest ${manifestPath}`,
+    );
+  });
+
+  it('bundle mode: throws instead of warn+null when the manifest is missing', () => {
+    vi.stubEnv('AGENT_NEO_BUNDLED_RUNTIME_ROOT', root);
+    vi.stubEnv('AGENT_NEO_RESOURCE_DIR', path.join(root, 'Resources'));
+    const logger = createFakeLogger();
+
+    expect(() => loadBetterSqlite3(path.join(root, 'a', 'b'), logger as unknown as LoaderLogger)).toThrow(
+      `[native-dep-manifest] bundle mode but manifest is missing: expected ${path.join(
+        root,
+        'dist',
+        'native',
+        'manifest.json',
+      )}`,
+    );
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it('CLI mode: returns null before any load attempt', () => {
+    const requests = recordModuleLoads();
+    vi.stubEnv('CODE_AGENT_CLI_MODE', 'true');
+    const logger = createFakeLogger();
+
+    const Database = loadBetterSqlite3(path.join(root, 'a', 'b'), logger as unknown as LoaderLogger);
+
+    expect(Database).toBeNull();
+    expect(requests.filter((request) => request === 'better-sqlite3')).toHaveLength(0);
   });
 });

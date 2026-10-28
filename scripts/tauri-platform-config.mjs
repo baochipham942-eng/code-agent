@@ -24,6 +24,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { mapTauriResourcePath } from './tauri-resource-path.mjs';
 
 const target = process.argv[2];
 if (target !== 'win32-x64') {
@@ -58,16 +59,7 @@ function shouldKeepResource(source) {
 }
 
 function mapPath(entry) {
-  return entry
-    .replaceAll('better-sqlite3/prebuilds/darwin-arm64.node', 'better-sqlite3/prebuilds/win32-x64.node')
-    .replaceAll('node-pty/prebuilds/darwin-arm64', 'node-pty/prebuilds/win32-x64')
-    .replaceAll('@img/sharp-darwin-arm64', '@img/sharp-win32-x64')
-    // win32 sharp 包的 lib/ 同时含 .node 与 libvips DLL，必须整目录打包
-    .replace('@img/sharp-win32-x64/lib/**/*.node', '@img/sharp-win32-x64/lib/**/*')
-    .replace(/^\.\.\/scripts\/rtk$/, '../scripts/rtk.exe')
-    .replace(/^\.\.\/scripts\/uv$/, '../scripts/uv.exe')
-    .replace(/^scripts\/rtk$/, 'scripts/rtk.exe')
-    .replace(/^scripts\/uv$/, 'scripts/uv.exe');
+  return mapTauriResourcePath(entry, target);
 }
 
 function mapResources(value) {

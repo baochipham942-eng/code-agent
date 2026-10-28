@@ -23,6 +23,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { mapTauriResourcePath } from './tauri-resource-path.mjs';
 
 const arch = process.argv[2];
 if (arch !== 'arm64' && arch !== 'x64') {
@@ -35,10 +36,8 @@ const confPath = path.join(root, 'src-tauri', 'tauri.conf.json');
 const conf = JSON.parse(fs.readFileSync(confPath, 'utf8'));
 const resources = conf.bundle?.resources ?? [];
 
-// arch 相关路径全部含 `darwin-arm64` 子串（node-pty prebuild / sharp / sharp-libvips），
-// 一次替换即覆盖全部三类；arm64 时原样返回（base 即 arm64）。
 function mapPath(entry) {
-  return arch === 'x64' ? entry.replaceAll('darwin-arm64', 'darwin-x64') : entry;
+  return mapTauriResourcePath(entry, arch);
 }
 
 function mapResources(value) {

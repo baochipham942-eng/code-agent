@@ -110,7 +110,6 @@ import {
 } from '../utils/sendWithImmediateAssistantFeedback';
 import { isChatSendAccepted } from '../utils/chatSendState';
 import { DurableResumeNotice, suppressLegacyInterruptionDecision, useDurableContinueVisible, useDurableResumeContinuation, useGuardedDurableContinue } from './features/chat/durableResume';
-import { QuotaWaitNotice } from './features/chat/quotaWaitNotice';
 // Zustand selectors must return a referentially stable fallback. A fresh [] here makes
 // useSyncExternalStore treat every snapshot as changed and can loop before ChatView mounts.
 const EMPTY_PENDING_USER_QUESTIONS: UserQuestionRequest[] = [];
@@ -1023,7 +1022,6 @@ export const ChatView: React.FC = () => {
 
           {isDurableAutoResuming && <DurableResumeNotice text={t.chat.durableResumeNotice} />}
           {isDurableResumeQueued && <DurableResumeNotice text={t.chat.durableResumeQueuedNotice} />}
-          {durableResume?.quotaWait && <QuotaWaitNotice dueAt={durableResume.quotaWait.dueAt} duePassed={durableResume.quotaWait.duePassed} onCancel={() => { cancel(); }} onRetryNow={() => { durableContinue.onContinue(); }} />}
 
           {/* 讨论流浮层已收进右侧「本会话的代理」面板的「事件」折叠区（N-L6-AGENTVIEW S2），
               输入框上方不再另起浮层 */}

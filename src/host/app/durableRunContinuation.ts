@@ -6,6 +6,9 @@ import type { RunRegistry } from '../runtime/runRegistry';
 import type { RunRehydrationPlan } from '../runtime/durableRunStores';
 import { isNativeRecoveryDescriptor } from '../runtime/nativeRecoveryHost';
 import { clearQuotaWaitTimer } from '../runtime/quotaWaitTimer';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('DurableRunContinuation');
 
 type DurableContinuationRegistry = Pick<RunRegistry,
   | 'findRecoveredWaitingRun'
@@ -72,12 +75,20 @@ export async function continueParkedDurableRun(input: {
         source.id,
       );
     } catch (error) {
+      // 回停失败只降级不吞主错误（下方照常 throw）；但降级本身要留痕，否则 run 停在
+      // running 却无人续跑时没有任何线索（降级路径留痕错题本）。
       await runRegistry.parkDurable(
         recovered.runId,
         parkedCause === 'quota_wait'
           ? { reason: 'quota_wait', ...(quotaDueAt !== undefined ? { dueAt: quotaDueAt } : {}) }
           : { reason: 'user_stop' },
-      ).catch(() => undefined);
+      ).catch((parkError: unknown) => {
+        logger.warn('[DurableRunContinuation] park-back after failed resume failed', {
+          runId: recovered.runId,
+          sessionId,
+          reason: parkError instanceof Error ? parkError.message : String(parkError),
+        });
+      });
       throw error;
     }
     return { runId: recovered.runId };

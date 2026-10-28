@@ -1,4 +1,8 @@
+import { createLogger } from '../services/infra/logger';
+
 type QuotaWaitContinuer = (input: { sessionId: string; runId: string }) => Promise<unknown>;
+
+const logger = createLogger('QuotaWaitTimer');
 
 let continuer: QuotaWaitContinuer | null = null;
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -27,7 +31,15 @@ export function armQuotaWaitOnPark(input: { runId: string; sessionId: string; du
     timers.delete(input.runId);
     const fn = continuer;
     if (!fn) return;
-    void fn({ sessionId: input.sessionId, runId: input.runId }).catch(() => undefined);
+    // 失败必须留痕（降级路径留痕错题本）：到点续跑落空时 run 会一直停在 waiting，
+    // 不打这条 warn 的话用户与开发者都无从得知自动续跑为何没发生。
+    void fn({ sessionId: input.sessionId, runId: input.runId }).catch((error: unknown) => {
+      logger.warn('[QuotaWaitTimer] due-time auto-continue failed', {
+        runId: input.runId,
+        sessionId: input.sessionId,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    });
   }, delay);
   if (typeof timer.unref === 'function') timer.unref();
   timers.set(input.runId, timer);

@@ -17,6 +17,7 @@ import {
   withTransientRetry,
   createRetryFingerprintScope,
 } from '../../../src/host/model/providers/retryStrategy';
+import { runWithQuotaWaitSuspendEligibility } from '../../../src/host/model/providers/quotaWaitSuspend';
 import { classifyError } from '../../../src/host/model/errorClassifier';
 import { getProviderHealthMonitor } from '../../../src/host/model/providerHealthMonitor';
 
@@ -567,14 +568,14 @@ describe('Retry Strategy', () => {
       const onRetry = vi.fn();
       const scope = createRetryFingerprintScope();
 
-      await expect(withTransientRetry(fn, {
+      await expect(runWithQuotaWaitSuspendEligibility(true, () => withTransientRetry(fn, {
         providerName,
         model: 'm',
         maxRetries: 4,
         baseDelay: 1,
         onRetry,
         fingerprintScope: scope,
-      })).rejects.toMatchObject({ name: 'QuotaWaitSuspendError', waitMs: 90_000 });
+      }))).rejects.toMatchObject({ name: 'QuotaWaitSuspendError', waitMs: 90_000 });
 
       expect(fn).toHaveBeenCalledTimes(1);
       expect(onRetry).not.toHaveBeenCalled();
@@ -589,6 +590,26 @@ describe('Retry Strategy', () => {
       }, { providerName, model: 'm', maxRetries: 4, baseDelay: 1, fingerprintScope: scope });
       expect(result).toBe('ok');
       expect(calls).toBe(3);
+    });
+
+    it('keeps a suspend-ineligible caller on the capped retry path (no conversion, retries then succeeds)', async () => {
+      vi.useFakeTimers();
+      try {
+        const err = Object.assign(new Error('429'), { status: 429, retryAfterMs: 90_000 });
+        const fn = vi.fn().mockRejectedValueOnce(err).mockResolvedValue('ok');
+        const pending = withTransientRetry(fn, {
+          providerName: 'quota-ineligible',
+          maxRetries: 1,
+          baseDelay: 1,
+        });
+        await vi.advanceTimersByTimeAsync(59_999);
+        expect(fn).toHaveBeenCalledTimes(1);
+        await vi.advanceTimersByTimeAsync(1);
+        await expect(pending).resolves.toBe('ok');
+        expect(fn).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('keeps a wait past 24h on the capped sleep path', async () => {

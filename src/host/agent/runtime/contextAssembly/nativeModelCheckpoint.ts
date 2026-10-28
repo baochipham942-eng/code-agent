@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import type { ModelConfig } from '../../../../shared/contract/model';
 import { getConfiguredApplicationRunRegistry } from '../../../app/applicationRunRegistry';
 import { isQuotaWaitSuspendError } from '../../../model/providers/retryStrategy';
+import { runWithQuotaWaitSuspendEligibility } from '../../../model/providers/quotaWaitSuspend';
+import { isQuotaWaitParkableRun } from '../../../runtime/quotaWaitParkability';
 import { logger, type ContextAssemblyCtx } from './shared';
 
 // 只给同文件的 withNativeModelOperation 用——生命周期四个点收在一处，不再单独对外开口。
@@ -76,7 +78,13 @@ export async function withNativeModelOperation<T>(
   await checkpointQuiet('after_model_dispatch', 'dispatched');
   let result: T;
   try {
-    result = await run();
+    // 长额度等待的挂起转换只对「本次推理属于可停靠 run」生效：这里已在 dispatch 检查点
+    // 之后，descriptor 在位即可停靠；辅助子 run / 无 descriptor / 非持久会话包进 false，
+    // 转换点保持原封顶重试 + 降级链（rework r1 Important：非可停靠 run 不得静默取消）。
+    result = await runWithQuotaWaitSuspendEligibility(
+      isQuotaWaitParkableRun(getConfiguredApplicationRunRegistry(), ctx.runtime.runId),
+      run,
+    );
   } catch (error) {
     const abandonedByUser = ctx.runtime.control.isCancelled
       || ctx.runtime.control.isInterrupted

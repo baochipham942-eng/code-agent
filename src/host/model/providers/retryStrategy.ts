@@ -8,7 +8,7 @@ import { EventEmitter } from 'events';
 import { getProviderHealthMonitor } from '../providerHealthMonitor';
 import { normalizeErrorMessage } from '../../lightMemory/normalizeErrorMessage';
 import { formatThrownError } from '../../../shared/utils/providerError';
-import { isQuotaSuspendWaitMs, isQuotaWaitSuspendError, QuotaWaitSuspendError } from './quotaWaitSuspend';
+import { isQuotaSuspendWaitMs, isQuotaWaitSuspendEligible, isQuotaWaitSuspendError, QuotaWaitSuspendError } from './quotaWaitSuspend';
 
 export { isQuotaWaitSuspendError, QuotaWaitSuspendError };
 
@@ -609,7 +609,9 @@ export async function withTransientRetry<T>(
     } catch (err) {
       if (isQuotaWaitSuspendError(err)) throw err;
       if (isRetryableModelCallError(err) && !signal?.aborted) {
-        const suspend = quotaSuspendErrorFor(err);
+        // 挂起只认可停靠 run 的调用链（runWithQuotaWaitSuspendEligibility）；其余调用方
+        // 保持原路径：封顶重试 → 跨 provider 降级，绝不能静默转取消。
+        const suspend = isQuotaWaitSuspendEligible() ? quotaSuspendErrorFor(err) : null;
         if (suspend) throw suspend;
       }
       const msg = err instanceof Error ? err.message : String(err);

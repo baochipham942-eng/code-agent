@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { streamText } from 'ai';
 import { inferenceViaAiSdk } from '../../../src/host/model/adapters/aiSdkAdapter';
 import { QuotaWaitSuspendError } from '../../../src/host/model/providers/retryStrategy';
+import { runWithQuotaWaitSuspendEligibility } from '../../../src/host/model/providers/quotaWaitSuspend';
 import type { StreamCallback, StreamChunk } from '../../../src/host/model/types';
 import type { ModelConfig } from '../../../src/shared/contract';
 
@@ -49,7 +50,7 @@ describe('inferenceViaAiSdk quota wait', () => {
     const err = Object.assign(new Error('limited'), { statusCode: 429, responseHeaders: { 'retry-after': '75' } });
     vi.mocked(streamText).mockImplementation(() => { throw err; });
     const col = makeCollector();
-    const pending = inferenceViaAiSdk([{ role: 'user', content: 'hi' }], [], CONFIG, col.onStream);
+    const pending = runWithQuotaWaitSuspendEligibility(true, () => inferenceViaAiSdk([{ role: 'user', content: 'hi' }], [], CONFIG, col.onStream));
     const outcome = await Promise.race([
       pending.then(() => 'resolved' as const, (error: unknown) => error),
       vi.advanceTimersByTimeAsync(5_000).then(() => 'slept' as const),
@@ -59,6 +60,26 @@ describe('inferenceViaAiSdk quota wait', () => {
     expect(col.byType('error')).toHaveLength(0);
     expect(health.recordFailure).not.toHaveBeenCalled();
     expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a suspend-ineligible caller (auxiliary run, background call) on the capped retry path', async () => {
+    // headers（而非 responseHeaders）：封顶提取器只认这个形状，60s 封顶睡眠才真实生效
+    const err = Object.assign(new Error('limited'), { statusCode: 429, headers: { 'retry-after': '75' } });
+    vi.mocked(streamText)
+      .mockImplementationOnce(() => { throw err; })
+      .mockReturnValueOnce(streamOf([
+        { type: 'text-delta', id: 't', text: 'done' },
+        { type: 'finish', finishReason: 'stop', totalUsage: { inputTokens: 1, outputTokens: 1 } },
+      ]));
+    const col = makeCollector();
+    const pending = inferenceViaAiSdk([{ role: 'user', content: 'hi' }], [], CONFIG, col.onStream);
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(vi.mocked(streamText)).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    const result = await pending;
+    expect(result.content).toBe('done');
+    expect(vi.mocked(streamText)).toHaveBeenCalledTimes(2);
+    expect(col.byType('error')).toHaveLength(0);
   });
 
   it('keeps a mid-stream 75s retry-after on the capped reconnect path', async () => {

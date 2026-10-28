@@ -1,3 +1,20 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+/**
+ * 挂起资格只活在调用链上：主循环把「本次推理属于一个可停靠 run」包进这个作用域，
+ * 转换点（withTransientRetry / aiSdkAdapter 首字节重试）才允许把长等待换成挂起。
+ * 作用域外的一切调用（后台标题生成、辅助子 run、非持久会话）保持原封顶重试 + 降级链。
+ */
+const suspendEligibilityScope = new AsyncLocalStorage<boolean>();
+
+export function runWithQuotaWaitSuspendEligibility<T>(eligible: boolean, run: () => Promise<T>): Promise<T> {
+  return suspendEligibilityScope.run(eligible, run);
+}
+
+export function isQuotaWaitSuspendEligible(): boolean {
+  return suspendEligibilityScope.getStore() === true;
+}
+
 /** In-process sleep stays at or below this. A longer quota wait parks the turn. */
 const QUOTA_SUSPEND_MIN_EXCLUSIVE_MS = 60_000;
 

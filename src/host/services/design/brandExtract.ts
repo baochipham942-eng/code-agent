@@ -21,11 +21,9 @@ import {
   MODEL_API_ENDPOINTS,
   ZHIPU_VISION_MODEL,
   MODEL_MAX_TOKENS,
-  DEFAULT_PROVIDER,
-  DEFAULT_MODELS,
 } from '../../../shared/constants';
 import { ModelRouter } from '../../model/modelRouter';
-import type { ModelConfig, ModelProvider } from '../../../shared/contract/model';
+import { resolveSessionDefaultModelConfig } from '../core/sessionDefaults';
 import type { ModelMessage } from '../../model/types';
 import { normalizeStringList } from '../../../shared/contract/designBrief';
 import { directionTokens, type DirectionTokens } from '../../../design/direction-tokens';
@@ -203,11 +201,9 @@ async function defaultVisionCall(
   signal?: AbortSignal,
 ): Promise<string> {
   const router = new ModelRouter();
-  const baseConfig: ModelConfig = {
-    provider: DEFAULT_PROVIDER as ModelProvider,
-    model: DEFAULT_MODELS.chat,
+  const baseConfig = resolveSessionDefaultModelConfig({
     maxTokens: MODEL_MAX_TOKENS.VISION,
-  };
+  });
   const candidates = router.getVisionPreflightCandidates(baseConfig);
 
   // 1) 用户已配置识图模型（mimo-omni / claude vision 等）

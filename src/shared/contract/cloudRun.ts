@@ -71,8 +71,9 @@ export function isTerminalCloudRunState(state: CloudRunState): boolean {
 /**
  * 「没有已验证账户则拒绝创建 run」的自有稳定码（ADR-086 合同 1）。
  * accountId 只能来自服务端验证结果，请求体里的用户字段不成为账户。
+ * FU3 的路由接线要用它判错时再导出（knip production 门：S1 无生产消费方）。
  */
-export const CLOUD_RUN_ACCOUNT_REQUIRED = 'CLOUD_RUN_ACCOUNT_REQUIRED';
+const CLOUD_RUN_ACCOUNT_REQUIRED = 'CLOUD_RUN_ACCOUNT_REQUIRED';
 
 export class CloudRunAccountRequiredError extends Error {
   readonly code = CLOUD_RUN_ACCOUNT_REQUIRED;

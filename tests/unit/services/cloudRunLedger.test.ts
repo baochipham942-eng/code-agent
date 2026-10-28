@@ -9,7 +9,6 @@ import path from 'node:path';
 
 import { applySchema } from '../../../src/host/services/core/database/schema';
 import {
-  CLOUD_RUN_ACCOUNT_REQUIRED,
   CLOUD_RUN_STATES,
   CloudRunAccountRequiredError,
   canTransitionCloudRunState,
@@ -90,7 +89,7 @@ describe('CloudRunLedger (ADR-086 S1)', () => {
         thrown = error;
       }
       expect(thrown).toBeInstanceOf(CloudRunAccountRequiredError);
-      expect((thrown as CloudRunAccountRequiredError).code).toBe(CLOUD_RUN_ACCOUNT_REQUIRED);
+      expect((thrown as CloudRunAccountRequiredError).code).toBe('CLOUD_RUN_ACCOUNT_REQUIRED');
       expect(runCount(db)).toBe(0);
 
       // 用户已缓存但会话未验证：默认解析器只读 getCurrentUser/hasVerifiedSession 这两个口
@@ -102,7 +101,7 @@ describe('CloudRunLedger (ADR-086 S1)', () => {
         thrown = error;
       }
       expect(thrown).toBeInstanceOf(CloudRunAccountRequiredError);
-      expect((thrown as CloudRunAccountRequiredError).code).toBe(CLOUD_RUN_ACCOUNT_REQUIRED);
+      expect((thrown as CloudRunAccountRequiredError).code).toBe('CLOUD_RUN_ACCOUNT_REQUIRED');
       expect(runCount(db)).toBe(0);
 
       // 注入解析器返回 null 的同形状兜底

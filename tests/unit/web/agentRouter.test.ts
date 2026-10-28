@@ -91,6 +91,16 @@ const mockDb = vi.hoisted(() => ({
   markSessionForkContextHandoffDispatching: vi.fn(() => ({})),
   markSessionForkContextHandoffConsumed: vi.fn(() => ({})),
 }));
+const cloudRunLedgerStub = {
+  admit: vi.fn((input: { sessionId: string }) => ({
+    record: { runId: 'cloud-run-stub', sessionId: input.sessionId, state: 'running' },
+    duplicate: false,
+    position: null,
+  })),
+  bindExecutionRunId: vi.fn(),
+  getRun: vi.fn(() => null),
+  onTransition: vi.fn(),
+};
 const mockQueuedInputEnqueue = vi.spyOn(QueuedInputRepository.prototype, 'enqueue')
   .mockImplementation(() => undefined);
 
@@ -333,6 +343,7 @@ async function startAgentApi(deps: {
       ?? deps.tryGetSessionManager
       ?? (async () => null),
     getSupabaseForSession: deps.getSupabaseForSession ?? (async () => null),
+    getCloudRunLedger: () => cloudRunLedgerStub as never,
     registerQueuedInputSendNowHook: deps.registerQueuedInputSendNowHook,
     registerCompanionRun: deps.registerCompanionRun,
     publishCompanionEvent: deps.publishCompanionEvent,
@@ -1520,6 +1531,68 @@ describe('createAgentRouter', () => {
       controller.abort();
       await waitForAssertion(() => {
         expect(mockCancel).toHaveBeenCalled();
+      });
+    });
+
+    describe('morning brief save-draft role mail tool gate over web', () => {
+      const ROLE = 'web-save-draft-role';
+
+      async function registerRole(tools: string[]): Promise<void> {
+        const { setCustomAgentMapForTest } = await import('../../../src/host/agent/agentRegistry');
+        setCustomAgentMapForTest(new Map([[
+          ROLE,
+          {
+            id: ROLE as never,
+            name: ROLE,
+            description: 'd',
+            prompt: 'p',
+            tools,
+            model: 'balanced',
+            maxIterations: 5,
+            readonly: false,
+            source: 'user',
+          },
+        ]]));
+      }
+
+      async function runSaveDraft(preferredAgentId?: string): Promise<string[] | undefined> {
+        const controller = new AbortController();
+        const response = await fetch(`${baseUrl}/api/run`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            prompt: '存草稿 1',
+            sessionId: 'session-save-draft-role-tools',
+            ...(preferredAgentId ? { context: { preferredAgentId } } : {}),
+          }),
+          signal: controller.signal,
+        });
+        expect(response.ok).toBe(true);
+        await waitForAssertion(() => expect(mockCreateAgentLoop).toHaveBeenCalled());
+        const config = mockCreateAgentLoop.mock.calls.at(-1)![0] as { allowedToolNames?: string[] };
+        controller.abort();
+        await waitForAssertion(() => expect(mockCancel).toHaveBeenCalled());
+        return config.allowedToolNames;
+      }
+
+      afterEach(async () => {
+        const { setCustomAgentMapForTest } = await import('../../../src/host/agent/agentRegistry');
+        setCustomAgentMapForTest(new Map());
+      });
+
+      it('removes mail_draft for a role whose equipment has no mail', async () => {
+        await registerRole(['Read']);
+
+        expect(await runSaveDraft(ROLE)).not.toContain('mail_draft');
+      });
+
+      it.each([['mail_draft'], ['mail']])('keeps exactly one mail_draft for a role declaring %s', async (mailTool) => {
+        await registerRole(['Read', mailTool]);
+
+        expect((await runSaveDraft(ROLE))?.filter((tool) => tool === 'mail_draft')).toHaveLength(1);
+      });
+
+      it('keeps exactly one mail_draft when no role is selected', async () => {
+        expect((await runSaveDraft())?.filter((tool) => tool === 'mail_draft')).toHaveLength(1);
       });
     });
 

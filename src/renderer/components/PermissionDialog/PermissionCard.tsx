@@ -15,6 +15,7 @@ import { useSessionStore } from '../../stores/sessionStore';
 import { usePermissionStore, type PermissionRequestForMemory } from '../../stores/permissionStore';
 import { DecisionCard, isEditableTarget, type DecisionCardViewMode, type DecisionOption } from '../DecisionCard';
 import { RequestDetails } from './RequestDetails';
+import { OutboundMaskNotice } from './OutboundMaskNotice';
 import type { PermissionRequest, ApprovalLevel, PermissionType } from './types';
 import type { PermissionRequest as ContractPermissionRequest, PermissionResponse } from '@shared/contract';
 import { isEditableTool } from '@shared/contract';
@@ -53,6 +54,7 @@ function normalizeRequest(
     details: {
       pluginId: request.details.pluginId,
       pluginName: request.details.pluginName,
+      outboundMasked: request.details.outboundMasked,
       filePath: request.details.path,
       command: request.details.command,
       url: request.details.url,
@@ -515,12 +517,15 @@ export function PermissionCard({
             ? w.calendarWriteWarning
             : isRemindersWrite ? w.remindersWriteWarning : w.irreversible}
         details={
-          <WritebackEditForm
-            tool={request.tool}
-            draft={draft}
-            original={request.rawArgs}
-            onChange={setDraft}
-          />
+          <>
+            {request.details.outboundMasked === true && <OutboundMaskNotice message={w.outboundMaskedNote} />}
+            <WritebackEditForm
+              tool={request.tool}
+              draft={draft}
+              original={request.rawArgs}
+              onChange={setDraft}
+            />
+          </>
         }
         options={[]}
         selectedId={invalid.length === 0 ? 'edit' : null}
@@ -549,6 +554,7 @@ export function PermissionCard({
       question={question}
       details={
         <>
+          {request.details.outboundMasked === true && <OutboundMaskNotice message={w.outboundMaskedNote} />}
           {sandboxPath ? (
             <p
               className="break-all rounded bg-zinc-800 p-2 font-mono text-xs text-badge-info"

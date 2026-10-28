@@ -75,6 +75,34 @@ export function isExternalSideEffectTool(toolName: string): boolean {
 }
 
 // ============================================================================
+// acceptEdits 档下仍必须询问的写档工具（N-ACCEPTEDITS-EXTERNAL-ASK）
+// ============================================================================
+// acceptEdits 的承诺是「文件编辑免确认、命令和外部访问仍确认」，但 permissionLevel:'write'
+// 同时盖住了出站 / 不可逆 / 拉起本地进程的工具——这些不能搭写档免确认的便车。刻意不并入
+// EXTERNAL_SIDE_EFFECT_TOOLS：那套判据还喂 roleProactivity / rolePersonalization /
+// cron / replay 安全与无人值守停车标签，扩大它会把工具悄悄从那些消费面里剥掉，这里单列。
+const ACCEPT_EDITS_MUST_ASK_TOOLS = new Set<string>([
+  'calendar_create_event',
+  'calendar_update_event',
+  'calendar_delete_event',
+  'reminders_delete',
+  'tmeetMeetingCreate',
+  'mcp_add_server',
+  'xlwings_execute',
+]);
+
+/**
+ * 判定一个工具在 acceptEdits 档下是否仍必须人工确认（EXTERNAL 出站类 + 上面的显式清单）。
+ * 只影响 acceptEdits 的档位自动放行改写；bypassPermissions / readOnly / plan 档不消费。
+ */
+export function mustAskUnderAcceptEdits(toolName: string): boolean {
+  return (
+    isExternalSideEffectTool(toolName)
+    || ACCEPT_EDITS_MUST_ASK_TOOLS.has(normalizeToolName(toolName))
+  );
+}
+
+// ============================================================================
 // B4 target 提取：只有能确定性提取 target 的 external 工具才有铸权资格
 // ============================================================================
 // 铸权铁律（逐条守）：target 是白名单精确串，无 glob 无前缀模糊——提取不到就返回 null

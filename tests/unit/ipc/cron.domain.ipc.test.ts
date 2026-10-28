@@ -14,6 +14,12 @@ const h = vi.hoisted(() => ({
   logError: vi.fn(),
   logWarn: vi.fn(),
   chat: vi.fn(async (..._a: unknown[]) => ({ content: '{"name":"日报"}' as string | undefined })),
+  settings: {
+    models: {
+      default: '' as string,
+      providers: {} as Record<string, { model?: string }>,
+    },
+  },
   service: {
     getGroupListenCheck: vi.fn((..._a: unknown[]) => ({ status: 'waiting' })),
     listJobs: vi.fn((..._a: unknown[]) => ['job']),
@@ -39,6 +45,12 @@ vi.mock('../../../src/host/model/modelRouter', () => ({
     }
   },
 }));
+vi.mock('../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({
+    getSettings: () => h.settings,
+    getApiKey: () => '',
+  }),
+}));
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: h.logWarn, error: h.logError, debug: vi.fn() }),
 }));
@@ -52,6 +64,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.handlers.clear();
   h.chat.mockImplementation(async () => ({ content: '{"name":"日报"}' }));
+  h.settings.models.default = '';
+  h.settings.models.providers = {};
   registerCronHandlers();
 });
 
@@ -120,17 +134,27 @@ describe('generateFromPrompt', () => {
     expect(h.chat).not.toHaveBeenCalled();
   });
 
-  it('成功：默认 provider/model、maxTokens 1024、用户输入 trim、system 带当前时间锚点；从回复中抠出 JSON', async () => {
+  it('成功：用户配置的默认 provider/model、maxTokens 1024、用户输入 trim、system 带当前时间锚点；从回复中抠出 JSON', async () => {
+    h.settings.models.default = 'deepseek';
+    h.settings.models.providers = { deepseek: { model: 'deepseek-chat' } };
     h.chat.mockResolvedValueOnce({ content: '好的：{"name":"每日简报","enabled":true} 以上' });
     expect(await call('generateFromPrompt', { prompt: '  每天早上八点给我简报  ' })).toEqual({ success: true, data: { name: '每日简报', enabled: true } });
     const req = h.chat.mock.calls[0][0] as { provider: string; model: string; maxTokens: number; messages: Array<{ role: string; content: string }> };
-    expect(req.provider).toBe(DEFAULT_PROVIDER);
-    expect(req.model).toBe(DEFAULT_MODEL);
+    expect(req.provider).toBe('deepseek');
+    expect(req.model).toBe('deepseek-chat');
     expect(req.maxTokens).toBe(1024);
     expect(req.messages[1]).toEqual({ role: 'user', content: '每天早上八点给我简报' });
     expect(req.messages[0].role).toBe('system');
     expect(req.messages[0].content).toContain('【当前时间】');
     expect(req.messages[0].content).toContain('"restatement"');
+  });
+
+  it('未配置默认模型时 generateFromPrompt 仍用出厂 provider/model', async () => {
+    h.chat.mockResolvedValueOnce({ content: '{"name":"日报"}' });
+    expect(await call('generateFromPrompt', { prompt: '每天' })).toEqual({ success: true, data: { name: '日报' } });
+    const req = h.chat.mock.calls[0][0] as { provider: string; model: string };
+    expect(req.provider).toBe(DEFAULT_PROVIDER);
+    expect(req.model).toBe(DEFAULT_MODEL);
   });
 
   it('回复里没有 JSON → PARSE_ERROR 格式异常；JSON 解析失败 → PARSE_ERROR 解析失败；content 缺省按空串', async () => {

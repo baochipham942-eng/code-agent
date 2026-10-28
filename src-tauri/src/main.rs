@@ -2271,11 +2271,11 @@ fn cleanup_server(app: &tauri::AppHandle) {
     }
 }
 
-/// 「停止并退出」意图落地后的等待期先藏主窗口：排空最多 65s（STOP_INTENT_WAIT），
-/// 用户已拍板退出，不能让一个无响应的窗口杵在屏幕上（fallback 的 3s 旧通道保持
-/// 旧观感，不藏）。
-fn hide_main_window_for_stop_wait(app: &AppHandle) {
-    if let Some(win) = app.get_webview_window("main") {
+/// 「停止并退出」意图落地后的等待期藏掉全部 webview 窗口：排空最多 65s
+/// （STOP_INTENT_WAIT），用户已拍板退出，不能让无响应的窗口杵在屏幕上——main 之外
+/// halo / pip / appshots overlay 也都是独立窗口，一样要藏（fallback 的 3s 旧通道不藏）。
+fn hide_windows_for_stop_wait(app: &AppHandle) {
+    for win in app.webview_windows().into_values() {
         win.hide().ok();
     }
 }
@@ -2492,9 +2492,9 @@ fn show_quit_confirm_dialog(
                     eprintln!("quit-intent: request failed; continuing exit ({mode})");
                 } else if plan.cleanup_server {
                     // stop 意图已被 daemon 确认：cleanup 换「EOF + 等自退」通道（最多
-                    // 65s），等待期先藏主窗口；POST 失败/无 token 仍走旧 SIGTERM+3s。
+                    // 65s），等待期藏掉全部窗口；POST 失败/无 token 仍走旧 SIGTERM+3s。
                     coordinator.set_stop_intent_landed();
-                    hide_main_window_for_stop_wait(&app);
+                    hide_windows_for_stop_wait(&app);
                 }
                 // 后台继续：不清理（ExitRequested/Exit 按 plan 跳过 cleanup_server），
                 // 常驻宿主接管运行中的任务；停止并退出：照旧清理。

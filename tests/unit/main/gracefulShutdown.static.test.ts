@@ -205,7 +205,7 @@ describe('「停止并退出」意图落地后的停止通道（FU1）', () => {
     expect(cleanupBlock![0]).toMatch(/stop_attached_daemon\(/);
   });
 
-  it('对话框在 stop 意图 POST 成功后置位 coordinator 标志并藏主窗口', () => {
+  it('对话框在 stop 意图 POST 成功后置位 coordinator 标志并藏全部窗口', () => {
     const main = readTauri('src/main.rs');
     const dialogAt = main.indexOf('fn show_quit_confirm_dialog');
     const dialogBody = main.slice(dialogAt);
@@ -213,9 +213,27 @@ describe('「停止并退出」意图落地后的停止通道（FU1）', () => {
     const setFlagAt = dialogBody.indexOf('set_stop_intent_landed()');
     expect(postAt, '对话框里必须还在 POST quit-intent').toBeGreaterThan(-1);
     expect(setFlagAt, 'stop 意图落地后必须置位 stop_intent_landed').toBeGreaterThan(postAt);
-    // 等待期藏主窗口：65s 排空等待不能让无响应窗口杵在屏幕上
-    expect(dialogBody).toContain('hide_main_window_for_stop_wait(&app)');
+    // 等待期藏全部窗口：65s 排空等待不能让无响应窗口杵在屏幕上
+    expect(dialogBody).toContain('hide_windows_for_stop_wait(&app)');
     // cleanup_server 必须把标志读进来传给 AppState::cleanup
     expect(main).toMatch(/stop_intent_landed\(\);\s*\n\s*if let Some\(cleanup\) = app\.state::<AppState>\(\)\.cleanup\(stop_intent_landed\)/);
+  });
+
+  // ── Rework r1（2026-10-28）：藏窗范围必须罩住全部 webview 窗口 ──────────
+  // halo（agent_halo.rs HALO_LABEL）/ pip（pip.rs PIP_LABEL）/ appshots overlay
+  // 都是独立 WebviewWindowBuilder 建的窗口，只藏 main 时它们会在 65s 排空
+  // 等待期间继续杵屏。锚法：从对话框调用点解析 helper 名再锚函数体，改名后
+  // 锚点跟着调用走，不会漂到别处。
+  it('等待期藏的是全部 webview 窗口，不是只有 main（halo/pip/overlay 同样不能杵屏）', () => {
+    const main = readTauri('src/main.rs');
+    const dialogBody = main.slice(main.indexOf('fn show_quit_confirm_dialog'));
+    const call = /(\w+for_stop_wait)\(&app\);/.exec(dialogBody);
+    expect(call, 'stop-wait 藏窗 helper 调用点缺失').not.toBeNull();
+    const fnBlock = new RegExp(`fn ${call![1]}\\(app: &AppHandle\\)[\\s\\S]*?\\n\\}`).exec(main);
+    expect(fnBlock, `fn ${call![1]} 函数体锚点失效`).not.toBeNull();
+    // 必须 iterate app.webview_windows() 逐个 hide
+    expect(fnBlock![0]).toMatch(/app\.webview_windows\(\)/);
+    // 旧写法只藏 main：其余窗口会在 65s 排空期间漏在屏幕上
+    expect(fnBlock![0]).not.toContain('get_webview_window("main")');
   });
 });

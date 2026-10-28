@@ -20,7 +20,6 @@ import { MCP_TIMEOUTS } from '../../../src/shared/constants';
 import { handleToolResultBookkeeping } from '../../../src/host/agent/runtime/toolResultLifecycle';
 import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
-import { setProtocolToolRegistryPort } from '../../../src/host/tools/protocolToolRegistration';
 import { resetCitationService } from '../../../src/host/services/citation/citationService';
 import { resetInputSanitizer } from '../../../src/host/security/inputSanitizer';
 import { SdkError, SdkErrorCode } from '@modelcontextprotocol/client';

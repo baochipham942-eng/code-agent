@@ -13,6 +13,12 @@ export function isQuotaWaitParkableRun(
 ): boolean {
   if (!registry || !runId) return false;
   if (!registry.hasDurableOwner(runId)) return false;
+  // 这是挂在 applicationRunRegistry 缝隙上的探测，测试会用最小假件替身整个 registry；
+  // 缺 envelope/checkpoint 访问器 = 不可停靠，按 false 走原封顶重试。探测绝不能把
+  // TypeError 抛进模型调用主路径，顶替模型的真实结果/错误（nativeModelCheckpoint
+  // 的 checkpoint 降级同款纪律）。
+  if (typeof registry.getDurableEnvelope !== 'function') return false;
+  if (typeof registry.getDurableCheckpointState !== 'function') return false;
   const envelope = registry.getDurableEnvelope(runId);
   if (!envelope || envelope.parentRunId) return false;
   return isNativeRecoveryDescriptor(registry.getDurableCheckpointState(runId));

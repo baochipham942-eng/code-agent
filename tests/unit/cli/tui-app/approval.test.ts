@@ -147,6 +147,22 @@ describe('SessionAllowList', () => {
     expect(allow.has(req({ type: 'file_write', tool: 'write_file', details: { path: '/x' } }))).toBe(true);
     expect(allow.has(req())).toBe(false);
   });
+
+  it('forceConfirm：Allow all edits 与 Always allow 都不能跳过逐次人工确认', () => {
+    const allow = new SessionAllowList();
+    const request = editReq({
+      tool: 'set_role_proactivity',
+      forceConfirm: true,
+      details: { preview: { type: 'generic', summary: '实时介入 -> 每日简报' } },
+    });
+    allow.addAllEdits();
+    allow.add(request);
+    expect(allow.has(request)).toBe(false);
+    expect(allow.approvalFor(request)).toBeUndefined();
+    expect(approvalOptions(request).map((option) => option.choice)).toEqual([
+      'once', 'reject', 'reject-feedback',
+    ]);
+  });
 });
 
 

@@ -213,10 +213,11 @@ export async function executeSetRoleProactivity(
     {
       sessionId: ctx.sessionId,
       forceConfirm: true,
-      type: 'file_write',
+      // 非文件工具走通用展开卡：file_write 会默认折叠旧->新复述，还会被 CLI 的编辑类授权命中。
+      type: 'command',
       tool: schema.name,
       // shadowAdapter 优先用 hint.reason 填审批请求；第 3 参只在 hint.reason 缺省时才落到卡上。
-      // 两处都放同一份旧->新复述，确认卡（CLI 直接渲染 reason；桌面卡展开后读 preview）才看得到。
+      // 两处都放同一份旧->新复述，确认卡（CLI 直接渲染 reason；桌面默认展开 preview）才看得到。
       reason: restatement,
       dangerLevel: 'normal',
       details: {

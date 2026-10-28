@@ -172,7 +172,7 @@ describe('set_role_proactivity（真实 configService，临时数据目录）', 
     expect(allow).toHaveBeenCalledTimes(1);
     const [toolName, , reason, hint] = allow.mock.calls[0] as [string, Record<string, unknown>, string | undefined, Parameters<CanUseToolFn>[3] | undefined];
     expect(toolName).toBe('set_role_proactivity');
-    expect(hint).toMatchObject({ forceConfirm: true, sessionId: 'sess-attended', type: 'file_write' });
+    expect(hint).toMatchObject({ forceConfirm: true, sessionId: 'sess-attended', type: 'command' });
     expect(reason).toContain('角色「研究员」主动性调整');
     expect(reason).toContain('实时介入');
     expect(reason).toContain('每日简报');

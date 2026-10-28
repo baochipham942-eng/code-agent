@@ -117,6 +117,30 @@ describe('session task slot crash recovery', () => {
     ledger.dispose();
   });
 
+  it('backfills the activity anchor to a supplied instant and never moves it backwards', async () => {
+    const ledger = new SessionTaskSlotLedger('session-a', new SessionTaskConcurrencyPool(), {
+      slotTimeoutMs: 1_000,
+      cleanupIntervalMs: 100,
+    });
+
+    expect(ledger.admit(ledgerInput(1))).toMatchObject({ outcome: 'started' });
+    await vi.advanceTimersByTimeAsync(800);
+    // 真实事件 touch 把锚定在当下；随后一份迟到的旧心跳（now - inactiveMs 早于已有锚）
+    // 回填不许把锚冲回过去。
+    ledger.touch('work-1');
+    ledger.touch('work-1', Date.now() - 3_000);
+    expect(ledger.get('work-1')?.lastActivityAt).toBe(Date.now());
+    await vi.advanceTimersByTimeAsync(800);
+    // 回填锚（真进展比已有锚更近）晚于已记录锚时采用回填值，空闲窗口从它起算。
+    ledger.touch('work-1', Date.now() - 600);
+    expect(ledger.get('work-1')?.lastActivityAt).toBe(Date.now() - 600);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(ledger.get('work-1')?.status).toBe('running');
+    await vi.advanceTimersByTimeAsync(200);
+    expect(ledger.get('work-1')).toMatchObject({ status: 'settled', terminalStatus: 'failed' });
+    ledger.dispose();
+  });
+
   it('does not expire a slot while shouldSkipExpiry is set', async () => {
     let skip = true;
     const ledger = new SessionTaskSlotLedger('session-a', new SessionTaskConcurrencyPool(), {

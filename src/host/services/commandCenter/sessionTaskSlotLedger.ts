@@ -161,10 +161,15 @@ export class SessionTaskSlotLedger {
     return this.drainStartable();
   }
 
-  touch(workItemId: string): void {
+  /** at 缺省记「现在」；传入则把活跃锚回填到该时刻（tool_progress 心跳按 inactiveMs 折算）。 */
+  touch(workItemId: string, at?: number): void {
     const slot = this.slots.get(workItemId);
     if (slot?.status !== 'running') return;
-    slot.lastActivityAt = this.now();
+    const anchor = at === undefined ? this.now() : at;
+    // 回填锚只许前移：迟到的旧心跳不得把已发生的真实 touch 冲回过去。
+    slot.lastActivityAt = slot.lastActivityAt === undefined
+      ? anchor
+      : Math.max(slot.lastActivityAt, anchor);
   }
 
   get(workItemId: string): SessionTaskSlot | undefined {

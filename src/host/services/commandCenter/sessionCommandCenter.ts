@@ -1,4 +1,4 @@
-import type { AgentEvent, Message, MessageAttachment, TaskProgressData } from '../../../shared/contract';
+import type { AgentEvent, Message, MessageAttachment, TaskProgressData, ToolProgressData } from '../../../shared/contract';
 import type { TaskProgress } from '../../../shared/contract/backgroundTask';
 import type { ToolResult } from '../../../shared/contract/tool';
 import type { NormalizedToolArtifactMeta } from '../../../shared/contract/artifactBlob';
@@ -486,7 +486,17 @@ export class SessionCommandCenter {
     const task = this.tasksBySession.get(sessionId)?.get(taskId);
     if (!task || TERMINAL.has(task.status)) return;
 
-    this.ledger(sessionId).touch(taskId);
+    // tool_progress 是守门器的定时心跳（每 5s 必发，挂死的 Bash 也照发），无条件 touch
+    // 会给挂死命令无限续命（FB-451）。inactiveMs 是工具自己的真实进展钟（有真输出才
+    // 归零），用它把活跃锚回填到「上次真进展」；其余事件类型一律按当下时刻 touch。
+    const heartbeatInactiveMs = event.type === 'tool_progress'
+      ? (event.data as ToolProgressData | undefined)?.inactiveMs
+      : undefined;
+    if (typeof heartbeatInactiveMs === 'number' && Number.isFinite(heartbeatInactiveMs)) {
+      this.ledger(sessionId).touch(taskId, Date.now() - Math.max(0, heartbeatInactiveMs));
+    } else {
+      this.ledger(sessionId).touch(taskId);
+    }
     this.noteApprovalEvent(taskId, event);
 
     // tool_call_start 只记「这个 call id 是哪个工具」，供 tool_call_end 落

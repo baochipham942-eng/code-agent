@@ -627,6 +627,79 @@ describe('SessionCommandCenter idle expiry', () => {
     center.dispose();
   });
 
+  it('fails a task whose only tool_progress heartbeats report growing inactivity', async () => {
+    const manager = new FakeTaskManager();
+    const wakeForegroundBrain = vi.fn().mockResolvedValue(undefined);
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn().mockResolvedValue(undefined),
+      wakeForegroundBrain,
+      slotLedgerOptions: { slotTimeoutMs: 30_000, cleanupIntervalMs: 1_000 },
+      slotRecoveryLocale: 'en',
+    });
+    const spawned = await center.spawn(input(1, 'report'));
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+
+    manager.emitAgent('session-a', {
+      type: 'tool_call_start',
+      data: { id: 'call-1', name: 'Bash', arguments: { command: 'sleep 900' } },
+    }, spawned.task.id);
+    // 守门器每 5s 必发一次心跳（REPORT_INTERVAL），挂死命令的 inactiveMs 只会滚大：
+    // 回填锚钉在工具启动时刻，30s 空闲窗口照样走完。
+    for (let tick = 1; tick <= 8; tick += 1) {
+      await vi.advanceTimersByTimeAsync(5_000);
+      manager.emitAgent('session-a', {
+        type: 'tool_progress',
+        data: { toolCallId: 'call-1', toolName: 'Bash', elapsedMs: tick * 5_000, inactiveMs: tick * 5_000 },
+      }, spawned.task.id);
+    }
+
+    expect(center.list('session-a')[0]).toMatchObject({
+      status: 'failed',
+      detail: 'Background task failed: the command stopped responding for 30 seconds',
+    });
+    expect(wakeForegroundBrain).toHaveBeenCalledTimes(1);
+    expect(manager.cancelBackgroundTask).toHaveBeenCalledTimes(1);
+    center.dispose();
+  });
+
+  it('keeps running when tool_progress reports real output that resets inactivity', async () => {
+    const manager = new FakeTaskManager();
+    const wakeForegroundBrain = vi.fn().mockResolvedValue(undefined);
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn().mockResolvedValue(undefined),
+      wakeForegroundBrain,
+      slotLedgerOptions: { slotTimeoutMs: 30_000, cleanupIntervalMs: 1_000 },
+      slotRecoveryLocale: 'en',
+    });
+    const spawned = await center.spawn(input(1, 'report'));
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+
+    // 隔拍有真输出：inactiveMs 周期归零，锚跟着推进，跑满两个空闲窗口也不回收。
+    for (let tick = 1; tick <= 12; tick += 1) {
+      await vi.advanceTimersByTimeAsync(5_000);
+      manager.emitAgent('session-a', {
+        type: 'tool_progress',
+        data: {
+          toolCallId: 'call-1',
+          toolName: 'Bash',
+          elapsedMs: tick * 5_000,
+          inactiveMs: tick % 2 === 0 ? 0 : 5_000,
+        },
+      }, spawned.task.id);
+    }
+    expect(center.list('session-a')[0]?.status).toBe('running');
+    // inactiveMs 缺席（schema 可选）的心跳按普通事件全量 touch，不给静默命令放水。
+    manager.emitAgent('session-a', {
+      type: 'tool_progress',
+      data: { toolCallId: 'call-1', toolName: 'Bash', elapsedMs: 60_000 },
+    }, spawned.task.id);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(center.list('session-a')[0]?.status).toBe('running');
+    expect(manager.cancelBackgroundTask).not.toHaveBeenCalled();
+    expect(wakeForegroundBrain).not.toHaveBeenCalled();
+    center.dispose();
+  });
+
   it('does not expire a task with a pending approval', async () => {
     const manager = new FakeTaskManager();
     const wakeForegroundBrain = vi.fn().mockResolvedValue(undefined);

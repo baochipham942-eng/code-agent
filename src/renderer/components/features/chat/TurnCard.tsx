@@ -452,7 +452,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             <span>
               {t.turnCard.workedFor.replace(
                 '{duration}',
-                stats.duration ? formatTurnDuration(stats.duration) : '—',
+                stats.duration !== null ? formatTurnDuration(stats.duration) : '—',
               )}
             </span>
           </button>

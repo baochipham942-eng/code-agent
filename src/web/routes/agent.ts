@@ -27,7 +27,7 @@ import {
   buildWorkbenchCapabilityContextLines,
   buildWorkbenchToolScope,
 } from '../../host/app/workbenchTurnContext';
-import { SESSION_COMMAND_CENTER_BRAIN_CONTEXT, getTextForegroundToolNamesForPrompt } from '../../host/app/sessionCommandCenterBrain';
+import { getSessionCommandCenterBrainContextForPrompt, getTextForegroundToolNamesForPrompt } from '../../host/app/sessionCommandCenterBrain';
 import {
   isSessionCommandCenterTurn,
   SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
@@ -1194,7 +1194,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           config.maxIterations ?? SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
           SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
         );
-        config.systemPrompt = [config.systemPrompt, SESSION_COMMAND_CENTER_BRAIN_CONTEXT]
+        // 回合级规则块（如存草稿）与工具面同一真源，都从 sessionCommandCenterBrain 取，
+        // 不能只同步 getTextForegroundToolNamesForPrompt 一边（rework r1：存草稿曾只送
+        // mail_draft 不送解析规则，模型即兴解析晨报草稿块）。
+        config.systemPrompt = [config.systemPrompt, ...getSessionCommandCenterBrainContextForPrompt(prompt)]
           .filter((part): part is string => Boolean(part?.trim()))
           .join('\n\n');
       }

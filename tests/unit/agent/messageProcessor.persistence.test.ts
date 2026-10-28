@@ -61,6 +61,8 @@ vi.mock('../../../src/host/mcp/logCollector.js', () => ({
 }));
 
 import { MessageProcessor } from '../../../src/host/agent/runtime/messageProcessor';
+import { logCollector } from '../../../src/host/mcp/logCollector.js';
+import { appendPromptBlockWithinBudget } from '../../../src/host/agent/runtime/contextAssembly/promptBudget';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
 import { ContextHealthState } from '../../../src/host/agent/runtime/contextHealthState';
@@ -606,6 +608,87 @@ describe('MessageProcessor persistence', () => {
     expect(runFinalizer.autoAdvanceTodos).not.toHaveBeenCalled();
     expect(ctx.telemetryAdapter.onTurnEnd).not.toHaveBeenCalled();
     expect(ctx.onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'turn_end' }));
+  });
+
+  it('转向时给在途工具结果打上 staleIntent，并把作废提示放进下一次推理', async () => {
+    const voidNotice = '此前的工具结果属于用户刚刚换掉的计划，不要继续执行那个计划，按用户的新消息来。';
+    const skillResult = { skillName: 'cleanup' };
+    const rawResult = {
+      toolCallId: 'tool-1',
+      success: true,
+      output: 'deleted a.txt',
+      metadata: { isSkillActivation: true, skillResult },
+    };
+    const ctx = {
+      artifact: ArtifactState.forTest(),
+      sessionId: 'runtime-session-1',
+      messages: [],
+      stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
+      modelConfig: { maxTokens: 4096, provider: 'test', model: 'test-model' },
+      contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
+      control: ControlState.forTest({ isCancelled: false } as never),
+      turn: TurnState.forTest({
+        effortLevel: 'medium',
+        currentTurnId: 'turn-1',
+        currentIterationSpanId: 'iteration-1',
+        toolsUsedInTurn: [],
+        needsReinference: true,
+      } as never),
+      onEvent: vi.fn(),
+      telemetryAdapter: { onTurnEnd: vi.fn() },
+    };
+    const contextAssembly = {
+      stripInternalFormatMimicry: vi.fn((content: string) => content),
+      generateId: vi.fn()
+        .mockReturnValueOnce('assistant-message-1')
+        .mockReturnValueOnce('tool-message-1'),
+      addAndPersistMessage: vi.fn(async (message) => {
+        ctx.messages.push(message as never);
+      }),
+      pushPersistentSystemContext: vi.fn(),
+      injectSystemMessage: vi.fn(),
+    };
+    const runFinalizer = {
+      emitTaskProgress: vi.fn(),
+      processSkillActivation: vi.fn(),
+    };
+    const toolEngine = {
+      executeToolsWithHooks: vi.fn(async () => [rawResult]),
+    };
+    const processor = createProcessor(ctx as DeepPartial<RuntimeContext>, contextAssembly, runFinalizer, toolEngine);
+
+    const action = await processor.handleToolResponse(
+      {
+        type: 'tool_use',
+        content: '',
+        toolCalls: [{ id: 'tool-1', name: 'Bash', arguments: { command: 'rm a.txt' } }],
+      } as ModelResponse,
+      false,
+      1,
+      { endSpan: vi.fn() },
+    );
+
+    expect(action).toBe('continue');
+    expect(ctx.control.isCancelled).toBe(false);
+    expect(ctx.control.isInterrupted).toBe(false);
+    expect(ctx.turn.needsReinference).toBe(false);
+    expect(rawResult.metadata).not.toHaveProperty('staleIntent');
+    const persisted = contextAssembly.addAndPersistMessage.mock.calls.map((call) => call[0] as {
+      role?: string;
+      toolResults?: Array<{ metadata?: { staleIntent?: boolean; skillResult?: unknown } }>;
+    });
+    const toolMessage = persisted.find((message) => message.role === 'tool');
+    expect(toolMessage?.toolResults?.[0]?.metadata).toMatchObject({ staleIntent: true, skillResult });
+    expect(runFinalizer.processSkillActivation).toHaveBeenCalledWith(skillResult);
+    expect(contextAssembly.pushPersistentSystemContext).toHaveBeenCalledWith(voidNotice, 'runtime-recovery');
+    expect(appendPromptBlockWithinBudget('system', voidNotice, 'steer-void')).toContain(voidNotice);
+    expect(logCollector.tool).toHaveBeenCalledWith('INFO', 'Tool result: 成功', expect.objectContaining({
+      toolCallId: 'tool-1',
+    }));
+    expect(ctx.onEvent).toHaveBeenCalledWith({
+      type: 'interrupt_acknowledged',
+      data: { message: '已收到新指令，正在调整方向...' },
+    });
   });
 
   it.each([

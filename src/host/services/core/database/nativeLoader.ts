@@ -1,3 +1,4 @@
+import fs from 'fs';
 import path from 'path';
 import { createRequire } from 'module';
 import type BetterSqlite3 from 'better-sqlite3';
@@ -35,17 +36,24 @@ export function loadBetterSqlite3(moduleDir: string, logger: Logger): typeof Bet
   let Database: typeof BetterSqlite3 | null = null;
   const nativePaths = betterSqlite3CandidatePaths(moduleDir);
   const candidateFailures: Array<{ path: string; error: string }> = [];
+  const missingCandidates: string[] = [];
   for (const nativePath of nativePaths) {
-    if (!Database) {
-      try {
-        const loaded: unknown = runtimeRequire(nativePath);
-        Database = loaded as typeof BetterSqlite3;
-        logger.info(`[DatabaseService] Loaded better-sqlite3 from ${nativePath}`);
-      } catch (error) {
-        const message = error instanceof Error ? error.message.split('\n')[0] : String(error);
-        candidateFailures.push({ path: nativePath, error: message });
-        logger.debug(`[DatabaseService] better-sqlite3 candidate unavailable: ${nativePath}`, { error: message });
-      }
+    if (Database) break;
+    // 候选路径只在打包态存在；dev/CI 里连目录都没有,require 必然失败,
+    // 先探存在性再 require,避免每次开库都刷三条 "Cannot find module" 噪音。
+    if (!fs.existsSync(nativePath)) {
+      missingCandidates.push(nativePath);
+      logger.debug(`[DatabaseService] better-sqlite3 candidate not present: ${nativePath}`);
+      continue;
+    }
+    try {
+      const loaded: unknown = runtimeRequire(nativePath);
+      Database = loaded as typeof BetterSqlite3;
+      logger.info(`[DatabaseService] Loaded better-sqlite3 from ${nativePath}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message.split('\n')[0] : String(error);
+      candidateFailures.push({ path: nativePath, error: message });
+      logger.debug(`[DatabaseService] better-sqlite3 candidate unavailable: ${nativePath}`, { error: message });
     }
   }
   // 回退到默认路径（Electron 模式或 node_modules）
@@ -58,11 +66,16 @@ export function loadBetterSqlite3(moduleDir: string, logger: Logger): typeof Bet
           source: 'better-sqlite3',
           failedCandidates: candidateFailures,
         });
+      } else {
+        logger.info('[DatabaseService] Loaded better-sqlite3 from package fallback', {
+          source: 'better-sqlite3',
+        });
       }
     } catch (error) {
       const err = error as Error;
       logger.warn('[DatabaseService] better-sqlite3 unavailable after all load attempts', {
         failedCandidates: candidateFailures,
+        missingCandidates,
         fallbackError: err.message?.split('\n')[0],
       });
     }

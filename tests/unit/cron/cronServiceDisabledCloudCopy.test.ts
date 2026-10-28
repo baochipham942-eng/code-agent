@@ -302,3 +302,109 @@ describe('CronService 停用/改名已注册的云端任务（真实 CronCloudRu
     await service.shutdown();
   });
 });
+
+// ============================================================================
+// N-ROLE-ROUTINE-RESTATE-FU1-FU1-FU1-FU1：跨进程 reconcile 重建停用任务时不许丢
+// 远端指针。reconcileJobsFromDatabase 的停用分支曾用 `this.jobs.set(id,
+// { definition })` 整条覆盖 map 条目，把 cloudJobId 抹掉；下一趟 updateJob 走
+// cloudRuntime.updateJob 查不到 remote id，惰性 addJob 在云端多注册一条副本，
+// 旧远端任务成了孤儿。与 updateJob 停用分支（上方案例 d 钉住的行为）同一缺陷
+// 的 reconcile 孪生。真 CronService + 真 CronCloudRuntime，只把网关 fetch 打桩。
+// ============================================================================
+describe('CronService 跨进程 reconcile 重建停用的云端任务（真实 CronCloudRuntime · 打桩云端网关）', () => {
+  it('(e) 另一进程改库触发 reconcile 重建停用任务：指针保留，后续改名不再 add、DB 指针不变', async () => {
+    const calls: Array<{ path: string; method: string; body?: Record<string, unknown> }> = [];
+    let addCount = 0;
+    // 必须在 new CronService() 之前装好：CronApiClient 构造时把 fetch 收成默认参数。
+    vi.stubGlobal('fetch', vi.fn(async (input: unknown, init?: { method?: string; body?: unknown }) => {
+      const path = new URL(String(input)).pathname;
+      const body = init?.body == null
+        ? undefined
+        : JSON.parse(String(init.body)) as Record<string, unknown>;
+      calls.push({ path, method: init?.method ?? 'GET', body });
+      if (path === '/api/cron/add') {
+        addCount += 1;
+        return fakeOk({ id: `remote-${addCount}` });
+      }
+      if (path === '/api/cron/update') return fakeOk({});
+      if (path === '/api/cron/list') return fakeOk({ jobs: [] });
+      throw new Error(`unexpected cloud cron request: ${path}`);
+    }));
+
+    // initialize 在云端未配置时就绪：启动对账看到的内存任务是空表，SSE 客户端也不启动。
+    // CronApiClient 逐请求读配置，之后再打开云端不影响后续 add/update 打到桩上。
+    const service = new CronService();
+    await service.initialize();
+    configState.cronCloud = { baseUrl: 'https://cloud.example.test', token: 'test-token' };
+
+    const job = await service.createJob({ ...disabledCloudCopy(), enabled: true });
+    expect(job.enabled).toBe(true);
+    await service.updateJob(job.id, { enabled: false });
+
+    // 模拟另一台 webServer 进程写库（saveCronJob 的整行列形状）：同一任务、停用态、
+    // updated_at 更新、名字与排程都改过（指纹必然不同，reconcile 必然重建），
+    // 行里带着远端指针。
+    dbState.cronRows = [{
+      id: job.id,
+      name: '另一进程改的名',
+      description: null,
+      schedule_type: 'every',
+      schedule: JSON.stringify({ type: 'every', interval: 2, unit: 'hours' }),
+      action: JSON.stringify(disabledCloudCopy().action),
+      runs_on: 'cloud',
+      max_run_budget: null,
+      max_runs: null,
+      run_count: 0,
+      min_interval_seconds: null,
+      result_channel: null,
+      cloud_job_id: 'remote-1',
+      enabled: 0,
+      max_retries: 0,
+      retry_delay: null,
+      timeout: null,
+      tags: null,
+      metadata: '{}',
+      created_at: job.createdAt,
+      updated_at: Date.now() + 5_000,
+    }];
+
+    await (service as unknown as { reconcileJobsFromDatabase: () => Promise<void> })
+      .reconcileJobsFromDatabase();
+
+    // reconcile 重建后的内存条目仍指向 remote-1（丢指针 = 缺陷本体）。
+    const activeAfterReconcile = (service as unknown as {
+      jobs: Map<string, { cloudJobId?: string }>;
+    }).jobs.get(job.id);
+    expect(activeAfterReconcile?.cloudJobId).toBe('remote-1');
+
+    const renamed = await service.updateJob(job.id, { name: '重启后改名' });
+    expect(renamed?.name).toBe('重启后改名');
+    expect(renamed?.enabled).toBe(false);
+
+    // 全程只注册过一条远端任务：reconcile 重建与后续改名都不许再 add。
+    const addCalls = calls.filter((call) => call.path === '/api/cron/add');
+    expect(addCalls).toHaveLength(1);
+
+    // 重建后的改名走 remote-1 的 update（不是惰性 add），body 带着 remote-1。
+    const updateCalls = calls.filter((call) => call.path === '/api/cron/update');
+    expect(updateCalls.length).toBeGreaterThanOrEqual(1);
+    const renameUpdate = updateCalls.find(
+      (call) => (call.body?.patch as Record<string, unknown> | undefined)?.name === '重启后改名',
+    );
+    expect(renameUpdate).toBeTruthy();
+    expect(renameUpdate?.body?.id).toBe('remote-1');
+
+    // 最后一次落库的 cron_jobs 行仍指向 remote-1（saveCronJob 第 13 个参数）。
+    const jobRows = dbState.savedRows.filter((row) => row[0] === job.id);
+    expect(jobRows.length).toBeGreaterThan(0);
+    expect(jobRows[jobRows.length - 1]?.[12]).toBe('remote-1');
+
+    // 内存里的活动条目也仍持有 remote-1。
+    const active = (service as unknown as {
+      jobs: Map<string, { cloudJobId?: string }>;
+    }).jobs.get(job.id);
+    expect(active?.cloudJobId).toBe('remote-1');
+
+    await service.shutdown();
+  });
+});

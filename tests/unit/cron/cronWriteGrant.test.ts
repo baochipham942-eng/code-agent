@@ -217,6 +217,39 @@ describe('判界 isPathWithinWriteGrantRoot（经生产消费口 approveBySchedu
     // 不存在的授权根同样拒
     expect(await grantAllows(path.join(grantRoot, 'note.txt'), path.join(grantRoot, 'missing-root'))).toBe(false);
   });
+
+  it('`~/` 前缀目标按执行侧 expandTilde 语义落到真实家目录，不拼进授权根（返修 r1）', async () => {
+    // 判据曾把 `~/x` 当相对路径拼进会话 cwd（cron 会话 cwd=授权根）恒判界内放行，
+    // 而执行侧 Write/Append 落盘前先 expandTilde 写进真实家目录——授权边界与保护
+    // 路径清单被 ~ 前缀整体绕过（ai-review Important）。判据必须与执行侧同一份解析。
+    sessionState.sessions['tilde-sess'] = {
+      id: 'tilde-sess',
+      origin: { kind: 'cron', metadata: { writeGrantRoot: grantRoot } },
+      workingDirectory: grantRoot,
+    };
+    // 家目录在授权根（tmpdir）之外：`~/notes.txt` 解析到家目录 → 出界拒
+    expect(await approveByScheduleWriteGrant({
+      sessionId: 'tilde-sess', type: 'file_write', details: { path: '~/notes.txt' },
+    })).toBeUndefined();
+    // 裸 `~` = 家目录本身，同样出界拒
+    expect(await approveByScheduleWriteGrant({
+      sessionId: 'tilde-sess', type: 'file_write', details: { path: '~' },
+    })).toBeUndefined();
+    // 授权根=真实家目录的退化授权：`~/.npmrc` 展开后界内，必须仍被保护路径拦下
+    const homeGrantRoot = realpathSync(os.homedir());
+    sessionState.sessions['tilde-home'] = {
+      id: 'tilde-home',
+      origin: { kind: 'cron', metadata: { writeGrantRoot: homeGrantRoot } },
+      workingDirectory: homeGrantRoot,
+    };
+    expect(await approveByScheduleWriteGrant({
+      sessionId: 'tilde-home', type: 'file_write', details: { path: '~/.npmrc' },
+    })).toBeUndefined();
+    // 同一形状的普通文件（~ 展开后界内、非保护）照常放行——修复不殃及池鱼
+    expect(await approveByScheduleWriteGrant({
+      sessionId: 'tilde-home', type: 'file_write', details: { path: '~/plain-note.txt' },
+    })).toEqual({ approved: true, approvalSource: 'schedule-write-grant' });
+  });
 });
 
 describe('approveByScheduleWriteGrant（放行判定矩阵）', () => {

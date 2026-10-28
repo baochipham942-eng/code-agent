@@ -25,6 +25,7 @@ import {
 } from '../../shared/cronWriteScope';
 import { isProtectedWritePath } from '../sandbox/sensitivePaths';
 import { createLogger } from '../services/infra/logger';
+import { expandTilde, resolveInputPath } from '../tools/utils/resolveInputPath';
 
 const logger = createLogger('CronWriteGrant');
 
@@ -194,8 +195,17 @@ export async function approveByScheduleWriteGrant(request: {
     });
     return undefined;
   }
-  let target = rawTarget;
-  if (!path.isAbsolute(rawTarget)) {
+  // 判据必须与执行侧同一份路径解析：Write/Append 落盘前走 resolveInputPath（先
+  // expandTilde 再对会话工作目录归一）。`~/x` 若不先展开，会被 path.isAbsolute 判成
+  // 相对路径拼进 cwd（cron 会话 cwd=授权根）恒判界内放行，而执行侧把文件写进真实
+  // 家目录——授权边界与保护路径清单被 ~ 前缀整体绕过（返修 r1）。判据侧复用同一份
+  // 解析器，杜绝两处再漂移；Edit 工具自身不展 tilde（落 cwd/~ 下），此处更严只影响
+  // 停车与否、不产生旁路。
+  const expanded = expandTilde(rawTarget);
+  let target: string;
+  if (path.isAbsolute(expanded)) {
+    target = path.resolve(expanded);
+  } else {
     const cwd = grantSession?.workingDirectory;
     if (!cwd || !path.isAbsolute(cwd)) {
       logger.info('Schedule write grant declined a relative target (session has no working directory)', {
@@ -205,7 +215,7 @@ export async function approveByScheduleWriteGrant(request: {
       });
       return undefined;
     }
-    target = path.resolve(cwd, rawTarget);
+    target = resolveInputPath(rawTarget, cwd);
   }
   if (!isPathWithinWriteGrantRoot(target, grantRoot)) {
     logger.info('Schedule write grant declined the target (outside the granted folder)', {

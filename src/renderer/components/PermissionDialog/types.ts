@@ -31,6 +31,8 @@ export type DangerLevel = 'normal' | 'warning' | 'danger';
 export interface PermissionRequestDetails {
   pluginId?: string;
   pluginName?: string;
+  /** Host-resolved outbound masking result. */
+  outboundMasked?: boolean;
   filePath?: string;
   command?: string;
   url?: string;

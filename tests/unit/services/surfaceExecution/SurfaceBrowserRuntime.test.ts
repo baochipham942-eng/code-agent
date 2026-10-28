@@ -594,7 +594,8 @@ describe('SurfaceExecutionRuntime Browser control plane', () => {
       { reason: 'Complete MFA', timeoutMs: 5_000 },
     ) as SurfaceTakeoverControlV1;
     expect(managedHarness.runtime.sessions.get(managed.session.sessionId)?.state).toBe('waiting_human');
-    await expect(managedHarness.runtime.executeBrowserAction({
+    let dispatched = false;
+    const blocked = managedHarness.runtime.executeBrowserAction({
       identity: managedHarness.identity,
       surfaceSessionId: managed.session.sessionId,
       predecessorStateId: observed.observation.stateId,
@@ -602,11 +603,22 @@ describe('SurfaceExecutionRuntime Browser control plane', () => {
       action: 'click',
       arguments: { action: 'click' },
       async dispatch() {
+        dispatched = true;
         return { providerResult: {}, outcome: { delivery: 'confirmed' } };
       },
-    })).rejects.toMatchObject({ surfaceError: { code: 'SURFACE_SESSION_BUSY' } });
+    });
+    const gate = await Promise.race([
+      blocked.then(() => 'settled', () => 'settled'),
+      new Promise<'blocked'>((resolve) => setTimeout(() => resolve('blocked'), 50)),
+    ]);
+    expect(gate).toBe('blocked');
+    expect(dispatched).toBe(false);
     await managedHarness.runtime.control(managed.subject, 'resume');
     await expect(takeover.wait).resolves.toBe('continue');
+    await expect(blocked).rejects.toMatchObject({
+      surfaceError: { code: 'SURFACE_STATE_STALE' },
+    });
+    expect(dispatched).toBe(false);
     expect(managedHarness.runtime.sessions.get(managed.session.sessionId)?.state).toBe('running');
 
     const failedHarness = createHarness('run-2', 'conversation-2');

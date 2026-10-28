@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QWEN_OMNI_REALTIME_MODEL, VOICE_BUDGET } from '../../src/shared/constants/voice';
 import type { VoiceLiveSettings } from '../../src/shared/contract/settings';
 import type { VoiceEvent, VoiceTokenUsage } from '../../src/shared/contract/voice';
@@ -22,14 +22,21 @@ const AUDIO_USAGE: VoiceTokenUsage = {
   outputTextTokens: 0,
 };
 
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-09-13T12:00:00+08:00'));
+});
+
 afterEach(() => {
   stopVoiceBudgetWatch(SESSION_ID);
+  vi.useRealTimers();
 });
 
 function runWatch(
   live: VoiceLiveSettings | undefined,
   elapsedMs: number,
   usage?: VoiceTokenUsage,
+  stallMs = 0,
 ): {
   events: VoiceEvent[];
   hangup: ReturnType<typeof vi.fn>;
@@ -44,6 +51,7 @@ function runWatch(
     conversationModel: QWEN_OMNI_REALTIME_MODEL,
     tokenUsage: { value: usage },
   };
+  vi.setSystemTime(Date.now() + stallMs);
   startVoiceBudgetWatch(session, live, (event) => events.push(event), hangup, () => true);
   stopVoiceBudgetWatch(session.id);
   const budget = events.filter(
@@ -93,8 +101,8 @@ describe('resolveVoiceBudgetConfig', () => {
 describe('evaluateVoiceBudget 档位边界', () => {
   const minuteLimit = 10;
 
-  function atRatio(ratio: number) {
-    return runWatch({ callMinuteLimit: minuteLimit }, ratio * minuteLimit * 60_000).budget;
+  function atRatio(ratio: number, stallMs = 0) {
+    return runWatch({ callMinuteLimit: minuteLimit }, ratio * minuteLimit * 60_000, undefined, stallMs).budget;
   }
 
   it('未设任何上限时即使已打满硬顶窗口也是 none', () => {
@@ -120,6 +128,13 @@ describe('evaluateVoiceBudget 档位边界', () => {
   it('100% 及超出都是 blocked', () => {
     expect(atRatio(VOICE_BUDGET.BLOCK_RATIO)?.level).toBe('blocked');
     expect(atRatio(1.2)?.level).toBe('blocked');
+  });
+
+  it('进程停顿 500ms（小于 600ms 余量）不翻转 under-edge 档位', () => {
+    expect(atRatio(0.699, 500)?.level).toBe('none');
+    expect(atRatio(VOICE_BUDGET.WARNING_RATIO - 0.001, 500)?.level).toBe('silent');
+    expect(atRatio(VOICE_BUDGET.BLOCK_RATIO - 0.001, 500)?.level).toBe('warning');
+    expect(atRatio(VOICE_BUDGET.BLOCK_RATIO, 500)?.level).toBe('blocked');
   });
 });
 

@@ -859,6 +859,10 @@ export function projectTurns(
   markFeedbackEligibleNodes(turns);
   markRecoveredFailures(turns);
 
+  for (const turn of turns) {
+    if (turn.endTime !== undefined) turn.endTime = Math.max(turn.endTime, turn.startTime);
+  }
+
   return {
     sessionId,
     turns,

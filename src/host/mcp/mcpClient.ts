@@ -19,6 +19,7 @@ import type {
 import { EventEmitter } from 'node:events';
 import { createHash } from 'node:crypto';
 import type { ToolDefinition, ToolResult } from '../../shared/contract';
+import { MCP_TIMEOUTS } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 import { getConfigService } from '../services/core/configService';
 
@@ -67,6 +68,7 @@ import {
   retryTransientRemoteMCPConnection,
 } from './mcpTransport';
 import { MCPToolRegistry } from './mcpToolRegistry';
+import { callMcpToolWithRateLimitRetry } from './mcpRateLimit';
 import {
   createMcpListChangedHandlers,
   McpListChangedRecovery,
@@ -438,6 +440,7 @@ export class MCPClient extends EventEmitter {
         }
       }, {
         ...(isStdioConfig(config) ? { maxAttempts: 1 } : {}),
+        serverName: config.name,
         signal: abortSignal,
         onRetry: (error, nextAttempt) => {
           logger.warn(`Transient MCP connection failure for ${config.name}; retrying`, {
@@ -925,7 +928,7 @@ export class MCPClient extends EventEmitter {
     args: Record<string, unknown>,
     options: MCPToolCallOptions | number = {},
   ): Promise<ToolResult> {
-    const timeoutMs = typeof options === 'number' ? options : options.timeoutMs ?? 60000;
+    const timeoutMs = typeof options === 'number' ? options : options.timeoutMs ?? MCP_TIMEOUTS.CALL_TOOL;
     const abortSignal = typeof options === 'number' ? undefined : options.abortSignal;
     const sessionId = typeof options === 'number' ? undefined : options.sessionId;
     if (shouldBlockRawCuaInvocation(serverName, options)) {
@@ -1003,11 +1006,16 @@ export class MCPClient extends EventEmitter {
     const startTime = Date.now();
 
     try {
-      let result = await this.registry.callExternalTool(toolCallId, serverName, toolName, args, client, {
-        timeoutMs,
-        abortSignal,
-        sessionId,
-      });
+      // 429：同一 client 上等 Retry-After 后重打（不 reconnect）；预算耗尽才回落到既有连接中断分类。
+      let result = await callMcpToolWithRateLimitRetry(
+        serverName,
+        () => this.registry.callExternalTool(toolCallId, serverName, toolName, args, client, {
+          timeoutMs,
+          abortSignal,
+          sessionId,
+        }),
+        { signal: abortSignal },
+      );
       if (serverName === CUA_DRIVER_SERVER_NAME) {
         result = {
           ...result,

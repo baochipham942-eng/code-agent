@@ -217,6 +217,10 @@ describe('晨报回复「存草稿 N」才打开 mail_draft', () => {
     const block = options.turnSystemContext?.[2] ?? '';
     expect(block).toContain('已经存过');
     expect(block).toContain('没有开邮件权限');
+    expect(block).toContain('如果本轮工具表里有 mail_draft');
+    // rework r1：条件钉成「还没有成功的 mail_draft 结果」——只有成功才挡重复调用，
+    // 被拒/失败后用户再回「存草稿 N」仍允许重试（与第 5 条的「已经成功过」同一口径）。
+    expect(block).toContain('且这封在本对话里还没有成功的 mail_draft 结果，你才调用它');
     expect(block).toContain('mail_draft');
     expect(block).toContain('delegate_task');
     expect(block).toContain('一共有几封草稿');

@@ -12,6 +12,7 @@ import { getDefaultWorkDirectory, getLegacyDefaultWorkDirectory } from '../../ho
 import { MANAGED_BROWSER_ARTIFACT_DIR } from '../../host/services/infra/browser/managedBrowserHelpers';
 import { resolveNativeDesktopCandidateRoots } from '../../host/services/desktop/nativeDesktopService';
 import { PRESENTATION_PREVIEW_CACHE_DIRNAME } from '../../host/tools/media/ppt/constants';
+import { PREVIEW_FORMAT_CACHE_DIRNAME } from '../../host/ipc/previewFormatCacheName';
 
 export const MAX_UPLOAD_SIZE = 50 * 1024 * 1024;
 export const UPLOAD_ROOT_DIR = path.join(os.tmpdir(), 'code-agent-uploads');
@@ -220,6 +221,7 @@ export function handleScreenshot(
   const isScreenshotDir = isPathWithinBase(resolved, path.join(userData, MANAGED_BROWSER_ARTIFACT_DIR))
     || isPathWithinBase(resolved, path.join(userData, 'appshots'))
     || isPathWithinBase(resolved, path.join(userData, 'cache', PRESENTATION_PREVIEW_CACHE_DIRNAME))
+    || isPathWithinBase(resolved, path.join(userData, 'cache', PREVIEW_FORMAT_CACHE_DIRNAME))
     || isPathWithinBase(resolved, getDefaultWorkDirectory())
     || isPathWithinBase(resolved, getLegacyDefaultWorkDirectory(userData))
     || isBoundSessionArtifactPath(resolved, accessScope.sessionWorkingDirectories ?? [])

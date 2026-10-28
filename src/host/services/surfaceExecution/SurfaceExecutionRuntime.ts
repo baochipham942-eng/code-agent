@@ -60,6 +60,7 @@ import {
   recordComputerInputLockLifecycleEvent,
 } from './surfaceComputerRuntimeHelpers';
 import { publishSurfaceContinuationEvent } from './surfaceContinuationRuntime';
+import { waitForBrowserHumanTakeoverRelease } from './browserHumanTakeoverWait';
 import { assertSurfaceRunOwner } from './surfaceRunOwnership';
 import {
   assertSurfaceSessionOwnershipForLog,
@@ -292,7 +293,7 @@ export class SurfaceExecutionRuntime {
     input: ExecuteBrowserActionInputV1<T>,
   ): Promise<SurfaceBrowserActionExecutionV1<T>> {
     this.assertActiveRun(input.identity, 'browser', input.provider || DEFAULT_BROWSER_PROVIDER);
-    const session = this.sessions.requireOwned(input.surfaceSessionId, input.identity);
+    let session = this.sessions.requireOwned(input.surfaceSessionId, input.identity);
     const provider = input.provider || session.provider;
     if (session.conversationId !== input.identity.conversationId
       || session.surface !== 'browser'
@@ -305,6 +306,15 @@ export class SurfaceExecutionRuntime {
         provider,
         input.operationId,
       );
+    }
+    if (session.state === 'waiting_human') {
+      const sessionId = session.sessionId;
+      const owner = { runId: session.runId, agentId: session.agentId };
+      session = await waitForBrowserHumanTakeoverRelease({
+        readSession: () => this.sessions.requireOwned(sessionId, owner),
+        operationId: input.operationId,
+        ...(input.parentSignal ? { parentSignal: input.parentSignal } : {}),
+      });
     }
     this.assertBrowserSessionReady(session, input.operationId);
     const binding = this.browserBindings.get(

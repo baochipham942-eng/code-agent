@@ -26,6 +26,11 @@ const messages = {
   },
 } as const;
 
+const idleFailure = {
+  zh: (duration: string) => `后台任务失败：命令已 ${duration}没有响应`,
+  en: (duration: string) => `Background task failed: the command stopped responding for ${duration}`,
+} as const;
+
 export function formatSessionTaskSlotRecoveryDetail(input: {
   taskLabel: string;
   laneKey: string;
@@ -44,4 +49,11 @@ export function describeSessionTaskSlotRecovery(locale: SessionTaskSlotLocale): 
   spoken: string;
 } {
   return messages[locale];
+}
+
+export function formatSessionCommandTaskIdleFailure(input: {
+  idleMs: number;
+  locale: SessionTaskSlotLocale;
+}): string {
+  return idleFailure[input.locale](durationText(input.idleMs, input.locale));
 }

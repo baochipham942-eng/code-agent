@@ -44,6 +44,14 @@ export const MCP_TIMEOUTS = {
    * run 中途异常中断、始终不进 completed/failed/cancelled 终态时，租约本该自然过期）。
    */
   DURABLE_LEASE_FALLBACK_TTL: 30 * 60_000,
+  /** 连接器 HTTP 429：无 Retry-After 头时的指数退避基数 */
+  RATE_LIMIT_RETRY_BASE: 400,
+  /** 连接器 HTTP 429：遵守服务器 Retry-After 的上限，超过则不等待、直接把等待秒数作为出路返回 */
+  RATE_LIMIT_RETRY_AFTER_CAP: 60_000,
+  /** 连接器 HTTP 429：无头退避的抖动比例（±25%；服务器给了头就不抖动） */
+  RATE_LIMIT_JITTER_RATIO: 0.25,
+  /** 连接器 HTTP 429：单次工具调用内的最大重试次数（不含首发） */
+  RATE_LIMIT_MAX_RETRIES: 2,
 } as const;
 
 /** DAG 调度器配置 */

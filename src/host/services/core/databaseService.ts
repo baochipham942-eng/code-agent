@@ -1344,9 +1344,9 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     assertDatabaseWritable(this._degradedMode);
   }
 
-  // --- Cloud Run Ledger（ADR-086 S1）---
+  // --- Cloud Run Ledger（ADR-086 S1–S3）---
   /**
-   * 云端 run 账本。S1 只有持久行与迁移，admit/路由接线是 S2+ 的单；
+   * 云端 run 账本：持久行、迁移、admit、FIFO 配额与取消请求；
    * 账本不静态 import AuthService（见 cloudRunLedger.ts 头注释），
    * 账户事实源由 authService 装载时注册，这里保持导入图干净。
    */

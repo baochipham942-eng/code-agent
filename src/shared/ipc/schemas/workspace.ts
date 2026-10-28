@@ -11,6 +11,7 @@ import { channelSchema } from './core';
 
 const WorkspaceDomainRequestSchema = z.object({
   action: z.enum([
+    'classifyPreviewFile',
     'closeLinkInRail',
     'controlUserBrowserHistory',
     'createFile',
@@ -59,11 +60,14 @@ const WorkspaceDomainRequestSchema = z.object({
     'openExternal',
     'openLinkInRail',
     'openPath',
+    'previewHeic',
+    'previewLegacyOffice',
     'previewPresentation',
     'publishVersion',
     'pushShareLink',
     'readBinary',
     'readFile',
+    'readTextPreview',
     'removeRecent',
     'removeWatermarkDesignImage',
     'resolveDesignDir',

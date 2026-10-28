@@ -11,6 +11,7 @@
 // post：NSIS setup.exe 存在 + PE 魔数 + （有签名 key 时）updater .sig 存在。
 // ============================================================================
 
+import { Buffer } from 'node:buffer';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';

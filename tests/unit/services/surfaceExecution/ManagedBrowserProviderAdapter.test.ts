@@ -71,6 +71,7 @@ function createFakeBrowser(failSnapshotAt?: number, options?: {
     leaseOwner = launchOptions?.leaseOwner || 'managed-browser';
     return {};
   });
+  const setLeaseInUse = vi.fn();
   const close = vi.fn(async () => {
     running = false;
     leaseOwner = undefined;
@@ -167,11 +168,13 @@ function createFakeBrowser(failSnapshotAt?: number, options?: {
     exportStorageState,
     importStorageState,
     close,
+    setLeaseInUse,
   };
   return {
     service: service as unknown as BrowserService,
     ensureSession,
     close,
+    setLeaseInUse,
     exportStorageState,
     importStorageState,
     hasCookie: (name: string) => cookies.has(name),
@@ -439,7 +442,11 @@ describe('ManagedBrowserProviderAdapter', () => {
         .successorState.stateId,
     );
 
+    expect(fake.setLeaseInUse).toHaveBeenLastCalledWith(true);
     await runtime.endRun(identity);
+    expect(fake.setLeaseInUse).toHaveBeenLastCalledWith(false);
+    expect(fake.setLeaseInUse.mock.invocationCallOrder.at(-1)!)
+      .toBeLessThan(release.mock.invocationCallOrder[0]);
     expect(release).toHaveBeenCalledOnce();
     expect(fake.close).toHaveBeenCalledOnce();
   });

@@ -564,11 +564,12 @@ describe('CronEventTrigger', () => {
 
       it('channel 源的 invalid-schedule 文案与历史逐字节相同', () => {
         const byteIdentical = "Invalid event schedule: source must be 'channel', eventName must be 'message', and accountId must be a non-empty string.";
-        // 刻意构造非法输入（同上 weeks 案例的放宽约定）：source 'webhook' 不在合法值域内，
+        // 刻意构造非法输入（同上 weeks 案例的放宽约定）：source 'carrier' 不在合法值域内
+        // （'webhook' 自 N-CRON-WEBHOOK-CLOUD-HOOK 起是合法源，有专属文案与分支测试），
         // 需要经 unknown 双转才能钉进 EventScheduleConfig 类型。
         expect(() => assertEventScheduleConstraints({
           ...base,
-          schedule: { type: 'event', source: 'webhook', accountId: 'acc-1', eventName: 'message' } as unknown as EventScheduleConfig,
+          schedule: { type: 'event', source: 'carrier', accountId: 'acc-1', eventName: 'message' } as unknown as EventScheduleConfig,
         })).toThrow(byteIdentical);
         expect(() => assertEventScheduleConstraints({
           ...base,

@@ -4,7 +4,7 @@
 
 import { classifyPermission, type ClassificationResult } from './permissionClassifier';
 import { enforceWriteFenceObligation } from '../sandbox/writeFence';
-import { isExternalSideEffectTool } from './externalSideEffect';
+import { isExternalSideEffectTool, mustAskUnderAcceptEdits } from './externalSideEffect';
 import { createTraceStep } from '../security/decisionTraceBuilder';
 import { getPermissionModeManager, permissionModeAutoApproves, type PermissionMode } from '../permissions/modes';
 import { resolveEffectiveSessionMode } from '../permissions/runPolicySnapshot';
@@ -341,7 +341,7 @@ export function userDeniedStickyError(toolName: string, deniedSummary?: string):
  * 3. readOnly 档 / 解析不出的写目标+路径 deny：只把 classifier 的 approve 降级为 ask
  *    （deny 保持原判，危险命令不弱化）；
  * 4. B1 档位免确认（审出 MED：bypass/acceptEdits 曾在主判定链零消费、纯虚标）：
- *    bypassPermissions=写入+执行免确认，acceptEdits=仅写入免确认——只把 ask 升级为
+ *    bypassPermissions=写入+执行免确认，acceptEdits=仅文件编辑类写入免确认（出站/进程类仍 ask）——只把 ask 升级为
  *    approve，deny / exec-policy forbidden / policy always_confirm / skill 边界 /
  *    前置 validateCommand 硬毙全部照常生效。
  */
@@ -470,7 +470,12 @@ export async function resolveToolPermissionClassification(input: {
     };
   }
   if (classification.decision === 'ask'
-    && permissionModeAutoApproves(input.sessionPermissionMode, input.permissionLevel)) {
+    && permissionModeAutoApproves(input.sessionPermissionMode, input.permissionLevel)
+    // acceptEdits 只承诺文件编辑免确认：出站 / 不可逆 / 拉起进程的写档工具不升 approve，
+    // 兑现设置文案「命令和外部访问仍保留确认」（N-ACCEPTEDITS-EXTERNAL-ASK）。
+    // bypassPermissions 不受此限，deny / policy / 边界照常生效。
+    && !(input.sessionPermissionMode === 'acceptEdits'
+      && mustAskUnderAcceptEdits(input.executionToolName))) {
     const reason = `权限档 ${input.sessionPermissionMode}：${input.permissionLevel === 'write' ? '写入' : '执行'}操作免确认`;
     classification = {
       decision: 'approve',

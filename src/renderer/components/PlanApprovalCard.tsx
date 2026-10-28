@@ -253,11 +253,11 @@ export const PlanApprovalCard: React.FC<{
     if (response.tasks) store.setSessionTasks(response.tasks);
   }, [target.messageId, target.toolCallId]);
 
-  const resyncFromLatestUpdate = useCallback(() => {
+  const resyncFromLatestUpdate = useCallback((): 'none' | number => {
     const message = useSessionStore.getState().messages.find((candidate) => candidate.id === target.messageId);
     const toolCall = message?.toolCalls?.find((candidate) => candidate.id === target.toolCallId);
     const latest = getPlanApprovalRecord(toolCall);
-    if (!latest) return;
+    if (!latest) return 'none';
     const merged = mergeStaleSteps(baseStepsRef.current, stepsRef.current, latest.steps);
     setVersion(latest.version ?? 1);
     updateBaseSteps(cloneSteps(latest.steps));
@@ -265,6 +265,7 @@ export const PlanApprovalCard: React.FC<{
     setConflicts(merged.conflicts);
     setEditingId(null);
     setDraft('');
+    return Object.keys(merged.conflicts).length;
   }, [target.messageId, target.toolCallId, updateBaseSteps, updateSteps]);
 
   const unresolvedConflict = Object.values(conflicts).some((conflict) => !conflict.choice);
@@ -313,14 +314,17 @@ export const PlanApprovalCard: React.FC<{
     } catch (submitError) {
       // 失败态只说 UI 语言且带下一步；宿主英文 message 不进卡片，未知码回落通用文案 + 小字附码。
       if (isStaleVersion(submitError)) {
-        setError({ message: t.planApproval.staleVersion });
-        resyncFromLatestUpdate();
+        // 文案取决于合并结果，必须先同步：零冲突用中性句，记录缺失或真有冲突仍用比较句。
+        const found = resyncFromLatestUpdate();
+        setError({
+          message: found === 0 ? t.planApproval.staleVersionNoConflict : t.planApproval.staleVersion,
+        });
       } else {
         setError({ message: t.planApproval.submitFailed, code: errorCode(submitError) });
       }
       if (!options?.keepInteractive) setSubmitting(false);
     }
-  }, [applyResponse, resyncFromLatestUpdate, submitting, t.planApproval.staleVersion, t.planApproval.submitFailed, target, unresolvedConflict, updateBaseSteps, updateSteps, version]);
+  }, [applyResponse, resyncFromLatestUpdate, submitting, t.planApproval.staleVersion, t.planApproval.staleVersionNoConflict, t.planApproval.submitFailed, target, unresolvedConflict, updateBaseSteps, updateSteps, version]);
 
   const beginEdit = (step: PlanApprovalStep) => {
     setEditingId(step.id);

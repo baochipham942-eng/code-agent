@@ -227,7 +227,7 @@ export const enSettingsCore = {
           acceptEdits: {
             title: permissionVocabularyEn.autoApprove,
             description: 'Accept file edits automatically while still confirming commands and external access.',
-            operationScope: 'Edits auto-approved, commands still ask',
+            operationScope: 'Edits auto-approved, commands / external actions still ask',
             riskLabel: 'Medium risk',
           },
           bypassPermissions: {

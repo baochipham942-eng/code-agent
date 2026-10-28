@@ -38,7 +38,6 @@ import {
   basename,
   buildDocxPreviewSpec,
   buildExcelPreviewSpec,
-  getExtension,
   parseArchiveInspection,
   parseDesignPptArtifactContent,
   shouldFlashOnDiskLoad,
@@ -48,6 +47,14 @@ import {
   type LoadedSnapshot,
   type PresentationInspection,
 } from './previewPanelModel';
+import { previewDispatch } from '../utils/previewable';
+import { loadFormatPreview } from '../utils/loadFormatPreview';
+import {
+  HeicPreviewView,
+  LegacyOfficePreviewView,
+  PreviewFallbackCard,
+  TextPreviewView,
+} from './previewFormatViews';
 
 // 模块级常量：写成内联字面量的话每次渲染都是新引用，ReactMarkdown 整棵重建。
 const REPORT_MARKDOWN_COMPONENTS = {
@@ -62,29 +69,6 @@ const MarkdownCore = lazy(() => import('./features/chat/MessageBubble/MarkdownCo
 
 const logger = createLogger('PreviewPanel');
 
-const MARKDOWN_EXTS = new Set(['md', 'mdx', 'markdown']);
-const HTML_EXTS = new Set(['html', 'htm']);
-const CSV_EXTS: Record<string, ',' | '\t'> = { csv: ',', tsv: '\t' };
-// Code files render in edit-only mode (no rendered form exists) via CodeEditor.
-const CODE_LANGUAGE_BY_EXT: Record<string, 'json' | 'yaml' | 'typescript' | 'javascript'> = {
-  json: 'json',
-  yaml: 'yaml',
-  yml:  'yaml',
-  ts:   'typescript',
-  tsx:  'typescript',
-  js:   'javascript',
-  jsx:  'javascript',
-};
-// Media types render via a data: URL built from the binary fetched over IPC.
-const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg']);
-const PDF_EXTS = new Set(['pdf']);
-const AUDIO_EXTS = new Set(['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg']);
-const VIDEO_EXTS = new Set(['mp4', 'webm', 'mov', 'mkv', 'avi']);
-const ARCHIVE_EXTS = new Set(['zip']);
-const DOCX_EXTS = new Set(['docx']);
-const EXCEL_EXTS = new Set(['xlsx', 'xls']);
-const PRESENTATION_EXTS = new Set(['pptx']);
-
 function commandApi() {
   return window.codeAgentAPI || window.electronAPI;
 }
@@ -97,7 +81,7 @@ async function invokeWorkspace<T>(action: string, payload?: unknown): Promise<T>
   return response.data as T;
 }
 
-function ArchivePreview({ content }: { content: string }) {
+function ArchivePreview({ content, onOpenDefault }: { content: string; onOpenDefault: () => void }) {
   const { t } = useI18n();
   const pv = t.previewWorkspace.preview;
   const inspection = parseArchiveInspection(content);
@@ -108,13 +92,16 @@ function ArchivePreview({ content }: { content: string }) {
       </div>
     );
   }
+  if (inspection.fallback) {
+    return <PreviewFallbackCard code={inspection.fallback.code} onOpenDefault={onOpenDefault} />;
+  }
 
   return (
-    <div className="h-full overflow-auto bg-zinc-950 p-4">
+    <div data-testid="archive-preview" className="h-full overflow-auto bg-zinc-950 p-4">
       <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-zinc-400">
         <span className="inline-flex items-center gap-1 rounded border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-zinc-200">
           <Archive className="h-3.5 w-3.5" />
-          {pv.zipArchive}
+          {pv.archiveKind.replace('{format}', inspection.format.toUpperCase())}
         </span>
         <span>{pv.entries.replace('{count}', String(inspection.entryCount))}</span>
         {inspection.truncated && <span>{pv.showingFirst.replace('{count}', String(inspection.shownCount))}</span>}
@@ -491,25 +478,14 @@ export const PreviewPanel: React.FC = () => {
   const savedContent = activeTab?.savedContent ?? '';
   const mode = activeTab?.mode ?? 'preview';
 
-  const ext = getExtension(previewFilePath);
-  const isMarkdown = MARKDOWN_EXTS.has(ext);
-  const isHtml = HTML_EXTS.has(ext);
+  const dispatch = previewDispatch(previewFilePath);
+  const {
+    isMarkdown, isHtml, isCsv, csvDelimiter, isCode, codeLanguage,
+    isImage, isPdf, isAudio, isVideo, isArchive, isDocx, isExcel, isPresentation,
+    isOffice, isBinary, isHeic, isLegacyOffice, isText, shikiLanguage,
+  } = dispatch;
   const hasSourceModes = isMarkdown || isHtml;
-  const csvDelimiter = CSV_EXTS[ext];
-  const isCsv = csvDelimiter !== undefined;
-  const codeLanguage = CODE_LANGUAGE_BY_EXT[ext];
-  const isCode = codeLanguage !== undefined;
-  const isImage = IMAGE_EXTS.has(ext);
-  const isPdf = PDF_EXTS.has(ext);
-  const isAudio = AUDIO_EXTS.has(ext);
-  const isVideo = VIDEO_EXTS.has(ext);
-  const isArchive = ARCHIVE_EXTS.has(ext);
-  const isDocx = DOCX_EXTS.has(ext);
-  const isExcel = EXCEL_EXTS.has(ext);
-  const isPresentation = PRESENTATION_EXTS.has(ext);
-  const isOffice = isDocx || isExcel || isPresentation;
-  const isBinary = isImage || isPdf || isAudio || isVideo;
-  const isDirty = !isBinary && !isArchive && !isOffice && content !== savedContent;
+  const isDirty = !isBinary && !isArchive && !isOffice && !isText && !isHeic && !isLegacyOffice && content !== savedContent;
   const isVirtual = activeTab?.kind === 'virtual';
   const directPublishedVersion = previewFilePath?.match(/\.published-v(\d+)(?:\.[^./]+)?$/)?.[1];
   const viewingPublishedVersion = selectedPublishedVersion !== null || directPublishedVersion !== undefined;
@@ -566,7 +542,7 @@ export const PreviewPanel: React.FC = () => {
   // 仅对要走 iframe 渲染的 HTML 产物，内联同目录相对 css/js 供预览。
   // markdown/csv/code/图片/pdf 各有专门渲染路径，不需要。
   useEffect(() => {
-    const renderAsHtml = !isMarkdown && !isCsv && !isCode && !isBinary && !isArchive && !isOffice;
+    const renderAsHtml = isHtml;
     if (!renderAsHtml || !content || !previewFilePath) {
       setPreviewHtml(null);
       return;
@@ -579,21 +555,22 @@ export const PreviewPanel: React.FC = () => {
       .then((html) => { if (!cancelled) setPreviewHtml(html); })
       .catch(() => { if (!cancelled) setPreviewHtml(null); });
     return () => { cancelled = true; };
-  }, [content, previewFilePath, isMarkdown, isCsv, isCode, isBinary, isArchive, isOffice]);
+  }, [content, previewFilePath, isHtml]);
 
   const loadContent = async (tabId: string, filePath: string) => {
     setIsLoading(true);
     setErrorState(null);
     try {
-      const tabExt = getExtension(filePath);
-      const isArchiveTab = ARCHIVE_EXTS.has(tabExt);
-      const isDocxTab = DOCX_EXTS.has(tabExt);
-      const isExcelTab = EXCEL_EXTS.has(tabExt);
-      const isPresentationTab = PRESENTATION_EXTS.has(tabExt);
-      const isBinaryTab = IMAGE_EXTS.has(tabExt)
-        || PDF_EXTS.has(tabExt)
-        || AUDIO_EXTS.has(tabExt)
-        || VIDEO_EXTS.has(tabExt);
+      const formatted = await loadFormatPreview(filePath, invokeWorkspace);
+      if (formatted !== null) {
+        markPreviewTabLoaded(tabId, formatted);
+      } else {
+      const tabDispatch = previewDispatch(filePath);
+      const isArchiveTab = tabDispatch.isArchive;
+      const isDocxTab = tabDispatch.isDocx;
+      const isExcelTab = tabDispatch.isExcel;
+      const isPresentationTab = tabDispatch.isPresentation;
+      const isBinaryTab = tabDispatch.isBinary;
       if (isArchiveTab) {
         const inspection = await invokeWorkspace<ArchiveInspection>('inspectArchive', {
           filePath,
@@ -623,6 +600,7 @@ export const PreviewPanel: React.FC = () => {
         const fetched = await invokeWorkspace<string>('readFile', { filePath });
         // readFile returns '' for empty files — that's valid content, not an error.
         markPreviewTabLoaded(tabId, fetched ?? '');
+      }
       }
       void refreshFileMetadata(filePath);
     } catch (err) {
@@ -728,6 +706,13 @@ export const PreviewPanel: React.FC = () => {
       }
       setIsExporting(false);
     }
+  };
+
+  const handleOpenWithDefault = () => {
+    if (!previewFilePath) return;
+    void invokeWorkspace('openPath', { filePath: previewFilePath }).catch((err) => {
+      logger.error('Failed to open with default app', err);
+    });
   };
 
   const handleOpenInBrowser = async () => {
@@ -864,7 +849,7 @@ export const PreviewPanel: React.FC = () => {
                   <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />{pv.refresh}
                 </button>
               )}
-              <button type="button" onClick={() => { void handleExportLongScreenshot(); setMoreActionsOpen(false); }} disabled={isExporting || isLoading || !!error || isMarkdown || isCsv || isCode || isBinary || isArchive || isOffice} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-700 disabled:opacity-40">
+              <button type="button" onClick={() => { void handleExportLongScreenshot(); setMoreActionsOpen(false); }} disabled={isExporting || isLoading || !!error || isMarkdown || isCsv || isCode || isBinary || isArchive || isOffice || isText || isHeic || isLegacyOffice} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-700 disabled:opacity-40">
                 <Camera className={`h-4 w-4 ${isExporting ? 'animate-pulse' : ''}`} />{pv.exportLongScreenshot}
               </button>
               {!isVirtual && (
@@ -892,7 +877,7 @@ export const PreviewPanel: React.FC = () => {
 
       {/* Content */}
       <div
-        className={`flex-1 overflow-hidden ${isMarkdown || isCsv || isImage || isAudio || isVideo || isArchive || isOffice ? 'bg-zinc-900' : 'bg-white'}${artifactFlash ? ' artifact-flash' : ''}`}
+        className={`flex-1 overflow-hidden ${isMarkdown || isCsv || isImage || isAudio || isVideo || isArchive || isOffice || isText || isHeic || isLegacyOffice ? 'bg-zinc-900' : 'bg-white'}${artifactFlash ? ' artifact-flash' : ''}`}
         onAnimationEnd={(e) => {
           if (e.target === e.currentTarget && e.animationName === 'artifactFlashFade') {
             setArtifactFlash(false);
@@ -935,7 +920,11 @@ export const PreviewPanel: React.FC = () => {
             />
           </div>
         ) : isArchive ? (
-          <ArchivePreview content={content} />
+          <ArchivePreview content={content} onOpenDefault={handleOpenWithDefault} />
+        ) : isHeic ? (
+          <HeicPreviewView content={content} onOpenDefault={handleOpenWithDefault} />
+        ) : isLegacyOffice ? (
+          <LegacyOfficePreviewView content={content} onOpenDefault={handleOpenWithDefault} />
         ) : isPresentation ? (
           <PresentationPreview content={content} />
         ) : isDocx ? (
@@ -1010,12 +999,18 @@ export const PreviewPanel: React.FC = () => {
           >
             <CsvTable content={content} delimiter={csvDelimiter} />
           </Suspense>
-        ) : (
+        ) : isHtml ? (
           <StaticHtmlPreview
             html={previewHtml ?? content}
             filePath={activeTab.path}
             iframeRef={iframeRef}
             title={pv.htmlPreviewTitle}
+          />
+        ) : (
+          <TextPreviewView
+            content={content}
+            shikiLanguage={shikiLanguage}
+            onOpenDefault={handleOpenWithDefault}
           />
         )}
       </div>

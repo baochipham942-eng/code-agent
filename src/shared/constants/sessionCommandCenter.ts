@@ -23,6 +23,26 @@ export const SESSION_COMMAND_CENTER_WAKE_MAX_ITERATIONS = 4;
 export const MAX_CONSECUTIVE_WAKES = 3;
 
 /**
+ * How long a background session-command run may go without an agent event
+ * before the slot is failed. Voice does not use this clock.
+ */
+export const SESSION_COMMAND_TASK_IDLE_TIMEOUT_MS = 30 * 60 * 1_000;
+
+const SESSION_COMMAND_TASK_IDLE_TIMEOUT_ENV = 'CODE_AGENT_SESSION_TASK_IDLE_TIMEOUT_MS';
+
+/** Sole reader of CODE_AGENT_SESSION_TASK_IDLE_TIMEOUT_MS. Invalid values keep the fallback. */
+export function resolveSessionCommandTaskIdleTimeoutMs(
+  env: NodeJS.ProcessEnv = process.env,
+  fallbackMs = SESSION_COMMAND_TASK_IDLE_TIMEOUT_MS,
+): number {
+  const raw = env[SESSION_COMMAND_TASK_IDLE_TIMEOUT_ENV]?.trim();
+  if (!raw || !/^\d+$/.test(raw)) return fallbackMs;
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) return fallbackMs;
+  return parsed;
+}
+
+/**
  * 判据单一真源：本轮是否套用指挥台 brain。
  *
  * 桌面（agentAppService）和 web（routes/agent.ts）两条路各自把工具面/迭代上限/系统上下文

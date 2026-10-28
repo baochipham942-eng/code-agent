@@ -1,5 +1,9 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.unmock('better-sqlite3');
+
+import Database from 'better-sqlite3';
 import type { TaskManager } from '../../../../src/host/task/TaskManager';
 import {
   SessionTaskConcurrencyPool,
@@ -12,7 +16,9 @@ import {
   getBackgroundTaskLedger,
   resetBackgroundTaskLedgerForTest,
 } from '../../../../src/host/task/backgroundTaskLedger';
+import { SqliteBackgroundTaskStore } from '../../../../src/host/task/backgroundTaskStore';
 import { createWorkspaceScope } from '../../../../src/host/runtime/workspaceScope';
+import { SESSION_TASK_SLOT_TIMEOUT_MS } from '../../../../src/shared/constants/voice';
 
 const PROJECT_SCOPE = createWorkspaceScope('slot-recovery-session', [{
   sourceId: 'slot-recovery-source',
@@ -23,6 +29,7 @@ const PROJECT_SCOPE = createWorkspaceScope('slot-recovery-session', [{
 
 class FakeTaskManager extends EventEmitter {
   startBackgroundTask = vi.fn().mockResolvedValue(undefined);
+  cancelBackgroundTask = vi.fn().mockResolvedValue(true);
   observeAgentEvents = vi.fn(() => () => undefined);
 }
 
@@ -93,12 +100,90 @@ describe('session task slot crash recovery', () => {
     ledger.dispose();
   });
 
+  it('extends the idle window from the latest touch instead of startedAt', async () => {
+    const ledger = new SessionTaskSlotLedger('session-a', new SessionTaskConcurrencyPool(), {
+      slotTimeoutMs: 1_000,
+      cleanupIntervalMs: 100,
+    });
+
+    expect(ledger.admit(ledgerInput(1))).toMatchObject({ outcome: 'started' });
+    await vi.advanceTimersByTimeAsync(800);
+    ledger.touch('work-1');
+    await vi.advanceTimersByTimeAsync(800);
+
+    expect(ledger.get('work-1')).toMatchObject({ status: 'running', lastActivityAt: Date.now() - 800 });
+    await vi.advanceTimersByTimeAsync(200);
+    expect(ledger.get('work-1')).toMatchObject({ status: 'settled', terminalStatus: 'failed' });
+    ledger.dispose();
+  });
+
+  it('backfills the activity anchor to a supplied instant and never moves it backwards', async () => {
+    const ledger = new SessionTaskSlotLedger('session-a', new SessionTaskConcurrencyPool(), {
+      slotTimeoutMs: 1_000,
+      cleanupIntervalMs: 100,
+    });
+
+    expect(ledger.admit(ledgerInput(1))).toMatchObject({ outcome: 'started' });
+    await vi.advanceTimersByTimeAsync(800);
+    // 真实事件 touch 把锚定在当下；随后一份迟到的旧心跳（now - inactiveMs 早于已有锚）
+    // 回填不许把锚冲回过去。
+    ledger.touch('work-1');
+    ledger.touch('work-1', Date.now() - 3_000);
+    expect(ledger.get('work-1')?.lastActivityAt).toBe(Date.now());
+    await vi.advanceTimersByTimeAsync(800);
+    // 回填锚（真进展比已有锚更近）晚于已记录锚时采用回填值，空闲窗口从它起算。
+    ledger.touch('work-1', Date.now() - 600);
+    expect(ledger.get('work-1')?.lastActivityAt).toBe(Date.now() - 600);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(ledger.get('work-1')?.status).toBe('running');
+    await vi.advanceTimersByTimeAsync(200);
+    expect(ledger.get('work-1')).toMatchObject({ status: 'settled', terminalStatus: 'failed' });
+    ledger.dispose();
+  });
+
+  it('does not expire a slot while shouldSkipExpiry is set', async () => {
+    let skip = true;
+    const ledger = new SessionTaskSlotLedger('session-a', new SessionTaskConcurrencyPool(), {
+      slotTimeoutMs: 1_000,
+      cleanupIntervalMs: 100,
+      shouldSkipExpiry: () => skip,
+    });
+
+    expect(ledger.admit(ledgerInput(1))).toMatchObject({ outcome: 'started' });
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(ledger.get('work-1')?.status).toBe('running');
+    skip = false;
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(ledger.get('work-1')).toMatchObject({ status: 'settled', terminalStatus: 'failed' });
+    ledger.dispose();
+  });
+
+  it('keeps the voice ledger on a 2h total occupancy clock', async () => {
+    expect(SESSION_TASK_SLOT_TIMEOUT_MS).toBe(2 * 60 * 60 * 1_000);
+    const recoveries: SessionTaskSlotRecovery[] = [];
+    const ledger = new SessionTaskSlotLedger('voice-session', new SessionTaskConcurrencyPool(), {
+      cleanupIntervalMs: 60_000,
+      onRecovery: (recovery) => recoveries.push(recovery),
+    });
+
+    expect(ledger.admit({ ...ledgerInput(1), sessionId: 'voice-session' })).toMatchObject({ outcome: 'started' });
+    await vi.advanceTimersByTimeAsync(30 * 60 * 1_000);
+    expect(ledger.get('work-1')).toMatchObject({ status: 'running' });
+    expect(ledger.get('work-1')?.lastActivityAt).toBeUndefined();
+
+    await vi.advanceTimersByTimeAsync(SESSION_TASK_SLOT_TIMEOUT_MS - 30 * 60 * 1_000);
+    expect(ledger.get('work-1')).toMatchObject({ status: 'settled', terminalStatus: 'failed' });
+    expect(recoveries[0]?.expired[0]?.occupiedMs).toBe(SESSION_TASK_SLOT_TIMEOUT_MS);
+    ledger.dispose();
+  });
+
   it('marks the abandoned text task failed in human-readable history and launches its lane successor', async () => {
     const manager = new FakeTaskManager();
     const projectTerminalResult = vi.fn().mockResolvedValue(undefined);
+    const wakeForegroundBrain = vi.fn().mockResolvedValue(undefined);
     const center = new SessionCommandCenter(manager as unknown as TaskManager, {
       projectTerminalResult,
-      wakeForegroundBrain: vi.fn().mockResolvedValue(undefined),
+      wakeForegroundBrain,
       slotLedgerOptions: { slotTimeoutMs: 1_000, cleanupIntervalMs: 100 },
       slotRecoveryLocale: 'zh',
     });
@@ -114,10 +199,13 @@ describe('session task slot crash recovery', () => {
     expect(center.list('session-a')).toMatchObject([
       {
         status: 'failed',
-        detail: expect.stringContaining('lane「report」占用 1 秒后仍未收到终态事件'),
+        detail: '后台任务失败：命令已 1 秒没有响应',
       },
       { status: 'running' },
     ]);
+    expect(wakeForegroundBrain).toHaveBeenCalledTimes(1);
+    expect(manager.cancelBackgroundTask).toHaveBeenCalledTimes(1);
+    expect(manager.cancelBackgroundTask).toHaveBeenCalledWith(first.task.id);
     expect(projectTerminalResult).toHaveBeenCalledWith(
       expect.objectContaining({ id: first.task.id, status: 'failed' }),
       'failed',
@@ -128,5 +216,70 @@ describe('session task slot crash recovery', () => {
       failure: { reason: 'session_command_task_failed' },
     });
     center.dispose();
+  });
+
+  it('settles a silent running task with the idle failure text and wakes the foreground once', async () => {
+    const manager = new FakeTaskManager();
+    const wakeForegroundBrain = vi.fn().mockResolvedValue(undefined);
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn().mockResolvedValue(undefined),
+      wakeForegroundBrain,
+      slotLedgerOptions: { slotTimeoutMs: 120_000, cleanupIntervalMs: 120_000 },
+      slotRecoveryLocale: 'en',
+    });
+
+    const first = await center.spawn(commandInput(1));
+    if (first.outcome === 'requires_choice') throw new Error('unexpected admission result');
+
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    expect(center.list('session-a')[0]).toMatchObject({
+      status: 'failed',
+      detail: 'Background task failed: the command stopped responding for 2 minutes',
+    });
+    expect(wakeForegroundBrain).toHaveBeenCalledTimes(1);
+    expect(wakeForegroundBrain).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: first.task.id,
+        status: 'failed',
+        detail: 'Background task failed: the command stopped responding for 2 minutes',
+      }),
+      'failed',
+    );
+    expect(manager.cancelBackgroundTask).toHaveBeenCalledTimes(1);
+    expect(manager.cancelBackgroundTask).toHaveBeenCalledWith(first.task.id);
+    center.dispose();
+  });
+
+  it('loads a persisted running card with no live process as orphaned', () => {
+    const db = new Database(':memory:');
+    try {
+      const store = new SqliteBackgroundTaskStore(db);
+      store.upsertTask({
+        id: 'session-work-hung',
+        kind: 'session_command_task',
+        sessionId: 'session-a',
+        source: 'session_command_center',
+        title: '提醒',
+        status: 'running',
+        createdAt: 1,
+        updatedAt: 2,
+        startedAt: 1,
+        events: [],
+        outputRefs: [],
+      });
+
+      const restarted = new SqliteBackgroundTaskStore(db);
+      expect(restarted.loadTerminalTask('session-work-hung')).toMatchObject({
+        status: 'orphaned',
+        failure: expect.objectContaining({ category: 'dead_log_only' }),
+        metadata: expect.objectContaining({
+          originalStatus: 'running',
+          recoveryStatus: 'dead-log-only',
+        }),
+      });
+    } finally {
+      db.close();
+    }
   });
 });

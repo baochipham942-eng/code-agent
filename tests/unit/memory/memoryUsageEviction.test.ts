@@ -26,7 +26,6 @@ vi.mock('../../../src/host/services/core/database/nativeLoader', async () => {
   const module = await import('better-sqlite3');
   return {
     loadBetterSqlite3: () => module.default,
-    betterSqlite3CandidatePaths: () => [],
   };
 });
 

@@ -389,6 +389,13 @@ export class TaskManager extends EventEmitter {
     return true;
   }
 
+  /** True while this background run still holds an approval resolver. */
+  hasPendingBackgroundPermission(taskId: string): boolean {
+    const run = this.backgroundRuns.get(taskId);
+    if (!run) return false;
+    return run.orchestrator.getPendingPermissionRequests().length > 0;
+  }
+
   async interruptBackgroundTask(
     taskId: string,
     message: string,

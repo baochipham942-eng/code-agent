@@ -243,12 +243,12 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
           if (language === 'document') {
             return <DocumentBlock spec={codeContent} />;
           }
-          return <CodeBlock language={language} code={codeContent} deferOffscreenLayout={!isStreaming} />;
+          return <CodeBlock language={language} code={codeContent} deferOffscreenLayout={!isStreaming} isStreaming={isStreaming} />;
         }
 
         // Block text retains a trailing newline; inline code normalizes newlines to spaces.
         if (!className && isCodeBlock && (codeContent === '' || codeText.endsWith('\n'))) {
-          return <CodeBlock language="" code={codeContent} deferOffscreenLayout={!isStreaming} />;
+          return <CodeBlock language="" code={codeContent} deferOffscreenLayout={!isStreaming} isStreaming={isStreaming} />;
         }
 
         return (

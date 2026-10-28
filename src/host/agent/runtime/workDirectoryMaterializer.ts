@@ -21,16 +21,22 @@
 // 停留在未分类，目录只作为磁盘上的产出夹存在，不铸造对应 Project 行。
 // ============================================================================
 import * as fs from 'fs/promises';
+import * as fsSync from 'fs';
 import * as path from 'path';
 import { getDefaultWorkDirectory } from '../../config/configPaths';
 import { materializeSessionWorkDirectory } from '../../config/sessionWorkDirectory';
 import { listSessionWorkDirectoryReservations } from '../../config/sessionWorkDirectoryReservations';
 import { isPathWithinRoot } from '../../runtime/workspaceScope';
+import { hasUnclearedStreamSnapshots } from '../../session/streamSnapshot';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('WorkDirectoryMaterializer');
 
 const attempts = new Map<string, Promise<void>>();
+/** 本进程在 stat ENOENT 之后 mkdir 成功的目录。已存在的目录不记入。 */
+const createdByThisProcess = new Set<string>();
+/** 仍在执行的 run 数。同一目录要等最后一个 run 结束才考虑回收。 */
+const activeRuns = new Map<string, number>();
 
 async function warnIfForeignClaimed(dir: string, sessionId?: string): Promise<void> {
   if (!sessionId) return;
@@ -65,6 +71,7 @@ async function attemptMaterialization(dir: string, sessionId?: string): Promise<
   }
   try {
     await materializeSessionWorkDirectory(dir);
+    createdByThisProcess.add(dir);
     logger.info(`[WorkDirectoryMaterializer] Materialized planned session work dir: ${dir}`);
   } catch (error) {
     logger.warn(`[WorkDirectoryMaterializer] Failed to materialize session work dir ${dir}:`, error);
@@ -108,4 +115,99 @@ export function shouldMaterializeWorkDirectoryForTool(
   return definition !== undefined
     && definition.readOnly !== true
     && definition.touchesWorkDirectory !== false;
+}
+
+function resolveTrackedDir(workingDirectory: string | undefined): string | undefined {
+  const trimmed = workingDirectory?.trim();
+  if (!trimmed) return undefined;
+  return path.resolve(trimmed);
+}
+
+/**
+ * run 开始。前台与后台 auxiliary 都从 AgentLoop.run 进来，按目录计数。
+ * 目录此刻可以还不存在——落盘发生在后续会写 cwd 的工具派发时。
+ */
+export function beginWorkDirectoryRun(workingDirectory: string | undefined): void {
+  const dir = resolveTrackedDir(workingDirectory);
+  if (!dir) return;
+  activeRuns.set(dir, (activeRuns.get(dir) ?? 0) + 1);
+}
+
+/**
+ * 最后一个占用该目录的 run 结束时，仅当本进程新建且内容只剩 `.code-agent`
+ * （其中至多空的 `stream-snapshots` 脚手架 / owner 标记）才删除。其它任何文件
+ * 或目录都留下；stream-snapshots 里还有未清除的 run 快照（断流恢复证据）时也
+ * 不删——证据要活到用户重进会话被 loadStreamSnapshot 读回（rework r1）。
+ * 删掉之后清掉 attempts，否则下一次 Write 会命中已完成的 promise、不再 mkdir。
+ */
+export function endWorkDirectoryRun(workingDirectory: string | undefined): void {
+  const dir = resolveTrackedDir(workingDirectory);
+  if (!dir) return;
+  const current = activeRuns.get(dir) ?? 0;
+  if (current <= 0) return;
+  if (current > 1) {
+    activeRuns.set(dir, current - 1);
+    return;
+  }
+  activeRuns.delete(dir);
+  recycleCreatedMetadataDir(dir);
+}
+
+function recycleCreatedMetadataDir(dir: string): void {
+  if (!createdByThisProcess.has(dir)) return;
+  if ((activeRuns.get(dir) ?? 0) > 0) return;
+  if (!fsSync.existsSync(dir)) {
+    createdByThisProcess.delete(dir);
+    attempts.delete(dir);
+    return;
+  }
+  if (!isOnlyCodeAgentMetadata(dir)) return;
+  if ((activeRuns.get(dir) ?? 0) > 0) return;
+  try {
+    fsSync.rmSync(dir, { recursive: true, force: false });
+  } catch (error) {
+    logger.warn(`[WorkDirectoryMaterializer] Failed to recycle empty session work dir ${dir}:`, error);
+    return;
+  }
+  createdByThisProcess.delete(dir);
+  attempts.delete(dir);
+}
+
+/**
+ * 空目录，或仅有 `.code-agent` 且其中至多空的 `stream-snapshots` 脚手架。
+ * 快照 run 文件是断流恢复证据，存在即不回收（判据单一真源在
+ * hasUnclearedStreamSnapshots）。任何其它名字、符号链接、非常规文件都算
+ * 用户内容，返回 false。
+ */
+function isOnlyCodeAgentMetadata(dir: string): boolean {
+  let rootStat: fsSync.Stats;
+  try {
+    rootStat = fsSync.lstatSync(dir);
+  } catch {
+    return false;
+  }
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) return false;
+  const top = readDirents(dir);
+  if (!top) return false;
+  if (top.length === 0) return true;
+  if (top.length !== 1 || top[0].name !== '.code-agent') return false;
+  if (!isRealDirectory(top[0])) return false;
+  const codeAgentEntries = readDirents(path.join(dir, '.code-agent'));
+  if (!codeAgentEntries) return false;
+  if (codeAgentEntries.length === 0) return true;
+  if (codeAgentEntries.length !== 1 || codeAgentEntries[0].name !== 'stream-snapshots') return false;
+  if (!isRealDirectory(codeAgentEntries[0])) return false;
+  return !hasUnclearedStreamSnapshots(dir);
+}
+
+function isRealDirectory(entry: fsSync.Dirent): boolean {
+  return entry.isDirectory() && !entry.isSymbolicLink();
+}
+
+function readDirents(dir: string): fsSync.Dirent[] | undefined {
+  try {
+    return fsSync.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return undefined;
+  }
 }

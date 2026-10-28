@@ -15,9 +15,11 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { useTaskStore } from '../../../stores/taskStore';
 import { recordStreamingPerformanceCounter } from '../../../utils/streamingPerformanceMetrics';
 import { useI18n } from '../../../hooks/useI18n';
+import { useScrollEdgeFade } from '../../../hooks/useScrollEdgeFade';
 import { SessionModelsContext } from './sessionModelsContext';
 import { hasIncompleteStreamSnapshot } from '../../../utils/streamingStatePresentation';
 import { isTurnVisibleInRange } from '../../../utils/turnVisibility';
+import { useWorkDetailPolicy } from '../../../utils/workDetailPolicy';
 import { buildTurnRailItems } from '../../../utils/turnRailItems';
 import {
   ConversationTurnTailSlot,
@@ -299,6 +301,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   suppressActiveBusySignal,
 }) => {
   const { t } = useI18n();
+  const workDetailPolicy = useWorkDetailPolicy();
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const scrollerElementRef = useRef<HTMLElement | null>(null);
   const [scrollerElement, setScrollerElement] = useState<HTMLElement | null>(null);
@@ -501,11 +504,11 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       cancelSecond?.();
     };
   }, [firstItemIndex]);
-
-  // 让滚动条在两侧各占一半空间：
-  // 否则 macOS scrollbar 吃掉父容器右边 6px，message 区 max-w-3xl 居中后比
+  const setScrollEdgeFade = useScrollEdgeFade();
+  // 让滚动条在两侧各占一半空间：否则 macOS scrollbar 吃掉父容器右边 6px，message 区 max-w-3xl 居中后比
   // ChatInput 区偏左 3px，跟 ChatInput 卡片左缘对不齐
   const handleScrollerRef = useCallback((el: HTMLElement | Window | null) => {
+    setScrollEdgeFade(el instanceof HTMLElement ? el : null);
     if (el instanceof HTMLElement) {
       scrollerElementRef.current = el;
       setScrollerElement(el);
@@ -515,8 +518,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       scrollerElementRef.current = null;
       setScrollerElement(null);
     }
-  }, []);
-
+  }, [setScrollEdgeFade]);
   useEffect(() => {
     return () => {
       activeDisplayScrollCancelRef.current?.();
@@ -1037,7 +1039,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
               key={turn.turnId}
               turn={turn}
               sessionId={projection.sessionId}
-              defaultExpanded={isLast || isStreaming}
+              defaultExpanded={isStreaming || (isLast && workDetailPolicy.keepLastTurnOpen)}
               forceExpanded={hasSearchMatch}
               highlightActive={isActiveMatchTurn}
               isActiveTurn={isStreaming}
@@ -1061,7 +1063,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         </div>
       );
     },
-    [activeMatchIndex, beforeFirstUserMessage, firstItemIndex, isProjectionSessionProcessing, onRewindUserPrompt, outputFollowTurnIndex, projection.activeTurnIndex, projection.sessionId, projection.turns, projectionStreamSnapshot, scheduleActiveDisplayScroll, searchMatches, sessionStatus, suppressActiveBusySignal],
+    [activeMatchIndex, beforeFirstUserMessage, firstItemIndex, isProjectionSessionProcessing, onRewindUserPrompt, outputFollowTurnIndex, projection.activeTurnIndex, projection.sessionId, projection.turns, projectionStreamSnapshot, scheduleActiveDisplayScroll, searchMatches, sessionStatus, suppressActiveBusySignal, workDetailPolicy],
   );
 
   // Header: load-older indicator

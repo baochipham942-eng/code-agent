@@ -675,6 +675,11 @@ export class ManagedBrowserProviderAdapter {
     if (signal.aborted) throw this.cancelledError(binding, input.operationId, signal.reason);
     const closeOnAbort = () => {
       if (binding.abortShutdown) return;
+      // Takeover aborts the in-flight action but must leave the shared window
+      // open. SurfaceInterruptService.abortActive passes this reason through
+      // the operation coordinator onto this signal. Every other reason still
+      // exports login state and closes.
+      if (signal.reason === 'surface-human-takeover') return;
       binding.abortShutdown = this.exportResumeStateAndClose(binding);
       // releaseBinding / dispatch finally await the same promise and rethrow it. Attach a
       // handler immediately as the Surface coordinator may reject on abort before cleanup runs.

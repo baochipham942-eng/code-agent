@@ -51,15 +51,6 @@ export const cronClient = {
     return invokeCron<CronJobDefinition | null>('grantLoginPassThrough', { jobId, siteOrigin });
   },
 
-  /** 写授权（任务详情面板一键同意）：host 解析工作文件夹并写入 metadata.writeGrantRoot。 */
-  grantWriteScope(jobId: string) {
-    return invokeCron<CronJobDefinition | null>('grantWriteScope', { jobId });
-  },
-
-  revokeWriteScope(jobId: string) {
-    return invokeCron<CronJobDefinition | null>('revokeWriteScope', { jobId });
-  },
-
   triggerJob(jobId: string) {
     return invokeCron<CronJobExecution | null>('triggerJob', { jobId });
   },

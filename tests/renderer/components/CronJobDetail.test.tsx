@@ -11,8 +11,6 @@ vi.mock('../../../src/renderer/services/cronClient', () => ({
     listJobs: vi.fn().mockResolvedValue([]),
     getStats: vi.fn().mockResolvedValue(null),
     getExecutions: vi.fn().mockResolvedValue([]),
-    grantWriteScope: vi.fn(),
-    revokeWriteScope: vi.fn(),
   },
 }));
 
@@ -99,22 +97,6 @@ describe('CronJobDetail', () => {
       editingJobId: null,
       copyingJobId: 'job-1',
     });
-  });
-
-  it('本地 agent 任务显示文件写入授权面板；云端任务与 shell 动作不显示', () => {
-    const local = render(<CronJobDetail job={makeJob({})} />);
-    expect(screen.getByTestId('cron-write-scope-panel')).toBeTruthy();
-    local.unmount();
-
-    const cloud = render(<CronJobDetail job={makeJob({ runsOn: 'cloud' })} />);
-    expect(screen.queryByTestId('cron-write-scope-panel')).toBeNull();
-    cloud.unmount();
-
-    const shell = render(
-      <CronJobDetail job={makeJob({ action: { type: 'shell', command: 'echo hi' } })} />,
-    );
-    expect(screen.queryByTestId('cron-write-scope-panel')).toBeNull();
-    shell.unmount();
   });
 });
 

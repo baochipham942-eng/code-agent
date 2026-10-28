@@ -448,6 +448,19 @@ export function getToolExecutionTimeoutMs(toolName: string): number | undefined 
   return TOOL_EXECUTION_TIMEOUTS.DEFAULT;
 }
 
+/**
+ * How long one browser tool call blocks while the user holds the live view
+ * (`waiting_human`). The human-takeover control timer stays 5 minutes and is
+ * not this value. `browser_action` is on the default tool inactivity budget
+ * (`getToolExecutionTimeoutMs` → 120_000) and the executor aborts the call at
+ * that budget, so the wait cap stays under it. A blocked call then returns one
+ * `SURFACE_SESSION_BUSY` instead of being killed first as a tool timeout.
+ */
+export const BROWSER_HUMAN_TAKEOVER_WAIT = {
+  POLL_INTERVAL_MS: 100,
+  CAP_MS: 100_000,
+} as const;
+
 // 有不可重放副作用的原生工具：多数只在启动前查一次 abortSignal，外层 inactivity 超时
 // 触发时副作用可能已经完成。这类工具的超时结果必须标 outcome-unknown（模型先核实状态
 // 再决定是否重试），否则模型把超时当失败直接重试会重复发送/重复创建（mail_send、

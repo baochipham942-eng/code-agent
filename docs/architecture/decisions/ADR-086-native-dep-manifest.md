@@ -68,6 +68,15 @@ export function betterSqlite3CandidatePaths(moduleDir: string): string[] {
 
 即：上游包自己的加载器早已是「约定位置、平台标签」模式（node-gyp-build 约定），是我们在外面包了一层试探。
 
+### 1.4 打包链 boot 闸对原生缺件的现行豁免
+
+`scripts/verify-webserver-boot.mjs` 是 v0.19.0「打包应用启动即崩」事故后立的门，内建在**每条打包链**上：`tauri:package` / `tauri:package:dev` / `tauri:release:bundle` 都是 `npm run build && npm run verify:webserver-boot && npm run tauri:prebuild-cleanup`（`package.json:224,228,230`；`release.yml:181`；这个位置被特征断言钉死 `releaseMacosGates.test.ts:817-822`）。另有专职 CI 腿 `.github/workflows/webserver-boot.yml`（ubuntu-24.04，`npm ci --ignore-scripts`，只跑 `build:web` 不建 dist/native，`:53-60`）；`desktopShellDiagnostics.ts:431` 把它列为修复建议命令。两层：
+
+- 静态层（硬门）：`webServer.bundle.cjs` 里不得残留 must-bundle 库（pdfkit/pptxgenjs/mammoth/exceljs/qrcode——全是纯 JS 库）的 external require（`:32,42-57`）。
+- 运行层（best-effort）：藏掉 node_modules 里这几个库后真启动 `dist/web/webServer.cjs`。但**原生缺件被显式豁免为非门失败**：头部注释「Other boot outcomes (env-specific: keychain, native deps, MCP) are not failures」（`:20`）；`scan()` 只对 must-bundle 库的 `Cannot find module` 判红，注释点名「`dist/native/better-sqlite3` not built in a lightweight web-only job … warn+pass」（`:103-113`）；子进程提前退出与超时也一律 ⚠ + exit 0（`:117-133`）。
+
+豁免的存在本身就是候选试探的产物：boot 冒烟跑在没建 dist/native 的环境里，试探必然撞出模块缺失，门只能把它归为「环境性」。这和本稿「缺件在门上红」的目标有表面冲突，消解见 §4.6 boot 闸节：该门起的是**源码模式**进程（不设 bundle 环境变量），按 §4.5 本就不该读清单；bundle 态原生缺件的红线由 mac/win 发版门与 Rust 首启预检持有；T2 合入后「轻量 job 没建 dist/native」这一唯一合法的原生缺失场景随候选删除而消失，豁免随之收窄（归 T5）。
+
 ## 2. 业界依据（每条带出处）
 
 | # | 来源 | 做法 | 引文/锚点 |
@@ -132,6 +141,7 @@ export function betterSqlite3CandidatePaths(moduleDir: string): string[] {
 - 路径一律相对 runtime root（bundle 模式 = `AGENT_NEO_BUNDLED_RUNTIME_ROOT`，即 `_up_`），与 Tauri resources 目标映射同构（§2-5 的 `_up_` 规则）。
 - `kind` 沿用 `runtimeAssetRegistry.ts:7-22` 的词汇（node-module / helper-binary / tool-binary / app-bundle），便于远期并轨。
 - **不含** onnxruntime-vad / playwright：它们 `delivery:'optional'`，有版本/哈希/下载源语义，已由 `build-runtime-assets.mjs:390-401` 的发布 manifest + `active.json` 覆盖。两份清单按 delivery 分界：**bundled=本清单，optional=既有体系**。
+- 范围闭合依据（2026-10-28 全仓盘点，命令与原始输出见证据档④-r2）：`externalBin` 在 `tauri.conf.json`、arch/platform overlay 与 `src-tauri/`、`scripts/` 全域 **0 处**——本仓 sidecar 不走 Tauri externalBin 三段后缀机制，全部经 `bundle.resources` 映射进包，清单条目与 resources 目标同构（§2-5 引 externalBin 仅作机制对照）。node_modules 含 `.node` 的包目录共 17 个，其中**随包**的只有四类：better-sqlite3（dist/native 装配副本 + node_modules 单架构副本）、keytar、node-pty（每个包仅 overlay 选中的一个平台目录进包）、@img/sharp-<plat>；其余 11 个目录是构建/dev 工具链（@rolldown/binding、@tailwindcss/oxide、lightningcss、fsevents×2——不进任何包）或 optional 资产（onnxruntime-node 的 5 个平台目录、node-pty 的 win32-arm64 目录），不随包分发，天然不在清单范围。
 
 ### 4.2 谁写、何时写
 
@@ -213,6 +223,12 @@ win（`verify-windows-release.mjs`）：
 2. post：NSIS 解包校验成本高，维持现状（exe + PE 魔数 + 体积），靠 pre 侧清单 + 安装后首启 Rust 预检兜底。
 3. 同步 `build-windows-test.yml` 与 `releaseMacosGates.test.ts` 特征断言（CLAUDE.md 发版节的既有要求）。
 
+boot 闸（`verify-webserver-boot.mjs`，打包链内建，现状见 §1.4）：
+
+1. **维持源码模式身份，不读清单**：它启动的进程不设 `AGENT_NEO_BUNDLED_RUNTIME_ROOT`，按 §4.5 走纯包解析；给它加 manifest 读取会破坏 bundle/源码两模式分界。bundle 态原生闭合不在它的职责内（由上面 mac/win 门 + Rust 预检持有）。
+2. 静态层（must-bundle JS 库不得 external）与本稿正交，**原样保留**。
+3. 运行层的原生豁免**随 T2 失据、T5 收窄**：候选删除后，源码模式装载器不再读 `dist/native/**`——其受控环境（node_modules 完整、must-bundle 库已藏）里 boot 冒烟再出现 `dist/native/` 前缀的模块缺失，只可能是有人重新引入了试探路径，属于**契约违例**，必须红；而第三方包内部的原生探测（如 keytar 在 `--ignore-scripts` 的 linux CI 上缺 `build/Release/keytar.node`）仍是环境性差异，维持 warn+pass。判据从「缺的库是否在 must-bundle 清单」扩为「must-bundle ∪ `dist/native/**` 路径缺失」，同步更新 `:20`/`:103-113`/`:117-118` 三处注释（删掉点名 `dist/native/better-sqlite3` 的豁免理由）。该收窄必须排在 T2 之后，否则 webserver-boot.yml 腿会因仍存在的探测噪音假红。
+
 Rust 壳首启预检（`main.rs:1721` `desktop_shell_resource_preflight`）：native 条目改为读清单（serde_json 已在依赖内），缺清单 = 启动失败走 Layer 3 弹窗（`main.rs:2102-2111` 既有通道）——用户机器上的最后防线；按本节设计它应该永远轮不到触发，因为门先红。**未验证项**：`cargo tauri dev`（debug）下 resource_dir 指向 target/debug，清单可达性需在 T4 实测定义。
 
 ### 4.7 迁移与回滚
@@ -225,7 +241,7 @@ Rust 壳首启预检（`main.rs:1721` `desktop_shell_resource_preflight`）：na
 | 2 | T2：读取方 + nativeLoader 切换 | bundle=manifest、源码=包解析，删候选循环。**前置**：N-SQLITE-LOADER-LOG-NOISE（在飞）先合——它改同一函数，后合方 rebase；T2 合入后候选循环消失，其测试随 T2 迁移改写 |
 | 3 | T3：子进程交接 | quickcheck/vacuum 收单路径，`NEO_QUICKCHECK_NATIVE_CANDIDATES` 语义退役 |
 | 4 | T4：Rust 预检 + 诊断镜像 + 构建侧资源表消费清单 | 消灭布局副本②③④ |
-| 5 | T5：发版门全量校验 | mac 闭合校验 + win 清单驱动 |
+| 5 | T5：发版门全量校验 | mac 闭合校验 + win 清单驱动 + boot 闸豁免收窄（§4.6，须排 T2 后） |
 | 6 | T6：清单扩容（keytar/node-pty/sharp/sidecar 声明） | 门 allowlist 收紧到全量闭合 |
 | 7 | T7（远期，不排期）：与 optional 资产 registry 并轨 | 概念收敛，优先级最低 |
 
@@ -246,7 +262,7 @@ Rust 壳首启预检（`main.rs:1721` `desktop_shell_resource_preflight`）：na
 | T2 | 读取方 + nativeLoader 切换 | `src/host/runtime/nativeDepManifest.ts`；`nativeLoader.ts` 重写；测试迁移（含 N-SQLITE-LOADER-LOG-NOISE 的测试） | 4.4 三条错误文案逐字断言；源码模式零候选试探（spy 断言 require 仅一次）；vitest/CI 全量绿 | 与在飞补丁分支的合并顺序；源码模式不再读 dist/native 是行为变化，需在开发者文档写明 |
 | T3 | 子进程交接 | `dbQuickCheckSubprocess.ts` / `dbVacuumSubprocess.ts` | 子进程收解析后单路径；缺路径 exit 3 且 stderr 指名清单条目；子进程测试更新 | 低（退出码语义不变） |
 | T4 | Rust 预检 + 诊断镜像消费清单 | `main.rs:desktop_shell_resource_preflight`、`desktopShellDiagnostics.ts`、`tauri-resource-inventory.mjs` | 三处不再各自硬编码 native 路径；预检失败信息带清单路径；`cargo tauri dev` 下行为定义并实测（标未验证项收口） | Rust 改动走 rust-ci；debug 构建下清单可达性未验证 |
-| T5 | 发版门清单校验 | `verify-macos-release.sh`、`verify-windows-release.mjs`、`releaseMacosGates.test.ts`、`build-windows-test.yml` | mac 双向闭合校验；win pre 门清单驱动 + bundled-node 真加载 win32-x64.node；故意删一个 .node 门必红（变异验证，对齐 ship 硬规③） | 闭合校验 allowlist 初始噪音（CUA .app、poppler dylib 等要正确归类） |
+| T5 | 发版门 + boot 闸清单校验 | `verify-macos-release.sh`、`verify-windows-release.mjs`、`releaseMacosGates.test.ts`、`build-windows-test.yml`；`verify-webserver-boot.mjs` 豁免收窄（§4.6：判据扩为 must-bundle ∪ `dist/native/**` 缺失，`:20`/`:103-113`/`:117-118` 注释同步） | mac 双向闭合校验；win pre 门清单驱动 + bundled-node 真加载 win32-x64.node；故意删一个 .node 门必红（变异验证，对齐 ship 硬规③）；boot 闸对 `dist/native/**` 缺失必红且 keytar 包内探测不误伤（变异验证） | 闭合校验 allowlist 初始噪音（CUA .app、poppler dylib 等要正确归类）；boot 闸收窄必须排在 T2 之后，早于 T2 会让 webserver-boot.yml 腿因探测噪音假红 |
 | T6 | 清单扩容 + 全量闭合 | writer 补 keytar/node-pty/sharp/sidecar 条目；门 allowlist 收紧；（可选）`resolveHelperBinary` bundle 模式直取 | bundle 内每个 .node / 可执行 helper 均有声明或 allowlist 理由；装载行为零变化（既有测试回归） | node-pty win32 双文件（conpty.node + pty.node）易漏，win 门必须覆盖 |
 | T7 | （远期）bundled 清单与 optional registry 并轨 | `runtimeAssetRegistry` 吸收 manifest 或反之 | 单一资产声明层 | 动 optional 下载链路（active.json/哈希校验）；收益主要是概念收敛，不排期 |
 

@@ -197,7 +197,8 @@ describe('CloudRunLedger (ADR-086 S1)', () => {
       expect(CLOUD_RUN_STATES).toHaveLength(10);
       expect(CLOUD_RUN_STATES).toContain('queued');
       for (const terminal of TERMINAL_STATES) {
-        for (const target of [...IN_FLIGHT_STATES, 'queued', ...TERMINAL_STATES]) {
+        const targets: readonly CloudRunRecord['state'][] = [...IN_FLIGHT_STATES, 'queued', ...TERMINAL_STATES];
+        for (const target of targets) {
           expect(canTransitionCloudRunState(terminal, target)).toBe(false);
         }
       }

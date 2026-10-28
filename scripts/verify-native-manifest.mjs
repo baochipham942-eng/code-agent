@@ -41,7 +41,7 @@ const ALLOWLIST = [
     reason: 'Swift helper binaries remain build-produced resources until T6 declares them',
   },
   {
-    pattern: /^scripts\/.*\.(?:mjs|py|sh|ts)$/,
+    pattern: /^scripts\/.*\.(?:bat|cmd|mjs|py|sh|ts)$/,
     reason: 'interpreted source and build scripts are not native helper binaries',
   },
   {

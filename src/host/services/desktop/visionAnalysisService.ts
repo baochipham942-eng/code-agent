@@ -3,7 +3,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { getConfigService } from '../core/configService';
 import { createLogger } from '../infra/logger';
-import { ZHIPU_VISION_MODEL, VISION_IMAGE, DEFAULT_PROVIDER, DEFAULT_MODELS } from '../../../shared/constants';
+import { ZHIPU_VISION_MODEL, VISION_IMAGE } from '../../../shared/constants';
+import { resolveSessionDefaultModelConfig } from '../core/sessionDefaults';
 import { ModelRouter } from '../../model/modelRouter';
 import type { ModelConfig, ModelProvider } from '../../../shared/contract/model';
 import { loadSharp } from '../../runtime/sharpRuntime';
@@ -242,18 +243,9 @@ function buildVisionBaseConfig(): ModelConfig {
   const configured = resolveVisionModelConfig();
   if (configured) return configured;
 
-  // 视觉未配置（或配的模型不支持视觉）时，用默认 provider 兜底 seed，
-  // 让 getVisionPreflightCandidates 以默认 provider 的视觉模型优先（如 xiaomi → mimo-omni）。
-  const configService = getConfigService();
-  const provider = DEFAULT_PROVIDER as ModelProvider;
-  return {
-    provider,
-    model: DEFAULT_MODELS.chat,
-    apiKey: configService.getApiKey(provider) || '',
-    baseUrl: configService.getSettings().models?.providers?.[provider]?.baseUrl,
-    temperature: 0.3,
-    maxTokens: 2048,
-  };
+  // 视觉未配置（或配的模型不支持视觉）时，用会话默认模型（用户配置优先）兜底 seed，
+  // 让 getVisionPreflightCandidates 以用户默认 provider 的视觉模型优先（如 xiaomi → mimo-omni）。
+  return resolveSessionDefaultModelConfig({ temperature: 0.3, maxTokens: 2048 });
 }
 
 const MISSING_VISION_MODEL_MESSAGE =

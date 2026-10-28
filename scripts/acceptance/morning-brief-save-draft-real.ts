@@ -161,9 +161,9 @@ function score(scenario: Scenario, text: string, toolCalls: ToolCall[]): RoundRe
   let pass: boolean;
   if (scenario === 'A') {
     pass = mailDraftCalls === 0 && includesAny(text, [
-      /已经[^。\n]{0,16}(?:存过|保存|存入|创建)/,
-      /已(?:经)?(?:存过|保存过|保存好|存好)/,
-      /(?:之前|先前)[^。\n]{0,16}(?:保存|存过|创建)/,
+      /已经[^。\n]{0,16}(?:存过|保存|存入|存进|创建)/,
+      /已(?:经)?(?:存过|保存过|保存好|存好|存进)/,
+      /(?:之前|先前|刚才)[^。\n]{0,16}(?:保存|存过|存进|创建)/,
       /(?:无需|不必|不需要|不要)[^。\n]{0,8}(?:重复|再次)/,
       /already\s+(?:saved|created|in\s+(?:the\s+)?drafts?)/i,
     ]);

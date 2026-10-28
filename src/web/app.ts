@@ -19,7 +19,7 @@ import type { DurableRunRolloutPolicy } from '../host/app/durableRunRollout';
 import type { DurableRunReadService } from '../host/app/durableRunReadService';
 import { TraceReadService } from '../host/app/traceReadService';
 import type { WebRouteLogger } from './routes/routeTypes';
-import type { BuildInfo, PermissionRequest } from '../shared/contract';
+import type { BuildInfo, PermissionRequest, RendererServeDecision } from '../shared/contract';
 import type { ConversationEnvelope } from '../shared/contract/conversationEnvelope';
 
 import { formatError } from './helpers/utils';
@@ -128,6 +128,8 @@ export interface CreateAppDeps {
   }, route: 'active' | 'idle') => Promise<'sent' | 'steered' | 'queued'>) => void;
   /** Resolves the desktop renderer gate used to start cross-process recovery. */
   onRendererReady?: () => void;
+  /** 缺省走包内 resolveRendererServeDecision；测试可注入固定决策。 */
+  getRendererServeDecision?: () => RendererServeDecision | null;
 }
 
 function inspectCompanionPlan(planId: string): CompanionPlanInspection | null {
@@ -217,6 +219,7 @@ export function createApp(deps: CreateAppDeps): express.Express {
     getDurableRunReadService,
     getPendingPermissionRequests,
     onRendererReady,
+    getRendererServeDecision,
     internalFeatures,
   } = deps;
 
@@ -247,12 +250,12 @@ export function createApp(deps: CreateAppDeps): express.Express {
     getBuildInfo,
     getPersistenceHealth,
     getDurableRunReady: () => isDurableRunGateOpen(getDurableRunRollout()),
-    getRendererServeDecision: () => resolveRendererServeDecision(
+    getRendererServeDecision: getRendererServeDecision ?? (() => resolveRendererServeDecision(
       resolveCodeAgentDataDir(),
       path.resolve(__dirname, '..', 'renderer'),
       process.env,
       { currentShellVersion: getAppVersion() },
-    ),
+    )),
     getPendingPermissionRequests,
     onRendererReady,
   }));

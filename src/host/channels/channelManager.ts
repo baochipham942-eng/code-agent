@@ -42,6 +42,7 @@ import {
   getInboundPairingService,
   type InboundPairingRequest,
 } from './inboundPairingService';
+import { maskChannelResponseCallback, maskOutboundChannelText } from './channelOutboundMask';
 
 const logger = createLogger('ChannelManager');
 
@@ -713,7 +714,8 @@ export class ChannelManager extends EventEmitter {
 
     return channel.sendMessage({
       chatId,
-      content,
+      // 出站掩码（N-OUTBOUND-SENSITIVE-GUARD）：离开本机的正文过 shape-only 掩码。
+      content: maskOutboundChannelText(content),
       ...options,
     });
   }
@@ -728,30 +730,33 @@ export class ChannelManager extends EventEmitter {
     }
 
     // 根据通道类型返回对应的回调
+    let callback: ChannelResponseCallback;
     if (channel instanceof ApiChannel) {
-      return (channel as ApiChannel).getResponseCallback(message.id);
+      callback = (channel as ApiChannel).getResponseCallback(message.id);
     } else if (channel instanceof FeishuChannel) {
-      return (channel as FeishuChannel).getResponseCallback(
+      callback = (channel as FeishuChannel).getResponseCallback(
         message.context.chatId,
         message.id
       );
     } else if (channel instanceof TelegramChannel) {
-      return (channel as TelegramChannel).getResponseCallback(
+      callback = (channel as TelegramChannel).getResponseCallback(
         message.context.chatId,
         message.id
       );
+    } else {
+      // 通用回调
+      callback = {
+        sendText: async (content: string) => {
+          return channel.sendMessage({
+            chatId: message.context.chatId,
+            content,
+            replyToMessageId: message.id,
+          });
+        },
+      };
     }
-
-    // 通用回调
-    return {
-      sendText: async (content: string) => {
-        return channel.sendMessage({
-          chatId: message.context.chatId,
-          content,
-          replyToMessageId: message.id,
-        });
-      },
-    };
+    // 出站掩码（N-OUTBOUND-SENSITIVE-GUARD）：sendText/editMessage 出站前统一掩码。
+    return maskChannelResponseCallback(callback);
   }
 
   /**

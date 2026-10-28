@@ -1,11 +1,11 @@
 // AI 增强大纲（增强 #1）：调默认文本模型据 topic 生成针对性大纲（标题+要点），
-// 替代确定性 SCQA 模板。付费调用——前端 opt-in；无 key / 失败 / 空响应一律降级确定性大纲。
-// 模型取法对齐 compactModel（lazy ModelRouter 单例 + 默认 provider/model + getApiKey）。
+// 替代确定性 SCQA 模板。付费调用——前端 opt-in；无 key（免 key 供应商除外）/ 失败 / 空响应一律降级确定性大纲。
+// 模型取法：resolveSessionDefaultModelConfig（用户配置的默认模型优先）+ getApiKey。
 import { ModelRouter } from '../../model/modelRouter';
 import { getConfigService } from '../core/configService';
-import { DEFAULT_PROVIDER } from '@shared/constants/defaults';
-import { DEFAULT_MODELS } from '@shared/constants/models';
-import type { ModelConfig, ModelProvider } from '@shared/contract';
+import { resolveSessionDefaultModelConfig } from '../core/sessionDefaults';
+import type { ModelConfig } from '@shared/contract';
+import { PROVIDER_REGISTRY } from '../../model/providerRegistry';
 import type { SlideData } from '../../tools/media/ppt/types';
 import { parseContentToSlides, outlineToSlideData } from '../../tools/media/ppt/parser';
 
@@ -57,17 +57,17 @@ export async function buildAiOutline(topic: string, slidesCount?: number, brief?
 
   try {
     const configService = getConfigService();
-    const settings = configService.getSettings();
-    const provider = (settings.model?.provider || DEFAULT_PROVIDER) as ModelProvider;
-    const apiKey = configService.getApiKey(provider);
-    if (!apiKey) return fallback; // 无 key → 静默降级（前端据 ai=false 提示）
+    const baseConfig = resolveSessionDefaultModelConfig();
+    const apiKey = configService.getApiKey(baseConfig.provider);
+    // 免 key 供应商（如 local）不因空 key 降级，key 由 provider 自补
+    if (!apiKey && PROVIDER_REGISTRY[baseConfig.provider]?.requiresApiKey !== false) {
+      return fallback; // 无 key → 静默降级（前端据 ai=false 提示）
+    }
 
     if (!router) router = new ModelRouter();
     const config: ModelConfig = {
-      provider,
-      model: settings.model?.model || DEFAULT_MODELS.chat,
+      ...baseConfig,
       apiKey,
-      baseUrl: settings.models?.providers?.[provider]?.baseUrl,
       temperature: 0.7,
       maxTokens: 2048,
     };

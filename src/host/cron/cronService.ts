@@ -48,6 +48,7 @@ import {
 } from './cronExecutionPolicy';
 import { CronCloudRuntime } from './cronCloudRuntime';
 import { CronEventTrigger, assertEventScheduleConstraints, hasExplicitChatListenBinding } from './cronEventTrigger';
+import { CronWebhookRelay, assertWebhookScheduleCloudConfigured } from './cronWebhookRelay';
 import { setChannelListenResolver } from '../channels/channelListenRegistry';
 import { getChannelManager } from '../channels/channelManager';
 import {
@@ -98,6 +99,12 @@ function cronDefinitionFingerprint(definition: CronJobDefinition): string {
   return JSON.stringify(persisted);
 }
 
+/** DB 行的远端指针：normalizeCronJobRow 不回传 cloud_job_id，读行处统一走这里。 */
+function rowCloudJobId(row: unknown): string | undefined {
+  const value = (row as Record<string, unknown>).cloud_job_id;
+  return typeof value === 'string' ? value : undefined;
+}
+
 // ============================================================================
 // CronService
 // ============================================================================
@@ -112,6 +119,8 @@ export class CronService implements Disposable {
   private unsubscribeCronMissed?: () => void;
   /** 'event' 调度的本地事件源（通道入站消息 → 合批 → executeJob）。 */
   private cronEventTrigger?: CronEventTrigger;
+  /** webhook 事件源的中继接线（cron_hook 帧 → ingestWebhook；hook 生命周期）。 */
+  private cronWebhookRelay?: CronWebhookRelay;
   private readonly failureNoticeGate = new CronFailureNoticeGate();
   /** 正在执行（含退避重试链）的 jobId：系统侧触发互斥，见 runScheduledJob。 */
   private readonly inFlightJobIds = new Set<string>();
@@ -166,10 +175,6 @@ export class CronService implements Disposable {
     await this.loadJobsFromDatabase();
     await this.cloudRuntime.reconcile();
 
-    if (this.cloudRuntime.isConfigured()) {
-      this.cloudRuntime.start();
-    }
-
     this.cronEventTrigger = new CronEventTrigger({
       host: {
         getJobDefinitions: () => this.listJobs(),
@@ -179,6 +184,14 @@ export class CronService implements Disposable {
       },
     });
     this.cronEventTrigger.start();
+    this.cronWebhookRelay = new CronWebhookRelay(this.cloudRuntime.apiClient, {
+      getJobDefinitions: () => this.listJobs(),
+      ingestWebhook: (delivery) => this.cronEventTrigger?.ingestWebhook(delivery) ?? 'ignored',
+    });
+
+    if (this.cloudRuntime.isConfigured()) {
+      this.cloudRuntime.start(this.cronWebhookRelay.handleStreamFrame);
+    }
 
     // 群监听绑定解析器：未 @ 的群消息按 hasExplicitChatListenBinding 判显式 (accountId, chatId) 绑定。
     setChannelListenResolver((accountId, chatId) => hasExplicitChatListenBinding(this.listJobs(), accountId, chatId));
@@ -192,6 +205,7 @@ export class CronService implements Disposable {
   async shutdown(): Promise<void> {
     this.cronEventTrigger?.dispose();
     this.cronEventTrigger = undefined;
+    this.cronWebhookRelay = undefined;
     setChannelListenResolver(undefined);
     if (this.jobsReconcileTimer) clearInterval(this.jobsReconcileTimer);
     this.jobsReconcileTimer = undefined;
@@ -253,6 +267,10 @@ export class CronService implements Disposable {
     const runsOn = definition.runsOn ?? 'local';
     assertExecutionLocationConstraints({ ...definition, runsOn });
     assertEventScheduleConstraints({ ...definition, runsOn });
+    if (definition.schedule?.type === 'event' && definition.schedule.source === 'webhook') {
+      // webhook 源（N-CRON-WEBHOOK-CLOUD-HOOK）：hook 活在云端中继后面，没配置就建不成。
+      assertWebhookScheduleCloudConfigured(this.cloudRuntime.isConfigured());
+    }
 
     const job: CronJobDefinition = {
       ...definition,
@@ -322,11 +340,18 @@ export class CronService implements Disposable {
     if (updatedJob.enabled) {
       this.registerJob(updatedJob);
     } else {
-      this.jobs.set(jobId, { definition: updatedJob });
+      this.jobs.set(jobId, { definition: updatedJob, cloudJobId: existingJob.cloudJobId });
     }
 
     syncCronAutomationFromJob(updatedJob, this.resolveAutomationRuntime);
     if (updates.schedule !== undefined || updates.enabled !== undefined) this.cronEventTrigger?.groupListenChecks.forget(jobId);
+    // 停用，或调度离开 webhook：用改写前的定义摘 hook。改写后的 schedule 往往已不是
+    // webhook，removeHookForJob 看到它会直接返回，云端仍收投递并被 ack 丢弃。
+    const previousSchedule = existingJob.definition.schedule;
+    const nextSchedule = updatedJob.schedule;
+    const wasWebhook = previousSchedule?.type === 'event' && previousSchedule.source === 'webhook';
+    const staysLiveWebhook = nextSchedule?.type === 'event' && nextSchedule.source === 'webhook' && updatedJob.enabled;
+    if (wasWebhook && !staysLiveWebhook) this.cronWebhookRelay?.removeHookForJob(existingJob.definition);
 
     // existingJob 指向改写前的 map 条目：已注册（有 cloudJobId）的停用任务仍要把停用态
     // 推给云端；从未注册的停用任务不碰云端（N-ROLE-ROUTINE-RESTATE-FU1-FU1）。
@@ -427,6 +452,7 @@ export class CronService implements Disposable {
     // Remove from memory
     this.jobs.delete(jobId);
     this.cronEventTrigger?.groupListenChecks.forget(jobId);
+    this.cronWebhookRelay?.removeHookForJob(job.definition);
     this.executions.delete(jobId);
 
     // Remove from database
@@ -686,7 +712,8 @@ export class CronService implements Disposable {
       if (jitter > 0) {
         await new Promise((resolve) => setTimeout(resolve, jitter));
       }
-      // jitter 窗口最长 15min：等待结束必须按 jobId 重取当前 definition（见 runScheduledJob），
+      // jitter 等待结束必须按 jobId 重取当前 definition（见 runScheduledJob）；
+      // every 任务窗口最长 15min，cron 表达式窗口最长 30s。
       // 不能拿这个闭包里注册时的旧 definition——等待期间被停用/删除/编辑过的任务
       // 照跑旧定义会产生模型费用、改过的 prompt 不生效（R2 审查 Important-3）。
       await this.runScheduledJob(id);
@@ -747,7 +774,7 @@ export class CronService implements Disposable {
   /**
    * 系统侧执行入口（croner tick 走完 jitter 等待后 / misfire 宽限窗补跑）：
    * 执行前按 jobId 重取**当前**定义，不存在或已停用则跳过并留痕（不是这次执行的失败，
-   * 不计连败、不发失败告警）——jitter 窗口最长 15min，等待期间任务可能已被停用/删除，
+   * 不计连败、不发失败告警）——every 任务 jitter 窗口最长 15min，等待期间任务可能已被停用/删除，
    * 拿注册时闭包里的旧 definition 照样执行会对已停任务产生模型费用（R2 审查 Important-3）。
    * 手动 triggerJob 不走这里：用户点「立即运行」就该立即运行。
    */
@@ -1023,7 +1050,7 @@ export class CronService implements Disposable {
 
     await new Promise((resolve) => setTimeout(resolve, delay));
 
-    // 不变量 A（R3）：等待后再执行——按 jobId 重取当前定义。等待期间（最长 15min）任务
+    // 不变量 A（R3）：等待后再执行——按 jobId 重取当前定义。等待期间（every 最长 15min，cron 最长 30s）任务
     // 可能已被停用/删除：拿闭包旧定义照跑是对已停任务再花一笔执行成本。中止重试链，
     // 终态 cancelled（不是这次执行的失败，不计连败；最后一次真实失败仍留在 execution.error）。
     const current = this.jobs.get(definition.id)?.definition;
@@ -1122,10 +1149,7 @@ export class CronService implements Disposable {
         }
 
         if (job.enabled) {
-          const cloudJobId = typeof (row as Record<string, unknown>).cloud_job_id === 'string'
-            ? (row as Record<string, unknown>).cloud_job_id as string
-            : undefined;
-          this.jobs.set(job.id, { definition: job, cloudJobId });
+          this.jobs.set(job.id, { definition: job, cloudJobId: rowCloudJobId(row) });
           this.registerJob(job);
           const activeJob = this.jobs.get(job.id);
           const previousScheduledAt = activeJob?.cronInstance
@@ -1150,10 +1174,7 @@ export class CronService implements Disposable {
             }
           }
         } else {
-          const cloudJobId = typeof (row as Record<string, unknown>).cloud_job_id === 'string'
-            ? (row as Record<string, unknown>).cloud_job_id as string
-            : undefined;
-          this.jobs.set(job.id, { definition: job, cloudJobId });
+          this.jobs.set(job.id, { definition: job, cloudJobId: rowCloudJobId(row) });
         }
         loadedCount += 1;
       }
@@ -1182,7 +1203,7 @@ export class CronService implements Disposable {
         if (current && cronDefinitionFingerprint(current.definition) === cronDefinitionFingerprint(definition)) continue;
         current?.cronInstance?.stop();
         if (definition.enabled) this.registerJob(definition);
-        else this.jobs.set(definition.id, { definition });
+        else this.jobs.set(definition.id, { definition, cloudJobId: current?.cloudJobId ?? rowCloudJobId(row) });
         this.cronEventTrigger?.groupListenChecks.forget(definition.id);
         changed = true;
         console.error(`[CronService] Reconciled job from database: ${definition.name} (${definition.id})`);

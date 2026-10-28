@@ -21,6 +21,7 @@ const CronDomainRequestSchema = z.object({
     'getStats',
     'getGroupListenCheck',
     'startGroupListenCheck',
+    'listMailSources',
     'listJobs',
     'revokeWriteScope',
     'triggerJob',

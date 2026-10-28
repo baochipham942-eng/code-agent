@@ -39,8 +39,8 @@ export type ApprovalLevel =
   | 'always'    // 始终允许
   | 'never';    // 永不允许
 
-/** renderer 卡片沉淀用的终态；timeout 由 host 真源回传，不能靠 UI 计时猜。 */
-export type PermissionDecision = ApprovalLevel | 'timeout';
+/** renderer 卡片沉淀用的终态；timeout / superseded 由 host 真源回传，不能靠 UI 计时猜。 */
+export type PermissionDecision = ApprovalLevel | 'timeout' | 'superseded';
 
 /**
  * Host 侧原因只传稳定 code + 窄 metadata；自由文本只放在 modelText，供模型上下文、
@@ -231,7 +231,7 @@ export interface PermissionRequest {
   decisionTrace?: import('./decisionTrace').DecisionTrace;
   /** host/renderer 已完成本次裁决；同一 permission_request 事件以加法字段回传终态。 */
   resolved?: boolean;
-  /** 用户选择或 host 的 timeout 结果；仅 resolved=true 时有意义。 */
+  /** 用户选择，或 host 的 timeout / superseded 结果；仅 resolved=true 时有意义。 */
   decision?: PermissionDecision;
   /** 裁决来自另一个面（手机 companion）；桌面据此收卡，不记成本机点击。 */
   resolvedBy?: 'companion';

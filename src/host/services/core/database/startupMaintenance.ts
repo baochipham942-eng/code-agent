@@ -106,13 +106,17 @@ export function runStartupMaintenance(deps: StartupMaintenanceDeps): RecoverySna
           .map((operation) => operation.toolCallId as string) ?? [],
       );
       // 幸存停车审批的 toolCall 保持「无结果」状态：批准后从台账执行一次才是它的收口。
-      // 判据与启动 hydrate / 点击恢复同一处真源（parkedApprovalSurvival）。
+      // 判据与启动 hydrate / 点击恢复同一处真源（parkedApprovalSurvival）：cwd 解析不出的
+      // 会话（如无来源会话的 cron 任务行）在这里就不算幸存——它的 toolCall 要写 INTERRUPTED
+      // 占位，不能悬空等着一张点了必被拒的死卡（N-...-RESUME-FU1）。
+      // getSession 不带 owner 过滤，与 hydrate / 点击路径同一口径。
       const survivingParkedToolCallIds = deps.pendingApprovalRepo
         ? listSurvivingParkedToolCallIds(
           deps.pendingApprovalRepo.listByKindAndStatus('tool_approval', 'pending'),
           sessionId,
           messages,
           Date.now(),
+          sessionRepo.getSession(sessionId)?.workingDirectory || null,
         )
         : new Set<string>();
       for (const assistantMessage of messages) {

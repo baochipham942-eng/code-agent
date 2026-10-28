@@ -111,6 +111,7 @@ vi.mock('../../../src/host/services/surfaceExecution/ManagedBrowserProviderAdapt
 }));
 
 import { CronService } from '../../../src/host/cron/cronService';
+import { appendCronAgentExpertThreadReceipt } from '../../../src/host/cron/cronAgentExpertThreadReceipt';
 
 function agentJob(roleId?: string): CronJobDefinition {
   return {
@@ -220,17 +221,39 @@ describe('named cron agent expert-thread receipt', () => {
     });
   });
 
-  it('bounds a long assistant conclusion before writing it into the expert thread', async () => {
+  function receiptSummary(content: string): string {
+    return content.split('这次的结论：\n')[1].split('\n\n[查看')[0];
+  }
+
+  async function writeReceipt(finalAssistantText: string, executionId: string): Promise<string> {
     state.expertThreadId = 'existing-expert-thread';
-    state.assistantText = `${'结'.repeat(1_300)}尾部不应保留`;
+    await appendCronAgentExpertThreadReceipt({
+      definition: { id: 'job-daily-review', name: '每日项目巡检' },
+      roleId: '牧之',
+      cronSessionId: 'cron-session',
+      executionId,
+      startedAt: 1_700_000_000_000,
+      succeeded: true,
+      finalAssistantText,
+      automationType: 'cron',
+    });
+    return state.receipts.at(-1)?.message.content ?? '';
+  }
 
-    await executeAgentAction(agentJob('牧之'));
+  it('appendCronAgentExpertThreadReceipt keeps a 3000-char conclusion', async () => {
+    const conclusion = '结'.repeat(3_000);
+    const content = await writeReceipt(conclusion, 'execution-3000');
+    expect(receiptSummary(content)).toBe(conclusion);
+    expect(content).toContain('[查看这次运行的全过程（会话 cron-session）](neo://thread/cron-session)');
+  });
 
-    const content = state.receipts[0].message.content;
-    const summary = content.split('这次的结论：\n')[1].split('\n\n[查看')[0];
-    expect(Array.from(summary)).toHaveLength(1_201);
+  it('appendCronAgentExpertThreadReceipt cuts a 5000-char conclusion at 4000 and keeps the full-run link', async () => {
+    const content = await writeReceipt(`${'结'.repeat(5_000)}尾部不应保留`, 'execution-5000');
+    const summary = receiptSummary(content);
+    expect(Array.from(summary)).toHaveLength(4_001);
     expect(summary).toMatch(/结…$/);
     expect(summary).not.toContain('尾部不应保留');
+    expect(content).toContain('[查看这次运行的全过程（会话 cron-session）](neo://thread/cron-session)');
   });
 
   it('does not query, create, or write an expert thread for an agent cron without roleId', async () => {

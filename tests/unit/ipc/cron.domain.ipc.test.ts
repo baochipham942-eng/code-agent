@@ -1,6 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from '../../../src/shared/constants';
+import { getConnectorRegistry } from '../../../src/host/connectors/registry';
+import type { Connector } from '../../../src/host/connectors/base';
 
 // cron.ipc.ts 的 CRON domain dispatch 特征测试（RQ-183 续作·CRON 刀迁表前先钉住现状）：
 // 9 个 action 的委派与参数解析、缺参统一 CRON_ERROR 文案、generateFromPrompt 的
@@ -10,7 +12,14 @@ import { DEFAULT_MODEL, DEFAULT_PROVIDER } from '../../../src/shared/constants';
 const h = vi.hoisted(() => ({
   handlers: new Map<string, (event: unknown, request: IPCRequest) => Promise<IPCResponse>>(),
   logError: vi.fn(),
+  logWarn: vi.fn(),
   chat: vi.fn(async (..._a: unknown[]) => ({ content: '{"name":"日报"}' as string | undefined })),
+  settings: {
+    models: {
+      default: '' as string,
+      providers: {} as Record<string, { model?: string }>,
+    },
+  },
   service: {
     getGroupListenCheck: vi.fn((..._a: unknown[]) => ({ status: 'waiting' })),
     listJobs: vi.fn((..._a: unknown[]) => ['job']),
@@ -36,8 +45,14 @@ vi.mock('../../../src/host/model/modelRouter', () => ({
     }
   },
 }));
+vi.mock('../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({
+    getSettings: () => h.settings,
+    getApiKey: () => '',
+  }),
+}));
 vi.mock('../../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: h.logError, debug: vi.fn() }),
+  createLogger: () => ({ info: vi.fn(), warn: h.logWarn, error: h.logError, debug: vi.fn() }),
 }));
 
 import { registerCronHandlers } from '../../../src/host/ipc/cron.ipc';
@@ -49,6 +64,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.handlers.clear();
   h.chat.mockImplementation(async () => ({ content: '{"name":"日报"}' }));
+  h.settings.models.default = '';
+  h.settings.models.providers = {};
   registerCronHandlers();
 });
 
@@ -117,17 +134,27 @@ describe('generateFromPrompt', () => {
     expect(h.chat).not.toHaveBeenCalled();
   });
 
-  it('成功：默认 provider/model、maxTokens 1024、用户输入 trim、system 带当前时间锚点；从回复中抠出 JSON', async () => {
+  it('成功：用户配置的默认 provider/model、maxTokens 1024、用户输入 trim、system 带当前时间锚点；从回复中抠出 JSON', async () => {
+    h.settings.models.default = 'deepseek';
+    h.settings.models.providers = { deepseek: { model: 'deepseek-chat' } };
     h.chat.mockResolvedValueOnce({ content: '好的：{"name":"每日简报","enabled":true} 以上' });
     expect(await call('generateFromPrompt', { prompt: '  每天早上八点给我简报  ' })).toEqual({ success: true, data: { name: '每日简报', enabled: true } });
     const req = h.chat.mock.calls[0][0] as { provider: string; model: string; maxTokens: number; messages: Array<{ role: string; content: string }> };
-    expect(req.provider).toBe(DEFAULT_PROVIDER);
-    expect(req.model).toBe(DEFAULT_MODEL);
+    expect(req.provider).toBe('deepseek');
+    expect(req.model).toBe('deepseek-chat');
     expect(req.maxTokens).toBe(1024);
     expect(req.messages[1]).toEqual({ role: 'user', content: '每天早上八点给我简报' });
     expect(req.messages[0].role).toBe('system');
     expect(req.messages[0].content).toContain('【当前时间】');
     expect(req.messages[0].content).toContain('"restatement"');
+  });
+
+  it('未配置默认模型时 generateFromPrompt 仍用出厂 provider/model', async () => {
+    h.chat.mockResolvedValueOnce({ content: '{"name":"日报"}' });
+    expect(await call('generateFromPrompt', { prompt: '每天' })).toEqual({ success: true, data: { name: '日报' } });
+    const req = h.chat.mock.calls[0][0] as { provider: string; model: string };
+    expect(req.provider).toBe(DEFAULT_PROVIDER);
+    expect(req.model).toBe(DEFAULT_MODEL);
   });
 
   it('回复里没有 JSON → PARSE_ERROR 格式异常；JSON 解析失败 → PARSE_ERROR 解析失败；content 缺省按空串', async () => {
@@ -170,4 +197,135 @@ it('routes receipt checks without executing the cron task', async () => {
   expect(await call('startGroupListenCheck', { jobId: 'j1' })).toEqual({ success: true, data: { status: 'waiting' } });
   expect(h.service.getGroupListenCheck).toHaveBeenLastCalledWith('j1', true);
   expect(h.service.triggerJob).not.toHaveBeenCalled();
+});
+
+// ============================================================================
+// listMailSources（N-TRIGGER-MAIL-CREATE-ENTRY-K1）：mail 触发源的账号/邮箱目录。
+// 失败分类与 createDefaultMailReader 同构，四个 reason 可区分且每个非 ok 分支
+// 都带 reason 记 warn 日志（降级留痕）。
+// ============================================================================
+describe('listMailSources', () => {
+  const registry = getConnectorRegistry();
+
+  function registerMailConnector(connector: Partial<Connector> & Pick<Connector, 'execute'>): void {
+    registry.register({
+      id: 'mail',
+      label: 'Mail',
+      capabilities: ['list_accounts', 'list_mailboxes'],
+      getCachedStatus: () => ({ connected: false, readiness: 'unchecked', capabilities: [] }),
+      getStatus: async () => ({ connected: false, readiness: 'unchecked', capabilities: [] }),
+      ...connector,
+    });
+  }
+
+  afterEach(() => {
+    registry.unregister('mail');
+  });
+
+  it('未注册（设置里没启用）→ ok:false connector-not-enabled，日志带 reason', async () => {
+    expect(await call('listMailSources')).toEqual({
+      success: true,
+      data: { ok: false, reason: 'connector-not-enabled' },
+    });
+    expect(h.logWarn.mock.calls.some((args) => String(args[0]).includes('connector-not-enabled'))).toBe(true);
+  });
+
+  it('readiness unavailable（非 macOS）→ ok:false unsupported-platform，日志带 reason', async () => {
+    registerMailConnector({
+      execute: async () => { throw new Error('unreachable'); },
+      getCachedStatus: () => ({ connected: false, readiness: 'unavailable', capabilities: [] }),
+      getStatus: async () => ({ connected: false, readiness: 'unavailable', capabilities: [] }),
+    });
+    expect(await call('listMailSources')).toEqual({
+      success: true,
+      data: { ok: false, reason: 'unsupported-platform' },
+    });
+    expect(h.logWarn.mock.calls.some((args) => String(args[0]).includes('unsupported-platform'))).toBe(true);
+  });
+
+  it('非 ready 且探测不过 → ok:false not-authorized（带原始 detail），日志带 reason', async () => {
+    registerMailConnector({
+      execute: async () => { throw new Error('authorization denied'); },
+    });
+    const response = await call('listMailSources');
+    expect(response).toEqual({
+      success: true,
+      data: { ok: false, reason: 'not-authorized', detail: 'authorization denied' },
+    });
+    expect(h.logWarn.mock.calls.some((args) => String(args[0]).includes('not-authorized'))).toBe(true);
+  });
+
+  it('list_accounts 抛错 → ok:false read-error（带 detail），日志带 reason', async () => {
+    registerMailConnector({
+      getCachedStatus: () => ({ connected: true, readiness: 'ready', capabilities: [] }),
+      getStatus: async () => ({ connected: true, readiness: 'ready', capabilities: [] }),
+      execute: async (action: string) => {
+        if (action === 'list_accounts') throw new Error('osascript exploded');
+        return { data: [] };
+      },
+    });
+    expect(await call('listMailSources')).toEqual({
+      success: true,
+      data: { ok: false, reason: 'read-error', detail: 'osascript exploded' },
+    });
+    expect(h.logWarn.mock.calls.some((args) => String(args[0]).includes('read-error'))).toBe(true);
+  });
+
+  it('ready → 账号与各账号邮箱目录；unchecked 先补探测；形状异常项被过滤', async () => {
+    const probed: string[] = [];
+    registerMailConnector({
+      execute: async (action: string, payload: Record<string, unknown>) => {
+        if (action === 'probe_access') {
+          probed.push('probe');
+          return { data: { connected: true, readiness: 'ready' } };
+        }
+        if (action === 'list_accounts') {
+          return { data: [{ name: '_icloud' }, { name: '  ' }, 'not-an-object', { noName: 1 }, { name: 'gmail' }] };
+        }
+        if (action === 'list_mailboxes') {
+          if (payload.account === '_icloud') {
+            return { data: [{ account: '_icloud', name: 'INBOX' }, { account: '_icloud', name: '归档' }, { account: 'gmail', name: '别人家的' }] };
+          }
+          if (payload.account === 'gmail') {
+            return { data: [{ account: 'gmail', name: 'INBOX' }] };
+          }
+          return { data: [] };
+        }
+        return { data: {} };
+      },
+    });
+    expect(await call('listMailSources')).toEqual({
+      success: true,
+      data: {
+        ok: true,
+        accounts: [{ name: '_icloud' }, { name: 'gmail' }],
+        // list_mailboxes 混入其它账户的邮箱按 account 字段收窄；未请求的账户不出现。
+        mailboxesByAccount: { _icloud: ['INBOX', '归档'], gmail: ['INBOX'] },
+      },
+    });
+    // unchecked → 先补探测（重启后不逼用户去设置再点一次授权）。
+    expect(probed).toEqual(['probe']);
+  });
+
+  it('单账户邮箱列举失败 → 该账户降级空数组（其余照常），失败记日志可区分', async () => {
+    registerMailConnector({
+      getCachedStatus: () => ({ connected: true, readiness: 'ready', capabilities: [] }),
+      getStatus: async () => ({ connected: true, readiness: 'ready', capabilities: [] }),
+      execute: async (action: string, payload: Record<string, unknown>) => {
+        if (action === 'list_accounts') return { data: [{ name: '_icloud' }, { name: 'gmail' }] };
+        if (action === 'list_mailboxes' && payload.account === '_icloud') throw new Error('mailbox listing failed');
+        if (action === 'list_mailboxes') return { data: [{ account: 'gmail', name: 'INBOX' }] };
+        return { data: {} };
+      },
+    });
+    expect(await call('listMailSources')).toEqual({
+      success: true,
+      data: {
+        ok: true,
+        accounts: [{ name: '_icloud' }, { name: 'gmail' }],
+        mailboxesByAccount: { _icloud: [], gmail: ['INBOX'] },
+      },
+    });
+    expect(h.logWarn.mock.calls.some((args) => String(args[0]).includes('listing failed for account _icloud'))).toBe(true);
+  });
 });

@@ -34,6 +34,12 @@ interface ParkedApprovalHydrationDeps {
   /** 幸存判据要读会话台账；缺省（测试/DB 未就绪）时 tool_approval 一律按不可存活收口。 */
   loadSessionMessages?: (sessionId: string) => Message[] | null;
   /**
+   * 会话工作目录解析（N-...-RESUME-FU1）：幸存行批准后要从台账重放执行，解析不出 cwd 的
+   * 行在启动时就收口，不留「看着能点、点了被拒」的死卡。缺省直读会话记录
+   * （getSession 不带 owner 过滤，与点击恢复的 resolveWorkingDirectory 同口径）。
+   */
+  resolveWorkingDirectory?: (sessionId: string) => string | null;
+  /**
    * 幸存行停靠用的 durable run 仓储（缺省走 getDatabase().getDurableRunRepository()）。
    * 显式注入只为让合同测试钉「guard_halt 停靠不进 listRecoverable」走真实 hydrate 入口。
    */
@@ -54,6 +60,7 @@ export function hydrateApprovalGatesAtBoot(
   const plan = getPlanApprovalGate().attachPersistence(repo, now);
   const launch = getSwarmLaunchApprovalGate().attachPersistence(repo, now);
   const loadSessionMessages = deps.loadSessionMessages ?? defaultLoadSessionMessages();
+  const resolveWorkingDirectory = deps.resolveWorkingDirectory ?? defaultResolveWorkingDirectory();
   const parkSessionDurableRuns = (sessionId: string, at: number) => {
     let repository: DurableRunRepository | null = deps.durableRunRepository ?? null;
     if (!repository) {
@@ -72,7 +79,14 @@ export function hydrateApprovalGatesAtBoot(
     const payload = parseParkedApprovalPayload(row.payloadJson);
     const sessionId = payload?.argsRef?.sessionId ?? payload?.sessionId ?? row.coordinatorId ?? null;
     const messages = sessionId ? loadSessionMessages(sessionId) : null;
-    const verdict = classifyParkedToolApprovalForSurvival({ payload, now, messages });
+    const verdict = classifyParkedToolApprovalForSurvival({
+      payload,
+      now,
+      messages,
+      // sessionId 都没有的行连台账都读不到（上面 messages=null 已判 args_unavailable）；
+      // 这里传 null 而非 undefined：hydrate 是权威判定方，解析不出就要收口。
+      workingDirectory: sessionId ? resolveWorkingDirectory(sessionId) : null,
+    });
     if (verdict.survive) {
       survivors.push(row.id);
       markSurvivorRestartOrigin(repo, row, payload);
@@ -82,7 +96,9 @@ export function hydrateApprovalGatesAtBoot(
     const changes = repo.resolve({
       id: row.id,
       status: 'rejected',
-      feedback: `Auto-rejected after restart: ${verdict.reason}`,
+      feedback: verdict.detail === 'working_directory_unavailable'
+        ? `Auto-rejected after restart: ${verdict.reason} (session working directory unavailable)`
+        : `Auto-rejected after restart: ${verdict.reason}`,
       resolvedAt: now,
     });
     parked += changes;
@@ -132,6 +148,21 @@ function defaultLoadSessionMessages(): (sessionId: string) => Message[] | null {
   return (sessionId: string) => {
     try {
       return getDatabase().getMessages(sessionId);
+    } catch {
+      return null;
+    }
+  };
+}
+
+/**
+ * 与点击恢复（parkedApprovalResume 的 resolveWorkingDirectory）同口径：直读会话记录，
+ * 不带 owner 过滤——owner-scoped 查询在重启后可能因当前 owner 不匹配而错失会话，
+ * 把可执行的行误判成「没有工作目录」。查询失败同样按解析不出收口（fail-closed）。
+ */
+function defaultResolveWorkingDirectory(): (sessionId: string) => string | null {
+  return (sessionId: string) => {
+    try {
+      return getDatabase().getSession(sessionId)?.workingDirectory || null;
     } catch {
       return null;
     }

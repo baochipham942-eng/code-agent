@@ -763,6 +763,7 @@ describe('ContextAssembly.buildModelMessages()', () => {
 
   it('materializes interventions into the actual model input', async () => {
     const messages: Message[] = [
+      buildMessage('earlier-user', 'user', 'earlier user turn'),
       buildMessage('pinned-message', 'user', 'pinned content'),
       buildMessage('excluded-message', 'assistant', 'excluded content'),
       buildMessage('retained-message', 'assistant', 'retained content'),
@@ -853,6 +854,14 @@ describe('ContextAssembly.buildModelMessages()', () => {
     expect(visibleContents).toContain('retained content');
     expect(visibleContents).toContain('base content');
     expect(visibleContents).not.toContain('excluded content');
+    const earlierAt = visibleContents.findIndex((content) => content.includes('earlier user turn'));
+    const pinnedAt = visibleContents.findIndex((content) => content.includes('pinned content'));
+    const retainedAt = visibleContents.findIndex((content) => content.includes('retained content'));
+    expect(earlierAt).toBeGreaterThanOrEqual(0);
+    expect(retainedAt).toBeGreaterThanOrEqual(0);
+    expect(retainedAt).toBeLessThan(earlierAt);
+    expect(pinnedAt).toBeGreaterThan(earlierAt);
+    expect(pinnedAt).not.toBe(0);
   });
 
   it('keeps memory_index in the stable system prefix for a query without memory keywords', async () => {
@@ -2182,6 +2191,163 @@ describe('ContextAssembly.checkAndAutoCompress()', () => {
     expect(ctx.messages[0].compaction, 'compaction message must be at index 0').toBeDefined();
     expect(ctx.messages[0].role).toBe('system');
     expect(ctx.messages.slice(1).map((message: Message) => message.id)).toEqual(['m4', 'm5', 'm6', 'm7']);
+  });
+
+  it('keeps a pinned message through auto compaction and drops excluded text from the request and the summariser', async () => {
+    const sessionId = `session-pin-exclude-${Date.now()}`;
+    const secret = 'quartz-ledger-91c4';
+    const pinText = 'release date is 3 Nov';
+    const laterText = 'what is the status now';
+    const pad = 'hard compaction transcript '.repeat(220);
+    const placeholder = '[excluded from model context]';
+    const buildFixture = (): Message[] => {
+      const excluded = buildMessage('excluded-ledger', 'assistant', `${secret} ${pad}`);
+      const toolPin = buildMessage('tool-pin', 'assistant', 'tool pin body');
+      toolPin.toolCalls = [{ id: 'noop-call', name: 'noop', arguments: { note: 'none' } }];
+      toolPin.toolResults = [{ toolCallId: 'noop-call', success: true, output: 'ok' }];
+      return [
+        buildMessage('pad-user', 'user', pad),
+        buildMessage('pad-assistant', 'assistant', pad),
+        buildMessage('pin-date', 'user', pinText),
+        toolPin,
+        excluded,
+        buildMessage('later-user', 'user', laterText),
+        buildMessage('tail-assistant', 'assistant', 'tail reply'),
+      ];
+    };
+    const joined = (modelMessages: Array<{ content?: unknown }>) => modelMessages
+      .map((message) => typeof message.content === 'string' ? message.content : JSON.stringify(message.content ?? ''))
+      .join('\n');
+    const tokensOf = (modelMessages: Array<{ content?: unknown }>) => modelMessages
+      .reduce((sum, message) => sum + estimateTokens(
+        typeof message.content === 'string' ? message.content : JSON.stringify(message.content ?? ''),
+      ), 0);
+    const requestAssembly = (messages: Message[]) => new ContextAssembly(buildRuntimeContext({
+      sessionId,
+      agentId: undefined,
+      messages,
+      compressionPipeline: new CompressionPipeline(),
+    }) as never);
+
+    const interventions = getContextInterventionState();
+    const prompts: string[] = [];
+    const summarize = vi.mocked(compactModelSummarizeWithMetadata);
+    summarize.mockImplementation(async (prompt: string) => {
+      prompts.push(prompt);
+      return {
+        summary: 'summary of kept work',
+        metadata: { provider: 'mock', model: 'test-model', useMainModel: false },
+      };
+    });
+
+    try {
+      const visibleMessages = buildFixture();
+      const excludedOnRequest = visibleMessages.find((message) => message.id === 'excluded-ledger');
+      expect(excludedOnRequest?.content.startsWith(secret)).toBe(true);
+
+      const fullMessages = await requestAssembly(visibleMessages).buildModelMessages();
+      const fullText = joined(fullMessages);
+      const fullTokens = tokensOf(fullMessages);
+      expect(fullText).toContain(secret);
+      expect(fullText).toContain(pinText);
+
+      interventions.applyIntervention(sessionId, undefined, 'excluded-ledger', 'exclude', true);
+      const hiddenMessages = await requestAssembly(visibleMessages).buildModelMessages();
+      const hiddenText = joined(hiddenMessages);
+      const hiddenTokens = tokensOf(hiddenMessages);
+      expect(hiddenText).not.toContain(secret);
+      expect(hiddenText).not.toContain(placeholder);
+      expect(hiddenTokens).toBeLessThan(fullTokens);
+
+      interventions.applyIntervention(sessionId, undefined, 'excluded-ledger', 'exclude', false);
+      const restoredMessages = await requestAssembly(visibleMessages).buildModelMessages();
+      const restoredText = joined(restoredMessages);
+      expect(restoredText).toContain(secret);
+      expect(tokensOf(restoredMessages)).toBeGreaterThan(hiddenTokens);
+
+      interventions.applyIntervention(sessionId, undefined, 'excluded-ledger', 'exclude', true);
+      interventions.applyIntervention(sessionId, undefined, 'pin-date', 'pin', true);
+      interventions.applyIntervention(sessionId, undefined, 'tool-pin', 'pin', true);
+
+      const compactMessages = buildFixture();
+      const excludedOriginal = compactMessages.find((message) => message.id === 'excluded-ledger');
+      const excludedContent = excludedOriginal?.content;
+      const ctx = {
+        sessionId,
+        agentId: undefined,
+        messages: compactMessages,
+        hookMessageBuffer: { add: vi.fn(), flush: vi.fn().mockReturnValue(''), size: 0 },
+        onEvent: vi.fn(),
+        modelConfig: { model: 'test-model', provider: 'test', maxTokens: 1024 },
+        toolRegistry: { getDeferredToolsSummary: vi.fn().mockReturnValue('') },
+        workingDirectory: process.cwd(),
+        isDefaultWorkingDirectory: true,
+        turn: TurnState.forTest({ isSimpleTaskMode: false }),
+        compressionPipeline: new CompressionPipeline(),
+        contextHealth: ContextHealthState.forTest({ persistentSystemContext: [], compressionState: new CompressionState() } as never),
+        autoCompressor: {
+          shouldTriggerByTokens: vi.fn().mockReturnValue(true),
+          getConfig: vi.fn().mockReturnValue({ preserveRecentCount: 2, enabled: true, warningThreshold: 0.75 }),
+          shouldWrapUp: vi.fn().mockReturnValue(false),
+          getCompactionCount: vi.fn().mockReturnValue(0),
+          getStats: vi.fn().mockReturnValue({ compressionCount: 0, totalSavedTokens: 0 }),
+          recordCompaction: vi.fn(),
+        },
+        systemPrompt: '',
+        hookManager: undefined,
+      };
+      const assembly = new ContextAssembly(ctx as never);
+      await assembly.checkAndAutoCompress();
+
+      expect(prompts.length).toBeGreaterThan(0);
+      expect(prompts[0]).toContain(placeholder);
+      expect(prompts[0]).not.toContain(secret);
+      expect(excludedOriginal?.content).toBe(excludedContent);
+      expect(ctx.messages.map((message: Message) => message.id).slice(1)).toEqual([
+        'pin-date',
+        'later-user',
+        'tail-assistant',
+      ]);
+      expect(ctx.messages[0].role).toBe('system');
+      expect(ctx.messages[0].compaction).toBeDefined();
+      expect(ctx.messages.some((message: Message) => message.id === 'tool-pin')).toBe(false);
+      expect(ctx.messages.some((message: Message) => message.id === 'excluded-ledger')).toBe(false);
+
+      const nextRequest = await requestAssembly(ctx.messages).buildModelMessages();
+      const nextText = joined(nextRequest);
+      const nextContents = nextRequest.map((message) => typeof message.content === 'string'
+        ? message.content
+        : JSON.stringify(message.content ?? ''));
+      const summaryAt = nextContents.findIndex((content) => content.includes('summary of kept work'));
+      const pinAt = nextContents.findIndex((content) => content.includes(pinText));
+      const laterAt = nextContents.findIndex((content) => content.includes(laterText));
+      expect(nextText).toContain(pinText);
+      expect(nextText).not.toContain(secret);
+      expect(summaryAt).toBeGreaterThan(0);
+      expect(pinAt).toBeGreaterThan(summaryAt);
+      expect(laterAt).toBeGreaterThan(pinAt);
+
+      interventions.applyIntervention(sessionId, undefined, 'excluded-ledger', 'exclude', false);
+      const undoMessages = buildFixture();
+      const undoCtx = {
+        ...ctx,
+        messages: undoMessages,
+        onEvent: vi.fn(),
+        contextHealth: ContextHealthState.forTest({ persistentSystemContext: [], compressionState: new CompressionState() } as never),
+      };
+      await new ContextAssembly(undoCtx as never).checkAndAutoCompress();
+      expect(prompts.at(-1)).toContain(secret);
+      expect(prompts.at(-1)).not.toContain(placeholder);
+    } finally {
+      summarize.mockReset();
+      summarize.mockResolvedValue({
+        summary: 'summary',
+        metadata: { provider: 'mock', model: 'test-model', useMainModel: false },
+      });
+      interventions.applyIntervention(sessionId, undefined, 'excluded-ledger', 'exclude', false);
+      interventions.applyIntervention(sessionId, undefined, 'pin-date', 'pin', false);
+      interventions.applyIntervention(sessionId, undefined, 'tool-pin', 'pin', false);
+    }
   });
 
   it('prefers checkpoint rebuild boundary over pure summary compaction when a checkpoint exists', async () => {

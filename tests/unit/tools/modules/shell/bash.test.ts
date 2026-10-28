@@ -1836,6 +1836,64 @@ describe('bashModule sandbox escalation', () => {
     }
   });
 
+  it('offers exactly one file card for the macOS chmod Unable-to-change-file-mode shape', async () => {
+    // N-SANDBOX-ESCALATE-CHMOD-SHAPE：真实 chmod 在 macOS 上打的是
+    // `chmod: Unable to change file mode on <path>: Operation not permitted`（采集
+    // 见 sandboxFailureDiagnostics.test.ts 的 CHMOD_BSD_EPERM 注释），旧兜底正则
+    // 只认 `chmod: <path>: …`，导致拒绝文本里提取不出路径、永不出卡。
+    const parent = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-chmod-')));
+    const deniedPath = join(parent, 'target.txt');
+    writeFileSync(deniedPath, 'x');
+    wrapMock.mockReturnValue({
+      command: `printf '%s\\n' 'chmod: Unable to change file mode on ${deniedPath}: Operation not permitted' >&2; exit 1`,
+      cleanup: cleanupMock,
+    });
+    const canUse = vi.fn().mockResolvedValue({ allow: true as const });
+    const handler = await bashModule.createHandler();
+    try {
+      const result = await handler.execute({ command: `chmod 600 ${deniedPath}` }, makeCtx(), canUse);
+      const escalationCalls = canUse.mock.calls.filter(([toolName]) => toolName === 'bash');
+      expect(escalationCalls).toHaveLength(1);
+      expect(escalationCalls[0]?.[3]).toEqual(expect.objectContaining({
+        details: expect.objectContaining({ action: 'sandbox_escalate_once', deniedPath }),
+      }));
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.meta?.sandboxEscalation).toEqual({ path: deniedPath, decision: 'approved' });
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  it('offers no chmod-shape card for a non-eligible context (gate not loosened)', async () => {
+    // 同一失败文本、不合格上下文（unattended / 禁写栏）必须零卡：新增形状只多
+    // 认一种拒绝文本，不放松 shouldOfferEscalation 的任何既有门。
+    const parent = resolveCanonicalRunPath(mkdtempSync(join(tmpdir(), 'sandbox-escalate-chmod-')));
+    const deniedPath = join(parent, 'target.txt');
+    writeFileSync(deniedPath, 'x');
+    wrapMock.mockReturnValue({
+      command: `printf '%s\\n' 'chmod: Unable to change file mode on ${deniedPath}: Operation not permitted' >&2; exit 1`,
+      cleanup: cleanupMock,
+    });
+    const handler = await bashModule.createHandler();
+    try {
+      for (const ctx of [
+        { sessionId: `unattended-chmod-shape-${process.pid}` },
+        { requiresOsWriteFence: true, writeFenceWorkspaceRoot: process.cwd() },
+      ]) {
+        if ('sessionId' in ctx) modeMgr.markUnattendedSession(ctx.sessionId as string);
+        const canUse = vi.fn().mockResolvedValue({ allow: true as const });
+        const result = await handler.execute({ command: `chmod 600 ${deniedPath}` }, makeCtx(ctx), canUse);
+        expect(canUse.mock.calls.filter(([toolName]) => toolName === 'bash')).toHaveLength(0);
+        expect(canUse).toHaveBeenCalledTimes(1);
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.meta?.sandboxEscalation).toBeUndefined();
+      }
+    } finally {
+      modeMgr.setMode('default', true);
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
   it('does not offer the write card for a Node read-denial traceback, only for a write one', async () => {
     // N-SANDBOX-ESCALATE-REACHABILITY：Node 的读写拒绝共用同一行
     // `Error: EPERM: operation not permitted, open '<path>'`，只有 error 行下面的栈帧能分辨。

@@ -67,6 +67,8 @@ import {
   readOnlyForcesConfirmationFor,
   resolveSessionPermissionMode,
   resolveToolPermissionClassification,
+  isStickyUserDenial,
+  userDeniedStickyError,
 } from './toolPermissionClassification';
 import { getPermissionModeManager } from '../permissions/modes';
 import { pickLeastTrustedOrigin, type AgentMessageOrigin } from '../agent/messageOrigin';
@@ -1506,8 +1508,9 @@ export class ToolExecutor {
       && toolDef.permissionLevel !== 'read';
     // ADR-067 D4：跨 agent 否认登记 + 洗白匹配。同一动作指纹在本会话刚被拒（ask-denied）
     // 且本轮输入含 peer-agent → 权限洗白，直接 BLOCK（不 exec；无人值守/bypass 同向，
-    // 先于一切自动放行捷径）；无 peer 来源（用户本人重试）→ launderRetryForcesAsk
-    // 降档 ask 一次，不硬毙、不 forceConfirm（审批记忆机制照走）。
+    // 先于一切自动放行捷径）；无 peer 来源（用户本人重试）→ 真人拒绝且仍在同一条用户
+    // 消息内 → sticky 拒绝（不出卡，见下）；否则 launderRetryForcesAsk 降档 ask 一次
+    // （审批记忆机制照走）。
     const actionFingerprint = effectiveSessionId && toolDef.permissionLevel !== 'read'
       ? computeActionFingerprint(executionToolName, params, bashWorkingDirectory)
       : null;
@@ -1543,6 +1546,23 @@ export class ToolExecutor {
           failureCode: AgentFailureCode.PermissionDenied,
           hostReason: failure,
         },
+      };
+    }
+    // ADR-067 D4 sticky：真人刚拒绝过的同指纹动作、仍在同一条用户消息内 → 不再二次出卡，
+    // 直接拒绝并告知模型等下一条用户消息（审批疲劳会把用户逼向 always-allow，竞品 v0.75.5 同款）。
+    // 非真人拒绝 / 缺消息 id / 换了消息 → 落回下面的 launderRetryForcesAsk ask 一次。
+    if (priorDenial && isStickyUserDenial(priorDenial, { peerOriginForcesConfirmation, sourceMessageId: options.sourceMessageId })) {
+      const failure = userDeniedStickyError(executionToolName, priorDenial.summary);
+      logger.warn('User denial sticky: refusing same fingerprint until the user sends another message', {
+        tool: executionToolName, fingerprint: actionFingerprint,
+      });
+      recordDecision(
+        executionToolName, params, 'policy-deny', 'user-denied-sticky',
+        permStartTime, undefined, effectiveSessionId, this.ledgerOrigin,
+      );
+      return {
+        success: false, error: failure.modelText,
+        metadata: { code: failure.code, failureCode: AgentFailureCode.PermissionDenied, hostReason: failure },
       };
     }
     const launderRetryForcesAsk = Boolean(priorDenial);
@@ -2289,7 +2309,7 @@ export class ToolExecutor {
         ).catch(() => {});
         traceBuilder.addStep('plan_approval', 'ask_denied', 'deny', hostReason);
         // ADR-067 D4：ask-denied 写入跨 agent 否认登记（sessionId + 动作指纹），
-        // 后续同指纹动作按洗白闸处置（peer 转述 BLOCK / 本人重试 forceConfirm 一次）
+        // 后续同指纹动作按洗白闸处置（peer 转述 BLOCK / 真人拒且同消息 sticky / 其余 ask 一次）
         if (actionFingerprint && effectiveSessionId) {
           getDenialRegistry().record({
             sessionId: effectiveSessionId,
@@ -2299,6 +2319,8 @@ export class ToolExecutor {
             reason: denialReason,
             timestamp: Date.now(),
             policyHash: computePolicyHash(effectiveSessionId),
+            userMessageId: options.sourceMessageId,
+            byUser: denialSource === 'user',
           });
         }
         recordDecision(executionToolName, params, 'ask-denied', denialReason, permStartTime, traceBuilder.build('deny'), effectiveSessionId, this.ledgerOrigin, getApprovalWaitMs(options.currentToolCallId, Date.now()));

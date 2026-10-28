@@ -176,6 +176,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  // cron:listMailSources 桩挂在 window.domainAPI 上（cronClient 直连），测完摘掉防串台。
+  delete (window as unknown as { domainAPI?: unknown }).domainAPI;
 });
 
 describe('① 手动配置创建事件任务', () => {
@@ -383,12 +385,12 @@ describe('② 列表/详情可见 + 停用/删除', () => {
   });
 });
 
-describe('connector:mail 任务编辑不损坏（rework r1）', () => {
-  // PR#2372 ai-review：mail 触发任务打开编辑器后，buildCronJobInput 会把 event 调度
-  // 无条件回建成 source:'channel' + 空 accountId——只改名字点保存必炸；用户若在绑定
-  // 选择器里随手选个通道账号绕过报错，updateJob 会把 mail 触发静默改写成通道触发。
-  // 根因修复：draft 带出原 mail 绑定（eventMailSource），保存时原样回写；绑定选择器
-  // 对 mail 草稿锁定为只读展示，不给「静默改绑」留入口。
+describe('connector:mail 任务可编辑可改绑（N-TRIGGER-MAIL-CREATE-ENTRY-K1）', () => {
+  // 历史（PR#2372 rework r1）：mail 绑定曾是只读锁定展示（防 buildCronJobInput 回建
+  // channel 源 + 防顺手选通道账号静默改绑）。本单起 mail 源有真正的编辑 UI
+  //（scheduleType 'event-mail' + CronMailEventFields 的账号/邮箱下拉），改绑走
+  // mail 自己的下拉；原绑定（eventMailSource）只负责 round-trip 表单里没有的
+  // 可选窗口字段。
 
   function makeMailEventJob(overrides: Partial<CronJobDefinition> = {}): CronJobDefinition {
     return makeEventJob({
@@ -409,12 +411,27 @@ describe('connector:mail 任务编辑不损坏（rework r1）', () => {
     });
   }
 
-  it('buildDraftFromJob 带出 mail 原绑定；buildCronJobInput 原样回写，不再回建 channel 源', () => {
+  /** cron:listMailSources 的域 IPC 桩（cronClient 走 window.domainAPI，不经 ipcService 桩）。 */
+  function stubMailSources(data: unknown): void {
+    (window as unknown as { domainAPI?: unknown }).domainAPI = {
+      invoke: async () => ({ success: true, data }),
+    };
+  }
+
+  const mailSourcesOk = {
+    ok: true,
+    accounts: [{ name: '_icloud' }, { name: 'gmail' }],
+    mailboxesByAccount: { _icloud: ['INBOX', '归档'], gmail: ['INBOX'] },
+  };
+
+  it('buildDraftFromJob 把 mail 任务分型为 event-mail 并带出账号/邮箱；原样保存 = 原调度逐字节回写', () => {
     const job = makeMailEventJob();
     const draft = buildDraftFromJob(job);
-    expect(draft.scheduleType).toBe('event');
+    expect(draft.scheduleType).toBe('event-mail');
+    expect(draft.eventMailAccountId).toBe('_icloud');
+    expect(draft.eventMailMailbox).toBe('INBOX');
+    // 原绑定整份带上（保存时保窗口字段）；通道字段保持默认（mail 账号名不是通道账号 id）。
     expect(draft.eventMailSource).toEqual(job.schedule);
-    // 通道字段保持默认（mail 账号名不是通道账号 id，不能混进去）。
     expect(draft.eventAccountId).toBe('');
 
     const input = buildCronJobInput(draft);
@@ -422,20 +439,49 @@ describe('connector:mail 任务编辑不损坏（rework r1）', () => {
     expect(input.schedule).toEqual(job.schedule);
   });
 
-  it('mail 草稿即使混入通道账号 id 也不静默改绑（eventMailSource 优先）', () => {
-    const draft = { ...buildDraftFromJob(makeMailEventJob()), eventAccountId: 'account-feishu' };
+  it('改绑账号（mailbox 清回缺省）→ 新绑定生效，可选窗口字段原样保留，mailbox 键不落', () => {
+    const draft = { ...buildDraftFromJob(makeMailEventJob()), eventMailAccountId: 'gmail', eventMailMailbox: '' };
     const input = buildCronJobInput(draft);
-    expect(input.schedule).toMatchObject({
+    expect(input.schedule).toEqual({
+      type: 'event',
       source: 'connector',
       connector: 'mail',
-      accountId: '_icloud',
-      mailbox: 'INBOX',
+      eventName: 'message',
+      accountId: 'gmail',
+      pollIntervalSec: 120,
+      batchWindowSec: 20,
+      minRunIntervalSec: 90,
     });
   });
 
-  it('channel 任务的草稿不带 eventMailSource（channel 路径不受影响）', () => {
+  it('改绑账号并显式选邮箱 → mailbox 逐字生效（覆盖原绑定带过来的邮箱）', () => {
+    const draft = { ...buildDraftFromJob(makeMailEventJob()), eventMailAccountId: 'gmail', eventMailMailbox: 'INBOX/Sent' };
+    const input = buildCronJobInput(draft);
+    expect(input.schedule).toMatchObject({ accountId: 'gmail', mailbox: 'INBOX/Sent' });
+  });
+
+  it('新建 event-mail 草稿（无原绑定）→ 保存落 {type:event,source:connector,connector:mail}，mailbox 缺省不落键', () => {
+    const draft = {
+      ...buildDraftFromJob(makeMailEventJob()),
+      eventMailSource: undefined,
+      eventMailAccountId: '_icloud',
+      eventMailMailbox: '',
+    };
+    const input = buildCronJobInput(draft);
+    expect(input.schedule).toEqual({
+      type: 'event',
+      source: 'connector',
+      connector: 'mail',
+      eventName: 'message',
+      accountId: '_icloud',
+    });
+  });
+
+  it('channel 任务的草稿不带 mail 字段（channel 路径不受影响）', () => {
     const draft = buildDraftFromJob(makeEventJob());
+    expect(draft.scheduleType).toBe('event');
     expect(draft.eventMailSource).toBeUndefined();
+    expect(draft.eventMailAccountId).toBe('');
     expect(buildCronJobInput(draft).schedule).toEqual({
       type: 'event',
       source: 'channel',
@@ -445,27 +491,104 @@ describe('connector:mail 任务编辑不损坏（rework r1）', () => {
     });
   });
 
-  it('编辑 mail 任务只改名字并保存：updateJob 收到原封不动的 mail 调度，表单不再报错', async () => {
+  it('webhook 任务原样保存：不要求通道账号，补选账号也不改写成 channel，窗口字段保留', async () => {
+    const job = makeEventJob({
+      id: 'job-hook',
+      name: '盯告警',
+      schedule: {
+        type: 'event',
+        source: 'webhook',
+        eventName: 'message',
+        batchWindowSec: 15,
+        minRunIntervalSec: 90,
+      },
+    });
+    const draft = buildDraftFromJob(job);
+    expect(draft.scheduleType).toBe('event-webhook');
+    expect(draft.eventAccountId).toBe('');
+    expect(draft.eventWebhookSource).toEqual(job.schedule);
+    // 旧表单会逼用户补一个通道账号；残留的账号字段不能把 source 改成 channel。
+    const polluted = { ...draft, eventAccountId: 'account-feishu', eventChatId: 'oc_group' };
+    expect(buildCronJobInput(polluted).scheduleType).toBe('event');
+    expect(buildCronJobInput(polluted).schedule).toEqual(job.schedule);
+
+    render(<CronJobEditor isOpen job={job} onClose={() => undefined} />);
+    expect(screen.queryByLabelText(/^触发账号/)).toBeNull();
+    expect((controlForLabel('调度类型') as HTMLSelectElement).value).toBe('event-webhook');
+
+    fireEvent.click(screen.getByText('保存修改'));
+    const updateJob = useCronStore.getState().updateJob as Mock;
+    await waitFor(() => expect(updateJob).toHaveBeenCalledTimes(1));
+    expect(updateJob).toHaveBeenCalledWith('job-hook', expect.objectContaining({
+      scheduleType: 'event',
+      schedule: job.schedule,
+    }));
+  });
+
+  it('把 webhook 调度改成通道后，保存载荷才是 channel（host 据此摘云端 hook）', async () => {
+    const job = makeEventJob({
+      id: 'job-hook',
+      name: '盯告警',
+      schedule: {
+        type: 'event',
+        source: 'webhook',
+        eventName: 'message',
+        batchWindowSec: 15,
+        minRunIntervalSec: 90,
+      },
+    });
+    render(<CronJobEditor isOpen job={job} onClose={() => undefined} />);
+    fireEvent.change(controlForLabel('调度类型'), { target: { value: 'event' } });
+    fireEvent.change(await screen.findByLabelText(/^触发账号/), { target: { value: feishuAccount.id } });
+    fireEvent.click(screen.getByText('保存修改'));
+
+    const updateJob = useCronStore.getState().updateJob as Mock;
+    await waitFor(() => expect(updateJob).toHaveBeenCalledTimes(1));
+    expect(updateJob.mock.calls[0][1].schedule).toMatchObject({
+      type: 'event',
+      source: 'channel',
+      accountId: 'account-feishu',
+    });
+  });
+
+  it('mail 草稿清空预算照旧被 requires-budget 拦下（护栏对 mail 源仍生效）', () => {
+    const draft = { ...buildDraftFromJob(makeMailEventJob()), maxRunBudget: '' };
+    const violation = validateEventScheduleConstraints({
+      schedule: {
+        type: 'event', source: 'connector', connector: 'mail',
+        eventName: 'message', accountId: draft.eventMailAccountId,
+      },
+      runsOn: draft.runsOn,
+      action: { type: draft.actionType },
+      maxRunBudget: null,
+    });
+    expect(violation?.reason).toBe('requires-budget');
+    expect(() => buildCronJobInput(draft)).toThrow(violation?.message);
+  });
+
+  it('编辑 mail 任务：改绑到另一个账号并保存，updateJob 收到新绑定（窗口保留、邮箱回落缺省）', async () => {
+    stubMailSources(mailSourcesOk);
     render(<CronJobEditor isOpen job={makeMailEventJob()} onClose={() => undefined} />);
 
-    // mail 绑定锁定展示；通道账号选择器不出现（没有可「随手选一个」的入口）。
-    expect(screen.getByTestId('cron-event-mail-source').textContent).toBe('_icloud · INBOX');
+    // mail 源走自己的账号下拉（不再是只读锁定展示；通道账号选择器不出现）。
+    // 目录加载完（select 从 disabled 转 enabled）再交互，避免把变更丢在加载态。
+    const accountSelect = await screen.findByLabelText(/^邮件账号/) as HTMLSelectElement;
+    await waitFor(() => expect(accountSelect.disabled).toBe(false));
+    expect(accountSelect.value).toBe('_icloud');
     expect(screen.queryByTestId('cron-event-account')).toBeNull();
 
-    fireEvent.change(controlForLabel('任务名称'), { target: { value: '处理新邮件（改）' } });
+    fireEvent.change(accountSelect, { target: { value: 'gmail' } });
     fireEvent.click(screen.getByText('保存修改'));
 
     const updateJob = useCronStore.getState().updateJob as Mock;
     await waitFor(() => expect(updateJob).toHaveBeenCalledTimes(1));
     expect(updateJob).toHaveBeenCalledWith('job-mail', expect.objectContaining({
-      name: '处理新邮件（改）',
       scheduleType: 'event',
       schedule: {
         type: 'event',
         source: 'connector',
         connector: 'mail',
-        accountId: '_icloud',
-        mailbox: 'INBOX',
+        accountId: 'gmail',
         eventName: 'message',
         pollIntervalSec: 120,
         batchWindowSec: 20,
@@ -474,18 +597,88 @@ describe('connector:mail 任务编辑不损坏（rework r1）', () => {
     }));
   });
 
-  it('mail 草稿清空预算照旧被 requires-budget 拦下（护栏对 mail 源仍生效，不再误报 invalid-schedule）', () => {
-    const draft = { ...buildDraftFromJob(makeMailEventJob()), maxRunBudget: '' };
-    const mailSchedule = draft.eventMailSource;
-    if (!mailSchedule) throw new Error('mail 草稿应带 eventMailSource 原绑定');
-    const violation = validateEventScheduleConstraints({
-      schedule: mailSchedule,
-      runsOn: draft.runsOn,
-      action: { type: draft.actionType },
-      maxRunBudget: null,
+  it('手动配置选「新邮件」+ 账号 + 显式邮箱 → createJob 收到 connector 调度（mailbox 逐字生效）', async () => {
+    stubMailSources(mailSourcesOk);
+    await openManualEditor();
+    fireEvent.change(controlForLabel('调度类型'), { target: { value: 'event-mail' } });
+
+    const accountSelect = await screen.findByLabelText(/^邮件账号/) as HTMLSelectElement;
+    await waitFor(() => expect(accountSelect.disabled).toBe(false));
+    expect(accountSelect.value).toBe('');
+    fireEvent.change(accountSelect, { target: { value: '_icloud' } });
+    // 换账号后邮箱回落缺省（INBOX 不落键），再显式选「归档」。
+    const mailboxSelect = await screen.findByLabelText(/^监听邮箱/) as HTMLSelectElement;
+    await waitFor(() => expect(mailboxSelect.disabled).toBe(false));
+    expect(mailboxSelect.value).toBe('');
+    fireEvent.change(mailboxSelect, { target: { value: '归档' } });
+    // event 任务必填预算：字段就在 mail 字段组里，填 0.5。
+    fireEvent.change(screen.getByLabelText(/^单次预算上限/), { target: { value: '0.5' } });
+    fireEvent.change(controlForLabel('任务名称'), { target: { value: '盯收件箱' } });
+    // Agent 动作参数与通道 event 流同一道（动作类型已被护栏钉成 Agent）。
+    fireEvent.click(screen.getByText('执行动作'));
+    fireEvent.change(controlForLabel('Agent 类型'), { target: { value: 'default' } });
+    fireEvent.change(controlForLabel('Prompt'), { target: { value: '处理新邮件' } });
+    fireEvent.click(screen.getByText('基本设置'));
+    fireEvent.click(screen.getByText('创建任务'));
+
+    const createJob = useCronStore.getState().createJob as Mock;
+    await waitFor(() => expect(createJob).toHaveBeenCalledTimes(1));
+    const input = createJob.mock.calls[0][0];
+    expect(input.schedule).toEqual({
+      type: 'event',
+      source: 'connector',
+      connector: 'mail',
+      eventName: 'message',
+      accountId: '_icloud',
+      mailbox: '归档',
     });
-    expect(violation?.reason).toBe('requires-budget');
-    expect(() => buildCronJobInput(draft)).toThrow(violation?.message);
+    expect(input.scheduleType).toBe('event');
+    expect(input.runsOn).toBe('local');
+    expect(input.action).toMatchObject({ type: 'agent' });
+    expect(input.maxRunBudget).toBe(0.5);
+  });
+
+  it('没选邮件账号就提交：表单报邮件专用 invalid-schedule 文案，createJob 不被调用', async () => {
+    stubMailSources(mailSourcesOk);
+    await openManualEditor();
+    fireEvent.change(controlForLabel('调度类型'), { target: { value: 'event-mail' } });
+    fireEvent.change(screen.getByLabelText(/^单次预算上限/), { target: { value: '0.5' } });
+    fireEvent.change(controlForLabel('任务名称'), { target: { value: '盯收件箱' } });
+    fireEvent.click(screen.getByText('创建任务'));
+
+    await waitFor(() => expect(screen.getAllByText(cronCenterZh.cronCenter.eventMailInvalidAccount).length).toBeGreaterThanOrEqual(1));
+    expect(useCronStore.getState().createJob).not.toHaveBeenCalled();
+  });
+
+  it('mail 连接器不可用三态：没启用 / 没授权 / 非 macOS 的提示可区分，都带去设置按钮（平台态除外）', async () => {
+    for (const [reason, expected, hasButton] of [
+      ['connector-not-enabled', cronCenterZh.cronCenter.eventMailUnavailableNotEnabled, true],
+      ['not-authorized', cronCenterZh.cronCenter.eventMailUnavailableNotAuthorized, true],
+      ['unsupported-platform', cronCenterZh.cronCenter.eventMailUnavailablePlatform, false],
+    ] as const) {
+      stubMailSources({ ok: false, reason });
+      render(<CronJobEditor isOpen job={null} onClose={() => undefined} />);
+      fireEvent.click(screen.getByText('手动配置'));
+      fireEvent.change(controlForLabel('调度类型'), { target: { value: 'event-mail' } });
+
+      expect(await screen.findByText(expected)).toBeTruthy();
+      expect(!!screen.queryByText(cronCenterZh.cronCenter.eventMailGoSettings)).toBe(hasButton);
+      cleanup();
+    }
+  });
+
+  it('mail 连接器就绪但没有账户：可区分的「没有账户」提示，确认照旧被 invalid-schedule 拦下', async () => {
+    stubMailSources({ ok: true, accounts: [], mailboxesByAccount: {} });
+    render(<CronJobEditor isOpen job={null} onClose={() => undefined} />);
+    fireEvent.click(screen.getByText('手动配置'));
+    fireEvent.change(controlForLabel('调度类型'), { target: { value: 'event-mail' } });
+
+    expect(await screen.findByTestId('cron-event-mail-no-accounts')).toBeTruthy();
+    fireEvent.change(controlForLabel('任务名称'), { target: { value: '盯收件箱' } });
+    fireEvent.change(screen.getByLabelText(/^单次预算上限/), { target: { value: '0.5' } });
+    fireEvent.click(screen.getByText('创建任务'));
+    await waitFor(() => expect(screen.getAllByText(cronCenterZh.cronCenter.eventMailInvalidAccount).length).toBeGreaterThanOrEqual(1));
+    expect(useCronStore.getState().createJob).not.toHaveBeenCalled();
   });
 });
 

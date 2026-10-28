@@ -42,9 +42,21 @@ export const zhSettingsExternalImport = {
       skillsSectionTitle: '技能（{count}）',
       instructionsTitle: '说明类内容（{count} 条）',
       instructionCompareOnly: '只供对照，不写入',
-      confirmDirective: '逐条确认',
+      // 注：旧的整文件「逐条确认」钮与「已确认并写入」文案随 K1A-FU1 规则拆条下线，
+      // 现行文案在 instructionRules 组里（导入这一条 / 已导入）。
+      instructionRules: {
+        rulesFound: '找到 {count} 条规则',
+        expand: '展开',
+        collapse: '收起',
+        capHint: '新会话每次最多携带 {max} 条规则（约 {chars} 字），优先导入最重要的。',
+        overCap: '超出新会话上限，暂不会生效',
+        importThis: '导入这一条',
+        importedState: '已导入',
+        alreadyImported: '已导入过',
+        noRules: '没有可导入的单条规则',
+        headless: '请在应用里完成这条的确认',
+      },
       confirmingDirective: '等待确认…',
-      directiveImported: '已确认并写入',
       directiveDialogTitle: '确认导入这条说明',
       directiveDialogConfirm: '确认导入',
       directiveDialogCancel: '暂不导入',

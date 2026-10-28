@@ -28,6 +28,7 @@ import {
   sandboxDeniedWritePath,
 } from '../../shell/sandboxFailureDiagnostics';
 import {
+  directoryEscalationReason,
   SANDBOX_ESCALATION_DECLINED_MESSAGE,
   shouldOfferDirectoryEscalation,
   shouldOfferEscalation,
@@ -848,9 +849,8 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         const offeredPath = offeredFilePath ?? offeredDirectoryPath;
         if (!offeredPath) throw error;
 
-        // 目录卡 = 目录行原文 + D5-A 例外句（禁写名 deny 行已随 DIR-FORBIDDEN 同批落地）；文件卡一字不改
         const escalationReason = offeredDirectoryPath
-          ? `沙盒拦截了这一步：它想写入目录 ${offeredDirectoryPath}（含其中全部内容）。允许仅这一次写入这个目录及其中内容并重跑？（其中凭据与配置类文件仍不可写）`
+          ? directoryEscalationReason(offeredDirectoryPath)
           : `沙盒拦截了这一步：它想写入文件 ${offeredPath}。允许仅这一次写入这个文件并重跑？`;
         let permit: Awaited<ReturnType<CanUseToolFn>>;
         try {

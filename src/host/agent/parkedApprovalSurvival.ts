@@ -5,7 +5,10 @@
 // A′ 方案的数据面：一条 tool_approval 停车行想活过重启，必须同时满足——
 //   ① 距 requestedAt 不到 24h（与 parkApproval 的 24h 兜底同一常量，不另立真源）；
 //   ② argsRef（sessionId + toolCallId）+ argsFingerprint + ledgerFaithful===true 都在；
-//   ③ 台账里真有承载该 toolCallId 的 assistant 消息，且还没有 tool result。
+//   ③ 台账里真有承载该 toolCallId 的 assistant 消息，且还没有 tool result；
+//   ④ 会话工作目录可解析（N-...-RESUME-FU1）：批准后要从台账重放执行，相对路径命令
+//     没有可靠 cwd 就会落错目录——解析不出（没落过 workingDirectory / 会话记录缺失）
+//     同样 fail-closed，别让收件箱留一张「点了必被拒」的死卡。
 // 任何一条不满足 → fail-closed 收口（expired_after_restart_24h / args_unavailable），
 // 绝不留一张「看着能点、点了被拒」的死卡。
 //
@@ -85,16 +88,27 @@ export function isSurvivalShapedPayload(
 
 export type ParkedToolApprovalSurvival =
   | { survive: true; sessionId: string; toolCallId: string; argsFingerprint: string }
-  | { survive: false; reason: 'expired_after_restart_24h' | 'args_unavailable' };
+  | {
+    survive: false;
+    reason: 'expired_after_restart_24h' | 'args_unavailable';
+    /** 机器可读的细分成因；当前只有 cwd 解析失败一种（启动收口的 feedback 靠它区分）。 */
+    detail?: 'working_directory_unavailable';
+  };
 
 /**
  * 完整存活判据（读台账）。年龄先行：过 24h 的行无论参数好坏都报 expired_after_restart_24h；
- * 其余任何一条不满足（无 argsRef / 无指纹 / 不忠实 / 台账缺消息 / 已有结果）都报 args_unavailable。
+ * 其余任何一条不满足（无 argsRef / 无指纹 / 不忠实 / 台账缺消息 / 已有结果 / cwd 解析不出）
+ * 都报 args_unavailable。
+ *
+ * workingDirectory 输入的三态：undefined = 调用方自带 cwd 门（点击恢复路径在认领前有
+ * 自己的 resolveWorkingDirectory fail-closed，不在此重复判定，保持双层防御的独立性）；
+ * null / 空串 = 查过了、解析不出 → 不存活（detail: working_directory_unavailable）。
  */
 export function classifyParkedToolApprovalForSurvival(input: {
   payload: unknown;
   now: number;
   messages: Message[] | null;
+  workingDirectory?: string | null;
 }): ParkedToolApprovalSurvival {
   const payload = input.payload as Partial<ToolApprovalPayload> | null;
   if (!payload || typeof payload !== 'object') {
@@ -106,6 +120,12 @@ export function classifyParkedToolApprovalForSurvival(input: {
   }
   if (!isSurvivalShapedPayload(payload, input.now)) {
     return { survive: false, reason: 'args_unavailable' };
+  }
+  // cwd 判定必须先于台账证据判定：启动序里 maintenance 先跑，cwd-less 行的 toolCall 已被
+  // 写上 INTERRUPTED 占位（占位正是 cwd 规则的后果）——若证据判定在前，hydrate 只会报
+  // 平淡的 args_unavailable，可区分后缀永远出不来。根因（cwd 解析不出）要压过表象（有结果）。
+  if (input.workingDirectory !== undefined && !input.workingDirectory) {
+    return { survive: false, reason: 'args_unavailable', detail: 'working_directory_unavailable' };
   }
   if (!input.messages) {
     return { survive: false, reason: 'args_unavailable' };
@@ -138,19 +158,22 @@ export function parseParkedApprovalPayload(payloadJson: string): Partial<ToolApp
 /**
  * startupMaintenance 用的会话内幸存 toolCall 集合：该 session 的 pending tool_approval 行里
  * 真正能活过重启的 toolCallId（这些调用不写 INTERRUPTED 占位，留给批准后真执行）。
+ * workingDirectory 由调用方按会话解析（sessionRepo.getSession 口径）：解析不出时该会话
+ * 的行全部不存活，toolCall 照写 INTERRUPTED 占位——与启动 hydrate 的收口同一次判。
  */
 export function listSurvivingParkedToolCallIds(
   rows: Array<{ payloadJson: string }>,
   sessionId: string,
   messages: Message[],
   now: number,
+  workingDirectory: string | null,
 ): Set<string> {
   const ids = new Set<string>();
   for (const row of rows) {
     const payload = parseParkedApprovalPayload(row.payloadJson);
     const rowSession = payload?.argsRef?.sessionId ?? payload?.sessionId;
     if (rowSession !== sessionId) continue;
-    const verdict = classifyParkedToolApprovalForSurvival({ payload, now, messages });
+    const verdict = classifyParkedToolApprovalForSurvival({ payload, now, messages, workingDirectory });
     if (verdict.survive) ids.add(verdict.toolCallId);
   }
   return ids;

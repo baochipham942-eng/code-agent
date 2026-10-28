@@ -29,6 +29,8 @@ export const delegateTaskSchema: ToolSchema = {
   permissionLevel: 'execute',
   allowInTextForeground: true,
   requiresPermission: false,
+  // 只登记后台任务，handler 不读写会话目录。缺省会在派发时把规划目录 mkdir 出来。
+  touchesWorkDirectory: false,
   accesses: [
     { kind: 'write', expression: 'resource(session, command_center)' },
   ],
@@ -51,6 +53,7 @@ export const steerTaskSchema: ToolSchema = {
   permissionLevel: 'execute',
   allowInTextForeground: true,
   requiresPermission: false,
+  touchesWorkDirectory: false,
 };
 
 export const cancelTaskSchema: ToolSchema = {
@@ -67,6 +70,7 @@ export const cancelTaskSchema: ToolSchema = {
   permissionLevel: 'execute',
   allowInTextForeground: true,
   requiresPermission: false,
+  touchesWorkDirectory: false,
 };
 
 export const taskStatusSchema: ToolSchema = {

@@ -25,6 +25,13 @@ import type {
 } from './types';
 import { isStdioConfig, isSSEConfig, isHttpStreamableConfig } from './types';
 import { isMcpInsufficientScopeError, isMcpServiceUnavailableError } from './mcpErrors';
+import {
+  computeMcpRateLimitDelayMs,
+  isMcpRateLimitedError,
+  noteMcpRateLimitedResponse,
+  sleepMcpRateLimit,
+  takeMcpRetryAfterMs,
+} from './mcpRateLimit';
 
 const logger = createLogger('MCPTransport', { lane: 'mcp' });
 export const MCP_TASKS_EXTENSION_ID = 'io.modelcontextprotocol/tasks';
@@ -41,7 +48,7 @@ export const SSE_CONNECT_TIMEOUT = MCP_TIMEOUTS.SSE_CONNECT;
 export const STDIO_CONNECT_TIMEOUT = MCP_TIMEOUTS.STDIO_CONNECT;
 export const STDIO_FIRST_RUN_TIMEOUT = MCP_TIMEOUTS.FIRST_RUN;
 export const REMOTE_MCP_CONNECT_MAX_ATTEMPTS = 2;
-export const REMOTE_MCP_CONNECT_RETRY_DELAY_MS = 400;
+export const REMOTE_MCP_CONNECT_RETRY_DELAY_MS = MCP_TIMEOUTS.RATE_LIMIT_RETRY_BASE;
 const mcpProxyAgents = new Map<string, ProxyAgent>();
 const RETRYABLE_SDK_ERROR_CODES = new Set<string>([
   SdkErrorCode.NotConnected,
@@ -135,7 +142,7 @@ const sharedDirectOauthFetch = createConnectorOAuthFetch({ env: {} });
 
 function createRemoteMCPFetch(
   target: URL,
-  options: { useProxy?: boolean; oauthFetch?: FetchLike } = {},
+  options: { useProxy?: boolean; oauthFetch?: FetchLike; serverName?: string } = {},
 ): typeof globalThis.fetch {
   const proxyUrl = options.useProxy ? resolveMCPProxyUrl(target) : undefined;
   let agent = proxyUrl ? mcpProxyAgents.get(proxyUrl) : undefined;
@@ -148,12 +155,14 @@ function createRemoteMCPFetch(
     ?? (options.useProxy ? sharedProxyAwareOauthFetch : sharedDirectOauthFetch);
   return ((input: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) => {
     if (init?.signal) {
-      return dispatcher
+      const sessionResponse: Promise<Response> = dispatcher
         ? undiciFetch(input as Parameters<typeof undiciFetch>[0], {
           ...init,
           dispatcher,
         } as Parameters<typeof undiciFetch>[1]) as unknown as Promise<Response>
         : fetch(input, init);
+      // SdkHttpError 不带响应头：429 的 Retry-After 只能在会话分支这里截获。
+      return noteMcpRateLimitedResponse(options.serverName, sessionResponse);
     }
     return invokeMcpOAuthFetch(oauthFetch, input, init);
   }) as typeof globalThis.fetch;
@@ -209,6 +218,7 @@ export async function retryTransientRemoteMCPConnection<T>(
   options: {
     maxAttempts?: number;
     retryDelayMs?: number;
+    serverName?: string;
     onRetry?: (error: unknown, nextAttempt: number) => void;
     signal?: AbortSignal;
   } = {},
@@ -226,7 +236,16 @@ export async function retryTransientRemoteMCPConnection<T>(
         throw error;
       }
       options.onRetry?.(error, attemptNumber + 1);
-      if (retryDelayMs > 0) {
+      if (isMcpRateLimitedError(error)) {
+        // 429：与 tools/call 同一套延迟——服务器给了 Retry-After 就照等，没给退避抖动。
+        const delayMs = computeMcpRateLimitDelayMs({
+          retryAfterMs: options.serverName !== undefined ? takeMcpRetryAfterMs(options.serverName) ?? undefined : undefined,
+          attempt: attemptNumber - 1,
+        });
+        if (delayMs > 0) {
+          await sleepMcpRateLimit(delayMs, options.signal);
+        }
+      } else if (retryDelayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
       }
     }
@@ -342,6 +361,7 @@ export function createTransport(
     const remoteFetch = createRemoteMCPFetch(url, {
       useProxy: options.useProxy,
       oauthFetch: options.oauthFetch,
+      serverName: config.name,
     });
 
     if (config.headers) {
@@ -368,6 +388,7 @@ export function createTransport(
     const remoteFetch = createRemoteMCPFetch(url, {
       useProxy: options.useProxy,
       oauthFetch: options.oauthFetch,
+      serverName: config.name,
     });
 
     if (config.headers) {

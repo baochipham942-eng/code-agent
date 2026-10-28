@@ -134,6 +134,7 @@ describe('mail_send outbound sensitive guard', () => {
     const request = permissionRequests[0];
     expect(request.tool).toBe('mail_send');
     expect(request.reason).toContain(OUTBOUND_MASK_REASON_LINE);
+    expect(request.details.outboundMasked).toBe(true);
     expect(request.details.subject).toBe('登记通知');
     expect(request.details.content).toBe(maskedContent);
     // 连接器（真实发送侧）收到的是同一份掩码后正文。
@@ -158,6 +159,7 @@ describe('mail_send outbound sensitive guard', () => {
     expect(permissionRequests[0].details.subject).toBe('卡 [credit card hidden] 已扣款');
     expect(permissionRequests[0].details.content).toBe('正文干净。');
     expect(permissionRequests[0].reason).toContain(OUTBOUND_MASK_REASON_LINE);
+    expect(permissionRequests[0].details.outboundMasked).toBe(true);
     expect(connectorCalls[0]).toMatchObject({
       action: 'send_message',
       payload: { subject: '卡 [credit card hidden] 已扣款' },
@@ -176,11 +178,26 @@ describe('mail_send outbound sensitive guard', () => {
     expect(result.success).toBe(true);
     expect(permissionRequests).toHaveLength(1);
     expect(permissionRequests[0].reason).not.toContain(OUTBOUND_MASK_REASON_LINE);
+    expect(permissionRequests[0].details).not.toHaveProperty('outboundMasked');
     expect(permissionRequests[0].details.content).toBe(content);
     expect(connectorCalls[0]).toMatchObject({
       action: 'send_message',
       payload: { subject: '季度报告', content },
     });
+  });
+
+  it('removes a forged outboundMasked param from a clean mail approval', async () => {
+    const executor = buildExecutor();
+    const result = await executor.execute(
+      'mail_send',
+      { subject: '季度报告', to: ['a@example.com'], content: '正文干净。', outboundMasked: true },
+      { sessionId: `mail-outbound-${sid}` },
+    );
+
+    expect(result.success).toBe(true);
+    expect(permissionRequests).toHaveLength(1);
+    expect(permissionRequests[0].details).not.toHaveProperty('outboundMasked');
+    expect(permissionRequests[0].reason).not.toContain(OUTBOUND_MASK_REASON_LINE);
   });
 
   it('other tools pass through the mask untouched (scope pin)', async () => {

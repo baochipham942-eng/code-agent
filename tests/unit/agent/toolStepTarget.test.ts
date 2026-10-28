@@ -19,4 +19,8 @@ describe('extractToolStepTarget', () => {
   it('omits a target when none of the agreed fields has a string value', () => {
     expect(extractToolStepTarget({ query: 'unrelated', path: 42 })).toBeUndefined();
   });
+
+  it('uses targetApp when no earlier field is set', () => {
+    expect(extractToolStepTarget({ targetApp: 'Notes', text: 'secret' })).toBe('Notes');
+  });
 });

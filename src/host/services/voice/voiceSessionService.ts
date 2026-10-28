@@ -414,14 +414,14 @@ async function connectAndBind(
   // 低置信近邻只负责暴露正式闸的盲区。等本轮 response.done 才知道模型也没调 end_call。
   let pendingHangupNearMiss = false;
   const baseInstructions = withLanguageDirective(routing.personaInstructions, liveSettings?.language);
-  const [continuity, userProfile] = await Promise.all([loadVoiceContinuity(neoSessionId), import('./voiceUserProfile').then((m) => m.loadVoiceUserProfile()).catch(() => '')]);
+  const [continuity, userProfile, memoryFacts] = await Promise.all([loadVoiceContinuity(neoSessionId), import('./voiceUserProfile').then((m) => m.loadVoiceUserProfile()).catch(() => ''), import('./voiceMemoryContext').then((m) => m.loadVoiceMemoryContext(neoSessionId))]);
   // 声纹（N-L7-SPK）：embedder 加载与上游建连并行；已注册本人时 continuity 扣住等认人。
   const voiceprint = prepareVoiceprintForCall(liveSettings?.voiceprint !== false);
   const initialInstructions = composeVoiceInstructions(baseInstructions, null, {
     // Phase 3：跟着这台机器真有没有这个能力走。能力与文案同一个判据，不虚构截屏能力。
     screenContextEnabled: isVoiceScreenContextSupported(),
     continuity: voiceprint.withholdContinuity ? null : continuity,
-    speechRate: liveSettings?.speechRate, userProfile: voiceprint.withholdContinuity ? '' : userProfile,
+    speechRate: liveSettings?.speechRate, userProfile: voiceprint.withholdContinuity ? '' : userProfile, memoryFacts: voiceprint.withholdContinuity ? null : memoryFacts,
   });
   // 上游回调一律经这个可变引用发：重连换的是 socket，不是通话。
   const clientRef = { current: client };
@@ -826,7 +826,7 @@ async function connectAndBind(
     transcriptCounter,
     transcriptBuf,
     transcriptMerge,
-    personaInstructions: baseInstructions, userProfile: voiceprint.withholdContinuity ? '' : userProfile,
+    personaInstructions: baseInstructions, userProfile: voiceprint.withholdContinuity ? '' : userProfile, memoryFacts: voiceprint.withholdContinuity ? null : memoryFacts,
     instructions: initialInstructions,
     conversationModel: selection.model.id,
     continuity: voiceprint.withholdContinuity ? null : continuity,
@@ -852,7 +852,7 @@ async function connectAndBind(
     state: session.speaker,
     isCurrent: () => active?.id === id,
     attachContinuity: (held) => {
-      session.continuity = held; session.userProfile = userProfile;
+      session.continuity = held; session.userProfile = userProfile; session.memoryFacts = memoryFacts;
       updateSessionInstructions(session);
     },
   });
@@ -915,7 +915,7 @@ function applyFocus(session: ActiveSession, focus: VoiceFocusContext): void {
  */
 function updateSessionInstructions(session: ActiveSession): void {
   const instructions = composeVoiceInstructions(session.personaInstructions, session.focus, {
-    continuity: session.continuity, userProfile: session.userProfile,
+    continuity: session.continuity, userProfile: session.userProfile, memoryFacts: session.memoryFacts,
     screenContextEnabled: isVoiceScreenContextSupported(),
     speechRate: readVoiceLiveSettings()?.speechRate,
   });

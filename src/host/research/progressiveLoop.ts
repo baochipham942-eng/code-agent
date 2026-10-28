@@ -15,7 +15,7 @@ import type {
 } from './types';
 import type { ModelRouter } from '../model/modelRouter';
 import type { ToolExecutor } from '../tools/toolExecutor';
-import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../shared/constants';
+import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('ProgressiveLoop');
@@ -248,9 +248,10 @@ ${[...state.objectivesCovered.keys()].map((o, i) => `${i + 1}. ${o}`).join('\n')
 ["查询1", "查询2", ...]`;
 
     try {
+      const { provider, model } = resolveSessionDefaultModelConfig();
       const response = await this.modelRouter.chat({
-        provider: DEFAULT_PROVIDER,
-        model: DEFAULT_MODEL,
+        provider,
+        model,
         messages: [{ role: 'user', content: prompt }],
         maxTokens: 300,
       });
@@ -506,9 +507,10 @@ ${sourceSummaries}
 }`;
 
     try {
+      const { provider, model } = resolveSessionDefaultModelConfig();
       const response = await this.modelRouter.chat({
-        provider: DEFAULT_PROVIDER,
-        model: DEFAULT_MODEL,
+        provider,
+        model,
         messages: [{ role: 'user', content: prompt }],
         maxTokens: 1000,
       });

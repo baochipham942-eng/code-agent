@@ -269,7 +269,10 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
     const requestDetails = request.details as Record<string, unknown>;
     const denied = request.decision === 'deny' || request.decision === 'never';
     const timedOut = request.decision === 'timeout';
-    const statusLabel = timedOut ? p.settledTimeout : denied ? p.settledDenied : p.settledAllowed;
+    const superseded = request.decision === 'superseded';
+    const statusLabel = superseded
+      ? p.settledSuperseded
+      : timedOut ? p.settledTimeout : denied ? p.settledDenied : p.settledAllowed;
     const humanizedStep = humanizeToolStep(
       request.tool,
       requestDetails,

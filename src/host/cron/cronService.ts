@@ -97,6 +97,12 @@ function cronDefinitionFingerprint(definition: CronJobDefinition): string {
   return JSON.stringify(persisted);
 }
 
+/** DB 行的远端指针：normalizeCronJobRow 不回传 cloud_job_id，读行处统一走这里。 */
+function rowCloudJobId(row: unknown): string | undefined {
+  const value = (row as Record<string, unknown>).cloud_job_id;
+  return typeof value === 'string' ? value : undefined;
+}
+
 // ============================================================================
 // CronService
 // ============================================================================
@@ -1122,10 +1128,7 @@ export class CronService implements Disposable {
         }
 
         if (job.enabled) {
-          const cloudJobId = typeof (row as Record<string, unknown>).cloud_job_id === 'string'
-            ? (row as Record<string, unknown>).cloud_job_id as string
-            : undefined;
-          this.jobs.set(job.id, { definition: job, cloudJobId });
+          this.jobs.set(job.id, { definition: job, cloudJobId: rowCloudJobId(row) });
           this.registerJob(job);
           const activeJob = this.jobs.get(job.id);
           const previousScheduledAt = activeJob?.cronInstance
@@ -1150,10 +1153,7 @@ export class CronService implements Disposable {
             }
           }
         } else {
-          const cloudJobId = typeof (row as Record<string, unknown>).cloud_job_id === 'string'
-            ? (row as Record<string, unknown>).cloud_job_id as string
-            : undefined;
-          this.jobs.set(job.id, { definition: job, cloudJobId });
+          this.jobs.set(job.id, { definition: job, cloudJobId: rowCloudJobId(row) });
         }
         loadedCount += 1;
       }
@@ -1182,7 +1182,7 @@ export class CronService implements Disposable {
         if (current && cronDefinitionFingerprint(current.definition) === cronDefinitionFingerprint(definition)) continue;
         current?.cronInstance?.stop();
         if (definition.enabled) this.registerJob(definition);
-        else this.jobs.set(definition.id, { definition });
+        else this.jobs.set(definition.id, { definition, cloudJobId: current?.cloudJobId ?? rowCloudJobId(row) });
         this.cronEventTrigger?.groupListenChecks.forget(definition.id);
         changed = true;
         console.error(`[CronService] Reconciled job from database: ${definition.name} (${definition.id})`);

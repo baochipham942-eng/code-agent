@@ -2079,6 +2079,75 @@ describe('AgentOrchestrator', () => {
     });
   });
 
+  describe('morning brief save-draft role mail tool gate', () => {
+    const ROLE = 'save-draft-role';
+
+    function registerRole(tools: string[]): void {
+      setCustomAgentMapForTest(new Map([[
+        ROLE,
+        {
+          id: ROLE as never,
+          name: ROLE,
+          description: 'd',
+          prompt: 'p',
+          tools,
+          model: 'balanced',
+          maxIterations: 5,
+          readonly: false,
+          source: 'user',
+        },
+      ]]));
+    }
+
+    async function runSaveDraft(roleId?: string): Promise<string[] | undefined> {
+      const { withSessionCommandCenterBrain } = await import('../../src/host/app/sessionCommandCenterBrain');
+      const options = withSessionCommandCenterBrain(roleId ? { agentOverrideId: roleId } : undefined, '存草稿 1');
+      await (orchestrator as unknown as {
+        runStandardAgentLoop(
+          content: string,
+          onEvent: (e: AgentEvent) => void,
+          modelConfig: unknown,
+          sessionId?: string,
+          executionContent?: string,
+          toolScope?: unknown,
+          executionIntent?: unknown,
+          options?: AgentRunOptions,
+        ): Promise<void>;
+      }).runStandardAgentLoop(
+        '存草稿 1', mockOnEvent, { provider: 'deepseek', model: 'deepseek-chat' },
+        'save-draft-role-session', undefined, undefined, undefined, options as AgentRunOptions,
+      );
+      return lastAgentLoopConfig()?.allowedToolNames;
+    }
+
+    afterEach(() => {
+      setCustomAgentMapForTest(new Map());
+    });
+
+    it.each(['off', 'on'] as const)('removes mail_draft for a no-mail role with the standing boundary %s', async (boundary) => {
+      registerRole(['Read']);
+      if (boundary === 'on') {
+        roleBoundaryProbe.mockReturnValue({
+          boundaryText: '不允许对外发送',
+          allowedTools: ['Read'],
+          blockedTools: [],
+        });
+      }
+
+      expect(await runSaveDraft(ROLE)).not.toContain('mail_draft');
+    });
+
+    it.each([['mail_draft'], ['mail']])('keeps exactly one mail_draft for a role declaring %s', async (mailTool) => {
+      registerRole(['Read', mailTool]);
+
+      expect((await runSaveDraft(ROLE))?.filter((tool) => tool === 'mail_draft')).toHaveLength(1);
+    });
+
+    it('keeps exactly one mail_draft when no role is resolved', async () => {
+      expect((await runSaveDraft())?.filter((tool) => tool === 'mail_draft')).toHaveLength(1);
+    });
+  });
+
   // --------------------------------------------------------------------------
   // named 专家的常驻边界 → 主轮实际工具表
   // --------------------------------------------------------------------------

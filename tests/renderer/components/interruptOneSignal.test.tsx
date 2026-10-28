@@ -357,7 +357,13 @@ describe('N-INTERRUPT-ONESIGNAL', () => {
     );
     expect(source).not.toMatch(/case 'resumable':/u);
     expect(source).not.toContain('RotateCcw');
-    expect(source).toContain(
+    // 中断文件写入不吞的判据搬到 turnFoldVisibility.ts（TurnCard 中间区跳过规则
+    // 与折叠可见性共用的那份），钉子跟着搬家：原文不变，只是换读规则真源所在的文件。
+    const foldVisibility = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/renderer/components/features/chat/turnFoldVisibility.ts'),
+      'utf8',
+    );
+    expect(foldVisibility).toContain(
       'isFileChangeCardOwnedNode(node) && !node.metadata?.streamInterruptionReason',
     );
     expect(source).toContain('!hasStreamInterruption && (');

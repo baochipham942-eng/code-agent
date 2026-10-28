@@ -1,7 +1,8 @@
 //! 退出守卫（N-QUIT-RUNNING-NATIVE）：Tauri 壳在退出前问一次 webServer 的
 //! `GET /api/quit-guard`（N-QUIT-GUARD-ENDPOINT 落的鉴权路由），有运行中任务
-//! 或已挂定时任务时弹原生确认框。三个按钮「取消 / 后台继续 / 停止并退出」
-//! （N-RESIDENT-HOST-SHELL-RUST），默认按钮是「取消」。
+//! 或已挂定时任务时弹原生确认框。附着成立时三键「后台继续 / 停止并退出 / 取消」
+//! （回车默认「后台继续」）；不成立时两键「停止并退出 / 取消」。文案按这套按钮
+//! 说明每个按钮的后果（N-QUIT-STOP-DAEMON-FIX）。
 //!
 //! 纯逻辑（解析/决策/文案/协调器）不依赖 Tauri 类型，可单测；只有
 //! `install_shutdown_observer` 一处碰 objc2（macOS 关机通知）。
@@ -18,6 +19,8 @@ pub const QUIT_GUARD_TIMEOUT: Duration = Duration::from_secs(2);
 pub const QUIT_GUARD_PATH: &str = "/api/quit-guard";
 /// Windows 后台继续：退壳前 POST，让 daemon 把随后的 stdin EOF 从停机指令里摘掉。
 pub const QUIT_GUARD_DETACH_PATH: &str = "/api/quit-guard/detach";
+/// 退壳前声明本次是后台继续还是停止并退出。detach 是 background 的别名。
+pub const QUIT_INTENT_PATH: &str = "/api/quit-intent";
 /// 鉴权 token 文件名，与 src/web/middleware/auth.ts 的 .dev-token 生命周期对齐。
 pub const DEV_TOKEN_FILE: &str = ".dev-token";
 
@@ -112,13 +115,29 @@ pub const QUIT_DIALOG_CANCEL_BUTTON: &str = "取消";
 pub const QUIT_DIALOG_BACKGROUND_BUTTON: &str = "后台继续";
 pub const QUIT_DIALOG_QUIT_BUTTON: &str = "停止并退出";
 
-/// 四种弹框文案，互不相同（有单测钉死）。
-pub fn quit_prompt_text(prompt: QuitPrompt) -> &'static str {
-    match prompt {
-        QuitPrompt::RunningTasks => "退出后，运行中的任务将被中断。",
-        QuitPrompt::ScheduledTasks => "退出后，定时任务将不再执行。",
-        QuitPrompt::Both => "退出后，运行中的任务将被中断，定时任务将不再执行。",
-        QuitPrompt::Unverified => "无法确认是否有任务在运行。退出可能中断任务或使定时任务失效。",
+/// 四种弹框文案。`offers_background_continue` 来自按钮组是否含「后台继续」
+/// （调用方用 `resident_host::quit_dialog_button_set_current()`，本模块不反依赖它）。
+/// 三键：先一行现状，再各一行写明两个退出按钮的后果。两键：只说退出会停掉任务，
+/// 不出现「后台继续」。三键默认键是留下任务继续跑，正文因此不写「将被中断」。
+pub fn quit_prompt_text(prompt: QuitPrompt, offers_background_continue: bool) -> &'static str {
+    if offers_background_continue {
+        match prompt {
+            QuitPrompt::RunningTasks => "有任务正在运行。\n后台继续：关闭窗口，任务和定时任务照常运行\n停止并退出：停止全部任务（含定时任务）并退出",
+            QuitPrompt::ScheduledTasks => "当前只有定时任务。停止后这些任务将不再运行。\n后台继续：关闭窗口，任务和定时任务照常运行\n停止并退出：停止全部任务（含定时任务）并退出",
+            QuitPrompt::Both => "有任务正在运行，也有定时任务。\n后台继续：关闭窗口，任务和定时任务照常运行\n停止并退出：停止全部任务（含定时任务）并退出",
+            QuitPrompt::Unverified => "无法确认是否有任务在运行。\n后台继续：关闭窗口，任务和定时任务照常运行\n停止并退出：停止全部任务（含定时任务）并退出",
+        }
+    } else {
+        match prompt {
+            QuitPrompt::RunningTasks => "有任务正在运行。退出将停止这些任务。",
+            QuitPrompt::ScheduledTasks => {
+                "当前只有定时任务。退出将停止这些定时任务，停止后不再运行。"
+            }
+            QuitPrompt::Both => "有任务正在运行，也有定时任务。退出将停止运行中的任务和定时任务。",
+            QuitPrompt::Unverified => {
+                "无法确认是否有任务在运行。退出将停止运行中的任务和定时任务。"
+            }
+        }
     }
 }
 
@@ -367,6 +386,41 @@ pub fn arm_background_continue_detach(
     )
 }
 
+/// 退壳前声明退出意图。POST `{QUIT_INTENT_PATH}`，JSON `{"mode":"background"|"stop"}`，
+/// Bearer，`no_proxy`。无 token、mode 不是这两值、建连失败、非 200 → false。
+/// 无 token 时不发请求。调用方在 unix 上失败也要继续退出，不能拿这个 false 把人留在 app 里。
+pub fn post_quit_intent(
+    base_url: &str,
+    token: Option<&str>,
+    mode: &str,
+    timeout: Duration,
+) -> bool {
+    let Some(token) = token else {
+        return false;
+    };
+    if mode != "background" && mode != "stop" {
+        return false;
+    }
+    let Ok(client) = reqwest::blocking::Client::builder()
+        .timeout(timeout)
+        .no_proxy()
+        .build()
+    else {
+        return false;
+    };
+    let url = format!("{base_url}{QUIT_INTENT_PATH}");
+    let payload = serde_json::json!({ "mode": mode }).to_string();
+    matches!(
+        client
+            .post(&url)
+            .bearer_auth(token)
+            .header("content-type", "application/json")
+            .body(payload)
+            .send(),
+        Ok(response) if response.status().as_u16() == 200
+    )
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // macOS 关机观察者
 // ─────────────────────────────────────────────────────────────────────────────
@@ -484,28 +538,46 @@ mod tests {
     }
 
     #[test]
-    fn quit_prompt_texts_are_pairwise_distinct() {
+    fn quit_prompt_texts_match_the_button_set() {
         let prompts = [
             QuitPrompt::RunningTasks,
             QuitPrompt::ScheduledTasks,
             QuitPrompt::Both,
             QuitPrompt::Unverified,
         ];
-        for i in 0..prompts.len() {
-            for j in (i + 1)..prompts.len() {
-                assert_ne!(
-                    quit_prompt_text(prompts[i]),
-                    quit_prompt_text(prompts[j]),
-                    "{} 与 {} 文案必须互不相同",
-                    quit_prompt_text(prompts[i]),
-                    quit_prompt_text(prompts[j])
-                );
+        let keep = "后台继续：关闭窗口，任务和定时任务照常运行";
+        let stop = "停止并退出：停止全部任务（含定时任务）并退出";
+        for offers_background in [true, false] {
+            for i in 0..prompts.len() {
+                for j in (i + 1)..prompts.len() {
+                    assert_ne!(
+                        quit_prompt_text(prompts[i], offers_background),
+                        quit_prompt_text(prompts[j], offers_background),
+                        "offers_background={offers_background} 的文案必须互不相同"
+                    );
+                }
             }
         }
-        // 台账验收的原文措辞必须出现
-        assert!(quit_prompt_text(QuitPrompt::RunningTasks).contains("运行中的任务将被中断"));
-        assert!(quit_prompt_text(QuitPrompt::ScheduledTasks).contains("定时任务将不再执行"));
-        assert!(quit_prompt_text(QuitPrompt::Unverified).contains("无法确认是否有任务在运行"));
+        for prompt in prompts {
+            let three = quit_prompt_text(prompt, true);
+            let two = quit_prompt_text(prompt, false);
+            println!("three {prompt:?} {three}");
+            println!("two {prompt:?} {two}");
+            assert_ne!(three, two, "{prompt:?} 两套按钮的文案必须不同");
+            assert!(!three.contains("将被中断"), "{three}");
+            assert!(three.contains(keep) && three.contains(stop), "{three}");
+            assert!(
+                !two.contains("后台继续") && !two.contains("将被中断"),
+                "{two}"
+            );
+            assert!(two.contains("停止"), "{two}");
+        }
+        assert!(quit_prompt_text(QuitPrompt::ScheduledTasks, true).contains("不再运行"));
+        assert!(quit_prompt_text(QuitPrompt::ScheduledTasks, false).contains("不再运行"));
+        assert!(quit_prompt_text(QuitPrompt::Unverified, true).contains("无法确认是否有任务在运行"));
+        assert!(
+            quit_prompt_text(QuitPrompt::Unverified, false).contains("无法确认是否有任务在运行")
+        );
     }
 
     // ── parse_guard_response ──────────────────────────────────────────────────
@@ -569,6 +641,28 @@ mod tests {
         Hang,
     }
 
+    /// 头收齐，且带 Content-Length 时把 body 也读完（quit-intent 要断言 JSON）。
+    fn request_bytes_complete(raw: &str) -> bool {
+        let Some(split) = raw.find("\r\n\r\n") else {
+            return false;
+        };
+        let headers = &raw[..split];
+        let body = &raw[split + 4..];
+        let mut length = None;
+        for line in headers.split("\r\n") {
+            let Some((name, value)) = line.split_once(':') else {
+                continue;
+            };
+            if name.eq_ignore_ascii_case("content-length") {
+                length = value.trim().parse().ok();
+            }
+        }
+        match length {
+            Some(n) => body.len() >= n,
+            None => true,
+        }
+    }
+
     fn spawn_stub(mode: StubMode) -> (String, Arc<Mutex<Vec<String>>>) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind stub");
         let addr = listener.local_addr().expect("stub addr");
@@ -586,7 +680,7 @@ mod tests {
                     Ok(0) => break,
                     Ok(n) => {
                         raw.push_str(&String::from_utf8_lossy(&buf[..n]));
-                        if raw.contains("\r\n\r\n") {
+                        if request_bytes_complete(&raw) {
                             break;
                         }
                     }
@@ -721,6 +815,76 @@ mod tests {
         );
     }
 
+    #[test]
+    fn post_quit_intent_posts_bearer_body_for_both_modes_and_skips_without_token() {
+        for mode in ["background", "stop"] {
+            let (base_url, requests) = spawn_stub(StubMode::Respond {
+                status: 200,
+                body: r#"{"ok":true}"#,
+            });
+            assert!(post_quit_intent(
+                &base_url,
+                Some(TEST_UUID),
+                mode,
+                TEST_TIMEOUT
+            ));
+            let recorded = requests.lock().expect("stub mutex");
+            let raw = recorded.first().expect("stub 应该看到请求");
+            assert!(
+                raw.starts_with("POST /api/quit-intent HTTP/1.1"),
+                "请求行应是 POST {QUIT_INTENT_PATH}，实际：{raw}"
+            );
+            assert!(
+                raw.contains(&format!("authorization: Bearer {TEST_UUID}"))
+                    || raw.contains(&format!("Authorization: Bearer {TEST_UUID}")),
+                "必须携带 Authorization: Bearer <token>，实际：{raw}"
+            );
+            assert!(
+                raw.contains(&format!(r#"{{"mode":"{mode}"}}"#)),
+                "body 应为 {{\"mode\":\"{mode}\"}}，实际：{raw}"
+            );
+        }
+        let (base_url, _requests) = spawn_stub(StubMode::Respond {
+            status: 500,
+            body: r#"{}"#,
+        });
+        assert!(
+            !post_quit_intent(&base_url, Some(TEST_UUID), "stop", TEST_TIMEOUT),
+            "非 200 不能当成意图已落地"
+        );
+        let (base_url, requests) = spawn_stub(StubMode::Respond {
+            status: 200,
+            body: r#"{"ok":true}"#,
+        });
+        assert!(!post_quit_intent(
+            &base_url,
+            None,
+            "background",
+            TEST_TIMEOUT
+        ));
+        thread::sleep(Duration::from_millis(200));
+        assert!(
+            requests.lock().expect("stub mutex").is_empty(),
+            "token 缺失时绝不能发请求"
+        );
+    }
+
+    #[test]
+    fn dialog_posts_quit_intent_before_exit_and_cleanup() {
+        let main = include_str!("main.rs");
+        let dialog = main.find("fn show_quit_confirm_dialog").expect("dialog");
+        let body = &main[dialog..];
+        let post_at = body
+            .find("post_quit_intent(")
+            .expect("退出前要 POST quit-intent");
+        let exit_at = body.find("app.exit(0)").expect("dialog exits");
+        let cleanup_at = body.find("cleanup_server(&app)").expect("cleanup");
+        assert!(post_at < exit_at, "quit-intent 必须先于 app.exit");
+        assert!(post_at < cleanup_at, "quit-intent 必须先于 cleanup");
+        assert!(body.contains("quit-intent: no token"));
+        assert!(body.contains("quit-intent: request failed"));
+    }
+
     // ── token 文件解析 ────────────────────────────────────────────────────────
 
     static TEMP_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -853,8 +1017,14 @@ mod tests {
     fn dialog_answer_action_maps_all_three_labels() {
         let cases: &[(Option<&str>, QuitAnswerAction)] = &[
             // 第一个按钮（= 默认回车键 =「取消」）→ 不退出
-            (Some(QUIT_DIALOG_CANCEL_BUTTON), QuitAnswerAction::StayRunning),
-            (Some(QUIT_DIALOG_BACKGROUND_BUTTON), QuitAnswerAction::BackgroundContinue),
+            (
+                Some(QUIT_DIALOG_CANCEL_BUTTON),
+                QuitAnswerAction::StayRunning,
+            ),
+            (
+                Some(QUIT_DIALOG_BACKGROUND_BUTTON),
+                QuitAnswerAction::BackgroundContinue,
+            ),
             (Some(QUIT_DIALOG_QUIT_BUTTON), QuitAnswerAction::Quit),
             // 关闭对话框（Esc/系统取消 → 非 Custom 变体，main.rs 转 None）→ 不退出
             (None, QuitAnswerAction::StayRunning),
@@ -950,7 +1120,11 @@ mod tests {
         // 放行分支里 background_continue 未置位 → 照旧 cleanup_server。
         // 这里钉住纯侧的两件事：豁免永远 ExitNow；豁免路径等效的收尾计划
         // （= Quit 的计划）是清理 + 退出。
-        for skip in [QuitSkip::SystemShutdown, QuitSkip::UpdateRestart, QuitSkip::SignalExit] {
+        for skip in [
+            QuitSkip::SystemShutdown,
+            QuitSkip::UpdateRestart,
+            QuitSkip::SignalExit,
+        ] {
             for outcome in [counts(1, 1), GuardOutcome::Unknown] {
                 assert_eq!(
                     decide_quit(outcome, Some(skip)),

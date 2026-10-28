@@ -73,7 +73,10 @@ const limits = {
   // 2026-10-11 +1: scripts/sandbox-escalate-dir-seatbelt-probe.sh
   // （N-SANDBOX-ESCALATE-DIR-SEATBELT：macOS seatbelt 真机试验入口，任务书和试验记录
   // 直接引用直属路径；一次性探针不适合折入 scripts/lib/）。
-  directScriptFiles: 167,
+  // 2026-10-28 +1: scripts/gen-native-dep-manifest.mjs（N-NATIVE-MANIFEST-T1：
+  // package.json 与三条构建 workflow 共用的原生依赖清单稳定入口；共享 mapPath
+  // 已归入 scripts/lib/，只占 writer 这一个直属名额）。
+  directScriptFiles: 168,
   // 15: the Poppler promotion boundary is split across two workflows on purpose —
   // build-poppler-sidecar.yml only reviews candidates and can never publish, while
   // promote-poppler-sidecar.yml holds the OSS credentials and publishes them.

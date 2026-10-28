@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { act, cleanup, fireEvent, render } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { act, cleanup, fireEvent, render, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TraceProjection, TraceTurn } from '../../../src/shared/contract/trace';
+import { useScrollEdgeFade } from '../../../src/renderer/hooks/useScrollEdgeFade';
 import {
   ACTIVE_DISPLAY_SCROLL_INTERVAL_MS,
   USER_SCROLL_PROGRAMMATIC_PAUSE_MS,
@@ -28,6 +30,7 @@ import {
   TurnBasedTraceView,
 } from '../../../src/renderer/components/features/chat/TurnBasedTraceView';
 import { isTurnVisibleInRange } from '../../../src/renderer/utils/turnVisibility';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 const mocks = vi.hoisted(() => ({
   scrollToIndex: vi.fn(),
@@ -484,15 +487,14 @@ describe('TurnBasedTraceView streaming scroll drivers', () => {
   });
 
   it('流式跟随期间 ResizeObserver 只观察活动 turn 且高度变化不再调度 scrollToIndex', () => {
-    const observerCallbacks: ResizeObserverCallback[] = [];
-    const observe = vi.fn();
+    const observers: Array<{ callback: ResizeObserverCallback; observe: ReturnType<typeof vi.fn> }> = [];
     vi.stubGlobal('ResizeObserver', class {
-      constructor(callback: ResizeObserverCallback) {
-        observerCallbacks.push(callback);
-      }
-      observe = observe;
+      observe = vi.fn();
       unobserve = vi.fn();
       disconnect = vi.fn();
+      constructor(readonly callback: ResizeObserverCallback) {
+        observers.push(this);
+      }
     });
 
     const streamingTurn = makeStreamingTurn({ turnNumber: 2, turnId: 'turn-2', startTime: 200 });
@@ -504,9 +506,14 @@ describe('TurnBasedTraceView streaming scroll drivers', () => {
     render(React.createElement(TurnBasedTraceView, { projection }));
     flushView();
 
-    const observed = observe.mock.calls.map((call) => call[0] as HTMLElement);
-    // 观察面收窄：所有 observer（吸底调度 + 流式 min-height 锁）都只观察跟随中的
-    // 活动 turn，而不是所有已挂载 turn
+    const scrollObservers = observers.filter((observer) => {
+      const calls = observer.observe.mock.calls;
+      return calls.length > 0 && calls.every((call) => (call[0] as HTMLElement).dataset.traceTurnId);
+    });
+    const observed = scrollObservers.flatMap((observer) => (
+      observer.observe.mock.calls.map((call) => call[0] as HTMLElement)
+    ));
+    // 排除独立的 scroller 渐隐 observer；吸底调度 + 流式 min-height 锁仍只观察活动 turn。
     expect(observed.length).toBeGreaterThanOrEqual(1);
     for (const el of observed) {
       expect(el.dataset.traceTurnId).toBe('turn-2');
@@ -518,8 +525,8 @@ describe('TurnBasedTraceView streaming scroll drivers', () => {
       mocks.virtuosoProps.atBottomStateChange(true);
     });
     act(() => {
-      for (const observerCallback of observerCallbacks) {
-        observerCallback([
+      for (const observer of scrollObservers) {
+        observer.callback([
           { target: observed[0], contentRect: rect(0, 480) } as unknown as ResizeObserverEntry,
         ], {} as ResizeObserver);
       }
@@ -824,6 +831,47 @@ describe('TurnBasedTraceView 不向虚拟列表灌入每渲染变身份的 props
   });
 });
 
+describe('TurnBasedTraceView 末轮默认展开随详略档（N-WORKDETAIL-DEFAULT-SIMPLE-FU2）', () => {
+  // TurnCard 被 mock 成 null，直接从 itemContent 产物里读它拿到的 defaultExpanded。
+  // itemContent 返回 外层div > 内层div > [TurnCard, ConversationTurnTailSlot]，按此结构取型。
+  function turnCardDefaultExpanded(index: number): boolean | undefined {
+    const { firstItemIndex, itemContent } = mocks.virtuosoProps;
+    const wrapper = itemContent(firstItemIndex + index, makeTurn(index)) as React.ReactElement<{
+      children: React.ReactElement<{
+        children: [React.ReactElement<{ defaultExpanded?: boolean }>, unknown];
+      }>;
+    }>;
+    const card = wrapper.props.children.props.children[0];
+    return card.props.defaultExpanded;
+  }
+
+  afterEach(() => {
+    useAppStore.setState({ disclosureLevel: 'standard' });
+  });
+
+  it('已完成末轮：simple 传 false（默认折叠），standard/advanced/expert 传 true', () => {
+    const projection = makeProjection(-1, 2);
+    for (const level of ['simple', 'standard', 'advanced', 'expert'] as const) {
+      useAppStore.setState({ disclosureLevel: level });
+      const { unmount } = render(React.createElement(TurnBasedTraceView, { projection }));
+      expect(turnCardDefaultExpanded(1)).toBe(level !== 'simple');
+      unmount();
+    }
+  });
+
+  it('流式中的活动轮保持展开，不随档位折叠', () => {
+    useAppStore.setState({ disclosureLevel: 'simple' });
+    render(React.createElement(TurnBasedTraceView, { projection: makeProjection(0, 1) }));
+    expect(turnCardDefaultExpanded(0)).toBe(true);
+  });
+
+  it('simple 档历史（非末）轮照旧 false，本单不动非末轮行为', () => {
+    useAppStore.setState({ disclosureLevel: 'simple' });
+    render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1, 2) }));
+    expect(turnCardDefaultExpanded(0)).toBe(false);
+  });
+});
+
 describe('TurnBasedTraceView turn rail (N-TURNRAIL)', () => {
   const railTick = (view: ReturnType<typeof render>, n: number) =>
     view.getByRole('button', { name: new RegExp(`^(回到第 ${n} 轮|Back to turn ${n})$`) });
@@ -868,5 +916,127 @@ describe('TurnBasedTraceView turn rail (N-TURNRAIL)', () => {
     });
     expect(railTick(view, 5).getAttribute('aria-current')).toBe('true');
     expect(railTick(view, 3).getAttribute('aria-current')).toBeNull();
+  });
+});
+
+describe('useScrollEdgeFade', () => {
+  let frames: Map<number, FrameRequestCallback>;
+  let nextFrame: number;
+  let resizeObservers: Array<{
+    callback: ResizeObserverCallback;
+    observed: Set<Element>;
+  }>;
+
+  beforeEach(() => {
+    frames = new Map();
+    nextFrame = 0;
+    resizeObservers = [];
+    vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => {
+      frames.set(++nextFrame, callback);
+      return nextFrame;
+    }));
+    vi.stubGlobal('cancelAnimationFrame', vi.fn((frame: number) => frames.delete(frame)));
+    vi.stubGlobal('ResizeObserver', class {
+      observed = new Set<Element>();
+      constructor(readonly callback: ResizeObserverCallback) {
+        resizeObservers.push(this);
+      }
+      observe(element: Element) {
+        this.observed.add(element);
+      }
+      disconnect() {
+        this.observed.clear();
+      }
+    });
+    vi.stubGlobal('MutationObserver', class {
+      observe() {}
+      disconnect() {}
+    });
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  const flushFrame = () => {
+    const callback = frames.values().next().value;
+    frames.clear();
+    act(() => callback?.(0));
+  };
+
+  it('turns off only the edge touching the scroller boundary', () => {
+    const scroller = document.createElement('div');
+    Object.defineProperties(scroller, {
+      clientHeight: { value: 100 },
+      scrollHeight: { value: 300 },
+    });
+    scroller.scrollTop = 0;
+    const { result, unmount } = renderHook(() => useScrollEdgeFade());
+    act(() => result.current(scroller));
+    flushFrame();
+    expect(scroller.dataset.fadeTop).toBe('false');
+    expect(scroller.dataset.fadeBottom).toBe('true');
+
+    scroller.scrollTop = 100;
+    act(() => scroller.dispatchEvent(new Event('scroll')));
+    flushFrame();
+    expect(scroller.dataset.fadeTop).toBe('true');
+    expect(scroller.dataset.fadeBottom).toBe('true');
+
+    scroller.scrollTop = 200;
+    act(() => scroller.dispatchEvent(new Event('scroll')));
+    flushFrame();
+    expect(scroller.dataset.fadeTop).toBe('true');
+    expect(scroller.dataset.fadeBottom).toBe('false');
+    unmount();
+  });
+
+  it('recomputes after content and viewport resize without a scroll event', () => {
+    const scroller = document.createElement('div');
+    const content = document.createElement('div');
+    scroller.append(content);
+    let clientHeight = 100;
+    let scrollHeight = 300;
+    Object.defineProperties(scroller, {
+      clientHeight: { get: () => clientHeight },
+      scrollHeight: { get: () => scrollHeight },
+    });
+    scroller.scrollTop = 200;
+    const { result, unmount } = renderHook(() => useScrollEdgeFade());
+    act(() => result.current(scroller));
+    flushFrame();
+    expect(scroller.dataset.fadeBottom).toBe('false');
+    expect(resizeObservers[0].observed).toContain(content);
+
+    scrollHeight = 400;
+    act(() => resizeObservers[0].callback([], {} as ResizeObserver));
+    flushFrame();
+    expect(scroller.dataset.fadeBottom).toBe('true');
+
+    clientHeight = 200;
+    act(() => resizeObservers[0].callback([], {} as ResizeObserver));
+    flushFrame();
+    expect(scroller.dataset.fadeBottom).toBe('false');
+    unmount();
+  });
+
+  it('throttles passive scroll events to one animation frame', () => {
+    const scroller = document.createElement('div');
+    const addEventListener = vi.spyOn(scroller, 'addEventListener');
+    const { result, unmount } = renderHook(() => useScrollEdgeFade());
+    act(() => result.current(scroller));
+    flushFrame();
+    act(() => {
+      scroller.dispatchEvent(new Event('scroll'));
+      scroller.dispatchEvent(new Event('scroll'));
+    });
+    expect(frames.size).toBe(1);
+    expect(addEventListener).toHaveBeenCalledWith('scroll', expect.any(Function), { passive: true });
+    unmount();
+    expect(cancelAnimationFrame).toHaveBeenCalledWith(nextFrame);
+  });
+
+  it('uses typed zero for edge-free mask stops', () => {
+    const css = readFileSync('src/renderer/styles/global.css', 'utf8');
+    expect(css).toContain('--chat-fade-top: 0px');
+    expect(css).toContain('--chat-fade-bottom: 0px');
   });
 });

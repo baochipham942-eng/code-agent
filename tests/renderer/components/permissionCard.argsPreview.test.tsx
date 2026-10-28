@@ -95,4 +95,22 @@ describe('PermissionCard argsPreview 呈现', () => {
     expect(html).not.toContain('permission-args-preview');
     expect(html).not.toContain('参数预览');
   });
+
+  it('set_role_proactivity 默认展开旧->新复述，不允许藏进文件写入紧凑卡', () => {
+    storeState.language = 'zh';
+    storeState.request = baseRequest({
+      tool: 'set_role_proactivity',
+      type: 'command',
+      forceConfirm: true,
+      details: {
+        preview: {
+          type: 'generic',
+          summary: '角色「研究员」主动性调整：\n打扰频率：实时介入 -> 每日简报（每天 09:00）\n永远别提：+ 天气',
+        },
+      },
+    });
+    const html = render();
+    expect(html).toContain('实时介入 -&gt; 每日简报（每天 09:00）');
+    expect(html).toContain('永远别提：+ 天气');
+  });
 });

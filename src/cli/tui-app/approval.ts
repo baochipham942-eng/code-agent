@@ -63,12 +63,16 @@ export function approvalOptions(request: PermissionRequestData): ApprovalOption[
   const key = approvalKey(request);
   const keyTarget = key.startsWith('bash:') ? key.slice('bash:'.length) : request.tool;
   const options: ApprovalOption[] = [{ choice: 'once', label: 'Allow once' }];
-  if (isEditClassRequest(request)) {
-    options.push({ choice: 'session-edits', label: 'Allow all edits this session' });
+  if (request.forceConfirm !== true) {
+    if (isEditClassRequest(request)) {
+      options.push({ choice: 'session-edits', label: 'Allow all edits this session' });
+    }
+    options.push(
+      { choice: 'always', label: `Always allow: ${keyTarget}` },
+      { choice: 'never', label: `Never allow: ${keyTarget}` },
+    );
   }
   options.push(
-    { choice: 'always', label: `Always allow: ${keyTarget}` },
-    { choice: 'never', label: `Never allow: ${keyTarget}` },
     { choice: 'reject', label: 'No, reject' },
     { choice: 'reject-feedback', label: 'No, reject with feedback' },
   );
@@ -144,6 +148,7 @@ export class SessionAllowList {
   private allEdits = false;
 
   has(request: PermissionRequestData): boolean {
+    if (request.forceConfirm === true) return false;
     if (this.allEdits && isEditClassRequest(request)) return true;
     return this.keys.has(approvalKey(request));
   }

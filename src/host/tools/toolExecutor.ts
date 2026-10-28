@@ -77,6 +77,7 @@ import { computePolicyHash } from '../permissions/policyHash';
 import { normalizePermissionAskResult, type RequestPermissionResult } from '../../shared/contract/permission';
 import { applyEditedArgs } from '../../shared/contract/permissionEdit';
 import { EXTERNAL_SIDE_EFFECT_TRACE_RULE, EXTERNAL_SIDE_EFFECT_TRACE_REASON, isExternalSideEffectTool, extractStandingGrantTarget } from './externalSideEffect';
+import { maskMailSendOutboundParams, OUTBOUND_MASK_REASON_LINE } from './outboundGuard';
 import { isRunPathInsideWorkspace, resolveCanonicalRunPath, type RunContext } from '../runtime/runContext';
 import { writeFenceObligationRoot } from '../sandbox/writeFence';
 import { getSandboxManager } from '../sandbox';
@@ -669,6 +670,10 @@ export class ToolExecutor {
     const pluginOrigin = getPluginOriginForTool(executionToolName);
     const pluginId = getPluginIdForTool(executionToolName);
     const policyToolName = normalizeToolName(executionToolName);
+    // 出站掩码（N-OUTBOUND-SENSITIVE-GUARD）：mail_send 正文进权限管道前先掩，
+    // 审批卡/短路匹配/真实发送三方一致（见 outboundGuard.ts 头注）。
+    const outboundMask = maskMailSendOutboundParams(executionToolName, params);
+    if (outboundMask.redacted) params = outboundMask.params;
     const writeWithoutWorkspaceAuthority = Boolean(
       this.runContext
       && !this.runContext.workspaceScope
@@ -2020,6 +2025,12 @@ export class ToolExecutor {
         // 不剥额外字段），把审批卡来源伪造成「来自插件《…》」——必须删掉。
         delete permissionRequest.details.pluginId;
         delete permissionRequest.details.pluginName;
+      }
+      // 出站掩码命中：审批 reason 注明一行（N-OUTBOUND-SENSITIVE-GUARD）。
+      if (outboundMask.redacted) {
+        permissionRequest.reason = [permissionRequest.reason, OUTBOUND_MASK_REASON_LINE]
+          .filter(Boolean)
+          .join('；');
       }
       if (
         permissionRequest.type === 'file_read'

@@ -174,6 +174,7 @@ jobs:
             BUNDLE_ARGS+=(--config "${RUNNER_TEMP}/tauri.x64.json")
           fi
           npm run rebuild-native:system
+          node scripts/gen-native-dep-manifest.mjs "darwin-${{ matrix.arch }}"
           npm run build
           # v0.19.0 事故闸：必须 bundle 的库（pdfkit/pptxgenjs 等）不得残留 esbuild-external，
           # 否则打包后 require 崩、healthcheck 前退出。隐藏这些库做静态校验+启动冒烟，
@@ -490,6 +491,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           node scripts/tauri-platform-config.mjs win32-x64 --out "${RUNNER_TEMP}/tauri.win32.json"
+          node scripts/gen-native-dep-manifest.mjs win32-x64
           cargo tauri build --config "${RUNNER_TEMP}/tauri.win32.json"
 
       - name: Verify NSIS artifact (post)

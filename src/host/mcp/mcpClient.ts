@@ -67,6 +67,7 @@ import {
   retryTransientRemoteMCPConnection,
 } from './mcpTransport';
 import { MCPToolRegistry } from './mcpToolRegistry';
+import { callMcpToolWithRateLimitRetry } from './mcpRateLimit';
 import {
   createMcpListChangedHandlers,
   McpListChangedRecovery,
@@ -438,6 +439,7 @@ export class MCPClient extends EventEmitter {
         }
       }, {
         ...(isStdioConfig(config) ? { maxAttempts: 1 } : {}),
+        serverName: config.name,
         signal: abortSignal,
         onRetry: (error, nextAttempt) => {
           logger.warn(`Transient MCP connection failure for ${config.name}; retrying`, {
@@ -1003,11 +1005,16 @@ export class MCPClient extends EventEmitter {
     const startTime = Date.now();
 
     try {
-      let result = await this.registry.callExternalTool(toolCallId, serverName, toolName, args, client, {
-        timeoutMs,
-        abortSignal,
-        sessionId,
-      });
+      // 429：同一 client 上等 Retry-After 后重打（不 reconnect）；预算耗尽才回落到既有连接中断分类。
+      let result = await callMcpToolWithRateLimitRetry(
+        serverName,
+        () => this.registry.callExternalTool(toolCallId, serverName, toolName, args, client, {
+          timeoutMs,
+          abortSignal,
+          sessionId,
+        }),
+        { signal: abortSignal },
+      );
       if (serverName === CUA_DRIVER_SERVER_NAME) {
         result = {
           ...result,

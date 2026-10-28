@@ -84,6 +84,7 @@ import { createTurnCostEventHandler } from './runtime/turnCostPersistence';
 import { getComboRecorder } from '../services/skills/comboRecorder';
 import { recordCapabilityGapTurn } from './capabilityGapTurnRecorder';
 import { mergeTurnSystemContext } from './turnScaffold';
+import { beginWorkDirectoryRun, endWorkDirectoryRun } from './runtime/workDirectoryMaterializer';
 
 export class AgentLoop {
   private ctx: RuntimeContext;
@@ -336,12 +337,16 @@ export class AgentLoop {
     // run 首参传进来。messageBuild 只读历史，因此这里为当前 user 消息登记一个纯请求投影；
     // 不改 ctx.messages，避免脚手架进入会话落库、checkpoint 或 renderer。
     const sessionId = this.ctx.sessionId;
+    // 前台（web /run 的 AgentLoop）和后台 auxiliary（orchestrator 里的 AgentLoop）共用这一处。
+    // 目录在 run 入口定稿，中途不改；结束时若本进程新建且只剩 .code-agent 元数据则回收。
+    const trackedWorkDir = this.ctx.workingDirectory;
     const stopStallWatch = startForegroundStallWatch({
       snapshot: () => this.stallSnapshot(),
       emit: (notice) => broadcastToRenderer(IPC_CHANNELS.STALL_NOTICE, { ...notice, sessionId }),
       clear: () => broadcastToRenderer(IPC_CHANNELS.STALL_NOTICE, { sessionId, clear: true }),
     });
     try {
+      beginWorkDirectoryRun(trackedWorkDir);
       // 轮级只判定一次；普通预定义 agent（如 explore）不会取得角色记忆写入身份。
       this.ctx.persistentRoleId = await resolvePersistentRoleId(this.ctx.agentId);
       effectiveUserMessage = await this.injectPersistentRoleContext(effectiveUserMessage);
@@ -370,6 +375,7 @@ export class AgentLoop {
         assistantMessageIdsBeforeRun,
       );
     } finally {
+      endWorkDirectoryRun(trackedWorkDir);
       stopStallWatch();
       clearStreamProgress(sessionId);
       broadcastToRenderer(IPC_CHANNELS.STALL_NOTICE, { sessionId, clear: true });

@@ -14,6 +14,7 @@ import {
 } from '../infra/supabaseService';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 import { getConfigService, getSecureStorage } from '../core';
+import { bindCloudRunAccountSource } from '../cloudRun/cloudRunLedger';
 import type { AuthUser, AuthStatus } from '../../../shared/contract';
 import { createLogger } from '../infra/logger';
 import { withTimeout } from '../infra/timeoutController';
@@ -774,5 +775,10 @@ export function getAuthService(): AuthService {
   }
   return authServiceInstance;
 }
+
+// 云端 run 账本（ADR-086）的账户事实源：本模块装载即注册。账本不能反向静态
+// import 这里——那会把 core barrel 的 import 期副作用拉进账本消费方的导入图
+// （见 cloudRunLedger.ts 头注释）；没注册时账本一律拒绝创建 run。
+bindCloudRunAccountSource(getAuthService());
 
 export type { AuthService };

@@ -15,6 +15,8 @@
 | `src/host/services/core/database/migrations/*` | 专项迁移和历史兼容 |
 | `src/host/services/core/database/nativeLoader.ts` | better-sqlite3 native binding 加载 |
 
+> **native binding 加载（ADR-086 T2 起）**：`nativeLoader` 不再逐候选试探。bundle 模式（`AGENT_NEO_BUNDLED_RUNTIME_ROOT` 与 `AGENT_NEO_RESOURCE_DIR` 同时非空，Rust 壳必设）从 `dist/native/manifest.json` 取单一 entry 路径 require 一次，清单缺失/声明路径缺失/平台不符直接 throw；源码模式（vitest、CI、eval 子进程、CLI、裸跑 webServer，以及只设单变量的 harness）走纯包解析 `require('better-sqlite3')`——**不再读 `dist/native`**：dev checkout 里即使存在 `dist/native` 副本（worktree-bootstrap 拷来的）也不会被优先选中，要验打包态行为请用 dev 槽包。
+
 ```sql
 -- sessions 表
 CREATE TABLE sessions (

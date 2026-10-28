@@ -1,8 +1,8 @@
-import fs from 'fs';
 import path from 'path';
 import { createRequire } from 'module';
 import type BetterSqlite3 from 'better-sqlite3';
 import type { createLogger } from '../../infra/logger';
+import { readNativeDepManifest, resolveNativeDepEntry } from '../../../runtime/nativeDepManifest';
 
 type Logger = ReturnType<typeof createLogger>;
 
@@ -17,6 +17,9 @@ const runtimeRequire = typeof require === 'function' ? require : createRequire(i
  * 单独导出是因为 VACUUM 子进程(dbVacuumSubprocess.ts)要在**另一个 node 进程**里
  * 加载同一份 native binding —— 打包态 binding 在 dist/native/ 而非 node_modules,
  * 两处必须用同一份候选清单,否则子进程在打包态静默找不到 binding。
+ *
+ * loadBetterSqlite3 已按 ADR-086 T2 切到清单/包解析,不再消费本清单;
+ * 两个子进程的交接(T3)退役本导出。
  */
 export function betterSqlite3CandidatePaths(moduleDir: string): string[] {
   // Web/Tauri 模式: 系统 Node.js 运行，Electron ABI 的 .node 文件不兼容
@@ -28,57 +31,39 @@ export function betterSqlite3CandidatePaths(moduleDir: string): string[] {
   ];
 }
 
-export function loadBetterSqlite3(moduleDir: string, logger: Logger): typeof BetterSqlite3 | null {
+/**
+ * better-sqlite3 装载(ADR-086 T2):
+ * - bundle 模式(壳同时设 AGENT_NEO_BUNDLED_RUNTIME_ROOT/AGENT_NEO_RESOURCE_DIR):
+ *   清单取单一 entry 路径 require 一次;清单缺失/声明路径缺失/平台不符直接 throw,无静默回退。
+ * - 源码模式:直接 require('better-sqlite3') 纯包解析,零候选试探,不读 dist/native。
+ *
+ * moduleDir 参数保留不动(四个调用方不随本单改);子进程交接(T3)之前它只剩
+ * betterSqlite3CandidatePaths 的调用方在用。
+ */
+export function loadBetterSqlite3(_moduleDir: string, logger: Logger): typeof BetterSqlite3 | null {
   if (process.env.CODE_AGENT_CLI_MODE && !process.env.CODE_AGENT_WEB_MODE) {
     return null;
   }
 
-  let Database: typeof BetterSqlite3 | null = null;
-  const nativePaths = betterSqlite3CandidatePaths(moduleDir);
-  const candidateFailures: Array<{ path: string; error: string }> = [];
-  const missingCandidates: string[] = [];
-  for (const nativePath of nativePaths) {
-    if (Database) break;
-    // 候选路径只在打包态存在；dev/CI 里连目录都没有,require 必然失败,
-    // 先探存在性再 require,避免每次开库都刷三条 "Cannot find module" 噪音。
-    if (!fs.existsSync(nativePath)) {
-      missingCandidates.push(nativePath);
-      logger.debug(`[DatabaseService] better-sqlite3 candidate not present: ${nativePath}`);
-      continue;
-    }
-    try {
-      const loaded: unknown = runtimeRequire(nativePath);
-      Database = loaded as typeof BetterSqlite3;
-      logger.info(`[DatabaseService] Loaded better-sqlite3 from ${nativePath}`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message.split('\n')[0] : String(error);
-      candidateFailures.push({ path: nativePath, error: message });
-      logger.debug(`[DatabaseService] better-sqlite3 candidate unavailable: ${nativePath}`, { error: message });
-    }
-  }
-  // 回退到默认路径（Electron 模式或 node_modules）
-  if (!Database) {
+  const manifest = readNativeDepManifest(process.env, logger);
+  if (!manifest) {
     try {
       const loaded: unknown = runtimeRequire('better-sqlite3');
-      Database = loaded as typeof BetterSqlite3;
-      if (candidateFailures.length > 0) {
-        logger.warn('[DatabaseService] Loaded better-sqlite3 from package fallback', {
-          source: 'better-sqlite3',
-          failedCandidates: candidateFailures,
-        });
-      } else {
-        logger.info('[DatabaseService] Loaded better-sqlite3 from package fallback', {
-          source: 'better-sqlite3',
-        });
-      }
+      logger.debug('[DatabaseService] Loaded better-sqlite3 from package resolution (source mode)');
+      return loaded as typeof BetterSqlite3;
     } catch (error) {
-      const err = error as Error;
-      logger.warn('[DatabaseService] better-sqlite3 unavailable after all load attempts', {
-        failedCandidates: candidateFailures,
-        missingCandidates,
-        fallbackError: err.message?.split('\n')[0],
+      const message = error instanceof Error ? error.message.split('\n')[0] : String(error);
+      logger.warn('[DatabaseService] better-sqlite3 unavailable in source mode', {
+        fallbackError: message,
       });
+      return null;
     }
   }
-  return Database;
+
+  const entryPath = resolveNativeDepEntry(manifest, 'better-sqlite3');
+  const loaded: unknown = runtimeRequire(entryPath);
+  logger.info(
+    `[DatabaseService] Loaded better-sqlite3 from ${entryPath} via native dep manifest ${manifest.manifestPath}`,
+  );
+  return loaded as typeof BetterSqlite3;
 }

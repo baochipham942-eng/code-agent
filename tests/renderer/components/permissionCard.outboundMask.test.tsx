@@ -63,7 +63,7 @@ function mailRequest(outboundMasked?: boolean): PermissionRequest {
       to: ['a@example.com'],
       content: 'The report is attached.',
       outboundMasked,
-    },
+    } as PermissionRequest['details'],
     timestamp: 1,
   };
 }

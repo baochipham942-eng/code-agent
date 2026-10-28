@@ -78,7 +78,7 @@ export async function buildAiOutline(topic: string, slidesCount?: number, brief?
     );
     const text = (response.content ?? '').trim();
     if (!text) return fallback;
-    const slides = parseContentToSlides(text, count);
+    const slides = parseContentToSlides(text, count, { h2AsPages: true });
     return slides.length > 0 ? { slides, ai: true } : fallback;
   } catch {
     return fallback;

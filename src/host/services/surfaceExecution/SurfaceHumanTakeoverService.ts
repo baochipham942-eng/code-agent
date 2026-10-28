@@ -35,15 +35,22 @@ export class SurfaceHumanTakeoverService {
     if (!Number.isFinite(input.timeoutMs) || input.timeoutMs <= 0) {
       throw new Error('Human takeover timeout must be a positive finite duration.');
     }
-    const session = this.sessions.requireOwned(input.subject.sessionId, input.subject);
     await this.interrupts.takeover(input.subject);
     this.observations.invalidateSession(input.subject);
     const requestId = `surface_takeover_${crypto.randomUUID()}`;
+    // Read the target at publish time. The user (or a blocked browser action
+    // refreshing a superseded observation) can move documentRevision while
+    // the session sits in waiting_human; the request-time clone would then
+    // fail the hub's revision check and Continue/stop could not settle.
+    const targetAt = () => {
+      const current = this.sessions.requireOwned(input.subject.sessionId, input.subject);
+      return current.activeTarget ? { target: current.activeTarget } : {};
+    };
     this.events.publish(input.subject, {
       phase: 'human',
       status: 'waiting',
       userSummary: input.reason,
-      ...(session.activeTarget ? { target: session.activeTarget } : {}),
+      ...targetAt(),
       evidenceRefs: [],
       artifactRefs: [],
       availableControls: ['resume', 'stop', 'end_session'],
@@ -62,7 +69,7 @@ export class SurfaceHumanTakeoverService {
         phase: 'human',
         status: resolution === 'continue' || resolution === 'navigated' ? 'succeeded' : 'cancelled',
         userSummary: `Human takeover ${resolution}`,
-        ...(session.activeTarget ? { target: session.activeTarget } : {}),
+        ...targetAt(),
         evidenceRefs: [],
         artifactRefs: [],
         availableControls: resolution === 'continue' || resolution === 'navigated'

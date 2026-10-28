@@ -138,6 +138,8 @@ export interface PermissionRequest {
     pluginId?: string;
     /** Host-resolved display name of the plugin that registered this tool. */
     pluginName?: string;
+    /** Host-resolved only; true when outbound sensitive data was masked. */
+    outboundMasked?: boolean;
     path?: string;
     filePath?: string;
     command?: string;

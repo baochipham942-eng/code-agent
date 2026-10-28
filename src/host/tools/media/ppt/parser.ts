@@ -8,7 +8,11 @@ import { DEFAULT_END_TITLE } from './constants';
 /**
  * 解析 Markdown 内容为幻灯片数据
  */
-export function parseContentToSlides(content: string, maxSlides: number): SlideData[] {
+export function parseContentToSlides(
+  content: string,
+  maxSlides: number,
+  options?: { h2AsPages?: boolean },
+): SlideData[] {
   const slides: SlideData[] = [];
   const lines = content.split('\n');
 
@@ -54,7 +58,15 @@ export function parseContentToSlides(content: string, maxSlides: number): SlideD
     // 二级标题处理
     else if (trimmed.startsWith('## ')) {
       const subTitle = trimmed.replace(/^##\s*/, '');
-      if (currentSlide && currentSlide.isTitle && !currentSlide.subtitle) {
+      if (options?.h2AsPages) {
+        if (currentSlide) slides.push(currentSlide);
+        currentSlide = {
+          title: subTitle,
+          points: [],
+          isTitle: false,
+          isEnd: /谢谢|感谢|Thank|Q&A|总结$/i.test(subTitle),
+        };
+      } else if (currentSlide && currentSlide.isTitle && !currentSlide.subtitle) {
         // 封面页：设为副标题
         currentSlide.subtitle = subTitle;
       } else if (currentSlide && !currentSlide.isTitle) {

@@ -26,6 +26,17 @@ const messages = {
   },
 } as const;
 
+const idleFailure = {
+  zh: (duration: string) => `后台任务失败：命令已 ${duration}没有响应`,
+  en: (duration: string) => `Background task failed: the command stopped responding for ${duration}`,
+} as const;
+
+/** 未答审批等到上限的失败句：说清是「等你批准等太久」，不是任务本身没响应。 */
+const approvalWaitFailure = {
+  zh: (duration: string) => `后台任务失败：等待你的批准已超过 ${duration}，已取消并释放任务位，可重试`,
+  en: (duration: string) => `Background task failed: waited more than ${duration} for your approval, cancelled`,
+} as const;
+
 export function formatSessionTaskSlotRecoveryDetail(input: {
   taskLabel: string;
   laneKey: string;
@@ -44,4 +55,18 @@ export function describeSessionTaskSlotRecovery(locale: SessionTaskSlotLocale): 
   spoken: string;
 } {
   return messages[locale];
+}
+
+export function formatSessionCommandTaskIdleFailure(input: {
+  idleMs: number;
+  locale: SessionTaskSlotLocale;
+}): string {
+  return idleFailure[input.locale](durationText(input.idleMs, input.locale));
+}
+
+export function formatSessionTaskApprovalWaitFailure(input: {
+  waitMs: number;
+  locale: SessionTaskSlotLocale;
+}): string {
+  return approvalWaitFailure[input.locale](durationText(input.waitMs, input.locale));
 }

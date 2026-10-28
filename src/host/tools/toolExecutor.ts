@@ -2026,11 +2026,14 @@ export class ToolExecutor {
         delete permissionRequest.details.pluginId;
         delete permissionRequest.details.pluginName;
       }
-      // 出站掩码命中：审批 reason 注明一行（N-OUTBOUND-SENSITIVE-GUARD）。
+      // 出站掩码命中：审批 reason 注明一行，可信标记供桌面卡双语提示。
       if (outboundMask.redacted) {
+        permissionRequest.details.outboundMasked = true;
         permissionRequest.reason = [permissionRequest.reason, OUTBOUND_MASK_REASON_LINE]
           .filter(Boolean)
           .join('；');
+      } else {
+        delete permissionRequest.details.outboundMasked;
       }
       if (
         permissionRequest.type === 'file_read'

@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TaskManager, TaskManagerEvent } from '../../../src/host/task/TaskManager';
 import type { AgentEvent } from '../../../src/shared/contract';
 import {
@@ -13,6 +13,13 @@ import {
   resetBackgroundTaskLedgerForTest,
 } from '../../../src/host/task/backgroundTaskLedger';
 import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
+import {
+  SESSION_COMMAND_TASK_IDLE_TIMEOUT_MS,
+  SESSION_COMMAND_TASK_APPROVAL_WAIT_CAP_MS,
+  resolveSessionCommandTaskIdleTimeoutMs,
+  resolveSessionCommandTaskApprovalWaitCapMs,
+} from '../../../src/shared/constants/sessionCommandCenter';
+import { INTERACTION_TIMEOUTS } from '../../../src/shared/constants/timeouts';
 
 const PROJECT_SCOPE = createWorkspaceScope('project-session-a', [{
   sourceId: 'source-session-a',
@@ -573,5 +580,337 @@ describe('SessionCommandCenter', () => {
     expect(projected?.status).toBe('failed');
     expect(projected?.progress?.lastToolFailure).toBeUndefined();
     center.dispose();
+  });
+});
+
+const IDLE_TIMEOUT_ENV = 'CODE_AGENT_SESSION_TASK_IDLE_TIMEOUT_MS';
+const APPROVAL_WAIT_CAP_ENV = 'CODE_AGENT_SESSION_TASK_APPROVAL_WAIT_CAP_MS';
+
+describe('SessionCommandCenter idle expiry', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-24T00:00:00.000Z'));
+    resetSessionTaskConcurrencyPoolForTest();
+    resetBackgroundTaskLedgerForTest();
+    delete process.env[IDLE_TIMEOUT_ENV];
+    delete process.env[APPROVAL_WAIT_CAP_ENV];
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    delete process.env[IDLE_TIMEOUT_ENV];
+    delete process.env[APPROVAL_WAIT_CAP_ENV];
+  });
+
+  it('does not expire a task that keeps emitting events past the idle window', async () => {
+    const manager = new FakeTaskManager();
+    const wakeForegroundBrain = vi.fn().mockResolvedValue(undefined);
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn().mockResolvedValue(undefined),
+      wakeForegroundBrain,
+      slotLedgerOptions: { slotTimeoutMs: 30_000, cleanupIntervalMs: 1_000 },
+      slotRecoveryLocale: 'en',
+    });
+    const spawned = await center.spawn(input(1, 'report'));
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+
+    await vi.advanceTimersByTimeAsync(20_000);
+    manager.emitAgent('session-a', {
+      type: 'message',
+      data: { id: 'msg-1', role: 'assistant', content: 'still working', timestamp: Date.now() },
+    }, spawned.task.id);
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    expect(center.list('session-a')[0]?.status).toBe('running');
+    expect(manager.cancelBackgroundTask).not.toHaveBeenCalled();
+    expect(wakeForegroundBrain).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(center.list('session-a')[0]).toMatchObject({
+      status: 'failed',
+      detail: 'Background task failed: the command stopped responding for 30 seconds',
+    });
+    center.dispose();
+  });
+
+  it('fails a task whose only tool_progress heartbeats report growing inactivity', async () => {
+    const manager = new FakeTaskManager();
+    const wakeForegroundBrain = vi.fn().mockResolvedValue(undefined);
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn().mockResolvedValue(undefined),
+      wakeForegroundBrain,
+      slotLedgerOptions: { slotTimeoutMs: 30_000, cleanupIntervalMs: 1_000 },
+      slotRecoveryLocale: 'en',
+    });
+    const spawned = await center.spawn(input(1, 'report'));
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+
+    manager.emitAgent('session-a', {
+      type: 'tool_call_start',
+      data: { id: 'call-1', name: 'Bash', arguments: { command: 'sleep 900' } },
+    }, spawned.task.id);
+    // 守门器每 5s 必发一次心跳（REPORT_INTERVAL），挂死命令的 inactiveMs 只会滚大：
+    // 回填锚钉在工具启动时刻，30s 空闲窗口照样走完。
+    for (let tick = 1; tick <= 8; tick += 1) {
+      await vi.advanceTimersByTimeAsync(5_000);
+      manager.emitAgent('session-a', {
+        type: 'tool_progress',
+        data: { toolCallId: 'call-1', toolName: 'Bash', elapsedMs: tick * 5_000, inactiveMs: tick * 5_000 },
+      }, spawned.task.id);
+    }
+
+    expect(center.list('session-a')[0]).toMatchObject({
+      status: 'failed',
+      detail: 'Background task failed: the command stopped responding for 30 seconds',
+    });
+    expect(wakeForegroundBrain).toHaveBeenCalledTimes(1);
+    expect(manager.cancelBackgroundTask).toHaveBeenCalledTimes(1);
+    center.dispose();
+  });
+
+  it('keeps running when tool_progress reports real output that resets inactivity', async () => {
+    const manager = new FakeTaskManager();
+    const wakeForegroundBrain = vi.fn().mockResolvedValue(undefined);
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn().mockResolvedValue(undefined),
+      wakeForegroundBrain,
+      slotLedgerOptions: { slotTimeoutMs: 30_000, cleanupIntervalMs: 1_000 },
+      slotRecoveryLocale: 'en',
+    });
+    const spawned = await center.spawn(input(1, 'report'));
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+
+    // 隔拍有真输出：inactiveMs 周期归零，锚跟着推进，跑满两个空闲窗口也不回收。
+    for (let tick = 1; tick <= 12; tick += 1) {
+      await vi.advanceTimersByTimeAsync(5_000);
+      manager.emitAgent('session-a', {
+        type: 'tool_progress',
+        data: {
+          toolCallId: 'call-1',
+          toolName: 'Bash',
+          elapsedMs: tick * 5_000,
+          inactiveMs: tick % 2 === 0 ? 0 : 5_000,
+        },
+      }, spawned.task.id);
+    }
+    expect(center.list('session-a')[0]?.status).toBe('running');
+    // inactiveMs 缺席（schema 可选）的心跳按普通事件全量 touch，不给静默命令放水。
+    manager.emitAgent('session-a', {
+      type: 'tool_progress',
+      data: { toolCallId: 'call-1', toolName: 'Bash', elapsedMs: 60_000 },
+    }, spawned.task.id);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(center.list('session-a')[0]?.status).toBe('running');
+    expect(manager.cancelBackgroundTask).not.toHaveBeenCalled();
+    expect(wakeForegroundBrain).not.toHaveBeenCalled();
+    center.dispose();
+  });
+
+  it('does not expire a task with a pending approval', async () => {
+    const manager = new FakeTaskManager();
+    const wakeForegroundBrain = vi.fn().mockResolvedValue(undefined);
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn().mockResolvedValue(undefined),
+      wakeForegroundBrain,
+      slotLedgerOptions: { slotTimeoutMs: 5_000, cleanupIntervalMs: 1_000 },
+      slotRecoveryLocale: 'en',
+    });
+    const spawned = await center.spawn(input(1, 'report'));
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+
+    manager.emitAgent('session-a', {
+      type: 'permission_request',
+      data: {
+        id: 'perm-1',
+        type: 'command',
+        tool: 'Bash',
+        details: { command: 'sleep 900' },
+        timestamp: Date.now(),
+      },
+    }, spawned.task.id);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(center.list('session-a')[0]?.status).toBe('running');
+    expect(manager.cancelBackgroundTask).not.toHaveBeenCalled();
+    expect(wakeForegroundBrain).not.toHaveBeenCalled();
+
+    manager.emitAgent('session-a', {
+      type: 'permission_request',
+      data: {
+        id: 'perm-1',
+        type: 'command',
+        tool: 'Bash',
+        details: { command: 'sleep 900' },
+        timestamp: Date.now(),
+        resolved: true,
+        decision: 'once',
+      },
+    }, spawned.task.id);
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(center.list('session-a')[0]?.status).toBe('running');
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(center.list('session-a')[0]?.status).toBe('failed');
+    expect(manager.cancelBackgroundTask).toHaveBeenCalledTimes(1);
+    center.dispose();
+  });
+
+  // ── N-BGTASK-HANG-TERMINAL-FU2：未答审批的等待有上限 ──
+
+  function approvalEvent(id: string, resolved?: boolean): AgentEvent {
+    return {
+      type: 'permission_request',
+      data: {
+        id,
+        type: 'command',
+        tool: 'Bash',
+        details: { command: 'sleep 900' },
+        timestamp: Date.now(),
+        ...(resolved ? { resolved: true, decision: 'once' } : {}),
+      },
+    } as AgentEvent;
+  }
+
+  it('fails a task that waits past the approval-wait cap with the approval sentence', async () => {
+    process.env[APPROVAL_WAIT_CAP_ENV] = '30000';
+    const manager = new FakeTaskManager();
+    const wakeForegroundBrain = vi.fn().mockResolvedValue(undefined);
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn().mockResolvedValue(undefined),
+      wakeForegroundBrain,
+      slotLedgerOptions: { slotTimeoutMs: 5_000, cleanupIntervalMs: 1_000 },
+      slotRecoveryLocale: 'en',
+    });
+    const spawned = await center.spawn(input(1, 'report'));
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+
+    manager.emitAgent('session-a', approvalEvent('perm-cap-1'), spawned.task.id);
+
+    await vi.advanceTimersByTimeAsync(29_000);
+    expect(center.list('session-a')[0]?.status).toBe('running');
+    expect(manager.cancelBackgroundTask).not.toHaveBeenCalled();
+    expect(wakeForegroundBrain).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(center.list('session-a')[0]).toMatchObject({
+      status: 'failed',
+      detail: 'Background task failed: waited more than 30 seconds for your approval, cancelled',
+    });
+    expect(manager.cancelBackgroundTask).toHaveBeenCalledTimes(1);
+    expect(wakeForegroundBrain).toHaveBeenCalledTimes(1);
+    expect(wakeForegroundBrain).toHaveBeenCalledWith(
+      expect.objectContaining({ id: spawned.task.id }),
+      'failed',
+    );
+    center.dispose();
+  });
+
+  it('restarts the approval wait when one approval resolves and another opens', async () => {
+    process.env[APPROVAL_WAIT_CAP_ENV] = '30000';
+    const manager = new FakeTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn().mockResolvedValue(undefined),
+      wakeForegroundBrain: vi.fn().mockResolvedValue(undefined),
+      slotLedgerOptions: { slotTimeoutMs: 5_000, cleanupIntervalMs: 1_000 },
+      slotRecoveryLocale: 'en',
+    });
+    const spawned = await center.spawn(input(1, 'report'));
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+
+    manager.emitAgent('session-a', approvalEvent('perm-reset-1'), spawned.task.id);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(center.list('session-a')[0]?.status).toBe('running');
+    manager.emitAgent('session-a', approvalEvent('perm-reset-1', true), spawned.task.id);
+    await vi.advanceTimersByTimeAsync(2_000);
+    manager.emitAgent('session-a', approvalEvent('perm-reset-2'), spawned.task.id);
+
+    // 从第一张算起 51s 早已超上限；从第二张（t=22s）算起 29s 仍在豁免内 → 还得活着
+    await vi.advanceTimersByTimeAsync(29_000);
+    expect(center.list('session-a')[0]?.status).toBe('running');
+    expect(manager.cancelBackgroundTask).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(center.list('session-a')[0]).toMatchObject({
+      status: 'failed',
+      detail: 'Background task failed: waited more than 30 seconds for your approval, cancelled',
+    });
+    center.dispose();
+  });
+
+  it('does not let approval-wait heartbeats renew the idle anchor', async () => {
+    process.env[APPROVAL_WAIT_CAP_ENV] = '30000';
+    const manager = new FakeTaskManager();
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn().mockResolvedValue(undefined),
+      wakeForegroundBrain: vi.fn().mockResolvedValue(undefined),
+      // 空闲窗口必须大于心跳周期（5s）：否则每拍「心跳前」的清理恰好够着窗口，
+      // 抑制与否都会到期，测不出锚有没有被心跳续命。
+      slotLedgerOptions: { slotTimeoutMs: 8_000, cleanupIntervalMs: 1_000 },
+      slotRecoveryLocale: 'en',
+    });
+    const spawned = await center.spawn(input(1, 'report'));
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+
+    manager.emitAgent('session-a', approvalEvent('perm-hb-1'), spawned.task.id);
+    // 等审批期间守门器照发 5s 心跳，且 inactiveMs 恒≈0（等人时间被工具钟扣除）：
+    // 这些心跳不是真进展，不许把空闲锚推到当下——否则上限永远轮不到判。
+    for (let tick = 1; tick <= 9; tick += 1) {
+      await vi.advanceTimersByTimeAsync(5_000);
+      manager.emitAgent('session-a', {
+        type: 'tool_progress',
+        data: { toolCallId: 'call-1', toolName: 'Bash', elapsedMs: 0, inactiveMs: 0 },
+      }, spawned.task.id);
+    }
+    expect(center.list('session-a')[0]).toMatchObject({
+      status: 'failed',
+      detail: 'Background task failed: waited more than 30 seconds for your approval, cancelled',
+    });
+    expect(manager.cancelBackgroundTask).toHaveBeenCalledTimes(1);
+    center.dispose();
+  });
+
+  it('uses the 30 minute idle default unless the env or injected ledger options override it', async () => {
+    expect(SESSION_COMMAND_TASK_IDLE_TIMEOUT_MS).toBe(30 * 60 * 1_000);
+    expect(resolveSessionCommandTaskIdleTimeoutMs({})).toBe(SESSION_COMMAND_TASK_IDLE_TIMEOUT_MS);
+    expect(resolveSessionCommandTaskIdleTimeoutMs({ [IDLE_TIMEOUT_ENV]: '120000' })).toBe(120_000);
+    expect(resolveSessionCommandTaskIdleTimeoutMs({ [IDLE_TIMEOUT_ENV]: 'nope' })).toBe(SESSION_COMMAND_TASK_IDLE_TIMEOUT_MS);
+    // 审批等待上限默认沿用无人值守停车审批的 24h 数字，不另造魔法数；非法 env 同样回落
+    expect(SESSION_COMMAND_TASK_APPROVAL_WAIT_CAP_MS).toBe(INTERACTION_TIMEOUTS.PARKED_APPROVAL);
+    expect(resolveSessionCommandTaskApprovalWaitCapMs({})).toBe(SESSION_COMMAND_TASK_APPROVAL_WAIT_CAP_MS);
+    expect(resolveSessionCommandTaskApprovalWaitCapMs({ [APPROVAL_WAIT_CAP_ENV]: '120000' })).toBe(120_000);
+    expect(resolveSessionCommandTaskApprovalWaitCapMs({ [APPROVAL_WAIT_CAP_ENV]: 'nope' })).toBe(SESSION_COMMAND_TASK_APPROVAL_WAIT_CAP_MS);
+
+    process.env[IDLE_TIMEOUT_ENV] = '20000';
+    const envManager = new FakeTaskManager();
+    const envCenter = new SessionCommandCenter(envManager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn().mockResolvedValue(undefined),
+      wakeForegroundBrain: vi.fn().mockResolvedValue(undefined),
+      slotLedgerOptions: { cleanupIntervalMs: 1_000 },
+      slotRecoveryLocale: 'en',
+    });
+    const envSpawned = await envCenter.spawn(input(1, 'report'));
+    if (envSpawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+    await vi.advanceTimersByTimeAsync(19_000);
+    expect(envCenter.list('session-a')[0]?.status).toBe('running');
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(envCenter.list('session-a')[0]?.status).toBe('failed');
+    envCenter.dispose();
+
+    resetSessionTaskConcurrencyPoolForTest();
+    resetBackgroundTaskLedgerForTest();
+    process.env[IDLE_TIMEOUT_ENV] = '20000';
+    const injected = new FakeTaskManager();
+    const injectedCenter = new SessionCommandCenter(injected as unknown as TaskManager, {
+      projectTerminalResult: vi.fn().mockResolvedValue(undefined),
+      wakeForegroundBrain: vi.fn().mockResolvedValue(undefined),
+      slotLedgerOptions: { slotTimeoutMs: 5_000, cleanupIntervalMs: 1_000 },
+      slotRecoveryLocale: 'en',
+    });
+    const injectedSpawned = await injectedCenter.spawn(input(2, 'research'));
+    if (injectedSpawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(injectedCenter.list('session-a')[0]?.status).toBe('running');
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(injectedCenter.list('session-a')[0]?.status).toBe('failed');
+    injectedCenter.dispose();
   });
 });

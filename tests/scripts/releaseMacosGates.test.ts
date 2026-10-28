@@ -278,6 +278,63 @@ describe('macOS release fail-closed gates', () => {
     expect(workflow).not.toContain('\t');
   });
 
+  it('generates native dependency manifests after overlays and before Tauri builds', () => {
+    const packageJson = JSON.parse(readRepoFile('package.json')) as { scripts: Record<string, string> };
+    for (const scriptName of ['tauri:package', 'tauri:package:dev']) {
+      expect(packageJson.scripts[scriptName]).toContain(
+        'npm run rebuild-native:system && node scripts/gen-native-dep-manifest.mjs &&',
+      );
+    }
+
+    const cases = [
+      {
+        path: '.github/workflows/release.yml',
+        job: 'build-mac',
+        step: 'Build signed Tauri updater bundle',
+        overlay: 'node scripts/tauri-arch-config.mjs x64',
+        writer: 'node scripts/gen-native-dep-manifest.mjs "darwin-${{ matrix.arch }}"',
+        build: 'bash scripts/tauri-release-bundle.sh',
+      },
+      {
+        path: '.github/workflows/build-x64-test.yml',
+        job: 'build-x64-test',
+        step: 'Build signed + notarized x64 bundle',
+        overlay: 'node scripts/tauri-arch-config.mjs x64',
+        writer: 'node scripts/gen-native-dep-manifest.mjs darwin-x64',
+        build: 'bash scripts/tauri-release-bundle.sh',
+      },
+      {
+        path: '.github/workflows/release.yml',
+        job: 'build-windows',
+        step: 'Build NSIS bundle (unsigned, minisign updater artifacts)',
+        overlay: 'node scripts/tauri-platform-config.mjs win32-x64',
+        writer: 'node scripts/gen-native-dep-manifest.mjs win32-x64',
+        build: 'cargo tauri build',
+      },
+      {
+        path: '.github/workflows/build-windows-test.yml',
+        job: 'build-windows-test',
+        step: 'Build NSIS bundle (unsigned, minisign updater artifacts)',
+        overlay: 'node scripts/tauri-platform-config.mjs win32-x64',
+        writer: 'node scripts/gen-native-dep-manifest.mjs win32-x64',
+        build: 'cargo tauri build',
+      },
+    ];
+
+    for (const testCase of cases) {
+      const workflow = readWorkflow(testCase.path);
+      const step = workflow.jobs?.[testCase.job]?.steps?.find((candidate) => candidate.name === testCase.step);
+      const run = step?.run ?? '';
+      expect(run).toContain(testCase.overlay);
+      expect(run).toContain(testCase.build);
+      expect(run, `${testCase.path} ${testCase.job} must generate the native manifest`).toContain(testCase.writer);
+      expect(run.indexOf(testCase.writer), `${testCase.path} ${testCase.job} writer follows overlay`)
+        .toBeGreaterThan(run.indexOf(testCase.overlay));
+      expect(run.indexOf(testCase.writer), `${testCase.path} ${testCase.job} writer precedes build`)
+        .toBeLessThan(run.indexOf(testCase.build));
+    }
+  });
+
   it('fetches the promoted immutable poppler resource on both macOS architectures before Tauri packaging', () => {
     const resources = readTauriResources();
     expect(resources.map['../scripts/poppler']).toBe('scripts/poppler');

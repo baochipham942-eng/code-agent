@@ -19,7 +19,6 @@ vi.mock('../../../src/host/services/core/database/nativeLoader', () => ({
       super(...args);
     }
   },
-  betterSqlite3CandidatePaths: () => [],
 }));
 
 vi.mock('../../../src/host/services/infra/dbBackup', async (importOriginal) => {

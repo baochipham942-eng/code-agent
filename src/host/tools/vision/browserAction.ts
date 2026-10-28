@@ -6,8 +6,8 @@
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
-import type { BrowserTargetRef } from '../../services/infra/browserService.js';
-import { getBrowserService } from '../../services/infra/browserPool.js';
+import type { BrowserService, BrowserTargetRef } from '../../services/infra/browserService.js';
+import { BrowserPoolBusyError, getBrowserService } from '../../services/infra/browserPool.js';
 import { createLogger } from '../../services/infra/logger';
 import { analyzeImageWithVision } from '../../services/desktop/visionAnalysisService';
 import {
@@ -356,9 +356,17 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
     // adapter may share one physical window among legal owners in the same
     // conversation so user navigation and the agent can continue one page.
     // Legacy callers without a complete owner identity keep the historical path.
-    const browserService = useManagedSurface && surfaceIdentity
-      ? managedAdapter.getBrowserService(surfaceIdentity)
-      : getBrowserService(context.agentId);
+    let browserService: BrowserService;
+    try {
+      browserService = useManagedSurface && surfaceIdentity
+        ? managedAdapter.getBrowserService(surfaceIdentity)
+        : getBrowserService(context.agentId);
+    } catch (error) {
+      if (error instanceof BrowserPoolBusyError) {
+        return { success: false, error: error.message };
+      }
+      throw error;
+    }
 
     if (action === 'execute_goal') {
       const driver = resolveBrowserJevStep({ browserService });

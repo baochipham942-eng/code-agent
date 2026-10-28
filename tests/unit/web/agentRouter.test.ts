@@ -1491,6 +1491,65 @@ describe('createAgentRouter', () => {
       });
     });
 
+    // rework r1：存草稿轮次的规则块此前只进了 withSessionCommandCenterBrain（桌面路），
+    // web 主链同判据只同步了工具面没同步规则块——「修了桌面漏了 web」的第三次翻车预演。
+    // 工具面（mail_draft）与规则块（解析格式/防重复/如实失败）必须同一真源同轮出现。
+    it('存草稿轮次：web 主链同步追加存草稿规则块，不只送 mail_draft 上工具面', async () => {
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: '存草稿 1',
+          sessionId: 'session-save-draft-rules',
+        }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+      await waitForAssertion(() => {
+        expect(mockCreateAgentLoop).toHaveBeenCalled();
+      });
+      const config = mockCreateAgentLoop.mock.calls.at(-1)![0] as {
+        allowedToolNames?: string[];
+        systemPrompt?: string;
+      };
+      expect(config.allowedToolNames).toContain('mail_draft');
+      expect(config.systemPrompt).toContain('<session_command_center>');
+      expect(config.systemPrompt).toContain('<morning_brief_save_draft>');
+      expect(config.systemPrompt).toContain('已经存过');
+      expect(config.systemPrompt).toContain('没有开邮件权限');
+      controller.abort();
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalled();
+      });
+    });
+
+    it('非存草稿轮次：systemPrompt 只有指挥台 brain 块，不带存草稿规则', async () => {
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: '今天有什么安排',
+          sessionId: 'session-save-draft-rules-absent',
+        }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+      await waitForAssertion(() => {
+        expect(mockCreateAgentLoop).toHaveBeenCalled();
+      });
+      const config = mockCreateAgentLoop.mock.calls.at(-1)![0] as {
+        allowedToolNames?: string[];
+        systemPrompt?: string;
+      };
+      expect(config.allowedToolNames).not.toContain('mail_draft');
+      expect(config.systemPrompt).toContain('<session_command_center>');
+      expect(config.systemPrompt).not.toContain('<morning_brief_save_draft>');
+      controller.abort();
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalled();
+      });
+    });
+
     it('body 带 thinkingEnabled=false + effortLevel=low → 原样落进 agent config', async () => {
       const controller = new AbortController();
       const response = await fetch(`${baseUrl}/api/run`, {

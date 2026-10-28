@@ -54,12 +54,14 @@ interface MCPToolRegistryCallOptions {
 interface InteractionAwareRequestOptions {
   timeout: number;
   signal?: AbortSignal;
+  /** 进度通知续期：按基础预算重挂本地看门狗，但不超过 CALL_TOOL_MAX_TOTAL 总上限 */
+  refresh(): void;
   dispose(): void;
 }
 
 // The nested decision timeout is registered after tools/call. Give its
 // structured denial one event-loop turn to cross the transport before the
-// outer request is cancelled. This does not extend the 60s decision budget.
+// outer request is cancelled. This does not extend the call-tool budget.
 const MCP_INTERACTION_SETTLEMENT_GRACE_MS = 1_000;
 
 function createInteractionAwareRequestOptions(
@@ -69,7 +71,9 @@ function createInteractionAwareRequestOptions(
 ): InteractionAwareRequestOptions {
   const interactive = hasInteractiveUi();
   const watchdog = new AbortController();
+  const totalDeadline = Date.now() + MCP_TIMEOUTS.CALL_TOOL_MAX_TOTAL;
   let timeout: NodeJS.Timeout | undefined;
+  let disposed = false;
   const abortForTimeout = () => {
     watchdog.abort(new SdkError(
       SdkErrorCode.RequestTimeout,
@@ -77,29 +81,38 @@ function createInteractionAwareRequestOptions(
       { timeout: timeoutMs },
     ));
   };
-  const armInteractiveWatchdog = () => {
+  const armWatchdog = (delayMs: number) => {
+    timeout = setTimeout(abortForTimeout, delayMs);
+    timeout.unref?.();
+  };
+  // 交互态重挂钟：pending 人工输入时保持卸下（挂起审批不受调用预算约束）。
+  // 交互变化回调走默认完整预算；进度续期传入封顶后的预算。
+  const armInteractiveWatchdog = (delayMs: number = timeoutMs) => {
     if (timeout) clearTimeout(timeout);
     timeout = undefined;
     if (hasPendingMcpInteraction(serverName)) return;
 
-    timeout = setTimeout(abortForTimeout, timeoutMs);
+    armWatchdog(delayMs);
+  };
+  const armSettlementAwareWatchdog = (delayMs: number) => {
+    if (timeout) clearTimeout(timeout);
+    timeout = undefined;
+    timeout = setTimeout(() => {
+      if (hasPendingMcpInteraction(serverName)) {
+        armWatchdog(MCP_INTERACTION_SETTLEMENT_GRACE_MS);
+        return;
+      }
+      abortForTimeout();
+    }, delayMs);
     timeout.unref?.();
   };
 
   let unsubscribe = () => {};
   if (interactive) {
-    unsubscribe = onPendingMcpInteractionChange(serverName, armInteractiveWatchdog);
+    unsubscribe = onPendingMcpInteractionChange(serverName, () => armInteractiveWatchdog());
     armInteractiveWatchdog();
   } else {
-    timeout = setTimeout(() => {
-      if (hasPendingMcpInteraction(serverName)) {
-        timeout = setTimeout(abortForTimeout, MCP_INTERACTION_SETTLEMENT_GRACE_MS);
-        timeout.unref?.();
-        return;
-      }
-      abortForTimeout();
-    }, timeoutMs);
-    timeout.unref?.();
+    armSettlementAwareWatchdog(timeoutMs);
   }
 
   return {
@@ -109,7 +122,23 @@ function createInteractionAwareRequestOptions(
     signal: callerSignal
       ? AbortSignal.any([callerSignal, watchdog.signal])
       : watchdog.signal,
+    refresh: () => {
+      // 进度续期只封顶进度路径：到总上限即掐，交互态挂起审批的再挂钟仍走完整预算。
+      if (disposed) return;
+      const remaining = totalDeadline - Date.now();
+      if (remaining <= 0) {
+        abortForTimeout();
+        return;
+      }
+      const delayMs = Math.min(timeoutMs, remaining);
+      if (interactive) {
+        armInteractiveWatchdog(delayMs);
+      } else {
+        armSettlementAwareWatchdog(delayMs);
+      }
+    },
     dispose: () => {
+      disposed = true;
       if (timeout) clearTimeout(timeout);
       unsubscribe();
     },
@@ -650,7 +679,7 @@ export class MCPToolRegistry {
     options: MCPToolRegistryCallOptions = {},
   ): Promise<ToolResult> {
     const startTime = Date.now();
-    const timeoutMs = options.timeoutMs ?? 60000;
+    const timeoutMs = options.timeoutMs ?? MCP_TIMEOUTS.CALL_TOOL;
     const abortSignal = options.abortSignal;
     if (abortSignal?.aborted) {
       return buildCancelledToolResult(toolCallId, startTime);
@@ -668,7 +697,15 @@ export class MCPToolRegistry {
         name: toolName,
         arguments: args,
         _meta: activeMcpRequestMeta(),
-      }, { timeout: requestOptions.timeout, signal: requestOptions.signal });
+      }, {
+        timeout: requestOptions.timeout,
+        signal: requestOptions.signal,
+        // 连接器报进度时同时续两处期限：SDK 计时器（resetTimeoutOnProgress）
+        // 与本地看门狗（refresh，受 CALL_TOOL_MAX_TOTAL 封顶）。不传 maxTotalTimeout——
+        // 交互态 SDK 超时是挂起审批兜底，总上限在那里会切断等人的调用。
+        onprogress: () => requestOptions.refresh(),
+        resetTimeoutOnProgress: true,
+      });
 
       logger.info(`MCP tool completed: ${serverName}/${toolName}`, { duration: Date.now() - startTime });
 
@@ -728,7 +765,12 @@ export class MCPToolRegistry {
     try {
       const retryResult = await client.callTool(
         { name: toolName, arguments: args, _meta: activeMcpRequestMeta() },
-        { timeout: requestOptions.timeout, signal: requestOptions.signal },
+        {
+          timeout: requestOptions.timeout,
+          signal: requestOptions.signal,
+          onprogress: () => requestOptions.refresh(),
+          resetTimeoutOnProgress: true,
+        },
       );
 
       logger.info(`MCP tool retry succeeded: ${serverName}/${toolName}`);

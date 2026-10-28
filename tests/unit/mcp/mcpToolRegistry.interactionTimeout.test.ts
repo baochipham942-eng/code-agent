@@ -157,7 +157,7 @@ describe('MCP tool transport interaction timeout', () => {
     });
   });
 
-  it('交互 UI 在线但没有 pending 人工输入时，挂死工具仍在 60 秒失败', async () => {
+  it('交互 UI 在线但没有 pending 人工输入时，挂死工具仍在默认预算（120 秒）失败', async () => {
     platformMocks.hasInteractiveUi.mockReturnValue(true);
     setBrowserWindowInteractionProbe(() => true);
     const { client, registry } = await createElicitingTransport();
@@ -174,6 +174,10 @@ describe('MCP tool transport interaction timeout', () => {
       message: 'Request timed out',
     });
 
+    // 默认预算 60s→120s：一分钟不再掐，两分钟掐。
+    await vi.advanceTimersByTimeAsync(60_000);
+    const marker = Symbol('pending');
+    await expect(Promise.race([result, Promise.resolve(marker)])).resolves.toBe(marker);
     await vi.advanceTimersByTimeAsync(60_000);
     await rejection;
   });

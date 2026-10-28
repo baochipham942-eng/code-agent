@@ -39,6 +39,11 @@ import {
   materializeRunWorkDirectoryOnce,
   shouldMaterializeWorkDirectoryForTool,
 } from '../../../src/host/agent/runtime/workDirectoryMaterializer';
+import {
+  createSnapshotHandler,
+  loadStreamSnapshot,
+  saveStreamSnapshot,
+} from '../../../src/host/session/streamSnapshot';
 import { taskStatusSchema } from '../../../src/host/tools/modules/commandCenter/sessionCommandCenter.schema';
 import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import {
@@ -566,17 +571,45 @@ describe('delegate task tools do not materialize; empty folders recycle (N-DELEG
     expect(existsSync(defaultRoot)).toBe(false);
   });
 
-  function plantMetadata(dir: string): void {
-    const snapshots = path.join(dir, '.code-agent', 'stream-snapshots');
-    mkdirSync(snapshots, { recursive: true });
-    writeFileSync(path.join(snapshots, 'snap.json'), '{"ok":true}');
+  function snapshotIdentity(dir: string, sessionId: string, runId: string) {
+    return { workingDir: dir, sessionId, runId, turnId: 'turn-1' } as const;
+  }
+
+  // 干净收尾形状：final 快照落盘即被 clearStreamSnapshot 清掉（streamSnapshot.ts
+  // createSnapshotHandler 尾部），整个会话快照目录连 owner 标记一起移除，
+  // 只剩空的 stream-snapshots 脚手架——这才是可回收的「纯元数据」
+  function plantFinalSnapshot(dir: string, sessionId: string, runId: string): void {
+    const handler = createSnapshotHandler(snapshotIdentity(dir, sessionId, runId));
+    handler({
+      content: '完整回复',
+      reasoning: '',
+      toolCalls: [],
+      estimatedTokens: 8,
+      timestamp: Date.now(),
+      isFinal: true,
+    });
+  }
+
+  // 断流形状：终错/取消路径刻意留在盘上的 incomplete 快照 + owner 标记。
+  // 这是 F4 恢复证据——loadStreamSnapshot 靠它让 renderer 渲染「继续上次中断回复」
+  function plantInterruptedSnapshot(dir: string, sessionId: string, runId: string): void {
+    const identity = snapshotIdentity(dir, sessionId, runId);
+    createSnapshotHandler(identity);
+    saveStreamSnapshot({
+      content: '中断前的半截回复',
+      reasoning: '',
+      toolCalls: [],
+      estimatedTokens: 8,
+      timestamp: Date.now(),
+      isFinal: false,
+    }, identity);
   }
 
   it('removes a dir this process created when it holds only .code-agent metadata', async () => {
     const dir = path.join(defaultRoot, '任务_1027_只有元数据');
     beginWorkDirectoryRun(dir);
     await materializeRunWorkDirectoryOnce(dir, { sessionId: 'session-meta' });
-    plantMetadata(dir);
+    plantFinalSnapshot(dir, 'session-meta', 'run-meta');
     endWorkDirectoryRun(dir);
     expect(existsSync(dir)).toBe(false);
   });
@@ -594,7 +627,7 @@ describe('delegate task tools do not materialize; empty folders recycle (N-DELEG
     const dir = path.join(defaultRoot, '任务_1027_元数据旁还有文件');
     beginWorkDirectoryRun(dir);
     await materializeRunWorkDirectoryOnce(dir, { sessionId: 'session-extra-meta' });
-    plantMetadata(dir);
+    plantFinalSnapshot(dir, 'session-extra-meta', 'run-extra-meta');
     writeFileSync(path.join(dir, '.code-agent', 'other.txt'), 'keep');
     endWorkDirectoryRun(dir);
     expect(existsSync(path.join(dir, '.code-agent', 'other.txt'))).toBe(true);
@@ -604,10 +637,11 @@ describe('delegate task tools do not materialize; empty folders recycle (N-DELEG
     const dir = path.join(defaultRoot, '任务_1027_不是本进程建的');
     mkdirSync(dir, { recursive: true });
     await materializeRunWorkDirectoryOnce(dir, { sessionId: 'session-foreign' });
-    plantMetadata(dir);
+    plantInterruptedSnapshot(dir, 'session-foreign', 'run-foreign');
     beginWorkDirectoryRun(dir);
     endWorkDirectoryRun(dir);
-    expect(existsSync(path.join(dir, '.code-agent', 'stream-snapshots', 'snap.json'))).toBe(true);
+    expect(existsSync(dir)).toBe(true);
+    expect(loadStreamSnapshot({ workingDir: dir, sessionId: 'session-foreign' })?.streamStatus).toBe('incomplete');
   });
 
   it('does not delete a shared dir until both runs end', async () => {
@@ -615,9 +649,48 @@ describe('delegate task tools do not materialize; empty folders recycle (N-DELEG
     beginWorkDirectoryRun(dir);
     beginWorkDirectoryRun(dir);
     await materializeRunWorkDirectoryOnce(dir, { sessionId: 'session-shared' });
-    plantMetadata(dir);
+    plantFinalSnapshot(dir, 'session-shared', 'run-shared');
     endWorkDirectoryRun(dir);
     expect(existsSync(dir)).toBe(true);
+    endWorkDirectoryRun(dir);
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  it('keeps the dir and its incomplete snapshot when the run broke mid-stream (rework r1)', async () => {
+    const dir = path.join(defaultRoot, '任务_1027_断流证据');
+    beginWorkDirectoryRun(dir);
+    await materializeRunWorkDirectoryOnce(dir, { sessionId: 'session-broken' });
+    plantInterruptedSnapshot(dir, 'session-broken', 'run-broken');
+    endWorkDirectoryRun(dir);
+    // 恢复证据必须活过回收：loadStreamSnapshot 读得回 incomplete 快照，
+    // deriveStreamInterruptionDecision 才有「继续上次中断回复」可渲染
+    expect(existsSync(dir)).toBe(true);
+    const recovered = loadStreamSnapshot({ workingDir: dir, sessionId: 'session-broken' });
+    expect(recovered?.streamStatus).toBe('incomplete');
+    expect(recovered?.content).toBe('中断前的半截回复');
+  });
+
+  it('still recycles when stream-snapshots holds only the owner marker (stream never started)', async () => {
+    const dir = path.join(defaultRoot, '任务_1027_只有owner标记');
+    beginWorkDirectoryRun(dir);
+    await materializeRunWorkDirectoryOnce(dir, { sessionId: 'session-marker-only' });
+    createSnapshotHandler(snapshotIdentity(dir, 'session-marker-only', 'run-marker-only'));
+    // marker 单独不是证据：run 文件从未落盘，loadStreamSnapshot 返回 null
+    expect(loadStreamSnapshot({ workingDir: dir, sessionId: 'session-marker-only' })).toBeNull();
+    endWorkDirectoryRun(dir);
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  it('recycles the dir once a later clean run clears the interrupted evidence (rework r1)', async () => {
+    const dir = path.join(defaultRoot, '任务_1027_断流后干净收尾');
+    beginWorkDirectoryRun(dir);
+    await materializeRunWorkDirectoryOnce(dir, { sessionId: 'session-recover' });
+    plantInterruptedSnapshot(dir, 'session-recover', 'run-broken');
+    endWorkDirectoryRun(dir);
+    expect(existsSync(dir)).toBe(true);
+    // 用户重进会话续跑：新 run 干净收尾，final 清掉整个会话快照目录（含旧证据）
+    beginWorkDirectoryRun(dir);
+    plantFinalSnapshot(dir, 'session-recover', 'run-recovered');
     endWorkDirectoryRun(dir);
     expect(existsSync(dir)).toBe(false);
   });
@@ -635,7 +708,7 @@ describe('delegate task tools do not materialize; empty folders recycle (N-DELEG
     await engine.executeToolsWithHooks([
       { id: 'bash-1', name: 'Bash', arguments: { command: 'pwd' } } as ToolCall,
     ]);
-    plantMetadata(plannedDir);
+    plantFinalSnapshot(plannedDir, 'session-recycle-write', 'run-recycle-write');
     endWorkDirectoryRun(plannedDir);
     expect(existsSync(plannedDir)).toBe(false);
 

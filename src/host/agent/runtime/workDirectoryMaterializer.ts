@@ -27,6 +27,7 @@ import { getDefaultWorkDirectory } from '../../config/configPaths';
 import { materializeSessionWorkDirectory } from '../../config/sessionWorkDirectory';
 import { listSessionWorkDirectoryReservations } from '../../config/sessionWorkDirectoryReservations';
 import { isPathWithinRoot } from '../../runtime/workspaceScope';
+import { hasUnclearedStreamSnapshots } from '../../session/streamSnapshot';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('WorkDirectoryMaterializer');
@@ -134,7 +135,9 @@ export function beginWorkDirectoryRun(workingDirectory: string | undefined): voi
 
 /**
  * 最后一个占用该目录的 run 结束时，仅当本进程新建且内容只剩 `.code-agent`
- * （里面至多 `stream-snapshots`，其下任意嵌套）才删除。其它任何文件或目录都留下。
+ * （其中至多空的 `stream-snapshots` 脚手架 / owner 标记）才删除。其它任何文件
+ * 或目录都留下；stream-snapshots 里还有未清除的 run 快照（断流恢复证据）时也
+ * 不删——证据要活到用户重进会话被 loadStreamSnapshot 读回（rework r1）。
  * 删掉之后清掉 attempts，否则下一次 Write 会命中已完成的 promise、不再 mkdir。
  */
 export function endWorkDirectoryRun(workingDirectory: string | undefined): void {
@@ -171,8 +174,10 @@ function recycleCreatedMetadataDir(dir: string): void {
 }
 
 /**
- * 空目录，或仅有 `.code-agent` 且其中至多有 `stream-snapshots`（可递归含快照文件）。
- * 任何其它名字、符号链接、非常规文件都算用户内容，返回 false。
+ * 空目录，或仅有 `.code-agent` 且其中至多空的 `stream-snapshots` 脚手架。
+ * 快照 run 文件是断流恢复证据，存在即不回收（判据单一真源在
+ * hasUnclearedStreamSnapshots）。任何其它名字、符号链接、非常规文件都算
+ * 用户内容，返回 false。
  */
 function isOnlyCodeAgentMetadata(dir: string): boolean {
   let rootStat: fsSync.Stats;
@@ -187,30 +192,12 @@ function isOnlyCodeAgentMetadata(dir: string): boolean {
   if (top.length === 0) return true;
   if (top.length !== 1 || top[0].name !== '.code-agent') return false;
   if (!isRealDirectory(top[0])) return false;
-  return isCodeAgentMetadata(path.join(dir, '.code-agent'));
-}
-
-function isCodeAgentMetadata(codeAgentDir: string): boolean {
-  const entries = readDirents(codeAgentDir);
-  if (!entries) return false;
-  if (entries.length === 0) return true;
-  if (entries.length !== 1 || entries[0].name !== 'stream-snapshots') return false;
-  if (!isRealDirectory(entries[0])) return false;
-  return isPlainTree(path.join(codeAgentDir, 'stream-snapshots'));
-}
-
-function isPlainTree(dir: string): boolean {
-  const entries = readDirents(dir);
-  if (!entries) return false;
-  for (const entry of entries) {
-    if (entry.isSymbolicLink()) return false;
-    if (entry.isDirectory()) {
-      if (!isPlainTree(path.join(dir, entry.name))) return false;
-      continue;
-    }
-    if (!entry.isFile()) return false;
-  }
-  return true;
+  const codeAgentEntries = readDirents(path.join(dir, '.code-agent'));
+  if (!codeAgentEntries) return false;
+  if (codeAgentEntries.length === 0) return true;
+  if (codeAgentEntries.length !== 1 || codeAgentEntries[0].name !== 'stream-snapshots') return false;
+  if (!isRealDirectory(codeAgentEntries[0])) return false;
+  return !hasUnclearedStreamSnapshots(dir);
 }
 
 function isRealDirectory(entry: fsSync.Dirent): boolean {

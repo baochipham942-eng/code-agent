@@ -287,6 +287,22 @@ describe('handleInspectArchive non-zip', () => {
     expect(corrupt.fallback).toEqual({ code: 'corrupt' });
   });
 
+  it('classifies GNU tar truncated gzip output as corrupt', async () => {
+    const dir = await tempDir();
+    const archive = path.join(dir, 'broken.tar.gz');
+    await writeFile(archive, 'truncated-gzip');
+
+    const inspection = await handleInspectArchive({ filePath: archive }, {
+      execFile: async () => tarFailure(
+        'gzip: stdin: unexpected end of file\n'
+        + 'tar: Child returned status 1\n'
+        + 'tar: Error is not recoverable: exiting now',
+      ),
+    });
+
+    expect(inspection.fallback).toEqual({ code: 'corrupt' });
+  });
+
   it('classifies mocked rar, encrypted, and corrupt archives', async () => {
     const dir = await tempDir();
     const rar = path.join(dir, 'sample.rar');

@@ -31,7 +31,7 @@ export function classifyArchiveFailure(text: string): 'encrypted' | 'corrupt' | 
   const lower = text.toLowerCase();
   if (/passphrase|password|encrypt/.test(lower)) return 'encrypted';
   if (/unsupported|unrecognized archive|mtree specification|not a tar/.test(lower)) return 'unsupported';
-  if (/damaged|truncat|corrupt|checksum|unexpected eof|failed to read full header/.test(lower)) return 'corrupt';
+  if (/damaged|truncat|corrupt|checksum|unexpected eof|unexpected end of file|failed to read full header/.test(lower)) return 'corrupt';
   return null;
 }
 

@@ -34,8 +34,12 @@ import { ArtifactState } from '../../../src/host/agent/runtime/artifactState';
 import { createRunContext, resolveCanonicalRunPath } from '../../../src/host/runtime/runContext';
 import { getToolDefinitionWithCloudMeta } from '../../../src/host/tools/dispatch/toolDefinitions';
 import {
+  beginWorkDirectoryRun,
+  endWorkDirectoryRun,
+  materializeRunWorkDirectoryOnce,
   shouldMaterializeWorkDirectoryForTool,
 } from '../../../src/host/agent/runtime/workDirectoryMaterializer';
+import { taskStatusSchema } from '../../../src/host/tools/modules/commandCenter/sessionCommandCenter.schema';
 import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import {
   hasProtocolTool,
@@ -491,6 +495,159 @@ describe('connector/network tools declared cwd-free (N-DELIVERABLE-WORKDIR-LAZY-
       { id: 'gh-1', name: 'github_pr', arguments: { action: 'list' } } as ToolCall,
     ]);
     expect(existsSync(plannedDir)).toBe(true);
+  });
+});
+
+describe('delegate task tools do not materialize; empty folders recycle (N-DELEGATE-WORKDIR-LAZY)', () => {
+  const delegationTools = ['delegate_task', 'steer_task', 'cancel_task'] as const;
+
+  beforeAll(() => {
+    getProtocolRegistry();
+  });
+
+  let tempDataDir: string;
+  let defaultRoot: string;
+  let priorDataDir: string | undefined;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    fileReadTracker.clear();
+    tempDataDir = mkdtempSync(path.join(tmpdir(), 'workdir-lazy-delegate-'));
+    priorDataDir = process.env.CODE_AGENT_DATA_DIR;
+    process.env.CODE_AGENT_DATA_DIR = tempDataDir;
+    defaultRoot = `${tempDataDir}-work`;
+  });
+
+  afterEach(() => {
+    fileReadTracker.clear();
+    if (priorDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
+    else process.env.CODE_AGENT_DATA_DIR = priorDataDir;
+    rmSync(tempDataDir, { recursive: true, force: true });
+    rmSync(defaultRoot, { recursive: true, force: true });
+  });
+
+  it('delegate_task, steer_task and cancel_task do not materialize; task_status stays read-only', () => {
+    for (const name of delegationTools) {
+      const definition = getToolDefinitionWithCloudMeta(name);
+      expect(definition, `${name} is registered`).toBeDefined();
+      expect(definition?.touchesWorkDirectory, `${name} opts out`).toBe(false);
+      expect(shouldMaterializeWorkDirectoryForTool(definition), `${name} skips mkdir`).toBe(false);
+    }
+    expect(taskStatusSchema.readOnly).toBe(true);
+    expect(taskStatusSchema.touchesWorkDirectory).toBeUndefined();
+    const status = getToolDefinitionWithCloudMeta('task_status');
+    expect(status?.readOnly).toBe(true);
+    expect(status?.touchesWorkDirectory).toBeUndefined();
+    expect(shouldMaterializeWorkDirectoryForTool(getToolDefinitionWithCloudMeta('Bash'))).toBe(true);
+  });
+
+  it('a turn calling only delegate_task leaves no planned dir', async () => {
+    const plannedDir = path.join(defaultRoot, '任务_1027_只派任务');
+    const execute = vi.fn(async (name: string): Promise<ToolResult> => ({
+      toolCallId: '', success: true, output: `${name} ok`,
+    }));
+    const { engine } = makeEngine(execute, plannedDir);
+
+    const results = await engine.executeToolsWithHooks([
+      {
+        id: 'delegate-1',
+        name: 'delegate_task',
+        arguments: {
+          title: '提醒日程和草稿',
+          short_name: '三件',
+          lane_key: 'realrun4',
+          submission_key: 'realrun4-1',
+          prompt: '创建提醒、邮件草稿和日程',
+        },
+      } as ToolCall,
+    ]);
+    expect(results.every((result) => result.success)).toBe(true);
+    expect(existsSync(plannedDir)).toBe(false);
+    expect(existsSync(defaultRoot)).toBe(false);
+  });
+
+  function plantMetadata(dir: string): void {
+    const snapshots = path.join(dir, '.code-agent', 'stream-snapshots');
+    mkdirSync(snapshots, { recursive: true });
+    writeFileSync(path.join(snapshots, 'snap.json'), '{"ok":true}');
+  }
+
+  it('removes a dir this process created when it holds only .code-agent metadata', async () => {
+    const dir = path.join(defaultRoot, '任务_1027_只有元数据');
+    beginWorkDirectoryRun(dir);
+    await materializeRunWorkDirectoryOnce(dir, { sessionId: 'session-meta' });
+    plantMetadata(dir);
+    endWorkDirectoryRun(dir);
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  it('keeps a folder that contains a user file', async () => {
+    const dir = path.join(defaultRoot, '任务_1027_有用户文件');
+    beginWorkDirectoryRun(dir);
+    await materializeRunWorkDirectoryOnce(dir, { sessionId: 'session-user-file' });
+    writeFileSync(path.join(dir, 'notes.md'), 'keep');
+    endWorkDirectoryRun(dir);
+    expect(existsSync(path.join(dir, 'notes.md'))).toBe(true);
+  });
+
+  it('keeps a dir when .code-agent holds anything besides stream-snapshots', async () => {
+    const dir = path.join(defaultRoot, '任务_1027_元数据旁还有文件');
+    beginWorkDirectoryRun(dir);
+    await materializeRunWorkDirectoryOnce(dir, { sessionId: 'session-extra-meta' });
+    plantMetadata(dir);
+    writeFileSync(path.join(dir, '.code-agent', 'other.txt'), 'keep');
+    endWorkDirectoryRun(dir);
+    expect(existsSync(path.join(dir, '.code-agent', 'other.txt'))).toBe(true);
+  });
+
+  it('keeps a dir this process did not create', async () => {
+    const dir = path.join(defaultRoot, '任务_1027_不是本进程建的');
+    mkdirSync(dir, { recursive: true });
+    await materializeRunWorkDirectoryOnce(dir, { sessionId: 'session-foreign' });
+    plantMetadata(dir);
+    beginWorkDirectoryRun(dir);
+    endWorkDirectoryRun(dir);
+    expect(existsSync(path.join(dir, '.code-agent', 'stream-snapshots', 'snap.json'))).toBe(true);
+  });
+
+  it('does not delete a shared dir until both runs end', async () => {
+    const dir = path.join(defaultRoot, '任务_1027_两个run');
+    beginWorkDirectoryRun(dir);
+    beginWorkDirectoryRun(dir);
+    await materializeRunWorkDirectoryOnce(dir, { sessionId: 'session-shared' });
+    plantMetadata(dir);
+    endWorkDirectoryRun(dir);
+    expect(existsSync(dir)).toBe(true);
+    endWorkDirectoryRun(dir);
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  it('a later Write re-creates the dir after recycle', async () => {
+    const plannedDir = path.join(defaultRoot, '任务_1027_回收后再写');
+    const seenByExecutor: boolean[] = [];
+    const execute = vi.fn(async (): Promise<ToolResult> => {
+      seenByExecutor.push(existsSync(plannedDir));
+      return { toolCallId: '', success: true, output: 'ok' };
+    });
+    const { engine } = makeEngine(execute, plannedDir);
+
+    beginWorkDirectoryRun(plannedDir);
+    await engine.executeToolsWithHooks([
+      { id: 'bash-1', name: 'Bash', arguments: { command: 'pwd' } } as ToolCall,
+    ]);
+    plantMetadata(plannedDir);
+    endWorkDirectoryRun(plannedDir);
+    expect(existsSync(plannedDir)).toBe(false);
+
+    beginWorkDirectoryRun(plannedDir);
+    await engine.executeToolsWithHooks([
+      { id: 'write-1', name: 'Write', arguments: { file_path: 'notes.md', content: 'x' } } as ToolCall,
+    ]);
+    expect(existsSync(plannedDir)).toBe(true);
+    expect(seenByExecutor).toEqual([true, true]);
+    writeFileSync(path.join(plannedDir, 'notes.md'), 'x');
+    endWorkDirectoryRun(plannedDir);
+    expect(existsSync(path.join(plannedDir, 'notes.md'))).toBe(true);
   });
 });
 

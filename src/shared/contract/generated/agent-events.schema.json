@@ -1280,7 +1280,8 @@
             "session",
             "always",
             "never",
-            "timeout"
+            "timeout",
+            "superseded"
           ]
         },
         "resolvedBy": {

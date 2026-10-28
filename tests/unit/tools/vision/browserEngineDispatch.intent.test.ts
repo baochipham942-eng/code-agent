@@ -36,6 +36,13 @@ vi.mock('../../../../src/host/services/infra/browserService.js', () => ({
 
 vi.mock('../../../../src/host/services/infra/browserPool.js', () => ({
   getBrowserService: vi.fn(),
+  browserPool: {
+    acquire: vi.fn(),
+    setInUse: vi.fn(),
+    releaseAgent: vi.fn(async () => undefined),
+  },
+  bindBrowserPoolReleaseHook: vi.fn(),
+  BrowserPoolBusyError: class BrowserPoolBusyError extends Error {},
 }));
 
 vi.mock('../../../../src/host/services/desktop/visionAnalysisService', () => ({

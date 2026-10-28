@@ -5,7 +5,9 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { createApp, type CreateAppDeps } from '../../../src/web/app';
 import { SERVER_AUTH_TOKEN } from '../../../src/web/middleware/auth';
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
-import type { BuildInfo } from '../../../src/shared/contract';
+import type { BuildInfo, RendererServeDecision } from '../../../src/shared/contract';
+
+let injectedRendererServe: RendererServeDecision | null = null;
 
 function buildDeps(dataDir: string): CreateAppDeps {
   const build = {
@@ -27,6 +29,7 @@ function buildDeps(dataDir: string): CreateAppDeps {
     resolveCodeAgentDataDir: () => dataDir,
     getAppVersion: () => '0.0.0-test',
     getBuildInfo: () => build,
+    getRendererServeDecision: () => injectedRendererServe,
     getDurableRunRollout: () => ({
       policy: {
         mode: 'legacy',
@@ -61,7 +64,10 @@ describe('health public projection and authenticated detail route', () => {
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   });
 
-  afterEach(() => vi.unstubAllEnvs());
+  afterEach(() => {
+    injectedRendererServe = null;
+    vi.unstubAllEnvs();
+  });
 
   it('keeps unauthenticated /health to its public liveness projection', async () => {
     const token = 'boot-1';
@@ -92,6 +98,43 @@ describe('health public projection and authenticated detail route', () => {
     expect(body).not.toHaveProperty('pid');
     expect(body).not.toHaveProperty('handlers');
     expect(body).not.toHaveProperty('persistence');
+  });
+
+  it('projects rendererServe down to { source, reason } with no local paths', async () => {
+    injectedRendererServe = {
+      source: 'active',
+      reason: 'active-healthy',
+      serveDir: '/Users/alice/.code-agent/renderer-cache/active',
+      builtinDir: '/Applications/Agent Neo.app/Contents/Resources/dist/renderer',
+      activeDir: '/Users/alice/.code-agent/renderer-cache/active',
+      activeBundle: null,
+      currentShellVersion: '0.0.0-test',
+    };
+
+    const response = await fetch(`${baseUrl}/api/health`);
+    const body = await response.json() as Record<string, unknown>;
+
+    expect(response.status).toBe(200);
+    expect(body.rendererServe).toEqual({ source: 'active', reason: 'active-healthy' });
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain('serveDir');
+    expect(serialized).not.toContain('builtinDir');
+    expect(serialized).not.toContain('activeDir');
+    expect(serialized).not.toContain('/Users/');
+    expect(serialized).not.toContain('/Applications/');
+
+    const detail = await fetch(`${baseUrl}/api/health/detail`, {
+      headers: { Authorization: `Bearer ${SERVER_AUTH_TOKEN}` },
+    });
+    const detailBody = await detail.json() as Record<string, unknown>;
+    expect(detail.status).toBe(200);
+    expect(detailBody.rendererServe).toMatchObject({
+      source: 'active',
+      reason: 'active-healthy',
+      serveDir: '/Users/alice/.code-agent/renderer-cache/active',
+      builtinDir: '/Applications/Agent Neo.app/Contents/Resources/dist/renderer',
+      activeDir: '/Users/alice/.code-agent/renderer-cache/active',
+    });
   });
 
   it('returns a nonce-bound HMAC proof, never a raw token echo', async () => {

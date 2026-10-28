@@ -29,7 +29,6 @@ import { CronJobDetail } from './CronJobDetail';
 import { CronJobEditor } from './CronJobEditor';
 import { CronExecutionList } from './CronExecutionList';
 import { CronExecutionDetail } from './CronExecutionDetail';
-import { CronDailyCostSummary } from './CronDailyCostSummary';
 import { WebModeBanner } from '../settings/WebModeBanner';
 import { FullScreenPage, FullScreenPageHeader } from '../shared/FullScreenPage';
 import { Button } from '../../primitives';
@@ -39,11 +38,6 @@ interface CronCenterPanelProps {
 }
 
 type CronCenterTab = 'jobs' | 'runs';
-
-function readCronSearchParam(name: string): string | null {
-  if (typeof window === 'undefined') return null;
-  return new URLSearchParams(window.location.search).get(name);
-}
 
 interface UnattendedBudgetStatus {
   currentCost: number;
@@ -97,12 +91,8 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
     recentExecutions,
     loadRecentExecutions,
   } = useCronStore();
-  const [activeTab, setActiveTab] = useState<CronCenterTab>(
-    () => (readCronSearchParam('cronTab') === 'runs' ? 'runs' : 'jobs'),
-  );
-  const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(
-    () => readCronSearchParam('execution'),
-  );
+  const [activeTab, setActiveTab] = useState<CronCenterTab>('jobs');
+  const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   // 待过目数以 IPC countPendingReview（服务侧按**任务**折算）为真源：收件箱的回传只当
   // 「列表变了，该重取了」的触发信号（回传值是按记录数，同一任务跑 3 轮会虚报 3）。
   // IPC 失败时回落回传值并 warn 留痕，不静默吞。回调必须稳定（收件箱 effect 依赖它）。
@@ -314,26 +304,21 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
             </div>
           </>
         ) : (
-          <>
-            <div className="shrink-0 px-6 pt-4" data-testid="cron-runs-daily-cost">
-              <CronDailyCostSummary executions={recentExecutions} />
-            </div>
-            <div className="grid flex-[1_0_420px] grid-cols-[minmax(0,3fr)_minmax(280px,2fr)] items-start gap-4 px-6 py-4" data-testid="cron-runs-workbench">
-              <CronExecutionList
-                executions={recentExecutions}
-                selectedExecutionId={selectedExecutionId}
-                onSelectExecution={setSelectedExecutionId}
-                jobNameById={jobNameById}
-                runsOnByJobId={runsOnByJobId}
+          <div className="grid flex-[1_0_420px] grid-cols-[minmax(0,3fr)_minmax(280px,2fr)] items-start gap-4 px-6 py-4" data-testid="cron-runs-workbench">
+            <CronExecutionList
+              executions={recentExecutions}
+              selectedExecutionId={selectedExecutionId}
+              onSelectExecution={setSelectedExecutionId}
+              jobNameById={jobNameById}
+              runsOnByJobId={runsOnByJobId}
+            />
+            <div className="min-w-0">
+              <CronExecutionDetail
+                execution={selectedExecution}
+                runsOn={selectedExecution?.runsOn ?? (selectedExecution ? runsOnByJobId[selectedExecution.jobId] : undefined)}
               />
-              <div className="min-w-0">
-                <CronExecutionDetail
-                  execution={selectedExecution}
-                  runsOn={selectedExecution?.runsOn ?? (selectedExecution ? runsOnByJobId[selectedExecution.jobId] : undefined)}
-                />
-              </div>
             </div>
-          </>
+          </div>
         )}
       </div>
 

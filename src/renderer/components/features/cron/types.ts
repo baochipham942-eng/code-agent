@@ -472,26 +472,11 @@ export function formatDateTime(value?: string | number): string {
   return date.toLocaleString();
 }
 
-/** 运行记录表的时间：月/日 + 时/分。详情仍用完整本地时间，避免两列日期把表撑出容器。 */
-export function formatRunListTime(value?: string | number): string {
-  if (value == null) return '—';
-  const date = typeof value === 'number' ? new Date(value) : new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
-  const pad = (part: number) => String(part).padStart(2, '0');
-  return `${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
 export function formatDuration(ms?: number): string {
   if (ms == null) return '—';
   if (ms < 1000) return `${ms}ms`;
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
   return `${(ms / 60_000).toFixed(1)}m`;
-}
-
-/** 单次运行/每日小计的美元显示（保留 4 位小数）。无模型调用与云端运行都是 dash。 */
-export function formatRunCostUsd(value?: number, runsOn?: 'local' | 'cloud'): string {
-  if (runsOn === 'cloud' || value == null || !Number.isFinite(value)) return '—';
-  return `$${value.toFixed(4)}`;
 }
 
 /** event 摘要的显示名（来自通道目录）：有名字用名字，缺了回落 id。 */

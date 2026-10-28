@@ -22,12 +22,14 @@ const readSrc = (rel: string) => fs.readFileSync(path.join(root, 'src', rel), 'u
 
 describe('T1 更新流程优雅停机', () => {
   it('unix 与 not(unix) 的 terminate_child 都收敛到共用的 wait_then_force_kill', () => {
-    const main = readTauri('src/main.rs');
+    // 进程收尾助手（terminate_child 两个平台变体 / wait_then_force_kill / force_kill）
+    // 已集中搬到 resident_host.rs（N-QUIT-STOP-DAEMON-FIX-FU1，main.rs 不再长）。
+    const residentHost = readTauri('src/resident_host.rs');
 
-    expect(main).toContain('fn wait_then_force_kill(child: &mut Child, graceful_reason: &str)');
+    expect(residentHost).toContain('fn wait_then_force_kill(child: &mut Child, graceful_reason: &str)');
     // 两个 terminate_child 定义体内都要调用它，锚在调用行本身，别被注释文本命中
-    const unixBlock = /#\[cfg\(unix\)\]\s*fn terminate_child[\s\S]*?\n\}/.exec(main);
-    const notUnixBlock = /#\[cfg\(not\(unix\)\)\]\s*fn terminate_child[\s\S]*?\n\}/.exec(main);
+    const unixBlock = /#\[cfg\(unix\)\]\s*(?:pub\s+)?fn terminate_child[\s\S]*?\n\}/.exec(residentHost);
+    const notUnixBlock = /#\[cfg\(not\(unix\)\)\]\s*(?:pub\s+)?fn terminate_child[\s\S]*?\n\}/.exec(residentHost);
     expect(unixBlock, 'unix 分支的 terminate_child 锚点失效').not.toBeNull();
     expect(notUnixBlock, 'not(unix) 分支的 terminate_child 锚点失效').not.toBeNull();
     expect(unixBlock![0]).toMatch(/wait_then_force_kill\(child,/);
@@ -35,13 +37,13 @@ describe('T1 更新流程优雅停机', () => {
   });
 
   it('Windows 分支改走 stdin-EOF 优雅路径，不再是无条件强杀', () => {
-    const main = readTauri('src/main.rs');
-    const notUnixBlock = /#\[cfg\(not\(unix\)\)\]\s*fn terminate_child[\s\S]*?\n\}/.exec(main);
+    const residentHost = readTauri('src/resident_host.rs');
+    const notUnixBlock = /#\[cfg\(not\(unix\)\)\]\s*(?:pub\s+)?fn terminate_child[\s\S]*?\n\}/.exec(residentHost);
     expect(notUnixBlock, 'not(unix) 分支的 terminate_child 锚点失效').not.toBeNull();
 
     expect(notUnixBlock![0]).toContain('child.stdin.take()');
     // 旧的无条件强杀理由必须已被替换，防止「加了新函数但没接上」的假修复
-    expect(main).not.toContain('forced-sigkill-no-signal-support');
+    expect(residentHost).not.toContain('forced-sigkill-no-signal-support');
   });
 
   it('新命令 shutdown_web_server_for_update 存在且调用 cleanup_server', () => {
@@ -162,5 +164,58 @@ describe('win32 EOF 停机的 drain 档位', () => {
     expect(webServer).toMatch(/watchdogActive:\s*isDrainWatchdogActive\(shellPipeAttached\)/);
     // 回归锚：旧写法（裸 shellPipeAttached）在 win32 EOF 路径必然漏到无看门狗档。
     expect(webServer).not.toMatch(/watchdogActive:\s*shellPipeAttached\b/);
+  });
+});
+
+// ── 「停止并退出」意图落地后的停止通道（N-QUIT-STOP-DAEMON-FIX-FU1）────────────
+// 旧通道（SIGTERM + 3s 强杀）会把「停止并退出」变成看门狗档排空（1s 宽限）+
+// SIGKILL 收割。新通道：意图 POST 成功 → 壳送达停机指令（owned 子进程 = 关
+// stdin 写端；附着守护 = 不发信号，daemon 由意图变化自行触发停机）后按
+// STOP_INTENT_WAIT 等它排空自退。这条跨端合同两端都在 mac/linux 本地跑不到
+// 完整行为（65s 等待/真 daemon），所以这里钉死源码文本：
+//   ① Rust 预算常量 == TS 侧 WEB_DAEMON.STOP_WAIT_MS（`neo daemon stop` 同款合同）；
+//   ② AppState::cleanup 必须按 stop_intent_landed 分叉到新通道；
+//   ③ 对话框在 stop 意图 POST 成功后必须置位 coordinator 标志并藏主窗口。
+describe('「停止并退出」意图落地后的停止通道（FU1）', () => {
+  it('Rust STOP_INTENT_WAIT 必须等于 WEB_DAEMON.STOP_WAIT_MS（65s 跨端合同）', () => {
+    const residentHost = readTauri('src/resident_host.rs');
+    const rust = /pub const STOP_INTENT_WAIT:\s*Duration\s*=\s*Duration::from_secs\((\d+)\);/.exec(residentHost);
+    expect(rust, 'STOP_INTENT_WAIT 常量锚点失效（resident_host.rs）').not.toBeNull();
+
+    const constants = readSrc('shared/constants/webServer.ts');
+    const ts = /STOP_WAIT_MS:\s*([\d_]+)/.exec(constants);
+    expect(ts, 'WEB_DAEMON.STOP_WAIT_MS 锚点失效').not.toBeNull();
+
+    // 壳预算必须罩住 daemon 的完整排空宽限（60s drain + 关库收尾），短了就是把
+    // 排空中的 daemon 又交给 SIGKILL，长了则白等。数字下划线（65_000）要剥掉再比。
+    expect(Number(rust![1]) * 1000).toBe(Number(ts![1].replace(/_/g, '')));
+  });
+
+  it('AppState::cleanup 按 stop_intent_landed 分叉到「等自退」通道（owned + 附着两处）', () => {
+    const main = readTauri('src/main.rs');
+    const cleanupBlock = /fn cleanup\(&self, stop_intent_landed: bool\)[\s\S]*?\n {4}\}/.exec(main);
+    expect(cleanupBlock, 'AppState::cleanup(stop_intent_landed) 签名锚点失效').not.toBeNull();
+    // owned 子进程：意图落地 → 关 stdin 写端 + STOP_INTENT_WAIT（旧路径是 SIGTERM+3s）
+    expect(cleanupBlock![0]).toContain('stop_child_by_stop_intent');
+    expect(cleanupBlock![0]).toContain('STOP_INTENT_WAIT');
+    // 附着守护：意图落地 → 不发信号等自退
+    expect(cleanupBlock![0]).toContain('wait_attached_daemon_self_exit');
+    // fallback：意图没落地仍是旧通道
+    expect(cleanupBlock![0]).toMatch(/terminate_child\(&mut owned\.child\)/);
+    expect(cleanupBlock![0]).toMatch(/stop_attached_daemon\(/);
+  });
+
+  it('对话框在 stop 意图 POST 成功后置位 coordinator 标志并藏主窗口', () => {
+    const main = readTauri('src/main.rs');
+    const dialogAt = main.indexOf('fn show_quit_confirm_dialog');
+    const dialogBody = main.slice(dialogAt);
+    const postAt = dialogBody.indexOf('post_quit_intent(');
+    const setFlagAt = dialogBody.indexOf('set_stop_intent_landed()');
+    expect(postAt, '对话框里必须还在 POST quit-intent').toBeGreaterThan(-1);
+    expect(setFlagAt, 'stop 意图落地后必须置位 stop_intent_landed').toBeGreaterThan(postAt);
+    // 等待期藏主窗口：65s 排空等待不能让无响应窗口杵在屏幕上
+    expect(dialogBody).toContain('hide_main_window_for_stop_wait(&app)');
+    // cleanup_server 必须把标志读进来传给 AppState::cleanup
+    expect(main).toMatch(/stop_intent_landed\(\);\s*\n\s*if let Some\(cleanup\) = app\.state::<AppState>\(\)\.cleanup\(stop_intent_landed\)/);
   });
 });

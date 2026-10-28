@@ -273,14 +273,27 @@ impl AppState {
         *guard = Some(record);
     }
 
-    fn cleanup(&self) -> Option<DesktopShellProcessCleanup> {
+    /// `stop_intent_landed`：「停止并退出」的意图 POST 已被 daemon 确认。此时停
+    /// 止通道从「SIGTERM + 3s 强杀」换成「送达停机指令后等 daemon 自行排空退出」
+    /// （owned 子进程 = 关 stdin 写端；附着守护 = 不发信号），预算
+    /// `resident_host::STOP_INTENT_WAIT`（N-QUIT-STOP-DAEMON-FIX-FU1）。意图没
+    /// 落地（无 token / POST 失败 / 后台继续 / 关机 / 更新 / 信号）时保持旧通道。
+    fn cleanup(&self, stop_intent_landed: bool) -> Option<DesktopShellProcessCleanup> {
         let spawned = self
             .web_server
             .lock()
             .expect("web_server mutex poisoned")
             .take();
         if let Some(mut owned) = spawned {
-            let (exit_reason, wait_status) = terminate_child(&mut owned.child);
+            let (exit_reason, wait_status) = if stop_intent_landed && cfg!(unix) {
+                resident_host::stop_child_by_stop_intent(
+                    &mut owned.child,
+                    resident_host::STOP_INTENT_WAIT,
+                    GRACEFUL_SHUTDOWN_POLL_INTERVAL,
+                )
+            } else {
+                resident_host::terminate_child(&mut owned.child)
+            };
             return Some(DesktopShellProcessCleanup {
                 owner: owned.owner.to_string(),
                 pid: owned.pid,
@@ -297,11 +310,19 @@ impl AppState {
             .lock()
             .expect("attached_daemon mutex poisoned")
             .take()?;
-        let exit_reason = resident_host::stop_attached_daemon(
-            &record,
-            GRACEFUL_SHUTDOWN_TIMEOUT,
-            GRACEFUL_SHUTDOWN_POLL_INTERVAL,
-        )?;
+        let exit_reason = if stop_intent_landed {
+            resident_host::wait_attached_daemon_self_exit(
+                &record,
+                resident_host::STOP_INTENT_WAIT,
+                GRACEFUL_SHUTDOWN_POLL_INTERVAL,
+            )?
+        } else {
+            resident_host::stop_attached_daemon(
+                &record,
+                GRACEFUL_SHUTDOWN_TIMEOUT,
+                GRACEFUL_SHUTDOWN_POLL_INTERVAL,
+            )?
+        };
         Some(DesktopShellProcessCleanup {
             owner: "resident-daemon".to_string(),
             pid: record.pid,
@@ -317,58 +338,8 @@ impl AppState {
     }
 }
 
-/// 已经发出「请自行退出」的信号之后：轮询等它退，超时才 SIGKILL 兜底。
-/// unix / not(unix) 两个 `terminate_child` 共用同一份超时策略，避免两处各自漂移。
-/// exit_reason 区分 graceful/forced，是事后判断「这次退出干不干净」的唯一证据。
-fn wait_then_force_kill(child: &mut Child, graceful_reason: &str) -> (String, Option<String>) {
-    let deadline = Instant::now() + GRACEFUL_SHUTDOWN_TIMEOUT;
-    while Instant::now() < deadline {
-        match child.try_wait() {
-            Ok(Some(status)) => return (graceful_reason.to_string(), Some(status.to_string())),
-            Ok(None) => thread::sleep(GRACEFUL_SHUTDOWN_POLL_INTERVAL),
-            Err(_) => break,
-        }
-    }
-
-    force_kill(child, "forced-sigkill-timeout")
-}
-
-/// 先发 SIGTERM 让 webServer 自己走干净关库路径，再交给 `wait_then_force_kill` 轮询等它退。
-#[cfg(unix)]
-fn terminate_child(child: &mut Child) -> (String, Option<String>) {
-    let pid = child.id() as i32;
-    // SAFETY: pid 是刚 spawn 出、尚未被 wait 掉的子进程句柄，SIGTERM 是标准的
-    // 「请自行退出」信号，不涉及内存操作。
-    if unsafe { libc::kill(pid, libc::SIGTERM) } != 0 {
-        return force_kill(child, "forced-sigkill-sigterm-send-failed");
-    }
-
-    wait_then_force_kill(child, "graceful-sigterm")
-}
-
-/// Windows 没有 POSIX 信号，TerminateProcess（Child::kill）不给子进程任何收尾机会。
-/// 但 webServer 本来就监听 stdin EOF 自杀（`webServer.ts` 的 `process.stdin.on('end')`，
-/// spawn 时的 `.stdin(Stdio::piped())` 就是为它准备的），所以这里关掉 stdin 写端
-/// 当作「请自行退出」，再走与 unix 同一套轮询 + 超时兜底。
-/// 不用 CREATE_NEW_PROCESS_GROUP + CTRL_BREAK_EVENT：那要 unsafe winapi + 改 spawn flags
-/// （已带 CREATE_NO_WINDOW，叠加还得另验），而 stdin EOF 这条通路是现成且已在用的。
-#[cfg(not(unix))]
-fn terminate_child(child: &mut Child) -> (String, Option<String>) {
-    // take() 取出 ChildStdin，出作用域即关闭管道写端 → 子进程 stdin 收到 EOF。
-    if child.stdin.take().is_none() {
-        return force_kill(child, "forced-sigkill-no-stdin-pipe");
-    }
-
-    wait_then_force_kill(child, "graceful-stdin-eof")
-}
-
-fn force_kill(child: &mut Child, reason: &str) -> (String, Option<String>) {
-    if let Err(error) = child.kill() {
-        return (format!("cleanup-kill-failed:{error}"), None);
-    }
-    let wait_status = child.wait().map(|status| status.to_string()).ok();
-    (reason.to_string(), wait_status)
-}
+// terminate_child（unix SIGTERM / windows stdin-EOF 两个变体）与 wait_then_force_kill /
+// force_kill 兜底都住在 resident_host：进程收尾助手集中一处，main.rs 不再长。
 
 // ============================================================================
 // Windows 孤儿进程收割（T2 工单，2026-08-07）
@@ -1025,57 +996,6 @@ mod windows_process_reap_tests {
   TCP    0.0.0.0:81800          0.0.0.0:0              LISTENING       2
 ";
         assert!(parse_windows_netstat_port_holders(output, 8180, 999).is_empty());
-    }
-}
-
-// 本地档，不是 CI 门（`.github/workflows/` 全仓 grep `cargo test` 零命中）。
-// unix-only：起真子进程验编排，Windows 分支的 stdin-EOF 行为只有 static-contract 档证据。
-#[cfg(all(test, unix))]
-mod terminate_child_tests {
-    use super::terminate_child;
-    use std::process::{Command, Stdio};
-    use std::{thread, time::Duration};
-
-    /// 让 shell 有时间跑到 `trap` 那一行再发信号，否则会跟「装 trap」赛跑：
-    /// SIGTERM 在 trap 生效前打到默认处理上，把 ignore 场景误判成 graceful。
-    fn let_shell_install_trap() {
-        thread::sleep(Duration::from_millis(100));
-    }
-
-    #[test]
-    fn sigterm_handled_by_child_reports_graceful() {
-        let mut child = Command::new("sh")
-            .arg("-c")
-            .arg("trap 'exit 0' TERM; while :; do sleep 0.1; done")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("failed to spawn trap-TERM test child");
-        let_shell_install_trap();
-
-        let (exit_reason, wait_status) = terminate_child(&mut child);
-
-        assert_eq!(exit_reason, "graceful-sigterm");
-        assert!(wait_status.is_some());
-    }
-
-    #[test]
-    fn sigterm_ignored_by_child_falls_back_to_forced_kill() {
-        let mut child = Command::new("sh")
-            .arg("-c")
-            .arg("trap '' TERM; while :; do sleep 0.1; done")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("failed to spawn trap-ignore test child");
-        let_shell_install_trap();
-
-        let (exit_reason, wait_status) = terminate_child(&mut child);
-
-        assert_eq!(exit_reason, "forced-sigkill-timeout");
-        assert!(wait_status.is_some());
     }
 }
 
@@ -2342,8 +2262,21 @@ fn show_startup_failure(error: &str, diagnostic_file: Option<&str>) {
 }
 
 fn cleanup_server(app: &tauri::AppHandle) {
-    if let Some(cleanup) = app.state::<AppState>().cleanup() {
+    // 「停止并退出」意图已被 daemon 确认时，cleanup 走「等自退」通道（最多 65s）。
+    let stop_intent_landed = app
+        .state::<Arc<quit_guard::QuitCoordinator>>()
+        .stop_intent_landed();
+    if let Some(cleanup) = app.state::<AppState>().cleanup(stop_intent_landed) {
         write_process_cleanup_event(app, cleanup);
+    }
+}
+
+/// 「停止并退出」意图落地后的等待期先藏主窗口：排空最多 65s（STOP_INTENT_WAIT），
+/// 用户已拍板退出，不能让一个无响应的窗口杵在屏幕上（fallback 的 3s 旧通道保持
+/// 旧观感，不藏）。
+fn hide_main_window_for_stop_wait(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        win.hide().ok();
     }
 }
 
@@ -2557,6 +2490,11 @@ fn show_quit_confirm_dialog(
                     quit_guard::QUIT_GUARD_TIMEOUT,
                 ) {
                     eprintln!("quit-intent: request failed; continuing exit ({mode})");
+                } else if plan.cleanup_server {
+                    // stop 意图已被 daemon 确认：cleanup 换「EOF + 等自退」通道（最多
+                    // 65s），等待期先藏主窗口；POST 失败/无 token 仍走旧 SIGTERM+3s。
+                    coordinator.set_stop_intent_landed();
+                    hide_main_window_for_stop_wait(&app);
                 }
                 // 后台继续：不清理（ExitRequested/Exit 按 plan 跳过 cleanup_server），
                 // 常驻宿主接管运行中的任务；停止并退出：照旧清理。

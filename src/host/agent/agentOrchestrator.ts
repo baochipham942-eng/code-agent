@@ -60,7 +60,7 @@ import {
 } from './orchestratorDagSync';
 import { seedGoalContractForRun } from './orchestratorGoalSeed';
 import { resolveRoleToolBoundary, toRoleBoundaryRunAllowlist } from '../services/roleAssets/rolePersonalization';
-// Sub-modules
+import { applyMorningBriefSaveDraftRoleTools } from '../app/morningBriefSaveDraftTools';
 import { type AgentOrchestratorConfig, type PendingSteerMessage } from './orchestrator/types';
 import {
   resolveModelConfig,
@@ -868,7 +868,7 @@ export class AgentOrchestrator {
       : null;
     // 局部变量让 TS 自己收窄，不用非空断言（eslint 棘轮把 no-non-null-assertion 记成 warning，
     // 新增一处就顶破基线）。
-    const requestedToolNames = options?.allowedToolNames;
+    const requestedToolNames = applyMorningBriefSaveDraftRoleTools(content, options?.allowedToolNames, routedRole?.tools);
     const intersectedBoundaryTools = roleToolBoundary
       ? (requestedToolNames
           ? roleToolBoundary.allowedTools.filter((tool) => requestedToolNames.some((allowed) => allowed.toLowerCase() === tool.toLowerCase()))

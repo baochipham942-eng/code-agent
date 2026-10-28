@@ -16,10 +16,15 @@ import {
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { createForegroundWake } from './foregroundWake';
 import { getConfigService } from '../core/configService';
-import { formatSessionCommandTaskIdleFailure } from '../../../shared/i18n/sessionTaskSlot';
+import {
+  formatSessionCommandTaskIdleFailure,
+  formatSessionTaskApprovalWaitFailure,
+} from '../../../shared/i18n/sessionTaskSlot';
 import {
   SESSION_COMMAND_TASK_IDLE_TIMEOUT_MS,
+  SESSION_COMMAND_TASK_APPROVAL_WAIT_CAP_MS,
   resolveSessionCommandTaskIdleTimeoutMs,
+  resolveSessionCommandTaskApprovalWaitCapMs,
 } from '../../../shared/constants/sessionCommandCenter';
 import type { RuntimeInputMode } from '../../../shared/contract/conversationEnvelope';
 import { RUNTIME_INPUT_REDIRECT_LINE, RUNTIME_INPUT_SUPPLEMENT_LINE } from '../../../shared/constants/runtimeInput';
@@ -137,6 +142,9 @@ export class SessionCommandCenter {
   private readonly toolNamesByCallId = new Map<string, string>();
   /** permission_request ids still unresolved on the agent event stream, per task. */
   private readonly pendingApprovalIdsByTask = new Map<string, Set<string>>();
+  /** 本轮审批等待的起点（首张未答审批时刻）；审批清空即删，下一张重新计时。 */
+  private readonly approvalWaitStartedAtByTask = new Map<string, number>();
+  private readonly approvalWaitCapMs: number;
   private readonly manager: TaskManager;
   private readonly projectTerminalResult: NonNullable<SessionCommandCenterDependencies['projectTerminalResult']>;
   private readonly persistMemberInput: NonNullable<SessionCommandCenterDependencies['persistMemberInput']>;
@@ -159,6 +167,10 @@ export class SessionCommandCenter {
     this.wakeForegroundBrain = dependencies.wakeForegroundBrain ?? createForegroundWake();
     this.slotLedgerOptions = dependencies.slotLedgerOptions ?? {};
     this.slotRecoveryLocale = dependencies.slotRecoveryLocale;
+    this.approvalWaitCapMs = resolveSessionCommandTaskApprovalWaitCapMs(
+      undefined,
+      SESSION_COMMAND_TASK_APPROVAL_WAIT_CAP_MS,
+    );
     for (const eventName of TASK_LIFECYCLE_EVENTS) {
       this.manager.on(eventName, this.onTaskEvent);
     }
@@ -363,6 +375,7 @@ export class SessionCommandCenter {
     this.stopAgentEventObservation?.();
     this.toolNamesByCallId.clear();
     this.pendingApprovalIdsByTask.clear();
+    this.approvalWaitStartedAtByTask.clear();
   }
 
   private tasks(sessionId: string): Map<string, SessionCommandTask> {
@@ -404,10 +417,12 @@ export class SessionCommandCenter {
       for (const { slot, occupiedMs } of recovery.expired) {
         const task = this.tasksBySession.get(sessionId)?.get(slot.workItemId);
         if (!task || TERMINAL.has(task.status)) continue;
-        const detail = formatSessionCommandTaskIdleFailure({
-          idleMs: occupiedMs,
-          locale,
-        });
+        // 回收此刻审批还挂着 = 这轮到期是「等审批等到上限」造成的（豁免期内审批在，
+        // 就不会被静默空闲回收），说审批句；否则按静默空闲句。
+        const waitMs = this.approvalWaitMs(task.id, Date.now());
+        const detail = waitMs !== undefined
+          ? formatSessionTaskApprovalWaitFailure({ waitMs, locale })
+          : formatSessionCommandTaskIdleFailure({ idleMs: occupiedMs, locale });
         void this.settle(task, 'failed', detail);
         this.cancelIdleRun(task.id);
       }
@@ -489,11 +504,16 @@ export class SessionCommandCenter {
     // tool_progress 是守门器的定时心跳（每 5s 必发，挂死的 Bash 也照发），无条件 touch
     // 会给挂死命令无限续命（FB-451）。inactiveMs 是工具自己的真实进展钟（有真输出才
     // 归零），用它把活跃锚回填到「上次真进展」；其余事件类型一律按当下时刻 touch。
+    // 等审批期间的心跳另有一条坑：工具钟把等人时间从 inactiveMs 里扣掉，等审批时
+    // inactiveMs 恒≈0，照常回填会把活跃锚推到当下——审批等待永远走不完空闲窗口，
+    // 等待上限也就永远轮不到判。等审批时锚冻结在审批起点，由 shouldSkipIdleExpiry 兜。
     const heartbeatInactiveMs = event.type === 'tool_progress'
       ? (event.data as ToolProgressData | undefined)?.inactiveMs
       : undefined;
     if (typeof heartbeatInactiveMs === 'number' && Number.isFinite(heartbeatInactiveMs)) {
-      this.ledger(sessionId).touch(taskId, Date.now() - Math.max(0, heartbeatInactiveMs));
+      if (!this.taskAwaitsApproval(taskId)) {
+        this.ledger(sessionId).touch(taskId, Date.now() - Math.max(0, heartbeatInactiveMs));
+      }
     } else {
       this.ledger(sessionId).touch(taskId);
     }
@@ -583,8 +603,17 @@ export class SessionCommandCenter {
     const pending = this.pendingApprovalIdsByTask.get(taskId) ?? new Set<string>();
     if (data.resolved === true) pending.delete(data.id);
     else pending.add(data.id);
-    if (pending.size === 0) this.pendingApprovalIdsByTask.delete(taskId);
-    else this.pendingApprovalIdsByTask.set(taskId, pending);
+    if (pending.size === 0) {
+      this.pendingApprovalIdsByTask.delete(taskId);
+      // 本轮等待结束：下一张未答审批重新计时，不沿用旧起点。
+      this.approvalWaitStartedAtByTask.delete(taskId);
+    } else {
+      this.pendingApprovalIdsByTask.set(taskId, pending);
+      // 首张未答审批落下起点；并行第二张不挪动它（上限按「本轮等待」算）。
+      if (!this.approvalWaitStartedAtByTask.has(taskId)) {
+        this.approvalWaitStartedAtByTask.set(taskId, Date.now());
+      }
+    }
   }
 
   /**
@@ -592,13 +621,30 @@ export class SessionCommandCenter {
    * the fallback for a manager that does not expose the query (unit fakes).
    * A desktop approval does not emit a resolution event. When that wait ends,
    * start the idle window at this tick instead of at the original request.
+   * 未答审批只豁免到等待上限（approvalWaitCapMs，默认 24h）：超过后豁免停止，
+   * 空闲回收链照常 fail + cancel + 唤醒，审批卡不再无限占位。
    */
   private shouldSkipIdleExpiry(slot: { workItemId: string; sessionId: string }): boolean {
-    if (this.taskAwaitsApproval(slot.workItemId)) return true;
+    const waitMs = this.approvalWaitMs(slot.workItemId, Date.now());
+    if (waitMs !== undefined) return waitMs < this.approvalWaitCapMs;
     if (!this.pendingApprovalIdsByTask.has(slot.workItemId)) return false;
     this.ledger(slot.sessionId).touch(slot.workItemId);
     this.pendingApprovalIdsByTask.delete(slot.workItemId);
     return true;
+  }
+
+  /**
+   * 该任务本轮审批等待已等多久；不在等审批 → undefined（并顺手清掉残留起点）。
+   * 只从实时查询/事件集得知在等、却还没有起点时（观察晚了），以首次观察到的那拍起算。
+   */
+  private approvalWaitMs(taskId: string, now: number): number | undefined {
+    if (!this.taskAwaitsApproval(taskId)) {
+      this.approvalWaitStartedAtByTask.delete(taskId);
+      return undefined;
+    }
+    const startedAt = this.approvalWaitStartedAtByTask.get(taskId) ?? now;
+    this.approvalWaitStartedAtByTask.set(taskId, startedAt);
+    return now - startedAt;
   }
 
   private taskAwaitsApproval(taskId: string): boolean {
@@ -650,6 +696,7 @@ export class SessionCommandCenter {
     artifacts?: NormalizedToolArtifactMeta[],
   ): Promise<void> {
     if (TERMINAL.has(task.status)) return;
+    this.approvalWaitStartedAtByTask.delete(task.id);
     task.status = status;
     task.detail = detail;
     task.summary = compactSummary(

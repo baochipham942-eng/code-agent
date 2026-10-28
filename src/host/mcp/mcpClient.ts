@@ -19,6 +19,7 @@ import type {
 import { EventEmitter } from 'node:events';
 import { createHash } from 'node:crypto';
 import type { ToolDefinition, ToolResult } from '../../shared/contract';
+import { MCP_TIMEOUTS } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 import { getConfigService } from '../services/core/configService';
 
@@ -927,7 +928,7 @@ export class MCPClient extends EventEmitter {
     args: Record<string, unknown>,
     options: MCPToolCallOptions | number = {},
   ): Promise<ToolResult> {
-    const timeoutMs = typeof options === 'number' ? options : options.timeoutMs ?? 60000;
+    const timeoutMs = typeof options === 'number' ? options : options.timeoutMs ?? MCP_TIMEOUTS.CALL_TOOL;
     const abortSignal = typeof options === 'number' ? undefined : options.abortSignal;
     const sessionId = typeof options === 'number' ? undefined : options.sessionId;
     if (shouldBlockRawCuaInvocation(serverName, options)) {

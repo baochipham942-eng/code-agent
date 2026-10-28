@@ -117,6 +117,7 @@ export const decisionCardZh = {
       // N-WRITEBACK-EDIT：写回类工具的专属呈现与「改一改再发」编辑态
       writeback: {
         mailSendTitle: '发送邮件',
+        outboundMaskedNote: '已去掉敏感信息，邮件里的 […hidden] 是打码后的内容，收件人看到的也是这样',
         mailSendQuestion: '发这封邮件给 {target}？',
         mailSendQuestionFallback: '发这封邮件？',
         tmeetCreateTitle: '创建腾讯会议',
@@ -352,6 +353,7 @@ export const decisionCardEn: typeof decisionCardZh = {
       tellModelContinue: 'Tell the model to continue',
       writeback: {
         mailSendTitle: 'Send email',
+        outboundMaskedNote: 'Sensitive information removed. […hidden] markers in the email are masked content, and recipients will see them the same way.',
         mailSendQuestion: 'Send this email to {target}?',
         mailSendQuestionFallback: 'Send this email?',
         tmeetCreateTitle: 'Create Tencent Meeting',

@@ -20,10 +20,10 @@ export function useScrollEdgeFade(): (scroller: HTMLElement | null) => void {
     const scheduleUpdate = () => {
       if (frame === null) frame = requestAnimationFrame(update);
     };
-    const resizeObserver = new ResizeObserver(scheduleUpdate);
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(scheduleUpdate);
     const observeTree = (root: Element) => {
-      resizeObserver.observe(root);
-      root.querySelectorAll('*').forEach((element) => resizeObserver.observe(element));
+      resizeObserver?.observe(root);
+      root.querySelectorAll('*').forEach((element) => resizeObserver?.observe(element));
     };
     const mutationObserver = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
@@ -40,7 +40,7 @@ export function useScrollEdgeFade(): (scroller: HTMLElement | null) => void {
     cleanupRef.current = () => {
       scroller.removeEventListener('scroll', scheduleUpdate);
       mutationObserver.disconnect();
-      resizeObserver.disconnect();
+      resizeObserver?.disconnect();
       if (frame !== null) cancelAnimationFrame(frame);
     };
   }, []);

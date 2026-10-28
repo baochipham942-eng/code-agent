@@ -484,15 +484,14 @@ describe('TurnBasedTraceView streaming scroll drivers', () => {
   });
 
   it('流式跟随期间 ResizeObserver 只观察活动 turn 且高度变化不再调度 scrollToIndex', () => {
-    const observerCallbacks: ResizeObserverCallback[] = [];
-    const observe = vi.fn();
+    const observers: Array<{ callback: ResizeObserverCallback; observe: ReturnType<typeof vi.fn> }> = [];
     vi.stubGlobal('ResizeObserver', class {
-      constructor(callback: ResizeObserverCallback) {
-        observerCallbacks.push(callback);
-      }
-      observe = observe;
+      observe = vi.fn();
       unobserve = vi.fn();
       disconnect = vi.fn();
+      constructor(readonly callback: ResizeObserverCallback) {
+        observers.push(this);
+      }
     });
 
     const streamingTurn = makeStreamingTurn({ turnNumber: 2, turnId: 'turn-2', startTime: 200 });
@@ -504,9 +503,14 @@ describe('TurnBasedTraceView streaming scroll drivers', () => {
     render(React.createElement(TurnBasedTraceView, { projection }));
     flushView();
 
-    const observed = observe.mock.calls.map((call) => call[0] as HTMLElement);
-    // 观察面收窄：所有 observer（吸底调度 + 流式 min-height 锁）都只观察跟随中的
-    // 活动 turn，而不是所有已挂载 turn
+    const scrollObservers = observers.filter((observer) => {
+      const calls = observer.observe.mock.calls;
+      return calls.length > 0 && calls.every((call) => (call[0] as HTMLElement).dataset.traceTurnId);
+    });
+    const observed = scrollObservers.flatMap((observer) => (
+      observer.observe.mock.calls.map((call) => call[0] as HTMLElement)
+    ));
+    // 排除独立的 scroller 渐隐 observer；吸底调度 + 流式 min-height 锁仍只观察活动 turn。
     expect(observed.length).toBeGreaterThanOrEqual(1);
     for (const el of observed) {
       expect(el.dataset.traceTurnId).toBe('turn-2');
@@ -518,8 +522,8 @@ describe('TurnBasedTraceView streaming scroll drivers', () => {
       mocks.virtuosoProps.atBottomStateChange(true);
     });
     act(() => {
-      for (const observerCallback of observerCallbacks) {
-        observerCallback([
+      for (const observer of scrollObservers) {
+        observer.callback([
           { target: observed[0], contentRect: rect(0, 480) } as unknown as ResizeObserverEntry,
         ], {} as ResizeObserver);
       }

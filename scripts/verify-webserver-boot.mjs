@@ -29,6 +29,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
+import { clearTimeout, setTimeout } from 'node:timers';
 
 // Libraries that MUST end up bundled into dist/web/webServer.bundle.cjs (they are NOT
 // shipped as Tauri app resources — see src-tauri/tauri.conf.json `resources`).

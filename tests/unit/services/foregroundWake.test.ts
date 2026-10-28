@@ -5,7 +5,9 @@ import {
   type ForegroundWakeDependencies,
 } from '../../../src/host/services/commandCenter/foregroundWake';
 import { WAKE_NOOP_TOOL_NAME } from '../../../src/shared/constants/agent';
-import { SESSION_COMMAND_CENTER_BRAIN_CONTEXT } from '../../../src/host/app/sessionCommandCenterBrain';
+import { getSessionCommandCenterBrainContextForPrompt } from '../../../src/host/app/sessionCommandCenterBrain';
+// 常量已不导出，经单一真源函数取基块（空白轮次不命中回合级规则）
+const SESSION_COMMAND_CENTER_BRAIN_CONTEXT = getSessionCommandCenterBrainContextForPrompt('')[0];
 import { MAX_CONSECUTIVE_WAKES } from '../../../src/shared/constants/sessionCommandCenter';
 
 const sendMessage = vi.fn().mockResolvedValue(undefined);

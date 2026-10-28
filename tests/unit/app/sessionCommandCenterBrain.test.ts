@@ -5,17 +5,21 @@
 // 缺一句"这是流程设计，不是权限问题或环境故障"的说明，模型只能对用户编"环境受限"。
 // 对称应用 skillBoundaryScope.ts 的 buildStrictToolsetNotice 同款声明。
 //
-// 桌面（agentAppService.ts）与 web（web/routes/agent.ts）两条判定通路共用同一份
-// SESSION_COMMAND_CENTER_BRAIN_CONTEXT 常量（web 直接 import 常量，桌面经
-// withSessionCommandCenterBrain 拼进 turnSystemContext），改这一处即两路生效。
+// 桌面（agentAppService.ts）与 web（web/routes/agent.ts）两条装配路共用同一份
+// brain 上下文清单：getSessionCommandCenterBrainContextForPrompt（桌面经
+// withSessionCommandCenterBrain 拼进 turnSystemContext，web 展开进 config.systemPrompt），
+// 改这一处即两路生效。
 // ============================================================================
 
 import { describe, expect, it } from 'vitest';
 import {
-  SESSION_COMMAND_CENTER_BRAIN_CONTEXT,
+  getSessionCommandCenterBrainContextForPrompt,
   getTextForegroundToolNamesForPrompt,
   withSessionCommandCenterBrain,
 } from '../../../src/host/app/sessionCommandCenterBrain';
+// 常量已不导出（防止装配路绕过单一真源直接拼常量），这里从共用函数取基块：
+// 空白轮次不命中任何回合级规则，返回值唯一成员就是 brain 基块。
+const SESSION_COMMAND_CENTER_BRAIN_CONTEXT = getSessionCommandCenterBrainContextForPrompt('')[0];
 import {
   isSessionCommandCenterTurn,
   SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
@@ -154,6 +158,84 @@ describe('withSessionCommandCenterBrain', () => {
       '<existing_context>keep me</existing_context>',
       SESSION_COMMAND_CENTER_BRAIN_CONTEXT,
     ]);
+  });
+});
+
+describe('晨报回复「存草稿 N」才打开 mail_draft', () => {
+  const matches = [
+    '存草稿 1',
+    '存草稿1',
+    '保存草稿 2',
+    '存草稿第3',
+    '存草稿 #4',
+    '存草稿 ５',
+    'save draft 6',
+    'Save draft #7',
+    '请存草稿 1',
+    '麻烦帮我存草稿 8',
+    'please save draft 2',
+    '  存草稿 1',
+    '您好，保存草稿第１',
+  ];
+  const misses = [
+    '存草稿箱里有什么',
+    '晨报末尾写着可以存草稿 1',
+    '今天有什么安排',
+    '存草稿',
+    '保存一下草稿 1',
+    '帮我看看草稿 1',
+  ];
+
+  it.each(matches)('命中「%s」：白名单多 mail_draft，并只在这时追加回合规则', (prompt) => {
+    const names = getTextForegroundToolNamesForPrompt(prompt);
+    expect(names).toContain('mail_draft');
+    expect(names.filter((name) => name === 'mail_draft')).toHaveLength(1);
+    const options = withSessionCommandCenterBrain(undefined, prompt);
+    expect(options.allowedToolNames).toContain('mail_draft');
+    const extra = (options.turnSystemContext ?? []).filter((block) => block !== SESSION_COMMAND_CENTER_BRAIN_CONTEXT);
+    expect(extra).toHaveLength(1);
+  });
+
+  it.each(misses)('不命中「%s」：不加 mail_draft，也不追加回合规则', (prompt) => {
+    expect(getTextForegroundToolNamesForPrompt(prompt)).not.toContain('mail_draft');
+    const options = withSessionCommandCenterBrain({
+      turnSystemContext: ['<existing_context>keep me</existing_context>'],
+    }, prompt);
+    expect(options.allowedToolNames).not.toContain('mail_draft');
+    expect(options.turnSystemContext).toEqual([
+      '<existing_context>keep me</existing_context>',
+      SESSION_COMMAND_CENTER_BRAIN_CONTEXT,
+    ]);
+  });
+
+  it('命中时保留已有上下文，规则块写明重复保存和没有邮件权限', () => {
+    const options = withSessionCommandCenterBrain({
+      turnSystemContext: ['<existing_context>keep me</existing_context>'],
+    }, '存草稿 1');
+    expect(options.turnSystemContext?.[0]).toBe('<existing_context>keep me</existing_context>');
+    expect(options.turnSystemContext?.[1]).toBe(SESSION_COMMAND_CENTER_BRAIN_CONTEXT);
+    const block = options.turnSystemContext?.[2] ?? '';
+    expect(block).toContain('已经存过');
+    expect(block).toContain('没有开邮件权限');
+    expect(block).toContain('mail_draft');
+    expect(block).toContain('delegate_task');
+    expect(block).toContain('一共有几封草稿');
+    expect(block).toContain('没有发送');
+  });
+
+  // rework r1：回合规则块的单一真源。桌面（withSessionCommandCenterBrain）和 web 主链
+  // （routes/agent.ts systemPrompt）两条装配路都消费这一个函数——判据或内容改出第二份，
+  // 就是「修了桌面漏了 web」的复发。
+  it('getSessionCommandCenterBrainContextForPrompt 是两条装配路共用的块清单', () => {
+    expect(getSessionCommandCenterBrainContextForPrompt('今天有什么安排'))
+      .toEqual([SESSION_COMMAND_CENTER_BRAIN_CONTEXT]);
+    const blocks = getSessionCommandCenterBrainContextForPrompt('存草稿 2');
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toBe(SESSION_COMMAND_CENTER_BRAIN_CONTEXT);
+    expect(blocks[1]).toContain('<morning_brief_save_draft>');
+    // 与桌面装配路的产物同形：withSessionCommandCenterBrain 的尾部即这份清单
+    const options = withSessionCommandCenterBrain(undefined, '存草稿 2');
+    expect(options.turnSystemContext?.slice(-2)).toEqual(blocks);
   });
 });
 

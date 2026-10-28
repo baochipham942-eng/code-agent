@@ -1403,6 +1403,36 @@ describe('AgentOrchestrator', () => {
       expect(queuedInputMocks.enqueue).not.toHaveBeenCalled();
     });
 
+    it('转向时作废打开的交互审批卡，之后再点允许不会执行', async () => {
+      const steer = vi.fn(async () => {
+        expect(perm(orchestrator).listPendingRequests()).toEqual([]);
+      });
+      internals(orchestrator).agentLoop = { steer };
+      const pending = perm(orchestrator).requestPermission({
+        type: 'file_delete',
+        tool: 'Bash',
+        sessionId: 'test-session-id',
+        details: { command: 'rm b.txt' },
+        forceConfirm: true,
+      } as unknown as Parameters<PermissionInternals['requestPermission']>[0]);
+      const [request] = perm(orchestrator).listPendingRequests();
+      expect(request?.id).toBeTruthy();
+
+      await orchestrator.interruptAndContinue('stop deleting');
+
+      expect(steer).toHaveBeenCalledOnce();
+      expect(mockOnEvent).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'permission_request',
+        data: expect.objectContaining({
+          id: request!.id,
+          resolved: true,
+          decision: 'superseded',
+        }),
+      }));
+      expect(orchestrator.handlePermissionResponse(request!.id, 'allow')).toBe('unknown_request');
+      await expect(pending).resolves.toEqual({ approved: false, denialSource: 'cancelled' });
+    });
+
     it('live steer 在 run settled 后降级写入 durable queue 并返回 queued outcome', async () => {
       const steer = vi.fn().mockRejectedValue(new SteerRejectedError());
       internals(orchestrator).agentLoop = { steer };

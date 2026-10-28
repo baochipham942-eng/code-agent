@@ -15,6 +15,7 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { useTaskStore } from '../../../stores/taskStore';
 import { recordStreamingPerformanceCounter } from '../../../utils/streamingPerformanceMetrics';
 import { useI18n } from '../../../hooks/useI18n';
+import { useScrollEdgeFade } from '../../../hooks/useScrollEdgeFade';
 import { SessionModelsContext } from './sessionModelsContext';
 import { hasIncompleteStreamSnapshot } from '../../../utils/streamingStatePresentation';
 import { isTurnVisibleInRange } from '../../../utils/turnVisibility';
@@ -503,11 +504,11 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       cancelSecond?.();
     };
   }, [firstItemIndex]);
-
-  // 让滚动条在两侧各占一半空间：
-  // 否则 macOS scrollbar 吃掉父容器右边 6px，message 区 max-w-3xl 居中后比
+  const setScrollEdgeFade = useScrollEdgeFade();
+  // 让滚动条在两侧各占一半空间：否则 macOS scrollbar 吃掉父容器右边 6px，message 区 max-w-3xl 居中后比
   // ChatInput 区偏左 3px，跟 ChatInput 卡片左缘对不齐
   const handleScrollerRef = useCallback((el: HTMLElement | Window | null) => {
+    setScrollEdgeFade(el instanceof HTMLElement ? el : null);
     if (el instanceof HTMLElement) {
       scrollerElementRef.current = el;
       setScrollerElement(el);
@@ -517,8 +518,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       scrollerElementRef.current = null;
       setScrollerElement(null);
     }
-  }, []);
-
+  }, [setScrollEdgeFade]);
   useEffect(() => {
     return () => {
       activeDisplayScrollCancelRef.current?.();

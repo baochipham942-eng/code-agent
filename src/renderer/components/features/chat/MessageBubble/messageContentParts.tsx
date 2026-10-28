@@ -157,10 +157,12 @@ export const CodeBlock = memo(function CodeBlock({
   language,
   code,
   deferOffscreenLayout = false,
+  isStreaming = false,
 }: {
   language: string;
   code: string;
   deferOffscreenLayout?: boolean;
+  isStreaming?: boolean;
 }) {
   const { t } = useI18n();
   const renderStartedAt = typeof performance !== 'undefined' && typeof performance.now === 'function'
@@ -172,7 +174,7 @@ export const CodeBlock = memo(function CodeBlock({
   const isLong = lines.length > CODE_COLLAPSE_LINES;
   const [copied, setCopied] = useState(false);
   const [wrapLines, setWrapLines] = useState(false);
-  const [collapsed, setCollapsed] = useState(() => isLong);
+  const [collapsed, setCollapsed] = useState(() => isLong && !isStreaming);
 
   // 仅在初次 mount 时按长度折叠（见上方 useState 初始化），不再在流式过程中
   // 因跨过阈值而强制塌陷——否则用户正在阅读的代码块会在生成中途突然折叠、布局跳变。

@@ -43,13 +43,14 @@ const TODAY = {
   foldThreshold: 5,
   toolGroupDefaultExpanded: false,
   showThinkingDigest: true,
+  keepLastTurnOpen: true,
 };
 
 const EXPECTED: Record<DisclosureLevel, typeof TODAY> = {
-  simple: { foldThreshold: 2, toolGroupDefaultExpanded: false, showThinkingDigest: false },
+  simple: { foldThreshold: 2, toolGroupDefaultExpanded: false, showThinkingDigest: false, keepLastTurnOpen: false },
   standard: TODAY,
-  advanced: { foldThreshold: Infinity, toolGroupDefaultExpanded: false, showThinkingDigest: true },
-  expert: { foldThreshold: Infinity, toolGroupDefaultExpanded: true, showThinkingDigest: true },
+  advanced: { foldThreshold: Infinity, toolGroupDefaultExpanded: false, showThinkingDigest: true, keepLastTurnOpen: true },
+  expert: { foldThreshold: Infinity, toolGroupDefaultExpanded: true, showThinkingDigest: true, keepLastTurnOpen: true },
 };
 
 describe('workDetailPolicy', () => {
@@ -66,13 +67,14 @@ describe('workDetailPolicy', () => {
   });
 
   it.each(Object.entries(EXPECTED) as Array<[DisclosureLevel, typeof TODAY]>)(
-    '%s exposes foldThreshold, toolGroupDefaultExpanded, and showThinkingDigest',
+    '%s exposes foldThreshold, toolGroupDefaultExpanded, showThinkingDigest, and keepLastTurnOpen',
     (level, expected) => {
       useAppStore.setState({ disclosureLevel: level });
       const { result } = renderHook(() => useWorkDetailPolicy());
       expect(result.current.foldThreshold).toBe(expected.foldThreshold);
       expect(result.current.toolGroupDefaultExpanded).toBe(expected.toolGroupDefaultExpanded);
       expect(result.current.showThinkingDigest).toBe(expected.showThinkingDigest);
+      expect(result.current.keepLastTurnOpen).toBe(expected.keepLastTurnOpen);
     },
   );
 });

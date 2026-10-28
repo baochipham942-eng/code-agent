@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 import type { FileInfo } from '../../../src/shared/contract';
@@ -17,6 +17,7 @@ const originalWorkingDirectory = useAppStore.getState().workingDirectory;
 const files: FileInfo[] = [
   { name: 'README.md', path: '/repo/README.md', isDirectory: false, size: 128 },
   { name: 'archive.bin', path: '/repo/archive.bin', isDirectory: false, size: 256 },
+  { name: 'notes', path: '/repo/notes', isDirectory: false, size: 32 },
 ];
 
 beforeEach(() => {
@@ -82,16 +83,39 @@ describe('FileExplorerPanel', () => {
     expect(fileName.closest('[title]')).toBeNull();
   });
 
-  it('falls back to the system opener for files the preview cannot render', () => {
+  it('falls back to the system opener for files the preview cannot render', async () => {
     render(<FileExplorerPanel onClose={vi.fn()} />);
 
     fireEvent.click(screen.getByText('archive.bin'));
 
     expect(openPreview).not.toHaveBeenCalled();
-    expect(domainInvoke).toHaveBeenCalledWith(
+    await waitFor(() => {
+      expect(domainInvoke).toHaveBeenCalledWith(
+        IPC_DOMAINS.WORKSPACE,
+        'openPath',
+        { filePath: '/repo/archive.bin' },
+      );
+    });
+  });
+
+  it('opens sniffed text in the side panel', async () => {
+    domainInvoke.mockImplementation(async (_domain: string, action: string, payload?: { filePath?: string }) => {
+      if (action === 'classifyPreviewFile' && payload?.filePath === '/repo/notes') {
+        return { success: true, data: { classification: 'text', filePath: payload.filePath } };
+      }
+      return { success: true, data: { classification: 'binary' } };
+    });
+    render(<FileExplorerPanel onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByText('notes'));
+
+    await waitFor(() => {
+      expect(openPreview).toHaveBeenCalledWith('/repo/notes');
+    });
+    expect(domainInvoke).not.toHaveBeenCalledWith(
       IPC_DOMAINS.WORKSPACE,
       'openPath',
-      { filePath: '/repo/archive.bin' },
+      { filePath: '/repo/notes' },
     );
   });
 });

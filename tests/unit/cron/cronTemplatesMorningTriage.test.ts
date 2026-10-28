@@ -99,13 +99,18 @@ describe('晨间分诊模板（morning-triage）', () => {
     expect(unbound.agentPrompt).toBe(PREVIOUS_UNBOUND_PROMPT);
     expect(unbound.agentRoleId).toBe('');
     expect(unbound.agentPrompt).not.toContain('草稿（未发送）');
+    expect(unbound.agentPrompt).not.toContain('草稿 N（未发送）');
     expect(unbound.agentPrompt).toContain('「未读取：<来源>」');
     expect(unbound.agentPrompt).toContain('今早没有需要处理的');
 
     const bound = template('morning-triage').generate({ roleId: ' assistant-lin ' });
     expect(bound.agentRoleId).toBe('assistant-lin');
     expect(bound.agentPrompt.startsWith(`${PREVIOUS_UNBOUND_PROMPT}\n`)).toBe(true);
-    expect(bound.agentPrompt).toContain('草稿（未发送）');
+    expect(bound.agentPrompt).toContain('「草稿 N（未发送）」');
+    expect(bound.agentPrompt).not.toContain('「草稿（未发送）」');
+    expect(bound.agentPrompt).toContain('第二行只写收件人的邮箱地址');
+    expect(bound.agentPrompt).toContain('不要写显示名');
+    expect(bound.agentPrompt).toContain('不要加尖括号');
     expect(bound.agentPrompt).toContain('（来源：发件人 · 主题）');
     expect(bound.agentPrompt).toContain('（来源：日程标题 · 时间）');
     expect(bound.agentPrompt).toContain('日程冲突');

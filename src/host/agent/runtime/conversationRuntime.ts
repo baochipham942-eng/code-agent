@@ -87,6 +87,8 @@ import { markDistilledSkillTurnSignal } from '../../services/skills/distillSigna
 import { emitGoalAbort } from './goalAbort';
 import { releaseDoomLoopHandbackForSteer } from './doomLoopHandback';
 import { markStreamSnapshotInterruptionReason } from '../../session/streamSnapshot';
+import { persistInputRedirectReceipt } from './inputRedirectReceipt';
+import { takeSteerEmptyReinferenceFailure } from './steerEmptyReinference';
 import { recordInferenceTrace } from './inferenceCacheTrace';
 import { getCachedDynamicSystemPrompt } from './contextAssembly/runtimeAssemblyCache';
 import { sampleWithToolsFingerprint } from './toolTableFingerprint';
@@ -551,6 +553,8 @@ export class ConversationRuntime {
         logger.debug('[AgentLoop] Calling inference...');
         const inferenceStartTime = Date.now();
         let response = await this.contextAssembly.inference(); if (this.ctx.control.isCancelled) break;
+        const steerEmpty = takeSteerEmptyReinferenceFailure(this.ctx.control, this.ctx.turn.needsReinference, response);
+        if (steerEmpty) { terminal = { status: 'failed', error: steerEmpty }; break; }
         if (this.ctx.cachePromptSample) {
           this.ctx.cachePromptSample.current = sampleWithToolsFingerprint(this.ctx.cachePromptSample, {
             prompt: getCachedDynamicSystemPrompt(this.ctx) ?? this.ctx.systemPrompt,
@@ -1211,35 +1215,26 @@ export class ConversationRuntime {
     // 审查 R4 #1：代数推进必须在第一个 await 之前——用户转向这一刻在途判官请求立即过期；
     // 放在 preserveStreamedPartial 之后会给旧裁决留下先生效的窗口。
     this.ctx.control.noteSteered();
+    this.ctx.control.clearPreApprovedTools();
+    this.ctx.control.armEmptyReinferenceAfterSteer();
+    // 作废审批卡会同步解开权限等待。这个标记必须先于第一个 await，微任务里的工具收尾才看得见。
+    this.ctx.turn.requestReinference();
     // 先留住被打断那一轮已经写出来的内容，再 abort——顺序反了就等于丢字。
     const partial = await this.preserveStreamedPartial('\n\n[已被新消息打断]');
     this.ctx.control.abortInference();
     const persisted = this.messageProcessor.injectSteerMessage(newMessage, clientMessageId, attachments, metadata, displayContent);
-    this.ctx.turn.requestReinference();
     logger.info('[AgentLoop] Steer requested — message injected, will re-infer on next cycle');
     await persisted;
     releaseDoomLoopHandbackForSteer(this.ctx.sessionId);
     if (resumePausedGoal) this.resume();
     if (metadata?.workbench?.runtimeInputMode === 'redirect') {
-      const receipt: InputRedirectReceiptMetadata = {
-        receiptId: generateMessageId(),
-        originalContent: displayContent ?? newMessage,
+      await persistInputRedirectReceipt(this.ctx, {
+        newMessage,
+        displayContent,
         expectedTurnId,
         partial,
         interruptedTools,
-      };
-      try {
-        await this.ctx.persistMessage?.({
-          id: receipt.receiptId,
-          role: 'system',
-          content: '已按你的纠正改了方向',
-          timestamp: Date.now(),
-          metadata: { inputRedirectReceipt: receipt },
-        });
-      } catch (err) {
-        logger.warn('[ConversationRuntime] persist input redirect receipt failed:', err);
-      }
-      this.ctx.onEvent({ type: 'input_redirected', data: receipt });
+      });
     }
   }
 

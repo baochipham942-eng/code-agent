@@ -219,6 +219,31 @@ function inferGenericActionDomain(name: string): GenericActionDomain {
   return 'tool';
 }
 
+function lastComputerApp(args: Record<string, unknown> | undefined): string {
+  if (!args) return '';
+  const names: string[] = [];
+  const own = takePreview(args.targetApp);
+  if (own) names.push(own);
+  if (Array.isArray(args.actions)) {
+    for (const sub of args.actions) {
+      if (!sub || typeof sub !== 'object') continue;
+      const name = takePreview((sub as { targetApp?: unknown }).targetApp);
+      if (name) names.push(name);
+    }
+  }
+  return names.length > 0 ? names[names.length - 1] : '';
+}
+
+/** Fill targetApp from the turn lease when this computer step did not name an app. */
+export function computerLabelArgs(
+  args: Record<string, unknown> | undefined,
+  leasedApp: string | undefined,
+): Record<string, unknown> | undefined {
+  const leased = typeof leasedApp === 'string' ? leasedApp.trim() : '';
+  if (!leased || lastComputerApp(args)) return args;
+  return { ...(args ?? {}), targetApp: leased };
+}
+
 function buildDomainActionSentence(
   domain: GenericActionDomain,
   actionValue: string,
@@ -229,6 +254,11 @@ function buildDomainActionSentence(
 ): string {
   const kind = classifyGenericAction(actionValue);
   const template = t.toolStepHumanize.domainActions[status][domain][kind];
+  if (domain === 'computer' && status === 'running' && kind === 'operate') {
+    const app = lastComputerApp(args);
+    const named = t.toolStepHumanize.domainActions.running.computer.operateNamed;
+    if (app && named) return named.replace('{target}', app);
+  }
   const sentence = template.replace('{domain}', domainLabel || t.receiptPresentation.humanToolLabels.unknownTool);
   if (domain !== 'browser' && domain !== 'computer') return sentence;
   const rawAction = typeof args.action === 'string' ? args.action : '';

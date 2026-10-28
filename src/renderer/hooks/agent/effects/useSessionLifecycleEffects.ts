@@ -208,6 +208,8 @@ export const useSessionLifecycleEffects = ({
           useStreamResumeStore.getState().clear();
           if (eventSessionId) {
             useTerminalRunGuardStore.getState().markTerminal(eventSessionId);
+            // 终态 error 也是收口：run 流把终局送到了，未收口记录合上（对账据此不再兜底重灌）
+            useTerminalRunGuardStore.getState().markRunEndObserved(eventSessionId);
           }
           clearSessionProcessing();
           refreshContextHealth();
@@ -218,9 +220,12 @@ export const useSessionLifecycleEffects = ({
           lastEventAtRef.current = Date.now();
           logHandledEvent();
           // 终态粘滞：终局一旦应用，这个 run 的尾巴事件/旧响应不得再点亮运行态
-          //（守卫与判据见 terminalRunGuardStore）。
+          //（守卫与判据见 terminalRunGuardStore）。终局事件到达即收口未收口记录——
+          // stream_end 不在此列（httpTransport 会在 reader 正常结束时合成它，不是
+          // 答案到过的证明）。
           if (eventSessionId) {
             useTerminalRunGuardStore.getState().markTerminal(eventSessionId);
+            useTerminalRunGuardStore.getState().markRunEndObserved(eventSessionId);
           }
           // ADR-068 刀 4：run 终态——断流续接信号兜底消除（正常恢复早在续答 delta 到达时消过）
           useStreamResumeStore.getState().clear();

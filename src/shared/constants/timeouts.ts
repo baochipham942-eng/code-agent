@@ -25,6 +25,16 @@ export const MCP_TIMEOUTS = {
   FIRST_RUN: 180_000,
   /** 工具调用重试超时 */
   TOOL_RETRY: 30_000,
+  /**
+   * 工具调用默认预算（60s→120s）：慢连接器操作（如大导出）不再一分钟被杀，
+   * 静默连接器最多等满两分钟。显式传 timeoutMs 的调用方不受影响。
+   */
+  CALL_TOOL: 120_000,
+  /**
+   * CALL_TOOL 进度续期总上限：连接器每报一次进度，本地看门狗按基础预算重挂一次，
+   * 但整个调用（含所有续期）不超过该值——永远报进度的连接器到点仍被切断。
+   */
+  CALL_TOOL_MAX_TOTAL: 10 * 60_000,
   /** 空闲 MCP 连接回收默认等待时间。活动请求和 durable task lease 会豁免回收。 */
   IDLE_REAP_TTL: 5 * 60_000,
   /** 空闲 MCP 连接回收扫描间隔。 */
@@ -34,6 +44,14 @@ export const MCP_TIMEOUTS = {
    * run 中途异常中断、始终不进 completed/failed/cancelled 终态时，租约本该自然过期）。
    */
   DURABLE_LEASE_FALLBACK_TTL: 30 * 60_000,
+  /** 连接器 HTTP 429：无 Retry-After 头时的指数退避基数 */
+  RATE_LIMIT_RETRY_BASE: 400,
+  /** 连接器 HTTP 429：遵守服务器 Retry-After 的上限，超过则不等待、直接把等待秒数作为出路返回 */
+  RATE_LIMIT_RETRY_AFTER_CAP: 60_000,
+  /** 连接器 HTTP 429：无头退避的抖动比例（±25%；服务器给了头就不抖动） */
+  RATE_LIMIT_JITTER_RATIO: 0.25,
+  /** 连接器 HTTP 429：单次工具调用内的最大重试次数（不含首发） */
+  RATE_LIMIT_MAX_RETRIES: 2,
 } as const;
 
 /** DAG 调度器配置 */

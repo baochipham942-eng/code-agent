@@ -90,6 +90,13 @@ import {
 } from './agentDurableRouteLifecycle';
 import { registerAgentCancelRoute } from './registerAgentCancelRoute';
 import { registerAgentContinueRoute } from './registerAgentContinueRoute';
+import {
+  CloudRunRouteRuntime,
+  handleCloudRunAdmission,
+  registerCloudRunRoutes,
+} from './cloudRunRoutes';
+import type { CloudRunState } from '../../shared/contract/cloudRun';
+import type { CloudRunLedger } from '../../host/services/cloudRun/cloudRunLedger';
 import { steerOrQueue } from '../../host/runtime/steerQueueFence';
 import { QueuedInputRepository } from '../../host/services/core/repositories/QueuedInputRepository';
 import { getDatabase } from '../../host/services/core/databaseService';
@@ -166,6 +173,7 @@ interface AgentRouterDeps extends AgentDurableRouteDeps {
   tryGetSessionManager: () => Promise<AgentSessionManagerLike | null>;
   tryGetCLISessionManager?: () => Promise<AgentSessionManagerLike | null>;
   getSupabaseForSession: () => Promise<SupabaseAgentBinding | null>;
+  getCloudRunLedger?: () => CloudRunLedger;
   registerQueuedInputStartupSweep?: (runStartupSweep: () => void) => void;
   registerQueuedInputEnqueueHook?: (onEnqueued: (sessionId: string) => void) => void;
   registerQueuedInputSendNowHook?: (sendNow: (input: {
@@ -389,7 +397,21 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     delegation: delegationHooks,
     logger,
   });
-  deps.registerQueuedInputStartupSweep?.(() => queuedInputDrain.runStartupSweep());
+  const cloudRunRuntime = new CloudRunRouteRuntime({
+    getLedger: () => deps.getCloudRunLedger?.() ?? getDatabase().getCloudRunLedger(),
+    runRegistry,
+    execute: (body, cloudRunId) => runAgentTurn(body, createOfflineAgentRunResponseSink(), {
+      connectedClient: false,
+      cloudRunId,
+    }),
+    logger,
+  });
+  deps.registerQueuedInputStartupSweep?.(() => {
+    queuedInputDrain.runStartupSweep();
+    void cloudRunRuntime.runStartupSweep().catch((error) => {
+      logger.error('[CloudRun] Startup sweep failed', error);
+    });
+  });
   deps.registerQueuedInputEnqueueHook?.((sessionId) => queuedInputDrain.handleEnqueued(sessionId));
   deps.registerQueuedInputSendNowHook?.(async ({ id, sessionId, envelope, delegationOrigin }, route) => {
     if (route === 'idle') {
@@ -443,7 +465,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
   async function runAgentTurn(
     body: AgentRunBody,
     res: Response,
-    transport:
+    transport: (
       | { connectedClient: true; requestToken: string }
       | {
           connectedClient: false;
@@ -457,7 +479,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
            * consumed），上一轮失败后的重投就被静默吞掉（rework r1）。
            */
           onReplayedRun?: (replay: { runId: string | null }) => void;
-        },
+        }
+    ) & { cloudRunId?: string },
   ): Promise<void> {
     const { prompt, project, sessionDir, model, provider, eventFilter } = body;
     const clientMessageId = body.clientMessageId?.trim()
@@ -465,6 +488,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       : undefined;
 
     if (!prompt) {
+      if (transport.cloudRunId) cloudRunRuntime.settle(transport.cloudRunId, 'failed');
       res.status(400).json({ error: 'Missing prompt' });
       return;
     }
@@ -549,7 +573,10 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         }
         return rollout?.policy.durableActivation ?? true;
       })();
-    if (durableActivation === null) return;
+    if (durableActivation === null) {
+      if (transport.cloudRunId) cloudRunRuntime.settle(transport.cloudRunId, 'failed');
+      return;
+    }
     let preflightDisconnected = transport.connectedClient && res.destroyed;
     const markPreflightDisconnected = (): void => {
       preflightDisconnected = true;
@@ -623,6 +650,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           : await ensureDefaultWebWorkingDirectory();
         logger.info(`[AgentRouter] No project/sessionDir/context workingDirectory, falling back to app work dir ${resolvedProject}`);
       } catch (error) {
+        if (transport.cloudRunId) cloudRunRuntime.settle(transport.cloudRunId, 'failed');
         if (transport.connectedClient) {
           res.status(500).json({ error: formatError(error), code: 'RUN_WORKSPACE_UNAVAILABLE' });
           return;
@@ -730,12 +758,14 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       ? agentRunSseLimiter.tryAcquire(transport.requestToken)
       : () => {};
     if (!releaseSseSlot) {
+      if (transport.cloudRunId) cloudRunRuntime.settle(transport.cloudRunId, 'failed');
       res.status(429).json({ error: 'Too many concurrent runs for this token', code: 'TOO_MANY_CONNECTIONS' });
       return;
     }
 
     let runContext: RunContext | undefined;
     let runHandle: RunHandle | undefined;
+    let cloudRunTerminalState: CloudRunState = 'failed';
     let foregroundPermissionIsland: OrchestratorPermissionIsland | undefined;
     const durableRunLifecycle = createAgentDurableRouteRunLifecycle({
       runRegistry,
@@ -755,6 +785,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       externalDurableLifecycle = started.externalLifecycle;
       runContext = runHandle.context;
       runCorrelationId = runContext.runId;
+      if (transport.cloudRunId) cloudRunRuntime.bindExecutionRunId(transport.cloudRunId, runCorrelationId);
       if (!transport.connectedClient) {
         transport.onDurableActivated?.({
           runId: runCorrelationId,
@@ -763,6 +794,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       }
     } catch (error) {
       releaseSseSlot();
+      if (transport.cloudRunId) cloudRunRuntime.settle(transport.cloudRunId, 'failed');
       if (error instanceof RunSessionConflictError) {
         if (transport.connectedClient) {
           res.status(409).json({
@@ -789,6 +821,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       if (runHandle) {
         await cancelDisconnectedAgentRouteRun({ runRegistry, runHandle, sessionId, durableActivation });
       }
+      if (transport.cloudRunId) cloudRunRuntime.settle(transport.cloudRunId, 'cancelled');
       res.off('close', markPreflightDisconnected);
       releaseSseSlot();
       return;
@@ -1059,6 +1092,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           } : {}),
         });
         const authoritativeStatus = await durableRunLifecycle.markSuccess({ result });
+        cloudRunTerminalState = authoritativeStatus === 'completed'
+          ? 'succeeded'
+          : authoritativeStatus === 'cancelled' ? 'cancelled' : 'failed';
         runController.flush();
         await runController.updateSessionStatus(
           authoritativeStatus === 'completed'
@@ -1526,6 +1562,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         : runController.hadTerminalError
           ? 'error'
           : 'completed';
+      cloudRunTerminalState = finalStatus === 'completed'
+        ? 'succeeded'
+        : finalStatus === 'interrupted' ? 'cancelled' : 'failed';
       await runController.updateSessionStatus(finalStatus);
 
       // 转后台会话在 web 直连轮的终态收线（桌面 orchestrator 轮在 TaskManager 的
@@ -1604,6 +1643,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
+      cloudRunTerminalState = runController.disconnected ? 'cancelled' : 'failed';
       if (externalEngineFailureContext) {
         recordExternalEngineFailure({
           sessionId,
@@ -1663,6 +1703,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         sessionId,
         triggerDrain: queuedInputDrain.handleReleasedSession,
       });
+      if (transport.cloudRunId) cloudRunRuntime.settle(transport.cloudRunId, cloudRunTerminalState);
       runController.destroy();
       // Telemetry: 结束会话追踪（写入聚合指标到 telemetry_sessions）
       try {
@@ -1714,10 +1755,29 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     const body = parsedBody.data.context
       ? { ...parsedBody.data, context: stripDelegationOriginContext(parsedBody.data.context) }
       : parsedBody.data;
+    if (body.environmentSelection) {
+      await handleCloudRunAdmission({
+        body,
+        res,
+        runtime: cloudRunRuntime,
+        runInline: (cloudBody, cloudRunId) => runAgentTurn(cloudBody, res, {
+          connectedClient: true,
+          requestToken: extractRequestToken(req),
+          cloudRunId,
+        }),
+      });
+      return;
+    }
     await runAgentTurn(body, res, {
       connectedClient: true,
       requestToken: extractRequestToken(req),
     });
+  });
+
+  registerCloudRunRoutes(router, {
+    runtime: cloudRunRuntime,
+    runRegistry,
+    getReadService: deps.getDurableRunReadService,
   });
 
   registerAgentCancelRoute(router, runRegistry, deps.getDurableRunReadService, (recovered) => {

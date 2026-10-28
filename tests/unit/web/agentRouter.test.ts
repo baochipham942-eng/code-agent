@@ -91,6 +91,16 @@ const mockDb = vi.hoisted(() => ({
   markSessionForkContextHandoffDispatching: vi.fn(() => ({})),
   markSessionForkContextHandoffConsumed: vi.fn(() => ({})),
 }));
+const cloudRunLedgerStub = {
+  admit: vi.fn((input: { sessionId: string }) => ({
+    record: { runId: 'cloud-run-stub', sessionId: input.sessionId, state: 'running' },
+    duplicate: false,
+    position: null,
+  })),
+  bindExecutionRunId: vi.fn(),
+  getRun: vi.fn(() => null),
+  onTransition: vi.fn(),
+};
 const mockQueuedInputEnqueue = vi.spyOn(QueuedInputRepository.prototype, 'enqueue')
   .mockImplementation(() => undefined);
 
@@ -333,6 +343,7 @@ async function startAgentApi(deps: {
       ?? deps.tryGetSessionManager
       ?? (async () => null),
     getSupabaseForSession: deps.getSupabaseForSession ?? (async () => null),
+    getCloudRunLedger: () => cloudRunLedgerStub as never,
     registerQueuedInputSendNowHook: deps.registerQueuedInputSendNowHook,
     registerCompanionRun: deps.registerCompanionRun,
     publishCompanionEvent: deps.publishCompanionEvent,

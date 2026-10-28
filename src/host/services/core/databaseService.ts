@@ -82,6 +82,7 @@ import { rebuildRunDetail } from './swarmRollupProjection';
 import { reconcileRun, type ReconcileResult } from './swarmReconcile';
 import type { SwarmRunDetail } from '../../../shared/contract/swarmTrace';
 import type { SessionLedger } from '../../../shared/contract/sessionLedger';
+import { createCloudRunLedger, type CloudRunLedger } from '../cloudRun/cloudRunLedger';
 import { redactSecrets } from '../../security/secretRedaction';
 import {
   AnchorWorkspaceEvidenceService,
@@ -280,6 +281,8 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   private swarmLedgerRepo!: SwarmLedgerRepository;
   private usageLedgerRepo!: UsageLedgerRepository;
   private turnCostRepo!: TurnCostRepository;
+  // 云端 run 账本（ADR-086 S1）惰性建，不参与崩溃恢复重建
+  private cloudRunLedger?: CloudRunLedger;
   /** 启动时从总账重建的崩溃现场快照（ADR-022 第二期），供诊断出口/恢复消费 */
   private lastRecoverySnapshot: RecoverySnapshot | null = null;
   private _integrityOutcome: DbIntegrityOutcome = { kind: 'ok' };
@@ -1339,6 +1342,20 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   private ensureWritable(): void {
     this.ensureDb();
     assertDatabaseWritable(this._degradedMode);
+  }
+
+  // --- Cloud Run Ledger（ADR-086 S1）---
+  /**
+   * 云端 run 账本。S1 只有持久行与迁移，admit/路由接线是 S2+ 的单；
+   * 账本不静态 import AuthService（见 cloudRunLedger.ts 头注释），
+   * 账户事实源由 authService 装载时注册，这里保持导入图干净。
+   */
+  getCloudRunLedger(): CloudRunLedger {
+    this.ensureDb();
+    if (!this.cloudRunLedger) {
+      this.cloudRunLedger = createCloudRunLedger({ db: this.db! });
+    }
+    return this.cloudRunLedger;
   }
 
   // --- SessionRepository ---

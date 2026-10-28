@@ -42,6 +42,20 @@ export class CloudRunRouteRuntime {
 
   bindExecutionRunId(cloudRunId: string, executionRunId: string): void {
     this.ledger().bindExecutionRunId(cloudRunId, executionRunId);
+    this.consumePendingCancel(cloudRunId, executionRunId);
+  }
+
+  // bind 前到达的取消只能在 cancel 路由落 cancel_requested_at 标记（当时还没有
+  // execution_run_id 可停）。这里就是该标记的唯一消费点：执行体刚注册进 registry、
+  // agent loop 还没起步，立即停掉，否则标记无人再读、run 照常跑完落自然终态。
+  private consumePendingCancel(cloudRunId: string, executionRunId: string): void {
+    const record = this.ledger().getRun(cloudRunId);
+    if (!record || record.cancelRequestedAt === null || isTerminalCloudRunState(record.state)) return;
+    const target = this.deps.runRegistry.get(executionRunId);
+    if (!target) return;
+    void target.cancel('user').catch((error: unknown) => {
+      this.deps.logger.error(`[CloudRun] Pre-bind cancel for run ${cloudRunId} failed`, error);
+    });
   }
 
   readRun(runId: string) {
@@ -204,16 +218,20 @@ export function registerCloudRunRoutes(
         res.json({ runId: record.runId, status: record.state });
         return;
       }
-      if (record.cancelRequestedAt !== null || !record.executionRunId) {
+      // 没绑 execution_run_id（admission 与 bind 之间的窗口）或执行体已不在 registry：
+      // 只能记 cancel_requested_at 标记回 202；标记由 bindExecutionRunId 消费。
+      // 反之只要执行体还活着就真停——哪怕标记已写过（早期取消不再把后续取消
+      // 永久短路成 202），cancel 本身幂等、重复投递是 registry 的既定契约。
+      const executionRunId = record.executionRunId;
+      const target = executionRunId !== null ? input.runRegistry.get(executionRunId) : undefined;
+      if (!executionRunId || !target) {
         ledger.requestCancel(record.runId);
         res.status(202).json({ runId: record.runId, status: 'cancel_requested', code: 'CANCEL_REQUESTED' });
         return;
       }
 
-      const executionRunId = record.executionRunId;
       ledger.requestCancel(record.runId);
-      const target = input.runRegistry.get(executionRunId);
-      if (target) await target.cancel('user');
+      await target.cancel('user');
       const settlement = await waitForCancelSettlement({
         runId: executionRunId,
         sessionId: record.sessionId,

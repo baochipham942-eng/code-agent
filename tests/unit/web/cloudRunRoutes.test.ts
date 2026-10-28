@@ -58,6 +58,7 @@ describe('cloud run HTTP contract', () => {
   let server: http.Server;
   let baseUrl: string;
   let runRegistry: RunRegistry;
+  let runtime: CloudRunRouteRuntime;
   let started: string[];
   let gates: Map<string, Deferred>;
   let executions: Map<string, ReturnType<RunRegistry['start']>>;
@@ -77,7 +78,7 @@ describe('cloud run HTTP contract', () => {
         sessionId: body.sessionId!,
         workspace: process.cwd(),
       });
-      ledger.bindExecutionRunId(cloudRunId, handle.context.runId);
+      runtime.bindExecutionRunId(cloudRunId, handle.context.runId);
       executions.set(cloudRunId, handle);
       started.push(body.clientMessageId!);
       const gate = gates.get(body.clientMessageId!) ?? deferred();
@@ -87,7 +88,7 @@ describe('cloud run HTTP contract', () => {
       runtime.settle(cloudRunId, handle.cancellationRequested ? 'cancelled' : 'succeeded');
     };
 
-    const runtime = new CloudRunRouteRuntime({
+    runtime = new CloudRunRouteRuntime({
       getLedger: () => ledger,
       runRegistry,
       execute,
@@ -191,16 +192,57 @@ describe('cloud run HTTP contract', () => {
     expect(ledger.countInFlight('acct_a')).toBe(1);
     expect(cancelSpy).toHaveBeenCalledTimes(1);
 
-    const repeated = await fetch(`${baseUrl}/api/cloud-runs/${cloudRun.runId}/cancel`, { method: 'POST' });
-    expect(repeated.status).toBe(202);
-    expect(cancelSpy).toHaveBeenCalledTimes(1);
-    expect(ledger.countInFlight('acct_a')).toBe(1);
-
+    // 重复取消不再被 cancel_requested_at 短路：执行体还活着就必须再次真停
+    // （幂等重投是 registry 契约），等它真的到达执行体后放行结算。
+    const repeated = fetch(`${baseUrl}/api/cloud-runs/${cloudRun.runId}/cancel`, { method: 'POST' });
+    await vi.waitFor(() => expect(cancelSpy).toHaveBeenCalledTimes(2));
     gates.get('message_cancel')!.resolve();
+    const repeatedResponse = await repeated;
+    expect(repeatedResponse.status).toBe(200);
+    expect(await repeatedResponse.json()).toMatchObject({ status: 'cancelled' });
+
     await vi.waitFor(() => expect(ledger.countInFlight('acct_a')).toBe(0));
     expect(ledger.getRun(cloudRun.runId)?.state).toBe('cancelled');
-    expect(cancelSpy).toHaveBeenCalledTimes(1);
+    expect(cancelSpy).toHaveBeenCalledTimes(2);
   }, 25_000);
+
+  it('consumes a pre-bind cancel at bind instead of letting the run finish on its own', async () => {
+    // admission 已落 running 行、execution_run_id 尚未绑：POST /run 与 bind 之间的窗口
+    const admission = ledger.admit({
+      sessionId: 'session_prebind',
+      trigger: 'manual',
+      requestJson: JSON.stringify(cloudBody('session_prebind', 'message_prebind')),
+    });
+    expect(admission.record.executionRunId).toBeNull();
+
+    const early = await fetch(`${baseUrl}/api/cloud-runs/${admission.record.runId}/cancel`, { method: 'POST' });
+    expect(early.status).toBe(202);
+    expect(await early.json()).toMatchObject({ code: 'CANCEL_REQUESTED' });
+    expect(ledger.getRun(admission.record.runId)?.cancelRequestedAt).not.toBeNull();
+
+    // 轮次起步：registry 注册 + bind（与 agent.ts 同一顺序）；标记必须在此被消费
+    const handle = runRegistry.start({ sessionId: 'session_prebind', workspace: process.cwd() });
+    runtime.bindExecutionRunId(admission.record.runId, handle.context.runId);
+    await vi.waitFor(() => expect(handle.cancellationRequested).toBe(true));
+    expect(ledger.getRun(admission.record.runId)?.state).toBe('running');
+  });
+
+  it('a cancel after bind still stops the live run when an earlier pre-bind cancel set the marker', async () => {
+    await postRun('session_marker', 'message_marker');
+    const cloudRun = ledger.listInFlightRuns()[0];
+    // 早期取消只落了标记（bind 前窗口的路由路径等价状态）
+    ledger.requestCancel(cloudRun.runId);
+    const execution = executions.get(cloudRun.runId)!;
+    const cancelSpy = vi.spyOn(execution, 'cancel');
+
+    const response = fetch(`${baseUrl}/api/cloud-runs/${cloudRun.runId}/cancel`, { method: 'POST' });
+    await vi.waitFor(() => expect(cancelSpy).toHaveBeenCalledTimes(1));
+    gates.get('message_marker')!.resolve();
+    const settled = await response;
+    expect(settled.status).toBe(200);
+    expect(await settled.json()).toMatchObject({ status: 'cancelled' });
+    expect(ledger.getRun(cloudRun.runId)?.state).toBe('cancelled');
+  });
 
   it('marks crashed in-flight rows interrupted and starts the queued head on startup', async () => {
     const first = ledger.admit({
@@ -220,7 +262,7 @@ describe('cloud run HTTP contract', () => {
     });
     gates.set('message_queued', deferred());
 
-    const runtime = new CloudRunRouteRuntime({
+    const sweepRuntime = new CloudRunRouteRuntime({
       getLedger: () => ledger,
       runRegistry,
       execute: async (body, cloudRunId) => {
@@ -230,7 +272,7 @@ describe('cloud run HTTP contract', () => {
       },
       logger,
     });
-    await runtime.runStartupSweep();
+    await sweepRuntime.runStartupSweep();
 
     expect(ledger.getRun(first.record.runId)?.state).toBe('interrupted');
     expect(ledger.getRun(second.record.runId)?.state).toBe('interrupted');

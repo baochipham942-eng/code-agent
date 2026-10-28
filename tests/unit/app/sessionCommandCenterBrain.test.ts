@@ -217,6 +217,7 @@ describe('晨报回复「存草稿 N」才打开 mail_draft', () => {
     const block = options.turnSystemContext?.[2] ?? '';
     expect(block).toContain('已经存过');
     expect(block).toContain('没有开邮件权限');
+    expect(block).toContain('如果本轮工具表里有 mail_draft');
     expect(block).toContain('mail_draft');
     expect(block).toContain('delegate_task');
     expect(block).toContain('一共有几封草稿');

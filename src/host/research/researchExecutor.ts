@@ -12,7 +12,7 @@ import type {
 import type { ModelRouter } from '../model/modelRouter';
 import type { ToolExecutor } from '../tools/toolExecutor';
 import type { ModelProvider } from '../../shared/contract/model';
-import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../shared/constants';
+import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 import { createLogger } from '../services/infra/logger';
 import { UrlCompressor } from './urlCompressor';
 
@@ -187,30 +187,33 @@ export class ResearchExecutor {
   // --------------------------------------------------------------------------
 
   /**
-   * Resolve provider from config, falling back to DEFAULT_PROVIDER.
+   * Resolve provider from config, falling back to the session default model
+   * (user-configured default provider, factory default only when unconfigured).
    */
   private resolveProvider(): ModelProvider {
-    return (this._researchConfig.modelProvider as ModelProvider) || DEFAULT_PROVIDER;
+    return (this._researchConfig.modelProvider as ModelProvider)
+      || resolveSessionDefaultModelConfig().provider;
   }
 
   /**
    * Resolve model for a given research phase.
    *
    * Priority:
-   * - planning/reflection: queryModel > model > DEFAULT_MODEL
-   * - analysis:            model > DEFAULT_MODEL
-   * - report/synthesis:    reportModel > model > DEFAULT_MODEL
+   * - planning/reflection: queryModel > model > session default
+   * - analysis:            model > session default
+   * - report/synthesis:    reportModel > model > session default
    */
   private resolveModel(phase: 'query' | 'analysis' | 'report'): string {
     const cfg = this._researchConfig;
+    const sessionDefaultModel = resolveSessionDefaultModelConfig().model;
     switch (phase) {
       case 'query':
-        return cfg.queryModel || cfg.model || DEFAULT_MODEL;
+        return cfg.queryModel || cfg.model || sessionDefaultModel;
       case 'report':
-        return cfg.reportModel || cfg.model || DEFAULT_MODEL;
+        return cfg.reportModel || cfg.model || sessionDefaultModel;
       case 'analysis':
       default:
-        return cfg.model || DEFAULT_MODEL;
+        return cfg.model || sessionDefaultModel;
     }
   }
 

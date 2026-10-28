@@ -11,7 +11,7 @@ import { getCronService } from '../cron/cronService';
 import { getConnectorRegistry } from '../connectors/registry';
 import { ModelRouter } from '../model/modelRouter';
 import { createLogger } from '../services/infra/logger';
-import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../shared/constants';
+import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 import type { CreateCronJobDefinition, CronJobDefinition, CronMailSourcesResult } from '../../shared/contract/cron';
 
 const logger = createLogger('CronIPC');
@@ -258,11 +258,11 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
     const nowAnchor = `\n\n【当前时间】${new Date().toISOString()}（UTC，默认时区 Asia/Shanghai）。`
       + `用户用「今天/明天/今晚/本周/下周」等相对时间时，必须以此为基准换算成将来的绝对时间，`
       + `生成的 at 类型 datetime 绝不能早于当前时间。`;
-    // 跟随项目默认 provider（mimo 包月），取代原硬编码 zhipu——app 的 zhipu
-    // 端点经 0ki 中转，中转 key 一旦失效会直接卡死 /schedule 的自然语言生成。
+    // 调用当下解析用户配置的默认 provider/model。没配过才落到出厂默认。
+    const { provider, model } = resolveSessionDefaultModelConfig();
     const response = await router.chat({
-      provider: DEFAULT_PROVIDER,
-      model: DEFAULT_MODEL,
+      provider,
+      model,
       messages: [
         { role: 'system', content: CRON_GENERATION_SYSTEM_PROMPT + nowAnchor },
         { role: 'user', content: prompt.trim() },

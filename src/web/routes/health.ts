@@ -71,7 +71,11 @@ function projectPublicHealth(payload: WebHealthDetail): WebHealthPublic {
     mode: payload.mode,
     timestamp: payload.timestamp,
     durableRunReady: payload.durableRunReady,
-    rendererServe: payload.rendererServe,
+    // Public projection keeps only the decision shape; the full decision carries
+    // absolute local paths (serveDir/builtinDir/activeDir) and stays detail-only.
+    rendererServe: payload.rendererServe
+      ? { source: payload.rendererServe.source, reason: payload.rendererServe.reason }
+      : null,
     build: typeof buildVersion === 'string' ? { version: buildVersion } : null,
   };
 }

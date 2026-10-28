@@ -1,10 +1,18 @@
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
+
+// 到点续跑 trace 断言（文末 describe）需要拦 warn；本文件其余被测模块只调 logger.warn，
+// mock 齐全不影响。
+const warn = vi.hoisted(() => vi.fn());
+
+vi.mock('../../../../src/host/services/infra/logger', () => ({
+  createLogger: () => ({ warn, info: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+}));
 
 import { RunRegistry } from '../../../../src/host/runtime/runRegistry';
 import { DurableRunKernel } from '../../../../src/host/runtime/durableRunKernel';
@@ -13,6 +21,7 @@ import { DurableRunRepository } from '../../../../src/host/services/core/reposit
 import { getApplicationRunRegistry, resetApplicationRunRegistryForTests } from '../../../../src/host/app/applicationRunRegistry';
 import { withNativeModelOperation } from '../../../../src/host/agent/runtime/contextAssembly/nativeModelCheckpoint';
 import { settleQuotaWaitInference, clearQuotaWaitNote } from '../../../../src/host/agent/runtime/contextAssembly/quotaWaitTurn';
+import { armQuotaWaitOnPark, clearQuotaWaitTimer, registerQuotaWaitContinuer } from '../../../../src/host/runtime/quotaWaitTimer';
 import { isQuotaWaitSuspendEligible, QuotaWaitSuspendError } from '../../../../src/host/model/providers/quotaWaitSuspend';
 import type { ContextAssemblyCtx } from '../../../../src/host/agent/runtime/contextAssembly/shared';
 import type { ModelConfig } from '../../../../src/shared/contract/model';
@@ -171,5 +180,42 @@ describe('quota wait parkability gate (rework r1)', () => {
     })).toBe(false);
     expect(bareCancelled).not.toHaveBeenCalled();
     registry.unregister(plain.context.runId, plain);
+  });
+});
+
+// 自 quotaWaitTimer.test.ts 并入（gates:fast 12 选案上限，见证据档 r2）：用例原样搬移，
+// 零断言改动。
+describe('quotaWaitTimer due-time auto-continue trace (rework r1)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-28T08:00:00.000Z'));
+    warn.mockClear();
+  });
+
+  afterEach(() => {
+    registerQuotaWaitContinuer(null);
+    clearQuotaWaitTimer('run-warn');
+    vi.useRealTimers();
+  });
+
+  it('leaves a distinguishable warn when the due-time continue fails', async () => {
+    registerQuotaWaitContinuer(async () => {
+      throw new Error('No parked durable run is available for session s-warn');
+    });
+    armQuotaWaitOnPark({ runId: 'run-warn', sessionId: 's-warn', dueAt: Date.now() + 75_000 });
+    await vi.advanceTimersByTimeAsync(75_000);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith('[QuotaWaitTimer] due-time auto-continue failed', {
+      runId: 'run-warn',
+      sessionId: 's-warn',
+      reason: 'No parked durable run is available for session s-warn',
+    });
+  });
+
+  it('stays silent when the due-time continue succeeds', async () => {
+    registerQuotaWaitContinuer(async () => ({ runId: 'run-warn' }));
+    armQuotaWaitOnPark({ runId: 'run-warn', sessionId: 's-warn', dueAt: Date.now() + 75_000 });
+    await vi.advanceTimersByTimeAsync(75_000);
+    expect(warn).not.toHaveBeenCalled();
   });
 });

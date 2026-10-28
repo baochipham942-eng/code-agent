@@ -1,5 +1,6 @@
 import type { CronJobAction, CronJobDefinition, CronJobExecution } from '../../shared/contract/cron';
 import { CRON_AGENT_SNAPSHOT, CRON_RESULT_PUSH } from '../../shared/constants';
+import { guardOutboundText } from '../security/sensitiveDataGuard';
 import { saveCronExecution, upsertCronExecutionInMemory } from './cronPersistence';
 import { truncateUtf8Snapshot } from './cronAgentPrompt';
 import { CRON_SUMMARY_TAG_PATTERN, extractCronAlertText } from '../../shared/cronRunDigest';
@@ -100,7 +101,9 @@ async function pushCronResult(
       return fail(`push target "${targetChannel}" has no conversation id (expected "<channel>:<chatId>")`);
     }
 
-    const sent = await channelManager.sendMessage(targetAccount.id, chatId, body);
+    // 出站掩码（N-OUTBOUND-SENSITIVE-GUARD）：真发出去的正文过 shape-only 掩码；
+    // 去重键 dedupBody 与 execution.result 仍持原文——原文只留本地，出口只见掩码。
+    const sent = await channelManager.sendMessage(targetAccount.id, chatId, guardOutboundText(body).text);
     // 🔴 返回值必须看：原实现忽略它，发送被平台拒绝（无效 receive_id / 不在出站白名单）时
     // 表现为「任务成功、结果没到」，而无人值守场景没有人会发现。
     if (!sent.success) return fail(`channel rejected the message: ${sent.error ?? 'unknown error'}`);

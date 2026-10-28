@@ -47,7 +47,9 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // sys-v89：N-DELIVERABLE-WORKDIR-LAZY-FU1-FU1——11 个连接器/网络写工具（calendar×3/mail×2/
 // reminders×3/tmeetMeetingCreate/jira/http_request）加 touchesWorkDirectory 元数据
 //（同 sys-v85 的 FU1 四工具，不进请求体，模型文本门要求 bump）。
-export const PROMPT_VERSION = 'sys-v89' as const;
+// sys-v90：N-DELEGATE-WORKDIR-LAZY——delegate_task/steer_task/cancel_task 加
+// touchesWorkDirectory 元数据（同 sys-v89，不进请求体，模型文本门要求 bump）。
+export const PROMPT_VERSION = 'sys-v90' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

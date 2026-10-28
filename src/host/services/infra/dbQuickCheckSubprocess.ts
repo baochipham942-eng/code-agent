@@ -57,10 +57,13 @@ function isAlreadyRunning(): boolean {
 }
 
 const CHILD_SCRIPT = `
+const fs = require('fs');
+const path = require('path');
 const candidates = JSON.parse(process.env.NEO_QUICKCHECK_NATIVE_CANDIDATES || '[]');
 let Database = null;
 let loadedFrom = null;
 for (const candidate of candidates) {
+  if (path.isAbsolute(candidate) && !fs.existsSync(candidate)) continue;
   try {
     Database = require(candidate);
     loadedFrom = candidate;

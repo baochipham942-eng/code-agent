@@ -227,7 +227,7 @@ export const zhSettingsCore = {
           acceptEdits: {
             title: permissionVocabularyZh.autoApprove,
             description: '自动接受文件编辑，命令和外部访问仍保留确认。',
-            operationScope: '编辑自动通过，命令仍询问',
+            operationScope: '编辑自动通过，命令 / 外部操作仍询问',
             riskLabel: '中风险',
           },
           bypassPermissions: {

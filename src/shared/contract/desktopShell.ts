@@ -109,6 +109,9 @@ export interface RendererServeDecision {
   disabledReason?: string;
 }
 
+/** Unauthenticated /api/health projection: decision shape minus every local path. */
+export type RendererServeDecisionPublic = Pick<RendererServeDecision, 'source' | 'reason'>;
+
 export type DesktopShellWebHealthStatus =
   | 'ok'
   | 'unreachable'

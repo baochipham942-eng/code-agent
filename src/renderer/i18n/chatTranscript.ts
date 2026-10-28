@@ -341,6 +341,16 @@ toolStatus: {
   },
 },
 
+messageKeepHide: {
+  menuLabel: '这条消息的上下文',
+  pin: '记住这条，压缩时别丢',
+  unpin: '取消记住',
+  exclude: '这条以后不给 AI 看',
+  include: '恢复给 AI 看',
+  pinnedBadge: '已记住',
+  excludedBadge: 'AI 看不到这条',
+},
+
 // 回合级文件变更卡（TurnDiffSummary）
 turnCard: {
   workedFor: '用时 {duration}',
@@ -838,6 +848,16 @@ toolStatus: {
     agent_message: { preparing: 'Preparing…', running: 'Sending message…' },
     findings_write: { preparing: 'Recording…', running: 'Writing findings…' },
   },
+},
+
+messageKeepHide: {
+  menuLabel: 'Context for this message',
+  pin: 'Keep this through compaction',
+  unpin: 'Stop keeping this',
+  exclude: 'Hide this from the AI',
+  include: 'Show this to the AI again',
+  pinnedBadge: 'Kept',
+  excludedBadge: 'Hidden from AI',
 },
 
 // Turn-level file change card (TurnDiffSummary)

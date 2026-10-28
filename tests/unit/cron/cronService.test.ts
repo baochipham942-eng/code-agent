@@ -154,6 +154,8 @@ vi.mock('../../../src/host/cron/artifactStandingRefresh', () => ({
 }));
 
 import { CronService } from '../../../src/host/cron/cronService';
+import type { CronApiClient } from '../../../src/host/cron/cronApiClient';
+import { CronWebhookRelay } from '../../../src/host/cron/cronWebhookRelay';
 import { deliverCronResultToChannel } from '../../../src/host/cron/cronResultDelivery';
 import { getEventBus, shutdownEventBus } from '../../../src/host/services/eventing/bus';
 import { getSessionManager } from '../../../src/host/services/infra/sessionManager';
@@ -1456,5 +1458,75 @@ describe('Feishu group listen check service wiring', () => {
     } finally {
       await service.shutdown();
     }
+  });
+});
+
+describe('webhook hook removal when the job stops being a live webhook job', () => {
+  async function liveWebhookJob() {
+    const service = new CronService();
+    const runtime = installCloudClient(service);
+    runtime.isConfigured = () => true;
+    const removeHook = vi.fn(async () => undefined);
+    const relay = new CronWebhookRelay(
+      { isConfigured: () => true, removeHook } as unknown as CronApiClient,
+      { getJobDefinitions: () => service.listJobs(), ingestWebhook: () => 'ignored' },
+    );
+    (service as unknown as { cronWebhookRelay?: CronWebhookRelay }).cronWebhookRelay = relay;
+    const job = await service.createJob({
+      name: 'watch alerts',
+      scheduleType: 'event',
+      schedule: {
+        type: 'event',
+        source: 'webhook',
+        eventName: 'message',
+        batchWindowSec: 15,
+        minRunIntervalSec: 90,
+      },
+      action: { type: 'agent', agentType: 'default', prompt: 'summarise the alert' },
+      runsOn: 'local',
+      maxRunBudget: 1,
+      enabled: true,
+    });
+    removeHook.mockClear();
+    return { service, job, removeHook };
+  }
+
+  const channelSchedule = {
+    type: 'event' as const,
+    source: 'channel' as const,
+    accountId: 'acc-1',
+    eventName: 'message' as const,
+  };
+
+  it('改名不摘 hook；调度改成 channel（仍启用）或同一次更新里停用，都按改写前的任务摘 hook', async () => {
+    const renamed = await liveWebhookJob();
+    await renamed.service.updateJob(renamed.job.id, { name: 'renamed alerts' });
+    expect(renamed.removeHook).not.toHaveBeenCalled();
+    await renamed.service.shutdown();
+
+    const retargeted = await liveWebhookJob();
+    await retargeted.service.updateJob(retargeted.job.id, {
+      scheduleType: 'event',
+      schedule: channelSchedule,
+    });
+    expect(retargeted.removeHook).toHaveBeenCalledTimes(1);
+    expect(retargeted.removeHook).toHaveBeenCalledWith(retargeted.job.id);
+    await retargeted.service.shutdown();
+
+    const disabledAndRetargeted = await liveWebhookJob();
+    await disabledAndRetargeted.service.updateJob(disabledAndRetargeted.job.id, {
+      enabled: false,
+      scheduleType: 'event',
+      schedule: channelSchedule,
+    });
+    expect(disabledAndRetargeted.removeHook).toHaveBeenCalledTimes(1);
+    expect(disabledAndRetargeted.removeHook).toHaveBeenCalledWith(disabledAndRetargeted.job.id);
+    await disabledAndRetargeted.service.shutdown();
+
+    const disabled = await liveWebhookJob();
+    await disabled.service.updateJob(disabled.job.id, { enabled: false });
+    expect(disabled.removeHook).toHaveBeenCalledTimes(1);
+    expect(disabled.removeHook).toHaveBeenCalledWith(disabled.job.id);
+    await disabled.service.shutdown();
   });
 });

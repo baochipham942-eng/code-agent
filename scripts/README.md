@@ -21,6 +21,9 @@
 - 是跨域构建、发布或验证的总编排器；
 - 为兼容已发布命令保留固定路径。
 
+`gen-native-dep-manifest.mjs` 是 package scripts 与 macOS x64 / Windows 构建 workflow 共用的
+原生依赖清单稳定入口；其共享 Tauri 资源映射放在 `lib/tauri-resource-path.mjs`。
+
 当前模型注意力固定开销由 `attention-budget-ratchet.mjs` 与同目录显式基线文件共同守门，
 经 `gates:local` 调用；任何提额都要在基线理由中留下产品决策。
 

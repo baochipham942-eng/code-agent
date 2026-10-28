@@ -81,7 +81,7 @@ describe('morning-triage template role field', () => {
       type: 'agent',
       roleId: 'assistant-lin',
     });
-    expect(payload.action.type === 'agent' ? payload.action.prompt : '').toContain('草稿（未发送）');
+    expect(payload.action.type === 'agent' ? payload.action.prompt : '').toContain('草稿 N（未发送）');
     expect(await screen.findByTestId('cron-saved-routine-restate')).toBeTruthy();
     expect(onClose).not.toHaveBeenCalled();
   });

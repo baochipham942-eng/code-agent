@@ -1,10 +1,10 @@
 // ============================================================================
-// CloudRunLedger — 云端 run 账本（ADR-086 S1：持久 run 行 + 可订阅迁移）
+// CloudRunLedger — 云端 run 账本（ADR-086 S1–S3）
 // ============================================================================
 // 账户只从注入的 accountResolver 来（缺省 = 绑定的 AuthService 已验证会话）；
 // createRun 不收 accountId 参数，请求体里的用户字段进不到 account_id。
 // runId / workspaceId 由账本铸造，写入后由 schema 触发器保不可变。
-// S1 只有存储与迁移；admit / 配额 / 取消在 S2+，路由接线是后续单。
+// 持久行与迁移之外，这里提供 admit / 配额 / FIFO 位置 / 提升 / 取消请求。
 //
 // 账户事实源用「authService 装载时注册」而不是本文件静态 import AuthService：
 // 静态 import 会把 services/core barrel（configService 的 import 期 .env 副作用）

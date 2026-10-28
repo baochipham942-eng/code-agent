@@ -3,7 +3,7 @@ import { CLOUD_RUN_STATES, CLOUD_RUN_TRIGGERS } from '../../../../shared/contrac
 import { safeAlter, type Logger } from './schemaHelpers';
 
 // ============================================================================
-// Cloud run ledger schema — ADR-086 slice S1. DDL only, 同 applySessionDelegationsSchema 形状。
+// Cloud run ledger schema — ADR-086 S1–S3. DDL only, 同 applySessionDelegationsSchema 形状。
 // - state / "trigger" 的 CHECK 列表由合同常量生成（单一事实源，与迁移表同源）。
 // - workspace_status 故意只给 DEFAULT 'active' 不加 CHECK：保留期词汇
 //   （active/…/cleaned 等）由 RETENTION-SRV 拍板，先钉枚举会猜错词表。

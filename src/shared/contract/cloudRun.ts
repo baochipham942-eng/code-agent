@@ -1,5 +1,5 @@
 // ============================================================================
-// Cloud run ledger contract — ADR-086 slice S1（持久云端 run 行）
+// Cloud run ledger contract — ADR-086 S1–S3（持久行、准入与取消）
 // ============================================================================
 // 云端 run 账本的可共享合同：状态词汇、触发来源、迁移表与准入稳定码。
 // 与桌面 durable_runs（ADR-037，created/running/…/completed/failed/cancelled）
@@ -71,7 +71,7 @@ export function isTerminalCloudRunState(state: CloudRunState): boolean {
 /**
  * 「没有已验证账户则拒绝创建 run」的自有稳定码（ADR-086 合同 1）。
  * accountId 只能来自服务端验证结果，请求体里的用户字段不成为账户。
- * FU3 的路由接线要用它判错时再导出（knip production 门：S1 无生产消费方）。
+ * 常量经 CloudRunAccountRequiredError.code 暴露，路由按稳定码返回 401。
  */
 const CLOUD_RUN_ACCOUNT_REQUIRED = 'CLOUD_RUN_ACCOUNT_REQUIRED';
 

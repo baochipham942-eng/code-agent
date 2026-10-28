@@ -337,3 +337,66 @@ describe('acceptEdits / bypassPermissions 档位判定链（审出 MED：曾是�
     expect(permissionCalls.length).toBe(1);
   });
 });
+
+describe('acceptEdits 出站/不可逆/进程类写档工具仍需用户确认（N-ACCEPTEDITS-EXTERNAL-ASK）', () => {
+  let executor: ToolExecutor;
+  let permissionCalls: Array<Record<string, unknown>> = [];
+
+  beforeEach(() => {
+    resetPermissionModeManager();
+    fs.rmSync(nodePath.join(tmpDataDir, 'session-permission-modes.json'), { force: true });
+    mockToolDef = undefined;
+    mockClassification = { decision: 'ask', reason: 'needs user', confidence: 1, cached: false };
+    permissionCalls = [];
+    executor = new ToolExecutor({
+      requestPermission: async (req) => {
+        permissionCalls.push(req as unknown as Record<string, unknown>);
+        return true;
+      },
+      workingDirectory: '/test/directory',
+    });
+  });
+
+  afterEach(() => {
+    resetPermissionModeManager();
+    vi.clearAllMocks();
+  });
+
+  // 走真实 resolveToolPermissionClassification 档位改写链（仅 classifyPermission 本体 mock 为 ask）：
+  // 这些 permissionLevel:'write' 的出站/不可逆/进程类工具不得被 acceptEdits 升级成自动放行。
+  it.each([
+    'mail_send',
+    'calendar_create_event',
+    'calendar_update_event',
+    'calendar_delete_event',
+    'reminders_delete',
+    'tmeetMeetingCreate',
+    'mcp_add_server',
+    'xlwings_execute',
+  ])('acceptEdits：%s 照走用户确认，不搭写档免确认便车', async (toolName) => {
+    getPermissionModeManager().setMode('acceptEdits');
+    setMockTool({ name: toolName, requiresPermission: true, permissionLevel: 'write' });
+    const params = toolName === 'calendar_create_event' ? { attendees: ['a@example.com'] } : {};
+    const result = await executor.execute(toolName, params, {});
+    expect(result.success).toBe(true);
+    expect(permissionCalls.length).toBe(1);
+    expect(permissionCalls[0].tool).toBe(toolName);
+  });
+
+  it('对照组：acceptEdits 下普通文件写入仍免确认', async () => {
+    getPermissionModeManager().setMode('acceptEdits');
+    setMockTool({ name: 'write_file', requiresPermission: true, permissionLevel: 'write' });
+    const result = await executor.execute('write_file', { file_path: '/test/directory/a.txt', content: 'x' }, {});
+    expect(result.success).toBe(true);
+    expect(permissionCalls.length).toBe(0);
+  });
+
+  it('对照组：bypassPermissions 下 mail_send 仍直接放行', async () => {
+    // bypass 档 requiresApproval：不带 approved=true 会被 setMode 拒掉，档位仍是 default
+    getPermissionModeManager().setMode('bypassPermissions', true);
+    setMockTool({ name: 'mail_send', requiresPermission: true, permissionLevel: 'write' });
+    const result = await executor.execute('mail_send', {}, {});
+    expect(result.success).toBe(true);
+    expect(permissionCalls.length).toBe(0);
+  });
+});

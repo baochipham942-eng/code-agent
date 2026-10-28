@@ -16,6 +16,30 @@ export function shouldFreezeNonReadWhileAwaitingUser(
     && definition?.permissionLevel !== 'read';
 }
 
+export type ToolAttemptOutcome = 'succeeded' | 'rejected' | 'failed' | 'cancelled' | 'skipped';
+
+/** 与 finish() 记进 tool_dispatch.outcome 的谓词同一套，顺序不可换。 */
+export function classifyToolAttemptOutcome(result: ToolResult, dispatched: boolean): ToolAttemptOutcome {
+  if (result.metadata?.cancelledByRun === true) return 'cancelled';
+  if (result.metadata?.skipped === true || result.metadata?.autoLoaded === true) return 'skipped';
+  if (result.success) return 'succeeded';
+  const rejected = !dispatched
+    || result.metadata?.permissionDecision === 'deny'
+    || result.metadata?.blocked === true
+    || (typeof result.metadata?.code === 'string' && result.metadata.code.startsWith('PERMISSION_DENIED'));
+  return rejected ? 'rejected' : 'failed';
+}
+
+export function toolAttemptOutcomeWord(outcome: ToolAttemptOutcome): string {
+  switch (outcome) {
+    case 'succeeded': return '成功';
+    case 'rejected': return '拒绝';
+    case 'failed': return '失败';
+    case 'cancelled': return '取消';
+    case 'skipped': return '跳过';
+  }
+}
+
 const AWAITING_USER_BLOCKED_ERROR = '<awaiting-user-input>\n'
   + '上一条 AskUserQuestion 没有得到用户回答（无人应答或等待超时）。\n'
   + '本轮禁止创建、修改、删除文件以及其它执行类操作。\n'
@@ -61,11 +85,9 @@ class ToolAttemptTrace {
     const stopReason = this.ctx.control?.forceFinalResponseReason ?? '';
     // 'evidence boundary repeated' 已随证据边界改记录式而没有产生方，从这条正则里摘掉。
     if (/^(artifact repair attempts exhausted:|artifact repair unavailable tool repeated:)/.test(stopReason)) this.noProgressStopped = true;
-    const cancelled = result.metadata?.cancelledByRun === true;
-    const skipped = result.metadata?.skipped === true || result.metadata?.autoLoaded === true;
-    const rejected = !dispatched || result.metadata?.permissionDecision === 'deny'
-      || result.metadata?.blocked === true
-      || (typeof result.metadata?.code === 'string' && result.metadata.code.startsWith('PERMISSION_DENIED'));
+    const outcome = classifyToolAttemptOutcome(result, dispatched);
+    const cancelled = outcome === 'cancelled';
+    const skipped = outcome === 'skipped';
     if (result.metadata?.awaitingUserInput === true) this.awaitingUserInput = true;
     if (!cancelled && !skipped) this.consecutiveErrors = result.success ? 0 : this.consecutiveErrors + 1;
     // Recovery needs the same operation and full canonical locator, never a basename/title match.
@@ -81,7 +103,7 @@ class ToolAttemptTrace {
       execution: result.metadata?.fromCache === true ? 'cache_hit'
         : result.metadata?.executionStarted === true ? 'executed'
         : !dispatched || result.metadata?.executionStarted === false ? 'not_executed' : 'unknown',
-      outcome: cancelled ? 'cancelled' : skipped ? 'skipped' : result.success ? 'succeeded' : rejected ? 'rejected' : 'failed',
+      outcome,
       success: result.success, durationMs,
       error: result.error ? redactSecrets(result.error) : null,
       fromCache: result.metadata?.fromCache === true,

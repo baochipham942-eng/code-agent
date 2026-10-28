@@ -278,6 +278,40 @@ describe('Browser live view human takeover', () => {
     await actRelease(release);
     await waitFor(() => expect(order).toEqual(['takeover', 'dispatch']));
   });
+
+  it('keeps clicks on the takeover bar off the live page and keeps Continue working', async () => {
+    seedSession('agent-a', 'running');
+    const view = render(<BrowserAgentWindow />);
+    const stage = screen.getByTestId('browser-agent-window-stage');
+    stageRect(stage);
+    // 真实用户序列：点画面 → 确认「中断并操作」（此后透传门开）→ 会话 waiting_human → 条出现
+    fireEvent.click(stage, { clientX: 100, clientY: 100, button: 0, detail: 1 });
+    fireEvent.click(screen.getByText('中断并操作'));
+    await waitFor(() => expect(dispatchUserBrowserInput).toHaveBeenCalledTimes(1));
+
+    dispatchUserBrowserInput.mockClear();
+    controlMock.mockClear();
+    seedSession('agent-a', 'waiting_human');
+    view.rerender(<BrowserAgentWindow />);
+    const bar = screen.getByTestId('browser-human-takeover-bar');
+    fireEvent.pointerDown(bar, { button: 0, pointerId: 1 });
+    fireEvent.pointerUp(bar, { button: 0, pointerId: 1 });
+    fireEvent.click(bar, { detail: 1 });
+    await actRelease(() => undefined);
+    // 条上的指针/点击不透传成页面点击，也不弹中断确认
+    expect(dispatchUserBrowserInput).not.toHaveBeenCalled();
+    expect(screen.queryByText('中断当前浏览任务？')).toBeNull();
+
+    // 继续按钮自身仍走 resume；它冒泡出去的 click 同样不透传
+    fireEvent.click(screen.getByTestId('browser-human-takeover-continue'));
+    await waitFor(() => expect(controlMock).toHaveBeenCalledWith({
+      version: 1,
+      conversationId: 'session-a',
+      surfaceSessionId: 'surface-agent',
+      action: 'resume',
+    }));
+    expect(dispatchUserBrowserInput).not.toHaveBeenCalled();
+  });
 });
 
 async function actRelease(release: () => void): Promise<void> {

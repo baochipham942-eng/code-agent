@@ -15,6 +15,7 @@ import type { UserBrowserInputPayload } from '@shared/utils/userBrowserInputPayl
 import { dispatchUserBrowserInput } from '../services/userBrowserLink';
 import { requestBrowserHumanTakeover } from './requestBrowserHumanTakeover';
 import {
+  isBrowserStageOverlayTarget,
   resolveBrowserStageInteractionGate,
   shouldDispatchBrowserStageInteraction,
 } from '../utils/browserStageInteractionGate';
@@ -189,6 +190,8 @@ export function useBrowserStageUserInput(
 
   const onStageClick = useCallback((event: MouseEvent<HTMLElement>) => {
     // pointer 序列已处理主路径；保留 click 仅作兜底（无 pointer 环境）。
+    // 悬浮壳 UI（人工接管条等）上的点击不透传到页面，也不消费 click 吞吐标记。
+    if (isBrowserStageOverlayTarget(event.target)) return;
     if (annotateMode) return;
     if (suppressNextClickRef.current) {
       suppressNextClickRef.current = false;
@@ -214,6 +217,8 @@ export function useBrowserStageUserInput(
   }, [annotateMode, interactive, mapPoint, route]);
 
   const onStagePointerDown = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    // 悬浮壳 UI 上的指针起点不算页面交互：不建手势、不聚焦 stage。
+    if (isBrowserStageOverlayTarget(event.target)) return;
     if (annotateMode || !interactive) return;
     // 仅接受已知按键；button 缺省时按左键（jsdom / 部分合成事件）
     if (

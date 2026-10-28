@@ -4,7 +4,7 @@
 
 import { classifyPermission, type ClassificationResult } from './permissionClassifier';
 import { enforceWriteFenceObligation } from '../sandbox/writeFence';
-import { isExternalSideEffectTool } from './externalSideEffect';
+import { isExternalSideEffectTool, mustAskUnderAcceptEdits } from './externalSideEffect';
 import { createTraceStep } from '../security/decisionTraceBuilder';
 import { getPermissionModeManager, permissionModeAutoApproves, type PermissionMode } from '../permissions/modes';
 import { resolveEffectiveSessionMode } from '../permissions/runPolicySnapshot';
@@ -303,13 +303,45 @@ export function peermsgLaunderDenialError(
 }
 
 /**
+ * ADR-067 D4 sticky：同一用户消息内，真人刚拒绝过的同指纹动作不再二次出卡。
+ * 判据四条全中才 sticky：登记是真人拒的（byUser）、本轮无 peer 来源、
+ * 两侧 user 消息 id 都在且相同。下一条用户消息（含渠道入站消息）id 即不同，
+ * 恢复正常出卡；缺 id（旧调用方）与非真人拒绝（超时/fail-closed/机器）照旧 ask。
+ */
+export function isStickyUserDenial(
+  priorDenial: { byUser?: boolean; userMessageId?: string } | undefined,
+  input: { peerOriginForcesConfirmation: boolean; sourceMessageId?: string },
+): boolean {
+  return Boolean(
+    priorDenial?.byUser
+      && priorDenial.userMessageId
+      && input.sourceMessageId
+      && priorDenial.userMessageId === input.sourceMessageId
+      && !input.peerOriginForcesConfirmation,
+  );
+}
+
+/**
+ * ADR-067 D4 sticky 拒绝文案：一句话告诉模型用户已拒绝该动作、下一条用户消息前
+ * 不会再被询问，别重试，要在聊天里向用户确认（审批疲劳会把用户逼向 always-allow；
+ * 竞品 Grok v0.75.5 同款语义）。复用 PERMISSION_DENIED_BY_USER，不新造契约码。
+ */
+export function userDeniedStickyError(toolName: string, deniedSummary?: string): HostReasonPayload {
+  const prior = deniedSummary ? ` (${deniedSummary})` : '';
+  const modelText = `${toolName} was not executed: the user already declined this exact action${prior} `
+    + 'earlier in this conversation turn. It will not run and will not be asked again until the user '
+    + 'sends another message, so do not retry it or rephrase it. If the user still wants it, ask them in chat.';
+  return createHostReason(HostReasonCode.PermissionDeniedByUser, modelText, { toolName });
+}
+
+/**
  * 权限分类三分支解析 + 档位改写：
  * 1. policy always_confirm / skill 边界违规 → 直接 ask（跳过 classifier）；
  * 2. 其余走 classifier；
  * 3. readOnly 档 / 解析不出的写目标+路径 deny：只把 classifier 的 approve 降级为 ask
  *    （deny 保持原判，危险命令不弱化）；
  * 4. B1 档位免确认（审出 MED：bypass/acceptEdits 曾在主判定链零消费、纯虚标）：
- *    bypassPermissions=写入+执行免确认，acceptEdits=仅写入免确认——只把 ask 升级为
+ *    bypassPermissions=写入+执行免确认，acceptEdits=仅文件编辑类写入免确认（出站/进程类仍 ask）——只把 ask 升级为
  *    approve，deny / exec-policy forbidden / policy always_confirm / skill 边界 /
  *    前置 validateCommand 硬毙全部照常生效。
  */
@@ -438,7 +470,12 @@ export async function resolveToolPermissionClassification(input: {
     };
   }
   if (classification.decision === 'ask'
-    && permissionModeAutoApproves(input.sessionPermissionMode, input.permissionLevel)) {
+    && permissionModeAutoApproves(input.sessionPermissionMode, input.permissionLevel)
+    // acceptEdits 只承诺文件编辑免确认：出站 / 不可逆 / 拉起进程的写档工具不升 approve，
+    // 兑现设置文案「命令和外部访问仍保留确认」（N-ACCEPTEDITS-EXTERNAL-ASK）。
+    // bypassPermissions 不受此限，deny / policy / 边界照常生效。
+    && !(input.sessionPermissionMode === 'acceptEdits'
+      && mustAskUnderAcceptEdits(input.executionToolName))) {
     const reason = `权限档 ${input.sessionPermissionMode}：${input.permissionLevel === 'write' ? '写入' : '执行'}操作免确认`;
     classification = {
       decision: 'approve',

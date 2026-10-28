@@ -265,6 +265,34 @@ describe('desktop shell diagnostics aggregator', () => {
     expect(diagnostics).not.toHaveProperty('bootProof');
   });
 
+  it('keeps renderer diagnostics on the local fallback when only public health is available', async () => {
+    // Public /api/health carries no pid/persistence and projects rendererServe to
+    // { source, reason }; diagnostics.renderer must still resolve local paths.
+    const resourceRoot = path.join(root, '_up_');
+    delete process.env.CODE_AGENT_BUNDLE_ID;
+    delete process.env.CODE_AGENT_DISABLE_RENDERER_HOT_UPDATE;
+    delete process.env.CODE_AGENT_RENDERER_BUNDLE_DISABLED;
+    process.env.AGENT_NEO_BUNDLED_RUNTIME_ROOT = resourceRoot;
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({
+      status: 'ok',
+      mode: 'web-standalone',
+      timestamp: 1,
+      durableRunReady: false,
+      build: null,
+      rendererServe: { source: 'builtin', reason: 'no-active-meta' },
+    }), { status: 200 })) as unknown as typeof fetch;
+
+    const diagnostics = await getDesktopShellDiagnostics();
+
+    expect(diagnostics.renderer).toMatchObject({
+      source: 'builtin',
+      reason: 'no-active-meta',
+      serveDir: path.join(resourceRoot, 'dist', 'renderer'),
+      builtinDir: path.join(resourceRoot, 'dist', 'renderer'),
+      activeDir: path.join(state.userData, 'renderer-cache', 'active'),
+    });
+  });
+
   it('reports packaged dev channel isolation separately from production', async () => {
     state.userData = path.join(root, '.code-agent-dev');
     fs.mkdirSync(path.join(state.userData, 'logs'), { recursive: true });

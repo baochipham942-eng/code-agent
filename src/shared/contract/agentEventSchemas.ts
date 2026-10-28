@@ -208,7 +208,7 @@ const permissionRequestSchema = typed<PermissionRequest>(z.object({
   argsPreview: z.string().optional(),
   timestamp: z.number(),
   resolved: z.boolean().optional(),
-  decision: z.enum(['once', 'deny', 'session', 'always', 'never', 'timeout']).optional(),
+  decision: z.enum(['once', 'deny', 'session', 'always', 'never', 'timeout', 'superseded']).optional(),
   resolvedBy: z.enum(['companion']).optional(),
   dangerLevel: z.enum(['normal', 'warning', 'danger']).optional(),
   riskClass: z.literal('external').optional(),

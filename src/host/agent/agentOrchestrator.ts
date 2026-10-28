@@ -376,7 +376,6 @@ export class AgentOrchestrator {
     }
 
     this.isInterrupting = true;
-
     this.onEvent({
       type: 'interrupt_start',
       data: { message: '正在调整方向...', newUserMessage: newMessage },
@@ -385,12 +384,13 @@ export class AgentOrchestrator {
 
     if (this.agentLoop) {
       try {
+        this.permissions.supersedeInteractivePendingApprovals();
         const outcome = await steerOrQueue(this.agentLoop, {
           sessionId, content: effectiveMessage, displayContent: newMessage, clientMessageId, attachments: attachments as MessageAttachment[] | undefined, metadata: messageMetadata, expectedTurnId,
         });
-
         while (this.pendingSteerMessages.length > 0) {
           const queued = this.pendingSteerMessages.shift()!;
+          this.permissions.supersedeInteractivePendingApprovals();
           await steerOrQueue(this.agentLoop, {
             sessionId, content: queued.content, displayContent: queued.displayContent, clientMessageId: queued.clientMessageId, attachments: queued.attachments, metadata: queued.messageMetadata, expectedTurnId: queued.expectedTurnId,
           });

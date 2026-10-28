@@ -43,6 +43,7 @@ export const TurnDiffHunkFeedback: React.FC<Props> = ({ filePath, oldText, newTe
             startLine: activeHunk.startLine,
             endLine: activeHunk.endLine,
             excerpt: activeHunk.excerpt,
+            deletionAnchor: activeHunk.deletionAnchor,
           },
           feedback,
         ),
@@ -55,12 +56,28 @@ export const TurnDiffHunkFeedback: React.FC<Props> = ({ filePath, oldText, newTe
     }
   }, [activeHunk, filePath, sending, sendPrompt, text]);
 
-  const linesLabel = (hunk: TurnDiffHunk): string =>
-    hunk.startLine === hunk.endLine
+  const linesLabel = (hunk: TurnDiffHunk): string => {
+    // 纯删除块的行号不是「被改的行」：中部删除显示插入点，文件尾删除显示末尾，
+    // 不能让 UI 把锚行说成可点改的行号（锚行没被改过）。
+    if (hunk.deletionAnchor === 'after') return t.turnDiff.hunkLinesFileEnd;
+    if (hunk.deletionAnchor === 'before') {
+      return t.turnDiff.hunkLinesBefore.replace('{line}', String(hunk.startLine));
+    }
+    return hunk.startLine === hunk.endLine
       ? t.turnDiff.hunkLinesSingle.replace('{line}', String(hunk.startLine))
       : t.turnDiff.hunkLinesRange
           .replace('{start}', String(hunk.startLine))
           .replace('{end}', String(hunk.endLine));
+  };
+
+  const openFeedback = (hunk: TurnDiffHunk): void => {
+    // 半句话不跟人走：草稿是针对某一块写的，换块 = 换对象，清零重来，
+    // 否则块 1 的半句会按块 2 的行号发出去。
+    if (activeHunk?.index !== hunk.index) {
+      setActiveHunk(hunk);
+      setText('');
+    }
+  };
 
   if (hunks.length === 0) return null;
 
@@ -86,7 +103,7 @@ export const TurnDiffHunkFeedback: React.FC<Props> = ({ filePath, oldText, newTe
                 size="sm"
                 data-testid="hunk-comment-btn"
                 title={t.turnDiff.hunkCommentTitle}
-                onClick={() => setActiveHunk(hunk)}
+                onClick={() => openFeedback(hunk)}
                 className="h-auto px-2! py-0.5! gap-1! text-[11px]!"
               >
                 {t.turnDiff.hunkComment}

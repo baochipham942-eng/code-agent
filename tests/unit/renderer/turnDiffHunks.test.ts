@@ -16,6 +16,7 @@ describe('buildTurnDiffHunks', () => {
       added: 1,
       removed: 1,
       excerpt: '-b\n+B',
+      deletionAnchor: null,
     });
     expect(hunks[1]).toEqual({
       index: 2,
@@ -24,6 +25,7 @@ describe('buildTurnDiffHunks', () => {
       added: 1,
       removed: 0,
       excerpt: '+f',
+      deletionAnchor: null,
     });
   });
 
@@ -37,11 +39,12 @@ describe('buildTurnDiffHunks', () => {
         added: 2,
         removed: 2,
         excerpt: '-l2\n-l3\n+X\n+Y',
+        deletionAnchor: null,
       },
     ]);
   });
 
-  it('纯删除块：startLine === endLine = 被删内容所在的那一行，摘录带 - 前缀', () => {
+  it('中部纯删除：锚在删除后顶上来的那行（before 语义），摘录带 - 前缀', () => {
     const hunks = buildTurnDiffHunks('x\ny\nz\n', 'x\nz\n');
     expect(hunks).toEqual([
       {
@@ -51,14 +54,31 @@ describe('buildTurnDiffHunks', () => {
         added: 0,
         removed: 1,
         excerpt: '-y',
+        deletionAnchor: 'before',
       },
     ]);
   });
 
-  it('文件尾删除：行号夹回新文件长度内', () => {
+  it('文件尾删除：锚点不夹回上一行——行号 = 新文件长度+1，deletionAnchor=after', () => {
+    // a/b/c 删掉 c：删除发生在新文件末尾之后（游标第 3 行），第 2 行 b 两边相同、没被改过。
+    // 夹回第 2 行会让消息把未改动的 b 说成要改的行——这里钉死不夹回。
     const hunks = buildTurnDiffHunks('a\nb\nc\n', 'a\nb\n');
     expect(hunks).toEqual([
-      { index: 1, startLine: 2, endLine: 2, added: 0, removed: 1, excerpt: '-c' },
+      { index: 1, startLine: 3, endLine: 3, added: 0, removed: 1, excerpt: '-c', deletionAnchor: 'after' },
+    ]);
+  });
+
+  it('文件尾多行删除同样锚在末尾之后（不夹到最后一行存活行）', () => {
+    const hunks = buildTurnDiffHunks('a\nb\nc\nd\n', 'a\n');
+    expect(hunks).toEqual([
+      { index: 1, startLine: 2, endLine: 2, added: 0, removed: 3, excerpt: '-b\n-c\n-d', deletionAnchor: 'after' },
+    ]);
+  });
+
+  it('删空整个文件：after 语义，startLine=1（新文件 0 行之后）', () => {
+    const hunks = buildTurnDiffHunks('a\nb\n', '');
+    expect(hunks).toEqual([
+      { index: 1, startLine: 1, endLine: 1, added: 0, removed: 2, excerpt: '-a\n-b', deletionAnchor: 'after' },
     ]);
   });
 
@@ -66,7 +86,7 @@ describe('buildTurnDiffHunks', () => {
     const text = 'p\nq\nr\n';
     const hunks = buildTurnDiffHunks('', text);
     expect(hunks).toEqual([
-      { index: 1, startLine: 1, endLine: 3, added: 3, removed: 0, excerpt: '+p\n+q\n+r' },
+      { index: 1, startLine: 1, endLine: 3, added: 3, removed: 0, excerpt: '+p\n+q\n+r', deletionAnchor: null },
     ]);
   });
 
@@ -88,6 +108,33 @@ describe('buildTurnDiffHunks', () => {
     expect(hunks[0].endLine).toBe(21);
   });
 
+  it('摘录截断给 -/+ 两侧都留额度：20 删 20 增的替换各带 6 行', () => {
+    // diffLines 对大段替换先输出 removed 后输出 added；顺序 slice(0,12) 会全是 - 行
+    const olds = Array.from({ length: 20 }, (_, i) => `old${i + 1}`).join('\n');
+    const news = Array.from({ length: 20 }, (_, i) => `new${i + 1}`).join('\n');
+    const hunks = buildTurnDiffHunks(`head\n${olds}\n`, `head\n${news}\n`);
+    expect(hunks).toHaveLength(1);
+    const lines = hunks[0].excerpt.split('\n');
+    expect(lines).toHaveLength(12);
+    expect(lines.slice(0, 6)).toEqual(Array.from({ length: 6 }, (_, i) => `-old${i + 1}`));
+    expect(lines.slice(6, 12)).toEqual(Array.from({ length: 6 }, (_, i) => `+new${i + 1}`));
+    // 计数与行区间不受摘录截断影响
+    expect(hunks[0].added).toBe(20);
+    expect(hunks[0].removed).toBe(20);
+    expect(hunks[0].startLine).toBe(2);
+    expect(hunks[0].endLine).toBe(21);
+  });
+
+  it('一侧用不完的摘录额度让给另一侧：2 删 20 增 = 2 个 - 行 + 10 个 + 行', () => {
+    const olds = 'old1\nold2';
+    const news = Array.from({ length: 20 }, (_, i) => `new${i + 1}`).join('\n');
+    const hunks = buildTurnDiffHunks(`head\n${olds}\n`, `head\n${news}\n`);
+    const lines = hunks[0].excerpt.split('\n');
+    expect(lines).toHaveLength(12);
+    expect(lines.slice(0, 2)).toEqual(['-old1', '-old2']);
+    expect(lines.slice(2, 12)).toEqual(Array.from({ length: 10 }, (_, i) => `+new${i + 1}`));
+  });
+
   it('改动与删除紧邻（同一处修改）算一个块，不因 added/removed 排序拆开', () => {
     // diff 对修改通常先 removed 后 added；两种顺序都应合成一个块
     const hunks = buildTurnDiffHunks('a\nold\nb\n', 'a\nnew1\nnew2\nb\n');
@@ -99,6 +146,7 @@ describe('buildTurnDiffHunks', () => {
         added: 2,
         removed: 1,
         excerpt: '-old\n+new1\n+new2',
+        deletionAnchor: null,
       },
     ]);
   });

@@ -143,7 +143,13 @@ describe('TurnDiffHunkFeedback（改动卡块级反馈）', () => {
     // 消息 = builder 对第一个块（新文件第 2 行，b→B）的真实输出：路径与行号必须真的进消息
     expect(mocks.sendPrompt.mock.calls[0][0]).toBe(
       buildDiffHunkFeedbackMessage(
-        { filePath: '/tmp/example.ts', startLine: 2, endLine: 2, excerpt: '-b\n+B' },
+        {
+          filePath: '/tmp/example.ts',
+          startLine: 2,
+          endLine: 2,
+          excerpt: '-b\n+B',
+          deletionAnchor: null,
+        },
         '把这个函数改回原来的样子',
       ),
     );
@@ -151,6 +157,53 @@ describe('TurnDiffHunkFeedback（改动卡块级反馈）', () => {
     expect(mocks.sendPrompt.mock.calls[0]).toHaveLength(1);
     // 一次性消息：发出即清空收起
     await waitFor(() => expect(screen.queryByTestId('hunk-feedback-input')).toBeNull());
+  });
+
+  it('换块清草稿：块 1 写半句再点块 2，草稿不跟过去（不会按块 2 的行号发出去）', async () => {
+    render(<TurnDiffSummary turn={makeAuthoritativeTurn()} />);
+    fireEvent.click(expandBtn());
+
+    fireEvent.click(screen.getAllByTestId('hunk-comment-btn')[0]);
+    let input = screen.getByTestId('hunk-feedback-input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '这个函数' } }); // 半句话
+
+    fireEvent.click(screen.getAllByTestId('hunk-comment-btn')[1]);
+    input = screen.getByTestId('hunk-feedback-input') as HTMLInputElement;
+    expect(input.value).toBe(''); // 草稿清零：半句不按块 2 的行号发出去
+    expect(screen.getAllByTestId('hunk-comment-btn')[0]).toBeTruthy();
+  });
+
+  it('文件尾纯删除块：标「文件末尾」而非行号，发送走 after 语义（末尾之后补回，不夹到存活行）', async () => {
+    // a/b/c 删掉 c：块锚 = 新文件长度+1，deletionAnchor='after'——消息不能把第 2 行 b 说成要改的行
+    const turn = makeAuthoritativeTurn();
+    turn.turnDiff!.files[0] = {
+      ...turn.turnDiff!.files[0],
+      oldText: 'a\nb\nc\n',
+      newText: 'a\nb\n',
+      added: 0,
+      removed: 1,
+    };
+    render(<TurnDiffSummary turn={turn} />);
+    fireEvent.click(expandBtn());
+
+    expect(screen.getByText('文件末尾')).toBeTruthy();
+    expect(screen.queryByText(/第 \d+ 行/)).toBeNull();
+
+    fireEvent.click(screen.getAllByTestId('hunk-comment-btn')[0]);
+    const input = screen.getByTestId('hunk-feedback-input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '把删掉的加回去' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => expect(mocks.sendPrompt).toHaveBeenCalledTimes(1));
+    expect(mocks.sendPrompt.mock.calls[0][0]).toBe(
+      buildDiffHunkFeedbackMessage(
+        { filePath: '/tmp/example.ts', startLine: 3, endLine: 3, excerpt: '-c', deletionAnchor: 'after' },
+        '把删掉的加回去',
+      ),
+    );
+    const sent = mocks.sendPrompt.mock.calls[0][0] as string;
+    expect(sent).toContain('删除位置：文件末尾（第 2 行之后）');
+    expect(sent).not.toContain('行号：3');
   });
 
   it('非权威 diff（工具 args 片段回退）不渲染块级反馈入口', () => {

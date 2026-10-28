@@ -28,6 +28,8 @@ import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/host/to
 import { getLoadedDeferredToolDefinitions } from '../../../src/host/tools/dispatch/toolDefinitions';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { getTextForegroundToolNames } from '../../../src/host/tools/protocolRegistry';
+import { getTextForegroundToolNamesForPrompt } from '../../../src/host/app/sessionCommandCenterBrain';
+import { isToolDeniedByRunPolicy } from '../../../src/host/tools/runToolPolicy';
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
@@ -490,6 +492,22 @@ describe('deferred tool preload', () => {
     expect(getToolSearchService().isToolLoaded('Append')).toBe(true);
     const names = getLoadedDeferredToolDefinitions().map((definition) => definition.name);
     expect(names).toContain('Append');
+  });
+
+  it('存草稿回复的前台白名单让 mail_draft 被预载，run policy 不再拒绝它', () => {
+    const allowed = getTextForegroundToolNamesForPrompt('存草稿 1');
+    expect(allowed).toContain('mail_draft');
+    expect(getDeferredToolsToPreloadForTurn(runtime({
+      allowedToolNames: allowed,
+    }))).toContain('mail_draft');
+    expect(isToolDeniedByRunPolicy({ allowedToolNames: allowed }, 'mail_draft')).toBe(false);
+
+    const plain = getTextForegroundToolNamesForPrompt('存草稿箱里有什么');
+    expect(plain).not.toContain('mail_draft');
+    expect(getDeferredToolsToPreloadForTurn(runtime({
+      allowedToolNames: plain,
+    }))).not.toContain('mail_draft');
+    expect(isToolDeniedByRunPolicy({ allowedToolNames: plain }, 'mail_draft')).toBe(true);
   });
 
   it('actually loads propose_role through the skill boundary path', () => {

@@ -108,6 +108,45 @@ export function nextFrame(): Promise<void> {
   });
 }
 
+export interface CommitSettlementOptions {
+  /** Silence window that must pass with no new Profiler commit before publishing. */
+  stableForMs?: number;
+  /** Hard cap; a journey whose commits never stop fails loudly instead of publishing half-settled. */
+  timeoutMs?: number;
+}
+
+/**
+ * Wait until the journey subtree stops committing, then return the settled
+ * count. react-virtuoso reacts to scroll/size changes asynchronously
+ * (ResizeObserver → rAF → store → React flush), so reading the count after a
+ * fixed number of frames races those trailing commits (N-PERF-JOURNEY-LONGSESSION-SETTLE).
+ */
+export async function waitForCommitSettlement(
+  instrument: JourneyInstrument,
+  options: CommitSettlementOptions = {},
+): Promise<number> {
+  const { stableForMs = 1_000, timeoutMs = 15_000 } = options;
+  const deadline = performance.now() + timeoutMs;
+  let lastCount = instrument.commitCount;
+  let lastChangeAt = performance.now();
+  for (;;) {
+    await nextFrame();
+    const now = performance.now();
+    const count = instrument.commitCount;
+    if (count !== lastCount) {
+      lastCount = count;
+      lastChangeAt = now;
+    } else if (now - lastChangeAt >= stableForMs) {
+      return lastCount;
+    }
+    if (now >= deadline) {
+      throw new Error(
+        `perf journey commits did not settle within ${timeoutMs}ms (commitCount=${lastCount}); refusing to publish a half-settled count`,
+      );
+    }
+  }
+}
+
 export function publishJourneyResult(
   journey: JourneyId,
   instrument: JourneyInstrument,

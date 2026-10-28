@@ -7,15 +7,36 @@ import { useScrollEdgeFade } from '../../../src/renderer/hooks/useScrollEdgeFade
 describe('useScrollEdgeFade', () => {
   let frames: Map<number, FrameRequestCallback>;
   let nextFrame: number;
+  let resizeObservers: Array<{
+    callback: ResizeObserverCallback;
+    observed: Set<Element>;
+  }>;
 
   beforeEach(() => {
     frames = new Map();
     nextFrame = 0;
+    resizeObservers = [];
     vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => {
       frames.set(++nextFrame, callback);
       return nextFrame;
     }));
     vi.stubGlobal('cancelAnimationFrame', vi.fn((frame: number) => frames.delete(frame)));
+    vi.stubGlobal('ResizeObserver', class {
+      observed = new Set<Element>();
+      constructor(readonly callback: ResizeObserverCallback) {
+        resizeObservers.push(this);
+      }
+      observe(element: Element) {
+        this.observed.add(element);
+      }
+      disconnect() {
+        this.observed.clear();
+      }
+    });
+    vi.stubGlobal('MutationObserver', class {
+      observe() {}
+      disconnect() {}
+    });
   });
 
   afterEach(() => vi.unstubAllGlobals());
@@ -49,6 +70,35 @@ describe('useScrollEdgeFade', () => {
     act(() => scroller.dispatchEvent(new Event('scroll')));
     flushFrame();
     expect(scroller.dataset.fadeTop).toBe('true');
+    expect(scroller.dataset.fadeBottom).toBe('false');
+    unmount();
+  });
+
+  it('recomputes after content and viewport resize without a scroll event', () => {
+    const scroller = document.createElement('div');
+    const content = document.createElement('div');
+    scroller.append(content);
+    let clientHeight = 100;
+    let scrollHeight = 300;
+    Object.defineProperties(scroller, {
+      clientHeight: { get: () => clientHeight },
+      scrollHeight: { get: () => scrollHeight },
+    });
+    scroller.scrollTop = 200;
+    const { result, unmount } = renderHook(() => useScrollEdgeFade());
+    act(() => result.current(scroller));
+    flushFrame();
+    expect(scroller.dataset.fadeBottom).toBe('false');
+    expect(resizeObservers[0].observed).toContain(content);
+
+    scrollHeight = 400;
+    act(() => resizeObservers[0].callback([], {} as ResizeObserver));
+    flushFrame();
+    expect(scroller.dataset.fadeBottom).toBe('true');
+
+    clientHeight = 200;
+    act(() => resizeObservers[0].callback([], {} as ResizeObserver));
+    flushFrame();
     expect(scroller.dataset.fadeBottom).toBe('false');
     unmount();
   });

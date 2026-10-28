@@ -1,6 +1,6 @@
 import type BetterSqlite3 from 'better-sqlite3';
 import { CLOUD_RUN_STATES, CLOUD_RUN_TRIGGERS } from '../../../../shared/contract/cloudRun';
-import type { Logger } from './schemaHelpers';
+import { safeAlter, type Logger } from './schemaHelpers';
 
 // ============================================================================
 // Cloud run ledger schema — ADR-086 slice S1. DDL only, 同 applySessionDelegationsSchema 形状。
@@ -15,7 +15,7 @@ function sqlLiteralList(values: readonly string[]): string {
   return values.map((value) => `'${value}'`).join(', ');
 }
 
-export function applyCloudRunLedgerSchema(db: BetterSqlite3.Database, _logger: Logger): void {
+export function applyCloudRunLedgerSchema(db: BetterSqlite3.Database, logger: Logger): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS cloud_runs (
       run_id TEXT PRIMARY KEY NOT NULL,
@@ -27,6 +27,11 @@ export function applyCloudRunLedgerSchema(db: BetterSqlite3.Database, _logger: L
       workspace_status TEXT NOT NULL DEFAULT 'active',
       retention_notice_at INTEGER,
       export_available INTEGER,
+      enqueued_seq INTEGER,
+      request_json TEXT,
+      client_message_id TEXT,
+      execution_run_id TEXT,
+      cancel_requested_at INTEGER,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
@@ -74,6 +79,29 @@ export function applyCloudRunLedgerSchema(db: BetterSqlite3.Database, _logger: L
     WHEN OLD.workspace_id != NEW.workspace_id
     BEGIN
       SELECT RAISE(ABORT, 'cloud_runs.workspace_id is immutable');
+    END;
+
+  `);
+
+  safeAlter(db, 'ALTER TABLE cloud_runs ADD COLUMN enqueued_seq INTEGER', logger);
+  safeAlter(db, 'ALTER TABLE cloud_runs ADD COLUMN request_json TEXT', logger);
+  safeAlter(db, 'ALTER TABLE cloud_runs ADD COLUMN client_message_id TEXT', logger);
+  safeAlter(db, 'ALTER TABLE cloud_runs ADD COLUMN execution_run_id TEXT', logger);
+  safeAlter(db, 'ALTER TABLE cloud_runs ADD COLUMN cancel_requested_at INTEGER', logger);
+
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_cloud_runs_client_message
+      ON cloud_runs (account_id, session_id, client_message_id)
+      WHERE client_message_id IS NOT NULL;
+
+    CREATE INDEX IF NOT EXISTS idx_cloud_runs_account_queue
+      ON cloud_runs (account_id, state, enqueued_seq);
+
+    CREATE TRIGGER IF NOT EXISTS trg_cloud_runs_execution_run_id_set_once
+    BEFORE UPDATE ON cloud_runs
+    WHEN OLD.execution_run_id IS NOT NULL AND NEW.execution_run_id != OLD.execution_run_id
+    BEGIN
+      SELECT RAISE(ABORT, 'cloud_runs.execution_run_id can only be set once');
     END;
   `);
 }

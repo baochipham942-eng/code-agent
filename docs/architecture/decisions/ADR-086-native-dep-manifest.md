@@ -1,6 +1,6 @@
 # ADR-086：原生依赖位置由构建期清单声明，不再运行时试探
 
-- 状态：**草稿·待爸拍板**
+- 状态：**已接受**（爸 2026-10-28 拍板：采纳 §4.5 源码模式纯包解析 + §5 子票 T1~T6 依次施工，T7 不排期）
 - 单号：N-NATIVE-DEP-MANIFEST-DESIGN
 - 基线：`origin/main@76b6e895`（开工时 origin/main 最新提交；本稿为纯设计文档，无生产代码改动）
 - 相关：N-SQLITE-LOADER-LOG-NOISE（在飞分支 `origin/mq/sqlite-loader-log-noise`@cadb04f7：先行补丁给 nativeLoader 候选加 require 前存在性检查；本稿不碰其范围，§4.7 定其退役时点）；ADR-081-execution-environment（运行形态词汇）；ADR-083-resident-host（桌面常驻宿主）；`.claude/rules/testing.md` 2026-08-14 条目（按需下载组件「备了子弹没备枪」教训——声明的完备性必须是机器可验证的）

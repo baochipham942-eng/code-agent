@@ -7,6 +7,7 @@ import {
   cloudRunToExecution,
   CronApiClient,
   type CronApiConfig,
+  type CronApiHookEvent,
   type CronApiRun,
 } from './cronApiClient';
 
@@ -61,8 +62,13 @@ export class CronCloudRuntime {
     return this.client.isConfigured();
   }
 
-  start(): void {
-    this.client.start((run) => this.projectRun(run));
+  /** 同一条事件流上的 webhook 中继帧入口（N-CRON-WEBHOOK-CLOUD-HOOK）。 */
+  get apiClient(): CronApiClient {
+    return this.client;
+  }
+
+  start(onHook?: (event: CronApiHookEvent) => Promise<void> | void): void {
+    this.client.start((run) => this.projectRun(run), onHook);
     this.reconcileTimer ??= setInterval(() => { void this.reconcile(); }, RECONCILE_INTERVAL_MS);
     this.reconcileTimer.unref?.();
   }

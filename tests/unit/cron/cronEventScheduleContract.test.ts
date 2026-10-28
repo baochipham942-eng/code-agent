@@ -27,6 +27,7 @@ import {
   normalizeSchedule,
   parseCronExecutionTrigger,
 } from '../../../src/host/cron/cronNormalizers';
+import { validateEventScheduleConstraints } from '../../../src/shared/cronEventValidation';
 import {
   loadCronExecutionsByJob,
   loadRecentCronExecutions,
@@ -141,7 +142,6 @@ describe('event 调度契约（①）', () => {
   it.each([
     ['缺 accountId', { type: 'event', source: 'channel', eventName: 'message' }],
     ['空 accountId', { type: 'event', source: 'channel', accountId: '  ', eventName: 'message' }],
-    ['非 channel 来源', { type: 'event', source: 'webhook', accountId: 'acc-1', eventName: 'message' }],
     ['非 message 事件', { type: 'event', source: 'channel', accountId: 'acc-1', eventName: 'reaction' }],
   ])('normalizeSchedule 拒绝非法配置：%s', (_label, value) => {
     expect(normalizeSchedule(value)).toBeNull();
@@ -410,7 +410,171 @@ describe('parseCronExecutionTrigger 的 connector 源宽容度（N-TRIGGER-CONNE
     expect(parseCronExecutionTrigger(
       '{"kind":"event","source":"connector","connector":"calendar"}',
     )).toEqual({ kind: 'event', source: 'connector' });
-    // source 白名单之外的值仍然整体丢弃（坏行按无 trigger 处理）
-    expect(parseCronExecutionTrigger('{"kind":"event","source":"webhook"}')?.source).toBeUndefined();
+    // source 白名单之外的值仍然整体丢弃（坏行按无 trigger 处理）；'webhook' 自
+    // N-CRON-WEBHOOK-CLOUD-HOOK 起在白名单内，单独断言见下。
+    expect(parseCronExecutionTrigger('{"kind":"event","source":"carrier"}')?.source).toBeUndefined();
+  });
+});
+
+// ----------------------------------------------------------------------------
+// webhook 源（N-CRON-WEBHOOK-CLOUD-HOOK，验收 ①）：契约/校验/normalizer。
+// 行为面（帧 → run、去重、ack、untrusted 块）见 cronWebhookRelay.test.ts。
+// ----------------------------------------------------------------------------
+
+describe('webhook 事件调度契约（N-CRON-WEBHOOK-CLOUD-HOOK ①）', () => {
+  it('normalizeSchedule 接受合法 webhook 配置并落默认窗口值（无 accountId 键）', () => {
+    const schedule = normalizeSchedule({ type: 'event', source: 'webhook', eventName: 'message' });
+    expect(schedule).toEqual({
+      type: 'event',
+      source: 'webhook',
+      eventName: 'message',
+      batchWindowSec: 10,
+      minRunIntervalSec: 60,
+    });
+    expect(schedule && 'accountId' in schedule).toBe(false);
+  });
+
+  it('normalizeSchedule 夹取 webhook 窗口字段（合批窗上限 300、限频下限 30）', () => {
+    const schedule = normalizeSchedule({
+      type: 'event', source: 'webhook', eventName: 'message',
+      batchWindowSec: 99_999, minRunIntervalSec: 1,
+    });
+    expect(schedule).toMatchObject({ batchWindowSec: 300, minRunIntervalSec: 30 });
+  });
+
+  it.each([
+    ['非 message 事件', { type: 'event', source: 'webhook', eventName: 'reaction' }],
+    ['webhook 带 accountId（无账号绑定，hook URL 即绑定）', { type: 'event', source: 'webhook', accountId: 'acc-1', eventName: 'message' }],
+  ])('normalizeSchedule 拒绝非法配置：%s', (_label, value) => {
+    expect(normalizeSchedule(value)).toBeNull();
+  });
+
+  it('webhook 任务从数据库行 round-trip（persist/load）', async () => {
+    const db = new Database(':memory:');
+    try {
+      createSchema(db);
+      databaseState.db = db;
+      const row = eventJobRow();
+      row.id = 'job-hook-1';
+      row.schedule = JSON.stringify({
+        type: 'event',
+        source: 'webhook',
+        eventName: 'message',
+        batchWindowSec: 30,
+        minRunIntervalSec: 120,
+      });
+      const job = normalizeCronJobRow(row)!;
+      expect(job.schedule).toEqual({
+        type: 'event',
+        source: 'webhook',
+        eventName: 'message',
+        batchWindowSec: 30,
+        minRunIntervalSec: 120,
+      });
+      await saveCronJob(job);
+      const persisted = db.prepare('SELECT * FROM cron_jobs WHERE id = ?').get(job.id);
+      expect(normalizeCronJobRow(persisted)).toEqual(job);
+    } finally {
+      databaseState.db = null;
+      db.close();
+    }
+  });
+
+  it('webhook run 的 trigger（source webhook、无 accountId 键）落库重载不丢', async () => {
+    const db = new Database(':memory:');
+    try {
+      createSchema(db);
+      databaseState.db = db;
+      await saveCronJob(normalizeCronJobRow(eventJobRow())!);
+      await saveCronExecution({
+        id: 'exec-hook-1',
+        jobId: 'job-event-1',
+        runsOn: 'local',
+        status: 'completed',
+        scheduledAt: NOW,
+        startedAt: NOW,
+        completedAt: NOW + 5_000,
+        duration: 5_000,
+        retryAttempt: 0,
+        trigger: {
+          kind: 'event',
+          source: 'webhook',
+          eventCount: 2,
+          droppedCount: 0,
+          eventIds: ['d-1', 'd-2'],
+        },
+      });
+
+      const reloaded = loadCronExecutionsByJob('job-event-1', 10);
+      expect(reloaded[0].trigger).toEqual({
+        kind: 'event',
+        source: 'webhook',
+        eventCount: 2,
+        droppedCount: 0,
+        eventIds: ['d-1', 'd-2'],
+      });
+    } finally {
+      databaseState.db = null;
+      db.close();
+    }
+  });
+
+  it('parseCronExecutionTrigger 认 webhook source', () => {
+    expect(parseCronExecutionTrigger(
+      '{"kind":"event","source":"webhook","eventCount":1,"eventIds":["d-1"]}',
+    )).toEqual({ kind: 'event', source: 'webhook', eventCount: 1, eventIds: ['d-1'] });
+  });
+});
+
+describe('webhook 事件源创建护栏（N-CRON-WEBHOOK-CLOUD-HOOK ①）', () => {
+  const webhookSubject = {
+    schedule: { type: 'event', source: 'webhook', eventName: 'message' },
+    runsOn: 'local',
+    action: { type: 'agent' },
+    maxRunBudget: 1,
+  };
+
+  it('合法 webhook 配置通过（runsOn local + agent 动作 + 预算 > 0）', () => {
+    expect(validateEventScheduleConstraints(webhookSubject)).toBeNull();
+  });
+
+  it.each([
+    ['缺预算', { ...webhookSubject, maxRunBudget: undefined }, 'requires-budget'],
+    ['cloud runsOn', { ...webhookSubject, runsOn: 'cloud' }, 'requires-local'],
+    ['非 agent 动作', { ...webhookSubject, action: { type: 'shell' } }, 'agent-only'],
+    ['webhook 带 accountId', { ...webhookSubject, schedule: { ...webhookSubject.schedule, accountId: 'acc-1' } }, 'invalid-schedule'],
+    ['非 message 事件', { ...webhookSubject, schedule: { ...webhookSubject.schedule, eventName: 'reaction' } }, 'invalid-schedule'],
+  ])('拒绝：%s', (_label, subject, reason) => {
+    const violation = validateEventScheduleConstraints(subject);
+    expect(violation?.reason).toBe(reason);
+  });
+
+  it('channel/connector 的既有文案逐字节不变', () => {
+    // channel 源：source 不在三类已知源里时仍走 channel 文案
+    expect(validateEventScheduleConstraints({
+      schedule: { type: 'event', source: 'carrier' },
+      runsOn: 'local',
+      action: { type: 'agent' },
+      maxRunBudget: 1,
+    })?.message).toBe(
+      "Invalid event schedule: source must be 'channel', eventName must be 'message', and accountId must be a non-empty string.",
+    );
+    expect(validateEventScheduleConstraints({
+      schedule: { type: 'event', source: 'channel', eventName: 'reaction', accountId: 'acc-1' },
+      runsOn: 'local',
+      action: { type: 'agent' },
+      maxRunBudget: 1,
+    })?.message).toBe(
+      "Invalid event schedule: source must be 'channel', eventName must be 'message', and accountId must be a non-empty string.",
+    );
+    // connector 源：缺 connector 名
+    expect(validateEventScheduleConstraints({
+      schedule: { type: 'event', source: 'connector', accountId: 'acc-1', eventName: 'message' },
+      runsOn: 'local',
+      action: { type: 'agent' },
+      maxRunBudget: 1,
+    })?.message).toBe(
+      "Invalid event schedule: source 'connector' requires connector 'mail', eventName 'message', and accountId must be a non-empty string.",
+    );
   });
 });

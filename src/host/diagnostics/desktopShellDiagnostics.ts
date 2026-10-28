@@ -461,7 +461,10 @@ export async function getDesktopShellDiagnostics(): Promise<DesktopShellDiagnost
   const web = await fetchWebHealth(url);
   const healthStatus: DesktopShellWebHealthStatus =
     boot?.healthMatchedBootToken === false ? 'boot-token-mismatch' : web.status;
-  const renderer = web.health?.rendererServe ?? resolveFallbackRendererDecision(dataDir);
+  // Public /api/health projects rendererServe down to { source, reason } with no
+  // local paths; only the authed detail body (or a local resolve) can fill them.
+  const renderer = (isWebHealthDetail(web.health) ? web.health.rendererServe : null)
+    ?? resolveFallbackRendererDecision(dataDir);
 
   const runtimeAssets = await getRuntimeAssetsStatus({ shellVersion }).catch(() => null);
   const rendererBundle = (() => {

@@ -53,6 +53,7 @@ import { engineModelPanelZh } from './engineModelPanel';
 import { jevAdvisoryZh } from './jevAdvisory';
 import { workflowStallZh } from './workflowStall';
 import { roleFirstWakeZh } from './roleFirstWake';
+import { roleWakeProposalsZh } from './roleWakeProposals';
 import { permissionRuleNlZh } from './permissionRuleNl';
 
 export const zh = {
@@ -75,6 +76,7 @@ export const zh = {
   ...jevAdvisoryZh,
   ...workflowStallZh,
   ...roleFirstWakeZh,
+  ...roleWakeProposalsZh,
   ...permissionRuleNlZh,
   // Common
   common: {

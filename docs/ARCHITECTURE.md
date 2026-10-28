@@ -753,3 +753,4 @@ Context Health 的 bySource 是当前消息、system prompt 与已挂载技能�
 | 081 | 执行环境成为一等对象（逐轮选择地点，账本不换边；云端带连接器授权；并发按用户配额） | 已接受（10-05，配额 2） | [ADR-081](./architecture/decisions/ADR-081-execution-environment.md) |
 | 083 | 桌面常驻宿主：执行进程与 Tauri 壳解耦（关窗/Quit 不杀任务；daemon 主、壳/CLI/手机从；`owner_epoch` 定主；合盖仍 OS-owned） | 已接受（10-06，方案 A） | [ADR-083](./architecture/decisions/ADR-083-resident-host.md) |
 | 084 | 人审一次性支付凭据原语（Stripe Link 官方 CLI；审批卡与 secureref 托管填表；US/CA；不含 PAN） | 挂起（爸 10-14） | [ADR-084](./architecture/decisions/ADR-084-one-shot-payment-card.md) |
+| 086 | 云端 run 账本（账户、runId、四条触发、终态、同步取消、持久 FIFO 与配额、队列位置；定时由账本排程） | 草稿 | [ADR-086](./architecture/decisions/ADR-086-cloud-run-ledger.md) |

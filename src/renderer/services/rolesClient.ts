@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { IPC_DOMAINS } from '@shared/ipc';
-import type { RoleFirstWakeSnapshot, RolePanelEntry } from '@shared/contract/roleAssets';
+import type { RoleFirstWakeSnapshot, RolePanelEntry, RoleWakeProposal } from '@shared/contract/roleAssets';
 import type { RolePackEntry } from '@shared/contract/rolePackRegistry';
 import ipcService from './ipcService';
 
@@ -49,6 +49,18 @@ export async function skipFirstWake(roleId: string): Promise<{ success: boolean 
   return ipcService.invokeDomain<{ success: boolean }>(IPC_DOMAINS.ROLES, 'firstWakeSkip', { roleId });
 }
 
+/** roles IPC wakeProposalsList。每日醒来「外部增量」给出的一键工作提议（pending）。 */
+export async function listWakeProposals(roleId: string): Promise<RoleWakeProposal[]> {
+  return ipcService.invokeDomain<RoleWakeProposal[]>(IPC_DOMAINS.ROLES, 'wakeProposalsList', { roleId });
+}
+/** roles IPC wakeProposalsAccept。返回 prompt 并移除该提议（卡片消失）。 */
+export async function acceptWakeProposal(roleId: string, title: string): Promise<{ prompt: string } | null> {
+  return ipcService.invokeDomain<{ prompt: string } | null>(IPC_DOMAINS.ROLES, 'wakeProposalsAccept', { roleId, title });
+}
+/** roles IPC wakeProposalsDismiss。「先不」：PROPOSAL_DISMISS_DAYS 天内不再重复出现。 */
+export async function dismissWakeProposal(roleId: string, title: string): Promise<{ success: boolean }> {
+  return ipcService.invokeDomain<{ success: boolean }>(IPC_DOMAINS.ROLES, 'wakeProposalsDismiss', { roleId, title });
+}
 export async function listRolePacks(): Promise<RolePackListItem[]> {
   return ipcService.invokeDomain<RolePackListItem[]>(IPC_DOMAINS.ROLES, 'rolePackList');
 }

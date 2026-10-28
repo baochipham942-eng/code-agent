@@ -177,4 +177,60 @@ describe('createSubagentToolRuntime permission forwarding', () => {
       expect(resolveSessionPermissionMode('readOnly', SESSION)).toBe('readOnly');
     });
   });
+
+  describe('acceptEdits 下出站/不可逆/进程类工具仍要询问（N-ACCEPTEDITS-EXTERNAL-ASK）', () => {
+    beforeEach(() => {
+      resetPermissionModeManager();
+    });
+
+    it.each([
+      'mail_send',
+      'calendar_create_event',
+      'calendar_update_event',
+      'calendar_delete_event',
+      'reminders_delete',
+      'tmeetMeetingCreate',
+      'mcp_add_server',
+      'xlwings_execute',
+    ])('acceptEdits + file_write 的 %s 转发 permission.request 而非自动放行', async (tool) => {
+      const { requestPermission, permissionRequest } = captureRequestPermission({
+        effectiveMode: 'acceptEdits',
+        permissionResult: false,
+      });
+
+      const approved = await requestPermission({
+        type: 'file_write',
+        tool,
+        details: {},
+      });
+
+      expect(approved).toBe(false);
+      expect(permissionRequest).toHaveBeenCalledTimes(1);
+      expect(permissionRequest).toHaveBeenCalledWith(expect.objectContaining({ tool }));
+    });
+
+    it('对照组：acceptEdits 下 Write 仍自动放行', async () => {
+      const { requestPermission, permissionRequest } = captureRequestPermission({
+        effectiveMode: 'acceptEdits',
+        permissionResult: false,
+      });
+
+      const approved = await requestPermission({ type: 'file_write', tool: 'Write', details: {} });
+
+      expect(approved).toBe(true);
+      expect(permissionRequest).not.toHaveBeenCalled();
+    });
+
+    it('对照组：bypassPermissions 下 mail_send 仍直接放行', async () => {
+      const { requestPermission, permissionRequest } = captureRequestPermission({
+        effectiveMode: 'bypassPermissions',
+        permissionResult: false,
+      });
+
+      const approved = await requestPermission({ type: 'file_write', tool: 'mail_send', details: {} });
+
+      expect(approved).toBe(true);
+      expect(permissionRequest).not.toHaveBeenCalled();
+    });
+  });
 });

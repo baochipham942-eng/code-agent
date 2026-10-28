@@ -39,7 +39,7 @@ import { useExternalImportStore } from '../../../../stores/externalImportStore';
 import { Button, Toggle } from '../../../primitives';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { SettingsSection } from '../SettingsLayout';
-import { ExternalImportInstructionRules, type DirectiveState } from './ExternalImportInstructionRules';
+import { countImportableRules, ExternalImportInstructionRules, type DirectiveState } from './ExternalImportInstructionRules';
 
 /** 页面类别列：新类别（K1B 的 MCP servers）在此加一档 + 对应 host handler。 */
 const IMPORT_CATEGORIES: ExternalImportCategory[] = ['instructions', 'memories', 'skills'];
@@ -613,7 +613,7 @@ function PreviewStep({
         <div className="rounded-lg border border-badge-warning/20 bg-badge-warning p-3" data-testid="external-import-instructions">
           <div className="flex items-center gap-2 text-xs font-medium text-badge-warning">
             <ShieldAlert className="h-4 w-4" />
-            {copy.instructionsTitle.replace('{count}', String(instructions.length))}
+            {copy.instructionsTitle.replace('{count}', String(countImportableRules(instructions)))}
           </div>
           <ExternalImportInstructionRules
             instructions={instructions}

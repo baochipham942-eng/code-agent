@@ -33,6 +33,7 @@ import { TurnDiffSummary } from './MessageBubble/TurnDiffSummary';
 import { buildTurnFileChanges } from '../../../utils/turnDiffSummary';
 import { getTurnFinalTextNode, getTurnUserNode } from '../../../utils/turnRailItems';
 import { TurnFeedback } from './TurnFeedback';
+import { MessageContextMenu } from './MessageContextMenu';
 import { TurnCompactionMarker } from './TurnCompactionMarker';
 import { TurnOutcomeBadge } from './TurnOutcomeBadge';
 import { ToolStepGroup } from './ToolStepGroup';
@@ -393,7 +394,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
         {foldedView?.userNode && (
           <TraceNodeRenderer
             node={foldedView.userNode}
-            sessionId={sessionId}
+            sessionId={sessionId} isStreaming={isStreaming}
             attachments={foldedView.userNode.attachments}
             inVoiceDispatchCard={isVoiceTurn}
             onRewindUserPrompt={onRewindUserPrompt}
@@ -575,13 +576,11 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             data-testid="turn-reply-actions"
           >
             {feedbackAnchor && (
-              <TurnCopyAction content={feedbackAnchor.content} />
-            )}
-            {feedbackAnchor && (
-              <TurnFeedback
-                messageId={feedbackAnchor.messageId}
-                content={feedbackAnchor.content}
-              />
+              <>
+                <TurnCopyAction content={feedbackAnchor.content} />
+                <TurnFeedback messageId={feedbackAnchor.messageId} content={feedbackAnchor.content} />
+                <MessageContextMenu sessionId={sessionId} messageId={feedbackAnchor.messageId} />
+              </>
             )}
             {forkAnchor && (
               <button /* ds-allow:button: 与点赞点踩同形的回复操作小图标按钮，Button primitive 无此紧凑图标变体 */

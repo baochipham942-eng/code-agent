@@ -55,6 +55,18 @@ export function validateEventScheduleConstraints(subject: EventScheduleValidatio
         message: "Invalid event schedule: source 'connector' requires connector 'mail', eventName 'message', and accountId must be a non-empty string.",
       };
     }
+  } else if (subject.schedule.source === 'webhook') {
+    // webhook 源（N-CRON-WEBHOOK-CLOUD-HOOK）：无账号绑定——hook URL/token 即绑定；
+    // 显式 accountId 是契约外字段，按配置错误拒绝。
+    if (
+      subject.schedule.eventName !== 'message'
+      || (typeof subject.schedule.accountId === 'string' && subject.schedule.accountId.trim() !== '')
+    ) {
+      return {
+        reason: 'invalid-schedule',
+        message: "Invalid event schedule: source 'webhook' requires eventName 'message' and does not bind an accountId.",
+      };
+    }
   } else if (
     subject.schedule.source !== 'channel'
     || subject.schedule.eventName !== 'message'

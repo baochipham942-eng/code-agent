@@ -290,7 +290,7 @@ export const InputAddMenu: React.FC<Props> = ({
         aria-label={t.inputAddMenu.moreOptionsAria}
         aria-expanded={open}
         title={t.inputAddMenu.moreOptionsTitle}
-        className="relative flex-shrink-0 w-8 h-8 -ml-2 rounded-lg flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50 transition-colors before:absolute before:content-[''] before:-inset-y-1.5 before:-left-2.5 before:-right-0.5"
+        className="relative flex-shrink-0 w-8 h-8 -ml-2 rounded-lg flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50 transition-colors before:absolute before:content-[''] before:top-0 before:-bottom-3 before:-left-2.5 before:-right-0.5"
       >
         <Plus className="w-4 h-4" />
       </button>

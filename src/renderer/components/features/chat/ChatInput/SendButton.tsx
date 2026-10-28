@@ -53,7 +53,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
   // interrupting / 转向 / 停止 / 普通 四个图标分支共用这一个形态。
   // 配色仍走主题 token（bg-brand 等），不改成字面白色——浅色主题下 --zinc-900 是
   // rgb(250,250,250)，白底按钮压在上面约 1.02:1，等于隐形。
-  const baseIconButtonClass = 'relative flex-shrink-0 h-7 w-7 rounded-full grid place-items-center transition-all duration-200 focus-visible:outline-hidden before:absolute before:content-[\'\'] before:-inset-y-2 before:-left-0.5 before:-right-3.5';
+  const baseIconButtonClass = 'relative flex-shrink-0 h-7 w-7 rounded-full grid place-items-center transition-all duration-200 focus-visible:outline-hidden before:absolute before:content-[\'\'] before:top-0 before:-bottom-4 before:-left-0.5 before:-right-3.5';
 
   // 运行中输入接入中：显示旋转加载图标
   if (isInterrupting) {

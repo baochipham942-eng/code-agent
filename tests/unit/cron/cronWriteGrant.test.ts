@@ -7,6 +7,9 @@
 //   - stripWriteGrantRoot（createJob 元数据防线）
 //   - CronService 窄写通道（②）：updateJob/createJob 写不进 writeGrantRoot，
 //     只有 grantWriteScope/revokeWriteScope 能写（整合拆分轮自 cronWriteScopeService.test.ts 并入）
+//   - Island 放行矩阵（①）：无人值守 cron 会话的界内 file_write/file_edit 在停车分支
+//     **之前**被放行；出界/`..`/软链逃逸/forceConfirm/Bash/非 cron 来源照旧停车
+//     （整合拆分轮自 scheduleWriteGrant.test.ts 并入，gates:fast 12 文件上限）
 // 真实文件系统（tmpdir + 真软链），sessionManager 用注入 mock。
 // ============================================================================
 import { mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
@@ -36,8 +39,14 @@ vi.mock('../../../src/host/services/infra/sessionManager', () => ({
   }),
 }));
 
-vi.mock('../../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+vi.mock('../../../src/host/services/infra/logger', () => {
+  const fake = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
+  return { createLogger: vi.fn(() => fake), logger: fake, default: fake };
+});
+
+vi.mock('../../../src/host/services/infra/notificationService', () => ({
+  // notifyTaskComplete 供 CronService 窄写通道块消费；notifyNeedsInput 供 Island 块消费。
+  notificationService: { notifyTaskComplete: vi.fn(), notifyNeedsInput: vi.fn() },
 }));
 
 vi.mock('../../../src/host/services/core/databaseService', () => ({
@@ -70,10 +79,6 @@ vi.mock('../../../src/host/services/sessionAutomation', () => ({
   getSessionAutomationService: () => automationState,
 }));
 
-vi.mock('../../../src/host/services/infra/notificationService', () => ({
-  notificationService: { notifyTaskComplete: vi.fn(), notifyNeedsInput: vi.fn() },
-}));
-
 import {
   approveByScheduleWriteGrant,
   grantCronWriteScope,
@@ -81,8 +86,12 @@ import {
   stripWriteGrantRoot,
 } from '../../../src/host/cron/cronWriteGrant';
 import { CronService } from '../../../src/host/cron/cronService';
+import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
+import { resetPermissionModeManager, getPermissionModeManager } from '../../../src/host/permissions/modes';
 import { CRON_WRITE_SCOPE_NO_FOLDER } from '../../../src/shared/cronWriteScope';
 import { PermissionRequestReason } from '../../../src/shared/contract/permission';
+import type { AppSettings, PermissionAskResult } from '../../../src/shared/contract';
+import type { PendingApprovalRepository } from '../../../src/host/services/core/repositories/PendingApprovalRepository';
 import type { CronJobDefinition } from '../../../src/shared/contract/cron';
 
 let grantRoot: string;
@@ -93,6 +102,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  resetPermissionModeManager();
   rmSync(grantRoot, { recursive: true, force: true });
 });
 
@@ -498,5 +508,167 @@ describe('CronService 写授权窄写通道（原 cronWriteScopeService.test.ts�
       metadata: { loginPassThroughOrigin: 'https://b.example', keep: 1 },
     });
     expect(edited?.metadata).toEqual({ loginPassThroughOrigin: 'https://a.example', keep: 1 });
+  });
+});
+
+describe('写授权放行（schedule write grant，原 scheduleWriteGrant.test.ts ①）', () => {
+  // 整合拆分轮（2026-10-28）自独立文件并入：真实 OrchestratorPermissionIsland + 真实
+  // cronWriteGrant 文件系统，mock 只有 sessionManager（与上方共用 sessionState）。
+  const islandSettings = (): AppSettings => ({
+    permissions: {
+      // write:false —— 交互路径的 autoApprove[level] 自动放行与本单无关，不许它抢答。
+      autoApprove: { read: false, write: false, execute: false, network: false },
+      blockedCommands: [],
+      devModeAutoApprove: false,
+    },
+  } as unknown as AppSettings);
+
+  /** 排空微任务链（approveByScheduleWriteGrant 里有动态 import + await，一跳不够）。 */
+  const flushMicrotasks = () => new Promise<void>((resolve) => { setImmediate(resolve); });
+
+  function makeIslandRepo(): PendingApprovalRepository & { insert: ReturnType<typeof vi.fn>; resolve: ReturnType<typeof vi.fn> } {
+    return {
+      insert: vi.fn(),
+      resolve: vi.fn(() => 1),
+    } as unknown as PendingApprovalRepository & { insert: ReturnType<typeof vi.fn>; resolve: ReturnType<typeof vi.fn> };
+  }
+
+  function makeIsland(repo: PendingApprovalRepository) {
+    return new OrchestratorPermissionIsland({
+      getSettings: () => islandSettings(),
+      isDevModeAutoApproveEnabled: () => false,
+      getExecutionTopology: () => 'async_agent',
+      hasApprovalUi: () => false,
+      onEvent: vi.fn(),
+      injectedPendingApprovalRepo: repo,
+    });
+  }
+
+  function islandStillPending(promise: Promise<PermissionAskResult>): Promise<boolean> {
+    const pending = Symbol('pending');
+    return Promise.race([promise, Promise.resolve(pending)]).then((result) => result === pending);
+  }
+
+  it('cron 无人值守会话写授权文件夹内的文件被放行，不落停车台账', async () => {
+    const sessionId = 'cron-granted';
+    getPermissionModeManager().markUnattendedSession(sessionId);
+    sessionState.sessions[sessionId] = {
+      id: sessionId,
+      origin: { kind: 'cron', metadata: { writeGrantRoot: grantRoot } },
+    };
+    const repo = makeIslandRepo();
+    const island = makeIsland(repo);
+    await expect(island.requestPermission({
+      type: 'file_write',
+      tool: 'Write',
+      details: { path: path.join(grantRoot, 'today.md') },
+      sessionId,
+    })).resolves.toEqual({ approved: true, approvalSource: 'schedule-write-grant' });
+    await expect(island.requestPermission({
+      type: 'file_edit',
+      tool: 'Edit',
+      details: { path: path.join(grantRoot, 'today.md') },
+      sessionId,
+    })).resolves.toEqual({ approved: true, approvalSource: 'schedule-write-grant' });
+    expect(repo.insert).not.toHaveBeenCalled();
+  });
+
+  it('出界 / `..` 逃逸 / 软链逃逸目标照旧停车（pending_approvals 落行、Promise 挂起）', async () => {
+    const sessionId = 'cron-granted-2';
+    getPermissionModeManager().markUnattendedSession(sessionId);
+    sessionState.sessions[sessionId] = {
+      id: sessionId,
+      origin: { kind: 'cron', metadata: { writeGrantRoot: grantRoot } },
+    };
+    const outsideRoot = mkdtempSync(path.join(os.tmpdir(), 'neo-island-out-'));
+    try {
+      symlinkSync(outsideRoot, path.join(grantRoot, 'link-out'));
+      const repo = makeIslandRepo();
+      const island = makeIsland(repo);
+      for (const target of [
+        path.join(path.dirname(grantRoot), 'outside.txt'),
+        path.join(grantRoot, '..', 'escape.txt'),
+        path.join(grantRoot, 'link-out', 'stolen.txt'),
+      ]) {
+        const result = island.requestPermission({
+          type: 'file_write', tool: 'Write', details: { path: target }, sessionId,
+        });
+        await flushMicrotasks();
+        expect(await islandStillPending(result)).toBe(true);
+        island.drainPendingPermissions();
+      }
+      expect(repo.insert).toHaveBeenCalledTimes(3);
+    } finally {
+      rmSync(outsideRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('forceConfirm（含保护路径 ask）与 Bash 照旧停车', async () => {
+    const sessionId = 'cron-granted-3';
+    getPermissionModeManager().markUnattendedSession(sessionId);
+    sessionState.sessions[sessionId] = {
+      id: sessionId,
+      origin: { kind: 'cron', metadata: { writeGrantRoot: grantRoot } },
+    };
+    const repo = makeIslandRepo();
+    const island = makeIsland(repo);
+    const forced = island.requestPermission({
+      type: 'file_write', tool: 'Write', forceConfirm: true,
+      details: { path: path.join(grantRoot, 'a.txt') }, sessionId,
+    });
+    const bash = island.requestPermission({
+      type: 'command', tool: 'Bash',
+      details: { command: `echo hi > ${grantRoot}/a.txt` }, sessionId,
+    });
+    await flushMicrotasks();
+    expect(await islandStillPending(forced)).toBe(true);
+    expect(await islandStillPending(bash)).toBe(true);
+    expect(repo.insert).toHaveBeenCalledTimes(2);
+    island.drainPendingPermissions();
+  });
+
+  it('非 cron 来源的会话（无来源 / channel 来源 / 未授权 cron）照旧停车', async () => {
+    const plainSession = 'plain-session';
+    const channelSession = 'channel-session';
+    const ungrantedCron = 'cron-ungranted';
+    getPermissionModeManager().markUnattendedSession(plainSession);
+    getPermissionModeManager().markUnattendedSession(channelSession);
+    getPermissionModeManager().markUnattendedSession(ungrantedCron);
+    sessionState.sessions[channelSession] = {
+      id: channelSession,
+      origin: { kind: 'channel', metadata: { writeGrantRoot: grantRoot } },
+    };
+    sessionState.sessions[ungrantedCron] = { id: ungrantedCron, origin: { kind: 'cron' } };
+    const repo = makeIslandRepo();
+    const island = makeIsland(repo);
+    for (const sessionId of [plainSession, channelSession, ungrantedCron]) {
+      const result = island.requestPermission({
+        type: 'file_write', tool: 'Write',
+        details: { path: path.join(grantRoot, 'a.txt') }, sessionId,
+      });
+      await flushMicrotasks();
+      expect(await islandStillPending(result)).toBe(true);
+    }
+    expect(repo.insert).toHaveBeenCalledTimes(3);
+    island.drainPendingPermissions();
+  });
+
+  it('交互会话（未标 unattended）不触发授权查询，照常走交互审批路径', async () => {
+    const sessionId = 'interactive-session';
+    sessionState.sessions[sessionId] = {
+      id: sessionId,
+      origin: { kind: 'cron', metadata: { writeGrantRoot: grantRoot } },
+    };
+    const repo = makeIslandRepo();
+    const island = makeIsland(repo);
+    const result = island.requestPermission({
+      type: 'file_write', tool: 'Write',
+      details: { path: path.join(grantRoot, 'a.txt') }, sessionId,
+    });
+    await flushMicrotasks();
+    // 交互路径：不停车（repo 不落行），Promise 等真人（60s 超时路径在别处已钉死）
+    expect(repo.insert).not.toHaveBeenCalled();
+    expect(await islandStillPending(result)).toBe(true);
+    island.drainPendingPermissions();
   });
 });

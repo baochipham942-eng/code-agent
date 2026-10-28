@@ -5,6 +5,8 @@
 //     才放行；非 cron 来源、无授权、forceConfirm、其余类型一律 undefined（照旧停车）
 //   - grant/revoke 落库与幂等、无文件夹抛 CRON_WRITE_SCOPE_NO_FOLDER
 //   - stripWriteGrantRoot（createJob 元数据防线）
+//   - CronService 窄写通道（②）：updateJob/createJob 写不进 writeGrantRoot，
+//     只有 grantWriteScope/revokeWriteScope 能写（整合拆分轮自 cronWriteScopeService.test.ts 并入）
 // 真实文件系统（tmpdir + 真软链），sessionManager 用注入 mock。
 // ============================================================================
 import { mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
@@ -14,6 +16,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const sessionState = vi.hoisted(() => ({
   sessions: {} as Record<string, { id: string; origin?: { kind: string; metadata?: Record<string, unknown> }; workingDirectory?: string } | undefined>,
+}));
+
+const dbState = vi.hoisted(() => ({
+  cronRows: [] as unknown[],
+  runs: [] as Array<{ sql: string; args: unknown[] }>,
+}));
+
+const automationState = vi.hoisted(() => ({
+  recordCreated: vi.fn(async () => undefined),
+  recordEvent: vi.fn(async () => undefined),
+  getBySourceRef: vi.fn(() => null),
+  upsert: vi.fn(() => undefined),
 }));
 
 vi.mock('../../../src/host/services/infra/sessionManager', () => ({
@@ -26,12 +40,47 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
 
+vi.mock('../../../src/host/services/core/databaseService', () => ({
+  getDatabase: () => ({
+    getDb: () => ({
+      prepare: (sql: string) => ({
+        all: () => (sql.includes('FROM cron_jobs') ? dbState.cronRows : []),
+        get: (...args: unknown[]) => (
+          sql.includes('MAX(started_at)')
+            ? { last_run_at: null }
+            : undefined
+        ),
+        run: (...args: unknown[]) => {
+          dbState.runs.push({ sql, args });
+          return { changes: 1, lastInsertRowid: 0 };
+        },
+      }),
+    }),
+  }),
+}));
+
+vi.mock('../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({
+    onSettingsUpdated: vi.fn(),
+    getSettings: () => ({ ui: { language: 'zh' } }),
+  }),
+}));
+
+vi.mock('../../../src/host/services/sessionAutomation', () => ({
+  getSessionAutomationService: () => automationState,
+}));
+
+vi.mock('../../../src/host/services/infra/notificationService', () => ({
+  notificationService: { notifyTaskComplete: vi.fn(), notifyNeedsInput: vi.fn() },
+}));
+
 import {
   approveByScheduleWriteGrant,
   grantCronWriteScope,
   revokeCronWriteScope,
   stripWriteGrantRoot,
 } from '../../../src/host/cron/cronWriteGrant';
+import { CronService } from '../../../src/host/cron/cronService';
 import { CRON_WRITE_SCOPE_NO_FOLDER } from '../../../src/shared/cronWriteScope';
 import { PermissionRequestReason } from '../../../src/shared/contract/permission';
 import type { CronJobDefinition } from '../../../src/shared/contract/cron';
@@ -352,5 +401,102 @@ describe('stripWriteGrantRoot（创建防线）', () => {
     expect(stripWriteGrantRoot({ keep: 1 })).toEqual({ keep: 1 });
     expect(stripWriteGrantRoot(undefined)).toBeUndefined();
     expect(stripWriteGrantRoot({ writeGrantRoot: '/tmp/evil' })).toBeUndefined();
+  });
+});
+
+describe('CronService 写授权窄写通道（原 cronWriteScopeService.test.ts）', () => {
+  // 整合拆分轮（2026-10-28）自独立文件并入：gates:fast 12 文件上限，两个同特性
+  // 新测试文件合一。mock 并集对本块无副作用（databaseService 等仅 CronService 消费）。
+  let service: CronService;
+
+  beforeEach(() => {
+    service = new CronService();
+  });
+
+  afterEach(async () => {
+    await service.shutdown();
+  });
+
+  function agentJob(overrides: Partial<CronJobDefinition> = {}) {
+    return {
+      name: '写笔记任务',
+      scheduleType: 'every' as const,
+      schedule: { type: 'every' as const, interval: 1, unit: 'hours' as const },
+      action: { type: 'agent' as const, agentType: 'default', prompt: '写一条笔记' },
+      runsOn: 'local' as const,
+      enabled: false,
+      ...overrides,
+    };
+  }
+
+  it('grant 经来源会话工作目录解析并落 metadata.writeGrantRoot；revoke 摘掉', async () => {
+    sessionState.sessions['src'] = { id: 'src', workingDirectory: grantRoot };
+    const job = await service.createJob(agentJob({
+      action: { type: 'agent', agentType: 'default', prompt: '写一条笔记', context: { sourceSessionId: 'src' } },
+    }));
+    expect(job.metadata?.writeGrantRoot).toBeUndefined();
+
+    const granted = await service.grantWriteScope(job.id);
+    expect(granted?.metadata?.writeGrantRoot).toBe(grantRoot);
+    expect(service.getJob(job.id)?.metadata?.writeGrantRoot).toBe(grantRoot);
+
+    const revoked = await service.revokeWriteScope(job.id);
+    expect(revoked?.metadata?.writeGrantRoot).toBeUndefined();
+    expect(service.getJob(job.id)?.metadata).toBeUndefined();
+    expect(await service.grantWriteScope('missing-job')).toBeNull();
+  });
+
+  it('解析不出工作文件夹时 grant 抛 CRON_WRITE_SCOPE_NO_FOLDER；常设刷新取产物目录', async () => {
+    const plain = await service.createJob(agentJob());
+    await expect(service.grantWriteScope(plain.id)).rejects.toThrow(CRON_WRITE_SCOPE_NO_FOLDER);
+
+    const refresh = await service.createJob(agentJob({
+      metadata: { artifactRefresh: { path: path.join(grantRoot, 'report.md'), instruction: '刷新', cadence: 'daily' } },
+    }));
+    const granted = await service.grantWriteScope(refresh.id);
+    expect(granted?.metadata?.writeGrantRoot).toBe(grantRoot);
+  });
+
+  it('updateJob 不能创建 writeGrantRoot（编辑器全量 metadata 夹带被剥掉）', async () => {
+    const job = await service.createJob(agentJob());
+    const edited = await service.updateJob(job.id, {
+      name: '改过名字',
+      metadata: { sourceSessionId: 'src', writeGrantRoot: '/tmp/smuggled' },
+    });
+    expect(edited?.metadata).toEqual({ sourceSessionId: 'src' });
+    expect(service.getJob(job.id)?.metadata?.writeGrantRoot).toBeUndefined();
+  });
+
+  it('updateJob 不能改写已有授权值（编辑器回传原值可保留，换值被忽略）', async () => {
+    sessionState.sessions['src'] = { id: 'src', workingDirectory: grantRoot };
+    const job = await service.createJob(agentJob({
+      action: { type: 'agent', agentType: 'default', prompt: '写一条笔记', context: { sourceSessionId: 'src' } },
+    }));
+    await service.grantWriteScope(job.id);
+
+    const tampered = await service.updateJob(job.id, {
+      metadata: { ...(service.getJob(job.id)?.metadata ?? {}), writeGrantRoot: '/tmp/other-root' },
+    });
+    expect(tampered?.metadata?.writeGrantRoot).toBe(grantRoot);
+  });
+
+  it('createJob 载荷夹带的 writeGrantRoot 一律剥掉', async () => {
+    const job = await service.createJob(agentJob({
+      metadata: { writeGrantRoot: '/tmp/smuggled-at-create', harmless: true },
+    }));
+    expect(job.metadata).toEqual({ harmless: true });
+  });
+
+  it('写授权防线不改变 loginPassThroughOrigin 的既有行为（create 不剥、update 剥）', async () => {
+    // create 对 login 字段的历史行为是透传（本单不扩权改动它），回归钉住这一点。
+    const job = await service.createJob(agentJob({
+      metadata: { loginPassThroughOrigin: 'https://a.example' },
+    }));
+    expect(job.metadata).toEqual({ loginPassThroughOrigin: 'https://a.example' });
+    // update 对 login 字段维持「回传保留存量、换值忽略」的既有语义（存量为 create 透传值）。
+    const edited = await service.updateJob(job.id, {
+      metadata: { loginPassThroughOrigin: 'https://b.example', keep: 1 },
+    });
+    expect(edited?.metadata).toEqual({ loginPassThroughOrigin: 'https://a.example', keep: 1 });
   });
 });

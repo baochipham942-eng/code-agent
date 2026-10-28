@@ -1,8 +1,8 @@
 export function mapTauriResourcePath(entry, target) {
-  if (target === 'arm64') {
+  if (target === 'darwin-arm64') {
     return entry;
   }
-  if (target === 'x64') {
+  if (target === 'darwin-x64') {
     return entry.replaceAll('darwin-arm64', 'darwin-x64');
   }
   if (target === 'win32-x64') {

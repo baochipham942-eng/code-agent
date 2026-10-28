@@ -37,7 +37,7 @@ const conf = JSON.parse(fs.readFileSync(confPath, 'utf8'));
 const resources = conf.bundle?.resources ?? [];
 
 function mapPath(entry) {
-  return mapTauriResourcePath(entry, arch);
+  return mapTauriResourcePath(entry, `darwin-${arch}`);
 }
 
 function mapResources(value) {

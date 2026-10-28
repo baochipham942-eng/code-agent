@@ -4,6 +4,7 @@ import { applyTelemetrySchema } from './schemaTelemetry';
 import { applyAnnotationsSchema } from './schemaAnnotations';
 import { applyAppGrantsSchema } from './schemaAppGrants';
 import { applySessionDelegationsSchema } from './schemaSessionDelegations';
+import { applyCloudRunLedgerSchema } from './schemaCloudRunLedger';
 import { safeAlter, type Logger } from './schemaHelpers';
 import { applyTranscriptFtsSchema } from '../../../../shared/transcriptFts.sql';
 import { applyMemoriesFtsSchema } from '../../../../shared/memoriesFts.sql';
@@ -1141,6 +1142,9 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
 
   // session_delegations - cross-session delegation links (ADR-072 D5)
   applySessionDelegationsSchema(db, logger);
+
+  // cloud run ledger - persistent cloud run rows (ADR-086 S1)
+  applyCloudRunLedgerSchema(db, logger);
 
   // Agent Neo native Generative UI. Mutable state remains local by design;
   // the source message's neo_ui fence is the cross-device initial truth.

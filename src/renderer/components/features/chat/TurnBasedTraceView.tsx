@@ -19,6 +19,7 @@ import { useScrollEdgeFade } from '../../../hooks/useScrollEdgeFade';
 import { SessionModelsContext } from './sessionModelsContext';
 import { hasIncompleteStreamSnapshot } from '../../../utils/streamingStatePresentation';
 import { isTurnVisibleInRange } from '../../../utils/turnVisibility';
+import { useWorkDetailPolicy } from '../../../utils/workDetailPolicy';
 import { buildTurnRailItems } from '../../../utils/turnRailItems';
 import {
   ConversationTurnTailSlot,
@@ -300,6 +301,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   suppressActiveBusySignal,
 }) => {
   const { t } = useI18n();
+  const workDetailPolicy = useWorkDetailPolicy();
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const scrollerElementRef = useRef<HTMLElement | null>(null);
   const [scrollerElement, setScrollerElement] = useState<HTMLElement | null>(null);
@@ -1037,7 +1039,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
               key={turn.turnId}
               turn={turn}
               sessionId={projection.sessionId}
-              defaultExpanded={isLast || isStreaming}
+              defaultExpanded={isStreaming || (isLast && workDetailPolicy.keepLastTurnOpen)}
               forceExpanded={hasSearchMatch}
               highlightActive={isActiveMatchTurn}
               isActiveTurn={isStreaming}
@@ -1061,7 +1063,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         </div>
       );
     },
-    [activeMatchIndex, beforeFirstUserMessage, firstItemIndex, isProjectionSessionProcessing, onRewindUserPrompt, outputFollowTurnIndex, projection.activeTurnIndex, projection.sessionId, projection.turns, projectionStreamSnapshot, scheduleActiveDisplayScroll, searchMatches, sessionStatus, suppressActiveBusySignal],
+    [activeMatchIndex, beforeFirstUserMessage, firstItemIndex, isProjectionSessionProcessing, onRewindUserPrompt, outputFollowTurnIndex, projection.activeTurnIndex, projection.sessionId, projection.turns, projectionStreamSnapshot, scheduleActiveDisplayScroll, searchMatches, sessionStatus, suppressActiveBusySignal, workDetailPolicy],
   );
 
   // Header: load-older indicator

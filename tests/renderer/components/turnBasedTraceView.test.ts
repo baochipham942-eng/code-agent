@@ -30,6 +30,7 @@ import {
   TurnBasedTraceView,
 } from '../../../src/renderer/components/features/chat/TurnBasedTraceView';
 import { isTurnVisibleInRange } from '../../../src/renderer/utils/turnVisibility';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 const mocks = vi.hoisted(() => ({
   scrollToIndex: vi.fn(),
@@ -827,6 +828,47 @@ describe('TurnBasedTraceView 不向虚拟列表灌入每渲染变身份的 props
     view.rerender(React.createElement(TurnBasedTraceView, { projection }));
 
     expect(mocks.virtuosoProps.itemContent).toBe(firstSearchMatches);
+  });
+});
+
+describe('TurnBasedTraceView 末轮默认展开随详略档（N-WORKDETAIL-DEFAULT-SIMPLE-FU2）', () => {
+  // TurnCard 被 mock 成 null，直接从 itemContent 产物里读它拿到的 defaultExpanded。
+  // itemContent 返回 外层div > 内层div > [TurnCard, ConversationTurnTailSlot]，按此结构取型。
+  function turnCardDefaultExpanded(index: number): boolean | undefined {
+    const { firstItemIndex, itemContent } = mocks.virtuosoProps;
+    const wrapper = itemContent(firstItemIndex + index, makeTurn(index)) as React.ReactElement<{
+      children: React.ReactElement<{
+        children: [React.ReactElement<{ defaultExpanded?: boolean }>, unknown];
+      }>;
+    }>;
+    const card = wrapper.props.children.props.children[0];
+    return card.props.defaultExpanded;
+  }
+
+  afterEach(() => {
+    useAppStore.setState({ disclosureLevel: 'standard' });
+  });
+
+  it('已完成末轮：simple 传 false（默认折叠），standard/advanced/expert 传 true', () => {
+    const projection = makeProjection(-1, 2);
+    for (const level of ['simple', 'standard', 'advanced', 'expert'] as const) {
+      useAppStore.setState({ disclosureLevel: level });
+      const { unmount } = render(React.createElement(TurnBasedTraceView, { projection }));
+      expect(turnCardDefaultExpanded(1)).toBe(level !== 'simple');
+      unmount();
+    }
+  });
+
+  it('流式中的活动轮保持展开，不随档位折叠', () => {
+    useAppStore.setState({ disclosureLevel: 'simple' });
+    render(React.createElement(TurnBasedTraceView, { projection: makeProjection(0, 1) }));
+    expect(turnCardDefaultExpanded(0)).toBe(true);
+  });
+
+  it('simple 档历史（非末）轮照旧 false，本单不动非末轮行为', () => {
+    useAppStore.setState({ disclosureLevel: 'simple' });
+    render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1, 2) }));
+    expect(turnCardDefaultExpanded(0)).toBe(false);
   });
 });
 

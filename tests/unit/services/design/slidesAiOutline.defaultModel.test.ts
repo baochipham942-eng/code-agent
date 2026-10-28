@@ -10,6 +10,7 @@ const h = vi.hoisted(() => ({
       providers: {} as Record<string, { model?: string; baseUrl?: string }>,
     },
   },
+  apiKey: 'test-key' as string,
   inference: vi.fn(async (_messages: unknown, _tools: unknown, _config: unknown) => ({
     content: '# 封面标题\n\n## 第一页\n- 要点一\n- 要点二\n- 要点三',
   })),
@@ -18,7 +19,7 @@ const h = vi.hoisted(() => ({
 vi.mock('../../../../src/host/services/core/configService', () => ({
   getConfigService: () => ({
     getSettings: () => h.settings,
-    getApiKey: () => 'test-key',
+    getApiKey: () => h.apiKey,
   }),
 }));
 
@@ -43,6 +44,7 @@ describe('buildAiOutline default model', () => {
     h.inference.mockClear();
     h.settings.models.default = '';
     h.settings.models.providers = {};
+    h.apiKey = 'test-key';
   });
 
   it('generates on the configured user provider and model', async () => {
@@ -72,5 +74,19 @@ describe('buildAiOutline default model', () => {
       temperature: 0.7,
       maxTokens: 2048,
     });
+  });
+  it('still calls inference for the keyless local provider with an empty key', async () => {
+    h.settings.models.default = 'local';
+    h.settings.models.providers = { local: { model: 'qwen2.5-coder:7b' } };
+    h.apiKey = '';
+    const result = await buildAiOutline('行业趋势', 5);
+    expect(result.ai).toBe(true);
+    expect(inferenceConfig()).toMatchObject({
+      provider: 'local',
+      model: 'qwen2.5-coder:7b',
+      temperature: 0.7,
+      maxTokens: 2048,
+    });
+    expect(inferenceConfig().apiKey).toBeFalsy();
   });
 });

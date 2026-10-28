@@ -102,6 +102,21 @@ describe('checkpoint writer default model', () => {
     });
   });
 
+  it('lets the keyless local provider through with an empty key', async () => {
+    h.settings.models.default = 'local';
+    h.settings.models.providers = { local: { model: 'qwen2.5-coder:7b' } };
+    h.apiKey = '';
+    const result = await runCheckpointWriterAgent(job());
+    // 免 key 供应商不提前抛错，请求照发 ModelRouter（真实路由下 LocalProvider 自补 key）
+    expect(result.success).toBe(false);
+    expect(inferenceConfig()).toMatchObject({
+      provider: 'local',
+      model: 'qwen2.5-coder:7b',
+      temperature: CHECKPOINT_WRITER.LLM_TEMPERATURE,
+      maxTokens: CHECKPOINT_WRITER.LLM_MAX_OUTPUT_TOKENS,
+    });
+    expect(inferenceConfig().apiKey).toBeFalsy();
+  });
   it('keeps the moonshot env fallback and the no-key error text', async () => {
     h.settings.models.default = 'moonshot';
     h.settings.models.providers = { moonshot: { model: 'kimi-k2.5' } };

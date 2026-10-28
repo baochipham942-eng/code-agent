@@ -3,7 +3,9 @@ import { SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS } from '../../shared/consta
 import { getTextForegroundToolNames } from '../tools/protocolRegistry';
 import { detectTaskFeatures } from '../prompts/systemReminders';
 
-export const SESSION_COMMAND_CENTER_BRAIN_CONTEXT = [
+// 不导出：web/桌面两条装配路都经 getSessionCommandCenterBrainContextForPrompt 取块，
+// 导出常量只会引回「第二条装配路直接拼常量」的旧形态（rework r1）。
+const SESSION_COMMAND_CENTER_BRAIN_CONTEXT = [
   '<session_command_center>',
   '你是这条文字会话的前台 brain。前台要保持快速流式回复，耗时执行一律交给后台任务槽。',
   '分诊规则：',
@@ -43,13 +45,57 @@ export const SESSION_COMMAND_CENTER_BRAIN_CONTEXT = [
 const OFFICE_DOC_DELIVERABLE_RE = /\.docx\b|\bword\s*文档|\bword\s+(?:document|file|report)\b/i;
 const OFFICE_SHEET_DELIVERABLE_RE = /\.xlsx\b|\bexcel\s*(?:工作簿|表格|文件)|\bexcel\s+(?:workbook|spreadsheet|file)\b/i;
 
+// 句首才算存草稿指令。晨报正文或句子中间出现这几个字不能把 mail_draft 送上轮。
+// 允许的前缀只是客气话（请 / 麻烦 / 帮我 / 你好 / please），不是任意前文。
+// 不导出：唯一消费方是本文件的两个函数，导出就是 knip 死导出。
+const SAVE_DRAFT_POLITE_RE = '(?:请帮我|麻烦你|请你|劳驾|拜托|您好|你好|please|kindly|请|麻烦|帮我)';
+const SAVE_DRAFT_REPLY_RE = new RegExp(
+  `^\\s*(?:${SAVE_DRAFT_POLITE_RE}[\\s,，。.!！]*)*(?:(?:存|保存)草稿\\s*(?:第|#|＃)?\\s*[0-9０-９]+|save\\s+draft\\s*(?:#|＃)?\\s*[0-9０-９]+)`,
+  'iu',
+);
+
+/**
+ * 用户在角色线程里回「存草稿 N」时追加。起草仍发生在无人值守的晨报里，
+ * 这一轮只负责把点名的那一封原样存进邮箱草稿箱。
+ */
+const MORNING_BRIEF_SAVE_DRAFT_CONTEXT = [
+  '<morning_brief_save_draft>',
+  '用户这句是在要求把晨报里的一封草稿存进邮箱。按下面做，不要发挥。',
+  '1. 只看本对话里最近一条晨间分诊结果（定时任务「晨间分诊」的结论）。草稿块从「草稿 N（未发送）」那一行开始，N 从 1 起：第二行是收件人邮箱，第三行是主题，从第四行起到下一块之前是正文。取出用户点名的那一封。',
+  '2. 收件人、主题、正文原样抄进 mail_draft 的 to、subject、content。to 里只放邮箱地址，不要改写，不要新增收件人，不要加显示名或尖括号。',
+  '3. 本轮工具表里已经有 mail_draft。你自己调用它，不要先去找别的工具，不要调用 delegate_task，也不要调用 mail_send。',
+  '4. N 超出范围，或这条晨报里没有草稿块时，直接说明一共有几封草稿，什么工具都不要调用。',
+  '5. 同一封的 mail_draft 在本对话里已经成功过，就说这封已经存过，不要再次调用。',
+  '6. 调用成功后告诉用户：草稿在邮箱的草稿箱里，没有发送。',
+  '7. mail_draft 不在本轮工具里、被拒绝或调用失败时如实说明。没有邮件权限就说这位角色没有开邮件权限，不要假装已经存好。',
+  '</morning_brief_save_draft>',
+].join('\n');
+
+function isMorningBriefSaveDraftReply(prompt: string): boolean {
+  return SAVE_DRAFT_REPLY_RE.test(prompt);
+}
+
+/**
+ * 本轮指挥台 brain 的系统上下文块（含回合级附加规则），桌面与 web 两条装配路的单一真源：
+ * 桌面经 withSessionCommandCenterBrain 拼进 turnSystemContext，web 主链
+ * （routes/agent.ts 的 config.systemPrompt）直接展开同一份块——见
+ * shared/constants/sessionCommandCenter.ts 的警告：装配形状各异，判据与内容必须只有一份。
+ */
+export function getSessionCommandCenterBrainContextForPrompt(prompt: string): string[] {
+  const blocks = [SESSION_COMMAND_CENTER_BRAIN_CONTEXT];
+  if (isMorningBriefSaveDraftReply(prompt)) blocks.push(MORNING_BRIEF_SAVE_DRAFT_CONTEXT);
+  return blocks;
+}
+
 export function getTextForegroundToolNamesForPrompt(prompt: string): string[] {
   const base = getTextForegroundToolNames();
-  const features = detectTaskFeatures(prompt);
-  if (!features.isOneTurnFileDeliverable) return base;
   const extras: string[] = [];
-  if (OFFICE_DOC_DELIVERABLE_RE.test(prompt)) extras.push('docx_generate');
-  if (OFFICE_SHEET_DELIVERABLE_RE.test(prompt)) extras.push('excel_generate', 'DocEdit');
+  const features = detectTaskFeatures(prompt);
+  if (features.isOneTurnFileDeliverable) {
+    if (OFFICE_DOC_DELIVERABLE_RE.test(prompt)) extras.push('docx_generate');
+    if (OFFICE_SHEET_DELIVERABLE_RE.test(prompt)) extras.push('excel_generate', 'DocEdit');
+  }
+  if (isMorningBriefSaveDraftReply(prompt)) extras.push('mail_draft');
   return extras.length > 0 ? [...base, ...extras] : base;
 }
 
@@ -57,6 +103,11 @@ export function withSessionCommandCenterBrain(
   options: AppServiceRunOptions | undefined,
   prompt?: string,
 ): AppServiceRunOptions {
+  const text = prompt ?? '';
+  const turnSystemContext = [
+    ...(options?.turnSystemContext ?? []),
+    ...getSessionCommandCenterBrainContextForPrompt(text),
+  ];
   return {
     ...(options ?? {}),
     mode: options?.mode ?? 'normal',
@@ -66,11 +117,8 @@ export function withSessionCommandCenterBrain(
         : SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
       SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
     ),
-    allowedToolNames: getTextForegroundToolNamesForPrompt(prompt ?? ''),
+    allowedToolNames: getTextForegroundToolNamesForPrompt(text),
     foregroundToolFace: true,
-    turnSystemContext: [
-      ...(options?.turnSystemContext ?? []),
-      SESSION_COMMAND_CENTER_BRAIN_CONTEXT,
-    ],
+    turnSystemContext,
   };
 }

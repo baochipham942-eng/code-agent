@@ -47,7 +47,6 @@ const OFFICE_SHEET_DELIVERABLE_RE = /\.xlsx\b|\bexcel\s*(?:工作簿|表格|文�
 
 // 句首才算存草稿指令。晨报正文或句子中间出现这几个字不能把 mail_draft 送上轮。
 // 允许的前缀只是客气话（请 / 麻烦 / 帮我 / 你好 / please），不是任意前文。
-// 不导出：唯一消费方是本文件的两个函数，导出就是 knip 死导出。
 const SAVE_DRAFT_POLITE_RE = '(?:请帮我|麻烦你|请你|劳驾|拜托|您好|你好|please|kindly|请|麻烦|帮我)';
 const SAVE_DRAFT_REPLY_RE = new RegExp(
   `^\\s*(?:${SAVE_DRAFT_POLITE_RE}[\\s,，。.!！]*)*(?:(?:存|保存)草稿\\s*(?:第|#|＃)?\\s*[0-9０-９]+|save\\s+draft\\s*(?:#|＃)?\\s*[0-9０-９]+)`,
@@ -71,7 +70,7 @@ const MORNING_BRIEF_SAVE_DRAFT_CONTEXT = [
   '</morning_brief_save_draft>',
 ].join('\n');
 
-function isMorningBriefSaveDraftReply(prompt: string): boolean {
+export function isMorningBriefSaveDraftReply(prompt: string): boolean {
   return SAVE_DRAFT_REPLY_RE.test(prompt);
 }
 

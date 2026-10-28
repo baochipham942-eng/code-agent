@@ -3,7 +3,7 @@
   "messageRefs": [
     {
       "kind": "content",
-      "contentHash": "49d3797f262a70174dd9aaa7f0e4baba7651a1439f22facf72e9813667a74c19",
+      "contentHash": "e47498b4dd9e84bb4ee0ece555b0bb923fa0808d0d0a3c2fe206ef9ef8a42c0b",
       "reason": "system_prompt_fallback"
     },
     {
@@ -19,13 +19,12 @@
       "messageId": "msg-03"
     }
   ],
-  "toolSchemaHash": "c3c4a0271b0334f9b0282f0a9b193f64ca7c0c0bc6a7c6d264d14ca9ecf1bf08",
+  "toolSchemaHash": "ee47480db4b64afc80b6baa245fc3f0394cee7449a51c5a0f2d1796b2a4a2222",
   "toolNames": [
     "AskUserQuestion",
     "Bash",
     "Blob",
     "Edit",
-    "ExternalSearch",
     "Glob",
     "Grep",
     "ListDirectory",

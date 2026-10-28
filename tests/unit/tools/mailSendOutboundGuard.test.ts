@@ -16,6 +16,12 @@ vi.mock('../../../src/host/services/infra/logger', () => {
 
 import { getToolCache } from '../../../src/host/services/infra/toolCache';
 import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
+import {
+  hasProtocolTool,
+  registerProtocolTool,
+  unregisterProtocolTool,
+} from '../../../src/host/tools/protocolToolRegistration';
+import { mailSendSchema } from '../../../src/host/tools/modules/connectors/mailSend.schema';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import type { PermissionRequestData } from '../../../src/host/tools/types';
 import { getConnectorRegistry } from '../../../src/host/connectors';
@@ -41,9 +47,30 @@ describe('mail_send outbound sensitive guard', () => {
   let connectorExecute: Connector['execute'];
   let connectorCalls: Array<{ action: string; payload: Record<string, unknown> }>;
   let sid = 0;
+  let bridgedToolNames: string[] = [];
 
   beforeAll(() => {
+    // mail_send 只在 darwin 注册（modules/index.ts 连接器组平台门）；Linux CI 上缺席时
+    // executor.execute 在 resolve 阶段 unknown-tool 失败，权限闸根本没跑到（PR#2555 实录）。
+    // 补注册桥：缺席才补、loader 消费真实模块（用例要过权限闸进 handler 调用链），
+    // afterAll 只注销自己补的——盲 unregister 会把 darwin 的原生注册也摘掉。
     getProtocolRegistry();
+    bridgedToolNames = [mailSendSchema]
+      .filter((schema) => !hasProtocolTool(schema.name))
+      .map((schema) => {
+        registerProtocolTool(schema, async () => {
+          const { mailSendModule } = await import(
+            '../../../src/host/tools/modules/connectors/mailSend'
+          );
+          return mailSendModule;
+        });
+        return schema.name;
+      });
+  });
+
+  afterAll(() => {
+    for (const name of bridgedToolNames) unregisterProtocolTool(name);
+    bridgedToolNames = [];
   });
 
   beforeEach(() => {

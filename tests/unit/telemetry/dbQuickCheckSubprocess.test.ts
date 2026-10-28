@@ -66,20 +66,45 @@ function activateBundleEnv(root: string): void {
   process.env.AGENT_NEO_RESOURCE_DIR = root;
 }
 
-/** 轮询日志文件直到出现匹配行（文件 sink 是异步 write stream） */
-async function waitForLog(match: RegExp, timeoutMs = 8000): Promise<string> {
+/** 取当前日志末尾字节位置作书签：本用例的断言只认书签之后新落盘的内容 */
+function logBookmark(): number {
+  try {
+    return fs.statSync(logFile).size;
+  } catch {
+    return 0; // 日志文件还没建
+  }
+}
+
+/** 读书签之后的增量（字节偏移读取，避开书签之前整段历史） */
+function readLogSince(since: number): string {
+  try {
+    const fd = fs.openSync(logFile, 'r');
+    try {
+      const size = fs.fstatSync(fd).size;
+      const len = Math.max(0, size - since);
+      if (len <= 0) return '';
+      const buf = Buffer.alloc(len);
+      fs.readSync(fd, buf, 0, len, since);
+      return buf.toString('utf8');
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return ''; // 日志文件还没建
+  }
+}
+
+/** 在书签之后的增量里轮询等一行匹配。文件 sink 是异步 WriteStream（线程池落盘），
+ *  本次的行可能晚于 outcome resolve 落盘——无书签地对整个文件 pop 匹配行，会立刻读回
+ *  前序用例的同形陈旧行（r1 审查项）；书签限定增量 + 轮询兜落盘延迟，两类误读都堵死。 */
+async function waitForLog(since: number, match: RegExp, timeoutMs = 8000): Promise<string> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    let content = '';
-    try {
-      content = fs.readFileSync(logFile, 'utf8');
-    } catch {
-      /* 日志文件还没建 */
-    }
-    const line = content.split('\n').filter((l) => match.test(l)).pop();
+    const tail = readLogSince(since);
+    const line = tail.split('\n').filter((l) => match.test(l)).pop();
     if (line) return line;
     if (Date.now() > deadline) {
-      throw new Error(`log line ${match} not found within ${timeoutMs}ms; tail:\n${content.split('\n').slice(-5).join('\n')}`);
+      throw new Error(`log line ${match} not found after bookmark within ${timeoutMs}ms; tail since bookmark:\n${tail.split('\n').slice(-5).join('\n')}`);
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
@@ -113,9 +138,10 @@ describe('runQuickCheckInSubprocess (ADR-086 T3 单路径交接)', () => {
   it('源码模式：子进程加载包解析路径，quick_check ok', async () => {
     delete process.env.AGENT_NEO_BUNDLED_RUNTIME_ROOT;
     delete process.env.AGENT_NEO_RESOURCE_DIR;
+    const mark = logBookmark();
     const outcome = await mod.runQuickCheckInSubprocess(dbPath);
     expect(outcome).toBe('ok');
-    const line = await waitForLog(/native binding loaded from/);
+    const line = await waitForLog(mark, /native binding loaded from/);
     expect(line).toContain(repoBetterSqlite3);
   }, 60_000);
 
@@ -123,9 +149,10 @@ describe('runQuickCheckInSubprocess (ADR-086 T3 单路径交接)', () => {
     const root = makeBundleFixture('ok');
     activateBundleEnv(root);
     const declared = path.join(root, 'dist', 'native', 'better-sqlite3');
+    const mark = logBookmark();
     const outcome = await mod.runQuickCheckInSubprocess(dbPath);
     expect(outcome).toBe('ok');
-    const line = await waitForLog(/native binding loaded from/);
+    const line = await waitForLog(mark, /native binding loaded from/);
     expect(line).toContain(declared);
   }, 60_000);
 
@@ -133,22 +160,24 @@ describe('runQuickCheckInSubprocess (ADR-086 T3 单路径交接)', () => {
     const root = makeBundleFixture('missing');
     activateBundleEnv(root);
     const declared = path.join(root, 'dist', 'native', 'better-sqlite3');
+    const mark = logBookmark();
     const outcome = await mod.runQuickCheckInSubprocess(dbPath);
     expect(outcome).toBe('spawn-failed');
-    const line = await waitForLog(/Database quick_check could not resolve better-sqlite3/);
+    const line = await waitForLog(mark, /Database quick_check could not resolve better-sqlite3/);
     expect(line).toContain("module 'better-sqlite3' is declared at");
     expect(line).toContain(declared);
-    // 没派子进程：日志里不应出现任何子进程 stderr 形状的行
-    expect(fs.readFileSync(logFile, 'utf8')).not.toContain('native binding unresolved at');
+    // 没派子进程：书签之后的增量里不应出现任何子进程 stderr 形状的行
+    expect(readLogSince(mark)).not.toContain('native binding unresolved at');
   }, 60_000);
 
   it('子进程收到无法 require 的声明路径：exit 3，stderr 指名路径与来源', async () => {
     const root = makeBundleFixture('bogus');
     activateBundleEnv(root);
     const declared = path.join(root, 'dist', 'native', 'better-sqlite3.js');
+    const mark = logBookmark();
     const outcome = await mod.runQuickCheckInSubprocess(dbPath);
     expect(outcome).toBe('spawn-failed');
-    const line = await waitForLog(/better-sqlite3 native binding unresolved at/);
+    const line = await waitForLog(mark, /better-sqlite3 native binding unresolved at/);
     expect(line).toContain(declared);
     expect(line).toContain('boom from bogus native entry');
     expect(line).toContain('native dep manifest');

@@ -14,6 +14,7 @@ import { toast } from '../../../../hooks/useToast';
 import { DiffView } from '../../../DiffView';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { buildTurnFileChanges } from '../../../../utils/turnDiffSummary';
+import { TurnDiffHunkFeedback } from './TurnDiffHunkFeedback';
 import {
   readTurnDiffExpansion,
   writeTurnDiffExpansion,
@@ -64,6 +65,10 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn, excluded
     () => buildTurnFileChanges(turn).filter((change) => !excludedFilePaths?.has(change.filePath)),
     [excludedFilePaths, turn],
   );
+
+  // 只有权威 diff 的 oldText/newText 是磁盘整文件文本，行号才是真文件行号；
+  // 工具 args 回退路径的片段行号对不上用户眼前的文件，不给块级反馈入口。
+  const isAuthoritativeDiff = turn.turnDiff != null && turn.turnDiff.filesAuthoritative !== false;
 
   // 查 checkpoint 找本 turn 的 rewind 锚点 messageId
   useEffect(() => {
@@ -319,6 +324,13 @@ export const TurnDiffSummary: React.FC<TurnDiffSummaryProps> = ({ turn, excluded
                     stats={{ added: fc.added, removed: fc.removed }}
                     className="border border-zinc-800 rounded-md overflow-hidden"
                   />
+                  {isAuthoritativeDiff && (
+                    <TurnDiffHunkFeedback
+                      filePath={fc.filePath}
+                      oldText={fc.oldText}
+                      newText={fc.newText}
+                    />
+                  )}
                 </div>
               )}
             </div>

@@ -16,7 +16,11 @@ import {
 import { getBackgroundTaskLedger } from '../../task/backgroundTaskLedger';
 import { createForegroundWake } from './foregroundWake';
 import { getConfigService } from '../core/configService';
-import { formatSessionTaskSlotRecoveryDetail } from '../../../shared/i18n/sessionTaskSlot';
+import { formatSessionCommandTaskIdleFailure } from '../../../shared/i18n/sessionTaskSlot';
+import {
+  SESSION_COMMAND_TASK_IDLE_TIMEOUT_MS,
+  resolveSessionCommandTaskIdleTimeoutMs,
+} from '../../../shared/constants/sessionCommandCenter';
 import type { RuntimeInputMode } from '../../../shared/contract/conversationEnvelope';
 import { RUNTIME_INPUT_REDIRECT_LINE, RUNTIME_INPUT_SUPPLEMENT_LINE } from '../../../shared/constants/runtimeInput';
 
@@ -131,6 +135,8 @@ export class SessionCommandCenter {
   private readonly ledgers = new Map<string, SessionTaskSlotLedger>();
   /** 在途工具调用的名字（`${taskId}:${toolCallId}` → 工具名）；tool_call_end 即删，只活在途调用。 */
   private readonly toolNamesByCallId = new Map<string, string>();
+  /** permission_request ids still unresolved on the agent event stream, per task. */
+  private readonly pendingApprovalIdsByTask = new Map<string, Set<string>>();
   private readonly manager: TaskManager;
   private readonly projectTerminalResult: NonNullable<SessionCommandCenterDependencies['projectTerminalResult']>;
   private readonly persistMemberInput: NonNullable<SessionCommandCenterDependencies['persistMemberInput']>;
@@ -356,6 +362,7 @@ export class SessionCommandCenter {
     for (const ledger of this.ledgers.values()) ledger.dispose();
     this.stopAgentEventObservation?.();
     this.toolNamesByCallId.clear();
+    this.pendingApprovalIdsByTask.clear();
   }
 
   private tasks(sessionId: string): Map<string, SessionCommandTask> {
@@ -371,6 +378,8 @@ export class SessionCommandCenter {
     let ledger = this.ledgers.get(sessionId);
     if (!ledger) {
       ledger = new SessionTaskSlotLedger(sessionId, getSessionTaskConcurrencyPool(), {
+        slotTimeoutMs: resolveSessionCommandTaskIdleTimeoutMs(undefined, SESSION_COMMAND_TASK_IDLE_TIMEOUT_MS),
+        shouldSkipExpiry: (slot) => this.shouldSkipIdleExpiry(slot),
         ...this.slotLedgerOptions,
         onRecovery: (recovery) => this.handleSlotRecovery(sessionId, recovery),
       });
@@ -395,13 +404,12 @@ export class SessionCommandCenter {
       for (const { slot, occupiedMs } of recovery.expired) {
         const task = this.tasksBySession.get(sessionId)?.get(slot.workItemId);
         if (!task || TERMINAL.has(task.status)) continue;
-        const detail = formatSessionTaskSlotRecoveryDetail({
-          taskLabel: task.shortName || task.title,
-          laneKey: slot.laneKey,
-          occupiedMs,
+        const detail = formatSessionCommandTaskIdleFailure({
+          idleMs: occupiedMs,
           locale,
         });
         void this.settle(task, 'failed', detail);
+        this.cancelIdleRun(task.id);
       }
     } finally {
       for (const slot of recovery.startable) {
@@ -478,6 +486,9 @@ export class SessionCommandCenter {
     const task = this.tasksBySession.get(sessionId)?.get(taskId);
     if (!task || TERMINAL.has(task.status)) return;
 
+    this.ledger(sessionId).touch(taskId);
+    this.noteApprovalEvent(taskId, event);
+
     // tool_call_start 只记「这个 call id 是哪个工具」，供 tool_call_end 落
     // lastToolFailure.tool / 对比同名工具的后续成功；end 时即删，map 只活在途调用。
     if (event.type === 'tool_call_start') {
@@ -553,6 +564,73 @@ export class SessionCommandCenter {
     };
     task.updatedAt = Date.now();
     this.projectTask(task);
+  }
+
+  private noteApprovalEvent(taskId: string, event: AgentEvent): void {
+    if (event.type !== 'permission_request') return;
+    const data = event.data as { id?: unknown; resolved?: unknown } | undefined;
+    if (!data || typeof data.id !== 'string' || data.id.length === 0) return;
+    const pending = this.pendingApprovalIdsByTask.get(taskId) ?? new Set<string>();
+    if (data.resolved === true) pending.delete(data.id);
+    else pending.add(data.id);
+    if (pending.size === 0) this.pendingApprovalIdsByTask.delete(taskId);
+    else this.pendingApprovalIdsByTask.set(taskId, pending);
+  }
+
+  /**
+   * Live orchestrator state wins when TaskManager can answer. The event set is
+   * the fallback for a manager that does not expose the query (unit fakes).
+   * A desktop approval does not emit a resolution event. When that wait ends,
+   * start the idle window at this tick instead of at the original request.
+   */
+  private shouldSkipIdleExpiry(slot: { workItemId: string; sessionId: string }): boolean {
+    if (this.taskAwaitsApproval(slot.workItemId)) return true;
+    if (!this.pendingApprovalIdsByTask.has(slot.workItemId)) return false;
+    this.ledger(slot.sessionId).touch(slot.workItemId);
+    this.pendingApprovalIdsByTask.delete(slot.workItemId);
+    return true;
+  }
+
+  private taskAwaitsApproval(taskId: string): boolean {
+    const live = this.liveApprovalPending(taskId);
+    if (live !== null) return live;
+    return (this.pendingApprovalIdsByTask.get(taskId)?.size ?? 0) > 0;
+  }
+
+  private liveApprovalPending(taskId: string): boolean | null {
+    const manager = this.manager as TaskManager & {
+      hasPendingBackgroundPermission?(taskId: string): boolean;
+    };
+    if (typeof manager.hasPendingBackgroundPermission !== 'function') return null;
+    try {
+      return manager.hasPendingBackgroundPermission(taskId);
+    } catch (error) {
+      logger.warn('Failed to read whether a background task is waiting for approval', {
+        taskId,
+        reason: 'idle_timeout_approval_query_failed',
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
+  private cancelIdleRun(taskId: string): void {
+    try {
+      const cancel = this.manager.cancelBackgroundTask(taskId);
+      void Promise.resolve(cancel).catch((error: unknown) => {
+        logger.warn('Failed to cancel a background task after it stopped responding', {
+          taskId,
+          reason: 'idle_timeout_cancel_failed',
+          message: error instanceof Error ? error.message : String(error),
+        });
+      });
+    } catch (error) {
+      logger.warn('Failed to cancel a background task after it stopped responding', {
+        taskId,
+        reason: 'idle_timeout_cancel_failed',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private async settle(

@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TaskManager, TaskManagerEvent } from '../../../src/host/task/TaskManager';
 import type { AgentEvent } from '../../../src/shared/contract';
 import {
@@ -13,6 +13,10 @@ import {
   resetBackgroundTaskLedgerForTest,
 } from '../../../src/host/task/backgroundTaskLedger';
 import { createWorkspaceScope } from '../../../src/host/runtime/workspaceScope';
+import {
+  SESSION_COMMAND_TASK_IDLE_TIMEOUT_MS,
+  resolveSessionCommandTaskIdleTimeoutMs,
+} from '../../../src/shared/constants/sessionCommandCenter';
 
 const PROJECT_SCOPE = createWorkspaceScope('project-session-a', [{
   sourceId: 'source-session-a',
@@ -573,5 +577,142 @@ describe('SessionCommandCenter', () => {
     expect(projected?.status).toBe('failed');
     expect(projected?.progress?.lastToolFailure).toBeUndefined();
     center.dispose();
+  });
+});
+
+const IDLE_TIMEOUT_ENV = 'CODE_AGENT_SESSION_TASK_IDLE_TIMEOUT_MS';
+
+describe('SessionCommandCenter idle expiry', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-24T00:00:00.000Z'));
+    resetSessionTaskConcurrencyPoolForTest();
+    resetBackgroundTaskLedgerForTest();
+    delete process.env[IDLE_TIMEOUT_ENV];
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    delete process.env[IDLE_TIMEOUT_ENV];
+  });
+
+  it('does not expire a task that keeps emitting events past the idle window', async () => {
+    const manager = new FakeTaskManager();
+    const wakeForegroundBrain = vi.fn().mockResolvedValue(undefined);
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn().mockResolvedValue(undefined),
+      wakeForegroundBrain,
+      slotLedgerOptions: { slotTimeoutMs: 30_000, cleanupIntervalMs: 1_000 },
+      slotRecoveryLocale: 'en',
+    });
+    const spawned = await center.spawn(input(1, 'report'));
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+
+    await vi.advanceTimersByTimeAsync(20_000);
+    manager.emitAgent('session-a', {
+      type: 'message',
+      data: { id: 'msg-1', role: 'assistant', content: 'still working', timestamp: Date.now() },
+    }, spawned.task.id);
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    expect(center.list('session-a')[0]?.status).toBe('running');
+    expect(manager.cancelBackgroundTask).not.toHaveBeenCalled();
+    expect(wakeForegroundBrain).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(center.list('session-a')[0]).toMatchObject({
+      status: 'failed',
+      detail: 'Background task failed: the command stopped responding for 30 seconds',
+    });
+    center.dispose();
+  });
+
+  it('does not expire a task with a pending approval', async () => {
+    const manager = new FakeTaskManager();
+    const wakeForegroundBrain = vi.fn().mockResolvedValue(undefined);
+    const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn().mockResolvedValue(undefined),
+      wakeForegroundBrain,
+      slotLedgerOptions: { slotTimeoutMs: 5_000, cleanupIntervalMs: 1_000 },
+      slotRecoveryLocale: 'en',
+    });
+    const spawned = await center.spawn(input(1, 'report'));
+    if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+
+    manager.emitAgent('session-a', {
+      type: 'permission_request',
+      data: {
+        id: 'perm-1',
+        type: 'command',
+        tool: 'Bash',
+        details: { command: 'sleep 900' },
+        timestamp: Date.now(),
+      },
+    }, spawned.task.id);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(center.list('session-a')[0]?.status).toBe('running');
+    expect(manager.cancelBackgroundTask).not.toHaveBeenCalled();
+    expect(wakeForegroundBrain).not.toHaveBeenCalled();
+
+    manager.emitAgent('session-a', {
+      type: 'permission_request',
+      data: {
+        id: 'perm-1',
+        type: 'command',
+        tool: 'Bash',
+        details: { command: 'sleep 900' },
+        timestamp: Date.now(),
+        resolved: true,
+        decision: 'once',
+      },
+    }, spawned.task.id);
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(center.list('session-a')[0]?.status).toBe('running');
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(center.list('session-a')[0]?.status).toBe('failed');
+    expect(manager.cancelBackgroundTask).toHaveBeenCalledTimes(1);
+    center.dispose();
+  });
+
+  it('uses the 30 minute idle default unless the env or injected ledger options override it', async () => {
+    expect(SESSION_COMMAND_TASK_IDLE_TIMEOUT_MS).toBe(30 * 60 * 1_000);
+    expect(resolveSessionCommandTaskIdleTimeoutMs({})).toBe(SESSION_COMMAND_TASK_IDLE_TIMEOUT_MS);
+    expect(resolveSessionCommandTaskIdleTimeoutMs({ [IDLE_TIMEOUT_ENV]: '120000' })).toBe(120_000);
+    expect(resolveSessionCommandTaskIdleTimeoutMs({ [IDLE_TIMEOUT_ENV]: 'nope' })).toBe(SESSION_COMMAND_TASK_IDLE_TIMEOUT_MS);
+
+    process.env[IDLE_TIMEOUT_ENV] = '20000';
+    const envManager = new FakeTaskManager();
+    const envCenter = new SessionCommandCenter(envManager as unknown as TaskManager, {
+      projectTerminalResult: vi.fn().mockResolvedValue(undefined),
+      wakeForegroundBrain: vi.fn().mockResolvedValue(undefined),
+      slotLedgerOptions: { cleanupIntervalMs: 1_000 },
+      slotRecoveryLocale: 'en',
+    });
+    const envSpawned = await envCenter.spawn(input(1, 'report'));
+    if (envSpawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+    await vi.advanceTimersByTimeAsync(19_000);
+    expect(envCenter.list('session-a')[0]?.status).toBe('running');
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(envCenter.list('session-a')[0]?.status).toBe('failed');
+    envCenter.dispose();
+
+    resetSessionTaskConcurrencyPoolForTest();
+    resetBackgroundTaskLedgerForTest();
+    process.env[IDLE_TIMEOUT_ENV] = '20000';
+    const injected = new FakeTaskManager();
+    const injectedCenter = new SessionCommandCenter(injected as unknown as TaskManager, {
+      projectTerminalResult: vi.fn().mockResolvedValue(undefined),
+      wakeForegroundBrain: vi.fn().mockResolvedValue(undefined),
+      slotLedgerOptions: { slotTimeoutMs: 5_000, cleanupIntervalMs: 1_000 },
+      slotRecoveryLocale: 'en',
+    });
+    const injectedSpawned = await injectedCenter.spawn(input(2, 'research'));
+    if (injectedSpawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(injectedCenter.list('session-a')[0]?.status).toBe('running');
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(injectedCenter.list('session-a')[0]?.status).toBe('failed');
+    injectedCenter.dispose();
   });
 });

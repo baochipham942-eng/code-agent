@@ -16,8 +16,13 @@
  *      shipped as Tauri app resources, so an external require would crash the
  *      packaged app. This is the reliable, CI-safe gate.
  *   2. RUNTIME (best-effort): boot the bundle with the must-bundle libs hidden
- *      from node_modules and fail if a MODULE_NOT_FOUND occurs at startup. Other
- *      boot outcomes (env-specific: keychain, native deps, MCP) are not failures.
+ *      from node_modules and fail (exit 1) if a MODULE_NOT_FOUND at startup hits
+ *      a must-bundle lib or anything under dist/native/** — this gate boots in
+ *      source mode, where native deps must resolve through package resolution
+ *      (ADR-086), so a dist/native miss can only be re-introduced path probing.
+ *      Third-party in-package probes (e.g. keytar's build/Release/keytar.node on
+ *      a --ignore-scripts job) and other env-specific outcomes (keychain, MCP)
+ *      stay warn+pass.
  *
  * Usage: node scripts/verify-webserver-boot.mjs   (run after `npm run build:web`)
  */
@@ -100,22 +105,42 @@ function isMustBundle(modPath) {
   const base = modPath.split(/[\\/]/).pop();
   return MUST_BE_BUNDLED.some((m) => modPath === m || base === m || modPath.endsWith(`/${m}`));
 }
+function isDistNativeMiss(modPath) {
+  // True when the missing module lives under a `dist/native` path segment
+  // (either separator). That is bundle-mode territory (ADR-086); this gate boots
+  // in source mode, where such a miss can only mean re-introduced path probing.
+  return /(?:^|[\\/])dist[\\/]native(?:[\\/]|$)/.test(modPath);
+}
 function scan(chunk) {
   out += chunk;
-  // Only a MUST-bundle lib missing at boot is our bug. Other missing modules
-  // (e.g. `dist/native/better-sqlite3` not built in a lightweight web-only job)
-  // are env/setup issues — let the exit/timeout handler warn+pass instead.
-  const miss = out.match(/Cannot find module '([^']+)'/);
-  if (miss && isMustBundle(miss[1])) {
-    finish(1, `runtime boot: must-bundle lib '${miss[1]}' missing at boot — it is esbuild-external, not bundled.`);
-    return;
+  // Judge EVERY `Cannot find module '…'` in the accumulated output, not just the
+  // first — an earlier env-specific miss must not hide a later one. Red when the
+  // miss is must-bundle OR under dist/native/** (source mode never reads
+  // dist/native — ADR-086). Third-party in-package probes (e.g. keytar's
+  // ../build/Release/keytar.node) are env issues: they fall through to the
+  // exit/timeout handlers' warn+pass.
+  const misses = [...out.matchAll(/Cannot find module '([^']+)'/g)].map((m) => m[1]);
+  for (const miss of misses) {
+    if (isMustBundle(miss)) {
+      finish(1, `runtime boot: must-bundle lib '${miss}' missing at boot — it is esbuild-external, not bundled.`);
+      return;
+    }
+    if (isDistNativeMiss(miss)) {
+      finish(
+        1,
+        `runtime boot: '${miss}' missing under dist/native — native deps must resolve through package resolution in source mode (ADR-086); someone re-added dist/native path probing.`,
+      );
+      return;
+    }
   }
   if (out.includes(READY)) finish(0, 'runtime boot reached HTTP stage with must-bundle libs hidden.');
 }
 child.stdout.on('data', (d) => scan(d.toString()));
 child.stderr.on('data', (d) => scan(d.toString()));
-// Env-specific boot failures (keychain/native/MCP in CI) are NOT gate failures —
-// the static layer already guarantees the bundling invariant.
+// Env-specific boot failures (keychain, third-party in-package native probes
+// such as keytar's, MCP in CI) are NOT gate failures — a dist/native miss would
+// already have gone red in scan(); the static layer guarantees the bundling
+// invariant.
 child.on('exit', () => {
   if (settled) return;
   settled = true;

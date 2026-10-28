@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { Server } from '@modelcontextprotocol/server';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
-import { INTERACTION_TIMEOUTS } from '../../../src/shared/constants';
+import { INTERACTION_TIMEOUTS, MCP_TIMEOUTS } from '../../../src/shared/constants';
 import type { MCPElicitationResponse } from '../../../src/shared/contract';
 import { setBrowserWindowInteractionProbe } from '../../../src/host/platform/windowBridge';
 
@@ -61,6 +61,51 @@ async function createElicitingTransport(): Promise<{ client: Client; registry: M
   server.setRequestHandler('tools/call', async (request, context) => {
     if (request.params.name === 'stuck_tool') {
       return new Promise(() => {});
+    }
+    if (request.params.name === 'export_with_confirm') {
+      // rework r1：慢导出先弹确认，等人期间持续报进度，应答后再报一跳收尾
+      const progressToken = (request.params as { _meta?: { progressToken?: number | string } })._meta?.progressToken;
+      let answered = false;
+      const confirmation = context.mcpReq.elicitInput({
+        mode: 'form',
+        message: '请确认导出范围',
+        requestedSchema: {
+          type: 'object',
+          properties: { workspace: { type: 'string' } },
+          required: ['workspace'],
+        },
+      }, { timeout: INTERACTION_TIMEOUTS.PARKED_APPROVAL }).then((response) => {
+        answered = true;
+        return response;
+      }).catch(() => undefined);
+      await new Promise<void>((resolve) => {
+        let ticks = 0;
+        const tick = async () => {
+          ticks += 1;
+          if (progressToken !== undefined) {
+            try {
+              await context.mcpReq.notify({
+                method: 'notifications/progress',
+                params: { progressToken, progress: ticks },
+              });
+            } catch {
+              // 客户端超时/取消后 transport 半关：停止报进度
+              resolve();
+              return;
+            }
+          }
+          if (ticks >= 3 && answered) {
+            resolve();
+            return;
+          }
+          setTimeout(tick, 10_000);
+        };
+        setTimeout(tick, 10_000);
+      });
+      await confirmation;
+      return {
+        content: [{ type: 'text', text: 'export done after confirm' }],
+      };
     }
     const elicitation = await context.mcpReq.elicitInput({
       mode: 'form',
@@ -257,5 +302,40 @@ describe('MCP tool transport interaction timeout', () => {
     await expect(consent).resolves.toMatchObject({ granted: true });
     completeTool?.({ content: [{ type: 'text', text: 'ok' }], isError: false });
     await expect(result).resolves.toMatchObject({ success: true, output: 'ok' });
+  });
+
+  it('挂起审批期间进度续期不消耗总上限：跨过 10 分钟不掐，应答后照常完成', async () => {
+    platformMocks.hasInteractiveUi.mockReturnValue(true);
+    setBrowserWindowInteractionProbe(() => true);
+    const { client, registry } = await createElicitingTransport();
+    vi.useFakeTimers();
+
+    const result = registry.callExternalTool(
+      'tool-progress-parked',
+      SERVER_NAME,
+      'export_with_confirm',
+      {},
+      client,
+    );
+    await vi.waitFor(() => expect(platformMocks.send).toHaveBeenCalledOnce());
+
+    // 确认挂起 + 连接器每 10 秒报进度：跨过 CALL_TOOL_MAX_TOTAL（10 分钟）不被调用预算掐断
+    await vi.advanceTimersByTimeAsync(MCP_TIMEOUTS.CALL_TOOL_MAX_TOTAL + 5_000);
+    const marker = Symbol('pending');
+    await expect(Promise.race([result, Promise.resolve(marker)])).resolves.toBe(marker);
+
+    const request = platformMocks.send.mock.calls[0]?.[1] as { id: string };
+    await responseHandler?.({}, {
+      requestId: request.id,
+      action: 'accept',
+      content: { workspace: '/tmp/export-project' },
+    });
+
+    // 应答后的下一条进度也不能把总上限已过的调用掐死
+    await vi.advanceTimersByTimeAsync(30_000);
+    await expect(result).resolves.toMatchObject({
+      success: true,
+      output: 'export done after confirm',
+    });
   });
 });

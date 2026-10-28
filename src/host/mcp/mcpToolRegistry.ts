@@ -54,7 +54,7 @@ interface MCPToolRegistryCallOptions {
 interface InteractionAwareRequestOptions {
   timeout: number;
   signal?: AbortSignal;
-  /** 进度通知续期：按基础预算重挂本地看门狗，但不超过 CALL_TOOL_MAX_TOTAL 总上限 */
+  /** 进度通知续期：按基础预算重挂本地看门狗，但不超过 CALL_TOOL_MAX_TOTAL 总上限（挂起审批期间不消耗上限） */
   refresh(): void;
   dispose(): void;
 }
@@ -71,7 +71,7 @@ function createInteractionAwareRequestOptions(
 ): InteractionAwareRequestOptions {
   const interactive = hasInteractiveUi();
   const watchdog = new AbortController();
-  const totalDeadline = Date.now() + MCP_TIMEOUTS.CALL_TOOL_MAX_TOTAL;
+  let totalDeadline = Date.now() + MCP_TIMEOUTS.CALL_TOOL_MAX_TOTAL;
   let timeout: NodeJS.Timeout | undefined;
   let disposed = false;
   const abortForTimeout = () => {
@@ -123,8 +123,13 @@ function createInteractionAwareRequestOptions(
       ? AbortSignal.any([callerSignal, watchdog.signal])
       : watchdog.signal,
     refresh: () => {
-      // 进度续期只封顶进度路径：到总上限即掐，交互态挂起审批的再挂钟仍走完整预算。
       if (disposed) return;
+      // 挂起审批不受调用预算约束：pending 人工输入时不因总上限掐断，等人期间也不
+      // 消耗上限（窗口顺延）；再挂钟交给交互变化回调（交互态）/结算看门狗（无头态）。
+      if (hasPendingMcpInteraction(serverName)) {
+        totalDeadline = Date.now() + MCP_TIMEOUTS.CALL_TOOL_MAX_TOTAL;
+        return;
+      }
       const remaining = totalDeadline - Date.now();
       if (remaining <= 0) {
         abortForTimeout();

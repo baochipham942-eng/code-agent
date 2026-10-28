@@ -277,11 +277,10 @@ async function requestDevToolPermission(
       timer,
     });
 
-    broadcastSSE('agent:event', {
+    broadcastSSE('agent:event', envelopeWebAgentEvent(sessionId, {
       type: 'permission_request',
       data: fullRequest,
-      sessionId,
-    });
+    }));
   });
 }
 

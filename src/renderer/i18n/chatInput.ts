@@ -73,6 +73,9 @@ export const chatInputZh = {
     iactChipConfirmation: '我选择了建议项：『{label}』。请按该选项的语义继续；若该选项表示由我自行处理，则本轮到此为止，不要代替我执行。',
     readOnlyNotice: '这个会话是只读的，不能在这里继续输入。',
     readOnlyNewSession: '新开会话继续',
+    unsentDraftNotice: '上次输入框里还有一段内容：「{preview}」',
+    unsentDraftPutBack: '放回输入框',
+    unsentDraftDiscard: '丢弃',
   },
   scheduleComposer: {
     title: '创建定时任务',
@@ -513,6 +516,9 @@ export const chatInputEn: typeof chatInputZh = {
     iactChipConfirmation: 'I selected the suggested option: "{label}". Please continue based on what that option means — if it means I\'ll handle this myself, stop here for this turn and don\'t do it for me.',
     readOnlyNotice: 'This session is read-only and cannot take more input here.',
     readOnlyNewSession: 'Start a new session to continue',
+    unsentDraftNotice: 'There is still text from the input box: "{preview}"',
+    unsentDraftPutBack: 'Put it back in the input',
+    unsentDraftDiscard: 'Discard',
   },
   scheduleComposer: {
     title: 'Create scheduled task',

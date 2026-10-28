@@ -205,15 +205,9 @@ export function PermissionCard({
     switch (level) {
       case 'once':
       case 'always':
-        // always 只会由遗留权限记忆命中触发（新卡不再提供该档），行为照旧：单次放行，
-        // 后续免询问靠记忆本身。
         return 'allow';
       case 'session':
         return 'allow_session';
-      case 'run':
-        return 'allow_run';
-      case '24h':
-        return 'allow_24h';
       case 'deny':
       case 'never':
       default:
@@ -232,9 +226,6 @@ export function PermissionCard({
       processedRequestRef.current = request.id;
 
       try {
-        // N-PERM-GRANT-TIERS：run / 24h 两档不进 renderer 权限记忆——真源在 host 侧
-        // toolGrantStore（真到期、设置页可见可撤）。这里只保留遗留 session/always/never
-        // 记忆路径（新卡不再产生 session/always 新条目）。
         if (!appGrantCard && (level === 'session' || level === 'always' || level === 'never') && request.forceConfirm !== true) {
           const memoryReq: PermissionRequestForMemory = {
             id: request.id,
@@ -365,14 +356,14 @@ export function PermissionCard({
           if (!hideStandingGrants) {
             e.preventDefault();
             e.stopPropagation();
-            handleApproval(appGrantCard ? 'session' : 'run');
+            handleApproval('session');
           }
           break;
         case 'a':
           if (!hideStandingGrants) {
             e.preventDefault();
             e.stopPropagation();
-            handleApproval(appGrantCard ? 'always' : '24h');
+            handleApproval('always');
           }
           break;
       }
@@ -414,13 +405,10 @@ export function PermissionCard({
     },
   ] : [
     { id: 'once', label: p.optionOnce, description: p.optionOnceDesc, shortcut: 'y' },
-    // N-PERM-GRANT-TIERS：通用工具卡的常驻档换成「到这次做完为止 / 24 小时内允许」——
-    // host 侧 toolGrantStore 真源，到期/结束真失效；不再提供 renderer 记忆的
-    // 「本会话/始终」（遗留 localStorage 条目命中仍按原样放行）。
     ...(!hideStandingGrants
       ? [
-          { id: 'run', label: p.optionRun, description: p.optionRunDesc, shortcut: 's' },
-          { id: '24h', label: p.option24h, description: p.option24hDesc, shortcut: 'a' },
+          { id: 'session', label: p.optionSession, description: p.optionSessionDesc, shortcut: 's' },
+          { id: 'always', label: p.optionAlways, description: p.optionAlwaysDesc, shortcut: 'a' },
         ]
       : []),
     { id: 'deny', label: p.optionDeny, description: p.optionDenyDesc, shortcut: 'n' },

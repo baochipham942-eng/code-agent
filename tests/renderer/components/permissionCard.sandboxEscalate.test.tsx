@@ -108,8 +108,6 @@ describe('sandbox escalation approval card', () => {
     expect(html).not.toContain('允许一次');
     expect(html).not.toContain('本会话允许');
     expect(html).not.toContain('始终允许');
-    expect(html).not.toContain('到这次做完为止');
-    expect(html).not.toContain('24 小时内允许');
     expect(html).not.toContain('仍然执行');
   });
 
@@ -267,8 +265,8 @@ describe('other approval cards stay word-for-word', () => {
     expect(html).toContain(GENERIC_CONSEQUENCE);
     expect(html).toContain('>echo hi<');
     expect(buttonLabel(html, '允许一次', 'y')).toBe(true);
-    expect(buttonLabel(html, '到这次做完为止', 's')).toBe(true);
-    expect(buttonLabel(html, '24 小时内允许', 'a')).toBe(true);
+    expect(buttonLabel(html, '本会话允许', 's')).toBe(true);
+    expect(buttonLabel(html, '始终允许', 'a')).toBe(true);
     expect(buttonLabel(html, '拒绝', 'n')).toBe(true);
     expect(html).not.toContain('沙盒拦截了这一步');
     expect(html).not.toContain('允许仅这一次');
@@ -292,8 +290,6 @@ describe('other approval cards stay word-for-word', () => {
     expect(buttonLabel(html, '拒绝', 'n')).toBe(true);
     expect(html).not.toContain('允许一次');
     expect(html).not.toContain('本会话允许');
-    expect(html).not.toContain('到这次做完为止');
-    expect(html).not.toContain('24 小时内允许');
     expect(html).not.toContain('沙盒拦截了这一步');
     expect(html).not.toContain(GENERIC_CONSEQUENCE);
   });
@@ -308,8 +304,8 @@ describe('other approval cards stay word-for-word', () => {
     expect(html).toContain('data-view-mode="compact"');
     expect(html).toContain('允许写入 notes.md？');
     expect(buttonLabel(html, '允许一次', 'y')).toBe(true);
-    expect(buttonLabel(html, '到这次做完为止', 's')).toBe(true);
-    expect(buttonLabel(html, '24 小时内允许', 'a')).toBe(true);
+    expect(buttonLabel(html, '本会话允许', 's')).toBe(true);
+    expect(buttonLabel(html, '始终允许', 'a')).toBe(true);
     expect(buttonLabel(html, '拒绝', 'n')).toBe(true);
     expect(html).not.toContain('将写入 notes.md');
     expect(html).not.toContain('沙盒拦截了这一步');

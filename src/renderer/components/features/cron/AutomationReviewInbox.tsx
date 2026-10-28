@@ -261,32 +261,6 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                               {cc.parkedAlwaysAllow.replace('{target}', item.standingGrantTarget ?? '')}
                             </button>
                           )}
-                          {/* N-PERM-GRANT-TIERS：与交互审批卡同款两档。run 档只对本次运行
-                              生效（run 结束即失效）；24h 档跨运行 24 小时。 */}
-                          {!isPairing && (
-                            <>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="secondary"
-                                disabled={busyId === item.id}
-                                onClick={() => handleResolveParked(item, 'allow_run')}
-                                data-testid="parked-allow-run"
-                              >
-                                {cc.parkedAllowRun}
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="secondary"
-                                disabled={busyId === item.id}
-                                onClick={() => handleResolveParked(item, 'allow_24h')}
-                                data-testid="parked-allow-24h"
-                              >
-                                {cc.parkedAllow24h}
-                              </Button>
-                            </>
-                          )}
                           <button /* ds-allow:button: 同上，收件箱行内超小文本按钮 */
                             onClick={() => handleResolveParked(item, 'deny')}
                             disabled={busyId === item.id}

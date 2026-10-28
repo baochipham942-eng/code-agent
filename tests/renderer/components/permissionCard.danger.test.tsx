@@ -98,7 +98,7 @@ describe('PermissionCard 危险度与强制确认分离', () => {
     expect(html.match(/危险/gu)).toHaveLength(1);
   });
 
-  it('普通写文件（既不危险也不强制）保留常驻授权入口（N-PERM-GRANT-TIERS 两档）', () => {
+  it('普通写文件（既不危险也不强制）保留常驻授权入口', () => {
     const html = render({
       id: 'req-4',
       tool: 'Write',
@@ -108,8 +108,6 @@ describe('PermissionCard 危险度与强制确认分离', () => {
     });
 
     expect(html).not.toContain(DANGER_COPY);
-    // 常驻入口的形态换成两档新文案（真源 host 侧 toolGrantStore）
-    expect(html).toContain('到这次做完为止');
-    expect(html).toContain('24 小时内允许');
+    expect(html).toContain(STANDING_GRANT);
   });
 });

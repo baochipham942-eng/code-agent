@@ -20,10 +20,8 @@ export type PermissionType =
 export type ApprovalLevel =
   | 'once'      // 允许一次
   | 'deny'      // 拒绝
-  | 'session'   // 本次会话允许（应用卡 / 遗留权限记忆命中）
-  | 'always'    // 始终允许（应用卡 / 遗留权限记忆命中）
-  | 'run'       // 到这次做完为止（N-PERM-GRANT-TIERS run 档）
-  | '24h'       // 24 小时内允许（N-PERM-GRANT-TIERS 24h 档）
+  | 'session'   // 本次会话允许
+  | 'always'    // 始终允许
   | 'never';    // 永不允许
 
 // 危险等级

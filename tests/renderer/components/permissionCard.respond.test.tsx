@@ -133,9 +133,7 @@ describe('PermissionCard respond path', () => {
     });
     render(<PermissionCard />);
 
-    // N-PERM-GRANT-TIERS 后 s/a 两档不再写 renderer 记忆（真源在 host 侧
-    // toolGrantStore）；仍会写记忆的直发档只剩 Shift+N（永不允许）。
-    fireEvent.keyDown(window, { key: 'N', shiftKey: true });
+    fireEvent.keyDown(window, { key: 's' });
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledTimes(1);
@@ -147,7 +145,7 @@ describe('PermissionCard respond path', () => {
       expect(toastError).toHaveBeenCalledWith(expect.stringContaining('请重试'));
     });
 
-    fireEvent.keyDown(window, { key: 'N', shiftKey: true });
+    fireEvent.keyDown(window, { key: 's' });
 
     await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(setPendingPermissionRequest).toHaveBeenLastCalledWith(null));

@@ -76,11 +76,6 @@ export const decisionCardZh = {
       optionSessionDesc: '本次会话内同类操作不再询问',
       optionAlways: '始终允许',
       optionAlwaysDesc: '以后同类操作不再询问',
-      // N-PERM-GRANT-TIERS：通用工具卡两档（host 侧 toolGrantStore 真源，真到期）
-      optionRun: '到这次做完为止',
-      optionRunDesc: '这轮任务里同类操作不再询问，任务结束恢复询问',
-      option24h: '24 小时内允许',
-      option24hDesc: '24 小时内同类操作不再询问，到期自动恢复询问',
       optionDeny: '拒绝',
       optionDenyDesc: '不允许执行',
       computerApp: {
@@ -317,10 +312,6 @@ export const decisionCardEn: typeof decisionCardZh = {
       optionSessionDesc: 'Similar operations won’t ask again in this session',
       optionAlways: 'Always allow',
       optionAlwaysDesc: 'Similar operations won’t ask again',
-      optionRun: 'Until this task is done',
-      optionRunDesc: 'Similar operations won’t ask again until this task finishes',
-      option24h: 'Allow for 24 hours',
-      option24hDesc: 'Similar operations won’t ask again for the next 24 hours',
       optionDeny: 'Deny',
       optionDenyDesc: 'Do not run this operation',
       computerApp: {

@@ -14,7 +14,6 @@ import Database from 'better-sqlite3';
 
 vi.mock('../../../src/host/services/core/database/nativeLoader', () => ({
   loadBetterSqlite3: () => Database,
-  betterSqlite3CandidatePaths: () => [],
 }));
 
 const databaseState = vi.hoisted(() => ({

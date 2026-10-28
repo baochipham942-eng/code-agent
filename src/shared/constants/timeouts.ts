@@ -563,6 +563,8 @@ export const CRON_GUARDRAILS = {
   FIRE_JITTER_PERIOD_RATIO: 0.1,
   /** jitter 窗口上限 (ms)：天级任务也不会被推迟超过 15 分钟 */
   FIRE_JITTER_MAX_MS: 15 * 60_000,
+  /** 显式 cron 表达式的 jitter 上限 (ms)：保持用户选定的分钟响应及时。 */
+  FIRE_JITTER_CRON_MAX_MS: 30_000,
   /** 循环任务连续失败达到此次数后自动停用（防静默烧钱死循环）——退避 exhausted 后的最终停用档 */
   MAX_CONSECUTIVE_FAILURES: 5,
   /** 失败退避基数：第 n 次重试前等待 min(BASE × FACTOR^(n-1), MAX_INTERVAL) */

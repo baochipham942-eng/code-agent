@@ -1,5 +1,5 @@
 import { IPC_DOMAINS } from '@shared/ipc';
-import type { CronGroupListenCheck } from '@shared/contract/cron';
+import type { CronGroupListenCheck, CronMailSourcesResult } from '@shared/contract/cron';
 import type {
   CronJobDefinition,
   CronJobExecution,
@@ -66,6 +66,11 @@ export const cronClient = {
 
   getStats() {
     return invokeCron<CronServiceStats>('getStats');
+  },
+
+  /** 「新邮件」触发源的账号/邮箱目录（含可用性 reason 分类；编辑器与 /schedule 确认卡共用）。 */
+  listMailSources() {
+    return invokeCron<CronMailSourcesResult>('listMailSources');
   },
 
   generateFromPrompt(prompt: string) {

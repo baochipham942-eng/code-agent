@@ -532,6 +532,10 @@ describe('ExpertPanel', () => {
     await waitFor(() => expect(screen.getByTestId('role-bound-automations-list')).toBeTruthy());
     expect(screen.getByTestId('role-bound-automation-daily-report').textContent).toContain('每 1 天');
     expect(screen.getByTestId('role-bound-automation-daily-report').textContent).toContain('启用');
+    expect(screen.getByTestId('role-bound-automation-daily-report').textContent).toContain('上次运行：还没跑过');
+    expect(screen.getByTestId('role-bound-automation-run-daily-report').textContent).toContain('现在运行');
+    expect(screen.getByTestId('role-bound-automation-toggle-daily-report').textContent).toContain('暂停');
+    expect(screen.queryByTestId('role-bound-automation-toggle-wake')).toBeNull();
     expect(screen.getByTestId('role-bound-automation-managed-wake').textContent).toContain('由上方「主动性」设置管理');
   });
 

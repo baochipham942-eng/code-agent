@@ -2,7 +2,7 @@
 // Persistence Health Contract
 // ============================================================================
 
-import type { RendererServeDecision } from './desktopShell';
+import type { RendererServeDecision, RendererServeDecisionPublic } from './desktopShell';
 import type { BuildInfo } from './buildInfo';
 
 export type PersistenceStatus = 'available' | 'unavailable' | 'degraded' | 'recovered';
@@ -34,10 +34,13 @@ export interface WebHealthPublic {
    * 判「服务能不能用」要看这个字段，不要看 status / startup token。
   */
   durableRunReady: boolean;
-  rendererServe: RendererServeDecision | null;
+  rendererServe: RendererServeDecisionPublic | null;
 }
 
-export interface WebHealthDetail extends WebHealthPublic {
+// `rendererServe` must be re-declared: the public projection drops all local paths,
+// but the authed detail route still returns the full decision.
+export interface WebHealthDetail extends Omit<WebHealthPublic, 'rendererServe'> {
+  rendererServe: RendererServeDecision | null;
   tauriBootConfigured: boolean;
   handlers: number;
   serverRoot: string;

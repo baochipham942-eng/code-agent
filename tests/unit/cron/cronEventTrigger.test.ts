@@ -564,11 +564,12 @@ describe('CronEventTrigger', () => {
 
       it('channel 源的 invalid-schedule 文案与历史逐字节相同', () => {
         const byteIdentical = "Invalid event schedule: source must be 'channel', eventName must be 'message', and accountId must be a non-empty string.";
-        // 刻意构造非法输入（同上 weeks 案例的放宽约定）：source 'webhook' 不在合法值域内，
+        // 刻意构造非法输入（同上 weeks 案例的放宽约定）：source 'carrier' 不在合法值域内
+        // （'webhook' 自 N-CRON-WEBHOOK-CLOUD-HOOK 起是合法源，有专属文案与分支测试），
         // 需要经 unknown 双转才能钉进 EventScheduleConfig 类型。
         expect(() => assertEventScheduleConstraints({
           ...base,
-          schedule: { type: 'event', source: 'webhook', accountId: 'acc-1', eventName: 'message' } as unknown as EventScheduleConfig,
+          schedule: { type: 'event', source: 'carrier', accountId: 'acc-1', eventName: 'message' } as unknown as EventScheduleConfig,
         })).toThrow(byteIdentical);
         expect(() => assertEventScheduleConstraints({
           ...base,
@@ -791,6 +792,33 @@ describe('CronEventTrigger', () => {
       await vi.advanceTimersByTimeAsync(40_000); // t=85s 下一趟（65s）发现 103 → 合批（75s）出 run
       expect(h.runs).toHaveLength(1);
       expect(h.runs[0].trigger.eventIds).toEqual(['gmail|INBOX|103']);
+    });
+
+    // N-TRIGGER-MAIL-CREATE-ENTRY-K1：编辑器现在能把 mail 任务改绑到别的邮箱——种子
+    // 键控二元组里的邮箱那一半同样要咬合（同账号 INBOX → Archive 改绑 = 新绑定重新播种）。
+    it('① 同账号改绑邮箱后同样重新播种：新邮箱存量未读不触发，之后新到邮件才触发', async () => {
+      const inbox: MailSummary[] = [mailMsg(1)];
+      const archive: MailSummary[] = [mailMsg(201)]; // 改绑目标的存量未读（洪水源）
+      const listMessages = vi.fn(async (_account: string, mailbox: string): Promise<MailSummary[]> =>
+        mailbox === 'INBOX' ? [...inbox] : [...archive]);
+      const h = createMailHarness([mailEventJob()], { listMessages });
+      await vi.advanceTimersByTimeAsync(5_000); // t=5s 首趟：INBOX 种子
+      expect(h.runs).toHaveLength(0);
+
+      // 编辑器改绑（updateJob）：同账号 INBOX → Archive（任务表下一 tick 自然生效）。
+      h.jobs[0] = mailEventJob({
+        schedule: {
+          type: 'event', source: 'connector', connector: 'mail', accountId: '_icloud',
+          mailbox: 'Archive', eventName: 'message', pollIntervalSec: 30, batchWindowSec: 10, minRunIntervalSec: 30,
+        },
+      });
+      await vi.advanceTimersByTimeAsync(40_000); // t=45s 改绑后首趟（35s）+ 合批窗（45s）：只重新播种，不出 run
+      expect(h.runs).toHaveLength(0);
+
+      archive.push(mailMsg(202));
+      await vi.advanceTimersByTimeAsync(40_000); // t=85s 下一趟（65s）发现 202 → 合批（75s）出 run
+      expect(h.runs).toHaveLength(1);
+      expect(h.runs[0].trigger.eventIds).toEqual(['_icloud|Archive|202']);
     });
 
     it('mailbox 缺省轮询 INBOX；显式 mailbox 逐字生效', async () => {

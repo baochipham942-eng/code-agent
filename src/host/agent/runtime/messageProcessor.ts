@@ -73,6 +73,7 @@ import { wasMessagePersistedByContextAssembly } from './contextAssembly/systemCo
 import { shouldEndRunForPlanApproval } from './planApprovalRunBoundary';
 import { isWriteBlockedDuringPlanExitFallback } from './planExitFallback';
 import { persistCancelledToolCallClosures } from './cancelledToolCallClosure';
+import { settleSteerDuringToolExecution } from './staleIntentSteer';
 import { emitArtifactRepairStopError } from './artifactRepairStopError';
 import { ensureUniqueToolCallIds } from './toolCallIdUniqueness';
 const logger = createLogger('MessageProcessor');
@@ -808,22 +809,12 @@ export class MessageProcessor {
     // h2A 实时转向
     if (this.ctx.turn.needsReinference) {
       this.ctx.turn.clearReinference();
-      logger.info('[AgentLoop] Steer detected during tool execution — saving results and re-inferring');
-      if (toolResults.length > 0) {
-        const partialResults = sanitizeToolResultsForHistoryWithCalls(toolResults, toolCalls);
-        const partialToolMessage: Message = {
-          id: this.contextAssembly.generateId(),
-          role: 'tool',
-          content: JSON.stringify(partialResults),
-          timestamp: Date.now(),
-          toolResults: partialResults,
-        };
-        await this.contextAssembly.addAndPersistMessage(partialToolMessage);
-        this.applyDeferredSkillActivations(toolResults);
-      }
-      this.ctx.onEvent({
-        type: 'interrupt_acknowledged',
-        data: { message: '已收到新指令，正在调整方向...' },
+      await settleSteerDuringToolExecution({
+        ctx: this.ctx,
+        contextAssembly: this.contextAssembly,
+        toolResults,
+        toolCalls,
+        applyDeferredSkillActivations: (results) => this.applyDeferredSkillActivations(results),
       });
       return 'continue';
     }

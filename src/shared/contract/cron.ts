@@ -157,10 +157,14 @@ export interface CronExpressionConfig {
 
 /**
  * Event-triggered schedule: the job is fired by local events (channel inbound
- * messages or connector polling), not by time. No listening port, no HTTP
- * endpoint, no public callback is involved.
+ * messages, connector polling, or webhook deliveries pushed by the Neo cloud
+ * relay), not by time. No listening port, no HTTP endpoint, no public callback
+ * is involved on this machine.
  */
-export type EventScheduleConfig = EventChannelScheduleConfig | EventConnectorMailScheduleConfig;
+export type EventScheduleConfig =
+  | EventChannelScheduleConfig
+  | EventConnectorMailScheduleConfig
+  | EventWebhookScheduleConfig;
 
 /**
  * Channel event schedule: the job is fired by inbound messages of a channel
@@ -207,6 +211,52 @@ export interface EventConnectorMailScheduleConfig {
   /** Minimum spacing between two runs (seconds). Default 60, floor 30. */
   minRunIntervalSec?: number;
 }
+
+/**
+ * Webhook event schedule (N-CRON-WEBHOOK-CLOUD-HOOK): the job is fired by
+ * deliveries that the Neo cloud relay pushes over the existing cloud event
+ * stream. External systems POST to a per-job hook URL on the relay; Neo never
+ * listens on a port itself, and the request body only ever enters the
+ * untrusted payload block. No accountId: the hook URL/token pair is the
+ * binding (minted per job by the relay, shown once, regenerable).
+ */
+export interface EventWebhookScheduleConfig {
+  type: 'event';
+  /** Event source: deliveries relayed from the Neo cloud webhook relay. */
+  source: 'webhook';
+  /** Event kind; only inbound hook deliveries ('message') exist today. */
+  eventName: 'message';
+  /** Events arriving within this window merge into one run (seconds). Default 10, max 300. */
+  batchWindowSec?: number;
+  /** Minimum spacing between two runs (seconds). Default 60, floor 30. */
+  minRunIntervalSec?: number;
+}
+
+/** mail 源账号/邮箱目录的账号项（mail connector list_accounts 的 data 项形状）。 */
+export interface CronMailSourceAccount {
+  name: string;
+}
+
+/**
+ * cron:listMailSources 的结果（N-TRIGGER-MAIL-CREATE-ENTRY-K1）：编辑器与 /schedule
+ * 确认卡的「新邮件」触发源账号/邮箱下拉数据源。ok:false 的 reason 与
+ * createDefaultMailReader 的失败分类同构（缺件 ≠ 未授权 ≠ 平台不支持 ≠ 读取失败），
+ * 供渲染层给出可区分的提示；这是可用性信息而非 IPC 错误，走 success:true + data。
+ */
+export type CronMailSourcesResult =
+  | {
+    ok: true;
+    /** mail connector 列出的本机 Mail 账户。 */
+    accounts: CronMailSourceAccount[];
+    /** 每个账户的可监听邮箱名（list_mailboxes）；单账户失败降级为空数组（其余账户照常）。 */
+    mailboxesByAccount: Record<string, string[]>;
+  }
+  | {
+    ok: false;
+    reason: 'connector-not-enabled' | 'not-authorized' | 'unsupported-platform' | 'read-error';
+    /** 失败细节（探测/读取的原始错误文本），只用于展示与日志，不参与判定。 */
+    detail?: string;
+  };
 
 /**
  * Action types for cron jobs
@@ -337,8 +387,12 @@ export interface RoleWakeAction {
  */
 export interface CronExecutionTrigger {
   kind: 'event' | 'schedule';
-  /** Event source: 'channel' (locally connected channel messages) or 'connector' (local connector polling). */
-  source?: 'channel' | 'connector';
+  /**
+   * Event source: 'channel' (locally connected channel messages), 'connector'
+   * (local connector polling), or 'webhook' (deliveries pushed by the Neo
+   * cloud webhook relay; these carry no accountId — the hook URL is the binding).
+   */
+  source?: 'channel' | 'connector' | 'webhook';
   /** Connector id; present iff source === 'connector'. Only 'mail' exists today. */
   connector?: 'mail';
   /** Channel account or mail account whose messages fired the run. */

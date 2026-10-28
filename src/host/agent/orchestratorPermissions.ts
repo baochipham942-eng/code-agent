@@ -372,6 +372,27 @@ export class OrchestratorPermissionIsland {
     logger.info(`Drained ${count} pending permission(s)`, { response });
   }
 
+  /**
+   * 用户中途改向：只作废还挂着的交互审批卡。停车（无人值守）审批不动，
+   * 也不写停车台账。解除语义与 drain 相同——机器取消，不是用户拒绝。
+   */
+  supersedeInteractivePendingApprovals(): void {
+    const interactive = [...this.pendingPermissions.entries()].filter(([, entry]) => !entry.parked);
+    for (const [id, entry] of interactive) {
+      noteCompanionApprovalSettlement({ requestId: id, outcome: 'cancelled' });
+      this.pendingPermissions.delete(id);
+      try {
+        this.onEvent({
+          type: 'permission_request',
+          data: { ...entry.request, resolved: true, decision: 'superseded' },
+        });
+      } catch (error) {
+        logger.warn('Superseded permission event could not be emitted; resolving cancelled anyway', error);
+      }
+      entry.resolve('deny', 'cancelled');
+    }
+  }
+
   /** B2: 懒取停车审批持久化仓库。注入优先（测试），否则回退 DB 单例（生产）。 */
   private getPendingApprovalRepo(): PendingApprovalRepository | null {
     if (this.injectedPendingApprovalRepo) return this.injectedPendingApprovalRepo;

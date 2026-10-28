@@ -9,6 +9,7 @@ import { permissionModeAutoApproves, type PermissionMode } from '../permissions/
 // N-PERM-POLICYVERSION E6：档位解析统一走 resolveSessionPermissionMode（无 override 时
 // 读 run 有效视图；子代理链的 sessionId 在模块内映射到本会话活跃 run 的快照）。
 import { resolveSessionPermissionMode } from '../tools/toolPermissionClassification';
+import { mustAskUnderAcceptEdits } from '../tools/externalSideEffect';
 import { isAgentWorktreePath } from './agentWorktreePath';
 import type { ToolExecutionRequest } from './subagentPipeline';
 import type { SubagentExecutionContext } from './subagentExecutorTypes';
@@ -116,6 +117,9 @@ export function createSubagentToolRuntime(input: {
           mode === 'bypassPermissions'
           || permissionModeAutoApproves(mode, getPermissionLevel(request.type))
         )
+        // acceptEdits 下连接器写以 type:'file_write' 进来，档位判据只看 type 会放过工具名——
+        // 出站 / 不可逆 / 进程类工具（mustAskUnderAcceptEdits）仍要落到 permission.request。
+        && !(mode === 'acceptEdits' && mustAskUnderAcceptEdits(request.tool))
       ) return true;
       return context.permission.request({ ...request, ...input.identity });
     },

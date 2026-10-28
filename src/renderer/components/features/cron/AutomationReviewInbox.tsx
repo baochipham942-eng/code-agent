@@ -385,10 +385,15 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                             )}
                             {record.config?.missedNotice ? (
                               <div className="text-[11px] text-badge-warning" data-testid="automation-review-missed">
-                                {cc.inboxMissedAt.replace(
-                                  '{time}',
-                                  new Date(record.config.missedNotice.scheduledAt).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN'),
-                                )}
+                                {record.config.missedNotice.reason === 'webhook-expired'
+                                  ? cc.inboxWebhookExpired.replace(
+                                    '{count}',
+                                    String(record.config.missedNotice.count ?? 0),
+                                  )
+                                  : cc.inboxMissedAt.replace(
+                                    '{time}',
+                                    new Date(record.config.missedNotice.scheduledAt).toLocaleString(language === 'en' ? 'en-US' : 'zh-CN'),
+                                  )}
                               </div>
                             ) : record.config?.loginWall ? (
                               <div className="text-[11px] text-badge-warning" data-testid="automation-review-login-wall">

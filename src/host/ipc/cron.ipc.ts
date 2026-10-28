@@ -8,10 +8,11 @@ import type { RawDomainRouteHandlers } from '../../shared/ipc/domainRoutes';
 import { CronSchemas, type CronDomainRequest } from '../../shared/ipc/schemas/cron';
 import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import { getCronService } from '../cron/cronService';
+import { getConnectorRegistry } from '../connectors/registry';
 import { ModelRouter } from '../model/modelRouter';
 import { createLogger } from '../services/infra/logger';
-import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../shared/constants';
-import type { CreateCronJobDefinition, CronJobDefinition } from '../../shared/contract/cron';
+import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
+import type { CreateCronJobDefinition, CronJobDefinition, CronMailSourcesResult } from '../../shared/contract/cron';
 
 const logger = createLogger('CronIPC');
 
@@ -64,6 +65,67 @@ function getUpdateCronJobRequest(source: unknown): { jobId: string; updates: Upd
   return { jobId, updates: restUpdates as unknown as UpdateCronJobPayload };
 }
 
+/**
+ * 列出 mail 触发源可绑定的账号与邮箱（N-TRIGGER-MAIL-CREATE-ENTRY-K1）。失败分类
+ * 与 cronMailPoller 的 createDefaultMailReader 同构：未注册（设置里没启用）=
+ * connector-not-enabled；探测不过（未授权/授权被拒）= not-authorized；readiness
+ * unavailable（非 macOS）= unsupported-platform；list_accounts 抛错 = read-error。
+ * readiness 非 ready 时先补一次 probe_access（重启后 readiness 回 unchecked，已授权
+ * 用户不该被逼去设置再点一次）。每个非 ok 分支都带 reason 记日志（降级留痕）。
+ */
+async function listMailSources(): Promise<CronMailSourcesResult> {
+  const mailConnector = getConnectorRegistry().get('mail');
+  if (!mailConnector) {
+    logger.warn('listMailSources unavailable (reason: connector-not-enabled): mail connector is not registered');
+    return { ok: false, reason: 'connector-not-enabled' };
+  }
+  const readiness = mailConnector.getCachedStatus?.().readiness;
+  if (readiness === 'unavailable') {
+    logger.warn('listMailSources unavailable (reason: unsupported-platform): mail connector reports unavailable');
+    return { ok: false, reason: 'unsupported-platform' };
+  }
+  if (readiness !== 'ready') {
+    try {
+      await mailConnector.execute('probe_access', {});
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      logger.warn(`listMailSources unavailable (reason: not-authorized, cached readiness: ${readiness ?? 'unknown'}): ${detail}`);
+      return { ok: false, reason: 'not-authorized', detail };
+    }
+  }
+  try {
+    const accountsResult = await mailConnector.execute('list_accounts', {});
+    const accounts = (Array.isArray(accountsResult.data) ? accountsResult.data : [])
+      .filter((item): item is { name: string } => isRecord(item) && typeof item.name === 'string' && item.name.trim() !== '')
+      .map((item) => ({ name: item.name }));
+    const mailboxesByAccount: Record<string, string[]> = {};
+    for (const account of accounts) {
+      try {
+        const mailboxesResult = await mailConnector.execute('list_mailboxes', { account: account.name });
+        const rawMailboxes = Array.isArray(mailboxesResult.data) ? mailboxesResult.data : [];
+        const mailboxes = rawMailboxes
+          .filter((item): item is { account: string; name: string } =>
+            isRecord(item) && typeof item.name === 'string' && item.name.trim() !== '')
+          // list_mailboxes 不带 account 过滤时返回所有账户的邮箱，按 account 字段收窄。
+          .filter((item) => !item.account || item.account === account.name)
+          .map((item) => item.name);
+        mailboxesByAccount[account.name] = mailboxes;
+      } catch (error) {
+        // 单账户邮箱列举失败不拖死整个目录：该账户降级为空列表（UI 回落默认 INBOX），
+        // 其余账户照常；失败原因记日志可区分。
+        const detail = error instanceof Error ? error.message : String(error);
+        logger.warn(`listMailSources mailbox listing failed for account ${account.name}: ${detail}`);
+        mailboxesByAccount[account.name] = [];
+      }
+    }
+    return { ok: true, accounts, mailboxesByAccount };
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    logger.warn(`listMailSources unavailable (reason: read-error): ${detail}`);
+    return { ok: false, reason: 'read-error', detail };
+  }
+}
+
 const CRON_GENERATION_SYSTEM_PROMPT = `你是一个定时任务配置助手。根据用户的自然语言描述，生成定时任务的 JSON 配置。
 
 只返回一个 JSON 对象，不要有其他文字。JSON 格式如下：
@@ -78,6 +140,7 @@ const CRON_GENERATION_SYSTEM_PROMPT = `你是一个定时任务配置助手。�
     // cron 类型: { "type": "cron", "expression": "cron表达式", "timezone": "Asia/Shanghai" }
     // at 类型: { "type": "at", "datetime": "ISO时间字符串" }
     // event 类型: { "type": "event", "source": "channel", "eventName": "message" }
+    //   或邮件监听: { "type": "event", "source": "connector", "connector": "mail", "eventName": "message" }
   },
   "action": {
     // agent 类型（最常用）: { "type": "agent", "agentType": "default", "prompt": "要让 AI 智能体执行的任务描述" }
@@ -99,7 +162,7 @@ const CRON_GENERATION_SYSTEM_PROMPT = `你是一个定时任务配置助手。�
 - 尽量从描述中推断合理的调度方式和参数
 - 错峰：小时级/天级的循环任务避免落在整点（分钟=0）扎堆触发——除非用户明确要求整点，cron 表达式的分钟位默认用一个非 0 值（如 17），"every" 间隔类型不受影响（会自动错峰）
 - 事件监听：用户想「盯着/监听某个群或会话，来了新消息就做某事」（如「关注发布群，有人提到发布就总结给我」「群里有消息就提醒我」）→ scheduleType 用 "event"，schedule 固定为 { "type": "event", "source": "channel", "eventName": "message" }，并在返回 JSON 顶层加 "groupName": 用户原话提到的群名（字符串；用户没点名具体群就省略这个字段）。不要编造 accountId 或 chatId——账号和群由用户稍后在确认卡里自己选。event 类型的动作必须是 agent。
-- 邮件请求不用 event：用户说「有新邮件时通知我」这类邮件触发暂不支持 event 创建（没有对应的创建界面），改用 every/cron 定时巡检（如每小时查一次邮箱）来近似表达。
+- 邮件监听：用户说「有新邮件时/来新邮件就做某事」（如「新邮件到了把它整理成待办」）→ scheduleType 用 "event"，schedule 固定为 { "type": "event", "source": "connector", "connector": "mail", "eventName": "message" }。不要编造 accountId 或 mailbox——邮件账号和邮箱由用户稍后在确认卡里自己选。event 类型的动作必须是 agent。
 - 可选地返回 restatement；其中 what 和 notifyWhen 都必须是面向用户的平实完整句子。若无法可靠推断，可省略整个 restatement 对象。
 - 只返回 JSON，不要任何解释`;
 
@@ -125,6 +188,11 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
     const filter = getCronJobFilter(payload);
     const jobs = cronService.listJobs(filter);
     return { success: true, data: jobs } satisfies IPCResponse;
+  },
+  listMailSources: async () => {
+    // 可用性结果（含 ok:false 的 reason 分类）走 success:true + data：这是结构化的
+    // 「现在能不能选账号」陈述，不是 IPC 层错误；渲染层按 reason 给可区分提示。
+    return { success: true, data: await listMailSources() } satisfies IPCResponse;
   },
   createJob: async (_ctx, payload) => {
     const cronService = getCronService();
@@ -190,11 +258,11 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
     const nowAnchor = `\n\n【当前时间】${new Date().toISOString()}（UTC，默认时区 Asia/Shanghai）。`
       + `用户用「今天/明天/今晚/本周/下周」等相对时间时，必须以此为基准换算成将来的绝对时间，`
       + `生成的 at 类型 datetime 绝不能早于当前时间。`;
-    // 跟随项目默认 provider（mimo 包月），取代原硬编码 zhipu——app 的 zhipu
-    // 端点经 0ki 中转，中转 key 一旦失效会直接卡死 /schedule 的自然语言生成。
+    // 调用当下解析用户配置的默认 provider/model。没配过才落到出厂默认。
+    const { provider, model } = resolveSessionDefaultModelConfig();
     const response = await router.chat({
-      provider: DEFAULT_PROVIDER,
-      model: DEFAULT_MODEL,
+      provider,
+      model,
       messages: [
         { role: 'system', content: CRON_GENERATION_SYSTEM_PROMPT + nowAnchor },
         { role: 'user', content: prompt.trim() },

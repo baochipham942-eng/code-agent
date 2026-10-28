@@ -1523,6 +1523,68 @@ describe('createAgentRouter', () => {
       });
     });
 
+    describe('morning brief save-draft role mail tool gate over web', () => {
+      const ROLE = 'web-save-draft-role';
+
+      async function registerRole(tools: string[]): Promise<void> {
+        const { setCustomAgentMapForTest } = await import('../../../src/host/agent/agentRegistry');
+        setCustomAgentMapForTest(new Map([[
+          ROLE,
+          {
+            id: ROLE as never,
+            name: ROLE,
+            description: 'd',
+            prompt: 'p',
+            tools,
+            model: 'balanced',
+            maxIterations: 5,
+            readonly: false,
+            source: 'user',
+          },
+        ]]));
+      }
+
+      async function runSaveDraft(preferredAgentId?: string): Promise<string[] | undefined> {
+        const controller = new AbortController();
+        const response = await fetch(`${baseUrl}/api/run`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            prompt: '存草稿 1',
+            sessionId: 'session-save-draft-role-tools',
+            ...(preferredAgentId ? { context: { preferredAgentId } } : {}),
+          }),
+          signal: controller.signal,
+        });
+        expect(response.ok).toBe(true);
+        await waitForAssertion(() => expect(mockCreateAgentLoop).toHaveBeenCalled());
+        const config = mockCreateAgentLoop.mock.calls.at(-1)![0] as { allowedToolNames?: string[] };
+        controller.abort();
+        await waitForAssertion(() => expect(mockCancel).toHaveBeenCalled());
+        return config.allowedToolNames;
+      }
+
+      afterEach(async () => {
+        const { setCustomAgentMapForTest } = await import('../../../src/host/agent/agentRegistry');
+        setCustomAgentMapForTest(new Map());
+      });
+
+      it('removes mail_draft for a role whose equipment has no mail', async () => {
+        await registerRole(['Read']);
+
+        expect(await runSaveDraft(ROLE)).not.toContain('mail_draft');
+      });
+
+      it.each([['mail_draft'], ['mail']])('keeps exactly one mail_draft for a role declaring %s', async (mailTool) => {
+        await registerRole(['Read', mailTool]);
+
+        expect((await runSaveDraft(ROLE))?.filter((tool) => tool === 'mail_draft')).toHaveLength(1);
+      });
+
+      it('keeps exactly one mail_draft when no role is selected', async () => {
+        expect((await runSaveDraft())?.filter((tool) => tool === 'mail_draft')).toHaveLength(1);
+      });
+    });
+
     it('非存草稿轮次：systemPrompt 只有指挥台 brain 块，不带存草稿规则', async () => {
       const controller = new AbortController();
       const response = await fetch(`${baseUrl}/api/run`, {

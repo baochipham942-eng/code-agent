@@ -1,7 +1,7 @@
 // ============================================================================
 // TurnCard - A single conversation turn (user prompt + assistant responses)
 // ============================================================================
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { TraceTurn, TraceNode } from '@shared/contract/trace';
 import type { StreamRecoverySnapshot } from '@shared/contract/session';
 import type { TurnHookActivity, TurnSkillActivity } from '@shared/contract/turnTimeline';
@@ -30,7 +30,7 @@ import { TraceNodeRenderer } from './TraceNodeRenderer';
 import { ExpandableContent } from './ExpandableContent';
 import { StreamingIndicator, getRunningSubagentCount, getRunningToolStartTime, getStreamingWaitingReason } from './StreamingIndicator';
 import { TurnDiffSummary } from './MessageBubble/TurnDiffSummary';
-import { buildTurnFileChanges, isFileChangeCardOwnedNode } from '../../../utils/turnDiffSummary';
+import { buildTurnFileChanges } from '../../../utils/turnDiffSummary';
 import { getTurnFinalTextNode, getTurnUserNode } from '../../../utils/turnRailItems';
 import { TurnFeedback } from './TurnFeedback';
 import { MessageContextMenu } from './MessageContextMenu';
@@ -63,6 +63,7 @@ import { useVoiceLiveRuntime } from '../../../hooks/useVoiceLiveRuntime';
 import { hasPendingPermissionForSession, hasQueuedPermissionForSession } from '../../../utils/sessionNeedsInput';
 import { useSessionTurnActive } from '../../../hooks/useSessionTurnActive';
 import { resolveBusySignal } from '../../../utils/turnBusySignal';
+import { hasFoldHiddenMiddle, isNodeSkippedInMiddle } from './turnFoldVisibility';
 
 interface TurnCardProps {
   turn: TraceTurn;
@@ -174,7 +175,8 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     finalTextNode: getTurnFinalTextNode(turn, isVoiceTurn),
   }), [turn, isVoiceTurn]);
 
-  // 折叠策略：已完成 + 非 streaming + 节点数达阈值 + 确实有最终 assistant 文本。
+  // 折叠策略：已完成 + 非 streaming + 节点数达阈值 + 确实有最终 assistant 文本
+  // + 折叠真藏得住中间内容（纯问答轮藏了个寂寞，不出「用时」空开关）。
   // 语音任务卡不套这条阈值——电话里派出去的活不管几步都折成卡（用户在打电话，不看屏幕），
   // 流式期间也折：live 信号由卡身底部的呼吸态指示承担，过程默认不铺开。
   const canFold = isVoiceTurn
@@ -182,12 +184,36 @@ export const TurnCard: React.FC<TurnCardProps> = ({
     : turn.status === 'completed' &&
       !isStreaming &&
       turn.nodes.length >= policy.foldThreshold &&
-      Boolean(foldedView.finalTextNode);
+      Boolean(foldedView.finalTextNode) &&
+      hasFoldHiddenMiddle(displayNodes, foldedView.userNode, foldedView.finalTextNode);
+  // 会话还在跑（goal 多轮任务的轮间空档：轮已 completed、下一轮未开）时挂载的末轮
+  // 不折——过程还在跑，折了就丢现场；等会话闲下来再由下面的自动折叠收口。
   const [userExpanded, setUserExpanded] = useState(
-    Boolean(defaultExpanded) || !canFold
+    Boolean(defaultExpanded) || !canFold || Boolean(isSessionProcessing)
   );
   const expanded = userExpanded || Boolean(forceExpanded);
   const folded = canFold && !expanded;
+
+  // 简洁档收尾自动折叠（2026-10-17 拍板 B）：流式期间全程展开，轮收尾进入可折叠态
+  // 且会话整体也闲下来（r1：goal 多轮任务里轮粒度的 completed 早于会话结束，轮间
+  // 空档不许折）的那一刻，若用户从没手动点过这轮的展开/收起，就地折回「用时」一行 +
+  // 结论。其余档 keepLastTurnOpen=true 不动（收尾保持展开）。用户点过就永远以用户的手
+  // 为准；搜索强制展开走 forceExpanded，与这里互不干扰。layout effect：收尾帧先铺开
+  // 再跳回会闪一下，折叠要在 paint 前落定。
+  const userToggledRef = useRef(false);
+  const autoFoldEligible = canFold && !policy.keepLastTurnOpen && !isSessionProcessing;
+  const autoFoldEligibleRef = useRef(autoFoldEligible);
+  useLayoutEffect(() => {
+    const wasEligible = autoFoldEligibleRef.current;
+    autoFoldEligibleRef.current = autoFoldEligible;
+    if (!wasEligible && autoFoldEligible && !userToggledRef.current) {
+      setUserExpanded(false);
+    }
+  }, [autoFoldEligible]);
+  const handleToggleExpanded = useCallback(() => {
+    userToggledRef.current = true;
+    setUserExpanded(!expanded);
+  }, [expanded]);
 
   // Codex 式外壳：user 消息 + "Worked for Xm Ys" 折叠/展开按钮 + 最终 AI 结论
   // 中间的 thinking/tool_groups/中间 AI 文本根据 expanded 切换显示
@@ -396,7 +422,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             title={voiceDispatch.title}
             speaker={voiceDispatch.speaker}
             expanded={expanded}
-            onToggle={() => setUserExpanded(!expanded)}
+            onToggle={handleToggleExpanded}
           />
         )}
 
@@ -413,7 +439,7 @@ export const TurnCard: React.FC<TurnCardProps> = ({
             语音任务卡的展开/收起由上面的卡头承担，不再重复一个折叠钮。 */}
         {canFold && !isVoiceTurn && (
           <button
-            onClick={() => setUserExpanded(!expanded)}
+            onClick={handleToggleExpanded}
             className="flex items-center gap-1.5 text-xs leading-4 text-zinc-500 hover:text-zinc-300 transition-colors py-0.5"
             aria-expanded={expanded}
             title={expanded ? t.turnCard.collapseTurn : t.turnCard.expandTurn}
@@ -461,32 +487,9 @@ export const TurnCard: React.FC<TurnCardProps> = ({
                 );
               }
               const node: TraceNode = d.node;
-              // User node rendered above; skip here to avoid duplicate
-              if (node.id === foldedView.userNode?.id) {
-                return null;
-              }
-              // Hook/skill activity gets a stable, always-visible banner below the user prompt.
-              if (node.turnTimeline?.kind === 'hook_activity' || node.turnTimeline?.kind === 'skill_activity') {
-                return null;
-              }
-              // 产物/来源节点统一锚到最终答案之后渲染（见下方），避免随流式位置在答案上下漂移。
-              if (node.turnTimeline?.kind === 'artifact_ownership') {
-                return null;
-              }
-              if (node.subtype === 'skill_status') {
-                return null;
-              }
-              // 压缩摘要不占消息流一整行，标记挪到操作行右端（见下方 turn-reply-actions）
-              if (node.type === 'system' && node.subtype === 'compaction') {
-                return null;
-              }
-              // 文件改动只由下方的文件变更卡讲一遍：卡片带相对路径 + 增删行数 + diff + 撤销，
-              // 节点流里那行工具步骤是纯重复（同一个文件名在一屏里出现三次）。
-              if (isFileChangeCardOwnedNode(node) && !node.metadata?.streamInterruptionReason) {
-                return null;
-              }
-              // Final text rendered below; skip here to avoid duplicate
-              if (canFold && node.id === foldedView?.finalTextNode?.id) {
+              // 中间区跳过规则（置顶/横幅/锚点/变更卡归属等）与折叠可见性共用一份判据，
+              // 逐条理由见 turnFoldVisibility.ts。折叠态下结论在卡外渲染（finalTextAnchoredBelow）。
+              if (isNodeSkippedInMiddle(node, foldedView.userNode, foldedView.finalTextNode, canFold)) {
                 return null;
               }
               const isNodeStreaming = isStreaming

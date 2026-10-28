@@ -1,3 +1,5 @@
+import { INTERACTION_TIMEOUTS } from './timeouts';
+
 /**
  * 后台任务禁止递归调用的指挥台调度工具。
  * 这份拒绝集不决定文字前台工具面；前台只消费 ToolSchema.allowInTextForeground。
@@ -36,6 +38,26 @@ export function resolveSessionCommandTaskIdleTimeoutMs(
   fallbackMs = SESSION_COMMAND_TASK_IDLE_TIMEOUT_MS,
 ): number {
   const raw = env[SESSION_COMMAND_TASK_IDLE_TIMEOUT_ENV]?.trim();
+  if (!raw || !/^\d+$/.test(raw)) return fallbackMs;
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) return fallbackMs;
+  return parsed;
+}
+
+/**
+ * 未答审批最多给一个后台任务续多久：超过后审批豁免停止，空闲回收链照常
+ * fail + cancel + 唤醒。默认沿用无人值守停车审批的 24h 兜底数字，不另造魔法数。
+ */
+export const SESSION_COMMAND_TASK_APPROVAL_WAIT_CAP_MS = INTERACTION_TIMEOUTS.PARKED_APPROVAL;
+
+const SESSION_COMMAND_TASK_APPROVAL_WAIT_CAP_ENV = 'CODE_AGENT_SESSION_TASK_APPROVAL_WAIT_CAP_MS';
+
+/** Sole reader of CODE_AGENT_SESSION_TASK_APPROVAL_WAIT_CAP_MS. Invalid values keep the fallback. */
+export function resolveSessionCommandTaskApprovalWaitCapMs(
+  env: NodeJS.ProcessEnv = process.env,
+  fallbackMs = SESSION_COMMAND_TASK_APPROVAL_WAIT_CAP_MS,
+): number {
+  const raw = env[SESSION_COMMAND_TASK_APPROVAL_WAIT_CAP_ENV]?.trim();
   if (!raw || !/^\d+$/.test(raw)) return fallbackMs;
   const parsed = Number(raw);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) return fallbackMs;

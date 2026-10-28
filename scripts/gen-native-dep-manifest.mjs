@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mapTauriResourcePath } from './tauri-resource-path.mjs';
+import { mapTauriResourcePath } from './lib/tauri-resource-path.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 

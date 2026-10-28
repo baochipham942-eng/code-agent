@@ -128,4 +128,17 @@ describe('buildAiOutline h2AsPages', () => {
       expectedSections(),
     );
   });
+
+  it('keeps the last section when the model follows the prompt literally (cover + count sections)', async () => {
+    h.inference.mockResolvedValueOnce({
+      content: '# 封面标题\n\n## 背景\n- 背景要点\n\n## 问题\n- 问题要点\n\n## 方案\n- 方案要点\n\n## 总结\n- 总结要点',
+    });
+
+    const result = await buildAiOutline('主题', 4);
+
+    expect(result.ai).toBe(true);
+    expect(result.slides.map(slide => slide.title)).toEqual(['封面标题', '背景', '问题', '方案', '总结']);
+    expect(result.slides[4].points).toEqual(['总结要点']);
+    expect(result.slides[4].isEnd).toBe(true);
+  });
 });

@@ -78,7 +78,8 @@ export async function buildAiOutline(topic: string, slidesCount?: number, brief?
     );
     const text = (response.content ?? '').trim();
     if (!text) return fallback;
-    const slides = parseContentToSlides(text, count, { h2AsPages: true });
+    // 提示词契约是「# 封面 + 每页一个 ##」，模型按字面输出即 count+1 页；上限须含封面，否则末节被静默截掉
+    const slides = parseContentToSlides(text, count + 1, { h2AsPages: true });
     return slides.length > 0 ? { slides, ai: true } : fallback;
   } catch {
     return fallback;

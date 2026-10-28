@@ -50,6 +50,9 @@ export function useComposerDraftPersistence(args: {
   const valueRef = useRef(value);
   valueRef.current = value;
   const sendInFlightRef = useRef(false);
+  // Key of the session that started the send. The settle can land after a
+  // session switch, so it must not read whatever key is current by then.
+  const sendKeyRef = useRef<string | null>(null);
   const ignoreNextEmptyRef = useRef(true);
   const wasSuspendedRef = useRef(false);
   const writerRef = useRef<ComposerDraftWriter | null>(null);
@@ -122,6 +125,7 @@ export function useComposerDraftPersistence(args: {
   const noteOptimisticClear = useCallback(() => {
     sendInFlightRef.current = true;
     setSendInFlight(true);
+    sendKeyRef.current = keyRef.current;
     // Hold, do not remove. Success is the only outcome that deletes.
     writerRef.current?.flushNow(keyRef.current, valueRef.current, () => true);
   }, []);
@@ -129,12 +133,16 @@ export function useComposerDraftPersistence(args: {
   const noteSendSettled = useCallback((outcome: ComposerDraftSendOutcome) => {
     sendInFlightRef.current = false;
     setSendInFlight(false);
+    const sendKey = sendKeyRef.current;
+    sendKeyRef.current = null;
     // Cancel the empty-box schedule captured during the optimistic clear so it
     // cannot remove the draft once the in-flight flag drops.
     writerRef.current?.cancel();
     if (outcome !== 'success') return;
-    removeComposerDraft(keyRef.current);
-    setStored(null);
+    // Delete the draft of the session that sent. If the user switched sessions
+    // mid-send, the current session's stored draft and notice stay untouched.
+    removeComposerDraft(sendKey);
+    if (sendKey === keyRef.current) setStored(null);
   }, []);
 
   const trackSend = useCallback(async (send: () => boolean | Promise<boolean>) => {

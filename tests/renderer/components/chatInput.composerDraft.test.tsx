@@ -214,6 +214,45 @@ describe('useComposerDraftPersistence', () => {
     expect(readComposerDraft(KEY_A)).toBe('still here');
   });
 
+  it('deletes the draft of the session that sent, not the one current when the send settles', async () => {
+    const seeder = createComposerDraftWriter({ pageTarget: null, visibilityTarget: null });
+    seeder.flushNow(KEY_B, 'beta text', () => false);
+    seeder.dispose();
+
+    const { result, rerender } = renderHook(
+      ({ sessionId, value }: { sessionId: string; value: string }) => useComposerDraftPersistence({
+        sessionId,
+        sessionless: false,
+        value,
+        setValue: () => undefined,
+      }),
+      { initialProps: { sessionId: SESSION_A, value: 'alpha send' } },
+    );
+    await act(async () => { await vi.advanceTimersByTimeAsync(COMPOSER_DRAFT_DEBOUNCE_MS); });
+    expect(readComposerDraft(KEY_A)).toBe('alpha send');
+
+    let resolveSend: (value: boolean) => void = () => undefined;
+    const pendingSend = new Promise<boolean>((resolve) => { resolveSend = resolve; });
+    let tracked: Promise<boolean | 'timeout'> = Promise.resolve(false);
+    act(() => { tracked = result.current.trackSend(() => pendingSend); });
+    // The optimistic clear already emptied the box; the user switches to
+    // session B while the send from A is still in flight.
+    rerender({ sessionId: SESSION_B, value: '' });
+    await act(async () => { await vi.advanceTimersByTimeAsync(COMPOSER_DRAFT_DEBOUNCE_MS); });
+
+    await act(async () => {
+      resolveSend(true);
+      await tracked;
+    });
+    expect(readComposerDraft(KEY_A)).toBeNull();
+    expect(readComposerDraft(KEY_B)).toBe('beta text');
+    expect(result.current.notice?.preview).toBe('beta text');
+
+    // Back on A the successful send is not offered again.
+    rerender({ sessionId: SESSION_A, value: '' });
+    expect(result.current.notice).toBeNull();
+  });
+
   it('does not store queued-edit text or drop the idle draft when that edit ends', async () => {
     const { rerender } = renderHook(
       ({ value, suspend }: { value: string; suspend: boolean }) => useComposerDraftPersistence({

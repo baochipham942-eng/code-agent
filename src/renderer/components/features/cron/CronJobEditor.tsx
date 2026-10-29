@@ -602,9 +602,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       size="lg"
       footer={(
         <>
-          <Button variant="ghost" onClick={onClose} disabled={submitting}>
-            取消
-          </Button>
+          <Button variant="ghost" onClick={onClose} disabled={submitting}>取消</Button>
           <Button onClick={handleSubmit} loading={submitting} disabled={cloudRoleBound || webhookGated}>
             {job ? '保存修改' : '创建任务'}
           </Button>

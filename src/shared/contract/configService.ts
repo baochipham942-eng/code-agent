@@ -43,6 +43,7 @@ export type ServiceApiKey =
   | 'minimax-search'
   | 'skillsmp'
   | 'neo-share'
+  | 'neo-cron-cloud'
   | 'typesafe';
 
 /**
@@ -67,6 +68,7 @@ export const MASKED_SERVICE_KEY_LIST = [
   'zhipu-search',
   'minimax-search',
   'neo-share',
+  'neo-cron-cloud',
   'typesafe',
 ] as const satisfies readonly ServiceApiKey[];
 

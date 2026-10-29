@@ -1524,6 +1524,30 @@ describe('bashModule sandbox escalation', () => {
     }
   });
 
+  it('logs eligibility inputs and gate returns when a sandboxed foreground write is denied', async () => {
+    const deniedPath = resolveCanonicalRunPath(`/tmp/sandbox-escalation-eligibility-log-${process.pid}`);
+    const denial = `printf '%s\\n' "EPERM: operation not permitted, open '${deniedPath}'" >&2; exit 1`;
+    wrapMock.mockReturnValueOnce({ command: denial, cleanup: cleanupMock });
+    const canUse = vi.fn()
+      .mockResolvedValueOnce({ allow: true as const })
+      .mockResolvedValueOnce({ allow: false as const, reason: 'declined' });
+    const ctx = makeCtx();
+    const handler = await bashModule.createHandler();
+    const result = await handler.execute({ command: `printf x > ${deniedPath}` }, ctx, canUse);
+    expect(result.ok).toBe(false);
+    // 观测契约：出卡判据输入与两门返回值必须落宿主日志，否则「资格门拦了卡」
+    // 与「卡请求了但没送到前台」无从区分（N-SANDBOX-ESCALATE-CHMOD-SHAPE-FU1 真机归因全靠这条）。
+    expect(ctx.logger.info).toHaveBeenCalledWith('Sandbox escalation eligibility evaluated', {
+      sessionId: ctx.sessionId,
+      unattended: false,
+      writeFence: false,
+      permissionMode: 'default',
+      deniedPath,
+      offeredFilePath: deniedPath,
+      offeredDirectoryPath: null,
+    });
+  });
+
   it('preserves the original failure and explains a declined or thrown approval', async () => {
     for (const approval of [
       { allow: false as const, reason: 'declined' },

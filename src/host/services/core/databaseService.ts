@@ -2258,6 +2258,21 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     return this.sessionForkPortabilityRepo.importSessionFork(input);
   }
+  /** 批量外部历史导入的去重预检（只读，不写任何表）。 */
+  hasSessionForkImport(input: {
+    sourceExportId: string;
+    ownerScopeId: string;
+    projectId: string;
+    namespace: string;
+  }): boolean {
+    this.ensureDb();
+    return this.sessionForkPortabilityRepo.hasImportedExport(
+      input.sourceExportId,
+      input.ownerScopeId,
+      input.projectId,
+      input.namespace,
+    );
+  }
   async prepareImportedIsolatedWorkspace(
     input: PublishImportedIsolatedWorkspaceInput,
   ): Promise<PreparedImportedIsolatedWorkspace> {

@@ -11,9 +11,9 @@
 // 只掩值本身。thinking / responsesOutput / image 部件两个方向都不动。
 //
 // 失败语义 fail-closed：掩码或还原抛错时以带稳定 code 的用户可读错误上抛，请求中
-// 止，绝不静默明文外发（接线与开关读取见 modelRouter._callProvider）。
-// 覆盖边界：只接 ModelRouter._callProvider 这一个漏斗；主 loop 的 aiSdk 直连路径
-// （inferenceViaAiSdk）不在本 cut 内。
+// 止，绝不静默明文外发。接线点两处同语义：ModelRouter._callProvider（legacy 引擎）
+// 与 adapters/aiSdkAdapter.inferenceViaAiSdk（默认引擎的主 loop / provider fallback /
+// 子代理公共入口）。占位符文本二次掩码是 no-op，两路叠加不会双重替换。
 
 import { createHmac, randomBytes } from 'node:crypto';
 import {

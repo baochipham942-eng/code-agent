@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button } from '../../primitives/Button';
 import { useI18n } from '../../../hooks/useI18n';
 import { interpolate } from '../../../i18n/interpolate';
@@ -22,7 +22,17 @@ export function QuotaWaitNotice(props: {
   onRetryNow: () => void;
 }): React.ReactElement {
   const { t } = useI18n();
-  const text = props.duePassed
+  // duePassed 是投影时快照，会话列表不刷新就停在旧值：到点翻转靠本地一次性定时器补上
+  // （与宿主 armQuotaWaitOnPark 同为 one-shot），自动续跑失败时文案也不会停在过期的「预计」。
+  const [dueReached, setDueReached] = useState(false);
+  useEffect(() => {
+    setDueReached(false);
+    if (props.duePassed || props.dueAt <= Date.now()) return;
+    const timer = setTimeout(() => setDueReached(true), props.dueAt - Date.now());
+    return () => clearTimeout(timer);
+  }, [props.duePassed, props.dueAt]);
+  const duePassed = props.duePassed || dueReached || props.dueAt <= Date.now();
+  const text = duePassed
     ? t.chat.quotaWaitDue
     : interpolate(t.chat.quotaWaitUntil, { when: formatQuotaWaitWhen(props.dueAt) });
   return (

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { QuotaWaitNotice } from '../../../src/renderer/components/features/chat/quotaWaitNotice';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
@@ -40,5 +40,20 @@ describe('QuotaWaitNotice', () => {
     rerender(<QuotaWaitNotice dueAt={dueAt} duePassed onCancel={onCancel} onRetryNow={onRetryNow} />);
     expect(screen.getByTestId('quota-wait-notice').textContent).toContain('The wait is over. Continue to resume');
     expect(screen.getByTestId('quota-wait-retry').textContent).toBe('Retry now');
+  });
+
+  it('flips to the due-passed line at dueAt without waiting for a fresh projection', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 9, 27, 15, 0, 0));
+    useAppStore.setState({ language: 'zh' });
+    const dueAt = new Date(2026, 9, 27, 16, 40, 0).getTime();
+    render(
+      <QuotaWaitNotice dueAt={dueAt} duePassed={false} onCancel={vi.fn()} onRetryNow={vi.fn()} />,
+    );
+    expect(screen.getByTestId('quota-wait-notice').textContent).toContain('额度限流，预计 16:40 继续');
+    act(() => {
+      vi.advanceTimersByTime(100 * 60 * 1000 + 1);
+    });
+    expect(screen.getByTestId('quota-wait-notice').textContent).toContain('已到点，点继续');
   });
 });

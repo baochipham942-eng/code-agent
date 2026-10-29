@@ -51,7 +51,8 @@ vi.mock('../../../src/host/security/outboundSecretMask', async (importActual) =>
 import { inferenceViaAiSdk } from '../../../src/host/model/adapters/aiSdkAdapter';
 import { applyOutboundSecretMask } from '../../../src/host/security/outboundSecretMask';
 import type { StreamChunk, StreamCallback } from '../../../src/host/model/types';
-import type { ModelConfig, ModelResponse } from '../../../src/shared/contract';
+import type { ModelConfig } from '../../../src/shared/contract';
+import type { ModelResponse } from '../../../src/host/agent/loopTypes';
 import type { ModelMessage } from '../../../src/host/model/types';
 
 const SECRET = 'sk-Abc123defGHI789xyz';

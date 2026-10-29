@@ -1,5 +1,5 @@
 // ============================================================================
-// CloudRunLedger — 云端 run 账本（ADR-086 S1–S3）
+// CloudRunLedger — 云端 run 账本（ADR-087 S1–S3）
 // ============================================================================
 // 账户只从注入的 accountResolver 来（缺省 = 绑定的 AuthService 已验证会话）；
 // createRun 不收 accountId 参数，请求体里的用户字段进不到 account_id。
@@ -50,7 +50,7 @@ export function bindCloudRunAccountSource(source: CloudRunAccountSource): void {
   accountSource = source;
 }
 
-/** ADR-086 合同 1：只有 hasVerifiedSession() 为真才给出账户 id；未绑定即拒绝。 */
+/** ADR-087 合同 1：只有 hasVerifiedSession() 为真才给出账户 id；未绑定即拒绝。 */
 function defaultAccountResolver(): string | null {
   const source = accountSource;
   if (!source?.hasVerifiedSession()) return null;

@@ -429,7 +429,7 @@ describe('N-ROLE-ROUTINE-RESTATE-FU1-FU1-FU2 云端角色 agent 护栏', () => {
 
   it('无角色云端 agent 仍通过真实 CronCloudRuntime 注册', async () => {
     configState.cronCloud = { baseUrl: 'https://cloud.example.test', token: 'test-token' };
-    const fetchStub = vi.fn(async () => fakeOk({ id: 'remote-agent-1' }));
+    const fetchStub = vi.fn(async (_input: unknown) => fakeOk({ id: 'remote-agent-1' }));
     vi.stubGlobal('fetch', fetchStub);
     const service = new CronService();
 

@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CronJobDefinition, CronJobExecution } from '../../../../src/shared/contract/cron';
+import { IPC_CHANNELS } from '../../../../src/shared/ipc';
+
+const broadcastToRenderer = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../../src/host/platform', () => ({
   Notification: { isSupported: () => true },
   AppWindow: { getFocusedWindow: () => null },
-  broadcastToRenderer: vi.fn(),
+  broadcastToRenderer,
 }));
 vi.mock('../../../../src/host/services/serviceRegistry', () => ({
   getServiceRegistry: () => ({ register: vi.fn() }),
@@ -101,5 +104,76 @@ describe('notification budget one-hour replay', () => {
       sessionId: 'session-failed',
       title: '任务失败 - [定时] 紧急任务',
     });
+  });
+
+  it('marks held resume and voice sessions unread before folding their notifications', () => {
+    delete process.env.CODE_AGENT_NOTIFICATION_DRY_RUN;
+    broadcastToRenderer.mockClear();
+    notificationService.notifyTaskComplete({
+      sessionId: 'session-first',
+      sessionTitle: 'first completion',
+      duration: 1_000,
+      toolsUsed: [],
+    }, { force: true });
+    notificationService.notifyTaskResuming({
+      sessionId: 'session-resume-held',
+      sessionTitle: 'held resume',
+      autoResumeCount: 1,
+    });
+    notificationService.notifyVoiceWorkSettled({
+      sessionId: 'session-voice-held',
+      taskTitle: 'held voice task',
+      status: 'done',
+    });
+
+    for (const sessionId of ['session-resume-held', 'session-voice-held']) {
+      expect(broadcastToRenderer).toHaveBeenCalledWith(
+        IPC_CHANNELS.NOTIFICATION_SHOW,
+        expect.objectContaining({
+          sessionId,
+          markSessionUnread: true,
+          attentionOnly: true,
+        }),
+      );
+    }
+    expect(notificationService.getRecentNotifications()).toHaveLength(1);
+
+    vi.advanceTimersByTime(15 * 60_000);
+    expect(notificationService.getRecentNotifications().at(-1)).toMatchObject({ type: 'digest' });
+    const unreadSessionIds = broadcastToRenderer.mock.calls
+      .map(([, event]) => event)
+      .filter((event) => event.attentionOnly === true)
+      .map((event) => event.sessionId);
+    expect(unreadSessionIds).toEqual(['session-resume-held', 'session-voice-held']);
+  });
+
+  it('delivers a single held resume at window end without re-marking the session unread', () => {
+    delete process.env.CODE_AGENT_NOTIFICATION_DRY_RUN;
+    broadcastToRenderer.mockClear();
+    notificationService.notifyTaskComplete({
+      sessionId: 'session-first',
+      sessionTitle: 'first completion',
+      duration: 1_000,
+      toolsUsed: [],
+    }, { force: true });
+    notificationService.notifyTaskResuming({
+      sessionId: 'session-single-held',
+      sessionTitle: 'single held resume',
+      autoResumeCount: 2,
+    });
+
+    expect(broadcastToRenderer).toHaveBeenCalledWith(
+      IPC_CHANNELS.NOTIFICATION_SHOW,
+      expect.objectContaining({ sessionId: 'session-single-held', attentionOnly: true }),
+    );
+
+    vi.advanceTimersByTime(15 * 60_000);
+    const windowEndEvent = broadcastToRenderer.mock.calls
+      .map(([, event]) => event)
+      .filter((event) => event.attentionOnly !== true)
+      .at(-1);
+    expect(windowEndEvent).toMatchObject({ sessionId: 'session-single-held' });
+    // 未读标记在暂存当下已送达，窗尾补投只弹通知、不重复标未读。
+    expect(windowEndEvent?.markSessionUnread).toBeUndefined();
   });
 });

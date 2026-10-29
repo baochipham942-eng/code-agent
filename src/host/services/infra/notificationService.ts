@@ -204,6 +204,29 @@ class NotificationService implements Disposable {
     });
   }
 
+  /**
+   * 预算把通知折进窗口时，其未读标记不能跟着等窗口收尾：暂存当下就单独广播一条
+   * attentionOnly 事件（渲染端只接未读圆点、不弹 OS 通知），之后的窗尾投递不再重复标记。
+   */
+  private broadcastSessionAttentionMark(sessionId: string): void {
+    if (this.isDryRun()) return;
+    broadcastToRenderer(IPC_CHANNELS.NOTIFICATION_SHOW, {
+      id: `notification_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      title: '',
+      body: '',
+      sessionId,
+      markSessionUnread: true,
+      attentionOnly: true,
+    });
+  }
+
+  private enqueueBudgeted(item: BudgetedNotification): void {
+    if (this.budget.enqueue(item) !== 'held') return;
+    if (!item.delivery.markSessionUnread) return;
+    this.broadcastSessionAttentionMark(item.sessionId);
+    delete item.delivery.markSessionUnread;
+  }
+
   private isIntentAllowed(intent: NotificationIntent): boolean {
     const decision = evaluateNotificationPolicy(intent);
     if (!decision.allowed) {
@@ -248,7 +271,7 @@ class NotificationService implements Disposable {
       }
     }
 
-    this.budget.enqueue({
+    this.enqueueBudgeted({
       intent: 'needs_input',
       type: 'needs_input',
       sessionId: data.sessionId,
@@ -284,7 +307,7 @@ class NotificationService implements Disposable {
     body += `\n耗时: ${this.formatDuration(duration)}`;
 
     const title = `${data.succeeded === false ? '任务失败' : '任务完成'} - ${sessionTitle}`;
-    this.budget.enqueue({
+    this.enqueueBudgeted({
       intent,
       urgent: options?.urgent,
       type: intent,
@@ -311,7 +334,7 @@ class NotificationService implements Disposable {
     // 兜底会话名必须与通知同语言，所以在这里（知道 locale 的一方）落兜底，调用方传原始标题。
     const title = text.resumingTitle(data.sessionTitle || text.untitledSession);
     const body = text.resumingBody(data.autoResumeCount);
-    this.budget.enqueue({
+    this.enqueueBudgeted({
       intent: 'task_resuming',
       type: 'task_resuming',
       sessionId: data.sessionId,
@@ -333,7 +356,7 @@ class NotificationService implements Disposable {
       return;
     }
 
-    this.budget.enqueue({
+    this.enqueueBudgeted({
       intent: 'plugin',
       type: 'plugin',
       sessionId: '',
@@ -368,7 +391,7 @@ class NotificationService implements Disposable {
       : data.status === 'unverified'
         ? '这件语音派出的任务在通话结束后跑完了，但没有留下产物，请你自己确认一下结果。'
         : `这件语音派出的任务在通话结束后失败了：${data.detail?.trim() || '未给出原因'}`;
-    this.budget.enqueue({
+    this.enqueueBudgeted({
       intent,
       type: intent,
       sessionId: data.sessionId,

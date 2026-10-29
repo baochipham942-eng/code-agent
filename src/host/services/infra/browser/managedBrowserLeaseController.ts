@@ -1,10 +1,15 @@
 import type { ManagedBrowserLeaseState } from '../../../../shared/contract/desktop';
+import { BROWSER_TIMEOUTS } from '../../../../shared/constants/timeouts';
+import { createLogger } from '../logger';
 import {
   createManagedBrowserLease,
   isManagedBrowserLeaseExpired,
 } from './managedBrowserHelpers';
 
+const logger = createLogger('ManagedBrowserLease');
+
 export class ManagedBrowserLeaseController {
+  private inUse = false;
   private lease: ManagedBrowserLeaseState | null = null;
   private leaseTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -24,11 +29,15 @@ export class ManagedBrowserLeaseController {
     return lease;
   }
 
+  setInUse(inUse: boolean): void {
+    this.inUse = inUse;
+  }
+
   heartbeat(nowMs = Date.now()): void {
     if (this.lease?.status !== 'active') {
       return;
     }
-    if (isManagedBrowserLeaseExpired(this.lease, nowMs)) {
+    if (isManagedBrowserLeaseExpired(this.lease, nowMs) && !this.extendIfInUse(nowMs)) {
       this.markExpired(nowMs);
       return;
     }
@@ -57,7 +66,11 @@ export class ManagedBrowserLeaseController {
     if (!this.lease) {
       return null;
     }
-    if (this.lease.status === 'active' && isManagedBrowserLeaseExpired(this.lease)) {
+    if (
+      this.lease.status === 'active'
+      && isManagedBrowserLeaseExpired(this.lease)
+      && !this.extendIfInUse(Date.now())
+    ) {
       this.markExpired();
     }
     return this.lease ? { ...this.lease } : null;
@@ -76,6 +89,21 @@ export class ManagedBrowserLeaseController {
     };
   }
 
+  /** An in-use binding keeps its lease past the TTL until the ceiling since the last heartbeat. */
+  private extendIfInUse(nowMs: number): boolean {
+    const lease = this.lease;
+    if (!this.inUse || lease?.status !== 'active') {
+      return false;
+    }
+    if (nowMs - lease.lastHeartbeatAtMs >= BROWSER_TIMEOUTS.LEASE_IN_USE_CEILING) {
+      return false;
+    }
+    this.lease = { ...lease, expiresAtMs: nowMs + lease.ttlMs };
+    logger.warn(`Managed browser lease ${lease.leaseId} is in use; extended instead of expiring.`);
+    this.scheduleExpiry(this.lease);
+    return true;
+  }
+
   private scheduleExpiry(lease: ManagedBrowserLeaseState): void {
     this.clearTimer();
     if (lease.status !== 'active') {
@@ -84,6 +112,9 @@ export class ManagedBrowserLeaseController {
     const delayMs = Math.max(0, lease.expiresAtMs - Date.now());
     this.leaseTimer = setTimeout(() => {
       if (this.lease?.leaseId !== lease.leaseId || this.lease.status !== 'active') {
+        return;
+      }
+      if (this.extendIfInUse(Date.now())) {
         return;
       }
       this.markExpired();

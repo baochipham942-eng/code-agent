@@ -263,6 +263,11 @@ export const BROWSER_TIMEOUTS = {
    * 与 surface 租约 TTL 同为 30 分钟。
    */
   POOL_IDLE_RECLAIM: 30 * 60_000,
+  /**
+   * 使用中的托管浏览器租约可越过 TTL 续期的上限（距上次心跳）。
+   * 防止进程崩溃后 binding 永不释放而租约永远不过期。
+   */
+  LEASE_IN_USE_CEILING: 4 * 60 * 60_000,
 } as const;
 
 /** artifact_runnable 断言家族超时（浏览器类走 GAME_VALIDATION_TIMEOUTS / ARTIFACT_PREVIEW_HEALTH） */

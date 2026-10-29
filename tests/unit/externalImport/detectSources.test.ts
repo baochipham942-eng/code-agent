@@ -39,6 +39,7 @@ let dataDir: string;
 beforeEach(async () => {
   dryRunMock.mockReset();
   dryRunMock.mockResolvedValue({
+    instructions: [],
     summary: { discoveredMemory: 0, readyToImport: 0, duplicates: 0, instructionOnly: 0, archived: 0 },
   });
   tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'external-import-detect-'));
@@ -69,6 +70,18 @@ describe('detectExternalImportSources', () => {
     // 无 SKILL.md 的目录不算技能
     await fs.mkdir(path.join(homeDir, '.codex', 'skills', 'not-a-skill'), { recursive: true });
     dryRunMock.mockResolvedValue({
+      instructions: [
+        {
+          id: 'instruction:rule-1',
+          adapterId: 'codex-local-custom',
+          title: 'AGENTS.md',
+          content: '不要自动推送分支',
+          sourcePath: path.join(homeDir, '.codex', 'AGENTS.md'),
+          reason: 'directive-confirmation-required',
+          contentHash: 'rule-1',
+          sourceMetadata: { segmentCount: 1 },
+        },
+      ],
       summary: { discoveredMemory: 3, readyToImport: 3, duplicates: 0, instructionOnly: 1, archived: 0 },
     });
 
@@ -88,6 +101,67 @@ describe('detectExternalImportSources', () => {
     expect(dryRunMock).toHaveBeenCalledWith(expect.anything(), {
       adapterIds: ['codex-local-custom'],
       homeDir,
+    });
+  });
+
+  it('来源行说明计数只数可逐条导入的规则：instruction-file 整文件对照项不计入', async () => {
+    await fs.mkdir(path.join(homeDir, '.grok'), { recursive: true });
+    // 1 条规则 + 1 个整文件对照项：来源行数 1（summary.instructionOnly=2 不采用）
+    dryRunMock.mockResolvedValueOnce({
+      instructions: [
+        {
+          id: 'instruction:rule-1',
+          adapterId: 'grok-build',
+          title: 'AGENTS.md',
+          content: '回复用中文',
+          sourcePath: path.join(homeDir, '.grok', 'AGENTS.md'),
+          reason: 'directive-confirmation-required',
+          contentHash: 'rule-1',
+          sourceMetadata: { segmentCount: 2 },
+        },
+        {
+          id: 'instruction:file-1',
+          adapterId: 'grok-build',
+          title: 'PROJECT.md',
+          content: '整文件只供对照',
+          sourcePath: path.join(homeDir, '.grok', 'PROJECT.md'),
+          reason: 'instruction-file',
+          contentHash: 'file-1',
+          sourceMetadata: {},
+        },
+      ],
+      summary: { discoveredMemory: 0, readyToImport: 0, duplicates: 0, instructionOnly: 2, archived: 0 },
+    });
+    // 只剩整文件对照项：来源行数 0（summary.instructionOnly=1 不采用）
+    dryRunMock.mockResolvedValueOnce({
+      instructions: [
+        {
+          id: 'instruction:file-2',
+          adapterId: 'grok-build',
+          title: 'AGENTS.md',
+          content: '拆不出规则的用户级文件',
+          sourcePath: path.join(homeDir, '.grok', 'AGENTS.md'),
+          reason: 'instruction-file',
+          contentHash: 'file-2',
+          sourceMetadata: { segmentCount: 0 },
+        },
+      ],
+      summary: { discoveredMemory: 0, readyToImport: 0, duplicates: 0, instructionOnly: 1, archived: 0 },
+    });
+
+    // grok 是 SOURCES 里唯一 adapterId=grok-build 的来源，两次调用对应两轮检测
+    const withRule = await detectExternalImportSources({} as never);
+    const grokWithRule = withRule.sources.find((source) => source.sourceId === 'grok-build');
+    expect(grokWithRule?.categories.find((c) => c.category === 'instructions')).toEqual({
+      category: 'instructions',
+      count: 1,
+    });
+
+    const fileOnly = await detectExternalImportSources({} as never);
+    const grokFileOnly = fileOnly.sources.find((source) => source.sourceId === 'grok-build');
+    expect(grokFileOnly?.categories.find((c) => c.category === 'instructions')).toEqual({
+      category: 'instructions',
+      count: 0,
     });
   });
 

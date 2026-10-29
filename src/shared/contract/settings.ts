@@ -453,6 +453,13 @@ export interface AppSettings {
      * 三态同上，但**缺省 = 关**（连内部槽也要显式 'auto'/'on'）——自动扫描是默认行为变化。
      */
     postLaunchAutoHarvest?: 'on' | 'off' | 'auto';
+    /**
+     * 出云密钥掩码（N-PROMPT-SECRET-MASK）：开启后发往模型厂商的请求文本里，
+     * 密钥形态值（API key / JWT / 私钥块 / env 赋值）换成可逆占位符，回包再换回
+     * 原值——聊天界面仍显示真实值，厂商请求体不含。**缺省 = 关**；掩码失败时该次
+     * 请求不发（fail-closed，绝不静默明文外发）。接线见 ModelRouter._callProvider。
+     */
+    outboundSecretMask?: boolean;
   };
   /** 评测中心（ADR-071 Q4）。 */
   evaluation?: {

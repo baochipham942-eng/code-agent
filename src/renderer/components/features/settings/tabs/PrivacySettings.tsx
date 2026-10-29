@@ -157,6 +157,9 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
   // 从「开」切回来等于没切（ai-review PR #1650 Important①）。
   const [postLaunchScoring, setPostLaunchScoring] = useState<'on' | 'off' | 'auto'>('auto');
   const [postLaunchReflow, setPostLaunchReflow] = useState<'on' | 'off' | 'auto'>('auto');
+  // 出云密钥掩码（N-PROMPT-SECRET-MASK）：缺省关；写 settings.privacy.outboundSecretMask，
+  // host 侧 ModelRouter._callProvider 每次请求现读现用。
+  const [outboundMaskEnabled, setOutboundMaskEnabled] = useState(false);
   const [thirdPartyUiEnabled, setThirdPartyUiEnabled] = useState(false);
   // 评测反馈池钩子命令（ADR-071 Q4）。空串 = 抽屉按钮退化成「复制 fb add 命令」。
   const [feedbackHookCommand, setFeedbackHookCommand] = useState('');
@@ -211,6 +214,7 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
         setChannels(resolvePrivacyFlags(s, readReportedTelemetryEnv()));
         setPostLaunchScoring(s?.privacy?.postLaunchScoring ?? 'auto');
         setPostLaunchReflow(s?.privacy?.postLaunchReflow ?? 'auto');
+        setOutboundMaskEnabled(s?.privacy?.outboundSecretMask === true);
         setThirdPartyUiEnabled(isThirdPartyPluginUiEnabled(s));
         setFeedbackHookCommand(s?.evaluation?.feedbackHookCommand ?? '');
       } catch {
@@ -270,6 +274,21 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
       setPrivacySaving(false);
     }
   }, [postLaunchReflow]);
+
+  const handleOutboundMaskToggle = useCallback(async (next: boolean) => {
+    const previous = outboundMaskEnabled;
+    setPrivacySaving(true);
+    setOutboundMaskEnabled(next);
+    try {
+      const nextCfg = { ...(privacyCfgRef.current ?? {}), outboundSecretMask: next };
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', { privacy: nextCfg } as Partial<AppSettings>);
+      privacyCfgRef.current = nextCfg;
+    } catch {
+      setOutboundMaskEnabled(previous);
+    } finally {
+      setPrivacySaving(false);
+    }
+  }, [outboundMaskEnabled]);
 
   // 焦点离开才写盘：命令是逐字符输入的，每敲一下都过一次 settings IPC 没必要。
   const handleFeedbackHookCommit = useCallback(async (next: string) => {
@@ -615,6 +634,21 @@ const PrivacySettings: React.FC<PrivacySettingsProps> = ({ onNavigateSettings })
             </div>
           </div>
         </div>
+      </SettingsSection>
+
+      <SettingsSection
+        title={privacyText.outboundMask.title}
+        description={privacyText.outboundMask.description}
+      >
+        <PrivacySwitch
+          testId="privacy-outbound-secret-mask-toggle"
+          checked={outboundMaskEnabled}
+          disabled={privacySaving}
+          label={privacyText.outboundMask.label}
+          body={privacyText.outboundMask.body}
+          icon={<KeyRound className="h-4 w-4 text-zinc-400" />}
+          onChange={(next) => { void handleOutboundMaskToggle(next); }}
+        />
       </SettingsSection>
 
       {feedbackHookSection}

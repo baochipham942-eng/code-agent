@@ -883,6 +883,12 @@ export const zhSettingsWork = {
           off: '关',
         },
       },
+      outboundMask: {
+        title: '出云密钥掩码',
+        description: '默认关闭。开启后，发给模型厂商的请求里密钥和令牌会换成占位符，回复里再换回真实值；聊天界面始终显示真实值。',
+        label: '发往模型厂商前掩码密钥',
+        body: '往对话里粘贴 .env 或密钥时，厂商请求体里只会出现占位符，本机收到回复后自动还原。掩码失败时该次请求不会发出。',
+      },
       evaluation: {
         title: '评测反馈池钩子',
         description: '评测抽屉里「进反馈池」按钮要跑的命令。留空 = 按钮退化成复制 fb add 命令文本。',

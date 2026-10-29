@@ -855,6 +855,7 @@ export const Sidebar: React.FC = () => {
             <button
               onClick={() => setShowUserMenu(!showUserMenu)}
               aria-label={sb.userMenu}
+              aria-haspopup="menu"
               aria-expanded={showUserMenu}
               /* 落到全侧栏基准轨（数值见 Sidebar 根的横向节奏注释）：
                  根带 6 + 容器 p-2(8) + 行 px-3(12) = 图标左缘 26；+图标 16 +gap-2.5(10) = 昵称左缘 52，

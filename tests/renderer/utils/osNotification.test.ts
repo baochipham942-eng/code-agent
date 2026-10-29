@@ -44,7 +44,7 @@ describe('osNotification', () => {
     expect(domainInvoke).toHaveBeenCalledWith(
       IPC_DOMAINS.NOTIFICATION,
       'reportClientDelivery',
-      { mode: 'suppressed-focused', sent: false },
+      { mode: 'suppressed-focused', dispatched: false },
     );
   });
 
@@ -60,7 +60,7 @@ describe('osNotification', () => {
     expect(domainInvoke).toHaveBeenCalledWith(
       IPC_DOMAINS.NOTIFICATION,
       'reportClientDelivery',
-      { mode: 'tauri', granted: true, sent: true },
+      { mode: 'tauri', granted: true, dispatched: true },
     );
   });
 
@@ -75,7 +75,7 @@ describe('osNotification', () => {
     expect(domainInvoke).toHaveBeenCalledWith(
       IPC_DOMAINS.NOTIFICATION,
       'reportClientDelivery',
-      { mode: 'tauri', granted: false, sent: false },
+      { mode: 'tauri', granted: false, dispatched: false },
     );
   });
 });

@@ -233,7 +233,7 @@ class NotificationService implements Disposable {
       ...(data.failureKind ? { failureKind: data.failureKind } : {}),
       ...(data.resetAt ? { resetAt: data.resetAt } : {}),
     });
-    logger.info('Notification sent', { sessionTitle });
+    logger.info('Notification dispatched to renderer', { sessionTitle });
   }
 
   /** Background restart-resume is silent in the chat surface, so expose one system signal. */

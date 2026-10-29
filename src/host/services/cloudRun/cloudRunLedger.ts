@@ -130,6 +130,14 @@ export class CloudRunLedger {
     return { record, position: this.repository.getQueuePosition(record) };
   }
 
+  /**
+   * 排程方（cloudCronScheduler）要按「这本账当前解析出的账户」过滤到期行时读这里，
+   * 与 admit 的账户同一事实源；不给任何调用方开「自带 accountId 进 admit」的口子。
+   */
+  resolveAccountId(): string | null {
+    return this.accountResolver();
+  }
+
   bindExecutionRunId(runId: string, executionRunId: string): CloudRunRecord {
     return this.repository.bindExecutionRunId(runId, executionRunId, this.clock());
   }

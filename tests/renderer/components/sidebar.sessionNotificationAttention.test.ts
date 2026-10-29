@@ -40,4 +40,17 @@ describe('侧栏通知未读接线', () => {
     expect(handled).toBe(false);
     expect(markSessionUnread).not.toHaveBeenCalled();
   });
+
+  it('预算窗口折起弹窗时的 attentionOnly 事件仍即时标记未读', () => {
+    const markSessionUnread = vi.fn();
+
+    const handled = applySessionNotificationAttention(
+      notification({ markSessionUnread: true, attentionOnly: true }),
+      { markSessionUnread },
+    );
+
+    expect(handled).toBe(true);
+    expect(markSessionUnread).toHaveBeenCalledOnce();
+    expect(markSessionUnread).toHaveBeenCalledWith('session-1');
+  });
 });

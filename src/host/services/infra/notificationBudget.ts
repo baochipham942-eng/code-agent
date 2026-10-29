@@ -20,6 +20,9 @@ interface NotificationBudgetOptions<T extends NotificationBudgetItem> {
   clearTimer?: (timer: NotificationBudgetTimer) => void;
 }
 
+/** enqueue 的去向：立即投递（豁免/开窗首条）还是暂存等窗口收尾。 */
+export type NotificationBudgetDisposition = 'delivered' | 'held';
+
 export class NotificationBudget<T extends NotificationBudgetItem> {
   private readonly deliver: (item: T) => void;
   private readonly deliverDigest: (items: readonly T[]) => void;
@@ -40,17 +43,18 @@ export class NotificationBudget<T extends NotificationBudgetItem> {
     });
   }
 
-  enqueue(item: T): void {
+  enqueue(item: T): NotificationBudgetDisposition {
     if (item.intent === 'needs_input' || item.intent === 'task_failed' || item.urgent === true) {
       this.deliver(item);
-      return;
+      return 'delivered';
     }
     if (this.windowStartedAt === null) {
       this.deliver(item);
       this.openWindow();
-      return;
+      return 'delivered';
     }
     this.held.push(item);
+    return 'held';
   }
 
   clear(): void {

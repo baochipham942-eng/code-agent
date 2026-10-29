@@ -125,6 +125,13 @@ describe('NotificationBudget', () => {
     expect(setTimer).toHaveBeenCalledTimes(1);
   });
 
+  it('reports each enqueue as delivered or held so callers can flush side effects promptly', () => {
+    expect(budget.enqueue(item('first'))).toBe('delivered');
+    expect(budget.enqueue(item('held'))).toBe('held');
+    expect(budget.enqueue(item('urgent', { urgent: true }))).toBe('delivered');
+    expect(budget.enqueue(item('input', { intent: 'needs_input' }))).toBe('delivered');
+  });
+
   it('clear drops held items and resets the next item to first', () => {
     budget.enqueue(item('first'));
     budget.enqueue(item('held'));

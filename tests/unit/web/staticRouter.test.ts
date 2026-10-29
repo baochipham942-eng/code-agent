@@ -107,6 +107,40 @@ describe('createStaticRouter', () => {
     );
     expect(body).toContain('</script>');
   });
+
+  // FB-430：DNS 重绑定（Host 是外部域名）和外站跳转（cross-site）都拿不到带 token 的页面
+  it('refuses the token page when Host is not loopback', async () => {
+    const port = new URL(baseUrl).port;
+    const body = await new Promise<{ status: number; text: string }>((resolve, reject) => {
+      http.get({ host: '127.0.0.1', port, path: '/', headers: { Host: `evil.example.com:${port}` } }, (res) => {
+        let text = '';
+        res.on('data', (c) => { text += c; });
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, text }));
+      }).on('error', reject);
+    });
+    expect(body.status).toBe(421);
+    expect(body.text).not.toContain('test-token');
+  });
+
+  it('refuses the token page on cross-site navigation', async () => {
+    const response = await fetch(`${baseUrl}/?__neoDraft=hi`, { headers: { 'Sec-Fetch-Site': 'cross-site' } });
+    expect(response.status).toBe(403);
+    expect(await response.text()).not.toContain('test-token');
+  });
+
+  it('serves the token page to localhost and same-origin loads', async () => {
+    const port = new URL(baseUrl).port;
+    const viaLocalhost = await new Promise<string>((resolve, reject) => {
+      http.get({ host: '127.0.0.1', port, path: '/', headers: { Host: `localhost:${port}` } }, (res) => {
+        let text = '';
+        res.on('data', (c) => { text += c; });
+        res.on('end', () => resolve(text));
+      }).on('error', reject);
+    });
+    expect(viaLocalhost).toContain('"test-token"');
+    const sameOrigin = await fetch(`${baseUrl}/`, { headers: { 'Sec-Fetch-Site': 'same-origin' } });
+    expect(await sameOrigin.text()).toContain('"test-token"');
+  });
 });
 
 // ── 循环4：运行时 serve 目录解析（包内基线 ⇄ 云端 active 热更）────────────

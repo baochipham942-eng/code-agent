@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* global AbortSignal, fetch, setTimeout */
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -11,7 +12,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CLI_CONNECTOR_DESCRIPTORS } from '../src/shared/constants/cliConnectorDescriptors.ts';
 
 const PROVIDER_ID = 'custom-tokenrhythm';
-const MODEL_ID = 'deepseek-v4-flash';
+const SLOTLESS_MODEL_CANDIDATES = [
+  'deepseek-v4-flash',
+  'deepseek-flash',
+  'deepseek-v4-flash-0731',
+  'deepseek-v4-pro',
+];
 const STATE_FILE = '.neo-verify-state.json';
 const DEFAULT_SECRET_FILE = path.join(os.homedir(), '.ship', 'secrets', 'neo-dogfood.env');
 const DEFAULT_SOURCE_DATA_DIR = path.join(os.homedir(), '.code-agent-dev');
@@ -63,16 +69,28 @@ function copyModelDescriptor(value) {
   return Object.fromEntries(allowed.filter((key) => value[key] !== undefined).map((key) => [key, value[key]]));
 }
 
+export function resolveSlotlessModelId(sourceProvider) {
+  const models = sourceProvider?.models;
+  const modelId = SLOTLESS_MODEL_CANDIDATES.find((candidate) => {
+    const descriptor = models?.[candidate];
+    return descriptor && typeof descriptor === 'object' && !Array.isArray(descriptor) && descriptor.enabled !== false;
+  });
+  if (modelId) return modelId;
+  const states = SLOTLESS_MODEL_CANDIDATES.map((candidate) => {
+    const descriptor = models?.[candidate];
+    return `${candidate}=${descriptor?.enabled === false ? 'disabled' : 'missing'}`;
+  });
+  fail(`no enabled model candidate for ${PROVIDER_ID}: ${states.join(', ')}`);
+}
+
 export function buildSlotlessConfig(source, tokenRhythmKey, nativeConnectorIds) {
   const sourceModels = source?.models;
   const sourceProvider = sourceModels?.providers?.[PROVIDER_ID];
-  const sourceModel = sourceProvider?.models?.[MODEL_ID];
   if (!sourceProvider || typeof sourceProvider !== 'object' || Array.isArray(sourceProvider)) {
     fail(`source config is missing provider ${PROVIDER_ID}`);
   }
-  if (!sourceModel || typeof sourceModel !== 'object' || Array.isArray(sourceModel)) {
-    fail(`source config is missing model ${PROVIDER_ID}/${MODEL_ID}`);
-  }
+  const modelId = resolveSlotlessModelId(sourceProvider);
+  const sourceModel = sourceProvider.models[modelId];
 
   const provider = {};
   for (const key of ['enabled', 'displayName', 'baseUrl', 'protocol', 'temperature', 'maxTokens']) {
@@ -80,8 +98,8 @@ export function buildSlotlessConfig(source, tokenRhythmKey, nativeConnectorIds) 
   }
   provider.enabled = true;
   provider.apiKey = tokenRhythmKey;
-  provider.model = MODEL_ID;
-  provider.models = { [MODEL_ID]: copyModelDescriptor(sourceModel) };
+  provider.model = modelId;
+  provider.models = { [modelId]: copyModelDescriptor(sourceModel) };
 
   // ConfigService 会把未出现的内置 provider 与默认值合并，其中若干默认 enabled=true。
   // 显式关闭源配置里的其他 provider，避免临时实例把空壳 provider 呈现为可选项；只复制
@@ -96,7 +114,7 @@ export function buildSlotlessConfig(source, tokenRhythmKey, nativeConnectorIds) 
   const routeNames = Object.keys(sourceModels?.routing ?? {});
   const routing = Object.fromEntries(
     (routeNames.length > 0 ? routeNames : ['code', 'fast', 'chat'])
-      .map((route) => [route, { provider: PROVIDER_ID, model: MODEL_ID }]),
+      .map((route) => [route, { provider: PROVIDER_ID, model: modelId }]),
   );
 
   const config = {
@@ -157,7 +175,7 @@ export function buildSlotlessTemplateProvenance(config, sourceConfigPath) {
       .filter((key) => configuredProvider[key] !== undefined)
       .map((key) => [key, configuredProvider[key]]),
   );
-  const modelDescriptorSha256 = fingerprintJson(configuredProvider.models[MODEL_ID]);
+  const modelDescriptorSha256 = fingerprintJson(configuredProvider.models[configuredProvider.model]);
   const connectorsSha256 = fingerprintJson(config.connectors);
   const mcp = config.mcp === undefined
     ? { present: false, sha256: null }
@@ -419,7 +437,7 @@ async function assertConfiguredModel(url, token) {
   const body = await response.json().catch(() => null);
   const settings = body?.success ? body.data : null;
   const provider = settings?.models?.providers?.[PROVIDER_ID];
-  const model = provider?.models?.[MODEL_ID];
+  const model = provider?.models?.[provider.model];
   if (
     !response.ok
     || !provider
@@ -428,7 +446,7 @@ async function assertConfiguredModel(url, token) {
     || !model
     || model.enabled === false
   ) {
-    fail(`model self-check failed: ${PROVIDER_ID}/${MODEL_ID} is not configured`);
+    fail(`model self-check failed: ${PROVIDER_ID}/${provider?.model} is not configured`);
   }
 }
 
@@ -803,7 +821,7 @@ async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigAr
     child.unref();
     console.log('NEO_VERIFY_SECURE_STORAGE=configured');
     console.log(`NEO_VERIFY_KEY=${maskTokenRhythmKey(credentials.tokenRhythmKey)}`);
-    console.log(`NEO_VERIFY_MODEL=${PROVIDER_ID}/${MODEL_ID}`);
+    console.log(`NEO_VERIFY_MODEL=${PROVIDER_ID}/${config.models.providers[PROVIDER_ID].model}`);
     console.log(
       `NEO_VERIFY_TEMPLATE=${template.fingerprintSha256.slice(0, 16)}`
       + ` temperature=${template.provider.temperature ?? 'absent'}`

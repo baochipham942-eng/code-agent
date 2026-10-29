@@ -220,6 +220,11 @@ pub struct QuitCoordinator {
     /// 「后台继续」置位（N-RESIDENT-HOST-SHELL-RUST）：随后重入的
     /// ExitRequested 与 RunEvent::Exit 都跳过 cleanup_server，常驻宿主留着跑。
     background_continue: AtomicBool,
+    /// 「停止并退出」的意图 POST 已被 daemon 确认（N-QUIT-STOP-DAEMON-FIX-FU1）：
+    /// 随后的 cleanup_server 换「送达停机指令后等 daemon 自行排空退出」通道
+    /// （owned 子进程 = 关 stdin 写端；附着守护 = 不发信号），预算
+    /// `resident_host::STOP_INTENT_WAIT`。非消费语义：置位后进程即将退出。
+    stop_intent_landed: AtomicBool,
 }
 
 impl QuitCoordinator {
@@ -269,6 +274,16 @@ impl QuitCoordinator {
 
     pub fn background_continue(&self) -> bool {
         self.background_continue.load(Ordering::Acquire)
+    }
+
+    /// 「停止并退出」意图 POST 成功后置位（对话框回调）；cleanup_server 读取它
+    /// 决定走哪条停止通道。POST 失败/无 token 不置位 → 旧 SIGTERM+3s 兜底。
+    pub fn set_stop_intent_landed(&self) {
+        self.stop_intent_landed.store(true, Ordering::Release);
+    }
+
+    pub fn stop_intent_landed(&self) -> bool {
+        self.stop_intent_landed.load(Ordering::Acquire)
     }
 
     /// 豁免查询（优先级无关行为，只影响上报哪个变体）：最不可逆的先报。
@@ -986,6 +1001,16 @@ mod tests {
             !coordinator.exit_allowed(),
             "放行一次后必须复位，不能豁免后续退出"
         );
+    }
+
+    #[test]
+    fn coordinator_stop_intent_landed_defaults_false_until_set() {
+        // FU1 fallback 合同的一环：意图 POST 失败 / 无 token / 没走到 POST 时标志
+        // 必须是 false，cleanup_server 才会落回旧 SIGTERM+3s 通道。
+        let coordinator = QuitCoordinator::new();
+        assert!(!coordinator.stop_intent_landed());
+        coordinator.set_stop_intent_landed();
+        assert!(coordinator.stop_intent_landed());
     }
 
     #[test]

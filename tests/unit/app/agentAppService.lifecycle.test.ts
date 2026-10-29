@@ -211,7 +211,7 @@ describe('AgentAppService lifecycle routing', () => {
     expect(registry.parkDurable).toHaveBeenCalledWith('run-parked', { reason: 'user_stop' });
   });
 
-  it('rejects a second Continue while the first is in flight and never parks the run it started', async () => {
+  it('a second Continue while the first is in flight is a no-op and never parks the run it started', async () => {
     let releaseResume!: () => void;
     const resumeExistingDurableRun = vi.fn(() => new Promise<void>((resolve) => { releaseResume = resolve; }));
     const registry = {
@@ -239,7 +239,7 @@ describe('AgentAppService lifecycle routing', () => {
     );
 
     const first = service.continueDurableRun('session-1');
-    await expect(service.continueDurableRun('session-1')).rejects.toThrow('already continuing');
+    await expect(service.continueDurableRun('session-1')).resolves.toBeUndefined();
     await vi.waitFor(() => expect(resumeExistingDurableRun).toHaveBeenCalledTimes(1));
     releaseResume();
     await first;

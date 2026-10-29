@@ -23,6 +23,7 @@ import { buildCronJobInput, createDefaultCronJobDraft, type CronJobDraft } from 
 import { CronRunsOnSelector } from './CronRunsOnSelector';
 import { CronResultChannelField } from './CronResultChannel';
 import { showCronLoginWallWarning } from './cronLoginWallNotice';
+import { CLOUD_ROLE_BOUND_ERROR } from './CronCloudRoleRestriction';
 import { SavedRoutineRestate } from './SavedRoutineRestate';
 
 export type SimpleFrequency = 'daily' | 'weekdays' | 'weekly' | 'hourly' | 'once';
@@ -139,7 +140,9 @@ export const CronSimpleCreate: React.FC<CronSimpleCreateProps> = ({ onDone }) =>
       onDone();
     } catch (err) {
       const message = err instanceof Error ? err.message : '';
-      setError(message.includes('Cloud jobs must have an interval')
+      setError(message.includes(CLOUD_ROLE_BOUND_ERROR)
+        ? cc.cloudRoleBoundHint
+        : message.includes('Cloud jobs must have an interval')
         ? cc.cloudIntervalHint
         : message.includes('Local jobs must have an interval')
           ? cc.localIntervalHint

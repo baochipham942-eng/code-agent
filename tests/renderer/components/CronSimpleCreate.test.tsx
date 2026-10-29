@@ -194,4 +194,15 @@ describe('CronSimpleCreate', () => {
     fireEvent.change(screen.getByDisplayValue('09:00'), { target: { value: '09:17' } });
     expect(screen.queryByTestId('cron-stagger-hint')).toBeNull();
   });
+
+  it('云端+角色被宿主拒绝时显示本地化原因而非英文原句', async () => {
+    createJob.mockRejectedValue(new Error('Role-bound agent jobs cannot run on the cloud scheduler'));
+    render(<CronSimpleCreate onDone={() => undefined} />);
+    fireEvent.click(screen.getByTestId('cron-runs-on-cloud'));
+    fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '整理云端简报' } });
+    fireEvent.click(screen.getByText('创建自动化'));
+    await waitFor(() => expect(createJob).toHaveBeenCalled());
+    expect(await screen.findByText(/只能在本机运行/)).toBeTruthy();
+    expect(screen.queryByText(/Role-bound/)).toBeNull();
+  });
 });

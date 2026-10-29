@@ -218,3 +218,26 @@ describe('Feishu onboarding checklist', () => {
     });
   });
 });
+
+describe('CronJobDetail 启用被宿主拒绝（云端角色副本）', () => {
+  it('启用旧停用云端角色副本被拒时显示本地化原因，不抛未处理 rejection', async () => {
+    const updateJob = vi.fn().mockRejectedValue(
+      new Error('Role-bound agent jobs cannot run on the cloud scheduler'),
+    );
+    useCronStore.setState({ updateJob } as never);
+    render(
+      <CronJobDetail
+        job={makeJob({
+          runsOn: 'cloud',
+          enabled: false,
+          action: { type: 'agent', agentType: 'general', prompt: 'x', roleId: 'role-muzhi' },
+        })}
+      />,
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByText('启用'));
+    });
+    expect(screen.getByTestId('cron-detail-toggle-error').textContent).toContain('只能在本机运行');
+    expect(screen.getByTestId('cron-detail-toggle-error').textContent).not.toContain('Role-bound');
+  });
+});

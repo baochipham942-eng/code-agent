@@ -38,6 +38,10 @@ import { CronMailEventFields, mailEventValidationMessage } from './CronMailEvent
 import { CronScheduleFields } from './CronScheduleFields';
 import { CronTemplateRoleField } from './CronTemplateRoleField';
 import { CLOUD_ROLE_BOUND_ERROR, CronCloudRoleRestriction, isCloudRoleBoundAgentDraft } from './CronCloudRoleRestriction';
+import { CronWebhookScheduleFields } from './CronWebhookScheduleFields';
+import { CronWebhookCreatedView } from './CronWebhookCreatedView';
+import { useCronWebhookGate } from './useCronWebhookGate';
+import { takeCronEditorDraft } from './cronEditorDraftStash';
 
 interface CronJobEditorProps {
   isOpen: boolean;
@@ -121,6 +125,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
   );
   const [draft, setDraft] = useState<CronJobDraft>(createDefaultCronJobDraft());
   const [errors, setErrors] = useState<FieldErrors>({});
+  const { cloud, gated: webhookGated, gotoSettings: gotoCloudSettings } = useCronWebhookGate(draft);
   // event 护栏提示的显示闸门：只在提交过或动过事件相关字段之后才亮——
   // 光选「通道消息」不填任何东西不挨红框（r2）。
   const [eventValidationArmed, setEventValidationArmed] = useState(false);
@@ -133,7 +138,8 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
   const [templateValues, setTemplateValues] = useState<Record<string, string>>({});
   // 保存成功且角色绑定的任务：不直接关闭，切换到只读复述视图（Done 才关闭）。
   const [savedJob, setSavedJob] = useState<CronJobDefinition | null>(null);
-
+  // webhook 任务创建成功后：展示一次性链接的任务 id（链接本身只活在 CronWebhookCreatedView）。
+  const [webhookJobId, setWebhookJobId] = useState<string | null>(null);
   // savedJob 只在弹窗「关→开」转换时清：保存成功后 store 的 createJob/updateJob
   // 会 await refresh()，jobs 数组被 IPC 新对象整体替换，CronCenterPanel 派生的
   // job/copySource prop 随之换身份并重跑下面的 reset effect——若每次重跑都清，
@@ -144,7 +150,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
     const reopened = !wasOpenRef.current;
     wasOpenRef.current = isOpen;
     if (!isOpen) return;
-    if (reopened) setSavedJob(null);
+    if (reopened) { setSavedJob(null); setWebhookJobId(null); }
     if (job) {
       setDraft(buildDraftFromJob(job));
       setStep('manual');
@@ -160,8 +166,10 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       });
       setStep('manual');
     } else {
-      setDraft(createDefaultCronJobDraft());
-      setStep('simple');
+      // 从「去设置」回来：取回暂存草稿，不让用户重填整张表单。
+      const stashed = takeCronEditorDraft();
+      setDraft(stashed ?? createDefaultCronJobDraft());
+      setStep(stashed ? 'manual' : 'simple');
       setSelectedTemplate(null);
       setTemplateValues({});
     }
@@ -189,13 +197,9 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
       { value: 'cron', label: 'Cron 表达式' },
       { value: 'event', label: cc.eventScheduleOption },
       { value: 'event-mail', label: cc.eventMailScheduleOption },
-      // 创建菜单不提供 webhook；只有正在编辑一条已落库 webhook 任务时才露出，
-      // 否则下拉的受控值对不上选项，保存前就会被看成通道消息。
-      ...(draft.scheduleType === 'event-webhook'
-        ? [{ value: 'event-webhook', label: cc.eventWebhookScheduleOption }]
-        : []),
+      { value: 'event-webhook', label: cc.eventWebhookScheduleOption },
     ],
-    [cc.eventScheduleOption, cc.eventMailScheduleOption, cc.eventWebhookScheduleOption, draft.scheduleType]
+    [cc.eventScheduleOption, cc.eventMailScheduleOption, cc.eventWebhookScheduleOption]
   );
 
   // event 调度的创建期护栏（host createJob 同款）：只允许本机 + Agent 动作。
@@ -337,6 +341,10 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           setSavedJob(created);
           return;
         }
+        if (draft.scheduleType === 'event-webhook') {
+          setWebhookJobId(created.id);
+          return;
+        }
       }
       onClose();
     } catch (error) {
@@ -353,6 +361,15 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
     return (
       <Modal isOpen={isOpen} onClose={onClose} title={title}>
         <SavedRoutineRestate job={savedJob} onDone={onClose} />
+      </Modal>
+    );
+  }
+
+  // ── Webhook 一次性链接视图（创建成功后）────────────────────────────
+  if (webhookJobId) {
+    return (
+      <Modal isOpen={isOpen} onClose={onClose} title={cc.webhook.cardTitle}>
+        <CronWebhookCreatedView jobId={webhookJobId} onDone={onClose} />
       </Modal>
     );
   }
@@ -588,7 +605,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           <Button variant="ghost" onClick={onClose} disabled={submitting}>
             取消
           </Button>
-          <Button onClick={handleSubmit} loading={submitting} disabled={cloudRoleBound}>
+          <Button onClick={handleSubmit} loading={submitting} disabled={cloudRoleBound || webhookGated}>
             {job ? '保存修改' : '创建任务'}
           </Button>
         </>
@@ -712,6 +729,20 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
                     setField('eventChatId', eventChatId);
                     setEventValidationArmed(true);
                   }}
+                  maxRunBudget={draft.maxRunBudget}
+                  onBudgetChange={(maxRunBudget) => {
+                    setField('maxRunBudget', maxRunBudget);
+                    setEventValidationArmed(true);
+                  }}
+                  validationMessage={eventValidationMessage}
+                />
+              )}
+
+              {draft.scheduleType === 'event-webhook' && (
+                <CronWebhookScheduleFields
+                  loading={cloud.loading}
+                  configured={cloud.configured}
+                  onGotoSettings={gotoCloudSettings}
                   maxRunBudget={draft.maxRunBudget}
                   onBudgetChange={(maxRunBudget) => {
                     setField('maxRunBudget', maxRunBudget);

@@ -49,6 +49,7 @@ import {
 import { CronCloudRuntime } from './cronCloudRuntime';
 import { CronEventTrigger, assertEventScheduleConstraints, hasExplicitChatListenBinding } from './cronEventTrigger';
 import { CronWebhookRelay, assertWebhookScheduleCloudConfigured } from './cronWebhookRelay';
+import { runWebhookHookOp } from './cronWebhookHookOps';
 import { setChannelListenResolver } from '../channels/channelListenRegistry';
 import { getChannelManager } from '../channels/channelManager';
 import {
@@ -123,9 +124,11 @@ export class CronService implements Disposable {
   private readonly jobsChangedListeners = new Set<() => void>();
   private cloudRuntime = new CronCloudRuntime(
     () => {
-      const config = getConfigService().getSettings().cronCloud;
+      const configService = getConfigService();
+      const config = configService.getSettings().cronCloud;
       const baseUrl = config?.baseUrl?.trim();
-      const token = config?.token?.trim();
+      // token 只存 secureStorage；settings.cronCloud.token 仅作旧版本只读回退。
+      const token = (configService.getServiceApiKey?.('neo-cron-cloud') ?? config?.token)?.trim();
       return baseUrl && token ? { baseUrl, token } : undefined;
     },
     {
@@ -196,6 +199,15 @@ export class CronService implements Disposable {
     this.jobsReconcileTimer.unref?.();
     console.error('[CronService] Initialized');
   }
+
+  /** 云端事件流（hook 投递的唯一通道）幂等启动：设置页保存云端配置后调用，免重启。 */
+  ensureCloudStream(): void {
+    if (this.cronWebhookRelay && this.cloudRuntime.isConfigured()) this.cloudRuntime.start(this.cronWebhookRelay.handleStreamFrame);
+  }
+
+  /** webhook hook 注册/轮换：{url, token} 只在返回值里出现一次（见 cronWebhookHookOps）。 */
+  registerWebhookHook(jobId: string) { return runWebhookHookOp('register', jobId, this.jobs, this.cronWebhookRelay, () => this.ensureCloudStream()); }
+  rotateWebhookHook(jobId: string) { return runWebhookHookOp('rotate', jobId, this.jobs, this.cronWebhookRelay, () => this.ensureCloudStream()); }
 
   async shutdown(): Promise<void> {
     this.cronEventTrigger?.dispose();

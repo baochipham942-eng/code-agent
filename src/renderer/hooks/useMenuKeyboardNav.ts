@@ -20,13 +20,14 @@ export function useMenuKeyboardNav(
 
     enabledItems()[0]?.focus();
 
+    const onDocumentKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      closeRef.current();
+    };
+
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        event.stopPropagation();
-        closeRef.current();
-        return;
-      }
       if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
 
       const items = enabledItems();
@@ -41,7 +42,11 @@ export function useMenuKeyboardNav(
       items[nextIndex]?.focus();
     };
 
+    document.addEventListener('keydown', onDocumentKeyDown);
     container.addEventListener('keydown', onKeyDown);
-    return () => container.removeEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onDocumentKeyDown);
+      container.removeEventListener('keydown', onKeyDown);
+    };
   }, [open, containerRef]);
 }

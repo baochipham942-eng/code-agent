@@ -153,6 +153,20 @@ describe('SessionActionsMenu accessibility', () => {
     expect(document.activeElement).toBe(trigger);
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
   });
+
+  it('closes on Escape after focus leaves the open menu', () => {
+    render(<SessionActionsMenu />);
+    const trigger = screen.getByRole('button', { name: sessionCopy.menuAria });
+    fireEvent.click(trigger);
+    expect(document.activeElement).toBe(screen.getAllByRole('menuitem')[0]);
+
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: 'Escape' });
+
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+  });
 });
 
 describe('SidebarAccountMenu accessibility', () => {
@@ -191,5 +205,20 @@ describe('SidebarAccountMenu accessibility', () => {
     fireEvent.keyDown(items[1], { key: 'Escape' });
     expect(screen.queryByRole('menu')).toBeNull();
     expect(document.activeElement).toBe(trigger);
+  });
+
+  it('closes on Escape after focus leaves the open menu', () => {
+    render(<AccountMenuHarness />);
+    const trigger = screen.getByRole('button', { name: sidebarCopy.userMenu });
+    trigger.focus();
+    fireEvent.click(trigger);
+    expect(document.activeElement).toBe(screen.getAllByRole('menuitem')[0]);
+
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: 'Escape' });
+
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
   });
 });

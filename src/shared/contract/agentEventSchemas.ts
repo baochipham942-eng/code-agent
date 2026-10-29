@@ -22,6 +22,7 @@ import type {
   ResearchCompleteData,
   ResearchDetectedData,
   ResearchErrorData,
+  ConnectorRequiredEventData,
   ResearchModeStartedData,
   ResearchProgressData,
   RoleDraftPendingData,
@@ -466,6 +467,7 @@ const stabilityByType = {
   turn_diff: 'experimental',
   notification: 'experimental',
   routing_resolved: 'experimental',
+  connector_required: 'experimental',
   artifact_locator: 'stable',
   agent_complete: 'stable',
   agent_cancelled: 'stable',
@@ -606,6 +608,7 @@ const hostReasonPayloadSchema = typed<HostReasonPayload>(z.object({
   modelText: z.string(),
 }));
 const RoutingResolvedEventSchema = event('routing_resolved', typed<RoutingResolvedEventData>(z.object({ mode: z.enum(['auto', 'explicit']), agentId: z.string(), agentName: z.string(), reason: z.union([z.string(), hostReasonPayloadSchema]), score: z.number(), fallbackToDefault: z.boolean().optional(), requestedAgentId: z.string().optional(), timestamp: z.number().optional() })));
+const ConnectorRequiredEventSchema = event('connector_required', typed<ConnectorRequiredEventData>(z.object({ connectors: z.array(z.object({ id: z.string(), source: z.enum(['selected', 'expert']), reason: z.string() })) })));
 const ArtifactLocatorEventSchema = event('artifact_locator', typed<ArtifactLocatorTelemetryEventData>(z.object({ state: z.enum(['resolved', 'stale', 'blocked']), kind: z.enum(['spreadsheet', 'presentation', 'document']), reason: z.string() })));
 const AgentCompleteEventSchema = event('agent_complete', z.null());
 const AgentCancelledEventSchema = event('agent_cancelled', z.null());
@@ -750,7 +753,7 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   ArtifactWriteStartedEventSchema, PermissionRequestEventSchema, ModelDecisionEventSchema, HookTriggerEventSchema,
   HookStartedEventSchema, ErrorEventSchema, MessageDeltaEventSchema, MessageSnapshotEventSchema, StreamChunkEventSchema,
   StreamReasoningEventSchema, StreamToolCallStartEventSchema, StreamToolCallDeltaEventSchema, TodoUpdateEventSchema,
-  TaskUpdateEventSchema, PlanApprovalUpdateEventSchema, TurnDiffEventSchema, NotificationEventSchema, RoutingResolvedEventSchema, ArtifactLocatorEventSchema,
+  TaskUpdateEventSchema, PlanApprovalUpdateEventSchema, TurnDiffEventSchema, NotificationEventSchema, RoutingResolvedEventSchema, ConnectorRequiredEventSchema, ArtifactLocatorEventSchema,
   AgentCompleteEventSchema, AgentCancelledEventSchema, GoalIterationEventSchema, GoalGateEventSchema,
   GoalCompleteEventSchema, AgentThinkingEventSchema, TurnStartEventSchema, TurnEndEventSchema,
   SubagentActivityEventSchema, SubagentRunEndEventSchema, SkillActivatedEventSchema, MemoryInjectedEventSchema, MemoryWrittenEventSchema,

@@ -116,3 +116,16 @@ action "Send a notification via a webhook"）：
 | Neo 帧解析与 hook 端点调用 | `src/host/cron/cronApiClient.ts` |
 | 事件源契约（`EventWebhookScheduleConfig`） | `src/shared/contract/cron.ts` |
 | 入队/去重/untrusted 块 | `src/host/cron/cronEventTrigger.ts` |
+
+## Neo 侧用户入口（N-CRON-WEBHOOK-CLOUD-HOOK-FU1）
+
+- **云端服务配置**：设置 → 权限与安全 页的「云端计划任务服务」卡。地址写 `settings.cronCloud.baseUrl`；
+  令牌只进 secureStorage（service key `neo-cron-cloud`，不进 settings.json；旧版 `settings.cronCloud.token`
+  仅作只读回退）。保存后渲染层调 cron IPC `ensureCloudStream`，主进程幂等启动云端事件流（hook 投递的唯一通道），免重启。
+- **创建**：手动配置的调度类型常驻「Webhook 投递」；云端未配置时显示原因 + 「去设置」并禁用保存（去设置前草稿暂存、回来取回）。
+  创建成功后渲染层调 IPC `registerWebhookHook`，完整 URL 只在一次性卡里展示一次（Copy + 密码级警示）。
+- **重新生成**：任务详情的「Webhook 链接」块不再显示链接，只说明已隐藏；「重新生成」确认后调 `rotateWebhookHook`
+  （旧链接立即失效），新 URL 走同一张一次性卡。任务停用时 Neo 已 `remove` hook，详情提示链接已吊销；重新启用不自动 mint，
+  用「重新生成」找回（rotate 对已被 remove 的 jobId 的行为由中继仓定义，Neo 侧未能验证）。
+- hook 响应里的 `{url, token}` 只经 IPC 返回值到达渲染层：主进程不记录、不持久化；失败响应只带不含密钥的消息，
+  云端未配置用独立错误码 `CRON_CLOUD_NOT_CONFIGURED` 供渲染层本地化。

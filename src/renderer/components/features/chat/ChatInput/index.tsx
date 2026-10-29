@@ -669,9 +669,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     clearDebugDraftParamsFromCurrentUrl(window);
     window.setTimeout(() => {
       inputAreaRef.current?.focus();
-      if (draft.autoSubmit) {
-        formRef.current?.requestSubmit();
-      }
     }, 0);
   }, []);
 

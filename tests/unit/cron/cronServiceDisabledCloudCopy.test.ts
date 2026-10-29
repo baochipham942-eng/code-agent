@@ -408,3 +408,75 @@ describe('CronService 跨进程 reconcile 重建停用的云端任务（真实 C
     await service.shutdown();
   });
 });
+
+// ============================================================================
+// N-ROLE-ROUTINE-RESTATE-FU1-FU1-FU1-FU1-FU1：另一进程创建的启用云端任务
+// 只存在 DB 行里；本进程 reconcile 后必须沿用行内远端指针，后续改名只能 update。
+// ============================================================================
+describe('CronService 跨进程 reconcile 重建启用的云端任务（真实 CronCloudRuntime · 打桩云端网关）', () => {
+  it('(f) 空内存从 DB 重建启用任务：保留 remote-1，后续改名只 update 不 add', async () => {
+    const calls: Array<{ path: string; method: string; body?: Record<string, unknown> }> = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: unknown, init?: { method?: string; body?: unknown }) => {
+      const path = new URL(String(input)).pathname;
+      const body = init?.body == null
+        ? undefined
+        : JSON.parse(String(init.body)) as Record<string, unknown>;
+      calls.push({ path, method: init?.method ?? 'GET', body });
+      if (path === '/api/cron/add') return fakeOk({ id: 'remote-duplicate' });
+      if (path === '/api/cron/update') return fakeOk({});
+      if (path === '/api/cron/list') return fakeOk({ jobs: [] });
+      throw new Error(`unexpected cloud cron request: ${path}`);
+    }));
+
+    const service = new CronService();
+    await service.initialize();
+    configState.cronCloud = { baseUrl: 'https://cloud.example.test', token: 'test-token' };
+
+    const jobId = 'local-enabled-reconcile-1';
+    dbState.cronRows = [{
+      id: jobId,
+      name: '另一进程创建的启用云端任务',
+      description: null,
+      schedule_type: 'every',
+      schedule: JSON.stringify({ type: 'every', interval: 1, unit: 'hours' }),
+      action: JSON.stringify({ type: 'agent', agentType: 'default', prompt: '汇总今天的日程' }),
+      runs_on: 'cloud',
+      max_run_budget: null,
+      max_runs: null,
+      run_count: 0,
+      min_interval_seconds: null,
+      result_channel: null,
+      cloud_job_id: 'remote-1',
+      enabled: 1,
+      max_retries: 0,
+      retry_delay: null,
+      timeout: null,
+      tags: null,
+      metadata: '{}',
+      created_at: Date.now() - 60_000,
+      updated_at: Date.now(),
+    }];
+
+    await (service as unknown as { reconcileJobsFromDatabase: () => Promise<void> })
+      .reconcileJobsFromDatabase();
+
+    const activeAfterReconcile = (service as unknown as {
+      jobs: Map<string, { cloudJobId?: string }>;
+    }).jobs.get(jobId);
+    expect(activeAfterReconcile?.cloudJobId).toBe('remote-1');
+
+    const renamed = await service.updateJob(jobId, { name: '本进程改名' });
+    expect(renamed?.name).toBe('本进程改名');
+
+    const updateCalls = calls.filter((call) => call.path === '/api/cron/update');
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0]?.body?.id).toBe('remote-1');
+    expect(calls.filter((call) => call.path === '/api/cron/add')).toHaveLength(0);
+
+    const jobRows = dbState.savedRows.filter((row) => row[0] === jobId);
+    expect(jobRows.length).toBeGreaterThan(0);
+    expect(jobRows[jobRows.length - 1]?.[12]).toBe('remote-1');
+
+    await service.shutdown();
+  });
+});

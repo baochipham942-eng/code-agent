@@ -8,7 +8,7 @@
 import { create } from 'zustand';
 import type { ConnectorRequiredItem } from '@shared/contract/agent';
 
-export type ConnectorRequiredStatus = 'pending' | 'resuming' | 'dismissed';
+type ConnectorRequiredStatus = 'pending' | 'resuming' | 'dismissed';
 
 export interface ConnectorRequiredEntry {
   sessionId: string;

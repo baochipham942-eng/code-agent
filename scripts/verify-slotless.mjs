@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* global AbortSignal, fetch, setTimeout */
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';

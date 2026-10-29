@@ -242,6 +242,13 @@ const BROWSER_ACTION_CATALOG: ActionCatalogMap = {
     consequence: "no_external_side_effect",
     evidenceKind: "browser_logs",
   },
+  // N-BROWSER-KEEP-RESULT-PAGE: closes the other tabs and flips the binding to
+  // kept — a session-lifecycle mutation, not a page read.
+  keep_result_page: {
+    ...WRITE_BROWSER_DEFAULTS,
+    consequence: "no_external_side_effect",
+    evidenceKind: "workbench_state",
+  },
   list_profiles: {
     ...READ_BROWSER_DEFAULTS,
     consequence: "no_external_side_effect",

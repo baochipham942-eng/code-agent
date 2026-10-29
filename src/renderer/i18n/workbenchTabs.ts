@@ -137,6 +137,17 @@ export const workbenchTabsZh = {
       importCookiesOpenFullDiskAccess: '打开系统设置',
       importCookiesUseRelayHint: '或改用 Chrome Relay',
       livePicture: 'Neo 正在浏览的页面画面',
+      // N-BROWSER-KEEP-RESULT-PAGE：终态条（结果页保留 / 已关闭可重开）
+      keptResult: {
+        keptTitle: '结果页已保留',
+        keptHint: 'Neo 把这一页留给你了，提交状态原样保留，可以直接继续操作。',
+        keptOpen: '在 Neo 中打开',
+        keptClosedHint: '这页窗已关闭（闲置回收或浏览器被关）。重新打开只恢复网址，不恢复表单里已填的内容。',
+        closedTitle: '结果页已关闭',
+        reopen: '重新打开',
+        reopenFailed: '打不开这一页：{error}',
+        adoptFailed: '认领结果页失败：{error}',
+      },
       // 地址栏（2026-08-04 工单）：显示当前页 URL、可编辑回车导航；搜索词判无效不做搜索
       addressBarLabel: '地址栏',
       addressBarPlaceholder: '输入网址，回车打开',
@@ -308,6 +319,17 @@ export const workbenchTabsEn: typeof workbenchTabsZh = {
       importCookiesOpenFullDiskAccess: 'Open System Settings',
       importCookiesUseRelayHint: 'Or use Chrome Relay',
       livePicture: 'Live picture of the page Neo is browsing',
+      // N-BROWSER-KEEP-RESULT-PAGE: terminal bar (result page kept / closed, reopen)
+      keptResult: {
+        keptTitle: 'Result page kept',
+        keptHint: 'Neo left this page for you — the submitted state is intact, keep working right here.',
+        keptOpen: 'Open in Neo',
+        keptClosedHint: 'This window was closed (idle reclaim or the browser was closed). Reopening restores the address only, not anything typed into forms.',
+        closedTitle: 'Result page closed',
+        reopen: 'Reopen',
+        reopenFailed: 'Could not open this page: {error}',
+        adoptFailed: 'Could not attach to the kept page: {error}',
+      },
       addressBarLabel: 'Address bar',
       addressBarPlaceholder: 'Type a URL and press Enter',
       addressBarInvalid: 'That is not a valid URL. Enter a full address like example.com.',

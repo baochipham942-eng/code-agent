@@ -83,6 +83,64 @@ export async function openHttpLinkInRailAsync(input: OpenHttpLinkInRailInput): P
   }
 }
 
+/** kept 结果页三态（N-BROWSER-KEEP-RESULT-PAGE）：none=无；kept=窗还活着；closed=已关、URL 留存。 */
+export interface KeptResultPage {
+  state: 'none' | 'kept' | 'closed';
+  url: string | null;
+  title: string | null;
+}
+
+/** 查询本会话 kept 结果页状态；host 不可达或无会话按 none 处理（终态条不硬依赖 IPC）。 */
+export async function getKeptResultPage(conversationId: string | null | undefined): Promise<KeptResultPage> {
+  const normalized = conversationId?.trim();
+  const bridge = domainBridge();
+  if (!bridge || !normalized) return { state: 'none', url: null, title: null };
+  try {
+    const response = await bridge.invoke<KeptResultPage>(
+      IPC_DOMAINS.WORKSPACE,
+      'getKeptResultPage',
+      { conversationId: normalized },
+    );
+    if (!response.success || !response.data) {
+      return { state: 'none', url: null, title: null };
+    }
+    return response.data;
+  } catch (error) {
+    logger.error('Failed to fetch kept result page state', error, { conversationId: normalized });
+    return { state: 'none', url: null, title: null };
+  }
+}
+
+/** 认领 kept 结果页：user run 绑上模型留下的活窗（不导航）；返回与 openLinkInRail 同形快照。 */
+export async function adoptKeptResultPage(input: {
+  conversationId: string | null | undefined;
+  workspace: string | null | undefined;
+}): Promise<OpenLinkInRailResult> {
+  const conversationId = input.conversationId?.trim();
+  const workspace = input.workspace?.trim() ?? '';
+  const bridge = domainBridge();
+  if (!bridge || !conversationId) {
+    throw new Error('Kept result page adoption requires a conversation.');
+  }
+  useAppStore.getState().openWorkbenchTab('browser', { source: 'user' });
+  const response = await bridge.invoke<OpenLinkInRailResult>(
+    IPC_DOMAINS.WORKSPACE,
+    'adoptKeptResultPage',
+    { conversationId, workspace },
+  );
+  if (!response.success || !response.data) {
+    throw new Error(response.error?.message || 'Failed to open the kept result page.');
+  }
+  const applied = useSurfaceExecutionStore.getState().setNativeSnapshot(
+    conversationId,
+    response.data.snapshot,
+  );
+  if (applied === 'invalid') {
+    throw new Error('Kept result page returned an invalid Surface snapshot.');
+  }
+  return response.data;
+}
+
 export async function controlUserBrowserHistory(input: {
   conversationId: string | null | undefined;
   workspace: string | null | undefined;

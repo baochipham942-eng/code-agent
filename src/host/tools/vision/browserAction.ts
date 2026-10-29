@@ -33,6 +33,7 @@ import {
   withWorkbenchTrace,
 } from './browserActionResultProjection';
 import { maybeExecuteBrowserSurfaceInteraction } from './browserActionSurfaceInteractions';
+import { executeKeepResultPage } from './browserKeepResultPage';
 import { enforceBrowserCaptchaTakeoverGate } from './browserCaptchaGate';
 import { enforceBrowserLoginWallStop } from './browserLoginWallGate';
 import {
@@ -85,6 +86,7 @@ type BrowserActionType =
   | 'wait'
   | 'fill_form'
   | 'get_logs'
+  | 'keep_result_page'
   | 'execute_goal';
 
 const MANAGED_SESSION_ACTIONS = new Set<BrowserActionType>([
@@ -128,6 +130,7 @@ export const browserActionTool: Tool = {
 Routing: prefer web_fetch/search for plain reads; use browser_action for login/session, multi-page, or visual work. After mutations, refresh DOM/a11y evidence before claiming final state.
 engine (ADR-041): optional auto|managed|relay (default auto). Explicit managed/relay never silent-switches. managed=Neo isolated browser; relay=user-attached Chrome tab.
 Profile login reuse: list_profiles; import_profile_cookies recognizes the legacy userConfirmed signal but also requires a one-time Host approval bound to profile/domain scope; clear_cookies clears managed profile cookies. Never log cookie values.
+keep_result_page: call once the active page is the final result the user should take over — it closes every other tab and keeps this window open for the user after the run ends (not for relay/unattended runs or the shared personal profile).
 storageState file path: export_storage_state / import_storage_state for CI/scripts.${browserJevStepDescriptionSuffix()}`; },
   requiresPermission: true,
   permissionLevel: 'execute',
@@ -146,6 +149,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
           'get_workbench_state', 'get_account_state', 'export_storage_state', 'import_storage_state',
           'list_profiles', 'import_profile_cookies', 'clear_cookies',
           'wait_for_download', 'upload_file', 'wait', 'fill_form', 'get_logs',
+          'keep_result_page',
           'execute_goal',
         ],
         description: 'The browser action to perform',
@@ -857,6 +861,15 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
             output: logs || 'No logs available yet. Try performing some browser actions first.',
           };
         }
+
+        // N-BROWSER-KEEP-RESULT-PAGE: 关掉其余标签页，把当前页标记为留给用户的结果页。
+        case 'keep_result_page':
+          return await executeKeepResultPage({
+            identity: surfaceIdentity,
+            browserService,
+            context,
+            params,
+          });
 
         default:
           return { success: false, error: `Unknown action: ${action}` };

@@ -129,6 +129,65 @@ describe('BrowserPool', () => {
     vi.useRealTimers();
   });
 
+  it('reclaims a kept entry before the idle threshold so a kept window never blocks a new task', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    const timed = new BrowserPool(4);
+    // 4 个命名条目：3 个 in-use + 1 个 kept（刚 keep，远未到闲置阈值）。
+    const inUseCloses = ['agent-a', 'agent-b', 'agent-c'].map((id) => {
+      const service = timed.acquire(id);
+      timed.setInUse(id, true);
+      return vi.spyOn(service, 'close');
+    });
+    const kept = timed.acquire('agent-kept');
+    timed.setKept('agent-kept', true);
+    const keptClose = vi.spyOn(kept, 'close');
+    vi.setSystemTime(new Date(Date.now() + 5_000));
+
+    timed.acquire('agent-new');
+
+    expect(keptClose).toHaveBeenCalledTimes(1);
+    expect(timed.hasAgent('agent-kept')).toBe(false);
+    expect(timed.hasAgent('agent-new')).toBe(true);
+    for (const close of inUseCloses) expect(close).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('prefers the oldest kept entry when several kept windows are reclaimable', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    const timed = new BrowserPool(2);
+    const older = timed.acquire('kept-older');
+    timed.setKept('kept-older', true);
+    vi.setSystemTime(new Date('2026-01-01T00:00:10.000Z'));
+    const newer = timed.acquire('kept-newer');
+    timed.setKept('kept-newer', true);
+    const olderClose = vi.spyOn(older, 'close');
+
+    timed.acquire('agent-new');
+
+    expect(olderClose).toHaveBeenCalledTimes(1);
+    expect(timed.hasAgent('kept-older')).toBe(false);
+    expect(timed.hasAgent('kept-newer')).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it('a kept entry marked in use (user adopted the result page) is never evicted', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    const timed = new BrowserPool(1);
+    const kept = timed.acquire('agent-kept');
+    timed.setKept('agent-kept', true);
+    timed.setInUse('agent-kept', true);
+    const keptClose = vi.spyOn(kept, 'close');
+    vi.setSystemTime(new Date(Date.now() + BROWSER_TIMEOUTS.POOL_IDLE_RECLAIM * 2));
+
+    expect(() => timed.acquire('agent-b')).toThrow(BrowserPoolBusyError);
+    expect(keptClose).not.toHaveBeenCalled();
+    expect(timed.hasAgent('agent-kept')).toBe(true);
+    vi.useRealTimers();
+  });
+
   it('throws BrowserPoolBusyError when four named entries are in use and closes none of them', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));

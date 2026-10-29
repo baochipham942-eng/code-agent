@@ -14,6 +14,11 @@ import {
   type ManagedBrowserProviderAdapter,
 } from './ManagedBrowserProviderAdapter';
 import {
+  getKeptBrowserRegistry,
+  type KeptBrowserRegistry,
+  type KeptResultPageSnapshot,
+} from './keptBrowserRegistry';
+import {
   getSurfaceExecutionRuntime,
   type SurfaceExecutionRuntime,
   type SurfaceRuntimeIdentityV1,
@@ -60,6 +65,12 @@ export interface UserBrowserLinkResult {
   snapshot: SurfaceConversationSnapshotV1;
 }
 
+/** adopt 入参：认领本会话的 kept 结果页（不导航）。 */
+export interface AdoptKeptResultPageInput {
+  conversationId: string;
+  workspace: string;
+}
+
 type UserBrowserRuntime = Pick<SurfaceExecutionRuntime, 'endRun' | 'snapshotConversation'>;
 type UserBrowserAdapter = Pick<ManagedBrowserProviderAdapter, 'execute'>;
 
@@ -97,6 +108,7 @@ export class UserBrowserLinkService {
     private readonly registry: RunRegistry = getApplicationRunRegistry(),
     private readonly runtime: UserBrowserRuntime = getSurfaceExecutionRuntime(),
     private readonly adapter: UserBrowserAdapter = getManagedBrowserProviderAdapter(),
+    private readonly keptRegistry: KeptBrowserRegistry = getKeptBrowserRegistry(),
   ) {}
 
   private ensureRun(conversationId: string, workspace: string): UserBrowserRun {
@@ -200,6 +212,68 @@ export class UserBrowserLinkService {
       throw new Error(result.error || `User browser ${action} failed.`);
     }
     return this.runtime.snapshotConversation(conversationId);
+  }
+
+  /**
+   * N-BROWSER-KEEP-RESULT-PAGE: 用户从聊天里认领（adopt）本会话的 kept 结果页。
+   * 绑定 user run 到 kept 服务但不导航——画面停留在模型留下的那一页（提交状态原样），
+   * 用户接着看/滚动/编辑。服务在 user run 结束后仍保持 kept（直到闲置回收/驱逐/显式关闭）。
+   */
+  async adopt(input: AdoptKeptResultPageInput): Promise<UserBrowserLinkResult> {
+    const conversationId = input.conversationId.trim();
+    const workspace = input.workspace.trim();
+    if (!conversationId || !workspace) {
+      throw new Error('Kept result page adoption requires conversationId and workspace.');
+    }
+    const kept = this.keptRegistry.getAlive(conversationId);
+    if (!kept) {
+      throw new Error('No kept result page is open for this conversation.');
+    }
+
+    const run = this.ensureRun(conversationId, workspace);
+    let result;
+    try {
+      result = await this.adapter.execute({
+        identity: run.identity,
+        operationId: `user-browser-link:adopt:${randomUUID()}`,
+        action: 'list_tabs',
+        params: { action: 'list_tabs' },
+        async executeProvider(_signal, browserService) {
+          const tabs = browserService.listTabs();
+          return {
+            success: true,
+            output: `Attached to kept result page (${tabs.length} tab(s)): ${kept.url}`,
+          };
+        },
+      });
+    } catch (error) {
+      await this.finish(conversationId, run, 'user').catch(() => undefined);
+      throw error;
+    }
+
+    if (!result.success) {
+      const message = result.error || 'Kept result page adoption failed.';
+      await this.finish(conversationId, run, 'user').catch(() => undefined);
+      throw new Error(message);
+    }
+    const surfaceSessionId = typeof result.metadata?.surfaceSessionId === 'string'
+      ? result.metadata.surfaceSessionId
+      : '';
+    if (!surfaceSessionId) {
+      await this.finish(conversationId, run, 'user').catch(() => undefined);
+      throw new Error('Kept result page adoption did not create a Surface session.');
+    }
+    return {
+      conversationId,
+      runId: run.identity.runId,
+      surfaceSessionId,
+      snapshot: this.runtime.snapshotConversation(conversationId),
+    };
+  }
+
+  /** kept 结果页三态（none/kept/closed + url/title），getKeptResultPage IPC 真源。 */
+  keptState(conversationId: string): KeptResultPageSnapshot {
+    return this.keptRegistry.snapshot(conversationId.trim());
   }
 
   /**

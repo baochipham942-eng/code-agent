@@ -44,6 +44,7 @@ import {
 import { useBrowserStageUserInput } from '../../hooks/useBrowserStageUserInput';
 import { confirmLiveBrowserInterrupt } from '../../hooks/requestBrowserHumanTakeover';
 import { BrowserHumanTakeoverBar } from './BrowserHumanTakeoverBar';
+import { BrowserKeptResultBar } from './BrowserKeptResultBar';
 import { BROWSER_STAGE_VIEWPORT } from '@shared/constants';
 import { resolveStageFollowPlan } from '@shared/utils/browserStageViewportFollow';
 import { normalizeBrowserAddressInput } from '../../utils/browserAddressBar';
@@ -877,6 +878,7 @@ export const BrowserAgentWindow: React.FC = () => {
           </div>
         )}
 
+        {terminalSurfaceSession && <BrowserKeptResultBar conversationId={currentSessionId} workspace={workingDirectory} />}
         {annotateMode && pins.map((pin) => (
           <button
             key={pin.id}

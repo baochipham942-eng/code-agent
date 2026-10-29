@@ -7,7 +7,7 @@ import type { SurfaceConversationSnapshotV1 } from '../../../src/shared/contract
 
 type UserBrowserLinks = Pick<
   UserBrowserLinkService,
-  'open' | 'end' | 'history' | 'dispatchUserInput' | 'setViewport'
+  'open' | 'end' | 'history' | 'dispatchUserInput' | 'setViewport' | 'adopt' | 'keptState'
 >;
 
 function snapshot(conversationId: string): SurfaceConversationSnapshotV1 {
@@ -37,12 +37,21 @@ describe('workspace openLinkInRail wiring', () => {
     const history = vi.fn(async () => snapshot('conversation-a'));
     const dispatchUserInput = vi.fn(async () => snapshot('conversation-a'));
     const setViewport = vi.fn(async () => snapshot('conversation-a'));
+    const adopt = vi.fn(async () => ({
+      conversationId: 'conversation-a',
+      runId: 'user-run',
+      surfaceSessionId: 'surface-user',
+      snapshot: snapshot('conversation-a'),
+    }));
+    const keptState = vi.fn(() => ({ state: 'none' as const, url: null, title: null }));
     const links: UserBrowserLinks = {
       open,
       end,
       history,
       dispatchUserInput,
       setViewport,
+      adopt,
+      keptState,
     };
 
     registerWorkspaceHandlers(
@@ -93,12 +102,21 @@ describe('workspace openLinkInRail wiring', () => {
     const history = vi.fn(async () => snapshot('conversation-a'));
     const dispatchUserInput = vi.fn(async () => snapshot('conversation-a'));
     const setViewport = vi.fn(async () => snapshot('conversation-a'));
+    const adopt = vi.fn(async () => ({
+      conversationId: 'conversation-a',
+      runId: 'user-run',
+      surfaceSessionId: 'surface-user',
+      snapshot: snapshot('conversation-a'),
+    }));
+    const keptState = vi.fn(() => ({ state: 'none' as const, url: null, title: null }));
     const links: UserBrowserLinks = {
       open,
       end,
       history,
       dispatchUserInput,
       setViewport,
+      adopt,
+      keptState,
     };
 
     registerWorkspaceHandlers(

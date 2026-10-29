@@ -1,5 +1,5 @@
 // ============================================================================
-// CloudRunRepository — 云端 run 账本持久行与准入事务（ADR-086 S1–S3）
+// CloudRunRepository — 云端 run 账本持久行与准入事务（ADR-087 S1–S3）
 // ============================================================================
 // 同步 SQLite only（SessionDelegationRepository 形状）。时间戳一律是参数，
 // 本层禁裸取当前时间（repositories grep 门）；真钟默认在 CloudRunLedger。
@@ -290,7 +290,7 @@ export class CloudRunRepository {
     };
   }
 
-  /** seq 全序；afterSeq 供重启后补读增量（ADR-086 失败模式：重启续听）。 */
+  /** seq 全序；afterSeq 供重启后补读增量（ADR-087 失败模式：重启续听）。 */
   listTransitions(afterSeq = 0): CloudRunTransitionRecord[] {
     const rows = this.db
       .prepare('SELECT * FROM cloud_run_transitions WHERE seq > ? ORDER BY seq ASC')

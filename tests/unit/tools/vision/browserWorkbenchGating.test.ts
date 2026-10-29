@@ -707,9 +707,10 @@ describe('browser workbench gating', () => {
     browserMocks.state.running = true;
     browserMocks.state.tabs = [{ id: 'tab-1', url: 'https://example.com', title: 'Example' }];
     browserMocks.state.activeTabId = 'tab-1';
-    const envName = 'BROWSER_REDACTION_FIXTURE_VALUE';
+    const envName = 'CODE_AGENT_BROWSER_SECRET_REDACTION_FIXTURE';
     const fixtureValue = 'redacted-fixture-value';
     process.env[envName] = fixtureValue;
+    process.env[`${envName}_ORIGINS`] = 'https://example.com';
 
     try {
       const result = await browserActionTool.execute(
@@ -741,6 +742,7 @@ describe('browser workbench gating', () => {
       });
     } finally {
       delete process.env[envName];
+      delete process.env[`${envName}_ORIGINS`];
     }
   });
 

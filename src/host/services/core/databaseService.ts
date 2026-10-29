@@ -281,7 +281,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   private swarmLedgerRepo!: SwarmLedgerRepository;
   private usageLedgerRepo!: UsageLedgerRepository;
   private turnCostRepo!: TurnCostRepository;
-  // 云端 run 账本（ADR-086 S1）惰性建，不参与崩溃恢复重建
+  // 云端 run 账本（ADR-087 S1）惰性建，不参与崩溃恢复重建
   private cloudRunLedger?: CloudRunLedger;
   /** 启动时从总账重建的崩溃现场快照（ADR-022 第二期），供诊断出口/恢复消费 */
   private lastRecoverySnapshot: RecoverySnapshot | null = null;
@@ -1344,7 +1344,7 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     assertDatabaseWritable(this._degradedMode);
   }
 
-  // --- Cloud Run Ledger（ADR-086 S1–S3）---
+  // --- Cloud Run Ledger（ADR-087 S1–S3）---
   /**
    * 云端 run 账本：持久行、迁移、admit、FIFO 配额与取消请求；
    * 账本不静态 import AuthService（见 cloudRunLedger.ts 头注释），

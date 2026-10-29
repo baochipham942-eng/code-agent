@@ -37,6 +37,7 @@ import { CronEventScheduleFields } from './CronEventScheduleFields';
 import { CronMailEventFields, mailEventValidationMessage } from './CronMailEventFields';
 import { CronScheduleFields } from './CronScheduleFields';
 import { CronTemplateRoleField } from './CronTemplateRoleField';
+import { CLOUD_ROLE_BOUND_ERROR, CronCloudRoleRestriction, isCloudRoleBoundAgentDraft } from './CronCloudRoleRestriction';
 
 interface CronJobEditorProps {
   isOpen: boolean;
@@ -103,6 +104,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
     const message = error instanceof Error ? error.message : '';
     if (message.includes('Cloud jobs must have an interval')) return cc.cloudIntervalHint;
     if (message.includes('Local jobs must have an interval')) return cc.localIntervalHint;
+    if (message.includes(CLOUD_ROLE_BOUND_ERROR)) return cc.cloudRoleBoundHint;
     if (message.includes('runsOn is immutable')) return cc.locationImmutable;
     return message || fallback;
   };
@@ -225,6 +227,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
   const eventValidationMessage = eventValidationArmed && eventViolation
     ? cc.eventValidation[eventViolation.reason]
     : null;
+  const cloudRoleBound = isCloudRoleBoundAgentDraft(draft);
 
   const setField = <K extends keyof CronJobDraft>(key: K, value: CronJobDraft[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -585,7 +588,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
           <Button variant="ghost" onClick={onClose} disabled={submitting}>
             取消
           </Button>
-          <Button onClick={handleSubmit} loading={submitting}>
+          <Button onClick={handleSubmit} loading={submitting} disabled={cloudRoleBound}>
             {job ? '保存修改' : '创建任务'}
           </Button>
         </>
@@ -679,6 +682,7 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
             onChange={(runsOn) => setField('runsOn', runsOn)}
             readOnly={Boolean(job) || isEventScheduleKind(draft.scheduleType)}
           />
+          <CronCloudRoleRestriction draft={draft} message={cc.cloudRoleBoundHint} />
 
           <div className="border-t border-zinc-800 pt-4">
             <h4 className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-zinc-500">

@@ -93,6 +93,7 @@ import {
   handleCloudRunAdmission,
   registerCloudRunRoutes,
 } from './cloudRunRoutes';
+import { CloudCronScheduler } from '../../host/services/cloudRun/cloudCronScheduler';
 import type { CloudRunState } from '../../shared/contract/cloudRun';
 import type { CloudRunLedger } from '../../host/services/cloudRun/cloudRunLedger';
 import { steerOrQueue } from '../../host/runtime/steerQueueFence';
@@ -409,6 +410,14 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     void cloudRunRuntime.runStartupSweep().catch((error) => {
       logger.error('[CloudRun] Startup sweep failed', error);
     });
+    // ADR-087 S4（方案 B）：cloud webServer 自己排程 cron，admit 之后才执行；
+    // 执行体缺省 fail-closed，等 FU5 的 OpenClaw 核对单关账后再接真执行体。
+    const cloudCronDb = getDatabase().getDb();
+    if (cloudCronDb) {
+      new CloudCronScheduler({ db: cloudCronDb, getLedger: () => cloudRunRuntime.ledger() }).start();
+    } else {
+      logger.error('[CloudCron] Scheduler not started: database unavailable');
+    }
   });
   deps.registerQueuedInputEnqueueHook?.((sessionId) => queuedInputDrain.handleEnqueued(sessionId));
   deps.registerQueuedInputSendNowHook?.(async ({ id, sessionId, envelope, delegationOrigin }, route) => {

@@ -262,6 +262,15 @@ export class SessionForkPortabilityRepository {
     return apply.immediate();
   }
 
+  /**
+   * 只读判重预检：该 (sourceExportId, owner, project, namespace) 是否已有完成导入。
+   * 批量导入在进 importSessionFork 之前用——后者对同 exportId 不同 digest 抛
+   * SYNC_ID_DIGEST_CONFLICT，不能当幂等闸。
+   */
+  hasImportedExport(sourceExportId: string, ownerScopeId: string, projectId: string, namespace: string): boolean {
+    return this.readImportRecord(sourceExportId, ownerScopeId, projectId, namespace) !== null;
+  }
+
   getDurableEnvelope(
     exportId: string,
     ownerScopeId: string,

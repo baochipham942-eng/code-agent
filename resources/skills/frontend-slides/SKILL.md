@@ -136,13 +136,14 @@ user-invocable: true
 ### 5. 合成 PPTX / PDF
 
 脚本与本 SKILL.md 同目录。下面命令里的路径就是该目录，直接运行：
+合成时必须传递已选风格：`<theme>` 取已选的 `corporate`、`minimal` 或 `bold-editorial`，选择这三种风格后不得省略 `--theme`；其他风格省略该参数，沿用 `default`。
 
 ```bash
 # 有背景图：背景图 + slides.json 文字叠加
-node "$SKILL_DIR/scripts/merge-to-pptx-hybrid.mjs" <slide-deck-dir>
+node "$SKILL_DIR/scripts/merge-to-pptx-hybrid.mjs" <slide-deck-dir> --theme <theme>
 
 # 没有背景图，或图片失败：纯文字 + 纯色主题背景。只跑这一次。
-node "$SKILL_DIR/scripts/merge-to-pptx-hybrid.mjs" <slide-deck-dir> --text-only
+node "$SKILL_DIR/scripts/merge-to-pptx-hybrid.mjs" <slide-deck-dir> --text-only --theme <theme>
 
 # 仅当背景图真实存在时才导出 PDF
 node "$SKILL_DIR/scripts/merge-to-pdf.mjs" <slide-deck-dir>

@@ -133,6 +133,25 @@ describe('frontend-slides packaged merge scripts', () => {
     expect(pdfBundle).not.toMatch(/require\(\s*["']pdf-lib["']\s*\)/);
   });
 
+  it('passes the selected theme through every documented hybrid merge command', () => {
+    const skillDocs = [
+      'resources/skills/frontend-slides/SKILL.md',
+      '.claude/skills/frontend-slides/SKILL.md',
+      '.agents/skills/frontend-slides/SKILL.md',
+    ];
+    for (const relative of skillDocs) {
+      const content = fs.readFileSync(path.join(root, relative), 'utf8');
+      const commands = content.split('\n').filter((line) => line.includes('merge-to-pptx-hybrid.mjs'));
+      expect(commands.length, `${relative} must document the hybrid merge command`).toBeGreaterThan(0);
+      for (const command of commands) {
+        expect(command, `${relative} must forward the selected style`).toContain('--theme <theme>');
+      }
+      expect(content, `${relative} must define the supported theme mapping`).toContain(
+        '`<theme>` 取已选的 `corporate`、`minimal` 或 `bold-editorial`，选择这三种风格后不得省略 `--theme`；其他风格省略该参数，沿用 `default`',
+      );
+    }
+  });
+
   it('renders a 5-page text-only pptx from a copy outside the repo', () => {
     const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'frontend-slides-merge-'));
     const scriptDir = path.join(outside, 'scripts');

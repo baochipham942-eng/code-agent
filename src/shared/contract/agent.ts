@@ -383,6 +383,18 @@ export interface RoutingResolvedEventData {
   timestamp?: number;
 }
 
+/** connector_required 事件里的一个未就绪连接器。reason 目前恒为 'not_connected'，留给后续（过期/重新登录）扩展。 */
+export interface ConnectorRequiredItem {
+  id: string;
+  source: 'selected' | 'expert';
+  reason: string;
+}
+
+/** 用户选中 / 专家声明的连接器未就绪：每轮在首个模型输出前至多发一次，renderer 据此在聊天里展示连接卡。 */
+export interface ConnectorRequiredEventData {
+  connectors: ConnectorRequiredItem[];
+}
+
 /** ADR-040 D2：locator 写前对账的隐私安全遥测，只允许记录分类与原因。 */
 export interface ArtifactLocatorTelemetryEventData {
   state: 'resolved' | 'stale' | 'blocked';

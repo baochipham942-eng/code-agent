@@ -52,6 +52,7 @@ import { outcomeWordsEn } from './outcomeWords';
 import { engineModelPanelEn } from './engineModelPanel';
 import { jevAdvisoryEn } from './jevAdvisory';
 import { workflowStallEn } from './workflowStall';
+import { connectorRequiredEn } from './connectorRequired';
 import { roleFirstWakeEn } from './roleFirstWake';
 import { roleWakeProposalsEn } from './roleWakeProposals';
 import { permissionRuleNlEn } from './permissionRuleNl';
@@ -76,6 +77,7 @@ export const en = {
   ...outcomeWordsEn, ...engineModelPanelEn,
   ...jevAdvisoryEn,
   ...workflowStallEn,
+  ...connectorRequiredEn,
   ...roleFirstWakeEn,
   ...roleWakeProposalsEn,
   ...permissionRuleNlEn,

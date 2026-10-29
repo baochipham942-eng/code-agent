@@ -5,6 +5,7 @@ import { applyAnnotationsSchema } from './schemaAnnotations';
 import { applyAppGrantsSchema } from './schemaAppGrants';
 import { applySessionDelegationsSchema } from './schemaSessionDelegations';
 import { applyCloudRunLedgerSchema } from './schemaCloudRunLedger';
+import { applyCloudCronSchedulesSchema } from './schemaCloudCronSchedules';
 import { safeAlter, type Logger } from './schemaHelpers';
 import { applyTranscriptFtsSchema } from '../../../../shared/transcriptFts.sql';
 import { applyMemoriesFtsSchema } from '../../../../shared/memoriesFts.sql';
@@ -1145,6 +1146,9 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
 
   // cloud run ledger - persistent cloud run rows (ADR-087 S1)
   applyCloudRunLedgerSchema(db, logger);
+
+  // cloud cron schedules - cloud-owned schedule rows (ADR-087 S4, option B)
+  applyCloudCronSchedulesSchema(db, logger);
 
   // Agent Neo native Generative UI. Mutable state remains local by design;
   // the source message's neo_ui fence is the cross-device initial truth.

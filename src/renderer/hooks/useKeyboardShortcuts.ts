@@ -180,6 +180,7 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
 
   const {
     setShowSettings,
+    closeSettings,
     openSettingsTab,
     setSidebarCollapsed,
     sidebarCollapsed,
@@ -290,7 +291,8 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig = {}): void
             return true;
           }
           if (useAppStore.getState().showSettings) {
-            setShowSettings(false);
+            // closeSettings：带返回落点（自动化门「去设置」）时回自动化页，否则照旧关掉回聊天。
+            closeSettings();
             return true;
           }
           if (customHandlers.cancel) {

@@ -261,6 +261,10 @@ describe('secret prompt takeover (调研反面教材第二条)', () => {
     "Enter passphrase for key '/Users/x/.ssh/id_ed25519':",
     'Enter your PIN:',
     'Verification code:',
+    // N-CONNECTOR-POLISH-AUDIT-FU3/FU5：owner 决定登录/2FA 验证码永远手动，
+    // 这几条常见措辞钉住不放行（已含 one-time/verification/验证码 家族正则）。
+    'Enter verification code:',
+    'Your one-time code:',
     '请输入密码：',
     '验证码:',
   ])('refuses to type when the terminal is waiting on %s', async (prompt) => {

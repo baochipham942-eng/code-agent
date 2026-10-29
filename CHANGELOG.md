@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **聊天内连接卡 + 连上后自动续跑**（N-CONNECTOR-POLISH-AUDIT-FU1）：用户手选 / 专家声明的连接器未就绪时，宿主每轮在首个模型输出前发一次 `connector_required`（experimental，载荷 `connectors[{id, source, reason}]`，`reason` 默认 `not_connected`，供后续过期/重登场景复用）；模型侧多一行「尚未连接，不要用其他手段替代」；renderer 在输入框上方出连接卡（去连接 / 稍后），App 级 watcher 在连接成功后追加一条续跑用户消息（原生连接器走 `CONNECTOR_EVENT`，CLI/SaaS 轮询 `oauthStatus`，到顶改露手动「我已连好，继续」）。已知限制：卡片只在会话内存里，刷新即丢；MCP server 与 free-text 服务名识别不在范围内。
+
 ## [0.33.0] - 2026-08-19
 
 > 面向用户的发版说明见 [docs/releases/v0.33.0.md](docs/releases/v0.33.0.md)。

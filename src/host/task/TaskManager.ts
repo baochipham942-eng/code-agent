@@ -799,6 +799,13 @@ export class TaskManager extends EventEmitter {
     if (backgroundTaskId) {
       const background = this.backgroundRuns.get(backgroundTaskId);
       if (background?.sessionId !== sessionId) return 'no_orchestrator';
+      // 后台 lane 的审批应答路由留痕（N-SANDBOX-ESCALATE-CHMOD-SHAPE-FU1）：应答进了
+      // lane 的 orchestrator 还是前台会话的，此前只能从下游日志反推。
+      logger.info('Permission response routed to background task orchestrator', {
+        requestId,
+        backgroundTaskId,
+        sessionId,
+      });
       const outcome = background.orchestrator.handlePermissionResponse(requestId, response, updatedArgs);
       // 'storage_unavailable' 是台账瞬时写失败、可重试：跟 'unknown_request' 一样不能
       // 丢掉属主映射，否则用户再点一次就找不到这条后台 run，审批彻底不可裁决。

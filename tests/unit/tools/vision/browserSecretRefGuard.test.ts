@@ -40,7 +40,7 @@ vi.mock('../../../../src/host/services/cloud/featureFlagService', () => ({ isCom
 vi.mock('../../../../src/host/services', () => ({ getConfigService: () => ({ onSettingsUpdated: vi.fn(), getApiKey: () => null }) }));
 
 import { browserActionTool } from '../../../../src/host/tools/vision/browserAction';
-import { checkOrigin, scrubSecretFromMessage } from '../../../../src/host/tools/vision/browserSecretRefGuard';
+import { scrubSecretFromMessage } from '../../../../src/host/tools/vision/browserSecretRefGuard';
 
 const context: ToolContext = {
   workingDirectory: '/tmp/x',
@@ -143,12 +143,14 @@ describe('browser secretRef guard', () => {
     expect(notFillable.error).toContain('get_dom_snapshot');
   });
 
-  it('checkOrigin compares exact origins', () => {
-    expect(checkOrigin('https://github.com/a?b=1', 'https://github.com')).toBe(true);
-    expect(checkOrigin('https://github.com.evil.test/', 'https://github.com')).toBe(false);
-    expect(checkOrigin('http://github.com/', 'https://github.com')).toBe(false);
-    expect(checkOrigin('https://github.com/', '')).toBe(false);
-    expect(checkOrigin('https://github.com/', undefined)).toBe(false);
-    expect(checkOrigin('about:blank', 'about:blank')).toBe(false);
+  it('origin match is exact (lookalike host, scheme, port, non-http origins refused)', async () => {
+    for (const url of ['https://github.com.evil.test/', 'http://github.com/', 'https://github.com:8443/', 'about:blank', 'data:text/html,x']) {
+      mocks.state.url = url;
+      const result = await typeSecret();
+      expect(result.metadata).toMatchObject({ code: 'SECRET_REF_ORIGIN_MISMATCH' });
+    }
+    mocks.state.url = 'https://github.com/a?b=1';
+    expect((await typeSecret()).success).toBe(true);
+    expect(mocks.service.type).toHaveBeenCalledTimes(1);
   });
 });

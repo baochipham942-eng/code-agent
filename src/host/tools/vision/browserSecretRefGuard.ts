@@ -30,7 +30,7 @@ function fail(error: string, metadata?: Record<string, unknown>): ToolExecutionR
   return { success: false, error, ...(metadata ? { metadata } : {}) };
 }
 
-export function resolveSecret(secretRef: string): SecretResolution {
+function resolveSecret(secretRef: string): SecretResolution {
   const name = secretRef.startsWith('env:') ? secretRef.slice(4) : '';
   const valid =
     /^[A-Z0-9_]+$/.test(name) &&
@@ -65,7 +65,7 @@ function originOf(url: string): string | null {
   }
 }
 
-export function checkOrigin(currentUrl: string, allowedOriginsEnv: string | undefined): boolean {
+function checkOrigin(currentUrl: string, allowedOriginsEnv: string | undefined): boolean {
   const current = originOf(currentUrl);
   if (!current || !allowedOriginsEnv) return false;
   return allowedOriginsEnv
@@ -98,7 +98,7 @@ const CATEGORY_NEXT_STEP: Record<FailureCategory, string> = {
   other: 'Run browser_action.get_dom_snapshot to check the page state, then retry.',
 };
 
-export interface SecretTypeBrowser {
+interface SecretTypeBrowser {
   getLiveTabUrl?(tabId?: string): string;
   getActiveTab(): { url: string; page?: { url?: () => string } } | null;
   getElementBoundingBox(selector: string, tabId?: string): Promise<unknown>;

@@ -151,8 +151,9 @@ export interface PendingProjectGoalChatSeed {
 /**
  * 设置页的用户关闭落点（Stripe portal return_url 模式）：从二级页（目前只有自动化的
  * webhook 门）「去设置」时记下来源页，用户关闭设置（X / Esc）时直接回该页而不是聊天首页。
+ * 只经 AppState 消费，不单独导出。
  */
-export type SettingsReturnTo = 'cronCenter';
+type SettingsReturnTo = 'cronCenter';
 
 export interface AppState {
   // UI State

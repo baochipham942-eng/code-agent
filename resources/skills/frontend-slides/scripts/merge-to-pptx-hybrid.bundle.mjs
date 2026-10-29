@@ -9763,7 +9763,7 @@ var require_lib3 = __commonJS({
   }
 });
 
-// resources/skills/frontend-slides/scripts/src/merge-to-pptx-hybrid.mjs
+// resources/skill-sources/frontend-slides/merge-to-pptx-hybrid.mjs
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { join, basename } from "path";
 
@@ -15087,28 +15087,36 @@ var PptxGenJS = class {
   }
 };
 
-// resources/skills/frontend-slides/scripts/src/merge-to-pptx-hybrid.mjs
+// resources/skill-sources/frontend-slides/merge-to-pptx-hybrid.mjs
 var TEXT_ONLY_NOTICE = "backgrounds were skipped";
 function parseArgs() {
   const args = process.argv.slice(2);
   let dir = "";
   let output;
   let textOnly = false;
+  let themeName = "default";
   for (let i = 0; i < args.length; i += 1) {
     if (args[i] === "--output" || args[i] === "-o") {
       output = args[i + 1];
       i += 1;
     } else if (args[i] === "--text-only") {
       textOnly = true;
+    } else if (args[i] === "--theme") {
+      themeName = args[i + 1] || "";
+      i += 1;
     } else if (!args[i].startsWith("-")) {
       dir = args[i];
     }
   }
   if (!dir) {
-    console.error("Usage: node merge-to-pptx-hybrid.mjs <slide-deck-dir> [--text-only] [--output filename.pptx]");
+    console.error("Usage: node merge-to-pptx-hybrid.mjs <slide-deck-dir> [--text-only] [--theme name] [--output filename.pptx]");
     process.exit(1);
   }
-  return { dir, output, textOnly };
+  if (!Object.prototype.hasOwnProperty.call(THEMES, themeName)) {
+    console.error(`Unknown theme "${themeName}". Valid themes: ${Object.keys(THEMES).join(", ")}`);
+    process.exit(1);
+  }
+  return { dir, output, textOnly, themeName };
 }
 function findSlideImages(dir) {
   const files = readdirSync(dir);
@@ -15154,6 +15162,7 @@ var STYLE = {
     footnote: "999999",
     overlay: "000000"
   },
+  titleShadow: true,
   // 文字区域（百分比转为英寸，基于 10x5.625 英寸的 16:9 画布）
   title: { x: 0.6, y: 0.4, w: 8.8, fontSize: 32, bold: true },
   subtitle: { x: 0.6, y: 1.1, w: 8.8, fontSize: 18 },
@@ -15165,24 +15174,70 @@ var STYLE = {
     subtitle: { x: 0.8, y: 2.6, w: 8.4, fontSize: 20 }
   }
 };
-var PLAIN_THEME = {
-  background: "1F2937",
-  accent: "2563EB"
+var THEMES = {
+  default: {
+    fontFace: STYLE.fontFace,
+    background: "1F2937",
+    accent: "2563EB",
+    colors: {
+      title: STYLE.colors.title,
+      subtitle: STYLE.colors.subtitle,
+      bullet: STYLE.colors.bullet,
+      footnote: STYLE.colors.footnote
+    },
+    titleShadow: true
+  },
+  corporate: {
+    fontFace: "Microsoft YaHei",
+    background: "F8FAFC",
+    accent: "1D4ED8",
+    colors: {
+      title: "0F172A",
+      subtitle: "334155",
+      bullet: "1E293B",
+      footnote: "475569"
+    },
+    titleShadow: false
+  },
+  minimal: {
+    fontFace: "PingFang SC",
+    background: "FFFFFF",
+    accent: "111827",
+    colors: {
+      title: "111827",
+      subtitle: "374151",
+      bullet: "1F2937",
+      footnote: "4B5563"
+    },
+    titleShadow: false
+  },
+  "bold-editorial": {
+    fontFace: "Songti SC",
+    background: "111111",
+    accent: "F59E0B",
+    colors: {
+      title: "FFFFFF",
+      subtitle: "FDE68A",
+      bullet: "FFF7ED",
+      footnote: "FED7AA"
+    },
+    titleShadow: true
+  }
 };
-function addPlainBackground(slide) {
+function addPlainBackground(slide, theme) {
   slide.addShape("rect", {
     x: 0,
     y: 0,
     w: "100%",
     h: "100%",
-    fill: { color: PLAIN_THEME.background }
+    fill: { color: theme.background }
   });
   slide.addShape("rect", {
     x: 0,
     y: 0,
     w: 0.12,
     h: "100%",
-    fill: { color: PLAIN_THEME.accent }
+    fill: { color: theme.accent }
   });
 }
 function addBackgroundImage(slide, imagePath) {
@@ -15209,8 +15264,10 @@ function addBackgroundImage(slide, imagePath) {
     fill: { color: STYLE.colors.overlay, transparency: 55 }
   });
 }
-function addTextContent(slide, data, isCover) {
-  const font = STYLE.fontFace;
+function addTextContent(slide, data, isCover, theme, imageMode = false) {
+  const font = theme.fontFace;
+  const colors = imageMode ? STYLE.colors : theme.colors;
+  const titleShadow = imageMode ? STYLE.titleShadow : theme.titleShadow;
   const layout = isCover ? STYLE.cover : STYLE;
   if (data.title) {
     const cfg = isCover ? layout.title : layout.title;
@@ -15222,10 +15279,10 @@ function addTextContent(slide, data, isCover) {
       fontSize: cfg.fontSize,
       fontFace: font,
       bold: cfg.bold || false,
-      color: STYLE.colors.title,
+      color: colors.title,
       align: isCover ? "center" : "left",
       valign: "middle",
-      shadow: { type: "outer", blur: 6, offset: 2, color: "000000", opacity: 0.5 }
+      ...titleShadow ? { shadow: { type: "outer", blur: 6, offset: 2, color: "000000", opacity: 0.5 } } : {}
     });
   }
   if (data.subtitle) {
@@ -15237,7 +15294,7 @@ function addTextContent(slide, data, isCover) {
       h: 0.6,
       fontSize: cfg.fontSize,
       fontFace: font,
-      color: STYLE.colors.subtitle,
+      color: colors.subtitle,
       align: isCover ? "center" : "left",
       valign: "middle"
     });
@@ -15248,7 +15305,7 @@ function addTextContent(slide, data, isCover) {
       options: {
         fontSize: STYLE.bullets.fontSize,
         fontFace: font,
-        color: STYLE.colors.bullet,
+        color: colors.bullet,
         bullet: { type: "number" },
         lineSpacing: STYLE.bullets.lineSpacing,
         paraSpaceBefore: 6
@@ -15270,12 +15327,12 @@ function addTextContent(slide, data, isCover) {
       h: 0.4,
       fontSize: STYLE.footnote.fontSize,
       fontFace: font,
-      color: STYLE.colors.footnote,
+      color: colors.footnote,
       align: "right"
     });
   }
 }
-async function createHybridPptx({ images, slidesData, outputPath, textOnly }) {
+async function createHybridPptx({ images, slidesData, outputPath, textOnly, theme }) {
   const pptx = new PptxGenJS();
   pptx.layout = "LAYOUT_16x9";
   pptx.author = "frontend-slides (hybrid)";
@@ -15292,8 +15349,8 @@ async function createHybridPptx({ images, slidesData, outputPath, textOnly }) {
     for (const data of pages) {
       const deckSlide = pptx.addSlide();
       const isCover = data.layout === "cover" || Number(data.index) === 1;
-      addPlainBackground(deckSlide);
-      addTextContent(deckSlide, data, isCover);
+      addPlainBackground(deckSlide, theme);
+      addTextContent(deckSlide, data, isCover, theme);
       console.log(`Added text-only slide ${data.index}`);
     }
     await pptx.writeFile({ fileName: outputPath });
@@ -15308,7 +15365,7 @@ Created (text-only): ${outputPath}`);
     const isCover = data?.layout === "cover" || slide.index === 1;
     addBackgroundImage(deckSlide, slide.path);
     if (data) {
-      addTextContent(deckSlide, data, isCover);
+      addTextContent(deckSlide, data, isCover, theme, true);
     }
     const hasText = data ? " + text" : " (image only)";
     console.log(`Added: ${slide.filename}${hasText}`);
@@ -15320,7 +15377,8 @@ Created (hybrid): ${outputPath}`);
   console.log(`Slides with text overlay: ${dataMap.size}`);
 }
 async function main() {
-  const { dir, output, textOnly } = parseArgs();
+  const { dir, output, textOnly, themeName } = parseArgs();
+  const theme = THEMES[themeName];
   if (!existsSync(dir)) {
     console.error(`Directory not found: ${dir}`);
     process.exit(1);
@@ -15343,7 +15401,7 @@ async function main() {
     }
   }
   console.log("");
-  await createHybridPptx({ images, slidesData, outputPath, textOnly: renderTextOnly });
+  await createHybridPptx({ images, slidesData, outputPath, textOnly: renderTextOnly, theme });
 }
 main().catch((error) => {
   console.error("Error:", error.message);

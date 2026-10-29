@@ -61,7 +61,7 @@ export async function postOsNotification(opts: { title: string; body: string }):
   const hasFocus = typeof document !== 'undefined' && document.hasFocus();
   const visible = typeof document !== 'undefined' && !document.hidden;
   if (shouldSuppressOsNotification(hasFocus, visible)) {
-    reportDelivery({ mode: 'suppressed-focused', sent: false });
+    reportDelivery({ mode: 'suppressed-focused', dispatched: false });
     return;
   }
   if (isTauriMode()) {
@@ -69,11 +69,12 @@ export async function postOsNotification(opts: { title: string; body: string }):
       const mod = await loadModule();
       const granted = await ensureTauriPermission(mod);
       if (!granted) {
-        reportDelivery({ mode: 'tauri', granted: false, sent: false });
+        reportDelivery({ mode: 'tauri', granted: false, dispatched: false });
         return;
       }
+      // dispatched = OS API accepted the call; macOS gives no callback, so display is not confirmed.
       mod.sendNotification({ title: opts.title, body: opts.body });
-      reportDelivery({ mode: 'tauri', granted: true, sent: true });
+      reportDelivery({ mode: 'tauri', granted: true, dispatched: true });
     } catch (err) {
       console.warn('[osNotification] Tauri sendNotification 失败', err);
       reportDelivery({ mode: 'tauri', error: err instanceof Error ? err.message : String(err) });

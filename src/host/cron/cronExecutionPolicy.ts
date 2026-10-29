@@ -1,6 +1,7 @@
 import { Cron } from 'croner';
 import { CRON_GUARDRAILS } from '../../shared/constants';
 import type { CronJobDefinition, CronMissedReason } from '../../shared/contract/cron';
+import { isRoleBoundCronJob } from '../../shared/cronRoleBinding';
 import { suggestCronStaggerMinute } from '../../shared/cronStagger';
 import {
   createScopedCostLimit,
@@ -134,6 +135,14 @@ export function decideOneTimeJobStartup(
       : { kind: 'disable', dueAt: ts, missedReason: 'interrupted', alreadyStarted: true };
   }
   return { kind: 'disable', dueAt: Number.isFinite(ts) ? ts : undefined, missedReason: 'app-offline', alreadyStarted: false };
+}
+
+export function assertCloudRunnableAction(
+  definition: Pick<CronJobDefinition, 'runsOn' | 'action'>,
+): void {
+  if (definition.runsOn === 'cloud' && definition.action.type === 'agent' && isRoleBoundCronJob(definition)) {
+    throw new Error('Role-bound agent jobs cannot run on the cloud scheduler because role memory is only available on this computer.');
+  }
 }
 
 export function assertExecutionLocationConstraints(

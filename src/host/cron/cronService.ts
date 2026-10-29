@@ -40,7 +40,7 @@ import { executeCronAgentAction } from './cronAgentAction';
 import { getEventBus } from '../services/eventing/bus';
 import { persistCronMissedTrace } from './cronMissedTrace';
 import {
-  assertExecutionLocationConstraints,
+  assertCloudRunnableAction, assertExecutionLocationConstraints,
   computeCronFireJitterMs,
   decideOneTimeJobStartup,
   intervalToCron,
@@ -260,7 +260,7 @@ export class CronService implements Disposable {
     assertSupportedEveryScheduleUnit(definition.schedule);
 
     const runsOn = definition.runsOn ?? 'local';
-    assertExecutionLocationConstraints({ ...definition, runsOn });
+    assertExecutionLocationConstraints({ ...definition, runsOn }); assertCloudRunnableAction({ ...definition, runsOn });
     assertEventScheduleConstraints({ ...definition, runsOn });
     if (definition.schedule?.type === 'event' && definition.schedule.source === 'webhook') {
       // webhook 源（N-CRON-WEBHOOK-CLOUD-HOOK）：hook 活在云端中继后面，没配置就建不成。
@@ -324,7 +324,7 @@ export class CronService implements Disposable {
     // 重新启用已停用任务：运行计数清零、摘掉停用原因（N-CRON-BUDGET-EXPOSE）；只改 maxRuns 不动计数。
     if (updates.enabled === true && !existingJob.definition.enabled) rearmCronRunLimit(updatedJob);
     assertSupportedEveryScheduleUnit(updatedJob.schedule);
-    assertExecutionLocationConstraints(updatedJob);
+    assertExecutionLocationConstraints(updatedJob); if (updates.enabled === true || updates.action !== undefined) assertCloudRunnableAction(updatedJob);
     assertEventScheduleConstraints(updatedJob);
 
     // Save to database

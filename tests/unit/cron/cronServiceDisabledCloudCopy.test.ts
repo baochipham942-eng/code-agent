@@ -139,15 +139,15 @@ import { CronService } from '../../../src/host/cron/cronService';
 import type { CronCloudRuntime } from '../../../src/host/cron/cronCloudRuntime';
 import { shutdownEventBus } from '../../../src/host/services/eventing/bus';
 
-/** 角色绑定 agent 任务（copy-to-cloud 副本的真实形状：runsOn=cloud、enabled=false）。 */
+/** 无角色 agent 任务（copy-to-cloud 副本的真实形状：runsOn=cloud、enabled=false）。 */
 function disabledCloudCopy() {
   return {
-    name: '牧之晨间简报 (云端)',
+    name: '晨间简报 (云端)',
     runsOn: 'cloud' as const,
     enabled: false,
     scheduleType: 'every' as const,
     schedule: { type: 'every' as const, interval: 1, unit: 'hours' as const },
-    action: { type: 'agent' as const, agentType: 'default' as const, prompt: '汇总今天的日程并给一段晨间简报', roleId: 'role-muzhi' },
+    action: { type: 'agent' as const, agentType: 'default' as const, prompt: '汇总今天的日程并给一段晨间简报' },
   };
 }
 
@@ -405,6 +405,65 @@ describe('CronService 跨进程 reconcile 重建停用的云端任务（真实 C
     }).jobs.get(job.id);
     expect(active?.cloudJobId).toBe('remote-1');
 
+    await service.shutdown();
+  });
+});
+
+describe('N-ROLE-ROUTINE-RESTATE-FU1-FU1-FU2 云端角色 agent 护栏', () => {
+  const stableError = 'Role-bound agent jobs cannot run on the cloud scheduler';
+
+  it.each([true, false])('enabled=%s 的角色任务在 /api/cron/add 前拒绝', async (enabled) => {
+    configState.cronCloud = { baseUrl: 'https://cloud.example.test', token: 'test-token' };
+    const fetchStub = vi.fn();
+    vi.stubGlobal('fetch', fetchStub);
+    const service = new CronService();
+
+    await expect(service.createJob({
+      ...disabledCloudCopy(),
+      enabled,
+      action: { ...disabledCloudCopy().action, roleId: 'role-muzhi' },
+    })).rejects.toThrow(stableError);
+    expect(fetchStub).not.toHaveBeenCalled();
+    await service.shutdown();
+  });
+
+  it('无角色云端 agent 仍通过真实 CronCloudRuntime 注册', async () => {
+    configState.cronCloud = { baseUrl: 'https://cloud.example.test', token: 'test-token' };
+    const fetchStub = vi.fn(async () => fakeOk({ id: 'remote-agent-1' }));
+    vi.stubGlobal('fetch', fetchStub);
+    const service = new CronService();
+
+    const job = await service.createJob({ ...disabledCloudCopy(), enabled: true });
+
+    expect(fetchStub).toHaveBeenCalledTimes(1);
+    expect(new URL(String(fetchStub.mock.calls[0]?.[0])).pathname).toBe('/api/cron/add');
+    const active = (service as unknown as {
+      jobs: Map<string, { cloudJobId?: string }>;
+    }).jobs.get(job.id);
+    expect(active?.cloudJobId).toBe('remote-agent-1');
+    await service.shutdown();
+  });
+
+  it('旧停用云端角色行禁止启用或换动作，仍可改名与停用', async () => {
+    const service = new CronService();
+    const legacy = {
+      ...disabledCloudCopy(),
+      id: 'legacy-cloud-role',
+      action: { ...disabledCloudCopy().action, roleId: 'role-muzhi' },
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    (service as unknown as { jobs: Map<string, { definition: typeof legacy }> })
+      .jobs.set(legacy.id, { definition: legacy });
+
+    await expect(service.updateJob(legacy.id, { enabled: true })).rejects.toThrow(stableError);
+    await expect(service.updateJob(legacy.id, {
+      action: { ...legacy.action, prompt: '换一个动作' },
+    })).rejects.toThrow(stableError);
+    await expect(service.updateJob(legacy.id, { name: '旧副本改名' }))
+      .resolves.toMatchObject({ name: '旧副本改名', enabled: false });
+    await expect(service.updateJob(legacy.id, { enabled: false }))
+      .resolves.toMatchObject({ enabled: false });
     await service.shutdown();
   });
 });

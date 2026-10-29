@@ -94,6 +94,10 @@ export const SERVICE_TIMEOUTS = {
   BOOTSTRAP: 30_000,
 } as const;
 
+export const NOTIFICATION_BUDGET = {
+  WINDOW_MS: 15 * 60_000,
+} as const;
+
 /** 用户交互超时 */
 export const INTERACTION_TIMEOUTS = {
   /** 无交互 renderer 时的用户问题等待超时 */

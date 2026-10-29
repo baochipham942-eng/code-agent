@@ -23,7 +23,42 @@ async function invokeCron<T>(action: string, payload?: unknown): Promise<T> {
   return response.data as T;
 }
 
+/** 一次性展示的 webhook 链接；调用方展示后即丢弃，不得持久化。 */
+export interface CronWebhookHookSecret {
+  url: string;
+  token: string;
+}
+
+/** hook 注册/轮换失败：code 可区分「云端未配置」，message 为主机原文（不含密钥）。 */
+export class CronHookError extends Error {
+  constructor(message: string, readonly code?: string) {
+    super(message);
+    this.name = 'CronHookError';
+  }
+}
+
+async function invokeHookAction(action: 'registerWebhookHook' | 'rotateWebhookHook', jobId: string): Promise<CronWebhookHookSecret> {
+  const response = await window.domainAPI?.invoke<CronWebhookHookSecret>(IPC_DOMAINS.CRON, action, { jobId });
+  if (!response?.success || !response.data) {
+    throw new CronHookError(response?.error?.message || `cron:${action} failed`, response?.error?.code);
+  }
+  return response.data;
+}
+
 export const cronClient = {
+  registerWebhookHook(jobId: string) {
+    return invokeHookAction('registerWebhookHook', jobId);
+  },
+
+  rotateWebhookHook(jobId: string) {
+    return invokeHookAction('rotateWebhookHook', jobId);
+  },
+
+  /** 云端地址/令牌保存后调用：不重启即启动事件流（幂等）。 */
+  ensureCloudStream() {
+    return invokeCron<void>('ensureCloudStream');
+  },
+
   getGroupListenCheck(jobId: string) {
     return invokeCron<CronGroupListenCheck | null>('getGroupListenCheck', { jobId });
   },

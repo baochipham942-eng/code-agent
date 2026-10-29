@@ -31,10 +31,18 @@ export interface CronWebhookRelayDeps {
   ingestWebhook(delivery: WebhookDelivery): WebhookIngestOutcome;
 }
 
+/** 云端未配置的可区分错误：IPC 层据此回 CRON_CLOUD_NOT_CONFIGURED，渲染层给本地化引导。 */
+export class CloudNotConfiguredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CloudNotConfiguredError';
+  }
+}
+
 /** webhook 任务创建护栏：中继活在云端 cron 配置后面，没配置就不许建。 */
 export function assertWebhookScheduleCloudConfigured(isConfigured: boolean): void {
   if (!isConfigured) {
-    throw new Error(
+    throw new CloudNotConfiguredError(
       'Webhook-triggered jobs require the Neo cloud scheduler to be configured; '
       + 'set the cloud scheduler URL and token in settings first.',
     );

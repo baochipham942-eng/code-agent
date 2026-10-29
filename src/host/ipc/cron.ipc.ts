@@ -8,6 +8,7 @@ import type { RawDomainRouteHandlers } from '../../shared/ipc/domainRoutes';
 import { CronSchemas, type CronDomainRequest } from '../../shared/ipc/schemas/cron';
 import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import { getCronService } from '../cron/cronService';
+import { CloudNotConfiguredError } from '../cron/cronWebhookRelay';
 import { getConnectorRegistry } from '../connectors/registry';
 import { ModelRouter } from '../model/modelRouter';
 import { createLogger } from '../services/infra/logger';
@@ -126,6 +127,29 @@ async function listMailSources(): Promise<CronMailSourcesResult> {
   }
 }
 
+/**
+ * webhook hook 注册/轮换。{url, token} 只在成功响应的 data 里出现一次；失败分支
+ * 只带不含密钥的主机消息（失败时本就没有密钥），云端未配置用独立 code 供渲染层本地化。
+ */
+async function runWebhookHookAction(operation: 'register' | 'rotate', payload: unknown): Promise<IPCResponse> {
+  const jobId = getStringField(payload, 'jobId');
+  if (!jobId) throw new Error('Invalid cron job id');
+  const cronService = getCronService();
+  try {
+    const secret = operation === 'register'
+      ? await cronService.registerWebhookHook(jobId)
+      : await cronService.rotateWebhookHook(jobId);
+    return { success: true, data: secret };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    logger.warn(`Cron webhook hook ${operation} failed for job ${jobId}: ${message}`);
+    return {
+      success: false,
+      error: { code: error instanceof CloudNotConfiguredError ? 'CRON_CLOUD_NOT_CONFIGURED' : 'CRON_ERROR', message },
+    };
+  }
+}
+
 const CRON_GENERATION_SYSTEM_PROMPT = `你是一个定时任务配置助手。根据用户的自然语言描述，生成定时任务的 JSON 配置。
 
 只返回一个 JSON 对象，不要有其他文字。JSON 格式如下：
@@ -188,6 +212,12 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
     const filter = getCronJobFilter(payload);
     const jobs = cronService.listJobs(filter);
     return { success: true, data: jobs } satisfies IPCResponse;
+  },
+  registerWebhookHook: async (_ctx, payload) => runWebhookHookAction('register', payload),
+  rotateWebhookHook: async (_ctx, payload) => runWebhookHookAction('rotate', payload),
+  ensureCloudStream: async () => {
+    getCronService().ensureCloudStream();
+    return { success: true } satisfies IPCResponse;
   },
   listMailSources: async () => {
     // 可用性结果（含 ok:false 的 reason 分类）走 success:true + data：这是结构化的

@@ -15,7 +15,7 @@ export type RunStatus =
 export const TERMINAL_RUN_STATUSES = ['completed', 'failed', 'cancelled'] as const satisfies readonly RunStatus[];
 
 /** Why a non-terminal run is parked or being recovered. */
-export type RunInterruptCause = 'crash_or_quit' | 'user_stop' | 'budget_exhausted' | 'guard_halt';
+export type RunInterruptCause = 'crash_or_quit' | 'user_stop' | 'budget_exhausted' | 'guard_halt' | 'quota_wait';
 
 /** Automatic restart attempts are deliberately bounded; a user Continue starts a new budget. */
 export const MAX_AUTO_RESUME_COUNT = 2;
@@ -162,6 +162,8 @@ export interface RunEnvelope {
   interrupt_cause?: RunInterruptCause;
   /** Number of crash/quit resumes dispatched for this logical run. */
   autoResumeCount?: number;
+  /** Wall-clock time a quota_wait park may continue. Cleared with the cause. */
+  quotaWaitDueAt?: number;
   terminal?: RunTerminal;
   createdAt: number;
   updatedAt: number;
@@ -372,25 +374,28 @@ function isRunInterruptCause(value: unknown): value is RunInterruptCause {
   return value === 'crash_or_quit'
     || value === 'user_stop'
     || value === 'budget_exhausted'
-    || value === 'guard_halt';
+    || value === 'guard_halt'
+    || value === 'quota_wait';
 }
 
 export function getRunInterruptCause(envelope: Pick<RunEnvelope, 'interruptCause' | 'interrupt_cause'>): RunInterruptCause | undefined {
   return envelope.interruptCause ?? envelope.interrupt_cause;
 }
 
-export function withRunInterruptMetadata<T extends Pick<RunEnvelope, 'interruptCause' | 'interrupt_cause' | 'autoResumeCount'>>(
+export function withRunInterruptMetadata<T extends Pick<RunEnvelope, 'interruptCause' | 'interrupt_cause' | 'autoResumeCount' | 'quotaWaitDueAt'>>(
   envelope: T,
-  input: { interruptCause?: RunInterruptCause; autoResumeCount?: number; clearInterruptCause?: boolean },
+  input: { interruptCause?: RunInterruptCause; autoResumeCount?: number; clearInterruptCause?: boolean; quotaWaitDueAt?: number },
 ): T {
   const nextCause = input.clearInterruptCause ? undefined : (input.interruptCause ?? getRunInterruptCause(envelope));
   const nextCount = input.autoResumeCount ?? envelope.autoResumeCount ?? 0;
+  const quotaWaitDueAt = nextCause === 'quota_wait' ? (input.quotaWaitDueAt ?? envelope.quotaWaitDueAt) : undefined;
   return {
     ...envelope,
     ...(nextCause === undefined
       ? { interruptCause: undefined, interrupt_cause: undefined }
       : { interruptCause: nextCause, interrupt_cause: nextCause }),
     autoResumeCount: nextCount,
+    quotaWaitDueAt,
   };
 }
 

@@ -323,6 +323,10 @@ export class BrowserService implements Disposable {
     }
   }
 
+  setLeaseInUse(inUse: boolean): void {
+    this.leaseController.setInUse(inUse);
+  }
+
   isRunning(): boolean {
     return this.browser !== null || this.context !== null;
   }

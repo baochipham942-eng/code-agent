@@ -523,6 +523,8 @@ export class ManagedBrowserProviderAdapter {
     if (binding.serviceKey !== MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY) {
       browserPool.setInUse(binding.serviceKey, true);
     }
+    // Lease expiry is independent of the pool: pin it for every key, personal included.
+    browserService.setLeaseInUse(true);
     this.ensureOrganicNavHook(browserService);
     try {
       const observed = await this.captureObservation(binding, {
@@ -599,6 +601,7 @@ export class ManagedBrowserProviderAdapter {
       candidate.serviceKey === binding.serviceKey
       && candidate.browserService === binding.browserService
     ));
+    if (!stillShared) binding.browserService.setLeaseInUse(false);
     // Personal/default pool entry is never released here — login state must survive
     // surface cleanup and app-visible session ends (BrowserPool no-ops default key).
     if (!stillShared && binding.serviceKey !== MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY) {

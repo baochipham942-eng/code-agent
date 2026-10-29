@@ -336,6 +336,7 @@ function scheduleAuthTokenReloadOnce(): boolean {
   }
 
   window.setTimeout(() => {
+    if (typeof window === 'undefined') return;
     window.location.reload();
   }, 250);
   return true;

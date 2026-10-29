@@ -147,8 +147,10 @@ export async function typeSecret(input: SecretTypeInput): Promise<ToolExecutionR
       ? `the page is on ${origin}, which is not listed in ${resolved.originsVar}`
       : `${resolved.originsVar} is not set, so no site is allowed for this secret`;
     return fail(
-      `This step needs you: ${reason}. Nothing was typed. Enter the credential yourself in the browser window (browser_action.switch_tab brings it to the front)` +
-        `, or add the exact site origin to ${resolved.originsVar} if you trust it.`,
+      `This step needs you: ${reason}. Nothing was typed. The browser now belongs to the user, who will enter the credential themselves in the same window. ` +
+        'Do not retry or route around it: your next browser action waits until the user presses Continue, ' +
+        'and after that you must call get_dom_snapshot before acting (takeover invalidates earlier observations). ' +
+        `To allow this site without a handover, add its exact origin to ${resolved.originsVar} if you trust it.`,
       {
         code: 'SECRET_REF_ORIGIN_MISMATCH',
         userActionRequired: true,

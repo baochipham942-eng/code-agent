@@ -192,6 +192,9 @@ describe('createSubagentToolRuntime permission forwarding', () => {
       'tmeetMeetingCreate',
       'mcp_add_server',
       'xlwings_execute',
+      'ExcelAutomate',
+      'sleep_until',
+      'wake_on',
     ])('acceptEdits + file_write 的 %s 转发 permission.request 而非自动放行', async (tool) => {
       const { requestPermission, permissionRequest } = captureRequestPermission({
         effectiveMode: 'acceptEdits',
@@ -207,6 +210,28 @@ describe('createSubagentToolRuntime permission forwarding', () => {
       expect(approved).toBe(false);
       expect(permissionRequest).toHaveBeenCalledTimes(1);
       expect(permissionRequest).toHaveBeenCalledWith(expect.objectContaining({ tool }));
+    });
+
+    // 对照组：可逆 / 草稿 / 只读浏览类在 acceptEdits 下保持自动放行（不冒确认）
+    it.each([
+      'reminders_create',
+      'reminders_update',
+      'mail_draft',
+      'browser_navigate',
+    ])('acceptEdits + file_write 的 %s 仍自动放行', async (tool) => {
+      const { requestPermission, permissionRequest } = captureRequestPermission({
+        effectiveMode: 'acceptEdits',
+        permissionResult: false,
+      });
+
+      const approved = await requestPermission({
+        type: 'file_write',
+        tool,
+        details: {},
+      });
+
+      expect(approved).toBe(true);
+      expect(permissionRequest).not.toHaveBeenCalled();
     });
 
     it('对照组：acceptEdits 下 Write 仍自动放行', async () => {

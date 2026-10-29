@@ -81,6 +81,8 @@ export function isExternalSideEffectTool(toolName: string): boolean {
 // 同时盖住了出站 / 不可逆 / 拉起本地进程的工具——这些不能搭写档免确认的便车。刻意不并入
 // EXTERNAL_SIDE_EFFECT_TOOLS：那套判据还喂 roleProactivity / rolePersonalization /
 // cron / replay 安全与无人值守停车标签，扩大它会把工具悄悄从那些消费面里剥掉，这里单列。
+// ExcelAutomate 与 xlwings_execute 同类（automate 动作可跑宏）；sleep_until / wake_on
+// 是自唤醒调度——一次放行等于授权一次无人值守的未来执行，均按出站级询问。
 const ACCEPT_EDITS_MUST_ASK_TOOLS = new Set<string>([
   'calendar_create_event',
   'calendar_update_event',
@@ -89,6 +91,9 @@ const ACCEPT_EDITS_MUST_ASK_TOOLS = new Set<string>([
   'tmeetMeetingCreate',
   'mcp_add_server',
   'xlwings_execute',
+  'ExcelAutomate',
+  'sleep_until',
+  'wake_on',
 ]);
 
 /**

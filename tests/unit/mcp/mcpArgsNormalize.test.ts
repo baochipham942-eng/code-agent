@@ -116,8 +116,10 @@ describe('traceMcpArgsNormalized — 改写留痕（N-CONNECTOR-POLISH-AUDIT-FU5
     // 反向变异（删掉 callTool 里的 traceMcpArgsNormalized 调用）必须红在这一条上。
     const client = new MCPClient();
     const addSpanEvent = vi.spyOn(getTelemetryService(), 'addSpanEvent');
-    vi.spyOn((client as unknown as { registry: { normalizeToolArgs: unknown } }).registry, 'normalizeToolArgs')
-      .mockReturnValue({ path: { app_token: 'a', table_id: 'b' } });
+    const registry = (client as unknown as {
+      registry: { normalizeToolArgs: (server: string, tool: string, args: Record<string, unknown>) => Record<string, unknown> };
+    }).registry;
+    vi.spyOn(registry, 'normalizeToolArgs').mockReturnValue({ path: { app_token: 'a', table_id: 'b' } });
     (client as unknown as { callToolInternal: unknown }).callToolInternal = vi.fn(async () => ({
       success: true, output: 'ok',
     }));

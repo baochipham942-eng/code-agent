@@ -59,7 +59,7 @@ export function settleModelOpsForManualContinue(
 
 /**
  * 新消息优先（ADR-075 修订 2026-09-29 ③⑤）：同会话里本进程持有、无活 handle 的根 run，
- * 若是等「继续」的停靠 run（user_stop / guard_halt / 预算耗尽）或还在后台排队的自动续跑，
+ * 若是等「继续」的停靠 run（user_stop / guard_halt / 预算耗尽 / quota_wait）或还在后台排队的自动续跑，
  * 就该让位给新一轮。等审批的 waiting（crash_or_quit，计数多少都一样）不在此列，仍按原冲突语义。
  */
 export function findSupersededSessionRoots(

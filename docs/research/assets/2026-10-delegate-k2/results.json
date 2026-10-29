@@ -7,7 +7,7 @@
     "budgetMs": 3000,
     "withinBudget": true
   },
-  "generatedAt": "2026-10-29T12:57:58.486Z",
+  "generatedAt": "2026-10-29T13:03:38.251Z",
   "e1Run": {
     "summary": {
       "model": "glm-5.3",
@@ -1646,18 +1646,18 @@
       "rate": 0.9,
       "passed": true
     },
-    "agreement": 0.5681818181818182,
-    "cohenKappa": 0.6016898008449004,
+    "agreement": 0.6363636363636364,
+    "cohenKappa": 0.6988176726820162,
     "perLabel": [
       {
         "label": "delegate_existing",
         "n": 18,
-        "agree": 6
+        "agree": 7
       },
       {
         "label": "answer_here",
         "n": 7,
-        "agree": 3
+        "agree": 4
       },
       {
         "label": "clarify",
@@ -1687,7 +1687,7 @@
       {
         "label": "stop",
         "n": 3,
-        "agree": 2
+        "agree": 3
       }
     ],
     "disagreementIds": [
@@ -1696,7 +1696,6 @@
       "DK2-0213",
       "DK2-0155",
       "DK2-0189",
-      "DK2-0111",
       "DK2-0191",
       "DK2-0083",
       "DK2-0180",
@@ -1707,11 +1706,9 @@
       "DK2-0194",
       "DK2-0179",
       "DK2-0140",
-      "DK2-0130",
-      "DK2-0184",
       "DK2-0198"
     ],
-    "malformedCount": 6,
+    "malformedCount": 1,
     "sampleSize": 44
   }
 }

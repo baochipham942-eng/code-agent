@@ -21,6 +21,7 @@ import {
   getCronAutomationType,
   readCronSourceSessionId,
 } from './cronAutomationBridge';
+import { CloudNotConfiguredError } from './cronCloudErrors';
 import { CronApiClient, type CronApiHookEvent, type CronApiHookSecret } from './cronApiClient';
 import type { WebhookDelivery, WebhookIngestOutcome } from './cronEventTrigger';
 import { getSessionAutomationService } from '../services/sessionAutomation';
@@ -29,14 +30,6 @@ export interface CronWebhookRelayDeps {
   getJobDefinitions(): CronJobDefinition[];
   /** CronEventTrigger.ingestWebhook 的直通口：帧在此进绑定过滤/去重/合批链路。 */
   ingestWebhook(delivery: WebhookDelivery): WebhookIngestOutcome;
-}
-
-/** 云端未配置的可区分错误：IPC 层据此回 CRON_CLOUD_NOT_CONFIGURED，渲染层给本地化引导。 */
-export class CloudNotConfiguredError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'CloudNotConfiguredError';
-  }
 }
 
 /** webhook 任务创建护栏：中继活在云端 cron 配置后面，没配置就不许建。 */

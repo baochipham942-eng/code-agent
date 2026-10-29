@@ -15,6 +15,7 @@ import {
   type NotificationIntent,
 } from './notificationPolicy';
 import { getConfigService } from '../core/configService';
+import { getDaemonQuitIntent } from '../daemon/quitIntent';
 import {
   getDurableResumeNotificationText,
   type DurableResumeNotificationLocale,
@@ -75,6 +76,21 @@ class NotificationService implements Disposable {
   private enabled: boolean = true;
   private disposed = false;
   private recentNotifications: RecordedNotification[] = [];
+
+  /**
+   * Fallback B 原生通知发送器（N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1）。默认走
+   * osascript（host 侧，壳死了也能弹）；单测注入替身，不真弹系统通知。
+   */
+  private nativeNotificationSender: (payload: { title: string; body: string }) => void = (payload) => {
+    new Notification({ title: payload.title, body: payload.body }).show();
+  };
+
+  /** 测试注入原生通知替身；不传恢复默认 osascript 路径。 */
+  setNativeNotificationSender(sender: ((payload: { title: string; body: string }) => void) | null): void {
+    this.nativeNotificationSender = sender ?? ((payload) => {
+      new Notification({ title: payload.title, body: payload.body }).show();
+    });
+  }
 
   private isDryRun(): boolean {
     return process.env.CODE_AGENT_NOTIFICATION_DRY_RUN === '1';
@@ -188,6 +204,21 @@ class NotificationService implements Disposable {
       body: entry.body,
       sessionId: data.sessionId,
     });
+    // Fallback B（N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1）：deliver 只广播给 renderer，
+    // 渲染端没了（壳声明「后台继续」退出，ADR-083）时 toast 没有落点——再弹一条 host 侧
+    // 原生通知兜底。文案不复制调用方的 title/body（那可能带工具名），用固定人话。
+    // 已知局限：意图声明后没有「壳重新接上」的复位事件，重开后 needs_input 会
+    // renderer toast + 原生通知双弹（见证据档）；放着不修是刻意的——漏报比重复打扰贵。
+    if (getDaemonQuitIntent() === 'background') {
+      try {
+        this.nativeNotificationSender({
+          title: '有事项需要你确认',
+          body: '后台任务在等你确认，打开 Agent Neo 处理。',
+        });
+      } catch (error) {
+        logger.warn('Native needs-input notification failed', { error });
+      }
+    }
     logger.info('Needs-input notification sent', { title: data.title });
   }
 

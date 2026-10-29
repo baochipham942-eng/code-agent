@@ -307,6 +307,8 @@ type PermissionApprovalSource =
   | 'cli-auto-approve'
   | 'unattended-readonly'
   | 'auto-approve-level'
+  /** 定时任务面板预授权文件夹内的 file_write/file_edit 放行（N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1） */
+  | 'schedule-write-grant'
   | 'skip-permissions'
   | 'noninteractive'
   | 'session-allowlist'

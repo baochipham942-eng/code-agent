@@ -148,9 +148,17 @@ export interface PendingProjectGoalChatSeed {
   goal: GoalRunInput;
 }
 
+/**
+ * 设置页的用户关闭落点（Stripe portal return_url 模式）：从二级页（目前只有自动化的
+ * webhook 门）「去设置」时记下来源页，用户关闭设置（X / Esc）时直接回该页而不是聊天首页。
+ */
+export type SettingsReturnTo = 'cronCenter';
+
 export interface AppState {
   // UI State
   showSettings: boolean;
+  /** 非空 = 这次设置是带返回落点打开的；closeSettings 据此决定关了落哪儿。 */
+  settingsReturnTo: SettingsReturnTo | null;
   settingsInitialTab: SettingsTab | null; // 打开设置时默认选中的 Tab
   settingsMemoryFocus: SettingsMemoryFocus | null;
   settingsCapabilityFocus: SettingsCapabilityFocus | null;
@@ -293,6 +301,10 @@ export interface AppState {
 
   // Actions
   setShowSettings: (show: boolean) => void;
+  /** 带返回落点打开设置：用户关闭时回到 returnTo 页（深链落点不在设置页时退化为 openSettingsTab）。 */
+  openSettingsWithReturn: (tab: SettingsTab, returnTo: SettingsReturnTo) => void;
+  /** 用户关闭设置（X / Esc）：带返回落点时回该页；否则与 setShowSettings(false) 等价。 */
+  closeSettings: () => void;
   setPendingRoleChatSeed: (seed: string | null) => void;
   openSettingsTab: (tab: SettingsTab) => void; // 打开设置并跳转到指定 Tab
   openMemorySettings: (focus?: Omit<SettingsMemoryFocus, 'nonce'>) => void;

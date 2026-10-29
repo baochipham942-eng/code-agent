@@ -10,7 +10,11 @@ import ipcService from '../../../src/renderer/services/ipcService';
 
 const facadeInvoke = vi.hoisted(() => vi.fn());
 const openSettings = vi.hoisted(() => vi.fn());
+const platform = vi.hoisted(() => ({ current: 'darwin' }));
 
+vi.mock('@shared/keybindings', () => ({
+  getCurrentKeybindingPlatform: () => platform.current,
+}));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: { invokeDomain: vi.fn().mockResolvedValue(undefined) },
 }));
@@ -54,10 +58,27 @@ const REQUEST_COMMAND = 'requestAppshotsHotkeyAccess';
 describe('AppshotsSettings 快捷键（⌘+⌘）输入监控权限行', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    platform.current = 'darwin';
   });
 
   afterEach(() => {
     cleanup();
+  });
+
+  it('非 macOS：隐藏快捷键权限行且不查询或请求输入监控权限', async () => {
+    platform.current = 'win32';
+    mockHotkey({ permissionGranted: false, tapInstalled: false, devChannel: false });
+    renderTab();
+
+    await waitFor(() => {
+      expect(facadeInvoke).toHaveBeenCalledWith('setAppshotsEnabled', { enabled: true });
+    });
+    expect(screen.queryByTestId('appshots-hotkey-permission-row')).toBeNull();
+    expect(screen.queryByRole('button', { name: '开启快捷键' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '打开「输入监控」权限设置' })).toBeNull();
+    expect(facadeInvoke.mock.calls.some((call) => call[0] === 'getAppshotsHotkeyStatus')).toBe(false);
+    expect(facadeInvoke.mock.calls.some((call) => call[0] === REQUEST_COMMAND)).toBe(false);
+    expect(openSettings).not.toHaveBeenCalled();
   });
 
   it('not granted: 显示「未开启」+「开启快捷键」+「打开系统设置」两个入口', async () => {

@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Camera, Monitor, Accessibility, Check, Keyboard } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
+import { getCurrentKeybindingPlatform } from '@shared/keybindings';
 import type { AppSettings } from '@shared/contract';
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
@@ -41,7 +42,8 @@ export const AppshotsSettings: React.FC = () => {
   const [enabled, setEnabled] = useState(true);
   const [target, setTarget] = useState<'current' | 'new'>('current');
   const web = isWebMode();
-  // 快捷键权限行：只读状态查询；老 shell 没有这两条命令时整行隐藏（try/catch）。
+  const isMacPlatform = getCurrentKeybindingPlatform() === 'darwin';
+  // 快捷键权限行仅 macOS 提供；老 shell 没有这两条命令时整行隐藏（try/catch）。
   const [hotkeyStatus, setHotkeyStatus] = useState<AppshotsHotkeyStatus | null>(null);
   const [hotkeySupported, setHotkeySupported] = useState(true);
   const [hotkeyRequesting, setHotkeyRequesting] = useState(false);
@@ -50,7 +52,7 @@ export const AppshotsSettings: React.FC = () => {
   const pollUntilRef = useRef(0);
 
   const refreshHotkeyStatus = useCallback(async () => {
-    if (!isNativeCommandRuntimeAvailable()) return;
+    if (!isMacPlatform || !isNativeCommandRuntimeAvailable()) return;
     try {
       setHotkeyStatus(await invokeNativeCommandAction('getAppshotsHotkeyStatus'));
     } catch (error) {
@@ -61,7 +63,7 @@ export const AppshotsSettings: React.FC = () => {
       });
       setHotkeySupported(false);
     }
-  }, []);
+  }, [isMacPlatform]);
 
   useEffect(() => {
     void refreshHotkeyStatus();
@@ -227,8 +229,8 @@ export const AppshotsSettings: React.FC = () => {
             <span className="text-sm text-zinc-300">{appshotsText.openAccessibility}</span>
           </button>
           {/* 第三行：快捷键专属的「输入监控」状态 + 显式开启入口（FB-457：系统框只在这一行的
-              按钮被点击后才可能出现；状态查询失败/老 shell 缺命令时整行隐藏） */}
-          {hotkeySupported && hotkeyStatus && (
+              按钮被点击后才可能出现；非 macOS、状态查询失败/老 shell 缺命令时整行隐藏） */}
+          {isMacPlatform && hotkeySupported && hotkeyStatus && (
             <div
               data-testid="appshots-hotkey-permission-row"
               className="flex items-center gap-3 p-3 rounded-lg border border-zinc-700"

@@ -25,6 +25,12 @@ import type {
   SessionExportEnvelopeV2,
 } from '../../../shared/contract/sessionForkPortability';
 import { buildSessionExportEnvelopeV2 } from '../sessionFork/portability/codec';
+import { formatToolUseLine } from '../../externalImport/toolUseLine';
+import {
+  importRecentExternalChats,
+  type RecentExternalChatsImportOptions,
+  type RecentExternalChatImportResult,
+} from '../../externalImport/chatsImport';
 export type AgentEngineHistoryEngineKind = Extract<AgentEngineKind, 'codex_cli' | 'claude_code'>;
 export interface AgentEngineHistoryDiagnostic {
   level: 'warning' | 'error';
@@ -258,6 +264,29 @@ export class AgentEngineHistoryImportService {
     });
     return { summary, provenance, envelope };
   }
+  /**
+   * 批量导入候选清单：两引擎合并、按会话 updatedAt 新→旧。窗口过滤必须用 summary 的
+   * updatedAt（Claude 是消息时间），不能用 findHistoryFiles 的 mtime 预排序截断。
+   */
+  async listRecentHistory(request: { sinceMs?: number; limit?: number }): Promise<AgentEngineHistorySummary[]> {
+    const summaries: AgentEngineHistorySummary[] = [];
+    for (const engine of ['claude_code', 'codex_cli'] as const) {
+      const scan = await this.findHistoryFiles(engine);
+      for (const source of scan.files) {
+        const summary = await this.summarizeSource(engine, source);
+        if (request.sinceMs !== undefined && summary.updatedAt < request.sinceMs) continue;
+        summaries.push(summary);
+      }
+    }
+    summaries.sort((left, right) => right.updatedAt - left.updatedAt);
+    return request.limit !== undefined ? summaries.slice(0, request.limit) : summaries;
+  }
+  /** 批量导入最近外部会话（入口；实现见 externalImport/chatsImport.ts）。 */
+  async importRecentChats(
+    request: Omit<RecentExternalChatsImportOptions, 'historyService'>,
+  ): Promise<RecentExternalChatImportResult[]> {
+    return importRecentExternalChats({ ...request, historyService: this });
+  }
   private async mapClaudeMessages(
     sourcePath: string,
     externalSessionId: string,
@@ -347,9 +376,15 @@ export class AgentEngineHistoryImportService {
       const text = normalizeLineEndings(content);
       return text.trim() ? [{ type: 'text', text }] : [];
     }
+    // tool_use 降级为一行纯文本（见 externalImport/toolUseLine.ts）；tool_result 不进信封。
     return content
-      .filter((block) => block.type === 'text' && typeof block.text === 'string')
-      .map((block) => normalizeLineEndings(block.text ?? ''))
+      .map((block) => {
+        if (block.type === 'tool_use') return formatToolUseLine(block.name, block.input);
+        if (block.type === 'text' && typeof block.text === 'string') {
+          return normalizeLineEndings(block.text);
+        }
+        return '';
+      })
       .filter((text) => text.trim().length > 0)
       .map((text) => ({ type: 'text' as const, text }));
   }
@@ -856,6 +891,12 @@ function extractCodexImportMessage(obj: Record<string, unknown>): CodexImportMes
     }
   }
   if (obj.type === 'response_item') {
+    if (payload.type === 'function_call') {
+      // 工具调用降级为一行纯文本；function_call_output 不进信封。
+      const name = typeof payload.name === 'string' ? payload.name : undefined;
+      const text = formatToolUseLine(name, payload.arguments);
+      if (text) return { role: 'assistant', text, timestamp };
+    }
     if (payload.type === 'reasoning') {
       return {
         role: 'assistant',

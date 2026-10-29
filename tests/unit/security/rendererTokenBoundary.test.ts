@@ -103,6 +103,7 @@ const ALLOWLIST: AllowlistEntry[] = [
   { file: 'src/renderer/components/features/settings/tabs/ProviderDetailSections.tsx', name: 'onApiKeyChange', reason: '表单变更回调 prop，不承载存量凭据' },
   { file: 'src/renderer/components/features/settings/tabs/ProviderModelsSection.tsx', name: 'hasApiKey', reason: '布尔存在标志，不承载 key 值' },
   { file: 'src/renderer/components/features/settings/tabs/SearchSettings.tsx', name: 'apiKey', reason: '搜索 service key 表单态：setServiceApiKey 只写，回显走 maskApiKey' },
+  { file: 'src/renderer/components/features/settings/tabs/CronCloudSettingsCard.tsx', name: 'apiKey', reason: '云端计划任务令牌：用户手输、setServiceApiKey 只写，回显仅掩码' },
   { file: 'src/renderer/components/features/settings/tabs/VisualModelsSettings.tsx', name: 'apiKey', reason: '视觉模型表单态：用户手输、只写' },
   { file: 'src/renderer/components/features/settings/tabs/VoiceApiKeyConfig.tsx', name: 'apiKey', reason: '语音 key 表单态：用户手输、只写' },
   { file: 'src/renderer/components/features/settings/tabs/VoiceModelSettings.tsx', name: 'apiKey', reason: '语音 provider 表单态：用户手输、只写' },

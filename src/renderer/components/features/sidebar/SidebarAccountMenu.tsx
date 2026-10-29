@@ -9,7 +9,7 @@
 // 关闭回调、高级工具折叠态与它的开关、以及当前会话所属项目 id。
 // ============================================================================
 
-import React from 'react';
+import React, { useCallback, useRef } from 'react';
 import {
   Activity,
   Blocks,
@@ -25,6 +25,7 @@ import {
 import { useAppStore } from '../../../stores/appStore';
 import { useAuthStore } from '../../../stores/authStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { useMenuKeyboardNav } from '../../../hooks/useMenuKeyboardNav';
 import { canAccessFeature } from '../../../utils/accessControl';
 import { AccountMenuItem, AccountMenuLabel } from './sidebarPresentation';
 import { useInternalFeatureStore } from '../../../internalFeatures/internalFeatureStore';
@@ -66,9 +67,19 @@ export const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({
   const canOpenPromptManager = canAccessFeature('prompt.manager', user);
   const canOpenInternal = canAccessFeature('capability.internal', user);
   const internalFeatures = useInternalFeatureStore((state) => state.features);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  if (!returnFocusRef.current && typeof document !== 'undefined') {
+    returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  }
+  const closeAndReturnFocus = useCallback(() => {
+    onClose();
+    returnFocusRef.current?.focus();
+  }, [onClose]);
+  useMenuKeyboardNav(true, menuRef, closeAndReturnFocus);
 
   return (
-    <div className="absolute bottom-full left-2 right-2 z-50 max-h-[80vh] overflow-y-auto rounded-xl elevation-l2 popover-enter py-1">
+    <div ref={menuRef} role="menu" aria-label={sb.userMenu} className="absolute bottom-full left-2 right-2 z-50 max-h-[80vh] overflow-y-auto rounded-xl elevation-l2 popover-enter py-1">
       <AccountMenuLabel>{sb.menuCommon}</AccountMenuLabel>
       <AccountMenuItem
         onClick={() => { setShowActivityPanel(true); onClose(); }}
@@ -103,6 +114,8 @@ export const SidebarAccountMenu: React.FC<SidebarAccountMenuProps> = ({
       <div className="my-1 border-t border-zinc-800" />
       <button /* ds-allow:button: 折叠组头是 11px 微字号纯文本行头，primitive 无对应变体（同款豁免见 SidebarProjectDrawer） */
         type="button"
+        role="menuitem"
+        aria-expanded={advancedToolsOpen}
         onClick={onToggleAdvancedTools}
         className="flex w-full items-center gap-2 px-3 py-2 text-sm text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
       >

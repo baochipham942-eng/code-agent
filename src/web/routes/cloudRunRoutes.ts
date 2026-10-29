@@ -19,6 +19,12 @@ interface CloudRunRuntimeDeps {
   getLedger: () => CloudRunLedger;
   runRegistry: RunRegistry;
   execute: (body: AgentRunBody, cloudRunId: string) => Promise<void>;
+  /**
+   * ADR-087 S4：提升上来的 cron 行交这里执行（request_json 不是 AgentRunBody，
+   * 绝不走上面的 parse 路径）。缺省 fail-closed：settle failed + 留痕，
+   * 在 OpenClaw 核对单（N-CLOUD-RUN-LEDGER-DESIGN-FU5）关账前不放开。
+   */
+  executeCronRun?: (record: CloudRunRecord) => Promise<void>;
   logger: WebRouteLogger;
 }
 
@@ -111,6 +117,12 @@ export class CloudRunRouteRuntime {
   }
 
   private startPromoted(record: CloudRunRecord): void {
+    // ADR-087 S4：cron 行的 request_json 是调度载荷，不是 AgentRunBody——
+    // 走 parse 路径会把 cron 行误跑或误 settle failed，必须先分流。
+    if (record.trigger === 'cron') {
+      this.startPromotedCronRun(record);
+      return;
+    }
     let parsed: ReturnType<typeof AgentRunBodySchema.safeParse>;
     try {
       parsed = AgentRunBodySchema.safeParse(JSON.parse(record.requestJson ?? 'null'));
@@ -126,6 +138,22 @@ export class CloudRunRouteRuntime {
     }
     void this.deps.execute(parsed.data, record.runId).catch((error: unknown) => {
       this.deps.logger.error(`[CloudRun] Promoted run ${record.runId} failed`, error);
+      this.settle(record.runId, 'failed');
+    });
+  }
+
+  private startPromotedCronRun(record: CloudRunRecord): void {
+    const executor = this.deps.executeCronRun;
+    if (!executor) {
+      this.deps.logger.error(
+        '[CloudRun] Promoted cron run has no executor configured; settling failed (S4 fail-closed)',
+        { runId: record.runId, sessionId: record.sessionId },
+      );
+      this.settle(record.runId, 'failed');
+      return;
+    }
+    void executor(record).catch((error: unknown) => {
+      this.deps.logger.error(`[CloudRun] Promoted cron run ${record.runId} failed`, error);
       this.settle(record.runId, 'failed');
     });
   }

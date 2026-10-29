@@ -460,6 +460,11 @@ export class BrowserService implements Disposable {
     }
   }
 
+  /** Live page URL of the target tab (tab.url is only refreshed on load events). */
+  getLiveTabUrl(tabId?: string): string {
+    return this.getTab(tabId).page.url();
+  }
+
   getActiveTab(): BrowserTab | null {
     return this.activeTabId ? this.tabs.get(this.activeTabId) || null : null;
   }

@@ -933,6 +933,12 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         if (isTaskManagerOwnedRunState(state.status)) {
           await tm.cancelTask(resolvedSessionId);
         } else {
+          // 停靠待「继续」的 durable run（quota_wait / user_stop / guard_halt）没有活 loop：
+          // TaskManager 是 idle，orchestrator.cancel 对已结束的 loop 只发事件，parked run 会一直
+          // waiting、quotaWaitTimer 到点仍自动续跑——与用户显式取消相反。走 web /api/cancel 同款
+          // terminalRecoveredWaitingRun 终态化（同时清 due timer），命中即收工。
+          const parked = await this.externalRunRegistry?.terminalRecoveredWaitingRun({ sessionId: resolvedSessionId });
+          if (parked) return;
           const orchestrator = this.getOrchestratorOrThrow(resolvedSessionId);
           // Legacy orchestrator.cancel signature accepts 'user' | 'session-switch'
           // — map our cascade reasons back for backward compatibility.

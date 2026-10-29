@@ -847,6 +847,17 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
           ? undefined
           : shouldOfferDirectoryEscalation(eligibility);
         const offeredPath = offeredFilePath ?? offeredDirectoryPath;
+        // 出卡与否的判据输入与两门返回值此前无宿主日志，真机排查只能靠出卡反证
+        // （N-SANDBOX-ESCALATE-CHMOD-SHAPE-FU1）。只在沙盒内前台命令失败时到达。
+        ctx.logger.info('Sandbox escalation eligibility evaluated', {
+          sessionId: ctx.sessionId,
+          unattended,
+          writeFence,
+          permissionMode,
+          deniedPath: deniedPath ?? null,
+          offeredFilePath: offeredFilePath ?? null,
+          offeredDirectoryPath: offeredDirectoryPath ?? null,
+        });
         if (!offeredPath) throw error;
 
         const escalationReason = offeredDirectoryPath

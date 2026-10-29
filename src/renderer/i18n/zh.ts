@@ -52,6 +52,7 @@ import { outcomeWordsZh } from './outcomeWords';
 import { engineModelPanelZh } from './engineModelPanel';
 import { jevAdvisoryZh } from './jevAdvisory';
 import { workflowStallZh } from './workflowStall';
+import { connectorRequiredZh } from './connectorRequired';
 import { roleFirstWakeZh } from './roleFirstWake';
 import { roleWakeProposalsZh } from './roleWakeProposals';
 import { permissionRuleNlZh } from './permissionRuleNl';
@@ -75,6 +76,7 @@ export const zh = {
   ...engineModelPanelZh,
   ...jevAdvisoryZh,
   ...workflowStallZh,
+  ...connectorRequiredZh,
   ...roleFirstWakeZh,
   ...roleWakeProposalsZh,
   ...permissionRuleNlZh,

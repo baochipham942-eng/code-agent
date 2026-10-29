@@ -46,6 +46,7 @@ import {
   ARTIFACT_SELECTED_PROVIDER_RETRY_DELAYS_MS,
 } from './modelRouterTimeouts';
 import { normalizeInferenceOptions } from './modelRouterInferenceOptions';
+import { applyOutboundSecretMask } from '../security/outboundSecretMask';
 
 const logger = createLogger('ModelRouter');
 import type { InferenceOptions, ModelMessage, ModelResponse, StreamCallback, MessageContent } from './types';
@@ -840,6 +841,12 @@ export class ModelRouter {
     if (!provider) {
       throw new Error(`Unsupported provider: ${config.provider}`);
     }
+    const replayMessages = sanitizeModelReplayForModelInfo(messages, this.getModelInfo(config.provider, config.model));
+    // 可逆出云密钥掩码（N-PROMPT-SECRET-MASK）：开关关 → undefined，走原样路径（请求
+    // 字节不变）；开 → 出云掩码、回包/流式还原。掩码或还原失败在模块内以带稳定 code
+    // 的错误上抛（fail-closed），这里不吞——绝不静默明文外发。默认引擎的 aiSdk 直连
+    // 路径在 inferenceViaAiSdk 入口接同一模块，与本漏斗互为备份。
+    const outboundMask = applyOutboundSecretMask(replayMessages, onStream);
     const timeoutMs = options?.requestTimeoutMs;
     const timedAbort = typeof timeoutMs === 'number' && timeoutMs > 0
       ? createTimedAbortController(timeoutMs, { label: `model-router:${config.provider}/${config.model}` })
@@ -853,18 +860,24 @@ export class ModelRouter {
     const healthMonitor = getProviderHealthMonitor();
     const observationCount = healthMonitor.getObservationCount(config.provider);
     const startedAt = Date.now();
-    const replayMessages = sanitizeModelReplayForModelInfo(messages, this.getModelInfo(config.provider, config.model));
     try {
       if (effectiveSignal?.aborted) {
         throw new Error('Request was cancelled before starting');
       }
-      const response = await provider.inference(replayMessages, tools, config, onStream, effectiveSignal, options);
+      const response = await provider.inference(
+        outboundMask?.messages ?? replayMessages,
+        tools,
+        config,
+        outboundMask?.onStream ?? onStream,
+        effectiveSignal,
+        options,
+      );
       // Legacy providers do not all use the shared retry wrapper. Fill the
       // canonical provider key only when the inner path recorded nothing.
       if (healthMonitor.getObservationCount(config.provider) === observationCount) {
         healthMonitor.recordSuccess(config.provider, Date.now() - startedAt, { model: config.model });
       }
-      return response;
+      return outboundMask ? outboundMask.restore(response) : response;
     } catch (error) {
       if (isQuotaWaitSuspendError(error)) throw error;
       if (healthMonitor.getObservationCount(config.provider) === observationCount) {

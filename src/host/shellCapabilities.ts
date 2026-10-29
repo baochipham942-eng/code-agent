@@ -58,6 +58,7 @@ import { PermissionTranslateSchemas } from '../shared/ipc/schemas/permissionTran
 const DEFAULT_SINCE_VERSION = '0.16.93';
 
 const NATIVE_TAURI_COMMANDS = [
+  'appshots_hotkey_status',
   'appshots_read_image_data_url',
   'appshots_read_image_data_url_by_id',
   'appshots_report_composer_slot',
@@ -66,6 +67,7 @@ const NATIVE_TAURI_COMMANDS = [
   'appshots_set_target_session',
   'appshots_skip_motion',
   'appshots_trigger',
+  'appshots_request_hotkey_access',
   'check_for_update',
   'desktop_capture_screenshot',
   'desktop_get_app_icon',

@@ -3,8 +3,8 @@
 // 启用开关 / 发送目标会话 / 触发方式说明 / 权限引导
 // ============================================================================
 
-import React, { useState, useEffect } from 'react';
-import { Camera, Monitor, Accessibility, Check } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Camera, Monitor, Accessibility, Check, Keyboard } from 'lucide-react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings } from '@shared/contract';
 import { createLogger } from '../../../../utils/logger';
@@ -15,10 +15,12 @@ import { openNativeDesktopSystemSettings } from '../../../../services/nativeDesk
 import {
   invokeNativeCommandAction,
   isNativeCommandRuntimeAvailable,
+  type AppshotsHotkeyStatus,
 } from '../../../../services/nativeCommandFacade';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useAppshotsStore } from '../../../../stores/appshotsStore';
 import { Toggle } from '../../../primitives/Toggle';
+import { Button } from '../../../primitives/Button';
 
 const logger = createLogger('AppshotsSettings');
 const TARGET_SESSION_OPTIONS = ['current', 'new'] as const;
@@ -39,6 +41,55 @@ export const AppshotsSettings: React.FC = () => {
   const [enabled, setEnabled] = useState(true);
   const [target, setTarget] = useState<'current' | 'new'>('current');
   const web = isWebMode();
+  // 快捷键权限行：只读状态查询；老 shell 没有这两条命令时整行隐藏（try/catch）。
+  const [hotkeyStatus, setHotkeyStatus] = useState<AppshotsHotkeyStatus | null>(null);
+  const [hotkeySupported, setHotkeySupported] = useState(true);
+  const [hotkeyRequesting, setHotkeyRequesting] = useState(false);
+  // 点过「开启快捷键」后最多轮询 60s（2s 一次）等安装结果；平时不轮询。
+  const [hotkeyPollUntil, setHotkeyPollUntil] = useState(0);
+  const pollUntilRef = useRef(0);
+
+  const refreshHotkeyStatus = useCallback(async () => {
+    if (!isNativeCommandRuntimeAvailable()) return;
+    try {
+      setHotkeyStatus(await invokeNativeCommandAction('getAppshotsHotkeyStatus'));
+    } catch (error) {
+      // 不区分错误类型：状态查询失败（含老 shell 未注册该命令）一律收起整行，
+      // 带可区分原因，别静默吞掉。
+      logger.warn('Appshots hotkey status unavailable, hiding shortcut permission row', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      setHotkeySupported(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshHotkeyStatus();
+  }, [refreshHotkeyStatus]);
+
+  useEffect(() => {
+    pollUntilRef.current = hotkeyPollUntil;
+    if (hotkeyPollUntil === 0) return;
+    const interval = setInterval(() => {
+      void refreshHotkeyStatus();
+      if (Date.now() >= pollUntilRef.current) setHotkeyPollUntil(0);
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [hotkeyPollUntil, refreshHotkeyStatus]);
+
+  // 显式请求「输入监控」：系统框只在用户点了这个按钮后才出现（Rust 侧每进程至多问一次）。
+  const handleEnableHotkey = async () => {
+    if (!isNativeCommandRuntimeAvailable()) return;
+    setHotkeyRequesting(true);
+    try {
+      setHotkeyStatus(await invokeNativeCommandAction('requestAppshotsHotkeyAccess'));
+    } catch (error) {
+      logger.error('Failed to request appshots hotkey access', error);
+    } finally {
+      setHotkeyRequesting(false);
+      setHotkeyPollUntil(Date.now() + 60_000);
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -175,6 +226,50 @@ export const AppshotsSettings: React.FC = () => {
             <Accessibility className="w-4 h-4 text-zinc-400" />
             <span className="text-sm text-zinc-300">{appshotsText.openAccessibility}</span>
           </button>
+          {/* 第三行：快捷键专属的「输入监控」状态 + 显式开启入口（FB-457：系统框只在这一行的
+              按钮被点击后才可能出现；状态查询失败/老 shell 缺命令时整行隐藏） */}
+          {hotkeySupported && hotkeyStatus && (
+            <div
+              data-testid="appshots-hotkey-permission-row"
+              className="flex items-center gap-3 p-3 rounded-lg border border-zinc-700"
+            >
+              <Keyboard className="w-4 h-4 text-zinc-400 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm text-zinc-300">{appshotsText.hotkeyTitle}</div>
+                <div className="text-xs text-zinc-500 mt-0.5">
+                  {appshotsText.hotkeyDescription}
+                </div>
+              </div>
+              <span className="text-xs text-zinc-400 shrink-0">
+                {!hotkeyStatus.permissionGranted
+                  ? appshotsText.hotkeyStatusOff
+                  : hotkeyStatus.tapInstalled
+                    ? appshotsText.hotkeyStatusOn
+                    : appshotsText.hotkeyStatusNeedsRestart}
+              </span>
+              {!hotkeyStatus.permissionGranted && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={web}
+                  loading={hotkeyRequesting}
+                  onClick={() => void handleEnableHotkey()}
+                >
+                  {appshotsText.hotkeyEnable}
+                </Button>
+              )}
+              {!hotkeyStatus.permissionGranted && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={web}
+                  onClick={() => openNativeDesktopSystemSettings('inputMonitoring')}
+                >
+                  {appshotsText.hotkeyOpenSettings}
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

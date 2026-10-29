@@ -8,6 +8,8 @@ import {
   computeRetryBackoffMs,
   extractRetryAfterMs,
   isCancellationError,
+  isQuotaWaitSuspendError,
+  quotaSuspendErrorFor,
   describeFallbackError,
   isFallbackEligible,
   isRetryableModelCallError,
@@ -15,6 +17,7 @@ import {
   withTransientRetry,
   createRetryFingerprintScope,
 } from '../../../src/host/model/providers/retryStrategy';
+import { runWithQuotaWaitSuspendEligibility } from '../../../src/host/model/providers/quotaWaitSuspend';
 import { classifyError } from '../../../src/host/model/errorClassifier';
 import { getProviderHealthMonitor } from '../../../src/host/model/providerHealthMonitor';
 
@@ -505,6 +508,140 @@ describe('Retry Strategy', () => {
     it('returns null when no hint present', () => {
       expect(extractRetryAfterMs(new Error('socket hang up'))).toBeNull();
       expect(extractRetryAfterMs('plain string error')).toBeNull();
+    });
+
+    it('keeps a header of 600 seconds capped at 60s and ignores hour text', () => {
+      const err = new Error('try again in 2 hours') as Error & { headers?: Record<string, string> };
+      err.headers = { 'retry-after': '600' };
+      expect(extractRetryAfterMs(err)).toBe(60_000);
+      // The old regex only knows ms/s. An unknown unit is optional, so "2 hours"
+      // and "2 minutes" stay 2 seconds. The uncapped sibling reads the real unit.
+      expect(extractRetryAfterMs(new Error('try again in 2 hours'))).toBe(2_000);
+      expect(extractRetryAfterMs(new Error('try again in 2 minutes'))).toBe(2_000);
+    });
+  });
+
+  describe('extractUncappedRetryAfterMs', () => {
+    const now = Date.parse('2026-10-27T08:00:00.000Z');
+
+    it('returns the raw header wait, an HTTP-date delta, and hour text', () => {
+      const header = new Error('limited') as Error & { headers?: Record<string, string> };
+      header.headers = { 'retry-after': '600' };
+      expect(quotaSuspendErrorFor(header, now)?.waitMs).toBe(600_000);
+
+      const dated = new Error('limited') as Error & { headers?: Record<string, string> };
+      dated.headers = { 'retry-after': new Date(now + 2 * 60 * 60 * 1000).toUTCString() };
+      expect(quotaSuspendErrorFor(dated, now)?.waitMs).toBe(7_200_000);
+
+      expect(quotaSuspendErrorFor(new Error('try again in 2 hours'), now)?.waitMs).toBe(7_200_000);
+      expect(quotaSuspendErrorFor(new Error('try again in 2 minutes'), now)?.waitMs).toBe(120_000);
+    });
+
+    it('reads an AI SDK responseHeaders record and a nested cause', () => {
+      const err = Object.assign(new Error('limited'), {
+        statusCode: 429,
+        responseHeaders: { 'retry-after': '75' },
+      });
+      expect(quotaSuspendErrorFor(err, now)?.waitMs).toBe(75_000);
+      const wrapped = new Error('wrapper', { cause: err });
+      expect(quotaSuspendErrorFor(wrapped, now)?.waitMs).toBe(75_000);
+    });
+
+    it('suspends only inside (60s, 24h]', () => {
+      const atCap = Object.assign(new Error('429'), { status: 429, retryAfterMs: 60_000 });
+      const justOver = Object.assign(new Error('429'), { status: 429, retryAfterMs: 60_001 });
+      const day = Object.assign(new Error('429'), { status: 429, retryAfterMs: 24 * 60 * 60 * 1000 });
+      const tooLong = Object.assign(new Error('429'), { status: 429, retryAfterMs: 24 * 60 * 60 * 1000 + 1 });
+      expect(quotaSuspendErrorFor(atCap, now)).toBeNull();
+      expect(quotaSuspendErrorFor(justOver, now)?.waitMs).toBe(60_001);
+      expect(quotaSuspendErrorFor(day, now)?.dueAt).toBe(now + 24 * 60 * 60 * 1000);
+      expect(quotaSuspendErrorFor(tooLong, now)).toBeNull();
+      expect(quotaSuspendErrorFor(Object.assign(new Error('bad request'), { status: 400, retryAfterMs: 90_000 }), now)?.waitMs).toBe(90_000);
+    });
+  });
+
+  describe('quota wait suspend', () => {
+    it('throws before sleep, failure recording, or the fingerprint breaker', async () => {
+      const providerName = 'quota-suspend-no-sleep';
+      const err = Object.assign(new Error('429'), { status: 429, retryAfterMs: 90_000 });
+      const fn = vi.fn().mockRejectedValue(err);
+      const onRetry = vi.fn();
+      const scope = createRetryFingerprintScope();
+
+      await expect(runWithQuotaWaitSuspendEligibility(true, () => withTransientRetry(fn, {
+        providerName,
+        model: 'm',
+        maxRetries: 4,
+        baseDelay: 1,
+        onRetry,
+        fingerprintScope: scope,
+      }))).rejects.toMatchObject({ name: 'QuotaWaitSuspendError', waitMs: 90_000 });
+
+      expect(fn).toHaveBeenCalledTimes(1);
+      expect(onRetry).not.toHaveBeenCalled();
+      expect(getProviderHealthMonitor().getHealth(providerName)).toBeNull();
+
+      let calls = 0;
+      const short = Object.assign(new Error('429'), { status: 429, retryAfterMs: 1 });
+      const result = await withTransientRetry(async () => {
+        calls += 1;
+        if (calls < 3) throw short;
+        return 'ok';
+      }, { providerName, model: 'm', maxRetries: 4, baseDelay: 1, fingerprintScope: scope });
+      expect(result).toBe('ok');
+      expect(calls).toBe(3);
+    });
+
+    it('keeps a suspend-ineligible caller on the capped retry path (no conversion, retries then succeeds)', async () => {
+      vi.useFakeTimers();
+      try {
+        const err = Object.assign(new Error('429'), { status: 429, retryAfterMs: 90_000 });
+        const fn = vi.fn().mockRejectedValueOnce(err).mockResolvedValue('ok');
+        const pending = withTransientRetry(fn, {
+          providerName: 'quota-ineligible',
+          maxRetries: 1,
+          baseDelay: 1,
+        });
+        await vi.advanceTimersByTimeAsync(59_999);
+        expect(fn).toHaveBeenCalledTimes(1);
+        await vi.advanceTimersByTimeAsync(1);
+        await expect(pending).resolves.toBe('ok');
+        expect(fn).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('keeps a wait past 24h on the capped sleep path', async () => {
+      vi.useFakeTimers();
+      try {
+        const delays: number[] = [];
+        const err = Object.assign(new Error('429'), { status: 429, headers: { 'retry-after': '90000' } });
+        const fn = vi.fn().mockRejectedValueOnce(err).mockResolvedValue('ok');
+        const pending = withTransientRetry(fn, {
+          providerName: 'quota-over-day',
+          maxRetries: 1,
+          baseDelay: 1,
+          onRetry: (info) => delays.push(info.delay),
+        });
+        await vi.advanceTimersByTimeAsync(60_000);
+        await expect(pending).resolves.toBe('ok');
+        expect(delays).toEqual([60_000]);
+        expect(isQuotaWaitSuspendError(err)).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not suspend a non-retryable balance error that mentions a long wait', async () => {
+      const err = Object.assign(new Error('insufficient_quota, try again in 2 hours'), { status: 402 });
+      const fn = vi.fn().mockRejectedValue(err);
+      await expect(withTransientRetry(fn, {
+        providerName: 'quota-balance',
+        maxRetries: 2,
+        baseDelay: 1,
+      })).rejects.toThrow('insufficient_quota');
+      expect(fn).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -552,7 +552,7 @@ export class ConversationRuntime {
         // 1. Call model
         logger.debug('[AgentLoop] Calling inference...');
         const inferenceStartTime = Date.now();
-        let response = await this.contextAssembly.inference();
+        let response = await this.contextAssembly.inference(); if (this.ctx.control.isCancelled) break;
         const steerEmpty = takeSteerEmptyReinferenceFailure(this.ctx.control, this.ctx.turn.needsReinference, response);
         if (steerEmpty) { terminal = { status: 'failed', error: steerEmpty }; break; }
         if (this.ctx.cachePromptSample) {

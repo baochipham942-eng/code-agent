@@ -54,13 +54,9 @@ import type { ConversationModelSpec } from '../../shared/contract/conversationEn
 import { createKeyedSerializer } from './keyedSerializer';
 import { findRecoveredWaitingRun as matchRecoveredWaitingRun, findSupersededSessionRoots, settleModelOpsForManualContinue, supersedeSessionRoots, terminalRecoveredWaitingRunOnce } from './recoveredWaitingRun';
 import { isDurableResumeQueued } from './durableRecoveryQueueState';
-import {
-  asNativeAgentTeamProjectionState,
-  isDurableActiveSessionConstraint,
-  isHeartbeatFencingError,
-  isSqliteBusyError,
-  mergeAgentTeamProjectionState,
-} from './runRegistrySupport';
+import { asNativeAgentTeamProjectionState, isDurableActiveSessionConstraint, isHeartbeatFencingError, isSqliteBusyError, mergeAgentTeamProjectionState } from './runRegistrySupport';
+import { armQuotaWaitOnPark, clearQuotaWaitTimer } from './quotaWaitTimer';
+import { resolveAdoptedRecoveryWorkspace } from './adoptedRecoveryWorkspace';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('RunRegistry');
@@ -380,6 +376,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
           ...(input.interruptCause ? { interruptCause: input.interruptCause } : {}),
           ...(input.autoResumeCount === undefined ? {} : { autoResumeCount: input.autoResumeCount }),
           ...(input.clearInterruptCause ? { clearInterruptCause: true } : {}),
+          ...(input.quotaWaitDueAt !== undefined ? { quotaWaitDueAt: input.quotaWaitDueAt } : {}),
         }));
       }
       this.durableCheckpointStates.set(runId, input.state);
@@ -387,14 +384,14 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     });
   }
 
-  async parkDurable(runId: string, input: { now?: number; reason?: 'user_stop' } = {}, expected?: RunHandle): Promise<void> {
+  async parkDurable(runId: string, input: { now?: number; reason?: 'user_stop' | 'quota_wait'; dueAt?: number } = {}, expected?: RunHandle): Promise<void> {
     if (expected && this.handlesByRunId.get(runId) !== expected) throw new Error(`Durable Run park fenced by stale handle: ${runId}`);
-    const envelope = this.durableEnvelopes.get(runId); if (!envelope) throw new Error(`Durable Run ${runId} is not active`); const now = input.now ?? Date.now(); const cause = input.reason ?? 'user_stop'; await this.checkpointDurable(runId, { now, status: 'waiting', state: this.durableCheckpointStates.get(runId), engineCursor: envelope.cursor.engineCursor, pendingOperations: envelope.pendingOperations ?? [], childRuns: envelope.childRuns, interruptCause: cause, events: [{ type: 'run_interrupted', payload: { cause }, recordedAt: now }] });
+    const envelope = this.durableEnvelopes.get(runId); if (!envelope) throw new Error(`Durable Run ${runId} is not active`); const now = input.now ?? Date.now(); const cause = input.reason ?? 'user_stop'; if (cause !== 'quota_wait') clearQuotaWaitTimer(runId); const dueAt = cause === 'quota_wait' ? input.dueAt : undefined; await this.checkpointDurable(runId, { now, status: 'waiting', state: this.durableCheckpointStates.get(runId), engineCursor: envelope.cursor.engineCursor, pendingOperations: envelope.pendingOperations ?? [], childRuns: envelope.childRuns, interruptCause: cause, ...(dueAt !== undefined ? { quotaWaitDueAt: dueAt } : {}), events: [{ type: 'run_interrupted', payload: { cause, ...(dueAt !== undefined ? { dueAt } : {}) }, recordedAt: now }] }); if (dueAt !== undefined) armQuotaWaitOnPark({ runId, sessionId: envelope.sessionId, dueAt, now });
   }
 
   /** Reset the automatic restart budget when a user explicitly continues a parked run. */
   async resetDurableResumeBudget(runId: string, now = Date.now()): Promise<void> {
-    const envelope = this.durableEnvelopes.get(runId); if (!envelope) throw new Error(`Durable Run ${runId} is not active`);
+    clearQuotaWaitTimer(runId); const envelope = this.durableEnvelopes.get(runId); if (!envelope) throw new Error(`Durable Run ${runId} is not active`);
     await this.checkpointDurable(runId, { now, status: 'running', state: this.durableCheckpointStates.get(runId), engineCursor: envelope.cursor.engineCursor, pendingOperations: settleModelOpsForManualContinue(envelope.pendingOperations ?? [], now, envelope), childRuns: envelope.childRuns, clearInterruptCause: true, autoResumeCount: 0, events: [{ type: 'manual_resume_requested', payload: { sessionId: envelope.sessionId }, recordedAt: now }] });
   }
   async checkpointNativeModelOperation(input: {
@@ -653,7 +650,7 @@ export class RunRegistry implements AgentTeamDurableParentHost {
         attempt: live.attempt,
         owner: live.owner,
       });
-      this.durableOwners.delete(runId);
+      this.durableOwners.delete(runId); clearQuotaWaitTimer(runId);
       this.durableEnvelopes.delete(runId);
       this.durableCheckpointStates.delete(runId);
       this.stopHeartbeat(runId);
@@ -893,21 +890,14 @@ export class RunRegistry implements AgentTeamDurableParentHost {
     }
     const existing = this.handlesByRunId.get(runId);
     if (existing) return existing;
-    const recoveredDescriptor = this.durableCheckpointStates.get(runId);
-    const workspaceScope = isNativeRecoveryDescriptor(recoveredDescriptor)
-      ? recoveredDescriptor.workspace.scope
-      : undefined;
-    const workspace = input.workspace
-      ?? (isNativeRecoveryDescriptor(recoveredDescriptor) ? recoveredDescriptor.workspace.root : undefined);
-    const cwd = input.cwd
-      ?? (isNativeRecoveryDescriptor(recoveredDescriptor) ? recoveredDescriptor.workspace.cwd : workspace);
-    if (!workspace || !cwd) throw new Error(`Recovered durable run has no workspace: ${runId}`);
+    const adopted = resolveAdoptedRecoveryWorkspace(input, this.durableCheckpointStates.get(runId));
+    if (!adopted) throw new Error(`Recovered durable run has no workspace: ${runId}`);
     const context = createRunContext({
       ...input,
       runId,
-      workspace,
-      cwd,
-      workspaceScope: input.workspaceScope ?? workspaceScope,
+      workspace: adopted.workspace,
+      cwd: adopted.cwd,
+      workspaceScope: adopted.workspaceScope,
       createdAt: envelope.createdAt,
     });
     const handle = createRunHandle(context, this.durableTraceContexts.get(runId));

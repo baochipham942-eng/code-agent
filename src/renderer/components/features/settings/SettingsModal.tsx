@@ -9,8 +9,8 @@
 //   侧栏 tab 点击 / 设置搜索跳转 / 关闭设置页（返回键 + X）统一走
 //   guardWhileModelDirty，dirty 时弹 ConfirmDialog（丢弃修改 / 继续编辑）。
 // - dirty 期间侧栏「通用模型」tab 显示「未保存」徽标；其他即存页不参与。
-// - 已知边界：全局 Escape 快捷键（useKeyboardShortcuts）直接 setShowSettings(false)，
-//   走 store 不经过本组件，暂不拦截（拦截需把 dirty 提升到全局 store，留给后续批次）。
+// - 已知边界：全局 Escape 快捷键（useKeyboardShortcuts）直接走 store 的 closeSettings()，
+//   不经过本组件，暂不拦截（拦截需把 dirty 提升到全局 store，留给后续批次）。
 // ============================================================================
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -308,7 +308,7 @@ function getErrorMessage(error: unknown): string {
 
 export const SettingsModal: React.FC = () => {
   const {
-    setShowSettings,
+    closeSettings,
     openSettingsTab,
     modelConfig,
     setModelConfig,
@@ -394,8 +394,9 @@ export const SettingsModal: React.FC = () => {
   }, [guardWhileModelDirty, installedCapabilities, openSettingsTab]);
 
   const handleClose = useCallback(() => {
-    guardWhileModelDirty(() => setShowSettings(false));
-  }, [guardWhileModelDirty, setShowSettings]);
+    // closeSettings：带返回落点（自动化门「去设置」）时回自动化页，否则等同关掉设置回聊天。
+    guardWhileModelDirty(() => closeSettings());
+  }, [guardWhileModelDirty, closeSettings]);
 
   const [showUpdateModal, setShowUpdateModal] = useState(false);
 

@@ -25,6 +25,7 @@ import { syncSupabaseSessionRow } from '../helpers/supabaseSessionSync';
 import { buildGoalContract } from '../../host/agent/goalModeController';
 import {
   buildWorkbenchCapabilityContextLines,
+  listNotReadyDeclaredConnectors,
   buildWorkbenchToolScope,
 } from '../../host/app/workbenchTurnContext';
 import { getSessionCommandCenterBrainContextForPrompt, getTextForegroundToolNamesForPrompt } from '../../host/app/sessionCommandCenterBrain';
@@ -1205,6 +1206,16 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           });
           logger.warn('[AgentRouter] Unknown preferredAgentId, falling back to default routing', { preferredAgentId, sessionId });
         }
+      }
+
+      // 选中/专家声明的连接器未就绪：每轮首个模型输出前发一次 connector_required（renderer 出连接卡）。
+      // web 路径不应用专家声明的连接器，仅用已解析的 preferredAgentId 做事件口径。
+      const connectorRequired = listNotReadyDeclaredConnectors(
+        preferredAgentId ? { agentOverrideId: preferredAgentId } : undefined,
+        body.context,
+      );
+      if (connectorRequired.length > 0) {
+        runController.emitAgentEvent({ type: 'connector_required', data: { connectors: connectorRequired } });
       }
 
       // /goal 自治模式：body.goal 存在则激活（schema 保证 verify/review 至少有一个）。

@@ -10,6 +10,7 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { useStreamResumeStore } from '../../../stores/streamResumeStore';
 import { userMessageReplacement } from '../../../utils/optimisticUserSend';
 import { useStatusStore } from '../../../stores/statusStore';
+import { parseConnectorRequiredPayload, useConnectorRequiredStore } from '../../../stores/connectorRequiredStore';
 import { useTurnExecutionStore } from '../../../stores/turnExecutionStore';
 import { applyRoutingDegradationSignal } from '../../../utils/routingDegradation';
 import { useAppStore } from '../../../stores/appStore';
@@ -950,6 +951,14 @@ export const useConversationStreamEffects = ({
             if (endedTurnId) segmentRedirectByTurnRef.current.delete(endedTurnId);
           }
           logger.debug('turn_end', { turnId: normalizeTurnIdPayload(event.data).turnId });
+          break;
+
+        case 'connector_required':
+          lastEventAtRef.current = Date.now();
+          logHandledEvent();
+          if (eventSessionId) {
+            useConnectorRequiredStore.getState().report(eventSessionId, parseConnectorRequiredPayload(event.data));
+          }
           break;
 
         case 'routing_resolved':

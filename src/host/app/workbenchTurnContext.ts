@@ -1,4 +1,5 @@
 import type { ConversationEnvelopeContext, WorkbenchToolScope } from '../../shared/contract/conversationEnvelope';
+import type { ConnectorRequiredItem } from '../../shared/contract/agent';
 import type { SelectedElementInfo } from '../../shared/livePreview/protocol';
 import type { AppServiceRunOptions } from '../../shared/contract/appService';
 import { normalizeDesignBrief } from '../../shared/contract/designBrief';
@@ -36,6 +37,8 @@ import { getBuiltinInProcessMcpServerIds, isMcpServerConnected } from '../mcp/mc
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('WorkbenchTurnContext');
+
+const CONNECTOR_REQUIRED_DEFAULT_REASON = 'not_connected';
 
 function formatBrowserSnapshotTimestamp(timestamp?: number | null): string | null {
   if (!timestamp) {
@@ -96,6 +99,13 @@ export function buildWorkbenchCapabilityContextLines(
   const readyConnectorIds = getReadySelectedConnectorIds(context.selectedConnectorIds);
   if (readyConnectorIds.length) {
     lines.push(`优先使用这些本地 connectors（仅在相关时使用）：${readyConnectorIds.join('、')}`);
+  }
+
+  const notReadySelected = (context.selectedConnectorIds || [])
+    .map((connectorId) => connectorId.trim())
+    .filter((connectorId) => connectorId && isConnectorSideId(connectorId) && !isConnectorReadyForTurnScope(connectorId));
+  if (notReadySelected.length) {
+    lines.push(buildConnectorNotConnectedLine(notReadySelected));
   }
 
   if (context.selectedMcpServerIds?.length) {
@@ -481,6 +491,41 @@ function getReadySelectedConnectorIds(selectedConnectorIds?: string[], source: '
     });
 }
 
+function buildConnectorNotConnectedLine(connectorIds: string[]): string {
+  return `这些 connectors 尚未连接：${connectorIds.join('、')}。用户已在聊天里看到连接卡片；请简短告知用户需先连接，不要改用其他手段替代，连接完成后应用会自动继续。`;
+}
+
+/**
+ * 本轮声明了但没就绪的连接器（用户手选 + 专家声明，仅连接器侧 id；MCP 走 mcpOAuthConsent，不在此列）。
+ * 「会话手选覆盖专家」口径与 withWorkbenchTurnSystemContext 一致。
+ * 只给事件发射点调用——就绪判据本轮会被多处重复求值，绝不能在判据里发事件。
+ */
+export function listNotReadyDeclaredConnectors(
+  options: AppServiceRunOptions | undefined,
+  context?: ConversationEnvelopeContext,
+  sessionMetadata?: Record<string, unknown>,
+): ConnectorRequiredItem[] {
+  const result: ConnectorRequiredItem[] = [];
+  const seen = new Set<string>();
+  const collect = (ids: string[] | undefined, source: ConnectorRequiredItem['source']) => {
+    for (const raw of ids || []) {
+      const id = raw.trim();
+      if (!id || seen.has(id) || !isConnectorSideId(id) || isConnectorReadyForTurnScope(id)) continue;
+      seen.add(id);
+      result.push({ id, source, reason: CONNECTOR_REQUIRED_DEFAULT_REASON });
+    }
+  };
+  collect(context?.selectedConnectorIds, 'selected');
+  const sessionPickedScope = (context?.selectedConnectorIds?.length ?? 0) > 0
+    || (context?.selectedMcpServerIds?.length ?? 0) > 0;
+  if (!sessionPickedScope) {
+    const { roleId } = resolveTurnRoleId(options, context, sessionMetadata);
+    const expertConnectors = roleId ? resolveAgent(roleId)?.connectors : undefined;
+    collect(resolveSessionConnectorIds({ expertConnectors }), 'expert');
+  }
+  return result;
+}
+
 export function buildWorkbenchToolScope(
   context?: ConversationEnvelopeContext,
 ): WorkbenchToolScope | undefined {
@@ -591,6 +636,12 @@ export function withWorkbenchTurnSystemContext(
   // 还没注册、list_tools 也是空的），不点名的话这一轮模型既丢了其他 MCP 工具，
   // 也不知道目标 server 存在，比不收窄更糟。名字的权威来源是最终 toolScope，
   // 不问它来自用户手选还是专家声明。
+  const notReadyExpertIds = listNotReadyDeclaredConnectors(options, context, sessionMetadata)
+    .filter((item) => item.source === 'expert')
+    .map((item) => item.id);
+  if (notReadyExpertIds.length) {
+    turnSystemContext.push(buildConnectorNotConnectedLine(notReadyExpertIds));
+  }
   if (toolScope?.allowedMcpServerIds?.length) {
     turnSystemContext.push(
       `本轮 MCP 工具面收窄到这些 server（仅在相关时使用；未连接的首次调用其工具时会自动连接）：${toolScope.allowedMcpServerIds.join('、')}`,

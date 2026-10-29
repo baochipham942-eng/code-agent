@@ -1,5 +1,5 @@
 // ============================================================================
-// Cloud run ledger contract — ADR-086 S1–S3（持久行、准入与取消）
+// Cloud run ledger contract — ADR-087 S1–S3（持久行、准入与取消）
 // ============================================================================
 // 云端 run 账本的可共享合同：状态词汇、触发来源、迁移表与准入稳定码。
 // 与桌面 durable_runs（ADR-037，created/running/…/completed/failed/cancelled）
@@ -14,7 +14,7 @@ export type CloudRunTrigger = 'manual' | 'cron' | 'channel' | 'delegate';
 export const CLOUD_RUN_TRIGGERS = ['manual', 'cron', 'channel', 'delegate'] as const satisfies readonly CloudRunTrigger[];
 
 export type CloudRunState =
-  | 'queued' // 已登记未执行，不在飞、不占配额（ADR-086 合同 6）
+  | 'queued' // 已登记未执行，不在飞、不占配额（ADR-087 合同 6）
   | 'running'
   | 'waiting-approval' // 停车（ADR-082）：等人的是同一 run，不是终态
   | 'waiting-reconnect'
@@ -25,7 +25,7 @@ export type CloudRunState =
   | 'interrupted'
   | 'abandoned';
 
-/** queued 不算在飞（ADR-086 术语表：排队中的不算）。 */
+/** queued 不算在飞（ADR-087 术语表：排队中的不算）。 */
 const CLOUD_RUN_NON_TERMINAL_STATES = ['queued', 'running', 'waiting-approval', 'waiting-reconnect'] as const satisfies readonly CloudRunState[];
 
 const CLOUD_RUN_TERMINAL_STATES = ['succeeded', 'failed', 'cancelled', 'timed_out', 'interrupted', 'abandoned'] as const satisfies readonly CloudRunState[];
@@ -34,7 +34,7 @@ const CLOUD_RUN_TERMINAL_STATES = ['succeeded', 'failed', 'cancelled', 'timed_ou
 export const CLOUD_RUN_STATES = [...CLOUD_RUN_NON_TERMINAL_STATES, ...CLOUD_RUN_TERMINAL_STATES] as const satisfies readonly CloudRunState[];
 
 /**
- * 状态迁移表。终态出边为空（ADR-086 合同 4：终态一经写下不再回在飞）；
+ * 状态迁移表。终态出边为空（ADR-087 合同 4：终态一经写下不再回在飞）；
  * waiting-approval 可回 running（ADR-082：批准之后继续同一 run）；
  * parking/reconnect 不直达 succeeded——成功必须先回到 running 执行完。
  */
@@ -69,7 +69,7 @@ export function isTerminalCloudRunState(state: CloudRunState): boolean {
 }
 
 /**
- * 「没有已验证账户则拒绝创建 run」的自有稳定码（ADR-086 合同 1）。
+ * 「没有已验证账户则拒绝创建 run」的自有稳定码（ADR-087 合同 1）。
  * accountId 只能来自服务端验证结果，请求体里的用户字段不成为账户。
  * 常量经 CloudRunAccountRequiredError.code 暴露，路由按稳定码返回 401。
  */

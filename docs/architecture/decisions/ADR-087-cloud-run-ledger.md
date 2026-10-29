@@ -1,6 +1,7 @@
-# ADR-086：云端 run 账本（准入、配额、终态）
+# ADR-087：云端 run 账本（准入、配额、终态）
 
-- 状态：**草稿**（本单选定方案 B；不代替主人对其它 ADR 的拍板）
+- 状态：**已接受（方案 B，爸 2026-10-29 拍板）**。S4 仍须钉住运行时能「关闭自动响铃且保留强制 run」才合入，核对由 N-CLOUD-RUN-LEDGER-DESIGN-FU5 跟踪，在此之前 S4 保持 fail-closed
+- 编号：原编号 ADR-086，与 ADR-086-native-dep-manifest 撞号，2026-10-29 改为 087
 - 单号：N-CLOUD-RUN-LEDGER-DESIGN（只定合同，不改执行代码）
 - 基线：`origin/main@0290e2990`（`0290e2990`，工作树 `mq/cloud-run-ledger-design`）
 - 相关：[ADR-081](./ADR-081-execution-environment.md)（已接受：配额 2、同会话不并行、删除即释放）、[ADR-082](./ADR-082-cloud-cron-approval.md)（已接受：停车沿用同一 run）、[ADR-037](./ADR-037-durable-run-kernel.md)（一 run 一 owner）、[云端 run 工作区保留期设计稿](../designs/cloud-run-retention.md)（D1–D7 仍待拍板，本 ADR 不改那些数字）
@@ -23,6 +24,13 @@ sequenceDiagram
   end
   Note over Exec: 交互、通道、委托走本进程的 agent loop。定时任务走 OpenClaw，且只在账本放行后执行
 ```
+
+## 决策记录
+
+2026-10-29，爸在方案 A / B / C 中选定 B：账本排程云端定时任务，OpenClaw 只执行账本放行的那一次 run。
+cron 令牌由云端 webServer 持有，定时 tick 也跑在云端 webServer 上；桌面不再是云端定时任务的排程方（迁移在 S4 落地）。
+这收窄了 [ADR-081](./ADR-081-execution-environment.md) 里「`cronCloud.token` 继续只用于定时任务调度」一句：令牌今后放在服务端，不再放在桌面设置里。
+S4 不合入，除非钉住的运行时能关闭自动响铃并仍执行强制 run（由 N-CLOUD-RUN-LEDGER-DESIGN-FU5 核对）。
 
 ## 术语
 

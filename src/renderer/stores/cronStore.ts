@@ -5,6 +5,7 @@ import type {
   CronServiceStats,
 } from '@shared/contract';
 import { isRoleBoundCronJob } from '@shared/cronRoleBinding';
+import { isWebhookCronJob } from '@shared/cronWebhookJob';
 import {
   cronClient,
   type CreateCronJobInput,
@@ -178,8 +179,8 @@ export const useCronStore = create<CronState>()((set, get) => ({
       selectedJobId: created.id,
       // 角色绑定任务保存后编辑器保持打开：组件切到「已保存」复述视图，Done 才关
       // （N-ROLE-ROUTINE-RESTATE）。这里若照旧落 isEditorOpen:false，Modal 会连带
-      // 复述视图一起卸载，视图永远出不来。
-      ...(isRoleBoundCronJob(created)
+      // 复述视图一起卸载，视图永远出不来。webhook 任务同理：一次性链接卡（N-CRON-WEBHOOK-CLOUD-HOOK-FU1）。
+      ...(isRoleBoundCronJob(created) || isWebhookCronJob(created)
         ? {}
         : { isEditorOpen: false, editingJobId: null, copyingJobId: null }),
     });

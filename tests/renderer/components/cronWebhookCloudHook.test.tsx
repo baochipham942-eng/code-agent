@@ -259,3 +259,27 @@ describe('CronHookError', () => {
     expect(new CronHookError('m', 'CRON_CLOUD_NOT_CONFIGURED').code).toBe('CRON_CLOUD_NOT_CONFIGURED');
   });
 });
+
+describe('cronStore.createJob 与一次性链接卡', () => {
+  it('创建 webhook 任务后编辑器保持打开（否则 Modal 连链接卡一起卸载，真 UI 里卡永远出不来）', async () => {
+    // beforeEach 把共享 store 的动作换成了 vi.fn：重载模块拿到带真实动作的新 store。
+    vi.resetModules();
+    const real = await import('../../../src/renderer/stores/cronStore');
+    domainApi.invoke.mockImplementation(async (_domain: string, action: string) => (
+      action === 'createJob' ? { success: true, data: webhookJob() } : { success: true, data: [] }
+    ));
+    real.useCronStore.setState({ isEditorOpen: true, editingJobId: null, copyingJobId: null });
+    await real.useCronStore.getState().createJob({} as never);
+    expect(real.useCronStore.getState().isEditorOpen).toBe(true);
+    expect(real.useCronStore.getState().selectedJobId).toBe('job-1');
+
+    // 普通任务仍然照旧关闭编辑器
+    domainApi.invoke.mockImplementation(async (_domain: string, action: string) => (
+      action === 'createJob'
+        ? { success: true, data: webhookJob({ id: 'job-2', scheduleType: 'every', schedule: { type: 'every', interval: 1, unit: 'hours' } }) }
+        : { success: true, data: [] }
+    ));
+    await real.useCronStore.getState().createJob({} as never);
+    expect(real.useCronStore.getState().isEditorOpen).toBe(false);
+  });
+});

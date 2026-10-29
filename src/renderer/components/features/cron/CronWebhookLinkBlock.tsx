@@ -13,10 +13,6 @@ import { useI18n } from '../../../hooks/useI18n';
 import { cronClient } from '../../../services/cronClient';
 import { CronWebhookLinkCard, webhookHookFailureText } from './CronWebhookLinkCard';
 
-export function isWebhookJob(job: CronJobDefinition): boolean {
-  return job.schedule.type === 'event' && job.schedule.source === 'webhook';
-}
-
 export const CronWebhookLinkBlock: React.FC<{ job: CronJobDefinition }> = ({ job }) => {
   const { t } = useI18n();
   const wc = t.cronCenter.webhook;

@@ -54,6 +54,11 @@ export function readCronAlertReason(value: unknown): string | undefined {
   return reason || undefined;
 }
 
+export function isCronAgentResultUrgent(value: unknown): boolean {
+  return readCronAlertReason(value) !== undefined
+    || (isCronAgentActionResult(value) && value.urgency === 'must_today');
+}
+
 /**
  * 成功运行是否「值得打扰」（N-CRON-RESTATE-HUMAN-WHEN / N-CRON-URGENCY-NOTIFY，
  * 原 cronService 内联三元收口至此）：external-watch 或 notifyWhen 任务只认最终

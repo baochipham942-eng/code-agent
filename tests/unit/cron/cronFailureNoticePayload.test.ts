@@ -58,7 +58,7 @@ describe('notifyCronAgentExecution 失败载荷', () => {
       resetAt: '2026-10-15T05:00:00.000Z',
       succeeded: false,
       summary: expect.stringContaining('定时任务失败：'),
-    }), { force: true });
+    }), { force: true, urgent: false });
   });
 
   it('登录墙仍只带站点和登录墙码', () => {
@@ -71,7 +71,7 @@ describe('notifyCronAgentExecution 失败载荷', () => {
       code: 'CRON_LOGIN_WALL_STOP',
       siteOrigin: 'https://example.test',
       succeeded: false,
-    }), { force: true });
+    }), { force: true, urgent: false });
     const payload = notify.mock.calls[0][0] as { code?: string; failureKind?: string };
     expect(payload.failureKind).toBeUndefined();
     expect(payload.code).not.toBe('CRON_FAILURE');

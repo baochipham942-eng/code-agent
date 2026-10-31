@@ -1,8 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight, History } from 'lucide-react';
-import type { ImportHistoryEntry, ImportHistoryOutcome, ImportHistorySource } from '@shared/contract/importHistory';
+import {
+  isUndoableImportItem,
+  type ImportHistoryEntry,
+  type ImportHistoryOutcome,
+  type ImportHistorySource,
+} from '@shared/contract/importHistory';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useAppStore } from '../../../../stores/appStore';
+import { useSessionStore } from '../../../../stores/sessionStore';
 import { useExternalImportHistoryStore } from '../../../../stores/externalImportHistoryStore';
 import { formatRelativeTime, localeForLanguage } from '../../../../utils/i18nTime';
 import { Button } from '../../../primitives';
@@ -96,6 +102,24 @@ function HistoryRow({
   relativeTime: string;
 }) {
   const historyCopy = copy.history;
+  const undo = useExternalImportHistoryStore((state) => state.undo);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const undoable = entry.items.filter((item) => isUndoableImportItem(entry, item)).length;
+  const runUndo = async () => {
+    setBusy(true);
+    setFailed(false);
+    try {
+      await undo(entry.id);
+      setConfirming(false);
+      void useSessionStore.getState().loadSessions({ silent: true }).catch(() => {});
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <div className="rounded-md border border-zinc-800 bg-zinc-950/40" data-testid={`external-import-history-row-${entry.id}`}>
       <Button
@@ -119,6 +143,44 @@ function HistoryRow({
               {item.label} · {outcomeLabel(item.outcome, copy)}
             </div>
           ))}
+        </div>
+      )}
+      {entry.undone ? (
+        <div className="space-y-0.5 border-t border-zinc-800 px-3 py-2 text-[11px] text-zinc-400" data-testid={`external-import-history-undone-${entry.id}`}>
+          <div>
+            {historyCopy.undone} · {historyCopy.undoneRemoved.replace('{count}', String(entry.undone.removed))}
+            {entry.undone.kept.length > 0 && ` · ${historyCopy.undoneKept.replace('{count}', String(entry.undone.kept.length))}`}
+          </div>
+          {entry.undone.kept.map((kept, index) => (
+            <div key={`${kept.label}:${index}`} className="truncate text-zinc-500">
+              {kept.label} · {historyCopy.keptReasons[kept.reason]}
+            </div>
+          ))}
+        </div>
+      ) : undoable > 0 && (
+        <div className="space-y-2 border-t border-zinc-800 px-3 py-2">
+          {confirming ? (
+            <>
+              <div className="text-[11px] text-zinc-300" data-testid={`external-import-history-undo-confirm-${entry.id}`}>
+                {historyCopy.undoConfirm
+                  .replace('{chats}', String(entry.category === 'chats' ? undoable : 0))
+                  .replace('{skills}', String(entry.category === 'skills' ? undoable : 0))}
+              </div>
+              {failed && <div className="text-[11px] text-badge-danger">{historyCopy.undoFailed}</div>}
+              <div className="flex gap-2">
+                <Button variant="danger" size="sm" disabled={busy} onClick={() => void runUndo()}>
+                  {historyCopy.undoConfirmAction}
+                </Button>
+                <Button variant="ghost" size="sm" disabled={busy} onClick={() => setConfirming(false)}>
+                  {historyCopy.undoCancel}
+                </Button>
+              </div>
+            </>
+          ) : (
+            <Button variant="ghost" size="sm" onClick={() => setConfirming(true)}>
+              {historyCopy.undo}
+            </Button>
+          )}
         </div>
       )}
     </div>

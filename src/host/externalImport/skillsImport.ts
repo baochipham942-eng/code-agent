@@ -13,6 +13,7 @@ import { getHomeDir, getSkillsDir } from '../config';
 import { hasSkillMd } from '../services/skills/skillParser';
 import { createLogger } from '../services/infra/logger';
 import { recordSkillsImportHistory } from './importHistory';
+import { digestSkillDir } from './skillDirDigest';
 import {
   readClaudeLegacySkillsPreference,
   writeClaudeLegacySkillsPreference,
@@ -137,7 +138,12 @@ export async function applyExternalSkillsImport(
       await fs.mkdir(path.dirname(targetPath), { recursive: true });
       await fs.cp(item.sourcePath, targetPath, { recursive: true });
       copied += 1;
-      results.push({ sourceId: item.sourceId, name: item.name, action: 'copied' });
+      results.push({
+        sourceId: item.sourceId,
+        name: item.name,
+        action: 'copied',
+        digest: await digestSkillDir(targetPath).catch(() => undefined),
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       // 裸报错只进日志（UI 只显 i18n 标签），带技能名/来源便于判因。

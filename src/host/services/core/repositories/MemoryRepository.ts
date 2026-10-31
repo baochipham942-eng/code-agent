@@ -231,7 +231,13 @@ export class MemoryRepository {
 
     const after = this.getMemory(id);
     if (before && after) {
-      this.appendJournal(journal?.operation ?? 'update', after, before, after, journal);
+      // 只记真实变更（rework r2 ①③）：快照（summary/status/content）无差异的写入
+      // 不追加日志行——否则镜像重建等批量回写会给每条 no-op 记一行，淹没历史并
+      // 抹掉列表上真实的「后台写入」标记。显式 evict 恒记（清退要留痕）。
+      const changed = journal?.operation === 'evict' || journalSnapshot(before) !== journalSnapshot(after);
+      if (changed) {
+        this.appendJournal(journal?.operation ?? 'update', after, before, after, journal);
+      }
     }
     return after;
   }

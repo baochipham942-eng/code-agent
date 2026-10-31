@@ -215,7 +215,7 @@ export async function applyMemoryHarnessImport(
     });
     writtenFiles.push(written.filename);
   }
-  const mirrorRebuild = await rebuildMemoryMirrorFromLightFiles(db);
+  const mirrorRebuild = await rebuildMemoryMirrorFromLightFiles(db, { journal: { actor: 'import' } });
   return {
     imported: entries.length,
     skipped: dryRun.candidates.length - entries.length,
@@ -280,7 +280,7 @@ export async function confirmMemoryHarnessDirective(
     source: { ...entry.source, filePath: written.filename },
     updatedAt: Date.parse(written.updatedAt) || entry.updatedAt,
   };
-  const mirrorRebuild = await rebuildMemoryMirrorFromLightFiles(db);
+  const mirrorRebuild = await rebuildMemoryMirrorFromLightFiles(db, { journal: { actor: 'import' } });
   return {
     instructionId,
     confirmed: true,

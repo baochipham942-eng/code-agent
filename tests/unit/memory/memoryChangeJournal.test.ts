@@ -6,14 +6,28 @@
 // 日志写失败 fail-safe——只 warn，绝不拦记忆写入本身。
 // ============================================================================
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { afterEach, describe, it, expect, beforeEach, vi } from 'vitest';
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
+import * as fs from 'fs/promises';
+import * as path from 'path';
+import os from 'os';
 import { applySchema } from '../../../src/host/services/core/database/schema';
 import { MemoryRepository } from '../../../src/host/services/core/repositories/MemoryRepository';
 import type { MemoryRecord } from '../../../src/host/protocol/types';
+import {
+  listUnifiedMemoryEntries,
+  rebuildMemoryMirrorFromLightFiles,
+  updateMemoryEntry,
+} from '../../../src/host/memory/memoryEntryRuntime';
+
+const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
+
+vi.mock('../../../src/host/config/configPaths', () => ({
+  getUserConfigDir: () => mockConfigDir.dir,
+}));
 
 const logger = {
   info: vi.fn(),
@@ -183,5 +197,84 @@ describe('MemoryRepository — memory change journal', () => {
     const byMemory = new Map(latest.map((change) => [change.memoryId, change]));
     expect(byMemory.get(a.id)).toMatchObject({ actor: 'auto_review', operation: 'update' });
     expect(byMemory.get(b.id)).toMatchObject({ actor: 'dream', operation: 'create' });
+  });
+});
+
+// ----------------------------------------------------------------------------
+// 重建洪泛回归（rework r2 ①③）：rebuildMemoryMirrorFromLightFiles 会对每个既有
+// 镜像调 updateMemory；无变化时不得追加日志行，否则一次面板编辑写 N 行 no-op
+// user_manual，把其他条目上真实的后台标记抹掉。
+// ----------------------------------------------------------------------------
+describe('memory change journal — mirror rebuild no-op flood', () => {
+  let tmpDir: string;
+  let db: BetterSqlite3.Database;
+  let repo: MemoryRepository;
+
+  function journalCount(): number {
+    return (db.prepare('SELECT COUNT(*) AS c FROM memory_change_journal').get() as { c: number }).c;
+  }
+
+  async function writeLightFile(filename: string, entryId: string, content: string): Promise<void> {
+    await fs.writeFile(path.join(tmpDir, 'memory', filename), `---
+name: Entry ${entryId}
+description: Summary ${entryId}
+type: project
+entry_id: ${entryId}
+status: active
+source: knowledge_inbox
+schema_version: 2
+---
+
+${content}
+`, 'utf-8');
+  }
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'memory-journal-rebuild-'));
+    mockConfigDir.dir = tmpDir;
+    await fs.mkdir(path.join(tmpDir, 'memory'), { recursive: true });
+    db = createDb();
+    repo = new MemoryRepository(db);
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('a no-change background rebuild appends zero journal rows', async () => {
+    await writeLightFile('entry-a.md', 'entry_a', 'Content A');
+    await rebuildMemoryMirrorFromLightFiles(repo, { journal: { actor: 'import' } });
+    expect(journalCount()).toBe(1);
+
+    await rebuildMemoryMirrorFromLightFiles(repo, { journal: { actor: 'dream' } });
+    expect(journalCount()).toBe(1);
+  });
+
+  it('editing one of three mirrors appends exactly one row and leaves the other lastChange markers intact', async () => {
+    await writeLightFile('entry-a.md', 'entry_a', 'Content A');
+    await writeLightFile('entry-b.md', 'entry_b', 'Content B');
+    await writeLightFile('entry-c.md', 'entry_c', 'Content C');
+    await rebuildMemoryMirrorFromLightFiles(repo, { journal: { actor: 'import' } });
+    expect(journalCount()).toBe(3);
+    // 无文件变化的后台重建：0 新行，三条 lastChange 仍是 import/create
+    await rebuildMemoryMirrorFromLightFiles(repo, { journal: { actor: 'dream' } });
+    expect(journalCount()).toBe(3);
+
+    // 面板编辑 entry_b（user_manual 路径，与 memory.ipc 的 PANEL_JOURNAL 同款）
+    await updateMemoryEntry(repo, { entryId: 'entry_b', content: 'Content B v2' }, { journal: { actor: 'user_manual' } });
+
+    expect(journalCount()).toBe(4);
+    expect(repo.listMemoryJournal({ entryId: 'entry_b' })[0]).toMatchObject({
+      operation: 'update',
+      actor: 'user_manual',
+    });
+    expect(repo.listMemoryJournal({ entryId: 'entry_a' })).toHaveLength(1);
+    expect(repo.listMemoryJournal({ entryId: 'entry_c' })).toHaveLength(1);
+
+    // 面板列表读路径：只有 entry_b 的 lastChange 是 user_manual，其余仍是后台 import
+    const byId = new Map((await listUnifiedMemoryEntries(repo)).entries.map((entry) => [entry.id, entry]));
+    expect(byId.get('entry_a')?.lastChange).toMatchObject({ actor: 'import', operation: 'create' });
+    expect(byId.get('entry_b')?.lastChange).toMatchObject({ actor: 'user_manual', operation: 'update' });
+    expect(byId.get('entry_c')?.lastChange).toMatchObject({ actor: 'import', operation: 'create' });
   });
 });

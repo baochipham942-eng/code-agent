@@ -519,31 +519,44 @@ export async function rebuildMemoryMirrorFromLightFiles(
       const entry = lightMemoryFileToEntry(file);
       const existing = existingByEntryId.get(entry.id) || existingByFilePath.get(file.filename);
       if (existing) {
-        db.updateMemory(existing.id, {
-          content: entry.content,
-          summary: entry.title || entry.summary,
-          category: categoryForMemoryEntryKind(entry.kind),
-          confidence: 1,
+        const memoryEntry = {
+          schemaVersion: entry.schemaVersion,
+          id: entry.id,
           status: entry.status,
-          deprecatedBy: entry.deprecatedBy,
-          metadata: {
-            ...existing.metadata,
-            memoryEntry: {
-              schemaVersion: entry.schemaVersion,
-              id: entry.id,
-              status: entry.status,
-              deprecatedBy: entry.deprecatedBy ?? null,
-              kind: entry.kind,
-              scope: entry.scope,
-              sourceKind: entry.source.kind,
-              sourceOfTruth: 'light_file',
-              filePath: file.filename,
-              evidence: entry.evidence,
-              importProvenance: entry.source.importProvenance ?? null,
+          deprecatedBy: entry.deprecatedBy ?? null,
+          kind: entry.kind,
+          scope: entry.scope,
+          sourceKind: entry.source.kind,
+          sourceOfTruth: 'light_file',
+          filePath: file.filename,
+          evidence: entry.evidence,
+          importProvenance: entry.source.importProvenance ?? null,
+        };
+        // 无变化直接跳过（rework r2 ①）：镜像回写是高频路径，no-op 也走 UPDATE 会
+        // 顶起 updated_at 并给每条镜像记一行日志，淹没真实变更。updateMemory 内的
+        // 快照判重是最终兜底，这里先省掉写本身。
+        const unchanged = existing.content === entry.content
+          && (existing.summary ?? null) === ((entry.title || entry.summary) ?? null)
+          && existing.status === entry.status
+          && existing.category === categoryForMemoryEntryKind(entry.kind)
+          && (existing.deprecatedBy ?? null) === (entry.deprecatedBy ?? null)
+          && existing.confidence === 1
+          && JSON.stringify(existing.metadata?.memoryEntry ?? null) === JSON.stringify(memoryEntry);
+        if (!unchanged) {
+          db.updateMemory(existing.id, {
+            content: entry.content,
+            summary: entry.title || entry.summary,
+            category: categoryForMemoryEntryKind(entry.kind),
+            confidence: 1,
+            status: entry.status,
+            deprecatedBy: entry.deprecatedBy,
+            metadata: {
+              ...existing.metadata,
+              memoryEntry,
             },
-          },
-        }, options.journal);
-        updated++;
+          }, options.journal);
+          updated++;
+        }
       } else {
         createMemoryMirrorRecord(db, entry, {
           category: categoryForMemoryEntryKind(entry.kind),

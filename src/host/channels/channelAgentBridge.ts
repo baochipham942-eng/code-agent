@@ -31,12 +31,7 @@ import {
 import { clearStoppedChannelRuns, consumeStoppedChannelRun, deliverChannelCommandText, parseChannelCommand } from './channelCommandRuntime';
 import { channelCommandText } from './channelCommandI18n';
 import { getChannelCloudRunPort } from './channelCloudRunPort';
-import {
-  admitChannelIngressThroughCloud,
-  runChannelCloudTurn,
-  type ChannelBridgeCloudSurface,
-  type ChannelCloudRunPayload,
-} from './channelCloudAdmission';
+import { admitChannelIngressThroughCloud, runChannelCloudTurn, type ChannelBridgeCloudSurface, type ChannelCloudRunPayload } from './channelCloudAdmission';
 
 const logger = createLogger('ChannelAgentBridge');
 
@@ -335,8 +330,7 @@ export class ChannelAgentBridge {
       timestamp: msg.timestamp,
     };
 
-    // ADR-087 S4B：服务模式下非 guest 入站一律交云端账本（admit 是唯一入口）；
-    // 桌面态无端口，走下面原有本地路径。
+    // ADR-087 S4B：服务模式非 guest 入站一律交云端账本（admit 唯一入口）；桌面态无端口走本地路径。
     const cloudPort = getChannelCloudRunPort();
     if (cloudPort && processMessage.ingressAuth !== 'guest') {
       await admitChannelIngressThroughCloud(this.cloudSurface(), cloudPort, accountId, processMessage, parts);
@@ -384,11 +378,7 @@ export class ChannelAgentBridge {
     }
   }
 
-  /**
-   * ADR-087 S4B：云端账本行的通道轮执行体——running 准入的内联轮与排队行的
-   * 提升轮共用（服务模式装配的 executeChannelRun 也调这里）。跑完收线账本行；
-   * 抛错或轮次失败收 failed。
-   */
+  /** ADR-087 S4B：云端账本行的通道轮执行体（内联轮与提升轮共用）；跑完收线，抛错/失败收 failed。 */
   async runAdmittedChannelTurn(payload: ChannelCloudRunPayload, runId: string): Promise<boolean> {
     return runChannelCloudTurn(this.cloudSurface(), payload, runId);
   }
@@ -402,18 +392,11 @@ export class ChannelAgentBridge {
       enrich: (message) => this.enrichChannelMessage(message),
       convertAttachments: (attachments) => this.convertAttachments(attachments),
       callback: (accountId, message) => this.channelManager.getResponseCallback(accountId, message),
-      turn: (accountId, message, orchestrator, attachments, responseCallback) =>
-        this.handleSyncMessage(accountId, message, orchestrator, attachments, responseCallback),
+      turn: (accountId, message, orchestrator, attachments, responseCallback) => this.handleSyncMessage(accountId, message, orchestrator, attachments, responseCallback),
       locale: () => (this.config.configService.getSettings().ui.language === 'en' ? 'en-US' : 'zh-CN'),
-      reply: async (accountId, message, text) => {
-        await this.channelManager.getResponseCallback(accountId, message)
-          ?.sendText(withSenderAttribution(message, text));
-      },
+      reply: async (accountId, message, text) => { await this.channelManager.getResponseCallback(accountId, message)?.sendText(withSenderAttribution(message, text)); },
       fail: (accountId, message, errorMessage) => this.sendErrorResponse(accountId, message, errorMessage),
-      markPart: (accountId, messageId, ok) => {
-        if (ok) this.markMessageCompleted(accountId, messageId);
-        else this.markMessageFailed(accountId, messageId);
-      },
+      markPart: (accountId, messageId, ok) => { if (ok) this.markMessageCompleted(accountId, messageId); else this.markMessageFailed(accountId, messageId); },
     };
   }
 

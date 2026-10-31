@@ -56,6 +56,7 @@ export function resolveShortTierWait(requested: number | undefined): { timeout: 
   return { timeout: requested };
 }
 
+/** 短档超时且 handover 失败（任务容量满/进程已退出）时的兜底文案；正常路径会带 task-id 返回。 */
 export function exceededShortTierMessage(timeoutMs: number): string {
-  return `Command exceeded the ${timeoutMs / 1000}s foreground limit for this session and was terminated (background execution is disabled in unattended sessions). Split it into shorter commands.`;
+  return `Command exceeded the ${timeoutMs / 1000}s foreground limit for this session and could not be adopted as a background task (capacity reached or process already exited); the process was terminated. Split it into shorter commands or retry in a moment.`;
 }

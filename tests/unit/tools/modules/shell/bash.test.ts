@@ -397,7 +397,7 @@ describe('bashModule (native)', () => {
       expect(handoverTimedOutCommandMock).toHaveBeenCalledOnce();
     }, 10_000);
 
-    it('terminates on timeout in unattended sessions instead of handing over', async () => {
+    it('terminates on timeout in unattended non-short-tier sessions instead of handing over', async () => {
       const unattendedSession = `unattended-timeout-${Date.now()}`;
       getPermissionModeManager().markUnattendedSession(unattendedSession);
       const handler = await bashModule.createHandler();
@@ -446,16 +446,50 @@ describe('bashModule (native)', () => {
         }
       }, 10_000);
 
-      it('keeps the kill in unattended short-tier sessions and says the tier was exceeded', async () => {
+      it('hands over in unattended short-tier sessions too, keeping the sandbox; run_in_background stays rejected', async () => {
         process.env.CODE_AGENT_BASH_SHORT_TIMEOUT_MS = '80';
+        handoverTimedOutCommandMock.mockReturnValue({ taskId: 'short-unattended-task', preview: '' });
+        // 用 exec 前缀当无害的「已包装」标记：真沙箱包装是 sandbox-exec -p ... <cmd>，
+        // 测试里换成 exec <cmd>（不改执行语义），收编侧若丢包装就能被抓到。
+        wrapMock.mockImplementation((cmd: unknown) => ({ command: `exec ${cmd}`, cleanup: cleanupMock }));
+        const sessionId = shortSession(true);
+        const handler = await bashModule.createHandler();
+        const result = await handler.execute({ command: SLOW }, makeCtx({ sessionId }), allowAll);
+        expect(handoverTimedOutCommandMock).toHaveBeenCalledOnce();
+        // 收编不得丢沙箱：收编的命令就是本次实际执行的（含沙箱包装的）那份，
+        // sandboxed 标志与本次运行的真实沙箱决策一致——不是恒 true（平台可能降级），
+        // 是「收编保留运行时决策」这个不变量。
+        const handoverArg = handoverTimedOutCommandMock.mock.calls[0][0] as { sandboxed?: boolean; command?: string };
+        if (wrapMock.mock.calls.length > 0) {
+          expect(handoverArg.command).toContain('exec ');
+        }
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(handoverArg.sandboxed).toBe((result.meta as { sandboxed?: boolean }).sandboxed);
+          expect(result.output).toContain('<task-id>short-unattended-task</task-id>');
+          expect(result.output).toContain('Results will be delivered automatically; continue with other work.');
+        }
+        // 显式 run_in_background=true 在 unattended 会话仍拒（收窄只作用于超时 handover）。
+        const explicit = await handler.execute(
+          { command: 'echo hi', run_in_background: true },
+          makeCtx({ sessionId }),
+          allowAll,
+        );
+        expect(explicit.ok).toBe(false);
+        if (!explicit.ok) expect(explicit.code).toBe('BACKGROUND_UNAVAILABLE');
+      }, 10_000);
+
+      it('falls back to the kill with an explicit message when short-tier handover cannot adopt', async () => {
+        process.env.CODE_AGENT_BASH_SHORT_TIMEOUT_MS = '80';
+        handoverTimedOutCommandMock.mockReturnValue(null);
         const handler = await bashModule.createHandler();
         const result = await handler.execute({ command: SLOW }, makeCtx({ sessionId: shortSession(true) }), allowAll);
-        expect(handoverTimedOutCommandMock).not.toHaveBeenCalled();
+        expect(handoverTimedOutCommandMock).toHaveBeenCalledOnce();
         expect(result.ok).toBe(false);
         if (!result.ok) {
           expect(result.code).toBe('TIMEOUT');
           expect(result.error).toContain('exceeded the 0.08s foreground limit');
-          expect(result.error).toContain('Split it');
+          expect(result.error).toContain('could not be adopted as a background task');
         }
       }, 10_000);
 

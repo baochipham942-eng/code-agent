@@ -811,7 +811,12 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
           startedAt: Date.now(),
           env: childEnvFg.env,
           toolName: schema.name,
-          onTimeout: unattended ? undefined : ({ child, stdout, stderr, startedAt }) => handoverTimedOutCommand({
+          // 短档（channel/cron/role-wake）超时一律 handover 转后台，含 unattended 会话：
+          // 收编不换命令、不换沙箱——child 仍跑在 spawn 时的 sandbox-exec 包装下，
+          // 沙箱决策原样保留（sandboxed 标志随收编传入）。显式 run_in_background=true
+          // 在 unattended 仍拒（上方 BACKGROUND_UNAVAILABLE）；只有非短档的 unattended
+          // 超时保留 kill（120s 默认档维持 PR #2065 行为）。
+          onTimeout: unattended && !shortTier ? undefined : ({ child, stdout, stderr, startedAt }) => handoverTimedOutCommand({
             child,
             command: sandboxedCommand,
             cwd: workingDirectory,

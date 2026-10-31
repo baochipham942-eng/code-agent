@@ -14,6 +14,7 @@ import type { RecentExternalChatImportResult } from '@shared/contract/agentEngin
 import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
 import { useSessionStore } from '../../../../stores/sessionStore';
+import { useExternalImportHistoryStore } from '../../../../stores/externalImportHistoryStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button } from '../../../primitives';
 
@@ -54,6 +55,7 @@ export const ExternalChatsImportSection: React.FC = () => {
         'importRecentChats',
       );
       setResults(data ?? []);
+      await useExternalImportHistoryStore.getState().load();
       // 宿主导入不广播 SESSION_LIST_UPDATED，侧栏项目组又派生自会话列表——
       // 真有新导入才静默刷一次（durableResume / teamClient 同款调用），
       // 全部已在 Neo / 零候选 / IPC 失败不刷；刷新被拒不翻错误态、结果照常显示。

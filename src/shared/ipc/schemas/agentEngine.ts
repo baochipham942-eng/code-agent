@@ -17,6 +17,7 @@ const AgentEngineDomainRequestSchema = z.object({
     'importRecentChats',
     'list',
     'listHistory',
+    'listImportHistory',
     'listModels',
     'listSources',
     'previewHistory',

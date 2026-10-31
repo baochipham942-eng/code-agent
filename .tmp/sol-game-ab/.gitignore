@@ -1,0 +1,7 @@
+# N-SOL-GAME-AB scratch: everything here stays out of git except the
+# pre-registered decision rule and this ignore file itself. Cases/fixture are
+# private-archive copies (must not be committed); run outputs and per-unit data
+# dirs are measurement artifacts.
+*
+!DECISION-RULE.md
+!.gitignore

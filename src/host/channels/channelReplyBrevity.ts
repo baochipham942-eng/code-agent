@@ -8,14 +8,14 @@
 
 import { CHANNEL_REPLY_CHAR_LIMIT_DEFAULT } from '../../shared/constants';
 
-export const CHANNEL_REPLY_STYLE_INSTRUCTION = [
+const CHANNEL_REPLY_STYLE_INSTRUCTION = [
   '[IM 回复纪律]',
   '- 单条 IM 回复不超过 150 个汉字：先给结论，再用一行写依据。',
   '- 内容较长时只发摘要，完整内容写进会话（文件/交付物）并告诉用户在哪里。',
   '- 不要在 IM 里输出进度播报；只在有结果、需要用户决定、或无法完成时说话。',
 ].join('\n');
 
-export const CHANNEL_REPLY_FULL_TEXT_NOTE = '（完整内容见 Neo 会话）';
+const CHANNEL_REPLY_FULL_TEXT_NOTE = '（完整内容见 Neo 会话）';
 
 export function buildChannelRunContent(content: string): string {
   return `${content}\n\n${CHANNEL_REPLY_STYLE_INSTRUCTION}`;

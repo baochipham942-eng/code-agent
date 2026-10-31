@@ -3,8 +3,6 @@ import type { ChannelMessage } from '../../../src/shared/contract/channel';
 import type { ChannelResponseCallback } from '../../../src/host/channels/channelInterface';
 import { ChannelAgentBridge } from '../../../src/host/channels/channelAgentBridge';
 import {
-  CHANNEL_REPLY_FULL_TEXT_NOTE,
-  CHANNEL_REPLY_STYLE_INSTRUCTION,
   buildChannelRunContent,
   resolveChannelReplyLimit,
   softLimitChannelReply,
@@ -16,6 +14,9 @@ vi.mock('../../../src/host/tools/dispatch/toolDefinitions', () => ({ getAllToolD
 interface Harness {
   handleSyncMessage(a: string, m: ChannelMessage, o: unknown, att: undefined, cb: ChannelResponseCallback): Promise<void>;
 }
+
+const CHANNEL_REPLY_FULL_TEXT_NOTE = '（完整内容见 Neo 会话）';
+const CHANNEL_REPLY_STYLE_INSTRUCTION = '[IM 回复纪律]';
 
 const message: ChannelMessage = {
   id: 'm1', channelId: 'feishu-1', sender: { id: 'u', name: 'U' },

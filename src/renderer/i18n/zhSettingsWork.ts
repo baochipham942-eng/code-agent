@@ -688,6 +688,23 @@ export const zhSettingsWork = {
         delete: '删除',
         evidence: '证据',
         noEvidence: '无证据记录',
+        sourceSession: {
+          open: '打开来源会话',
+          missing: '来源会话已不存在，无法跳转',
+          probeFailed: '无法确认来源会话是否还在',
+          opening: '正在打开来源会话…',
+        },
+        history: {
+          title: '变更历史',
+          empty: '暂无变更记录',
+          failed: '变更历史读取失败',
+          operationLabels: { create: '创建', update: '更新', delete: '删除', evict: '清退' },
+          actorLabels: {
+            user_manual: '手动', auto_review: '自动审阅', role_wake: '角色唤醒',
+            dream: '后台整理', eviction: '自动清理', import: '导入', unknown: '未知来源',
+          },
+        },
+        backgroundWriteBadge: '后台写入',
         selectToEdit: '选择一条记忆后编辑。',
         batchReview: {
           selection: '选择',

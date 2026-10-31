@@ -123,6 +123,32 @@ describe('MemoryEntriesManager helpers', () => {
     expect(rows.find((row) => row.id === 'mem_normal')?.pausedLabel).toBeUndefined();
   });
 
+  it('marks entries last changed by a background actor, not manual edits (N-MEM-JOURNAL-SOURCEJUMP)', () => {
+    const background = entry({
+      id: 'mem_bg',
+      status: 'active',
+      lastChange: { actor: 'dream', operation: 'update', timestamp: now },
+    });
+    const manual = entry({
+      id: 'mem_manual',
+      status: 'active',
+      lastChange: { actor: 'user_manual', operation: 'update', timestamp: now },
+    });
+    const unjournaled = entry({ id: 'mem_no_journal', status: 'active' });
+    const rows = buildMemoryEntryRows({
+      entries: [background, manual, unjournaled],
+      selectedEntryId: null,
+      searchQuery: '',
+      statusFilter: 'all',
+      kindFilter: 'all',
+      sourceFilter: 'all',
+      now,
+    });
+    expect(rows.find((row) => row.id === 'mem_bg')?.backgroundWriteLabel).toBe(zh.settings.memory.entries.backgroundWriteBadge);
+    expect(rows.find((row) => row.id === 'mem_manual')?.backgroundWriteLabel).toBeUndefined();
+    expect(rows.find((row) => row.id === 'mem_no_journal')?.backgroundWriteLabel).toBeUndefined();
+  });
+
   it('directive candidates stay out of the batch-selectable set', () => {
     const normal = entry({ id: 'mem_candidate_user', status: 'candidate', kind: 'user' });
     const directive = entry({ id: 'mem_candidate_directive', status: 'candidate', kind: 'directive' });

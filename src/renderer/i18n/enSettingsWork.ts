@@ -687,6 +687,23 @@ export const enSettingsWork = {
         delete: 'Delete',
         evidence: 'Evidence',
         noEvidence: 'No evidence records',
+        sourceSession: {
+          open: 'Open source session',
+          missing: 'Source session no longer exists',
+          probeFailed: 'Cannot confirm the source session still exists',
+          opening: 'Opening source session…',
+        },
+        history: {
+          title: 'Change history',
+          empty: 'No change records yet',
+          failed: 'Failed to load change history',
+          operationLabels: { create: 'Created', update: 'Updated', delete: 'Deleted', evict: 'Evicted' },
+          actorLabels: {
+            user_manual: 'Manual', auto_review: 'Auto review', role_wake: 'Role wake',
+            dream: 'Background tidy', eviction: 'Auto cleanup', import: 'Import', unknown: 'Unknown source',
+          },
+        },
+        backgroundWriteBadge: 'Background write',
         selectToEdit: 'Select a memory entry to edit.',
         batchReview: {
           selection: 'Selection',

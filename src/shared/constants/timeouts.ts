@@ -660,6 +660,16 @@ export const WEB_SERVER_SHUTDOWN_TIMEOUTS = {
 } as const;
 
 /**
+ * connector_required 连接卡判读前的 CLI 状态探测等待（N-CONNECTOR-POLISH-AUDIT-FU1-FU2）。
+ * 轮级缓存冷（开机后首张卡）时，发卡点先等在途/新起一次 CLI 状态探测这么多毫秒；
+ * 到点或失败保持 fail-open（不发卡）但 warn 出可区分原因。只有本轮声明了 CLI
+ * 连接器且缓存缺它的条目才会等——没有 CLI 声明或缓存已暖时零额外探测。
+ */
+export const CONNECTOR_CARD_TIMEOUTS = {
+  CLI_STATUS_PROBE_WAIT_MS: 3_000,
+} as const;
+
+/**
  * CLI durable run 终态落库重试（N-CLI-DURABLE-TERMINAL-LOST）：夜巡 8 进程共库时
  * terminalCLIDurableRun 两次零退避重试全灭、run 永远停在非终态（exit 0 会话遗留 78 条）。
  * 仓储层已有 IMMEDIATE+busy 重试；这组是 CLI 退出前的最后一道：busy 类错误带退避重试，

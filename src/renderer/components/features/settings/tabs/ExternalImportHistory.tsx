@@ -166,7 +166,7 @@ function HistoryRow({
                   .replace('{chats}', String(entry.category === 'chats' ? undoable : 0))
                   .replace('{skills}', String(entry.category === 'skills' ? undoable : 0))}
               </div>
-              {failed && <div className="text-[11px] text-red-400">{historyCopy.undoFailed}</div>}
+              {failed && <div className="text-[11px] text-badge-danger">{historyCopy.undoFailed}</div>}
               <div className="flex gap-2">
                 <Button variant="danger" size="sm" disabled={busy} onClick={() => void runUndo()}>
                   {historyCopy.undoConfirmAction}

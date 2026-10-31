@@ -35,7 +35,11 @@ import { getCachedStatus } from '../connectors/cli/cliConnector';
 import { validateProviderDescriptor, type ProviderDescriptor } from '../connectors/oauth/providerDescriptor';
 import { NATIVE_CONNECTOR_IDS, type NativeConnectorId } from '../../shared/constants';
 import type { ConfigService } from '../services';
-import { replaceCliConnectorConnectionStatusCache } from '../connectors/cli/cliConnectorStatusCache';
+import {
+  registerCliConnectorStatusProbeStarter,
+  replaceCliConnectorConnectionStatusCache,
+  trackCliConnectorStatusProbe,
+} from '../connectors/cli/cliConnectorStatusCache';
 
 // macOS native connector → host app 映射。Mail/Calendar/Reminders 走 open -a，
 // 其他未来可接入 AppleScript 连接器可在这里扩展。
@@ -397,7 +401,7 @@ interface ConnectorOAuthProviderStatus {
   tenantName?: string;
 }
 
-async function listConnectorOAuthStatuses(): Promise<ConnectorOAuthProviderStatus[]> {
+async function collectConnectorOAuthStatuses(): Promise<ConnectorOAuthProviderStatus[]> {
   const statuses = await Promise.all(listOAuthProviderDescriptors().map(async (descriptor) => {
     const authMode = descriptor.authMode ?? 'oauth';
     if (isCliAuthMode(authMode)) {
@@ -468,6 +472,19 @@ async function listConnectorOAuthStatuses(): Promise<ConnectorOAuthProviderStatu
   replaceCliConnectorConnectionStatusCache(statuses);
   return statuses;
 }
+
+function listConnectorOAuthStatuses(): Promise<ConnectorOAuthProviderStatus[]> {
+  // 每次状态列举都登记为在途探测：发卡点（workbenchTurnContext）冷缓存时等它，
+  // 免得开机第一轮在探测落定前把「未登录」错判成 ready 而吞掉连接卡
+  // （N-CONNECTOR-POLISH-AUDIT-FU1-FU2）。
+  const probe = collectConnectorOAuthStatuses();
+  trackCliConnectorStatusProbe(probe);
+  return probe;
+}
+
+// 发卡点冷缓存且无在途探测时「新起一次」的入口；注册在缓存模块里，
+// 避免 workbenchTurnContext 反向依赖整个 ipc 层。
+registerCliConnectorStatusProbeStarter(() => listConnectorOAuthStatuses());
 
 async function handleConnectorOAuthConnect(
   payload: { providerId?: string; action?: string; authMode?: 'oauth' | CliAuthMode } | undefined,

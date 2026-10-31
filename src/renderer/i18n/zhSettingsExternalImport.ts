@@ -77,6 +77,28 @@ export const zhSettingsExternalImport = {
       },
       applyCta: '开始导入',
       applyFailed: '导入失败',
+      // 最近聊天一键导入卡（N-EXTHISTORY-IMPORT-CHATS-HOST-FU1）：独立于三步流，
+      // 一键批量导入最近 30 天 Claude Code / Codex CLI 会话；reason 是宿主日志用的
+      // 原始诊断串（含路径），页面只按 status 出文案，绝不渲染 reason。
+      chatsImport: {
+        title: '最近聊天',
+        description: '批量导入最近 30 天的 Claude Code / Codex CLI 聊天，最多 50 条，原对话不会被修改。',
+        cta: '导入最近的聊天',
+        running: '正在导入…',
+        summary: '已导入 {imported} · 已在 Neo {already} · 目录不存在 {folderMissing} · 失败 {failed}',
+        empty: '最近 30 天没有发现 Claude Code 或 Codex 聊天',
+        failed: '导入最近的聊天失败',
+        engineNames: {
+          claude_code: 'Claude Code',
+          codex_cli: 'Codex',
+        },
+        statusLabels: {
+          imported: '已导入',
+          already_imported: '已在 Neo',
+          folder_missing: '原目录已不存在，恢复目录后重新点击即可导入',
+          failed: '这一条没能导入',
+        },
+      },
       resultsTitle: '导入完成',
       resultsMemory: '记忆：导入 {imported} 条，跳过 {skipped} 条',
       resultsSkills: '技能：复制 {copied} 个，跳过 {skipped} 个，已放进 Neo 技能库',

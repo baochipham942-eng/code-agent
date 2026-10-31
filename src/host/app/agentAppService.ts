@@ -74,7 +74,7 @@ import type {
   ConversationEnvelopeContext,
   WorkbenchMessageMetadata,
 } from '../../shared/contract/conversationEnvelope';
-import { listNotReadyDeclaredConnectors, withWorkbenchTurnSystemContext } from './workbenchTurnContext';
+import { resolveConnectorRequiredForTurn, withWorkbenchTurnSystemContext } from './workbenchTurnContext';
 import { withSessionCommandCenterBrain } from './sessionCommandCenterBrain';
 import { isSessionCommandCenterTurn } from '../../shared/constants/sessionCommandCenter';
 import { getPermissionModeManager } from '../permissions/modes';
@@ -817,7 +817,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       envelope.context,
       getSessionManager().getSessionMetadata?.(resolvedSessionId),
     );
-    this.emitConnectorRequired(tm, resolvedSessionId, envelope.options as AppServiceRunOptions | undefined, envelope.context);
+    await this.emitConnectorRequired(tm, resolvedSessionId, envelope.options as AppServiceRunOptions | undefined, envelope.context);
     const optionsWithTurnSettings: AppServiceRunOptions = {
       ...(workbenchOptions ?? {}),
       searchEnabled: envelope.searchEnabled ?? true,
@@ -1011,7 +1011,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       envelope.context,
       getSessionManager().getSessionMetadata?.(resolvedSessionId),
     );
-    this.emitConnectorRequired(tm, resolvedSessionId, envelope.options as AppServiceRunOptions | undefined, envelope.context);
+    await this.emitConnectorRequired(tm, resolvedSessionId, envelope.options as AppServiceRunOptions | undefined, envelope.context);
     const options = isSessionCommandCenterTurn({
       prompt: envelope.content,
       hasGoal: Boolean(workbenchOptions?.goal),
@@ -1029,15 +1029,14 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     );
   }
 
-  private emitConnectorRequired(
+  private async emitConnectorRequired(
     tm: ReturnType<AgentAppServiceImpl['getTaskManager']>,
     sessionId: string,
     options: AppServiceRunOptions | undefined,
     context: ConversationEnvelope['context'],
-  ): void {
-    const connectors = listNotReadyDeclaredConnectors(options, context, getSessionManager().getSessionMetadata?.(sessionId));
-    if (connectors.length === 0) return;
-    tm.emitAgentEventForSession(sessionId, { type: 'connector_required', data: { connectors } });
+  ): Promise<void> {
+    const connectors = await resolveConnectorRequiredForTurn(options, context, getSessionManager().getSessionMetadata?.(sessionId));
+    if (connectors.length > 0) tm.emitAgentEventForSession(sessionId, { type: 'connector_required', data: { connectors } });
   }
 
   // === Workspace ===

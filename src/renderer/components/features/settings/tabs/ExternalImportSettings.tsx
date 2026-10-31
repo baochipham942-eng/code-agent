@@ -39,6 +39,7 @@ import { useExternalImportStore } from '../../../../stores/externalImportStore';
 import { Button, Toggle } from '../../../primitives';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { SettingsSection } from '../SettingsLayout';
+import { ExternalChatsImportSection } from './ExternalChatsImportSection';
 import { countImportableRules, ExternalImportInstructionRules, type DirectiveState } from './ExternalImportInstructionRules';
 
 /** 页面类别列：新类别（K1B 的 MCP servers）在此加一档 + 对应 host handler。 */
@@ -279,8 +280,12 @@ export const ExternalImportSettings: React.FC = () => {
   }
 
   if (detectedSources.length === 0) {
+    // 记忆/技能来源可以为空，但最近聊天卡独立于检测面——照常给出（FU1）。
     return (
-      <div data-testid="external-import-empty" className="text-sm text-zinc-500">{copy.noSources}</div>
+      <SettingsSection title={copy.title} description={copy.description}>
+        <div data-testid="external-import-empty" className="text-sm text-zinc-500">{copy.noSources}</div>
+        <ExternalChatsImportSection />
+      </SettingsSection>
     );
   }
 
@@ -307,6 +312,8 @@ export const ExternalImportSettings: React.FC = () => {
             {message.text}
           </div>
         )}
+
+        <ExternalChatsImportSection />
 
         {claudeSkills && (
           <div

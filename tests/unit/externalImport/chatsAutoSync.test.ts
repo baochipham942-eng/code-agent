@@ -10,11 +10,17 @@ import type BetterSqlite3 from 'better-sqlite3';
 
 const env = vi.hoisted(() => ({
   importRecentChats: vi.fn(async (_req: unknown): Promise<unknown[]> => []),
+  recordChats: vi.fn(async (): Promise<void> => {}),
   database: null as unknown,
 }));
 const logger = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }));
 
 vi.mock('../../../src/host/services/infra/logger', () => ({ createLogger: () => logger }));
+// 导入历史记账走 mock：这里断言的是单飞的 trigger 语义（一次运行一条、记发起方），
+// 落盘形状由 tests/unit/externalImport/importHistory.test.ts 覆盖。
+vi.mock('../../../src/host/externalImport/importHistory', () => ({
+  recordChatImportHistory: env.recordChats,
+}));
 vi.mock('../../../src/host/services/agentEngine/agentEngineHistoryImport', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../src/host/services/agentEngine/agentEngineHistoryImport')>()),
   getAgentEngineHistoryImportService: () => ({ importRecentChats: env.importRecentChats }),
@@ -62,6 +68,7 @@ beforeEach(async () => {
   vi.stubEnv('CODE_AGENT_DATA_DIR', dataDir);
   env.importRecentChats.mockReset();
   env.importRecentChats.mockResolvedValue([]);
+  env.recordChats.mockReset();
   logger.warn.mockReset();
 });
 
@@ -173,6 +180,29 @@ describe('单飞（验收⑤）', () => {
     // 结束后 guard 释放，下一次是新一轮
     await importRecentChatsSingleFlight();
     expect(env.importRecentChats).toHaveBeenCalledTimes(2);
+  });
+
+  it('一轮导入只记一条历史，trigger 记发起方：auto 发起记 {trigger:"auto"}，搭车的手动点击不重复记账', async () => {
+    writeChatsSyncState({ mode: 'on' });
+    let release!: (value: unknown[]) => void;
+    env.importRecentChats.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    const sync = runChatsAutoSync();
+    const manual = importRecentChatsSingleFlight(); // 同步进行中的手动点击，搭同一 promise
+    release([{ engine: 'claude_code', sourceSessionId: 'a', title: 'a', status: 'imported' }]);
+    await Promise.all([sync, manual]);
+    expect(env.recordChats).toHaveBeenCalledTimes(1);
+    expect(env.recordChats).toHaveBeenCalledWith(
+      [{ engine: 'claude_code', sourceSessionId: 'a', title: 'a', status: 'imported' }],
+      { trigger: 'auto' },
+    );
+
+    // 纯手动发起（无人搭车）：不带 options（manual 是 recordChatImportHistory 的缺省）。
+    env.importRecentChats.mockResolvedValue([{ engine: 'claude_code', sourceSessionId: 'b', title: 'b', status: 'imported' }]);
+    await importRecentChatsSingleFlight();
+    expect(env.recordChats).toHaveBeenCalledTimes(2);
+    expect(env.recordChats).toHaveBeenLastCalledWith([
+      { engine: 'claude_code', sourceSessionId: 'b', title: 'b', status: 'imported' },
+    ]);
   });
 });
 

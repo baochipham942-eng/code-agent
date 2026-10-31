@@ -35,6 +35,7 @@ import { getSessionManager } from '../services/infra/sessionManager';
 import { currentSessionForkOwnerScopeId } from '../services/sessionFork/ownerScope';
 import * as fsp from 'node:fs/promises';
 import { getDefaultWorkDirectory } from '../config/configPaths';
+import { listImportHistory, recordChatImportHistory } from '../externalImport/importHistory';
 
 function isExternalEngineKind(kind: AgentEngineKind | undefined): kind is ExternalAgentEngineKind {
   // 单一真源：external engine 列表统一由 agentEngineGuards.isExternalAgentEngine 维护，
@@ -89,6 +90,11 @@ const agentEngineHandlers: RawDomainRouteHandlers<AgentEngineDomainRequest, void
     // 漂移会让批量导入的去重预检整批漏判。
     const data = await getAgentEngineHistoryImportService()
       .importRecentChats({ ownerScopeId: currentSessionForkOwnerScopeId() });
+    await recordChatImportHistory(data);
+    return { success: true, data };
+  },
+  listImportHistory: async (_ctx, _requestPayload) => {
+    const data = await listImportHistory();
     return { success: true, data };
   },
   listModels: async (_ctx, _requestPayload) => {

@@ -131,6 +131,25 @@ describe('applyExternalSkillsImport no-overwrite invariant', () => {
     expect(survivor).toContain('neo body must survive');
   });
 
+  it('apply 末尾按来源记录导入历史，只保存名称与 copied/skipped', async () => {
+    await writeSkill(path.join(homeDir, '.codex', 'skills'), 'codex-skill');
+    await writeSkill(path.join(homeDir, '.cursor', 'skills'), 'cursor-skill');
+    await writeSkill(userSkillsDir, 'cursor-skill', 'existing neo copy');
+
+    await applyExternalSkillsImport({});
+
+    const raw = await fs.readFile(path.join(dataDir, 'external-import-history.json'), 'utf8');
+    const ledger = JSON.parse(raw) as {
+      entries: Array<{ category: string; source: string; count: number; items: unknown[] }>;
+    };
+    expect(ledger.entries).toMatchObject([
+      { category: 'skills', source: 'codex', count: 1, items: [{ label: 'codex-skill', outcome: 'copied' }] },
+      { category: 'skills', source: 'cursor', count: 0, items: [{ label: 'cursor-skill', outcome: 'skipped' }] },
+    ]);
+    expect(raw).not.toContain(homeDir);
+    expect(raw).not.toContain('target-name-exists');
+  });
+
   it('再导一次：全部 target-name-exists，copied=0（导入幂等，零新增）', async () => {
     await writeSkill(path.join(homeDir, '.codex', 'skills'), 'codex-skill');
 

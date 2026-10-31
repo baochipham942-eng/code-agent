@@ -25,7 +25,7 @@ import { syncSupabaseSessionRow } from '../helpers/supabaseSessionSync';
 import { buildGoalContract } from '../../host/agent/goalModeController';
 import {
   buildWorkbenchCapabilityContextLines,
-  listNotReadyDeclaredConnectors,
+  resolveConnectorRequiredForTurn,
   buildWorkbenchToolScope,
 } from '../../host/app/workbenchTurnContext';
 import { getSessionCommandCenterBrainContextForPrompt, getTextForegroundToolNamesForPrompt } from '../../host/app/sessionCommandCenterBrain';
@@ -1210,7 +1210,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
 
       // 选中/专家声明的连接器未就绪：每轮首个模型输出前发一次 connector_required（renderer 出连接卡）。
       // web 路径不应用专家声明的连接器，仅用已解析的 preferredAgentId 做事件口径。
-      const connectorRequired = listNotReadyDeclaredConnectors(
+      const connectorRequired = await resolveConnectorRequiredForTurn(
         preferredAgentId ? { agentOverrideId: preferredAgentId } : undefined,
         body.context,
       );

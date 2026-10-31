@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { startFakeOAuthMcpServer, type FakeOAuthMcpServer } from '../../helpers/fakeOAuthMcpServer';
+import { startFakeOAuthMcpServer, type FakeOAuthMcpServer } from './fakeOAuthMcpServer';
 
 const storage = vi.hoisted(() => {
   const values = new Map<string, string>();

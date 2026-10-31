@@ -24,22 +24,22 @@ function settleLedgerRun(ledger: CloudRunLedger, runId: string, state: 'succeede
   ledger.transition(runId, state);
 }
 
-/** 订阅账本迁移等一条行收线；先订阅再查现值，终态在两步之间落地也不漏。 */
-function waitForChannelRunSettled(ledger: CloudRunLedger, runId: string): Promise<void> {
+/** 订阅账本迁移等一条行收线；先订阅再查现值，终态在两步之间落地也不漏。resolve 值为收线终态。 */
+function waitForChannelRunSettled(ledger: CloudRunLedger, runId: string): Promise<string> {
   return new Promise((resolve) => {
     let settled = false;
     let unsubscribe: () => void = () => {};
-    const finish = () => {
+    const finish = (state: string) => {
       if (settled) return;
       settled = true;
       unsubscribe();
-      resolve();
+      resolve(state);
     };
     unsubscribe = ledger.onTransition((transition) => {
-      if (transition.runId === runId && isTerminalCloudRunState(transition.toState)) finish();
+      if (transition.runId === runId && isTerminalCloudRunState(transition.toState)) finish(transition.toState);
     });
     const current = ledger.getRun(runId);
-    if (current && isTerminalCloudRunState(current.state)) finish();
+    if (current && isTerminalCloudRunState(current.state)) finish(current.state);
   });
 }
 

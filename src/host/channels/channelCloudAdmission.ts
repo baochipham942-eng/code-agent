@@ -135,10 +135,12 @@ export function decodeChannelCloudRunPayload(requestJson: string | null): Channe
 type ChannelCloudAdmitDecision =
   | { kind: 'run'; runId: string }
   | { kind: 'queued'; runId: string; queuePosition: number }
-  | { kind: 'duplicate'; runId: string };
+  | { kind: 'duplicate'; runId: string; state: string };
 
 function decideChannelCloudAdmission(admission: ChannelCloudRunAdmission): ChannelCloudAdmitDecision {
-  if (admission.duplicate) return { kind: 'duplicate', runId: admission.record.runId };
+  if (admission.duplicate) {
+    return { kind: 'duplicate', runId: admission.record.runId, state: admission.record.state };
+  }
   if (admission.record.state === 'queued') {
     return {
       kind: 'queued',
@@ -147,6 +149,17 @@ function decideChannelCloudAdmission(admission: ChannelCloudRunAdmission): Chann
     };
   }
   return { kind: 'run', runId: admission.record.runId };
+}
+
+/**
+ * 「终态但从未执行」的行：interrupted 只由 startupSweep 对没有执行体绑定的
+ * 在飞行写入（通道行从不 bind），abandoned 只能从 queued 迁来——两条都发生在
+ * 任何回复发出之前。succeeded/failed 证明轮次真跑过（settle 只在轮次收尾写）。
+ * 平台重推撞上这类行不是重复投递而是恢复路径：与桌面重启后内存去重清零同
+ * 语义，就地补跑这轮；否则消息被永久吞掉（重推不添行、终态行不再执行）。
+ */
+function isUnexecutedTerminalState(state: string | undefined): boolean {
+  return state === 'interrupted' || state === 'abandoned';
 }
 
 /** 回帖只尽力而为：提示发不出去不能吞掉消息本体（与桥内既有兜底同型）。 */
@@ -195,7 +208,19 @@ export async function admitChannelIngressThroughCloud(
     });
     const decision = decideChannelCloudAdmission(admission);
     if (decision.kind === 'duplicate') {
-      // 平台重推：这轮已交过账本（在跑或已收线），不回帖、不起第二轮。
+      if (isUnexecutedTerminalState(decision.state)) {
+        // 重推撞上从未执行的终态行（重启被 sweep 打断/排队被弃置）：恢复路径，
+        // 补跑这轮并回帖；行保持原终态（迁移表终态无出边，settle 幂等跳过）。
+        logger.warn('[ChannelCloud] redelivery matched an unexecuted terminal row; re-running the turn', {
+          accountId,
+          messageId: message.id,
+          runId: decision.runId,
+          state: decision.state,
+        });
+        markParts(await runChannelCloudTurn(surface, payload, decision.runId));
+        return;
+      }
+      // 平台重推：这轮已交过账本且真跑过（在跑或已收线），不回帖、不起第二轮。
       logger.info('[ChannelCloud] redelivery matched an existing ledger row; ignoring', {
         accountId,
         runId: decision.runId,
@@ -208,7 +233,19 @@ export async function admitChannelIngressThroughCloud(
       // 该会话的真实回复发出前同会话后续消息不插队。
       await safeReply(surface, accountId, message, channelCommandText(surface.locale(), 'cloudQueued')
         .replace('{n}', String(decision.queuePosition)));
-      await port.waitForSettled(decision.runId);
+      const settledState = await port.waitForSettled(decision.runId);
+      if (isUnexecutedTerminalState(settledState)) {
+        // 等到的终态证明这轮从未执行（提升后被 sweep 打断/弃置）：等不来回复，
+        // 就地补跑，别把这条消息标成已处理。
+        logger.warn('[ChannelCloud] awaited queued run ended unexecuted; re-running the turn', {
+          accountId,
+          messageId: message.id,
+          runId: decision.runId,
+          state: settledState,
+        });
+        markParts(await runChannelCloudTurn(surface, payload, decision.runId));
+        return;
+      }
       markParts(true);
       return;
     }
@@ -253,9 +290,17 @@ export async function runChannelCloudTurn(
     if (!orchestrator) throw new Error('Channel orchestrator unavailable for cloud run');
     const enrichment = await surface.enrich(message);
     const attachments = surface.convertAttachments(enrichment.attachments);
+    // 与桌面路径同型（processIngressMessage 的回写）：enrich 会把语音转写块拼进
+    // content、把转写状态写回附件。不回写就把云端路径（内联轮与提升轮）的语音
+    // 消息降级成裸正文——转写照跑但模型永远看不到。
+    const enrichedMessage: ChannelMessage = {
+      ...message,
+      content: enrichment.content,
+      attachments: enrichment.attachments,
+    };
     const responseCallback = surface.callback(accountId, message);
     if (!responseCallback) throw new Error('Failed to get response callback for cloud run');
-    ok = await surface.turn(accountId, message, orchestrator, attachments, responseCallback);
+    ok = await surface.turn(accountId, enrichedMessage, orchestrator, attachments, responseCallback);
     return ok;
   } finally {
     getChannelCloudRunPort()?.settle(runId, ok ? 'succeeded' : 'failed');

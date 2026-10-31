@@ -28,10 +28,12 @@ export interface ChannelCloudRunPort {
   /** 桥接层自己跑完一轮后收线；排队行的提升轮同样经这里收线。 */
   settle(runId: string, state: 'succeeded' | 'failed'): void;
   /**
-   * 等一条排队行被提升执行并收线（终态）。调用方持有 IngressPipeline 的
-   * 会话锁等在这里：该会话的真实回复发出前，同会话后续消息不会插队。
+   * 等一条排队行被提升执行并收线（终态），resolve 值为收线时的终态。调用方
+   * 持有 IngressPipeline 的会话锁等在这里：该会话的真实回复发出前，同会话
+   * 后续消息不会插队。带终态回来是为了区分「真跑完收线」（succeeded/failed）
+   * 与「从未执行就被打断」（interrupted/abandoned）——后者等不来任何回复。
    */
-  waitForSettled(runId: string): Promise<void>;
+  waitForSettled(runId: string): Promise<string>;
 }
 
 let port: ChannelCloudRunPort | null = null;

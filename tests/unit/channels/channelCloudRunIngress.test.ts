@@ -6,6 +6,10 @@
 //   还原、经 executeChannelRun 真跑、回复送达、行收 succeeded（不落 failed）。
 // - ③ guest 消息与桌面态（无端口）不进账本，本地路径不变。
 // - ④ 账号未就绪：恰一条白话回复，本地什么都不跑，账本无行。
+// - r1-A 语音消息：转写块必须拼进云端轮次的 prompt（与桌面路径同形）。
+// - r1-B 重推撞上 sweep 打断的行（interrupted，从未执行）：补跑补回复，
+//   不再静默吞掉（桌面重启后内存去重清零本来就会重跑）。
+// - r1-C 排队等待者等到的终态是 interrupted：同样就地补跑，不标已处理。
 // ============================================================================
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -23,6 +27,13 @@ vi.mock('../../../src/host/task', () => ({
 
 vi.mock('../../../src/host/channels/channelManager', () => ({
   getChannelManager: () => channelManager,
+}));
+
+// 语音转写只桩结果（真实链路在 audioTranscriptionService 自己的测试里）；
+// 该模块的运行时导出只有 transcribeAudioFile 且仅桥消费，定向 mock 安全。
+const transcribeAudioFileMock = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/host/services/media/audioTranscriptionService', () => ({
+  transcribeAudioFile: transcribeAudioFileMock,
 }));
 
 // guest 路径会真调 getAllToolDefinitions（真实工具面太重，照 eventFilter 测试 mock）。
@@ -193,6 +204,7 @@ describe('channel ingress through the cloud run ledger (service mode)', () => {
     sessionManager.createSession.mockImplementation(async () => ({ id: `session-${sessionManager.createSession.mock.calls.length}` }));
     sessionManager.getSession.mockReset();
     sessionManager.getSession.mockImplementation(async (sessionId: string) => ({ id: sessionId, messages: [] }));
+    transcribeAudioFileMock.mockReset();
   });
 
   afterEach(() => {
@@ -278,5 +290,72 @@ describe('channel ingress through the cloud run ledger (service mode)', () => {
     expect(sendText).toHaveBeenCalledWith(expect.stringContaining('云端账号还没就绪'));
     expect(allTurns()).toHaveLength(0);
     expect(channelManager.sendErrorResponse).not.toHaveBeenCalled();
+  });
+
+  it('r1-A splices the voice transcript into the cloud turn prompt (parity with the desktop path)', async () => {
+    transcribeAudioFileMock.mockResolvedValue({ ok: true, text: 'meeting at three pm today', engine: 'stub' });
+    const bridge = new ChannelAgentBridge({ configService, bindingStore: sharedBindingStore } as never);
+    // 语音消息：正文为空，可说的全在附件转写里（paired 通道的典型形状）。
+    await ingress(bridge, 'account-1', createMessage('chat-voice', 'om_v', {
+      content: '',
+      attachments: [{
+        id: 'att-1', type: 'audio', name: 'voice.ogg', mimeType: 'audio/ogg', localPath: '/tmp/voice.ogg',
+      }],
+    }));
+
+    expect(transcribeAudioFileMock).toHaveBeenCalledTimes(1);
+    const turns = allTurns();
+    expect(turns).toHaveLength(1);
+    const promptContent = turns[0][0] as string;
+    expect(promptContent).toContain('语音转写');
+    expect(promptContent).toContain('meeting at three pm today');
+    // 回帖同样带转写内容（假 orchestrator 原样回显 prompt）。
+    expect(sendText).toHaveBeenCalledWith(expect.stringContaining('meeting at three pm today'));
+    expect(ledger.getRun(cloudRunRows(db)[0].run_id as string)?.state).toBe('succeeded');
+  });
+
+  it('r1-B re-runs the turn when a redelivery matches a row the startup sweep interrupted', async () => {
+    // 前一进程：om_i 已 admit 成 running，重启后 startupSweep 对未 bind 执行体的
+    // 在飞行收 interrupted（通道行从不 bind）——sweep 的机制就是这条 transition。
+    const prior = ledger.admit({
+      sessionId: 'session-prior',
+      trigger: 'channel',
+      channelDeliveryId: 'account-1:om_i',
+      requestJson: JSON.stringify({ accountId: 'account-1', message: { id: 'om_i' }, partIds: ['om_i'] }),
+    });
+    ledger.transition(prior.record.runId, 'interrupted');
+
+    // 平台重推同一消息 id：全新 bridge 实例（内存去重清零），只有账本幂等键在挡。
+    const bridge = new ChannelAgentBridge({ configService, bindingStore: sharedBindingStore } as never);
+    await ingress(bridge, 'account-1', createMessage('chat-r1b', 'om_i'));
+
+    expect(cloudRunRows(db)).toHaveLength(1); // 幂等键接住，不添行
+    expect(allTurns()).toHaveLength(1); // 但轮次补跑：消息不再被吞
+    expect(sendText).toHaveBeenCalledTimes(1);
+    expect(sendText).toHaveBeenCalledWith('reply:hello from chat-r1b');
+    // 终态无出边：补跑后的 settle 幂等跳过，行保持 interrupted（对首次尝试是如实记录）。
+    expect(ledger.getRun(prior.record.runId)?.state).toBe('interrupted');
+  });
+
+  it('r1-C re-runs inline when the awaited queued row ends interrupted instead of replying', async () => {
+    ledger.admit({ sessionId: 'session_busy_1', trigger: 'manual', requestJson: JSON.stringify({ prompt: 'busy1' }) });
+    ledger.admit({ sessionId: 'session_busy_2', trigger: 'manual', requestJson: JSON.stringify({ prompt: 'busy2' }) });
+
+    // 不 await：排队分支持会话锁等提升轮收线。
+    const bridge = new ChannelAgentBridge({ configService, bindingStore: sharedBindingStore } as never);
+    const ingressPromise = ingress(bridge, 'account-1', createMessage('chat-r1c', 'om_w'));
+    await vi.waitFor(() => expect(sendText).toHaveBeenCalledTimes(1));
+    expect(sendText).toHaveBeenCalledWith(expect.stringContaining('第 1 位'));
+
+    const queuedRow = cloudRunRows(db).find((row) => row.trigger === 'channel')!;
+    // 提升（queued→running）后进程内 sweep 把未 bind 的在飞行打断：等待者等到的
+    // 终态是 interrupted，不是任何真实回复。
+    ledger.transition(queuedRow.run_id as string, 'running');
+    ledger.transition(queuedRow.run_id as string, 'interrupted');
+    await ingressPromise;
+
+    expect(allTurns()).toHaveLength(1); // 就地补跑，不把这条消息标成已处理
+    expect(sendText).toHaveBeenLastCalledWith('reply:hello from chat-r1c');
+    expect(ledger.getRun(queuedRow.run_id as string)?.state).toBe('interrupted');
   });
 });

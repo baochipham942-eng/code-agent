@@ -331,7 +331,7 @@ describe('cloud run HTTP contract', () => {
     const first = await runtime.admit(cloudBody('session_env', 'message_env1'));
     expect(first.record.state).toBeTypeOf('string');
 
-    const stored = readStoredRow('session_env');
+    const stored = readStoredRow('session_env')!;
     expect(readPersistedExecutionEnvironment(stored.metadata as Record<string, unknown>))
       .toMatchObject({ kind: 'cloud', environmentId: 'cloud-test' });
     expect(typeof (stored.metadata as Record<string, Record<string, unknown>>).executionEnvironment?.setAt).toBe('number');
@@ -347,7 +347,7 @@ describe('cloud run HTTP contract', () => {
     const updatedAtBefore = stored.updatedAt;
     await new Promise((resolve) => setTimeout(resolve, 10));
     await runtime.admit(cloudBody('session_env', 'message_env2'));
-    const second = readStoredRow('session_env');
+    const second = readStoredRow('session_env')!;
     expect(readPersistedExecutionEnvironment(second.metadata as Record<string, unknown>)?.setAt).toBe(setAtBefore);
     expect(second.updatedAt).toBe(updatedAtBefore);
   });
@@ -370,7 +370,7 @@ describe('cloud run HTTP contract', () => {
   });
 
   it('④ mark dep returning false or rejecting does not fail the admit and warns which case happened', async () => {
-    logger.warn.mockClear();
+    (logger.warn as ReturnType<typeof vi.fn>).mockClear();
     // case 1：patch 返回 false（会话行不存在）→ 工厂 warn 命名该情形，admit 照常成功
     const falseRuntime = new CloudRunRouteRuntime({
       getLedger: () => ledger,
@@ -390,7 +390,7 @@ describe('cloud run HTTP contract', () => {
       expect.objectContaining({ sessionId: 'session_env', environmentId: 'cloud-test' }),
     );
 
-    logger.warn.mockClear();
+    (logger.warn as ReturnType<typeof vi.fn>).mockClear();
     // case 2：dep 自身 reject → admit 侧兜底 warn，admit 照常成功
     const rejectingRuntime = new CloudRunRouteRuntime({
       getLedger: () => ledger,

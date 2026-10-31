@@ -22,7 +22,7 @@ export type AgentEngineKind =
 export type ExternalAgentEngineKind = Exclude<AgentEngineKind, 'native'>;
 
 /** 批量导入最近外部会话的引擎面（Claude Code / Codex CLI，N-EXTHISTORY-IMPORT-CHATS-HOST）。 */
-export type ExternalChatsImportEngineKind = Extract<AgentEngineKind, 'claude_code' | 'codex_cli'>;
+type ExternalChatsImportEngineKind = Extract<AgentEngineKind, 'claude_code' | 'codex_cli'>;
 
 /**
  * 单条外部会话的批量导入结果（importRecentChats IPC action 的 data 元素）。

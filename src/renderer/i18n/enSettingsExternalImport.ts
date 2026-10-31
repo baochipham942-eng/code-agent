@@ -81,7 +81,7 @@ export const enSettingsExternalImport = {
       // the page only localizes status and never renders reason.
       chatsImport: {
         title: 'Recent chats',
-        description: 'One click imports your last 30 days of Claude Code / Codex CLI chats, up to 50; the originals are never modified.',
+        description: 'Import your last 30 days of Claude Code / Codex CLI chats, up to 50; the originals are never modified.',
         cta: 'Import recent chats',
         running: 'Importing…',
         summary: 'Imported {imported} · already in Neo {already} · folder not found {folderMissing} · failed {failed}',

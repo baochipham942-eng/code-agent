@@ -153,7 +153,7 @@ export async function importRecentExternalChats(
       // resolveProject 会把会话归到未分类项目，拿那个 id 查台账必漏——改按 workspace key
       // 查回导入时归属的项目（不铸造）；连项目都查不到（从没导入过）才落 folder_missing。
       const dirOnDisk = !cwd || (await isDirectoryOnDisk(cwd));
-      const ghostProject = dirOnDisk ? undefined : await lookupProjectForWorkspace(cwd!);
+      const ghostProject = cwd && !dirOnDisk ? await lookupProjectForWorkspace(cwd) : undefined;
       if (!dirOnDisk && !ghostProject) {
         results.push({
           ...base,

@@ -82,7 +82,7 @@ export const zhSettingsExternalImport = {
       // 原始诊断串（含路径），页面只按 status 出文案，绝不渲染 reason。
       chatsImport: {
         title: '最近聊天',
-        description: '一键导入最近 30 天的 Claude Code / Codex CLI 聊天，最多 50 条，原对话不会被修改。',
+        description: '批量导入最近 30 天的 Claude Code / Codex CLI 聊天，最多 50 条，原对话不会被修改。',
         cta: '导入最近的聊天',
         running: '正在导入…',
         summary: '已导入 {imported} · 已在 Neo {already} · 目录不存在 {folderMissing} · 失败 {failed}',

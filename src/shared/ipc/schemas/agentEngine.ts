@@ -25,6 +25,7 @@ const AgentEngineDomainRequestSchema = z.object({
     'select',
     'selectModel',
     'setChatsSync',
+    'undoImportHistory',
   ]),
   payload: z.unknown().optional(),
   requestId: z.string().optional(),

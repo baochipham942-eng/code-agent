@@ -66,7 +66,26 @@ async function fillDraftAndGotoSettings(): Promise<void> {
   await waitFor(() => expect(screen.getByText('调度方式')).toBeTruthy());
   fireEvent.change(controlForLabel('任务名称'), { target: { value: '我的 webhook 任务' } });
   fireEvent.change(controlForLabel('调度类型'), { target: { value: 'event-webhook' } });
-  fireEvent.click(await screen.findByTestId('cron-webhook-goto-settings'));
+  // openCloudCronSettings 注册 0/200ms 两个真定时器，jsdom 环境卸载后 fire 会
+  // 报 unhandled `document is not defined`（CI 0 failed 但 1 unhandled 的根因）。
+  // 处理：按函数名拦截这两个 focus 回调（fake timers 全局会卡本文件的 waitFor /
+  // 异步渲染链，不用），其余 setTimeout 照真跑；点击同步路径结束后立即在 jsdom
+  // 存活窗口内执行收集到的回调——既走到生产路径又零跨环境 pending timer。
+  const pendingFocus: Array<() => void> = [];
+  const originalSetTimeout = window.setTimeout.bind(window);
+  const spy = vi.spyOn(window, 'setTimeout').mockImplementation(((handler: TimerHandler, delay?: number, ...args: unknown[]) => {
+    if (typeof handler === 'function' && handler.name === 'focusCronCloudSection') {
+      pendingFocus.push(handler as () => void);
+      return 0 as unknown as number;
+    }
+    return originalSetTimeout(handler, delay, ...args);
+  }) as typeof window.setTimeout);
+  try {
+    fireEvent.click(await screen.findByTestId('cron-webhook-goto-settings'));
+  } finally {
+    spy.mockRestore();
+  }
+  for (const focus of pendingFocus) focus();
 }
 
 beforeEach(() => {

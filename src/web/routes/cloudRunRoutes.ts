@@ -25,6 +25,12 @@ interface CloudRunRuntimeDeps {
    * 在 OpenClaw 核对单（N-CLOUD-RUN-LEDGER-DESIGN-FU5）关账前不放开。
    */
   executeCronRun?: (record: CloudRunRecord) => Promise<void>;
+  /**
+   * ADR-081/087 S4B：manual 云端轮准入后给会话打「跑过云」粘性标记（永不清理）。
+   * 实现须自带等值跳过与失败兜底（见 createMarkSessionExecutionEnvironment）；
+   * 这里再兜一层 dep 自身 reject，绝不影响 admit 主路径。
+   */
+  markSessionExecutionEnvironment?: (sessionId: string, environmentId: string) => Promise<boolean>;
   logger: WebRouteLogger;
 }
 
@@ -34,7 +40,7 @@ export class CloudRunRouteRuntime {
 
   constructor(private readonly deps: CloudRunRuntimeDeps) {}
 
-  admit(body: AgentRunBody) {
+  async admit(body: AgentRunBody) {
     const sessionId = body.sessionId?.trim() || `web-session-${randomUUID()}`;
     const sanitizedBody = { ...body, sessionId };
     const admission = this.ledger().admit({
@@ -43,6 +49,20 @@ export class CloudRunRouteRuntime {
       requestJson: JSON.stringify(sanitizedBody),
       clientMessageId: body.clientMessageId,
     });
+    // ADR-081/087 S4B：ledger admit 成功后打「跑过云」标记。判等跳过在 mark
+    // 实现内（重复 admit 无害）；mark 失败/抛异常只 warn，不进 admit 失败路径。
+    const environmentId = sanitizedBody.environmentSelection?.environmentId;
+    if (environmentId && this.deps.markSessionExecutionEnvironment) {
+      try {
+        await this.deps.markSessionExecutionEnvironment(sessionId, environmentId);
+      } catch (error) {
+        this.deps.logger.warn('[CloudRun] markSessionExecutionEnvironment dep rejected', {
+          sessionId,
+          environmentId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
     return { ...admission, body: sanitizedBody };
   }
 
@@ -180,7 +200,7 @@ export async function handleCloudRunAdmission(input: {
   runInline: (body: AgentRunBody, cloudRunId: string) => Promise<void>;
 }): Promise<void> {
   try {
-    const admission = input.runtime.admit(input.body);
+    const admission = await input.runtime.admit(input.body);
     if (admission.record.state === 'queued' || admission.duplicate) {
       input.res.status(admission.record.state === 'queued' ? 202 : 200).json(
         queuePayload(admission.record, admission.position),

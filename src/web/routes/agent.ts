@@ -47,6 +47,7 @@ import {
   recordExternalEngineFailure,
 } from './agentEngineFailureRecorder';
 import { buildTurnTerminalFailure } from './agentTurnTerminalFailure';
+import { createMarkSessionExecutionEnvironment } from '../../host/services/cloudRun/sessionExecutionEnvironmentMarker';
 import { checkEnvironmentProtocol } from './environmentProtocolGate';
 import {
   AgentRunBodySchema,
@@ -397,6 +398,18 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     delegation: delegationHooks,
     logger,
   });
+  const markSessionExecutionEnvironment = createMarkSessionExecutionEnvironment({
+    readSessionMetadata: async (sessionId) => {
+      const sm = await tryGetSessionManager();
+      const session = sm?.getSession ? await sm.getSession(sessionId, 1) : null;
+      return session?.metadata;
+    },
+    patchSessionMetadata: async (sessionId, patch) => {
+      const sm = await tryGetSessionManager();
+      return (await sm?.patchSessionMetadata?.(sessionId, patch)) ?? false;
+    },
+    logger,
+  });
   const cloudRunRuntime = new CloudRunRouteRuntime({
     getLedger: () => deps.getCloudRunLedger?.() ?? getDatabase().getCloudRunLedger(),
     runRegistry,
@@ -404,6 +417,8 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       connectedClient: false,
       cloudRunId,
     }),
+    // ADR-081/087 S4B：manual 云端轮准入即打「跑过云」粘性会话标记（永不清理）。
+    markSessionExecutionEnvironment,
     logger,
   });
   deps.registerQueuedInputStartupSweep?.(() => {
@@ -607,6 +622,12 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     } catch (err) {
       sessionPreflightReadFailed = true;
       logger.warn(`[AgentRouter] Failed to restore session ${sessionId}:`, err);
+    }
+
+    // ADR-081/087 S4B：admit 时会话行可能尚不存在（标记没写成），run 真正起跑、
+    // 会话恢复后再补一次；仍缺失只 warn（mark 实现内），不阻塞 run。
+    if (transport.cloudRunId && body.environmentSelection?.environmentId) {
+      void markSessionExecutionEnvironment(sessionId, body.environmentSelection.environmentId);
     }
 
     let resolvedProject: string | undefined =

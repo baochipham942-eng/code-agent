@@ -493,6 +493,6 @@ describe('delegate_session outcome telemetry (ADR-072 E6)', () => {
     const serialized = JSON.stringify({ track: trackNodeCalls, log: loggerInfo.mock.calls });
     expect(serialized).not.toContain(marker);
     expect(serialized).not.toContain('secret body');
-    expect(result.error).toContain('candidate_set_stale');
+    expect((result as { error: string }).error).toContain('candidate_set_stale');
   });
 });

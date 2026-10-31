@@ -34,6 +34,7 @@ export const CronEventDecisionsPanel: React.FC<{ job: CronJobDefinition }> = ({ 
   const setEventActionMode = useCronStore((state) => state.setEventActionMode);
   const mode = resolveCronEventActionMode(job) ?? 'observe';
   const [decisions, setDecisions] = useState<CronEventDecision[]>([]);
+  const [modeChange, setModeChange] = useState<{ from: 'observe' | 'auto'; to: 'observe' | 'auto'; at: number } | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
@@ -46,6 +47,10 @@ export const CronEventDecisionsPanel: React.FC<{ job: CronJobDefinition }> = ({ 
       .then(() => cronClient.getEventDecisions(job.id))
       .then((rows) => { if (!cancelled) setDecisions(Array.isArray(rows) ? rows : []); })
       .catch(() => { if (!cancelled) { setDecisions([]); setLoadFailed(true); } });
+    Promise.resolve()
+      .then(() => cronClient.getEventActionModeChange(job.id))
+      .then((entry) => { if (!cancelled) setModeChange(entry ?? null); })
+      .catch(() => { if (!cancelled) setModeChange(null); });
     return () => { cancelled = true; };
   }, [job.id, job.updatedAt]);
 
@@ -121,6 +126,13 @@ export const CronEventDecisionsPanel: React.FC<{ job: CronJobDefinition }> = ({ 
         )}
       </div>
       {switchError && <div className="mt-2 text-xs text-badge-danger" role="alert">{switchError}</div>}
+      {modeChange && (
+        <div className="mt-2 text-xs text-zinc-500" data-testid="cron-action-mode-change">
+          {copy.changeLog.replace('{time}', formatDateTime(modeChange.at))
+            .replace('{from}', copy[modeChange.from])
+            .replace('{to}', copy[modeChange.to])}
+        </div>
+      )}
 
       <div className="mt-3 text-xs font-medium text-zinc-300">{copy.decisionsTitle}</div>
       {loadFailed ? (

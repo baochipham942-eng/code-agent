@@ -15,6 +15,7 @@ const CronDomainRequestSchema = z.object({
     'deleteJob',
     'grantLoginPassThrough',
     'generateFromPrompt',
+    'getEventActionModeChange',
     'getEventDecisions',
     'getExecutions',
     'getRecentExecutions',

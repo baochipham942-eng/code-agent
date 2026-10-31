@@ -353,3 +353,25 @@ export async function recordCronAutomationActionModeChanged(
   });
   if (!recorded) throw new Error(`Automation record for cron job ${definition.id} is missing; action-mode change not recorded.`);
 }
+
+/**
+ * 读回最近一次执行档切换（返修⑥：让「切换已记入变更历史」在详情页可见）。
+ * 数据源就是 recordCronAutomationActionModeChange 写进自动化记录 config 的
+ * actionModeChange；读不到（记录缺失/形状不对）返回 null，静默降级。
+ */
+export function readCronAutomationActionModeChange(
+  definition: CronJobDefinition,
+): { from: 'observe' | 'auto'; to: 'observe' | 'auto'; at: number } | null {
+  try {
+    const record = getSessionAutomationService()
+      .getBySourceRef(getCronAutomationType(definition), definition.id);
+    const change = record?.config?.actionModeChange;
+    if (!change || typeof change !== 'object') return null;
+    const { from, to, at } = change as Record<string, unknown>;
+    if ((from !== 'observe' && from !== 'auto') || (to !== 'observe' && to !== 'auto')) return null;
+    if (typeof at !== 'number') return null;
+    return { from, to, at };
+  } catch {
+    return null;
+  }
+}

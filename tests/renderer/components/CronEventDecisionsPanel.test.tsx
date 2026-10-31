@@ -10,6 +10,7 @@ import type { CronEventDecision, CronJobDefinition } from '../../../src/shared/c
 
 const clientState = vi.hoisted(() => ({
   getEventDecisions: vi.fn(),
+  getEventActionModeChange: vi.fn(),
   setEventActionMode: vi.fn(),
 }));
 
@@ -21,6 +22,7 @@ vi.mock('../../../src/renderer/services/cronClient', () => ({
     getStats: vi.fn().mockResolvedValue(null),
     getExecutions: vi.fn().mockResolvedValue([]),
     getEventDecisions: clientState.getEventDecisions,
+    getEventActionModeChange: clientState.getEventActionModeChange,
     setEventActionMode: clientState.setEventActionMode,
   },
 }));
@@ -61,8 +63,10 @@ const decisions: CronEventDecision[] = [
 
 beforeEach(() => {
   clientState.getEventDecisions.mockReset();
+  clientState.getEventActionModeChange.mockReset();
   clientState.setEventActionMode.mockReset();
   clientState.getEventDecisions.mockResolvedValue(decisions);
+  clientState.getEventActionModeChange.mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -109,16 +113,29 @@ describe('CronEventDecisionsPanel (via CronJobDetail)', () => {
     expect(clientState.setEventActionMode).not.toHaveBeenCalled();
   });
 
-  it('confirming the modal calls setEventActionMode(auto) and updates the job in the store', async () => {
+  it('confirming the modal calls setEventActionMode(auto), updates the job and shows the change-history entry', async () => {
     const job = eventJob();
     useCronStore.setState({ jobs: [job] });
-    clientState.setEventActionMode.mockResolvedValue({ ...job, actionMode: 'auto', updatedAt: 2 });
-    render(<CronJobDetail job={job} />);
+    let switched = false;
+    clientState.getEventActionModeChange.mockImplementation(async () => (
+      switched ? { from: 'observe', to: 'auto', at: 2 } : null
+    ));
+    clientState.setEventActionMode.mockImplementation(async () => {
+      switched = true;
+      return { ...job, actionMode: 'auto', updatedAt: 2 };
+    });
+    const { rerender } = render(<CronJobDetail job={job} />);
+    expect(screen.queryByTestId('cron-action-mode-change')).toBeNull();
     fireEvent.click(screen.getByTestId('cron-switch-to-auto'));
     await act(async () => { fireEvent.click(await screen.findByText('确认切换')); });
     expect(clientState.setEventActionMode).toHaveBeenCalledWith('job-listen', 'auto');
     await waitFor(() => expect(useCronStore.getState().jobs[0]?.actionMode).toBe('auto'));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    // 返修⑥：切换后（父层按 store 新任务重渲染）详情页能看到变更记录行，徽标翻成自动执行。
+    rerender(<CronJobDetail job={{ ...job, actionMode: 'auto', updatedAt: 2 }} />);
+    const change = await screen.findByTestId('cron-action-mode-change');
+    expect(change.textContent).toContain('由「仅观察」切换为「自动执行」');
+    expect(screen.getByTestId('cron-action-mode-badge').getAttribute('data-mode')).toBe('auto');
   });
 
   it('auto mode shows the auto badge and no switch action; time-based jobs show no panel', async () => {

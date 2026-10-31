@@ -30,6 +30,7 @@ import {
   recordCronAutomationExecution,
   getCronAutomationType,
   isSkippedResult,
+  readCronAutomationActionModeChange,
   type ResolveRuntimeDefinition,
 } from './cronAutomationBridge';
 import {
@@ -622,6 +623,13 @@ export class CronService implements Disposable {
   /** 事件自动化最近 limit 条逐事件决策（新的在前）。 */
   getEventDecisions(jobId: string, limit?: number): CronEventDecision[] {
     return loadCronEventDecisions(jobId, limit);
+  }
+
+  /** 最近一次执行档切换（返修⑥：详情页展示「切换已记入变更历史」）；任务不存在返回 null。 */
+  getEventActionModeChange(jobId: string): { from: 'observe' | 'auto'; to: 'observe' | 'auto'; at: number } | null {
+    const active = this.jobs.get(jobId);
+    if (!active) return null;
+    return readCronAutomationActionModeChange(active.definition);
   }
 
   getJobExecutions(jobId: string, limit: number = 10): CronJobExecution[] {

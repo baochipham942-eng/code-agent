@@ -99,6 +99,13 @@ export const cronClient = {
     return invokeCron<CronEventDecision[]>('getEventDecisions', { jobId, limit });
   },
 
+  /** 最近一次执行档切换（详情页的变更记录行；返修⑥）。 */
+  getEventActionModeChange(jobId: string) {
+    return invokeCron<{ from: 'observe' | 'auto'; to: 'observe' | 'auto'; at: number } | null>(
+      'getEventActionModeChange', { jobId },
+    );
+  },
+
   /** 切换事件自动化执行档：唯一能切到 auto 的入口（UI 侧必须先过确认弹窗）。 */
   setEventActionMode(jobId: string, mode: CronEventActionMode) {
     return invokeCron<CronJobDefinition | null>('setEventActionMode', { jobId, mode });

@@ -272,6 +272,11 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
     const limit = getNumberField(payload, 'limit');
     return { success: true, data: getCronService().getEventDecisions(jobId, limit) } satisfies IPCResponse;
   },
+  getEventActionModeChange: async (_ctx, payload) => {
+    const jobId = getStringField(payload, 'jobId');
+    if (!jobId) throw new Error('Invalid cron job id');
+    return { success: true, data: getCronService().getEventActionModeChange(jobId) } satisfies IPCResponse;
+  },
   setEventActionMode: async (_ctx, payload) => {
     // 唯一能把事件自动化切到 auto 的入口（renderer 侧为确认弹窗动作）；updateJob 里的 actionMode 被忽略。
     const jobId = getStringField(payload, 'jobId');

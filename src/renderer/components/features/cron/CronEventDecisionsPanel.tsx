@@ -62,6 +62,38 @@ export const CronEventDecisionsPanel: React.FC<{ job: CronJobDefinition }> = ({ 
     }
   };
 
+  // 「会接单但未执行」单独成节（返修③）：would_act 行（含观察档拦下的对外动作）与其余决策分开渲染。
+  const wouldActRows = decisions.filter((row) => row.decision === 'would_act');
+  const otherRows = decisions.filter((row) => row.decision !== 'would_act');
+
+  const renderRow = (row: CronEventDecision, testId: string) => (
+    <li
+      key={row.id}
+      data-testid={testId}
+      data-decision={row.decision}
+      data-highlight={row.decision === 'would_act' ? 'true' : undefined}
+      className={`rounded-lg border px-3 py-2 text-xs ${decisionRowClass(row.decision)}`}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-medium text-zinc-200">{copy.decision[row.decision]}</span>
+        <span className="text-zinc-500">
+          {row.kind === 'action'
+            ? copy.actionLabel.replace('{tool}', row.tool ?? '')
+            : copy.eventLabel.replace('{id}', row.eventId ?? '')}
+        </span>
+        {row.target && <span className="text-zinc-500">{copy.targetLabel.replace('{target}', row.target)}</span>}
+        <span className="ml-auto text-zinc-600">{formatDateTime(row.createdAt)}</span>
+      </div>
+      <div className="mt-1 text-zinc-400">{row.reason}</div>
+      {row.matchedRule && (
+        <div className="mt-0.5 text-zinc-500" data-testid="cron-event-decision-rule">
+          {copy.ruleLabel.replace('{rule}', row.matchedRule)}
+        </div>
+      )}
+      {row.summary && <div className="mt-1 truncate text-zinc-300">{row.summary}</div>}
+    </li>
+  );
+
   return (
     <section className="mt-4 rounded-xl border border-zinc-800 bg-zinc-950/50 px-4 py-3" data-testid="cron-event-decisions">
       <div className="flex flex-wrap items-center gap-2">
@@ -96,30 +128,25 @@ export const CronEventDecisionsPanel: React.FC<{ job: CronJobDefinition }> = ({ 
       ) : decisions.length === 0 ? (
         <div className="mt-2 text-xs text-zinc-500">{copy.decisionsEmpty}</div>
       ) : (
-        <ul className="mt-2 max-h-64 space-y-1.5 overflow-y-auto" data-testid="cron-event-decision-list">
-          {decisions.map((row) => (
-            <li
-              key={row.id}
-              data-testid="cron-event-decision-row"
-              data-decision={row.decision}
-              data-highlight={row.decision === 'would_act' ? 'true' : undefined}
-              className={`rounded-lg border px-3 py-2 text-xs ${decisionRowClass(row.decision)}`}
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-medium text-zinc-200">{copy.decision[row.decision]}</span>
-                <span className="text-zinc-500">
-                  {row.kind === 'action'
-                    ? copy.actionLabel.replace('{tool}', row.tool ?? '')
-                    : copy.eventLabel.replace('{id}', row.eventId ?? '')}
-                </span>
-                {row.target && <span className="text-zinc-500">{copy.targetLabel.replace('{target}', row.target)}</span>}
-                <span className="ml-auto text-zinc-600">{formatDateTime(row.createdAt)}</span>
-              </div>
-              <div className="mt-1 text-zinc-400">{row.reason}</div>
-              {row.summary && <div className="mt-1 truncate text-zinc-300">{row.summary}</div>}
-            </li>
-          ))}
-        </ul>
+        <>
+          {/* 返修③：「会接单但未执行」单独一节——观察档用户要过目的行不与其余决策混排。 */}
+          {wouldActRows.length > 0 && (
+            <div className="mt-2" data-testid="cron-event-would-act-section">
+              <div className="text-xs font-medium text-amber-500/90">{copy.wouldActSectionTitle}</div>
+              <ul className="mt-1.5 space-y-1.5">
+                {wouldActRows.map((row) => renderRow(row, 'cron-event-would-act-row'))}
+              </ul>
+            </div>
+          )}
+          {otherRows.length > 0 && (
+            <>
+              <div className="mt-3 text-xs font-medium text-zinc-400">{copy.otherDecisionsTitle}</div>
+              <ul className="mt-1.5 max-h-64 space-y-1.5 overflow-y-auto" data-testid="cron-event-decision-list">
+                {otherRows.map((row) => renderRow(row, 'cron-event-decision-row'))}
+              </ul>
+            </>
+          )}
+        </>
       )}
 
       <ConfirmDialog

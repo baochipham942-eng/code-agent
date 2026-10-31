@@ -4,7 +4,7 @@
 // 「切换为自动执行」必须过确认弹窗，确认后才调 host 的 setEventActionMode（host 写变更事件）。
 // ============================================================================
 import React from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CronEventDecision, CronJobDefinition } from '../../../src/shared/contract/cron';
 
@@ -49,8 +49,14 @@ const decisions: CronEventDecision[] = [
     id: 'd1', jobId: 'job-listen', kind: 'action', decision: 'would_act', reason: 'observe mode: mail_send intercepted before sending',
     runId: 'run-1', tool: 'mail_send', target: 'client@example.com', summary: 'Re: invoice — We will refund you today.', createdAt: 3,
   },
-  { id: 'd2', jobId: 'job-listen', kind: 'event', eventId: 'm-7', decision: 'would_act', reason: '客户要求退款', runId: 'run-1', createdAt: 2 },
-  { id: 'd3', jobId: 'job-listen', kind: 'event', eventId: 'm-8', decision: 'ignored', reason: '广告邮件', runId: 'run-1', createdAt: 1 },
+  {
+    id: 'd2', jobId: 'job-listen', kind: 'event', eventId: 'm-7', decision: 'would_act', reason: '客户要求退款', runId: 'run-1',
+    matchedRule: 'mail message · account _icloud · mailbox INBOX', createdAt: 2,
+  },
+  {
+    id: 'd3', jobId: 'job-listen', kind: 'event', eventId: 'm-8', decision: 'ignored', reason: '广告邮件', runId: 'run-1',
+    matchedRule: 'mail message · account _icloud · mailbox INBOX', createdAt: 1,
+  },
 ];
 
 beforeEach(() => {
@@ -65,21 +71,33 @@ afterEach(() => {
 });
 
 describe('CronEventDecisionsPanel (via CronJobDetail)', () => {
-  it('shows the observe badge and the decision list with would_act rows highlighted', async () => {
+  it('shows the observe badge; would_act rows sit in their own highlighted section with matched rule, out of the general list', async () => {
     render(<CronJobDetail job={eventJob()} />);
     const badge = screen.getByTestId('cron-action-mode-badge');
     expect(badge.getAttribute('data-mode')).toBe('observe');
     expect(badge.textContent).toContain('仅观察');
 
-    const rows = await screen.findAllByTestId('cron-event-decision-row');
+    // 返修③：「会接单但未执行」单独一节，would_act 行（事件 + 拦下的动作）都在里面。
+    const section = await screen.findByTestId('cron-event-would-act-section');
     expect(clientState.getEventDecisions).toHaveBeenCalledWith('job-listen');
-    expect(rows.map((row) => row.getAttribute('data-decision'))).toEqual(['would_act', 'would_act', 'ignored']);
-    expect(rows.map((row) => row.getAttribute('data-highlight'))).toEqual(['true', 'true', null]);
-    expect(rows[0].textContent).toContain('本会执行');
-    expect(rows[0].textContent).toContain('mail_send');
-    expect(rows[0].textContent).toContain('client@example.com');
-    expect(rows[0].textContent).toContain('We will refund you today.');
-    expect(rows[2].textContent).toContain('广告邮件');
+    expect(section.textContent).toContain('会接单但未执行');
+    const sectionRows = within(section).getAllByTestId('cron-event-would-act-row');
+    expect(sectionRows.map((row) => row.getAttribute('data-decision'))).toEqual(['would_act', 'would_act']);
+    expect(sectionRows.map((row) => row.getAttribute('data-highlight'))).toEqual(['true', 'true']);
+    expect(sectionRows[0].textContent).toContain('本会执行');
+    expect(sectionRows[0].textContent).toContain('mail_send');
+    expect(sectionRows[0].textContent).toContain('client@example.com');
+    expect(sectionRows[0].textContent).toContain('We will refund you today.');
+    // 事件行带「命中的任务规则」（返修②）。
+    expect(within(sectionRows[1]).getByTestId('cron-event-decision-rule').textContent)
+      .toContain('mail message · account _icloud · mailbox INBOX');
+
+    // 其余决策（非 would_act）留在总列表里：would_act 不得混入。
+    const generalRows = await screen.findAllByTestId('cron-event-decision-row');
+    expect(generalRows.map((row) => row.getAttribute('data-decision'))).toEqual(['ignored']);
+    expect(generalRows[0].textContent).toContain('广告邮件');
+    expect(within(generalRows[0]).getByTestId('cron-event-decision-rule').textContent)
+      .toContain('mail message · account _icloud · mailbox INBOX');
   });
 
   it('switch to auto opens a confirm modal; cancelling does not call the host', async () => {

@@ -204,6 +204,13 @@ export interface CronEventDecision {
   reason: string;
   /** Execution id of the run that judged (or reported) the event. */
   runId?: string;
+  /**
+   * Event rows: the schedule rule that admitted the event — the binding that
+   * let it into the batch window (source + account + chat/mailbox). Derived
+   * from the event schedule config; a model-stated `rule=` in the run's
+   * per-event decision tag wins when present. Truncated like the reason.
+   */
+  matchedRule?: string;
   /** Action rows: intercepted tool name (`channel_reply` for result delivery). */
   tool?: string;
   /** Action rows: recipient / channel target when determinable. */

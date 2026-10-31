@@ -47,6 +47,7 @@ import { resolveCronEventActionMode } from '../../shared/cronEventActionMode';
 import { sqliteCronEventDecisionStore, type CronEventDecisionStore } from './cronEventDecisionLedger';
 import {
   buildEventDecisionInstruction,
+  describeEventScheduleRule,
   droppedEventDecisions,
   settleEventRunDecisions,
   type CronDroppedEvent,
@@ -443,7 +444,7 @@ export class CronEventTrigger {
         this.decisionStore.record(droppedEventDecisions(jobId, [
           ...state.droppedEvents,
           ...state.pending.map((event) => ({ eventId: event.messageId, cause: 'automation_inactive' as const })),
-        ]));
+        ], undefined, current.schedule.type === 'event' ? describeEventScheduleRule(current.schedule) : undefined));
       }
       this.states.delete(jobId);
       return;
@@ -530,6 +531,8 @@ export class CronEventTrigger {
         execution,
         runError,
         observeActionCount: (runId) => this.decisionStore.countActionsForRun(runId),
+        // 事件行的「命中规则」：配置推导（模型在决策标签里说了 rule= 则以模型为准）。
+        matchedRule: definition.schedule.type === 'event' ? describeEventScheduleRule(definition.schedule) : undefined,
       }));
     } catch (error) {
       console.error(`[CronEventTrigger] Decision ledger settlement failed for job ${jobId}:`, error);

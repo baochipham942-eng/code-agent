@@ -240,7 +240,8 @@ describe('③ 逐事件决策台账', () => {
         result: {
           eventDecisions: [
             { eventId: 'e1', action: 'act', reason: 'asked for the meeting time' },
-            { eventId: 'e2', action: 'act', reason: 'requested the weekly report' },
+            // e2 模型顺带说了命中的规则：模型陈述的 rule 优先于配置推导的规则。
+            { eventId: 'e2', action: 'act', reason: 'requested the weekly report', rule: '客户群要周报' },
             { eventId: 'e3', action: 'ignore', reason: 'small talk, nothing to do' },
           ],
         },
@@ -287,6 +288,13 @@ describe('③ 逐事件决策台账', () => {
     expect(byEvent.e4.reason).toContain('per-run carry limit (3 events)');
     expect(byEvent.e5).toMatchObject({ decision: 'unavailable', runId: 'run-2' });
     expect(byEvent.e5.reason).toBe('run failed: provider timeout after 3 retries');
+    // 返修②：每条事件行都带「命中的任务规则」——配置推导（source + 账号 + 群/邮箱），
+    // 模型陈述了 rule= 就用模型的（e2），被丢弃的 e4 也记录准入它的规则。
+    expect(byEvent.e1.matchedRule).toBe('channel message · account acc-1 · chat oc_group');
+    expect(byEvent.e2.matchedRule).toBe('客户群要周报');
+    expect(byEvent.e3.matchedRule).toBe('channel message · account acc-1 · chat oc_group');
+    expect(byEvent.e4.matchedRule).toBe('channel message · account acc-1 · chat oc_group');
+    expect(byEvent.e5.matchedRule).toBe('channel message · account acc-1 · chat oc_group');
   });
 
   it('观察档：模型说 act 的事件记 would_act（不是 acted）', async () => {
@@ -314,7 +322,10 @@ describe('③ 逐事件决策台账', () => {
     pending?.();
     await new Promise((resolve) => setImmediate(resolve));
     trigger.dispose();
-    expect(rows).toEqual([expect.objectContaining({ eventId: 'e1', decision: 'would_act', reason: 'would answer the question', runId: 'run-o' })]);
+    expect(rows).toEqual([expect.objectContaining({
+      eventId: 'e1', decision: 'would_act', reason: 'would answer the question', runId: 'run-o',
+      matchedRule: 'channel message · account acc-1 · chat oc_group',
+    })]);
   });
 
   it('台账按任务有界：只保留最近 N 条', () => {
@@ -332,15 +343,17 @@ describe('③ 逐事件决策台账', () => {
     expect(kept.map((row) => row.eventId)).toEqual(['e6', 'e5', 'e4', 'e3', 'e2']);
   });
 
-  it('解析模型陈述：只认合法 act/ignore 标签，理由截成一行', () => {
+  it('解析模型陈述：只认合法 act/ignore 标签，理由截成一行；可选 rule= 属性带出模型说的命中规则', () => {
     const parsed = parseStatedEventDecisions([
       '<cron_event_decision id="m1" action="act">需要\n回复</cron_event_decision>',
       '<cron_event_decision id="m2" action="maybe">x</cron_event_decision>',
       '<cron_event_decision id="m3" action="IGNORE">闲聊</cron_event_decision>',
+      '<cron_event_decision id="m4" action="act" rule="客服群 · 退款关键词">客户要退款</cron_event_decision>',
     ].join('\n'));
     expect(parsed).toEqual([
       { eventId: 'm1', action: 'act', reason: '需要 回复' },
       { eventId: 'm3', action: 'ignore', reason: '闲聊' },
+      { eventId: 'm4', action: 'act', reason: '客户要退款', rule: '客服群 · 退款关键词' },
     ]);
   });
 });

@@ -813,6 +813,10 @@ async function initializeServices(): Promise<void> {
   bootMark('cron+cadence');
 
   kickoffWebStartupServices(configService, { broadcastSSE, capabilityBootstrap });
+  // 「保持聊天同步」：auth 已恢复缓存用户（owner scope 才对），不 await；E2E 不跑。
+  if (process.env.CODE_AGENT_E2E !== '1') {
+    void import('../host/externalImport/chatsAutoSync').then((m) => m.startChatsAutoSync(() => broadcastSSE(IPC_CHANNELS.SESSION_LIST_UPDATED, undefined)));
+  }
 
   // 8. Log Bridge + P3-A 只读任务状态 provider。
   // 与步骤 5/6/7 同类的 web/main 路径分离修复：logBridge.start() + provider 注册此前只在

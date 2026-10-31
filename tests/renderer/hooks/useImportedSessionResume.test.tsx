@@ -11,7 +11,6 @@
 // - fork IPC 失败：人话 toast + 返回 false（composer 恢复草稿）。
 // ============================================================================
 
-import React from 'react';
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 

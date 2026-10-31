@@ -255,10 +255,11 @@ describe('GuardFabric', () => {
 
     it('maps deny action to deny verdict', () => {
       const source = new PolicyEngineSource();
-      // Writing to /usr triggers deny rule
+      // rm -rf / triggers block-rm-rf-root (the old /usr/bin write case only denied
+      // via the empty-command false match; see N-PERM-RULE-EMPTY-INPUT-MATCH)
       const result = source.evaluate({
-        tool: 'write',
-        args: { filePath: '/usr/bin/malicious' },
+        tool: 'bash',
+        args: { command: 'rm -rf /' },
         topology: 'main',
       });
       expect(result).not.toBeNull();

@@ -12,6 +12,7 @@ import * as path from 'path';
 import { getHomeDir, getSkillsDir } from '../config';
 import { hasSkillMd } from '../services/skills/skillParser';
 import { createLogger } from '../services/infra/logger';
+import { recordSkillsImportHistory } from './importHistory';
 import {
   readClaudeLegacySkillsPreference,
   writeClaudeLegacySkillsPreference,
@@ -162,6 +163,7 @@ export async function applyExternalSkillsImport(
       });
     }
   }
+  await recordSkillsImportHistory(results);
   return {
     targetDir,
     copied,

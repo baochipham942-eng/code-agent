@@ -153,6 +153,14 @@ export class AutoAgentDurableRuntime {
           reason,
           event: { type: `agent_team_${status}`, payload: { runtime: 'auto_agent' }, recordedAt: terminalAt + 1 },
         });
+        await this.parentHost.prepareAgentTeamChild({
+          parentRunId: input.parentRunId,
+          teamRunId: runId,
+          treeId: input.graphId,
+          logicalOperationId,
+          sideEffect: input.sideEffect,
+          now,
+        });
         await this.parentHost.projectAgentTeamChildTerminal({
           parentRunId: input.parentRunId,
           teamRunId: runId,

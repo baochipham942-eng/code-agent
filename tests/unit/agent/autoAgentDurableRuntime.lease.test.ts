@@ -5,12 +5,13 @@ import Database from 'better-sqlite3';
 
 const loggerState = vi.hoisted(() => ({ warn: vi.fn() }));
 vi.mock('../../../src/host/services/infra/logger', () => ({
-  createLogger: () => ({ warn: loggerState.warn }),
+  createLogger: () => ({ info: vi.fn(), warn: loggerState.warn, error: vi.fn(), debug: vi.fn() }),
 }));
 
 import { AutoAgentDurableRuntime } from '../../../src/host/agent/autoAgentDurableRuntime';
 import type { AgentTeamDurableParentHost } from '../../../src/host/agent/agentTeamDurableTypes';
 import { DurableRunKernel } from '../../../src/host/runtime/durableRunKernel';
+import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 import { DurableRunRepository } from '../../../src/host/services/core/repositories/DurableRunRepository';
 
 function createStack(processInstanceId = 'process-1', leaseDurationMs = 750) {
@@ -114,6 +115,58 @@ describe('AutoAgentDurableRuntime lease ownership', () => {
       await vi.advanceTimersByTimeAsync(1_000);
       expect(heartbeat).toHaveBeenCalledTimes(1);
     } finally {
+      db.close();
+    }
+  });
+
+  it('resolves the parent child operation after later native checkpoints hide its projection', async () => {
+    const { db, repository, kernel } = createStack('process-parent', 60_000);
+    const registry = new RunRegistry();
+    registry.configureDurableKernel(kernel);
+    const now = Date.now();
+    try {
+      await registry.startDurable({
+        runId: 'run-parent',
+        sessionId: 'session-auto',
+        workspace: '/tmp/auto',
+        cwd: '/tmp/auto',
+      }, now);
+      const runtime = new AutoAgentDurableRuntime(kernel, registry);
+      const controller = await runtime.start({
+        parentRunId: 'run-parent',
+        sessionId: 'session-auto',
+        sourceMessageId: 'message-auto',
+        workspace: { root: '/tmp/auto', cwd: '/tmp/auto', fingerprint: 'workspace-fingerprint' },
+        graphId: 'auto-agent:session-auto',
+        sideEffect: true,
+        now: now + 1,
+      });
+      const parent = (await repository.get('run-parent'))!;
+      await registry.checkpointDurable('run-parent', {
+        now: now + 2,
+        status: 'running',
+        state: { schemaVersion: 1, kind: 'native' },
+        pendingOperations: parent.pendingOperations ?? [],
+        childRuns: parent.childRuns ?? [],
+        events: [{ type: 'native_checkpoint', payload: {}, recordedAt: now + 2 }],
+      });
+
+      await controller.terminal('completed', undefined, now + 3);
+
+      const projected = (await repository.get('run-parent'))!;
+      expect(projected.pendingOperations).toEqual([
+        expect.objectContaining({ kind: 'child_run', status: 'succeeded' }),
+      ]);
+      expect(projected.childRuns).toEqual([
+        expect.objectContaining({ childRunId: controller.runId, status: 'completed' }),
+      ]);
+      await expect(registry.terminalDurable('run-parent', {
+        now: now + 4,
+        status: 'completed',
+        event: { type: 'run_completed', payload: {}, recordedAt: now + 4 },
+      })).resolves.toMatchObject({ status: 'completed' });
+    } finally {
+      registry.clear();
       db.close();
     }
   });

@@ -104,6 +104,29 @@ describe('MemoryEntriesManager — source session jump (②)', () => {
     }));
   });
 
+  it('lands on the message even when the evidence sessionId was redacted by the sensitive guard (r3)', async () => {
+    // 真实链路：evidence[].sessionId 落库时被 guardMemoryMetadata 统一 redact，
+    // 顶层 sessionId（记录列）不经过 metadata 才保留原值—— messageId 匹配不能依赖 evidence 的 sessionId。
+    mockBackend({
+      entries: [entry({
+        sessionId: 'sess-live',
+        evidence: [{ sessionId: '***REDACTED***', messageId: 'msg-1' }],
+      })],
+      sessionExists: true,
+    });
+    render(<MemoryEntriesManager />);
+
+    const openButton = await screen.findByTestId('memory-entry-source-session-open');
+    expect((openButton as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(openButton);
+
+    await waitFor(() => expect(switchSessionMock).toHaveBeenCalledWith('sess-live'));
+    expect(setPendingSearchJumpMock).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'sess-live',
+      messageId: 'msg-1',
+    }));
+  });
+
   it('disables the jump with a reason when the source session no longer exists', async () => {
     mockBackend({
       entries: [entry({ sessionId: 'sess-gone' })],

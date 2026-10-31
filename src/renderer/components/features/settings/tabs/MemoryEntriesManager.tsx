@@ -26,7 +26,7 @@ import type {
   MemoryEntryUpdateRequest,
   MemoryEntryUpdateResult,
 } from '@shared/contract/memory';
-import { formatBatchReviewSkippedDetail, visibleCandidateEntryIds } from './MemoryEntriesManager.helpers';
+import { findSourceSessionRef, formatBatchReviewSkippedDetail, visibleCandidateEntryIds } from './MemoryEntriesManager.helpers';
 import { Input } from '../../../primitives';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { SettingsSection } from '../SettingsLayout';
@@ -310,12 +310,9 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
     setDraft(selectedEntry ? createDraft(selectedEntry) : null);
   }, [selectedEntry?.id]);
 
-  const sourceSessionId = selectedEntry?.sessionId
-    ?? selectedEntry?.evidence.find((item) => item.sessionId)?.sessionId
-    ?? null;
-  const sourceMessageId = selectedEntry?.evidence.find(
-    (item) => item.sessionId === sourceSessionId && item.messageId,
-  )?.messageId ?? null;
+  // 来源会话/落点消息解析收口到 helper：evidence[].sessionId 落库时被敏感 guard redact，
+  // 匹配不能依赖它（r3），口径见 findSourceSessionRef。
+  const { sessionId: sourceSessionId, messageId: sourceMessageId } = findSourceSessionRef(selectedEntry);
 
   // 变更历史随选中条目加载（N-MEM-JOURNAL-SOURCEJUMP ③）
   useEffect(() => {

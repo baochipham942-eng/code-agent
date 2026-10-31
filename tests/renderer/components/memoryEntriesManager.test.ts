@@ -8,6 +8,7 @@ import {
   getMemoryEntryStatusLabel,
 } from '../../../src/renderer/components/features/settings/tabs/MemoryEntriesManager';
 import {
+  findSourceSessionRef,
   formatBatchReviewSkippedDetail,
   visibleCandidateEntryIds,
 } from '../../../src/renderer/components/features/settings/tabs/MemoryEntriesManager.helpers';
@@ -147,6 +148,52 @@ describe('MemoryEntriesManager helpers', () => {
     expect(rows.find((row) => row.id === 'mem_bg')?.backgroundWriteLabel).toBe(zh.settings.memory.entries.backgroundWriteBadge);
     expect(rows.find((row) => row.id === 'mem_manual')?.backgroundWriteLabel).toBeUndefined();
     expect(rows.find((row) => row.id === 'mem_no_journal')?.backgroundWriteLabel).toBeUndefined();
+  });
+
+  it('resolves the source session ref from the record column when evidence session ids are redacted (r3)', () => {
+    // 落库链路把 evidence[].sessionId redact 成哨兵串；顶层 sessionId（记录列）保留原值
+    expect(findSourceSessionRef(entry({
+      sessionId: 'sess-a',
+      evidence: [{ sessionId: '***REDACTED***', messageId: 'msg-1' }],
+    }))).toEqual({ sessionId: 'sess-a', messageId: 'msg-1' });
+
+    // 精确同会话的证据行优先于 redact 行
+    expect(findSourceSessionRef(entry({
+      sessionId: 'sess-a',
+      evidence: [
+        { sessionId: '***REDACTED***', messageId: 'msg-fallback' },
+        { sessionId: 'sess-a', messageId: 'msg-exact' },
+      ],
+    }))).toEqual({ sessionId: 'sess-a', messageId: 'msg-exact' });
+
+    // 明确来自别的会话的证据行跳过；sessionId 缺失（无 metadata 证据）也算不可证外来
+    expect(findSourceSessionRef(entry({
+      sessionId: 'sess-a',
+      evidence: [
+        { sessionId: 'sess-other', messageId: 'msg-other' },
+        { messageId: 'msg-2' },
+      ],
+    }))).toEqual({ sessionId: 'sess-a', messageId: 'msg-2' });
+
+    // 全是外来会话证据行时不取 messageId（跳会话顶部，不误落到别人的消息）
+    expect(findSourceSessionRef(entry({
+      sessionId: 'sess-a',
+      evidence: [{ sessionId: 'sess-other', messageId: 'msg-other' }],
+    }))).toEqual({ sessionId: 'sess-a', messageId: null });
+
+    // 无顶层 sessionId 时 redact 哨兵不得顶上来当会话 id（否则探测/禁用原因会展示垃圾串）
+    expect(findSourceSessionRef(entry({
+      sessionId: null,
+      evidence: [{ sessionId: '***REDACTED***', messageId: 'msg-1' }],
+    }))).toEqual({ sessionId: null, messageId: null });
+
+    // 无 metadata 的存量条目：默认证据行带真实 sessionId，仍可作为来源会话
+    expect(findSourceSessionRef(entry({
+      sessionId: null,
+      evidence: [{ sessionId: 'sess-b', messageId: 'msg-3' }],
+    }))).toEqual({ sessionId: 'sess-b', messageId: 'msg-3' });
+
+    expect(findSourceSessionRef(null)).toEqual({ sessionId: null, messageId: null });
   });
 
   it('directive candidates stay out of the batch-selectable set', () => {

@@ -4,6 +4,7 @@ import {
   clampToShortTier,
   grantShortTierWait,
   markShortTierSession,
+  resetShortTierWait,
   resolveForegroundTimeoutTier,
   resolveShortTierWait,
   settleShortTierWait,
@@ -56,5 +57,14 @@ describe('foregroundTier', () => {
     expect(grantShortTierWait('chan-2', 10000).timeout).toBe(10000);
     settleShortTierWait('chan-3', 4000);
     expect(grantShortTierWait('chan-3', 10000)).toEqual({ timeout: 6000 });
+  });
+
+  it('每轮重置：turn 1 用尽预算 → turn 2 ≤ 档位的阻塞读取再次放行；同一轮内累计上限仍拒绝', () => {
+    settleShortTierWait('chan-turn', 10000);
+    expect(grantShortTierWait('chan-turn', 5000).refusal).toContain('no-wait limit');
+    resetShortTierWait('chan-turn');
+    expect(grantShortTierWait('chan-turn', 10000)).toEqual({ timeout: 10000 });
+    settleShortTierWait('chan-turn', 10000);
+    expect(grantShortTierWait('chan-turn', 1000).refusal).toContain('no-wait limit');
   });
 });

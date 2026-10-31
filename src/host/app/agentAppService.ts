@@ -90,6 +90,7 @@ import type { CancellationReason } from '../../shared/contract/cancellation';
 import { normalizeCancellationReason } from '../../shared/contract/cancellation';
 import { AGENT_ENGINE_LABELS, normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
 import {
+  assertImportedEngineSessionNotRunnable,
   ExternalEngineDurableLifecycle,
   getExternalEngineAdapter,
   getRemoteAgentEngineModelCatalogService,
@@ -447,6 +448,10 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const sessionManager = getSessionManager();
     const session = await sessionManager.getSession(resolvedSessionId, 1);
     const engine = normalizeAgentEngineSession(session?.engine);
+    // Imported external-history chats are read-only records: fail with a clear
+    // reason before any orchestrator/launch side effect — the renderer's
+    // fork-on-send path is the only way to continue from them.
+    assertImportedEngineSessionNotRunnable(engine);
     const orchestrator = this.getOrchestrator(resolvedSessionId);
     const sessionWorkspaceScope = resolveSessionWorkspaceScope(
       session,

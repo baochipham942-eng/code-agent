@@ -47,6 +47,12 @@ interface CloudRunRuntimeDeps {
    */
   executeCronRun?: (record: CloudRunRecord) => Promise<void>;
   /**
+   * ADR-087 S4B：提升起跑的 channel 行交这里执行（request_json 是通道入站载荷，
+   * 不是 AgentRunBody）。缺省 fail-closed：settle failed + 留痕；
+   * 通道入站接线（IngressPipeline）是另一张单。
+   */
+  executeChannelRun?: (record: CloudRunRecord) => Promise<void>;
+  /**
    * ADR-081/087 S4B：manual 云端轮准入后给会话打「跑过云」粘性标记（永不清理）。
    * 实现须自带等值跳过与失败兜底（见 createMarkSessionExecutionEnvironment）；
    * 这里再兜一层 dep 自身 reject，绝不影响 admit 主路径。
@@ -174,6 +180,10 @@ export class CloudRunRouteRuntime {
       this.startPromotedCronRun(record);
       return;
     }
+    if (record.trigger === 'channel') {
+      this.startPromotedChannelRun(record);
+      return;
+    }
     let delegationOrigin: DelegationOriginMarker | undefined;
     let parsed: ReturnType<typeof AgentRunBodySchema.safeParse>;
     try {
@@ -219,6 +229,22 @@ export class CloudRunRouteRuntime {
       ...(onDurableActivated ? { onDurableActivated } : {}),
     }).catch((error: unknown) => {
       this.deps.logger.error(`[CloudRun] Promoted run ${record.runId} failed`, error);
+      this.settle(record.runId, 'failed');
+    });
+  }
+
+  private startPromotedChannelRun(record: CloudRunRecord): void {
+    const executor = this.deps.executeChannelRun;
+    if (!executor) {
+      this.deps.logger.error(
+        '[CloudRun] Promoted channel run has no executor configured; settling failed (S4B fail-closed)',
+        { runId: record.runId, sessionId: record.sessionId },
+      );
+      this.settle(record.runId, 'failed');
+      return;
+    }
+    void executor(record).catch((error: unknown) => {
+      this.deps.logger.error(`[CloudRun] Promoted channel run ${record.runId} failed`, error);
       this.settle(record.runId, 'failed');
     });
   }

@@ -87,6 +87,18 @@ export const enSettingsExternalImport = {
         summary: 'Imported {imported} · already in Neo {already} · folder not found {folderMissing} · failed {failed}',
         empty: 'No Claude Code or Codex chats found in the last 30 days',
         failed: 'Failed to import recent chats',
+        sync: {
+          title: 'Keep chats in sync',
+          description: 'On every launch, import new Claude Code / Codex chats from the last 30 days (up to 50); the originals are never modified. Chats already imported are kept when sync is off or paused.',
+          toggleLabel: 'Keep chats in sync',
+          statusOff: 'Off',
+          statusOn: 'On',
+          statusOnLast: 'On · last synced {time}, {count} new',
+          statusPaused: 'Paused, imported chats kept',
+          pause: 'Pause sync',
+          resume: 'Resume sync',
+          failed: 'Failed to update sync settings',
+        },
         engineNames: {
           claude_code: 'Claude Code',
           codex_cli: 'Codex',

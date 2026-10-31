@@ -32,10 +32,10 @@ import {
   type AgentEngineHistoryPreviewRequest,
 } from '../services/agentEngine/agentEngineHistoryImport';
 import { getSessionManager } from '../services/infra/sessionManager';
-import { currentSessionForkOwnerScopeId } from '../services/sessionFork/ownerScope';
+import { getChatsSyncState, importRecentChatsSingleFlight, setChatsSyncMode } from '../externalImport/chatsAutoSync';
 import * as fsp from 'node:fs/promises';
 import { getDefaultWorkDirectory } from '../config/configPaths';
-import { listImportHistory, recordChatImportHistory } from '../externalImport/importHistory';
+import { listImportHistory } from '../externalImport/importHistory';
 
 function isExternalEngineKind(kind: AgentEngineKind | undefined): kind is ExternalAgentEngineKind {
   // 单一真源：external engine 列表统一由 agentEngineGuards.isExternalAgentEngine 维护，
@@ -86,16 +86,26 @@ const agentEngineHandlers: RawDomainRouteHandlers<AgentEngineDomainRequest, void
     return { success: true, data };
   },
   importRecentChats: async (_ctx, _requestPayload) => {
-    // ownerScopeId 必须与 importSessionFork 台账口径逐字同值（单一真源见 ownerScope 模块），
-    // 漂移会让批量导入的去重预检整批漏判。
-    const data = await getAgentEngineHistoryImportService()
-      .importRecentChats({ ownerScopeId: currentSessionForkOwnerScopeId() });
-    await recordChatImportHistory(data);
+    // 与启动自动同步共用单飞；ownerScopeId 口径与导入历史记账都在 chatsAutoSync 里（一次运行只记一条）。
+    const data = await importRecentChatsSingleFlight();
     return { success: true, data };
   },
   listImportHistory: async (_ctx, _requestPayload) => {
     const data = await listImportHistory();
     return { success: true, data };
+  },
+  getChatsSync: async (_ctx, _requestPayload) => {
+    return { success: true, data: getChatsSyncState() };
+  },
+  setChatsSync: async (_ctx, requestPayload) => {
+    const mode = (requestPayload as { mode?: unknown } | undefined)?.mode;
+    if (mode !== 'off' && mode !== 'on' && mode !== 'paused') {
+      return {
+        success: false,
+        error: { code: 'INVALID_PAYLOAD', message: 'setChatsSync requires mode off | on | paused.' },
+      };
+    }
+    return { success: true, data: await setChatsSyncMode(mode) };
   },
   listModels: async (_ctx, _requestPayload) => {
     const data = await getRemoteAgentEngineModelCatalogService().readCatalog();

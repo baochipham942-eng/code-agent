@@ -126,6 +126,24 @@ describe('runChatsAutoSync 门控矩阵', () => {
   });
 });
 
+describe('同步进行中切换模式（rework r2）', () => {
+  it.each(['off', 'paused'] as const)('同步进行中切到 %s：写回不得把 mode 拨回 on，lastRun 照记、广播照发', async (mode) => {
+    writeChatsSyncState({ mode: 'on' });
+    let release!: (value: unknown[]) => void;
+    env.importRecentChats.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    const onImported = vi.fn();
+    const sync = runChatsAutoSync({ onImported, now: () => 888 });
+    // 导入仍在进行时用户关/暂停开关（走真实用户路径 setChatsSyncMode，不直写文件）
+    await setChatsSyncMode(mode);
+    expect(readChatsSyncState().mode).toBe(mode);
+    release([{ engine: 'claude_code', sourceSessionId: 'a', title: 'a', status: 'imported' }]);
+    await sync;
+    expect(readChatsSyncState()).toEqual({ mode, lastRun: { at: 888, imported: 1 } });
+    // 导入已经发生，会话列表仍要刷新
+    expect(onImported).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('setChatsSyncMode', () => {
   it('off -> on 先同步一轮再返回含 lastRun 的状态；on -> paused / off 不导入', async () => {
     env.importRecentChats.mockResolvedValue([{ engine: 'claude_code', sourceSessionId: 'a', title: 'a', status: 'imported' }]);

@@ -51,7 +51,9 @@ export async function runChatsAutoSync(options: ChatsAutoSyncOptions = {}): Prom
   try {
     const results = await importRecentChatsSingleFlight();
     const imported = results.filter((item) => item.status === 'imported').length;
-    writeChatsSyncState({ mode: 'on', lastRun: { at: (options.now ?? Date.now)(), imported } });
+    // 写回保留「此刻」的模式：同步进行中用户切到 off/paused，不能被本轮结束时的写回拨回 on。
+    const currentMode = readChatsSyncState().mode;
+    writeChatsSyncState({ mode: currentMode, lastRun: { at: (options.now ?? Date.now)(), imported } });
     if (imported > 0) (options.onImported ?? importedListener)?.();
   } catch (err) {
     logger.warn('Chats auto sync failed', { error: err instanceof Error ? err.message : String(err) });

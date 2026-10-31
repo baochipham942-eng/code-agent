@@ -112,6 +112,7 @@ import {
   looksLikeCodeImageGeneration,
 } from '../../../../../src/host/tools/modules/shell/bash';
 import { getPermissionModeManager } from '../../../../../src/host/permissions/modes';
+import { markShortTierSession } from '../../../../../src/host/tools/shell/foregroundTier';
 import { getSandboxManager } from '../../../../../src/host/sandbox';
 import { resolveCanonicalRunPath } from '../../../../../src/host/runtime/runContext';
 import { BASH } from '../../../../../src/shared/constants';
@@ -396,7 +397,7 @@ describe('bashModule (native)', () => {
       expect(handoverTimedOutCommandMock).toHaveBeenCalledOnce();
     }, 10_000);
 
-    it('terminates on timeout in unattended sessions instead of handing over', async () => {
+    it('terminates on timeout in unattended non-short-tier sessions instead of handing over', async () => {
       const unattendedSession = `unattended-timeout-${Date.now()}`;
       getPermissionModeManager().markUnattendedSession(unattendedSession);
       const handler = await bashModule.createHandler();
@@ -413,6 +414,109 @@ describe('bashModule (native)', () => {
       }
       expect(handoverTimedOutCommandMock).not.toHaveBeenCalled();
     }, 10_000);
+
+    describe('short foreground tier (channel / cron / role-wake)', () => {
+      const SLOW = 'node -e "setTimeout(() => {}, 5000)"';
+      let prevEnv: string | undefined;
+      beforeEach(() => {
+        prevEnv = process.env.CODE_AGENT_BASH_SHORT_TIMEOUT_MS;
+      });
+      afterEach(() => {
+        if (prevEnv === undefined) delete process.env.CODE_AGENT_BASH_SHORT_TIMEOUT_MS;
+        else process.env.CODE_AGENT_BASH_SHORT_TIMEOUT_MS = prevEnv;
+      });
+      const shortSession = (unattended: boolean) => {
+        const id = `short-tier-${unattended ? 'u' : 'a'}-${Date.now()}-${Math.random()}`;
+        markShortTierSession(id);
+        if (unattended) getPermissionModeManager().markUnattendedSession(id);
+        return id;
+      };
+
+      it('hands a timed-out command over to a background task past the short tier', async () => {
+        process.env.CODE_AGENT_BASH_SHORT_TIMEOUT_MS = '80';
+        handoverTimedOutCommandMock.mockReturnValue({ taskId: 'short-task', preview: '' });
+        const handler = await bashModule.createHandler();
+        const result = await handler.execute({ command: SLOW }, makeCtx({ sessionId: shortSession(false) }), allowAll);
+        expect(handoverTimedOutCommandMock).toHaveBeenCalledOnce();
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.output).toContain('timed out after 0.08 seconds');
+          expect(result.output).toContain('<task-id>short-task</task-id>');
+          expect(result.output).toContain('Results will be delivered automatically; continue with other work.');
+        }
+      }, 10_000);
+
+      it('hands over in unattended short-tier sessions too, keeping the sandbox; run_in_background stays rejected', async () => {
+        process.env.CODE_AGENT_BASH_SHORT_TIMEOUT_MS = '80';
+        handoverTimedOutCommandMock.mockReturnValue({ taskId: 'short-unattended-task', preview: '' });
+        // 用 exec 前缀当无害的「已包装」标记：真沙箱包装是 sandbox-exec -p ... <cmd>，
+        // 测试里换成 exec <cmd>（不改执行语义），收编侧若丢包装就能被抓到。
+        wrapMock.mockImplementation((cmd: unknown) => ({ command: `exec ${cmd}`, cleanup: cleanupMock }));
+        const sessionId = shortSession(true);
+        const handler = await bashModule.createHandler();
+        const result = await handler.execute({ command: SLOW }, makeCtx({ sessionId }), allowAll);
+        expect(handoverTimedOutCommandMock).toHaveBeenCalledOnce();
+        // 收编不得丢沙箱：收编的命令就是本次实际执行的（含沙箱包装的）那份，
+        // sandboxed 标志与本次运行的真实沙箱决策一致——不是恒 true（平台可能降级），
+        // 是「收编保留运行时决策」这个不变量。
+        const handoverArg = handoverTimedOutCommandMock.mock.calls[0][0] as { sandboxed?: boolean; command?: string };
+        if (wrapMock.mock.calls.length > 0) {
+          expect(handoverArg.command).toContain('exec ');
+        }
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(handoverArg.sandboxed).toBe((result.meta as { sandboxed?: boolean }).sandboxed);
+          expect(result.output).toContain('<task-id>short-unattended-task</task-id>');
+          expect(result.output).toContain('Results will be delivered automatically; continue with other work.');
+        }
+        // 显式 run_in_background=true 在 unattended 会话仍拒（收窄只作用于超时 handover）。
+        const explicit = await handler.execute(
+          { command: 'echo hi', run_in_background: true },
+          makeCtx({ sessionId }),
+          allowAll,
+        );
+        expect(explicit.ok).toBe(false);
+        if (!explicit.ok) expect(explicit.code).toBe('BACKGROUND_UNAVAILABLE');
+      }, 10_000);
+
+      it('falls back to the kill with an explicit message when short-tier handover cannot adopt', async () => {
+        process.env.CODE_AGENT_BASH_SHORT_TIMEOUT_MS = '80';
+        handoverTimedOutCommandMock.mockReturnValue(null);
+        const handler = await bashModule.createHandler();
+        const result = await handler.execute({ command: SLOW }, makeCtx({ sessionId: shortSession(true) }), allowAll);
+        expect(handoverTimedOutCommandMock).toHaveBeenCalledOnce();
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.code).toBe('TIMEOUT');
+          expect(result.error).toContain('exceeded the 0.08s foreground limit');
+          expect(result.error).toContain('could not be adopted as a background task');
+        }
+      }, 10_000);
+
+      it('refuses sleep at a command position but not inside arguments', async () => {
+        const handler = await bashModule.createHandler();
+        const ctx = makeCtx({ sessionId: shortSession(false) });
+        for (const command of ['sleep 30', 'echo a && sleep 1', 'FOO=1 sleep 2', 'ls | sleep 3']) {
+          const result = await handler.execute({ command }, ctx, allowAll);
+          expect(result.ok).toBe(false);
+          if (!result.ok) expect(result.error).toContain('arrive automatically');
+        }
+        const ok = await handler.execute({ command: 'echo sleep' }, ctx, allowAll);
+        expect(ok.ok).toBe(true);
+      });
+
+      it('clamps a timeout above the tier and reports it; interactive sessions are untouched', async () => {
+        const handler = await bashModule.createHandler();
+        const clamped = await handler.execute({ command: 'echo hi', timeout: 300000 }, makeCtx({ sessionId: shortSession(false) }), allowAll);
+        expect(clamped.ok).toBe(true);
+        if (clamped.ok) expect(clamped.output).toContain('Requested timeout 300s exceeds the 10s limit');
+        const interactive = await handler.execute({ command: 'echo hi', timeout: 300000 }, makeCtx(), allowAll);
+        expect(interactive.ok).toBe(true);
+        if (interactive.ok) expect(interactive.output).not.toContain('clamped');
+        const sleeping = await handler.execute({ command: 'sleep 0.1' }, makeCtx(), allowAll);
+        expect(sleeping.ok).toBe(true);
+      });
+    });
 
     it('aborts a foreground command when the run signal fires', async () => {
       const ctrl = new AbortController();

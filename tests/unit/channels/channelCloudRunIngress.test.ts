@@ -223,7 +223,9 @@ describe('channel ingress through the cloud run ledger (service mode)', () => {
       state: 'succeeded',
       channel_delivery_id: 'account-1:om_1',
     });
-    expect(sendText).toHaveBeenCalledTimes(1);
+    // N-CHANNEL-REPLY-BREVITY 并入后每轮多一条开跑回执：ack + reply = 2。
+    expect(sendText).toHaveBeenCalledTimes(2);
+    expect(sendText).toHaveBeenNthCalledWith(1, '收到，开始处理：hello from chat-1');
     expect(sendText).toHaveBeenCalledWith('reply:hello from chat-1');
     expect(allTurns()).toHaveLength(1);
 
@@ -234,7 +236,7 @@ describe('channel ingress through the cloud run ledger (service mode)', () => {
     expect(cloudRunRows(db)).toHaveLength(1);
     expect(ledger.getRun(rows[0].run_id as string)?.state).toBe('succeeded');
     expect(allTurns()).toHaveLength(1);
-    expect(sendText).toHaveBeenCalledTimes(1);
+    expect(sendText).toHaveBeenCalledTimes(2);
   });
 
   it('② queues the third chat behind 2 busy slots, hints once, then replies from the promoted run', async () => {
@@ -258,7 +260,8 @@ describe('channel ingress through the cloud run ledger (service mode)', () => {
     await ingressPromise;
     await vi.waitFor(() => expect(ledger.getRun(queued!.run_id as string)?.state).toBe('succeeded'));
 
-    expect(sendText).toHaveBeenCalledTimes(2);
+    // cloudQueued 提示 1 + 提升轮开跑回执 1 + 终稿 1 = 3（回执来自 N-CHANNEL-REPLY-BREVITY）。
+    expect(sendText).toHaveBeenCalledTimes(3);
     expect(sendText).toHaveBeenLastCalledWith('reply:hello from chat-queued');
     expect(ledger.getRun(queued!.run_id as string)?.state).not.toBe('failed');
   });
@@ -331,7 +334,8 @@ describe('channel ingress through the cloud run ledger (service mode)', () => {
 
     expect(cloudRunRows(db)).toHaveLength(1); // 幂等键接住，不添行
     expect(allTurns()).toHaveLength(1); // 但轮次补跑：消息不再被吞
-    expect(sendText).toHaveBeenCalledTimes(1);
+    // 开跑回执（N-CHANNEL-REPLY-BREVITY）+ 补跑终稿 = 2。
+    expect(sendText).toHaveBeenCalledTimes(2);
     expect(sendText).toHaveBeenCalledWith('reply:hello from chat-r1b');
     // 终态无出边：补跑后的 settle 幂等跳过，行保持 interrupted（对首次尝试是如实记录）。
     expect(ledger.getRun(prior.record.runId)?.state).toBe('interrupted');

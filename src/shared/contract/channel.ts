@@ -203,6 +203,8 @@ export type ChannelPrivacyMode = 'local-redact' | 'allow-raw' | 'off';
 export interface ChannelPrivacyConfig {
   /** 入站消息隐私策略，默认 local-redact */
   privacyMode?: ChannelPrivacyMode;
+  /** 单条 IM 回复软上限（字符数），超出按首个段落边界截断并指向 Neo 会话；缺省 150 */
+  replyCharLimit?: number;
 }
 
 /**

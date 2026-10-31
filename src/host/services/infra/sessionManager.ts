@@ -254,10 +254,12 @@ export class SessionManager implements Disposable {
     // cron/heartbeat 的审批由 B2 停车卡等待用户（24h backstop）；不要再把它们送进旧的 60s 终态路径。
     try {
       const { getPermissionModeManager } = await import('../../permissions/modes');
+      const { markShortTierSession } = await import('../../tools/shell/foregroundTier');
       const permissionManager = getPermissionModeManager();
       const originKind = session.origin?.kind;
       if (originKind === 'cron' || originKind === 'heartbeat' || originKind === 'channel') {
         permissionManager.markUnattendedSession(session.id);
+        markShortTierSession(session.id);
       }
       permissionManager.initSessionMode(session.id);
     } catch (err) {

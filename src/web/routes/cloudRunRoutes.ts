@@ -6,6 +6,8 @@ import type { RunRegistry } from '../../host/runtime/runRegistry';
 import type { CloudRunLedger } from '../../host/services/cloudRun/cloudRunLedger';
 import type { CloudRunRecord } from '../../host/services/core/repositories/CloudRunRepository';
 import { CANCELLATION_TIMEOUTS } from '../../shared/constants';
+import type { DelegationOriginMarker } from '../../shared/contract/queuedInput';
+import { readPersistedExecutionEnvironment } from '../../shared/contract/executionEnvironmentMarker';
 import {
   CloudRunAccountRequiredError,
   isTerminalCloudRunState,
@@ -18,7 +20,7 @@ import type { WebRouteLogger } from './routeTypes';
 interface CloudRunRuntimeDeps {
   getLedger: () => CloudRunLedger;
   runRegistry: RunRegistry;
-  execute: (body: AgentRunBody, cloudRunId: string) => Promise<void>;
+  execute: (body: AgentRunBody, cloudRunId: string, delegationOrigin?: DelegationOriginMarker) => Promise<void>;
   /**
    * ADR-087 S4：提升上来的 cron 行交这里执行（request_json 不是 AgentRunBody，
    * 绝不走上面的 parse 路径）。缺省 fail-closed：settle failed + 留痕，
@@ -40,13 +42,15 @@ export class CloudRunRouteRuntime {
 
   constructor(private readonly deps: CloudRunRuntimeDeps) {}
 
-  async admit(body: AgentRunBody) {
+  async admit(body: AgentRunBody, options?: { delegationOrigin?: DelegationOriginMarker }) {
+    const delegationOrigin = options?.delegationOrigin;
     const sessionId = body.sessionId?.trim() || `web-session-${randomUUID()}`;
     const sanitizedBody = { ...body, sessionId };
     const admission = this.ledger().admit({
       sessionId,
-      trigger: 'manual',
-      requestJson: JSON.stringify(sanitizedBody),
+      trigger: delegationOrigin ? 'delegate' : 'manual',
+      // delegate 行存 { body, delegationOrigin }：排队后提升时来源标记不能丢。
+      requestJson: JSON.stringify(delegationOrigin ? { body: sanitizedBody, delegationOrigin } : sanitizedBody),
       clientMessageId: body.clientMessageId,
     });
     // ADR-081/087 S4B：ledger admit 成功后打「跑过云」标记。判等跳过在 mark
@@ -143,9 +147,24 @@ export class CloudRunRouteRuntime {
       this.startPromotedCronRun(record);
       return;
     }
+    let delegationOrigin: DelegationOriginMarker | undefined;
     let parsed: ReturnType<typeof AgentRunBodySchema.safeParse>;
     try {
-      parsed = AgentRunBodySchema.safeParse(JSON.parse(record.requestJson ?? 'null'));
+      let payload: unknown = JSON.parse(record.requestJson ?? 'null');
+      if (record.trigger === 'delegate') {
+        const stored = payload as { body?: unknown; delegationOrigin?: Partial<DelegationOriginMarker> } | null;
+        const origin = stored?.delegationOrigin;
+        if (typeof origin?.delegationId !== 'string' || typeof origin.actionFingerprint !== 'string') {
+          this.deps.logger.error('[CloudRun] Persisted delegate request has no valid delegationOrigin', {
+            runId: record.runId,
+          });
+          this.settle(record.runId, 'failed');
+          return;
+        }
+        delegationOrigin = { delegationId: origin.delegationId, actionFingerprint: origin.actionFingerprint };
+        payload = stored?.body;
+      }
+      parsed = AgentRunBodySchema.safeParse(payload);
     } catch (error) {
       this.deps.logger.error('[CloudRun] Persisted request is not valid JSON', error);
       this.settle(record.runId, 'failed');
@@ -156,7 +175,7 @@ export class CloudRunRouteRuntime {
       this.settle(record.runId, 'failed');
       return;
     }
-    void this.deps.execute(parsed.data, record.runId).catch((error: unknown) => {
+    void this.deps.execute(parsed.data, record.runId, delegationOrigin).catch((error: unknown) => {
       this.deps.logger.error(`[CloudRun] Promoted run ${record.runId} failed`, error);
       this.settle(record.runId, 'failed');
     });
@@ -191,6 +210,49 @@ function queuePayload(record: CloudRunRecord, position: { queuePosition: number;
     queuePosition: position?.queuePosition ?? null,
     ahead: position?.ahead ?? null,
   };
+}
+
+/**
+ * ADR-087 S4B：委托投递到「跑过云」会话必须经 admit(delegate)。
+ * - 'direct'：目标会话没有云标记，调用方走原有直跑路径
+ * - 'queued'：已交账本（排队或重复投递），调用方不得再跑
+ * - 'ran'：已准入并内联执行完
+ * 无已验证账户 fail-closed：留痕后原样抛出，绝不回落直跑。
+ */
+export async function admitDelegatedTurn(input: {
+  runtime: CloudRunRouteRuntime;
+  body: AgentRunBody;
+  delegationOrigin: DelegationOriginMarker;
+  readSessionMetadata: (sessionId: string) => Promise<Record<string, unknown> | undefined>;
+  runInline: (body: AgentRunBody, cloudRunId: string) => Promise<void>;
+  logger: WebRouteLogger;
+}): Promise<'direct' | 'queued' | 'ran'> {
+  const sessionId = input.body.sessionId?.trim();
+  if (!sessionId) return 'direct';
+  const marker = readPersistedExecutionEnvironment(await input.readSessionMetadata(sessionId));
+  if (!marker) return 'direct';
+  try {
+    const admission = await input.runtime.admit(input.body, { delegationOrigin: input.delegationOrigin });
+    if (admission.record.state === 'queued' || admission.duplicate) {
+      input.logger.info('[CloudRun] Delegated delivery handed to ledger', {
+        sessionId,
+        runId: admission.record.runId,
+        state: admission.record.state,
+        queuePosition: admission.position?.queuePosition ?? null,
+      });
+      return 'queued';
+    }
+    await input.runInline(admission.body, admission.record.runId);
+    return 'ran';
+  } catch (error) {
+    if (error instanceof CloudRunAccountRequiredError) {
+      input.logger.warn('[CloudRun] Delegated delivery to cloud-marked session refused: no verified account (fail-closed)', {
+        sessionId,
+        reason: 'cloud_account_required',
+      });
+    }
+    throw error;
+  }
 }
 
 export async function handleCloudRunAdmission(input: {

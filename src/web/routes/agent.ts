@@ -91,6 +91,7 @@ import {
 import { registerAgentCancelRoute } from './registerAgentCancelRoute';
 import { registerAgentContinueRoute } from './registerAgentContinueRoute';
 import {
+  admitDelegatedTurn,
   CloudRunRouteRuntime,
   handleCloudRunAdmission,
   registerCloudRunRoutes,
@@ -380,10 +381,15 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     },
     hasActiveRun: (sessionId) => Boolean(runRegistry.getBySessionId(sessionId)),
     runEnvelope: async (envelope, response, onActivated, options) => {
-      await runAgentTurn(buildQueuedAgentRunBody(envelope), response, {
+      const runBody = buildQueuedAgentRunBody(envelope);
+      const origin = options?.delegationOrigin;
+      if (origin && await admitDelegated(runBody, origin, (cloudBody, cloudRunId) => runAgentTurn(cloudBody, response, {
+        connectedClient: false, onDurableActivated: onActivated, delegationOrigin: origin, cloudRunId,
+      }))) return;
+      await runAgentTurn(runBody, response, {
         connectedClient: false,
         onDurableActivated: onActivated,
-        ...(options?.delegationOrigin ? { delegationOrigin: options.delegationOrigin } : {}),
+        ...(origin ? { delegationOrigin: origin } : {}),
       });
     },
     emitAgentEvent: (sessionId, event) => {
@@ -413,14 +419,23 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
   const cloudRunRuntime = new CloudRunRouteRuntime({
     getLedger: () => deps.getCloudRunLedger?.() ?? getDatabase().getCloudRunLedger(),
     runRegistry,
-    execute: (body, cloudRunId) => runAgentTurn(body, createOfflineAgentRunResponseSink(), {
+    execute: (body, cloudRunId, delegationOrigin) => runAgentTurn(body, createOfflineAgentRunResponseSink(), {
       connectedClient: false,
       cloudRunId,
+      ...(delegationOrigin ? { delegationOrigin } : {}),
     }),
     // ADR-081/087 S4B：manual 云端轮准入即打「跑过云」粘性会话标记（永不清理）。
     markSessionExecutionEnvironment,
     logger,
   });
+  const admitDelegated = async (
+    body: AgentRunBody,
+    delegationOrigin: import('../../shared/contract/queuedInput').DelegationOriginMarker,
+    runInline: (body: AgentRunBody, cloudRunId: string) => Promise<void>,
+  ): Promise<boolean> => (await admitDelegatedTurn({
+    runtime: cloudRunRuntime, body, delegationOrigin, runInline, logger,
+    readSessionMetadata: async (sid) => (await (await tryGetSessionManager())?.getSession?.(sid, 1))?.metadata,
+  })) !== 'direct';
   deps.registerQueuedInputStartupSweep?.(() => {
     queuedInputDrain.runStartupSweep();
     void cloudRunRuntime.runStartupSweep().catch((error) => {
@@ -438,18 +453,20 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
   deps.registerQueuedInputEnqueueHook?.((sessionId) => queuedInputDrain.handleEnqueued(sessionId));
   deps.registerQueuedInputSendNowHook?.(async ({ id, sessionId, envelope, delegationOrigin }, route) => {
     if (route === 'idle') {
+      const idleBody = buildQueuedAgentRunBody({ ...envelope, clientMessageId: id, sessionId });
+      // I2/INV-4：sendNow 空闲分支也要回填 target_run_id（此前漏传 onDurableActivated）。
+      const onDurableActivated = ({ runId }: { runId: string }) => delegationHooks.onActivated({ id, sessionId }, { runId });
+      if (delegationOrigin && await admitDelegated(idleBody, delegationOrigin, (cloudBody, cloudRunId) => runAgentTurn(
+        cloudBody, createOfflineAgentRunResponseSink(),
+        { connectedClient: false, delegationOrigin, cloudRunId, onDurableActivated },
+      ))) return 'sent';
       await runAgentTurn(
-        buildQueuedAgentRunBody({
-          ...envelope,
-          clientMessageId: id,
-          sessionId,
-        }),
+        idleBody,
         createOfflineAgentRunResponseSink(),
         {
           connectedClient: false,
           ...(delegationOrigin ? { delegationOrigin } : {}),
-          // I2/INV-4：sendNow 空闲分支也要回填 target_run_id（此前漏传 onDurableActivated）。
-          onDurableActivated: ({ runId }) => delegationHooks.onActivated({ id, sessionId }, { runId }),
+          onDurableActivated,
         },
       );
       return 'sent';

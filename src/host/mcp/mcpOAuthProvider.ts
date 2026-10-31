@@ -5,6 +5,7 @@ import type {
   OAuthClientMetadata,
   OAuthTokens,
 } from '@modelcontextprotocol/client';
+import { applyMcpScopeUpgradeHint } from './mcpScopeUpgrade';
 import { getSecureStorage, type SecureStorageService } from '../services/core/secureStorage';
 import type { MCPHttpStreamableServerConfig } from './types';
 import { getMcpOAuthCoordinator, type McpOAuthCoordinator, type McpOAuthFlow } from './mcpOAuthCoordinator';
@@ -248,7 +249,7 @@ export function createOAuthProviderForServer(
       await coordinator.handleAuthorizationRedirect({
         serverIdentity,
         flowId: flow.flowId,
-        authUrl,
+        authUrl: applyMcpScopeUpgradeHint(serverIdentity, authUrl),
       });
     },
     beforeClientMetadata: async () => {

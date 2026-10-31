@@ -83,6 +83,7 @@ import { getMcpOAuthCoordinator } from './mcpOAuthCoordinator';
 import {
   formatMcpConnectionError,
   formatMcpConnectorErrorExit,
+  mcpInsufficientScopeMetadata,
   isOAuthAuthorizationRequiredError,
   MCPToolDeliveryUnknownError,
 } from './mcpErrors';
@@ -493,6 +494,11 @@ export class MCPClient extends EventEmitter {
       }
       throw error;
     }
+  }
+
+  /** 等当前后台授权完成（含授权后的自动重连）；没有进行中的授权则立即返回。 */
+  async waitForPendingOAuthAuthorization(serverName: string): Promise<void> {
+    await this.pendingOAuthAuthorizations.get(serverName)?.catch(() => {});
   }
 
   private maybeStartOAuthAuthorizationCompletion(
@@ -1095,6 +1101,7 @@ export class MCPClient extends EventEmitter {
         // 模型拿到的是「下一步做什么」，不是一句裸报错加一次无效重连。
         error: formatMcpConnectorErrorExit(error) ?? errorMessage,
         duration: Date.now() - startTime,
+        ...(mcpInsufficientScopeMetadata(error) ? { metadata: mcpInsufficientScopeMetadata(error) } : {}),
       };
     }
   }

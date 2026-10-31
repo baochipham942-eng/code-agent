@@ -16,6 +16,7 @@ import {
 } from '../mcp/mcpClient';
 import { McpOAuthProvider } from '../mcp/mcpOAuthProvider';
 import { getMcpOAuthCoordinator } from '../mcp/mcpOAuthCoordinator';
+import { reauthorizeMcpServer } from '../mcp/mcpReauthorize';
 import {
   ensureConfigDir,
   ensureUserConfigDir,
@@ -720,6 +721,10 @@ const mcpHandlers: DomainRouteHandlers<McpDomainRequest, RegisterMcpHandlersOpti
   reconnectServer: async (_ctx, requestPayload) => {
     const payload = requestPayload as { serverName: string };
     return await handleReconnectServer(payload.serverName);
+  },
+  reauthorizeServer: async (_ctx, requestPayload) => {
+    const payload = requestPayload as { serverName: string; requiredScope?: string };
+    return await reauthorizeMcpServer(getMCPClient(), payload.serverName, payload.requiredScope);
   },
   signOutServer: async (_ctx, requestPayload) => {
     const payload = requestPayload as { serverName: string };

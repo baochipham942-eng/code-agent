@@ -376,7 +376,9 @@ export function createTransport(
     const transport = new StreamableHTTPClientTransport(url, {
       requestInit,
       fetch: remoteFetch,
-      ...(options.authProvider ? { authProvider: options.authProvider } : {}),
+      // OAuth 连接器 403 insufficient_scope：不让 SDK 在工具调用中途静默弹授权再抛裸 Unauthorized，
+      // 而是抛带 requiredScope 的 InsufficientScopeError，由聊天卡「重新授权」接手（N-CONNECTOR-POLISH-AUDIT-FU4-SCOPE）。
+      ...(options.authProvider ? { authProvider: options.authProvider, onInsufficientScope: 'throw' as const } : {}),
     });
     return { transport, connectTimeout: SSE_CONNECT_TIMEOUT };
   } else if (isSSEConfig(config)) {

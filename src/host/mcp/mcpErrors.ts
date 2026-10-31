@@ -148,6 +148,16 @@ function requiredScopeOf(error: unknown): string | undefined {
     : undefined;
 }
 
+/** ToolResult.metadata 里标记「权限范围不足」的键；引擎据此发 connector_required 卡。 */
+export const MCP_INSUFFICIENT_SCOPE_METADATA_KEY = 'mcpInsufficientScope';
+
+/** 权限范围不足时给 ToolResult.metadata 用的结构化信息；其他错误返回 undefined。 */
+export function mcpInsufficientScopeMetadata(error: unknown): Record<string, unknown> | undefined {
+  if (!isMcpInsufficientScopeError(error)) return undefined;
+  const requiredScope = requiredScopeOf(error);
+  return { [MCP_INSUFFICIENT_SCOPE_METADATA_KEY]: requiredScope ? { requiredScope } : {} };
+}
+
 /** 连接阶段（尚无会话）的 404 才表示端点不存在；会话期 404 是过期会话，走重连。 */
 function isConnectPhaseEndpointMissing(error: unknown): boolean {
   return httpStatusOf(error) === 404;

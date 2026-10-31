@@ -29,6 +29,7 @@ export * from './memory';
 export * from './scriptRuntime';
 export * from './skillCatalog';
 export * from './mcpCatalog';
+export * from './mcpPermissionPages';
 export * from './feishu';
 export * from './channelReconnect';
 export * from './almaPluginRegistry';

@@ -383,11 +383,18 @@ export interface RoutingResolvedEventData {
   timestamp?: number;
 }
 
-/** connector_required 事件里的一个未就绪连接器。reason 目前恒为 'not_connected'，留给后续（过期/重新登录）扩展。 */
+/**
+ * connector_required 事件里的一个需要用户处理的连接器。
+ * reason：'not_connected'（默认，未连接）| 'insufficient_scope'（已连接但授权范围不足，卡片给「重新授权」）。
+ */
 export interface ConnectorRequiredItem {
   id: string;
   source: 'selected' | 'expert';
   reason: string;
+  /** insufficient_scope：服务端挑战里声明缺的 scope（可能缺省） */
+  requiredScope?: string;
+  /** insufficient_scope：仅来自「已核实官方权限页」表，缺省即不展示链接 */
+  helpUrl?: string;
 }
 
 /** 用户选中 / 专家声明的连接器未就绪：每轮在首个模型输出前至多发一次，renderer 据此在聊天里展示连接卡。 */

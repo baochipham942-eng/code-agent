@@ -96,7 +96,7 @@ import {
   handleCloudRunAdmission,
   registerCloudRunRoutes,
 } from './cloudRunRoutes';
-import { wireChannelCloudRun } from './cloudChannelRun';
+import { channelCloudRuntimeDeps, wireChannelCloudRun } from './cloudChannelRun';
 import { isWebServiceMode } from '../middleware/auth';
 import { CloudCronScheduler } from '../../host/services/cloudRun/cloudCronScheduler';
 import type { CloudRunState } from '../../shared/contract/cloudRun';
@@ -427,7 +427,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
   const cloudRunRuntime = new CloudRunRouteRuntime({
     getLedger: getCloudLedger,
     runRegistry,
-    ...(channelCloud ? { executeChannelRun: channelCloud.executeChannelRun } : {}),
+    ...channelCloudRuntimeDeps(channelCloud),
     execute: (body, cloudRunId, options) => runAgentTurn(body, createOfflineAgentRunResponseSink(), {
       connectedClient: false,
       cloudRunId,

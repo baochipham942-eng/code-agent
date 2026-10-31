@@ -23,7 +23,7 @@ vi.mock('../../../src/host/channels/channelAgentBridge', () => ({
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 import { createCloudRunLedger, type CloudRunLedger } from '../../../src/host/services/cloudRun/cloudRunLedger';
 import { CloudRunRouteRuntime } from '../../../src/web/routes/cloudRunRoutes';
-import { wireChannelCloudRun } from '../../../src/web/routes/cloudChannelRun';
+import { channelCloudRuntimeDeps, wireChannelCloudRun } from '../../../src/web/routes/cloudChannelRun';
 import { applySchema } from '../../../src/host/services/core/database/schema';
 import { setChannelCloudRunPort, getChannelCloudRunPort } from '../../../src/host/channels/channelCloudRunPort';
 
@@ -65,7 +65,7 @@ describe('wireChannelCloudRun production assembly', () => {
       getLedger: () => ledger,
       runRegistry,
       execute: async () => {},
-      executeChannelRun: wired.executeChannelRun,
+      ...channelCloudRuntimeDeps(wired),
       logger: logger as never,
     });
     runtime.ledger(); // 挂 transition listener（生产里 admit 先经过它，这里直连账本要补挂）
@@ -99,6 +99,12 @@ describe('wireChannelCloudRun production assembly', () => {
     expect(admission.record.state).toBe('queued');
     return admission.record.runId;
   }
+
+  it('③ desktop shape: no wiring (channelCloud undefined) injects nothing into the runtime deps', () => {
+    expect(channelCloudRuntimeDeps(undefined)).toEqual({});
+    const wired = wireChannelCloudRun({ getLedger: () => ledger, logger: logger as never });
+    expect(channelCloudRuntimeDeps(wired).executeChannelRun).toBe(wired.executeChannelRun);
+  });
 
   it('② executes a promoted channel row from request_json through the bridge and settles succeeded', async () => {
     const runId = queueBehindBusySlots(channelPayloadJson(), 'account-1:om_promoted');

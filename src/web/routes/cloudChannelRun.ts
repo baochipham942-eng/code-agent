@@ -44,6 +44,16 @@ function waitForChannelRunSettled(ledger: CloudRunLedger, runId: string): Promis
 }
 
 /**
+ * agent.ts 的 CloudRunRouteRuntime deps 增量：服务模式注入 channel 执行体，
+ * 桌面态（channelCloud 未装配）为空对象——通道行为不变。注入点唯一，测试咬这里。
+ */
+export function channelCloudRuntimeDeps(
+  channelCloud: { executeChannelRun: (record: CloudRunRecord) => Promise<void> } | undefined,
+): { executeChannelRun?: (record: CloudRunRecord) => Promise<void> } {
+  return channelCloud ? { executeChannelRun: channelCloud.executeChannelRun } : {};
+}
+
+/**
  * 服务模式装配：注册通道→账本端口，并返回 executeChannelRun。
  * 幂等：重复调用以后一次注册为准。
  */

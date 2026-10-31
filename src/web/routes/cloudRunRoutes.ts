@@ -6,6 +6,8 @@ import type { RunRegistry } from '../../host/runtime/runRegistry';
 import type { CloudRunLedger } from '../../host/services/cloudRun/cloudRunLedger';
 import type { CloudRunRecord } from '../../host/services/core/repositories/CloudRunRepository';
 import { CANCELLATION_TIMEOUTS } from '../../shared/constants';
+import type { DelegationOriginMarker } from '../../shared/contract/queuedInput';
+import { readPersistedExecutionEnvironment } from '../../shared/contract/executionEnvironmentMarker';
 import {
   CloudRunAccountRequiredError,
   isTerminalCloudRunState,
@@ -18,7 +20,26 @@ import type { WebRouteLogger } from './routeTypes';
 interface CloudRunRuntimeDeps {
   getLedger: () => CloudRunLedger;
   runRegistry: RunRegistry;
-  execute: (body: AgentRunBody, cloudRunId: string) => Promise<void>;
+  execute: (
+    body: AgentRunBody,
+    cloudRunId: string,
+    options?: {
+      delegationOrigin?: DelegationOriginMarker;
+      /** ADR-072 INV-4（rework r1）：提升起跑的 delegate 轮用它回填委托行 target_run_id。 */
+      onDurableActivated?: (activation: { runId: string; activatedAt: number }) => void;
+    },
+  ) => Promise<void>;
+  /**
+   * ADR-072 INV-4（rework r1）：排进账本的委托提升起跑时回填委托行 target_run_id。
+   * queued input id 就是 delegate 行 body.clientMessageId（drain / sendNow 都这么带）；
+   * 交接即 markConsumed，drain 的 onActivated 再无触发点，只能挂在这里。
+   */
+  onDelegateRunActivated?: (activation: {
+    queuedInputId: string;
+    sessionId: string;
+    runId: string;
+    activatedAt: number;
+  }) => void;
   /**
    * ADR-087 S4：提升上来的 cron 行交这里执行（request_json 不是 AgentRunBody，
    * 绝不走上面的 parse 路径）。缺省 fail-closed：settle failed + 留痕，
@@ -40,14 +61,24 @@ export class CloudRunRouteRuntime {
 
   constructor(private readonly deps: CloudRunRuntimeDeps) {}
 
-  async admit(body: AgentRunBody) {
+  async admit(body: AgentRunBody, options?: {
+    delegationOrigin?: DelegationOriginMarker;
+    /**
+     * rework r1：失败重投的再准入。dedupe 命中的旧行已终态（不可能再执行），
+     * dedupe 键让路建新行；body 原样保留——clientMessageId 仍是 queued input id，
+     * runAgentTurn 的失败重放预检与 INV-4 回填都靠它。
+     */
+    redelivery?: boolean;
+  }) {
+    const delegationOrigin = options?.delegationOrigin;
     const sessionId = body.sessionId?.trim() || `web-session-${randomUUID()}`;
     const sanitizedBody = { ...body, sessionId };
     const admission = this.ledger().admit({
       sessionId,
-      trigger: 'manual',
-      requestJson: JSON.stringify(sanitizedBody),
-      clientMessageId: body.clientMessageId,
+      trigger: delegationOrigin ? 'delegate' : 'manual',
+      // delegate 行存 { body, delegationOrigin }：排队后提升时来源标记不能丢。
+      requestJson: JSON.stringify(delegationOrigin ? { body: sanitizedBody, delegationOrigin } : sanitizedBody),
+      clientMessageId: options?.redelivery ? undefined : body.clientMessageId,
     });
     // ADR-081/087 S4B：ledger admit 成功后打「跑过云」标记。判等跳过在 mark
     // 实现内（重复 admit 无害）；mark 失败/抛异常只 warn，不进 admit 失败路径。
@@ -143,9 +174,24 @@ export class CloudRunRouteRuntime {
       this.startPromotedCronRun(record);
       return;
     }
+    let delegationOrigin: DelegationOriginMarker | undefined;
     let parsed: ReturnType<typeof AgentRunBodySchema.safeParse>;
     try {
-      parsed = AgentRunBodySchema.safeParse(JSON.parse(record.requestJson ?? 'null'));
+      let payload: unknown = JSON.parse(record.requestJson ?? 'null');
+      if (record.trigger === 'delegate') {
+        const stored = payload as { body?: unknown; delegationOrigin?: Partial<DelegationOriginMarker> } | null;
+        const origin = stored?.delegationOrigin;
+        if (typeof origin?.delegationId !== 'string' || typeof origin.actionFingerprint !== 'string') {
+          this.deps.logger.error('[CloudRun] Persisted delegate request has no valid delegationOrigin', {
+            runId: record.runId,
+          });
+          this.settle(record.runId, 'failed');
+          return;
+        }
+        delegationOrigin = { delegationId: origin.delegationId, actionFingerprint: origin.actionFingerprint };
+        payload = stored?.body;
+      }
+      parsed = AgentRunBodySchema.safeParse(payload);
     } catch (error) {
       this.deps.logger.error('[CloudRun] Persisted request is not valid JSON', error);
       this.settle(record.runId, 'failed');
@@ -156,7 +202,22 @@ export class CloudRunRouteRuntime {
       this.settle(record.runId, 'failed');
       return;
     }
-    void this.deps.execute(parsed.data, record.runId).catch((error: unknown) => {
+    // ADR-072 INV-4（rework r1）：排进账本的委托提升起跑时也要回填 target_run_id——
+    // 交接那一刻 queued input 已 markConsumed，drain 的 onActivated 再无触发点。
+    const clientMessageId = parsed.data.clientMessageId?.trim();
+    const onDurableActivated = delegationOrigin && clientMessageId && this.deps.onDelegateRunActivated
+      ? (activation: { runId: string; activatedAt: number }) => {
+        this.deps.onDelegateRunActivated?.({
+          queuedInputId: clientMessageId,
+          sessionId: record.sessionId,
+          ...activation,
+        });
+      }
+      : undefined;
+    void this.deps.execute(parsed.data, record.runId, {
+      ...(delegationOrigin ? { delegationOrigin } : {}),
+      ...(onDurableActivated ? { onDurableActivated } : {}),
+    }).catch((error: unknown) => {
       this.deps.logger.error(`[CloudRun] Promoted run ${record.runId} failed`, error);
       this.settle(record.runId, 'failed');
     });
@@ -193,11 +254,88 @@ function queuePayload(record: CloudRunRecord, position: { queuePosition: number;
   };
 }
 
+/**
+ * ADR-087 S4B：委托投递到「跑过云」会话必须经 admit(delegate)。
+ * - 'direct'：目标会话没有云标记，调用方走原有直跑路径
+ * - 'queued'：已交账本（排队或重复投递），调用方不得再跑
+ * - 'ran'：已准入并内联执行完
+ * 无已验证账户 fail-closed：留痕后原样抛出，绝不回落直跑。
+ */
+export async function admitDelegatedTurn(input: {
+  runtime: CloudRunRouteRuntime;
+  body: AgentRunBody;
+  delegationOrigin: DelegationOriginMarker;
+  readSessionMetadata: (sessionId: string) => Promise<Record<string, unknown> | undefined>;
+  runInline: (body: AgentRunBody, cloudRunId: string) => Promise<void>;
+  logger: WebRouteLogger;
+}): Promise<'direct' | 'queued' | 'ran'> {
+  const sessionId = input.body.sessionId?.trim();
+  if (!sessionId) return 'direct';
+  const marker = readPersistedExecutionEnvironment(await input.readSessionMetadata(sessionId));
+  if (!marker) return 'direct';
+  try {
+    let admission = await input.runtime.admit(input.body, { delegationOrigin: input.delegationOrigin });
+    if (
+      admission.duplicate
+      && isTerminalCloudRunState(admission.record.state)
+      && admission.record.state !== 'succeeded'
+    ) {
+      // rework r1：失败重投必须再跑一轮。dedupe 命中的是上一轮的终态失败行——
+      // 判 'queued' 会让 drainOne markConsumed 把用户消息静默吞掉（与直跑路径
+      // 「失败重投再跑一轮」语义相反）。终态行不可能再执行，dedupe 键让路建新行；
+      // succeeded 的重投保持幂等吞掉（那轮已经真跑完，再跑就是重复轮）。
+      input.logger.warn('[CloudRun] Delegated redelivery matches a terminal ledger row; re-admitting a fresh row', {
+        sessionId,
+        previousRunId: admission.record.runId,
+        previousState: admission.record.state,
+      });
+      admission = await input.runtime.admit(input.body, {
+        delegationOrigin: input.delegationOrigin,
+        redelivery: true,
+      });
+    }
+    if (admission.record.state === 'queued' || admission.duplicate) {
+      input.logger.info('[CloudRun] Delegated delivery handed to ledger', {
+        sessionId,
+        runId: admission.record.runId,
+        state: admission.record.state,
+        queuePosition: admission.position?.queuePosition ?? null,
+      });
+      return 'queued';
+    }
+    try {
+      await input.runInline(admission.body, admission.record.runId);
+    } catch (error) {
+      // rework r1：preflight 抛错（durable rollout 未 ready / 目录物化 IO /
+      // fork lineage assert）时账本行已置 running 却无人收线，占死
+      // CLOUD_RUN_MAX_IN_FLIGHT 之一直到进程重启。收线 failed 后原样抛出，
+      // drain 的失败重投语义不变。
+      input.logger.error('[CloudRun] Delegated inline run threw; settling ledger row failed', {
+        sessionId,
+        runId: admission.record.runId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      input.runtime.settle(admission.record.runId, 'failed');
+      throw error;
+    }
+    return 'ran';
+  } catch (error) {
+    if (error instanceof CloudRunAccountRequiredError) {
+      input.logger.warn('[CloudRun] Delegated delivery to cloud-marked session refused: no verified account (fail-closed)', {
+        sessionId,
+        reason: 'cloud_account_required',
+      });
+    }
+    throw error;
+  }
+}
+
 export async function handleCloudRunAdmission(input: {
   body: AgentRunBody;
   res: Response;
   runtime: CloudRunRouteRuntime;
   runInline: (body: AgentRunBody, cloudRunId: string) => Promise<void>;
+  logger?: WebRouteLogger;
 }): Promise<void> {
   try {
     const admission = await input.runtime.admit(input.body);
@@ -207,7 +345,19 @@ export async function handleCloudRunAdmission(input: {
       );
       return;
     }
-    await input.runInline(admission.body, admission.record.runId);
+    try {
+      await input.runInline(admission.body, admission.record.runId);
+    } catch (error) {
+      // rework r1：与 admitDelegatedTurn 同型兜底——runAgentTurn 的 preflight
+      // 抛错（目录物化 / fork lineage assert）时账本行无人收线会占死并发额度。
+      input.logger?.error('[CloudRun] Manual inline run threw; settling ledger row failed', {
+        sessionId: admission.record.sessionId,
+        runId: admission.record.runId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      input.runtime.settle(admission.record.runId, 'failed');
+      throw error;
+    }
   } catch (error) {
     if (error instanceof CloudRunAccountRequiredError) {
       sendAccountRequired(input.res);

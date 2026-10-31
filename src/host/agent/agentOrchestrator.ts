@@ -13,6 +13,7 @@ import type {
   ModelConfig,
 } from '../../shared/contract';
 import type { AgentRunOptions, ResearchUserSettings } from '../research/types';
+import { CHANNEL_REPLY_STYLE_INSTRUCTION } from '../channels/channelReplyBrevity';
 import { shouldDeliverAgentEvent } from '../protocol/events/eventFilter';
 import { AgentLoop } from './agentLoop';
 import { buildGoalContract } from './goalModeController';
@@ -275,11 +276,23 @@ export class AgentOrchestrator {
       modelConfig = neoTagModel.modelConfig;
     }
 
+    // IM 回复纪律（N-CHANNEL-REPLY-BREVITY）：channel 来源的 run 把回复风格块并进
+    // turnSystemContext——它只经 applyTurnSystemContext 进模型面请求（<user_request>
+    // 包裹 + AgentLoop 的 modelFacingUserMessage 投影），落库/展示/标题的用户消息仍是
+    // 原话。桌面 run 无 metadata.channel，不注入。
+    let runOptions = options;
+    if (messageMetadata?.channel) {
+      runOptions = {
+        ...(options ?? { mode: 'normal' as const }),
+        turnSystemContext: [...(options?.turnSystemContext ?? []), CHANNEL_REPLY_STYLE_INSTRUCTION],
+      };
+    }
+
     // Route to appropriate mode
     const mode = options?.mode ?? 'normal';
 
     if (mode === 'deep-research') {
-      await this.runDeepResearchMode(content, options, sessionAwareOnEvent, modelConfig);
+      await this.runDeepResearchMode(content, runOptions, sessionAwareOnEvent, modelConfig);
     } else if (mode === 'normal') {
       const analysis = analyzeTask(content);
       // An auxiliary slot has already been explicitly split and receives a constrained
@@ -287,12 +300,12 @@ export class AgentOrchestrator {
       // and bypass those run-level tool constraints, so keep it on the standard loop.
       if (!options?.disableAutoAgent && analysis.taskType === 'research') {
         logger.info('Auto-detected research task (keyword match), routing to deep research pipeline');
-        await this.runDeepResearchMode(content, options, sessionAwareOnEvent, modelConfig);
+        await this.runDeepResearchMode(content, runOptions, sessionAwareOnEvent, modelConfig);
       } else {
-        await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId ?? undefined, options);
+        await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId ?? undefined, runOptions);
       }
     } else {
-      await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId ?? undefined, options);
+      await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId ?? undefined, runOptions);
     }
   }
 

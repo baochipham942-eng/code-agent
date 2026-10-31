@@ -30,6 +30,7 @@ import {
 } from './channelSessionBindingStore';
 import { clearStoppedChannelRuns, consumeStoppedChannelRun, deliverChannelCommandText, parseChannelCommand } from './channelCommandRuntime';
 import { channelCommandText } from './channelCommandI18n';
+import { buildChannelRunContent, resolveChannelReplyLimit, softLimitChannelReply } from './channelReplyBrevity';
 
 const logger = createLogger('ChannelAgentBridge');
 
@@ -382,7 +383,8 @@ export class ChannelAgentBridge {
     // 收集响应
     let fullResponse = '';
     // 出站文本统一在这一处加发起人前缀，覆盖成功/兜底/失败三条 sendText 路径
-    const send = (text: string) => responseCallback.sendText(withSenderAttribution(message, text));
+    const replyLimit = resolveChannelReplyLimit(this.channelManager.getAccount(accountId)?.config?.replyCharLimit);
+    const send = (text: string) => responseCallback.sendText(withSenderAttribution(message, softLimitChannelReply(text, replyLimit)));
     this.busyHintedSessions.delete(this.channelSessions.get(this.getSessionKey(accountId, message)) ?? '');
     try {
       await this.startTyping(responseCallback);
@@ -392,7 +394,7 @@ export class ChannelAgentBridge {
       logCollector.log('agent', 'INFO', `[Channel] Processing message, count before: ${messageCountBefore}`);
 
       await orchestrator.sendMessage(
-        message.content,
+        buildChannelRunContent(message.content),
         attachments,
         {
           mode: 'normal',

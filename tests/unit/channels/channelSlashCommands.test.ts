@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChannelMessage } from '../../../src/shared/contract/channel';
 import { parseChannelCommand } from '../../../src/host/channels/channelCommand';
 import { clearStoppedChannelRuns } from '../../../src/host/channels/channelCommandRuntime';
+import { buildChannelRunContent } from '../../../src/host/channels/channelReplyBrevity';
 import { ChannelAgentBridge } from '../../../src/host/channels/channelAgentBridge';
 
 const sessionManager = vi.hoisted(() => {
@@ -401,7 +402,7 @@ describe('channel slash commands', () => {
     }));
     expect(orchestrator.cancel).toHaveBeenCalledWith('user');
     expect(texts().at(-1)).toBe('[Sender] 已停止');
-    expect(orchestrator.sendMessage.mock.calls.map((call) => call[0])).toEqual(['work']);
+    expect(orchestrator.sendMessage.mock.calls.map((call) => call[0])).toEqual([buildChannelRunContent('work')]);
   });
 
   it('opens a new session with /new and keeps the old session', async () => {
@@ -416,7 +417,7 @@ describe('channel slash commands', () => {
     await flushIngress();
     const ids = [...sessionManager.sessions.keys()];
     expect(ids).toEqual([oldId, 'session-2']);
-    expect(sessionManager.sessions.get(oldId)?.messages.some((entry) => entry.content === 'remember this')).toBe(true);
+    expect(sessionManager.sessions.get(oldId)?.messages.some((entry) => entry.content === buildChannelRunContent('remember this'))).toBe(true);
     expect(orchestrator.state.transcript.some((entry) => entry.content.includes('/new'))).toBe(false);
     expect(sessionManager.createSession).toHaveBeenCalledTimes(2);
   });
@@ -431,7 +432,7 @@ describe('channel slash commands', () => {
     expect(texts().at(-1)).toBe('有任务在运行，请先发「停」');
     expect(bindingStore.bindings.size).toBe(1);
     expect(sessionManager.createSession).toHaveBeenCalledTimes(1);
-    expect(orchestrator.sendMessage.mock.calls.map((call) => call[0])).toEqual(['do the work']);
+    expect(orchestrator.sendMessage.mock.calls.map((call) => call[0])).toEqual([buildChannelRunContent('do the work')]);
   });
 
   it('reports context usage and empty health without calling the model', async () => {
@@ -484,13 +485,13 @@ describe('channel slash commands', () => {
     await deliver('feishu-1', message({ id: 'zh-stop', content: '停！', context: { chatId: 'chat-zh', chatType: 'p2p' } }));
     expect(orchestrator.cancel).toHaveBeenCalledWith('user');
     expect(texts().at(-1)).toContain('已停止');
-    expect(orchestrator.sendMessage.mock.calls.map((call) => call[0])).toEqual(['do the work']);
+    expect(orchestrator.sendMessage.mock.calls.map((call) => call[0])).toEqual([buildChannelRunContent('do the work')]);
   });
 
   it('passes a natural stop phrase to the model when nothing is running', async () => {
     await deliver('feishu-1', message({ id: 'idle-cancel', content: '取消' }));
     await flushIngress();
-    expect(orchestrator.sendMessage.mock.calls.map((call) => call[0])).toEqual(['取消']);
+    expect(orchestrator.sendMessage.mock.calls.map((call) => call[0])).toEqual([buildChannelRunContent('取消')]);
     expect(texts().some((text) => text.includes('没有运行中的任务'))).toBe(false);
   });
 
@@ -526,7 +527,7 @@ describe('channel slash commands', () => {
     await deliver('feishu-1', message({ id: 'watch', content: '/stopwatch' }));
     await flushIngress();
     expect(orchestrator.sendMessage).toHaveBeenCalledTimes(1);
-    expect(orchestrator.sendMessage.mock.calls[0]?.[0]).toBe('/stopwatch');
+    expect(orchestrator.sendMessage.mock.calls[0]?.[0]).toBe(buildChannelRunContent('/stopwatch'));
     expect(orchestrator.cancel).not.toHaveBeenCalled();
   });
 });

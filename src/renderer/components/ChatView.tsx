@@ -72,7 +72,6 @@ import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndic
 import { RewindPanel } from './RewindPanel';
 // Pending PermissionCard lives in the fixed DecisionSlot above ChatInput.
 import type {
-  AgentEventEnvelope,
   AppSettings,
   Message,
   MessageAttachment,
@@ -80,7 +79,6 @@ import type {
   TaskPlan,
   UserQuestionRequest,
 } from '../../shared/contract';
-import type { QueuedInputActivatedEvent } from '@shared/contract/queuedInput';
 import { generateMessageId } from '@shared/utils/id';
 import type { RewindConversationResult } from '@shared/contract/sessionRewind';
 import type { TurnCheckoutResult } from '@shared/contract/turnCheckout';
@@ -109,6 +107,8 @@ import {
   type AssistantFeedbackState,
 } from '../utils/sendWithImmediateAssistantFeedback';
 import { isChatSendAccepted } from '../utils/chatSendState';
+import { useImportedSessionResumeSend } from '../hooks/useImportedSessionResume';
+import { useAssistantFeedbackEvents } from './features/chat/useAssistantFeedbackEvents';
 import { DurableResumeNotice, suppressLegacyInterruptionDecision, useDurableContinueVisible, useDurableResumeContinuation, useGuardedDurableContinue } from './features/chat/durableResume';
 import { QuotaWaitNotice } from './features/chat/quotaWaitNotice';
 import { ConnectorRequiredCards } from './features/chat/connectorRequiredCard';
@@ -223,6 +223,8 @@ export const ChatView: React.FC = () => {
   const messageActionUnregister = useMessageActionStore((s) => s.unregister);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
+  // 稳定访问器：导入会话的发送包装按需现读消息（引用恒定，避免下游 effect 重订阅）。
+  const getVisibleMessagesForSend = useCallback(() => messagesRef.current, []);
   const chatInputRef = useRef<ChatInputHandle>(null);
   useEffect(() => {
     messageActionRegister(
@@ -621,56 +623,13 @@ export const ChatView: React.FC = () => {
     skippedQuestionSessionId,
   ]);
 
-  useEffect(() => {
-    const unsubscribeActivated = ipcService.on(
-      IPC_CHANNELS.QUEUED_INPUT_ACTIVATED,
-      (activation: QueuedInputActivatedEvent) => {
-        setPendingAssistantFeedback((current) => transitionAssistantFeedback(current, {
-          type: 'durable_activated',
-          clientMessageId: activation.id,
-          sessionId: activation.sessionId,
-        }));
-      },
-    );
-    const unsubscribeAgentEvent = ipcService.on('agent:event', (event: AgentEventEnvelope) => {
-      const eventType: string = event.type;
-      const eventSessionId = event.sessionId
-        ?? (event.data && typeof event.data === 'object' && 'sessionId' in event.data
-          ? String(event.data.sessionId)
-          : undefined);
-      if (!eventSessionId) return;
-      if (eventType === 'task_start') {
-        const clientMessageId = event.data && typeof event.data === 'object'
-          && 'clientMessageId' in event.data && typeof event.data.clientMessageId === 'string'
-          ? event.data.clientMessageId
-          : undefined;
-        if (!clientMessageId) return;
-        setPendingAssistantFeedback((current) => transitionAssistantFeedback(current, {
-          type: 'durable_activated',
-          clientMessageId,
-          sessionId: eventSessionId,
-        }));
-        return;
-      }
-      if (eventType === 'message_delta') {
-        setPendingAssistantFeedback((current) => transitionAssistantFeedback(current, {
-          type: 'model_delta',
-          sessionId: eventSessionId,
-        }));
-        return;
-      }
-      if (eventType === 'error' || eventType === 'agent_cancelled' || eventType === 'stream_end' || eventType === 'agent_complete') {
-        setPendingAssistantFeedback((current) => transitionAssistantFeedback(current, {
-          type: eventType === 'agent_complete' ? 'run_finished' : 'send_failed',
-          sessionId: eventSessionId,
-        }));
-      }
-    });
-    return () => {
-      unsubscribeActivated?.();
-      unsubscribeAgentEvent?.();
-    };
-  }, []);
+  // 导入的外部历史会话：发送即 fork 出 Neo 原生子会话再投递（原记录只读）。
+  const handleSendEnvelopeWithImportResume = useImportedSessionResumeSend(
+    handleSendEnvelope,
+    getVisibleMessagesForSend,
+  );
+
+  useAssistantFeedbackEvents(setPendingAssistantFeedback);
 
   useEffect(() => {
     setPendingAssistantFeedback(null);
@@ -686,8 +645,8 @@ export const ChatView: React.FC = () => {
   }, [currentSessionId, streamSnapshot?.turnId]);
 
   const handleSendMessage = useCallback(async (content: string, attachments?: MessageAttachment[]) => {
-    return handleSendEnvelope(buildEnvelope(content, attachments));
-  }, [buildEnvelope, handleSendEnvelope]);
+    return handleSendEnvelopeWithImportResume(buildEnvelope(content, attachments));
+  }, [buildEnvelope, handleSendEnvelopeWithImportResume]);
 
   const durableContinue = useGuardedDurableContinue(durableResume?.interruptCause, useDurableResumeContinuation(currentSessionId));
   const showDurableContinue = useDurableContinueVisible(durableResume, effectiveIsProcessing);
@@ -736,20 +695,20 @@ export const ChatView: React.FC = () => {
       kind: 'start',
       goal: start.goalText,
     }));
-    void handleSendEnvelope(start.envelope).then((sent) => {
+    void handleSendEnvelopeWithImportResume(start.envelope).then((sent) => {
       if (!sent) {
         useAppStore.getState().clearGoalRun(currentSessionId);
       }
     }).catch(() => {
       useAppStore.getState().clearGoalRun(currentSessionId);
     });
-  }, [pendingProjectGoalChatSeed, currentSessionId, effectiveIsProcessing, buildEnvelope, handleSendEnvelope]);
+  }, [pendingProjectGoalChatSeed, currentSessionId, effectiveIsProcessing, buildEnvelope, handleSendEnvelopeWithImportResume]);
 
   // 项目协作空间底部输入框：composer 已建好新会话、乐观上屏首条用户消息（落地即在
   // 时间线上）并落 seed（完整 envelope，clientMessageId 与乐观消息同 id）。
   // 消费端抽到 useProjectChatSeed（可单测）：目标会话就绪后把 envelope 真正发给 agent
   // （sendMessage 按 id 去重不双份）；发送失败回滚乐观消息。
-  useProjectChatSeedConsumption({ currentSessionId, effectiveIsProcessing, handleSendEnvelope });
+  useProjectChatSeedConsumption({ currentSessionId, effectiveIsProcessing, handleSendEnvelope: handleSendEnvelopeWithImportResume });
 
   const handleRequestPromptRewind = useCallback((messageId: string, content: string) => {
     if (!currentSessionId) return;
@@ -1046,7 +1005,7 @@ export const ChatView: React.FC = () => {
               迁入聊天列后参与布局，几何上不可能再压 composer。 */}
           <BackgroundSessionPanel />
 
-          <ChatInput ref={chatInputRef} onSend={handleSendEnvelope} onSteer={handleSteerEnvelope}
+          <ChatInput ref={chatInputRef} onSend={handleSendEnvelopeWithImportResume} onSteer={handleSteerEnvelope}
             disabled={effectiveIsProcessing || isCreatingSession} isProcessing={effectiveIsProcessing}
             hasStoppableBackgroundWork={hasStoppableSwarmWork} isInterrupting={isInterrupting} onStop={cancel} hasContinuation={showDurableContinue}
             onContinue={durableContinue.onContinue} hasPlan={false} placeholder={currentSessionId === skippedQuestionSessionId ? t.userQuestion.skippedPlaceholder : undefined} />

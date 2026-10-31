@@ -30,7 +30,7 @@ import {
 } from './channelSessionBindingStore';
 import { clearStoppedChannelRuns, consumeStoppedChannelRun, deliverChannelCommandText, parseChannelCommand } from './channelCommandRuntime';
 import { channelCommandText } from './channelCommandI18n';
-import { buildChannelRunContent, resolveChannelReplyLimit, softLimitChannelReply } from './channelReplyBrevity';
+import { buildChannelAckText, resolveChannelReplyLimit, softLimitChannelReply } from './channelReplyBrevity';
 
 const logger = createLogger('ChannelAgentBridge');
 
@@ -280,11 +280,19 @@ export class ChannelAgentBridge {
     if (!sessionId || this.busyHintedSessions.has(sessionId) || !this.isSessionProcessing(sessionId)) return;
     this.busyHintedSessions.add(sessionId);
     try {
-      const locale = this.config.configService.getSettings().ui.language === 'en' ? 'en-US' : 'zh-CN';
       await this.channelManager.getResponseCallback(accountId, message)
-        ?.sendText(withSenderAttribution(message, channelCommandText(locale, 'busyHint')));
+        ?.sendText(withSenderAttribution(message, channelCommandText(this.resolveChannelLocale(), 'busyHint')));
     } catch (error) {
       logger.warn('Busy hint failed', { error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  /** 渠道文案语言；configService 缺 getSettings（测试桩）时回落中文。 */
+  private resolveChannelLocale(): 'en-US' | 'zh-CN' {
+    try {
+      return this.config.configService.getSettings().ui.language === 'en' ? 'en-US' : 'zh-CN';
+    } catch {
+      return 'zh-CN';
     }
   }
 
@@ -385,8 +393,20 @@ export class ChannelAgentBridge {
     // 出站文本统一在这一处加发起人前缀，覆盖成功/兜底/失败三条 sendText 路径
     const replyLimit = resolveChannelReplyLimit(this.channelManager.getAccount(accountId)?.config?.replyCharLimit);
     const send = (text: string) => responseCallback.sendText(withSenderAttribution(message, softLimitChannelReply(text, replyLimit)));
-    this.busyHintedSessions.delete(this.channelSessions.get(this.getSessionKey(accountId, message)) ?? '');
+    const busyHinted = this.busyHintedSessions.delete(this.channelSessions.get(this.getSessionKey(accountId, message)) ?? '');
     try {
+      // ③ 开跑回执：整轮只此一条（指令与访客不回执；刚发过「正在处理上一条」的轮次
+      // 也不回执，连发两句是噪音）。回执失败不挡运行。
+      if (message.ingressAuth !== 'guest' && !busyHinted && message.content.trim()) {
+        const ack = buildChannelAckText(this.resolveChannelLocale(), message.content);
+        if (ack) {
+          try {
+            await send(ack);
+          } catch (error) {
+            logger.warn('Channel ack failed', { error: error instanceof Error ? error.message : String(error) });
+          }
+        }
+      }
       await this.startTyping(responseCallback);
       // 记录发送前的消息数量，用于识别新的回复
       const messagesBefore = orchestrator.getMessages();
@@ -394,7 +414,7 @@ export class ChannelAgentBridge {
       logCollector.log('agent', 'INFO', `[Channel] Processing message, count before: ${messageCountBefore}`);
 
       await orchestrator.sendMessage(
-        buildChannelRunContent(message.content),
+        message.content,
         attachments,
         {
           mode: 'normal',

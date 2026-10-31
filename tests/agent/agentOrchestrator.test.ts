@@ -357,6 +357,8 @@ import { getToolSearchService } from '../../src/host/services/toolSearch/toolSea
 import { createWorkspaceScope } from '../../src/host/runtime/workspaceScope';
 import { resolveToolPermissionClassification } from '../../src/host/tools/toolPermissionClassification';
 import { TaskManager } from '../../src/host/task/TaskManager';
+import { applyTurnSystemContext } from '../../src/host/agent/orchestratorTurnContext';
+import { extractUserRequest } from '../../src/shared/utils/turnScaffold';
 import {
   beginVoiceDispatch,
   dispatchVoiceIntent,
@@ -519,6 +521,53 @@ describe('AgentOrchestrator', () => {
       await expect(AgentOrchestrator.prototype.sendMessage.call(ingress as unknown as AgentOrchestrator,
         'I am back', undefined, options)).rejects.toThrow('after user ingress');
       expect(cancelTimeWakesOnUserReturn).toHaveBeenCalledWith('return-session', options);
+    });
+
+    // N-CHANNEL-REPLY-BREVITY ①：IM 回复纪律只在推理期进模型面请求——channel 来源
+    // （messageMetadata.channel）把指令块并进 turnSystemContext（applyTurnSystemContext
+    // → <user_request> 包裹 + AgentLoop 的 modelFacingUserMessage 投影），落库/展示的
+    // 用户消息仍是原话；桌面 turn（无 metadata.channel）完全不注入。
+    it('injects the IM reply-style instruction for channel turns only, never into the stored user message', async () => {
+      vi.stubEnv('EVAL_DISABLED', 'true');
+      try {
+        const drive = async (messageMetadata?: { channel: Record<string, unknown> }) => {
+          const stored: Message[] = [];
+          const captured: { options?: AgentRunOptions } = {};
+          const ingress = {
+            permissions: { drainPendingPermissions: vi.fn() },
+            configService: { getSettings: () => ({}), getApiKey: vi.fn(() => 'test-key') },
+            resolveSessionId: async () => null,
+            generateId: () => `crb-${stored.length}`,
+            applyHistoryVisibility: (m: Message) => m,
+            addMessage: (m: Message) => { stored.push(m); },
+            runNormalMode: async (_content: string, _onEvent: unknown, _modelConfig: unknown, _sessionId: unknown, runOptions: AgentRunOptions) => {
+              captured.options = runOptions;
+            },
+          };
+          await (AgentOrchestrator.prototype as unknown as {
+            executeMessage: (this: unknown, ...args: unknown[]) => Promise<void>;
+          }).executeMessage.call(ingress, 'do it', undefined, { mode: 'normal', disableAutoAgent: true }, messageMetadata, undefined, true);
+          return { stored, captured };
+        };
+
+        const channel = await drive({ channel: { platform: 'feishu', chatId: 'c1' } });
+        expect(channel.stored[0].content).toBe('do it');
+        expect(channel.stored[0].content).not.toContain('[IM 回复纪律]');
+        const channelBlocks = channel.captured.options?.turnSystemContext ?? [];
+        expect(channelBlocks.some((block) => block.includes('[IM 回复纪律]'))).toBe(true);
+        // 模型面请求：指令块在 <user_request> 包裹之外，用户原话可无损拆回
+        const modelFacing = applyTurnSystemContext('do it', channel.captured.options, null, () => null);
+        expect(modelFacing).toContain('[IM 回复纪律]');
+        expect(modelFacing).toContain('<user_request>');
+        expect(extractUserRequest(modelFacing)).toBe('do it');
+
+        const desktop = await drive(undefined);
+        expect(desktop.stored[0].content).toBe('do it');
+        expect(desktop.captured.options?.turnSystemContext).toBeUndefined();
+        expect(applyTurnSystemContext('do it', desktop.captured.options, null, () => null)).toBe('do it');
+      } finally {
+        vi.unstubAllEnvs();
+      }
     });
 
     it('releases deferred-tool holds when a normal run ends', async () => {

@@ -3,7 +3,7 @@ import type { ChannelMessage } from '../../../src/shared/contract/channel';
 import type { ChannelResponseCallback } from '../../../src/host/channels/channelInterface';
 import { ChannelAgentBridge } from '../../../src/host/channels/channelAgentBridge';
 import {
-  buildChannelRunContent,
+  buildChannelAckText,
   resolveChannelReplyLimit,
   softLimitChannelReply,
 } from '../../../src/host/channels/channelReplyBrevity';
@@ -13,6 +13,9 @@ vi.mock('../../../src/host/tools/dispatch/toolDefinitions', () => ({ getAllToolD
 
 interface Harness {
   handleSyncMessage(a: string, m: ChannelMessage, o: unknown, att: undefined, cb: ChannelResponseCallback): Promise<void>;
+  channelSessions: Map<string, string>;
+  busyHintedSessions: Set<string>;
+  getSessionKey(accountId: string, message: ChannelMessage): string;
 }
 
 const CHANNEL_REPLY_FULL_TEXT_NOTE = '（完整内容见 Neo 会话）';
@@ -23,7 +26,7 @@ const message: ChannelMessage = {
   context: { chatId: 'c', chatType: 'p2p' }, content: 'do it', timestamp: 1,
 };
 
-async function runSync(reply: string, events: string[] = []) {
+async function runSync(reply: string, events: string[] = [], overrides: Partial<ChannelMessage> = {}) {
   const sendText = vi.fn(async () => ({ success: true }));
   const typing = vi.fn();
   const cb: ChannelResponseCallback = { sendText, startTyping: typing, stopTyping: typing };
@@ -33,25 +36,28 @@ async function runSync(reply: string, events: string[] = []) {
     sendMessage: vi.fn(async () => { events.push('message_delta', 'tool_call_start', 'progress'); }),
   };
   const bridge = new ChannelAgentBridge({ configService: {} as never });
-  await (bridge as unknown as Harness).handleSyncMessage('acc', message, orchestrator, undefined, cb);
-  return { sendText, orchestrator };
+  const runMessage = { ...message, ...overrides };
+  await (bridge as unknown as Harness).handleSyncMessage('acc', runMessage, orchestrator, undefined, cb);
+  return { sendText, orchestrator, bridge, runMessage };
 }
 
 describe('N-CHANNEL-REPLY-BREVITY', () => {
-  it('① channel runs get the reply-style instruction; plain content (desktop) does not', async () => {
-    const { orchestrator } = await runSync('ok');
-    const sent = (orchestrator.sendMessage.mock.calls[0] as unknown[])[0] as string;
-    expect(sent).toBe(buildChannelRunContent('do it'));
-    expect(sent).toContain(CHANNEL_REPLY_STYLE_INSTRUCTION);
-    expect(message.content).toBe('do it');
-    expect(message.content).not.toContain('IM 回复纪律');
+  it('① bridge hands the orchestrator the original content plus channel metadata; the instruction block stays out of the stored user message', async () => {
+    const { orchestrator, runMessage } = await runSync('ok');
+    const [sentContent, , , metadata] = orchestrator.sendMessage.mock.calls[0] as unknown as [string, unknown, unknown, { channel?: unknown }];
+    // 存库/展示的用户消息 = 原话：指令在 orchestrator 侧按 metadata.channel 于推理期注入，
+    // 不再拼进 content（桌面气泡/标题/记忆读的都是这条 content）。
+    expect(sentContent).toBe('do it');
+    expect(sentContent).not.toContain(CHANNEL_REPLY_STYLE_INSTRUCTION);
+    expect(metadata?.channel).toEqual(expect.objectContaining({ chatId: 'c', messageId: 'm1' }));
+    expect(runMessage.content).toBe('do it');
   });
 
   it('② 900-char reply is cut at a paragraph boundary with the full-text line', async () => {
     const long = `${'结论'.repeat(40)}\n\n${'细节'.repeat(400)}`;
     expect(long.length).toBeGreaterThan(850);
     const { sendText } = await runSync(long);
-    const sent = (sendText.mock.calls[0] as unknown[])[0] as string;
+    const sent = (sendText.mock.calls.at(-1) as unknown[])[0] as string;
     expect(sent).toBe(`${'结论'.repeat(40)}\n\n${CHANNEL_REPLY_FULL_TEXT_NOTE}`);
     expect(sent.length).toBeLessThan(150);
   });
@@ -59,7 +65,7 @@ describe('N-CHANNEL-REPLY-BREVITY', () => {
   it('② 120-char reply passes untouched', async () => {
     const short = '好'.repeat(120);
     const { sendText } = await runSync(short);
-    expect(sendText).toHaveBeenCalledWith(short);
+    expect((sendText.mock.calls.at(-1) as unknown[])[0]).toBe(short);
   });
 
   it('② soft-limited text stays under the Telegram 4096 max, so splitMessage only fires beyond it', () => {
@@ -77,16 +83,46 @@ describe('N-CHANNEL-REPLY-BREVITY', () => {
     expect(resolveChannelReplyLimit(300)).toBe(300);
   });
 
-  it('③ a run emits exactly one channel message; progress/typing/stream intents are denied', async () => {
+  it('③ a run emits ack + final (2 messages, ≤3 total); progress/typing/stream intents are denied', async () => {
     const events: string[] = [];
     const { sendText } = await runSync('完成', events);
     expect(events.length).toBeGreaterThan(0);
-    expect(sendText).toHaveBeenCalledTimes(1);
+    expect(sendText.mock.calls.length).toBe(2);
+    expect(sendText.mock.calls.length).toBeLessThanOrEqual(3);
+    expect((sendText.mock.calls[0] as unknown[])[0]).toBe('收到，开始处理：do it');
+    expect((sendText.mock.calls[1] as unknown[])[0]).toBe('完成');
     for (const intent of ['progress', 'typing', 'stream_delta', 'tool_started'] as const) {
       expect(evaluateNotificationPolicy(intent).allowed).toBe(false);
     }
     for (const intent of ['needs_input', 'task_complete', 'task_failed'] as const) {
       expect(evaluateNotificationPolicy(intent).allowed).toBe(true);
     }
+  });
+
+  it('③ the ack carries at most the first 30 chars of the request', () => {
+    expect(buildChannelAckText(undefined, `${'一'.repeat(35)}`)).toBe(`收到，开始处理：${'一'.repeat(30)}…`);
+    expect(buildChannelAckText('en-US', 'short one')).toBe('Got it, starting: short one');
+    expect(buildChannelAckText(undefined, '   ')).toBe('');
+  });
+
+  it('③ guest runs get no ack (final only)', async () => {
+    const { sendText } = await runSync('guest reply', [], { ingressAuth: 'guest' });
+    expect(sendText.mock.calls.map((call) => (call as unknown[])[0])).toEqual(['guest reply']);
+  });
+
+  it('③ a turn that just sent the busy hint gets no ack', async () => {
+    const sendText = vi.fn(async () => ({ success: true }));
+    const cb: ChannelResponseCallback = { sendText };
+    const orchestrator = {
+      getMessages: vi.fn().mockReturnValueOnce([]).mockReturnValueOnce([{ role: 'assistant', content: 'later' }]),
+      sendMessage: vi.fn(async () => undefined),
+    };
+    const bridge = new ChannelAgentBridge({ configService: {} as never });
+    const harness = bridge as unknown as Harness;
+    const sessionId = 'sess-busy';
+    harness.channelSessions.set(harness.getSessionKey('acc', message), sessionId);
+    harness.busyHintedSessions.add(sessionId);
+    await harness.handleSyncMessage('acc', message, orchestrator, undefined, cb);
+    expect(sendText.mock.calls.map((call) => (call as unknown[])[0])).toEqual(['later']);
   });
 });

@@ -1,14 +1,20 @@
 // ============================================================================
 // Channel Reply Brevity（N-CHANNEL-REPLY-BREVITY）
 // ----------------------------------------------------------------------------
-// IM 回复纪律：① 给 channel 来源的 run 注入回复风格指令（桌面 run 不经过本模块）；
+// IM 回复纪律：① channel 来源的 run 注入回复风格指令——由 orchestrator 在
+// executeMessage 里按 messageMetadata.channel 并进 turnSystemContext，只进模型面
+// 请求（<user_request> 包裹 + modelFacingUserMessage 投影），落库/展示的用户
+// 消息仍是原话；桌面 run 无 metadata.channel，不注入。
 // ② 出站软上限：超限不硬截断，按首个段落边界截取并附"全文在 Neo 会话里"提示，
 // 全文已由会话记录持久化。Telegram splitMessage 只在软限后仍超平台上限时兜底。
+// ③ 开跑回执：收到请求后经同一 send 路径回一句「收到，开始处理：…」。
 // ============================================================================
 
+import type { InboundAccessLocale } from './inboundAccessI18n';
+import { channelCommandText } from './channelCommandI18n';
 import { CHANNEL_REPLY_CHAR_LIMIT_DEFAULT } from '../../shared/constants';
 
-const CHANNEL_REPLY_STYLE_INSTRUCTION = [
+export const CHANNEL_REPLY_STYLE_INSTRUCTION = [
   '[IM 回复纪律]',
   '- 单条 IM 回复不超过 150 个汉字：先给结论，再用一行写依据。',
   '- 内容较长时只发摘要，完整内容写进会话（文件/交付物）并告诉用户在哪里。',
@@ -17,9 +23,8 @@ const CHANNEL_REPLY_STYLE_INSTRUCTION = [
 
 const CHANNEL_REPLY_FULL_TEXT_NOTE = '（完整内容见 Neo 会话）';
 
-export function buildChannelRunContent(content: string): string {
-  return `${content}\n\n${CHANNEL_REPLY_STYLE_INSTRUCTION}`;
-}
+/** 回执里携带的请求开头长度（字符） */
+const ACK_REQUEST_HEAD_CHARS = 30;
 
 export function resolveChannelReplyLimit(configured: unknown): number {
   return typeof configured === 'number' && Number.isFinite(configured) && configured > 0
@@ -46,4 +51,13 @@ export function softLimitChannelReply(text: string, limit: number): string {
     kept = cut > 0 ? head.slice(0, cut + 1) : head;
   }
   return `${kept}\n\n${CHANNEL_REPLY_FULL_TEXT_NOTE}`;
+}
+
+/** 开跑回执：「收到，开始处理：<请求前 30 字>」。空请求返回空串（调用方跳过回执）。 */
+export function buildChannelAckText(locale: InboundAccessLocale | undefined, content: string): string {
+  const trimmed = content.trim();
+  if (!trimmed) return '';
+  const head = trimmed.slice(0, ACK_REQUEST_HEAD_CHARS);
+  const ellipsized = head + (trimmed.length > head.length ? '…' : '');
+  return channelCommandText(locale, 'ackStart').replace('{request}', ellipsized);
 }

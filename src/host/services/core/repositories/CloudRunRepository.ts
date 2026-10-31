@@ -25,6 +25,7 @@ export interface CloudRunRecord {
   enqueuedSeq: number | null;
   requestJson: string | null;
   clientMessageId: string | null;
+  channelDeliveryId: string | null;
   executionRunId: string | null;
   cancelRequestedAt: number | null;
   createdAt: number;
@@ -49,6 +50,7 @@ interface InsertCloudRunInput {
   enqueuedSeq?: number;
   requestJson?: string;
   clientMessageId?: string;
+  channelDeliveryId?: string;
   now: number;
 }
 
@@ -77,6 +79,7 @@ function rowToRecord(row: SQLiteRow): CloudRunRecord {
     enqueuedSeq: row.enqueued_seq == null ? null : Number(row.enqueued_seq),
     requestJson: row.request_json == null ? null : String(row.request_json),
     clientMessageId: row.client_message_id == null ? null : String(row.client_message_id),
+    channelDeliveryId: row.channel_delivery_id == null ? null : String(row.channel_delivery_id),
     executionRunId: row.execution_run_id == null ? null : String(row.execution_run_id),
     cancelRequestedAt: row.cancel_requested_at == null ? null : Number(row.cancel_requested_at),
     createdAt: Number(row.created_at),
@@ -101,8 +104,8 @@ export class CloudRunRepository {
     this.db.prepare(
       `INSERT INTO cloud_runs (
         run_id, account_id, session_id, "trigger", state, workspace_id,
-        enqueued_seq, request_json, client_message_id, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        enqueued_seq, request_json, client_message_id, channel_delivery_id, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       input.runId,
       input.accountId,
@@ -113,6 +116,7 @@ export class CloudRunRepository {
       input.enqueuedSeq ?? null,
       input.requestJson ?? null,
       input.clientMessageId ?? null,
+      input.channelDeliveryId ?? null,
       input.now,
       input.now,
     );
@@ -123,6 +127,15 @@ export class CloudRunRepository {
 
   admitRun(input: AdmitCloudRunInput): { record: CloudRunRecord; duplicate: boolean } {
     const admit = this.db.transaction((): { record: CloudRunRecord; duplicate: boolean } => {
+      // ADR-087 S4B：通道幂等键先于 clientMessageId 查重——命中直接返回既有行，
+      // 不消耗 slot、不分配新 enqueued_seq。
+      if (input.channelDeliveryId) {
+        const channelExisting = this.db.prepare(
+          `SELECT * FROM cloud_runs
+           WHERE account_id = ? AND channel_delivery_id = ?`,
+        ).get(input.accountId, input.channelDeliveryId) as SQLiteRow | undefined;
+        if (channelExisting) return { record: rowToRecord(channelExisting), duplicate: true };
+      }
       if (input.clientMessageId) {
         const existing = this.db.prepare(
           `SELECT * FROM cloud_runs

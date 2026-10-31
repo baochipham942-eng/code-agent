@@ -35,6 +35,7 @@ import { getSessionManager } from '../services/infra/sessionManager';
 import { getChatsSyncState, importRecentChatsSingleFlight, setChatsSyncMode } from '../externalImport/chatsAutoSync';
 import * as fsp from 'node:fs/promises';
 import { getDefaultWorkDirectory } from '../config/configPaths';
+import { listImportHistory } from '../externalImport/importHistory';
 
 function isExternalEngineKind(kind: AgentEngineKind | undefined): kind is ExternalAgentEngineKind {
   // 单一真源：external engine 列表统一由 agentEngineGuards.isExternalAgentEngine 维护，
@@ -85,8 +86,12 @@ const agentEngineHandlers: RawDomainRouteHandlers<AgentEngineDomainRequest, void
     return { success: true, data };
   },
   importRecentChats: async (_ctx, _requestPayload) => {
-    // 与启动自动同步共用单飞（ownerScopeId 口径见 chatsAutoSync）。
+    // 与启动自动同步共用单飞；ownerScopeId 口径与导入历史记账都在 chatsAutoSync 里（一次运行只记一条）。
     const data = await importRecentChatsSingleFlight();
+    return { success: true, data };
+  },
+  listImportHistory: async (_ctx, _requestPayload) => {
+    const data = await listImportHistory();
     return { success: true, data };
   },
   getChatsSync: async (_ctx, _requestPayload) => {

@@ -111,6 +111,15 @@ export const zhSettingsExternalImport = {
           failed: '这一条没能导入',
         },
       },
+      history: {
+        title: '导入历史',
+        empty: '还没有导入记录',
+        newCount: '{count} 条新内容',
+        categories: {
+          chats: '聊天',
+          skills: '技能',
+        },
+      },
       resultsTitle: '导入完成',
       resultsMemory: '记忆：导入 {imported} 条，跳过 {skipped} 条',
       resultsSkills: '技能：复制 {copied} 个，跳过 {skipped} 个，已放进 Neo 技能库',

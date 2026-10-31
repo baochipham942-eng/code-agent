@@ -30,6 +30,8 @@ import {
 } from './channelSessionBindingStore';
 import { clearStoppedChannelRuns, consumeStoppedChannelRun, deliverChannelCommandText, parseChannelCommand } from './channelCommandRuntime';
 import { channelCommandText } from './channelCommandI18n';
+import { getChannelCloudRunPort } from './channelCloudRunPort';
+import { admitChannelIngressThroughCloud, runChannelCloudTurn, type ChannelBridgeCloudSurface, type ChannelCloudRunPayload } from './channelCloudAdmission';
 
 const logger = createLogger('ChannelAgentBridge');
 
@@ -328,6 +330,13 @@ export class ChannelAgentBridge {
       timestamp: msg.timestamp,
     };
 
+    // ADR-087 S4B：服务模式非 guest 入站一律交云端账本（admit 唯一入口）；桌面态无端口走本地路径。
+    const cloudPort = getChannelCloudRunPort();
+    if (cloudPort && processMessage.ingressAuth !== 'guest') {
+      await admitChannelIngressThroughCloud(this.cloudSurface(), cloudPort, accountId, processMessage, parts);
+      return;
+    }
+
     const sessionKey = this.getSessionKey(accountId, processMessage);
     const orchestrator = await this.getOrCreateChannelOrchestrator(sessionKey, accountId, processMessage);
     if (!orchestrator) {
@@ -369,6 +378,28 @@ export class ChannelAgentBridge {
     }
   }
 
+  /** ADR-087 S4B：云端账本行的通道轮执行体（内联轮与提升轮共用）；跑完收线，抛错/失败收 failed。 */
+  async runAdmittedChannelTurn(payload: ChannelCloudRunPayload, runId: string): Promise<boolean> {
+    return runChannelCloudTurn(this.cloudSurface(), payload, runId);
+  }
+
+  /** 云端账本路径用的桥面：私有步骤收进闭包，编排逻辑全住在 channelCloudAdmission.ts。 */
+  private cloudSurface(): ChannelBridgeCloudSurface {
+    return {
+      sessionKey: (accountId, message) => this.getSessionKey(accountId, message),
+      sessionId: (sessionKey, accountId, message) => this.getOrCreateChannelSessionId(sessionKey, accountId, message),
+      orchestrator: (sessionKey, accountId, message) => this.getOrCreateChannelOrchestrator(sessionKey, accountId, message),
+      enrich: (message) => this.enrichChannelMessage(message),
+      convertAttachments: (attachments) => this.convertAttachments(attachments),
+      callback: (accountId, message) => this.channelManager.getResponseCallback(accountId, message),
+      turn: (accountId, message, orchestrator, attachments, responseCallback) => this.handleSyncMessage(accountId, message, orchestrator, attachments, responseCallback),
+      locale: () => (this.config.configService.getSettings().ui.language === 'en' ? 'en-US' : 'zh-CN'),
+      reply: async (accountId, message, text) => { await this.channelManager.getResponseCallback(accountId, message)?.sendText(withSenderAttribution(message, text)); },
+      fail: (accountId, message, errorMessage) => this.sendErrorResponse(accountId, message, errorMessage),
+      markPart: (accountId, messageId, ok) => { if (ok) this.markMessageCompleted(accountId, messageId); else this.markMessageFailed(accountId, messageId); },
+    };
+  }
+
   /**
    * 处理同步消息
    */
@@ -378,7 +409,7 @@ export class ChannelAgentBridge {
     orchestrator: AgentOrchestrator,
     attachments: MessageAttachment[] | undefined,
     responseCallback: ChannelResponseCallback
-  ): Promise<void> {
+  ): Promise<boolean> {
     // 收集响应
     let fullResponse = '';
     // 出站文本统一在这一处加发起人前缀，覆盖成功/兜底/失败三条 sendText 路径
@@ -433,13 +464,15 @@ export class ChannelAgentBridge {
         const result = await send('处理完成，但没有生成响应。');
         logCollector.log('agent', 'INFO', `[Channel] Default response sent: success=${result.success}`);
       }
+      return true;
     } catch (error) {
-      if (consumeStoppedChannelRun(this.channelSessions.get(this.getSessionKey(accountId, message)) ?? '')) return;
+      if (consumeStoppedChannelRun(this.channelSessions.get(this.getSessionKey(accountId, message)) ?? '')) return true;
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       const { summary, retryHint } = summarizeUserFacingError(error, { surface: 'channel_reply' });
       const channelSummary = summarizeChannelError(error).message;
       logCollector.log('agent', 'ERROR', `[Channel] Error: ${errorMsg}`);
       await send(`处理失败: ${summary || channelSummary}${retryHint ? `\n${retryHint}` : ''}`);
+      return false;
     } finally {
       await this.stopTyping(responseCallback);
     }

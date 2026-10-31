@@ -374,7 +374,13 @@ async function executeChain(
     };
     const facts = await collectDeliveryFacts(deps, { sessionId: row.targetSessionId, queuedInputId: row.targetQueuedInputId, originSessionId: row.originSessionId });
     const delivery = (await import('../../../services/delegation/delegationAdmission')).recheckForDelivery(facts.snapshot);
-    if (delivery.kind !== 'deliver') return rejection(delivery.kind === 'pause' ? delivery.code : 'target_busy', delivery.kind === 'wait' ? 'another delegation is running' : delivery.detail);
+    if (delivery.kind !== 'deliver') {
+      // rework r1：pause 分支携带真实 gate（G1/G2/G11/G12/INV-2），必须随 meta
+      // 记录，E6 的 code × gate 分布才不失真；wait 是排队不是门拒绝，按工单
+      // 口径不传 gate（记 none）。
+      if (delivery.kind === 'pause') return rejection(delivery.code, delivery.detail, delivery.gate);
+      return rejection('target_busy', 'another delegation is running');
+    }
     queued.unpauseQueued(row.targetQueuedInputId, now);
     repository.markResumed(row.delegationId, now);
     runtime.notifyEnqueued(row.targetSessionId);

@@ -495,4 +495,85 @@ describe('delegate_session outcome telemetry (ADR-072 E6)', () => {
     expect(serialized).not.toContain('secret body');
     expect((result as { error: string }).error).toContain('candidate_set_stale');
   });
+
+  // rework r1：resume 的投递复核（recheckForDelivery）pause 分支携带真实 gate
+  // （G1/G2/G11/G12/INV-2），必须随 meta 记录，否则 E6 的 code × gate 分布把
+  // 复核拒绝全部记成 × none，与解析失败混桶。wait 分支是排队不是门拒绝，
+  // 按工单口径不传 gate（记 none）。
+  const setupCommittedChain = (runtime: Record<string, unknown>) => {
+    const db = new Database(':memory:');
+    applySchema(db, { info() {}, warn() {}, error() {}, debug() {} } as never);
+    const fingerprint = deriveActionFingerprint({ action: 'delegate_existing', targetIdentity: 'session:target', content: 'work', attachmentRefs: [] });
+    const key = deriveSubmissionKey({ originSessionId: 'origin', originTurnId: 'turn-1', action: 'delegate_existing', targetIdentity: 'session:target' });
+    commitDelegation(db, { delegationId: 'd-1', originSessionId: 'origin', originTurnId: 'turn-1', disposition: 'delegate_existing', targetSessionId: 'target', submissionKey: key, actionFingerprint: fingerprint, envelope: { content: 'work', sessionId: 'target' }, now: 1 });
+    setRuntime({
+      getDb: () => db,
+      getSessionRow: () => ({ id: 'target', title: 'Target', workingDirectory: '/workspace', sessionType: 'chat', engineKind: 'native' }),
+      getWorkspaceRoots: () => ['/workspace'],
+      getRuns: () => [],
+      getRun: () => undefined,
+      getPermissionMode: () => 'default',
+      evaluateFolderTrust: async () => ({ state: 'trusted', blockedItems: 0 }),
+      now: () => 2,
+      notifyEnqueued: () => {},
+      ...runtime,
+    });
+    return db;
+  };
+  const lastOutcome = () => trackNodeCalls[trackNodeCalls.length - 1];
+
+  it('g) rework r1：resume 被 G12 拒（投递复核）记录真实 gate 而非 none', async () => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    // TOCTOU 形态：stop 复核与 resume 的 admission 复核时工作区可信，
+    // resume 的投递复核（collectDeliveryFacts）时翻成不可信 → recheck 以 G12 pause。
+    // 恰好三次信任评估；次数不对说明走的不是这条缝，测试必须红。
+    const evaluateFolderTrust = vi.fn()
+      .mockResolvedValueOnce({ state: 'trusted', blockedItems: 0 })
+      .mockResolvedValueOnce({ state: 'trusted', blockedItems: 0 })
+      .mockResolvedValueOnce({ state: 'untrusted', blockedItems: 2 });
+    const db = setupCommittedChain({ evaluateFolderTrust });
+    try {
+      const allow = async () => ({ allow: true as const });
+      expect((await executeDelegateSession({ action: 'stop', delegationId: 'd-1' }, ctx, allow)).ok).toBe(true);
+      const resumed = await executeDelegateSession({ action: 'resume', delegationId: 'd-1' }, ctx, allow);
+      expect(evaluateFolderTrust).toHaveBeenCalledTimes(3);
+      expect(resumed.ok).toBe(false);
+      expect(resumed.meta).toEqual({ code: 'untrusted_workspace', gate: 'G12' });
+      expect(lastOutcome().properties).toEqual({ outcome: 'rejected', code: 'untrusted_workspace', gate: 'G12', action: 'resume' });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('h) rework r1：resume 复核 target_busy（INV-2）记录真实 gate', async () => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    const db = setupCommittedChain({ getRun: (sessionId: string) => ({ context: { sessionId, runId: 'user-run' } }) });
+    try {
+      const allow = async () => ({ allow: true as const });
+      expect((await executeDelegateSession({ action: 'stop', delegationId: 'd-1' }, ctx, allow)).ok).toBe(true);
+      const resumed = await executeDelegateSession({ action: 'resume', delegationId: 'd-1' }, ctx, allow);
+      expect(resumed.ok).toBe(false);
+      expect(resumed.meta).toEqual({ code: 'target_busy', gate: 'INV-2' });
+      expect(lastOutcome().properties).toEqual({ outcome: 'rejected', code: 'target_busy', gate: 'INV-2', action: 'resume' });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('i) rework r1：wait（排在前面的另一条委托）记 target_busy × none，与工单口径对齐', async () => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    const db = setupCommittedChain({ getRun: (sessionId: string) => ({ context: { sessionId, runId: 'delegated-run' } }) });
+    try {
+      const allow = async () => ({ allow: true as const });
+      expect((await executeDelegateSession({ action: 'stop', delegationId: 'd-1' }, ctx, allow)).ok).toBe(true);
+      // 活跃 run 归属另一条委托（target_run_id 对得上）→ wait，排队不是门拒绝
+      db.prepare("UPDATE session_delegations SET target_run_id = 'delegated-run' WHERE delegation_id = 'd-1'").run();
+      const resumed = await executeDelegateSession({ action: 'resume', delegationId: 'd-1' }, ctx, allow);
+      expect(resumed.ok).toBe(false);
+      expect(resumed.meta).toEqual({ code: 'target_busy', gate: 'none' });
+      expect(lastOutcome().properties).toEqual({ outcome: 'rejected', code: 'target_busy', gate: 'none', action: 'resume' });
+    } finally {
+      db.close();
+    }
+  });
 });

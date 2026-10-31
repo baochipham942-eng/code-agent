@@ -2597,6 +2597,12 @@
               },
               "reason": {
                 "type": "string"
+              },
+              "requiredScope": {
+                "type": "string"
+              },
+              "helpUrl": {
+                "type": "string"
               }
             },
             "required": [

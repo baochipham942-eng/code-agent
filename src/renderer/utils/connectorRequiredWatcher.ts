@@ -44,7 +44,9 @@ function connectedIds(native: ConnectorStatusSummary[], oauth: OAuthStatusItem[]
 }
 
 function pendingEntries(): ConnectorRequiredEntry[] {
-  return Object.values(useConnectorRequiredStore.getState().entries).filter((entry) => entry.status === 'pending');
+  // insufficient_scope 的连接器本来就是「已连接」，按连接态自动续跑会让卡片瞬间消失——由卡片自己的重新授权驱动，不进 watcher
+  return Object.values(useConnectorRequiredStore.getState().entries)
+    .filter((entry) => entry.status === 'pending' && entry.reason !== 'insufficient_scope');
 }
 
 /** 追加续跑消息。条件不满足返回 false（保持 pending）；抢到 resuming 才发，保证只发一次。 */

@@ -19,6 +19,10 @@ export interface ConnectorRequiredEntry {
   /** 轮询到顶仍未连上：卡片改露手动「我已连好，继续」。 */
   gaveUp: boolean;
   polls: number;
+  /** insufficient_scope 卡专用 */
+  requiredScope?: string;
+  helpUrl?: string;
+  reauth?: { state: 'running' | 'done' | 'failed'; error?: string };
 }
 
 interface ConnectorRequiredState {
@@ -27,6 +31,7 @@ interface ConnectorRequiredState {
   dismiss: (sessionId: string, connectorId: string) => void;
   claimResume: (sessionId: string, connectorId: string) => boolean;
   recordPoll: (sessionId: string, connectorId: string, cap: number) => void;
+  setReauth: (sessionId: string, connectorId: string, reauth: ConnectorRequiredEntry['reauth']) => void;
 }
 
 export function connectorRequiredKey(sessionId: string, connectorId: string): string {
@@ -50,6 +55,8 @@ export const useConnectorRequiredStore = create<ConnectorRequiredState>((set, ge
         status: 'pending',
         gaveUp: false,
         polls: 0,
+        ...(item.requiredScope ? { requiredScope: item.requiredScope } : {}),
+        ...(item.helpUrl ? { helpUrl: item.helpUrl } : {}),
       };
     }
     return { entries };
@@ -70,6 +77,13 @@ export const useConnectorRequiredStore = create<ConnectorRequiredState>((set, ge
     return true;
   },
 
+  setReauth: (sessionId, connectorId, reauth) => set((state) => {
+    const key = connectorRequiredKey(sessionId, connectorId);
+    const entry = state.entries[key];
+    if (!entry) return state;
+    return { entries: { ...state.entries, [key]: { ...entry, reauth } } };
+  }),
+
   recordPoll: (sessionId, connectorId, cap) => set((state) => {
     const key = connectorRequiredKey(sessionId, connectorId);
     const entry = state.entries[key];
@@ -85,12 +99,14 @@ export function parseConnectorRequiredPayload(data: unknown): ConnectorRequiredI
   if (!Array.isArray(connectors)) return [];
   return connectors.flatMap((item) => {
     if (!item || typeof item !== 'object') return [];
-    const { id, source, reason } = item as Record<string, unknown>;
+    const { id, source, reason, requiredScope, helpUrl } = item as Record<string, unknown>;
     if (typeof id !== 'string' || !id) return [];
     return [{
       id,
       source: source === 'expert' ? 'expert' as const : 'selected' as const,
       reason: typeof reason === 'string' && reason ? reason : 'not_connected',
+      ...(typeof requiredScope === 'string' && requiredScope ? { requiredScope } : {}),
+      ...(typeof helpUrl === 'string' && helpUrl ? { helpUrl } : {}),
     }];
   });
 }

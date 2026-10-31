@@ -13,6 +13,7 @@ import { Download, Loader2 } from 'lucide-react';
 import type { RecentExternalChatImportResult } from '@shared/contract/agentEngine';
 import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
+import { useSessionStore } from '../../../../stores/sessionStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button } from '../../../primitives';
 
@@ -53,6 +54,12 @@ export const ExternalChatsImportSection: React.FC = () => {
         'importRecentChats',
       );
       setResults(data ?? []);
+      // 宿主导入不广播 SESSION_LIST_UPDATED，侧栏项目组又派生自会话列表——
+      // 真有新导入才静默刷一次（durableResume / teamClient 同款调用），
+      // 全部已在 Neo / 零候选 / IPC 失败不刷；刷新被拒不翻错误态、结果照常显示。
+      if ((data ?? []).some((item) => item.status === 'imported')) {
+        void useSessionStore.getState().loadSessions({ silent: true }).catch(() => {});
+      }
     } catch {
       // 原始错误串（可能带路径）不进页面，只给固定大白话；宿主侧已按 action 记日志。
       setFailed(true);

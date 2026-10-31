@@ -75,6 +75,11 @@ export function grantShortTierWait(sessionId: string, requested: number): { time
   return { timeout: Math.min(requested, remaining) };
 }
 
+/** 每个入站 turn 开头清零：预算是「每轮」的，长寿 channel/cron 会话不能被首轮用掉后永久拒绝。 */
+export function resetShortTierWait(sessionId: string): void {
+  shortTierWaitSpent.delete(sessionId);
+}
+
 /** 阻塞调用返回后按实际耗时入账（任务提前结束不烧预算）。 */
 export function settleShortTierWait(sessionId: string, elapsedMs: number): void {
   shortTierWaitSpent.set(sessionId, (shortTierWaitSpent.get(sessionId) ?? 0) + Math.max(0, elapsedMs));

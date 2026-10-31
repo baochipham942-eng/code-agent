@@ -13,6 +13,7 @@ const AgentEngineDomainRequestSchema = z.object({
   action: z.enum([
     'detect',
     'get',
+    'getChatsSync',
     'importHistory',
     'importRecentChats',
     'list',
@@ -23,6 +24,7 @@ const AgentEngineDomainRequestSchema = z.object({
     'previewHistory',
     'select',
     'selectModel',
+    'setChatsSync',
   ]),
   payload: z.unknown().optional(),
   requestId: z.string().optional(),

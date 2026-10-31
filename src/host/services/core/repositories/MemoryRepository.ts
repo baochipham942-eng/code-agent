@@ -9,6 +9,13 @@ import { isFtsDisabled, isFtsSearchDegraded, markFtsTableAvailable, repairFtsTab
 import { isSqliteCorruptionError } from '../database/sqliteErrors';
 import type { MemoryRecord } from '../../../protocol/types';
 import { guardSensitiveText, guardSensitiveValue } from '../../../security/sensitiveDataGuard';
+import type {
+  MemoryChangeActor,
+  MemoryChangeJournalContext,
+  MemoryChangeJournalRow,
+  MemoryChangeOperation,
+} from '../../../../shared/contract/memory';
+import { createLogger } from '../../infra/logger';
 
 export type { MemoryRecord };
 
@@ -29,6 +36,28 @@ function parseJsonRecord(value: unknown): Record<string, unknown> {
   }
 }
 
+const journalLogger = createLogger('MemoryRepository');
+
+/** 记忆变更日志（N-MEM-JOURNAL-SOURCEJUMP）：before/after 快照 = {summary,status,content} 的截断 JSON */
+function journalSnapshot(record: MemoryRecord): string {
+  const snapshot = JSON.stringify({
+    summary: record.summary ?? null,
+    status: record.status ?? 'active',
+    content: record.content,
+  });
+  if (snapshot.length <= MEMORY.JOURNAL_SNAPSHOT_MAX_CHARS) return snapshot;
+  return `${snapshot.slice(0, MEMORY.JOURNAL_SNAPSHOT_MAX_CHARS)}…[truncated]`;
+}
+
+/** 统一条目 id（metadata.memoryEntry.id）有则记录，供面板按 entryId 查历史 */
+function journalEntryId(metadata: Record<string, unknown>): string | null {
+  const memoryEntry = metadata?.memoryEntry;
+  if (isRecord(memoryEntry) && typeof memoryEntry.id === 'string' && memoryEntry.id.length > 0) {
+    return memoryEntry.id;
+  }
+  return null;
+}
+
 function memoryStatusCondition(
   options: { includeArchived?: boolean; includeCandidates?: boolean },
   column = 'status',
@@ -47,7 +76,10 @@ export class MemoryRepository {
   // Memory CRUD
   // --------------------------------------------------------------------------
 
-  createMemory(data: Omit<MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>): MemoryRecord {
+  createMemory(
+    data: Omit<MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>,
+    journal?: MemoryChangeJournalContext,
+  ): MemoryRecord {
     const id = `mem_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
     const now = Date.now();
     const safeContent = guardMemoryText(data.content, 50_000);
@@ -74,7 +106,7 @@ export class MemoryRepository {
       now
     );
 
-    return {
+    const created: MemoryRecord = {
       id,
       ...data,
       content: safeContent,
@@ -86,6 +118,8 @@ export class MemoryRepository {
       createdAt: now,
       updatedAt: now,
     };
+    this.appendJournal('create', created, null, created, journal);
+    return created;
   }
 
   getMemory(id: string): MemoryRecord | null {
@@ -149,7 +183,9 @@ export class MemoryRepository {
     return rows.map(row => this.rowToMemoryRecord(row));
   }
 
-  updateMemory(id: string, updates: Partial<MemoryRecord>): MemoryRecord | null {
+  updateMemory(id: string, updates: Partial<MemoryRecord>, journal?: MemoryChangeJournalContext): MemoryRecord | null {
+    const before = this.getMemory(id);
+
     const sets: string[] = ['updated_at = ?'];
     const params: unknown[] = [Date.now()];
 
@@ -193,11 +229,19 @@ export class MemoryRepository {
     params.push(id);
     this.db.prepare(`UPDATE memories SET ${sets.join(', ')} WHERE id = ?`).run(...params);
 
-    return this.getMemory(id);
+    const after = this.getMemory(id);
+    if (before && after) {
+      this.appendJournal(journal?.operation ?? 'update', after, before, after, journal);
+    }
+    return after;
   }
 
-  deleteMemory(id: string): boolean {
+  deleteMemory(id: string, journal?: MemoryChangeJournalContext): boolean {
+    const before = this.getMemory(id);
     const result = this.db.prepare('DELETE FROM memories WHERE id = ?').run(id);
+    if (result.changes > 0 && before) {
+      this.appendJournal(journal?.operation ?? 'delete', before, before, null, journal);
+    }
     return result.changes > 0;
   }
 
@@ -207,7 +251,7 @@ export class MemoryRepository {
     source?: string;
     projectPath?: string;
     sessionId?: string;
-  }): number {
+  }, journal?: MemoryChangeJournalContext): number {
     const conditions: string[] = [];
     const params: unknown[] = [];
 
@@ -236,7 +280,14 @@ export class MemoryRepository {
       return 0; // 不允许无条件删除所有
     }
 
+    const deleted = (this.db.prepare(`SELECT * FROM memories WHERE ${conditions.join(' AND ')}`).all(...params) as SQLiteRow[])
+      .map((row) => this.rowToMemoryRecord(row));
     const result = this.db.prepare(`DELETE FROM memories WHERE ${conditions.join(' AND ')}`).run(...params);
+    if (result.changes > 0) {
+      for (const record of deleted) {
+        this.appendJournal(journal?.operation ?? 'delete', record, record, null, journal);
+      }
+    }
     return result.changes;
   }
 
@@ -414,6 +465,95 @@ export class MemoryRepository {
     this.db.prepare(`
       UPDATE memories SET access_count = access_count + 1, last_accessed_at = ? WHERE id = ?
     `).run(Date.now(), id);
+  }
+
+  // --------------------------------------------------------------------------
+  // Memory Change Journal（N-MEM-JOURNAL-SOURCEJUMP，append-only）
+  // --------------------------------------------------------------------------
+
+  /** 读某条记忆的变更日志（新→旧）；entryId/memoryId 二选一。 */
+  listMemoryJournal(request: { entryId?: string; memoryId?: string; limit?: number }): MemoryChangeJournalRow[] {
+    const limit = Math.max(1, Math.min(request.limit ?? MEMORY.JOURNAL_DEFAULT_LIMIT, MEMORY.JOURNAL_MAX_LIMIT));
+    const column = request.entryId ? 'entry_id' : 'memory_id';
+    const key = request.entryId ?? request.memoryId;
+    if (!key) return [];
+    const rows = this.db.prepare(`
+      SELECT * FROM memory_change_journal WHERE ${column} = ? ORDER BY id DESC LIMIT ?
+    `).all(key, limit) as SQLiteRow[];
+    return rows.map((row) => this.rowToJournalRow(row));
+  }
+
+  /** 每条记忆最近一次变更（列表「后台写入」标记用）。 */
+  latestMemoryChanges(): Array<Pick<MemoryChangeJournalRow, 'memoryId' | 'entryId' | 'actor' | 'operation' | 'timestamp'>> {
+    const rows = this.db.prepare(`
+      SELECT memory_id, entry_id, actor, operation, timestamp FROM (
+        SELECT memory_id, entry_id, actor, operation, timestamp,
+          ROW_NUMBER() OVER (PARTITION BY memory_id ORDER BY id DESC) AS rn
+        FROM memory_change_journal
+      ) WHERE rn = 1
+    `).all() as SQLiteRow[];
+    return rows.map((row) => ({
+      memoryId: row.memory_id as string,
+      entryId: (row.entry_id as string | null) ?? null,
+      actor: row.actor as MemoryChangeActor,
+      operation: row.operation as MemoryChangeOperation,
+      timestamp: row.timestamp as number,
+    }));
+  }
+
+  /**
+   * 追加一行变更日志。fail-safe：日志写失败只 warn，绝不拦记忆写入本身
+   * （与 trace finalizer 同款纪律）。
+   */
+  private appendJournal(
+    defaultOperation: MemoryChangeOperation,
+    anchor: MemoryRecord,
+    before: MemoryRecord | null,
+    after: MemoryRecord | null,
+    journal: MemoryChangeJournalContext | undefined,
+  ): void {
+    const operation: MemoryChangeOperation = journal?.operation ?? defaultOperation;
+    const sessionId = journal?.sessionId
+      ?? after?.sessionId
+      ?? before?.sessionId
+      ?? null;
+    const entryId = journalEntryId(after?.metadata ?? anchor.metadata ?? {});
+    try {
+      this.db.prepare(`
+        INSERT INTO memory_change_journal (timestamp, operation, memory_id, entry_id, actor, before_content, after_content, session_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        Date.now(),
+        operation,
+        anchor.id,
+        entryId,
+        journal?.actor ?? 'unknown',
+        before ? journalSnapshot(before) : null,
+        after ? journalSnapshot(after) : null,
+        sessionId,
+      );
+    } catch (error) {
+      journalLogger.warn('Memory change journal append failed (memory write kept)', {
+        memoryId: anchor.id,
+        operation,
+        actor: journal?.actor ?? 'unknown',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private rowToJournalRow(row: SQLiteRow): MemoryChangeJournalRow {
+    return {
+      id: row.id as number,
+      timestamp: row.timestamp as number,
+      operation: row.operation as MemoryChangeOperation,
+      memoryId: row.memory_id as string,
+      entryId: (row.entry_id as string | null) ?? null,
+      actor: row.actor as MemoryChangeActor,
+      beforeContent: (row.before_content as string | null) ?? null,
+      afterContent: (row.after_content as string | null) ?? null,
+      sessionId: (row.session_id as string | null) ?? null,
+    };
   }
 
   // --------------------------------------------------------------------------

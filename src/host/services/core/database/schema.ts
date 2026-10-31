@@ -639,6 +639,27 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
     }
   }
 
+  // Memory Change Journal（N-MEM-JOURNAL-SOURCEJUMP · 记忆变更日志，append-only）——
+  // memories 表每次 create/update/delete/evict 一行：谁改的（actor）、改前/改后快照、
+  // 关联 sessionId。后台写入的记忆要看得见、可回溯到源会话。只 INSERT/SELECT，永不
+  // UPDATE/DELETE（与 swarm_run_ledger/usage_ledger 同款账本纪律）；日志写失败不拦
+  // 记忆写入本身（MemoryRepository.appendJournal 内 fail-safe）。
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS memory_change_journal (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp INTEGER NOT NULL,
+      operation TEXT NOT NULL CHECK (operation IN ('create', 'update', 'delete', 'evict')),
+      memory_id TEXT NOT NULL,
+      entry_id TEXT,
+      actor TEXT NOT NULL CHECK (actor IN ('user_manual', 'auto_review', 'role_wake', 'dream', 'eviction', 'import', 'unknown')),
+      before_content TEXT,
+      after_content TEXT,
+      session_id TEXT
+    )
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_memory_change_journal_memory ON memory_change_journal (memory_id, id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_memory_change_journal_entry ON memory_change_journal (entry_id, id)`);
+
   // Memories FTS5 — BM25 检索通道（roadmap 2.5，searchMemories 召回底层）
   // DDL 在 src/shared/memoriesFts.sql.ts（与 CLI / 单测共用）
   applyMemoriesFtsSchema(db);

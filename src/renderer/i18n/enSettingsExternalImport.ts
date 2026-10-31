@@ -98,6 +98,15 @@ export const enSettingsExternalImport = {
           failed: 'Could not import this one',
         },
       },
+      history: {
+        title: 'Import history',
+        empty: 'No imports yet',
+        newCount: '{count} new',
+        categories: {
+          chats: 'chats',
+          skills: 'skills',
+        },
+      },
       resultsTitle: 'Import finished',
       resultsMemory: 'Memories: imported {imported}, skipped {skipped}',
       resultsSkills: 'Skills: copied {copied}, skipped {skipped}, placed in the Neo skills library',

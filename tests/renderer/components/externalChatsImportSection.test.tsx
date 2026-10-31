@@ -95,7 +95,13 @@ describe('ExternalChatsImportSection 点击与结果（验收②③ UI 半）', 
   });
 
   it('第二次点击全部 already_imported：汇总与每行都改口「已在 Neo」', async () => {
-    invokeDomain.mockResolvedValueOnce(FIRST_RUN).mockResolvedValueOnce(SECOND_RUN);
+    let chatRun = 0;
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action !== 'importRecentChats') return Promise.resolve([]);
+      const result = chatRun === 0 ? FIRST_RUN : SECOND_RUN;
+      chatRun += 1;
+      return Promise.resolve(result);
+    });
     render(<ExternalChatsImportSection />);
 
     fireEvent.click(screen.getByText('导入最近的聊天'));
@@ -186,7 +192,13 @@ describe('导入成功后刷新 session store（FU1-FU2）', () => {
   });
 
   it('全部 already_imported 的第二轮 → 不刷', async () => {
-    invokeDomain.mockResolvedValueOnce(FIRST_RUN).mockResolvedValueOnce(SECOND_RUN);
+    let chatRun = 0;
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action !== 'importRecentChats') return Promise.resolve([]);
+      const result = chatRun === 0 ? FIRST_RUN : SECOND_RUN;
+      chatRun += 1;
+      return Promise.resolve(result);
+    });
     render(<ExternalChatsImportSection />);
     fireEvent.click(screen.getByText('导入最近的聊天'));
     await screen.findByTestId('external-chats-import-summary');

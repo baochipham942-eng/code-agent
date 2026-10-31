@@ -76,6 +76,28 @@ export const enSettingsExternalImport = {
       },
       applyCta: 'Start import',
       applyFailed: 'Import failed',
+      // One-click recent chats card (N-EXTHISTORY-IMPORT-CHATS-HOST-FU1): independent of
+      // the 3-step wizard; reason is a raw host-log diagnostic string (contains paths),
+      // the page only localizes status and never renders reason.
+      chatsImport: {
+        title: 'Recent chats',
+        description: 'One click imports your last 30 days of Claude Code / Codex CLI chats, up to 50; the originals are never modified.',
+        cta: 'Import recent chats',
+        running: 'Importing…',
+        summary: 'Imported {imported} · already in Neo {already} · folder not found {folderMissing} · failed {failed}',
+        empty: 'No Claude Code or Codex chats found in the last 30 days',
+        failed: 'Failed to import recent chats',
+        engineNames: {
+          claude_code: 'Claude Code',
+          codex_cli: 'Codex',
+        },
+        statusLabels: {
+          imported: 'Imported',
+          already_imported: 'Already in Neo',
+          folder_missing: 'The original folder is gone; restore it and click again to import',
+          failed: 'Could not import this one',
+        },
+      },
       resultsTitle: 'Import finished',
       resultsMemory: 'Memories: imported {imported}, skipped {skipped}',
       resultsSkills: 'Skills: copied {copied}, skipped {skipped}, placed in the Neo skills library',

@@ -1,6 +1,23 @@
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.unmock('better-sqlite3');
+
+// ADR-072 E6 打点：捕获 PostHog 与 host log 的结局记录（两处都 mock，测试不写真日志）。
+const loggerInfo = vi.hoisted(() => vi.fn());
+const trackNodeCalls: Array<{ event: string; properties?: Record<string, unknown> }> = [];
+vi.mock('../../../../../src/host/observability/posthogNode', () => ({
+  trackNode: vi.fn((event: string, properties?: Record<string, unknown>) => {
+    trackNodeCalls.push({ event, properties });
+  }),
+}));
+vi.mock('../../../../../src/host/services/infra/logger', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../../../../../src/host/services/infra/logger')>();
+  return {
+    ...mod,
+    createLogger: () => ({ info: loggerInfo, warn: () => {}, error: () => {}, debug: () => {} }),
+  };
+});
+
 import { applySchema } from '../../../../../src/host/services/core/database/schema';
 import { SessionDelegationRepository } from '../../../../../src/host/services/core/repositories/SessionDelegationRepository';
 import { QueuedInputRepository } from '../../../../../src/host/services/core/repositories/QueuedInputRepository';
@@ -24,6 +41,8 @@ const setRuntime = (value: unknown) => {
 afterEach(() => {
   delete process.env.CODE_AGENT_CROSS_SESSION_DELEGATION;
   setRuntime(undefined);
+  trackNodeCalls.length = 0;
+  loggerInfo.mockClear();
 });
 
 describe('delegate_session', () => {
@@ -382,5 +401,98 @@ describe('delegate_session rejection codes (per-code, full pipeline)', () => {
   afterEach(() => {
     delete process.env.CODE_AGENT_CROSS_SESSION_DELEGATION;
     setBareRuntime(undefined);
+  });
+});
+
+// ============================================================================
+// ADR-072 E6 结局打点：每个到达工具体的调用记录恰好一次（PostHog
+// DELEGATE_SESSION_OUTCOME + host log '[DelegateSession] outcome'），属性恰好
+// outcome/code/gate/action 四个；FEATURE_DISABLED / PERMISSION_DENIED 不记录；
+// 任何记录都不携带用户内容。
+// ============================================================================
+describe('delegate_session outcome telemetry (ADR-072 E6)', () => {
+  it('a) admission rejection records exactly one outcome with the real gate (meta carries code+gate)', async () => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    setRuntime({ listSessions: () => [], now: () => 1 });
+    const result = await executeDelegateSession({ action: 'delegate_existing', candidateSetId: 'stale', candidateRef: 'ref', text: 'do it' }, ctx, async () => ({ allow: true }));
+    expect(result.ok).toBe(false);
+    expect(result.meta).toEqual({ code: 'candidate_set_stale', gate: 'G3' });
+    expect(trackNodeCalls).toHaveLength(1);
+    expect(trackNodeCalls[0].event).toBe('delegate_session_outcome');
+    expect(trackNodeCalls[0].properties).toEqual({ outcome: 'rejected', code: 'candidate_set_stale', gate: 'G3', action: 'delegate_existing' });
+    expect(loggerInfo).toHaveBeenCalledTimes(1);
+    expect(loggerInfo).toHaveBeenCalledWith('[DelegateSession] outcome', { outcome: 'rejected', code: 'candidate_set_stale', gate: 'G3', action: 'delegate_existing' });
+  });
+
+  it('b) parse failure records invalid_call with gate none and action unknown', async () => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    setRuntime({ listSessions: () => [], now: () => 1 });
+    const result = await executeDelegateSession({ action: 'bogus-action' }, ctx, async () => ({ allow: true }));
+    expect(result).toMatchObject({ ok: false, code: 'DELEGATION_REJECTED' });
+    expect(result.meta).toEqual({ code: 'invalid_call', gate: 'none' });
+    expect(trackNodeCalls).toHaveLength(1);
+    expect(trackNodeCalls[0].properties).toEqual({ outcome: 'rejected', code: 'invalid_call', gate: 'none', action: 'unknown' });
+  });
+
+  it('c) successful create_new records outcome ok', async () => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    const db = new Database(':memory:');
+    applySchema(db, { info() {}, warn() {}, error() {}, debug() {} } as never);
+    const createSession = vi.fn(async (input: { commit?: (write: () => void) => void }) => {
+      input.commit?.(() => {});
+      return { id: 'session_new' };
+    });
+    setRuntime({
+      getDb: () => db,
+      getSessionRow: () => null,
+      getWorkspaceRoots: () => ['/workspace'],
+      getRuns: () => [],
+      getRun: () => undefined,
+      getPermissionMode: () => 'default',
+      evaluateFolderTrust: async () => ({ state: 'trusted', blockedItems: 0 }),
+      notifyEnqueued: () => {},
+      randomId: (prefix: string) => `${prefix}new1`,
+      now: () => 100,
+      getSessionManager: () => ({ createSession }),
+    });
+    try {
+      const result = await executeDelegateSession({ action: 'create_new', content: 'fresh work' }, ctx, async () => ({ allow: true }));
+      expect(result.ok).toBe(true);
+      expect(trackNodeCalls).toHaveLength(1);
+      expect(trackNodeCalls[0].event).toBe('delegate_session_outcome');
+      expect(trackNodeCalls[0].properties).toEqual({ outcome: 'ok', code: 'ok', gate: 'none', action: 'create_new' });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('d) FEATURE_DISABLED records nothing', async () => {
+    setRuntime({ listSessions: () => [], now: () => 1 });
+    const result = await executeDelegateSession({ action: 'create_new', content: 'x' }, ctx, async () => ({ allow: true }));
+    expect(result).toMatchObject({ ok: false, code: 'FEATURE_DISABLED' });
+    expect(trackNodeCalls).toHaveLength(0);
+    expect(loggerInfo).not.toHaveBeenCalled();
+  });
+
+  it('d2) PERMISSION_DENIED records nothing', async () => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    setRuntime({ listSessions: () => [], now: () => 1 });
+    const result = await executeDelegateSession({ action: 'create_new', content: 'x' }, ctx, async () => ({ allow: false, reason: 'denied' }));
+    expect(result).toMatchObject({ ok: false, code: 'PERMISSION_DENIED' });
+    expect(trackNodeCalls).toHaveLength(0);
+    expect(loggerInfo).not.toHaveBeenCalled();
+  });
+
+  it('e) recorded properties never contain the user content string', async () => {
+    process.env.CODE_AGENT_CROSS_SESSION_DELEGATION = '1';
+    const marker = 'E6-LEAK-MARKER-7f3a9c';
+    setRuntime({ listSessions: () => [], now: () => 1 });
+    const result = await executeDelegateSession({ action: 'delegate_existing', candidateSetId: 'stale', candidateRef: 'ref', text: `secret body ${marker}` }, ctx, async () => ({ allow: true }));
+    expect(result.ok).toBe(false);
+    expect(trackNodeCalls).toHaveLength(1);
+    const serialized = JSON.stringify({ track: trackNodeCalls, log: loggerInfo.mock.calls });
+    expect(serialized).not.toContain(marker);
+    expect(serialized).not.toContain('secret body');
+    expect(result.error).toContain('candidate_set_stale');
   });
 });

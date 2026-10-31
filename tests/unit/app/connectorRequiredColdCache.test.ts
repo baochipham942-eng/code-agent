@@ -179,24 +179,22 @@ describe('agentAppService.sendMessage → connector_required（真实缓存模�
     return taskManager.emitAgentEventForSession.mock.calls.filter(([, event]) => event.type === 'connector_required');
   }
 
-  it('gap (a)：选中 feishu、探测仍在途 → 探测落定后本轮恰好发一次 connector_required（冷缓存不再吞卡）', async () => {
+  it('gap (a)：选中 feishu、缓存冷且无在途探测 → 发卡点自起一次探测，落定后本轮恰好发一次 connector_required', async () => {
     const probe = deferred<{ connected: boolean; identity: string }>();
     env.larkStatus = probe.promise;
-    const handler = registerConnectorIpc();
-    void handler(null, { action: 'oauthStatus' } as IPCRequest).catch(() => undefined);
-    await vi.waitFor(() => expect(env.larkStatusStarted).toBe(true));
-    // 前提钉死：此刻轮级缓存确实是冷的（探测仍在途）
-    expect(getCachedCliConnectorConnectionStatus('feishu')).toBeUndefined();
+    // 不先发 oauthStatus——模拟「渲染层探测还没起/没起成」的冷开机第一轮：
+    // 修复后发卡点自己新起一次探测并等它落定（未登录 connected:false）。
+    registerConnectorIpc();
+    probe.resolve({ connected: false, identity: 'none' });
 
-    const turn = createService().sendMessage({
+    await createService().sendMessage({
       sessionId: 'session-1',
       content: '用飞书给我发一条消息',
       context: { selectedConnectorIds: ['feishu'] },
     });
-    // 探测在轮次进行中才落定：未登录（connected:false）
-    probe.resolve({ connected: false, identity: 'none' });
-    await turn;
 
+    // 发卡点真的起了探测（而不是拿冷缓存直接判 ready）
+    expect(env.larkStatusStarted).toBe(true);
     const calls = connectorRequiredCalls();
     expect(calls).toHaveLength(1);
     expect(calls[0][1]).toEqual({

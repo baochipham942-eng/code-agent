@@ -56,6 +56,30 @@ export function resolveShortTierWait(requested: number | undefined): { timeout: 
   return { timeout: requested };
 }
 
+// 单次等待 ≤ 档位只挡住「一次等很久」；模型会用多次 ≤ 档位的轮询把回合拖满整条命令时长
+// （r3 e2e 实录：两条 10s 阻塞 output 轮询，回帖被拖到命令自然结束之后）。
+// 所以短档会话对后台任务的阻塞等待另加**累计**预算 = 档位时长，按实际阻塞耗时入账。
+const shortTierWaitSpent = new Map<string, number>();
+
+/** 阻塞等后台任务前申请本轮额度：余量内放行，预算耗尽 → 拒绝并提示结果自动送达。 */
+export function grantShortTierWait(sessionId: string, requested: number): { timeout: number; refusal?: string } {
+  const tierMs = resolveShortTierTimeoutMs();
+  const spent = shortTierWaitSpent.get(sessionId) ?? 0;
+  const remaining = tierMs - spent;
+  if (remaining <= 0) {
+    return {
+      timeout: 0,
+      refusal: `Refused: this session has already spent ${Math.round(spent / 1000)}s blocking on background tasks, exceeding the ${tierMs / 1000}s no-wait limit. ${NO_WAIT_HINT}`,
+    };
+  }
+  return { timeout: Math.min(requested, remaining) };
+}
+
+/** 阻塞调用返回后按实际耗时入账（任务提前结束不烧预算）。 */
+export function settleShortTierWait(sessionId: string, elapsedMs: number): void {
+  shortTierWaitSpent.set(sessionId, (shortTierWaitSpent.get(sessionId) ?? 0) + Math.max(0, elapsedMs));
+}
+
 /** 短档超时且 handover 失败（任务容量满/进程已退出）时的兜底文案；正常路径会带 task-id 返回。 */
 export function exceededShortTierMessage(timeoutMs: number): string {
   return `Command exceeded the ${timeoutMs / 1000}s foreground limit for this session and could not be adopted as a background task (capacity reached or process already exited); the process was terminated. Split it into shorter commands or retry in a moment.`;

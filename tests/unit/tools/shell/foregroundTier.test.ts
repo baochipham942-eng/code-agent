@@ -2,9 +2,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   checkNoWaitCommand,
   clampToShortTier,
+  grantShortTierWait,
   markShortTierSession,
   resolveForegroundTimeoutTier,
   resolveShortTierWait,
+  settleShortTierWait,
 } from '../../../../src/host/tools/shell/foregroundTier';
 import { BASH } from '../../../../src/shared/constants';
 
@@ -41,5 +43,18 @@ describe('foregroundTier', () => {
     expect(clampToShortTier(undefined)).toEqual({ timeout: 10000 });
     expect(resolveShortTierWait(30000).refusal).toBeTruthy();
     expect(resolveShortTierWait(undefined)).toEqual({ timeout: 10000 });
+  });
+
+  it('r3 累计 no-wait 预算：多次 ≤ 档位的轮询累计超过档位即拒绝，按实际耗时入账', () => {
+    // 复刻 r2 e2e 实录：每条等待都 ≤ 档位（10s），单次守卫放行，但累计把回合拖满命令全程。
+    expect(grantShortTierWait('chan-1', 10000)).toEqual({ timeout: 10000 });
+    settleShortTierWait('chan-1', 10000);
+    const refused = grantShortTierWait('chan-1', 10000);
+    expect(refused.refusal).toContain('arrive automatically');
+    expect(refused.refusal).toContain('no-wait limit');
+    // 预算按会话隔离；实际阻塞小于申请额时只入账实际值，余量仍在。
+    expect(grantShortTierWait('chan-2', 10000).timeout).toBe(10000);
+    settleShortTierWait('chan-3', 4000);
+    expect(grantShortTierWait('chan-3', 10000)).toEqual({ timeout: 6000 });
   });
 });

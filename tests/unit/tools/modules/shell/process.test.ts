@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import os from 'os';
-import { markShortTierSession } from '../../../../../src/host/tools/shell/foregroundTier';
+import { markShortTierSession, settleShortTierWait } from '../../../../../src/host/tools/shell/foregroundTier';
 import type { CanUseToolFn, Logger, ToolContext } from '../../../../../src/host/protocol/tools';
 
 const {
@@ -178,6 +178,43 @@ describe('processModule structured result metadata', () => {
 
     const interactive = await handler.execute({ action: 'output', task_id: 'task-1', timeout: 60000 }, makeCtx(), allowAll);
     expect(interactive.ok).toBe(true);
+  });
+
+  it('r3 累计 no-wait 预算：预算耗尽后阻塞轮询被拒，已终态任务与非阻塞读取不受影响', async () => {
+    isTaskIdMock.mockReturnValue(true);
+    getTaskOutputMock.mockResolvedValue({ status: 'running', output: '', exitCode: null, duration: 1 });
+    getBackgroundTaskMock.mockReturnValue({ taskId: 'task-1', status: 'running', command: 'x' });
+    const sessionId = `short-budget-${Date.now()}`;
+    markShortTierSession(sessionId);
+    const handler = await processModule.createHandler();
+
+    // 预算还有余量：放行且等待上限被压到余量（r2 e2e 实录的第二条无 timeout 轮询正是这样拖满回合）。
+    settleShortTierWait(sessionId, 4000);
+    const granted = await handler.execute({ action: 'output', task_id: 'task-1' }, makeCtx({ sessionId }), allowAll);
+    expect(granted.ok).toBe(true);
+    expect(getTaskOutputMock).toHaveBeenLastCalledWith('task-1', true, 6000);
+
+    // 预算耗尽：同一会话继续阻塞等（output 与 poll）都被拒，并带「结果自动送达」提示。
+    settleShortTierWait(sessionId, 6000);
+    const refusedOutput = await handler.execute({ action: 'output', task_id: 'task-1' }, makeCtx({ sessionId }), allowAll);
+    expect(refusedOutput.ok).toBe(false);
+    if (!refusedOutput.ok) expect(refusedOutput.error).toContain('arrive automatically');
+
+    const refusedPoll = await handler.execute({ action: 'poll', session_id: 'task-1', block: true }, makeCtx({ sessionId }), allowAll);
+    expect(refusedPoll.ok).toBe(false);
+    if (!refusedPoll.ok) expect(refusedPoll.error).toContain('arrive automatically');
+
+    // 已终态任务的读取永不计量：任务完成后随时能读全量输出（通知之外的兜底读取路径）。
+    getBackgroundTaskMock.mockReturnValue({ taskId: 'task-1', status: 'completed', command: 'x' });
+    getTaskOutputMock.mockResolvedValue({ status: 'completed', output: 'done', exitCode: 0, duration: 1 });
+    const completed = await handler.execute({ action: 'output', task_id: 'task-1' }, makeCtx({ sessionId }), allowAll);
+    expect(completed.ok).toBe(true);
+
+    // 非阻塞读取不受预算影响。
+    getBackgroundTaskMock.mockReturnValue({ taskId: 'task-1', status: 'running', command: 'x' });
+    getTaskOutputMock.mockResolvedValue({ status: 'running', output: '', exitCode: null, duration: 1 });
+    const nonBlock = await handler.execute({ action: 'output', task_id: 'task-1', block: false }, makeCtx({ sessionId }), allowAll);
+    expect(nonBlock.ok).toBe(true);
   });
 
   it('poll appends the sandbox denial path for a failed PTY', async () => {

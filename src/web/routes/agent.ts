@@ -96,6 +96,8 @@ import {
   handleCloudRunAdmission,
   registerCloudRunRoutes,
 } from './cloudRunRoutes';
+import { wireChannelCloudRun } from './cloudChannelRun';
+import { isWebServiceMode } from '../middleware/auth';
 import { CloudCronScheduler } from '../../host/services/cloudRun/cloudCronScheduler';
 import type { CloudRunState } from '../../shared/contract/cloudRun';
 import type { CloudRunLedger } from '../../host/services/cloudRun/cloudRunLedger';
@@ -416,9 +418,16 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     },
     logger,
   });
+  // ADR-087 S4B：服务模式把通道入站接进云端账本（admit 唯一入口），并给提升的
+  // channel 行装执行体；桌面态两样都不装，通道行为不变。
+  const getCloudLedger = () => deps.getCloudRunLedger?.() ?? getDatabase().getCloudRunLedger();
+  const channelCloud = isWebServiceMode()
+    ? wireChannelCloudRun({ getLedger: getCloudLedger, logger })
+    : undefined;
   const cloudRunRuntime = new CloudRunRouteRuntime({
-    getLedger: () => deps.getCloudRunLedger?.() ?? getDatabase().getCloudRunLedger(),
+    getLedger: getCloudLedger,
     runRegistry,
+    ...(channelCloud ? { executeChannelRun: channelCloud.executeChannelRun } : {}),
     execute: (body, cloudRunId, options) => runAgentTurn(body, createOfflineAgentRunResponseSink(), {
       connectedClient: false,
       cloudRunId,

@@ -15,14 +15,18 @@ vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 
-const bridge = vi.hoisted(() => ({ database: null as unknown, sessionRepo: null as unknown }));
+const bridge = vi.hoisted(() => ({
+  database: null as unknown,
+  sessionRepo: null as unknown,
+  currentUser: null as { id: string } | null,
+}));
 const loggerMocks = vi.hoisted(() => ({ warn: vi.fn() }));
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: loggerMocks.warn, error: vi.fn(), debug: vi.fn() }),
 }));
 vi.mock('../../../src/host/services/auth/authService', () => ({
-  getAuthService: () => ({ getCurrentUser: () => null }),
+  getAuthService: () => ({ getCurrentUser: () => bridge.currentUser }),
 }));
 vi.mock('../../../src/host/services/core/databaseService', () => ({
   getDatabase: () => bridge.database,
@@ -72,7 +76,7 @@ let claudeRoot: string;
 let homeDir: string;
 let userSkillsDir: string;
 
-async function writeClaudeChat(sessionId: string): Promise<void> {
+async function writeClaudeChat(sessionId: string): Promise<string> {
   const file = path.join(claudeRoot, sessionId, `${sessionId}.jsonl`);
   await fs.mkdir(path.dirname(file), { recursive: true });
   const lines = [
@@ -80,12 +84,13 @@ async function writeClaudeChat(sessionId: string): Promise<void> {
     { type: 'assistant', uuid: `a-${sessionId}`, sessionId, timestamp: '2026-10-10T10:00:01.000Z', message: { content: [{ type: 'text', text: 'ok' }] } },
   ];
   await fs.writeFile(file, `${lines.map((line) => JSON.stringify(line)).join('\n')}\n`);
+  return file;
 }
 
-function runImport() {
+function runImport(options?: { now?: () => number; ownerScopeId?: string }) {
   return importRecentExternalChats({
-    ownerScopeId: LOCAL_SESSION_FORK_OWNER_SCOPE_ID,
-    now: () => NOW,
+    ownerScopeId: options?.ownerScopeId ?? LOCAL_SESSION_FORK_OWNER_SCOPE_ID,
+    now: options?.now ?? (() => NOW),
     roots: { claudeProjectsRoot: claudeRoot, codexSessionsRoot: path.join(tmpRoot, 'codex-none') },
     resolveProject: (cwd, now) => projectService.ensureProjectForWorkspace(cwd, now),
     lookupProjectForWorkspace: (cwd) => Promise.resolve(projectService.findProjectForWorkspace(cwd)),
@@ -110,6 +115,13 @@ function importedRoot(sourceSessionId: string): string {
 
 function ledgerCount(): number {
   return (db.prepare('SELECT COUNT(*) AS c FROM session_fork_portability_imports').get() as { c: number }).c;
+}
+
+function ledgerCreatedAt(importedRootSessionId: string): number {
+  const row = db.prepare(
+    'SELECT created_at FROM session_fork_portability_imports WHERE imported_root_session_id = ?',
+  ).get(importedRootSessionId) as { created_at: number };
+  return row.created_at;
 }
 
 /** 给导入会话挂一个未删除的 fork 子会话（用户在只读会话里「继续」）。 */
@@ -163,7 +175,7 @@ beforeEach(async () => {
   bridge.database = {
     importSessionFork: (input: unknown) => portabilityRepo.importSessionFork(input as never),
     getProjectRepo: () => projectRepo,
-    findSessionForkImportRoot: (id: string) => portabilityRepo.findImportedRootSessionId(id),
+    findSessionForkImportRoot: (id: string, notAfter?: number) => portabilityRepo.findImportedRootSessionId(id, notAfter),
     hasLiveSessionForkChild: (id: string) => portabilityRepo.hasLiveForkChild(id),
     getSession: (id: string) => sessionRepo.getSession(id),
   };
@@ -226,6 +238,38 @@ describe('undoImportHistoryEntry — chats', () => {
     const again = await runImport();
     expect(again.map((r) => [r.sourceSessionId, r.status])).toEqual([['plain', 'already_imported']]);
     expect(sessionRow(importedRoot('plain')).is_deleted).toBe(1);
+  });
+
+  it('rework r1: undoing an old entry spares the same chat re-imported later under another owner scope', async () => {
+    const chatFile = await writeClaudeChat('plain');
+    const first = await runImport();
+    expect(first.map((r) => r.status)).toEqual(['imported']);
+    // 台账 created_at 走真实时钟，历史条目的 at 也取真实时刻（首次导入之后）。
+    const recordedAt = Date.now();
+    await recordChatImportHistory(first, { now: () => recordedAt });
+    const [entry] = await listImportHistory();
+    expect(entry.at).toBe(recordedAt);
+    const oldRoot = importedRoot('plain');
+
+    // 同一 exportId 的第二行台账：换 owner scope 后自动同步重导入同一外部聊天
+    // （源文件长了消息，payload digest 变了）——去重按 (exportId, owner, project,
+    // namespace) 查，owner 不同判未导入，照常落一行。
+    await fs.appendFile(chatFile, `${JSON.stringify({ type: 'user', uuid: 'u-plain-2', sessionId: 'plain', timestamp: '2026-10-10T10:00:02.000Z', message: { content: [{ type: 'text', text: 'more' }] } })}\n`);
+    bridge.currentUser = { id: 'user-two' };
+    const second = await runImport({ ownerScopeId: 'user-two' });
+    expect(second.map((r) => r.status)).toEqual(['imported']);
+    const newRoot = importedRoot('plain') as string;
+    expect(newRoot).not.toBe(oldRoot);
+    expect(ledgerCount()).toBe(2);
+    expect(ledgerCreatedAt(oldRoot)).toBeLessThanOrEqual(recordedAt);
+    expect(ledgerCreatedAt(newRoot)).toBeGreaterThan(recordedAt);
+    expect(sessionRow(newRoot).is_deleted).toBe(0);
+
+    const updated = await undoImportHistoryEntry(entry.id);
+
+    expect(sessionRow(oldRoot).is_deleted).toBe(1);
+    expect(sessionRow(newRoot).is_deleted).toBe(0);
+    expect(updated.undone).toMatchObject({ removed: 1, kept: [] });
   });
 });
 

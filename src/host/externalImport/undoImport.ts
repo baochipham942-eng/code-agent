@@ -38,7 +38,9 @@ async function undoChat(entry: ImportHistoryEntry, item: ImportHistoryItem): Pro
   const { getDatabase } = await import('../services/core/databaseService');
   const db = getDatabase();
   const exportId = `external-history:${entry.source}:${item.sourceSessionId}`;
-  const sessionId = db.findSessionForkImportRoot(exportId);
+  // 只认本条目记录时刻之前落下的台账行：同 exportId 后来重导入（换 owner/project）
+  // 写的新行不属于这次撤销，盲取最新会把删错落到新会话上。
+  const sessionId = db.findSessionForkImportRoot(exportId, entry.at);
   if (!sessionId || !db.getSession(sessionId)) return { removed: false, reason: 'missing' };
   if (db.hasLiveSessionForkChild(sessionId)) return { removed: false, reason: 'continued' };
   const { getSessionManager } = await import('../services/infra/sessionManager');

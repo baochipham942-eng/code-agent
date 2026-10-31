@@ -271,15 +271,20 @@ export class SessionForkPortabilityRepository {
     return this.readImportRecord(sourceExportId, ownerScopeId, projectId, namespace) !== null;
   }
 
-  /** 按 exportId 找导入产生的 Neo 根会话（只读；跨 owner/project 取最新一条）。 */
-  findImportedRootSessionId(sourceExportId: string): string | null {
+  /**
+   * 按 exportId 找导入产生的 Neo 根会话（只读；跨 owner/project）。
+   * notAfter：只看 created_at ≤ notAfter 的行里最新的一条。撤销历史条目时传条目记录
+   * 时刻——同 exportId 可以有更晚的行（换 owner scope / 换项目后自动同步重导入），
+   * 盲取最新一条会把撤销落到别人家的会话上。
+   */
+  findImportedRootSessionId(sourceExportId: string, notAfter = Number.MAX_SAFE_INTEGER): string | null {
     const row = this.db.prepare(`
       SELECT imported_root_session_id AS id
       FROM session_fork_portability_imports
-      WHERE source_export_id = ?
-      ORDER BY rowid DESC
+      WHERE source_export_id = ? AND created_at <= ?
+      ORDER BY created_at DESC, rowid DESC
       LIMIT 1
-    `).get(sourceExportId) as { id: string } | undefined;
+    `).get(sourceExportId, notAfter) as { id: string } | undefined;
     return row?.id ?? null;
   }
 

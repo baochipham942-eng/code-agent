@@ -18,6 +18,7 @@ import { BASH, OS_SANDBOX_CODES } from '../../../../shared/constants';
 import { HostReasonCode, createHostReason } from '../../../../shared/contract/permission';
 import { startBackgroundTask } from '../../shell/backgroundTasks';
 import { handoverTimedOutCommand } from '../../shell/timeoutHandover';
+import { checkNoWaitCommand, clampToShortTier, exceededShortTierMessage, resolveForegroundTimeoutTier } from '../../shell/foregroundTier';
 import { runForegroundCommand } from './foregroundCommand';
 import { createPtySession, getPtySessionOutput } from '../../shell/ptyExecutor';
 import { generateBashDescription } from '../../shell/dynamicDescription';
@@ -323,7 +324,14 @@ class BashHandler implements ToolHandler<Record<string, unknown>, string> {
       return { ok: false, error: DESIGN_CANVAS_REDIRECT_MESSAGE, code: 'DESIGN_CANVAS_REDIRECT' };
     }
 
-    const timeout = Math.min((args.timeout as number) || BASH.DEFAULT_TIMEOUT, MAX_TIMEOUT_MS);
+    const shortTier = resolveForegroundTimeoutTier(ctx.sessionId) === 'short';
+    const noWaitRefusal = shortTier ? checkNoWaitCommand(command) : null;
+    if (noWaitRefusal) return { ok: false, error: noWaitRefusal, code: 'INVALID_ARGS' };
+    const shortClamp = shortTier ? clampToShortTier(args.timeout as number | undefined) : undefined;
+    const timeout = shortClamp
+      ? shortClamp.timeout
+      : Math.min((args.timeout as number) || BASH.DEFAULT_TIMEOUT, MAX_TIMEOUT_MS);
+    const clampNote = shortClamp?.note ? `\n[note] ${shortClamp.note}` : '';
     const modelConfig = ctx.modelConfig as ModelConfig | undefined;
     const maxOutputLength = resolveToolResultBudget(
       modelConfig?.model ? resolveContextWindow(modelConfig.model, modelConfig.provider) : Number.NaN,
@@ -803,7 +811,12 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
           startedAt: Date.now(),
           env: childEnvFg.env,
           toolName: schema.name,
-          onTimeout: unattended ? undefined : ({ child, stdout, stderr, startedAt }) => handoverTimedOutCommand({
+          // 短档（channel/cron/role-wake）超时一律 handover 转后台，含 unattended 会话：
+          // 收编不换命令、不换沙箱——child 仍跑在 spawn 时的 sandbox-exec 包装下，
+          // 沙箱决策原样保留（sandboxed 标志随收编传入）。显式 run_in_background=true
+          // 在 unattended 仍拒（上方 BACKGROUND_UNAVAILABLE）；只有非短档的 unattended
+          // 超时保留 kill（120s 默认档维持 PR #2065 行为）。
+          onTimeout: unattended && !shortTier ? undefined : ({ child, stdout, stderr, startedAt }) => handoverTimedOutCommand({
             child,
             command: sandboxedCommand,
             cwd: workingDirectory,
@@ -920,7 +933,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         const preview = handover.preview || '(no output yet)';
         return {
           ok: true,
-          output: `Command timed out after ${timeout / 1000} seconds and was adopted as a background task.\n\n<task-id>${handover.taskId}</task-id>\n<task-type>bash-timeout-handover</task-type>\n<status>running</status>\n<output-preview>\n${preview}\n</output-preview>\n\nUse Process with action="output", task_id="${handover.taskId}" to continue reading the full output.`,
+          output: `Command timed out after ${timeout / 1000} seconds and was adopted as a background task.\n\n<task-id>${handover.taskId}</task-id>\n<task-type>bash-timeout-handover</task-type>\n<status>running</status>\n<output-preview>\n${preview}\n</output-preview>\n\nUse Process with action="output", task_id="${handover.taskId}" to continue reading the full output.\n\nResults will be delivered automatically; continue with other work.${clampNote}`,
           meta: {
             ...buildSandboxMeta(sandboxDecision),
             ...(sandboxEscalationMeta ? { sandboxEscalation: sandboxEscalationMeta } : {}),
@@ -957,7 +970,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
 
       return {
         ok: true,
-        output: cwdPrefix + output,
+        output: cwdPrefix + output + clampNote,
         meta: {
           ...buildSandboxMeta(sandboxDecision),
           ...(sandboxEscalationMeta ? { sandboxEscalation: sandboxEscalationMeta } : {}),
@@ -1028,7 +1041,9 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
       }
 
       if (errObj.killed && errObj.signal === 'SIGTERM') {
-        const timeoutMessage = unattended
+        const timeoutMessage = unattended && shortTier
+          ? exceededShortTierMessage(timeout) + clampNote
+          : unattended
           ? `Command timed out after ${timeout / 1000} seconds. Background execution is disabled in unattended sessions; the process was terminated.`
           : `Command timed out after ${timeout / 1000} seconds. Consider using run_in_background=true for long-running commands.`;
         return {

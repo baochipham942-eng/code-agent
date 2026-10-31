@@ -504,9 +504,7 @@ livePreview: {
 // 产物卡面向非程序员协作者，不用 Outputs/Sources/Skills 这类英文技术词。
 turnSections: { outputs: '产物', sources: '来源', executed: '操作记录', skills: '技能' },
 // 分叉子会话首段用户输入上方的轻量来源提示（取代原顶部分支导航栏）。
-forkSourceHint: {
-  source: '由此分支 · {parentTitle} · 锚点 {anchorId}',
-},
+forkSourceHint: { source: '由此分支 · {parentTitle}', imported: '续接自 {source} 导入的对话 · {parentTitle}', originalChat: '原对话' },
 
 // 工具调用展示（LiveToolOutput / ToolDetails / ToolResultMediaDisplays / CodeBlock / AbilityMenu）的零碎 UI 文案。
 toolDisplay: {
@@ -1016,9 +1014,7 @@ livePreview: {
 },
 // Turn timeline section titles (TraceNodeRenderer's ArtifactOwnershipNode / SkillActivityNode).
 turnSections: { outputs: 'Outputs', sources: 'Sources', executed: 'Activity', skills: 'Skills' },
-forkSourceHint: {
-  source: 'Branched from · {parentTitle} · anchor {anchorId}',
-},
+forkSourceHint: { source: 'Branched from · {parentTitle}', imported: 'Continued from a chat imported from {source} · {parentTitle}', originalChat: 'the original chat' },
 
 toolDisplay: {
   liveOutput: 'Live output',

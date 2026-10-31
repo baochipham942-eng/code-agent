@@ -76,7 +76,9 @@ const limits = {
   // 2026-10-28 +1: scripts/gen-native-dep-manifest.mjs（N-NATIVE-MANIFEST-T1：
   // package.json 与三条构建 workflow 共用的原生依赖清单稳定入口；共享 mapPath
   // 已归入 scripts/lib/，只占 writer 这一个直属名额）。
-  directScriptFiles: 168,
+  // 2026-10-28 +1: scripts/verify-native-manifest.mjs（N-NATIVE-MANIFEST-T5：
+  // macOS / Windows 发版门共用的原生依赖清单与闭包校验稳定入口）。
+  directScriptFiles: 169,
   // 15: the Poppler promotion boundary is split across two workflows on purpose —
   // build-poppler-sidecar.yml only reviews candidates and can never publish, while
   // promote-poppler-sidecar.yml holds the OSS credentials and publishes them.

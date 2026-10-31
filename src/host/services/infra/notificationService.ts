@@ -15,15 +15,17 @@ import {
   type NotificationIntent,
 } from './notificationPolicy';
 import { getConfigService } from '../core/configService';
+import { getDurableResumeNotificationText } from '../../../shared/i18n/durableResumeNotification';
 import {
-  getDurableResumeNotificationText,
-  type DurableResumeNotificationLocale,
-} from '../../../shared/i18n/durableResumeNotification';
+  getNotificationDigestText,
+  type NotificationDigestLocale,
+} from '../../../shared/i18n/notificationDigest';
+import { NotificationBudget, type NotificationBudgetItem } from './notificationBudget';
 
 const logger = createLogger('NotificationService');
 
 /** 通知文案语言跟随用户设置（ui.language）；读取失败按中文兜底，通知本身不许把恢复路径炸掉。 */
-function readNotificationLocale(): DurableResumeNotificationLocale {
+function readNotificationLocale(): NotificationDigestLocale {
   try {
     return getConfigService().getSettings().ui.language === 'en' ? 'en' : 'zh';
   } catch {
@@ -63,7 +65,7 @@ interface VoiceWorkSettledNotificationData {
 
 export interface RecordedNotification {
   id: string;
-  type: 'needs_input' | 'task_complete' | 'task_failed' | 'task_resuming' | 'plugin';
+  type: 'needs_input' | 'task_complete' | 'task_failed' | 'task_resuming' | 'plugin' | 'digest';
   sessionId: string;
   title: string;
   body: string;
@@ -71,10 +73,33 @@ export interface RecordedNotification {
   delivery: 'sent' | 'dry_run';
 }
 
+interface NotificationDeliveryPayload {
+  id: string;
+  title: string;
+  body: string;
+  sessionId: string;
+  jobId?: string;
+  markSessionUnread?: boolean;
+  code?: string;
+  siteOrigin?: string;
+  failureKind?: CronFailurePresentationKind;
+  resetAt?: string;
+}
+
+interface BudgetedNotification extends NotificationBudgetItem {
+  type: RecordedNotification['type'];
+  body: string;
+  delivery: Omit<NotificationDeliveryPayload, 'id' | 'title' | 'body' | 'sessionId'>;
+}
+
 class NotificationService implements Disposable {
   private enabled: boolean = true;
   private disposed = false;
   private recentNotifications: RecordedNotification[] = [];
+  private readonly budget = new NotificationBudget<BudgetedNotification>({
+    deliver: (item) => this.deliverNow(item),
+    deliverDigest: (items) => this.deliverDigest(items),
+  });
 
   private isDryRun(): boolean {
     return process.env.CODE_AGENT_NOTIFICATION_DRY_RUN === '1';
@@ -102,6 +127,7 @@ class NotificationService implements Disposable {
 
   clearRecentNotifications(): void {
     this.recentNotifications = [];
+    this.budget.clear();
   }
 
   /**
@@ -128,24 +154,64 @@ class NotificationService implements Disposable {
    * 图标与身份，点击经 onAction 跳到对应会话。替代旧的 osascript（无图标、点击不回调）。
    * dry-run 下只记录不投递（E2E 用 getRecent 断言，不真弹）。
    */
-  private deliver(payload: {
-    id: string;
-    title: string;
-    body: string;
-    sessionId: string;
-    jobId?: string;
-    markSessionUnread?: boolean;
-    code?: string;
-    siteOrigin?: string;
-    failureKind?: CronFailurePresentationKind;
-    resetAt?: string;
-  }): void {
+  private deliverNow(item: BudgetedNotification): void {
+    const entry = this.record({
+      type: item.type,
+      sessionId: item.sessionId,
+      title: item.title,
+      body: item.body,
+    });
+    this.deliver({
+      id: entry.id,
+      title: entry.title,
+      body: entry.body,
+      sessionId: entry.sessionId,
+      ...item.delivery,
+    });
+  }
+
+  private deliverDigest(items: readonly BudgetedNotification[]): void {
+    const text = getNotificationDigestText(readNotificationLocale());
+    this.deliverNow({
+      intent: 'task_complete',
+      type: 'digest',
+      sessionId: '',
+      title: text.title(items.length),
+      body: text.body(items.map((item) => item.title), items.length),
+      delivery: {},
+    });
+  }
+
+  private deliver(payload: NotificationDeliveryPayload): void {
     if (this.isDryRun()) return;
     broadcastToRenderer(IPC_CHANNELS.NOTIFICATION_SHOW, {
       ...payload,
       title: sanitizeNotificationText(payload.title, 120),
       body: sanitizeNotificationText(payload.body, 320),
     });
+  }
+
+  /**
+   * 预算把通知折进窗口时，其未读标记不能跟着等窗口收尾：暂存当下就单独广播一条
+   * attentionOnly 事件（渲染端只接未读圆点、不弹 OS 通知），之后的窗尾投递不再重复标记。
+   */
+  private broadcastSessionAttentionMark(sessionId: string): void {
+    if (this.isDryRun()) return;
+    broadcastToRenderer(IPC_CHANNELS.NOTIFICATION_SHOW, {
+      id: `notification_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      title: '',
+      body: '',
+      sessionId,
+      markSessionUnread: true,
+      attentionOnly: true,
+    });
+  }
+
+  private enqueueBudgeted(item: BudgetedNotification): void {
+    if (this.budget.enqueue(item) !== 'held') return;
+    if (!item.delivery.markSessionUnread) return;
+    this.broadcastSessionAttentionMark(item.sessionId);
+    delete item.delivery.markSessionUnread;
   }
 
   private isIntentAllowed(intent: NotificationIntent): boolean {
@@ -176,17 +242,13 @@ class NotificationService implements Disposable {
     if (!this.isIntentAllowed('needs_input')) return;
     if (!this.shouldNotify()) return;
 
-    const entry = this.record({
+    this.enqueueBudgeted({
+      intent: 'needs_input',
       type: 'needs_input',
       sessionId: data.sessionId,
       title: data.title,
       body: data.body,
-    });
-    this.deliver({
-      id: entry.id,
-      title: entry.title,
-      body: entry.body,
-      sessionId: data.sessionId,
+      delivery: {},
     });
     logger.info('Needs-input notification sent', { title: data.title });
   }
@@ -195,7 +257,7 @@ class NotificationService implements Disposable {
    * 发送任务完成通知
    * @param options.force 后台任务（loop/定时任务）完成时传 true，绕过焦点门强制提醒
    */
-  notifyTaskComplete(data: TaskNotificationData, options?: { force?: boolean }): void {
+  notifyTaskComplete(data: TaskNotificationData, options?: { force?: boolean; urgent?: boolean }): void {
     const intent: NotificationIntent = data.succeeded === false ? 'task_failed' : 'task_complete';
     if (!this.isIntentAllowed(intent)) return;
     if (!this.shouldNotify(options?.force)) {
@@ -215,23 +277,20 @@ class NotificationService implements Disposable {
     body += `\n耗时: ${this.formatDuration(duration)}`;
 
     const title = `${data.succeeded === false ? '任务失败' : '任务完成'} - ${sessionTitle}`;
-    const trimmedBody = body.trim();
-    const entry = this.record({
+    this.enqueueBudgeted({
+      intent,
+      urgent: options?.urgent,
       type: intent,
       sessionId: data.sessionId,
       title,
-      body: trimmedBody,
-    });
-    this.deliver({
-      id: entry.id,
-      title: entry.title,
-      body: entry.body,
-      sessionId: data.sessionId,
-      ...(data.jobId ? { jobId: data.jobId } : {}),
-      ...(data.code ? { code: data.code } : {}),
-      ...(data.siteOrigin ? { siteOrigin: data.siteOrigin } : {}),
-      ...(data.failureKind ? { failureKind: data.failureKind } : {}),
-      ...(data.resetAt ? { resetAt: data.resetAt } : {}),
+      body: body.trim(),
+      delivery: {
+        ...(data.jobId ? { jobId: data.jobId } : {}),
+        ...(data.code ? { code: data.code } : {}),
+        ...(data.siteOrigin ? { siteOrigin: data.siteOrigin } : {}),
+        ...(data.failureKind ? { failureKind: data.failureKind } : {}),
+        ...(data.resetAt ? { resetAt: data.resetAt } : {}),
+      },
     });
     logger.info('Notification dispatched to renderer', { sessionTitle });
   }
@@ -244,13 +303,14 @@ class NotificationService implements Disposable {
     // 兜底会话名必须与通知同语言，所以在这里（知道 locale 的一方）落兜底，调用方传原始标题。
     const title = text.resumingTitle(data.sessionTitle || text.untitledSession);
     const body = text.resumingBody(data.autoResumeCount);
-    const entry = this.record({
+    this.enqueueBudgeted({
+      intent: 'task_resuming',
       type: 'task_resuming',
       sessionId: data.sessionId,
       title,
       body,
+      delivery: { markSessionUnread: true },
     });
-    this.deliver({ id: entry.id, title: entry.title, body: entry.body, sessionId: data.sessionId, markSessionUnread: true });
     logger.info('Task resume notification sent', { sessionId: data.sessionId, autoResumeCount: data.autoResumeCount });
   }
 
@@ -265,14 +325,15 @@ class NotificationService implements Disposable {
       return;
     }
 
-    const entry = this.record({
+    this.enqueueBudgeted({
+      intent: 'plugin',
       type: 'plugin',
       sessionId: '',
       title: data.title,
       body: data.body,
+      delivery: {},
     });
-    this.deliver({ id: entry.id, title: entry.title, body: entry.body, sessionId: '' });
-    logger.info('Plugin notification sent', { title: entry.title });
+    logger.info('Plugin notification sent', { title: data.title });
   }
 
   /**
@@ -299,18 +360,13 @@ class NotificationService implements Disposable {
       : data.status === 'unverified'
         ? '这件语音派出的任务在通话结束后跑完了，但没有留下产物，请你自己确认一下结果。'
         : `这件语音派出的任务在通话结束后失败了：${data.detail?.trim() || '未给出原因'}`;
-    const entry = this.record({
+    this.enqueueBudgeted({
+      intent,
       type: intent,
       sessionId: data.sessionId,
       title,
       body,
-    });
-    this.deliver({
-      id: entry.id,
-      title: entry.title,
-      body: entry.body,
-      sessionId: data.sessionId,
-      markSessionUnread: true,
+      delivery: { markSessionUnread: true },
     });
     logger.info('Voice work settlement notification sent', {
       sessionId: data.sessionId,
@@ -329,6 +385,7 @@ class NotificationService implements Disposable {
     if (this.disposed) return;
     this.disposed = true;
     this.enabled = false;
+    this.budget.dispose();
   }
 
   setEnabled(enabled: boolean): void {

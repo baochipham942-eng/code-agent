@@ -39,6 +39,10 @@ const env = vi.hoisted(() => {
         { engine: 'codex_cli', sourceSessionId: 's2', title: 'chat two', status: 'already_imported' },
       ]),
     },
+    importHistory: {
+      list: vi.fn(async (): Promise<unknown> => [{ id: 'entry-1', category: 'chats' }]),
+      recordChats: vi.fn(async (): Promise<void> => {}),
+    },
     session: {
       getSession: vi.fn(async (): Promise<unknown> => null),
       updateSession: vi.fn(async () => {}),
@@ -66,8 +70,16 @@ vi.mock('../../../src/host/services/agentEngine/agentEngineHistoryImport', () =>
 vi.mock('../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => env.session,
 }));
+vi.mock('../../../src/host/externalImport/importHistory', () => ({
+  listImportHistory: env.importHistory.list,
+  recordChatImportHistory: env.importHistory.recordChats,
+}));
 // ownerScope 单一真源模块：真实现会拉进 authService/supabase 一串重图，这里钉住返回值，
 // 断言 handler 透传的就是它（口径漂移会让批量导入去重预检整批漏判）。
+vi.mock('../../../src/host/externalImport/chatsSyncPreference', () => ({
+  readChatsSyncState: () => ({ mode: 'off' }),
+  writeChatsSyncState: () => {},
+}));
 vi.mock('../../../src/host/services/sessionFork/ownerScope', () => ({
   currentSessionForkOwnerScopeId: () => 'owner-fixture',
 }));
@@ -128,6 +140,26 @@ describe('agentEngine.ipc dispatch 特征：只读委派', () => {
       ],
     });
     expect(env.history.importRecentChats).toHaveBeenCalledWith({ ownerScopeId: 'owner-fixture' });
+    expect(env.importHistory.recordChats).toHaveBeenCalledWith([
+      { engine: 'claude_code', sourceSessionId: 's1', title: 'chat one', status: 'imported' },
+      { engine: 'codex_cli', sourceSessionId: 's2', title: 'chat two', status: 'already_imported' },
+    ]);
+  });
+
+  it('listImportHistory 返回持久化条目', async () => {
+    expect(await call('listImportHistory')).toEqual({
+      success: true,
+      data: [{ id: 'entry-1', category: 'chats' }],
+    });
+    expect(env.importHistory.list).toHaveBeenCalledTimes(1);
+  });
+
+  it('getChatsSync 回传偏好状态；setChatsSync 非法 mode → INVALID_PAYLOAD', async () => {
+    expect(await call('getChatsSync')).toEqual({ success: true, data: { mode: 'off' } });
+    expect(await call('setChatsSync', { mode: 'sometimes' })).toEqual(
+      fail('INVALID_PAYLOAD', 'setChatsSync requires mode off | on | paused.'),
+    );
+    expect(await call('setChatsSync')).toMatchObject({ success: false });
   });
 });
 

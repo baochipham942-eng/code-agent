@@ -32,6 +32,7 @@ import {
   type AgentEngineHistoryPreviewRequest,
 } from '../services/agentEngine/agentEngineHistoryImport';
 import { getSessionManager } from '../services/infra/sessionManager';
+import { currentSessionForkOwnerScopeId } from '../services/sessionFork/ownerScope';
 import * as fsp from 'node:fs/promises';
 import { getDefaultWorkDirectory } from '../config/configPaths';
 
@@ -81,6 +82,13 @@ const agentEngineHandlers: RawDomainRouteHandlers<AgentEngineDomainRequest, void
   importHistory: async (_ctx, requestPayload) => {
     const data = await getAgentEngineHistoryImportService()
       .mapHistoryForImport(requestPayload as AgentEngineHistoryImportEnvelopeRequest);
+    return { success: true, data };
+  },
+  importRecentChats: async (_ctx, _requestPayload) => {
+    // ownerScopeId 必须与 importSessionFork 台账口径逐字同值（单一真源见 ownerScope 模块），
+    // 漂移会让批量导入的去重预检整批漏判。
+    const data = await getAgentEngineHistoryImportService()
+      .importRecentChats({ ownerScopeId: currentSessionForkOwnerScopeId() });
     return { success: true, data };
   },
   listModels: async (_ctx, _requestPayload) => {

@@ -107,7 +107,7 @@ export async function recordChatImportHistory(
     items: items.map((item): ImportHistoryItem => ({
       label: item.title,
       outcome: item.status,
-      sourceSessionId: item.sourceSessionId,
+      ...(item.status === 'imported' ? { sourceSessionId: item.sourceSessionId } : {}),
     })),
   })), options);
 }

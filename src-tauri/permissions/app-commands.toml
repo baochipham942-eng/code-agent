@@ -54,6 +54,8 @@ commands.allow = [
   "appshots_skip_motion",
   "appshots_set_target_session",
   "appshots_set_motion_enabled",
+  "appshots_hotkey_status",
+  "appshots_request_hotkey_access",
   "pip_show",
   "pip_frame",
   "pip_controls",

@@ -936,6 +936,13 @@ export const enSettingsWork = {
       permissionsDescription: 'App screenshots need Screen Recording to capture windows and Accessibility to read window text. If the shortcut does not respond, grant permissions in System Settings and restart the app.',
       openScreenCapture: 'Open Screen Recording permissions',
       openAccessibility: 'Open Accessibility permissions',
+      hotkeyTitle: 'Shortcut (⌘+⌘) · Input Monitoring',
+      hotkeyDescription: 'Input Monitoring is only needed for the left+right Command shortcut; you can still attach app screenshots from the "+" menu.',
+      hotkeyStatusOff: 'Off',
+      hotkeyStatusOn: 'On',
+      hotkeyStatusNeedsRestart: 'Granted — restart Neo to take effect',
+      hotkeyEnable: 'Enable shortcut',
+      hotkeyOpenSettings: 'Open Input Monitoring permissions',
     },
     hooks: {
       title: 'Hooks',

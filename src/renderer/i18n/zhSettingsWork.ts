@@ -937,6 +937,13 @@ export const zhSettingsWork = {
       permissionsDescription: '应用截图需要「屏幕录制」截窗、「辅助功能」读取窗口文本。若热键无反应，请在系统设置里授权后重启应用。',
       openScreenCapture: '打开「屏幕录制」权限设置',
       openAccessibility: '打开「辅助功能」权限设置',
+      hotkeyTitle: '快捷键（⌘+⌘）· 输入监控',
+      hotkeyDescription: '只有想用左右 Command 快捷键时才需要「输入监控」；不开也能从输入框「+」菜单附上应用截图。',
+      hotkeyStatusOff: '未开启',
+      hotkeyStatusOn: '已开启',
+      hotkeyStatusNeedsRestart: '已授权，重启 Neo 后生效',
+      hotkeyEnable: '开启快捷键',
+      hotkeyOpenSettings: '打开「输入监控」权限设置',
     },
     hooks: {
       title: 'Hook',

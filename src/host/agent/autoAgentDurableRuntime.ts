@@ -3,6 +3,9 @@ import type { GraphCheckpoint } from '../orchestration/graphTypes';
 import type { RunKernelAdapter } from '../runtime/durableRunKernel';
 import type { AgentTeamDurableParentHost } from './agentTeamDurableTypes';
 import { AUTO_AGENT_CURSOR_VERSION, type AutoAgentRecoveryState } from '../runtime/autoAgentRecoveryHost';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('AutoAgentDurableRuntime');
 
 export interface AutoAgentDurableStartInput {
   parentRunId: string;
@@ -86,6 +89,25 @@ export class AutoAgentDurableRuntime {
       pendingOperations: [operation],
       events: [{ type: 'auto_agent_prepared', payload: { graphId: input.graphId }, recordedAt: now }],
     });
+    let owner = created.owner;
+    let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+    const stopHeartbeat = () => {
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      heartbeatTimer = undefined;
+    };
+    const intervalMs = Math.max(250, Math.floor((owner.leaseExpiresAt - now) / 3));
+    heartbeatTimer = setInterval(() => {
+      void this.kernel.heartbeat(runId, owner, Date.now()).then((renewed) => {
+        owner = renewed;
+      }).catch((error: unknown) => {
+        logger.warn('Auto agent durable heartbeat stopped', {
+          runId,
+          reason: error instanceof Error ? error.message : String(error),
+        });
+        stopHeartbeat();
+      });
+    }, intervalMs);
+    heartbeatTimer.unref?.();
     return {
       runId,
       persist: async (checkpoint) => {
@@ -94,7 +116,7 @@ export class AutoAgentDurableRuntime {
         await this.kernel.checkpoint({
           runId,
           attempt: created.attempt.attempt,
-          owner: created.owner,
+          owner,
           now: checkpoint.updatedAt,
           status: checkpoint.status === 'waiting' || checkpoint.status === 'requires_review' ? 'waiting' : 'running',
           state,
@@ -104,6 +126,7 @@ export class AutoAgentDurableRuntime {
         });
       },
       terminal: async (status, reason, terminalAt = Date.now()) => {
+        stopHeartbeat();
         operation = {
           ...operation,
           status: status === 'completed' ? 'succeeded' : 'failed',
@@ -113,7 +136,7 @@ export class AutoAgentDurableRuntime {
         await this.kernel.checkpoint({
           runId,
           attempt: created.attempt.attempt,
-          owner: created.owner,
+          owner,
           now: terminalAt,
           status: 'running',
           state,
@@ -124,7 +147,7 @@ export class AutoAgentDurableRuntime {
         await this.kernel.terminal({
           runId,
           attempt: created.attempt.attempt,
-          owner: created.owner,
+          owner,
           now: terminalAt + 1,
           status,
           reason,

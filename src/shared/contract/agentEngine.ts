@@ -21,6 +21,21 @@ export type AgentEngineKind =
 
 export type ExternalAgentEngineKind = Exclude<AgentEngineKind, 'native'>;
 
+/** 批量导入最近外部会话的引擎面（Claude Code / Codex CLI，N-EXTHISTORY-IMPORT-CHATS-HOST）。 */
+export type ExternalChatsImportEngineKind = Extract<AgentEngineKind, 'claude_code' | 'codex_cli'>;
+
+/**
+ * 单条外部会话的批量导入结果（importRecentChats IPC action 的 data 元素）。
+ * reason 是宿主日志用的原始诊断串（含路径），renderer 只按 status 出文案、不渲染 reason。
+ */
+export interface RecentExternalChatImportResult {
+  engine: ExternalChatsImportEngineKind;
+  sourceSessionId: string;
+  title: string;
+  status: 'imported' | 'already_imported' | 'folder_missing' | 'failed';
+  reason?: string;
+}
+
 export type AgentEngineInstallState = 'builtin' | 'installed' | 'missing';
 
 export type AgentEngineRuntimeState =

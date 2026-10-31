@@ -16,6 +16,8 @@ export const POSTHOG_EVENTS = {
   MODEL_SELECTED: 'model_selected',
   MODEL_DECISION: 'model_decision',
   MODEL_STRATEGY_RECOMMENDATION_FEEDBACK: 'model_strategy_recommendation_feedback',
+  /** ADR-072 E6：delegate_session 每次调用的结局打点（flag 内测期拒绝码分布），属性只有 outcome/code/gate/action */
+  DELEGATE_SESSION_OUTCOME: 'delegate_session_outcome',
 } as const;
 
 export type PostHogEvent = (typeof POSTHOG_EVENTS)[keyof typeof POSTHOG_EVENTS];

@@ -19,12 +19,19 @@ import { deriveActionFingerprint, deriveSubmissionKey, delegationTargetIdentity 
 import { projectSessionCandidates, resolveCandidateRef } from '../../../services/delegation/delegationCandidates';
 import { getDelegationCandidateSecret, getDelegationToolRuntime, workspaceWithinRoots } from '../../../services/delegation/delegationToolRuntime';
 import { isCrossSessionDelegationEnabled } from '../../../services/delegation/crossSessionDelegationFlag';
+import { createLogger } from '../../../services/infra/logger';
+import { trackNode } from '../../../observability/posthogNode';
+import { POSTHOG_EVENTS } from '../../../../shared/observability/posthog-events';
 import { delegateSessionSchema as schema } from './delegateSession.schema';
+
+const logger = createLogger('DelegateSession');
 
 const REJECTION_SUFFIX = ' Nothing was delegated. Ask the user with AskUserQuestion; do not retry with create_new.';
 
-function rejection(code: string, detail: string): ToolResult<string> {
-  return { ok: false, code: 'DELEGATION_REJECTED', error: `${code}: ${detail}.${REJECTION_SUFFIX}` };
+// ADR-072 E6 打点：meta 只带 code/gate 两个枚举值（无内容、无 id、无路径），
+// 记录层从这里读，避免解析模型可见的 error 文本。
+function rejection(code: string, detail: string, gate?: string): ToolResult<string> {
+  return { ok: false, code: 'DELEGATION_REJECTED', error: `${code}: ${detail}.${REJECTION_SUFFIX}`, meta: { code, gate: gate ?? 'none' } };
 }
 
 function successfulOutput(input: { delegationId: string; targetName: string; queuedAhead: number }): ToolResult<string> {
@@ -212,6 +219,34 @@ export async function executeDelegateSession(
   canUseTool: Parameters<ToolHandler['execute']>[2],
   _onProgress?: Parameters<ToolHandler['execute']>[3],
 ): Promise<ToolResult<string>> {
+  const result = await runDelegateSession(args, ctx, canUseTool, _onProgress);
+  recordDelegateSessionOutcome(args, result);
+  return result;
+}
+
+// ADR-072 E6：每个到达工具体的调用记录恰好一次结局（PostHog + host log 各一），
+// 属性恰好 outcome/code/gate/action 四个。FEATURE_DISABLED / PERMISSION_DENIED
+// 不是 gate 拒绝，不记录。
+function recordDelegateSessionOutcome(args: Record<string, unknown>, result: ToolResult<string>): void {
+  if (!result.ok && result.code !== 'DELEGATION_REJECTED') return;
+  const meta = (result as { meta?: { code?: unknown; gate?: unknown } }).meta;
+  const parsed = parseArgs(args);
+  const props = {
+    outcome: result.ok ? 'ok' : 'rejected',
+    code: typeof meta?.code === 'string' ? meta.code : result.ok ? 'ok' : 'unknown',
+    gate: typeof meta?.gate === 'string' ? meta.gate : 'none',
+    action: parsed.ok ? parsed.call.action : 'unknown',
+  };
+  trackNode(POSTHOG_EVENTS.DELEGATE_SESSION_OUTCOME, props);
+  logger.info('[DelegateSession] outcome', props);
+}
+
+async function runDelegateSession(
+  args: Record<string, unknown>,
+  ctx: Parameters<ToolHandler['execute']>[1],
+  canUseTool: Parameters<ToolHandler['execute']>[2],
+  _onProgress?: Parameters<ToolHandler['execute']>[3],
+): Promise<ToolResult<string>> {
   if (!isCrossSessionDelegationEnabled()) return { ok: false, code: 'FEATURE_DISABLED', error: 'cross-session delegation is disabled' };
   const permission = await canUseTool(schema.name, args);
   if (!permission.allow) return { ok: false, code: 'PERMISSION_DENIED', error: permission.reason };
@@ -221,7 +256,7 @@ export async function executeDelegateSession(
   const call = parsed.call;
   try {
     const admission = await admissionFor(call, ctx, runtime);
-    if (admission.result.kind === 'rejected') return rejection(admission.result.code, admission.result.detail);
+    if (admission.result.kind === 'rejected') return rejection(admission.result.code, admission.result.detail, admission.result.gate);
     if (admission.result.kind === 'reused') {
       // rework r3：同指纹重放只证明「提交过」，不证明「还能投」。行已
       // stopped/aborted/superseded 时载荷永久暂停（INV-6 撤回不复活），必须

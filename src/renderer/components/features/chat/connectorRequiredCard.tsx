@@ -35,7 +35,7 @@ function InsufficientScopeCard({ entry, name }: { entry: ConnectorRequiredEntry;
       <span className="min-w-0">
         <span className="block">{interpolate(state === 'done' ? t.connectorRequired.reauthorized : t.connectorRequired.scopeTitle, { name })}</span>
         {state === 'running' && <span className="block text-xs text-zinc-500">{t.connectorRequired.reauthorizing}</span>}
-        {state === 'failed' && <span data-testid="connector-required-reauth-error" className="block text-xs text-red-400">{interpolate(t.connectorRequired.reauthorizeFailed, { error: entry.reauth?.error ?? '' })}</span>}
+        {state === 'failed' && <span data-testid="connector-required-reauth-error" className="block text-xs text-badge-danger">{interpolate(t.connectorRequired.reauthorizeFailed, { error: entry.reauth?.error ?? '' })}</span>}
         {(state === undefined || state === 'failed') && <span className="block text-xs text-zinc-500">{t.connectorRequired.scopeBody}{entry.requiredScope ? ` · ${interpolate(t.connectorRequired.scopeScope, { scope: entry.requiredScope })}` : ''}</span>}
       </span>
       <span className="flex shrink-0 gap-2">

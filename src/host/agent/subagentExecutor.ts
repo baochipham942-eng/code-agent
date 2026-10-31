@@ -3,6 +3,7 @@
 // Enhanced with unified pipeline (T4)
 // ============================================================================
 
+import { buildInsufficientScopeConnectorEvent } from './runtime/connectorScopeCard';
 import { resolveSubagentPreset } from './subagentFirstRunPreset';
 import type { AgentMessageOrigin } from './messageOrigin';
 import type { ToolCall } from '../../shared/contract';
@@ -896,6 +897,9 @@ export class SubagentExecutor {
                 },
               ).finally(markToolEnd);
               descendantUsage = addSubagentUsage(descendantUsage, result.metadata);
+              // MCP 权限范围不足：子代理（文字前台委派的常见路径）的失败也要给用户一张「重新授权」卡
+              const scopeCard = buildInsufficientScopeConnectorEvent(result);
+              if (scopeCard) context.events.emit(scopeCard.type, scopeCard.data);
               const toolDuration = Date.now() - toolStartTime;
               toolResults.push(
                 `Tool ${toolCall.name}: ${result.success ? 'Success' : 'Failed'}\n${result.output || result.error || ''}`

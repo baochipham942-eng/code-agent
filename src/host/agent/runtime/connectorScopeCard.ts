@@ -12,7 +12,7 @@ import { getMcpPermissionPageUrl, MCP_PERMISSION_PAGE_URLS } from '../../../shar
 import { MCP_INSUFFICIENT_SCOPE_METADATA_KEY } from '../../mcp/mcpErrors';
 
 export function buildInsufficientScopeConnectorEvent(
-  result: ToolResult,
+  result: Pick<ToolResult, 'success' | 'metadata'>,
   permissionPages: Readonly<Record<string, string>> = MCP_PERMISSION_PAGE_URLS,
 ): AgentEvent | null {
   if (result.success) return null;

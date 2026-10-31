@@ -4,7 +4,6 @@ import {
   clampToShortTier,
   markShortTierSession,
   resolveForegroundTimeoutTier,
-  resolveShortTierTimeoutMs,
   resolveShortTierWait,
 } from '../../../../src/host/tools/shell/foregroundTier';
 import { BASH } from '../../../../src/shared/constants';
@@ -22,10 +21,10 @@ describe('foregroundTier', () => {
   });
 
   it('defaults to 10s and is configurable by env; interactive default stays 120s', () => {
-    expect(resolveShortTierTimeoutMs()).toBe(10000);
+    expect(clampToShortTier(undefined).timeout).toBe(10000);
     expect(BASH.DEFAULT_TIMEOUT).toBe(120000);
     process.env.CODE_AGENT_BASH_SHORT_TIMEOUT_MS = '3000';
-    expect(resolveShortTierTimeoutMs()).toBe(3000);
+    expect(clampToShortTier(undefined).timeout).toBe(3000);
   });
 
   it('flags sleep only at command positions', () => {

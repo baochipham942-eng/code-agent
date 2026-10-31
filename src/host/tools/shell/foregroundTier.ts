@@ -15,7 +15,7 @@ export function resolveForegroundTimeoutTier(sessionId?: string): ForegroundTime
   return sessionId && shortTierSessions.has(sessionId) ? 'short' : 'interactive';
 }
 
-export function resolveShortTierTimeoutMs(): number {
+function resolveShortTierTimeoutMs(): number {
   const override = Number(process.env[SHORT_TIER_ENV]);
   return Number.isFinite(override) && override > 0 ? override : BASH.SHORT_TIER_TIMEOUT;
 }

@@ -35,8 +35,10 @@ export type FileTargetKind = (typeof FILE_TARGET_KINDS)[number];
 export type ApprovalLevel =
   | 'once'      // 允许一次
   | 'deny'      // 拒绝
-  | 'session'   // 本次会话允许
-  | 'always'    // 始终允许
+  | 'session'   // 本次会话允许（遗留：renderer 权限记忆；应用卡「本次对话允许」）
+  | 'always'    // 始终允许（遗留：renderer 权限记忆；应用卡「始终允许」）
+  | 'run'       // 到这次做完为止（N-PERM-GRANT-TIERS run 档，随 run 结束失效）
+  | '24h'       // 24 小时内允许（N-PERM-GRANT-TIERS 24h 档，到期失效）
   | 'never';    // 永不允许
 
 /** renderer 卡片沉淀用的终态；timeout / superseded 由 host 真源回传，不能靠 UI 计时猜。 */
@@ -243,7 +245,23 @@ export interface PermissionRequest {
 // - allow_standing：批准本次并记住长期授权。external 工具在无人值守 automation 上
 //   铸造 (工具, target)；computer_use 带 targetApp 时记住该应用（交互会话没有 automation
 //   也能记）。铸造只由人工点击触发，模型侧无入口。
-export type PermissionResponse = 'allow' | 'allow_session' | 'allow_standing' | 'deny';
+// - allow_run / allow_24h（N-PERM-GRANT-TIERS）：host 侧 toolGrantStore 的两档工具授权。
+//   allow_run 只对 (会话, 工具[, target]) 生效到本轮 run 结束；allow_24h 全局生效 24 小时。
+//   两者在放行语义上等价 allow（isApproveResponse），改过参数的应答仍只配一次性放行。
+export type PermissionResponse = 'allow' | 'allow_session' | 'allow_run' | 'allow_24h' | 'allow_standing' | 'deny';
+
+/**
+ * 放行语义判定（N-PERM-GRANT-TIERS 收口）：所有「允许」形态——含 allow_run/allow_24h
+ * 两档工具授权——都算 approve。各消费点（审批岛 / web dev 路由等）统一走这里，
+ * 新增档位时不会再出现「某处 switch 忘了加值」把用户点的允许当拒绝。
+ */
+export function isApprovePermissionResponse(response: PermissionResponse): boolean {
+  return response === 'allow'
+    || response === 'allow_session'
+    || response === 'allow_standing'
+    || response === 'allow_run'
+    || response === 'allow_24h';
+}
 
 /**
  * 审批响应投递结果——「点了允许之后到底发生了什么」的唯一口径。

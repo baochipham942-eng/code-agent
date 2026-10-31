@@ -39,6 +39,7 @@ const setPendingPermissionRequest = vi.hoisted(() => vi.fn());
 const dismissPermissionRequest = vi.hoisted(() => vi.fn());
 const recordPermissionDecision = vi.hoisted(() => vi.fn());
 const toastError = vi.hoisted(() => vi.fn());
+const domainInvoke = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../src/renderer/stores/appStore', () => ({
   useAppStore: () => ({
@@ -75,12 +76,16 @@ import { installPermissionResponseHandler } from '../../../src/web/webPermission
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
 import { zh } from '../../../src/renderer/i18n/zh';
 
+const commandSentinel = 'CLICKLOG_COMMAND_SENTINEL_7f3d91';
+const pathSentinel = '/tmp/CLICKLOG_PATH_SENTINEL_7f3d91';
+const argsSentinel = 'CLICKLOG_ARGS_SENTINEL_7f3d91';
+
 const request: PermissionRequest = {
   id: 'permission-http-chain',
   sessionId: 'session-current',
   tool: 'Write',
   type: 'file_write',
-  details: { path: '/tmp/report.txt' },
+  details: { path: pathSentinel, command: commandSentinel, changes: argsSentinel },
   timestamp: 1,
 };
 
@@ -107,8 +112,10 @@ describe('PermissionCard late click over the real HTTP chain', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    domainInvoke.mockResolvedValue({ success: true, data: undefined });
     // 真桥：组件里的 ipcService.invoke 会读 window.codeAgentAPI。
     window.codeAgentAPI = createHttpCodeAgentAPI('http://localhost:8180');
+    window.codeAgentDomainAPI = { invoke: domainInvoke };
   });
 
   afterEach(() => {
@@ -118,6 +125,7 @@ describe('PermissionCard late click over the real HTTP chain', () => {
     globalThis.fetch = originalFetch;
     foregroundOutcome.value = undefined;
     delete window.codeAgentAPI;
+    delete window.codeAgentDomainAPI;
   });
 
   it('undelivered (phone answered first): other-device toast, no local decision, card dismissed', async () => {
@@ -144,7 +152,17 @@ describe('PermissionCard late click over the real HTTP chain', () => {
       expect(recordPermissionDecision).not.toHaveBeenCalled();
       expect(dismissPermissionRequest).toHaveBeenCalledWith(request.id);
       expect(toastError).toHaveBeenCalledWith(zh.decisionCard.permission.settledElsewhere);
+      expect(domainInvoke).toHaveBeenCalledTimes(1);
     });
+    expect(domainInvoke).toHaveBeenCalledWith('domain:diagnostics', 'logClientError', {
+      context: 'PermissionCard',
+      message: 'PermissionCard click exit: stage=undelivered requestId=permission-http-chain sessionId=session-current',
+      detail: 'PENDING_PERMISSION_NOT_FOUND',
+    });
+    const loggedText = JSON.stringify(domainInvoke.mock.calls);
+    expect(loggedText).not.toContain(commandSentinel);
+    expect(loggedText).not.toContain(pathSentinel);
+    expect(loggedText).not.toContain(argsSentinel);
   });
 
   it('delivered response keeps today behaviour through the same chain', async () => {

@@ -36,6 +36,7 @@ const saveMemory = vi.hoisted(() => vi.fn());
 const dismissPermissionRequest = vi.hoisted(() => vi.fn());
 const recordPermissionDecision = vi.hoisted(() => vi.fn());
 const toastError = vi.hoisted(() => vi.fn());
+const domainInvoke = vi.hoisted(() => vi.fn());
 const appState = vi.hoisted(() => ({
   request: null as PermissionRequest | null,
   sessionId: null as string | null,
@@ -114,6 +115,7 @@ function confirmAllowOnce() {
  */
 async function expectFailureKeepsCardThenRetryDelivers(
   failingFetch: typeof fetch,
+  expectedDetail: unknown,
 ): Promise<void> {
   const fetchMock = vi.fn(failingFetch);
   globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -123,6 +125,17 @@ async function expectFailureKeepsCardThenRetryDelivers(
 
   await waitFor(() => {
     expect(toastError).toHaveBeenCalledWith('审批响应发送失败，请重试');
+    expect(domainInvoke).toHaveBeenCalledTimes(2);
+  });
+  expect(domainInvoke).toHaveBeenNthCalledWith(1, 'domain:diagnostics', 'logClientError', {
+    context: 'PermissionCard',
+    message: 'PermissionCard click exit: stage=transport-send-failure requestId=permission-transport-failure sessionId=session-current',
+    detail: expectedDetail,
+  });
+  expect(domainInvoke).toHaveBeenNthCalledWith(2, 'domain:diagnostics', 'logClientError', {
+    context: 'PermissionCard',
+    message: 'PermissionCard click exit: stage=card-catch requestId=permission-transport-failure sessionId=session-current',
+    detail: expectedDetail,
   });
   expect(recordPermissionDecision).not.toHaveBeenCalled();
   expect(dismissPermissionRequest).not.toHaveBeenCalled();
@@ -159,12 +172,14 @@ describe('PermissionCard transport failure over the real HTTP chain', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    domainInvoke.mockResolvedValue({ success: true, data: undefined });
     appState.request = request;
     appState.sessionId = 'session-current';
     foregroundOutcome.value = undefined;
     window.sessionStorage.clear();
     // 真桥：组件里的 ipcService.invoke 会读 window.codeAgentAPI。
     window.codeAgentAPI = createHttpCodeAgentAPI('http://localhost:8180');
+    window.codeAgentDomainAPI = { invoke: domainInvoke };
   });
 
   afterEach(() => {
@@ -174,6 +189,7 @@ describe('PermissionCard transport failure over the real HTTP chain', () => {
     globalThis.fetch = originalFetch;
     foregroundOutcome.value = undefined;
     delete window.codeAgentAPI;
+    delete window.codeAgentDomainAPI;
   });
 
   it('fetch rejects (network down): card restored with retry toast, second click delivers', async () => {
@@ -181,6 +197,7 @@ describe('PermissionCard transport failure over the real HTTP chain', () => {
       (async () => {
         throw new TypeError('Failed to fetch');
       }) as unknown as typeof fetch,
+      'Failed to fetch',
     );
   });
 
@@ -193,6 +210,7 @@ describe('PermissionCard transport failure over the real HTTP chain', () => {
         text: async () => JSON.stringify({ error: 'boom' }),
         json: async () => ({}),
       })) as unknown as typeof fetch,
+      '审批应答发送失败 (500): boom',
     );
   });
 
@@ -205,6 +223,7 @@ describe('PermissionCard transport failure over the real HTTP chain', () => {
         text: async () => JSON.stringify({ error: { message: 'Invalid auth token' } }),
         json: async () => ({}),
       })) as unknown as typeof fetch,
+      expect.stringContaining('401'),
     );
   });
 
@@ -219,6 +238,7 @@ describe('PermissionCard transport failure over the real HTTP chain', () => {
           throw new Error('not json');
         },
       })) as unknown as typeof fetch,
+      '审批应答发送失败 (200): 非 JSON 响应',
     );
   });
 });

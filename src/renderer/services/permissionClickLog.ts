@@ -33,9 +33,13 @@ export function logPermissionClickExit({
   error?: unknown;
 }): void {
   const message = `PermissionCard click exit: stage=${stage} requestId=${requestId ?? 'none'} sessionId=${sessionId ?? 'none'}`;
-  void ipcService.invokeDomain(IPC_DOMAINS.DIAGNOSTICS, 'logClientError', {
-    context: 'PermissionCard',
-    message,
-    detail: permissionClickErrorText(error),
-  }).catch(() => {});
+  try {
+    void ipcService.invokeDomain(IPC_DOMAINS.DIAGNOSTICS, 'logClientError', {
+      context: 'PermissionCard',
+      message,
+      detail: permissionClickErrorText(error),
+    }).catch(() => {});
+  } catch {
+    return;
+  }
 }

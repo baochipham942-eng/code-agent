@@ -1,5 +1,5 @@
 export type ImportHistoryTrigger = 'manual' | 'auto';
-export type ImportHistoryCategory = 'chats' | 'skills';
+type ImportHistoryCategory = 'chats' | 'skills';
 export type ImportHistorySource = 'claude_code' | 'codex_cli' | 'codex' | 'cursor';
 export type ImportHistoryOutcome =
   | 'imported'

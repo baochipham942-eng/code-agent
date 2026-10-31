@@ -523,6 +523,25 @@ describe('AgentOrchestrator', () => {
       expect(cancelTimeWakesOnUserReturn).toHaveBeenCalledWith('return-session', options);
     });
 
+    it('每个入站 turn 开头重置短档会话的累计 no-wait 预算', async () => {
+      const { grantShortTierWait, settleShortTierWait } = await import('../../src/host/tools/shell/foregroundTier');
+      const ingress = {
+        permissions: { drainPendingPermissions: vi.fn() },
+        configService: { getSettings: () => ({}) },
+        resolveSessionId: async () => 'budget-session',
+        generateId: () => 'user-message',
+        applyHistoryVisibility: () => { throw new Error('after user ingress'); },
+        executeMessage: (AgentOrchestrator.prototype as unknown as {
+          executeMessage: (...args: unknown[]) => Promise<void>;
+        }).executeMessage,
+      };
+      settleShortTierWait('budget-session', 10_000);
+      expect(grantShortTierWait('budget-session', 5_000).refusal).toBeTruthy();
+      await expect(AgentOrchestrator.prototype.sendMessage.call(ingress as unknown as AgentOrchestrator,
+        'turn 2', undefined, { mode: 'normal' as const })).rejects.toThrow('after user ingress');
+      expect(grantShortTierWait('budget-session', 5_000)).toEqual({ timeout: 5_000 });
+    });
+
     // N-CHANNEL-REPLY-BREVITY ①：IM 回复纪律只在推理期进模型面请求——channel 来源
     // （messageMetadata.channel）把指令块并进 turnSystemContext（applyTurnSystemContext
     // → <user_request> 包裹 + AgentLoop 的 modelFacingUserMessage 投影），落库/展示的

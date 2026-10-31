@@ -12,6 +12,7 @@ import React from 'react';
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TraceProjection } from '../../../src/shared/contract/trace';
+import type { SearchMatch } from '../../../src/renderer/components/features/chat/ChatSearchBar';
 
 vi.mock('../../../src/renderer/services/ipcService', () => {
   const instance = { invoke: vi.fn() };
@@ -67,7 +68,10 @@ afterEach(() => {
 });
 
 describe('ChatSearchBar — empty-query matches push (r3 ①)', () => {
-  function renderBar(onMatchesChange: ReturnType<typeof vi.fn>, proj: TraceProjection) {
+  function renderBar(
+    onMatchesChange: ReturnType<typeof vi.fn<(matches: SearchMatch[], activeIndex: number) => void>>,
+    proj: TraceProjection,
+  ) {
     return render(
       <ChatSearchBar
         visible

@@ -8,6 +8,7 @@ import {
 } from '../../../src/shared/contract/agentEngine';
 import {
   assertAgentEngineRunnable,
+  assertImportedEngineSessionNotRunnable,
   assertWorkspaceCwd,
   buildManualAgentEngineSelection,
   resolveExternalEngineLaunch,
@@ -373,6 +374,38 @@ describe('Agent Engine launch policy', () => {
       makeSession({ workingDirectory: workspaceRoot }),
       { kind: 'claude_code', cwd: workspaceRoot, permissionProfile: 'default', origin: 'manual' },
     )).toThrow(/read-only/);
+  });
+
+  // N-EXTHISTORY-IMPORT-CHATS-RESUME：导入的外部历史会话是只读记录——直发必须
+  // 在进入外部引擎 launch 前抛清晰错误，desktop sendMessage 与 web /run 共用此闸。
+  it('blocks sending into an imported external-history session with a plain-language error', () => {
+    const importedEngine = {
+      kind: 'claude_code',
+      model: 'claude-history',
+      cwd: workspaceRoot,
+      permissionProfile: 'read_only',
+      origin: 'import',
+    } as const;
+
+    expect(() => assertImportedEngineSessionNotRunnable(importedEngine))
+      .toThrow(/imported read-only history.*never changes/);
+    expect(() => resolveExternalEngineLaunch(
+      makeSession({ workingDirectory: workspaceRoot, origin: { kind: 'import' } }),
+      importedEngine,
+    )).toThrow(/imported read-only history/);
+
+    // 引擎 origin 干净但会话 origin 是 import（历史导入的落库形态）：launch 闸同样给清晰错误。
+    expect(() => resolveExternalEngineLaunch(
+      makeSession({ workingDirectory: workspaceRoot, origin: { kind: 'import' } }),
+      { kind: 'codex_cli', cwd: workspaceRoot, permissionProfile: 'read_only', origin: 'manual' },
+    )).toThrow(/imported read-only history/);
+  });
+
+  it('lets a native engine that merely carries import origin keep the regular send path', () => {
+    expect(() => assertImportedEngineSessionNotRunnable({
+      kind: 'native',
+      origin: 'import',
+    })).not.toThrow();
   });
 
   it('uses the session workspace as the launch boundary even when engine metadata is polluted', async () => {

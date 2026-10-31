@@ -225,7 +225,17 @@ export async function runAutoAgentMode(
       compatibilitySink: compatibility,
       onGraphCheckpoint: (checkpoint) => durableController?.persist(checkpoint),
     });
-    await durableController?.terminal(result.success ? 'completed' : 'failed', result.success ? undefined : 'auto_agent_failed');
+    try {
+      await durableController?.terminal(result.success ? 'completed' : 'failed', result.success ? undefined : 'auto_agent_failed');
+    } catch (error) {
+      if (!result.success) throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn('Auto Agent durable terminal projection failed; preserving successful graph result', {
+        runId: durableController?.runId,
+        reason: /fenced|stale owner/i.test(message) ? 'fenced' : 'other',
+        error: message,
+      });
+    }
   } catch (error) {
     await durableController?.terminal('failed', error instanceof Error ? error.message : 'auto_agent_failed').catch(() => undefined);
     throw error;

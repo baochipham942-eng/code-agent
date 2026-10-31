@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../../src/shared/ipc';
 import { AgentEngineCapabilityError } from '../../../src/shared/contract/agentEngine';
 
-// agentEngine.ipc.ts 派发特征测试（RQ-183 续作·AGENT_ENGINE 刀迁表前钉住 switch 形态）：派发层 10 个 action。
+// agentEngine.ipc.ts 派发特征测试（RQ-183 续作·AGENT_ENGINE 刀迁表前钉住 switch 形态）：派发层 11 个 action。
 // 既有 agentEngine.ipc.test.ts 只覆盖 detect 的双缓存失效与并发等待。这里补派发层契约：
 // - list / listSources / get / listModels / listHistory / previewHistory / importHistory 的委派与原样回传（payload 透传）
+// - importRecentChats 用 ownerScope 单一真源取 owner（N-EXTHISTORY-IMPORT-CHATS-HOST-FU1），逐条结果原样回传
 // - select 缺参 INVALID_PAYLOAD；selectModel 的 INVALID_PAYLOAD / SESSION_NOT_FOUND / INVALID_ENGINE / MODEL_NOT_FOUND / MODEL_DISABLED 完整文案
 // - catch 映射：AgentEngineCapabilityError → 自带 code + details{engine,capability}；AgentEngineModelIncompatibleError →
 //   MODEL_NOT_FOUND + details{engine,model}；AgentEngineHistoryImportError → 自带 code + details；普通 Error → INTERNAL_ERROR；非 Error → String
@@ -33,6 +34,10 @@ const env = vi.hoisted(() => {
       listHistory: vi.fn(async (_req: unknown): Promise<unknown> => [{ id: 'h1' }]),
       previewHistory: vi.fn(async (_req: unknown): Promise<unknown> => ({ id: 'h1', turns: [] })),
       mapHistoryForImport: vi.fn(async (_req: unknown): Promise<unknown> => ({ summary: { id: 'h1' }, provenance: { kind: 'external_history' }, envelope: { schema: 'neo.session-export' } })),
+      importRecentChats: vi.fn(async (_req: unknown): Promise<unknown> => [
+        { engine: 'claude_code', sourceSessionId: 's1', title: 'chat one', status: 'imported' },
+        { engine: 'codex_cli', sourceSessionId: 's2', title: 'chat two', status: 'already_imported' },
+      ]),
     },
     session: {
       getSession: vi.fn(async (): Promise<unknown> => null),
@@ -60,6 +65,11 @@ vi.mock('../../../src/host/services/agentEngine/agentEngineHistoryImport', () =>
 }));
 vi.mock('../../../src/host/services/infra/sessionManager', () => ({
   getSessionManager: () => env.session,
+}));
+// ownerScope 单一真源模块：真实现会拉进 authService/supabase 一串重图，这里钉住返回值，
+// 断言 handler 透传的就是它（口径漂移会让批量导入去重预检整批漏判）。
+vi.mock('../../../src/host/services/sessionFork/ownerScope', () => ({
+  currentSessionForkOwnerScopeId: () => 'owner-fixture',
 }));
 
 import { registerAgentEngineHandlers } from '../../../src/host/ipc/agentEngine.ipc';
@@ -107,6 +117,17 @@ describe('agentEngine.ipc dispatch 特征：只读委派', () => {
       data: { summary: { id: 'h1' }, provenance: { kind: 'external_history' }, envelope: { schema: 'neo.session-export' } },
     });
     expect(env.history.mapHistoryForImport).toHaveBeenCalledWith(req);
+  });
+
+  it('importRecentChats 只带 ownerScope 单一真源的 ownerScopeId，逐条结果原样回传', async () => {
+    expect(await call('importRecentChats')).toEqual({
+      success: true,
+      data: [
+        { engine: 'claude_code', sourceSessionId: 's1', title: 'chat one', status: 'imported' },
+        { engine: 'codex_cli', sourceSessionId: 's2', title: 'chat two', status: 'already_imported' },
+      ],
+    });
+    expect(env.history.importRecentChats).toHaveBeenCalledWith({ ownerScopeId: 'owner-fixture' });
   });
 });
 

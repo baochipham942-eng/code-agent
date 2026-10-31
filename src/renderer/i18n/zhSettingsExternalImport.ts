@@ -88,6 +88,18 @@ export const zhSettingsExternalImport = {
         summary: '已导入 {imported} · 已在 Neo {already} · 目录不存在 {folderMissing} · 失败 {failed}',
         empty: '最近 30 天没有发现 Claude Code 或 Codex 聊天',
         failed: '导入最近的聊天失败',
+        sync: {
+          title: '保持聊天同步',
+          description: '每次启动时自动导入最近 30 天新的 Claude Code / Codex 聊天，最多 50 条，原对话不会被修改。关闭或暂停后，已导入的聊天会保留。',
+          toggleLabel: '保持聊天同步',
+          statusOff: '未开启',
+          statusOn: '已开启',
+          statusOnLast: '已开启 · 刚同步于 {time}，新增 {count} 条',
+          statusPaused: '已暂停，已导入的聊天保留',
+          pause: '暂停同步',
+          resume: '恢复同步',
+          failed: '更新同步设置失败',
+        },
         engineNames: {
           claude_code: 'Claude Code',
           codex_cli: 'Codex',

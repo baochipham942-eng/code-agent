@@ -8,18 +8,23 @@
 // 文案：裸 reason 串（含源路径）只进宿主日志，绝不出现在页面 DOM——与技能结果块
 // 同一条规矩。
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Download, Loader2 } from 'lucide-react';
 import type { RecentExternalChatImportResult } from '@shared/contract/agentEngine';
 import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { useI18n } from '../../../../hooks/useI18n';
-import { Button } from '../../../primitives';
+import { Button, Toggle } from '../../../primitives';
 
 type ExternalChatsImportCopy = ReturnType<
   typeof useI18n
 >['t']['settings']['externalImport']['chatsImport'];
+
+interface ChatsSyncState {
+  mode: 'off' | 'on' | 'paused';
+  lastRun?: { at: number; imported: number };
+}
 
 function summaryCounts(results: RecentExternalChatImportResult[]): Record<'imported' | 'already' | 'folderMissing' | 'failed', number> {
   return {
@@ -44,6 +49,50 @@ export const ExternalChatsImportSection: React.FC = () => {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const [results, setResults] = useState<RecentExternalChatImportResult[] | null>(null);
+
+  const [sync, setSync] = useState<ChatsSyncState>({ mode: 'off' });
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [syncFailed, setSyncFailed] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    ipcService
+      .invokeDomain<ChatsSyncState>(IPC_DOMAINS.AGENT_ENGINE, 'getChatsSync')
+      .then((state) => { if (alive && state) setSync(state); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const changeSync = async (mode: ChatsSyncState['mode']): Promise<void> => {
+    setSyncBusy(true);
+    setSyncFailed(false);
+    try {
+      const next = await ipcService.invokeDomain<ChatsSyncState>(
+        IPC_DOMAINS.AGENT_ENGINE,
+        'setChatsSync',
+        { mode },
+      );
+      if (next) setSync(next);
+      // 开启时宿主已同步一轮；有新导入则静默刷一次侧栏（同 runImport）。
+      if (mode === 'on' && (next?.lastRun?.imported ?? 0) > 0) {
+        void useSessionStore.getState().loadSessions({ silent: true }).catch(() => {});
+      }
+    } catch {
+      setSyncFailed(true);
+    } finally {
+      setSyncBusy(false);
+    }
+  };
+
+  const syncStatus = sync.mode === 'paused'
+    ? copy.sync.statusPaused
+    : sync.mode === 'on'
+      ? (sync.lastRun
+        ? copy.sync.statusOnLast
+          .replace('{time}', new Date(sync.lastRun.at).toLocaleString())
+          .replace('{count}', String(sync.lastRun.imported))
+        : copy.sync.statusOn)
+      : copy.sync.statusOff;
 
   const runImport = async (): Promise<void> => {
     setBusy(true);
@@ -87,6 +136,37 @@ export const ExternalChatsImportSection: React.FC = () => {
         >
           {busy ? copy.running : copy.cta}
         </Button>
+      </div>
+
+      <div className="mt-3 border-t border-zinc-700/70 pt-3" data-testid="external-chats-sync">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-sm font-medium text-zinc-200">{copy.sync.title}</div>
+            <div className="mt-1 text-xs text-zinc-500">{copy.sync.description}</div>
+            <div className="mt-1 text-xs text-zinc-400" data-testid="external-chats-sync-status">{syncStatus}</div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {sync.mode !== 'off' && (
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={syncBusy}
+                onClick={() => void changeSync(sync.mode === 'paused' ? 'on' : 'paused')}
+              >
+                {sync.mode === 'paused' ? copy.sync.resume : copy.sync.pause}
+              </Button>
+            )}
+            <Toggle
+              checked={sync.mode === 'on'}
+              disabled={syncBusy}
+              aria-label={copy.sync.toggleLabel}
+              onChange={(checked) => void changeSync(checked ? 'on' : 'off')}
+            />
+          </div>
+        </div>
+        {syncFailed && (
+          <div data-testid="external-chats-sync-error" className="mt-2 text-xs text-badge-danger">{copy.sync.failed}</div>
+        )}
       </div>
 
       {failed && (

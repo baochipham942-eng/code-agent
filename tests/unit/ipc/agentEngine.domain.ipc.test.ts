@@ -68,6 +68,10 @@ vi.mock('../../../src/host/services/infra/sessionManager', () => ({
 }));
 // ownerScope 单一真源模块：真实现会拉进 authService/supabase 一串重图，这里钉住返回值，
 // 断言 handler 透传的就是它（口径漂移会让批量导入去重预检整批漏判）。
+vi.mock('../../../src/host/externalImport/chatsSyncPreference', () => ({
+  readChatsSyncState: () => ({ mode: 'off' }),
+  writeChatsSyncState: () => {},
+}));
 vi.mock('../../../src/host/services/sessionFork/ownerScope', () => ({
   currentSessionForkOwnerScopeId: () => 'owner-fixture',
 }));
@@ -128,6 +132,14 @@ describe('agentEngine.ipc dispatch 特征：只读委派', () => {
       ],
     });
     expect(env.history.importRecentChats).toHaveBeenCalledWith({ ownerScopeId: 'owner-fixture' });
+  });
+
+  it('getChatsSync 回传偏好状态；setChatsSync 非法 mode → INVALID_PAYLOAD', async () => {
+    expect(await call('getChatsSync')).toEqual({ success: true, data: { mode: 'off' } });
+    expect(await call('setChatsSync', { mode: 'sometimes' })).toEqual(
+      fail('INVALID_PAYLOAD', 'setChatsSync requires mode off | on | paused.'),
+    );
+    expect(await call('setChatsSync')).toMatchObject({ success: false });
   });
 });
 

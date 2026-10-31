@@ -17,12 +17,18 @@ import type { RecentExternalChatImportResult } from '../../../src/shared/contrac
 import { IPC_DOMAINS } from '../../../src/shared/ipc/domains';
 
 const invokeDomain = vi.hoisted(() => vi.fn());
+// 「保持聊天同步」的两个 action 走独立 mock，避免干扰 importRecentChats 的按序返回值。
+const syncInvoke = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: {
     isAvailable: () => false,
     invoke: vi.fn(),
-    invokeDomain,
+    invokeDomain: (...args: unknown[]) => (
+      args[1] === 'getChatsSync' || args[1] === 'setChatsSync'
+        ? syncInvoke(args[1], args[2])
+        : invokeDomain(...args)
+    ),
     on: () => () => {},
     off: vi.fn(),
   },
@@ -58,6 +64,8 @@ const SECOND_RUN: RecentExternalChatImportResult[] = FIRST_RUN.map((item) => ({
 
 beforeEach(() => {
   invokeDomain.mockReset();
+  syncInvoke.mockReset();
+  syncInvoke.mockResolvedValue({ mode: 'off' });
   useAppStore.setState({ language: 'zh' });
 });
 
@@ -226,5 +234,55 @@ describe('导入成功后刷新 session store（FU1-FU2）', () => {
     expect(screen.getByTestId('external-chats-import-summary').textContent)
       .toBe('已导入 1 · 已在 Neo 1 · 目录不存在 1 · 失败 1');
     expect(screen.queryByTestId('external-chats-import-error')).toBeNull();
+  });
+});
+
+// ============================================================================
+// 「保持聊天同步」三态（N-EXTHISTORY-IMPORT-SYNC-CHATS）
+// ============================================================================
+describe('保持聊天同步 三态', () => {
+  const dump = () => screen.getByTestId('external-chats-sync').textContent ?? '';
+
+  it('off：开关关闭、状态「未开启」、无暂停按钮；打开开关 → setChatsSync on，展示刚同步与新增数', async () => {
+    syncInvoke.mockImplementation(async (action: string, payload?: { mode: string }) =>
+      action === 'setChatsSync'
+        ? { mode: payload?.mode, lastRun: { at: Date.now(), imported: 3 } }
+        : { mode: 'off' });
+    render(<ExternalChatsImportSection />);
+    await waitFor(() => expect(syncInvoke).toHaveBeenCalledWith('getChatsSync', undefined));
+    expect(screen.getByTestId('external-chats-sync-status').textContent).toBe('未开启');
+    expect(screen.queryByText('暂停同步')).toBeNull();
+    const toggle = screen.getByRole('switch');
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+
+    fireEvent.click(toggle);
+    await waitFor(() => expect(screen.getByTestId('external-chats-sync-status').textContent).toContain('新增 3 条'));
+    expect(syncInvoke).toHaveBeenCalledWith('setChatsSync', { mode: 'on' });
+    expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByText('暂停同步')).toBeTruthy();
+  });
+
+  it('on → 暂停 → paused：状态「已暂停，已导入的聊天保留」，按钮变「恢复同步」', async () => {
+    syncInvoke.mockImplementation(async (action: string, payload?: { mode: string }) =>
+      action === 'setChatsSync' ? { mode: payload?.mode } : { mode: 'on' });
+    render(<ExternalChatsImportSection />);
+    fireEvent.click(await screen.findByText('暂停同步'));
+    await waitFor(() => expect(screen.getByTestId('external-chats-sync-status').textContent)
+      .toBe('已暂停，已导入的聊天保留'));
+    expect(syncInvoke).toHaveBeenCalledWith('setChatsSync', { mode: 'paused' });
+    expect(screen.getByText('恢复同步')).toBeTruthy();
+    expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false');
+    expect(dump()).not.toContain('paused');
+  });
+
+  it('setChatsSync 失败 → 固定文案', async () => {
+    syncInvoke.mockImplementation(async (action: string) => {
+      if (action === 'setChatsSync') throw new Error('INTERNAL: /Users/x');
+      return { mode: 'off' };
+    });
+    render(<ExternalChatsImportSection />);
+    fireEvent.click(screen.getByRole('switch'));
+    await screen.findByTestId('external-chats-sync-error');
+    expect(document.body.textContent ?? '').not.toContain('/Users/x');
   });
 });

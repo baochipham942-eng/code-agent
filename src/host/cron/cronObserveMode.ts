@@ -13,7 +13,7 @@ import { enterObserveMode, truncateObserveText } from '../tools/observeModeGate'
 import { sqliteCronEventDecisionStore, type CronEventDecisionStore } from './cronEventDecisionLedger';
 
 /** 通道结果回复在台账里的「工具名」。 */
-export const OBSERVE_CHANNEL_REPLY_TOOL = 'channel_reply';
+const OBSERVE_CHANNEL_REPLY_TOOL = 'channel_reply';
 
 export function isCronObserveMode(definition: Pick<CronJobDefinition, 'schedule' | 'actionMode'>): boolean {
   return resolveCronEventActionMode(definition) === 'observe';

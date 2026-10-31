@@ -14,8 +14,8 @@ import { getDatabase } from '../services/core/databaseService';
 
 export type CronEventDecisionInput = Omit<CronEventDecision, 'id' | 'createdAt'> & { createdAt?: number };
 
-export interface CronEventDecisionWriteOptions {
-  /** 每任务保留的最近条数；缺省 CRON_EVENT_DECISIONS.DEFAULT_MAX_PER_JOB。 */
+interface CronEventDecisionWriteOptions {
+  /** 每任务保留的最近条数（N 可配）；缺省 CRON_EVENT_DECISIONS.DEFAULT_MAX_PER_JOB。 */
   maxPerJob?: number;
   /** 写入时间戳（缺省 Date.now()；同批行共用一个基准、按序 +1 保持顺序）。 */
   now?: number;
@@ -23,7 +23,7 @@ export interface CronEventDecisionWriteOptions {
 
 /** 台账的读写面（CronEventTrigger / 拦截 sink 依赖它；测试可注入内存实现）。 */
 export interface CronEventDecisionStore {
-  record(rows: readonly CronEventDecisionInput[]): void;
+  record(rows: readonly CronEventDecisionInput[], options?: CronEventDecisionWriteOptions): void;
   /** 该 run 已记下的观察档拦截（kind 'action'）条数。 */
   countActionsForRun(runId: string): number;
 }
@@ -62,7 +62,7 @@ function rowToDecision(row: DecisionRow): CronEventDecision | null {
   };
 }
 
-export function recordCronEventDecisions(
+function recordCronEventDecisions(
   rows: readonly CronEventDecisionInput[],
   options: CronEventDecisionWriteOptions = {},
 ): void {
@@ -116,7 +116,7 @@ export function loadCronEventDecisions(jobId: string, limit: number = CRON_EVENT
   }
 }
 
-export function countCronObserveActionsForRun(runId: string): number {
+function countCronObserveActionsForRun(runId: string): number {
   try {
     const db = getDatabase().getDb();
     if (!db) return 0;
@@ -131,6 +131,6 @@ export function countCronObserveActionsForRun(runId: string): number {
 }
 
 export const sqliteCronEventDecisionStore: CronEventDecisionStore = {
-  record: (rows) => recordCronEventDecisions(rows),
+  record: (rows, options) => recordCronEventDecisions(rows, options),
   countActionsForRun: countCronObserveActionsForRun,
 };

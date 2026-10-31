@@ -1,5 +1,5 @@
 import { IPC_DOMAINS } from '@shared/ipc';
-import type { CronGroupListenCheck, CronMailSourcesResult } from '@shared/contract/cron';
+import type { CronEventActionMode, CronEventDecision, CronGroupListenCheck, CronMailSourcesResult } from '@shared/contract/cron';
 import type {
   CronJobDefinition,
   CronJobExecution,
@@ -92,6 +92,16 @@ export const cronClient = {
 
   getExecutions(jobId: string, limit = 20) {
     return invokeCron<CronJobExecution[]>('getExecutions', { jobId, limit });
+  },
+
+  /** 事件自动化最近的逐事件决策（新的在前；N-TRIGGER-OBSERVE-MODE）。 */
+  getEventDecisions(jobId: string, limit = 50) {
+    return invokeCron<CronEventDecision[]>('getEventDecisions', { jobId, limit });
+  },
+
+  /** 切换事件自动化执行档：唯一能切到 auto 的入口（UI 侧必须先过确认弹窗）。 */
+  setEventActionMode(jobId: string, mode: CronEventActionMode) {
+    return invokeCron<CronJobDefinition | null>('setEventActionMode', { jobId, mode });
   },
 
   /** 跨任务执行流（运行记录 tab）：全部任务的执行按时间倒序 */

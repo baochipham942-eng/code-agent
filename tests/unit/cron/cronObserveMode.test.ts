@@ -37,8 +37,12 @@ import { saveCronJob } from '../../../src/host/cron/cronPersistence';
 import { normalizeCronJobRow } from '../../../src/host/cron/cronNormalizers';
 import { actionModeForNewJob, carryEventActionMode } from '../../../src/host/cron/cronEventActionModeChange';
 import { deliverCronResultToChannel } from '../../../src/host/cron/cronResultDelivery';
-import { loadCronEventDecisions, type CronEventDecisionInput, type CronEventDecisionStore } from '../../../src/host/cron/cronEventDecisionLedger';
-import { recordCronEventDecisions } from '../../../src/host/cron/cronEventDecisionLedger';
+import {
+  loadCronEventDecisions,
+  sqliteCronEventDecisionStore,
+  type CronEventDecisionInput,
+  type CronEventDecisionStore,
+} from '../../../src/host/cron/cronEventDecisionLedger';
 import { CronEventTrigger, type CronEventChannelSource } from '../../../src/host/cron/cronEventTrigger';
 import { parseStatedEventDecisions } from '../../../src/host/cron/cronEventDecisions';
 import { resolveCronEventActionMode } from '../../../src/shared/cronEventActionMode';
@@ -319,7 +323,7 @@ describe('③ 逐事件决策台账', () => {
     db.prepare(`INSERT INTO cron_jobs (id, name, schedule_type, schedule, action, runs_on, enabled, created_at, updated_at)
       VALUES ('job-observe', 'n', 'event', '{}', '{}', 'local', 1, 1, 1)`).run();
     for (let i = 0; i < 7; i += 1) {
-      recordCronEventDecisions(
+      sqliteCronEventDecisionStore.record(
         [{ jobId: 'job-observe', kind: 'event', eventId: `e${i}`, decision: 'ignored', reason: 'r' }],
         { maxPerJob: 5, now: NOW + i },
       );

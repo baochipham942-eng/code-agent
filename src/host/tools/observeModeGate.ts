@@ -19,7 +19,7 @@ import { extractStandingGrantTarget, isExternalSideEffectTool } from './external
 import type { ToolExecutionResult } from './types';
 
 /** 一次被拦下的对外动作：工具名 / 目标（取得到才有）/ 本会发出什么的一行摘要。 */
-export interface ObserveModeInterception {
+interface ObserveModeInterception {
   toolName: string;
   target?: string;
   summary: string;
@@ -37,12 +37,8 @@ export function enterObserveMode(sessionId: string, sink: ObserveModeSink): () =
   };
 }
 
-export function isSessionInObserveMode(sessionId: string | undefined): boolean {
-  return sessionId !== undefined && observedSessions.has(sessionId);
-}
-
 /** 观察档要拦的调用：EXTERNAL 出站工具，或后果目录里标为对外副作用的浏览器/电脑动作。 */
-export function isObserveInterceptedToolCall(toolName: string, params: Record<string, unknown>): boolean {
+function isObserveInterceptedToolCall(toolName: string, params: Record<string, unknown>): boolean {
   if (isExternalSideEffectTool(toolName)) return true;
   if (!normalizeBrowserComputerCatalogToolName(toolName)) return false;
   const entry = getStrictBrowserComputerActionCatalogForArgs({ toolName, arguments: params });

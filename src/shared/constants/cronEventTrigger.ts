@@ -55,7 +55,7 @@ export const CRON_EVENT_TRIGGER = {
  * 台账按任务有界（保留最近 N 条），理由/摘要按字符截断。
  */
 export const CRON_EVENT_DECISIONS = {
-  /** 每个自动化保留的最近决策条数缺省（N 可由 recordCronEventDecisions 的 maxPerJob 覆盖）。 */
+  /** 每个自动化保留的最近决策条数缺省（N 可由 CronEventDecisionStore.record 的 maxPerJob 覆盖）。 */
   DEFAULT_MAX_PER_JOB: 500,
   /** 读接口单次返回条数上限。 */
   MAX_READ_LIMIT: 500,

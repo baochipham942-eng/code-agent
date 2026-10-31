@@ -1,4 +1,5 @@
 import express from 'express';
+import type { Response as ExpressResponse } from 'express';
 import http from 'node:http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -404,6 +405,28 @@ describe('cloud run HTTP contract', () => {
     expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('dep rejected'),
       expect.objectContaining({ sessionId: 'session_env', error: 'marker boom' }),
+    );
+  });
+
+  // rework r1：admitDelegatedTurn 的同型兜底——manual 路径 runInline（真实装配
+  // 是 runAgentTurn）preflight 抛错时账本行已置 running，无人收线会占死
+  // CLOUD_RUN_MAX_IN_FLIGHT 之一直到进程重启。
+  it('r1: manual inline run throwing settles the ledger row failed and rethrows', async () => {
+    await expect(handleCloudRunAdmission({
+      body: cloudBody('session_throw', 'message_throw'),
+      res: {} as ExpressResponse,
+      runtime,
+      logger,
+      runInline: async () => { throw new Error('workspace materialization failed'); },
+    })).rejects.toThrow('workspace materialization failed');
+    const row = db.prepare(
+      "SELECT run_id FROM cloud_runs WHERE client_message_id = 'message_throw'",
+    ).get() as { run_id: string };
+    expect(row).toBeTruthy();
+    expect(ledger.getRun(row.run_id)?.state).toBe('failed');
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('Manual inline run threw'),
+      expect.objectContaining({ runId: row.run_id, error: 'workspace materialization failed' }),
     );
   });
 });

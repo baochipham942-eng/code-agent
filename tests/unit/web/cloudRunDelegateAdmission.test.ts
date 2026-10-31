@@ -9,6 +9,8 @@ import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 import { createCloudRunLedger, type CloudRunLedger } from '../../../src/host/services/cloudRun/cloudRunLedger';
 import { applySchema } from '../../../src/host/services/core/database/schema';
 import { QueuedInputRepository } from '../../../src/host/services/core/repositories/QueuedInputRepository';
+import { SessionDelegationRepository } from '../../../src/host/services/core/repositories/SessionDelegationRepository';
+import { createDelegationDrainHooks } from '../../../src/host/services/delegation/delegationDrainHooks';
 import type { DelegationOriginMarker } from '../../../src/shared/contract/queuedInput';
 import { admitDelegatedTurn, CloudRunRouteRuntime } from '../../../src/web/routes/cloudRunRoutes';
 import { buildQueuedAgentRunBody } from '../../../src/web/routes/agent';
@@ -22,6 +24,11 @@ const CLOUD_MARKER = { executionEnvironment: { kind: 'cloud', environmentId: 'cl
 
 interface TurnCall { body: AgentRunBody; cloudRunId?: string; delegationOrigin?: DelegationOriginMarker }
 
+interface TurnOptions {
+  delegationOrigin?: DelegationOriginMarker;
+  onDurableActivated?: (activation: { runId: string; activatedAt: number }) => void;
+}
+
 describe('delegated delivery into a cloud-marked session goes through admit(delegate) (ADR-087 S4B)', () => {
   let db: BetterSqlite3.Database;
   let ledger: CloudRunLedger;
@@ -31,10 +38,16 @@ describe('delegated delivery into a cloud-marked session goes through admit(dele
   let queuedRepo: QueuedInputRepository;
   let metadata: Record<string, Record<string, unknown> | undefined>;
   let drainErrors: unknown[];
+  let inlineFailure: Error | null;
+  let runSeq: number;
 
-  // 与 agent.ts 里 runAgentTurn 的角色同构：记录 options 里的 cloudRunId / delegationOrigin。
-  const runAgentTurn = async (body: AgentRunBody, cloudRunId?: string, delegationOrigin?: DelegationOriginMarker) => {
-    calls.push({ body, cloudRunId, delegationOrigin });
+  // 与 agent.ts 里 runAgentTurn 的角色同构：记录 options 里的 cloudRunId /
+  // delegationOrigin；run 注册成功即触发 onDurableActivated（对齐真实现
+  // bindExecutionRunId 之后的激活点）。inlineFailure 模拟 preflight 抛错。
+  const runAgentTurn = async (body: AgentRunBody, cloudRunId?: string, options?: TurnOptions) => {
+    if (inlineFailure) throw inlineFailure;
+    calls.push({ body, cloudRunId, delegationOrigin: options?.delegationOrigin });
+    options?.onDurableActivated?.({ runId: `run_${++runSeq}`, activatedAt: 1 });
   };
 
   beforeEach(() => {
@@ -43,12 +56,14 @@ describe('delegated delivery into a cloud-marked session goes through admit(dele
     account = ACCOUNT;
     calls = [];
     drainErrors = [];
+    inlineFailure = null;
+    runSeq = 0;
     metadata = { 'sess-cloud': CLOUD_MARKER, 'sess-local': {} };
     ledger = createCloudRunLedger({ db, clock: () => 1_700_000_000_000, accountResolver: () => account });
     runtime = new CloudRunRouteRuntime({
       getLedger: () => ledger,
       runRegistry: new RunRegistry(),
-      execute: (body, cloudRunId, origin) => runAgentTurn(body, cloudRunId, origin),
+      execute: (body, cloudRunId, options) => runAgentTurn(body, cloudRunId, options),
       logger,
     });
     runtime.ledger();
@@ -62,7 +77,7 @@ describe('delegated delivery into a cloud-marked session goes through admit(dele
     return createWebQueuedInputDrain({
       getRepository: () => queuedRepo,
       hasActiveRun: () => false,
-      runEnvelope: async (envelope, _res: Response, _onActivated, options) => {
+      runEnvelope: async (envelope, _res: Response, onActivated, options) => {
         const body = buildQueuedAgentRunBody(envelope);
         const origin = options?.delegationOrigin;
         const verdict = origin
@@ -72,10 +87,12 @@ describe('delegated delivery into a cloud-marked session goes through admit(dele
             delegationOrigin: origin,
             logger,
             readSessionMetadata: async (sid) => metadata[sid],
-            runInline: (b, runId) => runAgentTurn(b, runId, origin),
+            runInline: (b, runId) => runAgentTurn(b, runId, { delegationOrigin: origin, onDurableActivated: onActivated }),
           })
           : 'direct';
-        if (verdict === 'direct') await runAgentTurn(body, undefined, origin);
+        if (verdict === 'direct') {
+          await runAgentTurn(body, undefined, { delegationOrigin: origin, onDurableActivated: onActivated });
+        }
       },
       emitAgentEvent: () => {},
       notifyQueuedInputSettled: () => {},
@@ -93,6 +110,11 @@ describe('delegated delivery into a cloud-marked session goes through admit(dele
 
   async function deliver(id: string, sessionId: string) {
     queuedRepo.enqueue({ id, sessionId, envelope: { content: `work ${id}`, sessionId }, now: 1 });
+    makeDrain().handleEnqueued(sessionId);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  }
+
+  async function drainWaiting(sessionId: string) {
     makeDrain().handleEnqueued(sessionId);
     await new Promise((resolve) => setTimeout(resolve, 30));
   }
@@ -187,5 +209,125 @@ describe('delegated delivery into a cloud-marked session goes through admit(dele
       expect.stringContaining('no valid delegationOrigin'),
       expect.anything(),
     );
+  });
+
+  // ── rework r1：PR 评审三条 Important 的回归 ───────────────────────────
+
+  it('r1-① inline preflight throw settles the ledger row failed (not stuck running) and the drain requeues for retry', async () => {
+    inlineFailure = new Error('Durable Run persistence is unavailable');
+    await deliver('q1', 'sess-cloud');
+    const runId = delegateRunId();
+    expect(ledger.getRun(runId)?.state).toBe('failed');
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('Delegated inline run threw'),
+      expect.objectContaining({ sessionId: 'sess-cloud', runId }),
+    );
+    const row = queuedRepo.getById('q1');
+    expect(row?.status).toBe('queued');
+    expect(row?.retryCount).toBe(1);
+    expect(ledger.countInFlight(ACCOUNT)).toBe(0);
+  });
+
+  it('r1-② a redelivery whose earlier delegate row failed re-runs instead of being silently consumed', async () => {
+    inlineFailure = new Error('Durable Run persistence is unavailable');
+    await deliver('q1', 'sess-cloud');
+    const failedRunId = delegateRunId();
+    expect(queuedRepo.getById('q1')?.status).toBe('queued');
+
+    inlineFailure = null;
+    await drainWaiting('sess-cloud');
+
+    const rows = db.prepare(
+      "SELECT run_id, state FROM cloud_runs WHERE trigger = 'delegate' ORDER BY enqueued_seq",
+    ).all() as { run_id: string; state: string }[];
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ run_id: failedRunId, state: 'failed' });
+    expect(rows[1].state).toBe('running');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ delegationOrigin: ORIGIN, cloudRunId: rows[1].run_id });
+    expect(queuedRepo.getById('q1')?.status).toBe('consumed');
+  });
+
+  it('r1-②b duplicate whose row is still queued stays handed over: no fresh row, no run', async () => {
+    fillQuota();
+    await deliver('q1', 'sess-cloud');
+    expect(queuedRepo.getById('q1')?.status).toBe('consumed');
+    const verdict = await admitDelegatedTurn({
+      runtime,
+      body: buildQueuedAgentRunBody({ content: 'work q1', sessionId: 'sess-cloud', clientMessageId: 'q1' }),
+      delegationOrigin: ORIGIN,
+      logger,
+      readSessionMetadata: async (sid) => metadata[sid],
+      runInline: (b, runId) => runAgentTurn(b, runId, { delegationOrigin: ORIGIN }),
+    });
+    expect(verdict).toBe('queued');
+    expect(db.prepare("SELECT COUNT(*) AS n FROM cloud_runs WHERE trigger = 'delegate'").get()).toEqual({ n: 1 });
+    expect(calls).toEqual([]);
+  });
+
+  it('r1-②c duplicate whose row succeeded stays consumed: no duplicate turn', async () => {
+    await deliver('q1', 'sess-cloud');
+    runtime.settle(delegateRunId(), 'succeeded');
+    const verdict = await admitDelegatedTurn({
+      runtime,
+      body: buildQueuedAgentRunBody({ content: 'work q1', sessionId: 'sess-cloud', clientMessageId: 'q1' }),
+      delegationOrigin: ORIGIN,
+      logger,
+      readSessionMetadata: async (sid) => metadata[sid],
+      runInline: (b, runId) => runAgentTurn(b, runId, { delegationOrigin: ORIGIN }),
+    });
+    expect(verdict).toBe('queued');
+    expect(calls).toHaveLength(1);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM cloud_runs').get()).toEqual({ n: 1 });
+  });
+
+  it('r1-③ a queued delegate row promoted later backfills the delegation row target_run_id (INV-4)', async () => {
+    const delegations = new SessionDelegationRepository(db);
+    delegations.insertOrGet({
+      delegationId: 'dlg_1',
+      originSessionId: 'sess-origin',
+      originTurnId: 'turn_1',
+      disposition: 'create_new',
+      targetSessionId: 'sess-cloud',
+      targetQueuedInputId: 'q9',
+      submissionKey: 'sub_1',
+      actionFingerprint: 'fp_1',
+      createdAt: 1,
+    });
+    // 与 agent.ts 生产同构：onDelegateRunActivated → delegationHooks.onActivated
+    // （真 createDelegationDrainHooks + 真 SessionDelegationRepository 回填）。
+    // 换新 ledger：beforeEach 的旧 runtime 已在本 ledger 上挂了 transition
+    // 监听，会抢先 promote（用它那份没有 onDelegateRunActivated 的 execute）。
+    const delegationHooks = createDelegationDrainHooks({
+      getDb: () => db,
+      getSessionRow: () => null,
+      getPermissionMode: () => null,
+      evaluateFolderTrust: async () => ({ state: 'trusted', blockedItems: 0 }),
+      getActiveRunId: () => null,
+      logger,
+    });
+    ledger = createCloudRunLedger({ db, clock: () => 1_700_000_000_000, accountResolver: () => account });
+    runtime = new CloudRunRouteRuntime({
+      getLedger: () => ledger,
+      runRegistry: new RunRegistry(),
+      execute: (body, cloudRunId, options) => runAgentTurn(body, cloudRunId, options),
+      onDelegateRunActivated: ({ queuedInputId, sessionId, runId }) =>
+        delegationHooks.onActivated({ id: queuedInputId, sessionId }, { runId }),
+      logger,
+    });
+    runtime.ledger();
+
+    const [first, second] = fillQuota();
+    await deliver('q9', 'sess-cloud');
+    expect(queuedRepo.getById('q9')?.status).toBe('consumed');
+    expect(delegations.getByTargetQueuedInputId('q9')?.targetRunId).toBeNull();
+
+    runtime.settle(first, 'succeeded');
+    runtime.settle(second, 'succeeded');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(delegations.getByTargetQueuedInputId('q9')?.targetRunId).toBe('run_1');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ delegationOrigin: ORIGIN });
   });
 });

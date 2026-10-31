@@ -419,11 +419,15 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
   const cloudRunRuntime = new CloudRunRouteRuntime({
     getLedger: () => deps.getCloudRunLedger?.() ?? getDatabase().getCloudRunLedger(),
     runRegistry,
-    execute: (body, cloudRunId, delegationOrigin) => runAgentTurn(body, createOfflineAgentRunResponseSink(), {
+    execute: (body, cloudRunId, options) => runAgentTurn(body, createOfflineAgentRunResponseSink(), {
       connectedClient: false,
       cloudRunId,
-      ...(delegationOrigin ? { delegationOrigin } : {}),
+      ...(options?.delegationOrigin ? { delegationOrigin: options.delegationOrigin } : {}),
+      ...(options?.onDurableActivated ? { onDurableActivated: options.onDurableActivated } : {}),
     }),
+    // ADR-072 INV-4（rework r1）：排进账本的委托提升起跑时回填 target_run_id。
+    onDelegateRunActivated: ({ queuedInputId, sessionId, runId }) =>
+      delegationHooks.onActivated({ id: queuedInputId, sessionId }, { runId }),
     // ADR-081/087 S4B：manual 云端轮准入即打「跑过云」粘性会话标记（永不清理）。
     markSessionExecutionEnvironment,
     logger,
@@ -1816,6 +1820,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         body,
         res,
         runtime: cloudRunRuntime,
+        logger,
         runInline: (cloudBody, cloudRunId) => runAgentTurn(cloudBody, res, {
           connectedClient: true,
           requestToken: extractRequestToken(req),

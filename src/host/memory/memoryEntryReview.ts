@@ -38,7 +38,7 @@ export async function batchReviewMemoryEntries(
     const result = await updateMemoryEntry(db, {
       entryId,
       status: request.decision === 'approve' ? 'active' : 'rejected',
-    });
+    }, { journal: { actor: 'auto_review' } });
     updated.push(result.entry);
   }
   return { updated, skipped };

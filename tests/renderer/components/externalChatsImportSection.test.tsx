@@ -30,6 +30,7 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 
 import { ExternalChatsImportSection } from '../../../src/renderer/components/features/settings/tabs/ExternalChatsImportSection';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 
 const FIRST_RUN: RecentExternalChatImportResult[] = [
   { engine: 'claude_code', sourceSessionId: 's-1', title: '重构计划', status: 'imported' },
@@ -150,5 +151,80 @@ describe('ExternalChatsImportSection 点击与结果（验收②③ UI 半）', 
       .toBe('目录没了的会话 · Claude Code · The original folder is gone; restore it and click again to import');
     expect(screen.getByTestId('external-chats-import-row-s-4').textContent)
       .toBe('坏掉的一条 · Codex · Could not import this one');
+  });
+});
+
+// ============================================================================
+// 导入成功后即时刷新会话列表（N-EXTHISTORY-IMPORT-CHATS-HOST-FU1-FU1-FU2）
+// ============================================================================
+//
+// 只在 imported > 0 时 loadSessions({ silent: true })（与 sessionStoreBroadcasts
+// 的静默刷新同款）；全部 already_imported / 零候选 / IPC 失败不刷；刷新被拒
+// 不翻错误态、结果照常显示。spy 挂在真 store 的 action 槽位上。
+describe('导入成功后刷新 session store（FU1-FU2）', () => {
+  let loadSessionsSpy: ReturnType<typeof vi.fn>;
+  let originalLoadSessions: unknown;
+
+  beforeEach(() => {
+    originalLoadSessions = useSessionStore.getState().loadSessions;
+    loadSessionsSpy = vi.fn().mockResolvedValue(undefined);
+    useSessionStore.setState({ loadSessions: loadSessionsSpy as never });
+  });
+
+  afterEach(() => {
+    useSessionStore.setState({ loadSessions: originalLoadSessions as never });
+  });
+
+  it('imported>0 的首轮 → loadSessions 恰好一次且带 { silent: true }，结果照常显示', async () => {
+    invokeDomain.mockResolvedValue(FIRST_RUN);
+    render(<ExternalChatsImportSection />);
+    fireEvent.click(screen.getByText('导入最近的聊天'));
+    await screen.findByTestId('external-chats-import-summary');
+
+    expect(loadSessionsSpy).toHaveBeenCalledTimes(1);
+    expect(loadSessionsSpy).toHaveBeenCalledWith({ silent: true });
+  });
+
+  it('全部 already_imported 的第二轮 → 不刷', async () => {
+    invokeDomain.mockResolvedValueOnce(FIRST_RUN).mockResolvedValueOnce(SECOND_RUN);
+    render(<ExternalChatsImportSection />);
+    fireEvent.click(screen.getByText('导入最近的聊天'));
+    await screen.findByTestId('external-chats-import-summary');
+    expect(loadSessionsSpy).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByText('导入最近的聊天'));
+    await waitFor(() => {
+      expect(screen.getByTestId('external-chats-import-summary').textContent)
+        .toBe('已导入 0 · 已在 Neo 4 · 目录不存在 0 · 失败 0');
+    });
+    expect(loadSessionsSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('零候选 → 不刷', async () => {
+    invokeDomain.mockResolvedValue([]);
+    render(<ExternalChatsImportSection />);
+    fireEvent.click(screen.getByText('导入最近的聊天'));
+    await screen.findByTestId('external-chats-import-empty');
+    expect(loadSessionsSpy).not.toHaveBeenCalled();
+  });
+
+  it('IPC 失败 → 不刷且错误态照旧', async () => {
+    invokeDomain.mockRejectedValue(new Error('INTERNAL_ERROR'));
+    render(<ExternalChatsImportSection />);
+    fireEvent.click(screen.getByText('导入最近的聊天'));
+    await screen.findByTestId('external-chats-import-error');
+    expect(loadSessionsSpy).not.toHaveBeenCalled();
+  });
+
+  it('loadSessions 被拒 → 汇总仍在、错误横幅不出现', async () => {
+    loadSessionsSpy.mockRejectedValue(new Error('refresh blew up'));
+    invokeDomain.mockResolvedValue(FIRST_RUN);
+    render(<ExternalChatsImportSection />);
+    fireEvent.click(screen.getByText('导入最近的聊天'));
+    await screen.findByTestId('external-chats-import-summary');
+
+    expect(screen.getByTestId('external-chats-import-summary').textContent)
+      .toBe('已导入 1 · 已在 Neo 1 · 目录不存在 1 · 失败 1');
+    expect(screen.queryByTestId('external-chats-import-error')).toBeNull();
   });
 });

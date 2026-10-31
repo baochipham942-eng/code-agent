@@ -437,6 +437,8 @@ export interface CronJobExecution {
   retryAttempt: number;
   /** Exit code for shell commands */
   exitCode?: number;
+  /** Actual model cost of this run in USD (local runs, from the scoped cost meter); undefined = no model call happened or a cloud run. */
+  cost?: number;
   /** Trigger descriptor: why this run happened (event runs only). */
   trigger?: CronExecutionTrigger;
 }

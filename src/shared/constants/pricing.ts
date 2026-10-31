@@ -140,6 +140,8 @@ export const MODEL_PRICING_PER_1M: Record<string, ModelPricingEntry> = {
   'claude-3-5-haiku-20241022': { input: 0.25, output: 1.25, cacheRead: 0.025, cacheWrite: 0.3125 },
   // Zhipu
   'glm-5': { input: 0.05, output: 0.05 },
+  // N-CRON-RUN-LEDGER-VISIBLE：coding 端点 glm-5.3 暂无官方价目，按同系 glm-5 计价（运行账本读数可记非零成本）。
+  'glm-5.3': { input: 0.05, output: 0.05 },
   'glm-4.7': { input: 0.05, output: 0.05 },
   'glm-4.6v': { input: 0.05, output: 0.05 },
   // glm-5.3-flash：0ki 年卡包月模型，不按 token 计费，额度按次扣

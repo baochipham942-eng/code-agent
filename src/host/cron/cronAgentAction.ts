@@ -22,6 +22,7 @@ import { appendCronAgentExpertThreadReceipt } from './cronAgentExpertThreadRecei
 import { buildCronAgentPrompt, truncateUtf8Snapshot } from './cronAgentPrompt';
 import { beginArtifactRefresh, finishArtifactRefresh } from './artifactStandingRefresh';
 import { runWithCronJobBudget } from './cronExecutionPolicy';
+import { attachCronRunCost, createCronRunCostMeter } from './cronRunCostMeter';
 import { cronNotifyQuietRound } from './cronFailurePolicy';
 import { getCronAutomationType } from './cronAutomationBridge';
 
@@ -84,6 +85,8 @@ export async function executeCronAgentAction(
   let result: unknown; let finalAssistantText = '';
   let runError: unknown; let runFailed = false;
   // 常设刷新（metadata.artifactRefresh）：跑前建快照记基线；非刷新任务返回 undefined 零扰动
+  // N-CRON-RUN-LEDGER-VISIBLE：单次运行成本计量（maxRunBudget 有值时计量器兼任预算闸，见 cronRunCostMeter 头注）。
+  const costMeter = createCronRunCostMeter(definition.maxRunBudget);
   const artifactRefresh = beginArtifactRefresh(definition);
   try {
     try {
@@ -96,7 +99,7 @@ export async function executeCronAgentAction(
         agentRunOptions,
         eventPayloadBlock === undefined ? undefined : { memoryTainted: true },
       );
-      result = await runWithCronJobBudget(definition.maxRunBudget, sendMessage);
+      result = await runWithCronJobBudget(definition.maxRunBudget, () => costMeter.run(sendMessage));
       const unattendedTimeout = (await import('../agent/unattendedApprovalTerminal')).takeUnattendedApprovalTimeout(cronSession.id);
       if (unattendedTimeout) throw new Error(unattendedTimeout);
 
@@ -191,6 +194,7 @@ export async function executeCronAgentAction(
     if (runError instanceof Error && !('cronSessionId' in runError)) {
       (runError as Error & { cronSessionId?: string }).cronSessionId = cronSession.id;
     }
+    attachCronRunCost(runError, costMeter);
     throw runError;
   }
 
@@ -216,5 +220,7 @@ export async function executeCronAgentAction(
   // 结果组装（digest + 紧急档位 N-CRON-INBOX-URGENCY-TIER）在 cronNormalizers：
   // cronService 贴 max-lines 线，档位优先读摘要头部行、无摘要块读正文头部。
   // notifyQuietRound 只打 notifySuppressed 标记（通知门），不进 skipped 形状。
-  return buildCronAgentActionResult(action, result, cronSession.id, finalAssistantText, quietWatchRound, notifyQuietRound);
+  const actionResult = buildCronAgentActionResult(action, result, cronSession.id, finalAssistantText, quietWatchRound, notifyQuietRound);
+  const costUsd = costMeter.getCostUsd();
+  return costUsd > 0 ? { ...actionResult, costUsd } : actionResult;
 }

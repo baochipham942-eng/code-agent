@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isExternalSideEffectTool, extractStandingGrantTarget } from '../../../src/host/tools/externalSideEffect';
+import { isExternalSideEffectTool, extractStandingGrantTarget, mustAskUnderAcceptEdits } from '../../../src/host/tools/externalSideEffect';
 
 describe('isExternalSideEffectTool (EXTERNAL 风险类判据)', () => {
   it('flags native send tools (mail_send) as external', () => {
@@ -118,5 +118,28 @@ describe('extractStandingGrantTarget (B4 授权 target 提取)', () => {
     expect(extractStandingGrantTarget('Bash', { command: 'ls', standingGrant: true, allowForever: 'yes' })).toBeNull();
     // mail_send 即便带伪造字段，target 仍只由 to 决定
     expect(extractStandingGrantTarget('mail_send', { to: ['a@x.com'], grant: 'forever' })).toBe('a@x.com');
+  });
+});
+
+describe('mustAskUnderAcceptEdits (acceptEdits 档仍必须询问清单)', () => {
+  it('新增三名在清单上：ExcelAutomate（可跑宏）/ sleep_until / wake_on（自唤醒）', () => {
+    expect(mustAskUnderAcceptEdits('ExcelAutomate')).toBe(true);
+    expect(mustAskUnderAcceptEdits('sleep_until')).toBe(true);
+    expect(mustAskUnderAcceptEdits('wake_on')).toBe(true);
+  });
+
+  it('既有清单成员仍命中（抽查 xlwings_execute / mcp_add_server）', () => {
+    expect(mustAskUnderAcceptEdits('xlwings_execute')).toBe(true);
+    expect(mustAskUnderAcceptEdits('mcp_add_server')).toBe(true);
+  });
+
+  it('可逆 / 草稿 / 只读浏览 / 截图类不在清单上（含 wake_on_event 刻意不动）', () => {
+    expect(mustAskUnderAcceptEdits('reminders_create')).toBe(false);
+    expect(mustAskUnderAcceptEdits('reminders_update')).toBe(false);
+    expect(mustAskUnderAcceptEdits('mail_draft')).toBe(false);
+    expect(mustAskUnderAcceptEdits('browser_navigate')).toBe(false);
+    expect(mustAskUnderAcceptEdits('screenshot')).toBe(false);
+    // wake_on_event 刻意保持自动放行：owner 待答的 follow-up（见证据档），本单不加
+    expect(mustAskUnderAcceptEdits('wake_on_event')).toBe(false);
   });
 });

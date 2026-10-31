@@ -97,6 +97,13 @@ export interface CronJobDefinition {
   metadata?: Record<string, unknown>;
   /** Optional Neo channel account type/name that receives this job's result. */
   resultChannel?: string;
+  /**
+   * Event automations only (N-TRIGGER-OBSERVE-MODE): `observe` evaluates events but
+   * never sends anything outward; `auto` lets runs act. Missing on an event job
+   * means `observe` (fail-closed). Ignored by createJob/updateJob — the only way to
+   * reach `auto` is the explicit `setEventActionMode` user action.
+   */
+  actionMode?: CronEventActionMode;
   /** Computed next run timestamp. Returned by the runtime service; not persisted. */
   nextRunAt?: number;
   /** Created timestamp */
@@ -165,6 +172,53 @@ export type EventScheduleConfig =
   | EventChannelScheduleConfig
   | EventConnectorMailScheduleConfig
   | EventWebhookScheduleConfig;
+
+/**
+ * Action mode of an event automation (N-TRIGGER-OBSERVE-MODE).
+ * - `observe` (default for new event automations): the run judges every event
+ *   normally, but outbound side effects (external-side-effect tools, channel
+ *   replies) are intercepted in the host and recorded as `would_act` decisions.
+ * - `auto`: runs act. Reached only through an explicit, confirmed user action.
+ * Records created before this field existed were stamped `auto` by a one-time DB
+ * migration (schemaCronEventDecisions.ts), so they keep acting.
+ */
+export type CronEventActionMode = 'observe' | 'auto';
+
+/** Per-event decision outcome recorded in the decision ledger. */
+export type CronEventDecisionOutcome = 'acted' | 'would_act' | 'ignored' | 'dropped' | 'unavailable';
+
+/**
+ * One decision-ledger row (N-TRIGGER-OBSERVE-MODE).
+ * `kind: 'event'` rows: exactly one per event that entered the batch window.
+ * `kind: 'action'` rows: one per outbound action intercepted in observe mode
+ * (decision is always `would_act`; carries tool/target/summary).
+ */
+export interface CronEventDecision {
+  id: string;
+  jobId: string;
+  kind: 'event' | 'action';
+  /** Platform message id / mail id / webhook delivery id (event rows). */
+  eventId?: string;
+  decision: CronEventDecisionOutcome;
+  /** One-line reason (model-stated, drop cause or failure). */
+  reason: string;
+  /** Execution id of the run that judged (or reported) the event. */
+  runId?: string;
+  /**
+   * Event rows: the schedule rule that admitted the event — the binding that
+   * let it into the batch window (source + account + chat/mailbox). Derived
+   * from the event schedule config; a model-stated `rule=` in the run's
+   * per-event decision tag wins when present. Truncated like the reason.
+   */
+  matchedRule?: string;
+  /** Action rows: intercepted tool name (`channel_reply` for result delivery). */
+  tool?: string;
+  /** Action rows: recipient / channel target when determinable. */
+  target?: string;
+  /** Action rows: one-line summary of what would have been sent (truncated). */
+  summary?: string;
+  createdAt: number;
+}
 
 /**
  * Channel event schedule: the job is fired by inbound messages of a channel

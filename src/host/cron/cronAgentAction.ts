@@ -24,6 +24,8 @@ import { beginArtifactRefresh, finishArtifactRefresh } from './artifactStandingR
 import { runWithCronJobBudget } from './cronExecutionPolicy';
 import { cronNotifyQuietRound } from './cronFailurePolicy';
 import { getCronAutomationType } from './cronAutomationBridge';
+import { parseStatedEventDecisions } from './cronEventDecisions';
+import { enterObserveModeForCronRun } from './cronObserveMode';
 
 export interface CronAgentActionHost {
   /** 从内存 job 表取该任务当前定义（快照写回与常设刷新结算都要最新底稿）。 */
@@ -85,6 +87,8 @@ export async function executeCronAgentAction(
   let runError: unknown; let runFailed = false;
   // 常设刷新（metadata.artifactRefresh）：跑前建快照记基线；非刷新任务返回 undefined 零扰动
   const artifactRefresh = beginArtifactRefresh(definition);
+  // 观察档（N-TRIGGER-OBSERVE-MODE）：本会话的对外副作用调用由 ToolExecutor 拦下记 would_act。
+  const leaveObserveMode = enterObserveModeForCronRun(definition, cronSession.id, executionId);
   try {
     try {
       // 事件触发时通道载荷只以 untrusted 定界块追加在 prompt 尾部，并给该条
@@ -156,6 +160,7 @@ export async function executeCronAgentAction(
       }
     }
   } finally {
+    leaveObserveMode();
     tm.cleanup(cronSession.id);
   }
 
@@ -216,5 +221,8 @@ export async function executeCronAgentAction(
   // 结果组装（digest + 紧急档位 N-CRON-INBOX-URGENCY-TIER）在 cronNormalizers：
   // cronService 贴 max-lines 线，档位优先读摘要头部行、无摘要块读正文头部。
   // notifyQuietRound 只打 notifySuppressed 标记（通知门），不进 skipped 形状。
-  return buildCronAgentActionResult(action, result, cronSession.id, finalAssistantText, quietWatchRound, notifyQuietRound);
+  const actionResult = buildCronAgentActionResult(action, result, cronSession.id, finalAssistantText, quietWatchRound, notifyQuietRound);
+  // 事件 run：模型逐事件陈述的 act/ignore + 理由带出去，供决策台账结算（cronEventDecisions）。
+  const eventDecisions = eventPayloadBlock === undefined ? [] : parseStatedEventDecisions(finalAssistantText);
+  return eventDecisions.length > 0 ? { ...actionResult, eventDecisions } : actionResult;
 }

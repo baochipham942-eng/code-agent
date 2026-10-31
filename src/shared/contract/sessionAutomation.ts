@@ -28,7 +28,9 @@ export type SessionAutomationEventKind =
   | 'failed'
   | 'cancelled'
   | 'skipped'
-  | 'stage_ready';
+  | 'stage_ready'
+  /** Event automation switched between observe and auto (N-TRIGGER-OBSERVE-MODE). */
+  | 'action_mode_changed';
 
 export interface SessionAutomationNextStageConfig {
   /** Explicit prompt to send back into the source session when this automation reaches a terminal success state. */

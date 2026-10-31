@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import os from 'os';
+import { markShortTierSession } from '../../../../../src/host/tools/shell/foregroundTier';
 import type { CanUseToolFn, Logger, ToolContext } from '../../../../../src/host/protocol/tools';
 
 const {
@@ -161,6 +162,22 @@ describe('processModule structured result metadata', () => {
         }),
       });
     }
+  });
+
+  it('short-tier sessions refuse blocking waits above the tier; interactive sessions do not', async () => {
+    isTaskIdMock.mockReturnValue(true);
+    getTaskOutputMock.mockResolvedValue({ status: 'running', output: '', exitCode: null, duration: 1 });
+    getBackgroundTaskMock.mockReturnValue({ taskId: 'task-1', status: 'running', command: 'x' });
+    const sessionId = `short-process-${Date.now()}`;
+    markShortTierSession(sessionId);
+    const handler = await processModule.createHandler();
+
+    const refused = await handler.execute({ action: 'output', task_id: 'task-1', timeout: 60000 }, makeCtx({ sessionId }), allowAll);
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.error).toContain('arrive automatically');
+
+    const interactive = await handler.execute({ action: 'output', task_id: 'task-1', timeout: 60000 }, makeCtx(), allowAll);
+    expect(interactive.ok).toBe(true);
   });
 
   it('poll appends the sandbox denial path for a failed PTY', async () => {

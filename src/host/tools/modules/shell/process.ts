@@ -21,6 +21,7 @@ import type {
 } from '../../../protocol/tools';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { processSchema as schema } from './process.schema';
+import { resolveForegroundTimeoutTier, resolveShortTierWait } from '../../shell/foregroundTier';
 import {
   getAllBackgroundTasks,
   getBackgroundTask,
@@ -42,6 +43,11 @@ import {
 import { diagnoseSandboxDenial } from '../../shell/sandboxFailureDiagnostics';
 
 const DEFAULT_POLL_TIMEOUT = 30000;
+
+function resolveProcessWait(requested: number | undefined, block: boolean, sessionId?: string): { timeout: number; refusal?: string } {
+  if (!block || resolveForegroundTimeoutTier(sessionId) !== 'short') return { timeout: requested ?? DEFAULT_POLL_TIMEOUT };
+  return resolveShortTierWait(requested);
+}
 export type ProcessActionPermissionClass = 'observe' | 'control';
 
 const PROCESS_OBSERVATION_ACTIONS = new Set(['list', 'poll', 'log', 'output']);
@@ -183,7 +189,9 @@ Use Process action=kill <id> to terminate a running process.`;
 async function handlePoll(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult<string>> {
   const sessionId = args.session_id as string | undefined;
   const block = Boolean(args.block);
-  const timeout = (args.timeout as number | undefined) ?? DEFAULT_POLL_TIMEOUT;
+  const wait = resolveProcessWait(args.timeout as number | undefined, block, ctx.sessionId);
+  if (wait.refusal) return { ok: false, error: wait.refusal, code: 'INVALID_ARGS' };
+  const timeout = wait.timeout;
 
   if (!sessionId) {
     return { ok: false, error: 'session_id is required for poll action', code: 'INVALID_ARGS' };
@@ -495,7 +503,9 @@ async function handleOutput(args: Record<string, unknown>, ctx: ToolContext): Pr
   // Output 兼容 task_id 和 session_id（legacy task_output 用 task_id）
   const id = (args.task_id as string | undefined) ?? (args.session_id as string | undefined);
   const block = args.block !== false; // default true
-  const timeout = (args.timeout as number | undefined) ?? DEFAULT_POLL_TIMEOUT;
+  const wait = resolveProcessWait(args.timeout as number | undefined, block, ctx.sessionId);
+  if (wait.refusal) return { ok: false, error: wait.refusal, code: 'INVALID_ARGS' };
+  const timeout = wait.timeout;
 
   if (!id) {
     // No id → list all tasks（沿用 task_output 的 list 行为）

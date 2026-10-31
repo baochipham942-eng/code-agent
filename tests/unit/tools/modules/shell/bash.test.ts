@@ -112,6 +112,7 @@ import {
   looksLikeCodeImageGeneration,
 } from '../../../../../src/host/tools/modules/shell/bash';
 import { getPermissionModeManager } from '../../../../../src/host/permissions/modes';
+import { markShortTierSession } from '../../../../../src/host/tools/shell/foregroundTier';
 import { getSandboxManager } from '../../../../../src/host/sandbox';
 import { resolveCanonicalRunPath } from '../../../../../src/host/runtime/runContext';
 import { BASH } from '../../../../../src/shared/constants';
@@ -413,6 +414,75 @@ describe('bashModule (native)', () => {
       }
       expect(handoverTimedOutCommandMock).not.toHaveBeenCalled();
     }, 10_000);
+
+    describe('short foreground tier (channel / cron / role-wake)', () => {
+      const SLOW = 'node -e "setTimeout(() => {}, 5000)"';
+      let prevEnv: string | undefined;
+      beforeEach(() => {
+        prevEnv = process.env.CODE_AGENT_BASH_SHORT_TIMEOUT_MS;
+      });
+      afterEach(() => {
+        if (prevEnv === undefined) delete process.env.CODE_AGENT_BASH_SHORT_TIMEOUT_MS;
+        else process.env.CODE_AGENT_BASH_SHORT_TIMEOUT_MS = prevEnv;
+      });
+      const shortSession = (unattended: boolean) => {
+        const id = `short-tier-${unattended ? 'u' : 'a'}-${Date.now()}-${Math.random()}`;
+        markShortTierSession(id);
+        if (unattended) getPermissionModeManager().markUnattendedSession(id);
+        return id;
+      };
+
+      it('hands a timed-out command over to a background task past the short tier', async () => {
+        process.env.CODE_AGENT_BASH_SHORT_TIMEOUT_MS = '80';
+        handoverTimedOutCommandMock.mockReturnValue({ taskId: 'short-task', preview: '' });
+        const handler = await bashModule.createHandler();
+        const result = await handler.execute({ command: SLOW }, makeCtx({ sessionId: shortSession(false) }), allowAll);
+        expect(handoverTimedOutCommandMock).toHaveBeenCalledOnce();
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.output).toContain('timed out after 0.08 seconds');
+          expect(result.output).toContain('<task-id>short-task</task-id>');
+          expect(result.output).toContain('Results will be delivered automatically; continue with other work.');
+        }
+      }, 10_000);
+
+      it('keeps the kill in unattended short-tier sessions and says the tier was exceeded', async () => {
+        process.env.CODE_AGENT_BASH_SHORT_TIMEOUT_MS = '80';
+        const handler = await bashModule.createHandler();
+        const result = await handler.execute({ command: SLOW }, makeCtx({ sessionId: shortSession(true) }), allowAll);
+        expect(handoverTimedOutCommandMock).not.toHaveBeenCalled();
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.code).toBe('TIMEOUT');
+          expect(result.error).toContain('exceeded the 0.08s foreground limit');
+          expect(result.error).toContain('Split it');
+        }
+      }, 10_000);
+
+      it('refuses sleep at a command position but not inside arguments', async () => {
+        const handler = await bashModule.createHandler();
+        const ctx = makeCtx({ sessionId: shortSession(false) });
+        for (const command of ['sleep 30', 'echo a && sleep 1', 'FOO=1 sleep 2', 'ls | sleep 3']) {
+          const result = await handler.execute({ command }, ctx, allowAll);
+          expect(result.ok).toBe(false);
+          if (!result.ok) expect(result.error).toContain('arrive automatically');
+        }
+        const ok = await handler.execute({ command: 'echo sleep' }, ctx, allowAll);
+        expect(ok.ok).toBe(true);
+      });
+
+      it('clamps a timeout above the tier and reports it; interactive sessions are untouched', async () => {
+        const handler = await bashModule.createHandler();
+        const clamped = await handler.execute({ command: 'echo hi', timeout: 300000 }, makeCtx({ sessionId: shortSession(false) }), allowAll);
+        expect(clamped.ok).toBe(true);
+        if (clamped.ok) expect(clamped.output).toContain('Requested timeout 300s exceeds the 10s limit');
+        const interactive = await handler.execute({ command: 'echo hi', timeout: 300000 }, makeCtx(), allowAll);
+        expect(interactive.ok).toBe(true);
+        if (interactive.ok) expect(interactive.output).not.toContain('clamped');
+        const sleeping = await handler.execute({ command: 'sleep 0.1' }, makeCtx(), allowAll);
+        expect(sleeping.ok).toBe(true);
+      });
+    });
 
     it('aborts a foreground command when the run signal fires', async () => {
       const ctrl = new AbortController();

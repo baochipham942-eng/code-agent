@@ -62,11 +62,14 @@ function hasDraftText(text: string): boolean {
 
 export function readComposerDraft(
   key: string | null,
-  storage: Pick<ComposerDraftStorage, 'getItem'> = localStorage,
+  storage?: Pick<ComposerDraftStorage, 'getItem'>,
 ): string | null {
   if (!key) return null;
+  // Boot code also runs where localStorage does not exist (node tests, SSR): no storage = no draft.
+  const source = storage ?? (typeof localStorage === 'undefined' ? null : localStorage);
+  if (!source) return null;
   try {
-    const raw = storage.getItem(key);
+    const raw = source.getItem(key);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<StoredComposerDraft>;
     if (parsed.v !== 1 || typeof parsed.text !== 'string' || !hasDraftText(parsed.text)) return null;
@@ -90,6 +93,12 @@ function writeComposerDraft(
   } catch {
     return false;
   }
+}
+
+/** Write only when the key holds no draft yet. Returns true when the key ends up holding this text. */
+export function writeComposerDraftIfAbsent(key: string | null, text: string): boolean {
+  if (readComposerDraft(key) !== null) return false;
+  return writeComposerDraft(key, text);
 }
 
 export function removeComposerDraft(

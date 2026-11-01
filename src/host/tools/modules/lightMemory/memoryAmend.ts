@@ -19,6 +19,7 @@ import type {
   ToolSchema,
 } from '../../../protocol/tools';
 import { getDatabase } from '../../../services/core/databaseService';
+import { resolveJournalContext } from '../../../memory/memoryJournalActor';
 import { memoryAmendSchema } from './memoryAmend.schema';
 
 const schema: ToolSchema = memoryAmendSchema;
@@ -54,6 +55,9 @@ class MemoryAmendHandler implements ToolHandler<Record<string, unknown>, string>
       return { ok: false, error: `No memory found with id "${id}".`, code: 'NOT_FOUND' };
     }
 
+    // journal 归因：醒来会话里 agent 的纠错/遗忘是角色行为，记 role_wake 而非 unknown
+    const journal = resolveJournalContext(ctx.sessionId, 'unknown');
+
     if (action === 'forget') {
       const deprecatedBy = typeof args.deprecated_by === 'string' && args.deprecated_by.trim()
         ? args.deprecated_by.trim()
@@ -69,7 +73,7 @@ class MemoryAmendHandler implements ToolHandler<Record<string, unknown>, string>
             },
           }
         : existing.metadata;
-      db.updateMemory(id, { status: 'archived', deprecatedBy: deprecatedBy ?? null, metadata });
+      db.updateMemory(id, { status: 'archived', deprecatedBy: deprecatedBy ?? null, metadata }, journal);
       ctx.logger.info('memory_amend forget archived', { id, deprecatedBy });
       return {
         ok: true,
@@ -84,7 +88,7 @@ class MemoryAmendHandler implements ToolHandler<Record<string, unknown>, string>
     }
 
     const summary = content.length > SUMMARY_MAX_CHARS ? `${content.slice(0, SUMMARY_MAX_CHARS)}…` : content;
-    const updated = db.updateMemory(id, { content, summary });
+    const updated = db.updateMemory(id, { content, summary }, journal);
     ctx.logger.info('memory_amend update done', { id });
 
     return {

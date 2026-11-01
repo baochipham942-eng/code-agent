@@ -139,6 +139,8 @@ class NotificationService implements Disposable {
     siteOrigin?: string;
     failureKind?: CronFailurePresentationKind;
     resetAt?: string;
+    /** 失败类通知：renderer 端即使窗口聚焦也要弹。 */
+    urgent?: boolean;
   }): void {
     if (this.isDryRun()) return;
     broadcastToRenderer(IPC_CHANNELS.NOTIFICATION_SHOW, {
@@ -198,7 +200,8 @@ class NotificationService implements Disposable {
   notifyTaskComplete(data: TaskNotificationData, options?: { force?: boolean }): void {
     const intent: NotificationIntent = data.succeeded === false ? 'task_failed' : 'task_complete';
     if (!this.isIntentAllowed(intent)) return;
-    if (!this.shouldNotify(options?.force)) {
+    // 失败类通知不受焦点门限制：用户盯着别的会话时也不能错过失败。
+    if (!this.shouldNotify(options?.force || intent === 'task_failed')) {
       logger.debug('Skip notification - app is focused');
       return;
     }
@@ -232,6 +235,7 @@ class NotificationService implements Disposable {
       ...(data.siteOrigin ? { siteOrigin: data.siteOrigin } : {}),
       ...(data.failureKind ? { failureKind: data.failureKind } : {}),
       ...(data.resetAt ? { resetAt: data.resetAt } : {}),
+      ...(intent === 'task_failed' ? { urgent: true } : {}),
     });
     logger.info('Notification dispatched to renderer', { sessionTitle });
   }
@@ -311,6 +315,7 @@ class NotificationService implements Disposable {
       body: entry.body,
       sessionId: data.sessionId,
       markSessionUnread: true,
+      ...(intent === 'task_failed' ? { urgent: true } : {}),
     });
     logger.info('Voice work settlement notification sent', {
       sessionId: data.sessionId,

@@ -78,4 +78,26 @@ describe('osNotification', () => {
       { mode: 'tauri', granted: false, dispatched: false },
     );
   });
+
+  // urgent（失败类）× 焦点 2x2：只有 focused+非 urgent 被抑制
+  it.each([
+    { urgent: true, focused: true, sent: true },
+    { urgent: true, focused: false, sent: true },
+    { urgent: false, focused: true, sent: false },
+    { urgent: false, focused: false, sent: true },
+  ])('urgent=$urgent focused=$focused → dispatched=$sent', async ({ urgent, focused, sent }) => {
+    (globalThis as Record<string, unknown>).document = { hasFocus: () => focused, hidden: false };
+    const { postOsNotification } = await import('../../../src/renderer/utils/osNotification');
+
+    await postOsNotification({ title: 't', body: 'b' }, { urgent });
+
+    expect(notificationPlugin.sendNotification).toHaveBeenCalledTimes(sent ? 1 : 0);
+    expect(domainInvoke).toHaveBeenCalledWith(
+      IPC_DOMAINS.NOTIFICATION,
+      'reportClientDelivery',
+      sent
+        ? { mode: 'tauri', granted: true, dispatched: true, ...(urgent ? { urgent: true } : {}) }
+        : { mode: 'suppressed-focused', dispatched: false },
+    );
+  });
 });

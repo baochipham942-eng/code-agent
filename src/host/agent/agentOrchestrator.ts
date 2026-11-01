@@ -211,7 +211,7 @@ export class AgentOrchestrator {
     const settings = this.configService.getSettings();
     const sessionManager = getSessionManager();
     const sessionId = await this.resolveSessionId();
-    if (sessionId) await cancelTimeWakesOnUserReturn(sessionId, options);
+    if (sessionId) { (await import('../tools/shell/foregroundTier')).resetShortTierWait(sessionId); await cancelTimeWakesOnUserReturn(sessionId, options); }
 
     if (persistUserMessage) {
       const userMessage: Message = { id: clientMessageId ?? this.generateId(), role: 'user', content: options?.displayContent ?? content, timestamp: Date.now(), attachments: attachments as MessageAttachment[] | undefined, metadata: messageMetadata };

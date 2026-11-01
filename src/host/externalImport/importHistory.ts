@@ -62,6 +62,11 @@ async function readEntries(): Promise<ImportHistoryEntry[]> {
   }
 }
 
+async function writeEntries(entries: ImportHistoryEntry[]): Promise<void> {
+  await fs.mkdir(getUserConfigDir(), { recursive: true });
+  await fs.writeFile(historyPath(), `${JSON.stringify({ version: 1, entries }, null, 2)}\n`, 'utf8');
+}
+
 async function appendEntries(entries: NewEntry[], options: RecordOptions): Promise<void> {
   const trigger = options.trigger ?? 'manual';
   const recordable = trigger === 'auto' ? entries.filter((entry) => entry.count >= 1) : entries;
@@ -76,8 +81,7 @@ async function appendEntries(entries: NewEntry[], options: RecordOptions): Promi
       at,
     }));
     const next = [...added, ...existing].slice(0, MAX_ENTRIES);
-    await fs.mkdir(getUserConfigDir(), { recursive: true });
-    await fs.writeFile(historyPath(), `${JSON.stringify({ version: 1, entries: next }, null, 2)}\n`, 'utf8');
+    await writeEntries(next);
   } catch (error) {
     logger.warn('import history write failed; import result is unchanged', {
       reason: error instanceof Error ? error.message : String(error),
@@ -100,7 +104,11 @@ export async function recordChatImportHistory(
     category: 'chats',
     source,
     count: items.filter((item) => item.status === 'imported').length,
-    items: items.map((item): ImportHistoryItem => ({ label: item.title, outcome: item.status })),
+    items: items.map((item): ImportHistoryItem => ({
+      label: item.title,
+      outcome: item.status,
+      ...(item.status === 'imported' ? { sourceSessionId: item.sourceSessionId } : {}),
+    })),
   })), options);
 }
 
@@ -119,10 +127,28 @@ export async function recordSkillsImportHistory(
     category: 'skills',
     source,
     count: items.filter((item) => item.action === 'copied').length,
-    items: items.map((item): ImportHistoryItem => ({ label: item.name, outcome: item.action })),
+    items: items.map((item): ImportHistoryItem => ({
+      label: item.name,
+      outcome: item.action,
+      ...(item.digest ? { digest: item.digest } : {}),
+    })),
   })), options);
 }
 
 export async function listImportHistory(): Promise<ImportHistoryEntry[]> {
   return readEntries();
+}
+
+/** 回写单条历史（撤销结果落盘用）；条目不存在返回 null。 */
+export async function updateImportHistoryEntry(
+  entryId: string,
+  update: (entry: ImportHistoryEntry) => ImportHistoryEntry,
+): Promise<ImportHistoryEntry | null> {
+  const entries = await readEntries();
+  const index = entries.findIndex((entry) => entry.id === entryId);
+  if (index < 0) return null;
+  const updated = update(entries[index]);
+  entries[index] = updated;
+  await writeEntries(entries);
+  return updated;
 }

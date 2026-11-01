@@ -150,7 +150,8 @@ posixOnly('channel 会话短档超时 handover（真实建档/真实收编）', 
     expect(longRun.ok).toBe(true);
     if (!longRun.ok) return;
     expect(longRun.output).toContain('was adopted as a background task');
-    expect(longRun.output).toContain('Results will be delivered automatically; continue with other work.');
+    expect(longRun.output).toContain('Reply to the user now; do not wait or poll.');
+    expect(longRun.output).not.toContain('Process with action');
     const taskId = longRun.output.match(/<task-id>([^<]+)<\/task-id>/)?.[1];
     expect(taskId).toBeTruthy();
     adoptedTaskIds.push(taskId!);

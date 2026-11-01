@@ -397,6 +397,18 @@ describe('bashModule (native)', () => {
       expect(handoverTimedOutCommandMock).toHaveBeenCalledOnce();
     }, 10_000);
 
+    it('③ interactive handover text is byte-identical to the pre-change text', async () => {
+      handoverTimedOutCommandMock.mockReturnValue({ taskId: 'adopted-timeout-task', preview: 'line 1' });
+      const handler = await bashModule.createHandler();
+      const result = await handler.execute({ command: 'sleep 100', timeout: 500 }, makeCtx(), allowAll);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).toBe(
+          'Command timed out after 0.5 seconds and was adopted as a background task.\n\n<task-id>adopted-timeout-task</task-id>\n<task-type>bash-timeout-handover</task-type>\n<status>running</status>\n<output-preview>\nline 1\n</output-preview>\n\nUse Process with action="output", task_id="adopted-timeout-task" to continue reading the full output.\n\nResults will be delivered automatically; continue with other work.',
+        );
+      }
+    }, 10_000);
+
     it('terminates on timeout in unattended non-short-tier sessions instead of handing over', async () => {
       const unattendedSession = `unattended-timeout-${Date.now()}`;
       getPermissionModeManager().markUnattendedSession(unattendedSession);
@@ -442,7 +454,8 @@ describe('bashModule (native)', () => {
         if (result.ok) {
           expect(result.output).toContain('timed out after 0.08 seconds');
           expect(result.output).toContain('<task-id>short-task</task-id>');
-          expect(result.output).toContain('Results will be delivered automatically; continue with other work.');
+          expect(result.output).toContain('Reply to the user now; do not wait or poll.');
+          expect(result.output).not.toContain('Process with action');
         }
       }, 10_000);
 
@@ -467,7 +480,8 @@ describe('bashModule (native)', () => {
         if (result.ok) {
           expect(handoverArg.sandboxed).toBe((result.meta as { sandboxed?: boolean }).sandboxed);
           expect(result.output).toContain('<task-id>short-unattended-task</task-id>');
-          expect(result.output).toContain('Results will be delivered automatically; continue with other work.');
+          expect(result.output).toContain('Reply to the user now; do not wait or poll.');
+          expect(result.output).not.toContain('Process with action');
         }
         // 显式 run_in_background=true 在 unattended 会话仍拒（收窄只作用于超时 handover）。
         const explicit = await handler.execute(

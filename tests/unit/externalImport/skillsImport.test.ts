@@ -122,7 +122,7 @@ describe('applyExternalSkillsImport no-overwrite invariant', () => {
     expect(result.copied).toBe(1);
     expect(result.skipped).toBe(1);
     expect(result.items).toEqual([
-      { sourceId: 'codex', name: 'codex-skill', action: 'copied' },
+      { sourceId: 'codex', name: 'codex-skill', action: 'copied', digest: expect.any(String) },
       { sourceId: 'cursor', name: 'clash', action: 'skipped', reason: 'target-name-exists' },
     ]);
     const copied = await fs.readFile(path.join(userSkillsDir, 'codex-skill', 'SKILL.md'), 'utf-8');

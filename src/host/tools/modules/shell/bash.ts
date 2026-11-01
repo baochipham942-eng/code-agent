@@ -933,7 +933,7 @@ Use Process tool with action="kill", task_id="${result.taskId}" to terminate if 
         const preview = handover.preview || '(no output yet)';
         return {
           ok: true,
-          output: `Command timed out after ${timeout / 1000} seconds and was adopted as a background task.\n\n<task-id>${handover.taskId}</task-id>\n<task-type>bash-timeout-handover</task-type>\n<status>running</status>\n<output-preview>\n${preview}\n</output-preview>\n\nUse Process with action="output", task_id="${handover.taskId}" to continue reading the full output.\n\nResults will be delivered automatically; continue with other work.${clampNote}`,
+          output: `Command timed out after ${timeout / 1000} seconds and was adopted as a background task.\n\n<task-id>${handover.taskId}</task-id>\n<task-type>bash-timeout-handover</task-type>\n<status>running</status>\n<output-preview>\n${preview}\n</output-preview>\n\n${shortTier ? 'The full result will be delivered to this session automatically when the command finishes. Reply to the user now; do not wait or poll.' : `Use Process with action="output", task_id="${handover.taskId}" to continue reading the full output.\n\nResults will be delivered automatically; continue with other work.`}${clampNote}`,
           meta: {
             ...buildSandboxMeta(sandboxDecision),
             ...(sandboxEscalationMeta ? { sandboxEscalation: sandboxEscalationMeta } : {}),

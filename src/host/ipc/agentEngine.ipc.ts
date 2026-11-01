@@ -36,6 +36,7 @@ import { getChatsSyncState, importRecentChatsSingleFlight, setChatsSyncMode } fr
 import * as fsp from 'node:fs/promises';
 import { getDefaultWorkDirectory } from '../config/configPaths';
 import { listImportHistory } from '../externalImport/importHistory';
+import { ImportUndoError, undoImportHistoryEntry } from '../externalImport/undoImport';
 
 function isExternalEngineKind(kind: AgentEngineKind | undefined): kind is ExternalAgentEngineKind {
   // 单一真源：external engine 列表统一由 agentEngineGuards.isExternalAgentEngine 维护，
@@ -93,6 +94,23 @@ const agentEngineHandlers: RawDomainRouteHandlers<AgentEngineDomainRequest, void
   listImportHistory: async (_ctx, _requestPayload) => {
     const data = await listImportHistory();
     return { success: true, data };
+  },
+  undoImportHistory: async (_ctx, requestPayload) => {
+    const entryId = (requestPayload as { entryId?: unknown } | undefined)?.entryId;
+    if (typeof entryId !== 'string' || !entryId) {
+      return {
+        success: false,
+        error: { code: 'INVALID_PAYLOAD', message: 'undoImportHistory requires entryId.' },
+      };
+    }
+    try {
+      return { success: true, data: await undoImportHistoryEntry(entryId) };
+    } catch (error) {
+      if (error instanceof ImportUndoError) {
+        return { success: false, error: { code: error.code, message: error.message } };
+      }
+      throw error;
+    }
   },
   getChatsSync: async (_ctx, _requestPayload) => {
     return { success: true, data: getChatsSyncState() };

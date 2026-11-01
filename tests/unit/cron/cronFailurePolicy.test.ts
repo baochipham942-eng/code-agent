@@ -238,14 +238,33 @@ describe('notifyCronAgentExecution：notifySuppressed 完成通知门', () => {
     expect(notifyState.notifyTaskComplete).not.toHaveBeenCalled();
   });
 
-  it('成功 + 无标记（判据满足/未设判据）→ 完成通知照发（force 直达）', () => {
+  it('成功 + 无标记（判据满足/未设判据）→ 完成通知照发（force + urgent 直达）', () => {
     notifyCronAgentExecution(
       agentDefinition,
       execution('completed', buildCronAgentActionResult(action, undefined, 'sess-1', '<cron_alert>紧急</cron_alert>', false, false)),
       new CronFailureNoticeGate(),
     );
     expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(1);
-    expect(notifyState.notifyTaskComplete.mock.calls[0]?.[1]).toEqual({ force: true });
+    expect(notifyState.notifyTaskComplete.mock.calls[0]?.[1]).toEqual({ force: true, urgent: true });
+  });
+
+  it('must_today 与 alertReason 紧急，普通完成与 can_wait 不紧急', () => {
+    const base = { agentType: 'default', prompt: '汇总', result: null, sessionId: 'sess-1' };
+    for (const result of [
+      base,
+      { ...base, urgency: 'must_today' },
+      { ...base, alertReason: '生产故障' },
+      { ...base, urgency: 'can_wait' },
+    ]) {
+      notifyCronAgentExecution(agentDefinition, execution('completed', result), new CronFailureNoticeGate());
+    }
+
+    expect(notifyState.notifyTaskComplete.mock.calls.map((call) => call[1])).toEqual([
+      { force: true, urgent: false },
+      { force: true, urgent: true },
+      { force: true, urgent: true },
+      { force: true, urgent: false },
+    ]);
   });
 
   it('失败告警永不被该门静音：失败执行照发（标记只可能出现在成功路径）', () => {

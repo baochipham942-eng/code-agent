@@ -14,7 +14,11 @@ import type { AgentAction, CronJobDefinition, CronJobExecution } from '../../sha
 import { normalizeErrorMessage } from '../lightMemory/failureJournal';
 import { getConfigService } from '../services/core/configService';
 import { notificationService } from '../services/infra/notificationService';
-import { isNotifySuppressedResult, readCronAlertReason } from './cronNormalizers';
+import {
+  isCronAgentResultUrgent,
+  isNotifySuppressedResult,
+  readCronAlertReason,
+} from './cronNormalizers';
 import {
   CRON_LOGIN_WALL_STOP,
   parseCronLoginWallStop,
@@ -245,7 +249,10 @@ export function notifyCronAgentExecution(
             }
           : {}),
       },
-      { force: true }, // 后台定时任务完成：绕过焦点门，app 前台/后台都提醒
+      {
+        force: true,
+        urgent: succeeded && isCronAgentResultUrgent(execution.result),
+      }, // 后台定时任务完成：绕过焦点门，app 前台/后台都提醒
     );
   } catch (err) {
     console.error('[CronService] notifyAgentExecution failed:', err);

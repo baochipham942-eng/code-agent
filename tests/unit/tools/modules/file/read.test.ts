@@ -262,6 +262,21 @@ describe('readModule (native)', () => {
       }
     });
 
+    it('ENOENT on a chat upload path explains the upload expired instead of a bare not-found', async () => {
+      // 聊天上传的临时副本随 webServer 启动/关停整体清空：重启后再读就是 ENOENT。
+      // 此时要说「上传已过期，请重新上传」，不能只回 not found 让模型干瞪眼。
+      const uploadPath = path.join(os.tmpdir(), 'code-agent-uploads', 'uuid-1', 'sales.csv');
+      const handler = await readModule.createHandler();
+      const result = await handler.execute({ file_path: uploadPath }, makeCtx(), allowAll);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('ENOENT');
+        expect(result.error).toContain('not found');
+        expect(result.error).toContain('上传已过期');
+        expect(result.error).toContain('重新上传');
+      }
+    });
+
     it('rejects .xlsx with redirect hint', async () => {
       const file = path.join(tmpDir, 'data.xlsx');
       const handler = await readModule.createHandler();

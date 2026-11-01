@@ -392,9 +392,13 @@ export const MemoryTab: React.FC = () => {
   const [allowImportConflicts, setAllowImportConflicts] = useState(false);
 
   // Load data
+  // 首次加载才给全页 Loader：refresh（保存/撤回等子区动作的 onChanged 回调）若也翻
+  // isLoading，整个 tab 会卸掉重挂——子区（条目管理器）的行内反馈横幅刚 setState 就
+  // 随卸载丢掉，用户永远看不到（N-MEM-JOURNAL-SOURCEJUMP-FU2 真跑实测）。
+  const hasLoadedOnce = useRef(false);
   const loadData = async () => {
     try {
-      setIsLoading(true);
+      if (!hasLoadedOnce.current) setIsLoading(true);
       const [filesResult, statsResult] = await Promise.all([
         invokeLightMemory<LightMemoryFile[]>({ action: 'lightList' }),
         invokeLightMemory<LightMemoryStats>({ action: 'lightStats' }),
@@ -408,6 +412,7 @@ export const MemoryTab: React.FC = () => {
     } catch {
       setMessage({ type: 'error', text: memoryText.files.loadFailed });
     } finally {
+      hasLoadedOnce.current = true;
       setIsLoading(false);
     }
   };

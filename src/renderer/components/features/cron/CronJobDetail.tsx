@@ -17,6 +17,7 @@ import {
 } from './types';
 import { CronExecutionList } from './CronExecutionList';
 import { CronExecutionDetail } from './CronExecutionDetail';
+import { CLOUD_ROLE_BOUND_ERROR } from './CronCloudRoleRestriction';
 import { CronRunsOnPill } from './CronRunsOnSelector';
 import { CronResultChannelSummary } from './CronResultChannel';
 import { useEventScheduleNames } from './useChannelCatalog';
@@ -44,6 +45,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job }) => {
   } = useCronStore();
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [isTriggering, setIsTriggering] = useState(false);
+  const [toggleError, setToggleError] = useState<string | null>(null);
   // event 摘要的账号/群显示名（通道目录）；目录没有的回落 id。挂在早退 return 之前（hook 不得条件调用）。
   const eventNamesFor = useEventScheduleNames();
 
@@ -87,7 +89,13 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job }) => {
   const latestLabel = cc.status[latest?.status ?? 'none'];
 
   const handleToggleEnabled = async () => {
-    await updateJob(job.id, { enabled: !job.enabled });
+    setToggleError(null);
+    try {
+      await updateJob(job.id, { enabled: !job.enabled });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '';
+      setToggleError(message.includes(CLOUD_ROLE_BOUND_ERROR) ? cc.cloudRoleBoundHint : message || cc.simpleCreateFailed);
+    }
   };
 
   const handleDelete = async () => {
@@ -163,6 +171,11 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job }) => {
             </button>
           </div>
         </div>
+        {toggleError && (
+          <div role="alert" data-testid="cron-detail-toggle-error" className="mt-2 text-xs text-badge-danger">
+            {toggleError}
+          </div>
+        )}
 
         {/* 四磁贴 → 两行摘要：调度+下次运行讲「什么时候跑」，状态+动作讲「跑什么」，
             同一件事不再拆成四张卡各说一遍 */}

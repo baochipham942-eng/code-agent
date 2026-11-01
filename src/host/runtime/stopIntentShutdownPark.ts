@@ -25,6 +25,8 @@ export interface StopIntentShutdownParkSummary {
   parked: number;
   /** 无恢复描述符、落终态 cancelled 的 run 数（重开出现中断线）。 */
   terminalCancelled: number;
+  /** 不属于主 run 收口范围而跳过的 handle 数（子 run / 外部 CLI run / 无 durable owner）。 */
+  skipped: number;
   /** 收口步骤抛错（已 warn 留痕）的 run 数。 */
   errors: number;
 }
@@ -35,11 +37,21 @@ export interface StopIntentShutdownParkSummary {
  */
 export async function parkPrimaryRunsOnStopIntentShutdown(registry: RunRegistry): Promise<StopIntentShutdownParkSummary> {
   const intent = getDaemonQuitIntent();
-  const summary: StopIntentShutdownParkSummary = { intent, parked: 0, terminalCancelled: 0, errors: 0 };
+  const summary: StopIntentShutdownParkSummary = { intent, parked: 0, terminalCancelled: 0, skipped: 0, errors: 0 };
   if (intent !== 'stop') return summary;
   for (const handle of registry.list()) {
     const runId = handle.context.runId;
-    const ownedBefore = registry.hasDurableOwner(runId);
+    // 只收口「有 durable owner 的原生主 run」：
+    //  - 无 owner（startAuxiliary 的浏览器/子任务 handle）：没有 durable 行可收，硬收只会白报错；
+    //  - 有 parentRunId 的 agent-team 子 run：停成 waiting 没有继续入口，父 run 的 agent-team:<child>
+    //    pending op 也等不到终态（durableRunTerminal.canParkResumableUserStop 同口径）；
+    //    它们随父 run 的终态/停靠与 spawnGuard.cancelAll 一并收尾；
+    //  - external_cli 引擎 run：终态由 externalLifecycle.finish 收口，这里写 cancelled 会绕过它。
+    const envelope = registry.getDurableEnvelope(runId);
+    if (!registry.hasDurableOwner(runId) || !envelope || envelope.parentRunId || envelope.engine?.kind === 'external_cli') {
+      summary.skipped += 1;
+      continue;
+    }
     try {
       await finalizeOrParkDurableRun({
         registry,
@@ -50,7 +62,7 @@ export async function parkPrimaryRunsOnStopIntentShutdown(registry: RunRegistry)
         cancelled: true,
         registration: 'primary',
       });
-      if (ownedBefore && !registry.hasDurableOwner(runId)) summary.terminalCancelled += 1;
+      if (!registry.hasDurableOwner(runId)) summary.terminalCancelled += 1;
       else {
         summary.parked += 1;
         // 立刻交出租约：停靠行的租约默认还有一段余量，重开太快会撞在窗口里，

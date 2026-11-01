@@ -107,6 +107,48 @@ describe('parkPrimaryRunsOnStopIntentShutdown (FB-324)', () => {
     expect(registry.hasDurableOwner(handle.context.runId)).toBe(false);
   });
 
+  it('stop intent skips agent-team child runs (no continue entry; parent owns their end state)', async () => {
+    const { repository, registry } = openRegistry('child');
+    const parent = await registry.startDurable({ sessionId: 'session-child', workspace: '/tmp/ws-child' });
+    const child = await registry.startAuxiliaryDurableChild({
+      runId: 'run-child-aux', sessionId: 'session-child', workspace: '/tmp/ws-child', cwd: '/tmp/ws-child',
+    }, parent.context.runId);
+    await checkpointModelOperation(registry, child.context.runId);
+    quitIntent.value = 'stop';
+
+    const summary = await parkPrimaryRunsOnStopIntentShutdown(registry);
+
+    expect(summary).toMatchObject({ intent: 'stop', skipped: 1, errors: 0 });
+    expect(rawRunRow(repository, child.context.runId)?.status).not.toBe('waiting');
+    expect(registry.hasDurableOwner(child.context.runId)).toBe(true);
+    expect(registry.get(child.context.runId)).toBe(child);
+  });
+
+  it('stop intent leaves external CLI runs to their own lifecycle', async () => {
+    const { repository, registry } = openRegistry('ext');
+    const { handle: ext } = await registry.startExternalDurable({
+      runId: 'run-ext', sessionId: 'session-ext', workspace: '/tmp/ws-ext', cwd: '/tmp/ws-ext', engine: 'codex_cli',
+    });
+    quitIntent.value = 'stop';
+
+    const summary = await parkPrimaryRunsOnStopIntentShutdown(registry);
+
+    expect(summary).toMatchObject({ intent: 'stop', skipped: 1, terminalCancelled: 0, errors: 0 });
+    expect(rawRunRow(repository, ext.context.runId)?.status).not.toBe('cancelled');
+    expect(registry.get(ext.context.runId)).toBe(ext);
+  });
+
+  it('stop intent ignores handles without a durable owner without logging a false error', async () => {
+    const { registry } = openRegistry('noowner');
+    const aux = registry.startAuxiliary({ runId: 'run-noowner', sessionId: 'session-noowner', workspace: '/tmp/ws-noowner' });
+    quitIntent.value = 'stop';
+
+    const summary = await parkPrimaryRunsOnStopIntentShutdown(registry);
+
+    expect(summary).toMatchObject({ intent: 'stop', parked: 0, terminalCancelled: 0, skipped: 1, errors: 0 });
+    expect(registry.get(aux.context.runId)).toBe(aux);
+  });
+
   it('non-stop intent (none) leaves every active run untouched', async () => {
     const { registry } = openRegistry('none');
     const handle = await registry.startDurable({ sessionId: 'session-none', workspace: '/tmp/ws-none' });

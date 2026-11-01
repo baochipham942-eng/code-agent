@@ -18,10 +18,12 @@ import { applySchema } from '../../../src/host/services/core/database/schema';
 import { MemoryRepository } from '../../../src/host/services/core/repositories/MemoryRepository';
 import type { MemoryRecord } from '../../../src/host/protocol/types';
 import {
+  deleteMemoryEntry,
   listUnifiedMemoryEntries,
   rebuildMemoryMirrorFromLightFiles,
   updateMemoryEntry,
 } from '../../../src/host/memory/memoryEntryRuntime';
+import { parseMemoryJournalSnapshot } from '../../../src/renderer/components/features/settings/tabs/memoryJournalSnapshot';
 
 const mockConfigDir = vi.hoisted(() => ({ dir: '' }));
 
@@ -315,5 +317,141 @@ ${content}
     expect(byId.get('entry_a')?.lastChange).toMatchObject({ actor: 'import', operation: 'create' });
     expect(byId.get('entry_b')?.lastChange).toMatchObject({ actor: 'user_manual', operation: 'update' });
     expect(byId.get('entry_c')?.lastChange).toMatchObject({ actor: 'import', operation: 'create' });
+  });
+});
+
+// ----------------------------------------------------------------------------
+// 逐行撤回（N-MEM-JOURNAL-SOURCEJUMP-FU2）：后台 update/delete(软归档)/evict 行的
+// before 快照经面板既有 updateMemoryEntry 通道整段写回。断言：内容/状态恢复、
+// 恰好新增一条 user_manual 行、旧行字节级不变；并用测试核实被清退/软归档条目
+// 仍可被 updateMemoryEntry 定位（硬删条目则不可——UI 那侧禁用 + 原因）。
+// ----------------------------------------------------------------------------
+describe('memory change journal — per-row undo restore (FU2)', () => {
+  let tmpDir: string;
+  let db: BetterSqlite3.Database;
+  let repo: MemoryRepository;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'memory-journal-undo-'));
+    mockConfigDir.dir = tmpDir;
+    await fs.mkdir(path.join(tmpDir, 'memory'), { recursive: true });
+    db = createDb();
+    repo = new MemoryRepository(db);
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  /** 面板撤回的实际负载形状：解析出的快照 → memoryEntryUpdate 请求字段 */
+  function restorePayload(row: { beforeContent: string | null }) {
+    const parsed = parseMemoryJournalSnapshot(row.beforeContent);
+    if (!parsed?.restorable) throw new Error('snapshot not restorable');
+    return { title: parsed.title, content: parsed.content, status: parsed.status };
+  }
+
+  it('restores a dream-rewritten memory from the before snapshot and appends exactly one user_manual row', async () => {
+    const created = repo.createMemory(
+      makeMemoryInput('v1 content', { summary: 'v1 title', metadata: { memoryEntry: { id: 'entry_undo_1' } } }),
+      { actor: 'user_manual' },
+    );
+    repo.updateMemory(created.id, { content: 'rewritten by dream', summary: 'dream summary' }, { actor: 'dream' });
+
+    const rowsBefore = repo.listMemoryJournal({ entryId: 'entry_undo_1' });
+    expect(rowsBefore.map((row) => row.operation)).toEqual(['update', 'create']);
+    const payload = restorePayload(rowsBefore[0]);
+    expect(payload).toEqual({ title: 'v1 title', content: 'v1 content', status: 'active' });
+
+    await updateMemoryEntry(repo, { entryId: 'entry_undo_1', ...payload }, { journal: { actor: 'user_manual' } });
+
+    const rowsAfter = repo.listMemoryJournal({ entryId: 'entry_undo_1' });
+    expect(rowsAfter).toHaveLength(rowsBefore.length + 1);
+    expect(rowsAfter[0]).toMatchObject({ operation: 'update', actor: 'user_manual', entryId: 'entry_undo_1' });
+    // append-only：撤回前的所有行字节级不变
+    expect(rowsAfter.slice(1)).toEqual(rowsBefore);
+
+    const record = repo.getMemory(created.id);
+    expect(record?.content).toBe('v1 content');
+    expect(record?.status).toBe('active');
+    expect(record?.summary).toBe('v1 title');
+  });
+
+  it('restores a background soft-archived (deleted) entry back to its pre-delete state', async () => {
+    repo.createMemory(
+      makeMemoryInput('delete me later', { summary: 'del title', metadata: { memoryEntry: { id: 'entry_undo_2' } } }),
+      { actor: 'user_manual' },
+    );
+    // 后台删除 = 软归档（deleteMemoryEntry 复用 updateMemoryEntry 通道）
+    await deleteMemoryEntry(repo, { entryId: 'entry_undo_2' }, { journal: { actor: 'eviction' } });
+
+    const archived = (await listUnifiedMemoryEntries(repo)).entries.find((entry) => entry.id === 'entry_undo_2');
+    expect(archived?.status).toBe('archived');
+
+    const rowsBefore = repo.listMemoryJournal({ entryId: 'entry_undo_2' });
+    const payload = restorePayload(rowsBefore[0]);
+    expect(payload).toEqual({ title: 'del title', content: 'delete me later', status: 'active' });
+
+    const result = await updateMemoryEntry(repo, { entryId: 'entry_undo_2', ...payload }, { journal: { actor: 'user_manual' } });
+    expect(result.entry.status).toBe('active');
+    expect(result.entry.content).toBe('delete me later');
+    expect(result.entry.deprecatedBy).toBeNull();
+
+    const rowsAfter = repo.listMemoryJournal({ entryId: 'entry_undo_2' });
+    expect(rowsAfter).toHaveLength(rowsBefore.length + 1);
+    expect(rowsAfter[0]).toMatchObject({ actor: 'user_manual' });
+    expect(rowsAfter.slice(1)).toEqual(rowsBefore);
+  });
+
+  it('restores an evicted light-file entry: the file is re-created and the mirror row returns to active', async () => {
+    await fs.writeFile(path.join(tmpDir, 'memory', 'entry-evict.md'), `---
+name: Entry evict
+description: Summary evict
+type: project
+entry_id: entry_evict
+status: active
+source: knowledge_inbox
+schema_version: 2
+---
+
+Evict me
+`, 'utf-8');
+    await rebuildMemoryMirrorFromLightFiles(repo, { journal: { actor: 'import' } });
+    // 后台清退：light 文件消失后重建镜像（软归档，不硬删）
+    await fs.rm(path.join(tmpDir, 'memory', 'entry-evict.md'));
+    await rebuildMemoryMirrorFromLightFiles(repo, { journal: { actor: 'dream' } });
+
+    const rowsBefore = repo.listMemoryJournal({ entryId: 'entry_evict' });
+    expect(rowsBefore[0]).toMatchObject({ operation: 'evict', actor: 'eviction' });
+
+    const evicted = (await listUnifiedMemoryEntries(repo)).entries.find((entry) => entry.id === 'entry_evict');
+    expect(evicted?.status).toBe('archived');
+
+    const payload = restorePayload(rowsBefore[0]);
+    const result = await updateMemoryEntry(repo, { entryId: 'entry_evict', ...payload }, { journal: { actor: 'user_manual' } });
+    expect(result.entry.status).toBe('active');
+    expect(result.entry.content).toBe('Evict me');
+
+    const rowsAfter = repo.listMemoryJournal({ entryId: 'entry_evict' });
+    expect(rowsAfter[0]).toMatchObject({ actor: 'user_manual' });
+    expect(rowsAfter.slice(1)).toEqual(rowsBefore);
+  });
+
+  it('cannot restore a hard-deleted memory — the entry is unresolvable (UI must disable, not pretend)', async () => {
+    const created = repo.createMemory(
+      makeMemoryInput('hard deleted', { metadata: { memoryEntry: { id: 'entry_undo_4' } } }),
+      { actor: 'user_manual' },
+    );
+    repo.deleteMemory(created.id, { actor: 'auto_review' });
+    const deleteRow = repo.listMemoryJournal({ entryId: 'entry_undo_4' })[0];
+    expect(deleteRow).toMatchObject({ operation: 'delete', actor: 'auto_review' });
+    expect(restorePayload(deleteRow)).toEqual({ title: '', content: 'hard deleted', status: 'active' });
+
+    const entries = (await listUnifiedMemoryEntries(repo)).entries.filter((entry) => entry.id === 'entry_undo_4');
+    expect(entries).toHaveLength(0);
+    // 硬删后 updateMemoryEntry 解析不到条目 → 面板只能禁用 + 原因
+    await expect(updateMemoryEntry(repo, {
+      entryId: 'entry_undo_4',
+      ...restorePayload(deleteRow),
+    }, { journal: { actor: 'user_manual' } })).rejects.toThrow('Memory entry not found: entry_undo_4');
   });
 });

@@ -8,9 +8,16 @@
 
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { MemoryEntry, MemoryEntryListResult, MemoryChangeJournalResult } from '../../../src/shared/contract/memory';
+import type {
+  MemoryChangeJournalResult,
+  MemoryChangeJournalRow,
+  MemoryEntry,
+  MemoryEntryListResult,
+  MemoryEntryUpdateResult,
+} from '../../../src/shared/contract/memory';
+import { parseMemoryJournalSnapshot } from '../../../src/renderer/components/features/settings/tabs/memoryJournalSnapshot';
 
 const invokeDomainMock = vi.hoisted(() => vi.fn());
 vi.mock('../../../src/renderer/services/ipcService', () => ({
@@ -69,11 +76,13 @@ function journalResult(rows: MemoryChangeJournalResult['rows']): MemoryChangeJou
   return { rows };
 }
 
-/** route invokeDomain：MEMORY 三个动作 + SESSION 存在性探测（只读 sessionExists，load 一律 unexpected） */
+/** route invokeDomain：MEMORY 动作 + SESSION 存在性探测（只读 sessionExists，load 一律 unexpected） */
 function mockBackend(options: {
   entries: MemoryEntry[];
   journal?: MemoryChangeJournalResult['rows'];
   sessionExists?: boolean | 'throw';
+  /** memoryEntryUpdate 的返回形状：ok 走成功路径；fail 抛错（走恢复失败路径） */
+  updateResult?: 'ok' | 'fail';
 }): void {
   invokeDomainMock.mockImplementation(async (domain: string, action: string) => {
     if (domain === 'domain:session' && action === 'sessionExists') {
@@ -84,6 +93,10 @@ function mockBackend(options: {
       return { entries: options.entries, sourceCounts: { light_file: options.entries.length, db_memory: 0 } } satisfies MemoryEntryListResult;
     }
     if (action === 'memoryEntryJournal') return journalResult(options.journal ?? []);
+    if (action === 'memoryEntryUpdate') {
+      if (options.updateResult === 'fail') throw new Error('Memory entry not found: mem_entry_1');
+      return { entry: options.entries[0] } satisfies MemoryEntryUpdateResult;
+    }
     throw new Error(`unexpected invoke ${domain}/${action}`);
   });
 }
@@ -253,5 +266,253 @@ describe('MemoryEntriesManager — change history and background marker (③)', 
 
     const history = await screen.findByTestId('memory-entry-history');
     await waitFor(() => expect(history.textContent).toContain('暂无变更记录'));
+  });
+});
+
+// ============================================================================
+// 逐行撤回（N-MEM-JOURNAL-SOURCEJUMP-FU2）：后台 actor 的 update/delete/evict
+// 行给「撤回」，确认后把 before 快照整段经 memoryEntryUpdate 写回；截断快照/
+// 没有快照/恢复失败 → 禁用 + 一行原因。create 行与手动行不给撤回。
+// ============================================================================
+function journalRow(overrides: Partial<MemoryChangeJournalRow> = {}): MemoryChangeJournalRow {
+  return {
+    id: 3,
+    timestamp: now,
+    operation: 'update',
+    memoryId: 'mem_1',
+    entryId: 'mem_entry_1',
+    actor: 'dream',
+    beforeContent: JSON.stringify({ summary: 'User prefers dark mode', status: 'active', content: 'The user prefers dark mode.' }),
+    afterContent: null,
+    sessionId: null,
+    ...overrides,
+  };
+}
+
+describe('parseMemoryJournalSnapshot — before 快照解析', () => {
+  it('parses a full snapshot into title/content/status (summary → title)', () => {
+    expect(parseMemoryJournalSnapshot(journalRow().beforeContent)).toEqual({
+      restorable: true,
+      title: 'User prefers dark mode',
+      content: 'The user prefers dark mode.',
+      status: 'active',
+    });
+  });
+
+  it('marks truncated and unparseable snapshots as not restorable', () => {
+    expect(parseMemoryJournalSnapshot('{"summary":"a","status":"acti…[truncated]')).toEqual({ restorable: false, reason: 'truncated' });
+    expect(parseMemoryJournalSnapshot('not json at all')).toEqual({ restorable: false, reason: 'truncated' });
+    expect(parseMemoryJournalSnapshot('{"summary":"a","status":"weird","content":"c"}')).toEqual({ restorable: false, reason: 'truncated' });
+  });
+
+  it('returns null when there is no before snapshot (create rows)', () => {
+    expect(parseMemoryJournalSnapshot(null)).toBeNull();
+  });
+});
+
+describe('MemoryEntriesManager — per-row undo (FU2)', () => {
+  it('shows Undo only on background update/delete/evict rows, not on create or manual rows', async () => {
+    mockBackend({
+      entries: [entry()],
+      journal: [
+        journalRow({ id: 5, actor: 'dream', operation: 'update' }),
+        journalRow({ id: 4, actor: 'eviction', operation: 'evict', beforeContent: JSON.stringify({ summary: 's', status: 'active', content: 'c' }) }),
+        journalRow({ id: 3, actor: 'import', operation: 'create', beforeContent: null }),
+        journalRow({ id: 2, actor: 'user_manual', operation: 'update', beforeContent: JSON.stringify({ summary: 's', status: 'active', content: 'c' }) }),
+      ],
+    });
+    render(<MemoryEntriesManager />);
+
+    const rows = await screen.findAllByTestId('memory-entry-history-row');
+    expect(rows).toHaveLength(4);
+    const undoButtons = screen.getAllByTestId('memory-entry-history-undo');
+    expect(undoButtons).toHaveLength(2);
+    expect((undoButtons[0] as HTMLButtonElement).disabled).toBe(false);
+    expect((undoButtons[1] as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('disables the Undo with a reason when the snapshot was truncated', async () => {
+    mockBackend({
+      entries: [entry()],
+      journal: [journalRow({
+        beforeContent: '{"summary":"User prefers dark mode","status":"active","content":"The user pre…[truncated]',
+      })],
+    });
+    render(<MemoryEntriesManager />);
+
+    const undoButton = await screen.findByTestId('memory-entry-history-undo');
+    expect((undoButton as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId('memory-entry-history-undo-reason').textContent).toContain('改写前快照被截断');
+    fireEvent.click(undoButton);
+    // 禁用态点不开确认弹窗
+    expect(screen.queryByTestId('memory-entry-undo-preview')).toBeNull();
+  });
+
+  it('disables the Undo with a reason when an update row has no before snapshot', async () => {
+    mockBackend({ entries: [entry()], journal: [journalRow({ beforeContent: null })] });
+    render(<MemoryEntriesManager />);
+
+    const undoButton = await screen.findByTestId('memory-entry-history-undo');
+    expect((undoButton as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId('memory-entry-history-undo-reason').textContent).toContain('没有改写前快照');
+  });
+
+  it('confirms with a preview and sends the snapshot through memoryEntryUpdate', async () => {
+    mockBackend({ entries: [entry()], journal: [journalRow()] });
+    render(<MemoryEntriesManager />);
+
+    fireEvent.click(await screen.findByTestId('memory-entry-history-undo'));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('撤回这次改写？')).toBeTruthy();
+    expect(within(dialog).getByTestId('memory-entry-undo-preview').textContent).toBe('The user prefers dark mode.');
+    fireEvent.click(within(dialog).getByRole('button', { name: '撤回' }));
+
+    await waitFor(() => {
+      const updateCall = invokeDomainMock.mock.calls.find(([, action]) => action === 'memoryEntryUpdate');
+      expect(updateCall?.[2]).toEqual({
+        action: 'memoryEntryUpdate',
+        entryId: 'mem_entry_1',
+        title: 'User prefers dark mode',
+        content: 'The user prefers dark mode.',
+        status: 'active',
+        deprecatedBy: null,
+      });
+    });
+    // 成功后：重拉条目 + 重拉历史（journal 至少两次）
+    await waitFor(() => {
+      const journalCalls = invokeDomainMock.mock.calls.filter(([, action]) => action === 'memoryEntryJournal');
+      expect(journalCalls.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  it('previews only the first 200 chars of long content in the confirm dialog', async () => {
+    const longContent = 'x'.repeat(300);
+    mockBackend({
+      entries: [entry()],
+      journal: [journalRow({ beforeContent: JSON.stringify({ summary: 's', status: 'active', content: longContent }) })],
+    });
+    render(<MemoryEntriesManager />);
+
+    fireEvent.click(await screen.findByTestId('memory-entry-history-undo'));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByTestId('memory-entry-undo-preview').textContent).toBe(`${'x'.repeat(200)}…`);
+  });
+
+  it('does not restore to archived with deprecatedBy cleared and keeps non-active status payloads intact', async () => {
+    mockBackend({
+      entries: [entry()],
+      journal: [journalRow({ operation: 'delete', actor: 'eviction', beforeContent: JSON.stringify({ summary: 'before title', status: 'archived', content: 'before content' }) })],
+    });
+    render(<MemoryEntriesManager />);
+
+    fireEvent.click(await screen.findByTestId('memory-entry-history-undo'));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: '撤回' }));
+
+    await waitFor(() => {
+      const updateCall = invokeDomainMock.mock.calls.find(([, action]) => action === 'memoryEntryUpdate');
+      expect(updateCall?.[2]).toEqual({
+        action: 'memoryEntryUpdate',
+        entryId: 'mem_entry_1',
+        title: 'before title',
+        content: 'before content',
+        status: 'archived',
+      });
+    });
+  });
+
+  it('disables the row with a reason after a failed restore attempt', async () => {
+    mockBackend({ entries: [entry()], journal: [journalRow()], updateResult: 'fail' });
+    render(<MemoryEntriesManager />);
+
+    fireEvent.click(await screen.findByTestId('memory-entry-history-undo'));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: '撤回' }));
+
+    const reason = await screen.findByTestId('memory-entry-history-undo-reason');
+    expect(reason.textContent).toContain('该条目当前无法定位');
+    const undoButton = screen.getByTestId('memory-entry-history-undo');
+    expect((undoButton as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+// ============================================================================
+// rework r1：①同页导入/删文件后 entriesRefreshKey 重拉列表；②同条目后台刷新
+// 不清未保存草稿（脏标记），撤回是显式覆盖、放行同步。
+// ============================================================================
+describe('MemoryEntriesManager — same-page refresh and dirty draft (rework r1)', () => {
+  /** 动态后端：entries 随闭包变量变化，模拟后台改写/撤回后的服务器状态 */
+  function mockDynamicBackend(options: {
+    entries: () => MemoryEntry[];
+    journal?: MemoryChangeJournalResult['rows'];
+  }): void {
+    invokeDomainMock.mockImplementation(async (domain: string, action: string) => {
+      if (action === 'memoryEntries') {
+        const entries = options.entries();
+        return { entries, sourceCounts: { light_file: entries.length, db_memory: 0 } } satisfies MemoryEntryListResult;
+      }
+      if (action === 'memoryEntryJournal') return journalResult(options.journal ?? []);
+      if (action === 'memoryEntryUpdate') return { entry: options.entries()[0] } satisfies MemoryEntryUpdateResult;
+      throw new Error(`unexpected invoke ${domain}/${action}`);
+    });
+  }
+
+  const entryListCalls = () => invokeDomainMock.mock.calls.filter(([, action]) => action === 'memoryEntries').length;
+
+  it('reloads the entry list when entriesRefreshKey changes (r1 ①)', async () => {
+    mockBackend({ entries: [entry()] });
+    const view = render(<MemoryEntriesManager />);
+    await screen.findAllByTestId('memory-entry-row');
+    const callsBefore = entryListCalls();
+    expect(callsBefore).toBeGreaterThanOrEqual(1);
+
+    view.rerender(<MemoryEntriesManager entriesRefreshKey={1} />);
+    await waitFor(() => expect(entryListCalls()).toBeGreaterThan(callsBefore));
+  });
+
+  it('keeps unsaved edits when the same entry is refreshed by a background rewrite (r1 ②)', async () => {
+    let backendEntries = [entry({ content: 'server v1', updatedAt: now })];
+    mockDynamicBackend({ entries: () => backendEntries });
+    render(<MemoryEntriesManager />);
+
+    const contentBox = await screen.findByLabelText('正文');
+    await waitFor(() => expect((contentBox as HTMLTextAreaElement).value).toBe('server v1'));
+    fireEvent.change(contentBox, { target: { value: 'user edit' } });
+    expect((contentBox as HTMLTextAreaElement).value).toBe('user edit');
+
+    // 后台 actor 改写同一条 → 面板任一动作触发 loadEntries（这里点刷新）
+    backendEntries = [entry({ title: 'Server v2 title', content: 'server v2 by background actor', updatedAt: now + 5_000 })];
+    fireEvent.click(screen.getByRole('button', { name: '刷新' }));
+    await waitFor(() => expect(entryListCalls()).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(screen.getByTestId('memory-entry-row').textContent).toContain('Server v2 title'));
+
+    // 未保存的用户编辑不能被静默清掉
+    expect((contentBox as HTMLTextAreaElement).value).toBe('user edit');
+  });
+
+  it('replaces a dirty draft with the restored content after undo (explicit overwrite, r1 ②)', async () => {
+    const restored = 'original content before rewrite';
+    let backendEntries = [entry({ content: 'rewritten by dream', updatedAt: now })];
+    mockDynamicBackend({
+      entries: () => backendEntries,
+      journal: [journalRow({
+        actor: 'dream',
+        beforeContent: JSON.stringify({ summary: 'User prefers dark mode', status: 'active', content: restored }),
+      })],
+    });
+    render(<MemoryEntriesManager />);
+
+    const contentBox = await screen.findByLabelText('正文');
+    await waitFor(() => expect((contentBox as HTMLTextAreaElement).value).toBe('rewritten by dream'));
+    fireEvent.change(contentBox, { target: { value: 'my wip edit' } });
+
+    fireEvent.click(await screen.findByTestId('memory-entry-history-undo'));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: '撤回' }));
+
+    // 撤回确认弹窗已警告覆盖：编辑器必须切到恢复后内容，脏草稿不给保留
+    backendEntries = [entry({ content: restored, updatedAt: now + 9_000 })];
+    await waitFor(() => expect((contentBox as HTMLTextAreaElement).value).toBe(restored));
   });
 });

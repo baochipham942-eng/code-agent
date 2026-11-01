@@ -46,7 +46,7 @@ function journalSnapshot(record: MemoryRecord): string {
     content: record.content,
   });
   if (snapshot.length <= MEMORY.JOURNAL_SNAPSHOT_MAX_CHARS) return snapshot;
-  return `${snapshot.slice(0, MEMORY.JOURNAL_SNAPSHOT_MAX_CHARS)}…[truncated]`;
+  return `${snapshot.slice(0, MEMORY.JOURNAL_SNAPSHOT_MAX_CHARS)}${MEMORY.JOURNAL_SNAPSHOT_TRUNCATED_SUFFIX}`;
 }
 
 /** 统一条目 id（metadata.memoryEntry.id）有则记录，供面板按 entryId 查历史 */

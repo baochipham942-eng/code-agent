@@ -161,6 +161,7 @@ describe('memory journal actor — role wake attribution', () => {
       projectPath,
       sessionId,
       confidence: 0.9,
+      metadata: {},
     });
   }
 

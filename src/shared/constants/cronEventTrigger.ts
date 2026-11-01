@@ -49,3 +49,24 @@ export const CRON_EVENT_TRIGGER = {
   /** untrusted 事件块的定界标签（闭合标签出现在载荷里会被转义）。 */
   UNTRUSTED_BLOCK_TAG: 'untrusted_channel_events',
 } as const;
+
+/**
+ * 事件自动化「观察档」与逐事件决策台账（N-TRIGGER-OBSERVE-MODE）的界。
+ * 台账按任务有界（保留最近 N 条），理由/摘要按字符截断。
+ */
+export const CRON_EVENT_DECISIONS = {
+  /** 每个自动化保留的最近决策条数缺省（N 可由 CronEventDecisionStore.record 的 maxPerJob 覆盖）。 */
+  DEFAULT_MAX_PER_JOB: 500,
+  /** 读接口单次返回条数上限。 */
+  MAX_READ_LIMIT: 500,
+  /** 一行理由的截断长度（字符）。 */
+  MAX_REASON_CHARS: 200,
+  /** 「本会发出什么」摘要的截断长度（字符）。 */
+  MAX_SUMMARY_CHARS: 200,
+  /** 每任务挂起待记的 dropped 事件 id 上限（超出只计数，不逐条记）。 */
+  MAX_PENDING_DROPPED_IDS: 500,
+  /** 模型逐事件陈述决策的标签名（只在事件触发的 run 里要求）。 */
+  DECISION_TAG: 'cron_event_decision',
+  /** 观察档拦截后回给工具调用方的结果文案前缀（模型可见）。 */
+  OBSERVE_RECORDED_TEXT: 'recorded, not executed (observe mode)',
+} as const;

@@ -16,6 +16,8 @@ import type {
   CronMissedEvent,
   CronMissedReason,
   CreateCronJobDefinition,
+  CronEventActionMode,
+  CronEventDecision,
 } from '../../shared/contract/cron';
 import { getDatabase } from '../services/core/databaseService';
 import { getConfigService } from '../services/core/configService';
@@ -28,6 +30,7 @@ import {
   recordCronAutomationExecution,
   getCronAutomationType,
   isSkippedResult,
+  readCronAutomationActionModeChange,
   type ResolveRuntimeDefinition,
 } from './cronAutomationBridge';
 import {
@@ -64,6 +67,8 @@ import {
   upsertCronExecutionInMemory,
 } from './cronPersistence';
 import { deliverCronResultToChannel } from './cronResultDelivery';
+import { actionModeForNewJob, carryEventActionMode, changeEventActionMode } from './cronEventActionModeChange';
+import { loadCronEventDecisions } from './cronEventDecisionLedger';
 import { rearmCronRunLimit, settleCronRunLimit } from './cronRunLimit';
 import {
   adoptFailedAgentSession,
@@ -283,6 +288,8 @@ export class CronService implements Disposable {
       ...definition,
       runsOn,
       metadata: cronLoginWallMetadata({ action: definition.action }, definition.metadata),
+      // 新建 event 自动化一律仅观察（入参 actionMode 忽略）；切到自动执行只走 setEventActionMode。
+      actionMode: actionModeForNewJob(definition.schedule),
       id: uuidv4(), createdAt: now, updatedAt: now,
     };
 
@@ -332,6 +339,8 @@ export class CronService implements Disposable {
       ...existingJob.definition,
       ...updates,
       metadata: cronLoginWallMetadata({ action: updates.action ?? existingJob.definition.action }, metadata), updatedAt: Date.now(),
+      // 执行档不随普通更新改写（只收窄：改绑/改成 event 回落 observe），见 cronEventActionModeChange。
+      actionMode: carryEventActionMode(existingJob.definition, { schedule: updates.schedule ?? existingJob.definition.schedule }),
     };
     // 重新启用已停用任务：运行计数清零、摘掉停用原因（N-CRON-BUDGET-EXPOSE）；只改 maxRuns 不动计数。
     if (updates.enabled === true && !existingJob.definition.enabled) rearmCronRunLimit(updatedJob);
@@ -597,6 +606,32 @@ export class CronService implements Disposable {
   /**
    * Get execution history for a job
    */
+  /**
+   * 显式切换事件自动化执行档（N-TRIGGER-OBSERVE-MODE）：唯一能到 'auto' 的入口，先写自动化
+   * 变更事件再落库；非 event 任务抛错，任务不存在返回 null。
+   */
+  async setEventActionMode(jobId: string, mode: CronEventActionMode): Promise<CronJobDefinition | null> {
+    const active = this.jobs.get(jobId);
+    if (!active) return null;
+    return changeEventActionMode(active.definition, mode, {
+      persistJob: (job) => this.persistJob(job),
+      applyDefinition: (job) => { active.definition = job; },
+      notifyJobsChanged: () => this.notifyJobsChanged(),
+    });
+  }
+
+  /** 事件自动化最近 limit 条逐事件决策（新的在前）。 */
+  getEventDecisions(jobId: string, limit?: number): CronEventDecision[] {
+    return loadCronEventDecisions(jobId, limit);
+  }
+
+  /** 最近一次执行档切换（返修⑥：详情页展示「切换已记入变更历史」）；任务不存在返回 null。 */
+  getEventActionModeChange(jobId: string): { from: 'observe' | 'auto'; to: 'observe' | 'auto'; at: number } | null {
+    const active = this.jobs.get(jobId);
+    if (!active) return null;
+    return readCronAutomationActionModeChange(active.definition);
+  }
+
   getJobExecutions(jobId: string, limit: number = 10): CronJobExecution[] {
     const executions = this.executions.get(jobId) || [];
     if (executions.length > 0) {

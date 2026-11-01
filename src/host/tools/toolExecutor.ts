@@ -76,6 +76,7 @@ import { computeActionFingerprint, getDenialRegistry } from '../security/denialR
 import { computePolicyHash } from '../permissions/policyHash';
 import { normalizePermissionAskResult, type RequestPermissionResult } from '../../shared/contract/permission';
 import { applyEditedArgs } from '../../shared/contract/permissionEdit';
+import { interceptObserveModeToolCall } from './observeModeGate';
 import { EXTERNAL_SIDE_EFFECT_TRACE_RULE, EXTERNAL_SIDE_EFFECT_TRACE_REASON, isExternalSideEffectTool, extractStandingGrantTarget } from './externalSideEffect';
 import { maskMailSendOutboundParams, OUTBOUND_MASK_REASON_LINE } from './outboundGuard';
 import { isRunPathInsideWorkspace, resolveCanonicalRunPath, type RunContext } from '../runtime/runContext';
@@ -674,6 +675,9 @@ export class ToolExecutor {
     // 审批卡/短路匹配/真实发送三方一致（见 outboundGuard.ts 头注）。
     const outboundMask = maskMailSendOutboundParams(executionToolName, params);
     if (outboundMask.redacted) params = outboundMask.params;
+    // N-TRIGGER-OBSERVE-MODE：观察档事件运行的对外副作用调用在审批/缓存/派发前拦下记 would_act（只加 deny）。
+    const observeModeResult = interceptObserveModeToolCall(effectiveSessionId, executionToolName, params);
+    if (observeModeResult) return observeModeResult;
     const writeWithoutWorkspaceAuthority = Boolean(
       this.runContext
       && !this.runContext.workspaceScope

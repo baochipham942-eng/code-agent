@@ -9,7 +9,7 @@ import {
 } from '../components/features/chat/ChatInput/composerDraftStore';
 
 /** First blank new-task session (list order = most recent first) that holds an unsent draft. */
-export function findBlankSessionWithDraft<T extends { id: string }>(
+function findBlankSessionWithDraft<T extends { id: string }>(
   sessions: T[],
   isBlank: (session: T) => boolean,
 ): T | null {
@@ -19,7 +19,7 @@ export function findBlankSessionWithDraft<T extends { id: string }>(
 }
 
 /** Move the sessionless home draft onto a freshly created session so the card shows there. */
-export function adoptHomeDraft(sessionId: string): void {
+function adoptHomeDraft(sessionId: string): void {
   const homeKey = composerDraftStorageKey(null, false);
   const text = readComposerDraft(homeKey);
   if (text === null) return;

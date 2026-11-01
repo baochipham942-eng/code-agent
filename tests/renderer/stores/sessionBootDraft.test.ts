@@ -4,7 +4,7 @@ import {
   composerDraftStorageKey,
   readComposerDraft,
 } from '../../../src/renderer/components/features/chat/ChatInput/composerDraftStore';
-import { adoptHomeDraft, findBlankSessionWithDraft } from '../../../src/renderer/stores/sessionBootDraft';
+import { openInitialSession } from '../../../src/renderer/stores/sessionBootDraft';
 
 const mockDomainInvoke = vi.fn();
 
@@ -83,24 +83,35 @@ describe('cold boot lands on the session that holds the unsent draft', () => {
     expect(useSessionStore.getState().currentSessionId).toBe('busy');
   });
 
-  it('findBlankSessionWithDraft ignores blank sessions without a stored draft', () => {
-    storeDraft('b2', 'x');
-    const sessions = [{ id: 'b1', blank: true }, { id: 'b2', blank: true }, { id: 'b3', blank: false }];
-    expect(findBlankSessionWithDraft(sessions, (s) => s.blank)?.id).toBe('b2');
-    expect(findBlankSessionWithDraft([{ id: 'b1', blank: true }], (s) => s.blank)).toBeNull();
-  });
-
-  it('adoptHomeDraft moves the home draft onto the new session and clears the home key', () => {
+  it('with no sessions the home draft moves onto the created session and the home key is cleared', async () => {
     storeDraft(null, 'typed while no session existed');
-    adoptHomeDraft('fresh');
+    const switchSession = vi.fn();
+    await openInitialSession({
+      sessions: [], isBlank: () => true, switchSession, createSession: async () => ({ id: 'fresh' }),
+    });
+    expect(switchSession).not.toHaveBeenCalled();
     expect(readComposerDraft(composerDraftStorageKey('fresh', false))).toBe('typed while no session existed');
     expect(readComposerDraft(composerDraftStorageKey(null, false))).toBeNull();
   });
 
-  it('adoptHomeDraft never overwrites an existing session draft', () => {
+  it('never overwrites an existing draft on the created session', async () => {
     storeDraft(null, 'home text');
     storeDraft('fresh', 'session text');
-    adoptHomeDraft('fresh');
+    await openInitialSession({
+      sessions: [], isBlank: () => true, switchSession: vi.fn(), createSession: async () => ({ id: 'fresh' }),
+    });
     expect(readComposerDraft(composerDraftStorageKey('fresh', false))).toBe('session text');
+  });
+
+  it('skips blank sessions that hold no draft', async () => {
+    storeDraft('b2', 'x');
+    const switchSession = vi.fn();
+    await openInitialSession({
+      sessions: [{ id: 'b1' }, { id: 'b2' }, { id: 'b3' }],
+      isBlank: (s) => s.id !== 'b3',
+      switchSession,
+      createSession: vi.fn(),
+    });
+    expect(switchSession).toHaveBeenCalledWith('b2');
   });
 });

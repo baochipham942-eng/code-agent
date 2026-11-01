@@ -11,7 +11,7 @@ import {
   readComposerDraft,
 } from '../../../src/renderer/components/features/chat/ChatInput/composerDraftStore';
 import { useComposerDraftPersistence } from '../../../src/renderer/components/features/chat/ChatInput/useComposerDraftPersistence';
-import { adoptHomeDraft } from '../../../src/renderer/stores/sessionBootDraft';
+import { openInitialSession } from '../../../src/renderer/stores/sessionBootDraft';
 import { UnsentDraftNotice } from '../../../src/renderer/components/features/chat/ChatInput/UnsentDraftNotice';
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
@@ -345,7 +345,14 @@ describe('UnsentDraftNotice restart', () => {
     localStorage.setItem(composerDraftStorageKey(null, false)!, JSON.stringify({ v: 1, text: 'typed with no session' }));
     render(<DraftHarness sessionId="fresh-session" />);
     expect(screen.queryByTestId('unsent-draft-notice')).toBeNull();
-    act(() => { adoptHomeDraft('fresh-session'); });
+    await act(async () => {
+      await openInitialSession({
+        sessions: [],
+        isBlank: () => true,
+        switchSession: async () => undefined,
+        createSession: async () => ({ id: 'fresh-session' }),
+      });
+    });
     expect(screen.getByTestId('unsent-draft-notice')).toBeTruthy();
     fireEvent.click(screen.getByTestId('unsent-draft-put-back'));
     expect((screen.getByTestId('composer-draft-box') as HTMLTextAreaElement).value).toBe('typed with no session');

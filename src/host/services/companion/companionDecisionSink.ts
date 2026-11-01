@@ -40,7 +40,11 @@ export function noteCompanionApprovalSettlement(event: CompanionApprovalHostSett
 }
 
 export function approvalAnswerFromPermission(response: PermissionResponse): CompanionApprovalAnswer {
-  if (response === 'allow_session') return { decision: 'allow_session' };
+  // allow_run/allow_24h（N-PERM-GRANT-TIERS）归 allow_session 档：都是时间盒放行，
+  // 不是永久 approved；手机侧回执口径与桌面一致。
+  if (response === 'allow_session' || response === 'allow_run' || response === 'allow_24h') {
+    return { decision: 'allow_session' };
+  }
   if (response === 'allow' || response === 'allow_standing') return { decision: 'approved' };
   return { decision: 'rejected' };
 }

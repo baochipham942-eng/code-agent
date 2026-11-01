@@ -22,6 +22,7 @@ import { SettingsSchemas, type SettingsDomainRequest } from '../../shared/ipc/sc
 import { WindowSchemas, type WindowDomainRequest } from '../../shared/ipc/schemas/window';
 import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import { bindAppGrantDatabase } from '../permissions/appGrantStore';
+import { bindToolGrantDatabase } from '../permissions/toolGrantStore';
 import { listGrants as listLedgerGrants, revokeGrant as revokeLedgerGrant } from '../permissions/grantLedger';
 import { extractDocxParagraphsFromBuffer } from '../tools/artifacts/docxParagraphLocator';
 import {
@@ -547,6 +548,8 @@ function bindLiveAppGrantDatabase(): void {
   const { getDatabase } = require('../services/core/databaseService') as typeof import('../services/core/databaseService');
   const db = getDatabase().getDb();
   if (db) bindAppGrantDatabase(db);
+  // N-PERM-GRANT-TIERS：台账列/撤 24h 档工具授权也要拿到活库绑定。
+  if (db) bindToolGrantDatabase(db);
 }
 
 const settingsHandlers: DomainRouteHandlers<SettingsDomainRequest, SettingsRouteCtx> = {

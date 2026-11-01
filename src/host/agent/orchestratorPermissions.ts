@@ -4,6 +4,7 @@
 
 import type { AgentEvent, AppSettings, PermissionRequest, PermissionResponse } from '../../shared/contract';
 import type { PermissionAskResult, PermissionDeliveryOutcome, PermissionDenialSource } from '../../shared/contract/permission';
+import { isApprovePermissionResponse } from '../../shared/contract/permission';
 import type { ToolApprovalPayload, PendingApprovalKind } from '../../shared/contract/pendingApproval';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
 import { PARKED_APPROVAL_PREVIEW_MAX_CHARS } from '../../shared/constants/pendingApproval';
@@ -21,6 +22,7 @@ import { approvalParkEvents } from './approvalParkEvents';
 import { noteUnattendedApprovalTimeout, UNATTENDED_APPROVAL_TIMEOUT } from './unattendedApprovalTerminal';
 import { getConfirmationGate } from './confirmationGate';
 import { mintAppGrantSession, mintAppGrantStanding } from '../permissions/appGrantStore';
+import { mintTool24hGrant, mintToolRunGrant } from '../permissions/toolGrantStore';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
 import { createLogger } from '../services/infra/logger';
 import { approvalAnswerFromPermission, isCompanionApprovalResponding, noteCompanionApprovalSettlement } from '../services/companion/companionDecisionSink';
@@ -51,9 +53,10 @@ function toDeliveryOutcome(resolution: ParkedResolution): PermissionDeliveryOutc
   return resolution === 'storage_unavailable' ? 'storage_unavailable' : 'unknown_request';
 }
 
-/** 归一化审批响应为「放行/拒绝」。allow_standing（B4 铸权）在放行语义上等价 allow。 */
+/** 归一化审批响应为「放行/拒绝」。判定单一真源在共享契约（allow_standing 与
+ * allow_run/allow_24h 在放行语义上等价 allow）。 */
 function isApproveResponse(response: PermissionResponse): boolean {
-  return response === 'allow' || response === 'allow_session' || response === 'allow_standing';
+  return isApprovePermissionResponse(response);
 }
 
 /**
@@ -76,14 +79,36 @@ function buildParkedArgsPreview(request: PermissionRequest): string | undefined 
     : redacted;
 }
 
-/** 真人点的会话/始终。带 targetApp 时只记该应用，不记工具级放行。plain allow 不记。 */
-function recordHumanGrant(response: PermissionResponse, request: PermissionRequest): void {
+/** 真人点的会话/始终/两档工具授权。带 targetApp 时只记该应用，不记工具级放行。
+ * plain allow 不记。allow_run/allow_24h 铸进 toolGrantStore（target 取透传的
+ * standingGrantTarget，无 target 的工具级授权不放大到任何去向）。
+ * 带 updatedArgs 的非 allow 应答会被 toAskResult 整体 fail-closed 拒——那种应答
+ * 不铸造任何记忆：用户审的是改后内容，拒绝它不能换算成对原稿的任何档位授权。 */
+function recordHumanGrant(
+  response: PermissionResponse,
+  request: PermissionRequest,
+  updatedArgs?: Record<string, unknown>,
+): void {
+  if (updatedArgs && response !== 'allow') return;
   const app = request.details?.targetApp;
   if (response === 'allow_session' && request.sessionId) {
     if (app?.name) mintAppGrantSession(request.sessionId, app);
     else getConfirmationGate().recordApproval(request.sessionId, request.tool);
   } else if (response === 'allow_standing' && app?.name) {
     mintAppGrantStanding(app);
+  } else if (response === 'allow_run' && !app?.name) {
+    // run 档没有会话就无处归属（重启恢复/无会话应答）：不落任何记忆，warn 留痕，
+    // 下一次同类调用照常询问——fail-safe 而非静默放大成全局。
+    if (!request.sessionId) {
+      logger.warn('allow_run response without sessionId: run-tier grant not minted, next call will ask again', {
+        tool: request.tool,
+        requestId: request.id,
+      });
+    } else {
+      mintToolRunGrant(request.sessionId, request.tool, request.details?.standingGrantTarget ?? null);
+    }
+  } else if (response === 'allow_24h' && !app?.name) {
+    mintTool24hGrant(request.tool, request.details?.standingGrantTarget ?? null);
   }
 }
 
@@ -566,7 +591,7 @@ export class OrchestratorPermissionIsland {
       this.pendingPermissions.set(fullRequest.id, {
         resolve: (response, machineDenial, updatedArgs) => {
           clearInterval(watchdog);
-          recordHumanGrant(response, fullRequest);
+          recordHumanGrant(response, fullRequest, updatedArgs);
           resolve(toAskResult(response, machineDenial, updatedArgs));
         },
         request: fullRequest,

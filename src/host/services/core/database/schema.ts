@@ -3,6 +3,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 import { applyTelemetrySchema } from './schemaTelemetry';
 import { applyAnnotationsSchema } from './schemaAnnotations';
 import { applyAppGrantsSchema } from './schemaAppGrants';
+import { applyToolGrantsSchema } from './schemaToolGrants';
 import { applySessionDelegationsSchema } from './schemaSessionDelegations';
 import { applyCloudRunLedgerSchema } from './schemaCloudRunLedger';
 import { applyCloudCronSchedulesSchema } from './schemaCloudCronSchedules';
@@ -813,6 +814,7 @@ export function applySchema(db: BetterSqlite3.Database, logger: Logger): void {
   applyTelemetrySchema(db, logger);
   applyAnnotationsSchema(db, logger);
   applyAppGrantsSchema(db, logger);
+  applyToolGrantsSchema(db, logger);
 
   // Captures 表 (知识库采集内容持久化)
   db.exec(`

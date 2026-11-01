@@ -130,6 +130,27 @@ describe('parked approval resume from message ledger', () => {
     expect(persistedMessages[0].toolResults?.[0]).toMatchObject({ toolCallId, success: true });
   });
 
+  it('重启恢复点 allow_run（到这次做完为止）→ 按放行恢复执行，不当拒绝（rework r2）', async () => {
+    seedSurvivorRow();
+
+    const outcome = await resume('allow_run');
+
+    expect(outcome).toMatchObject({ handled: true, status: 'executed' });
+    expect(executions).toBe(1);
+    expect(sideEffectLog).toEqual(['echo >> sleep 30']);
+    expect(repo.getById('resume-1')).toMatchObject({ status: 'approved', feedback: expect.not.stringContaining('rejected') });
+  });
+
+  it('重启恢复点 allow_24h（24 小时内允许）→ 按放行恢复执行，不当拒绝（rework r2）', async () => {
+    seedSurvivorRow();
+
+    const outcome = await resume('allow_24h');
+
+    expect(outcome).toMatchObject({ handled: true, status: 'executed' });
+    expect(executions).toBe(1);
+    expect(repo.getById('resume-1')).toMatchObject({ status: 'approved', feedback: expect.not.stringContaining('rejected') });
+  });
+
   it('重复批准：第二次点击行已非 pending → 不接手、不再执行（点击了也不执行第二次）', async () => {
     seedSurvivorRow();
 

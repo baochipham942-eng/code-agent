@@ -22,6 +22,12 @@ export const MEMORY = {
   FLUSH_CONFIDENCE: 0.8,
   /** preCompact flush: 查重时查询的 session_extracted 历史条数上限 */
   FLUSH_DEDUP_LOOKBACK: 200,
+  /** 记忆变更日志（N-MEM-JOURNAL-SOURCEJUMP）：before/after 快照 JSON 的截断上限 */
+  JOURNAL_SNAPSHOT_MAX_CHARS: 2_000,
+  /** 记忆变更日志：读接口默认返回条数 */
+  JOURNAL_DEFAULT_LIMIT: 50,
+  /** 记忆变更日志：读接口单次返回上限 */
+  JOURNAL_MAX_LIMIT: 200,
   /** Episodic FTS 索引的保留天数（超过此天数的消息触发 prune 可被清理） */
   EPISODIC_INDEX_RETENTION_DAYS: 90,
   /** EpisodicRecall 工具默认返回条数 */

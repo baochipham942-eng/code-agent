@@ -52,6 +52,7 @@ const SessionDomainRequestSchema = z.object({
     'rewindToPrompt',
     'search',
     'searchSessionForkExports',
+    'sessionExists',
     'traceConversationProvenance',
     'switchModel',
     'turnCheckout',

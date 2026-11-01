@@ -161,7 +161,9 @@ async function propose(
   }
   const entry = candidateEntry(projectDir, topic, summary, content, sources, now);
   await writeEntryToLightMemory(entry);
-  if (db) await rebuildMemoryMirrorFromLightFiles(db);
+  // actor=import：/init-memory 的候选是 agent 从项目材料自动采集的（entry.source.kind
+  // 本就是 'import'），不是用户在面板手写的——归入后台自动写入一类。
+  if (db) await rebuildMemoryMirrorFromLightFiles(db, { journal: { actor: 'import' } });
   return {
     ok: true,
     output: formatWritten(topic, entry),

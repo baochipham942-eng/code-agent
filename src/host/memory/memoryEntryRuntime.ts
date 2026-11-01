@@ -16,6 +16,8 @@ import type {
   MemoryPackRequest,
   MemoryPackResult,
   PackedMemoryItem,
+  MemoryChangeJournalContext,
+  MemoryChangeJournalRow,
 } from '../../shared/contract/memory';
 import * as fs from 'fs/promises';
 import type { MemoryRecord } from '../services/core/repositories';
@@ -36,6 +38,7 @@ import {
 } from './memoryEntryScoring';
 import { sanitizeMemoryContent } from '../utils/sanitizeMemoryContent';
 import { MEMORY } from '../../shared/constants';
+import { createLogger } from '../services/infra/logger';
 import { formatMemoryAgeLine, withPackedWrittenLine } from './memoryAge';
 import { withMemoryBackgroundGuidance } from './memoryContextGuidance';
 import {
@@ -43,6 +46,8 @@ import {
   metadataForImportedEntry,
   sourceKindForLightFile,
 } from './memoryEntryMetadata';
+
+const runtimeLogger = createLogger('MemoryEntryRuntime');
 
 export interface MemoryEntryDatabase {
   listMemories(options?: {
@@ -58,10 +63,12 @@ export interface MemoryEntryDatabase {
     includeArchived?: boolean;
     includeCandidates?: boolean;
   }): MemoryRecord[];
-  createMemory(data: Omit<MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>): MemoryRecord;
-  updateMemory(id: string, updates: Partial<MemoryRecord>): MemoryRecord | null;
+  createMemory(data: Omit<MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>, journal?: MemoryChangeJournalContext): MemoryRecord;
+  updateMemory(id: string, updates: Partial<MemoryRecord>, journal?: MemoryChangeJournalContext): MemoryRecord | null;
   /** BM25/FTS 关键词召回（roadmap 2.5）；缺省实现时混合召回静默跳过 */
   searchMemories?(query: string, options?: { limit?: number; applyDecay?: boolean }): MemoryRecord[];
+  /** 变更日志聚合（N-MEM-JOURNAL-SOURCEJUMP）；缺省实现时列表不带「后台写入」标记 */
+  latestMemoryChanges?(): Array<Pick<MemoryChangeJournalRow, 'memoryId' | 'entryId' | 'actor' | 'operation' | 'timestamp'>>;
 }
 
 export interface BuildActiveMemoryEntryInput {
@@ -410,6 +417,7 @@ export function createMemoryMirrorRecord(
   options: {
     metadata?: Record<string, unknown>;
     category?: string;
+    journal?: MemoryChangeJournalContext;
   } = {},
 ): MemoryRecord {
   return db.createMemory({
@@ -439,7 +447,29 @@ export function createMemoryMirrorRecord(
         importProvenance: entry.source.importProvenance ?? null,
       },
     },
-  });
+  }, options.journal);
+}
+
+/** 列表附带「最近一次变更」标记（后台写入可见）。读失败只 warn，不连累列表本身。 */
+function annotateLastChange(entries: MemoryEntry[], db: MemoryEntryDatabase | undefined): void {
+  if (!db || typeof db.latestMemoryChanges !== 'function') return;
+  try {
+    const changes = db.latestMemoryChanges();
+    const byEntryId = new Map(changes.filter((change) => change.entryId).map((change) => [change.entryId as string, change]));
+    const byMemoryId = new Map(changes.map((change) => [change.memoryId, change]));
+    for (const entry of entries) {
+      const change = byEntryId.get(entry.id)
+        ?? (entry.source.memoryId ? byMemoryId.get(entry.source.memoryId) : undefined)
+        ?? (entry.id.startsWith('db:') ? byMemoryId.get(entry.id.slice(3)) : undefined);
+      if (change) {
+        entry.lastChange = { actor: change.actor, operation: change.operation, timestamp: change.timestamp };
+      }
+    }
+  } catch (error) {
+    runtimeLogger.warn('Memory journal last-change annotation skipped', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 export async function listUnifiedMemoryEntries(db?: MemoryEntryDatabase): Promise<MemoryEntryListResult> {
@@ -453,6 +483,7 @@ export async function listUnifiedMemoryEntries(db?: MemoryEntryDatabase): Promis
     ...dbEntries.filter((entry) => !(entry.source.sourceOfTruth === 'light_file' && lightEntryIds.has(entry.id))),
   ].sort((a, b) => b.updatedAt - a.updatedAt);
 
+  annotateLastChange(entries, db);
   return {
     entries,
     sourceCounts: entries.reduce<Record<'light_file' | 'db_memory', number>>((acc, entry) => {
@@ -462,7 +493,10 @@ export async function listUnifiedMemoryEntries(db?: MemoryEntryDatabase): Promis
   };
 }
 
-export async function rebuildMemoryMirrorFromLightFiles(db: MemoryEntryDatabase): Promise<MemoryMirrorRebuildResult> {
+export async function rebuildMemoryMirrorFromLightFiles(
+  db: MemoryEntryDatabase,
+  options: { journal?: MemoryChangeJournalContext } = {},
+): Promise<MemoryMirrorRebuildResult> {
   const files = await listMemoryFiles();
   const existingMirrors = db.listMemories({ includeArchived: true, limit: 1000, orderBy: 'updated_at', orderDir: 'DESC' })
     .filter((memory) => memoryEntryMetadata(memory)?.sourceOfTruth === 'light_file');
@@ -485,34 +519,48 @@ export async function rebuildMemoryMirrorFromLightFiles(db: MemoryEntryDatabase)
       const entry = lightMemoryFileToEntry(file);
       const existing = existingByEntryId.get(entry.id) || existingByFilePath.get(file.filename);
       if (existing) {
-        db.updateMemory(existing.id, {
-          content: entry.content,
-          summary: entry.title || entry.summary,
-          category: categoryForMemoryEntryKind(entry.kind),
-          confidence: 1,
+        const memoryEntry = {
+          schemaVersion: entry.schemaVersion,
+          id: entry.id,
           status: entry.status,
-          deprecatedBy: entry.deprecatedBy,
-          metadata: {
-            ...existing.metadata,
-            memoryEntry: {
-              schemaVersion: entry.schemaVersion,
-              id: entry.id,
-              status: entry.status,
-              deprecatedBy: entry.deprecatedBy ?? null,
-              kind: entry.kind,
-              scope: entry.scope,
-              sourceKind: entry.source.kind,
-              sourceOfTruth: 'light_file',
-              filePath: file.filename,
-              evidence: entry.evidence,
-              importProvenance: entry.source.importProvenance ?? null,
+          deprecatedBy: entry.deprecatedBy ?? null,
+          kind: entry.kind,
+          scope: entry.scope,
+          sourceKind: entry.source.kind,
+          sourceOfTruth: 'light_file',
+          filePath: file.filename,
+          evidence: entry.evidence,
+          importProvenance: entry.source.importProvenance ?? null,
+        };
+        // 无变化直接跳过（rework r2 ①）：镜像回写是高频路径，no-op 也走 UPDATE 会
+        // 顶起 updated_at 并给每条镜像记一行日志，淹没真实变更。updateMemory 内的
+        // 快照判重是最终兜底，这里先省掉写本身。
+        const unchanged = existing.content === entry.content
+          && (existing.summary ?? null) === ((entry.title || entry.summary) ?? null)
+          && existing.status === entry.status
+          && existing.category === categoryForMemoryEntryKind(entry.kind)
+          && (existing.deprecatedBy ?? null) === (entry.deprecatedBy ?? null)
+          && existing.confidence === 1
+          && JSON.stringify(existing.metadata?.memoryEntry ?? null) === JSON.stringify(memoryEntry);
+        if (!unchanged) {
+          db.updateMemory(existing.id, {
+            content: entry.content,
+            summary: entry.title || entry.summary,
+            category: categoryForMemoryEntryKind(entry.kind),
+            confidence: 1,
+            status: entry.status,
+            deprecatedBy: entry.deprecatedBy,
+            metadata: {
+              ...existing.metadata,
+              memoryEntry,
             },
-          },
-        });
-        updated++;
+          }, options.journal);
+          updated++;
+        }
       } else {
         createMemoryMirrorRecord(db, entry, {
           category: categoryForMemoryEntryKind(entry.kind),
+          journal: options.journal,
         });
         created++;
       }
@@ -535,7 +583,7 @@ export async function rebuildMemoryMirrorFromLightFiles(db: MemoryEntryDatabase)
     db.updateMemory(memory.id, {
       status: 'archived',
       metadata: { ...memory.metadata, memoryEntry: { ...meta, status: 'archived' } },
-    });
+    }, { actor: 'eviction', operation: 'evict' });
     removed++;
   }
 
@@ -846,6 +894,7 @@ function buildUpdatedMemoryEntry(current: MemoryEntry, request: MemoryEntryUpdat
 export async function updateMemoryEntry(
   db: MemoryEntryDatabase,
   request: MemoryEntryUpdateRequest,
+  options: { journal?: MemoryChangeJournalContext } = {},
 ): Promise<MemoryEntryUpdateResult> {
   const current = (await listUnifiedMemoryEntries(db)).entries.find((entry) => entry.id === request.entryId);
   if (!current) throw new Error(`Memory entry not found: ${request.entryId}`);
@@ -869,7 +918,7 @@ export async function updateMemoryEntry(
       importProvenance: next.source.importProvenance,
     });
     await rebuildLightMemoryIndex();
-    const mirrorRebuild = await rebuildMemoryMirrorFromLightFiles(db);
+    const mirrorRebuild = await rebuildMemoryMirrorFromLightFiles(db, { journal: options.journal });
     return {
       entry: {
         ...lightMemoryFileToEntry(file),
@@ -904,7 +953,7 @@ export async function updateMemoryEntry(
         },
       }, 'db_memory'),
     },
-  });
+  }, options.journal);
   if (!updated) throw new Error(`Memory record update failed: ${record.id}`);
 
   return {
@@ -915,6 +964,7 @@ export async function updateMemoryEntry(
 export async function deleteMemoryEntry(
   db: MemoryEntryDatabase,
   request: MemoryEntryDeleteRequest,
+  options: { journal?: MemoryChangeJournalContext } = {},
 ): Promise<MemoryEntryDeleteResult> {
   const current = (await listUnifiedMemoryEntries(db)).entries.find((entry) => entry.id === request.entryId);
   if (!current) return { deleted: false };
@@ -922,7 +972,7 @@ export async function deleteMemoryEntry(
     entryId: request.entryId,
     status: 'archived',
     deprecatedBy: null,
-  });
+  }, { journal: options.journal });
   return {
     // Backward-compatible field name: removed from active recall, retained on disk/DB.
     deleted: archived.entry.status === 'archived',
@@ -994,9 +1044,9 @@ export async function applyImportMemoryBundleV2(
             ...existing.metadata,
             ...metadataForImportedEntry(entry, entry.source.sourceOfTruth),
           },
-        });
+        }, { actor: 'import' });
       } else {
-        db.createMemory(memoryRecordInputForImportedEntry(entry));
+        db.createMemory(memoryRecordInputForImportedEntry(entry), { actor: 'import' });
       }
     }
 
@@ -1006,7 +1056,7 @@ export async function applyImportMemoryBundleV2(
   }
 
   const mirrorRebuild = lightChanged
-    ? await rebuildMemoryMirrorFromLightFiles(db)
+    ? await rebuildMemoryMirrorFromLightFiles(db, { journal: { actor: 'import' } })
     : undefined;
   if (lightChanged) {
     await rebuildLightMemoryIndex();

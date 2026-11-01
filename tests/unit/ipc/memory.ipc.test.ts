@@ -555,7 +555,7 @@ describe('memory.ipc memoryAudit', () => {
           sourceOfTruth: 'db_memory',
         }),
       }),
-    }));
+    }), { actor: 'import' });
   });
 
   it('routes unified memory entry update and soft archive through the simple memory channel', async () => {
@@ -649,7 +649,7 @@ describe('memory.ipc memoryAudit', () => {
     expect(mocks.database.updateMemory).toHaveBeenCalledWith('mem-mirror', expect.objectContaining({
       content: 'Archived memory content.',
       category: 'user_requirement',
-    }));
+    }), { actor: 'user_manual' });
 
     const deleteResponse = await ipc.invoke<IPCResponse>(IPC_CHANNELS.MEMORY, {
       action: 'memoryEntryDelete',
@@ -670,7 +670,7 @@ describe('memory.ipc memoryAudit', () => {
     }));
     expect(mocks.database.updateMemory).toHaveBeenLastCalledWith('mem-mirror', expect.objectContaining({
       status: 'archived',
-    }));
+    }), { actor: 'user_manual' });
     expect(mocks.database.deleteMemory).not.toHaveBeenCalled();
   });
 
@@ -755,7 +755,7 @@ describe('memory.ipc memoryAudit', () => {
           filePath: expect.stringMatching(/^memory-[a-f0-9]+\.md$/),
         }),
       },
-    }));
+    }), { actor: 'user_manual', sessionId: 'session-1' });
     expect(mocks.database.createMemory).toHaveBeenNthCalledWith(2, expect.objectContaining({
       type: 'desktop_activity',
       category: 'knowledge_inbox_decision',
@@ -767,7 +767,7 @@ describe('memory.ipc memoryAudit', () => {
           memoryId: 'mem-approved',
         }),
       },
-    }));
+    }), { actor: 'user_manual', sessionId: 'session-1' });
   });
 
   it('resolves a Knowledge Inbox rejection without creating seedable memory', async () => {
@@ -824,7 +824,7 @@ describe('memory.ipc memoryAudit', () => {
       type: 'desktop_activity',
       category: 'knowledge_inbox_decision',
       content: expect.stringContaining('Rejected Knowledge Inbox candidate'),
-    }));
+    }), { actor: 'user_manual', sessionId: undefined });
     const firstHash = mocks.database.createMemory.mock.calls[0][0].metadata.knowledgeInbox.contentHash;
     const secondHash = mocks.database.createMemory.mock.calls[1][0].metadata.knowledgeInbox.contentHash;
     expect(firstHash).toBe(secondHash);

@@ -4,7 +4,9 @@ import {
   CheckCircle2,
   Database,
   FileText,
+  History,
   Loader2,
+  MessageSquareText,
   RotateCcw,
   Save,
   Search,
@@ -13,6 +15,8 @@ import {
 import { IPC_CHANNELS } from '@shared/ipc';
 import { IPC_DOMAINS } from '@shared/ipc/domains';
 import type {
+  MemoryChangeJournalResult,
+  MemoryChangeJournalRow,
   MemoryEntry,
   MemoryEntryBatchReviewResult,
   MemoryEntryKind,
@@ -22,12 +26,15 @@ import type {
   MemoryEntryUpdateRequest,
   MemoryEntryUpdateResult,
 } from '@shared/contract/memory';
-import { formatBatchReviewSkippedDetail, visibleCandidateEntryIds } from './MemoryEntriesManager.helpers';
+import { findSourceSessionRef, formatBatchReviewSkippedDetail, visibleCandidateEntryIds } from './MemoryEntriesManager.helpers';
 import { Input } from '../../../primitives';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { SettingsSection } from '../SettingsLayout';
 import { isWebMode } from '../../../../utils/platform';
 import ipcService from '../../../../services/ipcService';
+import { useSessionStore } from '../../../../stores/sessionStore';
+import { useSessionUIStore } from '../../../../stores/sessionUIStore';
+import { useAppStore } from '../../../../stores/appStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import { localeForLanguage } from '../../../../utils/i18nTime';
 import { zh } from '../../../../i18n/zh';
@@ -41,6 +48,7 @@ type MemoryEntryCommand =
   | { action: 'memoryEntries' }
   | ({ action: 'memoryEntryUpdate' } & MemoryEntryUpdateRequest)
   | { action: 'memoryEntryBatchReview'; entryIds: string[]; decision: 'approve' | 'reject' }
+  | { action: 'memoryEntryJournal'; entryId: string; limit?: number }
   | { action: 'memoryEntryResumeInjection'; entryId: string };
 
 interface MemoryEntryCommandResponse<T> {
@@ -65,10 +73,17 @@ export interface MemoryEntryManagerRow {
   statusLabel: string;
   /** 已暂停自动带进对话时的徽标文案（N-MEM-EVICT-NEVER-READ） */
   pausedLabel?: string;
+  /** 最近一次变更是后台写入时的徽标文案（N-MEM-JOURNAL-SOURCEJUMP） */
+  backgroundWriteLabel?: string;
   kindLabel: string;
   sourceLabel: string;
   updatedAtLabel: string;
   selected: boolean;
+}
+
+/** 后台改动的 actor（面板手动编辑以外的一切写入路径；unknown 一并标出，宁可见不可漏） */
+function isBackgroundMemoryActor(actor: string): boolean {
+  return actor !== 'user_manual';
 }
 
 const STATUS_OPTIONS: MemoryEntryStatus[] = ['candidate', 'active', 'rejected', 'stale', 'archived'];
@@ -150,6 +165,9 @@ export function buildMemoryEntryRows({
       summary: entry.summary,
       statusLabel: getMemoryEntryStatusLabel(entry.status, labels.entries.statusLabels),
       ...(entry.injectionPaused ? { pausedLabel: labels.entries.injectionPaused.badge } : {}),
+      ...(entry.lastChange && isBackgroundMemoryActor(entry.lastChange.actor)
+        ? { backgroundWriteLabel: labels.entries.backgroundWriteBadge }
+        : {}),
       kindLabel: getMemoryEntryKindLabel(entry.kind, labels.entries.kindLabels),
       sourceLabel: getMemoryEntrySourceLabel(entry.source.sourceOfTruth, labels.sourceLabels),
       updatedAtLabel: formatMemoryEntryUpdatedAt(entry.updatedAt, now, labels.relativeDate, locale),
@@ -209,6 +227,11 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const [busy, setBusy] = useState<'load' | 'save' | 'batch' | null>('load');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  // N-MEM-JOURNAL-SOURCEJUMP：变更历史 + 来源会话跳转
+  const [journalRows, setJournalRows] = useState<MemoryChangeJournalRow[] | null>(null);
+  const [journalFailed, setJournalFailed] = useState(false);
+  const [sourceSessionProbe, setSourceSessionProbe] = useState<'exists' | 'missing' | 'probe-failed' | 'checking' | null>(null);
+  const [openingSourceSession, setOpeningSourceSession] = useState(false);
 
   const entries = result?.entries ?? [];
   const selectedEntry = useMemo(
@@ -287,6 +310,61 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
   useEffect(() => {
     setDraft(selectedEntry ? createDraft(selectedEntry) : null);
   }, [selectedEntry?.id]);
+
+  // 来源会话/落点消息解析收口到 helper：evidence[].sessionId 落库时被敏感 guard redact，
+  // 匹配不能依赖它（r3），口径见 findSourceSessionRef。
+  const { sessionId: sourceSessionId, messageId: sourceMessageId } = findSourceSessionRef(selectedEntry);
+
+  // 变更历史随选中条目加载（N-MEM-JOURNAL-SOURCEJUMP ③）
+  useEffect(() => {
+    let cancelled = false;
+    setJournalRows(null);
+    setJournalFailed(false);
+    if (!selectedEntry) return;
+    invokeMemoryEntryCommand<MemoryChangeJournalResult>({ action: 'memoryEntryJournal', entryId: selectedEntry.id })
+      .then((response) => {
+        if (cancelled) return;
+        if (response.success && response.data) setJournalRows(response.data.rows);
+        else setJournalFailed(true);
+      })
+      .catch(() => { if (!cancelled) setJournalFailed(true); });
+    return () => { cancelled = true; };
+  }, [selectedEntry?.id]);
+
+  // 来源会话存在性探测：在就给跳转按钮，不在就禁用并给原因（②）。
+  // 走只读 sessionExists——session.load 会 restoreSession（切宿主 currentSessionId/
+  // toolCache、清会话缓存、写审计），选中条目只是探测，不能付这些副作用（r4）。
+  useEffect(() => {
+    let cancelled = false;
+    setSourceSessionProbe(sourceSessionId ? 'checking' : null);
+    if (!sourceSessionId) return;
+    ipcService.invokeDomain<boolean>(IPC_DOMAINS.SESSION, 'sessionExists', { sessionId: sourceSessionId })
+      .then((exists) => { if (!cancelled) setSourceSessionProbe(exists === true ? 'exists' : 'missing'); })
+      .catch(() => { if (!cancelled) setSourceSessionProbe('probe-failed'); });
+    return () => { cancelled = true; };
+  }, [sourceSessionId]);
+
+  const openSourceSession = async () => {
+    if (!sourceSessionId || sourceSessionProbe !== 'exists' || openingSourceSession) return;
+    setOpeningSourceSession(true);
+    try {
+      // 设置是 overlay：secondaryPages 的排除清单明确不含 showSettings，switchSession
+      // 的 closeSecondaryPages 关不掉它——不先关设置，跳转后用户仍被设置页盖住看不见
+      // 落点。走 setShowSettings(false)（inviteExpert / startCreateRoleChat 等设置内
+      // 跳聊天同款；不用 closeSettings，它带 cronCenter 返回落点时会改开自动化页）。
+      useAppStore.getState().setShowSettings(false);
+      // 有 messageId 就落点消息（沿用聊天搜索的 pendingSearchJump 机制），否则会话顶部
+      useSessionUIStore.getState().setPendingSearchJump({
+        sessionId: sourceSessionId,
+        ...(sourceMessageId ? { messageId: sourceMessageId } : {}),
+        query: '',
+        createdAt: Date.now(),
+      });
+      await useSessionStore.getState().switchSession(sourceSessionId);
+    } finally {
+      setOpeningSourceSession(false);
+    }
+  };
 
   const resumeInjection = async () => {
     if (!selectedEntry) return;
@@ -537,6 +615,9 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                           {row.pausedLabel && (
                             <div className="mt-1 text-[11px] text-badge-warning" data-testid="memory-entry-paused-badge">{row.pausedLabel}</div>
                           )}
+                          {row.backgroundWriteLabel && (
+                            <div className="mt-1 text-[11px] text-badge-info" data-testid="memory-entry-background-badge" title={row.backgroundWriteLabel}>{row.backgroundWriteLabel}</div>
+                          )}
                         </td>
                         <td className="px-3 py-3 align-top text-zinc-300">{row.kindLabel}</td>
                         <td className="px-3 py-3 align-top text-zinc-400">{row.sourceLabel}</td>
@@ -703,6 +784,61 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                     </div>
                   ) : (
                     <div>{memoryText.entries.noEvidence}</div>
+                  )}
+                </div>
+
+                {sourceSessionId && (
+                  <div className="rounded border border-zinc-800 bg-zinc-950/40 p-3 text-xs text-zinc-500" data-testid="memory-entry-source-session">
+                    <button
+                      type="button"
+                      onClick={openSourceSession}
+                      disabled={sourceSessionProbe !== 'exists' || openingSourceSession}
+                      className="inline-flex items-center gap-1.5 rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+                      data-testid="memory-entry-source-session-open"
+                    >
+                      <MessageSquareText className="h-3.5 w-3.5" />
+                      {openingSourceSession
+                        ? memoryText.entries.sourceSession.opening
+                        : memoryText.entries.sourceSession.open}
+                      {sourceMessageId ? ` · ${sourceMessageId.slice(0, 8)}` : ''}
+                    </button>
+                    {sourceSessionProbe !== 'exists' && (
+                      <div className="mt-1.5 text-[11px] text-zinc-500" data-testid="memory-entry-source-session-reason">
+                        {sourceSessionProbe === 'missing'
+                          ? memoryText.entries.sourceSession.missing
+                          : memoryText.entries.sourceSession.probeFailed}
+                        <span className="ml-1 font-mono">{sourceSessionId.slice(0, 12)}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="rounded border border-zinc-800 bg-zinc-950/40 p-3 text-xs text-zinc-500" data-testid="memory-entry-history">
+                  <div className="mb-2 flex items-center gap-1.5 font-medium text-zinc-400">
+                    <History className="h-3.5 w-3.5" />
+                    {memoryText.entries.history.title}
+                  </div>
+                  {journalFailed ? (
+                    <div className="text-badge-warning">{memoryText.entries.history.failed}</div>
+                  ) : journalRows === null ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : journalRows.length === 0 ? (
+                    <div>{memoryText.entries.history.empty}</div>
+                  ) : (
+                    <ol className="space-y-1.5">
+                      {journalRows.map((row) => (
+                        <li key={row.id} className="flex items-baseline gap-2" data-testid="memory-entry-history-row">
+                          <span className="text-zinc-600">{new Date(row.timestamp).toLocaleString(localeForLanguage(language))}</span>
+                          <span className="text-zinc-400">{memoryText.entries.history.operationLabels[row.operation] ?? row.operation}</span>
+                          <span className={row.actor === 'user_manual' ? 'text-zinc-500' : 'text-badge-info'}>
+                            {memoryText.entries.history.actorLabels[row.actor] ?? row.actor}
+                          </span>
+                          {row.sessionId && (
+                            <span className="truncate font-mono text-[10px] text-zinc-600">{row.sessionId.slice(0, 12)}</span>
+                          )}
+                        </li>
+                      ))}
+                    </ol>
                   )}
                 </div>
               </div>

@@ -396,6 +396,9 @@ export const MemoryTab: React.FC = () => {
   // isLoading，整个 tab 会卸掉重挂——子区（条目管理器）的行内反馈横幅刚 setState 就
   // 随卸载丢掉，用户永远看不到（N-MEM-JOURNAL-SOURCEJUMP-FU2 真跑实测）。
   const hasLoadedOnce = useRef(false);
+  // 同页导入 apply / 删除 light 文件会改条目集合；条目管理器不再随 isLoading 重挂，
+  // 用递增 key 让它重拉列表（rework r1 ①，防「新条目不出现/已删条目仍显示」的陈旧列表）
+  const [entriesRefreshKey, setEntriesRefreshKey] = useState(0);
   const loadData = async () => {
     try {
       if (!hasLoadedOnce.current) setIsLoading(true);
@@ -508,6 +511,7 @@ export const MemoryTab: React.FC = () => {
       if (result?.success) {
         setMessage({ type: 'success', text: `${memoryText.files.deleteSuccessPrefix}${filename}` });
         if (selectedFile?.filename === filename) setSelectedFile(null);
+        setEntriesRefreshKey((key) => key + 1);
         await loadData();
       } else {
         setMessage({ type: 'error', text: memoryText.files.deleteFailed });
@@ -591,6 +595,7 @@ export const MemoryTab: React.FC = () => {
         type: 'success',
         text: `${memoryText.import.applySuccessPrefix}${result.data.applied}${memoryText.import.applySuccessMiddle}${result.data.writtenFiles.length}${memoryText.import.applySuccessSuffix}`,
       });
+      setEntriesRefreshKey((key) => key + 1);
       await loadData();
     } catch (error) {
       setImportError(error instanceof Error ? error.message : String(error));
@@ -636,7 +641,7 @@ export const MemoryTab: React.FC = () => {
 
       <ExternalImportLinkSection />
 
-      <MemoryEntriesManager onChanged={loadData} />
+      <MemoryEntriesManager onChanged={loadData} entriesRefreshKey={entriesRefreshKey} />
 
       <SettingsSection
         title={memoryText.import.title}

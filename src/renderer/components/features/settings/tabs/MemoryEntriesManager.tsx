@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
   CheckCircle2,
@@ -213,12 +213,19 @@ function createDraft(entry: MemoryEntry): MemoryEntryDraft {
   };
 }
 
-export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<void> }> = ({ onChanged }) => {
+export const MemoryEntriesManager: React.FC<{
+  onChanged?: () => void | Promise<void>;
+  /** 变更即重拉条目列表：同页其他区（导入 apply / 删除 light 文件）改了条目集合时由父级递增（rework r1 ①） */
+  entriesRefreshKey?: number;
+}> = ({ onChanged, entriesRefreshKey = 0 }) => {
   const { t, language } = useI18n();
   const memoryText = t.settings.memory;
   const [result, setResult] = useState<MemoryEntryListResult | null>(null);
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
   const [draft, setDraft] = useState<MemoryEntryDraft | null>(null);
+  // 草稿是否有未保存的用户编辑（rework r1 ②）：同条目后台刷新不得静默覆盖
+  const [draftDirty, setDraftDirty] = useState(false);
+  const lastDraftEntryIdRef = useRef<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<EntryStatusFilter>('all');
   const [showArchived, setShowArchived] = useState(false);
@@ -309,13 +316,25 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
     setBusy(null);
   };
 
-  useEffect(() => { loadEntries(); }, []);
+  // 挂载即拉；entriesRefreshKey 变化（同页导入/删文件改了条目集合）重拉（rework r1 ①）
+  useEffect(() => { loadEntries(); }, [entriesRefreshKey]);
 
-  // updatedAt 一并入依赖：撤回（N-MEM-JOURNAL-SOURCEJUMP-FU2）后条目 id 不变、
-  // 只换内容，若仅按 id 重置 draft，编辑器会继续显示撤回前的旧正文
+  // 撤回（N-MEM-JOURNAL-SOURCEJUMP-FU2）后条目 id 不变、只换内容，draft 要跟着服务器
+  // 新值走；但同一条目上用户正在编辑的未保存草稿不能被后台刷新静默清掉（rework r1 ②）
+  // ——切条目仍无条件重置（沿用既有行为），撤回/保存走 setDraftDirty(false) 显式放行。
   useEffect(() => {
-    setDraft(selectedEntry ? createDraft(selectedEntry) : null);
-  }, [selectedEntry?.id, selectedEntry?.updatedAt]);
+    if (!selectedEntry) {
+      lastDraftEntryIdRef.current = null;
+      setDraft(null);
+      setDraftDirty(false);
+      return;
+    }
+    if (draftDirty && lastDraftEntryIdRef.current === selectedEntry.id) return;
+    const entrySwitched = lastDraftEntryIdRef.current !== selectedEntry.id;
+    lastDraftEntryIdRef.current = selectedEntry.id;
+    setDraft(createDraft(selectedEntry));
+    if (entrySwitched) setDraftDirty(false);
+  }, [selectedEntry, draftDirty]);
 
   // 来源会话/落点消息解析收口到 helper：evidence[].sessionId 落库时被敏感 guard redact，
   // 匹配不能依赖它（r3），口径见 findSourceSessionRef。
@@ -391,6 +410,12 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
     setBusy(null);
   };
 
+  /** 用户编辑入口：记脏标记，同条目后台刷新时不清未保存草稿（rework r1 ②） */
+  const editDraft = (patch: Partial<MemoryEntryDraft>) => {
+    setDraft((current) => (current ? { ...current, ...patch } : current));
+    setDraftDirty(true);
+  };
+
   const saveDraft = async (patch: Partial<MemoryEntryDraft> = {}) => {
     if (!selectedEntry || !draft) return;
     setBusy('save');
@@ -406,6 +431,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
       projectPath: next.projectPath || null,
     });
     if (response.success && response.data) {
+      setDraftDirty(false);
       setMessage({ type: 'success', text: memoryText.entries.updateSuccess });
       if (next.status === 'archived') setShowArchived(true);
       await loadEntries();
@@ -433,6 +459,8 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
       });
       if (response.success) {
         restored = true;
+        // 撤回是显式覆盖（确认弹窗已警告），编辑器必须切到恢复后内容：放行脏草稿同步
+        setDraftDirty(false);
         setMessage({ type: 'success', text: memoryText.entries.history.undo.success });
         await loadEntries();
         setJournalReloadKey((key) => key + 1);
@@ -726,7 +754,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                     {memoryText.entries.fields.status}
                     <select
                       value={draft.status}
-                      onChange={(event) => setDraft({ ...draft, status: event.target.value as MemoryEntryStatus })}
+                      onChange={(event) => editDraft({ status: event.target.value as MemoryEntryStatus })}
                       className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-xs text-zinc-300"
                     >
                       {STATUS_OPTIONS.map((status) => (
@@ -738,7 +766,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                     {memoryText.entries.fields.kind}
                     <select
                       value={draft.kind}
-                      onChange={(event) => setDraft({ ...draft, kind: event.target.value as MemoryEntryKind })}
+                      onChange={(event) => editDraft({ kind: event.target.value as MemoryEntryKind })}
                       className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-xs text-zinc-300"
                     >
                       {KIND_OPTIONS.map((kind) => (
@@ -752,7 +780,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                   {memoryText.entries.fields.title}
                   <Input
                     value={draft.title}
-                    onChange={(event) => setDraft({ ...draft, title: event.target.value })}
+                    onChange={(event) => editDraft({ title: event.target.value })}
                     className="mt-1"
                   />
                 </label>
@@ -761,7 +789,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                     {memoryText.entries.fields.projectPath}
                     <Input
                       value={draft.projectPath}
-                      onChange={(event) => setDraft({ ...draft, projectPath: event.target.value })}
+                      onChange={(event) => editDraft({ projectPath: event.target.value })}
                       placeholder={memoryText.entries.fields.projectPathPlaceholder}
                       className="mt-1"
                     />
@@ -771,7 +799,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                   {memoryText.entries.fields.summary}
                   <Input
                     value={draft.summary}
-                    onChange={(event) => setDraft({ ...draft, summary: event.target.value })}
+                    onChange={(event) => editDraft({ summary: event.target.value })}
                     className="mt-1"
                   />
                 </label>
@@ -779,7 +807,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                   {memoryText.entries.fields.content}
                   <textarea
                     value={draft.content}
-                    onChange={(event) => setDraft({ ...draft, content: event.target.value })}
+                    onChange={(event) => editDraft({ content: event.target.value })}
                     className="mt-1 h-48 w-full resize-y rounded border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs leading-relaxed text-zinc-300 outline-hidden focus:border-badge-accent/60"
                   />
                 </label>

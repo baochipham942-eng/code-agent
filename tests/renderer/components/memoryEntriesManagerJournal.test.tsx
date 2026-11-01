@@ -436,3 +436,83 @@ describe('MemoryEntriesManager — per-row undo (FU2)', () => {
     expect((undoButton as HTMLButtonElement).disabled).toBe(true);
   });
 });
+
+// ============================================================================
+// rework r1：①同页导入/删文件后 entriesRefreshKey 重拉列表；②同条目后台刷新
+// 不清未保存草稿（脏标记），撤回是显式覆盖、放行同步。
+// ============================================================================
+describe('MemoryEntriesManager — same-page refresh and dirty draft (rework r1)', () => {
+  /** 动态后端：entries 随闭包变量变化，模拟后台改写/撤回后的服务器状态 */
+  function mockDynamicBackend(options: {
+    entries: () => MemoryEntry[];
+    journal?: MemoryChangeJournalResult['rows'];
+  }): void {
+    invokeDomainMock.mockImplementation(async (domain: string, action: string) => {
+      if (action === 'memoryEntries') {
+        const entries = options.entries();
+        return { entries, sourceCounts: { light_file: entries.length, db_memory: 0 } } satisfies MemoryEntryListResult;
+      }
+      if (action === 'memoryEntryJournal') return journalResult(options.journal ?? []);
+      if (action === 'memoryEntryUpdate') return { entry: options.entries()[0] } satisfies MemoryEntryUpdateResult;
+      throw new Error(`unexpected invoke ${domain}/${action}`);
+    });
+  }
+
+  const entryListCalls = () => invokeDomainMock.mock.calls.filter(([, action]) => action === 'memoryEntries').length;
+
+  it('reloads the entry list when entriesRefreshKey changes (r1 ①)', async () => {
+    mockBackend({ entries: [entry()] });
+    const view = render(<MemoryEntriesManager />);
+    await screen.findAllByTestId('memory-entry-row');
+    const callsBefore = entryListCalls();
+    expect(callsBefore).toBeGreaterThanOrEqual(1);
+
+    view.rerender(<MemoryEntriesManager entriesRefreshKey={1} />);
+    await waitFor(() => expect(entryListCalls()).toBeGreaterThan(callsBefore));
+  });
+
+  it('keeps unsaved edits when the same entry is refreshed by a background rewrite (r1 ②)', async () => {
+    let backendEntries = [entry({ content: 'server v1', updatedAt: now })];
+    mockDynamicBackend({ entries: () => backendEntries });
+    render(<MemoryEntriesManager />);
+
+    const contentBox = await screen.findByLabelText('正文');
+    await waitFor(() => expect((contentBox as HTMLTextAreaElement).value).toBe('server v1'));
+    fireEvent.change(contentBox, { target: { value: 'user edit' } });
+    expect((contentBox as HTMLTextAreaElement).value).toBe('user edit');
+
+    // 后台 actor 改写同一条 → 面板任一动作触发 loadEntries（这里点刷新）
+    backendEntries = [entry({ title: 'Server v2 title', content: 'server v2 by background actor', updatedAt: now + 5_000 })];
+    fireEvent.click(screen.getByRole('button', { name: '刷新' }));
+    await waitFor(() => expect(entryListCalls()).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(screen.getByTestId('memory-entry-row').textContent).toContain('Server v2 title'));
+
+    // 未保存的用户编辑不能被静默清掉
+    expect((contentBox as HTMLTextAreaElement).value).toBe('user edit');
+  });
+
+  it('replaces a dirty draft with the restored content after undo (explicit overwrite, r1 ②)', async () => {
+    const restored = 'original content before rewrite';
+    let backendEntries = [entry({ content: 'rewritten by dream', updatedAt: now })];
+    mockDynamicBackend({
+      entries: () => backendEntries,
+      journal: [journalRow({
+        actor: 'dream',
+        beforeContent: JSON.stringify({ summary: 'User prefers dark mode', status: 'active', content: restored }),
+      })],
+    });
+    render(<MemoryEntriesManager />);
+
+    const contentBox = await screen.findByLabelText('正文');
+    await waitFor(() => expect((contentBox as HTMLTextAreaElement).value).toBe('rewritten by dream'));
+    fireEvent.change(contentBox, { target: { value: 'my wip edit' } });
+
+    fireEvent.click(await screen.findByTestId('memory-entry-history-undo'));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: '撤回' }));
+
+    // 撤回确认弹窗已警告覆盖：编辑器必须切到恢复后内容，脏草稿不给保留
+    backendEntries = [entry({ content: restored, updatedAt: now + 9_000 })];
+    await waitFor(() => expect((contentBox as HTMLTextAreaElement).value).toBe(restored));
+  });
+});

@@ -130,19 +130,17 @@ export class CronService implements Disposable {
   private readonly jobsChangedListeners = new Set<() => void>();
   private cloudRuntime = new CronCloudRuntime(
     () => {
-      const configService = getConfigService();
-      const config = configService.getSettings().cronCloud;
+      const config = getConfigService().getSettings().cronCloud;
       const baseUrl = config?.baseUrl?.trim();
       // token 只存 secureStorage；settings.cronCloud.token 仅作旧版本只读回退。
-      const token = (configService.getServiceApiKey?.('neo-cron-cloud') ?? config?.token)?.trim();
+      const token = (getConfigService().getServiceApiKey?.('neo-cron-cloud') ?? config?.token)?.trim();
       return baseUrl && token ? { baseUrl, token } : undefined;
     },
     {
       getJobs: () => this.jobs.values(),
       persistJob: (definition, cloudJobId) => this.persistJob(definition, cloudJobId),
       persistExecution: async (execution) => {
-        upsertCronExecutionInMemory(this.executions, execution);
-        await saveCronExecution(execution);
+        upsertCronExecutionInMemory(this.executions, execution); await saveCronExecution(execution);
       },
       loadExecutionStatus: loadCronExecutionStatus,
       unavailableMessage: () => getConfigService().getSettings().ui?.language === 'en'
@@ -153,6 +151,8 @@ export class CronService implements Disposable {
         notifyCronAgentExecution(definition, execution, this.failureNoticeGate);
         void this.notifyWakeOnJobCompleted(definition, execution);
       },
+      // 云端侧失败（云端调度器不可用）落库后发失败告警（FU1：无会话也发，见策略文件）。
+      onFailureRecorded: (definition, execution) => notifyCronAgentExecution(definition, execution, this.failureNoticeGate),
     },
   );
 

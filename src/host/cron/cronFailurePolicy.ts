@@ -196,6 +196,10 @@ export function cronNotifyQuietRound(
 /**
  * 定时 agent 任务跑完后发完成通知（从 cronService 平移，逻辑不变）。
  * 只对生成了会话的 agent action 发——点击通知经 NOTIFICATION_CLICKED 跳到该 session。
+ * 例外（N-CRON-FAIL-PLAIN-CLOUD-DOWN-FU1）：云端执行不带 sessionId（外键指向本地
+ * sessions，云端 run 照抄会撞 FK），但云端调度器不可用的失败再按无会话早退就永远
+ * 没有系统信号——仅这类失败（报文分类 cloud_unavailable）放行无会话告警，点击由
+ * renderer 落到 Cron Center 选中该任务；其余无会话执行保持静默（没有落点）。
  * 失败告警走 noticeGate（jobId+归一化错误 去重 + 1h 冷却）；完成通知不受门约束。
  * notifyWhen 未满足的安静成功轮除外（N-CRON-RESTATE-HUMAN-WHEN）：结果带
  * notifySuppressed 标记时跳过完成通知——安静正是用户要的行为。
@@ -207,7 +211,11 @@ export function notifyCronAgentExecution(
   execution: CronJobExecution,
   noticeGate: CronFailureNoticeGate,
 ): void {
-  if (definition.action.type !== 'agent' || !execution.sessionId) return;
+  // 无会话放行仅限 cloud_unavailable 失败：这类失败的执行没有本地 session（云端 FK
+  // 约束），早退会把它静默吞掉；判据与载荷 failureKind 同源（同一个分类函数）。
+  const cloudDownNotice = execution.status === 'failed' && !execution.sessionId
+    && classifyCronFailurePresentation(execution.error).kind === 'cloud_unavailable';
+  if (definition.action.type !== 'agent' || (!execution.sessionId && !cloudDownNotice)) return;
   // cancelled = 等容量被中断，不是失败，不发失败告警
   if (execution.status !== 'completed' && execution.status !== 'failed') return;
   try {
@@ -225,7 +233,7 @@ export function notifyCronAgentExecution(
       : undefined;
     notificationService.notifyTaskComplete(
       {
-        sessionId: execution.sessionId,
+        sessionId: execution.sessionId ?? '',
         sessionTitle: `[定时] ${definition.name}`,
         jobId: definition.id,
         summary: succeeded

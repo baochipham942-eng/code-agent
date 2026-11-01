@@ -80,6 +80,18 @@ function jobNameFromHostTitle(title: string): string | undefined {
   return name || undefined;
 }
 
+/**
+ * 云端调度器不可用的失败通知没有本地会话可跳（云端 run 的 session 活在服务端）：
+ * 命中时给出点击应选中的任务 id，由调用方打开 Cron Center 落到该任务的失败详情；
+ * 其余通知（含没带 jobId 的）返回 undefined，既有点击行为一字不变。
+ */
+export function cronFailureCloudDownJobId(
+  event: Pick<NotificationShowEvent, 'code' | 'failureKind' | 'jobId'> | null | undefined,
+): string | undefined {
+  if (event?.code !== CRON_FAILURE_CODE || event.failureKind !== 'cloud_unavailable') return undefined;
+  return event.jobId;
+}
+
 export function translateCronOsNotification(
   event: Pick<NotificationShowEvent, 'code' | 'title' | 'body' | 'siteOrigin' | 'failureKind' | 'resetAt'>,
   copy: CronFailureCopy,

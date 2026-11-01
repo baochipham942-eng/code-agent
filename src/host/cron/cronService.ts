@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { CRON_GUARDRAILS } from '../../shared/constants';
+import { CRON_CLOUD_UNAVAILABLE_MESSAGE_EN, CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH } from '../../shared/utils/cronCloudUnavailable';
 import type {
   CronJobDefinition,
   CronJobExecution,
@@ -145,8 +146,7 @@ export class CronService implements Disposable {
       },
       loadExecutionStatus: loadCronExecutionStatus,
       unavailableMessage: () => getConfigService().getSettings().ui?.language === 'en'
-        ? 'The cloud scheduler is unavailable, so the job was not run. Check the cloud scheduler URL and token, then try again.'
-        : '云端计划任务服务暂时不可用，任务未执行。请检查云端执行地址和令牌后重试。',
+        ? CRON_CLOUD_UNAVAILABLE_MESSAGE_EN : CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH,
       onCompleted: async (definition, execution, summary) => {
         await recordCronAutomationExecution(definition, execution, this.resolveAutomationRuntime);
         await this.deliverCronResult(definition, summary, execution.id);

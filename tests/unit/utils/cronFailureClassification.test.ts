@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { buildCronLoginWallStopCode } from '../../../src/shared/utils/browserLoginWall';
 import {
+  CRON_CLOUD_UNAVAILABLE_MESSAGE_EN,
+  CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH,
+} from '../../../src/shared/utils/cronCloudUnavailable';
+import {
   classifyCronFailure,
   cronFailureSourceText,
 } from '../../../src/shared/utils/cronFailureClassification';
@@ -17,6 +21,22 @@ describe('classifyCronFailure', () => {
     expect(classifyCronFailure(buildCronLoginWallStopCode('https://example.test'))).toEqual({
       kind: 'login_wall',
     });
+  });
+
+  it('云端调度器不可用的固定句归 cloud_unavailable，cause 追加不冲掉', () => {
+    expect(classifyCronFailure(CRON_CLOUD_UNAVAILABLE_MESSAGE_EN)).toEqual({ kind: 'cloud_unavailable' });
+    expect(classifyCronFailure(CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH)).toEqual({ kind: 'cloud_unavailable' });
+    // executeJob 落库时会把 cause 报文追加在句子后面，底因不得改写分类。
+    expect(classifyCronFailure(`${CRON_CLOUD_UNAVAILABLE_MESSAGE_EN}\nfetch failed`))
+      .toEqual({ kind: 'cloud_unavailable' });
+    expect(classifyCronFailure(`${CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH}\nfetch failed`))
+      .toEqual({ kind: 'cloud_unavailable' });
+    expect(classifyCronFailure(`${CRON_CLOUD_UNAVAILABLE_MESSAGE_EN}\n401`))
+      .toEqual({ kind: 'cloud_unavailable' });
+    expect(classifyCronFailure(`${CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH}\n401`))
+      .toEqual({ kind: 'cloud_unavailable' });
+    // 普通网络错误不受影响，仍是 network。
+    expect(classifyCronFailure('fetch failed')).toEqual({ kind: 'network' });
   });
 
   it('GLM 1308 带 next_flush_time：额度、窗口词、ISO 重置时间', () => {

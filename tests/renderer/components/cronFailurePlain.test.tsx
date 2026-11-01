@@ -2,11 +2,16 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { CronJobExecution } from '../../../src/shared/contract/cron';
+import type { CronJobDefinition, CronJobExecution } from '../../../src/shared/contract/cron';
 import { classifyCronFailure } from '../../../src/shared/utils/cronFailureClassification';
+import {
+  CRON_CLOUD_UNAVAILABLE_MESSAGE_EN,
+  CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH,
+} from '../../../src/shared/utils/cronCloudUnavailable';
 import { cronCenterEn, cronCenterZh } from '../../../src/renderer/i18n/cronCenter';
 import { CronExecutionDetail } from '../../../src/renderer/components/features/cron/CronExecutionDetail';
 import { translateCronOsNotification } from '../../../src/renderer/components/features/cron/cronFailureNotice';
+import { CronCloudRuntime } from '../../../src/host/cron/cronCloudRuntime';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
 import { buildCronLoginWallStopCode } from '../../../src/shared/utils/browserLoginWall';
@@ -17,6 +22,47 @@ const GLM_WITH_FLUSH = [
 ].join('\n');
 const GLM_WITHOUT_FLUSH = '{"error":{"code":"1308","message":"usage limit reached"}}';
 const BALANCE = '402 Payment Required: insufficient balance';
+
+/**
+ * 真实落库路径：CronCloudRuntime.recordFailure 在 fetch 打不通时写下的 execution。
+ * unavailableMessage 的接法与 cronService 相同（按语言返回固定句），拿到的就是
+ * 会进执行历史的原始记录——error 不手拼，详情页读到什么就验什么。
+ */
+async function recordedCloudFailure(language: 'zh' | 'en'): Promise<CronJobExecution> {
+  const executions: CronJobExecution[] = [];
+  const failingFetch = vi.fn(async () => {
+    throw new Error('fetch failed');
+  });
+  const runtime = new CronCloudRuntime(
+    () => ({ baseUrl: 'https://cron.example.test', token: 'secret-token' }),
+    {
+      getJobs: () => [],
+      persistJob: async () => {},
+      persistExecution: async (record) => { executions.push(record); },
+      loadExecutionStatus: () => undefined,
+      onCompleted: async () => {},
+      unavailableMessage: () => (language === 'en'
+        ? CRON_CLOUD_UNAVAILABLE_MESSAGE_EN
+        : CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH),
+    },
+    failingFetch as unknown as typeof fetch,
+  );
+  const definition: CronJobDefinition = {
+    id: 'cloud-down-job-1',
+    name: 'Cloud digest',
+    runsOn: 'cloud',
+    scheduleType: 'at',
+    schedule: { type: 'at', datetime: 2_000_000 },
+    action: { type: 'agent', agentType: 'default', prompt: 'Say hi.' },
+    enabled: true,
+    createdAt: 1,
+    updatedAt: 2,
+  };
+  await runtime.addJob(definition);
+  const [record] = executions;
+  if (!record) throw new Error('recordFailure did not persist an execution');
+  return record;
+}
 
 const originalOpen = useAppStore.getState().openSettingsTab;
 const originalTrigger = useCronStore.getState().triggerJob;
@@ -58,6 +104,7 @@ describe('cron failure notification copy', () => {
     ['timeout', 'request timed out'],
     ['auth', '401 Unauthorized: incorrect api key'],
     ['network', 'fetch failed'],
+    ['cloud-down', CRON_CLOUD_UNAVAILABLE_MESSAGE_EN],
     ['other', 'something exploded in the runner'],
   ] as const;
 
@@ -90,6 +137,23 @@ describe('cron failure notification copy', () => {
       expect(zh.body).toContain(clock(classified.resetAt));
       expect(zh.body).not.toContain('2026-10-15T05:00:00Z');
     }
+  });
+
+  it('云端调度器不可用：OS 通知按语言出人话', () => {
+    const zh = translateCronOsNotification({
+      code: 'CRON_FAILURE',
+      title: '任务失败 - [定时] 整理邮件',
+      body: `定时任务失败：${CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH}`,
+      failureKind: 'cloud_unavailable',
+    }, cronCenterZh.cronCenter, 'zh');
+    const en = translateCronOsNotification({
+      code: 'CRON_FAILURE',
+      title: '任务失败 - [定时] 整理邮件',
+      body: `定时任务失败：${CRON_CLOUD_UNAVAILABLE_MESSAGE_EN}`,
+      failureKind: 'cloud_unavailable',
+    }, cronCenterEn.cronCenter, 'en');
+    expect(zh.body).toBe('云端定时服务暂时连不上，这次任务没有执行。');
+    expect(en.body).toBe("The cloud scheduler can't be reached right now, so this run didn't happen.");
   });
 
   it('登录墙译文保持原句，不走失败分类', () => {
@@ -168,6 +232,38 @@ describe('CronExecutionDetail 人话失败', () => {
     }
   });
 
+  it('云端调度器不可用：真实 recordFailure 落库报文 → 一句话 + 立即重跑', async () => {
+    const triggerJob = vi.fn().mockResolvedValue(null);
+    useCronStore.setState({ triggerJob });
+
+    useAppStore.setState({ language: 'zh' });
+    const zhExecution = await recordedCloudFailure('zh');
+    expect(zhExecution.error).toBe(CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH);
+    const { unmount } = render(<CronExecutionDetail execution={zhExecution} runsOn="cloud" />);
+    expect(screen.getByTestId('cron-failure-sentence').textContent)
+      .toBe('云端定时服务暂时连不上，这次任务没有执行。');
+    expect(screen.getByTestId('cron-failure-action').textContent).toContain('立即重跑');
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('cron-failure-action'));
+    });
+    expect(triggerJob).toHaveBeenCalledWith('cloud-down-job-1');
+    // 原始报文仍收在技术详情里，排查线索不丢
+    expect(screen.getByTestId('cron-failure-technical').textContent)
+      .toContain(CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH);
+    unmount();
+
+    useAppStore.setState({ language: 'en' });
+    const enExecution = await recordedCloudFailure('en');
+    render(<CronExecutionDetail execution={enExecution} runsOn="cloud" />);
+    expect(screen.getByTestId('cron-failure-sentence').textContent)
+      .toBe("The cloud scheduler can't be reached right now, so this run didn't happen.");
+    expect(screen.getByTestId('cron-failure-action').textContent).toContain('Run again now');
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('cron-failure-action'));
+    });
+    expect(triggerJob).toHaveBeenCalledWith('cloud-down-job-1');
+  });
+
   it('换个模型打开模型设置，立即重跑复用 triggerJob', async () => {
     const openSettingsTab = vi.fn();
     const triggerJob = vi.fn().mockResolvedValue(null);
@@ -235,5 +331,6 @@ function sentenceFor(
   if (kind === 'timeout') return copy.failureTimeout;
   if (kind === 'auth') return copy.failureAuth;
   if (kind === 'network') return copy.failureNetwork;
+  if (kind === 'cloud_unavailable') return copy.failureCloudUnavailable;
   return copy.failureOther;
 }

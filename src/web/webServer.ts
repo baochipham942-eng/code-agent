@@ -1264,12 +1264,13 @@ async function main(): Promise<void> {
       })(),
       'reapChildProcesses'
     );
-    await withCap(
-      durableRunRuntime?.shutdown().catch((error) => {
+    // FB-324：stop 意图停机先停靠/终态收口主 run（非 stop no-op，详见 stopIntentShutdownPark.ts）。
+    await withCap((async () => {
+      try { const m = await import('../host/runtime/stopIntentShutdownPark'); console.log('[shutdown] stop-intent park:', JSON.stringify(await m.parkPrimaryRunsOnStopIntentShutdown(runRegistry))); } catch (err) { console.warn('[shutdown] stop-intent park failed:', err); }
+      await durableRunRuntime?.shutdown().catch((error) => {
         console.warn('[shutdown] durable recovery runtime failed:', error);
-      }) ?? Promise.resolve(),
-      'durableRunRuntime.shutdown'
-    );
+      });
+    })(), 'stopIntentPark+durableRunRuntime.shutdown');
     // V2-A: 关掉所有用户起的 dev server，避免 Vite/CRA 子进程成孤儿
     await withCap(
       (async () => {

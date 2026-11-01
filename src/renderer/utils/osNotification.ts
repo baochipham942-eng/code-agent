@@ -57,10 +57,15 @@ export function shouldSuppressOsNotification(hasFocus: boolean, visible: boolean
 }
 
 /** 发一条原生系统通知。Tauri 下自动带 Agent Neo 图标/身份；web 回落浏览器通知。 */
-export async function postOsNotification(opts: { title: string; body: string }): Promise<void> {
+export async function postOsNotification(
+  opts: { title: string; body: string },
+  flags: { urgent?: boolean } = {},
+): Promise<void> {
+  const urgent = flags.urgent === true;
   const hasFocus = typeof document !== 'undefined' && document.hasFocus();
   const visible = typeof document !== 'undefined' && !document.hidden;
-  if (shouldSuppressOsNotification(hasFocus, visible)) {
+  // urgent（失败类）跳过焦点门：用户盯着别的会话时也不能错过失败。
+  if (!urgent && shouldSuppressOsNotification(hasFocus, visible)) {
     reportDelivery({ mode: 'suppressed-focused', dispatched: false });
     return;
   }
@@ -69,19 +74,23 @@ export async function postOsNotification(opts: { title: string; body: string }):
       const mod = await loadModule();
       const granted = await ensureTauriPermission(mod);
       if (!granted) {
-        reportDelivery({ mode: 'tauri', granted: false, dispatched: false });
+        reportDelivery({ mode: 'tauri', granted: false, dispatched: false, ...(urgent ? { urgent } : {}) });
         return;
       }
       // dispatched = OS API accepted the call; macOS gives no callback, so display is not confirmed.
       mod.sendNotification({ title: opts.title, body: opts.body });
-      reportDelivery({ mode: 'tauri', granted: true, dispatched: true });
+      reportDelivery({ mode: 'tauri', granted: true, dispatched: true, ...(urgent ? { urgent } : {}) });
     } catch (err) {
       console.warn('[osNotification] Tauri sendNotification 失败', err);
       reportDelivery({ mode: 'tauri', error: err instanceof Error ? err.message : String(err) });
     }
     return;
   }
-  reportDelivery({ mode: 'web', perm: typeof Notification !== 'undefined' ? Notification.permission : 'unavailable' });
+  reportDelivery({
+    mode: 'web',
+    perm: typeof Notification !== 'undefined' ? Notification.permission : 'unavailable',
+    ...(urgent ? { urgent } : {}),
+  });
   // Web 回落：浏览器通知（best-effort）
   try {
     if (typeof Notification === 'undefined') return;

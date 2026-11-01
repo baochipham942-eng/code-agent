@@ -1104,6 +1104,10 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     return getSessionManager().getMessages(sessionId);
   }
 
+  async sessionExists(sessionId: string): Promise<boolean> {
+    return getSessionManager().sessionExists(sessionId);
+  }
+
   async getSessionTasks(sessionId: string): Promise<SessionTask[]> {
     return listTasks(sessionId);
   }

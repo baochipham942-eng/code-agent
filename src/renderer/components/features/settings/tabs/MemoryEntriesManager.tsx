@@ -330,13 +330,15 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
     return () => { cancelled = true; };
   }, [selectedEntry?.id]);
 
-  // 来源会话存在性探测：在就给跳转按钮，不在就禁用并给原因（②）
+  // 来源会话存在性探测：在就给跳转按钮，不在就禁用并给原因（②）。
+  // 走只读 sessionExists——session.load 会 restoreSession（切宿主 currentSessionId/
+  // toolCache、清会话缓存、写审计），选中条目只是探测，不能付这些副作用（r4）。
   useEffect(() => {
     let cancelled = false;
     setSourceSessionProbe(sourceSessionId ? 'checking' : null);
     if (!sourceSessionId) return;
-    ipcService.invokeDomain<unknown>(IPC_DOMAINS.SESSION, 'load', { sessionId: sourceSessionId })
-      .then((session) => { if (!cancelled) setSourceSessionProbe(session ? 'exists' : 'missing'); })
+    ipcService.invokeDomain<boolean>(IPC_DOMAINS.SESSION, 'sessionExists', { sessionId: sourceSessionId })
+      .then((exists) => { if (!cancelled) setSourceSessionProbe(exists === true ? 'exists' : 'missing'); })
       .catch(() => { if (!cancelled) setSourceSessionProbe('probe-failed'); });
     return () => { cancelled = true; };
   }, [sourceSessionId]);

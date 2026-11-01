@@ -55,16 +55,16 @@ function journalResult(rows: MemoryChangeJournalResult['rows']): MemoryChangeJou
   return { rows };
 }
 
-/** route invokeDomain：MEMORY 三个动作 + SESSION 存在性探测 */
+/** route invokeDomain：MEMORY 三个动作 + SESSION 存在性探测（只读 sessionExists，load 一律 unexpected） */
 function mockBackend(options: {
   entries: MemoryEntry[];
   journal?: MemoryChangeJournalResult['rows'];
   sessionExists?: boolean | 'throw';
 }): void {
   invokeDomainMock.mockImplementation(async (domain: string, action: string) => {
-    if (domain === 'domain:session' && action === 'load') {
+    if (domain === 'domain:session' && action === 'sessionExists') {
       if (options.sessionExists === 'throw') throw new Error('probe exploded');
-      return options.sessionExists ? { id: 'sess-live' } : null;
+      return options.sessionExists === true;
     }
     if (action === 'memoryEntries') {
       return { entries: options.entries, sourceCounts: { light_file: options.entries.length, db_memory: 0 } } satisfies MemoryEntryListResult;
@@ -125,6 +125,22 @@ describe('MemoryEntriesManager — source session jump (②)', () => {
       sessionId: 'sess-live',
       messageId: 'msg-1',
     }));
+  });
+
+  it('probes existence via the read-only sessionExists action and never calls the side-effectful load (r4)', async () => {
+    // session.load 会 restoreSession：切宿主 currentSessionId/toolCache、清会话缓存、写审计。
+    // 选中条目只是探测存在性，绝不能付这些副作用（rework r4）。
+    mockBackend({
+      entries: [entry({ sessionId: 'sess-live' })],
+      sessionExists: true,
+    });
+    render(<MemoryEntriesManager />);
+
+    const openButton = await screen.findByTestId('memory-entry-source-session-open');
+    expect((openButton as HTMLButtonElement).disabled).toBe(false);
+    const sessionCalls = invokeDomainMock.mock.calls.filter(([domain]) => domain === 'domain:session');
+    expect(sessionCalls).toEqual([['domain:session', 'sessionExists', { sessionId: 'sess-live' }]]);
+    expect(sessionCalls.some(([, action]) => action === 'load')).toBe(false);
   });
 
   it('disables the jump with a reason when the source session no longer exists', async () => {

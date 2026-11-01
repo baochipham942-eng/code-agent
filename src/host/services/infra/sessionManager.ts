@@ -1079,6 +1079,15 @@ export class SessionManager implements Disposable {
   }
 
   /**
+   * 只读存在性探测（记忆面板来源会话跳转）：不 restore、不切 currentSessionId、
+   * 不动 toolCache、不写审计——探测方（如设置面板选中一条记忆）不该付 load 的副作用。
+   * getSessionMetadata 不能担此判定：存在但无 metadata 的会话会误报不存在。
+   */
+  sessionExists(sessionId: string): boolean {
+    return this.getAccessibleStoredSession(sessionId) != null;
+  }
+
+  /**
    * 获取最近消息
    */
   async getRecentMessages(sessionId: string, count: number, options?: { includeRewound?: boolean }): Promise<Message[]> {

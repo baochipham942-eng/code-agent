@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { CronEventActionMode } from '@shared/contract/cron';
 import type {
   CronJobDefinition,
   CronJobExecution,
@@ -49,6 +50,8 @@ interface CronState {
   updateJob: (jobId: string, updates: UpdateCronJobInput) => Promise<CronJobDefinition | null>;
   deleteJob: (jobId: string) => Promise<boolean>;
   triggerJob: (jobId: string) => Promise<CronJobExecution | null>;
+  /** 事件自动化执行档切换（调用方负责先弹确认框）；成功后刷新任务表。 */
+  setEventActionMode: (jobId: string, mode: CronEventActionMode) => Promise<CronJobDefinition | null>;
 }
 
 async function loadLatestExecution(jobId: string): Promise<CronJobExecution | null> {
@@ -221,5 +224,13 @@ export const useCronStore = create<CronState>()((set, get) => ({
     const execution = await cronClient.triggerJob(jobId);
     await Promise.all([get().loadExecutions(jobId), get().loadStats()]);
     return execution;
+  },
+
+  setEventActionMode: async (jobId, mode) => {
+    const updated = await cronClient.setEventActionMode(jobId, mode);
+    if (updated) {
+      set((state) => ({ jobs: state.jobs.map((job) => (job.id === jobId ? updated : job)) }));
+    }
+    return updated;
   },
 }));

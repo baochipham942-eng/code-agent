@@ -2274,6 +2274,17 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       input.namespace,
     );
   }
+  /** 导入历史撤销用：导入台账里 exportId 对应的 Neo 根会话 id（只读）。
+   *  notAfter 传历史条目记录时刻，只命中该条目自己那次导入写下的台账行。 */
+  findSessionForkImportRoot(sourceExportId: string, notAfter?: number): string | null {
+    this.ensureDb();
+    return this.sessionForkPortabilityRepo.findImportedRootSessionId(sourceExportId, notAfter);
+  }
+  /** 导入历史撤销用：会话是否已有未删除的 fork 子会话（只读）。 */
+  hasLiveSessionForkChild(sessionId: string): boolean {
+    this.ensureDb();
+    return this.sessionForkPortabilityRepo.hasLiveForkChild(sessionId);
+  }
   async prepareImportedIsolatedWorkspace(
     input: PublishImportedIsolatedWorkspaceInput,
   ): Promise<PreparedImportedIsolatedWorkspace> {

@@ -86,8 +86,8 @@ describe('import history ledger', () => {
     const entries = await listImportHistory();
     expect(entries).toHaveLength(200);
     expect(entries[0].items).toHaveLength(100);
-    expect(entries[0].items[0]).toEqual({ label: 'Chat 0', outcome: 'imported' });
-    expect(entries[0].items.at(-1)).toEqual({ label: 'Chat 99', outcome: 'imported' });
+    expect(entries[0].items[0]).toEqual({ label: 'Chat 0', outcome: 'imported', sourceSessionId: 'session-0' });
+    expect(entries[0].items.at(-1)).toEqual({ label: 'Chat 99', outcome: 'imported', sourceSessionId: 'session-99' });
     expect(entries.at(-1)?.items[0].label).toBe('skill-2');
     expect(entries.some((entry) => entry.items[0]?.label === 'skill-0')).toBe(false);
   });

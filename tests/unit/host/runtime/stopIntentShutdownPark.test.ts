@@ -3,6 +3,12 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// 退出意图是进程级单例且无「复位为 none」的公开入口，这里用可控替身，保证每个用例起点确定。
+const quitIntent = vi.hoisted(() => ({ value: 'none' as 'none' | 'background' | 'stop' }));
+vi.mock('../../../../src/host/services/daemon/quitIntent', () => ({
+  getDaemonQuitIntent: () => quitIntent.value,
+}));
+
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 
@@ -10,7 +16,6 @@ import { parkPrimaryRunsOnStopIntentShutdown } from '../../../../src/host/runtim
 import { RunRegistry } from '../../../../src/host/runtime/runRegistry';
 import { DurableRunKernel } from '../../../../src/host/runtime/durableRunKernel';
 import { DurableRunRepository } from '../../../../src/host/services/core/repositories/DurableRunRepository';
-import { setDaemonQuitIntent } from '../../../../src/host/services/daemon/quitIntent';
 
 // FB-324：stop-intent 停机时主 run 必须落可恢复终态——有原生恢复描述符的停靠成
 // waiting+user_stop（重开出现继续提示），没有的落终态 cancelled；非 stop 意图
@@ -20,12 +25,12 @@ describe('parkPrimaryRunsOnStopIntentShutdown (FB-324)', () => {
 
   afterEach(() => {
     while (cleanups.length > 0) cleanups.pop()?.();
-    setDaemonQuitIntent('none');
+    quitIntent.value = 'none';
     vi.restoreAllMocks();
   });
 
   beforeEach(() => {
-    setDaemonQuitIntent('none');
+    quitIntent.value = 'none';
   });
 
   function openRegistry(label: string) {
@@ -49,7 +54,7 @@ describe('parkPrimaryRunsOnStopIntentShutdown (FB-324)', () => {
   }
 
   function rawRunRow(repository: DurableRunRepository, runId: string) {
-    return (repository as unknown as { db: Database }).db
+    return (repository as unknown as { db: InstanceType<typeof Database> }).db
       .prepare('SELECT status, envelope_json FROM durable_runs WHERE run_id = ?')
       .get(runId) as { status: string; envelope_json: string } | undefined;
   }
@@ -70,7 +75,7 @@ describe('parkPrimaryRunsOnStopIntentShutdown (FB-324)', () => {
     const { repository, registry } = openRegistry('park');
     const handle = await registry.startDurable({ sessionId: 'session-park', workspace: '/tmp/ws-park' });
     await checkpointModelOperation(registry, handle.context.runId);
-    setDaemonQuitIntent('stop');
+    quitIntent.value = 'stop';
 
     const summary = await parkPrimaryRunsOnStopIntentShutdown(registry);
 
@@ -86,7 +91,7 @@ describe('parkPrimaryRunsOnStopIntentShutdown (FB-324)', () => {
     const { repository, registry } = openRegistry('terminal');
     // 无 checkpointNativeModelOperation —— 没有 native recovery descriptor
     const handle = await registry.startDurable({ sessionId: 'session-terminal', workspace: '/tmp/ws-terminal' });
-    setDaemonQuitIntent('stop');
+    quitIntent.value = 'stop';
 
     const summary = await parkPrimaryRunsOnStopIntentShutdown(registry);
 
@@ -112,7 +117,7 @@ describe('parkPrimaryRunsOnStopIntentShutdown (FB-324)', () => {
     const { registry } = openRegistry('bg');
     const handle = await registry.startDurable({ sessionId: 'session-bg', workspace: '/tmp/ws-bg' });
     await checkpointModelOperation(registry, handle.context.runId);
-    setDaemonQuitIntent('background');
+    quitIntent.value = 'background';
 
     const summary = await parkPrimaryRunsOnStopIntentShutdown(registry);
 

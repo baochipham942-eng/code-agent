@@ -311,9 +311,11 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
 
   useEffect(() => { loadEntries(); }, []);
 
+  // updatedAt 一并入依赖：撤回（N-MEM-JOURNAL-SOURCEJUMP-FU2）后条目 id 不变、
+  // 只换内容，若仅按 id 重置 draft，编辑器会继续显示撤回前的旧正文
   useEffect(() => {
     setDraft(selectedEntry ? createDraft(selectedEntry) : null);
-  }, [selectedEntry?.id]);
+  }, [selectedEntry?.id, selectedEntry?.updatedAt]);
 
   // 来源会话/落点消息解析收口到 helper：evidence[].sessionId 落库时被敏感 guard redact，
   // 匹配不能依赖它（r3），口径见 findSourceSessionRef。

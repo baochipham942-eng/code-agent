@@ -26,6 +26,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 mod agent_halo;
 mod appshots;
+mod appshots_hotkey_gate;
 mod native_app_icon;
 mod native_desktop;
 mod pip;
@@ -35,10 +36,10 @@ mod resident_host_windows;
 mod traffic_lights;
 
 use appshots::{
-    appshots_last_front_app, appshots_read_image_data_url, appshots_read_image_data_url_by_id,
-    appshots_report_composer_slot, appshots_set_enabled,
-    appshots_set_motion_enabled, appshots_set_target_session, appshots_skip_motion,
-    appshots_trigger, appshots_trigger_for_pid, AppshotsState,
+    appshots_hotkey_status, appshots_last_front_app, appshots_read_image_data_url,
+    appshots_read_image_data_url_by_id, appshots_report_composer_slot, appshots_request_hotkey_access,
+    appshots_set_enabled, appshots_set_motion_enabled, appshots_set_target_session,
+    appshots_skip_motion, appshots_trigger, appshots_trigger_for_pid, AppshotsState,
 };
 use native_app_icon::desktop_get_app_icon;
 use native_desktop::{
@@ -4459,6 +4460,8 @@ fn main() {
             appshots_skip_motion,
             appshots_set_target_session,
             appshots_set_motion_enabled,
+            appshots_hotkey_status,
+            appshots_request_hotkey_access,
             pip_show,
             pip_frame,
             pip_controls,

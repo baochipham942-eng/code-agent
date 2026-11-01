@@ -198,6 +198,45 @@ describe('MemoryRepository — memory change journal', () => {
     expect(byMemory.get(a.id)).toMatchObject({ actor: 'auto_review', operation: 'update' });
     expect(byMemory.get(b.id)).toMatchObject({ actor: 'dream', operation: 'create' });
   });
+
+  // --------------------------------------------------------------------------
+  // 直建 DB 记忆的历史查询（rework r4 ②）：无 metadata.memoryEntry.id 的记忆
+  // （desktopActivity / contextHooks 等直写路径）在面板里的条目 id 是
+  // `db:${memoryId}` 兜底，journal 行只挂 memory_id——按 db: 前缀 entryId 查历史
+  // 必须回落到 memory_id，与 annotateLastChange 的徽标解析同口径。
+  // --------------------------------------------------------------------------
+  it('finds journal rows for direct DB memories via the db:-prefixed entry id (r4)', () => {
+    const created = repo.createMemory(
+      makeMemoryInput('direct write', { sessionId: 'sess-bg' }),
+      { actor: 'auto_review', sessionId: 'sess-bg' },
+    );
+    repo.updateMemory(created.id, { content: 'direct write v2' }, { actor: 'dream' });
+
+    const rows = repo.listMemoryJournal({ entryId: `db:${created.id}` });
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ operation: 'update', actor: 'dream' });
+    expect(rows[1]).toMatchObject({ operation: 'create', actor: 'auto_review' });
+    // 直建记忆没有统一条目 id，journal 行的 entry_id 为 null（解析只能走 memory_id）
+    expect(rows.every((row) => row.entryId === null)).toBe(true);
+  });
+
+  it('journal lookup and lastChange annotation agree on direct DB memories (r4)', () => {
+    const created = repo.createMemory(makeMemoryInput('badge path'), { actor: 'eviction' });
+
+    // 徽标路径（annotateLastChange 同款解析）：db: 前缀剥掉按 memory_id 命中
+    const latest = repo.latestMemoryChanges().find((change) => change.memoryId === created.id);
+    expect(latest).toMatchObject({ actor: 'eviction', operation: 'create' });
+    // 历史路径必须同样命中，否则「后台写入」徽标亮着、详情却恒显示暂无变更记录
+    expect(repo.listMemoryJournal({ entryId: `db:${created.id}` })).toHaveLength(1);
+    // 精确 entry_id 命中不受回落影响：带统一条目 id 的记忆照旧按 entry_id 查到
+    repo.createMemory(
+      makeMemoryInput('with unified entry id', {
+        metadata: { memoryEntry: { id: 'entry_unified_1' } },
+      } as Partial<Omit<MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>>),
+      { actor: 'user_manual' },
+    );
+    expect(repo.listMemoryJournal({ entryId: 'entry_unified_1' })).toHaveLength(1);
+  });
 });
 
 // ----------------------------------------------------------------------------

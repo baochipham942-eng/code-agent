@@ -477,16 +477,25 @@ export class MemoryRepository {
   // Memory Change Journal（N-MEM-JOURNAL-SOURCEJUMP，append-only）
   // --------------------------------------------------------------------------
 
-  /** 读某条记忆的变更日志（新→旧）；entryId/memoryId 二选一。 */
+  /**
+   * 读某条记忆的变更日志（新→旧）；entryId/memoryId 二选一。
+   * db: 前缀的 entryId（直建 DB 记忆在面板里的兜底条目 id，无统一条目 id）查不到
+   * entry_id 行时回落到 memory_id——与 annotateLastChange 的徽标解析同口径，
+   * 否则「后台写入」徽标亮着、详情历史却恒空（rework r4）。
+   */
   listMemoryJournal(request: { entryId?: string; memoryId?: string; limit?: number }): MemoryChangeJournalRow[] {
     const limit = Math.max(1, Math.min(request.limit ?? MEMORY.JOURNAL_DEFAULT_LIMIT, MEMORY.JOURNAL_MAX_LIMIT));
-    const column = request.entryId ? 'entry_id' : 'memory_id';
-    const key = request.entryId ?? request.memoryId;
-    if (!key) return [];
-    const rows = this.db.prepare(`
-      SELECT * FROM memory_change_journal WHERE ${column} = ? ORDER BY id DESC LIMIT ?
-    `).all(key, limit) as SQLiteRow[];
-    return rows.map((row) => this.rowToJournalRow(row));
+    const selectJournal = (column: 'entry_id' | 'memory_id', key: string): SQLiteRow[] =>
+      this.db.prepare(`
+        SELECT * FROM memory_change_journal WHERE ${column} = ? ORDER BY id DESC LIMIT ?
+      `).all(key, limit) as SQLiteRow[];
+    if (request.entryId) {
+      const rows = selectJournal('entry_id', request.entryId);
+      if (rows.length > 0 || !request.entryId.startsWith('db:')) return rows.map((row) => this.rowToJournalRow(row));
+      return selectJournal('memory_id', request.entryId.slice(3)).map((row) => this.rowToJournalRow(row));
+    }
+    if (!request.memoryId) return [];
+    return selectJournal('memory_id', request.memoryId).map((row) => this.rowToJournalRow(row));
   }
 
   /** 每条记忆最近一次变更（列表「后台写入」标记用）。 */

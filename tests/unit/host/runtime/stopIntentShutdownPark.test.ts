@@ -83,8 +83,14 @@ describe('parkPrimaryRunsOnStopIntentShutdown (FB-324)', () => {
     const row = rawRunRow(repository, handle.context.runId);
     expect(row?.status).toBe('waiting');
     expect(row?.envelope_json).toContain('"interruptCause":"user_stop"');
-    expect(registry.hasDurableOwner(handle.context.runId)).toBe(true);
+    // 租约已交出：下次启动立即可认领，不必等租约自然过期
+    const lease = (repository as unknown as { db: InstanceType<typeof Database> }).db
+      .prepare('SELECT lease_expires_at AS exp FROM durable_runs WHERE run_id = ?')
+      .get(handle.context.runId) as { exp: number };
+    expect(lease.exp).toBeLessThanOrEqual(Date.now());
+    expect(registry.hasDurableOwner(handle.context.runId)).toBe(false);
     expect(registry.get(handle.context.runId)).toBeUndefined();
+    expect(await repository.listParkedForReclaim(Date.now(), 10)).toHaveLength(1);
   });
 
   it('stop intent terminally cancels a run without a native recovery descriptor', async () => {

@@ -51,7 +51,12 @@ export async function parkPrimaryRunsOnStopIntentShutdown(registry: RunRegistry)
         registration: 'primary',
       });
       if (ownedBefore && !registry.hasDurableOwner(runId)) summary.terminalCancelled += 1;
-      else summary.parked += 1;
+      else {
+        summary.parked += 1;
+        // 立刻交出租约：停靠行的租约默认还有一段余量，重开太快会撞在窗口里，
+        // listParkedForReclaim 认不出（lease_expires_at<=now），会话仍是半截状态。
+        await registry.releaseDurable(runId);
+      }
     } catch (error) {
       summary.errors += 1;
       logger.warn('Failed to park/terminal a durable run during stop-intent shutdown', {

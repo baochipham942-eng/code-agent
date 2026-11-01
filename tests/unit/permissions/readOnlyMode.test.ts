@@ -373,6 +373,9 @@ describe('acceptEdits 出站/不可逆/进程类写档工具仍需用户确认�
     'tmeetMeetingCreate',
     'mcp_add_server',
     'xlwings_execute',
+    'ExcelAutomate',
+    'sleep_until',
+    'wake_on',
   ])('acceptEdits：%s 照走用户确认，不搭写档免确认便车', async (toolName) => {
     getPermissionModeManager().setMode('acceptEdits');
     setMockTool({ name: toolName, requiresPermission: true, permissionLevel: 'write' });
@@ -381,6 +384,20 @@ describe('acceptEdits 出站/不可逆/进程类写档工具仍需用户确认�
     expect(result.success).toBe(true);
     expect(permissionCalls.length).toBe(1);
     expect(permissionCalls[0].tool).toBe(toolName);
+  });
+
+  // 对照组：可逆 / 草稿 / 只读浏览类在 acceptEdits 下保持免确认（真实分类链，零请求）
+  it.each([
+    'reminders_create',
+    'reminders_update',
+    'mail_draft',
+    'browser_navigate',
+  ])('acceptEdits：%s 保持免确认（可逆/草稿/只读浏览）', async (toolName) => {
+    getPermissionModeManager().setMode('acceptEdits');
+    setMockTool({ name: toolName, requiresPermission: true, permissionLevel: 'write' });
+    const result = await executor.execute(toolName, {}, {});
+    expect(result.success).toBe(true);
+    expect(permissionCalls.length).toBe(0);
   });
 
   it('对照组：acceptEdits 下普通文件写入仍免确认', async () => {

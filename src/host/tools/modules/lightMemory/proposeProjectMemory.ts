@@ -25,6 +25,7 @@ import {
   type MemoryEntryDatabase,
 } from '../../../memory/memoryEntryRuntime';
 import { getDatabase } from '../../../services/core/databaseService';
+import { resolveJournalContext } from '../../../memory/memoryJournalActor';
 import { proposeProjectMemorySchema } from './proposeProjectMemory.schema';
 
 const schema: ToolSchema = proposeProjectMemorySchema;
@@ -149,6 +150,7 @@ async function propose(
   content: string,
   sources: string[],
   now: number,
+  sessionId: string,
 ): Promise<ToolResult<string>> {
   const id = draftEntryId(projectDir, topic);
   const existing = (await listUnifiedMemoryEntries(db)).entries.find((entry) => entry.id === id);
@@ -161,9 +163,13 @@ async function propose(
   }
   const entry = candidateEntry(projectDir, topic, summary, content, sources, now);
   await writeEntryToLightMemory(entry);
-  // actor=import：/init-memory 的候选是 agent 从项目材料自动采集的（entry.source.kind
-  // 本就是 'import'），不是用户在面板手写的——归入后台自动写入一类。
-  if (db) await rebuildMemoryMirrorFromLightFiles(db, { journal: { actor: 'import' } });
+  // actor 归因：/init-memory 的候选是 agent 从项目材料自动采集的（entry.source.kind
+  // 本就是 'import'），不是用户在面板手写的——归入后台自动写入一类；醒来会话里
+  // 采集的则记 role_wake。DB 不可用（CLI 探测失败）时无镜像可写，归因查找一并跳过。
+  if (db) {
+    const journal = resolveJournalContext(sessionId, 'import');
+    await rebuildMemoryMirrorFromLightFiles(db, { journal });
+  }
   return {
     ok: true,
     output: formatWritten(topic, entry),
@@ -236,6 +242,7 @@ class ProposeProjectMemoryHandler implements ToolHandler<Record<string, unknown>
         content,
         sources,
         Date.now(),
+        ctx.sessionId,
       );
       if (result.ok) {
         ctx.logger.info('ProposeProjectMemory done', {

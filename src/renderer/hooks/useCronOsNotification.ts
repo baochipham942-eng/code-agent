@@ -1,8 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { IPC_CHANNELS, type NotificationShowEvent } from '@shared/ipc';
 import { useAppStore } from '../stores/appStore';
+import { useCronStore } from '../stores/cronStore';
 import ipcService from '../services/ipcService';
-import { translateCronOsNotification } from '../components/features/cron/cronFailureNotice';
+import {
+  cronFailureCloudDownJobId,
+  translateCronOsNotification,
+} from '../components/features/cron/cronFailureNotice';
 import {
   cronLoginWallSiteOriginFromNotification,
   openCronLoginWallSite,
@@ -45,6 +49,13 @@ export function useCronOsNotification(
       if (siteOrigin) openCronLoginWallSite(siteOrigin, event?.jobId);
       const sessionId = lastSessionIdRef.current;
       if (sessionId) onOpenSessionRef.current(sessionId);
+      // 云端调度器不可用的失败没有本地会话：点击落 Cron Center 并选中该任务，
+      // 详情里就是这句人话和「立即重跑」——不然这次点击只是把 app 带到前台。
+      const cloudDownJobId = cronFailureCloudDownJobId(event);
+      if (cloudDownJobId) {
+        useCronStore.getState().selectJob(cloudDownJobId);
+        useAppStore.getState().setShowCronCenter(true);
+      }
     }).then((cleanup) => {
       if (disposed) {
         void cleanup?.();

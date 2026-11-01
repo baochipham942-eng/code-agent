@@ -10,7 +10,10 @@ import {
 } from '../../../src/shared/utils/cronCloudUnavailable';
 import { cronCenterEn, cronCenterZh } from '../../../src/renderer/i18n/cronCenter';
 import { CronExecutionDetail } from '../../../src/renderer/components/features/cron/CronExecutionDetail';
-import { translateCronOsNotification } from '../../../src/renderer/components/features/cron/cronFailureNotice';
+import {
+  cronFailureCloudDownJobId,
+  translateCronOsNotification,
+} from '../../../src/renderer/components/features/cron/cronFailureNotice';
 import { CronCloudRuntime } from '../../../src/host/cron/cronCloudRuntime';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
@@ -178,6 +181,39 @@ describe('cron failure notification copy', () => {
       title: '任务完成 - [定时] 整理邮件',
       body: '定时任务已完成',
     });
+  });
+});
+
+// N-CRON-FAIL-PLAIN-CLOUD-DOWN-FU1：云端调度器不可用的 OS 通知没有本地会话可跳，
+// 点击要落到 Cron Center 并选中该任务（同 useCronOsNotification 点击分支的两个动作）。
+describe('cloud-down OS 通知点击落点', () => {
+  afterEach(() => {
+    useAppStore.setState({ showCronCenter: false });
+    useCronStore.setState({ selectedJobId: null });
+  });
+
+  it('命中时给到 jobId，两个 store 动作把 Cron Center 开到该任务上', () => {
+    useAppStore.setState({ showCronCenter: false });
+    useCronStore.setState({ selectedJobId: null });
+    const jobId = cronFailureCloudDownJobId({
+      code: 'CRON_FAILURE',
+      failureKind: 'cloud_unavailable',
+      jobId: 'cloud-down-job-1',
+    });
+    expect(jobId).toBe('cloud-down-job-1');
+    useCronStore.getState().selectJob(jobId!);
+    useAppStore.getState().setShowCronCenter(true);
+    expect(useCronStore.getState().selectedJobId).toBe('cloud-down-job-1');
+    expect(useAppStore.getState().showCronCenter).toBe(true);
+  });
+
+  it.each([
+    ['其他失败类别', { code: 'CRON_FAILURE', failureKind: 'network', jobId: 'job-1' }],
+    ['云端类别但没带 jobId', { code: 'CRON_FAILURE', failureKind: 'cloud_unavailable' }],
+    ['登录墙码不借道', { code: 'CRON_LOGIN_WALL_STOP', failureKind: 'cloud_unavailable', jobId: 'job-1' }],
+    ['无事件', null],
+  ])('不命中：%s → undefined（既有点击行为零变化）', (_label, event) => {
+    expect(cronFailureCloudDownJobId(event as never)).toBeUndefined();
   });
 });
 

@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   notificationUnregister: vi.fn(),
   postOsNotification: vi.fn(),
   registerNotificationClick: vi.fn(),
+  setShowCronCenter: vi.fn(),
   language: 'zh' as const,
 }));
 
@@ -30,9 +31,11 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
   },
 }));
 vi.mock('../../../src/renderer/stores/appStore', () => ({
-  useAppStore: { getState: () => ({ language: mocks.language }) },
+  useAppStore: { getState: () => ({ language: mocks.language, setShowCronCenter: mocks.setShowCronCenter }) },
 }));
-vi.mock('../../../src/renderer/components/features/cron/cronFailureNotice', () => ({
+// 只有译文函数需要替身；cloud-down 点击判据保持真实现，点击分支才是在被测的那条路。
+vi.mock('../../../src/renderer/components/features/cron/cronFailureNotice', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/renderer/components/features/cron/cronFailureNotice')>()),
   translateCronOsNotification: vi.fn(() => ({ title: 'title', body: 'body' })),
 }));
 vi.mock('../../../src/renderer/utils/osNotification', () => ({
@@ -52,6 +55,7 @@ import {
   showCronLoginWallWarning,
 } from '../../../src/renderer/components/features/cron/cronLoginWallNotice';
 import { useCronOsNotification } from '../../../src/renderer/hooks/useCronOsNotification';
+import { useCronStore } from '../../../src/renderer/stores/cronStore';
 
 const notificationCopy = {} as Parameters<typeof useCronOsNotification>[0];
 
@@ -170,5 +174,32 @@ describe('cron login-wall renderer surface', () => {
 
     expect(mocks.domainInvoke).not.toHaveBeenCalled();
     expect(onOpenSession).toHaveBeenCalledWith('session-2');
+  });
+
+  // N-CRON-FAIL-PLAIN-CLOUD-DOWN-FU1：云端调度器不可用的失败通知没有本地会话，
+  // 点击不再只是把 app 带到前台——要开 Cron Center 并选中该任务。
+  it('cloud-down failure click opens the Cron Center on the job instead of a session', async () => {
+    const onOpenSession = vi.fn();
+    useCronStore.setState({ selectedJobId: null });
+    renderHook(() => useCronOsNotification(notificationCopy, onOpenSession));
+
+    await waitFor(() => expect(mocks.registerNotificationClick).toHaveBeenCalledTimes(1));
+    act(() => {
+      mocks.notificationHandler?.({
+        id: 'notice-3',
+        title: '任务失败 - [定时] 云端周报',
+        body: 'fallback',
+        sessionId: '',
+        jobId: 'cloud-down-job-1',
+        code: 'CRON_FAILURE',
+        failureKind: 'cloud_unavailable',
+      });
+      mocks.clickHandler?.();
+    });
+
+    expect(onOpenSession).not.toHaveBeenCalled(); // 没有会话就不走会话跳转
+    expect(mocks.setShowCronCenter).toHaveBeenCalledWith(true);
+    expect(useCronStore.getState().selectedJobId).toBe('cloud-down-job-1');
+    useCronStore.setState({ selectedJobId: null });
   });
 });

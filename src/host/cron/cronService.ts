@@ -1219,8 +1219,8 @@ export class CronService implements Disposable {
         if (current && definition.updatedAt < current.definition.updatedAt) continue;
         if (current && cronDefinitionFingerprint(current.definition) === cronDefinitionFingerprint(definition)) continue;
         current?.cronInstance?.stop();
+        this.jobs.set(definition.id, { definition, cloudJobId: current?.cloudJobId ?? rowCloudJobId(row) });
         if (definition.enabled) this.registerJob(definition);
-        else this.jobs.set(definition.id, { definition, cloudJobId: current?.cloudJobId ?? rowCloudJobId(row) });
         this.cronEventTrigger?.groupListenChecks.forget(definition.id);
         changed = true;
         console.error(`[CronService] Reconciled job from database: ${definition.name} (${definition.id})`);

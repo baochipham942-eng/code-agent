@@ -34,6 +34,7 @@ import { isWebMode } from '../../../../utils/platform';
 import ipcService from '../../../../services/ipcService';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { useSessionUIStore } from '../../../../stores/sessionUIStore';
+import { useAppStore } from '../../../../stores/appStore';
 import { useI18n } from '../../../../hooks/useI18n';
 import { localeForLanguage } from '../../../../utils/i18nTime';
 import { zh } from '../../../../i18n/zh';
@@ -347,6 +348,11 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
     if (!sourceSessionId || sourceSessionProbe !== 'exists' || openingSourceSession) return;
     setOpeningSourceSession(true);
     try {
+      // 设置是 overlay：secondaryPages 的排除清单明确不含 showSettings，switchSession
+      // 的 closeSecondaryPages 关不掉它——不先关设置，跳转后用户仍被设置页盖住看不见
+      // 落点。走 setShowSettings(false)（inviteExpert / startCreateRoleChat 等设置内
+      // 跳聊天同款；不用 closeSettings，它带 cronCenter 返回落点时会改开自动化页）。
+      useAppStore.getState().setShowSettings(false);
       // 有 messageId 就落点消息（沿用聊天搜索的 pendingSearchJump 机制），否则会话顶部
       useSessionUIStore.getState().setPendingSearchJump({
         sessionId: sourceSessionId,

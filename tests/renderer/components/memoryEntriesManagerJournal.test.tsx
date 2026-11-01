@@ -27,6 +27,20 @@ vi.mock('../../../src/renderer/stores/sessionUIStore', () => ({
   useSessionUIStore: Object.assign(vi.fn(), { getState: () => ({ setPendingSearchJump: setPendingSearchJumpMock }) }),
 }));
 
+const setShowSettingsMock = vi.hoisted(() => vi.fn());
+vi.mock('../../../src/renderer/stores/appStore', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/renderer/stores/appStore')>();
+  return {
+    ...actual,
+    // 组件只走 getState().setShowSettings；hook 形态（useI18n 的 language/setLanguage/
+    // cloudUIStrings）给最小真形状，别让 i18n 在渲染期解构 undefined。
+    useAppStore: Object.assign(
+      vi.fn(() => ({ language: 'zh', setLanguage: vi.fn(), cloudUIStrings: {} })),
+      { getState: () => ({ setShowSettings: setShowSettingsMock }) },
+    ),
+  };
+});
+
 import { MemoryEntriesManager } from '../../../src/renderer/components/features/settings/tabs/MemoryEntriesManager';
 
 const now = Date.parse('2026-10-31T08:00:00.000Z');
@@ -125,6 +139,25 @@ describe('MemoryEntriesManager — source session jump (②)', () => {
       sessionId: 'sess-live',
       messageId: 'msg-1',
     }));
+  });
+
+  it('closes the settings overlay on jump — switchSession does not close it (r5)', async () => {
+    // 设置是 overlay：secondaryPages.ts 的 SECONDARY_PAGE_SHOW_EXCLUSIONS 明确不含
+    // showSettings，switchSession 的 closeSecondaryPages 关不掉它——跳转后用户仍被
+    // 设置页盖住，看不见落点。必须显式走 setShowSettings(false)（inviteExpert /
+    // startCreateRoleChat 等设置内跳聊天同款）。
+    mockBackend({
+      entries: [entry({ sessionId: 'sess-live' })],
+      sessionExists: true,
+    });
+    render(<MemoryEntriesManager />);
+
+    const openButton = await screen.findByTestId('memory-entry-source-session-open');
+    expect((openButton as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(openButton);
+
+    await waitFor(() => expect(switchSessionMock).toHaveBeenCalledWith('sess-live'));
+    expect(setShowSettingsMock).toHaveBeenCalledWith(false);
   });
 
   it('probes existence via the read-only sessionExists action and never calls the side-effectful load (r4)', async () => {

@@ -24,6 +24,8 @@ export const MEMORY = {
   FLUSH_DEDUP_LOOKBACK: 200,
   /** 记忆变更日志（N-MEM-JOURNAL-SOURCEJUMP）：before/after 快照 JSON 的截断上限 */
   JOURNAL_SNAPSHOT_MAX_CHARS: 2_000,
+  /** 快照超限截断时拼在尾部的后缀（面板据此判定「截断快照不可完整恢复」，单一真源） */
+  JOURNAL_SNAPSHOT_TRUNCATED_SUFFIX: '…[truncated]',
   /** 记忆变更日志：读接口默认返回条数 */
   JOURNAL_DEFAULT_LIMIT: 50,
   /** 记忆变更日志：读接口单次返回上限 */

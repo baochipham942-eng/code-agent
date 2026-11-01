@@ -4,7 +4,6 @@ import {
   CheckCircle2,
   Database,
   FileText,
-  History,
   Loader2,
   MessageSquareText,
   RotateCcw,
@@ -27,6 +26,8 @@ import type {
   MemoryEntryUpdateResult,
 } from '@shared/contract/memory';
 import { findSourceSessionRef, formatBatchReviewSkippedDetail, visibleCandidateEntryIds } from './MemoryEntriesManager.helpers';
+import { journalRestoreRequest } from './memoryJournalSnapshot';
+import { MemoryEntryHistoryList } from './MemoryEntryHistoryList';
 import { Input } from '../../../primitives';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { SettingsSection } from '../SettingsLayout';
@@ -230,6 +231,9 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
   // N-MEM-JOURNAL-SOURCEJUMP：变更历史 + 来源会话跳转
   const [journalRows, setJournalRows] = useState<MemoryChangeJournalRow[] | null>(null);
   const [journalFailed, setJournalFailed] = useState(false);
+  // N-MEM-JOURNAL-SOURCEJUMP-FU2：逐行撤回后台改写（恢复失败过的行按行标禁用）
+  const [undoFailedRowIds, setUndoFailedRowIds] = useState<Set<number>>(new Set());
+  const [journalReloadKey, setJournalReloadKey] = useState(0);
   const [sourceSessionProbe, setSourceSessionProbe] = useState<'exists' | 'missing' | 'probe-failed' | 'checking' | null>(null);
   const [openingSourceSession, setOpeningSourceSession] = useState(false);
 
@@ -315,11 +319,13 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
   // 匹配不能依赖它（r3），口径见 findSourceSessionRef。
   const { sessionId: sourceSessionId, messageId: sourceMessageId } = findSourceSessionRef(selectedEntry);
 
-  // 变更历史随选中条目加载（N-MEM-JOURNAL-SOURCEJUMP ③）
+  // 变更历史随选中条目加载（N-MEM-JOURNAL-SOURCEJUMP ③）；撤回成功后靠
+  // journalReloadKey 重拉（选中条目不变，不会因 entryId 依赖自然刷新）
   useEffect(() => {
     let cancelled = false;
     setJournalRows(null);
     setJournalFailed(false);
+    setUndoFailedRowIds(new Set());
     if (!selectedEntry) return;
     invokeMemoryEntryCommand<MemoryChangeJournalResult>({ action: 'memoryEntryJournal', entryId: selectedEntry.id })
       .then((response) => {
@@ -329,7 +335,7 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
       })
       .catch(() => { if (!cancelled) setJournalFailed(true); });
     return () => { cancelled = true; };
-  }, [selectedEntry?.id]);
+  }, [selectedEntry?.id, journalReloadKey]);
 
   // 来源会话存在性探测：在就给跳转按钮，不在就禁用并给原因（②）。
   // 走只读 sessionExists——session.load 会 restoreSession（切宿主 currentSessionId/
@@ -406,6 +412,37 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
       setMessage({ type: 'error', text: response.error || memoryText.entries.updateFailed });
     }
     setBusy(null);
+  };
+
+  // 撤回后台改写（N-MEM-JOURNAL-SOURCEJUMP-FU2）：把该行 before 快照整段写回，
+  // 复用面板保存的 memoryEntryUpdate 通道（journal 自动追加 user_manual 行，旧行不动）。
+  // 写失败按行标禁用并给原因——绝不假装恢复成功。
+  const restoreFromJournal = async (
+    row: MemoryChangeJournalRow,
+    snapshot: { title: string; content: string; status: MemoryEntryStatus },
+  ): Promise<boolean> => {
+    if (!selectedEntry || busy) return false;
+    setBusy('save');
+    let restored = false;
+    try {
+      const response = await invokeMemoryEntryCommand<MemoryEntryUpdateResult>({
+        action: 'memoryEntryUpdate',
+        ...journalRestoreRequest(selectedEntry.id, snapshot),
+      });
+      if (response.success) {
+        restored = true;
+        setMessage({ type: 'success', text: memoryText.entries.history.undo.success });
+        await loadEntries();
+        setJournalReloadKey((key) => key + 1);
+        await onChanged?.();
+      } else {
+        setMessage({ type: 'error', text: response.error || memoryText.entries.history.undo.failed });
+      }
+    } finally {
+      if (!restored) setUndoFailedRowIds((current) => new Set(current).add(row.id));
+      setBusy(null);
+    }
+    return restored;
   };
 
   return (
@@ -813,34 +850,15 @@ export const MemoryEntriesManager: React.FC<{ onChanged?: () => void | Promise<v
                   </div>
                 )}
 
-                <div className="rounded border border-zinc-800 bg-zinc-950/40 p-3 text-xs text-zinc-500" data-testid="memory-entry-history">
-                  <div className="mb-2 flex items-center gap-1.5 font-medium text-zinc-400">
-                    <History className="h-3.5 w-3.5" />
-                    {memoryText.entries.history.title}
-                  </div>
-                  {journalFailed ? (
-                    <div className="text-badge-warning">{memoryText.entries.history.failed}</div>
-                  ) : journalRows === null ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : journalRows.length === 0 ? (
-                    <div>{memoryText.entries.history.empty}</div>
-                  ) : (
-                    <ol className="space-y-1.5">
-                      {journalRows.map((row) => (
-                        <li key={row.id} className="flex items-baseline gap-2" data-testid="memory-entry-history-row">
-                          <span className="text-zinc-600">{new Date(row.timestamp).toLocaleString(localeForLanguage(language))}</span>
-                          <span className="text-zinc-400">{memoryText.entries.history.operationLabels[row.operation] ?? row.operation}</span>
-                          <span className={row.actor === 'user_manual' ? 'text-zinc-500' : 'text-badge-info'}>
-                            {memoryText.entries.history.actorLabels[row.actor] ?? row.actor}
-                          </span>
-                          {row.sessionId && (
-                            <span className="truncate font-mono text-[10px] text-zinc-600">{row.sessionId.slice(0, 12)}</span>
-                          )}
-                        </li>
-                      ))}
-                    </ol>
-                  )}
-                </div>
+                <MemoryEntryHistoryList
+                  rows={journalRows}
+                  failed={journalFailed}
+                  labels={memoryText}
+                  locale={localeForLanguage(language)}
+                  busy={busy !== null}
+                  restoreFailedRowIds={undoFailedRowIds}
+                  onRestore={restoreFromJournal}
+                />
               </div>
             ) : (
               <div className="flex h-40 items-center justify-center text-xs text-zinc-500">

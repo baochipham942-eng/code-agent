@@ -10,6 +10,7 @@ import {
   nextFrame,
   publishJourneyError,
   publishJourneyResult,
+  waitForCommitSettlement,
 } from './journey-probe-instrument';
 
 const instrument = createJourneyInstrument();
@@ -78,13 +79,21 @@ function LongSessionSurface(): React.ReactElement {
       try {
         const scroller = await waitForScroller();
         const mountedBefore = await waitForMountedTurns();
+        // Virtuoso's initial bottom alignment (initialTopMostItemIndex=LAST) keeps
+        // committing after the first turns mount; the scrub must start from a
+        // quiescent base or its commits coalesce with the settle tail.
+        await waitForCommitSettlement(instrument);
         scroller.dispatchEvent(new WheelEvent('wheel', { deltaY: -240, bubbles: true }));
         scroller.scrollTop = Math.min(240, Math.max(0, scroller.scrollHeight - scroller.clientHeight));
         scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
         await nextFrame();
+        await waitForCommitSettlement(instrument);
         scroller.scrollTop = 0;
         scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
         await nextFrame();
+        // Trailing Virtuoso size/padding commits land on their own rAF schedule;
+        // publish only once they stop.
+        await waitForCommitSettlement(instrument);
         const mountedTurns = Math.max(mountedBefore, document.querySelectorAll('[data-trace-turn-id]').length);
         if (mountedTurns < 1) throw new Error('long-session: no turns mounted after scroll');
         if (!cancelled) {

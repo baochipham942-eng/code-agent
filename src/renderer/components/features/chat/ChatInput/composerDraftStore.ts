@@ -7,6 +7,9 @@ export const COMPOSER_DRAFT_SEND_TIMEOUT_MS = 15_000;
 const COMPOSER_DRAFT_KEY_PREFIX = 'neo.composerDraft.v1:';
 const COMPOSER_DRAFT_HOME_KEY = `${COMPOSER_DRAFT_KEY_PREFIX}home`;
 
+/** Fired after a draft is written from outside the composer (boot adopting the home draft). */
+export const COMPOSER_DRAFT_ADOPTED_EVENT = 'neo:composer-draft-adopted';
+
 export type ComposerDraftSendOutcome = 'success' | 'failure' | 'timeout';
 
 interface ComposerDraftStorage {

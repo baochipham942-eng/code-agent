@@ -1,6 +1,7 @@
 // Cold-boot helpers for unsent composer drafts. A draft is keyed by the session it was typed in,
 // so boot must land on that session (or carry the home draft over) or the card never shows.
 import {
+  COMPOSER_DRAFT_ADOPTED_EVENT,
   composerDraftStorageKey,
   readComposerDraft,
   removeComposerDraft,
@@ -24,6 +25,8 @@ export function adoptHomeDraft(sessionId: string): void {
   if (text === null) return;
   if (writeComposerDraftIfAbsent(composerDraftStorageKey(sessionId, false), text)) {
     removeComposerDraft(homeKey);
+    // The composer may already be mounted on this session and has read its (then empty) draft.
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event(COMPOSER_DRAFT_ADOPTED_EVENT));
   }
 }
 

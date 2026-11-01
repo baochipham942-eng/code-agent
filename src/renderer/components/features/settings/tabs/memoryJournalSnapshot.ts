@@ -59,7 +59,7 @@ export function parseMemoryJournalSnapshot(beforeContent: string | null): Parsed
 }
 
 /** 面板手动编辑以外的一切写入路径都是后台 actor（与 MemoryRepository/列表徽标同口径） */
-export function isBackgroundMemoryActor(actor: string): boolean {
+function isBackgroundMemoryActor(actor: string): boolean {
   return actor !== 'user_manual';
 }
 

@@ -20,6 +20,7 @@ interface CronFailureCopy {
   failureTimeout: string;
   failureAuth: string;
   failureNetwork: string;
+  failureCloudUnavailable: string;
   failureOther: string;
 }
 
@@ -69,6 +70,7 @@ export function cronFailureSentence(
   if (kind === 'timeout') return copy.failureTimeout;
   if (kind === 'auth') return copy.failureAuth;
   if (kind === 'network') return copy.failureNetwork;
+  if (kind === 'cloud_unavailable') return copy.failureCloudUnavailable;
   return copy.failureOther;
 }
 

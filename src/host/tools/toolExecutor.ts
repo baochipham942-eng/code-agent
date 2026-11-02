@@ -407,6 +407,9 @@ export interface ExecuteOptions {
   allowedToolNames?: readonly string[];
   // 本轮 allowedToolNames 只是会话指挥台前台 brain 自己的工具面（ADR-059），不是 run 级硬边界：子代理不继承它，按角色声明拿工具（N-SUBAGENT-WEBSEARCH-INHERIT）。
   foregroundToolFace?: boolean;
+  // strict skill 流程面（create-role/edit-role）的 canonical 工具名：白名单判定的
+  // 合法补充（与 toolScope 同档，不放宽显式 deny）。边界内工具不被前台白名单拦（FB-327）。
+  skillBoundaryAllowedTools?: readonly string[];
   skillDiscoveryService?: SkillDiscoveryService;
   // 内部标记：本次调用由 ctx.executeTool 发起（PTC 脚本里的一次 tools.X()）。
   // 唯一作用是不给嵌套出来的 context 再签发 executeTool —— 一层封顶，防递归。
@@ -798,6 +801,7 @@ export class ToolExecutor {
       deniedToolNames: options.deniedToolNames,
       allowedToolNames: options.allowedToolNames,
       toolScope: options.toolScope,
+      skillBoundaryAllowedTools: options.skillBoundaryAllowedTools,
     }, executionToolName)) {
       logger.warn('Tool blocked by run tool policy', { toolName: executionToolName });
       recordDecision(executionToolName, params, 'policy-deny', 'run tool policy (--tools/--disallowed-tools)', Date.now(), undefined, effectiveSessionId, this.ledgerOrigin);

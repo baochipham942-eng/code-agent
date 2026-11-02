@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, it, expect } from 'vitest';
-import { filterToolDefinitionsByStrictSkillBoundary, buildStrictToolsetNotice } from '../../../src/host/tools/skillBoundaryScope';
+import { filterToolDefinitionsByStrictSkillBoundary, buildStrictToolsetNotice, canonicalStrictBoundaryToolNames } from '../../../src/host/tools/skillBoundaryScope';
 import type { SkillToolBoundary } from '../../../src/shared/contract/agentSkill';
 
 const tools = [
@@ -82,5 +82,22 @@ describe('buildStrictToolsetNotice', () => {
     expect(notice).toContain('distill');
     expect(notice).not.toContain('exit_role_flow');
     expect(notice).toContain('新开会话');
+  });
+});
+
+describe('canonicalStrictBoundaryToolNames（run 级白名单豁免名单，FB-327）', () => {
+  it('strict 边界：allowedTools 归一为 canonical 名（别名解析、模式前缀取基名）', () => {
+    const names = canonicalStrictBoundaryToolNames({
+      skillName: 'create-role',
+      strict: true,
+      allowedTools: ['propose_role', 'exit_role_flow', 'ask_user_question', 'read_file', 'Bash(git:*)'],
+    });
+    expect(names).toEqual(['propose_role', 'exit_role_flow', 'AskUserQuestion', 'Read', 'Bash']);
+  });
+
+  it('非 strict 软边界 / 无边界 / 空名单 → 空数组（不参与白名单豁免）', () => {
+    expect(canonicalStrictBoundaryToolNames({ skillName: 'create-role', allowedTools: ['propose_role'] })).toEqual([]);
+    expect(canonicalStrictBoundaryToolNames(undefined)).toEqual([]);
+    expect(canonicalStrictBoundaryToolNames({ skillName: 'create-role', strict: true, allowedTools: [] })).toEqual([]);
   });
 });

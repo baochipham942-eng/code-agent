@@ -1,5 +1,5 @@
 // ============================================================================
-// CloudRunLedger — 云端 run 账本（ADR-086 S1–S3）
+// CloudRunLedger — 云端 run 账本（ADR-087 S1–S3）
 // ============================================================================
 // 账户只从注入的 accountResolver 来（缺省 = 绑定的 AuthService 已验证会话）；
 // createRun 不收 accountId 参数，请求体里的用户字段进不到 account_id。
@@ -50,7 +50,7 @@ export function bindCloudRunAccountSource(source: CloudRunAccountSource): void {
   accountSource = source;
 }
 
-/** ADR-086 合同 1：只有 hasVerifiedSession() 为真才给出账户 id；未绑定即拒绝。 */
+/** ADR-087 合同 1：只有 hasVerifiedSession() 为真才给出账户 id；未绑定即拒绝。 */
 function defaultAccountResolver(): string | null {
   const source = accountSource;
   if (!source?.hasVerifiedSession()) return null;
@@ -73,6 +73,8 @@ interface CreateCloudRunInput {
 interface AdmitCloudRunInput extends CreateCloudRunInput {
   requestJson: string;
   clientMessageId?: string;
+  /** ADR-087 S4B：通道幂等键；仅 trigger='channel' 合法，且 channel 行必须带。 */
+  channelDeliveryId?: string;
 }
 
 export class CloudRunLedger {
@@ -105,6 +107,15 @@ export class CloudRunLedger {
   admit(input: AdmitCloudRunInput) {
     this.validateCreateInput(input);
     if (!input.requestJson) throw new Error('Cloud run requestJson must be non-empty');
+    // ADR-087「同一次触发来了两遍」：通道幂等键 (accountId, channelDeliveryId)。
+    // 带 key 的 trigger 只许是 channel；channel 行没有 key 就无法去重，也拒绝。
+    const channelDeliveryId = input.channelDeliveryId?.trim() || undefined;
+    if (channelDeliveryId && input.trigger !== 'channel') {
+      throw new Error('Cloud run channelDeliveryId is only valid with trigger channel');
+    }
+    if (input.trigger === 'channel' && !channelDeliveryId) {
+      throw new Error('Cloud run trigger channel requires a non-empty channelDeliveryId');
+    }
     const accountId = this.requireAccountId();
     const admission = this.repository.admitRun({
       runId: randomUUID(),
@@ -114,6 +125,7 @@ export class CloudRunLedger {
       workspaceId: `ws_${randomUUID()}`,
       requestJson: input.requestJson,
       clientMessageId: input.clientMessageId?.trim() || undefined,
+      channelDeliveryId,
       maxInFlight: CLOUD_RUN_MAX_IN_FLIGHT,
       now: this.clock(),
     });
@@ -128,6 +140,14 @@ export class CloudRunLedger {
     const record = this.repository.getRunForAccount(runId, accountId);
     if (!record) return null;
     return { record, position: this.repository.getQueuePosition(record) };
+  }
+
+  /**
+   * 排程方（cloudCronScheduler）要按「这本账当前解析出的账户」过滤到期行时读这里，
+   * 与 admit 的账户同一事实源；不给任何调用方开「自带 accountId 进 admit」的口子。
+   */
+  resolveAccountId(): string | null {
+    return this.accountResolver();
   }
 
   bindExecutionRunId(runId: string, executionRunId: string): CloudRunRecord {

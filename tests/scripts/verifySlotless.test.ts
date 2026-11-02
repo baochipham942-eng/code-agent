@@ -15,7 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 // @ts-expect-error —— 纯 JS 本机验证入口，无类型声明
-import { buildSlotlessConfig, buildSlotlessTemplateProvenance, copySecureStoragePair, isAlive, linkCliConnectorInstallDirectories, maskTokenRhythmKey, parseDogfoodEnv, readDogfoodCredentials, resolveSourceConfigPath, stopRun } from '../../scripts/verify-slotless.mjs';
+import { buildSlotlessConfig, buildSlotlessTemplateProvenance, copySecureStoragePair, isAlive, linkCliConnectorInstallDirectories, maskTokenRhythmKey, parseDogfoodEnv, readDogfoodCredentials, resolveSlotlessModelId, resolveSourceConfigPath, stopRun } from '../../scripts/verify-slotless.mjs';
 // @ts-expect-error —— 纯 JS 本机验证入口，无类型声明
 import { parseViewport } from '../../scripts/verify-shot.mjs';
 
@@ -77,6 +77,50 @@ describe('slotless verification scripts', () => {
       servers: [{ name: 'local-test', command: 'node', enabled: true }],
     });
     expect(config).not.toHaveProperty('ui');
+  });
+
+  it('selects the first enabled model and routes every role to it', () => {
+    const config = buildSlotlessConfig({
+      models: {
+        providers: {
+          'custom-tokenrhythm': {
+            models: {
+              'deepseek-v4-flash': { label: 'Compatibility Flash', enabled: false },
+              'deepseek-flash': { label: 'Official Flash', enabled: true },
+              'deepseek-v4-flash-0731': { label: '0731 Flash', enabled: true },
+            },
+          },
+        },
+        routing: {
+          code: { provider: 'other', model: 'other-model' },
+          fast: { provider: 'other', model: 'other-model' },
+        },
+      },
+    }, 'sk_tr_test-only-abcd');
+
+    const provider = config.models.providers['custom-tokenrhythm'];
+    expect(provider.model).toBe('deepseek-flash');
+    expect(provider.models).toEqual({
+      'deepseek-flash': { label: 'Official Flash', enabled: true },
+    });
+    expect(provider.models[provider.model].enabled).not.toBe(false);
+    expect(config.models.routing).toEqual({
+      code: { provider: 'custom-tokenrhythm', model: 'deepseek-flash' },
+      fast: { provider: 'custom-tokenrhythm', model: 'deepseek-flash' },
+    });
+  });
+
+  it('reports every candidate state when no slotless model is enabled', () => {
+    expect(() => resolveSlotlessModelId({
+      models: {
+        'deepseek-v4-flash': { enabled: false },
+        'deepseek-v4-flash-0731': { enabled: false },
+      },
+    })).toThrow(
+      'no enabled model candidate for custom-tokenrhythm: '
+      + 'deepseek-v4-flash=disabled, deepseek-flash=missing, '
+      + 'deepseek-v4-flash-0731=disabled, deepseek-v4-pro=missing',
+    );
   });
 
   it('overrides only enabledNative when native connector verification is requested', () => {

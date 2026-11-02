@@ -10,8 +10,10 @@ import {
   CronFailureNoticeGate,
   notifyCronAgentExecution,
 } from '../../../src/host/cron/cronFailurePolicy';
+import { CronCloudRuntime } from '../../../src/host/cron/cronCloudRuntime';
 import { buildCronAgentActionResult } from '../../../src/host/cron/cronNormalizers';
 import { buildCronLoginWallStopCode } from '../../../src/shared/utils/browserLoginWall';
+import { CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH } from '../../../src/shared/utils/cronCloudUnavailable';
 
 const notify = notificationService.notifyTaskComplete as ReturnType<typeof vi.fn>;
 
@@ -43,6 +45,83 @@ function execution(
 
 beforeEach(() => {
   notify.mockClear();
+});
+
+/**
+ * 真实落库路径（FU1）：CronCloudRuntime.recordFailure 在 fetch 打不通时写下的 execution，
+ * 报文是 unavailableMessage 固定句、天然没有 sessionId——不手拼对象，notify 策略门读到
+ * 什么就断言什么。
+ */
+async function cloudDownExecution(): Promise<CronJobExecution> {
+  const executions: CronJobExecution[] = [];
+  const runtime = new CronCloudRuntime(
+    () => ({ baseUrl: 'https://cron.example.test', token: 'secret-token' }),
+    {
+      getJobs: () => [],
+      persistJob: async () => {},
+      persistExecution: async (record) => { executions.push(record); },
+      loadExecutionStatus: () => undefined,
+      onCompleted: async () => {},
+      unavailableMessage: () => CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH,
+    },
+    vi.fn(async () => {
+      throw new Error('fetch failed');
+    }) as unknown as typeof fetch,
+  );
+  await runtime.addJob(definition());
+  const [record] = executions;
+  if (!record) throw new Error('recordFailure did not persist an execution');
+  return record;
+}
+
+/** 无会话执行的负例形状：其余失败类别在没有 sessionId 时仍要静默（没有点击落点）。 */
+function sessionlessExecution(error: string): CronJobExecution {
+  const record = execution(error);
+  delete record.sessionId;
+  return record;
+}
+
+// N-CRON-FAIL-PLAIN-CLOUD-DOWN-FU1：云端执行不带 sessionId（cron_executions.session_id
+// 是本地 sessions 外键），策略门此前对它一律早退——云端调度器不可用的失败被静默吞掉。
+describe('notifyCronAgentExecution 无会话云端失败', () => {
+  it('无 sessionId 的 cloud_unavailable 失败照发：带 failureKind/jobId，sessionId 空串', async () => {
+    notifyCronAgentExecution(definition(), await cloudDownExecution(), new CronFailureNoticeGate());
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: '',
+      jobId: 'job-1',
+      code: 'CRON_FAILURE',
+      failureKind: 'cloud_unavailable',
+      succeeded: false,
+    }), { force: true });
+  });
+
+  it('同因云端失败冷却窗内只告警一次（复用既有 CronFailureNoticeGate 去重）', async () => {
+    const gate = new CronFailureNoticeGate();
+    notifyCronAgentExecution(definition(), await cloudDownExecution(), gate);
+    notifyCronAgentExecution(definition(), await cloudDownExecution(), gate);
+    expect(notify).toHaveBeenCalledTimes(1);
+  });
+
+  it('无 sessionId 的其他失败仍静默（没有落点的告警不放行）', () => {
+    notifyCronAgentExecution(definition(), sessionlessExecution('fetch failed'), new CronFailureNoticeGate());
+    notifyCronAgentExecution(definition(), sessionlessExecution('429 Too Many Requests'), new CronFailureNoticeGate());
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it('带 sessionId 的 cloud_unavailable 失败载荷不变（既有路径零扰动）', () => {
+    notifyCronAgentExecution(
+      definition(),
+      execution(CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH),
+      new CronFailureNoticeGate(),
+    );
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'session-1',
+      code: 'CRON_FAILURE',
+      failureKind: 'cloud_unavailable',
+    }), { force: true });
+  });
 });
 
 describe('notifyCronAgentExecution 失败载荷', () => {

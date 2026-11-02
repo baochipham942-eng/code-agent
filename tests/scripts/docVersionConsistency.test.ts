@@ -68,6 +68,62 @@ const CLAIMS: StackClaim[] = [
   },
 ];
 
+// ============================================================================
+// ADR 索引一致性门（2026-10-28 补）：docs/ARCHITECTURE.md §ADR 索引的每一行，
+// 编号列、链接标签号与目标文件必须一一对应且目标存在。起因：决策编号撞号
+// （native-dep-manifest 与 cloud-run-ledger 曾同用 086），ledger 侧改号 087 后
+// 索引行若漏改，链接悬空没有任何既有门会红——这条钉子把「改号后索引必须跟着改」固化。
+// 自举纪律同上：锚点章节找不到 → 报红，不假绿。
+// ============================================================================
+interface AdrIndexRow {
+  rowNumber: string;
+  labelNumber: string;
+  target: string;
+}
+
+function adrIndexRows(): AdrIndexRow[] {
+  const content = fs.readFileSync(path.join(repoRoot, 'docs/ARCHITECTURE.md'), 'utf-8');
+  const headingMatch = /^## .*ADR 索引.*$/m.exec(content);
+  expect(
+    headingMatch,
+    'docs/ARCHITECTURE.md 里找不到 ADR 索引章节标题——文档改了结构就同步更新本门的锚点，别让门空转假绿',
+  ).toBeTruthy();
+  const start = (headingMatch as RegExpExecArray).index + (headingMatch as RegExpExecArray)[0].length;
+  const rest = content.slice(start);
+  const nextHeading = /^## /m.exec(rest);
+  const section = nextHeading ? rest.slice(0, nextHeading.index) : rest;
+  const rows: AdrIndexRow[] = [];
+  const rowRe = /^\|\s*(\d{3})\s*\|[^\n]*\[ADR-(\d{3})\]\(([^)]+)\)/gm;
+  for (let m = rowRe.exec(section); m; m = rowRe.exec(section)) {
+    rows.push({ rowNumber: m[1], labelNumber: m[2], target: m[3] });
+  }
+  return rows;
+}
+
+describe('docs ADR 索引行与决策文件一致', () => {
+  it('has at least one ADR row to check (gate is not scanning zero targets)', () => {
+    expect(adrIndexRows().length).toBeGreaterThanOrEqual(10);
+  });
+
+  it('每行的编号列 = 链接标签号 = 目标文件名前缀，且目标文件存在', () => {
+    for (const row of adrIndexRows()) {
+      expect(
+        row.labelNumber,
+        `docs/ARCHITECTURE.md ADR 索引行 ${row.rowNumber} 的链接标签是 ADR-${row.labelNumber}，与编号列不一致（目标 ${row.target}）`,
+      ).toBe(row.rowNumber);
+      expect(
+        row.target.startsWith(`./architecture/decisions/ADR-${row.rowNumber}-`),
+        `docs/ARCHITECTURE.md ADR 索引行 ${row.rowNumber} 的目标文件名不带同号前缀：${row.target}`,
+      ).toBe(true);
+      expect(
+        // 链接写在 docs/ARCHITECTURE.md 里，目标相对 docs/ 解析
+        fs.existsSync(path.join(repoRoot, 'docs', row.target)),
+        `docs/ARCHITECTURE.md ADR 索引行 ${row.rowNumber} 链接目标缺失：${row.target}——ADR 改号或改名后同步更新索引行`,
+      ).toBe(true);
+    }
+  });
+});
+
 describe('docs tech-stack versions match package.json', () => {
   it('has at least one claim to check (gate is not scanning zero targets)', () => {
     expect(CLAIMS.length).toBeGreaterThan(0);

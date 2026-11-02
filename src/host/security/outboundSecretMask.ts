@@ -51,7 +51,10 @@ const processMaskKey = randomBytes(32);
 /** 占位符→原值映射。只在内存；进程重启即失效（重启后旧占位符本来就不再产生）。 */
 const placeholderToValue = new Map<string, string>();
 
-function placeholderFor(entry: SecretPatternEntry, value: string): string {
+function placeholderFor(entry: SecretPatternEntry, rawValue: string): string {
+  // 后跑的规则（如 url-query-token）可能命中已含内层占位符的文本（sk-{{…}}）：
+  // 入映射前先展开内层，保证映射值恒为原文，回包只需还原一层。
+  const value = restoreText(rawValue);
   const digest = createHmac('sha256', processMaskKey).update(value, 'utf8').digest('hex').slice(0, 8);
   const placeholder = `{{SECRET_${entry.type.toUpperCase()}_${digest}}}`;
   // 8 hex 的键控摘要理论上可碰撞：先到先得，碰撞时后到的值仍被掩码（占位符不复用原值）。

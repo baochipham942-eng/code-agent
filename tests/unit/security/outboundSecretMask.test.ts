@@ -202,6 +202,35 @@ describe('outboundSecretMask ② 还原', () => {
     expect(restored.content).toBe('value = Abc123defGHI789xyz');
   });
 
+  it.each([
+    ['sk-', 'https://api.example.com/v1?api_key=sk-Abc123defGHI789xyz&x=1'],
+    ['AIza', 'https://maps.example.com/v1?key=1&token=AIzaSyA1234567890abcdefghijklmnopqrstuv'],
+  ])('嵌套命中（%s 前缀规则 + url-query-token）：回包不留内层占位符', async (_label, url) => {
+    maskOn();
+    const s = applyOutboundSecretMask([{ role: 'user', content: `curl "${url}"` }]);
+    const masked = s!.messages[0].content as string;
+    expect(masked).not.toContain('Abc123defGHI789xyz');
+    expect(masked).not.toContain('1234567890abcdefghijklmnopqrstuv');
+    const text = s!.restore({ type: 'text', content: masked });
+    expect(text.content).toBe(`curl "${url}"`);
+    const obj = s!.restore({
+      type: 'tool_use',
+      toolCalls: [{ id: 'c', name: 'bash', arguments: { cmd: masked } }],
+    });
+    expect((obj.toolCalls![0].arguments as Record<string, unknown>).cmd).toBe(`curl "${url}"`);
+    const { chunks, onStream } = collector();
+    const wrapped = applyOutboundSecretMask([{ role: 'user', content: 'x' }], onStream)!;
+    await wrapped.onStream?.({ type: 'tool_call_start', toolCall: { index: 0, id: 'c1', name: 'bash' } });
+    await wrapped.onStream?.({ type: 'tool_call_delta', toolCall: { index: 0, argumentsDelta: JSON.stringify({ cmd: masked }) } });
+    await wrapped.onStream?.({ type: 'complete', finishReason: 'stop' });
+    const args = chunks
+      .filter((chunk): chunk is StreamChunk => typeof chunk !== 'string' && chunk.type === 'tool_call_delta')
+      .map((chunk) => chunk.toolCall?.argumentsDelta)
+      .join('');
+    expect(JSON.parse(args).cmd).toBe(`curl "${url}"`);
+    expect(args).not.toContain('{{SECRET_');
+  });
+
   it('未知占位符原样保留', async () => {
     const restored = session().restore({ type: 'text', content: 'keep {{SECRET_OPENAI_KEY_00000000}} as is' });
     expect(restored.content).toBe('keep {{SECRET_OPENAI_KEY_00000000}} as is');

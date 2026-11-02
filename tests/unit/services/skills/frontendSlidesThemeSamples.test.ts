@@ -68,6 +68,33 @@ describe('frontend-slides theme-samples script', () => {
     expect(new Set(hashes).size).toBe(3);
   }, 240_000);
 
+  // 假 soffice：把收到的 pptx 抄到捕获目录再失败。不依赖真 LibreOffice，直接检查样张 PPTX 的版式。
+  function capturedSamplePptx(deckSlides: unknown[]): string[] {
+    const deck = fs.mkdtempSync(path.join(os.tmpdir(), 'theme-samples-cap-'));
+    fs.writeFileSync(path.join(deck, 'slides.json'), JSON.stringify(deckSlides), 'utf8');
+    const capture = fs.mkdtempSync(path.join(os.tmpdir(), 'theme-samples-capdir-'));
+    const fake = path.join(capture, 'fake-soffice');
+    fs.writeFileSync(fake, `#!/bin/sh\nfor last; do :; done\ncp "$last" "${capture}/$(basename "$last")"\nexit 1\n`, { mode: 0o755 });
+    const env: NodeJS.ProcessEnv = { ...process.env, LIBREOFFICE_PATH: fake };
+    delete env.NODE_PATH;
+    run(deck, env);
+    return fs.readdirSync(capture).filter((f) => f.endsWith('.pptx')).map((f) => path.join(capture, f));
+  }
+  const titleCentered = (pptx: string) =>
+    spawnSync('unzip', ['-p', pptx, 'ppt/slides/slide1.xml'], { encoding: 'utf8' }).stdout.includes('algn="ctr"');
+
+  it('lays a chosen content slide out as content, not as a cover (merge treats index 1 as cover)', () => {
+    const pptxs = capturedSamplePptx(SLIDES);
+    expect(pptxs.length).toBe(1); // fake soffice fails after the first theme
+    expect(titleCentered(pptxs[0])).toBe(false);
+  });
+
+  it('still lays a sole cover slide out as a cover', () => {
+    const pptxs = capturedSamplePptx([SLIDES[0]]);
+    expect(pptxs.length).toBe(1);
+    expect(titleCentered(pptxs[0])).toBe(true);
+  });
+
   it('prints {available:false}, exits 0 and logs the failed lookup when soffice cannot be found', () => {
     const deck = makeDeck();
     const emptyBin = fs.mkdtempSync(path.join(os.tmpdir(), 'no-soffice-'));

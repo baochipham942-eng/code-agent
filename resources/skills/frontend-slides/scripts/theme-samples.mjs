@@ -85,6 +85,13 @@ function pickSlide(dir) {
   return slides.find((slide) => slide.layout !== 'cover') ?? slides[0];
 }
 
+// The merge script treats index 1 as the cover whatever `layout` says, so a content slide
+// must keep an index >= 2 or it would be laid out as a cover.
+function sampleIndex(slide) {
+  if (slide.layout === 'cover') return 1;
+  return Math.max(Number(slide.index) || 2, 2);
+}
+
 function run(cmd, args, label) {
   const result = spawnSync(cmd, args, { encoding: 'utf8', timeout: STEP_TIMEOUT_MS });
   if (result.status !== 0) {
@@ -106,7 +113,7 @@ function pdfToPng(pdf, png) {
 function renderSample({ soffice, mergeScript, slide, theme, outDir, work }) {
   const deck = path.join(work, theme);
   fs.mkdirSync(deck, { recursive: true });
-  fs.writeFileSync(path.join(deck, 'slides.json'), JSON.stringify([{ ...slide, index: 1 }], null, 2));
+  fs.writeFileSync(path.join(deck, 'slides.json'), JSON.stringify([{ ...slide, index: sampleIndex(slide) }], null, 2));
   const pptx = path.join(deck, `${theme}.pptx`);
   run(process.execPath, [mergeScript, deck, '--text-only', '--theme', theme, '--output', pptx], `merge (${theme})`);
   // Isolated profile so a running LibreOffice instance cannot swallow the headless call.

@@ -2,7 +2,7 @@
 // 依据：FlareSolverr 按页面标题 + DOM 选择器判挑战，Cloudflare 文档按结构标记（cf-mitigated）判挑战。
 
 /** 正文短于该长度才允许用裸词（captcha / 风控 / 验证码）判挑战；真实挑战页几乎没有别的内容。 */
-export const CHALLENGE_SHORT_BODY_MAX_CHARS = 800;
+const CHALLENGE_SHORT_BODY_MAX_CHARS = 800;
 const CHALLENGE_HEADING_MAX_CHARS = 80;
 
 const CHALLENGE_TITLE = /just a moment|attention required|checking your browser|verify you are human|verifying you are human|unusual traffic|安全验证|人机验证|请稍候/i;

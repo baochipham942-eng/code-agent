@@ -41,6 +41,26 @@ export function filterToolDefinitionsByStrictSkillBoundary<T extends { name: str
 }
 
 /**
+ * strict 边界的 canonical 工具名列表（供 run 级白名单豁免用）。
+ * 非 strict 边界返回空数组——软边界（GAP-001）不参与白名单豁免。
+ * 名字已过 resolveToolAlias 归一（ask_user_question → AskUserQuestion），
+ * 调用方按大小写不敏感比较即可，不需要再带 alias 表。
+ */
+export function canonicalStrictBoundaryToolNames(
+  boundary: SkillToolBoundary | undefined,
+): string[] {
+  if (!boundary?.strict || boundary.allowedTools.length === 0) {
+    return [];
+  }
+  const names: string[] = [];
+  for (const entry of boundary.allowedTools) {
+    const canonical = canonicalToolName(entry);
+    if (canonical) names.push(canonical);
+  }
+  return names;
+}
+
+/**
  * strict 边界激活时注入给模型的说明：为什么工具变少了、超出流程范围时怎么退出。
  * 没有它，模型只会对用户编一个"当前环境受限"的泛化解释（2026-07-21 真实故障）。
  */

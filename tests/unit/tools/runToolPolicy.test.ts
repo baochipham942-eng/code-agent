@@ -78,4 +78,26 @@ describe('runToolPolicy (pure)', () => {
     expect(couldMcpServerToolsSurviveRunPolicy('slow', {})).toBe(true);
     expect(couldMcpServerToolsSurviveRunPolicy('slow', { deniedToolNames: ['mcp__slow__*'] })).toBe(true);
   });
+
+  // FB-327：create-role 跟进轮撞上会话指挥台前台白名单时，strict 流程面工具被静默
+  // 裁掉 → 模型只能念稿停摆。skillBoundaryAllowedTools 是白名单的合法补充（同 toolScope 档）。
+  it('skillBoundaryAllowedTools 豁免 strict 流程面工具穿过前台白名单', () => {
+    const foregroundFace: RunToolPolicy = {
+      allowedToolNames: ['AskUserQuestion', 'Glob', 'Grep', 'Read'],
+      skillBoundaryAllowedTools: ['propose_role', 'exit_role_flow', 'list_experts', 'AskUserQuestion', 'Read', 'Glob', 'Grep'],
+    };
+    expect(isToolDeniedByRunPolicy(foregroundFace, 'propose_role')).toBe(false);
+    expect(isToolDeniedByRunPolicy(foregroundFace, 'LIST_EXPERTS')).toBe(false);
+    // 白名单语义对其它工具不变
+    expect(isToolDeniedByRunPolicy(foregroundFace, 'Bash')).toBe(true);
+  });
+
+  it('skillBoundaryAllowedTools 不放宽显式 deny（deny 一票否决保持）', () => {
+    const policy: RunToolPolicy = {
+      allowedToolNames: ['Read'],
+      deniedToolNames: ['propose_role'],
+      skillBoundaryAllowedTools: ['propose_role'],
+    };
+    expect(isToolDeniedByRunPolicy(policy, 'propose_role')).toBe(true);
+  });
 });

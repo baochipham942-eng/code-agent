@@ -11,7 +11,6 @@ import { channelSchema } from './core';
 
 const WorkspaceDomainRequestSchema = z.object({
   action: z.enum([
-    'adoptKeptResultPage',
     'classifyPreviewFile',
     'closeLinkInRail',
     'controlUserBrowserHistory',
@@ -44,7 +43,6 @@ const WorkspaceDomainRequestSchema = z.object({
     'getDesignMdSummary',
     'getDesignSettings',
     'getFileMetadata',
-    'getKeptResultPage',
     'getPublishInfo',
     'getShareLink',
     'importDesignImage',

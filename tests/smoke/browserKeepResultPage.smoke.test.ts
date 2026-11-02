@@ -1,14 +1,10 @@
 /**
  * Smoke — N-BROWSER-KEEP-RESULT-PAGE 真浏览器端到端（真 Playwright Chromium + 本地
- * fixture 表单站，全程过 ManagedBrowserProviderAdapter / keptBrowserRegistry /
- * UserBrowserLinkService，与生产同一条链路）：
+ * fixture 表单站，全程过 ManagedBrowserProviderAdapter / keptBrowserRegistry，与生产同一条链路）：
  *
  *   1. agent run：开搜索页 → 开表单页 → 填写并提交 → keep_result_page（关掉中间页）
  *   2. run 结束（runtime.endRun）→ 结果窗仍活着（不随 binding 清理关闭）
- *   3. 用户从聊天认领（adopt，不导航）→ 提交状态原样 → 用户在字段里继续输入成功
- *   4. 用户关 rail → 窗仍 kept；闲置回收（lease 到期关窗）→ 临时 profile 目录删除、
- *      池无泄漏、条目翻 closed（URL 留存）
- *   5. 一键重开（open 保存的 URL）→ 打开的是该 URL，但表单内容不恢复
+ *   3. 闲置回收（lease 到期关窗）→ 临时 profile 目录删除、池无泄漏、条目翻 closed（URL 留存）
  *
  * 跑法：npx vitest run --config vitest.smoke.config.ts tests/smoke/browserKeepResultPage.smoke.test.ts
  * 依赖：playwright bundled chromium 已就位。
@@ -31,7 +27,6 @@ import {
 import {
   KeptBrowserRegistry,
 } from '../../src/host/services/surfaceExecution/keptBrowserRegistry';
-import { UserBrowserLinkService } from '../../src/host/services/surfaceExecution/UserBrowserLinkService';
 import { executeKeepResultPage } from '../../src/host/tools/vision/browserKeepResultPage';
 import { SURFACE_USER_BROWSER_AGENT_ID } from '../../src/shared/contract/surfaceExecution';
 
@@ -64,7 +59,6 @@ describe('browser keep_result_page end-to-end (real chromium)', () => {
   let runtime: SurfaceExecutionRuntime;
   let registry: RunRegistry;
   let adapter: ManagedBrowserProviderAdapter;
-  let links: UserBrowserLinkService;
   const agentIdentity: SurfaceRuntimeIdentityV1 = {
     conversationId: 'smoke-keep-conversation',
     runId: 'smoke-keep-run-a',
@@ -98,7 +92,6 @@ describe('browser keep_result_page end-to-end (real chromium)', () => {
       undefined,
       keptRegistry,
     );
-    links = new UserBrowserLinkService(registry, runtime, adapter, keptRegistry);
   }, 30_000);
 
   afterAll(async () => {
@@ -127,7 +120,7 @@ describe('browser keep_result_page end-to-end (real chromium)', () => {
   }, 10_000);
 
   it(
-    'agent submits the form, keeps the result page, run ends, user claims and keeps typing on the live page',
+    'agent submits the form, keeps the result page, run ends, result window stays alive, cleanup on close',
     async () => {
       // ── 1. agent run：搜索页（中间页）→ 表单页 → 填写提交 ──────────────────
       const execute = (operationId: string, action: string, provider: (service: BrowserService) => Promise<void>) =>
@@ -173,7 +166,7 @@ describe('browser keep_result_page end-to-end (real chromium)', () => {
       expect(tabsAfterKeep.length).toBe(1);
       expect(tabsAfterKeep[0].url).toContain('/form');
 
-      const keptEntry = keptRegistry.getAlive(agentIdentity.conversationId);
+      const keptEntry = keptRegistry.get(agentIdentity.conversationId);
       expect(keptEntry).toMatchObject({ url: expect.stringContaining('/form'), state: 'kept' });
 
       // ── 3. run 结束：结果窗不随清理关闭（keep 生效的直接证据）──────────────
@@ -182,49 +175,15 @@ describe('browser keep_result_page end-to-end (real chromium)', () => {
       await runtime.endRun(agentIdentity);
       expect(keptService.isRunning()).toBe(true);
       expect(pool.hasAgent(keptEntry!.serviceKey)).toBe(true);
-      expect(keptRegistry.getAlive(agentIdentity.conversationId)).not.toBeNull();
-
-      // ── 4. 用户认领：不导航，提交状态原样，继续输入成功 ────────────────────
-      const adopted = await links.adopt({
-        conversationId: agentIdentity.conversationId,
-        workspace: process.cwd(),
-      });
-      expect(adopted.surfaceSessionId).toBeTruthy();
-
-      const adoptedContent = await keptService.getPageContent();
-      expect(adoptedContent.text).toContain('Submitted: smoke-keep-value');
-
-      const notesBox = await keptService.runScript<{ x: number; y: number }>(
-        '(() => { const r = document.getElementById("notes").getBoundingClientRect(); '
-        + 'return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()',
-      );
-      await links.dispatchUserInput({
-        conversationId: agentIdentity.conversationId,
-        workspace: process.cwd(),
-        input: { kind: 'click', x: notesBox.x, y: notesBox.y },
-      });
-      await links.dispatchUserInput({
-        conversationId: agentIdentity.conversationId,
-        workspace: process.cwd(),
-        input: { kind: 'insertText', text: 'typed-after-claim' },
-      });
-      const notesValue = await keptService.runScript<string>(
-        'document.getElementById("notes").value',
-      );
-      expect(notesValue).toBe('typed-after-claim');
-
-      // ── 5. 用户关 rail：窗仍 kept（直到闲置回收/驱逐/显式关闭）────────────
-      await links.end(agentIdentity.conversationId, 'user');
-      expect(keptService.isRunning()).toBe(true);
-      expect(keptRegistry.getAlive(agentIdentity.conversationId)).not.toBeNull();
+      expect(keptRegistry.get(agentIdentity.conversationId)?.state).toBe('kept');
 
       // ── 6. 闲置回收（lease 到期 → service.close）：closed + URL 留存 + 无泄漏 ─
-      const savedUrl = keptRegistry.getAlive(agentIdentity.conversationId)!.url;
+      const savedUrl = keptRegistry.get(agentIdentity.conversationId)!.url;
       const keptServiceKey = keptEntry!.serviceKey;
       await keptService.close();
 
-      expect(keptRegistry.getAlive(agentIdentity.conversationId)).toBeNull();
-      expect(keptRegistry.snapshot(agentIdentity.conversationId)).toMatchObject({
+      expect(keptRegistry.get(agentIdentity.conversationId)?.state).toBe('closed');
+      expect(keptRegistry.get(agentIdentity.conversationId)).toMatchObject({
         state: 'closed',
         url: savedUrl,
       });
@@ -232,21 +191,6 @@ describe('browser keep_result_page end-to-end (real chromium)', () => {
       expect(fs.existsSync(profileDir)).toBe(false);
       expect(pool.hasAgent(keptServiceKey)).toBe(false);
       expect(keptService.isRunning()).toBe(false);
-
-      // ── 7. 一键重开：打开保存的 URL；表单内容不恢复（只恢复地址）──────────
-      const reopened = await links.open({
-        conversationId: agentIdentity.conversationId,
-        url: savedUrl,
-        workspace: process.cwd(),
-      });
-      expect(reopened.surfaceSessionId).toBeTruthy();
-      const reopenedContent = await pool.acquire().getPageContent();
-      expect(reopenedContent.url).toContain('/form');
-      expect(reopenedContent.text).toContain('smoke keep result form');
-      expect(reopenedContent.text).not.toContain('Submitted: smoke-keep-value');
-
-      await links.end(agentIdentity.conversationId, 'user').catch(() => undefined);
-      await pool.acquire().close().catch(() => undefined);
     },
     TIMEOUT_MS,
   );

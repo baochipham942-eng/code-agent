@@ -2,7 +2,7 @@
 //
 // 模型显式调用 browser_action keep_result_page 后，本会话的「结果页窗口」在 run
 // 结束时不随 binding 清理关掉：注册表记录 {conversationId, serviceKey, url, title,
-// keptAt}，窗口保持存活（不 in use），用户从聊天里一键认领（adopt）继续操作同一页。
+// keptAt}，窗口保持存活（不 in use），（用户认领/UI 由后续单接手，见证据档 Deferred。）
 // 闲置 30 分钟（lease 到期）/ 池满驱逐 / 用户关闭后翻成 `closed`，URL 留存供一键重开
 // （重开只恢复 URL，不恢复表单内容）。
 //
@@ -27,11 +27,6 @@ export interface KeptBrowserEntry {
   keptAt: number;
   state: KeptBrowserEntryState;
 }
-
-/** IPC/UI 用的三态快照：none=无 kept 条目；kept=窗还活着；closed=已关、URL 留存。 */
-export type KeptResultPageSnapshot =
-  | { state: 'none'; url: null; title: null }
-  | { state: KeptBrowserEntryState; url: string; title: string };
 
 /** 注册表对池的最小依赖面（测试可注入假池）。 */
 export interface KeptBrowserPoolFacade {
@@ -96,12 +91,6 @@ export class KeptBrowserRegistry {
     return entry ? { ...entry } : null;
   }
 
-  /** 存活中的 kept 条目（adopt / ensureBinding 认领判据）。 */
-  getAlive(conversationId: string): KeptBrowserEntry | null {
-    const entry = this.get(conversationId);
-    return entry?.state === 'kept' ? entry : null;
-  }
-
   /** 该池键是否仍是某会话存活中的 kept 窗（releaseBinding 跳过释放的判据）。 */
   isKeptServiceAlive(serviceKey: string): boolean {
     for (const entry of this.entries.values()) {
@@ -127,13 +116,6 @@ export class KeptBrowserRegistry {
     if (entry?.state !== 'kept') return;
     entry.url = url;
     entry.title = title;
-  }
-
-  /** IPC 三态快照。 */
-  snapshot(conversationId: string): KeptResultPageSnapshot {
-    const entry = this.entries.get(conversationId);
-    if (!entry) return { state: 'none', url: null, title: null };
-    return { state: entry.state, url: entry.url, title: entry.title };
   }
 
   private markClosedIfService(conversationId: string, serviceKey: string): void {

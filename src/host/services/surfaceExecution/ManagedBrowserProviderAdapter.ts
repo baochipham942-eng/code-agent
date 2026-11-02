@@ -411,28 +411,9 @@ export class ManagedBrowserProviderAdapter {
       && binding.browserService.isRunning()
       && Boolean(binding.browserService.getActiveTab())
     ));
-    // N-BROWSER-KEEP-RESULT-PAGE: a user run claims (adopts) the conversation's
-    // kept result window WITHOUT navigating — the live page with its submitted
-    // state stays exactly as the agent left it. Stale entries (window died
-    // without a close event) flip to closed and the user path continues.
-    let keptService: BrowserService | null = null;
-    let keptServiceKey: string | null = null;
-    if (!shared && isUserRun(identity)) {
-      const kept = this.keptRegistry.getAlive(identity.conversationId);
-      if (kept) {
-        const candidate = this.acquireBrowser(kept.serviceKey);
-        if (candidate.isRunning() && candidate.getActiveTab()) {
-          keptService = candidate;
-          keptServiceKey = kept.serviceKey;
-        } else {
-          this.keptRegistry.markClosed(identity.conversationId);
-        }
-      }
-    }
-    const serviceKey = shared?.serviceKey || keptServiceKey || managedBrowserServiceKey(identity);
+    const serviceKey = shared?.serviceKey || managedBrowserServiceKey(identity);
     const profileMode = shared?.profileMode || managedBrowserProfileModeForIdentity(identity);
     const browserService = shared?.browserService
-      || keptService
       || this.acquireBrowser(
         serviceKey === MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY ? null : serviceKey,
       );
@@ -442,7 +423,7 @@ export class ManagedBrowserProviderAdapter {
     // Do not force profileMode when reusing a live shared window — switching while
     // running throws in BrowserService.launch.
     await browserService.ensureSession('about:blank', {
-      ...((shared || keptService) ? {} : { profileMode }),
+      ...(shared ? {} : { profileMode }),
       leaseOwner,
       leaseTtlMs: SURFACE_PROFILE_TTL_MS,
     });
@@ -495,11 +476,7 @@ export class ManagedBrowserProviderAdapter {
       }
     }
     try {
-      // Kept-window adoption skips the resume import: the adopted window already
-      // carries this conversation's freshest login state from the agent run.
-      if (!keptService) {
-        await this.resumeStateStore.importForConversation(identity.conversationId, browserService);
-      }
+      await this.resumeStateStore.importForConversation(identity.conversationId, browserService);
     } catch (error) {
       this.resumeLogger.error('Failed to restore managed browser login state', {
         conversationIdHash: hashIdentity([identity.conversationId]),

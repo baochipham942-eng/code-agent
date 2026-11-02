@@ -56,15 +56,15 @@ describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
       keptAt: 1000,
       state: 'kept',
     });
-    expect(registry.getAlive('conversation-a')?.serviceKey).toBe('surface-key-1');
+    expect(registry.get('conversation-a')?.serviceKey).toBe('surface-key-1');
     expect(registry.isKeptServiceAlive('surface-key-1')).toBe(true);
     expect(registry.isKeptServiceAlive('surface-other')).toBe(false);
-    expect(registry.snapshot('conversation-a')).toEqual({
+    expect(registry.get('conversation-a')).toEqual({
       state: 'kept',
       url: 'https://example.test/result',
       title: 'Result',
     });
-    expect(registry.snapshot('conversation-b')).toEqual({ state: 'none', url: null, title: null });
+    expect(registry.get('conversation-b')).toBeNull();
     expect(pool.setKept).toHaveBeenCalledWith('surface-key-1', true);
   });
 
@@ -75,11 +75,11 @@ describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
     registry.register(input);
 
     input.browserService.emit('page_load');
-    expect(registry.getAlive('conversation-a')).not.toBeNull();
+    expect(registry.get('conversation-a')?.state).toBe('kept');
 
     input.browserService.emit('close');
-    expect(registry.getAlive('conversation-a')).toBeNull();
-    expect(registry.snapshot('conversation-a')).toEqual({
+    expect(registry.get('conversation-a')?.state).toBe('closed');
+    expect(registry.get('conversation-a')).toEqual({
       state: 'closed',
       url: 'https://example.test/result',
       title: 'Result',
@@ -88,7 +88,7 @@ describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
     expect(pool.setKept).toHaveBeenCalledWith('surface-key-1', false);
 
     input.browserService.emit('crashed');
-    expect(registry.snapshot('conversation-a').state).toBe('closed');
+    expect(registry.get('conversation-a')?.state).toBe('closed');
   });
 
   it('a newer keep closes the older kept window (one kept window per conversation)', () => {
@@ -102,8 +102,8 @@ describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
     expect(released).toEqual(['surface-key-1']);
     // 旧窗的 close 事件不会把新条目翻 closed（serviceKey 捕获在注册时）。
     first.browserService.emit('close');
-    expect(registry.getAlive('conversation-a')?.serviceKey).toBe('surface-key-2');
-    expect(registry.snapshot('conversation-a')).toEqual({
+    expect(registry.get('conversation-a')?.serviceKey).toBe('surface-key-2');
+    expect(registry.get('conversation-a')).toEqual({
       state: 'kept',
       url: 'https://example.test/next',
       title: 'Result',
@@ -130,7 +130,7 @@ describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
       browserService: service,
     });
 
-    expect(registry.getAlive('conversation-a')?.url).toBe('https://example.test/after');
+    expect(registry.get('conversation-a')?.url).toBe('https://example.test/after');
     expect(pool.releaseAgent).not.toHaveBeenCalled();
     expect(service.listenerCount()).toBe(1);
   });
@@ -141,14 +141,14 @@ describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
     registry.register(input);
 
     registry.refreshTarget('conversation-a', 'https://example.test/final', 'Final');
-    expect(registry.getAlive('conversation-a')).toMatchObject({
+    expect(registry.get('conversation-a')).toMatchObject({
       url: 'https://example.test/final',
       title: 'Final',
     });
 
     input.browserService.emit('close');
     registry.refreshTarget('conversation-a', 'https://example.test/ignored', 'Ignored');
-    expect(registry.snapshot('conversation-a')).toMatchObject({
+    expect(registry.get('conversation-a')).toMatchObject({
       url: 'https://example.test/final',
     });
   });
@@ -160,8 +160,8 @@ describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
 
     registry.markClosed('conversation-a');
 
-    expect(registry.getAlive('conversation-a')).toBeNull();
-    expect(registry.snapshot('conversation-a').state).toBe('closed');
+    expect(registry.get('conversation-a')?.state).toBe('closed');
+    expect(registry.get('conversation-a')?.state).toBe('closed');
     expect(released).toEqual(['surface-key-1']);
     registry.markClosed('conversation-a');
     expect(released).toEqual(['surface-key-1']);
@@ -172,7 +172,7 @@ describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
     registry.register(baseInput({ conversationId: 'conversation-a', serviceKey: 'surface-key-a' }));
     registry.register(baseInput({ conversationId: 'conversation-b', serviceKey: 'surface-key-b' }));
 
-    expect(registry.getAlive('conversation-a')?.serviceKey).toBe('surface-key-a');
-    expect(registry.getAlive('conversation-b')?.serviceKey).toBe('surface-key-b');
+    expect(registry.get('conversation-a')?.serviceKey).toBe('surface-key-a');
+    expect(registry.get('conversation-b')?.serviceKey).toBe('surface-key-b');
   });
 });

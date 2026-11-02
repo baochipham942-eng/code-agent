@@ -45,8 +45,11 @@ function writeFile(root: string, relativePath: string, contents = '', executable
   }
 }
 
-function createFixture(target: Target, options: { includeSqlitePrebuild?: boolean; includeKeytarNative?: boolean } = {}): string {
-  const { includeSqlitePrebuild = true, includeKeytarNative = true } = options;
+function createFixture(
+  target: Target,
+  options: { includeSqlitePrebuild?: boolean; includeKeytarNative?: boolean; channel?: 'production' | 'dev' } = {},
+): string {
+  const { includeSqlitePrebuild = true, includeKeytarNative = true, channel = 'production' } = options;
   const root = mkdtempSync(resolve(tmpdir(), 'native-dep-manifest-'));
   writeJson(root, 'package.json', { version: '0.33.0' });
   writeJson(root, 'src-tauri/tauri.conf.json', { bundle: { resources: RESOURCES } });
@@ -87,15 +90,25 @@ function createFixture(target: Target, options: { includeSqlitePrebuild?: boolea
     for (const helper of ['system-audio-capture', 'voice-aec-io', 'vision-ocr', 'vision-tagger']) {
       writeFile(root, `scripts/${helper}`, '', true);
     }
-    writeFile(root, '.tauri-resources.noindex/scripts/Agent Neo Computer Use.app/Contents/MacOS/code-agent-cua', '', true);
+    // The dev chain only stages the Dev-named app (tauri.dev.conf.json nulls the
+    // production key), so a dev fixture must not carry the production source.
+    const cuaName = channel === 'dev' ? 'Agent Neo Computer Use Dev' : 'Agent Neo Computer Use';
+    writeFile(root, `.tauri-resources.noindex/scripts/${cuaName}.app/Contents/MacOS/code-agent-cua`, '', true);
+    if (channel === 'dev') {
+      writeJson(root, 'src-tauri/tauri.dev.conf.json', { bundle: { resources: {
+        '../.tauri-resources.noindex/scripts/Agent Neo Computer Use.app': null,
+        '../.tauri-resources.noindex/scripts/Agent Neo Computer Use Dev.app': 'scripts/Agent Neo Computer Use Dev.app',
+      } } });
+    }
   }
   return root;
 }
 
-function runWriter(root: string, target: Target) {
+function runWriter(root: string, target: Target, env: Record<string, string> = {}) {
   return spawnSync(process.execPath, [writer, target, '--root', root], {
     cwd: repoRoot,
     encoding: 'utf8',
+    env: { ...process.env, ...env },
   });
 }
 
@@ -227,6 +240,29 @@ describe('gen-native-dep-manifest', () => {
     expect(result.stderr).toContain(
       'Missing native dependency manifest path: .tauri-resources.noindex/scripts/Agent Neo Computer Use.app',
     );
+    expect(existsSync(resolve(root, 'dist/native/manifest.json'))).toBe(false);
+  });
+
+  it('declares the Dev CUA app instead of the production one when NEO_CHANNEL=dev', () => {
+    const root = createFixture('darwin-arm64', { channel: 'dev' });
+    const result = runWriter(root, 'darwin-arm64', { NEO_CHANNEL: 'dev' });
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    const modules = readManifest(root).modules;
+    expect(modules['computer-use-app']).toEqual({
+      kind: 'app-bundle',
+      path: 'scripts/Agent Neo Computer Use Dev.app',
+    });
+    expect(JSON.stringify(modules)).not.toContain('scripts/Agent Neo Computer Use.app');
+  });
+
+  it('fails on an unknown NEO_CHANNEL instead of guessing', () => {
+    const root = createFixture('darwin-arm64');
+    const result = runWriter(root, 'darwin-arm64', { NEO_CHANNEL: 'staging' });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('Unsupported NEO_CHANNEL: staging');
     expect(existsSync(resolve(root, 'dist/native/manifest.json'))).toBe(false);
   });
 

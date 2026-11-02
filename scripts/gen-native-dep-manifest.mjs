@@ -29,7 +29,18 @@ const SWIFT_HELPER_RESOURCES = [
   '../scripts/vision-tagger',
 ];
 const POPPLER_RESOURCE = '../scripts/poppler';
-const CUA_APP_RESOURCE = '../.tauri-resources.noindex/scripts/Agent Neo Computer Use.app';
+
+// CUA helper 的渠道身份：与 scripts/lib/cua-channel.sh（shell 真源）同源——NEO_CHANNEL=dev 时
+// stage 与 bundle 的都是 Dev 名字 .app（tauri.dev.conf.json 把生产键置 null）。空串按未设置
+// 处理（shell `:-` 语义）。改渠道名要连 cua-channel.sh / src/shared/cuaHelperChannel.ts 一起。
+function cuaAppResource() {
+  const channel = process.env.NEO_CHANNEL || 'production';
+  if (channel !== 'production' && channel !== 'dev') {
+    throw new Error(`Unsupported NEO_CHANNEL: ${channel} (only production / dev)`);
+  }
+  const appName = channel === 'dev' ? 'Agent Neo Computer Use Dev' : 'Agent Neo Computer Use';
+  return `../.tauri-resources.noindex/scripts/${appName}.app`;
+}
 
 function parseArgs(argv) {
   let target = `${process.platform}-${process.arch}`;
@@ -186,8 +197,9 @@ function buildModules(root, resources, nativeRoot, target) {
     };
   }
 
-  requireExists(root, resourceSource(resources, CUA_APP_RESOURCE, target));
-  modules['computer-use-app'] = { kind: 'app-bundle', path: resourceTarget(resources, CUA_APP_RESOURCE, target) };
+  const cuaResource = cuaAppResource();
+  requireExists(root, resourceSource(resources, cuaResource, target));
+  modules['computer-use-app'] = { kind: 'app-bundle', path: resourceTarget(resources, cuaResource, target) };
 
   return modules;
 }
@@ -196,10 +208,23 @@ function main() {
   const { root, target } = parseArgs(process.argv.slice(2));
   const appPackage = readJson(path.join(root, 'package.json'));
   const tauriConfig = readJson(path.join(root, 'src-tauri', 'tauri.conf.json'));
-  const resources = tauriConfig.bundle?.resources;
-  const nativeRoot = !Array.isArray(resources) ? resources?.['../dist/native'] : undefined;
+  const baseResources = tauriConfig.bundle?.resources;
+  const nativeRoot = !Array.isArray(baseResources) ? baseResources?.['../dist/native'] : undefined;
   if (typeof nativeRoot !== 'string') {
     throw new Error("Tauri resource mapping '../dist/native' must have a string target");
+  }
+
+  // dev overlay（tauri.dev.conf.json）把生产 CUA 键置 null、补 Dev 名字键。渠道已决定查哪把
+  // 键，冲突时以 base 为准（{...dev, ...base}）：null 删除标记只影响真的做 merge-patch 的
+  // tauri build，本脚本按渠道选键，不会被 null 分支误导。overlay 缺席 = 纯生产树，照常工作。
+  let resources = baseResources;
+  try {
+    const devOverlay = readJson(path.join(root, 'src-tauri', 'tauri.dev.conf.json')).bundle?.resources;
+    if (devOverlay && typeof devOverlay === 'object' && !Array.isArray(devOverlay)) {
+      resources = { ...devOverlay, ...baseResources };
+    }
+  } catch {
+    // no dev overlay conf: production-only tree
   }
 
   const modules = buildModules(root, resources, nativeRoot, target);

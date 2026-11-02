@@ -820,6 +820,16 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     aliases: ['propose role', 'draft role', 'create role', 'edit role', '建角色', '改角色'],
     source: 'builtin',
   },
+  // 注：exit_role_flow 与 propose_role 同一面（create-role/edit-role 的 allowedTools 都
+  // 声明了它），漏登记时 strict 收窄说明让模型「调用 exit_role_flow 退出流程」，但
+  // deferred 模式下 selectTool 查不到 → 永不进工具表 → 模型只能对用户说「环境受限」。
+  {
+    name: 'exit_role_flow',
+    shortDescription: '退出建/改角色严格流程：恢复完整工具集，未确认草稿保留在确认卡上',
+    tags: ['planning'],
+    aliases: ['exit role flow', 'leave role flow', '退出建角色', '退出改角色', '退出流程'],
+    source: 'builtin',
+  },
   {
     name: 'read_xlsx',
     shortDescription: '读取 Excel/CSV 表格内容（结构化取数，别用 Bash 硬啃）',

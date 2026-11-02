@@ -63,6 +63,7 @@ import { useAppshots } from './hooks/useAppshots';
 import { useSurfaceExecutionPip } from './hooks/useSurfaceExecutionPip';
 import { useSurfaceExecutionEffects } from './hooks/agent/effects/useSurfaceExecutionEffects';
 import { useAgentHalo } from './hooks/useAgentHalo';
+import { useConnectorRequiredWatcher } from './hooks/useConnectorRequiredWatcher';
 import { useRendererBundleAutoReload } from './hooks/useRendererBundleAutoReload';
 import { IPC_CHANNELS, IPC_DOMAINS, type ConfirmActionRequest } from '@shared/ipc';
 import type { AppSettings, ModelConfig, MCPElicitationRequest, MCPOAuthConsentRequest, UpdateInfo } from '@shared/contract';
@@ -148,6 +149,7 @@ export const App: React.FC = () => {
   useAppshots(); // 挂载 Appshots 事件监听（热键截图 → composer）
   useSurfaceExecutionPip(); // 当前会话 Browser / Computer 共享的可信实时 PiP
   useAgentHalo(); // CUA 原生驱动时的系统级光晕跟随（单指针共驾聚光灯）
+  useConnectorRequiredWatcher(); // 连接卡 pending 时盯连接状态，连上后追加续跑消息
   useInAppValidationBridge(); // browser-control 共用验证链路，不依赖内部评测包
   const {
     showSettings,

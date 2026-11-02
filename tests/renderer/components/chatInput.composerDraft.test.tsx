@@ -11,6 +11,7 @@ import {
   readComposerDraft,
 } from '../../../src/renderer/components/features/chat/ChatInput/composerDraftStore';
 import { useComposerDraftPersistence } from '../../../src/renderer/components/features/chat/ChatInput/useComposerDraftPersistence';
+import { openInitialSession } from '../../../src/renderer/stores/sessionBootDraft';
 import { UnsentDraftNotice } from '../../../src/renderer/components/features/chat/ChatInput/UnsentDraftNotice';
 
 vi.mock('../../../src/renderer/hooks/useI18n', () => ({
@@ -338,5 +339,49 @@ describe('UnsentDraftNotice restart', () => {
     fireEvent.click(screen.getByTestId('unsent-draft-discard'));
     expect(screen.queryByTestId('unsent-draft-notice')).toBeNull();
     expect(readComposerDraft(KEY_A)).toBeNull();
+  });
+
+  it('shows the card when boot adopts the home draft onto the already-mounted session', async () => {
+    localStorage.setItem(composerDraftStorageKey(null, false)!, JSON.stringify({ v: 1, text: 'typed with no session' }));
+    render(<DraftHarness sessionId="fresh-session" />);
+    expect(screen.queryByTestId('unsent-draft-notice')).toBeNull();
+    await act(async () => {
+      await openInitialSession({
+        sessions: [],
+        isBlank: () => true,
+        switchSession: async () => undefined,
+        createSession: async () => ({ id: 'fresh-session' }),
+      });
+    });
+    expect(screen.getByTestId('unsent-draft-notice')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('unsent-draft-put-back'));
+    expect((screen.getByTestId('composer-draft-box') as HTMLTextAreaElement).value).toBe('typed with no session');
+  });
+
+  it('home key (no session): saves, restores on a fresh mount, and clears after a successful send', async () => {
+    const HOME = composerDraftStorageKey(null, false)!;
+    const first = renderHook(
+      ({ value }: { value: string }) => useComposerDraftPersistence({
+        sessionId: null, sessionless: false, value, setValue: () => undefined,
+      }),
+      { initialProps: { value: 'home task description' } },
+    );
+    await act(async () => { await vi.advanceTimersByTimeAsync(COMPOSER_DRAFT_DEBOUNCE_MS); });
+    expect(readComposerDraft(HOME)).toBe('home task description');
+    first.unmount();
+
+    const setValue = vi.fn();
+    const second = renderHook(() => useComposerDraftPersistence({
+      sessionId: null, sessionless: false, value: '', setValue,
+    }));
+    expect(second.result.current.notice?.preview).toBe('home task description');
+    act(() => { second.result.current.putBack(); });
+    expect(setValue).toHaveBeenCalledWith('home task description');
+
+    let tracked: Promise<boolean | 'timeout'> = Promise.resolve(false);
+    act(() => { tracked = second.result.current.trackSend(() => Promise.resolve(true)); });
+    await act(async () => { await tracked; });
+    expect(readComposerDraft(HOME)).toBeNull();
+    expect(second.result.current.notice).toBeNull();
   });
 });

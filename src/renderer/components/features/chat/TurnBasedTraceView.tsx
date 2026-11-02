@@ -10,6 +10,7 @@ import type { TraceProjection, TraceTurn } from '@shared/contract/trace';
 import type { SearchMatch } from './ChatSearchBar';
 import { TurnCard } from './TurnCard';
 import { TurnRail } from './TurnRail';
+import { startSearchMatchSettlement } from './searchMatchSettlement';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useTaskStore } from '../../../stores/taskStore';
@@ -691,12 +692,18 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     activeDisplayScrollCancelRef.current?.();
     activeDisplayScrollCancelRef.current = null;
 
-    virtuosoRef.current?.scrollToIndex({
-      index: activeMatch.turnIndex,
-      align: 'center',
-      // Search is exact navigation. Long virtualized jumps can be dropped or
-      // left unfinished when animated across hundreds of unmounted items.
-      behavior: 'auto',
+    // N-MEM-JOURNAL-SOURCEJUMP r3：落点滚动用 settlement（跨帧重发，见
+    // searchMatchSettlement 的头注释与真跑证据），不再是一次性 scrollToIndex。
+    return startSearchMatchSettlement({
+      activeMatch,
+      turns: projectionTurnsRef.current,
+      readTurns: () => projectionTurnsRef.current,
+      virtuosoRef,
+      scrollerElementRef,
+      followFlagRef: keepActiveOutputVisibleRef,
+      cancelSlotRef: activeDisplayScrollCancelRef,
+      findTurnElement: (scroller, turnId) =>
+        scroller.querySelector<HTMLElement>(getTraceTurnSelector(turnId)),
     });
   }, [activeMatchIndex, searchMatches]);
 

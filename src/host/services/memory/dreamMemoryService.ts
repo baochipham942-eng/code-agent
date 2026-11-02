@@ -5,6 +5,7 @@ import type {
   MemoryEntryKind,
   MemoryEntryListResult,
   MemoryEntryUpdateResult,
+  MemoryChangeJournalContext,
 } from '../../../shared/contract/memory';
 import type { MemoryRecord, StoredSession } from '../core/repositories';
 import {
@@ -21,6 +22,9 @@ import {
 } from '../history/transcriptHistoryService';
 
 export const DREAM_MEMORY_SOURCE = 'dream';
+
+/** dream 写入的 journal actor（N-MEM-JOURNAL-SOURCEJUMP）：后台固化要可见、可回溯 */
+const DREAM_JOURNAL: MemoryChangeJournalContext = { actor: 'dream' };
 
 const DEFAULT_WINDOW_DAYS = 7;
 const DEFAULT_SESSION_LIMIT = 50;
@@ -97,8 +101,8 @@ export interface DreamMemoryDatabase extends TranscriptHistoryDatabase {
 export interface DreamMemoryIO {
   listEntries(db: DreamMemoryDatabase): Promise<MemoryEntryListResult>;
   writeEntry(entry: MemoryEntry): Promise<unknown>;
-  createMirror(db: DreamMemoryDatabase, entry: MemoryEntry, options?: { metadata?: Record<string, unknown>; category?: string }): MemoryRecord;
-  updateEntry(db: DreamMemoryDatabase, request: { entryId: string; status: 'stale' }): Promise<MemoryEntryUpdateResult | unknown>;
+  createMirror(db: DreamMemoryDatabase, entry: MemoryEntry, options?: { metadata?: Record<string, unknown>; category?: string; journal?: MemoryChangeJournalContext }): MemoryRecord;
+  updateEntry(db: DreamMemoryDatabase, request: { entryId: string; status: 'stale' }, options?: { journal?: MemoryChangeJournalContext }): Promise<MemoryEntryUpdateResult | unknown>;
 }
 
 export interface DreamRunOptions {
@@ -312,7 +316,7 @@ async function pruneStaleDreamEntries(
   const pruned: string[] = [];
   for (const entry of entries) {
     if (entry.status !== 'active' || !isDreamOwned(entry) || entry.updatedAt >= cutoff) continue;
-    await memoryIO.updateEntry(db, { entryId: entry.id, status: 'stale' });
+    await memoryIO.updateEntry(db, { entryId: entry.id, status: 'stale' }, { journal: DREAM_JOURNAL });
     pruned.push(entry.id);
   }
   return pruned;
@@ -391,6 +395,7 @@ export async function runDreamMemoryConsolidation(options: DreamRunOptions): Pro
     await memoryIO.writeEntry(entry);
     memoryIO.createMirror(options.db, entry, {
       category: 'flush_decision',
+      journal: DREAM_JOURNAL,
       metadata: {
         dream: {
           source: DREAM_MEMORY_SOURCE,

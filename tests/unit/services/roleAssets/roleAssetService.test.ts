@@ -356,7 +356,7 @@ describe('roleAssetService', () => {
 
     it('counts only index entries in the omitted tail (N-SUBAGENT-DOMAIN-MEMORY-REST1: blank/non-bullet lines do not inflate N)', async () => {
       await ensureRoleAssetDirs('研究员');
-      // 200 条目 + 3 条目 + 2 空行 + 1 标题行 = 206 物理行被裁 6 行，但条目只有 3 条。
+      // trim 去掉末尾空行后共 205 行：物理行被裁 5 行，但条目只有 3 条。
       const bullets = Array.from({ length: ROLE_ASSETS.INDEX_MAX_LINES + 3 }, (_, index) => `- entry-${index}`);
       const content = `${bullets.join('\n')}\n\n# tail header\n\n`;
       await fs.writeFile(path.join(getRoleDir('研究员'), 'MEMORY.md'), content, 'utf-8');
@@ -364,7 +364,7 @@ describe('roleAssetService', () => {
       const result = await loadScopedMemoryIndex({ scope: 'role', roleId: '研究员' });
 
       expect(result).toContain('OmittedMemoryIndexNotice: 省略了 3 条记忆索引条目');
-      expect(result).not.toContain('省略了 6 条');
+      expect(result).not.toContain('省略了 5 条');
       expect(result).not.toContain('- entry-200');
     });
 

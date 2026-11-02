@@ -91,6 +91,7 @@ export const cronCenterZh = {
     loginWallOpenSite: '在 Neo 浏览器中登录',
     // 失败人话（N-CRON-FAIL-PLAIN）：一句原因 + 一个下一步。重置时间由调用方填好，取不到用「以服务商为准」。
     failureNotificationTitle: '定时任务没跑成 · {name}',
+    failureToastView: '查看',
     failureQuotaWithReset: '模型额度/余额用完了，预计 {when} 恢复（以服务商为准）',
     failureQuotaWithResetAndLimit: '模型额度/余额用完了（{limit}），预计 {when} 恢复（以服务商为准）',
     failureQuotaUnknown: '模型额度/余额用完了。恢复时间以服务商为准',
@@ -497,6 +498,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     loginWallError: 'Log in to {site} in the Neo browser. This scheduled run was stopped.',
     loginWallOpenSite: 'Log in using Neo browser',
     failureNotificationTitle: "Scheduled task didn't finish · {name}",
+    failureToastView: 'View',
     failureQuotaWithReset: 'The model quota or balance is used up. It should be back around {when} (the provider decides).',
     failureQuotaWithResetAndLimit: 'The model quota or balance is used up ({limit}). It should be back around {when} (the provider decides).',
     failureQuotaUnknown: 'The model quota or balance is used up. The provider decides when it resets.',

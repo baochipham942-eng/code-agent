@@ -27,21 +27,7 @@ export function useCronOsNotification(
   const lastEventRef = useRef<NotificationShowEvent | null>(null);
 
   useEffect(() => {
-    const unsubscribe = ipcService.on(
-      IPC_CHANNELS.NOTIFICATION_SHOW,
-      (event: NotificationShowEvent) => {
-        lastSessionIdRef.current = event.sessionId;
-        lastEventRef.current = event;
-        void postOsNotification(translateCronOsNotification(
-          event,
-          copyRef.current,
-          useAppStore.getState().language,
-        ), { urgent: event.urgent === true });
-      },
-    );
-    let disposed = false;
-    let unregister: (() => Promise<void>) | undefined;
-    void registerNotificationClick(() => {
+    const openFromNotification = () => {
       const event = lastEventRef.current;
       // The native notification is a consent boundary only for login-wall stops;
       // other cron notifications must never grant browser pass-through.
@@ -56,7 +42,26 @@ export function useCronOsNotification(
         useCronStore.getState().selectJob(cloudDownJobId);
         useAppStore.getState().setShowCronCenter(true);
       }
-    }).then((cleanup) => {
+    };
+    const unsubscribe = ipcService.on(
+      IPC_CHANNELS.NOTIFICATION_SHOW,
+      (event: NotificationShowEvent) => {
+        lastSessionIdRef.current = event.sessionId;
+        lastEventRef.current = event;
+        void postOsNotification(translateCronOsNotification(
+          event,
+          copyRef.current,
+          useAppStore.getState().language,
+        ), {
+          urgent: event.urgent === true,
+          onOpen: openFromNotification,
+          openLabel: copyRef.current.failureToastView,
+        });
+      },
+    );
+    let disposed = false;
+    let unregister: (() => Promise<void>) | undefined;
+    void registerNotificationClick(openFromNotification).then((cleanup) => {
       if (disposed) {
         void cleanup?.();
       } else {

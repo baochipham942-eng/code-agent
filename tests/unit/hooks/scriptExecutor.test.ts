@@ -325,3 +325,52 @@ describe('executeScript output parsing', () => {
     expect(fs.existsSync(path.join(spillTestRoot, 'tmp'))).toBe(false);
   });
 });
+
+// ============================================================================
+// N-CSV-ATTACH-PREVIEW-AND-VISIBILITY-FU2 — 懒开会话工作目录下的 hook 执行
+// ----------------------------------------------------------------------------
+// 规划中的会话工作目录在首个会写 cwd 的工具派发前不存在（N-DELIVERABLE-WORKDIR-LAZY），
+// 而 UserPromptSubmit/PreToolUse 等 hook 在那之前就跑。缺失 cwd 下 exec 必须回退到
+// 存在的目录照常执行（此前是 `spawn /bin/sh ENOENT` 整批报错，Hooks 行显示
+// 「N 个出错」）；hook 子进程的 stdin 也要立刻 EOF（CC 兼容脚本按 stdin 读事件
+// 负载，父进程持有不关的管道会让它们挂满 timeout）。
+// ============================================================================
+describe('executeScript with not-yet-materialized work dir', () => {
+  beforeEach(() => {
+    fs.rmSync(spillTestRoot, { recursive: true, force: true });
+  });
+
+  afterAll(() => {
+    fs.rmSync(spillTestRoot, { recursive: true, force: true });
+  });
+
+  it('runs the hook successfully when the session work dir does not exist yet', async () => {
+    const missingDir = path.join(os.tmpdir(), `neo-hook-missing-cwd-${process.pid}-${Date.now()}`);
+    expect(fs.existsSync(missingDir)).toBe(false);
+
+    const result = await executeScript(
+      { command: `echo "hook-ok"` },
+      { ...buildPostToolContext(), workingDirectory: missingDir },
+    );
+
+    expect(result.action).toBe('allow');
+    expect(result.message).toBe('hook-ok');
+    expect(result.error).toBeUndefined();
+    expect(fs.existsSync(missingDir)).toBe(false); // 回退执行，不提前落盘目录
+  });
+
+  it('gives stdin-reading hook scripts an immediate EOF instead of hanging to timeout', async () => {
+    const missingDir = path.join(os.tmpdir(), `neo-hook-missing-cwd-${process.pid}-${Date.now()}`);
+    // 读 stdin 直到 EOF 才退出的 CC 兼容形状；stdin 不关时这里会挂满 timeout
+    const command = `node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{process.stdout.write("eof:"+d.length);process.exit(0)})'`;
+
+    const result = await executeScript(
+      { command, timeout: 4000 },
+      { ...buildPostToolContext(), workingDirectory: missingDir },
+    );
+
+    expect(result.action).toBe('allow');
+    expect(result.message).toBe('eof:0');
+    expect(result.error).toBeUndefined();
+  });
+});

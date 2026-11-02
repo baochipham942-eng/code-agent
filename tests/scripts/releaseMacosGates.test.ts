@@ -177,7 +177,12 @@ describe('macOS release fail-closed gates', () => {
     expect(verifyScript).toContain('LEGACY_RESOURCES_ROOT="${APP_RESOURCES_DIR}/_up_"');
     expect(verifyScript).toContain('RESOURCES_ROOT="${APP_RESOURCES_DIR}"');
     expect(verifyScript).toContain('dist/bundled-node/bin/node');
-    expect(verifyScript).toContain('dist/native/better-sqlite3/prebuilds/${BETTER_SQLITE3_PREBUILD_NAME}');
+    expect(verifyScript).toContain('scripts/verify-native-manifest.mjs');
+    expect(verifyScript).toContain('--platform "${EXPECTED_NATIVE_PLATFORM}"');
+    expect(verifyScript).toContain('--closure');
+    expect(verifyScript).toContain('manifest.modules["better-sqlite3"].native');
+    expect(verifyScript).toContain('lipo -archs "${REQUIRED_BETTER_SQLITE3_NATIVE}"');
+    expect(verifyScript).toContain('architecture matches manifest platform ${EXPECTED_NATIVE_PLATFORM}');
     expect(verifyScript).toContain('better-sqlite3 native loads with bundled Node ABI');
     expect(verifyScript).toContain('codesign --verify --deep --strict');
     expect(verifyScript).toContain('Authority=Developer ID Application:');
@@ -290,7 +295,8 @@ describe('macOS release fail-closed gates', () => {
       {
         path: '.github/workflows/release.yml',
         job: 'build-mac',
-        step: 'Build signed Tauri updater bundle',
+        manifestStep: 'Build signed Tauri updater bundle',
+        buildStep: 'Build signed Tauri updater bundle',
         overlay: 'node scripts/tauri-arch-config.mjs x64',
         writer: 'node scripts/gen-native-dep-manifest.mjs "darwin-${{ matrix.arch }}"',
         build: 'bash scripts/tauri-release-bundle.sh',
@@ -298,7 +304,8 @@ describe('macOS release fail-closed gates', () => {
       {
         path: '.github/workflows/build-x64-test.yml',
         job: 'build-x64-test',
-        step: 'Build signed + notarized x64 bundle',
+        manifestStep: 'Build signed + notarized x64 bundle',
+        buildStep: 'Build signed + notarized x64 bundle',
         overlay: 'node scripts/tauri-arch-config.mjs x64',
         writer: 'node scripts/gen-native-dep-manifest.mjs darwin-x64',
         build: 'bash scripts/tauri-release-bundle.sh',
@@ -306,7 +313,8 @@ describe('macOS release fail-closed gates', () => {
       {
         path: '.github/workflows/release.yml',
         job: 'build-windows',
-        step: 'Build NSIS bundle (unsigned, minisign updater artifacts)',
+        manifestStep: 'Prepare Windows overlay and native manifest',
+        buildStep: 'Build NSIS bundle (unsigned, minisign updater artifacts)',
         overlay: 'node scripts/tauri-platform-config.mjs win32-x64',
         writer: 'node scripts/gen-native-dep-manifest.mjs win32-x64',
         build: 'cargo tauri build',
@@ -314,7 +322,8 @@ describe('macOS release fail-closed gates', () => {
       {
         path: '.github/workflows/build-windows-test.yml',
         job: 'build-windows-test',
-        step: 'Build NSIS bundle (unsigned, minisign updater artifacts)',
+        manifestStep: 'Prepare Windows overlay and native manifest',
+        buildStep: 'Build NSIS bundle (unsigned, minisign updater artifacts)',
         overlay: 'node scripts/tauri-platform-config.mjs win32-x64',
         writer: 'node scripts/gen-native-dep-manifest.mjs win32-x64',
         build: 'cargo tauri build',
@@ -322,16 +331,47 @@ describe('macOS release fail-closed gates', () => {
     ];
 
     for (const testCase of cases) {
-      const workflow = readWorkflow(testCase.path);
-      const step = workflow.jobs?.[testCase.job]?.steps?.find((candidate) => candidate.name === testCase.step);
-      const run = step?.run ?? '';
+      const steps = readWorkflow(testCase.path).jobs?.[testCase.job]?.steps ?? [];
+      const manifestIndex = steps.findIndex((candidate) => candidate.name === testCase.manifestStep);
+      const buildIndex = steps.findIndex((candidate) => candidate.name === testCase.buildStep);
+      const run = steps[manifestIndex]?.run ?? '';
+      const buildRun = steps[buildIndex]?.run ?? '';
       expect(run).toContain(testCase.overlay);
-      expect(run).toContain(testCase.build);
+      expect(buildRun).toContain(testCase.build);
       expect(run, `${testCase.path} ${testCase.job} must generate the native manifest`).toContain(testCase.writer);
       expect(run.indexOf(testCase.writer), `${testCase.path} ${testCase.job} writer follows overlay`)
         .toBeGreaterThan(run.indexOf(testCase.overlay));
-      expect(run.indexOf(testCase.writer), `${testCase.path} ${testCase.job} writer precedes build`)
-        .toBeLessThan(run.indexOf(testCase.build));
+      if (manifestIndex === buildIndex) {
+        expect(run.indexOf(testCase.writer), `${testCase.path} ${testCase.job} writer precedes build`)
+          .toBeLessThan(run.indexOf(testCase.build));
+      } else {
+        expect(buildIndex, `${testCase.path} ${testCase.job} writer precedes build`).toBeGreaterThan(manifestIndex);
+      }
+    }
+  });
+
+  it('verifies the Windows native manifest closure and real database load before bundling', () => {
+    const verifier = readRepoFile('scripts/verify-windows-release.mjs');
+    expect(verifier).toContain('scripts/verify-native-manifest.mjs');
+    expect(verifier).toContain("'win32-x64'");
+    expect(verifier).toContain("'--closure'");
+    expect(verifier).toContain("manifest.modules['better-sqlite3'].entry");
+    expect(verifier).toContain("new Database(':memory:')");
+    expect(verifier).toContain('dist/bundled-node/node.exe');
+    expect(verifier).toContain('better-sqlite3 bundled Node load skipped (not Windows)');
+    expect(verifier).not.toContain("check('dist/native/better-sqlite3/prebuilds/win32-x64.node");
+    expect(verifier).not.toContain("check('node_modules/better-sqlite3/prebuilds/win32-x64.node'");
+
+    for (const workflowPath of ['.github/workflows/release.yml', '.github/workflows/build-windows-test.yml']) {
+      const steps = readWorkflow(workflowPath).jobs?.[workflowPath.includes('build-windows-test') ? 'build-windows-test' : 'build-windows']?.steps ?? [];
+      const stepNames = steps.map((step) => step.name);
+      const manifestIndex = stepNames.indexOf('Prepare Windows overlay and native manifest');
+      const preIndex = stepNames.indexOf('Verify bundle resources (pre)');
+      const buildIndex = stepNames.indexOf('Build NSIS bundle (unsigned, minisign updater artifacts)');
+      expect(manifestIndex, `${workflowPath} prepares the manifest before verification`).toBeGreaterThanOrEqual(0);
+      expect(preIndex).toBeGreaterThan(manifestIndex);
+      expect(buildIndex).toBeGreaterThan(preIndex);
+      expect(steps[preIndex]?.run).toBe('node scripts/verify-windows-release.mjs --stage pre');
     }
   });
 

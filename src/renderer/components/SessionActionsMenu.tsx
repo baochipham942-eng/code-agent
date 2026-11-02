@@ -38,6 +38,7 @@ import {
 } from './features/sidebar/sessionContextMenuItems';
 import { useI18n } from '../hooks/useI18n';
 import { useBundledCapabilityStore } from '../stores/bundledCapabilityStore';
+import { useMenuKeyboardNav } from '../hooks/useMenuKeyboardNav';
 
 const VoiceAuditDialog = React.lazy(() => import('./features/voice/VoiceAuditDialog').then((module) => ({
   default: module.VoiceAuditDialog,
@@ -55,6 +56,8 @@ export const SessionActionsMenu: React.FC = () => {
     replay: StructuredReplay;
   } | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
 
   const appWorkingDirectory = useAppStore((s) => s.workingDirectory);
   const setAppWorkingDirectory = useAppStore((s) => s.setWorkingDirectory);
@@ -86,18 +89,16 @@ export const SessionActionsMenu: React.FC = () => {
       if (!wrapperRef.current) return;
       if (!wrapperRef.current.contains(e.target as Node)) setOpen(false);
     };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
     document.addEventListener('mousedown', onMouseDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onMouseDown);
-      document.removeEventListener('keydown', onKey);
-    };
+    return () => document.removeEventListener('mousedown', onMouseDown);
   }, [open]);
 
   const close = useCallback(() => setOpen(false), []);
+  const closeAndReturnFocus = useCallback(() => {
+    setOpen(false);
+    triggerRef.current?.focus();
+  }, []);
+  useMenuKeyboardNav(open, menuRef, closeAndReturnFocus);
 
   const currentBackgroundSession = backgroundSessions.find((session) => session.sessionId === currentSessionId) || undefined;
   const currentSessionRuntime = currentSessionId ? sessionRuntimes.get(currentSessionId) : undefined;
@@ -377,19 +378,23 @@ export const SessionActionsMenu: React.FC = () => {
   return (
     <div ref={wrapperRef} className="relative">
       <IconButton
+        ref={triggerRef}
         icon={<MoreHorizontal className="w-4 h-4" />}
         aria-label={sam.menuAria}
+        aria-haspopup="menu"
+        aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         variant="ghost"
         size="md"
         className={open ? 'text-zinc-100' : 'text-zinc-400 hover:text-zinc-100'}
       />
       {open && (
-        <div className="absolute top-full left-0 mt-1 w-48 rounded-lg border border-white/[0.1] bg-zinc-900/95 p-1 shadow-xl backdrop-blur z-40">
+        <div ref={menuRef} role="menu" aria-label={sam.menuAria} className="absolute top-full left-0 mt-1 w-48 rounded-lg border border-white/[0.1] bg-zinc-900/95 p-1 shadow-xl backdrop-blur z-40">
           {items.map((item) => (
             <button
               key={item.key}
               type="button"
+              role="menuitem"
               onClick={item.onClick}
               disabled={item.disabled}
               className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors ${

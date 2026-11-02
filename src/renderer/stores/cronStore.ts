@@ -1,10 +1,12 @@
 import { create } from 'zustand';
+import type { CronEventActionMode } from '@shared/contract/cron';
 import type {
   CronJobDefinition,
   CronJobExecution,
   CronServiceStats,
 } from '@shared/contract';
 import { isRoleBoundCronJob } from '@shared/cronRoleBinding';
+import { isWebhookCronJob } from '@shared/cronWebhookJob';
 import {
   cronClient,
   type CreateCronJobInput,
@@ -48,6 +50,8 @@ interface CronState {
   updateJob: (jobId: string, updates: UpdateCronJobInput) => Promise<CronJobDefinition | null>;
   deleteJob: (jobId: string) => Promise<boolean>;
   triggerJob: (jobId: string) => Promise<CronJobExecution | null>;
+  /** 事件自动化执行档切换（调用方负责先弹确认框）；成功后刷新任务表。 */
+  setEventActionMode: (jobId: string, mode: CronEventActionMode) => Promise<CronJobDefinition | null>;
 }
 
 async function loadLatestExecution(jobId: string): Promise<CronJobExecution | null> {
@@ -178,8 +182,8 @@ export const useCronStore = create<CronState>()((set, get) => ({
       selectedJobId: created.id,
       // 角色绑定任务保存后编辑器保持打开：组件切到「已保存」复述视图，Done 才关
       // （N-ROLE-ROUTINE-RESTATE）。这里若照旧落 isEditorOpen:false，Modal 会连带
-      // 复述视图一起卸载，视图永远出不来。
-      ...(isRoleBoundCronJob(created)
+      // 复述视图一起卸载，视图永远出不来。webhook 任务同理：一次性链接卡（N-CRON-WEBHOOK-CLOUD-HOOK-FU1）。
+      ...(isRoleBoundCronJob(created) || isWebhookCronJob(created)
         ? {}
         : { isEditorOpen: false, editingJobId: null, copyingJobId: null }),
     });
@@ -220,5 +224,13 @@ export const useCronStore = create<CronState>()((set, get) => ({
     const execution = await cronClient.triggerJob(jobId);
     await Promise.all([get().loadExecutions(jobId), get().loadStats()]);
     return execution;
+  },
+
+  setEventActionMode: async (jobId, mode) => {
+    const updated = await cronClient.setEventActionMode(jobId, mode);
+    if (updated) {
+      set((state) => ({ jobs: state.jobs.map((job) => (job.id === jobId ? updated : job)) }));
+    }
+    return updated;
   },
 }));

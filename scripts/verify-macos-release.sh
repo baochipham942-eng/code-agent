@@ -105,6 +105,18 @@ echo "[verify-macos-release] resources root: ${RESOURCES_ROOT}"
 node "${ROOT_DIR}/scripts/release-security-scan.mjs" "${RESOURCES_ROOT}"
 node "${ROOT_DIR}/scripts/tauri-resource-inventory.mjs" --root "${RESOURCES_ROOT}"
 
+EXPECTED_NATIVE_PLATFORM="darwin-arm64"
+EXPECTED_NATIVE_ARCH="arm64"
+if [[ "$(uname -m)" == "x86_64" ]]; then
+  EXPECTED_NATIVE_PLATFORM="darwin-x64"
+  EXPECTED_NATIVE_ARCH="x86_64"
+fi
+NATIVE_MANIFEST_PATH="${RESOURCES_ROOT}/dist/native/manifest.json"
+node "${ROOT_DIR}/scripts/verify-native-manifest.mjs" \
+  --root "${RESOURCES_ROOT}" \
+  --platform "${EXPECTED_NATIVE_PLATFORM}" \
+  --closure
+
 POPPLER_ROOT="${RESOURCES_ROOT}/scripts/poppler"
 POPPLER_BIN="${POPPLER_ROOT}/bin/pdftoppm"
 POPPLER_NOTICES="${POPPLER_ROOT}/compliance/THIRD_PARTY_NOTICES.txt"
@@ -154,15 +166,25 @@ fi
 echo "[verify-macos-release] bundled node: ${BUNDLED_NODE_PATH}"
 "${BUNDLED_NODE_PATH}" -p '"[verify-macos-release] bundled node runtime: " + process.version + " ABI " + process.versions.modules + " " + process.platform + "-" + process.arch'
 
-BETTER_SQLITE3_PREBUILD_NAME="darwin-$("${BUNDLED_NODE_PATH}" -p 'process.arch').node"
-REQUIRED_BETTER_SQLITE3_NATIVE="${RESOURCES_ROOT}/dist/native/better-sqlite3/prebuilds/${BETTER_SQLITE3_PREBUILD_NAME}"
+REQUIRED_BETTER_SQLITE3_NATIVE="${RESOURCES_ROOT}/$(
+  node -e '
+const fs = require("node:fs");
+const manifest = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+process.stdout.write(manifest.modules["better-sqlite3"].native);
+' "${NATIVE_MANIFEST_PATH}"
+)"
 if [[ ! -f "${REQUIRED_BETTER_SQLITE3_NATIVE}" ]]; then
-  echo "[verify-macos-release] missing bundled better-sqlite3 native file: ${REQUIRED_BETTER_SQLITE3_NATIVE}" >&2
+  echo "[verify-macos-release] missing manifest-declared better-sqlite3 native file: ${REQUIRED_BETTER_SQLITE3_NATIVE}" >&2
   exit 1
 fi
+if [[ "$(lipo -archs "${REQUIRED_BETTER_SQLITE3_NATIVE}")" != "${EXPECTED_NATIVE_ARCH}" ]]; then
+  echo "[verify-macos-release] better-sqlite3 architecture mismatch for manifest platform ${EXPECTED_NATIVE_PLATFORM}: $(lipo -archs "${REQUIRED_BETTER_SQLITE3_NATIVE}")" >&2
+  exit 1
+fi
+echo "[verify-macos-release] better-sqlite3 native architecture matches manifest platform ${EXPECTED_NATIVE_PLATFORM}"
 
 better_sqlite3_native_paths=("${REQUIRED_BETTER_SQLITE3_NATIVE}")
-OPTIONAL_BETTER_SQLITE3_NATIVE="${RESOURCES_ROOT}/node_modules/better-sqlite3/prebuilds/${BETTER_SQLITE3_PREBUILD_NAME}"
+OPTIONAL_BETTER_SQLITE3_NATIVE="${RESOURCES_ROOT}/node_modules/better-sqlite3/prebuilds/$(basename "${REQUIRED_BETTER_SQLITE3_NATIVE}")"
 if [[ -f "${OPTIONAL_BETTER_SQLITE3_NATIVE}" ]]; then
   better_sqlite3_native_paths+=("${OPTIONAL_BETTER_SQLITE3_NATIVE}")
 fi

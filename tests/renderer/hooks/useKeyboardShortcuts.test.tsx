@@ -11,6 +11,7 @@ const appState = vi.hoisted(() => ({
   pendingPermissionSessionId: null as string | null,
   setPendingPermissionRequest,
   setShowSettings: vi.fn(),
+  closeSettings: vi.fn(),
   openSettingsTab: vi.fn(),
   setSidebarCollapsed: vi.fn(),
   sidebarCollapsed: false,
@@ -133,4 +134,41 @@ describe('useKeyboardShortcuts permission response', () => {
     });
   });
 
+});
+
+describe('useKeyboardShortcuts settings close routing (N-CRON-WEBHOOK-CLOUD-HOOK-FU1-FU2)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    appState.pendingPermissionRequest = null;
+    appState.pendingPermissionSessionId = null;
+    appState.showSettings = true;
+  });
+
+  afterEach(() => {
+    cleanup();
+    appState.showSettings = false;
+  });
+
+  it('Esc closes settings via closeSettings (return landing), not plain setShowSettings', async () => {
+    renderHook(() => useKeyboardShortcuts());
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+
+    // closeSettings 带「去设置」返回落点时回自动化页；裸 setShowSettings(false) 会把用户甩回聊天
+    expect(appState.closeSettings).toHaveBeenCalledTimes(1);
+    expect(appState.setShowSettings).not.toHaveBeenCalledWith(false);
+  });
+
+  it('settings open = false 时 Esc 不再走设置分支', async () => {
+    appState.showSettings = false;
+    renderHook(() => useKeyboardShortcuts());
+
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+
+    expect(appState.closeSettings).not.toHaveBeenCalled();
+  });
 });

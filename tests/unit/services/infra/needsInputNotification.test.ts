@@ -32,10 +32,15 @@ beforeEach(() => {
 });
 
 describe('needs-input notification focus policy', () => {
-  it('窗口聚焦时不发系统通知', () => {
+  it('窗口聚焦时仍投递（urgent 穿透焦点门）', () => {
     platformMocks.focusedWindow = {};
     notificationService.notifyNeedsInput({ sessionId: 's1', title: '等待回答', body: '请选择' });
-    expect(platformMocks.broadcast).not.toHaveBeenCalled();
+    expect(platformMocks.broadcast).toHaveBeenCalledWith(
+      IPC_CHANNELS.NOTIFICATION_SHOW,
+      expect.objectContaining({ sessionId: 's1', urgent: true }),
+    );
+    // needs-input 不是失败：不带 failure，renderer 不弹红色错误 toast
+    expect(platformMocks.broadcast.mock.calls.at(-1)?.[1]).not.toHaveProperty('failure');
   });
 
   it('窗口未聚焦时每次请求只投递一次', () => {
@@ -62,5 +67,32 @@ describe('needs-input notification focus policy', () => {
       IPC_CHANNELS.NOTIFICATION_SHOW,
       expect.objectContaining({ sessionId: '', title: '插件提醒', body: '插件已完成同步' }),
     );
+  });
+});
+
+describe('needs-input dedupeKey 去重', () => {
+  it('同一 dedupeKey 第二次调用不再投递', () => {
+    notificationService.notifyNeedsInput({ sessionId: 's1', title: '有操作等你确认', body: '第一条', dedupeKey: 'req-1' });
+    notificationService.notifyNeedsInput({ sessionId: 's1', title: '需要授权', body: '第二条', dedupeKey: 'req-1' });
+
+    expect(platformMocks.broadcast).toHaveBeenCalledTimes(1);
+    expect(platformMocks.broadcast).toHaveBeenCalledWith(
+      IPC_CHANNELS.NOTIFICATION_SHOW,
+      expect.objectContaining({ title: '有操作等你确认', urgent: true }),
+    );
+  });
+
+  it('不同 dedupeKey 各投递一次', () => {
+    notificationService.notifyNeedsInput({ sessionId: 's1', title: '等待回答', body: 'a', dedupeKey: 'req-a' });
+    notificationService.notifyNeedsInput({ sessionId: 's1', title: '等待回答', body: 'b', dedupeKey: 'req-b' });
+
+    expect(platformMocks.broadcast).toHaveBeenCalledTimes(2);
+  });
+
+  it('不传 dedupeKey 的重复调用不被压制', () => {
+    notificationService.notifyNeedsInput({ sessionId: 's1', title: '等待回答', body: 'a' });
+    notificationService.notifyNeedsInput({ sessionId: 's1', title: '等待回答', body: 'b' });
+
+    expect(platformMocks.broadcast).toHaveBeenCalledTimes(2);
   });
 });

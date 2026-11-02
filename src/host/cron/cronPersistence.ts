@@ -1,5 +1,6 @@
 import type { CronJobDefinition, CronJobExecution } from '../../shared/contract/cron';
 import { getDatabase } from '../services/core/databaseService';
+import { resolveCronEventActionMode } from '../../shared/cronEventActionMode';
 import { minimumIntervalSecondsForLocation } from './cronExecutionPolicy';
 import {
   normalizeCronExecutionRow,
@@ -84,6 +85,26 @@ export async function saveCronJob(
     );
   } catch (error) {
     console.error('[CronService] Failed to save job to database:', error);
+    return;
+  }
+  saveCronJobActionMode(job);
+}
+
+/**
+ * 事件任务执行档单列窄写（N-TRIGGER-OBSERVE-MODE）：只有显式 auto 落 auto，其余 event 任务
+ * 落 observe。单独一条语句而不并进上面的整行 upsert：action_mode 列
+ * 万一没迁移成功，任务本身照常保存，读回时 NULL 按 observe 处理（fail-closed，只收窄）。
+ */
+function saveCronJobActionMode(job: CronJobDefinition): void {
+  // 非 event 任务不写：读侧只对 event 任务解释该列；改回 event 时 carryEventActionMode 必给出值并写入。
+  const mode = resolveCronEventActionMode(job);
+  if (mode === null) return;
+  try {
+    const db = getDatabase().getDb();
+    if (!db) return;
+    db.prepare('UPDATE cron_jobs SET action_mode = ? WHERE id = ?').run(mode, job.id);
+  } catch (error) {
+    console.error('[CronService] Failed to save job action mode (event job reads back as observe):', error);
   }
 }
 

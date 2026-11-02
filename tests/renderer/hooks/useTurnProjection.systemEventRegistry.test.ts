@@ -49,6 +49,7 @@ const SAMPLE_PAYLOADS: { [K in UserVisibleSystemEventKey]: NonNullable<MessageMe
   voiceWorkFailure: { workItemId: WORK_ITEM_ID, title: '买菜' },
   voiceWorkSettled: { workItemId: WORK_ITEM_ID, title: '买菜', outcome: 'done' },
   agentRecoveryNotice: { kind: 'vision_tool_unsupported' },
+  roleFlowStalled: { skillName: 'create-role' },
   turnCheckoutNote: {
     operation: 'checkout',
     state: 'success',

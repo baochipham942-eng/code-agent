@@ -628,6 +628,8 @@ export interface NotificationShowEvent {
   failureKind?: CronFailurePresentationKind;
   /** ISO-8601。只有报文写明重置时间才带。 */
   resetAt?: string;
+  /** 失败类通知。renderer 即使窗口聚焦也照常弹 OS 通知；缺省按普通完成处理（聚焦时静默）。 */
+  urgent?: boolean;
 }
 
 export type MCPEventType = 'connection_errors' | 'server_connected' | 'server_disconnected' | 'capabilities_changed';

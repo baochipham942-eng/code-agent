@@ -90,4 +90,18 @@ describe('挂断后语音任务通知', () => {
       expect.not.objectContaining({ markSessionUnread: true }),
     );
   });
+
+  it('失败通知带 urgent:true，完成通知不带', () => {
+    notificationService.notifyVoiceWorkSettled({ sessionId: 's', taskTitle: 'A', status: 'failed', detail: 'x' });
+    notificationService.notifyTaskComplete({ sessionId: 's', sessionTitle: 'B', duration: 1, toolsUsed: [], succeeded: false });
+    notificationService.notifyTaskComplete({ sessionId: 's', sessionTitle: 'C', duration: 1, toolsUsed: [] });
+    notificationService.notifyVoiceWorkSettled({ sessionId: 's', taskTitle: 'D', status: 'done' });
+
+    const payloads = broadcastToRenderer.mock.calls.map((c) => c[1] as { title: string; urgent?: boolean });
+    expect(payloads).toHaveLength(4);
+    expect(payloads[0].urgent).toBe(true);
+    expect(payloads[1].urgent).toBe(true);
+    expect(payloads[2]).not.toHaveProperty('urgent');
+    expect(payloads[3]).not.toHaveProperty('urgent');
+  });
 });

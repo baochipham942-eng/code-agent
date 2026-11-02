@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildDesignSelectionContext,
   firstSelectedImageNode,
+  selectedImageNodes,
   selectionPromptHint,
 } from '../../../src/renderer/components/design/designSelectionContext';
 import type { CanvasImageNode, CanvasVideoNode } from '../../../src/renderer/components/design/designCanvasTypes';
@@ -69,5 +70,13 @@ describe('designSelectionContext', () => {
     expect(buildDesignSelectionContext([image()], [])).toBeNull();
     expect(buildDesignSelectionContext([image()], ['missing'])).toBeNull();
     expect(selectionPromptHint(null)).toBeUndefined();
+  });
+
+  it('selectedImageNodes：按选择顺序取图片节点，跳过视频/已丢弃，最多 limit 个', () => {
+    const nodes = [image({ id: 'a' }), image({ id: 'b' }), video({ id: 'v' }), image({ id: 'c', discarded: true }), image({ id: 'd' }), image({ id: 'e' })];
+    const context = buildDesignSelectionContext(nodes, ['d', 'v', 'a', 'c', 'b', 'e']);
+    expect(selectedImageNodes(nodes, context, 3).map((n) => n.id)).toEqual(['d', 'a', 'b']);
+    expect(selectedImageNodes(nodes, context, 1).map((n) => n.id)).toEqual(['d']);
+    expect(selectedImageNodes(nodes, null, 3)).toEqual([]);
   });
 });

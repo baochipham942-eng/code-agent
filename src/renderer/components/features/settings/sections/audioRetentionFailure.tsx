@@ -18,7 +18,7 @@ interface AudioRetentionFailureText {
 }
 
 /** lastError 含 EACCES/EPERM（不区分大小写）→ 权限类；其余（含缺失）→ 其他 */
-function classifyRetentionError(lastError: string | undefined): 'permission' | 'other' {
+export function classifyRetentionError(lastError: string | undefined): 'permission' | 'other' {
   if (!lastError) return 'other';
   const upper = lastError.toUpperCase();
   return upper.includes('EACCES') || upper.includes('EPERM') ? 'permission' : 'other';

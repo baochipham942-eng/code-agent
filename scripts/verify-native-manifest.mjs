@@ -7,38 +7,16 @@ const MANIFEST_PATH = 'dist/native/manifest.json';
 const MANIFEST_KIND = 'agent_neo_native_dep_manifest';
 const PLATFORMS = new Set(['darwin-arm64', 'darwin-x64', 'win32-x64']);
 
-const ALLOWLIST = [
-  {
-    pattern: /^node_modules\/keytar\/.*\.node$/,
-    reason: 'keytar remains package-resolved until T6 declares it',
-  },
-  {
-    pattern: /^node_modules\/node-pty\/.*\.node$/,
-    reason: 'node-pty prebuilds, including conpty.node and pty.node, remain package-resolved until T6',
-  },
-  {
-    pattern: /^node_modules\/@img\/sharp-[^/]+\/.*\.node$/,
-    reason: 'platform sharp packages remain package-resolved until T6 declares them',
-  },
+// Standing exclusions only: every keytar/node-pty/sharp/sidecar native file that
+// ships in a bundle must be declared by the manifest itself (ADR-086 full closure).
+const STATIC_ALLOWLIST = [
   {
     pattern: /^node_modules\/better-sqlite3\/prebuilds\/[^/]+\.node$/,
-    reason: 'the single-arch node_modules copy is distinct from the declared dist/native copy until T6',
+    reason: 'the node_modules prebuilds directory is an npm install artifact; the shipped copy is the declared dist/native assembly',
   },
   {
     pattern: /^scripts\/poppler\//,
-    reason: 'Poppler executables and dylibs are closed by its own sidecar-manifest release gate',
-  },
-  {
-    pattern: /(?:^|\/)scripts\/Agent Neo Computer Use(?: Dev)?\.app\//,
-    reason: 'CUA app bundles retain their signed app-bundle layout until T6 declares them',
-  },
-  {
-    pattern: /^scripts\/(?:rtk|uv)(?:\.exe)?$/,
-    reason: 'RTK and uv sidecars remain separately fetched resources until T6 declares them',
-  },
-  {
-    pattern: /^scripts\/(?:system-audio-capture|voice-aec-io|vision-ocr|vision-tagger)$/,
-    reason: 'Swift helper binaries remain build-produced resources until T6 declares them',
+    reason: 'Poppler executables and dylibs are closed by its own sidecar-manifest release gate (belt-and-braces: also declared as a helper-dir)',
   },
   {
     pattern: /^scripts\/.*\.(?:bat|cmd|mjs|py|sh|ts)$/,
@@ -53,6 +31,16 @@ const ALLOWLIST = [
     reason: 'onnxruntime is an optional runtime asset governed by the separate runtime-asset manifest',
   },
 ];
+
+function allowlistFor(platform) {
+  return [
+    ...STATIC_ALLOWLIST,
+    {
+      pattern: new RegExp(`^node_modules/node-pty/prebuilds/(?!${platform}/)[^/]+/[^/]+\\.node$`),
+      reason: "node-pty's npm tarball carries prebuilds for every platform; only the target platform directory is declared and bundled",
+    },
+  ];
+}
 
 function parseArgs(argv) {
   let root;
@@ -86,8 +74,8 @@ function parseArgs(argv) {
   return { root, platform, closure };
 }
 
-function isAllowlisted(relativePath) {
-  return ALLOWLIST.some((entry) => entry.pattern.test(relativePath));
+function isAllowlisted(relativePath, platform) {
+  return allowlistFor(platform).some((entry) => entry.pattern.test(relativePath));
 }
 
 function walkFiles(root, platform) {
@@ -146,6 +134,8 @@ function main() {
   }
 
   const declaredPaths = new Set();
+  // helper-dir / app-bundle declarations cover every file under their path.
+  const declaredDirectoryPaths = new Set();
   if (manifest) {
     if (manifest.kind !== MANIFEST_KIND) {
       fail(MANIFEST_PATH, `kind must be ${MANIFEST_KIND}`);
@@ -159,6 +149,25 @@ function main() {
     if (!manifest.modules || typeof manifest.modules !== 'object' || Array.isArray(manifest.modules)) {
       fail(MANIFEST_PATH, 'modules must be an object');
     } else {
+      const validateDeclaredPath = (declaredPath, label, field) => {
+        if (typeof declaredPath !== 'string' || declaredPath.length === 0) {
+          fail(label, `${field} must be a non-empty string`);
+          return;
+        }
+        if (declaredPath.includes('\\') || path.posix.isAbsolute(declaredPath) || path.win32.isAbsolute(declaredPath)) {
+          fail(label, `${field} must be a relative POSIX path under the resources root`);
+          return;
+        }
+        const normalizedPath = path.posix.normalize(declaredPath);
+        if (normalizedPath === '..' || normalizedPath.startsWith('../')) {
+          fail(label, `${field} escapes the resources root`);
+          return;
+        }
+        declaredPaths.add(normalizedPath);
+        if (!fs.existsSync(path.join(root, normalizedPath))) {
+          fail(normalizedPath, `declared ${field} path is missing`);
+        }
+      };
       for (const [moduleName, moduleEntry] of Object.entries(manifest.modules)) {
         if (!moduleEntry || typeof moduleEntry !== 'object' || Array.isArray(moduleEntry)) {
           fail(`${MANIFEST_PATH}#modules.${moduleName}`, 'module entry must be an object');
@@ -169,23 +178,25 @@ function main() {
           if (declaredPath === undefined) {
             continue;
           }
-          const label = `${MANIFEST_PATH}#modules.${moduleName}.${field}`;
-          if (typeof declaredPath !== 'string' || declaredPath.length === 0) {
-            fail(label, `${field} must be a non-empty string`);
-            continue;
+          validateDeclaredPath(declaredPath, `${MANIFEST_PATH}#modules.${moduleName}.${field}`, field);
+        }
+        const natives = moduleEntry.natives;
+        if (natives !== undefined) {
+          const label = `${MANIFEST_PATH}#modules.${moduleName}.natives`;
+          if (!Array.isArray(natives) || natives.length === 0
+            || natives.some((entry) => typeof entry !== 'string' || entry.length === 0)) {
+            fail(label, 'natives must be a non-empty array of non-empty strings');
+          } else {
+            natives.forEach((declaredPath) => validateDeclaredPath(declaredPath, label, 'natives'));
           }
-          if (declaredPath.includes('\\') || path.posix.isAbsolute(declaredPath) || path.win32.isAbsolute(declaredPath)) {
-            fail(label, `${field} must be a relative POSIX path under the resources root`);
-            continue;
-          }
-          const normalizedPath = path.posix.normalize(declaredPath);
-          if (normalizedPath === '..' || normalizedPath.startsWith('../')) {
-            fail(label, `${field} escapes the resources root`);
-            continue;
-          }
-          declaredPaths.add(normalizedPath);
-          if (!fs.existsSync(path.join(root, normalizedPath))) {
-            fail(normalizedPath, `declared ${field} path is missing`);
+        }
+        if (moduleEntry.kind === 'helper-dir' || moduleEntry.kind === 'app-bundle') {
+          const declaredPath = moduleEntry.path;
+          if (typeof declaredPath === 'string' && declaredPath.length > 0) {
+            const normalizedPath = path.posix.normalize(declaredPath);
+            if (!normalizedPath.startsWith('../')) {
+              declaredDirectoryPaths.add(normalizedPath);
+            }
           }
         }
       }
@@ -193,8 +204,10 @@ function main() {
   }
 
   if (closure) {
+    const coveredByDeclaredDirectory = (relativePath) => declaredDirectoryPaths.size > 0 && Array.from(declaredDirectoryPaths)
+      .some((directoryPath) => relativePath === directoryPath || relativePath.startsWith(`${directoryPath}/`));
     for (const { relativePath } of walkFiles(root, platform)) {
-      if (!declaredPaths.has(relativePath) && !isAllowlisted(relativePath)) {
+      if (!declaredPaths.has(relativePath) && !coveredByDeclaredDirectory(relativePath) && !isAllowlisted(relativePath, platform)) {
         fail(relativePath, 'closure requires every native file and executable scripts helper to be declared or allowlisted');
       }
     }

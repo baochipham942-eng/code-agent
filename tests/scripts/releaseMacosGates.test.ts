@@ -285,11 +285,15 @@ describe('macOS release fail-closed gates', () => {
 
   it('generates native dependency manifests after overlays and before Tauri builds', () => {
     const packageJson = JSON.parse(readRepoFile('package.json')) as { scripts: Record<string, string> };
-    for (const scriptName of ['tauri:package', 'tauri:package:dev']) {
-      expect(packageJson.scripts[scriptName]).toContain(
-        'npm run rebuild-native:system && node scripts/gen-native-dep-manifest.mjs &&',
-      );
-    }
+    // 本地链：生成器必须在 tauri:prebuild-cleanup（stage CUA、编 Swift helper）之后跑，否则新
+    // worktree 直接撞 Missing native dependency manifest path；dev 链只 stage Dev 名字 .app
+    // （tauri.dev.conf.json 置 null 生产键），生成器要带同渠道跑。
+    expect(packageJson.scripts['tauri:package']).toContain(
+      'npm run tauri:prebuild-cleanup && NEO_CHANNEL=production node scripts/gen-native-dep-manifest.mjs && npm run release:security-scan && cargo tauri build',
+    );
+    expect(packageJson.scripts['tauri:package:dev']).toContain(
+      'NEO_CHANNEL=dev npm run tauri:prebuild-cleanup && NEO_CHANNEL=dev node scripts/gen-native-dep-manifest.mjs && npm run release:security-scan',
+    );
 
     const cases = [
       {

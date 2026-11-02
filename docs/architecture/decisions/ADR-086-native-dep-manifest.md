@@ -263,7 +263,7 @@ Rust 壳首启预检（`main.rs:1721` `desktop_shell_resource_preflight`）：na
 | T3 | 子进程交接 | `dbQuickCheckSubprocess.ts` / `dbVacuumSubprocess.ts` | 子进程收解析后单路径；缺路径 exit 3 且 stderr 指名清单条目；子进程测试更新 | 低（退出码语义不变） |
 | T4 | Rust 预检 + 诊断镜像消费清单 | `main.rs:desktop_shell_resource_preflight`、`desktopShellDiagnostics.ts`、`tauri-resource-inventory.mjs` | 三处不再各自硬编码 native 路径；预检失败信息带清单路径；`cargo tauri dev` 下行为定义并实测（标未验证项收口） | Rust 改动走 rust-ci；debug 构建下清单可达性未验证 |
 | T5 | 发版门 + boot 闸清单校验 | `verify-macos-release.sh`、`verify-windows-release.mjs`、`releaseMacosGates.test.ts`、`build-windows-test.yml`；`verify-webserver-boot.mjs` 豁免收窄（§4.6：判据扩为 must-bundle ∪ `dist/native/**` 缺失，`:20`/`:103-113`/`:117-118` 注释同步） | mac 双向闭合校验；win pre 门清单驱动 + bundled-node 真加载 win32-x64.node；故意删一个 .node 门必红（变异验证，对齐 ship 硬规③）；boot 闸对 `dist/native/**` 缺失必红且 keytar 包内探测不误伤（变异验证） | 闭合校验 allowlist 初始噪音（CUA .app、poppler dylib 等要正确归类）；boot 闸收窄必须排在 T2 之后，早于 T2 会让 webserver-boot.yml 腿因探测噪音假红 |
-| T6 | 清单扩容 + 全量闭合 | writer 补 keytar/node-pty/sharp/sidecar 条目；门 allowlist 收紧；（可选）`resolveHelperBinary` bundle 模式直取 | bundle 内每个 .node / 可执行 helper 均有声明或 allowlist 理由；装载行为零变化（既有测试回归） | node-pty win32 双文件（conpty.node + pty.node）易漏，win 门必须覆盖 |
+| T6 | 清单扩容 + 全量闭合（已完成：N-NATIVE-MANIFEST-T6，2026-11-02；`resolveHelperBinary` 直取按范围裁掉未做） | writer 补 keytar/node-pty/sharp/sidecar 条目；门 allowlist 收紧；（可选）`resolveHelperBinary` bundle 模式直取 | bundle 内每个 .node / 可执行 helper 均有声明或 allowlist 理由；装载行为零变化（既有测试回归） | node-pty win32 双文件（conpty.node + pty.node）易漏，win 门必须覆盖 |
 | T7 | （远期）bundled 清单与 optional registry 并轨 | `runtimeAssetRegistry` 吸收 manifest 或反之 | 单一资产声明层 | 动 optional 下载链路（active.json/哈希校验）；收益主要是概念收敛，不排期 |
 
 ## 6. 不做的事

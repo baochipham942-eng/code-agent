@@ -23,17 +23,16 @@ export function useCronOsNotification(
   const onOpenSessionRef = useRef(onOpenSession);
   copyRef.current = copy;
   onOpenSessionRef.current = onOpenSession;
-  const lastSessionIdRef = useRef<string | null>(null);
   const lastEventRef = useRef<NotificationShowEvent | null>(null);
 
   useEffect(() => {
-    const openFromNotification = () => {
-      const event = lastEventRef.current;
+    // 原生点击读「最近一条」事件；toast 动作必须绑定自己那条，否则连续两条失败时点 A 会开 B。
+    const openForEvent = (event: NotificationShowEvent | null) => {
       // The native notification is a consent boundary only for login-wall stops;
       // other cron notifications must never grant browser pass-through.
       const siteOrigin = event && cronLoginWallSiteOriginFromNotification(event);
       if (siteOrigin) openCronLoginWallSite(siteOrigin, event?.jobId);
-      const sessionId = lastSessionIdRef.current;
+      const sessionId = event?.sessionId;
       if (sessionId) onOpenSessionRef.current(sessionId);
       // 云端调度器不可用的失败没有本地会话：点击落 Cron Center 并选中该任务，
       // 详情里就是这句人话和「立即重跑」——不然这次点击只是把 app 带到前台。
@@ -43,10 +42,10 @@ export function useCronOsNotification(
         useAppStore.getState().setShowCronCenter(true);
       }
     };
+    const openFromNotification = () => openForEvent(lastEventRef.current);
     const unsubscribe = ipcService.on(
       IPC_CHANNELS.NOTIFICATION_SHOW,
       (event: NotificationShowEvent) => {
-        lastSessionIdRef.current = event.sessionId;
         lastEventRef.current = event;
         void postOsNotification(translateCronOsNotification(
           event,
@@ -54,7 +53,8 @@ export function useCronOsNotification(
           useAppStore.getState().language,
         ), {
           urgent: event.urgent === true,
-          onOpen: openFromNotification,
+          failure: event.failure === true,
+          onOpen: () => openForEvent(event),
           openLabel: copyRef.current.failureToastView,
         });
       },

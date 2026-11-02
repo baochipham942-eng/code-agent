@@ -62,7 +62,7 @@ export function shouldSuppressOsNotification(hasFocus: boolean, visible: boolean
 /** 发一条原生系统通知。Tauri 下自动带 Agent Neo 图标/身份；web 回落浏览器通知。 */
 export async function postOsNotification(
   opts: { title: string; body: string },
-  flags: { urgent?: boolean; onOpen?: () => void; openLabel?: string } = {},
+  flags: { urgent?: boolean; failure?: boolean; onOpen?: () => void; openLabel?: string } = {},
 ): Promise<void> {
   const urgent = flags.urgent === true;
   const hasFocus = typeof document !== 'undefined' && document.hasFocus();
@@ -73,7 +73,8 @@ export async function postOsNotification(
     return;
   }
   // macOS 在 app 为 key window 时会藏起原生横幅：urgent 失败在前台补一条应用内 toast。
-  const toastShown = urgent && hasFocus && visible;
+  // 仅失败：needs-input 同为 urgent，但不是失败，不能弹红色错误 toast。
+  const toastShown = urgent && flags.failure === true && hasFocus && visible;
   if (toastShown) {
     const { onOpen, openLabel } = flags;
     toast.error(

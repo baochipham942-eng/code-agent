@@ -92,7 +92,7 @@ describe('osNotification', () => {
     const { useToastStore } = await import('../../../src/renderer/hooks/useToast');
 
     const onOpen = vi.fn();
-    await postOsNotification({ title: 't', body: 'b' }, { urgent, onOpen, openLabel: '查看' });
+    await postOsNotification({ title: 't', body: 'b' }, { urgent, failure: urgent, onOpen, openLabel: '查看' });
 
     // 应用内 toast 只在 urgent+聚焦时出现，恰好一条且带动作按钮
     const toasts = useToastStore.getState().toasts;
@@ -111,5 +111,16 @@ describe('osNotification', () => {
         ? { mode: 'tauri', granted: true, dispatched: true, ...(urgent ? { urgent: true } : {}), ...(urgent && focused ? { toastShown: true } : {}) }
         : { mode: 'suppressed-focused', dispatched: false },
     );
+  });
+
+  it('needs-input（urgent 但非 failure）聚焦时不弹错误 toast，原生分发照常', async () => {
+    (globalThis as Record<string, unknown>).document = { hasFocus: () => true, hidden: false };
+    const { postOsNotification } = await import('../../../src/renderer/utils/osNotification');
+    const { useToastStore } = await import('../../../src/renderer/hooks/useToast');
+
+    await postOsNotification({ title: '需要你确认', body: '权限请求' }, { urgent: true, onOpen: vi.fn(), openLabel: '查看' });
+
+    expect(useToastStore.getState().toasts).toHaveLength(0);
+    expect(notificationPlugin.sendNotification).toHaveBeenCalledTimes(1);
   });
 });

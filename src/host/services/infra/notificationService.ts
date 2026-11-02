@@ -141,6 +141,8 @@ class NotificationService implements Disposable {
     resetAt?: string;
     /** 失败类 / 需要输入类通知：renderer 端即使窗口聚焦也要弹。 */
     urgent?: boolean;
+    /** 仅任务失败；renderer 聚焦时据此补应用内错误 toast（needs-input 不带）。 */
+    failure?: boolean;
   }): void {
     if (this.isDryRun()) return;
     broadcastToRenderer(IPC_CHANNELS.NOTIFICATION_SHOW, {
@@ -238,7 +240,7 @@ class NotificationService implements Disposable {
       ...(data.siteOrigin ? { siteOrigin: data.siteOrigin } : {}),
       ...(data.failureKind ? { failureKind: data.failureKind } : {}),
       ...(data.resetAt ? { resetAt: data.resetAt } : {}),
-      ...(intent === 'task_failed' ? { urgent: true } : {}),
+      ...(intent === 'task_failed' ? { urgent: true, failure: true } : {}),
     });
     logger.info('Notification dispatched to renderer', { sessionTitle });
   }
@@ -318,7 +320,7 @@ class NotificationService implements Disposable {
       body: entry.body,
       sessionId: data.sessionId,
       markSessionUnread: true,
-      ...(intent === 'task_failed' ? { urgent: true } : {}),
+      ...(intent === 'task_failed' ? { urgent: true, failure: true } : {}),
     });
     logger.info('Voice work settlement notification sent', {
       sessionId: data.sessionId,

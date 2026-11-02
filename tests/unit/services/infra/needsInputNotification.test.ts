@@ -39,6 +39,8 @@ describe('needs-input notification focus policy', () => {
       IPC_CHANNELS.NOTIFICATION_SHOW,
       expect.objectContaining({ sessionId: 's1', urgent: true }),
     );
+    // needs-input 不是失败：不带 failure，renderer 不弹红色错误 toast
+    expect(platformMocks.broadcast.mock.calls.at(-1)?.[1]).not.toHaveProperty('failure');
   });
 
   it('窗口未聚焦时每次请求只投递一次', () => {

@@ -22,6 +22,7 @@ import { Button, Modal } from '../../../primitives';
 import { SettingsDetails, SettingsPage, SettingsSection } from '../SettingsLayout';
 import { createLogger } from '../../../../utils/logger';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { normalizeChannelAccountsPayload } from './channelAccountsPayload';
 import type {
   ChannelAccount,
   ChannelType,
@@ -674,9 +675,8 @@ export const ChannelsSettings: React.FC = () => {
     // 监听账号变化
     const removeAccountsListener = ipcService.on(
       IPC_CHANNELS.CHANNEL_ACCOUNTS_CHANGED,
-      (newAccounts: ChannelAccount[]) => {
-        setAccounts(newAccounts);
-      }
+      // SSE 传输会展开数组参数，统一走 normalize（类型签名是单数组，此处单点 cast）
+      ((...args: unknown[]) => setAccounts(normalizeChannelAccountsPayload(...args))) as (accounts: ChannelAccount[]) => void
     );
 
     // 监听状态变化

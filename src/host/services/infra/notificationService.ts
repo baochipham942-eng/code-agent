@@ -106,7 +106,7 @@ class NotificationService implements Disposable {
 
   /**
    * 检查是否应该发送通知
-   * 只在 App 窗口非焦点时发送
+   * 默认只在 App 窗口非焦点时发送；needs_input / 失败类 / force 绕过焦点门
    */
   private shouldNotify(force = false): boolean {
     if (!this.enabled) return false;
@@ -139,7 +139,7 @@ class NotificationService implements Disposable {
     siteOrigin?: string;
     failureKind?: CronFailurePresentationKind;
     resetAt?: string;
-    /** 失败类通知：renderer 端即使窗口聚焦也要弹。 */
+    /** 失败类 / 需要输入类通知：renderer 端即使窗口聚焦也要弹。 */
     urgent?: boolean;
   }): void {
     if (this.isDryRun()) return;
@@ -173,10 +173,12 @@ class NotificationService implements Disposable {
 
   /**
    * 发送 "需要输入" 通知（权限请求、用户提问）
+   * 一律 urgent：Neo 卡在等用户时，即使 app 聚焦（用户在看别的会话）也要弹系统横幅，
+   * 绕过 host 焦点门与 renderer 焦点门。
    */
   notifyNeedsInput(data: { sessionId: string; title: string; body: string }): void {
     if (!this.isIntentAllowed('needs_input')) return;
-    if (!this.shouldNotify()) return;
+    if (!this.shouldNotify(true)) return;
 
     const entry = this.record({
       type: 'needs_input',
@@ -189,6 +191,7 @@ class NotificationService implements Disposable {
       title: entry.title,
       body: entry.body,
       sessionId: data.sessionId,
+      urgent: true,
     });
     logger.info('Needs-input notification sent', { title: data.title });
   }

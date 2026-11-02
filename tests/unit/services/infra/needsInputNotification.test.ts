@@ -32,10 +32,13 @@ beforeEach(() => {
 });
 
 describe('needs-input notification focus policy', () => {
-  it('窗口聚焦时不发系统通知', () => {
+  it('窗口聚焦时仍投递（urgent 穿透焦点门）', () => {
     platformMocks.focusedWindow = {};
     notificationService.notifyNeedsInput({ sessionId: 's1', title: '等待回答', body: '请选择' });
-    expect(platformMocks.broadcast).not.toHaveBeenCalled();
+    expect(platformMocks.broadcast).toHaveBeenCalledWith(
+      IPC_CHANNELS.NOTIFICATION_SHOW,
+      expect.objectContaining({ sessionId: 's1', urgent: true }),
+    );
   });
 
   it('窗口未聚焦时每次请求只投递一次', () => {

@@ -14,6 +14,7 @@ const logger = createLogger('BrowserRiskGate', { lane: 'browser' });
 const GATED_ACTIONS = new Set<string>(['click', 'click_text', 'type', 'press_key']);
 
 interface RiskGateBrowserService {
+  findElements?(selector: string, tabId?: string): Promise<Array<{ text?: string; attributes?: Record<string, string> }>>;
   resolveTargetRef?(targetRef: unknown, tabId?: string): Promise<{ targetRef: { name?: string | null; textHint?: string | null } }>;
 }
 
@@ -31,6 +32,20 @@ async function targetLabels(input: BrowserRiskGateInput): Promise<string[] | nul
   for (const key of ['selector', 'text'] as const) {
     const value = params[key];
     if (typeof value === 'string' && value && (key === 'selector' || input.action === 'click_text')) labels.push(value);
+  }
+  // A CSS selector rarely carries the visible label (RBS-07: `button.added-manually` is the "Delete" button),
+  // so read the first matched element's text/aria-label too: that is the element page.click would hit.
+  if (typeof params.selector === 'string' && params.selector && input.action !== 'press_key') {
+    if (!input.browserService.findElements) {
+      logger.warn('browser risk gate: selector label unresolved (service has no findElements), selector text only');
+    } else {
+      try {
+        const [first] = await input.browserService.findElements(params.selector, input.tabId);
+        labels.push(first?.text || '', first?.attributes?.['aria-label'] || '', first?.attributes?.value || '', first?.attributes?.title || '');
+      } catch (error) {
+        logger.warn(`browser risk gate: selector label unresolved (${error instanceof Error ? error.message : 'unknown'}), selector text only`);
+      }
+    }
   }
   if (params.targetRef) {
     if (!input.browserService.resolveTargetRef) {

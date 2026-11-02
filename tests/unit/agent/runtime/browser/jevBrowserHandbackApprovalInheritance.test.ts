@@ -13,7 +13,7 @@ import { answers, button, context, FakeHost, runLoop, snapshot, stubSystemOne, t
 
 type StubSurface = Pick<
   BrowserService,
-  'resolveTargetRef' | 'clickTargetRef' | 'getPageContent' | 'getActiveTab' | 'beginTrace' | 'finishTrace' | 'logger'
+  'resolveTargetRef' | 'findElements' | 'clickTargetRef' | 'getPageContent' | 'getActiveTab' | 'beginTrace' | 'finishTrace' | 'logger'
 >;
 
 const pool = vi.hoisted(() => ({ service: null as unknown }));
@@ -38,6 +38,11 @@ class StubBrowserService implements StubSurface {
     const { targetRef: resolved } = await this.resolveTargetRef(input);
     this.clicks.push(resolved.refId);
     return resolved;
+  }
+  async findElements(selector: string) {
+    return selector === 'button.added-manually'
+      ? [{ selector, text: 'Delete', tagName: 'button', attributes: { class: 'added-manually' }, rect: { x: 0, y: 0, width: 50, height: 20 } }]
+      : [];
   }
   async getPageContent() { return { url: 'https://example.test/', title: 'Shelf', text: 'A plain shelf page with controls.' }; }
   getActiveTab() { return null; }
@@ -132,6 +137,18 @@ describe('Jev hand-back approval inheritance for the main-model Browser tool', (
     const byText = await browserActionTool.execute({ action: 'click_text', text: '删除' }, ctx);
     expect(bySelector.metadata?.code).toBe('SURFACE_APPROVAL_REQUIRED');
     expect(byText.metadata?.code).toBe('SURFACE_APPROVAL_REQUIRED');
+    expect(clickSelector).not.toHaveBeenCalled();
+  });
+
+  it('gates an opaque CSS selector by the matched element text (RBS-07 button.added-manually = "Delete")', async () => {
+    const requestPermission = vi.fn(async () => false);
+    const ctx = managedContext(requestPermission);
+    await jevLowConfidenceHandback(ctx);
+    const clickSelector = vi.fn();
+    (service as unknown as Record<string, unknown>).click = clickSelector;
+    const result = await browserActionTool.execute({ action: 'click', selector: 'button.added-manually' }, ctx);
+    expect(requestPermission).toHaveBeenCalledTimes(1);
+    expect(result.metadata?.code).toBe('SURFACE_APPROVAL_REQUIRED');
     expect(clickSelector).not.toHaveBeenCalled();
   });
 });

@@ -512,6 +512,7 @@ async function executeBrowserAction(argsJson: string, context: ToolContext): Pro
   // example OpenAI). This benchmark measures only the resolved baseline and
   // Jev calls, so retain the screenshot but disable that optional analysis.
   if (parsed.action === 'screenshot' && parsed.analyze === true) parsed.analyze = false;
+  console.error(`ACT phase=${permPhase} ${JSON.stringify({ action: parsed.action, selector: parsed.selector, text: parsed.text, targetRef: typeof parsed.targetRef === 'string' ? parsed.targetRef.slice(-12) : undefined })}`);
   return Promise.race([
     BrowserTool.execute(parsed, context),
     new Promise<ToolExecutionResult>((resolve) => setTimeout(() => resolve({

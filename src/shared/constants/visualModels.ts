@@ -53,6 +53,26 @@ export function imageModelsWithCap(cap: ImageCap): VisualImageModel[] {
   return IMAGE_MODELS.filter((m) => m.caps.includes(cap));
 }
 
+/**
+ * 多参考图图像编辑常量（N-IMAGE-MULTI-REF-IMPL，单一真源）。
+ * 2-3 张参考图走百炼 qwen-image-edit（同步 multimodal-generation 端点）；
+ * 单张仍走 wanx description_edit（imageGenerationService.generateImageFromReference，字节不变）。
+ * 出处：DashScope qwen-image-edit API 文档（zh/en，2026-10-29 抓取，全引与限制见
+ * docs/research/2026-10-image-multi-ref-probe.md）——输入 1-3 张；多图顺序按数组序列；
+ * 输出比例以最后一张图为准；content 里恰好一条 text。文档不定义"主体图"，靠指令里
+ * 「图1/图2」指代。Owner 决策 2026-10-29：上限即文档上限 3。
+ */
+export const IMAGE_MULTI_REF = {
+  /** 多参考图编辑模型 id（价表 IMAGE_PRICING_CNY 同名条目 0.5 元/张）。 */
+  MODEL: 'qwen-image-2.0-pro',
+  /** qwen-image-edit 同步生成端点路径（挂 MODEL_API_ENDPOINTS.dashscope base 之后）。 */
+  GENERATION_PATH: '/services/aigc/multimodal-generation/generation',
+  /** 参考图张数上限（文档上限 3 = Owner cap 3），0/1 张走既有路径。 */
+  MAX_REFERENCE_IMAGES: 3,
+  /** 同步出图请求超时（与 imageGenerationService 的 gpt-image 同步出图同档）。 */
+  GENERATION_TIMEOUT_MS: 120_000,
+} as const;
+
 // ── 视频生成模型注册表（P2，单 provider dashscope）。能力标签 t2v/i2v 驱动模式过滤。 ──
 export type VideoCap = 't2v' | 'i2v';
 

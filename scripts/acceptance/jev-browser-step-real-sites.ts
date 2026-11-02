@@ -28,6 +28,7 @@ import {
   type ArmName,
   type BaselinePricing,
   type BaselineProviderName,
+  splitSensitive,
   type TrialRow,
 } from './_jev-real-sites-lib.ts';
 import { makeSystemChromeProviderOptions, SYSTEM_CHROME_CDP_PROVIDER } from './browser-computer-system-chrome.ts';
@@ -86,7 +87,10 @@ interface ArmResult {
   jevCalls: number;
   jevUsd: number;
   fallbackReason?: string;
+  /** Jev arm, sensitive case: audit read right after the Jev inner loop returned (before any continuation). */
+  auditAfterJev?: number | 'unknown';
 }
+let permPhase = 'baseline';
 function keyState(name: string): 'set' | 'unset' {
   const value = process.env[name];
   return value !== undefined && value.trim().length > 0 ? 'set' : 'unset';
@@ -304,6 +308,9 @@ function makeContext(trialId: string): ToolContext {
     sessionId: `jev-real-${trialId}-${Date.now()}`,
     turnId: 'r1',
     requestPermission: async (request) => {
+      const decision = !(request.forceConfirm || request.dangerLevel === 'danger')
+        && !String(request.tool).includes('upload') && !String(request.tool).includes('handle_dialog');
+      console.error(`PERM ${trialId} phase=${permPhase} tool=${String(request.tool)} forceConfirm=${Boolean(request.forceConfirm)} danger=${request.dangerLevel ?? '-'} -> ${decision ? 'allow' : 'deny'}`);
       // Same policy as the local benchmark: danger and upload/dialog gates deny;
       // ordinary browser actions proceed.
       if (request.forceConfirm || request.dangerLevel === 'danger') return false;
@@ -505,6 +512,7 @@ async function executeBrowserAction(argsJson: string, context: ToolContext): Pro
   // example OpenAI). This benchmark measures only the resolved baseline and
   // Jev calls, so retain the screenshot but disable that optional analysis.
   if (parsed.action === 'screenshot' && parsed.analyze === true) parsed.analyze = false;
+  console.error(`ACT phase=${permPhase} ${JSON.stringify({ action: parsed.action, selector: parsed.selector, text: parsed.text, targetRef: typeof parsed.targetRef === 'string' ? parsed.targetRef.slice(-12) : undefined })}`);
   return Promise.race([
     BrowserTool.execute(parsed, context),
     new Promise<ToolExecutionResult>((resolve) => setTimeout(() => resolve({
@@ -609,6 +617,8 @@ async function runJevArmReal(args: {
       { task: args.spec.task, assertions: args.spec.jevAssertions, jevBudgetUsd: JEV_BUDGET_USD },
       args.context,
     );
+    const auditAfterJev = args.spec.sensitive ? await readAudit(args.spec) : 0;
+    permPhase = 'continuation';
     const meta = tool.metadata ?? {};
     const jevSteps = Number(meta.steps || 0);
     const jevCalls = Number(meta.jevCalls || 0);
@@ -660,6 +670,7 @@ async function runJevArmReal(args: {
       jevCalls,
       jevUsd,
       fallbackReason: finalReason ?? reason,
+      auditAfterJev,
     };
   } finally {
     if (previous === undefined) delete process.env.CODE_AGENT_BROWSER_JEV_STEP;
@@ -677,6 +688,7 @@ function rowFrom(input: {
   finalUrl: string;
   /** successScript outcome for ordinary cases; null for sensitive cases (scored on handback + audit). */
   success: boolean | null;
+  split?: { sensitiveJevInner: number; sensitiveContinuation: number };
   referencePricing: boolean;
   errorMessage?: string;
 }): TrialRow {
@@ -695,6 +707,7 @@ function rowFrom(input: {
     ok,
     status: input.result.status,
     sensitive: input.audit,
+    ...(input.split ?? {}),
     tokensIn: input.result.tokensIn,
     tokensOut: input.result.tokensOut,
     usd: input.result.usd,
@@ -780,10 +793,10 @@ function markdownReport(
     }
   }
   lines.push('');
-  lines.push('| arm | 试验数 | 成功率 | 平均步 | 平均 s | token in | token out | $ 总牌价 | $ 主模型牌价 | Jev $ | 敏感命中 | unknown |');
-  lines.push('|---|---|---|---|---|---|---|---|---|---|---|---|');
+  lines.push('| arm | 试验数 | 成功率 | 平均步 | 平均 s | token in | token out | $ 总牌价 | $ 主模型牌价 | Jev $ | 敏感命中 | unknown | jevInner | continuation |');
+  lines.push('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
   for (const agg of [baselineAgg, jevAgg]) {
-    lines.push(`| ${agg.arm} | ${agg.trials} | ${agg.successRate.toFixed(3)} | ${agg.avgSteps.toFixed(1)} | ${agg.avgWallSec.toFixed(0)} | ${agg.tokensIn} | ${agg.tokensOut} | ${agg.usd.toFixed(4)} | ${agg.usdReference.toFixed(4)} | ${agg.jevUsd.toFixed(5)} | ${agg.sensitiveHits} | ${agg.unknownSensitive} |`);
+    lines.push(`| ${agg.arm} | ${agg.trials} | ${agg.successRate.toFixed(3)} | ${agg.avgSteps.toFixed(1)} | ${agg.avgWallSec.toFixed(0)} | ${agg.tokensIn} | ${agg.tokensOut} | ${agg.usd.toFixed(4)} | ${agg.usdReference.toFixed(4)} | ${agg.jevUsd.toFixed(5)} | ${agg.sensitiveHits} | ${agg.unknownSensitive} | ${agg.sensitiveJevInner ?? '-'} | ${agg.sensitiveContinuation ?? '-'} |`);
   }
   lines.push('');
   lines.push(`差值（Jev−基线）：token in ${jevAgg.tokensIn - baselineAgg.tokensIn}, token out ${jevAgg.tokensOut - baselineAgg.tokensOut}, 总牌价 $ ${(jevAgg.usd - baselineAgg.usd).toFixed(4)}, 墙钟 ${(jevAgg.avgWallSec - baselineAgg.avgWallSec).toFixed(1)}s/试验。`);
@@ -831,6 +844,7 @@ async function main(): Promise<void> {
       for (const arm of order) {
         const trialId = `${spec.id}-${arm}-r${round}`;
         const context = makeContext(trialId);
+        permPhase = arm === 'jev' ? 'jev-inner' : 'baseline';
         const armStart = Date.now();
         try {
           await browserService.close().catch(() => undefined);
@@ -846,11 +860,12 @@ async function main(): Promise<void> {
           const wallSec = (Date.now() - armStart) / 1000;
           await dismissPendingDialog();
           const audit = spec.sensitive ? await readAudit(spec) : 0;
+          const split = arm === 'jev' && spec.sensitive ? splitSensitive(result.auditAfterJev ?? 'unknown', audit) : undefined;
           const finalTitle = await pageTitle();
           const finalUrl = await pageUrl();
           const success = await evaluateSuccess(spec);
           spendUsd += result.usd;
-          rows.push(rowFrom({ spec, arm, round, wallSec, result, audit, finalTitle, finalUrl, success, referencePricing: true }));
+          rows.push(rowFrom({ spec, arm, round, wallSec, result, audit, finalTitle, finalUrl, success, split, referencePricing: true }));
           console.error(`${trialId} status=${result.status} ok=${rows[rows.length - 1].ok} steps=${result.steps} sens=${rows[rows.length - 1].sensitive === 'unknown' ? 'unknown' : rows[rows.length - 1].sensitive} tokens=${result.tokensIn}/${result.tokensOut} $=${result.usd.toFixed(4)} spend=${spendUsd.toFixed(3)}`);
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
@@ -903,6 +918,8 @@ async function main(): Promise<void> {
     baselineSuccessRate: baselineAgg.successRate,
     jevSuccessRate: jevAgg.successRate,
     jevSensitiveHits: jevAgg.sensitiveHits,
+    jevInnerSensitive: jevAgg.sensitiveJevInner,
+    jevContinuationSensitive: jevAgg.sensitiveContinuation,
     jevUnknownOnSensitive,
     captchaClicked,
     baselineUsd: baselineAgg.usd,

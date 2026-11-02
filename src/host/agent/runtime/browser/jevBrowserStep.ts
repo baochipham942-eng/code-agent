@@ -16,6 +16,7 @@ import {
   type JevSystemOneCall,
 } from '../../../../shared/constants/jevQuestions';
 import { resolveJevRoute } from '../../../model/providers/typesafeProvider';
+import { detectBrowserChallenge } from '../../../../shared/utils/browserChallengeDetection';
 import { classifyBrowserComputerManualTakeover } from '../../../../shared/utils/browserComputerRedaction';
 import { isBrowserLoginWall } from '../../../../shared/utils/browserLoginWall';
 import type { BrowserService } from '../../../services/infra/browserService';
@@ -437,7 +438,14 @@ async function runJevBrowserStepLoop(
       ...captured.snapshot.headings.map((heading) => heading.text),
       visibleText,
     ].join('\n');
-    const takeover = classifyBrowserComputerManualTakeover(visible);
+    const takeover = detectBrowserChallenge({
+      title: captured.snapshot.title,
+      headings: captured.snapshot.headings.map((heading) => heading.text),
+      bodyText: visibleText,
+      frameUrls: (captured.snapshot.frameDocuments ?? []).map((frame) => frame.url),
+    })
+      ? 'captcha_or_risk_control'
+      : classifyBrowserComputerManualTakeover(visible, { skipCaptcha: true });
     if (takeover === 'captcha_or_risk_control' || takeover === 'mfa_required') {
       return finish('needs_review', takeover, { captchaClass: takeover });
     }

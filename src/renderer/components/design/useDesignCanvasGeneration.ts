@@ -24,6 +24,7 @@ import type { DesignVideoMode } from './designTypes';
 import { saveCanvasDoc } from './designCanvasPersistence';
 import { groupKey } from './variantSpine';
 import {
+  IMAGE_MULTI_REF,
   videoModelById,
   videoModelsWithCap,
   clampVideoDuration,
@@ -44,6 +45,7 @@ import { placeCanvasNode, placeVariantNode, type CanvasPlacementOperation } from
 import {
   buildDesignSelectionContext,
   firstSelectedImageNode,
+  selectedImageNodes,
 } from './designSelectionContext';
 import {
   buildCanvasBriefing,
@@ -259,18 +261,22 @@ export function useDesignCanvasGeneration(): {
       selectionContext,
     });
 
-    // 参考图垫图：优先取当前选中的图片；没有选中图时，再取画布上第一张参考图。
-    // 万相当前单图输入，多张选中时取第一张，与 selectionContext 的 primary 一致。
-    const refNode = firstSelectedImageNode(selectionCanvas.nodes, selectionContext) ?? selectionCanvas.nodes.find(isReferenceNode);
-    let referenceImageDataUrl: string | undefined;
-    if (refNode) {
-      referenceImageDataUrl = (await readWorkspaceImageAsDataUrl(`${runDir}/${refNode.src}`)) ?? undefined;
+    // 参考图垫图：优先取当前选中的图片（选择顺序，最多 3 张）；没有选中图时，再取画布上第一张参考图。
+    // 1 张走万相垫图，2-3 张走百炼多图编辑（图1/图2/图3 即此顺序）。
+    const selectedRefs = selectedImageNodes(selectionCanvas.nodes, selectionContext, IMAGE_MULTI_REF.MAX_REFERENCE_IMAGES);
+    const fallbackRef = selectedRefs.length ? undefined : selectionCanvas.nodes.find(isReferenceNode);
+    const refNodes = fallbackRef ? [fallbackRef] : selectedRefs;
+    const referenceImageDataUrls: string[] = [];
+    for (const refNode of refNodes) {
+      const dataUrl = await readWorkspaceImageAsDataUrl(`${runDir}/${refNode.src}`);
       // 参考图读失败时显式报错、不静默退化成纯文生图（否则用户以为用了参考图，审计 HIGH#2）。
-      if (!referenceImageDataUrl) {
+      if (!dataUrl) {
         useDesignCanvasStore.getState().setError(t.design.errReferenceRead);
         return;
       }
+      referenceImageDataUrls.push(dataUrl);
     }
+    const referenceImageDataUrl = referenceImageDataUrls[0];
 
     // 复述句在付费 IPC 之前发出：参数直接拼，零模型调用；理解错了用户能立刻停手。
     const spec: CanvasOpSpec = { op: 'generate', requirement: form.requirement, ratio: form.aspectRatio };
@@ -287,6 +293,7 @@ export function useDesignCanvasGeneration(): {
           model: form.imageModel,
           outputPath: assetAbs,
           referenceImageDataUrl,
+          referenceImageDataUrls: referenceImageDataUrls.length > 1 ? referenceImageDataUrls : undefined,
           selectionContext,
         },
       );

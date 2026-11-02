@@ -37,6 +37,7 @@ function makeAppService(
 ): AgentApplicationService {
   return {
     getMessages: async () => messages,
+    sessionExists: async () => false,
     getSessionTasks: async () => [],
     getSerializedCompressionState: () => serializedCompressionState,
     getCurrentSessionId: () => sessionId,

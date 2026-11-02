@@ -4,7 +4,9 @@
 // 把「为什么还活着」落到 daemon.pid 旁的 daemon-state.json（原子写），供
 // `neo daemon status` 读取。触发面：
 //   - start() 时写一次初值；
-//   - 意图变化（quit-intent 路由 → onDaemonQuitIntentChange）；
+//   - 意图变化（quit-intent 路由 → onDaemonQuitIntentChange；stop 意图同时联动
+//     去留 recheck——附着 daemon 的 stdin 管道早已断开，不会再有 EOF 事件来
+//     触发停机，意图本身就得是那条触发器）；
 //   - cron 任务增删改/启停（CronService.onJobsChanged，同时联动去留 recheck）；
 //   - webServer 把 run/审批/后台任务三类 idle 信号接到 report()（见 webServer 接线）。
 // 写失败只 warn 不抛：观测文件永远不挡运行。内容去重（pid/intent/reasons/armed
@@ -26,7 +28,7 @@ export interface DaemonResidencyReport {
 export function createDaemonResidencyReporter(input: {
   dataDir: string;
   getSnapshot: () => DaemonIdleSnapshot | undefined;
-  /** cron 任务变化时的去留重查（webServer 传入 rechecker.recheck）。 */
+  /** 去留重查（cron 任务变化与 stop 意图到达时；webServer 传入 rechecker.recheck）。 */
   recheck: () => boolean;
 }): DaemonResidencyReport {
   const { dataDir, getSnapshot, recheck } = input;
@@ -53,7 +55,14 @@ export function createDaemonResidencyReporter(input: {
     }
   };
 
-  onDaemonQuitIntentChange(report);
+  onDaemonQuitIntentChange(() => {
+    report();
+    // stop 意图 = 壳已拍板「停止并退出」：附着 daemon（上一任壳已死，stdin 管道
+    // 早已断开）不会再等来 EOF 事件，意图变化本身就得触发去留重查——recheck 内部
+    // 自守卫（管道仍连着 / 已在停机）会挡掉 owned 子进程场景的重复触发，那条路
+    // 仍由壳随后的 stdin EOF 走到同一个 shutdown。
+    if (getDaemonQuitIntent() === 'stop') recheck();
+  });
   void (async () => {
     try {
       const { getCronService } = await import('../../cron/cronService');

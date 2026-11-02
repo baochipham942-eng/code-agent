@@ -107,6 +107,11 @@ describe('DurableRunReadService migrated consumers', () => {
       status: 'running',
       durableWaitingInput: true,
     });
+    expect(projectDurableRunToSessionPayload({
+      ...base,
+      interruptCause: 'quota_wait',
+      quotaWaitDueAt: 1_000,
+    }).durableResume?.quotaWait).toEqual({ dueAt: 1_000, duePassed: true });
     expect(projectDurableRunToSessionPayload({ ...base, interruptCause: 'crash_or_quit', autoResumeCount: 1 })).toEqual({
       status: 'running',
       durableWaitingInput: true,

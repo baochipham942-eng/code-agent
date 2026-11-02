@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message } from '../../src/shared/contract/message';
 
 // DatabaseService 默认走 app.getPath('userData')，vitest 把它钉在
@@ -65,6 +65,51 @@ const { composeVoiceInstructions } = await import('../../src/host/services/voice
 const CARD = '4111111111111111';
 const memoryDir = path.join(dataDir, 'memory');
 
+// 账本四表带 immutable 触发器（schemaConversationBranch.ts），没有合法 DELETE 入口；
+// 这里是测试自己的一次性库，两轮之间拆掉 delete 触发器清空、再按原 DDL 重建。
+// replay_snapshots 是不受触发器保护的一次性缓存，直接清。
+const IMMUTABLE_LEDGER_TABLES = [
+  'conversation_entries',
+  'conversation_branches',
+  'conversation_branch_entries',
+  'conversation_branch_events',
+] as const;
+const LEDGER_TABLES = [
+  'conversation_branch_replay_snapshots',
+  'conversation_branch_events',
+  'conversation_branch_entries',
+  'conversation_branches',
+  'conversation_entries',
+] as const;
+
+function clearConversationLedger(): void {
+  const db = getDatabase().getDb();
+  if (!db) throw new Error('voiceMemoryContext test: db handle unavailable');
+  db.transaction(() => {
+    for (const table of IMMUTABLE_LEDGER_TABLES) {
+      db.exec(`DROP TRIGGER IF EXISTS ${table}_immutable_delete`);
+    }
+    for (const table of LEDGER_TABLES) {
+      db.prepare(`DELETE FROM ${table}`).run();
+    }
+    for (const table of IMMUTABLE_LEDGER_TABLES) {
+      db.exec(`
+        CREATE TRIGGER IF NOT EXISTS ${table}_immutable_delete
+        BEFORE DELETE ON ${table}
+        BEGIN
+          SELECT RAISE(ABORT, '${table} is immutable');
+        END;
+      `);
+    }
+  })();
+}
+
+function startOfLocalDay(at: number): number {
+  const date = new Date(at);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
 function seedSession(id: string, projectId: string, updatedAt: number): void {
   getDatabase().createSessionWithId(id, {
     title: id,
@@ -89,7 +134,14 @@ beforeEach(async () => {
   warn.mockClear();
   settings.current = { voice: { userProfile: { enabled: true } } };
   await getDatabase().clearAllSessions();
+  // clearAllSessions 只删 sessions（messages 靠 CASCADE）；幂等账本行会残留，
+  // --retry=1 在同进程重播同 id 种子时 timestamp 已变，必撞 IDEMPOTENCY_CONFLICT。
+  clearConversationLedger();
   writeFileSync(path.join(memoryDir, 'recent-conversations.md'), '# Recent Conversations\n');
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 afterAll(async () => {
@@ -100,11 +152,17 @@ afterAll(async () => {
 
 describe('voice memory context', () => {
   it('injects an earlier-night call and recent chat, and drops the covered call, the card, and other projects', async () => {
+    // 本地 00:02（本地时间构造器，任何 TZ 下都是午夜窗口）：CI 只在 UTC 午夜后
+    // ~20 分钟真踩这条，钉死时钟让它变成随时可复现的确定场景。
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 9, 28, 0, 2, 0));
     const now = Date.now();
     const earlierAt = new Date(now);
     earlierAt.setDate(earlierAt.getDate() - 1);
     earlierAt.setHours(21, 30, 0, 0);
-    const coveredEnd = now - 20 * 60_000;
+    // 00:20 前跑时 now-20min 落在上一本地日，sameLocalDay 判据会让被覆盖通话
+    // 漏进 Earlier calls。把结束时间钳进当前本地日，其余时间这个钳制是 no-op。
+    const coveredEnd = Math.max(now - 20 * 60_000, startOfLocalDay(now));
     const coveredStart = coveredEnd - 5 * 60_000;
     const staleAt = now - 15 * 24 * 60 * 60 * 1000;
     const today = new Date().toISOString().slice(0, 10);

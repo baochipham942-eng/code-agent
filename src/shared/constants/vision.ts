@@ -21,3 +21,7 @@ export const COMPUTER_BATCH = {
   /** settleMs 上限，防止模型写出爆炸性的延迟 */
   MAX_SETTLE_MS: 5_000,
 } as const;
+
+/** browser_action secretRef：只允许解析此前缀的环境变量；`<NAME>_ORIGINS` 为该密钥的站点白名单。 */
+export const BROWSER_SECRET_ENV_PREFIX = 'CODE_AGENT_BROWSER_SECRET_';
+export const BROWSER_SECRET_ORIGINS_SUFFIX = '_ORIGINS';

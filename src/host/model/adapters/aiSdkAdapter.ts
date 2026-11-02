@@ -61,8 +61,10 @@ import {
   abortableSleep,
   computeRetryBackoffMs,
   extractRetryAfterMs,
+  quotaSuspendErrorFor,
   retryEvents,
 } from '../providers/retryStrategy';
+import { isQuotaWaitSuspendEligible } from '../providers/quotaWaitSuspend';
 import { getProviderHealthMonitor } from '../providerHealthMonitor';
 import { getProviderLimiter } from '../concurrencyLimiter';
 import {
@@ -1028,6 +1030,10 @@ async function streamViaAiSdk(params: {
       const timeoutCapHit = watchdogTimedOut && timeoutRetriesUsed >= INFERENCE_TIMEOUTS.TIMEOUT_RETRY_MAX;
       if (timeoutCapHit) logger.warn(`[AiSdkAdapter] 首字节超时重试已达上限 (${INFERENCE_TIMEOUTS.TIMEOUT_RETRY_MAX})，放弃重试: "${msg}"`);
       if (!emittedOutput && attempt < maxRetries && !signal?.aborted && !timeoutCapHit && isRetryableModelCallError(effectiveErr)) {
+        // 挂起只认可停靠 run 的调用链（runWithQuotaWaitSuspendEligibility）；其余调用方
+        // 保持首字节前封顶重试，耗尽后照常走 provider 降级，绝不静默转取消。
+        const quotaSuspend = watchdogTimedOut || !isQuotaWaitSuspendEligible() ? null : quotaSuspendErrorFor(err);
+        if (quotaSuspend) throw quotaSuspend;
         if (watchdogTimedOut) timeoutRetriesUsed += 1;
         // B1 续接 attempt 的首字节前瞬态失败：断点态不能随「全新累积器」重置丢掉
         // （resumeSeed 已在循环顶消费）——挂回后再 continue，重试仍是 prefix 形状。

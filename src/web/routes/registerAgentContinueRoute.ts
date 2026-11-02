@@ -4,6 +4,7 @@ import type { TaskManager } from '../../host/task';
 import { getTaskManager as getDefaultTaskManager } from '../../host/task/TaskManager';
 import { continueParkedDurableRun } from '../../host/app/durableRunContinuation';
 import type { RunRegistry } from '../../host/runtime/runRegistry';
+import { registerQuotaWaitContinuer } from '../../host/runtime/quotaWaitTimer';
 import { formatError } from '../helpers/utils';
 import { AgentContinueBodySchema } from './agentBodySchemas';
 
@@ -13,6 +14,12 @@ export function registerAgentContinueRoute(
   getTaskManager: () => TaskManager = getDefaultTaskManager,
   getMessages?: (sessionId: string) => Promise<Message[]>,
 ): void {
+  registerQuotaWaitContinuer(({ sessionId }) => continueParkedDurableRun({
+    sessionId,
+    runRegistry,
+    taskManager: getTaskManager(),
+    ...(getMessages ? { getMessages } : {}),
+  }));
   router.post('/continue', async (req, res) => {
     const parsedBody = AgentContinueBodySchema.safeParse(req.body ?? {});
     if (!parsedBody.success) {

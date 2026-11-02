@@ -22,6 +22,12 @@ import {
 
 const logger = createLogger('NotificationService');
 
+/**
+ * needs-input 去重键容量：同一 dedupeKey 只投递一次，超限丢最旧（Set 保持插入序，
+ * 首元素即最旧）。有界内存，防长跑进程无限膨胀。
+ */
+const NEEDS_INPUT_DEDUPE_KEY_LIMIT = 200;
+
 /** 通知文案语言跟随用户设置（ui.language）；读取失败按中文兜底，通知本身不许把恢复路径炸掉。 */
 function readNotificationLocale(): DurableResumeNotificationLocale {
   try {
@@ -75,6 +81,8 @@ class NotificationService implements Disposable {
   private enabled: boolean = true;
   private disposed = false;
   private recentNotifications: RecordedNotification[] = [];
+  /** 已按 dedupeKey 投递过的 needs-input 键（有界，见 NEEDS_INPUT_DEDUPE_KEY_LIMIT）。 */
+  private deliveredNeedsInputKeys: Set<string> = new Set();
 
   private isDryRun(): boolean {
     return process.env.CODE_AGENT_NOTIFICATION_DRY_RUN === '1';
@@ -102,11 +110,12 @@ class NotificationService implements Disposable {
 
   clearRecentNotifications(): void {
     this.recentNotifications = [];
+    this.deliveredNeedsInputKeys.clear();
   }
 
   /**
    * 检查是否应该发送通知
-   * 只在 App 窗口非焦点时发送
+   * 默认只在 App 窗口非焦点时发送；needs_input / 失败类 / force 绕过焦点门
    */
   private shouldNotify(force = false): boolean {
     if (!this.enabled) return false;
@@ -139,6 +148,10 @@ class NotificationService implements Disposable {
     siteOrigin?: string;
     failureKind?: CronFailurePresentationKind;
     resetAt?: string;
+    /** 失败类 / 需要输入类通知：renderer 端即使窗口聚焦也要弹。 */
+    urgent?: boolean;
+    /** 仅任务失败；renderer 聚焦时据此补应用内错误 toast（needs-input 不带）。 */
+    failure?: boolean;
   }): void {
     if (this.isDryRun()) return;
     broadcastToRenderer(IPC_CHANNELS.NOTIFICATION_SHOW, {
@@ -171,10 +184,26 @@ class NotificationService implements Disposable {
 
   /**
    * 发送 "需要输入" 通知（权限请求、用户提问）
+   * 一律 urgent：Neo 卡在等用户时，即使 app 聚焦（用户在看别的会话）也要弹系统横幅，
+   * 绕过 host 焦点门与 renderer 焦点门。
+   * dedupeKey：同一条逻辑请求可能从两个发送口到达（停车通知 + 事件落库通知），
+   * 携带同一键的第二次调用在门后、投递前被丢弃；无键 = 行为不变。
    */
-  notifyNeedsInput(data: { sessionId: string; title: string; body: string }): void {
+  notifyNeedsInput(data: { sessionId: string; title: string; body: string; dedupeKey?: string }): void {
     if (!this.isIntentAllowed('needs_input')) return;
-    if (!this.shouldNotify()) return;
+    if (!this.shouldNotify(true)) return;
+
+    if (data.dedupeKey) {
+      if (this.deliveredNeedsInputKeys.has(data.dedupeKey)) {
+        logger.debug('Skip duplicate needs-input notification', { dedupeKey: data.dedupeKey });
+        return;
+      }
+      this.deliveredNeedsInputKeys.add(data.dedupeKey);
+      if (this.deliveredNeedsInputKeys.size > NEEDS_INPUT_DEDUPE_KEY_LIMIT) {
+        const oldest = this.deliveredNeedsInputKeys.values().next().value;
+        if (oldest !== undefined) this.deliveredNeedsInputKeys.delete(oldest);
+      }
+    }
 
     const entry = this.record({
       type: 'needs_input',
@@ -187,6 +216,7 @@ class NotificationService implements Disposable {
       title: entry.title,
       body: entry.body,
       sessionId: data.sessionId,
+      urgent: true,
     });
     logger.info('Needs-input notification sent', { title: data.title });
   }
@@ -198,7 +228,8 @@ class NotificationService implements Disposable {
   notifyTaskComplete(data: TaskNotificationData, options?: { force?: boolean }): void {
     const intent: NotificationIntent = data.succeeded === false ? 'task_failed' : 'task_complete';
     if (!this.isIntentAllowed(intent)) return;
-    if (!this.shouldNotify(options?.force)) {
+    // 失败类通知不受焦点门限制：用户盯着别的会话时也不能错过失败。
+    if (!this.shouldNotify(options?.force || intent === 'task_failed')) {
       logger.debug('Skip notification - app is focused');
       return;
     }
@@ -232,8 +263,9 @@ class NotificationService implements Disposable {
       ...(data.siteOrigin ? { siteOrigin: data.siteOrigin } : {}),
       ...(data.failureKind ? { failureKind: data.failureKind } : {}),
       ...(data.resetAt ? { resetAt: data.resetAt } : {}),
+      ...(intent === 'task_failed' ? { urgent: true, failure: true } : {}),
     });
-    logger.info('Notification sent', { sessionTitle });
+    logger.info('Notification dispatched to renderer', { sessionTitle });
   }
 
   /** Background restart-resume is silent in the chat surface, so expose one system signal. */
@@ -311,6 +343,7 @@ class NotificationService implements Disposable {
       body: entry.body,
       sessionId: data.sessionId,
       markSessionUnread: true,
+      ...(intent === 'task_failed' ? { urgent: true, failure: true } : {}),
     });
     logger.info('Voice work settlement notification sent', {
       sessionId: data.sessionId,

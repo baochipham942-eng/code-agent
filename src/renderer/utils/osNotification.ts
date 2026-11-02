@@ -10,6 +10,9 @@
 import { isTauriMode } from './platform';
 import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
+import { toast } from '../hooks/useToast';
+
+const FOREGROUND_FAILURE_TOAST_MS = 10_000;
 
 type NotifModule = typeof import('@tauri-apps/plugin-notification');
 
@@ -57,30 +60,53 @@ export function shouldSuppressOsNotification(hasFocus: boolean, visible: boolean
 }
 
 /** 发一条原生系统通知。Tauri 下自动带 Agent Neo 图标/身份；web 回落浏览器通知。 */
-export async function postOsNotification(opts: { title: string; body: string }): Promise<void> {
+export async function postOsNotification(
+  opts: { title: string; body: string },
+  flags: { urgent?: boolean; failure?: boolean; onOpen?: () => void; openLabel?: string } = {},
+): Promise<void> {
+  const urgent = flags.urgent === true;
   const hasFocus = typeof document !== 'undefined' && document.hasFocus();
   const visible = typeof document !== 'undefined' && !document.hidden;
-  if (shouldSuppressOsNotification(hasFocus, visible)) {
-    reportDelivery({ mode: 'suppressed-focused', sent: false });
+  // urgent（失败类）跳过焦点门：用户盯着别的会话时也不能错过失败。
+  if (!urgent && shouldSuppressOsNotification(hasFocus, visible)) {
+    reportDelivery({ mode: 'suppressed-focused', dispatched: false });
     return;
   }
+  // macOS 在 app 为 key window 时会藏起原生横幅：urgent 失败在前台补一条应用内 toast。
+  // 仅失败：needs-input 同为 urgent，但不是失败，不能弹红色错误 toast。
+  const toastShown = urgent && flags.failure === true && hasFocus && visible;
+  if (toastShown) {
+    const { onOpen, openLabel } = flags;
+    toast.error(
+      `${opts.title}: ${opts.body}`,
+      onOpen && openLabel ? { label: openLabel, onClick: onOpen } : undefined,
+      FOREGROUND_FAILURE_TOAST_MS,
+    );
+  }
+  const toastFlag = toastShown ? { toastShown: true } : {};
   if (isTauriMode()) {
     try {
       const mod = await loadModule();
       const granted = await ensureTauriPermission(mod);
       if (!granted) {
-        reportDelivery({ mode: 'tauri', granted: false, sent: false });
+        reportDelivery({ mode: 'tauri', granted: false, dispatched: false, ...(urgent ? { urgent } : {}), ...toastFlag });
         return;
       }
+      // dispatched = OS API accepted the call; macOS gives no callback, so display is not confirmed.
       mod.sendNotification({ title: opts.title, body: opts.body });
-      reportDelivery({ mode: 'tauri', granted: true, sent: true });
+      reportDelivery({ mode: 'tauri', granted: true, dispatched: true, ...(urgent ? { urgent } : {}), ...toastFlag });
     } catch (err) {
       console.warn('[osNotification] Tauri sendNotification 失败', err);
       reportDelivery({ mode: 'tauri', error: err instanceof Error ? err.message : String(err) });
     }
     return;
   }
-  reportDelivery({ mode: 'web', perm: typeof Notification !== 'undefined' ? Notification.permission : 'unavailable' });
+  reportDelivery({
+    mode: 'web',
+    perm: typeof Notification !== 'undefined' ? Notification.permission : 'unavailable',
+    ...(urgent ? { urgent } : {}),
+    ...toastFlag,
+  });
   // Web 回落：浏览器通知（best-effort）
   try {
     if (typeof Notification === 'undefined') return;

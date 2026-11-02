@@ -66,7 +66,7 @@ describe('registerAgentContinueRoute', () => {
     ]);
   });
 
-  it('rejects a concurrent second Continue and parks the run back if resume throws', async () => {
+  it('a concurrent second Continue is a no-op and parks the run back if resume throws', async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
     const { api } = await start({
@@ -75,9 +75,9 @@ describe('registerAgentContinueRoute', () => {
 
     const first = api.invoke(IPC_DOMAINS.AGENT, 'continue', { sessionId: 'session-parked' });
     const second = await api.invoke(IPC_DOMAINS.AGENT, 'continue', { sessionId: 'session-parked' });
-    expect(second).toMatchObject({
-      success: false,
-      error: { code: 'HTTP_409' },
+    expect(second).toEqual({
+      success: true,
+      data: { runId: 'run-parked', alreadyContinuing: true },
     });
     release();
     await first;

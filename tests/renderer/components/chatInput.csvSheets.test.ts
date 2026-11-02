@@ -42,4 +42,14 @@ describe('buildCsvSheetsJson', () => {
     expect(parsed.sheets[0].rows).toEqual([[1, 2], [null], [3, 4]]);
     expect(parsed.sheets[0].rowCount).toBe(3); // 中间那条空行计入数据行
   });
+
+  it('前导零 / 非规范数字 / 布尔字样保持原文，表头不被转换；规范数字仍是 number', () => {
+    const text = '007,zip,price,flag,sci,empty\n1,00123,1.10,TRUE,1e5,\n2,94105,2.5,false,3,x';
+    const spec = parseSheets(buildCsvSheetsJson('codes.csv', text)!);
+    expect(spec.headers).toEqual(['007', 'zip', 'price', 'flag', 'sci', 'empty']);
+    expect(spec.rows).toEqual([
+      [1, '00123', '1.10', 'TRUE', '1e5', null],
+      [2, 94105, 2.5, 'false', 3, 'x'],
+    ]);
+  });
 });

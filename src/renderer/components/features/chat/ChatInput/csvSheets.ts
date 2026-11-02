@@ -26,10 +26,20 @@ function hasUnrecoverableErrors(errors: Papa.ParseError[]): boolean {
   return errors.some((error) => error.code === 'MissingQuotes');
 }
 
+/**
+ * 单元格只在「转成 number 再转回字符串与原文逐字一致」时才当数值：
+ * '00123' / '1.10' / '1e5' / 'TRUE' 都保持原文，邮编、订单号、编码列不会被改写，
+ * 也不会被当成数值列去算合计。（papaparse 的 dynamicTyping 做不到无损，故自己判。）
+ */
+function toCell(raw: string): string | number | null {
+  if (raw === '') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && String(n) === raw ? n : raw;
+}
+
 export function buildCsvSheetsJson(fileName: string, text: string): string | undefined {
   const parsed = Papa.parse<unknown[]>(text, {
     header: false,
-    dynamicTyping: true,
   });
 
   if (parsed.data.length === 0 || hasUnrecoverableErrors(parsed.errors)) return undefined;
@@ -41,7 +51,7 @@ export function buildCsvSheetsJson(fileName: string, text: string): string | und
   if (trimmed.length === 0) return undefined;
 
   const headers = (trimmed[0] || []).map((cell) => (cell === null || cell === undefined ? '' : String(cell)));
-  const rows = trimmed.slice(1, MAX_SHEET_ROWS + 1);
+  const rows = trimmed.slice(1, MAX_SHEET_ROWS + 1).map((row) => row.map((cell) => toCell(String(cell ?? ''))));
   const name = (fileName.split('/').pop() || fileName).replace(/\.csv$/i, '') || 'csv';
 
   return JSON.stringify({

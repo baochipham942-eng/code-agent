@@ -53,7 +53,9 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // 本回合已声明 targetApp 后，省略 targetApp 的 type/key（含 computer_batch 子动作）会被拒绝。
 // 整合合并：本单 sys-v90 × main 已合入的 sys-v90 撞号，合并后的 prompt 输入哈希面
 // 未在任何一侧记录过，按惯例升版。
-export const PROMPT_VERSION = 'sys-v92' as const;
+// sys-v93：N-IMAGE-MULTI-REF-IMPL——image_generate reference_images 由最多 1 张放宽到 1-3 张
+//（图1/图2/图3 = 数组顺序、比例跟随最后一张），schema 描述与示例同步改写。
+export const PROMPT_VERSION = 'sys-v93' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

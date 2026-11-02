@@ -44,13 +44,17 @@ export async function waitForBrowserHumanTakeoverRelease(
   }
 }
 
+/** FU1-FU2-FU1：waiting_human 的 BUSY 消息面向模型的行动指引（三处 BUSY 站点共用）。 */
+export const WAITING_HUMAN_MODEL_GUIDANCE =
+  'The user is still using the browser. Do NOT retry browser actions; tell the user to finish and press Continue in the browser window, then stop and wait for their reply.';
+
 function browserSessionBusy(
   session: InteractiveSurfaceSessionV1,
   operationId: string,
 ): SurfaceExecutionRuntimeError {
   return new SurfaceExecutionRuntimeError({
     code: 'SURFACE_SESSION_BUSY',
-    message: `Browser Surface session cannot start an operation while ${session.state}.`,
+    message: `Browser Surface session cannot start an operation while ${session.state}.` + (session.state === 'waiting_human' ? ` ${WAITING_HUMAN_MODEL_GUIDANCE}` : ''),
     phase: 'prepare',
     retryable: session.state === 'paused' || session.state === 'waiting_human',
     userActionRequired: session.state === 'waiting_human',

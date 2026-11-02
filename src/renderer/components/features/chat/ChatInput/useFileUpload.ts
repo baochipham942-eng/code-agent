@@ -198,11 +198,23 @@ export function useFileUpload() {
 
     return new Promise((resolve) => {
       const reader = new FileReader();
-      reader.onload = (e) => {
+      reader.onload = async (e) => {
         const data = e.target?.result as string;
+        // .csv：从同一份已读文本构建 sheetsJson，消息气泡里渲染与 xlsx 同款的
+        // 交互表格。动态 import 让 papaparse 留在懒 chunk（同 CsvTable 拆包策略）；
+        // 解析失败静默回退为普通图标卡。
+        let sheetsJson: string | undefined;
+        if (category === 'data' && file.name.toLowerCase().endsWith('.csv')) {
+          try {
+            const { buildCsvSheetsJson } = await import('./csvSheets');
+            sheetsJson = buildCsvSheetsJson(displayName, data);
+          } catch (err) {
+            logger.warn('csv sheetsJson build failed, falling back to icon card', { fileName: file.name, error: err });
+          }
+        }
         resolve({
           id, type: 'file', category, name: displayName, size: file.size,
-          mimeType: file.type || 'text/plain', data, language, path: filePath,
+          mimeType: file.type || 'text/plain', data, language, path: filePath, sheetsJson,
         });
       };
       reader.onerror = () => {

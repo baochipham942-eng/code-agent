@@ -141,10 +141,11 @@ prompt 要求：
 ### 5. 合成 PPTX / PDF
 
 **默认使用混合合成脚本**（AI 背景图 + 真实中文文字叠加）：
+合成时必须传递已选风格：`<theme>` 取已选的 `corporate`、`minimal` 或 `bold-editorial`，选择这三种风格后不得省略 `--theme`；其他风格省略该参数，沿用 `default`。
 
 ```bash
 # 混合合成（推荐）：背景图 + slides.json 文字叠加
-node .Codex/skills/frontend-slides/scripts/merge-to-pptx-hybrid.mjs <slide-deck-dir>
+node .Codex/skills/frontend-slides/scripts/merge-to-pptx-hybrid.mjs <slide-deck-dir> --theme <theme>
 
 # 纯图片 PDF（快速预览用）
 node .Codex/skills/frontend-slides/scripts/merge-to-pdf.mjs <slide-deck-dir>

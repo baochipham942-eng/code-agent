@@ -19,9 +19,10 @@ export const ForkSourceHint: React.FC<ForkSourceHintProps> = ({ sessionId }) => 
   const forkLineage = useSessionStore((state) => {
     const session = state.sessions.find((item) => item.id === sessionId);
     return (session?.metadata?.forkLineage as SessionForkLineageSummary | undefined) ?? null;
-  });  const parentTitle = useSessionStore((state) => {
+  });
+  const parentSession = useSessionStore((state) => {
     if (!forkLineage) return null;
-    return state.sessions.find((item) => item.id === forkLineage.parentSessionId)?.title ?? null;
+    return state.sessions.find((item) => item.id === forkLineage.parentSessionId) ?? null;
   });
   const switchSession = useSessionStore((state) => state.switchSession);
   const setPendingSearchJump = useSessionUIStore((state) => state.setPendingSearchJump);
@@ -39,9 +40,17 @@ export const ForkSourceHint: React.FC<ForkSourceHintProps> = ({ sessionId }) => 
 
   if (!forkLineage) return null;
 
-  const label = t.forkSourceHint.source
-    .replace('{parentTitle}', parentTitle ?? forkLineage.parentSessionId)
-    .replace('{anchorId}', forkLineage.sourceAnchorMessageId);
+  const importSource = parentSession?.origin?.kind === 'import'
+    ? parentSession.engine?.kind === 'claude_code'
+      ? 'Claude Code'
+      : parentSession.engine?.kind === 'codex_cli'
+        ? 'Codex'
+        : null
+    : null;
+  const label = (importSource
+    ? t.forkSourceHint.imported.replace('{source}', importSource)
+    : t.forkSourceHint.source
+  ).replace('{parentTitle}', parentSession?.title ?? t.forkSourceHint.originalChat);
 
   return (
     <button /* ds-allow:button: 整行可点的轻量来源提示条（图标+截断文本左对齐），Button primitive 的居中动作按钮形状不适配 */

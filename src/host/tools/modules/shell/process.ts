@@ -21,6 +21,7 @@ import type {
 } from '../../../protocol/tools';
 import { createFileArtifact, createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { processSchema as schema } from './process.schema';
+import { resolveForegroundTimeoutTier, resolveShortTierWait, grantShortTierWait, settleShortTierWait } from '../../shell/foregroundTier';
 import {
   getAllBackgroundTasks,
   getBackgroundTask,
@@ -42,6 +43,25 @@ import {
 import { diagnoseSandboxDenial } from '../../shell/sandboxFailureDiagnostics';
 
 const DEFAULT_POLL_TIMEOUT = 30000;
+
+function resolveProcessWait(requested: number | undefined, block: boolean, sessionId?: string): { timeout: number; refusal?: string } {
+  if (!block || resolveForegroundTimeoutTier(sessionId) !== 'short') return { timeout: requested ?? DEFAULT_POLL_TIMEOUT };
+  return resolveShortTierWait(requested);
+}
+
+// 短档会话阻塞等后台任务：除了单次 ≤ 档位，还有按会话累计的 no-wait 预算（= 档位时长）。
+// 预算耗尽后拒绝继续等/轮询；只对「任务仍在跑、真要阻塞」的调用计量，已终态任务的读取不受影响。
+function meterTaskWait(
+  sessionId: string | undefined,
+  taskId: string,
+  block: boolean,
+  timeout: number,
+): { timeout: number; refusal?: string; metered?: boolean } {
+  if (!sessionId || !block || resolveForegroundTimeoutTier(sessionId) !== 'short') return { timeout };
+  const task = getBackgroundTask(taskId);
+  if (task?.status !== 'running') return { timeout };
+  return { ...grantShortTierWait(sessionId, timeout), metered: true };
+}
 export type ProcessActionPermissionClass = 'observe' | 'control';
 
 const PROCESS_OBSERVATION_ACTIONS = new Set(['list', 'poll', 'log', 'output']);
@@ -183,7 +203,9 @@ Use Process action=kill <id> to terminate a running process.`;
 async function handlePoll(args: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult<string>> {
   const sessionId = args.session_id as string | undefined;
   const block = Boolean(args.block);
-  const timeout = (args.timeout as number | undefined) ?? DEFAULT_POLL_TIMEOUT;
+  const wait = resolveProcessWait(args.timeout as number | undefined, block, ctx.sessionId);
+  if (wait.refusal) return { ok: false, error: wait.refusal, code: 'INVALID_ARGS' };
+  const timeout = wait.timeout;
 
   if (!sessionId) {
     return { ok: false, error: 'session_id is required for poll action', code: 'INVALID_ARGS' };
@@ -247,7 +269,11 @@ async function handlePoll(args: Record<string, unknown>, ctx: ToolContext): Prom
   }
 
   if (isTaskId(sessionId)) {
-    const output = await getTaskOutput(sessionId, block, timeout);
+    const budget = meterTaskWait(ctx.sessionId, sessionId, block, timeout);
+    if (budget.refusal) return { ok: false, error: budget.refusal, code: 'INVALID_ARGS' };
+    const waitStart = Date.now();
+    const output = await getTaskOutput(sessionId, block, budget.timeout);
+    if (budget.metered) settleShortTierWait(ctx.sessionId, Date.now() - waitStart);
     if (!output) {
       return { ok: false, error: `Task not found: ${sessionId}`, code: 'NOT_FOUND' };
     }
@@ -495,7 +521,8 @@ async function handleOutput(args: Record<string, unknown>, ctx: ToolContext): Pr
   // Output 兼容 task_id 和 session_id（legacy task_output 用 task_id）
   const id = (args.task_id as string | undefined) ?? (args.session_id as string | undefined);
   const block = args.block !== false; // default true
-  const timeout = (args.timeout as number | undefined) ?? DEFAULT_POLL_TIMEOUT;
+  const wait = resolveProcessWait(args.timeout as number | undefined, block, ctx.sessionId);
+  if (wait.refusal) return { ok: false, error: wait.refusal, code: 'INVALID_ARGS' };
 
   if (!id) {
     // No id → list all tasks（沿用 task_output 的 list 行为）
@@ -552,7 +579,11 @@ async function handleOutput(args: Record<string, unknown>, ctx: ToolContext): Pr
     return { ok: false, error: `Task ${id} not found.`, code: 'NOT_FOUND' };
   }
 
-  const result = await getTaskOutput(id, block, timeout);
+  const budget = meterTaskWait(ctx.sessionId, id, block, wait.timeout);
+  if (budget.refusal) return { ok: false, error: budget.refusal, code: 'INVALID_ARGS' };
+  const waitStart = Date.now();
+  const result = await getTaskOutput(id, block, budget.timeout);
+  if (budget.metered) settleShortTierWait(ctx.sessionId, Date.now() - waitStart);
   if (!result) {
     return { ok: false, error: `Failed to get output for task: ${id}`, code: 'OUTPUT_FAILED' };
   }

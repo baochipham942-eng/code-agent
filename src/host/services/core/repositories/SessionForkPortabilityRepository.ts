@@ -262,6 +262,43 @@ export class SessionForkPortabilityRepository {
     return apply.immediate();
   }
 
+  /**
+   * 只读判重预检：该 (sourceExportId, owner, project, namespace) 是否已有完成导入。
+   * 批量导入在进 importSessionFork 之前用——后者对同 exportId 不同 digest 抛
+   * SYNC_ID_DIGEST_CONFLICT，不能当幂等闸。
+   */
+  hasImportedExport(sourceExportId: string, ownerScopeId: string, projectId: string, namespace: string): boolean {
+    return this.readImportRecord(sourceExportId, ownerScopeId, projectId, namespace) !== null;
+  }
+
+  /**
+   * 按 exportId 找导入产生的 Neo 根会话（只读；跨 owner/project）。
+   * notAfter：只看 created_at ≤ notAfter 的行里最新的一条。撤销历史条目时传条目记录
+   * 时刻——同 exportId 可以有更晚的行（换 owner scope / 换项目后自动同步重导入），
+   * 盲取最新一条会把撤销落到别人家的会话上。
+   */
+  findImportedRootSessionId(sourceExportId: string, notAfter = Number.MAX_SAFE_INTEGER): string | null {
+    const row = this.db.prepare(`
+      SELECT imported_root_session_id AS id
+      FROM session_fork_portability_imports
+      WHERE source_export_id = ? AND created_at <= ?
+      ORDER BY created_at DESC, rowid DESC
+      LIMIT 1
+    `).get(sourceExportId, notAfter) as { id: string } | undefined;
+    return row?.id ?? null;
+  }
+
+  /** 会话是否有未删除的 fork 子会话（用户在只读导入会话里「继续」产生的原生子会话）。 */
+  hasLiveForkChild(sessionId: string): boolean {
+    return this.db.prepare(`
+      SELECT 1
+      FROM session_forks AS fork
+      JOIN sessions AS child ON child.id = fork.child_session_id
+      WHERE fork.source_session_id = ? AND child.is_deleted = 0
+      LIMIT 1
+    `).get(sessionId) !== undefined;
+  }
+
   getDurableEnvelope(
     exportId: string,
     ownerScopeId: string,

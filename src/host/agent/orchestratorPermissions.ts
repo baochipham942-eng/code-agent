@@ -436,6 +436,19 @@ export class OrchestratorPermissionIsland {
     const approvalTerminal = getPermissionModeManager().isUnattendedApprovalTerminal(fullRequest.sessionId);
     const unattended = getPermissionModeManager().isUnattendedSession(fullRequest.sessionId);
     const voice = getPermissionModeManager().isLiveVoiceSession(fullRequest.sessionId);
+    // 请求侧留痕（N-SANDBOX-ESCALATE-CHMOD-SHAPE-FU1）：应答侧每个出口都有日志，请求侧
+    // 此前一行都没有——「卡根本没被请求」与「请求了但没送到前端」无从区分。
+    // delegate_task 后台 lane 与前台共用 sessionId，这条日志同时是 lane 归属的证据。
+    logger.info('Approval request raised', {
+      requestId: fullRequest.id,
+      sessionId: fullRequest.sessionId ?? null,
+      tool: request.tool,
+      type: request.type,
+      forceConfirm,
+      unattended,
+      voice,
+      approvalTerminal,
+    });
     // cron/heartbeat/channel/语音派都走停车审批，24h backstop 只负责泄漏兜底；
     // 60s 终态仅保留给显式登记的旧兼容会话。
     if (unattended || voice) {
@@ -667,6 +680,9 @@ export class OrchestratorPermissionIsland {
             sessionId: fullRequest.sessionId,
             title: '有操作等你确认',
             body: `无人值守任务请求执行 ${fullRequest.tool}，已挂起等待你在收件箱确认。`,
+            // 停车口先发；同一条请求随后经 permission_request 事件再进落库通知口，
+            // 同键去重，用户只看到这一条更具体的「去收件箱确认」横幅。
+            dedupeKey: fullRequest.id,
           });
         } catch (err) {
           logger.warn('Parked approval notification failed', err);

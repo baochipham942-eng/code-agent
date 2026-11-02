@@ -67,3 +67,30 @@ describe('needs-input notification focus policy', () => {
     );
   });
 });
+
+describe('needs-input dedupeKey 去重', () => {
+  it('同一 dedupeKey 第二次调用不再投递', () => {
+    notificationService.notifyNeedsInput({ sessionId: 's1', title: '有操作等你确认', body: '第一条', dedupeKey: 'req-1' });
+    notificationService.notifyNeedsInput({ sessionId: 's1', title: '需要授权', body: '第二条', dedupeKey: 'req-1' });
+
+    expect(platformMocks.broadcast).toHaveBeenCalledTimes(1);
+    expect(platformMocks.broadcast).toHaveBeenCalledWith(
+      IPC_CHANNELS.NOTIFICATION_SHOW,
+      expect.objectContaining({ title: '有操作等你确认', urgent: true }),
+    );
+  });
+
+  it('不同 dedupeKey 各投递一次', () => {
+    notificationService.notifyNeedsInput({ sessionId: 's1', title: '等待回答', body: 'a', dedupeKey: 'req-a' });
+    notificationService.notifyNeedsInput({ sessionId: 's1', title: '等待回答', body: 'b', dedupeKey: 'req-b' });
+
+    expect(platformMocks.broadcast).toHaveBeenCalledTimes(2);
+  });
+
+  it('不传 dedupeKey 的重复调用不被压制', () => {
+    notificationService.notifyNeedsInput({ sessionId: 's1', title: '等待回答', body: 'a' });
+    notificationService.notifyNeedsInput({ sessionId: 's1', title: '等待回答', body: 'b' });
+
+    expect(platformMocks.broadcast).toHaveBeenCalledTimes(2);
+  });
+});

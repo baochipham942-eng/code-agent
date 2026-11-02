@@ -123,6 +123,9 @@ import { QueuedInputTray } from './QueuedInputTray';
 import { composerEditModeState } from './composerEditMode';
 import { useBundledCapabilityStore } from '../../../../stores/bundledCapabilityStore';
 import { ReadOnlySessionNotice } from './ReadOnlySessionNotice';
+import { ImportedSessionNotice } from './ImportedSessionNotice';
+import { useImportedSessionNotice } from '../../../../hooks/useImportedSessionResume';
+import { useComposerAppEvents } from './useComposerAppEvents';
 
 // ============================================================================
 // 类型定义
@@ -342,6 +345,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const currentSessionReadOnly = useSessionStore((s) => (
     s.sessions.find((session) => session.id === currentSessionId)?.readOnly === true
   ));
+  // 导入的外部历史会话：composer 保持可用，上方挂一行「发送即开新会话续聊」说明。
+  const importedSessionNotice = useImportedSessionNotice();
   const [pendingPromptCommand, setPendingPromptCommand] = useState<ComposerPromptCommandSelection | null>(null);
   const [pendingAgentSelection, setPendingAgentSelection] = useState<ComposerAgentSelection | null>(null);
   const [comboSuggestion, setComboSuggestion] = useState<{
@@ -363,22 +368,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const formRef = useRef<HTMLFormElement>(null);
   const debugDraftAppliedRef = useRef(false);
 
-  useEffect(() => {
-    const handleOpenCommandPalette = () => setShowCommandPalette(true);
-    window.addEventListener('app:openCommandPalette', handleOpenCommandPalette);
-    return () => {
-      window.removeEventListener('app:openCommandPalette', handleOpenCommandPalette);
-    };
-  }, []);
-
-  useEffect(() => {
-    const handleOpenSeedComposer = (event: Event) => {
-      const kind = (event as CustomEvent<{ kind?: SeedComposerKind }>).detail?.kind;
-      if (kind === 'team' || kind === 'role') setSeedComposer({ kind, initialText: '' });
-    };
-    window.addEventListener('app:openSeedComposer', handleOpenSeedComposer);
-    return () => window.removeEventListener('app:openSeedComposer', handleOpenSeedComposer);
-  }, []);
+  useComposerAppEvents(setShowCommandPalette, setSeedComposer);
 
   // /goal 确认卡打开时探测项目 package.json scripts 作为验证命令候选
   // （fail-closed：候选只来自项目真实脚本，读不到就空）。
@@ -1340,6 +1330,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             onPutBack={composerDraft.putBack}
             onDiscard={composerDraft.discard}
           />
+        )}
+        {!currentSessionReadOnly && importedSessionNotice && (
+          <ImportedSessionNotice state={importedSessionNotice} />
         )}
         {currentSessionReadOnly ? (
           <ReadOnlySessionNotice />

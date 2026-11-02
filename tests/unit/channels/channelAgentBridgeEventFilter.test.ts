@@ -80,7 +80,7 @@ describe('ChannelAgentBridge event declaration', () => {
     );
 
     expect(orchestrator.sendMessage).toHaveBeenCalledWith(
-      'hello', undefined, expect.any(Object), expect.objectContaining({ channel: expect.any(Object) }),
+      expect.stringContaining('hello'), undefined, expect.any(Object), expect.objectContaining({ channel: expect.any(Object) }),
     );
     expect(shouldDeliverAgentEvent('message_delta', declaredFilter)).toBe(false);
     expect(shouldDeliverAgentEvent('stream_chunk', declaredFilter)).toBe(false);

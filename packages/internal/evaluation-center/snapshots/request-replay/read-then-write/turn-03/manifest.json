@@ -3,7 +3,7 @@
   "messageRefs": [
     {
       "kind": "content",
-      "contentHash": "09cc7224dfd5d11a365e6aaae858b68eaaf2ea1fc1e649c1286f0f3bf2df222d",
+      "contentHash": "f8288c60ce23f172943b5502b73afed8fea20bbf1fde0d3b1700e5ab3fc30f64",
       "reason": "system_prompt_fallback"
     },
     {
@@ -28,7 +28,7 @@
     },
     {
       "kind": "content",
-      "contentHash": "d5ce250a49a4b6388fe9094a154b5c1dd98996257980340221fac73a2e8d75f1",
+      "contentHash": "2e4d26909e78e980ef110e4a694a36c8e20259c84303204634b59c4315888978",
       "reason": "dynamic_tail",
       "blocks": [
         {
@@ -44,8 +44,8 @@
           "bytes": 4
         },
         {
-          "contentHash": "886fb73c0cac099c7e13e1afc08ca002126c780f3279f8f4d94dc267ecac030b",
-          "bytes": 180
+          "contentHash": "7e50b1ecad35c9a61af73b83bc4137ce941da69c383baa8f2676fa9d27f5cfad",
+          "bytes": 329
         },
         {
           "contentHash": "4321bbd880e301948c0b880c24a5ffdfe73f103e23585e37904da5434cfdd520",
@@ -54,7 +54,7 @@
       ]
     }
   ],
-  "toolSchemaHash": "ee47480db4b64afc80b6baa245fc3f0394cee7449a51c5a0f2d1796b2a4a2222",
+  "toolSchemaHash": "a4e542e5e94abd446ff171c24cbffbca86b7297a2ab343d3047c654cb5735b84",
   "toolNames": [
     "AskUserQuestion",
     "Bash",

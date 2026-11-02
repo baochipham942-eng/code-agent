@@ -74,7 +74,7 @@ import type {
   ConversationEnvelopeContext,
   WorkbenchMessageMetadata,
 } from '../../shared/contract/conversationEnvelope';
-import { withWorkbenchTurnSystemContext } from './workbenchTurnContext';
+import { resolveConnectorRequiredForTurn, withWorkbenchTurnSystemContext } from './workbenchTurnContext';
 import { withSessionCommandCenterBrain } from './sessionCommandCenterBrain';
 import { isSessionCommandCenterTurn } from '../../shared/constants/sessionCommandCenter';
 import { getPermissionModeManager } from '../permissions/modes';
@@ -90,6 +90,7 @@ import type { CancellationReason } from '../../shared/contract/cancellation';
 import { normalizeCancellationReason } from '../../shared/contract/cancellation';
 import { AGENT_ENGINE_LABELS, normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
 import {
+  assertImportedEngineSessionNotRunnable,
   ExternalEngineDurableLifecycle,
   getExternalEngineAdapter,
   getRemoteAgentEngineModelCatalogService,
@@ -447,6 +448,10 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const sessionManager = getSessionManager();
     const session = await sessionManager.getSession(resolvedSessionId, 1);
     const engine = normalizeAgentEngineSession(session?.engine);
+    // Imported external-history chats are read-only records: fail with a clear
+    // reason before any orchestrator/launch side effect — the renderer's
+    // fork-on-send path is the only way to continue from them.
+    assertImportedEngineSessionNotRunnable(engine);
     const orchestrator = this.getOrchestrator(resolvedSessionId);
     const sessionWorkspaceScope = resolveSessionWorkspaceScope(
       session,
@@ -812,6 +817,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       envelope.context,
       getSessionManager().getSessionMetadata?.(resolvedSessionId),
     );
+    await this.emitConnectorRequired(tm, resolvedSessionId, envelope.options as AppServiceRunOptions | undefined, envelope.context);
     const optionsWithTurnSettings: AppServiceRunOptions = {
       ...(workbenchOptions ?? {}),
       searchEnabled: envelope.searchEnabled ?? true,
@@ -933,6 +939,12 @@ export class AgentAppServiceImpl implements AgentApplicationService {
         if (isTaskManagerOwnedRunState(state.status)) {
           await tm.cancelTask(resolvedSessionId);
         } else {
+          // 停靠待「继续」的 durable run（quota_wait / user_stop / guard_halt）没有活 loop：
+          // TaskManager 是 idle，orchestrator.cancel 对已结束的 loop 只发事件，parked run 会一直
+          // waiting、quotaWaitTimer 到点仍自动续跑——与用户显式取消相反。走 web /api/cancel 同款
+          // terminalRecoveredWaitingRun 终态化（同时清 due timer），命中即收工。
+          const parked = await this.externalRunRegistry?.terminalRecoveredWaitingRun({ sessionId: resolvedSessionId });
+          if (parked) return;
           const orchestrator = this.getOrchestratorOrThrow(resolvedSessionId);
           // Legacy orchestrator.cancel signature accepts 'user' | 'session-switch'
           // — map our cascade reasons back for backward compatibility.
@@ -999,6 +1011,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       envelope.context,
       getSessionManager().getSessionMetadata?.(resolvedSessionId),
     );
+    await this.emitConnectorRequired(tm, resolvedSessionId, envelope.options as AppServiceRunOptions | undefined, envelope.context);
     const options = isSessionCommandCenterTurn({
       prompt: envelope.content,
       hasGoal: Boolean(workbenchOptions?.goal),
@@ -1014,6 +1027,16 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       envelope.clientMessageId,
       envelope.expectedTurnId,
     );
+  }
+
+  private async emitConnectorRequired(
+    tm: ReturnType<AgentAppServiceImpl['getTaskManager']>,
+    sessionId: string,
+    options: AppServiceRunOptions | undefined,
+    context: ConversationEnvelope['context'],
+  ): Promise<void> {
+    const connectors = await resolveConnectorRequiredForTurn(options, context, getSessionManager().getSessionMetadata?.(sessionId));
+    if (connectors.length > 0) tm.emitAgentEventForSession(sessionId, { type: 'connector_required', data: { connectors } });
   }
 
   // === Workspace ===
@@ -1079,6 +1102,10 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
   async getMessages(sessionId: string): Promise<Message[]> {
     return getSessionManager().getMessages(sessionId);
+  }
+
+  async sessionExists(sessionId: string): Promise<boolean> {
+    return getSessionManager().sessionExists(sessionId);
   }
 
   async getSessionTasks(sessionId: string): Promise<SessionTask[]> {

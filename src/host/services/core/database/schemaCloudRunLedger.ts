@@ -3,7 +3,7 @@ import { CLOUD_RUN_STATES, CLOUD_RUN_TRIGGERS } from '../../../../shared/contrac
 import { safeAlter, type Logger } from './schemaHelpers';
 
 // ============================================================================
-// Cloud run ledger schema — ADR-086 S1–S3. DDL only, 同 applySessionDelegationsSchema 形状。
+// Cloud run ledger schema — ADR-087 S1–S3. DDL only, 同 applySessionDelegationsSchema 形状。
 // - state / "trigger" 的 CHECK 列表由合同常量生成（单一事实源，与迁移表同源）。
 // - workspace_status 故意只给 DEFAULT 'active' 不加 CHECK：保留期词汇
 //   （active/…/cleaned 等）由 RETENTION-SRV 拍板，先钉枚举会猜错词表。
@@ -88,11 +88,18 @@ export function applyCloudRunLedgerSchema(db: BetterSqlite3.Database, logger: Lo
   safeAlter(db, 'ALTER TABLE cloud_runs ADD COLUMN client_message_id TEXT', logger);
   safeAlter(db, 'ALTER TABLE cloud_runs ADD COLUMN execution_run_id TEXT', logger);
   safeAlter(db, 'ALTER TABLE cloud_runs ADD COLUMN cancel_requested_at INTEGER', logger);
+  // ADR-087 S4B：通道幂等键 (account_id, channel_delivery_id)——同一通道投递
+  // 重放只算一次准入，不消耗 slot 与 enqueued_seq。
+  safeAlter(db, 'ALTER TABLE cloud_runs ADD COLUMN channel_delivery_id TEXT', logger);
 
   db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_cloud_runs_client_message
       ON cloud_runs (account_id, session_id, client_message_id)
       WHERE client_message_id IS NOT NULL;
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_cloud_runs_channel_delivery
+      ON cloud_runs (account_id, channel_delivery_id)
+      WHERE channel_delivery_id IS NOT NULL;
 
     CREATE INDEX IF NOT EXISTS idx_cloud_runs_account_queue
       ON cloud_runs (account_id, state, enqueued_seq);

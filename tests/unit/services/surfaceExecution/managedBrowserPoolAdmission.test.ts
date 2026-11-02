@@ -34,6 +34,7 @@ function createFake(key: string) {
       running = true;
     }),
     close,
+    setLeaseInUse: vi.fn(),
     isRunning: () => running,
     getActiveTab: () => (running ? { id: 'tab-1' } : null),
     getSessionState: () => ({
@@ -57,7 +58,7 @@ function createFake(key: string) {
       interactiveElements: [],
     })),
   };
-  return { key, close, service: service as unknown as BrowserService };
+  return { key, close, setLeaseInUse: service.setLeaseInUse, service: service as unknown as BrowserService };
 }
 
 function createResumeStore(): BrowserResumeStateStore {
@@ -76,7 +77,8 @@ afterEach(() => {
 
 describe('managed browser pool admission', () => {
   it('does not mark the personal default key in use', async () => {
-    const pool = new BrowserPool(4, createFake('__default__').service, (key) => createFake(key).service);
+    const personal = createFake('__default__');
+    const pool = new BrowserPool(4, personal.service, (key) => createFake(key).service);
     const setInUse = vi.spyOn(browserPool, 'setInUse').mockImplementation((key, inUse) => {
       pool.setInUse(key, inUse);
     });
@@ -87,8 +89,9 @@ describe('managed browser pool admission', () => {
       sessionId: 'conversation-user',
       workspace: process.cwd(),
     });
+    const runtime = new SurfaceExecutionRuntime({ runRegistry: registry });
     const adapter = new ManagedBrowserProviderAdapter(
-      new SurfaceExecutionRuntime({ runRegistry: registry }),
+      runtime,
       undefined,
       undefined,
       createResumeStore(),
@@ -112,6 +115,10 @@ describe('managed browser pool admission', () => {
     expect(result.success).toBe(true);
     expect(managedBrowserServiceKey(identity)).toBe(MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY);
     expect(setInUse).not.toHaveBeenCalled();
+    // Lease pin applies to the personal key too, and is cleared when the run ends.
+    expect(personal.setLeaseInUse).toHaveBeenLastCalledWith(true);
+    await runtime.endRun(identity);
+    expect(personal.setLeaseInUse).toHaveBeenLastCalledWith(false);
   });
 
   it('keeps a thinking run browser when five managed runs overlap past the idle threshold', async () => {

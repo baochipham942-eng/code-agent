@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { CRON_GUARDRAILS } from '../../shared/constants';
+import { CRON_CLOUD_UNAVAILABLE_MESSAGE_EN, CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH } from '../../shared/utils/cronCloudUnavailable';
 import type {
   CronJobDefinition,
   CronJobExecution,
@@ -16,6 +17,8 @@ import type {
   CronMissedEvent,
   CronMissedReason,
   CreateCronJobDefinition,
+  CronEventActionMode,
+  CronEventDecision,
 } from '../../shared/contract/cron';
 import { getDatabase } from '../services/core/databaseService';
 import { getConfigService } from '../services/core/configService';
@@ -28,6 +31,7 @@ import {
   recordCronAutomationExecution,
   getCronAutomationType,
   isSkippedResult,
+  readCronAutomationActionModeChange,
   type ResolveRuntimeDefinition,
 } from './cronAutomationBridge';
 import {
@@ -51,6 +55,7 @@ import {
 import { CronCloudRuntime } from './cronCloudRuntime';
 import { CronEventTrigger, assertEventScheduleConstraints, hasExplicitChatListenBinding } from './cronEventTrigger';
 import { CronWebhookRelay, assertWebhookScheduleCloudConfigured } from './cronWebhookRelay';
+import { runWebhookHookOp } from './cronWebhookHookOps';
 import { setChannelListenResolver } from '../channels/channelListenRegistry';
 import { getChannelManager } from '../channels/channelManager';
 import {
@@ -66,6 +71,8 @@ import {
   upsertCronExecutionInMemory,
 } from './cronPersistence';
 import { deliverCronResultToChannel } from './cronResultDelivery';
+import { actionModeForNewJob, carryEventActionMode, changeEventActionMode } from './cronEventActionModeChange';
+import { loadCronEventDecisions } from './cronEventDecisionLedger';
 import { rearmCronRunLimit, settleCronRunLimit } from './cronRunLimit';
 import {
   adoptFailedAgentSession,
@@ -128,26 +135,27 @@ export class CronService implements Disposable {
     () => {
       const config = getConfigService().getSettings().cronCloud;
       const baseUrl = config?.baseUrl?.trim();
-      const token = config?.token?.trim();
+      // token 只存 secureStorage；settings.cronCloud.token 仅作旧版本只读回退。
+      const token = (getConfigService().getServiceApiKey?.('neo-cron-cloud') ?? config?.token)?.trim();
       return baseUrl && token ? { baseUrl, token } : undefined;
     },
     {
       getJobs: () => this.jobs.values(),
       persistJob: (definition, cloudJobId) => this.persistJob(definition, cloudJobId),
       persistExecution: async (execution) => {
-        upsertCronExecutionInMemory(this.executions, execution);
-        await saveCronExecution(execution);
+        upsertCronExecutionInMemory(this.executions, execution); await saveCronExecution(execution);
       },
       loadExecutionStatus: loadCronExecutionStatus,
       unavailableMessage: () => getConfigService().getSettings().ui?.language === 'en'
-        ? 'The cloud scheduler is unavailable, so the job was not run. Check the cloud scheduler URL and token, then try again.'
-        : '云端计划任务服务暂时不可用，任务未执行。请检查云端执行地址和令牌后重试。',
+        ? CRON_CLOUD_UNAVAILABLE_MESSAGE_EN : CRON_CLOUD_UNAVAILABLE_MESSAGE_ZH,
       onCompleted: async (definition, execution, summary) => {
         await recordCronAutomationExecution(definition, execution, this.resolveAutomationRuntime);
         await this.deliverCronResult(definition, summary, execution.id);
         notifyCronAgentExecution(definition, execution, this.failureNoticeGate);
         void this.notifyWakeOnJobCompleted(definition, execution);
       },
+      // 云端侧失败（云端调度器不可用）落库后发失败告警（FU1：无会话也发，见策略文件）。
+      onFailureRecorded: (definition, execution) => notifyCronAgentExecution(definition, execution, this.failureNoticeGate),
     },
   );
 
@@ -199,6 +207,15 @@ export class CronService implements Disposable {
     this.jobsReconcileTimer.unref?.();
     console.error('[CronService] Initialized');
   }
+
+  /** 云端事件流（hook 投递的唯一通道）幂等启动：设置页保存云端配置后调用，免重启。 */
+  ensureCloudStream(): void {
+    if (this.cronWebhookRelay && this.cloudRuntime.isConfigured()) this.cloudRuntime.start(this.cronWebhookRelay.handleStreamFrame);
+  }
+
+  /** webhook hook 注册/轮换：{url, token} 只在返回值里出现一次（见 cronWebhookHookOps）。 */
+  registerWebhookHook(jobId: string) { return runWebhookHookOp('register', jobId, this.jobs, this.cronWebhookRelay, () => this.ensureCloudStream()); }
+  rotateWebhookHook(jobId: string) { return runWebhookHookOp('rotate', jobId, this.jobs, this.cronWebhookRelay, () => this.ensureCloudStream()); }
 
   async shutdown(): Promise<void> {
     this.cronEventTrigger?.dispose();
@@ -274,6 +291,8 @@ export class CronService implements Disposable {
       ...definition,
       runsOn,
       metadata: cronLoginWallMetadata({ action: definition.action }, definition.metadata),
+      // 新建 event 自动化一律仅观察（入参 actionMode 忽略）；切到自动执行只走 setEventActionMode。
+      actionMode: actionModeForNewJob(definition.schedule),
       id: uuidv4(), createdAt: now, updatedAt: now,
     };
 
@@ -323,6 +342,8 @@ export class CronService implements Disposable {
       ...existingJob.definition,
       ...updates,
       metadata: cronLoginWallMetadata({ action: updates.action ?? existingJob.definition.action }, metadata), updatedAt: Date.now(),
+      // 执行档不随普通更新改写（只收窄：改绑/改成 event 回落 observe），见 cronEventActionModeChange。
+      actionMode: carryEventActionMode(existingJob.definition, { schedule: updates.schedule ?? existingJob.definition.schedule }),
     };
     // 重新启用已停用任务：运行计数清零、摘掉停用原因（N-CRON-BUDGET-EXPOSE）；只改 maxRuns 不动计数。
     if (updates.enabled === true && !existingJob.definition.enabled) rearmCronRunLimit(updatedJob);
@@ -588,6 +609,32 @@ export class CronService implements Disposable {
   /**
    * Get execution history for a job
    */
+  /**
+   * 显式切换事件自动化执行档（N-TRIGGER-OBSERVE-MODE）：唯一能到 'auto' 的入口，先写自动化
+   * 变更事件再落库；非 event 任务抛错，任务不存在返回 null。
+   */
+  async setEventActionMode(jobId: string, mode: CronEventActionMode): Promise<CronJobDefinition | null> {
+    const active = this.jobs.get(jobId);
+    if (!active) return null;
+    return changeEventActionMode(active.definition, mode, {
+      persistJob: (job) => this.persistJob(job),
+      applyDefinition: (job) => { active.definition = job; },
+      notifyJobsChanged: () => this.notifyJobsChanged(),
+    });
+  }
+
+  /** 事件自动化最近 limit 条逐事件决策（新的在前）。 */
+  getEventDecisions(jobId: string, limit?: number): CronEventDecision[] {
+    return loadCronEventDecisions(jobId, limit);
+  }
+
+  /** 最近一次执行档切换（返修⑥：详情页展示「切换已记入变更历史」）；任务不存在返回 null。 */
+  getEventActionModeChange(jobId: string): { from: 'observe' | 'auto'; to: 'observe' | 'auto'; at: number } | null {
+    const active = this.jobs.get(jobId);
+    if (!active) return null;
+    return readCronAutomationActionModeChange(active.definition);
+  }
+
   getJobExecutions(jobId: string, limit: number = 10): CronJobExecution[] {
     const cached = this.executions.get(jobId) ?? [];
     // 条数已经盖住请求时才信缓存。任务列表的 limit=1 不能挡住角色页的 limit=20。

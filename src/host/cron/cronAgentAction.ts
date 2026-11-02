@@ -25,6 +25,8 @@ import { runWithCronJobBudget } from './cronExecutionPolicy';
 import { attachCronRunCost, createCronRunCostMeter } from './cronRunCostMeter';
 import { cronNotifyQuietRound } from './cronFailurePolicy';
 import { getCronAutomationType } from './cronAutomationBridge';
+import { parseStatedEventDecisions } from './cronEventDecisions';
+import { enterObserveModeForCronRun } from './cronObserveMode';
 
 export interface CronAgentActionHost {
   /** 从内存 job 表取该任务当前定义（快照写回与常设刷新结算都要最新底稿）。 */
@@ -88,6 +90,8 @@ export async function executeCronAgentAction(
   // N-CRON-RUN-LEDGER-VISIBLE：单次运行成本计量（maxRunBudget 有值时计量器兼任预算闸，见 cronRunCostMeter 头注）。
   const costMeter = createCronRunCostMeter(definition.maxRunBudget);
   const artifactRefresh = beginArtifactRefresh(definition);
+  // 观察档（N-TRIGGER-OBSERVE-MODE）：本会话的对外副作用调用由 ToolExecutor 拦下记 would_act。
+  const leaveObserveMode = enterObserveModeForCronRun(definition, cronSession.id, executionId);
   try {
     try {
       // 事件触发时通道载荷只以 untrusted 定界块追加在 prompt 尾部，并给该条
@@ -159,6 +163,7 @@ export async function executeCronAgentAction(
       }
     }
   } finally {
+    leaveObserveMode();
     tm.cleanup(cronSession.id);
   }
 
@@ -221,6 +226,13 @@ export async function executeCronAgentAction(
   // cronService 贴 max-lines 线，档位优先读摘要头部行、无摘要块读正文头部。
   // notifyQuietRound 只打 notifySuppressed 标记（通知门），不进 skipped 形状。
   const actionResult = buildCronAgentActionResult(action, result, cronSession.id, finalAssistantText, quietWatchRound, notifyQuietRound);
+  // 事件 run：模型逐事件陈述的 act/ignore + 理由带出去，供决策台账结算（cronEventDecisions）。
+  const eventDecisions = eventPayloadBlock === undefined ? [] : parseStatedEventDecisions(finalAssistantText);
+  // N-CRON-RUN-LEDGER-VISIBLE：本地运行实测成本（scoped 计量器读数）；失败路径已挂在 error 上。
   const costUsd = costMeter.getCostUsd();
-  return costUsd > 0 ? { ...actionResult, costUsd } : actionResult;
+  return {
+    ...actionResult,
+    ...(eventDecisions.length > 0 ? { eventDecisions } : {}),
+    ...(costUsd > 0 ? { costUsd } : {}),
+  };
 }

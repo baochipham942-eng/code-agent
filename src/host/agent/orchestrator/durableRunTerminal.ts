@@ -11,6 +11,7 @@
 import type { RunRegistry } from '../../runtime/runRegistry';
 import type { RunHandle } from '../../runtime/runContext';
 import { isNativeRecoveryDescriptor } from '../../runtime/nativeRecoveryHost';
+import { clearQuotaWaitNote, peekQuotaWaitDueAt } from '../runtime/contextAssembly/quotaWaitTurn';
 import { createLogger } from '../../services/infra/logger';
 import type { AgentEvent } from '../../../shared/contract';
 import { isTerminalAgentError } from '../../../shared/utils/agentErrorClassification';
@@ -75,10 +76,20 @@ export async function finalizeOrParkDurableRun(
   input: DurableRunTerminalInput,
   terminal: (input: DurableRunTerminalInput) => Promise<void> = finalizeDurableRun,
 ): Promise<void> {
-  if (canParkResumableUserStop(input)) {
+  const dueAt = peekQuotaWaitDueAt(input.runId);
+  const parkable = dueAt !== undefined
+    ? canParkResumableUserStop({ ...input, cancelled: true })
+    : canParkResumableUserStop(input);
+  if (parkable) {
     try {
-      await input.registry.parkDurable(input.runId, { reason: 'user_stop' }, input.handle);
+      await input.registry.parkDurable(
+        input.runId,
+        dueAt !== undefined ? { reason: 'quota_wait', dueAt } : { reason: 'user_stop' },
+        input.handle,
+      );
+      clearQuotaWaitNote(input.runId);
     } catch (error) {
+      clearQuotaWaitNote(input.runId);
       logger.error('Failed to park durable run on user stop; falling back to terminal cancelled', error);
       await terminal(input);
       return;
@@ -87,6 +98,7 @@ export async function finalizeOrParkDurableRun(
     input.registry.unregister(input.runId, input.handle);
     return;
   }
+  if (dueAt !== undefined) clearQuotaWaitNote(input.runId);
   await terminal(input);
 }
 

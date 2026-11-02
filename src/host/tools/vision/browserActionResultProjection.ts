@@ -99,20 +99,6 @@ export function getBrowserTargetRefErrorDetails(error: unknown): {
   };
 }
 
-export function resolveBrowserSecretRef(secretRef: string | undefined): string | undefined {
-  if (!secretRef) {
-    return undefined;
-  }
-  if (secretRef.startsWith('env:')) {
-    const envName = secretRef.slice(4);
-    if (!/^[A-Z0-9_]+$/.test(envName)) {
-      return undefined;
-    }
-    return process.env[envName];
-  }
-  return undefined;
-}
-
 export function summarizeSecretRef(secretRef: string | undefined): string {
   if (!secretRef) {
     return 'secretRef';

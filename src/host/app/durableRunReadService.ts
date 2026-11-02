@@ -36,6 +36,7 @@ export interface DurableRunView {
   autoResumeCount?: number;
   /** 本进程能否接手这条停靠 run（重启后未被认领的旧 run 为 false，「继续」会找不到它）。 */
   continuable?: boolean;
+  quotaWaitDueAt?: number;
 }
 
 export interface LegacyRunViewInput {
@@ -107,6 +108,7 @@ export function mapDurableRunView(consumer: DurableRunConsumer, envelope: RunEnv
     updatedAt: envelope.updatedAt,
     ...(getRunInterruptCause(envelope) ? { interruptCause: getRunInterruptCause(envelope) } : {}),
     autoResumeCount: envelope.autoResumeCount ?? 0,
+    ...(typeof envelope.quotaWaitDueAt === 'number' ? { quotaWaitDueAt: envelope.quotaWaitDueAt } : {}),
   };
 }
 
@@ -184,6 +186,9 @@ function projectDurableResumeState(view: DurableRunView): DurableResumeState | u
   // 按停靠标记（ADR-075 修订二）：crash_or_quit 的 waiting 是等审批，不出「继续」。
   const canContinue = view.status === 'waiting' && view.continuable !== false && view.interruptCause !== 'crash_or_quit';
   if (!canContinue) return undefined;
+  const quotaWait = view.interruptCause === 'quota_wait' && typeof view.quotaWaitDueAt === 'number'
+    ? { dueAt: view.quotaWaitDueAt, duePassed: view.quotaWaitDueAt <= Date.now() }
+    : undefined;
   return {
     runId: view.runId,
     mode: 'continue',
@@ -191,5 +196,6 @@ function projectDurableResumeState(view: DurableRunView): DurableResumeState | u
     autoResumeCount,
     maxAutoResumeCount: MAX_AUTO_RESUME_COUNT,
     canContinue: true,
+    ...(quotaWait ? { quotaWait } : {}),
   };
 }

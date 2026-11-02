@@ -323,6 +323,10 @@ export class BrowserService implements Disposable {
     }
   }
 
+  setLeaseInUse(inUse: boolean): void {
+    this.leaseController.setInUse(inUse);
+  }
+
   isRunning(): boolean {
     return this.browser !== null || this.context !== null;
   }
@@ -454,6 +458,11 @@ export class BrowserService implements Disposable {
     } else {
       this.logger.log('WARN', `Cannot switch - tab not found: ${tabId}`);
     }
+  }
+
+  /** Live page URL of the target tab (tab.url is only refreshed on load events). */
+  getLiveTabUrl(tabId?: string): string {
+    return this.getTab(tabId).page.url();
   }
 
   getActiveTab(): BrowserTab | null {

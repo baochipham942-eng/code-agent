@@ -37,6 +37,8 @@ const engineMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../src/host/services/agentEngine', () => ({
+  // 导入历史只读守卫：本组用例的会话 origin 均为 'manual'，真实守卫为 no-op。
+  assertImportedEngineSessionNotRunnable: vi.fn(),
   getExternalEngineAdapter: vi.fn(() => ({ run: engineMocks.codexRun })),
   CodexCliAdapter: vi.fn(function CodexCliAdapterMock() {
     return { run: engineMocks.codexRun };

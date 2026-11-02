@@ -67,6 +67,7 @@ function createFakeBrowser() {
     onSessionChanged: () => () => undefined,
     getDomSnapshot,
     close,
+    setLeaseInUse: vi.fn(),
   };
   return { service: service as unknown as BrowserService, close, getDomSnapshot };
 }

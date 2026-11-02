@@ -263,6 +263,11 @@ export const BROWSER_TIMEOUTS = {
    * 与 surface 租约 TTL 同为 30 分钟。
    */
   POOL_IDLE_RECLAIM: 30 * 60_000,
+  /**
+   * 使用中的托管浏览器租约可越过 TTL 续期的上限（距上次心跳）。
+   * 防止进程崩溃后 binding 永不释放而租约永远不过期。
+   */
+  LEASE_IN_USE_CEILING: 4 * 60 * 60_000,
 } as const;
 
 /** artifact_runnable 断言家族超时（浏览器类走 GAME_VALIDATION_TIMEOUTS / ARTIFACT_PREVIEW_HEALTH） */
@@ -652,6 +657,16 @@ export const WEB_SERVER_SHUTDOWN_TIMEOUTS = {
    * `min(STEP_MS, 总预算剩余)`，给关库留下至少 1s（N-DSH-STOP2，2026-08-14）。
    */
   PRE_DB_BUDGET_MS: 2_000,
+} as const;
+
+/**
+ * connector_required 连接卡判读前的 CLI 状态探测等待（N-CONNECTOR-POLISH-AUDIT-FU1-FU2）。
+ * 轮级缓存冷（开机后首张卡）时，发卡点先等在途/新起一次 CLI 状态探测这么多毫秒；
+ * 到点或失败保持 fail-open（不发卡）但 warn 出可区分原因。只有本轮声明了 CLI
+ * 连接器且缓存缺它的条目才会等——没有 CLI 声明或缓存已暖时零额外探测。
+ */
+export const CONNECTOR_CARD_TIMEOUTS = {
+  CLI_STATUS_PROBE_WAIT_MS: 3_000,
 } as const;
 
 /**

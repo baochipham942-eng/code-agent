@@ -152,6 +152,7 @@ export async function persistTaskManagerEvent(
           sessionId,
           title: '需要授权',
           body: req.tool ? `${req.tool}: ${req.command || '请求执行权限'}` : '请求执行权限',
+          dedupeKey: typeof event.data.id === 'string' ? event.data.id : undefined,
         });
       }
     }

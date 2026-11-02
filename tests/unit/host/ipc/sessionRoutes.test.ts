@@ -59,8 +59,8 @@ function createDummyContext(): SessionCommandContext {
 }
 
 describe('defineSessionRoutes 表面差异', () => {
-  it('全量表 46 个 action，与 web 形态同集合（桩替换的是 handler 不是键）', () => {
-    expect(Object.keys(sessionRoutes.actions)).toHaveLength(46);
+  it('全量表 47 个 action，与 web 形态同集合（桩替换的是 handler 不是键）', () => {
+    expect(Object.keys(sessionRoutes.actions)).toHaveLength(47);
     expect(Object.keys(defineSessionRoutes('web').actions).sort())
       .toEqual(Object.keys(sessionRoutes.actions).sort());
   });
@@ -156,6 +156,35 @@ describe('defineSessionRoutes 表面差异', () => {
         error: { code: 'SERVICE_UNAVAILABLE', message: 'SessionManager not available' },
       });
     }
+  });
+
+  it('sessionExists 走只读探测：分发到 sessions().sessionExists，不触碰 load/restore 面（r4）', async () => {
+    // 记忆面板来源会话②的存在性探测：session.load 会 restoreSession（切宿主
+    // currentSessionId/toolCache、清会话缓存、写审计），选中条目绝不许走它。
+    const { registered, target } = createTarget();
+    const svc = {
+      sessionExists: vi.fn(async (sessionId: string) => sessionId === 'sess-live'),
+      loadSession: vi.fn(),
+    };
+    const ensureBackend = vi.fn(async () => {});
+    installDomainRoutes(target, defineSessionRoutes('web'), {
+      ...createDummyContext(),
+      ensureBackend,
+      sessions: async () => svc,
+    } as unknown as SessionCommandContext);
+    const invoke = registered.get('domain:session');
+
+    await expect(invoke?.(undefined, { action: 'sessionExists', payload: { sessionId: 'sess-live' } }))
+      .resolves.toEqual({ success: true, data: true });
+    await expect(invoke?.(undefined, { action: 'sessionExists', payload: { sessionId: 'sess-gone' } }))
+      .resolves.toEqual({ success: true, data: false });
+    expect(svc.sessionExists).toHaveBeenCalledTimes(2);
+    expect(svc.loadSession).not.toHaveBeenCalled();
+
+    // 缺 sessionId 在触碰 service 面之前就被前置校验拦下
+    await expect(invoke?.(undefined, { action: 'sessionExists', payload: {} }))
+      .resolves.toEqual({ success: false, error: { code: 'INVALID_PAYLOAD', message: 'sessionId is required' } });
+    expect(svc.sessionExists).toHaveBeenCalledTimes(2);
   });
 
   it('未知 action 兜底文案：web `Unknown session action:` / 桌面 `Unknown action:`', async () => {

@@ -89,6 +89,17 @@ export function createStaticRouter(deps: StaticDeps): Router {
       return;
     }
 
+    // FB-430：token 只给本机直接打开的页面。外部域名经 DNS 重绑定指到 127.0.0.1 时 Host 是对方域名；
+    // 外部网页跳转/嵌入过来是 cross-site——两种都不注入 token，也不给页面（防 __neoDraft 这类 URL 参数被外站借用）。
+    if (serverAuthToken) {
+      const refusal = refuseTokenPage(req);
+      if (refusal) {
+        logger.warn(`index.html refused (${refusal.status}): host=${req.headers.host ?? ''} site=${req.get('sec-fetch-site') ?? ''}`);
+        res.status(refusal.status).type('text').send(refusal.message);
+        return;
+      }
+    }
+
     const serveDir = resolveServeDir();
     const indexPath = path.join(serveDir, 'index.html');
 
@@ -126,6 +137,19 @@ export function createStaticRouter(deps: StaticDeps): Router {
   });
 
   return router;
+}
+
+const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '::1']);
+
+function refuseTokenPage(req: Pick<Request, 'headers' | 'get'>): { status: number; message: string } | null {
+  const hostname = (req.headers.host ?? '').replace(/:\d+$/, '').replace(/^\[(.*)\]$/, '$1').toLowerCase();
+  if (!LOOPBACK_HOSTNAMES.has(hostname)) {
+    return { status: 421, message: 'Agent Neo only serves this page on 127.0.0.1 / localhost' };
+  }
+  if (req.get('sec-fetch-site') === 'cross-site') {
+    return { status: 403, message: 'Open Agent Neo directly instead of from another website' };
+  }
+  return null;
 }
 
 function toInlineScriptJson(value: unknown): string {

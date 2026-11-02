@@ -11,7 +11,7 @@ import type { ModelDecisionEventData, ModelFallbackInfo, ModelFallbackTraceStep 
 import { buildModelProviderIdentity } from '../../../model/modelDecision';
 import { classifyProviderFallbackReason, formatFallbackReason, getFallbackChainForRequest, type ProviderFallbackCategory } from '../../../model/modelRouterPolicy';
 import { getProviderHealthMonitor } from '../../../model/providerHealthMonitor';
-import { describeFallbackError, isFallbackEligible } from '../../../model/providers/retryStrategy';
+import { describeFallbackError, isFallbackEligible, isQuotaWaitSuspendError } from '../../../model/providers/retryStrategy';
 import type { ContextAssemblyCtx } from './shared';
 import { logger } from './shared';
 export { handleImagePayloadExceededError } from './inferenceImagePayloadError';
@@ -240,7 +240,7 @@ export async function runAiSdkInferenceWithProviderFallback(
   try {
     return await inferenceViaAiSdk(messages, tools, config, onStream, signal, options);
   } catch (primaryErr) {
-    if (signal?.aborted || config.adaptive !== true) {
+    if (isQuotaWaitSuspendError(primaryErr) || signal?.aborted || config.adaptive !== true) {
       throw primaryErr;
     }
 

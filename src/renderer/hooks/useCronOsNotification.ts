@@ -36,7 +36,7 @@ export function useCronOsNotification(
           event,
           copyRef.current,
           useAppStore.getState().language,
-        ));
+        ), { urgent: event.urgent === true });
       },
     );
     let disposed = false;

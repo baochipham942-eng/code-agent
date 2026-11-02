@@ -22,6 +22,7 @@ import { appendCronAgentExpertThreadReceipt } from './cronAgentExpertThreadRecei
 import { buildCronAgentPrompt, truncateUtf8Snapshot } from './cronAgentPrompt';
 import { beginArtifactRefresh, finishArtifactRefresh } from './artifactStandingRefresh';
 import { runWithCronJobBudget } from './cronExecutionPolicy';
+import { attachCronRunCost, createCronRunCostMeter } from './cronRunCostMeter';
 import { cronNotifyQuietRound } from './cronFailurePolicy';
 import { getCronAutomationType } from './cronAutomationBridge';
 import { parseStatedEventDecisions } from './cronEventDecisions';
@@ -86,6 +87,8 @@ export async function executeCronAgentAction(
   let result: unknown; let finalAssistantText = '';
   let runError: unknown; let runFailed = false;
   // 常设刷新（metadata.artifactRefresh）：跑前建快照记基线；非刷新任务返回 undefined 零扰动
+  // N-CRON-RUN-LEDGER-VISIBLE：单次运行成本计量（maxRunBudget 有值时计量器兼任预算闸，见 cronRunCostMeter 头注）。
+  const costMeter = createCronRunCostMeter(definition.maxRunBudget);
   const artifactRefresh = beginArtifactRefresh(definition);
   // 观察档（N-TRIGGER-OBSERVE-MODE）：本会话的对外副作用调用由 ToolExecutor 拦下记 would_act。
   const leaveObserveMode = enterObserveModeForCronRun(definition, cronSession.id, executionId);
@@ -100,7 +103,7 @@ export async function executeCronAgentAction(
         agentRunOptions,
         eventPayloadBlock === undefined ? undefined : { memoryTainted: true },
       );
-      result = await runWithCronJobBudget(definition.maxRunBudget, sendMessage);
+      result = await runWithCronJobBudget(definition.maxRunBudget, () => costMeter.run(sendMessage));
       const unattendedTimeout = (await import('../agent/unattendedApprovalTerminal')).takeUnattendedApprovalTimeout(cronSession.id);
       if (unattendedTimeout) throw new Error(unattendedTimeout);
 
@@ -196,6 +199,7 @@ export async function executeCronAgentAction(
     if (runError instanceof Error && !('cronSessionId' in runError)) {
       (runError as Error & { cronSessionId?: string }).cronSessionId = cronSession.id;
     }
+    attachCronRunCost(runError, costMeter);
     throw runError;
   }
 
@@ -224,5 +228,11 @@ export async function executeCronAgentAction(
   const actionResult = buildCronAgentActionResult(action, result, cronSession.id, finalAssistantText, quietWatchRound, notifyQuietRound);
   // 事件 run：模型逐事件陈述的 act/ignore + 理由带出去，供决策台账结算（cronEventDecisions）。
   const eventDecisions = eventPayloadBlock === undefined ? [] : parseStatedEventDecisions(finalAssistantText);
-  return eventDecisions.length > 0 ? { ...actionResult, eventDecisions } : actionResult;
+  // N-CRON-RUN-LEDGER-VISIBLE：本地运行实测成本（scoped 计量器读数）；失败路径已挂在 error 上。
+  const costUsd = costMeter.getCostUsd();
+  return {
+    ...actionResult,
+    ...(eventDecisions.length > 0 ? { eventDecisions } : {}),
+    ...(costUsd > 0 ? { costUsd } : {}),
+  };
 }

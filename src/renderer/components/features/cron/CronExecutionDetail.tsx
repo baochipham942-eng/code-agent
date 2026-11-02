@@ -10,12 +10,14 @@ import { Button } from '../../primitives/Button';
 import {
   formatDateTime,
   formatDuration,
+  formatRunCostUsd,
   getExecutionStatusMeta,
   prettyJson,
 } from './types';
 import { CronRunsOnPill } from './CronRunsOnSelector';
 import { cronLoginWallCopy, openCronLoginWallSite } from './cronLoginWallNotice';
 import { cronFailureSentence } from './cronFailureNotice';
+import { wakeSkipSentence } from './wakeSkipSentence';
 
 const CLOUD_NOT_WIRED = 'Cloud execution is not wired yet (N-L3-MINLOOP-SRV).';
 const BUDGET_LIMIT = /Cron job run exceeded its \$(\d+(?:\.\d+)?) budget limit\./;
@@ -49,6 +51,11 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
   }
 
   const statusMeta = getExecutionStatusMeta(execution.status);
+  const wakeSkip = wakeSkipSentence(execution, {
+    silentLevel: cc.wakeSkipSilentLevel,
+    dailyBudget: cc.wakeSkipDailyBudget,
+    quietHours: cc.wakeSkipQuietHours,
+  });
   const loginWall = cronLoginWallCopy(execution.error, { error: cc.loginWallError });
   const budgetAmount = execution.error?.match(BUDGET_LIMIT)?.[1];
   const preservedError = loginWall?.message
@@ -125,10 +132,17 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
         <Info label={cc.colStartedAt} value={formatDateTime(execution.startedAt)} />
         <Info label={cc.execCompletedAt} value={formatDateTime(execution.completedAt)} />
         <Info label={cc.colDuration} value={formatDuration(execution.duration)} />
+        <Info label={cc.colCost} value={formatRunCostUsd(execution.cost, execution.runsOn ?? runsOn)} testId="cron-execution-cost" />
         <Info label={cc.execRetryCount} value={String(execution.retryAttempt)} />
         <Info label={cc.colExitCode} value={execution.exitCode != null ? String(execution.exitCode) : '—'} />
       </div>
 
+      {wakeSkip && (
+        <section className="mt-4" data-testid="cron-wake-skip-detail">
+          <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">{cc.wakeSkipTitle}</h5>
+          <p className="text-sm text-zinc-100" data-testid="cron-wake-skip-sentence">{wakeSkip}</p>
+        </section>
+      )}
       {preservedError && (
         <section className="mt-4">
           <div className="mb-2 flex items-center justify-between gap-2">

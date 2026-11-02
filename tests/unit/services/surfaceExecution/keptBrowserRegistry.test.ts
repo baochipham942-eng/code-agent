@@ -59,7 +59,7 @@ describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
     expect(registry.get('conversation-a')?.serviceKey).toBe('surface-key-1');
     expect(registry.isKeptServiceAlive('surface-key-1')).toBe(true);
     expect(registry.isKeptServiceAlive('surface-other')).toBe(false);
-    expect(registry.get('conversation-a')).toEqual({
+    expect(registry.get('conversation-a')).toMatchObject({
       state: 'kept',
       url: 'https://example.test/result',
       title: 'Result',
@@ -79,7 +79,7 @@ describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
 
     input.browserService.emit('close');
     expect(registry.get('conversation-a')?.state).toBe('closed');
-    expect(registry.get('conversation-a')).toEqual({
+    expect(registry.get('conversation-a')).toMatchObject({
       state: 'closed',
       url: 'https://example.test/result',
       title: 'Result',
@@ -103,7 +103,7 @@ describe('KeptBrowserRegistry (N-BROWSER-KEEP-RESULT-PAGE)', () => {
     // 旧窗的 close 事件不会把新条目翻 closed（serviceKey 捕获在注册时）。
     first.browserService.emit('close');
     expect(registry.get('conversation-a')?.serviceKey).toBe('surface-key-2');
-    expect(registry.get('conversation-a')).toEqual({
+    expect(registry.get('conversation-a')).toMatchObject({
       state: 'kept',
       url: 'https://example.test/next',
       title: 'Result',

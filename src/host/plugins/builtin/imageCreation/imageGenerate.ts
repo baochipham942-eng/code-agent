@@ -431,7 +431,7 @@ function validateImageGenerateArgs(
   const referenceValues = rawReferences === undefined ? [] : rawReferences;
   // 上限闸（N-IMAGE-MULTI-REF-IMPL）：schema minItems 1 / maxItems 3，超过 3 张在这里
   // 用中文报出实际上限，让模型能带着「最多 3 张」自行重试；付费调用前拦下。
-  if (referenceValues.length === 0) {
+  if (rawReferences !== undefined && referenceValues.length === 0) {
     return { ok: false, error: `reference_images 需要 1-${IMAGE_MULTI_REF.MAX_REFERENCE_IMAGES} 张参考图（收到 0 张）；不需要参考图时省略该参数` };
   }
   if (referenceValues.length > IMAGE_MULTI_REF.MAX_REFERENCE_IMAGES) {

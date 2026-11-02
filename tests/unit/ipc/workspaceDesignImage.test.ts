@@ -14,6 +14,13 @@ import { dirname, join } from 'node:path';
 
 const SVC = '../../../src/host/services/media/imageGenerationService';
 
+vi.mock('../../../src/host/services/media/imageMultiRefService', () => ({
+  generateImageFromReferences: vi.fn(async () => ({
+    imageData: 'data:image/png;base64,QUJD',
+    actualModel: 'qwen-image-2.0-pro',
+  })),
+}));
+
 vi.mock('../../../src/host/services/media/imageGenerationService', async (importActual) => {
   const actual = await importActual<typeof import('../../../src/host/services/media/imageGenerationService')>();
   return {
@@ -609,5 +616,40 @@ describe('handleImportDesignImage dataURL 内容守卫', () => {
 
     expect(await readFile(fakePngOutputPath).catch(() => null)).toBeNull();
     expect(thrown).toEqual(expect.objectContaining({ message: expect.stringMatching(/dataUrl/) }));
+  });
+});
+
+describe('handleGenerateDesignImage 多参考图（1-3 张）', () => {
+  const refs = ['data:image/png;base64,AAAA', 'data:image/png;base64,BBBB', 'data:image/png;base64,CCCC', 'data:image/png;base64,DDDD'];
+
+  it('2-3 张走多图 service（按序、整批），costCny 取 qwen 0.5', async () => {
+    const svc = await import(SVC);
+    const multi = await import('../../../src/host/services/media/imageMultiRefService');
+    for (const n of [2, 3]) {
+      (multi.generateImageFromReferences as any).mockClear();
+      const res = await handleGenerateDesignImage({ prompt: 'p', outputPath, referenceImageDataUrls: refs.slice(0, n) });
+      expect((multi.generateImageFromReferences as any).mock.calls[0][0]).toMatchObject({ referenceImageDataUrls: refs.slice(0, n) });
+      expect(res.actualModel).toBe('qwen-image-2.0-pro');
+      expect(res.costCny).toBe(0.5);
+    }
+    expect((svc.generateImageFromReference as any).mock.calls.length).toBe(0);
+  });
+
+  it('4 张在任何付费调用前被拒', async () => {
+    const svc = await import(SVC);
+    const multi = await import('../../../src/host/services/media/imageMultiRefService');
+    await expect(handleGenerateDesignImage({ prompt: 'p', outputPath, referenceImageDataUrls: refs }))
+      .rejects.toThrow('最多 3 张');
+    expect((multi.generateImageFromReferences as any).mock.calls.length).toBe(0);
+    expect((svc.generateImageFromReference as any).mock.calls.length).toBe(0);
+  });
+
+  it('数组仅 1 张保持万相（costCny 0.14），不走多图 service', async () => {
+    const svc = await import(SVC);
+    const multi = await import('../../../src/host/services/media/imageMultiRefService');
+    const res = await handleGenerateDesignImage({ prompt: 'p', outputPath, referenceImageDataUrls: [refs[0]] });
+    expect((svc.generateImageFromReference as any).mock.calls.length).toBe(1);
+    expect((multi.generateImageFromReferences as any).mock.calls.length).toBe(0);
+    expect(res.costCny).toBe(0.14);
   });
 });

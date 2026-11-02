@@ -32,6 +32,16 @@ describe('estimateMediaPriceCny（审批卡参考价纯函数）', () => {
     expect(estimateMediaPriceCny('image_generate', {})).toBeNull();
   });
 
+  it('image：2-3 张参考图按 qwen 多图单价计价，0/1 张保持原价', () => {
+    const base = estimateImageCostCny(GENERATION_TOOL_DEFAULT_MODELS.image);
+    const qwen = estimateImageCostCny('qwen-image-2.0-pro');
+    expect(qwen).toBe(0.5);
+    expect(estimateMediaPriceCny('image_generate', { prompt: ['a'], reference_images: ['a.png', 'b.png'] })?.unitPriceCny).toBe(qwen);
+    expect(estimateMediaPriceCny('image_generate', { prompt: ['a', 'b'], reference_images: ['a', 'b', 'c'] })?.totalCny).toBe(qwen * 2);
+    expect(estimateMediaPriceCny('image_generate', { prompt: ['a'], reference_images: ['a.png'] })?.unitPriceCny).toBe(base);
+    expect(estimateMediaPriceCny('image_generate', { prompt: ['a'] })?.unitPriceCny).toBe(base);
+  });
+
   it('image：model 只有命中价表才认，未知 id 回落工具默认模型（CogView）', () => {
     const defaultUnit = estimateImageCostCny(GENERATION_TOOL_DEFAULT_MODELS.image);
     expect(estimateMediaPriceCny('image_generate', { prompt: 'a', model: 'wanx2.1-t2i-turbo' })?.unitPriceCny)

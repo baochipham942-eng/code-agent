@@ -9,6 +9,7 @@ const service = vi.hoisted(() => ({
   determineImageEngine: vi.fn(() => 'cogview' as const),
   generateImage: vi.fn(),
   generateImageFromReference: vi.fn(),
+  generateImageFromReferences: vi.fn(),
   downloadImageAsBase64: vi.fn(),
   isImageUrl: vi.fn((data: string) => data.startsWith('http')),
 }));
@@ -17,6 +18,9 @@ const auth = vi.hoisted(() => ({ getCurrentUser: vi.fn(() => ({ isAdmin: false }
 const config = vi.hoisted(() => ({ getApiKey: vi.fn(), onSettingsUpdated: vi.fn() }));
 
 vi.mock('../../../../../src/host/services/media/imageGenerationService', () => service);
+vi.mock('../../../../../src/host/services/media/imageMultiRefService', () => ({
+  generateImageFromReferences: service.generateImageFromReferences,
+}));
 vi.mock('../../../../../src/host/services/auth/authService', () => ({
   getAuthService: () => auth,
 }));
@@ -59,6 +63,8 @@ describe('image_generate contract', () => {
     service.determineImageEngine.mockReturnValue('cogview');
     service.generateImage.mockReset();
     service.generateImageFromReference.mockReset();
+    service.generateImageFromReferences.mockReset();
+    service.generateImageFromReferences.mockResolvedValue({ imageData: IMAGE_DATA, actualModel: 'qwen-image-2.0-pro' });
     service.downloadImageAsBase64.mockReset();
     service.generateImage.mockResolvedValue({ imageData: IMAGE_DATA, actualModel: 'mock-model' });
     service.generateImageFromReference.mockResolvedValue({ imageData: IMAGE_DATA, actualModel: 'mock-reference-model' });
@@ -77,7 +83,7 @@ describe('image_generate contract', () => {
     const prompt = imageGenerateSchema.inputSchema.properties?.prompt;
     expect(prompt).toMatchObject({ type: 'array', items: { type: 'string' } });
     expect(imageGenerateSchema.inputSchema.properties?.reference_images)
-      .toMatchObject({ type: 'array', items: { type: 'string' }, maxItems: 1 });
+      .toMatchObject({ type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 3 });
     expect(imageGenerateSchema.inputSchema.properties?.output_file_path?.type).toBe('string');
     expect(imageGenerateSchema.inputSchema.properties?.output_path).toBeUndefined();
   });
@@ -86,7 +92,10 @@ describe('image_generate contract', () => {
     { args: { prompt: [] }, match: /at least one/ },
     { args: { prompt: Array.from({ length: 11 }, () => 'x') }, match: /more than 10/ },
     { args: { prompt: ['ok', 3] }, match: /non-empty strings/ },
-    { args: { prompt: ['ok'], reference_images: ['a.png', 'b.png'] }, match: /more than 1/ },
+    { args: { prompt: ['ok'], reference_images: ['missing-a.png', 'missing-b.png'] }, match: /不存在/ },
+    { args: { prompt: ['ok'], reference_images: ['a.png', 'b.png', 'c.png', 'd.png'] }, match: /最多 3 张/ },
+    { args: { prompt: ['ok'], reference_images: [] }, match: /1-3 张/ },
+    { args: { prompt: ['ok'], reference_images: ['', 'a.png'] }, match: /最多 3 张/ },
     { args: { prompt: ['ok'], output_path: 'old.png' }, match: /renamed to output_file_path/ },
     { args: { prompt: ['ok'], output_file_path: '../outside.png' }, match: /inside the workspace/ },
   ])('refuses invalid args before any service, fetch, write, or briefing call', async ({ args, match }) => {
@@ -100,6 +109,7 @@ describe('image_generate contract', () => {
     expect(service.determineImageEngine).not.toHaveBeenCalled();
     expect(service.generateImage).not.toHaveBeenCalled();
     expect(service.generateImageFromReference).not.toHaveBeenCalled();
+    expect(service.generateImageFromReferences).not.toHaveBeenCalled();
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(writeSpy).not.toHaveBeenCalled();
     expect(emit).not.toHaveBeenCalled();
@@ -234,6 +244,24 @@ describe('image_generate contract', () => {
       .toHaveBeenCalledWith(expect.objectContaining({ outerSignal: controller.signal }));
     expect(service.generateImage).not.toHaveBeenCalled();
     if (result.ok) expect(result.output).toContain('references used: 1 of 1');
+  });
+
+  it('2-3 张参考图按数组顺序整批交给多图 service，不走单图 service', async () => {
+    for (const name of ['a.png', 'b.png', 'c.png']) fs.writeFileSync(path.join(workspace, name), `ref-${name}`);
+    const result = await executeImageGenerate(
+      { prompt: ['图2的模特穿图1的裙子'], reference_images: ['a.png', 'b.png', 'c.png'] },
+      ctx(workspace),
+      allow,
+    );
+    expect(result.ok).toBe(true);
+    expect(service.generateImageFromReference).not.toHaveBeenCalled();
+    expect(service.generateImage).not.toHaveBeenCalled();
+    expect(service.generateImageFromReferences).toHaveBeenCalledTimes(1);
+    const call = service.generateImageFromReferences.mock.calls[0][0];
+    expect(call.referenceImageDataUrls).toEqual(
+      ['a.png', 'b.png', 'c.png'].map((n) => `data:image/png;base64,${Buffer.from(`ref-${n}`).toString('base64')}`),
+    );
+    if (result.ok) expect(result.output).toContain('references used: 3 of 3');
   });
 
   it('does not write to disk when the reference request resolves after an abort', async () => {

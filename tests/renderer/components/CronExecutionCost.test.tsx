@@ -83,6 +83,78 @@ describe('CronExecutionList 成本列', () => {
     expect(document.querySelector('[data-testid="cron-execution-table-scroll"]')?.className).toContain('overflow-x-auto');
   });
 
+  // N-CRON-RUN-LEDGER-VISIBLE-FU2-AFTERP2 ①：单任务视图（runsOn → 8 列）与
+  // 跨任务视图（jobName+runsOn → 9 列）下，未运行原因整行横跨、不裁切、是行的唯一单元格。
+  const SKIP_EXEC = (id: string, skipReason: string) => execution({
+    id, result: { roleId: 'r', trigger: 'cadence', status: 'skipped', skipReason },
+  });
+  const SKIP_REASONS = ['silent_level', 'daily_budget_exceeded (3/3)', 'quiet_hours'];
+
+  const assertSkipRows = (expectedColumns: number) => {
+    const reasonNodes = screen.getAllByTestId('cron-wake-skip-reason');
+    expect(reasonNodes).toHaveLength(SKIP_REASONS.length);
+    const thCount = document.querySelectorAll('thead th').length;
+    expect(thCount).toBe(expectedColumns);
+    for (const node of reasonNodes) {
+      const cell = node.closest('td');
+      expect(cell?.getAttribute('colspan')).toBe(String(expectedColumns));
+      expect(cell?.getAttribute('colspan')).toBe(String(thCount));
+      expect(cell?.querySelector('span')).toBeNull();
+      const cls = cell?.className ?? '';
+      expect(cls).not.toMatch(/truncate|max-w-|overflow-hidden|whitespace-nowrap/);
+      const row = cell?.closest('tr');
+      expect(row?.querySelectorAll(':scope > td').length).toBe(1);
+      expect(row?.querySelectorAll('td').length).toBe(1);
+    }
+    return reasonNodes.map((node) => node.textContent);
+  };
+
+  it('单任务视图（8 列）：三原因+正常行，skip 格横跨全表头且不裁切', () => {
+    render(
+      <CronExecutionList
+        executions={[
+          execution({ id: 'ok-8' }),
+          SKIP_EXEC('s1', SKIP_REASONS[0]),
+          SKIP_EXEC('s2', SKIP_REASONS[1]),
+          SKIP_EXEC('s3', SKIP_REASONS[2]),
+        ]}
+        selectedExecutionId={null}
+        onSelectExecution={() => undefined}
+        runsOnByJobId={{ 'job-1': 'local' }}
+      />,
+    );
+    const reasons = assertSkipRows(8);
+    expect(reasons[0]).toBe('未运行：角色处于静默档，不主动醒来');
+    expect(reasons[1]).toBe('未运行：今日唤醒次数已用满（3/3）');
+    expect(reasons[2]).toBe('未运行：处于免打扰时段，本次不补');
+    // 正常行（无 skip）不产生原因行；正常行自身 8 个 td
+    const normalRow = screen.getAllByText('完成')[0].closest('tr');
+    expect(normalRow?.querySelectorAll('td').length).toBe(8);
+  });
+
+  it('跨任务视图（9 列）：三原因+正常行，skip 格横跨全表头且不裁切', () => {
+    render(
+      <CronExecutionList
+        executions={[
+          execution({ id: 'ok-9', jobId: 'job-1' }),
+          SKIP_EXEC('s1', SKIP_REASONS[0]),
+          SKIP_EXEC('s2', SKIP_REASONS[1]),
+          SKIP_EXEC('s3', SKIP_REASONS[2]),
+        ]}
+        selectedExecutionId={null}
+        onSelectExecution={() => undefined}
+        jobNameById={{ 'job-1': '任务甲' }}
+        runsOnByJobId={{ 'job-1': 'local' }}
+      />,
+    );
+    const reasons = assertSkipRows(9);
+    expect(reasons[0]).toBe('未运行：角色处于静默档，不主动醒来');
+    expect(reasons[1]).toBe('未运行：今日唤醒次数已用满（3/3）');
+    expect(reasons[2]).toBe('未运行：处于免打扰时段，本次不补');
+    const normalRow = screen.getAllByText('任务甲')[0].closest('tr');
+    expect(normalRow?.querySelectorAll('td').length).toBe(9);
+  });
+
   it('云端运行即使带数字也显示 dash', () => {
     render(
       <CronExecutionList

@@ -79,6 +79,6 @@ export async function executeKeepResultPage(input: KeepResultPageInput): Promise
   return {
     success: true,
     output: `Result page kept for the user: ${activeTab.title || activeTab.url} (${activeTab.url}). `
-      + `${otherTabs.length} other tab(s) closed. After this run ends the user can open and keep working on this exact page from the chat.`,
+      + `${otherTabs.length} other tab(s) closed. After this run ends the page stays open in Neo's browser; it is reclaimed after the idle timeout or when the browser pool needs the slot.`,
   };
 }

@@ -71,6 +71,8 @@ describe('keep_result_page handler', () => {
 
     expect(result.success).toBe(true);
     expect(result.output).toContain('https://example.test/result');
+    expect(result.output).toContain('reclaimed after the idle timeout');
+    expect(result.output).not.toContain('from the chat');
     expect(browser.remaining()).toEqual(['tab-result']);
     expect(adapter.markResultPageKept).toHaveBeenCalledWith(identity, {
       url: 'https://example.test/result',

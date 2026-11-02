@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import { generateThinkingPrompt } from '../../../src/host/agent/runtime/contextAssembly/modeInjection';
 import type { ContextAssemblyCtx } from '../../../src/host/agent/runtime/contextAssembly/shared';
-import type { ToolCall, ToolResult } from '../../../shared/contract';
+import type { ToolCall, ToolResult } from '../../../src/shared/contract';
 
 const ctx = {} as ContextAssemblyCtx;
 

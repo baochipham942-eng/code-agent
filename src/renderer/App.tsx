@@ -84,6 +84,7 @@ import { signalRendererReady, RENDERER_READY_SETTLE_CAP_MS } from './utils/rende
 import { whenInitialSessionStateSettled } from './stores/sessionStore';
 import { useAppIpcListeners } from './hooks/useAppIpcListeners';
 import { useInAppValidationBridge } from './hooks/useInAppValidationBridge';
+import { useLedgerDeepLink } from './hooks/useLedgerDeepLink';
 import { useI18n } from './hooks/useI18n';
 import { useCronOsNotification } from './hooks/useCronOsNotification';
 import { InternalFeatureWorkspaceRegistration, PluginUiActivationPolicyBootstrap, ShellOverlaySlotHost, WorkspacePageSlotHost } from './slots/productSlotHosts';
@@ -151,6 +152,7 @@ export const App: React.FC = () => {
   useAgentHalo(); // CUA 原生驱动时的系统级光晕跟随（单指针共驾聚光灯）
   useConnectorRequiredWatcher(); // 连接卡 pending 时盯连接状态，连上后追加续跑消息
   useInAppValidationBridge(); // browser-control 共用验证链路，不依赖内部评测包
+  useLedgerDeepLink(); // ?open=automation|role：冷启动切会话会关掉二级页，钩子里补摊一次
   const {
     showSettings,
     showPromptManager,

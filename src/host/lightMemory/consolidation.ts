@@ -702,7 +702,7 @@ export async function consolidateLightMemory(
         description: action.result.description || action.result.name,
       }] : []),
     });
-    const mirror = await rebuildMemoryMirrorFromLightFiles(opts.db);
+    const mirror = await rebuildMemoryMirrorFromLightFiles(opts.db, { journal: { actor: 'dream' } });
     if (mirror.skipped.length > 0) {
       throw new Error(`DB mirror synchronization skipped ${mirror.skipped.length} file(s)`);
     }

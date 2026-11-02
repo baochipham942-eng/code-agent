@@ -709,7 +709,7 @@ describe('ExternalImportSettings 导入与结果（验收④）', () => {
       return Promise.resolve(undefined);
     });
 
-    const toggle = screen.getByRole('switch');
+    const toggle = screen.getByRole('switch', { name: '读取 Claude 技能' });
     fireEvent.click(toggle);
     await waitFor(() => {
       expect(invokeDomain).toHaveBeenCalledWith(
@@ -719,7 +719,7 @@ describe('ExternalImportSettings 导入与结果（验收④）', () => {
       );
     });
     await waitFor(() => {
-      expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false');
+      expect(screen.getByRole('switch', { name: '读取 Claude 技能' }).getAttribute('aria-checked')).toBe('false');
     });
   });
 });

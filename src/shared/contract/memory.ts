@@ -193,6 +193,62 @@ export interface MemoryEntryInjectionPause {
   since: number;
 }
 
+// ---------------------------------------------------------------------------
+// 记忆变更日志（N-MEM-JOURNAL-SOURCEJUMP）：memories 表每次 create/update/delete/
+// evict 追加一行，只 INSERT/SELECT，永不改旧行。后台改的记忆要看得见、可回溯。
+// ---------------------------------------------------------------------------
+
+/** 触发日志行的操作：create/update/delete 跟随仓储方法；evict = 来源消失后的镜像清退。 */
+export type MemoryChangeOperation = 'create' | 'update' | 'delete' | 'evict';
+
+/** 谁改的这条记忆；调用点说不清时记 unknown（清单见单据证据档）。 */
+export type MemoryChangeActor =
+  | 'user_manual'
+  | 'auto_review'
+  | 'role_wake'
+  | 'dream'
+  | 'eviction'
+  | 'import'
+  | 'unknown';
+
+/** 写入侧随调用点携带的 journal 上下文（MemoryRepository 写方法的可选参数）。 */
+export interface MemoryChangeJournalContext {
+  actor: MemoryChangeActor;
+  sessionId?: string | null;
+  /** 仅「来源消失后清退镜像」的调用点标 evict；缺省按仓储方法推 create/update/delete。 */
+  operation?: Extract<MemoryChangeOperation, 'evict'>;
+}
+
+/** 一条变更日志。before/afterContent 是 {summary,status,content} 的截断快照 JSON。 */
+export interface MemoryChangeJournalRow {
+  id: number;
+  timestamp: number;
+  operation: MemoryChangeOperation;
+  memoryId: string;
+  entryId: string | null;
+  actor: MemoryChangeActor;
+  beforeContent: string | null;
+  afterContent: string | null;
+  sessionId: string | null;
+}
+
+export interface MemoryChangeJournalRequest {
+  entryId?: string;
+  memoryId?: string;
+  limit?: number;
+}
+
+export interface MemoryChangeJournalResult {
+  rows: MemoryChangeJournalRow[];
+}
+
+/** 该条记忆最近一次变更（仅列表接口附带，供「后台写入」标记）。 */
+interface MemoryEntryLastChange {
+  actor: MemoryChangeActor;
+  operation: MemoryChangeOperation;
+  timestamp: number;
+}
+
 export interface MemoryEntry {
   id: string;
   schemaVersion: 2;
@@ -213,6 +269,8 @@ export interface MemoryEntry {
   updatedAt: number;
   /** 仅列表接口附带：该条当前不进自动注入（库里仍在，MemoryRead/搜索照常可取）。 */
   injectionPaused?: MemoryEntryInjectionPause;
+  /** 仅列表接口附带：最近一次变更日志（有则给「后台写入」标记；无日志/读失败不带）。 */
+  lastChange?: MemoryEntryLastChange;
 }
 
 export interface MemoryEntryListResult {

@@ -25,6 +25,7 @@ import { syncSupabaseSessionRow } from '../helpers/supabaseSessionSync';
 import { buildGoalContract } from '../../host/agent/goalModeController';
 import {
   buildWorkbenchCapabilityContextLines,
+  resolveConnectorRequiredForTurn,
   buildWorkbenchToolScope,
 } from '../../host/app/workbenchTurnContext';
 import { getSessionCommandCenterBrainContextForPrompt, getTextForegroundToolNamesForPrompt } from '../../host/app/sessionCommandCenterBrain';
@@ -46,6 +47,7 @@ import {
   recordExternalEngineFailure,
 } from './agentEngineFailureRecorder';
 import { buildTurnTerminalFailure } from './agentTurnTerminalFailure';
+import { createMarkSessionExecutionEnvironment } from '../../host/services/cloudRun/sessionExecutionEnvironmentMarker';
 import { checkEnvironmentProtocol } from './environmentProtocolGate';
 import {
   AgentRunBodySchema,
@@ -89,10 +91,14 @@ import {
 import { registerAgentCancelRoute } from './registerAgentCancelRoute';
 import { registerAgentContinueRoute } from './registerAgentContinueRoute';
 import {
+  admitDelegatedTurn,
   CloudRunRouteRuntime,
   handleCloudRunAdmission,
   registerCloudRunRoutes,
 } from './cloudRunRoutes';
+import { channelCloudRuntimeDeps, wireChannelCloudRun } from './cloudChannelRun';
+import { isWebServiceMode } from '../middleware/auth';
+import { CloudCronScheduler } from '../../host/services/cloudRun/cloudCronScheduler';
 import type { CloudRunState } from '../../shared/contract/cloudRun';
 import type { CloudRunLedger } from '../../host/services/cloudRun/cloudRunLedger';
 import { steerOrQueue } from '../../host/runtime/steerQueueFence';
@@ -377,10 +383,15 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     },
     hasActiveRun: (sessionId) => Boolean(runRegistry.getBySessionId(sessionId)),
     runEnvelope: async (envelope, response, onActivated, options) => {
-      await runAgentTurn(buildQueuedAgentRunBody(envelope), response, {
+      const runBody = buildQueuedAgentRunBody(envelope);
+      const origin = options?.delegationOrigin;
+      if (origin && await admitDelegated(runBody, origin, (cloudBody, cloudRunId) => runAgentTurn(cloudBody, response, {
+        connectedClient: false, onDurableActivated: onActivated, delegationOrigin: origin, cloudRunId,
+      }))) return;
+      await runAgentTurn(runBody, response, {
         connectedClient: false,
         onDurableActivated: onActivated,
-        ...(options?.delegationOrigin ? { delegationOrigin: options.delegationOrigin } : {}),
+        ...(origin ? { delegationOrigin: origin } : {}),
       });
     },
     emitAgentEvent: (sessionId, event) => {
@@ -395,36 +406,80 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     delegation: delegationHooks,
     logger,
   });
-  const cloudRunRuntime = new CloudRunRouteRuntime({
-    getLedger: () => deps.getCloudRunLedger?.() ?? getDatabase().getCloudRunLedger(),
-    runRegistry,
-    execute: (body, cloudRunId) => runAgentTurn(body, createOfflineAgentRunResponseSink(), {
-      connectedClient: false,
-      cloudRunId,
-    }),
+  const markSessionExecutionEnvironment = createMarkSessionExecutionEnvironment({
+    readSessionMetadata: async (sessionId) => {
+      const sm = await tryGetSessionManager();
+      const session = sm?.getSession ? await sm.getSession(sessionId, 1) : null;
+      return session?.metadata;
+    },
+    patchSessionMetadata: async (sessionId, patch) => {
+      const sm = await tryGetSessionManager();
+      return (await sm?.patchSessionMetadata?.(sessionId, patch)) ?? false;
+    },
     logger,
   });
+  // ADR-087 S4B：服务模式把通道入站接进云端账本（admit 唯一入口），并给提升的
+  // channel 行装执行体；桌面态两样都不装，通道行为不变。
+  const getCloudLedger = () => deps.getCloudRunLedger?.() ?? getDatabase().getCloudRunLedger();
+  const channelCloud = isWebServiceMode()
+    ? wireChannelCloudRun({ getLedger: getCloudLedger, logger })
+    : undefined;
+  const cloudRunRuntime = new CloudRunRouteRuntime({
+    getLedger: getCloudLedger,
+    runRegistry,
+    ...channelCloudRuntimeDeps(channelCloud),
+    execute: (body, cloudRunId, options) => runAgentTurn(body, createOfflineAgentRunResponseSink(), {
+      connectedClient: false,
+      cloudRunId,
+      ...(options?.delegationOrigin ? { delegationOrigin: options.delegationOrigin } : {}),
+      ...(options?.onDurableActivated ? { onDurableActivated: options.onDurableActivated } : {}),
+    }),
+    // ADR-072 INV-4（rework r1）：排进账本的委托提升起跑时回填 target_run_id。
+    onDelegateRunActivated: ({ queuedInputId, sessionId, runId }) =>
+      delegationHooks.onActivated({ id: queuedInputId, sessionId }, { runId }),
+    // ADR-081/087 S4B：manual 云端轮准入即打「跑过云」粘性会话标记（永不清理）。
+    markSessionExecutionEnvironment,
+    logger,
+  });
+  const admitDelegated = async (
+    body: AgentRunBody,
+    delegationOrigin: import('../../shared/contract/queuedInput').DelegationOriginMarker,
+    runInline: (body: AgentRunBody, cloudRunId: string) => Promise<void>,
+  ): Promise<boolean> => (await admitDelegatedTurn({
+    runtime: cloudRunRuntime, body, delegationOrigin, runInline, logger,
+    readSessionMetadata: async (sid) => (await (await tryGetSessionManager())?.getSession?.(sid, 1))?.metadata,
+  })) !== 'direct';
   deps.registerQueuedInputStartupSweep?.(() => {
     queuedInputDrain.runStartupSweep();
     void cloudRunRuntime.runStartupSweep().catch((error) => {
       logger.error('[CloudRun] Startup sweep failed', error);
     });
+    // ADR-087 S4（方案 B）：cloud webServer 自己排程 cron，admit 之后才执行；
+    // 执行体缺省 fail-closed，等 FU5 的 OpenClaw 核对单关账后再接真执行体。
+    const cloudCronDb = getDatabase().getDb();
+    if (cloudCronDb) {
+      new CloudCronScheduler({ db: cloudCronDb, getLedger: () => cloudRunRuntime.ledger() }).start();
+    } else {
+      logger.error('[CloudCron] Scheduler not started: database unavailable');
+    }
   });
   deps.registerQueuedInputEnqueueHook?.((sessionId) => queuedInputDrain.handleEnqueued(sessionId));
   deps.registerQueuedInputSendNowHook?.(async ({ id, sessionId, envelope, delegationOrigin }, route) => {
     if (route === 'idle') {
+      const idleBody = buildQueuedAgentRunBody({ ...envelope, clientMessageId: id, sessionId });
+      // I2/INV-4：sendNow 空闲分支也要回填 target_run_id（此前漏传 onDurableActivated）。
+      const onDurableActivated = ({ runId }: { runId: string }) => delegationHooks.onActivated({ id, sessionId }, { runId });
+      if (delegationOrigin && await admitDelegated(idleBody, delegationOrigin, (cloudBody, cloudRunId) => runAgentTurn(
+        cloudBody, createOfflineAgentRunResponseSink(),
+        { connectedClient: false, delegationOrigin, cloudRunId, onDurableActivated },
+      ))) return 'sent';
       await runAgentTurn(
-        buildQueuedAgentRunBody({
-          ...envelope,
-          clientMessageId: id,
-          sessionId,
-        }),
+        idleBody,
         createOfflineAgentRunResponseSink(),
         {
           connectedClient: false,
           ...(delegationOrigin ? { delegationOrigin } : {}),
-          // I2/INV-4：sendNow 空闲分支也要回填 target_run_id（此前漏传 onDurableActivated）。
-          onDurableActivated: ({ runId }) => delegationHooks.onActivated({ id, sessionId }, { runId }),
+          onDurableActivated,
         },
       );
       return 'sent';
@@ -597,6 +652,12 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     } catch (err) {
       sessionPreflightReadFailed = true;
       logger.warn(`[AgentRouter] Failed to restore session ${sessionId}:`, err);
+    }
+
+    // ADR-081/087 S4B：admit 时会话行可能尚不存在（标记没写成），run 真正起跑、
+    // 会话恢复后再补一次；仍缺失只 warn（mark 实现内），不阻塞 run。
+    if (transport.cloudRunId && body.environmentSelection?.environmentId) {
+      void markSessionExecutionEnvironment(sessionId, body.environmentSelection.environmentId);
     }
 
     let resolvedProject: string | undefined =
@@ -1198,6 +1259,16 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         }
       }
 
+      // 选中/专家声明的连接器未就绪：每轮首个模型输出前发一次 connector_required（renderer 出连接卡）。
+      // web 路径不应用专家声明的连接器，仅用已解析的 preferredAgentId 做事件口径。
+      const connectorRequired = await resolveConnectorRequiredForTurn(
+        preferredAgentId ? { agentOverrideId: preferredAgentId } : undefined,
+        body.context,
+      );
+      if (connectorRequired.length > 0) {
+        runController.emitAgentEvent({ type: 'connector_required', data: { connectors: connectorRequired } });
+      }
+
       // /goal 自治模式：body.goal 存在则激活（schema 保证 verify/review 至少有一个）。
       // 设 config.goalContract → agentLoop 据此建 ctx.goalMode + maxIterations=maxTurns + 预加载 attempt_completion。
       if (body.goal) {
@@ -1758,6 +1829,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         body,
         res,
         runtime: cloudRunRuntime,
+        logger,
         runInline: (cloudBody, cloudRunId) => runAgentTurn(cloudBody, res, {
           connectedClient: true,
           requestToken: extractRequestToken(req),

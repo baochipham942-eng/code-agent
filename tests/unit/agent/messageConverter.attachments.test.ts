@@ -224,4 +224,30 @@ describe('message attachment conversion', () => {
     expect(serialized).not.toContain('AAAAPPTX');
     expect(serialized).not.toContain('AAAAZIP');
   });
+
+  it('csv 附件（category=data）注入完整内容与可读取的路径行', () => {
+    // web 模式下 path 来自 /api/upload/temp 的落盘绝对路径；模型靠这一行 📍 路径
+    // 才能在内容被截断（>8000 字符只给 30 行预览）时用 Read 工具读原文件。
+    const attachment: MessageAttachment = {
+      id: 'att-csv',
+      type: 'file',
+      category: 'data',
+      name: 'sales.csv',
+      size: 2048,
+      mimeType: 'text/csv',
+      language: 'csv',
+      data: '月份,销售额\n一月,1000\n二月,2000',
+      path: '/var/folders/xx/T/code-agent-uploads/uuid/sales.csv',
+    };
+
+    const content = buildMultimodalContent('分析这个表', [attachment]);
+    const text = content
+      .filter((part) => part.type === 'text')
+      .map((part) => part.text ?? '')
+      .join('\n');
+
+    expect(text).toContain('数据文件: sales.csv');
+    expect(text).toContain('📍 路径: /var/folders/xx/T/code-agent-uploads/uuid/sales.csv');
+    expect(text).toContain('一月,1000');
+  });
 });

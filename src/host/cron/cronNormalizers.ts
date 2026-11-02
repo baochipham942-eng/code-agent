@@ -545,6 +545,8 @@ export function normalizeCronJobRow(row: unknown): CronJobDefinition | null {
     maxRuns,
     runCount: readNumberField(row, 'run_count') ?? 0,
     resultChannel,
+    // 事件任务执行档（N-TRIGGER-OBSERVE-MODE）：存量行由迁移戳成 'auto'；NULL/非法按 observe。
+    ...(scheduleType === 'event' ? { actionMode: row.action_mode === 'auto' ? 'auto' as const : 'observe' as const } : {}),
     enabled: row.enabled === 1 || row.enabled === true,
     maxRetries: readOptionalNumberField(row, 'max_retries'),
     // 旧版保存把未设置的 retryDelay 写成 5000（`|| 5000` + schema DEFAULT 5000），

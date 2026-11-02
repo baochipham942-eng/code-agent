@@ -235,7 +235,7 @@ export interface IpcInvokeHandlers {
 
   // Memory (Phase 2/3)
 
-  [IPC_CHANNELS.MEMORY]: (payload: { action: 'list' | 'update' | 'delete' | 'deleteByCategory' | 'export' | 'import' | 'getStats' | 'add' | 'getLearningInsights' | 'lightList' | 'lightRead' | 'lightDelete' | 'lightStats' | 'lightHealth' | 'lightRebuildIndex' | 'memoryAudit' | 'memoryInboxResolve' | 'memoryEntries' | 'memoryRebuildMirror' | 'memoryEntryUpdate' | 'memoryEntryDelete' | 'memoryEntryResumeInjection' | 'memoryEntryBatchReview' | 'memoryPack' | 'memoryExportV2' | 'memoryImportV2DryRun' | 'memoryImportV2Apply' | 'memoryHarnessImportDryRun' | 'memoryHarnessImportApply' | 'memoryHarnessImportConfirmDirective'; category?: MemoryCategory; id?: string; content?: string; data?: MemoryExport; bundle?: MemoryExportV2Bundle; allowConflicts?: boolean; query?: string; request?: MemoryPackRequest; item?: Partial<MemoryItem>; filename?: string; candidateId?: string; candidateIds?: string[]; instructionId?: string; decision?: 'approve' | 'reject'; title?: string; source?: string; reason?: string; kind?: string; projectPath?: string | null; sessionId?: string | null; limit?: number; entryId?: string; entryIds?: string[]; adapterIds?: Array<'codex-local-custom' | 'claude-code' | 'grok-build' | 'qwen-code' | 'gemini-cli'>; modelProvider?: 'zai' | 'deepseek' | null }) => Promise<{
+  [IPC_CHANNELS.MEMORY]: (payload: { action: 'list' | 'update' | 'delete' | 'deleteByCategory' | 'export' | 'import' | 'getStats' | 'add' | 'getLearningInsights' | 'lightList' | 'lightRead' | 'lightDelete' | 'lightStats' | 'lightHealth' | 'lightRebuildIndex' | 'memoryAudit' | 'memoryInboxResolve' | 'memoryEntries' | 'memoryRebuildMirror' | 'memoryEntryUpdate' | 'memoryEntryDelete' | 'memoryEntryJournal' | 'memoryEntryResumeInjection' | 'memoryEntryBatchReview' | 'memoryPack' | 'memoryExportV2' | 'memoryImportV2DryRun' | 'memoryImportV2Apply' | 'memoryHarnessImportDryRun' | 'memoryHarnessImportApply' | 'memoryHarnessImportConfirmDirective'; category?: MemoryCategory; id?: string; content?: string; data?: MemoryExport; bundle?: MemoryExportV2Bundle; allowConflicts?: boolean; query?: string; request?: MemoryPackRequest; item?: Partial<MemoryItem>; filename?: string; candidateId?: string; candidateIds?: string[]; instructionId?: string; decision?: 'approve' | 'reject'; title?: string; source?: string; reason?: string; kind?: string; projectPath?: string | null; sessionId?: string | null; limit?: number; entryId?: string; entryIds?: string[]; adapterIds?: Array<'codex-local-custom' | 'claude-code' | 'grok-build' | 'qwen-code' | 'gemini-cli'>; modelProvider?: 'zai' | 'deepseek' | null }) => Promise<{
 
     success: boolean;
     data?: MemoryItem[] | MemoryStatsNew | MemoryExport | MemoryExportV2Bundle | MemoryEntryListResult | MemoryMirrorRebuildResult | MemoryEntryUpdateResult | MemoryEntryDeleteResult | MemoryEntryBatchReviewResult | MemoryImportDryRunResult | MemoryImportApplyResult | MemoryImportDirectiveConfirmResult | MemoryImportV2DryRunResult | MemoryImportV2ApplyResult | MemoryPackResult | { deleted: number } | { imported: number; skipped: number } | MemoryItem | unknown;
@@ -628,6 +628,10 @@ export interface NotificationShowEvent {
   failureKind?: CronFailurePresentationKind;
   /** ISO-8601。只有报文写明重置时间才带。 */
   resetAt?: string;
+  /** 失败类通知。renderer 即使窗口聚焦也照常弹 OS 通知；缺省按普通完成处理（聚焦时静默）。 */
+  urgent?: boolean;
+  /** 仅任务失败：聚焦时 renderer 额外补应用内错误 toast。needs-input 虽 urgent 但不是失败，不带此标。 */
+  failure?: boolean;
 }
 
 export type MCPEventType = 'connection_errors' | 'server_connected' | 'server_disconnected' | 'capabilities_changed';

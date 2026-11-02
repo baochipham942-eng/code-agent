@@ -376,7 +376,37 @@ export class ManagedBrowserProviderAdapter {
         session = this.runtime.sessions.requireOwned(binding.surfaceSessionId, this.subject(binding));
         this.bindings.delete(this.ownerKey(input.identity));
       }
-      return this.attachSurfaceMetadata(wrapped.providerResult, binding, {
+      let providerResult = wrapped.providerResult;
+      // Must run after the operation ended: takeover aborts every in-flight operation of this run+agent.
+      if (
+        providerResult.metadata?.code === 'SECRET_REF_ORIGIN_MISMATCH'
+        && !isUserBrowserSurfaceIdentity(input.identity)
+      ) {
+        try {
+          await this.runtime.control(this.subject(binding), 'takeover', {
+            reason: 'Sign-in needs you: this site is not allowed for the secret',
+          });
+          session = this.runtime.sessions.requireOwned(binding.surfaceSessionId, this.subject(binding));
+          // The guard's mismatch text is neutral on purpose (paths without a takeover
+          // return it as-is); only here, with waiting_human real, promise the handover.
+          providerResult = {
+            ...providerResult,
+            error: `${providerResult.error ?? ''} The browser now belongs to the user: do not retry or route around it. `
+              + 'Your next browser action waits until the user presses Continue, and after that you must call get_dom_snapshot '
+              + 'before acting (takeover invalidates earlier observations).',
+          };
+        } catch (error) {
+          this.resumeLogger.warn?.('secretRef origin mismatch: browser handover to the user failed', {
+            cause: error instanceof Error ? error.message : String(error),
+            sessionId: binding.surfaceSessionId,
+          });
+          providerResult = {
+            ...providerResult,
+            error: `${providerResult.error ?? ''} (The browser handover could not be started; the user has not been given the browser.)`,
+          };
+        }
+      }
+      return this.attachSurfaceMetadata(providerResult, binding, {
         actionResult: wrapped.surfaceResult,
         events: wrapped.events,
         session,

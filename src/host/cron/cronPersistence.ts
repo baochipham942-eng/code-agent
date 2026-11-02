@@ -1,5 +1,6 @@
 import type { CronJobDefinition, CronJobExecution } from '../../shared/contract/cron';
 import { getDatabase } from '../services/core/databaseService';
+import { resolveCronEventActionMode } from '../../shared/cronEventActionMode';
 import { minimumIntervalSecondsForLocation } from './cronExecutionPolicy';
 import {
   normalizeCronExecutionRow,
@@ -19,6 +20,26 @@ export function upsertCronExecutionInMemory(
   executions.set(execution.jobId, history.slice(-100));
 }
 
+/**
+ * 短缓存（任务列表 limit=1）盖不住请求的窗口时，与库里的页合并。
+ * 同 id 保留内存对象：刚跑完、尚未落库，或 executeJob 还在原地改的那一条不能被库里的旧行换掉。
+ * 不把合并结果写回内存历史——连败计数只看本进程推进过的尾部，一次历史读取不能把旧失败灌进去。
+ */
+export function mergeCronExecutionWindow(
+  cached: readonly CronJobExecution[],
+  persisted: readonly CronJobExecution[],
+  limit: number,
+): CronJobExecution[] {
+  const byId = new Map<string, CronJobExecution>();
+  for (const row of persisted) byId.set(row.id, row);
+  for (const row of cached) byId.set(row.id, row);
+  const merged = [...byId.values()].sort((a, b) => {
+    if (a.scheduledAt !== b.scheduledAt) return a.scheduledAt - b.scheduledAt;
+    return (a.startedAt ?? 0) - (b.startedAt ?? 0);
+  });
+  return merged.slice(-limit);
+}
+
 function mapCronExecutionRows(rows: unknown[]): CronJobExecution[] {
   return rows.map(normalizeCronExecutionRow).filter((row): row is CronExecutionRow => row !== null).map((row) => ({
     id: row.id,
@@ -35,6 +56,7 @@ function mapCronExecutionRows(rows: unknown[]): CronJobExecution[] {
     retryAttempt: row.retry_attempt,
     exitCode: row.exit_code ?? undefined,
     trigger: parseCronExecutionTrigger(row.trigger_json),
+    cost: row.cost_usd ?? undefined,
   }));
 }
 
@@ -84,6 +106,26 @@ export async function saveCronJob(
     );
   } catch (error) {
     console.error('[CronService] Failed to save job to database:', error);
+    return;
+  }
+  saveCronJobActionMode(job);
+}
+
+/**
+ * 事件任务执行档单列窄写（N-TRIGGER-OBSERVE-MODE）：只有显式 auto 落 auto，其余 event 任务
+ * 落 observe。单独一条语句而不并进上面的整行 upsert：action_mode 列
+ * 万一没迁移成功，任务本身照常保存，读回时 NULL 按 observe 处理（fail-closed，只收窄）。
+ */
+function saveCronJobActionMode(job: CronJobDefinition): void {
+  // 非 event 任务不写：读侧只对 event 任务解释该列；改回 event 时 carryEventActionMode 必给出值并写入。
+  const mode = resolveCronEventActionMode(job);
+  if (mode === null) return;
+  try {
+    const db = getDatabase().getDb();
+    if (!db) return;
+    db.prepare('UPDATE cron_jobs SET action_mode = ? WHERE id = ?').run(mode, job.id);
+  } catch (error) {
+    console.error('[CronService] Failed to save job action mode (event job reads back as observe):', error);
   }
 }
 
@@ -119,8 +161,8 @@ export async function saveCronExecution(execution: CronJobExecution): Promise<vo
     if (!db) return;
     db.prepare(`
       INSERT OR REPLACE INTO cron_executions
-      (id, job_id, session_id, status, scheduled_at, started_at, completed_at, duration, result, error, retry_attempt, exit_code, trigger_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, job_id, session_id, status, scheduled_at, started_at, completed_at, duration, result, error, retry_attempt, exit_code, trigger_json, cost_usd)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       execution.id, execution.jobId, execution.sessionId || null, execution.status,
       execution.scheduledAt, execution.startedAt || null,
@@ -129,6 +171,7 @@ export async function saveCronExecution(execution: CronJobExecution): Promise<vo
       execution.error || null, execution.retryAttempt,
       execution.exitCode || null,
       execution.trigger ? JSON.stringify(execution.trigger) : null,
+      execution.cost ?? null,
     );
   } catch (error) {
     console.error('[CronService] Failed to save execution to database:', error);

@@ -23,7 +23,7 @@ const BUDGET_LIMIT = /Cron job run exceeded its \$(\d+(?:\.\d+)?) budget limit\.
 function failureAction(kind: CronFailurePresentationKind): 'model' | 'account' | 'rerun' | null {
   if (kind === 'quota') return 'model';
   if (kind === 'auth') return 'account';
-  if (kind === 'rate_limit' || kind === 'timeout' || kind === 'network') return 'rerun';
+  if (kind === 'rate_limit' || kind === 'timeout' || kind === 'network' || kind === 'cloud_unavailable') return 'rerun';
   return null;
 }
 

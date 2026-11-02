@@ -1,4 +1,5 @@
 import express from 'express';
+import type { Response as ExpressResponse } from 'express';
 import http from 'node:http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -8,7 +9,10 @@ import type BetterSqlite3 from 'better-sqlite3';
 
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 import { createCloudRunLedger, type CloudRunLedger } from '../../../src/host/services/cloudRun/cloudRunLedger';
+import { createMarkSessionExecutionEnvironment } from '../../../src/host/services/cloudRun/sessionExecutionEnvironmentMarker';
 import { applySchema } from '../../../src/host/services/core/database/schema';
+import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
+import { readPersistedExecutionEnvironment } from '../../../src/shared/contract/executionEnvironmentMarker';
 import {
   CloudRunRouteRuntime,
   handleCloudRunAdmission,
@@ -62,6 +66,7 @@ describe('cloud run HTTP contract', () => {
   let started: string[];
   let gates: Map<string, Deferred>;
   let executions: Map<string, ReturnType<RunRegistry['start']>>;
+  let channelStarted: string[];
 
   beforeEach(async () => {
     db = new Database(':memory:');
@@ -72,6 +77,7 @@ describe('cloud run HTTP contract', () => {
     started = [];
     gates = new Map();
     executions = new Map();
+    channelStarted = [];
 
     const execute = async (body: AgentRunBody, cloudRunId: string): Promise<void> => {
       const handle = runRegistry.start({
@@ -92,6 +98,20 @@ describe('cloud run HTTP contract', () => {
       getLedger: () => ledger,
       runRegistry,
       execute,
+      // ADR-087 S4B：channel 提升执行体——记录调用并正常结算（不落 failed）。
+      executeChannelRun: async (record) => {
+        channelStarted.push(record.runId);
+        runtime.settle(record.runId, 'succeeded');
+      },
+      // S4B：与生产同构的 mark 实现——直接读写 harness 的 :memory: db
+      //（SessionRepository 是 db 直读路径，无 sessionCache）。
+      markSessionExecutionEnvironment: createMarkSessionExecutionEnvironment({
+        readSessionMetadata: async (sessionId) =>
+          new SessionRepository(db).getSession(sessionId, { includeDeleted: true })?.metadata,
+        patchSessionMetadata: async (sessionId, patch) =>
+          new SessionRepository(db).patchSessionMetadata(sessionId, patch),
+        logger,
+      }),
       logger,
     });
     const router = express.Router();
@@ -281,6 +301,82 @@ describe('cloud run HTTP contract', () => {
     expect(ledger.countInFlight('acct_a')).toBe(1);
   });
 
+  it('③ 2 in-flight → 3rd channel admit queued; promoted once through executeChannelRun without failing; repeat admit returns the same row', async () => {
+    await postRun('session_1', 'message_1');
+    await postRun('session_2', 'message_2');
+    const queued = runtime.ledger().admit({
+      sessionId: 'session_channel',
+      trigger: 'channel',
+      requestJson: JSON.stringify({ payload: 'ingress-envelope', sessionId: 'session_channel' }),
+      channelDeliveryId: 'cd-1',
+    });
+    expect(queued.record.state).toBe('queued');
+    expect(queued.position).toEqual({ queuePosition: 1, ahead: 0 });
+
+    const repeat = runtime.ledger().admit({
+      sessionId: 'session_channel',
+      trigger: 'channel',
+      requestJson: JSON.stringify({ payload: 'ingress-envelope', sessionId: 'session_channel' }),
+      channelDeliveryId: 'cd-1',
+    });
+    expect(repeat.duplicate).toBe(true);
+    expect(repeat.record.runId).toBe(queued.record.runId);
+    expect(repeat.record.state).toBe('queued');
+
+    gates.get('message_1')!.resolve();
+    await vi.waitFor(() => expect(channelStarted).toEqual([queued.record.runId]));
+    await vi.waitFor(() => expect(ledger.getRun(queued.record.runId)?.state).toBe('succeeded'));
+    expect(ledger.getRun(queued.record.runId)?.state).not.toBe('failed');
+  });
+
+  it('④ executeChannelRun absent → promotion settles failed with a logged reason; manual rows still parse as AgentRunBody', async () => {
+    const db2 = new Database(':memory:');
+    applySchema(db2, logger);
+    const ledger2 = createCloudRunLedger({ db: db2, accountResolver: () => accountId });
+    const runtime2 = new CloudRunRouteRuntime({
+      getLedger: () => ledger2,
+      runRegistry,
+      execute: async () => {},
+      logger,
+    });
+    try {
+      // 用两条 manual 行占满 in-flight（running 行不走 startPromoted）。
+      const manual = (sessionId: string) => ({
+        sessionId,
+        trigger: 'manual' as const,
+        requestJson: JSON.stringify({ prompt: `work ${sessionId}`, sessionId, protocolVersion: 'environment-selection/1' }),
+      });
+      ledger2.admit(manual('session_m1'));
+      ledger2.admit(manual('session_m2'));
+      const channel = ledger2.admit({
+        sessionId: 'session_c',
+        trigger: 'channel',
+        requestJson: JSON.stringify({ payload: 'ingress-envelope', sessionId: 'session_c' }),
+        channelDeliveryId: 'cd-fail-closed',
+      });
+      expect(channel.record.state).toBe('queued');
+
+      runtime2.ledger(); // 挂 transition listener（与生产 promoteAccount 同链）
+      const firstRun = ledger2.listInFlightRuns()[0];
+      ledger2.transition(firstRun.runId, 'succeeded');
+      await vi.waitFor(() => expect(ledger2.getRun(channel.record.runId)?.state).toBe('failed'));
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('channel run has no executor configured'),
+        expect.objectContaining({ runId: channel.record.runId }),
+      );
+
+      // manual 路径不受 channel 分支影响：manual 行 promote 后仍走 AgentRunBody 解析并执行
+      const manualThird = ledger2.admit(manual('session_m3'));
+      await vi.waitFor(() => {
+        const state = ledger2.getRun(manualThird.record.runId)?.state;
+        return state === 'running' || state === 'succeeded' || state === 'failed';
+      });
+      expect(ledger2.getRun(manualThird.record.runId)?.state).not.toBe('failed');
+    } finally {
+      db2.close();
+    }
+  });
+
   it('cancels queued work immediately', async () => {
     await postRun('session_1', 'message_1');
     await postRun('session_2', 'message_2');
@@ -291,5 +387,129 @@ describe('cloud run HTTP contract', () => {
     expect(cancelled.status).toBe(200);
     expect(await cancelled.json()).toMatchObject({ status: 'cancelled' });
     expect(ledger.getRun(queued.runId)?.state).toBe('cancelled');
+  });
+
+// ============================================================================
+// ADR-081/087 S4B：manual 云端轮准入给会话打粘性「跑过云」标记。
+// 会话账本不换边，云端只是回合执行地；标记只写不清，后续本地回合不移除。
+// ============================================================================
+
+  function createSessionRow(sessionId: string): void {
+    new SessionRepository(db).createSessionWithId(sessionId, {
+      title: 'cloud marker',
+      modelConfig: { provider: 'openai', model: 'gpt-5' },
+    });
+  }
+
+  function readStoredRow(sessionId: string): { metadata: unknown; updatedAt: number } | null {
+    const row = db.prepare('SELECT metadata, updated_at FROM sessions WHERE id = ?').get(sessionId) as {
+      metadata: string | null;
+      updated_at: number;
+    } | undefined;
+    if (!row) return null;
+    return { metadata: row.metadata ? JSON.parse(row.metadata) : null, updatedAt: row.updated_at };
+  }
+
+  it('②③ admits a manual cloud turn and leaves a readable sticky marker that a second admit does not rewrite', async () => {
+    createSessionRow('session_env');
+    const first = await runtime.admit(cloudBody('session_env', 'message_env1'));
+    expect(first.record.state).toBeTypeOf('string');
+
+    const stored = readStoredRow('session_env')!;
+    expect(readPersistedExecutionEnvironment(stored.metadata as Record<string, unknown>))
+      .toMatchObject({ kind: 'cloud', environmentId: 'cloud-test' });
+    expect(typeof (stored.metadata as Record<string, Record<string, unknown>>).executionEnvironment?.setAt).toBe('number');
+
+    // 重启等价证据：SessionRepository 是不走任何缓存的 db 直读路径，
+    // 每次新开仓库读出的行就是落库内容本身。
+    const freshRead = readPersistedExecutionEnvironment(
+      new SessionRepository(db).getSession('session_env')?.metadata,
+    );
+    expect(freshRead).toMatchObject({ kind: 'cloud', environmentId: 'cloud-test' });
+
+    const setAtBefore = freshRead!.setAt;
+    const updatedAtBefore = stored.updatedAt;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await runtime.admit(cloudBody('session_env', 'message_env2'));
+    const second = readStoredRow('session_env')!;
+    expect(readPersistedExecutionEnvironment(second.metadata as Record<string, unknown>)?.setAt).toBe(setAtBefore);
+    expect(second.updatedAt).toBe(updatedAtBefore);
+  });
+
+  it('② still marks when the session row appears only later (row missing at admit, marker written on retry)', async () => {
+    // admit 时会话行不存在：mark 只 warn，不炸 admit；行出现后 run 启动重试写上。
+    const admission = await runtime.admit(cloudBody('session_late', 'message_late1'));
+    expect(admission.record.state).toBeTypeOf('string');
+    expect(readStoredRow('session_late')).toBeNull();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('session row missing'),
+      expect.objectContaining({ sessionId: 'session_late', environmentId: 'cloud-test' }),
+    );
+
+    createSessionRow('session_late');
+    await runtime.admit(cloudBody('session_late', 'message_late2'));
+    expect(readPersistedExecutionEnvironment(
+      new SessionRepository(db).getSession('session_late')?.metadata,
+    )).toMatchObject({ kind: 'cloud', environmentId: 'cloud-test' });
+  });
+
+  it('④ mark dep returning false or rejecting does not fail the admit and warns which case happened', async () => {
+    (logger.warn as ReturnType<typeof vi.fn>).mockClear();
+    // case 1：patch 返回 false（会话行不存在）→ 工厂 warn 命名该情形，admit 照常成功
+    const falseRuntime = new CloudRunRouteRuntime({
+      getLedger: () => ledger,
+      runRegistry,
+      execute: async () => {},
+      markSessionExecutionEnvironment: createMarkSessionExecutionEnvironment({
+        readSessionMetadata: async () => undefined,
+        patchSessionMetadata: async () => false,
+        logger,
+      }),
+      logger,
+    });
+    const falseAdmission = await falseRuntime.admit(cloudBody('session_env', 'message_false'));
+    expect(falseAdmission.record.state).toBeTypeOf('string');
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('session row missing'),
+      expect.objectContaining({ sessionId: 'session_env', environmentId: 'cloud-test' }),
+    );
+
+    (logger.warn as ReturnType<typeof vi.fn>).mockClear();
+    // case 2：dep 自身 reject → admit 侧兜底 warn，admit 照常成功
+    const rejectingRuntime = new CloudRunRouteRuntime({
+      getLedger: () => ledger,
+      runRegistry,
+      execute: async () => {},
+      markSessionExecutionEnvironment: async () => { throw new Error('marker boom'); },
+      logger,
+    });
+    const rejectingAdmission = await rejectingRuntime.admit(cloudBody('session_env', 'message_reject'));
+    expect(rejectingAdmission.record.state).toBeTypeOf('string');
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('dep rejected'),
+      expect.objectContaining({ sessionId: 'session_env', error: 'marker boom' }),
+    );
+  });
+
+  // rework r1：admitDelegatedTurn 的同型兜底——manual 路径 runInline（真实装配
+  // 是 runAgentTurn）preflight 抛错时账本行已置 running，无人收线会占死
+  // CLOUD_RUN_MAX_IN_FLIGHT 之一直到进程重启。
+  it('r1: manual inline run throwing settles the ledger row failed and rethrows', async () => {
+    await expect(handleCloudRunAdmission({
+      body: cloudBody('session_throw', 'message_throw'),
+      res: {} as ExpressResponse,
+      runtime,
+      logger,
+      runInline: async () => { throw new Error('workspace materialization failed'); },
+    })).rejects.toThrow('workspace materialization failed');
+    const row = db.prepare(
+      "SELECT run_id FROM cloud_runs WHERE client_message_id = 'message_throw'",
+    ).get() as { run_id: string };
+    expect(row).toBeTruthy();
+    expect(ledger.getRun(row.run_id)?.state).toBe('failed');
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('Manual inline run threw'),
+      expect.objectContaining({ runId: row.run_id, error: 'workspace materialization failed' }),
+    );
   });
 });

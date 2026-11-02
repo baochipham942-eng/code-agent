@@ -40,6 +40,8 @@ export interface CronAgentActionResult {
    * 通知回落通用文案（永不空正文）。无 notifyWhen 的任务（含 external-watch）恒无此键。
    */
   alertReason?: string;
+  /** 本次运行实测成本（USD，N-CRON-RUN-LEDGER-VISIBLE）：scoped 计量器读数；无模型调用时缺省。 */
+  costUsd?: number;
 }
 
 /** 执行结果是否带「notifyWhen 未满足」的安静标记（通知门用，见 cronFailurePolicy）。 */
@@ -124,6 +126,7 @@ export interface CronExecutionRow {
   error?: string | null;
   retry_attempt: number;
   exit_code?: number | null;
+  cost_usd?: number | null;
   trigger_json?: string | null;
 }
 
@@ -545,6 +548,8 @@ export function normalizeCronJobRow(row: unknown): CronJobDefinition | null {
     maxRuns,
     runCount: readNumberField(row, 'run_count') ?? 0,
     resultChannel,
+    // 事件任务执行档（N-TRIGGER-OBSERVE-MODE）：存量行由迁移戳成 'auto'；NULL/非法按 observe。
+    ...(scheduleType === 'event' ? { actionMode: row.action_mode === 'auto' ? 'auto' as const : 'observe' as const } : {}),
     enabled: row.enabled === 1 || row.enabled === true,
     maxRetries: readOptionalNumberField(row, 'max_retries'),
     // 旧版保存把未设置的 retryDelay 写成 5000（`|| 5000` + schema DEFAULT 5000），
@@ -596,6 +601,7 @@ export function normalizeCronExecutionRow(row: unknown): CronExecutionRow | null
     retry_attempt: retryAttempt,
     exit_code: readNullableNumberField(row, 'exit_code'),
     trigger_json: readNullableStringField(row, 'trigger_json'),
+    cost_usd: readNullableNumberField(row, 'cost_usd'),
   };
 }
 

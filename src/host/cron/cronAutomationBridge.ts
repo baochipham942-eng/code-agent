@@ -314,3 +314,64 @@ export async function recordCronAutomationExecution(
     console.error('[CronService] Failed to record automation execution:', error);
   }
 }
+
+/**
+ * 执行档切换写进自动化变更历史（N-TRIGGER-OBSERVE-MODE）：event 'action_mode_changed'，
+ * configPatch 记下当前档与切换时刻。没有自动化记录时先补建（同 archived 先例）。
+ * 与其它 record* 不同：这里**不吞错**——变更记不下来，切换就不能生效（调用方先记后落库）。
+ */
+export async function recordCronAutomationActionModeChanged(
+  definition: CronJobDefinition,
+  from: 'observe' | 'auto',
+  to: 'observe' | 'auto',
+): Promise<void> {
+  const sourceSessionId = readCronSourceSessionId(definition) ?? null;
+  const service = getSessionAutomationService();
+  const existing = service.getBySourceRef(getCronAutomationType(definition), definition.id);
+  if (!existing) {
+    service.upsert({
+      id: `${getCronAutomationType(definition)}:${definition.id}`,
+      sourceSessionId,
+      type: getCronAutomationType(definition),
+      status: definition.enabled ? 'active' : 'paused',
+      title: definition.name,
+      cadenceLabel: formatCronScheduleLabel(definition.schedule),
+      sourceRefId: definition.id,
+      config: buildCronAutomationConfig(definition),
+    });
+  }
+  const recorded = await service.recordEvent({
+    type: getCronAutomationType(definition),
+    sourceRefId: definition.id,
+    event: 'action_mode_changed',
+    summary: to === 'auto'
+      ? '执行方式已切换为「自动执行」：之后的事件运行会真实发送回复与邮件。'
+      : '执行方式已切换为「仅观察」：之后的事件运行只记录本会做什么，不发送任何内容。',
+    eventId: `action_mode:${definition.id}:${definition.updatedAt}`,
+    ...(existing?.lastRunAt !== undefined ? { lastRunAt: existing.lastRunAt } : {}),
+    configPatch: { actionMode: to, actionModeChange: { from, to, at: definition.updatedAt } },
+  });
+  if (!recorded) throw new Error(`Automation record for cron job ${definition.id} is missing; action-mode change not recorded.`);
+}
+
+/**
+ * 读回最近一次执行档切换（返修⑥：让「切换已记入变更历史」在详情页可见）。
+ * 数据源就是 recordCronAutomationActionModeChange 写进自动化记录 config 的
+ * actionModeChange；读不到（记录缺失/形状不对）返回 null，静默降级。
+ */
+export function readCronAutomationActionModeChange(
+  definition: CronJobDefinition,
+): { from: 'observe' | 'auto'; to: 'observe' | 'auto'; at: number } | null {
+  try {
+    const record = getSessionAutomationService()
+      .getBySourceRef(getCronAutomationType(definition), definition.id);
+    const change = record?.config?.actionModeChange;
+    if (!change || typeof change !== 'object') return null;
+    const { from, to, at } = change as Record<string, unknown>;
+    if ((from !== 'observe' && from !== 'auto') || (to !== 'observe' && to !== 'auto')) return null;
+    if (typeof at !== 'number') return null;
+    return { from, to, at };
+  } catch {
+    return null;
+  }
+}

@@ -3,10 +3,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { BrowserService } from '../../../../src/host/services/infra/browserService';
 import { RunRegistry } from '../../../../src/host/runtime/runRegistry';
-import {
-  ManagedBrowserProviderAdapter,
-  MANAGED_BROWSER_USER_PERSONAL_SERVICE_KEY,
-} from '../../../../src/host/services/surfaceExecution/ManagedBrowserProviderAdapter';
+import { ManagedBrowserProviderAdapter } from '../../../../src/host/services/surfaceExecution/ManagedBrowserProviderAdapter';
 import {
   SurfaceExecutionRuntime,
   type SurfaceRuntimeIdentityV1,
@@ -15,7 +12,6 @@ import {
   KeptBrowserRegistry,
   type KeptBrowserPoolFacade,
 } from '../../../../src/host/services/surfaceExecution/keptBrowserRegistry';
-import { UserBrowserLinkService } from '../../../../src/host/services/surfaceExecution/UserBrowserLinkService';
 import { SURFACE_USER_BROWSER_AGENT_ID } from '../../../../src/shared/contract/surfaceExecution';
 import type { BrowserResumeStateStore } from '../../../../src/host/services/surfaceExecution/BrowserResumeStateStore';
 
@@ -159,8 +155,7 @@ function createHarness(options?: { initialTabs?: FakeTab[] }) {
     undefined,
     keptRegistry,
   );
-  const links = new UserBrowserLinkService(registry, runtime, adapter, keptRegistry);
-  return { registry, runtime, identity, fake, acquire, release, adapter, keptRegistry, links };
+  return { registry, runtime, identity, fake, acquire, release, adapter, keptRegistry };
 }
 
 async function executeAction(

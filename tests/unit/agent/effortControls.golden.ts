@@ -135,6 +135,7 @@ export const GOLDEN_MODELS: readonly string[] = [
   'zhipu/glm-4.7-flashx',
   'zhipu/glm-5',
   'zhipu/glm-5.1',
+  'zhipu/glm-5.3',
   'zhipu/glm-5.3-flash',
 ];
 

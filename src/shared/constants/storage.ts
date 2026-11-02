@@ -16,6 +16,12 @@ export const MEMORY = {
   RECORD_DECAY_DAYS: 90,
   /** Minimum memory confidence after decay */
   RECORD_MIN_CONFIDENCE: 0.1,
+  /** 检索排序：使用次数增益系数，gain = 1 + ALPHA*log1p(accessCount) + BETA*freshness */
+  RECORD_RANK_USAGE_ALPHA: 0.1,
+  /** 检索排序：最近触碰新鲜度增益系数（decay 已按 lastAccessedAt 刷新，保持小值避免重复计） */
+  RECORD_RANK_RECENCY_BETA: 0.1,
+  /** 检索排序：新鲜度线性衰减窗口（天），超过即 0 */
+  RECORD_RANK_RECENCY_WINDOW_DAYS: 30,
   /** preCompact flush: 单次压缩最多写入 memories 表的条数（防炸记忆库） */
   FLUSH_MAX_PER_COMPACT: 5,
   /** preCompact flush: 写入 memories 表的默认 confidence */

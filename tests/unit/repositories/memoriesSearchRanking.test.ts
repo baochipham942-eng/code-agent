@@ -3,6 +3,7 @@
 // ============================================================================
 // - 衰减置信度打平时：accessCount 高者先，再按 (lastAccessedAt || updatedAt)
 //   新者先（FTS 通道的 JS 排序；LIKE 通道的 SQL ORDER BY 同口径）
+// - 排序键 = 衰减置信度 × 使用增益（见 MEMORY.RECORD_RANK_*）；无使用数据时增益恒 1
 // - now 可注入：decay 用 options.now ?? Date.now()，测试用固定时钟
 // - 无使用度数据（access_count 全 0、last_accessed_at 全 NULL）时排序与
 //   改动前逐位一致（回归护栏）
@@ -158,6 +159,51 @@ describe('MemoryRepository — searchMemories 使用度排序', () => {
 
     expect(repo.searchMemories('narwhal fading fact', { now: NOW }).map(m => m.id)).toEqual(['fading']);
     expect(repo.searchMemories('narwhal fading fact', { now: NOW + HALF_LIFE_MS })).toEqual([]);
+  });
+
+  // ---- 加权排序：衰减置信度 × 使用增益 ---------------------------------------
+
+  it('(a) 近平局的非整数置信度：低置信但高频近用者排前，返回的 confidence 仍是衰减原值', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const usedTouch = NOW - 0.5 * DAY;
+    insertMemory(db, { id: 'unused', content: 'axolotl unused habit note', confidence: 0.7312, accessCount: 0, updatedAt: NOW });
+    insertMemory(db, { id: 'used', content: 'axolotl used habit note', confidence: 0.7298, accessCount: 5, updatedAt: NOW - 3 * DAY, lastAccessedAt: usedTouch });
+
+    const results = repo.searchMemories('axolotl', { now: NOW });
+    expect(results.map(m => m.id)).toEqual(['used', 'unused']);
+    // confidence 字段 = 纯衰减值，不是加权分
+    expect(results[0].confidence).toBe(0.7298 * Math.pow(0.5, (NOW - usedTouch) / HALF_LIFE_MS));
+    expect(results[1].confidence).toBe(0.7312);
+  });
+
+  it('(b) 无使用数据且置信度各异：顺序与 confidence 值同改动前逐位一致', () => {
+    const rows = [
+      { id: 'c1', raw: 0.9, age: 2 * HALF_LIFE_MS },
+      { id: 'c2', raw: 0.8, age: 0 },
+      { id: 'c3', raw: 0.95, age: HALF_LIFE_MS },
+      { id: 'c4', raw: 0.61, age: 0.3 * HALF_LIFE_MS },
+    ];
+    for (const r of rows) {
+      insertMemory(db, { id: r.id, content: `capybara plain ${r.id}`, confidence: r.raw, accessCount: 0, updatedAt: NOW - r.age });
+    }
+    const expected = rows
+      .map(r => ({ id: r.id, confidence: r.raw * Math.pow(0.5, r.age / HALF_LIFE_MS) }))
+      .sort((x, y) => y.confidence - x.confidence);
+
+    const results = repo.searchMemories('capybara', { now: NOW });
+    expect(results.map(m => ({ id: m.id, confidence: m.confidence }))).toEqual(expected);
+  });
+
+  it('(c) 端到端：真实 recordMemoryAccess 写入使用度后，检索顺序翻转', () => {
+    const now = Date.now();
+    insertMemory(db, { id: 'top', content: 'ocelot reports preference top', confidence: 0.7312, accessCount: 0, updatedAt: now });
+    insertMemory(db, { id: 'cited', content: 'ocelot reports preference cited', confidence: 0.7298, accessCount: 0, updatedAt: now });
+
+    expect(repo.searchMemories('ocelot', { now: Date.now() }).map(m => m.id)).toEqual(['top', 'cited']);
+
+    for (let i = 0; i < 3; i++) repo.recordMemoryAccess('cited');
+
+    expect(repo.searchMemories('ocelot', { now: Date.now() }).map(m => m.id)).toEqual(['cited', 'top']);
   });
 
   // ---- LIKE 通道（<3 字符强制 LIKE；applyDecay: false 直接钉 SQL 序） --------

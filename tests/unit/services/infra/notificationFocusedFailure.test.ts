@@ -35,7 +35,7 @@ describe('聚焦时的 host 焦点门', () => {
     notificationService.notifyTaskComplete({ sessionId: 's', sessionTitle: 'T', duration: 1, toolsUsed: [], succeeded: false });
     expect(broadcastToRenderer).toHaveBeenCalledWith(
       IPC_CHANNELS.NOTIFICATION_SHOW,
-      expect.objectContaining({ urgent: true }),
+      expect.objectContaining({ urgent: true, failure: true }),
     );
   });
 

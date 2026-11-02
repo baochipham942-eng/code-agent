@@ -88,16 +88,39 @@ describe('osNotification', () => {
   ])('urgent=$urgent focused=$focused → dispatched=$sent', async ({ urgent, focused, sent }) => {
     (globalThis as Record<string, unknown>).document = { hasFocus: () => focused, hidden: false };
     const { postOsNotification } = await import('../../../src/renderer/utils/osNotification');
+    // resetModules 后 osNotification 用的是新 store 实例，需同批动态取真实 store
+    const { useToastStore } = await import('../../../src/renderer/hooks/useToast');
 
-    await postOsNotification({ title: 't', body: 'b' }, { urgent });
+    const onOpen = vi.fn();
+    await postOsNotification({ title: 't', body: 'b' }, { urgent, failure: urgent, onOpen, openLabel: '查看' });
+
+    // 应用内 toast 只在 urgent+聚焦时出现，恰好一条且带动作按钮
+    const toasts = useToastStore.getState().toasts;
+    expect(toasts).toHaveLength(urgent && focused ? 1 : 0);
+    if (urgent && focused) {
+      expect(toasts[0]).toMatchObject({ type: 'error', message: 't: b', duration: 10000, action: { label: '查看' } });
+      toasts[0].action!.onClick();
+      expect(onOpen).toHaveBeenCalledTimes(1);
+    }
 
     expect(notificationPlugin.sendNotification).toHaveBeenCalledTimes(sent ? 1 : 0);
     expect(domainInvoke).toHaveBeenCalledWith(
       IPC_DOMAINS.NOTIFICATION,
       'reportClientDelivery',
       sent
-        ? { mode: 'tauri', granted: true, dispatched: true, ...(urgent ? { urgent: true } : {}) }
+        ? { mode: 'tauri', granted: true, dispatched: true, ...(urgent ? { urgent: true } : {}), ...(urgent && focused ? { toastShown: true } : {}) }
         : { mode: 'suppressed-focused', dispatched: false },
     );
+  });
+
+  it('needs-input（urgent 但非 failure）聚焦时不弹错误 toast，原生分发照常', async () => {
+    (globalThis as Record<string, unknown>).document = { hasFocus: () => true, hidden: false };
+    const { postOsNotification } = await import('../../../src/renderer/utils/osNotification');
+    const { useToastStore } = await import('../../../src/renderer/hooks/useToast');
+
+    await postOsNotification({ title: '需要你确认', body: '权限请求' }, { urgent: true, onOpen: vi.fn(), openLabel: '查看' });
+
+    expect(useToastStore.getState().toasts).toHaveLength(0);
+    expect(notificationPlugin.sendNotification).toHaveBeenCalledTimes(1);
   });
 });

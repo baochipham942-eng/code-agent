@@ -22,6 +22,12 @@ import {
 
 const logger = createLogger('NotificationService');
 
+/**
+ * needs-input 去重键容量：同一 dedupeKey 只投递一次，超限丢最旧（Set 保持插入序，
+ * 首元素即最旧）。有界内存，防长跑进程无限膨胀。
+ */
+const NEEDS_INPUT_DEDUPE_KEY_LIMIT = 200;
+
 /** 通知文案语言跟随用户设置（ui.language）；读取失败按中文兜底，通知本身不许把恢复路径炸掉。 */
 function readNotificationLocale(): DurableResumeNotificationLocale {
   try {
@@ -75,6 +81,8 @@ class NotificationService implements Disposable {
   private enabled: boolean = true;
   private disposed = false;
   private recentNotifications: RecordedNotification[] = [];
+  /** 已按 dedupeKey 投递过的 needs-input 键（有界，见 NEEDS_INPUT_DEDUPE_KEY_LIMIT）。 */
+  private deliveredNeedsInputKeys: Set<string> = new Set();
 
   private isDryRun(): boolean {
     return process.env.CODE_AGENT_NOTIFICATION_DRY_RUN === '1';
@@ -102,6 +110,7 @@ class NotificationService implements Disposable {
 
   clearRecentNotifications(): void {
     this.recentNotifications = [];
+    this.deliveredNeedsInputKeys.clear();
   }
 
   /**
@@ -177,10 +186,24 @@ class NotificationService implements Disposable {
    * 发送 "需要输入" 通知（权限请求、用户提问）
    * 一律 urgent：Neo 卡在等用户时，即使 app 聚焦（用户在看别的会话）也要弹系统横幅，
    * 绕过 host 焦点门与 renderer 焦点门。
+   * dedupeKey：同一条逻辑请求可能从两个发送口到达（停车通知 + 事件落库通知），
+   * 携带同一键的第二次调用在门后、投递前被丢弃；无键 = 行为不变。
    */
-  notifyNeedsInput(data: { sessionId: string; title: string; body: string }): void {
+  notifyNeedsInput(data: { sessionId: string; title: string; body: string; dedupeKey?: string }): void {
     if (!this.isIntentAllowed('needs_input')) return;
     if (!this.shouldNotify(true)) return;
+
+    if (data.dedupeKey) {
+      if (this.deliveredNeedsInputKeys.has(data.dedupeKey)) {
+        logger.debug('Skip duplicate needs-input notification', { dedupeKey: data.dedupeKey });
+        return;
+      }
+      this.deliveredNeedsInputKeys.add(data.dedupeKey);
+      if (this.deliveredNeedsInputKeys.size > NEEDS_INPUT_DEDUPE_KEY_LIMIT) {
+        const oldest = this.deliveredNeedsInputKeys.values().next().value;
+        if (oldest !== undefined) this.deliveredNeedsInputKeys.delete(oldest);
+      }
+    }
 
     const entry = this.record({
       type: 'needs_input',

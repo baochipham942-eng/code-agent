@@ -126,7 +126,11 @@ describe('secretRef origin mismatch hands the browser to the user', () => {
     expect(h.runtime.sessions.requireOwned(h.ids.sessionId, subjectOf(h)).state).toBe('waiting_human');
     expect(h.fake.typed).not.toHaveBeenCalled();
     expect(h.fake.close).not.toHaveBeenCalled();
+    // Neutral base sentence from the guard + the handover tail the adapter appends
+    // only after takeover actually succeeded.
+    expect(result.error).toContain('This step needs you');
     expect(result.error).toContain('belongs to the user');
+    expect(result.error).toContain('waits until the user presses Continue');
     expect(result.error).toContain('get_dom_snapshot');
   });
 
@@ -176,6 +180,9 @@ describe('secretRef origin mismatch hands the browser to the user', () => {
     const result = await h.typeStep();
     expect(result.metadata?.code).toBe('SECRET_REF_ORIGIN_MISMATCH');
     expect(h.runtime.sessions.requireOwned(h.ids.sessionId, subjectOf(h)).state).toBe('running');
+    // No takeover happened, so the text must not claim one: no handover, no Continue.
+    expect(result.error).not.toContain('belongs to the user');
+    expect(result.error).not.toContain('Continue');
   });
 
   it('⑤ the secret value appears in no result text or log', async () => {

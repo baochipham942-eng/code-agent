@@ -1,9 +1,11 @@
 // ============================================================================
-// savedRoutineRestate —— 保存成功后的「会这样做」三行复述（N-ROLE-ROUTINE-RESTATE）。
-// 纯函数：输入是保存成功的 CronJobDefinition + 角色显示名 + 已解析的通道标签，
-// 输出 what/when/result 三行，确定性、零模型调用。what/when 复用聊天侧
-// buildScheduleConfirmRows 的口径（#2414 的人话 when）；event 调度换成固定句子；
-// result 永不透出原始 "<账号>:<会话id>" 串。
+// savedRoutineRestate —— 「会这样做」复述行（N-ROLE-ROUTINE-RESTATE 起）。
+// 纯函数：输入是任务定义（保存成功的记录或 buildCronJobInput 产出的 create 输入
+// 形状）+ 角色显示名 + 已解析的通道标签，输出 what/when/[notifyWhen]/result 行，
+// 确定性、零模型调用。what/when 复用聊天侧 buildScheduleConfirmRows 的口径
+// （#2414 的人话 when）；event 调度换成固定句子；result 永不透出原始
+// "<账号>:<会话id>" 串。notifyWhen 行只给预保存确认卡（N-CRON-MORNING-TRIAGE-REST1），
+// 值取 action.notifyWhen > action.urgencyCriteria > 兜底文案。
 // ============================================================================
 
 import type { CronJobDefinition } from '@shared/contract';
@@ -11,6 +13,12 @@ import type { ChannelAccount } from '@shared/contract/channel';
 import type { CronHumanLang } from '@shared/cronHumanize';
 import { buildScheduleConfirmRows } from '../chat/ChatInput/scheduleConfirm';
 import { findTargetAccount, parseResultTarget } from './CronResultChannel';
+
+/**
+ * 复述行能消费的任务形状：保存成功的 CronJobDefinition，或 buildCronJobInput 的
+ * 输出（create 输入形状，id/createdAt/updatedAt 可缺席——预保存确认卡直接喂）。
+ */
+export type SavedRoutineJobSource = Omit<CronJobDefinition, 'id' | 'createdAt' | 'updatedAt'>;
 
 /** 通道目录的最小结构（useChannelCatalog 的返回值可直接喂进来）。 */
 export interface SavedRoutineChannelCatalog {
@@ -40,6 +48,9 @@ interface SavedRoutineRestateLabels {
   /** 复用 scheduleConfirm 的行标签与兜底（what/when/result/fallbackWhat/reviewInbox）。 */
   what: string;
   when: string;
+  /** notifyWhen 行的标签与兜底值（预保存确认卡用；scheduleConfirm 同名词条）。 */
+  notifyWhen: string;
+  fallbackNotifyWhen: string;
   result: string;
   fallbackWhat: string;
   reviewInbox: string;
@@ -53,25 +64,33 @@ interface SavedRoutineRestateLabels {
 }
 
 export interface SavedRoutineRestateInput {
-  job: CronJobDefinition;
-  /** 角色显示名（listRoles 的 displayName；调用方负责回落 roleId）。 */
-  roleDisplayName: string;
+  job: SavedRoutineJobSource;
+  /** 角色显示名（listRoles 的 displayName；调用方负责回落 roleId）。缺省/空 = 不加前缀。 */
+  roleDisplayName?: string;
   /** 已解析的结果通道标签；空串 = 未设置。 */
   channelLabel: string;
   labels: SavedRoutineRestateLabels;
   lang?: CronHumanLang;
+  /**
+   * 预保存确认卡（N-CRON-MORNING-TRIAGE-REST1）：在 when 与 result 之间补出
+   * notifyWhen 行。值取 action.notifyWhen > action.urgencyCriteria > 兜底文案
+   * （编辑器没有 notifyWhen 输入，只有紧急判据一项）；仅 agent 动作出行——
+   * 通知判据只挂在 agent 执行链上，非 agent 出行等于给一个配不了的假口子。
+   */
+  notifyWhenRow?: boolean;
 }
 
 export interface SavedRoutineRow {
-  key: 'what' | 'when' | 'result' | 'status';
+  key: 'what' | 'when' | 'notifyWhen' | 'result' | 'status';
   label: string;
   value: string;
 }
 
 export function buildSavedRoutineRestateRows(input: SavedRoutineRestateInput): readonly SavedRoutineRow[] {
-  const { job, roleDisplayName, channelLabel, labels, lang = 'zh' } = input;
+  const { job, roleDisplayName = '', channelLabel, labels, lang = 'zh', notifyWhenRow = false } = input;
   // what/when 复用聊天侧确认卡口径：保存后的定义是 create 输入的超集，结构字段一致。
-  // notifyWhen 行不在本单范围，丢弃；result 行的值是原始 resultChannel，也丢弃。
+  // notifyWhen 行由本函数按 notifyWhenRow 自算（聊天侧口径只认 restatement，编辑器
+  // 输入没有）；result 行的值是原始 resultChannel，交给 channelLabel，不透出。
   const confirmRows = buildScheduleConfirmRows(
     { input: job, restatement: undefined },
     {
@@ -103,11 +122,21 @@ export function buildSavedRoutineRestateRows(input: SavedRoutineRestateInput): r
     ? labels.savedWhenEvent
     : (confirmRows.find((row) => row.key === 'when')?.value ?? '');
   const result = channelLabel.trim() || labels.reviewInbox;
+  // notifyWhen 行（仅预保存确认卡 + agent 动作）：notifyWhen 判据 > 紧急判据 > 兜底。
+  // 编辑器没有 notifyWhen 输入，设了紧急判据就把它当「什么变化值得通知」陈述——
+  // 用户设了判据，卡上不提等于静默改语义。
+  const agentAction = job.action.type === 'agent' ? job.action : null;
+  const notifyWhen = notifyWhenRow && agentAction
+    ? (agentAction.notifyWhen?.trim() || agentAction.urgencyCriteria?.trim() || labels.fallbackNotifyWhen)
+    : null;
   // 停用副本（copy-to-cloud 一律 enabled:false）追加第四行「状态」：用户读着
   // 「每天 09:00」会以为它会跑，其实要按了启用才会（N-ROLE-ROUTINE-RESTATE-FU1-FU1）。
   const rows: SavedRoutineRow[] = [
     { key: 'what', label: labels.what, value: what },
     { key: 'when', label: labels.when, value: when },
+    ...(notifyWhen != null
+      ? [{ key: 'notifyWhen' as const, label: labels.notifyWhen, value: notifyWhen }]
+      : []),
     { key: 'result', label: labels.result, value: result },
   ];
   if (job.enabled === false) {

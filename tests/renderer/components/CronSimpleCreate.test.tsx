@@ -134,7 +134,7 @@ describe('CronSimpleCreate', () => {
     expect(createJob).not.toHaveBeenCalled();
   });
 
-  it('填目标提交后走 createJob，产出 agent+cron 任务', async () => {
+  it('填目标提交后先出保存前确认卡，确认才走 createJob，产出 agent+cron 任务', async () => {
     createJob.mockImplementation(async (input) => ({
       ...(input as object),
       id: 'new-job',
@@ -147,6 +147,12 @@ describe('CronSimpleCreate', () => {
       target: { value: '每天帮我盯一下竞品发布' },
     });
     fireEvent.click(screen.getByText('创建自动化'));
+    // 无角色任务：先复述，createJob 不被调用（N-CRON-MORNING-TRIAGE-REST1）。
+    await waitFor(() => {
+      expect(screen.getByTestId('cron-pending-routine-restate')).toBeTruthy();
+    });
+    expect(createJob).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('cron-pending-routine-confirm'));
     await waitFor(() => {
       expect(onDone).toHaveBeenCalled();
     });
@@ -176,6 +182,8 @@ describe('CronSimpleCreate', () => {
     fireEvent.click(screen.getByTestId('cron-runs-on-cloud'));
     fireEvent.change(screen.getByPlaceholderText(/竞品动态/), { target: { value: '整理云端简报' } });
     fireEvent.click(screen.getByText('创建自动化'));
+    await waitFor(() => expect(screen.getByTestId('cron-pending-routine-restate')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('cron-pending-routine-confirm'));
     await waitFor(() => expect(createJob).toHaveBeenCalled());
     expect(createJob.mock.calls[0][0]).toMatchObject({ runsOn: 'cloud' });
   });

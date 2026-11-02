@@ -51,7 +51,7 @@ export const CacheRetentionFailureLine: React.FC<{
     { count: failedCount },
   );
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-1.5 text-[11px] text-badge-danger shrink-0">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5 text-[11px] text-badge-danger shrink-0">
       <span>{main}</span>
       <button /* ds-allow:button: 失败行内联文字链接式小 chip，primitive 变体会强加 bg/padding 改变外观 */
         type="button"

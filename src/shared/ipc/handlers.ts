@@ -633,7 +633,7 @@ export interface NotificationShowEvent {
   failureKind?: CronFailurePresentationKind;
   /** ISO-8601。只有报文写明重置时间才带。 */
   resetAt?: string;
-  /** 失败类通知。renderer 即使窗口聚焦也照常弹 OS 通知；缺省按普通完成处理（聚焦时静默）。 */
+  /** 失败类与 needs-input 通知。renderer 聚焦时也弹 OS 通知；例外：needs-input 且用户正聚焦查看该 sessionId 会话时不弹。缺省按普通完成处理（聚焦时静默）。 */
   urgent?: boolean;
   /** 仅任务失败：聚焦时 renderer 额外补应用内错误 toast。needs-input 虽 urgent 但不是失败，不带此标。 */
   failure?: boolean;

@@ -58,6 +58,7 @@ describe('shutdownCause 接线静态契约', () => {
     const shutdownCause = readSrc('web/shutdownCause.ts');
     expect(shutdownCause).toContain("'webserver-exit-cause.ndjson'");
     expect(shutdownCause).toContain("'logs'");
-    expect(shutdownCause).toContain('appendFileSync', '崩溃路径没有异步余量，必须同步写');
+    // 崩溃路径没有异步余量，必须同步写（appendFileSync）
+    expect(shutdownCause).toContain('appendFileSync');
   });
 });

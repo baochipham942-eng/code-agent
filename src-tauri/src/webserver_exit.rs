@@ -130,6 +130,7 @@ pub fn port_holders_excluding_dead(holders: &[u32], dead_pid: u32) -> Vec<u32> {
 /// - 槽空：`cleanup()` 已 take——故意停机，绝不报 unexpected（否则正常退出
 ///   每次都会多出一条假警报，取证档反被噪音淹死）；
 /// - 槽里换了新 pid：window-recreate 已重新 spawn，旧 watcher 让位。
+///
 /// 抽成纯函数便于单测（线程路径难以直测）。
 pub fn watcher_should_report(slot_pid: Option<u32>, watched_pid: u32) -> bool {
     slot_pid == Some(watched_pid)
@@ -243,6 +244,44 @@ pub fn unexpected_exit_event_payload(facts: &UnexpectedExitFacts) -> serde_json:
     })
 }
 
+/// watcher 单步的结局。
+#[derive(Debug)]
+pub enum WatchTick {
+    /// 子进程还活着（或 try_wait 偶发失败）——继续轮询。
+    StillRunning,
+    /// 槽空（cleanup() 已 take，故意停机）或已换新 pid（window-recreate 重启）
+    /// ——停止监视，**绝不**落 unexpected 事件。
+    SlotGone,
+    /// 子进程死在槽里（cleanup 没接手）：已把 child TAKE 出槽（cleanup() 将看到
+    /// 空槽不再碰它、也只报这一次），调用方负责落事件。
+    ExitedUnexpectedly(crate::OwnedWebServerChild, ExitStatus),
+}
+
+/// watcher 的每秒单步（在 `AppState.web_server` 锁内执行）。锁与判定集中在这个
+/// 纯入口里：线程体只剩 sleep + match，单测用真实 Mutex + 真实子进程驱动。
+pub fn watch_tick(
+    slot: &std::sync::Mutex<Option<crate::OwnedWebServerChild>>,
+    watched_pid: u32,
+) -> WatchTick {
+    let mut guard = match slot.lock() {
+        Ok(guard) => guard,
+        Err(_) => return WatchTick::StillRunning, // 锁毒化：主流程已在 panic 路径，轮询让位
+    };
+    if !watcher_should_report(guard.as_ref().map(|owned| owned.pid), watched_pid) {
+        return WatchTick::SlotGone;
+    }
+    match guard.as_mut().expect("slot checked above").child.try_wait() {
+        Ok(Some(status)) => {
+            // 死在槽里：TAKE 出槽（cleanup() 将看到空槽，不再碰、不再发事件）
+            let owned = guard.take().expect("slot checked above");
+            WatchTick::ExitedUnexpectedly(owned, status)
+        }
+        Ok(None) => WatchTick::StillRunning,
+        // try_wait 偶发失败下一轮再试
+        Err(_) => WatchTick::StillRunning,
+    }
+}
+
 /// 每个「被壳 spawn 并收管」的子进程一个 watcher 线程。在两个 `store_child`
 /// 调用点（setup 主启动 + window-recreate 重启）之后各启一个。
 /// 线程创建失败只意味着取证缺失，不影响主流程。
@@ -256,48 +295,42 @@ fn watch_web_server_child(app: tauri::AppHandle, watched_pid: u32) {
     loop {
         std::thread::sleep(WATCHER_POLL_INTERVAL);
         let state = app.state::<crate::AppState>();
-        let mut guard = match state.web_server.lock() {
-            Ok(guard) => guard,
-            Err(_) => return, // 锁毒化：主流程自身已在 panic 路径，取证线程让位
-        };
-        if !watcher_should_report(guard.as_ref().map(|owned| owned.pid), watched_pid) {
-            // 槽空（cleanup 已 take，acceptance ④）或已换新 pid（recreate 重启）
-            return;
+        match watch_tick(&state.web_server, watched_pid) {
+            WatchTick::StillRunning => continue,
+            WatchTick::SlotGone => return,
+            WatchTick::ExitedUnexpectedly(owned, status) => {
+                report_unexpected_exit(&app, owned, status);
+                return;
+            }
         }
-        let status = match guard.as_mut().expect("slot checked above").child.try_wait() {
-            Ok(Some(status)) => status,
-            Ok(None) => continue,
-            // try_wait 偶发失败下一轮再试；持锁期间不允许急转 return 丢掉槽
-            Err(_) => continue,
-        };
-        // 死在槽里：TAKE 出槽（cleanup() 将看到空槽，不再碰、不再发事件）
-        let owned = guard.take().expect("slot checked above");
-        drop(guard);
-
-        let described = describe_exit(&status);
-        let holder_pids = crate::stale_web_server_port_holders(crate::web_port())
-            .map(|holders| port_holders_excluding_dead(&holders, owned.pid))
-            .unwrap_or_default();
-        let facts = UnexpectedExitFacts {
-            app_version: app.config().version.clone(),
-            bundle_id: Some(app.config().identifier.clone()),
-            web_port: crate::web_port(),
-            shell_pid: std::process::id(),
-            pid: owned.pid,
-            started_at: owned.started_at.clone(),
-            uptime_ms: uptime_ms_since(&owned.started_at),
-            exit_code: described.exit_code,
-            signal: described.signal,
-            signal_name: described.signal_name,
-            cause: classify_exit(&status),
-            port_held_by_other: !holder_pids.is_empty(),
-            port_holder_pids: holder_pids,
-            health_probe: probe_health(&crate::health_url()),
-            stdio_tail: crate::web_server_log_dir(&app).and_then(|dir| tail_stdio_log(&dir)),
-        };
-        crate::append_shell_event_payload(&app, unexpected_exit_event_payload(&facts));
-        return;
     }
+}
+
+/// 死在槽里的收尾：端口易主 / 健康探针 / stdio 尾巴 + 落
+/// `desktop-shell-webserver-exited-unexpectedly`（error 级）事件。
+fn report_unexpected_exit(app: &tauri::AppHandle, owned: crate::OwnedWebServerChild, status: ExitStatus) {
+    let described = describe_exit(&status);
+    let holder_pids = crate::stale_web_server_port_holders(crate::web_port())
+        .map(|holders| port_holders_excluding_dead(&holders, owned.pid))
+        .unwrap_or_default();
+    let facts = UnexpectedExitFacts {
+        app_version: app.config().version.clone(),
+        bundle_id: Some(app.config().identifier.clone()),
+        web_port: crate::web_port(),
+        shell_pid: std::process::id(),
+        pid: owned.pid,
+        started_at: owned.started_at.clone(),
+        uptime_ms: uptime_ms_since(&owned.started_at),
+        exit_code: described.exit_code,
+        signal: described.signal,
+        signal_name: described.signal_name,
+        cause: classify_exit(&status),
+        port_held_by_other: !holder_pids.is_empty(),
+        port_holder_pids: holder_pids,
+        health_probe: probe_health(&crate::health_url()),
+        stdio_tail: crate::web_server_log_dir(app).and_then(|dir| tail_stdio_log(&dir)),
+    };
+    crate::append_shell_event_payload(app, unexpected_exit_event_payload(&facts));
 }
 
 /// `web_server_log_dir` 的 stdio 日志完整路径（main.rs spawn 用）。
@@ -308,7 +341,7 @@ pub fn stdio_log_path(log_dir: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::Command;
+    use std::process::{Child, Command};
 
     // ── describe/classify：真实 ExitStatus（acceptance ①②）────────────────
 
@@ -437,6 +470,128 @@ mod tests {
         assert!(watcher_should_report(Some(4242), 4242));
         // 槽里换了新 child（window-recreate 重启）——旧 watcher 让位不报
         assert!(!watcher_should_report(Some(7777), 4242));
+    }
+
+    /// 真实槽位 + 真实子进程的 watch_tick 驱动器。
+    fn slot_with(child: Child, pid: u32) -> std::sync::Mutex<Option<crate::OwnedWebServerChild>> {
+        std::sync::Mutex::new(Some(crate::OwnedWebServerChild {
+            child,
+            pid,
+            owner: "tauri-shell",
+            started_at: now_millis_string(),
+            stdin_eof_cleanup: true,
+        }))
+    }
+
+    #[test]
+    fn watch_tick_takes_dead_child_out_of_slot_and_reports_once() {
+        // 真实子进程，自然退出（exit 0，未经请求——cleanup 没接手）
+        let child = Command::new("sh").arg("-c").arg("exit 0").spawn().expect("spawn");
+        let pid = child.id();
+        let slot = slot_with(child, pid);
+
+        // 先等子进程死透（spawn 与首拍之间有竞态，sh 未必已经退出）；
+        // 轮询只读 try_wait，不动槽位内容。
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            let exited = slot
+                .lock()
+                .expect("lock")
+                .as_mut()
+                .expect("child in slot")
+                .child
+                .try_wait()
+                .expect("try_wait")
+                .is_some();
+            if exited || std::time::Instant::now() > deadline {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        // 第一拍：死在槽里 → ExitedUnexpectedly，且 child 已被 TAKE 出槽
+        let (owned, status) = match watch_tick(&slot, pid) {
+            WatchTick::ExitedUnexpectedly(owned, status) => (owned, status),
+            other => panic!("第一拍必须报 ExitedUnexpectedly，实际 {other:?}"),
+        };
+        assert_eq!(owned.pid, pid);
+        assert_eq!(classify_exit(&status), CAUSE_EXITED_ZERO_UNREQUESTED);
+        assert!(slot.lock().expect("lock").is_none(), "child 必须 TAKE 出槽");
+
+        // 第二拍：槽已空 → SlotGone（只报一次，cleanup 不会再碰）
+        assert!(matches!(watch_tick(&slot, pid), WatchTick::SlotGone));
+    }
+
+    #[test]
+    fn watch_tick_reports_nothing_while_child_is_alive() {
+        // 真实活子进程：watch_tick 必须继续轮询，绝不误报
+        let child = Command::new("sh").arg("-c").arg("sleep 30").spawn().expect("spawn");
+        let pid = child.id();
+        let slot = slot_with(child, pid);
+        assert!(matches!(watch_tick(&slot, pid), WatchTick::StillRunning));
+        let _ = slot
+            .lock()
+            .expect("lock")
+            .as_mut()
+            .expect("alive")
+            .child
+            .kill();
+    }
+
+    #[test]
+    fn intentional_cleanup_then_tick_never_reports_unexpected_exit() {
+        // acceptance ④ 的真流程：cleanup() 先把 child 从槽里 take 走（故意停机），
+        // 之后 watcher 的任何一拍都不得报 unexpected。
+        let child = Command::new("sh").arg("-c").arg("sleep 30").spawn().expect("spawn");
+        let pid = child.id();
+        let state = crate::AppState::default();
+        *state.web_server.lock().expect("lock") = Some(crate::OwnedWebServerChild {
+            child,
+            pid,
+            owner: "tauri-shell",
+            started_at: now_millis_string(),
+            stdin_eof_cleanup: true,
+        });
+
+        // cleanup（旧通道 SIGTERM；sh 立即死）——真实走 AppState::cleanup
+        let cleanup = state.cleanup(false);
+        assert!(cleanup.is_some(), "cleanup 必须接手槽里的 child");
+        assert_eq!(cleanup.expect("checked").pid, pid);
+        assert!(state.web_server.lock().expect("lock").is_none());
+
+        // 之后 watcher 的每一拍都是 SlotGone：故意停机绝不产生 unexpected 事件
+        assert!(matches!(watch_tick(&state.web_server, pid), WatchTick::SlotGone));
+        assert!(matches!(watch_tick(&state.web_server, pid), WatchTick::SlotGone));
+    }
+
+    /// ⑥ 反向变异锚：把 main.rs 的 spawn 改回 `Stdio::inherit()`（撤掉 stdio
+    /// 落盘重定向）或删掉 store_child 后的 watcher 启动 → 本测试红。
+    /// include_str! 在编译期把 main.rs 钉进来，锚的是接线文本本身。
+    #[test]
+    fn main_rs_wiring_pins_stdio_redirect_and_exit_watcher() {
+        let main_rs = include_str!("main.rs");
+        assert!(
+            main_rs.contains("webserver_exit::open_stdio_log"),
+            "spawn 必须先经 open_stdio_log 打开 webserver-stdio.log（撤掉重定向会红）"
+        );
+        assert!(
+            main_rs.contains(".stdout(stdout_stdio)"),
+            "stdout 必须重定向到 stdio 日志句柄（改回 inherit 会红）"
+        );
+        assert!(
+            main_rs.contains(".stderr(stderr_stdio)"),
+            "stderr 必须重定向到 stdio 日志句柄（改回 inherit 会红）"
+        );
+        assert!(
+            main_rs.contains("webserver_exit::spawn_exit_watcher"),
+            "store_child 之后必须启动退出 watcher（删掉会红）"
+        );
+        // 两处 store_child 调用点（setup 主启动 + window-recreate）都要各有一个 watcher
+        assert_eq!(
+            main_rs.matches("webserver_exit::spawn_exit_watcher").count(),
+            2,
+            "watcher 必须在两个 store_child 调用点之后各启一个"
+        );
     }
 
     #[test]

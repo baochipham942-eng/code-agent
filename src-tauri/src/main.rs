@@ -207,6 +207,7 @@ struct AppState {
     attached_daemon: Mutex<Option<resident_host::DaemonPidRecord>>,
 }
 
+#[derive(Debug)]
 struct OwnedWebServerChild {
     child: Child,
     pid: u32,

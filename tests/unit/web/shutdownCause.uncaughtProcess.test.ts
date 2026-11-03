@@ -67,7 +67,8 @@ describe('recordShutdownCause real-process（node --import tsx）', () => {
     const uncaught = parsedLines.find((line) => line['source'] === 'uncaught-exception');
     expect(uncaught, '必须有一条 uncaught-exception 行').toBeTruthy();
     expect(String(uncaught?.['detail'])).toContain('boom-uncaught-probe');
-    expect(String(uncaught?.['detail'])).toContain('||', 'stack 头部必须拼接在 detail 里');
+    // stack 头部必须拼接在 detail 里（errorHead 的 `||` 分隔符）
+    expect(String(uncaught?.['detail'])).toContain('||');
 
     const exit = parsedLines.find((line) => line['source'] === 'exit');
     expect(exit, '必须有一条 exit 行').toBeTruthy();

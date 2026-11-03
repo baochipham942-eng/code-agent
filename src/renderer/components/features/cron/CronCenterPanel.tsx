@@ -318,7 +318,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
             <div className="shrink-0 px-6 pt-4" data-testid="cron-runs-daily-cost">
               <CronDailyCostSummary executions={recentExecutions} />
             </div>
-            <div className="grid flex-[1_0_420px] grid-cols-[minmax(0,3fr)_minmax(280px,2fr)] items-start gap-4 px-6 py-4" data-testid="cron-runs-workbench">
+            <div className="grid flex-[1_0_420px] grid-cols-[minmax(0,2fr)_minmax(280px,1fr)] items-start gap-4 px-6 py-4" data-testid="cron-runs-workbench">
               <CronExecutionList
                 executions={recentExecutions}
                 selectedExecutionId={selectedExecutionId}

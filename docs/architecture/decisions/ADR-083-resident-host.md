@@ -146,3 +146,10 @@ sequenceDiagram
 1. **退出意图通道**：壳在退进程之前 `POST /api/quit-intent` 声明本次退出意图——`background`（后台继续）或 `stop`（停止并退出）；旧 `POST /api/quit-guard/detach` 保留为 background 的别名（Rust 壳仍在调用，切换见 N-RESIDENT-QUIT-THREE-BUTTONS）。`stop` 把下一次 stdin EOF 变成**全平台**停机指令：先照常排空在跑 run，再走既有优雅停机（shutdown），即使还有 run 在忙——留守只会把优雅窗耗在被硬杀上。
 2. **armed-schedule 留守规则**：空闲去留快照（daemonIdle）新增第四信号 `armedSchedules`（已启用定时任务数），与退出确认弹窗的 quit-guard 计数**同源同口径**。留守判据 = 老三信号（在跑 run / 配对伴侣 / 等审批）任一在忙，**或**（意图=background 且 armedSchedules>0）。无声明（壳崩了/被杀）时 armed 单独**永不**留守——不留隐形 daemon，拍板记录 2 的「空闲随壳退出」不被推翻。任务增/删/改/启停会触发去留重查（CronService.onJobsChanged → recheck）：删掉最后一个已启用任务，纯为任务留守的 daemon 随之退出。用户预期锚点：竞品的定时任务跑在云端、不依赖桌面 app 存活（Claude Cowork help center）；Neo 只能靠本机常驻兑现同一预期。
 3. **`neo daemon status` 留守原因**：daemon 在 pid 文件旁原子维护 `daemon-state.json`（退出意图 + 留守原因清单，快照/意图/任务变化时重写，写失败仅 warn 不挡运行）。status 在 pid 状态为 owned 时于 pid 行下多打一行：`Staying alive because: <running runs | N armed schedule(s) | paired companion | pending approval>`；无留守原因时明说 `No reason to stay alive: exits once the shell is gone`。陈旧文件（pid 不吻合 / 解析失败）忽略，按无留守原因口径打印。
+
+## 拍板记录（2026-10-24 append，N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1，只增不改）
+
+上一节（2026-10-18）不动；本节只追加两条，均由本单落地：
+
+1. **留守任务的写授权（方案 A，B 兜底）**：定时任务可在任务详情面板预授权一个「写文件夹」（= 运行会话的工作目录同源判定：常设刷新取产物所在目录，其余取来源会话工作目录；存 `metadata.writeGrantRoot`，只有专用授权 IPC 写得进，updateJob/createJob 一律剥掉）。壳已退出（background）后该任务的 cron/heartbeat 会话写**文件夹内**的 `file_write` / `file_edit` 自动放行（approvalSource=`schedule-write-grant`，realpath 归一防 `..` 与软链逃逸）；出界写、Bash、其余工具、保护路径（forceConfirm）照旧停车等人。授权语义对照 `loginPassThroughOrigin` 先例：显式同意才落库、可撤销。落选方案 B（每次都弹）作为兜底而非主路径，理由：竞品的「Always allow」若不持久化，用户会被同一件每日任务反复打扰（用户实测反馈，claudeissues.com/issue/59302）。
+2. **停车审批的原生通知兜底（fallback B）**：renderer toast 不随壳退出存活（`broadcastToRenderer` 无落点）。`needs_input` 通知在退出意图为 `background` 时额外弹一条 host 侧原生通知（osascript，文案固定人话、不带工具名）。已知局限：意图声明后无「壳重新接上」复位事件，重开后同一条 needs_input 会 toast + 原生双弹——接受，漏报贵过重复提醒。

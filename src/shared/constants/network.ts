@@ -152,6 +152,10 @@ export const CLOUD_ENDPOINTS = {
   get roleRegistry() {
     return `${getCloudApiUrl()}/api/v1/role-registry`;
   },
+  /** Neo 托管 Jev 判官（计量代理：key 只在服务端，N-JEV-NEO-KEY） */
+  get jevJudge() {
+    return `${getCloudApiUrl()}/api/v1/jev-judge`;
+  },
   /** WebSocket 端点 */
   get websocket() {
     const url = getCloudApiUrl();

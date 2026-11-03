@@ -99,6 +99,11 @@ const UNTRUSTED_CONTENT_SCHEMAS = [
   githubPrSchema,
   ocrSearchSchema,
   mcpUnifiedSchema,
+  mailSchema,
+  calendarSchema,
+  remindersSchema,
+  tmeetMeetingListSchema,
+  tmeetMeetingSearchSchema,
 ] satisfies readonly ToolSchema[];
 
 const EXPECTED_UNTRUSTED_CONTENT_POLICIES: Readonly<Record<string, UntrustedContentPolicy>> = {
@@ -124,6 +129,11 @@ const EXPECTED_UNTRUSTED_CONTENT_POLICIES: Readonly<Record<string, UntrustedCont
   github_pr: 'annotate',
   ocr_search: 'block',
   MCPUnified: 'block',
+  mail: 'block',
+  calendar: 'block',
+  reminders: 'annotate',
+  tmeetMeetingList: 'block',
+  tmeetMeetingSearch: 'block',
 };
 
 function findSchemaFiles(directory: string): string[] {

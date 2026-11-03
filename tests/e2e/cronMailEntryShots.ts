@@ -4,8 +4,8 @@
 // 夹具：tests/e2e/fakeMailWebServer.ts（源码同款 esbuild 选项打包，经
 // getConnectorRegistry().register() 注入假 mail 连接器，不触碰真实 Mail.app）。
 // 形态由 NEO_FAKE_MAIL_STATE 驱动（每次 playwright 进程跑一种）：
-//   ready / not-authorized / unsupported / not-enabled
-// ready 跑编辑器 + /schedule 确认卡两组截图；三种不可用态各出一张状态截图。
+//   ready / not-authorized / denied-after-ready / unsupported / not-enabled
+// ready 跑编辑器 + /schedule 确认卡两组截图；四种不可用态各出一张状态截图。
 // /schedule 的 generateFromPrompt 在 HTTP 层固定回放一份 mail 草案（被验的是
 // 确认卡与卡内选择，不是模型；真模型真跑见证据档 ⑦）。
 // ============================================================================
@@ -139,18 +139,21 @@ test('/schedule：mail 草案确认卡（行值 + 卡内选择 + 确认门）', 
 });
 
 test('编辑器：连接器不可用三态的可区分提示', async ({ page }) => {
-  test.skip(!['not-authorized', 'unsupported', 'not-enabled'].includes(STATE), '仅不可用态跑');
+  // denied-after-ready（FB-541：缓存 ready 后 -1743）走 not-authorized 同款验收：
+  // 专用「未授权」提示 + 去设置按钮，而不是只有重试的通用 read-error 提示。
+  test.skip(!['not-authorized', 'denied-after-ready', 'unsupported', 'not-enabled'].includes(STATE), '仅不可用态跑');
   await waitForAppReady(page);
   await openEditorOnMailSchedule(page);
 
   const expected = {
     'not-authorized': '还没有通过授权',
+    'denied-after-ready': '还没有通过授权',
     unsupported: '只在 macOS',
     'not-enabled': '还没有启用邮件连接器',
   }[STATE] ?? '';
   await expect(page.getByTestId('cron-event-mail-unavailable')).toContainText(expected, { timeout: 10_000 });
 
-  if (STATE === 'not-authorized' || STATE === 'not-enabled') {
+  if (STATE === 'not-authorized' || STATE === 'denied-after-ready' || STATE === 'not-enabled') {
     await expect(page.getByRole('dialog').getByRole('button', { name: '去设置' })).toBeVisible();
   } else {
     // 平台不支持：无可修复动作，不出去设置按钮。

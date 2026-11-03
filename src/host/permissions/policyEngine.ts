@@ -139,7 +139,7 @@ const BUILT_IN_RULES: PolicyRule[] = [
     priority: 1000,
     matcher: {
       level: ['read', 'write'],
-      pathPattern: /\.ssh\/id_[^/]+$/,
+      pathPattern: /\.ssh\/id_(?![^/]*\.pub$)[^/]+$/,
     },
     action: 'deny',
     reason: 'SSH private key access is not allowed',
@@ -317,6 +317,20 @@ export class PolicyEngine {
   matchUserDenyRule(request: PolicyRequest, rules?: readonly PolicyRule[]): PolicyRule | null {
     for (const rule of rules ?? this.rules) {
       if (rule.id.startsWith('user-deny-') && rule.action === 'deny' && this.matchesRule(request, rule)) {
+        return rule;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 找出与请求匹配的内置不可覆盖 deny 规则（!overridable && action==='deny'）。
+   * 与 matchUserDenyRule 同为独立扫描：不看 evaluate 的 matchedRule，也不受模式联动影响
+   * （N-PERM-RULE-EMPTY-INPUT-MATCH-FU1-FU1，决策 A：闸门只消费这一类做硬拒）。
+   */
+  matchHardDenyRule(request: PolicyRequest, rules?: readonly PolicyRule[]): PolicyRule | null {
+    for (const rule of rules ?? this.rules) {
+      if (!rule.overridable && rule.action === 'deny' && this.matchesRule(request, rule)) {
         return rule;
       }
     }

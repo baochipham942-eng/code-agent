@@ -286,3 +286,195 @@ describe('DoomLoopGuard result signals', () => {
     }]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// N-CUA-SCREEN-GUARDS-LOOP — cua 近似点击 + 屏幕未变连击
+// ---------------------------------------------------------------------------
+const CUA = 'mcp__cua-driver__';
+
+/** 计算器样例 AX 树：display 是屏上数字，指纹必须保留数字（7 ≠ 12）。 */
+function calcTree(display: string): string {
+  return [
+    '- [1] AXWindow "Calculator"',
+    `- [3] AXStaticText (${display}) [id=display]`,
+    '- [5] AXButton (+1) [actions=[press]]',
+  ].join('\n');
+}
+
+function cuaClick(bare: string, x: number, y: number, windowId: number = 7) {
+  return {
+    name: `${CUA}${bare}`,
+    arguments: { pid: 4321, window_id: windowId, x, y },
+    success: true,
+    summary: `clicked (${x},${y})`,
+  };
+}
+
+const click = (x: number, y: number, windowId = 7) => cuaClick('click', x, y, windowId);
+
+/** 快照输出带采集时间戳：指纹剥掉时间戳后内容相同才算"屏幕没变"。 */
+function cuaSnapshot(tree: string, windowId = 7, at = '2026-11-03T10:00:00') {
+  return {
+    name: `${CUA}get_window_state`,
+    arguments: { pid: 4321, window_id: windowId },
+    success: true,
+    summary: `captured ${at}\n${tree}`,
+  };
+}
+
+describe('DoomLoopGuard cua screen-click signals — N-CUA-SCREEN-GUARDS-LOOP', () => {
+  it('(a) fires on the 3rd near-identical click with unchanged snapshots (±24 px boundary included)', () => {
+    const guard = new DoomLoopGuard();
+    const tree = calcTree('7');
+    guard.recordResults([cuaSnapshot(tree)]);
+    guard.recordResults([click(400, 300)]);
+    guard.recordResults([cuaSnapshot(tree, 7, '2026-11-03T10:00:05')]); // 时间戳变了，内容没变
+    expect(guard.recordResults([click(402, 298)]).signals).toEqual([]); // streak 2
+    guard.recordResults([cuaSnapshot(tree, 7, '2026-11-03T10:00:11')]);
+    const hit = guard.recordResults([click(399, 303)]);
+    expect(hit.signals).toEqual(['screen_click_no_effect']);
+    expect(hit.nudge).toContain('screen did not change after repeated near-identical clicks');
+    expect(hit.nudge).toContain('another element');
+    expect(hit.nudge).toContain('keyboard route');
+
+    // 点击类三兄弟（click/double_click/right_click）同一桶；|dx|=|dy|=24 恰好在界内
+    const bare = new DoomLoopGuard();
+    bare.recordResults([cuaSnapshot(tree)]);
+    bare.recordResults([cuaClick('double_click', 400, 300)]);
+    bare.recordResults([cuaSnapshot(tree)]);
+    expect(bare.recordResults([cuaClick('right_click', 424, 324)]).signals).toEqual([]); // streak 2
+    bare.recordResults([cuaSnapshot(tree)]);
+    expect(bare.recordResults([click(400, 300)]).signals).toEqual(['screen_click_no_effect']);
+  });
+
+  it('(b) stays quiet when consecutive clicks are 25 px apart, even with unchanged snapshots', () => {
+    const guard = new DoomLoopGuard();
+    const tree = calcTree('7');
+    const xs = [400, 425, 450, 475]; // 每对相邻点击 |dx|=25（y 相同）
+    for (const x of xs) {
+      guard.recordResults([cuaSnapshot(tree)]);
+      expect(guard.recordResults([click(x, 300)]).signals).toEqual([]);
+    }
+    const ys = [300, 325, 350, 375]; // 每对相邻点击 |dy|=25（x 相同）
+    for (const y of ys) {
+      guard.recordResults([cuaSnapshot(tree)]);
+      expect(guard.recordResults([click(400, y)]).signals).toEqual([]);
+    }
+  });
+
+  it('(c) stays quiet when the snapshot changes between clicks, including digit-only changes', () => {
+    const guard = new DoomLoopGuard();
+    guard.recordResults([cuaSnapshot(calcTree('7'))]);
+    guard.recordResults([click(400, 300)]);
+    guard.recordResults([cuaSnapshot(calcTree('8'))]); // 屏上数字 7→8：点击生效了
+    expect(guard.recordResults([click(402, 298)]).signals).toEqual([]);
+    guard.recordResults([cuaSnapshot(calcTree('12'))]); // 8→12 同样是数字级变化
+    expect(guard.recordResults([click(399, 303)]).signals).toEqual([]);
+  });
+
+  it('(d) stays quiet when near-identical clicks target different windows', () => {
+    const guard = new DoomLoopGuard();
+    const tree = calcTree('7');
+    guard.recordResults([cuaSnapshot(tree, 7)]);
+    guard.recordResults([cuaSnapshot(tree, 8)]);
+    guard.recordResults([click(400, 300, 7)]);
+    guard.recordResults([cuaSnapshot(tree, 7)]);
+    expect(guard.recordResults([click(402, 298, 8)]).signals).toEqual([]);
+    guard.recordResults([cuaSnapshot(tree, 8)]);
+    expect(guard.recordResults([click(399, 303, 7)]).signals).toEqual([]);
+    guard.recordResults([cuaSnapshot(tree, 7)]);
+    // 两个窗口各点两次；若 key 不分窗口，第 3 次点击就会命中
+    expect(guard.recordResults([click(401, 301, 8)]).signals).toEqual([]);
+  });
+
+  it('(e) stays quiet without snapshot evidence between clicks', () => {
+    const none = new DoomLoopGuard();
+    none.recordResults([click(400, 300)]);
+    none.recordResults([click(402, 298)]);
+    expect(none.recordResults([click(399, 303)]).signals).toEqual([]);
+
+    const stale = new DoomLoopGuard();
+    const tree = calcTree('7');
+    stale.recordResults([cuaSnapshot(tree)]);
+    stale.recordResults([click(400, 300)]);
+    stale.recordResults([cuaSnapshot(tree)]);
+    expect(stale.recordResults([click(402, 298)]).signals).toEqual([]); // streak 2
+    // 点击 2 与点击 3 之间没有新快照：无证据不得判"屏幕没变"
+    expect(stale.recordResults([click(399, 303)]).signals).toEqual([]);
+  });
+
+  it('(f) fires at most once per run', () => {
+    const guard = new DoomLoopGuard();
+    const tree = calcTree('7');
+    guard.recordResults([cuaSnapshot(tree)]);
+    guard.recordResults([click(400, 300)]);
+    guard.recordResults([cuaSnapshot(tree)]);
+    guard.recordResults([click(402, 298)]);
+    guard.recordResults([cuaSnapshot(tree)]);
+    expect(guard.recordResults([click(399, 303)]).signals).toEqual(['screen_click_no_effect']);
+    guard.recordResults([cuaSnapshot(tree)]);
+    const again = guard.recordResults([click(401, 301)]);
+    expect(again.signals).toEqual([]);
+    expect(again.nudge).toBeUndefined();
+  });
+
+  it('(g) resetAfterHandback clears the cua click tracker and the fingerprints', () => {
+    const guard = new DoomLoopGuard();
+    const tree = calcTree('7');
+    guard.recordResults([cuaSnapshot(tree)]);
+    guard.recordResults([click(400, 300)]);
+    guard.recordResults([cuaSnapshot(tree)]);
+    expect(guard.recordResults([click(402, 298)]).signals).toEqual([]); // streak 2
+    guard.resetAfterHandback();
+    // 未清空的话，下一次计数点击就是第 3 连击；清空后要重新数满 3 次
+    guard.recordResults([cuaSnapshot(tree)]);
+    expect(guard.recordResults([click(399, 303)]).signals).toEqual([]); // streak 1
+    guard.recordResults([cuaSnapshot(tree)]);
+    expect(guard.recordResults([click(401, 301)]).signals).toEqual([]); // streak 2
+    guard.recordResults([cuaSnapshot(tree)]);
+    expect(guard.recordResults([click(400, 300)]).signals).toEqual(['screen_click_no_effect']);
+  });
+
+  it('counts only successful finite x/y cua-driver clicks (element_index / failures / foreign tools excluded)', () => {
+    const tree = calcTree('7');
+    const byIndex = {
+      name: `${CUA}click`,
+      arguments: { pid: 4321, window_id: 7, element_index: 5 },
+      success: true,
+      summary: 'clicked element 5',
+    };
+    const byIndexGuard = new DoomLoopGuard();
+    for (let i = 0; i < 4; i++) {
+      byIndexGuard.recordResults([cuaSnapshot(tree)]);
+      expect(byIndexGuard.recordResults([byIndex]).signals).toEqual([]);
+    }
+
+    const failedGuard = new DoomLoopGuard();
+    for (let i = 0; i < 4; i++) {
+      failedGuard.recordResults([cuaSnapshot(tree)]);
+      expect(failedGuard.recordResults([{ ...click(400, 300), success: false }]).signals).toEqual([]);
+    }
+
+    const foreignGuard = new DoomLoopGuard();
+    for (let i = 0; i < 4; i++) {
+      foreignGuard.recordResults([{ ...cuaSnapshot(tree), name: 'get_window_state' }]);
+      expect(foreignGuard.recordResults([{
+        name: 'click',
+        arguments: { pid: 4321, window_id: 7, x: 400, y: 300 },
+        success: true,
+        summary: 'clicked',
+      }]).signals).toEqual([]);
+    }
+
+    const nonFiniteGuard = new DoomLoopGuard();
+    for (const args of [{ x: '400', y: 300 }, { x: 400, y: Number.NaN }, { x: Number.POSITIVE_INFINITY, y: 300 }]) {
+      nonFiniteGuard.recordResults([cuaSnapshot(tree)]);
+      expect(nonFiniteGuard.recordResults([{
+        name: `${CUA}click`,
+        arguments: { pid: 4321, window_id: 7, ...args },
+        success: true,
+        summary: 'clicked',
+      }]).signals).toEqual([]);
+    }
+  });
+});

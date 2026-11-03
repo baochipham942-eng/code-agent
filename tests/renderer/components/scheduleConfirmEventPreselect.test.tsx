@@ -49,7 +49,7 @@ function mockCatalog(accounts: ChannelAccount[], catalog: Catalog): void {
   });
 }
 
-function makeDraft(draftId: string, groupName?: string): PendingScheduleDraft {
+function makeDraft(draftId: number, groupName?: string): PendingScheduleDraft {
   return {
     draftId,
     input: {
@@ -66,7 +66,7 @@ function makeDraft(draftId: string, groupName?: string): PendingScheduleDraft {
     description: '帮我盯一下群',
     sourceSessionId: 'session-1',
     ...(groupName ? { eventGroupName: groupName } : {}),
-  } as PendingScheduleDraft;
+  };
 }
 
 const lastSchedule = { current: undefined as unknown };
@@ -96,7 +96,7 @@ describe('ScheduleConfirmCard event auto-preselect', () => {
 
   it('① single account + named group: account and group both preselected, no any-chat fallback', async () => {
     mockCatalog([workA], { 'acc-a': [{ id: 'oc_other', name: '闲聊群' }, { id: 'oc_rel', name: '发布群' }] });
-    render(<Harness initial={makeDraft('d1', '发布群')} />);
+    render(<Harness initial={makeDraft(1, '发布群')} />);
 
     await waitFor(() => expect(accountSelect().value).toBe('acc-a'));
     await waitFor(async () => expect((await chatSelect()).value).toBe('oc_rel'));
@@ -111,7 +111,7 @@ describe('ScheduleConfirmCard event auto-preselect', () => {
       'acc-a': [{ id: 'oc_x', name: '闲聊群' }],
       'acc-b': [{ id: 'oc_rel', name: '发布群' }],
     });
-    render(<Harness initial={makeDraft('d2', '发布群')} />);
+    render(<Harness initial={makeDraft(2, '发布群')} />);
 
     await waitFor(() => expect(accountSelect().value).toBe('acc-b'));
     await waitFor(async () => expect((await chatSelect()).value).toBe('oc_rel'));
@@ -122,7 +122,7 @@ describe('ScheduleConfirmCard event auto-preselect', () => {
       'acc-a': [{ id: 'oc_1', name: '发布群' }],
       'acc-b': [{ id: 'oc_2', name: '发布群' }],
     });
-    render(<Harness initial={makeDraft('d3', '发布群')} />);
+    render(<Harness initial={makeDraft(3, '发布群')} />);
 
     await waitFor(() => expect(ipc.invoke).toHaveBeenCalledWith(IPC_CHANNELS.CHANNEL_LIST_CONVERSATIONS, 'acc-b'));
     await new Promise((resolve) => setTimeout(resolve, 30));
@@ -132,7 +132,7 @@ describe('ScheduleConfirmCard event auto-preselect', () => {
 
   it('② several accounts: name in none → nothing guessed', async () => {
     mockCatalog([workA, workB], { 'acc-a': [{ id: 'oc_1', name: '闲聊群' }], 'acc-b': [] });
-    render(<Harness initial={makeDraft('d4', '发布群')} />);
+    render(<Harness initial={makeDraft(4, '发布群')} />);
 
     await waitFor(() => expect(ipc.invoke).toHaveBeenCalledWith(IPC_CHANNELS.CHANNEL_LIST_CONVERSATIONS, 'acc-b'));
     await new Promise((resolve) => setTimeout(resolve, 30));
@@ -141,7 +141,7 @@ describe('ScheduleConfirmCard event auto-preselect', () => {
 
   it('② several accounts, no group named → nothing guessed', async () => {
     mockCatalog([workA, workB], { 'acc-a': [{ id: 'oc_1', name: '发布群' }] });
-    render(<Harness initial={makeDraft('d5')} />);
+    render(<Harness initial={makeDraft(5)} />);
 
     await waitFor(() => expect(ipc.invoke).toHaveBeenCalledWith(IPC_CHANNELS.CHANNEL_LIST_CONVERSATIONS, 'acc-b'));
     await new Promise((resolve) => setTimeout(resolve, 30));
@@ -153,7 +153,7 @@ describe('ScheduleConfirmCard event auto-preselect', () => {
       'acc-a': [{ id: 'oc_1', name: '发布群' }, { id: 'oc_2', name: '运营群' }],
       'acc-b': [{ id: 'oc_3', name: '运营群' }],
     });
-    render(<Harness initial={makeDraft('d6', '发布群')} />);
+    render(<Harness initial={makeDraft(6, '发布群')} />);
     await waitFor(() => expect(accountSelect().value).toBe('acc-a'));
     await waitFor(async () => expect((await chatSelect()).value).toBe('oc_1'));
 
@@ -169,7 +169,7 @@ describe('ScheduleConfirmCard event auto-preselect', () => {
 
   it('③ no group named: explicit "no group selected" notice, confirm stays enabled', async () => {
     mockCatalog([workA], { 'acc-a': [{ id: 'oc_rel', name: '发布群' }] });
-    render(<Harness initial={makeDraft('d7')} />);
+    render(<Harness initial={makeDraft(7)} />);
 
     await waitFor(() => expect(accountSelect().value).toBe('acc-a'));
     const notice = await screen.findByTestId('cron-event-chat-any-notice');
@@ -181,7 +181,7 @@ describe('ScheduleConfirmCard event auto-preselect', () => {
 
   it('③ named group not in the account: not-found notice, confirm disabled until a group or "any chat" is explicitly chosen', async () => {
     mockCatalog([workA], { 'acc-a': [{ id: 'oc_rel', name: '发布群' }] });
-    render(<Harness initial={makeDraft('d8', '不存在的群')} />);
+    render(<Harness initial={makeDraft(8, '不存在的群')} />);
 
     await waitFor(() => expect(accountSelect().value).toBe('acc-a'));
     const notice = await screen.findByTestId('cron-event-chat-not-found');
@@ -201,7 +201,7 @@ describe('ScheduleConfirmCard event auto-preselect', () => {
 
   it('draft replacement resets: a new draft is auto-preselected again', async () => {
     mockCatalog([workA], { 'acc-a': [{ id: 'oc_rel', name: '发布群' }, { id: 'oc_ops', name: '运营群' }] });
-    const first = makeDraft('d9', '发布群');
+    const first = makeDraft(9, '发布群');
     const { rerender } = render(
       <ScheduleConfirmCard draft={first} confirming={false} onConfirm={() => undefined} onDismiss={() => undefined} onDraftChange={() => undefined} />,
     );
@@ -209,7 +209,7 @@ describe('ScheduleConfirmCard event auto-preselect', () => {
 
     // onDraftChange 是空操作，所以本卡的编辑态来自自动预选；换一份草案整体替换。
     rerender(
-      <ScheduleConfirmCard draft={makeDraft('d10', '运营群')} confirming={false} onConfirm={() => undefined} onDismiss={() => undefined} onDraftChange={() => undefined} />,
+      <ScheduleConfirmCard draft={makeDraft(10, '运营群')} confirming={false} onConfirm={() => undefined} onDismiss={() => undefined} onDraftChange={() => undefined} />,
     );
     await waitFor(() => expect(accountSelect().value).toBe('acc-a'));
     await waitFor(async () => expect((await chatSelect()).value).toBe('oc_ops'));

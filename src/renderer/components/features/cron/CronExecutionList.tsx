@@ -56,7 +56,7 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
       data-testid="cron-execution-table-scroll"
     >
       <table className="w-full text-sm">
-        <thead className="bg-zinc-950/80 text-left text-xs uppercase text-zinc-500">
+        <thead className="bg-zinc-950/80 text-left text-xs text-zinc-500">
           <tr>
             {jobNameById && <th className={thClass}>{cc.colJob}</th>}
             <th className={thClass}>{cc.colStatus}</th>
@@ -87,7 +87,7 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
                   onClick={() => onSelectExecution(execution.id)}
                 >
                   {jobNameById && (
-                    <td className={`max-w-[220px] truncate text-zinc-200 ${tdClass}`}>
+                    <td className={`max-w-[200px] truncate text-zinc-200 ${tdClass}`}>
                       {jobNameById[execution.jobId] || execution.jobId}
                     </td>
                   )}

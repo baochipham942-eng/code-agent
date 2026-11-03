@@ -24,6 +24,7 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 }));
 
 import { useCronOsNotification } from '../../../src/renderer/hooks/useCronOsNotification';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 
 // host notifyNeedsInput 的 payload 形状
@@ -37,6 +38,7 @@ const setDoc = (focus: boolean, hidden: boolean) => {
 const deliveryReport = { mode: 'suppressed-viewing', dispatched: false };
 
 beforeEach(() => {
+  useAppStore.setState({ showSettings: false, showCronCenter: false, showCapabilityHub: false });
   setViewing('other-session');
   (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
   vi.spyOn(document, 'hasFocus').mockReturnValue(true); // app 聚焦且页面可见
@@ -132,4 +134,16 @@ describe('needs_input 聚焦链路（hook → postOsNotification）', () => {
       { mode: 'suppressed-focused', dispatched: false },
     );
   });
+
+  it.each(['showSettings', 'showCronCenter', 'showCapabilityHub'] as const)(
+    '② 正看该会话但 %s 二级页盖住会话区 → 仍弹（审批卡不在屏幕上）',
+    async (flag) => {
+      setViewing('s');
+      useAppStore.setState({ [flag]: true });
+      renderHook(() => useCronOsNotification({} as never, () => {}));
+      handlers.show!(needsInput);
+      await flush();
+      expect(plugin.sendNotification).toHaveBeenCalledTimes(1);
+    },
+  );
 });

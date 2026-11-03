@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { IPC_CHANNELS, type NotificationShowEvent } from '@shared/ipc';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { isSecondaryPageActive } from '../utils/secondaryPageActive';
 import { useCronStore } from '../stores/cronStore';
 import ipcService from '../services/ipcService';
 import {
@@ -51,6 +52,7 @@ export function useCronOsNotification(
         const needsInput = event.urgent === true && event.failure !== true;
         const viewingSession = needsInput
           && !!event.sessionId
+          && !isSecondaryPageActive(useAppStore.getState())
           && useSessionStore.getState().currentSessionId === event.sessionId;
         void postOsNotification(translateCronOsNotification(
           event,

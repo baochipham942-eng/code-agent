@@ -178,6 +178,48 @@ describe('TurnBasedTraceView session entry scrolling', () => {
     });
     expect(mocks.scrollToIndex).not.toHaveBeenCalled();
   });
+
+  it('recomputes isAtBottom when an overflowing session is already within the bottom threshold', () => {
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1) }));
+    const scroller = view.getByTestId('virtuoso-scroller');
+    act(() => mocks.virtuosoProps.atBottomStateChange(false));
+    expect(view.getByRole('button', { name: /回到底部|Jump to bottom/ })).toBeTruthy();
+    Object.defineProperties(scroller, {
+      scrollHeight: { value: 1000, configurable: true },
+      clientHeight: { value: 100, configurable: true },
+      scrollTop: { value: 900, configurable: true, writable: true },
+    });
+
+    act(() => {
+      mocks.virtuosoProps.atBottomStateChange(false);
+      mocks.virtuosoProps.rangeChanged({ startIndex: 1_000_000, endIndex: 1_000_002 });
+    });
+
+    expect(view.queryByRole('button', { name: /回到底部|Jump to bottom/ })).toBeNull();
+  });
+
+  it('recomputes isAtBottom after session-entry settle when content fits the viewport', () => {
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1) }));
+    const scroller = view.getByTestId('virtuoso-scroller');
+    act(() => mocks.virtuosoProps.atBottomStateChange(false));
+    expect(view.getByRole('button', { name: /回到底部|Jump to bottom/ })).toBeTruthy();
+    Object.defineProperties(scroller, {
+      scrollHeight: { value: 100, configurable: true },
+      clientHeight: { value: 100, configurable: true },
+      scrollTop: { value: 0, configurable: true, writable: true },
+    });
+
+    act(() => {
+      mocks.virtuosoProps.rangeChanged({ startIndex: 1_000_000, endIndex: 1_000_002 });
+      flushAnimationFrames();
+      vi.runOnlyPendingTimers();
+    });
+    for (let frame = 0; frame < 60; frame += 1) {
+      act(() => flushAnimationFrames());
+    }
+
+    expect(view.queryByRole('button', { name: /回到底部|Jump to bottom/ })).toBeNull();
+  });
 });
 
 describe('TurnBasedTraceView focus helpers', () => {

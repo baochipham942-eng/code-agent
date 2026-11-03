@@ -369,7 +369,6 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     sessionEntrySettlingRef,
     userScrollLastInteractionAtRef,
     setIsAtBottom,
-    setFollowedOutputTurnId,
     setRailActiveTurnId,
   });
   const outputFollowRevision = useMemo(
@@ -1071,7 +1070,12 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         itemContent={itemContent}
         followOutput={followOutput}
         atBottomStateChange={(atBottom) => {
-          if (!sessionEntrySettlingRef.current) setIsAtBottom(atBottom);
+          const scroller = scrollerElementRef.current;
+          const atBottomOrFits = atBottom || Boolean(
+            scroller && scroller.scrollHeight > 0
+            && (scroller.scrollHeight <= scroller.clientHeight || isScrollerNearBottom(scroller)),
+          );
+          if (!sessionEntrySettlingRef.current) setIsAtBottom(atBottomOrFits);
           if (atBottom && !historyPrependInProgressRef.current && !isUserScrollSuppressed()) {
             keepActiveOutputVisibleRef.current = true;
             const turnId = outputFollowTurn?.turnId ?? projection.turns[projection.turns.length - 1]?.turnId;

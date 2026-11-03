@@ -92,6 +92,8 @@ async function measure(page: Page, label: string) {
       clientHeight: element.clientHeight,
       bottomGap: element.scrollHeight - element.scrollTop - element.clientHeight,
     })).catch(() => null),
+    scrollerBox,
+    lastTurnBox,
     lastTurnInViewport: Boolean(
       scrollerBox && lastTurnBox
       && lastTurnBox.y + lastTurnBox.height > scrollerBox.y
@@ -172,29 +174,33 @@ test('return from Automation blank log reproduction with persisted messages', as
   await open(page, longId);
   await measure(page, 'initial-long');
 
+  await open(page, shortId);
+  const shortResult = await measure(page, 'short-initial');
+  expect(shortResult.scroll?.scrollTop).toBe(0);
   const results = [];
-  for (let iteration = 1; iteration <= 5; iteration += 1) {
+  const automationLoops = Number(process.env.CHAT_RETURN_AUTOMATION_LOOPS ?? 5);
+  for (let iteration = 1; iteration <= automationLoops; iteration += 1) {
     await page.getByTestId('sidebar-capability-automation').click();
     await expect(page.getByTestId('cron-center-panel')).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('[role="log"]')).toHaveCount(0);
     await open(page, longId);
     results.push(await measure(page, `automation-long-${iteration}`));
+    await page.getByTestId('sidebar-capability-automation').click();
+    await expect(page.getByTestId('cron-center-panel')).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('[role="log"]')).toHaveCount(0);
+    await open(page, shortId);
+    const automationShortResult = await measure(page, `automation-short-${iteration}`);
+    expect(automationShortResult.scroll?.scrollTop).toBe(0);
+    results.push(automationShortResult);
   }
 
-  await open(page, shortId);
-  const shortResult = await measure(page, 'short-initial');
-  expect(shortResult.scroll?.scrollTop).toBe(0);
-  await page.getByTestId('sidebar-capability-automation').click();
-  await expect(page.getByTestId('cron-center-panel')).toBeVisible();
-  await open(page, shortId);
-  const automationShortResult = await measure(page, 'automation-short');
-  expect(automationShortResult.scroll?.scrollTop).toBe(0);
-  results.push(automationShortResult);
-
-  await open(page, longId);
-  await open(page, shortId);
-  await open(page, longId);
-  results.push(await measure(page, 'switch-other-back-long'));
+  const switchLoops = Number(process.env.CHAT_RETURN_SWITCH_LOOPS ?? 1);
+  for (let iteration = 1; iteration <= switchLoops; iteration += 1) {
+    await open(page, longId);
+    await open(page, shortId);
+    await open(page, longId);
+    results.push(await measure(page, `switch-other-back-long-${iteration}`));
+  }
 
   await page.getByRole('button', { name: '用户菜单' }).click();
   await page.getByRole('menuitem', { name: '设置', exact: true }).click();

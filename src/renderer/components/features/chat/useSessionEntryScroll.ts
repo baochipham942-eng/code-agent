@@ -114,7 +114,6 @@ interface SessionEntryScrollOptions {
   sessionEntrySettlingRef: RefObject<boolean>;
   userScrollLastInteractionAtRef: RefObject<number>;
   setIsAtBottom: Dispatch<SetStateAction<boolean>>;
-  setFollowedOutputTurnId: Dispatch<SetStateAction<string | null>>;
   setRailActiveTurnId: Dispatch<SetStateAction<string | null>>;
 }
 
@@ -130,7 +129,6 @@ export function useSessionEntryScroll({
   sessionEntrySettlingRef,
   userScrollLastInteractionAtRef,
   setIsAtBottom,
-  setFollowedOutputTurnId,
   setRailActiveTurnId,
 }: SessionEntryScrollOptions): () => void {
   const entryRef = useRef<SessionEntryScrollState>({
@@ -204,14 +202,13 @@ export function useSessionEntryScroll({
         ),
         onSettled: () => {
           sessionEntrySettlingRef.current = false;
-          const lastTurnId = projectionTurnsRef.current.at(-1)?.turnId ?? null;
-          setFollowedOutputTurnId(lastTurnId);
-          setRailActiveTurnId(lastTurnId);
+          setIsAtBottom(true);
+          setRailActiveTurnId(projectionTurnsRef.current.at(-1)?.turnId ?? null);
         },
         onCancel: () => {
           sessionEntrySettlingRef.current = false;
         },
       });
     });
-  }, [projectionTurnsRef, sessionId, setIsAtBottom, userScrollLastInteractionAtRef, outputFollowStreamingRef, keepActiveOutputVisibleRef, virtuosoRef, scrollerElementRef, activeDisplayScrollCancelRef, sessionEntrySettlingRef, setFollowedOutputTurnId, setRailActiveTurnId]);
+  }, [projectionTurnsRef, sessionId, setIsAtBottom, userScrollLastInteractionAtRef, outputFollowStreamingRef, keepActiveOutputVisibleRef, virtuosoRef, scrollerElementRef, activeDisplayScrollCancelRef, sessionEntrySettlingRef, setRailActiveTurnId]);
 }

@@ -78,6 +78,25 @@ describe('webFetchUnified SSRF guard (real fetchDocument, real loopback server)'
     }
   });
 
+  it('action:"request" reaches the same refusal through native http_request (FU1)', async () => {
+    const handler = await webFetchUnifiedModule.createHandler();
+
+    const result = await handler.execute(
+      { action: 'request', url: `${baseUrl}/admin` },
+      makeCtx(),
+      allowAll,
+    );
+
+    // 与 action:"fetch" 同一道守卫：零命中，错误点名主机并指向 Bash curl 审批路径
+    expect(hits).toEqual([]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('internal network');
+      expect(result.error).toContain('127.0.0.1');
+      expect(result.error).toContain('curl');
+    }
+  });
+
   it('public 302 pointing at the local server never lands; hits stay 0', async () => {
     // 公网跳板用 stub（hermetic）；环回目标是真实服务器——守卫必须在第一跳后拦下
     const fetchStub = vi.fn(async (input: string | URL | Request) => {

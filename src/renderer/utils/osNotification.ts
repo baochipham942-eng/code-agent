@@ -10,11 +10,35 @@
 import { isTauriMode } from './platform';
 import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
+import { getNativeDesktopPermissionStatus, isNativeDesktopAvailable } from '../services/nativeDesktop';
 import { toast } from '../hooks/useToast';
 
 const FOREGROUND_FAILURE_TOAST_MS = 10_000;
 
 type NotifModule = typeof import('@tauri-apps/plugin-notification');
+type OsNotificationPermission = 'granted' | 'denied' | 'unknown';
+type OsNotificationPermissionSnapshot = {
+  permission: OsNotificationPermission;
+  platform: string | null;
+};
+
+export async function getOsNotificationPermissionSnapshot(): Promise<OsNotificationPermissionSnapshot> {
+  if (!isNativeDesktopAvailable()) return { permission: 'unknown', platform: null };
+  try {
+    const snapshot = await getNativeDesktopPermissionStatus();
+    const status = snapshot.permissions.find((permission) => permission.kind === 'notifications')?.status;
+    return {
+      permission: status === 'granted' || status === 'denied' ? status : 'unknown',
+      platform: snapshot.platform,
+    };
+  } catch {
+    return { permission: 'unknown', platform: null };
+  }
+}
+
+export async function getOsNotificationPermission(): Promise<OsNotificationPermission> {
+  return (await getOsNotificationPermissionSnapshot()).permission;
+}
 
 /** 把原生通知投递结果回报主进程（落日志，便于诊断「没弹」）。fire-and-forget。 */
 function reportDelivery(report: Record<string, unknown>): void {
@@ -92,15 +116,21 @@ export async function postOsNotification(
   const toastFlag = toastShown ? { toastShown: true } : {};
   if (isTauriMode()) {
     try {
-      const mod = await loadModule();
-      const granted = await ensureTauriPermission(mod);
-      if (!granted) {
+      const permission = await getOsNotificationPermission();
+      if (permission === 'denied') {
         reportDelivery({ mode: 'tauri', granted: false, dispatched: false, ...(urgent ? { urgent } : {}), ...toastFlag });
         return;
       }
+      const mod = await loadModule();
       // dispatched = OS API accepted the call; macOS gives no callback, so display is not confirmed.
       mod.sendNotification({ title: opts.title, body: opts.body });
-      reportDelivery({ mode: 'tauri', granted: true, dispatched: true, ...(urgent ? { urgent } : {}), ...toastFlag });
+      reportDelivery({
+        mode: 'tauri',
+        ...(permission === 'granted' ? { granted: true } : { permission: 'unknown' }),
+        dispatched: true,
+        ...(urgent ? { urgent } : {}),
+        ...toastFlag,
+      });
     } catch (err) {
       console.warn('[osNotification] Tauri sendNotification 失败', err);
       reportDelivery({ mode: 'tauri', error: err instanceof Error ? err.message : String(err) });

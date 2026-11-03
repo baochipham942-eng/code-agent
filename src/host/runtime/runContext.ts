@@ -86,6 +86,11 @@ function requireIdentifier(value: string, label: string): string {
   return normalized;
 }
 
+/** ENAMETOOLONG: a name/path over the OS limit cannot exist on disk, same as ENOENT. */
+function isNonexistentPathCode(code: string | undefined): boolean {
+  return code === 'ENOENT' || code === 'ENOTDIR' || code === 'ENAMETOOLONG';
+}
+
 /** Resolve symlink ancestors while preserving not-yet-created suffixes. */
 export function resolveCanonicalRunPath(input: string, symlinkDepth = 0): string {
   const resolved = path.resolve(input);
@@ -113,7 +118,7 @@ export function resolveCanonicalRunPath(input: string, symlinkDepth = 0): string
       const code = error && typeof error === 'object' && 'code' in error
         ? String(error.code)
         : undefined;
-      if (code !== 'ENOENT' && code !== 'ENOTDIR') {
+      if (!isNonexistentPathCode(code)) {
         throw error;
       }
       try {
@@ -124,7 +129,7 @@ export function resolveCanonicalRunPath(input: string, symlinkDepth = 0): string
           && 'code' in realpathError
           ? String(realpathError.code)
           : undefined;
-        if (realpathCode !== 'ENOENT' && realpathCode !== 'ENOTDIR') {
+        if (!isNonexistentPathCode(realpathCode)) {
           throw realpathError;
         }
         return path.resolve(cursor, ...parts.slice(index));

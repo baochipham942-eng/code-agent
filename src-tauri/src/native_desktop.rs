@@ -779,9 +779,28 @@ fn notification_permission_state(authorization_status: i64) -> &'static str {
     }
 }
 
+/// UNUserNotificationCenter raises an uncatchable ObjC exception (process abort)
+/// when the process has no .app bundle, e.g. `cargo tauri dev` running target/debug.
+fn exe_is_in_app_bundle(exe: &std::path::Path) -> bool {
+    exe.to_string_lossy().contains(".app/Contents/MacOS/")
+}
+
 #[cfg(target_os = "macos")]
 async fn probe_notifications_permission() -> NativePermissionStatus {
-    let status = tokio::task::spawn_blocking(|| {
+    let in_bundle = env::current_exe()
+        .map(|exe| exe_is_in_app_bundle(&exe))
+        .unwrap_or(false);
+    let status = if !in_bundle {
+        "unknown"
+    } else {
+        probe_notification_status_blocking().await
+    };
+    notification_status_to_permission(status)
+}
+
+#[cfg(target_os = "macos")]
+async fn probe_notification_status_blocking() -> &'static str {
+    tokio::task::spawn_blocking(|| {
         objc2::rc::autoreleasepool(|_| {
             use block2::RcBlock;
             use objc2_user_notifications::{UNNotificationSettings, UNUserNotificationCenter};
@@ -800,8 +819,11 @@ async fn probe_notifications_permission() -> NativePermissionStatus {
         })
     })
     .await
-    .unwrap_or("unknown");
+    .unwrap_or("unknown")
+}
 
+#[cfg(target_os = "macos")]
+fn notification_status_to_permission(status: &'static str) -> NativePermissionStatus {
     let detail = match status {
         "granted" => "UNUserNotificationCenter reports authorized notification permission.",
         "denied" => "UNUserNotificationCenter reports denied notification permission.",
@@ -3117,6 +3139,17 @@ mod privacy_tests {
         assert_eq!(notification_permission_state(3), "granted");
         assert_eq!(notification_permission_state(4), "granted");
         assert_eq!(notification_permission_state(99), "unknown");
+    }
+
+    #[test]
+    fn notification_probe_skips_non_bundle_executables() {
+        use std::path::Path;
+        assert!(!exe_is_in_app_bundle(Path::new(
+            "/repo/src-tauri/target/debug/code-agent-tauri"
+        )));
+        assert!(exe_is_in_app_bundle(Path::new(
+            "/Applications/Agent Neo.app/Contents/MacOS/code-agent-tauri"
+        )));
     }
 
     #[test]

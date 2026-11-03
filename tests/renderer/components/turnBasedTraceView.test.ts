@@ -137,6 +137,49 @@ function makeProjection(activeTurnIndex: number, turnCount = 3): TraceProjection
   };
 }
 
+describe('TurnBasedTraceView session entry scrolling', () => {
+  it('resets isAtBottom together with the Virtuoso remount when the session changes', () => {
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1) }));
+    act(() => mocks.virtuosoProps.atBottomStateChange(false));
+    expect(view.getByRole('button', { name: /回到底部|Jump to bottom/ })).toBeTruthy();
+
+    view.rerender(React.createElement(TurnBasedTraceView, {
+      projection: { ...makeProjection(-1), sessionId: 'session-2' },
+    }));
+
+    expect(view.queryByRole('button', { name: /回到底部|Jump to bottom/ })).toBeNull();
+    expect(mocks.virtuosoProps.initialTopMostItemIndex).toEqual({ index: 'LAST', align: 'end', behavior: 'auto' });
+  });
+
+  it('lands on the last turn and hides the button when an empty-mounted session receives turns', () => {
+    const view = render(React.createElement(TurnBasedTraceView, {
+      projection: { sessionId: 'session-1', turns: [], activeTurnIndex: -1 },
+    }));
+    view.rerender(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1) }));
+    act(() => mocks.virtuosoProps.atBottomStateChange(false));
+    expect(view.getByRole('button', { name: /回到底部|Jump to bottom/ })).toBeTruthy();
+
+    act(() => {
+      mocks.virtuosoProps.rangeChanged({ startIndex: 1_000_000, endIndex: 1_000_002 });
+      flushAnimationFrames();
+      vi.runOnlyPendingTimers();
+    });
+
+    expect(mocks.scrollToIndex).toHaveBeenCalledWith({ index: 2, align: 'end', behavior: 'auto' });
+    expect(mocks.autoscrollToBottom).toHaveBeenCalledTimes(1);
+    expect(view.queryByRole('button', { name: /回到底部|Jump to bottom/ })).toBeNull();
+
+    mocks.scrollToIndex.mockClear();
+    act(() => {
+      mocks.virtuosoProps.atBottomStateChange(true);
+      mocks.virtuosoProps.rangeChanged({ startIndex: 1_000_000, endIndex: 1_000_002 });
+      flushAnimationFrames();
+      vi.runOnlyPendingTimers();
+    });
+    expect(mocks.scrollToIndex).not.toHaveBeenCalled();
+  });
+});
+
 describe('TurnBasedTraceView focus helpers', () => {
   it('counts only leading history turns inserted before the previous first turn', () => {
     expect(getPrependedTurnCount('turn-1', [makeTurn(-2), makeTurn(-1), makeTurn(0)]))

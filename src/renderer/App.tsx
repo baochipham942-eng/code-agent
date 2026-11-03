@@ -87,6 +87,7 @@ import { useInAppValidationBridge } from './hooks/useInAppValidationBridge';
 import { useLedgerDeepLink } from './hooks/useLedgerDeepLink';
 import { useI18n } from './hooks/useI18n';
 import { useCronOsNotification } from './hooks/useCronOsNotification';
+import { isSecondaryPageActive } from './utils/secondaryPageActive';
 import { InternalFeatureWorkspaceRegistration, PluginUiActivationPolicyBootstrap, ShellOverlaySlotHost, WorkspacePageSlotHost } from './slots/productSlotHosts';
 
 const logger = createLogger('App');
@@ -689,13 +690,12 @@ export const App: React.FC = () => {
   // 知识记忆整窗页 2026-08-02 退役（内容并入设置 → 记忆）。
   // 设置页 2026-07-30 起是 overlay 整窗覆盖（X5.5-B1），本就不是 inline 页；仍留在名单里
   // 只为压住底下的顶栏不随设置开关抖动（覆盖层在位时它反正不可见）。
-  const inlineSecondaryPageActive = Boolean(
-    expertDetailRoleId || showLibraryPanel
-    || showCapabilityHub || showCronCenter || showLocalOpsPanel || showInAppValidation || activeInternalFeatureId
-    || showProjectSpacePage
-    || showSettings || showPromptManager || showLab || showTimeCapabilityCenter
-    || showActivityPanel || showProjectCollaborationPage || showDesktopPanel
-  );
+  const inlineSecondaryPageActive = isSecondaryPageActive({
+    expertDetailRoleId, showLibraryPanel, showCapabilityHub, showCronCenter, showLocalOpsPanel,
+    showInAppValidation, activeInternalFeatureId, showProjectSpacePage, showSettings,
+    showPromptManager, showLab, showTimeCapabilityCenter, showActivityPanel,
+    showProjectCollaborationPage, showDesktopPanel,
+  });
 
   const renderWorkbenchContent = (focusable = false) => (
     <div className="flex flex-col h-full bg-zinc-900">

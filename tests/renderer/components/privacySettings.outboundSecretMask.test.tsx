@@ -27,6 +27,7 @@ function mockIpc(settings: Record<string, unknown>): void {
   invokeDomain.mockImplementation((domain: string, action: string) => {
     if (domain === IPC_DOMAINS.SETTINGS && action === 'get') return Promise.resolve(settings);
     if (domain === IPC_DOMAINS.SETTINGS && action === 'set') return Promise.resolve(undefined);
+    if (domain === IPC_DOMAINS.SETTINGS && action === 'getOutboundMaskRecords') return Promise.resolve([]);
     if (domain === IPC_DOMAINS.PII && action === 'setup:status') {
       return Promise.resolve({ state: 'idle', startedAt: null, error: null, logTail: [] });
     }
@@ -79,6 +80,7 @@ describe('PrivacySettings 出云密钥掩码开关', () => {
     invokeDomain.mockImplementation((domain: string, action: string) => {
       if (domain === IPC_DOMAINS.SETTINGS && action === 'get') return Promise.resolve({});
       if (domain === IPC_DOMAINS.SETTINGS && action === 'set') return Promise.reject(new Error('disk full'));
+      if (domain === IPC_DOMAINS.SETTINGS && action === 'getOutboundMaskRecords') return Promise.resolve([]);
       if (domain === IPC_DOMAINS.PII && action === 'setup:status') {
         return Promise.resolve({ state: 'idle', startedAt: null, error: null, logTail: [] });
       }

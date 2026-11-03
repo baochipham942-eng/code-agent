@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
+import { getPromptCommandService } from '../../../src/host/services/commands/promptCommandService';
 import { createCLIAgent } from '../../../src/cli/adapter';
 import { buildQueuedAgentRunBody, createAgentRouter } from '../../../src/web/routes/agent';
 import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
@@ -1418,6 +1419,53 @@ describe('createAgentRouter', () => {
         }));
       } finally { controller.abort(); }
       await waitForAssertion(() => expect(mockCancel).toHaveBeenCalled());
+    });
+
+    describe('slash prompt command expansion on the desktop /run route (FB-523)', () => {
+      const postRun = async (prompt: string, sessionId: string) => {
+        const controller = new AbortController();
+        mockRun.mockClear();
+        mockCreateAgentLoop.mockClear();
+        try {
+          const response = await fetch(`${baseUrl}/api/run`, {
+            method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ prompt, sessionId }), signal: controller.signal,
+          });
+          expect(response.ok).toBe(true);
+          await waitForAssertion(() => expect(mockRun).toHaveBeenCalled());
+          const messages = mockCreateAgentLoop.mock.calls.at(-1)![2] as Message[];
+          return { runArgs: mockRun.mock.calls.at(-1)!, messages };
+        } finally { controller.abort(); }
+      };
+
+      it('/init-memory 展开为内置模板送模型，展示/持久化仍是字面量', async () => {
+        const { runArgs, messages } = await postRun('/init-memory', 'session-init-memory-expand');
+        expect(String(runArgs[0])).toContain('为当前工作目录起草项目记忆');
+        expect(runArgs[1]).toBe('/init-memory');
+        const lastUser = messages.filter(m => m.role === 'user').at(-1)!;
+        expect(String(lastUser.content)).toContain('为当前工作目录起草项目记忆');
+      });
+
+      it('普通文本与未注册 /foo 原样送模型', async () => {
+        const plain = await postRun('帮我看看这个目录', 'session-slash-plain');
+        expect(plain.runArgs[0]).toBe('帮我看看这个目录');
+        const unknown = await postRun('/definitely-not-a-command x', 'session-slash-unknown');
+        expect(unknown.runArgs[0]).toBe('/definitely-not-a-command x');
+      });
+
+      it('/goal 这类渲染层处理的斜杠不被展开', async () => {
+        const goal = await postRun('/goal ship it', 'session-slash-goal');
+        expect(goal.runArgs[0]).toBe('/goal ship it');
+      });
+
+      it('展开抛错 → 回退字面量并继续运行', async () => {
+        const svc = getPromptCommandService();
+        const spy = vi.spyOn(svc, 'resolveInvocation').mockRejectedValueOnce(new Error('boom'));
+        try {
+          const { runArgs } = await postRun('/init-memory', 'session-slash-throws');
+          expect(runArgs[0]).toBe('/init-memory');
+        } finally { spy.mockRestore(); }
+      });
     });
 
     it('连接器 chip 进入 AgentLoop toolScope，不只停在提示词和消息 metadata', async () => {

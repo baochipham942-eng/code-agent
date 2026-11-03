@@ -178,6 +178,17 @@ describe('notifyCronJobDisabled：预算 / permanent / max_runs 文案', () => {
     expect(summaries[1]).toContain('因配置/鉴权类错误停用');
     expect(summaries[2]).toContain('已达运行次数上限（2 次）已自动停用');
   });
+
+  it('real-run shape: cause-chain suffix after the budget message still maps to budget', () => {
+    // 真跑实录（④）：execution.error 是 cronFailureSourceText 拼的 cause 链，
+    // 预算消息后面跟着「成本超限：…」行——解析只认行首前缀，不许被尾巴顶回 permanent。
+    const joined = 'Cron job run exceeded its $0.01 budget limit (spent $0.0141).\n成本超限：单 case 实际成本 $0.014143 超过上限 $0.010000';
+    const reason = cronDisableReasonForFailure(joined);
+    expect(reason).toBe('budget');
+    notifyCronJobDisabled(definition, execution(joined), reason);
+    const summary = String(notifyState.notifyTaskComplete.mock.calls[0][0]?.summary);
+    expect(summary).toBe('本次运行花费 $0.0141，超过了你设的单次预算上限 $0.01，任务已自动停用。可在「自动化中心 → 定时任务」编辑该任务，调高「单次预算上限 (USD)」后重新启用。');
+  });
 });
 
 describe('CronFailureNoticeGate：失败通知去重 + 冷却', () => {

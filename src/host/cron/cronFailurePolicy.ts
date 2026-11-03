@@ -76,7 +76,9 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-const CRON_BUDGET_ERROR_PATTERN = /^Cron job run exceeded its \$([0-9]+(?:\.[0-9]+)?) budget limit(?: \(spent \$([0-9]+(?:\.[0-9]+)?)\))?\.$/;
+// 不尾锚定：真实管线的 execution.error 是 cause 链拼接（cronFailureSourceText），
+// 预算消息后还跟着「成本超限：…」行；只认行首前缀（与 PERMANENT_PATTERNS 同向）。
+const CRON_BUDGET_ERROR_PATTERN = /^Cron job run exceeded its \$([0-9]+(?:\.[0-9]+)?) budget limit(?: \(spent \$([0-9]+(?:\.[0-9]+)?)\))?\./;
 
 function parseCronBudgetExceededMessage(message: string | undefined): { cap: string; spent?: string } | undefined {
   const match = message?.match(CRON_BUDGET_ERROR_PATTERN);

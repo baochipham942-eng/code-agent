@@ -364,6 +364,22 @@ function isForbiddenWriteFileName(name: string): boolean {
     || HOME_SHELL_RC_FILES.includes(name);
 }
 
+/**
+ * 授权根内一次写目标命中禁写名（getForbiddenWritePathsUnderRoot 同一名册）的词法判据
+ * （N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1 返修 r2）。子树扫描只覆盖现存路径；
+ * 新建 <root>/.git/hooks/pre-commit、<root>/.npmrc 这类目标由这里补拦，不要求已存在。
+ * 目标不在 root 内返回 false（界外归调用方自己的判据管）。
+ */
+export function isForbiddenWriteNameUnderRoot(candidatePath: string, root: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(candidatePath));
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return false;
+  const segments = relative.split(path.sep);
+  return segments.some((name, index) => (
+    isForbiddenWriteFileName(name)
+    || (index > 0 && isForbiddenWriteDirName(name, segments[index - 1]))
+  ));
+}
+
 export interface ForbiddenWritePathsUnderRootOptions {
   homeDir?: string;
   env?: Partial<Pick<NodeJS.ProcessEnv, 'CODE_AGENT_DATA_DIR'>>;

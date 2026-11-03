@@ -166,6 +166,50 @@ describe('AuditLogger', () => {
       });
     });
 
+    describe('query date range across DST fall-back', () => {
+      const writeEntry = (isoTime: string) => {
+        const timestamp = Date.parse(isoTime);
+        const entry = {
+          timestamp,
+          timestampISO: isoTime,
+          eventType: 'tool_usage',
+          sessionId: 'session-dst',
+          toolName: 'Bash',
+          input: {},
+          duration: 1,
+          success: true,
+        };
+        fs.writeFileSync(path.join(tempDir, `${isoTime.slice(0, 10)}.jsonl`), `${JSON.stringify(entry)}\n`);
+        return timestamp;
+      };
+
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it("default 7-day window includes today's file shortly after a fall-back", async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date('2026-11-02T17:06:00Z'));
+        const timestamp = writeEntry('2026-11-02T16:00:00.000Z');
+
+        const result = await logger.query({ sessionId: 'session-dst' });
+        expect(result.entries.map((e) => e.timestamp)).toEqual([timestamp]);
+      });
+
+      it('explicit startTime 7 days earlier includes today and the first day', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date('2026-11-02T17:06:00Z'));
+        const first = writeEntry('2026-10-26T17:30:00.000Z');
+        const last = writeEntry('2026-11-02T16:00:00.000Z');
+
+        const result = await logger.query({
+          sessionId: 'session-dst',
+          startTime: Date.parse('2026-10-26T17:06:00Z') - 60 * 60 * 1000,
+        });
+        expect(result.entries.map((e) => e.timestamp).sort()).toEqual([first, last].sort());
+      });
+    });
+
     it('should not throw when logging command execution', () => {
       expect(() => {
         logger.logCommandExecution({

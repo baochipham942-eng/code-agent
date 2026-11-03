@@ -150,7 +150,8 @@ describe('outboundSecretMaskRecorder ① 回执形状与红线', () => {
     recordOutboundMaskedRequest([{ kind: 'KIND_B', placeholder: '{{SECRET_KIND_B_feedface}}' }]);
     const first = getOutboundMaskRecords();
     first.pop();
-    first[0].replacements[0].kind = 'TAMPERED';
+    // 故意篡改返回值（readonly 是类型面，运行时仍可写）：断言防御性拷贝吸收了篡改。
+    (first[0].replacements[0] as { kind: string }).kind = 'TAMPERED';
     const second = getOutboundMaskRecords();
     expect(second).toHaveLength(2);
     expect(second[0].replacements[0].kind).toBe('KIND_A');

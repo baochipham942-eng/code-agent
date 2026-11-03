@@ -325,7 +325,10 @@
         "scripts/acceptance/_jev-real-sites-lib.ts",
         "scripts/acceptance/jev-browser-step-real-sites.ts",
         "tests/fixtures/jev-browser-step/real-sites.json",
-        "docs/research/assets/2026-09-30-jev-eval/browser-real-sites.json"
+        "docs/research/assets/2026-11-02-jev-eval-rest2/browser-real-sites.json",
+        "docs/research/assets/2026-11-02-jev-eval-rest2/browser-real-sites-rbs07-fu1.json",
+        "docs/research/assets/2026-11-02-jev-eval-rest2/browser-real-sites-rbs07-fu1-extra.json",
+        "docs/research/assets/2026-11-02-jev-eval-rest2/browser-real-sites-rbs07-fu1-fix2.json"
       ],
       "files": [
         "tests/unit/scripts/acceptance/jevRealSitesLib.test.ts",

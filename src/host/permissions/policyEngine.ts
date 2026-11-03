@@ -306,6 +306,24 @@ export class PolicyEngine {
   }
 
   /**
+   * 找出与请求匹配的用户 deny 规则，独立于优先级竞争（N-PERM-RULE-EMPTY-INPUT-MATCH-FU1 r1）。
+   * evaluate() 只回报胜出的单条 matchedRule：内置不可覆盖 deny（priority 1000）在 Pass1
+   * 先命中就会把同时命中的 user-deny（priority 700、overridable）挤出 matchedRule 位——
+   * 消费方（guardFabricGate 的 evaluateUserDeny）问的是「用户是否显式拒绝了这个请求」，
+   * 不能拿 matchedRule 的 user-deny- 前缀当答案。只认规则本身 action=deny：plan/dontAsk
+   * 档模式改写 user-allow 成 result.action=deny 的不在此列（r4 语义保持）。
+   * @param rules 覆盖规则列表（N-PERM-POLICYVERSION：传 run 有效视图；缺省活状态）。
+   */
+  matchUserDenyRule(request: PolicyRequest, rules?: readonly PolicyRule[]): PolicyRule | null {
+    for (const rule of rules ?? this.rules) {
+      if (rule.id.startsWith('user-deny-') && rule.action === 'deny' && this.matchesRule(request, rule)) {
+        return rule;
+      }
+    }
+    return null;
+  }
+
+  /**
    * Sort rules by priority (highest first)
    */
   private sortRules(): void {
@@ -512,8 +530,9 @@ export class PolicyEngine {
       if (!levels.includes(request.level)) return false;
     }
 
-    // Path matching
-    if (matcher.pathPattern && request.filePath) {
+    // Path matching (pattern but no input => no match, same as toolSpecifier)
+    if (matcher.pathPattern) {
+      if (!request.filePath) return false;
       if (typeof matcher.pathPattern === 'string') {
         if (!request.filePath.includes(matcher.pathPattern)) return false;
       } else {
@@ -521,8 +540,9 @@ export class PolicyEngine {
       }
     }
 
-    // Command matching
-    if (matcher.commandPattern && request.command) {
+    // Command matching (pattern but no input => no match, same as toolSpecifier)
+    if (matcher.commandPattern) {
+      if (!request.command) return false;
       if (typeof matcher.commandPattern === 'string') {
         if (!request.command.includes(matcher.commandPattern)) return false;
       } else {

@@ -6,10 +6,13 @@
 // 本体是假的（绝不触碰真实 Mail.app / AppleScript / TCC）。
 //
 // 形态由 NEO_FAKE_MAIL_STATE 选（每次 playwright 起一个进程跑一种）：
-//   ready           — 已授权：两个账户 + 各自邮箱目录（编辑器正常态）
-//   not-authorized  — readiness unchecked 且 probe_access 抛错（未授权态）
-//   unsupported     — readiness unavailable（非 macOS 平台态）
-//   not-enabled     — 不注册（设置里没启用；config.json 也不启用 mail）
+//   ready              — 已授权：两个账户 + 各自邮箱目录（编辑器正常态）
+//   not-authorized     — readiness unchecked 且 probe_access 抛错（未授权态）
+//   denied-after-ready — 缓存 readiness 已 ready（早前探测通过），probe_access
+//                        照常通过，list_accounts 才抛 -1743——复刻 FB-541 实机
+//                        「授权后用户撤销授权但缓存放大」的路径（read-error 冒充）
+//   unsupported        — readiness unavailable（非 macOS 平台态）
+//   not-enabled        — 不注册（设置里没启用；config.json 也不启用 mail）
 //
 // 数据目录（CODE_AGENT_DATA_DIR）里预写 connectors.enabledNative=['mail']
 // （not-enabled 除外）：registry.configure() 对已注册的 id 幂等，假连接器得以
@@ -45,19 +48,27 @@ function status(readiness: ConnectorStatus['readiness'], connected = false): Con
   return { connected, readiness, capabilities: ['list_accounts', 'list_mailboxes'] };
 }
 
+// denied-after-ready：缓存 readiness 已 ready，与 ready 态同款状态面；差异只在
+// list_accounts 抛的这条 FB-541 实机日志原文。
+const DENIED_AFTER_READY_MESSAGE = 'Not authorized to send Apple events to Mail. (-1743)';
+const cachedReady = state === 'ready' || state === 'denied-after-ready';
+
 if (state !== 'not-enabled') {
   const fakeMail: Connector = {
     id: 'mail',
     label: 'Mail',
     capabilities: ['get_status', 'list_accounts', 'list_mailboxes', 'list_messages', 'read_message'],
-    getCachedStatus: () => status(state === 'unsupported' ? 'unavailable' : state === 'ready' ? 'ready' : 'unchecked', state === 'ready'),
-    getStatus: async () => status(state === 'unsupported' ? 'unavailable' : state === 'ready' ? 'ready' : 'unchecked', state === 'ready'),
+    getCachedStatus: () => status(state === 'unsupported' ? 'unavailable' : cachedReady ? 'ready' : 'unchecked', cachedReady),
+    getStatus: async () => status(state === 'unsupported' ? 'unavailable' : cachedReady ? 'ready' : 'unchecked', cachedReady),
     async execute(action, payload) {
       if (action === 'probe_access') {
         if (state === 'not-authorized') throw new Error('Automation access to Mail was denied');
         return { data: status('ready', true) };
       }
-      if (action === 'list_accounts') return { data: ACCOUNTS };
+      if (action === 'list_accounts') {
+        if (state === 'denied-after-ready') throw new Error(DENIED_AFTER_READY_MESSAGE);
+        return { data: ACCOUNTS };
+      }
       if (action === 'list_mailboxes') {
         const account = typeof payload.account === 'string' ? payload.account : '';
         return { data: (MAILBOXES_BY_ACCOUNT[account] ?? []).map((name) => ({ account, name })) };

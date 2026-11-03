@@ -131,9 +131,9 @@ function hasKnownCardIssuer(digits: string): boolean {
 const BEARER_PATTERN = /\bBearer (?=[A-Za-z0-9._~+/=-]*\d)([A-Za-z0-9._~+/=-]{20,})/g;
 /**
  * 银行卡号：13-19 位，数字间至多一个空格/短横；前后不得紧贴数字/字母（前面还不得是
- * 小数点，后面不得是 `.数字`），再过 Luhn + 已知发卡段。
+ * 小数点或「字母数字+短横」，后面不得是 `.数字` 或 `-字母数字`——挡 UUID 尾段），再过 Luhn + 已知发卡段。
  */
-const CARD_PATTERN = /(?<![\dA-Za-z.])\d(?:[ -]?\d){12,18}(?![\dA-Za-z]|\.\d)/g;
+const CARD_PATTERN = /(?<![\dA-Za-z.]|[\dA-Za-z]-)\d(?:[ -]?\d){12,18}(?![\dA-Za-z]|-[\dA-Za-z]|\.\d)/g;
 
 function maskPrivateRules(text: string): string {
   let output = text.replace(BEARER_PATTERN, (_matched, token: string) =>

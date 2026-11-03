@@ -11,7 +11,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 const warn = vi.hoisted(() => vi.fn());
 const dbState = vi.hoisted(() => ({
   sessionRepo: null as { getSession: (id: string) => { origin?: { kind: string; id?: string }; sourceRunId?: string } | null } | null,
-  repo: null as { listByKindAndStatus: (kind: string, status: string) => Array<{ id: string; payloadJson: string; coordinatorId: string | null; submittedAt: number }> } | null,
+  repo: null as PendingApprovalRepository | null,
 }));
 
 vi.mock('../../../src/host/services/core/databaseService', () => ({

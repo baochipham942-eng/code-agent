@@ -16,6 +16,7 @@ import { getProviderLimiter } from './concurrencyLimiter';
 import { isZhipuFreeModel, resolveProviderApiKey, resolveProviderBaseUrl } from './providers/providerResolution';
 import { getMemoryModelOverride, type MemoryModelOverride } from './memoryModelOverrideScope';
 import type { ModelConfig, ModelProvider } from '../../shared/contract';
+import { applyOutboundSecretMask } from '../security/outboundSecretMask';
 import { looksLikeSse, parseSseChatCompletion } from './parseSseChatCompletion';
 
 const logger = createLogger('QuickModel');
@@ -415,9 +416,12 @@ async function executeQuickAttempt(
   }
 
   try {
+    // 出云密钥掩码（N-PROMPT-SECRET-MASK）：快模型旁路（建议/归档判断等）也带会话原文，
+    // 开关开时同样掩码、回包还原；掩码失败落入下方 catch → 失败结果，不发请求。
+    const outboundMask = applyOutboundSecretMask([{ role: 'user', content: prompt }]);
     const body: Record<string, unknown> = {
       model: config.model,
-      messages: [{ role: 'user', content: prompt }],
+      messages: outboundMask?.messages ?? [{ role: 'user', content: prompt }],
       max_tokens: effectiveMaxTokens,
       temperature: 0.1,
       stream: false,
@@ -490,7 +494,10 @@ async function executeQuickAttempt(
     limiter?.onSuccess();
     const parsed = await parseQuickModelResponse(response);
     if (parsed.kind === 'content') {
-      return { success: true, content: parsed.content, provider: config.provider, model: config.model };
+      const content = outboundMask
+        ? (outboundMask.restore({ type: 'text', content: parsed.content }).content ?? parsed.content)
+        : parsed.content;
+      return { success: true, content, provider: config.provider, model: config.model };
     }
     if (parsed.kind === 'invalid') {
       logger.error('Quick model returned an invalid response shape', {

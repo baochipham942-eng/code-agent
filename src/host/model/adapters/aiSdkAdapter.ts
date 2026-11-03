@@ -108,6 +108,7 @@ import {
 } from '../providerRuntimeCapabilities';
 import { sanitizeModelReplayForModelInfo } from '../modelReplaySanitizer';
 import { resolveModelInfo } from '../modelInfo';
+import { applyOutboundSecretMask } from '../../security/outboundSecretMask';
 
 // resolveModel 现覆盖全部 provider：deepseek/claude·anthropic（专用包）/ gemini（@ai-sdk/google）/
 // openrouter（@openrouter/ai-sdk-provider）/ 其余走 openai-compatible。自定义 id 的 protocol=claude
@@ -565,24 +566,33 @@ export async function inferenceViaAiSdk(
   signal?: AbortSignal,
   options?: InferenceOptions,
 ): Promise<ModelResponse> {
+  // 可逆出云密钥掩码（N-PROMPT-SECRET-MASK）：与 ModelRouter._callProvider 同一模块同一
+  // 语义——开关开时出云掩码、流式/回包还原；掩码失败 fail-closed 上抛（SDK 不被调用，
+  // 绝不明文外发）。主 loop / provider fallback / 子代理的公共模型入口都是本函数，
+  // 只在此接一次；占位符文本二次掩码是 no-op，与 _callProvider 叠加也不会双重替换。
+  const outboundMask = applyOutboundSecretMask(messages, onStream);
+  const requestMessages = outboundMask?.messages ?? messages;
+  const requestOnStream = outboundMask?.onStream ?? onStream;
   const limiter = getProviderLimiter(config.provider);
+  let result: ModelResponse;
   if (!limiter) {
-    return runInferenceViaAiSdk(messages, tools, config, onStream, signal, options);
-  }
-  await limiter.acquire(signal);
-  try {
-    const result = await runInferenceViaAiSdk(messages, tools, config, onStream, signal, options);
-    limiter.onSuccess();
-    return result;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes('1302') || msg.includes('速率限制') || msg.includes('rate limit')) {
-      limiter.onRateLimit();
+    result = await runInferenceViaAiSdk(requestMessages, tools, config, requestOnStream, signal, options);
+  } else {
+    await limiter.acquire(signal);
+    try {
+      result = await runInferenceViaAiSdk(requestMessages, tools, config, requestOnStream, signal, options);
+      limiter.onSuccess();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('1302') || msg.includes('速率限制') || msg.includes('rate limit')) {
+        limiter.onRateLimit();
+      }
+      throw err;
+    } finally {
+      limiter.release();
     }
-    throw err;
-  } finally {
-    limiter.release();
   }
+  return outboundMask ? outboundMask.restore(result) : result;
 }
 
 // 测试专用导出（挂在既有函数对象上，不新增顶层 export）：断点态筛选与端点路径覆盖的

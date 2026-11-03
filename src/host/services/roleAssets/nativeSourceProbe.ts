@@ -40,14 +40,15 @@ export async function probeUncheckedNativeConnectors(): Promise<void> {
       }
     }
 
-    const settled = await Promise.allSettled(probeTargets.map((target) => target.execute()));
     const probeFailed: string[] = [];
-    settled.forEach((result, index) => {
-      if (result.status === 'fulfilled') return;
-      const id = probeTargets[index]!.id;
-      probeFailed.push(id);
-      logger.warn(`Native connector probe failed (connector: ${id}): ${errorMessage(result.reason)}`);
-    });
+    await Promise.allSettled(probeTargets.map(async (target) => {
+      try {
+        await target.execute();
+      } catch (error) {
+        probeFailed.push(target.id);
+        logger.warn(`Native connector probe failed (connector: ${target.id}): ${errorMessage(error)}`);
+      }
+    }));
 
     if (notEnabled.length > 0 || unavailable.length > 0 || probeFailed.length > 0) {
       logger.info(

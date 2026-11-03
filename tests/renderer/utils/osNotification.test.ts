@@ -9,8 +9,14 @@ const notificationPlugin = vi.hoisted(() => ({
 }));
 
 const domainInvoke = vi.hoisted(() => vi.fn());
+const getNativeDesktopPermissionStatus = vi.hoisted(() => vi.fn());
+const isNativeDesktopAvailable = vi.hoisted(() => vi.fn());
 
 vi.mock('@tauri-apps/plugin-notification', () => notificationPlugin);
+vi.mock('../../../src/renderer/services/nativeDesktop', () => ({
+  getNativeDesktopPermissionStatus,
+  isNativeDesktopAvailable,
+}));
 
 function installTauriWindow(): void {
   (globalThis as Record<string, unknown>).window = {
@@ -30,6 +36,10 @@ describe('osNotification', () => {
     // 既有发送路径用例不受影响；聚焦抑制由下面注入假 document 的用例覆盖。
     delete (globalThis as Record<string, unknown>).document;
     domainInvoke.mockResolvedValue({ success: true, data: null });
+    isNativeDesktopAvailable.mockReturnValue(true);
+    getNativeDesktopPermissionStatus.mockResolvedValue({
+      permissions: [{ kind: 'notifications', status: 'granted' }],
+    });
     notificationPlugin.isPermissionGranted.mockResolvedValue(true);
     notificationPlugin.requestPermission.mockResolvedValue('granted');
   });
@@ -103,8 +113,9 @@ describe('osNotification', () => {
   });
 
   it('does not report a sent notification when native permission is denied', async () => {
-    notificationPlugin.isPermissionGranted.mockResolvedValue(false);
-    notificationPlugin.requestPermission.mockResolvedValue('denied');
+    getNativeDesktopPermissionStatus.mockResolvedValue({
+      permissions: [{ kind: 'notifications', status: 'denied' }],
+    });
     const { postOsNotification } = await import('../../../src/renderer/utils/osNotification');
 
     await postOsNotification({ title: '任务完成 - 循环', body: '已完成 1 轮' });
@@ -115,6 +126,42 @@ describe('osNotification', () => {
       'reportClientDelivery',
       { mode: 'tauri', granted: false, dispatched: false },
     );
+  });
+
+  it.each([
+    {
+      scenario: 'bridge missing',
+      arrange: () => getNativeDesktopPermissionStatus.mockRejectedValue(new Error('Tauri runtime not available')),
+    },
+    {
+      scenario: 'bridge throws',
+      arrange: () => getNativeDesktopPermissionStatus.mockRejectedValue(new Error('probe failed')),
+    },
+    {
+      scenario: 'status unknown',
+      arrange: () => getNativeDesktopPermissionStatus.mockResolvedValue({
+        permissions: [{ kind: 'notifications', status: 'unknown' }],
+      }),
+    },
+  ])('reports unknown instead of granted:true for $scenario', async ({ arrange }) => {
+    arrange();
+    const { postOsNotification } = await import('../../../src/renderer/utils/osNotification');
+
+    await postOsNotification({ title: '任务完成 - 循环', body: '已完成 1 轮' });
+
+    expect(notificationPlugin.sendNotification).toHaveBeenCalledTimes(1);
+    const reportCall = domainInvoke.mock.calls.find((call) => call[1] === 'reportClientDelivery');
+    expect(reportCall?.[0]).toBe(IPC_DOMAINS.NOTIFICATION);
+    expect(reportCall?.[2]).toEqual({ mode: 'tauri', permission: 'unknown', dispatched: true });
+    expect(reportCall?.[2]).not.toHaveProperty('granted');
+  });
+
+  it('returns unknown outside Tauri without querying the native bridge', async () => {
+    isNativeDesktopAvailable.mockReturnValue(false);
+    const { getOsNotificationPermission } = await import('../../../src/renderer/utils/osNotification');
+
+    await expect(getOsNotificationPermission()).resolves.toBe('unknown');
+    expect(getNativeDesktopPermissionStatus).not.toHaveBeenCalled();
   });
 
   // urgent（失败类）× 焦点 2x2：只有 focused+非 urgent 被抑制

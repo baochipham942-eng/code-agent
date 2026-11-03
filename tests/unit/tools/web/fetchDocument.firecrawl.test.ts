@@ -119,22 +119,16 @@ describe('fetchDocument Firecrawl primary provider', () => {
     expect(doc.fallbackReason).toContain('HTTP 429');
   });
 
-  it('skips Firecrawl for local URLs', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(makeResponse({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      body: 'local',
-      url: 'http://127.0.0.1:3000',
-      contentType: 'text/plain',
-    }));
+  it('refuses local URLs before Firecrawl or native fetch (SSRF guard)', async () => {
+    const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
 
-    const doc = await fetchDocument('http://127.0.0.1:3000');
+    await expect(fetchDocument('http://127.0.0.1:3000')).rejects.toThrow(
+      /web_fetch blocked: 127\.0\.0\.1 is a private, loopback, link-local or cloud-metadata address/,
+    );
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toBe('http://127.0.0.1:3000');
-    expect(doc.provider).toBe('native');
+    // 守卫先于 Firecrawl 与原生 fetch：环回目标既不被抓取，也不泄露给第三方云
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('skips Firecrawl for obvious raw data URLs', async () => {

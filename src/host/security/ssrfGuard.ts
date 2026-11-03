@@ -23,8 +23,11 @@ const CLOUD_METADATA_HOSTNAMES = new Set([
  * 入参可为裸 hostname（'127.0.0.1'/'localhost'）或 WHATWG URL 的 IPv6 字面量（'[::1]'）。
  */
 export function isPrivateOrLocalHost(hostname: string): boolean {
-  const h = hostname.toLowerCase();
-  if (h === 'localhost') return true;
+  // WHATWG URL 保留 FQDN 尾点（'localhost.'），去一个尾点再判；
+  // *.localhost 按 RFC 6761/6762 整段解析到环回，一并判私有
+  //（N-WEBFETCH-BLOCK-PRIVATE-NET：web_fetch 共享入口接入本守卫时补齐）。
+  const h = hostname.toLowerCase().replace(/\.$/, '');
+  if (h === 'localhost' || h.endsWith('.localhost')) return true;
   if (CLOUD_METADATA_HOSTNAMES.has(h)) return true;
 
   // 私网/环回/链路本地/未指定 IPv4

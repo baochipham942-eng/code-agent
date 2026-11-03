@@ -622,6 +622,11 @@ export interface NotificationShowEvent {
    * Renderer 只把它接到既有 session unread 状态，不另建通知账本。
    */
   markSessionUnread?: boolean;
+  /**
+   * 静默事件：只送达 markSessionUnread，不弹 OS 通知。通知预算把弹窗折进
+   * 摘要窗口时，未读圆点仍要即时到达，不等窗口收尾。
+   */
+  attentionOnly?: boolean;
   code?: string;
   siteOrigin?: string;
   /** 定时失败人话分类。renderer 按界面语言翻译，host 不拼中文。 */

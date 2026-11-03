@@ -58,6 +58,44 @@ describe('osNotification', () => {
     );
   });
 
+  describe('needs-input viewing matrix', () => {
+    const cases: Array<[string, boolean, boolean, boolean, boolean]> = [
+      // name, hasFocus, hidden, viewingSession, expectSent
+      ['viewing + focused + visible', true, false, true, false],
+      ['other session + focused + visible', true, false, false, true],
+      ['viewing + unfocused', false, false, true, true],
+      ['viewing + hidden', true, true, true, true],
+    ];
+    it.each(cases)('%s', async (_n, focus, hidden, viewingSession, expectSent) => {
+      (globalThis as Record<string, unknown>).document = { hasFocus: () => focus, hidden };
+      const { postOsNotification } = await import('../../../src/renderer/utils/osNotification');
+      await postOsNotification({ title: '需要授权', body: 'bash' }, { urgent: true, viewingSession });
+      expect(notificationPlugin.sendNotification).toHaveBeenCalledTimes(expectSent ? 1 : 0);
+      expect(domainInvoke).toHaveBeenCalledWith(
+        IPC_DOMAINS.NOTIFICATION,
+        'reportClientDelivery',
+        expectSent
+          ? expect.objectContaining({ dispatched: true, urgent: true })
+          : { mode: 'suppressed-viewing', dispatched: false },
+      );
+    });
+
+    it('failure events ignore viewingSession', async () => {
+      (globalThis as Record<string, unknown>).document = { hasFocus: () => true, hidden: false };
+      const { postOsNotification } = await import('../../../src/renderer/utils/osNotification');
+      await postOsNotification({ title: '失败', body: 'x' }, { urgent: true, failure: true, viewingSession: true });
+      expect(notificationPlugin.sendNotification).toHaveBeenCalledTimes(1);
+    });
+
+    it('non-urgent stays suppressed-focused', async () => {
+      (globalThis as Record<string, unknown>).document = { hasFocus: () => true, hidden: false };
+      const { postOsNotification } = await import('../../../src/renderer/utils/osNotification');
+      await postOsNotification({ title: '完成', body: 'x' }, { viewingSession: true });
+      expect(domainInvoke).toHaveBeenCalledWith(
+        IPC_DOMAINS.NOTIFICATION, 'reportClientDelivery', { mode: 'suppressed-focused', dispatched: false });
+    });
+  });
+
   it('sends task notifications through the Tauri notification plugin', async () => {
     const { postOsNotification } = await import('../../../src/renderer/utils/osNotification');
 

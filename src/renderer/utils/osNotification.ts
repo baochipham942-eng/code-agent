@@ -75,14 +75,20 @@ export function shouldSuppressOsNotification(hasFocus: boolean, visible: boolean
 /** 发一条原生系统通知。Tauri 下自动带 Agent Neo 图标/身份；web 回落浏览器通知。 */
 export async function postOsNotification(
   opts: { title: string; body: string },
-  flags: { urgent?: boolean; failure?: boolean; onOpen?: () => void; openLabel?: string } = {},
+  flags: { urgent?: boolean; failure?: boolean; viewingSession?: boolean; onOpen?: () => void; openLabel?: string } = {},
 ): Promise<void> {
   const urgent = flags.urgent === true;
   const hasFocus = typeof document !== 'undefined' && document.hasFocus();
   const visible = typeof document !== 'undefined' && !document.hidden;
-  // urgent（失败类）跳过焦点门：用户盯着别的会话时也不能错过失败。
+  // urgent 跳过普通焦点门：失败、等输入都不能因为 app 聚焦而错过。
   if (!urgent && shouldSuppressOsNotification(hasFocus, visible)) {
     reportDelivery({ mode: 'suppressed-focused', dispatched: false });
+    return;
+  }
+  // needs-input（urgent 且非失败）例外：用户正聚焦看着需要输入的那个会话时，
+  // 审批/提问卡片就在屏幕上，横幅只是重复打扰；看别的会话、失焦、隐藏仍弹。
+  if (urgent && flags.failure !== true && flags.viewingSession === true && shouldSuppressOsNotification(hasFocus, visible)) {
+    reportDelivery({ mode: 'suppressed-viewing', dispatched: false });
     return;
   }
   // macOS 在 app 为 key window 时会藏起原生横幅：urgent 失败在前台补一条应用内 toast。

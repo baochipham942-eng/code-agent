@@ -622,13 +622,18 @@ export interface NotificationShowEvent {
    * Renderer 只把它接到既有 session unread 状态，不另建通知账本。
    */
   markSessionUnread?: boolean;
+  /**
+   * 静默事件：只送达 markSessionUnread，不弹 OS 通知。通知预算把弹窗折进
+   * 摘要窗口时，未读圆点仍要即时到达，不等窗口收尾。
+   */
+  attentionOnly?: boolean;
   code?: string;
   siteOrigin?: string;
   /** 定时失败人话分类。renderer 按界面语言翻译，host 不拼中文。 */
   failureKind?: CronFailurePresentationKind;
   /** ISO-8601。只有报文写明重置时间才带。 */
   resetAt?: string;
-  /** 失败类通知。renderer 即使窗口聚焦也照常弹 OS 通知；缺省按普通完成处理（聚焦时静默）。 */
+  /** 失败类与 needs-input 通知。renderer 聚焦时也弹 OS 通知；例外：needs-input 且用户正聚焦查看该 sessionId 会话时不弹。缺省按普通完成处理（聚焦时静默）。 */
   urgent?: boolean;
   /** 仅任务失败：聚焦时 renderer 额外补应用内错误 toast。needs-input 虽 urgent 但不是失败，不带此标。 */
   failure?: boolean;

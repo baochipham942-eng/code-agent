@@ -17,10 +17,12 @@ import { armBackgroundContinueDetach } from './shellExit';
 export type DaemonQuitIntentChoice = 'background' | 'stop';
 
 let daemonQuitIntent: DaemonQuitIntent = 'none';
+let clientAttachedSinceBackground = false;
 const intentListeners = new Set<() => void>();
 
 /** 壳声明退出意图。background 同时 arm detach（win32 EOF 停机指令摘除）。 */
 export function setDaemonQuitIntent(choice: DaemonQuitIntentChoice): void {
+  if (choice === 'background') clientAttachedSinceBackground = false;
   if (daemonQuitIntent === choice) return;
   daemonQuitIntent = choice;
   if (choice === 'background') armBackgroundContinueDetach();
@@ -33,17 +35,17 @@ export function setDaemonQuitIntent(choice: DaemonQuitIntentChoice): void {
   }
 }
 
-/** 新客户端接入全局 SSE：过期的 background 意图复位，之后普通断线照常取消 run。stop 不动。 */
-export function resetStaleBackgroundQuitIntent(): void {
-  if (daemonQuitIntent !== 'background') return;
-  daemonQuitIntent = 'none';
-  for (const listener of intentListeners) {
-    try {
-      listener();
-    } catch (error) {
-      console.error('[QuitIntent] listener failed:', error);
-    }
-  }
+/**
+ * 新客户端接入全局 SSE：只记「background 声明之后有人重新接入」，不改意图本身——
+ * daemonIdle / shellExit 的留守判据读同一份意图（armed schedules 靠它留守），不能被抹成 none。
+ */
+export function noteGlobalClientAttached(): void {
+  if (daemonQuitIntent === 'background') clientAttachedSinceBackground = true;
+}
+
+/** 在途 run 是否应在 SSE 断开后继续：background 声明有效且之后没人重新接入。 */
+export function isBackgroundContinueActive(): boolean {
+  return daemonQuitIntent === 'background' && !clientAttachedSinceBackground;
 }
 
 export function getDaemonQuitIntent(): DaemonQuitIntent {

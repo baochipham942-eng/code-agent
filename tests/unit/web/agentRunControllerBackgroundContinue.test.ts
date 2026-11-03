@@ -14,7 +14,7 @@ vi.mock('../../../src/web/helpers/sse', () => ({
 }));
 
 const { AgentRunController } = await import('../../../src/web/routes/agentRunController');
-const { setDaemonQuitIntent, resetStaleBackgroundQuitIntent, getDaemonQuitIntent } =
+const { setDaemonQuitIntent, noteGlobalClientAttached, getDaemonQuitIntent } =
   await import('../../../src/host/services/daemon/quitIntent');
 
 const DISCONNECT_LOG = 'SSE client disconnected, cancelling run';
@@ -47,8 +47,8 @@ describe('cancelForDisconnect × quit intent', () => {
   beforeEach(() => {
     broadcastSSE.mockClear();
     sendSSE.mockClear();
-    // 模块态：每个用例从 none 起步（stop 不可复位，本文件不使用 stop 之外的写入）
-    resetStaleBackgroundQuitIntent();
+    // 模块态：每个用例重新声明 background（会清掉重接入标记）
+    setDaemonQuitIntent('background');
   });
 
   it('intent=background：SSE 断开不 cancel、不标 disconnected、不打取消日志，run 正常完成', () => {
@@ -81,20 +81,8 @@ describe('cancelForDisconnect × quit intent', () => {
     }));
   });
 
-  it('对照：intent=none 断线照常 cancel 并打日志', () => {
-    const { res, cancel, logger, controller } = setup();
-    disconnect(res);
-    controller.cancelForDisconnect();
-
-    expect(cancel).toHaveBeenCalledWith('user');
-    expect(controller.disconnected).toBe(true);
-    expect(loggedDisconnect(logger)).toBe(true);
-  });
-
-  it('过期意图：background 后新客户端接入全局 SSE（复位），再断线仍 cancel', () => {
-    setDaemonQuitIntent('background');
-    resetStaleBackgroundQuitIntent();
-    expect(getDaemonQuitIntent()).toBe('none');
+  it('过期意图：background 后新客户端接入全局 SSE，再断线仍 cancel', () => {
+    noteGlobalClientAttached();
     const { res, cancel, controller } = setup();
     disconnect(res);
     controller.cancelForDisconnect();
@@ -102,9 +90,29 @@ describe('cancelForDisconnect × quit intent', () => {
     expect(cancel).toHaveBeenCalledWith('user');
   });
 
-  it('stop 意图不被复位', () => {
+  it('接入全局 SSE 不改写意图本身：留守判据读到的仍是 background（armed schedules 不丢）', () => {
+    noteGlobalClientAttached();
+    expect(getDaemonQuitIntent()).toBe('background');
+  });
+
+  it('壳重新声明 background 后重新生效', () => {
+    noteGlobalClientAttached();
+    setDaemonQuitIntent('background');
+    const { res, cancel, controller } = setup();
+    disconnect(res);
+    controller.cancelForDisconnect();
+
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  it('对照：intent=stop 断线照常 cancel 并打日志', () => {
     setDaemonQuitIntent('stop');
-    resetStaleBackgroundQuitIntent();
-    expect(getDaemonQuitIntent()).toBe('stop');
+    const { res, cancel, logger, controller } = setup();
+    disconnect(res);
+    controller.cancelForDisconnect();
+
+    expect(cancel).toHaveBeenCalledWith('user');
+    expect(controller.disconnected).toBe(true);
+    expect(loggedDisconnect(logger)).toBe(true);
   });
 });

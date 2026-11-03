@@ -8,7 +8,7 @@ import { envelopeWebAgentEvent } from '../helpers/agentStreamCursor';
 import type { AgentSessionManagerLike } from './agentRouteTypes';
 import type { WebRouteLogger } from './routeTypes';
 import type { RunHandle } from '../../host/runtime/runContext';
-import { getDaemonQuitIntent } from '../../host/services/daemon/quitIntent';
+import { isBackgroundContinueActive } from '../../host/services/daemon/quitIntent';
 import {
   shouldDeliverAgentEvent,
   type AgentEventFilter,
@@ -61,7 +61,7 @@ export class AgentRunController {
     if (this.runSettled || this.clientDisconnected || this.detachedForBackground) return;
     // ADR-083：壳选了「后台继续」后断开的 SSE 不是用户取消，run 要跑完并落库。
     // 显式 Stop 走 POST /api/cancel，不依赖 SSE close，不受影响。
-    if (getDaemonQuitIntent() === 'background') {
+    if (isBackgroundContinueActive()) {
       this.detachedForBackground = true;
       return;
     }

@@ -12,7 +12,7 @@ import {
 } from '../helpers/sse';
 import { envelopeWebAgentEvent } from '../helpers/agentStreamCursor';
 import { isCurrentUserAdmin } from '../../host/ipc/adminGuard';
-import { resetStaleBackgroundQuitIntent } from '../../host/services/daemon/quitIntent';
+import { noteGlobalClientAttached } from '../../host/services/daemon/quitIntent';
 import { getSessionStateManager } from '../../host/session/sessionStateManager';
 import type {
   BuildInfo,
@@ -113,7 +113,7 @@ export function createHealthRouter(deps: HealthDeps): Router {
       'Connection': 'keep-alive',
     });
     registerSSEClient(res, isCurrentUserAdmin());
-    resetStaleBackgroundQuitIntent();
+    noteGlobalClientAttached();
 
     // ADR-010 #6: 客户端重连时通过 Last-Event-ID header 或 lastEventId query 带上
     // 已见过的最大事件 id，服务端用 replay buffer 补发断线窗口内错过的事件。

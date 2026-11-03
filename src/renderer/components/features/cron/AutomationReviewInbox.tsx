@@ -258,7 +258,6 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                             className="shrink-0 text-badge-success"
                             data-testid="parked-handback-done"
                           >
-                            <Check className="h-3.5 w-3.5" />
                             {NL_RULE_K2_TEXT.inbox.userDidIt}
                           </Button>
                           <Button

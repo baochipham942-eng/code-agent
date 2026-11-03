@@ -15,6 +15,7 @@
 // ============================================================================
 
 import { getPolicyEngine, type PolicyRule } from './policyEngine';
+import { NL_RULE_K2_TEXT } from '../../shared/nlRuleRestate';
 import { resolveEffectivePolicyRules, resolveRunUserRuleContext } from './runPolicySnapshot';
 
 /** 消费结果。rule 是命中的规则串（Tool(pattern) 或裸工具名），用于指名与留痕。 */
@@ -112,3 +113,6 @@ export function resolveUserRuleOutcome(input: UserRuleOutcomeInput): UserRuleOut
   if (preapproveMiss) return { kind: 'ask', rule: ruleString(preapproveMiss) };
   return { kind: 'none' };
 }
+
+/** handback「我做完了」回给模型的工具结果文案（用户亲自做，勿重试，继续别的活）。 */
+export const handbackDoneModelText = NL_RULE_K2_TEXT.handbackDoneModelText;

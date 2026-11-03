@@ -1301,6 +1301,9 @@
           "type": "string",
           "const": "external"
         },
+        "handback": {
+          "type": "boolean"
+        },
         "decisionTrace": {
           "$ref": "#/$defs/__schema5"
         }

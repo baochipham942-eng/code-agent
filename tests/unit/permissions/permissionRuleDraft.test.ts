@@ -192,6 +192,6 @@ describe('describeRule（代码生成的人话复述）', () => {
   });
 
   it('行为档标签（确认卡开关用）与话术同源', () => {
-    expect(NL_RULE_TEXT.behavior).toEqual({ allow: '直接做', ask: '先问我', deny: '永不' });
+    expect(NL_RULE_TEXT.behavior).toEqual({ allow: '直接做', ask: '先问我', deny: '永不', preapprove: '我说了才做', handback: '交回我亲手做' });
   });
 });

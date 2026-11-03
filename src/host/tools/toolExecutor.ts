@@ -96,8 +96,7 @@ import { boundaryIdForRequestType } from './permissionBoundaryMapping';
 import { connectorWritePermissionRequest, findConnectorTokenWrite } from './connectorTokenWrite';
 import { evaluateGuardFabricGate } from './guardFabricGate';
 import { getPolicyEngine } from '../permissions/policyEngine';
-import { resolveUserRuleOutcomeForTool } from '../permissions/userRuleOutcome';
-import { NL_RULE_K2_TEXT } from '../../shared/nlRuleRestate';
+import { resolveUserRuleOutcomeForTool, handbackDoneModelText } from '../permissions/userRuleOutcome';
 import { classifyShellDesktopAutomation } from '../permissions/shellDesktopAutomation';
 import { resolveFileTargetKind } from '../permissions/fileTargetKind';
 import { completeArtifactLocatorGuardedWrite } from './artifacts/artifactLocatorHost';
@@ -1677,19 +1676,15 @@ export class ToolExecutor {
       }
     }
 
-    // N-PERM-NL-RULES-K2：一句话规则档位（deny>handback>ask>preapprove 未命中=ask>命中）。deny 由上方 user-deny 链与 guardFabricGate 硬拒；
-    // ask/handback 强制进审批链（nlForcesAsk 也压掉分类器 auto-approve 与 standing grant）；preapprove 命中并入 isPreApproved（吃同一份排除清单）。
+    // N-PERM-NL-RULES-K2：deny>handback>ask>preapprove 未命中=ask>命中。ask/handback 强制进审批链；preapprove 命中并入 isPreApproved（同一份排除清单）。
     const nlRule = resolveUserRuleOutcomeForTool(effectiveSessionId, policyToolName, params);
     const nlForcesAsk = nlRule.kind === 'ask' || nlRule.kind === 'handback';
-    const nlPreapproved = nlRule.kind === 'preapproved'
-      && !boundaryViolation && !guardFabricForcesApproval && !protectedWriteForcesConfirmation
-      && !peerOriginForcesConfirmation && !launderRetryForcesAsk && !commandAnalysisFailedReason
-      && !shellDesktopAutomation && !consequenceForcesClassification && !argumentForcesClassification
-      && !cuaAppGrantForcesClassification && !this.forcePermissionHandler && !unresolvedWriteTargetForcesAsk;
+    const nlPreapproved = nlRule.kind === 'preapproved' && ![boundaryViolation, guardFabricForcesApproval, protectedWriteForcesConfirmation, peerOriginForcesConfirmation, launderRetryForcesAsk, commandAnalysisFailedReason, shellDesktopAutomation, consequenceForcesClassification, argumentForcesClassification, cuaAppGrantForcesClassification, this.forcePermissionHandler, unresolvedWriteTargetForcesAsk].some(Boolean);
+    if (nlRule.kind === 'denied') return { success: false, error: `Blocked by your permission rule (${nlRule.rule}). Denied by your own settings; do not retry or achieve the same effect another way.` };
 
     // Check permission if required
     // Skill 系统：预授权工具跳过普通权限检查（但不能跳过边界违规或 consequence hard deny）
-    const isPreApproved = ( !boundaryViolation
+    const isPreApproved = (!boundaryViolation
       && !guardFabricForcesApproval
       && !protectedWriteForcesConfirmation
       && !peerOriginForcesConfirmation
@@ -1703,8 +1698,7 @@ export class ToolExecutor {
       && !unresolvedWriteTargetForcesAsk
       && options.preApprovedTools !== undefined
       && options.preApprovedTools.size > 0
-      && toolMatchesPatternSet(executionToolName, params, options.preApprovedTools)
-    ) || nlPreapproved;
+      && toolMatchesPatternSet(executionToolName, params, options.preApprovedTools)) || nlPreapproved;
     if (isPreApproved) {
       logger.debug('Tool pre-approved by Skill system, skipping permission check', { toolName: executionToolName });
       recordDecision(executionToolName, params, 'auto-approve', 'pre-approved', permStartTime, undefined, effectiveSessionId, this.ledgerOrigin);
@@ -2195,10 +2189,7 @@ export class ToolExecutor {
         requestPermission: this.requestPermission,
       });
       // N-PERM-NL-RULES-K2 handback「我做完了」：工具不执行，以成功形回给模型（用户亲自做，勿重试，继续别的活）——正常出路，不是失败。
-      if (ask.userDidIt) {
-        recordDecision(executionToolName, params, 'ask-denied', 'handback-user-did-it', permStartTime, traceBuilder.build('deny'), effectiveSessionId, this.ledgerOrigin);
-        return { success: true, output: ask.message ?? NL_RULE_K2_TEXT.handbackDoneModelText(executionToolName) };
-      }
+      if (ask.userDidIt) return { success: true, output: ask.message ?? handbackDoneModelText(executionToolName) };
       if (commandAnalysisFailedReason) {
         ask.approved = false;
         ask.denialSource = 'fail-closed';

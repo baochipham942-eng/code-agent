@@ -57,6 +57,7 @@ import {
   endMcpToolSpan,
   endMcpToolSpanAsError,
   startMcpToolCallSpan,
+  traceMcpArgsNormalized,
 } from './mcpCallTrace';
 
 // Import sub-modules
@@ -902,7 +903,9 @@ export class MCPClient extends EventEmitter {
       try {
         // 派发前把模型的已知参数姿势坑焊成确定性（如飞书 field.list 的 path 重嵌）。
         // callTool 是唯一 chokepoint，所有调用路径都经此；非命中工具原样透传。
-        const result = await this.callToolInternal(toolCallId, serverName, toolName, this.registry.normalizeToolArgs(serverName, toolName, args), options);
+        const normalizedArgs = this.registry.normalizeToolArgs(serverName, toolName, args);
+        traceMcpArgsNormalized(spanId, serverName, toolName, args, normalizedArgs);
+        const result = await this.callToolInternal(toolCallId, serverName, toolName, normalizedArgs, options);
         endMcpToolSpan(spanId, result);
         return this.idleReaper.applyRestartNotice(serverName, result);
       } catch (error) {

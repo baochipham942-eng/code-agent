@@ -22,6 +22,7 @@ import { buildCronAgentActionResult, cronAgentRunHasAlert } from '../../../src/h
 import { CRON_GUARDRAILS } from '../../../src/shared/constants';
 import type { CronJobDefinition, CronJobExecution } from '../../../src/shared/contract/cron';
 import { buildCronLoginWallStopCode } from '../../../src/shared/utils/browserLoginWall';
+import { CRON_CLOUD_UNAVAILABLE_MESSAGE_EN } from '../../../src/shared/utils/cronCloudUnavailable';
 
 describe('cronRetryBackoffMs：指数退避序列', () => {
   it('30s → 60s → 120s → 240s（BASE×FACTOR^(n-1)）', () => {
@@ -103,6 +104,8 @@ describe('classifyCronFailure：错误分类判据（集中一处）', () => {
     expect(classifyCronFailure(new Error('getaddrinfo ENOTFOUND api.example.com'))).toBe('transient');
     expect(classifyCronFailure(new Error('429 Too Many Requests'))).toBe('transient');
     expect(classifyCronFailure('云端计划任务服务暂时不可用，任务未执行。请检查云端执行地址和令牌后重试。')).toBe('transient');
+    // 展示层新增 cloud_unavailable 后，host 策略分类口径不变：英文固定句同样走 transient 退避。
+    expect(classifyCronFailure(CRON_CLOUD_UNAVAILABLE_MESSAGE_EN)).toBe('transient');
     expect(classifyCronFailure(new Error('Command failed: exit 1'))).toBe('transient');
   });
 });

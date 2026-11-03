@@ -8,6 +8,7 @@ import type { RawDomainRouteHandlers } from '../../shared/ipc/domainRoutes';
 import { CronSchemas, type CronDomainRequest } from '../../shared/ipc/schemas/cron';
 import { defineDomainRoutes, installDomainRoutes } from './domainRoutes/registry';
 import { getCronService } from '../cron/cronService';
+import { CloudNotConfiguredError } from '../cron/cronCloudErrors';
 import { getConnectorRegistry } from '../connectors/registry';
 import { ModelRouter } from '../model/modelRouter';
 import { createLogger } from '../services/infra/logger';
@@ -126,6 +127,29 @@ async function listMailSources(): Promise<CronMailSourcesResult> {
   }
 }
 
+/**
+ * webhook hook 注册/轮换。{url, token} 只在成功响应的 data 里出现一次；失败分支
+ * 只带不含密钥的主机消息（失败时本就没有密钥），云端未配置用独立 code 供渲染层本地化。
+ */
+async function runWebhookHookAction(operation: 'register' | 'rotate', payload: unknown): Promise<IPCResponse> {
+  const jobId = getStringField(payload, 'jobId');
+  if (!jobId) throw new Error('Invalid cron job id');
+  const cronService = getCronService();
+  try {
+    const secret = operation === 'register'
+      ? await cronService.registerWebhookHook(jobId)
+      : await cronService.rotateWebhookHook(jobId);
+    return { success: true, data: secret };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    logger.warn(`Cron webhook hook ${operation} failed for job ${jobId}: ${message}`);
+    return {
+      success: false,
+      error: { code: error instanceof CloudNotConfiguredError ? 'CRON_CLOUD_NOT_CONFIGURED' : 'CRON_ERROR', message },
+    };
+  }
+}
+
 const CRON_GENERATION_SYSTEM_PROMPT = `你是一个定时任务配置助手。根据用户的自然语言描述，生成定时任务的 JSON 配置。
 
 只返回一个 JSON 对象，不要有其他文字。JSON 格式如下：
@@ -189,6 +213,12 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
     const jobs = cronService.listJobs(filter);
     return { success: true, data: jobs } satisfies IPCResponse;
   },
+  registerWebhookHook: async (_ctx, payload) => runWebhookHookAction('register', payload),
+  rotateWebhookHook: async (_ctx, payload) => runWebhookHookAction('rotate', payload),
+  ensureCloudStream: async () => {
+    getCronService().ensureCloudStream();
+    return { success: true } satisfies IPCResponse;
+  },
   listMailSources: async () => {
     // 可用性结果（含 ok:false 的 reason 分类）走 success:true + data：这是结构化的
     // 「现在能不能选账号」陈述，不是 IPC 层错误；渲染层按 reason 给可区分提示。
@@ -235,6 +265,25 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
     const limit = getNumberField(payload, 'limit');
     const executions = cronService.getJobExecutions(jobId, limit);
     return { success: true, data: executions } satisfies IPCResponse;
+  },
+  getEventDecisions: async (_ctx, payload) => {
+    const jobId = getStringField(payload, 'jobId');
+    if (!jobId) throw new Error('Invalid cron job id');
+    const limit = getNumberField(payload, 'limit');
+    return { success: true, data: getCronService().getEventDecisions(jobId, limit) } satisfies IPCResponse;
+  },
+  getEventActionModeChange: async (_ctx, payload) => {
+    const jobId = getStringField(payload, 'jobId');
+    if (!jobId) throw new Error('Invalid cron job id');
+    return { success: true, data: getCronService().getEventActionModeChange(jobId) } satisfies IPCResponse;
+  },
+  setEventActionMode: async (_ctx, payload) => {
+    // 唯一能把事件自动化切到 auto 的入口（renderer 侧为确认弹窗动作）；updateJob 里的 actionMode 被忽略。
+    const jobId = getStringField(payload, 'jobId');
+    if (!jobId) throw new Error('Invalid cron job id');
+    const mode = getStringField(payload, 'mode');
+    if (mode !== 'observe' && mode !== 'auto') throw new Error('Invalid cron action mode');
+    return { success: true, data: await getCronService().setEventActionMode(jobId, mode) } satisfies IPCResponse;
   },
   getRecentExecutions: async (_ctx, payload) => {
     const cronService = getCronService();

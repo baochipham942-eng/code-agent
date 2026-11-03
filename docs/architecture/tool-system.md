@@ -218,6 +218,10 @@ ToolSearch("github search")
 - `tests/unit/protocol/toolResolver.mcpDirect.test.ts`
 - `tests/unit/tools/toolExecutor.mcpDirect.test.ts`
 
+### Connector boundary decisions (2026-10-29)
+
+连接器审计留下的四个「竞品行为」取舍，owner 于 2026-10-29 全部选保守项，并由测试钉死，防止后续单子漂移回去：(1) 摆错参数形状的 MCP 调用只保留逐工具修复规则并在运行 trace 里留 `mcp.args_normalized` 事件（只记键名不记值），不做通用参数修复引擎；(2) 用户提到某项服务时只弹连接卡询问一次（不做「提到即自动安装」，自动装仅限自愈用户已在用的连接器二进制）；(3) 登录/2FA 验证码永远手动输入，不从已连邮箱读取；(4) 不提供免账号的 X（Twitter）搜索，X 类检索一律需要账号。目录扩张（QuickBooks/Zoho/Bitbucket/Drive 等 21 族）整体押后，待聊天连接卡与打磨项落地后再议。
+
 ### 2026-06-12 MCP self-service and HTTP Streamable setup
 
 MCP 管理从"管理员代配"调整为"普通登录用户可自助管理 server"，但低层运行诊断仍保留 admin 边界：

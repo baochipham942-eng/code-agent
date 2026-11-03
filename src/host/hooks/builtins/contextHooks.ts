@@ -10,6 +10,8 @@ import type { Message } from '../../../shared/contract';
 import { getDatabase, type MemoryRecord } from '../../services';
 import { MEMORY } from '../../../shared/constants';
 import { guardSensitiveText } from '../../security/sensitiveDataGuard';
+import { resolveJournalContext } from '../../memory/memoryJournalActor';
+import type { MemoryChangeJournalContext } from '../../../shared/contract/memory';
 
 // ----------------------------------------------------------------------------
 // DB bridge — CLI 模式走 CLIDatabaseService，主进程走 Electron DatabaseService
@@ -27,7 +29,7 @@ interface FlushableDatabase {
     sessionId?: string;
     confidence: number;
     metadata?: Record<string, unknown>;
-  }): unknown;
+  }, journal?: MemoryChangeJournalContext): unknown;
   listMemories(options: {
     source?: string;
     projectPath?: string;
@@ -554,6 +556,8 @@ function flushToMemoryRepository(
     }
 
     // 写入（受 FLUSH_MAX_PER_COMPACT 约束）
+    // journal 归因：醒来会话里的压缩前固化是角色行为，记 role_wake 而非 unknown
+    const journal = resolveJournalContext(context.sessionId, 'unknown');
     for (const item of items) {
       if (stats.written >= MEMORY.FLUSH_MAX_PER_COMPACT) {
         break;
@@ -580,7 +584,7 @@ function flushToMemoryRepository(
           tokenCount: context.tokenCount,
           targetTokenCount: context.targetTokenCount,
         },
-      });
+      }, journal);
       existingHashes.add(hash);
       stats.written += 1;
     }

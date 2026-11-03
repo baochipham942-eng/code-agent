@@ -144,6 +144,7 @@ async function unsupportedAppServiceOperation(): Promise<never> {
 function makeAppService(sessionId: string, messages: Message[], modelOverride?: string): AgentApplicationService {
   return {
     getMessages: async () => messages,
+    sessionExists: async () => false,
     getSessionTasks: async () => [],
     getSerializedCompressionState: () => null,
     getCurrentSessionId: () => sessionId,

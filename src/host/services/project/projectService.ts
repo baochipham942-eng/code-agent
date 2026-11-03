@@ -456,6 +456,18 @@ export class ProjectService {
     return project;
   }
 
+  /**
+   * 按 workspace 路径查既有项目，不铸造、不落未分类：与 ensureProjectForWorkspace
+   * 同一道 trim/authority/workspaceKey 门，任一门不过或项目不存在都返回 undefined。
+   * 供「目录已从盘上消失但台账预检仍需原项目 id」的调用方使用（外部历史批量导入）。
+   */
+  findProjectForWorkspace(workspacePath: string): Project | undefined {
+    const dir = workspacePath.trim();
+    if (!dir) return undefined;
+    if (!resolveBackgroundWorkspaceAuthority({ workspace: dir })) return undefined;
+    return this.repo().getProjectByWorkspaceKey(getProjectKey(dir));
+  }
+
   async createSpace(input: CreateSpaceInput, now: number): Promise<Project> {
     const name = input.name.trim();
     if (!name) throw new Error('Space name is required.');

@@ -412,6 +412,14 @@ export interface MessageMetadata {
   agentRecoveryNotice?: {
     kind: 'vision_tool_unsupported' | 'artifact_stream_retry' | 'vision_preflight_used' | 'unresolved_tasks' | 'web_preview_repair';
   };
+  /**
+   * 建/改角色严格流程的停摆出口（`role:'system'`，FB-327）：create-role/edit-role
+   * 激活的轮回以纯文本收尾、既没有 propose_role 草稿也没有留给用户的问句时，
+   * 宿主落这条用户可见的「继续/放弃」说明，替代静默空闲。
+   */
+  roleFlowStalled?: {
+    skillName: 'create-role' | 'edit-role';
+  };
   /** User-visible audit note for atomic turn checkout / Redo, including partial outcomes. */
   turnCheckoutNote?: {
     operation: 'checkout' | 'redo';

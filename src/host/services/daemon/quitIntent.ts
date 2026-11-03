@@ -33,6 +33,19 @@ export function setDaemonQuitIntent(choice: DaemonQuitIntentChoice): void {
   }
 }
 
+/** 新客户端接入全局 SSE：过期的 background 意图复位，之后普通断线照常取消 run。stop 不动。 */
+export function resetStaleBackgroundQuitIntent(): void {
+  if (daemonQuitIntent !== 'background') return;
+  daemonQuitIntent = 'none';
+  for (const listener of intentListeners) {
+    try {
+      listener();
+    } catch (error) {
+      console.error('[QuitIntent] listener failed:', error);
+    }
+  }
+}
+
 export function getDaemonQuitIntent(): DaemonQuitIntent {
   return daemonQuitIntent;
 }

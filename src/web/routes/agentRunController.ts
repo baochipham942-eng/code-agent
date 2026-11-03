@@ -8,6 +8,7 @@ import { envelopeWebAgentEvent } from '../helpers/agentStreamCursor';
 import type { AgentSessionManagerLike } from './agentRouteTypes';
 import type { WebRouteLogger } from './routeTypes';
 import type { RunHandle } from '../../host/runtime/runContext';
+import { getDaemonQuitIntent } from '../../host/services/daemon/quitIntent';
 import {
   shouldDeliverAgentEvent,
   type AgentEventFilter,
@@ -47,6 +48,8 @@ function isTerminalErrorEvent(event: AgentEvent): boolean {
 export class AgentRunController {
   private runSettled = false;
   private clientDisconnected = false;
+  /** 壳以「后台继续」退出：SSE 断了但 run 继续，事件改走全局广播。 */
+  private detachedForBackground = false;
   private runHadTerminalError = false;
   private terminalFailure: unknown = null;
   private terminalErrorData: Record<string, unknown> | null = null;
@@ -55,7 +58,13 @@ export class AgentRunController {
   private readonly agentSSEBatcher;
 
   readonly cancelForDisconnect = (): void => {
-    if (this.runSettled || this.clientDisconnected) return;
+    if (this.runSettled || this.clientDisconnected || this.detachedForBackground) return;
+    // ADR-083：壳选了「后台继续」后断开的 SSE 不是用户取消，run 要跑完并落库。
+    // 显式 Stop 走 POST /api/cancel，不依赖 SSE close，不受影响。
+    if (getDaemonQuitIntent() === 'background') {
+      this.detachedForBackground = true;
+      return;
+    }
     this.clientDisconnected = true;
     const runHandle = this.deps.runHandle;
     if (!runHandle) return;
@@ -111,7 +120,7 @@ export class AgentRunController {
   }
 
   emitSSE(event: string, data: unknown): void {
-    if (this.deps.mirrorToBroadcast || this.shouldBroadcastAfterStreamClosed(event)) {
+    if (this.deps.mirrorToBroadcast || this.detachedForBackground || this.shouldBroadcastAfterStreamClosed(event)) {
       // 必须包成 agent:event 信封再广播，不能把原始事件名当 channel 直接发。
       //
       // 直连轮走的是 /api/agent/run 的响应流：httpTransport 的 processStream 把流上每条

@@ -170,7 +170,7 @@ describe('验收⑤：识别不了 / 受保护的用户话术', () => {
     expect(screen.getByTestId('nl-rule-reason').textContent).toContain('不会帮你设成自动放行');
     const behaviorSelect = screen.getByTestId('nl-rule-behavior') as HTMLSelectElement;
     const optionValues = [...behaviorSelect.querySelectorAll('option')].map((option) => option.value);
-    expect(optionValues).toEqual(['ask', 'deny']);
+    expect(optionValues).toEqual(['ask', 'deny', 'handback']);
     expect(behaviorSelect.value).toBe('ask');
 
     fireEvent.click(screen.getByTestId('nl-rule-confirm'));

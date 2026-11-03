@@ -680,6 +680,9 @@ export class OrchestratorPermissionIsland {
             sessionId: fullRequest.sessionId,
             title: '有操作等你确认',
             body: `无人值守任务请求执行 ${fullRequest.tool}，已挂起等待你在收件箱确认。`,
+            // 停车口先发；同一条请求随后经 permission_request 事件再进落库通知口，
+            // 同键去重，用户只看到这一条更具体的「去收件箱确认」横幅。
+            dedupeKey: fullRequest.id,
           });
         } catch (err) {
           logger.warn('Parked approval notification failed', err);

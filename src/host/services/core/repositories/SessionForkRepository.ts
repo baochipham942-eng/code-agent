@@ -25,6 +25,13 @@ export interface CreateForkRepositoryInput {
   childTitle: string;
   workspaceMode: SessionForkWorkspaceMode;
   contextDeliveryMode: SessionForkContextDeliveryMode;
+  /**
+   * Imported external-history sources fork into a native child on the app default
+   * model (N-EXTHISTORY-IMPORT-CHATS-RESUME): when set, the child engine is native
+   * (manual origin, fork read-only profile) and these provider/model values replace
+   * the source's placeholder history model columns.
+   */
+  nativeChildModel?: { provider: string; model: string };
   childWorkingDirectory?: string;
   workspaceSnapshotId?: string;
   now?: number;
@@ -134,6 +141,22 @@ function sanitizeForkEngine(raw: unknown, cwd: string | null): string {
     origin: 'manual',
   };
   if (typeof engine.model === 'string' && engine.model.trim()) safe.model = engine.model.trim();
+  if (cwd) safe.cwd = cwd;
+  return JSON.stringify(safe);
+}
+
+/**
+ * Native child engine for imported external-history forks: same fork authority
+ * rules as sanitizeForkEngine (never inherits write authority, manual origin),
+ * but the engine kind is Neo-native — the imported external CLI identity stops
+ * at the source session.
+ */
+function nativeForkEngine(cwd: string | null): string {
+  const safe: Record<string, unknown> = {
+    kind: 'native',
+    permissionProfile: 'read_only',
+    origin: 'manual',
+  };
   if (cwd) safe.cwd = cwd;
   return JSON.stringify(safe);
 }
@@ -286,13 +309,15 @@ export class SessionForkRepository {
         input.childSessionId,
         source.user_id ?? null,
         input.childTitle,
-        source.model_provider,
-        source.model_name,
+        input.nativeChildModel?.provider ?? source.model_provider,
+        input.nativeChildModel?.model ?? source.model_name,
         childWorkingDirectory,
         JSON.stringify({ kind: 'manual', metadata: { forkId: input.forkId } }),
         JSON.stringify({ forkLineage: lineageMetadata }),
         sourceSessionId,
-        sanitizeForkEngine(source.agent_engine, childWorkingDirectory),
+        input.nativeChildModel
+          ? nativeForkEngine(childWorkingDirectory)
+          : sanitizeForkEngine(source.agent_engine, childWorkingDirectory),
         source.memory_mode === 'off' ? 'off' : 'auto',
         typeof source.suppressed_memory_entry_ids === 'string' ? source.suppressed_memory_entry_ids : '[]',
         now,

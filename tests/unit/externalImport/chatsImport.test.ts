@@ -320,6 +320,7 @@ describe('importRecentExternalChats on a real sqlite database', () => {
       now: NOW_FN,
       roots: { claudeProjectsRoot: roots.claude, codexSessionsRoot: roots.codex },
       resolveProject: (cwd, now) => projectService.ensureProjectForWorkspace(cwd, now),
+      lookupProjectForWorkspace: (cwd) => Promise.resolve(projectService.findProjectForWorkspace(cwd)),
       hasExistingImport: (query) => portabilityRepo.hasImportedExport(
         query.sourceExportId,
         query.ownerScopeId,
@@ -339,6 +340,48 @@ describe('importRecentExternalChats on a real sqlite database', () => {
   function countRows(table: 'sessions' | 'messages' | 'session_fork_portability_imports'): number {
     return (db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number }).count;
   }
+
+  it('an already-imported chat whose folder was later deleted still reports already_imported; a never-imported chat stays folder_missing', async () => {
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'chats-import-ws-'));
+    tempRoots.push(workspace);
+    await writeClaudeChat({
+      claudeRoot: roots.claude,
+      sessionId: 'claude-then-deleted',
+      lines: [
+        claudeUserLine({ sessionId: 'claude-then-deleted', timestamp: '2026-10-16T10:00:00.000Z', text: 'claude then deleted', cwd: workspace }),
+        claudeAssistantTextLine({ sessionId: 'claude-then-deleted', timestamp: '2026-10-16T10:00:01.000Z', text: 'ok' }),
+      ],
+    });
+    await writeClaudeChat({
+      claudeRoot: roots.claude,
+      sessionId: 'claude-never-imported',
+      lines: [
+        claudeUserLine({ sessionId: 'claude-never-imported', timestamp: '2026-10-17T10:00:00.000Z', text: 'claude never imported', cwd: path.join(roots.root, 'never-existed') }),
+        claudeAssistantTextLine({ sessionId: 'claude-never-imported', timestamp: '2026-10-17T10:00:01.000Z', text: 'ok' }),
+      ],
+    });
+
+    // 第一轮：目录在盘 → 导入；从未存在的目录 → folder_missing（新→旧排序）。
+    const firstRun = await runImport();
+    expect(firstRun.map((result) => [result.sourceSessionId, result.status])).toEqual([
+      ['claude-never-imported', 'folder_missing'],
+      ['claude-then-deleted', 'imported'],
+    ]);
+    expect(countRows('sessions')).toBe(1);
+    expect(countRows('session_fork_portability_imports')).toBe(1);
+
+    // 目录事后被删：已导入的那条必须仍报 already_imported（去重台账先于 folder_missing
+    // 判），从未导入的那条照旧 folder_missing。
+    await fs.rm(workspace, { recursive: true, force: true });
+    const secondRun = await runImport();
+    expect(secondRun.map((result) => [result.sourceSessionId, result.status])).toEqual([
+      ['claude-never-imported', 'folder_missing'],
+      ['claude-then-deleted', 'already_imported'],
+    ]);
+    // 第二轮零写入：会话行数与台账行数都不变。
+    expect(countRows('sessions')).toBe(1);
+    expect(countRows('session_fork_portability_imports')).toBe(1);
+  });
 
   it('running twice imports nothing twice, even after the source file grows', async () => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'chats-import-ws-'));

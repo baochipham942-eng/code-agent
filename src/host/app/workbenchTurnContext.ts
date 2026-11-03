@@ -30,9 +30,11 @@ import { formatCanvasSnapshotForPrompt } from '../../shared/contract/canvasPropo
 import { formatDesignCanvasSessionReminder } from '../../shared/design/canvasSessionReminder';
 import { readPersistedExpertThread } from '../../shared/contract/expertThread';
 import {
+  awaitCliConnectorStatusProbe,
   getCachedCliConnectorConnectionStatus,
   isCliConnectorId,
 } from '../connectors/cli/cliConnectorStatusCache';
+import { CONNECTOR_CARD_TIMEOUTS } from '../../shared/constants/timeouts';
 import { getBuiltinInProcessMcpServerIds, isMcpServerConnected } from '../mcp/mcpConnectionProbe';
 import { createLogger } from '../services/infra/logger';
 
@@ -496,23 +498,24 @@ function buildConnectorNotConnectedLine(connectorIds: string[]): string {
 }
 
 /**
- * 本轮声明了但没就绪的连接器（用户手选 + 专家声明，仅连接器侧 id；MCP 走 mcpOAuthConsent，不在此列）。
+ * 本轮声明的连接器侧 id（用户手选 + 专家声明；MCP 走 mcpOAuthConsent，不在此列）。
  * 「会话手选覆盖专家」口径与 withWorkbenchTurnSystemContext 一致。
- * 只给事件发射点调用——就绪判据本轮会被多处重复求值，绝不能在判据里发事件。
+ * 发卡判读（listNotReadyDeclaredConnectors）与冷缓存预热（ensureCliConnectorStatusForCard）
+ * 共用这一份收集口径，避免两处各写一遍后漂移。
  */
-export function listNotReadyDeclaredConnectors(
+function collectDeclaredConnectorIds(
   options: AppServiceRunOptions | undefined,
   context?: ConversationEnvelopeContext,
   sessionMetadata?: Record<string, unknown>,
-): ConnectorRequiredItem[] {
-  const result: ConnectorRequiredItem[] = [];
+): Array<{ id: string; source: ConnectorRequiredItem['source'] }> {
+  const declared: Array<{ id: string; source: ConnectorRequiredItem['source'] }> = [];
   const seen = new Set<string>();
   const collect = (ids: string[] | undefined, source: ConnectorRequiredItem['source']) => {
     for (const raw of ids || []) {
       const id = raw.trim();
-      if (!id || seen.has(id) || !isConnectorSideId(id) || isConnectorReadyForTurnScope(id)) continue;
+      if (!id || seen.has(id) || !isConnectorSideId(id)) continue;
       seen.add(id);
-      result.push({ id, source, reason: CONNECTOR_REQUIRED_DEFAULT_REASON });
+      declared.push({ id, source });
     }
   };
   collect(context?.selectedConnectorIds, 'selected');
@@ -523,7 +526,65 @@ export function listNotReadyDeclaredConnectors(
     const expertConnectors = roleId ? resolveAgent(roleId)?.connectors : undefined;
     collect(resolveSessionConnectorIds({ expertConnectors }), 'expert');
   }
-  return result;
+  return declared;
+}
+
+/**
+ * 本轮声明了但没就绪的连接器。
+ * 只给事件发射点调用——就绪判据本轮会被多处重复求值，绝不能在判据里发事件。
+ */
+function listNotReadyDeclaredConnectors(
+  options: AppServiceRunOptions | undefined,
+  context?: ConversationEnvelopeContext,
+  sessionMetadata?: Record<string, unknown>,
+): ConnectorRequiredItem[] {
+  return collectDeclaredConnectorIds(options, context, sessionMetadata)
+    .filter((entry) => !isConnectorReadyForTurnScope(entry.id))
+    .map(({ id, source }) => ({ id, source, reason: CONNECTOR_REQUIRED_DEFAULT_REASON }));
+}
+
+/**
+ * 发 connector_required 卡前的冷缓存预热（N-CONNECTOR-POLISH-AUDIT-FU1-FU2）。
+ * 轮级 CLI 状态缓存只有 oauthStatus 探测这一个填充者且是异步的，空缓存按 ready
+ * fail-open——开机后第一轮若不等探测就判读，未登录的 feishu/tmeet 会被静默当成
+ * 已连接而不发卡。只有本轮声明了 CLI 连接器且缓存缺它的条目才等（没有 CLI 声明
+ * 或缓存已暖时零额外探测）；到点或失败保持 fail-open，但 warn 出可区分原因。
+ * 注意：只服务发卡路径，isConnectorReadyForTurnScope 的 tool-scope 语义不动。
+ */
+async function ensureCliConnectorStatusForCard(
+  options: AppServiceRunOptions | undefined,
+  context?: ConversationEnvelopeContext,
+  sessionMetadata?: Record<string, unknown>,
+): Promise<void> {
+  const coldCliConnectorIds = collectDeclaredConnectorIds(options, context, sessionMetadata)
+    .map((entry) => entry.id)
+    .filter((id) => isCliConnectorId(id) && !getCachedCliConnectorConnectionStatus(id));
+  if (coldCliConnectorIds.length === 0) return;
+
+  const probe = await awaitCliConnectorStatusProbe(CONNECTOR_CARD_TIMEOUTS.CLI_STATUS_PROBE_WAIT_MS);
+  if (probe.kind === 'filled') return;
+  logger.warn(
+    '[WorkbenchTurnContext] CLI connector status probe unresolved; connector_required card falls back to fail-open',
+    {
+      connectorIds: coldCliConnectorIds,
+      probeOutcome: probe.kind,
+      ...(probe.kind === 'error' ? { probeError: probe.message } : {}),
+      waitMs: CONNECTOR_CARD_TIMEOUTS.CLI_STATUS_PROBE_WAIT_MS,
+    },
+  );
+}
+
+/**
+ * 两条 connector_required 发射路径（agentAppService / web routes/agent）的统一入口：
+ * 先等冷缓存的 CLI 状态探测（有界），再按既有同步判读出卡。
+ */
+export async function resolveConnectorRequiredForTurn(
+  options: AppServiceRunOptions | undefined,
+  context?: ConversationEnvelopeContext,
+  sessionMetadata?: Record<string, unknown>,
+): Promise<ConnectorRequiredItem[]> {
+  await ensureCliConnectorStatusForCard(options, context, sessionMetadata);
+  return listNotReadyDeclaredConnectors(options, context, sessionMetadata);
 }
 
 export function buildWorkbenchToolScope(

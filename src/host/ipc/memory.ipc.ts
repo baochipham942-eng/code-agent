@@ -75,6 +75,9 @@ import type {
   MemoryMirrorRebuildResult,
   MemoryPackRequest,
   MemoryEntryListResult,
+  MemoryChangeJournalRequest,
+  MemoryChangeJournalResult,
+  MemoryChangeJournalContext,
 } from '../../shared/contract/memory';
 import type {
   ExternalImportSetClaudeLegacySkillsRequest,
@@ -84,6 +87,9 @@ import type {
 import { respondToDirectiveMemoryConfirmation } from '../memory/directiveMemoryConfirmation';
 
 const logger = createLogger('MemoryIPC');
+
+/** 面板动作的 journal actor：settings 面板里的编辑/删除/审核/重建都是用户手动触发 */
+const PANEL_JOURNAL: MemoryChangeJournalContext = { actor: 'user_manual' };
 
 interface MemoryAuditRequest {
   projectPath?: string | null;
@@ -577,13 +583,13 @@ async function handleListMemoryEntries(): Promise<Awaited<ReturnType<typeof list
 }
 
 async function handleRebuildMemoryMirror(): Promise<MemoryMirrorRebuildResult> {
-  return rebuildMemoryMirrorFromLightFiles(getDatabase());
+  return rebuildMemoryMirrorFromLightFiles(getDatabase(), { journal: PANEL_JOURNAL });
 }
 
 async function handleMemoryEntryUpdate(payload: MemoryEntryUpdateRequest): Promise<Awaited<ReturnType<typeof updateMemoryEntry>>> {
   if (!payload?.entryId) throw new Error('memory entry update requires entryId');
   if (isProjectScopedEntryId(payload.entryId)) return updateProjectScopedMemoryEntry(payload);
-  return updateMemoryEntry(getDatabase(), payload);
+  return updateMemoryEntry(getDatabase(), payload, { journal: PANEL_JOURNAL });
 }
 
 async function handleMemoryEntryResumeInjection(payload: { entryId?: string }): Promise<{ resumed: boolean }> {
@@ -594,7 +600,14 @@ async function handleMemoryEntryResumeInjection(payload: { entryId?: string }): 
 async function handleMemoryEntryDelete(payload: MemoryEntryDeleteRequest): Promise<Awaited<ReturnType<typeof deleteMemoryEntry>>> {
   if (!payload?.entryId) throw new Error('memory entry delete requires entryId');
   if (isProjectScopedEntryId(payload.entryId)) return deleteProjectScopedMemoryEntry(payload);
-  return deleteMemoryEntry(getDatabase(), payload);
+  return deleteMemoryEntry(getDatabase(), payload, { journal: PANEL_JOURNAL });
+}
+
+async function handleMemoryEntryJournal(payload: MemoryChangeJournalRequest): Promise<MemoryChangeJournalResult> {
+  const entryId = payload?.entryId?.trim() || undefined;
+  const memoryId = payload?.memoryId?.trim() || undefined;
+  if (!entryId && !memoryId) throw new Error('memory entry journal requires entryId or memoryId');
+  return { rows: getDatabase().listMemoryJournal({ entryId, memoryId, limit: payload?.limit }) };
 }
 
 async function handleMemoryEntryBatchReview(payload: MemoryEntryBatchReviewRequest): Promise<Awaited<ReturnType<typeof batchReviewMemoryEntries>>> {
@@ -626,7 +639,7 @@ async function handleMemoryHarnessImportConfirmDirective(payload: MemoryImportDi
 async function handleLightMemoryArchive(filename: string): Promise<boolean> {
   const archived = await archiveMemoryFile(filename);
   if (!archived) return false;
-  await rebuildMemoryMirrorFromLightFiles(getDatabase());
+  await rebuildMemoryMirrorFromLightFiles(getDatabase(), { journal: PANEL_JOURNAL });
   return true;
 }
 
@@ -741,6 +754,7 @@ async function handleMemoryInboxResolve(payload: MemoryInboxResolveRequest): Pro
     approvedMemory = createMemoryMirrorRecord(db, mirroredEntry, {
       category: categoryForInboxKind(payload.kind),
       metadata: decisionMetadata,
+      journal: { actor: 'user_manual', sessionId },
     });
   }
 
@@ -759,7 +773,7 @@ async function handleMemoryInboxResolve(payload: MemoryInboxResolveRequest): Pro
         memoryId: approvedMemory?.id ?? null,
       },
     },
-  });
+  }, { actor: 'user_manual', sessionId });
 
   return {
     candidateId,
@@ -890,6 +904,7 @@ const memoryRoutes = defineDomainRoutes<MemoryDomainRequest, void>(
     memoryRebuildMirror: () => handleRebuildMemoryMirror(),
     memoryEntryUpdate: (_ctx, payload) => handleMemoryEntryUpdate(payload as MemoryEntryUpdateRequest),
     memoryEntryDelete: (_ctx, payload) => handleMemoryEntryDelete(payload as MemoryEntryDeleteRequest),
+    memoryEntryJournal: (_ctx, payload) => handleMemoryEntryJournal(payload as MemoryChangeJournalRequest),
     memoryEntryResumeInjection: (_ctx, payload) => handleMemoryEntryResumeInjection(payload as { entryId?: string }),
     memoryEntryBatchReview: (_ctx, payload) => handleMemoryEntryBatchReview(payload as MemoryEntryBatchReviewRequest),
     memoryPack: (_ctx, payload) => handleMemoryPack(payload as MemoryPackRequest),
@@ -987,6 +1002,9 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
           break;
         case 'memoryEntryDelete':
           data = await handleMemoryEntryDelete(request as unknown as MemoryEntryDeleteRequest);
+          break;
+        case 'memoryEntryJournal':
+          data = await handleMemoryEntryJournal(request as MemoryChangeJournalRequest);
           break;
         case 'memoryEntryBatchReview':
           data = await handleMemoryEntryBatchReview(request as unknown as MemoryEntryBatchReviewRequest);

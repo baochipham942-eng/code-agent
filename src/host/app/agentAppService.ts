@@ -74,7 +74,7 @@ import type {
   ConversationEnvelopeContext,
   WorkbenchMessageMetadata,
 } from '../../shared/contract/conversationEnvelope';
-import { listNotReadyDeclaredConnectors, withWorkbenchTurnSystemContext } from './workbenchTurnContext';
+import { resolveConnectorRequiredForTurn, withWorkbenchTurnSystemContext } from './workbenchTurnContext';
 import { withSessionCommandCenterBrain } from './sessionCommandCenterBrain';
 import { isSessionCommandCenterTurn } from '../../shared/constants/sessionCommandCenter';
 import { getPermissionModeManager } from '../permissions/modes';
@@ -90,6 +90,7 @@ import type { CancellationReason } from '../../shared/contract/cancellation';
 import { normalizeCancellationReason } from '../../shared/contract/cancellation';
 import { AGENT_ENGINE_LABELS, normalizeAgentEngineSession } from '../../shared/contract/agentEngine';
 import {
+  assertImportedEngineSessionNotRunnable,
   ExternalEngineDurableLifecycle,
   getExternalEngineAdapter,
   getRemoteAgentEngineModelCatalogService,
@@ -447,6 +448,10 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const sessionManager = getSessionManager();
     const session = await sessionManager.getSession(resolvedSessionId, 1);
     const engine = normalizeAgentEngineSession(session?.engine);
+    // Imported external-history chats are read-only records: fail with a clear
+    // reason before any orchestrator/launch side effect — the renderer's
+    // fork-on-send path is the only way to continue from them.
+    assertImportedEngineSessionNotRunnable(engine);
     const orchestrator = this.getOrchestrator(resolvedSessionId);
     const sessionWorkspaceScope = resolveSessionWorkspaceScope(
       session,
@@ -812,7 +817,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       envelope.context,
       getSessionManager().getSessionMetadata?.(resolvedSessionId),
     );
-    this.emitConnectorRequired(tm, resolvedSessionId, envelope.options as AppServiceRunOptions | undefined, envelope.context);
+    await this.emitConnectorRequired(tm, resolvedSessionId, envelope.options as AppServiceRunOptions | undefined, envelope.context);
     const optionsWithTurnSettings: AppServiceRunOptions = {
       ...(workbenchOptions ?? {}),
       searchEnabled: envelope.searchEnabled ?? true,
@@ -1006,7 +1011,7 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       envelope.context,
       getSessionManager().getSessionMetadata?.(resolvedSessionId),
     );
-    this.emitConnectorRequired(tm, resolvedSessionId, envelope.options as AppServiceRunOptions | undefined, envelope.context);
+    await this.emitConnectorRequired(tm, resolvedSessionId, envelope.options as AppServiceRunOptions | undefined, envelope.context);
     const options = isSessionCommandCenterTurn({
       prompt: envelope.content,
       hasGoal: Boolean(workbenchOptions?.goal),
@@ -1024,15 +1029,14 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     );
   }
 
-  private emitConnectorRequired(
+  private async emitConnectorRequired(
     tm: ReturnType<AgentAppServiceImpl['getTaskManager']>,
     sessionId: string,
     options: AppServiceRunOptions | undefined,
     context: ConversationEnvelope['context'],
-  ): void {
-    const connectors = listNotReadyDeclaredConnectors(options, context, getSessionManager().getSessionMetadata?.(sessionId));
-    if (connectors.length === 0) return;
-    tm.emitAgentEventForSession(sessionId, { type: 'connector_required', data: { connectors } });
+  ): Promise<void> {
+    const connectors = await resolveConnectorRequiredForTurn(options, context, getSessionManager().getSessionMetadata?.(sessionId));
+    if (connectors.length > 0) tm.emitAgentEventForSession(sessionId, { type: 'connector_required', data: { connectors } });
   }
 
   // === Workspace ===
@@ -1098,6 +1102,10 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
   async getMessages(sessionId: string): Promise<Message[]> {
     return getSessionManager().getMessages(sessionId);
+  }
+
+  async sessionExists(sessionId: string): Promise<boolean> {
+    return getSessionManager().sessionExists(sessionId);
   }
 
   async getSessionTasks(sessionId: string): Promise<SessionTask[]> {

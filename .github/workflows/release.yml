@@ -473,6 +473,11 @@ jobs:
           npm run build
           npm run release:security-scan
 
+      - name: Prepare Windows overlay and native manifest
+        run: |
+          node scripts/tauri-platform-config.mjs win32-x64 --out "${RUNNER_TEMP}/tauri.win32.json"
+          node scripts/gen-native-dep-manifest.mjs win32-x64
+
       - name: Verify bundle resources (pre)
         run: node scripts/verify-windows-release.mjs --stage pre
 
@@ -489,10 +494,7 @@ jobs:
           TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: |
-          node scripts/tauri-platform-config.mjs win32-x64 --out "${RUNNER_TEMP}/tauri.win32.json"
-          node scripts/gen-native-dep-manifest.mjs win32-x64
-          cargo tauri build --config "${RUNNER_TEMP}/tauri.win32.json"
+        run: cargo tauri build --config "${RUNNER_TEMP}/tauri.win32.json"
 
       - name: Verify NSIS artifact (post)
         env:

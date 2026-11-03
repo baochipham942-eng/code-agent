@@ -2126,6 +2126,19 @@ export class ToolExecutor {
       // 把 $HOME 写边界 ask 自动批掉、文件真落盘。
       if (readOnlyForcesConfirmation || guardFabricForcesApproval || boundaryAskForcesConfirmation || protectedWriteForcesConfirmation || unresolvedWriteTargetForcesAsk) {
         permissionRequest.forceConfirm = true;
+        // 返修 r2：记录 forceConfirm 的成因形态。W3 写边界 ask 是唯一成因（且无 peer
+        // 触发）时标 boundary-only——定时任务写授权只放行这一种 forceConfirm，其余成因
+        // （只读档/guardFabric/保护路径/不确定目标/peer 触发/确认门）照旧人工。
+        if (
+          boundaryAskForcesConfirmation
+          && !readOnlyForcesConfirmation
+          && !guardFabricForcesApproval
+          && !protectedWriteForcesConfirmation
+          && !unresolvedWriteTargetForcesAsk
+          && !peerOriginForcesConfirmation
+        ) {
+          permissionRequest.forceConfirmBoundaryOnly = true;
+        }
       }
       if (unresolvedWriteTargetForcesAsk) {
         permissionRequest.reasonCode = PermissionRequestReason.UncertainWriteTargetWithPathDeny;
@@ -2167,6 +2180,8 @@ export class ToolExecutor {
         }
         if (shouldForceConfirm) {
           permissionRequest.forceConfirm = true;
+          // 确认门也是 forceConfirm 成因之一：boundary-only 标记必须摘掉（返修 r2）。
+          permissionRequest.forceConfirmBoundaryOnly = false;
           permissionRequest.dangerLevel = riskLevel === 'high'
             ? 'danger'
             : (riskLevel === 'medium' ? 'warning' : 'normal');

@@ -200,8 +200,8 @@ class NotificationService implements Disposable {
 
   /**
    * 发送 "需要输入" 通知（权限请求、用户提问）
-   * 一律 urgent：Neo 卡在等用户时，即使 app 聚焦（用户在看别的会话）也要弹系统横幅，
-   * 绕过 host 焦点门与 renderer 焦点门。
+   * 一律 urgent：绕过 host 焦点门与 renderer 普通焦点门。renderer 仅在 app 聚焦且用户
+   * 正看着该 sessionId 对应会话时不弹横幅（卡片已在屏幕上）；看别的会话/失焦/隐藏仍弹。
    * dedupeKey：同一条逻辑请求可能从两个发送口到达（停车通知 + 事件落库通知），
    * 携带同一键的第二次调用在门后、投递前被丢弃；无键 = 行为不变。
    */

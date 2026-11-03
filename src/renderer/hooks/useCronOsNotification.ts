@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { IPC_CHANNELS, type NotificationShowEvent } from '@shared/ipc';
 import { useAppStore } from '../stores/appStore';
+import { useSessionStore } from '../stores/sessionStore';
 import { useCronStore } from '../stores/cronStore';
 import ipcService from '../services/ipcService';
 import {
@@ -47,6 +48,10 @@ export function useCronOsNotification(
       IPC_CHANNELS.NOTIFICATION_SHOW,
       (event: NotificationShowEvent) => {
         lastEventRef.current = event;
+        const needsInput = event.urgent === true && event.failure !== true;
+        const viewingSession = needsInput
+          && !!event.sessionId
+          && useSessionStore.getState().currentSessionId === event.sessionId;
         void postOsNotification(translateCronOsNotification(
           event,
           copyRef.current,
@@ -54,6 +59,7 @@ export function useCronOsNotification(
         ), {
           urgent: event.urgent === true,
           failure: event.failure === true,
+          viewingSession,
           onOpen: () => openForEvent(event),
           openLabel: copyRef.current.failureToastView,
         });

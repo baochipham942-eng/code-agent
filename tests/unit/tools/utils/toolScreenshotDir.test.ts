@@ -86,7 +86,7 @@ describe('getToolScreenshotDir', () => {
 // ============================================================================
 describe('removeToolScreenshotDir', () => {
   /** 造一个带文件的会话截图目录，返回其路径 */
-  function makeSessionDir(sessionId: string): string {
+  function makeSessionDir(sessionId: string | undefined): string {
     const dir = getToolScreenshotDir(sessionId);
     mkdirSync(dir, { recursive: true });
     writeFileSync(path.join(dir, 'screenshot_1.png'), 'x');

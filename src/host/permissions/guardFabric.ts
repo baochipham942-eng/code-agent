@@ -6,6 +6,7 @@
 // sources with topology-aware verdict resolution.
 // ============================================================================
 
+import type { PermissionLevel } from '../../shared/contract/tool';
 import { getPolicyEngine } from './policyEngine';
 import { resolveEffectivePolicyRules } from './runPolicySnapshot';
 import { HookGuardSource } from './hookSource';
@@ -32,6 +33,13 @@ export interface GuardRequest {
   topology: ExecutionTopology;
   sessionId?: string;
   agentId?: string;
+  /** 调用方按 toolDef.permissionLevel 传入；缺省按 execute 评估（fail-safe，维持旧行为）。 */
+  level?: PermissionLevel;
+}
+
+/** FU1：评估 level 的单一缺省口径——三处 guard 调用共用，勿在调用点各写一份。 */
+export function resolveGuardLevel(level?: PermissionLevel): PermissionLevel {
+  return level ?? 'execute';
 }
 
 export interface GuardSourceResult {
@@ -185,7 +193,7 @@ export class PolicyEngineSource implements GuardSource {
       // N-PERM-POLICYVERSION E3：按 run 有效规则评估（外部放宽不作用于已开始的 run）。
       const result = getPolicyEngine().evaluate({
         tool: request.tool,
-        level: 'execute',
+        level: resolveGuardLevel(request.level),
         description: `tool: ${request.tool}`,
         command: request.args?.command as string,
         filePath: (request.args?.filePath as string) || (request.args?.file_path as string),

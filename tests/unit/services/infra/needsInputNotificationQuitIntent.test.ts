@@ -100,12 +100,14 @@ describe('needs-input 原生通知兜底（fallback B）', () => {
     notificationService.setNativeNotificationSender(nativeSender);
   });
 
-  it('焦点策略照旧：窗口聚焦时 needs_input 整体不发（含原生兜底）', () => {
+  it('焦点策略（main #2679 语义）：needs_input 一律 urgent 绕焦点门，原生兜底仍只由 quit-intent 决定', () => {
+    // 本单曾钉「聚焦时整体不发」；main #2679 改为 needs_input 一律 urgent——用户在看
+    // 别的会话也不能错过等输入。合并后以 main 语义为准，兜底门槛（quit-intent）不变。
     setDaemonQuitIntent('background');
     platformMocks.focusedWindow = {};
     notificationService.notifyNeedsInput({ sessionId: 's1', title: 't', body: 'b' });
-    expect(platformMocks.broadcast).not.toHaveBeenCalled();
-    expect(nativeSender).not.toHaveBeenCalled();
+    expect(platformMocks.broadcast).toHaveBeenCalledTimes(1);
+    expect(nativeSender).toHaveBeenCalledTimes(1);
   });
 
   it('原生兜底只挂在 needs_input 上：任务完成通知在 background 下不弹原生', () => {

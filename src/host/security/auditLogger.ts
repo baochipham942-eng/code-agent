@@ -443,11 +443,13 @@ export class AuditLogger {
    */
   private getLogFilesInRange(startDate: Date, endDate: Date): string[] {
     const files: string[] = [];
-    const current = new Date(startDate);
+    // File names use UTC dates (getDateString), so enumerate UTC calendar days;
+    // local-calendar stepping skips the last day across a DST fall-back.
+    const current = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate()));
 
     while (current <= endDate) {
       files.push(this.getLogFilePath(this.getDateString(current)));
-      current.setDate(current.getDate() + 1);
+      current.setUTCDate(current.getUTCDate() + 1);
     }
 
     return files;

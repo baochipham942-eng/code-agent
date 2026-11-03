@@ -244,6 +244,22 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
     const job = await cronService.grantLoginPassThrough(jobId, siteOrigin);
     return { success: true, data: job } satisfies IPCResponse;
   },
+  // N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1：写授权是用户在任务详情面板的显式同意
+  // 动作（同 grantLoginPassThrough 的先例），文件夹解析在 cronWriteGrant.ts。
+  grantWriteScope: async (_ctx, payload) => {
+    const cronService = getCronService();
+    const jobId = getStringField(payload, 'jobId');
+    if (!jobId) throw new Error('Invalid cron job id');
+    const job = await cronService.grantWriteScope(jobId);
+    return { success: true, data: job } satisfies IPCResponse;
+  },
+  revokeWriteScope: async (_ctx, payload) => {
+    const cronService = getCronService();
+    const jobId = getStringField(payload, 'jobId');
+    if (!jobId) throw new Error('Invalid cron job id');
+    const job = await cronService.revokeWriteScope(jobId);
+    return { success: true, data: job } satisfies IPCResponse;
+  },
   deleteJob: async (_ctx, payload) => {
     const cronService = getCronService();
     const jobId = getStringField(payload, 'jobId');
@@ -265,6 +281,25 @@ const cronHandlers: RawDomainRouteHandlers<CronDomainRequest, void> = {
     const limit = getNumberField(payload, 'limit');
     const executions = cronService.getJobExecutions(jobId, limit);
     return { success: true, data: executions } satisfies IPCResponse;
+  },
+  getEventDecisions: async (_ctx, payload) => {
+    const jobId = getStringField(payload, 'jobId');
+    if (!jobId) throw new Error('Invalid cron job id');
+    const limit = getNumberField(payload, 'limit');
+    return { success: true, data: getCronService().getEventDecisions(jobId, limit) } satisfies IPCResponse;
+  },
+  getEventActionModeChange: async (_ctx, payload) => {
+    const jobId = getStringField(payload, 'jobId');
+    if (!jobId) throw new Error('Invalid cron job id');
+    return { success: true, data: getCronService().getEventActionModeChange(jobId) } satisfies IPCResponse;
+  },
+  setEventActionMode: async (_ctx, payload) => {
+    // 唯一能把事件自动化切到 auto 的入口（renderer 侧为确认弹窗动作）；updateJob 里的 actionMode 被忽略。
+    const jobId = getStringField(payload, 'jobId');
+    if (!jobId) throw new Error('Invalid cron job id');
+    const mode = getStringField(payload, 'mode');
+    if (mode !== 'observe' && mode !== 'auto') throw new Error('Invalid cron action mode');
+    return { success: true, data: await getCronService().setEventActionMode(jobId, mode) } satisfies IPCResponse;
   },
   getRecentExecutions: async (_ctx, payload) => {
     const cronService = getCronService();

@@ -150,6 +150,25 @@ export function assertExternalSubagentProfile(
   throw new Error('External subagent permission profile must be read_only or workspace_write.');
 }
 
+/**
+ * Imported external-history chats (engine origin 'import') are read-only records:
+ * a send must fork a Neo-native continuation instead of launching the external
+ * engine. One shared message so desktop sendMessage, the web /run route, and the
+ * engine selection path all surface the same plain-language reason.
+ */
+const IMPORTED_SESSION_SEND_BLOCKED_MESSAGE = [
+  'This chat is an imported read-only history.',
+  'Send your message from its Neo continuation instead — the imported record never changes.',
+].join(' ');
+
+export function assertImportedEngineSessionNotRunnable(engine: AgentEngineSessionMetadata): void {
+  // Only external-engine imports are read-only records; a native engine that merely
+  // carries origin 'import' (portable Neo export) keeps the regular native send path.
+  if (engine.origin === 'import' && isExternalAgentEngine(engine.kind)) {
+    throw new Error(IMPORTED_SESSION_SEND_BLOCKED_MESSAGE);
+  }
+}
+
 export function assertExternalEngineSessionAllowed(
   session: Session | null | undefined,
 ): asserts session is Session {
@@ -163,6 +182,9 @@ export function assertExternalEngineSessionAllowed(
     throw new Error('External Agent Engine execution is not allowed in read-only sessions.');
   }
   const origin = session.origin?.kind ?? 'manual';
+  if (origin === 'import') {
+    throw new Error(IMPORTED_SESSION_SEND_BLOCKED_MESSAGE);
+  }
   if (origin !== 'manual') {
     throw new Error(`External Agent Engine execution is not allowed for ${origin} sessions.`);
   }

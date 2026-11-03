@@ -40,6 +40,7 @@ import { createJevWarden } from './jevWarden';
 import { runToolStepGuardRails } from './toolStepGuardRails';
 import { createPlanExitFallbackState } from './planExitFallback';
 import { settlePlanExitFallbackOnTextBreak } from './planExitFallbackCard';
+import { settleRoleFlowStallOnTextBreak } from './roleFlowStallExit';
 import { generateAutoContinuationPrompt as buildAutoContinuationPrompt } from './truncationPrompts';
 
 // Import refactored modules
@@ -706,6 +707,14 @@ export class ConversationRuntime {
               },
             });
             if (fallbackOutcome === 'reminded') continue;
+            // FB-327 停摆出口：建/改角色严格流程以纯文本收尾、既无草稿也无问句时，
+            // 落一条用户可见的「继续/放弃」说明再结束，替代静默空闲（详见 roleFlowStallExit）。
+            await settleRoleFlowStallOnTextBreak({
+              ctx: this.ctx,
+              assembly: this.contextAssembly,
+              boundary: this.ctx.turn.skillToolBoundary,
+              finalText: response.type === 'text' ? (response.content ?? '') : '',
+            });
             break;
           }
         }

@@ -91,10 +91,13 @@ import {
 import { registerAgentCancelRoute } from './registerAgentCancelRoute';
 import { registerAgentContinueRoute } from './registerAgentContinueRoute';
 import {
+  admitDelegatedTurn,
   CloudRunRouteRuntime,
   handleCloudRunAdmission,
   registerCloudRunRoutes,
 } from './cloudRunRoutes';
+import { channelCloudRuntimeDeps, wireChannelCloudRun } from './cloudChannelRun';
+import { isWebServiceMode } from '../middleware/auth';
 import { CloudCronScheduler } from '../../host/services/cloudRun/cloudCronScheduler';
 import type { CloudRunState } from '../../shared/contract/cloudRun';
 import type { CloudRunLedger } from '../../host/services/cloudRun/cloudRunLedger';
@@ -380,10 +383,15 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     },
     hasActiveRun: (sessionId) => Boolean(runRegistry.getBySessionId(sessionId)),
     runEnvelope: async (envelope, response, onActivated, options) => {
-      await runAgentTurn(buildQueuedAgentRunBody(envelope), response, {
+      const runBody = buildQueuedAgentRunBody(envelope);
+      const origin = options?.delegationOrigin;
+      if (origin && await admitDelegated(runBody, origin, (cloudBody, cloudRunId) => runAgentTurn(cloudBody, response, {
+        connectedClient: false, onDurableActivated: onActivated, delegationOrigin: origin, cloudRunId,
+      }))) return;
+      await runAgentTurn(runBody, response, {
         connectedClient: false,
         onDurableActivated: onActivated,
-        ...(options?.delegationOrigin ? { delegationOrigin: options.delegationOrigin } : {}),
+        ...(origin ? { delegationOrigin: origin } : {}),
       });
     },
     emitAgentEvent: (sessionId, event) => {
@@ -410,17 +418,37 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     },
     logger,
   });
+  // ADR-087 S4B：服务模式把通道入站接进云端账本（admit 唯一入口），并给提升的
+  // channel 行装执行体；桌面态两样都不装，通道行为不变。
+  const getCloudLedger = () => deps.getCloudRunLedger?.() ?? getDatabase().getCloudRunLedger();
+  const channelCloud = isWebServiceMode()
+    ? wireChannelCloudRun({ getLedger: getCloudLedger, logger })
+    : undefined;
   const cloudRunRuntime = new CloudRunRouteRuntime({
-    getLedger: () => deps.getCloudRunLedger?.() ?? getDatabase().getCloudRunLedger(),
+    getLedger: getCloudLedger,
     runRegistry,
-    execute: (body, cloudRunId) => runAgentTurn(body, createOfflineAgentRunResponseSink(), {
+    ...channelCloudRuntimeDeps(channelCloud),
+    execute: (body, cloudRunId, options) => runAgentTurn(body, createOfflineAgentRunResponseSink(), {
       connectedClient: false,
       cloudRunId,
+      ...(options?.delegationOrigin ? { delegationOrigin: options.delegationOrigin } : {}),
+      ...(options?.onDurableActivated ? { onDurableActivated: options.onDurableActivated } : {}),
     }),
+    // ADR-072 INV-4（rework r1）：排进账本的委托提升起跑时回填 target_run_id。
+    onDelegateRunActivated: ({ queuedInputId, sessionId, runId }) =>
+      delegationHooks.onActivated({ id: queuedInputId, sessionId }, { runId }),
     // ADR-081/087 S4B：manual 云端轮准入即打「跑过云」粘性会话标记（永不清理）。
     markSessionExecutionEnvironment,
     logger,
   });
+  const admitDelegated = async (
+    body: AgentRunBody,
+    delegationOrigin: import('../../shared/contract/queuedInput').DelegationOriginMarker,
+    runInline: (body: AgentRunBody, cloudRunId: string) => Promise<void>,
+  ): Promise<boolean> => (await admitDelegatedTurn({
+    runtime: cloudRunRuntime, body, delegationOrigin, runInline, logger,
+    readSessionMetadata: async (sid) => (await (await tryGetSessionManager())?.getSession?.(sid, 1))?.metadata,
+  })) !== 'direct';
   deps.registerQueuedInputStartupSweep?.(() => {
     queuedInputDrain.runStartupSweep();
     void cloudRunRuntime.runStartupSweep().catch((error) => {
@@ -438,18 +466,20 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
   deps.registerQueuedInputEnqueueHook?.((sessionId) => queuedInputDrain.handleEnqueued(sessionId));
   deps.registerQueuedInputSendNowHook?.(async ({ id, sessionId, envelope, delegationOrigin }, route) => {
     if (route === 'idle') {
+      const idleBody = buildQueuedAgentRunBody({ ...envelope, clientMessageId: id, sessionId });
+      // I2/INV-4：sendNow 空闲分支也要回填 target_run_id（此前漏传 onDurableActivated）。
+      const onDurableActivated = ({ runId }: { runId: string }) => delegationHooks.onActivated({ id, sessionId }, { runId });
+      if (delegationOrigin && await admitDelegated(idleBody, delegationOrigin, (cloudBody, cloudRunId) => runAgentTurn(
+        cloudBody, createOfflineAgentRunResponseSink(),
+        { connectedClient: false, delegationOrigin, cloudRunId, onDurableActivated },
+      ))) return 'sent';
       await runAgentTurn(
-        buildQueuedAgentRunBody({
-          ...envelope,
-          clientMessageId: id,
-          sessionId,
-        }),
+        idleBody,
         createOfflineAgentRunResponseSink(),
         {
           connectedClient: false,
           ...(delegationOrigin ? { delegationOrigin } : {}),
-          // I2/INV-4：sendNow 空闲分支也要回填 target_run_id（此前漏传 onDurableActivated）。
-          onDurableActivated: ({ runId }) => delegationHooks.onActivated({ id, sessionId }, { runId }),
+          onDurableActivated,
         },
       );
       return 'sent';
@@ -1799,6 +1829,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         body,
         res,
         runtime: cloudRunRuntime,
+        logger,
         runInline: (cloudBody, cloudRunId) => runAgentTurn(cloudBody, res, {
           connectedClient: true,
           requestToken: extractRequestToken(req),

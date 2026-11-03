@@ -45,6 +45,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 const Database = loadBetterSqlite3(moduleDir, logger);
 import type { Session, Message, ToolResult, ModelProvider, TodoItem, SessionTask } from '../../../shared/contract';
 import type { ContextInterventionAction, ContextInterventionSnapshot } from '../../../shared/contract/contextView';
+import type { MemoryChangeJournalContext, MemoryChangeJournalRow } from '../../../shared/contract/memory';
 import type { CaptureItem, CaptureSource, CaptureStats } from '../../../shared/contract/capture';
 import { SessionForkError } from '../../../shared/contract/sessionFork';
 
@@ -2273,6 +2274,17 @@ export class DatabaseService extends DurableRunDatabaseSupport {
       input.namespace,
     );
   }
+  /** 导入历史撤销用：导入台账里 exportId 对应的 Neo 根会话 id（只读）。
+   *  notAfter 传历史条目记录时刻，只命中该条目自己那次导入写下的台账行。 */
+  findSessionForkImportRoot(sourceExportId: string, notAfter?: number): string | null {
+    this.ensureDb();
+    return this.sessionForkPortabilityRepo.findImportedRootSessionId(sourceExportId, notAfter);
+  }
+  /** 导入历史撤销用：会话是否已有未删除的 fork 子会话（只读）。 */
+  hasLiveSessionForkChild(sessionId: string): boolean {
+    this.ensureDb();
+    return this.sessionForkPortabilityRepo.hasLiveForkChild(sessionId);
+  }
   async prepareImportedIsolatedWorkspace(
     input: PublishImportedIsolatedWorkspaceInput,
   ): Promise<PreparedImportedIsolatedWorkspace> {
@@ -3316,9 +3328,9 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   }
 
   // --- MemoryRepository ---
-  createMemory(data: Omit<import('./repositories').MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>): import('./repositories').MemoryRecord {
+  createMemory(data: Omit<import('./repositories').MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>, journal?: MemoryChangeJournalContext): import('./repositories').MemoryRecord {
     this.ensureWritable();
-    return this.memoryRepo.createMemory(data);
+    return this.memoryRepo.createMemory(data, journal);
   }
   getMemory(id: string): import('./repositories').MemoryRecord | null {
     this.ensureDb();
@@ -3328,17 +3340,25 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     return this.memoryRepo.listMemories(options);
   }
-  updateMemory(id: string, updates: Partial<import('./repositories').MemoryRecord>): import('./repositories').MemoryRecord | null {
+  updateMemory(id: string, updates: Partial<import('./repositories').MemoryRecord>, journal?: MemoryChangeJournalContext): import('./repositories').MemoryRecord | null {
     this.ensureDb();
-    return this.memoryRepo.updateMemory(id, updates);
+    return this.memoryRepo.updateMemory(id, updates, journal);
   }
-  deleteMemory(id: string): boolean {
+  deleteMemory(id: string, journal?: MemoryChangeJournalContext): boolean {
     this.ensureDb();
-    return this.memoryRepo.deleteMemory(id);
+    return this.memoryRepo.deleteMemory(id, journal);
   }
-  deleteMemories(filter: { type?: string; category?: string; source?: string; projectPath?: string; sessionId?: string }): number {
+  deleteMemories(filter: { type?: string; category?: string; source?: string; projectPath?: string; sessionId?: string }, journal?: MemoryChangeJournalContext): number {
     this.ensureDb();
-    return this.memoryRepo.deleteMemories(filter);
+    return this.memoryRepo.deleteMemories(filter, journal);
+  }
+  listMemoryJournal(request: { entryId?: string; memoryId?: string; limit?: number }): MemoryChangeJournalRow[] {
+    this.ensureDb();
+    return this.memoryRepo.listMemoryJournal(request);
+  }
+  latestMemoryChanges(): Array<Pick<MemoryChangeJournalRow, 'memoryId' | 'entryId' | 'actor' | 'operation' | 'timestamp'>> {
+    this.ensureDb();
+    return this.memoryRepo.latestMemoryChanges();
   }
   searchMemories(
     query: string,

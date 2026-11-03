@@ -76,6 +76,7 @@ import { computeActionFingerprint, getDenialRegistry } from '../security/denialR
 import { computePolicyHash } from '../permissions/policyHash';
 import { normalizePermissionAskResult, type RequestPermissionResult } from '../../shared/contract/permission';
 import { applyEditedArgs } from '../../shared/contract/permissionEdit';
+import { interceptObserveModeToolCall } from './observeModeGate';
 import { EXTERNAL_SIDE_EFFECT_TRACE_RULE, EXTERNAL_SIDE_EFFECT_TRACE_REASON, isExternalSideEffectTool, extractStandingGrantTarget } from './externalSideEffect';
 import { maskMailSendOutboundParams, OUTBOUND_MASK_REASON_LINE } from './outboundGuard';
 import { isRunPathInsideWorkspace, resolveCanonicalRunPath, type RunContext } from '../runtime/runContext';
@@ -406,6 +407,9 @@ export interface ExecuteOptions {
   allowedToolNames?: readonly string[];
   // 本轮 allowedToolNames 只是会话指挥台前台 brain 自己的工具面（ADR-059），不是 run 级硬边界：子代理不继承它，按角色声明拿工具（N-SUBAGENT-WEBSEARCH-INHERIT）。
   foregroundToolFace?: boolean;
+  // strict skill 流程面（create-role/edit-role）的 canonical 工具名：白名单判定的
+  // 合法补充（与 toolScope 同档，不放宽显式 deny）。边界内工具不被前台白名单拦（FB-327）。
+  skillBoundaryAllowedTools?: readonly string[];
   skillDiscoveryService?: SkillDiscoveryService;
   // 内部标记：本次调用由 ctx.executeTool 发起（PTC 脚本里的一次 tools.X()）。
   // 唯一作用是不给嵌套出来的 context 再签发 executeTool —— 一层封顶，防递归。
@@ -674,6 +678,9 @@ export class ToolExecutor {
     // 审批卡/短路匹配/真实发送三方一致（见 outboundGuard.ts 头注）。
     const outboundMask = maskMailSendOutboundParams(executionToolName, params);
     if (outboundMask.redacted) params = outboundMask.params;
+    // N-TRIGGER-OBSERVE-MODE：观察档事件运行的对外副作用调用在审批/缓存/派发前拦下记 would_act（只加 deny）。
+    const observeModeResult = interceptObserveModeToolCall(effectiveSessionId, executionToolName, params);
+    if (observeModeResult) return observeModeResult;
     const writeWithoutWorkspaceAuthority = Boolean(
       this.runContext
       && !this.runContext.workspaceScope
@@ -794,6 +801,7 @@ export class ToolExecutor {
       deniedToolNames: options.deniedToolNames,
       allowedToolNames: options.allowedToolNames,
       toolScope: options.toolScope,
+      skillBoundaryAllowedTools: options.skillBoundaryAllowedTools,
     }, executionToolName)) {
       logger.warn('Tool blocked by run tool policy', { toolName: executionToolName });
       recordDecision(executionToolName, params, 'policy-deny', 'run tool policy (--tools/--disallowed-tools)', Date.now(), undefined, effectiveSessionId, this.ledgerOrigin);
@@ -1227,6 +1235,7 @@ export class ToolExecutor {
       topology: executionTopology,
       sessionId: effectiveSessionId,
       agentId: options.agentId,
+      permissionLevel: toolDef.permissionLevel,
     });
     if (guardFabricGate.deny) {
       recordDecision(
@@ -2117,6 +2126,19 @@ export class ToolExecutor {
       // 把 $HOME 写边界 ask 自动批掉、文件真落盘。
       if (readOnlyForcesConfirmation || guardFabricForcesApproval || boundaryAskForcesConfirmation || protectedWriteForcesConfirmation || unresolvedWriteTargetForcesAsk) {
         permissionRequest.forceConfirm = true;
+        // 返修 r2：记录 forceConfirm 的成因形态。W3 写边界 ask 是唯一成因（且无 peer
+        // 触发）时标 boundary-only——定时任务写授权只放行这一种 forceConfirm，其余成因
+        // （只读档/guardFabric/保护路径/不确定目标/peer 触发/确认门）照旧人工。
+        if (
+          boundaryAskForcesConfirmation
+          && !readOnlyForcesConfirmation
+          && !guardFabricForcesApproval
+          && !protectedWriteForcesConfirmation
+          && !unresolvedWriteTargetForcesAsk
+          && !peerOriginForcesConfirmation
+        ) {
+          permissionRequest.forceConfirmBoundaryOnly = true;
+        }
       }
       if (unresolvedWriteTargetForcesAsk) {
         permissionRequest.reasonCode = PermissionRequestReason.UncertainWriteTargetWithPathDeny;
@@ -2158,6 +2180,8 @@ export class ToolExecutor {
         }
         if (shouldForceConfirm) {
           permissionRequest.forceConfirm = true;
+          // 确认门也是 forceConfirm 成因之一：boundary-only 标记必须摘掉（返修 r2）。
+          permissionRequest.forceConfirmBoundaryOnly = false;
           permissionRequest.dangerLevel = riskLevel === 'high'
             ? 'danger'
             : (riskLevel === 'medium' ? 'warning' : 'normal');

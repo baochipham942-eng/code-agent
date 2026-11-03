@@ -36,10 +36,12 @@ import ipcService from '../../../../services/ipcService';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useAppStore } from '../../../../stores/appStore';
 import { useExternalImportStore } from '../../../../stores/externalImportStore';
+import { useExternalImportHistoryStore } from '../../../../stores/externalImportHistoryStore';
 import { Button, Toggle } from '../../../primitives';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { SettingsSection } from '../SettingsLayout';
 import { ExternalChatsImportSection } from './ExternalChatsImportSection';
+import { ExternalImportHistory } from './ExternalImportHistory';
 import { countImportableRules, ExternalImportInstructionRules, type DirectiveState } from './ExternalImportInstructionRules';
 
 /** 页面类别列：新类别（K1B 的 MCP servers）在此加一档 + 对应 host handler。 */
@@ -206,6 +208,7 @@ export const ExternalImportSettings: React.FC = () => {
       const directivesImported = Object.values(directiveStates).filter((state) => state === 'imported').length;
       setResults({ memory, skills, directivesImported });
       setStep('results');
+      if (skills) await useExternalImportHistoryStore.getState().load();
       await refreshDetection();
     } catch (error) {
       setMessage({ type: 'error', text: error instanceof Error ? error.message : copy.applyFailed });
@@ -285,6 +288,7 @@ export const ExternalImportSettings: React.FC = () => {
       <SettingsSection title={copy.title} description={copy.description}>
         <div data-testid="external-import-empty" className="text-sm text-zinc-500">{copy.noSources}</div>
         <ExternalChatsImportSection />
+        <ExternalImportHistory />
       </SettingsSection>
     );
   }
@@ -445,6 +449,8 @@ export const ExternalImportSettings: React.FC = () => {
           </div>
         )}
       </div>
+
+      <ExternalImportHistory />
 
       <ConfirmDialog
         isOpen={pendingConfirm !== null}

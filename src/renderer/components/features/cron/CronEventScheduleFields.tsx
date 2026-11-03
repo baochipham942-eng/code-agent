@@ -10,7 +10,7 @@
 // 选完调度类型不立刻报）。
 // ============================================================================
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '../../primitives/Button';
 import { Input } from '../../primitives/Input';
 import { Select } from '../../primitives/Select';
@@ -139,6 +139,44 @@ export const CronEventScheduleFields: React.FC<CronEventScheduleFieldsProps> = (
   const chatNotice = autoPreselect && !chatId
     ? (wantedName && !nameFoundInAccount ? 'notFound' : 'any')
     : null;
+  // 点名了群却没选群时确认卡会拦确认；放行入口必须是独立按钮——原生 select 重选已选中的
+  // 「任意会话」不触发 change，账号没有任何群 / 只能手填时更没有别的项可切。
+  const [anyChosen, setAnyChosen] = useState(false);
+  useEffect(() => {
+    setAnyChosen(false);
+  }, [accountId, chatId]);
+  const chooseAnyChat = () => {
+    setAnyChosen(true);
+    onChatChange('');
+    onAnyChatChosen?.();
+  };
+  const chatNoticeBlock = chatNotice && (
+    <div
+      className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-badge-warning"
+      data-testid={chatNotice === 'notFound' ? 'cron-event-chat-not-found' : 'cron-event-chat-any-notice'}
+    >
+      <p>
+        {chatNotice === 'notFound'
+          ? cc.eventChatNotFoundNotice.replace('{name}', wantedName ?? '')
+          : cc.eventChatAnyNotice}
+      </p>
+      {wantedName && (
+        anyChosen ? (
+          <p className="mt-1.5" data-testid="cron-event-chat-any-chosen">{cc.eventChatAnyChosen}</p>
+        ) : (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="mt-1.5"
+            data-testid="cron-event-chat-choose-any"
+            onClick={chooseAnyChat}
+          >
+            {cc.eventChatChooseAny}
+          </Button>
+        )
+      )}
+    </div>
+  );
   const chatOptions = [
     { value: '', label: cc.eventChatAny },
     ...(!chatListed && chatId ? [{ value: chatId, label: chatId }] : []),
@@ -201,16 +239,7 @@ export const CronEventScheduleFields: React.FC<CronEventScheduleFieldsProps> = (
             />
           </FormField>
           <p className="mt-1 text-xs text-zinc-500">{cc.eventChatHint}</p>
-          {chatNotice && (
-            <div
-              className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-badge-warning"
-              data-testid={chatNotice === 'notFound' ? 'cron-event-chat-not-found' : 'cron-event-chat-any-notice'}
-            >
-              {chatNotice === 'notFound'
-                ? cc.eventChatNotFoundNotice.replace('{name}', wantedName ?? '')
-                : cc.eventChatAnyNotice}
-            </div>
-          )}
+          {chatNoticeBlock}
         </div>
       )}
 
@@ -230,6 +259,7 @@ export const CronEventScheduleFields: React.FC<CronEventScheduleFieldsProps> = (
           <p className="mt-1 text-xs text-zinc-500">
             {conversationState.error ? cc.resultPushListFailed : cc.eventChatManualHint}
           </p>
+          {chatNoticeBlock}
         </div>
       )}
 

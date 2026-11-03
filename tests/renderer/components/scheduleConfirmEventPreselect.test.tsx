@@ -185,18 +185,51 @@ describe('ScheduleConfirmCard event auto-preselect', () => {
 
     await waitFor(() => expect(accountSelect().value).toBe('acc-a'));
     const notice = await screen.findByTestId('cron-event-chat-not-found');
-    expect(notice.textContent).toBe(cc.eventChatNotFoundNotice.replace('{name}', '不存在的群'));
+    expect(notice.textContent).toContain(cc.eventChatNotFoundNotice.replace('{name}', '不存在的群'));
     expect(confirmButton().disabled).toBe(true);
 
-    // 显式选「任意会话」放行（不是静默默认）；群名仍没找到，「没找到」提示继续留着。
-    fireEvent.change(await chatSelect(), { target: { value: '' } });
+    // 显式点「改为监听所有会话」放行（不是静默默认；原生 select 重选已选中项不触发 change，
+    // 所以放行入口是独立按钮）；群名仍没找到，「没找到」提示继续留着。
+    fireEvent.click(screen.getByTestId('cron-event-chat-choose-any'));
     await waitFor(() => expect(confirmButton().disabled).toBe(false));
     expect(screen.getByTestId('cron-event-chat-not-found')).toBeTruthy();
+    expect(screen.getByTestId('cron-event-chat-any-chosen')).toBeTruthy();
 
     // 另一条路径：选具体群同样放行。
     fireEvent.change(await chatSelect(), { target: { value: 'oc_rel' } });
     expect(confirmButton().disabled).toBe(false);
     expect(screen.queryByTestId('cron-event-chat-not-found')).toBeNull();
+  });
+
+  it('③ named group, account has NO groups at all: the explicit button is the only way out and it works', async () => {
+    mockCatalog([workA], { 'acc-a': [] });
+    render(<Harness initial={makeDraft(11, '发布群')} />);
+
+    await waitFor(() => expect(accountSelect().value).toBe('acc-a'));
+    await screen.findByTestId('cron-event-chat-not-found');
+    expect(confirmButton().disabled).toBe(true);
+    // 下拉里只有「任意会话」一项，已选中，没有别的可切。
+    expect((await chatSelect()).options.length).toBe(1);
+
+    fireEvent.click(screen.getByTestId('cron-event-chat-choose-any'));
+    await waitFor(() => expect(confirmButton().disabled).toBe(false));
+  });
+
+  it('③ manual-input branch (account cannot list chats): shows why confirm is blocked and offers the explicit way out', async () => {
+    ipc.invoke.mockImplementation(async (channel: string) => {
+      if (channel === IPC_CHANNELS.CHANNEL_LIST_ACCOUNTS) return [workA];
+      if (channel === IPC_CHANNELS.CHANNEL_LIST_CONVERSATIONS) return { supported: false, conversations: [] };
+      return undefined;
+    });
+    render(<Harness initial={makeDraft(12, '发布群')} />);
+
+    await waitFor(() => expect(accountSelect().value).toBe('acc-a'));
+    await screen.findByLabelText('会话 / 群 ID（可选）');
+    expect(screen.getByTestId('cron-event-chat-not-found')).toBeTruthy();
+    expect(confirmButton().disabled).toBe(true);
+
+    fireEvent.click(screen.getByTestId('cron-event-chat-choose-any'));
+    await waitFor(() => expect(confirmButton().disabled).toBe(false));
   });
 
   it('draft replacement resets: a new draft is auto-preselected again', async () => {

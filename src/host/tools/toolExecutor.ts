@@ -1235,6 +1235,7 @@ export class ToolExecutor {
       topology: executionTopology,
       sessionId: effectiveSessionId,
       agentId: options.agentId,
+      permissionLevel: toolDef.permissionLevel,
     });
     if (guardFabricGate.deny) {
       recordDecision(

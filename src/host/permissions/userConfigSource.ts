@@ -12,6 +12,7 @@
 // ============================================================================
 
 import type { GuardSource, GuardRequest, GuardSourceResult, GuardVerdict } from './guardFabric';
+import { resolveGuardLevel } from './guardFabric';
 import { getPolicyEngine } from './policyEngine';
 import { resolveEffectivePolicyRules } from './runPolicySnapshot';
 import { createLogger } from '../services/infra/logger';
@@ -29,7 +30,7 @@ export class UserConfigSource implements GuardSource {
       // N-PERM-POLICYVERSION E3：按 run 有效规则评估（外部放宽不作用于已开始的 run）。
       const result = getPolicyEngine().evaluate({
         tool: request.tool,
-        level: 'execute',
+        level: resolveGuardLevel(request.level),
         description: `tool: ${request.tool}`,
         command: request.args?.command as string,
         filePath: (request.args?.filePath as string) || (request.args?.file_path as string),

@@ -35,6 +35,12 @@ describe('isPrivateOrLocalHost', () => {
     expect(isPrivateOrLocalHost('api.openai.com')).toBe(false);
     expect(isPrivateOrLocalHost('dashscope-result.oss-cn.aliyuncs.com')).toBe(false);
   });
+  it('localhost 变体（FQDN 尾点 / *.localhost 子域）判为私有（N-WEBFETCH-BLOCK-PRIVATE-NET）', () => {
+    expect(isPrivateOrLocalHost('localhost.')).toBe(true); // WHATWG URL 保留尾点
+    expect(isPrivateOrLocalHost('foo.localhost')).toBe(true); // RFC 6761/6762 解析到环回
+    expect(isPrivateOrLocalHost('BAR.localhost')).toBe(true); // 大小写归一后命中
+    expect(isPrivateOrLocalHost('example.com.')).toBe(false); // 公网域名的 FQDN 尾点形式仍放行
+  });
   it('IPv6 环回/ULA/链路本地判为私有（含方括号字面量）', () => {
     expect(isPrivateOrLocalHost('[::1]')).toBe(true);
     expect(isPrivateOrLocalHost('::1')).toBe(true);

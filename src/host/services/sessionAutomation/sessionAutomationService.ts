@@ -24,6 +24,7 @@ import {
   type CronRunGroupable,
 } from '../../../shared/cronRunDigest';
 import type { ParkedApprovalInboxItem, ToolApprovalPayload } from '../../../shared/contract/pendingApproval';
+import type { AwaitingApprovalRun } from '../../../shared/contract/sessionAutomation';
 import { getDatabase } from '../core/databaseService';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
@@ -578,6 +579,62 @@ export class SessionAutomationService {
         standingGrantTarget: payload.standingGrantTarget ?? null,
       };
     });
+  }
+
+  /**
+   * 无人值守停车可见性（N-CRON-UNATTENDED-BASH-PARK-STUCK）：pending 审批行 →
+   * 其会话 origin 是 cron/heartbeat 时，交出 jobId（origin.id）/executionId（sourceRunId）。
+   * 会话缺失或 origin 不可解析：跳过并 warn 留痕（不静默丢）。交互会话不在结果里。
+   */
+  listAwaitingApprovalRuns(): AwaitingApprovalRun[] {
+    let repo;
+    try {
+      repo = getDatabase().getPendingApprovalRepo();
+    } catch {
+      return [];
+    }
+    const rows = [
+      ...repo.listByKindAndStatus('tool_approval', 'pending'),
+      ...repo.listByKindAndStatus('directory_access', 'pending'),
+    ];
+    const out: AwaitingApprovalRun[] = [];
+    const seen = new Set<string>();
+    for (const row of rows) {
+      let payload: Partial<ToolApprovalPayload>;
+      try {
+        payload = JSON.parse(row.payloadJson) as Partial<ToolApprovalPayload>;
+      } catch {
+        logger.warn('Awaiting-approval run skipped: payload unreadable', { requestId: row.id });
+        continue;
+      }
+      const sessionId = payload.sessionId ?? row.coordinatorId ?? null;
+      if (!sessionId) {
+        logger.warn('Awaiting-approval run skipped: no sessionId', { requestId: row.id });
+        continue;
+      }
+      if (seen.has(sessionId)) continue;
+      const session = getDatabase().getSession(sessionId);
+      if (!session) {
+        logger.warn('Awaiting-approval run skipped: session row missing', { requestId: row.id, sessionId });
+        continue;
+      }
+      const origin = session.origin;
+      if (!origin || (origin.kind !== 'cron' && origin.kind !== 'heartbeat')) {
+        continue;
+      }
+      if (!origin.id) {
+        logger.warn('Awaiting-approval run skipped: session origin has no job id', { requestId: row.id, sessionId, kind: origin.kind });
+        continue;
+      }
+      seen.add(sessionId);
+      out.push({
+        jobId: origin.id,
+        executionId: session.sourceRunId ?? null,
+        requestId: row.id,
+        requestedAt: payload.requestedAt ?? row.submittedAt,
+      });
+    }
+    return out;
   }
 
   /** 用户过目：清 pendingReview 标记；一次性任务的 pending_review 状态转 archived。不写回流消息。 */

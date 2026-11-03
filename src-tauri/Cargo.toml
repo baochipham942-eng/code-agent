@@ -30,6 +30,7 @@ objc2 = "0.6"
 objc2-app-kit = { version = "0.3", features = ["NSBitmapImageRep", "NSImage", "NSWorkspace", "NSWindow", "NSResponder", "NSView", "NSControl", "NSButton", "block2"] }
 block2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSData", "NSDictionary", "NSGeometry", "NSString", "NSURL"] }
+objc2-user-notifications = { version = "0.3", default-features = false, features = ["std", "UNNotificationSettings", "UNUserNotificationCenter", "block2"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

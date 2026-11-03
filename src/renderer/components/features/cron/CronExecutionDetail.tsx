@@ -32,9 +32,17 @@ function failureAction(kind: CronFailurePresentationKind): 'model' | 'account' |
 interface CronExecutionDetailProps {
   execution: CronJobExecution | null;
   runsOn?: CronJobDefinition['runsOn'];
+  /** 等批准运行（N-CRON-UNATTENDED-BASH-PARK-STUCK）：状态 chip 换 amber 徽章 + 一句提示 + 去处理。 */
+  awaitingRun?: { executionId: string | null } | null;
+  onReviewAwaiting?: () => void;
 }
 
-export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execution, runsOn = 'local' }) => {
+export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
+  execution,
+  runsOn = 'local',
+  awaitingRun = null,
+  onReviewAwaiting,
+}) => {
   const { t, language } = useI18n();
   const cc = t.cronCenter;
   const switchSession = useSessionStore((state) => state.switchSession);
@@ -106,11 +114,38 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
               {isOpeningSession ? cc.execOpeningSession : cc.execOpenSession}
             </button>
           )}
-          <span className={`rounded-full px-2.5 py-1 text-xs ${statusMeta.className}`}>
-            {cc.status[execution.status]}
-          </span>
+          {execution.status === 'running' && awaitingRun != null ? (
+            <span
+              className="rounded-full border border-badge-warning/40 bg-amber-500/15 px-2.5 py-1 text-xs text-badge-warning"
+              data-testid="cron-exec-detail-awaiting-approval"
+            >
+              {cc.awaitingApprovalBadge}
+            </span>
+          ) : (
+            <span className={`rounded-full px-2.5 py-1 text-xs ${statusMeta.className}`}>
+              {cc.status[execution.status]}
+            </span>
+          )}
         </div>
       </div>
+
+      {execution.status === 'running' && awaitingRun != null && (
+        <div
+          className="mx-1 mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-badge-warning/30 bg-amber-500/5 px-3 py-2"
+          data-testid="cron-exec-detail-awaiting-approval-hint"
+        >
+          <span className="text-xs text-zinc-400">{cc.awaitingApprovalHint}</span>
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            onClick={onReviewAwaiting}
+            data-testid="cron-exec-detail-awaiting-approval-action"
+          >
+            {cc.awaitingApprovalAction}
+          </Button>
+        </div>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-2">
         <Info label={cc.execSession} value={execution.sessionId || '—'} />

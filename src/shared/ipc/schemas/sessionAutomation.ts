@@ -14,6 +14,7 @@ const SessionAutomationDomainRequestSchema = z.object({
     'countPendingReview',
     'getSessionSummary',
     'listBySession',
+    'listAwaitingApprovalRuns',
     'listParkedApprovals',
     'listPendingReview',
     'markReviewed',

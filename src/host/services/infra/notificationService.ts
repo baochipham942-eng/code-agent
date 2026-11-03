@@ -217,6 +217,7 @@ class NotificationService implements Disposable {
       body: entry.body,
       sessionId: data.sessionId,
       urgent: true,
+      markSessionUnread: true,
     });
     logger.info('Needs-input notification sent', { title: data.title });
   }
@@ -263,7 +264,7 @@ class NotificationService implements Disposable {
       ...(data.siteOrigin ? { siteOrigin: data.siteOrigin } : {}),
       ...(data.failureKind ? { failureKind: data.failureKind } : {}),
       ...(data.resetAt ? { resetAt: data.resetAt } : {}),
-      ...(intent === 'task_failed' ? { urgent: true, failure: true } : {}),
+      ...(intent === 'task_failed' ? { urgent: true, failure: true, markSessionUnread: true } : {}),
     });
     logger.info('Notification dispatched to renderer', { sessionTitle });
   }

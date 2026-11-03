@@ -135,6 +135,22 @@ describe.skipIf(!darwin)('native connector preload from enabledNative', () => {
     expect(warns.some((w) => w.includes('reason: not-registered'))).toBe(true);
   });
 
+  it('registry configured after the first turn: the next turn gets all three connectors write tools', () => {
+    mocks.enabledNative = ALL;
+    getConnectorRegistry().configure([]);
+
+    expect(getDeferredToolsToPreloadForTurn(turn(PROMPT))).toEqual([]);
+    expect(warnReasons().filter((w) => w.includes('reason: not-registered'))).toHaveLength(3);
+
+    getConnectorRegistry().configure(ALL);
+    mocks.warn.mockClear();
+
+    const names = getDeferredToolsToPreloadForTurn(turn(PROMPT));
+    expect(names).toEqual(expect.arrayContaining(WRITE_TOOLS));
+    expect(preloadDeferredToolsForTurn(turn(PROMPT))).toEqual(expect.arrayContaining(WRITE_TOOLS));
+    expect(mocks.warn).not.toHaveBeenCalled();
+  });
+
   it('not enabled: nothing preloaded, warns not-enabled', () => {
     enable([]);
 

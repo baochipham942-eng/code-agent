@@ -65,3 +65,17 @@ describe('needs_input 在聚焦时也投递', () => {
     );
   });
 });
+
+describe('markSessionUnread 随 urgent 通知下发', () => {
+  it('失败与 needs-input 带 markSessionUnread:true，普通完成不带', () => {
+    platformState.focused = false;
+    notificationService.notifyTaskComplete({ sessionId: 's', sessionTitle: 'T', duration: 1, toolsUsed: [], succeeded: false });
+    notificationService.notifyNeedsInput({ sessionId: 's', title: '需要授权 - T', body: 'bash' });
+    notificationService.notifyTaskComplete({ sessionId: 's', sessionTitle: 'T', duration: 1, toolsUsed: [] });
+    const payloads = broadcastToRenderer.mock.calls.map((c) => c[1] as Record<string, unknown>);
+    expect(payloads).toHaveLength(3);
+    expect(payloads[0]).toMatchObject({ failure: true, markSessionUnread: true });
+    expect(payloads[1]).toMatchObject({ urgent: true, markSessionUnread: true });
+    expect(payloads[2].markSessionUnread).toBeUndefined();
+  });
+});

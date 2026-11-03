@@ -13,6 +13,7 @@ interface CronFailureCopy {
   loginWallNotificationBody: string;
   failureNotificationTitle: string;
   failureToastView: string;
+  missedAlertsMerged: string;
   failureQuotaWithReset: string;
   failureQuotaWithResetAndLimit: string;
   failureQuotaUnknown: string;

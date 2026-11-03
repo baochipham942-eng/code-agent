@@ -4,7 +4,7 @@
 // 装配方式镜像 ChatView 的接线（同 durableResume.continueState.test.tsx 的 ParkedComposer 先例），
 // composer 核心键（Stop/Continue）不在本单改动面，⑤ 只钉「没多出新的 composer 按钮」。
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const ipcInvoke = vi.hoisted(() => vi.fn(async () => undefined));
@@ -28,6 +28,9 @@ import { SendButton } from '../../../src/renderer/components/features/chat/ChatI
 
 const SESSION_ID = 'session-parked';
 const PARKED = { mode: 'continue', canContinue: true, runId: 'run-parked-1' };
+// 真跑（Rework r1）撞出的缺陷复现要用真 loadSessions（executeLoadSessions +
+// preserveParkedContinueOnRefresh），在首个用例覆写前抓原始引用。
+const realLoadSessions = useSessionStore.getState().loadSessions;
 
 // 与 ChatView 相同的接线：mode 行 + 停靠行（带放弃）+ confirmDialog + composer。
 function ParkedRow({ resume, turnActive }: {
@@ -148,5 +151,70 @@ describe('abandon entry in the durable resume notice row', () => {
     expect(screen.queryByTestId('continue-run-button')).toBeNull();
     expect(screen.getByRole('button', { name: /^(停止|Stop)$/ })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^(放弃|Abandon)$/ })).toBeNull();
+  });
+});
+
+// Rework r1：真跑暴露「确认放弃后停靠行不消失」。链路：run 已被 /api/cancel 终态化
+// （服务端投影已无 durableResume），但会话行 updatedAt 不动，loadSessions 的防陈旧
+// 快照守卫 preserveParkedContinueOnRefresh 把「可继续」投影原样复活 → 行永远在，
+// 只能整页重载才消。这里用真 loadSessions + 真 store 复刻该形状。
+describe('abandon clears the parked projection against the stale-guarded session refresh', () => {
+  const UPDATED_AT = 1_000;
+  function StoreDrivenRow({ turnActive }: { turnActive: boolean }) {
+    const resume = useSessionStore((state) => state.sessions.find((session) => session.id === SESSION_ID)?.durableResume);
+    const show = useDurableContinueVisible(resume, turnActive);
+    const abandon = useAbandonParkedRun(SESSION_ID, resume?.runId);
+    return (
+      <>
+        {show && (
+          <DurableResumeNotice text="parked" actions={
+            <button type="button" onClick={abandon.onAbandon}>放弃</button>
+          } />
+        )}
+        {abandon.confirmDialog}
+      </>
+    );
+  }
+
+  beforeEach(() => {
+    ipcInvoke.mockReset().mockResolvedValue(undefined);
+    toastError.mockClear();
+    useSessionStore.setState({
+      currentSessionId: SESSION_ID,
+      loadSessions: realLoadSessions,
+      // 停靠会话行：mode continue + canContinue（与 ChatView 从 sessions.find 取的投影同源）
+      sessions: [{
+        id: SESSION_ID,
+        title: 't',
+        updatedAt: UPDATED_AT,
+        createdAt: UPDATED_AT,
+        status: 'interrupted',
+        durableResume: { runId: 'run-parked-1', mode: 'continue', interruptCause: 'user_stop', autoResumeCount: 0, maxAutoResumeCount: 3, canContinue: true },
+      }] as never,
+    });
+    // 服务端真跑形状：run 已终态化 → 刷新回的同一行没有 durableResume、updatedAt 没动
+    window.domainAPI = {
+      invoke: vi.fn(async () => ({
+        success: true,
+        data: [{ id: SESSION_ID, title: 't', updatedAt: UPDATED_AT, createdAt: UPDATED_AT, status: 'interrupted' }],
+      })),
+    } as never;
+  });
+
+  it('confirmed abandon removes the row even though the refreshed row is not newer and carries no projection', async () => {
+    render(<StoreDrivenRow turnActive={false} />);
+    expect(screen.getByTestId('durable-resume-notice')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '放弃' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '放弃' }));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('durable-resume-notice')).toBeNull();
+    }, { timeout: 2_000 });
+    expect(useSessionStore.getState().sessions.find((session) => session.id === SESSION_ID)?.durableResume).toBeUndefined();
+  });
+
+  afterEach(() => {
+    delete window.domainAPI;
   });
 });

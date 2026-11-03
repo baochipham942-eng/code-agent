@@ -106,6 +106,16 @@ export function useAbandonParkedRun(
     if (!sessionId || !runId) return;
     try {
       await ipcService.invoke(IPC_CHANNELS.AGENT_CANCEL, { sessionId, runId });
+      // run 已终态化，但会话行 updatedAt 不动；不乐观清投影的话，
+      // loadSessions 的防陈旧快照守卫（preserveParkedContinueOnRefresh）会把
+      // 「可继续」投影原样复活，停靠行只能靠整页重载才消失（真跑 Rework r1 撞出）。
+      useSessionStore.setState((state) => ({
+        sessions: state.sessions.map((session) => (
+          session.id === sessionId && session.durableResume
+            ? { ...session, durableResume: undefined }
+            : session
+        )),
+      }));
       void useSessionStore.getState().loadSessions({ silent: true });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));

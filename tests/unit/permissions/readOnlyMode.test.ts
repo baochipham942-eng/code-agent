@@ -376,6 +376,7 @@ describe('acceptEdits 出站/不可逆/进程类写档工具仍需用户确认�
     'ExcelAutomate',
     'sleep_until',
     'wake_on',
+    'wake_on_event',
   ])('acceptEdits：%s 照走用户确认，不搭写档免确认便车', async (toolName) => {
     getPermissionModeManager().setMode('acceptEdits');
     setMockTool({ name: toolName, requiresPermission: true, permissionLevel: 'write' });
@@ -413,6 +414,14 @@ describe('acceptEdits 出站/不可逆/进程类写档工具仍需用户确认�
     getPermissionModeManager().setMode('bypassPermissions', true);
     setMockTool({ name: 'mail_send', requiresPermission: true, permissionLevel: 'write' });
     const result = await executor.execute('mail_send', {}, {});
+    expect(result.success).toBe(true);
+    expect(permissionCalls.length).toBe(0);
+  });
+
+  it('对照组：bypassPermissions 下 wake_on_event 仍直接放行（清单只影响 acceptEdits）', async () => {
+    getPermissionModeManager().setMode('bypassPermissions', true);
+    setMockTool({ name: 'wake_on_event', requiresPermission: true, permissionLevel: 'write' });
+    const result = await executor.execute('wake_on_event', {}, {});
     expect(result.success).toBe(true);
     expect(permissionCalls.length).toBe(0);
   });

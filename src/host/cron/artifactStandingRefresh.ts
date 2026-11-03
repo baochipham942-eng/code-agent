@@ -8,7 +8,6 @@
 
 import * as fs from 'fs';
 import { createHash } from 'crypto';
-import { dirname, isAbsolute } from 'path';
 import type { CronJobDefinition } from '../../shared/contract/cron';
 import {
   findStandingRefreshJob,
@@ -16,6 +15,7 @@ import {
   type ArtifactRefreshMetadata,
   type StandingRefreshJobView,
 } from '../../shared/artifactStandingRefresh';
+import { cronWriteScopeFolder } from '../../shared/cronWriteScope';
 import {
   createSnapshot,
   publishVersion,
@@ -192,11 +192,9 @@ export function cronAgentWorkingDirectory(
   definition: CronJobDefinition,
   fallback: string | undefined,
 ): string | undefined {
-  const refresh = getArtifactRefreshMetadata(definition.metadata);
-  if (!refresh || !isAbsolute(refresh.path)) return fallback;
-  const parent = dirname(refresh.path);
-  if (!parent || parent === refresh.path) return fallback;
-  return parent;
+  // 判定唯一真源在 shared/cronWriteScope.cronWriteScopeFolder（renderer 任务详情的
+  // 写授权候选文件夹与这里必须是同一个答案，防止展示与实际授权漂移）。
+  return cronWriteScopeFolder(definition, fallback);
 }
 
 /**

@@ -84,12 +84,46 @@ describe.skipIf(!darwin)('native connector preload from enabledNative', () => {
     expect(loaded).toEqual(expect.arrayContaining(['reminders_create', 'mail_draft', 'calendar_create_event']));
   });
 
-  it('enabled but unchecked (post-restart): not preloaded, warns with the readiness reason', () => {
+  const WRITE_TOOLS = ['reminders_create', 'mail_draft', 'calendar_create_event'];
+  const warnReasons = () => mocks.warn.mock.calls.map((call) => String(call[0]));
+
+  it('enabled + unchecked (post-restart): write tools are still preloaded, no warn', () => {
     enable(ALL);
+    for (const id of ALL) expect(getConnectorRegistry().get(id)!.getCachedStatus!().readiness).toBe('unchecked');
+
+    expect(getDeferredToolsToPreloadForTurn(turn(PROMPT))).toEqual(expect.arrayContaining(WRITE_TOOLS));
+    expect(preloadDeferredToolsForTurn(turn(PROMPT))).toEqual(expect.arrayContaining(WRITE_TOOLS));
+    expect(mocks.warn).not.toHaveBeenCalled();
+  });
+
+  it('enabled + failed probe: not preloaded, warns readiness-failed', async () => {
+    enable(ALL);
+    mocks.runAppleScript.mockRejectedValueOnce(new Error('not authorized'));
+    await expect(getConnectorRegistry().get('reminders')!.execute('probe_access', {})).rejects.toThrow();
+    mocks.runAppleScript.mockRejectedValueOnce(new Error('not authorized'));
+    await expect(getConnectorRegistry().get('mail')!.execute('probe_access', {})).rejects.toThrow();
+    mocks.runAppleScript.mockRejectedValueOnce(new Error('not authorized'));
+    await expect(getConnectorRegistry().get('calendar')!.execute('probe_access', {})).rejects.toThrow();
+    for (const id of ALL) expect(getConnectorRegistry().get(id)!.getCachedStatus!().readiness).toBe('failed');
 
     expect(getDeferredToolsToPreloadForTurn(turn(PROMPT))).toEqual([]);
-    const warns = mocks.warn.mock.calls.map((call) => String(call[0]));
-    expect(warns.some((w) => w.includes('reason: readiness-unchecked') && w.includes('reminders'))).toBe(true);
+    expect(warnReasons().filter((w) => w.includes('reason: readiness-failed'))).toHaveLength(3);
+  });
+
+  it('enabled but platform unavailable: not preloaded, warns readiness-unavailable', () => {
+    const original = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    try {
+      enable([]);
+      enable(ALL);
+      for (const id of ALL) expect(getConnectorRegistry().get(id)!.getCachedStatus!().readiness).toBe('unavailable');
+
+      expect(getDeferredToolsToPreloadForTurn(turn(PROMPT))).toEqual([]);
+      expect(warnReasons().filter((w) => w.includes('reason: readiness-unavailable'))).toHaveLength(3);
+    } finally {
+      Object.defineProperty(process, 'platform', original);
+      enable([]);
+    }
   });
 
   it('enabled in config but absent from the registry: warns with not-registered', () => {
@@ -101,11 +135,11 @@ describe.skipIf(!darwin)('native connector preload from enabledNative', () => {
     expect(warns.some((w) => w.includes('reason: not-registered'))).toBe(true);
   });
 
-  it('not enabled: nothing preloaded, no warn', () => {
+  it('not enabled: nothing preloaded, warns not-enabled', () => {
     enable([]);
 
     expect(getDeferredToolsToPreloadForTurn(turn(PROMPT))).toEqual([]);
-    expect(mocks.warn).not.toHaveBeenCalled();
+    expect(warnReasons().filter((w) => w.includes('reason: not-enabled'))).toHaveLength(3);
   });
 
   it('enabled + ready but the prompt has no reminder/mail/calendar wording: not preloaded', async () => {

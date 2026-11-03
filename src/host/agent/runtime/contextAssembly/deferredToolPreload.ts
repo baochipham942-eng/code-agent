@@ -69,7 +69,10 @@ function getNativeConnectorToolsForIntent(
   const registry = getConnectorRegistry();
   const tools: string[] = [];
   for (const connectorId of matched) {
-    if (!enabledNative.includes(connectorId)) continue;
+    if (!enabledNative.includes(connectorId)) {
+      logger.warn(`[ContextAssembly] Native connector not preloaded (reason: not-enabled): ${connectorId}`);
+      continue;
+    }
     // 用户本轮手选了别的连接器 = 显式收窄，不替他加。
     if (scoped.length > 0 && !scoped.includes(connectorId)) continue;
     const connector = registry.get(connectorId);
@@ -77,11 +80,11 @@ function getNativeConnectorToolsForIntent(
       logger.warn(`[ContextAssembly] Enabled native connector not preloaded (reason: not-registered): ${connectorId}`);
       continue;
     }
-    const status = connector.getCachedStatus?.();
-    if (status && !(status.connected && (status.readiness === undefined || status.readiness === 'ready'))) {
-      logger.warn(
-        `[ContextAssembly] Enabled native connector not preloaded (reason: readiness-${status.readiness ?? 'disconnected'}): ${connectorId}`,
-      );
+    // unchecked = 重启后尚未探测（cron.ipc / cronMailPoller 同口径：按需探测，已授权用户不该被逼去再点一次），
+    // 执行时若 TCC 被拒由 handler 明确报错。failed / unavailable 才排除。
+    const readiness = connector.getCachedStatus?.().readiness;
+    if (readiness === 'failed' || readiness === 'unavailable') {
+      logger.warn(`[ContextAssembly] Enabled native connector not preloaded (reason: readiness-${readiness}): ${connectorId}`);
       continue;
     }
     for (const toolName of CONNECTOR_TOOL_NAMES[connectorId] ?? []) {

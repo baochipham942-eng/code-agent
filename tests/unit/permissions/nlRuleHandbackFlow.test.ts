@@ -106,7 +106,7 @@ const settings = (): AppSettings => ({
     blockedCommands: [],
     devModeAutoApprove: true,
   },
-} as AppSettings);
+} as unknown as AppSettings);
 
 /** 有人值守 + devModeAutoApprove 全开：handback/ask 必须仍然弹卡，不得被自动放行。 */
 function makeAttendedIsland(repo: ReturnType<typeof makeMemoryRepo>) {

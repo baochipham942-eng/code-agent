@@ -26,7 +26,7 @@ export type UserRuleOutcome =
   | { kind: 'ask'; rule: string }
   | { kind: 'preapproved'; rule: string; phrase: string };
 
-export interface UserRuleOutcomeInput {
+interface UserRuleOutcomeInput {
   sessionId?: string;
   /** 规范化后的工具名（与规则书写同一口径，engine 内部再折叠大小写） */
   tool: string;
@@ -75,7 +75,7 @@ function ruleString(rule: PolicyRule): string {
  * （PolicyEngine.matchUserRules：工具名规范化 + Tool(pattern) glob），
  * 规则列表传 run 有效视图，外部放宽不作用于已开始的 run。
  */
-export function resolveUserRuleOutcome(input: UserRuleOutcomeInput): UserRuleOutcome {
+function resolveUserRuleOutcome(input: UserRuleOutcomeInput): UserRuleOutcome {
   const runContext = resolveRunUserRuleContext(input.sessionId);
   const matched = getPolicyEngine().matchUserRules(
     {

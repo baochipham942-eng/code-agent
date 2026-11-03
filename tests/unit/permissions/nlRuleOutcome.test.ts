@@ -11,7 +11,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { getPolicyEngine, resetPolicyEngine } from '../../../src/host/permissions/policyEngine';
 import { beginRunPolicy, endRunPolicy } from '../../../src/host/permissions/runPolicySnapshot';
-import { resolveUserRuleOutcome } from '../../../src/host/permissions/userRuleOutcome';
+import { resolveUserRuleOutcomeForTool } from '../../../src/host/permissions/userRuleOutcome';
 
 beforeEach(() => {
   resetPolicyEngine();
@@ -34,7 +34,7 @@ describe('K2 判定序：deny > handback > ask > preapprove 未命中 > preappro
     });
     beginRunPolicy('k2-run-a', 'k2-session', { roleId: undefined, initiatingText: '让我推一把' });
     // handback 盖过 ask 与 preapprove（即使短语命中）
-    expect(resolveUserRuleOutcome({ sessionId: 'k2-session', tool: 'Bash', command: 'git push origin main' }))
+    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'git push origin main' }))
       .toEqual({ kind: 'handback', rule: 'Bash(git push *)' });
     endRunPolicy('k2-run-a');
 
@@ -46,7 +46,7 @@ describe('K2 判定序：deny > handback > ask > preapprove 未命中 > preappro
       ],
     });
     beginRunPolicy('k2-run-a', 'k2-session', { roleId: undefined, initiatingText: '让我推一把' });
-    expect(resolveUserRuleOutcome({ sessionId: 'k2-session', tool: 'Bash', command: 'git push origin main' }))
+    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'git push origin main' }))
       .toEqual({ kind: 'ask', rule: 'Bash(git push *)' });
     endRunPolicy('k2-run-a');
 
@@ -57,7 +57,7 @@ describe('K2 判定序：deny > handback > ask > preapprove 未命中 > preappro
       ],
     });
     beginRunPolicy('k2-run-a', 'k2-session', { roleId: undefined, initiatingText: '让我推一把' });
-    expect(resolveUserRuleOutcome({ sessionId: 'k2-session', tool: 'Bash', command: 'git push origin main' }))
+    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'git push origin main' }))
       .toEqual({ kind: 'handback', rule: 'Bash(git push *)' });
     endRunPolicy('k2-run-a');
 
@@ -68,7 +68,7 @@ describe('K2 判定序：deny > handback > ask > preapprove 未命中 > preappro
       ],
     });
     beginRunPolicy('k2-run-a', 'k2-session', { roleId: undefined, initiatingText: '让我推一把' });
-    expect(resolveUserRuleOutcome({ sessionId: 'k2-session', tool: 'Bash', command: 'git push origin main' }))
+    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'git push origin main' }))
       .toEqual({ kind: 'denied', rule: 'Bash(git push *)' });
     endRunPolicy('k2-run-a');
   });
@@ -82,21 +82,21 @@ describe('K2 判定序：deny > handback > ask > preapprove 未命中 > preappro
       ],
     });
     beginRunPolicy('k2-run-a', 'k2-session', { roleId: undefined, initiatingText: '让我推一把' });
-    expect(resolveUserRuleOutcome({ sessionId: 'k2-session', tool: 'Bash', command: 'git push origin main' }))
+    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'git push origin main' }))
       .toEqual({ kind: 'denied', rule: 'Bash(git push *)' });
     endRunPolicy('k2-run-a');
   });
 
   it('K1 旧表 ask 规则映射为 ask 档（①：运行时强制弹审批的判定输入）', () => {
     getPolicyEngine().loadUserRules({ ask: ['Bash(git status)'] });
-    expect(resolveUserRuleOutcome({ tool: 'Bash', command: 'git status' }))
+    expect(resolveUserRuleOutcomeForTool(undefined, 'Bash', { command: 'git status' }))
       .toEqual({ kind: 'ask', rule: 'Bash(git status)' });
-    expect(resolveUserRuleOutcome({ tool: 'Bash', command: 'git push' })).toEqual({ kind: 'none' });
+    expect(resolveUserRuleOutcomeForTool(undefined, 'Bash', { command: 'git push' })).toEqual({ kind: 'none' });
   });
 
   it('K1 旧表 allow 规则不产生新放行捷径（none）', () => {
     getPolicyEngine().loadUserRules({ allow: ['Bash(git status)'] });
-    expect(resolveUserRuleOutcome({ tool: 'Bash', command: 'git status' })).toEqual({ kind: 'none' });
+    expect(resolveUserRuleOutcomeForTool(undefined, 'Bash', { command: 'git status' })).toEqual({ kind: 'none' });
   });
 });
 
@@ -109,26 +109,26 @@ describe('preapprove：触发短语逐字匹配发起话（④）', () => {
 
   it('发起话包含任一短语 → preapproved（带命中短语与规则）', () => {
     beginRunPolicy('k2-run-a', 'k2-session', { roleId: undefined, initiatingText: '改完了，让我推' });
-    expect(resolveUserRuleOutcome({ sessionId: 'k2-session', tool: 'Bash', command: 'git push origin main' }))
+    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'git push origin main' }))
       .toEqual({ kind: 'preapproved', rule: 'Bash(git push *)', phrase: '让我推' });
     endRunPolicy('k2-run-a');
   });
 
   it('发起话没有短语 → 回落 ask（绝不静默放行）', () => {
     beginRunPolicy('k2-run-a', 'k2-session', { roleId: undefined, initiatingText: '帮我发布新版本' });
-    expect(resolveUserRuleOutcome({ sessionId: 'k2-session', tool: 'Bash', command: 'git push origin main' }))
+    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'git push origin main' }))
       .toEqual({ kind: 'ask', rule: 'Bash(git push *)' });
     endRunPolicy('k2-run-a');
   });
 
   it('没有活跃 run（无发起话可匹配）→ 同样回落 ask', () => {
-    expect(resolveUserRuleOutcome({ sessionId: 'k2-idle', tool: 'Bash', command: 'git push origin main' }))
+    expect(resolveUserRuleOutcomeForTool('k2-idle', 'Bash', { command: 'git push origin main' }))
       .toEqual({ kind: 'ask', rule: 'Bash(git push *)' });
   });
 
   it('命令不被规则覆盖 → none', () => {
     beginRunPolicy('k2-run-a', 'k2-session', { roleId: undefined, initiatingText: '让我推' });
-    expect(resolveUserRuleOutcome({ sessionId: 'k2-session', tool: 'Bash', command: 'rm -rf /tmp/x' }))
+    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'rm -rf /tmp/x' }))
       .toEqual({ kind: 'none' });
     endRunPolicy('k2-run-a');
   });
@@ -143,21 +143,21 @@ describe('角色域：roleId 盖章只在对应角色的 run 上命中（③）'
 
   it('该角色的 run 命中 handback', () => {
     beginRunPolicy('k2-run-a', 'k2-session', { roleId: 'ops-editor', initiatingText: '发文章' });
-    expect(resolveUserRuleOutcome({ sessionId: 'k2-session', tool: 'Bash', command: 'git push origin main' }))
+    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'git push origin main' }))
       .toEqual({ kind: 'handback', rule: 'Bash(git push *)' });
     endRunPolicy('k2-run-a');
   });
 
   it('主聊天（无 roleId）不命中', () => {
     beginRunPolicy('k2-run-a', 'k2-session', { roleId: undefined, initiatingText: '发文章' });
-    expect(resolveUserRuleOutcome({ sessionId: 'k2-session', tool: 'Bash', command: 'git push origin main' }))
+    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'git push origin main' }))
       .toEqual({ kind: 'none' });
     endRunPolicy('k2-run-a');
   });
 
   it('别的角色的 run 不命中', () => {
     beginRunPolicy('k2-run-a', 'k2-session', { roleId: 'data-analyst', initiatingText: '发文章' });
-    expect(resolveUserRuleOutcome({ sessionId: 'k2-session', tool: 'Bash', command: 'git push origin main' }))
+    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'git push origin main' }))
       .toEqual({ kind: 'none' });
     endRunPolicy('k2-run-a');
   });
@@ -165,15 +165,15 @@ describe('角色域：roleId 盖章只在对应角色的 run 上命中（③）'
   it('同会话最新活跃 run 的盖章被解析（子代理继承同一会话栈），run 结束即清', () => {
     beginRunPolicy('k2-run-a', 'k2-session', { roleId: 'ops-editor', initiatingText: '发文章' });
     beginRunPolicy('k2-run-b', 'k2-session', { roleId: 'ops-editor', initiatingText: '继续发' });
-    expect(resolveUserRuleOutcome({ sessionId: 'k2-session', tool: 'Bash', command: 'git push origin main' }))
+    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'git push origin main' }))
       .toEqual({ kind: 'handback', rule: 'Bash(git push *)' });
     endRunPolicy('k2-run-b');
     // 上一条 run 还在飞时退回上一条 run 的盖章（同栈最新活跃者赢）
-    expect(resolveUserRuleOutcome({ sessionId: 'k2-session', tool: 'Bash', command: 'git push origin main' }))
+    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'git push origin main' }))
       .toEqual({ kind: 'handback', rule: 'Bash(git push *)' });
     endRunPolicy('k2-run-a');
     // 全部结束：盖章清空，角色域规则不再命中
-    expect(resolveUserRuleOutcome({ sessionId: 'k2-session', tool: 'Bash', command: 'git push origin main' }))
+    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'git push origin main' }))
       .toEqual({ kind: 'none' });
   });
 
@@ -182,7 +182,7 @@ describe('角色域：roleId 盖章只在对应角色的 run 上命中（③）'
       nlRules: [{ behavior: 'handback', rule: 'Bash(git push *)' }],
     });
     beginRunPolicy('k2-run-a', 'k2-session', { roleId: 'data-analyst', initiatingText: '发文章' });
-    expect(resolveUserRuleOutcome({ sessionId: 'k2-session', tool: 'Bash', command: 'git push origin main' }))
+    expect(resolveUserRuleOutcomeForTool('k2-session', 'Bash', { command: 'git push origin main' }))
       .toEqual({ kind: 'handback', rule: 'Bash(git push *)' });
     endRunPolicy('k2-run-a');
   });

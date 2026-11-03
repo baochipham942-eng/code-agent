@@ -172,6 +172,59 @@ describe('ToolExecutor 用户级 deny 规则硬拒（主 Bash 链）', () => {
     expect(permissionEvents).toHaveLength(0);
   });
 
+  // FU1：用户 deny 规则保持 level 无关——Read 工具（permissionLevel: read）不被 Bash(rm *) 咬住。
+  it('FU1: user-deny Bash(rm *) 不作用于 Read 工具（level 无关性不变）', async () => {
+    getPolicyEngine().loadUserRules({ deny: ['Bash(rm *)'] }, 'user-ui');
+    const executor = createExecutor();
+
+    const notePath = path.join(workspace, 'note.txt');
+    await fs.writeFile(notePath, 'x', 'utf-8');
+    const result = await executor.execute('Read', { file_path: notePath }, { sessionId: 'user-deny-read-untouched' });
+
+    // Read 不带 command，Bash(rm *) 本就不匹配空输入（#2641）；且评估 level=read。
+    // 期望：不因该用户规则硬拒（若规则被误用会像 Bash 用例一样 success=false 硬拒）。
+    expect(result.success).toBe(true);
+  });
+
+  // FU1 r1：level 按工具真实 permissionLevel 派生后，内置不可覆盖 deny（block-root-write /
+  // block-ssh-keys，priority 1000）会在 PolicyEngine Pass1 抢先成为唯一 matchedRule，把用户
+  // deny（priority 700、overridable）从 matchedRule 位上挤掉——guardFabricGate 若只看
+  // evaluate().matchedRule 的 user-deny- 前缀，用户显式 deny 被遮蔽成「无规则命中」，硬拒
+  // 降级成可批的写保护/凭据 ask。用户 deny 必须独立于优先级竞争扫描（matchUserDenyRule）。
+  it('FU1 r1: deny Write 后 Write /usr/bin/x：不被 block-root-write 遮蔽，按用户规则硬拒、零审批卡', async () => {
+    getPolicyEngine().loadUserRules({ deny: ['Write'] }, 'user-ui');
+    const executor = createExecutor();
+
+    const result = await executor.execute(
+      'Write',
+      { file_path: '/usr/bin/x', content: 'probe' },
+      { sessionId: 'user-deny-write-root-fu1r1' },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('User deny: Write');
+    // 硬拒不是可批的 ask：审批回调一次都不该被叫（遮蔽时会落进写保护 ask）。
+    expect(permissionEvents).toHaveLength(0);
+  });
+
+  it('FU1 r1: deny Read 后 Read 工作区 .ssh 私钥：不被 block-ssh-keys 遮蔽，按用户规则硬拒、零审批卡', async () => {
+    getPolicyEngine().loadUserRules({ deny: ['Read'] }, 'user-ui');
+    const keyPath = path.join(workspace, '.ssh', 'id_ed25519');
+    await fs.mkdir(path.dirname(keyPath), { recursive: true });
+    await fs.writeFile(keyPath, 'FAKE-PRIVATE-KEY\n', 'utf-8');
+    const executor = createExecutor();
+
+    const result = await executor.execute(
+      'Read',
+      { file_path: keyPath },
+      { sessionId: 'user-deny-read-ssh-fu1r1' },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('User deny: Read');
+    expect(permissionEvents).toHaveLength(0);
+  });
+
   it('非已知安全命令命中用户 deny 规则：同样硬拒，不降级成 ask/分类器，也不落盘', async () => {
     const target = path.join(os.tmpdir(), `neo-deny-probe-${process.pid}.txt`);
     getPolicyEngine().loadUserRules({ deny: [`Bash(touch ${target}*)`] }, 'user-ui');

@@ -10,7 +10,7 @@
 // 选完调度类型不立刻报）。
 // ============================================================================
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '../../primitives/Button';
 import { Input } from '../../primitives/Input';
 import { Select } from '../../primitives/Select';
@@ -38,6 +38,14 @@ interface CronEventScheduleFieldsProps {
    * 且用户还没手选群（chatId 空）时，目录里有同名群就自动选上。编辑器不传 = 行为不变。
    */
   preferredChatName?: string;
+  /**
+   * 确认卡专用（opt-in）：账号为空时自动预选（只有一个账号 / 多账号里仅一个目录含 preferredChatName），
+   * 并在群为空时给出琥珀色提示。每个挂载实例只判定一次——调用方按草案 id 给本组件 key，换草案即重置。
+   * 编辑器不传 = 行为不变。
+   */
+  autoPreselect?: boolean;
+  /** 用户在群下拉里显式选了「任意会话」（或清空手填框）时通知；确认卡据此放行「点名了群却没选群」的拦截。 */
+  onAnyChatChosen?: () => void;
 }
 
 export const CronEventScheduleFields: React.FC<CronEventScheduleFieldsProps> = ({
@@ -49,6 +57,8 @@ export const CronEventScheduleFields: React.FC<CronEventScheduleFieldsProps> = (
   onBudgetChange,
   validationMessage,
   preferredChatName,
+  autoPreselect,
+  onAnyChatChosen,
 }) => {
   const { t } = useI18n();
   const cc = t.cronCenter;
@@ -74,6 +84,32 @@ export const CronEventScheduleFields: React.FC<CronEventScheduleFieldsProps> = (
     if (match) onChatChangeRef.current(match.id, match.name);
   }, [preferredChatName, chatId, accountId, conversationsByAccount]);
 
+  // 账号自动预选：只判定一次（做过判定就记下，用户之后清空/改选不会被弹回）。
+  const onAccountChangeRef = useRef(onAccountChange);
+  onAccountChangeRef.current = onAccountChange;
+  const accountPreselectDoneRef = useRef(false);
+  useEffect(() => {
+    if (!autoPreselect || accountId || accountPreselectDoneRef.current) return;
+    if (accountsLoading || accounts.length === 0) return;
+    if (accounts.length === 1) {
+      accountPreselectDoneRef.current = true;
+      onAccountChangeRef.current(accounts[0].id, accounts[0].name);
+      return;
+    }
+    const wanted = preferredChatName?.trim();
+    if (!wanted) {
+      accountPreselectDoneRef.current = true;
+      return;
+    }
+    const states = accounts.map((account) => conversationsByAccount[account.id]);
+    if (states.some((state) => !state || state.loading)) return;
+    accountPreselectDoneRef.current = true;
+    const matches = accounts.filter((_, index) => states[index].conversations.some(
+      (conversation) => conversation.name.trim() === wanted,
+    ));
+    if (matches.length === 1) onAccountChangeRef.current(matches[0].id, matches[0].name);
+  }, [autoPreselect, accountId, accounts, accountsLoading, preferredChatName, conversationsByAccount]);
+
   const selectedAccount = accounts.find((account) => account.id === accountId);
   const staleAccount = Boolean(accountId && !accountsLoading && !selectedAccount);
   const conversationState = selectedAccount ? conversationsByAccount[selectedAccount.id] : undefined;
@@ -96,6 +132,51 @@ export const CronEventScheduleFields: React.FC<CronEventScheduleFieldsProps> = (
   ];
 
   const chatListed = conversationState?.conversations.some((conversation) => conversation.id === chatId) ?? false;
+  const wantedName = preferredChatName?.trim();
+  const nameFoundInAccount = Boolean(wantedName && conversationState?.conversations.some(
+    (conversation) => conversation.name.trim() === wantedName,
+  ));
+  const chatNotice = autoPreselect && !chatId
+    ? (wantedName && !nameFoundInAccount ? 'notFound' : 'any')
+    : null;
+  // 点名了群却没选群时确认卡会拦确认；放行入口必须是独立按钮——原生 select 重选已选中的
+  // 「任意会话」不触发 change，账号没有任何群 / 只能手填时更没有别的项可切。
+  const [anyChosen, setAnyChosen] = useState(false);
+  useEffect(() => {
+    setAnyChosen(false);
+  }, [accountId, chatId]);
+  const chooseAnyChat = () => {
+    setAnyChosen(true);
+    onChatChange('');
+    onAnyChatChosen?.();
+  };
+  const chatNoticeBlock = chatNotice && (
+    <div
+      className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-badge-warning"
+      data-testid={chatNotice === 'notFound' ? 'cron-event-chat-not-found' : 'cron-event-chat-any-notice'}
+    >
+      <p>
+        {chatNotice === 'notFound'
+          ? cc.eventChatNotFoundNotice.replace('{name}', wantedName ?? '')
+          : cc.eventChatAnyNotice}
+      </p>
+      {wantedName && (
+        anyChosen ? (
+          <p className="mt-1.5" data-testid="cron-event-chat-any-chosen">{cc.eventChatAnyChosen}</p>
+        ) : (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="mt-1.5"
+            data-testid="cron-event-chat-choose-any"
+            onClick={chooseAnyChat}
+          >
+            {cc.eventChatChooseAny}
+          </Button>
+        )
+      )}
+    </div>
+  );
   const chatOptions = [
     { value: '', label: cc.eventChatAny },
     ...(!chatListed && chatId ? [{ value: chatId, label: chatId }] : []),
@@ -148,13 +229,17 @@ export const CronEventScheduleFields: React.FC<CronEventScheduleFieldsProps> = (
               id="cron-event-chat"
               value={chatId}
               options={chatOptions}
-              onChange={(event) => onChatChange(
-                event.target.value,
-                conversationState.conversations.find((conversation) => conversation.id === event.target.value)?.name,
-              )}
+              onChange={(event) => {
+                onChatChange(
+                  event.target.value,
+                  conversationState.conversations.find((conversation) => conversation.id === event.target.value)?.name,
+                );
+                if (!event.target.value) onAnyChatChosen?.();
+              }}
             />
           </FormField>
           <p className="mt-1 text-xs text-zinc-500">{cc.eventChatHint}</p>
+          {chatNoticeBlock}
         </div>
       )}
 
@@ -165,12 +250,16 @@ export const CronEventScheduleFields: React.FC<CronEventScheduleFieldsProps> = (
               id="cron-event-chat-manual"
               value={chatId}
               placeholder={cc.eventChatManualPlaceholder}
-              onChange={(event) => onChatChange(event.target.value)}
+              onChange={(event) => {
+                onChatChange(event.target.value);
+                if (!event.target.value) onAnyChatChosen?.();
+              }}
             />
           </FormField>
           <p className="mt-1 text-xs text-zinc-500">
             {conversationState.error ? cc.resultPushListFailed : cc.eventChatManualHint}
           </p>
+          {chatNoticeBlock}
         </div>
       )}
 

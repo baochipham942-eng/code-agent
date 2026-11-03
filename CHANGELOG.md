@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **应用缓存清理失败在 Settings > Data 可见**（N-RETENTION-APP-CACHES-REST2）：`appCacheRetention`（channel-media / 托管浏览器截图 / appshots）与 `presentationPreviewRetention`（旧 slide revision）新增 `failedCurrent`（每轮 sweep 用本轮 failed 覆盖，零失败时 `resetFailures()`）与状态出口，由 `cacheRetentionStatus.ts` 聚合；DATA 域新增 `getCacheRetentionStatus` / `retryCacheRetention`；数据页在 `failedCurrent > 0` 时显示失败行（权限类 EACCES/EPERM 与其他分文案，打开数据文件夹 + 重试，原始错误只进折叠详情）。全部 kind 都展示，没有 log-only 例外。REST1 的 tool-screenshots kind 未合入，本单未覆盖；合入后走同一个 sweep 出口自动计入。
 - **聊天内连接卡 + 连上后自动续跑**（N-CONNECTOR-POLISH-AUDIT-FU1）：用户手选 / 专家声明的连接器未就绪时，宿主每轮在首个模型输出前发一次 `connector_required`（experimental，载荷 `connectors[{id, source, reason}]`，`reason` 默认 `not_connected`，供后续过期/重登场景复用）；模型侧多一行「尚未连接，不要用其他手段替代」；renderer 在输入框上方出连接卡（去连接 / 稍后），App 级 watcher 在连接成功后追加一条续跑用户消息（原生连接器走 `CONNECTOR_EVENT`，CLI/SaaS 轮询 `oauthStatus`，到顶改露手动「我已连好，继续」）。已知限制：卡片只在会话内存里，刷新即丢；MCP server 与 free-text 服务名识别不在范围内。
 
 ## [0.33.0] - 2026-08-19

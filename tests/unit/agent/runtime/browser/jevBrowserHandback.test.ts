@@ -295,6 +295,37 @@ describe('jev browser armed handback', () => {
     }
   });
 
+  it('HN-like 长列表页（标题含 Cloudflare / CAPTCHA）不被内环与主路径门判为人机验证', async () => {
+    const rows = Array.from({ length: 30 }, (_, i) => `${i + 1}. Cloudflare outage and CAPTCHA tricks (example.com)`).join('\n');
+    const page = snapshot('New Links | Hacker News', [button('more', 'More')], 'http://127.0.0.1/newest');
+    page.snapshot.headings = [{ level: 2, text: 'CAPTCHA solvers compared' }];
+    const host = new FakeHost([page]);
+    host.url = 'http://127.0.0.1/newest';
+    host.visibleText = rows;
+    const systemOne = stubSystemOne(() => answers({ opConf: 0.4, target: 'more' }));
+    const result = await runLoop(host, systemOne, { task: 'Read the newest stories' });
+    expect(result.reason).not.toBe('captcha_or_risk_control');
+
+    const permission = vi.fn(async () => false);
+    const gate = await enforceBrowserCaptchaTakeoverGate({
+      action: 'click',
+      browserService: {
+        getPageContent: async () => ({ url: 'http://127.0.0.1/newest', title: 'New Links | Hacker News', text: rows }),
+        getActiveTab: () => ({
+          id: 't1',
+          page: {
+            title: async () => 'New Links | Hacker News',
+            frames: () => [{ url: () => 'http://127.0.0.1/newest' }],
+            $$eval: (async () => ['CAPTCHA solvers compared']) as never,
+          },
+        }),
+      },
+      context: { requestPermission: permission },
+    });
+    expect(gate).toBeNull();
+    expect(permission).not.toHaveBeenCalled();
+  });
+
   it('mutate done1 断言未满足时不得 done_verified，且 false done 被记上', async () => {
     const host = plainHost();
     const systemOne = stubSystemOne(() => answers({

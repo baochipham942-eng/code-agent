@@ -152,3 +152,7 @@ scratchpad/
 # Codex CLI 本地运行态（codex 交叉验证可能在树内留下的 CODEX_HOME 内容），永不入库；
 # 不忽略会被 check-repository-structure 的根目录棘轮数成多余的顶层目录
 .codex/
+
+# 工单本地暂存目录（任务书规定的 .tmp/<单号>/ scratch：私有 cases 副本、编排器、真跑产物），
+# 永不入库；不忽略会让 check-repository-structure 把 .tmp 数成多余的顶层 tracked 目录
+.tmp/

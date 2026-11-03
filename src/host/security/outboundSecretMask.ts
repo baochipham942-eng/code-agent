@@ -29,6 +29,11 @@ import type {
   StreamChunk,
 } from '../model/types';
 import { getConfigService } from '../services/core/configService';
+import {
+  recordOutboundMaskedRequest,
+  type OutboundMaskReplacementRecord,
+  type OutboundMaskRequestMeta,
+} from './outboundSecretMaskRecorder';
 
 /** redact 回调里标记「值在这里」的哨兵——真实文本里不会出现（NUL 包裹）。 */
 const MASK_SENTINEL = '\u0000__NEO_OUTBOUND_SECRET__\u0000';
@@ -51,6 +56,13 @@ const processMaskKey = randomBytes(32);
 /** 占位符→原值映射。只在内存；进程重启即失效（重启后旧占位符本来就不再产生）。 */
 const placeholderToValue = new Map<string, string>();
 
+/**
+ * 本次 applyOutboundSecretMask 的替换回执收集槽（N-PROMPT-SECRET-MASK-FU2）：非 null
+ * 期间 placeholderFor 每产出一个占位符就追加一条 {kind, placeholder}。窗口全程同步
+ * （maskModelMessages 无 await），并发请求不会串账。只存占位符形态，绝不存原值。
+ */
+let replacementReceipt: OutboundMaskReplacementRecord[] | null = null;
+
 function placeholderFor(entry: { type: string }, rawValue: string): string {
   // 后跑的规则（如 url-query-token）可能命中已含内层占位符的文本（sk-{{…}}）：
   // 入映射前先展开内层，保证映射值恒为原文，回包只需还原一层。
@@ -59,6 +71,7 @@ function placeholderFor(entry: { type: string }, rawValue: string): string {
   const placeholder = `{{SECRET_${entry.type.toUpperCase()}_${digest}}}`;
   // 8 hex 的键控摘要理论上可碰撞：先到先得，碰撞时后到的值仍被掩码（占位符不复用原值）。
   if (!placeholderToValue.has(placeholder)) placeholderToValue.set(placeholder, value);
+  replacementReceipt?.push({ kind: entry.type.toUpperCase(), placeholder });
   return placeholder;
 }
 
@@ -400,10 +413,12 @@ const RESTORE_FAILED_MESSAGE = 'Outbound secret masking could not restore the mo
 /**
  * 开关关（或缺省/settings 不可读）→ undefined，调用方走原样路径（请求字节不变）。
  * 开关开 → 立即掩码出云消息（失败抛带 code 的错误，请求中止，绝不明文外发）。
+ * meta（可选 provider/model）只进替换回执（N-PROMPT-SECRET-MASK-FU2），不影响掩码本身。
  */
 export function applyOutboundSecretMask(
   messages: ModelMessage[],
   onStream?: StreamCallback,
+  meta?: OutboundMaskRequestMeta,
 ): OutboundSecretMaskSession | undefined {
   let enabled: boolean;
   try {
@@ -415,11 +430,17 @@ export function applyOutboundSecretMask(
   if (!enabled) return undefined;
 
   let masked: ModelMessage[];
+  const replacements: OutboundMaskReplacementRecord[] = [];
+  replacementReceipt = replacements;
   try {
     masked = maskModelMessages(messages);
   } catch (error) {
     throw new Error(MASK_FAILED_MESSAGE, { cause: error });
+  } finally {
+    replacementReceipt = null;
   }
+  // 回执只记真发生替换的请求（空清单在 recorder 里是 no-op），且只含占位符形态。
+  recordOutboundMaskedRequest(replacements, meta);
 
   return {
     messages: masked,

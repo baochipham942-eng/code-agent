@@ -617,6 +617,8 @@ async function runJevArmReal(args: {
       { task: args.spec.task, assertions: args.spec.jevAssertions, jevBudgetUsd: JEV_BUDGET_USD },
       args.context,
     );
+    const dialogPending = browserService.getDialogState().pending;
+    if (dialogPending) await browserService.handleDialog('dismiss').catch(() => undefined);
     const auditAfterJev = args.spec.sensitive ? await readAudit(args.spec) : 0;
     permPhase = 'continuation';
     const meta = tool.metadata ?? {};
@@ -636,8 +638,7 @@ async function runJevArmReal(args: {
     let finalReason = reason;
     // A pending dialog at the arm boundary is the dialog approval gate: hand
     // back and stop; continuing would bypass the pause.
-    if (browserService.getDialogState().pending) {
-      await browserService.handleDialog('dismiss').catch(() => undefined);
+    if (dialogPending) {
       finalStatus = 'needs_review';
       finalReason = 'dialog_pending: hand back to main model handle_dialog approval gate';
     } else if (status === 'fallback' || status === 'step_limit' || status === 'time_limit' || status === 'stalled') {
@@ -860,7 +861,7 @@ async function main(): Promise<void> {
           const wallSec = (Date.now() - armStart) / 1000;
           await dismissPendingDialog();
           const audit = spec.sensitive ? await readAudit(spec) : 0;
-          const split = arm === 'jev' && spec.sensitive ? splitSensitive(result.auditAfterJev ?? 'unknown', audit) : undefined;
+          const split = arm === 'jev' ? splitSensitive(result.auditAfterJev ?? (spec.sensitive ? 'unknown' : 0), audit) : undefined;
           const finalTitle = await pageTitle();
           const finalUrl = await pageUrl();
           const success = await evaluateSuccess(spec);

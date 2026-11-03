@@ -6,7 +6,9 @@
 // 阈值（WORKFLOW_STALL_THRESHOLDS.N_SOFT_MS，单一真源）给行级一个 UI 软提示：
 // 行在工作中、不在等审批、且距最近可见进展锚点超过软阈值 → 报 quiet。
 // 锚点 = member.lastActivityAt（contextSnapshot.lastUpdated ?? startTime，
-// 见 SessionMemberBar 的填充）；没有锚点一律不报（fail-closed，不猜）。
+// 见 SessionMemberBar 的填充）；前台 spawn_agent 渲染的是 agentTree 节点行（无 member），
+// 改用 node.lastToolStep.at ?? node.updatedAt ?? node.createdAt（这三者只随真实事件前进，
+// 无心跳写入；纯思考轮不动）。没有锚点一律不报（fail-closed，不猜）。
 // ============================================================================
 
 import { WORKFLOW_STALL_THRESHOLDS } from '@shared/constants';
@@ -21,7 +23,12 @@ import type { AgentRow } from './agentRows';
 export function isAgentRowQuiet(row: AgentRow, now: number): boolean {
   if (row.status !== 'working') return false;
   if (row.hold === 'approval') return false;
-  const anchor = row.member?.lastActivityAt;
+  // 并入专家行的节点仍用 member 锚点；只有纯节点行（无 member）才走节点锚点
+  const anchor = row.member
+    ? row.member.lastActivityAt
+    : row.kind === 'agent'
+      ? (row.node?.lastToolStep?.at ?? row.node?.updatedAt ?? row.node?.createdAt)
+      : undefined;
   if (anchor === undefined) return false; // fail-closed：没有可算的锚点就不误报
   return now - anchor > WORKFLOW_STALL_THRESHOLDS.N_SOFT_MS;
 }

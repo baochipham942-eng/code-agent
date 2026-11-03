@@ -451,12 +451,42 @@ describe('SessionAgentsPanel', () => {
     expect(screen.queryByTestId('agents-panel-quiet-researcher')).toBeNull();
   });
 
-  it('agentTree 节点行没有锚点，不进「暂无进展」判定（本单只覆盖专家行）', async () => {
+  // r1：前台 spawn_agent 渲染的是 agentTree 节点行（无 member）。锚点 = lastToolStep.at ?? updatedAt ?? createdAt。
+  it('agentTree 节点行静默超 2 分钟：出现「暂无进展」', async () => {
+    mockTree(snapshotOf([treeNode({ updatedAt: Date.now() - 130_000 })]));
+
+    render(<SessionAgentsPanel />);
+    const quiet = await screen.findByTestId('agents-panel-quiet-agent-9');
+    expect(quiet.textContent).toContain('暂无进展');
+    expect(screen.getByTestId('agents-panel-status-agent-9').textContent).toBe('工作中');
+  });
+
+  it('agentTree 节点行 2 分钟内有进展（lastToolStep 较新）：不报', async () => {
+    mockTree(snapshotOf([treeNode({
+      updatedAt: Date.now() - 300_000,
+      lastToolStep: { tool: 'Read', at: Date.now() - 30_000 },
+    })]));
+
+    render(<SessionAgentsPanel />);
+    await screen.findByTestId('agents-panel-row-agent-9');
+    expect(screen.queryByTestId('agents-panel-quiet-agent-9')).toBeNull();
+  });
+
+  it('agentTree 节点行没有任何锚点：fail-closed 不报', async () => {
     mockTree(snapshotOf([treeNode({})]));
 
     render(<SessionAgentsPanel />);
     await screen.findByTestId('agents-panel-row-agent-9');
-    expect(screen.getByTestId('agents-panel-status-agent-9').textContent).toBe('工作中');
+    expect(screen.queryByTestId('agents-panel-quiet-agent-9')).toBeNull();
+  });
+
+  it('agentTree 节点行等审批：不报', async () => {
+    appState.pendingPermissionSessionId = 'session-1';
+    appState.pendingPermissionRequest = { agentId: 'agent-9', resolved: false };
+    mockTree(snapshotOf([treeNode({ updatedAt: Date.now() - 130_000 })]));
+
+    render(<SessionAgentsPanel />);
+    expect((await screen.findByTestId('agents-panel-status-agent-9')).textContent).toBe('需要授权');
     expect(screen.queryByTestId('agents-panel-quiet-agent-9')).toBeNull();
   });
 });

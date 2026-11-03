@@ -456,6 +456,10 @@ export class OrchestratorPermissionIsland {
       tool: request.tool,
       type: request.type,
       forceConfirm,
+      // 返修 r2 的成因标记与结构化原因码一并留痕：定时任务写授权只放行
+      // boundary-only 形态，真跑日志必须能直接核这三元组（Rework r3 证据要求）。
+      forceConfirmBoundaryOnly: request.forceConfirmBoundaryOnly === true,
+      reasonCode: request.reasonCode ?? null,
       unattended,
       voice,
       approvalTerminal,

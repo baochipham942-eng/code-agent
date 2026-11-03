@@ -18,6 +18,8 @@ interface CronExecutionListProps {
   jobNameById?: Record<string, string>;
   /** Immutable execution location keyed by job id. */
   runsOnByJobId?: Record<string, CronJobDefinition['runsOn']>;
+  /** jobId → 等批准运行（N-CRON-UNATTENDED-BASH-PARK-STUCK）：running 行状态格换 amber 徽章。 */
+  awaitingByJobId?: Map<string, unknown>;
 }
 
 const thClass = 'whitespace-nowrap px-1 py-2';
@@ -34,6 +36,7 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
   onSelectExecution,
   jobNameById,
   runsOnByJobId,
+  awaitingByJobId,
 }) => {
   const { t } = useI18n();
   const cc = t.cronCenter;
@@ -89,9 +92,18 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
                     </td>
                   )}
                   <td className={`whitespace-nowrap ${tdClass}`}>
-                    <span className={`rounded-full px-2 py-1 text-xs ${statusMeta.className}`}>
-                      {cc.status[execution.status]}
-                    </span>
+                    {execution.status === 'running' && (awaitingByJobId?.has(execution.jobId) ?? false) ? (
+                      <span
+                        className="rounded-full border border-badge-warning/40 bg-amber-500/15 px-2 py-1 text-xs text-badge-warning"
+                        data-testid="cron-exec-awaiting-approval"
+                      >
+                        {cc.awaitingApprovalBadge}
+                      </span>
+                    ) : (
+                      <span className={`rounded-full px-2 py-1 text-xs ${statusMeta.className}`}>
+                        {cc.status[execution.status]}
+                      </span>
+                    )}
                   </td>
                   {runsOnByJobId && (
                     <td className={tdClass}>

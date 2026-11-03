@@ -201,6 +201,7 @@ export const enSettingsCore = {
         offDescription: 'Task-finished and failure alerts will not pop up.',
         unknownDescription: 'Neo cannot read the macOS setting; check System Settings.',
         openSettings: 'Open system settings',
+        openSettingsFailed: 'Unable to open System Settings. Open Notifications manually.',
       },
       permissions: {
         pageTitle: 'Permissions & security',

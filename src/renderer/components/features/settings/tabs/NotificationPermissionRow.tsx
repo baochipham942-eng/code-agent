@@ -1,21 +1,22 @@
 import React, { useEffect, useState } from 'react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { openNativeDesktopSystemSettings } from '../../../../services/nativeDesktop';
-import { getOsNotificationPermission } from '../../../../utils/osNotification';
+import { getOsNotificationPermissionSnapshot } from '../../../../utils/osNotification';
 import { Button } from '../../../primitives/Button';
 
-type NotificationPermission = Awaited<ReturnType<typeof getOsNotificationPermission>>;
+type NotificationPermissionSnapshot = Awaited<ReturnType<typeof getOsNotificationPermissionSnapshot>>;
 
 export const NotificationPermissionRow: React.FC = () => {
   const { t } = useI18n();
   const text = t.settings.general.notifications;
-  const [permission, setPermission] = useState<NotificationPermission>('unknown');
+  const [snapshot, setSnapshot] = useState<NotificationPermissionSnapshot>({ permission: 'unknown', platform: null });
+  const [openSettingsFailed, setOpenSettingsFailed] = useState(false);
 
   useEffect(() => {
     let mounted = true;
     const refresh = async () => {
-      const next = await getOsNotificationPermission();
-      if (mounted) setPermission(next);
+      const next = await getOsNotificationPermissionSnapshot();
+      if (mounted) setSnapshot(next);
     };
     const handleFocus = () => void refresh();
     void refresh();
@@ -26,6 +27,18 @@ export const NotificationPermissionRow: React.FC = () => {
     };
   }, []);
 
+  const handleOpenSettings = async () => {
+    setOpenSettingsFailed(false);
+    try {
+      await openNativeDesktopSystemSettings('notifications');
+    } catch {
+      setOpenSettingsFailed(true);
+    }
+  };
+
+  if (snapshot.platform !== 'macos') return null;
+
+  const permission = snapshot.permission;
   const status = permission === 'granted'
     ? text.on
     : permission === 'denied'
@@ -59,6 +72,9 @@ export const NotificationPermissionRow: React.FC = () => {
           </span>
         </div>
         <p className="mt-1 text-xs leading-5 text-zinc-500">{description}</p>
+        {openSettingsFailed ? (
+          <p className="mt-1 text-xs leading-5 text-badge-danger" role="alert">{text.openSettingsFailed}</p>
+        ) : null}
       </div>
       {permission !== 'granted' ? (
         <Button
@@ -66,7 +82,7 @@ export const NotificationPermissionRow: React.FC = () => {
           size="sm"
           variant="secondary"
           className="shrink-0"
-          onClick={() => void openNativeDesktopSystemSettings('notifications')}
+          onClick={() => void handleOpenSettings()}
         >
           {text.openSettings}
         </Button>

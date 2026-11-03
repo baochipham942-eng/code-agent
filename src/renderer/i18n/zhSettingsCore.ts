@@ -201,6 +201,7 @@ export const zhSettingsCore = {
         offDescription: '任务完成和失败提醒不会弹出系统通知。',
         unknownDescription: 'Neo 无法读取 macOS 设置，请检查系统设置。',
         openSettings: '打开系统设置',
+        openSettingsFailed: '无法打开系统设置，请手动打开“通知”。',
       },
       permissions: {
         pageTitle: '权限与安全',

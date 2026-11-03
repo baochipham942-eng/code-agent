@@ -17,16 +17,27 @@ const FOREGROUND_FAILURE_TOAST_MS = 10_000;
 
 type NotifModule = typeof import('@tauri-apps/plugin-notification');
 type OsNotificationPermission = 'granted' | 'denied' | 'unknown';
+type OsNotificationPermissionSnapshot = {
+  permission: OsNotificationPermission;
+  platform: string | null;
+};
 
-export async function getOsNotificationPermission(): Promise<OsNotificationPermission> {
-  if (!isNativeDesktopAvailable()) return 'unknown';
+export async function getOsNotificationPermissionSnapshot(): Promise<OsNotificationPermissionSnapshot> {
+  if (!isNativeDesktopAvailable()) return { permission: 'unknown', platform: null };
   try {
     const snapshot = await getNativeDesktopPermissionStatus();
     const status = snapshot.permissions.find((permission) => permission.kind === 'notifications')?.status;
-    return status === 'granted' || status === 'denied' ? status : 'unknown';
+    return {
+      permission: status === 'granted' || status === 'denied' ? status : 'unknown',
+      platform: snapshot.platform,
+    };
   } catch {
-    return 'unknown';
+    return { permission: 'unknown', platform: null };
   }
+}
+
+export async function getOsNotificationPermission(): Promise<OsNotificationPermission> {
+  return (await getOsNotificationPermissionSnapshot()).permission;
 }
 
 /** 把原生通知投递结果回报主进程（落日志，便于诊断「没弹」）。fire-and-forget。 */

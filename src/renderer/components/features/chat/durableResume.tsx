@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { IPC_DOMAINS } from '@shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../services/ipcService';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { toast } from '../../../hooks/useToast';
@@ -82,9 +82,50 @@ export function useGuardedDurableContinue(
   };
 }
 
-export const DurableResumeNotice: React.FC<{ text: string }> = ({ text }) => (
+export const DurableResumeNotice: React.FC<{ text: string; actions?: React.ReactNode }> = ({ text, actions }) => (
   <div className="mx-auto mb-2 flex max-w-3xl items-center gap-2 px-4 text-xs text-zinc-400" data-testid="durable-resume-notice">
     <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand" aria-hidden="true" />
     <span>{text}</span>
+    {actions}
   </div>
 );
+
+/**
+ * 停靠待「继续」的 run 的「放弃」入口（N-STOP-ABANDON-ENTRY）：模态二次确认后走
+ * 真实取消链路（agent:cancel → web /api/cancel 的 terminalRecoveredWaitingRun）终态化。
+ * selector 带 durableResume.runId，web 路由据此终止停靠的那个 run；桌面
+ * appService.cancel 按 sessionId 落到同一 registry 方法。取消（模态的取消）不动 run。
+ */
+export function useAbandonParkedRun(
+  sessionId: string | null | undefined,
+  runId: string | null | undefined,
+): { onAbandon: () => void; confirmDialog: React.ReactNode } {
+  const { t } = useI18n();
+  const [confirming, setConfirming] = useState(false);
+  const abandon = useCallback(async () => {
+    if (!sessionId || !runId) return;
+    try {
+      await ipcService.invoke(IPC_CHANNELS.AGENT_CANCEL, { sessionId, runId });
+      void useSessionStore.getState().loadSessions({ silent: true });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    }
+  }, [sessionId, runId]);
+  return {
+    onAbandon: () => setConfirming(true),
+    confirmDialog: (
+      <ConfirmDialog
+        isOpen={confirming}
+        variant="danger"
+        title={t.chat.durableAbandonTitle}
+        message={t.chat.durableAbandonMessage}
+        confirmText={t.chat.durableAbandon}
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => {
+          setConfirming(false);
+          void abandon();
+        }}
+      />
+    ),
+  };
+}

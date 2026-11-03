@@ -293,7 +293,7 @@ class NotificationService implements Disposable {
       sessionId: data.sessionId,
       title: data.title,
       body: data.body,
-      delivery: { urgent: true },
+      delivery: { urgent: true, markSessionUnread: true },
     });
     // Fallback B（N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1）：deliver 只广播给 renderer，
     // 渲染端没了（壳声明「后台继续」退出，ADR-083）时 toast 没有落点——再弹一条 host 侧
@@ -351,7 +351,7 @@ class NotificationService implements Disposable {
         ...(data.siteOrigin ? { siteOrigin: data.siteOrigin } : {}),
         ...(data.failureKind ? { failureKind: data.failureKind } : {}),
         ...(data.resetAt ? { resetAt: data.resetAt } : {}),
-        ...(intent === 'task_failed' ? { urgent: true, failure: true } : {}),
+        ...(intent === 'task_failed' ? { urgent: true, failure: true, markSessionUnread: true } : {}),
       },
     });
     logger.info('Notification dispatched to renderer', { sessionTitle });

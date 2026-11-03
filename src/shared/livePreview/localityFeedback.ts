@@ -137,7 +137,7 @@ function sheetMessage(
 }
 
 /** 摘录进 <user-data> 前换掉字面闭合标签，否则用户文本能让数据块提前闭合。 */
-function sanitizeUserData(value: string): string {
+export function sanitizeUserData(value: string): string {
   return value.replace(/<\/user-data>/g, '<\\/user-data>');
 }
 

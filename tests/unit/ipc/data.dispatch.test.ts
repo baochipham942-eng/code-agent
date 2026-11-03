@@ -20,6 +20,10 @@ const h = vi.hoisted(() => ({
     clear: vi.fn(),
     cleanExpired: vi.fn(() => 6),
   },
+  cacheRetention: {
+    getCacheRetentionStatus: vi.fn(() => ({ failedCurrent: 2, dataDir: '/tmp/data' })),
+    retryCacheRetentionSweeps: vi.fn(async () => ({ failedCurrent: 0, dataDir: '/tmp/data' })),
+  },
 }));
 
 vi.mock('../../../src/host/services/auth', () => ({
@@ -29,6 +33,7 @@ vi.mock('../../../src/host/services/auth', () => ({
   }),
 }));
 vi.mock('../../../src/host/services/core/databaseService', () => ({ getDatabase: () => h.db }));
+vi.mock('../../../src/host/services/infra/cacheRetentionStatus', () => h.cacheRetention);
 vi.mock('../../../src/host/services/infra/toolCache', () => ({ getToolCache: () => h.toolCache }));
 vi.mock('../../../src/host/services/infra/sessionManager', () => ({ getSessionManager: () => ({ clearCache: vi.fn() }) }));
 vi.mock('../../../src/host/platform', () => ({ app: { getPath: vi.fn(() => '/tmp/code-agent-test') } }));
@@ -69,6 +74,12 @@ describe('data.ipc dispatch 特征', () => {
     expect(await call('cacheClear')).toEqual({ success: true, data: null });
     expect(h.toolCache.clear).toHaveBeenCalledTimes(1);
     expect(await call('cacheCleanExpired')).toEqual({ success: true, data: 6 });
+  });
+
+  it('缓存清理失败行两个 action：getCacheRetentionStatus 透传状态、retryCacheRetention 重跑后返回新状态；都不过权限门', async () => {
+    expect(await call('getCacheRetentionStatus')).toEqual({ success: true, data: { failedCurrent: 2, dataDir: '/tmp/data' } });
+    expect(await call('retryCacheRetention')).toEqual({ success: true, data: { failedCurrent: 0, dataDir: '/tmp/data' } });
+    expect(h.cacheRetention.retryCacheRetentionSweeps).toHaveBeenCalledTimes(1);
   });
 
   it('clearSnapshots（管理员）：天数换算毫秒传两表并合计；0 天或缺 payload → olderThanMs undefined', async () => {

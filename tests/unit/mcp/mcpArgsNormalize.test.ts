@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, afterEach } from 'vitest';
 import { normalizeMcpToolArgs } from '../../../src/host/mcp/mcpArgsNormalize';
+import { traceMcpArgsNormalized } from '../../../src/host/mcp/mcpCallTrace';
+import { MCPClient } from '../../../src/host/mcp/mcpClient';
+import { getTelemetryService } from '../../../src/host/telemetry/telemetryService';
 
 const FIELD_LIST = 'bitable.v1.appTableField.list';
 
@@ -67,5 +70,65 @@ describe('normalizeMcpToolArgs — 飞书 field.list path 重嵌', () => {
   it('field.list 但无 app_token/table_id 可搬：no-op', () => {
     const args = { params: { page_size: 50 } };
     expect(normalizeMcpToolArgs('lark', FIELD_LIST, args)).toBe(args);
+  });
+});
+
+describe('traceMcpArgsNormalized — 改写留痕（N-CONNECTOR-POLISH-AUDIT-FU5）', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('改写发生：恰一条 mcp.args_normalized，只带键名不带值', () => {
+    const addSpanEvent = vi.spyOn(getTelemetryService(), 'addSpanEvent');
+    const original = { app_token: 'secret-ish-token', table_id: 'tblYYY' };
+    const normalized = normalizeMcpToolArgs('lark', FIELD_LIST, original);
+    expect(normalized).not.toBe(original);
+
+    traceMcpArgsNormalized('span-1', 'lark', FIELD_LIST, original, normalized);
+
+    expect(addSpanEvent).toHaveBeenCalledTimes(1);
+    const [spanId, eventName, attrs] = addSpanEvent.mock.calls[0];
+    expect(spanId).toBe('span-1');
+    expect(eventName).toBe('mcp.args_normalized');
+    expect(attrs).toMatchObject({ 'mcp.server': 'lark', 'mcp.tool': FIELD_LIST });
+    // 只有顶层键名（app_token/table_id 被搬走、path 新增），绝不出现参数值
+    expect(attrs?.['mcp.args_changed_keys']).toBe('app_token,path,table_id');
+    expect(JSON.stringify(attrs)).not.toContain('secret-ish-token');
+  });
+
+  it('引用相等（无改写）：不发事件', () => {
+    const addSpanEvent = vi.spyOn(getTelemetryService(), 'addSpanEvent');
+    const args = { path: { app_token: 'a', table_id: 'b' } };
+
+    traceMcpArgsNormalized('span-1', 'lark', FIELD_LIST, args, args);
+
+    expect(addSpanEvent).not.toHaveBeenCalled();
+  });
+
+  it('spanId 缺失：不抛（tracing 不可用不影响执行）', () => {
+    const original = { app_token: 'a', table_id: 'b' };
+    const normalized = { path: { app_token: 'a', table_id: 'b' } };
+    expect(() => traceMcpArgsNormalized(undefined, 'lark', FIELD_LIST, original, normalized)).not.toThrow();
+  });
+
+  it('接线：mcpClient.callTool 在 registry 改写入参时发出该事件（变异守卫）', async () => {
+    // 这条走真 callTool 包装（span + normalize + trace 接线），不是直测 helper——
+    // 反向变异（删掉 callTool 里的 traceMcpArgsNormalized 调用）必须红在这一条上。
+    const client = new MCPClient();
+    const addSpanEvent = vi.spyOn(getTelemetryService(), 'addSpanEvent');
+    const registry = (client as unknown as {
+      registry: { normalizeToolArgs: (server: string, tool: string, args: Record<string, unknown>) => Record<string, unknown> };
+    }).registry;
+    vi.spyOn(registry, 'normalizeToolArgs').mockReturnValue({ path: { app_token: 'a', table_id: 'b' } });
+    (client as unknown as { callToolInternal: unknown }).callToolInternal = vi.fn(async () => ({
+      success: true, output: 'ok',
+    }));
+
+    await client.callTool('call-1', 'lark', FIELD_LIST, { app_token: 'a', table_id: 'b' });
+
+    const call = addSpanEvent.mock.calls.find(([, name]) => name === 'mcp.args_normalized');
+    expect(call).toBeDefined();
+    expect(call?.[0]).toEqual(expect.any(String));
+    expect(JSON.stringify(call?.[2])).not.toContain('app_token\":\"a');
   });
 });

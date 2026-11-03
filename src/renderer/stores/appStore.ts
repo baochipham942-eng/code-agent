@@ -49,6 +49,7 @@ import {
 } from '../utils/workbenchViews';
 import { createWorkbenchActions } from './workbenchActions';
 import { SECONDARY_PAGES_CLOSED } from './secondaryPages';
+import { discardCronEditorDraft } from '../components/features/cron/cronEditorDraftStash';
 import { buildContentPreviewState } from './contentPreviewState';
 import { buildPermissionDecisionState, buildPermissionDismissState } from './permissionDecisionState';
 import { installedBundledCapabilityIds } from './bundledCapabilityStore';
@@ -117,6 +118,7 @@ const defaultModelConfig: ModelConfig = {
 export const useAppStore = create<AppState>()((set, get) => ({
   // Initial UI State
   showSettings: false,
+  settingsReturnTo: null,
   settingsInitialTab: null,
   settingsMemoryFocus: null,
   settingsCapabilityFocus: null,
@@ -219,9 +221,32 @@ export const useAppStore = create<AppState>()((set, get) => ({
   contextHealthCollapsed: true, // 默认收起
 
   // Actions
-  setShowSettings: (show) => set(show
-    ? { showSettings: true }
-    : { ...SECONDARY_PAGES_CLOSED, showSettings: false }),
+  // 不带返回落点的关闭（引导完成 / 邀专家 / 建角色会话等，落点是聊天）：
+  // 清掉返回落点，并作废「去设置」暂存的编辑器草稿——之后的「新建任务」给全新空白草稿。
+  setShowSettings: (show) => {
+    if (!show) discardCronEditorDraft();
+    set(show
+      ? { showSettings: true }
+      : { ...SECONDARY_PAGES_CLOSED, showSettings: false, settingsReturnTo: null });
+  },
+  // 带返回落点打开设置（Stripe portal return_url 模式）：深链落点不在设置页时退化为普通深链。
+  openSettingsWithReturn: (tab, returnTo) => {
+    const noFocus = { settingsMemoryFocus: null, settingsCapabilityFocus: null };
+    const target = resolveSettingsDeepLink(tab, installedBundledCapabilityIds());
+    if (target.kind !== 'settings') {
+      get().openSettingsTab(tab);
+      return;
+    }
+    set({ showSettings: true, settingsInitialTab: target.tab, settingsReturnTo: returnTo, ...noFocus });
+  },
+  // 用户关闭设置（X / Esc）：带返回落点时直接回该页（编辑器凭暂存草稿重开）；否则与 setShowSettings(false) 等价。
+  closeSettings: () => {
+    if (get().settingsReturnTo === 'cronCenter') {
+      set({ ...SECONDARY_PAGES_CLOSED, showSettings: false, showCronCenter: true, settingsReturnTo: null });
+      return;
+    }
+    get().setShowSettings(false);
+  },
   setPendingRoleChatSeed: (seed) => set({ pendingRoleChatSeed: seed }),
   setPendingProjectGoalChatSeed: (seed) => set({ pendingProjectGoalChatSeed: seed }),
   setShowPromptManager: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showPromptManager: show }),
@@ -230,7 +255,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const noFocus = { settingsMemoryFocus: null, settingsCapabilityFocus: null };
     const target = resolveSettingsDeepLink(tab, installedBundledCapabilityIds());
     if (target.kind === 'cronCenter') {
-      set({ ...SECONDARY_PAGES_CLOSED, showCronCenter: true, showSettings: false, ...noFocus });
+      // 深链直达自动化（设置页搜索）：也算「回去了」，返回落点就地清掉，草稿留给编辑器取。
+      set({ ...SECONDARY_PAGES_CLOSED, showCronCenter: true, showSettings: false, settingsReturnTo: null, ...noFocus });
     } else if (target.kind === 'capabilityHub') {
       get().openCapabilityHub(target.tab);
       set(noFocus);
@@ -330,12 +356,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setPendingInAppValidationRequest: (request) => set({ pendingInAppValidationRequest: request }),
   setShowActivityPanel: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showActivityPanel: show }),
   setShowCapabilityHub: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showCapabilityHub: show }),
-  openCapabilityHub: (tab) => set({
-    ...SECONDARY_PAGES_CLOSED,
-    showCapabilityHub: true,
-    showSettings: false,
-    capabilityHubTab: tab,
-  }),
+  openCapabilityHub: (tab) => {
+    // 关掉设置且不回自动化：返回落点与暂存草稿一并作废（同 setShowSettings(false) 的放弃语义）。
+    discardCronEditorDraft();
+    set({
+      ...SECONDARY_PAGES_CLOSED,
+      showCapabilityHub: true,
+      showSettings: false,
+      capabilityHubTab: tab,
+      settingsReturnTo: null,
+    });
+  },
   closeSecondaryPages: () => set({ ...SECONDARY_PAGES_CLOSED }),
   setShowCronCenter: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showCronCenter: show }),
   setShowTimeCapabilityCenter: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showTimeCapabilityCenter: show }),

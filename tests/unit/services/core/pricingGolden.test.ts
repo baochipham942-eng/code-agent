@@ -18,6 +18,8 @@ const GOLDEN_PROVIDERS = [
   "claude",
   "claude",
   "zhipu",
+  // glm-5.3（N-CRON-RUN-LEDGER-VISIBLE 新增价目，与 glm-5 同价）
+  "zhipu",
   "zhipu",
   "zhipu",
   "zhipu",
@@ -174,6 +176,14 @@ const GOLDEN_EXPECTED_COST_USD = [
     "allFour": 0.09125,
     "zero": 0,
     "large": 1.05625
+  },
+  {
+    "inputOutput": 0.0075000000000000015,
+    "cacheRead": 0.007625000000000002,
+    "cacheCreation": 0.009062500000000001,
+    "allFour": 0.008250000000000002,
+    "zero": 0,
+    "large": 0.11125000000000002
   },
   {
     "inputOutput": 0.0075000000000000015,

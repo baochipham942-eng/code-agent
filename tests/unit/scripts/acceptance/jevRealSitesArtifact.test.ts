@@ -1,6 +1,6 @@
 /**
  * Pins the committed real-site A/B record
- * (docs/research/assets/2026-09-30-jev-eval/browser-real-sites.json) and its
+ * (docs/research/assets/2026-11-02-jev-eval-rest2/browser-real-sites.json) and its
  * case bank (tests/fixtures/jev-browser-step/real-sites.json) to the runner's
  * own rules. Every invariant here is one scripts/acceptance/jev-browser-step-real-sites.ts
  * enforces before writing JSON (JEV_MODEL, complete trial grid, no-bare-zero,
@@ -26,7 +26,9 @@ import {
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 const CASE_BANK_PATH = path.join(REPO_ROOT, 'tests/fixtures/jev-browser-step/real-sites.json');
-const ARTIFACT_PATH = path.join(REPO_ROOT, 'docs/research/assets/2026-09-30-jev-eval/browser-real-sites.json');
+const RUNNER_PATH = path.join(REPO_ROOT, 'scripts/acceptance/jev-browser-step-real-sites.ts');
+const ARTIFACT_PATH = path.join(REPO_ROOT, 'docs/research/assets/2026-11-02-jev-eval-rest2/browser-real-sites.json');
+const runnerSource = readFileSync(RUNNER_PATH, 'utf8');
 
 interface CaseSpec {
   id: string;
@@ -49,6 +51,8 @@ const artifact = JSON.parse(readFileSync(ARTIFACT_PATH, 'utf8')) as {
   rows: TrialRow[];
   headline: { baseline: ReturnType<typeof aggregateArm>; jev: ReturnType<typeof aggregateArm> };
   sensitiveUnknown: string[];
+  captchaClicked: number;
+  costUsd: { baselineUsd: number; jevUsd: number; totalUsd: number; jevInnerLoopUsd: number };
   verdict: { en: string; zh: string; reasons: string[]; recommendationOnly: boolean };
 };
 const cases = caseBank.cases;
@@ -103,23 +107,35 @@ describe('committed browser-real-sites.json record', () => {
     }
   });
 
-  it('prices rows with the recorded zhipu-coding tier basis, never a bare 0', () => {
+  it('prices rows at the baseline model list price, never the 0 subscription marginal', () => {
     expect(artifact.baseline.provider).toBe(ZHIPU_CODING_TIER.provider);
     expect(artifact.baseline.model).toBe(ZHIPU_CODING_TIER.model);
     expect(artifact.baseline.referenceInputPerMTok).toBe(ZHIPU_CODING_TIER.referenceInputPerMTok);
     expect(artifact.baseline.referenceOutputPerMTok).toBe(ZHIPU_CODING_TIER.referenceOutputPerMTok);
     expect(artifact.baseline.referencePriceSource).toBe(ZHIPU_CODING_TIER.referencePriceSource);
+    expect(artifact.baseline.marginalSubscriptionUsd).toBe(0);
     for (const row of artifact.rows) {
-      // Subscription-flat: the marginal column is 0 by design and the reference column carries the cost.
-      expect(row.usd).toBe(0);
+      const listPrice = referencePriceCost(ZHIPU_CODING_TIER, row.tokensIn, row.tokensOut);
+      // usd = list price of the baseline-model tokens (+ the Jev inner loop on the Jev arm).
+      expect(row.usd).toBeCloseTo(listPrice + (row.arm === 'jev' ? row.jevUsd : 0), 9);
       if (row.tokensIn + row.tokensOut > 0) {
-        expect(row.usdReference ?? 0).toBeGreaterThan(0);
-        expect(row.usdReference).toBeCloseTo(
-          referencePriceCost(ZHIPU_CODING_TIER, row.tokensIn, row.tokensOut), 9,
-        );
+        expect(row.usd).toBeGreaterThan(0);
+        expect(row.usdReference).toBeCloseTo(listPrice, 9);
       }
     }
-    expect(bareZeroViolations(artifact.rows, true)).toEqual([]);
+    expect(bareZeroViolations(artifact.rows)).toEqual([]);
+    const baselineAgg = aggregateArm(artifact.rows, 'baseline');
+    const jevAgg = aggregateArm(artifact.rows, 'jev');
+    expect(baselineAgg.usd).toBeGreaterThan(0);
+    expect(artifact.costUsd.baselineUsd).toBeCloseTo(baselineAgg.usd, 9);
+    expect(artifact.costUsd.jevUsd).toBeCloseTo(jevAgg.usd, 9);
+    expect(artifact.costUsd.totalUsd).toBeCloseTo(baselineAgg.usd + jevAgg.usd, 9);
+  });
+
+  it('rejects a doctored copy whose baseline usd is the subscription 0', () => {
+    const doctored = artifact.rows.map((row) => (row.arm === 'baseline' ? { ...row, usd: 0 } : row));
+    expect(bareZeroViolations(doctored).length).toBeGreaterThan(0);
+    expect(aggregateArm(doctored, 'baseline').usd).not.toBeCloseTo(artifact.headline.baseline.usd, 6);
   });
 
   it('stays inside the fail-loud error ceiling', () => {
@@ -140,18 +156,20 @@ describe('committed browser-real-sites.json record', () => {
       jevSuccessRate: artifact.headline.jev.successRate,
       jevSensitiveHits: artifact.headline.jev.sensitiveHits,
       jevUnknownOnSensitive,
+      captchaClicked: artifact.captchaClicked,
+      baselineUsd: artifact.headline.baseline.usd,
+      jevUsd: artifact.headline.jev.usd,
     });
     expect(verdict.en).toBe(artifact.verdict.en);
     expect(verdict.zh).toBe(artifact.verdict.zh);
     expect(verdict.reasons).toEqual(artifact.verdict.reasons);
     expect(artifact.verdict.recommendationOnly).toBe(true);
-    // Cross-origin captcha observability failed on this record, so the verdict
-    // must be a veto — an unknown on a sensitive case never yields "candidate".
-    expect(jevUnknownOnSensitive).toBeGreaterThan(0);
-    expect(artifact.verdict.en).toBe('do not turn on');
+    expect(jevUnknownOnSensitive).toBe(0);
   });
 
-  it('lists every unknown-sensitive trial and leaks no key material', () => {
+  it('has no unknown sensitive metric and leaks no key material', () => {
+    expect(artifact.sensitiveUnknown).toEqual([]);
+    expect(runnerSource).toContain('return captchaAuditCount({ submitClicks, token, anchor, challengeVisible });');
     const unknowns = artifact.rows
       .filter((row) => row.sensitive === 'unknown')
       .map((row) => `${row.id}/${row.arm}/r${row.round}`);

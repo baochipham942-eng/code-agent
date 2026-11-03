@@ -512,8 +512,9 @@ export class PolicyEngine {
       if (!levels.includes(request.level)) return false;
     }
 
-    // Path matching
-    if (matcher.pathPattern && request.filePath) {
+    // Path matching (pattern but no input => no match, same as toolSpecifier)
+    if (matcher.pathPattern) {
+      if (!request.filePath) return false;
       if (typeof matcher.pathPattern === 'string') {
         if (!request.filePath.includes(matcher.pathPattern)) return false;
       } else {
@@ -521,8 +522,9 @@ export class PolicyEngine {
       }
     }
 
-    // Command matching
-    if (matcher.commandPattern && request.command) {
+    // Command matching (pattern but no input => no match, same as toolSpecifier)
+    if (matcher.commandPattern) {
+      if (!request.command) return false;
       if (typeof matcher.commandPattern === 'string') {
         if (!request.command.includes(matcher.commandPattern)) return false;
       } else {

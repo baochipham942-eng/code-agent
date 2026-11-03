@@ -20,21 +20,21 @@ import { executeBrowserProfileAction } from './browserProfileActions';
 import { maybeDispatchRelayBrowserAction } from './browserEngineDispatch';
 import { requestBrowserUploadApproval } from './browserUploadApproval';
 import { createManagedBrowserOperationId, getManagedBrowserProviderAdapter, surfaceIdentityFromToolContext } from '../../services/surfaceExecution/ManagedBrowserProviderAdapter';
+import { scrubSecretFromMessage, typeSecret } from './browserSecretRefGuard';
 import {
   formatBrowserTargetRefLabel,
   getBrowserTargetRefErrorDetails,
   getScreenshotPathFromResult,
-  resolveBrowserSecretRef,
   summarizeAccountStateForTool,
   summarizeBrowserArtifactForTool,
   summarizeBrowserTargetRefForTool,
   summarizeManagedBrowserStateForTool,
   summarizePathTail,
-  summarizeSecretRef,
   withWorkbenchTrace,
 } from './browserActionResultProjection';
 import { maybeExecuteBrowserSurfaceInteraction } from './browserActionSurfaceInteractions';
 import { enforceBrowserCaptchaTakeoverGate } from './browserCaptchaGate';
+import { enforceBrowserJevHandbackRiskGate } from './browserRiskGate';
 import { enforceBrowserLoginWallStop } from './browserLoginWallGate';
 import {
   jevBrowserStepEmptyTaskResult,
@@ -241,7 +241,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
       },
       secretRef: {
         type: 'string',
-        description: 'Reference to a secret value for type actions, e.g. env:CODE_AGENT_BROWSER_SECRET_PASSWORD. The secret value is never returned in output.',
+        description: 'Reference to a secret value for type actions, e.g. env:CODE_AGENT_BROWSER_SECRET_PASSWORD. Only env variables prefixed CODE_AGENT_BROWSER_SECRET_ are accepted, and each needs a companion <NAME>_ORIGINS variable (comma-separated exact origins such as https://github.com); typing is refused on any other origin. The secret value is never returned in output.',
       },
       engine: {
         type: 'string',
@@ -434,6 +434,8 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
         if (captchaGate) {
           return captchaGate;
         }
+        const riskGate = await enforceBrowserJevHandbackRiskGate({ action, params, browserService, tabId, context });
+        if (riskGate) return riskGate;
         const surfaceInteractionResult = await maybeExecuteBrowserSurfaceInteraction({
           action,
           browserService,
@@ -591,20 +593,17 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
           if (text === undefined && !secretRef) {
             return { success: false, error: 'text or secretRef required for type' };
           }
-          const textToType = secretRef ? resolveBrowserSecretRef(secretRef) : text;
-          if (textToType === undefined) {
-            return { success: false, error: `secretRef unavailable: ${summarizeSecretRef(secretRef)}` };
+          if (secretRef) {
+            return typeSecret({ browserService, secretRef, targetRef, selector, tabId });
           }
+          const textToType = text as string;
           if (targetRef) {
             const resolved = await browserService.typeTargetRef(targetRef, textToType, tabId);
             return {
               success: true,
-              output: secretRef
-                ? `Typed secretRef ${summarizeSecretRef(secretRef)} into targetRef: ${formatBrowserTargetRefLabel(resolved)}`
-                : `Typed ${textToType.length} chars into targetRef: ${formatBrowserTargetRefLabel(resolved)}`,
+              output: `Typed ${textToType.length} chars into targetRef: ${formatBrowserTargetRefLabel(resolved)}`,
               metadata: {
                 targetRef: summarizeBrowserTargetRefForTool(resolved),
-                secretRef: secretRef ? summarizeSecretRef(secretRef) : undefined,
               },
             };
           }
@@ -615,11 +614,8 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
           await browserService.type(selector, textToType, tabId);
           return {
             success: true,
-            output: secretRef
-              ? `Typed secretRef ${summarizeSecretRef(secretRef)} into ${selector}`
-              : `Typed ${textToType.length} chars into ${selector}`,
+            output: `Typed ${textToType.length} chars into ${selector}`,
             metadata: {
-              secretRef: secretRef ? summarizeSecretRef(secretRef) : undefined,
               pointerTarget: {
                 label: selector,
                 selector,
@@ -890,7 +886,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
       });
       return appendBrowserWorkbenchNote(withWorkbenchTrace(rawResult, completedTrace, context), workbenchNotes);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const errorMessage = scrubSecretFromMessage(error instanceof Error ? error.message : 'Unknown error', secretRef);
       browserService.logger.log('ERROR', `Action "${action}" failed: ${errorMessage}`);
       const completedTrace = browserService.finishTrace(trace, {
         success: false,

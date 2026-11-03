@@ -162,6 +162,13 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
       ? s.waitingPermissionApp.replace('{app}', () => waitingAppName)
       : s.waitingPermission
     : s.waitingInput;
+  const importSourceLabel = session.origin?.kind === 'import'
+    ? session.engine?.kind === 'claude_code'
+      ? s.importedFromClaudeCode
+      : session.engine?.kind === 'codex_cli'
+        ? s.importedFromCodex
+        : undefined
+    : undefined;
   const latestActivityAt = Math.max(
     session.updatedAt || 0,
     sessionRuntime?.lastActivityAt || 0,
@@ -256,6 +263,11 @@ export const SidebarSessionItem: React.FC<SidebarSessionItemProps> = ({
                 data-testid="sidebar-session-waiting-text"
               >
                 {waitingText}
+              </div>
+            )}
+            {status.kind !== 'approval' && importSourceLabel && (
+              <div className="truncate text-[11px] text-zinc-500" data-testid="sidebar-session-import-source">
+                {importSourceLabel}
               </div>
             )}
           </div>

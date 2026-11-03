@@ -222,6 +222,33 @@ describe('TurnBasedTraceView session entry scrolling', () => {
   });
 });
 
+describe('TurnBasedTraceView session-entry settle cancel', () => {
+  it('recomputes isAtBottom from real geometry when settling is cancelled by a turns reference change', () => {
+    const view = render(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1) }));
+    const scroller = view.getByTestId('virtuoso-scroller');
+    act(() => mocks.virtuosoProps.atBottomStateChange(false));
+    expect(view.getByRole('button', { name: /回到底部|Jump to bottom/ })).toBeTruthy();
+    Object.defineProperties(scroller, {
+      scrollHeight: { value: 5000, configurable: true },
+      clientHeight: { value: 700, configurable: true },
+      scrollTop: { value: 0, configurable: true, writable: true },
+    });
+
+    act(() => {
+      mocks.virtuosoProps.rangeChanged({ startIndex: 1_000_000, endIndex: 1_000_002 });
+      flushAnimationFrames();
+      vi.runOnlyPendingTimers();
+    });
+    scroller.scrollTop = 4300;
+    view.rerender(React.createElement(TurnBasedTraceView, { projection: makeProjection(-1) }));
+    for (let frame = 0; frame < 5; frame += 1) {
+      act(() => flushAnimationFrames());
+    }
+
+    expect(view.queryByRole('button', { name: /回到底部|Jump to bottom/ })).toBeNull();
+  });
+});
+
 describe('TurnBasedTraceView focus helpers', () => {
   it('counts only leading history turns inserted before the previous first turn', () => {
     expect(getPrependedTurnCount('turn-1', [makeTurn(-2), makeTurn(-1), makeTurn(0)]))

@@ -203,6 +203,10 @@ export function useSessionEntryScroll({
         },
         onCancel: () => {
           sessionEntrySettlingRef.current = false;
+          const scroller = scrollerElementRef.current;
+          if (scroller && scroller.scrollHeight > 0) {
+            setIsAtBottom(scroller.scrollHeight <= scroller.clientHeight || isScrollerNearBottom(scroller));
+          }
         },
       });
     });

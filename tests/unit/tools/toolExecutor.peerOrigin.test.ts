@@ -61,6 +61,7 @@ vi.mock('../../../src/host/tools/permissionClassifier', async (importOriginal) =
 import { getToolCache } from '../../../src/host/services/infra/toolCache';
 import { getProtocolRegistry } from '../../../src/host/tools/protocolRegistry';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
+import { PermissionRequestReason } from '../../../src/shared/contract/permission';
 import type { PermissionRequestData } from '../../../src/host/tools/types';
 import type { AgentMessageOrigin } from '../../../src/host/agent/messageOrigin';
 import { getPermissionModeManager } from '../../../src/host/permissions/modes';
@@ -167,6 +168,49 @@ describe('ToolExecutor turn 起源权限闸（ADR-067 D3）', () => {
     expect(request.turnOrigin).toEqual([PEER]);
     expect(result.success).toBe(false);
   });
+
+  it('返修 r3 正向：工作区外绝对路径 Write 的边界 ask 是唯一成因 → forceConfirm + boundary-only + OutsideWorkspace', async () => {
+    // r2 钉了「非边界成因在场时标记必须缺席」；这里钉同链路的正向形状——定时任务写授权
+    // 真跑放行的正是它（e2e/glm 主腿实证）：W3 写边界 ask 是 forceConfirm 的唯一成因，
+    // 三元组必须齐：forceConfirm=true、forceConfirmBoundaryOnly=true、
+    // reasonCode=FileWriteOutsideWorkspace。形状复刻 cron 会话：无 workspace 权威
+    // （CODE_AGENT_HOME + workingDirectory 都指向假 home → writeWorkspaceRoot 为空，
+    // toolExecutor.homeBoundary 同款配方）——分类器在 tmp 白名单**之前**就走
+    // 「无工作区边界 → outside_project ask」（permissionClassifier.ts:1173）。
+    const prevHome = process.env.CODE_AGENT_HOME;
+    const fakeHome = await fs.mkdtemp(path.join(os.tmpdir(), 'peer-origin-home-'));
+    const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'peer-origin-outside-'));
+    process.env.CODE_AGENT_HOME = fakeHome;
+    try {
+      const executor = new ToolExecutor({
+        workingDirectory: fakeHome,
+        requestPermission: async (request) => {
+          permissionRequests.push(request);
+          return false;
+        },
+      });
+      executor.setAuditEnabled(false);
+      // 目标必须在 runtimeWorkspace（=workingDirectory=fakeHome）之外，reasonCode 才是
+      // FileWriteOutsideWorkspace（getFileBoundaryId 的 inWorkspace 判据是 workingDirectory）。
+      // 分类器侧 workspaceRoot 为空 → 在 tmp 白名单之前就走 W3，目标落在 tmpdir 不影响。
+      await executor.execute(
+        'Write',
+        { file_path: path.join(outsideDir, 'boundary-only-probe.txt'), content: 'neo-boundary-only' },
+        { sessionId: sessionId('boundary-only') },
+      );
+      expect(permissionRequests).toHaveLength(1);
+      expect(permissionRequests[0].type).toBe('file_write');
+      expect(permissionRequests[0].forceConfirm).toBe(true);
+      expect(permissionRequests[0].forceConfirmBoundaryOnly).toBe(true);
+      expect(permissionRequests[0].reasonCode).toBe(PermissionRequestReason.FileWriteOutsideWorkspace);
+    } finally {
+      if (prevHome === undefined) delete process.env.CODE_AGENT_HOME;
+      else process.env.CODE_AGENT_HOME = prevHome;
+      await fs.rm(fakeHome, { recursive: true, force: true });
+      await fs.rm(outsideDir, { recursive: true, force: true });
+    }
+  });
+
 
   it('classifier 判 approve 也压不住：peer 起源仍出卡（降档在自动放行之后）', async () => {
     classifierState.autoApprove = true;

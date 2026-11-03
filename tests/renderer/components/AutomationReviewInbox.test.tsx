@@ -487,6 +487,30 @@ describe('AutomationReviewInbox', () => {
     });
   });
 
+  it('N-PERM-NL-RULES-K2 handback 行：出「我做完了 / 让 Neo 做这一次」两键，不出批准/拒绝；两键各回 user_did_it / allow', async () => {
+    listParkedApprovals.mockResolvedValueOnce([makeParked({ id: 'perm_hb_1', handback: true })]).mockResolvedValue([]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('parked-handback-badge')).toBeTruthy();
+    });
+    expect(screen.queryByTestId('parked-approve')).toBeNull();
+    expect(screen.queryByTestId('parked-reject')).toBeNull();
+    fireEvent.click(screen.getByTestId('parked-handback-done'));
+    await waitFor(() => {
+      expect(ipcInvoke).toHaveBeenCalledWith('agent:permission-response', 'perm_hb_1', 'user_did_it', 'session-1');
+    });
+    listParkedApprovals.mockResolvedValueOnce([makeParked({ id: 'perm_hb_2', handback: true })]).mockResolvedValue([]);
+    cleanup();
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('parked-handback-let-neo')).toBeTruthy();
+    });
+    fireEvent.click(screen.getByTestId('parked-handback-let-neo'));
+    await waitFor(() => {
+      expect(ipcInvoke).toHaveBeenCalledWith('agent:permission-response', 'perm_hb_2', 'allow', 'session-1');
+    });
+  });
+
   it('拒绝回传 deny', async () => {
     listParkedApprovals.mockResolvedValueOnce([makeParked({ id: 'perm_req_2' })]).mockResolvedValue([]);
     render(<AutomationReviewInbox />);

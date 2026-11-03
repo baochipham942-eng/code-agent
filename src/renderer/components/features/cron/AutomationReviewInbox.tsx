@@ -250,23 +250,27 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                       {!isOrphaned && item.handback ? (
                         <>
                           {/* N-PERM-NL-RULES-K2 handback 行：出「我做完了 / 让 Neo 做这一次」两键，语义见 shared/nlRuleRestate */}
-                          <button /* ds-allow:button: 收件箱行内超小文本按钮（py-1 text-xs） */
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             onClick={() => handleResolveParked(item, 'user_did_it')}
                             disabled={busyId === item.id}
-                            className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-badge-success transition-colors hover:bg-emerald-500/10 hover:text-badge-success disabled:opacity-50"
+                            className="shrink-0 text-badge-success"
                             data-testid="parked-handback-done"
                           >
                             <Check className="h-3.5 w-3.5" />
                             {NL_RULE_K2_TEXT.inbox.userDidIt}
-                          </button>
-                          <button /* ds-allow:button: 同上，收件箱行内超小文本按钮 */
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             onClick={() => handleResolveParked(item, 'allow')}
                             disabled={busyId === item.id}
-                            className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-50"
+                            className="shrink-0"
                             data-testid="parked-handback-let-neo"
                           >
                             {NL_RULE_K2_TEXT.inbox.letNeoOnce}
-                          </button>
+                          </Button>
                         </>
                       ) : !isOrphaned && (
                         <>

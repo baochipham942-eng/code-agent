@@ -418,7 +418,11 @@ async function executeQuickAttempt(
   try {
     // 出云密钥掩码（N-PROMPT-SECRET-MASK）：快模型旁路（建议/归档判断等）也带会话原文，
     // 开关开时同样掩码、回包还原；掩码失败落入下方 catch → 失败结果，不发请求。
-    const outboundMask = applyOutboundSecretMask([{ role: 'user', content: prompt }]);
+    const outboundMask = applyOutboundSecretMask(
+      [{ role: 'user', content: prompt }],
+      undefined,
+      { provider: config.provider, model: config.model },
+    );
     const body: Record<string, unknown> = {
       model: config.model,
       messages: outboundMask?.messages ?? [{ role: 'user', content: prompt }],

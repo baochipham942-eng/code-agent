@@ -11,7 +11,8 @@ import type { SearchMatch } from './ChatSearchBar';
 import { TurnCard } from './TurnCard';
 import { TurnRail } from './TurnRail';
 import { startSearchMatchSettlement } from './searchMatchSettlement';
-import { scheduleAfterLayout, startBottomSettlement, useSessionEntryScroll } from './useSessionEntryScroll';
+import { isScrollerNearBottom, scheduleAfterLayout, startBottomSettlement, useSessionEntryScroll } from './useSessionEntryScroll';
+export { isScrollerNearBottom } from './useSessionEntryScroll';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useTaskStore } from '../../../stores/taskStore';
@@ -103,13 +104,6 @@ export function shouldFollowTurnOutput(
   if (userScrollSuppressed) return false;
   if (keepActiveOutputVisible) return 'auto';
   return isAtBottom ? 'auto' : false;
-}
-
-export function isScrollerNearBottom(
-  scroller: Pick<HTMLElement, 'scrollHeight' | 'scrollTop' | 'clientHeight'>,
-  threshold = 96,
-): boolean {
-  return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight <= threshold;
 }
 
 export function getOutputFollowTurnIndex(
@@ -320,6 +314,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const [followedOutputTurnId, setFollowedOutputTurnId] = useState<string | null>(null);
   // 用户上滚离开底部时浮出「回到底部」按钮（贴底时隐藏）
   const [isAtBottom, setIsAtBottom] = useState(true);
+  const sessionEntrySettlingRef = useRef(false);
   // 轮次导航（N-TURNRAIL）：当前轮 = 视口顶部那一轮，由 Virtuoso 的可见范围回报驱动；
   // 宽/窄两态由容器查询（外层 @container）切换。历史整段加载，跳转直接 scrollToIndex。
   const railItems = useMemo(() => buildTurnRailItems(projection.turns), [projection.turns]);
@@ -371,8 +366,11 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     outputFollowStreamingRef,
     keepActiveOutputVisibleRef,
     activeDisplayScrollCancelRef,
+    sessionEntrySettlingRef,
     userScrollLastInteractionAtRef,
     setIsAtBottom,
+    setFollowedOutputTurnId,
+    setRailActiveTurnId,
   });
   const outputFollowRevision = useMemo(
     () => getTurnOutputRevision(outputFollowTurn, {
@@ -410,11 +408,11 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   const visibleRangeRef = useRef<ListRange | null>(null);
   const reportVisibleRange = useCallback((range: ListRange) => {
     visibleRangeRef.current = range;
-    noteSessionEntryRange();
     const topTurnId = projectionTurnsRef.current[range.startIndex - firstItemIndex]?.turnId ?? null;
-    if (topTurnId && !railActiveFromDomRef.current) {
+    if (topTurnId && !railActiveFromDomRef.current && !sessionEntrySettlingRef.current) {
       setRailActiveTurnId((current) => (current === topTurnId ? current : topTurnId));
     }
+    noteSessionEntryRange();
     onInterruptionPointVisibilityChange?.(
       isTurnVisibleInRange(range, interruptionTurnIndex, firstItemIndex),
     );
@@ -1073,11 +1071,11 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         itemContent={itemContent}
         followOutput={followOutput}
         atBottomStateChange={(atBottom) => {
-          setIsAtBottom(atBottom);
+          if (!sessionEntrySettlingRef.current) setIsAtBottom(atBottom);
           if (atBottom && !historyPrependInProgressRef.current && !isUserScrollSuppressed()) {
             keepActiveOutputVisibleRef.current = true;
             const turnId = outputFollowTurn?.turnId ?? projection.turns[projection.turns.length - 1]?.turnId;
-            if (turnId) updateFollowedOutputTurnId(turnId);
+            if (turnId && !sessionEntrySettlingRef.current) updateFollowedOutputTurnId(turnId);
           }
         }}
         atBottomThreshold={96}

@@ -129,7 +129,16 @@ describe('outboundSecretMask ① 负例（不该掩的别动）', () => {
   beforeEach(maskOn);
 
   it.each([
-    ['bearer（medium confidence 不在本 cut）', 'Authorization: Bearer abcdefgh12345678'],
+    ['bearer 短令牌（<20 字符）', 'Authorization: Bearer abcdefgh12345678'],
+    ['bearer 散文', 'Bearer authentication scheme is described in RFC 6750'],
+    ['bearer 长但无数字', 'Authorization: Bearer abcdefghijklmnopqrstuvwxyz'],
+    ['bearer 小写（区分大小写）', 'authorization: bearer abcdefghij0123456789klmn'],
+    ['13 位时间戳', 'created at 1700000000000 ms'],
+    ['Luhn 不合规的 16 位', 'card 4111 1111 1111 1112'],
+    ['更长数字串里嵌着 Luhn 合规号', 'id 94111111111111111 end'],
+    ['数字紧贴字母', 'order A4111111111111111'],
+    ['小数点相邻', 'ratio 0.4111111111111111'],
+    ['Luhn 合规但无已知发卡段', 'ref 9999999999999995'],
     ['MAX_TOKENS 数字赋值', 'MAX_TOKENS = 128000'],
     ['普通 token 变量名', 'const token = userToken;'],
     ['占位符值', 'MY_API_KEY=your-api-key-here'],
@@ -445,5 +454,73 @@ describe('outboundSecretMask 开关与 fail-closed', () => {
       },
     });
     expect(() => s.restore(evilResponse)).toThrow(/OUTBOUND_SECRET_MASK_RESTORE_FAILED/);
+  });
+});
+
+
+describe('outboundSecretMask FU1 BEARER / CARD', () => {
+  beforeEach(maskOn);
+
+  const TOKEN = 'eyJhbGciOiJIUzI1NiJ9abcd1234efgh5678';
+  const CARD = '4111 1111 1111 1111';
+
+  it('bearer：只掩令牌，Bearer 前缀留明文', () => {
+    const { masked } = maskOne(`Authorization: Bearer ${TOKEN.replace('eyJ', 'zzz')}`);
+    expect(masked).toMatch(/^Authorization: Bearer \{\{SECRET_BEARER_TOKEN_[0-9a-f]{8}\}\}$/);
+  });
+
+  it.each([
+    ['visa 空格分组', '4111 1111 1111 1111'],
+    ['visa 连续', '4111111111111111'],
+    ['visa 短横', '4111-1111-1111-1111'],
+    ['mastercard 5xxx', '5555 5555 5555 4444'],
+    ['mastercard 2-series', '2223003122003222'],
+    ['amex', '378282246310005'],
+    ['discover', '6011111111111117'],
+  ])('card %s 被掩且可原样还原', (_n, card) => {
+    const { masked, placeholder } = maskOne(`pay ${card}, thanks`);
+    expect(placeholder).toMatch(/^\{\{SECRET_CARD_NUMBER_[0-9a-f]{8}\}\}$/);
+    expect(masked).toBe(`pay ${placeholder}, thanks`);
+    const restored = session().restore({ content: masked } as ModelResponse);
+    expect(restored.content).toBe(`pay ${card}, thanks`);
+  });
+
+  it('句末句号不阻止卡号命中', () => {
+    const { masked } = maskOne('my card is 4111111111111111.');
+    expect(masked).toMatch(/^my card is \{\{SECRET_CARD_NUMBER_[0-9a-f]{8}\}\}\.$/);
+  });
+
+  it('同值跨请求同占位符（bearer 与 card）', () => {
+    const t1 = maskOne(`Bearer ${TOKEN}`);
+    const t2 = maskOne(`x Bearer ${TOKEN} y`);
+    expect(t2.placeholder).toBe(t1.placeholder);
+    const c1 = maskOne(`card ${CARD}`);
+    const c2 = maskOne(`${CARD} again`);
+    expect(c2.placeholder).toBe(c1.placeholder);
+  });
+
+  it('混合日志：两种都掩，周边订单号/时间戳不动，入参不被改', () => {
+    const text = `ts=1700000000000 order=20261102123456\nAuthorization: Bearer ${TOKEN}\ncard ${CARD}`;
+    const input: ModelMessage[] = [{ role: 'user', content: text }];
+    const snapshot = JSON.stringify(input);
+    const s = applyOutboundSecretMask(input)!;
+    const out = s.messages[0].content as string;
+    expect(JSON.stringify(input)).toBe(snapshot);
+    expect(out).not.toContain(TOKEN);
+    expect(out).not.toContain(CARD);
+    expect(out).toContain('ts=1700000000000 order=20261102123456');
+    expect(s.restore({ content: out } as ModelResponse).content).toBe(text);
+  });
+
+  it.each([2, 3])('卡号占位符被流式切成 %i 片仍还原', async (pieces) => {
+    const { masked } = maskOne(`card ${CARD} ok`);
+    const sink = collector();
+    const s = applyOutboundSecretMask([{ role: 'user', content: 'x' }], sink.onStream)!;
+    const size = Math.ceil(masked.length / pieces);
+    for (let i = 0; i < masked.length; i += size) {
+      await s.onStream!({ type: 'text', content: masked.slice(i, i + size) });
+    }
+    await s.onStream!({ type: 'complete' } as StreamChunk);
+    expect(joinedText(sink.chunks)).toBe(`card ${CARD} ok`);
   });
 });

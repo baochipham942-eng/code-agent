@@ -178,9 +178,15 @@ describe('ToolExecutor turn 起源权限闸（ADR-067 D3）', () => {
     // toolExecutor.homeBoundary 同款配方）——分类器在 tmp 白名单**之前**就走
     // 「无工作区边界 → outside_project ask」（permissionClassifier.ts:1173）。
     const prevHome = process.env.CODE_AGENT_HOME;
+    const prevDataDir = process.env.CODE_AGENT_DATA_DIR;
     const fakeHome = await fs.mkdtemp(path.join(os.tmpdir(), 'peer-origin-home-'));
     const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'peer-origin-outside-'));
     process.env.CODE_AGENT_HOME = fakeHome;
+    // HOME 必须配 DATA_DIR（tests/security/codeAgentHomeIsolationGuard）：globalSetup 钉了
+    // DATA_DIR，只挪 HOME 对 getUserConfigDir 是静默 no-op。本用例读的是 getHomeDir()
+    // （workspaceAuthority 的 canonicalHomes），DATA_DIR 顺带指进 fakeHome 反而把用户
+    // 配置隔离做实，随下方 finally 一并恢复/清理。
+    process.env.CODE_AGENT_DATA_DIR = path.join(fakeHome, 'data');
     try {
       const executor = new ToolExecutor({
         workingDirectory: fakeHome,
@@ -206,6 +212,8 @@ describe('ToolExecutor turn 起源权限闸（ADR-067 D3）', () => {
     } finally {
       if (prevHome === undefined) delete process.env.CODE_AGENT_HOME;
       else process.env.CODE_AGENT_HOME = prevHome;
+      if (prevDataDir === undefined) delete process.env.CODE_AGENT_DATA_DIR;
+      else process.env.CODE_AGENT_DATA_DIR = prevDataDir;
       await fs.rm(fakeHome, { recursive: true, force: true });
       await fs.rm(outsideDir, { recursive: true, force: true });
     }

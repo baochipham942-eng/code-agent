@@ -116,7 +116,12 @@ describe('inferenceViaAiSdk × outboundSecretMask 接线', () => {
     const collector = makeCollector();
     const result = await inferenceViaAiSdk(messages, [], NO_LIMITER, collector.onStream);
     // 掩码入口被调过（读到开关=关），messages/onStream 都是同引用
-    expect(applyMaskMock).toHaveBeenCalledWith(messages, collector.onStream);
+    // 第三参是回执用的 provider/model 元信息（N-PROMPT-SECRET-MASK-FU2），不含任何原值
+    expect(applyMaskMock).toHaveBeenCalledWith(
+      messages,
+      collector.onStream,
+      expect.objectContaining({ provider: expect.any(String), model: expect.any(String) }),
+    );
     // SDK 请求文本仍是原文（请求字节不变）
     expect(sdkPromptText()).toContain(SECRET);
     expect(sdkPromptText()).not.toMatch(PLACEHOLDER_RE);

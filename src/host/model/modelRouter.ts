@@ -846,7 +846,10 @@ export class ModelRouter {
     // 字节不变）；开 → 出云掩码、回包/流式还原。掩码或还原失败在模块内以带稳定 code
     // 的错误上抛（fail-closed），这里不吞——绝不静默明文外发。默认引擎的 aiSdk 直连
     // 路径在 inferenceViaAiSdk 入口接同一模块，与本漏斗互为备份。
-    const outboundMask = applyOutboundSecretMask(replayMessages, onStream);
+    const outboundMask = applyOutboundSecretMask(replayMessages, onStream, {
+      provider: config.provider,
+      model: config.model,
+    });
     const timeoutMs = options?.requestTimeoutMs;
     const timedAbort = typeof timeoutMs === 'number' && timeoutMs > 0
       ? createTimedAbortController(timeoutMs, { label: `model-router:${config.provider}/${config.model}` })

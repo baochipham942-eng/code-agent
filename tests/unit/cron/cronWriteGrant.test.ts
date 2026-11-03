@@ -340,24 +340,56 @@ describe('approveByScheduleWriteGrant（放行判定矩阵）', () => {
     }
   });
 
-  it('forceConfirm 的 W3 写边界形态（reasonCode=file_write_outside_workspace）在界内放行', async () => {
+  it('forceConfirm 只在「W3 写边界 ask 为唯一成因」（boundary-only 标记）时放行（返修 r2）', async () => {
     sessionState.sessions['cron-sess'] = {
       id: 'cron-sess',
       origin: { kind: 'cron', metadata: { writeGrantRoot: grantRoot } },
     };
     // cron runContext 无 workspace 权威时一切写都带这条边界 ask（e2e 实证），
-    // 授权预先回答的就是它。
+    // 授权预先回答的就是它——toolExecutor 在边界 ask 是唯一成因时打 boundary-only 标记。
+    expect(await approveByScheduleWriteGrant({
+      sessionId: 'cron-sess', type: 'file_write', forceConfirm: true,
+      forceConfirmBoundaryOnly: true,
+      reasonCode: PermissionRequestReason.FileWriteOutsideWorkspace,
+      details: { path: path.join(grantRoot, 'note.txt') },
+    })).toEqual({ approved: true, approvalSource: 'schedule-write-grant' });
+    // 同一形状但 forceConfirm 另有成因（只读档 / guardFabric / peer 触发 / 确认门——
+    // 标记缺席）：授权不覆盖，照旧停车等人（返修 r2：曾只看 reasonCode 被整体绕过）。
     expect(await approveByScheduleWriteGrant({
       sessionId: 'cron-sess', type: 'file_write', forceConfirm: true,
       reasonCode: PermissionRequestReason.FileWriteOutsideWorkspace,
       details: { path: path.join(grantRoot, 'note.txt') },
-    })).toEqual({ approved: true, approvalSource: 'schedule-write-grant' });
-    // 其余 reasonCode 的 forceConfirm 不归授权管
+    })).toBeUndefined();
+    // 其余 reasonCode 的 forceConfirm 不归授权管（即便带 boundary-only 标记）
     expect(await approveByScheduleWriteGrant({
       sessionId: 'cron-sess', type: 'file_write', forceConfirm: true,
+      forceConfirmBoundaryOnly: true,
       reasonCode: PermissionRequestReason.UncertainWriteTargetWithPathDeny,
       details: { path: path.join(grantRoot, 'note.txt') },
     })).toBeUndefined();
+  });
+
+  it('授权根内的项目级保护路径与禁写名（.git/config、.git/hooks/*）不放行（返修 r2）', async () => {
+    // 执行侧 isProtectedWritePath 带 { projectRoot: writeWorkspaceRoot ?? executionCwd }；
+    // 判据侧曾漏 projectRoot → <root>/.git/config 等根内项目级保护目标被放行。
+    // .git/hooks/ 下（含新建）钩子由禁写名规则（getForbiddenWritePathsUnderRoot 同一名册）补拦。
+    sessionState.sessions['cron-sess'] = {
+      id: 'cron-sess',
+      origin: { kind: 'cron', metadata: { writeGrantRoot: grantRoot } },
+    };
+    expect(await approveByScheduleWriteGrant({
+      sessionId: 'cron-sess', type: 'file_write',
+      details: { path: path.join(grantRoot, '.git', 'hooks', 'pre-commit') },
+    })).toBeUndefined();
+    expect(await approveByScheduleWriteGrant({
+      sessionId: 'cron-sess', type: 'file_write',
+      details: { path: path.join(grantRoot, '.git', 'config') },
+    })).toBeUndefined();
+    // 同一根下的普通文件仍放行（收紧没有殃及池鱼）
+    expect(await approveByScheduleWriteGrant({
+      sessionId: 'cron-sess', type: 'file_write',
+      details: { path: path.join(grantRoot, 'note.txt') },
+    })).toEqual({ approved: true, approvalSource: 'schedule-write-grant' });
   });
 
   it('保护路径（~/.npmrc 等约束自改写目标）即使落在授权文件夹内也不放行', async () => {

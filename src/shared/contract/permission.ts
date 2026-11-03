@@ -131,6 +131,13 @@ export interface PermissionRequest {
   runId?: string;
   parentToolUseId?: string;
   forceConfirm?: boolean;
+  /**
+   * N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1 返修 r2：forceConfirm 的成因标记。
+   * true 仅当 W3 写边界 ask（boundaryAskForcesConfirmation）是唯一成因且无 peer 触发；
+   * 只读档 / guardFabric / 保护路径 / 不确定目标 / 确认门 任一在场则缺席。
+   * 定时任务写授权（cronWriteGrant）只放行这一种 forceConfirm 形态，其余照旧人工。
+   */
+  forceConfirmBoundaryOnly?: boolean;
   type: PermissionType;
   tool: string;
   details: {

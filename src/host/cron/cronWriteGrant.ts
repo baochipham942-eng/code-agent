@@ -5,7 +5,8 @@
 // 授权文件夹 = 运行会话的工作目录同源判定（shared/cronWriteScope.cronWriteScopeFolder，
 // 常设刷新取产物所在目录，其余取来源会话工作目录）。运行时无人值守（壳已退出，
 // ADR-083 background）的 cron/heartbeat 会话写这个文件夹内的 file_write/file_edit
-// 自动放行；出界、forceConfirm、Bash、其余工具一律照旧停车等人。
+// 自动放行；出界、非边界成因的 forceConfirm、保护路径/禁写名、Bash、其余工具一律
+// 照旧停车等人。
 //
 // 授权语义对照 loginPassThroughOrigin 先例：显式同意才落库、普通编辑不可夹带、
 // 会话 origin.metadata 随 run 带走、消费侧只认 host 侧解析结果。
@@ -23,7 +24,7 @@ import {
   cronWriteScopeFolder,
   writeGrantRootFromMetadata,
 } from '../../shared/cronWriteScope';
-import { isProtectedWritePath } from '../sandbox/sensitivePaths';
+import { isForbiddenWriteNameUnderRoot, isProtectedWritePath } from '../sandbox/sensitivePaths';
 import { createLogger } from '../services/infra/logger';
 import { expandTilde, resolveInputPath } from '../tools/utils/resolveInputPath';
 
@@ -164,19 +165,23 @@ export async function approveByScheduleWriteGrant(request: {
   type: string;
   tool?: string;
   forceConfirm?: boolean;
+  /** toolExecutor 的成因标记：true 仅当 W3 写边界 ask 是 forceConfirm 的唯一成因。 */
+  forceConfirmBoundaryOnly?: boolean;
   reasonCode?: PermissionRequestReason;
   /** 宽收窄用：只消费 path/file_path；其余键（command/url 等）在场即说明不是文件写目标。 */
   details?: { path?: string; filePath?: string; [key: string]: unknown };
 }): Promise<PermissionAskResult | undefined> {
   if (request.type !== 'file_write' && request.type !== 'file_edit') return undefined;
-  // forceConfirm 只放行「W3 写边界 ask」这一种形态：cron/heartbeat 会话的 runContext 没有
-  // workspace 权威，一切绝对路径写都被判 outside_project（2026-10-24 e2e 实证
-  // boundaryAskForcesConfirmation=true，readOnly/guardFabric/protected/uncertain 均 false），
-  // 而用户点「允许在 <folder> 里保存文件」预先回答的恰恰是这道边界题。其余 forceConfirm
-  // 形态（保护路径、只读档、peer 来源、不确定目标）不归这份授权管，照旧人工。
+  // forceConfirm 只放行「W3 写边界 ask 为唯一成因」这一种形态（返修 r2）：cron/heartbeat
+  // 会话的 runContext 没有 workspace 权威，一切绝对路径写都被判 outside_project
+  // （2026-10-24 e2e 实证 boundaryAskForcesConfirmation=true，其余成因 false），而用户点
+  // 「允许在 <folder> 里保存文件」预先回答的恰恰是这道边界题——toolExecutor 此时打
+  // forceConfirmBoundaryOnly 标记。reasonCode 只看路径，挡不住同场的其余成因（只读档、
+  // guardFabric、保护路径、peer 来源、不确定目标、确认门），标记缺席一律照旧人工。
   if (
     request.forceConfirm === true
-    && request.reasonCode !== PermissionRequestReason.FileWriteOutsideWorkspace
+    && (request.forceConfirmBoundaryOnly !== true
+      || request.reasonCode !== PermissionRequestReason.FileWriteOutsideWorkspace)
   ) return undefined;
   const grantSession = await scheduleWriteGrantSession(request.sessionId);
   const grantRoot = grantSession?.root;
@@ -225,9 +230,23 @@ export async function approveByScheduleWriteGrant(request: {
     });
     return undefined;
   }
-  // 保护路径（~/.ssh、策略文件等）不因落在授权文件夹内而放行——授权只覆盖普通文件写。
-  if (isProtectedWritePath(path.resolve(target))) {
-    logger.info('Schedule write grant declined a protected write path', { target });
+  // 保护路径（~/.ssh、策略文件、根内 .git/config 等约束自改写目标）不因落在授权文件夹
+  // 内而放行——授权只覆盖普通文件写。projectRoot 必须带上（与执行侧同参形状）：漏了它
+  // <root>/.git/config、根内数据目录策略文件等项目级条目整组漏拦（返修 r2）。会话工作
+  // 目录与授权根不同时两侧都查（runContext 的 workspace 权威可能是其中任一个）。
+  // 禁写名规则（.git/hooks 下新建钩子、凭据名文件，与 getForbiddenWritePathsUnderRoot
+  // 同一名册）一并补拦，不要求目标已存在。
+  const resolvedTarget = path.resolve(target);
+  const cwdRoot = grantSession?.workingDirectory;
+  if (
+    isProtectedWritePath(resolvedTarget, { projectRoot: grantRoot })
+    || (cwdRoot
+      && path.isAbsolute(cwdRoot)
+      && path.resolve(cwdRoot) !== path.resolve(grantRoot)
+      && isProtectedWritePath(resolvedTarget, { projectRoot: cwdRoot }))
+    || isForbiddenWriteNameUnderRoot(resolvedTarget, grantRoot)
+  ) {
+    logger.info('Schedule write grant declined a protected write path', { target, grantRoot });
     return undefined;
   }
   return { approved: true, approvalSource: 'schedule-write-grant' };

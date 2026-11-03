@@ -160,6 +160,9 @@ describe('ToolExecutor turn 起源权限闸（ADR-067 D3）', () => {
     expect(permissionRequests).toHaveLength(1);
     const request = permissionRequests[0];
     expect(request.forceConfirm).toBe(true);
+    // 返修 r2：peer 触发是 forceConfirm 的非边界成因——boundary-only 标记必须缺席，
+    // 定时任务写授权只认「W3 写边界 ask 为唯一成因」的 forceConfirm。
+    expect(request.forceConfirmBoundaryOnly).not.toBe(true);
     expect(request.details.triggeredByAgentMessage).toEqual({ senderAgentId: 'agent-b' });
     expect(request.turnOrigin).toEqual([PEER]);
     expect(result.success).toBe(false);

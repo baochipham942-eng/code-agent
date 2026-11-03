@@ -67,6 +67,8 @@ export interface MemberPill {
   /** standby 成员的排除键（member 的 id ?? roleId；lead 用 roleId），× 掉时写进 composerStore */
   standbyKey?: string;
   filesChanged?: string[];
+  /** 最近可见进展锚点：纯思考轮不刷 contextSnapshot，锚点停在 startTime（agentRowStall 据此报「暂无进展」）。 */
+  lastActivityAt?: number;
   agent?: SwarmAgentState;
   record?: SwarmRunAgentRecord;
 }
@@ -125,6 +127,7 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
         status: pillStatusOf(agent.status),
         isLead: roleId === teamLeadRoleId,
         filesChanged: agent.filesChanged,
+        lastActivityAt: agent.contextSnapshot?.lastUpdated ?? agent.startTime,
         agent,
         record: records?.[index],
       } satisfies MemberPill;

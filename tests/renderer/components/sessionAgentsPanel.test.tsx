@@ -390,4 +390,73 @@ describe('SessionAgentsPanel', () => {
     expect(usage.textContent).toContain('2.0K');
     expect(usage.textContent).toContain('5 秒');
   });
+
+  // ==========================================================================
+  // N-FIX-WF-STALL-SPAWN-AGENT：spawn_agent 静默子代理的行级「暂无进展」软提示。
+  // 锚点 = 账本成员的 lastActivityAt（contextSnapshot.lastUpdated ?? startTime，
+  // 在 SessionMemberBar.fromAgents 填充）；阈值 WORKFLOW_STALL_THRESHOLDS.N_SOFT_MS。
+  // ==========================================================================
+  it('静默超 2 分钟：working 行尾出现「暂无进展」，锚点前进（新进展）即清掉', async () => {
+    let detailAgents: SwarmRunAgentRecord[] = [
+      record({ status: 'running', endTime: null, durationMs: null, startTime: Date.now() - 130_000 }),
+    ];
+    const item: SwarmRunListItem = { ...ledgerRun, status: 'running' };
+    invokeMock.mockImplementation((channel: string) => {
+      if (channel === IPC_CHANNELS.SWARM_LIST_TRACE_RUNS) return Promise.resolve([item]);
+      if (channel === IPC_CHANNELS.SWARM_GET_TRACE_RUN_DETAIL) {
+        return Promise.resolve({
+          run: { ...item, endedAt: null, totalToolCalls: 0, parallelPeak: 1, errorSummary: null, aggregation: null, tags: [] },
+          agents: detailAgents,
+          events: [],
+        } satisfies SwarmRunDetail);
+      }
+      return Promise.resolve(null);
+    });
+
+    render(<SessionAgentsPanel />);
+    // >2 分钟：行尾软提示（复用 workflowStall.quiet 词条），状态行自身文案不被叠字
+    const quiet = await screen.findByTestId('agents-panel-quiet-researcher');
+    expect(quiet.textContent).toContain('暂无进展');
+    expect(screen.getByTestId('agents-panel-status-researcher').textContent).toBe('工作中');
+
+    // 锚点前进（新进展把 lastActivityAt 刷到近期）→ 提示消失
+    detailAgents = [
+      record({ status: 'running', endTime: null, durationMs: null, startTime: Date.now() - 5_000 }),
+    ];
+    useSwarmStore.setState({ lastEventAt: Date.now() });
+    await waitFor(() => expect(screen.queryByTestId('agents-panel-quiet-researcher')).toBeNull());
+  });
+
+  it('working 但 2 分钟内有锚点：不报「暂无进展」', async () => {
+    mockLedger(
+      [record({ status: 'running', endTime: null, durationMs: null, startTime: Date.now() - 60_000 })],
+      { status: 'running' },
+    );
+
+    render(<SessionAgentsPanel />);
+    await screen.findByTestId('agents-panel-row-researcher');
+    expect(screen.queryByTestId('agents-panel-quiet-researcher')).toBeNull();
+  });
+
+  it('等审批的行不报「暂无进展」（hold 优先于 quiet）', async () => {
+    appState.pendingPermissionSessionId = 'session-1';
+    appState.pendingPermissionRequest = { agentId: 'researcher', resolved: false };
+    mockLedger(
+      [record({ status: 'running', endTime: null, durationMs: null, startTime: Date.now() - 130_000 })],
+      { status: 'running' },
+    );
+
+    render(<SessionAgentsPanel />);
+    expect((await screen.findByTestId('agents-panel-status-researcher')).textContent).toBe('需要授权');
+    expect(screen.queryByTestId('agents-panel-quiet-researcher')).toBeNull();
+  });
+
+  it('agentTree 节点行没有锚点，不进「暂无进展」判定（本单只覆盖专家行）', async () => {
+    mockTree(snapshotOf([treeNode({})]));
+
+    render(<SessionAgentsPanel />);
+    await screen.findByTestId('agents-panel-row-agent-9');
+    expect(screen.getByTestId('agents-panel-status-agent-9').textContent).toBe('工作中');
+    expect(screen.queryByTestId('agents-panel-quiet-agent-9')).toBeNull();
+  });
 });

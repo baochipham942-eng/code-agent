@@ -32,7 +32,12 @@ import { CHANNEL_MEDIA_CACHE_DIRNAME, defaultChannelMediaCacheRoot } from '../..
 import { MANAGED_BROWSER_ARTIFACT_DIR } from './browser/managedBrowserHelpers';
 import { getToolScreenshotsRoot } from '../../tools/utils/toolScreenshotDir';
 import { createLogger } from './logger';
-import { countRetentionFailed, createRetentionLedger, type RetentionFailureCounter } from './retentionLedger';
+import {
+  countRetentionFailed,
+  createRetentionLedger,
+  type RetentionFailureCounter,
+  type RetentionLedgerStatus,
+} from './retentionLedger';
 import { collectReferenceText, normalizeSeparators } from './retentionReferenceScan';
 
 const logger = createLogger('AppCacheRetention');
@@ -150,6 +155,27 @@ function resolvePolicy(spec: AppCacheDirSpec): CacheDirPolicy {
 
 const appCacheRetentionLedger = createRetentionLedger();
 
+// 此刻仍删不掉的失败数。failedTotal 是历史累计（同一批文件重试 N 次翻 N 倍）；每次
+// sweep 结束用本轮 failed 覆盖这里，零失败清账时归零——UI 失败行的数字取这份，不随重试虚增
+// （与 audioRetention 的 failedCurrentCount 同一套口径）
+let failedCurrentCount = 0;
+
+/**
+ * 一轮 sweep 收尾记账：零失败先清旧账（此前删不掉的已不在），再用本轮结果覆盖
+ * "仍在失败"计数并累计进账本。本模块所有错误都在 sweep 内部 catch（不存在不完整轮），
+ * 每条出口（扫描失败提前返回 / 正常收尾）都必须走这里，否则失败行丢账。
+ */
+function publishSweepOutcome(summary: AppCacheRetentionSummary & RetentionFailureCounter, now: number): void {
+  if (summary.failed === 0) appCacheRetentionLedger.resetFailures();
+  failedCurrentCount = summary.failed;
+  appCacheRetentionLedger.publish(summary.deleted, summary.failed, summary.lastError, now);
+}
+
+/** 状态出口：Settings > Data 的缓存清理失败行读这份（经 cacheRetentionStatus 聚合） */
+export function getAppCacheRetentionStatus(): RetentionLedgerStatus & { failedCurrent: number } {
+  return { ...appCacheRetentionLedger.read(), failedCurrent: failedCurrentCount };
+}
+
 export async function sweepAppCacheRetention(input?: {
   dirs?: readonly AppCacheDirSpec[];
   dbPath?: string | null;
@@ -171,7 +197,7 @@ export async function sweepAppCacheRetention(input?: {
     const reason = error instanceof Error ? error.message : String(error);
     logger.warn('[应用缓存保留] 引用扫描失败，本轮不删除任何文件', { reason });
     countRetentionFailed(summary, reason);
-    appCacheRetentionLedger.publish(summary.deleted, summary.failed, summary.lastError, now);
+    publishSweepOutcome(summary, now);
     return { ...summary };
   }
 
@@ -188,7 +214,7 @@ export async function sweepAppCacheRetention(input?: {
   if (summary.deleted > 0) {
     logger.info('[应用缓存保留] 已回收缓存文件', { deleted: summary.deleted });
   }
-  appCacheRetentionLedger.publish(summary.deleted, summary.failed, summary.lastError, now);
+  publishSweepOutcome(summary, now);
   return { ...summary };
 }
 

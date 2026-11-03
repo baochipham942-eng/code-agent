@@ -112,6 +112,19 @@ async function handleDataSetSnapshotRetention(req: { days: number }): Promise<vo
   db.setPreference('debugSnapshotRetentionDays', days);
 }
 
+// 应用缓存保留清理状态（appCacheRetention + presentationPreviewRetention 聚合）：
+// Settings > Data 的失败行读取/重试入口。不进权限门——数据页对所有用户可见
+//（与 clearToolCache 同先例），失败可见性不是管理员特权。
+async function handleGetCacheRetentionStatus(): Promise<unknown> {
+  const { getCacheRetentionStatus } = await import('../services/infra/cacheRetentionStatus');
+  return getCacheRetentionStatus();
+}
+
+async function handleRetryCacheRetention(): Promise<unknown> {
+  const { retryCacheRetentionSweeps } = await import('../services/infra/cacheRetentionStatus');
+  return retryCacheRetentionSweeps();
+}
+
 function requiresAdmin(action: string): boolean {
   return action === 'getSnapshotStats'
     || action === 'clearSnapshots'
@@ -166,6 +179,8 @@ const dataRoutes = defineDomainRoutes<DataDomainRequest, void>(
     cacheCleanExpired: () => handleCacheCleanExpired(),
     getStats: () => handleDataGetStats(),
     clearToolCache: () => handleDataClearToolCache(),
+    getCacheRetentionStatus: () => handleGetCacheRetentionStatus(),
+    retryCacheRetention: () => handleRetryCacheRetention(),
     getSnapshotStats: () => handleDataGetSnapshotStats(),
     clearSnapshots: (_ctx, payload) =>
       handleDataClearSnapshots((payload as { olderThanDays?: number; sessionId?: string }) ?? {}),

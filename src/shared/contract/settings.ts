@@ -453,6 +453,14 @@ export interface AppSettings {
      * 三态同上，但**缺省 = 关**（连内部槽也要显式 'auto'/'on'）——自动扫描是默认行为变化。
      */
     postLaunchAutoHarvest?: 'on' | 'off' | 'auto';
+    /**
+     * 出云密钥掩码（N-PROMPT-SECRET-MASK）：开启后发往模型厂商的请求文本里，
+     * 密钥形态值（API key / JWT / 私钥块 / env 赋值）换成可逆占位符，回包再换回
+     * 原值——聊天界面仍显示真实值，厂商请求体不含。**缺省 = 关**；掩码失败时该次
+     * 请求不发（fail-closed，绝不静默明文外发）。接线：ModelRouter._callProvider 与
+     * adapters/aiSdkAdapter.inferenceViaAiSdk（默认引擎入口）。
+     */
+    outboundSecretMask?: boolean;
   };
   /** 评测中心（ADR-071 Q4）。 */
   evaluation?: {
@@ -542,5 +550,10 @@ export interface AppSettings {
     openRouterConsent?: boolean;
     /** 首次给出同意的时间（epoch ms），审计/同步留痕；重复同意不刷新，撤销不删除。 */
     openRouterConsentAt?: number;
+    /**
+     * Neo 托管判官（无自有 key 时由 Neo 出钱的云端判官，N-JEV-NEO-KEY）。
+     * 缺省 = 开：只在没有自有 key 且已登录时才实际启用；关闭后行为回到「无 key」。
+     */
+    neoHostedEnabled?: boolean;
   };
 }

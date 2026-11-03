@@ -48,6 +48,20 @@ function missingManifestError(manifestPath: string, cause: unknown): Error {
   );
 }
 
+function describeInvalidManifest(parsed: unknown): string | null {
+  if (
+    isRecord(parsed) &&
+    parsed.kind === MANIFEST_KIND &&
+    parsed.schemaVersion === MANIFEST_SCHEMA_VERSION &&
+    isRecord(parsed.modules)
+  ) {
+    return null;
+  }
+  return `invalid manifest: kind=${String(parsed && isRecord(parsed) ? parsed.kind : parsed)} schemaVersion=${
+    parsed && isRecord(parsed) ? String(parsed.schemaVersion) : 'n/a'
+  }`;
+}
+
 /**
  * 读清单。bundle 模式 = AGENT_NEO_BUNDLED_RUNTIME_ROOT 与 AGENT_NEO_RESOURCE_DIR 同时非空:
  * Rust 壳起 webServer 时两变量必同时设置;18 处非壳 harness 只设前者指向源码 checkout,
@@ -76,24 +90,14 @@ export function readNativeDepManifest(
   } catch (error) {
     throw missingManifestError(manifestPath, error);
   }
-  if (
-    !isRecord(parsed) ||
-    parsed.kind !== MANIFEST_KIND ||
-    parsed.schemaVersion !== MANIFEST_SCHEMA_VERSION ||
-    !isRecord(parsed.modules)
-  ) {
-    throw missingManifestError(
-      manifestPath,
-      `invalid manifest: kind=${String(parsed && isRecord(parsed) ? parsed.kind : parsed)} schemaVersion=${
-        parsed && isRecord(parsed) ? String(parsed.schemaVersion) : 'n/a'
-      }`,
-    );
-  }
+  const invalid = describeInvalidManifest(parsed);
+  if (invalid) throw missingManifestError(manifestPath, invalid);
+  const manifest = parsed as Record<string, unknown>;
 
   const platform = `${process.platform}-${process.arch}`;
-  if (parsed.platform !== platform) {
+  if (manifest.platform !== platform) {
     throw new Error(
-      `[native-dep-manifest] manifest platform ${String(parsed.platform)} does not match this process ${platform}; wrong overlay used at build time. Fix: rebuild with the matching arch/platform overlay.`,
+      `[native-dep-manifest] manifest platform ${String(manifest.platform)} does not match this process ${platform}; wrong overlay used at build time. Fix: rebuild with the matching arch/platform overlay.`,
     );
   }
 
@@ -101,8 +105,8 @@ export function readNativeDepManifest(
     manifestPath,
     root,
     platform,
-    generatedAt: typeof parsed.generatedAt === 'string' ? parsed.generatedAt : undefined,
-    modules: parsed.modules as Record<string, NativeDepManifestEntry>,
+    generatedAt: typeof manifest.generatedAt === 'string' ? manifest.generatedAt : undefined,
+    modules: manifest.modules as Record<string, NativeDepManifestEntry>,
   };
 }
 
@@ -122,4 +126,33 @@ export function resolveNativeDepEntry(manifest: NativeDepManifest, moduleId: str
     );
   }
   return declaredAt;
+}
+
+/**
+ * 按显式 root 读 `<root>/dist/native/manifest.json`,不抛错:成功返回清单,失败返回一句原因。
+ * 只做 kind/schemaVersion 校验,不比对平台(平台闸门属于发版门,ADR-086 §4.6)。
+ * 供诊断镜像(desktopShellDiagnostics)用,那里的 root 来自资源目录而非环境变量。
+ */
+export function readNativeDepManifestAt(
+  root: string,
+): { manifest: NativeDepManifest } | { reason: string } {
+  const manifestPath = path.join(path.resolve(root), 'dist', 'native', 'manifest.json');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  } catch (error) {
+    return { reason: `unreadable (${error instanceof Error ? error.message : String(error)})` };
+  }
+  const invalid = describeInvalidManifest(parsed);
+  if (invalid) return { reason: invalid };
+  const manifest = parsed as Record<string, unknown>;
+  return {
+    manifest: {
+      manifestPath,
+      root: path.resolve(root),
+      platform: String(manifest.platform),
+      generatedAt: typeof manifest.generatedAt === 'string' ? manifest.generatedAt : undefined,
+      modules: manifest.modules as Record<string, NativeDepManifestEntry>,
+    },
+  };
 }

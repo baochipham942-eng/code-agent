@@ -187,6 +187,25 @@ async function stopServer(server: StartedServer): Promise<void> {
   server.child.kill('SIGKILL');
 }
 
+/**
+ * 清空 getRecent 列表并复位通知预算（窗口/暂存/digest 定时器）——走生产清档口
+ * DELETE /api/dev/notifications → notificationService.clearRecentNotifications()。
+ * serial 模式共享一台服务器：上一条用例的完成通知会打开 15 分钟预算窗口，后续
+ * 非豁免通知被折进暂存（不进 getRecent），不断言新通知的用例会白等 90s 超时。
+ * 鉴权用 server 自己落盘的 dev token（listen 回调写 <REPO_ROOT>/.dev-token，
+ * 与页面 localStorage bridge-token 同源），readFile 已在文件头引入。
+ */
+async function resetNotifications(server: StartedServer): Promise<void> {
+  const token = (await readFile(path.join(REPO_ROOT, '.dev-token'), 'utf-8')).trim();
+  const response = await fetch(`${server.baseUrl}/api/dev/notifications`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    throw new Error(`重置通知状态失败：DELETE /api/dev/notifications → ${response.status}`);
+  }
+}
+
 async function openAppWithCleanSession(page: Page, baseUrl: string) {
   const ssePromise = page.waitForResponse(
     (resp) => resp.url().includes('/api/events'),
@@ -284,6 +303,12 @@ test.describe('/schedule + /loop 斜杠命令', () => {
 
   test.afterAll(async () => {
     if (server) await stopServer(server);
+  });
+
+  // 每条用例从「首条通知」起步：预算窗口跨用例残留会把本用例的非豁免完成通知
+  // 折进 15 分钟暂存，getRecent 轮询（下方两处）拿不到刚发生的通知。
+  test.beforeEach(async () => {
+    await resetNotifications(server);
   });
 
   test('/schedule：自然语言 → 创建定时任务 → 成功 toast', async ({ page }) => {

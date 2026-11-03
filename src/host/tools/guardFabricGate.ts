@@ -4,6 +4,8 @@
 
 import type { DecisionStep, DecisionTrace } from '../../shared/contract/decisionTrace';
 import { getGuardFabric, type ExecutionTopology } from '../permissions';
+import { resolveGuardLevel } from '../permissions/guardFabric';
+import type { PermissionLevel } from '../../shared/contract/tool';
 import { getPolicyEngine } from '../permissions/policyEngine';
 import { resolveEffectivePolicyRules } from '../permissions/runPolicySnapshot';
 import { createLogger } from '../services/infra/logger';
@@ -18,6 +20,8 @@ export interface GuardFabricGateInput {
   topology: ExecutionTopology;
   sessionId?: string;
   agentId?: string;
+  /** 按 toolDef.permissionLevel 传入；缺省按 execute 评估（fail-safe，维持旧行为）。 */
+  permissionLevel?: PermissionLevel;
 }
 
 export interface GuardFabricGateResult {
@@ -40,7 +44,7 @@ export interface GuardFabricGateResult {
 function evaluateUserDeny(input: GuardFabricGateInput): GuardFabricGateResult['deny'] | undefined {
   const { matchedRule } = getPolicyEngine().evaluate({
     tool: input.policyToolName,
-    level: 'execute',
+    level: resolveGuardLevel(input.permissionLevel),
     description: `tool: ${input.policyToolName}`,
     command: input.params.command as string,
     filePath: (input.params.filePath as string) || (input.params.file_path as string),
@@ -74,6 +78,7 @@ export function evaluateGuardFabricGate(input: GuardFabricGateInput): GuardFabri
       topology: input.topology,
       sessionId: input.sessionId,
       agentId: input.agentId,
+      level: input.permissionLevel,
     });
 
     // 只消费 topology 规则的裁决（2026-07-13 激活批收窄）：其余 sources（policyEngine/

@@ -172,6 +172,20 @@ describe('ToolExecutor 用户级 deny 规则硬拒（主 Bash 链）', () => {
     expect(permissionEvents).toHaveLength(0);
   });
 
+  // FU1：用户 deny 规则保持 level 无关——Read 工具（permissionLevel: read）不被 Bash(rm *) 咬住。
+  it('FU1: user-deny Bash(rm *) 不作用于 Read 工具（level 无关性不变）', async () => {
+    getPolicyEngine().loadUserRules({ deny: ['Bash(rm *)'] }, 'user-ui');
+    const executor = createExecutor();
+
+    const notePath = path.join(workspace, 'note.txt');
+    await fs.writeFile(notePath, 'x', 'utf-8');
+    const result = await executor.execute('Read', { file_path: notePath }, { sessionId: 'user-deny-read-untouched' });
+
+    // Read 不带 command，Bash(rm *) 本就不匹配空输入（#2641）；且评估 level=read。
+    // 期望：不因该用户规则硬拒（若规则被误用会像 Bash 用例一样 success=false 硬拒）。
+    expect(result.success).toBe(true);
+  });
+
   it('非已知安全命令命中用户 deny 规则：同样硬拒，不降级成 ask/分类器，也不落盘', async () => {
     const target = path.join(os.tmpdir(), `neo-deny-probe-${process.pid}.txt`);
     getPolicyEngine().loadUserRules({ deny: [`Bash(touch ${target}*)`] }, 'user-ui');

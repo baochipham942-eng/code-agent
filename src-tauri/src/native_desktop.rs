@@ -771,15 +771,85 @@ fn probe_microphone_permission() -> NativePermissionStatus {
     )
 }
 
-fn probe_notifications_permission() -> NativePermissionStatus {
+fn notification_permission_state(authorization_status: i64) -> &'static str {
+    match authorization_status {
+        1 => "denied",
+        2 | 3 | 4 => "granted",
+        _ => "unknown",
+    }
+}
+
+/// UNUserNotificationCenter raises an uncatchable ObjC exception (process abort)
+/// when the process has no .app bundle, e.g. `cargo tauri dev` running target/debug.
+fn exe_is_in_app_bundle(exe: &std::path::Path) -> bool {
+    exe.to_string_lossy().contains(".app/Contents/MacOS/")
+}
+
+#[cfg(target_os = "macos")]
+async fn probe_notifications_permission() -> NativePermissionStatus {
+    let in_bundle = env::current_exe()
+        .map(|exe| exe_is_in_app_bundle(&exe))
+        .unwrap_or(false);
+    let status = if !in_bundle {
+        "unknown"
+    } else {
+        probe_notification_status_blocking().await
+    };
+    notification_status_to_permission(status)
+}
+
+#[cfg(target_os = "macos")]
+async fn probe_notification_status_blocking() -> &'static str {
+    tokio::task::spawn_blocking(|| {
+        objc2::rc::autoreleasepool(|_| {
+            use block2::RcBlock;
+            use objc2_user_notifications::{UNNotificationSettings, UNUserNotificationCenter};
+
+            let (sender, receiver) = mpsc::channel();
+            let completion =
+                RcBlock::new(move |settings: std::ptr::NonNull<UNNotificationSettings>| {
+                    let authorization_status = unsafe { settings.as_ref() }.authorizationStatus();
+                    let _ = sender.send(notification_permission_state(authorization_status.0 as i64));
+                });
+            UNUserNotificationCenter::currentNotificationCenter()
+                .getNotificationSettingsWithCompletionHandler(&completion);
+            receiver
+                .recv_timeout(Duration::from_secs(2))
+                .unwrap_or("unknown")
+        })
+    })
+    .await
+    .unwrap_or("unknown")
+}
+
+#[cfg(target_os = "macos")]
+fn notification_status_to_permission(status: &'static str) -> NativePermissionStatus {
+    let detail = match status {
+        "granted" => "UNUserNotificationCenter reports authorized notification permission.",
+        "denied" => "UNUserNotificationCenter reports denied notification permission.",
+        _ => "UNUserNotificationCenter notification permission is not determined or could not be read.",
+    };
     permission_status(
         "notifications",
         "Notifications",
-        "unknown",
+        status,
         false,
-        Some("Notification permission is managed by the Tauri notification plugin and is not probed by the native desktop bridge yet.".to_string()),
-        Some("check_notification_plugin".to_string()),
+        Some(detail.to_string()),
+        (status != "granted").then(|| "open_notifications_settings".to_string()),
         current_bundle_id(),
+    )
+}
+
+#[cfg(not(target_os = "macos"))]
+async fn probe_notifications_permission() -> NativePermissionStatus {
+    permission_status(
+        "notifications",
+        "Notifications",
+        "unsupported",
+        false,
+        Some("Notification permission probing is only implemented on macOS.".to_string()),
+        None,
+        None,
     )
 }
 
@@ -1830,7 +1900,7 @@ pub async fn desktop_get_permission_status() -> Result<NativePermissionSnapshot,
         probe_microphone_permission(),
         probe_screen_capture_permission(),
         probe_accessibility_permission(),
-        probe_notifications_permission(),
+        probe_notifications_permission().await,
     ];
     Ok(NativePermissionSnapshot {
         schema_version: 1,
@@ -2210,6 +2280,9 @@ pub fn desktop_open_system_settings(request: OpenSystemSettingsRequest) -> Resul
             }
             "microphone" => {
                 "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
+            }
+            "notifications" => {
+                "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
             }
             other => return Err(format!("Unsupported settings pane: {other}")),
         };
@@ -3056,6 +3129,27 @@ mod privacy_tests {
         assert_eq!(tcc_auth_value_to_permission_state(Some("0")), "denied");
         assert_eq!(tcc_auth_value_to_permission_state(Some("1")), "unknown");
         assert_eq!(tcc_auth_value_to_permission_state(None), "unknown");
+    }
+
+    #[test]
+    fn maps_user_notification_authorization_states() {
+        assert_eq!(notification_permission_state(0), "unknown");
+        assert_eq!(notification_permission_state(1), "denied");
+        assert_eq!(notification_permission_state(2), "granted");
+        assert_eq!(notification_permission_state(3), "granted");
+        assert_eq!(notification_permission_state(4), "granted");
+        assert_eq!(notification_permission_state(99), "unknown");
+    }
+
+    #[test]
+    fn notification_probe_skips_non_bundle_executables() {
+        use std::path::Path;
+        assert!(!exe_is_in_app_bundle(Path::new(
+            "/repo/src-tauri/target/debug/code-agent-tauri"
+        )));
+        assert!(exe_is_in_app_bundle(Path::new(
+            "/Applications/Agent Neo.app/Contents/MacOS/code-agent-tauri"
+        )));
     }
 
     #[test]

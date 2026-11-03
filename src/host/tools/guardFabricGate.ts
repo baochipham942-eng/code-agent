@@ -45,8 +45,8 @@ export interface GuardFabricGateResult {
  * 前缀当答案，用户 deny 被遮蔽成「无规则命中」，硬拒降级成可批的 ask——所以命中判定
  * 不看 evaluate 的 matchedRule，走独立扫描。
  */
-function evaluateUserDeny(input: GuardFabricGateInput): GuardFabricGateResult['deny'] | undefined {
-  const request = {
+function buildPolicyRequest(input: GuardFabricGateInput) {
+  return {
     tool: input.policyToolName,
     level: resolveGuardLevel(input.permissionLevel),
     description: `tool: ${input.policyToolName}`,
@@ -54,6 +54,10 @@ function evaluateUserDeny(input: GuardFabricGateInput): GuardFabricGateResult['d
     filePath: (input.params.filePath as string) || (input.params.file_path as string),
     sessionId: input.sessionId,
   };
+}
+
+function evaluateUserDeny(input: GuardFabricGateInput): GuardFabricGateResult['deny'] | undefined {
+  const request = buildPolicyRequest(input);
   const rules = resolveEffectivePolicyRules(input.sessionId);
   // 完整评估保留：审计按真实 level 记账（FU1 验收⑥），模式联动语义不变。
   getPolicyEngine().evaluate(request, rules);
@@ -71,9 +75,31 @@ function evaluateUserDeny(input: GuardFabricGateInput): GuardFabricGateResult['d
   };
 }
 
+/**
+ * 内置不可覆盖 deny（block-root-write / block-ssh-keys / block-rm-rf-root）对所有拓扑硬拒，
+ * 在审批之前生效；此前只进审计，主链上 Write /usr/bin/x 仍会弹审批卡、点允许就执行。
+ */
+function evaluateBuiltinHardDeny(input: GuardFabricGateInput): GuardFabricGateResult['deny'] | undefined {
+  const rule = getPolicyEngine().matchHardDenyRule(buildPolicyRequest(input), resolveEffectivePolicyRules(input.sessionId));
+  if (!rule) return undefined;
+  const reason = `built-in: ${rule.name}`;
+  logger.warn('Denied by built-in safety rule', { toolName: input.executionToolName, rule: rule.id });
+  const trace = createTraceBuilder(input.executionToolName)
+    .addStep('policy_enforcer', rule.id, 'deny', reason)
+    .build('deny');
+  return {
+    error: `Blocked by built-in safety rule (${rule.name}): ${rule.reason}. Do not retry. Write inside the workspace/project directory instead, or ask the user to make this change themselves.`,
+    reason,
+    trace,
+  };
+}
+
 export function evaluateGuardFabricGate(input: GuardFabricGateInput): GuardFabricGateResult {
   const userDeny = evaluateUserDeny(input);
   if (userDeny) return { deny: userDeny };
+
+  const builtinDeny = evaluateBuiltinHardDeny(input);
+  if (builtinDeny) return { deny: builtinDeny };
 
   if (input.topology === 'main') {
     return {};

@@ -172,7 +172,7 @@ describe('readOnly 只读探索档', () => {
     getPermissionModeManager().setMode('readOnly');
     mockClassification = { decision: 'deny', reason: 'dangerous', confidence: 1, cached: false };
     setMockTool({ name: 'write_file', requiresPermission: true, permissionLevel: 'write' });
-    const result = await executor.execute('write_file', { file_path: '/etc/passwd', content: 'x' }, {});
+    const result = await executor.execute('write_file', { file_path: '/tmp/readonly-classifier-probe.txt', content: 'x' }, {});
     expect(result.success).toBe(false);
     expect(result.error).toContain('Denied');
     expect(permissionCalls.length).toBe(0);

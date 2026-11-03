@@ -24,11 +24,22 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 }));
 
 import { useCronOsNotification } from '../../../src/renderer/hooks/useCronOsNotification';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 
 // host notifyNeedsInput 的 payload 形状
 const needsInput = { id: 'n1', title: '需要授权 - T', body: 'bash', sessionId: 's', urgent: true };
 
+const setViewing = (id: string | null) => useSessionStore.setState({ currentSessionId: id });
+const setDoc = (focus: boolean, hidden: boolean) => {
+  vi.spyOn(document, 'hasFocus').mockReturnValue(focus);
+  vi.spyOn(document, 'hidden', 'get').mockReturnValue(hidden);
+};
+const deliveryReport = { mode: 'suppressed-viewing', dispatched: false };
+
 beforeEach(() => {
+  useAppStore.setState({ showSettings: false, showCronCenter: false, showCapabilityHub: false });
+  setViewing('other-session');
   (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
   vi.spyOn(document, 'hasFocus').mockReturnValue(true); // app 聚焦且页面可见
   plugin.isPermissionGranted.mockResolvedValue(true);
@@ -45,7 +56,7 @@ afterEach(() => {
 const flush = () => new Promise((r) => setTimeout(r, 20));
 
 describe('needs_input 聚焦链路（hook → postOsNotification）', () => {
-  it('urgent 事件在聚焦时仍 sendNotification 并回报 dispatched:true, urgent:true', async () => {
+  it('urgent 事件（看别的会话）在聚焦时仍 sendNotification 并回报 dispatched:true, urgent:true', async () => {
     renderHook(() => useCronOsNotification({} as never, () => {}));
     handlers.show!(needsInput);
     await flush();
@@ -68,4 +79,71 @@ describe('needs_input 聚焦链路（hook → postOsNotification）', () => {
       { mode: 'suppressed-focused', dispatched: false },
     );
   });
+
+  it('① needs-input + 聚焦可见 + 正看该会话 → 不弹，回报 suppressed-viewing', async () => {
+    setViewing('s');
+    renderHook(() => useCronOsNotification({} as never, () => {}));
+    handlers.show!(needsInput);
+    await flush();
+    expect(plugin.sendNotification).not.toHaveBeenCalled();
+    expect(invokeDomain).toHaveBeenCalledWith(IPC_DOMAINS.NOTIFICATION, 'reportClientDelivery', deliveryReport);
+  });
+
+  it('② 空 sessionId → 视为没在看，照弹', async () => {
+    setViewing('');
+    renderHook(() => useCronOsNotification({} as never, () => {}));
+    handlers.show!({ ...needsInput, sessionId: '' });
+    await flush();
+    expect(plugin.sendNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['失焦', false, false],
+    ['页面隐藏', true, true],
+  ])('② 正看该会话但%s → 仍弹', async (_n, focus, hidden) => {
+    setViewing('s');
+    setDoc(focus, hidden);
+    renderHook(() => useCronOsNotification({} as never, () => {}));
+    handlers.show!(needsInput);
+    await flush();
+    expect(plugin.sendNotification).toHaveBeenCalledTimes(1);
+    expect(invokeDomain).toHaveBeenCalledWith(
+      IPC_DOMAINS.NOTIFICATION,
+      'reportClientDelivery',
+      expect.objectContaining({ dispatched: true, urgent: true }),
+    );
+  });
+
+  it('③ 失败事件即使正看该会话也照弹（行为不变）', async () => {
+    setViewing('s');
+    renderHook(() => useCronOsNotification({} as never, () => {}));
+    handlers.show!({ ...needsInput, failure: true });
+    await flush();
+    expect(plugin.sendNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it('③ 非 urgent 事件正看该会话仍是 suppressed-focused', async () => {
+    setViewing('s');
+    renderHook(() => useCronOsNotification({} as never, () => {}));
+    handlers.show!({ ...needsInput, urgent: undefined });
+    await flush();
+    expect(plugin.sendNotification).not.toHaveBeenCalled();
+    expect(invokeDomain).toHaveBeenCalledWith(
+      IPC_DOMAINS.NOTIFICATION,
+      'reportClientDelivery',
+      { mode: 'suppressed-focused', dispatched: false },
+    );
+  });
+
+  it.each(['showSettings', 'showCronCenter', 'showCapabilityHub'] as const)(
+    '② 正看该会话但 %s 二级页盖住会话区 → 仍弹（审批卡不在屏幕上）',
+    async (flag) => {
+      setViewing('s');
+      useAppStore.setState({ [flag]: true });
+      renderHook(() => useCronOsNotification({} as never, () => {}));
+      handlers.show!(needsInput);
+      await flush();
+      expect(plugin.sendNotification).toHaveBeenCalledTimes(1);
+    },
+  );
 });

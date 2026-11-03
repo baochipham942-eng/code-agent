@@ -31,6 +31,10 @@ import { normalizeMcpToolArgs } from './mcpArgsNormalize';
 import { isCuaStateV2Enabled } from './cuaStateConfig';
 import { CUA_READONLY_TOOLS } from './cuaSessionLock';
 import {
+  CUA_SCREEN_LADDER_ENTRY_TOOLS,
+  CUA_SCREEN_LADDER_TOOL_SUFFIX,
+} from './cuaLadderGuidance';
+import {
   getActiveRunTraceContext,
   serializeRunTraceContext,
 } from '../telemetry/runTraceContext';
@@ -574,7 +578,14 @@ export class MCPToolRegistry {
         serverTaskCapabilities?: MCPServerTaskCapabilities;
       } } = {
         name: `mcp__${tool.serverName}__${tool.name}`,
-        description: `[MCP:${tool.serverName}] ${tool.description}`,
+        // N-CUA-SCREEN-GUARDS-LADDER：cua-driver 三个入口工具挂能力阶梯后缀
+        // （connectors/browser 优先，屏幕控制最后），与 V2 computer_use 描述同源。
+        description: `[MCP:${tool.serverName}] ${tool.description}${
+          tool.serverName === CUA_DRIVER_SERVER_NAME
+          && CUA_SCREEN_LADDER_ENTRY_TOOLS.has(tool.name)
+            ? ` ${CUA_SCREEN_LADDER_TOOL_SUFFIX}`
+            : ''
+        }`,
         inputSchema: tool.inputSchema as ToolDefinition['inputSchema'],
         // MCP content/structuredContent is normalized into the string observation
         // consumed by Neo's tool runtime, so the public definition must describe

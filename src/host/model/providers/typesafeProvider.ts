@@ -231,7 +231,7 @@ function rejectHttp(route: JevRoute, status: number, body: string): never {
 }
 
 /**
- * 托管端点的结构化错误（{error, message}）：限流两码映射 per-process blocked-until
+ * 托管端点的结构化错误（{error, message}）：限流两码 + 持续性服务故障映射 per-process blocked-until
  * （用户日限 → 下一个 UTC 日界；熔断 → 30 分钟），此后 resolveJevRoute() 不再给出
  * 托管路由，判官特性按既有无路由路径降级。blockJevHosted 内部每原因 warn 一条。
  */
@@ -258,6 +258,12 @@ function rejectHosted(route: JevRoute, status: number, body: string): never {
       TYPESAFE_ERROR_CODES.hostedFuse,
       `Neo hosted judge global fuse open; retrying after ${new Date(block.blockedUntil).toISOString()}`,
     );
+  }
+  // 持续性服务故障（云端漏配 / 未部署 / 鉴权模式不匹配 / 上游挂）：短退避，避免此后每次判官调用
+  // 都先付一次云端往返才降级。请求级 4xx（如 400 坏请求）不算服务故障、不退避。
+  const persistent = status === 401 || status === 403 || status === 404 || status === 405 || status >= 500;
+  if (persistent) {
+    blockJevHosted('service_unavailable', Date.now(), `HTTP ${status}${errorCode ? ` ${errorCode}` : ''}`);
   }
   if (status === 401 && errorCode === 'jev_auth_required') {
     fail(TYPESAFE_ERROR_CODES.hostedAuthRequired, 'Neo hosted judge rejected the cloud access token');
@@ -354,6 +360,10 @@ export async function systemOne(
         controller.signal,
       );
     } catch (error) {
+      // 托管路由：超时/网络失败是服务故障信号，退避（调用方主动取消不算）。
+      if (effectiveRoute.kind === 'neo_hosted' && !(options.signal?.aborted ?? false)) {
+        blockJevHosted('service_unavailable', Date.now(), timedOut ? `timeout ${timeoutMs}ms` : 'network error');
+      }
       if (timedOutOrAborted(error)) {
         fail(TYPESAFE_ERROR_CODES.timeout, `systemOne 超时（${timeoutMs}ms）或被外部中止`);
       }

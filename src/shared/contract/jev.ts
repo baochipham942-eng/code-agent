@@ -21,8 +21,11 @@ export type JevKeySource =
   | 'disabled_by_user'
   | 'none';
 
-/** Neo 托管判官被限流的两个原因（429/503 → 客户端进入 blocked-until 退避）。 */
-export type JevHostedBlockReason = 'user_daily_limit' | 'global_fuse';
+/**
+ * Neo 托管判官的退避原因：限流两码（429/503）+ 持续性服务故障（401/404/5xx/网络/超时，
+ * 云端漏配或未部署时短退避，避免每次判官调用都先付一次云端往返）。
+ */
+export type JevHostedBlockReason = 'user_daily_limit' | 'global_fuse' | 'service_unavailable';
 
 /** Neo 托管判官的 per-process 退避状态（触发后到点前不再发起调用，避免刷 429）。 */
 export interface JevHostedBlockState {

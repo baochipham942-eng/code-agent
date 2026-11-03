@@ -34,6 +34,7 @@ import { getContextHealthService } from '../../context/contextHealthService';
 import { stampAssistantMessageCorrelation } from '../../session/assistantCorrelation';
 import { getTelemetryCollector } from '../../telemetry';
 import { clearSessionRuntimeCaches } from '../../session/sessionCacheLifecycle';
+import { removeToolScreenshotDir } from '../../tools/utils/toolScreenshotDir';
 
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
 const logger = createLogger('SessionManager');
@@ -813,6 +814,9 @@ export class SessionManager implements Disposable {
     await this.deleteTerminalFrames(sessionId);
     db.deleteSession(sessionId);
 
+    // 工具截图目录随会话回收（内部自吞失败，只 warn 不阻断删除）
+    await removeToolScreenshotDir(sessionId);
+
     // 清除缓存
     this.sessionCache.delete(sessionId);
     if (this.currentSessionId === sessionId) {
@@ -830,6 +834,8 @@ export class SessionManager implements Disposable {
     clearSessionRuntimeCaches(sessionId); if (getDatabase().getSession(sessionId)) throw new Error('SESSION_NOT_DELETED');
     await (await import('../surfaceExecution/ManagedBrowserProviderAdapter')).getManagedBrowserProviderAdapter().clearConversationResumeState(sessionId);
     await this.deleteTerminalFrames(sessionId);
+    // 工具截图目录随会话回收（内部自吞失败，只 warn 不阻断）
+    await removeToolScreenshotDir(sessionId);
   }
 
   /**

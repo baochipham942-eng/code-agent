@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { openNativeDesktopSystemSettings } from '../../../../services/nativeDesktop';
-import { getOsNotificationPermissionSnapshot } from '../../../../utils/osNotification';
+import { getOsNotificationPermission, getOsNotificationPermissionSnapshot } from '../../../../utils/osNotification';
 import { Button } from '../../../primitives/Button';
 
-type NotificationPermissionSnapshot = Awaited<ReturnType<typeof getOsNotificationPermissionSnapshot>>;
+type NotificationPermissionSnapshot = {
+  permission: Awaited<ReturnType<typeof getOsNotificationPermission>>;
+  platform: string | null;
+};
 
 export const NotificationPermissionRow: React.FC = () => {
   const { t } = useI18n();

@@ -14,7 +14,10 @@ const plugin = vi.hoisted(() => ({
 const getNativeDesktopPermissionStatus = vi.hoisted(() => vi.fn());
 
 vi.mock('@tauri-apps/plugin-notification', () => plugin);
-vi.mock('../../../src/renderer/services/nativeDesktop', () => ({ getNativeDesktopPermissionStatus }));
+vi.mock('../../../src/renderer/services/nativeDesktop', () => ({
+  getNativeDesktopPermissionStatus,
+  isNativeDesktopAvailable: () => true,
+}));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: {
     on: (channel: string, cb: (e: unknown) => void) => {

@@ -10,7 +10,7 @@
 import { isTauriMode } from './platform';
 import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
-import { getNativeDesktopPermissionStatus } from '../services/nativeDesktop';
+import { getNativeDesktopPermissionStatus, isNativeDesktopAvailable } from '../services/nativeDesktop';
 import { toast } from '../hooks/useToast';
 
 const FOREGROUND_FAILURE_TOAST_MS = 10_000;
@@ -19,7 +19,7 @@ type NotifModule = typeof import('@tauri-apps/plugin-notification');
 type OsNotificationPermission = 'granted' | 'denied' | 'unknown';
 
 export async function getOsNotificationPermission(): Promise<OsNotificationPermission> {
-  if (!isTauriMode()) return 'unknown';
+  if (!isNativeDesktopAvailable()) return 'unknown';
   try {
     const snapshot = await getNativeDesktopPermissionStatus();
     const status = snapshot.permissions.find((permission) => permission.kind === 'notifications')?.status;

@@ -1,12 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useI18n } from '../../../../hooks/useI18n';
-import {
-  getNativeDesktopPermissionStatus,
-  openNativeDesktopSystemSettings,
-} from '../../../../services/nativeDesktop';
+import { openNativeDesktopSystemSettings } from '../../../../services/nativeDesktop';
+import { getOsNotificationPermission } from '../../../../utils/osNotification';
 import { Button } from '../../../primitives/Button';
 
-type NotificationPermission = 'granted' | 'denied' | 'unknown';
+type NotificationPermission = Awaited<ReturnType<typeof getOsNotificationPermission>>;
 
 export const NotificationPermissionRow: React.FC = () => {
   const { t } = useI18n();
@@ -16,14 +14,7 @@ export const NotificationPermissionRow: React.FC = () => {
   useEffect(() => {
     let mounted = true;
     const refresh = async () => {
-      let next: NotificationPermission = 'unknown';
-      try {
-        const snapshot = await getNativeDesktopPermissionStatus();
-        const status = snapshot.permissions.find((item) => item.kind === 'notifications')?.status;
-        if (status === 'granted' || status === 'denied') next = status;
-      } catch {
-        next = 'unknown';
-      }
+      const next = await getOsNotificationPermission();
       if (mounted) setPermission(next);
     };
     const handleFocus = () => void refresh();

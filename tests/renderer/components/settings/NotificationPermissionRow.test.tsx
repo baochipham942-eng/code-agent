@@ -3,24 +3,18 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const getNativeDesktopPermissionStatus = vi.hoisted(() => vi.fn());
+const getOsNotificationPermission = vi.hoisted(() => vi.fn());
 const openNativeDesktopSystemSettings = vi.hoisted(() => vi.fn());
 
-vi.mock('../../../../src/renderer/services/nativeDesktop', () => ({
-  getNativeDesktopPermissionStatus,
-  openNativeDesktopSystemSettings,
-}));
+vi.mock('../../../../src/renderer/utils/osNotification', () => ({ getOsNotificationPermission }));
+vi.mock('../../../../src/renderer/services/nativeDesktop', () => ({ openNativeDesktopSystemSettings }));
 
 import { NotificationPermissionRow } from '../../../../src/renderer/components/features/settings/tabs/NotificationPermissionRow';
 import { useAppStore } from '../../../../src/renderer/stores/appStore';
 
-function permissionSnapshot(status: 'granted' | 'denied' | 'unknown') {
-  return { permissions: [{ kind: 'notifications', status }] };
-}
-
 beforeEach(() => {
   useAppStore.setState({ language: 'en' });
-  getNativeDesktopPermissionStatus.mockResolvedValue(permissionSnapshot('unknown'));
+  getOsNotificationPermission.mockResolvedValue('unknown');
   openNativeDesktopSystemSettings.mockResolvedValue(true);
 });
 
@@ -31,7 +25,7 @@ afterEach(() => {
 
 describe('NotificationPermissionRow', () => {
   it('shows Off in macOS and opens notification settings when denied', async () => {
-    getNativeDesktopPermissionStatus.mockResolvedValue(permissionSnapshot('denied'));
+    getOsNotificationPermission.mockResolvedValue('denied');
     render(<NotificationPermissionRow />);
 
     expect(await screen.findByText('Off in macOS')).toBeTruthy();
@@ -50,7 +44,7 @@ describe('NotificationPermissionRow', () => {
   });
 
   it('shows On without a settings button when granted', async () => {
-    getNativeDesktopPermissionStatus.mockResolvedValue(permissionSnapshot('granted'));
+    getOsNotificationPermission.mockResolvedValue('granted');
     render(<NotificationPermissionRow />);
 
     expect(await screen.findByText('On')).toBeTruthy();
@@ -58,15 +52,13 @@ describe('NotificationPermissionRow', () => {
   });
 
   it('re-reads permission when the window regains focus', async () => {
-    getNativeDesktopPermissionStatus
-      .mockResolvedValueOnce(permissionSnapshot('granted'))
-      .mockResolvedValueOnce(permissionSnapshot('denied'));
+    getOsNotificationPermission.mockResolvedValueOnce('granted').mockResolvedValueOnce('denied');
     render(<NotificationPermissionRow />);
     await screen.findByText('On');
 
     fireEvent.focus(window);
 
     expect(await screen.findByText('Off in macOS')).toBeTruthy();
-    expect(getNativeDesktopPermissionStatus).toHaveBeenCalledTimes(2);
+    expect(getOsNotificationPermission).toHaveBeenCalledTimes(2);
   });
 });

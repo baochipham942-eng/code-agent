@@ -10,9 +10,13 @@ const notificationPlugin = vi.hoisted(() => ({
 
 const domainInvoke = vi.hoisted(() => vi.fn());
 const getNativeDesktopPermissionStatus = vi.hoisted(() => vi.fn());
+const isNativeDesktopAvailable = vi.hoisted(() => vi.fn());
 
 vi.mock('@tauri-apps/plugin-notification', () => notificationPlugin);
-vi.mock('../../../src/renderer/services/nativeDesktop', () => ({ getNativeDesktopPermissionStatus }));
+vi.mock('../../../src/renderer/services/nativeDesktop', () => ({
+  getNativeDesktopPermissionStatus,
+  isNativeDesktopAvailable,
+}));
 
 function installTauriWindow(): void {
   (globalThis as Record<string, unknown>).window = {
@@ -32,6 +36,7 @@ describe('osNotification', () => {
     // 既有发送路径用例不受影响；聚焦抑制由下面注入假 document 的用例覆盖。
     delete (globalThis as Record<string, unknown>).document;
     domainInvoke.mockResolvedValue({ success: true, data: null });
+    isNativeDesktopAvailable.mockReturnValue(true);
     getNativeDesktopPermissionStatus.mockResolvedValue({
       permissions: [{ kind: 'notifications', status: 'granted' }],
     });
@@ -114,7 +119,7 @@ describe('osNotification', () => {
   });
 
   it('returns unknown outside Tauri without querying the native bridge', async () => {
-    delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+    isNativeDesktopAvailable.mockReturnValue(false);
     const { getOsNotificationPermission } = await import('../../../src/renderer/utils/osNotification');
 
     await expect(getOsNotificationPermission()).resolves.toBe('unknown');

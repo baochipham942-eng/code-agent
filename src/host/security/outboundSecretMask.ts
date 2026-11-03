@@ -63,7 +63,7 @@ const placeholderToValue = new Map<string, string>();
  */
 let replacementReceipt: OutboundMaskReplacementRecord[] | null = null;
 
-function placeholderFor(entry: SecretPatternEntry, rawValue: string): string {
+function placeholderFor(entry: { type: string }, rawValue: string): string {
   // 后跑的规则（如 url-query-token）可能命中已含内层占位符的文本（sk-{{…}}）：
   // 入映射前先展开内层，保证映射值恒为原文，回包只需还原一层。
   const value = restoreText(rawValue);
@@ -106,7 +106,64 @@ function maskMatch(entry: SecretPatternEntry, match: RegExpExecArray): string {
   return prefix + placeholderFor(entry, value) + suffix;
 }
 
+// ---- 本模块私有规则（不改共享 registry 的 confidence，免得连带收紧日志/遥测脱敏）----
+
+/** Luhn 校验：只吃纯数字串。 */
+function passesLuhn(digits: string): boolean {
+  let sum = 0;
+  let double = false;
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let d = digits.charCodeAt(i) - 48;
+    if (double) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    sum += d;
+    double = !double;
+  }
+  return sum % 10 === 0;
+}
+
+/** 已知发卡段 + 对应长度：Visa / MasterCard / Amex / Discover / UnionPay / JCB。 */
+function hasKnownCardIssuer(digits: string): boolean {
+  const n = digits.length;
+  const p2 = Number(digits.slice(0, 2));
+  const p4 = Number(digits.slice(0, 4));
+  if (digits[0] === '4') return n === 13 || n === 16 || n === 19;
+  if ((p2 >= 51 && p2 <= 55) || (p4 >= 2221 && p4 <= 2720)) return n === 16;
+  if (p2 === 34 || p2 === 37) return n === 15;
+  if (p4 === 6011 || p2 === 65) return n >= 16 && n <= 19;
+  if (p2 === 62 || p2 === 35) return n >= 16 && n <= 19;
+  return false;
+}
+
+/**
+ * 登录令牌（Bearer）：区分大小写的 `Bearer `，令牌 >=20 字符且含数字，只掩令牌本身。
+ * 「Bearer authentication scheme」这类散文没有数字、也不够长，不会命中。
+ */
+const BEARER_PATTERN = /\bBearer (?=[A-Za-z0-9._~+/=-]*\d)([A-Za-z0-9._~+/=-]{20,})/g;
+/**
+ * 银行卡号：13-19 位，数字间至多一个空格/短横；前后不得紧贴数字/字母（前面还不得是
+ * 小数点或「字母数字+短横」，后面不得是 `.数字` 或 `-字母数字`——挡 UUID 尾段），再过 Luhn + 已知发卡段。
+ */
+const CARD_PATTERN = /(?<![\dA-Za-z.]|[\dA-Za-z]-)\d(?:[ -]?\d){12,18}(?![\dA-Za-z]|-[\dA-Za-z]|\.\d)/g;
+
+function maskPrivateRules(text: string): string {
+  let output = text.replace(BEARER_PATTERN, (_matched, token: string) =>
+    `Bearer ${placeholderFor({ type: 'bearer_token' }, token)}`);
+  output = output.replace(CARD_PATTERN, (matched) => {
+    const digits = matched.replace(/[ -]/g, '');
+    if (!passesLuhn(digits) || !hasKnownCardIssuer(digits)) return matched;
+    return placeholderFor({ type: 'card_number' }, matched);
+  });
+  return output;
+}
+
 function maskText(text: string): string {
+  return maskPrivateRules(maskSharedRules(text));
+}
+
+function maskSharedRules(text: string): string {
   let output = text;
   for (const entry of HIGH_CONFIDENCE_ENTRIES) {
     entry.pattern.lastIndex = 0;

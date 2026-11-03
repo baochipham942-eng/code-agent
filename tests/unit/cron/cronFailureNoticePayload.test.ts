@@ -93,7 +93,7 @@ describe('notifyCronAgentExecution 无会话云端失败', () => {
       code: 'CRON_FAILURE',
       failureKind: 'cloud_unavailable',
       succeeded: false,
-    }), { force: true });
+    }), { force: true, urgent: false });
   });
 
   it('同因云端失败冷却窗内只告警一次（复用既有 CronFailureNoticeGate 去重）', async () => {
@@ -120,7 +120,7 @@ describe('notifyCronAgentExecution 无会话云端失败', () => {
       sessionId: 'session-1',
       code: 'CRON_FAILURE',
       failureKind: 'cloud_unavailable',
-    }), { force: true });
+    }), { force: true, urgent: false });
   });
 });
 

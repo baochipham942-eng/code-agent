@@ -166,7 +166,7 @@ describe('TurnBasedTraceView session entry scrolling', () => {
     });
 
     expect(mocks.scrollToIndex).toHaveBeenCalledWith({ index: 2, align: 'end', behavior: 'auto' });
-    expect(mocks.autoscrollToBottom).toHaveBeenCalledTimes(1);
+    expect(mocks.autoscrollToBottom).not.toHaveBeenCalled();
     expect(view.queryByRole('button', { name: /回到底部|Jump to bottom/ })).toBeNull();
 
     mocks.scrollToIndex.mockClear();

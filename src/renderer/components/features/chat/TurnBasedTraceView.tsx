@@ -369,7 +369,6 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
     sessionEntrySettlingRef,
     userScrollLastInteractionAtRef,
     setIsAtBottom,
-    setRailActiveTurnId,
   });
   const outputFollowRevision = useMemo(
     () => getTurnOutputRevision(outputFollowTurn, {

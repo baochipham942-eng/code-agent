@@ -49,9 +49,15 @@ function formatWaiting(requestedAt: number): string {
 interface AutomationReviewInboxProps {
   /** 待过目条数变化时回传（加载/刷新后都会调一次），供页首状态条显示 */
   onPendingCountChange?: (count: number) => void;
+  /**
+   * 外部新鲜度信号（Rework r1）：收件箱常驻挂载、只在 mount 时拉一次，停车审批
+   * 发生在面板开着时不会自动出现。父级在等批准集合变化（出现/消失）时变更本值，
+   * 收件箱随之重拉 listParkedApprovals——「去处理」才不会落到不含该审批的旧快照。
+   */
+  refreshSignal?: string | number;
 }
 
-export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ onPendingCountChange }) => {
+export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ onPendingCountChange, refreshSignal }) => {
   const { t, language } = useI18n();
   const cc = t.cronCenter;
   const switchSession = useSessionStore((state) => state.switchSession);
@@ -101,7 +107,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
 
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, refreshSignal]);
 
   const handleResolveParked = async (item: ParkedApprovalInboxItem, response: PermissionResponse) => {
     if (item.status !== 'pending') return; // orphaned 不可操作

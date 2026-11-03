@@ -162,6 +162,12 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
     for (const run of awaitingRuns) map.set(run.jobId, run);
     return map;
   }, [awaitingRuns]);
+  // 等批准集合指纹（Rework r1）：轮询每 2s 换新数组，但内容不变时指纹不变。
+  // 集合变化（停车出现/被应答消失）时驱动收件箱重拉，徽章与收件箱不再各说各话。
+  const awaitingRefreshSignal = useMemo(
+    () => awaitingRuns.map((run) => run.requestId).sort().join('|'),
+    [awaitingRuns],
+  );
 
   useEffect(() => {
     refresh();
@@ -332,9 +338,10 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
 
         {/* 收件箱常驻挂载（两个 tab 共用）：待过目数是状态条与 tab 角标的数据源，
             切 tab 用 CSS 隐藏而不是卸载，不丢数、不重复拉取。收件箱按产品语义
-            归属「运行记录」——它是运行结果里需要人过目的子集。 */}
+            归属「运行记录」——它是运行结果里需要人过目的子集。refreshSignal 让
+            常驻收件箱在停车集合变化时重拉（Rework r1），「去处理」不再落到旧快照。 */}
         <div className={activeTab === 'runs' ? undefined : 'hidden'}>
-          <AutomationReviewInbox onPendingCountChange={refreshPendingReviewCount} />
+          <AutomationReviewInbox onPendingCountChange={refreshPendingReviewCount} refreshSignal={awaitingRefreshSignal} />
         </div>
 
         {activeTab === 'jobs' ? (

@@ -28,8 +28,13 @@ vi.mock('../../../src/renderer/services/cronClient', () => ({
     getRecentExecutions: vi.fn().mockResolvedValue([]),
   },
 }));
+// 收件箱打桩并记录收到的 refreshSignal（Rework r1：停车集合变化要传导给常驻收件箱）
+const inboxSignals = vi.hoisted(() => [] as unknown[]);
 vi.mock('../../../src/renderer/components/features/cron/AutomationReviewInbox', () => ({
-  AutomationReviewInbox: () => <div data-testid="stub-inbox" />,
+  AutomationReviewInbox: (props: { refreshSignal?: string | number }) => {
+    inboxSignals.push(props.refreshSignal);
+    return <div data-testid="stub-inbox" />;
+  },
 }));
 vi.mock('../../../src/renderer/components/features/cron/CronJobEditor', () => ({
   CronJobEditor: () => null,
@@ -46,6 +51,7 @@ let awaitingRunsMock: unknown[] = [];
 
 beforeEach(() => {
   awaitingRunsMock = [];
+  inboxSignals.length = 0;
   invokeDomain.mockReset();
   invokeDomain.mockImplementation((_domain: string, action: string) => {
     if (action === 'listAwaitingApprovalRuns') return Promise.resolve(awaitingRunsMock);
@@ -105,6 +111,9 @@ describe('无人值守等批准可见性（N-CRON-UNATTENDED-BASH-PARK-STUCK-VIS
     const otherRow = screen.getByText('周报盘点').closest('button')!;
     expect(otherRow.querySelector('[data-testid="cron-job-awaiting-approval"]')).toBeNull();
 
+    // Rework r1：停车集合出现 → 常驻收件箱收到变化的 refreshSignal（停车审批卡要重拉）
+    expect(inboxSignals).toContain('req-1');
+
     // 批准/拒绝后下一轮轮询返回空 → badge 消失（2s 间隔，放宽到 3s）
     awaitingRunsMock = [];
     await vi.waitFor(
@@ -113,6 +122,8 @@ describe('无人值守等批准可见性（N-CRON-UNATTENDED-BASH-PARK-STUCK-VIS
       },
       { timeout: 3000 },
     );
+    // 集合清空 → 信号回到空串，收件箱随之再拉一轮（卡撤下）
+    expect(inboxSignals[inboxSignals.length - 1]).toBe('');
   });
 
   it('没有任何 running 执行时不发起等批准轮询', async () => {

@@ -1,4 +1,5 @@
  
+import { expandSlashPromptForModel } from './agentSlashExpansion';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import fs from 'fs/promises';
@@ -1418,9 +1419,11 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // agentOrchestrator 的 applyTurnSystemContext 在真机上根本不执行。
       const candidateNotice = buildCapabilityCandidateNotice(sessionId);
       if (candidateNotice) capabilityContextLines.push(candidateNotice);
+      // FB-523：桌面主链不经 appService.sendMessage，/init-memory 等内置命令在此展开（仅模型面）
+      const slashExpandedPrompt = await expandSlashPromptForModel(visiblePrompt, resolvedProject);
       const modelFacePrompt = capabilityContextLines.length > 0
-        ? wrapWithTurnSystemContext(capabilityContextLines, visiblePrompt)
-        : visiblePrompt;
+        ? wrapWithTurnSystemContext(capabilityContextLines, slashExpandedPrompt)
+        : slashExpandedPrompt;
       deps.publishCompanionEvent?.(sessionId, 'message', { event: userMsg, runId: runContext.runId });
       const messages = [
         ...history,

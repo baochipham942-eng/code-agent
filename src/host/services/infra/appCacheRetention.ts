@@ -30,7 +30,7 @@ import { getUserConfigDir } from '../../config/configPaths';
 import { getUserDataPath } from '../../platform/appPaths';
 import { CHANNEL_MEDIA_CACHE_DIRNAME, defaultChannelMediaCacheRoot } from '../../channels/feishu/feishuMedia';
 import { MANAGED_BROWSER_ARTIFACT_DIR } from './browser/managedBrowserHelpers';
-import { getToolScreenshotsRoot } from '../../tools/utils/toolScreenshotDir';
+import { getToolScreenshotsRoot, TOOL_SCREENSHOT_EXTENSIONS } from '../../tools/utils/toolScreenshotDir';
 import { createLogger } from './logger';
 import {
   countRetentionFailed,
@@ -44,9 +44,6 @@ const logger = createLogger('AppCacheRetention');
 
 /** appshots 目录名（写入方在 Rust：src-tauri/src/appshots.rs `appshots_dir()` = `<dataDir>/appshots`） */
 const APPSHOT_DIR_NAME = 'appshots';
-
-/** 工具截图的候选扩展名（三个写入方的产物形状：*.png + *.jpg） */
-const TOOL_SCREENSHOT_EXTENSIONS: readonly string[] = ['.png', '.jpg'];
 
 /**
  * 引用预筛 needle（宁可多捞，精筛在各 kind 的 isReferenced）：

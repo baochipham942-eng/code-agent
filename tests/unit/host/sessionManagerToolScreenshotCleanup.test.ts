@@ -127,4 +127,37 @@ describe('SessionManager.deleteSession 工具截图目录回收', () => {
 
     expect(fs.existsSync(dir)).toBe(false);
   });
+
+  /**
+   * Rework r1 回归：会话分叉把父会话消息整行复制到子会话名下
+   * （SessionForkRepository：content/tool_results/content_parts 原样带绝对路径），
+   * 子会话在父删除后仍存活（parentDeleted）。删父会话时：
+   *   - 被子会话引用的截图必须保留（活引用）；
+   *   - 只被父会话自己引用/无人引用的照删（死者引用不算数，tombstone 不删消息行）。
+   */
+  it('分叉子会话引用了父会话截图路径时，删父会话保留被引用文件、只清无活引用的文件', async () => {
+    createSession('parent-a');
+    createSession('child-fork');
+    const dir = getToolScreenshotDir('parent-a');
+    fs.mkdirSync(dir, { recursive: true });
+    const referencedByChild = path.join(dir, 'screenshot_1800000000000.png');
+    const referencedByParentOnly = path.join(dir, 'screenshot_1800000000001.png');
+    const unreferenced = path.join(dir, 'screenshot_1800000000002.png');
+    fs.writeFileSync(referencedByChild, 'x');
+    fs.writeFileSync(referencedByParentOnly, 'x');
+    fs.writeFileSync(unreferenced, 'x');
+    const insertMessage = coreConnection.prepare(
+      'INSERT INTO messages (id, session_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)',
+    );
+    // 子会话复制来的父阶段消息：content 带父截图绝对路径（活引用，父删后仍要用）
+    insertMessage.run('m-child-1', 'child-fork', 'assistant', `已保存截图 ${referencedByChild}`, 1800000000000);
+    // 父会话自己的消息也引用另一张（死者引用，不应保）
+    insertMessage.run('m-parent-1', 'parent-a', 'assistant', `已保存截图 ${referencedByParentOnly}`, 1800000000000);
+
+    await sessionManager.deleteSession('parent-a');
+
+    expect(fs.existsSync(referencedByChild)).toBe(true);
+    expect(fs.existsSync(referencedByParentOnly)).toBe(false);
+    expect(fs.existsSync(unreferenced)).toBe(false);
+  });
 });

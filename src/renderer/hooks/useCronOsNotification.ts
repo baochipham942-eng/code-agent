@@ -4,7 +4,6 @@ import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { isSecondaryPageActive } from '../utils/secondaryPageActive';
 import { useCronStore } from '../stores/cronStore';
-import { useSessionStore } from '../stores/sessionStore';
 import { toast } from './useToast';
 import { createMissedAlertQueue } from './missedAlertsOnReturn';
 import ipcService from '../services/ipcService';

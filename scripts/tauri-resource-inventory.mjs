@@ -34,7 +34,7 @@ function requiredStartupResources(rootDir) {
   try {
     manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   } catch (error) {
-    throw new Error(`Cannot read ${NATIVE_MANIFEST} under ${rootDir}: ${error instanceof Error ? error.message : error}`);
+    throw new Error(`Cannot read ${NATIVE_MANIFEST} under ${rootDir}: ${error instanceof Error ? error.message : error}`, { cause: error });
   }
   if (
     !manifest

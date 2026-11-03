@@ -13,7 +13,7 @@ import { parseParkedApprovalPayload } from './parkedApprovalSurvival';
 
 const logger = createLogger('ParkedApprovalRunClosure');
 
-export const PARKED_APPROVAL_RUN_CLOSE_REASON = 'parked_approval_closed';
+const PARKED_APPROVAL_RUN_CLOSE_REASON = 'parked_approval_closed';
 
 /** 该会话是否还有 pending 的 tool_approval 行（还有就说明 run 仍要停靠等人）。 */
 export function sessionHasPendingToolApproval(

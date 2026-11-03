@@ -192,6 +192,16 @@ export const zhSettingsCore = {
       fontSizeSaveFailed: '字体大小保存失败，已恢复原设置',
     },
     general: {
+      notifications: {
+        title: '系统通知',
+        on: '已开启',
+        off: 'macOS 中已关闭',
+        unknown: '无法确认',
+        onDescription: '任务完成和失败提醒会通过系统通知弹出。',
+        offDescription: '任务完成和失败提醒不会弹出系统通知。',
+        unknownDescription: 'Neo 无法读取 macOS 设置，请检查系统设置。',
+        openSettings: '打开系统设置',
+      },
       permissions: {
         pageTitle: '权限与安全',
         pageDescription: '管理 Agent 执行敏感操作时的权限检查，以及子 Agent 的权限继承策略。',

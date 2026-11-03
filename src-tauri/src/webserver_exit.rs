@@ -478,7 +478,7 @@ mod tests {
             child,
             pid,
             owner: "tauri-shell",
-            started_at: now_millis_string(),
+            started_at: crate::now_millis_string(),
             stdin_eof_cleanup: true,
         }))
     }
@@ -549,7 +549,7 @@ mod tests {
             child,
             pid,
             owner: "tauri-shell",
-            started_at: now_millis_string(),
+            started_at: crate::now_millis_string(),
             stdin_eof_cleanup: true,
         });
 

@@ -71,6 +71,13 @@ export const enSettingsSystem = {
         cacheClearedPrefix: 'Cleared ',
         cacheClearedSuffix: ' local cache records',
       },
+      cacheRetention: {
+        failedPermission: '{count} cache items could not be deleted: no delete permission. Check the data folder permissions in Finder and try again',
+        failedOther: '{count} cache items could not be deleted and this cleanup did not finish. You can retry later',
+        openFolder: 'Open data folder',
+        retry: 'Retry',
+        details: 'Details',
+      },
       persistence: {
         title: 'History persistence is unavailable',
         degradedTitle: 'Storage is degraded',

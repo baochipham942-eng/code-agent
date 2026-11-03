@@ -576,6 +576,53 @@ export class DurableRunRepository implements DurableRunStores {
     }).immediate());
   }
 
+  /**
+   * N-FIX-PARKED-APPROVAL-SURVIVE-RESTART-RESUME-FU1-FU1：停车审批已被收口（自动拒绝 / 批准执行一次）后，
+   * 把该会话最新的活跃 root run 在 `status = 'waiting'` 栅栏内收成 cancelled。
+   * 与 cancelUnresumableParkedRun 同形（绕租约、owner epoch +1 fence 原持有方），区别是没有
+   * 「末事件」判据——停车审批的收口本身就是判据，且只动 waiting，running/recovering 等绝不碰。
+   * 不续跑、不派发任何东西（A′）。返回是否真的收了一条 run。
+   */
+  async closeParkedWaitingRunForSession(input: { sessionId: string; now: number; reason: string }): Promise<boolean> {
+    return runWithSqliteBusyRetry(() => this.db.transaction(() => {
+      const row = this.db.prepare(`SELECT * FROM durable_runs
+        WHERE session_id = ? AND parent_run_id IS NULL
+          AND status IN ('created','running','waiting','paused','recovering')
+        ORDER BY created_at DESC, rowid DESC LIMIT 1`).get(input.sessionId) as Row | undefined;
+      if (row?.status !== 'waiting') return false;
+      const envelope = rowToEnvelope(row);
+      const terminalSeq = envelope.cursor.nextEventSeq;
+      const owner = envelope.owner
+        ? { ...envelope.owner, epoch: envelope.owner.epoch + 1, leaseExpiresAt: input.now }
+        : undefined;
+      const next: RunEnvelope = {
+        ...envelope,
+        status: 'cancelled',
+        owner,
+        cursor: { ...envelope.cursor, nextEventSeq: terminalSeq + 1 },
+        terminal: { status: 'cancelled', eventSeq: terminalSeq, at: input.now, reason: input.reason },
+        updatedAt: input.now,
+      };
+      assertRunEnvelope(next);
+      this.db.prepare(`INSERT INTO durable_run_events (run_id, seq, attempt, event_type, event_json, recorded_at)
+        VALUES (?, ?, ?, ?, ?, ?)`)
+        .run(envelope.runId, terminalSeq, envelope.attempt, 'run_cancelled',
+          stringify({ sessionId: input.sessionId, reason: input.reason }), input.now);
+      const changed = this.db.prepare(`UPDATE durable_runs SET status = 'cancelled', next_event_seq = ?,
+        terminal_event_seq = ?, terminal_at = ?, owner_epoch = ?, lease_expires_at = ?, envelope_json = ?, updated_at = ?
+        WHERE run_id = ? AND status = 'waiting'`)
+        .run(terminalSeq + 1, terminalSeq, input.now, owner?.epoch ?? null, input.now, stringify(next), input.now,
+          envelope.runId);
+      if (changed.changes !== 1) return false;
+      this.db.prepare(`UPDATE durable_run_attempts SET status = 'ended', ended_at = ?
+        WHERE run_id = ? AND attempt = ? AND status IN ('starting','active')`)
+        .run(input.now, envelope.runId, envelope.attempt);
+      this.db.prepare(`UPDATE durable_run_children SET status = 'cancelled', terminal_at = ? WHERE child_run_id = ?`)
+        .run(input.now, envelope.runId);
+      return true;
+    }).immediate());
+  }
+
   private requireOwnedEnvelope(runId: string, attempt: number, ownerEpoch: number): RunEnvelope {
     const row = this.db.prepare('SELECT * FROM durable_runs WHERE run_id = ?').get(runId) as Row | undefined;
     if (!row) throw new Error(`Unknown durable run: ${runId}`);

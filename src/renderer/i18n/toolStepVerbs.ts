@@ -91,12 +91,11 @@ interface ToolStepVerbBundle {
   failureCode: string;
   failureReasonMissing: string;
   notRunPrefix: string;
-  /** 停车审批自动收口三句（键 = PARKED_APPROVAL_CLOSURE_SENTENCES 的名字；zh 直接用原句，保证字节一致）。 */
-  parkedClosure: {
-    expiredAfterRestart24h: string;
-    workingDirectoryUnavailable: string;
-    argsUnavailable: string;
-  };
+  /**
+   * 停车审批自动收口句（键 = PARKED_APPROVAL_CLOSURE_SENTENCES 的名字；zh 直接用原句，保证字节一致）。
+   * 按 Record<共享键联合, string> 收口：host 新增收口原因而任一语言表漏配时，这里直接编译红。
+   */
+  parkedClosure: Record<keyof typeof PARKED_APPROVAL_CLOSURE_SENTENCES, string>;
   failureCodes: {
     'worktree-create-failed': string;
     'gateway-timeout': string;
@@ -232,6 +231,7 @@ export const toolStepVerbsEn: ToolStepVerbBundle = {
   parkedClosure: {
     expiredAfterRestart24h: 'This step waited for your confirmation for over 24 hours, so it was voided automatically and did not run.',
     workingDirectoryUnavailable: "This conversation has no working directory, so it can't be run safely after a restart. It did not run.",
+    runEndedAfterRestart: 'The run this step belonged to has already ended, so it did not run; you will be asked again the next time it triggers.',
     argsUnavailable: 'After the app restarted, the full details of this step could not be found, so it was not run for safety.',
   },
   failureCodes: {

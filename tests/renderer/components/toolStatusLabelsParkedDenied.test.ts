@@ -18,6 +18,7 @@ function denied(error: string, metadata?: Record<string, unknown>): ToolCall {
 const EN_CLOSURE_SENTENCES = {
   expiredAfterRestart24h: 'This step waited for your confirmation for over 24 hours, so it was voided automatically and did not run.',
   workingDirectoryUnavailable: "This conversation has no working directory, so it can't be run safely after a restart. It did not run.",
+  runEndedAfterRestart: 'The run this step belonged to has already ended, so it did not run; you will be asked again the next time it triggers.',
   argsUnavailable: 'After the app restarted, the full details of this step could not be found, so it was not run for safety.',
 } as const;
 
@@ -25,6 +26,7 @@ const EN_CLOSURE_SENTENCES = {
 const LEGACY_ZH_SENTENCES = {
   expiredAfterRestart24h: '这一步等你确认超过 24 小时，已自动作废，没有执行。',
   workingDirectoryUnavailable: '这次对话没有工作目录，重启后无法安全执行，没有执行。',
+  runEndedAfterRestart: '所属运行已结束，没有执行；下次触发会重新询问你。',
   argsUnavailable: '应用重启后找不到这一步的完整信息，为安全起见没有执行。',
 } as const;
 
@@ -37,6 +39,7 @@ describe('停车审批 denied 结果的步骤状态词', () => {
     ['host 现写的收口句', (key: ClosureKey) => {
       if (key === 'expiredAfterRestart24h') return describeParkedApprovalClosure('expired_after_restart_24h');
       if (key === 'workingDirectoryUnavailable') return describeParkedApprovalClosure('args_unavailable', 'working_directory_unavailable');
+      if (key === 'runEndedAfterRestart') return describeParkedApprovalClosure('run_ended_after_restart');
       return describeParkedApprovalClosure('args_unavailable');
     }],
     ['老行持久化的中文原句', (key: ClosureKey) => LEGACY_ZH_SENTENCES[key]],

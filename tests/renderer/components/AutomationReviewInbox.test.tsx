@@ -577,6 +577,8 @@ describe('AutomationReviewInbox', () => {
       'This step waited for your confirmation for over 24 hours, so it was voided automatically and did not run.'],
     ['workingDirectoryUnavailable', '这次对话没有工作目录，重启后无法安全执行，没有执行。',
       "This conversation has no working directory, so it can't be run safely after a restart. It did not run."],
+    ['runEndedAfterRestart', '所属运行已结束，没有执行；下次触发会重新询问你。',
+      'The run this step belonged to has already ended, so it did not run; you will be asked again the next time it triggers.'],
     ['argsUnavailable', '应用重启后找不到这一步的完整信息，为安全起见没有执行。',
       'After the app restarted, the full details of this step could not be found, so it was not run for safety.'],
   ] as const)('voided 行 %s：zh 显原句 / en 显译文', async (_key, zhSentence, enSentence) => {

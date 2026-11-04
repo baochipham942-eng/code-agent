@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { AgentEvent, AppSettings, PermissionRequest, PermissionResponse } from '../../shared/contract';
+import { PermissionRequestReason } from '../../shared/contract/permission';
 import type { PermissionAskResult, PermissionDeliveryOutcome, PermissionDenialSource } from '../../shared/contract/permission';
 import type { ToolApprovalPayload, PendingApprovalKind } from '../../shared/contract/pendingApproval';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
@@ -84,6 +85,19 @@ function buildParkedArgsPreview(request: PermissionRequest): string | undefined 
 
 /** 真人点的会话/始终。带 targetApp 时只记该应用，不记工具级放行。plain allow 不记。 */
 function recordHumanGrant(response: PermissionResponse, request: PermissionRequest): void {
+  // ADR-088 §4 三层保证之 3（host 侧永不铸造）：敏感步骤交回的应答**整体**跳过铸造——
+  // 包括 allow_session 在无 targetApp 时回落 recordApproval 的会话级工具放行记录
+  // （那同样是本流程不许产生的授权）。任何形态的记住应答都降级为一次性语义。
+  if (
+    request.reasonCode === PermissionRequestReason.SensitiveStepHandback
+    || request.details?.sensitiveStep
+  ) {
+    logger.info('Sensitive step hand-back answer never mints a grant', {
+      tool: request.tool,
+      response,
+    });
+    return;
+  }
   const app = request.details?.targetApp;
   if (response === 'allow_session' && request.sessionId) {
     if (app?.name) mintAppGrantSession(request.sessionId, app);
@@ -710,6 +724,10 @@ export class OrchestratorPermissionIsland {
           }
           : {}),
         ...(argsPreview ? { argsPreview } : {}),
+        // ADR-088 敏感步骤交回：收件箱/会话卡据此渲染单状态交回卡（展示元数据，无秘密本体）。
+        ...(fullRequest.details?.sensitiveStep
+          ? { sensitiveStep: fullRequest.details.sensitiveStep }
+          : {}),
         // 目录授权卡直接给人话："访问 <path>（只读/读写）· <agent 理由>"，不用通用 tool 名。
         displayTool: isDirectoryAccess
           ? `目录访问：${fullRequest.details?.path ?? '(unknown path)'}（${

@@ -17,9 +17,9 @@ const logger = createLogger('SkillsSyncPreference');
 const PREFERENCE_FILE = 'external-skills-sync.json';
 
 export type SkillsSyncMode = 'off' | 'on' | 'paused';
-export type SkillsSyncHandled = Record<ExternalSkillCopySourceId, string[]>;
+type SkillsSyncHandled = Record<ExternalSkillCopySourceId, string[]>;
 
-export interface SkillsSyncLastRun {
+interface SkillsSyncLastRun {
   at: number;
   imported: number;
   keptNeo: number;

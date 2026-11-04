@@ -350,6 +350,7 @@ export function buildLedgerTaskRecords(tasks: Task[], currentSessionId: string |
         scope: 'global' as const,
         title: task.title,
         status,
+        ...(status === 'blocked' ? { failed: true } : {}),
         steps: [
           {
             title: backgroundTaskStatusLabel(task),

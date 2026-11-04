@@ -482,7 +482,7 @@ export interface MessageMetadata {
   streamResumeNote?: { attempt: number; maxReconnects: number };
 }
 
-export type StreamInterruptionReason = 'user' | 'session-switch' | 'app-restart' | 'stream-break';
+export type StreamInterruptionReason = 'user' | 'session-switch' | 'app-restart' | 'stream-break' | 'idle-reaped';
 
 export interface Message {
   id: string;

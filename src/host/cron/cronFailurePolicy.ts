@@ -76,6 +76,19 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+// 不尾锚定：真实管线的 execution.error 是 cause 链拼接（cronFailureSourceText），
+// 预算消息后还跟着「成本超限：…」行；只认行首前缀（与 PERMANENT_PATTERNS 同向）。
+const CRON_BUDGET_ERROR_PATTERN = /^Cron job run exceeded its \$([0-9]+(?:\.[0-9]+)?) budget limit(?: \(spent \$([0-9]+(?:\.[0-9]+)?)\))?\./;
+
+function parseCronBudgetExceededMessage(message: string | undefined): { cap: string; spent?: string } | undefined {
+  const match = message?.match(CRON_BUDGET_ERROR_PATTERN);
+  return match ? { cap: match[1], ...(match[2] ? { spent: match[2] } : {}) } : undefined;
+}
+
+export function cronDisableReasonForFailure(error: unknown): 'budget' | 'permanent' {
+  return parseCronBudgetExceededMessage(errorMessage(error)) ? 'budget' : 'permanent';
+}
+
 export function classifyCronFailure(error: unknown | string): CronFailureKind {
   const message = typeof error === 'string' ? error : errorMessage(error);
   if (message.startsWith(`${CRON_LOGIN_WALL_STOP}|`)) return 'login-wall';
@@ -139,6 +152,26 @@ function buildMaxRunsDisabledSummary(definition: CronJobDefinition): string {
       + '可在「自动化中心 → 定时任务」重新启用，重新启用后计数清零。';
 }
 
+function buildBudgetDisabledSummary(definition: CronJobDefinition, error: string | undefined): string {
+  const parsed = parseCronBudgetExceededMessage(error);
+  const cap = typeof definition.maxRunBudget === 'number' && Number.isFinite(definition.maxRunBudget)
+    ? definition.maxRunBudget.toFixed(2)
+    : parsed?.cap ?? '?';
+  const english = getConfigService().getSettings().ui?.language === 'en';
+  if (parsed?.spent) {
+    return english
+      ? `This run spent $${parsed.spent}, over your per-run budget cap of $${cap}, so the task was disabled. `
+        + 'Raise "Per-run budget cap (USD)" under Automation Center → Scheduled tasks and re-enable it.'
+      : `本次运行花费 $${parsed.spent}，超过了你设的单次预算上限 $${cap}，任务已自动停用。`
+        + '可在「自动化中心 → 定时任务」编辑该任务，调高「单次预算上限 (USD)」后重新启用。';
+  }
+  return english
+    ? `This run went over your per-run budget cap of $${cap}, so the task was disabled. `
+      + 'Raise "Per-run budget cap (USD)" under Automation Center → Scheduled tasks and re-enable it.'
+    : `本次运行超过了你设的单次预算上限 $${cap}，任务已自动停用。`
+      + '可在「自动化中心 → 定时任务」编辑该任务，调高「单次预算上限 (USD)」后重新启用。';
+}
+
 /**
  * 最终停用通知（不受冷却约束）：必须带上出路——去哪重新启用、看什么错误。
  * 所有动作类型都发（不止 agent 任务）：用户不知道任务被停了正是本次回归的痛点。
@@ -146,12 +179,14 @@ function buildMaxRunsDisabledSummary(definition: CronJobDefinition): string {
 export function notifyCronJobDisabled(
   definition: CronJobDefinition,
   execution: CronJobExecution,
-  reason: 'consecutive' | 'permanent' | 'max_runs',
+  reason: 'consecutive' | 'permanent' | 'max_runs' | 'budget',
 ): void {
   const lastError = execution.error ? truncateForNotice(execution.error) : '未知错误';
   const summary = reason === 'consecutive'
     ? `连续失败 ${CRON_GUARDRAILS.MAX_CONSECUTIVE_FAILURES} 次已自动停用。最后错误：${lastError}。`
       + '可在「自动化中心 → 定时任务」重新启用。'
+    : reason === 'budget'
+      ? buildBudgetDisabledSummary(definition, execution.error)
     : reason === 'max_runs'
       ? buildMaxRunsDisabledSummary(definition)
     : `因配置/鉴权类错误停用（重试无效）。错误：${lastError}。`
@@ -161,6 +196,9 @@ export function notifyCronJobDisabled(
       {
         sessionId: execution.sessionId ?? '',
         sessionTitle: `[定时] ${definition.name}`,
+        // 停用通知必须带 jobId：无会话执行（如云端 run）的点击落 Cron Center 选中该任务，
+        // 那里才有「重新启用」；不带 jobId 时 renderer 的点击是无操作的 dismiss。
+        jobId: definition.id,
         summary,
         duration: execution.duration ?? 0,
         toolsUsed: [],

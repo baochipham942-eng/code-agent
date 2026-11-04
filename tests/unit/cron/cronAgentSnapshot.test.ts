@@ -153,7 +153,7 @@ describe('CronService agent run snapshot wiring', () => {
 
     await expect(
       harness.executeAction(definition, definition.action, undefined, 'execution-budget'),
-    ).rejects.toThrow('Cron job run exceeded its $0.01 budget limit.');
+    ).rejects.toThrow('Cron job run exceeded its $0.01 budget limit (spent $0.0200).');
     expect(agentState.cleanup).toHaveBeenCalledWith('cron-session-1');
   });
 

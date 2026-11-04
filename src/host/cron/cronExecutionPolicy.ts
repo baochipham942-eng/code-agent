@@ -176,7 +176,12 @@ export async function runWithCronJobBudget<T>(
     return await jobCostLimit.run(operation);
   } catch (error) {
     if (isScopedCostLimitExceeded(error)) {
-      throw new Error(`Cron job run exceeded its $${maxRunBudget.toFixed(2)} budget limit.`, { cause: error });
+      const spent = error instanceof Error && 'costUsd' in error
+        && typeof error.costUsd === 'number' ? error.costUsd.toFixed(4) : undefined;
+      throw new Error(
+        `Cron job run exceeded its $${maxRunBudget.toFixed(2)} budget limit${spent ? ` (spent $${spent})` : ''}.`,
+        { cause: error },
+      );
     }
     throw error;
   }

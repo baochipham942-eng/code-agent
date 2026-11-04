@@ -26,6 +26,7 @@ import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';
 import { Button } from '../../primitives/Button';
+import { SensitiveStepParkedRow } from '../../PermissionDialog/SensitiveStepHandbackCard';
 import { openCronLoginWallSite } from './cronLoginWallNotice';
 import { CronReviewDigest } from './CronReviewDigest';
 
@@ -232,6 +233,26 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                   const isOrphaned = item.status === 'orphaned';
                   const isPairing = item.kind === 'channel_pairing';
                   const isExternal = item.riskClass === 'external';
+                  // ADR-088 敏感步骤交回：单状态交回卡（[完成后继续]/[这步不做了]），
+                  // 不出「每次都允许」铸权入口——host 侧对交回应答永不铸造授权。
+                  if (item.sensitiveStep) {
+                    return (
+                      <div
+                        key={item.id}
+                        className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2 ${isOrphaned ? 'opacity-50' : ''}`}
+                        data-testid="parked-approval-item"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm text-zinc-200">{item.displayTool ?? item.tool}</div>
+                          <SensitiveStepParkedRow
+                            step={item.sensitiveStep}
+                            onRespond={(response) => { void handleResolveParked(item, response); }}
+                            disabled={busyId === item.id || isOrphaned}
+                          />
+                        </div>
+                      </div>
+                    );
+                  }
                   // A4 作用域提示：external 动作离开本机（暖色边框强调）；有 target 时点名去向。
                   // 非 external 审批卡不变（不加 scopeNote、不换边框）。
                   const scopeNote = isExternal

@@ -290,6 +290,7 @@ export const enSettingsSystem = {
     webModeBanner: {
       desktopOnlyFeature: 'Some features are only available in the desktop app',
       desktopOnlyLabel: '(desktop app)',
+      channelsManageDesktopOnly: 'The web app can only view channel accounts and their status. To add, connect/disconnect, edit or delete them, use the desktop Agent Neo app.',
     },
     nativeDesktop: {
       meetingAppNames: [

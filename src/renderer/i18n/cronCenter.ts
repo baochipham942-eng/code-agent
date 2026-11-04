@@ -185,6 +185,7 @@ export const cronCenterZh = {
     roleWakeNoModel: '无模型调用',
     execError: '错误',
     execResult: '结果',
+    execStopReason: '为什么停了',
     // 简单创建流（A3）
     simpleTitle: '添加自动化',
     simpleGoalLabel: '想让 Neo 定期做什么',
@@ -613,6 +614,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     roleWakeNoModel: 'No model call',
     execError: 'Error',
     execResult: 'Result',
+    execStopReason: 'Why it stopped',
     simpleTitle: 'New automation',
     simpleGoalLabel: 'What should Neo do on schedule',
     simpleGoalPlaceholder: 'e.g. Read competitor updates I follow and write a brief',

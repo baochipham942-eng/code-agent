@@ -184,8 +184,13 @@ function maskPrivateRules(text: string): string {
     if (!passesLuhn(digits) || !hasKnownCardIssuer(digits)) return matched;
     return placeholderFor({ type: 'card_number' }, matched);
   });
-  output = output.replace(EMAIL_PATTERN, (matched: string, domain: string, offset: number, whole: string) =>
-    isEmailCandidate(whole, offset, matched, domain) ? placeholderFor({ type: 'email' }, matched) : matched);
+  output = output.replace(EMAIL_PATTERN, (matched: string, domain: string, offset: number, whole: string) => {
+    // JSON 文本里 `\n`/`\t` 转义的字母会被吞进 local 部分：把它留在占位符之外，免得产出非法的 `\{` 转义。
+    const lead = offset > 0 && whole[offset - 1] === '\\' && /[ntrbf]/.test(matched[0]) ? 1 : 0;
+    const email = matched.slice(lead);
+    if (email.startsWith('@') || !isEmailCandidate(whole, offset + lead, email, domain)) return matched;
+    return matched.slice(0, lead) + placeholderFor({ type: 'email' }, email);
+  });
   return output;
 }
 

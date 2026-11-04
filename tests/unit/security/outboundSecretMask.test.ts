@@ -619,4 +619,17 @@ describe('outboundSecretMask FU2 EMAIL', () => {
     await s.onStream!({ type: 'complete' } as StreamChunk);
     expect(joinedText(sink.chunks)).toBe('mail rina.k@fastmail.com ok');
   });
+
+  it('JSON 文本 arguments 里 \\n/\\t 转义后的邮箱：转义保持合法，JSON 仍可解析且往返一致', () => {
+    const email = 'rina@fastmail.com';
+    const args = JSON.stringify({ text: `line1\n${email}\t${email}` });
+    const s = applyOutboundSecretMask([{ role: 'assistant', content: '', toolCalls: [{ id: 't1', name: 'send', arguments: args }] }])!;
+    const maskedArgs = s.messages[0].toolCalls![0].arguments;
+    expect(maskedArgs).not.toContain(email);
+    expect(maskedArgs).not.toContain('\\{');
+    const parsed = JSON.parse(maskedArgs) as { text: string };
+    expect(parsed.text).toMatch(/^line1\n\{\{SECRET_EMAIL_[0-9a-f]{8}\}\}\t\{\{SECRET_EMAIL_[0-9a-f]{8}\}\}$/);
+    const restored = s.restore({ type: 'tool_use', toolCalls: [{ id: 't1', name: 'send', arguments: parsed }] });
+    expect(restored.toolCalls![0].arguments).toEqual({ text: `line1\n${email}\t${email}` });
+  });
 });

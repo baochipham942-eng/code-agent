@@ -635,6 +635,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
 export const ChannelsSettings: React.FC = () => {
   const { t } = useI18n();
   const channelText = t.settings.channels;
+  const webOnlyNote = isWebMode() ? t.settings.webModeBanner.channelsManageDesktopOnly : undefined;
   const statusFilters = channelText.statusFilters as ChannelStatusFilterOption[];
   const [accounts, setAccounts] = useState<ChannelAccount[]>([]);
   const [channelTypes, setChannelTypes] = useState<ChannelTypeInfo[]>([]);
@@ -832,10 +833,12 @@ export const ChannelsSettings: React.FC = () => {
 
       <SettingsSection
         title={channelText.accounts.title}
+        description={webOnlyNote}
         actions={(
           <Button
             size="sm"
             disabled={isWebMode()}
+            title={webOnlyNote}
             onClick={handleAdd}
             variant="primary"
             leftIcon={<Plus className="w-3 h-3" />}
@@ -895,6 +898,7 @@ export const ChannelsSettings: React.FC = () => {
                 className="mt-4"
                 size="sm"
                 disabled={isWebMode()}
+                title={webOnlyNote}
                 onClick={handleAdd}
                 variant="primary"
                 leftIcon={<Plus className="w-3 h-3" />}
@@ -983,6 +987,7 @@ export const ChannelsSettings: React.FC = () => {
                         size="sm"
                         variant="ghost"
                         disabled={isWebMode()}
+                        title={webOnlyNote}
                         onClick={() => handleToggleConnection(account)}
                         loading={connectingId === account.id}
                         leftIcon={
@@ -999,6 +1004,7 @@ export const ChannelsSettings: React.FC = () => {
                         size="sm"
                         variant="ghost"
                         disabled={isWebMode()}
+                        title={webOnlyNote}
                         onClick={() => handleEdit(account)}
                         leftIcon={<Edit className="w-3 h-3" />}
                       >
@@ -1008,6 +1014,7 @@ export const ChannelsSettings: React.FC = () => {
                         size="sm"
                         variant="ghost"
                         disabled={isWebMode()}
+                        title={webOnlyNote}
                         onClick={() => handleDelete(account.id)}
                         leftIcon={<Trash2 className="w-3 h-3 text-badge-danger" />}
                       >

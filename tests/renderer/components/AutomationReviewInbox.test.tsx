@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionAutomationRecord } from '../../../src/shared/contract/sessionAutomation';
 import type { ParkedApprovalInboxItem } from '../../../src/shared/contract/pendingApproval';
@@ -783,5 +783,83 @@ describe('awaiting-approval refresh signal (Rework r1)', () => {
       { timeout: 4000 },
     );
     expect(listParkedApprovals.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+// N-CRON-REVIEW-COUNT-LIVE：页面停着时数字自动刷新，服务掉线不显示假 0。
+describe('live refresh (N-CRON-REVIEW-COUNT-LIVE)', () => {
+  const setVisibility = (state: 'visible' | 'hidden') => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+  };
+  beforeEach(() => {
+    vi.useFakeTimers();
+    setVisibility('visible');
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    setVisibility('visible');
+  });
+  const tick = async (ms: number) => {
+    await act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+  };
+
+  it('一个轮询间隔后标题与 onPendingCountChange 无需重挂载即更新', async () => {
+    listPendingReview.mockResolvedValue([makeRecord({ id: 'a1' })]);
+    countPendingReview.mockResolvedValue(1);
+    const onChange = vi.fn();
+    render(<AutomationReviewInbox onPendingCountChange={onChange} />);
+    await tick(0);
+    expect(screen.getByTestId('automation-review-inbox-title').textContent).toContain('1');
+
+    listPendingReview.mockResolvedValue([makeRecord({ id: 'a1' }), makeRecord({ id: 'a2', title: '新结果' })]);
+    countPendingReview.mockResolvedValue(2);
+    await tick(10_000);
+    expect(screen.getByTestId('automation-review-inbox-title').textContent).toContain('2');
+    expect(onChange).toHaveBeenLastCalledWith(2);
+  });
+
+  it('请求失败保留上次值、从不回报 0，恢复后下一次刷新', async () => {
+    listPendingReview.mockResolvedValue([makeRecord({ id: 'a1' })]);
+    countPendingReview.mockResolvedValue(4);
+    const onChange = vi.fn();
+    render(<AutomationReviewInbox onPendingCountChange={onChange} />);
+    await tick(0);
+    expect(screen.getByTestId('automation-review-inbox-title').textContent).toContain('4');
+
+    listPendingReview.mockRejectedValue(new Error('Load failed'));
+    countPendingReview.mockRejectedValue(new Error('Load failed'));
+    listParkedApprovals.mockRejectedValue(new Error('Load failed'));
+    await tick(10_000);
+    expect(screen.getByTestId('automation-review-inbox-title').textContent).toContain('4');
+    expect(onChange).not.toHaveBeenCalledWith(0);
+
+    listPendingReview.mockResolvedValue([makeRecord({ id: 'a1' })]);
+    countPendingReview.mockResolvedValue(5);
+    listParkedApprovals.mockResolvedValue([]);
+    await tick(10_000);
+    expect(screen.getByTestId('automation-review-inbox-title').textContent).toContain('5');
+  });
+
+  it('页面隐藏时暂停轮询，切回可见立即重拉；卸载后不再请求', async () => {
+    listPendingReview.mockResolvedValue([makeRecord({ id: 'a1' })]);
+    countPendingReview.mockResolvedValue(1);
+    const { unmount } = render(<AutomationReviewInbox />);
+    await tick(0);
+
+    setVisibility('hidden');
+    const before = listPendingReview.mock.calls.length;
+    await tick(30_000);
+    expect(listPendingReview.mock.calls.length).toBe(before);
+
+    setVisibility('visible');
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    await tick(0);
+    expect(listPendingReview.mock.calls.length).toBe(before + 1);
+
+    unmount();
+    const afterUnmount = listPendingReview.mock.calls.length;
+    await act(async () => { window.dispatchEvent(new Event('focus')); });
+    await tick(30_000);
+    expect(listPendingReview.mock.calls.length).toBe(afterUnmount);
   });
 });

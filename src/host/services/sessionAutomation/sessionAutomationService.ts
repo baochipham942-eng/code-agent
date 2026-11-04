@@ -585,6 +585,7 @@ export class SessionAutomationService {
         status: row.status === 'orphaned' ? 'orphaned' : 'pending',
         riskClass: payload.riskClass ?? null,
         standingGrantTarget: payload.standingGrantTarget ?? null,
+        sensitiveStep: payload.sensitiveStep,
       };
     }), ...voided];
   }

@@ -119,11 +119,18 @@ export function resolveAgentActivityStepStatus(input: {
 }): ToolStepStatus {
   const { step, working, activityIds, sessionId, permission } = input;
   if (!step) return 'completed';
+  // 请求点名本目标的三条键路：顶层 agentId / runId（applyMemberHolds 同款），以及
+  // turnOrigin[].runId（ADR-067：delegate_task 的审批卡不带顶层 agentId/runId，
+  // 发起轮的 runId 即任务的 id/runId——真机 mail_send 卡实证，见任务书背景）。
   const namesThisTarget = (request: PermissionRequest | null | undefined): boolean => {
     if (!request || request.resolved) return false;
     if (request.tool !== step.tool) return false;
-    return (request.agentId !== undefined && activityIds.includes(request.agentId))
-      || (request.runId !== undefined && activityIds.includes(request.runId));
+    const requestIds = [
+      request.agentId,
+      request.runId,
+      ...(request.turnOrigin ?? []).map((origin) => origin.runId),
+    ];
+    return requestIds.some((id) => id !== undefined && activityIds.includes(id));
   };
   const pendingInScope = sessionId
     ? permission?.pendingPermissionSessionId === sessionId

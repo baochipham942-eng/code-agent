@@ -130,6 +130,41 @@ describe('resolveAgentActivityStepStatus', () => {
     })).toBe('pending-approval');
   });
 
+  // 真机形态（N-APPROVAL-PENDING-STATUS-COPY）：delegate_task 的 mail_send 卡不带
+  // 顶层 agentId/runId，以 turnOrigin[].runId 指回发起轮（= 任务 id/runId）。
+  it('correlates through turnOrigin[].runId when the card names no top-level agentId/runId', () => {
+    expect(resolveAgentActivityStepStatus({
+      ...workingTask,
+      activityIds: ['session-work-1'],
+      step: mailStep,
+      sessionId: 'session-1',
+      permission: {
+        pendingPermissionRequest: mailRequest({
+          agentId: undefined,
+          runId: undefined,
+          turnOrigin: [{ senderKind: 'user', sessionId: 'session-1', runId: 'session-work-1', turnId: 't-1' }],
+        }),
+        pendingPermissionSessionId: 'session-1',
+      },
+    })).toBe('pending-approval');
+  });
+
+  it('turnOrigin naming another run does not flip this row', () => {
+    expect(resolveAgentActivityStepStatus({
+      ...workingTask,
+      step: mailStep,
+      sessionId: 'session-1',
+      permission: {
+        pendingPermissionRequest: mailRequest({
+          agentId: undefined,
+          runId: undefined,
+          turnOrigin: [{ senderKind: 'user', sessionId: 'session-1', runId: 'session-work-other' }],
+        }),
+        pendingPermissionSessionId: 'session-1',
+      },
+    })).toBe('running');
+  });
+
   it('resolved request falls through to running for connector writes', () => {
     expect(resolveAgentActivityStepStatus({
       ...workingTask,

@@ -69,7 +69,13 @@ afterEach(async () => {
   }
 });
 
-async function setup(opts: { withCustom: boolean }) {
+async function setup(opts: {
+  withCustom: boolean;
+  /** 显式声明协议；缺省 = 不写字段（隐式 openai）。 */
+  protocol?: 'openai' | 'claude' | 'responses';
+  providerId?: string;
+  model?: string;
+}) {
   const { initConfigService } = await import('../../../src/host/services/core/configService');
   const { getSecureStorage } = await import('../../../src/host/services/core/secureStorage');
   const cfg = initConfigService();
@@ -77,16 +83,18 @@ async function setup(opts: { withCustom: boolean }) {
   fs.rmSync((cfg as unknown as { configPath: string }).configPath, { force: true });
   await cfg.initialize();
   if (opts.withCustom) {
-    getSecureStorage().setApiKey(CUSTOM_ID, CUSTOM_KEY);
+    const providerId = opts.providerId ?? CUSTOM_ID;
+    getSecureStorage().setApiKey(providerId, CUSTOM_KEY);
     await cfg.updateSettings({
       models: {
-        default: CUSTOM_ID,
+        default: providerId,
         providers: {
-          [CUSTOM_ID]: {
+          [providerId]: {
             enabled: true,
             baseUrl: `http://${fakeHost}/api/coding/paas/v4`,
-            model: CUSTOM_MODEL,
+            model: opts.model ?? CUSTOM_MODEL,
             displayName: 'GLM coding',
+            ...(opts.protocol ? { protocol: opts.protocol } : {}),
           },
         },
       },
@@ -161,5 +169,64 @@ describe('quick lanes × only custom GLM provider configured', () => {
     await getConfigService().updateSettings({ models: { providers: { [CUSTOM_ID]: { enabled: true, baseUrl: '' } } } } as never);
     expect(await qm.quickTask('hi', 16)).toMatchObject({ failureReason: 'not_configured' });
     expect(warn.mock.calls.map((c) => JSON.stringify(c)).some((m) => m.includes(CUSTOM_ID) && /no endpoint/i.test(m))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 协议门（rework r1）：quick 车道只会说 OpenAI /chat/completions + Bearer。
+// claude / responses 协议的默认中转不进本车道 —— 否则错格式请求会把主聊天还在用的
+// key 拉黑并污染 quickModelAuthFailure 诊断。判定与主 loop 的协议改道同源。
+// ---------------------------------------------------------------------------
+describe('quick lanes × custom default provider protocol gate', () => {
+  it('protocol=claude → 三条车道 not_configured、零出站请求、不拉黑 key，warn 点名协议', async () => {
+    const qm = await setup({ withCustom: true, protocol: 'claude' });
+    const { quick, memory, judgeRequests } = await runLanes(qm);
+    expect(quick).toMatchObject({ failureReason: 'not_configured' });
+    expect(memory).toMatchObject({ failureReason: 'not_configured' });
+    expect(judgeRequests).toBe(0);
+    expect(seen).toHaveLength(0);
+    expect(qm.getQuickModelAuthFailure()).toBeNull();
+    const msgs = warn.mock.calls.map((c) => JSON.stringify(c));
+    expect(msgs.some((m) => m.includes(CUSTOM_ID) && /protocol 'claude'/.test(m) && /quick lane/i.test(m))).toBe(true);
+  });
+
+  it('protocol=responses → 同上，quiet not_configured 回落', async () => {
+    const qm = await setup({ withCustom: true, protocol: 'responses' });
+    const { quick, memory, judgeRequests } = await runLanes(qm);
+    expect(quick).toMatchObject({ failureReason: 'not_configured' });
+    expect(memory).toMatchObject({ failureReason: 'not_configured' });
+    expect(judgeRequests).toBe(0);
+    expect(seen).toHaveLength(0);
+    expect(qm.getQuickModelAuthFailure()).toBeNull();
+    const msgs = warn.mock.calls.map((c) => JSON.stringify(c));
+    expect(msgs.some((m) => m.includes(CUSTOM_ID) && /protocol 'responses'/.test(m) && /quick lane/i.test(m))).toBe(true);
+  });
+
+  it('声明 openai 但能力矩阵按模型改道 Responses（custom-tokenrhythm/deepseek-v4-flash-0731）→ 同样拦下', async () => {
+    const qm = await setup({
+      withCustom: true,
+      providerId: 'custom-tokenrhythm',
+      model: 'deepseek-v4-flash-0731',
+    });
+    const { quick, memory, judgeRequests } = await runLanes(qm);
+    expect(quick).toMatchObject({ failureReason: 'not_configured' });
+    expect(memory).toMatchObject({ failureReason: 'not_configured' });
+    expect(judgeRequests).toBe(0);
+    expect(seen).toHaveLength(0);
+    expect(qm.getQuickModelAuthFailure()).toBeNull();
+    const msgs = warn.mock.calls.map((c) => JSON.stringify(c));
+    expect(msgs.some((m) => m.includes('custom-tokenrhythm') && /protocol 'responses'/.test(m))).toBe(true);
+  });
+
+  it('显式声明 protocol=openai → 照常走自定义端点（门不过度拦截）', async () => {
+    const qm = await setup({ withCustom: true, protocol: 'openai' });
+    const { quick, memory, judgeRequests } = await runLanes(qm);
+    expect(quick.provider).toBe(CUSTOM_ID);
+    expect(memory.provider).toBe(CUSTOM_ID);
+    expect(judgeRequests).toBeGreaterThan(0);
+    for (const s of seen) {
+      expect(s.host).toBe(fakeHost);
+      expect(s.auth).toBe(`Bearer ${CUSTOM_KEY}`);
+    }
   });
 });

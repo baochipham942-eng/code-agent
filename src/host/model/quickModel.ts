@@ -15,6 +15,8 @@ import { normalizeApiKey } from '../services/core/configHelpers';
 import { getProviderLimiter } from './concurrencyLimiter';
 import { isZhipuFreeModel, resolveProviderApiKey, resolveProviderBaseUrl } from './providers/providerResolution';
 import { resolveConfiguredDefaultProvider } from '../../shared/modelDefaults';
+import { resolveProviderProtocol } from '../../shared/modelRuntime';
+import { resolveModelCapabilities } from './modelCapabilityMatrix';
 import { getMemoryModelOverride, type MemoryModelOverride } from './memoryModelOverrideScope';
 import type { ModelConfig, ModelProvider } from '../../shared/contract';
 import { applyOutboundSecretMask } from '../security/outboundSecretMask';
@@ -279,14 +281,32 @@ function resolveMemoryOverride(override: MemoryModelOverride): QuickModelConfig 
 /**
  * 用户默认 provider 是自配的 custom-* 中转（不在内置端点表里）时，用它自己的
  * 端点 + key + model 作 quick 车道候选。内置 provider 不走这里（由 routing.* 管）。
+ *
+ * 协议门：quick 车道只会说 OpenAI /chat/completions + Bearer（executeQuickAttempt）。
+ * 主 loop 会按协议把 claude / responses 中转改道到各自的 adapter
+ * （modelRouter.getDynamicCustomProvider），本车道没有对应线格式——放进去就是错格式
+ * 请求：401/403 会把主聊天还在用的 key 拉黑（quickAuthBlacklist）并污染
+ * quickModelAuthFailure 诊断，其余形状则是恒定 http_error。判定与主 loop 同源：
+ * 声明协议（settings.models.providers[id].protocol，缺省 openai）+ 能力矩阵按模型
+ * 改道 Responses 的行（矩阵 responses 且声明非 claude → responses）。
  */
 function resolveDefaultCustomProvider(misses: string[]): QuickModelConfig | null {
   const settings = getConfigService().getSettings().models;
   const provider = resolveConfiguredDefaultProvider(settings, DEFAULT_PROVIDER) as string;
   if ((MODEL_API_ENDPOINTS as Record<string, string>)[provider]) return null;
-  const model = settings.providers?.[provider]?.model;
+  const providerSettings = settings.providers?.[provider];
+  const model = providerSettings?.model;
   if (!model) {
     misses.push(`default ${provider}: no model configured`);
+    return null;
+  }
+  const declaredProtocol = resolveProviderProtocol(provider, providerSettings);
+  const matrixProtocol = resolveModelCapabilities(provider as ModelProvider, model).protocol;
+  if (declaredProtocol !== 'openai' || matrixProtocol === 'responses') {
+    const effectiveProtocol = matrixProtocol === 'responses' && declaredProtocol !== 'claude'
+      ? 'responses'
+      : declaredProtocol;
+    misses.push(`default ${provider}: protocol '${effectiveProtocol}' unsupported by quick lane (OpenAI-compatible only)`);
     return null;
   }
   return resolveRole(provider, model, 'default', misses);

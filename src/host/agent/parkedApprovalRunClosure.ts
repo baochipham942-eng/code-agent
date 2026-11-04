@@ -35,13 +35,14 @@ export async function closeSessionParkedRun(
   approvalRequestedAt: number,
 ): Promise<boolean> {
   try {
-    const closed = await repository.closeParkedWaitingRunForSession({
+    const { closed, skippedReason } = await repository.closeParkedWaitingRunForSession({
       sessionId,
       now,
       reason: PARKED_APPROVAL_RUN_CLOSE_REASON,
       approvalRequestedAt,
     });
-    if (closed) logger.info('Closed parked waiting durable run after approval closure', { sessionId });
+    if (closed) logger.info('Closed parked durable run after approval closure', { sessionId });
+    else logger.warn('Parked durable run not closed after approval closure', { sessionId, reason: skippedReason });
     return closed;
   } catch (error) {
     logger.warn('Failed to close parked durable run after approval closure', {

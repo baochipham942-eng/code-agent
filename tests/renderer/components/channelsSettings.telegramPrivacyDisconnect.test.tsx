@@ -82,7 +82,9 @@ describe('ChannelsSettings telegram privacy hint vs disconnect', () => {
       fire?.({ accountId: 'tg-1', status: 'disconnected', error: undefined });
     });
 
-    await within(row).findByText(c.statusFilters.find((f) => f.value === 'disconnected').label);
+    await within(row).findByText(
+      c.statusFilters.find((f) => f.value === 'disconnected')?.label ?? 'disconnected',
+    );
     expect(within(row).queryByTestId('telegram-privacy-mode-hint')).toBeNull();
     // 状态更新只来自事件推送，没有列表重载等额外 IPC
     expect(invoke.mock.calls.length).toBe(callsAfterDisconnect);

@@ -507,7 +507,7 @@ describe('ToolExecutor cua sensitive step hand-back (ADR-088 phase 1)', () => {
           blockedCommands: [],
           devModeAutoApprove: false,
         },
-      } as AppSettings),
+      } as unknown as AppSettings),
       isDevModeAutoApproveEnabled: () => false,
       getExecutionTopology: () => 'async_agent',
       hasApprovalUi: () => true,
@@ -519,10 +519,15 @@ describe('ToolExecutor cua sensitive step hand-back (ADR-088 phase 1)', () => {
       workingDirectory: '/tmp/workbench',
     });
 
-    for (const [bareTool, params, response] of [
-      ['press_key', { pid: SHOP_PID, window_id: SHOP_WINDOW_ID, key: 'p' }, 'allow_session'],
-      ['hotkey', { pid: SHOP_PID, window_id: SHOP_WINDOW_ID, keys: ['cmd', 'v'] }, 'allow_standing'],
-    ] as const) {
+    const cases: Array<{
+      bareTool: string;
+      params: Record<string, unknown>;
+      response: 'allow_session' | 'allow_standing';
+    }> = [
+      { bareTool: 'press_key', params: { pid: SHOP_PID, window_id: SHOP_WINDOW_ID, key: 'p' }, response: 'allow_session' },
+      { bareTool: 'hotkey', params: { pid: SHOP_PID, window_id: SHOP_WINDOW_ID, keys: ['cmd', 'v'] }, response: 'allow_standing' },
+    ];
+    for (const { bareTool, params, response } of cases) {
       events.length = 0;
       resolverState.getDefinition.mockReturnValue(cuaActionDefinition(bareTool));
       const pending = executor.execute(`mcp__cua-driver__${bareTool}`, params, { sessionId: 's-no-mint' });

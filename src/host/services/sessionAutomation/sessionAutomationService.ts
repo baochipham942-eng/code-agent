@@ -25,6 +25,8 @@ import {
 } from '../../../shared/cronRunDigest';
 import type { ParkedApprovalInboxItem, ToolApprovalPayload } from '../../../shared/contract/pendingApproval';
 import type { AwaitingApprovalRun } from '../../../shared/contract/sessionAutomation';
+import { PARKED_APPROVAL_VOIDED_RETENTION_MS } from '../../../shared/constants/pendingApproval';
+import { describeParkedApprovalClosure } from '../../agent/parkedApprovalSurvival';
 import { getDatabase } from '../core/databaseService';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
@@ -537,7 +539,13 @@ export class SessionAutomationService {
       ...repo.listByKindAndStatus('channel_pairing', 'pending'),
       ...repo.listByKindAndStatus('channel_pairing', 'orphaned'),
     ];
-    return rows.map((row) => {
+    const now = Date.now();
+    const voided: ParkedApprovalInboxItem[] = [];
+    for (const row of repo.listByKindAndStatus('tool_approval', 'rejected')) {
+      const item = toVoidedInboxItem(row, now);
+      if (item) voided.push(item);
+    }
+    return [...rows.map((row): ParkedApprovalInboxItem => {
       if (row.kind === 'channel_pairing') {
         let payload: Record<string, unknown> = {};
         try {
@@ -578,7 +586,7 @@ export class SessionAutomationService {
         riskClass: payload.riskClass ?? null,
         standingGrantTarget: payload.standingGrantTarget ?? null,
       };
-    });
+    }), ...voided];
   }
 
   /**
@@ -856,4 +864,36 @@ let instance: SessionAutomationService | null = null;
 export function getSessionAutomationService(): SessionAutomationService {
   if (!instance) instance = new SessionAutomationService();
   return instance;
+}
+
+const AUTO_REJECTED_AFTER_RESTART_PREFIX = 'Auto-rejected after restart: ';
+
+/** 重启后被自动作废的 tool_approval 行 → 收件箱只读留痕；超出保留期或原因码认不出的行返回 null。 */
+function toVoidedInboxItem(
+  row: { id: string; payloadJson: string; coordinatorId: string | null; submittedAt: number; resolvedAt: number | null; feedback: string | null },
+  now: number,
+): ParkedApprovalInboxItem | null {
+  const feedback = row.feedback ?? '';
+  if (!feedback.startsWith(AUTO_REJECTED_AFTER_RESTART_PREFIX)) return null;
+  if (row.resolvedAt === null || now - row.resolvedAt > PARKED_APPROVAL_VOIDED_RETENTION_MS) return null;
+  const match = /^(expired_after_restart_24h|args_unavailable)( \(session working directory unavailable\))?$/
+    .exec(feedback.slice(AUTO_REJECTED_AFTER_RESTART_PREFIX.length));
+  if (!match) return null;
+  const reason = match[1] as 'expired_after_restart_24h' | 'args_unavailable';
+  let payload: Partial<ToolApprovalPayload> = {};
+  try {
+    payload = JSON.parse(row.payloadJson) as Partial<ToolApprovalPayload>;
+  } catch {
+    // 损坏 payload 用列兜底
+  }
+  return {
+    id: row.id,
+    kind: 'tool_approval',
+    sessionId: payload.sessionId ?? row.coordinatorId,
+    tool: payload.tool ?? 'unknown',
+    displayTool: payload.displayTool,
+    requestedAt: payload.requestedAt ?? row.submittedAt,
+    status: 'voided',
+    voidReason: describeParkedApprovalClosure(reason, match[2] ? 'working_directory_unavailable' : undefined),
+  };
 }

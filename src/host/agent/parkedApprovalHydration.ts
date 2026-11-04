@@ -22,8 +22,11 @@ import type { DurableRunRepository } from '../services/core/repositories/Durable
 import { createLogger } from '../services/infra/logger';
 import {
   classifyParkedToolApprovalForSurvival,
+  describeParkedApprovalClosure,
   parseParkedApprovalPayload,
 } from './parkedApprovalSurvival';
+import { closeSessionParkedRun } from './parkedApprovalRunClosure';
+import { rejectLedgerToolApproval, type LedgerToolExecutionPorts } from '../runtime/ledgerToolExecution';
 
 const logger = createLogger('ParkedApprovalHydration');
 
@@ -44,6 +47,11 @@ interface ParkedApprovalHydrationDeps {
    * 显式注入只为让合同测试钉「guard_halt 停靠不进 listRecoverable」走真实 hydrate 入口。
    */
   durableRunRepository?: DurableRunRepository;
+  /**
+   * 被拒行的 denied 结果落台账用的持久化端口（缺省与点击路径 defaultPorts 同一持久化：
+   * getDatabase().addMessage + crash-recovery 出处）。
+   */
+  persistToolMessage?: LedgerToolExecutionPorts['persistToolMessage'];
 }
 
 /**
@@ -73,7 +81,19 @@ export function hydrateApprovalGatesAtBoot(
     parkSessionDurableRunsForApproval(repository, sessionId, at);
   };
 
+  const persistToolMessage = deps.persistToolMessage ?? defaultPersistToolMessage;
+  const getRunRepository = (): DurableRunRepository | null => {
+    if (deps.durableRunRepository) return deps.durableRunRepository;
+    try {
+      return getDatabase().getDurableRunRepository();
+    } catch {
+      return null;
+    }
+  };
+
   const survivors: string[] = [];
+  const survivingSessions = new Set<string>();
+  const closedSessions = new Map<string, number>(); // sessionId → 被收口审批里最早的 requestedAt
   let parked = 0;
   for (const row of repo.listByKindAndStatus('tool_approval', 'pending')) {
     const payload = parseParkedApprovalPayload(row.payloadJson);
@@ -90,7 +110,10 @@ export function hydrateApprovalGatesAtBoot(
     if (verdict.survive) {
       survivors.push(row.id);
       markSurvivorRestartOrigin(repo, row, payload);
-      if (sessionId) parkSessionDurableRuns(sessionId, now);
+      if (sessionId) {
+        survivingSessions.add(sessionId);
+        parkSessionDurableRuns(sessionId, now);
+      }
       continue;
     }
     const changes = repo.resolve({
@@ -102,11 +125,46 @@ export function hydrateApprovalGatesAtBoot(
       resolvedAt: now,
     });
     parked += changes;
+    if (changes > 0 && sessionId) {
+      const requestedAt = payload?.requestedAt ?? row.submittedAt;
+      closedSessions.set(sessionId, Math.min(closedSessions.get(sessionId) ?? requestedAt, requestedAt));
+      // 台账可读且 toolCall 还悬空时补一条 denied 结果（rejectLedgerToolApproval 按稳定消息 id 幂等）。
+      const toolCallId = payload?.argsRef?.toolCallId;
+      if (messages && toolCallId) {
+        const reason = describeParkedApprovalClosure(verdict.reason, verdict.detail);
+        void rejectLedgerToolApproval(
+          { persistToolMessage, now: () => now },
+          { messages, toolCallId, sessionId, reason },
+        ).catch((err: unknown) => logger.warn('Failed to write denied result for auto-rejected parked approval', {
+          requestId: row.id,
+          sessionId,
+          reason: 'ledger_persist_failed',
+          error: err instanceof Error ? err.message : String(err),
+        }));
+      } else if (sessionId) {
+        logger.warn('Auto-rejected parked approval has no readable ledger; denied result not written', {
+          requestId: row.id,
+          sessionId,
+          reason: messages ? 'tool_call_id_missing' : 'ledger_unreadable',
+        });
+      }
+    }
   }
   // 旧版本遗留的 orphaned 行 + 竞态漏网的 pending 行统一兜底收口（幸存行排除在外）。
   parked += repo.rejectPendingAfterRestart('tool_approval', now, survivors).length;
   for (const kind of ['directory_access', 'channel_pairing'] as const) {
     parked += repo.rejectPendingAfterRestart(kind, now).length;
+  }
+  if (closedSessions.size > 0) {
+    const runRepository = getRunRepository();
+    if (runRepository) {
+      for (const [closedSession, requestedAt] of closedSessions) {
+        if (survivingSessions.has(closedSession)) continue;
+        void closeSessionParkedRun(runRepository, closedSession, now, requestedAt);
+      }
+    } else {
+      logger.warn('Durable run repository unavailable; parked runs not closed after approval rejection');
+    }
   }
   if (plan + launch + parked > 0) {
     logger.warn(
@@ -142,6 +200,10 @@ function markSurvivorRestartOrigin(
   } catch (err) {
     logger.warn(`Failed to mark surviving parked approval ${row.id}`, err);
   }
+}
+
+async function defaultPersistToolMessage(sessionId: string, message: Message): Promise<void> {
+  getDatabase().addMessage(sessionId, message, { provenanceKind: 'crash-recovery' });
 }
 
 function defaultLoadSessionMessages(): (sessionId: string) => Message[] | null {

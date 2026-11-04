@@ -909,9 +909,9 @@ export const enSettingsWork = {
       },
       outboundMask: {
         title: 'Outbound secret mask',
-        description: 'Off by default. When on, keys, login tokens (Bearer) and card numbers are replaced with placeholders in requests to the model vendor and swapped back in replies; chat always shows the real values.',
+        description: 'Off by default. When on, keys, login tokens (Bearer), card numbers and email addresses are replaced with placeholders in requests to the model vendor and swapped back in replies; chat always shows the real values.',
         label: 'Mask secrets before sending to the model vendor',
-        body: 'When you paste a .env, key, login token or card number into chat, the vendor request body only contains placeholders, and your device restores them in the reply. If masking fails, that request is not sent.',
+        body: 'When you paste a .env, key, login token, card number or email address into chat, the vendor request body only contains placeholders, and your device restores them in the reply. If masking fails, that request is not sent.',
       },
       evaluation: {
         title: 'Evaluation feedback-pool hook',

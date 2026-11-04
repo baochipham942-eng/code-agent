@@ -60,6 +60,9 @@ export async function checkExternalModification(
 
   try {
     const stats = await fs.stat(filePath);
+    if (!stats.isFile()) {
+      return { modified: false, message: 'Not a regular file; freshness check skipped' };
+    }
     const currentMtime = stats.mtimeMs;
     const currentSize = stats.size;
     const currentDigest = computeContentDigest(await fs.readFile(filePath));

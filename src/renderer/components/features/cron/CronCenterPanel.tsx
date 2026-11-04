@@ -20,6 +20,7 @@ import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
 import ipcService from '../../../services/ipcService';
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
+import type { AwaitingApprovalRun } from '@shared/contract/sessionAutomation';
 import { createLogger } from '../../../utils/logger';
 import { openBudgetSettings } from '../../../utils/budgetSettingsNavigation';
 import { CronJobList } from './CronJobList';
@@ -96,6 +97,8 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
     closeEditor,
     recentExecutions,
     loadRecentExecutions,
+    latestExecutions,
+    syncRunningExecutions,
   } = useCronStore();
   const [activeTab, setActiveTab] = useState<CronCenterTab>(
     () => (readCronSearchParam('cronTab') === 'runs' ? 'runs' : 'jobs'),
@@ -121,6 +124,53 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
       });
   }, []);
   const [unattendedBudgetStatus, setUnattendedBudgetStatus] = useState<UnattendedBudgetStatus | null>(null);
+  // 无人值守停车可见性（N-CRON-UNATTENDED-BASH-PARK-STUCK）：仅在面板挂载且存在 running
+  // 执行时每 2s 拉「等批准」运行（批准/拒绝后下一轮即消失，任务行回到运行中）。
+  const [awaitingRuns, setAwaitingRuns] = useState<AwaitingApprovalRun[]>([]);
+  // running 信号在两个 tab 来源不同：任务 tab 只有各 job 的最近一次执行
+  // （latestExecutions，refresh 时拉），运行记录 tab 才有跨任务 recentExecutions；
+  // 两个都看，否则默认任务 tab 永远不会开始轮询。
+  const hasRunningExecution =
+    recentExecutions.some((execution) => execution.status === 'running') ||
+    Object.values(latestExecutions).some((execution) => execution?.status === 'running');
+  useEffect(() => {
+    if (!hasRunningExecution) {
+      setAwaitingRuns((prev) => (prev.length === 0 ? prev : []));
+      return;
+    }
+    let active = true;
+    const load = () => {
+      // 批准后命令跑完、host 写 completed，渲染端不重拉就永远停在「运行中」：随同一拍校正执行记录。
+      void syncRunningExecutions();
+      void sessionAutomationClient
+        .listAwaitingApprovalRuns()
+        .then((runs) => {
+          if (active) setAwaitingRuns(Array.isArray(runs) ? runs : []);
+        })
+        .catch((error) => {
+          logger.warn('Failed to load awaiting-approval runs', {
+            errorMessage: error instanceof Error ? error.message : String(error),
+          });
+        });
+    };
+    load();
+    const timer = window.setInterval(load, 2000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [hasRunningExecution, syncRunningExecutions]);
+  const awaitingByJobId = useMemo(() => {
+    const map = new Map<string, AwaitingApprovalRun>();
+    for (const run of awaitingRuns) map.set(run.jobId, run);
+    return map;
+  }, [awaitingRuns]);
+  // 等批准集合指纹（Rework r1）：轮询每 2s 换新数组，但内容不变时指纹不变。
+  // 集合变化（停车出现/被应答消失）时驱动收件箱重拉，徽章与收件箱不再各说各话。
+  const awaitingRefreshSignal = useMemo(
+    () => awaitingRuns.map((run) => run.requestId).sort().join('|'),
+    [awaitingRuns],
+  );
 
   useEffect(() => {
     refresh();
@@ -291,9 +341,10 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
 
         {/* 收件箱常驻挂载（两个 tab 共用）：待过目数是状态条与 tab 角标的数据源，
             切 tab 用 CSS 隐藏而不是卸载，不丢数、不重复拉取。收件箱按产品语义
-            归属「运行记录」——它是运行结果里需要人过目的子集。 */}
+            归属「运行记录」——它是运行结果里需要人过目的子集。refreshSignal 让
+            常驻收件箱在停车集合变化时重拉（Rework r1），「去处理」不再落到旧快照。 */}
         <div className={activeTab === 'runs' ? undefined : 'hidden'}>
-          <AutomationReviewInbox onPendingCountChange={refreshPendingReviewCount} />
+          <AutomationReviewInbox onPendingCountChange={refreshPendingReviewCount} refreshSignal={awaitingRefreshSignal} />
         </div>
 
         {activeTab === 'jobs' ? (
@@ -301,14 +352,18 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
             {/* 模板区独立成块（拍板）：与任务工作台分离，点一下即建 */}
             <CronFeaturedTemplates />
             <div className="grid flex-[1_0_420px] grid-cols-[360px_1fr] overflow-hidden">
-              <CronJobList />
+              <CronJobList awaitingByJobId={awaitingByJobId} />
               <div className="min-w-0">
                 {isLoading && jobs.length === 0 ? (
                   <div className="flex h-full items-center justify-center text-sm text-zinc-500">
                     {cc.loading}
                   </div>
                 ) : (
-                  <CronJobDetail job={selectedJob} />
+                  <CronJobDetail
+                    job={selectedJob}
+                    awaitingRun={selectedJob ? awaitingByJobId.get(selectedJob.id) ?? null : null}
+                    onReviewAwaiting={() => setActiveTab('runs')}
+                  />
                 )}
               </div>
             </div>
@@ -318,18 +373,21 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
             <div className="shrink-0 px-6 pt-4" data-testid="cron-runs-daily-cost">
               <CronDailyCostSummary executions={recentExecutions} />
             </div>
-            <div className="grid flex-[1_0_420px] grid-cols-[minmax(0,3fr)_minmax(280px,2fr)] items-start gap-4 px-6 py-4" data-testid="cron-runs-workbench">
+            <div className="grid flex-[1_0_420px] grid-cols-[minmax(0,2fr)_minmax(280px,1fr)] items-start gap-4 px-6 py-4" data-testid="cron-runs-workbench">
               <CronExecutionList
                 executions={recentExecutions}
                 selectedExecutionId={selectedExecutionId}
                 onSelectExecution={setSelectedExecutionId}
                 jobNameById={jobNameById}
                 runsOnByJobId={runsOnByJobId}
+                awaitingByJobId={awaitingByJobId}
               />
               <div className="min-w-0">
                 <CronExecutionDetail
                   execution={selectedExecution}
                   runsOn={selectedExecution?.runsOn ?? (selectedExecution ? runsOnByJobId[selectedExecution.jobId] : undefined)}
+                  awaitingRun={selectedExecution ? awaitingByJobId.get(selectedExecution.jobId) ?? null : null}
+                  onReviewAwaiting={() => setActiveTab('runs')}
                 />
               </div>
             </div>

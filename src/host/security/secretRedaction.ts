@@ -2,7 +2,7 @@
 // Secret Redaction - small dependency-free helpers for logs and smoke output
 // ============================================================================
 
-import { redactCredentialText } from '../../shared/security/secretPatterns';
+import { redactCommandKeywordSecrets, redactCredentialText } from '../../shared/security/secretPatterns';
 import type { ToolResult } from '../../shared/contract';
 
 const SENSITIVE_KEY_PARTS = [
@@ -27,6 +27,11 @@ export function isSensitiveLogKey(key: string): boolean {
 
 export function redactSecrets(value: string): string {
   return redactCredentialText(value, { redacted: '***REDACTED***' });
+}
+
+/** 命令行/审批预览专用：在 redactSecrets 之上再掩 password=… / --password … 形态。不要用于工具结果。 */
+export function redactCommandSecrets(value: string): string {
+  return redactCommandKeywordSecrets(redactSecrets(value), { redacted: '***REDACTED***' });
 }
 
 /**

@@ -192,6 +192,17 @@ export const enSettingsCore = {
       fontSizeSaveFailed: 'Failed to save font size. Previous setting restored.',
     },
     general: {
+      notifications: {
+        title: 'System notifications',
+        on: 'On',
+        off: 'Off in macOS',
+        unknown: 'Cannot confirm',
+        onDescription: 'Task-finished and failure alerts can appear as system notifications.',
+        offDescription: 'Task-finished and failure alerts will not pop up.',
+        unknownDescription: 'Neo cannot read the macOS setting; check System Settings.',
+        openSettings: 'Open system settings',
+        openSettingsFailed: 'Unable to open System Settings. Open Notifications manually.',
+      },
       permissions: {
         pageTitle: 'Permissions & security',
         pageDescription: 'Manage permission checks for sensitive Agent actions and the permission inheritance policy for sub-agents.',
@@ -363,10 +374,15 @@ export const enSettingsCore = {
           status: {
             official: 'Active · official TypeSafe key',
             openrouter: 'Active · borrowing your OpenRouter key',
+            neo_hosted: "Active · Neo's cloud judge (you have no key of your own)",
             openrouter_pending_consent: 'Your OpenRouter key was found, but not allowed yet',
             disabled_by_user: 'Off',
             none: 'Not active (no usable key)',
           },
+          hostedSwitchLabel: "Use Neo's cloud judge",
+          hostedBlockUser: "Today's cloud judge allowance is used up; it resets tomorrow; Neo falls back to normal confirmations",
+          hostedBlockFuse: 'Cloud judge is unavailable today; it recovers automatically later; Neo falls back to normal confirmations',
+          disclosureHosted: "Content summaries pass through Neo's server to the judge model; Neo does not store request bodies.",
           degradedPrefix: 'Skipped ',
           degradedSuffix: ' judge calls this run (no usable key or not allowed yet)',
           disclosurePrefix: 'When on, commands and tool calls that need confirmation are redacted first (only command text, tool name, and working directory remain), then sent to ',

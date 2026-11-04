@@ -139,7 +139,7 @@ const BUILT_IN_RULES: PolicyRule[] = [
     priority: 1000,
     matcher: {
       level: ['read', 'write'],
-      pathPattern: /\.ssh\/id_[^/]+$/,
+      pathPattern: /\.ssh\/id_(?![^/]*\.pub$)[^/]+$/,
     },
     action: 'deny',
     reason: 'SSH private key access is not allowed',
@@ -301,6 +301,38 @@ export class PolicyEngine {
         continue;
       }
       if (pathCandidates.some((candidate) => matchSpecifier(specifier, candidate))) return rule;
+    }
+    return null;
+  }
+
+  /**
+   * 找出与请求匹配的用户 deny 规则，独立于优先级竞争（N-PERM-RULE-EMPTY-INPUT-MATCH-FU1 r1）。
+   * evaluate() 只回报胜出的单条 matchedRule：内置不可覆盖 deny（priority 1000）在 Pass1
+   * 先命中就会把同时命中的 user-deny（priority 700、overridable）挤出 matchedRule 位——
+   * 消费方（guardFabricGate 的 evaluateUserDeny）问的是「用户是否显式拒绝了这个请求」，
+   * 不能拿 matchedRule 的 user-deny- 前缀当答案。只认规则本身 action=deny：plan/dontAsk
+   * 档模式改写 user-allow 成 result.action=deny 的不在此列（r4 语义保持）。
+   * @param rules 覆盖规则列表（N-PERM-POLICYVERSION：传 run 有效视图；缺省活状态）。
+   */
+  matchUserDenyRule(request: PolicyRequest, rules?: readonly PolicyRule[]): PolicyRule | null {
+    for (const rule of rules ?? this.rules) {
+      if (rule.id.startsWith('user-deny-') && rule.action === 'deny' && this.matchesRule(request, rule)) {
+        return rule;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 找出与请求匹配的内置不可覆盖 deny 规则（!overridable && action==='deny'）。
+   * 与 matchUserDenyRule 同为独立扫描：不看 evaluate 的 matchedRule，也不受模式联动影响
+   * （N-PERM-RULE-EMPTY-INPUT-MATCH-FU1-FU1，决策 A：闸门只消费这一类做硬拒）。
+   */
+  matchHardDenyRule(request: PolicyRequest, rules?: readonly PolicyRule[]): PolicyRule | null {
+    for (const rule of rules ?? this.rules) {
+      if (!rule.overridable && rule.action === 'deny' && this.matchesRule(request, rule)) {
+        return rule;
+      }
     }
     return null;
   }

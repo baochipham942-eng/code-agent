@@ -209,3 +209,11 @@ export interface UpsertSessionAutomationInput {
   resultSessionId?: string;
   config?: SessionAutomationConfig;
 }
+
+/** 无人值守停车可见性（N-CRON-UNATTENDED-BASH-PARK-STUCK）：一条「等批准」运行（已 join 到 cron 任务）。 */
+export interface AwaitingApprovalRun {
+  jobId: string;
+  executionId: string | null;
+  requestId: string;
+  requestedAt: number;
+}

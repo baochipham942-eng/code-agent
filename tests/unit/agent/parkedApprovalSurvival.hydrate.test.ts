@@ -16,6 +16,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type BetterSqlite3 from 'better-sqlite3';
 
 import { runStartupMaintenance } from '../../../src/host/services/core/database/startupMaintenance';
@@ -73,6 +76,7 @@ function bashSurvivalPayload(command: string): {
 
 describe('parked approval survival across restart (hydrate + startupMaintenance)', () => {
   let db: BetterSqlite3.Database;
+  let dbDir: string;
   let sessionRepo: SessionRepository;
   let repo: PendingApprovalRepository;
   let logger: ReturnType<typeof createLogger>;
@@ -106,7 +110,8 @@ describe('parked approval survival across restart (hydrate + startupMaintenance)
   });
 
   beforeEach(() => {
-    db = new Database(':memory:');
+    dbDir = mkdtempSync(join(tmpdir(), 'parked-voided-'));
+    db = new Database(join(dbDir, 'code-agent.db')); // 真实文件库（非 :memory:）
     db.pragma('foreign_keys = ON');
     logger = {
       debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(),
@@ -121,7 +126,10 @@ describe('parked approval survival across restart (hydrate + startupMaintenance)
     parkedRuns = [];
     vi.clearAllMocks();
   });
-  afterEach(() => db.close());
+  afterEach(() => {
+    db.close();
+    rmSync(dbDir, { recursive: true, force: true });
+  });
 
   /** 缺省带 cwd（幸存前提，FU1 ④）；传 null 复刻无来源会话的 cron 任务形状（workingDirectory NULL）。 */
   function createCrashedSession(id: string, workingDirectory: string | null = `/workspace/${id}`): void {
@@ -203,6 +211,35 @@ describe('parked approval survival across restart (hydrate + startupMaintenance)
       status: 'rejected',
       feedback: 'Auto-rejected after restart: args_unavailable',
       resolvedAt: now,
+    });
+  });
+
+  it('REALRUN ① 25h 老行经 hydrate 后收件箱以 voided 灰行呈现 24 小时句；4 天前 / approved 行不返回', async () => {
+    const now = Date.now();
+    const H = 3_600_000;
+    createCrashedSession('aged-session');
+    seedAssistantToolCall('aged-session', 'call-aged', 'sleep 30');
+    seedParkedRow({ id: 'aged-1', sessionId: 'aged-session', toolCallId: 'call-aged', requestedAt: now - 25 * H });
+    hydrate(now);
+
+    // 4 天前自动作废的行：超出 3 天保留期
+    seedParkedRow({ id: 'old-voided', sessionId: 'aged-session', toolCallId: 'call-old', requestedAt: now - 100 * H });
+    repo.resolve({ id: 'old-voided', status: 'rejected', feedback: 'Auto-rejected after restart: expired_after_restart_24h', resolvedAt: now - 96 * H });
+    // approved 行
+    seedParkedRow({ id: 'approved-1', sessionId: 'aged-session', toolCallId: 'call-appr', requestedAt: now - 2 * H });
+    repo.resolve({ id: 'approved-1', status: 'approved', feedback: null, resolvedAt: now - H });
+    // 用户手动拒绝的行：不是重启作废，不返回
+    seedParkedRow({ id: 'manual-rej', sessionId: 'aged-session', toolCallId: 'call-man', requestedAt: now - 2 * H });
+    repo.resolve({ id: 'manual-rej', status: 'rejected', feedback: 'user denied', resolvedAt: now - H });
+
+    const { SessionAutomationService } = await import('../../../src/host/services/sessionAutomation/sessionAutomationService');
+    const inbox = new SessionAutomationService().listParkedApprovals();
+    console.log('REALRUN-① inbox =', JSON.stringify(inbox));
+    expect(inbox.map((item) => item.id)).toEqual(['aged-1']);
+    expect(inbox[0]).toMatchObject({
+      status: 'voided',
+      tool: 'Bash',
+      voidReason: '这一步等你确认超过 24 小时，已自动作废，没有执行。',
     });
   });
 
@@ -440,10 +477,12 @@ describe('parked approval survival across restart (hydrate + startupMaintenance)
     });
     hydrate(Date.now());
 
-    // 收件箱读径（sessionAutomationService.listParkedApprovals）：cwd-less 卡不再出现
+    // 收件箱读径（sessionAutomationService.listParkedApprovals）：cwd-less 卡不再是可点的 pending，
+    // 只以 voided 灰色只读留痕出现（REALRUN）
     const { SessionAutomationService } = await import('../../../src/host/services/sessionAutomation/sessionAutomationService');
     const inbox = new SessionAutomationService().listParkedApprovals();
-    expect(inbox.map((item) => item.id)).toEqual(['inbox-cwd-1']);
+    expect(inbox.filter((item) => item.status === 'pending').map((item) => item.id)).toEqual(['inbox-cwd-1']);
+    expect(inbox.filter((item) => item.status === 'voided').map((item) => item.id)).toEqual(['inbox-cwdless-1']);
     expect(inbox[0]).toMatchObject({ sessionId: 'inbox-cwd', tool: 'Bash', status: 'pending' });
 
     // 批准收件箱里那张卡：从台账执行一次，cwd 用会话工作目录；再点不再执行

@@ -120,7 +120,7 @@ export type LedgerToolApprovalRejection =
 
 /** 拒绝后的台账收口：给该 toolCallId 落一条 denied 结果消息（不执行任何东西）。 */
 export async function rejectLedgerToolApproval(
-  ports: LedgerToolExecutionPorts,
+  ports: Pick<LedgerToolExecutionPorts, 'persistToolMessage' | 'now'> & Partial<LedgerToolExecutionPorts>,
   input: {
     messages: Message[];
     toolCallId: string;

@@ -16,6 +16,11 @@ import { normalizeErrorMessage } from '../../lightMemory/normalizeErrorMessage';
 // polling_repeat / same_error_family 与 L1/L2 同一阈值 ×3——两次仍可能是
 // 重试，第三次相同观察才算没有进展。abab_action_cycle 的窗口是 4，因为
 // A,B,A,B 本身要四步才成环（A≠B）；再少一步看不出交替。
+// screen_click_no_effect（N-CUA-SCREEN-GUARDS-LOOP）：cua 像素点击在 ±24px
+//     半径内连击，且上一次计数点击与本次点击之间到达的 get_window_state
+//     屏幕指纹未变 → 第 3 次 nudge。element_index 精确重复已由 L1 覆盖；
+//     两次点击之间没有新快照 = 无证据，不判"屏幕没变"。该信号不进
+//     jevWarden 的 DOOM_LOOP_SIGNALS 空转清单（Warden 行为保持不变）。
 // 命中只 nudge，不中止；每个 run 每个信号至多一次。
 //
 // 计数器生命周期 = 一次 run（每轮用户输入重新实例化即重置）。
@@ -30,11 +35,20 @@ const POLLING_REPEAT_THRESHOLD = 3;
 const SAME_ERROR_FAMILY_THRESHOLD = 3;
 /** A,B,A,B 需要四步才成立；这是环的长度，不是另一套 ×3 计数。 */
 const ABAB_CYCLE_STEPS = 4;
+/** cua 近似点击判定半径（px）：与上次计数点击 |dx|、|dy| 都不超过它才算"点同一处"。 */
+const CUA_CLICK_NEAR_PX = 24;
+/** 与 L1/L2 对齐：近似点击 + 屏幕未变的连击第 3 次才算空转。 */
+const CUA_SCREEN_CLICK_THRESHOLD = 3;
 
 /** 空转信号枚举（N-DOOMLOOP-SIGNALS / N-JEV-WARDEN-MOCK 共享，Warden 直接引用不另立定义）。 */
 export const SIGNAL_POLLING_REPEAT = 'polling_repeat';
 export const SIGNAL_SAME_ERROR_FAMILY = 'same_error_family';
 export const SIGNAL_ABAB_ACTION_CYCLE = 'abab_action_cycle';
+/**
+ * cua 点击空转信号（N-CUA-SCREEN-GUARDS-LOOP）。刻意不导出：Warden 不认它
+ * （不进 DOOM_LOOP_SIGNALS），消费方只有本文件与测试里的字面量。
+ */
+const SIGNAL_SCREEN_CLICK_NO_EFFECT = 'screen_click_no_effect';
 
 /** JSON 序列化但排序 object key，防止 key 重排导致的签名假阴性 */
 export function stableStringify(value: unknown): string {
@@ -71,6 +85,18 @@ export interface GuardCallResult {
 interface GuardSignalCheck {
   signals: string[];
   nudge?: string;
+}
+
+/** cua 近似点击连击状态（per pid:window_id）。 */
+interface CuaClickStreak {
+  /** 上次计数点击的坐标。 */
+  x: number;
+  y: number;
+  /** 上次计数点击时该 key 的屏幕指纹；null = 当时无快照证据。 */
+  fingerprintAtClick: string | null;
+  /** 上次计数点击之后是否到达过新快照；无新快照不得判"屏幕没变"。 */
+  snapshotSinceLastClick: boolean;
+  streak: number;
 }
 
 function callSignature(toolCall: GuardToolCall): string {
@@ -122,6 +148,10 @@ export class DoomLoopGuard {
   /** 连续相同规范化错误族。 */
   private errorFamily: string | null = null;
   private errorFamilyStreak = 0;
+  /** cua 近似点击连击状态（key = pid:window_id，见 cuaWindowKey）。 */
+  private cuaClickStreaks = new Map<string, CuaClickStreak>();
+  /** 各 key 最近一次 get_window_state 的屏幕指纹。 */
+  private cuaScreenFingerprints = new Map<string, string>();
   /** 本 run 已 nudge 过的信号。再命中不再注入。 */
   private firedSignals = new Set<string>();
 
@@ -184,6 +214,8 @@ export class DoomLoopGuard {
     this.pollStreak = 0;
     this.errorFamily = null;
     this.errorFamilyStreak = 0;
+    this.cuaClickStreaks.clear();
+    this.cuaScreenFingerprints.clear();
   }
 
   /**
@@ -195,6 +227,8 @@ export class DoomLoopGuard {
     for (const call of step) {
       this.notePoll(call, signals);
       this.noteErrorFamily(call, signals);
+      this.noteCuaSnapshot(call);
+      this.noteCuaClick(call, signals);
     }
     if (this.ababHit()) this.takeSignal(SIGNAL_ABAB_ACTION_CYCLE, signals);
     if (signals.length === 0) return { signals };
@@ -250,6 +284,54 @@ export class DoomLoopGuard {
     }
   }
 
+  /**
+   * cua 快照观测：把该 key 最新一次 get_window_state 的文本输出记成屏幕指纹，
+   * 并标记"上次计数点击后到达过新快照"。失败或空输出的快照不算证据。
+   */
+  private noteCuaSnapshot(call: GuardCallResult): void {
+    if (call.name !== `${CUA_TOOL_PREFIX}get_window_state` || call.success !== true) return;
+    const key = cuaWindowKey(call.arguments ?? {});
+    if (!key) return;
+    const fingerprint = screenFingerprint(call.summary);
+    if (!fingerprint) return;
+    this.cuaScreenFingerprints.set(key, fingerprint);
+    const streak = this.cuaClickStreaks.get(key);
+    if (streak) streak.snapshotSinceLastClick = true;
+  }
+
+  /**
+   * cua 像素点击连击：同一 key、±CUA_CLICK_NEAR_PX 内、且两次点击之间的
+   * 快照指纹未变（都有快照且相等）才续连击；缺任何证据都从 1 重数。
+   */
+  private noteCuaClick(call: GuardCallResult, signals: string[]): void {
+    const click = cuaPixelClick(call);
+    if (!click) return;
+    const prev = this.cuaClickStreaks.get(click.key);
+    const fingerprintNow = this.cuaScreenFingerprints.get(click.key) ?? null;
+    let streak = 1;
+    if (
+      prev
+      && prev.snapshotSinceLastClick
+      && prev.fingerprintAtClick !== null
+      && fingerprintNow !== null
+      && fingerprintNow === prev.fingerprintAtClick
+      && Math.abs(click.x - prev.x) <= CUA_CLICK_NEAR_PX
+      && Math.abs(click.y - prev.y) <= CUA_CLICK_NEAR_PX
+    ) {
+      streak = prev.streak + 1;
+    }
+    this.cuaClickStreaks.set(click.key, {
+      x: click.x,
+      y: click.y,
+      fingerprintAtClick: fingerprintNow,
+      snapshotSinceLastClick: false,
+      streak,
+    });
+    if (streak >= CUA_SCREEN_CLICK_THRESHOLD) {
+      this.takeSignal(SIGNAL_SCREEN_CLICK_NO_EFFECT, signals);
+    }
+  }
+
   private ababHit(): boolean {
     if (this.actionCycle.length < ABAB_CYCLE_STEPS) return false;
     const [first, second, third, fourth] = this.actionCycle;
@@ -265,14 +347,69 @@ export class DoomLoopGuard {
 
 const POLL_ACTIONS = new Set(['poll', 'output', 'log']);
 
+/** cua-driver 原生 MCP 工具名前缀（裸名 click/double_click/right_click/get_window_state 等）。 */
+const CUA_TOOL_PREFIX = 'mcp__cua-driver__';
+/** 视为"点击类"的 cua 裸工具名（拖拽/输入不在其列）。 */
+const CUA_CLICK_ACTIONS = new Set(['click', 'double_click', 'right_click']);
+
+/** 与 cuaNarration 的 windowKey 同构：pid 必须是数字；window_id 可缺省（按 app 兜底键）。 */
+function cuaWindowKey(args: Record<string, unknown>): string | null {
+  const pid = args.pid;
+  if (typeof pid !== 'number' || !Number.isFinite(pid)) return null;
+  const windowId = args.window_id;
+  return `${pid}:${typeof windowId === 'number' && Number.isFinite(windowId) ? windowId : 'app'}`;
+}
+
+/** 只认成功的、带有限数字坐标 x/y 的 cua 点击；element_index 点击交给 L1。 */
+function cuaPixelClick(call: GuardCallResult): { key: string; x: number; y: number } | null {
+  if (!call.name.startsWith(CUA_TOOL_PREFIX)) return null;
+  if (!CUA_CLICK_ACTIONS.has(call.name.slice(CUA_TOOL_PREFIX.length))) return null;
+  if (call.success !== true) return null;
+  const args = call.arguments ?? {};
+  const x = args.x;
+  const y = args.y;
+  if (typeof x !== 'number' || !Number.isFinite(x)) return null;
+  if (typeof y !== 'number' || !Number.isFinite(y)) return null;
+  const key = cuaWindowKey(args);
+  if (!key) return null;
+  return { key, x, y };
+}
+
+/**
+ * 屏幕指纹：折叠空白、只剥 ISO 时间戳与 HH:MM:SS。刻意不复用
+ * normalizeSignalText——它会把数字抹平，计算器屏上 "7" 和 "12" 会被当成
+ * 同一块屏幕。文本为空时返回 null（空快照不算证据）。
+ */
+function screenFingerprint(text: string): string | null {
+  const normalized = text
+    .replace(/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?/g, 'TS')
+    .replace(/\b\d{2}:\d{2}:\d{2}\b/g, 'TS')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalized) return null;
+  // FNV-1a：AX 树整段可能很长，只驻留短指纹（带长度降低碰撞面）。
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < normalized.length; i++) {
+    hash ^= normalized.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `${normalized.length.toString(16)}:${hash.toString(16)}`;
+}
+
 function signalNudge(signals: string[]): string {
-  return [
+  const lines = [
     '<system-reminder>',
     `Runaway guard (${signals.join(', ')}): these steps are not making progress.`,
     'Stop and change strategy. Use a different tool, different arguments, or explain the blocker to the user.',
     'Do not keep polling the same task, repeating the same error, or alternating the same two steps.',
-    '</system-reminder>',
-  ].join('\n');
+  ];
+  if (signals.includes(SIGNAL_SCREEN_CLICK_NO_EFFECT)) {
+    lines.push(
+      'The screen did not change after repeated near-identical clicks: try another element, a keyboard route, or tell the user what is blocked.',
+    );
+  }
+  lines.push('</system-reminder>');
+  return lines.join('\n');
 }
 
 /** 数字、引号、路径、时间戳、uuid 抹平后再交给 failure journal 的归一化。 */

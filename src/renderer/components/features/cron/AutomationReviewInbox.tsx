@@ -24,6 +24,7 @@ import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';
 import { Button } from '../../primitives/Button';
+import { SensitiveStepParkedRow } from '../../PermissionDialog/SensitiveStepHandbackCard';
 import { openCronLoginWallSite } from './cronLoginWallNotice';
 import { CronReviewDigest } from './CronReviewDigest';
 
@@ -49,9 +50,15 @@ function formatWaiting(requestedAt: number): string {
 interface AutomationReviewInboxProps {
   /** 待过目条数变化时回传（加载/刷新后都会调一次），供页首状态条显示 */
   onPendingCountChange?: (count: number) => void;
+  /**
+   * 外部新鲜度信号（Rework r1）：收件箱常驻挂载、只在 mount 时拉一次，停车审批
+   * 发生在面板开着时不会自动出现。父级在等批准集合变化（出现/消失）时变更本值，
+   * 收件箱随之重拉 listParkedApprovals——「去处理」才不会落到不含该审批的旧快照。
+   */
+  refreshSignal?: string | number;
 }
 
-export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ onPendingCountChange }) => {
+export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ onPendingCountChange, refreshSignal }) => {
   const { t, language } = useI18n();
   const cc = t.cronCenter;
   const switchSession = useSessionStore((state) => state.switchSession);
@@ -101,7 +108,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
 
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, refreshSignal]);
 
   const handleResolveParked = async (item: ParkedApprovalInboxItem, response: PermissionResponse) => {
     if (item.status !== 'pending') return; // orphaned 不可操作
@@ -176,15 +183,51 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
         <div className="max-h-[32vh] overflow-y-auto rounded-xl border border-badge-warning/25 bg-amber-500/5 px-4 py-3">
           {parked.length > 0 && (
             <div className="mb-3" data-testid="parked-approval-group">
-              <div className="mb-2 flex items-center gap-2 text-xs font-medium text-badge-warning">
-                <ShieldAlert className="h-3.5 w-3.5" />
-                {cc.parkedTitle.replace('{count}', String(parked.length))}
-              </div>
+              {parked.some((item) => item.status !== 'voided') && (
+                <div className="mb-2 flex items-center gap-2 text-xs font-medium text-badge-warning">
+                  <ShieldAlert className="h-3.5 w-3.5" />
+                  {cc.parkedTitle.replace('{count}', String(parked.filter((item) => item.status === 'pending').length))}
+                </div>
+              )}
               <div className="space-y-1.5">
                 {parked.map((item) => {
+                  if (item.status === 'voided') {
+                    return (
+                      <div
+                        key={item.id}
+                        className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2 opacity-50"
+                        data-testid="parked-approval-voided"
+                      >
+                        <div className="truncate text-sm text-zinc-200">{item.displayTool ?? item.tool}</div>
+                        <div className="text-[11px] text-zinc-500">
+                          {cc.parkedVoidedLabel}：{item.voidReason}
+                        </div>
+                      </div>
+                    );
+                  }
                   const isOrphaned = item.status === 'orphaned';
                   const isPairing = item.kind === 'channel_pairing';
                   const isExternal = item.riskClass === 'external';
+                  // ADR-088 敏感步骤交回：单状态交回卡（[完成后继续]/[这步不做了]），
+                  // 不出「每次都允许」铸权入口——host 侧对交回应答永不铸造授权。
+                  if (item.sensitiveStep) {
+                    return (
+                      <div
+                        key={item.id}
+                        className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2 ${isOrphaned ? 'opacity-50' : ''}`}
+                        data-testid="parked-approval-item"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm text-zinc-200">{item.displayTool ?? item.tool}</div>
+                          <SensitiveStepParkedRow
+                            step={item.sensitiveStep}
+                            onRespond={(response) => { void handleResolveParked(item, response); }}
+                            disabled={busyId === item.id || isOrphaned}
+                          />
+                        </div>
+                      </div>
+                    );
+                  }
                   // A4 作用域提示：external 动作离开本机（暖色边框强调）；有 target 时点名去向。
                   // 非 external 审批卡不变（不加 scopeNote、不换边框）。
                   const scopeNote = isExternal

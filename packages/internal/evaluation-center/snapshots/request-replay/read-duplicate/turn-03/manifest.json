@@ -3,7 +3,7 @@
   "messageRefs": [
     {
       "kind": "content",
-      "contentHash": "b7771dc6c05f1b030afe62541e84ae3dae71e2867cd6fab8464ea92b310a85dd",
+      "contentHash": "8235374bd8008c7f212dbb0a3ee2615dc96beb2591b8538bd802ed1b902ea4d1",
       "reason": "system_prompt_fallback"
     },
     {
@@ -59,7 +59,7 @@
       ]
     }
   ],
-  "toolSchemaHash": "a4e542e5e94abd446ff171c24cbffbca86b7297a2ab343d3047c654cb5735b84",
+  "toolSchemaHash": "5f35729d882d31acc89d85170ed6c70c99f5b29cb44aaa778c291d264096ab3b",
   "toolNames": [
     "AskUserQuestion",
     "Bash",
@@ -73,9 +73,7 @@
     "ToolSearch",
     "WebSearch",
     "Write",
-    "delegate_task",
-    "recommend_capability",
-    "task_status"
+    "recommend_capability"
   ],
   "requested": {
     "provider": "openai",

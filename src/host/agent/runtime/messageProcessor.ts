@@ -31,6 +31,7 @@ import type { ContextAssembly } from './contextAssembly';
 import type { RunFinalizer } from './runFinalizer';
 import type { ToolExecutionEngine } from './toolExecutionEngine';
 import { generateMessageId } from '../../../shared/utils/id';
+import { getAttachmentId } from '../../../shared/utils/messageAttachments';
 import { getSessionManager } from '../../services';
 import { extractArtifacts } from '../artifactExtractor';
 import { handleDeclareDeliverablesGate } from './declareDeliverablesGate';
@@ -443,7 +444,11 @@ export class MessageProcessor {
     const latestUserContent = latestUserMessage?.content;
     const hasAppshotEvidence =
       (typeof latestUserContent === 'string' && latestUserContent.includes('<appshot')) ||
-      latestUserMessage?.attachments?.some((attachment) => attachment.id.startsWith('appshot-')) ||
+      // 缺 id 的历史附件（持久化/回放脏数据，后台槽会继承主会话历史）必须走
+      // getAttachmentId 兜底——裸 `attachment.id.startsWith` 曾让一条脏附件炸穿
+      // 整轮纯文本收尾（2026-08-07 converter.ts 同型事故；realrun20 07/08 占位
+      // 子代理 `reading 'startsWith'` 失败的落点就是这里）。
+      latestUserMessage?.attachments?.some((attachment) => getAttachmentId(attachment).startsWith('appshot-')) ||
       false;
     const desktopClaimGate = applyDesktopActionClaimGate({
       recentUserMessages: collectRecentUserTexts(this.ctx.messages),

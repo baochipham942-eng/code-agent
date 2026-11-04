@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { CronJobDefinition, CronJobExecution } from '@shared/contract';
 import { classifyCronFailure, type CronFailurePresentationKind } from '@shared/utils/cronFailureClassification';
 import { ExternalLink, MessageSquareText } from 'lucide-react';
@@ -6,6 +6,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
 import { useCronStore } from '../../../stores/cronStore';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
 import { Button } from '../../primitives/Button';
 import {
   formatDateTime,
@@ -20,7 +21,7 @@ import { cronFailureSentence } from './cronFailureNotice';
 import { wakeSkipSentence } from './wakeSkipSentence';
 
 const CLOUD_NOT_WIRED = 'Cloud execution is not wired yet (N-L3-MINLOOP-SRV).';
-const BUDGET_LIMIT = /Cron job run exceeded its \$(\d+(?:\.\d+)?) budget limit\./;
+const BUDGET_LIMIT = /Cron job run exceeded its \$(\d+(?:\.\d+)?) budget limit(?: \(spent \$(\d+(?:\.\d+)?)\))?\./;
 
 function failureAction(kind: CronFailurePresentationKind): 'model' | 'account' | 'rerun' | null {
   if (kind === 'quota') return 'model';
@@ -32,15 +33,40 @@ function failureAction(kind: CronFailurePresentationKind): 'model' | 'account' |
 interface CronExecutionDetailProps {
   execution: CronJobExecution | null;
   runsOn?: CronJobDefinition['runsOn'];
+  /** 等批准运行（N-CRON-UNATTENDED-BASH-PARK-STUCK）：状态 chip 换 amber 徽章 + 一句提示 + 去处理。 */
+  awaitingRun?: { executionId: string | null } | null;
+  onReviewAwaiting?: () => void;
 }
 
-export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execution, runsOn = 'local' }) => {
+export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
+  execution,
+  runsOn = 'local',
+  awaitingRun = null,
+  onReviewAwaiting,
+}) => {
   const { t, language } = useI18n();
   const cc = t.cronCenter;
   const switchSession = useSessionStore((state) => state.switchSession);
   const setShowCronCenter = useAppStore((state) => state.setShowCronCenter);
   const [isOpeningSession, setIsOpeningSession] = useState(false);
   const [isRerunning, setIsRerunning] = useState(false);
+  const [stopReason, setStopReason] = useState<{ sessionId: string; text: string } | null>(null);
+  const reasonSessionId = execution && (execution.status === 'interrupted' || execution.status === 'failed')
+    ? execution.sessionId
+    : undefined;
+  useEffect(() => {
+    if (!reasonSessionId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const text = await sessionAutomationClient.getVoidedApprovalReason(reasonSessionId);
+        if (!cancelled && text) setStopReason({ sessionId: reasonSessionId, text });
+      } catch {
+        // 原因只是补充说明；查不到就不显示
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [reasonSessionId]);
 
   if (!execution) {
     return (
@@ -57,11 +83,13 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
     quietHours: cc.wakeSkipQuietHours,
   });
   const loginWall = cronLoginWallCopy(execution.error, { error: cc.loginWallError });
-  const budgetAmount = execution.error?.match(BUDGET_LIMIT)?.[1];
+  const budgetMatch = execution.error?.match(BUDGET_LIMIT);
   const preservedError = loginWall?.message
     ?? (execution.error === 'unsupported_action' ? cc.unsupportedAction
       : execution.error === CLOUD_NOT_WIRED ? cc.cloudExecutionNotWired
-        : budgetAmount ? cc.runBudgetExceeded.replace('{amount}', budgetAmount) : undefined);
+        : budgetMatch?.[2]
+          ? cc.runBudgetStopped.replace('{spent}', budgetMatch[2]).replace('{cap}', budgetMatch[1])
+          : budgetMatch?.[1] ? cc.runBudgetExceeded.replace('{amount}', budgetMatch[1]) : undefined);
   const classified = preservedError || !execution.error ? undefined : classifyCronFailure(execution.error);
   const failureSentence = classified
     ? cronFailureSentence(classified.kind, classified, cc, language)
@@ -106,11 +134,38 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
               {isOpeningSession ? cc.execOpeningSession : cc.execOpenSession}
             </button>
           )}
-          <span className={`rounded-full px-2.5 py-1 text-xs ${statusMeta.className}`}>
-            {cc.status[execution.status]}
-          </span>
+          {execution.status === 'running' && awaitingRun != null ? (
+            <span
+              className="rounded-full border border-badge-warning/40 bg-amber-500/15 px-2.5 py-1 text-xs text-badge-warning"
+              data-testid="cron-exec-detail-awaiting-approval"
+            >
+              {cc.awaitingApprovalBadge}
+            </span>
+          ) : (
+            <span className={`rounded-full px-2.5 py-1 text-xs ${statusMeta.className}`}>
+              {cc.status[execution.status]}
+            </span>
+          )}
         </div>
       </div>
+
+      {execution.status === 'running' && awaitingRun != null && (
+        <div
+          className="mx-1 mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-badge-warning/30 bg-amber-500/5 px-3 py-2"
+          data-testid="cron-exec-detail-awaiting-approval-hint"
+        >
+          <span className="text-xs text-zinc-400">{cc.awaitingApprovalHint}</span>
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            onClick={onReviewAwaiting}
+            data-testid="cron-exec-detail-awaiting-approval-action"
+          >
+            {cc.awaitingApprovalAction}
+          </Button>
+        </div>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-2">
         <Info label={cc.execSession} value={execution.sessionId || '—'} />
@@ -136,6 +191,13 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({ execut
         <Info label={cc.execRetryCount} value={String(execution.retryAttempt)} />
         <Info label={cc.colExitCode} value={execution.exitCode != null ? String(execution.exitCode) : '—'} />
       </div>
+
+      {stopReason && stopReason.sessionId === reasonSessionId && (
+        <section className="mt-4" data-testid="cron-exec-stop-reason">
+          <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">{cc.execStopReason}</h5>
+          <p className="text-sm text-zinc-100" data-testid="cron-exec-stop-reason-text">{stopReason.text}</p>
+        </section>
+      )}
 
       {wakeSkip && (
         <section className="mt-4" data-testid="cron-wake-skip-detail">

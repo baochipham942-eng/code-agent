@@ -63,3 +63,38 @@ describe('policy rules with pattern but empty input', () => {
     expect(result!.verdict).not.toBe('deny');
   });
 });
+
+// FU1 r1：evaluate() 只回报优先级胜出的单条 matchedRule——内置不可覆盖 deny（priority 1000）
+// 在 Pass1 先命中就把同时命中的 user-deny（priority 700、overridable）挤出 matchedRule 位。
+// 消费方（guardFabricGate 的 evaluateUserDeny）问的是「用户是否显式拒绝了这个请求」，与
+// 优先级竞争无关，必须走 matchUserDenyRule 独立扫描；只认规则本身 action=deny，plan/dontAsk
+// 档模式改写的 user-allow（result.action=deny）不在此列（r4 语义保持）。
+describe('matchUserDenyRule: 用户 deny 不被内置规则遮蔽（FU1 r1）', () => {
+  let engine: PolicyEngine;
+
+  beforeEach(() => {
+    resetPolicyEngine();
+    engine = new PolicyEngine();
+  });
+
+  it('Write /usr/bin/x + deny Write：evaluate 的 matchedRule 被 block-root-write 抢占，扫描仍返回 user-deny', () => {
+    engine.loadUserRules({ deny: ['Write'] }, 'user-ui');
+    const request = { tool: 'Write', level: 'write' as const, description: 'x', filePath: '/usr/bin/x' };
+    // 遮蔽现场：整体评估的 matchedRule 是内置规则，不是用户规则。
+    expect(engine.evaluate(request).matchedRule?.id).toBe('block-root-write');
+    expect(engine.matchUserDenyRule(request)?.id).toBe('user-deny-Write');
+  });
+
+  it('Read ~/.ssh/id_rsa + deny Read：block-ssh-keys 同理不遮蔽用户 deny', () => {
+    engine.loadUserRules({ deny: ['Read'] }, 'user-ui');
+    const request = { tool: 'Read', level: 'read' as const, description: 'x', filePath: '/Users/someone/.ssh/id_rsa' };
+    expect(engine.evaluate(request).matchedRule?.id).toBe('block-ssh-keys');
+    expect(engine.matchUserDenyRule(request)?.id).toBe('user-deny-Read');
+  });
+
+  it('无用户 deny 命中返回 null；user-allow（含模式改写）与路径不符的 user-deny 都不算', () => {
+    engine.loadUserRules({ allow: ['Bash(git tag)'], deny: ['Read(**/.aws/**)'] }, 'user-ui');
+    expect(engine.matchUserDenyRule({ tool: 'Bash', level: 'execute', description: 'x', command: 'git tag' })).toBeNull();
+    expect(engine.matchUserDenyRule({ tool: 'Read', level: 'read', description: 'x', filePath: '/tmp/plain.txt' })).toBeNull();
+  });
+});

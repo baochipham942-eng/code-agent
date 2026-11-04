@@ -19,6 +19,7 @@ import { createHash } from 'node:crypto';
 import type { Message } from '../../shared/contract';
 import type { ToolApprovalPayload } from '../../shared/contract/pendingApproval';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants';
+import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '../../shared/parkedApprovalClosure';
 import { sanitizeToolCallsForHistory } from './messageHandling/converter';
 import { persistedToolCall, toolResultEvidence } from '../runtime/ledgerToolExecution';
 
@@ -143,6 +144,19 @@ export function classifyParkedToolApprovalForSurvival(input: {
     toolCallId: payload.argsRef.toolCallId,
     argsFingerprint: payload.argsFingerprint,
   };
+}
+
+/**
+ * 收口原因 → 写进台账 denied 结果的一句大白话（用户重开会话时在工具步骤上看到的就是它）。
+ * 后续收件箱工单复用本函数，名称与签名保持稳定。
+ */
+export function describeParkedApprovalClosure(
+  reason: 'expired_after_restart_24h' | 'args_unavailable',
+  detail?: 'working_directory_unavailable',
+): string {
+  if (reason === 'expired_after_restart_24h') return PARKED_APPROVAL_CLOSURE_SENTENCES.expiredAfterRestart24h;
+  if (detail === 'working_directory_unavailable') return PARKED_APPROVAL_CLOSURE_SENTENCES.workingDirectoryUnavailable;
+  return PARKED_APPROVAL_CLOSURE_SENTENCES.argsUnavailable;
 }
 
 /** 安全解析 payloadJson；坏行当 null 处理（判据侧全部落 args_unavailable）。 */

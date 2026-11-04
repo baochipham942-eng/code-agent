@@ -14,6 +14,7 @@ import { assertAdminAccess, getAdminAccessIpcError, isCurrentUserAdmin } from '.
 import { resolveConnectionTestModel } from '../model/providerConnectionTest';
 import { isRuntimeProviderConfigured } from '../../shared/modelRuntime';
 import { resolveProviderIconAsset, saveProviderIconAsset } from '../services/providerIconAssets';
+import { getOutboundMaskRecords } from '../security/outboundSecretMaskRecorder';
 import { handleDiscoverModels, type DiscoveredProviderModel, type DiscoverModelsResult } from './provider.ipc';
 import { refreshRegisteredVoiceInstructions } from '../services/capabilities/hostCapabilityPorts';
 import { createLogger } from '../services/infra/logger';
@@ -596,6 +597,11 @@ const settingsHandlers: DomainRouteHandlers<SettingsDomainRequest, SettingsRoute
   },
   getBudgetStatus: async () => {
     return await handleGetBudgetStatus();
+  },
+  // 出云掩码替换回执（N-PROMPT-SECRET-MASK-FU2）：只读，返回占位符形态（kind +
+  // placeholder + 时间 + 可选 provider/model），无原值——不经 admin 门，与 get 同档。
+  getOutboundMaskRecords: async () => {
+    return getOutboundMaskRecords();
   },
   setBudgetConfig: async (getConfigService, payload) => {
     await handleSetBudgetConfig(getConfigService, payload as Parameters<typeof handleSetBudgetConfig>[1]);

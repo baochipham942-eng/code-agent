@@ -12,7 +12,8 @@ import type { AgentRow, MemberRowSource } from '../../../src/renderer/utils/agen
 import type { AgentTreeNode } from '../../../src/shared/contract/agentTree';
 import type { SwarmAgentContextSnapshot, SwarmAgentState } from '../../../src/shared/contract/swarm';
 import type { SwarmRunAgentRecord } from '../../../src/shared/contract/swarmTrace';
-import { memberProgressAnchor, swarmRunAgentRecordToState } from '../../../src/renderer/components/features/expert/SessionMemberBar';
+import { memberProgressAnchor } from '../../../src/renderer/utils/memberProgressAnchor';
+import { swarmRunAgentRecordToState } from '../../../src/renderer/components/features/expert/SessionMemberBar';
 
 const T0 = 1_700_000_000_000;
 

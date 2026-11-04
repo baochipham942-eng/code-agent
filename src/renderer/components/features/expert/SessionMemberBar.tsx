@@ -27,6 +27,7 @@ import { RoleInitialAvatar } from './RoleInitialAvatar';
 import { useDurableSwarmRunDetail } from '../../../hooks/useDurableSwarmRunDetail';
 import { useSessionAgentRows } from '../../../hooks/useSessionAgentRows';
 import { deriveAgentMergeState } from '../../../utils/agentMergeState';
+import { memberProgressAnchor } from '../../../utils/memberProgressAnchor';
 import type { AgentRow } from '../../../utils/agentRows';
 import { useRightPanelTabsStore } from '../../../stores/rightPanelTabsStore';
 
@@ -53,22 +54,6 @@ export function swarmRunAgentRecordToState(record: SwarmRunAgentRecord): SwarmAg
     finalOutput: record.finalOutput,
     filesChanged: record.filesChanged,
   };
-}
-
-/**
- * 成员行的「最近可见进展」活锚点（N-FIX-WF-STALL-SPAWN-AGENT r4）：
- * 账本记录转出的 state 不带 contextSnapshot（MemberConversationView 同结论：快照只在
- * 流里、账本不存），所以锚点只认会随真实进展前进的活源——传入 state 自带的
- * contextSnapshot.lastUpdated（live 输入时）与同 id 的 swarmStore 流状态快照，取最新。
- * 没有活源返回 undefined（fail-closed：宁可不说，不拿 startTime 充当进展）。
- */
-export function memberProgressAnchor(
-  agent: SwarmAgentState,
-  liveAgent?: SwarmAgentState,
-): number | undefined {
-  const candidates = [agent.contextSnapshot?.lastUpdated, liveAgent?.contextSnapshot?.lastUpdated]
-    .filter((value): value is number => typeof value === 'number');
-  return candidates.length > 0 ? Math.max(...candidates) : undefined;
 }
 
 /** 一颗 pill 要渲染的东西；standby=预选待命（没有状态徽标） */

@@ -2,7 +2,7 @@
 // Guard Fabric Tests
 // ============================================================================
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   GuardFabric,
   PolicyEngineSource,
@@ -238,6 +238,48 @@ describe('GuardFabric', () => {
       expect(['allow', 'ask', 'deny']).toContain(result!.verdict);
       expect(result!.source).toBe('rules');
       expect(result!.confidence).toBe(1.0);
+    });
+
+    // N-PERM-RULE-EMPTY-INPUT-MATCH-FU1：level 从工具真实 permissionLevel 派生。
+    it('FU1: passes the supplied level to policyEngine (read/write) and falls back to execute', async () => {
+      const { getPolicyEngine } = await import('../../../src/host/permissions/policyEngine');
+      const spy = vi.spyOn(getPolicyEngine(), 'evaluate');
+      const source = new PolicyEngineSource();
+
+      source.evaluate({ tool: 'read', args: { filePath: '/tmp/a.txt' }, topology: 'main', level: 'read' });
+      expect(spy.mock.calls.at(-1)![0].level).toBe('read');
+
+      source.evaluate({ tool: 'write', args: { filePath: '/tmp/b.txt' }, topology: 'main', level: 'write' });
+      expect(spy.mock.calls.at(-1)![0].level).toBe('write');
+
+      source.evaluate({ tool: 'bash', args: { command: 'ls' }, topology: 'main' });
+      expect(spy.mock.calls.at(-1)![0].level).toBe('execute');
+      spy.mockRestore();
+    });
+
+    it('FU1: block-root-write now denies a Write to /usr/bin at write level', () => {
+      const source = new PolicyEngineSource();
+      const result = source.evaluate({
+        tool: 'write',
+        args: { filePath: '/usr/bin/x' },
+        topology: 'main',
+        level: 'write',
+      });
+      expect(result).not.toBeNull();
+      expect(result!.verdict).toBe('deny');
+      expect(result!.reason).toContain('Writing to system directories');
+    });
+
+    it('FU1: rm -rf / still denied at execute level', () => {
+      const source = new PolicyEngineSource();
+      const result = source.evaluate({
+        tool: 'bash',
+        args: { command: 'rm -rf /' },
+        topology: 'main',
+        level: 'execute',
+      });
+      expect(result).not.toBeNull();
+      expect(result!.verdict).toBe('deny');
     });
 
     it('maps prompt action to ask verdict', () => {

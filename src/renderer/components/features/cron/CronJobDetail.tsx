@@ -17,6 +17,7 @@ import {
 } from './types';
 import { CronExecutionList } from './CronExecutionList';
 import { CronExecutionDetail } from './CronExecutionDetail';
+import { Button } from '../../primitives';
 import { CronRunsOnPill } from './CronRunsOnSelector';
 import { CronResultChannelSummary } from './CronResultChannel';
 import { useEventScheduleNames } from './useChannelCatalog';
@@ -27,9 +28,12 @@ import { isWebhookCronJob } from '@shared/cronWebhookJob';
 
 interface CronJobDetailProps {
   job: CronJobDefinition | null;
+  /** 等批准运行（N-CRON-UNATTENDED-BASH-PARK-STUCK）：头 chip 换 amber 徽章 + 一句提示 + 去处理。 */
+  awaitingRun?: { executionId: string | null } | null;
+  onReviewAwaiting?: () => void;
 }
 
-export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job }) => {
+export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun = null, onReviewAwaiting }) => {
   const { t, language } = useI18n();
   const cc = t.cronCenter;
   const {
@@ -85,6 +89,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job }) => {
   const latest = latestExecutions[job.id];
   const latestMeta = getLatestExecutionStatus(latest);
   const latestLabel = cc.status[latest?.status ?? 'none'];
+  const awaitingApproval = awaitingRun != null;
 
   const handleToggleEnabled = async () => {
     await updateJob(job.id, { enabled: !job.enabled });
@@ -111,10 +116,36 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job }) => {
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-lg font-semibold text-zinc-100">{job.name}</h3>
-              <span className={`rounded-full px-2 py-1 text-xs ${latestMeta.className}`}>
-                {cc.latest.replace('{label}', latestLabel)}
-              </span>
+              {awaitingApproval ? (
+                <span
+                  className="rounded-full border border-badge-warning/40 bg-amber-500/15 px-2 py-1 text-xs text-badge-warning"
+                  data-testid="cron-detail-awaiting-approval"
+                >
+                  {cc.awaitingApprovalBadge}
+                </span>
+              ) : (
+                <span className={`rounded-full px-2 py-1 text-xs ${latestMeta.className}`}>
+                  {cc.latest.replace('{label}', latestLabel)}
+                </span>
+              )}
             </div>
+            {awaitingApproval && (
+              <div
+                className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-badge-warning/30 bg-amber-500/5 px-3 py-2"
+                data-testid="cron-detail-awaiting-approval-hint"
+              >
+                <span className="text-xs text-zinc-400">{cc.awaitingApprovalHint}</span>
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  onClick={onReviewAwaiting}
+                  data-testid="cron-detail-awaiting-approval-action"
+                >
+                  {cc.awaitingApprovalAction}
+                </Button>
+              </div>
+            )}
             <div className="mt-2 max-w-3xl text-sm">
               {job.description ? (
                 <p className="text-zinc-400">{job.description}</p>

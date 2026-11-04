@@ -64,6 +64,8 @@ export const WEB_FETCH = {
   CACHE_TTL: 900_000,
   /** 缓存最大条目数 */
   CACHE_MAX_ENTRIES: 50,
+  /** 手动跟随重定向的最大跳数（每跳都过 SSRF 守卫） */
+  MAX_REDIRECTS: 5,
   /** 受信文档内容直通上限 */
   TRUSTED_DOCS_MAX_CHARS: 100_000,
   /** 可重试 HTTP 状态码 */
@@ -151,6 +153,10 @@ export const CLOUD_ENDPOINTS = {
   /** 官方 Role Pack Registry（签名控制面） */
   get roleRegistry() {
     return `${getCloudApiUrl()}/api/v1/role-registry`;
+  },
+  /** Neo 托管 Jev 判官（计量代理：key 只在服务端，N-JEV-NEO-KEY） */
+  get jevJudge() {
+    return `${getCloudApiUrl()}/api/v1/jev-judge`;
   },
   /** WebSocket 端点 */
   get websocket() {

@@ -668,6 +668,49 @@ describe('SessionCommandCenter idle expiry', () => {
     center.dispose();
   });
 
+  describe('system permission prompt hint on idle reap', () => {
+    const HINT = 'A system permission prompt may still be on screen; dismiss it or choose Don\'t Allow.';
+    async function reapAfter(command: string, finishBeforeReap = false) {
+      const manager = new FakeTaskManager();
+      const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+        projectTerminalResult: vi.fn().mockResolvedValue(undefined),
+        wakeForegroundBrain: vi.fn().mockResolvedValue(undefined),
+        slotLedgerOptions: { slotTimeoutMs: 30_000, cleanupIntervalMs: 1_000 },
+        slotRecoveryLocale: 'en',
+      });
+      const spawned = await center.spawn(input(1, 'report'));
+      if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+      manager.emitAgent('session-a', {
+        type: 'tool_call_start',
+        data: { id: 'call-1', name: 'Bash', arguments: { command } },
+      }, spawned.task.id);
+      if (finishBeforeReap) {
+        manager.emitAgent('session-a', {
+          type: 'tool_call_end',
+          data: { toolCallId: 'call-1', success: true, output: 'ok' },
+        }, spawned.task.id);
+      }
+      await vi.advanceTimersByTimeAsync(31_000);
+      const detail = center.list('session-a')[0]?.detail;
+      center.dispose();
+      return detail;
+    }
+
+    it('appends the hint when the in-flight command is an osascript call', async () => {
+      const detail = await reapAfter('osascript -e \'tell application "Reminders" to get name of every list\'');
+      expect(detail).toBe(`Background task failed: the command stopped responding for 30 seconds. ${HINT}`);
+    });
+
+    it('leaves a plain command\'s failure text unchanged', async () => {
+      expect(await reapAfter('sleep 600')).toBe('Background task failed: the command stopped responding for 30 seconds');
+    });
+
+    it('adds no hint when the osascript command already finished before the reap', async () => {
+      const detail = await reapAfter('osascript -e "return 1"', true);
+      expect(detail).not.toContain('permission prompt');
+    });
+  });
+
   it('keeps running when tool_progress reports real output that resets inactivity', async () => {
     const manager = new FakeTaskManager();
     const wakeForegroundBrain = vi.fn().mockResolvedValue(undefined);

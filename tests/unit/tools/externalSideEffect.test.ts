@@ -122,10 +122,14 @@ describe('extractStandingGrantTarget (B4 授权 target 提取)', () => {
 });
 
 describe('mustAskUnderAcceptEdits (acceptEdits 档仍必须询问清单)', () => {
-  it('新增三名在清单上：ExcelAutomate（可跑宏）/ sleep_until / wake_on（自唤醒）', () => {
-    expect(mustAskUnderAcceptEdits('ExcelAutomate')).toBe(true);
+  it('自唤醒三件套在清单上：sleep_until / wake_on / wake_on_event（owner decision 11-02 option A）', () => {
     expect(mustAskUnderAcceptEdits('sleep_until')).toBe(true);
     expect(mustAskUnderAcceptEdits('wake_on')).toBe(true);
+    expect(mustAskUnderAcceptEdits('wake_on_event')).toBe(true);
+  });
+
+  it('ExcelAutomate（可跑宏）仍在清单上', () => {
+    expect(mustAskUnderAcceptEdits('ExcelAutomate')).toBe(true);
   });
 
   it('既有清单成员仍命中（抽查 xlwings_execute / mcp_add_server）', () => {
@@ -133,13 +137,11 @@ describe('mustAskUnderAcceptEdits (acceptEdits 档仍必须询问清单)', () =>
     expect(mustAskUnderAcceptEdits('mcp_add_server')).toBe(true);
   });
 
-  it('可逆 / 草稿 / 只读浏览 / 截图类不在清单上（含 wake_on_event 刻意不动）', () => {
+  it('可逆 / 草稿 / 只读浏览 / 截图类不在清单上', () => {
     expect(mustAskUnderAcceptEdits('reminders_create')).toBe(false);
     expect(mustAskUnderAcceptEdits('reminders_update')).toBe(false);
     expect(mustAskUnderAcceptEdits('mail_draft')).toBe(false);
     expect(mustAskUnderAcceptEdits('browser_navigate')).toBe(false);
     expect(mustAskUnderAcceptEdits('screenshot')).toBe(false);
-    // wake_on_event 刻意保持自动放行：owner 待答的 follow-up（见证据档），本单不加
-    expect(mustAskUnderAcceptEdits('wake_on_event')).toBe(false);
   });
 });

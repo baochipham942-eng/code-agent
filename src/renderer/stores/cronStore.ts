@@ -45,6 +45,8 @@ interface CronState {
   loadStats: () => Promise<void>;
   loadExecutions: (jobId: string, limit?: number) => Promise<void>;
   loadRecentExecutions: (limit?: number) => Promise<void>;
+  /** 有 running 执行时由面板轮询调用：一次请求同时校正「运行记录」流与各任务最近一次执行。 */
+  syncRunningExecutions: () => Promise<void>;
   refresh: () => Promise<void>;
   createJob: (input: CreateCronJobInput) => Promise<CronJobDefinition>;
   updateJob: (jobId: string, updates: UpdateCronJobInput) => Promise<CronJobDefinition | null>;
@@ -164,6 +166,35 @@ export const useCronStore = create<CronState>()((set, get) => ({
       set({
         error: error instanceof Error ? error.message : 'Failed to load recent cron executions',
       });
+    }
+  },
+
+  syncRunningExecutions: async () => {
+    try {
+      const recent = await cronClient.getRecentExecutions(50);
+      const byId = new Map(recent.map((execution) => [execution.id, execution]));
+      let changed = false;
+      set((state) => {
+        const latestExecutions = { ...state.latestExecutions };
+        let latestChanged = false;
+        for (const [jobId, known] of Object.entries(latestExecutions)) {
+          const fresh = known ? byId.get(known.id) : undefined;
+          if (fresh && fresh.status !== known?.status) {
+            latestExecutions[jobId] = fresh;
+            latestChanged = true;
+          }
+        }
+        const recentChanged = JSON.stringify(recent) !== JSON.stringify(state.recentExecutions);
+        changed = recentChanged || latestChanged;
+        if (!changed) return state;
+        return {
+          ...(recentChanged ? { recentExecutions: recent } : {}),
+          ...(latestChanged ? { latestExecutions } : {}),
+        };
+      });
+      if (changed) await get().loadStats();
+    } catch (error) {
+      logger.warn('Failed to sync running cron executions', { error });
     }
   },
 

@@ -94,6 +94,10 @@ export const SERVICE_TIMEOUTS = {
   BOOTSTRAP: 30_000,
 } as const;
 
+export const NOTIFICATION_BUDGET = {
+  WINDOW_MS: 15 * 60_000,
+} as const;
+
 /** 用户交互超时 */
 export const INTERACTION_TIMEOUTS = {
   /** 无交互 renderer 时的用户问题等待超时 */
@@ -680,4 +684,10 @@ export const CLI_DURABLE_TERMINAL = {
   RETRY_ATTEMPTS: 5,
   /** 退避基数（毫秒）：第 n 次重试前等待 BASE << (n-1) */
   RETRY_BACKOFF_BASE_MS: 200,
+} as const;
+
+/** Neo 托管判官（N-JEV-NEO-KEY）客户端退避时长 */
+export const JEV_HOSTED_TIMEOUTS = {
+  /** 持续性服务故障（401/404/5xx/网络/超时）后短退避：避免每次判官调用都先付一次云端往返再降级 */
+  SERVICE_FAILURE_BACKOFF: 5 * 60_000,
 } as const;

@@ -14,7 +14,8 @@
 import { createLogger } from '../services/infra/logger';
 import type { JevSystemOneCall } from '../../shared/constants/jevQuestions';
 import type { JevFeature, JevKeySource, JevStatus } from '../../shared/contract/jev';
-import { probeJevKeySource, resolveJevRoute } from './providers/typesafeProvider';
+import { getJevHostedBlock, readJevHostedBlockForStatus } from './jevHostedQuota';
+import { probeJevHostedEligible, probeJevKeySource, resolveJevRoute } from './providers/typesafeProvider';
 
 const logger = createLogger('JevFeatures');
 
@@ -51,7 +52,8 @@ const degradedWarned = new Set<JevFeature>();
 const DEGRADE_REASON_TEXT: Record<JevKeySource, string> = {
   official: 'Jev 路由已可用',
   openrouter: 'Jev 路由已可用（借用 OpenRouter key）',
-  none: 'TYPESAFE_API_KEY 与 OpenRouter key 均未配置',
+  neo_hosted: 'Neo 云判官正在限流退避（今日额度已用完或全局熔断）',
+  none: 'TYPESAFE_API_KEY 与 OpenRouter key 均未配置，且 Neo 托管判官不可用（未登录或云判官开关关）',
   disabled_by_user: '用户已在设置中关闭 Jev 总开关',
   openrouter_pending_consent: '检测到 OpenRouter key，但用户尚未允许借用',
 };
@@ -87,7 +89,10 @@ export function createProductionJevCall(feature: JevFeature): JevSystemOneCall {
 /** 诊断快照（diagnostics jevStatus）：只读，永不包含 key 材料。形状真源 shared/contract/jev.ts。 */
 export function getJevStatus(): JevStatus {
   const keySource = probeJevKeySource();
-  const keyConfigured = keySource === 'official' || keySource === 'openrouter';
+  const hostedBlocked = keySource === 'neo_hosted' && getJevHostedBlock() !== null;
+  const keyConfigured = keySource === 'official'
+    || keySource === 'openrouter'
+    || (keySource === 'neo_hosted' && !hostedBlocked);
   const features = {} as JevStatus['features'];
   for (const feature of Object.keys(JEV_FEATURE_ENV_FLAGS) as JevFeature[]) {
     const flagOn = isJevFeatureOn(feature);
@@ -97,10 +102,12 @@ export function getJevStatus(): JevStatus {
       degradedCount: degradedCounts[feature],
     };
   }
+  const hostedEligible = probeJevHostedEligible();
   return {
     keyConfigured,
     route: keyConfigured ? keySource : null,
     keySource,
+    ...(hostedEligible ? { hosted: readJevHostedBlockForStatus(hostedEligible) } : {}),
     features,
   };
 }

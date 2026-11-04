@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionAutomationRecord } from '../../../src/shared/contract/sessionAutomation';
 import type { ParkedApprovalInboxItem } from '../../../src/shared/contract/pendingApproval';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
+import { cronClient } from '../../../src/renderer/services/cronClient';
 
 const listPendingReview = vi.fn<() => Promise<SessionAutomationRecord[]>>();
 const listParkedApprovals = vi.fn<() => Promise<ParkedApprovalInboxItem[]>>();
@@ -13,6 +14,8 @@ const markReviewed = vi.fn().mockResolvedValue(null);
 const switchSession = vi.fn().mockResolvedValue(undefined);
 const ipcInvoke = vi.fn().mockResolvedValue(undefined);
 const ipcInvokeDomain = vi.fn().mockResolvedValue(undefined);
+// 面板「等批准」轮询的可变应答（Rework r1 用例翻转它模拟停车出现）
+const awaitingRunsMock = vi.hoisted(() => ({ value: [] as unknown[] }));
 const toastInfo = vi.fn();
 const toastError = vi.fn();
 const toastSuccess = vi.fn();
@@ -50,6 +53,7 @@ vi.mock('../../../src/renderer/services/sessionAutomationClient', () => ({
     listParkedApprovals: () => listParkedApprovals(),
     countPendingReview: () => countPendingReview(),
     markReviewed: (id: string) => markReviewed(id),
+    listAwaitingApprovalRuns: () => Promise.resolve(awaitingRunsMock.value),
   },
 }));
 
@@ -134,6 +138,7 @@ afterEach(() => {
 beforeEach(() => {
   // 默认两路都空；具体用例按需 override。
   webMode.value = false;
+  awaitingRunsMock.value = [];
   copyPathToClipboard.mockClear();
   copyPathToClipboard.mockResolvedValue(true);
   listPendingReview.mockResolvedValue([]);
@@ -696,5 +701,49 @@ describe('pending review count parity', () => {
     });
     expect(screen.getAllByTestId('automation-review-item')).toHaveLength(2);
     expect(screen.getByTestId('automation-review-inbox-title').textContent).not.toContain('2 条');
+  });
+});
+
+// ── Rework r1（N-CRON-UNATTENDED-BASH-PARK-STUCK-VISIBLE）：常驻收件箱只在挂载时拉
+// listParkedApprovals；停车发生在面板开着时，徽章亮了但收件箱还是旧快照，「去处理」
+// 落到不含该审批的收件箱。修复：面板把等批准集合指纹作为 refreshSignal 传入，指纹变化
+// 收件箱即重拉。本用例走真收件箱 + 真面板（本文件 CronJobList/Detail 打桩、收件箱不打桩）。
+describe('awaiting-approval refresh signal (Rework r1)', () => {
+  it('面板开着时停车出现：等批准轮询发现后，收件箱不重挂载也拉到该审批卡', async () => {
+    awaitingRunsMock.value = [];
+    vi.mocked(cronClient.listJobs).mockResolvedValue([
+      {
+        id: 'job-1',
+        name: '每日晨报',
+        scheduleType: 'every',
+        schedule: { type: 'every', interval: 1, unit: 'days' },
+        action: { type: 'agent', agentType: 'default', prompt: 'x' },
+        runsOn: 'local',
+        enabled: true,
+      },
+    ] as never);
+    // latestExecutions 里 job-1 有一条 running（挂载刷新即拉），等批准轮询门因此打开
+    vi.mocked(cronClient.getExecutions).mockImplementation(async (jobId: string) =>
+      jobId === 'job-1'
+        ? [{ id: 'exec-1', jobId: 'job-1', status: 'running', scheduledAt: 1, startedAt: 1, retryAttempt: 0 }]
+        : []);
+    // 收件箱挂载首拉没有这条审批；等批准指纹变化触发重拉后才给
+    listParkedApprovals.mockResolvedValueOnce([]).mockResolvedValue([makeParked({})]);
+
+    render(<CronCenterPanel onClose={() => undefined} />);
+    await waitFor(() => {
+      expect(screen.getByTestId('automation-review-inbox')).toBeTruthy();
+    });
+    expect(screen.queryByTestId('parked-approval-item')).toBeNull();
+
+    // 停车发生：下一轮轮询拿到该运行 → 面板指纹变化 → 收件箱原地重拉（不重挂载）
+    awaitingRunsMock.value = [{ jobId: 'job-1', executionId: 'exec-1', requestId: 'req-1', requestedAt: 1 }];
+    await waitFor(
+      () => {
+        expect(screen.getByTestId('parked-approval-item')).toBeTruthy();
+      },
+      { timeout: 4000 },
+    );
+    expect(listParkedApprovals.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 });

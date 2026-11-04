@@ -40,6 +40,7 @@ import { useDoctorStore } from '../../../../stores/doctorStore';
 import { OS_SANDBOX_DOCTOR_ITEM_NAME } from '@shared/constants/sandbox';
 import { validateUserPermissionRule } from '@shared/permissionRuleSyntax';
 import { JevKeyConfig } from './JevKeyConfig';
+import { NotificationPermissionRow } from './NotificationPermissionRow';
 import { CronCloudSettingsCard } from './CronCloudSettingsCard';
 import { NlRuleTranslator } from '../permissions/NlRuleTranslator';
 
@@ -504,6 +505,7 @@ export const GeneralSettings: React.FC = () => {
       description={generalText.pageDescription}
     >
       <WebModeBanner />
+      <NotificationPermissionRow />
       <JevKeyConfig />
 
       <SettingsSection

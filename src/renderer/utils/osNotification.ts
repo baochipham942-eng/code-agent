@@ -10,11 +10,35 @@
 import { isTauriMode } from './platform';
 import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
+import { getNativeDesktopPermissionStatus, isNativeDesktopAvailable } from '../services/nativeDesktop';
 import { toast } from '../hooks/useToast';
 
 const FOREGROUND_FAILURE_TOAST_MS = 10_000;
 
 type NotifModule = typeof import('@tauri-apps/plugin-notification');
+type OsNotificationPermission = 'granted' | 'denied' | 'unknown';
+type OsNotificationPermissionSnapshot = {
+  permission: OsNotificationPermission;
+  platform: string | null;
+};
+
+export async function getOsNotificationPermissionSnapshot(): Promise<OsNotificationPermissionSnapshot> {
+  if (!isNativeDesktopAvailable()) return { permission: 'unknown', platform: null };
+  try {
+    const snapshot = await getNativeDesktopPermissionStatus();
+    const status = snapshot.permissions.find((permission) => permission.kind === 'notifications')?.status;
+    return {
+      permission: status === 'granted' || status === 'denied' ? status : 'unknown',
+      platform: snapshot.platform,
+    };
+  } catch {
+    return { permission: 'unknown', platform: null };
+  }
+}
+
+export async function getOsNotificationPermission(): Promise<OsNotificationPermission> {
+  return (await getOsNotificationPermissionSnapshot()).permission;
+}
 
 /** 把原生通知投递结果回报主进程（落日志，便于诊断「没弹」）。fire-and-forget。 */
 function reportDelivery(report: Record<string, unknown>): void {
@@ -62,14 +86,20 @@ export function shouldSuppressOsNotification(hasFocus: boolean, visible: boolean
 /** 发一条原生系统通知。Tauri 下自动带 Agent Neo 图标/身份；web 回落浏览器通知。 */
 export async function postOsNotification(
   opts: { title: string; body: string },
-  flags: { urgent?: boolean; failure?: boolean; onOpen?: () => void; openLabel?: string } = {},
+  flags: { urgent?: boolean; failure?: boolean; viewingSession?: boolean; onOpen?: () => void; openLabel?: string } = {},
 ): Promise<void> {
   const urgent = flags.urgent === true;
   const hasFocus = typeof document !== 'undefined' && document.hasFocus();
   const visible = typeof document !== 'undefined' && !document.hidden;
-  // urgent（失败类）跳过焦点门：用户盯着别的会话时也不能错过失败。
+  // urgent 跳过普通焦点门：失败、等输入都不能因为 app 聚焦而错过。
   if (!urgent && shouldSuppressOsNotification(hasFocus, visible)) {
     reportDelivery({ mode: 'suppressed-focused', dispatched: false });
+    return;
+  }
+  // needs-input（urgent 且非失败）例外：用户正聚焦看着需要输入的那个会话时，
+  // 审批/提问卡片就在屏幕上，横幅只是重复打扰；看别的会话、失焦、隐藏仍弹。
+  if (urgent && flags.failure !== true && flags.viewingSession === true && shouldSuppressOsNotification(hasFocus, visible)) {
+    reportDelivery({ mode: 'suppressed-viewing', dispatched: false });
     return;
   }
   // macOS 在 app 为 key window 时会藏起原生横幅：urgent 失败在前台补一条应用内 toast。
@@ -86,15 +116,21 @@ export async function postOsNotification(
   const toastFlag = toastShown ? { toastShown: true } : {};
   if (isTauriMode()) {
     try {
-      const mod = await loadModule();
-      const granted = await ensureTauriPermission(mod);
-      if (!granted) {
+      const permission = await getOsNotificationPermission();
+      if (permission === 'denied') {
         reportDelivery({ mode: 'tauri', granted: false, dispatched: false, ...(urgent ? { urgent } : {}), ...toastFlag });
         return;
       }
+      const mod = await loadModule();
       // dispatched = OS API accepted the call; macOS gives no callback, so display is not confirmed.
       mod.sendNotification({ title: opts.title, body: opts.body });
-      reportDelivery({ mode: 'tauri', granted: true, dispatched: true, ...(urgent ? { urgent } : {}), ...toastFlag });
+      reportDelivery({
+        mode: 'tauri',
+        ...(permission === 'granted' ? { granted: true } : { permission: 'unknown' }),
+        dispatched: true,
+        ...(urgent ? { urgent } : {}),
+        ...toastFlag,
+      });
     } catch (err) {
       console.warn('[osNotification] Tauri sendNotification 失败', err);
       reportDelivery({ mode: 'tauri', error: err instanceof Error ? err.message : String(err) });

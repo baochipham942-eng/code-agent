@@ -1,7 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { IPC_CHANNELS, type NotificationShowEvent } from '@shared/ipc';
 import { useAppStore } from '../stores/appStore';
+import { useSessionStore } from '../stores/sessionStore';
+import { isSecondaryPageActive } from '../utils/secondaryPageActive';
 import { useCronStore } from '../stores/cronStore';
+import { toast } from './useToast';
+import { createMissedAlertQueue } from './missedAlertsOnReturn';
 import ipcService from '../services/ipcService';
 import {
   cronFailureCloudDownJobId,
@@ -12,6 +16,12 @@ import {
   openCronLoginWallSite,
 } from '../components/features/cron/cronLoginWallNotice';
 import { postOsNotification, registerNotificationClick } from '../utils/osNotification';
+
+const MISSED_ALERT_TOAST_MS = 10_000;
+
+function windowAttended(): boolean {
+  return document.hasFocus() && !document.hidden;
+}
 
 type CronNotificationCopy = Parameters<typeof translateCronOsNotification>[1];
 
@@ -24,6 +34,8 @@ export function useCronOsNotification(
   copyRef.current = copy;
   onOpenSessionRef.current = onOpenSession;
   const lastEventRef = useRef<NotificationShowEvent | null>(null);
+
+  const missedRef = useRef(createMissedAlertQueue());
 
   useEffect(() => {
     // 原生点击读「最近一条」事件；toast 动作必须绑定自己那条，否则连续两条失败时点 A 会开 B。
@@ -46,7 +58,15 @@ export function useCronOsNotification(
     const unsubscribe = ipcService.on(
       IPC_CHANNELS.NOTIFICATION_SHOW,
       (event: NotificationShowEvent) => {
+        // 预算窗口折起弹窗时单独送达的未读标记：只供侧栏圆点，不弹 OS 通知、不作点击目标。
+        if (event.attentionOnly) return;
         lastEventRef.current = event;
+        missedRef.current.record(event, windowAttended());
+        const needsInput = event.urgent === true && event.failure !== true;
+        const viewingSession = needsInput
+          && !!event.sessionId
+          && !isSecondaryPageActive(useAppStore.getState())
+          && useSessionStore.getState().currentSessionId === event.sessionId;
         void postOsNotification(translateCronOsNotification(
           event,
           copyRef.current,
@@ -54,11 +74,28 @@ export function useCronOsNotification(
         ), {
           urgent: event.urgent === true,
           failure: event.failure === true,
+          viewingSession,
           onOpen: () => openForEvent(event),
           openLabel: copyRef.current.failureToastView,
         });
       },
     );
+    // 回到前台：把离开期间攒下的 urgent 提醒合成一条可点的 toast（侧栏红点由 Sidebar 另管）。
+    const flushMissed = () => {
+      if (!windowAttended()) return;
+      const spec = missedRef.current.flush(useSessionStore.getState().currentSessionId);
+      if (!spec) return;
+      const c = copyRef.current;
+      const notice = translateCronOsNotification(spec.latest, c, useAppStore.getState().language);
+      const message = spec.count > 1
+        ? c.missedAlertsMerged.replace('{count}', String(spec.count))
+        : `${notice.title}: ${notice.body}`;
+      const action = { label: c.failureToastView, onClick: () => openForEvent(spec.latest) };
+      if (spec.type === 'error') toast.error(message, action, MISSED_ALERT_TOAST_MS);
+      else toast.warning(message, action, MISSED_ALERT_TOAST_MS);
+    };
+    window.addEventListener('focus', flushMissed);
+    document.addEventListener('visibilitychange', flushMissed);
     let disposed = false;
     let unregister: (() => Promise<void>) | undefined;
     void registerNotificationClick(openFromNotification).then((cleanup) => {
@@ -70,6 +107,8 @@ export function useCronOsNotification(
     });
     return () => {
       disposed = true;
+      window.removeEventListener('focus', flushMissed);
+      document.removeEventListener('visibilitychange', flushMissed);
       unsubscribe?.();
       void unregister?.();
     };

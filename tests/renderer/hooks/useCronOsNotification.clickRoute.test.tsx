@@ -56,6 +56,7 @@ beforeEach(() => {
   (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
   h.parked = [];
   h.click = null;
+  useCronStore.setState({ selectedJobId: null });
   useAppStore.setState({ showCronCenter: false, cronCenterRunsRequested: false });
   vi.spyOn(document, 'hasFocus').mockReturnValue(true);
 });
@@ -99,6 +100,18 @@ describe('notification-clicked 路由', () => {
     await click('j');
     expect(open).not.toHaveBeenCalled();
     expect(useCronStore.getState().selectedJobId).toBe('job-9');
+    expect(useAppStore.getState().showCronCenter).toBe(true);
+  });
+
+  it.each([
+    ['完成', { id: 'jc', title: 't', body: 'b', jobId: 'job-c' }, 'job-c'],
+    ['失败', { id: 'jf', title: 't', body: 'b', jobId: 'job-f', failure: true }, 'job-f'],
+  ])('%s事件仅 jobId → 自动化中心并选中该任务', async (_n, ev, jobId) => {
+    await mount();
+    h.show!(ev);
+    await click(ev.id);
+    expect(open).not.toHaveBeenCalled();
+    expect(useCronStore.getState().selectedJobId).toBe(jobId);
     expect(useAppStore.getState().showCronCenter).toBe(true);
   });
 

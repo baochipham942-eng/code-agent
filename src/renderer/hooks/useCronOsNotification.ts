@@ -63,8 +63,14 @@ export function useCronOsNotification(
     // 点击路由（壳发 notification-clicked {id}）：按通知类型落点，且每个 id 只处理一次。
     const routeClick = async (event: NotificationShowEvent) => {
       const needsInput = event.urgent === true && event.failure !== true;
+      // 无会话仅有 jobId（任何类型）：落自动化中心并选中任务；登录墙/云端不可用仍走 openForEvent。
+      const jobOnly = !event.sessionId && !!event.jobId;
       if (!needsInput) {
         openForEvent(event);
+        if (jobOnly) {
+          useCronStore.getState().selectJob(event.jobId as string);
+          useAppStore.getState().setShowCronCenter(true);
+        }
         return;
       }
       if (event.sessionId) {

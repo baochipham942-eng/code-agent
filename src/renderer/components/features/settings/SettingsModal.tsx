@@ -504,6 +504,7 @@ export const SettingsModal: React.FC = () => {
                 onNavigate={handleSearchNavigate}
                 access={accessSubject}
                 installedCapabilities={installedCapabilities}
+                externalImportAvailable={externalImportStatus === 'available'}
               />
             </div>
           </div>

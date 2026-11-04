@@ -120,6 +120,13 @@ export const agentErrorZh = {
         title: '模型服务暂时限流',
         suggestion: '当前模型供应商返回限流。请稍后重试，或先切换到其他可用模型。',
       },
+      usage_limit: {
+        title: '{window}额度已用完',
+        suggestion: '预计 {resetTime} 恢复。恢复前可以先切换到其他模型继续，重试暂时无效。',
+        titleNoWindow: '套餐额度已用完',
+        suggestionNoReset: '服务商没有给出恢复时间，请向服务商确认额度何时恢复。恢复前可以先切换到其他模型继续，重试暂时无效。',
+        windowLabel: '{window}',
+      },
       concurrency: {
         title: '模型账号并发已满',
         suggestion: '当前模型服务返回并发限制。请稍后重试，或先切换到其他可用模型。',
@@ -204,6 +211,13 @@ export const agentErrorEn: typeof agentErrorZh = {
       rate_limited: {
         title: 'Model service is rate limited',
         suggestion: 'The model provider is throttling requests. Retry in a moment, or switch to another available model.',
+      },
+      usage_limit: {
+        title: 'The {window} quota is used up',
+        suggestion: 'Expected back around {resetTime}. Switch to another model to keep going until then; retrying will not help.',
+        titleNoWindow: 'The plan quota is used up',
+        suggestionNoReset: 'The provider did not say when it resets — ask the provider for the reset time. Switch to another model to keep going until then; retrying will not help.',
+        windowLabel: '{window}',
       },
       concurrency: {
         title: 'Model account concurrency is full',

@@ -19,6 +19,7 @@ import { calendarConnector } from '../../../src/host/connectors/native/calendar'
 import { remindersConnector } from '../../../src/host/connectors/native/reminders';
 
 const EXPECTED = new Date(2026, 10, 3, 22, 15, 30).getTime();
+const EXPECTED_NOON = new Date(2026, 10, 3, 12, 15, 30).getTime();
 const EXPECTED_AM = new Date(2026, 10, 3, 10, 15, 30).getTime();
 
 const FIXTURES: Array<[string, string, number]> = [
@@ -26,6 +27,7 @@ const FIXTURES: Array<[string, string, number]> = [
   ['Chinese no weekday', '2026年11月3日 22:15:30', EXPECTED],
   ['Chinese 下午', '2026年11月3日 星期二 下午10:15:30', EXPECTED],
   ['Chinese 上午', '2026年11月3日 上午10:15:30', EXPECTED_AM],
+  ['Chinese 中午 noon', '2026年11月3日 星期二 中午12:15:30', EXPECTED_NOON],
   ['English 24h', 'Tuesday, November 3, 2026 at 22:15:30', EXPECTED],
   ['English PM', 'Tuesday, November 3, 2026 at 10:15:30 PM', EXPECTED],
   ['English AM', 'Tuesday, November 3, 2026 at 10:15:30 AM', EXPECTED_AM],

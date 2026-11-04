@@ -53,6 +53,7 @@ const ENGLISH_MONTHS: Record<string, number> = {
 
 function to24Hour(hour: number, meridiem: string | undefined): number {
   if (!meridiem) return hour;
+  if (meridiem === '中午') return hour < 6 ? hour + 12 : hour;
   const pm = /^(PM|下午|晚上)$/i.test(meridiem);
   const h = hour % 12;
   return pm ? h + 12 : h;

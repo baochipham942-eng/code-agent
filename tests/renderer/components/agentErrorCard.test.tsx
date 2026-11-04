@@ -336,6 +336,39 @@ describe('AgentErrorCard', () => {
   });
 });
 
+describe('usage_limit card', () => {
+  const originalTz = process.env.TZ;
+  afterEach(() => {
+    if (originalTz === undefined) delete process.env.TZ; else process.env.TZ = originalTz;
+  });
+
+  it('③ 说额度用完 + 本机时区恢复时间，给切换模型、没有重试按钮', () => {
+    process.env.TZ = 'Asia/Shanghai';
+    renderCard(makeError({ category: 'usage_limit', httpStatus: 429, usageWindowText: '5 小时', resetAt: '2026-11-03T09:34:10.000Z' }));
+    expect(screen.getByText('5 小时额度已用完')).toBeTruthy();
+    expect(screen.getByText(/预计 11\/3 17:34 恢复/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: zh.agentError.actions.switchModel })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: zh.agentError.actions.retry })).toBeNull();
+    expect(screen.queryByTestId('rate-limited-error-line')).toBeNull();
+  });
+
+  it('② 同一时刻在洛杉矶时区显示本地时间；解析不出时间时给「向服务商确认」而不是空白', () => {
+    process.env.TZ = 'America/Los_Angeles';
+    expect(resolveAgentErrorCopy({ category: 'usage_limit', usageWindowText: '5 小时', resetAt: '2026-11-03T09:34:10.000Z' }, zh).suggestion)
+      .toContain('11/3 01:34');
+    const noTime = resolveAgentErrorCopy({ category: 'usage_limit' }, zh);
+    expect(noTime.title).toBe('套餐额度已用完');
+    expect(noTime.suggestion).toContain('向服务商确认');
+    expect(resolveAgentErrorCopy({ category: 'usage_limit' }, en).suggestion).toContain('ask the provider');
+  });
+
+  it('⑤ 普通限流仍渲染灰字行 + 重试', () => {
+    renderCard(makeError({ category: 'rate_limited', httpStatus: 429 }));
+    expect(screen.getByTestId('rate-limited-error-line')).toBeTruthy();
+    expect(screen.getByRole('button', { name: zh.agentError.actions.retry })).toBeTruthy();
+  });
+});
+
 describe('resolveAgentErrorCopy / buildAgentErrorReport', () => {
   it('resolves copy per category with zh i18n', () => {
     expect(resolveAgentErrorCopy({ category: 'concurrency' }, zh).title).toBe('模型账号并发已满');

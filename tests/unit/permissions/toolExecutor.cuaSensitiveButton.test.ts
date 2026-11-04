@@ -91,6 +91,16 @@ function driverListApps() {
   };
 }
 
+/** 内层真类型化（AppSettings['permissions'] 全量覆盖），外层 as 与 FU2 姊妹测试同款（部分 settings）。 */
+function settings(): AppSettings {
+  const permissions: AppSettings['permissions'] = {
+    autoApprove: { read: false, write: false, execute: false, network: false },
+    blockedCommands: [],
+    devModeAutoApprove: false,
+  };
+  return { permissions } as AppSettings;
+}
+
 describe('ToolExecutor cua sensitive button click hand-back (ADR-088 phase 2)', () => {
   let db: Database.Database;
 
@@ -202,7 +212,7 @@ describe('ToolExecutor cua sensitive button click hand-back (ADR-088 phase 2)', 
     const events: Array<{ type: string; data: { id: string } }> = [];
     const insert = vi.fn();
     const island = new OrchestratorPermissionIsland({
-      getSettings: () => ({ permissions: { autoApprove: { read: false, write: false, execute: false, network: false }, blockedCommands: [], devModeAutoApprove: false } } as AppSettings),
+      getSettings: () => settings(),
       isDevModeAutoApproveEnabled: () => false,
       getExecutionTopology: () => 'async_agent',
       hasApprovalUi: () => true,

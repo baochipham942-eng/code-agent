@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { CronJobDefinition, CronJobExecution } from '@shared/contract';
 import { classifyCronFailure, type CronFailurePresentationKind } from '@shared/utils/cronFailureClassification';
 import { ExternalLink, MessageSquareText } from 'lucide-react';
@@ -6,6 +6,7 @@ import { useI18n } from '../../../hooks/useI18n';
 import { useAppStore } from '../../../stores/appStore';
 import { useCronStore } from '../../../stores/cronStore';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
 import { Button } from '../../primitives/Button';
 import {
   formatDateTime,
@@ -49,6 +50,23 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
   const setShowCronCenter = useAppStore((state) => state.setShowCronCenter);
   const [isOpeningSession, setIsOpeningSession] = useState(false);
   const [isRerunning, setIsRerunning] = useState(false);
+  const [stopReason, setStopReason] = useState<{ sessionId: string; text: string } | null>(null);
+  const reasonSessionId = execution && (execution.status === 'interrupted' || execution.status === 'failed')
+    ? execution.sessionId
+    : undefined;
+  useEffect(() => {
+    if (!reasonSessionId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const text = await sessionAutomationClient.getVoidedApprovalReason(reasonSessionId);
+        if (!cancelled && text) setStopReason({ sessionId: reasonSessionId, text });
+      } catch {
+        // 原因只是补充说明；查不到就不显示
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [reasonSessionId]);
 
   if (!execution) {
     return (
@@ -171,6 +189,13 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
         <Info label={cc.execRetryCount} value={String(execution.retryAttempt)} />
         <Info label={cc.colExitCode} value={execution.exitCode != null ? String(execution.exitCode) : '—'} />
       </div>
+
+      {stopReason && stopReason.sessionId === reasonSessionId && (
+        <section className="mt-4" data-testid="cron-exec-stop-reason">
+          <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">{cc.execStopReason}</h5>
+          <p className="text-sm text-zinc-100" data-testid="cron-exec-stop-reason-text">{stopReason.text}</p>
+        </section>
+      )}
 
       {wakeSkip && (
         <section className="mt-4" data-testid="cron-wake-skip-detail">

@@ -5,14 +5,18 @@
 // 上下文表（无槽验收实测 elementFromPoint(发送键中心)=面板本体）。改为 ChatView 列内、
 // composer 正上方的文档流块（对齐 max-w-3xl 列右缘）——参与布局，几何上不可能再压
 // composer 控件；模态遮罩仍在其上（floatingPanel 档）。
+// 2026-11-03（N-BGPANEL-STOP-TERMINAL）：终态行常驻面板直到用户清除（host 不再 3 秒
+// 自动删），running 行给 Stop（走 AGENT_CANCEL）、终态行给 Clear（走 host dismiss）。
+// Stop/Clear 与切前台按钮是兄弟节点，不嵌套（button 里套 button 是非法 HTML）。
 
 import React from 'react';
 import { useSessionStore } from '../../../stores/sessionStore';
-import { Play, CheckCircle, XCircle, Loader2, X } from 'lucide-react';
+import { Play, CheckCircle, XCircle, Loader2, X, Square, Trash2 } from 'lucide-react';
 import type { BackgroundSessionInfo } from '@shared/contract/sessionState';
 import { Z_LAYERS } from '../../../styles/zLayers';
 import { useI18n } from '../../../hooks/useI18n';
 import { BACKGROUND_TASK_CANCELLED, RUN_ERROR_CODE_MAX_ITERATIONS } from '@shared/constants';
+import { IconButton } from '../../primitives';
 
 interface BackgroundTaskLineLabels {
   completed: string;
@@ -52,50 +56,90 @@ function formatBackgroundDuration(startedAt: number, now: number, labels: Durati
   return labels.hours.replace('{n}', String(Math.floor(minutes / 60))).replace('{m}', String(minutes % 60));
 }
 
-const BackgroundSessionItem: React.FC<{
+interface BackgroundSessionItemProps {
   session: BackgroundSessionInfo;
   onForeground: () => void;
+  onStop: () => void;
+  onClear: () => void;
   line: string;
   foregroundAria: string;
-}> = ({ session, onForeground, line, foregroundAria }) => {
+  stopAria: string;
+  clearAria: string;
+}
+
+const BackgroundSessionItem: React.FC<BackgroundSessionItemProps> = ({
+  session,
+  onForeground,
+  onStop,
+  onClear,
+  line,
+  foregroundAria,
+  stopAria,
+  clearAria,
+}) => {
   const statusIcon = {
     running: <Loader2 className="w-4 h-4 animate-spin text-badge-info" />,
     completed: <CheckCircle className="w-4 h-4 text-badge-success" />,
     failed: <XCircle className="w-4 h-4 text-badge-danger" />,
   }[session.status];
+  const isRunning = session.status === 'running';
 
   return (
-    <button
-      onClick={onForeground}
-      aria-label={foregroundAria}
+    <div
       data-testid="background-session-item"
       data-status={session.status}
-      className="w-full flex items-center gap-3 p-3 bg-zinc-700 hover:bg-zinc-600/80 rounded-lg transition-colors text-left"
+      className="flex items-center gap-1 bg-zinc-700 rounded-lg pr-1"
     >
-      {statusIcon}
-      <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-zinc-200 truncate">
-          {session.title}
-        </div>
-        <div className="text-xs text-zinc-400" data-testid="background-session-item-line">
-          {line}
-        </div>
-        {session.progress !== undefined && session.status === 'running' && (
-          <div className="mt-1 h-1 bg-zinc-600 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-blue-500 transition-all duration-300"
-              style={{ width: `${session.progress}%` }}
-            />
+      <button
+        onClick={onForeground}
+        aria-label={foregroundAria}
+        data-testid="background-session-foreground"
+        className="flex-1 min-w-0 flex items-center gap-3 p-3 hover:bg-zinc-600/80 rounded-lg transition-colors text-left"
+      >
+        {statusIcon}
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium text-zinc-200 truncate">
+            {session.title}
           </div>
-        )}
-      </div>
-      <Play className="w-4 h-4 text-zinc-500" />
-    </button>
+          <div className="text-xs text-zinc-400" data-testid="background-session-item-line">
+            {line}
+          </div>
+          {session.progress !== undefined && isRunning && (
+            <div className="mt-1 h-1 bg-zinc-600 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-blue-500 transition-all duration-300"
+                style={{ width: `${session.progress}%` }}
+              />
+            </div>
+          )}
+        </div>
+        <Play className="w-4 h-4 text-zinc-500" />
+      </button>
+      {isRunning ? (
+        <IconButton
+          icon={<Square className="fill-current" />}
+          aria-label={stopAria}
+          data-testid="background-session-stop"
+          variant="danger"
+          size="md"
+          onClick={onStop}
+        />
+      ) : (
+        <IconButton
+          icon={<Trash2 />}
+          aria-label={clearAria}
+          data-testid="background-session-clear"
+          variant="ghost"
+          size="md"
+          onClick={onClear}
+        />
+      )}
+    </div>
   );
 };
 
 export const BackgroundSessionPanel: React.FC = () => {
-  const { backgroundSessions, moveToForeground } = useSessionStore();
+  const { backgroundSessions, moveToForeground, stopBackgroundSession, dismissBackgroundSession } = useSessionStore();
   const { t } = useI18n();
   const [isMinimized, setIsMinimized] = React.useState(false);
   const [now, setNow] = React.useState(() => Date.now());
@@ -111,6 +155,7 @@ export const BackgroundSessionPanel: React.FC = () => {
     return null;
   }
 
+  const runningCount = backgroundSessions.filter((s) => s.status === 'running').length;
   const durationLabels = {
     seconds: t.backgroundPanel.durationSeconds,
     minutes: t.backgroundPanel.durationMinutes,
@@ -124,6 +169,11 @@ export const BackgroundSessionPanel: React.FC = () => {
   };
 
   if (isMinimized) {
+    // 收起胶囊只报 running 数（终态行不算「在跑」，也不转 spinner）；全终态时改报
+    // 已结束条数，用户知道还有结果没清。
+    const pillLabel = runningCount > 0
+      ? t.backgroundPanel.minimizedLabel.replace('{count}', String(runningCount))
+      : t.backgroundPanel.minimizedFinishedLabel.replace('{count}', String(backgroundSessions.length));
     return (
       <div className="w-full shrink-0 chat-col-pad pb-1">
         <div className="mx-auto flex w-full max-w-3xl justify-end">
@@ -134,9 +184,9 @@ export const BackgroundSessionPanel: React.FC = () => {
             className="flex items-center gap-2 px-3 py-2 bg-zinc-700 hover:bg-zinc-600/90 backdrop-blur-sm border border-zinc-700 rounded-full shadow-lg transition-colors"
             style={{ zIndex: Z_LAYERS.floatingPanel }}
           >
-            <Loader2 className="w-4 h-4 animate-spin text-badge-info" />
+            <Loader2 className={`w-4 h-4 text-badge-info ${runningCount > 0 ? 'animate-spin' : ''}`} />
             <span className="text-sm text-zinc-200">
-              {t.backgroundPanel.minimizedLabel.replace('{count}', String(backgroundSessions.length))}
+              {pillLabel}
             </span>
           </button>
         </div>
@@ -170,8 +220,12 @@ export const BackgroundSessionPanel: React.FC = () => {
                   key={session.sessionId}
                   session={session}
                   onForeground={() => moveToForeground(session.sessionId)}
+                  onStop={() => void stopBackgroundSession(session.sessionId)}
+                  onClear={() => void dismissBackgroundSession(session.sessionId)}
                   line={isRunning ? formatBackgroundDuration(session.startedAt, now, durationLabels) : line}
                   foregroundAria={t.backgroundPanel.foregroundAria.replace('{title}', session.title)}
+                  stopAria={t.backgroundPanel.stopAria.replace('{title}', session.title)}
+                  clearAria={t.backgroundPanel.clearAria.replace('{title}', session.title)}
                 />
               );
             })}

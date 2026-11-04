@@ -76,4 +76,17 @@ describe('httpTransport background 通道（web 模式）', () => {
     expect(url).toBe('http://localhost:8180/api/background/tasks');
     expect((init as RequestInit).method).toBe('GET');
   });
+
+  it('background:dismiss-terminal 同样包 {sessionId} 发给 web 路由（N-BGPANEL-STOP-TERMINAL）', async () => {
+    const api = createHttpCodeAgentAPI('http://localhost:8180');
+
+    await api.invoke(IPC_CHANNELS.BACKGROUND_DISMISS_TERMINAL, 'session-1');
+
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://localhost:8180/api/background/dismiss-terminal');
+    const requestInit = init as RequestInit;
+    expect(requestInit.method).toBe('POST');
+    expect(JSON.parse(String(requestInit.body))).toEqual({ sessionId: 'session-1' });
+  });
 });

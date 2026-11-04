@@ -75,5 +75,34 @@ export function createBackgroundRouter(deps: BackgroundRouterDeps): Router {
     res.json({ success: true, data: task });
   });
 
+  // 清除已结束的后台条目（终态行手动清除；running 态 409，不在后台 404）
+  router.post('/background/dismiss-terminal', (req: Request, res: Response) => {
+    const sessionId = readSessionId(req.body);
+    if (!sessionId) {
+      res.status(400).json({
+        success: false,
+        error: { code: 'INVALID_BODY', message: 'sessionId is required.' },
+      });
+      return;
+    }
+
+    const manager = getBackgroundTaskManager();
+    if (!manager.isInBackground(sessionId)) {
+      res.status(404).json({
+        success: false,
+        error: { code: 'BACKGROUND_TASK_NOT_FOUND', message: `Session ${sessionId} is not in background.` },
+      });
+      return;
+    }
+    if (!manager.dismissTerminal(sessionId)) {
+      res.status(409).json({
+        success: false,
+        error: { code: 'BACKGROUND_TASK_NOT_TERMINAL', message: `Session ${sessionId} is still running; stop it before clearing.` },
+      });
+      return;
+    }
+    res.json({ success: true, data: { sessionId } });
+  });
+
   return router;
 }

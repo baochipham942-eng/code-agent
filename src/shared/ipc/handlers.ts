@@ -442,6 +442,7 @@ export interface IpcInvokeHandlers {
   // Background (后台任务)
   [IPC_CHANNELS.BACKGROUND_MOVE_TO_BACKGROUND]: (sessionId: string) => Promise<boolean>;
   [IPC_CHANNELS.BACKGROUND_MOVE_TO_FOREGROUND]: (sessionId: string) => Promise<BackgroundSessionInfo | null>;
+  [IPC_CHANNELS.BACKGROUND_DISMISS_TERMINAL]: (sessionId: string) => Promise<boolean>;
   [IPC_CHANNELS.BACKGROUND_GET_TASKS]: () => Promise<BackgroundSessionInfo[]>;
   [IPC_CHANNELS.BACKGROUND_GET_COUNT]: () => Promise<number>;
 

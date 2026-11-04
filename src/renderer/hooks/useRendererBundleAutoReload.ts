@@ -52,7 +52,10 @@ export function useRendererBundleAutoReload(options: RendererBundleAutoReloadOpt
   } = options;
 
   const runningSessionCount = useSessionStore((state) => state.runningSessionIds.size);
-  const backgroundSessionCount = useSessionStore((state) => state.backgroundSessions.length);
+  // 只数 running 行：终态行（完成/失败/停止）常驻面板直到用户清除，重载不会打断它。
+  const backgroundSessionCount = useSessionStore(
+    (state) => state.backgroundSessions.filter((session) => session.status === 'running').length,
+  );
   const processingSessionCount = useAppStore((state) => state.processingSessionIds.size);
   const isProcessing = useAppStore((state) => state.isProcessing);
   const activeTaskCount = useTaskStore((state) => countActiveTaskStates(state.sessionStates));

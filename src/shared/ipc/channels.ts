@@ -296,6 +296,8 @@ export const BACKGROUND_CHANNELS = {
   MOVE_TO_BACKGROUND: 'background:move-to-background',
   /** 将会话恢复到前台 */
   MOVE_TO_FOREGROUND: 'background:move-to-foreground',
+  /** 清除已结束的后台条目（running 态 no-op，终态行由用户手动清除） */
+  DISMISS_TERMINAL: 'background:dismiss-terminal',
   /** 获取所有后台任务 */
   GET_TASKS: 'background:get-tasks',
   /** 获取后台任务数量 */

@@ -6,7 +6,6 @@
 // 的自动重载：重载不打断任何东西，反而让用户尽早拿到带新面板的 bundle。这里钉
 // backgroundSessionCount 只数 status === 'running' 行。
 
-import React from 'react';
 import { renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RendererBundleStatus } from '@shared/contract';

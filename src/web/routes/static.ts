@@ -95,7 +95,10 @@ export function createStaticRouter(deps: StaticDeps): Router {
       const refusal = refuseTokenPage(req);
       if (refusal) {
         logger.warn(`index.html refused (${refusal.status}): host=${req.headers.host ?? ''} site=${req.get('sec-fetch-site') ?? ''}`);
-        res.status(refusal.status).type('text').send(refusal.message);
+        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'");
+        res.setHeader('X-Frame-Options', 'DENY');
+        res.status(refusal.status).type('html').send(refusal.html);
         return;
       }
     }
@@ -141,13 +144,77 @@ export function createStaticRouter(deps: StaticDeps): Router {
 
 const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '::1']);
 
-function refuseTokenPage(req: Pick<Request, 'headers' | 'get'>): { status: number; message: string } | null {
-  const hostname = (req.headers.host ?? '').replace(/:\d+$/, '').replace(/^\[(.*)\]$/, '$1').toLowerCase();
+const GUARD_PAGE_COPY = {
+  title: 'Agent Neo',
+  heading: '请在新标签页中打开 Agent Neo',
+  crossSiteReason: '出于本机安全保护，Agent Neo 不直接响应从其他网页或聊天链接发起的跳转。',
+  hostReason: '出于本机安全保护，Agent Neo 仅支持通过本机地址（127.0.0.1 或 localhost）直接访问。',
+  guidance: '请复制下面的地址，粘贴到浏览器的新标签页中打开：',
+  openButton: '在新标签页中打开 Agent Neo',
+} as const;
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatLoopbackRootUrl(hostname: string, port: string | number | undefined): string {
+  const hostBracketed = hostname.includes(':') ? `[${hostname}]` : hostname;
+  const portSuffix = port ? `:${port}` : '';
+  return `http://${hostBracketed}${portSuffix}/`;
+}
+
+function renderGuardPageHtml(reason: string, rootAddress: string): string {
+  const safeTitle = escapeHtml(GUARD_PAGE_COPY.title);
+  const safeHeading = escapeHtml(GUARD_PAGE_COPY.heading);
+  const safeReason = escapeHtml(reason);
+  const safeGuidance = escapeHtml(GUARD_PAGE_COPY.guidance);
+  const safeAddress = escapeHtml(rootAddress);
+  const safeButton = escapeHtml(GUARD_PAGE_COPY.openButton);
+
+  return [
+    '<!doctype html><html lang="zh-CN"><head>',
+    '<meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1">',
+    `<title>${safeTitle}</title>`,
+    '<style>',
+    ':root{color-scheme:light dark;--bg:#f8fafc;--card:#ffffff;--text:#0f172a;--muted:#475569;--border:#e2e8f0;--code-bg:#f1f5f9;--btn-bg:#0f172a;--btn-text:#ffffff;}',
+    '@media (prefers-color-scheme:dark){:root{--bg:#0b0f19;--card:#111827;--text:#f8fafc;--muted:#94a3b8;--border:#1e293b;--code-bg:#1e293b;--btn-bg:#f8fafc;--btn-text:#0f172a;}}',
+    '*{box-sizing:border-box;}',
+    'body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;line-height:1.6;}',
+    'main{max-width:520px;width:100%;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:28px 24px;box-shadow:0 4px 12px rgba(0,0,0,0.06);}',
+    'h1{margin:0 0 12px;font-size:20px;font-weight:600;}',
+    'p{margin:0 0 12px;font-size:14px;color:var(--muted);}',
+    'code{display:block;padding:10px 12px;margin:0 0 18px;background:var(--code-bg);border:1px solid var(--border);border-radius:8px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:14px;color:var(--text);user-select:all;word-break:break-all;}',
+    'a.btn{display:inline-block;padding:10px 16px;background:var(--btn-bg);color:var(--btn-text);text-decoration:none;border-radius:8px;font-size:14px;font-weight:500;}',
+    '</style>',
+    '</head><body><main>',
+    `<h1>${safeHeading}</h1>`,
+    `<p>${safeReason}</p>`,
+    `<p>${safeGuidance}</p>`,
+    `<code>${safeAddress}</code>`,
+    `<a class="btn" href="${safeAddress}" target="_blank" rel="noopener">${safeButton}</a>`,
+    '</main></body></html>',
+  ].join('');
+}
+
+function refuseTokenPage(req: Pick<Request, 'headers' | 'get' | 'socket'>): { status: number; html: string } | null {
+  const rawHost = req.headers.host ?? '';
+  const portMatch = rawHost.match(/:(\d+)$/);
+  const hostname = rawHost.replace(/:\d+$/, '').replace(/^\[(.*)\]$/, '$1').toLowerCase();
   if (!LOOPBACK_HOSTNAMES.has(hostname)) {
-    return { status: 421, message: 'Agent Neo only serves this page on 127.0.0.1 / localhost' };
+    const localPort = req.socket?.localPort;
+    const address = formatLoopbackRootUrl('127.0.0.1', localPort);
+    return { status: 421, html: renderGuardPageHtml(GUARD_PAGE_COPY.hostReason, address) };
   }
   if (req.get('sec-fetch-site') === 'cross-site') {
-    return { status: 403, message: 'Open Agent Neo directly instead of from another website' };
+    const port = portMatch ? portMatch[1] : req.socket?.localPort;
+    const address = formatLoopbackRootUrl(hostname, port);
+    return { status: 403, html: renderGuardPageHtml(GUARD_PAGE_COPY.crossSiteReason, address) };
   }
   return null;
 }

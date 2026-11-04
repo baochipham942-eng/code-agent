@@ -169,3 +169,71 @@ describe('parkApproval 参数预览与 argsRef', () => {
     }));
   });
 });
+
+describe('停车审批 password=… 形态脱敏（整份 payload_json）', () => {
+  beforeEach(() => resetPermissionModeManager());
+  afterEach(() => resetPermissionModeManager());
+
+  function parkCommand(command: string): ToolApprovalPayload {
+    const insert = vi.fn();
+    const island = new OrchestratorPermissionIsland({
+      getSettings: () => settings(),
+      isDevModeAutoApproveEnabled: () => false,
+      getExecutionTopology: () => 'main',
+      hasApprovalUi: () => false,
+      onEvent: vi.fn(),
+      injectedPendingApprovalRepo: { insert, resolve: vi.fn(() => 1) } as unknown as PendingApprovalRepository,
+    });
+    getPermissionModeManager().markUnattendedSession('sess-pw');
+    void island.requestPermission({
+      type: 'command', tool: 'Bash', details: { command }, sessionId: 'sess-pw', parentToolUseId: 'toolu_PW',
+    });
+    return parkedPayload(insert);
+  }
+
+  it.each([
+    'mysql -u root --password=hunter2xyz',
+    "curl -d 'password=hunter2xyz' https://x.test",
+    'export password=hunter2xyz',
+    'mysql --password hunter2xyz -u root',
+    'login --pwd: hunter2xyz',
+  ])('%s：payload 整体不含明文，argsPreview 与 argsSummary 均已掩码', (command) => {
+    const payload = parkCommand(command);
+    expect(JSON.stringify(payload)).not.toContain('hunter2xyz');
+    expect(payload.argsPreview).toContain('***REDACTED***');
+    expect(payload.argsSummary).toContain('***REDACTED***');
+  });
+
+  it('argsSummary 此前完全未脱敏：Bearer 也不再明文落盘', () => {
+    const payload = parkCommand('curl -H "Authorization: Bearer abcdefghijklmno" https://x.test');
+    expect(JSON.stringify(payload)).not.toContain('abcdefghijklmno');
+  });
+
+  it.each([
+    'echo password policy',
+    'grep -r password src/',
+    'echo $TOKEN',
+    'const token = getToken()',
+    'token: string',
+    'apiKey: options.apiKey,',
+    'const token = this.token;',
+    'password: req.body.password',
+    'secret = config.secret',
+    'password: hashed_password',
+    'token: TokenType;',
+  ])('无误伤：%s 预览与摘要保持原样', (command) => {
+    const payload = parkCommand(command);
+    expect(payload.argsPreview).toBe(command);
+    expect(payload.argsSummary).toBe(command);
+  });
+});
+
+describe('关键字脱敏不进共享 registry（工具结果/历史/日志不被改写）', () => {
+  it('redactSecrets 对源码形态与 password=… 都保持原样，仅 redactCommandSecrets 掩码', async () => {
+    const { redactSecrets, redactCommandSecrets } = await import('../../../src/host/security/secretRedaction');
+    for (const text of ['apiKey: options.apiKey,', 'password=hunter2xyz', 'mysql --password=hunter2xyz']) {
+      expect(redactSecrets(text)).toBe(text);
+    }
+    expect(redactCommandSecrets('mysql --password=hunter2xyz')).toBe('mysql --password=***REDACTED***');
+  });
+});

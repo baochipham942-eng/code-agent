@@ -84,8 +84,10 @@ export interface ParkedApprovalInboxItem {
   displayTool?: string;
   /** epoch ms，UI 算等待时长 */
   requestedAt: number;
-  /** pending=可批准/拒绝；orphaned=应用重启后过期，灰态不可操作 */
-  status: 'pending' | 'orphaned';
+  /** pending=可批准/拒绝；orphaned=应用重启后过期，灰态不可操作；voided=重启后被自动作废（留痕只读） */
+  status: 'pending' | 'orphaned' | 'voided';
+  /** voided 专用：一句大白话作废原因（describeParkedApprovalClosure） */
+  voidReason?: string;
   riskClass?: string | null;
   /** B4 授权目标精确串；非空 = 可铸造 target 粒度长期授权（出「每次都允许发 <target>」按钮） */
   standingGrantTarget?: string | null;

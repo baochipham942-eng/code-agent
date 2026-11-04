@@ -25,6 +25,16 @@ export const MCP_TIMEOUTS = {
   FIRST_RUN: 180_000,
   /** 工具调用重试超时 */
   TOOL_RETRY: 30_000,
+  /**
+   * 工具调用默认预算（60s→120s）：慢连接器操作（如大导出）不再一分钟被杀，
+   * 静默连接器最多等满两分钟。显式传 timeoutMs 的调用方不受影响。
+   */
+  CALL_TOOL: 120_000,
+  /**
+   * CALL_TOOL 进度续期总上限：连接器每报一次进度，本地看门狗按基础预算重挂一次，
+   * 但整个调用（含所有续期）不超过该值——永远报进度的连接器到点仍被切断。
+   */
+  CALL_TOOL_MAX_TOTAL: 10 * 60_000,
   /** 空闲 MCP 连接回收默认等待时间。活动请求和 durable task lease 会豁免回收。 */
   IDLE_REAP_TTL: 5 * 60_000,
   /** 空闲 MCP 连接回收扫描间隔。 */
@@ -34,6 +44,14 @@ export const MCP_TIMEOUTS = {
    * run 中途异常中断、始终不进 completed/failed/cancelled 终态时，租约本该自然过期）。
    */
   DURABLE_LEASE_FALLBACK_TTL: 30 * 60_000,
+  /** 连接器 HTTP 429：无 Retry-After 头时的指数退避基数 */
+  RATE_LIMIT_RETRY_BASE: 400,
+  /** 连接器 HTTP 429：遵守服务器 Retry-After 的上限，超过则不等待、直接把等待秒数作为出路返回 */
+  RATE_LIMIT_RETRY_AFTER_CAP: 60_000,
+  /** 连接器 HTTP 429：无头退避的抖动比例（±25%；服务器给了头就不抖动） */
+  RATE_LIMIT_JITTER_RATIO: 0.25,
+  /** 连接器 HTTP 429：单次工具调用内的最大重试次数（不含首发） */
+  RATE_LIMIT_MAX_RETRIES: 2,
 } as const;
 
 /** DAG 调度器配置 */
@@ -74,6 +92,10 @@ export const SERVICE_TIMEOUTS = {
   LIFECYCLE: 30_000,
   /** 引导程序 */
   BOOTSTRAP: 30_000,
+} as const;
+
+export const NOTIFICATION_BUDGET = {
+  WINDOW_MS: 15 * 60_000,
 } as const;
 
 /** 用户交互超时 */
@@ -240,6 +262,16 @@ export const BROWSER_TIMEOUTS = {
   WAIT_DEFAULT: 1_000,
   /** Computer Use 等待超时 */
   COMPUTER_USE_WAIT: 5_000,
+  /**
+   * 命名池条目不在使用中、且空闲达到此时长，池满时才允许回收。
+   * 与 surface 租约 TTL 同为 30 分钟。
+   */
+  POOL_IDLE_RECLAIM: 30 * 60_000,
+  /**
+   * 使用中的托管浏览器租约可越过 TTL 续期的上限（距上次心跳）。
+   * 防止进程崩溃后 binding 永不释放而租约永远不过期。
+   */
+  LEASE_IN_USE_CEILING: 4 * 60 * 60_000,
 } as const;
 
 /** artifact_runnable 断言家族超时（浏览器类走 GAME_VALIDATION_TIMEOUTS / ARTIFACT_PREVIEW_HEALTH） */
@@ -430,6 +462,19 @@ export function getToolExecutionTimeoutMs(toolName: string): number | undefined 
   return TOOL_EXECUTION_TIMEOUTS.DEFAULT;
 }
 
+/**
+ * How long one browser tool call blocks while the user holds the live view
+ * (`waiting_human`). The human-takeover control timer stays 5 minutes and is
+ * not this value. `browser_action` is on the default tool inactivity budget
+ * (`getToolExecutionTimeoutMs` → 120_000) and the executor aborts the call at
+ * that budget, so the wait cap stays under it. A blocked call then returns one
+ * `SURFACE_SESSION_BUSY` instead of being killed first as a tool timeout.
+ */
+export const BROWSER_HUMAN_TAKEOVER_WAIT = {
+  POLL_INTERVAL_MS: 100,
+  CAP_MS: 100_000,
+} as const;
+
 // 有不可重放副作用的原生工具：多数只在启动前查一次 abortSignal，外层 inactivity 超时
 // 触发时副作用可能已经完成。这类工具的超时结果必须标 outcome-unknown（模型先核实状态
 // 再决定是否重试），否则模型把超时当失败直接重试会重复发送/重复创建（mail_send、
@@ -543,6 +588,8 @@ export const TOOL_TIMEOUT_THRESHOLDS: Record<string, number> = {
  * 失败处置分档：transient → 指数退避重试 → 连败停用；permanent → 首次即停用并告知用户。
  */
 export const CRON_GUARDRAILS = {
+  /** 跨 webServer 进程重新读取 cron_jobs 的周期；只对账，不创建第二套调度器。 */
+  JOB_RECONCILE_TICK_MS: 5_000,
   /**
    * 循环任务触发前的随机 jitter 窗口下限 (ms)。分钟级任务保持原有的秒级抖动，
    * 窗口随周期放大（见 FIRE_JITTER_PERIOD_RATIO）但不会低于此值。
@@ -552,6 +599,8 @@ export const CRON_GUARDRAILS = {
   FIRE_JITTER_PERIOD_RATIO: 0.1,
   /** jitter 窗口上限 (ms)：天级任务也不会被推迟超过 15 分钟 */
   FIRE_JITTER_MAX_MS: 15 * 60_000,
+  /** 显式 cron 表达式的 jitter 上限 (ms)：保持用户选定的分钟响应及时。 */
+  FIRE_JITTER_CRON_MAX_MS: 30_000,
   /** 循环任务连续失败达到此次数后自动停用（防静默烧钱死循环）——退避 exhausted 后的最终停用档 */
   MAX_CONSECUTIVE_FAILURES: 5,
   /** 失败退避基数：第 n 次重试前等待 min(BASE × FACTOR^(n-1), MAX_INTERVAL) */
@@ -615,6 +664,16 @@ export const WEB_SERVER_SHUTDOWN_TIMEOUTS = {
 } as const;
 
 /**
+ * connector_required 连接卡判读前的 CLI 状态探测等待（N-CONNECTOR-POLISH-AUDIT-FU1-FU2）。
+ * 轮级缓存冷（开机后首张卡）时，发卡点先等在途/新起一次 CLI 状态探测这么多毫秒；
+ * 到点或失败保持 fail-open（不发卡）但 warn 出可区分原因。只有本轮声明了 CLI
+ * 连接器且缓存缺它的条目才会等——没有 CLI 声明或缓存已暖时零额外探测。
+ */
+export const CONNECTOR_CARD_TIMEOUTS = {
+  CLI_STATUS_PROBE_WAIT_MS: 3_000,
+} as const;
+
+/**
  * CLI durable run 终态落库重试（N-CLI-DURABLE-TERMINAL-LOST）：夜巡 8 进程共库时
  * terminalCLIDurableRun 两次零退避重试全灭、run 永远停在非终态（exit 0 会话遗留 78 条）。
  * 仓储层已有 IMMEDIATE+busy 重试；这组是 CLI 退出前的最后一道：busy 类错误带退避重试，
@@ -625,4 +684,16 @@ export const CLI_DURABLE_TERMINAL = {
   RETRY_ATTEMPTS: 5,
   /** 退避基数（毫秒）：第 n 次重试前等待 BASE << (n-1) */
   RETRY_BACKOFF_BASE_MS: 200,
+} as const;
+
+/** Neo 托管判官（N-JEV-NEO-KEY）客户端退避时长 */
+export const JEV_HOSTED_TIMEOUTS = {
+  /** 持续性服务故障（401/404/5xx/网络/超时）后短退避：避免每次判官调用都先付一次云端往返再降级 */
+  SERVICE_FAILURE_BACKOFF: 5 * 60_000,
+} as const;
+
+/** 自动化页「待过目」收件箱的后台刷新（N-CRON-REVIEW-COUNT-LIVE） */
+export const CRON_REVIEW_INBOX_TIMEOUTS = {
+  /** 页面可见时的轮询间隔：定时任务在页面停着时跑完，数字无需切页就更新 */
+  POLL_INTERVAL: 10_000,
 } as const;

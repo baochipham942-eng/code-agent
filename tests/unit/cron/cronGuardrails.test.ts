@@ -82,12 +82,12 @@ function getInternalCronInstance(service: CronService, jobId: string): Cron | un
   return jobs.get(jobId)?.cronInstance;
 }
 
-describe('cron 触发 jitter（防惊群，窗口按周期取）', () => {
+describe('cron 触发 jitter（防惊群，every 按周期取，cron capped at 30s）', () => {
   it('一次性 at 任务不抖动', () => {
     expect(computeCronFireJitterMs({ type: 'at', datetime: 0 }, () => 0.999)).toBe(0);
   });
 
-  it('every/cron 任务抖动落在 [0, 窗口) 内：窗口 = clamp(周期×10%, 2s, 15min)', () => {
+  it('every/cron 任务抖动落在各自窗口内', () => {
     // 分钟级任务（60s 周期）：窗口 6s（秒级抖动）
     const minuteSchedule = { type: 'every', interval: 1, unit: 'minutes' } as const;
     expect(computeCronFireJitterMs(minuteSchedule, () => 0)).toBe(0);
@@ -99,6 +99,11 @@ describe('cron 触发 jitter（防惊群，窗口按周期取）', () => {
     expect(computeCronFireJitterMs(hourSchedule, () => 0.999)).toBe(
       Math.floor(0.999 * 60 * 60_000 * CRON_GUARDRAILS.FIRE_JITTER_PERIOD_RATIO),
     );
+    // every 6 hours keeps the existing minute-level window, capped at 15min.
+    const sixHourSchedule = { type: 'every', interval: 6, unit: 'hours' } as const;
+    expect(computeCronFireJitterMs(sixHourSchedule, () => 0.999)).toBe(
+      Math.floor(0.999 * CRON_GUARDRAILS.FIRE_JITTER_MAX_MS),
+    );
     // 天级任务：封顶 15min
     const daySchedule = { type: 'every', interval: 1, unit: 'days' } as const;
     expect(computeCronFireJitterMs(daySchedule, () => 0.999)).toBe(
@@ -109,9 +114,13 @@ describe('cron 触发 jitter（防惊群，窗口按周期取）', () => {
     expect(computeCronFireJitterMs(tinySchedule, () => 0.999)).toBe(
       Math.floor(0.999 * CRON_GUARDRAILS.FIRE_JITTER_MIN_MS),
     );
-    // cron 表达式任务按表达式最小间隔取窗口（每小时的 0 分 → 6min 窗口）
+    // cron 表达式任务最多只抖动 30s，即使表达式是每天固定分钟。
+    const dailyCron = { type: 'cron', expression: '0 9 * * *' } as const;
+    expect(computeCronFireJitterMs(dailyCron, () => 0.999)).toBe(
+      Math.floor(0.999 * CRON_GUARDRAILS.FIRE_JITTER_CRON_MAX_MS),
+    );
     expect(computeCronFireJitterMs({ type: 'cron', expression: '0 * * * *' }, () => 0.5)).toBe(
-      Math.floor(0.5 * 60 * 60_000 * CRON_GUARDRAILS.FIRE_JITTER_PERIOD_RATIO),
+      Math.floor(0.5 * CRON_GUARDRAILS.FIRE_JITTER_CRON_MAX_MS),
     );
   });
 });

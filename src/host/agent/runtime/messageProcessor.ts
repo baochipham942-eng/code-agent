@@ -31,6 +31,7 @@ import type { ContextAssembly } from './contextAssembly';
 import type { RunFinalizer } from './runFinalizer';
 import type { ToolExecutionEngine } from './toolExecutionEngine';
 import { generateMessageId } from '../../../shared/utils/id';
+import { getAttachmentId } from '../../../shared/utils/messageAttachments';
 import { getSessionManager } from '../../services';
 import { extractArtifacts } from '../artifactExtractor';
 import { handleDeclareDeliverablesGate } from './declareDeliverablesGate';
@@ -73,6 +74,7 @@ import { wasMessagePersistedByContextAssembly } from './contextAssembly/systemCo
 import { shouldEndRunForPlanApproval } from './planApprovalRunBoundary';
 import { isWriteBlockedDuringPlanExitFallback } from './planExitFallback';
 import { persistCancelledToolCallClosures } from './cancelledToolCallClosure';
+import { settleSteerDuringToolExecution } from './staleIntentSteer';
 import { emitArtifactRepairStopError } from './artifactRepairStopError';
 import { ensureUniqueToolCallIds } from './toolCallIdUniqueness';
 const logger = createLogger('MessageProcessor');
@@ -442,7 +444,11 @@ export class MessageProcessor {
     const latestUserContent = latestUserMessage?.content;
     const hasAppshotEvidence =
       (typeof latestUserContent === 'string' && latestUserContent.includes('<appshot')) ||
-      latestUserMessage?.attachments?.some((attachment) => attachment.id.startsWith('appshot-')) ||
+      // 缺 id 的历史附件（持久化/回放脏数据，后台槽会继承主会话历史）必须走
+      // getAttachmentId 兜底——裸 `attachment.id.startsWith` 曾让一条脏附件炸穿
+      // 整轮纯文本收尾（2026-08-07 converter.ts 同型事故；realrun20 07/08 占位
+      // 子代理 `reading 'startsWith'` 失败的落点就是这里）。
+      latestUserMessage?.attachments?.some((attachment) => getAttachmentId(attachment).startsWith('appshot-')) ||
       false;
     const desktopClaimGate = applyDesktopActionClaimGate({
       recentUserMessages: collectRecentUserTexts(this.ctx.messages),
@@ -808,22 +814,12 @@ export class MessageProcessor {
     // h2A 实时转向
     if (this.ctx.turn.needsReinference) {
       this.ctx.turn.clearReinference();
-      logger.info('[AgentLoop] Steer detected during tool execution — saving results and re-inferring');
-      if (toolResults.length > 0) {
-        const partialResults = sanitizeToolResultsForHistoryWithCalls(toolResults, toolCalls);
-        const partialToolMessage: Message = {
-          id: this.contextAssembly.generateId(),
-          role: 'tool',
-          content: JSON.stringify(partialResults),
-          timestamp: Date.now(),
-          toolResults: partialResults,
-        };
-        await this.contextAssembly.addAndPersistMessage(partialToolMessage);
-        this.applyDeferredSkillActivations(toolResults);
-      }
-      this.ctx.onEvent({
-        type: 'interrupt_acknowledged',
-        data: { message: '已收到新指令，正在调整方向...' },
+      await settleSteerDuringToolExecution({
+        ctx: this.ctx,
+        contextAssembly: this.contextAssembly,
+        toolResults,
+        toolCalls,
+        applyDeferredSkillActivations: (results) => this.applyDeferredSkillActivations(results),
       });
       return 'continue';
     }

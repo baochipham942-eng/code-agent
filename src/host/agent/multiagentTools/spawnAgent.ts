@@ -47,6 +47,7 @@ import { checkReadonlyParentRule, type ParentContext } from '../childContext';
 import { getPermissionModeManager } from '../../permissions/modes';
 import { getSpawnGuard } from '../spawnGuard';
 import { bindFileOwnershipReleaseHook } from '../../services/infra/fileOwnershipRegistry';
+import { bindBrowserPoolReleaseHook } from '../../services/infra/browserPool';
 import { routeFailureCode } from '../../../shared/contract/cancellation';
 import {
   AgentFailureCode,
@@ -113,6 +114,8 @@ export async function executeSpawnAgent(
 
     const guard = getSpawnGuard();
     bindFileOwnershipReleaseHook(guard);
+    // Legacy pool keys are the agent id. Release that entry when the agent finishes.
+    bindBrowserPoolReleaseHook(guard);
 
     // ========================================================================
     // spawn 嵌套深度截断（执行层防线）

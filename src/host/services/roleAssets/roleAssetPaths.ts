@@ -86,6 +86,11 @@ export function getRoleFirstWakePath(roleId: string): string {
   return path.join(getRoleDir(roleId), ROLE_ASSETS.FIRST_WAKE_FILENAME);
 }
 
+/** 每日醒来的外部增量提议：roles/<roleId>/wake-proposals.json */
+export function getRoleWakeProposalsPath(roleId: string): string {
+  return path.join(getRoleDir(roleId), ROLE_ASSETS.WAKE_PROPOSALS_FILENAME);
+}
+
 /** 角色工作履历：roles/<roleId>/history.md */
 export function getRoleHistoryPath(roleId: string): string {
   return path.join(getRoleDir(roleId), ROLE_ASSETS.HISTORY_FILENAME);

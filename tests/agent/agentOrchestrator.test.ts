@@ -326,8 +326,12 @@ vi.mock('../../src/host/services/infra/browserService.js', () => ({
 vi.mock('../../src/host/services/infra/browserPool.js', () => ({
   browserPool: {
     acquire: vi.fn(() => browserMocks.service),
+    setInUse: vi.fn(),
+    releaseAgent: vi.fn(async () => undefined),
   },
   getBrowserService: vi.fn(() => browserMocks.service),
+  bindBrowserPoolReleaseHook: vi.fn(),
+  BrowserPoolBusyError: class BrowserPoolBusyError extends Error {},
 }));
 
 // Mock cloud config service
@@ -353,6 +357,8 @@ import { getToolSearchService } from '../../src/host/services/toolSearch/toolSea
 import { createWorkspaceScope } from '../../src/host/runtime/workspaceScope';
 import { resolveToolPermissionClassification } from '../../src/host/tools/toolPermissionClassification';
 import { TaskManager } from '../../src/host/task/TaskManager';
+import { applyTurnSystemContext } from '../../src/host/agent/orchestratorTurnContext';
+import { extractUserRequest } from '../../src/shared/utils/turnScaffold';
 import {
   beginVoiceDispatch,
   dispatchVoiceIntent,
@@ -515,6 +521,72 @@ describe('AgentOrchestrator', () => {
       await expect(AgentOrchestrator.prototype.sendMessage.call(ingress as unknown as AgentOrchestrator,
         'I am back', undefined, options)).rejects.toThrow('after user ingress');
       expect(cancelTimeWakesOnUserReturn).toHaveBeenCalledWith('return-session', options);
+    });
+
+    it('每个入站 turn 开头重置短档会话的累计 no-wait 预算', async () => {
+      const { grantShortTierWait, settleShortTierWait } = await import('../../src/host/tools/shell/foregroundTier');
+      const ingress = {
+        permissions: { drainPendingPermissions: vi.fn() },
+        configService: { getSettings: () => ({}) },
+        resolveSessionId: async () => 'budget-session',
+        generateId: () => 'user-message',
+        applyHistoryVisibility: () => { throw new Error('after user ingress'); },
+        executeMessage: (AgentOrchestrator.prototype as unknown as {
+          executeMessage: (...args: unknown[]) => Promise<void>;
+        }).executeMessage,
+      };
+      settleShortTierWait('budget-session', 10_000);
+      expect(grantShortTierWait('budget-session', 5_000).refusal).toBeTruthy();
+      await expect(AgentOrchestrator.prototype.sendMessage.call(ingress as unknown as AgentOrchestrator,
+        'turn 2', undefined, { mode: 'normal' as const })).rejects.toThrow('after user ingress');
+      expect(grantShortTierWait('budget-session', 5_000)).toEqual({ timeout: 5_000 });
+    });
+
+    // N-CHANNEL-REPLY-BREVITY ①：IM 回复纪律只在推理期进模型面请求——channel 来源
+    // （messageMetadata.channel）把指令块并进 turnSystemContext（applyTurnSystemContext
+    // → <user_request> 包裹 + AgentLoop 的 modelFacingUserMessage 投影），落库/展示的
+    // 用户消息仍是原话；桌面 turn（无 metadata.channel）完全不注入。
+    it('injects the IM reply-style instruction for channel turns only, never into the stored user message', async () => {
+      vi.stubEnv('EVAL_DISABLED', 'true');
+      try {
+        const drive = async (messageMetadata?: { channel: Record<string, unknown> }) => {
+          const stored: Message[] = [];
+          const captured: { options?: AgentRunOptions } = {};
+          const ingress = {
+            permissions: { drainPendingPermissions: vi.fn() },
+            configService: { getSettings: () => ({}), getApiKey: vi.fn(() => 'test-key') },
+            resolveSessionId: async () => null,
+            generateId: () => `crb-${stored.length}`,
+            applyHistoryVisibility: (m: Message) => m,
+            addMessage: (m: Message) => { stored.push(m); },
+            runNormalMode: async (_content: string, _onEvent: unknown, _modelConfig: unknown, _sessionId: unknown, runOptions: AgentRunOptions) => {
+              captured.options = runOptions;
+            },
+          };
+          await (AgentOrchestrator.prototype as unknown as {
+            executeMessage: (this: unknown, ...args: unknown[]) => Promise<void>;
+          }).executeMessage.call(ingress, 'do it', undefined, { mode: 'normal', disableAutoAgent: true }, messageMetadata, undefined, true);
+          return { stored, captured };
+        };
+
+        const channel = await drive({ channel: { platform: 'feishu', chatId: 'c1' } });
+        expect(channel.stored[0].content).toBe('do it');
+        expect(channel.stored[0].content).not.toContain('[IM 回复纪律]');
+        const channelBlocks = channel.captured.options?.turnSystemContext ?? [];
+        expect(channelBlocks.some((block) => block.includes('[IM 回复纪律]'))).toBe(true);
+        // 模型面请求：指令块在 <user_request> 包裹之外，用户原话可无损拆回
+        const modelFacing = applyTurnSystemContext('do it', channel.captured.options, null, () => null);
+        expect(modelFacing).toContain('[IM 回复纪律]');
+        expect(modelFacing).toContain('<user_request>');
+        expect(extractUserRequest(modelFacing)).toBe('do it');
+
+        const desktop = await drive(undefined);
+        expect(desktop.stored[0].content).toBe('do it');
+        expect(desktop.captured.options?.turnSystemContext).toBeUndefined();
+        expect(applyTurnSystemContext('do it', desktop.captured.options, null, () => null)).toBe('do it');
+      } finally {
+        vi.unstubAllEnvs();
+      }
     });
 
     it('releases deferred-tool holds when a normal run ends', async () => {
@@ -1403,6 +1475,36 @@ describe('AgentOrchestrator', () => {
       expect(queuedInputMocks.enqueue).not.toHaveBeenCalled();
     });
 
+    it('转向时作废打开的交互审批卡，之后再点允许不会执行', async () => {
+      const steer = vi.fn(async () => {
+        expect(perm(orchestrator).listPendingRequests()).toEqual([]);
+      });
+      internals(orchestrator).agentLoop = { steer };
+      const pending = perm(orchestrator).requestPermission({
+        type: 'file_delete',
+        tool: 'Bash',
+        sessionId: 'test-session-id',
+        details: { command: 'rm b.txt' },
+        forceConfirm: true,
+      } as unknown as Parameters<PermissionInternals['requestPermission']>[0]);
+      const [request] = perm(orchestrator).listPendingRequests();
+      expect(request?.id).toBeTruthy();
+
+      await orchestrator.interruptAndContinue('stop deleting');
+
+      expect(steer).toHaveBeenCalledOnce();
+      expect(mockOnEvent).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'permission_request',
+        data: expect.objectContaining({
+          id: request!.id,
+          resolved: true,
+          decision: 'superseded',
+        }),
+      }));
+      expect(orchestrator.handlePermissionResponse(request!.id, 'allow')).toBe('unknown_request');
+      await expect(pending).resolves.toEqual({ approved: false, denialSource: 'cancelled' });
+    });
+
     it('live steer 在 run settled 后降级写入 durable queue 并返回 queued outcome', async () => {
       const steer = vi.fn().mockRejectedValue(new SteerRejectedError());
       internals(orchestrator).agentLoop = { steer };
@@ -2046,6 +2148,75 @@ describe('AgentOrchestrator', () => {
       });
 
       expect(granted).toEqual({ approved: false, denialSource: 'fail-closed' });
+    });
+  });
+
+  describe('morning brief save-draft role mail tool gate', () => {
+    const ROLE = 'save-draft-role';
+
+    function registerRole(tools: string[]): void {
+      setCustomAgentMapForTest(new Map([[
+        ROLE,
+        {
+          id: ROLE as never,
+          name: ROLE,
+          description: 'd',
+          prompt: 'p',
+          tools,
+          model: 'balanced',
+          maxIterations: 5,
+          readonly: false,
+          source: 'user',
+        },
+      ]]));
+    }
+
+    async function runSaveDraft(roleId?: string): Promise<string[] | undefined> {
+      const { withSessionCommandCenterBrain } = await import('../../src/host/app/sessionCommandCenterBrain');
+      const options = withSessionCommandCenterBrain(roleId ? { agentOverrideId: roleId } : undefined, '存草稿 1');
+      await (orchestrator as unknown as {
+        runStandardAgentLoop(
+          content: string,
+          onEvent: (e: AgentEvent) => void,
+          modelConfig: unknown,
+          sessionId?: string,
+          executionContent?: string,
+          toolScope?: unknown,
+          executionIntent?: unknown,
+          options?: AgentRunOptions,
+        ): Promise<void>;
+      }).runStandardAgentLoop(
+        '存草稿 1', mockOnEvent, { provider: 'deepseek', model: 'deepseek-chat' },
+        'save-draft-role-session', undefined, undefined, undefined, options as AgentRunOptions,
+      );
+      return lastAgentLoopConfig()?.allowedToolNames;
+    }
+
+    afterEach(() => {
+      setCustomAgentMapForTest(new Map());
+    });
+
+    it.each(['off', 'on'] as const)('removes mail_draft for a no-mail role with the standing boundary %s', async (boundary) => {
+      registerRole(['Read']);
+      if (boundary === 'on') {
+        roleBoundaryProbe.mockReturnValue({
+          boundaryText: '不允许对外发送',
+          allowedTools: ['Read'],
+          blockedTools: [],
+        });
+      }
+
+      expect(await runSaveDraft(ROLE)).not.toContain('mail_draft');
+    });
+
+    it.each([['mail_draft'], ['mail']])('keeps exactly one mail_draft for a role declaring %s', async (mailTool) => {
+      registerRole(['Read', mailTool]);
+
+      expect((await runSaveDraft(ROLE))?.filter((tool) => tool === 'mail_draft')).toHaveLength(1);
+    });
+
+    it('keeps exactly one mail_draft when no role is resolved', async () => {
+      expect((await runSaveDraft())?.filter((tool) => tool === 'mail_draft')).toHaveLength(1);
     });
   });
 

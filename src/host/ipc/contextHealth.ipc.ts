@@ -10,6 +10,11 @@ import { CompressionState } from '../context/compressionState';
 import { getContextEventLedger } from '../context/contextEventLedger';
 import { estimateTokens } from '../context/tokenEstimator';
 import { compactMessagesWithSummary } from '../context/compactionService';
+import { getContextInterventionState } from '../context/contextInterventionState';
+import {
+  commitCompactedMessagesKeepingPinned,
+  redactExcludedMessagesForCompaction,
+} from '../context/compactionIntervention';
 import { getCompactModelInfo, resetCompactModel } from '../context/compactModel';
 import {
   type ContextCompressionChannelState,
@@ -503,10 +508,11 @@ async function compactSessionOnce(
 
   const systemPrompt = resolveSystemPromptForSession(deps, sessionId);
   const modelConfig = resolveModelConfigForSession(appService, sessionId);
+  const interventions = getContextInterventionState().getEffectiveSnapshot(sessionId);
   const compaction = await compactMessagesWithSummary({
     sessionId,
     source: options.messageId ? 'manual_from_message' : 'manual_current',
-    messages,
+    messages: redactExcludedMessagesForCompaction(messages, interventions),
     anchorMessageId,
     preserveRecentCount: compressionConfig.preserveRecentCount,
     systemPrompt,
@@ -538,7 +544,12 @@ async function compactSessionOnce(
     } satisfies CompactResult;
   }
 
-  const newMessages = compaction.newMessages;
+  const newMessages = commitCompactedMessagesKeepingPinned(
+    messages,
+    compaction.newMessages,
+    compaction.block.compactedMessageCount,
+    interventions,
+  );
   const afterTokens = compaction.afterTokens;
   const savedTokens = compaction.savedTokens;
   const afterPercent = maxTokens > 0 ? Math.round((afterTokens / maxTokens) * 1000) / 10 : 0;

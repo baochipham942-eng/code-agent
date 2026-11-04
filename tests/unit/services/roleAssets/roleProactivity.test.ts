@@ -88,6 +88,10 @@ vi.mock('@host/session/sessionEventService', () => ({
 vi.mock('../../../../src/host/agent/agentRegistry', () => ({
   resolveAgent: () => undefined,
 }));
+// 能力中心：默认无已连接源（外部增量段不进 prompt；带源行为见 roleWakeFindWork.test.ts）
+vi.mock('../../../../src/host/services/capabilities/capabilityCenterService', () => ({
+  getCapabilityCenterService: () => ({ listCapabilities: async () => ({ items: [] }) }),
+}));
 
 // hooks：RoleWake 事件 fire-and-forget，测试中不关心
 vi.mock('../../../../src/host/hooks', () => ({

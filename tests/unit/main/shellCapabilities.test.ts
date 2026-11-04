@@ -127,9 +127,18 @@ describe('shell capabilities', () => {
   it.each([
     ['domain:desktop', 'getAudioCaptureStatus'],
     ['domain:workspace', 'inspectArchive'],
+    ['domain:workspace', 'readTextPreview'],
+    ['domain:workspace', 'previewHeic'],
+    ['domain:workspace', 'previewLegacyOffice'],
   ])('keeps %s/%s low: 只读首词压过词中写动词', (domain, action) => {
     expect(getShellCapabilities().find((capability) => (
       capability.id === makeShellCapabilityId(domain, action)
+    ))).toMatchObject({ risk: 'low' });
+  });
+
+  it('keeps classifyPreviewFile low without adding a verb-table word', () => {
+    expect(getShellCapabilities().find((capability) => (
+      capability.id === makeShellCapabilityId('domain:workspace', 'classifyPreviewFile')
     ))).toMatchObject({ risk: 'low' });
   });
 

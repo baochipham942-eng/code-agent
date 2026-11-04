@@ -11,7 +11,7 @@ import type {
   DeepResearchConfig,
 } from './types';
 import type { ModelRouter } from '../model/modelRouter';
-import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../shared/constants';
+import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('ResearchPlanner');
@@ -125,9 +125,10 @@ export class ResearchPlanner {
     const planPrompt = this.buildPlanPrompt(topic, config);
 
     try {
+      const sessionDefault = resolveSessionDefaultModelConfig();
       const response = await this.modelRouter.chat({
-        provider: (config.modelProvider as 'deepseek' | 'openai' | 'claude' | 'openrouter') ?? DEFAULT_PROVIDER,
-        model: config.model ?? DEFAULT_MODEL,
+        provider: (config.modelProvider as 'deepseek' | 'openai' | 'claude' | 'openrouter') ?? sessionDefault.provider,
+        model: config.model ?? sessionDefault.model,
         messages: [{ role: 'user', content: planPrompt }],
         maxTokens: 2000,
       });

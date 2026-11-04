@@ -966,9 +966,9 @@ export function initSupabase(url: string, anonKey: string): SupabaseClient<Datab
         },
         removeItem: async (key) => {
           secureStorage.removeItem(key);
-          // supabase-js 会在 refresh token 失效时自动 removeItem。这里仅清本槽的本地
-          // session，保留 Keychain 副本用于明确的 sessionExpired/重连语义；只有
-          // AuthService.signOut() 的用户显式登出路径才允许删除 Keychain 条目。
+          // auth-js _removeSession：不可重试的 refresh 失败会 removeItem，宣告 session 已死。
+          // 必须同时清 Keychain，否则下一次 getItem 会把失效 token 写回并再次刷新。
+          if (isSupabaseSessionKey(key)) await secureStorage.clearSessionFromKeychain();
         },
       },
       autoRefreshToken: true,

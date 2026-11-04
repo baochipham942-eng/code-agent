@@ -23,6 +23,14 @@ export interface RunToolPolicy {
   readonly deniedToolNames?: readonly string[];
   readonly allowedToolNames?: readonly string[];
   readonly toolScope?: WorkbenchToolScope;
+  /**
+   * strict skill 流程面（create-role/edit-role 等）的 canonical 工具名：
+   * 白名单判定的合法补充（同 toolScope 档，不放宽显式 deny）。
+   * 用户显式进入的严格流程自带更紧的工具边界，它的必备工具（如 propose_role）
+   * 不该被前台 brain 的通用白名单静默裁掉——裁掉后模型只能念稿停摆（FB-327）。
+   * 名字由调用方用 canonicalStrictBoundaryToolNames 归一后传入。
+   */
+  readonly skillBoundaryAllowedTools?: readonly string[];
 }
 
 function normalizeRunPolicyToolName(name: string): string {
@@ -63,8 +71,21 @@ export function isToolDeniedByRunPolicy(policy: RunToolPolicy, toolName: string)
   const allowed = allowedToolSet(policy);
   const allowedForRun = !allowed
     || allowed.has(normalized)
-    || isToolAllowedByWorkbenchScope(policy.toolScope, toolName);
+    || isToolAllowedByWorkbenchScope(policy.toolScope, toolName)
+    || isToolAllowedBySkillBoundary(policy.skillBoundaryAllowedTools, normalized);
   return !allowedForRun || (deniedToolSet(policy)?.has(normalized) ?? false);
+}
+
+/**
+ * strict skill 流程面豁免：工具名在边界 canonical 名单里（大小写不敏感）即算白名单合法。
+ * 只补白名单一侧——显式 deny 仍然一票否决（上方 return 的 deny 分支不受本函数影响）。
+ */
+function isToolAllowedBySkillBoundary(
+  names: readonly string[] | undefined,
+  normalizedToolName: string,
+): boolean {
+  if (!names || names.length === 0) return false;
+  return names.some((name) => normalizeRunPolicyToolName(name) === normalizedToolName);
 }
 
 /**

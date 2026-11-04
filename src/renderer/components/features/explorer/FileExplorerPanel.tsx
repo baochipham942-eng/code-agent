@@ -216,11 +216,27 @@ const FileTreeNode: React.FC<{
   const handleClick = useCallback(() => {
     if (file.isDirectory) {
       handleToggle();
-    } else if (isPreviewable(file.path)) {
-      useAppStore.getState().openPreview(file.path);
-    } else {
-      window.domainAPI?.invoke(IPC_DOMAINS.WORKSPACE, 'openPath', { filePath: file.path });
+      return;
     }
+    if (isPreviewable(file.path)) {
+      useAppStore.getState().openPreview(file.path);
+      return;
+    }
+    const pending = window.domainAPI?.invoke<{ classification?: string }>(
+      IPC_DOMAINS.WORKSPACE,
+      'classifyPreviewFile',
+      { filePath: file.path },
+    );
+    if (!pending) return;
+    void pending.then((response) => {
+      if (response?.success && response.data?.classification === 'text') {
+        useAppStore.getState().openPreview(file.path);
+        return;
+      }
+      void window.domainAPI?.invoke(IPC_DOMAINS.WORKSPACE, 'openPath', { filePath: file.path });
+    }).catch(() => {
+      void window.domainAPI?.invoke(IPC_DOMAINS.WORKSPACE, 'openPath', { filePath: file.path });
+    });
   }, [file.isDirectory, file.path, handleToggle]);
 
   const handleDragStart = useCallback((e: React.DragEvent) => {

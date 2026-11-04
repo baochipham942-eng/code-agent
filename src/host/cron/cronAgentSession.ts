@@ -1,10 +1,10 @@
-import { DEFAULT_MODELS, DEFAULT_PROVIDER } from '../../shared/constants';
 import type { CronJobAction, CronJobDefinition } from '../../shared/contract/cron';
 import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 import { readCronSourceSessionId } from './cronAutomationBridge';
 import { formatCronAgentSessionTitle, getCronAgentSessionType } from './cronNormalizers';
 import { cronAgentWorkingDirectory } from './artifactStandingRefresh';
 import { siteOriginFromUrl } from '../../shared/utils/browserLoginWall';
+import { writeGrantRootFromMetadata } from '../../shared/cronWriteScope';
 
 function cronLoginGatedSiteOrigin(definition: CronJobDefinition): string | undefined {
   // Only the explicit renderer consent action writes this field. The
@@ -23,7 +23,7 @@ function cronLoginGatedSiteOrigin(definition: CronJobDefinition): string | undef
 
 /**
  * Create the dedicated agent session for a cron run. Resolution order:
- * settings 默认模型 → 来源会话模型 → 全局默认；工作目录沿用来源/当前会话。
+ * 来源/当前会话模型 → settings 默认模型 → 全局默认；工作目录沿用来源/当前会话。
  * The session is created read-only; memory off is inherited from the source session.
  */
 export async function createCronAgentSession(
@@ -31,9 +31,8 @@ export async function createCronAgentSession(
   action: CronJobAction,
   executionId?: string
 ) {
-  const { getConfigService, getSessionManager } = await import('../services');
+  const { getSessionManager } = await import('../services');
 
-  const configService = getConfigService();
   const sessionManager = getSessionManager();
   const currentSessionId = sessionManager.getCurrentSessionId();
   const sourceSessionId = readCronSourceSessionId(definition, action);
@@ -44,18 +43,20 @@ export async function createCronAgentSession(
     ? await sessionManager.getSession(currentSessionId)
     : null;
   const baseSession = sourceSession ?? currentSession;
-  const settings = configService.getSettings();
   const sessionType = getCronAgentSessionType(action);
   const originKind = sessionType === 'heartbeat' ? 'heartbeat' : 'cron';
   const loginGatedSiteOrigin = cronLoginGatedSiteOrigin(definition);
+  // 写授权（N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1）：任务详情面板一键授权的文件夹
+  // 随 run 带进会话来源，requestPermission 的放行判定只认这个 host 侧透传值。
+  const writeGrantRoot = writeGrantRootFromMetadata(definition.metadata);
 
   return sessionManager.createSession({
     title: formatCronAgentSessionTitle(definition, sessionType),
     modelConfig: resolveSessionDefaultModelConfig({
-      provider: settings.model?.provider || baseSession?.modelConfig.provider || DEFAULT_PROVIDER,
-      model: settings.model?.model || baseSession?.modelConfig.model || DEFAULT_MODELS.chat,
-      temperature: settings.model?.temperature ?? baseSession?.modelConfig.temperature ?? 0.7,
-      maxTokens: settings.model?.maxTokens ?? baseSession?.modelConfig.maxTokens,
+      provider: baseSession?.modelConfig.provider,
+      model: baseSession?.modelConfig.model,
+      temperature: baseSession?.modelConfig.temperature,
+      maxTokens: baseSession?.modelConfig.maxTokens,
     }),
     workingDirectory: cronAgentWorkingDirectory(definition, baseSession?.workingDirectory),
     type: sessionType,
@@ -68,6 +69,7 @@ export async function createCronAgentSession(
         actionType: action.type,
         sourceSessionId,
         ...(loginGatedSiteOrigin ? { loginPassThroughOrigin: loginGatedSiteOrigin } : {}),
+        ...(writeGrantRoot ? { writeGrantRoot } : {}),
       },
     },
     parentSessionId: sourceSessionId,

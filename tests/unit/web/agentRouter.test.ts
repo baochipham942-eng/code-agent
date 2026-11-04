@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.unmock('better-sqlite3');
 import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
+import { getPromptCommandService } from '../../../src/host/services/commands/promptCommandService';
 import { createCLIAgent } from '../../../src/cli/adapter';
 import { buildQueuedAgentRunBody, createAgentRouter } from '../../../src/web/routes/agent';
 import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
@@ -91,6 +92,16 @@ const mockDb = vi.hoisted(() => ({
   markSessionForkContextHandoffDispatching: vi.fn(() => ({})),
   markSessionForkContextHandoffConsumed: vi.fn(() => ({})),
 }));
+const cloudRunLedgerStub = {
+  admit: vi.fn((input: { sessionId: string }) => ({
+    record: { runId: 'cloud-run-stub', sessionId: input.sessionId, state: 'running' },
+    duplicate: false,
+    position: null,
+  })),
+  bindExecutionRunId: vi.fn(),
+  getRun: vi.fn(() => null),
+  onTransition: vi.fn(),
+};
 const mockQueuedInputEnqueue = vi.spyOn(QueuedInputRepository.prototype, 'enqueue')
   .mockImplementation(() => undefined);
 
@@ -333,6 +344,7 @@ async function startAgentApi(deps: {
       ?? deps.tryGetSessionManager
       ?? (async () => null),
     getSupabaseForSession: deps.getSupabaseForSession ?? (async () => null),
+    getCloudRunLedger: () => cloudRunLedgerStub as never,
     registerQueuedInputSendNowHook: deps.registerQueuedInputSendNowHook,
     registerCompanionRun: deps.registerCompanionRun,
     publishCompanionEvent: deps.publishCompanionEvent,
@@ -1409,6 +1421,53 @@ describe('createAgentRouter', () => {
       await waitForAssertion(() => expect(mockCancel).toHaveBeenCalled());
     });
 
+    describe('slash prompt command expansion on the desktop /run route (FB-523)', () => {
+      const postRun = async (prompt: string, sessionId: string) => {
+        const controller = new AbortController();
+        mockRun.mockClear();
+        mockCreateAgentLoop.mockClear();
+        try {
+          const response = await fetch(`${baseUrl}/api/run`, {
+            method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ prompt, sessionId }), signal: controller.signal,
+          });
+          expect(response.ok).toBe(true);
+          await waitForAssertion(() => expect(mockRun).toHaveBeenCalled());
+          const messages = mockCreateAgentLoop.mock.calls.at(-1)![2] as Message[];
+          return { runArgs: mockRun.mock.calls.at(-1)!, messages };
+        } finally { controller.abort(); }
+      };
+
+      it('/init-memory 展开为内置模板送模型，展示/持久化仍是字面量', async () => {
+        const { runArgs, messages } = await postRun('/init-memory', 'session-init-memory-expand');
+        expect(String(runArgs[0])).toContain('为当前工作目录起草项目记忆');
+        expect(runArgs[1]).toBe('/init-memory');
+        const lastUser = messages.filter(m => m.role === 'user').at(-1)!;
+        expect(String(lastUser.content)).toContain('为当前工作目录起草项目记忆');
+      });
+
+      it('普通文本与未注册 /foo 原样送模型', async () => {
+        const plain = await postRun('帮我看看这个目录', 'session-slash-plain');
+        expect(plain.runArgs[0]).toBe('帮我看看这个目录');
+        const unknown = await postRun('/definitely-not-a-command x', 'session-slash-unknown');
+        expect(unknown.runArgs[0]).toBe('/definitely-not-a-command x');
+      });
+
+      it('/goal 这类渲染层处理的斜杠不被展开', async () => {
+        const goal = await postRun('/goal ship it', 'session-slash-goal');
+        expect(goal.runArgs[0]).toBe('/goal ship it');
+      });
+
+      it('展开抛错 → 回退字面量并继续运行', async () => {
+        const svc = getPromptCommandService();
+        const spy = vi.spyOn(svc, 'resolveInvocation').mockRejectedValueOnce(new Error('boom'));
+        try {
+          const { runArgs } = await postRun('/init-memory', 'session-slash-throws');
+          expect(runArgs[0]).toBe('/init-memory');
+        } finally { spy.mockRestore(); }
+      });
+    });
+
     it('连接器 chip 进入 AgentLoop toolScope，不只停在提示词和消息 metadata', async () => {
       const controller = new AbortController();
       const response = await fetch(`${baseUrl}/api/run`, {
@@ -1485,6 +1544,127 @@ describe('createAgentRouter', () => {
       expect(config.allowedToolNames).toEqual(expect.arrayContaining(['Read', 'Edit', 'Write']));
       expect(config.allowedToolNames).not.toEqual(expect.arrayContaining(['Append', 'Bash']));
       expect(config.maxIterations).toBe(8);
+      controller.abort();
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalled();
+      });
+    });
+
+    // rework r1：存草稿轮次的规则块此前只进了 withSessionCommandCenterBrain（桌面路），
+    // web 主链同判据只同步了工具面没同步规则块——「修了桌面漏了 web」的第三次翻车预演。
+    // 工具面（mail_draft）与规则块（解析格式/防重复/如实失败）必须同一真源同轮出现。
+    it('存草稿轮次：web 主链同步追加存草稿规则块，不只送 mail_draft 上工具面', async () => {
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: '存草稿 1',
+          sessionId: 'session-save-draft-rules',
+        }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+      await waitForAssertion(() => {
+        expect(mockCreateAgentLoop).toHaveBeenCalled();
+      });
+      const config = mockCreateAgentLoop.mock.calls.at(-1)![0] as {
+        allowedToolNames?: string[];
+        systemPrompt?: string;
+      };
+      expect(config.allowedToolNames).toContain('mail_draft');
+      expect(config.systemPrompt).toContain('<session_command_center>');
+      expect(config.systemPrompt).toContain('<morning_brief_save_draft>');
+      expect(config.systemPrompt).toContain('已经存过');
+      expect(config.systemPrompt).toContain('没有开邮件权限');
+      controller.abort();
+      await waitForAssertion(() => {
+        expect(mockCancel).toHaveBeenCalled();
+      });
+    });
+
+    describe('morning brief save-draft role mail tool gate over web', () => {
+      const ROLE = 'web-save-draft-role';
+
+      async function registerRole(tools: string[]): Promise<void> {
+        const { setCustomAgentMapForTest } = await import('../../../src/host/agent/agentRegistry');
+        setCustomAgentMapForTest(new Map([[
+          ROLE,
+          {
+            id: ROLE as never,
+            name: ROLE,
+            description: 'd',
+            prompt: 'p',
+            tools,
+            model: 'balanced',
+            maxIterations: 5,
+            readonly: false,
+            source: 'user',
+          },
+        ]]));
+      }
+
+      async function runSaveDraft(preferredAgentId?: string): Promise<string[] | undefined> {
+        const controller = new AbortController();
+        const response = await fetch(`${baseUrl}/api/run`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            prompt: '存草稿 1',
+            sessionId: 'session-save-draft-role-tools',
+            ...(preferredAgentId ? { context: { preferredAgentId } } : {}),
+          }),
+          signal: controller.signal,
+        });
+        expect(response.ok).toBe(true);
+        await waitForAssertion(() => expect(mockCreateAgentLoop).toHaveBeenCalled());
+        const config = mockCreateAgentLoop.mock.calls.at(-1)![0] as { allowedToolNames?: string[] };
+        controller.abort();
+        await waitForAssertion(() => expect(mockCancel).toHaveBeenCalled());
+        return config.allowedToolNames;
+      }
+
+      afterEach(async () => {
+        const { setCustomAgentMapForTest } = await import('../../../src/host/agent/agentRegistry');
+        setCustomAgentMapForTest(new Map());
+      });
+
+      it('removes mail_draft for a role whose equipment has no mail', async () => {
+        await registerRole(['Read']);
+
+        expect(await runSaveDraft(ROLE)).not.toContain('mail_draft');
+      });
+
+      it.each([['mail_draft'], ['mail']])('keeps exactly one mail_draft for a role declaring %s', async (mailTool) => {
+        await registerRole(['Read', mailTool]);
+
+        expect((await runSaveDraft(ROLE))?.filter((tool) => tool === 'mail_draft')).toHaveLength(1);
+      });
+
+      it('keeps exactly one mail_draft when no role is selected', async () => {
+        expect((await runSaveDraft())?.filter((tool) => tool === 'mail_draft')).toHaveLength(1);
+      });
+    });
+
+    it('非存草稿轮次：systemPrompt 只有指挥台 brain 块，不带存草稿规则', async () => {
+      const controller = new AbortController();
+      const response = await fetch(`${baseUrl}/api/run`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          prompt: '今天有什么安排',
+          sessionId: 'session-save-draft-rules-absent',
+        }),
+        signal: controller.signal,
+      });
+      expect(response.ok).toBe(true);
+      await waitForAssertion(() => {
+        expect(mockCreateAgentLoop).toHaveBeenCalled();
+      });
+      const config = mockCreateAgentLoop.mock.calls.at(-1)![0] as {
+        allowedToolNames?: string[];
+        systemPrompt?: string;
+      };
+      expect(config.allowedToolNames).not.toContain('mail_draft');
+      expect(config.systemPrompt).toContain('<session_command_center>');
+      expect(config.systemPrompt).not.toContain('<morning_brief_save_draft>');
       controller.abort();
       await waitForAssertion(() => {
         expect(mockCancel).toHaveBeenCalled();

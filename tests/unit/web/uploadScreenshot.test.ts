@@ -98,6 +98,19 @@ describe('handleScreenshot whitelist', () => {
     expect(pipe).toHaveBeenCalledOnce();
   });
 
+  it('serves heic and legacy-office page images from the preview-formats cache', () => {
+    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    const pipe = vi.fn();
+    vi.spyOn(fs, 'createReadStream').mockReturnValue({ pipe } as unknown as fs.ReadStream);
+
+    const res = mockRes();
+    handleScreenshot(mockReq('/fake/userdata/cache/preview-formats/heic/abc.jpg'), res);
+
+    expect(res.statusCode).toBe(0);
+    expect(res.headers['Content-Type']).toBe('image/jpeg');
+    expect(pipe).toHaveBeenCalledOnce();
+  });
+
   it('denies presentation cache lookalike dirs outside the runtime userData root', () => {
     const res = mockRes();
     handleScreenshot(mockReq('/tmp/evil/cache/presentation-page-previews/rev123/pages/deck-01.jpg'), res);

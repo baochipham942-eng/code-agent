@@ -14,7 +14,7 @@ import type {
 import type { TaskModelStrategySettings } from '../../shared/contract/settings';
 import { PROVIDER_REGISTRY } from './providerRegistry';
 import { AGENT_DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_MODELS } from '../../shared/constants';
-import { isFallbackEligible, abortableSleep, isCancellationError, describeFallbackError } from './providers/retryStrategy';
+import { isFallbackEligible, abortableSleep, isCancellationError, describeFallbackError, isQuotaWaitSuspendError } from './providers/retryStrategy';
 import { getSettingsProviderBaseUrl } from './providers/providerResolution';
 import { resolveModelInfo } from './modelInfo';
 import { resolveModelMaxOutputTokens } from './modelLimits';
@@ -46,6 +46,7 @@ import {
   ARTIFACT_SELECTED_PROVIDER_RETRY_DELAYS_MS,
 } from './modelRouterTimeouts';
 import { normalizeInferenceOptions } from './modelRouterInferenceOptions';
+import { applyOutboundSecretMask } from '../security/outboundSecretMask';
 
 const logger = createLogger('ModelRouter');
 import type { InferenceOptions, ModelMessage, ModelResponse, StreamCallback, MessageContent } from './types';
@@ -556,6 +557,7 @@ export class ModelRouter {
           }
           return result;
         } catch (err) {
+          if (isQuotaWaitSuspendError(err)) throw err;
           const errMsg = err instanceof Error ? err.message : String(err);
           // 401/403 是持久性错误（key 过期/无效），禁用 free model 避免重复失败
           if (simpleTaskDecision.decision.reason === 'simple-task-free' && /401|403|unauthorized|forbidden/i.test(errMsg)) {
@@ -587,6 +589,7 @@ export class ModelRouter {
 
       return result;
     } catch (primaryErr) {
+      if (isQuotaWaitSuspendError(primaryErr)) throw primaryErr;
       // ---- Cross-provider fallback chain ----
       // 同指纹熔断的文案不含 502/429。describeFallbackError 取 cause 或保留的 status。
       const described = describeFallbackError(primaryErr);
@@ -838,6 +841,15 @@ export class ModelRouter {
     if (!provider) {
       throw new Error(`Unsupported provider: ${config.provider}`);
     }
+    const replayMessages = sanitizeModelReplayForModelInfo(messages, this.getModelInfo(config.provider, config.model));
+    // 可逆出云密钥掩码（N-PROMPT-SECRET-MASK）：开关关 → undefined，走原样路径（请求
+    // 字节不变）；开 → 出云掩码、回包/流式还原。掩码或还原失败在模块内以带稳定 code
+    // 的错误上抛（fail-closed），这里不吞——绝不静默明文外发。默认引擎的 aiSdk 直连
+    // 路径在 inferenceViaAiSdk 入口接同一模块，与本漏斗互为备份。
+    const outboundMask = applyOutboundSecretMask(replayMessages, onStream, {
+      provider: config.provider,
+      model: config.model,
+    });
     const timeoutMs = options?.requestTimeoutMs;
     const timedAbort = typeof timeoutMs === 'number' && timeoutMs > 0
       ? createTimedAbortController(timeoutMs, { label: `model-router:${config.provider}/${config.model}` })
@@ -851,19 +863,26 @@ export class ModelRouter {
     const healthMonitor = getProviderHealthMonitor();
     const observationCount = healthMonitor.getObservationCount(config.provider);
     const startedAt = Date.now();
-    const replayMessages = sanitizeModelReplayForModelInfo(messages, this.getModelInfo(config.provider, config.model));
     try {
       if (effectiveSignal?.aborted) {
         throw new Error('Request was cancelled before starting');
       }
-      const response = await provider.inference(replayMessages, tools, config, onStream, effectiveSignal, options);
+      const response = await provider.inference(
+        outboundMask?.messages ?? replayMessages,
+        tools,
+        config,
+        outboundMask?.onStream ?? onStream,
+        effectiveSignal,
+        options,
+      );
       // Legacy providers do not all use the shared retry wrapper. Fill the
       // canonical provider key only when the inner path recorded nothing.
       if (healthMonitor.getObservationCount(config.provider) === observationCount) {
         healthMonitor.recordSuccess(config.provider, Date.now() - startedAt, { model: config.model });
       }
-      return response;
+      return outboundMask ? outboundMask.restore(response) : response;
     } catch (error) {
+      if (isQuotaWaitSuspendError(error)) throw error;
       if (healthMonitor.getObservationCount(config.provider) === observationCount) {
         healthMonitor.recordFailure(config.provider, { model: config.model, error,
           cancelled: signal?.aborted === true

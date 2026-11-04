@@ -28,7 +28,9 @@ export type SessionAutomationEventKind =
   | 'failed'
   | 'cancelled'
   | 'skipped'
-  | 'stage_ready';
+  | 'stage_ready'
+  /** Event automation switched between observe and auto (N-TRIGGER-OBSERVE-MODE). */
+  | 'action_mode_changed';
 
 export interface SessionAutomationNextStageConfig {
   /** Explicit prompt to send back into the source session when this automation reaches a terminal success state. */
@@ -118,8 +120,18 @@ export interface SessionAutomationConfig extends Record<string, unknown> {
   };
   /** 最近一次无人值守运行遇到登录墙；用户过目后清除。 */
   loginWall?: { siteOrigin: string; at: number };
-  /** 启动时发现漏跑且无法回写源会话时，由自动化收件箱承接。 */
-  missedNotice?: { scheduledAt: number; reason: CronMissedReason };
+  /**
+   * 启动时发现漏跑且无法回写源会话时，由自动化收件箱承接。
+   * webhook 源（N-CRON-WEBHOOK-CLOUD-HOOK）复用同一承接位：中继排队超 24h 过期的
+   * 投递以 reason 'webhook-expired' + count 落待过目。收件箱按 reason 分支：
+   * webhook-expired 显示丢弃条数，不复用「应用离线」（应用当时可以一直在线）。
+   */
+  missedNotice?: {
+    scheduledAt: number;
+    reason: CronMissedReason | 'webhook-expired';
+    /** webhook-expired 专属：过期丢弃的投递条数。 */
+    count?: number;
+  };
   /** B4：本 automation 上人工铸造的 target 粒度长期授权规则。删/archive 即失效（消费时按 status 钳制）。 */
   standingGrants?: StandingGrant[];
 }
@@ -196,4 +208,12 @@ export interface UpsertSessionAutomationInput {
   sourceRefId?: string;
   resultSessionId?: string;
   config?: SessionAutomationConfig;
+}
+
+/** 无人值守停车可见性（N-CRON-UNATTENDED-BASH-PARK-STUCK）：一条「等批准」运行（已 join 到 cron 任务）。 */
+export interface AwaitingApprovalRun {
+  jobId: string;
+  executionId: string | null;
+  requestId: string;
+  requestedAt: number;
 }

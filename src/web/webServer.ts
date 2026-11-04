@@ -363,10 +363,7 @@ import { getApplicationRunRegistry } from '../host/app/applicationRunRegistry';
 import { createApplicationAutoAgentRecoveryHost } from '../host/app/autoAgentRecoveryHost';
 import { createApplicationNativeRecoveryPorts } from '../host/app/nativeRecoveryHost';
 import { shouldStartQueuedAutoResume } from '../host/app/durableRunContinuation';
-import {
-  assembleDurableRun,
-  type DurableRunApplicationRuntime,
-} from '../host/app/initializeDurableRun';
+import { assembleDurableRun, type DurableRunApplicationRuntime } from '../host/app/initializeDurableRun';
 import { resolveDurableRunRollout } from '../host/app/durableRunRollout';
 import type { PendingDevPermissionRequest } from './routes/dev';
 import { createApp, type CreateAppDeps } from './app';
@@ -376,13 +373,12 @@ import { createDaemonResidencyReporter } from '../host/services/daemon/daemonSta
 import { getDaemonQuitIntent } from '../host/services/daemon/quitIntent';
 import { backgroundContinueDetachArmed, createDaemonExitRechecker, shouldStayResidentAfterShellExit, stdinEofIsQuitCommand } from '../host/services/daemon/shellExit';
 import { drainPendingOpsForShutdown, isDrainWatchdogActive } from '../host/services/daemon/daemonDrain';
+import { installExitCauseProbes, markShellPipeDetached, recordShutdownCause } from './shutdownCause';
 import { getBackgroundTaskLedger } from '../host/task/backgroundTaskLedger';
 import { listForegroundPermissionRequests, onForegroundPermissionStateChange } from './foregroundPermissionRegistry';
 import { createWebSessionContext } from './sessionDomainHandler';
 import { startDurableRunStartup } from './durableRunStartup';
-import {
-  notifyDurableRecoveryWaiting as notifyDurableRecoveryWaitingWith,
-} from './durableRecoveryWaitingNotifier';
+import { notifyDurableRecoveryWaiting as notifyDurableRecoveryWaitingWith } from './durableRecoveryWaitingNotifier';
 import type { DurableRecoveryDispatchResult } from '../host/runtime/durableRecoveryDispatcher';
 
 // Re-export broadcastSSE for backward compatibility
@@ -813,6 +809,10 @@ async function initializeServices(): Promise<void> {
   bootMark('cron+cadence');
 
   kickoffWebStartupServices(configService, { broadcastSSE, capabilityBootstrap });
+  // 「保持聊天同步」：auth 已恢复缓存用户（owner scope 才对），不 await；E2E 不跑。
+  if (process.env.CODE_AGENT_E2E !== '1') {
+    void import('../host/externalImport/chatsAutoSync').then((m) => m.startChatsAutoSync(() => broadcastSSE(IPC_CHANNELS.SESSION_LIST_UPDATED, undefined)));
+  }
 
   // 8. Log Bridge + P3-A 只读任务状态 provider。
   // 与步骤 5/6/7 同类的 web/main 路径分离修复：logBridge.start() + provider 注册此前只在
@@ -1096,6 +1096,9 @@ async function runCompileWarmup(): Promise<never> {
 
 async function main(): Promise<void> {
   exitIfPackagedDevModeRefused(process.env);
+  // 最后遗言探针（uncaughtExceptionMonitor / exit）：越早装覆盖面越全，包括
+  // 启动早期崩溃。uncaughtExceptionMonitor 只旁观，不改变崩溃行为。
+  installExitCauseProbes();
   if (process.env.CODE_AGENT_COMPILE_WARMUP === '1') {
     await runCompileWarmup();
     return;
@@ -1214,7 +1217,11 @@ async function main(): Promise<void> {
   });
 
   // 优雅退出
-  const shutdown = async () => {
+  // source 口径（N-WEBSERVER-DEATH-SUPERVISE-DIAG）：信号监听器触发时 Node 把
+  // 信号名传进来（'SIGTERM'/'SIGINT'）；stdin 断开路径显式传 'stdin-eof'/
+  // 'stdin-error'；无参调用 = daemon rechecker 触发。落盘在 shutdownCause.ts。
+  const shutdown = async (source?: string) => {
+    recordShutdownCause(source ?? 'daemon-rechecker');
     console.log('\nShutting down...');
     // 宽限期是有限的（Rust 侧 GRACEFUL_SHUTDOWN_TIMEOUT 到点就 SIGKILL），关库是这段
     // 时间里唯一不能省的一步——前面的清理任何一个卡住，都会把预算吃光，最后仍然被
@@ -1260,12 +1267,13 @@ async function main(): Promise<void> {
       })(),
       'reapChildProcesses'
     );
-    await withCap(
-      durableRunRuntime?.shutdown().catch((error) => {
+    // FB-324：stop 意图停机先停靠/终态收口主 run（非 stop no-op，详见 stopIntentShutdownPark.ts）。
+    await withCap((async () => {
+      try { const m = await import('../host/runtime/stopIntentShutdownPark'); console.log('[shutdown] stop-intent park:', JSON.stringify(await m.parkPrimaryRunsOnStopIntentShutdown(runRegistry))); } catch (err) { console.warn('[shutdown] stop-intent park failed:', err); }
+      await durableRunRuntime?.shutdown().catch((error) => {
         console.warn('[shutdown] durable recovery runtime failed:', error);
-      }) ?? Promise.resolve(),
-      'durableRunRuntime.shutdown'
-    );
+      });
+    })(), 'stopIntentPark+durableRunRuntime.shutdown');
     // V2-A: 关掉所有用户起的 dev server，避免 Vite/CRA 子进程成孤儿
     await withCap(
       (async () => {
@@ -1326,14 +1334,16 @@ async function main(): Promise<void> {
     })
     : undefined;
   let shellPipeClosedHandled = false;
-  const onShellPipeClosed = () => {
+  const onShellPipeClosed = (cause: 'stdin-eof' | 'stdin-error' = 'stdin-eof') => {
     if (shellPipeClosedHandled) return;
     shellPipeClosedHandled = true;
     shellPipeAttached = false;
+    // 取证同步：此后任何退出原因都带「管道已断」这条事实
+    markShellPipeDetached();
     const shouldStay = shouldStayResidentAfterShellExit(process.platform, daemonIdleSnapshot?.(), eofIsQuitCommand(), getDaemonQuitIntent());
     if (daemonExitRechecker?.onShellPipeClosed()) return;
     if (!shouldStay) {
-      void shutdown();
+      void shutdown(cause);
       return;
     }
     logger.info('[daemon] shell exited while busy — staying resident (runs/companion/approval/armed schedules)');
@@ -1346,8 +1356,8 @@ async function main(): Promise<void> {
   }
   if (process.env.CODE_AGENT_TAURI_BOOT_TOKEN) {
     process.stdin.resume();
-    process.stdin.on('end', onShellPipeClosed);
-    process.stdin.on('error', onShellPipeClosed);
+    process.stdin.on('end', () => onShellPipeClosed('stdin-eof'));
+    process.stdin.on('error', () => onShellPipeClosed('stdin-error'));
   }
 
   // ── 前端热更：启动后异步拉取（不阻塞 health，失败不影响启动）─────────

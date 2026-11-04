@@ -34,6 +34,8 @@ import {
 } from './parkedApprovalSurvival';
 import { sanitizeToolCallsForHistory } from './messageHandling/converter';
 import { NL_RULE_K2_TEXT } from '../../shared/nlRuleRestate';
+import { closeSessionParkedRun, sessionHasPendingToolApproval } from './parkedApprovalRunClosure';
+import type { DurableRunRepository } from '../services/core/repositories/DurableRunRepository';
 
 const logger = createLogger('ParkedApprovalResume');
 
@@ -47,6 +49,8 @@ export interface ParkedApprovalResumePorts extends LedgerToolExecutionPorts {
    * 回退家目录：相对路径命令会以错误的 cwd 落副作用（rework r1）。
    */
   resolveWorkingDirectory(sessionId: string): string | null | Promise<string | null>;
+  /** 收口后的 durable run 仓储；缺省走 DB 单例，取不到则跳过收口（只 warn）。 */
+  durableRunRepository?: DurableRunRepository | null;
 }
 
 export type ParkedApprovalResumeOutcome =
@@ -163,6 +167,48 @@ export async function resumeSurvivingParkedApproval(input: {
   const now = input.now ?? Date.now();
   const ports = input.ports ?? defaultPorts(() => now);
   if (!ports) return { handled: false };
+  const outcome = await resumeWithPorts(input, now, ports);
+  // 行已收口（执行过 / 已有结果 / 拒绝 / 作废）且该会话没有别的待批行：run 不会再被推进，
+  // 把 waiting 的 root run 收成 cancelled，别让会话永远投影成 running。不续跑（A′）。
+  if (outcome.handled && outcome.status !== 'lost_race') {
+    await closeRunAfterOutcome(ports, input.requestId, now);
+  }
+  return outcome;
+}
+
+async function closeRunAfterOutcome(
+  ports: ParkedApprovalResumePorts,
+  requestId: string,
+  now: number,
+): Promise<void> {
+  try {
+    const row = ports.repo.getById(requestId);
+    const payload = row ? parseParkedApprovalPayload(row.payloadJson) : null;
+    const sessionId = payload?.argsRef?.sessionId ?? payload?.sessionId ?? row?.coordinatorId ?? null;
+    if (!sessionId || sessionHasPendingToolApproval(ports.repo, sessionId)) return;
+    let repository = ports.durableRunRepository ?? null;
+    if (!repository) {
+      try {
+        repository = getDatabase().getDurableRunRepository();
+      } catch {
+        logger.warn('Durable run repository unavailable; parked run not closed after approval', { requestId });
+        return;
+      }
+    }
+    await closeSessionParkedRun(repository, sessionId, now, payload?.requestedAt ?? row?.submittedAt ?? 0);
+  } catch (error) {
+    logger.warn('Closing parked run after approval failed', {
+      requestId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+async function resumeWithPorts(
+  input: { requestId: string; response: PermissionResponse },
+  now: number,
+  ports: ParkedApprovalResumePorts,
+): Promise<ParkedApprovalResumeOutcome> {
   const { repo } = ports;
 
   let row: PendingApprovalRecord | null;

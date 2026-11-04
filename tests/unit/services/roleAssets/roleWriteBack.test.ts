@@ -237,6 +237,77 @@ describe('runRoleWriteBack', () => {
     expect(indexContent).toContain('[user-preference.md]');
   });
 
+  it('masks secrets in global write-back files and INDEX; role and project layers still route', async () => {
+    await ensureRoleAssetDirs('研究员');
+    // sk-(?:proj-)? plus 40 alphanumerics. A short literal such as sk-test-xxxx is not masked.
+    const secretBody = 'abcdefghijklmnopqrstuvwxyz0123456789ABCD';
+    const secret = `sk-proj-${secretBody}`;
+    const card = '4111 1111 1111 1111';
+    const maskedSecret = `sk-p...${secretBody.slice(-4)}`;
+    const workspacePath = path.join(mockConfigDir.dir, 'ws-global-guard');
+
+    mockQuickTask.mockResolvedValue({
+      success: true,
+      content: JSON.stringify({
+        memories: [
+          {
+            layer: 'global',
+            filename: 'global-secret-note.md',
+            name: '全局备忘',
+            description: `描述里有密钥 ${secret} 和卡号 ${card}`,
+            content: `正文里有密钥 ${secret} 和卡号 ${card}，这条足够长。`,
+          },
+          {
+            layer: 'role',
+            filename: 'role-glossary.md',
+            name: '业务术语',
+            description: '用户的 GMV 口径',
+            content: '用户业务中 GMV 指标不含退款，统计周期为自然周。',
+          },
+          {
+            layer: 'project',
+            filename: 'project-template.md',
+            name: '项目模板',
+            description: '这个项目的周报模板位置',
+            content: '该项目的周报模板在 docs/templates/weekly.md，按部门分三个 sheet。',
+          },
+        ],
+        historySummary: '写回三层',
+      }),
+    });
+
+    const result = await runRoleWriteBack({
+      roleId: '研究员',
+      workspacePath,
+      taskPrompt: '整理记忆',
+      finalOutput: 'done',
+    });
+
+    expect(result.written).toBe(3);
+
+    const globalFile = await fs.readFile(path.join(mockConfigDir.dir, 'memory', 'global-secret-note.md'), 'utf-8');
+    const indexContent = await fs.readFile(path.join(mockConfigDir.dir, 'memory', 'INDEX.md'), 'utf-8');
+    for (const text of [globalFile, indexContent]) {
+      expect(text).not.toContain(secret);
+      expect(text).not.toContain(secretBody);
+      expect(text).not.toContain(card);
+      expect(text).toContain(maskedSecret);
+      expect(text).toContain('[credit card hidden]');
+    }
+    expect(globalFile).toContain('全局备忘');
+    expect(indexContent).toContain('[global-secret-note.md]');
+
+    const roleMemories = await listScopedMemories({ scope: 'role', roleId: '研究员' });
+    expect(roleMemories.map((m) => m.filename)).toEqual(['role-glossary.md']);
+    expect(roleMemories[0].content).toContain('不含退款');
+    expect(roleMemories[0].content).not.toContain(secret);
+
+    const projectMemories = await listScopedMemories({ scope: 'project', workspacePath });
+    expect(projectMemories.map((m) => m.filename)).toEqual(['project-template.md']);
+    expect(projectMemories[0].content).toContain('docs/templates/weekly.md');
+    expect(projectMemories[0].content).not.toContain(secret);
+  });
+
   it('degrades gracefully when quick model fails (只记履历不写记忆)', async () => {
     await ensureRoleAssetDirs('研究员');
     mockQuickTask.mockResolvedValue({ success: false, error: 'model unavailable' });

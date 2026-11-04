@@ -40,6 +40,7 @@ import type { SessionAutomationEventKind, SessionAutomationStatus } from '../../
 import { isExternalSideEffectTool } from '../../tools/externalSideEffect';
 import { getKnownToolNames } from '../../tools/knownToolNames';
 import { resolveRoleToolBoundary, toRoleBoundaryRunAllowlist } from './rolePersonalization';
+import { correctDecisionForUnreadableSources, lastWakeDateFromHistory, resolveWakeExternalDelta, storeWakeProposalsFromWake } from './roleWakeFindWork';
 
 const logger = createLogger('RoleProactivity');
 
@@ -136,10 +137,11 @@ export async function countWakesToday(roleId: string): Promise<number> {
 // 醒来 prompt（设计 §3.1）
 // ----------------------------------------------------------------------------
 
-function buildWakePrompt(
+export function buildWakePrompt(
   trigger: RoleWakeTrigger,
   extraContext?: string,
   config?: RoleProactivityConfig,
+  externalDeltaSection?: string,
 ): string {
   const lines = [
     `你被${trigger === 'cadence' ? '定时' : '任务结束事件'}唤醒。这不是用户发来的消息，用户现在不在。`,
@@ -166,12 +168,9 @@ function buildWakePrompt(
     `预算约束：你最多有 ${ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS} 轮工具调用，超出会被强制结束，重要的事先做。`,
   ];
   const topicBlock = config ? formatTopicPreferencePrompt(config) : '';
-  if (topicBlock) {
-    lines.push('', topicBlock);
-  }
-  if (extraContext) {
-    lines.push('', '本次唤醒的额外上下文：', extraContext);
-  }
+  if (topicBlock) lines.push('', topicBlock);
+  if (externalDeltaSection) lines.push('', externalDeltaSection);
+  if (extraContext) lines.push('', '本次唤醒的额外上下文：', extraContext);
   return lines.join('\n');
 }
 
@@ -312,13 +311,15 @@ export async function wakeRole(
     return { roleId, trigger, status: 'skipped', skipReason: 'quiet_hours' };
   }
 
-  // ---- 步骤 2：空产物守卫（成本闸）----
+  // ---- 步骤 2：空产物守卫（成本闸）+ 外部增量巡检 ----
   // cadence 醒来的输入是"自己经手过的产物"；履历里没有任何产物条目（排除醒来记录本身）
   // 就没有东西可巡检，确定性静默，不烧模型 token。event 触发不受此限（run 总结的输入是 runSummary）。
+  let externalDelta: Awaited<ReturnType<typeof resolveWakeExternalDelta>> | undefined;
   if (trigger === 'cadence') {
     const allHistory = await loadRoleHistory(roleId, Number.MAX_SAFE_INTEGER);
     const productEntries = allHistory.filter((l) => !l.includes(ROLE_PROACTIVITY.WAKE_SESSION_TITLE_PREFIX));
-    if (productEntries.length === 0) {
+    externalDelta = await resolveWakeExternalDelta({ roleId, hasProducts: productEntries.length > 0, lastWakeDate: lastWakeDateFromHistory(allHistory), config });
+    if (productEntries.length === 0 && externalDelta.sourceNames.length === 0) {
       logger.info('Wake resolved to silence: no products in history', { roleId, trigger });
       await appendRoleHistory(roleId, {
         date: new Date().toISOString().slice(0, 10),
@@ -341,8 +342,7 @@ export async function wakeRole(
   const currentSessionId = sessionManager.getCurrentSessionId();
   const currentSession = currentSessionId ? await sessionManager.getSession(currentSessionId) : null;
   // workspace 解析链（与 webServer/desktop bootstrap 同序）：显式传入 > 当前会话 >
-  // CODE_AGENT_WORKING_DIR > 用户工作区偏好。不能落到 process.cwd()——那是应用安装目录，
-  // 角色会跑去巡检应用自己的代码（E2E 实测踩坑）。
+  // CODE_AGENT_WORKING_DIR > 用户工作区偏好。不能落到 process.cwd()——那是应用安装目录，角色会跑去巡检应用自己的代码（E2E 实测踩坑）。
   const workspacePath = options?.workspacePath
     ?? currentSession?.workingDirectory
     ?? process.env.CODE_AGENT_WORKING_DIR?.trim()
@@ -404,10 +404,9 @@ export async function wakeRole(
   }
 
   // ---- 步骤 5：跑实例（角色 agent 定义 + 记忆注入 + 迭代数硬约束）----
-  // 双路径（web/main 路径分离）：
-  //   - Electron main：TaskManager orchestrator（带 UI 事件路由 / 权限弹窗）
-  //   - webServer/headless（发行版后端）：cli/bootstrap createAgentLoop（与 /api/run 同源）
-  const wakePrompt = buildWakePrompt(trigger, options?.runSummary, config);
+  // 双路径：Electron main 走 TaskManager orchestrator（UI 事件路由 / 权限弹窗）；
+  // webServer/headless（发行版后端）走 cli/bootstrap createAgentLoop（与 /api/run 同源）。
+  const wakePrompt = buildWakePrompt(trigger, options?.runSummary, config, externalDelta?.section);
   const { getTaskManager } = await import('../../task');
   const tm = getTaskManager();
   const orchestrator = tm.getOrCreateCurrentOrchestrator(session.id);
@@ -443,8 +442,7 @@ export async function wakeRole(
   }
 
   // ---- 步骤 6：读最终产出，解析四选一决策 ----
-  // 两条路径都把消息持久化进会话（orchestrator persistMessage / CLI persistAgentLoopMessageToSession），
-  // 统一从会话读最后一条 assistant 消息。
+  // 两条路径都把消息持久化进会话（orchestrator / CLI），统一从会话读最后一条 assistant 消息。
   const sessionWithMessages = await sessionManager.getSession(session.id);
   const assistantMessages = (sessionWithMessages?.messages ?? []).filter((m) => m.role === 'assistant' && m.content);
   const finalOutput = assistantMessages.length > 0 ? assistantMessages[assistantMessages.length - 1].content : '';
@@ -462,6 +460,8 @@ export async function wakeRole(
     logger.info('Wake decision forced to silence: excluded topic', { roleId, trigger, parsedDecision });
     decision = 'silence';
   }
+  if (externalDelta?.section && !excluded) decision = correctDecisionForUnreadableSources({ decision, finalOutput, sourceNames: externalDelta.sourceNames, roleId });
+  await storeWakeProposalsFromWake({ roleId, finalOutput, config });
   let summary = stripWakeMarkup(finalOutput)
     .slice(0, ROLE_PROACTIVITY.HISTORY_SUMMARY_MAX_CHARS);
   if (inferredAdvanceProposal && !excluded) {

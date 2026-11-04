@@ -1,9 +1,9 @@
 const DEBUG_DRAFT_PARAM = '__neoDraft';
-const DEBUG_DRAFT_SUBMIT_PARAM = '__neoSubmit';
+// FB-430：自动提交已移除（外站链接能借登录态替用户发消息）；旧链接里的参数只清掉、不生效
+const LEGACY_SUBMIT_PARAM = '__neoSubmit';
 
 export interface DebugDraftUrlPayload {
   content: string;
-  autoSubmit: boolean;
 }
 
 function isLocalDebugDraftHost(hostname: string): boolean {
@@ -26,16 +26,12 @@ export function readDebugDraftFromLocation(
     return null;
   }
 
-  const submitValue = params.get(DEBUG_DRAFT_SUBMIT_PARAM);
-  return {
-    content,
-    autoSubmit: submitValue === '1' || submitValue === 'true',
-  };
+  return { content };
 }
 
 export function clearDebugDraftParamsFromUrl(url: URL): string {
   url.searchParams.delete(DEBUG_DRAFT_PARAM);
-  url.searchParams.delete(DEBUG_DRAFT_SUBMIT_PARAM);
+  url.searchParams.delete(LEGACY_SUBMIT_PARAM);
   return `${url.pathname}${url.search}${url.hash}`;
 }
 

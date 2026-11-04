@@ -283,6 +283,23 @@ Error: EPERM: operation not permitted, copyfile '/etc/hosts' -> '/tmp/neo-node-c
 
 Node.js v24.21.0`;
 
+// Captured on macOS 27.0.1 through the real chain bash.ts uses —
+// wrapCommandForSandbox(`chmod 600 '<file>'`, { workingDirectory: <repo> }) with a
+// fresh probe dir directly under $HOME — so the profile denies file-write* there
+// (N-SANDBOX-ESCALATE-CHMOD-SHAPE). BSD /bin/chmod puts prose after the first
+// colon, which the generic write-utilities regex cannot match:
+const CHMOD_BSD_EPERM = 'chmod: Unable to change file mode on /Users/leo/neo-chmod-shape-probe/target.txt: Operation not permitted\n';
+
+// Same capture with the operand path quoted and containing spaces.
+const CHMOD_BSD_EPERM_SPACED_PATH = 'chmod: Unable to change file mode on /Users/leo/neo chmod shape probe/target with space.txt: Operation not permitted\n';
+
+// Same capture with homebrew GNU coreutils, which installs as `gchmod` on macOS
+// and prefixes the line with it (Linux prints the identical message as `chmod:`).
+const GCHMOD_GNU_EPERM = "gchmod: changing permissions of '/Users/leo/neo-chmod-shape-probe/target.txt': Operation not permitted\n";
+
+// Same GNU capture with spaces in the quoted path.
+const GCHMOD_GNU_EPERM_SPACED_PATH = "gchmod: changing permissions of '/Users/leo/neo chmod shape probe/target with space.txt': Operation not permitted\n";
+
 describe('sandboxDeniedWritePath', () => {
   it('recognises a Python PermissionError write traceback', () => {
     expect(sandboxDeniedWritePath(PYTHON_OPEN_W_TRACEBACK)).toBe('/System/x');
@@ -370,5 +387,24 @@ describe('sandboxDeniedWritePath', () => {
     expect(
       sandboxDeniedWritePath("PermissionError: [Errno 13] Permission denied: '/System/x'"),
     ).toBeUndefined();
+  });
+
+  it('recognises the macOS/BSD chmod Unable-to-change-file-mode shape, spaces included', () => {
+    expect(sandboxDeniedWritePath(CHMOD_BSD_EPERM)).toBe('/Users/leo/neo-chmod-shape-probe/target.txt');
+    expect(sandboxDeniedWritePath(CHMOD_BSD_EPERM_SPACED_PATH)).toBe('/Users/leo/neo chmod shape probe/target with space.txt');
+    expect(sandboxDeniedWriteCreatesDirectory(CHMOD_BSD_EPERM)).toBe(false);
+  });
+
+  it('recognises the GNU chmod changing-permissions-of shape, also as homebrew gchmod', () => {
+    expect(sandboxDeniedWritePath(GCHMOD_GNU_EPERM)).toBe('/Users/leo/neo-chmod-shape-probe/target.txt');
+    expect(sandboxDeniedWritePath(GCHMOD_GNU_EPERM_SPACED_PATH)).toBe('/Users/leo/neo chmod shape probe/target with space.txt');
+    // Linux spells the same message with a bare `chmod:` prefix.
+    expect(sandboxDeniedWritePath("chmod: changing permissions of '/etc/hosts': Operation not permitted")).toBe('/etc/hosts');
+  });
+
+  it('does not mistake non-EPERM or relative-path chmod lines for denied writes', () => {
+    expect(sandboxDeniedWritePath('chmod: Unable to change file mode on /x: No such file or directory')).toBeUndefined();
+    expect(sandboxDeniedWritePath("chmod: changing permissions of '/x': Read-only file system")).toBeUndefined();
+    expect(sandboxDeniedWritePath('chmod: Unable to change file mode on foo: Operation not permitted')).toBeUndefined();
   });
 });

@@ -13,6 +13,7 @@ import { isSemanticToolUIEnabled } from '../../../../../utils/featureFlags';
 import {
   deriveToolTargetContext,
   getToolFilePath,
+  computerLabelArgs,
   humanizeToolStep,
   isInternalStreamTool,
   toolNameForDetail,
@@ -90,11 +91,16 @@ export function ToolHeader({
     ? buildToolStatusLineCopy({ status, interruptionReason, toolCall }, t)
     : null;
   const preflight = toolPreflightCopy(toolCall, t);
+  const rawArgs = toolCall.arguments as Record<string, unknown> | undefined;
+  const leasedApp = toolCall.name === 'computer_use' || toolCall.name === 'Computer'
+    ? (toolCall.targetContext?.kind === 'app' ? toolCall.targetContext.label : undefined)
+    : undefined;
+  const labelArgs = computerLabelArgs(rawArgs, leasedApp);
   const displayName = preflight?.action ?? (assembled
     ? assembled.action
     : humanizeToolStep(
         toolCall.name,
-        toolCall.arguments as Record<string, unknown> | undefined,
+        labelArgs,
         t,
         toolCall.shortDescription,
         awaitingApproval

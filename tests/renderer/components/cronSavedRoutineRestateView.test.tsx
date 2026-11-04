@@ -18,6 +18,9 @@ const mocks = vi.hoisted(() => ({
   listProjects: vi.fn(),
 }));
 
+// 语言档可切（默认 zh）：停用状态行的文案要按 zh/en 双档验证（N-ROLE-ROUTINE-RESTATE-FU1-FU1）。
+const i18nState = vi.hoisted(() => ({ language: 'zh' as 'zh' | 'en' }));
+
 // 传输层 mock、store 动作走真实现：createJob/updateJob 成功后是否误关编辑器
 // （isEditorOpen）是本单踩过的真集成坑，必须在入口测试里被钉住。
 vi.mock('../../../src/renderer/services/cronClient', () => {
@@ -58,7 +61,12 @@ vi.mock('../../../src/renderer/components/features/cron/useChannelCatalog', () =
 }));
 vi.mock('../../../src/renderer/hooks/useI18n', async () => {
   const { zh } = await import('../../../src/renderer/i18n/zh');
-  return { useI18n: () => ({ t: zh, language: 'zh' }) };
+  const { en } = await import('../../../src/renderer/i18n/en');
+  return {
+    useI18n: () => (
+      i18nState.language === 'en' ? { t: en, language: 'en' } : { t: zh, language: 'zh' }
+    ),
+  };
 });
 
 import { CronSimpleCreate } from '../../../src/renderer/components/features/cron/CronSimpleCreate';
@@ -95,6 +103,11 @@ function rowValue(key: string): string {
   return root.querySelector(`[data-saved-routine-value="${key}"]`)?.textContent ?? '';
 }
 
+function rowCount(): number {
+  return screen.getByTestId('cron-saved-routine-restate')
+    .querySelectorAll('[data-saved-routine-row]').length;
+}
+
 beforeEach(() => {
   mocks.listJobs.mockResolvedValue([]);
   mocks.listRoles.mockResolvedValue([{ roleId: 'role-x', displayName: '小星' }]);
@@ -121,6 +134,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  i18nState.language = 'zh';
 });
 
 describe('CronSimpleCreate 保存后复述', () => {
@@ -277,6 +291,80 @@ describe('CronJobEditor 保存后复述', () => {
     await waitFor(() => {
       expect(useCronStore.getState().isEditorOpen).toBe(false);
     });
+  });
+});
+
+// N-ROLE-ROUTINE-RESTATE-FU1-FU1：copy-to-cloud 存的是 enabled:false 的停用副本，
+// 复述视图必须出第四行「状态」讲清楚要按了启用才会跑；启用任务保持恰好三行。
+describe('CronJobEditor 保存后复述 · 停用云端副本的第四行「状态」', () => {
+  it('copy 路径停用云端副本：四行，status 行告诉用户当前停用', async () => {
+    mocks.createJob.mockResolvedValue(savedRoleJob({ runsOn: 'cloud', enabled: false }));
+    const onClose = vi.fn();
+    useCronStore.setState({ isEditorOpen: true });
+    render(<CronJobEditor isOpen job={null} copySource={existingRoleJob()} onClose={onClose} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '创建任务' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('cron-saved-routine-restate')).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(rowValue('what')).toBe('由 小星 执行：记录里的目标');
+    });
+    expect(rowCount()).toBe(4);
+    expect(
+      screen.getByTestId('cron-saved-routine-restate')
+        .querySelector('[data-saved-routine-row="status"]'),
+    ).toBeTruthy();
+    expect(rowValue('status')).toBe('当前已停用，点启用后才会按时跑');
+
+    fireEvent.click(screen.getByTestId('cron-saved-routine-done'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('启用的保存结果不出现第四行（仍恰好三行）', async () => {
+    mocks.createJob.mockResolvedValue(savedRoleJob({ runsOn: 'cloud', enabled: true }));
+    const onClose = vi.fn();
+    useCronStore.setState({ isEditorOpen: true });
+    render(<CronJobEditor isOpen job={null} copySource={existingRoleJob()} onClose={onClose} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '创建任务' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('cron-saved-routine-restate')).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(rowValue('what')).toBe('由 小星 执行：记录里的目标');
+    });
+    expect(rowCount()).toBe(3);
+    expect(
+      screen.getByTestId('cron-saved-routine-restate')
+        .querySelector('[data-saved-routine-row="status"]'),
+    ).toBeNull();
+
+    fireEvent.click(screen.getByTestId('cron-saved-routine-done'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('en 语言档：停用副本的 status 行是英文停用提示', async () => {
+    i18nState.language = 'en';
+    mocks.createJob.mockResolvedValue(savedRoleJob({ runsOn: 'cloud', enabled: false }));
+    const onClose = vi.fn();
+    useCronStore.setState({ isEditorOpen: true });
+    render(<CronJobEditor isOpen job={null} copySource={existingRoleJob()} onClose={onClose} />);
+
+    fireEvent.click(screen.getByRole('button', { name: '创建任务' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('cron-saved-routine-restate')).toBeTruthy();
+    });
+    expect(rowCount()).toBe(4);
+    await waitFor(() => {
+      expect(rowValue('status')).toBe('Currently paused — it will only run on schedule after you turn it on.');
+    });
+
+    fireEvent.click(screen.getByTestId('cron-saved-routine-done'));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
 

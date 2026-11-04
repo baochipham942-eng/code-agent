@@ -10,6 +10,7 @@ export class ControlState {
   private _isCancelled = false;
   private _isInterrupted = false;
   private _isSettled = false;
+  private _cancelReason?: 'user' | 'session-switch' | 'idle-reaped';
   /** per-inference controller：inference 层建/清，conversationRuntime 只触发 abort */
   private _abortController: AbortController | null = null;
   /** per-run controller：conversationRuntime 建/清，下游只读 .signal 透传 */
@@ -26,6 +27,8 @@ export class ControlState {
   /** 转向代数（N-JEV-WARDEN-MOCK 审查 R3）：steer 每发生一次 +1，给等待中的异步判面做过期判定。 */
   private _steerEpoch = 0;
   private readonly _preApprovedTools = new Set<string>();
+  /** steer() 置位。下一次非空推理清掉；空的再推理把本轮判失败，不走强制收尾。 */
+  private _emptyReinferenceAfterSteer = false;
   private _externalDataCallCount = 0;
   private _memoryTainted = false;
 
@@ -46,10 +49,14 @@ export class ControlState {
   get planExitFallbackActive(): boolean { return this._planExitFallbackActive; }
   get steerEpoch(): number { return this._steerEpoch; }
   get preApprovedTools(): Set<string> { return this._preApprovedTools; }
+  get emptyReinferenceAfterSteer(): boolean { return this._emptyReinferenceAfterSteer; }
   get externalDataCallCount(): number { return this._externalDataCallCount; }
 
-  markCancelled(): void {
+  get cancelReason(): 'user' | 'session-switch' | 'idle-reaped' | undefined { return this._cancelReason; }
+
+  markCancelled(reason?: 'user' | 'session-switch' | 'idle-reaped'): void {
     this._isCancelled = true;
+    this._cancelReason = reason;
   }
 
   markInterrupted(): void {
@@ -112,6 +119,7 @@ export class ControlState {
     this.clearForceFinalResponse();
     this.clearReadLoopSeal();
     this._planExitFallbackActive = false;
+    this._emptyReinferenceAfterSteer = false;
   }
 
   /** ADR-074 K1：兜底提醒发出时置位；plan mode 退出后配 isPlanMode 判定才继续拦截。 */
@@ -135,6 +143,19 @@ export class ControlState {
 
   preApproveTool(toolName: string): void {
     this._preApprovedTools.add(toolName);
+  }
+
+  /** 清掉技能预授权。会话级 / 长期「始终允许」不在这个集合里，不动。 */
+  clearPreApprovedTools(): void {
+    this._preApprovedTools.clear();
+  }
+
+  armEmptyReinferenceAfterSteer(): void {
+    this._emptyReinferenceAfterSteer = true;
+  }
+
+  clearEmptyReinferenceAfterSteer(): void {
+    this._emptyReinferenceAfterSteer = false;
   }
 
   resetExternalDataCalls(): void {

@@ -52,7 +52,9 @@ import { outcomeWordsEn } from './outcomeWords';
 import { engineModelPanelEn } from './engineModelPanel';
 import { jevAdvisoryEn } from './jevAdvisory';
 import { workflowStallEn } from './workflowStall';
+import { connectorRequiredEn } from './connectorRequired';
 import { roleFirstWakeEn } from './roleFirstWake';
+import { roleWakeProposalsEn } from './roleWakeProposals';
 import { permissionRuleNlEn } from './permissionRuleNl';
 // satisfies（而非 `: Translations` 注解）：key 集合必须与 zh 完全一致——zh 多 key /
 // en 缺 key / en 多 key 都在此报红，同时保留 en 自身的推断类型。zh.ts 是形状真源
@@ -75,7 +77,9 @@ export const en = {
   ...outcomeWordsEn, ...engineModelPanelEn,
   ...jevAdvisoryEn,
   ...workflowStallEn,
+  ...connectorRequiredEn,
   ...roleFirstWakeEn,
+  ...roleWakeProposalsEn,
   ...permissionRuleNlEn,
   // Common
   common: {
@@ -651,8 +655,8 @@ export const en = {
   about: {
     title: 'About',
     version: 'Version',
-    buildInfo: '{branch} @ {commitShort} ({builtAt})',
-    buildUnknown: 'unknown',
+    buildBranch: 'branch {branch}',
+    buildCommit: 'build {commitShort}',
     description:
       'Agent Neo is an eval-driven, multi-model AI assistant for life and work tasks. It combines local execution, files and desktop control, external agent handoffs, and acceptance checks in one traceable context.',
     capabilities: 'Core Capabilities',

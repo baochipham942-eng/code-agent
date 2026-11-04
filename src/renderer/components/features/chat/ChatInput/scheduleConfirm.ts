@@ -13,16 +13,22 @@ interface ScheduleConfirmLabels {
   reviewInbox: string;
 }
 
-/** event 草案专属行（监听哪个群 / 单次预算）的文案：确认卡从 cronCenter 组进来传。 */
+/** event 草案专属行（监听哪个群/邮箱 / 单次预算）的文案：确认卡从 cronCenter 组进来传。 */
 export interface ScheduleEventConfirmLabels {
   group: string;
   groupFallback: string;
   groupAnyChat: string;
   budget: string;
+  /** mail 草案：「监听哪个邮箱」行标签。 */
+  mail: string;
+  /** mail 草案：账号未选时的兜底值。 */
+  mailFallback: string;
+  /** mail 草案：行值前缀（「新邮件 · 账号 · 邮箱」里的第一段）。 */
+  mailTrigger: string;
 }
 
 interface ScheduleConfirmRow {
-  key: 'what' | 'when' | 'notifyWhen' | 'result' | 'group' | 'budget';
+  key: 'what' | 'when' | 'notifyWhen' | 'result' | 'group' | 'budget' | 'mail';
   label: string;
   value: string;
 }
@@ -60,8 +66,9 @@ function readRestatement(value: unknown): ScheduleRestatement | undefined {
 }
 
 // 调度按 type 分支校验：every→interval 数字 + unit 枚举；cron→expression 非空；at→datetime 字符串/数字；
-// event→channel 源 + message 事件（accountId 允许为空：草稿期用户还没在卡里选，
-// 选没选由共享校验器在确认按钮上把关）。connector:mail 源没有创建 UI，一律拒绝。
+// event→channel 源 + message 事件，或 connector:mail 源（N-TRIGGER-MAIL-CREATE-ENTRY-K1 起
+// 两种事件源都可从 /schedule 创建；accountId 允许为空：草稿期用户还没在卡里选，
+// 选没选由共享校验器在确认按钮上把关）。其他 connector 源一律拒绝。
 // 校验失败返回 undefined，由 normalizeScheduleDraft 判草案无效（与缺 action 同等处理）：
 // 缺 schedule 的草案走到确认一步也会被 host 拒掉，不能出卡。
 // weeks 是契约遗留单位，展示标签没有对应文案，按无效处理。
@@ -88,20 +95,35 @@ function readValidSchedule(value: unknown): CreateCronJobInput['schedule'] | und
       return schedule as unknown as CreateCronJobInput['schedule'];
     }
     case 'event': {
-      if (asTrimmedString(value.source) !== 'channel' || asTrimmedString(value.eventName) !== 'message') {
-        return undefined;
-      }
+      const eventName = asTrimmedString(value.eventName);
+      if (eventName !== 'message') return undefined;
       // accountId 恒为 string（草稿期可为空串 = 还没选，共享校验器据此禁确认）；
       // chatId 空串不落键（= 任意会话，空串下发给 host 会绑死不存在的会话）。
       const accountId = asTrimmedString(value.accountId);
-      const chatId = asTrimmedString(value.chatId);
-      return {
-        type: 'event',
-        source: 'channel',
-        eventName: 'message',
-        accountId,
-        ...(chatId ? { chatId } : {}),
-      };
+      if (asTrimmedString(value.source) === 'channel') {
+        const chatId = asTrimmedString(value.chatId);
+        return {
+          type: 'event',
+          source: 'channel',
+          eventName: 'message',
+          accountId,
+          ...(chatId ? { chatId } : {}),
+        };
+      }
+      // connector:mail：mailbox 可选（缺省 INBOX，空串不落键——空 mailbox 下发给
+      // host 会被当成字面量邮箱名，静默监听不存在的邮箱）。
+      if (asTrimmedString(value.source) === 'connector' && asTrimmedString(value.connector) === 'mail') {
+        const mailbox = asTrimmedString(value.mailbox);
+        return {
+          type: 'event',
+          source: 'connector',
+          connector: 'mail',
+          eventName: 'message',
+          accountId,
+          ...(mailbox ? { mailbox } : {}),
+        };
+      }
+      return undefined;
     }
     default:
       return undefined;
@@ -222,8 +244,25 @@ export function buildScheduleConfirmRows(
   // 非 agent 草案整行不出，不给「看起来可配置」的假口子（N-CRON-RESTATE-HUMAN-WHEN）。
   const isAgentAction = isPlainObject(input.action) && asTrimmedString(input.action.type) === 'agent';
 
-  // event 草案没有「什么时候」：换成「监听哪个群」+「单次预算」两行（值随卡内编辑走），
-  // 交互本体（账号/群选择、预算输入）由 CronEventScheduleFields 渲染，行值只做当前状态陈述。
+  // event 草案没有「什么时候」：换成「监听哪个群/邮箱」+「单次预算」两行（值随卡内编辑走），
+  // 交互本体（账号/群或账号/邮箱选择、预算输入）由 CronEventScheduleFields /
+  // CronMailEventFields 渲染，行值只做当前状态陈述。
+  if (schedule?.type === 'event' && schedule.source === 'connector') {
+    const accountId = asTrimmedString(schedule.accountId);
+    const mailbox = asTrimmedString(schedule.mailbox) || CRON_EVENT_TRIGGER.DEFAULT_MAILBOX;
+    const mailValue = accountId
+      ? `${eventLabels?.mailTrigger || ''} · ${accountId} · ${mailbox}`
+      : (eventLabels?.mailFallback || '');
+    const budget = input.maxRunBudget;
+    return [
+      { key: 'what', label: labels.what, value: what },
+      { key: 'mail', label: eventLabels?.mail ?? '', value: mailValue },
+      ...(isAgentAction ? [{ key: 'notifyWhen' as const, label: labels.notifyWhen, value: notifyWhen }] : []),
+      { key: 'budget', label: eventLabels?.budget ?? '', value: typeof budget === 'number' ? String(budget) : '' },
+      { key: 'result', label: labels.result, value: result },
+    ];
+  }
+
   if (schedule?.type === 'event' && schedule.source === 'channel') {
     const accountId = asTrimmedString(schedule.accountId);
     const chatId = asTrimmedString(schedule.chatId);

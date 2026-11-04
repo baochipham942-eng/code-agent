@@ -100,8 +100,11 @@ describe('parked approval durable run parking (through hydrate)', () => {
       ];
 
       // 重启路径：hydrate 幸存 → 默认停靠口被注入的仓储替换（真实函数照跑）。
+      // FU1：幸存前提含会话 cwd 可解析；本文件没有 sessions 表，注入运行本身的 workspace
+      // （= 该会话运行时真持有的工作目录）。
       const counts = hydrateApprovalGatesAtBoot(approvals, 2_000, {
         loadSessionMessages: () => ledgerMessages,
+        resolveWorkingDirectory: () => workspace,
         durableRunRepository: repository,
       });
       expect(counts.survived).toBe(1);

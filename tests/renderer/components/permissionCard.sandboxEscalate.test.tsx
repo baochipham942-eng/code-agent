@@ -53,7 +53,7 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 const { PermissionCard } = await import('../../../src/renderer/components/PermissionDialog/PermissionCard');
 
 const FILE_REASON = '沙盒拦截了这一步：它想写入文件 /tmp/neo-sandbox/neo-x.txt。允许仅这一次写入这个文件并重跑？';
-const DIR_REASON = '沙盒拦截了这一步：它想写入目录 /tmp/neo-sandbox/neo-dir（含其中全部内容）。允许仅这一次写入这个目录及其中内容并重跑？（其中凭据与配置类文件仍不可写）';
+const DIR_REASON = '沙盒拦截了这一步：它想写入目录 /tmp/neo-sandbox/neo-dir（含其中全部内容）。允许仅这一次写入这个目录及其中内容并重跑？（其中已有的凭据与配置类文件仍不可写）';
 const GENERIC_CONSEQUENCE = '将执行有风险命令，可能覆盖本机系统或项目状态。';
 
 function render(request: ContractPermissionRequest): string {

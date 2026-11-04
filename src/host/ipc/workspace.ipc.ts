@@ -35,6 +35,7 @@ import {
   handlePreviewPresentation,
   type WorkspaceExportBundlePayload,
 } from './workspaceArchive.ipc';
+import { classifyPreviewFile, previewHeic, previewLegacyOffice, readTextPreview } from './workspacePreviewFormats';
 import {
   getPublishState,
   listPublishedVersions,
@@ -837,6 +838,12 @@ interface WorkspaceRouteCtx {
  * try 外解构抛错（IPC 调用 reject），现返回 INVALID_ACTION。
  */
 const workspaceRoutes = defineDomainRoutes<WorkspaceDomainRequest, WorkspaceRouteCtx>(WorkspaceSchemas.REQUEST, {
+  ...{
+    classifyPreviewFile: (_ctx: unknown, payload: unknown) => classifyPreviewFile(payload as { filePath?: string }),
+    readTextPreview: (_ctx: unknown, payload: unknown) => readTextPreview(payload as { filePath?: string }),
+    previewHeic: (_ctx: unknown, payload: unknown) => previewHeic(payload as { filePath?: string }),
+    previewLegacyOffice: (_ctx: unknown, payload: unknown) => previewLegacyOffice(payload as { filePath?: string }),
+  },
   selectDirectory: async ({ getMainWindow, getAppService, getConfigService }, _payload) => {
     return await handleSelectDirectory(getMainWindow, getAppService, getConfigService);
   },

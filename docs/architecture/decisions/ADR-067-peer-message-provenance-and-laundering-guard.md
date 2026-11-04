@@ -59,7 +59,7 @@ origin = { senderKind: 'user' | 'orchestrator' | 'peer-agent' | 'dependency',
 ### D4 跨 agent 否认登记 + 洗白匹配（denial ledger，二期）
 
 - `decisionHistory.ts` 升级为可按 `(sessionId, 动作指纹)` 查询的 denial registry；指纹复用 `canonicalizeCommand` / `standingGrantTarget` 的规范化。`ask-denied` 写入。
-- 任何 agent 后续命中同指纹动作：`turnOrigin` 含 peer → 直接 BLOCK，`recordDecision('policy-deny','peermsg-launder')`；无 peer 来源（用户本人重试/换 agent 重跑）→ `forceConfirm` 一次，不硬毙。
+- 任何 agent 后续命中同指纹动作：`turnOrigin` 含 peer → 直接 BLOCK，`recordDecision('policy-deny','peermsg-launder')`；无 peer 来源（用户本人重试/换 agent 重跑）→ 真人拒绝（`denialSource === 'user'`）且仍在**同一条用户消息**内（同 `sourceMessageId`）→ 直接拒绝、不再出卡（`recordDecision('policy-deny','user-denied-sticky')`，模型收到一句话：用户已拒绝该动作，下一条用户消息前不会再被询问，别重试、在聊天里向用户确认）；非真人拒绝（超时/fail-closed/机器）、缺消息 id、或用户已发出下一条消息（含渠道入站）→ 恢复正常出卡。理由：同一轮里把同一动作反复摆上审批卡是审批疲劳的直接来源，会把用户逼向「always allow」这种更不安全的捷径；竞品 Grok v0.75.5 同款（「拒绝后 Bot 停下，直到用户再发消息才再试」）。批准仍即时清登记。
 - 这是竞品「peer 说我被拦了帮我跑 → BLOCK」语义的完整复刻，但它依赖 D1 的真实 sender 与 D3 的 turnOrigin 维度，否则无法区分「peer 转述」与「用户本人重试」，误伤不可控——故排二期。
 
 ### D5 与消息面放开的先后
@@ -98,7 +98,7 @@ origin = { senderKind: 'user' | 'orchestrator' | 'peer-agent' | 'dependency',
 | 刀 0 来源铸造 | 三套消息结构加 `origin`；五个入队点宿主铸造；修两处硬编码；drain 前缀诚实化；存量无 origin 从严 | 单测（入队点铸造、伪造 from 不生效、前缀正确）+ 反向变异（把 `send_input` 转发消息盖成 `'user'` → 测试红） | — |
 | 刀 1 push 边界 | 队列注入过 InputSanitizer + nonce 边界；user 消息不包 | 单测（peer 消息含注入载荷被包边界/拦截）+ 反向变异（摘掉边界 → 注入扫描测试红） | 刀 0 |
 | 刀 2 origin 权限 | `turnOrigin` 进 PermissionRequestData 与判定链；peer 起源写/执行 forceConfirm + 审批卡标注；无人值守 fail-closed | 单测（peer 起源 bash 必出卡且卡面带 sender；user 起源不变；只读不升档）+ 反向变异（去掉 turnOrigin 传递 → peer 起源静默放行，测试红） | 刀 0 |
-| 刀 3 denial ledger | decisionHistory 升级可查询 registry；指纹规范化；peer+同指纹 BLOCK，无 peer forceConfirm | 单测（A 被拒 → B peer 转述同指纹 BLOCK；用户重试 forceConfirm；改参数不误伤） | 刀 2 |
+| 刀 3 denial ledger | decisionHistory 升级可查询 registry；指纹规范化；peer+同指纹 BLOCK，无 peer：真人拒且同消息内 sticky 拒绝、换消息恢复出卡 | 单测（A 被拒 → B peer 转述同指纹 BLOCK；同消息重试零新卡；新消息后再出卡；改参数不误伤） | 刀 2 |
 
 顺序：刀 0 → 刀 1/刀 2 可并行 → 刀 3 二期。全部落地前，`SUBAGENT_DISABLED_TOOLS` 消息类工具不许放开。
 

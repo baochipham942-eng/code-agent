@@ -6,6 +6,7 @@ import {
   SdkHttpError,
   UnauthorizedError,
 } from '@modelcontextprotocol/client';
+import { MCP_RATE_LIMIT_DEFERRED_CODE } from './mcpRateLimit';
 
 export const MCP_TOOL_DELIVERY_UNKNOWN_CODE = 'MCP_TOOL_DELIVERY_UNKNOWN' as const;
 const MCP_TASK_UNAVAILABLE_CODE = 'MCP_TASK_UNAVAILABLE' as const;
@@ -176,6 +177,15 @@ export function formatMcpConnectorErrorExit(
   options?: { connectPhase?: boolean },
 ): string | null {
   const message = errorMessageOf(error) ?? 'connector error';
+  const deferred = rateLimitDeferredWaitOf(error);
+  if (deferred) {
+    const waitSeconds = Math.ceil(deferred.waitMs / 1000);
+    return [
+      `mcp-rate-limit-deferred: ${message}`,
+      `${deferred.serverName} is rate-limiting this account and asked to wait ${waitSeconds}s — retrying now will keep failing.`,
+      `Tell the user to resend this request in about ${waitSeconds} seconds, or switch to another connector for now. Do not retry automatically.`,
+    ].join(' ');
+  }
   if (isMcpCredentialsMissingError(error)) {
     return [
       message,
@@ -199,6 +209,15 @@ export function formatMcpConnectorErrorExit(
     ].join(' ');
   }
   return null;
+}
+
+/** 429 的 Retry-After 超过遵守上限：不阻塞调用，等待秒数作为出路文案上抛（mcpRateLimit.ts）。 */
+function rateLimitDeferredWaitOf(error: unknown): { serverName: string; waitMs: number } | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+  const candidate = error as { code?: unknown; serverName?: unknown; waitMs?: unknown };
+  if (candidate.code !== MCP_RATE_LIMIT_DEFERRED_CODE) return undefined;
+  if (typeof candidate.serverName !== 'string' || typeof candidate.waitMs !== 'number') return undefined;
+  return { serverName: candidate.serverName, waitMs: candidate.waitMs };
 }
 
 /** 发出请求前凭据就绪失败（secretRef 解析失败 / 字段缺失或为空）——凭据根本没附上，别报成 401 授权失效。 */

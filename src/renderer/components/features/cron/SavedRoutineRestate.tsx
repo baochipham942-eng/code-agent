@@ -66,6 +66,8 @@ export const SavedRoutineRestate: React.FC<SavedRoutineRestateProps> = ({ job, o
       reviewInbox: sc.reviewInbox,
       savedWhenEvent: cc.savedRestateWhenEvent,
       savedRolePrefix: cc.savedRestateRolePrefix,
+      savedStatusLabel: cc.savedRestateStatusLabel,
+      savedStatusPaused: cc.savedRestateStatusPaused,
     },
     lang: language,
   }), [job, roleDisplayName, channelLabel, sc, cc, language]);

@@ -20,6 +20,7 @@ import type {
 import { getLangfuseService } from '../../services';
 import { logCollector } from '../../mcp/logCollector.js';
 import { EXIT_ROLE_FLOW_TOOL_NAME } from '../../tools/modules/roleAuthoring/exitRoleFlow.schema';
+import { canonicalStrictBoundaryToolNames } from '../../tools/skillBoundaryScope';
 import { createLogger } from '../../services/infra/logger';
 import { DESIGN_QUALITY } from '../../../shared/constants';
 import { runDesignQualityReview } from '../../quality/designQualityHook';
@@ -90,6 +91,7 @@ import { getBackgroundSubagentRegistry } from '../backgroundSubagentRegistry';
 import { formatSystemReminderForCompletions } from '../subagentCompletionNotification';
 import { planContextTag } from './planApprovalRunBoundary';
 import { extractToolStepTarget } from '../toolStepTarget';
+import { computerUseObservedTarget } from '../../plugins/builtin/computerUse/computerUseObservedTarget';
 import { decodeUtf8 } from '../../utils/decodeText';
 
 const logger = createLogger('AgentLoop');
@@ -265,7 +267,11 @@ export class ToolExecutionEngine {
           tool: entry.toolCall.name,
           toolIndex: entry.index,
           toolTotal: toolCalls.length,
-          target: extractToolStepTarget(entry.toolCall.arguments),
+          target: computerUseObservedTarget(entry.toolCall.name, entry.toolCall.arguments, {
+            sessionId: this.ctx.sessionId,
+            turnId: this.ctx.turn.currentTurnId,
+            agentId: this.ctx.agentId,
+          }) ?? extractToolStepTarget(entry.toolCall.arguments),
           ...(parallel
             ? { parallel: true }
             : { progress: Math.round((entry.index / toolCalls.length) * 100) }),
@@ -318,9 +324,22 @@ export class ToolExecutionEngine {
       if (toolCallStarted) return;
       toolCallStarted = true;
       const observedArgs = sanitizeToolArgumentsForObservation(toolCall);
+      const leasedApp = computerUseObservedTarget(toolCall.name, observedArgs, {
+        sessionId: this.ctx.sessionId,
+        turnId: this.ctx.turn.currentTurnId,
+        agentId: this.ctx.agentId,
+      });
       this.ctx.onEvent({
         type: 'tool_call_start',
-        data: { ...toolCall, arguments: observedArgs, _index: index, turnId: this.ctx.turn.currentTurnId },
+        data: {
+          ...toolCall,
+          arguments: observedArgs,
+          ...(leasedApp && !toolCall.targetContext
+            ? { targetContext: { kind: 'app' as const, label: leasedApp } }
+            : {}),
+          _index: index,
+          turnId: this.ctx.turn.currentTurnId,
+        },
       });
       this.ctx.telemetryAdapter?.onToolCallStart(
         this.ctx.turn.currentTurnId,
@@ -812,6 +831,9 @@ export class ToolExecutionEngine {
           forceFinalResponse: this.ctx.control.forceFinalResponse.bind(this.ctx.control),
           deniedToolNames: this.ctx.deniedToolNames,
           allowedToolNames: this.ctx.allowedToolNames, foregroundToolFace: this.ctx.foregroundToolFace,
+          // strict skill 流程面透传：让执行层兜底闸与组装层同一语义（FB-327），
+          // 边界内工具（如 propose_role）不被前台白名单在派发时二次拦截。
+          skillBoundaryAllowedTools: canonicalStrictBoundaryToolNames(this.ctx.turn.skillToolBoundary),
         }
       );
       const result = await watchdog.awaitExecution(

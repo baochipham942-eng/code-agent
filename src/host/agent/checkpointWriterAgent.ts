@@ -7,9 +7,11 @@
 // 独立把关 → 原子写入。验证失败不落盘，上游 fail-closed 跳过重建边界。
 // ============================================================================
 
-import type { Message, ModelConfig, ModelProvider } from '../../shared/contract';
+import type { Message, ModelConfig } from '../../shared/contract';
 import type { SessionTask } from '../../shared/contract/planning';
-import { CHECKPOINT_WRITER, DEFAULT_MODELS, DEFAULT_PROVIDER } from '../../shared/constants';
+import { CHECKPOINT_WRITER } from '../../shared/constants';
+import { PROVIDER_REGISTRY } from '../model/providerRegistry';
+import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 import { createLogger } from '../services/infra/logger';
 import { ModelRouter } from '../model/modelRouter';
 import { getConfigService } from '../services';
@@ -137,26 +139,26 @@ function summarizeValidation(validation: CheckpointValidationResult): string {
 }
 
 // ----------------------------------------------------------------------------
-// 默认 LLM：主模型直调（模型解析仿 compactModel.initializeMainModel）
+// 默认 LLM：主模型直调（模型解析走 resolveSessionDefaultModelConfig，
+// 用户配置的默认模型优先，未配置才落出厂默认）
 // ----------------------------------------------------------------------------
 
 let writerModelRouter: ModelRouter | null = null;
 
 function resolveWriterModelConfig(): ModelConfig {
   const configService = getConfigService();
-  const settings = configService.getSettings();
-  const provider = (settings.model?.provider || DEFAULT_PROVIDER) as ModelProvider;
-  const model = settings.model?.model || DEFAULT_MODELS.chat;
+  const { provider, model, baseUrl } = resolveSessionDefaultModelConfig();
   const apiKey = configService.getApiKey(provider)
     || (provider === 'moonshot' ? process.env.KIMI_K25_API_KEY : undefined);
-  if (!apiKey) {
+  // 免 key 供应商（如 local）与主会话同款放行，key 由 provider 自补，不在此提前拒绝
+  if (!apiKey && PROVIDER_REGISTRY[provider]?.requiresApiKey !== false) {
     throw new Error(`checkpoint writer: no API key available for provider ${provider}`);
   }
   return {
     provider,
     model,
     apiKey,
-    baseUrl: settings.models?.providers?.[provider]?.baseUrl,
+    baseUrl,
     temperature: CHECKPOINT_WRITER.LLM_TEMPERATURE,
     maxTokens: CHECKPOINT_WRITER.LLM_MAX_OUTPUT_TOKENS,
   };

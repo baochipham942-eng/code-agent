@@ -7,7 +7,7 @@
 
 import type { AgentSource } from './agentRegistry';
 import type { SkillCategory } from './skillRepository';
-import type { CronScheduleConfig } from './cron';
+import type { CronJobStatus, CronScheduleConfig } from './cron';
 
 /** 角色展示元数据；内置角色与云下发角色包共用这一合同。 */
 export interface BuiltinRoleVisual {
@@ -104,6 +104,10 @@ export interface RoleBoundCronJob {
   enabled: boolean;
   nextRunAt?: number;
   lastRunAt?: number;
+  /** 最近一条执行的状态；没有执行记录时缺省 */
+  lastStatus?: CronJobStatus;
+  /** 最近一条执行的错误：只要首行，去掉堆栈并截断；没有错误时缺省 */
+  lastError?: string;
   actionType: 'agent' | 'role_wake';
 }
 
@@ -145,6 +149,15 @@ export type RoleWakeTrigger = 'cadence' | 'event';
 export interface RoleFirstWakeSuggestion {
   title: string;
   prompt: string;
+}
+
+/** 每日醒来「外部增量」巡检给出的一键工作提议（wake-proposals.json 的 pending 快照） */
+export interface RoleWakeProposal {
+  title: string;
+  /** 点击后写进专家会话的委托 prompt：从起草/拟计划开始，不直接发送。 */
+  prompt: string;
+  /** 落盘时间（ISO），展示/排序用。 */
+  createdAt?: string;
 }
 
 /** 首次醒来状态机取值：pending（已入队待跑）→ running → completed / skipped / failed（终态，不再重入） */

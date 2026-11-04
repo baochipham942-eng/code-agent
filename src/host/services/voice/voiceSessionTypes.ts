@@ -3,6 +3,7 @@
 import type { WebSocket as WsSocket } from 'ws';
 import type { VoiceFocusContext, VoiceTokenUsage, VoiceTransportHandle } from '../../../shared/contract/voice';
 import type { VoiceContinuityContext } from './voiceContextAssembler';
+import type { VoiceMemoryFacts } from './voiceMemoryContext';
 import type { VoiceInterruptCandidate } from './voiceInterruptCandidates';
 import type { NarrationState } from './voiceNarrationQueue';
 import type { NarrationResponseLedger } from './voiceNarrationTranscript';
@@ -42,8 +43,8 @@ export interface ActiveSession {
   transcriptBuf: { assistantByResponse: Map<string, string> };
   /** 上一条落库的用户字幕，供 R5 连续字幕并入上一条 */
   transcriptMerge: TranscriptMergeState;
-  /** 通话身份的短人设，焦点刷新时要和 Focus 段一起重拼；userProfile 同样受声纹闸保护。 */
-  personaInstructions: string; userProfile: string;
+  /** 通话身份的短人设，焦点刷新时要和 Focus 段一起重拼；userProfile 与 memoryFacts 同样受声纹闸保护。 */
+  personaInstructions: string; userProfile: string; memoryFacts: VoiceMemoryFacts | null;
   /** 当前已下发给上游的完整 instructions，用于语速/焦点刷新去重。 */
   instructions: string;
   /** 本次通话真用的上游模型（设置白名单解析后），挂断摘要如实记它 */

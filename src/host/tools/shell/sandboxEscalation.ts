@@ -207,6 +207,22 @@ export function shouldOfferDirectoryEscalation(input: SandboxEscalationEligibili
   return resolvedPath;
 }
 
+/**
+ * Directory card wording (design doc 卡片文案). The question line is fixed; the
+ * forbidden-name exception sentence is appended only when the granted directory
+ * already exists — the deny lines / ro-bind covers only names that already exist
+ * inside the granted tree, so a directory that does not exist at denial time
+ * (mkdir denial) has nothing to protect and its card must not promise the
+ * exception (FB-415: the opening is a subset of the promise).
+ */
+export function directoryEscalationReason(offeredDirectoryPath: string): string {
+  const question =
+    `沙盒拦截了这一步：它想写入目录 ${offeredDirectoryPath}（含其中全部内容）。允许仅这一次写入这个目录及其中内容并重跑？`;
+  return directoryEscalationTarget(offeredDirectoryPath) === 'directory'
+    ? `${question}（其中已有的凭据与配置类文件仍不可写）`
+    : question;
+}
+
 export const SANDBOX_ESCALATION_DECLINED_MESSAGE =
   'The user declined to widen the sandbox for this command. Run it outside the workspace yourself, or ask to change the target path.';
 

@@ -32,6 +32,7 @@ import { getRoleFirstWakePath, isSafeRoleId } from './roleAssetPaths';
 import { getBuiltinRoleVisual } from './builtinRoles';
 import { readRolePersonalization, toRoleBoundaryRunAllowlist } from './rolePersonalization';
 import { resolveWakeRunToolScope } from './roleProactivity';
+import { probeUncheckedNativeConnectors } from './nativeSourceProbe';
 
 const logger = createLogger('RoleFirstWake');
 
@@ -321,8 +322,9 @@ function isUserConnectedSource(item: CapabilityCenterItem): boolean {
     && !item.tags.includes('in-process');
 }
 
-/** 已连接源 = 能力中心里用户自连的 connector / mcp_template（判据见 isUserConnectedSource）。 */
-async function listConnectedSourceNames(): Promise<string[]> {
+/** 已连接源 = 能力中心里用户自连的 connector / mcp_template（判据见 isUserConnectedSource）。首次醒来与每日醒来的外部增量巡检共用。 */
+export async function listConnectedSourceNames(): Promise<string[]> {
+  await probeUncheckedNativeConnectors();
   try {
     const { getCapabilityCenterService } = await import('../capabilities/capabilityCenterService');
     const inventory = await getCapabilityCenterService().listCapabilities();

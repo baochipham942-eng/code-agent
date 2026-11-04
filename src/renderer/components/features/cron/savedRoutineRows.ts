@@ -47,6 +47,9 @@ interface SavedRoutineRestateLabels {
   savedWhenEvent: string;
   /** cronCenter 新增：what 行角色前缀模板，如「由 {role} 执行：」。 */
   savedRolePrefix: string;
+  /** cronCenter 新增：停用状态行的标签与值（仅 job.enabled === false 时出第四行）。 */
+  savedStatusLabel: string;
+  savedStatusPaused: string;
 }
 
 export interface SavedRoutineRestateInput {
@@ -60,7 +63,7 @@ export interface SavedRoutineRestateInput {
 }
 
 export interface SavedRoutineRow {
-  key: 'what' | 'when' | 'result';
+  key: 'what' | 'when' | 'result' | 'status';
   label: string;
   value: string;
 }
@@ -100,9 +103,15 @@ export function buildSavedRoutineRestateRows(input: SavedRoutineRestateInput): r
     ? labels.savedWhenEvent
     : (confirmRows.find((row) => row.key === 'when')?.value ?? '');
   const result = channelLabel.trim() || labels.reviewInbox;
-  return [
+  // 停用副本（copy-to-cloud 一律 enabled:false）追加第四行「状态」：用户读着
+  // 「每天 09:00」会以为它会跑，其实要按了启用才会（N-ROLE-ROUTINE-RESTATE-FU1-FU1）。
+  const rows: SavedRoutineRow[] = [
     { key: 'what', label: labels.what, value: what },
     { key: 'when', label: labels.when, value: when },
     { key: 'result', label: labels.result, value: result },
   ];
+  if (job.enabled === false) {
+    rows.push({ key: 'status', label: labels.savedStatusLabel, value: labels.savedStatusPaused });
+  }
+  return rows;
 }

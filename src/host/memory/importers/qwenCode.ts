@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { instructionItem, memoryItemFromMarkdown } from './adapterHelpers';
+import { instructionItems, memoryItemFromMarkdown } from './adapterHelpers';
 import { directoryExists, listMarkdownFiles } from './markdown';
 import type { MemoryImporterAdapter, RawMemoryImportItem } from './types';
 
@@ -37,14 +37,14 @@ export const qwenCodeAdapter: MemoryImporterAdapter = {
         if (item) items.push(item);
       }
     }
-    const rules = await instructionItem({
+    items.push(...await instructionItems({
       adapterId: 'qwen-code',
       sourceVendor: 'Alibaba',
       sourcePath: path.join(root, 'QWEN.md'),
       sourceScope: 'global',
       verifiedOnDevice: true,
-    });
-    if (rules) items.push(rules);
+      splitRules: true,
+    }));
     return { items, skipped };
   },
 };

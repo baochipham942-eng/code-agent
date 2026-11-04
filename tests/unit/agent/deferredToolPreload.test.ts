@@ -28,6 +28,8 @@ import { getProtocolRegistry, resetProtocolRegistry } from '../../../src/host/to
 import { getLoadedDeferredToolDefinitions } from '../../../src/host/tools/dispatch/toolDefinitions';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { getTextForegroundToolNames } from '../../../src/host/tools/protocolRegistry';
+import { getTextForegroundToolNamesForPrompt } from '../../../src/host/app/sessionCommandCenterBrain';
+import { isToolDeniedByRunPolicy } from '../../../src/host/tools/runToolPolicy';
 
 vi.mock('../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({
@@ -492,6 +494,22 @@ describe('deferred tool preload', () => {
     expect(names).toContain('Append');
   });
 
+  it('存草稿回复的前台白名单让 mail_draft 被预载，run policy 不再拒绝它', () => {
+    const allowed = getTextForegroundToolNamesForPrompt('存草稿 1');
+    expect(allowed).toContain('mail_draft');
+    expect(getDeferredToolsToPreloadForTurn(runtime({
+      allowedToolNames: allowed,
+    }))).toContain('mail_draft');
+    expect(isToolDeniedByRunPolicy({ allowedToolNames: allowed }, 'mail_draft')).toBe(false);
+
+    const plain = getTextForegroundToolNamesForPrompt('存草稿箱里有什么');
+    expect(plain).not.toContain('mail_draft');
+    expect(getDeferredToolsToPreloadForTurn(runtime({
+      allowedToolNames: plain,
+    }))).not.toContain('mail_draft');
+    expect(isToolDeniedByRunPolicy({ allowedToolNames: plain }, 'mail_draft')).toBe(true);
+  });
+
   it('actually loads propose_role through the skill boundary path', () => {
     registerProtocolToolForPreload('propose_role' as never);
     resetToolSearchService();
@@ -503,5 +521,21 @@ describe('deferred tool preload', () => {
     } as never);
     expect(loaded).toEqual(['propose_role']);
     expect(getToolSearchService().isToolLoaded('propose_role')).toBe(true);
+  });
+
+  // FB-327 同面补登记：exit_role_flow 在两个 strict skill 的 allowedTools 里都被声明，
+  // 漏登记 DEFERRED_TOOLS_META 时 selectTool 查不到 → 永不进工具表 → 收窄说明里
+  // 「调用 exit_role_flow 退出流程」是一句模型做不到的话。
+  it('actually loads exit_role_flow through the skill boundary path', () => {
+    registerProtocolToolForPreload('exit_role_flow' as never);
+    resetToolSearchService();
+    const loaded = preloadDeferredToolsForTurn({
+      enableToolDeferredLoading: true,
+      executionIntent: undefined,
+      messages: [{ id: 'm1', role: 'user', content: '/create-role 研究员', timestamp: 1 }],
+      turn: TurnState.forTest({ skillToolBoundary: { skillName: 'create-role', allowedTools: ['exit_role_flow', 'read_file'] } }),
+    } as never);
+    expect(loaded).toContain('exit_role_flow');
+    expect(getToolSearchService().isToolLoaded('exit_role_flow')).toBe(true);
   });
 });

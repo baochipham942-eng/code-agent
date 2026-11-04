@@ -35,6 +35,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../../src/renderer/services/surfaceExecutionClient', () => ({
   getPersistedSurfaceTerminalFrame: mocks.getPersistedSurfaceTerminalFrame,
   deletePersistedSurfaceTerminalFrames: vi.fn(),
+  // The live window now loads the takeover control client at import time.
+  controlSurfaceExecutionSession: vi.fn(async () => undefined),
 }));
 
 const DISK_FRAME_DATA_URL = 'data:image/jpeg;base64,/9j/4AAQSkZJRg==';

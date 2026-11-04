@@ -1,8 +1,11 @@
 import type { CronJobAction, CronJobDefinition, CronJobExecution } from '../../shared/contract/cron';
 import { CRON_AGENT_SNAPSHOT, CRON_RESULT_PUSH } from '../../shared/constants';
+import { guardOutboundText } from '../security/sensitiveDataGuard';
 import { saveCronExecution, upsertCronExecutionInMemory } from './cronPersistence';
 import { truncateUtf8Snapshot } from './cronAgentPrompt';
 import { CRON_SUMMARY_TAG_PATTERN, extractCronAlertText } from '../../shared/cronRunDigest';
+import { CRON_EVENT_DECISION_BLOCK_PATTERN } from './cronEventDecisions';
+import { isCronObserveMode, recordObservedChannelReply } from './cronObserveMode';
 
 interface CronResultDeliveryOutcome {
   delivered: boolean;
@@ -10,6 +13,8 @@ interface CronResultDeliveryOutcome {
   reason?: string;
   /** 真推成功时回传用于写回 lastPushed 的去重键（按 CRON_AGENT_SNAPSHOT.MAX_BYTES 截断；≤8KB 时与发出正文一字不差）。 */
   pushedBody?: string;
+  /** 观察档（N-TRIGGER-OBSERVE-MODE）：本会推送，已拦下记 would_act，什么都没发。 */
+  observed?: boolean;
 }
 
 export interface CronResultDeliveryPersistence {
@@ -45,7 +50,9 @@ function parseTarget(raw: string): { account: string; chatId?: string } {
  * alert 分支走 shared/cronRunDigest.extractCronAlertText（与完成系统通知共用同一提取，
  * N-CRON-RESTATE-HUMAN-WHEN-FU1）；快照正则复用 shared/constants 的 pattern source。
  */
-function sanitizePushBody(raw: string): string {
+function sanitizePushBody(rawWithDecisions: string): string {
+  // 逐事件决策标签（N-TRIGGER-OBSERVE-MODE）是台账数据，不进通道。
+  const raw = rawWithDecisions.replace(CRON_EVENT_DECISION_BLOCK_PATTERN, '');
   const alerts = extractCronAlertText(raw);
   if (alerts) return alerts;
   const snapshotBlocks = new RegExp(CRON_AGENT_SNAPSHOT.TAG_PATTERN.source, 'gi');
@@ -61,6 +68,7 @@ function sanitizePushBody(raw: string): string {
 async function pushCronResult(
   definition: CronJobDefinition,
   result: unknown,
+  executionId: string | undefined,
 ): Promise<CronResultDeliveryOutcome> {
   const actionContext = definition.action.type === 'agent'
     ? definition.action.context as Record<string, unknown> | undefined
@@ -86,6 +94,13 @@ async function pushCronResult(
     }
   }
 
+  // 观察档拦截（宿主执行路径，不靠提示词）：本会推送的正文只记一条 would_act，
+  // 通道管理器一下都不碰——账号解析/发送都在这之后。
+  if (isCronObserveMode(definition)) {
+    recordObservedChannelReply(definition, executionId, targetChannel, body);
+    return { delivered: false, observed: true };
+  }
+
   const { account: accountRef, chatId } = parseTarget(targetChannel);
   try {
     const { getChannelManager } = await import('../channels/channelManager');
@@ -100,7 +115,9 @@ async function pushCronResult(
       return fail(`push target "${targetChannel}" has no conversation id (expected "<channel>:<chatId>")`);
     }
 
-    const sent = await channelManager.sendMessage(targetAccount.id, chatId, body);
+    // 出站掩码（N-OUTBOUND-SENSITIVE-GUARD）：真发出去的正文过 shape-only 掩码；
+    // 去重键 dedupBody 与 execution.result 仍持原文——原文只留本地，出口只见掩码。
+    const sent = await channelManager.sendMessage(targetAccount.id, chatId, guardOutboundText(body).text);
     // 🔴 返回值必须看：原实现忽略它，发送被平台拒绝（无效 receive_id / 不在出站白名单）时
     // 表现为「任务成功、结果没到」，而无人值守场景没有人会发现。
     if (!sent.success) return fail(`channel rejected the message: ${sent.error ?? 'unknown error'}`);
@@ -131,7 +148,7 @@ export async function deliverCronResultToChannel(
   executionId: string | undefined,
   persistence: CronResultDeliveryPersistence,
 ): Promise<CronResultDeliveryOutcome> {
-  const outcome = await pushCronResult(definition, result);
+  const outcome = await pushCronResult(definition, result, executionId);
   if (outcome.delivered) {
     await rememberPushedBody(definition, outcome.pushedBody, persistence);
     return outcome;

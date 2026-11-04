@@ -5,6 +5,17 @@
 import path from 'path';
 import os from 'os';
 import { resolveCanonicalRunPath } from '../../runtime/runContext';
+import { CHAT_UPLOAD_DIR_NAME } from '../../../shared/constants/chatUploads';
+
+/**
+ * 是否落在聊天上传临时目录（web/Tauri 的 /api/upload/temp 落盘处，
+ * webServer 启动/关停时整体清空）。Read 工具用它在上传副本 ENOENT 时
+ * 给「上传已过期，请重新上传」的人话提示，而不是一句干巴巴的 not found。
+ */
+export function isChatUploadPath(filePath: string): boolean {
+  const uploadRoot = path.join(os.tmpdir(), CHAT_UPLOAD_DIR_NAME);
+  return filePath.startsWith(`${uploadRoot}${path.sep}`);
+}
 
 /**
  * 展开波浪号路径 (~/xxx -> /Users/xxx/xxx)

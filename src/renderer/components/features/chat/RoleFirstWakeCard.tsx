@@ -13,6 +13,7 @@ import { getFirstWake, listRoles, skipFirstWake } from '../../../services/rolesC
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { goToExpertThread } from '../../../utils/inviteExpert';
+import { RoleWakeProposalsCard } from './RoleWakeProposalsCard';
 
 const POLL_MS = 3000;
 
@@ -208,5 +209,10 @@ export const RoleFirstWakeThreadBanner: React.FC = () => {
   ));
   const roleId = readPersistedExpertThread(metadata)?.roleId;
   if (!currentSessionId || !roleId) return null;
-  return <RoleFirstWakeCard roleId={roleId} framed />;
+  return (
+    <>
+      <RoleFirstWakeCard roleId={roleId} framed />
+      <RoleWakeProposalsCard roleId={roleId} framed />
+    </>
+  );
 };

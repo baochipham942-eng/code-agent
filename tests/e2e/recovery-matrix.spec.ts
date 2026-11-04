@@ -300,7 +300,9 @@ test('G parked tool approval survives SIGKILL restart and runs exactly once', as
   const effectFile = path.join(current.dirs.workspace, 'parked-approval-effect.txt');
   // 无人值守来源：cron agent 任务（origin=cron 的会话才会真走 B2 停车挂起）。带 sourceSessionId
   // 指向一个有工作目录的来源会话——真实产品形状（从会话派生的任务继承 cwd）；无 cwd 的会话
-  // 在 r1 修复后批准会 fail-closed 收口 args_unavailable，那是另一条被单测钉住的路径。
+  // 自 N-PARKED-APPROVAL-SURVIVE-RESTART-RESUME-FU1 起在启动判定就被收口（不进收件箱，
+  // toolCall 写占位），该形状由 tests/unit/agent/parkedApprovalSurvival.hydrate.test.ts 的
+  // 「③ cwd-less 会话」用例钉住，真进程 G 格只验带 cwd 的可执行路径。
   const sourceSession = await api(current.baseUrl, token, 'POST', '/api/sessions', {
     title: 'G 停车审批来源会话',
     workingDirectory: current.dirs.workspace,

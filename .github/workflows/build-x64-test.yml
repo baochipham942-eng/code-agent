@@ -110,6 +110,7 @@ jobs:
           # 派生 x64 资源覆盖（node-pty/sharp/libvips → darwin-x64），通过 $@ 透传给 cargo tauri build。
           node scripts/tauri-arch-config.mjs x64 --out "${RUNNER_TEMP}/tauri.x64.json"
           npm run rebuild-native:system
+          node scripts/gen-native-dep-manifest.mjs darwin-x64
           npm run build
           npm run tauri:prebuild-cleanup
           npm run release:security-scan

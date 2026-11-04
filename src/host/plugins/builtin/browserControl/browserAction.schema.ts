@@ -120,7 +120,7 @@ storageState file path: export_storage_state / import_storage_state for CI/scrip
       },
       secretRef: {
         type: 'string',
-        description: 'Reference to a secret value for type actions, e.g. env:CODE_AGENT_BROWSER_SECRET_PASSWORD. The secret value is never returned in output.',
+        description: 'Reference to a secret value for type actions, e.g. env:CODE_AGENT_BROWSER_SECRET_PASSWORD. Only env variables prefixed CODE_AGENT_BROWSER_SECRET_ are accepted, and each needs a companion <NAME>_ORIGINS variable (comma-separated exact origins such as https://github.com); typing is refused on any other origin. The secret value is never returned in output.',
       },
       engine: {
         type: 'string',

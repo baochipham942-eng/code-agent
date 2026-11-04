@@ -15,9 +15,10 @@ import { useSessionStore } from '../../stores/sessionStore';
 import { usePermissionStore, type PermissionRequestForMemory } from '../../stores/permissionStore';
 import { DecisionCard, isEditableTarget, type DecisionCardViewMode, type DecisionOption } from '../DecisionCard';
 import { RequestDetails } from './RequestDetails';
+import { OutboundMaskNotice } from './OutboundMaskNotice';
 import type { PermissionRequest, ApprovalLevel, PermissionType } from './types';
 import type { PermissionRequest as ContractPermissionRequest, PermissionResponse } from '@shared/contract';
-import { isEditableTool } from '@shared/contract';
+import { isEditableTool, PermissionRequestReason } from '@shared/contract';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { NL_RULE_K2_TEXT } from '@shared/nlRuleRestate';
 import { getPermissionConfig } from './utils';
@@ -34,6 +35,7 @@ import {
 } from './WritebackFields';
 import { defaultPermissionViewMode, isDangerousRequestShape, isSafeDefaultDeny, permissionSummary } from './permissionPresentation';
 import { isSandboxEscalation, sandboxEscalationDeniedPath, sandboxEscalationQuestion } from './sandboxEscalationPresentation';
+import { SensitiveStepHandbackCard } from './SensitiveStepHandbackCard';
 
 // 将共享类型的 PermissionRequest 转换为本地类型
 function normalizeRequest(
@@ -55,6 +57,7 @@ function normalizeRequest(
     details: {
       pluginId: request.details.pluginId,
       pluginName: request.details.pluginName,
+      outboundMasked: request.details.outboundMasked,
       filePath: request.details.path,
       command: request.details.command,
       url: request.details.url,
@@ -77,6 +80,7 @@ function normalizeRequest(
       sandbox: request.details.sandbox,
       deniedPath: request.details.deniedPath,
       action: request.details.action,
+      sensitiveStep: request.details.sensitiveStep,
     },
     // 可编辑工具才带原参数（host 默认分支 details = {...params} + 透传字段）；其余不背这份
     rawArgs: isEditableTool(request.tool) ? (request.details as Record<string, unknown>) : undefined,
@@ -157,6 +161,10 @@ export function PermissionCard({
     ? normalizeRequest(sourceRequest)
     : null;
   const sandboxEscalation = request !== null && isSandboxEscalation(request);
+  // ADR-088 敏感步骤交回卡：reasonCode 与 details.sensitiveStep 双判据（与 host 收口同口径）
+  const sensitiveHandback = request !== null
+    && (request.reasonCode === PermissionRequestReason.SensitiveStepHandback
+      || request.details.sensitiveStep !== undefined);
   const settled = request?.resolved === true && request.decision !== undefined;
   const safeDefaultDeny = request !== null && isSafeDefaultDeny(request);
   // N-PERM-NL-RULES-K2：handback（交回我亲手做）卡——两键（我做完了 / 让 Neo 做这一次），
@@ -322,9 +330,10 @@ export function PermissionCard({
   }, [request, memoryResult, handleApproval, isNewRequest]);
 
   // 字母直发快捷键（点了就执行，不经确认键）— stopPropagation 防止触发 ChatView 的 Esc+Esc。
-  // 数字键 1-N / Enter / Esc 由 DecisionCard 统一处理。
+  // 数字键 1-N / Enter / Esc 由 DecisionCard 统一处理。交回卡不参与字母直发：它的
+  // 「完成后继续」要求用户真的做完这一步，一次误触 y 不该等价于已完成。
   useEffect(() => {
-    if (!request || settled) return;
+    if (!request || settled || sensitiveHandback) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       // 含 contentEditable（neo composer）：输入时不吃字母快捷键
@@ -377,7 +386,7 @@ export function PermissionCard({
 
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [request, settled, handleApproval, hideStandingGrants, draft, editable, appGrantCard, isDangerous, handback]);
+  }, [request, settled, handleApproval, hideStandingGrants, draft, editable, appGrantCard, isDangerous, handback, sensitiveHandback]);
 
   // 如果没有当前会话可见的待处理权限请求，不渲染
   if (!request) return null;
@@ -510,6 +519,18 @@ export function PermissionCard({
   // 已决请求不再由 PermissionCard 渲染；结果归属到对应工具步骤旁的一行存证。
   if (settled) return null;
 
+  // ADR-088 敏感步骤交回卡：整卡换成交回状态机（三个按钮、无任何「记住」选项），
+  // 应答仍走下方 handleApproval 既有投递链（once=一次性 allow / deny），无新应答值。
+  if (sensitiveHandback && request) {
+    return (
+      <SensitiveStepHandbackCard
+        request={request}
+        onRespond={(level) => { void handleApproval(level); }}
+        onCollapse={onCollapse}
+      />
+    );
+  }
+
   // 编辑态：选项行让位给表单；主按钮 = 按修改后发送（必填为空时禁用），ghost = 放弃修改
   if (editable && draft !== null && request.rawArgs) {
     const invalid = validateWritebackDraft(request.tool, draft);
@@ -530,12 +551,15 @@ export function PermissionCard({
             ? w.calendarWriteWarning
             : isRemindersWrite ? w.remindersWriteWarning : w.irreversible}
         details={
-          <WritebackEditForm
-            tool={request.tool}
-            draft={draft}
-            original={request.rawArgs}
-            onChange={setDraft}
-          />
+          <>
+            {request.details.outboundMasked === true && <OutboundMaskNotice message={w.outboundMaskedNote} />}
+            <WritebackEditForm
+              tool={request.tool}
+              draft={draft}
+              original={request.rawArgs}
+              onChange={setDraft}
+            />
+          </>
         }
         options={[]}
         selectedId={invalid.length === 0 ? 'edit' : null}
@@ -564,6 +588,7 @@ export function PermissionCard({
       question={question}
       details={
         <>
+          {request.details.outboundMasked === true && <OutboundMaskNotice message={w.outboundMaskedNote} />}
           {sandboxPath ? (
             <p
               className="break-all rounded bg-zinc-800 p-2 font-mono text-xs text-badge-info"

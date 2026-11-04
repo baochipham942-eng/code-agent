@@ -10,6 +10,24 @@ const execFileAsync = promisify(execFile);
 const MAX_BUFFER = 1024 * 1024 * 10;
 const DEFAULT_TIMEOUT = 15_000;
 
+// TCC 拒绝 Apple Events 自动化时 osascript 以 errno -1743 退出（典型文案
+// "Not authorized to send Apple events to Mail."）。匹配错误码或措辞把这类失败
+// 归为「授权被拒」而不是一般读取失败（screenshotFailureCause / photos.ts 各有
+// 私有同款判断，这里是可复用的一份）。
+const APPLE_EVENTS_DENIED_PATTERN = /-1743|not authorized to send apple events/i;
+
+/**
+ * 判断错误是否为 Apple Events 授权被拒（-1743）。输入是 Error 时看 message，
+ * 是字符串时直接匹配；其余一律 false。调用方用它把 read-error 细分成
+ * not-authorized，渲染层才能给出「去设置」而不是永远重试。
+ */
+export function isAppleEventsDenied(error: unknown): boolean {
+  const message = error instanceof Error
+    ? error.message
+    : typeof error === 'string' ? error : '';
+  return APPLE_EVENTS_DENIED_PATTERN.test(message);
+}
+
 export async function runAppleScript(lines: string[]): Promise<string> {
   const args = lines.flatMap((line) => ['-e', line]);
   const { stdout } = await execFileAsync('osascript', args, {

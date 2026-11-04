@@ -97,6 +97,13 @@ export interface CronJobDefinition {
   metadata?: Record<string, unknown>;
   /** Optional Neo channel account type/name that receives this job's result. */
   resultChannel?: string;
+  /**
+   * Event automations only (N-TRIGGER-OBSERVE-MODE): `observe` evaluates events but
+   * never sends anything outward; `auto` lets runs act. Missing on an event job
+   * means `observe` (fail-closed). Ignored by createJob/updateJob — the only way to
+   * reach `auto` is the explicit `setEventActionMode` user action.
+   */
+  actionMode?: CronEventActionMode;
   /** Computed next run timestamp. Returned by the runtime service; not persisted. */
   nextRunAt?: number;
   /** Created timestamp */
@@ -157,10 +164,61 @@ export interface CronExpressionConfig {
 
 /**
  * Event-triggered schedule: the job is fired by local events (channel inbound
- * messages or connector polling), not by time. No listening port, no HTTP
- * endpoint, no public callback is involved.
+ * messages, connector polling, or webhook deliveries pushed by the Neo cloud
+ * relay), not by time. No listening port, no HTTP endpoint, no public callback
+ * is involved on this machine.
  */
-export type EventScheduleConfig = EventChannelScheduleConfig | EventConnectorMailScheduleConfig;
+export type EventScheduleConfig =
+  | EventChannelScheduleConfig
+  | EventConnectorMailScheduleConfig
+  | EventWebhookScheduleConfig;
+
+/**
+ * Action mode of an event automation (N-TRIGGER-OBSERVE-MODE).
+ * - `observe` (default for new event automations): the run judges every event
+ *   normally, but outbound side effects (external-side-effect tools, channel
+ *   replies) are intercepted in the host and recorded as `would_act` decisions.
+ * - `auto`: runs act. Reached only through an explicit, confirmed user action.
+ * Records created before this field existed were stamped `auto` by a one-time DB
+ * migration (schemaCronEventDecisions.ts), so they keep acting.
+ */
+export type CronEventActionMode = 'observe' | 'auto';
+
+/** Per-event decision outcome recorded in the decision ledger. */
+export type CronEventDecisionOutcome = 'acted' | 'would_act' | 'ignored' | 'dropped' | 'unavailable';
+
+/**
+ * One decision-ledger row (N-TRIGGER-OBSERVE-MODE).
+ * `kind: 'event'` rows: exactly one per event that entered the batch window.
+ * `kind: 'action'` rows: one per outbound action intercepted in observe mode
+ * (decision is always `would_act`; carries tool/target/summary).
+ */
+export interface CronEventDecision {
+  id: string;
+  jobId: string;
+  kind: 'event' | 'action';
+  /** Platform message id / mail id / webhook delivery id (event rows). */
+  eventId?: string;
+  decision: CronEventDecisionOutcome;
+  /** One-line reason (model-stated, drop cause or failure). */
+  reason: string;
+  /** Execution id of the run that judged (or reported) the event. */
+  runId?: string;
+  /**
+   * Event rows: the schedule rule that admitted the event — the binding that
+   * let it into the batch window (source + account + chat/mailbox). Derived
+   * from the event schedule config; a model-stated `rule=` in the run's
+   * per-event decision tag wins when present. Truncated like the reason.
+   */
+  matchedRule?: string;
+  /** Action rows: intercepted tool name (`channel_reply` for result delivery). */
+  tool?: string;
+  /** Action rows: recipient / channel target when determinable. */
+  target?: string;
+  /** Action rows: one-line summary of what would have been sent (truncated). */
+  summary?: string;
+  createdAt: number;
+}
 
 /**
  * Channel event schedule: the job is fired by inbound messages of a channel
@@ -207,6 +265,52 @@ export interface EventConnectorMailScheduleConfig {
   /** Minimum spacing between two runs (seconds). Default 60, floor 30. */
   minRunIntervalSec?: number;
 }
+
+/**
+ * Webhook event schedule (N-CRON-WEBHOOK-CLOUD-HOOK): the job is fired by
+ * deliveries that the Neo cloud relay pushes over the existing cloud event
+ * stream. External systems POST to a per-job hook URL on the relay; Neo never
+ * listens on a port itself, and the request body only ever enters the
+ * untrusted payload block. No accountId: the hook URL/token pair is the
+ * binding (minted per job by the relay, shown once, regenerable).
+ */
+export interface EventWebhookScheduleConfig {
+  type: 'event';
+  /** Event source: deliveries relayed from the Neo cloud webhook relay. */
+  source: 'webhook';
+  /** Event kind; only inbound hook deliveries ('message') exist today. */
+  eventName: 'message';
+  /** Events arriving within this window merge into one run (seconds). Default 10, max 300. */
+  batchWindowSec?: number;
+  /** Minimum spacing between two runs (seconds). Default 60, floor 30. */
+  minRunIntervalSec?: number;
+}
+
+/** mail 源账号/邮箱目录的账号项（mail connector list_accounts 的 data 项形状）。 */
+export interface CronMailSourceAccount {
+  name: string;
+}
+
+/**
+ * cron:listMailSources 的结果（N-TRIGGER-MAIL-CREATE-ENTRY-K1）：编辑器与 /schedule
+ * 确认卡的「新邮件」触发源账号/邮箱下拉数据源。ok:false 的 reason 与
+ * createDefaultMailReader 的失败分类同构（缺件 ≠ 未授权 ≠ 平台不支持 ≠ 读取失败），
+ * 供渲染层给出可区分的提示；这是可用性信息而非 IPC 错误，走 success:true + data。
+ */
+export type CronMailSourcesResult =
+  | {
+    ok: true;
+    /** mail connector 列出的本机 Mail 账户。 */
+    accounts: CronMailSourceAccount[];
+    /** 每个账户的可监听邮箱名（list_mailboxes）；单账户失败降级为空数组（其余账户照常）。 */
+    mailboxesByAccount: Record<string, string[]>;
+  }
+  | {
+    ok: false;
+    reason: 'connector-not-enabled' | 'not-authorized' | 'unsupported-platform' | 'read-error';
+    /** 失败细节（探测/读取的原始错误文本），只用于展示与日志，不参与判定。 */
+    detail?: string;
+  };
 
 /**
  * Action types for cron jobs
@@ -337,8 +441,12 @@ export interface RoleWakeAction {
  */
 export interface CronExecutionTrigger {
   kind: 'event' | 'schedule';
-  /** Event source: 'channel' (locally connected channel messages) or 'connector' (local connector polling). */
-  source?: 'channel' | 'connector';
+  /**
+   * Event source: 'channel' (locally connected channel messages), 'connector'
+   * (local connector polling), or 'webhook' (deliveries pushed by the Neo
+   * cloud webhook relay; these carry no accountId — the hook URL is the binding).
+   */
+  source?: 'channel' | 'connector' | 'webhook';
   /** Connector id; present iff source === 'connector'. Only 'mail' exists today. */
   connector?: 'mail';
   /** Channel account or mail account whose messages fired the run. */
@@ -383,6 +491,8 @@ export interface CronJobExecution {
   retryAttempt: number;
   /** Exit code for shell commands */
   exitCode?: number;
+  /** Actual model cost of this run in USD (local runs, from the scoped cost meter); undefined = no model call happened or a cloud run. */
+  cost?: number;
   /** Trigger descriptor: why this run happened (event runs only). */
   trigger?: CronExecutionTrigger;
 }

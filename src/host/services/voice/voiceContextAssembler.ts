@@ -15,6 +15,7 @@ import type { Message } from '../../../shared/contract/message';
 import type { SessionState } from '../../task';
 import { buildVocabularyBlock } from './voiceVocabulary';
 import { buildSpeechPaceDirective } from './voiceRouting';
+import { buildVoiceMemoryBlock, type VoiceMemoryFacts } from './voiceMemoryContext';
 import { getConfigService } from '../core/configService';
 import { getSessionManager } from '../infra/sessionManager';
 import { createLogger } from '../infra/logger';
@@ -53,6 +54,8 @@ export interface VoiceInstructionContext {
    * 用户在通话中改语速要靠这条即时生效（refreshVoiceInstructions 走的就是这条路）。
    */
   speechRate?: VoiceLiveSettings['speechRate'];
+  /** 更早的通话、本会话最近聊天、本项目最近话题。声纹未确认或开关关闭时为 null。 */
+  memoryFacts?: VoiceMemoryFacts | null;
 }
 
 const VIEW_LABEL: Record<string, string> = {
@@ -211,6 +214,7 @@ export function composeVoiceInstructions(
     buildFocusBlock(focus),
     buildScreenContextBlock(context.screenContextEnabled === true),
     buildRecentVoiceBlock(context.continuity ?? null),
+    buildVoiceMemoryBlock(context.memoryFacts ?? null),
     buildVocabularyBlock(),
   ].filter(Boolean);
   return [persona, ...blocks].join('\n\n');

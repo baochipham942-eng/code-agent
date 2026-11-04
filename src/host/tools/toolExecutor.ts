@@ -23,6 +23,12 @@ import {
 import { getToolCache } from '../services/infra/toolCache';
 import { extractComputerTargetApp } from '../permissions/computerAppTarget';
 import { cuaToolNeedsAppGrant, resolveCuaAppTarget } from '../permissions/cuaAppTarget';
+import {
+  classifyCuaSensitiveStep,
+  decorateSensitiveStepRequest,
+  sensitiveStepHandbackResolution,
+  stripSensitiveStepParams,
+} from '../permissions/cuaSensitiveStep';
 import { resolvePreAskGrant } from '../permissions/preAskGrant';
 import { createLogger } from '../services/infra/logger';
 import { getAuditLogger, maskSensitiveData, isKnownSafeCommand, validateCommand, getShellSafetyMode, getExecPolicyStore, getPolicyEnforcer, type PolicyEnforcer, type PolicyCheckResult, type ValidationResult } from '../security';
@@ -67,6 +73,8 @@ import {
   readOnlyForcesConfirmationFor,
   resolveSessionPermissionMode,
   resolveToolPermissionClassification,
+  isStickyUserDenial,
+  userDeniedStickyError,
 } from './toolPermissionClassification';
 import { getPermissionModeManager } from '../permissions/modes';
 import { pickLeastTrustedOrigin, type AgentMessageOrigin } from '../agent/messageOrigin';
@@ -74,7 +82,9 @@ import { computeActionFingerprint, getDenialRegistry } from '../security/denialR
 import { computePolicyHash } from '../permissions/policyHash';
 import { normalizePermissionAskResult, type RequestPermissionResult } from '../../shared/contract/permission';
 import { applyEditedArgs } from '../../shared/contract/permissionEdit';
+import { interceptObserveModeToolCall } from './observeModeGate';
 import { EXTERNAL_SIDE_EFFECT_TRACE_RULE, EXTERNAL_SIDE_EFFECT_TRACE_REASON, isExternalSideEffectTool, extractStandingGrantTarget } from './externalSideEffect';
+import { maskMailSendOutboundParams, OUTBOUND_MASK_REASON_LINE } from './outboundGuard';
 import { isRunPathInsideWorkspace, resolveCanonicalRunPath, type RunContext } from '../runtime/runContext';
 import { writeFenceObligationRoot } from '../sandbox/writeFence';
 import { getSandboxManager } from '../sandbox';
@@ -404,6 +414,9 @@ export interface ExecuteOptions {
   allowedToolNames?: readonly string[];
   // 本轮 allowedToolNames 只是会话指挥台前台 brain 自己的工具面（ADR-059），不是 run 级硬边界：子代理不继承它，按角色声明拿工具（N-SUBAGENT-WEBSEARCH-INHERIT）。
   foregroundToolFace?: boolean;
+  // strict skill 流程面（create-role/edit-role）的 canonical 工具名：白名单判定的
+  // 合法补充（与 toolScope 同档，不放宽显式 deny）。边界内工具不被前台白名单拦（FB-327）。
+  skillBoundaryAllowedTools?: readonly string[];
   skillDiscoveryService?: SkillDiscoveryService;
   // 内部标记：本次调用由 ctx.executeTool 发起（PTC 脚本里的一次 tools.X()）。
   // 唯一作用是不给嵌套出来的 context 再签发 executeTool —— 一层封顶，防递归。
@@ -668,6 +681,13 @@ export class ToolExecutor {
     const pluginOrigin = getPluginOriginForTool(executionToolName);
     const pluginId = getPluginIdForTool(executionToolName);
     const policyToolName = normalizeToolName(executionToolName);
+    // 出站掩码（N-OUTBOUND-SENSITIVE-GUARD）：mail_send 正文进权限管道前先掩，
+    // 审批卡/短路匹配/真实发送三方一致（见 outboundGuard.ts 头注）。
+    const outboundMask = maskMailSendOutboundParams(executionToolName, params);
+    if (outboundMask.redacted) params = outboundMask.params;
+    // N-TRIGGER-OBSERVE-MODE：观察档事件运行的对外副作用调用在审批/缓存/派发前拦下记 would_act（只加 deny）。
+    const observeModeResult = interceptObserveModeToolCall(effectiveSessionId, executionToolName, params);
+    if (observeModeResult) return observeModeResult;
     const writeWithoutWorkspaceAuthority = Boolean(
       this.runContext
       && !this.runContext.workspaceScope
@@ -788,6 +808,7 @@ export class ToolExecutor {
       deniedToolNames: options.deniedToolNames,
       allowedToolNames: options.allowedToolNames,
       toolScope: options.toolScope,
+      skillBoundaryAllowedTools: options.skillBoundaryAllowedTools,
     }, executionToolName)) {
       logger.warn('Tool blocked by run tool policy', { toolName: executionToolName });
       recordDecision(executionToolName, params, 'policy-deny', 'run tool policy (--tools/--disallowed-tools)', Date.now(), undefined, effectiveSessionId, this.ledgerOrigin);
@@ -1221,6 +1242,7 @@ export class ToolExecutor {
       topology: executionTopology,
       sessionId: effectiveSessionId,
       agentId: options.agentId,
+      permissionLevel: toolDef.permissionLevel,
     });
     if (guardFabricGate.deny) {
       recordDecision(
@@ -1507,8 +1529,9 @@ export class ToolExecutor {
       && toolDef.permissionLevel !== 'read';
     // ADR-067 D4：跨 agent 否认登记 + 洗白匹配。同一动作指纹在本会话刚被拒（ask-denied）
     // 且本轮输入含 peer-agent → 权限洗白，直接 BLOCK（不 exec；无人值守/bypass 同向，
-    // 先于一切自动放行捷径）；无 peer 来源（用户本人重试）→ launderRetryForcesAsk
-    // 降档 ask 一次，不硬毙、不 forceConfirm（审批记忆机制照走）。
+    // 先于一切自动放行捷径）；无 peer 来源（用户本人重试）→ 真人拒绝且仍在同一条用户
+    // 消息内 → sticky 拒绝（不出卡，见下）；否则 launderRetryForcesAsk 降档 ask 一次
+    // （审批记忆机制照走）。
     const actionFingerprint = effectiveSessionId && toolDef.permissionLevel !== 'read'
       ? computeActionFingerprint(executionToolName, params, bashWorkingDirectory)
       : null;
@@ -1544,6 +1567,23 @@ export class ToolExecutor {
           failureCode: AgentFailureCode.PermissionDenied,
           hostReason: failure,
         },
+      };
+    }
+    // ADR-067 D4 sticky：真人刚拒绝过的同指纹动作、仍在同一条用户消息内 → 不再二次出卡，
+    // 直接拒绝并告知模型等下一条用户消息（审批疲劳会把用户逼向 always-allow，竞品 v0.75.5 同款）。
+    // 非真人拒绝 / 缺消息 id / 换了消息 → 落回下面的 launderRetryForcesAsk ask 一次。
+    if (priorDenial && isStickyUserDenial(priorDenial, { peerOriginForcesConfirmation, sourceMessageId: options.sourceMessageId })) {
+      const failure = userDeniedStickyError(executionToolName, priorDenial.summary);
+      logger.warn('User denial sticky: refusing same fingerprint until the user sends another message', {
+        tool: executionToolName, fingerprint: actionFingerprint,
+      });
+      recordDecision(
+        executionToolName, params, 'policy-deny', 'user-denied-sticky',
+        permStartTime, undefined, effectiveSessionId, this.ledgerOrigin,
+      );
+      return {
+        success: false, error: failure.modelText,
+        metadata: { code: failure.code, failureCode: AgentFailureCode.PermissionDenied, hostReason: failure },
       };
     }
     const launderRetryForcesAsk = Boolean(priorDenial);
@@ -1976,6 +2016,9 @@ export class ToolExecutor {
         }
       }
 
+      // ADR-088 一期：密码框输入交回用户。敏感判定必须早于 resolvePreAskGrant 消费——
+      // 已记住的应用授权压不掉交回卡；未命中才进入既有按应用审批链（规格 §2 判定顺序）。
+      const cuaSensitiveStep = classifyCuaSensitiveStep(executionToolName, params);
       const preAsk = needsUserApproval ? resolvePreAskGrant({
         toolName: executionToolName,
         sessionId: effectiveSessionId,
@@ -1986,7 +2029,8 @@ export class ToolExecutor {
           || policyForcesConfirmation || unresolvedWriteTargetForcesAsk
           || Boolean(boundaryViolation) || readOnlyForcesConfirmation
           || peerOriginForcesConfirmation || launderRetryForcesAsk
-          || nlForcesAsk,
+          || nlForcesAsk
+          || Boolean(cuaSensitiveStep),
       }) : null;
       if (preAsk) {
         needsUserApproval = false;
@@ -2009,6 +2053,15 @@ export class ToolExecutor {
         // 不剥额外字段），把审批卡来源伪造成「来自插件《…》」——必须删掉。
         delete permissionRequest.details.pluginId;
         delete permissionRequest.details.pluginName;
+      }
+      // 出站掩码命中：审批 reason 注明一行，可信标记供桌面卡双语提示。
+      if (outboundMask.redacted) {
+        permissionRequest.details.outboundMasked = true;
+        permissionRequest.reason = [permissionRequest.reason, OUTBOUND_MASK_REASON_LINE]
+          .filter(Boolean)
+          .join('；');
+      } else {
+        delete permissionRequest.details.outboundMasked;
       }
       if (
         permissionRequest.type === 'file_read'
@@ -2073,7 +2126,11 @@ export class ToolExecutor {
       // （与 messageProcessor 落库同一套 sanitize）算指纹 + 忠实标记，随请求上抛给
       // parkApproval 落进行 payload——重启批准时从台账重算比对，点的是 A 就绝不执行 B。
       if (options.currentToolCallId) {
-        const survival = computeLedgerArgsSurvival(requestedToolName, params);
+        // ADR-088 §3：交回请求的指纹输入必须剔除 text（低熵密码的哈希可被爆破）。
+        const survival = computeLedgerArgsSurvival(
+          requestedToolName,
+          cuaSensitiveStep ? stripSensitiveStepParams(params) : params,
+        );
         permissionRequest.argsFingerprint = survival.argsFingerprint;
         permissionRequest.ledgerFaithful = survival.ledgerFaithful;
       }
@@ -2092,6 +2149,19 @@ export class ToolExecutor {
       // 把 $HOME 写边界 ask 自动批掉、文件真落盘。
       if (readOnlyForcesConfirmation || guardFabricForcesApproval || boundaryAskForcesConfirmation || protectedWriteForcesConfirmation || unresolvedWriteTargetForcesAsk || nlForcesAsk) {
         permissionRequest.forceConfirm = true;
+        // 返修 r2：记录 forceConfirm 的成因形态。W3 写边界 ask 是唯一成因（且无 peer
+        // 触发）时标 boundary-only——定时任务写授权只放行这一种 forceConfirm，其余成因
+        // （只读档/guardFabric/保护路径/不确定目标/peer 触发/确认门）照旧人工。
+        if (
+          boundaryAskForcesConfirmation
+          && !readOnlyForcesConfirmation
+          && !guardFabricForcesApproval
+          && !protectedWriteForcesConfirmation
+          && !unresolvedWriteTargetForcesAsk
+          && !peerOriginForcesConfirmation
+        ) {
+          permissionRequest.forceConfirmBoundaryOnly = true;
+        }
       }
       // N-PERM-NL-RULES-K2 handback：卡面/收件箱换「我做完了 / 让 Neo 做这一次」，裁决也走 user_did_it。
       if (nlRule.kind === 'handback') permissionRequest.handback = true;
@@ -2135,12 +2205,20 @@ export class ToolExecutor {
         }
         if (shouldForceConfirm) {
           permissionRequest.forceConfirm = true;
+          // 确认门也是 forceConfirm 成因之一：boundary-only 标记必须摘掉（返修 r2）。
+          permissionRequest.forceConfirmBoundaryOnly = false;
           permissionRequest.dangerLevel = riskLevel === 'high'
             ? 'danger'
             : (riskLevel === 'medium' ? 'warning' : 'normal');
         }
       } catch (error) {
         logger.debug('ConfirmationGate preview error:', error);
+      }
+
+      // ADR-088 一期：敏感步骤交回卡（放在确认门之后，details 整体替换——被键入的文本、
+      // 预确认门写入的 preview、targetApp 一并清空，请求只带 kind/elementLabel/appName+action）。
+      if (cuaSensitiveStep) {
+        decorateSensitiveStepRequest(permissionRequest, cuaSensitiveStep, computerApp, executionToolName);
       }
 
       // PermissionRequest hook: allow hooks to intercept/block before user prompt
@@ -2210,6 +2288,41 @@ export class ToolExecutor {
         }
       }
       const approved = ask.approved;
+
+      // ADR-088 一期：交回步**永不执行**（规格 §4 三层保证之 1——没有任何代码路径从这张
+      // 请求的应答通向原始工具调用）。应答只决定回话模板：allow=用户已亲手完成（done），
+      // deny/超时/取消=跳过（skipped）；两个出口都 success:true，不是权限失败。
+      if (cuaSensitiveStep) {
+        const outcome = approved ? 'done_by_user' : 'skipped';
+        traceBuilder.addStep(
+          'plan_approval',
+          'sensitive_step_handback',
+          approved ? 'allow' : 'deny',
+          approved
+            ? '敏感步骤交回：用户已亲手完成并点「完成后继续」，Neo 未执行这一步'
+            : `敏感步骤交回：用户跳过（来源：${ask.denialSource ?? 'user'}），Neo 未执行这一步`,
+        );
+        recordDecision(
+          executionToolName,
+          stripSensitiveStepParams(params), // 台账先剥掉 text（规格 §3），反正这步不会执行
+          approved ? 'ask-approved' : 'ask-denied',
+          `sensitive_step_handback:${outcome}`,
+          permStartTime,
+          traceBuilder.build(approved ? 'allow' : 'deny'),
+          effectiveSessionId,
+          this.ledgerOrigin,
+          getApprovalWaitMs(options.currentToolCallId, Date.now()),
+        );
+        const resolution = sensitiveStepHandbackResolution(cuaSensitiveStep, outcome, {
+          expiredUnanswered: ask.denialSource === 'timeout',
+        });
+        logger.info('Sensitive step handed back to the user; not executed', {
+          tool: executionToolName,
+          outcome,
+          kind: cuaSensitiveStep.kind,
+        });
+        return { success: true, result: resolution.result, metadata: resolution.metadata };
+      }
 
       if (approved) {
         const approvalSource = ask.approvalSource ?? 'unspecified';
@@ -2292,7 +2405,7 @@ export class ToolExecutor {
         ).catch(() => {});
         traceBuilder.addStep('plan_approval', 'ask_denied', 'deny', hostReason);
         // ADR-067 D4：ask-denied 写入跨 agent 否认登记（sessionId + 动作指纹），
-        // 后续同指纹动作按洗白闸处置（peer 转述 BLOCK / 本人重试 forceConfirm 一次）
+        // 后续同指纹动作按洗白闸处置（peer 转述 BLOCK / 真人拒且同消息 sticky / 其余 ask 一次）
         if (actionFingerprint && effectiveSessionId) {
           getDenialRegistry().record({
             sessionId: effectiveSessionId,
@@ -2302,6 +2415,8 @@ export class ToolExecutor {
             reason: denialReason,
             timestamp: Date.now(),
             policyHash: computePolicyHash(effectiveSessionId),
+            userMessageId: options.sourceMessageId,
+            byUser: denialSource === 'user',
           });
         }
         recordDecision(executionToolName, params, 'ask-denied', denialReason, permStartTime, traceBuilder.build('deny'), effectiveSessionId, this.ledgerOrigin, getApprovalWaitMs(options.currentToolCallId, Date.now()));

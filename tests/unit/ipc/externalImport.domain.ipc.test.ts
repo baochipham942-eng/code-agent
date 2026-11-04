@@ -125,6 +125,7 @@ describe('externalImport* 域 action 分发', () => {
 
   it('记忆/说明仍走既有 memoryHarnessImport* 域 action（同表同装配，无第二管线）', async () => {
     vi.stubEnv('CODE_AGENT_HOME', '/tmp/k1a-fixture-home');
+    vi.stubEnv('CODE_AGENT_DATA_DIR', '/tmp/k1a-fixture-home/data');
     try {
       await call('memoryHarnessImportDryRun', { adapterIds: ['codex-local-custom'] });
       expect(importer.dryRunMemoryHarnessImport).toHaveBeenCalledWith(db, {

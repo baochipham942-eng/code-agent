@@ -69,6 +69,15 @@ export interface ToolApprovalPayload {
    * 让 Neo 做这一次」两键，而非批准/拒绝；通知文案也不同。缺省 = 普通停车审批。
    */
   handback?: boolean;
+  /**
+   * ADR-088 敏感步骤交回（透传自 permission request details.sensitiveStep）：该行渲染为
+   * 单状态交回卡（[完成后继续]/[这步不做了]），不出任何「每次都允许」铸权入口。
+   */
+  sensitiveStep?: {
+    kind: 'password' | 'verification_code' | 'payment';
+    elementLabel?: string;
+    appName?: string;
+  };
 }
 
 /** 收件箱「等待批准的操作」分组的行数据（B2）。id=requestId，回传 permissionResponse 用。 */
@@ -80,8 +89,10 @@ export interface ParkedApprovalInboxItem {
   displayTool?: string;
   /** epoch ms，UI 算等待时长 */
   requestedAt: number;
-  /** pending=可批准/拒绝；orphaned=应用重启后过期，灰态不可操作 */
-  status: 'pending' | 'orphaned';
+  /** pending=可批准/拒绝；orphaned=应用重启后过期，灰态不可操作；voided=重启后被自动作废（留痕只读） */
+  status: 'pending' | 'orphaned' | 'voided';
+  /** voided 专用：一句大白话作废原因（describeParkedApprovalClosure） */
+  voidReason?: string;
   riskClass?: string | null;
   /** B4 授权目标精确串；非空 = 可铸造 target 粒度长期授权（出「每次都允许发 <target>」按钮） */
   standingGrantTarget?: string | null;
@@ -89,6 +100,8 @@ export interface ParkedApprovalInboxItem {
   argsPreview?: string;
   /** N-PERM-NL-RULES-K2：handback 行（出「我做完了/让 Neo 做这一次」两键）。 */
   handback?: boolean;
+  /** ADR-088 敏感步骤交回；非交回行缺省，收件箱按普通停车行渲染。 */
+  sensitiveStep?: ToolApprovalPayload['sensitiveStep'];
   pairingCode?: string;
   pairingSender?: string;
   pairingChannel?: 'feishu' | 'lark';

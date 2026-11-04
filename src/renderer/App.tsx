@@ -63,6 +63,7 @@ import { useAppshots } from './hooks/useAppshots';
 import { useSurfaceExecutionPip } from './hooks/useSurfaceExecutionPip';
 import { useSurfaceExecutionEffects } from './hooks/agent/effects/useSurfaceExecutionEffects';
 import { useAgentHalo } from './hooks/useAgentHalo';
+import { useConnectorRequiredWatcher } from './hooks/useConnectorRequiredWatcher';
 import { useRendererBundleAutoReload } from './hooks/useRendererBundleAutoReload';
 import { IPC_CHANNELS, IPC_DOMAINS, type ConfirmActionRequest } from '@shared/ipc';
 import type { AppSettings, ModelConfig, MCPElicitationRequest, MCPOAuthConsentRequest, UpdateInfo } from '@shared/contract';
@@ -83,8 +84,10 @@ import { signalRendererReady, RENDERER_READY_SETTLE_CAP_MS } from './utils/rende
 import { whenInitialSessionStateSettled } from './stores/sessionStore';
 import { useAppIpcListeners } from './hooks/useAppIpcListeners';
 import { useInAppValidationBridge } from './hooks/useInAppValidationBridge';
+import { useLedgerDeepLink } from './hooks/useLedgerDeepLink';
 import { useI18n } from './hooks/useI18n';
 import { useCronOsNotification } from './hooks/useCronOsNotification';
+import { isSecondaryPageActive } from './utils/secondaryPageActive';
 import { InternalFeatureWorkspaceRegistration, PluginUiActivationPolicyBootstrap, ShellOverlaySlotHost, WorkspacePageSlotHost } from './slots/productSlotHosts';
 
 const logger = createLogger('App');
@@ -148,7 +151,9 @@ export const App: React.FC = () => {
   useAppshots(); // 挂载 Appshots 事件监听（热键截图 → composer）
   useSurfaceExecutionPip(); // 当前会话 Browser / Computer 共享的可信实时 PiP
   useAgentHalo(); // CUA 原生驱动时的系统级光晕跟随（单指针共驾聚光灯）
+  useConnectorRequiredWatcher(); // 连接卡 pending 时盯连接状态，连上后追加续跑消息
   useInAppValidationBridge(); // browser-control 共用验证链路，不依赖内部评测包
+  useLedgerDeepLink(); // ?open=automation|role：冷启动切会话会关掉二级页，钩子里补摊一次
   const {
     showSettings,
     showPromptManager,
@@ -685,13 +690,12 @@ export const App: React.FC = () => {
   // 知识记忆整窗页 2026-08-02 退役（内容并入设置 → 记忆）。
   // 设置页 2026-07-30 起是 overlay 整窗覆盖（X5.5-B1），本就不是 inline 页；仍留在名单里
   // 只为压住底下的顶栏不随设置开关抖动（覆盖层在位时它反正不可见）。
-  const inlineSecondaryPageActive = Boolean(
-    expertDetailRoleId || showLibraryPanel
-    || showCapabilityHub || showCronCenter || showLocalOpsPanel || showInAppValidation || activeInternalFeatureId
-    || showProjectSpacePage
-    || showSettings || showPromptManager || showLab || showTimeCapabilityCenter
-    || showActivityPanel || showProjectCollaborationPage || showDesktopPanel
-  );
+  const inlineSecondaryPageActive = isSecondaryPageActive({
+    expertDetailRoleId, showLibraryPanel, showCapabilityHub, showCronCenter, showLocalOpsPanel,
+    showInAppValidation, activeInternalFeatureId, showProjectSpacePage, showSettings,
+    showPromptManager, showLab, showTimeCapabilityCenter, showActivityPanel,
+    showProjectCollaborationPage, showDesktopPanel,
+  });
 
   const renderWorkbenchContent = (focusable = false) => (
     <div className="flex flex-col h-full bg-zinc-900">

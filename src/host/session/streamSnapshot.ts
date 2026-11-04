@@ -375,6 +375,51 @@ export function clearStreamSnapshot(identity: StreamSnapshotIdentity): void {
   }
 }
 
+/**
+ * 这个工作区里是否还有未清除的快照 run 文件（断流恢复证据）。
+ *
+ * owner 标记（current-run.json）不算证据——只有配上 run 文件 loadStreamSnapshot
+ * 才读得回内容；干净收尾（isFinal → clearStreamSnapshot）会把整个会话快照目录
+ * 连标记一起移除。目录缺失/空目录 = 没有证据；读不出来（非 ENOENT）按有证据
+ * 处理（fail-safe：判定不了就不许删）。
+ *
+ * 懒开目录回收（workDirectoryMaterializer 删空任务夹前）用它挡住恢复证据：
+ * 终错/取消路径刻意把 incomplete 快照留在盘上，供会话重进时读回、渲染
+ * 「继续上次中断回复」决策槽——删了它恢复链就断了。
+ */
+export function hasUnclearedStreamSnapshots(workingDir: string): boolean {
+  let root: string;
+  try {
+    root = path.join(resolveWorkspace(workingDir), CONFIG_DIR_NEW, SNAPSHOT_DIRECTORY);
+  } catch {
+    return true;
+  }
+  return dirHoldsSnapshotFile(root);
+}
+
+function readSnapshotDirents(dir: string): fs.Dirent[] | null {
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true });
+  } catch (error) {
+    // ENOENT = 目录不在/已清空；其它读失败判不了，按有证据处理
+    return (error as NodeJS.ErrnoException).code === 'ENOENT' ? [] : null;
+  }
+}
+
+function dirHoldsSnapshotFile(dir: string): boolean {
+  const entries = readSnapshotDirents(dir);
+  if (!entries) return true;
+  for (const entry of entries) {
+    if (entry.isDirectory() && !entry.isSymbolicLink()) {
+      if (dirHoldsSnapshotFile(path.join(dir, entry.name))) return true;
+      continue;
+    }
+    // 除 owner 标记外的任何文件（run 快照、.tmp 残片）、符号链接、非常规条目都算要保的内容
+    if (!entry.isFile() || entry.name !== OWNER_FILE) return true;
+  }
+  return false;
+}
+
 /** Create a callback permanently bound to one run owner. */
 export function createSnapshotHandler(identity: StreamSnapshotIdentity): (snapshot: StreamSnapshot) => void {
   try {

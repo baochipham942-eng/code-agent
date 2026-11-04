@@ -270,6 +270,8 @@ describe('authService session trust', () => {
       isAuthenticated: false,
       sessionExpired: true,
     });
+    // Keychain 清除不在这条过期标记路径上。失效 refresh 由 storage adapter 的
+    // removeItem 清掉 Keychain；AuthService.signOut() 仍是这里唯一的清除点。
     expect(mocks.storage.clearSessionFromKeychain).not.toHaveBeenCalled();
   });
 
@@ -328,6 +330,7 @@ describe('authService session trust', () => {
     await cb!('SIGNED_OUT', null);
 
     await expect(authService.getStatus()).resolves.toMatchObject({ sessionExpired: true });
+    // 同上：SIGNED_OUT 回调只标记 sessionExpired，不碰 Keychain。
     expect(mocks.storage.clearSessionFromKeychain).not.toHaveBeenCalled();
   });
 

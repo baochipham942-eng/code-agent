@@ -226,6 +226,34 @@ describe('ExternalImportSettings 来源选择（验收①②）', () => {
     expect(screen.queryByText('预览要导入的内容')).toBeNull();
   });
 
+  it('说明计数为 0 的来源行照常渲染标签，数字显示 0（与预览头部同口径）', async () => {
+    // 说明文件拆不出规则：来源行计数 0（host 侧只数可逐条导入的规则）
+    stubDetect(detectResult({
+      sources: [
+        {
+          sourceId: 'codex',
+          adapterId: 'codex-local-custom',
+          homePath: '~/.codex',
+          detected: true,
+          categories: [
+            { category: 'instructions', count: 0 },
+            { category: 'memories', count: 2 },
+            { category: 'skills', count: 1 },
+          ],
+        },
+      ],
+    }));
+    render(<ExternalImportSettings />);
+
+    await screen.findByTestId('external-import-sources');
+
+    const codexRow = screen.getByTestId('external-import-source-codex');
+    expect(codexRow.textContent).toContain('说明 0');
+    expect(codexRow.textContent).toContain('记忆 2');
+    // 勾选框照常在场（隐藏 0 计数勾选项不在本单范围）
+    expect(codexRow.querySelectorAll('input[type="checkbox"]').length).toBe(3);
+  });
+
   it('预览按勾选来源聚合调用既有管线 dry-run + 技能预览（验收③）', async () => {
     stubDetect(detectResult());
     render(<ExternalImportSettings />);
@@ -502,6 +530,107 @@ describe('ExternalImportSettings 导入与结果（验收④）', () => {
     );
   });
 
+  it('预览头部计数 = 各分组「找到 N 条规则」之和：拆不出规则的整文件不计入（FU1 返修验收①）', async () => {
+    stubDetect(detectResult());
+    render(<ExternalImportSettings />);
+    await screen.findByTestId('external-import-sources');
+
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action === 'memoryHarnessImportDryRun') {
+        return Promise.resolve(dryRunResult({
+          instructions: [
+            {
+              id: 'instruction:a',
+              adapterId: 'codex-local-custom',
+              title: 'AGENTS.md',
+              content: '规则一',
+              sourcePath: '~/.codex/AGENTS.md',
+              reason: 'directive-confirmation-required',
+              contentHash: 'ha',
+              sourceMetadata: {},
+            },
+            {
+              id: 'instruction:b',
+              adapterId: 'codex-local-custom',
+              title: 'AGENTS.md',
+              content: '规则二',
+              sourcePath: '~/.codex/AGENTS.md',
+              reason: 'directive-confirmation-required',
+              contentHash: 'hb',
+              sourceMetadata: {},
+            },
+            {
+              id: 'instruction:whole',
+              adapterId: 'claude-code',
+              title: 'CLAUDE.md',
+              content: 'headings and code only',
+              sourcePath: '~/.claude/CLAUDE.md',
+              reason: 'instruction-file',
+              contentHash: 'hwhole',
+              sourceMetadata: { segmentCount: 0 },
+            },
+          ],
+        }));
+      }
+      if (action === 'externalImportSkillsPreview') {
+        return Promise.resolve({ items: [], summary: { copy: 0, skip: 0 } });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    fireEvent.click(screen.getByText('预览要导入的内容'));
+    await screen.findByTestId('external-import-preview');
+
+    const headerCount = Number(
+      screen.getByTestId('external-import-instructions').textContent?.match(/说明类内容（(\d+) 条）/)?.[1],
+    );
+    const groupCounts = screen.getAllByRole('button', { name: /找到 \d+ 条规则/ })
+      .map((button) => Number(button.textContent?.match(/找到 (\d+) 条规则/)?.[1] ?? 0));
+    expect(groupCounts).toEqual([2]);
+    expect(headerCount).toBe(groupCounts.reduce((sum, count) => sum + count, 0));
+    // 拆不出规则的用户级文件（segmentCount 0）仍占自己的一行，但不进头部数字
+    expect(headerCount).not.toBe(3);
+    expect(screen.getByTestId('external-import-rule-norules').textContent).toBe('没有可导入的单条规则');
+  });
+
+  it('只有项目级对照项时头部计 0 但区块仍渲染，对照行文案保留（FU1 返修验收①）', async () => {
+    stubDetect(detectResult());
+    render(<ExternalImportSettings />);
+    await screen.findByTestId('external-import-sources');
+
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action === 'memoryHarnessImportDryRun') {
+        return Promise.resolve(dryRunResult({
+          instructions: [
+            {
+              id: 'instruction:project',
+              adapterId: 'gemini-cli',
+              title: 'GEMINI.md',
+              content: 'project-level whole file',
+              sourcePath: '~/work/repo/GEMINI.md',
+              reason: 'instruction-file',
+              contentHash: 'hproject',
+              sourceMetadata: {},
+            },
+          ],
+        }));
+      }
+      if (action === 'externalImportSkillsPreview') {
+        return Promise.resolve({ items: [], summary: { copy: 0, skip: 0 } });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    fireEvent.click(screen.getByText('预览要导入的内容'));
+    await screen.findByTestId('external-import-preview');
+
+    // 区块照常渲染（instructions.length > 0），头部只数可导入规则 → 0
+    expect(screen.getByTestId('external-import-instructions').textContent)
+      .toContain('说明类内容（0 条）');
+    expect(screen.getByText('只供对照，不写入')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /找到 \d+ 条规则/ })).toBeNull();
+  });
+
   it('逐条确认走既有 confirm IPC + 既有 MEMORY_CONFIRM_RESPONSE 回执通道（验收③）', async () => {
     stubDetect(detectResult());
     render(<ExternalImportSettings />);
@@ -534,8 +663,10 @@ describe('ExternalImportSettings 导入与结果（验收④）', () => {
     fireEvent.click(screen.getByText('预览要导入的内容'));
     await screen.findByTestId('external-import-preview');
 
-    // 返修钉子：确认钮不换行（nowrap + 不收缩），把换行让给路径截断
-    const confirmButton = screen.getByText('逐条确认').closest('button');
+    // K1A-FU1：规则分组默认收起，先展开再逐条导入
+    fireEvent.click(screen.getByRole('button', { name: /找到 1 条规则/ }));
+    // 返修钉子：确认钮不换行（nowrap + 不收缩），把换行让给规则原文
+    const confirmButton = screen.getByText('导入这一条').closest('button');
     expect(confirmButton?.className).toContain('whitespace-nowrap');
     expect(confirmButton?.className).toContain('shrink-0');
     fireEvent.click(confirmButton as HTMLButtonElement);
@@ -551,7 +682,7 @@ describe('ExternalImportSettings 导入与结果（验收④）', () => {
       });
     });
     resolveConfirm({ instructionId: 'instruction:hash1', confirmed: true, imported: true });
-    await screen.findByText('已确认并写入');
+    await screen.findByText('已导入');
     expect(invokeDomain).toHaveBeenCalledWith(
       IPC_DOMAINS.MEMORY,
       'memoryHarnessImportConfirmDirective',
@@ -578,7 +709,7 @@ describe('ExternalImportSettings 导入与结果（验收④）', () => {
       return Promise.resolve(undefined);
     });
 
-    const toggle = screen.getByRole('switch');
+    const toggle = screen.getByRole('switch', { name: '读取 Claude 技能' });
     fireEvent.click(toggle);
     await waitFor(() => {
       expect(invokeDomain).toHaveBeenCalledWith(
@@ -588,7 +719,7 @@ describe('ExternalImportSettings 导入与结果（验收④）', () => {
       );
     });
     await waitFor(() => {
-      expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false');
+      expect(screen.getByRole('switch', { name: '读取 Claude 技能' }).getAttribute('aria-checked')).toBe('false');
     });
   });
 });

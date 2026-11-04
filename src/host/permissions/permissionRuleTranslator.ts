@@ -19,8 +19,9 @@ import {
 } from '../../shared/permissionRuleTranslate';
 import { describeNlRule } from '../../shared/nlRuleRestate';
 import { TOOL_SPECIFIER_TYPES } from '../../shared/permissionRuleSyntax';
-import { DEFAULT_MODEL, DEFAULT_PROVIDER, MODEL_MAX_TOKENS } from '../../shared/constants';
+import { MODEL_MAX_TOKENS } from '../../shared/constants';
 import { ModelRouter } from '../model/modelRouter';
+import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 import { createLogger } from '../services/infra/logger';
 import { parseToolSpecifier } from './specifierParser';
 import { isProtectedAllowRule, resolveRuleConflict, validateDraft, type NlExistingRuleEntry } from './permissionRuleDraft';
@@ -47,9 +48,10 @@ export interface TranslatePermissionOptions {
 }
 
 const defaultChat: TranslatorChatFn = async (messages) => {
+  const { provider, model } = resolveSessionDefaultModelConfig();
   const response = await new ModelRouter().chat({
-    provider: DEFAULT_PROVIDER,
-    model: DEFAULT_MODEL,
+    provider,
+    model,
     messages,
     maxTokens: MODEL_MAX_TOKENS.COMPACT,
   });

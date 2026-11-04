@@ -3,6 +3,20 @@
 // 禁止在 lightMemory/cron 业务代码里散布这些字面量，统一从这里引用。
 // ============================================================================
 
+/**
+ * 新会话种子注入预算（seedMemoryInjector 打包与外部导入规则拆分的共用真源）。
+ * 说明文件拆出的单条规则不得超过 PER_ITEM_CHARS——超出会在注入时被截断，
+ * 预览必须展示「真正会被存下/注入」的那一行（N-EXTHISTORY-IMPORT-K1A-FU1）。
+ */
+export const SEED_INJECTION = {
+  /** 每个新会话最多注入的条数（指令与记忆各自计） */
+  MAX_ITEMS: 10,
+  /** 注入块总字符预算 */
+  TOTAL_CHARS: 800,
+  /** 单条注入保留的字符数（超出截断） */
+  PER_ITEM_CHARS: 120,
+} as const;
+
 /** Light Memory 通用预算 */
 export const LIGHT_MEMORY = {
   /**
@@ -178,6 +192,8 @@ export const ROLE_ASSETS = {
   DRAFTS_DIR_NAME: 'role-drafts',
   /** 首次醒来状态文件名：roles/<roleId>/first-wake.json（pending → running → completed/skipped） */
   FIRST_WAKE_FILENAME: 'first-wake.json',
+  /** 每日醒来外部增量提议：roles/<roleId>/wake-proposals.json */
+  WAKE_PROPOSALS_FILENAME: 'wake-proposals.json',
   /** 首次醒来的工具调用轮数预算（独立于巡检醒来：提示词要求 ≤3 次只读探查后作答，
    *  6 = 探查 + 多步读取余量，掐掉长探查拖慢首次醒来。不许挪用 ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS，
    *  那是按「逐个检查产物」多步工作流设计的 15 轮预算，砍它会把巡检醒来掐断在半途）。 */
@@ -220,6 +236,12 @@ export const ROLE_PROACTIVITY = {
   TOPIC_MAX_CHARS: 40,
   /** 话题偏好最多条数 */
   TOPIC_MAX_ITEMS: 20,
+  /** 冷线索判据：已发出超过 N 天还没收到回复的邮件（外部增量巡检用） */
+  STALE_REPLY_DAYS: 4,
+  /** 一次外部增量巡检最多给出的一键工作提议数（落盘与展示共用上限） */
+  MAX_PROPOSALS: 2,
+  /** 提议被「先不」后多少天内不再重复出现 */
+  PROPOSAL_DISMISS_DAYS: 7,
 } as const;
 
 /** Agent 型定时任务跨运行快照（存放在 action.context 共享袋中）。 */

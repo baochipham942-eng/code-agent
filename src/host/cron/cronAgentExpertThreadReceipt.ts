@@ -7,7 +7,8 @@ import { IPC_CHANNELS } from '../../shared/ipc';
 import { broadcastToRenderer } from '../platform';
 import { getSessionManager } from '../services/infra/sessionManager';
 
-const RECEIPT_SUMMARY_MAX_CHARS = 1_200;
+/** 角色线程收据里「这次的结论」的字数上限。晨报草稿要整段留下，1200 会切断。 */
+const RECEIPT_SUMMARY_MAX_CHARS = 4_000;
 const RECEIPT_ERROR_MAX_CHARS = 240;
 
 type CronExpertThreadReceiptInput = {

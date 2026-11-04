@@ -13,6 +13,8 @@ import {
   renderCheckpointRebuildContext,
 } from './rebuild';
 import { validateCheckpointDocument } from './validator';
+import { getContextInterventionState } from '../contextInterventionState';
+import { pinnedPlainTextSurvivors } from '../compactionIntervention';
 
 export interface CheckpointBoundaryRuntime {
   sessionId: string;
@@ -105,7 +107,12 @@ export async function tryInsertCheckpointRebuildBoundary(
     source: 'system',
   };
 
-  runtime.messages.splice(0, tail.compactedMessageCount, marker);
+  const pinnedSurvivors = pinnedPlainTextSurvivors(
+    runtime.messages,
+    tail.compactedMessageCount,
+    getContextInterventionState().getEffectiveSnapshot(runtime.sessionId, runtime.agentId),
+  );
+  runtime.messages.splice(0, tail.compactedMessageCount, marker, ...pinnedSurvivors);
   runtime.contextHealth.setCheckpointWatermark(watermark);
   runtime.contextHealth.replaceCompressionState(new CompressionState());
   runtime.contextHealth.compressionState.applyCommit({

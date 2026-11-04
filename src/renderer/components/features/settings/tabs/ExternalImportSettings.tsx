@@ -36,14 +36,16 @@ import ipcService from '../../../../services/ipcService';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useAppStore } from '../../../../stores/appStore';
 import { useExternalImportStore } from '../../../../stores/externalImportStore';
+import { useExternalImportHistoryStore } from '../../../../stores/externalImportHistoryStore';
 import { Button, Toggle } from '../../../primitives';
 import { ConfirmDialog } from '../../../composites/ConfirmDialog';
 import { SettingsSection } from '../SettingsLayout';
+import { ExternalChatsImportSection } from './ExternalChatsImportSection';
+import { ExternalImportHistory } from './ExternalImportHistory';
+import { countImportableRules, ExternalImportInstructionRules, type DirectiveState } from './ExternalImportInstructionRules';
 
 /** 页面类别列：新类别（K1B 的 MCP servers）在此加一档 + 对应 host handler。 */
 const IMPORT_CATEGORIES: ExternalImportCategory[] = ['instructions', 'memories', 'skills'];
-
-type DirectiveState = 'pending' | 'imported' | 'not-imported' | 'failed';
 
 interface ImportResults {
   memory: MemoryImportApplyResult | null;
@@ -51,7 +53,7 @@ interface ImportResults {
   directivesImported: number;
 }
 
-type ExternalImportCopy = ReturnType<typeof useI18n>['t']['settings']['externalImport'];
+export type ExternalImportCopy = ReturnType<typeof useI18n>['t']['settings']['externalImport'];
 
 function categoryLabel(category: ExternalImportCategory, copy: ExternalImportCopy): string {
   return copy.categories[category];
@@ -206,6 +208,7 @@ export const ExternalImportSettings: React.FC = () => {
       const directivesImported = Object.values(directiveStates).filter((state) => state === 'imported').length;
       setResults({ memory, skills, directivesImported });
       setStep('results');
+      if (skills) await useExternalImportHistoryStore.getState().load();
       await refreshDetection();
     } catch (error) {
       setMessage({ type: 'error', text: error instanceof Error ? error.message : copy.applyFailed });
@@ -224,9 +227,15 @@ export const ExternalImportSettings: React.FC = () => {
       );
       setDirectiveStates((current) => ({
         ...current,
-        [instructionId]: result.imported ? 'imported' : 'not-imported',
+        [instructionId]: result.imported
+          ? 'imported'
+          : result.confirmed
+            ? 'already-imported'
+            : result.notConfirmedReason === 'headless-no-ui'
+              ? 'headless'
+              : 'declined',
       }));
-      if (!result.imported) {
+      if (!result.confirmed && !result.imported) {
         setMessage({ type: 'error', text: copy.directiveNotImported });
       }
     } catch (error) {
@@ -274,8 +283,13 @@ export const ExternalImportSettings: React.FC = () => {
   }
 
   if (detectedSources.length === 0) {
+    // 记忆/技能来源可以为空，但最近聊天卡独立于检测面——照常给出（FU1）。
     return (
-      <div data-testid="external-import-empty" className="text-sm text-zinc-500">{copy.noSources}</div>
+      <SettingsSection title={copy.title} description={copy.description}>
+        <div data-testid="external-import-empty" className="text-sm text-zinc-500">{copy.noSources}</div>
+        <ExternalChatsImportSection />
+        <ExternalImportHistory />
+      </SettingsSection>
     );
   }
 
@@ -302,6 +316,8 @@ export const ExternalImportSettings: React.FC = () => {
             {message.text}
           </div>
         )}
+
+        <ExternalChatsImportSection />
 
         {claudeSkills && (
           <div
@@ -364,6 +380,7 @@ export const ExternalImportSettings: React.FC = () => {
             selectedCandidateIds={selectedCandidateIds}
             directiveStates={directiveStates}
             busy={busy}
+            homeDir={detectionResult?.homeDir}
             onToggleCandidate={(candidateId, checked) => setSelectedCandidateIds((current) => {
               const next = new Set(current);
               if (checked) next.add(candidateId);
@@ -432,6 +449,8 @@ export const ExternalImportSettings: React.FC = () => {
           </div>
         )}
       </div>
+
+      <ExternalImportHistory />
 
       <ConfirmDialog
         isOpen={pendingConfirm !== null}
@@ -510,6 +529,7 @@ function PreviewStep({
   selectedCandidateIds,
   directiveStates,
   busy,
+  homeDir,
   onToggleCandidate,
   onConfirmDirective,
   onBack,
@@ -521,6 +541,7 @@ function PreviewStep({
   selectedCandidateIds: Set<string>;
   directiveStates: Record<string, DirectiveState>;
   busy: string | null;
+  homeDir?: string | null;
   onToggleCandidate: (candidateId: string, checked: boolean) => void;
   onConfirmDirective: (instructionId: string) => void;
   onBack: () => void;
@@ -605,35 +626,16 @@ function PreviewStep({
         <div className="rounded-lg border border-badge-warning/20 bg-badge-warning p-3" data-testid="external-import-instructions">
           <div className="flex items-center gap-2 text-xs font-medium text-badge-warning">
             <ShieldAlert className="h-4 w-4" />
-            {copy.instructionsTitle.replace('{count}', String(instructions.length))}
+            {copy.instructionsTitle.replace('{count}', String(countImportableRules(instructions)))}
           </div>
-          <div className="mt-2 space-y-1 text-[11px] text-zinc-500">
-            {instructions.map((item) => (
-              <div key={item.id} className="flex items-center justify-between gap-2">
-                <div className="min-w-0 truncate font-mono">{item.sourcePath}</div>
-                {item.reason !== 'directive-confirmation-required' ? (
-                  // instruction-file（如 AGENTS.md/CLAUDE.md）：既有管线定性为只供对照，不给确认钮
-                  <span className="shrink-0 text-zinc-500">{copy.instructionCompareOnly}</span>
-                ) : directiveStates[item.id] === 'imported' ? (
-                  <span className="shrink-0 text-badge-success">{copy.directiveImported}</span>
-                ) : directiveStates[item.id] === 'not-imported' ? (
-                  <span className="shrink-0 text-zinc-500">{copy.directiveNotImported}</span>
-                ) : (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="shrink-0 whitespace-nowrap"
-                    disabled={busy !== null}
-                    onClick={() => onConfirmDirective(item.id)}
-                  >
-                    {busy === `directive:${item.id}`
-                      ? copy.confirmingDirective
-                      : copy.confirmDirective}
-                  </Button>
-                )}
-              </div>
-            ))}
-          </div>
+          <ExternalImportInstructionRules
+            instructions={instructions}
+            directiveStates={directiveStates}
+            busy={busy}
+            homeDir={homeDir}
+            copy={copy}
+            onConfirmDirective={onConfirmDirective}
+          />
         </div>
       )}
     </div>

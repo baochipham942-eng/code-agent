@@ -3,7 +3,8 @@
 // ----------------------------------------------------------------------------
 // 场景：agent A 的写/执行动作被人在审批卡上拒绝（ask-denied）后，同会话内任何
 // agent 再以同一动作指纹出现——peer 消息转述 = 权限洗白，直接 BLOCK；用户本人
-// 重试 = forceConfirm 一次（走既有审批记忆，不硬毙）。
+// 重试 = 同一条用户消息内 sticky 拒绝（不出卡），下一条用户消息起恢复出卡
+// （走既有审批记忆，批准即清登记）。
 //
 // 键 = (sessionId, 动作指纹)：同 session 跨 agent 共享（这正是洗白面），
 // 跨 session 不共享。指纹规范化复用现成真源，不造第二套：
@@ -54,6 +55,10 @@ interface DenialRecord {
   timestamp: number;
   /** 登记当时生效的权限策略哈希。 */
   policyHash?: string;
+  /** 被拒时正在处理的那条 user 消息 id（sticky 判据：同一条消息内不再二次出卡）。 */
+  userMessageId?: string;
+  /** 真人拒绝（denialSource === 'user'）才 sticky；超时/fail-closed/机器拒绝照旧 ask。 */
+  byUser: boolean;
 }
 
 /**

@@ -40,6 +40,8 @@ import { useDoctorStore } from '../../../../stores/doctorStore';
 import { OS_SANDBOX_DOCTOR_ITEM_NAME } from '@shared/constants/sandbox';
 import { validateUserPermissionRule } from '@shared/permissionRuleSyntax';
 import { JevKeyConfig } from './JevKeyConfig';
+import { NotificationPermissionRow } from './NotificationPermissionRow';
+import { CronCloudSettingsCard } from './CronCloudSettingsCard';
 import { NlRuleTranslator } from '../permissions/NlRuleTranslator';
 
 export type PermissionMode = 'default' | 'readOnly' | 'acceptEdits' | 'bypassPermissions';
@@ -503,6 +505,7 @@ export const GeneralSettings: React.FC = () => {
       description={generalText.pageDescription}
     >
       <WebModeBanner />
+      <NotificationPermissionRow />
       <JevKeyConfig />
 
       <SettingsSection
@@ -522,6 +525,8 @@ export const GeneralSettings: React.FC = () => {
           {sandboxDoctor?.suggestion || sandboxDoctor?.details || generalText.sandbox.installHint}
         </p>
       </SettingsSection>
+
+      <CronCloudSettingsCard />
 
       <div id="budget-settings-section" tabIndex={-1} data-testid="budget-settings-section">
         <SettingsSection title={budgetText.title} description={budgetText.description}>

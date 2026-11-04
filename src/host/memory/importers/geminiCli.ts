@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { instructionItem, memoryItemFromMarkdown } from './adapterHelpers';
+import { instructionItems, memoryItemFromMarkdown } from './adapterHelpers';
 import { directoryExists, listMarkdownFiles } from './markdown';
 import type { MemoryImporterAdapter, RawMemoryImportItem } from './types';
 
@@ -22,14 +22,15 @@ export const geminiCliAdapter: MemoryImporterAdapter = {
         continue;
       }
       if (path.basename(sourcePath).toUpperCase() === 'GEMINI.MD') {
-        const rules = await instructionItem({
+        // 项目级 GEMINI.md：整文件只供对照，不拆条（项目目录里的规则不进全局指令）
+        items.push(...await instructionItems({
           adapterId: 'gemini-cli',
           sourceVendor: 'Google',
           sourcePath,
           sourceScope: relative.split(path.sep)[0] || 'project',
           verifiedOnDevice: false,
-        });
-        if (rules) items.push(rules);
+          splitRules: false,
+        }));
         continue;
       }
       const item = await memoryItemFromMarkdown({
@@ -43,14 +44,14 @@ export const geminiCliAdapter: MemoryImporterAdapter = {
       });
       if (item) items.push(item);
     }
-    const globalRules = await instructionItem({
+    items.push(...await instructionItems({
       adapterId: 'gemini-cli',
       sourceVendor: 'Google',
       sourcePath: path.join(root, 'GEMINI.md'),
       sourceScope: 'global',
       verifiedOnDevice: false,
-    });
-    if (globalRules) items.push(globalRules);
+      splitRules: true,
+    }));
     return { items, skipped };
   },
 };

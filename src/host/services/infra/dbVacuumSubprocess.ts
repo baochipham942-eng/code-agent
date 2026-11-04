@@ -10,23 +10,20 @@
 // node)跑一段最小脚本,主进程只 await 子进程退出码。
 //
 // 打包态最容易挂的点是 native binding:better-sqlite3 在打包态不在 node_modules,
-// 而在 dist/native/better-sqlite3/。候选清单与主进程共用 nativeLoader 的同一份
-// (betterSqlite3CandidatePaths),解析失败子进程以专用退出码退出、主进程记 error,
-// 绝不静默跳过。
+// 而在 dist/native/better-sqlite3/。路径由父进程经 resolveBetterSqlite3SubprocessPath
+// 解析一次(bundle 态走 dist/native 清单,源码态走包解析,ADR-086 §4.3)传给子进程;
+// 子进程单 require,解析失败以专用退出码退出、主进程记 error,绝不静默跳过。
 // ============================================================================
 
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { fileURLToPath } from 'url';
-import { betterSqlite3CandidatePaths } from '../core/database/nativeLoader';
+import { resolveBetterSqlite3SubprocessPath } from '../core/database/nativeLoader';
 import { getUserDataPath } from '../../platform/appPaths';
 import { TELEMETRY_RETENTION } from '../../../shared/constants';
 import { createLogger } from './logger';
 
 const logger = createLogger('DbVacuum');
-
-const moduleDir = typeof __dirname === 'string' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 
 /** 正在跑的 VACUUM 子进程 pid 标记文件(存 pid 文本) */
 const VACUUM_LOCK_FILE = '.vacuum-running';
@@ -91,25 +88,19 @@ async function hasFreeSpaceFor(dbPath: string): Promise<{ ok: boolean; detail: s
 
 // 子进程脚本:走 `node -e`,参数经 env 传入(避免 argv 引号歧义)。
 // 只做三件事:加载 native binding → 开库设 busy_timeout → VACUUM → close。
+// 不做任何路径试探:只 require 父进程解析好的那一个绝对路径(ADR-086 §4.3)。
 // close() 是必须的:干净关闭才会 checkpoint 并删掉 -wal / -shm。
 const CHILD_SCRIPT = `
-const candidates = JSON.parse(process.env.NEO_VACUUM_NATIVE_CANDIDATES || '[]');
-let Database = null;
-let loadedFrom = null;
-for (const candidate of candidates) {
-  try {
-    Database = require(candidate);
-    loadedFrom = candidate;
-    break;
-  } catch (error) {
-    console.error('[vacuum] native candidate unavailable: ' + candidate + ' :: ' + (error && error.message));
-  }
-}
-if (!Database) {
-  console.error('[vacuum] better-sqlite3 native binding unresolved; tried: ' + candidates.join(', '));
+const nativePath = process.env.NEO_VACUUM_NATIVE_PATH;
+const nativeSource = process.env.NEO_VACUUM_NATIVE_SOURCE || 'unknown';
+let Database;
+try {
+  Database = require(nativePath);
+} catch (error) {
+  console.error('better-sqlite3 native binding unresolved at ' + nativePath + ' (' + nativeSource + '): ' + (error && error.message));
   process.exit(${EXIT_NATIVE_BINDING_UNRESOLVED});
 }
-console.error('[vacuum] native binding loaded from ' + loadedFrom);
+console.error('native binding loaded from ' + nativePath);
 const db = new Database(process.env.NEO_VACUUM_DB_PATH);
 try {
   db.pragma('busy_timeout = ' + Number(process.env.NEO_VACUUM_BUSY_TIMEOUT_MS));
@@ -142,13 +133,26 @@ export async function runVacuumInSubprocess(dbPath: string): Promise<VacuumOutco
     return 'skipped-low-disk';
   }
 
-  const candidates = [...betterSqlite3CandidatePaths(moduleDir), 'better-sqlite3'];
+  let nativePath: string;
+  let nativeSource: string;
+  try {
+    const resolved = resolveBetterSqlite3SubprocessPath(logger);
+    nativePath = resolved.path;
+    nativeSource = resolved.source;
+  } catch (error) {
+    // 解析失败(清单缺失/声明路径缺失/平台不符)就不派子进程:错误文案自带清单条目信息
+    logger.error(
+      `Database VACUUM could not resolve better-sqlite3: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return 'failed';
+  }
   return await new Promise<VacuumOutcome>((resolve) => {
     const child = spawn(process.execPath, ['-e', CHILD_SCRIPT], {
       env: {
         ...process.env,
         NEO_VACUUM_DB_PATH: dbPath,
-        NEO_VACUUM_NATIVE_CANDIDATES: JSON.stringify(candidates),
+        NEO_VACUUM_NATIVE_PATH: nativePath,
+        NEO_VACUUM_NATIVE_SOURCE: nativeSource,
         NEO_VACUUM_BUSY_TIMEOUT_MS: String(TELEMETRY_RETENTION.VACUUM_BUSY_TIMEOUT_MS),
       },
       stdio: ['ignore', 'ignore', 'pipe'],
@@ -195,7 +199,7 @@ export async function runVacuumInSubprocess(dbPath: string): Promise<VacuumOutco
       if (code === EXIT_NATIVE_BINDING_UNRESOLVED) {
         // 打包态最容易静默挂掉的地方:必须 error 级别报出来,不许当成普通 best-effort 失败
         logger.error(
-          `Database VACUUM subprocess could not resolve the better-sqlite3 native binding; VACUUM will never run until this is fixed. Tried: ${candidates.join(', ')} :: ${stderr.trim()}`,
+          `Database VACUUM subprocess could not load the better-sqlite3 native binding at ${nativePath} (${nativeSource}); VACUUM will never run until this is fixed. :: ${stderr.trim()}`,
         );
         settle('failed');
         return;

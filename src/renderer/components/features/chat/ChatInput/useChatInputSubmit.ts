@@ -63,6 +63,7 @@ import { applyPendingCommandPrefix } from './pendingCommand';
 import { openSideChat as openSideChatLayer } from '../sideChatFloaterState';
 import { parseBtwCommand } from './parseBtwCommand';
 import { shouldClearComposerAfterSend } from './utils';
+import type { ComposerDraftSendOutcome } from './composerDraftStore';
 
 type VoiceInputContextValue = {
   anchor: string;
@@ -107,6 +108,10 @@ export interface UseChatInputSubmitParams {
   isUploading: boolean;
   onSend: (envelope: ConversationEnvelope) => boolean | Promise<boolean>;
   onSteer?: (envelope: ConversationEnvelope) => Promise<SteerOrQueueOutcome | undefined>;
+  /** Flush the idle draft and hold it across the optimistic clear. */
+  onComposerDraftOptimisticClear?: () => void;
+  /** Drop the stored draft only after success (onSend true or a queued row persisted). */
+  onComposerDraftSendSettled?: (outcome: ComposerDraftSendOutcome) => void;
   onQueuedInputChanged?: () => void;
   agentEntries: Parameters<typeof parseAgentSlashCommand>[1];
   buildEnvelope: BuildEnvelope;
@@ -192,6 +197,8 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     isUploading,
     onSend,
     onSteer,
+    onComposerDraftOptimisticClear,
+    onComposerDraftSendSettled,
     onQueuedInputChanged,
     agentEntries,
     buildEnvelope,
@@ -274,12 +281,17 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       const handoffPrompt = pending.handoffPrompt;
       // event 草案（N-CRON-EVENT-CREATE-CHAT）确认前的纵深防御：卡上已按共享校验器
       // 禁用确认按钮，这里再拦一次（卡不可交互/草案被外部改写的路径）。同时剥掉
-      // chatId 空串（= 任意会话；空串下发给 host 会绑死一个不存在的会话，静默永不触发）。
+      // chatId 空串（= 任意会话；空串下发给 host 会绑死一个不存在的会话，静默永不触发）
+      // 与 mail 草案的 mailbox 空串（= 缺省 INBOX；空串会被 host 当字面量邮箱名）。
       if (input.schedule.type === 'event') {
         let schedule = input.schedule;
         if (schedule.source === 'channel' && !schedule.chatId) {
           const { chatId: _droppedEmptyChatId, ...channelSchedule } = schedule;
           schedule = channelSchedule;
+        }
+        if (schedule.source === 'connector' && schedule.connector === 'mail' && !schedule.mailbox) {
+          const { mailbox: _droppedEmptyMailbox, ...mailSchedule } = schedule;
+          schedule = mailSchedule;
         }
         input = { ...input, schedule };
         const violation = validateEventScheduleConstraints({
@@ -370,6 +382,7 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     }
     useSessionStore.getState().addMessage(buildGoalNoticeMessage({ kind: 'start', goal: parsed.goal }));
     addToInputHistory(historyEntry);
+    onComposerDraftOptimisticClear?.();
     setValue('');
     discardPendingResendClientMessageId(pendingResendClientMessageIdRef);
     setAttachments([]);
@@ -378,16 +391,19 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
     try {
       const sent = await onSend(goalEnvelope);
       if (sent === false) {
+        onComposerDraftSendSettled?.('failure');
         if (currentSessionId) useAppStore.getState().clearGoalRun(currentSessionId);
         return false;
       }
+      onComposerDraftSendSettled?.('success');
       resetSentSelection();
       return true;
     } catch {
+      onComposerDraftSendSettled?.('failure');
       if (currentSessionId) useAppStore.getState().clearGoalRun(currentSessionId);
       return false;
     }
-  }, [addToInputHistory, attachments, buildEnvelope, captureSuccessfulSendReset, closeGoalConfirm, currentSessionId, onSend, pendingResendClientMessageIdRef, setAttachments, setValue]);
+  }, [addToInputHistory, attachments, buildEnvelope, captureSuccessfulSendReset, closeGoalConfirm, currentSessionId, onComposerDraftOptimisticClear, onComposerDraftSendSettled, onSend, pendingResendClientMessageIdRef, setAttachments, setValue]);
 
   // 处理提交
   // 运行中允许提交，把新输入排到当前回复结束后发送。
@@ -688,6 +704,8 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
       if (contentToSend) {
         addToInputHistory(contentToSend);
       }
+      // Hold the stored draft across this clear. Only a success outcome deletes it.
+      onComposerDraftOptimisticClear?.();
       setValue('');
       setVoiceInputContext(null);
       setAttachments([]);
@@ -813,44 +831,45 @@ export function useChatInputSubmit(params: UseChatInputSubmitParams) {
         return settleSendWithinTimeout(onSend(stamped));
       };
 
+      const settleComposerSend = async (envelope: ConversationEnvelope): Promise<boolean> => {
+        try {
+          const sent = await submitEnvelope(envelope);
+          if (sent === SEND_TIMED_OUT) {
+            onComposerDraftSendSettled?.('timeout');
+            rollback(true);
+            return false;
+          }
+          if (!shouldClearComposerAfterSend(sent)) {
+            onComposerDraftSendSettled?.('failure');
+            rollback(false);
+            return false;
+          }
+          onComposerDraftSendSettled?.('success');
+          return true;
+        } catch {
+          onComposerDraftSendSettled?.('failure');
+          rollback(false);
+          return false;
+        }
+      };
+
       // P3-18: Shell shortcut - ! prefix sends command to agent as bash request
+      let sentOk = true;
       if (nextEnvelope.content.startsWith('!')) {
         const shellCmd = nextEnvelope.content.slice(1).trim();
         if (shellCmd) {
-          try {
-            const sent = await submitEnvelope({
-              content: `Execute this shell command and show the output: \`${shellCmd}\``,
-              context: nextEnvelope.context,
-            });
-            if (sent === SEND_TIMED_OUT) {
-              rollback(true);
-              return;
-            }
-            if (!shouldClearComposerAfterSend(sent)) {
-              rollback(false);
-              return;
-            }
-          } catch {
-            rollback(false);
-            return;
-          }
+          sentOk = await settleComposerSend({
+            content: `Execute this shell command and show the output: \`${shellCmd}\``,
+            context: nextEnvelope.context,
+          });
+        } else {
+          // Box already cleared and nothing is in flight to roll back. Drop the hold.
+          onComposerDraftSendSettled?.('success');
         }
       } else {
-        try {
-          const sent = await submitEnvelope(nextEnvelope);
-          if (sent === SEND_TIMED_OUT) {
-            rollback(true);
-            return;
-          }
-          if (!shouldClearComposerAfterSend(sent)) {
-            rollback(false);
-            return;
-          }
-        } catch {
-          rollback(false);
-          return;
-        }
+        sentOk = await settleComposerSend(nextEnvelope);
       }
+      if (!sentOk) return;
       resetSentSelection();
     }
   };

@@ -1,6 +1,6 @@
 // initializeSessionStore 的 IPC 订阅。从 sessionStore 拆出，只留接线（max-lines）。
 
-import type { Session } from '@shared/contract';
+import type { Session, SessionStatus } from '@shared/contract';
 import type { BackgroundTaskUpdateEvent } from '@shared/contract/sessionState';
 import { IPC_CHANNELS, type SessionStatusUpdateEvent, type SessionUpdatedEvent } from '@shared/ipc';
 import ipcService from '../services/ipcService';
@@ -11,8 +11,24 @@ import { useSessionStore, type SessionWithMeta } from './sessionStore';
 import { useStatusStore } from './statusStore';
 import { useTaskStore } from './taskStore';
 import { hostStampPredatesTerminal, useTerminalRunGuardStore } from './terminalRunGuardStore';
+import { createTerminalStatusReconciler } from './terminalStatusReconcile';
 
 type NormalizableSession = Session & { messageCount?: number; turnCount?: number };
+
+// 终态广播对账（语义与宽限期见 terminalStatusReconcile.ts）：模块级单例，
+// 与 streamSnapshotRehydrate 的 handler 同款接线。
+const handleTerminalStatusReconcile = createTerminalStatusReconciler({
+  getCurrentSessionId: () => useSessionStore.getState().currentSessionId,
+  getLastMessage: () => {
+    const { messages } = useSessionStore.getState();
+    return messages[messages.length - 1];
+  },
+  reloadSession: (sessionId) => useSessionStore.getState().switchSession(sessionId, { force: true }),
+  isRunActive: (sessionId) => useAppStore.getState().isSessionProcessing(sessionId),
+  isTerminalStatus: (status) => isTerminalRecoverySessionStatus(status as SessionStatus | undefined),
+  hasUnendedRun: (sessionId) => useTerminalRunGuardStore.getState().hasUnendedRun(sessionId),
+  clearUnendedRun: (sessionId) => useTerminalRunGuardStore.getState().markRunEndObserved(sessionId),
+});
 
 export async function bindInitializedSessionBroadcasts(
   normalize: (session: NormalizableSession) => SessionWithMeta,
@@ -40,6 +56,9 @@ export async function bindInitializedSessionBroadcasts(
       );
       useAppStore.getState().setSessionProcessing(sessionId, false);
       useTaskStore.getState().updateSessionState(sessionId, { status: 'idle' });
+      // 对账：终局事件只走 run 响应流，流若静默失联，上面只清指示不补消息——
+      // 这里挂宽限期检查，超时仍未见 assistant 终稿就走快照重灌把 DB 真相拉回页面。
+      handleTerminalStatusReconcile(event);
     }
 
     // 宿主说开始跑了就点亮。可继续的停靠不能被更旧的 running 广播重新点亮；

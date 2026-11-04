@@ -204,6 +204,8 @@ describe('② 无人值守 handback：停车 + 通知，不执行、不失败', 
       sessionId: SESSION,
       title: NL_RULE_K2_TEXT.notify.title,
       body: NL_RULE_K2_TEXT.notify.body(TRANSFER_TOOL),
+      // 同键（= 停车行 id）：事件落库口随后发的通用「需要授权」会被去重，用户只看到这一条
+      dedupeKey: rowId,
     });
 
     // 「我做完了」：工具不执行，成功形回给模型（用户亲自做，勿重试），台账行收口、不留失败
@@ -344,7 +346,7 @@ describe('④ preapprove：短语命中免卡，未命中出卡；deny 仍硬拒
 
     const toolResult = await executor.execute(TRANSFER_TOOL, { amount: 100 }, { sessionId: SESSION });
     expect(toolResult.success).toBe(false);
-    expect(toolResult.error).toContain('Blocked by your permission rule');
+    expect(toolResult.error).toContain('Blocked by your permission deny rule');
     expect(resolverState.execute).not.toHaveBeenCalled();
   });
 });

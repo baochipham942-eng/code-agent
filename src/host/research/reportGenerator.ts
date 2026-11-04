@@ -10,7 +10,8 @@ import type {
   DeepResearchConfig,
 } from './types';
 import type { ModelRouter } from '../model/modelRouter';
-import { DEFAULT_PROVIDER, DEFAULT_MODEL, getModelMaxOutputTokens } from '../../shared/constants';
+import { getModelMaxOutputTokens } from '../../shared/constants';
+import { resolveSessionDefaultModelConfig } from '../services/core/sessionDefaults';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('ReportGenerator');
@@ -124,8 +125,9 @@ export class ReportGenerator {
     const reportPrompt = this.buildReportPrompt(plan, stepResults, style);
 
     try {
-      const modelId = config.model ?? DEFAULT_MODEL;
-      const reportProvider = (config.modelProvider as 'deepseek' | 'openai' | 'claude' | 'openrouter') ?? DEFAULT_PROVIDER;
+      const sessionDefault = resolveSessionDefaultModelConfig();
+      const modelId = config.model ?? sessionDefault.model;
+      const reportProvider = (config.modelProvider as 'deepseek' | 'openai' | 'claude' | 'openrouter') ?? sessionDefault.provider;
       const originalMessages: Array<{ role: string; content: string }> = [
         { role: 'user', content: reportPrompt },
       ];

@@ -22,6 +22,8 @@ export interface SessionTaskSlot extends SessionTaskSlotInput {
   status: SessionTaskSlotStatus;
   attempt: number;
   startedAt?: number;
+  /** Set only by touch(). Absent means the clock is still total occupancy from startedAt. */
+  lastActivityAt?: number;
   terminalStatus?: SessionTaskTerminalStatus;
 }
 
@@ -42,6 +44,8 @@ export interface SessionTaskSlotLedgerOptions {
   cleanupIntervalMs?: number;
   now?: () => number;
   onRecovery?: (recovery: SessionTaskSlotRecovery) => void;
+  /** Return true to keep a running slot past the timeout (an approval wait is not idle). */
+  shouldSkipExpiry?: (slot: SessionTaskSlot) => boolean;
 }
 
 export type SessionTaskAdmission =
@@ -87,6 +91,7 @@ export class SessionTaskSlotLedger {
   private readonly cleanupIntervalMs: number;
   private readonly now: () => number;
   private readonly onRecovery?: (recovery: SessionTaskSlotRecovery) => void;
+  private readonly shouldSkipExpiry?: (slot: SessionTaskSlot) => boolean;
   private cleanupInterval: ReturnType<typeof setInterval> | null;
 
   constructor(
@@ -100,6 +105,7 @@ export class SessionTaskSlotLedger {
     this.cleanupIntervalMs = options.cleanupIntervalMs ?? SESSION_TASK_SLOT_CLEANUP_INTERVAL_MS;
     this.now = options.now ?? Date.now;
     this.onRecovery = options.onRecovery;
+    this.shouldSkipExpiry = options.shouldSkipExpiry;
     this.cleanupInterval = setInterval(() => {
       this.cleanupExpiredSlots();
     }, this.cleanupIntervalMs);
@@ -153,6 +159,17 @@ export class SessionTaskSlotLedger {
     const queuedIndex = this.queue.indexOf(workItemId);
     if (queuedIndex >= 0) this.queue.splice(queuedIndex, 1);
     return this.drainStartable();
+  }
+
+  /** at 缺省记「现在」；传入则把活跃锚回填到该时刻（tool_progress 心跳按 inactiveMs 折算）。 */
+  touch(workItemId: string, at?: number): void {
+    const slot = this.slots.get(workItemId);
+    if (slot?.status !== 'running') return;
+    const anchor = at === undefined ? this.now() : at;
+    // 回填锚只许前移：迟到的旧心跳不得把已发生的真实 touch 冲回过去。
+    slot.lastActivityAt = slot.lastActivityAt === undefined
+      ? anchor
+      : Math.max(slot.lastActivityAt, anchor);
   }
 
   get(workItemId: string): SessionTaskSlot | undefined {
@@ -241,8 +258,12 @@ export class SessionTaskSlotLedger {
 
     for (const slot of this.slots.values()) {
       if (slot.status !== 'running' || slot.startedAt === undefined) continue;
-      const occupiedMs = Math.max(0, recoveredAt - slot.startedAt);
+      // No touch() leaves lastActivityAt unset, so the anchor stays startedAt.
+      // Voice never touches, and its default window stays the 2h total clock.
+      const activityAt = Math.max(slot.startedAt, slot.lastActivityAt ?? slot.startedAt);
+      const occupiedMs = Math.max(0, recoveredAt - activityAt);
       if (occupiedMs < this.slotTimeoutMs) continue;
+      if (this.shouldSkipExpiry?.(slot)) continue;
       this.pool.release(slot.workItemId);
       slot.status = 'settled';
       slot.terminalStatus = 'failed';

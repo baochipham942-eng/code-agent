@@ -148,7 +148,16 @@ function readSandboxDeniedWritePath(failureText: string): string | undefined {
   if (shellRedirect) return shellRedirect;
 
   // write utilities: `mkdir: /path: Operation not permitted`, `cp: /path: …`
-  return /(?:^|\n)(?:mkdir|touch|cp|mv|rm|rmdir|tee|install|ln|chmod|chown|truncate)(?:\s+\S+)?:\s+((?:~|\/)[^:\r\n]+):\s+Operation not permitted\b/im.exec(failureText)?.[1]?.trim();
+  const writeUtilityPath = /(?:^|\n)(?:mkdir|touch|cp|mv|rm|rmdir|tee|install|ln|chmod|chown|truncate)(?:\s+\S+)?:\s+((?:~|\/)[^:\r\n]+):\s+Operation not permitted\b/im.exec(failureText)?.[1]?.trim();
+  if (writeUtilityPath) return writeUtilityPath;
+
+  // chmod's real shapes put prose after the first colon, so the write-utilities
+  // form above misses them: macOS/BSD `chmod: Unable to change file mode on
+  // <path>: Operation not permitted` (the path may contain spaces) and GNU
+  // `chmod: changing permissions of '<path>': Operation not permitted` — on
+  // macOS GNU coreutils installs as `gchmod` and prefixes the line with it.
+  return /(?:^|\n)chmod:\s+Unable to change file mode on\s+((?:~|\/).+?):\s+Operation not permitted\b/im.exec(failureText)?.[1]?.trim()
+    ?? /(?:^|\n)g?chmod:\s+changing permissions of\s+'((?:~|\/)[^'\r\n]+)':\s+Operation not permitted\b/im.exec(failureText)?.[1]?.trim();
 }
 
 /**

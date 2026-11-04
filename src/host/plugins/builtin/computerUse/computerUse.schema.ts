@@ -20,8 +20,8 @@ Desktop routing contract:
 - diagnose_app: Diagnose target app process/window/TCC/AX/CGEvent readiness in one call
 - click/doubleClick/rightClick: Click at x,y coordinates
 - move: Move mouse to x,y
-- type: Type text. Without targetApp+axPath this fires global keystrokes at whatever app is frontmost RIGHT NOW — if a video call or another app steals focus mid-task your input lands in the wrong window. Prefer the headless form: targetApp + axPath (axPath comes from get_ax_elements or locate_role). Coordinate-form (x,y) also fires global keystrokes after a click.
-- key: Press keyboard key/shortcut. Same caveat as type — global keyboard event sent to the frontmost app. Cmd+N etc. cannot be routed via background AX; if you only need to invoke a menu item, prefer get_ax_elements to find the AXMenuItem and click its axPath instead of a global shortcut.
+- type: Type text. Without targetApp+axPath this fires global keystrokes at whatever app is frontmost RIGHT NOW — if a video call or another app steals focus mid-task your input lands in the wrong window. Prefer the headless form: targetApp + axPath (axPath comes from get_ax_elements or locate_role). Coordinate-form (x,y) also fires global keystrokes after a click. Once this turn has already declared a targetApp, a type that omits targetApp is refused; resend with that targetApp and axPath.
+- key: Press keyboard key/shortcut. Same caveat as type — global keyboard event sent to the frontmost app. Cmd+N etc. cannot be routed via background AX; if you only need to invoke a menu item, prefer get_ax_elements to find the AXMenuItem and click its axPath instead of a global shortcut. Once this turn has already declared a targetApp, a key that omits targetApp is refused; resend with that targetApp and axPath.
 - scroll: Scroll in direction (up/down/left/right)
 - drag: Drag from x,y to toX,toY
 - mouse_down / mouse_up: Press or release the mouse button at x,y without the matching counterpart. Use to build custom drag rhythms (sliders/canvas) or hold-to-select. Always pair them.
@@ -47,7 +47,7 @@ Desktop routing contract:
 - action: The action to perform
 - x, y: Screen coordinates (for basic mouse actions)
 - coordSpace: 'screen' (default) or 'image'. Set 'image' when x/y came from a screenshot you analyzed — they will be scaled from the analyzed-image space to logical screen points before clicking. Pass imageWidth/imageHeight (from screenshot metadata.analyzedWidth/Height) alongside it.
-- targetApp: Expected app for desktop actions. With axPath or role/name/selector on macOS, Computer Surface can use background Accessibility instead of the foreground cursor.
+- targetApp: Expected app for desktop actions. If omitted, the frontmost app is used, except after this turn has already declared a targetApp: type and key (including computer_batch sub-actions) that omit it are refused until resent with targetApp and axPath from get_ax_elements or locate_role. With axPath or role/name/selector on macOS, Computer Surface can use background Accessibility instead of the foreground cursor.
 - pid/windowId/windowRef/windowLocalPoint: macOS background CGEvent target from get_windows, for closed-source app debugging without foreground activation
 - bundleId/title: Optional expected target identity from get_windows; checked before background CGEvent clicks
 - selector: CSS selector (for smart actions)
@@ -122,7 +122,7 @@ IMPORTANT: locate_element / locate_text / smart_* / get_elements require a launc
       },
       targetApp: {
         type: 'string',
-        description: 'Expected target app for desktop actions. If omitted, the frontmost app is used. With axPath or role/name/selector on macOS, background Accessibility can target the app without requiring it to be frontmost. For open_application, this is the app name to launch (e.g. "Safari", "Visual Studio Code").',
+        description: 'Expected target app for desktop actions. If omitted, the frontmost app is used, except type and key (including computer_batch sub-actions) after this turn has already declared a targetApp: those are refused until resent with targetApp and axPath from get_ax_elements or locate_role. With axPath or role/name/selector on macOS, background Accessibility can target the app without requiring it to be frontmost. For open_application, this is the app name to launch (e.g. "Safari", "Visual Studio Code").',
       },
       actions: {
         type: 'array',

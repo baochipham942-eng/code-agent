@@ -45,6 +45,7 @@ import type BetterSqlite3 from 'better-sqlite3';
 const Database = loadBetterSqlite3(moduleDir, logger);
 import type { Session, Message, ToolResult, ModelProvider, TodoItem, SessionTask } from '../../../shared/contract';
 import type { ContextInterventionAction, ContextInterventionSnapshot } from '../../../shared/contract/contextView';
+import type { MemoryChangeJournalContext, MemoryChangeJournalRow } from '../../../shared/contract/memory';
 import type { CaptureItem, CaptureSource, CaptureStats } from '../../../shared/contract/capture';
 import { SessionForkError } from '../../../shared/contract/sessionFork';
 
@@ -82,6 +83,7 @@ import { rebuildRunDetail } from './swarmRollupProjection';
 import { reconcileRun, type ReconcileResult } from './swarmReconcile';
 import type { SwarmRunDetail } from '../../../shared/contract/swarmTrace';
 import type { SessionLedger } from '../../../shared/contract/sessionLedger';
+import { createCloudRunLedger, type CloudRunLedger } from '../cloudRun/cloudRunLedger';
 import { redactSecrets } from '../../security/secretRedaction';
 import {
   AnchorWorkspaceEvidenceService,
@@ -280,6 +282,8 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   private swarmLedgerRepo!: SwarmLedgerRepository;
   private usageLedgerRepo!: UsageLedgerRepository;
   private turnCostRepo!: TurnCostRepository;
+  // 云端 run 账本（ADR-087 S1）惰性建，不参与崩溃恢复重建
+  private cloudRunLedger?: CloudRunLedger;
   /** 启动时从总账重建的崩溃现场快照（ADR-022 第二期），供诊断出口/恢复消费 */
   private lastRecoverySnapshot: RecoverySnapshot | null = null;
   private _integrityOutcome: DbIntegrityOutcome = { kind: 'ok' };
@@ -1341,6 +1345,20 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     assertDatabaseWritable(this._degradedMode);
   }
 
+  // --- Cloud Run Ledger（ADR-087 S1–S3）---
+  /**
+   * 云端 run 账本：持久行、迁移、admit、FIFO 配额与取消请求；
+   * 账本不静态 import AuthService（见 cloudRunLedger.ts 头注释），
+   * 账户事实源由 authService 装载时注册，这里保持导入图干净。
+   */
+  getCloudRunLedger(): CloudRunLedger {
+    this.ensureDb();
+    if (!this.cloudRunLedger) {
+      this.cloudRunLedger = createCloudRunLedger({ db: this.db! });
+    }
+    return this.cloudRunLedger;
+  }
+
   // --- SessionRepository ---
   createSession(session: Session): void {
     this.ensureWritable();
@@ -2240,6 +2258,32 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   ): ImportSessionForkResult {
     this.ensureDb();
     return this.sessionForkPortabilityRepo.importSessionFork(input);
+  }
+  /** 批量外部历史导入的去重预检（只读，不写任何表）。 */
+  hasSessionForkImport(input: {
+    sourceExportId: string;
+    ownerScopeId: string;
+    projectId: string;
+    namespace: string;
+  }): boolean {
+    this.ensureDb();
+    return this.sessionForkPortabilityRepo.hasImportedExport(
+      input.sourceExportId,
+      input.ownerScopeId,
+      input.projectId,
+      input.namespace,
+    );
+  }
+  /** 导入历史撤销用：导入台账里 exportId 对应的 Neo 根会话 id（只读）。
+   *  notAfter 传历史条目记录时刻，只命中该条目自己那次导入写下的台账行。 */
+  findSessionForkImportRoot(sourceExportId: string, notAfter?: number): string | null {
+    this.ensureDb();
+    return this.sessionForkPortabilityRepo.findImportedRootSessionId(sourceExportId, notAfter);
+  }
+  /** 导入历史撤销用：会话是否已有未删除的 fork 子会话（只读）。 */
+  hasLiveSessionForkChild(sessionId: string): boolean {
+    this.ensureDb();
+    return this.sessionForkPortabilityRepo.hasLiveForkChild(sessionId);
   }
   async prepareImportedIsolatedWorkspace(
     input: PublishImportedIsolatedWorkspaceInput,
@@ -3284,9 +3328,9 @@ export class DatabaseService extends DurableRunDatabaseSupport {
   }
 
   // --- MemoryRepository ---
-  createMemory(data: Omit<import('./repositories').MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>): import('./repositories').MemoryRecord {
+  createMemory(data: Omit<import('./repositories').MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>, journal?: MemoryChangeJournalContext): import('./repositories').MemoryRecord {
     this.ensureWritable();
-    return this.memoryRepo.createMemory(data);
+    return this.memoryRepo.createMemory(data, journal);
   }
   getMemory(id: string): import('./repositories').MemoryRecord | null {
     this.ensureDb();
@@ -3296,17 +3340,25 @@ export class DatabaseService extends DurableRunDatabaseSupport {
     this.ensureDb();
     return this.memoryRepo.listMemories(options);
   }
-  updateMemory(id: string, updates: Partial<import('./repositories').MemoryRecord>): import('./repositories').MemoryRecord | null {
+  updateMemory(id: string, updates: Partial<import('./repositories').MemoryRecord>, journal?: MemoryChangeJournalContext): import('./repositories').MemoryRecord | null {
     this.ensureDb();
-    return this.memoryRepo.updateMemory(id, updates);
+    return this.memoryRepo.updateMemory(id, updates, journal);
   }
-  deleteMemory(id: string): boolean {
+  deleteMemory(id: string, journal?: MemoryChangeJournalContext): boolean {
     this.ensureDb();
-    return this.memoryRepo.deleteMemory(id);
+    return this.memoryRepo.deleteMemory(id, journal);
   }
-  deleteMemories(filter: { type?: string; category?: string; source?: string; projectPath?: string; sessionId?: string }): number {
+  deleteMemories(filter: { type?: string; category?: string; source?: string; projectPath?: string; sessionId?: string }, journal?: MemoryChangeJournalContext): number {
     this.ensureDb();
-    return this.memoryRepo.deleteMemories(filter);
+    return this.memoryRepo.deleteMemories(filter, journal);
+  }
+  listMemoryJournal(request: { entryId?: string; memoryId?: string; limit?: number }): MemoryChangeJournalRow[] {
+    this.ensureDb();
+    return this.memoryRepo.listMemoryJournal(request);
+  }
+  latestMemoryChanges(): Array<Pick<MemoryChangeJournalRow, 'memoryId' | 'entryId' | 'actor' | 'operation' | 'timestamp'>> {
+    this.ensureDb();
+    return this.memoryRepo.latestMemoryChanges();
   }
   searchMemories(
     query: string,

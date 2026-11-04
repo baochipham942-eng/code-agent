@@ -22,6 +22,7 @@ function entry(sessionId: string, fingerprint: string, index = 0): DenialRecordE
     summary: fingerprint,
     reason: 'user',
     timestamp: 1000 + index,
+    byUser: true,
   };
 }
 

@@ -39,8 +39,8 @@ export type ApprovalLevel =
   | 'always'    // 始终允许
   | 'never';    // 永不允许
 
-/** renderer 卡片沉淀用的终态；timeout 由 host 真源回传，不能靠 UI 计时猜。 */
-export type PermissionDecision = ApprovalLevel | 'timeout';
+/** renderer 卡片沉淀用的终态；timeout / superseded 由 host 真源回传，不能靠 UI 计时猜。 */
+export type PermissionDecision = ApprovalLevel | 'timeout' | 'superseded';
 
 /**
  * Host 侧原因只传稳定 code + 窄 metadata；自由文本只放在 modelText，供模型上下文、
@@ -131,6 +131,13 @@ export interface PermissionRequest {
   runId?: string;
   parentToolUseId?: string;
   forceConfirm?: boolean;
+  /**
+   * N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1 返修 r2：forceConfirm 的成因标记。
+   * true 仅当 W3 写边界 ask（boundaryAskForcesConfirmation）是唯一成因且无 peer 触发；
+   * 只读档 / guardFabric / 保护路径 / 不确定目标 / 确认门 任一在场则缺席。
+   * 定时任务写授权（cronWriteGrant）只放行这一种 forceConfirm 形态，其余照旧人工。
+   */
+  forceConfirmBoundaryOnly?: boolean;
   type: PermissionType;
   tool: string;
   details: {
@@ -138,6 +145,8 @@ export interface PermissionRequest {
     pluginId?: string;
     /** Host-resolved display name of the plugin that registered this tool. */
     pluginName?: string;
+    /** Host-resolved only; true when outbound sensitive data was masked. */
+    outboundMasked?: boolean;
     path?: string;
     filePath?: string;
     command?: string;
@@ -201,6 +210,18 @@ export interface PermissionRequest {
     deniedPath?: string;
     /** 沙盒写放宽动作：sandbox_escalate_once 或 sandbox_escalate_dir_once。 */
     action?: string;
+    /**
+     * ADR-088 敏感步骤交回：这一步 Neo 永不代执行，交回用户亲手完成。有此字段 =
+     * 审批卡渲染成交回卡（reasonCode=SensitiveStepHandback），应答永不铸造任何授权。
+     * 只含展示元数据；被键入的文本绝不进任何载荷（规格 docs/architecture/sensitive-step-handback.md §3）。
+     */
+    sensitiveStep?: {
+      kind: 'password' | 'verification_code' | 'payment';
+      /** 目标元素 label（公开界面元数据，非秘密本体） */
+      elementLabel?: string;
+      /** 展示用应用名（交回卡 {app} 变量）；不是 targetApp，不参与任何授权铸造 */
+      appName?: string;
+    };
   };
   /** 人类可读原因文案（向后兼容，旧路径仍只读此字段） */
   reason?: string;
@@ -237,7 +258,7 @@ export interface PermissionRequest {
   decisionTrace?: import('./decisionTrace').DecisionTrace;
   /** host/renderer 已完成本次裁决；同一 permission_request 事件以加法字段回传终态。 */
   resolved?: boolean;
-  /** 用户选择或 host 的 timeout 结果；仅 resolved=true 时有意义。 */
+  /** 用户选择，或 host 的 timeout / superseded 结果；仅 resolved=true 时有意义。 */
   decision?: PermissionDecision;
   /** 裁决来自另一个面（手机 companion）；桌面据此收卡，不记成本机点击。 */
   resolvedBy?: 'companion';
@@ -314,6 +335,8 @@ type PermissionApprovalSource =
   | 'cli-auto-approve'
   | 'unattended-readonly'
   | 'auto-approve-level'
+  /** 定时任务面板预授权文件夹内的 file_write/file_edit 放行（N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1） */
+  | 'schedule-write-grant'
   | 'skip-permissions'
   | 'noninteractive'
   | 'session-allowlist'
@@ -380,6 +403,8 @@ export enum PermissionRequestReason {
   NetworkEgress = 'network_egress',
   /** 调用 MCP 服务器工具 */
   McpTool = 'mcp_tool',
+  /** 敏感步骤交回用户（ADR-088：密码/验证码/支付 Neo 永不代做，交回用户亲手完成） */
+  SensitiveStepHandback = 'sensitive_step_handback',
   /** 未归类的原因（兜底；default 工具分支统一落此值，避免空白原因） */
   Unknown = 'unknown',
 }
@@ -402,6 +427,8 @@ export function permissionReasonText(code: PermissionRequestReason): string {
       return '访问外部网络资源';
     case PermissionRequestReason.McpTool:
       return '调用 MCP 服务器工具';
+    case PermissionRequestReason.SensitiveStepHandback:
+      return '敏感步骤交回用户';
     case PermissionRequestReason.Unknown:
       return '此操作需要你的确认';
     default: {

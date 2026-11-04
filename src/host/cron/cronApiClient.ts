@@ -20,6 +20,32 @@ export interface CronApiRun {
   summary?: string;
 }
 
+/** register/rotate 的一次性回执：token 只在这里出现，调用方展示一次后即丢弃。 */
+export interface CronApiHookSecret {
+  /** 可粘贴进外部系统 webhook URL 字段的完整 hook URL（已含 ?token=）。 */
+  url: string;
+  /** hook token；中继只存哈希，rotate 后旧 token 立即失效。 */
+  token: string;
+}
+
+/**
+ * webhook 中继帧（N-CRON-WEBHOOK-CLOUD-HOOK）：投递（event: cron_hook）与
+ * 过期通告（event: cron_hook_expired）。wire 契约见 docs/architecture/cron-webhook-relay.md。
+ */
+export type CronApiHookEvent =
+  | {
+    type: 'hook';
+    jobId: string;
+    deliveryId: string;
+    receivedAt: number;
+    body: string;
+  }
+  | {
+    type: 'hook-expired';
+    jobId: string;
+    count: number;
+  };
+
 type CronApiEnvelope = {
   ok?: boolean;
   result?: unknown;
@@ -227,6 +253,38 @@ function readRunList(result: unknown): CronApiRun[] {
   return values.map(normalizeRun).filter((run): run is CronApiRun => run !== null);
 }
 
+/** cron_hook 帧的形状校验：缺 jobId/deliveryId/body 的坏帧丢弃（不喂给触发链路）。 */
+function normalizeHookDelivery(value: unknown): Extract<CronApiHookEvent, { type: 'hook' }> | null {
+  if (!isRecord(value) || typeof value.jobId !== 'string' || typeof value.deliveryId !== 'string') return null;
+  if (typeof value.body !== 'string') return null;
+  return {
+    type: 'hook',
+    jobId: value.jobId,
+    deliveryId: value.deliveryId,
+    // receivedAt 缺失时按到达时刻兜底（与 normalizeRun 对 ts 的口径一致）。
+    receivedAt: typeof value.receivedAt === 'number' && Number.isFinite(value.receivedAt) ? value.receivedAt : Date.now(),
+    body: value.body,
+  };
+}
+
+/** cron_hook_expired 帧的形状校验：count 非有限数按 0 处理（通告性帧，不因坏值丢弃）。 */
+function normalizeHookExpiry(value: unknown): Extract<CronApiHookEvent, { type: 'hook-expired' }> | null {
+  if (!isRecord(value) || typeof value.jobId !== 'string') return null;
+  return {
+    type: 'hook-expired',
+    jobId: value.jobId,
+    count: typeof value.count === 'number' && Number.isFinite(value.count) ? value.count : 0,
+  };
+}
+
+/** register/rotate 的 result 形状校验：url/token 必须都是非空字符串。 */
+function readHookSecret(result: unknown): CronApiHookSecret {
+  if (isRecord(result) && typeof result.url === 'string' && result.url && typeof result.token === 'string' && result.token) {
+    return { url: result.url, token: result.token };
+  }
+  throw new Error('Cloud cron hook registration returned an invalid response.');
+}
+
 function toExecutionStatus(run: CronApiRun): CronJobExecution['status'] {
   if (run.action === 'started') return 'running';
   return run.status === 'error' ? 'failed' : 'completed';
@@ -304,10 +362,47 @@ export class CronApiClient {
     return readRunList(await this.request('runs?scope=all', 'GET'));
   }
 
-  start(onRun: (run: CronApiRun) => Promise<void> | void): void {
+  /**
+   * webhook 中继端点（N-CRON-WEBHOOK-CLOUD-HOOK；wire 契约见
+   * docs/architecture/cron-webhook-relay.md）。全部走既有 cloud Bearer；
+   * 失败统一包一层可区分的 hook 前缀（含底层 HTTP 状态），不与普通 cron API
+   * 报错混淆。register/rotate 的 {url, token} 只作为返回值出现，绝不落日志。
+   */
+  async registerHook(jobId: string): Promise<CronApiHookSecret> {
+    return readHookSecret(await this.hookRequest('register', { jobId }));
+  }
+
+  async rotateHook(jobId: string): Promise<CronApiHookSecret> {
+    return readHookSecret(await this.hookRequest('rotate', { jobId }));
+  }
+
+  async removeHook(jobId: string): Promise<void> {
+    await this.hookRequest('remove', { jobId });
+  }
+
+  /** at-least-once 的确认侧：投递已被终态处置（入队/去重/忽略）后逐批回执。 */
+  async ackHooks(jobId: string, deliveryIds: readonly string[]): Promise<void> {
+    await this.hookRequest('ack', { jobId, deliveryIds });
+  }
+
+  private async hookRequest(operation: string, params: Record<string, unknown>): Promise<unknown> {
+    try {
+      return await this.request(`hooks/${operation}`, 'POST', params);
+    } catch (error) {
+      throw new Error(
+        `Cloud cron hook ${operation} failed: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
+    }
+  }
+
+  start(
+    onRun: (run: CronApiRun) => Promise<void> | void,
+    onHook?: (event: CronApiHookEvent) => Promise<void> | void,
+  ): void {
     if (this.running) return;
     this.running = true;
-    void this.runLoop(onRun);
+    void this.runLoop(onRun, onHook);
   }
 
   stop(): void {
@@ -320,7 +415,10 @@ export class CronApiClient {
     this.reconnectResolve = undefined;
   }
 
-  async connectOnce(onRun: (run: CronApiRun) => Promise<void> | void): Promise<void> {
+  async connectOnce(
+    onRun: (run: CronApiRun) => Promise<void> | void,
+    onHook?: (event: CronApiHookEvent) => Promise<void> | void,
+  ): Promise<void> {
     const missedRuns = await this.listRuns();
     for (const run of missedRuns) await onRun(run);
 
@@ -353,8 +451,12 @@ export class CronApiClient {
         while (boundary >= 0) {
           const frame = buffer.slice(0, boundary);
           buffer = buffer.slice(boundary + 2);
-          const event = this.parseEventFrame(frame);
-          if (event) await onRun(event);
+          const event = this.parseStreamFrame(frame);
+          if (event !== null) {
+            // 帧分发按形状判别：run 帧（action 字段）走 onRun，hook 帧走可选的 onHook。
+            if ('action' in event) await onRun(event);
+            else if (onHook) await onHook(event);
+          }
           boundary = buffer.indexOf('\n\n');
         }
       }
@@ -364,11 +466,14 @@ export class CronApiClient {
     }
   }
 
-  private async runLoop(onRun: (run: CronApiRun) => Promise<void> | void): Promise<void> {
+  private async runLoop(
+    onRun: (run: CronApiRun) => Promise<void> | void,
+    onHook?: (event: CronApiHookEvent) => Promise<void> | void,
+  ): Promise<void> {
     let delayMs = 500;
     while (this.running) {
       try {
-        await this.connectOnce(onRun);
+        await this.connectOnce(onRun, onHook);
         delayMs = 500;
       } catch (error) {
         if (!this.running) return;
@@ -385,19 +490,33 @@ export class CronApiClient {
     }
   }
 
-  private parseEventFrame(frame: string): CronApiRun | null {
+  /**
+   * 单帧解析：`event: cron`（run）与 `event: cron_hook` / `event: cron_hook_expired`
+   * （webhook 中继，N-CRON-WEBHOOK-CLOUD-HOOK）。与旧 parseEventFrame 同口径：
+   * 没有 `event: cron` 行的帧仍然丢弃（不把无 event 行的帧当 cron）。
+   */
+  private parseStreamFrame(frame: string): CronApiRun | CronApiHookEvent | null {
     const lines = frame.split('\n');
-    if (!lines.some((line) => line.trim() === 'event: cron')) return null;
+    const eventName = lines
+      .map((line) => /^event:\s*(.*)$/.exec(line)?.[1]?.trim())
+      .find((name): name is string => name !== undefined);
+    if (eventName !== 'cron' && eventName !== 'cron_hook' && eventName !== 'cron_hook_expired') {
+      return null;
+    }
     const data = lines
       .filter((line) => line.startsWith('data:'))
       .map((line) => line.slice(5).trimStart())
       .join('\n');
     if (!data) return null;
+    let parsed: unknown;
     try {
-      return normalizeRun(JSON.parse(data) as unknown);
+      parsed = JSON.parse(data) as unknown;
     } catch {
       return null;
     }
+    if (eventName === 'cron_hook') return normalizeHookDelivery(parsed);
+    if (eventName === 'cron_hook_expired') return normalizeHookExpiry(parsed);
+    return normalizeRun(parsed);
   }
 
   private requireConfig(): CronApiConfig {

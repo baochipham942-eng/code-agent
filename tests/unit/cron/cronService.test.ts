@@ -42,6 +42,23 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
         ),
         run: (...args: unknown[]) => {
           dbState.savedRows.push(args);
+          if (sql.includes('INSERT INTO cron_jobs')) {
+            const [id, name, description, scheduleType, schedule, action, runsOn, maxRunBudget, maxRuns,
+              runCount, minIntervalSeconds, resultChannel, cloudJobId, enabled, maxRetries, retryDelay,
+              timeout, tags, metadata, createdAt, updatedAt] = args;
+            const row = {
+              id, name, description, schedule_type: scheduleType, schedule, action, runs_on: runsOn,
+              max_run_budget: maxRunBudget, max_runs: maxRuns, run_count: runCount,
+              min_interval_seconds: minIntervalSeconds, result_channel: resultChannel,
+              cloud_job_id: cloudJobId, enabled, max_retries: maxRetries, retry_delay: retryDelay,
+              timeout, tags, metadata, created_at: createdAt, updated_at: updatedAt,
+            };
+            const index = dbState.cronRows.findIndex((item) => (
+              !!item && typeof item === 'object' && (item as Record<string, unknown>).id === id
+            ));
+            if (index >= 0) dbState.cronRows[index] = row;
+            else dbState.cronRows.push(row);
+          }
           return { changes: 0 };
         },
       }),
@@ -137,6 +154,8 @@ vi.mock('../../../src/host/cron/artifactStandingRefresh', () => ({
 }));
 
 import { CronService } from '../../../src/host/cron/cronService';
+import type { CronApiClient } from '../../../src/host/cron/cronApiClient';
+import { CronWebhookRelay } from '../../../src/host/cron/cronWebhookRelay';
 import { deliverCronResultToChannel } from '../../../src/host/cron/cronResultDelivery';
 import { getEventBus, shutdownEventBus } from '../../../src/host/services/eventing/bus';
 import { getSessionManager } from '../../../src/host/services/infra/sessionManager';
@@ -205,7 +224,18 @@ function installCloudClient(
       if (active) active.cloudJobId = remoteJobId;
       return remoteJobId;
     }),
-    updateJob: vi.fn(overrides.updateJob ?? (async () => undefined)),
+    // 忠实于真实 CronCloudRuntime.updateJob：本地没有 remote id 时懒注册走 addJob，
+    // 只有已注册（map 里有 cloudJobId）的才打远端 update（N-ROLE-ROUTINE-RESTATE-FU1-FU1）。
+    updateJob: vi.fn(async (definition: Definition) => {
+      const jobs = (service as unknown as {
+        jobs: Map<string, { cloudJobId?: string }>;
+      }).jobs;
+      if (!jobs.get(definition.id)?.cloudJobId) {
+        await runtime.addJob(definition);
+        return;
+      }
+      await (overrides.updateJob ?? (async () => undefined))(definition);
+    }),
     removeJob: vi.fn(async (_definition: Definition, remoteJobId?: string) => {
       await (overrides.removeJob ?? (async () => undefined))(remoteJobId ?? 'remote-job-1');
       return true;
@@ -247,21 +277,26 @@ describe('CronService execution location invariants', () => {
 
   it('mirrors cloud create, update, and remove through the remote lifecycle', async () => {
     const service = new CronService();
-    const cloudClient = installCloudClient(service);
+    const remoteUpdate = vi.fn(async () => undefined);
+    const cloudClient = installCloudClient(service, { updateJob: remoteUpdate });
     const job = await service.createJob({
       ...shellJob('hours'),
       runsOn: 'cloud',
       enabled: false,
     });
+    // 停用副本创建时不注册云端（否则未配置云端会立刻落一条假 failed 执行记录）。
+    expect(cloudClient.addJob).not.toHaveBeenCalled();
 
     await service.updateJob(job.id, { name: 'Updated cloud job', enabled: true });
     await expect(service.deleteJob(job.id)).resolves.toBe(true);
 
+    // 启用走懒注册（runtime.updateJob → addJob），远端 update 不会被打到。
     expect(cloudClient.addJob).toHaveBeenCalledTimes(1);
-    expect(cloudClient.updateJob).toHaveBeenCalledWith(expect.objectContaining({
+    expect(cloudClient.addJob).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Updated cloud job',
       enabled: true,
     }));
+    expect(remoteUpdate).not.toHaveBeenCalled();
     expect(cloudClient.removeJob).toHaveBeenCalledWith(
       expect.objectContaining({ id: job.id }),
       'remote-job-1',
@@ -1139,6 +1174,38 @@ describe('N-TRIGGER-CHANNEL-EVENT event-triggered jobs', () => {
     };
   }
 
+  // N-TRIGGER-OBSERVE-MODE ①④：新建 event 自动化缺省仅观察；普通 create/update 都改不到 auto，
+  // 只有 setEventActionMode（确认弹窗动作）能切，且先写自动化变更事件。
+  it('creates event jobs in observe mode; only setEventActionMode reaches auto and records a change event', async () => {
+    const service = new CronService();
+    const job = await service.createJob(eventJobDefinition({ actionMode: 'auto' }));
+    expect(job.actionMode).toBe('observe');
+
+    const updated = await service.updateJob(job.id, { actionMode: 'auto', name: 'renamed' });
+    expect(updated?.actionMode).toBe('observe');
+    expect(automationState.recordEvent).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'action_mode_changed' }));
+
+    automationState.recordEvent.mockResolvedValueOnce({ id: `external_event:${job.id}` } as never);
+    const switched = await service.setEventActionMode(job.id, 'auto');
+    expect(switched?.actionMode).toBe('auto');
+    expect(service.getJob(job.id)?.actionMode).toBe('auto');
+    expect(automationState.recordEvent).toHaveBeenCalledWith(expect.objectContaining({
+      sourceRefId: job.id,
+      event: 'action_mode_changed',
+      configPatch: expect.objectContaining({ actionMode: 'auto' }),
+    }));
+
+    // 变更事件记不下来 → 切换不生效（auto 必须留在变更历史里）。
+    automationState.recordEvent.mockRejectedValueOnce(new Error('db locked'));
+    await expect(service.setEventActionMode(job.id, 'observe')).rejects.toThrow('db locked');
+    expect(service.getJob(job.id)?.actionMode).toBe('auto');
+
+    const timeJob = await service.createJob(shellJob('minutes'));
+    expect(timeJob.actionMode).toBeUndefined();
+    await expect(service.setEventActionMode(timeJob.id, 'auto')).rejects.toThrow('event-triggered automations only');
+    await service.shutdown();
+  });
+
   // 验收①：非法 event 配置在 createJob 就被拒（英文错误、信息可定位）。
   it('rejects event jobs violating creation rules at createJob', async () => {
     const service = new CronService();
@@ -1423,5 +1490,75 @@ describe('Feishu group listen check service wiring', () => {
     } finally {
       await service.shutdown();
     }
+  });
+});
+
+describe('webhook hook removal when the job stops being a live webhook job', () => {
+  async function liveWebhookJob() {
+    const service = new CronService();
+    const runtime = installCloudClient(service);
+    runtime.isConfigured = () => true;
+    const removeHook = vi.fn(async () => undefined);
+    const relay = new CronWebhookRelay(
+      { isConfigured: () => true, removeHook } as unknown as CronApiClient,
+      { getJobDefinitions: () => service.listJobs(), ingestWebhook: () => 'ignored' },
+    );
+    (service as unknown as { cronWebhookRelay?: CronWebhookRelay }).cronWebhookRelay = relay;
+    const job = await service.createJob({
+      name: 'watch alerts',
+      scheduleType: 'event',
+      schedule: {
+        type: 'event',
+        source: 'webhook',
+        eventName: 'message',
+        batchWindowSec: 15,
+        minRunIntervalSec: 90,
+      },
+      action: { type: 'agent', agentType: 'default', prompt: 'summarise the alert' },
+      runsOn: 'local',
+      maxRunBudget: 1,
+      enabled: true,
+    });
+    removeHook.mockClear();
+    return { service, job, removeHook };
+  }
+
+  const channelSchedule = {
+    type: 'event' as const,
+    source: 'channel' as const,
+    accountId: 'acc-1',
+    eventName: 'message' as const,
+  };
+
+  it('改名不摘 hook；调度改成 channel（仍启用）或同一次更新里停用，都按改写前的任务摘 hook', async () => {
+    const renamed = await liveWebhookJob();
+    await renamed.service.updateJob(renamed.job.id, { name: 'renamed alerts' });
+    expect(renamed.removeHook).not.toHaveBeenCalled();
+    await renamed.service.shutdown();
+
+    const retargeted = await liveWebhookJob();
+    await retargeted.service.updateJob(retargeted.job.id, {
+      scheduleType: 'event',
+      schedule: channelSchedule,
+    });
+    expect(retargeted.removeHook).toHaveBeenCalledTimes(1);
+    expect(retargeted.removeHook).toHaveBeenCalledWith(retargeted.job.id);
+    await retargeted.service.shutdown();
+
+    const disabledAndRetargeted = await liveWebhookJob();
+    await disabledAndRetargeted.service.updateJob(disabledAndRetargeted.job.id, {
+      enabled: false,
+      scheduleType: 'event',
+      schedule: channelSchedule,
+    });
+    expect(disabledAndRetargeted.removeHook).toHaveBeenCalledTimes(1);
+    expect(disabledAndRetargeted.removeHook).toHaveBeenCalledWith(disabledAndRetargeted.job.id);
+    await disabledAndRetargeted.service.shutdown();
+
+    const disabled = await liveWebhookJob();
+    await disabled.service.updateJob(disabled.job.id, { enabled: false });
+    expect(disabled.removeHook).toHaveBeenCalledTimes(1);
+    expect(disabled.removeHook).toHaveBeenCalledWith(disabled.job.id);
+    await disabled.service.shutdown();
   });
 });

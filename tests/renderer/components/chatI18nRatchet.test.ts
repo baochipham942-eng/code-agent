@@ -19,6 +19,7 @@ const MIGRATED: string[] = [
   'features/chat/ChatSearchBar.tsx',
   'features/chat/ToolStepGroup.tsx',
   'features/chat/MessageBubble/TurnDiffSummary.tsx',
+  'features/chat/MessageBubble/TurnDiffHunkFeedback.tsx',
   'features/chat/MessageBubble/ToolCallDisplay/statusLabels.ts',
   'features/chat/ChatInput/index.tsx',
   'features/chat/ChatInput/InputArea.tsx',

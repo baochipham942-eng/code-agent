@@ -25,11 +25,10 @@ import {
   MODEL_API_ENDPOINTS,
   ZHIPU_VISION_MODEL,
   MODEL_MAX_TOKENS,
-  DEFAULT_PROVIDER,
-  DEFAULT_MODELS,
 } from '../../../../shared/constants';
 import { ModelRouter } from '../../../model/modelRouter';
-import type { ModelConfig, ModelProvider } from '../../../../shared/contract/model';
+import { resolveSessionDefaultModelConfig } from '../../../services/core/sessionDefaults';
+import type { ModelConfig } from '../../../../shared/contract/model';
 import type { ModelMessage } from '../../../model/types';
 import { createVirtualArtifact } from '../../artifacts/artifactMeta';
 import { imageAnalyzeSchema as schema } from './imageAnalyze.schema';
@@ -389,7 +388,7 @@ export async function executeImageAnalyze(
   const ctxModelConfig = ctx.modelConfig as ModelConfig | undefined;
   const visionBaseConfig: ModelConfig = ctxModelConfig?.provider
     ? ctxModelConfig
-    : { provider: DEFAULT_PROVIDER as ModelProvider, model: DEFAULT_MODELS.chat, maxTokens: 2048 };
+    : resolveSessionDefaultModelConfig({ maxTokens: 2048 });
   const visionCandidates = router.getVisionPreflightCandidates(visionBaseConfig);
 
   try {

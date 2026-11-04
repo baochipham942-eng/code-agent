@@ -1,10 +1,12 @@
 import { create } from 'zustand';
+import type { CronEventActionMode } from '@shared/contract/cron';
 import type {
   CronJobDefinition,
   CronJobExecution,
   CronServiceStats,
 } from '@shared/contract';
 import { isRoleBoundCronJob } from '@shared/cronRoleBinding';
+import { isWebhookCronJob } from '@shared/cronWebhookJob';
 import {
   cronClient,
   type CreateCronJobInput,
@@ -43,11 +45,15 @@ interface CronState {
   loadStats: () => Promise<void>;
   loadExecutions: (jobId: string, limit?: number) => Promise<void>;
   loadRecentExecutions: (limit?: number) => Promise<void>;
+  /** 有 running 执行时由面板轮询调用：一次请求同时校正「运行记录」流与各任务最近一次执行。 */
+  syncRunningExecutions: () => Promise<void>;
   refresh: () => Promise<void>;
   createJob: (input: CreateCronJobInput) => Promise<CronJobDefinition>;
   updateJob: (jobId: string, updates: UpdateCronJobInput) => Promise<CronJobDefinition | null>;
   deleteJob: (jobId: string) => Promise<boolean>;
   triggerJob: (jobId: string) => Promise<CronJobExecution | null>;
+  /** 事件自动化执行档切换（调用方负责先弹确认框）；成功后刷新任务表。 */
+  setEventActionMode: (jobId: string, mode: CronEventActionMode) => Promise<CronJobDefinition | null>;
 }
 
 async function loadLatestExecution(jobId: string): Promise<CronJobExecution | null> {
@@ -163,6 +169,35 @@ export const useCronStore = create<CronState>()((set, get) => ({
     }
   },
 
+  syncRunningExecutions: async () => {
+    try {
+      const recent = await cronClient.getRecentExecutions(50);
+      const byId = new Map(recent.map((execution) => [execution.id, execution]));
+      let changed = false;
+      set((state) => {
+        const latestExecutions = { ...state.latestExecutions };
+        let latestChanged = false;
+        for (const [jobId, known] of Object.entries(latestExecutions)) {
+          const fresh = known ? byId.get(known.id) : undefined;
+          if (fresh && fresh.status !== known?.status) {
+            latestExecutions[jobId] = fresh;
+            latestChanged = true;
+          }
+        }
+        const recentChanged = JSON.stringify(recent) !== JSON.stringify(state.recentExecutions);
+        changed = recentChanged || latestChanged;
+        if (!changed) return state;
+        return {
+          ...(recentChanged ? { recentExecutions: recent } : {}),
+          ...(latestChanged ? { latestExecutions } : {}),
+        };
+      });
+      if (changed) await get().loadStats();
+    } catch (error) {
+      logger.warn('Failed to sync running cron executions', { error });
+    }
+  },
+
   refresh: async () => {
     await Promise.all([get().loadJobs(), get().loadStats()]);
     const { selectedJobId } = get();
@@ -178,8 +213,8 @@ export const useCronStore = create<CronState>()((set, get) => ({
       selectedJobId: created.id,
       // 角色绑定任务保存后编辑器保持打开：组件切到「已保存」复述视图，Done 才关
       // （N-ROLE-ROUTINE-RESTATE）。这里若照旧落 isEditorOpen:false，Modal 会连带
-      // 复述视图一起卸载，视图永远出不来。
-      ...(isRoleBoundCronJob(created)
+      // 复述视图一起卸载，视图永远出不来。webhook 任务同理：一次性链接卡（N-CRON-WEBHOOK-CLOUD-HOOK-FU1）。
+      ...(isRoleBoundCronJob(created) || isWebhookCronJob(created)
         ? {}
         : { isEditorOpen: false, editingJobId: null, copyingJobId: null }),
     });
@@ -220,5 +255,13 @@ export const useCronStore = create<CronState>()((set, get) => ({
     const execution = await cronClient.triggerJob(jobId);
     await Promise.all([get().loadExecutions(jobId), get().loadStats()]);
     return execution;
+  },
+
+  setEventActionMode: async (jobId, mode) => {
+    const updated = await cronClient.setEventActionMode(jobId, mode);
+    if (updated) {
+      set((state) => ({ jobs: state.jobs.map((job) => (job.id === jobId ? updated : job)) }));
+    }
+    return updated;
   },
 }));

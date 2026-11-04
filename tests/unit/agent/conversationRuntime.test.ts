@@ -845,6 +845,25 @@ describe('ConversationRuntime', () => {
       expect(ctx.control.steerEpoch).toBe(before + 1);
     });
 
+    it('steer 在第一个 await 之前清空技能预授权，之后技能再激活会重新加入', async () => {
+      ctx.control.preApproveTool('Bash');
+      ctx.control.preApproveTool('Write');
+      const before = ctx.control.steerEpoch;
+      (runtime as unknown as { preserveStreamedPartial: () => Promise<unknown> }).preserveStreamedPartial =
+        vi.fn().mockImplementation(() => {
+          expect(ctx.control.steerEpoch).toBe(before + 1);
+          expect(ctx.control.preApprovedTools.size).toBe(0);
+          expect(ctx.control.emptyReinferenceAfterSteer).toBe(true);
+          return Promise.resolve({ charCount: 0 });
+        });
+
+      await runtime.steer('stop deleting');
+
+      expect(ctx.control.preApprovedTools.size).toBe(0);
+      ctx.control.preApproveTool('Bash');
+      expect([...ctx.control.preApprovedTools]).toEqual(['Bash']);
+    });
+
     it('用户消息自动复活 anti-spin paused goal 并释放 turn-boundary waiter', async () => {
       const goalMode = new GoalModeController({
         goal: 'finish',
@@ -1651,6 +1670,75 @@ describe('ConversationRuntime', () => {
       expect(modules.contextAssembly.inference).toHaveBeenCalledTimes(1);
       expect((runtime as any).messageProcessor.handleToolResponse).not.toHaveBeenCalled();
       expect((runtime as any).messageProcessor.detectAndForceExecuteTextToolCall).not.toHaveBeenCalled();
+    });
+
+    it('转向后的再推理既没有正文也没有工具调用时，这一轮失败', async () => {
+      modules.contextAssembly.inference
+        .mockImplementationOnce(async () => {
+          await runtime.steer('stop deleting');
+          return { type: 'text', content: '还在删' };
+        })
+        .mockResolvedValueOnce({ type: 'text', content: '' });
+
+      await runtime.run('delete files');
+
+      expect(modules.runFinalizer.finalizeRun).toHaveBeenCalledWith(
+        expect.any(Number),
+        'delete files',
+        expect.anything(),
+        expect.any(Number),
+        expect.objectContaining({
+          status: 'failed',
+          error: expect.objectContaining({
+            message: '你刚发来的新消息之后，没有得到回复，也没有继续调用工具。这一轮已停止，不会接着执行被换掉的计划。',
+          }),
+        }),
+      );
+    });
+
+    it('被打断的空推理不算转向后的再推理，下一次有正文仍完成', async () => {
+      modules.contextAssembly.inference
+        .mockImplementationOnce(async () => {
+          await runtime.steer('stop deleting');
+          return { type: 'text', content: '   ' };
+        })
+        .mockResolvedValueOnce({ type: 'text', content: '已停下。' });
+
+      await runtime.run('delete files');
+
+      expect(modules.runFinalizer.finalizeRun).toHaveBeenCalledWith(
+        expect.any(Number),
+        'delete files',
+        expect.anything(),
+        expect.any(Number),
+        expect.objectContaining({ status: 'completed' }),
+      );
+      expect(ctx.control.emptyReinferenceAfterSteer).toBe(false);
+    });
+
+    it('转向后的空再推理不合成最大轮次收尾', async () => {
+      ctx.maxIterations = 2;
+      modules.contextAssembly.inference
+        .mockImplementationOnce(async () => {
+          await runtime.steer('stop deleting');
+          return { type: 'text', content: '还在删' };
+        })
+        .mockResolvedValueOnce({ type: 'text', content: '  ' });
+
+      await runtime.run('delete files');
+
+      const persistCalls = modules.contextAssembly.addAndPersistMessage.mock.calls as unknown[][];
+      const synthesized = persistCalls
+        .map((call) => call[0] as { content?: string })
+        .find((message) => message.content?.includes('已达最大执行轮次'));
+      expect(synthesized).toBeUndefined();
+      expect(modules.runFinalizer.finalizeRun).toHaveBeenCalledWith(
+        expect.any(Number),
+        'delete files',
+        expect.anything(),
+        expect.any(Number),
+        expect.objectContaining({ status: 'failed' }),
+      );
     });
 
     it('forces a tool-free three-part summary when max iterations is reached (roadmap 1.6)', async () => {

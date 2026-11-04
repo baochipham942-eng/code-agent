@@ -73,6 +73,8 @@ interface DomainActionSet {
   update: string;
   delete: string;
   operate: string;
+  /** Running computer step when the app is known. `{target}` is the app name. */
+  operateNamed?: string;
 }
 
 interface ToolStepVerbBundle {
@@ -87,6 +89,7 @@ interface ToolStepVerbBundle {
   pendingApprovalStatus: string;
   failureCode: string;
   failureReasonMissing: string;
+  notRunPrefix: string;
   failureCodes: {
     'worktree-create-failed': string;
     'gateway-timeout': string;
@@ -154,7 +157,7 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
     },
     running: {
       browser: { query: '正在查看浏览器信息', create: '正在浏览器中创建内容', update: '正在更新浏览器内容', delete: '正在清理浏览器数据', operate: '正在操作浏览器' },
-      computer: { query: '正在查看电脑状态', create: '正在电脑上创建内容', update: '正在更新电脑内容', delete: '正在清理电脑内容', operate: '正在操作电脑' },
+      computer: { query: '正在查看电脑状态', create: '正在电脑上创建内容', update: '正在更新电脑内容', delete: '正在清理电脑内容', operate: '正在操作电脑', operateNamed: '正在操作：{target}' },
       mcp: { query: '正在通过 {domain} 查询信息', create: '正在通过 {domain} 创建内容', update: '正在通过 {domain} 更新内容', delete: '正在通过 {domain} 删除内容', operate: '正在调用 {domain}' },
       tool: { query: '正在查询工具信息', create: '正在创建内容', update: '正在更新内容', delete: '正在删除内容', operate: '正在执行工具操作' },
     },
@@ -175,6 +178,7 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
   pendingApprovalStatus: '待确认',
   failureCode: '错误码 {code}',
   failureReasonMissing: '暂无失败原因摘要，可展开详情查看记录',
+  notRunPrefix: '未执行',
   failureCodes: {
     'worktree-create-failed': '无法为这次任务准备运行环境',
     'gateway-timeout': '服务暂时没有响应',
@@ -208,7 +212,7 @@ export const toolStepVerbsEn: ToolStepVerbBundle = {
   },
   domainActions: {
     'pending-approval': { browser: { query: 'Request to inspect browser information', create: 'Request to create browser content', update: 'Request to update browser content', delete: 'Request to clear browser data', operate: 'Request to control the browser' }, computer: { query: 'Request to inspect computer state', create: 'Request to create computer content', update: 'Request to update computer content', delete: 'Request to clear computer content', operate: 'Request to control the computer' }, mcp: { query: 'Request to query information through {domain}', create: 'Request to create content through {domain}', update: 'Request to update content through {domain}', delete: 'Request to delete content through {domain}', operate: 'Request to call {domain}' }, tool: { query: 'Request to query tool information', create: 'Request to create content', update: 'Request to update content', delete: 'Request to delete content', operate: 'Request to run a tool operation' } },
-    running: { browser: { query: 'Inspecting browser information', create: 'Creating browser content', update: 'Updating browser content', delete: 'Clearing browser data', operate: 'Controlling the browser' }, computer: { query: 'Inspecting computer state', create: 'Creating computer content', update: 'Updating computer content', delete: 'Clearing computer content', operate: 'Controlling the computer' }, mcp: { query: 'Querying information through {domain}', create: 'Creating content through {domain}', update: 'Updating content through {domain}', delete: 'Deleting content through {domain}', operate: 'Calling {domain}' }, tool: { query: 'Querying tool information', create: 'Creating content', update: 'Updating content', delete: 'Deleting content', operate: 'Running a tool operation' } },
+    running: { browser: { query: 'Inspecting browser information', create: 'Creating browser content', update: 'Updating browser content', delete: 'Clearing browser data', operate: 'Controlling the browser' }, computer: { query: 'Inspecting computer state', create: 'Creating computer content', update: 'Updating computer content', delete: 'Clearing computer content', operate: 'Controlling the computer', operateNamed: 'Operating: {target}' }, mcp: { query: 'Querying information through {domain}', create: 'Creating content through {domain}', update: 'Updating content through {domain}', delete: 'Deleting content through {domain}', operate: 'Calling {domain}' }, tool: { query: 'Querying tool information', create: 'Creating content', update: 'Updating content', delete: 'Deleting content', operate: 'Running a tool operation' } },
     completed: { browser: { query: 'Inspected browser information', create: 'Created browser content', update: 'Updated browser content', delete: 'Cleared browser data', operate: 'Controlled the browser' }, computer: { query: 'Inspected computer state', create: 'Created computer content', update: 'Updated computer content', delete: 'Cleared computer content', operate: 'Controlled the computer' }, mcp: { query: 'Queried information through {domain}', create: 'Created content through {domain}', update: 'Updated content through {domain}', delete: 'Deleted content through {domain}', operate: 'Called {domain}' }, tool: { query: 'Queried tool information', create: 'Created content', update: 'Updated content', delete: 'Deleted content', operate: 'Ran a tool operation' } },
     failed: { browser: { query: 'Could not inspect browser information', create: 'Could not create browser content', update: 'Could not update browser content', delete: 'Could not clear browser data', operate: 'Could not control the browser' }, computer: { query: 'Could not inspect computer state', create: 'Could not create computer content', update: 'Could not update computer content', delete: 'Could not clear computer content', operate: 'Could not control the computer' }, mcp: { query: 'Could not query information through {domain}', create: 'Could not create content through {domain}', update: 'Could not update content through {domain}', delete: 'Could not delete content through {domain}', operate: 'Could not call {domain}' }, tool: { query: 'Could not query tool information', create: 'Could not create content', update: 'Could not update content', delete: 'Could not delete content', operate: 'Could not run the tool operation' } },
   },
@@ -216,6 +220,7 @@ export const toolStepVerbsEn: ToolStepVerbBundle = {
   pendingApprovalStatus: 'Approval needed',
   failureCode: 'Error code {code}',
   failureReasonMissing: 'No failure summary is available; expand the details to inspect the record',
+  notRunPrefix: 'Not run',
   failureCodes: {
     'worktree-create-failed': 'Could not prepare the workspace for this task',
     'gateway-timeout': 'The service did not respond in time',

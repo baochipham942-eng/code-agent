@@ -39,6 +39,8 @@ import { useStreamResumeStore } from '../../../stores/streamResumeStore';
 import { MemberInputNote } from '../expert/MemberInputNote';
 import { WakeRationaleNote, wakeRationaleFromMetadata } from './WakeRationaleNote';
 import { TurnTimelineNodeRenderer } from './TraceTimelineNodes';
+import { MessageContextFrame, MessageContextMenu } from './MessageContextMenu';
+import { messageContextMenuId } from './useMessageContextInterventions';
 
 interface TraceNodeRendererProps {
   node: TraceNode;
@@ -75,7 +77,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
     case 'user':
       content = (
         <UserNode
-          messageId={node.id}
+          messageId={messageContextMenuId(node) ?? node.id}
           sessionId={sessionId}
           content={node.content}
           attachments={attachments}
@@ -83,6 +85,7 @@ export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({
           sendFailed={node.metadata?.sendFailed === true}
           suppressVoiceBadge={Boolean(inVoiceDispatchCard)}
           isNeoTagMessage={Boolean(node.metadata?.neoTag)}
+          streaming={isStreaming}
           onRewind={onRewindUserPrompt}
           rewindDisabled={rewindDisabled}
         />
@@ -160,7 +163,8 @@ const UserNode: React.FC<{
   isNeoTagMessage?: boolean;
   onRewind?: (messageId: string, content: string) => void;
   rewindDisabled?: boolean;
-}> = ({ messageId, sessionId, content, attachments, sourceType, sendFailed, suppressVoiceBadge, isNeoTagMessage, onRewind, rewindDisabled }) => {
+  streaming?: boolean;
+}> = ({ messageId, sessionId, content, attachments, sourceType, sendFailed, suppressVoiceBadge, isNeoTagMessage, onRewind, rewindDisabled, streaming }) => {
   const { t } = useI18n();
   const editAndResendMessage = useMessageActionStore((state) => state.editAndResendMessage);
   // 展示面还原：带 turnSystemContext 脚手架（<user_request> 包裹）的历史/泄漏消息只显示
@@ -227,6 +231,8 @@ const UserNode: React.FC<{
                     <RotateCcw className="h-3.5 w-3.5" />
                   </button>
                 )}
+                <MessageContextMenu sessionId={sessionId} messageId={messageId} placement="user" streaming={streaming} />
+                <MessageContextFrame sessionId={sessionId} messageId={messageId}>
                 <div className={`rounded-2xl px-4 py-2.5 bg-zinc-800/60 border ${sendFailed ? 'border-red-500/40' : 'border-border-muted'}`}>
                   <div className="text-zinc-200 leading-relaxed select-text">
                     <MessageContent
@@ -237,6 +243,7 @@ const UserNode: React.FC<{
                     />
                   </div>
                 </div>
+                </MessageContextFrame>
               </div>
             )}
           </div>
@@ -306,6 +313,7 @@ const AssistantTextNode: React.FC<{
   const [copied, setCopied] = useState(false);
   const [selectionCopy, setSelectionCopy] = useState<SelectionCopyState | null>(null);
   const messageId = node.messageId || (node.id.endsWith('-text') ? node.id.slice(0, -5) : node.id);
+  const contextMenuId = messageContextMenuId(node);
   // ADR-068 刀 4：断流续接信号只挂断流那一刻的 streaming 消息（一屏一个信号；B2 分段后
   // 即定格的断点段），续答 delta 到达即消除（store 侧 resolveIfActivityOn）。
   const resumeSignal = useStreamResumeStore(
@@ -388,6 +396,22 @@ const AssistantTextNode: React.FC<{
     );
   }
 
+  const assistantTextBody = node.content ? (
+    <div ref={contentRef} className="text-zinc-200 leading-relaxed select-text">
+      <MessageContent
+        content={displayContent}
+        isUser={false}
+        isStreaming={Boolean(turnStreaming || isAnimating)}
+        messageId={messageId}
+        streamingTailStart={tailStartIndex}
+        mediaContext={{ sessionId, messageId }}
+      />
+      {(turnStreaming || isAnimating) && (
+        <span className="sr-only">正在生成</span>
+      )}
+    </div>
+  ) : null;
+
   return (
     <div
       ref={rootRef}
@@ -452,24 +476,13 @@ const AssistantTextNode: React.FC<{
         </div>
       )}
 
-      {/* Text content */}
+      {/* Text content. Badge only on the feedback-eligible final reply. */}
       {node.content && (
-        <div ref={contentRef} className="text-zinc-200 leading-relaxed select-text">
-          <MessageContent
-            content={displayContent}
-            isUser={false}
-            isStreaming={Boolean(turnStreaming || isAnimating)}
-            messageId={messageId}
-            streamingTailStart={tailStartIndex}
-            mediaContext={{
-              sessionId,
-              messageId,
-            }}
-          />
-          {(turnStreaming || isAnimating) && (
-            <span className="sr-only">正在生成</span>
-          )}
-        </div>
+        contextMenuId ? (
+          <MessageContextFrame sessionId={sessionId} messageId={contextMenuId}>
+            {assistantTextBody}
+          </MessageContextFrame>
+        ) : assistantTextBody
       )}
 
       {/* ADR-068 刀 4（D5）：断流续接状态行——同一 streaming 消息内嵌，一屏一个信号；

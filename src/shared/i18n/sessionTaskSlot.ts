@@ -26,6 +26,17 @@ const messages = {
   },
 } as const;
 
+const idleFailure = {
+  zh: (duration: string) => `后台任务失败：命令已 ${duration}没有响应`,
+  en: (duration: string) => `Background task failed: the command stopped responding for ${duration}`,
+} as const;
+
+/** 未答审批等到上限的失败句：说清是「等你批准等太久」，不是任务本身没响应。 */
+const approvalWaitFailure = {
+  zh: (duration: string) => `后台任务失败：等待你的批准已超过 ${duration}，已取消并释放任务位，可重试`,
+  en: (duration: string) => `Background task failed: waited more than ${duration} for your approval, cancelled`,
+} as const;
+
 export function formatSessionTaskSlotRecoveryDetail(input: {
   taskLabel: string;
   laneKey: string;
@@ -44,4 +55,38 @@ export function describeSessionTaskSlotRecovery(locale: SessionTaskSlotLocale): 
   spoken: string;
 } {
   return messages[locale];
+}
+
+/** 回收时在途命令可能在等 macOS 系统授权框：框由系统持有、Neo 关不掉，只能提示用户手动处理。 */
+const systemPromptHint = {
+  zh: '系统授权框可能还在屏幕上，请手动点掉或点「不允许」。',
+  en: 'A system permission prompt may still be on screen; dismiss it or choose Don\'t Allow.',
+} as const;
+
+function withSystemPromptHint(text: string, locale: SessionTaskSlotLocale, flag?: boolean): string {
+  return flag ? `${text}${locale === 'zh' ? '。' : '. '}${systemPromptHint[locale]}` : text;
+}
+
+export function formatSessionCommandTaskIdleFailure(input: {
+  idleMs: number;
+  locale: SessionTaskSlotLocale;
+  mayAwaitSystemPrompt?: boolean;
+}): string {
+  return withSystemPromptHint(
+    idleFailure[input.locale](durationText(input.idleMs, input.locale)),
+    input.locale,
+    input.mayAwaitSystemPrompt,
+  );
+}
+
+export function formatSessionTaskApprovalWaitFailure(input: {
+  waitMs: number;
+  locale: SessionTaskSlotLocale;
+  mayAwaitSystemPrompt?: boolean;
+}): string {
+  return withSystemPromptHint(
+    approvalWaitFailure[input.locale](durationText(input.waitMs, input.locale)),
+    input.locale,
+    input.mayAwaitSystemPrompt,
+  );
 }

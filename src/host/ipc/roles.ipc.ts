@@ -107,7 +107,36 @@ interface RoleIdPayload {
   roleId?: string;
 }
 
-type CronBindingRow = { id: string; name: string; schedule: string; action: string; enabled: number; last_run_at: number | null };
+type CronBindingRow = {
+  id: string;
+  name: string;
+  schedule: string;
+  action: string;
+  enabled: number;
+  last_run_at: number | null;
+  last_status?: string | null;
+  last_error?: string | null;
+};
+
+const BOUND_EXECUTION_STATUSES = ['pending', 'running', 'completed', 'failed', 'cancelled', 'paused', 'interrupted'] as const;
+const LAST_ERROR_MAX = 120;
+
+function boundExecutionStatus(raw: unknown): RoleBoundCronJob['lastStatus'] {
+  return typeof raw === 'string' && (BOUND_EXECUTION_STATUSES as readonly string[]).includes(raw)
+    ? raw as RoleBoundCronJob['lastStatus']
+    : undefined;
+}
+
+/** 详情行只展示一句原因：丢掉堆栈帧，超长首行截断。 */
+function shortExecutionError(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const line = raw
+    .split(/\r?\n/)
+    .map((part) => part.trim())
+    .find((part) => part.length > 0 && !/^at\s+\S/.test(part));
+  if (!line) return undefined;
+  return line.length <= LAST_ERROR_MAX ? line : `${line.slice(0, LAST_ERROR_MAX - 1)}…`;
+}
 
 function getBoundActionType(action: unknown, roleId: string): RoleBoundCronJob['actionType'] | null {
   if (!isRecord(action) || action.roleId !== roleId) return null;
@@ -120,10 +149,20 @@ function handleListBoundCronJobs(roleId: string): RoleBoundCronJob[] {
   const db = getDatabase().getDb();
   if (!db) return [];
   // 本机 cron 通常只有十位数；为详情页扫描并 JSON.parse action 足够，避免为这个低频反查增加 roleId 列、索引或迁移负担。
+  // 时间与状态、错误取同一条最新执行（COALESCE 与原先 last_run_at 同一口径），不另开列、不迁移。
   const rows = db.prepare(`
     SELECT j.id, j.name, j.schedule, j.action, j.enabled,
-      (SELECT MAX(COALESCE(e.completed_at, e.started_at, e.scheduled_at)) FROM cron_executions e WHERE e.job_id = j.id) AS last_run_at
+      COALESCE(e.completed_at, e.started_at, e.scheduled_at) AS last_run_at,
+      e.status AS last_status,
+      e.error AS last_error
     FROM cron_jobs j
+    LEFT JOIN cron_executions e ON e.id = (
+      SELECT e2.id
+      FROM cron_executions e2
+      WHERE e2.job_id = j.id
+      ORDER BY COALESCE(e2.completed_at, e2.started_at, e2.scheduled_at) DESC, e2.rowid DESC
+      LIMIT 1
+    )
   `).all() as CronBindingRow[];
   const nextRuns = new Map(getCronService().listJobs().map((job) => [job.id, job.nextRunAt]));
   const bindings: RoleBoundCronJob[] = [];
@@ -131,6 +170,8 @@ function handleListBoundCronJobs(roleId: string): RoleBoundCronJob[] {
     const actionType = getBoundActionType(parseJsonValue(row.action), roleId);
     const schedule = normalizeSchedule(parseJsonValue(row.schedule));
     if (!actionType || !schedule) continue;
+    const lastStatus = boundExecutionStatus(row.last_status);
+    const lastError = shortExecutionError(row.last_error);
     bindings.push({
       id: row.id,
       name: row.name,
@@ -138,6 +179,8 @@ function handleListBoundCronJobs(roleId: string): RoleBoundCronJob[] {
       enabled: Boolean(row.enabled),
       ...(nextRuns.get(row.id) !== undefined ? { nextRunAt: nextRuns.get(row.id) } : {}),
       ...(typeof row.last_run_at === 'number' ? { lastRunAt: row.last_run_at } : {}),
+      ...(lastStatus ? { lastStatus } : {}),
+      ...(lastError ? { lastError } : {}),
       actionType,
     });
   }
@@ -709,6 +752,33 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
       return { success: false, error: { code: 'INVALID_ARGS', message: 'a safe roleId is required' } };
     }
     return { success: true, data: await getFirstWakeSnapshot(roleId) };
+  },
+  // --- 每日醒来的外部增量提议卡（N-ROLE-WAKE-FIND-WORK） ---
+  wakeProposalsList: async (_ctx, payload) => {
+    const { roleId } = (payload ?? {}) as RoleIdPayload;
+    if (!roleId || !isSafeRoleId(roleId)) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'a safe roleId is required' } };
+    }
+    const { listWakeProposals } = await import('../services/roleAssets/roleWakeFindWork');
+    return { success: true, data: await listWakeProposals(roleId) };
+  },
+  wakeProposalsAccept: async (_ctx, payload) => {
+    const { roleId, title } = (payload ?? {}) as RoleIdPayload & { title?: string };
+    if (!roleId || !isSafeRoleId(roleId) || !title?.trim()) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'a safe roleId and title are required' } };
+    }
+    const { acceptWakeProposal } = await import('../services/roleAssets/roleWakeFindWork');
+    const accepted = await acceptWakeProposal(roleId, title);
+    if (!accepted) return { success: false, error: { code: 'NOT_FOUND', message: 'proposal not found' } };
+    return { success: true, data: accepted };
+  },
+  wakeProposalsDismiss: async (_ctx, payload) => {
+    const { roleId, title } = (payload ?? {}) as RoleIdPayload & { title?: string };
+    if (!roleId || !isSafeRoleId(roleId) || !title?.trim()) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'a safe roleId and title are required' } };
+    }
+    const { dismissWakeProposal } = await import('../services/roleAssets/roleWakeFindWork');
+    return { success: true, data: await dismissWakeProposal(roleId, title) };
   },
   firstWakeSkip: async (_ctx, payload) => {
     const { roleId } = (payload ?? {}) as RoleIdPayload;

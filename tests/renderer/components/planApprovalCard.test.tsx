@@ -13,8 +13,12 @@ import {
   PlanApprovalCard,
   PlanApprovalEvidence,
 } from '../../../src/renderer/components/PlanApprovalCard';
+import { planApprovalEn } from '../../../src/renderer/i18n/planApproval';
 import { findPendingPlanApproval, getPlanApprovalRecord } from '../../../src/renderer/utils/planApprovalView';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
+
+const STALE_CONFLICT_ZH = '计划已更新到新版本，请比较冲突步骤并选择后再批准';
+const STALE_NO_CONFLICT_ZH = '计划已更新到新版本，已为你同步最新步骤，请重新确认后再批准';
 
 const approval: PlanApprovalRecord = {
   status: 'pending',
@@ -349,9 +353,8 @@ describe('PlanApprovalCard', () => {
 
     fireEvent.click(screen.getByTestId('plan-approve-button'));
 
-    await waitFor(() => expect(
-      screen.getByText('计划已更新到新版本，请比较冲突步骤并选择后再批准'),
-    ).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(STALE_NO_CONFLICT_ZH)).toBeTruthy());
+    expect(screen.queryByText(STALE_CONFLICT_ZH)).toBeNull();
     expect(screen.queryByText('Plan approval version is stale')).toBeNull();
     expect(screen.getByText('Server revised step')).toBeTruthy();
     expect(screen.getByTestId('plan-approval-version').textContent).toContain('2');
@@ -465,7 +468,69 @@ describe('PlanApprovalCard', () => {
     expect(screen.getByTestId('plan-step-conflict-step-2')).toBeTruthy();
     expect(screen.getByText('Model revised card')).toBeTruthy();
     expect((screen.getByTestId('plan-approve-button') as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByTestId('plan-approval-error').textContent).toContain('计划已更新到新版本');
+    expect(screen.getByTestId('plan-approval-error').textContent).toContain(STALE_CONFLICT_ZH);
+    expect(screen.queryByText(STALE_NO_CONFLICT_ZH)).toBeNull();
+  });
+
+  it('STALE_VERSION 同一步双方都改过时仍显示比较冲突文案', async () => {
+    const stale = new Error('Plan approval version is stale');
+    (stale as Error & { code: string }).code = 'STALE_VERSION';
+    const latestSteps = [
+      approval.steps[0],
+      { id: 'step-2', content: 'Model revised card', originalContent: 'Build card' },
+      approval.steps[2],
+    ];
+    useSessionStore.setState({
+      messages: [{
+        ...message,
+        toolCalls: [{
+          ...message.toolCalls![0],
+          result: {
+            ...message.toolCalls![0].result!,
+            metadata: { planApproval: { ...approval, version: 2, steps: latestSteps } },
+          },
+        }],
+      }],
+    });
+    mocks.invokeDomain.mockRejectedValue(stale);
+
+    renderCard();
+    fireEvent.click(screen.getAllByTitle('编辑')[1]);
+    fireEvent.change(screen.getByLabelText('编辑'), { target: { value: 'My edited card' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+
+    await waitFor(() => expect(screen.getByText(STALE_CONFLICT_ZH)).toBeTruthy());
+    expect(screen.queryByText(STALE_NO_CONFLICT_ZH)).toBeNull();
+    expect(screen.queryByText('Plan approval version is stale')).toBeNull();
+    expect(screen.getByTestId('plan-step-conflict-step-2')).toBeTruthy();
+  });
+
+  it('最新计划记录缺失时 STALE_VERSION 仍显示比较冲突文案', async () => {
+    const stale = new Error('Plan approval version is stale');
+    (stale as Error & { code: string }).code = 'STALE_VERSION';
+    mocks.invokeDomain.mockRejectedValue(stale);
+    useSessionStore.setState({
+      messages: [{ ...message, toolCalls: [] }],
+    });
+
+    renderCard();
+    fireEvent.click(screen.getByTestId('plan-approve-button'));
+
+    await waitFor(() => expect(screen.getByText(STALE_CONFLICT_ZH)).toBeTruthy());
+    expect(screen.queryByText(STALE_NO_CONFLICT_ZH)).toBeNull();
+    expect(screen.queryByText('Plan approval version is stale')).toBeNull();
+  });
+
+  it('无冲突分支的英文文案是中性句', () => {
+    expect(planApprovalEn.planApproval.staleVersionNoConflict).toBe(
+      'The plan was updated to a newer version. The latest steps are now shown — review them and approve again.',
+    );
+  });
+
+  it('冲突分支的英文文案仍是比较冲突句', () => {
+    expect(planApprovalEn.planApproval.staleVersion).toBe(
+      'The plan was updated to a newer version. Compare each conflict and choose a version before approving again.',
+    );
   });
 
   it('Edited 标记按最终正文与 originalContent 推导', () => {

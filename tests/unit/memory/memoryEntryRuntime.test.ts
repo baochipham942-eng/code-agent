@@ -164,7 +164,7 @@ Use current project patterns.
           filePath: 'project-rule.md',
         }),
       }),
-    }));
+    }), undefined);
 
     const listed = await listUnifiedMemoryEntries(db);
     expect(listed.entries.map((entry) => entry.id)).toEqual(['mem_entry_project']);
@@ -246,7 +246,7 @@ Use current project patterns.
           kind: 'feedback',
         }),
       }),
-    }));
+    }), undefined);
   });
 
   it('updates DB memory entries without creating Light Memory files', async () => {
@@ -304,7 +304,7 @@ Use current project patterns.
           kind: 'pattern',
         }),
       }),
-    }));
+    }), undefined);
     await expect(fs.readdir(memDir)).resolves.not.toContain('memory-db.md');
   });
 
@@ -357,7 +357,7 @@ Use current project patterns.
     expect(raw).toContain('Use current project patterns.');
     const index = await fs.readFile(path.join(memDir, 'INDEX.md'), 'utf-8');
     expect(index).not.toContain('project-rule.md');
-    expect(db.updateMemory).toHaveBeenCalledWith('mem-mirror', expect.objectContaining({ status: 'archived' }));
+    expect(db.updateMemory).toHaveBeenCalledWith('mem-mirror', expect.objectContaining({ status: 'archived' }), undefined);
     expect(db.deleteMemory).not.toHaveBeenCalled();
   });
 
@@ -429,7 +429,7 @@ Use current project patterns.
           deprecatedBy: null,
         }),
       }),
-    }));
+    }), undefined);
   });
 
   it('pack defaults exclude archived entries from both file and DB candidates', async () => {
@@ -964,6 +964,6 @@ Use current project patterns.
           sourceOfTruth: 'light_file',
         }),
       }),
-    }));
+    }), { actor: 'import' });
   });
 });

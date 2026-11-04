@@ -34,6 +34,7 @@ import { getContextHealthService } from '../../context/contextHealthService';
 import { stampAssistantMessageCorrelation } from '../../session/assistantCorrelation';
 import { getTelemetryCollector } from '../../telemetry';
 import { clearSessionRuntimeCaches } from '../../session/sessionCacheLifecycle';
+import { removeToolScreenshotDir } from '../../tools/utils/toolScreenshotDir';
 
 import { Disposable, getServiceRegistry } from '../serviceRegistry';
 const logger = createLogger('SessionManager');
@@ -254,10 +255,12 @@ export class SessionManager implements Disposable {
     // cron/heartbeat 的审批由 B2 停车卡等待用户（24h backstop）；不要再把它们送进旧的 60s 终态路径。
     try {
       const { getPermissionModeManager } = await import('../../permissions/modes');
+      const { markShortTierSession } = await import('../../tools/shell/foregroundTier');
       const permissionManager = getPermissionModeManager();
       const originKind = session.origin?.kind;
       if (originKind === 'cron' || originKind === 'heartbeat' || originKind === 'channel') {
         permissionManager.markUnattendedSession(session.id);
+        markShortTierSession(session.id);
       }
       permissionManager.initSessionMode(session.id);
     } catch (err) {
@@ -811,6 +814,9 @@ export class SessionManager implements Disposable {
     await this.deleteTerminalFrames(sessionId);
     db.deleteSession(sessionId);
 
+    // 工具截图目录随会话回收（内部自吞失败，只 warn 不阻断删除）
+    await removeToolScreenshotDir(sessionId);
+
     // 清除缓存
     this.sessionCache.delete(sessionId);
     if (this.currentSessionId === sessionId) {
@@ -828,6 +834,8 @@ export class SessionManager implements Disposable {
     clearSessionRuntimeCaches(sessionId); if (getDatabase().getSession(sessionId)) throw new Error('SESSION_NOT_DELETED');
     await (await import('../surfaceExecution/ManagedBrowserProviderAdapter')).getManagedBrowserProviderAdapter().clearConversationResumeState(sessionId);
     await this.deleteTerminalFrames(sessionId);
+    // 工具截图目录随会话回收（内部自吞失败，只 warn 不阻断）
+    await removeToolScreenshotDir(sessionId);
   }
 
   /**
@@ -1074,6 +1082,15 @@ export class SessionManager implements Disposable {
    */
   getSessionMetadata(sessionId: string): Record<string, unknown> | undefined {
     return this.getAccessibleStoredSession(sessionId)?.metadata;
+  }
+
+  /**
+   * 只读存在性探测（记忆面板来源会话跳转）：不 restore、不切 currentSessionId、
+   * 不动 toolCache、不写审计——探测方（如设置面板选中一条记忆）不该付 load 的副作用。
+   * getSessionMetadata 不能担此判定：存在但无 metadata 的会话会误报不存在。
+   */
+  sessionExists(sessionId: string): boolean {
+    return this.getAccessibleStoredSession(sessionId) != null;
   }
 
   /**

@@ -8,6 +8,7 @@
 
 import { getDatabase, type MemoryRecord } from '../services';
 import { createLogger } from '../services/infra/logger';
+import { SEED_INJECTION } from '../../shared/constants';
 import { sanitizeMemoryContent } from './sanitizeMemoryContent';
 import {
   KNOWLEDGE_INBOX_DECISION_CATEGORY,
@@ -27,17 +28,17 @@ const logger = createLogger('SeedMemoryInjector');
 // Constants
 // ----------------------------------------------------------------------------
 
-/** Maximum number of memories to query */
-const MAX_SEED_MEMORIES = 10;
+/** Maximum number of memories to query（单一真源：shared/constants 的 SEED_INJECTION） */
+const MAX_SEED_MEMORIES = SEED_INJECTION.MAX_ITEMS;
 
 /** Maximum total tokens for the seed memory block (~200 tokens ≈ ~800 chars) */
 const MAX_SEED_TOKENS = 200;
 
-/** Character budget retained for the memory packer API. */
-const MAX_SEED_CHARS = 800;
+/** Character budget retained for the memory packer API.（单一真源：SEED_INJECTION） */
+const MAX_SEED_CHARS = SEED_INJECTION.TOTAL_CHARS;
 
-/** Maximum characters per individual memory entry */
-const MAX_ENTRY_CHARS = 120;
+/** Maximum characters per individual memory entry（单一真源：SEED_INJECTION） */
+const MAX_ENTRY_CHARS = SEED_INJECTION.PER_ITEM_CHARS;
 
 const USER_MEMORY_KINDS = [
   'user',

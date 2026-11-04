@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CronJobAction, CronJobDefinition } from '../../../src/shared/contract/cron';
+import type { CronJobAction, CronJobDefinition, CronJobExecution } from '../../../src/shared/contract/cron';
 import { CRON_AGENT_SNAPSHOT } from '../../../src/shared/constants';
 import { truncateUtf8Snapshot } from '../../../src/host/cron/cronAgentPrompt';
 import { extractCronAlertText } from '../../../src/shared/cronRunDigest';
@@ -254,5 +254,51 @@ describe('deliverCronResultToChannel push body sanitization (PR#2060 round 2)', 
 
     expect(result).toEqual({ delivered: true, pushedBody: expected });
     expect(sendMessage).toHaveBeenCalledWith('account-uuid', 'oc_group1', expected);
+  });
+});
+
+// ============================================================================
+// N-OUTBOUND-SENSITIVE-GUARD 验收① —— cron 结果推送出口的 shape-only 掩码
+// ----------------------------------------------------------------------------
+// 真发出去的正文过 guardOutboundText（密钥/SSN/卡号/大陆身份证号），去重键与
+// 执行记录的 result 仍持原文：原文只留本地，出口只见掩码。卡号是公开标准测试卡号。
+// ============================================================================
+describe('deliverCronResultToChannel outbound sensitive guard', () => {
+  const CARD_BODY = '支付卡 4111 1111 1111 1111 已扣款，明细见附件。';
+  const MASKED_BODY = '支付卡 [credit card hidden] 已扣款，明细见附件。';
+
+  function executionWith(result: unknown): CronJobExecution {
+    return { id: 'exec-1', jobId: 'job-1', status: 'completed', scheduledAt: 1, retryAttempt: 0, result };
+  }
+
+  it('delivers the masked body; execution.result and the dedupe key keep the original', async () => {
+    const definition = job('feishu:oc_group1');
+    const execution = executionWith(CARD_BODY);
+    const executions = new Map<string, CronJobExecution[]>([['job-1', [execution]]]);
+    const persistAction = vi.fn();
+
+    const outcome = await deliverCronResultToChannel(
+      definition, CARD_BODY, executions, 'exec-1',
+      { getLatestDefinition: () => definition, persistAction },
+    );
+
+    // 通道（此处是替身 channelManager.sendMessage）收到掩码后正文。
+    expect(sendMessage).toHaveBeenCalledWith('account-uuid', 'oc_group1', MASKED_BODY);
+    // 执行记录仍持原文，未被就地改写。
+    expect(execution.result).toBe(CARD_BODY);
+    // 去重键写回的也是原文：掩码不参与「一字不差」判定。
+    expect(outcome).toEqual({ delivered: true, pushedBody: CARD_BODY });
+  });
+
+  it('masks mainland resident IDs in pushed bodies too', async () => {
+    const body = '持证人 110101199001011237 已核验。';
+    await deliver(job('feishu:oc_group1'), body).outcome;
+    expect(sendMessage).toHaveBeenCalledWith('account-uuid', 'oc_group1', '持证人 [id number hidden] 已核验。');
+  });
+
+  it('leaves clean bodies byte-identical on the wire', async () => {
+    const body = '今日简报：无异常。';
+    await deliver(job('feishu:oc_group1'), body).outcome;
+    expect(sendMessage).toHaveBeenCalledWith('account-uuid', 'oc_group1', body);
   });
 });

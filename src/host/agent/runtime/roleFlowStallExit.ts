@@ -23,8 +23,49 @@ const logger = createLogger('AgentLoop');
 /** 与 conversationRuntimeStickySkill 的 STICKY_STRICT_SKILL_NAMES 同一集合（建/改角色）。 */
 const ROLE_AUTHORING_STRICT_SKILLS = new Set(['create-role', 'edit-role']);
 
+const PROPOSE_ROLE_TOOL_NAME = 'propose_role';
+
+/** 每个 run（ctx）按「最近一条 user 消息」记已落过说明的那一轮：同一轮 settle 重复调用不叠第二条，下一轮照常可落。 */
+const stallSurfacedTurnByRun = new WeakMap<object, string>();
+
+function latestUserMessageId(messages: readonly Message[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role === 'user') return messages[i].id;
+  }
+  return '';
+}
+
+/**
+ * 最近一次 /create-role|/edit-role 种子之后，历史里是否有成功的 propose_role 调用。
+ * 有 = 流程已产出过草稿（之后被用户确认、移走或读盘失败都不再是「没产出」），
+ * 此时 pending 草稿查不到不能判停摆。扫描方式对齐 conversationRuntimeStickySkill.hasExitedRoleFlowSince。
+ */
+function hasProposedRoleSinceSeed(messages: readonly Message[]): boolean {
+  let seedIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg?.role === 'user' && msg.visibility !== 'rewound' && /^\/(?:create-role|edit-role)(?:\s|$)/.test(msg.content.trim())) {
+      seedIndex = i;
+      break;
+    }
+  }
+  const succeeded = new Set<string>();
+  const proposeCallIds: string[] = [];
+  for (let i = seedIndex + 1; i < messages.length; i++) {
+    const msg = messages[i];
+    for (const result of msg?.toolResults ?? []) {
+      if (result.success) succeeded.add(result.toolCallId);
+    }
+    for (const call of msg?.toolCalls ?? []) {
+      if (call.result?.success) succeeded.add(call.id);
+      if (msg.role === 'assistant' && call.name === PROPOSE_ROLE_TOOL_NAME) proposeCallIds.push(call.id);
+    }
+  }
+  return proposeCallIds.some((id) => succeeded.has(id));
+}
+
 /** settle 需要的宿主窄面：事件出口。 */
-type RoleFlowStallContext = Pick<RuntimeContext, 'sessionId' | 'onEvent'>;
+type RoleFlowStallContext = Pick<RuntimeContext, 'sessionId' | 'onEvent' | 'messages'>;
 
 /** settle 需要的装配窄面：落卡消息持久化与消息 id 生成。 */
 interface RoleFlowStallAssembly {
@@ -42,16 +83,18 @@ export interface RoleFlowStallInput {
 /**
  * 停摆判定（纯函数）：
  * - 建/改角色的 strict 边界仍激活（exit_role_flow 成功后边界会被清掉，天然排除显式退出）；
- * - 本会话没有 pending 角色草稿（有草稿 = 确认卡在场，空闲是正常等确认）；
+ * - 本会话没有 pending 角色草稿（有草稿 = 确认卡在场，空闲是正常等确认），
+ *   且种子之后没有成功的 propose_role（草稿被确认/移走后查不到，不等于没产出）；
  * - 收尾文本里没有问句（？/?）——留给用户问题的一轮是合法访谈收尾，不打扰。
  */
 function shouldSurfaceRoleFlowStall(
   boundary: SkillToolBoundary | undefined,
   finalText: string,
   hasPendingDraft: boolean,
+  hasProposedRole: boolean,
 ): boolean {
   if (!boundary?.strict || !ROLE_AUTHORING_STRICT_SKILLS.has(boundary.skillName)) return false;
-  if (hasPendingDraft) return false;
+  if (hasPendingDraft || hasProposedRole) return false;
   return !/[?？]/.test(finalText);
 }
 
@@ -80,9 +123,12 @@ export async function settleRoleFlowStallOnTextBreak(input: RoleFlowStallInput):
     });
   }
 
-  if (!shouldSurfaceRoleFlowStall(input.boundary, input.finalText, hasPendingDraft)) {
+  const turnKey = latestUserMessageId(input.ctx.messages);
+  if (stallSurfacedTurnByRun.get(input.ctx) === turnKey) return false;
+  if (!shouldSurfaceRoleFlowStall(input.boundary, input.finalText, hasPendingDraft, hasProposedRoleSinceSeed(input.ctx.messages))) {
     return false;
   }
+  stallSurfacedTurnByRun.set(input.ctx, turnKey);
 
   const skillName = input.boundary?.skillName === 'edit-role' ? 'edit-role' : 'create-role';
   const message: Message = {

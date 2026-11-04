@@ -2,10 +2,10 @@
 /* global fetch, AbortSignal, TextDecoder */
 // Real-run recipe: drive a >=8-step managed-browser task over the local fixture via POST /api/run (SSE),
 // print ordered Browser calls (action,args,result digest) and any permission/doom-loop events.
-// Usage: node scripts/verify-browser-doomloop.mjs <webServerUrl> <dataDir> [out.json] [provider] [model]
+// Usage: node scripts/verification/verify-browser-doomloop.mjs <webServerUrl> <dataDir> [out.json] [provider] [model]
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { startFixture } from '../tests/fixtures/browser-doomloop/server.mjs';
+import { startFixture } from '../../tests/fixtures/browser-doomloop/server.mjs';
 
 const [baseUrl, dataDir, outFile, provider = 'zhipu', model = 'glm-5.3'] = process.argv.slice(2);
 if (!baseUrl || !dataDir) { console.error('usage: <url> <dataDir> [out.json] [provider] [model]'); process.exit(2); }

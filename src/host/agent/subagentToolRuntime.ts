@@ -65,7 +65,7 @@ function inheritParentAdditionalRoots(
   return createWorkspaceScope(worktreeScope.projectId, roots);
 }
 
-export type SubagentPolicyDecision = 'deny' | 'ask' | { decision: 'deny' | 'ask'; reason?: string; policyName?: string };
+type SubagentPolicyDecision = 'deny' | 'ask' | { decision: 'deny' | 'ask'; reason?: string; policyName?: string };
 
 export interface SubagentToolPolicy {
   allowedTools: Set<string>;

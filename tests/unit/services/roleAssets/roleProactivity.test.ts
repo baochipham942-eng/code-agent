@@ -26,8 +26,12 @@ const mockSessionManager = vi.hoisted(() => ({
   updateMessage: vi.fn(),
 }));
 const mockRunRoleWriteBack = vi.hoisted(() => vi.fn(async () => ({ written: [], skipped: [], historyAppended: true })));
-// advance→goal run（P4）：Electron 路径用落库事件读 goal 终态
-const mockSessionEvents = vi.hoisted(() => ({ getEventsByType: vi.fn(() => [] as Array<{ eventData?: unknown }>) }));
+// advance→goal run（P4）：Electron 路径用落库事件读 goal 终态。
+// 签名对齐真实 SessionEventService.getEventsByType(sessionId, eventType)——0 参箭头会让
+// 带参 mockImplementation 撞 TS2345（tsc-tests-ratchet 2026-11-04 返修）。
+const mockSessionEvents = vi.hoisted(() => ({
+  getEventsByType: vi.fn((_sessionId: string, _eventType: string) => [] as Array<{ eventData?: unknown }>),
+}));
 const mockSessionAutomation = vi.hoisted(() => ({
   recordCreated: vi.fn(async () => undefined),
   recordEvent: vi.fn(async () => undefined),

@@ -21,7 +21,7 @@ import { cronFailureSentence } from './cronFailureNotice';
 import { wakeSkipSentence } from './wakeSkipSentence';
 
 const CLOUD_NOT_WIRED = 'Cloud execution is not wired yet (N-L3-MINLOOP-SRV).';
-const BUDGET_LIMIT = /Cron job run exceeded its \$(\d+(?:\.\d+)?) budget limit\./;
+const BUDGET_LIMIT = /Cron job run exceeded its \$(\d+(?:\.\d+)?) budget limit(?: \(spent \$(\d+(?:\.\d+)?)\))?\./;
 
 function failureAction(kind: CronFailurePresentationKind): 'model' | 'account' | 'rerun' | null {
   if (kind === 'quota') return 'model';
@@ -83,11 +83,13 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
     quietHours: cc.wakeSkipQuietHours,
   });
   const loginWall = cronLoginWallCopy(execution.error, { error: cc.loginWallError });
-  const budgetAmount = execution.error?.match(BUDGET_LIMIT)?.[1];
+  const budgetMatch = execution.error?.match(BUDGET_LIMIT);
   const preservedError = loginWall?.message
     ?? (execution.error === 'unsupported_action' ? cc.unsupportedAction
       : execution.error === CLOUD_NOT_WIRED ? cc.cloudExecutionNotWired
-        : budgetAmount ? cc.runBudgetExceeded.replace('{amount}', budgetAmount) : undefined);
+        : budgetMatch?.[2]
+          ? cc.runBudgetStopped.replace('{spent}', budgetMatch[2]).replace('{cap}', budgetMatch[1])
+          : budgetMatch?.[1] ? cc.runBudgetExceeded.replace('{amount}', budgetMatch[1]) : undefined);
   const classified = preservedError || !execution.error ? undefined : classifyCronFailure(execution.error);
   const failureSentence = classified
     ? cronFailureSentence(classified.kind, classified, cc, language)

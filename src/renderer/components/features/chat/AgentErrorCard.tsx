@@ -25,6 +25,7 @@ const SWITCH_MODEL_CATEGORIES: ReadonlySet<AgentErrorCategory> = new Set([
   'model_not_found',
   'forbidden',
   'rate_limited',
+  'usage_limit',
   'concurrency',
   'network',
 ]);
@@ -42,6 +43,7 @@ const NEW_SESSION_CATEGORIES: ReadonlySet<AgentErrorCategory> = new Set([
 const NO_RETRY_CATEGORIES: ReadonlySet<AgentErrorCategory> = new Set([
   'auth',
   'insufficient_balance',
+  'usage_limit',
   'image_payload',
 ]);
 
@@ -84,12 +86,28 @@ function buildTechnicalItems(
   return items;
 }
 
-/** 按 category 查 i18n 文案；context_length 的建议带 token 数模板。 */
+/** usage_limit 的恢复时间：按本机时区、带日期时分，同一时刻在任何时区下都是同一瞬间。 */
+function formatResetTime(resetAt: string, locale: string): string | null {
+  const date = new Date(resetAt);
+  if (!Number.isFinite(date.getTime())) return null;
+  return date.toLocaleString(locale, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+/** 按 category 查 i18n 文案；context_length 的建议带 token 数模板，usage_limit 带窗口词与恢复时间。 */
 export function resolveAgentErrorCopy(
-  error: Pick<AgentErrorMetadata, 'category' | 'requestedTokens' | 'maxTokens'>,
+  error: Pick<AgentErrorMetadata, 'category' | 'requestedTokens' | 'maxTokens' | 'usageWindowText' | 'resetAt'>,
   t: Translations,
+  locale = 'zh-CN',
 ): { title: string; suggestion: string } {
   const copy = t.agentError.categories[error.category] ?? t.agentError.categories.generic;
+  if (error.category === 'usage_limit') {
+    const usage = t.agentError.categories.usage_limit;
+    const resetTime = error.resetAt ? formatResetTime(error.resetAt, locale) : null;
+    return {
+      title: error.usageWindowText ? usage.title.replace('{window}', error.usageWindowText) : usage.titleNoWindow,
+      suggestion: resetTime ? usage.suggestion.replace('{resetTime}', resetTime) : usage.suggestionNoReset,
+    };
+  }
   if (error.category !== 'context_length') return copy;
   const requestedK = error.requestedTokens ? Math.round(error.requestedTokens / 1000) : '?';
   const maxK = error.maxTokens ? Math.round(error.maxTokens / 1000) : '?';
@@ -138,8 +156,8 @@ const AgentErrorCard: React.FC<{
   messageId: string;
   sessionId?: string;
 }> = ({ error, messageId, sessionId }) => {
-  const { t } = useI18n();
-  const { title, suggestion } = resolveAgentErrorCopy(error, t);
+  const { t, language } = useI18n();
+  const { title, suggestion } = resolveAgentErrorCopy(error, t, language === 'zh' ? 'zh-CN' : 'en-US');
   const developerMode = useAppStore((state) => state.developerMode);
   // 运行中禁用重试，避免并发重发把正在跑的轮次搞乱
   const isRunning = useSessionStore((s) => (sessionId ? s.runningSessionIds.has(sessionId) : false));
@@ -275,10 +293,10 @@ const RateLimitedErrorLine: React.FC<{
   messageId: string;
   sessionId?: string;
 }> = ({ error, messageId, sessionId }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const developerMode = useAppStore((state) => state.developerMode);
   const isRunning = useSessionStore((state) => (sessionId ? state.runningSessionIds.has(sessionId) : false));
-  const { title, suggestion } = resolveAgentErrorCopy(error, t);
+  const { title, suggestion } = resolveAgentErrorCopy(error, t, language === 'zh' ? 'zh-CN' : 'en-US');
   const technicalItems = buildTechnicalItems(error, t, true);
   const showDeveloperDetails = developerMode && !error.goalAbort;
 

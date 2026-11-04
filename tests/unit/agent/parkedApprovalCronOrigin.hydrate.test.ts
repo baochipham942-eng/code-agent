@@ -65,7 +65,7 @@ describe('cron / heartbeat origin parked approvals are voided at restart', () =>
   let dbDir: string;
   let sessionRepo: SessionRepository;
   let repo: PendingApprovalRepository;
-  const closeParkedWaitingRunForSession = vi.fn(async () => true);
+  const closeParkedWaitingRunForSession = vi.fn(async (_input: { sessionId: string }) => true);
   const durableRunRepoStub = {
     listActiveRunRoster: async () => [],
     closeParkedWaitingRunForSession,
@@ -178,7 +178,7 @@ describe('cron / heartbeat origin parked approvals are voided at restart', () =>
     });
     // 每个被作废的运行都走既有 closeSessionParkedRun 收口；交互会话不收口
     await vi.waitFor(() => expect(closeParkedWaitingRunForSession).toHaveBeenCalledTimes(11));
-    const closedSessions = closeParkedWaitingRunForSession.mock.calls.map((c) => (c[0] as { sessionId: string }).sessionId);
+    const closedSessions = closeParkedWaitingRunForSession.mock.calls.map((c) => c[0].sessionId);
     expect(closedSessions).not.toContain('interactive');
     expect(closedSessions).toContain('cron-0');
 

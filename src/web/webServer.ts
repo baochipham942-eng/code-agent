@@ -812,6 +812,7 @@ async function initializeServices(): Promise<void> {
   // 「保持聊天同步」：auth 已恢复缓存用户（owner scope 才对），不 await；E2E 不跑。
   if (process.env.CODE_AGENT_E2E !== '1') {
     void import('../host/externalImport/chatsAutoSync').then((m) => m.startChatsAutoSync(() => broadcastSSE(IPC_CHANNELS.SESSION_LIST_UPDATED, undefined)));
+    void import('../host/externalImport/skillsAutoSync').then((m) => m.startSkillsAutoSync());
   }
 
   // 8. Log Bridge + P3-A 只读任务状态 provider。

@@ -99,6 +99,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
     recentExecutions,
     loadRecentExecutions,
     latestExecutions,
+    syncRunningExecutions,
   } = useCronStore();
   const [activeTab, setActiveTab] = useState<CronCenterTab>(
     () => (readCronSearchParam('cronTab') === 'runs' ? 'runs' : 'jobs'),
@@ -146,6 +147,8 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
     }
     let active = true;
     const load = () => {
+      // 批准后命令跑完、host 写 completed，渲染端不重拉就永远停在「运行中」：随同一拍校正执行记录。
+      void syncRunningExecutions();
       void sessionAutomationClient
         .listAwaitingApprovalRuns()
         .then((runs) => {
@@ -163,7 +166,7 @@ export const CronCenterPanel: React.FC<CronCenterPanelProps> = ({ onClose }) => 
       active = false;
       window.clearInterval(timer);
     };
-  }, [hasRunningExecution]);
+  }, [hasRunningExecution, syncRunningExecutions]);
   const awaitingByJobId = useMemo(() => {
     const map = new Map<string, AwaitingApprovalRun>();
     for (const run of awaitingRuns) map.set(run.jobId, run);

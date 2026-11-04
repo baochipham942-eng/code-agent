@@ -202,7 +202,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
             <SummaryItem label={cc.cardSchedule} value={formatScheduleSummary(job, language, eventNamesFor(job))} />
             <SummaryItem
               label={cc.cardNextRun}
-              value={job.enabled && job.nextRunAt != null ? formatDateTime(job.nextRunAt) : '—'}
+              value={job.enabled && job.nextRunAt != null ? formatDateTime(job.nextRunAt, language) : '—'}
               testId="cron-detail-next-run"
             />
           </div>
@@ -243,8 +243,8 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
             {cc.advancedSection}
           </summary>
           <div className="mt-3 grid gap-3 lg:grid-cols-5">
-            <InfoCard label={cc.cardCreatedAt} value={formatDateTime(job.createdAt)} />
-            <InfoCard label={cc.cardUpdatedAt} value={formatDateTime(job.updatedAt)} />
+            <InfoCard label={cc.cardCreatedAt} value={formatDateTime(job.createdAt, language)} />
+            <InfoCard label={cc.cardUpdatedAt} value={formatDateTime(job.updatedAt, language)} />
             <InfoCard label={cc.cardMaxRetries} value={job.maxRetries != null ? String(job.maxRetries) : '0'} />
             <InfoCard label={cc.cardRetryDelay} value={job.retryDelay != null ? `${job.retryDelay}ms` : '—'} />
             <InfoCard label={cc.cardTimeout} value={job.timeout != null ? `${job.timeout}ms` : '—'} />

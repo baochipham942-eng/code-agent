@@ -89,6 +89,7 @@ interface ToolStepVerbBundle {
   pendingApprovalStatus: string;
   failureCode: string;
   failureReasonMissing: string;
+  notRunPrefix: string;
   failureCodes: {
     'worktree-create-failed': string;
     'gateway-timeout': string;
@@ -177,6 +178,7 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
   pendingApprovalStatus: '待确认',
   failureCode: '错误码 {code}',
   failureReasonMissing: '暂无失败原因摘要，可展开详情查看记录',
+  notRunPrefix: '未执行',
   failureCodes: {
     'worktree-create-failed': '无法为这次任务准备运行环境',
     'gateway-timeout': '服务暂时没有响应',
@@ -218,6 +220,7 @@ export const toolStepVerbsEn: ToolStepVerbBundle = {
   pendingApprovalStatus: 'Approval needed',
   failureCode: 'Error code {code}',
   failureReasonMissing: 'No failure summary is available; expand the details to inspect the record',
+  notRunPrefix: 'Not run',
   failureCodes: {
     'worktree-create-failed': 'Could not prepare the workspace for this task',
     'gateway-timeout': 'The service did not respond in time',

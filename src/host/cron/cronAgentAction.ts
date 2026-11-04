@@ -22,6 +22,7 @@ import { appendCronAgentExpertThreadReceipt } from './cronAgentExpertThreadRecei
 import { buildCronAgentPrompt, truncateUtf8Snapshot } from './cronAgentPrompt';
 import { beginArtifactRefresh, finishArtifactRefresh } from './artifactStandingRefresh';
 import { runWithCronJobBudget } from './cronExecutionPolicy';
+import { createCronExecutionCostWriter } from './cronPersistence';
 import { attachCronRunCost, createCronRunCostMeter } from './cronRunCostMeter';
 import { cronNotifyQuietRound } from './cronFailurePolicy';
 import { getCronAutomationType } from './cronAutomationBridge';
@@ -91,7 +92,11 @@ export async function executeCronAgentAction(
   let runError: unknown; let runFailed = false;
   // 常设刷新（metadata.artifactRefresh）：跑前建快照记基线；非刷新任务返回 undefined 零扰动
   // N-CRON-RUN-LEDGER-VISIBLE：单次运行成本计量（maxRunBudget 有值时计量器兼任预算闸，见 cronRunCostMeter 头注）。
-  const costMeter = createCronRunCostMeter(definition.maxRunBudget);
+  // FU1：onCost 把已发生的成本增量窄写进 running 行——进程中途被杀，interrupted 行也带真实花费。
+  const costMeter = createCronRunCostMeter(
+    definition.maxRunBudget,
+    executionId ? { onCost: createCronExecutionCostWriter(executionId) } : undefined,
+  );
   const artifactRefresh = beginArtifactRefresh(definition);
   // 观察档（N-TRIGGER-OBSERVE-MODE）：本会话的对外副作用调用由 ToolExecutor 拦下记 would_act。
   const leaveObserveMode = enterObserveModeForCronRun(definition, cronSession.id, executionId);

@@ -522,7 +522,12 @@ export class RunFinalizer {
       });
     }
 
-    await recordTurnOutcomeStamp(this.ctx, terminalStatus, completionSummary);
+    await recordTurnOutcomeStamp(
+      this.ctx,
+      terminalStatus,
+      completionSummary,
+      terminalStatus === 'cancelled' && this.ctx.control.cancelReason === 'idle-reaped' ? 'idle_reaped' : undefined,
+    );
 
     await this.emitTurnDiff();
 

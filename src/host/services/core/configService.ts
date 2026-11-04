@@ -690,7 +690,8 @@ export class ConfigService implements IReadConfigService {
     if (updates.permissions && (
       updates.permissions.deny !== undefined ||
       updates.permissions.ask !== undefined ||
-      updates.permissions.allow !== undefined
+      updates.permissions.allow !== undefined ||
+      updates.permissions.nlRules !== undefined
     )) {
       this.applyUserPermissionRules('user-ui');
     }

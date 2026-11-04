@@ -665,6 +665,8 @@ describe('SessionCommandCenter idle expiry', () => {
     });
     expect(wakeForegroundBrain).toHaveBeenCalledTimes(1);
     expect(manager.cancelBackgroundTask).toHaveBeenCalledTimes(1);
+    // 空闲回收必须带 reason，下游才不会把系统动作记成「用户停止」
+    expect(manager.cancelBackgroundTask).toHaveBeenCalledWith(spawned.task.id, 'idle-reaped');
     center.dispose();
   });
 
@@ -796,6 +798,7 @@ describe('SessionCommandCenter idle expiry', () => {
       detail: 'Background task failed: waited more than 30 seconds for your approval, cancelled',
     });
     expect(manager.cancelBackgroundTask).toHaveBeenCalledTimes(1);
+    expect(manager.cancelBackgroundTask).toHaveBeenCalledWith(spawned.task.id, 'idle-reaped');
     expect(wakeForegroundBrain).toHaveBeenCalledTimes(1);
     expect(wakeForegroundBrain).toHaveBeenCalledWith(
       expect.objectContaining({ id: spawned.task.id }),

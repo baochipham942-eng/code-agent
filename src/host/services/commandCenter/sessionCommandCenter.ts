@@ -672,7 +672,7 @@ export class SessionCommandCenter {
 
   private cancelIdleRun(taskId: string): void {
     try {
-      const cancel = this.manager.cancelBackgroundTask(taskId);
+      const cancel = this.manager.cancelBackgroundTask(taskId, 'idle-reaped');
       void Promise.resolve(cancel).catch((error: unknown) => {
         logger.warn('Failed to cancel a background task after it stopped responding', {
           taskId,

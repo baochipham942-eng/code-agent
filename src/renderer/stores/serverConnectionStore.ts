@@ -14,7 +14,7 @@ import { create } from 'zustand';
  * recovering  连续探测失败达到阈值——顶部横幅「正在重连…」
  * unavailable 持续不可达超时——横幅升级为「无法恢复」+「重试」按钮
  */
-export type ServerConnectionStatus = 'ok' | 'recovering' | 'unavailable';
+type ServerConnectionStatus = 'ok' | 'recovering' | 'unavailable';
 
 interface ServerConnectionState {
   status: ServerConnectionStatus;

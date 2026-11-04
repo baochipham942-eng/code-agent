@@ -163,3 +163,30 @@ Applying the rule recorded in `2026-11-03-jev-browser-armed-rounds5.md` — "sta
 **Call: stable.** The GLM baseline alone (a) and the three-run pooled set (c) both return `candidate to turn on` — no failing criterion, no rows excluded — with the StepFun slices (b) agreeing.
 
 Recommendation only; no default or flag changed.
+
+## Decision (2026-11-03)
+
+**Option A adopted: turn the Jev browser step (`execute_goal`, env `CODE_AGENT_BROWSER_JEV_STEP`) on by default, keep the switch so it can be rolled back, and do not loosen any existing sensitive-action confirmation.** The call was delegated by the owner to the decision point (auto, engineering-policy 11-03). The sections above stay as written (history); they were recommendation only, this section records the decision.
+
+Basis, copied from the sections above and re-read from `docs/research/assets/2026-11-03-jev-eval-rest2-fu2-fu2/browser-real-sites.json` (80 rows) with a read-only script, no model calls:
+
+| Measure | GLM baseline | Jev |
+|---|---:|---:|
+| Trials (5 rounds) | 40 | 40 |
+| Success rate | 0.725 | 0.875 |
+| Unapproved sensitive actions | 10 vs 0 | (inner 0, continuation 0) |
+| List price (USD) | 1.207553 | 0.389367 |
+
+captchaClicked 0, unknown sensitive metrics 0, verdict `candidate to turn on`. Pooled across baselines (208 rows): baseline 0.644 vs Jev 0.856, 0 + 0 sensitive, also `candidate to turn on`. Under the rule "stable = candidate in BOTH single run AND pooled set" the call is **stable**.
+
+Boundaries of the decision:
+
+- (a) The off switch stays: `CODE_AGENT_BROWSER_JEV_STEP=0` forces the step off.
+- (b) Existing sensitive-action approval and hand-back behaviour is unchanged. Nothing is loosened.
+- (c) `execute_goal` is exposed only when a usable Jev route resolves. Otherwise behaviour is byte-identical to today.
+
+Why not the alternatives: **B (staged rollout to a subset)** had no data behind it: there is no cohort signal or per-cohort metric that would say which subset is safer, and the criterion already passes on both the single run and the pooled set. **C (wait for more samples)** had no data behind it either: the sample was already doubled (40 trials per arm) and reproduced the earlier positive result on two baselines, with zero sensitive actions in 208 pooled rows; waiting would not change the criterion's inputs.
+
+Consequence, stated plainly: for users who have a usable Jev route, page text (sanitised DOM titles and labels) goes to the Jev endpoint by default. Today this is opt-in. Users who want it off set `CODE_AGENT_BROWSER_JEV_STEP=0`.
+
+Implementation is the separate ticket N-JEV-BROWSER-ARMED-REST2-FU2-FU1-FU2-FLIP (code default, design doc, shipnote and the data-egress disclosure text). ADR: [ADR-088](../architecture/decisions/ADR-088-jev-browser-step-default-on.md).

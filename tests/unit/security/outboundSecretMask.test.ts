@@ -525,3 +525,111 @@ describe('outboundSecretMask FU1 BEARER / CARD', () => {
     expect(joinedText(sink.chunks)).toBe(`card ${CARD} ok`);
   });
 });
+
+describe('outboundSecretMask FU2 EMAIL', () => {
+  beforeEach(maskOn);
+
+  const EMAIL_PH = /\{\{SECRET_EMAIL_[0-9a-f]{8}\}\}/;
+  const masks = (text: string): string => {
+    const s = applyOutboundSecretMask([{ role: 'user', content: text }])!;
+    return s.messages[0].content as string;
+  };
+
+  it.each([
+    ['fastmail', 'rina.k@fastmail.com'],
+    ['multi-label tld', 'ops@corp.example.co.uk'],
+    ['.local', 'admin@build.local'],
+    ['two-label internal', 'ops@mail.corp'],
+    ['mixed case', 'j@Gmail.COM'],
+    ['plus tag', 'rina+tag@fastmail.com'],
+    ['gitte 不是 git@', 'gitte@fastmail.com'],
+    ['github 不是 git@', 'github@acme-corp.com'],
+  ])('mask: %s', (_n, email) => {
+    const out = masks(`mail ${email} now`);
+    expect(out).toMatch(new RegExp(`^mail ${EMAIL_PH.source} now$`));
+    expect(out).not.toContain(email);
+    expect(session().restore({ content: out } as ModelResponse).content).toBe(`mail ${email} now`);
+  });
+
+  it('Magpie：句末句号不阻止命中', () => {
+    expect(masks('email address is jo@quill.dev.')).toMatch(new RegExp(`^email address is ${EMAIL_PH.source}\\.$`));
+  });
+
+  it.each([
+    ['example.com 文档示例', 'user@example.com'],
+    ['example.org 子域', 'a@mail.example.org'],
+    ['.example', 'a@host.example'],
+    ['.test', 'a@foo.test'],
+    ['.invalid', 'a@foo.invalid'],
+    ['.localhost', 'a@app.localhost'],
+    ['user@example 无 TLD', 'user@example'],
+    ['Magpie：pytest.fixture', 'x@pytest.fixture'],
+    ['Magpie：follow docs@AGENTS.md', 'follow docs@AGENTS.md'],
+    ['Magpie：functools.cache', 'obj@functools.cache'],
+    ['Magpie：git@github.com SSH 远程', 'git@github.com:o/r.git'],
+    ['Magpie：logo@2x.png', 'logo@2x.png'],
+    ['Magpie：261020_14-16-11@2x.jpg', '261020_14-16-11@2x.jpg'],
+    ['@decorator', '@dataclass\nclass A: pass'],
+    ['@scope 包名', 'npm i @types/node @scope/pkg'],
+    ['pkg@1.2.3', 'npm i react@18.3.1 pkg@1.2.3'],
+  ])('不掩：%s', (_n, text) => {
+    expect(masks(text)).toBe(text);
+  });
+
+  it('URL userinfo 不留半掩残渣：凭据规则先走，邮箱规则不再插手', () => {
+    const out = masks('clone https://deploy:Xk9Qm2Zp7Rw4Tn8Vb3@repo.acme-corp.com/x.git now');
+    expect(out).not.toContain('Xk9Qm2Zp7Rw4Tn8Vb3');
+    expect(out).toMatch(/^clone https:\/\/\{\{SECRET_BASIC_AUTH_[0-9a-f]{8}\}\}@repo\.acme-corp\.com\/x\.git now$/);
+    expect(out).not.toMatch(/\{\{SECRET_EMAIL_/);
+    const plain = masks('open https://user:pw@host.com/path');
+    expect(plain).toMatch(/^open https:\/\/\{\{SECRET_BASIC_AUTH_[0-9a-f]{8}\}\}@host\.com\/path$/);
+  });
+
+  it('占位符稳定：同地址同占位符，不同地址不同占位符', () => {
+    const a1 = maskOne('x rina.k@fastmail.com');
+    const a2 = maskOne('rina.k@fastmail.com again');
+    const b = maskOne('x rina.j@fastmail.com');
+    expect(a2.placeholder).toBe(a1.placeholder);
+    expect(b.placeholder).not.toBe(a1.placeholder);
+    expect(a1.placeholder).toMatch(/^\{\{SECRET_EMAIL_[0-9a-f]{8}\}\}$/);
+  });
+
+  it('JSON 工具参数还原：含 + 与引号的文本往返仍是合法 JSON', () => {
+    const email = 'rina+k@fastmail.com';
+    const args = JSON.stringify({ to: email, note: `say "hi" to ${email}` });
+    const input: ModelMessage[] = [{ role: 'assistant', content: '', toolCalls: [{ id: 't1', name: 'send', arguments: args }] }];
+    const s = applyOutboundSecretMask(input)!;
+    const maskedArgs = s.messages[0].toolCalls![0].arguments;
+    expect(maskedArgs).not.toContain(email);
+    const restored = s.restore({
+      type: 'tool_use',
+      toolCalls: [{ id: 't1', name: 'send', arguments: JSON.parse(maskedArgs) as Record<string, unknown> }],
+    });
+    expect(restored.toolCalls![0].arguments).toEqual({ to: email, note: `say "hi" to ${email}` });
+  });
+
+  it.each([2, 3])('邮箱占位符被流式切成 %i 片仍还原', async (pieces) => {
+    const { masked } = maskOne('mail rina.k@fastmail.com ok');
+    const sink = collector();
+    const s = applyOutboundSecretMask([{ role: 'user', content: 'x' }], sink.onStream)!;
+    const size = Math.ceil(masked.length / pieces);
+    for (let i = 0; i < masked.length; i += size) {
+      await s.onStream!({ type: 'text', content: masked.slice(i, i + size) });
+    }
+    await s.onStream!({ type: 'complete' } as StreamChunk);
+    expect(joinedText(sink.chunks)).toBe('mail rina.k@fastmail.com ok');
+  });
+
+  it('JSON 文本 arguments 里 \\n/\\t 转义后的邮箱：转义保持合法，JSON 仍可解析且往返一致', () => {
+    const email = 'rina@fastmail.com';
+    const args = JSON.stringify({ text: `line1\n${email}\t${email}` });
+    const s = applyOutboundSecretMask([{ role: 'assistant', content: '', toolCalls: [{ id: 't1', name: 'send', arguments: args }] }])!;
+    const maskedArgs = s.messages[0].toolCalls![0].arguments;
+    expect(maskedArgs).not.toContain(email);
+    expect(maskedArgs).not.toContain('\\{');
+    const parsed = JSON.parse(maskedArgs) as { text: string };
+    expect(parsed.text).toMatch(/^line1\n\{\{SECRET_EMAIL_[0-9a-f]{8}\}\}\t\{\{SECRET_EMAIL_[0-9a-f]{8}\}\}$/);
+    const restored = s.restore({ type: 'tool_use', toolCalls: [{ id: 't1', name: 'send', arguments: parsed }] });
+    expect(restored.toolCalls![0].arguments).toEqual({ text: `line1\n${email}\t${email}` });
+  });
+});

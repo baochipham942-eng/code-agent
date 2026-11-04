@@ -27,3 +27,30 @@ export function isCronPermissionDeniedMarker(value: unknown): value is CronPermi
       && (REASONS as readonly string[]).includes(stepRecord.reason as string);
   });
 }
+
+// ----------------------------------------------------------------------------
+// 被拒原因的大白话（zh/en 各四条，单一真源 · Rework r2）：host 完成通知
+// （cron/cronFailurePolicy）与 renderer 详情句（i18n/cronCenter 的
+// permissionDeniedReason* 四键）用同一组词——host 读不了 renderer i18n，故放
+// shared。改措辞只改这里，两侧同步变。
+// ----------------------------------------------------------------------------
+const REASON_TEXT_ZH: Record<CronPermissionDeniedReason, string> = {
+  user: '你当时拒绝了它',
+  timeout: '等批准超时，没有人处理',
+  cancelled: '运行被取消或重启，批准被作废',
+  other: '审批链路出问题，按安全默认拒绝了',
+};
+
+const REASON_TEXT_EN: Record<CronPermissionDeniedReason, string> = {
+  user: 'you declined it',
+  timeout: 'nobody approved it in time',
+  cancelled: 'the run was cancelled or restarted, voiding the approval',
+  other: 'the approval chain failed and it was denied for safety',
+};
+
+export function cronPermissionDeniedReasonText(
+  reason: CronPermissionDeniedReason,
+  language: 'zh' | 'en',
+): string {
+  return (language === 'en' ? REASON_TEXT_EN : REASON_TEXT_ZH)[reason];
+}

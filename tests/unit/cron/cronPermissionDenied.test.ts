@@ -131,7 +131,11 @@ describe('deriveCronPermissionDenied ① 被拒且无产出', () => {
     expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(1);
     const payload = notifyState.notifyTaskComplete.mock.calls[0][0];
     expect(payload.succeeded).toBe(true);
-    expect(payload.summary).toBe('定时任务需处理：有命令没获批准，没有产出。');
+    // Rework r2：通知要点名哪一步被拒、为什么被拒——含被拒命令与原因大白话，
+    // 不再只有通用「有命令没获批准」（此例 reason=timeout → 等批准超时，没有人处理）。
+    expect(payload.summary).toContain('echo hi');
+    expect(payload.summary).toContain('等批准超时，没有人处理');
+    expect(payload.summary).toBe('定时任务需处理：「echo hi」没有获批准（等批准超时，没有人处理），没有产出。');
   });
 });
 

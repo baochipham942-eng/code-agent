@@ -22,6 +22,7 @@ import { SessionRepository } from '../../../src/host/services/core/repositories/
 import { ToolExecutionEventRepository } from '../../../src/host/services/core/repositories/ToolExecutionEventRepository';
 import { PendingApprovalRepository } from '../../../src/host/services/core/repositories/PendingApprovalRepository';
 import type { Message, Session } from '../../../src/shared/contract';
+import { isParkedApprovalClosureSentence } from '../../../src/shared/parkedApprovalClosure';
 import { computeLedgerArgsSurvival } from '../../../src/host/agent/parkedApprovalSurvival';
 
 const planAttach = vi.fn(() => 0);
@@ -186,6 +187,22 @@ describe('cron / heartbeat origin parked approvals are voided at restart', () =>
     expect(await inboxIds()).toEqual(['row-interactive']);
     const { SessionAutomationService } = await import('../../../src/host/services/sessionAutomation/sessionAutomationService');
     expect(new SessionAutomationService().listParkedApprovals()[0]).toMatchObject({ displayTool: '重启前发起 · Bash' });
+  });
+
+  it('isParkedApprovalClosureSentence 认得运行已结束句（渲染端读作「未执行」而非执行失败）', () => {
+    expect(isParkedApprovalClosureSentence(SENTENCE)).toBe(true);
+  });
+
+  it('hydrate 后 getVoidedApprovalReason(cron 会话) 返回运行已结束句，且不 warn unparseable；收件箱不列灰行', async () => {
+    const now = Date.now();
+    seed('cron-r', { kind: 'cron', id: 'job-1' } as Session['origin'], now - 2 * H);
+    seed('interactive-r', undefined, now - 2 * H);
+    hydrate(now);
+    const { SessionAutomationService } = await import('../../../src/host/services/sessionAutomation/sessionAutomationService');
+    const svc = new SessionAutomationService();
+    expect(svc.getVoidedApprovalReason('cron-r')).toBe(SENTENCE);
+    expect(logSpies.warn).not.toHaveBeenCalledWith('Voided approval reason unparseable', expect.anything());
+    expect(svc.listParkedApprovals().map((item) => item.id)).toEqual(['row-interactive-r']);
   });
 
   it('cron 来源超过 24h 的行仍报 expired_after_restart_24h（年龄判据先行）', () => {

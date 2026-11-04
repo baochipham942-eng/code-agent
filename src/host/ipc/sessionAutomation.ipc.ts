@@ -51,6 +51,11 @@ const sessionAutomationRoutes = defineDomainRoutes<SessionAutomationDomainReques
     if (!sessionId) throw new Error('缺少 sessionId');
     return service.summarizeSessions([sessionId])[sessionId];
   },
+  getVoidedApprovalReason: (_ctx, payload) => {
+    const sessionId = getString(payload, 'sessionId');
+    if (!sessionId) throw new Error('缺少 sessionId');
+    return getSessionAutomationService().getVoidedApprovalReason(sessionId);
+  },
   listPendingReview: (_ctx, _payload) => {
     const service = getSessionAutomationService();
     return service.listPendingReview();

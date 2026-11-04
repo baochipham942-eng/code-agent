@@ -5,6 +5,7 @@ import type { ToolCapabilitySource } from '../types/runWorkbench';
 import type { Translations } from '../i18n';
 import { readHostReasonFromMetadata, resolveHostReasonCopy } from './hostReasonPresentation';
 import { redactCredentialText } from '@shared/security/secretPatterns';
+import { isParkedApprovalClosureSentence } from '@shared/parkedApprovalClosure';
 
 /**
  * 判定一条工具结果是否「自动加载重试」的良性内部状态（success:false 但不是真失败）。
@@ -460,7 +461,18 @@ function isDeclinedSandboxEscalation(metadata: Record<string, unknown> | null | 
   return (escalation as { decision?: unknown }).decision === 'declined';
 }
 
+/** 停车审批被自动收口（没有执行）的 denied 结果：「未执行 · <原因句>」，不读作执行失败。 */
+export function resolveParkedApprovalClosureCopy(
+  toolCall: Pick<ToolCall, 'result'>,
+  t: Translations,
+): string | null {
+  const error = toolCall.result?.error;
+  return isParkedApprovalClosureSentence(error) ? `${t.toolStepHumanize.notRunPrefix} · ${error}` : null;
+}
+
 export function humanizeToolFailureReason(toolCall: Pick<ToolCall, 'name' | 'result'>, t: Translations): string {
+  const closure = resolveParkedApprovalClosureCopy(toolCall, t);
+  if (closure) return closure;
   const result = toolCall.result;
   const metadata = result?.metadata;
   // 拒绝放宽沙盒的出路必须盖过 FS_ERROR 的「错误码」行。

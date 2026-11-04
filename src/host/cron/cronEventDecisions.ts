@@ -100,6 +100,55 @@ function readStatedDecisions(result: unknown): Map<string, StatedEventDecision> 
   return stated;
 }
 
+/**
+ * 携带 id → 模型陈述：先精确匹配；剩下的携带 id 只在「唯一无歧义」时放宽——
+ * 恰有一条未被认领的陈述 id 与它互为前缀（忽略大小写/首尾空白，典型是模型抄长十六进制
+ * id 时多/少写了末尾字符）。多于一条或没有 → 不匹配，走兜底。不做编辑距离模糊匹配。
+ */
+function matchStatedDecisions(
+  carried: readonly string[],
+  stated: Map<string, StatedEventDecision>,
+): Map<string, StatedEventDecision> {
+  const matched = new Map<string, StatedEventDecision>();
+  const claimed = new Set<string>();
+  for (const id of carried) {
+    const exact = stated.get(id);
+    if (exact) {
+      matched.set(id, exact);
+      claimed.add(exact.eventId);
+    }
+  }
+  const norm = (id: string) => id.trim().toLowerCase();
+  for (const id of carried) {
+    if (matched.has(id)) continue;
+    const key = norm(id);
+    if (!key) continue;
+    const candidates = [...stated.values()].filter((d) => {
+      if (claimed.has(d.eventId)) return false;
+      const other = norm(d.eventId);
+      return other.length > 0 && (other.startsWith(key) || key.startsWith(other));
+    });
+    if (candidates.length !== 1) continue;
+    // 另一个未匹配的携带 id 也对上同一条陈述 → 有歧义，两边都不认。
+    const rivals = carried.filter((c) => c !== id && !matched.has(c) && (norm(c).startsWith(norm(candidates[0].eventId)) || norm(candidates[0].eventId).startsWith(norm(c))));
+    if (rivals.length > 0) continue;
+    matched.set(id, candidates[0]);
+    claimed.add(candidates[0].eventId);
+  }
+  return matched;
+}
+
+/** 兜底原因的补充说明：区分「没陈述」「陈述了但 id 对不上」「结果里根本没有 eventDecisions 字段」。 */
+function describeUnmatched(result: unknown, stated: Map<string, StatedEventDecision>): string {
+  const raw = result && typeof result === 'object' ? (result as Record<string, unknown>).eventDecisions : undefined;
+  if (!result || typeof result !== 'object' || (raw !== undefined && !Array.isArray(raw))) {
+    return 'run result carried no eventDecisions field';
+  }
+  if (stated.size === 0) return 'no per-event reason stated';
+  const ids = truncateObserveText([...stated.keys()].join(', '), CRON_EVENT_DECISIONS.MAX_REASON_CHARS);
+  return `stated decisions did not match this event id (stated ids: ${ids})`;
+}
+
 function dropReason(cause: CronEventDropCause): string {
   switch (cause) {
     case 'queue_overflow':
@@ -185,10 +234,11 @@ export function settleEventRunDecisions(input: EventRunSettlementInput): CronEve
   }
 
   const stated = readStatedDecisions(run.result);
-  const fallback = fallbackDecision(input, run, runId);
+  const matched = matchStatedDecisions(input.carriedEventIds, stated);
   for (const eventId of input.carriedEventIds) {
-    const decision = stated.get(eventId);
+    const decision = matched.get(eventId);
     if (!decision) {
+      const fallback = fallbackDecision(input, run, runId, describeUnmatched(run.result, stated));
       rows.push({ jobId: input.jobId, kind: 'event', eventId, ...fallback, ...withRun, ...withRule });
       continue;
     }
@@ -217,14 +267,15 @@ function fallbackDecision(
   input: EventRunSettlementInput,
   run: SettledRun,
   runId: string | undefined,
+  why: string,
 ): { decision: CronEventDecisionOutcome; reason: string } {
   if (input.mode === 'observe') {
     return runId && input.observeActionCount(runId) > 0
-      ? { decision: 'would_act', reason: 'outbound action intercepted in observe mode (no per-event reason stated)' }
-      : { decision: 'ignored', reason: 'no outbound action attempted (no per-event reason stated)' };
+      ? { decision: 'would_act', reason: `outbound action intercepted in observe mode (${why})` }
+      : { decision: 'ignored', reason: `no outbound action attempted (${why})` };
   }
   const result = run.result && typeof run.result === 'object' ? run.result as Record<string, unknown> : {};
   return result.skipped === true || result.notifySuppressed === true
-    ? { decision: 'ignored', reason: 'run stayed quiet (no alert; no per-event reason stated)' }
-    : { decision: 'acted', reason: 'run completed and reported (no per-event reason stated)' };
+    ? { decision: 'ignored', reason: `run stayed quiet (no alert; ${why})` }
+    : { decision: 'acted', reason: `run completed and reported (${why})` };
 }

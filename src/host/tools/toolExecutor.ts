@@ -23,6 +23,12 @@ import {
 import { getToolCache } from '../services/infra/toolCache';
 import { extractComputerTargetApp } from '../permissions/computerAppTarget';
 import { cuaToolNeedsAppGrant, resolveCuaAppTarget } from '../permissions/cuaAppTarget';
+import {
+  classifyCuaSensitiveStep,
+  decorateSensitiveStepRequest,
+  sensitiveStepHandbackResolution,
+  stripSensitiveStepParams,
+} from '../permissions/cuaSensitiveStep';
 import { resolvePreAskGrant } from '../permissions/preAskGrant';
 import { createLogger } from '../services/infra/logger';
 import { getAuditLogger, maskSensitiveData, isKnownSafeCommand, validateCommand, getShellSafetyMode, getExecPolicyStore, getPolicyEnforcer, type PolicyEnforcer, type PolicyCheckResult, type ValidationResult } from '../security';
@@ -2002,6 +2008,9 @@ export class ToolExecutor {
         }
       }
 
+      // ADR-088 一期：密码框输入交回用户。敏感判定必须早于 resolvePreAskGrant 消费——
+      // 已记住的应用授权压不掉交回卡；未命中才进入既有按应用审批链（规格 §2 判定顺序）。
+      const cuaSensitiveStep = classifyCuaSensitiveStep(executionToolName, params);
       const preAsk = needsUserApproval ? resolvePreAskGrant({
         toolName: executionToolName,
         sessionId: effectiveSessionId,
@@ -2011,7 +2020,8 @@ export class ToolExecutor {
           || guardFabricForcesApproval || protectedWriteForcesConfirmation
           || policyForcesConfirmation || unresolvedWriteTargetForcesAsk
           || Boolean(boundaryViolation) || readOnlyForcesConfirmation
-          || peerOriginForcesConfirmation || launderRetryForcesAsk,
+          || peerOriginForcesConfirmation || launderRetryForcesAsk
+          || Boolean(cuaSensitiveStep),
       }) : null;
       if (preAsk) {
         needsUserApproval = false;
@@ -2107,7 +2117,11 @@ export class ToolExecutor {
       // （与 messageProcessor 落库同一套 sanitize）算指纹 + 忠实标记，随请求上抛给
       // parkApproval 落进行 payload——重启批准时从台账重算比对，点的是 A 就绝不执行 B。
       if (options.currentToolCallId) {
-        const survival = computeLedgerArgsSurvival(requestedToolName, params);
+        // ADR-088 §3：交回请求的指纹输入必须剔除 text（低熵密码的哈希可被爆破）。
+        const survival = computeLedgerArgsSurvival(
+          requestedToolName,
+          cuaSensitiveStep ? stripSensitiveStepParams(params) : params,
+        );
         permissionRequest.argsFingerprint = survival.argsFingerprint;
         permissionRequest.ledgerFaithful = survival.ledgerFaithful;
       }
@@ -2190,6 +2204,12 @@ export class ToolExecutor {
         logger.debug('ConfirmationGate preview error:', error);
       }
 
+      // ADR-088 一期：敏感步骤交回卡（放在确认门之后，details 整体替换——被键入的文本、
+      // 预确认门写入的 preview、targetApp 一并清空，请求只带 kind/elementLabel/appName+action）。
+      if (cuaSensitiveStep) {
+        decorateSensitiveStepRequest(permissionRequest, cuaSensitiveStep, computerApp, executionToolName);
+      }
+
       // PermissionRequest hook: allow hooks to intercept/block before user prompt
       if (options.hookManager) {
         try {
@@ -2255,6 +2275,41 @@ export class ToolExecutor {
         }
       }
       const approved = ask.approved;
+
+      // ADR-088 一期：交回步**永不执行**（规格 §4 三层保证之 1——没有任何代码路径从这张
+      // 请求的应答通向原始工具调用）。应答只决定回话模板：allow=用户已亲手完成（done），
+      // deny/超时/取消=跳过（skipped）；两个出口都 success:true，不是权限失败。
+      if (cuaSensitiveStep) {
+        const outcome = approved ? 'done_by_user' : 'skipped';
+        traceBuilder.addStep(
+          'plan_approval',
+          'sensitive_step_handback',
+          approved ? 'allow' : 'deny',
+          approved
+            ? '敏感步骤交回：用户已亲手完成并点「完成后继续」，Neo 未执行这一步'
+            : `敏感步骤交回：用户跳过（来源：${ask.denialSource ?? 'user'}），Neo 未执行这一步`,
+        );
+        recordDecision(
+          executionToolName,
+          stripSensitiveStepParams(params), // 台账先剥掉 text（规格 §3），反正这步不会执行
+          approved ? 'ask-approved' : 'ask-denied',
+          `sensitive_step_handback:${outcome}`,
+          permStartTime,
+          traceBuilder.build(approved ? 'allow' : 'deny'),
+          effectiveSessionId,
+          this.ledgerOrigin,
+          getApprovalWaitMs(options.currentToolCallId, Date.now()),
+        );
+        const resolution = sensitiveStepHandbackResolution(cuaSensitiveStep, outcome, {
+          expiredUnanswered: ask.denialSource === 'timeout',
+        });
+        logger.info('Sensitive step handed back to the user; not executed', {
+          tool: executionToolName,
+          outcome,
+          kind: cuaSensitiveStep.kind,
+        });
+        return { success: true, result: resolution.result, metadata: resolution.metadata };
+      }
 
       if (approved) {
         const approvalSource = ask.approvalSource ?? 'unspecified';

@@ -127,6 +127,18 @@ export function classifyAgentError(
     if (structuredFailureCode === 'MODEL_QUOTA') {
       return { ...base, category: 'insufficient_balance', httpStatus: explicitStatus ?? 402 };
     }
+    if (structuredFailureCode === 'MODEL_USAGE_LIMIT') {
+      const marker = payload.failure as AgentErrorPayload;
+      return {
+        ...base,
+        category: 'usage_limit',
+        httpStatus: explicitStatus ?? 429,
+        usageWindowText: getStringPayloadField(marker, 'windowText'),
+        resetAt: getStringPayloadField(marker, 'resetAt'),
+        provider: base.provider ?? getStringPayloadField(marker, 'provider'),
+        modelId: base.modelId ?? getStringPayloadField(marker, 'model'),
+      };
+    }
     if (structuredFailureCode === 'MODEL_UNAVAILABLE') {
       return { ...base, category: 'model_not_found', httpStatus: explicitStatus ?? 404 };
     }

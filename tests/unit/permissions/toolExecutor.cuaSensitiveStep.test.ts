@@ -145,11 +145,11 @@ describe('ToolExecutor cua sensitive step hand-back (ADR-088 phase 1)', () => {
     return { executor, requestPermission };
   }
 
-  function typeIntoPasswordField() {
+  function typeIntoPasswordField(options: { sessionId: string; currentToolCallId?: string } = { sessionId: 's1' }) {
     return {
       tool: 'mcp__cua-driver__type_text',
       params: { pid: SHOP_PID, window_id: SHOP_WINDOW_ID, element_index: 3, text: PASSWORD_TEXT },
-      options: { sessionId: 's1' },
+      options,
     };
   }
 
@@ -349,8 +349,7 @@ describe('ToolExecutor cua sensitive step hand-back (ADR-088 phase 1)', () => {
     resolverState.getDefinition.mockReturnValue(cuaActionDefinition('type_text'));
     mintAppGrantSession('s1', SHOP);
     const { executor, requestPermission } = makeExecutor(true);
-    const { tool, params, options } = typeIntoPasswordField();
-    options.currentToolCallId = 'toolu_sensitive_1';
+    const { tool, params, options } = typeIntoPasswordField({ sessionId: 's1', currentToolCallId: 'toolu_sensitive_1' });
     const result = await executor.execute(tool, params, options);
     expect(result.success).toBe(true);
     const req = requestPermission.mock.calls[0][0];

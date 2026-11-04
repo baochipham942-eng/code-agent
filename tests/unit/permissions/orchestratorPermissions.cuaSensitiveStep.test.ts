@@ -168,7 +168,8 @@ describe('orchestrator: sensitive step hand-back requests (ADR-88 phase 1)', () 
       if (!event) throw new Error('no permission_request event');
       expect(island.handlePermissionResponse(event.data.id, response)).toBe('delivered');
       const result = await promise;
-      expect(result).toEqual({ approved: response !== 'deny', ...(response !== 'deny' ? { approvalSource: 'user' } : {}) } as PermissionAskResult);
+      // 循环里只有 allow 形态（deny 在渲染/island 测试里另有用例），这里三种应答都应放行
+      expect(result).toEqual({ approved: true, approvalSource: 'user' } as PermissionAskResult);
       expect(listAppGrants(Date.now())).toHaveLength(0);
       expect(listAppSessionGrants()).toHaveLength(0);
     }

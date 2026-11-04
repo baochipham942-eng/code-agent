@@ -1543,6 +1543,11 @@ end tell
   - 数据/表格 → read_xlsx, excel_generate, chart_generate
   - 记忆 → MemoryRead, MemoryWrite
   - 任务编排 → TaskManager
+  - 日历/日程 → calendar（action=list_events 读日程；要建/改/删日程再加 calendar_create_event）
+  - 提醒事项 → reminders（要新建再加 reminders_create）
+  - 邮件 → mail（读/搜）+ mail_draft（起草）；发送才加 mail_send，属高权限要点明
+  - 会议（腾讯会议）→ tmeetMeetingList
+  **只能使用上面清单里的工具名，不要自己编；需要的能力不在清单里，就如实告诉用户这项能力暂时没有，并先给出不含它的草稿。** \`propose_role\` 会拒绝不存在的工具名并返回最接近的真实名字。
   调用前用一句话告诉用户你给它配了哪些能力、为什么（尤其涉及 Bash/写文件这种高权限要点明）。
 - **systemPrompt**：角色的系统提示词（markdown），写清专长、工作准则、输出格式。可参考预设角色的结构（核心能力 / 工作准则 / 输出格式）。
 
@@ -1648,6 +1653,7 @@ end tell
 - **roleId**：保持与 editingRoleId 一致（不要改名；用户若想改名，告诉他本期暂不支持）
 - **description / category / tools / systemPrompt**：合并后的完整新定义（不是只填改动的部分——是整份覆盖）
   - tools 取最小够用集，增减能力时用一句话告诉用户你动了哪些（尤其 Bash / 写文件这种高权限）
+  - tools 只能写真实存在的工具名（沿用现有定义里的名字，或用 \`list_experts\` 里见过的名字），不要自己编；需要的能力没有对应工具就如实告诉用户，草稿里不要放假名字
 \`propose_role\` 会生成**修改草稿**并在聊天里弹出确认卡。草稿不会自动入库。
 
 ### 4. 迭代与确认

@@ -42,8 +42,11 @@ vi.mock('../../../src/host/services', () => ({
   }),
 }));
 
-type DeepPartial<T> = T extends (infer U)[]
-  ? DeepPartial<U>[]
+// 数组分支必须保留 readonly（如 ArtifactState.lastDeliverableCheck 里的
+// readonly DeliverablePlaceholderHit[]）：映射成可变数组会让真值反而不兼容
+// DeepPartial 目标型（tsc-tests 门 2 处 TS2345 的根因），也丢掉只读契约。
+type DeepPartial<T> = T extends readonly (infer U)[]
+  ? readonly DeepPartial<U>[]
   : T extends object
     ? { -readonly [P in keyof T]?: DeepPartial<T[P]> }
     : T;

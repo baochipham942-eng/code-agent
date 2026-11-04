@@ -182,12 +182,28 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
         <div className="max-h-[32vh] overflow-y-auto rounded-xl border border-badge-warning/25 bg-amber-500/5 px-4 py-3">
           {parked.length > 0 && (
             <div className="mb-3" data-testid="parked-approval-group">
-              <div className="mb-2 flex items-center gap-2 text-xs font-medium text-badge-warning">
-                <ShieldAlert className="h-3.5 w-3.5" />
-                {cc.parkedTitle.replace('{count}', String(parked.length))}
-              </div>
+              {parked.some((item) => item.status !== 'voided') && (
+                <div className="mb-2 flex items-center gap-2 text-xs font-medium text-badge-warning">
+                  <ShieldAlert className="h-3.5 w-3.5" />
+                  {cc.parkedTitle.replace('{count}', String(parked.filter((item) => item.status === 'pending').length))}
+                </div>
+              )}
               <div className="space-y-1.5">
                 {parked.map((item) => {
+                  if (item.status === 'voided') {
+                    return (
+                      <div
+                        key={item.id}
+                        className="rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2 opacity-50"
+                        data-testid="parked-approval-voided"
+                      >
+                        <div className="truncate text-sm text-zinc-200">{item.displayTool ?? item.tool}</div>
+                        <div className="text-[11px] text-zinc-500">
+                          {cc.parkedVoidedLabel}：{item.voidReason}
+                        </div>
+                      </div>
+                    );
+                  }
                   const isOrphaned = item.status === 'orphaned';
                   const isPairing = item.kind === 'channel_pairing';
                   const isExternal = item.riskClass === 'external';

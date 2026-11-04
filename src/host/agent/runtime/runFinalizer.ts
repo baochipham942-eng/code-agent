@@ -522,7 +522,12 @@ export class RunFinalizer {
       });
     }
 
-    await recordTurnOutcomeStamp(this.ctx, terminalStatus, completionSummary);
+    await recordTurnOutcomeStamp(
+      this.ctx,
+      terminalStatus,
+      completionSummary,
+      terminalStatus === 'cancelled' && this.ctx.control.cancelReason === 'idle-reaped' ? 'idle_reaped' : undefined,
+    );
 
     await this.emitTurnDiff();
 
@@ -531,7 +536,14 @@ export class RunFinalizer {
     const terminalEventType = getRunTerminalAgentEventType(terminalStatus);
     logger.debug(`[AgentLoop] ========== run() END, emitting ${terminalEventType} ==========`);
     logCollector.agent('INFO', `Agent run ${terminalStatus}, ${iterations} iterations`);
-    this.ctx.onEvent({ type: terminalEventType, data: null });
+    if (terminalEventType === 'agent_cancelled') {
+      this.ctx.onEvent({
+        type: 'agent_cancelled',
+        data: this.ctx.control.cancelReason === 'idle-reaped' ? { reason: 'idle_reaped' } : null,
+      });
+    } else {
+      this.ctx.onEvent({ type: terminalEventType, data: null });
+    }
 
     // === Mechanism Stats (observability) ===
     logger.info(`[AgentLoop] === Mechanism Stats ===`);

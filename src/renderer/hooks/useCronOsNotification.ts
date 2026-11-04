@@ -60,7 +60,10 @@ export function useCronOsNotification(
         useAppStore.getState().setShowCronCenter(true);
       }
     };
-    // 点击路由（壳发 notification-clicked {id}）：按通知类型落点，且每个 id 只处理一次。
+    // 点击路由：接收端契约是壳发 `notification-clicked {id}`（id = NotificationShowEvent.id）。
+    // 注意：当前壳尚未发该事件（发射端由 N-FIX-NOTIFY-DISPLAY-GAP-FU1-NATIVE 负责），
+    // 在那之前桌面端只走下面的旧 onAction 路径（读最近一条事件，桌面端通常根本不触发）。
+    // 按通知类型落点，且每个 id 只处理一次。
     const routeClick = async (event: NotificationShowEvent) => {
       const needsInput = event.urgent === true && event.failure !== true;
       // 无会话仅有 jobId（任何类型）：落自动化中心并选中任务；登录墙/云端不可用仍走 openForEvent。

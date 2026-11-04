@@ -7,7 +7,7 @@
 // 2) 工作台 grid 不再 flex-1 min-h-0（会被压到 0），而是 flex-[1_0_420px]
 //    （高屏占满、矮屏保底可滚）。
 import React from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const invokeDomain = vi.hoisted(() => vi.fn());
@@ -52,7 +52,6 @@ vi.mock('../../../src/renderer/components/features/settings/WebModeBanner', () =
 import { CronCenterPanel } from '../../../src/renderer/components/features/cron/CronCenterPanel';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
-import { act } from '@testing-library/react';
 
 beforeEach(() => {
   invokeDomain.mockReset();

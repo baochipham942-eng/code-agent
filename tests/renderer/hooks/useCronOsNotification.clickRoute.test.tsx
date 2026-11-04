@@ -6,6 +6,7 @@ import { IPC_CHANNELS } from '../../../src/shared/ipc';
 const h = vi.hoisted(() => ({
   show: null as null | ((e: unknown) => void),
   click: null as null | ((e: { payload: { id: string } }) => void),
+  unlisten: vi.fn(),
   action: null as null | (() => void),
   parked: [] as Array<{ sessionId: string; status: string }>,
 }));
@@ -22,7 +23,7 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 vi.mock('../../../src/renderer/services/tauriPluginFacade', () => ({
   listenTauriEvent: vi.fn(async (_n: string, cb: (e: { payload: { id: string } }) => void) => {
     h.click = cb;
-    return () => {};
+    return h.unlisten;
   }),
 }));
 vi.mock('../../../src/renderer/services/sessionAutomationClient', () => ({
@@ -56,6 +57,7 @@ beforeEach(() => {
   (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
   h.parked = [];
   h.click = null;
+  h.unlisten.mockClear();
   useCronStore.setState({ selectedJobId: null });
   useAppStore.setState({ showCronCenter: false, cronCenterRunsRequested: false });
   vi.spyOn(document, 'hasFocus').mockReturnValue(true);
@@ -132,6 +134,15 @@ describe('notification-clicked 路由', () => {
     await click('a');
     expect(open).toHaveBeenCalledTimes(1);
     expect(open).toHaveBeenCalledWith('sess-a');
+  });
+
+  it('卸载时取消 notification-clicked 监听', async () => {
+    open = vi.fn();
+    const view = renderHook(() => useCronOsNotification({} as never, open as never));
+    await flush();
+    expect(h.unlisten).not.toHaveBeenCalled();
+    view.unmount();
+    expect(h.unlisten).toHaveBeenCalledTimes(1);
   });
 
   it('未知 id → 不导航并 warn', async () => {

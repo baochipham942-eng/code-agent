@@ -62,6 +62,8 @@ async function dismiss(page) {
   if (await ob.isVisible().catch(() => false)) await ob.getByRole('button', { name: '跳过，稍后在设置里配置' }).click();
   await page.waitForTimeout(500);
 }
+const EXPECTED = { repeated: 1, samebase: 2 };
+let failed = false;
 const results = {};
 try {
   await waitUp();
@@ -107,8 +109,14 @@ try {
     await page.screenshot({ path: shot });
     results[name] = { cardCount: info.labels.length, labels: info.labels, overlaps: ov.length, clipped, geometry: ov.length === 0 && clipped === 0 ? 'no overlaps' : 'PROBLEM', shot };
     console.log(name, JSON.stringify(results[name]));
+    if (name in EXPECTED && info.labels.length !== EXPECTED[name]) {
+      failed = true;
+      console.log(`FAIL AssertionError: ${name} expected cardCount ${EXPECTED[name]} got ${info.labels.length}`);
+    }
   }
   await browser.close();
 } finally {
   stop();
 }
+if (failed) process.exit(1);
+console.log('PASS: repeated=1 card, samebase=2 cards');

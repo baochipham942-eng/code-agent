@@ -13,7 +13,6 @@
 // 复用的是 conversationRuntime.test.ts 的装配 harness，仅替换 fixture 与断言。
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createHookManager } from '../../../src/host/hooks';
 import { TurnState } from '../../../src/host/agent/runtime/turnState';
 import { ControlState } from '../../../src/host/agent/runtime/controlState';
 import { RunStatsState } from '../../../src/host/agent/runtime/runStatsState';

@@ -79,11 +79,13 @@ describe('候选能力注入', () => {
     // 真机事故：模型把本块当任务，复述成「我先把 <repeated_workarounds>…交给后台执行」
     // 并派占位子代理。措辞必须把这四条边界写死在块内，不能只靠周边文档。
     expect(notice).toContain('不是用户请求');
-    expect(notice).toContain('不是要执行的任务');
-    expect(notice).toContain('不要把它复述给用户');
-    expect(notice).toContain('不要把它转交给后台任务或子代理');
+    expect(notice).toContain('不是任务');
+    expect(notice).toContain('禁止在任何回复、任何后台任务或子代理的说明里提及、引用或转述本块');
     // 本轮任务真源指向 <user_request>（与 wrapWithTurnSystemContext 的包装对应）
     expect(notice).toContain('<user_request>');
+    // 标签名不得再像任务（旧名 repeated_workarounds 被模型当引用物写进转述句）
+    expect(notice).toContain('<background_capability_stats>');
+    expect(notice).not.toContain('repeated_workarounds');
   });
 
   it('没有 sessionId 时不注入（后台/无会话调用不该付这份 token）', () => {

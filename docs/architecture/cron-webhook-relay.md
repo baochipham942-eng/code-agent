@@ -26,7 +26,7 @@ token、1 秒内回 2xx、把请求体排队（≤ 24h），然后经**既有 cl
 | 端点 | 方法 | 请求体 | 成功响应 `result` |
 |---|---|---|---|
 | `/api/cron/hooks/register` | POST | `{ "jobId": "<Neo 本地任务 id>" }` | `{ "url": "https://…/api/cron/hooks/<jobId>?token=<t>", "token": "<t>" }` |
-| `/api/cron/hooks/rotate` | POST | `{ "jobId": "…" }` | `{ "url": "…（新 token）", "token": "<新 t>" }` |
+| `/api/cron/hooks/rotate` | POST | `{ "jobId": "…" }` | `{ "url": "…（新 token）", "token": "<新 t>" }`；jobId 未注册或已 remove 时行为同 `register`（见要点） |
 | `/api/cron/hooks/remove` | POST | `{ "jobId": "…" }` | `{}`（幂等：jobId 未注册也回 2xx） |
 | `/api/cron/hooks/ack` | POST | `{ "jobId": "…", "deliveryIds": ["d1", "d2"] }` | `{}` |
 
@@ -36,6 +36,13 @@ token、1 秒内回 2xx、把请求体排队（≤ 24h），然后经**既有 cl
 - **register/rotate 的 `{url, token}` 只返回一次**。中继只存 token 的哈希；Neo 只把
   返回值交给调用方展示一次（不落任务定义、不落日志）。rotate 等价于吊销旧 token +
   发新对；同一任务重复 register 返回**新的** token 对（旧 token 失效）。
+- **rotate 对未注册或已 remove 的 jobId 行为同 `register`**（契约 a）：创建 hook 并返回
+  **新的** `{url, token}`——停用后重新启用的任务无需先重新 register，直接 rotate 即可找回。
+- **旧 token 永不复活**（契约 b）：该 jobId 此前发过的任何 token 在 remove/后续 rotate 之后
+  保持吊销；rotate 对已 remove 的 jobId 绝不回显 remove 之前发过的 token，只发全新对。
+- **归属（契约 c）**：jobId 归首次 register 它的账号（Bearer 对应的云端账号）所有，只有
+  属主账号可 register/rotate/remove 该 jobId。他账号的调用回 **403**，且响应**不得泄露**
+  该 jobId 是否存在——错误体对他账号保持同一形状，不因 jobId 存在与否而可区分。
 - `remove` 对未注册的 jobId 回 2xx（任务删除/停用时 Neo 只做 best-effort 清理）。
 - 鉴权失败（Bearer 无效）回 401；Neo 侧把失败包成带 hook 前缀的可区分错误
   （`Cloud cron hook register failed: … (HTTP 401)`）。
@@ -126,6 +133,8 @@ action "Send a notification via a webhook"）：
   创建成功后渲染层调 IPC `registerWebhookHook`，完整 URL 只在一次性卡里展示一次（Copy + 密码级警示）。
 - **重新生成**：任务详情的「Webhook 链接」块不再显示链接，只说明已隐藏；「重新生成」确认后调 `rotateWebhookHook`
   （旧链接立即失效），新 URL 走同一张一次性卡。任务停用时 Neo 已 `remove` hook，详情提示链接已吊销；重新启用不自动 mint，
-  用「重新生成」找回（rotate 对已被 remove 的 jobId 的行为由中继仓定义，Neo 侧未能验证）。
+  用「重新生成」找回。rotate 对已被 remove 的 jobId 的契约已在本文钉死：行为同 `register`（发**全新** `{url, token}`）、
+  该 jobId 的旧 token 保持吊销、仅属主账号可操作（上文要点 a/b/c）；Neo 侧以
+  `tests/unit/cron/cronWebhookCloudHook.test.ts` 的打桩网关按此契约钉测（停用 → 重新启用 → 重新生成全路径）。
 - hook 响应里的 `{url, token}` 只经 IPC 返回值到达渲染层：主进程不记录、不持久化；失败响应只带不含密钥的消息，
   云端未配置用独立错误码 `CRON_CLOUD_NOT_CONFIGURED` 供渲染层本地化。

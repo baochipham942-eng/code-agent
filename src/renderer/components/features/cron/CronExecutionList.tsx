@@ -79,6 +79,7 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
               quietHours: cc.wakeSkipQuietHours,
             });
             const costRunsOn = execution.runsOn ?? runsOnByJobId?.[execution.jobId];
+            const awaitingPreview = awaitingByJobId?.get(execution.jobId)?.commandPreview;
             const isSelected = execution.id === selectedExecutionId;
             const rowTone = isSelected ? 'bg-zinc-800/80' : 'bg-zinc-900/40 hover:bg-zinc-800/50';
             return (
@@ -97,11 +98,9 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
                       <span
                         className="inline-block max-w-[180px] overflow-hidden text-ellipsis whitespace-nowrap rounded-full border border-badge-warning/40 bg-amber-500/15 px-2 py-1 align-middle text-xs text-badge-warning"
                         data-testid="cron-exec-awaiting-approval"
-                        title={awaitingByJobId?.get(execution.jobId)?.commandPreview
-                          ? cc.awaitingApprovalWithPreview.replace('{preview}', awaitingByJobId.get(execution.jobId)!.commandPreview!)
-                          : undefined}
+                        title={awaitingPreview ? cc.awaitingApprovalWithPreview.replace('{preview}', awaitingPreview) : undefined}
                       >
-                        {awaitingApprovalLabel(cc.awaitingApprovalWithPreview, awaitingByJobId?.get(execution.jobId)?.commandPreview) ?? cc.awaitingApprovalBadge}
+                        {awaitingApprovalLabel(cc.awaitingApprovalWithPreview, awaitingPreview) ?? cc.awaitingApprovalBadge}
                       </span>
                     ) : (
                       <span className={`rounded-full px-2 py-1 text-xs ${statusMeta.className}`}>

@@ -409,6 +409,16 @@ async function resolveProvenance(provider: string, model: string): Promise<EvalR
   return { provider, model, endpoint, gitSha, gitDirty: dirty, runnerSha };
 }
 
+// Never throws: null when there is no session / no data. Shared by the success and catch paths so timed-out and errored units keep their spend.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function readTokenUsage(ctx: RunnerContext, agent: any): TokenUsage | null {
+  try {
+    const sessionId = agent?.getSessionId?.();
+    const d = sessionId ? ctx.getTelemetryCollector().getSessionData(sessionId) : null;
+    return d ? { inputTokens: d.totalInputTokens, outputTokens: d.totalOutputTokens, totalTokens: d.totalTokens, estimatedCost: d.estimatedCost } : null;
+  } catch { return null; }
+}
+
 async function runOneUnit(
   ctx: RunnerContext,
   evalCase: EvalCase,
@@ -463,19 +473,7 @@ async function runOneUnit(
 
     // Must read telemetry BEFORE finalizeSession() (called in `finally`) —
     // endSession() nulls out the collector's activeSession.
-    let tokenUsage: TokenUsage | null = null;
-    const sessionId = agent.getSessionId();
-    if (sessionId) {
-      const sessionData = ctx.getTelemetryCollector().getSessionData(sessionId);
-      if (sessionData) {
-        tokenUsage = {
-          inputTokens: sessionData.totalInputTokens,
-          outputTokens: sessionData.totalOutputTokens,
-          totalTokens: sessionData.totalTokens,
-          estimatedCost: sessionData.estimatedCost,
-        };
-      }
-    }
+    const tokenUsage = readTokenUsage(ctx, agent);
 
     const artifactPath = await locateArtifact(workspaceDir, evalCase.prompt);
     let passedFull: boolean;
@@ -540,7 +538,7 @@ async function runOneUnit(
       passedLight: null,
       failuresRaw: [],
       codes: [],
-      tokenUsage: null,
+      tokenUsage: readTokenUsage(ctx, agent),
       artifactPath: null,
       error: error instanceof Error ? error.message : String(error),
       repairRoundsUsed: null,

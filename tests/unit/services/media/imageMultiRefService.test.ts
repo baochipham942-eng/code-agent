@@ -112,11 +112,12 @@ describe('generateImageFromReferences', () => {
       json: async () => ({}),
       text: async () => 'x'.repeat(2000),
     })) as unknown as typeof fetch;
-    const error = await generateImageFromReferences({ prompt: 'p', referenceImageDataUrls: IMG.slice(0, 2) })
-      .catch((e: Error) => e);
-    expect(error).toBeInstanceOf(Error);
-    expect(error.message).toContain('429');
-    expect(error.message.length).toBeLessThan(600);
+    const caught = await generateImageFromReferences({ prompt: 'p', referenceImageDataUrls: IMG.slice(0, 2) })
+      .then(() => undefined, (e: unknown) => e);
+    expect(caught).toBeInstanceOf(Error);
+    if (!(caught instanceof Error)) throw new Error('expected the call to reject');
+    expect(caught.message).toContain('429');
+    expect(caught.message.length).toBeLessThan(600);
   });
 
   it('1 张参考图仍走万相 description_edit（请求体不变），不碰多图端点', async () => {

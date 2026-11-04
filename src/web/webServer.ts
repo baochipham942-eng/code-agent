@@ -616,6 +616,8 @@ async function initializeServices(): Promise<void> {
     logger.warn('Loop startup recovery failed (non-blocking):', (error as Error).message);
   }
   bootMark('loop-recovery');
+  // 4.5b Swarm trace 启动收口（N-STALE-AGENT-CHIP-AFTER-QUIT A）：上一进程遗留的 running run 收 cancelled，细节见 swarmTraceStartupRecovery。
+  await import('../host/agent/swarmTraceStartupRecovery').then(({ runSwarmTraceStartupRecovery }) => runSwarmTraceStartupRecovery());
 
   // Capability migration needs initialized settings and message history. Activation still
   // finishes before IPC registration and before the agent runtime can settle a turn.

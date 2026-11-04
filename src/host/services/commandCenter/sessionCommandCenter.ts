@@ -140,6 +140,8 @@ export class SessionCommandCenter {
   private readonly ledgers = new Map<string, SessionTaskSlotLedger>();
   /** 在途工具调用的名字（`${taskId}:${toolCallId}` → 工具名）；tool_call_end 即删，只活在途调用。 */
   private readonly toolNamesByCallId = new Map<string, string>();
+  /** 在途 shell 调用的命令文本（key 同 toolNamesByCallId），只供回收时判断是否可能卡在系统授权框。 */
+  private readonly shellCommandsByCallId = new Map<string, string>();
   /** permission_request ids still unresolved on the agent event stream, per task. */
   private readonly pendingApprovalIdsByTask = new Map<string, Set<string>>();
   /** 本轮审批等待的起点（首张未答审批时刻）；审批清空即删，下一张重新计时。 */
@@ -374,6 +376,7 @@ export class SessionCommandCenter {
     for (const ledger of this.ledgers.values()) ledger.dispose();
     this.stopAgentEventObservation?.();
     this.toolNamesByCallId.clear();
+    this.shellCommandsByCallId.clear();
     this.pendingApprovalIdsByTask.clear();
     this.approvalWaitStartedAtByTask.clear();
   }
@@ -420,9 +423,13 @@ export class SessionCommandCenter {
         // 回收此刻审批还挂着 = 这轮到期是「等审批等到上限」造成的（豁免期内审批在，
         // 就不会被静默空闲回收），说审批句；否则按静默空闲句。
         const waitMs = this.approvalWaitMs(task.id, Date.now());
+        // 结论：macOS 没有公开 API 能关掉系统自己弹出的 TCC 自动化授权框（Apple 论坛
+        // thread/666528 里授权调用本身还能无限阻塞）；靠辅助功能替用户点系统框既要多一项
+        // 权限、又可能误点「允许」，已否决。所以回收后只能如实告诉用户框可能还在，不假装关掉。
+        const mayAwaitSystemPrompt = this.mayAwaitSystemPrompt(task.id);
         const detail = waitMs !== undefined
-          ? formatSessionTaskApprovalWaitFailure({ waitMs, locale })
-          : formatSessionCommandTaskIdleFailure({ idleMs: occupiedMs, locale });
+          ? formatSessionTaskApprovalWaitFailure({ waitMs, locale, mayAwaitSystemPrompt })
+          : formatSessionCommandTaskIdleFailure({ idleMs: occupiedMs, locale, mayAwaitSystemPrompt });
         void this.settle(task, 'failed', detail);
         this.cancelIdleRun(task.id);
       }
@@ -432,6 +439,14 @@ export class SessionCommandCenter {
         if (next) this.launch(next);
       }
     }
+  }
+
+  private mayAwaitSystemPrompt(taskId: string): boolean {
+    const prefix = `${taskId}:`;
+    for (const [key, command] of this.shellCommandsByCallId) {
+      if (key.startsWith(prefix) && /osascript|tell application|system events/i.test(command)) return true;
+    }
+    return false;
   }
 
   private launch(task: SessionCommandTask): void {
@@ -522,9 +537,13 @@ export class SessionCommandCenter {
     // tool_call_start 只记「这个 call id 是哪个工具」，供 tool_call_end 落
     // lastToolFailure.tool / 对比同名工具的后续成功；end 时即删，map 只活在途调用。
     if (event.type === 'tool_call_start') {
-      const call = event.data as { id?: unknown; name?: unknown } | undefined;
+      const call = event.data as { id?: unknown; name?: unknown; arguments?: unknown } | undefined;
       if (typeof call?.id === 'string' && typeof call.name === 'string') {
         this.toolNamesByCallId.set(`${taskId}:${call.id}`, call.name);
+        const command = (call.arguments as { command?: unknown } | undefined)?.command;
+        if (/bash|shell/i.test(call.name) && typeof command === 'string') {
+          this.shellCommandsByCallId.set(`${taskId}:${call.id}`, command);
+        }
       }
       return;
     }
@@ -567,6 +586,7 @@ export class SessionCommandCenter {
     const mapKey = `${task.id}:${result.toolCallId}`;
     const tool = this.toolNamesByCallId.get(mapKey) ?? task.progress?.lastToolStep?.tool;
     this.toolNamesByCallId.delete(mapKey);
+    this.shellCommandsByCallId.delete(mapKey);
 
     if (result.success) {
       const failure = task.progress?.lastToolFailure;

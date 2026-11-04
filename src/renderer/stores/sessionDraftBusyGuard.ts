@@ -14,7 +14,7 @@ export interface DraftBusySignals {
  * 这类会话即使列表元数据仍显示 新对话/0 消息，也绝不能被「新任务」当作空白草稿复用，
  * 否则下一个问题会落进旧会话。
  */
-export function isSessionBusyForDraftReuse(sessionId: string, slice: DraftBusySignals): boolean {
+function isSessionBusyForDraftReuse(sessionId: string, slice: DraftBusySignals): boolean {
   const app = useAppStore.getState();
   if (slice.runningSessionIds?.has(sessionId) || app.isSessionProcessing(sessionId)) return true;
   if ((slice.sessionRuntimes?.get(sessionId)?.activeAgentCount ?? 0) > 0) return true;

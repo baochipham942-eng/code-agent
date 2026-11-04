@@ -33,6 +33,7 @@ mod quit_guard;
 mod resident_host;
 mod resident_host_windows;
 mod traffic_lights;
+mod webserver_exit;
 
 use appshots::{
     appshots_last_front_app, appshots_read_image_data_url, appshots_read_image_data_url_by_id,
@@ -206,6 +207,7 @@ struct AppState {
     attached_daemon: Mutex<Option<resident_host::DaemonPidRecord>>,
 }
 
+#[derive(Debug)]
 struct OwnedWebServerChild {
     child: Child,
     pid: u32,
@@ -2041,6 +2043,43 @@ fn spawn_web_server_recording(
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         command.creation_flags(CREATE_NO_WINDOW);
     }
+    // stdout/stderr 落盘取证：launchd 下 inherit 的输出直接丢失（batch-24 三连死
+    // 查不到现场的原因之一），webServer 自己的 "Shutting down..." 也只有 console。
+    // 打开失败回退 inherit 并落 warning 事件——不许静默降级（取证缺失要说出来）。
+    let (stdout_stdio, stderr_stdio) = match web_server_log_dir(app) {
+        Some(log_dir) => match webserver_exit::open_stdio_log(&log_dir) {
+            Ok(file) => match file.try_clone() {
+                Ok(stderr_file) => (Stdio::from(file), Stdio::from(stderr_file)),
+                Err(error) => {
+                    write_shell_event(
+                        app,
+                        diagnostics,
+                        "warning",
+                        "desktop-shell-webserver-stdio-log-failed",
+                        &format!("webServer stderr log handle failed, falling back to inherit: {error}"),
+                        Some(serde_json::json!({
+                            "path": webserver_exit::stdio_log_path(&log_dir),
+                        })),
+                    );
+                    (Stdio::inherit(), Stdio::inherit())
+                }
+            },
+            Err(error) => {
+                write_shell_event(
+                    app,
+                    diagnostics,
+                    "warning",
+                    "desktop-shell-webserver-stdio-log-failed",
+                    &format!("webServer stdio log failed, falling back to inherit: {error}"),
+                    Some(serde_json::json!({
+                        "path": webserver_exit::stdio_log_path(&log_dir),
+                    })),
+                );
+                (Stdio::inherit(), Stdio::inherit())
+            }
+        },
+        None => (Stdio::inherit(), Stdio::inherit()),
+    };
     command
         .arg(&script_path)
         .current_dir(&working_dir)
@@ -2052,8 +2091,8 @@ fn spawn_web_server_recording(
         // stdin 用 pipe：本进程死亡（含 panic/SIGABRT）时管道关闭，
         // webServer 监听 stdin EOF 自杀，不留孤儿进程占住端口
         .stdin(Stdio::piped())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit());
+        .stdout(stdout_stdio)
+        .stderr(stderr_stdio);
 
     for (key, value) in web_server_runtime_env(&working_dir, resource_dir.as_deref()) {
         command.env(key, value.as_os_str());
@@ -2218,7 +2257,11 @@ fn recreate_main_window(app: &tauri::AppHandle) -> Result<(), String> {
             );
         } else {
             let child = start_web_server(app)?;
+            let child_pid = child.id();
             app.state::<AppState>().store_child(child);
+            // 收管即监视：子进程死在槽里（非 cleanup 接手）才落
+            // desktop-shell-webserver-exited-unexpectedly 事件（取证，不自动重启）
+            webserver_exit::spawn_exit_watcher(app.clone(), child_pid);
         }
     }
 
@@ -4539,7 +4582,14 @@ fn main() {
                 );
             } else {
                 match start_web_server_recording(&app.handle(), &mut boot_diagnostics) {
-                    Ok(child) => app.state::<AppState>().store_child(child),
+                    Ok(child) => {
+                        let child_pid = child.id();
+                        app.state::<AppState>().store_child(child);
+                        // 收管即监视：子进程死在槽里（非 cleanup 接手）才落
+                        // desktop-shell-webserver-exited-unexpectedly 事件
+                        // （取证，不自动重启——那是 RESTART 票）
+                        webserver_exit::spawn_exit_watcher(app.handle().clone(), child_pid);
+                    }
                     Err(error) => {
                         // 不走 panic（SIGABRT 闪退无提示）：弹错误框告知用户后干净退出
                         show_startup_failure(&error, boot_diagnostics.diagnostic_file.as_deref());

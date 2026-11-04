@@ -317,7 +317,7 @@ export const zh = {
     importImage: '添加图片',
     importHint: '也可直接往画布粘贴(⌘V)或拖入图片；导入后选中即可圈选重绘',
     addReference: '添加参考图',
-    referenceHint: '参考图会在生成时作为视觉参考一并发给模型（最多 3 张；选中多张时按选择顺序作为图1/图2/图3）',
+    referenceHint: '参考图会在生成时作为视觉参考一并发给模型（最多 3 张；选中多张时按选择顺序作为图1/图2/图3，并改用多图编辑模型出图，单价高于单张参考图）',
     referenceBadge: '参考',
     layerPanelTitle: '图层',
     sidePanelExpand: '展开画布面板',

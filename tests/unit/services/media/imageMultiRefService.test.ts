@@ -84,6 +84,41 @@ describe('generateImageFromReferences', () => {
       .rejects.toThrow('未返回图片 URL');
   });
 
+  // r3 review Important：content 为纯字符串（正文带 https 链接）不是文档形状，
+  // 不得正则取链接当结果图下载——那会把拒绝说明里的文档链接存成 png 并按张计价。
+  it('content 为纯字符串（含 https 链接）时按「未返回图片 URL」拒绝，且只发一次请求', async () => {
+    const calls: string[] = [];
+    globalThis.fetch = vi.fn(async (input: unknown) => {
+      calls.push(String(input));
+      return res({ output: { choices: [{ message: { content: '请求被内容安全策略拒绝，参见 https://help.example.com/doc-123 说明页。' } }] } });
+    }) as unknown as typeof fetch;
+    await expect(generateImageFromReferences({ prompt: 'p', referenceImageDataUrls: IMG.slice(0, 2) }))
+      .rejects.toThrow('未返回图片 URL');
+    expect(calls).toHaveLength(1);
+  });
+
+  // r3 review Nit：image 值非 https:// 非 data: 时不得原样当 imageData 落盘（会解码出坏图）。
+  it('content[].image 为非 https 非 data: 字符串时按「未返回图片 URL」拒绝', async () => {
+    globalThis.fetch = vi.fn(async () => res({ output: { choices: [{ message: { content: [{ image: 'not-a-url.png' }] } }] } })) as unknown as typeof fetch;
+    await expect(generateImageFromReferences({ prompt: 'p', referenceImageDataUrls: IMG.slice(0, 2) }))
+      .rejects.toThrow('未返回图片 URL');
+  });
+
+  // r3 review Nit：百炼错误体超长时截断，防撑大工具输出。
+  it('非 2xx 错误体截断到 500 字符', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: false,
+      status: 429,
+      json: async () => ({}),
+      text: async () => 'x'.repeat(2000),
+    })) as unknown as typeof fetch;
+    const error = await generateImageFromReferences({ prompt: 'p', referenceImageDataUrls: IMG.slice(0, 2) })
+      .catch((e: Error) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toContain('429');
+    expect(error.message.length).toBeLessThan(600);
+  });
+
   it('1 张参考图仍走万相 description_edit（请求体不变），不碰多图端点', async () => {
     const calls = installFetch();
     const out = await generateImageFromReference({ prompt: 'p', referenceImageDataUrl: IMG[0] });

@@ -33,23 +33,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /**
  * 从 multimodal-generation 响应解析结果图 URL。
- * 预期形状（qwen-image-edit 文档例）：output.choices[0].message.content[] 里带 image 字符串；
- * 兼容 content 为纯字符串的 chat 形状（取首个 https URL）。形状不符返回 undefined。
+ * 只认文档形状（qwen-image-edit 文档例）：output.choices[0].message.content[] 里的 {image}。
+ * r3 review Important：不设「content 为纯字符串时正则取首个 https 链接」的兼容分支——
+ * 端点返回带链接的文字（如拒绝说明附文档链接）时，链接会被当图片下载存成 png 并按张计价。
+ * image 值必须是 https:// 或 data: URL（r3 review Nit），其余形状一律视为未返回图片。
  */
 function parseMultiRefImageUrl(payload: unknown): string | undefined {
   if (!isRecord(payload)) return undefined;
   const output = isRecord(payload.output) ? payload.output : undefined;
   const choices = output && Array.isArray(output.choices) ? output.choices : undefined;
   const message = choices && isRecord(choices[0]) && isRecord(choices[0].message) ? choices[0].message : undefined;
-  if (!message) return undefined;
-  if (Array.isArray(message.content)) {
-    for (const entry of message.content) {
-      if (isRecord(entry) && typeof entry.image === 'string') return entry.image;
+  if (!message || !Array.isArray(message.content)) return undefined;
+  for (const entry of message.content) {
+    if (!isRecord(entry)) continue;
+    const image = entry.image;
+    if (typeof image === 'string' && (image.startsWith('https://') || image.startsWith('data:'))) {
+      return image;
     }
-    return undefined;
-  }
-  if (typeof message.content === 'string') {
-    return message.content.match(/https:\/\/\S+/)?.[0];
   }
   return undefined;
 }
@@ -90,7 +90,8 @@ export async function generateImageFromReferences(input: {
     input.outerSignal ?? new AbortController().signal,
   );
   if (!response.ok) {
-    const errorText = await response.text();
+    // 百炼错误体偶尔很长，截到 500 字符防止撑大工具输出（r3 review Nit）。
+    const errorText = (await response.text()).slice(0, 500);
     throw new Error(`多参考图生成失败（模型: ${IMAGE_MULTI_REF.MODEL}）: ${response.status} - ${errorText}`);
   }
   const payload: unknown = await response.json();

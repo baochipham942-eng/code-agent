@@ -317,7 +317,7 @@ export const en = {
     importImage: 'Add image',
     importHint: 'Or paste (⌘V) / drag images onto the canvas; select an imported image to repaint',
     addReference: 'Add reference',
-    referenceHint: 'Reference images are sent to the model as visual guidance on generate (up to 3 images; with several selected they are sent in selection order as image 1/2/3)',
+    referenceHint: 'Reference images are sent to the model as visual guidance on generate (up to 3 images; with several selected they are sent in selection order as image 1/2/3 and generation switches to the multi-image edit model, which costs more per image than a single reference)',
     referenceBadge: 'Ref',
     layerPanelTitle: 'Layers',
     sidePanelExpand: 'Expand canvas panel',

@@ -177,7 +177,7 @@ SENSITIVE_STEP_SKIPPED_BY_USER — I did NOT perform this step. The user chose t
 | 缺口 | 为什么接不住 | 缓解 |
 |---|---|---|
 | `press_key` / `hotkey` 打进已聚焦的密码框 | key 事件无元素概念，host 不知道焦点在哪个控件（只能从上一动作推断，不权威）；且按键类工具不在一期工具表内 | 本规格不承诺覆盖；后续单可把窗口级规则扩到按键类（最新快照含 Secure 字段时按键也交回，代价是登录页上一切按键都交回） |
-| 像素坐标（x/y）点击 | 缓存只存 `{role,label}` 不存 frame 几何，x/y 无法 join 到元素 | 一期的窗口级规则覆盖**输入**；**点击**的像素路径在 FU3 后仍是缺口（需扩缓存存 frame，另立单） |
+| 像素坐标（x/y）点击 | 缓存只存 `{role,label}` 不存 frame 几何，x/y 无法 join 到元素 | 一期的窗口级规则覆盖**输入**；**点击**的像素路径 FU3 起走窗口级兜底（窗口最新快照含命中词表的带 label 可点击元素才交回）；无缓存快照 / 图标按钮 / 词表外 label 仍是缺口（需扩缓存存 frame，另立单） |
 | Bash / osascript 旁路 | 在终端里 `osascript -e 'keystroke ...'` 不走 cua 路径，敏感门看不见 | shell 安全长另有体系（commandSafety / 沙箱），不在本规格边界内；文档明示不承诺堵 |
 | 纯图标 / 无 label 按钮 | 词表靠 label，无 label 无从命中 | 词表网的结构性漏报；二期可选 frame+视觉模型辅助，成本另评 |
 | `Submit` / `PIN` / 「确认订单」 | 实测三族词表全漏（无对应词条 / 中文组合词） | 词表起点从窄开始、逐条按真机反馈补；接受「先漏再宽」的既定取舍 |

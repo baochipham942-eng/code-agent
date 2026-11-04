@@ -14,12 +14,8 @@ vi.mock('../../../src/host/services/core/configService', () => ({
 vi.mock('../../../src/host/services/infra/notificationService', () => ({
   notificationService: { notifyTaskComplete: notifyState.notifyTaskComplete },
 }));
-// buildMaxRunsDisabledSummary 读 ui.language 决定停用文案语言；单测固定中文。
-vi.mock('../../../src/host/services/core/configService', () => ({
-  getConfigService: () => ({
-    getSettings: () => ({ ui: { language: 'zh' } }),
-  }),
-}));
+// buildMaxRunsDisabledSummary / buildBudgetDisabledSummary 都读 ui.language 决定停用文案语言；
+// 单测默认固定中文（configState.language 重置点在下方全局 afterEach），预算用例按 it.each 切 en。
 
 import {
   classifyCronFailure,

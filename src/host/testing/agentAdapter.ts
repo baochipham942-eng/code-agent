@@ -48,6 +48,16 @@ export const EVAL_AGENT_DEFAULTS = {
   skills: [] as readonly string[],
 } as const;
 
+// 评测 run 没有后台任务槽：TaskManager 只由 createAgentRuntime 初始化，standalone
+// 链路不初始化，delegate_task/steer_task/cancel_task/task_status 调了必是死路
+// （N-SOL-GAME-AB-FU1）——整族收出工具面并硬拒直调。
+const STANDALONE_UNAVAILABLE_TOOLS = [
+  'delegate_task',
+  'steer_task',
+  'cancel_task',
+  'task_status',
+] as const;
+
 /**
  * N-EVAL-POLICY-WRITE-BOUNDARY-ENABLE：评测 run 的写边界 scope。
  *
@@ -867,6 +877,11 @@ export class StandaloneAgentAdapter implements AgentInterface {
           // GAP-017: hooks 是 harness 对照实验维度之一（评测默认关闭）
           enableHooks: this.harness?.hooksEnabled ?? false,
           enableToolDeferredLoading: this.toolMode === 'deferred',
+          // 唯一接线点：AgentLoop 把它收进 runtime ctx——schema 工具面收窄
+          // （toolRunPolicy）与每次执行的兜底硬闸（ExecuteOptions.deniedToolNames，
+          // toolExecutionEngine 逐调用转发）都从这里取。ToolExecutor 构造期没有
+          // denylist 参数（执行层吃 ExecuteOptions）。
+          deniedToolNames: [...STANDALONE_UNAVAILABLE_TOOLS],
           autoApprovePlan: true,
           telemetryAdapter,
           systemPromptStore: telemetryCollector.systemPromptCache,

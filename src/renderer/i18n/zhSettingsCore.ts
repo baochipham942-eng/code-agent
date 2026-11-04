@@ -429,6 +429,7 @@ export const zhSettingsCore = {
         runtimePrefix: '已整理 ',
         runtimeMiddle: ' 次 · 释放 ',
         runtimeSuffix: ' tokens',
+        runtimeEmpty: '还没有整理记录',
       },
       details: {
         title: '整理阈值与留痕',

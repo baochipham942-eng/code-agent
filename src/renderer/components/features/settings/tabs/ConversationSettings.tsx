@@ -57,8 +57,8 @@ function percentLabel(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
-function tokensLabel(value: number | undefined, unsetLabel: string): string {
-  if (!value) return unsetLabel;
+function tokensLabel(value: number | undefined): string {
+  if (!value) return '0';
   if (value >= 1000) return `${Math.round(value / 1000)}K`;
   return `${value}`;
 }
@@ -207,11 +207,17 @@ export const ConversationSettings: React.FC = () => {
                 {conversationText.features.hooksPrefix}{featureLabel(compressionState.features.hooks, conversationText.featureStates)}
               </span>
               <span>
-                {conversationText.features.runtimePrefix}
-                {compressionState.runtime.compressionCount}
-                {conversationText.features.runtimeMiddle}
-                {tokensLabel(compressionState.runtime.totalSavedTokens, conversationText.notSet)}
-                {conversationText.features.runtimeSuffix}
+                {!compressionState.runtime.compressionCount && !compressionState.runtime.totalSavedTokens ? (
+                  conversationText.features.runtimeEmpty
+                ) : (
+                  <>
+                    {conversationText.features.runtimePrefix}
+                    {compressionState.runtime.compressionCount}
+                    {conversationText.features.runtimeMiddle}
+                    {tokensLabel(compressionState.runtime.totalSavedTokens)}
+                    {conversationText.features.runtimeSuffix}
+                  </>
+                )}
               </span>
               {savingCompression && <span>{t.common.saving}</span>}
             </div>

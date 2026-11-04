@@ -448,7 +448,12 @@ describe('② permanent 错误：重试无用，首次即停用并告知', () =>
     const summaries = notifyState.notifyTaskComplete.mock.calls.map((call) => String(call[0]?.summary));
     const disableAlerts = summaries.filter((s) => s.includes('停用'));
     expect(disableAlerts).toHaveLength(1);
-    expect(disableAlerts[0]).toContain('重试无效');
+    if (error.message.includes('budget limit')) {
+      expect(disableAlerts[0]).toContain('单次预算上限');
+      expect(disableAlerts[0]).toContain('调高');
+    } else {
+      expect(disableAlerts[0]).toContain('重试无效');
+    }
     expect(disableAlerts[0]).toContain('自动化中心');
     await service.shutdown();
   });

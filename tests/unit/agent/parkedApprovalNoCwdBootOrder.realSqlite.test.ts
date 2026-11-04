@@ -23,6 +23,7 @@ import { DurableRunRepository } from '../../../src/host/services/core/repositori
 import { PendingApprovalRepository } from '../../../src/host/services/core/repositories/PendingApprovalRepository';
 import { SessionRepository } from '../../../src/host/services/core/repositories/SessionRepository';
 import { DurableRunKernel } from '../../../src/host/runtime/durableRunKernel';
+import { createDurableRecoveryRuntime } from '../../../src/host/runtime/durableRecoveryRuntime';
 import { RunRegistry } from '../../../src/host/runtime/runRegistry';
 import { hydrateApprovalGatesAtBoot } from '../../../src/host/agent/parkedApprovalHydration';
 import { resumeSurvivingParkedApproval, type ParkedApprovalResumePorts } from '../../../src/host/agent/parkedApprovalResume';
@@ -185,5 +186,38 @@ describe('no-cwd parked approval: real boot order hydrate → recoverDurable (re
     await resumeSurvivingParkedApproval({ requestId: 'appr-s2', response: 'allow', now: 5_000, ports });
     await resumeSurvivingParkedApproval({ requestId: 'appr-s2', response: 'allow', now: 5_001, ports });
     expect(executeTool).toHaveBeenCalledTimes(1);
+  });
+
+  it('快速重启：hydrate 时租约未过期 → 清扫器两次认领（先未过期、后过期）后 run 是 cancelled，从不 waiting', async () => {
+    seedSession('s3', null, 'call-s3');
+    await seedRunningApprovalRun('run-3', 's3'); // 租约 1_100 到期
+    const runtime = createDurableRecoveryRuntime({
+      registry: second, kernel: kernelFor('second-host'), dataDir: dir,
+    });
+
+    hydrateApprovalGatesAtBoot(approvals, 1_050, { // 租约仍有效：此刻不能碰
+      loadSessionMessages: (id) => sessions.getMessages(id),
+      resolveWorkingDirectory: (id) => sessions.getSession(id)?.workingDirectory || null,
+      durableRunRepository: runs,
+      persistToolMessage,
+    });
+    await flush();
+    expect(approvals.getById('appr-s3')).toMatchObject({ status: 'rejected' });
+    expect((await runs.get('run-3'))?.status).toBe('running'); // 活租约：绝不动
+
+    await runtime.recoverAndDispatch(1_060); // 租约仍有效，不被认领
+    expect((await runs.get('run-3'))?.status).toBe('running');
+    await runtime.recoverAndDispatch(1_500); // 过期后：先收口，再认领（已无可认领）
+
+    const env = await runs.get('run-3');
+    expect(env?.status).toBe('cancelled');
+    expect(mapDurableRunToSessionStatus(env!.status)).toBe('interrupted');
+    const updatedAt = (): number => (db.prepare('SELECT updated_at FROM durable_runs WHERE run_id = ?').get('run-3') as { updated_at: number }).updated_at;
+    const before = updatedAt();
+    await runtime.recoverAndDispatch(2_000);
+    await runtime.recoverAndDispatch(3_000);
+    expect(updatedAt()).toBe(before);
+    expect((await runs.get('run-3'))?.status).toBe('cancelled');
+    await runtime.shutdown();
   });
 });

@@ -1168,13 +1168,13 @@ export class ConversationRuntime {
     };
   }
 
-  async cancel(reason?: 'user' | 'session-switch'): Promise<void> {
+  async cancel(reason?: 'user' | 'session-switch' | 'idle-reaped'): Promise<void> {
     // 回复已经完成落库、但 run 还没从 registry 注销的尾窗里，cancel 必须是安全 no-op。
     // 这时再标 cancelled / preserve partial 会把同一条完整回复追加标记后写成第二行。
     if (this.ctx.control.isSettled) return;
 
-    markStreamSnapshotInterruptionReason({ workingDir: this.ctx.workingDirectory, sessionId: this.ctx.sessionId }, reason === 'session-switch' ? 'session-switch' : 'user');
-    this.ctx.control.markCancelled();
+    markStreamSnapshotInterruptionReason({ workingDir: this.ctx.workingDirectory, sessionId: this.ctx.sessionId }, reason === 'session-switch' || reason === 'idle-reaped' ? reason : 'user');
+    this.ctx.control.markCancelled(reason);
 
     await this.preserveStreamedPartial(
       reason === 'session-switch' ? '\n\n[未完成 — 切换会话中断]' : '\n\n[cancelled]',

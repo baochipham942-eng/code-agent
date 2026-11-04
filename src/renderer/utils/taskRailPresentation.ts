@@ -22,6 +22,7 @@ export interface TaskRailView {
   mode: TaskRailMode;
   title: string;
   status: TaskRecord['status'];
+  failed?: boolean;
   visibleSteps: TaskRailStepView[];
   completedSteps: TaskRailStepView[];
   hiddenCompletedCount: number;
@@ -141,6 +142,7 @@ export function deriveTaskRailView(task: TaskRecord, run?: RunUiState | null): T
       mode: 'simple',
       title: simpleTitle(task, run),
       status: task.status,
+      failed: task.failed,
       visibleSteps: [],
       completedSteps: [],
       hiddenCompletedCount: 0,
@@ -157,6 +159,7 @@ export function deriveTaskRailView(task: TaskRecord, run?: RunUiState | null): T
     mode: 'checklist',
     title: task.title || runStatusLabel(run) || statusLabel(task.status),
     status: task.status,
+    failed: task.failed,
     visibleSteps: taskSteps,
     completedSteps: [],
     hiddenCompletedCount: 0,

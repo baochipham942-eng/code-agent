@@ -430,6 +430,7 @@ export const enSettingsCore = {
         runtimePrefix: 'Cleaned ',
         runtimeMiddle: ' times · freed ',
         runtimeSuffix: ' tokens',
+        runtimeEmpty: 'No cleanups yet',
       },
       details: {
         title: 'Cleanup thresholds and audit trail',

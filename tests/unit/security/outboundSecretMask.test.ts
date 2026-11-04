@@ -601,8 +601,11 @@ describe('outboundSecretMask FU2 EMAIL', () => {
     const s = applyOutboundSecretMask(input)!;
     const maskedArgs = s.messages[0].toolCalls![0].arguments;
     expect(maskedArgs).not.toContain(email);
-    const restored = s.restore({ content: '', toolCalls: [{ id: 't1', name: 'send', arguments: maskedArgs }] } as ModelResponse);
-    expect(JSON.parse(restored.toolCalls![0].arguments)).toEqual({ to: email, note: `say "hi" to ${email}` });
+    const restored = s.restore({
+      type: 'tool_use',
+      toolCalls: [{ id: 't1', name: 'send', arguments: JSON.parse(maskedArgs) as Record<string, unknown> }],
+    });
+    expect(restored.toolCalls![0].arguments).toEqual({ to: email, note: `say "hi" to ${email}` });
   });
 
   it.each([2, 3])('邮箱占位符被流式切成 %i 片仍还原', async (pieces) => {

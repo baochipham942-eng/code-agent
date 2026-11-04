@@ -696,3 +696,9 @@ export const JEV_HOSTED_TIMEOUTS = {
   /** 持续性服务故障（401/404/5xx/网络/超时）后短退避：避免每次判官调用都先付一次云端往返再降级 */
   SERVICE_FAILURE_BACKOFF: 5 * 60_000,
 } as const;
+
+/** 自动化页「待过目」收件箱的后台刷新（N-CRON-REVIEW-COUNT-LIVE） */
+export const CRON_REVIEW_INBOX_TIMEOUTS = {
+  /** 页面可见时的轮询间隔：定时任务在页面停着时跑完，数字无需切页就更新 */
+  POLL_INTERVAL: 10_000,
+} as const;

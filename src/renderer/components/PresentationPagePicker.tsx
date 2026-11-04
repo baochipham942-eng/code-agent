@@ -47,6 +47,16 @@ async function loadPresentationPreview(filePath: string): Promise<PresentationPa
   return response.data;
 }
 
+/**
+ * libreoffice-missing 且还没有失败码（安装仍在后台进行）时的有界自动重试节奏：
+ * 逐次退避，总和 < 10 分钟；出页图 / 拿到具体失败码 / 换文件 / 卸载即停。
+ */
+const MISSING_RETRY_DELAYS_MS = [3_000, 7_000, 15_000, 30_000, 60_000, 90_000, 120_000, 150_000];
+
+function shouldRetryMissingPreview(result: PresentationPagePreviewResult): boolean {
+  return result.state === 'libreoffice-missing' && result.error === undefined;
+}
+
 function outlineText(page: PresentationOutlinePage): string[] {
   if (page.text?.length) return page.text;
   return page.textPreview ? [page.textPreview] : [];
@@ -74,19 +84,34 @@ export const PresentationPagePicker: React.FC<Props> = ({ title, filePath, outli
     }
 
     let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let retryIndex = 0;
+    const request = (): void => {
+      void loadPresentationPreview(filePath)
+        .then((result) => {
+          if (cancelled) return;
+          setResolved(result);
+          // 安装仍在后台准备：按有界节奏自动重发一次预览请求，成功出页图或
+          // 拿到具体失败码后由条件自然停止。
+          if (shouldRetryMissingPreview(result) && retryIndex < MISSING_RETRY_DELAYS_MS.length) {
+            retryTimer = setTimeout(request, MISSING_RETRY_DELAYS_MS[retryIndex]);
+            retryIndex += 1;
+          }
+        })
+        .catch((error) => {
+          if (!cancelled) setLoadError(error instanceof Error ? error.message : String(error));
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    };
     setLoading(true);
     setLoadError(null);
-    void loadPresentationPreview(filePath)
-      .then((result) => {
-        if (!cancelled) setResolved(result);
-      })
-      .catch((error) => {
-        if (!cancelled) setLoadError(error instanceof Error ? error.message : String(error));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => { cancelled = true; };
+    request();
+    return () => {
+      cancelled = true;
+      if (retryTimer !== undefined) clearTimeout(retryTimer);
+    };
   }, [filePath, preview]);
 
   const pages = useMemo(() => {

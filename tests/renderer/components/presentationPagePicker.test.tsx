@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MessageAttachment, PresentationPagePreviewResult } from '../../../src/shared/contract';
 
@@ -140,5 +140,76 @@ describe('PresentationPagePicker 截图墙与降级链', () => {
         displayName: 'deck.pptx',
       },
     });
+  });
+});
+
+describe('PresentationPagePicker libreoffice-missing 有界自动重试', () => {
+  const missingPreview: PresentationPagePreviewResult = {
+    filePath: '/tmp/deck.pptx',
+    state: 'libreoffice-missing',
+    pages: readyPreview.pages.map(({ screenshotPath: _ignored, ...page }) => page),
+  };
+
+  function mockInvoke(...results: PresentationPagePreviewResult[]): void {
+    Object.defineProperty(window, 'domainAPI', {
+      configurable: true,
+      value: { invoke: vi.fn() },
+    });
+    const invoke = (window.domainAPI as { invoke: ReturnType<typeof vi.fn> }).invoke;
+    // 逐个返回；耗尽后再被调用就抛错，便于断言「不该再发请求」
+    for (const result of results) invoke.mockResolvedValueOnce({ success: true, data: result });
+    invoke.mockRejectedValueOnce(new Error('unexpected extra previewPresentation call'));
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('missing 且无失败码：自动重发预览请求，下一次 ready 即渲染页图并停止轮询', async () => {
+    mockInvoke(missingPreview, readyPreview);
+    const invoke = (window.domainAPI as { invoke: ReturnType<typeof vi.fn> }).invoke;
+    const view = render(<PresentationPagePicker title="deck.pptx" filePath="/tmp/deck.pptx" />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(view.container.textContent).toContain('正在后台准备像素预览组件');
+    expect(view.container.innerHTML).not.toContain('<img');
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
+    expect(invoke).toHaveBeenCalledTimes(2);
+    expect(view.container.innerHTML).toContain('<img');
+    expect(view.container.innerHTML).toContain('deck-2.jpg');
+    expect(view.container.textContent).not.toContain('正在后台准备像素预览组件');
+
+    // ready 之后不应再发请求（再推进全程节奏也不发）
+    await act(async () => { await vi.advanceTimersByTimeAsync(600_000); });
+    expect(invoke).toHaveBeenCalledTimes(2);
+  });
+
+  it('missing 且带失败码：显示具体原因，不再自动轮询', async () => {
+    mockInvoke({ ...missingPreview, error: 'LIBREOFFICE_RUNTIME_OFFLINE' });
+    const invoke = (window.domainAPI as { invoke: ReturnType<typeof vi.fn> }).invoke;
+    const view = render(<PresentationPagePicker title="deck.pptx" filePath="/tmp/deck.pptx" />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(view.container.textContent).toContain('连不上 LibreOffice 下载源');
+    expect(view.container.textContent).not.toContain('正在后台准备像素预览组件');
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(600_000); });
+    expect(invoke).toHaveBeenCalledTimes(1);
+  });
+
+  it('卸载后清理重试定时器，不再发请求', async () => {
+    mockInvoke(missingPreview);
+    const invoke = (window.domainAPI as { invoke: ReturnType<typeof vi.fn> }).invoke;
+    const view = render(<PresentationPagePicker title="deck.pptx" filePath="/tmp/deck.pptx" />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(invoke).toHaveBeenCalledTimes(1);
+    view.unmount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(600_000); });
+    expect(invoke).toHaveBeenCalledTimes(1);
   });
 });

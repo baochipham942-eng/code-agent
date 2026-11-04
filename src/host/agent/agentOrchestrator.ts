@@ -314,7 +314,7 @@ export class AgentOrchestrator {
     queuePendingSteerMessagesOrWarn(sessionId, asQueueable, logContext, logger);
   }
 
-  async cancel(reason?: 'user' | 'session-switch'): Promise<void> {
+  async cancel(reason?: 'user' | 'session-switch' | 'idle-reaped'): Promise<void> {
     logger.info('Cancel requested', { reason });
     const sessionId = this.sessionId ?? getSessionManager().getCurrentSessionId();
 
@@ -340,7 +340,7 @@ export class AgentOrchestrator {
         this.agentLoop = null;
         this.onEvent({
           type: 'agent_cancelled',
-          data: null,
+          data: reason === 'idle-reaped' ? { reason: 'idle_reaped' } : null,
           sessionId,
         } as AgentEvent & { sessionId?: string });
       }
@@ -357,7 +357,7 @@ export class AgentOrchestrator {
 
     this.onEvent({
       type: 'agent_cancelled',
-      data: null,
+      data: reason === 'idle-reaped' ? { reason: 'idle_reaped' } : null,
       sessionId,
     } as AgentEvent & { sessionId?: string });
   }

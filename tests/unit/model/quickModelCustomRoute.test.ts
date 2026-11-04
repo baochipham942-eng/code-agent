@@ -11,7 +11,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 interface Seen { host: string; auth: string }
 
-const OUT_DIR = path.join(os.homedir(), 'work/out/N-QUICKMODEL-CUSTOM-GLM-ROUTE');
 const CUSTOM_ID = 'custom-glm-coding';
 const CUSTOM_KEY = 'sk-custom-glm-secret';
 const CUSTOM_MODEL = 'glm-5.3';
@@ -109,8 +108,6 @@ describe('quick lanes × only custom GLM provider configured', () => {
   it('case1: 只有自定义 GLM provider → 三条车道都落到它的 endpoint，不碰 0ki', async () => {
     const qm = await setup({ withCustom: true });
     const { quick, memory, judgeRequests } = await runLanes(qm);
-    const table = { quick: [quick.provider, quick.success], memory: [memory.provider, memory.success], judgeRequests, seen };
-    fs.writeFileSync(path.join(OUT_DIR, 'case1.json'), JSON.stringify({ ...table, runtime: qm.getQuickModelRuntimeInfo() }, null, 1));
     expect(quick.provider).toBe(CUSTOM_ID);
     expect(memory.provider).toBe(CUSTOM_ID);
     expect(judgeRequests).toBeGreaterThan(0);

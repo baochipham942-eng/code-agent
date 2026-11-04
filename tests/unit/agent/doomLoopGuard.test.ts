@@ -85,6 +85,95 @@ describe('DoomLoopGuard L1 — 同名同参连续重复', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// N-FIX-BROWSER-DOOMLOOP-REAPPROVE r1 — 观察类 Browser 调用的 L1 结果确认
+// ---------------------------------------------------------------------------
+const browserResult = (action: string, summary: string, success = true) => ({
+  name: 'Browser',
+  arguments: { action },
+  success,
+  summary,
+});
+
+describe('DoomLoopGuard L1 — 观察类 Browser 重复要由结果确认 (N-FIX-BROWSER-DOOMLOOP-REAPPROVE r1)', () => {
+  it('(a) 轮询演进页面不再误报：get_content ×4，结果 loading,loading,loading,ready → 全程无 doom-loop', () => {
+    const guard = new DoomLoopGuard();
+    const read = call('Browser', { action: 'get_content' });
+    const levels: string[] = [];
+    for (const summary of ['loading', 'loading', 'loading', 'ready']) {
+      levels.push(guard.recordStep([read]).level);
+      guard.recordResults([browserResult('get_content', summary)]);
+    }
+    expect(levels).toEqual(['none', 'none', 'none', 'none']);
+  });
+
+  it('(b) 真重复仍升级：同参同结果连续读，先 nudge 再 abort（比非观察类多一拍结果确认）', () => {
+    const guard = new DoomLoopGuard();
+    const read = call('Browser', { action: 'get_content' });
+    const page = 'URL: http://127.0.0.1:1/ Title: Fixture --- Page Text --- static page, nothing changes';
+    const levels: string[] = [];
+    const checks: ReturnType<DoomLoopGuard['recordStep']>[] = [];
+    for (let i = 0; i < 6; i++) {
+      checks.push(guard.recordStep([read]));
+      levels.push(checks[checks.length - 1].level);
+      guard.recordResults([browserResult('get_content', page)]);
+    }
+    expect(levels).toEqual(['none', 'none', 'none', 'none', 'doom-loop', 'doom-loop-abort']);
+    expect(checks[4].nudge).toContain('<doom-loop-guard>');
+  });
+
+  it('(c) 同坐标 Browser click 重复不受结果折扣：第 3 次 nudge、第 4 次 abort（与改动前一致）', () => {
+    const guard = new DoomLoopGuard();
+    const clickAt = call('Browser', { action: 'click', selector: '#go' });
+    const levels: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      levels.push(guard.recordStep([clickAt]).level);
+      guard.recordResults([browserResult('click', 'Clicked element: #go')]);
+    }
+    expect(levels).toEqual(['none', 'none', 'doom-loop', 'doom-loop-abort']);
+  });
+
+  it('(d) 结果每次都在变（页面持续推进）的同参重复读永不升级', () => {
+    const guard = new DoomLoopGuard();
+    const read = call('Browser', { action: 'get_content' });
+    const levels: string[] = [];
+    for (let i = 0; i < 8; i++) {
+      levels.push(guard.recordStep([read]).level);
+      guard.recordResults([browserResult('get_content', `progress ${i}%`)]);
+    }
+    expect(levels.every((level) => level === 'none')).toBe(true);
+  });
+
+  it('(e) nudge 之后页面演进（结果变化）→ 不 abort，从新观察重数', () => {
+    const guard = new DoomLoopGuard();
+    const read = call('Browser', { action: 'get_content' });
+    const summaries = ['page A', 'page A', 'page A', 'page A', 'page B', 'page B', 'page B', 'page B', 'page B'];
+    const levels: string[] = [];
+    for (const summary of summaries) {
+      levels.push(guard.recordStep([read]).level);
+      guard.recordResults([browserResult('get_content', summary)]);
+    }
+    expect(levels).toEqual(['none', 'none', 'none', 'none', 'doom-loop', 'none', 'none', 'none', 'doom-loop']);
+  });
+
+  it('(f) resetAfterHandback 清掉观察确认链：换方法后要重新数满才再 nudge', () => {
+    const guard = new DoomLoopGuard();
+    const read = call('Browser', { action: 'get_content' });
+    const page = 'same page text';
+    for (let i = 0; i < 5; i++) {
+      guard.recordStep([read]);
+      guard.recordResults([browserResult('get_content', page)]);
+    }
+    guard.resetAfterHandback();
+    const levels: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      levels.push(guard.recordStep([read]).level);
+      guard.recordResults([browserResult('get_content', page)]);
+    }
+    expect(levels).toEqual(['none', 'none', 'none', 'none', 'doom-loop']);
+  });
+});
+
 describe('DoomLoopGuard L2 — 行动签名重复', () => {
   it('nudges when the same multi-call step repeats 3 times', () => {
     const guard = new DoomLoopGuard();

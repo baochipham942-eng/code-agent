@@ -299,7 +299,17 @@ fn watch_web_server_child(app: tauri::AppHandle, watched_pid: u32) {
             WatchTick::StillRunning => continue,
             WatchTick::SlotGone => return,
             WatchTick::ExitedUnexpectedly(owned, status) => {
+                let cause = classify_exit(&status);
+                let dead_pid = owned.pid;
                 report_unexpected_exit(&app, owned, status);
+                // 取证已落盘，交给监督线程拉起替代者（有界重启 + backoff，
+                // 连续 3 败弹「重试」对话框；N-WEBSERVER-DEATH-SUPERVISE-RESTART）。
+                crate::webserver_supervise::supervise_after_death(
+                    app.clone(),
+                    cause,
+                    dead_pid,
+                    crate::webserver_supervise::PATH_OWNED_CHILD,
+                );
                 return;
             }
         }

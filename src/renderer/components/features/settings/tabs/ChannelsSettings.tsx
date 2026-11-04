@@ -209,6 +209,7 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
   onClose,
 }) => {
   const { t } = useI18n();
+  const formId = React.useId();
   const channelText = t.settings.channels;
   const privacyModeOptions = channelText.privacyModes as ChannelPrivacyModeOption[];
   const [name, setName] = useState(account?.name || '');
@@ -314,8 +315,18 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
       onClose={onClose}
       title={account ? channelText.modal.editTitle : channelText.modal.addTitle}
       size="md"
+      footer={
+        <>
+          <Button type="button" variant="ghost" onClick={onClose}>
+            {channelText.actions.cancel}
+          </Button>
+          <Button type="submit" form={formId} variant="primary">
+            {account ? channelText.actions.save : channelText.actions.add}
+          </Button>
+        </>
+      }
     >
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form id={formId} onSubmit={handleSubmit} className="space-y-4">
           {/* 名称 */}
           <div>
             <label className="block text-sm text-zinc-400 mb-1">{channelText.modal.nameLabel}</label>
@@ -612,15 +623,6 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
             </>
           )}
 
-          {/* 按钮 */}
-          <div className="flex justify-end gap-3 pt-4">
-            <Button type="button" variant="ghost" onClick={onClose}>
-              {channelText.actions.cancel}
-            </Button>
-            <Button type="submit" variant="primary">
-              {account ? channelText.actions.save : channelText.actions.add}
-            </Button>
-          </div>
         </form>
     </Modal>
   );

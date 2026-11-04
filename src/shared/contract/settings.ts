@@ -550,5 +550,10 @@ export interface AppSettings {
     openRouterConsent?: boolean;
     /** 首次给出同意的时间（epoch ms），审计/同步留痕；重复同意不刷新，撤销不删除。 */
     openRouterConsentAt?: number;
+    /**
+     * Neo 托管判官（无自有 key 时由 Neo 出钱的云端判官，N-JEV-NEO-KEY）。
+     * 缺省 = 开：只在没有自有 key 且已登录时才实际启用；关闭后行为回到「无 key」。
+     */
+    neoHostedEnabled?: boolean;
   };
 }

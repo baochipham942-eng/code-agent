@@ -18,6 +18,8 @@ interface CronExecutionListProps {
   jobNameById?: Record<string, string>;
   /** Immutable execution location keyed by job id. */
   runsOnByJobId?: Record<string, CronJobDefinition['runsOn']>;
+  /** jobId → 等批准运行（N-CRON-UNATTENDED-BASH-PARK-STUCK）：running 行状态格换 amber 徽章。 */
+  awaitingByJobId?: Map<string, unknown>;
 }
 
 const thClass = 'whitespace-nowrap px-1 py-2';
@@ -34,6 +36,7 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
   onSelectExecution,
   jobNameById,
   runsOnByJobId,
+  awaitingByJobId,
 }) => {
   const { t } = useI18n();
   const cc = t.cronCenter;
@@ -53,7 +56,7 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
       data-testid="cron-execution-table-scroll"
     >
       <table className="w-full text-sm">
-        <thead className="bg-zinc-950/80 text-left text-xs uppercase text-zinc-500">
+        <thead className="bg-zinc-950/80 text-left text-xs text-zinc-500">
           <tr>
             {jobNameById && <th className={thClass}>{cc.colJob}</th>}
             <th className={thClass}>{cc.colStatus}</th>
@@ -84,14 +87,23 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
                   onClick={() => onSelectExecution(execution.id)}
                 >
                   {jobNameById && (
-                    <td className={`max-w-[220px] truncate text-zinc-200 ${tdClass}`}>
+                    <td className={`max-w-[200px] truncate text-zinc-200 ${tdClass}`}>
                       {jobNameById[execution.jobId] || execution.jobId}
                     </td>
                   )}
                   <td className={`whitespace-nowrap ${tdClass}`}>
-                    <span className={`rounded-full px-2 py-1 text-xs ${statusMeta.className}`}>
-                      {cc.status[execution.status]}
-                    </span>
+                    {execution.status === 'running' && (awaitingByJobId?.has(execution.jobId) ?? false) ? (
+                      <span
+                        className="rounded-full border border-badge-warning/40 bg-amber-500/15 px-2 py-1 text-xs text-badge-warning"
+                        data-testid="cron-exec-awaiting-approval"
+                      >
+                        {cc.awaitingApprovalBadge}
+                      </span>
+                    ) : (
+                      <span className={`rounded-full px-2 py-1 text-xs ${statusMeta.className}`}>
+                        {cc.status[execution.status]}
+                      </span>
+                    )}
                   </td>
                   {runsOnByJobId && (
                     <td className={tdClass}>

@@ -3,6 +3,7 @@ import type { ChannelMessage } from '../../../src/shared/contract/channel';
 import type { ChannelResponseCallback } from '../../../src/host/channels/channelInterface';
 import { ChannelAgentBridge } from '../../../src/host/channels/channelAgentBridge';
 import {
+  CHANNEL_REPLY_STYLE_INSTRUCTION as REAL_STYLE_INSTRUCTION,
   buildChannelAckText,
   resolveChannelReplyLimit,
   softLimitChannelReply,
@@ -124,5 +125,28 @@ describe('N-CHANNEL-REPLY-BREVITY', () => {
     harness.busyHintedSessions.add(sessionId);
     await harness.handleSyncMessage('acc', message, orchestrator, undefined, cb);
     expect(sendText.mock.calls.map((call) => (call as unknown[])[0])).toEqual(['later']);
+  });
+});
+
+describe('N-CHANNEL-REPLY-BREVITY-FU2 overflow instruction', () => {
+  const overflowLine = REAL_STYLE_INSTRUCTION.split('\n').find((line) => line.includes('内容较长')) ?? '';
+
+  it('keeps the header and the other two rules', () => {
+    expect(REAL_STYLE_INSTRUCTION.startsWith('[IM 回复纪律]')).toBe(true);
+    expect(REAL_STYLE_INSTRUCTION).toContain('不超过 150 个汉字：先给结论，再用一行写依据');
+    expect(REAL_STYLE_INSTRUCTION).toContain('不要在 IM 里输出进度播报');
+  });
+
+  it('puts the full content in the same reply and forbids writing files', () => {
+    expect(overflowLine).toContain('第一段');
+    expect(overflowLine).toContain('同一条回复');
+    expect(overflowLine).toContain('不要为此写文件');
+    expect(overflowLine).toContain('不要提工具失败或权限');
+  });
+
+  it('mentions 文件/交付物 only inside the explicit-request exception', () => {
+    const [beforeException, exception] = overflowLine.split('用户明确要求');
+    expect(exception).toBeDefined();
+    expect(beforeException.replace('不要为此写文件或创建交付物', '')).not.toMatch(/文件|交付物/);
   });
 });

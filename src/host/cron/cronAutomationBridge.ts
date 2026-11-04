@@ -19,6 +19,7 @@ import type {
   SessionAutomationType,
 } from '../../shared/contract/sessionAutomation';
 import { isCronUrgency } from '../../shared/cronUrgency';
+import { cronSourceSessionIdFromDefinition } from '../../shared/cronWriteScope';
 import { resolveCronArtifactsForReview } from '../../shared/cronArtifactPath';
 import { formatCronExpressionLabel } from '../../shared/cronHumanize';
 import { parseCronLoginWallStop } from '../../shared/utils/browserLoginWall';
@@ -86,13 +87,8 @@ export function readCronSourceSessionId(
   definition: CronJobDefinition,
   action: CronJobAction = definition.action,
 ): string | undefined {
-  const metadataSource = definition.metadata?.sourceSessionId;
-  if (typeof metadataSource === 'string' && metadataSource.trim()) return metadataSource;
-  if (action.type === 'agent') {
-    const contextSource = action.context?.sourceSessionId;
-    if (typeof contextSource === 'string' && contextSource.trim()) return contextSource;
-  }
-  return undefined;
+  // 判定唯一真源在 shared/cronWriteScope（renderer 写授权面板要按同一规则找来源会话）。
+  return cronSourceSessionIdFromDefinition(definition, action);
 }
 
 export function getCronAutomationType(

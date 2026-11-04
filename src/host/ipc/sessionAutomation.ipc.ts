@@ -55,6 +55,11 @@ const sessionAutomationRoutes = defineDomainRoutes<SessionAutomationDomainReques
     const service = getSessionAutomationService();
     return service.listPendingReview();
   },
+  listAwaitingApprovalRuns: (_ctx, _payload) => {
+    const service = getSessionAutomationService();
+    // 无人值守停车可见性（N-CRON-UNATTENDED-BASH-PARK-STUCK）：join pending 审批 × cron 会话 origin。
+    return service.listAwaitingApprovalRuns();
+  },
   listParkedApprovals: (_ctx, _payload) => {
     const service = getSessionAutomationService();
     return service.listParkedApprovals();

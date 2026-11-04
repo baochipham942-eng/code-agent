@@ -113,6 +113,10 @@ describe('停车审批 needs-input 横幅去重（真服务链路）', () => {
       details: { path: '/tmp/parked-dedupe.txt' },
       sessionId,
     });
+    // 无人值守 file_write 先过写授权查询（N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1 的
+    // approveByScheduleWriteGrant：动态 import + 会话查询）才落停车——比纯停车链路多几跳
+    // 微任务。排空后再快照 persistence（fake timers 下 setImmediate 被冻，用微任务自旋）。
+    for (let i = 0; i < 20 && onEvents.length === 0; i += 1) await Promise.resolve();
     await Promise.all(persistence);
 
     expect(onEvents).toHaveLength(1);

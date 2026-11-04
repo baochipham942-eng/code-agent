@@ -20,23 +20,37 @@ const defaultRoot = path.join(
   '_up_',
 );
 
-const betterSqlite3Platform = process.platform === 'linux'
-  && !process.report.getReport().header.glibcVersionRuntime
-  ? 'linuxmusl'
-  : process.platform;
-const betterSqlite3Prebuild = `dist/native/better-sqlite3/prebuilds/${betterSqlite3Platform}-${process.arch}.node`;
 const keytarNative = 'node_modules/keytar/build/Release/keytar.node';
 // Base tauri.conf.json ships prebuilds/darwin-arm64; the x64 overlay rewrites that
 // arch. Verify the arch this process is bundling. Windows/Linux skip this path.
 const nodePtyDarwinNative = `node_modules/node-pty/prebuilds/darwin-${process.arch}/pty.node`;
+const NATIVE_MANIFEST = 'dist/native/manifest.json';
 
-const REQUIRED_STARTUP_RESOURCES = [
-  'dist/renderer/index.html',
-  betterSqlite3Prebuild,
-  keytarNative,
-];
-if (process.platform === 'darwin') {
-  REQUIRED_STARTUP_RESOURCES.push(nodePtyDarwinNative);
+// ADR-086: native modules declared in the root's manifest are required; keytar and
+// node-pty stay hard-coded until T6 moves them into the manifest.
+function requiredStartupResources(rootDir) {
+  const manifestPath = path.join(rootDir, NATIVE_MANIFEST);
+  let manifest;
+  try {
+    manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  } catch (error) {
+    throw new Error(`Cannot read ${NATIVE_MANIFEST} under ${rootDir}: ${error instanceof Error ? error.message : error}`, { cause: error });
+  }
+  if (
+    !manifest
+    || manifest.kind !== 'agent_neo_native_dep_manifest'
+    || manifest.schemaVersion !== 1
+    || !manifest.modules
+    || typeof manifest.modules !== 'object'
+  ) {
+    throw new Error(`Invalid ${NATIVE_MANIFEST} under ${rootDir}: kind/schemaVersion/modules mismatch`);
+  }
+  const declared = Object.values(manifest.modules)
+    .map((entry) => entry?.native)
+    .filter((native) => typeof native === 'string' && native);
+  const required = ['dist/renderer/index.html', ...declared, keytarNative];
+  if (process.platform === 'darwin') required.push(nodePtyDarwinNative);
+  return required;
 }
 
 function readArg(name) {
@@ -323,7 +337,7 @@ function buildInventory(rootDir) {
 }
 
 function verifyStartupResources(rootDir) {
-  const missing = REQUIRED_STARTUP_RESOURCES.filter(
+  const missing = requiredStartupResources(rootDir).filter(
     (relativePath) => !fs.existsSync(path.join(rootDir, relativePath)),
   );
   if (missing.length > 0) {

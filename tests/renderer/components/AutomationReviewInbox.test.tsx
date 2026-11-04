@@ -532,6 +532,44 @@ describe('AutomationReviewInbox', () => {
     expect(screen.queryByTestId('parked-reject')).toBeNull();
   });
 
+  it('REALRUN ②：voided 项灰态只读，显示工具名 + 作废句，无按钮；标题计数只算 pending', async () => {
+    listParkedApprovals.mockResolvedValue([
+      makeParked({ id: 'perm_pending' }),
+      makeParked({
+        id: 'perm_void', status: 'voided', tool: 'Bash',
+        voidReason: '这一步等你确认超过 24 小时，已自动作废，没有执行。',
+      }),
+    ]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('parked-approval-voided')).toBeTruthy();
+    });
+    const voided = screen.getByTestId('parked-approval-voided');
+    expect(voided.textContent).toContain('Bash');
+    expect(voided.textContent).toContain('这一步等你确认超过 24 小时，已自动作废，没有执行。');
+    expect(voided.querySelector('button')).toBeNull();
+    expect(screen.getAllByTestId('parked-approve')).toHaveLength(1);
+    expect(screen.getByTestId('parked-approval-group').textContent).toContain('1 个操作等你确认');
+  });
+
+  it('REALRUN ②：只有 voided 项时不出「0 个操作等你确认」标题', async () => {
+    listParkedApprovals.mockResolvedValue([
+      makeParked({ id: 'perm_void', status: 'voided', tool: 'Bash', voidReason: 'x' }),
+    ]);
+    render(<AutomationReviewInbox />);
+    await waitFor(() => {
+      expect(screen.getByTestId('parked-approval-voided')).toBeTruthy();
+    });
+    expect(screen.getByTestId('parked-approval-group').textContent).not.toContain('0 个操作');
+  });
+
+  it('REALRUN ②：zh / en 两份文案都有 parkedVoidedLabel', async () => {
+    const { zh } = await import('../../../src/renderer/i18n/zh');
+    const { en } = await import('../../../src/renderer/i18n/en');
+    expect(zh.cronCenter.parkedVoidedLabel).toBeTruthy();
+    expect(en.cronCenter.parkedVoidedLabel).toBeTruthy();
+  });
+
   // N-PARKED-APPROVAL-SURVIVE-RESTART-PERSIST ④：停车审批行带参数预览（host 已脱敏）
   it('item.argsPreview 在时渲染参数预览行（zh 词条）', async () => {
     listParkedApprovals.mockResolvedValue([

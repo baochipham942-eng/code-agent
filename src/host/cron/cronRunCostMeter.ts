@@ -31,12 +31,14 @@ export interface CronRunCostMeter {
 }
 
 /**
+ * 模块内构造器（不走 export：生产入口一律经 createCronRunCostMeterForExecution，
+ * 导出即 dead export，knip production 棘轮必报）。
  * @param maxRunBudget 任务的单次预算。传 undefined = 只计量不设闸（role-wake 历史上
  * 无预算闸，本单不扩权）。
  * @param options.onCost 每记一笔真实 usage 后收到本次尝试的累计成本（N-CRON-RUN-LEDGER-VISIBLE-FU1：
  * 运行中增量落库用；监听器抛错由 scoped 层吞掉，不影响计量与越线语义）。
  */
-export function createCronRunCostMeter(
+function createCronRunCostMeter(
   maxRunBudget: number | null | undefined,
   options?: { onCost?: ScopedCostListener },
 ): CronRunCostMeter {

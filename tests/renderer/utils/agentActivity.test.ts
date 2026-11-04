@@ -89,6 +89,20 @@ function mailRequest(overrides: Partial<PermissionRequest> = {}): PermissionRequ
   };
 }
 
+/** 补齐 Task 必填字段，避免不完整对象强转（tsc-tests 棘轮红线）。 */
+function taskFixture(overrides: Partial<Task> & Pick<Task, 'id'>): Task {
+  return {
+    source: 'delegate_task',
+    title: 'delegated write',
+    status: 'running',
+    createdAt: 1,
+    updatedAt: 1,
+    events: [],
+    outputRefs: [],
+    ...overrides,
+  };
+}
+
 describe('resolveAgentActivityStepStatus', () => {
   const mailStep: LastToolStep = { tool: 'mail_send', at: 1 };
   const workingTask = { working: true, activityIds: ['task-1'] };
@@ -236,12 +250,8 @@ describe('resolveAgentActivityStepStatus', () => {
   });
 
   it('taskActivityIds collects id, runId and metadata.childRunId', () => {
-    const task = {
-      id: 'task-1',
-      runId: 'run-9',
-      metadata: { childRunId: 'child-7' },
-    } as Task;
+    const task = taskFixture({ id: 'task-1', runId: 'run-9', metadata: { childRunId: 'child-7' } });
     expect(taskActivityIds(task)).toEqual(['task-1', 'run-9', 'child-7']);
-    expect(taskActivityIds({ id: 'task-2' } as Task)).toEqual(['task-2']);
+    expect(taskActivityIds(taskFixture({ id: 'task-2' }))).toEqual(['task-2']);
   });
 });

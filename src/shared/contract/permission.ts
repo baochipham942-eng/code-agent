@@ -122,8 +122,8 @@ export function hostReasonModelText(reason: HostReasonValue): string {
   return typeof reason === 'string' ? reason : reason.modelText;
 }
 
-/** 一次审批所属轮次的来源描述（host AgentMessageOrigin 的跨端投影，ADR-067 D3）。 */
-export interface PermissionTurnOrigin {
+/** 一次审批所属轮次的来源描述（host AgentMessageOrigin 的跨端投影，ADR-067 D3）；仅本文件投影用，不外导。 */
+interface PermissionTurnOrigin {
   senderKind: 'user' | 'orchestrator' | 'peer-agent' | 'dependency';
   senderAgentId?: string;
   sessionId?: string;

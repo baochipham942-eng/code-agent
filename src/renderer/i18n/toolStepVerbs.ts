@@ -1,4 +1,5 @@
 import type { ToolStepLabelKey, ToolStepStatus } from '@shared/contract';
+import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '@shared/parkedApprovalClosure';
 
 type DeclaredVerbForms = Record<ToolStepLabelKey, string>;
 
@@ -90,6 +91,12 @@ interface ToolStepVerbBundle {
   failureCode: string;
   failureReasonMissing: string;
   notRunPrefix: string;
+  /** 停车审批自动收口三句（键 = PARKED_APPROVAL_CLOSURE_SENTENCES 的名字；zh 直接用原句，保证字节一致）。 */
+  parkedClosure: {
+    expiredAfterRestart24h: string;
+    workingDirectoryUnavailable: string;
+    argsUnavailable: string;
+  };
   failureCodes: {
     'worktree-create-failed': string;
     'gateway-timeout': string;
@@ -179,6 +186,7 @@ export const toolStepVerbsZh: ToolStepVerbBundle = {
   failureCode: '错误码 {code}',
   failureReasonMissing: '暂无失败原因摘要，可展开详情查看记录',
   notRunPrefix: '未执行',
+  parkedClosure: { ...PARKED_APPROVAL_CLOSURE_SENTENCES },
   failureCodes: {
     'worktree-create-failed': '无法为这次任务准备运行环境',
     'gateway-timeout': '服务暂时没有响应',
@@ -221,6 +229,11 @@ export const toolStepVerbsEn: ToolStepVerbBundle = {
   failureCode: 'Error code {code}',
   failureReasonMissing: 'No failure summary is available; expand the details to inspect the record',
   notRunPrefix: 'Not run',
+  parkedClosure: {
+    expiredAfterRestart24h: 'This step waited for your confirmation for over 24 hours, so it was voided automatically and did not run.',
+    workingDirectoryUnavailable: "This conversation has no working directory, so it can't be run safely after a restart. It did not run.",
+    argsUnavailable: 'After the app restarted, the full details of this step could not be found, so it was not run for safety.',
+  },
   failureCodes: {
     'worktree-create-failed': 'Could not prepare the workspace for this task',
     'gateway-timeout': 'The service did not respond in time',

@@ -41,7 +41,7 @@ import {
   type SupportedEveryTimeUnit,
 } from './cronNormalizers';
 import { executeCronAgentAction } from './cronAgentAction';
-import { attachCronRunCost, createCronRunCostMeter, readCronRunCostUsd } from './cronRunCostMeter';
+import { attachCronRunCost, createCronRunCostMeterForExecution, readCronRunCostUsd } from './cronRunCostMeter';
 import { addCronRunCostUsd } from '../../shared/cronRunLedger';
 import { getEventBus } from '../services/eventing/bus';
 import { persistCronMissedTrace } from './cronMissedTrace';
@@ -59,7 +59,6 @@ import { runWebhookHookOp } from './cronWebhookHookOps';
 import { setChannelListenResolver } from '../channels/channelListenRegistry';
 import { getChannelManager } from '../channels/channelManager';
 import {
-  createCronExecutionCostWriter,
   deleteCronJob,
   loadCronExecutionStatus,
   loadCronExecutionsByJob,
@@ -1068,11 +1067,7 @@ export class CronService implements Disposable {
         // 角色主动性：cadence 到点 → 完整醒来循环（内部文档）
         const { wakeRole } = await import('../services/roleAssets/roleProactivity');
         // 只计量不设闸：role-wake 历史上不吃 maxRunBudget（本单不扩权），外层闸仍是全局预算池。
-        // FU1：onCost 增量窄写 running 行的 cost_usd，挂死被标 interrupted 也留得下真实花费。
-        const costMeter = createCronRunCostMeter(
-          undefined,
-          executionId ? { onCost: createCronExecutionCostWriter(executionId) } : undefined,
-        );
+        const costMeter = createCronRunCostMeterForExecution(undefined, executionId);
         const wakeResult = await costMeter.run(() => wakeRole(action.roleId, 'cadence')).catch((error: unknown) => {
           attachCronRunCost(error, costMeter);
           throw error;

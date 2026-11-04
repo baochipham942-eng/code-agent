@@ -17,6 +17,7 @@
 // 原样转成既有措辞；计量器放在外层会让本次成本读成 $0。
 // ============================================================================
 import { createScopedCostLimit, type ScopedCostListener } from '../services/core/scopedCostLimit';
+import { createCronExecutionCostWriter } from './cronPersistence';
 import { isCronAgentActionResult, isRecord } from './cronNormalizers';
 
 /** 纯计量档的上限：高到永不触顶；若真越过，说明预算体系整体失守，fail-loud 合理。 */
@@ -47,6 +48,22 @@ export function createCronRunCostMeter(
     run: (operation) => scoped.run(operation),
     getCostUsd: () => scoped.getCostUsd(),
   };
+}
+
+/**
+ * 入口接线（N-CRON-RUN-LEDGER-VISIBLE-FU1）：构建接好增量成本窄写的计量器——
+ * 每笔真实 usage 落账时把累计成本窄写进仍处于 running 的执行行 cost_usd，进程
+ * 中途被杀/挂死，interrupted 行也带真实花费。executionId 缺席（无执行行可写）时
+ * 退回纯计量；收尾的整行写入不受影响、天然赢过增量写。
+ */
+export function createCronRunCostMeterForExecution(
+  maxRunBudget: number | null | undefined,
+  executionId: string | undefined,
+): CronRunCostMeter {
+  return createCronRunCostMeter(
+    maxRunBudget,
+    executionId === undefined ? undefined : { onCost: createCronExecutionCostWriter(executionId) },
+  );
 }
 
 /**

@@ -11,7 +11,7 @@ vi.mock('../../../src/host/services/core/databaseService', () => ({
 // 真BudgetService + 真scoped钩子（不 mock scopedCostLimit）：走 budgetService.recordUsage
 // → recordScopedUsage/recordScopedCost 的生产记账路径，只把数据库换成内存 SQLite。
 import { BudgetService, type TokenUsage } from '../../../src/host/services/core/budgetService';
-import { createCronRunCostMeter } from '../../../src/host/cron/cronRunCostMeter';
+import { createCronRunCostMeterForExecution } from '../../../src/host/cron/cronRunCostMeter';
 import {
   createCronExecutionCostWriter,
   markInterruptedCronExecutions,
@@ -145,10 +145,8 @@ describe('cron execution incremental cost persistence (N-CRON-RUN-LEDGER-VISIBLE
     await saveCronJob(localJob());
     const execution = runningExecution();
     await saveCronExecution(execution); // executeJob 开跑时先落 running 行
-    // 与生产同款接线：入口把计量器 onCost 接到增量窄写（默认 1s 节流 + 尾随写）。
-    const meter = createCronRunCostMeter(undefined, {
-      onCost: createCronExecutionCostWriter(execution.id),
-    });
+    // 与生产同款接线：入口（cronAgentAction / role-wake）都走这个工厂挂增量窄写。
+    const meter = createCronRunCostMeterForExecution(undefined, execution.id);
     const budget = new BudgetService({ enabled: false });
     await meter.run(async () => {
       budget.recordUsage(providerUsage('s1', 10_000, 1_000)); // $0.013，立即首写

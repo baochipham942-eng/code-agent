@@ -35,6 +35,8 @@ export interface CronAgentActionHost {
   updateJob: (jobId: string, updates: Partial<Omit<CronJobDefinition, 'id' | 'createdAt'>>) => Promise<unknown>;
   /** 即 CronService.deliverCronResult：安静轮判定通过后的通道推送。 */
   deliverCronResult: (definition: CronJobDefinition, result: unknown, executionId?: string) => Promise<void>;
+  /** 会话一建好就把 id 记进执行记录并落库：进程在模型跑到一半被杀，运行详情仍能顺着它找到会话与作废审批。 */
+  recordSessionId: (executionId: string, sessionId: string) => Promise<void>;
 }
 
 export async function executeCronAgentAction(
@@ -59,6 +61,7 @@ export async function executeCronAgentAction(
   const { getTaskManager } = await import('../task');
   const tm = getTaskManager();
   const cronSession = await createCronAgentSession(definition, action, executionId);
+  if (executionId) await host.recordSessionId(executionId, cronSession.id);
   const orchestrator = tm.getOrCreateCurrentOrchestrator(cronSession.id) ?? null;
   if (!orchestrator) {
     throw new Error(`AgentOrchestrator not available for cron session ${cronSession.id}`);

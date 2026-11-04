@@ -214,7 +214,7 @@ describe('resolved permission_request 事件的撤回（落库口）', () => {
     notificationService.clearRecentNotifications();
   });
 
-  const plainRequest = (id: string, sessionId: string, resolved?: boolean) => ({
+  const plainRequest = (id: string, sessionId: string, resolved?: boolean): AgentEvent => ({
     type: 'permission_request' as const,
     data: {
       id,

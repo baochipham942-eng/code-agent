@@ -35,7 +35,7 @@ const settings = (): AppSettings => ({
     blockedCommands: [],
     devModeAutoApprove: false,
   },
-} as AppSettings);
+} as unknown as AppSettings);
 
 function makeRepo(): PendingApprovalRepository & { insert: ReturnType<typeof vi.fn> } {
   return {

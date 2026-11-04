@@ -5,7 +5,6 @@
 // ============================================================================
 import React, { useEffect, useState } from 'react';
 import type { RoleWakeProposal } from '@shared/contract/roleAssets';
-import { Button } from '../../primitives/Button';
 import { useI18n } from '../../../hooks/useI18n';
 import { DomainInvokeError } from '../../../services/ipcService';
 import { acceptWakeProposal, dismissWakeProposal, listWakeProposals } from '../../../services/rolesClient';
@@ -73,33 +72,33 @@ export const RoleWakeProposalsCard: React.FC<RoleWakeProposalsCardProps> = ({ ro
     }
   };
 
+  // 与 RoleFirstWakeCard 同一视觉语言（role-wake-prototype.html 屏一）：无填充面板、
+  // 安静的描边按钮 + 淡的「先不」，颜色全走主题 token。mb-2 mt-2 同款间距语义。
   const body = (
     <div
-      className="mb-2 rounded-lg border border-badge-info/60 bg-sky-950/30 px-3 py-2"
+      className="mb-2 mt-2"
       data-testid="role-wake-proposals-card"
     >
-      <p className="text-xs text-zinc-200">{copy.heading}</p>
+      <p className="text-sm text-text-tertiary">{copy.heading}</p>
       <div className="mt-2 space-y-1.5">
         {proposals.map((proposal) => (
           <div key={proposal.title} className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
+            <button
+              type="button"
               disabled={busy}
-              className="h-auto whitespace-normal text-left"
+              className="rounded-lg border border-border-strong bg-void px-3 py-1.5 text-left text-sm font-normal text-text-secondary transition-colors hover:border-border-hover hover:bg-surface hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
               onClick={() => { void handleAccept(proposal); }}
             >
               {proposal.title}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
+            </button>
+            <button
+              type="button"
               disabled={busy}
-              className="h-auto"
+              className="rounded-md px-2 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
               onClick={() => { void handleDismiss(proposal); }}
             >
               {copy.dismiss}
-            </Button>
+            </button>
           </div>
         ))}
       </div>

@@ -137,57 +137,80 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
   const showNone = state === 'completed' && sourcesMode === 'none';
   const showSuggestions = state === 'completed' && sourcesMode === 'connected';
 
+  // 视觉范本 role-wake-prototype.html 屏一：醒来角色像普通一轮发言——小头像 + 名字、
+  // 无填充面板；建议是一排安静的描边按钮，「跳过」淡在最右。颜色全部走主题 token，
+  // 亮暗（含高对比）两套都成立，不再用任何随主题翻转后洗成泥灰的固定底色。
+  // mt-2：composer 位（RoleDraftNotifications 原位挂卡）与 transcript 底部渐隐区
+  // 是零间距贴边（实测 scroller.bottom == card.top），渐隐的半透明残字会贴进卡面
+  // 读成「文字透出来」；补 8px 呼吸位把两块视觉分开（banner 位自带 mt-2 包装层）。
   const body = (
     <div
-      className="mb-2 rounded-lg border border-badge-info/60 bg-sky-950/30 px-3 py-2"
+      className="mb-2 mt-2 grid grid-cols-[28px_minmax(0,1fr)] gap-x-3"
       data-testid="role-first-wake-card"
       data-state={state}
       data-sources-mode={sourcesMode}
     >
-      {showRunning && (
-        <p className="text-xs text-zinc-200">{interpolate(copy.running, { name: displayName })}</p>
-      )}
-      {showFailed && (
-        <div className="space-y-1">
-          <p className="text-xs text-zinc-100">{copy.failedTitle}</p>
-          {snapshot?.failureReason && (
-            <p className="text-xs text-zinc-400" data-testid="role-first-wake-reason">{snapshot.failureReason}</p>
-          )}
-        </div>
-      )}
-      {(showSuggestions || showNone) && (
-        <p className="whitespace-pre-wrap text-xs text-zinc-200" data-testid="role-first-wake-intro">
-          {intro || copy.introFallback}
-        </p>
-      )}
-      {showNone && <p className="mt-1 text-xs text-zinc-400">{copy.connectHint}</p>}
-      {showSuggestions && suggestions.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-2">
-          {suggestions.map((suggestion) => (
-            <Button
-              key={suggestion.prompt}
-              variant="secondary"
-              size="sm"
+      <div
+        aria-hidden="true"
+        className="flex size-7 items-center justify-center rounded-full bg-badge-accent text-sm font-semibold text-badge-accent"
+      >
+        {displayName.trim().charAt(0) || '·'}
+      </div>
+      <p className="text-sm font-semibold leading-7 text-text-primary">{displayName}</p>
+      <div className="col-start-2 min-w-0">
+        {showRunning && (
+          <p className="text-base leading-relaxed text-text-tertiary">
+            {interpolate(copy.running, { name: displayName })}
+          </p>
+        )}
+        {showFailed && (
+          <div className="space-y-1">
+            <p className="text-base leading-relaxed text-status-error">{copy.failedTitle}</p>
+            {snapshot?.failureReason && (
+              <p className="text-sm text-text-tertiary" data-testid="role-first-wake-reason">{snapshot.failureReason}</p>
+            )}
+          </div>
+        )}
+        {(showSuggestions || showNone) && (
+          <p className="whitespace-pre-wrap text-base leading-relaxed text-text-primary" data-testid="role-first-wake-intro">
+            {intro || copy.introFallback}
+          </p>
+        )}
+        {showNone && <p className="mt-1 text-sm text-text-tertiary">{copy.connectHint}</p>}
+        {(showSuggestions || showNone || showFailed) && (
+          <div className="mt-2.5 flex flex-wrap items-center gap-2">
+            {showSuggestions && suggestions.map((suggestion) => (
+              <button
+                key={suggestion.prompt}
+                type="button"
+                disabled={busy}
+                className="rounded-lg border border-border-strong bg-void px-3 py-1.5 text-left text-sm font-normal text-text-secondary transition-colors hover:border-border-hover hover:bg-surface hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => { void handleSuggestion(suggestion.prompt); }}
+              >
+                {suggestion.title}
+              </button>
+            ))}
+            {showNone && (
+              <Button variant="primary" size="sm" onClick={openConnectors}>{copy.connect}</Button>
+            )}
+            {(showNone || showFailed) && (
+              <button
+                type="button"
+                className="rounded-lg border border-border-strong bg-void px-3 py-1.5 text-sm font-normal text-text-secondary transition-colors hover:border-border-hover hover:bg-surface hover:text-text-primary"
+                onClick={openThread}
+              >
+                {copy.goToThread}
+              </button>
+            )}
+            <button
+              type="button"
               disabled={busy}
-              className="h-auto whitespace-normal text-left"
-              onClick={() => { void handleSuggestion(suggestion.prompt); }}
+              className="ml-auto rounded-md px-2 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => { void handleSkip(); }}
             >
-              {suggestion.title}
-            </Button>
-          ))}
-        </div>
-      )}
-      <div className="mt-2 flex flex-wrap gap-2">
-        {showNone && (
-          <Button variant="primary" size="sm" onClick={openConnectors}>{copy.connect}</Button>
-        )}
-        {(showNone || showFailed) && (
-          <Button variant="secondary" size="sm" onClick={openThread}>{copy.goToThread}</Button>
-        )}
-        {showFailed ? (
-          <Button variant="ghost" size="sm" disabled={busy} onClick={() => { void handleSkip(); }}>{copy.close}</Button>
-        ) : (
-          <Button variant="ghost" size="sm" disabled={busy} onClick={() => { void handleSkip(); }}>{copy.skip}</Button>
+              {showFailed ? copy.close : copy.skip}
+            </button>
+          </div>
         )}
       </div>
     </div>

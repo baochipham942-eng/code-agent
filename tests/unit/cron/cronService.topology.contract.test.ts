@@ -60,7 +60,7 @@ describe('cron agent 会话拓扑标注接线', () => {
       /if \(!quietWatchRound && !notifyQuietRound\) \{[\s\S]{0,400}deliverCronResult\(/,
     );
     expect(cronAgentActionSource).toMatch(
-      /buildCronAgentActionResult\(action, result, cronSession\.id, finalAssistantText, quietWatchRound, notifyQuietRound\)/,
+      /buildCronAgentActionResult\(action, result, cronSession\.id, finalAssistantText, quietWatchRound, notifyQuietRound, permissionDenied\)/,
     );
   });
 

@@ -14,6 +14,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import type { CronUrgency, PermissionResponse, SessionAutomationRecord } from '@shared/contract';
 import type { ParkedApprovalInboxItem } from '@shared/contract/pendingApproval';
 import { isCronUrgency } from '@shared/cronUrgency';
+import { isCronPermissionDeniedMarker } from '@shared/cronPermissionDenied';
 import { Check, CircleCheck, Cloud, ExternalLink, Inbox, MessageSquareText, ShieldAlert, ShieldCheck, X } from 'lucide-react';
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
 import ipcService from '../../../services/ipcService';
@@ -327,6 +328,8 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                         const urgencyRaw = record.config?.pendingReview?.urgencyRaw;
                         const digest = record.config?.pendingReview?.digest;
                         const maxRunsReached = record.config?.pendingReview?.maxRunsReached;
+                        // 需处理（N-CRON-RUN-COMPLETED-BUT-DENIED）：被拒且无产出的运行带琥珀徽章。
+                        const permissionDenied = isCronPermissionDeniedMarker(record.config?.pendingReview?.permissionDenied);
                         const resultSessionId = reviewResultSessionId(record);
                         const hasPendingApproval = Boolean(
                           resultSessionId
@@ -347,6 +350,14 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
                                   data-testid="automation-urgency-badge"
                                 >
                                   {cc.inboxUrgencyBadge}
+                                </span>
+                              )}
+                              {permissionDenied && (
+                                <span
+                                  className="inline-flex shrink-0 items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] text-badge-warning"
+                                  data-testid="automation-review-permission-denied"
+                                >
+                                  {cc.permissionDeniedBadge}
                                 </span>
                               )}
                               {isCloud && (

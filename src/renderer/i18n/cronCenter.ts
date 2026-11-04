@@ -110,6 +110,15 @@ export const cronCenterZh = {
     failureActionRunAgain: '立即重跑',
     failureActionCheckAccount: '检查账号设置',
     failureTechnical: '查看技术详情',
+    // 需处理（N-CRON-RUN-COMPLETED-BUT-DENIED）：被拒且无产出的运行不算「成功」。
+    permissionDeniedBadge: '需处理',
+    permissionDeniedTitle: '有命令没获批准',
+    permissionDeniedSentence: '「{summary}」没有获批准（{reason}），这次运行没有产出。',
+    permissionDeniedReasonUser: '你当时拒绝了它',
+    permissionDeniedReasonTimeout: '等批准超时，没有人处理',
+    permissionDeniedReasonCancelled: '运行被取消或重启，批准被作废',
+    permissionDeniedReasonOther: '审批链路出问题，按安全默认拒绝了',
+    permissionDeniedRerunNote: '重新运行会再次请求批准',
     // 触发源 chip（键 = utils/cronHumanize 的 CronTriggerKind，语义对齐 SessionAutomationType）
     triggerKind: {
       cron: '定时',
@@ -541,6 +550,14 @@ export const cronCenterEn: typeof cronCenterZh = {
     failureActionRunAgain: 'Run again now',
     failureActionCheckAccount: 'Check account settings',
     failureTechnical: 'Technical details',
+    permissionDeniedBadge: 'Needs attention',
+    permissionDeniedTitle: 'A command was not approved',
+    permissionDeniedSentence: '“{summary}” was not approved ({reason}); this run produced nothing.',
+    permissionDeniedReasonUser: 'you declined it',
+    permissionDeniedReasonTimeout: 'nobody approved it in time',
+    permissionDeniedReasonCancelled: 'the run was cancelled or restarted, voiding the approval',
+    permissionDeniedReasonOther: 'the approval chain failed and it was denied for safety',
+    permissionDeniedRerunNote: 'Running it again will ask for approval again',
     triggerKind: {
       cron: 'Scheduled',
       at: 'One-time',

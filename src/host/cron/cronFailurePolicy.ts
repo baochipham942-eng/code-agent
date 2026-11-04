@@ -18,6 +18,7 @@ import {
   isCronAgentResultUrgent,
   isNotifySuppressedResult,
   readCronAlertReason,
+  readCronPermissionDenied,
 } from './cronNormalizers';
 import {
   CRON_LOGIN_WALL_STOP,
@@ -140,6 +141,18 @@ function buildMaxRunsDisabledSummary(definition: CronJobDefinition): string {
 }
 
 /**
+ * 「需处理」完成通知文案（N-CRON-RUN-COMPLETED-BUT-DENIED）：被拒且无产出的运行
+ * 打完成通知时，正文直说「有命令没获批准，没有产出」，不再说「已完成」——用户
+ * 得知道点开是去处理，不是去看成果。中英随界面语言，与停用文案同一取法。
+ */
+function buildPermissionDeniedNoticeSummary(): string {
+  const english = getConfigService().getSettings().ui?.language === 'en';
+  return english
+    ? 'Scheduled task needs attention: a command was not approved, so nothing was produced.'
+    : '定时任务需处理：有命令没获批准，没有产出。';
+}
+
+/**
  * 最终停用通知（不受冷却约束）：必须带上出路——去哪重新启用、看什么错误。
  * 所有动作类型都发（不止 agent 任务）：用户不知道任务被停了正是本次回归的痛点。
  */
@@ -244,7 +257,9 @@ export function notifyCronAgentExecution(
         sessionTitle: `[定时] ${definition.name}`,
         jobId: definition.id,
         summary: succeeded
-          ? readCronAlertReason(execution.result) ?? '定时任务已完成'
+          ? readCronPermissionDenied(execution.result)
+            ? buildPermissionDeniedNoticeSummary()
+            : readCronAlertReason(execution.result) ?? '定时任务已完成'
           : loginWall
             ? undefined
             : `定时任务失败：${execution.error ?? '未知错误'}`,

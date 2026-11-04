@@ -29,6 +29,16 @@ describe('isPrivateOrLocalHost', () => {
     expect(isPrivateOrLocalHost('metadata')).toBe(true);
     expect(isPrivateOrLocalHost('instance-data')).toBe(true);
   });
+  it('原 httpRequest BLOCKED_HOSTS 的元数据条目全部仍判私有（rework r1 基线对齐）', () => {
+    expect(isPrivateOrLocalHost('100.100.100.200')).toBe(true); // Alibaba Cloud ECS metadata
+    expect(isPrivateOrLocalHost('metadata.azure.com')).toBe(true); // Azure IMDS 主机名形式
+    expect(isPrivateOrLocalHost('fd00:ec2::254')).toBe(true); // AWS IPv6 实例元数据（fd 前缀已覆盖）
+    expect(isPrivateOrLocalHost('169.254.169.254')).toBe(true);
+  });
+  it('100.64.0.0/10 CGNAT 其余地址不在拦截范围（父单已记录的已知边界）', () => {
+    expect(isPrivateOrLocalHost('100.64.0.1')).toBe(false);
+    expect(isPrivateOrLocalHost('100.101.0.1')).toBe(false);
+  });
   it('公网 IPv4 / 域名判为非私有', () => {
     expect(isPrivateOrLocalHost('8.8.8.8')).toBe(false);
     expect(isPrivateOrLocalHost('172.32.0.1')).toBe(false); // 172.32 出私网段

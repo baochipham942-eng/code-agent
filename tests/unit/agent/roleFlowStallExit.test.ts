@@ -23,8 +23,18 @@ const SESSION_ID = 'session-1';
 const createRoleBoundary = { skillName: 'create-role', allowedTools: ['propose_role', 'exit_role_flow', 'list_experts', 'ask_user_question', 'read_file', 'glob', 'grep'], strict: true as const };
 const editRoleBoundary = { skillName: 'edit-role', allowedTools: ['propose_role', 'exit_role_flow', 'list_experts', 'read_file', 'ask_user_question', 'glob', 'grep'], strict: true as const };
 
-function mkCtx() {
-  return { sessionId: SESSION_ID, onEvent: vi.fn() };
+const SEED: Message = { id: 'u-seed', role: 'user', content: '/create-role 一个晨报摘要员', timestamp: 1 };
+
+function proposeHistory(success: boolean): Message[] {
+  return [
+    SEED,
+    { id: 'a1', role: 'assistant', content: '', timestamp: 2, toolCalls: [{ id: 'tc-1', name: 'propose_role', arguments: {} }] },
+    { id: 't1', role: 'tool', content: '', timestamp: 3, toolResults: [{ toolCallId: 'tc-1', success, ...(success ? { output: 'ok' } : { error: 'bad' }) }] },
+  ] as Message[];
+}
+
+function mkCtx(messages: Message[] = [SEED]) {
+  return { sessionId: SESSION_ID, onEvent: vi.fn(), messages };
 }
 
 function mkAssembly() {
@@ -149,5 +159,72 @@ describe('settleRoleFlowStallOnTextBreak 落卡', () => {
     });
     expect(fired).toBe(false);
     expect(ctx.onEvent).not.toHaveBeenCalled();
+  });
+});
+
+
+// N-ROLE-STALL-FALSE-ALARM-AFTER-CONFIRM
+describe('propose_role 已成功后不再误报停摆', () => {
+  it('种子后有成功 propose_role + 草稿已被确认移走（列表为空）→ 不落卡不发事件', async () => {
+    const ctx = mkCtx(proposeHistory(true));
+    const assembly = mkAssembly();
+    const fired = await settleRoleFlowStallOnTextBreak({
+      ctx, assembly, boundary: createRoleBoundary, finalText: '已创建，谢谢。',
+    });
+    expect(fired).toBe(false);
+    expect(assembly.addAndPersistMessage).not.toHaveBeenCalled();
+    expect(ctx.onEvent).not.toHaveBeenCalled();
+  });
+
+  it('同上但 listRoleDrafts 读盘失败 → 仍不误报', async () => {
+    listRoleDraftsMock.mockRejectedValue(new Error('disk error'));
+    const ctx = mkCtx(proposeHistory(true));
+    const assembly = mkAssembly();
+    const fired = await settleRoleFlowStallOnTextBreak({
+      ctx, assembly, boundary: createRoleBoundary, finalText: '已创建。',
+    });
+    expect(fired).toBe(false);
+    expect(assembly.addAndPersistMessage).not.toHaveBeenCalled();
+    expect(ctx.onEvent).not.toHaveBeenCalled();
+  });
+
+  it('propose_role 结果 success:false → 仍判停摆', async () => {
+    const assembly = mkAssembly();
+    const fired = await settleRoleFlowStallOnTextBreak({
+      ctx: mkCtx(proposeHistory(false)), assembly, boundary: createRoleBoundary, finalText: '失败了。',
+    });
+    expect(fired).toBe(true);
+    expect(assembly.persisted).toHaveLength(1);
+  });
+
+  it('成功的 propose_role 在更早的 /create-role 种子之前 → 不算本次流程的产出，仍判停摆', async () => {
+    const messages = [...proposeHistory(true), { id: 'u-seed2', role: 'user', content: '/create-role 另一个', timestamp: 9 } as Message];
+    const fired = await settleRoleFlowStallOnTextBreak({
+      ctx: mkCtx(messages), assembly: mkAssembly(), boundary: createRoleBoundary, finalText: '好了。',
+    });
+    expect(fired).toBe(true);
+  });
+
+  it('同一轮连续两次 settle → 只落一条；下一轮（新 user 消息）可再落', async () => {
+    const ctx = mkCtx();
+    const assembly = mkAssembly();
+    const input = { ctx, assembly, boundary: createRoleBoundary, finalText: '好了。' };
+    expect(await settleRoleFlowStallOnTextBreak(input)).toBe(true);
+    expect(await settleRoleFlowStallOnTextBreak(input)).toBe(false);
+    expect(assembly.persisted).toHaveLength(1);
+    expect(ctx.onEvent).toHaveBeenCalledTimes(1);
+    ctx.messages.push({ id: 'u-next', role: 'user', content: '继续', timestamp: 20 } as Message);
+    expect(await settleRoleFlowStallOnTextBreak(input)).toBe(true);
+    expect(assembly.persisted).toHaveLength(2);
+  });
+
+  it('回放 propose_role 成功 → 确认（草稿移除）→ 收尾文本：持久化序列里没有停摆消息', async () => {
+    const ctx = mkCtx(proposeHistory(true));
+    const assembly = mkAssembly();
+    listRoleDraftsMock.mockResolvedValueOnce([{ sessionId: SESSION_ID }]); // 确认前：卡在场
+    await settleRoleFlowStallOnTextBreak({ ctx, assembly, boundary: createRoleBoundary, finalText: '草稿好了。' });
+    listRoleDraftsMock.mockResolvedValue([]); // 用户点了确认，草稿目录被删
+    await settleRoleFlowStallOnTextBreak({ ctx, assembly, boundary: createRoleBoundary, finalText: '角色已创建。' });
+    expect(assembly.persisted.filter((m) => m.metadata?.roleFlowStalled)).toEqual([]);
   });
 });

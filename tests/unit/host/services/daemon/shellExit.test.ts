@@ -64,13 +64,16 @@ describe('shouldStayResidentAfterShellExit（表驱动，返修 Important 1）',
 describe('webServer 接线（静态钉，win32 真机不可达）', () => {
   it('onShellPipeClosed 把 process.platform 喂给驻留判据，false 路径落到 shutdown()', () => {
     const src = fs.readFileSync(path.join(process.cwd(), 'src/web/webServer.ts'), 'utf8');
-    const callback = /const onShellPipeClosed = \(\) => \{[\s\S]*?\n {2}\};/.exec(src);
+    // onShellPipeClosed 现在带 cause 参数区分 stdin-eof/stdin-error
+    // （N-WEBSERVER-DEATH-SUPERVISE-DIAG 退出归因），锚点跟随签名；
+    // 判据强度不变：platform 实参 + false 路径落到 shutdown。
+    const callback = /const onShellPipeClosed = \(cause: 'stdin-eof' \| 'stdin-error'[^)]*\) => \{[\s\S]*?\n {2}\};/.exec(src);
     expect(callback, 'onShellPipeClosed 回调锚点失效').not.toBeNull();
     // r1 起调用是三参多行形状：单行子串钉不住，钉「函数名 + platform 实参」两条。
     expect(callback![0]).toContain('shouldStayResidentAfterShellExit(');
     expect(callback![0]).toContain('process.platform,');
     expect(callback![0]).toContain('eofIsQuitCommand()');
-    expect(callback![0]).toMatch(/void shutdown\(\)/);
+    expect(callback![0]).toMatch(/void shutdown\(cause\)/);
     expect(src).toContain('stdinEofIsQuitCommand: eofIsQuitCommand');
     expect(src).toContain('backgroundContinueDetachArmed()');
   });

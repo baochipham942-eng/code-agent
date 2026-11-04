@@ -25,6 +25,16 @@ interface Props {
   preview?: PresentationPagePreviewResult;
 }
 
+function missingCopy(
+  code: string | undefined,
+  design: Pick<ReturnType<typeof useI18n>['t']['design'], 'slidesPreviewMissing' | 'slidesPreviewOffline' | 'slidesPreviewInstallFailed' | 'slidesPreviewUnsupported'>,
+): string {
+  if (code === 'LIBREOFFICE_RUNTIME_OFFLINE') return design.slidesPreviewOffline;
+  if (code === 'LIBREOFFICE_RUNTIME_UNSUPPORTED') return design.slidesPreviewUnsupported;
+  if (code?.startsWith('LIBREOFFICE_RUNTIME_')) return design.slidesPreviewInstallFailed;
+  return design.slidesPreviewMissing;
+}
+
 async function loadPresentationPreview(filePath: string): Promise<PresentationPagePreviewResult> {
   const response = await window.domainAPI?.invoke<PresentationPagePreviewResult>(
     IPC_DOMAINS.WORKSPACE,
@@ -113,7 +123,7 @@ export const PresentationPagePicker: React.FC<Props> = ({ title, filePath, outli
         <div className="mt-3 flex items-center gap-2 rounded border border-badge-warning/20 bg-amber-500/[0.05] px-2.5 py-2 text-xs text-badge-warning">
           <ImageOff className="h-3.5 w-3.5 shrink-0" />
           {resolved?.state === 'libreoffice-missing'
-            ? t.design.slidesPreviewMissing
+            ? missingCopy(resolved.error, t.design)
             : '截图转换失败，已切换为可选文字大纲。'}
         </div>
       )}

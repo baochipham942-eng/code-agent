@@ -129,6 +129,7 @@ export const zhSettingsCore = {
       feishu: '飞书',
       telegram: 'Telegram',
       httpApi: 'HTTP API',
+      externalImport: '从其他 AI 应用导入',
       lightMemory: 'Light Memory',
       sessionStats: '会话统计',
       modelUsage: '模型使用',

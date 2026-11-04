@@ -18,6 +18,8 @@ import { Check, CircleCheck, Cloud, ExternalLink, Inbox, MessageSquareText, Shie
 import { sessionAutomationClient } from '../../../services/sessionAutomationClient';
 import ipcService from '../../../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { CRON_REVIEW_INBOX_TIMEOUTS } from '@shared/constants';
+import { createLogger } from '../../../utils/logger';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useAppStore } from '../../../stores/appStore';
 import { useCronStore } from '../../../stores/cronStore';
@@ -27,6 +29,8 @@ import { Button } from '../../primitives/Button';
 import { SensitiveStepParkedRow } from '../../PermissionDialog/SensitiveStepHandbackCard';
 import { openCronLoginWallSite } from './cronLoginWallNotice';
 import { CronReviewDigest } from './CronReviewDigest';
+
+const logger = createLogger('AutomationReviewInbox');
 
 function reviewResultSessionId(record: SessionAutomationRecord): string | undefined {
   return record.config?.pendingReview?.resultSessionId ?? record.resultSessionId;
@@ -66,7 +70,7 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
   const [items, setItems] = useState<SessionAutomationRecord[]>([]);
   const [parked, setParked] = useState<ParkedApprovalInboxItem[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
-  // 标题与页首 tile 同一口径：服务侧 countPendingReview（按任务折算）。失败时回落到记录数。
+  // 标题与页首 tile 同一口径：服务侧 countPendingReview（按任务折算）。失败时保留上次值（从未成功过则标题回落到记录数）。
   const [reviewCount, setReviewCount] = useState<number | null>(null);
 
   const handleRerunLoginWall = async (record: SessionAutomationRecord) => {
@@ -86,29 +90,50 @@ export const AutomationReviewInbox: React.FC<AutomationReviewInboxProps> = ({ on
   };
 
   const load = useCallback(() => {
+    // 失败一律保留上一次的值（不清空、不回报 0），并 warn 留痕：服务掉线时「0」是假数。
+    const warnFailed = (what: string) => (error: unknown) => {
+      logger.warn(`Failed to load ${what}, keeping last known value`, {
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    };
     sessionAutomationClient.listPendingReview()
       .then((records) => {
         const list = records ?? [];
         setItems(list);
         onPendingCountChange?.(list.length);
       })
-      .catch(() => {
-        setItems([]);
-        onPendingCountChange?.(0);
-      });
+      .catch(warnFailed('pending review list'));
     sessionAutomationClient.countPendingReview()
       .then((count) => {
-        setReviewCount(typeof count === 'number' ? count : null);
+        if (typeof count === 'number') setReviewCount(count);
       })
-      .catch(() => setReviewCount(null));
+      .catch(warnFailed('pending review count'));
     sessionAutomationClient.listParkedApprovals()
       .then((rows) => setParked(rows ?? []))
-      .catch(() => setParked([]));
+      .catch(warnFailed('parked approvals'));
   }, [onPendingCountChange]);
 
   useEffect(() => {
     load();
   }, [load, refreshSignal]);
+
+  // 页面停着时定时任务跑完也要自动刷新：可见时低频轮询，切回前台/窗口聚焦立即重拉。
+  useEffect(() => {
+    const isVisible = () => document.visibilityState === 'visible';
+    const timer = setInterval(() => {
+      if (isVisible()) load();
+    }, CRON_REVIEW_INBOX_TIMEOUTS.POLL_INTERVAL);
+    const onWake = () => {
+      if (isVisible()) load();
+    };
+    window.addEventListener('focus', onWake);
+    document.addEventListener('visibilitychange', onWake);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', onWake);
+      document.removeEventListener('visibilitychange', onWake);
+    };
+  }, [load]);
 
   const handleResolveParked = async (item: ParkedApprovalInboxItem, response: PermissionResponse) => {
     if (item.status !== 'pending') return; // orphaned 不可操作

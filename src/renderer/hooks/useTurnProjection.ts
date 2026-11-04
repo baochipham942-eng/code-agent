@@ -251,6 +251,7 @@ export function projectTurns(
   let currentTurn: TraceTurn | null = null;
   let turnCounter = 0;
   const voiceArtifactAnchors = new Map<string, string>();
+  const seenSystemEventIds = new Set<string>(); // 同 id 的登记事件（直播+重载各送一次）只投一个节点
   // recovery snapshot 是「未执行」的展示权威源。同一 tool call 可能同时残留一条
   // success=false 的旧节点和一条 snapshot 在途节点；渲染只保留 snapshot 那条，
   // 且整次中断收成一个时间线落点，不让同一 Write 同屏报失败又报中断。
@@ -476,6 +477,8 @@ export function projectTurns(
         continue;
       }
       const { spec, payload } = event;
+      if (seenSystemEventIds.has(msg.id)) continue;
+      seenSystemEventIds.add(msg.id);
       if (msg.metadata?.turnCheckoutNote && msg.id !== latestTurnCheckoutNoteId) {
         continue;
       }

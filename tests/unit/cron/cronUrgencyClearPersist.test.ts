@@ -40,6 +40,7 @@ vi.mock('../../../src/host/services/sessionAutomation', () => ({
 import { CronService } from '../../../src/host/cron/cronService';
 import { cronAgentRunHasAlert, normalizeCronJobRow } from '../../../src/host/cron/cronNormalizers';
 import { cronNotifyQuietRound } from '../../../src/host/cron/cronFailurePolicy';
+import type { AgentAction, CronJobAction } from '../../../src/shared/contract/cron';
 
 beforeEach(() => {
   const db = new Database(':memory:');
@@ -109,6 +110,15 @@ function clearedCriteriaWire() {
   }));
 }
 
+/** CronJobAction 联合收窄到 agent 变体（生产链路 executeAction 的分支同款，
+ *  谓词入参也是 AgentAction）。收窄本身即断言：清空判据不许顺带改掉动作类型。 */
+function asAgentAction(action: CronJobAction | undefined): AgentAction {
+  if (!action || action.type !== 'agent') {
+    throw new Error(`expected agent action after save/reload, got type=${action?.type}`);
+  }
+  return action;
+}
+
 describe('N-CRON-URGENCY-CLEAR-PERSIST 清空紧急判据的持久化', () => {
   it('清空判据保存后：返回值、action 列原文、重读行三处都没有可用的 urgencyCriteria', async () => {
     const service = new CronService();
@@ -117,7 +127,7 @@ describe('N-CRON-URGENCY-CLEAR-PERSIST 清空紧急判据的持久化', () => {
 
     const updated = await service.updateJob(job.id, clearedCriteriaWire());
     // ① 返回值：清掉的键没有以旧值、空串等任何形态回来。
-    expect(updated?.action.urgencyCriteria).toBeUndefined();
+    expect(asAgentAction(updated?.action).urgencyCriteria).toBeUndefined();
 
     // ② 落库的 action 列原文：键整个不存在（FB-441 复查的就是这列）。
     const row = databaseState.db!
@@ -130,7 +140,7 @@ describe('N-CRON-URGENCY-CLEAR-PERSIST 清空紧急判据的持久化', () => {
     // ③ 重启重读（initialize 从 DB 加载走的 normalizeCronJobRow）：判据仍为无。
     const reloaded = normalizeCronJobRow(row);
     expect(reloaded?.action).toMatchObject({ type: 'agent', agentType: 'default', prompt: '汇总未读邮件和消息' });
-    expect(reloaded?.action.urgencyCriteria).toBeUndefined();
+    expect(asAgentAction(reloaded?.action).urgencyCriteria).toBeUndefined();
     await service.shutdown();
   });
 
@@ -141,12 +151,12 @@ describe('N-CRON-URGENCY-CLEAR-PERSIST 清空紧急判据的持久化', () => {
     const row = databaseState.db!
       .prepare('SELECT * FROM cron_jobs WHERE id = ?')
       .get(job.id) as Record<string, unknown>;
-    const reloadedAction = normalizeCronJobRow(row)!.action;
+    const reloadedAction = asAgentAction(normalizeCronJobRow(row)!.action);
 
     // 对照组（证明谓词会咬）：判据还在时，同一段 can_wait 正文被安静。
     const canWaitText = 'urgency: can_wait\n今天没有需要今天处理的要紧事。';
-    expect(cronAgentRunHasAlert(job.action, { isExternalWatch: false, finalAssistantText: canWaitText })).toBe(false);
-    expect(cronNotifyQuietRound(job.action, false, job.id)).toBe(true);
+    expect(cronAgentRunHasAlert(asAgentAction(job.action), { isExternalWatch: false, finalAssistantText: canWaitText })).toBe(false);
+    expect(cronNotifyQuietRound(asAgentAction(job.action), false, job.id)).toBe(true);
 
     // 清空后（重读出的 action）：无判据任务恒有警报、永不安静——正常通知路径。
     // 两行与 cronAgentAction.ts 成功轮的 hasAlert / notifyQuietRound 计算同构。

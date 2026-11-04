@@ -95,8 +95,11 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
                   <td className={`whitespace-nowrap ${tdClass}`}>
                     {execution.status === 'running' && (awaitingByJobId?.has(execution.jobId) ?? false) ? (
                       <span
-                        className="whitespace-nowrap rounded-full border border-badge-warning/40 bg-amber-500/15 px-2 py-1 text-xs text-badge-warning"
+                        className="inline-block max-w-[180px] overflow-hidden text-ellipsis whitespace-nowrap rounded-full border border-badge-warning/40 bg-amber-500/15 px-2 py-1 align-middle text-xs text-badge-warning"
                         data-testid="cron-exec-awaiting-approval"
+                        title={awaitingByJobId?.get(execution.jobId)?.commandPreview
+                          ? cc.awaitingApprovalWithPreview.replace('{preview}', awaitingByJobId.get(execution.jobId)!.commandPreview!)
+                          : undefined}
                       >
                         {awaitingApprovalLabel(cc.awaitingApprovalWithPreview, awaitingByJobId?.get(execution.jobId)?.commandPreview) ?? cc.awaitingApprovalBadge}
                       </span>

@@ -194,6 +194,8 @@ describe('无人值守等批准可见性（N-CRON-UNATTENDED-BASH-PARK-STUCK-VIS
         const chip = screen.getByTestId('cron-exec-awaiting-approval');
         expect(chip.textContent).toContain('等你批准：node scripts/refresh-wechat…');
         expect(chip.className).toContain('whitespace-nowrap');
+        expect(chip.className).toContain('max-w-[180px]');
+        expect(chip.getAttribute('title')).toContain('等你批准：node scripts/refresh-wechat.js --since yesterday --verbose-long-flag');
       },
       { timeout: 3000 },
     );

@@ -216,4 +216,6 @@ export interface AwaitingApprovalRun {
   executionId: string | null;
   requestId: string;
   requestedAt: number;
+  /** 已脱敏的命令/路径预览（argsPreview ?? argsSummary），没有则不带。 */
+  commandPreview?: string;
 }

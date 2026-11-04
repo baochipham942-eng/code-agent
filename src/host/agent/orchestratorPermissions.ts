@@ -19,7 +19,12 @@ import type { PendingApprovalRepository } from '../services/core/repositories/Pe
 import { isExternalSideEffectTool } from '../tools/externalSideEffect';
 import { EDITABLE_PERMISSION_TIMEOUT_MS, isEditableTool } from '../../shared/contract/permissionEdit';
 import { approvalParkEvents } from './approvalParkEvents';
-import { noteUnattendedApprovalTimeout, UNATTENDED_APPROVAL_TIMEOUT } from './unattendedApprovalTerminal';
+import {
+  buildUnattendedDegradeFeedback,
+  noteUnattendedApprovalDenial,
+  noteUnattendedApprovalTimeout,
+  UNATTENDED_APPROVAL_TIMEOUT,
+} from './unattendedApprovalTerminal';
 import { getConfirmationGate } from './confirmationGate';
 import { mintAppGrantSession, mintAppGrantStanding } from '../permissions/appGrantStore';
 import { getPermissionLevel } from './orchestrator/modelConfigResolver';
@@ -490,7 +495,9 @@ export class OrchestratorPermissionIsland {
           permissionLevel,
           parkRepo,
           'tool_approval',
-          approvalTerminal ? 'unattended' : 'backstop',
+          approvalTerminal
+            ? 'unattended'
+            : getPermissionModeManager().isUnattendedApprovalDegrade(fullRequest.sessionId) ? 'degrade' : 'backstop',
         );
       }
     } else {
@@ -615,15 +622,36 @@ export class OrchestratorPermissionIsland {
     permissionLevel: string,
     repo: PendingApprovalRepository,
     kind: PendingApprovalKind = 'tool_approval',
-    deadline: 'unattended' | 'backstop' = 'backstop',
+    deadline: 'unattended' | 'backstop' | 'degrade' = 'backstop',
   ): Promise<PermissionAskResult> {
     const releaseHold = holdStallClock(fullRequest.sessionId);
     return new Promise<PermissionAskResult>((resolve) => {
       const unattendedDeadline = deadline === 'unattended';
+      const degradeDeadline = deadline === 'degrade';
       const timeoutMs = unattendedDeadline
         ? INTERACTION_TIMEOUTS.PERMISSION
-        : INTERACTION_TIMEOUTS.PARKED_APPROVAL;
+        : degradeDeadline
+          ? INTERACTION_TIMEOUTS.UNATTENDED_PARKED_APPROVAL_DEGRADE
+          : INTERACTION_TIMEOUTS.PARKED_APPROVAL;
       const timeoutId = setTimeout(() => {
+        if (degradeDeadline) {
+          logger.warn(`Unattended parked approval ${fullRequest.id} unanswered, degrading to deny`);
+          const degraded = this.resolveParkedApproval(
+            fullRequest.id,
+            'deny',
+            buildUnattendedDegradeFeedback(fullRequest.tool, timeoutMs),
+            'timeout',
+          );
+          if (degraded && fullRequest.sessionId) {
+            noteUnattendedApprovalDenial(fullRequest.sessionId, {
+              tool: fullRequest.tool,
+              argsPreview: fullRequest.argsPreview,
+              requestedAt: fullRequest.timestamp,
+              code: UNATTENDED_APPROVAL_TIMEOUT,
+            });
+          }
+          return;
+        }
         logger.warn(
           unattendedDeadline
             ? `Unattended approval ${fullRequest.id} timed out, denying`

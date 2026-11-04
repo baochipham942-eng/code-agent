@@ -113,6 +113,8 @@ export const INTERACTION_TIMEOUTS = {
    * 等待用户，等待期间由 beginHumanWait/endHumanWait 暂停该会话的工具计时。
    */
   PARKED_APPROVAL: 86_400_000,
+  /** cron/heartbeat 停车审批无人应答的降级期限（30 分钟）；channel/voice 仍走上面的 24h 兜底。 */
+  UNATTENDED_PARKED_APPROVAL_DEGRADE: 1_800_000,
   /** MCP Elicitation 用户输入超时 */
   MCP_ELICITATION: 60_000,
   /**

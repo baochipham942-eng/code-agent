@@ -261,6 +261,7 @@ export class SessionManager implements Disposable {
       if (originKind === 'cron' || originKind === 'heartbeat' || originKind === 'channel') {
         permissionManager.markUnattendedSession(session.id);
         markShortTierSession(session.id);
+        if (originKind !== 'channel') permissionManager.markUnattendedApprovalDegrade(session.id);
       }
       permissionManager.initSessionMode(session.id);
     } catch (err) {

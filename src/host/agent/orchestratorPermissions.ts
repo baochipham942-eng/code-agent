@@ -660,6 +660,10 @@ export class OrchestratorPermissionIsland {
       const argsRef = fullRequest.sessionId && fullRequest.parentToolUseId
         ? { sessionId: fullRequest.sessionId, toolCallId: fullRequest.parentToolUseId }
         : undefined;
+      const argsSummaryRaw = fullRequest.details?.command
+        ?? fullRequest.details?.path
+        ?? fullRequest.details?.filePath
+        ?? fullRequest.details?.url;
       const payload: ToolApprovalPayload = {
         sessionId: fullRequest.sessionId ?? null,
         ...(fullRequest.parentToolUseId ? { toolCallId: fullRequest.parentToolUseId } : {}),
@@ -667,10 +671,7 @@ export class OrchestratorPermissionIsland {
         type: fullRequest.type,
         permissionLevel,
         requestedAt: fullRequest.timestamp,
-        argsSummary: fullRequest.details?.command
-          ?? fullRequest.details?.path
-          ?? fullRequest.details?.filePath
-          ?? fullRequest.details?.url,
+        argsSummary: argsSummaryRaw === undefined ? undefined : redactSecrets(argsSummaryRaw),
         ...(argsRef ? { argsRef } : {}),
         // 跨重启存活原料（N-PARKED-APPROVAL-SURVIVE-RESTART-RESUME）：指纹 + 忠实标记由
         // toolExecutor 随请求上抛；不忠实（台账形 ≠ 原始 args）的行照写数据，判据侧拦。

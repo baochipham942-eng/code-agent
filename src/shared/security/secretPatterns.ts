@@ -3,6 +3,7 @@ export type SecretPatternId =
   | 'cookie-header'
   | 'session-cookie-assignment'
   | 'env-secret-assignment'
+  | 'keyword-secret-assignment'
   | 'openai-key'
   | 'google-api-key'
   | 'ak-prefixed-key'
@@ -131,6 +132,24 @@ export const secretPatternRegistry: SecretPatternEntry[] = [
     maskStyle: 'full',
     validate: (_input, match) => !/^(your[-_]?|xxx|changeme|change[-_]?me|example|dummy|placeholder|redacted|null|none|true|false|\*+)/i.test(match[2]),
     redact: (match, redacted) => `${match[1]}${redacted}`,
+  },
+  {
+    // 小写/混合大小写的 password=…、pwd: …、api_key=… 与 CLI 形态 --password=… / --password …。
+    // 保留键与分隔符，只替换值。confidence=medium：只用于展示/落盘脱敏，不进 outboundSecretMask（仅 high）。
+    id: 'keyword-secret-assignment',
+    type: 'env_secret',
+    pattern: /(?<![\w-])((?:--(?:password|passwd|pwd|secret|token|api[-_]?key|apikey)(?:\s*[:=]\s*|\s+))|(?:password|passwd|pwd|secret|token|api[-_]?key|apikey)["']?\s*[:=]\s*)(["']?)([^\s"',;}&]+)/gi,
+    confidence: 'medium',
+    maskStyle: 'full',
+    validate: (_input, match) => {
+      const value = match[3];
+      if (value.length < 6) return false;
+      if (/^[-$<*]/.test(value) || /[()]/.test(value)) return false;
+      // camelCase 标识符（userToken、getToken）是代码引用，不是密钥值
+      if (/^[a-z]+(?:[A-Z][a-z]+)+$/.test(value)) return false;
+      return !/^(process\.env|true$|false$|null$|none$|string$|changeme|change[-_]?me|your[-_]?|x{3,}|\[?redacted)/i.test(value);
+    },
+    redact: (match, redacted) => `${match[1]}${match[2]}${redacted}`,
   },
   {
     id: 'openai-key',

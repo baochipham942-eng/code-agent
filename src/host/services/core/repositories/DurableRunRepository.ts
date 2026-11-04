@@ -583,13 +583,21 @@ export class DurableRunRepository implements DurableRunStores {
    * 「末事件」判据——停车审批的收口本身就是判据，且只动 waiting，running/recovering 等绝不碰。
    * 不续跑、不派发任何东西（A′）。返回是否真的收了一条 run。
    */
-  async closeParkedWaitingRunForSession(input: { sessionId: string; now: number; reason: string }): Promise<boolean> {
+  async closeParkedWaitingRunForSession(input: {
+    sessionId: string;
+    now: number;
+    reason: string;
+    /** 被收口审批的 requestedAt：只有「审批发起时已存在」的 run 才是它停靠的那条；更晚创建的 run 不是。 */
+    approvalRequestedAt: number;
+  }): Promise<boolean> {
     return runWithSqliteBusyRetry(() => this.db.transaction(() => {
       const row = this.db.prepare(`SELECT * FROM durable_runs
         WHERE session_id = ? AND parent_run_id IS NULL
           AND status IN ('created','running','waiting','paused','recovering')
         ORDER BY created_at DESC, rowid DESC LIMIT 1`).get(input.sessionId) as Row | undefined;
       if (row?.status !== 'waiting') return false;
+      // 栅栏：run 比审批还晚创建 → 是后来的 run2（user_stop/quota_wait/MCP 等待…），不是审批停靠的那条。
+      if (Number(row.created_at) > input.approvalRequestedAt) return false;
       const envelope = rowToEnvelope(row);
       const terminalSeq = envelope.cursor.nextEventSeq;
       const owner = envelope.owner

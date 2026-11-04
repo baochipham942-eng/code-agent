@@ -194,7 +194,7 @@ async function closeRunAfterOutcome(
         return;
       }
     }
-    await closeSessionParkedRun(repository, sessionId, now);
+    await closeSessionParkedRun(repository, sessionId, now, payload?.requestedAt ?? row?.submittedAt ?? 0);
   } catch (error) {
     logger.warn('Closing parked run after approval failed', {
       requestId,

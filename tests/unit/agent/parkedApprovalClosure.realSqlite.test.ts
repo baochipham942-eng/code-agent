@@ -230,4 +230,41 @@ describe('parked approval closure → ledger denied result + run leaves waiting 
     expect(counts).toMatchObject({ survived: 1, parked: 1 });
     expect((await runs.get('run-5'))?.status).toBe('waiting');
   });
+
+  it('r1 hydrate：审批早于该会话当前 waiting run（run2）→ 不收 run2', async () => {
+    seedSession('s6', null);
+    seedRow('a6', 's6', 'call-s6', 500); // 审批发起于 run 创建（1_000）之前 → 属于旧 run1
+    await seedWaitingRun('run-6', 's6');
+
+    hydrateApprovalGatesAtBoot(approvals, 2_000, {
+      loadSessionMessages: (id) => sessions.getMessages(id),
+      resolveWorkingDirectory: () => null,
+      durableRunRepository: runs,
+      persistToolMessage,
+    });
+    await flush();
+
+    expect(approvals.getById('a6')?.status).toBe('rejected');
+    expect((await runs.get('run-6'))?.status).toBe('waiting');
+  });
+
+  it('r1 点击：审批早于该会话当前 waiting run（run2）→ 执行后不收 run2', async () => {
+    seedSession('s7', '/work/s7');
+    seedRow('a7', 's7', 'call-s7', 500);
+    await seedWaitingRun('run-7', 's7');
+    const ports = {
+      repo: approvals,
+      loadMessages: (id: string) => sessions.getMessages(id),
+      resolveWorkingDirectory: () => '/work/s7',
+      executeTool: vi.fn(async () => ({ success: true, output: 'ok' })),
+      persistToolMessage,
+      now: () => 2_000,
+      durableRunRepository: runs,
+    } as unknown as ParkedApprovalResumePorts;
+
+    const out = await resumeSurvivingParkedApproval({ requestId: 'a7', response: 'allow', now: 2_000, ports });
+
+    expect(out).toMatchObject({ handled: true, status: 'executed' });
+    expect((await runs.get('run-7'))?.status).toBe('waiting');
+  });
 });

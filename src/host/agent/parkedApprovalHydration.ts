@@ -93,7 +93,7 @@ export function hydrateApprovalGatesAtBoot(
 
   const survivors: string[] = [];
   const survivingSessions = new Set<string>();
-  const closedSessions = new Set<string>();
+  const closedSessions = new Map<string, number>(); // sessionId → 被收口审批里最早的 requestedAt
   let parked = 0;
   for (const row of repo.listByKindAndStatus('tool_approval', 'pending')) {
     const payload = parseParkedApprovalPayload(row.payloadJson);
@@ -126,7 +126,8 @@ export function hydrateApprovalGatesAtBoot(
     });
     parked += changes;
     if (changes > 0 && sessionId) {
-      closedSessions.add(sessionId);
+      const requestedAt = payload?.requestedAt ?? row.submittedAt;
+      closedSessions.set(sessionId, Math.min(closedSessions.get(sessionId) ?? requestedAt, requestedAt));
       // 台账可读且 toolCall 还悬空时补一条 denied 结果（rejectLedgerToolApproval 按稳定消息 id 幂等）。
       const toolCallId = payload?.argsRef?.toolCallId;
       if (messages && toolCallId) {
@@ -157,9 +158,9 @@ export function hydrateApprovalGatesAtBoot(
   if (closedSessions.size > 0) {
     const runRepository = getRunRepository();
     if (runRepository) {
-      for (const closedSession of closedSessions) {
+      for (const [closedSession, requestedAt] of closedSessions) {
         if (survivingSessions.has(closedSession)) continue;
-        void closeSessionParkedRun(runRepository, closedSession, now);
+        void closeSessionParkedRun(runRepository, closedSession, now, requestedAt);
       }
     } else {
       logger.warn('Durable run repository unavailable; parked runs not closed after approval rejection');

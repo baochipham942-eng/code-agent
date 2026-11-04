@@ -431,6 +431,15 @@ export const cronCenterZh = {
         unavailable: '未判定',
       },
     },
+    // 任务详情 · 文件写入授权（N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1）
+    writeScope: {
+      label: '文件写入',
+      granted: '已允许在 {folder} 里保存文件',
+      notAllowed: '不允许。需要保存文件时会停下来等你确认。',
+      allow: '允许在 {folder} 里保存文件',
+      revoke: '撤销',
+      noFolderHint: '先在对话里给这个任务选一个工作文件夹，才能授权它保存文件。',
+    },
     // 执行状态（键 = CronJobStatus + none）
     status: {
       pending: '待执行',
@@ -846,6 +855,14 @@ export const cronCenterEn: typeof cronCenterZh = {
         dropped: 'Dropped',
         unavailable: 'Unavailable',
       },
+    },
+    writeScope: {
+      label: 'File writing',
+      granted: 'Allowed to save files in {folder}',
+      notAllowed: 'Not allowed. It will stop and wait for you when it needs to save a file.',
+      allow: 'Allow saving files in {folder}',
+      revoke: 'Revoke',
+      noFolderHint: 'Pick a working folder for this task in chat first.',
     },
     status: {
       pending: 'Pending',

@@ -16,6 +16,9 @@ const CLOUD_METADATA_HOSTNAMES = new Set([
   'metadata.google.internal', // GCP
   'metadata', // 各云 metadata 服务的短名别名
   'instance-data', // AWS EC2 上的 /etc/hosts 别名
+  // Azure IMDS 主机名形式（IP 形式 169.254.169.254 由链路本地段兜住）。
+  // rework r1：httpRequest 旧 BLOCKED_HOSTS 已拦此名，收口到本守卫时漏了，补齐。
+  'metadata.azure.com',
 ]);
 
 /**
@@ -39,6 +42,10 @@ export function isPrivateOrLocalHost(hostname: string): boolean {
     if (a === 172 && b >= 16 && b <= 31) return true;
     if (a === 192 && b === 168) return true;
     if (a === 169 && b === 254) return true;
+    // 阿里云 ECS 元数据服务。rework r1：httpRequest 旧 BLOCKED_HOSTS 已拦此 IP，
+    // 收口到本守卫时漏了，补齐（只拦元数据地址本身；100.64.0.0/10 CGNAT 整段
+    // 仍是父单记录的已知边界，不在拦截范围）。
+    if (a === 100 && b === 100 && Number(m[3]) === 100 && Number(m[4]) === 200) return true;
     return false;
   }
 

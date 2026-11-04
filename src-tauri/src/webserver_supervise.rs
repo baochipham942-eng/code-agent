@@ -65,12 +65,15 @@ pub const PATH_OWNED_CHILD: &str = "owned-child";
 pub const PATH_ATTACHED_DAEMON: &str = "attached-daemon";
 /// give-up 对话框点「重试」后开的新循环。
 pub const CAUSE_DIALOG_RETRY: &str = "dialog-retry";
-/// 附着守护 watcher 判死时的 cause（没有 Child 句柄，拿不到退出码/信号）。
-pub const CAUSE_DAEMON_UNREACHABLE: &str = "attached-daemon-unreachable";
+/// 附着守护 watcher 判死时的 cause：连续身份 miss（没有 Child 句柄，拿不到
+/// 退出码/信号；身份是唯一判死信号——健康 miss 只是「忙」，不判死）。
+pub const CAUSE_DAEMON_UNREACHABLE: &str = "attached-daemon-identity-gone";
 
 pub const SKIP_SHUTTING_DOWN: &str = "shutting-down";
 pub const SKIP_GUARD_HELD: &str = "restart-guard-held";
 pub const SKIP_ALREADY_HEALTHY: &str = "server-already-healthy";
+/// 附着守护活着只是不应答（忙）：拒绝走清端口的 spawn 路径。
+pub const SKIP_DAEMON_ALIVE: &str = "attached-daemon-alive";
 
 // ============================================================================
 // 纯状态机：decide(history, now) -> Restart{delay} | GiveUp
@@ -137,25 +140,37 @@ pub fn record_healthy(history: &SuperviseHistory, now_ms: u128) -> SuperviseHist
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DaemonWatchTick {
-    /// 身份 + 健康都在：继续轮询（miss 计数清零）。
+    /// 身份 + 健康都在：继续轮询（身份 miss 计数清零）。
     Alive,
-    /// 一拍 miss（ps 身份或 /health 不满足）：累计 n 拍。
-    Miss(u32),
-    /// 连续 miss 达到判死线：调用方交接给监督循环。
+    /// 身份在、/health 不应答：守护**活着**，只是忙（事件循环被同步重活阻塞
+    /// 6-9s 并不罕见）。绝不判死、绝不让 spawn 路径 kill -9 它——继续盯，
+    /// 由调用方留痕一次「不健康」事件。
+    Unhealthy,
+    /// 一拍身份 miss（ps 无输出 / lstart+command 不吻合）：身份是唯一能证明
+    /// 进程真没了的信号，连续累计 n 拍。
+    IdentityMiss(u32),
+    /// 连续 DAEMON_DEAD_AFTER_MISSES 拍身份 miss：调用方交接给监督循环。
     Dead,
 }
 
-/// 一拍判定：身份与健康都在才算活着；miss 连续累计，一拍 Alive 即清零
-/// （瞬时抖动不判死）。达到 DAEMON_DEAD_AFTER_MISSES 拍才算真死。
-pub fn daemon_watch_tick(previous_misses: u32, identity_ok: bool, health_ok: bool) -> DaemonWatchTick {
-    if identity_ok && health_ok {
-        return DaemonWatchTick::Alive;
+/// 一拍判定：**只有身份 miss 计入判死**（ps 拿不到 / 不吻合 = 进程没了或 pid
+/// 被复用）。健康 miss 一拍都不算——忙守护（身份在、/health 暂时超时）判死
+/// 会让 spawn 路径的 clear_stale_web_server_port kill -9 活守护，正在跑的
+/// 后台任务被强杀（ai-review #2746 Important）。健康不健康交给附着重判
+/// （decide_startup_io 的 health_ok）决定「附着还是换人」，不决定生死。
+pub fn daemon_watch_tick(previous_identity_misses: u32, identity_ok: bool, health_ok: bool) -> DaemonWatchTick {
+    if !identity_ok {
+        let misses = previous_identity_misses.saturating_add(1);
+        if misses >= DAEMON_DEAD_AFTER_MISSES {
+            return DaemonWatchTick::Dead;
+        }
+        return DaemonWatchTick::IdentityMiss(misses);
     }
-    let misses = previous_misses.saturating_add(1);
-    if misses >= DAEMON_DEAD_AFTER_MISSES {
-        DaemonWatchTick::Dead
+    // 身份吻合：进程活着。健康只影响「要不要留痕」，不影响生死。
+    if health_ok {
+        DaemonWatchTick::Alive
     } else {
-        DaemonWatchTick::Miss(misses)
+        DaemonWatchTick::Unhealthy
     }
 }
 
@@ -192,6 +207,18 @@ pub fn plan_replacement(daemon_record: Option<DaemonPidRecord>, already_healthy:
         ReplacementPlan::AlreadyHealthy
     } else {
         ReplacementPlan::SpawnOwned
+    }
+}
+
+/// SpawnOwned 前的最后一道闸：附着槽里还有记录、且该记录的身份**此刻仍**
+/// 吻合（ps lstart+command 对得上）= 守护活着只是不应答（忙/暂时不健康）——
+/// spawn 路径会经 clear_stale_web_server_port 对端口占用者无差别 kill -9，
+/// 活守护绝不能走到那。返回 false = 拒绝 spawn，按一次失败处理。
+/// 槽为 None（本就是 owned 子进程路径）或身份已不吻合（真死/pid 复用）→ 放行。
+pub fn spawn_owned_allowed(attached: Option<&DaemonPidRecord>, attached_identity_ok: bool) -> bool {
+    match attached {
+        Some(_) => !attached_identity_ok,
+        None => true,
     }
 }
 
@@ -492,9 +519,29 @@ impl SuperviseHooks for AppSuperviseHooks {
             }
             ReplacementPlan::AlreadyHealthy => Ok(SpawnOutcome::AlreadyHealthy),
             ReplacementPlan::SpawnOwned => {
-                // 附着槽里的记录已死（decide_startup_io None 才走到这）：清掉，
-                // cleanup 不再对着死/复用的 pid 发信号。
                 let state = self.app.state::<AppState>();
+                // SpawnOwned 最后一道闸：decide_startup_io 判 None 可能只是守护
+                // **忙**（身份在、/health 超时）。此刻再核一次附着记录的身份，
+                // 仍吻合 = 活守护 → 拒绝 spawn（spawn 路径的 clear_stale_web_server_port
+                // 会 kill -9 它，正在跑的后台任务会被强杀），按一次失败退避重试。
+                let attached = match state.attached_daemon.lock() {
+                    Ok(guard) => guard.clone(),
+                    Err(poisoned) => poisoned.into_inner().clone(),
+                };
+                if let Some(record) = attached.as_ref() {
+                    let identity_ok = resident_host::process_identity_matches(
+                        record,
+                        resident_host::ps_process_identity(record.pid).as_deref(),
+                    );
+                    if !spawn_owned_allowed(attached.as_ref(), identity_ok) {
+                        return Err(format!(
+                            "attached daemon pid {} is alive (identity matches) but unhealthy; refusing to spawn (would kill -9 a live daemon)",
+                            record.pid
+                        ));
+                    }
+                }
+                // 身份已不吻合（真死 / pid 复用）或槽本就为空：清掉附着记录，
+                // cleanup 不再对着死/复用的 pid 发信号。
                 if let Ok(mut slot) = state.attached_daemon.lock() {
                     *slot = None;
                 }
@@ -682,7 +729,10 @@ pub fn spawn_daemon_watcher(app: tauri::AppHandle, watched: DaemonPidRecord) {
     let _ = std::thread::Builder::new()
         .name("webserver-daemon-watcher".to_string())
         .spawn(move || {
-            let mut misses = 0u32;
+            let mut identity_misses = 0u32;
+            // 「不健康」留痕只在一个连续 episode 里发一次，恢复健康后重置——
+            // 每 2s 一条会刷屏，但完全不记又违反「无静默分支」。
+            let mut unhealthy_logged = false;
             loop {
                 std::thread::sleep(DAEMON_WATCH_POLL_INTERVAL);
                 let state = app.state::<AppState>();
@@ -698,9 +748,34 @@ pub fn spawn_daemon_watcher(app: tauri::AppHandle, watched: DaemonPidRecord) {
                     resident_host::ps_process_identity(watched.pid).as_deref(),
                 );
                 let health_ok = resident_host::http_health_ok(&crate::health_url());
-                match daemon_watch_tick(misses, identity_ok, health_ok) {
-                    DaemonWatchTick::Alive => misses = 0,
-                    DaemonWatchTick::Miss(n) => misses = n,
+                match daemon_watch_tick(identity_misses, identity_ok, health_ok) {
+                    DaemonWatchTick::Alive => {
+                        identity_misses = 0;
+                        unhealthy_logged = false;
+                    }
+                    // 身份在、健康不应答：守护活着，继续盯（不判死、不杀）。
+                    DaemonWatchTick::Unhealthy => {
+                        if !unhealthy_logged {
+                            unhealthy_logged = true;
+                            emit_supervise_event(
+                                &app,
+                                "warning",
+                                EVENT_DAEMON_UNREACHABLE,
+                                format!(
+                                    "attached daemon webServer alive but /api/health unresponsive (pid {}); keeping it (busy, not dead)",
+                                    watched.pid
+                                ),
+                                serde_json::json!({
+                                    "owner": "resident-daemon",
+                                    "role": "webServer",
+                                    "path": PATH_ATTACHED_DAEMON,
+                                    "pid": watched.pid,
+                                    "state": "unhealthy-alive",
+                                }),
+                            );
+                        }
+                    }
+                    DaemonWatchTick::IdentityMiss(n) => identity_misses = n,
                     DaemonWatchTick::Dead => {
                         report_daemon_death(&app, &watched);
                         return;
@@ -719,7 +794,7 @@ fn report_daemon_death(app: &tauri::AppHandle, record: &DaemonPidRecord) {
         "error",
         EVENT_DAEMON_UNREACHABLE,
         format!(
-            "attached daemon webServer unreachable for {DAEMON_DEAD_AFTER_MISSES} consecutive polls (pid {})",
+            "attached daemon webServer identity gone for {DAEMON_DEAD_AFTER_MISSES} consecutive polls (pid {})",
             record.pid
         ),
         serde_json::json!({
@@ -728,7 +803,7 @@ fn report_daemon_death(app: &tauri::AppHandle, record: &DaemonPidRecord) {
             "path": PATH_ATTACHED_DAEMON,
             "pid": record.pid,
             "cause": CAUSE_DAEMON_UNREACHABLE,
-            "identityAndHealthMisses": DAEMON_DEAD_AFTER_MISSES,
+            "identityMisses": DAEMON_DEAD_AFTER_MISSES,
         }),
     );
     supervise_after_death(app.clone(), CAUSE_DAEMON_UNREACHABLE, record.pid, PATH_ATTACHED_DAEMON);
@@ -934,17 +1009,58 @@ mod tests {
     // ── ③ 附着守护：判死节奏 / 让位判定 / 重生计划（活守护绝不 spawn）────
 
     #[test]
-    fn daemon_watch_tick_requires_two_consecutive_misses() {
-        // 身份 + 健康都在 → 活着，miss 清零
+    fn daemon_watch_tick_requires_two_consecutive_identity_misses() {
+        // 身份 + 健康都在 → 活着，身份 miss 计数清零
         assert_eq!(daemon_watch_tick(1, true, true), DaemonWatchTick::Alive);
         assert_eq!(daemon_watch_tick(0, true, true), DaemonWatchTick::Alive);
-        // 一拍 miss（ps 没了 / 健康没了）只累计，不判死
-        assert_eq!(daemon_watch_tick(0, false, true), DaemonWatchTick::Miss(1));
-        assert_eq!(daemon_watch_tick(0, true, false), DaemonWatchTick::Miss(1));
-        // 连续第 2 拍 miss（拍数从上一拍续起）→ 判死
+        // 身份在、健康不应答 → Unhealthy：守护活着（忙），继续盯，绝不判死
+        assert_eq!(daemon_watch_tick(0, true, false), DaemonWatchTick::Unhealthy);
+        assert_eq!(daemon_watch_tick(1, true, false), DaemonWatchTick::Unhealthy);
+        assert_eq!(daemon_watch_tick(0, false, true), DaemonWatchTick::IdentityMiss(1));
+        assert_eq!(daemon_watch_tick(0, false, false), DaemonWatchTick::IdentityMiss(1));
+        // 连续第 2 拍身份 miss（拍数从上一拍续起）→ 判死；首拍 miss 不判死
+        assert_eq!(daemon_watch_tick(1, false, true), DaemonWatchTick::Dead, "上一拍已 miss，本拍再 miss = 连续 2 拍");
+    }
+
+    // ── Rework r1：忙守护（身份在、/health 暂时不应答）绝不能被判死 ─────────
+    // 根因：旧判据把健康 miss 也计入判死拍数，守护事件循环被同步重活阻塞
+    // 6-9s（身份仍在）就会被判死，随后 spawn 路径的 clear_stale_web_server_port
+    // 对活守护 kill -9。身份是唯一能证明进程真没了的信号。
+    #[test]
+    fn busy_daemon_with_identity_never_declared_dead() {
+        assert_ne!(
+            daemon_watch_tick(1, true, false),
+            DaemonWatchTick::Dead,
+            "身份在、健康 miss 一拍不能判死"
+        );
+        assert_ne!(
+            daemon_watch_tick(5, true, false),
+            DaemonWatchTick::Dead,
+            "健康 miss 哪怕攒了很多拍，身份在就绝不能判死"
+        );
+        // 正面钉死：身份在 + 健康 miss → Unhealthy（活着，继续盯）
+        assert_eq!(daemon_watch_tick(1, true, false), DaemonWatchTick::Unhealthy);
+        assert_eq!(daemon_watch_tick(999, true, false), DaemonWatchTick::Unhealthy);
+        // 身份 miss 仍是判死的唯一信号
         assert_eq!(daemon_watch_tick(1, false, false), DaemonWatchTick::Dead);
-        assert_eq!(daemon_watch_tick(1, false, true), DaemonWatchTick::Dead);
-        assert_eq!(daemon_watch_tick(1, true, false), DaemonWatchTick::Dead);
+    }
+
+    // ── Rework r1：SpawnOwned 闸——身份在的活守护不许走到清端口的 spawn ────
+    // decide_startup_io 判 None 只说明「没能同时证明身份+健康」，守护可能只是
+    // 忙；spawn_owned_allowed 是最后一道闸，身份仍吻合就必须拒绝。
+    #[test]
+    fn spawn_owned_gate_blocks_alive_daemon_allows_dead_or_owned_path() {
+        let record = DaemonPidRecord { pid: 777, start_time: Some("Sat Oct 11 22:29:33 2026".into()) };
+        // 身份在（活守护，只是不健康）→ 不许 SpawnOwned
+        assert!(
+            !spawn_owned_allowed(Some(&record), true),
+            "身份仍吻合的守护活着：必须拒绝 spawn（否则 clear_stale_web_server_port kill -9 活守护）"
+        );
+        // 身份没了（真死 / pid 复用）→ 放行 spawn
+        assert!(spawn_owned_allowed(Some(&record), false));
+        // 槽为 None（owned-child 死亡路径）→ 放行
+        assert!(spawn_owned_allowed(None, true));
+        assert!(spawn_owned_allowed(None, false));
     }
 
     #[test]

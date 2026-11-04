@@ -2279,12 +2279,43 @@ fn recreate_main_window(app: &tauri::AppHandle) -> Result<(), String> {
                     Some(serde_json::json!({ "daemonPid": record.pid })),
                 );
             } else {
-                let child = start_web_server(app)?;
-                if let Some(child_pid) = app.state::<AppState>().store_child(child) {
-                    // 收管即监视：子进程死在槽里（非 cleanup 接手）才落
-                    // desktop-shell-webserver-exited-unexpectedly 事件，之后交给
-                    // 监督线程自动重启（N-WEBSERVER-DEATH-SUPERVISE-RESTART）
-                    webserver_exit::spawn_exit_watcher(app.clone(), child_pid);
+                // SpawnOwned 同款闸：decide_startup_io 判 None 可能只是守护**忙**
+                //（身份在、/health 超时）。身份仍吻合 = 活守护，绝不 spawn——
+                // spawn 路径的 clear_stale_web_server_port 会 kill -9 它。
+                let attached = app
+                    .state::<AppState>()
+                    .attached_daemon
+                    .lock()
+                    .map(|guard| guard.clone())
+                    .unwrap_or_else(|poisoned| poisoned.into_inner().clone());
+                let attached_alive = attached.as_ref().is_some_and(|record| {
+                    resident_host::process_identity_matches(
+                        record,
+                        resident_host::ps_process_identity(record.pid).as_deref(),
+                    )
+                });
+                if attached_alive {
+                    let diagnostics = new_boot_diagnostics(app);
+                    write_shell_event(
+                        app,
+                        &diagnostics,
+                        "warning",
+                        "desktop-shell-webserver-restart-skipped",
+                        "webServer restart skipped: attached daemon alive but unhealthy (busy, not dead); not killing it",
+                        Some(serde_json::json!({
+                            "reason": webserver_supervise::SKIP_DAEMON_ALIVE,
+                            "path": "window-recreate",
+                            "daemonPid": attached.map(|record| record.pid),
+                        })),
+                    );
+                } else {
+                    let child = start_web_server(app)?;
+                    if let Some(child_pid) = app.state::<AppState>().store_child(child) {
+                        // 收管即监视：子进程死在槽里（非 cleanup 接手）才落
+                        // desktop-shell-webserver-exited-unexpectedly 事件，之后交给
+                        // 监督线程自动重启（N-WEBSERVER-DEATH-SUPERVISE-RESTART）
+                        webserver_exit::spawn_exit_watcher(app.clone(), child_pid);
+                    }
                 }
             }
             // 窗口重开自愈成功 = 新一轮：give-up 计数清零（重开窗口必须永远

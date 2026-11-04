@@ -78,11 +78,13 @@ export const OverviewRunHeader: React.FC = () => {
   if (!model) return null;
 
   const wt = t.workbenchTabs;
-  const cancelledOutcome = t.outcomeWords['cancelled-by-user'].timeline;
+  const cancelledOutcome = model.outcome === 'idle-reaped'
+    ? t.outcomeWords['failed-idle-reaped'].timeline
+    : t.outcomeWords['cancelled-by-user'].timeline;
   const failedOutcome = t.outcomeWords['failed-unknown'].timeline;
   const toneLabel = model.tone === 'waiting'
     ? wt.overviewRunWaitingApproval
-    : model.outcome === 'cancelled'
+    : (model.outcome === 'cancelled' || model.outcome === 'idle-reaped')
       ? cancelledOutcome.label
       : model.outcome === 'error'
         ? failedOutcome.label
@@ -94,7 +96,7 @@ export const OverviewRunHeader: React.FC = () => {
   const phaseLine = model.tone === 'waiting'
     ? wt.overviewRunWaitingApproval
     : model.outcome
-      ? (model.outcome === 'cancelled'
+      ? ((model.outcome === 'cancelled' || model.outcome === 'idle-reaped')
         ? `${cancelledOutcome.label} · ${cancelledOutcome.reason}`
         : `${failedOutcome.label} · ${failedOutcome.reason}`)
       : model.phase;

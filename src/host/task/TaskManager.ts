@@ -381,11 +381,11 @@ export class TaskManager extends EventEmitter {
     }
   }
 
-  async cancelBackgroundTask(taskId: string): Promise<boolean> {
+  async cancelBackgroundTask(taskId: string, reason?: 'idle-reaped'): Promise<boolean> {
     const run = this.backgroundRuns.get(taskId);
     if (!run) return false;
     run.status = 'cancelling';
-    await run.orchestrator.cancel();
+    await run.orchestrator.cancel(reason);
     return true;
   }
 

@@ -81,6 +81,47 @@ describe('useCronOsNotification 前台失败 toast 动作', () => {
     expect(useAppStore.getState().showCronCenter).toBe(true);
   });
 
+  it('自动停用通知（无会话）：toast 动作打开 Cron Center 并选中该任务', async () => {
+    const { postOsNotification: real } = await vi.importActual<typeof import('../../../src/renderer/utils/osNotification')>(
+      '../../../src/renderer/utils/osNotification',
+    );
+    postOsNotification.mockImplementation(real);
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    useToastStore.setState({ toasts: [] });
+    useAppStore.getState().setShowCronCenter(false);
+    useCronStore.setState({ selectedJobId: null });
+    renderHook(() => useCronOsNotification(cronCenterZh.cronCenter, vi.fn()));
+    // notifyCronJobDisabled 的载荷形状：无会话、无 code/failureKind，只有 jobId
+    handlers.show!({
+      id: 'd', title: '[定时] C', body: 'b', sessionId: '', urgent: true, failure: true, jobId: 'job-x',
+    });
+    await vi.waitFor(() => expect(useToastStore.getState().toasts).toHaveLength(1));
+    useToastStore.getState().toasts[0].action!.onClick();
+    expect(useCronStore.getState().selectedJobId).toBe('job-x');
+    expect(useAppStore.getState().showCronCenter).toBe(true);
+  });
+
+  it('停用通知带 sessionId：仍打开该会话，不开 Cron Center', async () => {
+    const { postOsNotification: real } = await vi.importActual<typeof import('../../../src/renderer/utils/osNotification')>(
+      '../../../src/renderer/utils/osNotification',
+    );
+    postOsNotification.mockImplementation(real);
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    useToastStore.setState({ toasts: [] });
+    useAppStore.getState().setShowCronCenter(false);
+    useCronStore.setState({ selectedJobId: null });
+    const onOpenSession = vi.fn();
+    renderHook(() => useCronOsNotification(cronCenterZh.cronCenter, onOpenSession));
+    handlers.show!({
+      id: 'd2', title: '[定时] D', body: 'b', sessionId: 'sess-2', urgent: true, failure: true, jobId: 'job-x',
+    });
+    await vi.waitFor(() => expect(useToastStore.getState().toasts).toHaveLength(1));
+    useToastStore.getState().toasts[0].action!.onClick();
+    expect(onOpenSession).toHaveBeenCalledWith('sess-2');
+    expect(useCronStore.getState().selectedJobId).toBeNull();
+    expect(useAppStore.getState().showCronCenter).toBe(false);
+  });
+
   it('连续两条失败：点 A 的 toast 打开 A 的会话，不是最近一条 B', async () => {
     const { postOsNotification: real } = await vi.importActual<typeof import('../../../src/renderer/utils/osNotification')>(
       '../../../src/renderer/utils/osNotification',

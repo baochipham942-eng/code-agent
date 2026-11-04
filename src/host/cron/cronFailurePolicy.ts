@@ -161,6 +161,9 @@ export function notifyCronJobDisabled(
       {
         sessionId: execution.sessionId ?? '',
         sessionTitle: `[定时] ${definition.name}`,
+        // 停用通知必须带 jobId：无会话执行（如云端 run）的点击落 Cron Center 选中该任务，
+        // 那里才有「重新启用」；不带 jobId 时 renderer 的点击是无操作的 dismiss。
+        jobId: definition.id,
         summary,
         duration: execution.duration ?? 0,
         toolsUsed: [],

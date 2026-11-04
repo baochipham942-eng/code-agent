@@ -130,7 +130,7 @@ resign_app_if_possible() {
 kill_zombie_webserver() {
   # 杀掉可能占用 WEB_PORT 的 zombie webServer.cjs（前次 Tauri main 异常退出残留）。
   # 不清这些 zombie 会导致新 Tauri main 启动时 webServer spawn 检测失败而 abort(SIGABRT)。
-  # 只按「谁 LISTEN 在 WEB_PORT」定位，绝不能按进程名 pkill -f "webServer.cjs"：
+  # 只按「谁 LISTEN 在 WEB_PORT」定位，绝不能按进程名 pkill：
   # 别的 Dev 槽 / verify-slotless / 其他会话的 webServer 同名不同端口，按名字杀会把
   # 它们一起带走（FB-553）。-sTCP:LISTEN 同时避免把 merely 连着这个端口的客户端
   # （比如开着 localhost 页面的浏览器 tab）一并 kill -9。

@@ -14,7 +14,7 @@ import type {
   ToolCapabilityView,
 } from '../types/runWorkbench';
 import { getToolCapabilitySource } from './toolExecutionPresentation';
-import { hasCancelledRunMarker } from './streamingStatePresentation';
+import { hasCancelledRunMarker, isIdleReapedRun } from './streamingStatePresentation';
 import {
   isReadOnlyArtifactOwnershipItem,
   isReadOnlyArtifactTool,
@@ -156,6 +156,7 @@ export function buildRunUiState(args: BuildRunWorkbenchModelInput): RunUiState {
     waitingApprovalId: args.pendingApprovalId || undefined,
     ...describeBlocked(firstBlockedReason(turn)),
     completionSignal: completionSignal(turn),
+    ...(status === 'cancelled' && turn && isIdleReapedRun(turn) ? { terminalReason: 'idle_reaped' as const } : {}),
     startedAt: turn?.startTime,
     endedAt: turn?.endTime,
   };

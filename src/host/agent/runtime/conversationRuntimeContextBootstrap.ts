@@ -344,6 +344,8 @@ export async function runStartupContextAssembly(
   contextAssembly: ContextAssembly,
   options: {
     userMessage: string;
+    /** 分析口径的用户原话（extractUserRequest 后）：seed memory 检索按它评分，不看轮首脚手架。 */
+    analysisUserRequest?: string;
     isSimpleTask: boolean;
     injectActivityContext: (options: { includeDesktopActivity: boolean }) => Promise<void>;
     bootstrapDesktopDerivedContext: (userMessage?: string) => Promise<void>;
@@ -418,7 +420,9 @@ export async function runStartupContextAssembly(
     }
   }
 
-  await raceStartupStep(ctx, injectSeedMemory(ctx, contextAssembly, options.userMessage));
+  // seed memory 检索是分析口径：query 只用用户原话。注入块（含 <repeated_workarounds>）
+  // 混进 query 会把无关的历史记忆召回（N-CAP-NOTICE-LEAK）。
+  await raceStartupStep(ctx, injectSeedMemory(ctx, contextAssembly, options.analysisUserRequest ?? options.userMessage));
   if (isStartupAborted(ctx)) return 'aborted';
 
   await raceStartupStep(ctx, options.injectActivityContext({ includeDesktopActivity: !options.isSimpleTask }));

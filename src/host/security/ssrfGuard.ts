@@ -16,6 +16,9 @@ const CLOUD_METADATA_HOSTNAMES = new Set([
   'metadata.google.internal', // GCP
   'metadata', // 各云 metadata 服务的短名别名
   'instance-data', // AWS EC2 上的 /etc/hosts 别名
+  // Azure IMDS 主机名形式（IP 形式 169.254.169.254 由链路本地段兜住）。
+  // rework r1：httpRequest 旧 BLOCKED_HOSTS 已拦此名，收口到本守卫时漏了，补齐。
+  'metadata.azure.com',
 ]);
 
 /**
@@ -23,8 +26,11 @@ const CLOUD_METADATA_HOSTNAMES = new Set([
  * 入参可为裸 hostname（'127.0.0.1'/'localhost'）或 WHATWG URL 的 IPv6 字面量（'[::1]'）。
  */
 export function isPrivateOrLocalHost(hostname: string): boolean {
-  const h = hostname.toLowerCase();
-  if (h === 'localhost') return true;
+  // WHATWG URL 保留 FQDN 尾点（'localhost.'），去一个尾点再判；
+  // *.localhost 按 RFC 6761/6762 整段解析到环回，一并判私有
+  //（N-WEBFETCH-BLOCK-PRIVATE-NET：web_fetch 共享入口接入本守卫时补齐）。
+  const h = hostname.toLowerCase().replace(/\.$/, '');
+  if (h === 'localhost' || h.endsWith('.localhost')) return true;
   if (CLOUD_METADATA_HOSTNAMES.has(h)) return true;
 
   // 私网/环回/链路本地/未指定 IPv4
@@ -36,6 +42,10 @@ export function isPrivateOrLocalHost(hostname: string): boolean {
     if (a === 172 && b >= 16 && b <= 31) return true;
     if (a === 192 && b === 168) return true;
     if (a === 169 && b === 254) return true;
+    // 阿里云 ECS 元数据服务。rework r1：httpRequest 旧 BLOCKED_HOSTS 已拦此 IP，
+    // 收口到本守卫时漏了，补齐（只拦元数据地址本身；100.64.0.0/10 CGNAT 整段
+    // 仍是父单记录的已知边界，不在拦截范围）。
+    if (a === 100 && b === 100 && Number(m[3]) === 100 && Number(m[4]) === 200) return true;
     return false;
   }
 

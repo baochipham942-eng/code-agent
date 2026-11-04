@@ -14,7 +14,11 @@ import type { AgentAction, CronJobDefinition, CronJobExecution } from '../../sha
 import { normalizeErrorMessage } from '../lightMemory/failureJournal';
 import { getConfigService } from '../services/core/configService';
 import { notificationService } from '../services/infra/notificationService';
-import { isNotifySuppressedResult, readCronAlertReason } from './cronNormalizers';
+import {
+  isCronAgentResultUrgent,
+  isNotifySuppressedResult,
+  readCronAlertReason,
+} from './cronNormalizers';
 import {
   CRON_LOGIN_WALL_STOP,
   parseCronLoginWallStop,
@@ -157,6 +161,9 @@ export function notifyCronJobDisabled(
       {
         sessionId: execution.sessionId ?? '',
         sessionTitle: `[定时] ${definition.name}`,
+        // 停用通知必须带 jobId：无会话执行（如云端 run）的点击落 Cron Center 选中该任务，
+        // 那里才有「重新启用」；不带 jobId 时 renderer 的点击是无操作的 dismiss。
+        jobId: definition.id,
         summary,
         duration: execution.duration ?? 0,
         toolsUsed: [],
@@ -253,7 +260,10 @@ export function notifyCronAgentExecution(
             }
           : {}),
       },
-      { force: true }, // 后台定时任务完成：绕过焦点门，app 前台/后台都提醒
+      {
+        force: true,
+        urgent: succeeded && isCronAgentResultUrgent(execution.result),
+      }, // 后台定时任务完成：绕过焦点门，app 前台/后台都提醒
     );
   } catch (err) {
     console.error('[CronService] notifyAgentExecution failed:', err);

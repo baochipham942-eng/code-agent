@@ -262,3 +262,31 @@ export function redactCredentialText(input: string, options: RedactCredentialTex
 
   return output;
 }
+
+/**
+ * 命令行/审批预览专用的关键字键值脱敏：password=…、pwd: …、api_key=… 与 --password=… / --password …。
+ * 刻意不进 secretPatternRegistry：那会让读源码的工具结果（`apiKey: options.apiKey`）也被改写，
+ * 模型随后按所见内容 Edit 会对不上。只在停车审批的 argsPreview / argsSummary 两处显式调用。
+ */
+const COMMAND_KEYWORD_SECRET_PATTERN =
+  /(?<![\w-])((?:--(?:password|passwd|pwd|secret|token|api[-_]?key|apikey)(?:\s*[:=]\s*|\s+))|(?:password|passwd|pwd|secret|token|api[-_]?key|apikey)["']?\s*[:=]\s*)(["']?)([^\s"',;}&]+)/gi;
+
+const COMMAND_PLACEHOLDER_VALUE =
+  /^(process\.env|true$|false$|null$|none$|string$|changeme|change[-_]?me|your[-_]?|x{3,}|\[?redacted)/i;
+
+export function redactCommandKeywordSecrets(input: string, options: RedactCredentialTextOptions = {}): string {
+  const redacted = options.redacted ?? DEFAULT_REDACTED;
+  return input.replace(
+    COMMAND_KEYWORD_SECRET_PATTERN,
+    (match: string, key: string, quote: string, value: string) => {
+      if (value.length < 6) return match;
+      if (/^[-$<*]/.test(value) || /[()]/.test(value)) return match;
+      // 标识符/成员访问（userToken、this.token、req.body.password、hashed_password）是代码引用，不是密钥值
+      if (/^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+$/.test(value)) return match;
+      if (/^[a-z]+(?:[A-Z][a-z]+)+$/.test(value) || /^[A-Z][a-z]+(?:[A-Z][a-z]+)*$/.test(value)) return match;
+      if (/^[a-z]+(?:_[a-z]+)+$/.test(value)) return match;
+      if (COMMAND_PLACEHOLDER_VALUE.test(value)) return match;
+      return `${key}${quote}${redacted}`;
+    },
+  );
+}

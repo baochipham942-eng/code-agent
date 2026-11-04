@@ -53,9 +53,14 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // 本回合已声明 targetApp 后，省略 targetApp 的 type/key（含 computer_batch 子动作）会被拒绝。
 // 整合合并：本单 sys-v90 × main 已合入的 sys-v90 撞号，合并后的 prompt 输入哈希面
 // 未在任何一侧记录过，按惯例升版。
-// sys-v93：N-ROLE-PROACTIVITY-CHAT-TUNE——新 deferred 工具 set_role_proactivity（schema 全额下发 +
-// ToolSearch 索引行），模型每轮可见文本变化。
-export const PROMPT_VERSION = 'sys-v93' as const;
+// sys-v95：N-FIX-BROWSER-SECRETREF-HARDEN-FU1-FU2-FU2——Browser 工具（BrowserTool.ts 与
+// browser.schema.ts 两份逐字孪生）inputSchema 与 ## Parameters: 列表补列 secretRef，
+// 描述与 browser_action 的 secretRef 逐字一致；模型才能把密码引用作为 secretRef
+// 参数传入而非把引用文本打进 text（FB-552/FB-544）。
+// sys-v96：N-ROLE-PROACTIVITY-CHAT-TUNE 整合合并——本单 sys-v93（新 deferred 工具
+// set_role_proactivity：schema 全额下发 + ToolSearch 索引行）× main 的 sys-v95
+// Browser secretRef 面，合并后的 prompt 输入哈希面未在任何一侧记录过，按惯例升版。
+export const PROMPT_VERSION = 'sys-v96' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

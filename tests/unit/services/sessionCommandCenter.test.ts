@@ -665,7 +665,52 @@ describe('SessionCommandCenter idle expiry', () => {
     });
     expect(wakeForegroundBrain).toHaveBeenCalledTimes(1);
     expect(manager.cancelBackgroundTask).toHaveBeenCalledTimes(1);
+    // 空闲回收必须带 reason，下游才不会把系统动作记成「用户停止」
+    expect(manager.cancelBackgroundTask).toHaveBeenCalledWith(spawned.task.id, 'idle-reaped');
     center.dispose();
+  });
+
+  describe('system permission prompt hint on idle reap', () => {
+    const HINT = 'A system permission prompt may still be on screen; dismiss it or choose Don\'t Allow.';
+    async function reapAfter(command: string, finishBeforeReap = false) {
+      const manager = new FakeTaskManager();
+      const center = new SessionCommandCenter(manager as unknown as TaskManager, {
+        projectTerminalResult: vi.fn().mockResolvedValue(undefined),
+        wakeForegroundBrain: vi.fn().mockResolvedValue(undefined),
+        slotLedgerOptions: { slotTimeoutMs: 30_000, cleanupIntervalMs: 1_000 },
+        slotRecoveryLocale: 'en',
+      });
+      const spawned = await center.spawn(input(1, 'report'));
+      if (spawned.outcome === 'requires_choice') throw new Error('unexpected admission result');
+      manager.emitAgent('session-a', {
+        type: 'tool_call_start',
+        data: { id: 'call-1', name: 'Bash', arguments: { command } },
+      }, spawned.task.id);
+      if (finishBeforeReap) {
+        manager.emitAgent('session-a', {
+          type: 'tool_call_end',
+          data: { toolCallId: 'call-1', success: true, output: 'ok' },
+        }, spawned.task.id);
+      }
+      await vi.advanceTimersByTimeAsync(31_000);
+      const detail = center.list('session-a')[0]?.detail;
+      center.dispose();
+      return detail;
+    }
+
+    it('appends the hint when the in-flight command is an osascript call', async () => {
+      const detail = await reapAfter('osascript -e \'tell application "Reminders" to get name of every list\'');
+      expect(detail).toBe(`Background task failed: the command stopped responding for 30 seconds. ${HINT}`);
+    });
+
+    it('leaves a plain command\'s failure text unchanged', async () => {
+      expect(await reapAfter('sleep 600')).toBe('Background task failed: the command stopped responding for 30 seconds');
+    });
+
+    it('adds no hint when the osascript command already finished before the reap', async () => {
+      const detail = await reapAfter('osascript -e "return 1"', true);
+      expect(detail).not.toContain('permission prompt');
+    });
   });
 
   it('keeps running when tool_progress reports real output that resets inactivity', async () => {
@@ -796,6 +841,7 @@ describe('SessionCommandCenter idle expiry', () => {
       detail: 'Background task failed: waited more than 30 seconds for your approval, cancelled',
     });
     expect(manager.cancelBackgroundTask).toHaveBeenCalledTimes(1);
+    expect(manager.cancelBackgroundTask).toHaveBeenCalledWith(spawned.task.id, 'idle-reaped');
     expect(wakeForegroundBrain).toHaveBeenCalledTimes(1);
     expect(wakeForegroundBrain).toHaveBeenCalledWith(
       expect.objectContaining({ id: spawned.task.id }),

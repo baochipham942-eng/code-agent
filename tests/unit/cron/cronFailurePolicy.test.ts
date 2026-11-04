@@ -9,6 +9,12 @@ const notifyState = vi.hoisted(() => ({ notifyTaskComplete: vi.fn() }));
 vi.mock('../../../src/host/services/infra/notificationService', () => ({
   notificationService: { notifyTaskComplete: notifyState.notifyTaskComplete },
 }));
+// buildMaxRunsDisabledSummary 读 ui.language 决定停用文案语言；单测固定中文。
+vi.mock('../../../src/host/services/core/configService', () => ({
+  getConfigService: () => ({
+    getSettings: () => ({ ui: { language: 'zh' } }),
+  }),
+}));
 
 import {
   classifyCronFailure,
@@ -17,6 +23,7 @@ import {
   cronRetryBackoffMs,
   CronFailureNoticeGate,
   notifyCronAgentExecution,
+  notifyCronJobDisabled,
 } from '../../../src/host/cron/cronFailurePolicy';
 import { buildCronAgentActionResult, cronAgentRunHasAlert } from '../../../src/host/cron/cronNormalizers';
 import { CRON_GUARDRAILS } from '../../../src/shared/constants';
@@ -241,14 +248,33 @@ describe('notifyCronAgentExecution：notifySuppressed 完成通知门', () => {
     expect(notifyState.notifyTaskComplete).not.toHaveBeenCalled();
   });
 
-  it('成功 + 无标记（判据满足/未设判据）→ 完成通知照发（force 直达）', () => {
+  it('成功 + 无标记（判据满足/未设判据）→ 完成通知照发（force + urgent 直达）', () => {
     notifyCronAgentExecution(
       agentDefinition,
       execution('completed', buildCronAgentActionResult(action, undefined, 'sess-1', '<cron_alert>紧急</cron_alert>', false, false)),
       new CronFailureNoticeGate(),
     );
     expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(1);
-    expect(notifyState.notifyTaskComplete.mock.calls[0]?.[1]).toEqual({ force: true });
+    expect(notifyState.notifyTaskComplete.mock.calls[0]?.[1]).toEqual({ force: true, urgent: true });
+  });
+
+  it('must_today 与 alertReason 紧急，普通完成与 can_wait 不紧急', () => {
+    const base = { agentType: 'default', prompt: '汇总', result: null, sessionId: 'sess-1' };
+    for (const result of [
+      base,
+      { ...base, urgency: 'must_today' },
+      { ...base, alertReason: '生产故障' },
+      { ...base, urgency: 'can_wait' },
+    ]) {
+      notifyCronAgentExecution(agentDefinition, execution('completed', result), new CronFailureNoticeGate());
+    }
+
+    expect(notifyState.notifyTaskComplete.mock.calls.map((call) => call[1])).toEqual([
+      { force: true, urgent: false },
+      { force: true, urgent: true },
+      { force: true, urgent: true },
+      { force: true, urgent: false },
+    ]);
   });
 
   it('失败告警永不被该门静音：失败执行照发（标记只可能出现在成功路径）', () => {
@@ -404,5 +430,44 @@ describe('notifyCronAgentExecution：urgencyCriteria 通知门矩阵（N-CRON-UR
     const loginWallPayload = notifyState.notifyTaskComplete.mock.calls[1]?.[0] as { code?: string };
     expect(failedPayload.succeeded).toBe(false);
     expect(loginWallPayload.code).toBe('CRON_LOGIN_WALL_STOP');
+  });
+});
+
+// ============================================================================
+// notifyCronJobDisabled（N-FIX-NOTIFY-FAILURE-FOREGROUND-BANNER-FU2-FU1）：
+// 三种停用原因（连败/永久配置错/到数）的通知载荷都必须带 jobId——无会话执行
+// （如云端 run）的「查看」点击只有靠它落 Cron Center 选中该任务（重新启用入口
+// 在那里），不带 jobId 时点击只是空操作 dismiss（FB-551/FB-543）。
+// 同时钉死不带 code/failureKind：带上的话 renderer 会把它当云端不可用文案翻译。
+// ============================================================================
+describe('notifyCronJobDisabled：停用通知载荷带 jobId（三种原因）', () => {
+  const disabledDefinition = {
+    id: 'job-x',
+    name: '备份',
+    action: { type: 'shell', command: 'echo ok' },
+  } as unknown as CronJobDefinition;
+
+  function disabledExecution(): CronJobExecution {
+    return {
+      id: 'exec-disabled', jobId: 'job-x', status: 'failed', scheduledAt: 0,
+      startedAt: 0, completedAt: 1, duration: 1, retryAttempt: 0,
+      error: 'provider 500',
+    } as CronJobExecution;
+  }
+
+  it('consecutive / permanent / max_runs 的载荷都带 definition.id，不带 code/failureKind', () => {
+    notifyState.notifyTaskComplete.mockClear();
+    for (const reason of ['consecutive', 'permanent', 'max_runs'] as const) {
+      notifyCronJobDisabled(disabledDefinition, disabledExecution(), reason);
+    }
+    expect(notifyState.notifyTaskComplete).toHaveBeenCalledTimes(3);
+    const payloads = notifyState.notifyTaskComplete.mock.calls
+      .map((call) => call[0] as { jobId?: string; code?: string; failureKind?: string; succeeded?: boolean });
+    for (const payload of payloads) {
+      expect(payload.jobId).toBe('job-x');
+      expect(payload.code).toBeUndefined();
+      expect(payload.failureKind).toBeUndefined();
+      expect(payload.succeeded).toBe(false);
+    }
   });
 });

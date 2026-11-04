@@ -42,6 +42,8 @@ interface ParkedApprovalHydrationDeps {
    * （getSession 不带 owner 过滤，与点击恢复的 resolveWorkingDirectory 同口径）。
    */
   resolveWorkingDirectory?: (sessionId: string) => string | null;
+  /** 会话来源 kind（cron / heartbeat 的停车审批重启后作废）；缺省直读会话记录（同样不带 owner 过滤）。 */
+  resolveSessionOriginKind?: (sessionId: string) => string | null;
   /**
    * 幸存行停靠用的 durable run 仓储（缺省走 getDatabase().getDurableRunRepository()）。
    * 显式注入只为让合同测试钉「guard_halt 停靠不进 listRecoverable」走真实 hydrate 入口。
@@ -69,6 +71,7 @@ export function hydrateApprovalGatesAtBoot(
   const launch = getSwarmLaunchApprovalGate().attachPersistence(repo, now);
   const loadSessionMessages = deps.loadSessionMessages ?? defaultLoadSessionMessages();
   const resolveWorkingDirectory = deps.resolveWorkingDirectory ?? defaultResolveWorkingDirectory();
+  const resolveSessionOriginKind = deps.resolveSessionOriginKind ?? defaultResolveSessionOriginKind();
   const parkSessionDurableRuns = (sessionId: string, at: number) => {
     let repository: DurableRunRepository | null = deps.durableRunRepository ?? null;
     if (!repository) {
@@ -99,8 +102,10 @@ export function hydrateApprovalGatesAtBoot(
     const payload = parseParkedApprovalPayload(row.payloadJson);
     const sessionId = payload?.argsRef?.sessionId ?? payload?.sessionId ?? row.coordinatorId ?? null;
     const messages = sessionId ? loadSessionMessages(sessionId) : null;
+    const originKind = sessionId ? resolveSessionOriginKind(sessionId) : null;
     const verdict = classifyParkedToolApprovalForSurvival({
       payload,
+      sessionOriginKind: originKind,
       now,
       messages,
       // sessionId 都没有的行连台账都读不到（上面 messages=null 已判 args_unavailable）；
@@ -125,6 +130,14 @@ export function hydrateApprovalGatesAtBoot(
       resolvedAt: now,
     });
     parked += changes;
+    if (changes > 0 && verdict.reason === 'run_ended_after_restart') {
+      logger.warn('Voided parked approval of unattended run after restart', {
+        requestId: row.id,
+        sessionId,
+        reason: 'run_ended_after_restart',
+        originKind,
+      });
+    }
     if (changes > 0 && sessionId) {
       const requestedAt = payload?.requestedAt ?? row.submittedAt;
       closedSessions.set(sessionId, Math.min(closedSessions.get(sessionId) ?? requestedAt, requestedAt));
@@ -305,4 +318,15 @@ export function closeDeadParkedApproval(requestId: string, now: number = Date.no
     return true;
   }
   return false;
+}
+
+/** 会话来源 kind：与 defaultResolveWorkingDirectory 同口径（无 owner 过滤）；查询失败返回 null。 */
+function defaultResolveSessionOriginKind(): (sessionId: string) => string | null {
+  return (sessionId: string) => {
+    try {
+      return getDatabase().getSession(sessionId)?.origin?.kind ?? null;
+    } catch {
+      return null;
+    }
+  };
 }

@@ -430,6 +430,37 @@ describe.skipIf(!darwinForConnectors)('getTextForegroundToolNamesForPrompt — �
       .toEqual(getTextForegroundToolNames());
   });
 
+  // rework r1（PR #2808 ai-review）：手选/专家连接器收窄必须透传——范围外即使意图
+  // 命中也不进 allowlist。否则 run policy 白名单放行范围外连接器写、deferred 预载却
+  // 按收窄不送 schema，同一轮两个判决互相矛盾。
+  it('手选/专家收窄连接器范围：范围外即使意图命中也不进面', () => {
+    connectorMocks.enabledNative = CONNECTOR_ALL;
+    getConnectorRegistry().configure(CONNECTOR_ALL);
+
+    // 直接调用形态（web 路传 config.toolScope?.allowedConnectorIds）
+    expect(getTextForegroundToolNamesForPrompt('给 a@b.c 发封邮件说会议改期', ['calendar']))
+      .toEqual(getTextForegroundToolNames());
+
+    // 桌面路形态：withSessionCommandCenterBrain 从 options.toolScope 透传
+    // （withWorkbenchTurnSystemContext 已把手选/专家并进 options.toolScope）
+    const options = withSessionCommandCenterBrain(
+      { toolScope: { allowedConnectorIds: ['calendar'] } },
+      '给 a@b.c 发封邮件说会议改期',
+    );
+    for (const absent of ['mail', 'mail_send', 'mail_draft']) {
+      expect(options.allowedToolNames).not.toContain(absent);
+    }
+
+    // 双意图轮：范围内的 calendar 保留，范围外的 mail 剔除
+    const dual = withSessionCommandCenterBrain(
+      { toolScope: { allowedConnectorIds: ['calendar'] } },
+      '给 a@b.c 发封邮件，再帮我建个日程',
+    );
+    expect(dual.allowedToolNames).toContain('calendar_create_event');
+    expect(dual.allowedToolNames).not.toContain('mail_send');
+    expect(dual.allowedToolNames).not.toContain('mail_draft');
+  });
+
   it('就绪不可用（非 darwin）：不进面', () => {
     const original = Object.getOwnPropertyDescriptor(process, 'platform')!;
     Object.defineProperty(process, 'platform', { value: 'win32' });

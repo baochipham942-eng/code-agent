@@ -97,7 +97,17 @@ export function getSessionCommandCenterBrainContextForPrompt(prompt: string): st
  * 判据与 deferredToolPreload 共用 connectors/nativeConnectorIntent.ts 的单一真源；
  * 不命中意图的轮次零新增（无 schema 膨胀，前缀缓存不受影响）。
  */
-export function getTextForegroundToolNamesForPrompt(prompt: string): string[] {
+/**
+ * `allowedConnectorIds`：本轮手选/专家声明的连接器范围（web 工作台 toolScope、桌面
+ * envelope options.toolScope 经 withWorkbenchTurnSystemContext 并出来的那份）。非空 =
+ * 显式收窄：范围外的连接器即使意图命中也不进面——与 run policy 的 toolScope 补充
+ * 豁免、deferred 预载的收窄判据三方同判（rework r1：漏传会让白名单放行范围外
+ * 连接器写，预载却按收窄不送 schema，两个判决互相矛盾）。无手选时传 undefined。
+ */
+export function getTextForegroundToolNamesForPrompt(
+  prompt: string,
+  allowedConnectorIds?: readonly string[],
+): string[] {
   const base = getTextForegroundToolNames();
   const extras: string[] = [];
   const features = detectTaskFeatures(prompt);
@@ -107,7 +117,7 @@ export function getTextForegroundToolNamesForPrompt(prompt: string): string[] {
   }
   if (isMorningBriefSaveDraftReply(prompt)) extras.push('mail_draft');
   // 无意图命中时零副作用（不触 configService/registry）。
-  extras.push(...getNativeConnectorToolNamesForIntent({ userText: prompt }));
+  extras.push(...getNativeConnectorToolNamesForIntent({ userText: prompt, allowedConnectorIds }));
   if (extras.length === 0) return base;
   // 存草稿轮 mail_draft 已在 extras 里，连接器扩展会再次带回同名——去重保序。
   return Array.from(new Set([...base, ...extras]));
@@ -131,7 +141,7 @@ export function withSessionCommandCenterBrain(
         : SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
       SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
     ),
-    allowedToolNames: getTextForegroundToolNamesForPrompt(text),
+    allowedToolNames: getTextForegroundToolNamesForPrompt(text, options?.toolScope?.allowedConnectorIds),
     foregroundToolFace: true,
     turnSystemContext,
   };

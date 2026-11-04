@@ -201,13 +201,29 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
   );
 };
 
+/**
+ * roleId 优先取 expertThread 标记；首次醒来会话没有该标记（写入会改变路由），
+ * roleId 只在 origin.metadata（kind=cron, trigger=first_wake）里，重开会话时靠它找回卡片。
+ */
+function resolveBannerRoleId(
+  session: { metadata?: unknown; origin?: { kind?: string; metadata?: Record<string, unknown> } } | undefined,
+): string | undefined {
+  if (!session) return undefined;
+  const fromThread = readPersistedExpertThread(session.metadata as never)?.roleId;
+  if (fromThread) return fromThread;
+  const origin = session.origin;
+  if (origin?.kind !== 'cron' || origin.metadata?.trigger !== 'first_wake') return undefined;
+  const roleId = origin.metadata.roleId;
+  return typeof roleId === 'string' && roleId ? roleId : undefined;
+}
+
 /** 当前会话是某专家的主 thread 时，把同一张卡放在对话顶部。 */
 export const RoleFirstWakeThreadBanner: React.FC = () => {
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
-  const metadata = useSessionStore((state) => (
-    state.sessions.find((session) => session.id === state.currentSessionId)?.metadata
+  const currentSession = useSessionStore((state) => (
+    state.sessions.find((session) => session.id === state.currentSessionId)
   ));
-  const roleId = readPersistedExpertThread(metadata)?.roleId;
+  const roleId = resolveBannerRoleId(currentSession);
   if (!currentSessionId || !roleId) return null;
   return (
     <>

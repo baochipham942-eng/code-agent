@@ -146,7 +146,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { tab: 'channels', labelKey: 'httpApi', keywords: ['http', 'api', 'rest', 'port', 'cors'] },
 
   // External import（从其他 AI 应用导入：检测到来源才可见）
-  { tab: 'external-import', labelKey: 'externalImport', keywords: ['导入', '从其他 AI 应用导入', 'Claude Code', 'Codex', '保持聊天同步', 'import', 'import from other AI apps', 'keep chats in sync', 'chat sync'], requiresExternalImport: true },
+  { tab: 'external-import', labelKey: 'externalImport', keywords: ['Claude Code', 'Codex', 'import', 'import from other AI apps', 'keep chats in sync', 'chat sync', zh.settings.externalImport.chatsImport.sync.title, en.settings.externalImport.chatsImport.sync.title], requiresExternalImport: true },
 
   // Memory
   { tab: 'memory', labelKey: 'lightMemory', keywords: ['memory', 'file', 'memory file'] },

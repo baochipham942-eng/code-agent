@@ -902,12 +902,12 @@ export function getSessionAutomationService(): SessionAutomationService {
 
 const AUTO_REJECTED_AFTER_RESTART_PREFIX = 'Auto-rejected after restart: ';
 
-type VoidedFeedback = { reason: 'expired_after_restart_24h' | 'args_unavailable'; workingDirectoryUnavailable: boolean };
+type VoidedFeedback = { reason: 'expired_after_restart_24h' | 'args_unavailable' | 'run_ended_after_restart'; workingDirectoryUnavailable: boolean };
 
 /** 解析「重启后自动作废」反馈串；不是该前缀或原因码认不出返回 null。 */
 function parseVoidedFeedback(feedback: string | null): VoidedFeedback | null {
   if (!feedback?.startsWith(AUTO_REJECTED_AFTER_RESTART_PREFIX)) return null;
-  const match = /^(expired_after_restart_24h|args_unavailable)( \(session working directory unavailable\))?$/
+  const match = /^(expired_after_restart_24h|args_unavailable|run_ended_after_restart)( \(session working directory unavailable\))?$/
     .exec(feedback.slice(AUTO_REJECTED_AFTER_RESTART_PREFIX.length));
   if (!match) return null;
   return { reason: match[1] as VoidedFeedback['reason'], workingDirectoryUnavailable: Boolean(match[2]) };
@@ -923,6 +923,8 @@ function toVoidedInboxItem(
 ): ParkedApprovalInboxItem | null {
   const voided = parseVoidedFeedback(row.feedback);
   if (!voided) return null;
+  // 无人值守运行的作废审批只在对应运行详情里说明，不进收件箱灰行（收件箱只放交互会话的留痕）。
+  if (voided.reason === 'run_ended_after_restart') return null;
   if (row.resolvedAt === null || now - row.resolvedAt > PARKED_APPROVAL_VOIDED_RETENTION_MS) return null;
   let payload: Partial<ToolApprovalPayload> = {};
   try {

@@ -7,7 +7,7 @@ import type { PermissionAskResult, PermissionDeliveryOutcome, PermissionDenialSo
 import type { ToolApprovalPayload, PendingApprovalKind } from '../../shared/contract/pendingApproval';
 import { INTERACTION_TIMEOUTS } from '../../shared/constants/timeouts';
 import { PARKED_APPROVAL_PREVIEW_MAX_CHARS } from '../../shared/constants/pendingApproval';
-import { redactSecrets } from '../security/secretRedaction';
+import { redactCommandSecrets } from '../security/secretRedaction';
 import { generatePermissionRequestId } from '../../shared/utils/id';
 import type { ExecutionTopology } from '../permissions';
 import { getPermissionModeManager } from '../permissions/modes';
@@ -71,7 +71,7 @@ function buildParkedArgsPreview(request: PermissionRequest): string | undefined 
     request.details?.changes,
   ].filter((part): part is string => typeof part === 'string' && part.length > 0);
   if (parts.length === 0) return undefined;
-  const redacted = redactSecrets(parts.join(' · '));
+  const redacted = redactCommandSecrets(parts.join(' · '));
   return redacted.length > PARKED_APPROVAL_PREVIEW_MAX_CHARS
     ? `${redacted.slice(0, PARKED_APPROVAL_PREVIEW_MAX_CHARS - 1)}…`
     : redacted;
@@ -660,6 +660,10 @@ export class OrchestratorPermissionIsland {
       const argsRef = fullRequest.sessionId && fullRequest.parentToolUseId
         ? { sessionId: fullRequest.sessionId, toolCallId: fullRequest.parentToolUseId }
         : undefined;
+      const argsSummaryRaw = fullRequest.details?.command
+        ?? fullRequest.details?.path
+        ?? fullRequest.details?.filePath
+        ?? fullRequest.details?.url;
       const payload: ToolApprovalPayload = {
         sessionId: fullRequest.sessionId ?? null,
         ...(fullRequest.parentToolUseId ? { toolCallId: fullRequest.parentToolUseId } : {}),
@@ -667,10 +671,7 @@ export class OrchestratorPermissionIsland {
         type: fullRequest.type,
         permissionLevel,
         requestedAt: fullRequest.timestamp,
-        argsSummary: fullRequest.details?.command
-          ?? fullRequest.details?.path
-          ?? fullRequest.details?.filePath
-          ?? fullRequest.details?.url,
+        argsSummary: argsSummaryRaw === undefined ? undefined : redactCommandSecrets(argsSummaryRaw),
         ...(argsRef ? { argsRef } : {}),
         // 跨重启存活原料（N-PARKED-APPROVAL-SURVIVE-RESTART-RESUME）：指纹 + 忠实标记由
         // toolExecutor 随请求上抛；不忠实（台账形 ≠ 原始 args）的行照写数据，判据侧拦。

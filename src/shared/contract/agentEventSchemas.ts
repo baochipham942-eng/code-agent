@@ -611,7 +611,7 @@ const RoutingResolvedEventSchema = event('routing_resolved', typed<RoutingResolv
 const ConnectorRequiredEventSchema = event('connector_required', typed<ConnectorRequiredEventData>(z.object({ connectors: z.array(z.object({ id: z.string(), source: z.enum(['selected', 'expert']), reason: z.string() })) })));
 const ArtifactLocatorEventSchema = event('artifact_locator', typed<ArtifactLocatorTelemetryEventData>(z.object({ state: z.enum(['resolved', 'stale', 'blocked']), kind: z.enum(['spreadsheet', 'presentation', 'document']), reason: z.string() })));
 const AgentCompleteEventSchema = event('agent_complete', z.null());
-const AgentCancelledEventSchema = event('agent_cancelled', z.null());
+const AgentCancelledEventSchema = event('agent_cancelled', z.object({ reason: z.literal('idle_reaped') }).nullable());
 const GoalIterationEventSchema = event('goal_iteration', z.object({ turn: z.number(), maxTurns: z.number(), goalStatus: z.enum(['pending', 'paused', 'met', 'aborted']), pauseReason: z.enum(['anti_spin']).optional(), tokensUsed: z.number(), tokenBudget: z.number(), wallClockBudgetMs: z.number().optional(), parentToolUseId: z.string().optional() }));
 const GoalGateEventSchema = event('goal_gate', z.object({
   gate: z.number(), pass: z.boolean(), exitCode: z.number().nullable().optional(), timedOut: z.boolean().optional(), reason: z.string().optional(), parentToolUseId: z.string().optional(),

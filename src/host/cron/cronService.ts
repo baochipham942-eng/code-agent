@@ -79,7 +79,7 @@ import {
   classifyCronFailure,
   countTrailingCronFailures,
   cronRetryBackoffMs,
-  CronFailureNoticeGate,
+  CronFailureNoticeGate, cronDisableReasonForFailure,
   notifyCronAgentExecution,
   notifyCronJobDisabled,
 } from './cronFailurePolicy';
@@ -948,7 +948,7 @@ export class CronService implements Disposable {
             `[CronService] Job ${definition.id} auto-disabled after permanent failure: ${execution.error}`,
           );
           await this.updateJob(definition.id, { enabled: false });
-          notifyCronJobDisabled(definition, execution, 'permanent');
+          notifyCronJobDisabled(definition, execution, cronDisableReasonForFailure(execution.error));
           disableNotified = true;
         } else if (finalKind !== 'login-wall' && countTrailingCronFailures(this.executions.get(definition.id) ?? []) >= CRON_GUARDRAILS.MAX_CONSECUTIVE_FAILURES) {
           console.error(
@@ -1031,6 +1031,7 @@ export class CronService implements Disposable {
           loadJob: (jobId) => this.jobs.get(jobId)?.definition,
           updateJob: (jobId, updates) => this.updateJob(jobId, updates),
           deliverCronResult: (job, result, execId) => this.deliverCronResult(job, result, execId),
+          recordSessionId: (execId, sessionId) => this.recordExecutionSessionId(definition.id, execId, sessionId),
         }, definition, action, executionId, eventPayloadBlock);
       }
 
@@ -1093,6 +1094,13 @@ export class CronService implements Disposable {
     const job = this.jobs.get(definition.id);
     return job ? this.withRuntimeScheduleState(job) : definition;
   };
+
+  private async recordExecutionSessionId(jobId: string, executionId: string, sessionId: string): Promise<void> {
+    const execution = this.executions.get(jobId)?.find((e) => e.id === executionId);
+    if (!execution) return;
+    execution.sessionId = sessionId;
+    await saveCronExecution(execution);
+  }
 
   private async retryExecution(
     definition: CronJobDefinition,

@@ -302,6 +302,64 @@ describe('httpRequestModule (native)', () => {
     });
   });
 
+  // rework r1 — 旧 BLOCKED_HOSTS 明确拦截、收口到 ssrfGuard 后漏掉的两个云元数据地址，
+  // 必须维持基线的 deny：直连与重定向逐跳守卫都不放行。
+  describe('SSRF: retired BLOCKED_HOSTS metadata entries stay blocked (rework r1)', () => {
+    it('refuses Alibaba Cloud ECS metadata 100.100.100.200 before any fetch', async () => {
+      fetchMock.mockResolvedValue(makeResponse({ body: 'leaked' }));
+      const result = await run({ url: 'http://100.100.100.200/latest/meta-data/' });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('INVALID_ARGS');
+        expect(result.error).toMatch(/internal network/);
+        expect(result.error).toContain('100.100.100.200');
+        expect(result.error).toContain('curl');
+      }
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('refuses Azure IMDS hostname metadata.azure.com before any fetch', async () => {
+      fetchMock.mockResolvedValue(makeResponse({ body: 'leaked' }));
+      const result = await run({ url: 'http://metadata.azure.com/metadata/instance' });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe('INVALID_ARGS');
+        expect(result.error).toMatch(/internal network/);
+        expect(result.error).toContain('metadata.azure.com');
+        expect(result.error).toContain('curl');
+      }
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('refuses a 302 hop landing on 100.100.100.200 before the second request is sent', async () => {
+      const ecsTarget = 'http://100.100.100.200/latest/meta-data/ram/security-credentials/';
+      const requested: string[] = [];
+      fetchMock.mockImplementation(async (input: unknown) => {
+        const requestedUrl = typeof input === 'string' ? input : String(input);
+        requested.push(requestedUrl);
+        if (requestedUrl === 'https://public.example/ecsmeta') {
+          return makeResponse({
+            status: 302,
+            statusText: 'Found',
+            headers: { location: ecsTarget },
+          });
+        }
+        if (requestedUrl === ecsTarget) {
+          return makeResponse({ status: 200, body: 'RAM-TEMP-CREDENTIALS' });
+        }
+        throw new Error(`unexpected fetch target: ${requestedUrl}`);
+      });
+      const result = await run({ url: 'https://public.example/ecsmeta' });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toMatch(/internal network/);
+        expect(result.error).toContain('100.100.100.200');
+      }
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(requested).not.toContain(ecsTarget);
+    });
+  });
+
   describe('happy paths', () => {
     it('GET returns body and status', async () => {
       fetchMock.mockResolvedValue(

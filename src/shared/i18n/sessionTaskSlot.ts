@@ -57,16 +57,36 @@ export function describeSessionTaskSlotRecovery(locale: SessionTaskSlotLocale): 
   return messages[locale];
 }
 
+/** 回收时在途命令可能在等 macOS 系统授权框：框由系统持有、Neo 关不掉，只能提示用户手动处理。 */
+const systemPromptHint = {
+  zh: '系统授权框可能还在屏幕上，请手动点掉或点「不允许」。',
+  en: 'A system permission prompt may still be on screen; dismiss it or choose Don\'t Allow.',
+} as const;
+
+function withSystemPromptHint(text: string, locale: SessionTaskSlotLocale, flag?: boolean): string {
+  return flag ? `${text}${locale === 'zh' ? '。' : '. '}${systemPromptHint[locale]}` : text;
+}
+
 export function formatSessionCommandTaskIdleFailure(input: {
   idleMs: number;
   locale: SessionTaskSlotLocale;
+  mayAwaitSystemPrompt?: boolean;
 }): string {
-  return idleFailure[input.locale](durationText(input.idleMs, input.locale));
+  return withSystemPromptHint(
+    idleFailure[input.locale](durationText(input.idleMs, input.locale)),
+    input.locale,
+    input.mayAwaitSystemPrompt,
+  );
 }
 
 export function formatSessionTaskApprovalWaitFailure(input: {
   waitMs: number;
   locale: SessionTaskSlotLocale;
+  mayAwaitSystemPrompt?: boolean;
 }): string {
-  return approvalWaitFailure[input.locale](durationText(input.waitMs, input.locale));
+  return withSystemPromptHint(
+    approvalWaitFailure[input.locale](durationText(input.waitMs, input.locale)),
+    input.locale,
+    input.mayAwaitSystemPrompt,
+  );
 }

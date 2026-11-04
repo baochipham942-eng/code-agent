@@ -148,6 +148,34 @@ const BEARER_PATTERN = /\bBearer (?=[A-Za-z0-9._~+/=-]*\d)([A-Za-z0-9._~+/=-]{20
  */
 const CARD_PATTERN = /(?<![\dA-Za-z.]|[\dA-Za-z]-)\d(?:[ -]?\d){12,18}(?![\dA-Za-z]|-[\dA-Za-z]|\.\d)/g;
 
+/**
+ * 邮箱：local@domain.tld，TLD >=2 个字母；前面不得紧贴 local 字符，后面不得紧贴域名字符
+ * （句末句号放行）。`@scope/pkg`、`pkg@1.2.3`、`@decorator` 因缺 local 或 TLD 不会命中。
+ */
+const EMAIL_PATTERN = /(?<![A-Za-z0-9._%+-])[A-Za-z0-9_%+-][A-Za-z0-9._%+-]*@((?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,})(?![A-Za-z0-9_-])/g;
+/** URL userinfo（`https://user:pw@host`）：前缀落在 scheme:// 之后、host 之前——交给凭据规则，不当邮箱。 */
+const URL_USERINFO_PREFIX = /[a-z][a-z0-9+.-]*:\/\/[^\s/@]*$/i;
+/** RFC 2606/6761 保留域名：文档示例，不是真实地址。 */
+const RESERVED_EMAIL_DOMAIN = /(?:^|\.)example\.(?:com|org|net)$|\.(?:example|test|invalid|localhost)$/;
+/** `name@2x.png` 类资源文件名：域名首段是 `<数字>x` 且尾段是常见图片/媒体扩展名。 */
+const ASSET_FILE_DOMAIN = /^\d+x\.(?:png|jpe?g|gif|webp|svg|avif|heic|bmp|ico|mp4|mov)$/;
+/** 代码属性 / 文件名尾巴（`x@pytest.fixture`、`docs@AGENTS.md`）：小清单，不是完整 TLD 库。 */
+const CODE_TAIL_LABELS = new Set([
+  'md', 'mdx', 'ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs', 'json', 'py', 'rs', 'go', 'yml', 'yaml', 'toml',
+  'txt', 'sh', 'lock', 'log', 'cfg', 'ini', 'css', 'html',
+  'fixture', 'cache', 'property', 'setter', 'getter', 'wraps', 'dataclass', 'staticmethod', 'classmethod',
+  'abstractmethod', 'parametrize', 'skip', 'skipif', 'xfail', 'cached_property', 'lru_cache',
+]);
+
+function isEmailCandidate(text: string, offset: number, matched: string, domain: string): boolean {
+  const local = matched.slice(0, matched.length - domain.length - 1);
+  if (local.toLowerCase() === 'git') return false; // git@host SSH 远程
+  const lower = domain.toLowerCase();
+  if (RESERVED_EMAIL_DOMAIN.test(lower) || ASSET_FILE_DOMAIN.test(lower)) return false;
+  if (CODE_TAIL_LABELS.has(lower.slice(lower.lastIndexOf('.') + 1))) return false;
+  return !URL_USERINFO_PREFIX.test(text.slice(0, offset));
+}
+
 function maskPrivateRules(text: string): string {
   let output = text.replace(BEARER_PATTERN, (_matched, token: string) =>
     `Bearer ${placeholderFor({ type: 'bearer_token' }, token)}`);
@@ -155,6 +183,13 @@ function maskPrivateRules(text: string): string {
     const digits = matched.replace(/[ -]/g, '');
     if (!passesLuhn(digits) || !hasKnownCardIssuer(digits)) return matched;
     return placeholderFor({ type: 'card_number' }, matched);
+  });
+  output = output.replace(EMAIL_PATTERN, (matched: string, domain: string, offset: number, whole: string) => {
+    // JSON 文本里 `\n`/`\t` 转义的字母会被吞进 local 部分：把它留在占位符之外，免得产出非法的 `\{` 转义。
+    const lead = offset > 0 && whole[offset - 1] === '\\' && /[ntrbf]/.test(matched[0]) ? 1 : 0;
+    const email = matched.slice(lead);
+    if (email.startsWith('@') || !isEmailCandidate(whole, offset + lead, email, domain)) return matched;
+    return matched.slice(0, lead) + placeholderFor({ type: 'email' }, email);
   });
   return output;
 }

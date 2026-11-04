@@ -146,6 +146,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   showCapabilityHub: false,
   capabilityHubTab: 'experts',
   showCronCenter: false,
+  cronCenterRunsRequested: false,
   showTimeCapabilityCenter: false,
   showFileExplorer: false,
   voicePasteStatus: 'idle' as const,
@@ -368,6 +369,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
     });
   },
   closeSecondaryPages: () => set({ ...SECONDARY_PAGES_CLOSED }),
+  openCronCenterRuns: () => set({ ...SECONDARY_PAGES_CLOSED, showCronCenter: true, cronCenterRunsRequested: true }),
+  clearCronCenterRunsRequest: () => set({ cronCenterRunsRequested: false }),
   setShowCronCenter: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showCronCenter: show }),
   setShowTimeCapabilityCenter: (show) => set({ ...(show ? SECONDARY_PAGES_CLOSED : {}), showTimeCapabilityCenter: show }),
   setShowFileExplorer: (show) => {

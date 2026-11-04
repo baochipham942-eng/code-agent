@@ -16,8 +16,12 @@ import {
   openCronLoginWallSite,
 } from '../components/features/cron/cronLoginWallNotice';
 import { postOsNotification, registerNotificationClick } from '../utils/osNotification';
+import { sessionAutomationClient } from '../services/sessionAutomationClient';
+import { listenTauriEvent } from '../services/tauriPluginFacade';
+import { isTauriMode } from '../utils/platform';
 
 const MISSED_ALERT_TOAST_MS = 10_000;
+const RECENT_EVENT_LIMIT = 50;
 
 function windowAttended(): boolean {
   return document.hasFocus() && !document.hidden;
@@ -34,6 +38,8 @@ export function useCronOsNotification(
   copyRef.current = copy;
   onOpenSessionRef.current = onOpenSession;
   const lastEventRef = useRef<NotificationShowEvent | null>(null);
+  const recentEventsRef = useRef(new Map<string, NotificationShowEvent>());
+  const handledClicksRef = useRef(new Set<string>());
 
   const missedRef = useRef(createMissedAlertQueue());
 
@@ -54,13 +60,65 @@ export function useCronOsNotification(
         useAppStore.getState().setShowCronCenter(true);
       }
     };
-    const openFromNotification = () => openForEvent(lastEventRef.current);
+    // 点击路由（壳发 notification-clicked {id}）：按通知类型落点，且每个 id 只处理一次。
+    const routeClick = async (event: NotificationShowEvent) => {
+      const needsInput = event.urgent === true && event.failure !== true;
+      if (!needsInput) {
+        openForEvent(event);
+        return;
+      }
+      if (event.sessionId) {
+        // 待审批卡只在自动化中心「运行」收件箱里，会话内没有；有 pending 项就落收件箱。
+        let parked = false;
+        try {
+          const items = await sessionAutomationClient.listParkedApprovals();
+          parked = (items ?? []).some((i) => i.sessionId === event.sessionId && i.status === 'pending');
+        } catch (err) {
+          console.warn('[useCronOsNotification] listParkedApprovals failed, falling back to session', err);
+        }
+        if (parked) useAppStore.getState().openCronCenterRuns();
+        else onOpenSessionRef.current(event.sessionId);
+        return;
+      }
+      if (event.jobId) {
+        useCronStore.getState().selectJob(event.jobId);
+        useAppStore.getState().setShowCronCenter(true);
+        return;
+      }
+      openForEvent(event);
+    };
+    const claimClick = (id: string): boolean => {
+      const handled = handledClicksRef.current;
+      if (handled.has(id)) return false;
+      handled.add(id);
+      if (handled.size > RECENT_EVENT_LIMIT * 2) handled.delete(handled.values().next().value as string);
+      return true;
+    };
+    const clickById = (id: string) => {
+      const event = recentEventsRef.current.get(id);
+      if (!event) {
+        console.warn('[useCronOsNotification] notification-clicked: unknown notification id', id);
+        return;
+      }
+      if (!claimClick(id)) return;
+      void routeClick(event);
+    };
+    // 旧 onAction 路径：优先用最近事件的 id 过同一道去重，没有就退回最近事件。
+    const openFromNotification = () => {
+      const last = lastEventRef.current;
+      if (last && !claimClick(last.id)) return;
+      void (last ? routeClick(last) : Promise.resolve(openForEvent(null)));
+    };
     const unsubscribe = ipcService.on(
       IPC_CHANNELS.NOTIFICATION_SHOW,
       (event: NotificationShowEvent) => {
         // 预算窗口折起弹窗时单独送达的未读标记：只供侧栏圆点，不弹 OS 通知、不作点击目标。
         if (event.attentionOnly) return;
         lastEventRef.current = event;
+        const recent = recentEventsRef.current;
+        recent.delete(event.id);
+        recent.set(event.id, event);
+        if (recent.size > RECENT_EVENT_LIMIT) recent.delete(recent.keys().next().value as string);
         missedRef.current.record(event, windowAttended());
         const needsInput = event.urgent === true && event.failure !== true;
         const viewingSession = needsInput
@@ -105,8 +163,21 @@ export function useCronOsNotification(
         unregister = cleanup;
       }
     });
+    let unlistenClick: (() => void) | undefined;
+    if (isTauriMode()) {
+      void listenTauriEvent<{ id: string }>('notification-clicked', (e) => {
+        const id = e?.payload?.id;
+        if (typeof id === 'string') clickById(id);
+      }).then((fn) => {
+        if (disposed) fn();
+        else unlistenClick = fn;
+      }).catch((err) => {
+        console.warn('[useCronOsNotification] notification-clicked listen failed', err);
+      });
+    }
     return () => {
       disposed = true;
+      unlistenClick?.();
       window.removeEventListener('focus', flushMissed);
       document.removeEventListener('visibilitychange', flushMissed);
       unsubscribe?.();

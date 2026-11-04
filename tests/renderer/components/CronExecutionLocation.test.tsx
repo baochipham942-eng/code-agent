@@ -60,6 +60,22 @@ describe('N-CRON-ACTIONGATE unsupported action message', () => {
   });
 });
 
+describe('N-CRON-BUDGET-STOP-NOTICE execution detail copy', () => {
+  it.each([
+    ['zh', '超预算停车 · 花费 $0.0234 / 上限 $0.01'],
+    ['en', 'Stopped over budget · spent $0.0234 / cap $0.01'],
+  ] as const)('%s shows spend and cap when the budget error carries spend', (language, expected) => {
+    useAppStore.setState({ language });
+    render(<CronExecutionDetail execution={{ ...execution, runsOn: 'local', error: 'Cron job run exceeded its $0.01 budget limit (spent $0.0234).' }} />);
+    expect(screen.getByText(expected)).toBeTruthy();
+  });
+
+  it('keeps the old budget copy for legacy errors without spend', () => {
+    render(<CronExecutionDetail execution={{ ...execution, runsOn: 'local', error: 'Cron job run exceeded its $0.01 budget limit.' }} />);
+    expect(screen.getByText('本次执行超过了任务的 0.01 美元预算上限')).toBeTruthy();
+  });
+});
+
 describe('N-TRIGGER-CONNECTOR-MAIL run 记录的触发源标签', () => {
   it.each([
     ['zh', 'connector', '邮件', '触发源'],

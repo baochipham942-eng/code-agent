@@ -58,7 +58,7 @@ export type ParkedApprovalResumeOutcome =
   | { handled: true; status: 'denied'; resultRef: string | null }
   | { handled: true; status: 'already_present'; resultRef: string }
   | { handled: true; status: 'lost_race' }
-  | { handled: true; status: 'closed'; reason: 'expired_after_restart_24h' | 'args_unavailable' };
+  | { handled: true; status: 'closed'; reason: 'expired_after_restart_24h' | 'args_unavailable' | 'run_ended_after_restart' };
 
 function defaultPorts(nowFn: () => number): ParkedApprovalResumePorts | null {
   let repo: PendingApprovalRepository;
@@ -246,7 +246,7 @@ async function resumeWithPorts(
     feedback: string,
     deniedReason: string,
     status: 'denied' | 'closed' = 'denied',
-    reason?: 'expired_after_restart_24h' | 'args_unavailable',
+    reason?: 'expired_after_restart_24h' | 'args_unavailable' | 'run_ended_after_restart',
   ): Promise<ParkedApprovalResumeOutcome> => {
     const changes = repo.resolve({
       id: input.requestId,

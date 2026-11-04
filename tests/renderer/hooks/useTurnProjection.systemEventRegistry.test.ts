@@ -201,6 +201,12 @@ describe('用户可见 system 事件登记制（P0-2）', () => {
     },
   );
 
+  it('同一条登记事件消息（同 id）被送达两次 → 只投一个节点', () => {
+    const sys = systemEventMessage('roleFlowStalled');
+    const nodes = project([...plainTurn(), sys, { ...sys }]).flatMap((turn) => turn.nodes);
+    expect(nodes.filter((node) => node.id === 'sys-roleFlowStalled')).toHaveLength(1);
+  });
+
   it('底线：裸 role:system（无 metadata）仍被总闸跳过——内部指令不外泄', () => {
     const turns = project([
       ...plainTurn(),

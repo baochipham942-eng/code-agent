@@ -242,4 +242,72 @@ describe('RoleFirstWakeCard', () => {
     expect(screen.queryByTestId('role-first-wake-card')).toBeNull();
     expect(getFirstWake).not.toHaveBeenCalled();
   });
+
+  describe('首次醒来会话重开（roleId 只在 origin.metadata）', () => {
+    const WAKE_ORIGIN = { kind: 'cron', name: 'role-proactivity', metadata: { roleId: 'role-1', trigger: 'first_wake' } };
+    const openWakeSession = () => useSessionStore.setState({
+      currentSessionId: 'wake-1',
+      sessions: [{ id: 'wake-1', metadata: {}, origin: WAKE_ORIGIN }] as never,
+    });
+
+    it('仅凭 origin 渲染同样的介绍和同样数量的建议按钮', async () => {
+      getFirstWake.mockResolvedValue(COMPLETED);
+      openWakeSession();
+      render(<RoleFirstWakeThreadBanner />);
+      expect(await screen.findByText('我是小满，擅长整理日程。')).toBeTruthy();
+      expect(getFirstWake).toHaveBeenCalledWith('role-1');
+      const card = screen.getByTestId('role-first-wake-card');
+      for (const s of COMPLETED.suggestions) {
+        expect(card.textContent).toContain(s.title);
+      }
+      expect(screen.getByRole('button', { name: '跳过' })).toBeTruthy();
+    });
+
+    it('点建议后卡片消失；重开时 skipped 快照不渲染', async () => {
+      getFirstWake.mockResolvedValue(COMPLETED);
+      openWakeSession();
+      const view = render(<RoleFirstWakeThreadBanner />);
+      fireEvent.click(await screen.findByRole('button', { name: '总结本周日历' }));
+      await waitFor(() => expect(skipFirstWake).toHaveBeenCalledWith('role-1'));
+      expect(screen.queryByTestId('role-first-wake-card')).toBeNull();
+
+      view.unmount();
+      getFirstWake.mockClear();
+      getFirstWake.mockResolvedValue({ ...COMPLETED, state: 'skipped' });
+      render(<RoleFirstWakeThreadBanner />);
+      await waitFor(() => expect(getFirstWake).toHaveBeenCalledWith('role-1'));
+      expect(screen.queryByTestId('role-first-wake-card')).toBeNull();
+    });
+
+    it('跳过后卡片消失', async () => {
+      getFirstWake.mockResolvedValue(COMPLETED);
+      openWakeSession();
+      render(<RoleFirstWakeThreadBanner />);
+      fireEvent.click(await screen.findByRole('button', { name: '跳过' }));
+      await waitFor(() => expect(skipFirstWake).toHaveBeenCalledWith('role-1'));
+      expect(screen.queryByTestId('role-first-wake-card')).toBeNull();
+    });
+
+    it('其他 trigger 的 cron 会话与普通会话不渲染也不查询', () => {
+      getFirstWake.mockResolvedValue(COMPLETED);
+      useSessionStore.setState({
+        currentSessionId: 'cron-1',
+        sessions: [{
+          id: 'cron-1',
+          metadata: {},
+          origin: { kind: 'cron', metadata: { roleId: 'role-1', trigger: 'cadence' } },
+        }] as never,
+      });
+      const view = render(<RoleFirstWakeThreadBanner />);
+      expect(screen.queryByTestId('role-first-wake-card')).toBeNull();
+      view.unmount();
+      useSessionStore.setState({
+        currentSessionId: 'plain',
+        sessions: [{ id: 'plain', metadata: {} }] as never,
+      });
+      render(<RoleFirstWakeThreadBanner />);
+      expect(screen.queryByTestId('role-first-wake-card')).toBeNull();
+      expect(getFirstWake).not.toHaveBeenCalled();
+    });
+  });
 });

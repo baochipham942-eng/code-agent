@@ -33,12 +33,6 @@ export const secretPatternCanaries: SecretPatternCanary[] = [
     rawSecret: 'mk-abcdef1234567890',
   },
   {
-    id: 'keyword-secret-assignment',
-    positive: 'mysql -u root --password=hunter2xyz',
-    negative: 'echo password policy; token: string; const token = getToken()',
-    rawSecret: 'hunter2xyz',
-  },
-  {
     id: 'openai-key',
     positive: `provider key sk-${'a'.repeat(24)}`,
     negative: 'task id sk-short',

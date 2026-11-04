@@ -34,6 +34,7 @@ mod resident_host;
 mod resident_host_windows;
 mod traffic_lights;
 mod webserver_exit;
+mod webserver_supervise;
 
 use appshots::{
     appshots_last_front_app, appshots_read_image_data_url, appshots_read_image_data_url_by_id,
@@ -205,6 +206,10 @@ struct AppState {
     web_server: Mutex<Option<OwnedWebServerChild>>,
     /// 附着到的常驻守护。没有 Child 句柄，cleanup 按 pid 发信号。
     attached_daemon: Mutex<Option<resident_host::DaemonPidRecord>>,
+    /// 退出收尸已开跑（cleanup_server 置位，进程生命周期内不复位）：监督重启
+    /// 在每次 spawn 前后都再看一眼它，退出竞态下绝不把新孩子塞回槽里变孤儿
+    /// （N-WEBSERVER-DEATH-SUPERVISE-RESTART）。
+    shutting_down: AtomicBool,
 }
 
 #[derive(Debug)]
@@ -255,9 +260,22 @@ struct KeybindingGlobalHotkeyResult {
 }
 
 impl AppState {
-    fn store_child(&self, child: Child) {
+    /// 入槽前在**同一把锁里**核 shutting_down：cleanup 已经把旧世界收走时
+    /// 拒绝入槽并当场收掉这个刚拉起的孩子（kill + wait）——否则它会在壳退出
+    /// 后变成孤儿占着端口。Some(pid) = 已入槽。
+    fn store_child(&self, child: Child) -> Option<u32> {
         let pid = child.id();
         let mut guard = self.web_server.lock().expect("web_server mutex poisoned");
+        if self.shutting_down.load(std::sync::atomic::Ordering::SeqCst) {
+            drop(guard);
+            let mut child = child;
+            let _ = child.kill();
+            let _ = child.wait();
+            eprintln!(
+                "webserver-supervise: shutting-down raced the respawn; reaped child pid {pid} instead of storing it"
+            );
+            return None;
+        }
         *guard = Some(OwnedWebServerChild {
             child,
             pid,
@@ -265,6 +283,7 @@ impl AppState {
             started_at: now_millis_string(),
             stdin_eof_cleanup: true,
         });
+        Some(pid)
     }
 
     fn store_attached_daemon(&self, record: resident_host::DaemonPidRecord) {
@@ -2237,31 +2256,53 @@ fn renderer_navigation_failure_message(error: &str) -> String {
 /// webServer 已死则先重新拉起。保证用户双击图标永远能得到一个窗口。
 fn recreate_main_window(app: &tauri::AppHandle) -> Result<(), String> {
     if !is_server_running() {
-        // 与 setup 同一附着判定：is_server_running 偶发失败但守护活着且健康时
-        // 附着而不是 spawn——后者会经 clear_stale_web_server_port kill -9 活守护。
-        let attach_daemon = if !cfg!(debug_assertions) {
-            resident_host::decide_startup_io(real_data_dir().as_deref(), &health_url())
+        // 单飞闸（与死亡重启共用）：拿不到说明监督线程正在拉起，不与其抢
+        // spawn；它成功后会自己 navigate main 窗口。拿到则由本路径自愈。
+        if let Some(_restart_guard) = webserver_supervise::acquire_restart_guard() {
+            // 与 setup 同一附着判定：is_server_running 偶发失败但守护活着且健康时
+            // 附着而不是 spawn——后者会经 clear_stale_web_server_port kill -9 活守护。
+            let attach_daemon = if !cfg!(debug_assertions) {
+                resident_host::decide_startup_io(real_data_dir().as_deref(), &health_url())
+            } else {
+                None
+            };
+            if let Some(record) = attach_daemon {
+                app.state::<AppState>().store_attached_daemon(record.clone());
+                webserver_supervise::spawn_daemon_watcher(app.clone(), record.clone());
+                let diagnostics = new_boot_diagnostics(app);
+                write_shell_event(
+                    app,
+                    &diagnostics,
+                    "info",
+                    "desktop-shell-attached-daemon",
+                    "attached to resident daemon webServer (window recreate)",
+                    Some(serde_json::json!({ "daemonPid": record.pid })),
+                );
+            } else {
+                let child = start_web_server(app)?;
+                if let Some(child_pid) = app.state::<AppState>().store_child(child) {
+                    // 收管即监视：子进程死在槽里（非 cleanup 接手）才落
+                    // desktop-shell-webserver-exited-unexpectedly 事件，之后交给
+                    // 监督线程自动重启（N-WEBSERVER-DEATH-SUPERVISE-RESTART）
+                    webserver_exit::spawn_exit_watcher(app.clone(), child_pid);
+                }
+            }
+            // 窗口重开自愈成功 = 新一轮：give-up 计数清零（重开窗口必须永远
+            // 能自愈，不能被上一轮的 3 连败卡死）。
+            webserver_supervise::reset_history();
         } else {
-            None
-        };
-        if let Some(record) = attach_daemon {
-            app.state::<AppState>().store_attached_daemon(record.clone());
             let diagnostics = new_boot_diagnostics(app);
             write_shell_event(
                 app,
                 &diagnostics,
-                "info",
-                "desktop-shell-attached-daemon",
-                "attached to resident daemon webServer (window recreate)",
-                Some(serde_json::json!({ "daemonPid": record.pid })),
+                "warning",
+                "desktop-shell-webserver-restart-skipped",
+                "webServer restart skipped: restart-guard-held (supervisor already recovering)",
+                Some(serde_json::json!({
+                    "reason": webserver_supervise::SKIP_GUARD_HELD,
+                    "path": "window-recreate",
+                })),
             );
-        } else {
-            let child = start_web_server(app)?;
-            let child_pid = child.id();
-            app.state::<AppState>().store_child(child);
-            // 收管即监视：子进程死在槽里（非 cleanup 接手）才落
-            // desktop-shell-webserver-exited-unexpectedly 事件（取证，不自动重启）
-            webserver_exit::spawn_exit_watcher(app.clone(), child_pid);
         }
     }
 
@@ -2305,6 +2346,11 @@ fn show_startup_failure(error: &str, diagnostic_file: Option<&str>) {
 }
 
 fn cleanup_server(app: &tauri::AppHandle) {
+    // 先立停机牌再收尸：监督重启路径（spawn 前后两道检查 + store_child 的锁内
+    // 检查）从此绝不再拉起/入槽，退出竞态下不会漏出一个孤儿 webServer。
+    app.state::<AppState>()
+        .shutting_down
+        .store(true, std::sync::atomic::Ordering::SeqCst);
     // 「停止并退出」意图已被 daemon 确认时，cleanup 走「等自退」通道（最多 65s）。
     let stop_intent_landed = app
         .state::<Arc<quit_guard::QuitCoordinator>>()
@@ -4566,6 +4612,9 @@ fn main() {
                 // cleanup_server 才能 SIGTERM 这个守护（进程不是这次 spawn 的，没有 Child）。
                 app.state::<AppState>()
                     .store_attached_daemon(record.clone());
+                // 附着守护没有退出 watcher（不是我们的子进程）——监督模块的
+                // daemon watcher 负责盯它死没死（N-WEBSERVER-DEATH-SUPERVISE-RESTART）。
+                webserver_supervise::spawn_daemon_watcher(app.handle().clone(), record.clone());
                 write_shell_event(
                     &app.handle(),
                     &boot_diagnostics,
@@ -4583,12 +4632,12 @@ fn main() {
             } else {
                 match start_web_server_recording(&app.handle(), &mut boot_diagnostics) {
                     Ok(child) => {
-                        let child_pid = child.id();
-                        app.state::<AppState>().store_child(child);
-                        // 收管即监视：子进程死在槽里（非 cleanup 接手）才落
-                        // desktop-shell-webserver-exited-unexpectedly 事件
-                        // （取证，不自动重启——那是 RESTART 票）
-                        webserver_exit::spawn_exit_watcher(app.handle().clone(), child_pid);
+                        if let Some(child_pid) = app.state::<AppState>().store_child(child) {
+                            // 收管即监视：子进程死在槽里（非 cleanup 接手）才落
+                            // desktop-shell-webserver-exited-unexpectedly 事件，
+                            // 之后交给监督线程自动重启（N-WEBSERVER-DEATH-SUPERVISE-RESTART）
+                            webserver_exit::spawn_exit_watcher(app.handle().clone(), child_pid);
+                        }
                     }
                     Err(error) => {
                         // 不走 panic（SIGABRT 闪退无提示）：弹错误框告知用户后干净退出

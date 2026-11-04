@@ -69,7 +69,7 @@ export function resolveSessionCommandTaskApprovalWaitCapMs(
  * 前台模型读到的是这份宽松上限——SSRF 拒绝提示里的「改走 Bash curl 审批」整句
  * 必须完整到达前台，否则前台不知道下一步能做什么（FB-577）。
  */
-export const SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS = 1500;
+const SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS = 1500;
 
 /**
  * resultText 的单一真源：detail 规范化空白后封顶；超限保留前缀并显式标注总长，

@@ -23,7 +23,6 @@ import { getSessionManager } from '../../../src/host/services/infra/sessionManag
 import {
   SESSION_COMMAND_TASK_IDLE_TIMEOUT_MS,
   SESSION_COMMAND_TASK_APPROVAL_WAIT_CAP_MS,
-  SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS,
   resolveSessionCommandTaskIdleTimeoutMs,
   resolveSessionCommandTaskApprovalWaitCapMs,
 } from '../../../src/shared/constants/sessionCommandCenter';
@@ -992,6 +991,9 @@ describe('model-facing task result text', () => {
   });
 
   const HINT_SENTENCE = 'use a Bash curl command instead — it asks the user for approval.';
+  // SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS 的同值（该常量不导出——src 侧只有
+  // 同文件的 composeSessionCommandTaskResultText 消费它，导出会撞 knip production）
+  const MODEL_CAP = 1500;
 
   /** FB-577 镜像：总长 388 字，提示句从第 262 字开始——240 字旧截断必然丢句。 */
   function fb577Conclusion(): string {
@@ -1072,7 +1074,7 @@ describe('model-facing task result text', () => {
       await vi.waitFor(() => expect(addMessageToSession).toHaveBeenCalledTimes(1));
 
       const message = addMessageToSession.mock.calls[0][1];
-      const expectedBody = `${conclusion.slice(0, SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS)}${marker}`;
+      const expectedBody = `${conclusion.slice(0, MODEL_CAP)}${marker}`;
       expect(message.content).toBe(`[任务结果] 任务1｜completed｜${expectedBody}`);
       // 截断线之前的正文（含提示句）原样到达，且模型明确知道被裁过
       expect(message.content).toContain(HINT_SENTENCE);

@@ -183,7 +183,7 @@ describe('deriveCronPermissionDenied ② 判据矩阵', () => {
   it('空消息 / 无 tool 消息 → 无标记（不炸）', () => {
     expect(deriveCronPermissionDenied([], false)).toBeUndefined();
     expect(deriveCronPermissionDenied(
-      [{ role: 'assistant', content: '想想就算了', timestamp: 1 }],
+      [{ role: 'assistant' }],
       false,
     )).toBeUndefined();
   });

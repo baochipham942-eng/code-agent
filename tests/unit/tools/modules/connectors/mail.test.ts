@@ -234,16 +234,45 @@ describe('mailModule (native)', () => {
         expect(result.output).toContain('Work / INBOX');
         expect(result.output).toContain('| 已读');
         expect(result.output).toContain('#2 Unread');
-        expect(result.output).toContain('未知时间');
+        expect(result.output).toContain('收信时间无法解析');
+        expect(result.output).not.toContain('未知时间');
         expect(result.output).toContain('| 未读');
         expect(result.meta).toMatchObject({
           action: 'list_messages',
           connector: 'mail',
           count: 2,
+          receivedTimeParsed: false,
         });
         const artifact = result.meta?.artifact as { kind?: string; metadata?: Record<string, unknown> };
         expect(artifact.kind).toBe('text');
         expect(artifact.metadata?.count).toBe(2);
+      }
+    });
+
+    it('list_messages meta marks receivedTimeParsed true when every time parsed', async () => {
+      execMock.mockResolvedValue({
+        data: [{ id: 1, subject: 'A', sender: 'a@x.com', receivedAtMs: Date.UTC(2026, 10, 3), read: true }],
+      });
+      const result = await run({ action: 'list_messages', mailbox: 'INBOX' });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.output).not.toContain('收信时间无法解析');
+        expect(result.meta).toMatchObject({ receivedTimeParsed: true });
+      }
+    });
+
+    it('read_message distinguishes unparseable time from parsed time', async () => {
+      const base = { id: 9, subject: 'S', sender: 'a@x.com', read: true, content: 'c', attachmentCount: 0 };
+      execMock.mockResolvedValueOnce({ data: { ...base, receivedAtMs: null } });
+      const bad = await run({ action: 'read_message', message_id: 9 });
+      execMock.mockResolvedValueOnce({ data: { ...base, receivedAtMs: Date.UTC(2026, 10, 3) } });
+      const good = await run({ action: 'read_message', message_id: 9 });
+      expect(bad.ok && good.ok).toBe(true);
+      if (bad.ok && good.ok) {
+        expect(bad.output).toContain('时间：收信时间无法解析');
+        expect(bad.meta).toMatchObject({ receivedTimeParsed: false });
+        expect(good.output).not.toContain('收信时间无法解析');
+        expect(good.meta).toMatchObject({ receivedTimeParsed: true });
       }
     });
 

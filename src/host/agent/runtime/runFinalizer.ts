@@ -30,7 +30,7 @@ import { getContextHealthService } from '../../context/contextHealthService';
 import { resolveContextWindow } from '../../model/modelLimits';
 import { getModelErrorStatus, summarizeModelErrorForUser } from '../../../shared/modelErrorDiagnostics';
 import { formatThrownError } from '../../../shared/utils/providerError';
-import { getModelAuthFailureMarker, getModelQuotaFailureMarker, getModelUnavailableMarker } from '../../model/errorClassifier';
+import { getModelAuthFailureMarker, getModelQuotaFailureMarker, getModelUnavailableMarker, getModelUsageLimitFailureMarker } from '../../model/errorClassifier';
 
 // Import refactored modules
 import type {
@@ -402,7 +402,7 @@ export class RunFinalizer {
         });
       }
       logger.error('[AgentLoop] Loop exited due to runtime error', terminalError);
-      const marker = getModelAuthFailureMarker(terminalError) ?? getModelUnavailableMarker(terminalError) ?? getModelQuotaFailureMarker(terminalError);
+      const marker = getModelAuthFailureMarker(terminalError) ?? getModelUnavailableMarker(terminalError) ?? getModelUsageLimitFailureMarker(terminalError) ?? getModelQuotaFailureMarker(terminalError);
       // 带上这一轮真正跑的模型：手机据此判断用户是否已经换走，换了就不再挂「换一个可用模型」。
       const modelFailure = marker && { ...marker, provider: marker.provider ?? this.ctx.modelConfig.provider, model: marker.model ?? this.ctx.modelConfig.model };
       logCollector.agent('ERROR', `Agent run failed: ${errorMessage}`);

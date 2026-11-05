@@ -76,12 +76,15 @@ export const chatInputZh = {
     readOnlyNotice: '这个会话是只读的，不能在这里继续输入。',
     readOnlyNewSession: '新开会话继续',
     // 定时任务运行记录会话的 composer（N-UI-CRON-RUN-RECORD-CLEAR）：输入照常可用，
-    // 发送会 fork 出新对话带走任务+结果；placeholder 直接说清这件事。
+    // 发送会 fork 出新对话带走任务+结果；已中断无结果时不承诺「带上这次的结果」。
     cronFollowUpPlaceholder: '接着问这次运行…（会开一条新对话，带上这次的结果）',
+    cronFollowUpPlaceholderNoResult: '接着问这次运行…（会开一条新对话）',
     cronFollowUpRunActive: '这次运行还在进行中，等它结束再接着问',
     cronFollowUpNewSessionTitle: '{title} · 续问',
     cronFollowUpSeedWithTask: '【接着一次定时任务运行】那次运行的任务是：{task}\n那次运行中断了，没有留下结果。下面是我的问题：',
     cronFollowUpSeedNoTask: '【接着一次定时任务运行】那次运行中断了，没有留下结果。下面是我的问题：',
+    cronFollowUpSeedIncompleteWithTask: '【接着一次定时任务运行】那次运行的任务是：{task}\n那次运行没有跑完。下面是我的问题：',
+    cronFollowUpSeedIncompleteNoTask: '【接着一次定时任务运行】那次运行没有跑完。下面是我的问题：',
     cronFollowUpForkFailed: '没能开启新对话：{reason}',
     cronFollowUpCreateFailed: '没能开启新对话，请重试',
     importedNotice: '这是从 {engine} 导入的对话。发送消息会开启一个新的 Neo 会话并从这段历史继续；这条记录不会改动。',
@@ -534,12 +537,15 @@ export const chatInputEn: typeof chatInputZh = {
     readOnlyNotice: 'This session is read-only and cannot take more input here.',
     readOnlyNewSession: 'Start a new session to continue',
     // Scheduled-run record sessions keep a usable composer (N-UI-CRON-RUN-RECORD-CLEAR):
-    // sending forks a new conversation carrying the task and result; the placeholder says so.
+    // sending forks a new conversation carrying the task and result; when interrupted with no result, omit the result promise.
     cronFollowUpPlaceholder: 'Ask about this run… (opens a new conversation with its result)',
+    cronFollowUpPlaceholderNoResult: 'Ask about this run… (opens a new conversation)',
     cronFollowUpRunActive: 'This run is still in progress — ask again once it finishes',
     cronFollowUpNewSessionTitle: '{title} · follow-up',
     cronFollowUpSeedWithTask: '[Continuing from a scheduled run] Its task was: {task}\nThat run was interrupted and left no result. My question:',
     cronFollowUpSeedNoTask: '[Continuing from a scheduled run] That run was interrupted and left no result. My question:',
+    cronFollowUpSeedIncompleteWithTask: '[Continuing from a scheduled run] Its task was: {task}\nThat run did not finish. My question:',
+    cronFollowUpSeedIncompleteNoTask: '[Continuing from a scheduled run] That run did not finish. My question:',
     cronFollowUpForkFailed: 'Could not open a new conversation: {reason}',
     cronFollowUpCreateFailed: 'Could not open a new conversation — please retry',
     importedNotice: 'This is a chat imported from {engine}. Sending a message opens a new Neo session that continues from it; this record will not change.',

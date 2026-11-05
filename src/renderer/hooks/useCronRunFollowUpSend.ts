@@ -15,7 +15,13 @@ import type { Message } from '@shared/contract';
 import type { Session } from '@shared/contract/session';
 import { stripCronPromptDecoration } from '@shared/cronRunMessage';
 import { IPC_DOMAINS } from '@shared/ipc';
+import {
+  deriveCronRunStatusLine,
+  findCronExecutionForSession,
+  getObservedCronRunStatusForSession,
+} from '../components/features/chat/cronRunSessionStatus';
 import ipcService from '../services/ipcService';
+import { useCronStore } from '../stores/cronStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useI18n } from './useI18n';
 import { toast } from './useToast';
@@ -24,6 +30,22 @@ import { toast } from './useToast';
 function isCronRunRecordSession(session: Session | null | undefined): boolean {
   const kind = session?.origin?.kind;
   return kind === 'cron' || kind === 'heartbeat';
+}
+
+function resolveSessionRunStatusKind(session: Session | null | undefined, sessionId: string) {
+  const observed = getObservedCronRunStatusForSession(sessionId);
+  if (observed) return observed.kind;
+  const jobId = session?.origin?.id?.trim();
+  if (!jobId) return null;
+  const cronState = useCronStore.getState();
+  const latestForJob = cronState.latestExecutions[jobId];
+  const candidates = [
+    ...(cronState.executionsByJobId[jobId] ?? []),
+    ...(latestForJob ? [latestForJob] : []),
+    ...cronState.recentExecutions.filter((item) => item.jobId === jobId),
+  ];
+  const execution = findCronExecutionForSession(candidates, { executionId: session?.sourceRunId, sessionId });
+  return deriveCronRunStatusLine({ execution, pendingApproval: null })?.kind ?? null;
 }
 
 /**
@@ -105,9 +127,21 @@ export function useCronRunFollowUpSend(
         toast.error(copy.cronFollowUpCreateFailed);
         return false;
       }
-      const seedPrefix = taskText
-        ? copy.cronFollowUpSeedWithTask.replace('{task}', taskText)
-        : copy.cronFollowUpSeedNoTask;
+      const statusKind = resolveSessionRunStatusKind(session, sessionId);
+      // 仅在进程中断（interrupted，或未记录为 failed/cancelled）时称「中断了，没有留下结果」；
+      // 失败或取消的运行不说「中断了，没有留下结果」。
+      const isFailedOrCancelled =
+        statusKind === 'failed-denied'
+        || statusKind === 'failed-generic'
+        || statusKind === 'cancelled'
+        || session?.status === 'error';
+      const seedPrefix = isFailedOrCancelled
+        ? (taskText
+          ? copy.cronFollowUpSeedIncompleteWithTask.replace('{task}', taskText)
+          : copy.cronFollowUpSeedIncompleteNoTask)
+        : (taskText
+          ? copy.cronFollowUpSeedWithTask.replace('{task}', taskText)
+          : copy.cronFollowUpSeedNoTask);
       return await send({
         ...envelope,
         sessionId: created.id,

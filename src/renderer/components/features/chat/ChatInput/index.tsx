@@ -4,7 +4,7 @@
 // 深度研究通过语义自动检测触发，无需手动切换
 // ============================================================================
 
-import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef, useMemo } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef, useMemo, useSyncExternalStore } from 'react';
 import { Image, FileText } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/contract';
 import type {
@@ -127,6 +127,13 @@ import { ReadOnlySessionNotice } from './ReadOnlySessionNotice';
 import { ImportedSessionNotice } from './ImportedSessionNotice';
 import { useImportedSessionNotice } from '../../../../hooks/useImportedSessionResume';
 import { useComposerAppEvents } from './useComposerAppEvents';
+import {
+  deriveCronRunStatusLine,
+  findCronExecutionForSession,
+  getObservedCronRunStatusForSession,
+  subscribeObservedCronRunStatus,
+} from '../cronRunSessionStatus';
+import { useCronStore } from '../../../../stores/cronStore';
 
 // ============================================================================
 // 类型定义
@@ -388,6 +395,26 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     return kind === 'cron' || kind === 'heartbeat';
   });
   const cronRunFollowUpMode = currentSessionReadOnly && isCronRunRecordSession;
+  const observedCronRunStatus = useSyncExternalStore(
+    subscribeObservedCronRunStatus,
+    () => getObservedCronRunStatusForSession(currentSessionId),
+    () => null,
+  );
+  const cronStoreStatusKind = useCronStore((state) => {
+    if (!cronRunFollowUpMode || !currentSessionId) return null;
+    const session = useSessionStore.getState().sessions.find((item) => item.id === currentSessionId);
+    const jobId = session?.origin?.id?.trim();
+    if (!jobId) return null;
+    const latestForJob = state.latestExecutions[jobId];
+    const candidates = [
+      ...(state.executionsByJobId[jobId] ?? []),
+      ...(latestForJob ? [latestForJob] : []),
+      ...state.recentExecutions.filter((item) => item.jobId === jobId),
+    ];
+    const execution = findCronExecutionForSession(candidates, { executionId: session?.sourceRunId, sessionId: currentSessionId });
+    return deriveCronRunStatusLine({ execution, pendingApproval: null })?.kind ?? null;
+  });
+  const cronRunStatusKind = observedCronRunStatus?.kind ?? cronStoreStatusKind;
   // 导入的外部历史会话：composer 保持可用，上方挂一行「发送即开新会话续聊」说明。
   const importedSessionNotice = useImportedSessionNotice();
   const [pendingPromptCommand, setPendingPromptCommand] = useState<ComposerPromptCommandSelection | null>(null);
@@ -983,11 +1010,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
   const resolvedPlaceholder = useMemo(() => {
     if (placeholder) return placeholder;
-    if (cronRunFollowUpMode) return t.chatInput.cronFollowUpPlaceholder;
+    if (cronRunFollowUpMode) {
+      return cronRunStatusKind === 'interrupted'
+        ? t.chatInput.cronFollowUpPlaceholderNoResult
+        : t.chatInput.cronFollowUpPlaceholder;
+    }
     if (inputPlaceholder) return inputPlaceholder;
     if (!isProcessing) return undefined;
     return t.chatInputSubmit.runtimeInputPlaceholder;
-  }, [cronRunFollowUpMode, inputPlaceholder, isProcessing, placeholder, t]);
+  }, [cronRunFollowUpMode, cronRunStatusKind, inputPlaceholder, isProcessing, placeholder, t]);
 
   // 提交发送管线（schedule/loop/goal/agent 命令分支 + appshot 注入 + ! shell 快捷 + 失败回滚）
   const { handleSubmit, runScheduleCreation, confirmScheduleCreation, startGoalRun, submitSeedComposer } = useChatInputSubmit({

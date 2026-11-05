@@ -25,8 +25,10 @@ vi.mock('../../../src/renderer/services/sessionAutomationClient', () => ({
 import { CronRunSessionStatusBar } from '../../../src/renderer/components/features/chat/CronRunSessionStatusBar';
 import { CronRunSessionIntro } from '../../../src/renderer/components/features/chat/CronRunSessionIntro';
 import {
+  clearObservedCronRunStatusesForTest,
   composeElapsed,
   deriveCronRunStatusLine,
+  isCronExecutionPermissionDenialError,
   splitElapsedParts,
 } from '../../../src/renderer/components/features/chat/cronRunSessionStatus';
 import { useSessionStore, type SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
@@ -69,6 +71,7 @@ const cronRunSession: Partial<SessionWithMeta> & { id: string } = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  clearObservedCronRunStatusesForTest();
   invokeMock.mockResolvedValue({ outcome: 'delivered' });
   getExecutionsMock.mockResolvedValue([]);
   listParkedApprovalsMock.mockResolvedValue([]);
@@ -78,6 +81,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  clearObservedCronRunStatusesForTest();
   // 撤掉定时器相关的挂载残留
   vi.restoreAllMocks();
 });
@@ -107,11 +111,48 @@ describe('deriveCronRunStatusLine（纯判定）', () => {
     })).toEqual({ kind: 'finished', durationMs: 7_000 });
   });
 
-  it('进程没了/失败/取消都是「已中断」：dead run 绝不显示运行中', () => {
-    for (const status of ['interrupted', 'failed', 'cancelled'] as const) {
-      expect(deriveCronRunStatusLine({ execution: makeExecution({ status }), pendingApproval: null }))
-        .toEqual({ kind: 'interrupted' });
-    }
+  it('interrupted / failed（被拒 vs 其他） / cancelled 各自拆成独立 kind，绝不混成同一个', () => {
+    expect(deriveCronRunStatusLine({ execution: makeExecution({ status: 'interrupted' }), pendingApproval: null }))
+      .toEqual({ kind: 'interrupted' });
+    expect(deriveCronRunStatusLine({ execution: makeExecution({ status: 'cancelled' }), pendingApproval: null }))
+      .toEqual({ kind: 'cancelled' });
+    expect(deriveCronRunStatusLine({
+      execution: makeExecution({ status: 'failed', error: 'Permission denied by user' }),
+      pendingApproval: null,
+    })).toEqual({ kind: 'failed-denied' });
+    expect(deriveCronRunStatusLine({
+      execution: makeExecution({ status: 'failed', error: '用户拒绝了该命令' }),
+      pendingApproval: null,
+    })).toEqual({ kind: 'failed-denied' });
+    expect(deriveCronRunStatusLine({
+      execution: makeExecution({ status: 'failed', error: 'bash 被自动拒绝：当前无人值守会话不允许弹权限框' }),
+      pendingApproval: null,
+    })).toEqual({ kind: 'failed-denied' });
+    expect(deriveCronRunStatusLine({
+      execution: makeExecution({ status: 'failed', error: 'Command failed with exit code 1: ECONNRESET' }),
+      pendingApproval: null,
+    })).toEqual({ kind: 'failed-generic' });
+    expect(deriveCronRunStatusLine({
+      execution: makeExecution({ status: 'failed', error: undefined }),
+      pendingApproval: null,
+    })).toEqual({ kind: 'failed-generic' });
+  });
+
+  it('isCronExecutionPermissionDenialError：稳定识别主进程权限拒绝错误，不把普通失败误判为被拒', () => {
+    expect(isCronExecutionPermissionDenialError('Permission denied')).toBe(true);
+    expect(isCronExecutionPermissionDenialError('PERMISSION_DENIED_BY_USER')).toBe(true);
+    expect(isCronExecutionPermissionDenialError('PERMISSION_DENIED_UNATTENDED_AUTO')).toBe(true);
+    expect(isCronExecutionPermissionDenialError('UNATTENDED_APPROVAL_TIMEOUT')).toBe(true);
+    expect(isCronExecutionPermissionDenialError('用户拒绝了该命令')).toBe(true);
+    expect(isCronExecutionPermissionDenialError('命令被拒绝')).toBe(true);
+    expect(isCronExecutionPermissionDenialError('bash 被自动拒绝：危险命令在无人值守模式下禁止执行')).toBe(true);
+    expect(isCronExecutionPermissionDenialError('Command was denied by policy')).toBe(true);
+
+    expect(isCronExecutionPermissionDenialError(undefined)).toBe(false);
+    expect(isCronExecutionPermissionDenialError('')).toBe(false);
+    expect(isCronExecutionPermissionDenialError('Command failed: exit code 1')).toBe(false);
+    expect(isCronExecutionPermissionDenialError('429 Too Many Requests')).toBe(false);
+    expect(isCronExecutionPermissionDenialError('Execution timed out after 60000ms')).toBe(false);
   });
 
   it('没有执行记录也没有等批准：不编状态（null）', () => {
@@ -189,6 +230,53 @@ describe('CronRunSessionStatusBar（组件）', () => {
     const node = await screen.findByTestId('cron-run-status');
     expect(node.dataset.state).toBe('interrupted');
     expect(screen.getByTestId('cron-run-status-text').textContent).toBe('已中断，没有结果');
+
+    fireEvent.click(screen.getByTestId('cron-run-status-rerun'));
+    await waitFor(() => {
+      expect(triggerJobMock).toHaveBeenCalledWith('job-1');
+    });
+  });
+
+  it('失败（命令被拒绝）：显示「没跑成：命令被拒绝」+ 再跑一次走 triggerJob', async () => {
+    showSession(cronRunSession);
+    getExecutionsMock.mockResolvedValue([
+      makeExecution({ status: 'failed', error: 'Permission denied: 用户拒绝了该命令' }),
+    ]);
+    render(<CronRunSessionStatusBar sessionId="session-1" />);
+    const node = await screen.findByTestId('cron-run-status');
+    expect(node.dataset.state).toBe('failed-denied');
+    expect(screen.getByTestId('cron-run-status-text').textContent).toBe('没跑成：命令被拒绝');
+
+    fireEvent.click(screen.getByTestId('cron-run-status-rerun'));
+    await waitFor(() => {
+      expect(triggerJobMock).toHaveBeenCalledWith('job-1');
+    });
+  });
+
+  it('失败（其他原因）：显示「没跑成」，绝不把裸 error 串吐到状态行 + 再跑一次走 triggerJob', async () => {
+    showSession(cronRunSession);
+    getExecutionsMock.mockResolvedValue([
+      makeExecution({ status: 'failed', error: 'Error: ECONNRESET socket hang up at TLSSocket' }),
+    ]);
+    render(<CronRunSessionStatusBar sessionId="session-1" />);
+    const node = await screen.findByTestId('cron-run-status');
+    expect(node.dataset.state).toBe('failed-generic');
+    expect(screen.getByTestId('cron-run-status-text').textContent).toBe('没跑成');
+    expect(screen.getByTestId('cron-run-status-text').textContent).not.toContain('ECONNRESET');
+
+    fireEvent.click(screen.getByTestId('cron-run-status-rerun'));
+    await waitFor(() => {
+      expect(triggerJobMock).toHaveBeenCalledWith('job-1');
+    });
+  });
+
+  it('已取消：显示「已取消」+ 再跑一次走 triggerJob', async () => {
+    showSession(cronRunSession);
+    getExecutionsMock.mockResolvedValue([makeExecution({ status: 'cancelled' })]);
+    render(<CronRunSessionStatusBar sessionId="session-1" />);
+    const node = await screen.findByTestId('cron-run-status');
+    expect(node.dataset.state).toBe('cancelled');
+    expect(screen.getByTestId('cron-run-status-text').textContent).toBe('已取消');
 
     fireEvent.click(screen.getByTestId('cron-run-status-rerun'));
     await waitFor(() => {

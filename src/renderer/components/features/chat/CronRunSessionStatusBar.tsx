@@ -25,6 +25,9 @@ import { toast } from '../../../hooks/useToast';
 import {
   composeElapsed,
   deriveCronRunStatusLine,
+  findCronExecutionForSession,
+  isTerminalCronRunStatusKind,
+  setObservedCronRunStatusForSession,
   splitElapsedParts,
   type CronRunAwaitingApproval,
   type CronRunStatusLine,
@@ -56,15 +59,6 @@ function findParkedApprovalForSession(
   };
 }
 
-function findExecutionForSession(executions: CronJobExecution[], args: { executionId?: string; sessionId: string }): CronJobExecution | null {
-  if (args.executionId) {
-    const byId = executions.find((execution) => execution.id === args.executionId);
-    if (byId) return byId;
-  }
-  // sourceRunId 缺席的老会话：按 sessionId 对（一个运行会话只承载一次执行）。
-  return executions.find((execution) => execution.sessionId === args.sessionId) ?? null;
-}
-
 export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessionId }) => {
   const { t } = useI18n();
   const copy = t.cronRunRecord;
@@ -78,11 +72,14 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
   const [now, setNow] = useState(() => Date.now());
   const [approvalBusy, setApprovalBusy] = useState(false);
   const [isRerunning, setIsRerunning] = useState(false);
-  // 终态后停轮询：completed/interrupted 不会自己变回来。
+  // 终态后停轮询：completed/interrupted/failed/cancelled 不会自己变回来。
   const status = useMemo(
     () => deriveCronRunStatusLine({ execution, pendingApproval }),
     [execution, pendingApproval],
   );
+  useEffect(() => {
+    setObservedCronRunStatusForSession(sessionId, status);
+  }, [sessionId, status]);
   const statusRef = useRef<CronRunStatusLine | null>(null);
   statusRef.current = status;
   // 找不到执行记录的连续次数：老会话缺 sourceRunId/sessionId 关联时别无限轮询。
@@ -91,7 +88,7 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
     if (!jobId) return;
     try {
       const executions = await cronClient.getExecutions(jobId, 20);
-      const nextExecution = findExecutionForSession(executions, { executionId, sessionId });
+      const nextExecution = findCronExecutionForSession(executions, { executionId, sessionId });
       if (nextExecution) missingFetchesRef.current = 0;
       else missingFetchesRef.current += 1;
       setExecution(nextExecution);
@@ -111,7 +108,7 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
   useEffect(() => {
     if (!jobId) return;
     void refresh();
-    if (activeKind === 'finished' || activeKind === 'interrupted') return;
+    if (isTerminalCronRunStatusKind(activeKind)) return;
     const timer = window.setInterval(() => {
       if (statusRef.current === null && missingFetchesRef.current >= 5) return;
       void refresh();
@@ -222,16 +219,28 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
     );
   }
 
-  if (status?.kind === 'interrupted') {
+  if (
+    status?.kind === 'interrupted'
+    || status?.kind === 'failed-denied'
+    || status?.kind === 'failed-generic'
+    || status?.kind === 'cancelled'
+  ) {
+    const label = status.kind === 'failed-denied'
+      ? copy.failedDenied
+      : status.kind === 'failed-generic'
+        ? copy.failedGeneric
+        : status.kind === 'cancelled'
+          ? copy.cancelled
+          : copy.interrupted;
     return (
       <div
         className="flex flex-wrap items-center gap-2 py-1 text-[13px] text-zinc-400"
         role="status"
         data-testid="cron-run-status"
-        data-state="interrupted"
+        data-state={status.kind}
       >
         <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-mark-neutral" aria-hidden="true" />
-        <span data-testid="cron-run-status-text">{copy.interrupted}</span>
+        <span data-testid="cron-run-status-text">{label}</span>
         <button /* ds-allow:button: 状态行内超小次级按钮（h-6 px-2 text-xs） */
           type="button"
           onClick={() => { void handleRerun(); }}

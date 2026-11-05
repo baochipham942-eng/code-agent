@@ -4,7 +4,6 @@
 // 运行记录本体一行不改。中断得太早没有锚点时开普通新会话带任务原文。
 // 非运行记录会话直通、运行中不发送。
 
-import React from 'react';
 import { renderHook, act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -15,6 +14,11 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 }));
 
 import { useCronRunFollowUpSend } from '../../../src/renderer/hooks/useCronRunFollowUpSend';
+import {
+  clearObservedCronRunStatusesForTest,
+  setObservedCronRunStatusForSession,
+} from '../../../src/renderer/components/features/chat/cronRunSessionStatus';
+import { useCronStore } from '../../../src/renderer/stores/cronStore';
 import { useSessionStore, type SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 import type { Message } from '../../../src/shared/contract';
 import type { ConversationEnvelope } from '../../../src/shared/contract/conversationEnvelope';
@@ -45,6 +49,8 @@ function envelope(content: string): ConversationEnvelope {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  clearObservedCronRunStatusesForTest();
+  useCronStore.setState({ executionsByJobId: {}, latestExecutions: {}, recentExecutions: [] } as never);
   useSessionStore.setState({
     sessions: [cronRunSession],
     currentSessionId: 'record-1',
@@ -57,6 +63,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  clearObservedCronRunStatusesForTest();
   vi.restoreAllMocks();
 });
 
@@ -104,6 +111,7 @@ describe('useCronRunFollowUpSend', () => {
   });
 
   it('中断得太早没有任何助手回复：开普通新会话，任务原文（去掉机器尾段）随问题带过去', async () => {
+    setObservedCronRunStatusForSession('record-1', { kind: 'interrupted' });
     const messages = [
       userMessage('查一下今天的日程\n\n【当前时间】2026-11-04T08:27:33.512Z（UTC）。今天本地日期是 2026-11-04。'),
     ];
@@ -120,9 +128,32 @@ describe('useCronRunFollowUpSend', () => {
     expect(useSessionStore.getState().createSession).toHaveBeenCalled();
     const [arg] = (send.mock.calls as Array<[ConversationEnvelope]>)[0];
     expect(arg.sessionId).toBe('fresh-1');
+    expect(arg.content).toContain('那次运行中断了，没有留下结果。');
     expect(arg.content).toContain('这个任务后来怎么样了？');
     expect(arg.content).toContain('查一下今天的日程');
     expect(arg.content).not.toContain('【当前时间】');
+  });
+
+  it('failed 或 cancelled 且无助手回复：不冒充「中断了，没有留下结果」，改用「那次运行没有跑完。」', async () => {
+    const messages = [
+      userMessage('查一下今天的日程\n\n【当前时间】2026-11-04T08:27:33.512Z（UTC）。今天本地日期是 2026-11-04。'),
+    ];
+    for (const execution of [
+      { id: 'exec-1', jobId: 'job-1', status: 'failed' as const, error: 'Permission denied', scheduledAt: 1, retryAttempt: 0, sessionId: 'record-1' },
+      { id: 'exec-1', jobId: 'job-1', status: 'failed' as const, error: 'Command failed: exit code 1', scheduledAt: 1, retryAttempt: 0, sessionId: 'record-1' },
+      { id: 'exec-1', jobId: 'job-1', status: 'cancelled' as const, scheduledAt: 1, retryAttempt: 0, sessionId: 'record-1' },
+    ]) {
+      clearObservedCronRunStatusesForTest();
+      useCronStore.setState({ executionsByJobId: { 'job-1': [execution] }, latestExecutions: {}, recentExecutions: [] } as never);
+      const send = vi.fn().mockResolvedValue(true);
+      const { result } = renderHook(() => useCronRunFollowUpSend(send, () => messages));
+      await act(async () => {
+        await result.current(envelope('为什么没跑成？'));
+      });
+      const [arg] = (send.mock.calls as Array<[ConversationEnvelope]>)[0];
+      expect(arg.content).toContain('那次运行没有跑完。');
+      expect(arg.content).not.toContain('那次运行中断了，没有留下结果。');
+    }
   });
 
   it('fork 失败：返回 false（草稿回滚）并出声，不切会话', async () => {

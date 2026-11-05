@@ -7,9 +7,14 @@ import React from 'react';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatInput } from '../../../src/renderer/components/features/chat/ChatInput';
+import {
+  clearObservedCronRunStatusesForTest,
+  setObservedCronRunStatusForSession,
+} from '../../../src/renderer/components/features/chat/cronRunSessionStatus';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 import ipcService from '../../../src/renderer/services/ipcService';
 import { useBundledCapabilityStore } from '../../../src/renderer/stores/bundledCapabilityStore';
+import { useCronStore } from '../../../src/renderer/stores/cronStore';
 import { useSessionStore, type SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 
 const realCreateSession = useSessionStore.getState().createSession;
@@ -53,6 +58,8 @@ const cronRunSession = (id: string) => makeSession({
 
 describe('定时任务运行记录的 composer（readOnly + origin cron）', () => {
   beforeEach(() => {
+    clearObservedCronRunStatusesForTest();
+    useCronStore.setState({ executions: [], recentExecutions: [] } as never);
     resetCapabilityStore();
     const invokeDomain = ipcService.invokeDomain.bind(ipcService);
     vi.spyOn(ipcService, 'invokeDomain').mockImplementation((domain, action, payload) => {
@@ -63,6 +70,7 @@ describe('定时任务运行记录的 composer（readOnly + origin cron）', () 
 
   afterEach(() => {
     cleanup();
+    clearObservedCronRunStatusesForTest();
     vi.restoreAllMocks();
     useSessionStore.setState({
       sessions: [],
@@ -83,12 +91,21 @@ describe('定时任务运行记录的 composer（readOnly + origin cron）', () 
     expect(screen.getByTestId('chat-composer-textarea').textContent).not.toContain('只读');
   });
 
-  it('placeholder 说明去向：会开一条新对话，带上这次的结果', () => {
+  it('placeholder 说明去向：有结果时承诺会开一条新对话并带上这次的结果', () => {
     showSession(cronRunSession('cron-record-placeholder'));
     render(<ChatInput onSend={() => true} />);
 
     // composer 是 contenteditable，placeholder 是空态时的兄弟 span
     expect(screen.getByText('接着问这次运行…（会开一条新对话，带上这次的结果）')).toBeTruthy();
+  });
+
+  it('interrupted（没有结果）时 placeholder 不承诺「带上这次的结果」', () => {
+    showSession(cronRunSession('cron-record-interrupted'));
+    setObservedCronRunStatusForSession('cron-record-interrupted', { kind: 'interrupted' });
+    render(<ChatInput onSend={() => true} />);
+
+    expect(screen.getByText('接着问这次运行…（会开一条新对话）')).toBeTruthy();
+    expect(screen.queryByText('接着问这次运行…（会开一条新对话，带上这次的结果）')).toBeNull();
   });
 
   it('heartbeat 运行记录同样处理', () => {

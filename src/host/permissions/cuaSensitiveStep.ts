@@ -3,9 +3,11 @@
 // 规格唯一真源：docs/architecture/sensitive-step-handback.md。
 //
 // 窗口级规则：目标窗口最新快照含 AXSecureTextField（结构性信号，索引行与未索引行都算，
-// 信号在 cuaNarration 的快照缓存里维护）→ type_text / set_value / type_text_chars
+// 信号在 cuaNarration 的快照缓存里维护）→ type_text / set_value / type_text_chars，
+// 以及可产出字符的 press_key（单字符，仅可选 shift）和粘贴 hotkey（cmd/ctrl + v）
 // 不执行、不吃任何已记住的应用授权（resolvePreAskGrant blocked），改弹 forceConfirm
-// 交回卡。该窗口无任何快照 = 无信号 → 不升格交回，照旧走按应用审批链（规格 §9）。
+// 交回卡；导航/控制键与非粘贴组合键保留原按应用审批链。该窗口无任何快照 = 无信号 →
+// 不升格交回，照旧走按应用审批链并打 debug 留痕（规格 §8/§9）。
 // 二期 FU3（支付/验证码词表）只会往 SENSITIVE_INPUT_CUA_TOOLS/词表侧加信号源，接同一道门。
 // ============================================================================
 
@@ -18,8 +20,85 @@ import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('CuaSensitiveStep');
 
-/** 一期覆盖的输入类工具；type_text_chars 是驱动 invoke 期别名（不进 tools/list，mod.rs:698-706）。 */
+/** 一期覆盖的文本输入工具；type_text_chars 是驱动 invoke 期别名（不进 tools/list，mod.rs:698-706）。 */
 const SENSITIVE_INPUT_CUA_TOOLS = new Set(['type_text', 'set_value', 'type_text_chars']);
+
+/** hotkey 粘贴主修饰键（macOS cmd / 跨平台 ctrl 及其常见别名，大小写不敏感）。 */
+const PASTE_PRIMARY_MODIFIERS = new Set(['cmd', 'command', 'ctrl', 'control', 'meta', 'super']);
+const ALL_HOTKEY_MODIFIERS = new Set([
+  ...PASTE_PRIMARY_MODIFIERS,
+  'shift',
+  'alt',
+  'option',
+  'opt',
+  'fn',
+]);
+
+function isSinglePrintableChar(value: string): boolean {
+  const chars = Array.from(value);
+  return chars.length === 1 && !/\p{C}/u.test(chars[0]);
+}
+
+function isShiftOnlyModifiers(modifiers: unknown): boolean {
+  if (modifiers === undefined || modifiers === null) return true;
+  if (!Array.isArray(modifiers)) return false;
+  return modifiers.every((m) => typeof m === 'string' && m.toLowerCase() === 'shift');
+}
+
+/**
+ * press_key 仅交回会打出字符的按键（单个可打印字符，只允许无修饰键或单独 shift）。
+ * Return/Tab/Escape/方向键/Delete 及带 cmd/ctrl/alt 的快捷键保留原按应用审批链，
+ * 避免用户输完密码后模型按 Return 提交时二次弹交回卡。
+ */
+function isCharacterProducingPressKey(params: Record<string, unknown> | null | undefined): boolean {
+  const key = params?.key;
+  if (typeof key !== 'string' || key.length === 0) return false;
+  if (!isShiftOnlyModifiers(params?.modifiers)) return false;
+  if (isSinglePrintableChar(key)) return true;
+  const shiftChord = /^shift\+(.+)$/is.exec(key);
+  return shiftChord !== null && isSinglePrintableChar(shiftChord[1]);
+}
+
+/** hotkey 仅交回粘贴组合键（cmd/ctrl + v，含 cmd+shift+v 等无样式粘贴变体，大小写不敏感）。 */
+function isPasteHotkey(params: Record<string, unknown> | null | undefined): boolean {
+  const rawKeys = params?.keys;
+  const items: unknown[] = Array.isArray(rawKeys)
+    ? rawKeys
+    : typeof rawKeys === 'string'
+      ? [rawKeys]
+      : [];
+  if (items.length === 0) return false;
+  const tokens: string[] = [];
+  for (const item of items) {
+    if (typeof item !== 'string') return false;
+    const parts = item.length > 1 && item.includes('+') ? item.split('+') : [item];
+    for (const part of parts) {
+      const normalized = part.trim().toLowerCase();
+      if (!normalized) return false;
+      tokens.push(normalized);
+    }
+  }
+  let hasPrimary = false;
+  const nonModifiers: string[] = [];
+  for (const token of tokens) {
+    if (PASTE_PRIMARY_MODIFIERS.has(token)) {
+      hasPrimary = true;
+    } else if (!ALL_HOTKEY_MODIFIERS.has(token)) {
+      nonModifiers.push(token);
+    }
+  }
+  return hasPrimary && nonModifiers.length === 1 && nonModifiers[0] === 'v';
+}
+
+function isSensitiveCandidateCuaCall(
+  bareTool: string,
+  params: Record<string, unknown> | null | undefined,
+): boolean {
+  if (SENSITIVE_INPUT_CUA_TOOLS.has(bareTool)) return true;
+  if (bareTool === 'press_key') return isCharacterProducingPressKey(params);
+  if (bareTool === 'hotkey') return isPasteHotkey(params);
+  return false;
+}
 
 export interface CuaSensitiveStep {
   kind: 'password';
@@ -36,7 +115,7 @@ export function classifyCuaSensitiveStep(
   params: Record<string, unknown> | null | undefined,
 ): CuaSensitiveStep | null {
   const tool = parseCuaToolName(executionToolName);
-  if (tool === null || !SENSITIVE_INPUT_CUA_TOOLS.has(tool)) return null;
+  if (tool === null || !isSensitiveCandidateCuaCall(tool, params)) return null;
   const signal = readCuaWindowSecureField(params ?? {});
   if (signal === null) {
     // 无信号不升格是有意取舍（规格 §9：无差别交回全部输入 = 卡片通胀）；但缺口要留痕可查。
@@ -52,11 +131,11 @@ export function classifyCuaSensitiveStep(
 }
 
 /**
- * 被键入的文本 / 字段值绝不进任何载荷（规格 §3：请求、指纹输入、台账、卡片全算）。
+ * 被键入的文本 / 字段值 / 按键绝不进任何载荷（规格 §3：请求、指纹输入、台账、卡片全算）。
  * 这一步永不执行，参数本体没有留存价值——一律浅拷贝剥掉。
  */
 export function stripSensitiveStepParams(params: Record<string, unknown>): Record<string, unknown> {
-  const { text: _text, value: _value, ...rest } = params;
+  const { text: _text, value: _value, key: _key, keys: _keys, modifiers: _modifiers, ...rest } = params;
   return rest;
 }
 

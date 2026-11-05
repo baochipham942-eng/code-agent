@@ -16,6 +16,8 @@ export const chatInputZh = {
   chatInput: {
     viewPlan: '查看实现计划',
     processingFiles: '文件处理中…',
+    pendingSendUploadWaiting: '正在上传，完成后自动发送',
+    pendingSendUploadFailed: '有文件没能添加成功，这条消息没有发出',
     placeholderCode: '今天帮你做些什么？ @ 引用对话文件，/ 调用技能与指令',
     placeholderContinue: '继续描述…（@ 引用文件，/ 调用技能）',
     placeholderWithAttachments: '添加描述…（@ 引用文件，/ 调用技能）',
@@ -466,6 +468,8 @@ export const chatInputEn: typeof chatInputZh = {
   chatInput: {
     viewPlan: 'View implementation plan',
     processingFiles: 'Processing files…',
+    pendingSendUploadWaiting: 'Uploading — your message will send when it finishes',
+    pendingSendUploadFailed: 'A file could not be added, so this message was not sent',
     placeholderCode: 'What can I help you with today? @ to reference files, / for skills & commands',
     placeholderContinue: 'Keep describing… (@ to reference files, / for skills)',
     placeholderWithAttachments: 'Add a description… (@ to reference files, / for skills)',

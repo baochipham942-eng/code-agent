@@ -15,7 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 // @ts-expect-error —— 纯 JS 本机验证入口，无类型声明
-import { buildSlotlessConfig, buildSlotlessTemplateProvenance, copySecureStoragePair, isAlive, linkCliConnectorInstallDirectories, maskTokenRhythmKey, parseDogfoodEnv, readDogfoodCredentials, resolveSlotlessModelId, resolveSourceConfigPath, stopRun } from '../../scripts/verify-slotless.mjs';
+import { buildSlotlessConfig, buildWebServerEnv, parseStartArgs, buildSlotlessTemplateProvenance, copySecureStoragePair, isAlive, linkCliConnectorInstallDirectories, maskTokenRhythmKey, parseDogfoodEnv, readDogfoodCredentials, resolveSlotlessModelId, resolveSourceConfigPath, stopRun } from '../../scripts/verify-slotless.mjs';
 // @ts-expect-error —— 纯 JS 本机验证入口，无类型声明
 import { parseViewport } from '../../scripts/verify-shot.mjs';
 
@@ -448,6 +448,16 @@ describe('slotless verification scripts', () => {
 
     expect(signals).toEqual(['SIGTERM', 'SIGKILL']);
     expect(existsSync(dir)).toBe(true);
+  });
+
+  it('--clean-account is parsed once and only then adds the skip-cloud-list env', () => {
+    expect(parseStartArgs(['T']).cleanAccount).toBe(false);
+    const parsed = parseStartArgs(['T', '--clean-account', '--reuse-dist']);
+    expect(parsed).toMatchObject({ ticket: 'T', cleanAccount: true, reuseDist: true });
+    expect(() => parseStartArgs(['T', '--clean-account', '--clean-account'])).toThrow(/only be specified once/);
+    const base = { baseEnv: {}, dataDir: '/d', runtimeTmpDir: '/d/t', port: 1234 };
+    expect(buildWebServerEnv({ ...base, cleanAccount: true }).CODE_AGENT_SKIP_CLOUD_SESSION_LIST).toBe('1');
+    expect(buildWebServerEnv({ ...base, cleanAccount: false })).not.toHaveProperty('CODE_AGENT_SKIP_CLOUD_SESSION_LIST');
   });
 
   it('validates screenshot viewport bounds', () => {

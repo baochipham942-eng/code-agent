@@ -86,6 +86,7 @@ import { whenInitialSessionStateSettled } from './stores/sessionStore';
 import { useAppIpcListeners } from './hooks/useAppIpcListeners';
 import { useInAppValidationBridge } from './hooks/useInAppValidationBridge';
 import { useLedgerDeepLink } from './hooks/useLedgerDeepLink';
+import { useDesktopPresence } from './hooks/useDesktopPresence';
 import { useI18n } from './hooks/useI18n';
 import { useCronOsNotification } from './hooks/useCronOsNotification';
 import { isSecondaryPageActive } from './utils/secondaryPageActive';
@@ -155,6 +156,7 @@ export const App: React.FC = () => {
   useConnectorRequiredWatcher(); // 连接卡 pending 时盯连接状态，连上后追加续跑消息
   useInAppValidationBridge(); // browser-control 共用验证链路，不依赖内部评测包
   useLedgerDeepLink(); // ?open=automation|role：冷启动切会话会关掉二级页，钩子里补摊一次
+  useDesktopPresence(); // 桌面在场心跳（N-NOTIFY-PRESENCE-HEARTBEAT）：host 用它压掉普通完成推送的手机震动
   const {
     showSettings,
     showPromptManager,

@@ -155,6 +155,10 @@ export async function persistTaskManagerEvent(
           body: req.tool ? `${req.tool}: ${req.command || '请求执行权限'}` : '请求执行权限',
           dedupeKey: typeof event.data.id === 'string' ? event.data.id : undefined,
         });
+      } else if (typeof event.data.id === 'string') {
+        // 审批已裁决（超时/被顶替/别处应答）：把之前投递的那条 needs-input 通知撤回，
+        // 错过横幅的用户回来不再收到已处理完的「需要授权」补提醒（没投递过则 no-op）。
+        notificationService.retractNeedsInput(event.data.id);
       }
     }
 

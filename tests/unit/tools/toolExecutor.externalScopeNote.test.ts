@@ -5,6 +5,17 @@ const resolverState = vi.hoisted(() => ({
   execute: vi.fn(),
 }));
 
+// standing grant 命中开关（N-FIX-PARKED-BANNER-STALE-AFTER-RESOLVE 验收④）：默认关，
+// 保持既有用例「不命中 → 照旧询问」的行为；需要命中的用例置 true。
+const standingGrantState = vi.hoisted(() => ({ hit: false }));
+
+vi.mock('../../../src/host/services/sessionAutomation/sessionAutomationService', () => ({
+  getSessionAutomationService: () => ({
+    matchStandingGrant: () => standingGrantState.hit,
+    mintStandingGrant: vi.fn(),
+  }),
+}));
+
 vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
   getToolResolver: () => ({
     getDefinition: resolverState.getDefinition,
@@ -103,6 +114,7 @@ describe('ToolExecutor EXTERNAL 审批卡作用域打标', () => {
     resolverState.getDefinition.mockImplementation((name: string) => definitions.get(name));
     resolverState.execute.mockReset();
     resolverState.execute.mockResolvedValue({ success: true, output: 'ok' });
+    standingGrantState.hit = false;
   });
 
   async function askFor(toolName: string, params: Record<string, unknown>): Promise<PermissionRequestData> {
@@ -141,6 +153,24 @@ describe('ToolExecutor EXTERNAL 审批卡作用域打标', () => {
   it('web_fetch 不携带 riskClass（联网读不是 external）', async () => {
     const request = await askFor('web_fetch', { url: 'https://example.com' });
     expect(request).not.toHaveProperty('riskClass');
+  });
+
+  it('standing grant 命中时不发起审批（已授权即不打扰，也就不可能弹 needs-input 通知）', async () => {
+    standingGrantState.hit = true;
+    const requestPermission = vi.fn(async (_request: unknown) => false);
+    const executor = new ToolExecutor({
+      requestPermission,
+      workingDirectory: '/tmp/workbench',
+      forcePermissionHandler: true,
+    });
+    executor.setAuditEnabled(false);
+    // 参数与前面「会走到询问」的 mail_send 用例不同：同参第二次会被 prior-denial
+    // 的 launderRetryForcesAsk 拦住不走授权消费，测的就不再是 standing grant 了。
+    await executor.execute('mail_send', { subject: 'granted', to: ['c@x.com'] }, { sessionId: 's1' });
+    // needs-input 通知的两个发送口（parkApproval / permission_request 落库）都在
+    // requestPermission 之后；这里连问都不问，自然一条 needs-input 都不会有。
+    expect(requestPermission).not.toHaveBeenCalled();
+    expect(resolverState.execute).toHaveBeenCalledTimes(1);
   });
 });
 

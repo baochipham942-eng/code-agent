@@ -15,12 +15,21 @@ import React, { useMemo, useState } from 'react';
 import { ArrowLeft, Bot, Clock, Square, Wrench, Zap } from 'lucide-react';
 import { useSwarmStore } from '../../../stores/swarmStore';
 import { useMemberViewStore } from '../../../stores/memberViewStore';
+import { useAppStore } from '../../../stores/appStore';
 import { useDurableSwarmRunDetail } from '../../../hooks/useDurableSwarmRunDetail';
 import { useAgentTreeSnapshot } from '../../../hooks/useAgentTreeSnapshot';
 import { useBackgroundTaskStore } from '../../../stores/backgroundTaskStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { humanizeToolStep } from '../../../utils/humanizeToolStep';
-import { describeLastToolFailure, describeLastToolStep, isLastToolFailureVisible } from '../../../utils/agentActivity';
+import {
+  describeLastToolFailure,
+  describeLastToolStep,
+  isAgentNodeTerminalStatus,
+  isLastToolFailureVisible,
+  isTaskTerminalStatus,
+  resolveAgentActivityStepStatus,
+  taskActivityIds,
+} from '../../../utils/agentActivity';
 import { RoleInitialAvatar } from './RoleInitialAvatar';
 import { useSessionMembers } from './SessionMemberBar';
 import { MemberInputBar, type MemberInputTarget } from './MemberInputBar';
@@ -96,6 +105,13 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
   // 普通代理（非 Team 成员）的两条既有脊柱：agentTree 快照 + delegate_task 后台任务
   const { snapshot } = useAgentTreeSnapshot(sessionId);
   const backgroundTasks = useBackgroundTaskStore((state) => state.tasks);
+  // 审批未决时普通代理页的「当前动作」不得谎报完成态（N-APPROVAL-PENDING-STATUS-COPY）
+  const pendingPermissionRequest = useAppStore((state) => state.pendingPermissionRequest);
+  const pendingPermissionSessionId = useAppStore((state) => state.pendingPermissionSessionId);
+  const queuedPermissionRequests = useAppStore((state) => state.queuedPermissionRequests);
+  const permissionState = useMemo(() => (
+    { pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests }
+  ), [pendingPermissionRequest, pendingPermissionSessionId, queuedPermissionRequests]);
 
   const member = members.find((item) => item.key === viewingMemberId);
   const agent = member?.agent;
@@ -149,12 +165,29 @@ export const MemberConversationView: React.FC<{ sessionId: string | null }> = ({
 
   if (!member && !plainNode && !plainTask) return null;
 
-  // ── 普通代理视图：只展示节点/Task 上已有的字段，不另起 live 子 transcript ──
-  if (!member || !agent) {
-    const name = plainNode?.role ?? plainTask?.title ?? viewingMemberId ?? '';
-    const currentAction = plainNode
-      ? describeLastToolStep(plainNode.lastToolStep, t)
-      : describeLastToolStep(plainTask?.progress?.lastToolStep, t);
+    // ── 普通代理视图：只展示节点/Task 上已有的字段，不另起 live 子 transcript ──
+    if (!member || !agent) {
+      const name = plainNode?.role ?? plainTask?.title ?? viewingMemberId ?? '';
+      // N-APPROVAL-PENDING-STATUS-COPY：审批未决亮「请求…」词形；连接器写工具在目标
+      // 还在干活时亮「正在…」词形；终态/读类维持原词形。
+      const activityStatus = plainNode
+        ? resolveAgentActivityStepStatus({
+          step: plainNode.lastToolStep,
+          working: !isAgentNodeTerminalStatus(plainNode.status),
+          activityIds: [plainNode.id],
+          sessionId,
+          permission: permissionState,
+        })
+        : resolveAgentActivityStepStatus({
+          step: plainTask?.progress?.lastToolStep,
+          working: plainTask ? !isTaskTerminalStatus(plainTask.status) : false,
+          activityIds: plainTask ? taskActivityIds(plainTask) : [],
+          sessionId,
+          permission: permissionState,
+        });
+      const currentAction = plainNode
+        ? describeLastToolStep(plainNode.lastToolStep, t, activityStatus)
+        : describeLastToolStep(plainTask?.progress?.lastToolStep, t, activityStatus);
     const dispatchedTask = plainNode?.task ?? plainTask?.title ?? '';
     const finalOutput = plainNode?.progress ?? plainTask?.summary ?? '';
     const outputRefs = plainTask?.outputRefs ?? [];

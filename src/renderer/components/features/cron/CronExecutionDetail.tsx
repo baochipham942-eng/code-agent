@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import type { CronJobDefinition, CronJobExecution } from '@shared/contract';
+import type { CronJobDefinition, CronJobExecution, CronPermissionDeniedReason } from '@shared/contract';
+import { isCronPermissionDeniedMarker } from '@shared/cronPermissionDenied';
 import { classifyCronFailure, type CronFailurePresentationKind } from '@shared/utils/cronFailureClassification';
 import { ExternalLink, MessageSquareText } from 'lucide-react';
 import { useI18n } from '../../../hooks/useI18n';
@@ -13,6 +14,7 @@ import {
   formatDuration,
   formatRunCostUsd,
   getExecutionStatusMeta,
+  isPermissionDeniedExecution,
   prettyJson,
 } from './types';
 import { CronRunsOnPill } from './CronRunsOnSelector';
@@ -21,7 +23,26 @@ import { cronFailureSentence } from './cronFailureNotice';
 import { wakeSkipSentence } from './wakeSkipSentence';
 
 const CLOUD_NOT_WIRED = 'Cloud execution is not wired yet (N-L3-MINLOOP-SRV).';
+const TIME_LIMIT = /Cron job run exceeded its (\d+(?:\.\d+)?)s time limit\./;
 const BUDGET_LIMIT = /Cron job run exceeded its \$(\d+(?:\.\d+)?) budget limit(?: \(spent \$(\d+(?:\.\d+)?)\))?\./;
+
+/** 需处理原因一句话（N-CRON-RUN-COMPLETED-BUT-DENIED）：给非程序员看的「为什么没批准」。 */
+function permissionDeniedReasonText(
+  cc: {
+    permissionDeniedReasonUser: string;
+    permissionDeniedReasonTimeout: string;
+    permissionDeniedReasonCancelled: string;
+    permissionDeniedReasonOther: string;
+  },
+  reason: CronPermissionDeniedReason,
+): string {
+  switch (reason) {
+    case 'user': return cc.permissionDeniedReasonUser;
+    case 'timeout': return cc.permissionDeniedReasonTimeout;
+    case 'cancelled': return cc.permissionDeniedReasonCancelled;
+    default: return cc.permissionDeniedReasonOther;
+  }
+}
 
 function failureAction(kind: CronFailurePresentationKind): 'model' | 'account' | 'rerun' | null {
   if (kind === 'quota') return 'model';
@@ -77,19 +98,26 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
   }
 
   const statusMeta = getExecutionStatusMeta(execution.status);
+  // 需处理（N-CRON-RUN-COMPLETED-BUT-DENIED）：被拒且无产出的完成运行换琥珀徽章 + 一句话 + 重跑。
+  const deniedCandidate = isPermissionDeniedExecution(execution)
+    ? (execution.result as { permissionDenied?: unknown }).permissionDenied
+    : undefined;
+  const permissionDenied = isCronPermissionDeniedMarker(deniedCandidate) ? deniedCandidate : undefined;
   const wakeSkip = wakeSkipSentence(execution, {
     silentLevel: cc.wakeSkipSilentLevel,
     dailyBudget: cc.wakeSkipDailyBudget,
     quietHours: cc.wakeSkipQuietHours,
   });
   const loginWall = cronLoginWallCopy(execution.error, { error: cc.loginWallError });
+  const timeLimitSeconds = execution.error?.match(TIME_LIMIT)?.[1];
   const budgetMatch = execution.error?.match(BUDGET_LIMIT);
   const preservedError = loginWall?.message
     ?? (execution.error === 'unsupported_action' ? cc.unsupportedAction
       : execution.error === CLOUD_NOT_WIRED ? cc.cloudExecutionNotWired
         : budgetMatch?.[2]
           ? cc.runBudgetStopped.replace('{spent}', budgetMatch[2]).replace('{cap}', budgetMatch[1])
-          : budgetMatch?.[1] ? cc.runBudgetExceeded.replace('{amount}', budgetMatch[1]) : undefined);
+          : budgetMatch?.[1] ? cc.runBudgetExceeded.replace('{amount}', budgetMatch[1])
+            : timeLimitSeconds ? cc.runTimeExceeded.replace('{seconds}', timeLimitSeconds) : undefined);
   const classified = preservedError || !execution.error ? undefined : classifyCronFailure(execution.error);
   const failureSentence = classified
     ? cronFailureSentence(classified.kind, classified, cc, language)
@@ -140,6 +168,13 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
               data-testid="cron-exec-detail-awaiting-approval"
             >
               {cc.awaitingApprovalBadge}
+            </span>
+          ) : permissionDenied ? (
+            <span
+              className="rounded-full px-2.5 py-1 text-xs text-badge-warning bg-amber-500/10"
+              data-testid="cron-exec-detail-permission-denied"
+            >
+              {cc.permissionDeniedBadge}
             </span>
           ) : (
             <span className={`rounded-full px-2.5 py-1 text-xs ${statusMeta.className}`}>
@@ -203,6 +238,31 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
         <section className="mt-4" data-testid="cron-wake-skip-detail">
           <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">{cc.wakeSkipTitle}</h5>
           <p className="text-sm text-zinc-100" data-testid="cron-wake-skip-sentence">{wakeSkip}</p>
+        </section>
+      )}
+      {permissionDenied && (
+        <section className="mt-4" data-testid="cron-permission-denied-detail">
+          <h5 className="mb-2 text-xs font-medium uppercase tracking-wide text-badge-warning">{cc.permissionDeniedTitle}</h5>
+          {permissionDenied.steps.map((step, index) => (
+            <p key={`${step.tool}-${index}`} className="text-sm text-zinc-100" data-testid="cron-permission-denied-sentence">
+              {cc.permissionDeniedSentence
+                .replace('{summary}', step.summary)
+                .replace('{reason}', permissionDeniedReasonText(cc, step.reason))}
+            </p>
+          ))}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              loading={isRerunning}
+              data-testid="cron-permission-denied-rerun"
+              onClick={() => { void handleRerun(); }}
+            >
+              {cc.failureActionRunAgain}
+            </Button>
+            <span className="text-xs text-zinc-500">{cc.permissionDeniedRerunNote}</span>
+          </div>
         </section>
       )}
       {preservedError && (

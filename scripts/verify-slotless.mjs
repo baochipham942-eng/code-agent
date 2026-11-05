@@ -777,7 +777,8 @@ function runPreStartHook(dataDir) {
   if (result.status !== 0) fail(`pre-start hook exited with ${result.status ?? 'unknown'}`);
 }
 
-async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount = false) {  const ticket = sanitizeTicket(ticketArg);
+async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount = false) {
+  const ticket = sanitizeTicket(ticketArg);
   const credentials = readDogfoodCredentials();
   const requestedSourceConfig = resolveSourceConfigPath(sourceConfigArg);
   if (!existsSync(requestedSourceConfig)) fail(`source config is required: ${requestedSourceConfig}`);

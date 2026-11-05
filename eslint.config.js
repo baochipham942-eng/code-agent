@@ -255,8 +255,6 @@ export default tseslint.config(
     // en/zh 镜像，新 provider/模型条目只追加不重构），与主文案 en.ts/zh.ts 同类纯数据（N-MAXLINES-MINEFIELD-2）。
     // agentAppService / ChatInput/index / web/routes/agent — 编排与协议穿越边界（桌面/渲染/web 三条
     // 消息链路的汇聚口），2026-07-29 UX round2 后同 agentOrchestrator 类按汇聚口豁免。
-    // webServer.ts — 全发行版唯一的启动汇聚口（initializeServices 组合根），2026-11-05 有效行恰好
-    // 顶满 1000 上限，任何一段 fire-and-forget 启动段都会破限；拆分归专项 god-file 债务单。
     // browserService.ts — 托管浏览器生命周期/标签/视口/输入汇聚口（system Chrome CDP + Playwright
     // bundled 双路径）；helper 已拆到 browser/*，本文件仍是会话真源与 IPC 入口。
     files: [
@@ -268,7 +266,6 @@ export default tseslint.config(
       'src/host/services/infra/browserService.ts',
       'src/renderer/components/features/chat/ChatInput/index.tsx',
       'src/web/routes/agent.ts',
-      'src/web/webServer.ts',
       'src/host/services/toolSearch/deferredToolsData.ts',
       'src/renderer/i18n/enSettingsModels.ts',
       'src/renderer/i18n/zhSettingsModels.ts',

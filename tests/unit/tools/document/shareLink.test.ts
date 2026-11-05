@@ -131,6 +131,14 @@ describe('document share links', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('https://share.llmxy.xyz:8443/api/share');
   });
 
+  it('keeps a self-hosted address on another sealos.run host', async () => {
+    configService.baseUrl = 'https://my-share.cloud.sealos.run';
+    publishVersion(filePath);
+    fetchMock.mockRejectedValueOnce(new TypeError('fetch failed'));
+    await expect(createShareLink(filePath, 604_800)).rejects.toThrow('Share service unavailable');
+    expect(fetchMock.mock.calls[0][0]).toBe('https://my-share.cloud.sealos.run/api/share');
+  });
+
   it('reports an unreachable service, a 5xx and a rejected token as distinct plain errors', async () => {
     publishVersion(filePath);
     fetchMock.mockRejectedValueOnce(new TypeError('fetch failed'));

@@ -12,8 +12,9 @@ import { pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 
 // 任务书的两个硬断言：同文件连写 5 次 → 1 张卡；同名不同目录 → 2 张卡。
-// twoturns / relabs 只观察不断言（见证据档 ③）。
-export const EXPECTED_CARDS = { repeated: 1, samebase: 2 };
+// FU1 追加：单轮里 ./report.html 与同一文件的绝对路径 → 1 张卡（键对齐工作目录）。
+// twoturns 只观察不断言——跨轮合并是 N-DELIVERABLE-DEDUP-VERIFY-FU2 的 owner 决策。
+export const EXPECTED_CARDS = { repeated: 1, samebase: 2, relabs: 1 };
 
 // seed fixtures：与 src/renderer/utils/artifactOwnership.ts 消费的真实 Message/toolCalls 形状一致。
 export function buildSeedCases(work, t0 = Date.now() - 600_000) {

@@ -21,7 +21,7 @@ import { useI18n } from './useI18n';
 import { toast } from './useToast';
 
 /** origin.kind 为 cron/heartbeat 的运行记录会话。 */
-export function isCronRunRecordSession(session: Session | null | undefined): boolean {
+function isCronRunRecordSession(session: Session | null | undefined): boolean {
   const kind = session?.origin?.kind;
   return kind === 'cron' || kind === 'heartbeat';
 }

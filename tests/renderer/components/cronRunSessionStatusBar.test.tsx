@@ -55,7 +55,7 @@ function showSession(session: Partial<SessionWithMeta> & { id: string }): void {
   });
 }
 
-const cronRunSession = {
+const cronRunSession: Partial<SessionWithMeta> & { id: string } = {
   id: 'session-1',
   title: '[Schedule] 每日日程检查',
   readOnly: true,

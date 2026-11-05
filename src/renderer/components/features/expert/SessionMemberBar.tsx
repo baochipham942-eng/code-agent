@@ -22,10 +22,12 @@ import type { SwarmAgentState } from '@shared/contract/swarm';
 import type { SwarmRunAgentRecord } from '@shared/contract/swarmTrace';
 import { readPersistedTeamLead, teamRecipeMemberKey } from '@shared/contract/teamRecipe';
 import { useMemberViewStore } from '../../../stores/memberViewStore';
+import { useSwarmStore } from '../../../stores/swarmStore';
 import { RoleInitialAvatar } from './RoleInitialAvatar';
 import { useDurableSwarmRunDetail } from '../../../hooks/useDurableSwarmRunDetail';
 import { useSessionAgentRows } from '../../../hooks/useSessionAgentRows';
 import { deriveAgentMergeState } from '../../../utils/agentMergeState';
+import { memberProgressAnchor } from '../../../utils/memberProgressAnchor';
 import type { AgentRow } from '../../../utils/agentRows';
 import { useRightPanelTabsStore } from '../../../stores/rightPanelTabsStore';
 
@@ -67,6 +69,8 @@ export interface MemberPill {
   /** standby 成员的排除键（member 的 id ?? roleId；lead 用 roleId），× 掉时写进 composerStore */
   standbyKey?: string;
   filesChanged?: string[];
+  /** 最近可见进展的活锚点（contextSnapshot.lastUpdated，只从活源取；见 memberProgressAnchor）。 */
+  lastActivityAt?: number;
   agent?: SwarmAgentState;
   record?: SwarmRunAgentRecord;
 }
@@ -92,6 +96,10 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
     return readPersistedTeamLead(session?.metadata)?.roleId ?? null;
   });
   const durableDetail = useDurableSwarmRunDetail(sessionId);
+  // 活锚点来源（只读订阅，不改 store）：同 id 的流状态带 contextSnapshot.lastUpdated，
+  // 账本记录里没有——成员在干活时它随真实进展前进（r4：startTime 不是进展）。
+  const liveAgents = useSwarmStore((state) => state.agents);
+  const liveAgentById = useMemo(() => new Map(liveAgents.map((agent) => [agent.id, agent])), [liveAgents]);
   // 账本必须自证属于本会话再采信。原先靠「至少 2 个成员」间接挡住外会话的 run
   // （单 agent 的陈旧 run 挤进来会把别人的成员画到这条上，e2e 实测过：
   // swarm-chain 的 e2e-scout 出现在 workbench-overview 新建的会话里）。
@@ -125,6 +133,7 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
         status: pillStatusOf(agent.status),
         isLead: roleId === teamLeadRoleId,
         filesChanged: agent.filesChanged,
+        lastActivityAt: memberProgressAnchor(agent, liveAgentById.get(agent.id)),
         agent,
         record: records?.[index],
       } satisfies MemberPill;
@@ -152,7 +161,7 @@ export function useSessionMembers(sessionId: string | null): MemberPill[] {
         isLead: entry.roleId === teamLeadRoleId,
         standbyKey: entry.standbyKey,
       }));
-  }, [persistedAgents, selectedTeamRecipeId, standbyExcludedMemberKeys, recipes, professionOf, iconOf, teamLeadRoleId]);
+  }, [persistedAgents, liveAgentById, selectedTeamRecipeId, standbyExcludedMemberKeys, recipes, professionOf, iconOf, teamLeadRoleId]);
 
   return pills;
 }

@@ -72,12 +72,14 @@ export const PresentationPagePicker: React.FC<Props> = ({ title, filePath, outli
   useEffect(() => {
     setSelectedIndex(0);
     if (preview) {
+      // 首屏直接画传入的缓存结果（右栏文件预览路径由 PreviewPanel 提供）。
       setResolved(preview);
       setLoading(false);
       setLoadError(null);
-      return;
-    }
-    if (!filePath) {
+      // 缓存结果仍是「LibreOffice 准备中且无失败码」时不短路：继续走下面的
+      // 有界自动重试，后台装完即自动出页图，不要求用户手动刷新。
+      if (!filePath || !shouldRetryMissingPreview(preview)) return;
+    } else if (!filePath) {
       setResolved(undefined);
       setLoading(false);
       return;
@@ -105,9 +107,16 @@ export const PresentationPagePicker: React.FC<Props> = ({ title, filePath, outli
           if (!cancelled) setLoading(false);
         });
     };
-    setLoading(true);
-    setLoadError(null);
-    request();
+    if (preview) {
+      // 首屏结果已有（缓存 missing）：不立即重发，从第一档退避开始等，
+      // 节奏与聊天附件路径一致。
+      retryTimer = setTimeout(request, MISSING_RETRY_DELAYS_MS[retryIndex]);
+      retryIndex += 1;
+    } else {
+      setLoading(true);
+      setLoadError(null);
+      request();
+    }
     return () => {
       cancelled = true;
       if (retryTimer !== undefined) clearTimeout(retryTimer);

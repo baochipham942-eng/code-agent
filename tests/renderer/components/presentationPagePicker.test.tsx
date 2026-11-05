@@ -212,4 +212,43 @@ describe('PresentationPagePicker libreoffice-missing 有界自动重试', () => 
     await act(async () => { await vi.advanceTimersByTimeAsync(600_000); });
     expect(invoke).toHaveBeenCalledTimes(1);
   });
+
+  it('右栏路径（缓存 missing 结果作为 preview prop）：首屏不重发，按退避自动重试，ready 即渲染页图并停止', async () => {
+    mockInvoke(readyPreview);
+    const invoke = (window.domainAPI as { invoke: ReturnType<typeof vi.fn> }).invoke;
+    // 走真实右栏入口：PreviewPanel 把 previewPresentation 的 JSON 缓存成 tab
+    // content，PresentationPreview 解析后作为 preview prop 传给 picker。
+    const view = render(<PresentationPreview content={JSON.stringify(missingPreview)} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    // 首屏用缓存结果，不立即重发请求
+    expect(invoke).toHaveBeenCalledTimes(0);
+    expect(view.container.textContent).toContain('正在后台准备像素预览组件');
+    expect(view.container.innerHTML).not.toContain('<img');
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(view.container.innerHTML).toContain('<img');
+    expect(view.container.innerHTML).toContain('deck-2.jpg');
+    expect(view.container.textContent).not.toContain('正在后台准备像素预览组件');
+
+    // ready 之后不应再发请求（再推进全程节奏也不发）
+    await act(async () => { await vi.advanceTimersByTimeAsync(600_000); });
+    expect(invoke).toHaveBeenCalledTimes(1);
+  });
+
+  it('右栏路径（preview prop 带失败码）：显示具体原因，不自动轮询', async () => {
+    mockInvoke();
+    const invoke = (window.domainAPI as { invoke: ReturnType<typeof vi.fn> }).invoke;
+    const view = render(
+      <PresentationPagePicker
+        title="deck.pptx"
+        filePath="/tmp/deck.pptx"
+        preview={{ ...missingPreview, error: 'LIBREOFFICE_RUNTIME_OFFLINE' }}
+      />,
+    );
+    await act(async () => { await vi.advanceTimersByTimeAsync(600_000); });
+    expect(invoke).toHaveBeenCalledTimes(0);
+    expect(view.container.textContent).toContain('连不上 LibreOffice 下载源');
+    expect(view.container.textContent).not.toContain('正在后台准备像素预览组件');
+  });
 });

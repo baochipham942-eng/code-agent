@@ -2,6 +2,7 @@
 
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import type { EventScheduleValidationReason } from '@shared/cronEventValidation';
+import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied';
 // 自动化面板词条（features/cron 全家桶）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 sidebar.ts / chatInput.ts 先例）。
 // 注：types.ts 里的 formatActionSummary/formatDateTime 等格式化函数文案暂未迁移
@@ -53,6 +54,7 @@ export const cronCenterZh = {
     awaitingApprovalBadge: '等你批准',
     awaitingApprovalHint: '有一个运行中的任务正等你批准操作，处理前它会一直停在这里。',
     awaitingApprovalAction: '去处理',
+    awaitingApprovalWithPreview: '等你批准：{preview}',
     nextRun: '下次 {time}',
     locationFilterAll: '全部',
     locationLocal: '本地',
@@ -87,6 +89,7 @@ export const cronCenterZh = {
     cloudExecutionNotWired: '云端执行尚未接线（N-L3-MINLOOP-SRV）',
     unsupportedAction: '该类任务暂不支持',
     runBudgetExceeded: '本次执行超过了任务的 {amount} 美元预算上限',
+    runTimeExceeded: '本次执行超过了任务的 {seconds} 秒时限',
     runBudgetStopped: '超预算停车 · 花费 ${spent} / 上限 ${cap}',
     loginWallWarning: '这个任务会访问可能需要登录的网站 {site}。请在 Neo 浏览器中登录，定时运行才能继续。',
     loginWallNotificationTitle: '需要重新登录',
@@ -111,6 +114,16 @@ export const cronCenterZh = {
     failureActionRunAgain: '立即重跑',
     failureActionCheckAccount: '检查账号设置',
     failureTechnical: '查看技术详情',
+    // 需处理（N-CRON-RUN-COMPLETED-BUT-DENIED）：被拒且无产出的运行不算「成功」。
+    permissionDeniedBadge: '需处理',
+    permissionDeniedTitle: '有命令没获批准',
+    permissionDeniedSentence: '「{summary}」没有获批准（{reason}），这次运行没有产出。',
+    // 四条原因措辞与 host 完成通知同源（shared/cronPermissionDenied，Rework r2）
+    permissionDeniedReasonUser: cronPermissionDeniedReasonText('user', 'zh'),
+    permissionDeniedReasonTimeout: cronPermissionDeniedReasonText('timeout', 'zh'),
+    permissionDeniedReasonCancelled: cronPermissionDeniedReasonText('cancelled', 'zh'),
+    permissionDeniedReasonOther: cronPermissionDeniedReasonText('other', 'zh'),
+    permissionDeniedRerunNote: '重新运行会再次请求批准',
     // 触发源 chip（键 = utils/cronHumanize 的 CronTriggerKind，语义对齐 SessionAutomationType）
     triggerKind: {
       cron: '定时',
@@ -487,6 +500,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     awaitingApprovalBadge: 'Needs your approval',
     awaitingApprovalHint: 'A running task is waiting for your approval; it stays parked until you review it.',
     awaitingApprovalAction: 'Review',
+    awaitingApprovalWithPreview: 'Needs your approval: {preview}',
     nextRun: 'Next {time}',
     locationFilterAll: 'All',
     locationLocal: 'Local',
@@ -521,6 +535,7 @@ export const cronCenterEn: typeof cronCenterZh = {
     cloudExecutionNotWired: 'Cloud execution is not wired yet (N-L3-MINLOOP-SRV)',
     unsupportedAction: 'This task type is not supported yet.',
     runBudgetExceeded: 'This run exceeded the task budget limit of ${amount}',
+    runTimeExceeded: 'This run exceeded the task time limit of {seconds}s',
     runBudgetStopped: 'Stopped over budget · spent ${spent} / cap ${cap}',
     loginWallWarning: 'This task visits a site that may require login: {site}. Log in using the Neo browser before the scheduled run.',
     loginWallNotificationTitle: 'Login needed',
@@ -544,6 +559,14 @@ export const cronCenterEn: typeof cronCenterZh = {
     failureActionRunAgain: 'Run again now',
     failureActionCheckAccount: 'Check account settings',
     failureTechnical: 'Technical details',
+    permissionDeniedBadge: 'Needs attention',
+    permissionDeniedTitle: 'A command was not approved',
+    permissionDeniedSentence: '“{summary}” was not approved ({reason}); this run produced nothing.',
+    permissionDeniedReasonUser: cronPermissionDeniedReasonText('user', 'en'),
+    permissionDeniedReasonTimeout: cronPermissionDeniedReasonText('timeout', 'en'),
+    permissionDeniedReasonCancelled: cronPermissionDeniedReasonText('cancelled', 'en'),
+    permissionDeniedReasonOther: cronPermissionDeniedReasonText('other', 'en'),
+    permissionDeniedRerunNote: 'Running it again will ask for approval again',
     triggerKind: {
       cron: 'Scheduled',
       at: 'One-time',

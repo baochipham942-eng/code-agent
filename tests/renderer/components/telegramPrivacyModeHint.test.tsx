@@ -14,12 +14,13 @@ afterEach(cleanup);
 function telegramAccount(options: {
   groupAccessMode?: 'allowlist' | 'all_members';
   telegramCanReadAllGroupMessages?: boolean;
+  status?: ChannelAccount['status'];
 }): ChannelAccount {
   return {
     id: 'tg-1',
     name: 'TG',
     type: 'telegram',
-    status: 'connected',
+    status: options.status ?? 'connected',
     enabled: true,
     createdAt: 1,
     config: {
@@ -66,5 +67,44 @@ describe('TelegramPrivacyModeHint', () => {
       <TelegramPrivacyModeHint account={telegramAccount({ groupAccessMode: 'all_members' })} />,
     );
     expect(screen.queryByTestId('telegram-privacy-mode-hint')).toBeNull();
+  });
+
+  it.each([['disconnected'], ['error'], ['connecting']] as const)(
+    'hides the hint for a stale getMe=false once status is %s',
+    (status) => {
+      const { rerender } = render(
+        <TelegramPrivacyModeHint
+          account={telegramAccount({ groupAccessMode: 'all_members', telegramCanReadAllGroupMessages: false })}
+        />,
+      );
+      expect(screen.getByTestId('telegram-privacy-mode-hint')).toBeTruthy();
+      rerender(
+        <TelegramPrivacyModeHint
+          account={telegramAccount({ groupAccessMode: 'all_members', telegramCanReadAllGroupMessages: false, status })}
+        />,
+      );
+      expect(screen.queryByTestId('telegram-privacy-mode-hint')).toBeNull();
+    },
+  );
+
+  it('follows the fresh getMe value after reconnecting', () => {
+    const { rerender } = render(
+      <TelegramPrivacyModeHint
+        account={telegramAccount({ groupAccessMode: 'all_members', telegramCanReadAllGroupMessages: false, status: 'disconnected' })}
+      />,
+    );
+    expect(screen.queryByTestId('telegram-privacy-mode-hint')).toBeNull();
+    rerender(
+      <TelegramPrivacyModeHint
+        account={telegramAccount({ groupAccessMode: 'all_members', telegramCanReadAllGroupMessages: true })}
+      />,
+    );
+    expect(screen.queryByTestId('telegram-privacy-mode-hint')).toBeNull();
+    rerender(
+      <TelegramPrivacyModeHint
+        account={telegramAccount({ groupAccessMode: 'all_members', telegramCanReadAllGroupMessages: false })}
+      />,
+    );
+    expect(screen.getByTestId('telegram-privacy-mode-hint')).toBeTruthy();
   });
 });

@@ -13,12 +13,14 @@ interface SettingsSearchProps {
   onNavigate: (tab: SettingsTab) => void;
   access?: AccessSubject | null;
   installedCapabilities?: ReadonlySet<BundledHostCapabilityId>;
+  externalImportAvailable?: boolean;
 }
 
 export const SettingsSearch: React.FC<SettingsSearchProps> = ({
   onNavigate,
   access = null,
   installedCapabilities,
+  externalImportAvailable = false,
 }) => {
   const [query, setQuery] = useState('');
   const [isFocused, setIsFocused] = useState(false);
@@ -29,7 +31,8 @@ export const SettingsSearch: React.FC<SettingsSearchProps> = ({
   const results = useMemo(() => searchSettings(query, {
     ...(access ?? {}),
     installedCapabilities,
-  }), [access, installedCapabilities, query]);
+    externalImportAvailable,
+  }), [access, installedCapabilities, externalImportAvailable, query]);
 
   // Deduplicate results by tab — show one entry per tab with all matching labels
   const groupedResults = useMemo(() => {

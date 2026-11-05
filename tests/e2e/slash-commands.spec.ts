@@ -400,7 +400,7 @@ test.describe('/schedule + /loop 斜杠命令', () => {
       name: jobName,
       scheduleType: 'at',
       schedule: { type: 'at', datetime: runAt },
-      action: { type: 'agent', agentType: 'general', prompt: '回复一句“定时已执行”即可，不要调用任何工具。' },
+      action: { type: 'agent', agentType: 'default', prompt: '回复一句“定时已执行”即可，不要调用任何工具。' },
       enabled: true,
     });
 
@@ -461,7 +461,7 @@ test.describe('/schedule + /loop 斜杠命令', () => {
         name: `过去任务-${Date.now()}`,
         scheduleType: 'at',
         schedule: { type: 'at', datetime: past },
-        action: { type: 'agent', agentType: 'general', prompt: 'x' },
+        action: { type: 'agent', agentType: 'default', prompt: 'x' },
         enabled: true,
       });
     } catch (err) {

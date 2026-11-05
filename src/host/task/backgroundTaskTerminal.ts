@@ -13,10 +13,16 @@
 // createTerminalEventTracker（durableRunTerminal）同形：isTerminalAgentError。
 
 import type { AgentEvent } from '../../shared/contract';
+import type { SessionStatus } from '../../shared/contract/session';
+import { IPC_CHANNELS } from '../../shared/ipc';
 import { isTerminalAgentError } from '../../shared/utils/agentErrorClassification';
 import { resolveBackgroundRunSettlement, settleBackgroundRun } from '../session/backgroundRunSettlement';
 import { getBackgroundTaskManager } from '../session/backgroundTaskManager';
+import { broadcastToRenderer } from '../platform';
 import { getSessionManager, notificationService } from '../services';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('BackgroundTaskTerminal');
 
 /** run 级终态 error 事件的记账（message 展示用、code 优先给 renderer 翻译）。 */
 export interface BackgroundRunErrorRecord {
@@ -97,6 +103,46 @@ export async function closeBackgroundRunAtTerminal(
         ? { status: 'error', errorMessage: runError.message, errorCode: runError.code }
         : { status: 'completed' },
   ));
+}
+
+/**
+ * 主跑（cron/heartbeat/通道/CLI 等 orchestrator 驱动轮）终态的 session 状态收口。
+ *
+ * 缺口形状（N-SIDEBAR-CRON-RUN-STATUS-STALE / FB-510）：带终态的 session:updated 广播
+ * 此前只有 web 直连轮一个出口（/api/run → AgentRunController.updateSessionStatus）；orchestrator
+ * 驱动的自动化轮收尾只发 agent_complete（事件流），session 终态既不落库也不广播——已打开的
+ * 运行会话视图与侧栏 spinner 停在运行态，只能换会话再切回来（重读库）才对账。这里在 agent
+ * 终态锚点上补齐同一份终态分类（决策表与 closeBackgroundRunAtTerminal / agent.ts finalStatus
+ * 一致），持久化后走全局广播；renderer 侧由既有 SESSION_UPDATED 终态消费链清运行态 +
+ * terminalStatusReconcile 宽限重灌把 DB 终稿拉回页面。手动会话不走 orchestrator（/api/run
+ * 链路自带广播），行为不变。
+ *
+ * 与 closeBackgroundRunAtTerminal 的顺序约定：本函数只读 error 记账不消费，必须先于
+ * closeBackgroundRunAtTerminal 调用（后者 delete 账目），失败轮才能分类成 error 而非 completed。
+ */
+export async function settlePrimaryRunSessionStatus(
+  sessionId: string,
+  eventType: 'agent_complete' | 'agent_cancelled',
+  errors: Map<string, BackgroundRunErrorRecord>,
+): Promise<void> {
+  const runError = errors.get(sessionId);
+  const status: SessionStatus = eventType === 'agent_cancelled'
+    ? 'interrupted'
+    : runError ? 'error' : 'completed';
+  const updatedAt = Date.now();
+  try {
+    await getSessionManager().updateSession(sessionId, { status, updatedAt });
+    broadcastToRenderer(IPC_CHANNELS.SESSION_UPDATED, { sessionId, updates: { status, updatedAt } });
+    broadcastToRenderer(IPC_CHANNELS.SESSION_LIST_UPDATED, undefined);
+  } catch (error) {
+    // 与 AgentRunController.updateSessionStatus 同口径：落库失败只留痕不广播，
+    // 避免 renderer 状态与 DB 分叉（重载后反而回退）。
+    logger.warn('[BackgroundTaskTerminal] Failed to settle primary run terminal session status', {
+      sessionId,
+      status,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 /**

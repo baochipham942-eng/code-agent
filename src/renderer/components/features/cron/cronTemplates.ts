@@ -4,6 +4,7 @@ import { findRecommendedMcpServer } from '@shared/constants/mcpCatalog';
 import { CRON_EVENT_TRIGGER } from '@shared/constants';
 import type { CronJobDraft } from './types';
 import { createDefaultCronJobDraft } from './types';
+import { localCronTimezone } from './localTimezone';
 
 // ── Template field definition ───────────────────────────────────────
 
@@ -70,11 +71,6 @@ export function getMissingTemplateConnectors(
 
 function makeDraft(overrides: Partial<CronJobDraft>): CronJobDraft {
   return { ...createDefaultCronJobDraft(), ...overrides };
-}
-
-/** 本机系统时区（晨间分诊这类「本地时间」模板用，不钉死 Asia/Shanghai）。 */
-function localCronTimezone(): string {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone || '';
 }
 
 /**

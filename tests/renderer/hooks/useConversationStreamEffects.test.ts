@@ -312,6 +312,42 @@ describe('applyConversationStreamEvent host-owned user message', () => {
   });
 });
 
+// N-ROLE-STALL-FALSE-ALARM-AFTER-CONFIRM：宿主落库并广播的 role:'system' 事件消息（如 roleFlowStalled）
+// 曾被当成 assistant commit 合并进当前轮正文（正文里多出一段普通文字），而落库那条 system 消息
+// 又按登记表投成 info 行——同一句话渲染两次。system 消息只能作为独立消息按 id 幂等入库。
+describe('applyConversationStreamEvent host system event message', () => {
+  const state = () => ({ currentTurnMessageId: 'turn-1', committedAssistantMessageIds: new Set<string>(), lastDeltaSeqByTurn: new Map<string, number>(),
+    segmentRedirectByTurn: new Map<string, { segmentId: string; splitAtAttempt: number }>() });
+  const run = (event: { data: Record<string, unknown> }, messagesRef: { current: Message[] }) => {
+    applyConversationStreamEvent({ type: 'message', data: event.data }, state(), {
+      addMessage: (message: Message) => { messagesRef.current = [...messagesRef.current, message]; },
+      updateMessage: (id: string, changes: Partial<Message>) => {
+        messagesRef.current = messagesRef.current.map((m) => (m.id === id ? { ...m, ...changes } : m));
+      },
+      setMessages: (next: Message[]) => { messagesRef.current = next; },
+      getMessages: () => messagesRef.current,
+      queueUpdate: () => {},
+      now: () => 500,
+      generateId: () => 'generated',
+    });
+  };
+  const systemData = {
+    id: 'sys-stall', role: 'system', content: '⚠️ 建角色流程这一轮没有生成草稿', timestamp: 450,
+    metadata: { roleFlowStalled: { skillName: 'create-role' } },
+  };
+
+  it('does not merge the system notice into the assistant body; adds it as its own message once', () => {
+    const messagesRef = { current: [{ id: 'turn-1', role: 'assistant', content: '草稿已生成', timestamp: 300 } as Message] };
+    run({ data: systemData }, messagesRef);
+    run({ data: systemData }, messagesRef);
+    expect(messagesRef.current[0].content).toBe('草稿已生成');
+    expect(messagesRef.current.filter((m) => m.id === 'sys-stall')).toHaveLength(1);
+    expect(messagesRef.current.find((m) => m.id === 'sys-stall')).toMatchObject({
+      role: 'system', metadata: { roleFlowStalled: { skillName: 'create-role' } },
+    });
+  });
+});
+
 
 describe('applyConversationStreamEvent plan_approval_update', () => {
   const planMessage: Message = {

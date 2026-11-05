@@ -23,7 +23,9 @@ function cronLoginGatedSiteOrigin(definition: CronJobDefinition): string | undef
 
 /**
  * Create the dedicated agent session for a cron run. Resolution order:
- * 来源/当前会话模型 → settings 默认模型 → 全局默认；工作目录沿用来源/当前会话。
+ * 来源/当前会话模型 → settings 默认模型 → 全局默认；工作目录只取来源会话（产物刷新任务取产物
+ * 所在目录），绝不取 UI 当前焦点会话——否则无来源任务每次运行都落到恰好开着的那个聊天的
+ * 文件夹、侧栏也把新会话归到它名下（同 cronWriteGrant.sourceSessionWorkingDirectory 的口径）。
  * The session is created read-only; memory off is inherited from the source session.
  */
 export async function createCronAgentSession(
@@ -58,7 +60,7 @@ export async function createCronAgentSession(
       temperature: baseSession?.modelConfig.temperature,
       maxTokens: baseSession?.modelConfig.maxTokens,
     }),
-    workingDirectory: cronAgentWorkingDirectory(definition, baseSession?.workingDirectory),
+    workingDirectory: cronAgentWorkingDirectory(definition, sourceSession?.workingDirectory),
     type: sessionType,
     origin: {
       kind: originKind,

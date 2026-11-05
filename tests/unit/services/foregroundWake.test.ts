@@ -165,4 +165,30 @@ describe('foreground task-result wake', () => {
     await wake(task('task-2'), 'completed');
     expect(sendMessage.mock.calls[1][0]).not.toContain('期间用户');
   });
+
+  // N-FIX-WEBFETCH-BLOCK-PRIVATE-NET-FU2：240 字 summary 截断了 SSRF 拒绝提示里的
+  // 「改走 Bash curl 审批」整句（FB-577）；唤醒提示改读 1500 封顶的 resultText。
+  it('quotes the full model-facing result text in the wake prompt', async () => {
+    const hint = 'use a Bash curl command instead — it asks the user for approval.';
+    // 铺垫恰好 240 字：旧口径（summary 硬切）必然丢句，resultText 必须原样带到
+    const conclusion = `${'铺垫。'.repeat(80)}${hint}后续不再赘述。`;
+    expect(conclusion.slice(0, 240)).not.toContain(hint);
+
+    const wake = createForegroundWake(dependencies());
+    await wake({
+      ...task(),
+      summary: conclusion.slice(0, 240),
+      resultText: conclusion,
+    }, 'failed');
+    const prompt = sendMessage.mock.calls[0][0] as string;
+    expect(prompt).toContain('已失败');
+    expect(prompt).toContain(conclusion);
+    expect(prompt).toContain(hint);
+  });
+
+  it('falls back to the 240-char summary when the task has no resultText (legacy shape)', async () => {
+    const wake = createForegroundWake(dependencies());
+    await wake({ ...task(), summary: 'x'.repeat(240) }, 'completed');
+    expect(sendMessage.mock.calls[0][0]).toContain('x'.repeat(240));
+  });
 });

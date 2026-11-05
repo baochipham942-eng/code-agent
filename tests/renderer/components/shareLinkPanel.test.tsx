@@ -105,7 +105,7 @@ describe('ShareLinkPanel states', () => {
   });
 
   it.each([
-    ['Share service unavailable: fetch failed', '分享服务暂时连不上，链接没有变化，稍后再试。'],
+    ['Share service unavailable: fetch failed', '分享服务暂时连不上，稍后再试。'],
     ['Share service token rejected', '分享服务 token 不对，去设置重新填写。'],
   ])('shows plain copy when create fails with %s', async (message, copy) => {
     renderState({ share: null, stale: false, latestPublishedVersion: 1, tokenConfigured: true });

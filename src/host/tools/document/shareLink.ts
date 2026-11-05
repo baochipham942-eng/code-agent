@@ -4,7 +4,7 @@ import type {
   DeliverableShareLink,
   DeliverableShareLinkInfo,
 } from '../../../shared/contract/deliverable';
-import { SHARE_SERVICE, SHARE_SERVICE_TIMEOUTS } from '../../../shared/constants/shareService';
+import { SHARE_SERVICE, SHARE_SERVICE_TIMEOUTS, resolveShareBaseUrl } from '../../../shared/constants/shareService';
 import { getConfigService } from '../../services/core/configService';
 import {
   listPublishedVersions,
@@ -51,8 +51,7 @@ function getServiceContext(): { baseUrl: string; token: string } {
   const configService = getConfigService();
   const token = configService?.getServiceApiKey('neo-share')?.trim();
   if (!token) throw new Error('Share service token not configured');
-  const configuredBaseUrl = configService?.getSettings().shareService?.baseUrl?.trim();
-  const baseUrl = (configuredBaseUrl || SHARE_SERVICE.DEFAULT_BASE_URL).replace(/\/+$/, '');
+  const baseUrl = resolveShareBaseUrl(configService?.getSettings().shareService?.baseUrl);
   return { baseUrl, token };
 }
 

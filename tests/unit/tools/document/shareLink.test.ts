@@ -123,6 +123,14 @@ describe('document share links', () => {
     expect(info.stale).toBe(false);
   });
 
+  it('treats a saved retired Sealos address as unset', async () => {
+    configService.baseUrl = 'https://share-aix-7c8f2d.bja.sealos.run/';
+    publishVersion(filePath);
+    fetchMock.mockRejectedValueOnce(new TypeError('fetch failed'));
+    await expect(createShareLink(filePath, 604_800)).rejects.toThrow('Share service unavailable');
+    expect(fetchMock.mock.calls[0][0]).toBe('https://share.llmxy.xyz:8443/api/share');
+  });
+
   it('reports an unreachable service, a 5xx and a rejected token as distinct plain errors', async () => {
     publishVersion(filePath);
     fetchMock.mockRejectedValueOnce(new TypeError('fetch failed'));

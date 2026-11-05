@@ -61,7 +61,13 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // 参数传入而非把引用文本打进 text（FB-552/FB-544）。
 // 整合合并：本单 sys-v93（image_generate 多参考图 schema 面）× main 已合入的 sys-v95
 //（Browser secretRef schema 面），合并后的 prompt 输入哈希面未在任何一侧记录过，按惯例升版。
-export const PROMPT_VERSION = 'sys-v96' as const;
+// sys-v96：N-FG-CONNECTOR-TOOLS——指挥台 brain 提示词加 3a 条（连接器工具在场时
+// 发邮件/建日程/设提醒直调，审批卡在聊天内确认），且命中意图的轮次工具面新增
+// mail/calendar/reminders 连接器读写工具（ADR-059 修订，per-turn 进面）。
+// 整合合并 r2：本单 sys-v96（image 多参考图 × secretRef 合并面）× main 已合入的
+// sys-v96（连接器工具面）撞号，两个 sys-v96 的哈希面互不包含，合并面未在任何一侧
+// 记录过，按惯例升版。
+export const PROMPT_VERSION = 'sys-v97' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */
 export const EXPLORE_AGENT_DESCRIPTION =

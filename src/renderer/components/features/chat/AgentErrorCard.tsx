@@ -125,7 +125,7 @@ export function resolveAgentErrorCopy(
 }
 
 /** 灰字行的短原因：按 category 查短语表，一行放得下、不带建议动作。 */
-export function resolveAgentErrorShortReason(
+function resolveAgentErrorShortReason(
   category: AgentErrorCategory,
   t: Translations,
 ): string {
@@ -136,7 +136,7 @@ export function resolveAgentErrorShortReason(
  * 整卡上的「连续 N 次」说明，runLength≥2 才有。不可重试类（NO_RETRY_CATEGORIES）
  * 明说「再发也不会好」；可重试类只陈述次数，不断言重试无效。
  */
-export function buildRepeatNotice(
+function buildRepeatNotice(
   run: Pick<AgentErrorRunInfo, 'runLength'> | undefined,
   category: AgentErrorCategory,
   t: Translations,

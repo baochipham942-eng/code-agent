@@ -26,9 +26,7 @@ vi.mock('../../../src/renderer/hooks/useToast', () => ({
 import {
   AgentErrorPresentation,
   buildAgentErrorReport,
-  buildRepeatNotice,
   resolveAgentErrorCopy,
-  resolveAgentErrorShortReason,
 } from '../../../src/renderer/components/features/chat/AgentErrorCard';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useMessageActionStore } from '../../../src/renderer/stores/messageActionStore';
@@ -541,12 +539,15 @@ describe('AgentErrorPresentation 连续同因失败折叠', () => {
     expect(en.agentError.shortReasons.auth).toBe('account authorization failed');
   });
 
-  it('短原因与连续次数句的查表行为：未知类回落 generic、<2 次不出次数句', () => {
-    expect(resolveAgentErrorShortReason('auth', zh)).toBe('账号没通过授权');
-    expect(resolveAgentErrorShortReason('nope' as AgentErrorMetadata['category'], zh)).toBe('运行失败');
-    expect(buildRepeatNotice({ runLength: 3 }, 'auth', zh)).toBe('连续 3 次都是这个原因，再发也不会好。');
-    expect(buildRepeatNotice({ runLength: 2 }, 'network', zh)).toBe('连续 2 次都是这个原因。');
-    expect(buildRepeatNotice({ runLength: 1 }, 'auth', zh)).toBeNull();
-    expect(buildRepeatNotice(undefined, 'auth', zh)).toBeNull();
+  it('短原因查表行为：未知类回落 generic', () => {
+    render(
+      <AgentErrorPresentation
+        error={makeError({ category: 'nope' as AgentErrorMetadata['category'] })}
+        messageId="assistant-1"
+        sessionId="session-1"
+        run={{ runLength: 2, latest: false }}
+      />,
+    );
+    expect(screen.getByTestId('agent-error-muted-line').textContent).toBe('没有回复 · 运行失败');
   });
 });

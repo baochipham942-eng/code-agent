@@ -63,6 +63,9 @@ const CHECK_ACCOUNT_CATEGORIES: ReadonlySet<AgentErrorCategory> = new Set([
   'forbidden',
 ]);
 
+/** 首次醒来卡 failed 态复用同一份「账号类错误」判据（RoleFirstWakeCard 换模型/查账号按钮）。 */
+export const WAKE_CARD_CHECK_ACCOUNT_CATEGORIES: ReadonlySet<AgentErrorCategory> = CHECK_ACCOUNT_CATEGORIES;
+
 // interrupted 留在这四组之外：回复前被停掉时仍给重试，不换模型、不查账号、不开新会话。
 
 function shouldShowRetry(category: AgentErrorCategory): boolean {

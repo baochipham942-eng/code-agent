@@ -35,7 +35,7 @@ describe('cron agent 会话拓扑标注接线', () => {
 
   it('cronService 在 sendMessage 前把 orchestrator 标为 async_agent', () => {
     expect(cronAgentActionSource).toMatch(
-      /setExecutionTopology\('async_agent'\)[\s\S]{0,1600}sendMessage\(\s*buildCronAgentPrompt\(\s*action\.prompt\s*,/,
+      /setExecutionTopology\('async_agent'\)[\s\S]{0,1700}sendMessage\(\s*buildCronAgentPrompt\(\s*action\.prompt\s*,/,
     );
   });
 
@@ -60,7 +60,7 @@ describe('cron agent 会话拓扑标注接线', () => {
       /if \(!quietWatchRound && !notifyQuietRound\) \{[\s\S]{0,400}deliverCronResult\(/,
     );
     expect(cronAgentActionSource).toMatch(
-      /buildCronAgentActionResult\(action, result, cronSession\.id, finalAssistantText, quietWatchRound, notifyQuietRound\)/,
+      /buildCronAgentActionResult\(action, result, cronSession\.id, finalAssistantText, quietWatchRound, notifyQuietRound, permissionDenied\)/,
     );
   });
 

@@ -109,26 +109,55 @@ describe('createStaticRouter', () => {
   });
 
   // FB-430：DNS 重绑定（Host 是外部域名）和外站跳转（cross-site）都拿不到带 token 的页面
-  it('refuses the token page when Host is not loopback', async () => {
+  it('refuses the token page when Host is not loopback and renders a safe Chinese guard page linking to 127.0.0.1', async () => {
     const port = new URL(baseUrl).port;
-    const body = await new Promise<{ status: number; text: string }>((resolve, reject) => {
-      http.get({ host: '127.0.0.1', port, path: '/', headers: { Host: `evil.example.com:${port}` } }, (res) => {
+    const hostileHost = `"><script>x</script>.evil.test:${port}`;
+    const result = await new Promise<{ status: number; headers: http.IncomingHttpHeaders; text: string }>((resolve, reject) => {
+      http.get({ host: '127.0.0.1', port, path: '/', headers: { Host: hostileHost } }, (res) => {
         let text = '';
         res.on('data', (c) => { text += c; });
-        res.on('end', () => resolve({ status: res.statusCode ?? 0, text }));
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, text }));
       }).on('error', reject);
     });
-    expect(body.status).toBe(421);
-    expect(body.text).not.toContain('test-token');
+    expect(result.status).toBe(421);
+    expect(result.headers['content-type']).toContain('text/html');
+    expect(result.headers['cache-control']).toBe('no-store');
+    expect(result.headers['content-security-policy']).toBe("default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'");
+    expect(result.headers['x-frame-options']).toBe('DENY');
+    expect(result.text).toContain('<!doctype html><html lang="zh-CN">');
+    expect(result.text).toContain('<title>Agent Neo</title>');
+    expect(result.text).toContain('请复制下面的地址，粘贴到浏览器的新标签页中打开：');
+    expect(result.text).toContain(`<code>http://127.0.0.1:${port}/</code>`);
+    expect(result.text).toContain(`href="http://127.0.0.1:${port}/" target="_blank" rel="noopener"`);
+    expect(result.text).not.toContain('test-token');
+    expect(result.text).not.toContain('__CODE_AGENT_TOKEN__');
+    expect(result.text).not.toContain('<script');
+    expect(result.text).not.toContain('<pre>');
+    expect(result.text).not.toContain('evil.test');
   });
 
-  it('refuses the token page on cross-site navigation', async () => {
+  it('refuses the token page on cross-site navigation with a Chinese guard HTML page', async () => {
+    const port = new URL(baseUrl).port;
     const response = await fetch(`${baseUrl}/?__neoDraft=hi`, { headers: { 'Sec-Fetch-Site': 'cross-site' } });
+    const body = await response.text();
+
     expect(response.status).toBe(403);
-    expect(await response.text()).not.toContain('test-token');
+    expect(response.headers.get('content-type')).toContain('text/html');
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(response.headers.get('content-security-policy')).toBe("default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'");
+    expect(response.headers.get('x-frame-options')).toBe('DENY');
+    expect(body).toContain('<!doctype html><html lang="zh-CN">');
+    expect(body).toContain('<title>Agent Neo</title>');
+    expect(body).toContain('请复制下面的地址，粘贴到浏览器的新标签页中打开：');
+    expect(body).toContain(`<code>http://127.0.0.1:${port}/</code>`);
+    expect(body).toContain(`href="http://127.0.0.1:${port}/" target="_blank" rel="noopener"`);
+    expect(body).not.toContain('test-token');
+    expect(body).not.toContain('__CODE_AGENT_TOKEN__');
+    expect(body).not.toContain('<script');
+    expect(body).not.toContain('<pre>');
   });
 
-  it('serves the token page to localhost and same-origin loads', async () => {
+  it('serves the token page to localhost and none / same-origin / same-site loads', async () => {
     const port = new URL(baseUrl).port;
     const viaLocalhost = await new Promise<string>((resolve, reject) => {
       http.get({ host: '127.0.0.1', port, path: '/', headers: { Host: `localhost:${port}` } }, (res) => {
@@ -138,8 +167,14 @@ describe('createStaticRouter', () => {
       }).on('error', reject);
     });
     expect(viaLocalhost).toContain('"test-token"');
-    const sameOrigin = await fetch(`${baseUrl}/`, { headers: { 'Sec-Fetch-Site': 'same-origin' } });
-    expect(await sameOrigin.text()).toContain('"test-token"');
+
+    for (const site of ['none', 'same-origin', 'same-site']) {
+      const response = await fetch(`${baseUrl}/`, { headers: { 'Sec-Fetch-Site': site } });
+      expect(response.status).toBe(200);
+      const html = await response.text();
+      expect(html).toContain('window.__CODE_AGENT_TOKEN__="test-token"');
+      expect(html).toContain('<div id="root"></div>');
+    }
   });
 });
 

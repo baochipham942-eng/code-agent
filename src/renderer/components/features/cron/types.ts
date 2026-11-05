@@ -469,11 +469,18 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
   };
 }
 
-export function formatDateTime(value?: string | number): string {
+/**
+ * 详情页时间（FB-567/FB-570）：zh 固定 24 小时制 `YYYY/MM/DD HH:mm`（手工拼，跟
+ * formatRunListTime 同一来源，绝不裸 toLocaleString() 跟机器 locale 走）；en 维持
+ * en-US 原样。运行列表仍用 formatRunListTime（月/日短格式，避免撑出容器）。
+ */
+export function formatDateTime(value?: string | number, lang: CronHumanLang = 'zh'): string {
   if (value == null) return '未设置';
-  const date = typeof value === 'number' ? new Date(value) : new Date(value);
+  const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '无效时间';
-  return date.toLocaleString();
+  if (lang === 'en') return date.toLocaleString('en-US');
+  const pad = (part: number) => String(part).padStart(2, '0');
+  return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 /** 运行记录表的时间：月/日 + 时/分。详情仍用完整本地时间，避免两列日期把表撑出容器。 */
@@ -511,7 +518,7 @@ export function formatScheduleSummary(
 ): string {
   switch (job.schedule.type) {
     case 'at':
-      return `一次性 · ${formatDateTime(job.schedule.datetime)}`;
+      return `一次性 · ${formatDateTime(job.schedule.datetime, lang)}`;
     case 'every': {
       if ((job.schedule.unit as string) === 'weeks') {
         return `不支持的周间隔 · ${job.schedule.interval} weeks`;

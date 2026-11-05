@@ -28,20 +28,33 @@ vi.mock('../../../src/host/tools/dispatch/toolResolver', () => ({
   }),
 }));
 
+const loggerSpies = vi.hoisted(() => ({
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+}));
+
 vi.mock('../../../src/host/services/infra/logger', () => ({
-  logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-  createLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+  logger: loggerSpies,
+  createLogger: () => loggerSpies,
 }));
 
 vi.mock('../../../src/host/mcp/mcpClient', () => ({
   getMCPClient: () => ({ callTool: mcpClientState.callTool }),
 }));
 
+import type { AppSettings } from '../../../src/shared/contract';
+import type { PermissionRequest } from '../../../src/shared/contract/permission';
+import type { PendingApprovalRepository } from '../../../src/host/services/core/repositories/PendingApprovalRepository';
+import { OrchestratorPermissionIsland } from '../../../src/host/agent/orchestratorPermissions';
 import { resetDecisionHistory, getDecisionHistory } from '../../../src/host/security/decisionHistory';
 import { ToolExecutor } from '../../../src/host/tools/toolExecutor';
 import { applyAppGrantsSchema } from '../../../src/host/services/core/database/schemaAppGrants';
 import {
   bindAppGrantDatabase,
+  listAppGrants,
+  listAppSessionGrants,
   mintAppGrantSession,
   mintAppGrantStanding,
 } from '../../../src/host/permissions/appGrantStore';
@@ -117,6 +130,10 @@ describe('ToolExecutor cua sensitive step hand-back (ADR-088 phase 1)', () => {
     resetDecisionHistory();
     resetPermissionModeManager();
     resetCuaNarrationCacheForTest();
+    loggerSpies.debug.mockClear();
+    loggerSpies.info.mockClear();
+    loggerSpies.warn.mockClear();
+    loggerSpies.error.mockClear();
     db = new Database(':memory:');
     applyAppGrantsSchema(db, logger as never);
     bindAppGrantDatabase(db, true);
@@ -390,5 +407,262 @@ describe('ToolExecutor cua sensitive step hand-back (ADR-088 phase 1)', () => {
     await executor.execute(tool, params, options);
     expect(requestPermission).toHaveBeenCalledTimes(3);
     expect(resolverState.execute).not.toHaveBeenCalled();
+  });
+
+  // --------------------------------------------------------------------------
+  // N-CUA-SCREEN-GUARDS-SENSITIVE-PROBE-FU2-FU2：窗口级交回扩到可产出字符的按键与粘贴快捷键
+  // --------------------------------------------------------------------------
+
+  it('password window + printable press_key ("p" and shift+"Z") → forceConfirm hand-back card, driver never called, no grant minted, key absent from request/ledger/fingerprint', async () => {
+    resolverState.getDefinition.mockReturnValue(cuaActionDefinition('press_key'));
+    mintAppGrantSession('s1', SHOP);
+    const { executor, requestPermission } = makeExecutor(true);
+
+    const resLower = await executor.execute(
+      'mcp__cua-driver__press_key',
+      { pid: SHOP_PID, window_id: SHOP_WINDOW_ID, key: 'p' },
+      { sessionId: 's1', currentToolCallId: 'toolu_pk_p' },
+    );
+    expect(requestPermission).toHaveBeenCalledTimes(1);
+    expect(resolverState.execute).not.toHaveBeenCalled();
+    const reqLower = requestPermission.mock.calls[0][0];
+    expect(reqLower.forceConfirm).toBe(true);
+    expect(reqLower.type).toBe('dangerous_command');
+    expect(reqLower.reasonCode).toBe(PermissionRequestReason.SensitiveStepHandback);
+    expect(reqLower.details).toEqual({
+      sensitiveStep: { kind: 'password', elementLabel: 'Password', appName: 'Shop' },
+      action: 'press_key',
+    });
+    expect(reqLower.argsFingerprint).toBe(
+      computeLedgerArgsSurvival('mcp__cua-driver__press_key', { pid: SHOP_PID, window_id: SHOP_WINDOW_ID }).argsFingerprint,
+    );
+    expect(reqLower.argsFingerprint).not.toBe(
+      computeLedgerArgsSurvival('mcp__cua-driver__press_key', { pid: SHOP_PID, window_id: SHOP_WINDOW_ID, key: 'p' }).argsFingerprint,
+    );
+    expect(resLower.success).toBe(true);
+    expect(String(resLower.result)).toContain('SENSITIVE_STEP_DONE_BY_USER');
+    expect(String(resLower.result)).toContain('I did NOT perform this step');
+
+    // shift 修饰的可打印字符（"Z" 不出现在任何元数据单词里，可直接做整串零残留断言）
+    requestPermission.mockClear();
+    const resShift = await executor.execute(
+      'mcp__cua-driver__press_key',
+      { pid: SHOP_PID, window_id: SHOP_WINDOW_ID, key: 'Z', modifiers: ['shift'] },
+      { sessionId: 's1', currentToolCallId: 'toolu_pk_2' },
+    );
+    expect(requestPermission).toHaveBeenCalledTimes(1);
+    expect(resolverState.execute).not.toHaveBeenCalled();
+    const reqShift = requestPermission.mock.calls[0][0];
+    expect(JSON.stringify(reqShift)).not.toContain('Z');
+    expect(JSON.stringify(reqShift)).not.toContain('shift');
+    expect(reqShift.argsFingerprint).toBe(
+      computeLedgerArgsSurvival('mcp__cua-driver__press_key', { pid: SHOP_PID, window_id: SHOP_WINDOW_ID }).argsFingerprint,
+    );
+    expect(JSON.stringify(getDecisionHistory().getRecent(5))).not.toContain('"key"');
+    expect(JSON.stringify(getDecisionHistory().getRecent(5))).not.toContain('Z');
+    expect(resShift.success).toBe(true);
+  });
+
+  it('password window + paste hotkey (cmd+v / ctrl+v / cmd+shift+v) → forceConfirm hand-back card, driver never called, keys absent from request/ledger/fingerprint', async () => {
+    resolverState.getDefinition.mockReturnValue(cuaActionDefinition('hotkey'));
+    mintAppGrantStanding(SHOP, 1);
+
+    let callIdx = 0;
+    for (const keys of [['cmd', 'v'], ['Command', 'V'], ['ctrl', 'v'], ['cmd', 'shift', 'v']]) {
+      callIdx += 1;
+      const { executor, requestPermission } = makeExecutor(true);
+      const result = await executor.execute(
+        'mcp__cua-driver__hotkey',
+        { pid: SHOP_PID, window_id: SHOP_WINDOW_ID, keys },
+        { sessionId: 's1', currentToolCallId: `toolu_hk_${callIdx}` },
+      );
+      expect(requestPermission).toHaveBeenCalledTimes(1);
+      expect(resolverState.execute).not.toHaveBeenCalled();
+      const req = requestPermission.mock.calls[0][0];
+      expect(req.forceConfirm).toBe(true);
+      expect(req.reasonCode).toBe(PermissionRequestReason.SensitiveStepHandback);
+      expect(req.details).toEqual({
+        sensitiveStep: { kind: 'password', elementLabel: 'Password', appName: 'Shop' },
+        action: 'hotkey',
+      });
+      expect(JSON.stringify(req)).not.toContain('"keys"');
+      expect(req.argsFingerprint).toBe(
+        computeLedgerArgsSurvival('mcp__cua-driver__hotkey', { pid: SHOP_PID, window_id: SHOP_WINDOW_ID }).argsFingerprint,
+      );
+      expect(req.argsFingerprint).not.toBe(
+        computeLedgerArgsSurvival('mcp__cua-driver__hotkey', { pid: SHOP_PID, window_id: SHOP_WINDOW_ID, keys }).argsFingerprint,
+      );
+      expect(JSON.stringify(getDecisionHistory().getRecent(5))).not.toContain('"keys"');
+      expect(result.success).toBe(true);
+      expect(String(result.result)).toContain('SENSITIVE_STEP_DONE_BY_USER');
+    }
+  });
+
+  it('password window + press_key / paste hotkey through real OrchestratorPermissionIsland mints NO grant for any answer', async () => {
+    const events: Array<{ type: string; data: PermissionRequest & { id: string } }> = [];
+    const island = new OrchestratorPermissionIsland({
+      getSettings: () => ({
+        permissions: {
+          autoApprove: { read: false, write: false, execute: false, network: false },
+          blockedCommands: [],
+          devModeAutoApprove: false,
+        },
+      } as unknown as AppSettings),
+      isDevModeAutoApproveEnabled: () => false,
+      getExecutionTopology: () => 'async_agent',
+      hasApprovalUi: () => true,
+      onEvent: (event) => events.push(event as { type: string; data: PermissionRequest & { id: string } }),
+      injectedPendingApprovalRepo: { insert: vi.fn(), resolve: vi.fn(() => 1) } as unknown as PendingApprovalRepository,
+    });
+    const executor = new ToolExecutor({
+      requestPermission: (request) => island.requestPermission(request as Omit<PermissionRequest, 'id' | 'timestamp'>),
+      workingDirectory: '/tmp/workbench',
+    });
+
+    const cases: Array<{
+      bareTool: string;
+      params: Record<string, unknown>;
+      response: 'allow_session' | 'allow_standing';
+    }> = [
+      { bareTool: 'press_key', params: { pid: SHOP_PID, window_id: SHOP_WINDOW_ID, key: 'p' }, response: 'allow_session' },
+      { bareTool: 'hotkey', params: { pid: SHOP_PID, window_id: SHOP_WINDOW_ID, keys: ['cmd', 'v'] }, response: 'allow_standing' },
+    ];
+    for (const { bareTool, params, response } of cases) {
+      events.length = 0;
+      resolverState.getDefinition.mockReturnValue(cuaActionDefinition(bareTool));
+      const pending = executor.execute(`mcp__cua-driver__${bareTool}`, params, { sessionId: 's-no-mint' });
+      let event: (typeof events)[number] | undefined;
+      for (let i = 0; i < 30 && !event; i += 1) {
+        event = events.find((e) => e.type === 'permission_request');
+        if (!event) await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      expect(event).toBeTruthy();
+      expect(island.handlePermissionResponse(event!.data.id, response)).toBe('delivered');
+      const result = await pending;
+      expect(result.success).toBe(true);
+      expect(resolverState.execute).not.toHaveBeenCalled();
+      expect(listAppGrants(Date.now())).toHaveLength(0);
+      expect(listAppSessionGrants()).toHaveLength(0);
+    }
+  });
+
+  it('password window + navigation/control keys (Return / Tab / Escape / arrows / Delete) and non-paste hotkeys (cmd+a / cmd+c / cmd+tab) are NOT handed back (old chain)', async () => {
+    mintAppGrantSession('s1', SHOP);
+    const { executor, requestPermission } = makeExecutor(true);
+
+    resolverState.getDefinition.mockReturnValue(cuaActionDefinition('press_key'));
+    for (const keyParams of [
+      { key: 'Return' },
+      { key: 'Tab' },
+      { key: 'Tab', modifiers: ['shift'] },
+      { key: 'Escape' },
+      { key: 'down' },
+      { key: 'Delete' },
+      { key: 'a', modifiers: ['cmd'] },
+    ]) {
+      resolverState.execute.mockClear();
+      const result = await executor.execute(
+        'mcp__cua-driver__press_key',
+        { pid: SHOP_PID, window_id: SHOP_WINDOW_ID, ...keyParams },
+        { sessionId: 's1' },
+      );
+      expect(result.success).toBe(true);
+      expect(requestPermission).not.toHaveBeenCalled();
+      expect(resolverState.execute).toHaveBeenCalledTimes(1);
+    }
+
+    resolverState.getDefinition.mockReturnValue(cuaActionDefinition('hotkey'));
+    for (const keys of [['cmd', 'a'], ['cmd', 'c'], ['cmd', 'tab'], ['ctrl', 'a']]) {
+      resolverState.execute.mockClear();
+      const result = await executor.execute(
+        'mcp__cua-driver__hotkey',
+        { pid: SHOP_PID, window_id: SHOP_WINDOW_ID, keys },
+        { sessionId: 's1' },
+      );
+      expect(result.success).toBe(true);
+      expect(requestPermission).not.toHaveBeenCalled();
+      expect(resolverState.execute).toHaveBeenCalledTimes(1);
+    }
+
+    // 未铸授权时仍走原按应用审批链（普通 targetApp 卡，非 SensitiveStepHandback，批准后真调驱动）
+    resolverState.getDefinition.mockReturnValue(cuaActionDefinition('press_key'));
+    resolverState.execute.mockClear();
+    const { executor: ungrantedExec, requestPermission: ungrantedAsk } = makeExecutor(true);
+    const ungrantedRes = await ungrantedExec.execute(
+      'mcp__cua-driver__press_key',
+      { pid: SHOP_PID, window_id: SHOP_WINDOW_ID, key: 'Return' },
+      { sessionId: 's-ungranted' },
+    );
+    expect(ungrantedRes.success).toBe(true);
+    expect(ungrantedAsk).toHaveBeenCalledTimes(1);
+    expect(ungrantedAsk.mock.calls[0][0].reasonCode).not.toBe(PermissionRequestReason.SensitiveStepHandback);
+    expect(ungrantedAsk.mock.calls[0][0].forceConfirm).toBeFalsy();
+    expect(ungrantedAsk.mock.calls[0][0].details.sensitiveStep).toBeUndefined();
+    expect(ungrantedAsk.mock.calls[0][0].details.targetApp).toEqual(SHOP);
+    expect(resolverState.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('normal window (no secure field) + printable press_key ("p") and paste hotkey (cmd+v) are NOT handed back (old chain)', async () => {
+    mintAppGrantSession('s1', SHOP);
+    recordCuaResult('get_window_state', { pid: SHOP_PID, window_id: 9 }, PLAIN_WINDOW.replace('window_id=7', 'window_id=9'));
+    const { executor, requestPermission } = makeExecutor(true);
+
+    resolverState.getDefinition.mockReturnValue(cuaActionDefinition('press_key'));
+    const keyRes = await executor.execute(
+      'mcp__cua-driver__press_key',
+      { pid: SHOP_PID, window_id: 9, key: 'p' },
+      { sessionId: 's1' },
+    );
+    expect(keyRes.success).toBe(true);
+    expect(requestPermission).not.toHaveBeenCalled();
+    expect(resolverState.execute).toHaveBeenCalledTimes(1);
+
+    resolverState.execute.mockClear();
+    resolverState.getDefinition.mockReturnValue(cuaActionDefinition('hotkey'));
+    const hkRes = await executor.execute(
+      'mcp__cua-driver__hotkey',
+      { pid: SHOP_PID, window_id: 9, keys: ['cmd', 'v'] },
+      { sessionId: 's1' },
+    );
+    expect(hkRes.success).toBe(true);
+    expect(requestPermission).not.toHaveBeenCalled();
+    expect(resolverState.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('no snapshot cached + printable press_key / paste hotkey → old chain plus the debug gap log (without secret key text)', async () => {
+    mintAppGrantSession('s1', SHOP);
+    resetCuaNarrationCacheForTest();
+    const { executor, requestPermission } = makeExecutor(true);
+
+    resolverState.getDefinition.mockReturnValue(cuaActionDefinition('press_key'));
+    const keyRes = await executor.execute(
+      'mcp__cua-driver__press_key',
+      { pid: SHOP_PID, window_id: 999, key: 'Q' },
+      { sessionId: 's1' },
+    );
+    expect(keyRes.success).toBe(true);
+    expect(requestPermission).not.toHaveBeenCalled();
+    expect(resolverState.execute).toHaveBeenCalledTimes(1);
+    expect(loggerSpies.debug).toHaveBeenCalledWith(
+      'cua sensitive step: no window snapshot cached, no signal (gap)',
+      { tool: 'mcp__cua-driver__press_key', pid: SHOP_PID, windowId: 999 },
+    );
+    expect(JSON.stringify(loggerSpies.debug.mock.calls)).not.toContain('"Q"');
+
+    loggerSpies.debug.mockClear();
+    resolverState.execute.mockClear();
+    resolverState.getDefinition.mockReturnValue(cuaActionDefinition('hotkey'));
+    const hkRes = await executor.execute(
+      'mcp__cua-driver__hotkey',
+      { pid: SHOP_PID, window_id: 999, keys: ['cmd', 'v'] },
+      { sessionId: 's1' },
+    );
+    expect(hkRes.success).toBe(true);
+    expect(requestPermission).not.toHaveBeenCalled();
+    expect(resolverState.execute).toHaveBeenCalledTimes(1);
+    expect(loggerSpies.debug).toHaveBeenCalledWith(
+      'cua sensitive step: no window snapshot cached, no signal (gap)',
+      { tool: 'mcp__cua-driver__hotkey', pid: SHOP_PID, windowId: 999 },
+    );
   });
 });

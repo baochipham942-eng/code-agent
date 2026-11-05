@@ -56,6 +56,7 @@ import { lookupMcpToolAfterReapedReconnect } from './mcpReapedToolLookup';
 import type { ConversationExecutionIntent, WorkbenchToolScope } from '../../shared/contract/conversationEnvelope';
 import { isBashToolName, normalizeToolName } from './toolNames';
 import { isToolDeniedByRunPolicy } from './runToolPolicy';
+import { evaluateSubagentPolicyDenial, type SubagentToolPolicy } from '../agent/subagentToolRuntime';
 import { finalizeSurfaceAwareToolResult } from './artifacts/surfaceExecutionToolResultPipeline';
 import { recordDecision, recordInToolPermissionAsk } from './toolExecutorDecisionTrace';
 import { checkNeoTagToolGuard } from './neoTagToolGuard';
@@ -425,7 +426,7 @@ export interface ExecuteOptions {
   // 策略只能收紧（deny），不能放宽：'deny' 直接拒，'ask' 继续走常规管道
   // （validateCommand / classifyPermission / exec policy / 审计 / cache）。
   // 这保证 subagent 与主 agent 走同一条 ToolExecutor 管道，而非绕过权限的旁路。
-  subagentPolicy?: { allowedTools: Set<string>; check: (toolName: string, params: Record<string, unknown>) => 'deny' | 'ask' };
+  subagentPolicy?: SubagentToolPolicy;
   /**
    * ADR-067 D3：本轮最新输入的 origin 链（可多条，判定取最不可信者）。
    * 子代理 loop 在 drain 注入时挂载；主 agent 常规用户输入铸 user 起源。
@@ -822,18 +823,13 @@ export class ToolExecutor {
     if (options.subagentPolicy) {
       if (!options.subagentPolicy.allowedTools.has(executionToolName)) {
         logger.warn('Tool not in subagent allowlist', { toolName: executionToolName });
-        return {
-          success: false,
-          error: `Tool not allowed for subagent: ${executionToolName}`,
-        };
+        return { success: false, error: `Tool not allowed for subagent: ${executionToolName}` };
       }
-      if (options.subagentPolicy.check(executionToolName, params) === 'deny') {
-        logger.warn('Denied by subagent permission policy', { toolName: executionToolName });
-        recordDecision(executionToolName, params, 'policy-deny', 'subagent policy', Date.now(), undefined, effectiveSessionId, this.ledgerOrigin);
-        return {
-          success: false,
-          error: `Denied by subagent permission policy: ${executionToolName}`,
-        };
+      const subagentDenial = evaluateSubagentPolicyDenial(options.subagentPolicy, executionToolName, params);
+      if (subagentDenial) {
+        logger.warn(subagentDenial.error, { toolName: executionToolName, policy: subagentDenial.policyName, reason: subagentDenial.reason });
+        recordDecision(executionToolName, params, 'policy-deny', subagentDenial.reason, Date.now(), undefined, effectiveSessionId, this.ledgerOrigin);
+        return { success: false, error: subagentDenial.error };
       }
     }
 

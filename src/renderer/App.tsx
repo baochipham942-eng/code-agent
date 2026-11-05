@@ -41,6 +41,7 @@ import { MemoryLearningProvider } from './components/features/memory';
 import { ToastContainer } from './components/Toast';
 import { ProviderStatusNotice } from './components/ProviderStatusNotice';
 import { SessionExpiredNotice } from './components/SessionExpiredNotice';
+import { ServerConnectionBanner } from './components/ServerConnectionBanner';
 import { BudgetAlertNotice } from './components/BudgetAlertNotice';
 import { CompanionPairRequestCard } from './components/CompanionPairRequestCard';
 import { VoiceBudgetAlertNotice } from './components/VoiceBudgetAlertNotice';
@@ -723,6 +724,9 @@ export const App: React.FC = () => {
       <ExpertWorkbenchAutoOpen />
       <SessionExpiredNotice />
       <div className="h-screen flex flex-col bg-zinc-950 text-zinc-200">
+        {/* 后台服务死亡期间的顶部「重连中」横幅（N-WEBSERVER-DEATH-SUPERVISE-BANNER）；
+            ok 态整条不渲染，恢复后随一次性 reload 自己消失。 */}
+        <ServerConnectionBanner />
         {/* 左右结构（2026-07-27 拍板「右侧标题栏和下面样式上打通」，参照 Codex）：
             左栏一块面（zinc-950）+ 一条竖分隔线 + 右栏一块面（zinc-900），
             右栏顶栏与右栏内容共用同一底色、同一左右边界 ⇒ 顶栏读作右栏的一部分，

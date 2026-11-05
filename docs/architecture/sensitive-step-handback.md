@@ -1,6 +1,6 @@
 # 屏幕控制敏感步骤交回用户（Sensitive Step Hand-back）
 
-> ADR-088 · 状态：已拍板（方案 B，2026-11-03）· 实施载体：N-CUA-SCREEN-GUARDS-SENSITIVE-PROBE-FU2（一期 · 密码框输入）、N-CUA-SCREEN-GUARDS-SENSITIVE-PROBE-FU3（二期 · 支付/验证码点击词表）
+> ADR-088 · 状态：已拍板（方案 B，2026-11-03）· 实施载体：N-CUA-SCREEN-GUARDS-SENSITIVE-PROBE-FU2（一期 · 密码框输入，含 FU2-FU2 字符按键/粘贴补齐）、N-CUA-SCREEN-GUARDS-SENSITIVE-PROBE-FU3（二期 · 支付/验证码点击词表）
 >
 > 本文是 FU2 / FU3 的**唯一实施规格**：读完本文不需要再问任何问题就能开工。行号会漂移，锚点以 `路径:标识符` 为准（grep 是唯一真源）；文中行号均为 2026-11-03 时点。
 
@@ -22,13 +22,13 @@
 
 **只管 native 屏幕控制路径**：工具名以 `mcp__cua-driver__` 为前缀的调用（表外未知名按 `cuaToolNeedsAppGrant` 的 fail-closed 口径同属应用动作）。浏览器路径的 CAPTCHA/MFA 交回已有先例 `enforceBrowserCaptchaTakeoverGate`，不在本规格内。
 
-### 一期（FU2）：密码框输入 —— 结构性信号
+### 一期（FU2 + FU2-FU2）：密码框输入 —— 结构性信号
 
 | 项 | 内容 |
 |---|---|
-| 工具 | `type_text`、`set_value`（含 invoke 期别名 `type_text_chars`） |
+| 工具 | `type_text`、`set_value`（含 invoke 期别名 `type_text_chars`），以及会产出内容的按键调用：`press_key`（单个可打印字符，仅允许无修饰键或单独 `shift`）与粘贴 `hotkey`（`cmd`/`ctrl` + `v`，含 `cmd+shift+v` 等变体，大小写不敏感）。`Return`/`Tab`/`Escape`/方向键/`Delete` 及 `cmd+a`/`cmd+c`/`cmd+tab` 等导航/非粘贴键**刻意不交回**（保留原按应用审批链，避免手输密码后按回车提交二次弹卡） |
 | 信号（主） | cuaNarration 缓存 join：`(pid:window_id) → element_index → {role,label}`（`recordCuaResult` 每次 `get_window_state` 成功后由 mcpClient 自动喂，索引跨快照整体替换）。目标 `role` 命中 `AXSecureTextField`（正则先例 `CU_SECURE_ROLE` = `/^axsecuretextfield$/i`，jev 内环注释原文「AX 树里唯一确定性的密码信号」）→ `kind = password` |
-| 信号（兜底） | 调用只带 `x/y`（无 element_index）或 join 失败时：该 `(pid:window_id)` **最新一次快照**含任一 AXSecureTextField → 该窗口内的一切输入动作交回（窗口级规则，覆盖像素路径，无需逐动作 join 成功） |
+| 信号（兜底） | 调用只带 `x/y`（无 element_index）、无元素概念（`press_key` / `hotkey`）或 join 失败时：该 `(pid:window_id)` **最新一次快照**含任一 AXSecureTextField（`readCuaWindowSecureField`）→ 该窗口内的上述文本输入、单字符可打印 `press_key` 与粘贴 `hotkey` 一律交回（窗口级规则，覆盖像素与按键路径，无需逐动作 join 成功） |
 | kind | 一期只产出 `password` |
 
 ### 二期（FU3）：支付 / 验证码 —— 词表信号
@@ -84,12 +84,12 @@
 
 ### 永不进任何载荷的信息
 
-被键入的文本（`params.text`）、字段当前值（AXValue）**不得出现在任何载荷里**——权限请求、停车 `argsPreview`、`argsFingerprint` 的输入、通知文案、卡片渲染、模型回话模板、审批台账 / decision ledger 全部包含在内。实施要点：
+被键入的文本与按键内容（`params.text`、`params.value`、`params.key`、`params.keys`、`params.modifiers`）、字段当前值（AXValue）**不得出现在任何载荷里**——权限请求、停车 `argsPreview`、`argsFingerprint` 的输入、通知文案、卡片渲染、模型回话模板、审批台账 / decision ledger 全部包含在内。实施要点：
 
-- 请求 `details` 只带 `kind` 与 `elementLabel`（元素 label 是公开的界面元数据，不是秘密本体）。
+- 请求 `details` 只带 `kind` 与 `elementLabel`（及展示用 `appName`；元素 label 是公开的界面元数据，不是秘密本体）。
 - `buildParkedArgsPreview` 只读 `command/path/filePath/url/changes`，cua 请求天然不带 → `argsPreview` 为空；FU2 不得给交回请求补这些字段。
-- `argsFingerprint` 的输入必须**剔除 `text` 参数**（低熵密码的哈希可被爆破），指纹只覆盖工具名 + 元素标识。
-- 交回调用的 `recordDecision` 台账记录必须先剥掉/替换 `text` 参数再落账——反正这步不会执行，参数本体没有留存价值。
+- `argsFingerprint` 的输入必须先经 `stripSensitiveStepParams`**剔除 `text` / `value` / `key` / `keys` / `modifiers` 参数**（低熵密码或单字符的哈希可被爆破），指纹只覆盖工具名 + 窗口/元素标识。
+- 交回调用的 `recordDecision` 台账记录同样必须先经 `stripSensitiveStepParams` 剥掉敏感输入参数再落账——反正这步不会执行，参数本体没有留存价值。
 
 ## 4. 载体（Carrier）
 
@@ -172,13 +172,13 @@ SENSITIVE_STEP_SKIPPED_BY_USER — I did NOT perform this step. The user chose t
 
 ## 8. 已知覆盖缺口（Known coverage gaps）
 
-诚实清单，FU2/FU3 明确**不**覆盖（后续单据另立）：
+诚实清单，记录已收口的边界取舍与 FU2/FU3 明确**不**覆盖的面（后续单据另立）：
 
-| 缺口 | 为什么接不住 | 缓解 |
+| 缺口 / 边界 | 现状与原因 | 缓解与取舍 |
 |---|---|---|
-| `press_key` / `hotkey` 打进已聚焦的密码框 | key 事件无元素概念，host 不知道焦点在哪个控件（只能从上一动作推断，不权威）；且按键类工具不在一期工具表内 | 本规格不承诺覆盖；后续单可把窗口级规则扩到按键类（最新快照含 Secure 字段时按键也交回，代价是登录页上一切按键都交回） |
-| 像素坐标（x/y）点击 | 缓存只存 `{role,label}` 不存 frame 几何，x/y 无法 join 到元素 | 一期的窗口级规则覆盖**输入**；**点击**的像素路径 FU3 起走窗口级兜底（窗口最新快照含命中词表的带 label 可点击元素才交回）；无缓存快照 / 图标按钮 / 词表外 label 仍是缺口（需扩缓存存 frame，另立单） |
-| Bash / osascript 旁路 | 在终端里 `osascript -e 'keystroke ...'` 不走 cua 路径，敏感门看不见 | shell 安全长另有体系（commandSafety / 沙箱），不在本规格边界内；文档明示不承诺堵 |
+| `press_key` / `hotkey` 打进已聚焦的密码框 | **已覆盖可打印字符与粘贴键，刻意不覆盖导航键**（FU2-FU2）：目标窗口最新快照含 `AXSecureTextField` 时，单个可打印字符 `press_key`（无修饰键或仅 `shift`）与粘贴 `hotkey`（`cmd`/`ctrl` + `v`，大小写不敏感）已走同一窗口级交回门并剥离 `key`/`keys`/`modifiers`；`Return`/`Tab`/`Escape`/方向键/`Delete` 及 `cmd+a`/`cmd+c`/`cmd+tab` 等非粘贴键不交回 | key 事件无目标元素索引，若对登录页一切按键交回，用户手输密码并点「完成后继续」后模型按 `Return` 提交会因快照仍含密码框而二次弹交回卡（卡片通胀）；保留导航键在原按应用审批链是避免卡膨胀的有意取舍 |
+| Bash / osascript GUI 输入 | **已被 shell 桌面自动化分类器强制审批，但不进交回门**：`src/host/permissions/shellDesktopAutomation.ts:classifyShellDesktopAutomation` 已识别 `tell [app/application] "System Events" … keystroke\|key code\|click at\|scroll\|mouse down/up`、`pyautogui`/`pydirectinput` 合成键鼠、坐标 token 与桌面 CLI 语法，并在 `toolExecutor` 强制升格审批（`shell_desktop_automation` → `ask`，绕过 Bash 预授权、安全命令白名单与 lenient 档）；但 shell 命令不含 `pid` / `window_id`，无法与 `readCuaWindowSecureField` 做目标窗口 join | 若改成「只要任意已缓存窗口含 `AXSecureTextField` 就把 shell GUI 命令交回」，后台留着一个已读过的登录窗就会误伤无关窗口的自动化命令；因此刻意不接入 `SensitiveStepHandback`，维持 `classifyShellDesktopAutomation` 的强制人工审批 |
+| 盲坐标 `x/y` / 无缓存快照与像素坐标点击 | （1）**无缓存快照（盲窗口 / 盲 `x/y` 输入与按键）**：目标 `(pid, window_id)` 从未跑过 `get_window_state` 时，`readCuaWindowSecureField` 返回 `null`（无信号），按 §9 不升格交回；（2）**有缓存快照时的像素坐标（`x/y`）点击**：缓存只存 `{role,label}` 不存 `frame` 几何，`x/y` 无法 join 到具体按钮 | （1）无快照缺口在 `src/host/permissions/cuaSensitiveStep.ts:classifyCuaSensitiveStep` 打 debug 日志留痕：`cua sensitive step: no window snapshot cached, no signal (gap)`（带 `tool`/`pid`/`windowId`），不无差别升格以避免卡片通胀；（2）一期窗口级规则已覆盖有快照窗口内的输入与字符按键/粘贴，二期 FU3 起**点击**的像素路径走窗口级兜底（窗口最新快照含命中词表的带 label 可点击元素才交回）；无缓存快照 / 图标按钮 / 词表外 label 仍是缺口，精确 join 到具体按钮需扩缓存存 `frame`（另立单） |
 | 纯图标 / 无 label 按钮 | 词表靠 label，无 label 无从命中 | 词表网的结构性漏报；二期可选 frame+视觉模型辅助，成本另评 |
 | `Submit` / `PIN` / 「确认订单」 | 实测三族词表全漏（无对应词条 / 中文组合词） | 词表起点从窄开始、逐条按真机反馈补；接受「先漏再宽」的既定取舍 |
 | 整桌面读取（`get_desktop_state` / `get_accessibility_tree` / `screenshot`）不弹卡 | 既有已知缺口（按应用授权体系外），敏感门只拦**动作**不拦**读取** | 读取结果里的密码框 role/value 属另一议题（macOS AX 本身不回密码 value） |
@@ -189,7 +189,7 @@ SENSITIVE_STEP_SKIPPED_BY_USER — I did NOT perform this step. The user chose t
 
 | 故障态 | 行为 | 出路 |
 |---|---|---|
-| 快照缓存缺失（该窗口从没 get_window_state 过，join 与窗口级信号都无源） | 敏感判定无信号 → 按既有按应用审批链走（今日行为），不误交回 | 模型要点元素本来就需要先读窗口；读到即有信号。判定「无信号不升格」是有意取舍：无差别交回全部输入 = 卡片通胀 |
+| 快照缓存缺失（该窗口从没 get_window_state 过，join 与窗口级信号都无源） | 敏感判定无信号 → 按既有按应用审批链走（今日行为），不误交回，并在 `cuaSensitiveStep.ts:classifyCuaSensitiveStep` 打 debug 日志 `cua sensitive step: no window snapshot cached, no signal (gap)` 留痕 | 模型要点元素或确认焦点本来就需要先读窗口；读到即有信号。判定「无信号不升格」是有意取舍：无差别交回全部输入/按键 = 卡片通胀 |
 | element_index 过期（页面已变，索引跨快照失效） | 缓存每次快照整体替换，旧索引 join 不到 → 一期落窗口级兜底；二期点击 join 失败按未命中处理（缺口见 §8） | 模型重读窗口后重试即恢复 join；模板已要求 done 后先 `get_window_state` |
 | 用户点了「我来完成」但一直不点「完成后继续」（交互会话） | 请求一直挂着（交互路径无硬超时），run 等待 | 用户发新消息或取消 run → `drainPendingPermissions` 机器 deny → skipped 模板，run 继续；下次再遇到同一步重新弹卡（永不记住） |
 | 无人值守停车后用户 24h 不回 | 24h 兜底 deny（`parked approval expired`） | run 以 skipped 收尾（不是挂死）；needs-input 通知与未读标记已发；重跑或下次再问 |
@@ -210,7 +210,7 @@ SENSITIVE_STEP_SKIPPED_BY_USER — I did NOT perform this step. The user chose t
 - 权限链：`src/host/permissions/preAskGrant.ts:resolvePreAskGrant`、`src/host/permissions/appGrantStore.ts:matchAppGrant`、`src/host/permissions/appGrantStore.ts:mintAppGrantSession`、`src/host/permissions/appGrantStore.ts:mintAppGrantStanding`、`src/host/agent/orchestratorPermissions.ts:recordHumanGrant`、`src/host/agent/orchestratorPermissions.ts:parkApproval`、`src/host/agent/orchestratorPermissions.ts:drainPendingPermissions`、`src/host/agent/confirmationGate.ts:recordApproval`
 - 卡片：`src/renderer/components/PermissionDialog/PermissionCard.tsx:hideStandingGrants`
 - 先例与范围：`src/host/tools/vision/browserCaptchaGate.ts:enforceBrowserCaptchaTakeoverGate`、`src/host/permissions/cuaAppTarget.ts:cuaToolNeedsAppGrant`、`src/host/permissions/cuaAppTarget.ts:resolveCuaAppTarget`、`src/host/mcp/mcpToolRegistry.ts:mapCuaToolPermission`
-- 信号源：`src/host/mcp/cuaNarration.ts:recordCuaResult`、`src/host/mcp/cuaNarration.ts:narrateCuaToolCall`、`src/host/mcp/mcpClient.ts:recordCuaResult`、`src/host/agent/runtime/desktop/jevCuaStepCandidates.ts:CU_SECURE_ROLE`、`src/host/agent/runtime/desktop/jevCuaStepCandidates.ts:CU_RISK_KEYWORD`
+- 信号源与分类器：`src/host/mcp/cuaNarration.ts:recordCuaResult`、`src/host/mcp/cuaNarration.ts:readCuaWindowSecureField`、`src/host/mcp/cuaNarration.ts:narrateCuaToolCall`、`src/host/mcp/mcpClient.ts:recordCuaResult`、`src/host/permissions/cuaSensitiveStep.ts:classifyCuaSensitiveStep`、`src/host/permissions/cuaSensitiveStep.ts:stripSensitiveStepParams`、`src/host/permissions/cuaSensitiveStep.ts:decorateSensitiveStepRequest`、`src/host/permissions/cuaSensitiveStep.ts:sensitiveStepHandbackResolution`、`src/host/permissions/shellDesktopAutomation.ts:classifyShellDesktopAutomation`、`src/host/agent/runtime/desktop/jevCuaStepCandidates.ts:CU_SECURE_ROLE`、`src/host/agent/runtime/desktop/jevCuaStepCandidates.ts:CU_RISK_KEYWORD`
 - 判定位置：`src/host/tools/toolExecutor.ts:resolvePreAskGrant`、`src/host/tools/toolExecutor.ts:cuaAppGrantForcesClassification`、`src/host/tools/toolExecutor.ts:buildPermissionRequest`
 - 契约与常量：`src/shared/contract/permission.ts:PermissionRequestReason`、`src/shared/contract/permission.ts:permissionReasonText`、`src/shared/constants/timeouts.ts:INTERACTION_TIMEOUTS`
 - 无人值守：`src/host/permissions/modes.ts:markUnattendedSession`、`src/host/permissions/modes.ts:isUnattendedSession`、`src/host/permissions/modes.ts:isUnattendedApprovalTerminal`、`src/host/permissions/unattendedReadOnlyTools.ts:isUnattendedAllowedReadOnlyTool`、`src/host/agent/unattendedApprovalTerminal.ts:UNATTENDED_APPROVAL_TIMEOUT`、`src/host/services/infra/notificationService.ts:notifyNeedsInput`

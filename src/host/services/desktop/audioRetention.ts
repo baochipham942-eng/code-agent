@@ -3,6 +3,10 @@
 // transcript (NULL or '') keeps the file for failedRetentionMs (default 24h).
 // Only regular .wav files inside audioDir are unlinked. ENOENT counts as already
 // gone. Sweep logs and continues; it does not throw.
+// wav_path pointers are cleared in one batched UPDATE per sweep/clear round
+// (clearPointers): the per-row spawn version turned a large backlog into
+// O(rows)×~15ms of event-loop blocking, which landed on startup time for
+// machines that had capture off for months (PR #2820 review).
 // A clear/sweep that finishes with zero failures resets the failure ledger:
 // the files that used to fail are gone (fixed and retried, or removed by hand),
 // so the status must not keep reporting stale failures.
@@ -38,6 +42,12 @@ interface RetentionRow {
   wavPath: string;
   transcript: string | null;
   createdAtMs: number | null;
+}
+
+/** 一条待清指针的 audio_segments 行（本轮文件已删/已失联） */
+interface RetentionPointer {
+  id: string;
+  wavPath: string;
 }
 
 type WavInspection =
@@ -178,15 +188,20 @@ function runSweep(
       retentionMs,
       summary,
     };
+    // 指针清空攒到循环外一批执行（clearPointers）：逐行 spawn sqlite3 会把
+    // 大 backlog 拖成 O(rows)×~15ms 的同步阻塞，采集关闭数月的机器首次启动
+    // 时这笔账全记在 listen 之前（PR #2820 review）。
+    const pendingPointers: RetentionPointer[] = [];
     for (const row of rows) {
       try {
-        processRow(row, ctx);
+        processRow(row, ctx, pendingPointers);
       } catch (error) {
         const reason = errorText(error);
         warnFail(row.wavPath, reason);
         countRetentionFailed(summary, reason);
       }
     }
+    summary.rowsUpdated += clearPointers(input.sqlitePath, pendingPointers);
   }
 
   sweepOrphans(input.audioDir, referenced, input.now, retentionMs, summary);
@@ -194,10 +209,10 @@ function runSweep(
   return true;
 }
 
-function processRow(row: RetentionRow, ctx: SweepContext): void {
+function processRow(row: RetentionRow, ctx: SweepContext, pendingPointers: RetentionPointer[]): void {
   const inspection = inspectWav(ctx.audioDir, row.wavPath);
   if (inspection.action === 'missing') {
-    if (clearPointer(ctx.sqlitePath, row.wavPath, row.id)) ctx.summary.rowsUpdated += 1;
+    pendingPointers.push({ id: row.id, wavPath: row.wavPath });
     return;
   }
 
@@ -221,7 +236,7 @@ function processRow(row: RetentionRow, ctx: SweepContext): void {
     return;
   }
   ctx.summary.deleted += 1;
-  if (clearPointer(ctx.sqlitePath, row.wavPath, row.id)) ctx.summary.rowsUpdated += 1;
+  pendingPointers.push({ id: row.id, wavPath: row.wavPath });
 }
 
 function sweepOrphans(
@@ -307,6 +322,7 @@ function inspectWav(audioDir: string, wavPath: string): WavInspection {
   }
 }
 
+// 单文件路径（finalizeSegmentAudio）用：一次只清一条指针。
 function clearPointer(sqlitePath: string, wavPath: string, segmentId: string): boolean {
   const sql = `UPDATE audio_segments SET wav_path = NULL WHERE wav_path = '${sqlEscape(wavPath)}' OR id = '${sqlEscape(segmentId)}'; SELECT changes();`;
   try {
@@ -321,6 +337,36 @@ function clearPointer(sqlitePath: string, wavPath: string, segmentId: string): b
     logger.warn('[音频保留] 清空 wav_path 失败', { path: wavPath, reason: errorText(error) });
     return false;
   }
+}
+
+// SQL 走 argv 传给 sqlite3 CLI，单参数过大有 ARG_MAX 上限（Linux 128KB/参数），
+// 按行数分块，块大小让单条语句稳在几十 KB。
+const POINTER_CLEAR_CHUNK = 200;
+
+// 整轮 sweep/clear 的指针清空合并成每块一次 UPDATE：sqlite3 子进程调用数与
+// 过期行数无关（200 行一块），大 backlog 不再把同步阻塞拖成 O(rows)×~15ms。
+// 返回受影响行数（口径与逐行版一致：changes() 累计）。
+function clearPointers(sqlitePath: string, pending: RetentionPointer[]): number {
+  let changed = 0;
+  for (let start = 0; start < pending.length; start += POINTER_CLEAR_CHUNK) {
+    const chunk = pending.slice(start, start + POINTER_CLEAR_CHUNK);
+    const ids = chunk.map((pointer) => `'${sqlEscape(pointer.id)}'`).join(', ');
+    const paths = chunk.map((pointer) => `'${sqlEscape(pointer.wavPath)}'`).join(', ');
+    const sql = `UPDATE audio_segments SET wav_path = NULL WHERE id IN (${ids}) OR wav_path IN (${paths}); SELECT changes();`;
+    try {
+      changed += Number(execFileSync('sqlite3', [sqlitePath, sql], { encoding: 'utf-8' }).trim());
+    } catch (error) {
+      logger.warn('[音频保留] 清空 wav_path 失败', {
+        count: chunk.length,
+        reason: errorText(error),
+      });
+    }
+  }
+  if (pending.length > 0 && changed !== pending.length) {
+    // 行本身来自本库 SELECT，正常应全命中；不一致说明有行中途消失或路径串行，留痕可判因
+    logger.warn('[音频保留] 清空 wav_path 部分未命中', { expected: pending.length, changed });
+  }
+  return changed;
 }
 
 function loadRows(sqlitePath: string): RetentionRow[] | null {
@@ -522,7 +568,10 @@ function runClear(
     deleteClearableWav(input.audioDir, wavPath, result, removed);
   }
   if (input.sqlitePath && rows) {
-    for (const row of rows) settleClearedRow(input.sqlitePath, input.audioDir, row, result, removed);
+    // 同 runSweep：指针清空攒批，清空全部在 backlog 大时也不能逐行 spawn sqlite3
+    const pendingPointers: RetentionPointer[] = [];
+    for (const row of rows) settleClearedRow(input.audioDir, row, result, removed, pendingPointers);
+    clearPointers(input.sqlitePath, pendingPointers);
   }
   removeEmptyDateDirs(input.audioDir);
 }
@@ -576,19 +625,19 @@ function deleteClearableWav(audioDir: string, wavPath: string, result: ClearAccu
 }
 
 function settleClearedRow(
-  sqlitePath: string,
   audioDir: string,
   row: RetentionRow,
   result: ClearAccum,
   removed: Set<string>,
+  pendingPointers: RetentionPointer[],
 ): void {
   const inspection = inspectWav(audioDir, row.wavPath);
   if (inspection.action === 'missing') {
-    clearPointer(sqlitePath, row.wavPath, row.id);
+    pendingPointers.push({ id: row.id, wavPath: row.wavPath });
     return;
   }
   if (inspection.action === 'delete' && removed.has(inspection.deletePath)) {
-    clearPointer(sqlitePath, row.wavPath, row.id);
+    pendingPointers.push({ id: row.id, wavPath: row.wavPath });
     return;
   }
   if (inspection.action === 'refuse') {
@@ -603,7 +652,7 @@ function settleClearedRow(
   }
   deleteClearableWav(audioDir, row.wavPath, result, removed);
   if (inspectWav(audioDir, row.wavPath).action === 'missing') {
-    clearPointer(sqlitePath, row.wavPath, row.id);
+    pendingPointers.push({ id: row.id, wavPath: row.wavPath });
   }
 }
 

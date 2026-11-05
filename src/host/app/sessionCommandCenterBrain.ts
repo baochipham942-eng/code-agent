@@ -2,6 +2,7 @@ import type { AppServiceRunOptions } from '../../shared/contract/appService';
 import { SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS } from '../../shared/constants/sessionCommandCenter';
 import { getTextForegroundToolNames } from '../tools/protocolRegistry';
 import { detectTaskFeatures } from '../prompts/systemReminders';
+import { getNativeConnectorToolNamesForIntent } from '../connectors/nativeConnectorIntent';
 
 // 不导出：web/桌面两条装配路都经 getSessionCommandCenterBrainContextForPrompt 取块，
 // 导出常量只会引回「第二条装配路直接拼常量」的旧形态（rework r1）。
@@ -12,6 +13,7 @@ const SESSION_COMMAND_CENTER_BRAIN_CONTEXT = [
   '1. 闲聊、解释、基于现有上下文即可回答的问题，直接回答，不调用工具。',
   '2. 只要读几个文件、搜一下代码、看看目录就能回答的问题，自己用 Read/Grep/Glob/ListDirectory 读完直接答，不要派活——为一次文件读取开一个后台任务是浪费。',
   '3. 短小的本地文件修改，先 Read 再用 Edit 或 Write 直接完成；写报告/文档/表格时若本轮工具表已有对应生成工具（docx_generate、excel_generate），直接调用它把文件交付掉；运行命令、联网查证、多步骤执行、等待审批，以及做网页等其他生成级长任务，调用 delegate_task。读的量大到要翻遍整个仓库时也派活。',
+  '3a. 本轮工具表里已有邮件、日历、提醒事项工具时，发邮件、建日程、设提醒这类请求直接调用对应工具完成，不派 delegate_task；发送或创建前聊天里会出现确认卡片，按用户在卡片上的选择如实回复，只在工具返回成功后才说已发送或已创建。',
   '4. 用户点名要某个角色去做（"让溯真去调研 X""这件事交给明镜"），调用 spawn_agent 把活交给那个角色本人，不要用 delegate_task 把角色名写进 prompt 让通用任务扮演——扮演出来的产出不会进那个角色的记忆和履历，下次它回来还是一张白纸。没点名角色时照常用 delegate_task。',
   '5. 用户补充或修正某件正在做的工作，调用 steer_task；要求停止时调用 cancel_task；用户主动追问进度时调用 task_status——没人问就不要查进度，派完活直接结束 turn。',
   '6. 目标任务不唯一、并发槽已满或取消代价较高时，调用 AskUserQuestion 让用户按短名选择，不替用户猜。',
@@ -86,7 +88,26 @@ export function getSessionCommandCenterBrainContextForPrompt(prompt: string): st
   return blocks;
 }
 
-export function getTextForegroundToolNamesForPrompt(prompt: string): string[] {
+/**
+ * 连接器工具的 per-turn 进面（ADR-059 修订，N-FG-CONNECTOR-TOOLS）：
+ * 「发邮件 / 建日程 / 设提醒」这类一句话外部写入不再绕 delegate_task 派后台——
+ * 命中意图 × 设置启用 × registry 就绪（unchecked 仍可用）时，该连接器的读写工具
+ * 名直接进本轮 allowlist，deferred 预载层照白名单把 schema 送上轮；模型调写工具
+ * 后照旧走 C1 连接器外部写确认（聊天内审批卡），权限与审批链路一字不动。
+ * 判据与 deferredToolPreload 共用 connectors/nativeConnectorIntent.ts 的单一真源；
+ * 不命中意图的轮次零新增（无 schema 膨胀，前缀缓存不受影响）。
+ */
+/**
+ * `allowedConnectorIds`：本轮手选/专家声明的连接器范围（web 工作台 toolScope、桌面
+ * envelope options.toolScope 经 withWorkbenchTurnSystemContext 并出来的那份）。非空 =
+ * 显式收窄：范围外的连接器即使意图命中也不进面——与 run policy 的 toolScope 补充
+ * 豁免、deferred 预载的收窄判据三方同判（rework r1：漏传会让白名单放行范围外
+ * 连接器写，预载却按收窄不送 schema，两个判决互相矛盾）。无手选时传 undefined。
+ */
+export function getTextForegroundToolNamesForPrompt(
+  prompt: string,
+  allowedConnectorIds?: readonly string[],
+): string[] {
   const base = getTextForegroundToolNames();
   const extras: string[] = [];
   const features = detectTaskFeatures(prompt);
@@ -95,7 +116,11 @@ export function getTextForegroundToolNamesForPrompt(prompt: string): string[] {
     if (OFFICE_SHEET_DELIVERABLE_RE.test(prompt)) extras.push('excel_generate', 'DocEdit');
   }
   if (isMorningBriefSaveDraftReply(prompt)) extras.push('mail_draft');
-  return extras.length > 0 ? [...base, ...extras] : base;
+  // 无意图命中时零副作用（不触 configService/registry）。
+  extras.push(...getNativeConnectorToolNamesForIntent({ userText: prompt, allowedConnectorIds }));
+  if (extras.length === 0) return base;
+  // 存草稿轮 mail_draft 已在 extras 里，连接器扩展会再次带回同名——去重保序。
+  return Array.from(new Set([...base, ...extras]));
 }
 
 export function withSessionCommandCenterBrain(
@@ -116,7 +141,7 @@ export function withSessionCommandCenterBrain(
         : SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
       SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
     ),
-    allowedToolNames: getTextForegroundToolNamesForPrompt(text),
+    allowedToolNames: getTextForegroundToolNamesForPrompt(text, options?.toolScope?.allowedConnectorIds),
     foregroundToolFace: true,
     turnSystemContext,
   };

@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import type { TraceProjection } from '@shared/contract/trace';
+import { useSessionStore } from '../stores/sessionStore';
 import { useSwarmStore } from '../stores/swarmStore';
 import { useTurnExecutionStore, type HookActivityEvent, type RoutingEvidenceEvent } from '../stores/turnExecutionStore';
 import { useWorkbenchCapabilities } from './useWorkbenchCapabilities';
@@ -28,6 +29,12 @@ export function useTurnExecutionClarity(
     () => (projection.sessionId ? (hookRunningBySession[projection.sessionId] ?? null) : null),
     [hookRunningBySession, projection.sessionId],
   );
+  // 会话工作目录：只喂给产物去重键（相对/绝对同一文件折叠），不参与展示路径。
+  const workingDirectory = useSessionStore((state) =>
+    projection.sessionId
+      ? (state.sessions.find((session) => session.id === projection.sessionId)?.workingDirectory ?? null)
+      : null,
+  );
 
   return useMemo(
     () => buildTurnExecutionClarityProjection({
@@ -38,7 +45,8 @@ export function useTurnExecutionClarity(
       routingEvents,
       hookEvents,
       hookRunning,
+      workingDirectory,
     }),
-    [capabilities, hookEvents, hookRunning, launchRequests, projection, routingEvents, swarmEvents],
+    [capabilities, hookEvents, hookRunning, launchRequests, projection, routingEvents, swarmEvents, workingDirectory],
   );
 }

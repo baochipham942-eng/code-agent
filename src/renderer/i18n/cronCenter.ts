@@ -2,6 +2,7 @@
 
 import { outcomeWordsEn, outcomeWordsZh } from './outcomeWords';
 import type { EventScheduleValidationReason } from '@shared/cronEventValidation';
+import { cronPermissionDeniedReasonText } from '@shared/cronPermissionDenied';
 // 自动化面板词条（features/cron 全家桶）—— zh/en 同文件相邻维护。
 // 独立文件避免 zh.ts/en.ts 撞 max-lines 棘轮（同 sidebar.ts / chatInput.ts 先例）。
 // 注：types.ts 里的 formatActionSummary/formatDateTime 等格式化函数文案暂未迁移
@@ -112,6 +113,16 @@ export const cronCenterZh = {
     failureActionRunAgain: '立即重跑',
     failureActionCheckAccount: '检查账号设置',
     failureTechnical: '查看技术详情',
+    // 需处理（N-CRON-RUN-COMPLETED-BUT-DENIED）：被拒且无产出的运行不算「成功」。
+    permissionDeniedBadge: '需处理',
+    permissionDeniedTitle: '有命令没获批准',
+    permissionDeniedSentence: '「{summary}」没有获批准（{reason}），这次运行没有产出。',
+    // 四条原因措辞与 host 完成通知同源（shared/cronPermissionDenied，Rework r2）
+    permissionDeniedReasonUser: cronPermissionDeniedReasonText('user', 'zh'),
+    permissionDeniedReasonTimeout: cronPermissionDeniedReasonText('timeout', 'zh'),
+    permissionDeniedReasonCancelled: cronPermissionDeniedReasonText('cancelled', 'zh'),
+    permissionDeniedReasonOther: cronPermissionDeniedReasonText('other', 'zh'),
+    permissionDeniedRerunNote: '重新运行会再次请求批准',
     // 触发源 chip（键 = utils/cronHumanize 的 CronTriggerKind，语义对齐 SessionAutomationType）
     triggerKind: {
       cron: '定时',
@@ -546,6 +557,14 @@ export const cronCenterEn: typeof cronCenterZh = {
     failureActionRunAgain: 'Run again now',
     failureActionCheckAccount: 'Check account settings',
     failureTechnical: 'Technical details',
+    permissionDeniedBadge: 'Needs attention',
+    permissionDeniedTitle: 'A command was not approved',
+    permissionDeniedSentence: '“{summary}” was not approved ({reason}); this run produced nothing.',
+    permissionDeniedReasonUser: cronPermissionDeniedReasonText('user', 'en'),
+    permissionDeniedReasonTimeout: cronPermissionDeniedReasonText('timeout', 'en'),
+    permissionDeniedReasonCancelled: cronPermissionDeniedReasonText('cancelled', 'en'),
+    permissionDeniedReasonOther: cronPermissionDeniedReasonText('other', 'en'),
+    permissionDeniedRerunNote: 'Running it again will ask for approval again',
     triggerKind: {
       cron: 'Scheduled',
       at: 'One-time',

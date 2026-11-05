@@ -22,6 +22,7 @@ import type { RunRegistry } from './runRegistry';
 import type { DynamicWorkflowRecoveryHost } from './dynamicWorkflowRecovery';
 import type { NativeRecoveryHostPorts } from './nativeRecoveryHost';
 import type { AutoAgentRecoveryHost } from './autoAgentRecoveryHost';
+import { retryDeferredParkedRunCloses } from '../agent/parkedApprovalRunClosure';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('DurableRecoveryRuntime');
@@ -104,6 +105,7 @@ export function createDurableRecoveryRuntime(input: {
     if (stopped) throw new Error('Durable recovery runtime is stopped');
     // The sweeper stays on the canonical claim path:
     // recoverDurable -> recoverOnStartup -> stores.listRecoverable -> fenced claimLease.
+    await retryDeferredParkedRunCloses(now);
     const plans = await input.registry.recoverDurable(now);
     return dispatcher.dispatch(plans, now);
   };

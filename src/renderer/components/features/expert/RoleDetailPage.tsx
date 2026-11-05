@@ -47,6 +47,7 @@ import { RoleSecurityTab } from './RoleSecurityTab';
 import { RolePersonalizationTab } from './RolePersonalizationTab';
 import { RoleRecordsTab } from './RoleRecordsTab';
 import { RoleRoutinesSection } from './RoleRoutinesSection';
+import { RoleDeleteControl, shouldMountRoleDeleteControl } from './RoleDeleteControl';
 
 const logger = createLogger("RoleDetailPage");
 
@@ -866,6 +867,7 @@ export const RoleDetailPage: React.FC<RoleDetailPageProps> = ({ roleId }) => {
               = 切到本页「技能」tab，详情页本身就是配置处) + 原有 tab 分段控件 */}
           <Button variant="primary" size="sm" data-testid="role-detail-go-thread" onClick={() => void goToExpertThread(roleId, { title: detail?.visual.displayName || roleId })}>{expertText.invite}</Button>
           <Button variant="secondary" size="sm" data-testid="role-detail-configure" onClick={() => setTab('skills')}>{expertText.configure}</Button>
+          {detail && shouldMountRoleDeleteControl(detail) ? <RoleDeleteControl roleId={roleId} displayName={detail.visual.displayName || roleId} onDeleted={closeDetail} onRestored={loadDetail} /> : null}
           <div className="flex rounded-md border border-zinc-700 p-0.5" role="tablist">{ROLE_DETAIL_TABS.map((key) => <button /* ds-allow:button: 详情页内部 tab 使用语义分段控件 */ key={key} type="button" role="tab" aria-selected={tab === key} data-testid={`role-detail-tab-${key}`} onClick={() => setTab(key)} className={`rounded px-2.5 py-1 text-xs transition-colors ${tab === key ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}>{expertText.detailTabs[key]}</button>)}</div>
         </div>}
       />

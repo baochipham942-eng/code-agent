@@ -46,7 +46,7 @@ import {
   stripRawHtmlOutsideCode,
 } from './messageContentParts';
 import { CronRunMessageFrame, useIsCronRunSession } from './CronRunMessageFrame';
-import { stripCronPromptDecoration } from '@shared/cronRunMessage';
+import { hasCronRunMachineTags, stripCronPromptDecoration } from '@shared/cronRunMessage';
 
 /**
  * 把"本地 HTML 文件"的 href 解析成可预览的路径；非本地 HTML 返回 null。
@@ -105,6 +105,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
   const workingDirectory = useAppStore((state) => state.workingDirectory);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const isCronRunSession = useIsCronRunSession(mediaContext?.sessionId);
+  const renderWithCronFrame = !isUser && (isCronRunSession || hasCronRunMachineTags(content));
   const streamingNeedsMarkdown = !isUser && isStreaming && shouldRenderStreamingContentAsMarkdown(content);
   const markdownSource = useThrottledStreamingContent(content, streamingNeedsMarkdown);
   const deferCompletedLayout = shouldDeferTurnContentLayout({
@@ -589,7 +590,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
     );
   }
 
-  if (isStreaming && !streamingNeedsMarkdown && isCronRunSession) {
+  if (isStreaming && !streamingNeedsMarkdown && renderWithCronFrame) {
     return (
       <div className="text-sm leading-[1.7] break-words prose prose-invert prose-sm max-w-none streaming-text">
         <CronRunMessageFrame
@@ -641,7 +642,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
       data-deferred-content-kind={deferCompletedLayout ? deferredAssistantContentKind : undefined}
       style={deferCompletedLayout ? getDeferredContentStyle(deferredAssistantContentKind) : undefined}
     >
-      {isCronRunSession ? (
+      {renderWithCronFrame ? (
         <CronRunMessageFrame
           source={markdownSource}
           sessionId={mediaContext?.sessionId}

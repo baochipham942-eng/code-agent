@@ -13,6 +13,18 @@ interface CronRunMessageSegment {
 const CRON_MACHINE_BLOCK_SOURCE =
   '<cron_(snapshot|alert|summary)\\s*>([\\s\\S]*?)<\\/cron_\\1\\s*>|<cron_(snapshot|alert|summary)\\b[^>]*>[\\s\\S]*$';
 
+const CRON_MACHINE_TAG_TEST = /<cron_(?:snapshot|alert|summary)\b/i;
+
+/**
+ * Does the assistant message contain any `<cron_snapshot>`, `<cron_alert>`, or
+ * `<cron_summary>` tag (closed or streaming/unclosed)? Used where original cron
+ * run sessions and branched follow-up sessions meet so both render summary
+ * cards and strip machine tags identically.
+ */
+export function hasCronRunMachineTags(source: string): boolean {
+  return Boolean(source) && CRON_MACHINE_TAG_TEST.test(source);
+}
+
 const ARTIFACT_LINE = /^\s*artifact:\s*(\S.*)?\s*$/i;
 const URGENCY_LINE = /^\s*urgency\s*:/i;
 

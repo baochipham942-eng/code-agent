@@ -45,6 +45,7 @@ vi.mock('../../../src/host/services/infra/logger', () => ({
   }),
 }));
 
+import { buildUnattendedDegradeFeedback } from '../../../src/host/agent/unattendedApprovalTerminal';
 import { resetDecisionHistory, getDecisionHistory } from '../../../src/host/security/decisionHistory';
 import { createCLIPermissionHandler } from '../../../src/cli/permissionPolicy';
 import { ToolExecutor, type ToolExecutorConfig } from '../../../src/host/tools/toolExecutor';
@@ -378,6 +379,17 @@ describe('N-PERMTRACE 审批拒绝路径可观测性', () => {
 
     expect(entry).toMatchObject({ outcome: 'ask-denied', reason: 'user' });
     expect(result.error).toBe('Permission denied by user');
+  });
+
+  it('无人值守降级拒绝的说明原样作为工具结果交给模型', async () => {
+    const message = buildUnattendedDegradeFeedback('Write', 1_800_000);
+    const { result, entry } = await denyOnce(
+      vi.fn().mockResolvedValue({ approved: false, denialSource: 'timeout', message }),
+    );
+
+    expect(entry).toMatchObject({ outcome: 'ask-denied', reason: 'timeout' });
+    expect(result.error).toBe(message);
+    expect(result.error).toContain('未读取：<来源>（需要你批准）');
   });
 
   it('处理器自报 timeout → reason 记 timeout（不按调用方名字枚举）', async () => {

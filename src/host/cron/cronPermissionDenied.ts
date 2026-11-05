@@ -85,7 +85,7 @@ export function deriveCronPermissionDenied(
       }
       // 名字对不回的成功结果按「有产出」处理：证不了它只读，就不该把运行
       // 说成「没有产出」（标记宁缺勿滥，最小判据）。
-      if (result.success && call?.name && !isUnattendedAllowedReadOnlyTool(call.name)) {
+      if (result.success && !(call?.name && isUnattendedAllowedReadOnlyTool(call.name))) {
         hasProductiveSuccess = true;
       }
     }

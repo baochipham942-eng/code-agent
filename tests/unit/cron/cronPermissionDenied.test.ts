@@ -170,6 +170,20 @@ describe('deriveCronPermissionDenied ② 判据矩阵', () => {
     expect(deriveCronPermissionDenied(messages, false)).toBeUndefined();
   });
 
+  it('对不回调用名的成功结果按有产出算（证不了只读）→ 无标记', () => {
+    const messages = [
+      { role: 'assistant', toolCalls: [{ id: 'denied', name: 'Bash', arguments: { command: 'rm x' } }] },
+      {
+        role: 'tool',
+        toolResults: [
+          { toolCallId: 'denied', success: false, metadata: { failureCode: AgentFailureCode.PermissionDenied } },
+          { toolCallId: 'orphan', success: true },
+        ],
+      },
+    ] as unknown as Parameters<typeof deriveCronPermissionDenied>[0];
+    expect(deriveCronPermissionDenied(messages, false)).toBeUndefined();
+  });
+
   it('只读放行工具的成功结果不抵消：只读成功 + 被拒 → 有标记', () => {
     const messages = [
       assistantWithCalls([

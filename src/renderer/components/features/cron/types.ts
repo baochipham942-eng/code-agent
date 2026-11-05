@@ -13,7 +13,7 @@ import type {
 } from '@shared/contract';
 import { validateEventScheduleConstraints } from '@shared/cronEventValidation';
 import { isCronPermissionDeniedMarker } from '@shared/cronPermissionDenied';
-import { CRON_EVENT_TRIGGER } from '@shared/constants';
+import { CRON_AGENT_TYPES, CRON_EVENT_TRIGGER } from '@shared/constants';
 import { formatCronExpressionLabel, humanizeEverySchedule, type CronHumanLang } from '@shared/cronHumanize';
 
 export interface CronJobDraft {
@@ -407,6 +407,9 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
   } else if (draft.actionType === 'agent') {
     if (!draft.agentType.trim()) {
       throw new Error('Agent 类型不能为空');
+    }
+    if (!(CRON_AGENT_TYPES as readonly string[]).includes(draft.agentType.trim())) {
+      throw new Error(`Agent 类型“${draft.agentType.trim()}”不存在，可选值：${CRON_AGENT_TYPES.join('、')}。`);
     }
     if (!draft.agentPrompt.trim()) {
       throw new Error('Prompt 不能为空');

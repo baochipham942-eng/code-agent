@@ -4,6 +4,7 @@ import type { DatabaseService } from '../../host/services/core/databaseService';
 import { extractArtifacts } from '../../host/agent/artifactExtractor';
 import type { SessionCreateOptions } from '../../cli/session';
 import { generateMessageId } from '../../shared/utils/id';
+import { getAuthService } from '../../host/services/auth/authService';
 import { attachAssistantCorrelation, stampAssistantMessageCorrelation } from '../../host/session/assistantCorrelation';
 import type { WebRouteLogger } from '../routes/routeTypes';
 import {
@@ -623,6 +624,8 @@ export function createWebSessionStore(deps: WebSessionStoreDeps) {
             ? {
               title: input.title,
               modelConfig: input.modelConfig,
+              // 与 infra SessionManager 的 owner 过滤对齐：无归属行在已登录进程里读写全报 not found
+              userId: getAuthService().getCurrentUser()?.id ?? null,
               ...(input.workingDirectory ? { workingDirectory: input.workingDirectory } : {}),
             }
             : undefined,

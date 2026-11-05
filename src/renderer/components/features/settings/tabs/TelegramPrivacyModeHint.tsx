@@ -4,11 +4,15 @@ import { useI18n } from '../../../../hooks/useI18n';
 
 function showsTelegramPrivacyModeHint(account: ChannelAccount): boolean {
   if (account.type !== 'telegram' || account.config.type !== 'telegram') return false;
+  // The warning describes a live connection's getMe result; a stale value survives
+  // status changes (disconnect/error/connecting) and restarts, so only surface it
+  // while connected — the next successful connect writes a fresh value anyway.
+  if (account.status !== 'connected') return false;
   return account.config.groupAccessMode === 'all_members'
     && account.telegramCanReadAllGroupMessages === false;
 }
 
-/** Account-row warning. Unknown (never connected) and a true getMe result render nothing. */
+/** Account-row warning. Unknown (never connected), a true getMe result and any non-connected status render nothing. */
 export function TelegramPrivacyModeHint({ account }: { account: ChannelAccount }): React.ReactElement | null {
   const { t } = useI18n();
   if (!showsTelegramPrivacyModeHint(account)) return null;

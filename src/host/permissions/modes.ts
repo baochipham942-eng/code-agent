@@ -238,6 +238,7 @@ export class PermissionModeManager {
    * 的 24h 停车等人；channel 也继续只进 unattendedSessions。
    */
   private approvalTerminalSessions: Set<string> = new Set();
+  private approvalDegradeSessions: Set<string> = new Set();
   /**
    * 自动档限流。同一会话连续或窗口内自动拦截达阈值后置位，进程内终身有效。
    * 不落盘、不提供 clear：本单不做恢复，无消费方的清除口会让 knip 红。
@@ -442,6 +443,15 @@ export class PermissionModeManager {
    */
   markUnattendedSession(sessionId: string): void {
     this.unattendedSessions.add(sessionId);
+  }
+
+  /** cron/heartbeat 会话：停车审批 30 分钟无人应答则降级拒绝（与 60s 旧终态互不相干）。 */
+  markUnattendedApprovalDegrade(sessionId: string): void {
+    this.approvalDegradeSessions.add(sessionId);
+  }
+
+  isUnattendedApprovalDegrade(sessionId?: string): boolean {
+    return !!sessionId && this.approvalDegradeSessions.has(sessionId);
   }
 
   /** 旧的显式终态入口；新的 cron/heartbeat 会话不调用它。 */

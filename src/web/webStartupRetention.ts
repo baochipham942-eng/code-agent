@@ -1,5 +1,5 @@
 // ============================================================================
-// 启动期保留清理（日志 + 数据库）—— 发行版路径接线
+// 启动期保留清理（日志 + 数据库 + 缓存 + 录音）—— 发行版路径接线
 //
 // logRetention / dbRetention 原本只在 Electron main 路径（app/bootstrap.ts:130/:138）
 // 启动，而所有发行版跑的是 src/web/webServer.ts —— 于是这两个"修死代码"的修复自己成了
@@ -19,12 +19,16 @@ import { SQLITE_INTEGRITY } from '../shared/constants';
 const logger = createLogger('WebStartupRetention');
 
 /**
- * fire-and-forget 触发两项保留清理。两者均 best-effort，失败只 warn，绝不影响启动。
+ * fire-and-forget 触发各项保留清理。均 best-effort，失败只 warn，不拖死启动：
+ * 各项的重活都有界——重数据库操作移出本进程、sqlite 调用与条目数解耦（分块批量）。
  *
  * ⚠️ 这里的「不 await」**不是**防阻塞手段（2026-07-31 事故推翻了原注释的假设）：
  * better-sqlite3 是同步 API，在本进程 `exec('VACUUM')` 会阻塞整个 event loop，
  * 实测把 listen 堵死 59.3 秒 —— 不 await 只避开了 await 语义，避不开同步阻塞。
- * 真正的防阻塞在 dbRetention 内部：全库 VACUUM 已移出本进程（dbVacuumSubprocess.ts）。
+ * 真正的防阻塞在各清理内部：dbRetention 的全库 VACUUM 已移出本进程
+ * （dbVacuumSubprocess.ts）；音频清扫的 wav_path 指针清空按块批量合并
+ * （audioRetention.clearPointers），sqlite3 子进程数不随过期行数线性涨
+ * （PR #2820 review：逐行 spawn 曾把采集关闭数月机器的首启卡在 listen 前）。
  */
 export function kickoffStartupRetention(): void {
   setIntegrityCheckListener((result) => {
@@ -47,4 +51,12 @@ export function kickoffStartupRetention(): void {
   void import('../host/services/infra/appCacheRetention')
     .then(({ kickoffAppCacheRetention }) => kickoffAppCacheRetention())
     .catch((error) => logger.warn('App cache retention failed (non-blocking):', (error as Error).message));
+  // 录音保留：清扫原本只挂在采集启动/定时器上，采集关着的机器永远不清，
+  // 过期 wav 无限堆积。启动扫一次，与采集开关解耦；失败沿用既有记账
+  // （logger.warn + retention ledger → 设置页 AudioRetentionFailureLine）。
+  // 开销有界：指针清空在清扫内部按块批量（sqlite3 调用数与过期行数无关），
+  // 其余是内存中的 fs 遍历/unlink，均 µs 级/文件。
+  void import('../host/services/desktop/desktopAudioCapture')
+    .then(({ sweepCapturedAudio }) => sweepCapturedAudio())
+    .catch((error) => logger.warn('Audio retention failed (non-blocking):', (error as Error).message));
 }

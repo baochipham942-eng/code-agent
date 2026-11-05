@@ -65,11 +65,21 @@ export function buildDefaultSuggestions(t: Translations): SuggestionItem[] {
 // 静默退回事故行为。
 export const NewSessionWelcome: React.FC<{
   onSend: (message: string) => void;
+  /**
+   * FB-580（2026-11-05 真机复现）：composer 已有内容（文本/附件/chip）时点示例卡
+   **不**直接发送——改走 onFillDraft 把模板追加进输入框，发送时机留给用户。
+   * 缺省（不传）按空 composer 处理，保持一键直发。
+   */
+  isComposerOccupied?: () => boolean;
+  /** FB-580：把示例模板填进 composer（不发送、不动附件与 chip）。 */
+  onFillDraft?: (prompt: string) => void;
   workingDirectory?: string | null;
   workbenchSnapshot?: SessionWorkbenchSnapshot | null;
   session?: ResumableSession | null;
 }> = ({
   onSend,
+  isComposerOccupied,
+  onFillDraft,
   workingDirectory,
   workbenchSnapshot,
   session,
@@ -91,6 +101,17 @@ export const NewSessionWelcome: React.FC<{
   const contextDetails = hasWorkspaceContext
     ? buildNewSessionContextDetails(t, workbenchSnapshot)
     : null;
+  // FB-580：示例卡是给「还没开工」的人的一键起点；用户已经开始打字/挂附件/摆 chip 时，
+  // 点卡绝不替他发送或丢弃草稿——模板进输入框（空行分隔），何时发送由他决定。
+  // 判定放在本组件内而不是调用方：这样这条决策才被组件单测覆盖（同 isBlankNewSession
+  // 的立规理由），不会被一次误删接线静默退回「点卡即重活开跑」的事故行为。
+  const handleSuggestionActivate = (prompt: string) => {
+    if (isComposerOccupied?.()) {
+      onFillDraft?.(prompt);
+      return;
+    }
+    onSend(prompt);
+  };
 
   return (
     <div className="h-full flex flex-col items-center justify-center px-6 py-12">
@@ -138,7 +159,7 @@ export const NewSessionWelcome: React.FC<{
             <SuggestionCard
               key={suggestion.title}
               {...suggestion}
-              onSend={onSend}
+              onActivate={handleSuggestionActivate}
               delay={100 + index * 60}
             />
           ))}
@@ -195,7 +216,7 @@ interface SuggestionCardProps {
   prompt: string;
   accent: string;
   iconColor: string;
-  onSend: (message: string) => void;
+  onActivate: (prompt: string) => void;
   delay: number;
 }
 
@@ -206,12 +227,12 @@ const SuggestionCard: React.FC<SuggestionCardProps> = ({
   prompt,
   accent,
   iconColor,
-  onSend,
+  onActivate,
   delay,
 }) => {
   return (
     <button
-      onClick={() => onSend(prompt)}
+      onClick={() => onActivate(prompt)}
       className={`group relative min-h-[128px] rounded-lg border p-4 text-left ${accent}
                   transition-colors duration-200 hover:border-border-hover hover:bg-surface-hover
                   animate-fade-in-up`}

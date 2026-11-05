@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { DeliverableShareLinkInfo } from '../../../src/shared/contract';
 
 const mocks = vi.hoisted(() => ({
@@ -102,6 +102,17 @@ describe('ShareLinkPanel states', () => {
     expect(screen.getByText('链接已撤销')).toBeTruthy();
     expect(screen.getByText('已打开的人 24 小时内仍能看。')).toBeTruthy();
     expect(screen.getByRole('button', { name: '重新生成' })).toBeTruthy();
+  });
+
+  it.each([
+    ['Share service unavailable: fetch failed', '分享服务暂时连不上，稍后再试。'],
+    ['Share service token rejected', '分享服务 token 不对，去设置重新填写。'],
+  ])('shows plain copy when create fails with %s', async (message, copy) => {
+    renderState({ share: null, stale: false, latestPublishedVersion: 1, tokenConfigured: true });
+    const createButton = await screen.findByRole('button', { name: '上传并生成链接' });
+    mocks.invokeDomain.mockRejectedValueOnce(new Error(message));
+    fireEvent.click(createButton);
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalledWith(copy));
   });
 
   it('shows the settings route when the upload token is missing', async () => {

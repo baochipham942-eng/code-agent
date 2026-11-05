@@ -33,7 +33,7 @@ function formatMessage(item: {
   receivedAtMs: number | null;
   read: boolean;
 }): string {
-  const received = item.receivedAtMs ? new Date(item.receivedAtMs).toLocaleString('zh-CN') : '未知时间';
+  const received = item.receivedAtMs ? new Date(item.receivedAtMs).toLocaleString('zh-CN') : '收信时间无法解析';
   const scope = [item.account, item.mailbox].filter(Boolean).join(' / ');
   return `- #${item.id} ${item.subject}\n  ${scope || 'Mail'} | ${item.sender} | ${received}${item.read ? ' | 已读' : ' | 未读'}`;
 }
@@ -163,7 +163,11 @@ async function executeMail(
       return {
         ok: true,
         output,
-        meta: buildMailMeta(ctx, action, output, { count: messages.length, messages }),
+        meta: buildMailMeta(ctx, action, output, {
+          count: messages.length,
+          messages,
+          receivedTimeParsed: messages.every((m) => Boolean(m.receivedAtMs)),
+        }),
       };
     }
 
@@ -180,7 +184,7 @@ async function executeMail(
       attachments?: string[];
       attachmentCount?: number;
     };
-    const received = message.receivedAtMs ? new Date(message.receivedAtMs).toLocaleString('zh-CN') : '未知时间';
+    const received = message.receivedAtMs ? new Date(message.receivedAtMs).toLocaleString('zh-CN') : '收信时间无法解析';
     const attachmentCount = typeof message.attachmentCount === 'number'
       ? message.attachmentCount
       : (message.attachments?.length || 0);
@@ -195,6 +199,7 @@ async function executeMail(
         account: message.account,
         mailbox: message.mailbox,
         receivedAtMs: message.receivedAtMs,
+        receivedTimeParsed: Boolean(message.receivedAtMs),
         read: message.read,
         attachmentCount,
         attachments: message.attachments,

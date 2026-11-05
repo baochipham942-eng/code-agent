@@ -67,6 +67,7 @@ import { createCompanionProvisioningRouter } from './routes/companionProvisionin
 import { CompanionGateway } from '../host/services/companion/CompanionGateway';
 import { companionApnsOutboxTransport } from '../host/services/companion/companionApnsProvider';
 import { CompanionPushOutbox, loadPushWrapKeySync } from '../host/services/companion/CompanionPushOutbox';
+import { desktopPresence } from '../host/services/companion/desktopPresence';
 import { projectCompanionEvent } from '../host/services/companion/projectCompanionEvent';
 import { CompanionApprovalService } from '../host/services/companion/CompanionApprovalService';
 import { CompanionQuestionService } from '../host/services/companion/CompanionQuestionService';
@@ -510,6 +511,9 @@ export function createApp(deps: CreateAppDeps): express.Express {
         wrapKey: loadPushWrapKeySync(resolveCodeAgentDataDir()),
         apnsKeyPath: apns.apnsKeyPath,
         send: apns.send,
+        // 桌面在场抑制（N-NOTIFY-PRESENCE-HEARTBEAT）：与 notification IPC 的 reportPresence
+        // 共享同一单例——renderer 心跳写进去，这里读出来压掉普通完成推送。
+        presence: desktopPresence,
       });
       void services.library.cleanup().catch((error) => {
         logger.warn('Companion deleted-session cleanup unavailable', error);

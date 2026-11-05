@@ -8,6 +8,7 @@ import { createLogger } from '../services/infra/logger';
 import {
   closeBackgroundRunAtTerminal,
   settleBackgroundOnTaskComplete,
+  settlePrimaryRunSessionStatus,
   trackBackgroundRunTerminalError,
   type BackgroundRunErrorRecord,
 } from './backgroundTaskTerminal';
@@ -171,6 +172,9 @@ export async function persistTaskManagerEvent(
       trackBackgroundRunTerminalError(deps.backgroundRunTerminalErrors, sessionId, event.data);
     }
     if ((event.type === 'agent_complete' || event.type === 'agent_cancelled') && eventKey === sessionId) {
+      // 主跑终态先落 session 状态并广播（settlePrimaryRunSessionStatus 只读 error 账，
+      // 必须排在会消费账目的 closeBackgroundRunAtTerminal 之前——顺序见该函数头注释）。
+      await settlePrimaryRunSessionStatus(sessionId, event.type, deps.backgroundRunTerminalErrors);
       await closeBackgroundRunAtTerminal(sessionId, event.type, deps.backgroundRunTerminalErrors);
     }
   } catch (error) {

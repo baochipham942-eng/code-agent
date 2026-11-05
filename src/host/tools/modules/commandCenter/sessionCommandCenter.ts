@@ -194,9 +194,11 @@ export async function executeTaskStatus(
   if (tasks.length === 0) return { ok: true, output: '当前会话还没有后台任务。' };
   return {
     ok: true,
-    output: tasks.map((task, index) => (
-      `${index + 1}. ${task.shortName} [${task.status}] id=${task.id}${task.summary ? `：${task.summary}` : ''}`
-    )).join('\n'),
+    output: tasks.map((task, index) => {
+      // resultText 优先：240 字 summary 会截断「改走 Bash curl 审批」这类可执行提示（FB-577）
+      const resultText = task.resultText ?? task.summary;
+      return `${index + 1}. ${task.shortName} [${task.status}] id=${task.id}${resultText ? `：${resultText}` : ''}`;
+    }).join('\n'),
   };
 }
 

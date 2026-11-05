@@ -27,7 +27,7 @@ const logger = createLogger('RoleTrash');
 // 类型与错误码（稳定 code，renderer 侧翻译；host 不写中文错误文案）
 // ----------------------------------------------------------------------------
 
-export type RoleTrashErrorCode =
+type RoleTrashErrorCode =
   | 'ROLE_DELETE_INVALID_ID'
   | 'ROLE_DELETE_BUILTIN'
   | 'ROLE_DELETE_PACK_INSTALLED'
@@ -36,21 +36,21 @@ export type RoleTrashErrorCode =
   | 'ROLE_TRASH_NOT_FOUND'
   | 'ROLE_RESTORE_CONFLICT';
 
-export interface RoleTrashMeta {
+interface RoleTrashMeta {
   roleId: string;
   /** 删除时刻（ISO 字符串）；retention 按它计算 */
   deletedAt: string;
 }
 
-export type RoleDeleteGuard =
+type RoleDeleteGuard =
   | { deletable: true }
   | { deletable: false; code: RoleTrashErrorCode; message: string };
 
-export type TrashUserRoleResult =
+type TrashUserRoleResult =
   | { success: true; trashId: string }
   | { success: false; code: RoleTrashErrorCode; message: string };
 
-export type RestoreTrashedRoleResult =
+type RestoreTrashedRoleResult =
   | { success: true; roleId: string }
   | { success: false; code: RoleTrashErrorCode; message: string };
 
@@ -59,7 +59,7 @@ export type RestoreTrashedRoleResult =
 // ----------------------------------------------------------------------------
 
 /** 回收站根目录：~/.code-agent/roles-trash/ */
-export function getRolesTrashRootDir(): string {
+function getRolesTrashRootDir(): string {
   return path.join(getUserConfigDir(), ROLE_ASSETS.TRASH_DIR_NAME);
 }
 
@@ -78,7 +78,7 @@ function getRoleDefinitionPath(roleId: string): string {
  * - 孤儿（roles/<id>/ 在、agents/<id>.md 不在——没有定义可移动）
  * - 角色目录根本不存在（无东西可删）
  */
-export async function isDeletableUserRole(roleId: string): Promise<RoleDeleteGuard> {
+async function isDeletableUserRole(roleId: string): Promise<RoleDeleteGuard> {
   if (!isSafeRoleId(roleId)) {
     return { deletable: false, code: 'ROLE_DELETE_INVALID_ID', message: `Invalid role id: "${roleId}"` };
   }
@@ -175,7 +175,7 @@ export async function restoreTrashedRole(trashId: string, now: Date = new Date()
  * 清掉超过 TRASH_RETENTION_DAYS 的条目；没有 meta.json 的残骸目录（删除中途崩掉的
  * 半成品）一并清——它们没有还原所需的完整信息，留着只是占地方。
  */
-export async function purgeExpiredTrash(now: number = Date.now()): Promise<{ purged: string[] }> {
+async function purgeExpiredTrash(now: number = Date.now()): Promise<{ purged: string[] }> {
   const root = getRolesTrashRootDir();
   let entries: Awaited<ReturnType<typeof listTrashEntries>>;
   try {

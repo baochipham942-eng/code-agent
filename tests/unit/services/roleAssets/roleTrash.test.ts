@@ -27,17 +27,18 @@ vi.mock('../../../../src/host/services/roleAssets/rolePackInstallService', () =>
 }));
 
 import {
-  isDeletableUserRole,
   trashUserRole,
   restoreTrashedRole,
-  purgeExpiredTrash,
-  getRolesTrashRootDir,
 } from '../../../../src/host/services/roleAssets/roleTrash';
 import { listPersistentRoles } from '../../../../src/host/services/roleAssets/roleAssetService';
+import { ROLE_ASSETS } from '../../../../src/shared/constants';
 
 const agentsDir = () => path.join(mockConfigDir.dir, 'agents');
 const rolesDir = () => path.join(mockConfigDir.dir, 'roles');
-const trashDir = () => getRolesTrashRootDir();
+// 回收站根目录与 roleTrash.getRolesTrashRootDir 同源推导（configPaths 已 mock 到
+// mockConfigDir.dir）；守卫/清理逻辑只经公开 API（trashUserRole / restoreTrashedRole）
+// 驱动，不 import 模块内部函数（knip production 出口棘轮：只导真有人 import 的）。
+const trashDir = () => path.join(mockConfigDir.dir, ROLE_ASSETS.TRASH_DIR_NAME);
 
 /** 建一个完整的用户自建角色：定义 + 资产目录（记忆 / 索引 / 履历 / 期望 / 资料架） */
 async function seedUserRole(roleId: string, marker = 'v1'): Promise<Record<string, string>> {
@@ -138,7 +139,6 @@ describe('roleTrash', () => {
     it('角色目录不存在拒绝 ROLE_DELETE_NOT_FOUND；非法 id 拒绝 ROLE_DELETE_INVALID_ID', async () => {
       expect(await trashUserRole('不存在的角色')).toMatchObject({ success: false, code: 'ROLE_DELETE_NOT_FOUND' });
       expect(await trashUserRole('a/b')).toMatchObject({ success: false, code: 'ROLE_DELETE_INVALID_ID' });
-      expect(await isDeletableUserRole('数据分析师')).toMatchObject({ deletable: false, code: 'ROLE_DELETE_BUILTIN' });
     });
   });
 
@@ -210,28 +210,27 @@ describe('roleTrash', () => {
       const trashed = await trashUserRole('过期角色', new Date(t0));
       expect(trashed.success).toBe(true);
 
-      const kept = await purgeExpiredTrash(t0 + 29 * DAY);
-      expect(kept.purged).toEqual([]);
-      expect(await exists(path.join(trashDir(), trashed.trashId!))).toBe(true);
-      // 29 天仍在保留期内，restore 照常可用
+      // 29 天：仍在保留期内（purge 经 trash/restore 惰性触发，此处用 restore 驱动）
       expect(await restoreTrashedRole(trashed.trashId!, new Date(t0 + 29 * DAY))).toMatchObject({ success: true });
-      // 重新删一次，验证 31 天边界
+      // 重新删一次，验证 31 天边界：restore 先惰性 purge 过期条目，条目已不存在 → 稳定拒绝
       const trashedAgain = await trashUserRole('过期角色', new Date(t0));
       expect(trashedAgain.success).toBe(true);
 
-      const purged = await purgeExpiredTrash(t0 + 31 * DAY);
-      expect(purged.purged).toEqual([trashedAgain.trashId!]);
-      expect(await exists(path.join(trashDir(), trashedAgain.trashId!))).toBe(false);
       expect(await restoreTrashedRole(trashedAgain.trashId!, new Date(t0 + 31 * DAY))).toMatchObject({ success: false, code: 'ROLE_TRASH_NOT_FOUND' });
+      // 拒绝的原因是条目真的被清掉了（目录已不在），而不是 restore 自己按时间拒绝
+      expect(await exists(path.join(trashDir(), trashedAgain.trashId!))).toBe(false);
     });
 
     it('没有 meta.json 的残骸目录（删除中途崩掉的半成品）直接清掉', async () => {
+      // 先删正常角色（这次 trash 自带的惰性 purge 无事可做），再伪造删除中途崩掉的残骸，
+      // 让 restore 成为触发清理的那次调用
+      await seedUserRole('带残骸角色');
+      const trashed = await trashUserRole('带残骸角色');
       await fs.mkdir(path.join(trashDir(), 'role-debris'), { recursive: true });
       await fs.writeFile(path.join(trashDir(), 'role-debris', 'agent.md'), '残骸', 'utf-8');
 
-      const purged = await purgeExpiredTrash(Date.now());
+      expect(await restoreTrashedRole(trashed.trashId!)).toMatchObject({ success: true });
 
-      expect(purged.purged).toEqual(['role-debris']);
       expect(await exists(path.join(trashDir(), 'role-debris'))).toBe(false);
     });
   });

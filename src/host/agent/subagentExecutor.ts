@@ -363,8 +363,8 @@ export class SubagentExecutor {
       sessionId,
       effectiveMode: subagentEffectiveMode,
       identity: turnObservability.identity,
-      allowedToolNames: allowedNames,
-      checkToolExecution: (request) => pipeline.checkToolExecution(pipelineContext, request).allowed,
+      allowedToolNames: allowedNames, policyName: effectivePreset,
+      checkToolExecution: (request) => pipeline.checkToolExecution(pipelineContext, request),
     });
     const subagentToolExecutor = toolRuntime.executor;
     const subagentPolicy = toolRuntime.policy;

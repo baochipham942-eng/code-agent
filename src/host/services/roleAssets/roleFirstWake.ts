@@ -18,7 +18,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { createLogger } from '../infra/logger';
 import { getSessionAutomationService } from '../sessionAutomation';
-import { ROLE_ASSETS, ROLE_PROACTIVITY } from '../../../shared/constants';
+import { ROLE_ASSETS, ROLE_PROACTIVITY, WAKE_NOOP_TOOL_NAME } from '../../../shared/constants';
 import { UNATTENDED_TRUST_NOTICE } from '../../../shared/unattendedTrust';
 import type {
   RoleFirstWakeSnapshot,
@@ -74,9 +74,13 @@ function boundedText(value: unknown, max: number): string | undefined {
   return trimmed.length <= max ? trimmed : trimmed.slice(0, max).trim() || undefined;
 }
 
-/** 去掉 ```first_wake_suggestions 围栏。解析用的正则不带 g，避免 lastIndex 串味。 */
+/** 去掉 ```first_wake_suggestions 围栏（以及模型用 ```json 包裹的建议数组）。解析用的正则不带 g，避免 lastIndex 串味。 */
 function stripSuggestionsBlock(text: string): string {
-  return text.replace(/```first_wake_suggestions\s*[\s\S]*?```/gi, '').trim();
+  return text
+    .replace(/```first_wake_suggestions\s*[\s\S]*?```/gi, '')
+    .replace(/```(?:json)?\s*\[\s*\{\s*"title"\s*:[\s\S]*?\}\s*\]\s*```/gi, '')
+    .replace(/\n*\[\s*\{\s*"title"\s*:\s*"[^"]+"\s*,\s*"prompt"\s*:\s*"[^"]+"\s*\}[\s\S]*?\]\s*$/i, '')
+    .trim();
 }
 
 // ----------------------------------------------------------------------------
@@ -93,6 +97,7 @@ const INTRO_NARRATION_PATTERN = new RegExp(
   '(?:工具|迭代|轮)[^。！？!?.]{0,8}(?:上限|耗尽|用完|限制|失败)'
   + '|停止(?:探查|探索)'
   + '|(?:已完成|未完成|没完成)的?(?:工作|任务|事项)'
+  + '|(?:最大步数|工具已停用|收尾总结|本轮结论)'
   + '|tool[-.a-z ]{0,16}(?:limit|budget|exhaust)'
   + '|stopped (?:probing|exploring)',
   'i',
@@ -129,7 +134,9 @@ function extractIntro(finalOutput: string, displayName = ''): string | undefined
   const lines = stripSuggestionsBlock(finalOutput).split(/\r?\n/);
   const kept: string[] = [];
   for (const line of lines) {
-    const bare = stripIntroMarkers(line).trim();
+    const bare = stripIntroMarkers(line)
+      .replace(/^(?:首次|第\s*一\s*次)?(?:巡览|探查|查看|唤醒)完成[：:，,\s]*/u, '')
+      .trim();
     if (INTRO_NOISE_LINE_PATTERN.test(line)) continue;
     if (INTRO_LABEL_PATTERN.test(bare)) continue;
     if (INTRO_NARRATION_PATTERN.test(bare)) continue;
@@ -241,8 +248,11 @@ const FIRST_WAKE_PROMPT_CONNECTED = (sourceNames: readonly string[], userExpecta
   '你的任务：',
   '1. 探查要快：最多做 3 次左右的只读探查（每次一个工具调用，看列表、文件、记录、最近活动这类概览就够），看完就停。不发送任何消息，不修改任何内容，也不把探查过程写进最终回复。',
   '2. 结合你的职责与刚才实际看到的数据，想出恰好 3 件你能帮用户做的具体的事；某个源里没有有用数据时，就基于你的职责给通用建议，不许编造任务或数据。',
-  '3. 最终回复只讲新发现：1-2 句话，说你刚才在这些源里实际看到了什么（数量、主体、最近活动这类具体事实），某个源读取失败也要如实说没看到。不要介绍你自己：用户刚在确认卡里看过你的名字和职责，不要再提你的名字，不要再复述你的职责，也不要把刚被创建、刚被唤醒这件事当开场白。用纯文本，不要任何 Markdown 标记（不要 #、**、列表、表格），不要汇报「已完成/未完成」，不要提工具调用上限或轮数，正文里也不要罗列建议——建议只放进建议块。',
-  `4. 回复末尾必须带一个建议块（fenced code block，语言标记 ${SUGGESTIONS_BLOCK_TAG}），内容是 JSON 数组，恰好 3 项，每项形如 { "title": "...", "prompt": "..." }：`,
+  '3. 最终回复只有 1-2 句话：直接说你刚才实际看到了什么（数量、主体、最近活动这类具体事实），某个源读取失败也要如实说没看到。不要介绍你自己：用户刚在确认卡里看过你的名字和职责，不要再提你的名字，不要再复述你的职责，也不要写「首次巡览完成：」「工作区内只有一份…」这类过程前缀或把刚被创建、刚被唤醒当开场白。正文用纯文本，不要任何 Markdown 标记（不要 #、**、列表、表格），不要汇报「已完成/未完成」，不要提工具调用上限或轮数，正文里也不要罗列建议——建议只放进下面的建议块。',
+  `4. 回复末尾必须附上下面的建议块（fenced code block，语言标记 ${SUGGESTIONS_BLOCK_TAG}），内容是 JSON 数组，恰好 3 项：`,
+  `\`\`\`${SUGGESTIONS_BLOCK_TAG}`,
+  '[{"title":"查本周冲突","prompt":"帮我检查本周日历里的会议冲突"},{"title":"每天早上发简报","prompt":"每天早上帮我整理当日日程简报"},{"title":"修邮件和提醒的连接","prompt":"帮我排查邮件和提醒事项读取报错的原因"}]',
+  '```',
   '   - title：一句话标题，用户扫一眼就懂；中文不超过 10 个字（英文不超过 6 个单词）',
   '   - prompt：用户点这条建议时直接发给你的完整委托，用用户的口吻写',
   '   - 每条都必须基于你刚才实际看到的数据或你的职责，不许编造数据',
@@ -280,7 +290,9 @@ function parseFirstWakeSuggestions(
 ): RoleFirstWakeSuggestion[] {
   // none 模式的 host 侧硬闸：无源时模型给什么都不采纳，杜绝编造。
   if (mode === 'none') return [];
-  const block = finalOutput.match(SUGGESTIONS_BLOCK_PATTERN)?.[1];
+  const block = finalOutput.match(SUGGESTIONS_BLOCK_PATTERN)?.[1]
+    ?? finalOutput.match(/```(?:json)?\s*(\[\s*\{\s*"title"\s*:[\s\S]*?\}\s*\])\s*```/i)?.[1]
+    ?? finalOutput.match(/(\[\s*\{\s*"title"\s*:\s*"[^"]+"\s*,\s*"prompt"\s*:\s*"[^"]+"\s*\}[\s\S]*?\])\s*$/i)?.[1];
   if (!block?.trim()) return [];
   let parsed: unknown;
   try {
@@ -327,7 +339,9 @@ async function resolveFirstWakeAllowedToolNames(roleId: string): Promise<string[
   const levelByName = new Map(definitions.map((definition) => [definition.name, definition.permissionLevel]));
   const wakeScope = await resolveWakeRunToolScope(roleId);
   const candidates = wakeScope.allowedToolNames ?? definitions.map((definition) => definition.name);
-  const readOnly = candidates.filter((name) => levelByName.get(name) === 'read');
+  const readOnly = candidates.filter(
+    (name) => levelByName.get(name) === 'read' && name !== WAKE_NOOP_TOOL_NAME,
+  );
   return toRoleBoundaryRunAllowlist(readOnly);
 }
 
@@ -428,24 +442,54 @@ async function defaultFirstWakeRunner(input: {
     });
     const config = agent.getConfig();
 
-    // 角色 agent 定义的 system prompt（有定义则注入，让首次醒来实例带角色人设）
-    let rolePrompt = '';
+    // 角色 agent 定义的 system prompt（有定义则走 agentOverride 整体替换默认主提示词，
+    // 避免默认主提示词的完成汇报/检查清单要求覆盖首次醒来的 1-2 句纯文本 + 建议块格式）
     try {
       const { resolveAgent } = await import('../../agent/agentRegistry');
-      rolePrompt = resolveAgent(input.roleId)?.prompt ?? '';
+      const resolved = resolveAgent(input.roleId);
+      if (resolved?.prompt) {
+        config.agentOverride = {
+          id: resolved.id,
+          name: resolved.name,
+          systemPrompt: resolved.prompt,
+          deniedToolNames: [],
+        };
+      }
     } catch {
       // registry 不可用 → 不注入角色 prompt
     }
 
-    config.systemPrompt = rolePrompt;
     config.systemInstructions = [UNATTENDED_TRUST_NOTICE];
     config.maxIterations = ROLE_ASSETS.FIRST_WAKE_MAX_ITERATIONS;
     // 首次醒来是无人值守发起，不进上线后评测分母。
     config.originKind = 'headless';
     config.allowedToolNames = input.allowedToolNames;
 
-    const agentLoop = createAgentLoop(config, () => { /* 后台运行，无 UI 事件消费方 */ }, [], input.sessionId);
+    let lastEventAssistantContent = '';
+    const agentLoop = createAgentLoop(
+      config,
+      (event) => {
+        if (event.type === 'message' && event.data && (event.data as { role?: string }).role === 'assistant') {
+          const content = (event.data as { content?: unknown }).content;
+          if (typeof content === 'string' && content.trim()) {
+            lastEventAssistantContent = content;
+          }
+        }
+      },
+      [
+        {
+          id: `first-wake-user-${Date.now()}`,
+          role: 'user',
+          content: input.prompt,
+          timestamp: Date.now(),
+        },
+      ],
+      input.sessionId,
+    );
     await agentLoop.run(input.prompt);
+    if (lastEventAssistantContent) {
+      return { finalOutput: lastEventAssistantContent };
+    }
   }
 
   // 两条路径都把消息持久化进会话，统一从会话读最后一条 assistant 消息。
@@ -722,6 +766,11 @@ async function runFirstWake(roleId: string, deps?: FirstWakeDeps): Promise<void>
     if (after?.state === 'skipped') {
       await recordFirstWakeResult(session.id, 'skipped', '用户跳过了首次醒来。');
       return;
+    }
+
+    // 首次醒来不得以无介绍、无建议的空结果记为 completed：转落 failed，使卡片展示既有失败态与重新查看出路。
+    if (!intro && suggestions.length === 0) {
+      throw new Error('empty_first_wake_output');
     }
 
     await writeFirstWakeState(roleId, {

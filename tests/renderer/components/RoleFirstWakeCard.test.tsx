@@ -412,16 +412,18 @@ describe('RoleFirstWakeCard 返修 r2', () => {
     await waitFor(() => expect(screen.getByTestId('role-first-wake-reason').textContent).toBe('刚才没能看你的日历：网络连不上。'));
 
     cleanup();
-    // generic → 省略冒号与原因
+    // generic / empty_first_wake_output → 省略冒号与原因，提供「重新查看」恢复动作与「建好了，现在就可以让我做事。」说明
     getFirstWake.mockResolvedValue({
       state: 'failed',
       sourcesMode: 'connected',
       sources: ['日历'],
       suggestions: [],
-      failureReason: 'model exploded',
+      failureReason: 'empty_first_wake_output',
     });
     render(<RoleFirstWakeCard roleId="role-1" />);
     await waitFor(() => expect(screen.getByTestId('role-first-wake-reason').textContent).toBe('刚才没能看你的日历。'));
+    expect(screen.getByText('建好了，现在就可以让我做事。')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '重新查看' })).toBeTruthy();
 
     cleanup();
     useAppStore.setState({ developerMode: true });

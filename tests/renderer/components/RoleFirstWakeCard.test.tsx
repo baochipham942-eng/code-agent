@@ -177,8 +177,8 @@ describe('RoleFirstWakeCard', () => {
     });
     render(<RoleFirstWakeCard roleId="role-1" />);
     expect(await screen.findByText('建好了，现在就可以让我做事。')).toBeTruthy();
-    // 普通用户不见原始错误：reason 行是分类映射文案（generic → 运行失败），无 sources → 「你的数据」
-    expect(screen.getByTestId('role-first-wake-reason').textContent).toBe('刚才没能看你的数据：运行失败。');
+    // 普通用户不见原始错误：generic 类省略原因和冒号，无 sources → 「你的数据」
+    expect(screen.getByTestId('role-first-wake-reason').textContent).toBe('刚才没能看你的数据。');
     fireEvent.click(screen.getByRole('button', { name: '进入会话' }));
     expect(goToExpertThread).toHaveBeenCalledWith('role-1');
     expect(skipFirstWake).not.toHaveBeenCalled();
@@ -188,12 +188,20 @@ describe('RoleFirstWakeCard', () => {
     expect(screen.queryByTestId('role-first-wake-card')).toBeNull();
   });
 
-  it('进行中显示熟悉数据，没有建议按钮，「先不用」常在（F 钉）', async () => {
+  it('进行中显示熟悉数据，没有建议按钮，「先不用」同排右对齐且有生命体征动画（C & F 钉）', async () => {
     getFirstWake.mockResolvedValue({ state: 'running', sourcesMode: 'connected', suggestions: [] });
     render(<RoleFirstWakeCard roleId="role-1" />);
-    expect(await screen.findByText('正在熟悉你已连接的数据…')).toBeTruthy();
+    const runningText = await screen.findByText('正在熟悉你已连接的数据…');
+    expect(runningText).toBeTruthy();
     expect(screen.queryByRole('button', { name: '去连接' })).toBeNull();
-    expect(screen.getByRole('button', { name: '先不用' })).toBeTruthy();
+    const skipBtn = screen.getByRole('button', { name: '先不用' });
+    expect(skipBtn).toBeTruthy();
+    // 同排右对齐：runningText 与 skipBtn 同属一个 flex 行容器，且有 pulse 动效点（支持 motion-reduce）
+    expect(runningText.parentElement).toBe(skipBtn.parentElement);
+    expect(skipBtn.className).toContain('ml-auto');
+    const pulseDot = screen.getByTestId('role-first-wake-pulse');
+    expect(pulseDot.className).toContain('animate-pulse');
+    expect(pulseDot.className).toContain('motion-reduce:animate-none');
   });
 
   it('确认创建后在原位挂上卡片；确认修改不挂', async () => {
@@ -364,7 +372,7 @@ describe('RoleFirstWakeCard 返修 r2', () => {
     }
   });
 
-  it('B：failed 原始错误普通用户不可见，开发者模式原样露出', async () => {
+  it('B：failed 原始错误普通用户不可见，使用短原因词条（auth / 余额 / 网络 / generic），开发者模式原样露出', async () => {
     getFirstWake.mockResolvedValue({
       state: 'failed',
       sourcesMode: 'connected',
@@ -374,10 +382,46 @@ describe('RoleFirstWakeCard 返修 r2', () => {
     });
     render(<RoleFirstWakeCard roleId="role-1" />);
     await waitFor(() => expect(screen.getByTestId('role-first-wake-card').getAttribute('data-state')).toBe('failed'));
-    // 有日历源 → 「你的日历」；auth 类错误映射成既有 agentError 文案，不见原始串
+    // 有日历源 → 「你的日历」；auth 类错误映射成短文案，单冒号，不见原始串
     expect(screen.getByTestId('role-first-wake-reason').textContent)
-      .toBe('刚才没能看你的日历：这个模型暂时用不了：账号没通过授权。');
+      .toBe('刚才没能看你的日历：模型账号没通过授权。');
     expect(screen.getByTestId('role-first-wake-card').textContent).not.toContain('RAW SECRET');
+
+    cleanup();
+    // insufficient_balance / usage_limit → 模型额度用完了
+    getFirstWake.mockResolvedValue({
+      state: 'failed',
+      sourcesMode: 'connected',
+      sources: ['日历'],
+      suggestions: [],
+      failureReason: 'insufficient balance 402',
+    });
+    render(<RoleFirstWakeCard roleId="role-1" />);
+    await waitFor(() => expect(screen.getByTestId('role-first-wake-reason').textContent).toBe('刚才没能看你的日历：模型额度用完了。'));
+
+    cleanup();
+    // network → 网络连不上
+    getFirstWake.mockResolvedValue({
+      state: 'failed',
+      sourcesMode: 'connected',
+      sources: ['日历'],
+      suggestions: [],
+      failureReason: 'fetch failed ECONNREFUSED',
+    });
+    render(<RoleFirstWakeCard roleId="role-1" />);
+    await waitFor(() => expect(screen.getByTestId('role-first-wake-reason').textContent).toBe('刚才没能看你的日历：网络连不上。'));
+
+    cleanup();
+    // generic → 省略冒号与原因
+    getFirstWake.mockResolvedValue({
+      state: 'failed',
+      sourcesMode: 'connected',
+      sources: ['日历'],
+      suggestions: [],
+      failureReason: 'model exploded',
+    });
+    render(<RoleFirstWakeCard roleId="role-1" />);
+    await waitFor(() => expect(screen.getByTestId('role-first-wake-reason').textContent).toBe('刚才没能看你的日历。'));
 
     cleanup();
     useAppStore.setState({ developerMode: true });
@@ -479,26 +523,54 @@ describe('RoleFirstWakeCard 返修 r2', () => {
   });
 });
 
-describe('RoleWakeProposalsCard 返修 r2（首次醒来失败时不出现）', () => {
+describe('RoleWakeProposalsCard 返修 A（首次醒来卡可见时不出现，收起后照常出现）', () => {
   beforeEach(() => {
     getFirstWake.mockReset();
+    skipFirstWake.mockReset().mockResolvedValue({ success: true });
+    listRoles.mockReset().mockResolvedValue([ROLE]);
     listWakeProposals.mockReset().mockResolvedValue([
       { title: '整理本周会议纪要', prompt: 'p', createdAt: 1 },
     ]);
+    useAppStore.setState({ firstWakeCardRoleId: null, developerMode: false });
   });
 
   afterEach(() => cleanup());
 
-  it('first wake failed → 即便有 pending 提议也不渲染', async () => {
-    getFirstWake.mockResolvedValue({ state: 'failed', sourcesMode: 'none', suggestions: [] });
-    render(<RoleWakeProposalsCard roleId="role-1" />);
-    await waitFor(() => expect(getFirstWake).toHaveBeenCalledWith('role-1'));
-    await waitFor(() => expect(screen.queryByTestId('role-wake-proposals-card')).toBeNull());
+  it.each([
+    ['running', { state: 'running' as const, sourcesMode: 'connected' as const, suggestions: [] }],
+    ['completed', COMPLETED],
+    ['failed', { state: 'failed' as const, sourcesMode: 'none' as const, suggestions: [], failureReason: 'err' }],
+  ])('first wake %s 可见时 → 提议卡不渲染', async (_label, snapshot) => {
+    getFirstWake.mockResolvedValue(snapshot);
+    render(
+      <>
+        <RoleFirstWakeCard roleId="role-1" />
+        <RoleWakeProposalsCard roleId="role-1" />
+      </>,
+    );
+    await waitFor(() => expect(screen.getByTestId('role-first-wake-card')).toBeTruthy());
+    expect(screen.queryByTestId('role-wake-proposals-card')).toBeNull();
   });
 
-  it('first wake completed → 提议照常渲染', async () => {
-    getFirstWake.mockResolvedValue(COMPLETED);
-    render(<RoleWakeProposalsCard roleId="role-1" />);
+  it('首次醒来卡被「先不用」收起后（或本身已 skipped）→ 提议卡照常出现', async () => {
+    let currentWake: RoleFirstWakeSnapshot = COMPLETED;
+    getFirstWake.mockImplementation(async () => currentWake);
+    skipFirstWake.mockImplementation(async () => {
+      currentWake = { ...COMPLETED, state: 'skipped' };
+      return { success: true };
+    });
+    render(
+      <>
+        <RoleFirstWakeCard roleId="role-1" />
+        <RoleWakeProposalsCard roleId="role-1" />
+      </>,
+    );
+    await waitFor(() => expect(screen.getByTestId('role-first-wake-card')).toBeTruthy());
+    expect(screen.queryByTestId('role-wake-proposals-card')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: '先不用' }));
+    await waitFor(() => expect(screen.queryByTestId('role-first-wake-card')).toBeNull());
     await waitFor(() => expect(screen.getByTestId('role-wake-proposals-card')).toBeTruthy());
+    expect(screen.getByText('整理本周会议纪要')).toBeTruthy();
   });
 });

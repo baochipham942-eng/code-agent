@@ -8,6 +8,7 @@ import type { RoleWakeProposal } from '@shared/contract/roleAssets';
 import { useI18n } from '../../../hooks/useI18n';
 import { DomainInvokeError } from '../../../services/ipcService';
 import { acceptWakeProposal, dismissWakeProposal, getFirstWake, listWakeProposals } from '../../../services/rolesClient';
+import { useAppStore } from '../../../stores/appStore';
 import { goToExpertThread } from '../../../utils/inviteExpert';
 
 interface RoleWakeProposalsCardProps {
@@ -19,23 +20,25 @@ interface RoleWakeProposalsCardProps {
 export const RoleWakeProposalsCard: React.FC<RoleWakeProposalsCardProps> = ({ roleId, framed = false }) => {
   const { t } = useI18n();
   const copy = t.roleWakeProposals;
+  const firstWakeCardRoleId = useAppStore((state) => state.firstWakeCardRoleId);
   const [proposals, setProposals] = useState<RoleWakeProposal[] | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    // 首次醒来失败时不出现（2026-11-05 owner 返修）：失败卡已说明哪里没成功，
-    // 再叠「今天可以帮你做」会把重点从修问题引向接活。
+    // 首次醒来卡片可见时不出现（2026-11-05 owner 返修 A）：只允许无首次醒来卡时渲染
+    // （firstWake 为 null 或已 skipped），避免两套建议和「先不用 / 先不」同时竞争。
     void Promise.all([listWakeProposals(roleId), getFirstWake(roleId)])
       .then(([next, wake]) => {
         if (cancelled) return;
-        setProposals(wake?.state === 'failed' ? [] : next);
+        const firstWakeVisible = wake !== null && wake !== undefined && wake.state !== 'skipped';
+        setProposals(firstWakeVisible ? [] : next);
       })
       .catch(() => { if (!cancelled) setProposals([]); });
     return () => { cancelled = true; };
-  }, [roleId]);
+  }, [roleId, firstWakeCardRoleId]);
 
-  if (proposals === null || proposals.length === 0) return null;
+  if (firstWakeCardRoleId === roleId || proposals === null || proposals.length === 0) return null;
 
   const remove = (title: string): void => {
     setProposals((prev) => (prev ?? []).filter((p) => p.title !== title));

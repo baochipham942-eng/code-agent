@@ -41,7 +41,7 @@ describe('RoleWakeProposalsCard', () => {
     acceptWakeProposal.mockReset();
     dismissWakeProposal.mockReset();
     skipFirstWake.mockReset();
-    getFirstWake.mockReset().mockResolvedValue({ state: 'completed', sourcesMode: 'connected', suggestions: [] });
+    getFirstWake.mockReset().mockResolvedValue({ state: 'skipped', sourcesMode: 'connected', suggestions: [] });
     goToExpertThread.mockReset().mockResolvedValue(undefined);
   });
   afterEach(() => cleanup());

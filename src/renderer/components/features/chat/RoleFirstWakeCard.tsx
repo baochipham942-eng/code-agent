@@ -185,24 +185,38 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
   const showNone = state === 'completed' && sourcesMode === 'none';
   const showSuggestions = state === 'completed' && sourcesMode === 'connected';
 
-  // failed 文案：普通用户只见 classifyAgentError 映射后的标题，原始错误仅开发者模式露出
+  // failed 文案：普通用户只见短原因映射（roleFirstWake.reasons），generic 直接省略冒号和原因；原始错误仅开发者模式露出
   const failureReason = snapshot?.failureReason?.trim() ?? '';
   const failureCategory = (failureReason ? classifyAgentError({ message: failureReason })?.category : undefined) ?? 'generic';
-  const failureTitle = resolveAgentErrorCopy(
-    { category: failureCategory },
-    t,
-    language === 'zh' ? 'zh-CN' : 'en-US',
-  ).title;
+  const scopeText = hasCalendarSource(snapshot?.sources) ? copy.scopeCalendar : copy.scopeData;
+  const shortReason = (copy.reasons as Record<string, string | undefined>)[failureCategory];
+  const fallbackReason = failureCategory === 'generic'
+    ? undefined
+    : resolveAgentErrorCopy(
+      { category: failureCategory },
+      t,
+      language === 'zh' ? 'zh-CN' : 'en-US',
+    ).title;
+  const mappedReason = shortReason ?? fallbackReason;
   const failedLookLine = developerMode && failureReason
     ? failureReason
-    : interpolate(copy.failedLook, {
-      scope: hasCalendarSource(snapshot?.sources) ? copy.scopeCalendar : copy.scopeData,
-      reason: failureTitle,
-    });
+    : mappedReason
+      ? interpolate(copy.failedLook, { scope: scopeText, reason: mappedReason })
+      : interpolate(copy.failedLookGeneric, { scope: scopeText });
   // 出路按 category 分流（与 AgentErrorCard 同一套策略）：账号类给换模型+查账号，其余给重看
   const showAccountActions = WAKE_CARD_CHECK_ACCOUNT_CATEGORIES.has(failureCategory);
 
   const outlineButtonClass = 'rounded-lg border border-border-strong bg-void px-3 py-1.5 text-left text-sm font-normal text-text-secondary transition-colors hover:border-border-hover hover:bg-surface hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50';
+  const skipButton = (
+    <button
+      type="button"
+      disabled={busy}
+      className="ml-auto rounded-md px-2 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+      onClick={() => { void handleSkip(); }}
+    >
+      {copy.skip}
+    </button>
+  );
 
   // 视觉范本 role-wake-prototype-v2.html 屏一/屏二：醒来角色像普通一轮发言——28px
   // 首字头像（名字进 aria-label/title，屏上不再有名册行）、无填充面板；建议是一排
@@ -226,7 +240,15 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
       </div>
       <div className="col-start-2 min-w-0 pt-[3px]">
         {showRunning && (
-          <p className="text-base leading-relaxed text-text-tertiary">{copy.running}</p>
+          <div className="flex items-center gap-2">
+            <span
+              className="size-2 shrink-0 rounded-full bg-brand animate-pulse motion-reduce:animate-none"
+              aria-hidden="true"
+              data-testid="role-first-wake-pulse"
+            />
+            <p className="text-base leading-relaxed text-text-tertiary">{copy.running}</p>
+            {skipButton}
+          </div>
         )}
         {showFailed && (
           <div className="space-y-0.5">
@@ -240,67 +262,62 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
           </p>
         )}
         {showNone && <p className="mt-1 text-sm text-text-tertiary">{copy.connectHint}</p>}
-        <div className="mt-2.5 flex flex-wrap items-center gap-2">
-          {showSuggestions && suggestions.map((suggestion) => (
-            <button
-              key={suggestion.prompt}
-              type="button"
-              disabled={busy}
-              className={outlineButtonClass}
-              onClick={() => { void handleSuggestion(suggestion.prompt); }}
-            >
-              {suggestion.title}
-            </button>
-          ))}
-          {showNone && (
-            <Button variant="primary" size="sm" onClick={openConnectors}>{copy.connect}</Button>
-          )}
-          {!framed && (showNone || showFailed) && (
-            <button
-              type="button"
-              className={outlineButtonClass}
-              onClick={openThread}
-            >
-              {copy.goToThread}
-            </button>
-          )}
-          {showFailed && showAccountActions && (
-            <>
+        {!showRunning && (
+          <div className="mt-2.5 flex flex-wrap items-center gap-2">
+            {showSuggestions && suggestions.map((suggestion) => (
+              <button
+                key={suggestion.prompt}
+                type="button"
+                disabled={busy}
+                className={outlineButtonClass}
+                onClick={() => { void handleSuggestion(suggestion.prompt); }}
+              >
+                {suggestion.title}
+              </button>
+            ))}
+            {showNone && (
+              <Button variant="primary" size="sm" onClick={openConnectors}>{copy.connect}</Button>
+            )}
+            {!framed && (showNone || showFailed) && (
               <button
                 type="button"
                 className={outlineButtonClass}
-                onClick={() => { window.dispatchEvent(new CustomEvent(OPEN_MODEL_SWITCHER_EVENT)); }}
+                onClick={openThread}
               >
-                {copy.switchModel}
+                {copy.goToThread}
               </button>
+            )}
+            {showFailed && showAccountActions && (
+              <>
+                <button
+                  type="button"
+                  className={outlineButtonClass}
+                  onClick={() => { window.dispatchEvent(new CustomEvent(OPEN_MODEL_SWITCHER_EVENT)); }}
+                >
+                  {copy.switchModel}
+                </button>
+                <button
+                  type="button"
+                  className={outlineButtonClass}
+                  onClick={() => { useAppStore.getState().openSettingsTab('model'); }}
+                >
+                  {copy.checkAccount}
+                </button>
+              </>
+            )}
+            {showFailed && !showAccountActions && (
               <button
                 type="button"
+                disabled={busy}
                 className={outlineButtonClass}
-                onClick={() => { useAppStore.getState().openSettingsTab('model'); }}
+                onClick={() => { void handleRetry(); }}
               >
-                {copy.checkAccount}
+                {copy.retryLook}
               </button>
-            </>
-          )}
-          {showFailed && !showAccountActions && (
-            <button
-              type="button"
-              disabled={busy}
-              className={outlineButtonClass}
-              onClick={() => { void handleRetry(); }}
-            >
-              {copy.retryLook}
-            </button>
-          )}
-          <button
-            type="button"
-            disabled={busy}
-            className="ml-auto rounded-md px-2 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
-            onClick={() => { void handleSkip(); }}
-          >
-            {copy.skip}
-          </button>
-        </div>
+            )}
+            {skipButton}
+          </div>
+        )}
       </div>
     </div>
   );

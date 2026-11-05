@@ -879,6 +879,10 @@ export const ChatView: React.FC = () => {
               welcome={firstWakeCardRoleId ? null : (
                 <NewSessionWelcome
                   onSend={handleSendMessage}
+                  // FB-580：composer 有字/附件/chip 时点示例卡改为填充草稿（不发送、
+                  // 不丢已有内容，模板空行接在现有文本后）；空 composer 保持一键直发。
+                  isComposerOccupied={() => Boolean(chatInputRef.current?.hasDraftOccupancy())}
+                  onFillDraft={(prompt) => chatInputRef.current?.appendDraftPrompt(prompt)}
                   workingDirectory={currentSessionWorkingDirectory}
                   workbenchSnapshot={currentSession?.workbenchSnapshot}
                   session={currentSession}

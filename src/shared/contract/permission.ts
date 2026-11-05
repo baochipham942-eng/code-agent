@@ -122,6 +122,15 @@ export function hostReasonModelText(reason: HostReasonValue): string {
   return typeof reason === 'string' ? reason : reason.modelText;
 }
 
+/** 一次审批所属轮次的来源描述（host AgentMessageOrigin 的跨端投影，ADR-067 D3）；仅本文件投影用，不外导。 */
+interface PermissionTurnOrigin {
+  senderKind: 'user' | 'orchestrator' | 'peer-agent' | 'dependency';
+  senderAgentId?: string;
+  sessionId?: string;
+  runId?: string;
+  turnId?: string;
+}
+
 // 权限请求
 export interface PermissionRequest {
   id: string;
@@ -130,6 +139,13 @@ export interface PermissionRequest {
   agentId?: string;
   runId?: string;
   parentToolUseId?: string;
+  /**
+   * 轮次来源链（ADR-067 D3；host toolExecutor 在 ask 时透传 options.turnOrigin）。
+   * 后台代理的审批卡以 origin.runId 指回发起这次委派的运行（delegate_task 任务的
+   * id/runId 即该 runId），渲染端据此把「审批卡未决」对回具体任务
+   * （N-APPROVAL-PENDING-STATUS-COPY）。
+   */
+  turnOrigin?: PermissionTurnOrigin[];
   forceConfirm?: boolean;
   /**
    * N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1 返修 r2：forceConfirm 的成因标记。

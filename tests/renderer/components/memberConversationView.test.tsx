@@ -41,6 +41,7 @@ import { useTeamRecipeStore } from '../../../src/renderer/stores/teamRecipeStore
 import { useAgentRegistryStore } from '../../../src/renderer/stores/agentRegistryStore';
 import { useBackgroundTaskStore } from '../../../src/renderer/stores/backgroundTaskStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 const record: SwarmRunAgentRecord = {
   runId: 'run-1', agentId: 'researcher', name: '调研员', role: 'researcher', status: 'completed',
@@ -99,6 +100,7 @@ describe('成员对话页', () => {
     useTeamRecipeStore.setState({ recipes: [], isLoaded: true });
     useAgentRegistryStore.setState({ entries: [{ id: 'researcher', name: '调研员', description: '', source: 'builtin', modelTier: 'balanced', readonly: true, tools: [], profession: '行业研究员' }], isLoaded: true });
     useBackgroundTaskStore.setState({ tasks: [] });
+    useAppStore.setState({ pendingPermissionRequest: null, pendingPermissionSessionId: null, queuedPermissionRequests: {} });
   });
   afterEach(() => cleanup());
 
@@ -246,6 +248,54 @@ describe('成员对话页', () => {
     expect(screen.getByTestId('member-current-action').textContent).toContain('读取了 /repo/a.ts');
     // 普通代理视图也有返回主会话
     expect(screen.getByTestId('member-view-back')).toBeTruthy();
+  });
+
+  // ── N-APPROVAL-PENDING-STATUS-COPY：普通代理页「当前动作」不谎报完成态 ──
+
+  function mailAgentNode(status: AgentTreeNode['status']): AgentTreeNode {
+    return {
+      id: 'agent-mail', role: '发件代理', status, statusLabel: '正在处理',
+      task: '发封问候邮件', children: [],
+      lastToolStep: { tool: 'mail_send', at: 1 },
+      worktreeState: { status: 'none' },
+      budgetSummary: {},
+      evidenceRefs: [], sources: ['spawnGuard'],
+    };
+  }
+
+  async function renderPlainAgent(node: AgentTreeNode): Promise<void> {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue([]);
+    invokeDomainMock.mockImplementation((domain: unknown, action: unknown) => {
+      if (domain === IPC_DOMAINS.AGENT && action === 'getTree') return Promise.resolve(treeSnapshot(node));
+      return Promise.resolve(null);
+    });
+    useMemberViewStore.setState({ viewingMemberId: node.id });
+    render(<MemberConversationView sessionId="session-1" />);
+    await waitFor(() => expect(screen.getByTestId('member-conversation-view')).toBeTruthy());
+  }
+
+  it('普通代理审批卡未决：当前动作亮请求词形，不说「发送了邮件」', async () => {
+    useAppStore.setState({
+      pendingPermissionRequest: {
+        id: 'perm-mail-1', type: 'network', tool: 'mail_send', agentId: 'agent-mail', details: {}, timestamp: 1,
+      },
+      pendingPermissionSessionId: 'session-1',
+    });
+    await renderPlainAgent(mailAgentNode('running'));
+
+    const row = screen.getByTestId('member-current-action').textContent ?? '';
+    expect(row).toContain('请求发送邮件');
+    expect(row).not.toContain('发送了邮件');
+  });
+
+  it('审批不在场：运行中的连接器写亮「正在…」词形；终态落回完成词形', async () => {
+    await renderPlainAgent(mailAgentNode('running'));
+    expect(screen.getByTestId('member-current-action').textContent).toContain('正在发送邮件');
+
+    cleanup();
+    await renderPlainAgent(mailAgentNode('completed'));
+    expect(screen.getByTestId('member-current-action').textContent).toContain('发送了邮件');
   });
 
   it('普通代理按 delegate_task 后台任务渲染：标题 / 摘要 / 产出引用 / 耗时', async () => {

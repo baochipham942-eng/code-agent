@@ -182,7 +182,7 @@ export async function finishArtifactRefresh(
 
 /**
  * 常设刷新会话的工作目录。产物路径是绝对路径时用其所在目录，否则沿用 fallback
- * （来源会话或当前焦点会话的目录，两者都没有时为 undefined）。
+ * （仅来源会话的目录，没有来源会话时为 undefined；不取 UI 焦点会话）。
  *
  * fallback 为空时 orchestrator 落到用户主目录。主目录上的信任扫描会走进可能让
  * readdir 永不返回的子目录，整趟停在 initializeUserHooks，inFlight 把后续 tick 挡住。

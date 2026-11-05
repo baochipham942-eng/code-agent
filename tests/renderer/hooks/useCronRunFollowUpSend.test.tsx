@@ -14,10 +14,7 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 }));
 
 import { useCronRunFollowUpSend } from '../../../src/renderer/hooks/useCronRunFollowUpSend';
-import {
-  clearObservedCronRunStatusesForTest,
-  setObservedCronRunStatusForSession,
-} from '../../../src/renderer/components/features/chat/cronRunSessionStatus';
+import { setObservedCronRunStatusForSession } from '../../../src/renderer/components/features/chat/cronRunSessionStatus';
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
 import { useSessionStore, type SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 import type { Message } from '../../../src/shared/contract';
@@ -49,7 +46,7 @@ function envelope(content: string): ConversationEnvelope {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  clearObservedCronRunStatusesForTest();
+  setObservedCronRunStatusForSession('record-1', null);
   useCronStore.setState({ executionsByJobId: {}, latestExecutions: {}, recentExecutions: [] } as never);
   useSessionStore.setState({
     sessions: [cronRunSession],
@@ -63,7 +60,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  clearObservedCronRunStatusesForTest();
+  setObservedCronRunStatusForSession('record-1', null);
   vi.restoreAllMocks();
 });
 
@@ -143,7 +140,7 @@ describe('useCronRunFollowUpSend', () => {
       { id: 'exec-1', jobId: 'job-1', status: 'failed' as const, error: 'Command failed: exit code 1', scheduledAt: 1, retryAttempt: 0, sessionId: 'record-1' },
       { id: 'exec-1', jobId: 'job-1', status: 'cancelled' as const, scheduledAt: 1, retryAttempt: 0, sessionId: 'record-1' },
     ]) {
-      clearObservedCronRunStatusesForTest();
+      setObservedCronRunStatusForSession('record-1', null);
       useCronStore.setState({ executionsByJobId: { 'job-1': [execution] }, latestExecutions: {}, recentExecutions: [] } as never);
       const send = vi.fn().mockResolvedValue(true);
       const { result } = renderHook(() => useCronRunFollowUpSend(send, () => messages));

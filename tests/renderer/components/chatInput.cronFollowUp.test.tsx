@@ -7,10 +7,7 @@ import React from 'react';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatInput } from '../../../src/renderer/components/features/chat/ChatInput';
-import {
-  clearObservedCronRunStatusesForTest,
-  setObservedCronRunStatusForSession,
-} from '../../../src/renderer/components/features/chat/cronRunSessionStatus';
+import { setObservedCronRunStatusForSession } from '../../../src/renderer/components/features/chat/cronRunSessionStatus';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 import ipcService from '../../../src/renderer/services/ipcService';
 import { useBundledCapabilityStore } from '../../../src/renderer/stores/bundledCapabilityStore';
@@ -58,7 +55,7 @@ const cronRunSession = (id: string) => makeSession({
 
 describe('定时任务运行记录的 composer（readOnly + origin cron）', () => {
   beforeEach(() => {
-    clearObservedCronRunStatusesForTest();
+    setObservedCronRunStatusForSession('cron-record-interrupted', null);
     useCronStore.setState({ executions: [], recentExecutions: [] } as never);
     resetCapabilityStore();
     const invokeDomain = ipcService.invokeDomain.bind(ipcService);
@@ -70,7 +67,7 @@ describe('定时任务运行记录的 composer（readOnly + origin cron）', () 
 
   afterEach(() => {
     cleanup();
-    clearObservedCronRunStatusesForTest();
+    setObservedCronRunStatusForSession('cron-record-interrupted', null);
     vi.restoreAllMocks();
     useSessionStore.setState({
       sessions: [],

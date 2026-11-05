@@ -42,7 +42,7 @@ const PERMISSION_DENIAL_ZH_TOKENS = [
   String.fromCharCode(0x672a, 0x83b7, 0x81ea, 0x52a8, 0x6279, 0x51c6), // 未获自动批准
 ];
 
-export function isCronExecutionPermissionDenialError(error: string | undefined | null): boolean {
+function isCronExecutionPermissionDenialError(error: string | undefined | null): boolean {
   if (!error) return false;
   if (PERMISSION_DENIAL_ERROR_RE.test(error)) return true;
   return PERMISSION_DENIAL_ZH_TOKENS.some((token) => error.includes(token));
@@ -127,11 +127,6 @@ export function subscribeObservedCronRunStatus(listener: () => void): () => void
   return () => {
     observedCronRunListeners.delete(listener);
   };
-}
-
-export function clearObservedCronRunStatusesForTest(): void {
-  observedCronRunStatusBySession.clear();
-  for (const listener of observedCronRunListeners) listener();
 }
 
 /** 流逝时间拆件：单位词由调用方从 i18n 取（zh 时/分/秒，en h/m/s）。 */

@@ -25,10 +25,9 @@ vi.mock('../../../src/renderer/services/sessionAutomationClient', () => ({
 import { CronRunSessionStatusBar } from '../../../src/renderer/components/features/chat/CronRunSessionStatusBar';
 import { CronRunSessionIntro } from '../../../src/renderer/components/features/chat/CronRunSessionIntro';
 import {
-  clearObservedCronRunStatusesForTest,
   composeElapsed,
   deriveCronRunStatusLine,
-  isCronExecutionPermissionDenialError,
+  setObservedCronRunStatusForSession,
   splitElapsedParts,
 } from '../../../src/renderer/components/features/chat/cronRunSessionStatus';
 import { useSessionStore, type SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
@@ -71,7 +70,7 @@ const cronRunSession: Partial<SessionWithMeta> & { id: string } = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  clearObservedCronRunStatusesForTest();
+  setObservedCronRunStatusForSession('session-1', null);
   invokeMock.mockResolvedValue({ outcome: 'delivered' });
   getExecutionsMock.mockResolvedValue([]);
   listParkedApprovalsMock.mockResolvedValue([]);
@@ -81,7 +80,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  clearObservedCronRunStatusesForTest();
+  setObservedCronRunStatusForSession('session-1', null);
   // 撤掉定时器相关的挂载残留
   vi.restoreAllMocks();
 });
@@ -138,21 +137,24 @@ describe('deriveCronRunStatusLine（纯判定）', () => {
     })).toEqual({ kind: 'failed-generic' });
   });
 
-  it('isCronExecutionPermissionDenialError：稳定识别主进程权限拒绝错误，不把普通失败误判为被拒', () => {
-    expect(isCronExecutionPermissionDenialError('Permission denied')).toBe(true);
-    expect(isCronExecutionPermissionDenialError('PERMISSION_DENIED_BY_USER')).toBe(true);
-    expect(isCronExecutionPermissionDenialError('PERMISSION_DENIED_UNATTENDED_AUTO')).toBe(true);
-    expect(isCronExecutionPermissionDenialError('UNATTENDED_APPROVAL_TIMEOUT')).toBe(true);
-    expect(isCronExecutionPermissionDenialError('用户拒绝了该命令')).toBe(true);
-    expect(isCronExecutionPermissionDenialError('命令被拒绝')).toBe(true);
-    expect(isCronExecutionPermissionDenialError('bash 被自动拒绝：危险命令在无人值守模式下禁止执行')).toBe(true);
-    expect(isCronExecutionPermissionDenialError('Command was denied by policy')).toBe(true);
+  it('权限拒绝错误识别：稳定识别主进程权限拒绝错误，不把普通失败误判为被拒', () => {
+    const statusForError = (error: string | undefined) =>
+      deriveCronRunStatusLine({ execution: makeExecution({ status: 'failed', error }), pendingApproval: null })?.kind;
 
-    expect(isCronExecutionPermissionDenialError(undefined)).toBe(false);
-    expect(isCronExecutionPermissionDenialError('')).toBe(false);
-    expect(isCronExecutionPermissionDenialError('Command failed: exit code 1')).toBe(false);
-    expect(isCronExecutionPermissionDenialError('429 Too Many Requests')).toBe(false);
-    expect(isCronExecutionPermissionDenialError('Execution timed out after 60000ms')).toBe(false);
+    expect(statusForError('Permission denied')).toBe('failed-denied');
+    expect(statusForError('PERMISSION_DENIED_BY_USER')).toBe('failed-denied');
+    expect(statusForError('PERMISSION_DENIED_UNATTENDED_AUTO')).toBe('failed-denied');
+    expect(statusForError('UNATTENDED_APPROVAL_TIMEOUT')).toBe('failed-denied');
+    expect(statusForError('用户拒绝了该命令')).toBe('failed-denied');
+    expect(statusForError('命令被拒绝')).toBe('failed-denied');
+    expect(statusForError('bash 被自动拒绝：危险命令在无人值守模式下禁止执行')).toBe('failed-denied');
+    expect(statusForError('Command was denied by policy')).toBe('failed-denied');
+
+    expect(statusForError(undefined)).toBe('failed-generic');
+    expect(statusForError('')).toBe('failed-generic');
+    expect(statusForError('Command failed: exit code 1')).toBe('failed-generic');
+    expect(statusForError('429 Too Many Requests')).toBe('failed-generic');
+    expect(statusForError('Execution timed out after 60000ms')).toBe('failed-generic');
   });
 
   it('没有执行记录也没有等批准：不编状态（null）', () => {

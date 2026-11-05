@@ -24,7 +24,7 @@ interface DesktopPresenceReport {
 export interface DesktopPresenceProbe {
   /** 用户此刻是否在电脑前（窗内、可见、聚焦、最近输入也在窗内）。 */
   isActive(now: number): boolean;
-  /** 会话最近一次被看到的时间戳；从未看过为 null。 */
+  /** 会话最近一次被看到（窗口可见+聚焦时的上报）的时间戳；从未看过为 null。 */
   lastViewedAt(sessionId: string): number | null;
 }
 
@@ -40,8 +40,11 @@ class DesktopPresence implements DesktopPresenceProbe {
   /** 记一条 renderer 上报；now 显式可注入（IPC 通道缺省用实例时钟）。 */
   report(input: DesktopPresenceReport, now = this.now()): void {
     this.latest = { ...input, receivedAt: now };
+    // 单向已读只认「真在看」：隐藏/失焦的心跳照样带 viewingSessionId（renderer 上报的是
+    // 选中态，不是注视态），这些拍子不得盖章已读——否则重试等待期的完成推送会被后台
+    // 心跳盖成 skipped，手机没收到、桌面也没人看，通知双丢。
     const sessionId = input.viewingSessionId;
-    if (typeof sessionId === 'string' && sessionId) {
+    if (input.visible && input.focused && typeof sessionId === 'string' && sessionId) {
       const prev = this.viewedAt.get(sessionId);
       if (prev === undefined || now >= prev) this.viewedAt.set(sessionId, now);
     }

@@ -68,4 +68,22 @@ describe('DesktopPresence.lastViewedAt', () => {
     desktopPresence.report({ visible: true, focused: true, lastInputAt: T0, viewingSessionId: null }, T0);
     expect(desktopPresence.lastViewedAt('')).toBe(null);
   });
+
+  // r1 返修：单向已读只认「真在看」。renderer 心跳在窗口隐藏/失焦时仍每拍上报
+  // viewingSessionId（它上报的是选中态），这些拍子不得盖章已读——否则重试等待期的
+  // 完成推送会被后台心跳盖成 skipped（手机没收到、桌面也没人看，通知双丢）。
+  it('r1 失焦/隐藏的心跳不写入已读表；回到前台（可见+聚焦）才盖章', () => {
+    desktopPresence.report({ visible: true, focused: false, lastInputAt: T0, viewingSessionId: 'presence-blind-a' }, T0);
+    expect(desktopPresence.lastViewedAt('presence-blind-a')).toBe(null);
+    desktopPresence.report({ visible: false, focused: true, lastInputAt: T0 + 1_000, viewingSessionId: 'presence-blind-a' }, T0 + 1_000);
+    expect(desktopPresence.lastViewedAt('presence-blind-a')).toBe(null);
+    desktopPresence.report({ visible: true, focused: true, lastInputAt: T0 + 2_000, viewingSessionId: 'presence-blind-a' }, T0 + 2_000);
+    expect(desktopPresence.lastViewedAt('presence-blind-a')).toBe(T0 + 2_000);
+  });
+
+  it('r1 失焦心跳不得推进已有已读时间（已读表不因后台拍子前进）', () => {
+    desktopPresence.report({ visible: true, focused: true, lastInputAt: T0, viewingSessionId: 'presence-blind-b' }, T0);
+    desktopPresence.report({ visible: true, focused: false, lastInputAt: T0 + 9_000, viewingSessionId: 'presence-blind-b' }, T0 + 9_000);
+    expect(desktopPresence.lastViewedAt('presence-blind-b')).toBe(T0);
+  });
 });

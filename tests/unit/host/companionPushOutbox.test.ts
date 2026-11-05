@@ -300,5 +300,46 @@ describe('CompanionPushOutbox', () => {
       ]);
       expect(sent).toEqual(['task_complete']);
     });
+
+    // r1 返修（评审 Important）：首推 PROVIDER_RETRY 进重试等待；等待期间用户切走
+    // （失焦），隐藏窗口的心跳仍带 viewingSessionId —— 不得盖章已读把 pending 行盖成
+    // skipped（手机没收到、桌面也没人看，通知双丢）。行必须在重试后照常 sent。
+    it('r1 重试等待期的失焦心跳不得把 pending 完成推送盖成 skipped', async () => {
+      const box: { push?: CompanionPushOutbox } = {};
+      const blindGateway = new CompanionGateway(db, {
+        now: () => now,
+        onPublish: event => box.push?.enqueue(event),
+        onRevoke: deviceId => box.push?.forgetDevice(deviceId),
+      });
+      blindGateway.registerDevice({ deviceId: 'phone-1', credentialHash: 'hash', scopeEpoch: 1, scope: ['presence-blind-x'], revokedAt: null });
+      let attempts = 0;
+      const outbox = new CompanionPushOutbox(db, blindGateway, {
+        now: () => now,
+        wrapKey,
+        apnsKeyPath: '/tmp/not-a-real-key.p8',
+        presence: desktopPresence,
+        send: async request => {
+          attempts += 1;
+          sent.push(request.payload.titleKey);
+          return attempts === 1
+            ? { accepted: false, code: 'PROVIDER_RETRY', retryAfterMs: 5_000 }
+            : { accepted: true };
+        },
+      });
+      box.push = outbox;
+      outbox.register('phone-1', { provider: 'apns', token: 'device-token-aaaaaaaa', environment: 'production' });
+      // 用户已切走（失焦但 currentSessionId 未变）：完成事件照常入队
+      desktopPresence.report({ visible: true, focused: false, lastInputAt: now }, now);
+      outbox.enqueue({ eventId: 'evt-blind-1', epoch: 1, seq: 1, sessionId: 'presence-blind-x', kind: 'agent_complete', payload: {}, createdAt: now });
+      // 首推 PROVIDER_RETRY → pending 等重试
+      await outbox.flush();
+      expect(outbox.rowsFor('phone-1')[0]).toMatchObject({ state: 'pending', attempts: 1 });
+      // 重试等待期内隐藏窗口的心跳（viewingSessionId 仍是被看的那个会话，时间 ≥ created_at）
+      now += 6_000;
+      desktopPresence.report({ visible: true, focused: false, lastInputAt: now, viewingSessionId: 'presence-blind-x' }, now);
+      await outbox.flush();
+      expect(outbox.rowsFor('phone-1')[0]).toMatchObject({ state: 'sent', attempts: 2 });
+      expect(sent).toEqual(['task_complete', 'task_complete']);
+    });
   });
 });

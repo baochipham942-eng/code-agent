@@ -258,6 +258,8 @@ export type AgentErrorCategory =
   | 'model_not_found'
   | 'forbidden'
   | 'rate_limited'
+  /** 套餐用量窗口用尽（429 + 用量上限措辞）：窗口会自己恢复，不给重试。 */
+  | 'usage_limit'
   | 'concurrency'
   | 'network'
   | 'context_length'
@@ -289,6 +291,9 @@ export interface AgentErrorMetadata {
   /** context_length 专用：实际/上限 tokens，供卡片模板填空 */
   requestedTokens?: number;
   maxTokens?: number;
+  /** usage_limit 专用：供应商写的窗口词（如「5 小时」）与重置时间（ISO UTC）。 */
+  usageWindowText?: string;
+  resetAt?: string;
 }
 
 export interface InputRedirectReceiptMetadata {

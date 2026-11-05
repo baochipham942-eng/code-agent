@@ -69,7 +69,7 @@ import { AgentRunController } from './agentRunController';
 import { getBackgroundTaskManager } from '../../host/session/backgroundTaskManager';
 import { resolveBackgroundRunSettlement, settleBackgroundRun } from '../../host/session/backgroundRunSettlement';
 import { getProjectSourceTrustFailureMarker } from '../../host/services/project/projectSourceTrustError';
-import { getModelAuthFailureMarker } from '../../host/model/errorClassifier';
+import { getModelAuthFailureMarker, getModelUsageLimitFailureMarker } from '../../host/model/errorClassifier';
 import { AgentRunEventCollector } from './agentRunEventCollector';
 import { RunRegistry, RunSessionConflictError } from '../../host/runtime/runRegistry';
 import { isTerminalRunStatus, type RunEnvelope } from '../../shared/contract/durableRun';
@@ -1294,7 +1294,13 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       if (commandCenterBrain) {
         // 文字前台由 web TaskManager 承载，免除 CLI 专用的任务工具禁用表。
         config.taskManagerToolsEnabled = true;
-        config.allowedToolNames = applyMorningBriefSaveDraftRoleTools(prompt, getTextForegroundToolNamesForPrompt(prompt), config.agentOverride?.tools);
+        config.allowedToolNames = applyMorningBriefSaveDraftRoleTools(
+          prompt,
+          // 手选/专家连接器收窄必须透传（rework r1）：非空 scope 之外即使意图命中也不进白名单，
+          // 否则 run policy 放行范围外连接器写、预载却按收窄不送 schema，判决互相矛盾。
+          getTextForegroundToolNamesForPrompt(prompt, config.toolScope?.allowedConnectorIds),
+          config.agentOverride?.tools,
+        );
         config.foregroundToolFace = true;
         config.maxIterations = Math.min(
           config.maxIterations ?? SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,
@@ -1736,13 +1742,16 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       );
       // 引擎发过终态 error 时它的 failure 优先：那条带着这一轮真正跑的模型（provider/model），
       // 抛出的原始错误上通常没有——这里是手机唯一收到的那条 error，丢了「换走失败模型收起卡片」就失效。
-      const failure = getProjectSourceTrustFailureMarker(error) ?? runController.lastTerminalFailure ?? getModelAuthFailureMarker(error);
+      const failure = getProjectSourceTrustFailureMarker(error) ?? runController.lastTerminalFailure ?? getModelAuthFailureMarker(error) ?? getModelUsageLimitFailureMarker(error);
       deps.publishCompanionEvent?.(sessionId, 'error', { event: { code: 'RUN_FAILED', ...(failure ? { failure } : {}) }, runId: runContext?.runId });
       if (!runController.disconnected) {
         runController.emitAgentEvent({
           type: 'error',
           data: {
             message,
+            // 引擎已发过带标记的终态 error；这条后到的会覆盖前一条的分类，不带标记就把
+            // usage_limit 等降成 generic 卡（web 构建假供应商实测 2026-11-04）。
+            ...(failure ? { failure } : {}),
           },
         });
       }

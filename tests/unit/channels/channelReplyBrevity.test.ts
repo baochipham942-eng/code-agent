@@ -150,3 +150,37 @@ describe('N-CHANNEL-REPLY-BREVITY-FU2 overflow instruction', () => {
     expect(beforeException.replace('不要为此写文件或创建交付物', '')).not.toMatch(/文件|交付物/);
   });
 });
+
+describe('N-CHANNEL-REPLY-BREVITY-FU2-FU2 dangling heading drop', () => {
+  const note = CHANNEL_REPLY_FULL_TEXT_NOTE;
+
+  it('① drops the trailing heading whose table body was truncated away', () => {
+    const summary = '两个方案各有取舍。';
+    const heading = '## 详细对比表';
+    const table = Array.from({ length: 20 }, (_, i) => `| 行${i} | 内容${i} |`).join('\n');
+    // limit 刚好让摘要＋标题进得来、表格进不来
+    const limit = summary.length + 2 + heading.length + 1;
+    expect(softLimitChannelReply(`${summary}\n\n${heading}\n\n${table}`, limit)).toBe(`${summary}\n\n${note}`);
+  });
+
+  it('① keeps a heading whose body fits and truncates only a later paragraph', () => {
+    const summary = '结论先行。';
+    const heading = '## 关键数字';
+    const smallTable = '| A | B |\n| 1 | 2 |';
+    const fit = `${summary}\n\n${heading}\n\n${smallTable}`;
+    const out = softLimitChannelReply(`${fit}\n\n${'后续说明很长。'.repeat(50)}`, fit.length);
+    expect(out).toBe(`${fit}\n\n${note}`);
+  });
+
+  it('① drops two consecutive trailing headings in one go', () => {
+    const summary = '总结。';
+    const kept = `${summary}\n\n## 小节一\n\n## 小节二`;
+    const out = softLimitChannelReply(`${kept}\n\n${'超长表格'.repeat(100)}`, kept.length);
+    expect(out).toBe(`${summary}\n\n${note}`);
+  });
+
+  it('① heading-only first paragraph still goes through the old first-paragraph fallback', () => {
+    const out = softLimitChannelReply(`## 结论速览\n\n${'数据'.repeat(300)}`, 150);
+    expect(out).toBe(`## 结论速览\n\n${note}`);
+  });
+});

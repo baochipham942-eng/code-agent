@@ -39,6 +39,8 @@ interface TurnBasedTraceViewProps {
   onRewindUserPrompt?: (messageId: string, content: string) => void;
   /** 注入到第一条 turn 用户消息上方（分叉子会话的来源提示） */
   beforeFirstUserMessage?: React.ReactNode;
+  /** 注入到第一条 turn 用户消息下方（定时任务运行记录的状态行） */
+  afterFirstUserMessage?: React.ReactNode;
   /** Virtuoso 可见范围是否覆盖流式中断所在 turn，供追赶条做视口双门。 */
   onInterruptionPointVisibilityChange?: (visible: boolean) => void;
   /** ChatView 的发送阶段占位可见时，活动 turn 不再另画一条忙信号。 */
@@ -276,6 +278,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   activeMatchIndex = 0,
   onRewindUserPrompt,
   beforeFirstUserMessage,
+  afterFirstUserMessage,
   onInterruptionPointVisibilityChange,
   suppressActiveBusySignal,
 }) => {
@@ -1023,6 +1026,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
               }
               onRewindUserPrompt={onRewindUserPrompt}
               beforeUserMessage={index === 0 ? beforeFirstUserMessage : undefined}
+              afterUserMessage={index === 0 ? afterFirstUserMessage : undefined}
               suppressBusySignal={isStreaming && suppressActiveBusySignal}
             />
             <ConversationTurnTailSlot
@@ -1033,7 +1037,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
         </div>
       );
     },
-    [activeMatchIndex, beforeFirstUserMessage, firstItemIndex, isProjectionSessionProcessing, onRewindUserPrompt, outputFollowTurnIndex, projection.activeTurnIndex, projection.sessionId, projection.turns, projectionStreamSnapshot, scheduleActiveDisplayScroll, searchMatches, sessionStatus, suppressActiveBusySignal, workDetailPolicy],
+    [activeMatchIndex, afterFirstUserMessage, beforeFirstUserMessage, firstItemIndex, isProjectionSessionProcessing, onRewindUserPrompt, outputFollowTurnIndex, projection.activeTurnIndex, projection.sessionId, projection.turns, projectionStreamSnapshot, scheduleActiveDisplayScroll, searchMatches, sessionStatus, suppressActiveBusySignal, workDetailPolicy],
   );
 
   // Header: load-older indicator

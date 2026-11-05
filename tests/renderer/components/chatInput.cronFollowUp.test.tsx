@@ -1,0 +1,113 @@
+// @vitest-environment jsdom
+// N-UI-CRON-RUN-RECORD-CLEAR：定时任务运行记录会话（readOnly + origin cron/heartbeat）
+// 的 composer：不出现「只读」，输入区照常可用，placeholder 说清「发送会开一条新对话，
+// 带上这次的结果」。非 cron 的 readOnly 会话仍走原只读提示（防御分支，当前无来源）。
+
+import React from 'react';
+import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ChatInput } from '../../../src/renderer/components/features/chat/ChatInput';
+import { IPC_DOMAINS } from '../../../src/shared/ipc';
+import ipcService from '../../../src/renderer/services/ipcService';
+import { useBundledCapabilityStore } from '../../../src/renderer/stores/bundledCapabilityStore';
+import { useSessionStore, type SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
+
+const realCreateSession = useSessionStore.getState().createSession;
+
+function makeSession(overrides: Partial<SessionWithMeta> & { id: string }): SessionWithMeta {
+  return {
+    title: overrides.id,
+    modelConfig: { provider: 'openai', model: 'gpt-5' },
+    createdAt: 1,
+    updatedAt: 1,
+    messageCount: 0,
+    turnCount: 0,
+    ...overrides,
+  } as SessionWithMeta;
+}
+
+function resetCapabilityStore(): void {
+  useBundledCapabilityStore.setState({
+    installed: { 'builtin.voice-live': false, 'builtin.voice-input': false },
+    states: [],
+    loaded: true,
+    error: null,
+  });
+}
+
+function showSession(session: SessionWithMeta): void {
+  useSessionStore.setState({
+    sessions: [session],
+    currentSessionId: session.id,
+    messages: [],
+    createSession: realCreateSession,
+  });
+}
+
+const cronRunSession = (id: string) => makeSession({
+  id,
+  readOnly: true,
+  origin: { kind: 'cron', id: 'job-1', name: '每日日程检查' },
+  sourceRunId: 'exec-1',
+});
+
+describe('定时任务运行记录的 composer（readOnly + origin cron）', () => {
+  beforeEach(() => {
+    resetCapabilityStore();
+    const invokeDomain = ipcService.invokeDomain.bind(ipcService);
+    vi.spyOn(ipcService, 'invokeDomain').mockImplementation((domain, action, payload) => {
+      if (domain === IPC_DOMAINS.QUEUED_INPUT && action === 'list') return Promise.resolve([]);
+      return invokeDomain(domain, action, payload);
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    useSessionStore.setState({
+      sessions: [],
+      currentSessionId: null,
+      messages: [],
+      createSession: realCreateSession,
+    });
+    resetCapabilityStore();
+  });
+
+  it('readOnly 的运行记录会话：输入区照常渲染，不出现「只读」提示', () => {
+    showSession(cronRunSession('cron-record'));
+    render(<ChatInput onSend={() => true} />);
+
+    expect(screen.getByTestId('chat-composer-textarea')).toBeTruthy();
+    expect(screen.queryByTestId('readonly-session-notice')).toBeNull();
+    // 整个输入区没有「只读」字样
+    expect(screen.getByTestId('chat-composer-textarea').textContent).not.toContain('只读');
+  });
+
+  it('placeholder 说明去向：会开一条新对话，带上这次的结果', () => {
+    showSession(cronRunSession('cron-record-placeholder'));
+    render(<ChatInput onSend={() => true} />);
+
+    // composer 是 contenteditable，placeholder 是空态时的兄弟 span
+    expect(screen.getByText('接着问这次运行…（会开一条新对话，带上这次的结果）')).toBeTruthy();
+  });
+
+  it('heartbeat 运行记录同样处理', () => {
+    showSession(makeSession({
+      id: 'hb-record',
+      readOnly: true,
+      origin: { kind: 'heartbeat', id: 'hb-1' },
+    }));
+    render(<ChatInput onSend={() => true} />);
+
+    expect(screen.getByTestId('chat-composer-textarea')).toBeTruthy();
+    expect(screen.queryByTestId('readonly-session-notice')).toBeNull();
+  });
+
+  it('非 cron 的 readOnly 会话仍走只读提示（防御分支）', () => {
+    showSession(makeSession({ id: 'ro-other', readOnly: true }));
+    render(<ChatInput onSend={() => true} />);
+
+    expect(screen.getByTestId('readonly-session-notice')).toBeTruthy();
+    expect(screen.queryByTestId('chat-composer-textarea')).toBeNull();
+  });
+});

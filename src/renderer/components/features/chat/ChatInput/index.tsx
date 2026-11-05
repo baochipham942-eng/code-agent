@@ -345,6 +345,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const currentSessionReadOnly = useSessionStore((s) => (
     s.sessions.find((session) => session.id === currentSessionId)?.readOnly === true
   ));
+  // 定时任务运行记录（N-UI-CRON-RUN-RECORD-CLEAR）：readOnly 只是「记录不改写」的内部
+  // 标志，对用户不出现「只读」。composer 照常可用，发送经 useCronRunFollowUpSend
+  // fork 出新对话带走任务+结果，placeholder 直接说清去向。
+  const isCronRunRecordSession = useSessionStore((s) => {
+    const kind = s.sessions.find((session) => session.id === currentSessionId)?.origin?.kind;
+    return kind === 'cron' || kind === 'heartbeat';
+  });
+  const cronRunFollowUpMode = currentSessionReadOnly && isCronRunRecordSession;
   // 导入的外部历史会话：composer 保持可用，上方挂一行「发送即开新会话续聊」说明。
   const importedSessionNotice = useImportedSessionNotice();
   const [pendingPromptCommand, setPendingPromptCommand] = useState<ComposerPromptCommandSelection | null>(null);
@@ -904,10 +912,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
 
   const resolvedPlaceholder = useMemo(() => {
     if (placeholder) return placeholder;
+    if (cronRunFollowUpMode) return t.chatInput.cronFollowUpPlaceholder;
     if (inputPlaceholder) return inputPlaceholder;
     if (!isProcessing) return undefined;
     return t.chatInputSubmit.runtimeInputPlaceholder;
-  }, [inputPlaceholder, isProcessing, placeholder, t]);
+  }, [cronRunFollowUpMode, inputPlaceholder, isProcessing, placeholder, t]);
 
   // 提交发送管线（schedule/loop/goal/agent 命令分支 + appshot 注入 + ! shell 快捷 + 失败回滚）
   const { handleSubmit, runScheduleCreation, confirmScheduleCreation, startGoalRun, submitSeedComposer } = useChatInputSubmit({
@@ -921,6 +930,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     artifactReferences,
     currentSessionId,
     isProcessing,
+    neverQueueToSession: cronRunFollowUpMode,
     disabled,
     isUploading,
     onSend,
@@ -1324,7 +1334,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
           }}
         />
 
-        {composerDraft.notice && !currentSessionReadOnly && (
+        {composerDraft.notice && (!currentSessionReadOnly || cronRunFollowUpMode) && (
           <UnsentDraftNotice
             preview={composerDraft.notice.preview}
             onPutBack={composerDraft.putBack}
@@ -1334,7 +1344,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
         {!currentSessionReadOnly && importedSessionNotice && (
           <ImportedSessionNotice state={importedSessionNotice} />
         )}
-        {currentSessionReadOnly ? (
+        {currentSessionReadOnly && !cronRunFollowUpMode ? (
           <ReadOnlySessionNotice />
         ) : (
         // composer 浮起（2026-08-04 §3.1）：L2 底 + 投影，默认无边框、聚焦描边显现，

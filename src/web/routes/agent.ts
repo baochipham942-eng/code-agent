@@ -1744,13 +1744,13 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // 抛出的原始错误上通常没有——这里是手机唯一收到的那条 error，丢了「换走失败模型收起卡片」就失效。
       const failure = getProjectSourceTrustFailureMarker(error) ?? runController.lastTerminalFailure ?? getModelAuthFailureMarker(error) ?? getModelUsageLimitFailureMarker(error);
       deps.publishCompanionEvent?.(sessionId, 'error', { event: { code: 'RUN_FAILED', ...(failure ? { failure } : {}) }, runId: runContext?.runId });
-      if (!runController.disconnected) {
+      // 引擎已发过终态 error（runFinalizer 先发再抛）就不补发：同轮第二条 error 只会让
+      // renderer 再渲染一张同款红卡。引擎那条自带 failure，落库分类走 lastTerminalErrorData。
+      if (!runController.disconnected && !runController.hadTerminalError) {
         runController.emitAgentEvent({
           type: 'error',
           data: {
             message,
-            // 引擎已发过带标记的终态 error；这条后到的会覆盖前一条的分类，不带标记就把
-            // usage_limit 等降成 generic 卡（web 构建假供应商实测 2026-11-04）。
             ...(failure ? { failure } : {}),
           },
         });

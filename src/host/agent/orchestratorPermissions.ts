@@ -289,6 +289,15 @@ export class OrchestratorPermissionIsland {
         return 'lost';
       }
       approvalParkEvents.emit('resolved', { id, sessionId: pending.request.sessionId ?? null, status });
+      // 裁决赢了就把停车时发的那条「有操作等你确认」撤回（N-FIX-PARKED-BANNER-STALE-AFTER-RESOLVE）：
+      // 错过横幅的用户回来不该再被一条已处理完的停车提醒误导。approve/deny/timeout 的赢面
+      // 出口都汇到这一行；没赢（抢答/过期/台账写不进）不撤——赢的那次已经撤过。停车时若
+      // 通知被策略拦下没投递，retractNeedsInput 自身是 no-op。
+      try {
+        notificationService.retractNeedsInput(id);
+      } catch (err) {
+        logger.warn('Parked approval notification retract failed', err);
+      }
     }
     // B4 铸权：仅当人工在停车审批卡点「每次都允许发 <target>」（allow_standing）且赢得裁决后，
     // 把 (tool, target) 长期授权规则写到该会话所属 automation。target 从审批请求透传字段取，

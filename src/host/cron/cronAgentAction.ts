@@ -22,7 +22,7 @@ import { appendCronAgentExpertThreadReceipt } from './cronAgentExpertThreadRecei
 import { buildCronAgentPrompt, truncateUtf8Snapshot } from './cronAgentPrompt';
 import { beginArtifactRefresh, finishArtifactRefresh } from './artifactStandingRefresh';
 import { runWithCronJobBudget } from './cronExecutionPolicy';
-import { attachCronRunCost, createCronRunCostMeter } from './cronRunCostMeter';
+import { attachCronRunCost, createCronRunCostMeterForExecution } from './cronRunCostMeter';
 import { cronNotifyQuietRound } from './cronFailurePolicy';
 import { getCronAutomationType } from './cronAutomationBridge';
 import { parseStatedEventDecisions } from './cronEventDecisions';
@@ -116,7 +116,7 @@ export async function executeCronAgentAction(
   let runError: unknown; let runFailed = false;
   // 常设刷新（metadata.artifactRefresh）：跑前建快照记基线；非刷新任务返回 undefined 零扰动
   // N-CRON-RUN-LEDGER-VISIBLE：单次运行成本计量（maxRunBudget 有值时计量器兼任预算闸，见 cronRunCostMeter 头注）。
-  const costMeter = createCronRunCostMeter(definition.maxRunBudget);
+  const costMeter = createCronRunCostMeterForExecution(definition.maxRunBudget, executionId);
   const artifactRefresh = beginArtifactRefresh(definition);
   // 观察档（N-TRIGGER-OBSERVE-MODE）：本会话的对外副作用调用由 ToolExecutor 拦下记 would_act。
   const leaveObserveMode = enterObserveModeForCronRun(definition, cronSession.id, executionId);

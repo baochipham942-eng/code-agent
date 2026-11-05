@@ -95,6 +95,8 @@ interface NotificationDeliveryPayload {
   urgent?: boolean;
   /** 仅任务失败；renderer 聚焦时据此补应用内错误 toast（needs-input 不带）。 */
   failure?: boolean;
+  /** needs-input 去重键：随通知带给 renderer，裁决后按它撤回（retractNeedsInput）。 */
+  dedupeKey?: string;
 }
 
 interface BudgetedNotification extends NotificationBudgetItem {
@@ -293,7 +295,11 @@ class NotificationService implements Disposable {
       sessionId: data.sessionId,
       title: data.title,
       body: data.body,
-      delivery: { urgent: true, markSessionUnread: true },
+      delivery: {
+        urgent: true,
+        markSessionUnread: true,
+        ...(data.dedupeKey ? { dedupeKey: data.dedupeKey } : {}),
+      },
     });
     // Fallback B（N-RESIDENT-SCHEDULE-KEEPALIVE-DAEMON-FU1）：deliver 只广播给 renderer，
     // 渲染端没了（壳声明「后台继续」退出，ADR-083）时 toast 没有落点——再弹一条 host 侧
@@ -311,6 +317,31 @@ class NotificationService implements Disposable {
       }
     }
     logger.info('Needs-input notification sent', { title: data.title });
+  }
+
+  /**
+   * 撤回一条已投递的 needs-input 通知（审批裁决后调用，N-FIX-PARKED-BANNER-STALE-AFTER-RESOLVE）：
+   * 在同一 NOTIFICATION_SHOW 通道广播一条带 retract 标记、携带原 dedupeKey 的事件，
+   * renderer 据此把「离开期间的提醒」队列里那条移掉——用户回来不再被一条已处理完的
+   * 「有操作等你确认」补提醒误导。没投递过的键是 no-op（不广播）；重复撤回幂等。
+   * 已知局限：桌面壳已弹出的系统横幅撤不回（tauri-plugin-notification desktop 端无
+   * remove_active），只收回 renderer 侧的补提醒队列。
+   */
+  retractNeedsInput(dedupeKey: string): void {
+    if (!this.deliveredNeedsInputKeys.has(dedupeKey)) {
+      logger.debug('Skip retract for a needs-input key that was never delivered', { dedupeKey });
+      return;
+    }
+    if (this.isDryRun()) return;
+    broadcastToRenderer(IPC_CHANNELS.NOTIFICATION_SHOW, {
+      id: `notification_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      title: '',
+      body: '',
+      sessionId: '',
+      dedupeKey,
+      retract: true,
+    });
+    logger.info('Needs-input notification retracted', { dedupeKey });
   }
 
   /**

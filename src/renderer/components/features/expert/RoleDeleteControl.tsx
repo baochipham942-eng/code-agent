@@ -12,6 +12,7 @@ import type { RolePanelDetail } from "@shared/contract/roleAssets";
 import ipcService from "../../../services/ipcService";
 import { useI18n } from "../../../hooks/useI18n";
 import { useToastStore } from "../../../hooks/useToast";
+import { useAppStore } from "../../../stores/appStore";
 import { ConfirmDialog } from "../../composites/ConfirmDialog";
 import { createLogger } from "../../../utils/logger";
 
@@ -71,6 +72,10 @@ export const RoleDeleteControl: React.FC<RoleDeleteControlProps> = ({
             try {
               await ipcService.invokeDomain(IPC_DOMAINS.ROLES, "restoreDeletedRole", { trashId });
               addToast("success", text.restoreToast.replace("{role}", displayName));
+              // 删除成功时 onDeleted 已离开详情页（组件卸载，onRestored 的 loadDetail 是
+              // 死回调）：撤销后重新打开详情页 = 「undo reload the detail」，重挂载自带
+              // 新数据；用户再关掉它时专家列表也会带着还原后的角色重挂载。
+              useAppStore.getState().openExpertRoleDetail(roleId);
               onRestored();
             } catch (err) {
               // 过期被清 / 同名角色被重建：host 稳定 code 的 message 原样给人看

@@ -16,6 +16,7 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 
 import { RoleDeleteControl, shouldMountRoleDeleteControl } from '../../../src/renderer/components/features/expert/RoleDeleteControl';
 import { useToastStore } from '../../../src/renderer/hooks/useToast';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
 
 function renderControl(overrides: Partial<Parameters<typeof RoleDeleteControl>[0]> = {}) {
   const onDeleted = vi.fn();
@@ -82,6 +83,9 @@ describe('RoleDeleteControl（⑤）', () => {
 
     await waitFor(() => expect(invokeDomainMock).toHaveBeenCalledWith('domain:roles', 'restoreDeletedRole', { trashId: 'trash-xyz' }));
     await waitFor(() => expect(onRestored).toHaveBeenCalled());
+    // 撤销成功后重新打开详情页（删除时 onDeleted 已离开详情，loadDetail 是死回调；
+    // 真跑 2026-11-04 实证：不重开详情，已挂载的专家列表不会自动刷出还原的角色）
+    await waitFor(() => expect(useAppStore.getState().expertDetailRoleId).toBe('日历助理'));
     // 撤销成功后有恢复成功的 toast
     const toasts = useToastStore.getState().toasts;
     expect(toasts.some((toast) => toast.type === 'success' && toast.message.includes('恢复'))).toBe(true);

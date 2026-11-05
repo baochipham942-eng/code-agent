@@ -5,7 +5,7 @@
 
 const WINDOWS_ABSOLUTE_PATH = /^[a-zA-Z]:[\\/]/;
 
-export function isAbsoluteDeliverablePath(filePath: string): boolean {
+function isAbsoluteDeliverablePath(filePath: string): boolean {
   return filePath.startsWith('/') || WINDOWS_ABSOLUTE_PATH.test(filePath);
 }
 

@@ -18,6 +18,7 @@ import type {
 } from '../../../protocol/tools';
 import type { SkillCategory } from '../../../../shared/contract/skillRepository';
 import { enqueueRoleDraft } from '../../../services/roleAssets/roleDraftQueue';
+import { findUnknownToolNames, getKnownToolNames, hasProtocolToolRegistry } from '../../knownToolNames';
 import { proposeRoleSchema } from './proposeRole.schema';
 
 const schema: ToolSchema = proposeRoleSchema;
@@ -58,6 +59,32 @@ class ProposeRoleHandler implements ToolHandler<Record<string, unknown>, string>
     }
     if (ctx.abortSignal.aborted) {
       return { ok: false, error: 'aborted', code: 'ABORTED' };
+    }
+
+    // 工具名必须真实存在：模型编造的名字不能落进 agents/*.md（此前只在启动期记 error，专家已建好）
+    if (tools.length > 0) {
+      if (hasProtocolToolRegistry()) {
+        const unknown = findUnknownToolNames(tools, getKnownToolNames());
+        if (unknown.length > 0) {
+          ctx.logger.warn('propose_role rejected unknown tool names', { roleId, unknown: unknown.map((u) => u.name) });
+          const lines = unknown.map((u) => {
+            const near = u.suggestion ? [u.suggestion] : (u.nearest ?? []);
+            return near.length ? `- ${u.name} (nearest real tools: ${near.join(', ')})` : `- ${u.name} (no similar real tool)`;
+          },
+          );
+          return {
+            ok: false,
+            code: 'UNKNOWN_TOOLS',
+            error:
+              `These tool names do not exist, so no draft was created:\n${lines.join('\n')}\n` +
+              'Fix the names using real tool names and call propose_role again. ' +
+              'If no real tool provides the needed ability, tell the user in plain Chinese which ability is unavailable, ' +
+              'and submit the draft without that tool.',
+          };
+        }
+      } else {
+        ctx.logger.warn('propose_role skipped tool-name validation: protocol tool registry not ready', { roleId });
+      }
     }
 
     onProgress?.({ stage: 'starting', detail: `起草角色「${roleId}」` });

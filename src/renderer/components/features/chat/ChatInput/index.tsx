@@ -181,6 +181,13 @@ export interface ChatInputHandle {
     clientMessageId?: string;
   }) => void;
   focus: () => void;
+  /** FB-580 欢迎页示例卡：composer 是否已有内容（文本 / 内联 chip 含附件 / 待发 appshot）。 */
+  hasDraftOccupancy: () => boolean;
+  /**
+   * FB-580 欢迎页示例卡：模板追加到现有文本之后（空行分隔），附件与 chip 原样保留，
+   * 聚焦输入框。不发送。
+   */
+  appendDraftPrompt: (prompt: string) => void;
 }
 
 // ============================================================================
@@ -234,6 +241,29 @@ export function resolveComposerCoreActions(params: Parameters<typeof resolveLive
   // 附件「+」、身份/连接器/权限/模型、审批与提示 chip、VoiceChrome 状态条都不在此边界内。
   // JSX 必须逐项消费这份列表，禁止在映射外另塞同级核心按钮。
   return params.voiceInputInstalled === false ? [primaryAction] : ['voice-input', primaryAction];
+}
+
+// ============================================================================
+// 欢迎页示例卡 × 草稿保育（FB-580，2026-11-05 真机复现）
+// ============================================================================
+// 用户已在 composer 打字/挂附件/摆 chip 时点欢迎页示例卡：不发送、不丢弃，
+// 模板追加进输入框（空行分隔），发送时机由用户决定。占用判定与追加语义放纯函数，
+// handle（hasDraftOccupancy / appendDraftPrompt）与单测共用同一份口径——两个函数
+// 只在本文件消费（handle 是唯一出口），不导出（knip production 档不把测试当消费方）。
+// 占用的「chip」口径 = inlineChips 全集（命令 / 当轮 skill / @文件附件 / 资料库 pin /
+// 会话与产物引用）+ 待发 appshot——即输入区里用户摆进来的任何东西。
+function resolveDraftOccupancy(params: {
+  text: string;
+  inlineChipCount: number;
+  hasPendingAppshot: boolean;
+}): boolean {
+  return params.text.trim().length > 0 || params.inlineChipCount > 0 || params.hasPendingAppshot;
+}
+
+/** 模板追加语义：现有文本收掉尾随空白，空一行再接模板；空文本直接给模板。 */
+function appendComposerPrompt(currentText: string, prompt: string): string {
+  const base = currentText.replace(/\s+$/, '');
+  return base ? `${base}\n\n${prompt}` : prompt;
 }
 
 const ignoreVoiceInput = () => undefined;
@@ -675,7 +705,22 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     focus: () => {
       inputAreaRef.current?.focus();
     },
-  }), []);
+    // FB-580 欢迎页示例卡：占位探针读 latestValueRef（避免逐键重建 handle），chip /
+    // appshot 计数走依赖数组保持新鲜——空 composer 的「一键直发」与「有内容改填充」
+    // 都以用户此刻输入区里的真实状态为准。
+    hasDraftOccupancy: () => resolveDraftOccupancy({
+      text: latestValueRef.current,
+      inlineChipCount: inlineChips.length,
+      hasPendingAppshot: pendingAppshot !== null,
+    }),
+    appendDraftPrompt: (prompt) => {
+      if (!prompt) return;
+      // 与 setDraft 同款口径：程序写入的文本不算用户亲手输入，envelope 记 memoryTainted。
+      inputMemoryTainted.current = true;
+      setValue((prev) => appendComposerPrompt(prev, prompt));
+      inputAreaRef.current?.focus();
+    },
+  }), [inlineChips, pendingAppshot]);
 
   useEffect(() => {
     setVoiceInputContext(null);

@@ -11,7 +11,25 @@
 // 改这一处即两路生效。
 // ============================================================================
 
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+// 连接器 per-turn 进面（N-FG-CONNECTOR-TOOLS）的判据依赖 configService / connector
+// registry，与 nativeConnectorPreload.test.ts 同款替身：enabledNative 用可控变量、
+// registry 用真实单例（darwin 上 configure 注册，读就绪态）。
+// importActual 透传 configService 其余导出，避免图内其他消费方（toolAvailability 等）被半截 mock 弄红。
+const connectorMocks = vi.hoisted(() => ({
+  enabledNative: [] as string[],
+}));
+
+vi.mock('../../../src/host/services/core/configService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/host/services/core/configService')>();
+  // 原型委托：getSettings 换成受控版本（enabledNative 可变），其余方法（本文件图内
+  // getCoreToolDefinitions 会用 getServiceApiKey）落到真实单例——真实构造函数零 IO。
+  const testDouble = Object.create(actual.getConfigService());
+  testDouble.getSettings = () => ({ connectors: { enabledNative: connectorMocks.enabledNative } });
+  return { ...actual, getConfigService: () => testDouble };
+});
+
 import {
   getSessionCommandCenterBrainContextForPrompt,
   getTextForegroundToolNamesForPrompt,
@@ -28,6 +46,7 @@ import {
   getProtocolRegistry,
   getTextForegroundToolNames,
 } from '../../../src/host/tools/protocolRegistry';
+import { getConnectorRegistry } from '../../../src/host/connectors/registry';
 import { chatTranscriptEn, chatTranscriptZh } from '../../../src/renderer/i18n/chatTranscript';
 import { getSystemReminders } from '../../../src/host/prompts/systemReminders';
 
@@ -362,3 +381,145 @@ function weeklyPromptForSurface(): string {
 function sheetPromptForSurface(): string {
   return chatTranscriptZh.chat.suggestions.sheetAnalysis.prompt;
 }
+
+// ============================================================================
+// 连接器工具 per-turn 进面（N-FG-CONNECTOR-TOOLS，ADR-059 修订）
+// 「发邮件/建日程/设提醒」命中意图 × 设置启用 × registry 就绪时，连接器读写工具
+// 进文字前台 allowlist；无意图轮零新增（前缀缓存守卫）；权限与审批链路不动。
+// registry 是真实单例：darwin 上 configure 才注册（Linux CI 整组跳过，
+// 见 memory darwin-only 连接器注册表测试桥）。
+// ============================================================================
+const darwinForConnectors = process.platform === 'darwin';
+const CONNECTOR_ALL = ['reminders', 'mail', 'calendar'];
+
+describe.skipIf(!darwinForConnectors)('getTextForegroundToolNamesForPrompt — 连接器 per-turn 进面', () => {
+  beforeEach(() => {
+    connectorMocks.enabledNative = [];
+    getConnectorRegistry().configure([]);
+  });
+
+  it('意图 × 启用 × 就绪（unchecked）：该连接器读写工具进前台 allowlist', () => {
+    connectorMocks.enabledNative = CONNECTOR_ALL;
+    getConnectorRegistry().configure(CONNECTOR_ALL);
+
+    const mail = getTextForegroundToolNamesForPrompt('给 noreply@example.com 发封邮件，说明明天的会议改到下午3点');
+    expect(mail).toEqual(expect.arrayContaining(['mail', 'mail_send', 'mail_draft']));
+    const calendar = getTextForegroundToolNamesForPrompt('帮我在日历里建个日程，明天下午3点到4点团队周会');
+    expect(calendar).toEqual(expect.arrayContaining(['calendar', 'calendar_create_event']));
+    const reminders = getTextForegroundToolNamesForPrompt('提醒我明天早上9点核对发版清单');
+    expect(reminders).toEqual(expect.arrayContaining(['reminders', 'reminders_create']));
+    // 基础面前成员原样保留
+    for (const name of ['Read', 'Write', 'Edit', 'AskUserQuestion']) {
+      expect(mail).toContain(name);
+    }
+  });
+
+  it('withSessionCommandCenterBrain 带 prompt 时把连接器工具写进 allowlist（桌面路）', () => {
+    connectorMocks.enabledNative = ['mail'];
+    getConnectorRegistry().configure(['mail']);
+    const options = withSessionCommandCenterBrain(undefined, '给 a@b.c 发封邮件说会议改期');
+    expect(options.allowedToolNames).toContain('mail_send');
+    // 单轮只带命中的连接器：未命中的 calendar/reminders 不进面
+    expect(options.allowedToolNames).not.toContain('calendar_create_event');
+    expect(options.allowedToolNames).not.toContain('reminders_create');
+  });
+
+  it('未启用：不进面（行为与改动前一致，不扩面）', () => {
+    getConnectorRegistry().configure(CONNECTOR_ALL);
+    expect(getTextForegroundToolNamesForPrompt('给 a@b.c 发封邮件说会议改期'))
+      .toEqual(getTextForegroundToolNames());
+  });
+
+  // rework r1（PR #2808 ai-review）：手选/专家连接器收窄必须透传——范围外即使意图
+  // 命中也不进 allowlist。否则 run policy 白名单放行范围外连接器写、deferred 预载却
+  // 按收窄不送 schema，同一轮两个判决互相矛盾。
+  it('手选/专家收窄连接器范围：范围外即使意图命中也不进面', () => {
+    connectorMocks.enabledNative = CONNECTOR_ALL;
+    getConnectorRegistry().configure(CONNECTOR_ALL);
+
+    // 直接调用形态（web 路传 config.toolScope?.allowedConnectorIds）
+    expect(getTextForegroundToolNamesForPrompt('给 a@b.c 发封邮件说会议改期', ['calendar']))
+      .toEqual(getTextForegroundToolNames());
+
+    // 桌面路形态：withSessionCommandCenterBrain 从 options.toolScope 透传
+    // （withWorkbenchTurnSystemContext 已把手选/专家并进 options.toolScope）
+    const options = withSessionCommandCenterBrain(
+      { toolScope: { allowedConnectorIds: ['calendar'] } },
+      '给 a@b.c 发封邮件说会议改期',
+    );
+    for (const absent of ['mail', 'mail_send', 'mail_draft']) {
+      expect(options.allowedToolNames).not.toContain(absent);
+    }
+
+    // 双意图轮：范围内的 calendar 保留，范围外的 mail 剔除
+    const dual = withSessionCommandCenterBrain(
+      { toolScope: { allowedConnectorIds: ['calendar'] } },
+      '给 a@b.c 发封邮件，再帮我建个日程',
+    );
+    expect(dual.allowedToolNames).toContain('calendar_create_event');
+    expect(dual.allowedToolNames).not.toContain('mail_send');
+    expect(dual.allowedToolNames).not.toContain('mail_draft');
+  });
+
+  it('就绪不可用（非 darwin）：不进面', () => {
+    const original = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    try {
+      connectorMocks.enabledNative = CONNECTOR_ALL;
+      getConnectorRegistry().configure(CONNECTOR_ALL);
+      expect(getTextForegroundToolNamesForPrompt('给 a@b.c 发封邮件说会议改期'))
+        .toEqual(getTextForegroundToolNames());
+    } finally {
+      Object.defineProperty(process, 'platform', original);
+      getConnectorRegistry().configure([]);
+    }
+  });
+
+  it('无连接器意图的轮次零新增（前缀缓存守卫）', () => {
+    connectorMocks.enabledNative = CONNECTOR_ALL;
+    getConnectorRegistry().configure(CONNECTOR_ALL);
+    expect(getTextForegroundToolNamesForPrompt('explain this repo'))
+      .toEqual(getTextForegroundToolNames());
+    expect(getTextForegroundToolNamesForPrompt('你好，帮我看看今天有什么安排'))
+      .toEqual(getTextForegroundToolNames());
+  });
+
+  it('存草稿轮与连接器扩展同轮命中时 mail_draft 不重复', () => {
+    connectorMocks.enabledNative = ['mail'];
+    getConnectorRegistry().configure(['mail']);
+    const names = getTextForegroundToolNamesForPrompt('存草稿 1');
+    expect(names.filter((name) => name === 'mail_draft')).toHaveLength(1);
+  });
+
+  it('前台进面不降低连接器写工具的审批链路：C1 确定性 ask 仍生效', async () => {
+    const { connectorWriteAskClassification } = await import('../../../src/host/tools/connectorTokenWrite');
+    const { mailSendSchema } = await import('../../../src/host/tools/modules/connectors/mailSend.schema');
+    // schema 不做常驻前台声明：进面只靠 per-turn 判据（allowInTextForeground 仍是 false/缺省）
+    expect(mailSendSchema.allowInTextForeground).not.toBe(true);
+    expect(mailSendSchema.permissionLevel).toBe('write');
+    const classification = connectorWriteAskClassification(
+      mailSendSchema.name,
+      { subject: '会议改期', to: ['noreply@example.com'] },
+      mailSendSchema.permissionLevel!,
+      Date.now(),
+    );
+    expect(classification?.decision).toBe('ask');
+    expect(classification?.trustBoundary).toBe(true);
+    expect(classification?.reason).toContain('需要你确认');
+  });
+
+  it('语音窄工具面不受影响：不含任何连接器写工具（ADR-059 语音通道不变）', async () => {
+    const { VOICE_TOOL_DEFINITIONS } = await import('../../../src/host/services/voice/voiceTools');
+    const names = VOICE_TOOL_DEFINITIONS.map((definition) => definition.name);
+    for (const absent of ['mail', 'mail_send', 'mail_draft', 'calendar', 'calendar_create_event', 'reminders', 'reminders_create']) {
+      expect(names).not.toContain(absent);
+    }
+  });
+
+  it('brain 提示词讲明连接器工具直调 + 审批卡在聊天内确认', () => {
+    const block = getSessionCommandCenterBrainContextForPrompt('给 a@b.c 发封邮件')[0];
+    expect(block).toContain('不派 delegate_task');
+    expect(block).toContain('确认卡片');
+    expect(block).toContain('只在工具返回成功后才说已发送或已创建');
+  });
+});

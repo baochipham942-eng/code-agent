@@ -18,6 +18,8 @@ import { declaresCronUrgencyQuiet, parseUrgencyHeader } from '../../shared/cronU
 import { isCronPermissionDeniedMarker } from '../../shared/cronPermissionDenied';
 import type { CronPermissionDeniedMarker, CronUrgency } from '../../shared/contract/sessionAutomation';
 
+import type { UnattendedApprovalDenial } from '../agent/unattendedApprovalTerminal';
+
 export interface CronAgentActionResult {
   agentType: string;
   prompt: string;
@@ -28,6 +30,8 @@ export interface CronAgentActionResult {
   urgency?: CronUrgency;
   /** 头部行存在但值不合法时的整行原文（归 fyi 时保留给用户看）。 */
   urgencyRaw?: string;
+  /** 无人值守审批 30 分钟无人批准而降级拒绝的步骤（run 仍 completed），保留原因码供执行记录追溯。 */
+  unattendedApprovalDenials?: UnattendedApprovalDenial[];
   /**
    * notifyWhen 判据未满足的安静成功轮（N-CRON-RESTATE-HUMAN-WHEN）：跳过完成
    * 系统通知与通道推送。与 skipped 不同——执行仍 completed、仍进历史与待过目

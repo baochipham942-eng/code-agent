@@ -43,6 +43,8 @@ function usage() {
     'Use --clean-account to skip the cloud session-list pull so the sidebar starts truly empty (sign-in is unchanged).',
     'Use --native calendar,reminders to opt in to native connector verification on macOS.',
     `The source template defaults to ${DEFAULT_SOURCE_CONFIG}; use --source-config to select it explicitly.`,
+    'Set NEO_VERIFY_PRE_START=<script> to run that node script (with NEO_VERIFY_DATA_DIR in env) after the',
+    'data dir is staged and before the webServer spawns — e.g. to place folders the startup path must see.',
   ].join('\n');
 }
 
@@ -759,6 +761,22 @@ export function buildWebServerEnv({ baseEnv = process.env, dataDir, runtimeTmpDi
   };
 }
 
+/**
+ * Opt-in staging hook (NEO_VERIFY_PRE_START): run a node script against the staged
+ * data dir before the webServer spawns — e.g. to place folders in the default work
+ * root that the startup path under test must already see. Non-zero exit fails the start.
+ */
+function runPreStartHook(dataDir) {
+  const hook = process.env.NEO_VERIFY_PRE_START?.trim();
+  if (!hook) return;
+  const result = spawnSync(process.execPath, [hook], {
+    stdio: 'inherit',
+    env: { ...process.env, NEO_VERIFY_DATA_DIR: dataDir },
+  });
+  if (result.error) fail(`pre-start hook failed to start: ${result.error.message}`);
+  if (result.status !== 0) fail(`pre-start hook exited with ${result.status ?? 'unknown'}`);
+}
+
 async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigArg, cleanAccount = false) {
   const ticket = sanitizeTicket(ticketArg);
   const credentials = readDogfoodCredentials();
@@ -785,6 +803,7 @@ async function startRun(ticketArg, reuseDist, nativeConnectorIds, sourceConfigAr
     const runtimeTmpDir = path.join(dataDir, 'runtime-tmp');
     mkdirSync(runtimeTmpDir, { mode: 0o700 });
     chmodSync(runtimeTmpDir, 0o700);
+    runPreStartHook(dataDir);
 
     const port = await reservePort();
     const url = `http://127.0.0.1:${port}`;

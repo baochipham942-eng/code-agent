@@ -25,6 +25,7 @@ import { runWithCronJobBudget } from './cronExecutionPolicy';
 import { attachCronRunCost, createCronRunCostMeterForExecution } from './cronRunCostMeter';
 import { cronNotifyQuietRound } from './cronFailurePolicy';
 import { getCronAutomationType } from './cronAutomationBridge';
+import { takeUnattendedApprovalDenials } from '../agent/unattendedApprovalTerminal';
 import { parseStatedEventDecisions } from './cronEventDecisions';
 import { enterObserveModeForCronRun } from './cronObserveMode';
 import { deriveCronPermissionDenied } from './cronPermissionDenied';
@@ -188,6 +189,7 @@ export async function executeCronAgentAction(
       }
     } catch (error) {
       runFailed = true;
+      takeUnattendedApprovalDenials(cronSession.id);
       runError = ((code: string | undefined) => code ? new Error(code) : error)((await import('../agent/unattendedApprovalTerminal')).takeUnattendedApprovalTimeout(cronSession.id));
       try {
         const lastAssistant = [...orchestrator.getMessages()].reverse().find((message) => message.role === 'assistant');
@@ -275,8 +277,10 @@ export async function executeCronAgentAction(
   const eventDecisions = eventPayloadBlock === undefined ? [] : parseStatedEventDecisions(finalAssistantText);
   // N-CRON-RUN-LEDGER-VISIBLE：本地运行实测成本（scoped 计量器读数）；失败路径已挂在 error 上。
   const costUsd = costMeter.getCostUsd();
+  const unattendedApprovalDenials = takeUnattendedApprovalDenials(cronSession.id);
   return {
     ...actionResult,
+    ...(unattendedApprovalDenials.length > 0 ? { unattendedApprovalDenials } : {}),
     ...(eventDecisions.length > 0 ? { eventDecisions } : {}),
     ...(costUsd > 0 ? { costUsd } : {}),
   };

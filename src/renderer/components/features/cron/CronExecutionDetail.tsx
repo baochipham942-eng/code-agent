@@ -21,6 +21,7 @@ import { CronRunsOnPill } from './CronRunsOnSelector';
 import { cronLoginWallCopy, openCronLoginWallSite } from './cronLoginWallNotice';
 import { cronFailureSentence } from './cronFailureNotice';
 import { wakeSkipSentence } from './wakeSkipSentence';
+import { awaitingApprovalLabel } from './awaitingApprovalLabel';
 
 const CLOUD_NOT_WIRED = 'Cloud execution is not wired yet (N-L3-MINLOOP-SRV).';
 const TIME_LIMIT = /Cron job run exceeded its (\d+(?:\.\d+)?)s time limit\./;
@@ -55,7 +56,7 @@ interface CronExecutionDetailProps {
   execution: CronJobExecution | null;
   runsOn?: CronJobDefinition['runsOn'];
   /** 等批准运行（N-CRON-UNATTENDED-BASH-PARK-STUCK）：状态 chip 换 amber 徽章 + 一句提示 + 去处理。 */
-  awaitingRun?: { executionId: string | null } | null;
+  awaitingRun?: { executionId: string | null; commandPreview?: string } | null;
   onReviewAwaiting?: () => void;
 }
 
@@ -189,7 +190,7 @@ export const CronExecutionDetail: React.FC<CronExecutionDetailProps> = ({
           className="mx-1 mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-badge-warning/30 bg-amber-500/5 px-3 py-2"
           data-testid="cron-exec-detail-awaiting-approval-hint"
         >
-          <span className="text-xs text-zinc-400">{cc.awaitingApprovalHint}</span>
+          <span className="text-xs text-zinc-400">{awaitingApprovalLabel(cc.awaitingApprovalWithPreview, awaitingRun.commandPreview) ?? cc.awaitingApprovalHint}</span>
           <Button
             type="button"
             variant="primary"

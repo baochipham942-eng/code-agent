@@ -236,6 +236,28 @@ describe('PresentationPagePicker libreoffice-missing 有界自动重试', () => 
     expect(invoke).toHaveBeenCalledTimes(1);
   });
 
+  it('右栏路径（preview prop 为缓存 missing 结果）：父组件重渲染不得把重试已拿到的页图打回「准备中」', async () => {
+    mockInvoke(readyPreview);
+    const invoke = (window.domainAPI as { invoke: ReturnType<typeof vi.fn> }).invoke;
+    // PreviewPanel 每次渲染都会用（同一份）缓存 content 重新渲染 PresentationPreview；
+    // 重试已成功后，这种纯重渲染不允许把展示重置回缓存的 missing。
+    const view = render(<PresentationPreview content={JSON.stringify(missingPreview)} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(view.container.innerHTML).toContain('<img');
+
+    const sameContent = JSON.stringify(missingPreview);
+    view.rerender(<PresentationPreview content={sameContent} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(view.container.innerHTML).toContain('<img');
+    expect(view.container.textContent).not.toContain('正在后台准备像素预览组件');
+
+    // 纯重渲染也不应立刻多发请求
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    expect(invoke).toHaveBeenCalledTimes(1);
+  });
+
   it('右栏路径（preview prop 带失败码）：显示具体原因，不自动轮询', async () => {
     mockInvoke();
     const invoke = (window.domainAPI as { invoke: ReturnType<typeof vi.fn> }).invoke;

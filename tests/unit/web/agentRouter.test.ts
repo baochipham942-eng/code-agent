@@ -614,7 +614,7 @@ describe('createAgentRouter', () => {
     async function runFailingTurn(
       sessionId: string,
       engine: (onEvent: (event: { type: string; data?: unknown }) => void) => Promise<void>,
-      publish: ReturnType<typeof vi.fn>,
+      publish: NonNullable<Parameters<typeof createAgentRouter>[0]['publishCompanionEvent']>,
     ): Promise<string> {
       mockCreateAgentLoop.mockImplementationOnce((_config, onEvent: (event: { type: string; data?: unknown }) => void) => ({
         run: vi.fn(() => engine(onEvent)),

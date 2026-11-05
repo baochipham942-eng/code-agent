@@ -26,7 +26,9 @@ vi.mock('../../../src/renderer/hooks/useToast', () => ({
 import {
   AgentErrorPresentation,
   buildAgentErrorReport,
+  buildRepeatNotice,
   resolveAgentErrorCopy,
+  resolveAgentErrorShortReason,
 } from '../../../src/renderer/components/features/chat/AgentErrorCard';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useMessageActionStore } from '../../../src/renderer/stores/messageActionStore';
@@ -68,6 +70,7 @@ describe('AgentErrorCard', () => {
   });
 
   it('renders title, suggestion and detail line from category + metadata', () => {
+    useAppStore.setState({ developerMode: true });
     renderCard(makeError());
 
     expect(screen.getByText('模型接口或模型名称不匹配')).toBeTruthy();
@@ -145,21 +148,23 @@ describe('AgentErrorCard', () => {
   });
 
   it.each([
-    { developerMode: false, modelVisible: false },
-    { developerMode: true, modelVisible: true },
+    { developerMode: false, detailsVisible: false },
+    { developerMode: true, detailsVisible: true },
   ])(
-    '模型行按开发者模式显隐、技术详情仍对全用户可展开：$developerMode',
-    ({ developerMode, modelVisible }) => {
+    '模型行与技术详情都只对开发者露出（N-UI-AGENT-ERROR-REPEAT-COLLAPSE）：$developerMode',
+    ({ developerMode, detailsVisible }) => {
       useAppStore.setState({ developerMode });
       renderCard(makeError({ provider: 'custom-100xlabs', modelId: 'claude-opus-4-8' }));
 
       const modelLine = screen.queryByText('实际使用 claude-opus-4-8');
-      expect(Boolean(modelLine)).toBe(modelVisible);
+      expect(Boolean(modelLine)).toBe(detailsVisible);
 
-      // provider 仍然拿得到，并且不受开发者模式影响
-      const details = screen.getByText('查看技术详情').closest('details');
-      expect(details).toBeTruthy();
-      expect(details?.textContent).toContain('custom-100xlabs');
+      const details = screen.queryByText('查看技术详情')?.closest('details') ?? null;
+      expect(Boolean(details)).toBe(detailsVisible);
+      if (detailsVisible) {
+        // provider 仍然拿得到
+        expect(details?.textContent).toContain('custom-100xlabs');
+      }
     },
   );
 
@@ -409,5 +414,139 @@ describe('resolveAgentErrorCopy / buildAgentErrorReport', () => {
 
     expect(screen.queryByText('重试')).toBeNull();
     expect(screen.getByText('切换模型')).toBeTruthy();
+  });
+});
+
+// 连续同因失败折叠（N-UI-AGENT-ERROR-REPEAT-COLLAPSE）：run 由投影层从消息列表推导，
+// 这里钉住三件事——非最新的压成灰字行、最新整卡带连续次数、rate_limited 不参与折叠。
+describe('AgentErrorPresentation 连续同因失败折叠', () => {
+  beforeEach(() => {
+    useSessionStore.setState({ runningSessionIds: new Set() });
+    useAppStore.setState({ developerMode: false });
+  });
+
+  afterEach(() => {
+    cleanup();
+    useMessageActionStore.getState().unregister();
+  });
+
+  it('非段内最新：压成一行灰字「没有回复 · 原因」，无按钮、不抢 role=alert', () => {
+    render(
+      <AgentErrorPresentation
+        error={makeError({ category: 'auth', httpStatus: 401 })}
+        messageId="assistant-1"
+        sessionId="session-1"
+        run={{ runLength: 2, latest: false }}
+      />,
+    );
+
+    const line = screen.getByTestId('agent-error-muted-line');
+    expect(line.textContent).toBe('没有回复 · 账号没通过授权');
+    expect(line.className).toContain('text-text-tertiary');
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('段内最新且 runLength≥2：整卡说明连续次数，不可重试类（auth）明说再发也不会好', () => {
+    render(
+      <AgentErrorPresentation
+        error={makeError({ category: 'auth', httpStatus: 401 })}
+        messageId="assistant-3"
+        sessionId="session-1"
+        run={{ runLength: 3, latest: true }}
+      />,
+    );
+
+    expect(screen.getByRole('alert')).toBeTruthy();
+    expect(screen.getByText('连续 3 次都是这个原因，再发也不会好。')).toBeTruthy();
+    // 动作可见性不因折叠改变：auth 仍是换模型 + 检查账号、无重试
+    expect(screen.getByRole('button', { name: '切换模型' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '检查账号设置' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /重试/ })).toBeNull();
+  });
+
+  it('可重试类（network）用中性措辞，只说次数、不断言再发也不会好', () => {
+    render(
+      <AgentErrorPresentation
+        error={makeError({ category: 'network' })}
+        messageId="assistant-2"
+        sessionId="session-1"
+        run={{ runLength: 2, latest: true }}
+      />,
+    );
+
+    expect(screen.getByText('连续 2 次都是这个原因。')).toBeTruthy();
+    expect(screen.queryByText(/再发也不会好/)).toBeNull();
+    expect(screen.getByRole('button', { name: /重试/ })).toBeTruthy();
+  });
+
+  it('runLength 1 或缺 run：不出现连续次数句，维持单次失败整卡', () => {
+    const { unmount } = render(
+      <AgentErrorPresentation
+        error={makeError({ category: 'network' })}
+        messageId="assistant-1"
+        sessionId="session-1"
+        run={{ runLength: 1, latest: true }}
+      />,
+    );
+    expect(screen.queryByText(/连续/)).toBeNull();
+    unmount();
+
+    render(
+      <AgentErrorPresentation
+        error={makeError({ category: 'network' })}
+        messageId="assistant-1"
+        sessionId="session-1"
+      />,
+    );
+    expect(screen.getByRole('alert')).toBeTruthy();
+    expect(screen.queryByText(/连续/)).toBeNull();
+  });
+
+  it('同一轮内的重复报错（duplicate）整条不渲染', () => {
+    const { container } = render(
+      <AgentErrorPresentation
+        error={makeError({ category: 'auth', httpStatus: 401 })}
+        messageId="assistant-1"
+        sessionId="session-1"
+        run={{ runLength: 1, latest: false, duplicate: true }}
+      />,
+    );
+
+    expect(container.firstChild).toBeNull();
+    expect(screen.queryByTestId('agent-error-muted-line')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('rate_limited 不参与折叠：带 latest=false 仍走灰字行 + 重试路径', () => {
+    render(
+      <AgentErrorPresentation
+        error={makeError({ category: 'rate_limited', httpStatus: 429 })}
+        messageId="assistant-1"
+        sessionId="session-1"
+        run={{ runLength: 2, latest: false }}
+      />,
+    );
+
+    expect(screen.getByTestId('rate-limited-error-line')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '重试' })).toBeTruthy();
+    expect(screen.queryByTestId('agent-error-muted-line')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('灰字行与连续次数句的 en 词条齐全', () => {
+    expect(en.agentError.mutedLine).toBe('No reply · {reason}');
+    expect(en.agentError.repeat.noRetry).toContain('{n}');
+    expect(en.agentError.repeat.retryable).not.toContain('resending will not fix');
+    expect(en.agentError.shortReasons.auth).toBe('account authorization failed');
+  });
+
+  it('短原因与连续次数句的查表行为：未知类回落 generic、<2 次不出次数句', () => {
+    expect(resolveAgentErrorShortReason('auth', zh)).toBe('账号没通过授权');
+    expect(resolveAgentErrorShortReason('nope' as AgentErrorMetadata['category'], zh)).toBe('运行失败');
+    expect(buildRepeatNotice({ runLength: 3 }, 'auth', zh)).toBe('连续 3 次都是这个原因，再发也不会好。');
+    expect(buildRepeatNotice({ runLength: 2 }, 'network', zh)).toBe('连续 2 次都是这个原因。');
+    expect(buildRepeatNotice({ runLength: 1 }, 'auth', zh)).toBeNull();
+    expect(buildRepeatNotice(undefined, 'auth', zh)).toBeNull();
   });
 });

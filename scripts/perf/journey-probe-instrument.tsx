@@ -119,7 +119,7 @@ export interface CommitSettlementOptions {
  * Wait until the journey subtree stops committing, then return the settled
  * count. react-virtuoso reacts to scroll/size changes asynchronously
  * (ResizeObserver → rAF → store → React flush), so reading the count after a
- * fixed number of frames races those trailing commits (N-PERF-JOURNEY-LONGSESSION-SETTLE).
+ * fixed number of frames races those trailing commits (N-PERF-JOURNEY-LONGSESSION-SETTLE, N-PERF-LONG-SESSION-RATCHET-FLAKE).
  */
 export async function waitForCommitSettlement(
   instrument: JourneyInstrument,

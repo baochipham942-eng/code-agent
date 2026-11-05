@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "reason": "2026-09-25 N-PERF-JOURNEY-RATCHET 初值：四条 Neo 用户旅程各钉一枚 React Profiler commitCount，只降不升。cold-start=2（InputArea 可输入）、first-token=3（MessageContent 首 token）、long-session=18（TurnBasedTraceView 32 轮滚动）、session-switch=4（EmptySessionArea 骨架 + 两会话正文）。同 commit 连跑 5 次计数逐字节相同；wallClockMs / longTaskCount 只记录、不进门。",
+  "reason": "2026-09-25 N-PERF-JOURNEY-RATCHET 初值：四条 Neo 用户旅程各钉一枚 React Profiler commitCount，只降不升。cold-start=2（InputArea 可输入）、first-token=3（MessageContent 首 token）、long-session=18（TurnBasedTraceView 32 轮滚动；2026-11-06 起改为 13，口径改成进入 + wheel 信号、不再测滚动，见 journeys.long-session.reason）、session-switch=4（EmptySessionArea 骨架 + 两会话正文）。同 commit 连跑 5 次计数逐字节相同；wallClockMs / longTaskCount 只记录、不进门。",
   "journeys": {
     "cold-start": {
       "commitCount": 2,

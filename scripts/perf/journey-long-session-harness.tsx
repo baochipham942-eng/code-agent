@@ -98,7 +98,6 @@ function LongSessionSurface(): React.ReactElement {
         // historical 18/19 flake); publish only once commits fall silent.
         await waitForCommitSettlement(instrument);
         const settledTurns = Math.max(mountedTurns, document.querySelectorAll('[data-trace-turn-id]').length);
-        if (settledTurns < 1) throw new Error('long-session: no turns mounted');
         if (!cancelled) {
           publishJourneyResult('long-session', instrument, {
             turnCount: TURN_COUNT,

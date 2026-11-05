@@ -62,6 +62,12 @@ export function useCronOsNotification(
     const unsubscribe = ipcService.on(
       IPC_CHANNELS.NOTIFICATION_SHOW,
       (event: NotificationShowEvent) => {
+        // 审批已裁决的撤回：只把「离开期间的提醒」队列里那条 needs-input 移掉，
+        // 不弹 OS 通知、不作点击目标（retract 本身没有任何用户可见动作）。
+        if (event.retract) {
+          missedRef.current.remove(event.dedupeKey);
+          return;
+        }
         // 预算窗口折起弹窗时单独送达的未读标记：只供侧栏圆点，不弹 OS 通知、不作点击目标。
         if (event.attentionOnly) return;
         lastEventRef.current = event;

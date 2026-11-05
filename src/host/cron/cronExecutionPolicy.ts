@@ -1,6 +1,6 @@
 import { Cron } from 'croner';
-import { CRON_GUARDRAILS } from '../../shared/constants';
-import type { CronJobDefinition, CronMissedReason } from '../../shared/contract/cron';
+import { CRON_AGENT_TYPES, CRON_GUARDRAILS } from '../../shared/constants';
+import type { CronJobAction, CronJobDefinition, CronMissedReason } from '../../shared/contract/cron';
 import { suggestCronStaggerMinute } from '../../shared/cronStagger';
 import {
   createScopedCostLimit,
@@ -185,4 +185,15 @@ export async function runWithCronJobBudget<T>(
     }
     throw error;
   }
+}
+
+/**
+ * 保存时校验 agent 动作的 agentType。create 传 previous=undefined；update 只在 agentType
+ * 相对已存值有变化时才校验（内部写回会原样重发旧动作，存量行不能因此被拒）。
+ */
+export function assertAgentTypeOnSave(action: CronJobAction | undefined, previous?: CronJobAction): void {
+  if (action?.type !== 'agent') return;
+  if (previous?.type === 'agent' && previous.agentType === action.agentType) return;
+  if ((CRON_AGENT_TYPES as readonly string[]).includes(action.agentType)) return;
+  throw new Error(`Agent 类型“${action.agentType}”不存在，可选值：${CRON_AGENT_TYPES.join('、')}。`);
 }

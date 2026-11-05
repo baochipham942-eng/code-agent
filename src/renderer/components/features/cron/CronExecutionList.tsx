@@ -6,6 +6,7 @@ import {
   formatRunCostUsd,
   formatRunListTime,
   getExecutionStatusMeta,
+  isPermissionDeniedExecution,
 } from './types';
 import { wakeSkipSentence } from './wakeSkipSentence';
 import { CronRunsOnPill } from './CronRunsOnSelector';
@@ -73,6 +74,8 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
         <tbody>
           {executions.map((execution) => {
             const statusMeta = getExecutionStatusMeta(execution.status);
+            // 需处理（N-CRON-RUN-COMPLETED-BUT-DENIED）：被拒且无产出的完成运行换琥珀徽章。
+            const permissionDenied = isPermissionDeniedExecution(execution);
             const wakeSkipText = wakeSkipSentence(execution, {
               silentLevel: cc.wakeSkipSilentLevel,
               dailyBudget: cc.wakeSkipDailyBudget,
@@ -101,6 +104,13 @@ export const CronExecutionList: React.FC<CronExecutionListProps> = ({
                         title={awaitingPreview ? cc.awaitingApprovalWithPreview.replace('{preview}', awaitingPreview) : undefined}
                       >
                         {awaitingApprovalLabel(cc.awaitingApprovalWithPreview, awaitingPreview) ?? cc.awaitingApprovalBadge}
+                      </span>
+                    ) : permissionDenied ? (
+                      <span
+                        className="rounded-full px-2 py-1 text-xs text-badge-warning bg-amber-500/10"
+                        data-testid="cron-execution-permission-denied"
+                      >
+                        {cc.permissionDeniedBadge}
                       </span>
                     ) : (
                       <span className={`rounded-full px-2 py-1 text-xs ${statusMeta.className}`}>

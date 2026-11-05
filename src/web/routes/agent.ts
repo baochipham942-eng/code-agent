@@ -1294,7 +1294,13 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       if (commandCenterBrain) {
         // 文字前台由 web TaskManager 承载，免除 CLI 专用的任务工具禁用表。
         config.taskManagerToolsEnabled = true;
-        config.allowedToolNames = applyMorningBriefSaveDraftRoleTools(prompt, getTextForegroundToolNamesForPrompt(prompt), config.agentOverride?.tools);
+        config.allowedToolNames = applyMorningBriefSaveDraftRoleTools(
+          prompt,
+          // 手选/专家连接器收窄必须透传（rework r1）：非空 scope 之外即使意图命中也不进白名单，
+          // 否则 run policy 放行范围外连接器写、预载却按收窄不送 schema，判决互相矛盾。
+          getTextForegroundToolNamesForPrompt(prompt, config.toolScope?.allowedConnectorIds),
+          config.agentOverride?.tools,
+        );
         config.foregroundToolFace = true;
         config.maxIterations = Math.min(
           config.maxIterations ?? SESSION_COMMAND_CENTER_BRAIN_MAX_ITERATIONS,

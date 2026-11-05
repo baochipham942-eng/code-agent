@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // ============================================================================
 // N-UI-CRON-RUN-RECORD-CLEAR：运行记录会话的用户气泡只显示任务本身。
 // 存储里的消息内容仍是完整 prompt（模型必须收到全文），渲染层切掉机器尾段。
@@ -5,13 +6,10 @@
 
 import React from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { renderToStaticMarkupAsync } from './renderToStaticMarkupAsync';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
 import type { SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
-
-const { MessageContent } = await import(
-  '../../../src/renderer/components/features/chat/MessageBubble/MessageContent'
-);
+import { MessageContent } from '../../../src/renderer/components/features/chat/MessageBubble/MessageContent';
 
 const TASK = '查一下今天的日程，把冲突的会议列出来';
 // buildCronAgentPrompt 产出的真实形状（旧记录同形）：任务 + 空行 + 时间锚点 + 摘要指令
@@ -40,27 +38,28 @@ const ASSISTANT_WITH_CRON_BLOCKS = [
 ].join('\n');
 
 afterEach(() => {
+  cleanup();
   useSessionStore.setState({ sessions: [], currentSessionId: null });
 });
 
 describe('MessageContent 用户气泡的 cron prompt 切割', () => {
-  it('带机器尾段的记录（新旧同形）：气泡只显示任务，不出现时间锚点与摘要指令', async () => {
-    const html = await renderToStaticMarkupAsync(
+  it('带机器尾段的记录（新旧同形）：气泡只显示任务，不出现时间锚点与摘要指令', () => {
+    const view = render(
       <MessageContent content={FULL_PROMPT} isUser messageId="cron-run-user-1" />,
     );
-    expect(html).toContain(TASK);
-    expect(html).not.toContain('【当前时间】');
-    expect(html).not.toContain('cron_summary');
-    expect(html).not.toContain('Unix 秒');
+    expect(view.container.textContent).toContain(TASK);
+    expect(view.container.textContent).not.toContain('【当前时间】');
+    expect(view.container.textContent).not.toContain('cron_summary');
+    expect(view.container.textContent).not.toContain('Unix 秒');
   });
 
-  it('普通用户消息不受影响', async () => {
+  it('普通用户消息不受影响', () => {
     const plain = '帮我看看这个报错\n\n第二行';
-    const html = await renderToStaticMarkupAsync(
+    const view = render(
       <MessageContent content={plain} isUser messageId="plain-user-1" />,
     );
-    expect(html).toContain('帮我看看这个报错');
-    expect(html).toContain('第二行');
+    expect(view.container.textContent).toContain('帮我看看这个报错');
+    expect(view.container.textContent).toContain('第二行');
   });
 
   it('追问分支子会话（origin=manual，父会话为 cron 运行记录）：复制过来的助手回复同样渲染为「本次运行摘要」卡，不露出裸 <cron_summary> 与 urgency:', async () => {
@@ -92,7 +91,7 @@ describe('MessageContent 用户气泡的 cron prompt 切割', () => {
       currentSessionId: 'fork-child-1',
     });
 
-    const html = await renderToStaticMarkupAsync(
+    const view = render(
       <MessageContent
         content={ASSISTANT_WITH_CRON_BLOCKS}
         isUser={false}
@@ -100,12 +99,14 @@ describe('MessageContent 用户气泡的 cron prompt 切割', () => {
         mediaContext={{ sessionId: 'fork-child-1' }}
       />,
     );
-    expect(html).toContain('data-testid="cron-run-summary"');
-    expect(html).toContain('本次运行摘要');
-    expect(html).toContain('已成功执行');
-    expect(html).not.toContain('cron_summary');
-    expect(html).not.toContain('cron_snapshot');
-    expect(html).not.toContain('last_echo=');
-    expect(html).not.toContain('urgency:');
+    await waitFor(() => {
+      expect(screen.getByTestId('cron-run-summary')).toBeTruthy();
+    });
+    expect(screen.getByTestId('cron-run-summary').textContent).toContain('本次运行摘要');
+    expect(screen.getByTestId('cron-run-summary').textContent).toContain('已成功执行');
+    expect(view.container.textContent).not.toContain('cron_summary');
+    expect(view.container.textContent).not.toContain('cron_snapshot');
+    expect(view.container.textContent).not.toContain('last_echo=');
+    expect(view.container.textContent).not.toContain('urgency:');
   });
 });

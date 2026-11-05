@@ -77,22 +77,22 @@ describe('AgentErrorCard', () => {
     expect(screen.getByText('HTTP 404')).toBeTruthy();
   });
 
-  it('余额不足精确提示充值，只给检查账号设置，不引导重试或切换模型', () => {
+  it('余额不足精确提示充值，只给检查账号，不引导重试或换个模型', () => {
     renderCard(makeError({ category: 'insufficient_balance', httpStatus: 402 }));
 
     expect(screen.getByText('这个账号余额不足')).toBeTruthy();
     expect(screen.getByText('去供应商后台充值后即可继续')).toBeTruthy();
-    expect(screen.getByRole('button', { name: '检查账号设置' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '检查账号' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /重试/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: /切换模型/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /换个模型/ })).toBeNull();
   });
 
   it.each(['model_not_found', 'forbidden', 'concurrency', 'network'] as const)(
-    'shows 切换模型 but not 新开会话 for model-ish category %s',
+    'shows 换个模型 but not 新开会话 for model-ish category %s',
     (category) => {
       renderCard(makeError({ category, httpStatus: undefined }));
 
-      expect(screen.getByRole('button', { name: /切换模型/ })).toBeTruthy();
+      expect(screen.getByRole('button', { name: /换个模型/ })).toBeTruthy();
       expect(screen.queryByRole('button', { name: /新开会话/ })).toBeNull();
       expect(screen.getByRole('button', { name: /重试/ })).toBeTruthy();
       expect(screen.queryByRole('button', { name: /复制错误报告/ })).toBeNull();
@@ -100,12 +100,12 @@ describe('AgentErrorCard', () => {
   );
 
   it.each(['context_length', 'generic'] as const)(
-    'shows 新开会话 but not 切换模型 for category %s',
+    'shows 新开会话 but not 换个模型 for category %s',
     (category) => {
       renderCard(makeError({ category, httpStatus: undefined }));
 
       expect(screen.getByRole('button', { name: /新开会话/ })).toBeTruthy();
-      expect(screen.queryByRole('button', { name: /切换模型/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /换个模型/ })).toBeNull();
     },
   );
 
@@ -189,7 +189,7 @@ describe('AgentErrorCard', () => {
 
   it('switch model asks the ModelSwitcher to open', () => {
     renderCard(makeError());
-    fireEvent.click(screen.getByRole('button', { name: /切换模型/ }));
+    fireEvent.click(screen.getByRole('button', { name: /换个模型/ }));
 
     expect(mocks.dispatchEvent).toHaveBeenCalled();
     const event = mocks.dispatchEvent.mock.calls.map(([e]) => e).find(
@@ -255,7 +255,7 @@ describe('AgentErrorCard', () => {
     expect(screen.getByText('模型服务商限流，稍后重试')).toBeTruthy();
     expect(screen.queryByText(/实际使用/)).toBeNull();
     expect(screen.queryByText(/查看技术详情/)).toBeNull();
-    expect(screen.queryByText(/切换模型/)).toBeNull();
+    expect(screen.queryByText(/换个模型/)).toBeNull();
     expect(screen.queryByText(/复制错误报告/)).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: '重试' }));
@@ -329,7 +329,7 @@ describe('AgentErrorCard', () => {
     expect(screen.getByText('已中断')).toBeTruthy();
     expect(screen.getByText('这次运行在给出任何回复之前被停掉了。可以重试。')).toBeTruthy();
     expect(screen.getByRole('button', { name: /重试/ })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /切换模型/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /换个模型/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /检查账号/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /新开会话/ })).toBeNull();
     expect(en.agentError.categories.interrupted).toEqual({
@@ -411,7 +411,7 @@ describe('resolveAgentErrorCopy / buildAgentErrorReport', () => {
     renderCard(makeError({ category: 'auth' }));
 
     expect(screen.queryByText('重试')).toBeNull();
-    expect(screen.getByText('切换模型')).toBeTruthy();
+    expect(screen.getByText('换个模型')).toBeTruthy();
   });
 });
 
@@ -445,8 +445,8 @@ describe('AgentErrorPresentation 连续同因失败折叠', () => {
     expect(screen.queryByRole('button')).toBeNull();
   });
 
-  it('段内最新且 runLength≥2：整卡说明连续次数，不可重试类（auth）明说再发也不会好', () => {
-    render(
+  it('段内最新且 runLength≥2：整卡说明连续次数，不可重试类（auth）明说再发也不会好，中文句间无空格', () => {
+    const { container } = render(
       <AgentErrorPresentation
         error={makeError({ category: 'auth', httpStatus: 401 })}
         messageId="assistant-3"
@@ -457,9 +457,11 @@ describe('AgentErrorPresentation 连续同因失败折叠', () => {
 
     expect(screen.getByRole('alert')).toBeTruthy();
     expect(screen.getByText('连续 3 次都是这个原因，再发也不会好。')).toBeTruthy();
-    // 动作可见性不因折叠改变：auth 仍是换模型 + 检查账号、无重试
-    expect(screen.getByRole('button', { name: '切换模型' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '检查账号设置' })).toBeTruthy();
+    expect(container.textContent).toContain('密钥可能填错、过期，或者额度用完了。连续 3 次都是这个原因，再发也不会好。');
+    expect(container.textContent).not.toContain('。 连续');
+    // 动作可见性不因折叠改变：auth 仍是换个模型 + 检查账号、无重试
+    expect(screen.getByRole('button', { name: '换个模型' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '检查账号' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /重试/ })).toBeNull();
   });
 
@@ -537,6 +539,9 @@ describe('AgentErrorPresentation 连续同因失败折叠', () => {
     expect(en.agentError.repeat.noRetry).toContain('{n}');
     expect(en.agentError.repeat.retryable).not.toContain('resending will not fix');
     expect(en.agentError.shortReasons.auth).toBe('account authorization failed');
+    expect(en.agentError.categories.auth.suggestion).toBe('The key may be wrong or expired, or the quota may be used up.');
+    expect(en.agentError.actions.switchModel).toBe('Switch model');
+    expect(en.agentError.actions.checkAccount).toBe('Check account');
   });
 
   it('短原因查表行为：未知类回落 generic', () => {

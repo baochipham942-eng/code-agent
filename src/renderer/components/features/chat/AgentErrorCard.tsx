@@ -245,7 +245,9 @@ const AgentErrorCard: React.FC<{
 
       <div className="mt-0.5 pl-[22px] text-[13px] leading-relaxed text-text-secondary">
         {suggestion}
-        {repeatNotice && <span className="ml-1">{repeatNotice}</span>}
+        {repeatNotice && (
+          <span className={language === 'zh' ? undefined : 'ml-1'}>{repeatNotice}</span>
+        )}
       </div>
 
       {ranOnModel && (

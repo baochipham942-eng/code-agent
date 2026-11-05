@@ -123,7 +123,7 @@ export const agentErrorZh = {
         // 401 只能证明「没通过授权」，区分不出是密钥不对还是额度耗尽（Codex 验证 2026-08-01）。
         // 把两个互斥原因并列写成确定结论，用户会照着错的那个去排查。
         title: '这个模型用不了：账号没通过授权',
-        suggestion: '可能是密钥填错、过期，或这个账号已经没有额度了。换一个模型继续，或去设置里检查这个模型的账号配置。',
+        suggestion: '密钥可能填错、过期，或者额度用完了。',
       },
       insufficient_balance: {
         title: '这个账号余额不足',
@@ -184,8 +184,8 @@ export const agentErrorZh = {
     actions: {
       retry: '重试',
       retryRunning: '会话运行中，稍后再试',
-      switchModel: '切换模型',
-      checkAccount: '检查账号设置',
+      switchModel: '换个模型',
+      checkAccount: '检查账号',
       newSession: '新开会话',
       copyReport: '复制错误报告',
       copied: '错误报告已复制',
@@ -234,7 +234,7 @@ export const agentErrorEn: typeof agentErrorZh = {
     categories: {
       auth: {
         title: 'This model is unavailable: the account was not authorized',
-        suggestion: 'The key may be wrong or expired, or the account may be out of quota. Switch to another model, or check this model account in Settings.',
+        suggestion: 'The key may be wrong or expired, or the quota may be used up.',
       },
       insufficient_balance: {
         title: 'This account has insufficient balance',
@@ -296,7 +296,7 @@ export const agentErrorEn: typeof agentErrorZh = {
       retry: 'Retry',
       retryRunning: 'Session is running, try again later',
       switchModel: 'Switch model',
-      checkAccount: 'Check account settings',
+      checkAccount: 'Check account',
       newSession: 'New session',
       copyReport: 'Copy error report',
       copied: 'Error report copied',

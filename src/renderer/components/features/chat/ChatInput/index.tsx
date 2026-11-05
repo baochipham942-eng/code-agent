@@ -46,6 +46,7 @@ import { ContextUsagePill } from '../ContextUsagePill';
 import { CommandPalette } from '../../../CommandPalette';
 import { SlashCommandPopover } from './SlashCommandPopover';
 import { useFileUpload } from './useFileUpload';
+import { usePendingUploadSend } from './usePendingUploadSend';
 import { useChatInputSessionScope } from './useChatInputSessionScope';
 import {
   useAtMentionPanel,
@@ -328,6 +329,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const clearAppshot = useAppshotsStore((s) => s.clear);
   const appshotSlotRef = useRef<HTMLDivElement>(null);
   const [isUploading, setIsUploading] = useState(false);
+  // 本轮上传是否有文件没读出来：processFile / processFolderEntry 返回 null 记一次，
+  // 上传回合结束时汇成 uploadFailed，交给挂起发送分流（见 usePendingUploadSend）。
+  const [uploadFailed, setUploadFailed] = useState(false);
+  const uploadFailureCountRef = useRef(0);
   const [suggestions, setSuggestions] = useState<Array<{ id: string; text: string; source: string }>>([]);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [slashFilter, setSlashFilter] = useState('');
@@ -415,7 +420,28 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     };
   }, []);
 
-  const { processFile, processFolderEntry } = useFileUpload();
+  const { processFile: processFileRaw, processFolderEntry: processFolderEntryRaw } = useFileUpload();
+  // 包一层记失败：附件没读出来（返回 null）计一次，FB-579 的挂起发送据此「不发并告知」。
+  const processFile = useCallback(async (file: File) => {
+    const attachment = await processFileRaw(file);
+    if (!attachment) uploadFailureCountRef.current += 1;
+    return attachment;
+  }, [processFileRaw]);
+  const processFolderEntry = useCallback(async (dirEntry: FileSystemDirectoryEntry, folderName: string) => {
+    const attachment = await processFolderEntryRaw(dirEntry, folderName);
+    if (!attachment) uploadFailureCountRef.current += 1;
+    return attachment;
+  }, [processFolderEntryRaw]);
+  // 上传回合起止：起点清失败计数，终点汇出 uploadFailed（与 setIsUploading 同批提交）。
+  const handleUploadStateChange = useCallback((uploading: boolean) => {
+    setIsUploading(uploading);
+    if (uploading) {
+      uploadFailureCountRef.current = 0;
+      setUploadFailed(false);
+    } else {
+      setUploadFailed(uploadFailureCountRef.current > 0);
+    }
+  }, []);
   const handleDroppedSkillZips = useCallback(async (files: File[]) => {
     const { divertDroppedSkillZips } = await import('../../../../services/skillLocalZip');
     return divertDroppedSkillZips(files, {
@@ -430,7 +456,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     processFile,
     processFolderEntry,
     setAttachments,
-    setIsUploading: (uploading) => setIsUploading(uploading),
+    setIsUploading: handleUploadStateChange,
     onDroppedSkillZips: handleDroppedSkillZips,
   });
   // Composer typing stays passive for generic heuristics; only official registry skill
@@ -952,6 +978,20 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // 「转后台继续聊」：当前会话转后台 + 新前台会话发草稿（排队/改道默认路径不动）
   const submitBackgroundHandoff = useBackgroundHandoffSubmit({ currentSessionId, handleSubmit });
 
+  // FB-579：上传中的提交不丢——先挂起（提示「正在上传，完成后自动发送」），
+  // 上传结束自动重放；失败 / 等待期间改草稿则作废并告知（见 usePendingUploadSend）。
+  const pendingUploadReplayRef = useRef<((opts?: { steer?: boolean; content?: string }) => unknown) | null>(null);
+  const { pending: pendingUploadSend, park: parkUploadSend } = usePendingUploadSend({
+    isUploading,
+    uploadFailed,
+    disabled,
+    isProcessing: Boolean(isProcessing),
+    value,
+    attachments,
+    hasPendingCommand: Boolean(pendingCommand),
+    replayRef: pendingUploadReplayRef,
+  });
+
   const submitWithRuntimeChoice = useCallback(async (event?: React.FormEvent, opts?: { steer?: boolean; content?: string }) => {
     event?.preventDefault();
     if (editingQueuedInputId) {
@@ -970,8 +1010,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       inputAreaRef.current?.focus();
       return;
     }
+    // 上传还没结束：提交先挂起，草稿原地不动；上传结束由 usePendingUploadSend 重放本函数。
+    if (isUploading) {
+      parkUploadSend(opts);
+      return;
+    }
     return handleSubmit(undefined, opts);
-  }, [editingQueuedInputId, handleSubmit, value]);
+  }, [editingQueuedInputId, handleSubmit, isUploading, parkUploadSend, value]);
+  // 重放入口给 effect 用 ref 拿最新闭包：重放当刻的 value / attachments / isUploading 都是最新的。
+  pendingUploadReplayRef.current = (replayOpts) => {
+    void submitWithRuntimeChoice(undefined, replayOpts);
+  };
 
   // 附件 / 语音动作单元
   const {
@@ -981,7 +1030,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   } = useChatInputComposerActions({
     processFile,
     inputAreaRef,
-    setIsUploading,
+    setIsUploading: handleUploadStateChange,
     setAttachments,
     setValue,
     setVoiceInputContext,
@@ -1220,9 +1269,9 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
             </button>
           </SlotEntry>
 
-          {/* 文件处理中提示（L2 进行中层，组件自闸 + 自己走互斥表） */}
+          {/* 文件处理中提示（L2 进行中层，组件自闸 + 自己走互斥表）；挂起发送时换成「完成后自动发送」 */}
           <SlotEntry id="upload">
-            <ComposerUploadStatus active={isUploading} />
+            <ComposerUploadStatus active={isUploading} pendingSend={pendingUploadSend} />
           </SlotEntry>
 
           {/* Combo Skill suggestion card（L4 建议层） */}

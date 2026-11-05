@@ -53,10 +53,25 @@ const cronRunSession = (id: string) => makeSession({
   sourceRunId: 'exec-1',
 });
 
+/** 指定观测状态：placeholder 按「有没有结果可带」分叉，逐 kind 钉死。 */
+function withObservedStatus(
+  id: string,
+  kind: 'running' | 'awaiting' | 'interrupted' | 'failed-denied' | 'failed-generic' | 'cancelled' | 'finished',
+): void {
+  const line = kind === 'running'
+    ? { kind, startedAt: Date.now() }
+    : kind === 'awaiting'
+      ? { kind, approval: { id: 'req-1', requestedAt: Date.now() } }
+      : { kind };
+  setObservedCronRunStatusForSession(id, line);
+}
+
 describe('定时任务运行记录的 composer（readOnly + origin cron）', () => {
   beforeEach(() => {
     setObservedCronRunStatusForSession('cron-record-interrupted', null);
-    useCronStore.setState({ executions: [], recentExecutions: [] } as never);
+    // 复位真实 store 字段（review r6：executions 是不存在的字段，之前没复位到）：
+    // ChatInput 的 cronStore 兜底选择器读 executionsByJobId / latestExecutions / recentExecutions。
+    useCronStore.setState({ executionsByJobId: {}, latestExecutions: {}, recentExecutions: [] });
     resetCapabilityStore();
     const invokeDomain = ipcService.invokeDomain.bind(ipcService);
     vi.spyOn(ipcService, 'invokeDomain').mockImplementation((domain, action, payload) => {
@@ -68,6 +83,7 @@ describe('定时任务运行记录的 composer（readOnly + origin cron）', () 
   afterEach(() => {
     cleanup();
     setObservedCronRunStatusForSession('cron-record-interrupted', null);
+    setObservedCronRunStatusForSession('cron-record-status', null);
     vi.restoreAllMocks();
     useSessionStore.setState({
       sessions: [],
@@ -88,8 +104,9 @@ describe('定时任务运行记录的 composer（readOnly + origin cron）', () 
     expect(screen.getByTestId('chat-composer-textarea').textContent).not.toContain('只读');
   });
 
-  it('placeholder 说明去向：有结果时承诺会开一条新对话并带上这次的结果', () => {
-    showSession(cronRunSession('cron-record-placeholder'));
+  it('placeholder 说明去向：finished（有结果）才承诺会开一条新对话并带上这次的结果', () => {
+    showSession(cronRunSession('cron-record-status'));
+    withObservedStatus('cron-record-status', 'finished');
     render(<ChatInput onSend={() => true} />);
 
     // composer 是 contenteditable，placeholder 是空态时的兄弟 span
@@ -98,11 +115,33 @@ describe('定时任务运行记录的 composer（readOnly + origin cron）', () 
 
   it('interrupted（没有结果）时 placeholder 不承诺「带上这次的结果」', () => {
     showSession(cronRunSession('cron-record-interrupted'));
-    setObservedCronRunStatusForSession('cron-record-interrupted', { kind: 'interrupted' });
+    withObservedStatus('cron-record-interrupted', 'interrupted');
     render(<ChatInput onSend={() => true} />);
 
     expect(screen.getByText('接着问这次运行…（会开一条新对话）')).toBeTruthy();
     expect(screen.queryByText('接着问这次运行…（会开一条新对话，带上这次的结果）')).toBeNull();
+  });
+
+  // review r6：没有结果的收尾不止 interrupted——failed-denied / failed-generic / cancelled
+  // 同样不承诺「带上这次的结果」；只有 finished 才承诺。
+  it.each(['failed-denied', 'failed-generic', 'cancelled'] as const)(
+    '%s（没有结果）placeholder 同样不承诺「带上这次的结果」',
+    (kind) => {
+      showSession(cronRunSession('cron-record-status'));
+      withObservedStatus('cron-record-status', kind);
+      render(<ChatInput onSend={() => true} />);
+
+      expect(screen.getByText('接着问这次运行…（会开一条新对话）')).toBeTruthy();
+      expect(screen.queryByText('接着问这次运行…（会开一条新对话，带上这次的结果）')).toBeNull();
+    },
+  );
+
+  it('finished（有结果）placeholder 保持承诺「带上这次的结果」', () => {
+    showSession(cronRunSession('cron-record-status'));
+    withObservedStatus('cron-record-status', 'finished');
+    render(<ChatInput onSend={() => true} />);
+
+    expect(screen.getByText('接着问这次运行…（会开一条新对话，带上这次的结果）')).toBeTruthy();
   });
 
   it('heartbeat 运行记录同样处理', () => {

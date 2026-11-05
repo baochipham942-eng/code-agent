@@ -4,6 +4,8 @@
 // 批准/拒绝走停车审批 IPC、再跑一次走 triggerJob、执行记录缺失不显示运行中。
 
 import React from 'react';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -11,7 +13,17 @@ const invokeMock = vi.hoisted(() => vi.fn());
 const getExecutionsMock = vi.hoisted(() => vi.fn());
 const listParkedApprovalsMock = vi.hoisted(() => vi.fn());
 const triggerJobMock = vi.hoisted(() => vi.fn());
+const toastInfoMock = vi.hoisted(() => vi.fn());
+const toastErrorMock = vi.hoisted(() => vi.fn());
 
+vi.mock('../../../src/renderer/hooks/useToast', () => ({
+  toast: {
+    info: (...args: unknown[]) => toastInfoMock(...args),
+    error: (...args: unknown[]) => toastErrorMock(...args),
+    success: vi.fn(),
+    warning: vi.fn(),
+  },
+}));
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: { invoke: invokeMock, invokeDomain: vi.fn(), on: vi.fn().mockReturnValue(() => undefined) },
 }));
@@ -25,8 +37,10 @@ vi.mock('../../../src/renderer/services/sessionAutomationClient', () => ({
 import { CronRunSessionStatusBar } from '../../../src/renderer/components/features/chat/CronRunSessionStatusBar';
 import { CronRunSessionIntro } from '../../../src/renderer/components/features/chat/CronRunSessionIntro';
 import {
+  clearObservedCronRunStatusForSession,
   composeElapsed,
   deriveCronRunStatusLine,
+  getObservedCronRunStatusForSession,
   setObservedCronRunStatusForSession,
   splitElapsedParts,
 } from '../../../src/renderer/components/features/chat/cronRunSessionStatus';
@@ -34,6 +48,10 @@ import { useSessionStore, type SessionWithMeta } from '../../../src/renderer/sto
 import { useCronStore } from '../../../src/renderer/stores/cronStore';
 import type { CronJobExecution } from '../../../src/shared/contract/cron';
 import { IPC_CHANNELS } from '../../../src/shared/ipc';
+
+// 状态点的 class 必须是 global.css 里真定义的（review r6：cron-run-status-dot--pulsing 全仓无定义）。
+// jsdom 环境下 import.meta.url 不是 file://，用仓根相对路径读。
+const globalCss = readFileSync(resolve(process.cwd(), 'src/renderer/styles/global.css'), 'utf8');
 
 function makeExecution(overrides: Partial<CronJobExecution>): CronJobExecution {
   return {
@@ -80,7 +98,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  setObservedCronRunStatusForSession('session-1', null);
+  clearObservedCronRunStatusForSession('session-1');
   // 撤掉定时器相关的挂载残留
   vi.restoreAllMocks();
 });
@@ -141,10 +159,9 @@ describe('deriveCronRunStatusLine（纯判定）', () => {
     const statusForError = (error: string | undefined) =>
       deriveCronRunStatusLine({ execution: makeExecution({ status: 'failed', error }), pendingApproval: null })?.kind;
 
-    expect(statusForError('Permission denied')).toBe('failed-denied');
+    expect(statusForError('Permission denied by user')).toBe('failed-denied');
     expect(statusForError('PERMISSION_DENIED_BY_USER')).toBe('failed-denied');
     expect(statusForError('PERMISSION_DENIED_UNATTENDED_AUTO')).toBe('failed-denied');
-    expect(statusForError('UNATTENDED_APPROVAL_TIMEOUT')).toBe('failed-denied');
     expect(statusForError('用户拒绝了该命令')).toBe('failed-denied');
     expect(statusForError('命令被拒绝')).toBe('failed-denied');
     expect(statusForError('bash 被自动拒绝：危险命令在无人值守模式下禁止执行')).toBe('failed-denied');
@@ -155,6 +172,25 @@ describe('deriveCronRunStatusLine（纯判定）', () => {
     expect(statusForError('Command failed: exit code 1')).toBe('failed-generic');
     expect(statusForError('429 Too Many Requests')).toBe('failed-generic');
     expect(statusForError('Execution timed out after 60000ms')).toBe('failed-generic');
+  });
+
+  it('裸 "Permission denied" 是 shell/文件系统权限错，不算「命令被拒绝」（review r6）', () => {
+    const statusForError = (error: string) =>
+      deriveCronRunStatusLine({ execution: makeExecution({ status: 'failed', error }), pendingApproval: null })?.kind;
+
+    expect(statusForError('Permission denied')).toBe('failed-generic');
+    expect(statusForError('bash: /Users/x/run.sh: Permission denied')).toBe('failed-generic');
+    expect(statusForError('Error: spawn EACCES — Permission denied')).toBe('failed-generic');
+  });
+
+  it('UNATTENDED_APPROVAL_TIMEOUT 是无人批准超时（没人拒），归到没跑成而非命令被拒（review r6）', () => {
+    const statusForError = (error: string) =>
+      deriveCronRunStatusLine({ execution: makeExecution({ status: 'failed', error }), pendingApproval: null })?.kind;
+
+    expect(statusForError('UNATTENDED_APPROVAL_TIMEOUT')).toBe('failed-generic');
+    // host 真实全文（unattendedApprovalTerminal.ts）
+    expect(statusForError('UNATTENDED_APPROVAL_TIMEOUT: 工具 bash 的审批等了 10 分钟仍无人批准（当前无人在场），已自动拒绝。'))
+      .toBe('failed-generic');
   });
 
   it('没有执行记录也没有等批准：不编状态（null）', () => {
@@ -182,6 +218,22 @@ describe('CronRunSessionStatusBar（组件）', () => {
     expect(screen.getByTestId('cron-run-status-text').textContent).toMatch(/已 1[23] 秒/);
     expect(screen.queryByTestId('cron-run-status-approve')).toBeNull();
     expect(screen.queryByTestId('cron-run-status-rerun')).toBeNull();
+  });
+
+  it('运行中：状态点的 class 在 global.css 里有真定义（呼吸动画 + reduced-motion 降级）（review r6）', async () => {
+    showSession(cronRunSession);
+    getExecutionsMock.mockResolvedValue([makeExecution({ status: 'running', startedAt: Date.now() })]);
+    render(<CronRunSessionStatusBar sessionId="session-1" />);
+    const node = await screen.findByTestId('cron-run-status');
+    const dot = node.querySelector('span[aria-hidden="true"]');
+    expect(dot).toBeTruthy();
+    const cronClasses = (dot as HTMLElement).className.split(/\s+/).filter((name) => name.startsWith('cron-run'));
+    // 组件用的类必须是 CSS 里定义过的（曾用全仓无定义的 cron-run-status-dot--pulsing，点永不呼吸）
+    expect(cronClasses).toEqual(['cron-run-pulse-dot']);
+    expect(globalCss).toMatch(/\.cron-run-pulse-dot\s*\{[^}]*animation:\s*cronRunPulse/);
+    expect(globalCss).toMatch(/@keyframes cronRunPulse/);
+    // reduced-motion 降级分支保留：停动画
+    expect(globalCss).toMatch(/@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.cron-run-pulse-dot\s*\{\s*animation:\s*none/);
   });
 
   it('等批准：显示在干什么 + 批准走停车审批 IPC（first-responder-wins 同链路）', async () => {
@@ -212,6 +264,130 @@ describe('CronRunSessionStatusBar（组件）', () => {
     await waitFor(() => {
       expect(invokeMock).toHaveBeenCalledWith(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, 'req-1', 'deny', 'session-1');
     });
+  });
+
+  // review r6：AGENT_PERMISSION_RESPONSE 的注册类型是 Promise<void>，但真实写点各不相同
+  // （agent.ipc.ts legacy handler 回 {outcome}；web HTTP 桥送达解包、未送达透传
+  // {success:false,error} 信封）。每个真实形状一测，stale 分支不许恒为假。
+  describe('批准/拒绝的返回形状（按真实写点逐个钉死）', () => {
+    const APPROVAL_STALE_COPY = '这条批准已经失效（发起它的运行已结束），已标记过期';
+    const APPROVAL_FAILED_COPY = '操作没有生效，请重试';
+
+    async function renderAwaitingApproval(): Promise<void> {
+      showSession(cronRunSession);
+      getExecutionsMock.mockResolvedValue([makeExecution({ status: 'running' })]);
+      listParkedApprovalsMock.mockResolvedValue([{
+        id: 'req-1', kind: 'tool_approval', sessionId: 'session-1', tool: 'bash',
+        displayTool: '运行命令', requestedAt: Date.now() - 5_000, status: 'pending',
+        argsPreview: 'echo BG-PARKED-888',
+      }]);
+      render(<CronRunSessionStatusBar sessionId="session-1" />);
+      await screen.findByTestId('cron-run-status-approve');
+    }
+
+    it('Electron 式送达 {outcome:"delivered"}：不出声', async () => {
+      invokeMock.mockResolvedValue({ outcome: 'delivered' });
+      await renderAwaitingApproval();
+      fireEvent.click(screen.getByTestId('cron-run-status-approve'));
+      await waitFor(() => expect(invokeMock).toHaveBeenCalled());
+      expect(toastInfoMock).not.toHaveBeenCalled();
+      expect(toastErrorMock).not.toHaveBeenCalled();
+    });
+
+    it('Electron 式未送达 {outcome:"unknown_request"}：出「已失效」toast 并立即刷新状态行', async () => {
+      await renderAwaitingApproval();
+      invokeMock.mockResolvedValue({ outcome: 'unknown_request' });
+      // 点击后的刷新拉到终态：状态行不等下一拍轮询就变（review r6）
+      getExecutionsMock.mockResolvedValue([makeExecution({ status: 'interrupted' })]);
+      fireEvent.click(screen.getByTestId('cron-run-status-approve'));
+      await waitFor(() => expect(toastInfoMock).toHaveBeenCalledWith(APPROVAL_STALE_COPY));
+      await waitFor(() => {
+        expect(screen.getByTestId('cron-run-status').dataset.state).toBe('interrupted');
+      });
+    });
+
+    it('web HTTP 桥未送达信封 {success:false,error:{code:"PENDING_PERMISSION_NOT_FOUND"}}：出「已失效」toast', async () => {
+      invokeMock.mockResolvedValue({
+        success: false,
+        error: { code: 'PENDING_PERMISSION_NOT_FOUND', message: 'Permission response not delivered (unknown_request)' },
+      });
+      await renderAwaitingApproval();
+      fireEvent.click(screen.getByTestId('cron-run-status-approve'));
+      await waitFor(() => expect(toastInfoMock).toHaveBeenCalledWith(APPROVAL_STALE_COPY));
+      expect(toastErrorMock).not.toHaveBeenCalled();
+    });
+
+    it('web HTTP 桥送达解包 {requestId,sessionId,source}（没有 outcome 字段）：不出声，绝不误报 stale', async () => {
+      invokeMock.mockResolvedValue({ requestId: 'req-1', sessionId: 'session-1', source: 'task-manager' });
+      await renderAwaitingApproval();
+      fireEvent.click(screen.getByTestId('cron-run-status-approve'));
+      await waitFor(() => expect(invokeMock).toHaveBeenCalled());
+      expect(toastInfoMock).not.toHaveBeenCalled();
+      expect(toastErrorMock).not.toHaveBeenCalled();
+    });
+
+    it('Electron 式 {outcome:"storage_unavailable"}（宿主活着、台账写不进）：说「没生效请重试」，不说「已失效」', async () => {
+      invokeMock.mockResolvedValue({ outcome: 'storage_unavailable' });
+      await renderAwaitingApproval();
+      fireEvent.click(screen.getByTestId('cron-run-status-approve'));
+      await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith(APPROVAL_FAILED_COPY));
+      expect(toastInfoMock).not.toHaveBeenCalled();
+    });
+
+    it('web HTTP 桥 {success:false,error:{code:"PENDING_APPROVAL_STORAGE_UNAVAILABLE"}}：同样按可重试出声', async () => {
+      invokeMock.mockResolvedValue({
+        success: false,
+        error: { code: 'PENDING_APPROVAL_STORAGE_UNAVAILABLE', message: 'could not be recorded; retry' },
+      });
+      await renderAwaitingApproval();
+      fireEvent.click(screen.getByTestId('cron-run-status-approve'));
+      await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith(APPROVAL_FAILED_COPY));
+      expect(toastInfoMock).not.toHaveBeenCalled();
+    });
+
+    it('注册类型 Promise<void>（undefined，无信号）：不出声', async () => {
+      invokeMock.mockResolvedValue(undefined);
+      await renderAwaitingApproval();
+      fireEvent.click(screen.getByTestId('cron-run-status-approve'));
+      await waitFor(() => expect(invokeMock).toHaveBeenCalled());
+      expect(toastInfoMock).not.toHaveBeenCalled();
+      expect(toastErrorMock).not.toHaveBeenCalled();
+    });
+
+    it('host 裸 outcome 字符串非 delivered（agentAppService 直接回报）：出「已失效」toast', async () => {
+      invokeMock.mockResolvedValue('unknown_request');
+      await renderAwaitingApproval();
+      fireEvent.click(screen.getByTestId('cron-run-status-approve'));
+      await waitFor(() => expect(toastInfoMock).toHaveBeenCalledWith(APPROVAL_STALE_COPY));
+      expect(toastErrorMock).not.toHaveBeenCalled();
+    });
+
+    it('host 裸 outcome 字符串 delivered：不出声', async () => {
+      invokeMock.mockResolvedValue('delivered');
+      await renderAwaitingApproval();
+      fireEvent.click(screen.getByTestId('cron-run-status-approve'));
+      await waitFor(() => expect(invokeMock).toHaveBeenCalled());
+      expect(toastInfoMock).not.toHaveBeenCalled();
+      expect(toastErrorMock).not.toHaveBeenCalled();
+    });
+
+    it('invoke 抛错（审批应答发送失败）：出「操作没有生效」toast，点击不是没反应', async () => {
+      invokeMock.mockRejectedValue(new Error('审批应答发送失败 (502): bad gateway'));
+      await renderAwaitingApproval();
+      fireEvent.click(screen.getByTestId('cron-run-status-approve'));
+      await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith(APPROVAL_FAILED_COPY));
+      expect(toastInfoMock).not.toHaveBeenCalled();
+    });
+  });
+
+  it('状态行卸载时清掉观测 map：模块级 Map 不随打开过的记录会话一条条涨（review r6）', async () => {
+    showSession(cronRunSession);
+    getExecutionsMock.mockResolvedValue([makeExecution({ status: 'completed', duration: 1_000 })]);
+    const { unmount } = render(<CronRunSessionStatusBar sessionId="session-1" />);
+    await screen.findByTestId('cron-run-status');
+    expect(getObservedCronRunStatusForSession('session-1')?.kind).toBe('finished');
+    unmount();
+    expect(getObservedCronRunStatusForSession('session-1')).toBeNull();
   });
 
   it('非 pending（orphaned/voided）的停车审批不算等批准', async () => {

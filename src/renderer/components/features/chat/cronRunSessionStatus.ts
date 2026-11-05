@@ -31,9 +31,11 @@ export type CronRunStatusLine =
 /**
  * 判断失败运行是否由命令/权限被拒引起（与执行记录 error 字段及权限拒绝信号同源，
  * 不扫模型自由回复文本）。中文关键词用 Unicode 转义，满足 chatI18nRatchet 对源码无汉字字面量的要求。
+ * 只认「用户真的拒了」的信号：裸 "Permission denied" 多是 shell/文件系统权限错（EACCES），
+ * UNATTENDED_APPROVAL_TIMEOUT 是无人批准超时（没人拒，也没人批）——两者都不是「命令被拒绝」。
  */
 const PERMISSION_DENIAL_ERROR_RE =
-  /(?:^|\b)(?:PERMISSION_DENIED(?:_[A-Z0-9_]+)?|UNATTENDED_APPROVAL_TIMEOUT|Permission denied(?: by user)?|Command was denied|command was denied|user denied|declined by user)(?:\b|$)/;
+  /(?:^|\b)(?:PERMISSION_DENIED(?:_[A-Z0-9_]+)?|Permission denied by user|Command was denied|command was denied|user denied|declined by user)(?:\b|$)/;
 const PERMISSION_DENIAL_ZH_TOKENS = [
   String.fromCharCode(0x7528, 0x6237, 0x62d2, 0x7edd, 0x4e86, 0x8be5, 0x547d, 0x4ee4), // 用户拒绝了该命令
   String.fromCharCode(0x547d, 0x4ee4, 0x88ab, 0x62d2, 0x7edd), // 命令被拒绝
@@ -114,6 +116,12 @@ export function setObservedCronRunStatusForSession(sessionId: string, status: Cr
   const prev = observedCronRunStatusBySession.get(sessionId);
   if (prev?.kind === status?.kind && prev === status) return;
   observedCronRunStatusBySession.set(sessionId, status);
+  for (const listener of observedCronRunListeners) listener();
+}
+
+/** 状态行组件卸载时清掉本会话的观测值：模块级 Map 不随打开过的记录会话无限增长。 */
+export function clearObservedCronRunStatusForSession(sessionId: string): void {
+  if (!observedCronRunStatusBySession.delete(sessionId)) return;
   for (const listener of observedCronRunListeners) listener();
 }
 

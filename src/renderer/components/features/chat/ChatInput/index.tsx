@@ -1011,9 +1011,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const resolvedPlaceholder = useMemo(() => {
     if (placeholder) return placeholder;
     if (cronRunFollowUpMode) {
-      return cronRunStatusKind === 'interrupted'
-        ? t.chatInput.cronFollowUpPlaceholderNoResult
-        : t.chatInput.cronFollowUpPlaceholder;
+      // 只有 finished 有结果可带；中断/没跑成/取消/进行中一律不承诺「带上这次的结果」。
+      return cronRunStatusKind === 'finished'
+        ? t.chatInput.cronFollowUpPlaceholder
+        : t.chatInput.cronFollowUpPlaceholderNoResult;
     }
     if (inputPlaceholder) return inputPlaceholder;
     if (!isProcessing) return undefined;

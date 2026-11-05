@@ -23,6 +23,7 @@ import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';
 import {
+  clearObservedCronRunStatusForSession,
   composeElapsed,
   deriveCronRunStatusLine,
   findCronExecutionForSession,
@@ -43,6 +44,35 @@ function awaitingLabelFromParked(item: ParkedApprovalInboxItem, bashRunPrefix: s
   }
   const parts = [item.displayTool ?? item.tool, preview].filter(Boolean);
   return parts.length > 0 ? parts.join('：') : undefined;
+}
+
+/**
+ * 审批应答有没有真的送达宿主。AGENT_PERMISSION_RESPONSE 的注册类型写的是 Promise<void>
+ * （src/shared/ipc/handlers.ts），与实现不符，所以按 unknown 收窄。真实写点只有三种形状：
+ *   Electron 式 legacy handler → {outcome}（'delivered' / 'unknown_request' / 'no_orchestrator'
+ *     / 'no_session' / 'storage_unavailable'，agent.ipc.ts handlePermissionResponse）；
+ *   web HTTP 桥 → 送达时解包成 {requestId, sessionId, source}（没有 outcome 字段），
+ *     未送达时原样透传 {success:false, error:{code}}（webPermissionResponseHandler.ts）；
+ *   host 同步入口会直接回报裸 outcome 字符串（agentAppService.handlePermissionResponse）。
+ * 传输层故障（审批应答发送失败）直接 throw，走 handleApproval 的 catch。
+ * storage_unavailable / PENDING_APPROVAL_STORAGE_UNAVAILABLE 是宿主活着、只是台账这次
+ * 写不进的可重试中间态——运行没结束，不能说「已失效」，说「没生效，请重试」。
+ */
+function classifyPermissionDelivery(result: unknown): 'stale' | 'retryable' | 'ok' {
+  if (typeof result === 'string') {
+    if (result === 'delivered') return 'ok';
+    return result === 'storage_unavailable' ? 'retryable' : 'stale';
+  }
+  if (typeof result !== 'object' || result === null) return 'ok';
+  const record = result as { success?: unknown; outcome?: unknown; error?: unknown };
+  if (record.success === false) {
+    const code = (record.error as { code?: unknown } | undefined)?.code;
+    return code === 'PENDING_APPROVAL_STORAGE_UNAVAILABLE' ? 'retryable' : 'stale';
+  }
+  if (typeof record.outcome === 'string' && record.outcome !== 'delivered') {
+    return record.outcome === 'storage_unavailable' ? 'retryable' : 'stale';
+  }
+  return 'ok';
 }
 
 function findParkedApprovalForSession(
@@ -80,6 +110,10 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
   useEffect(() => {
     setObservedCronRunStatusForSession(sessionId, status);
   }, [sessionId, status]);
+  // 卸载时清掉本会话的观测值：模块级 Map 不随打开过的记录会话一条条涨。
+  useEffect(() => {
+    return () => { clearObservedCronRunStatusForSession(sessionId); };
+  }, [sessionId]);
   const statusRef = useRef<CronRunStatusLine | null>(null);
   statusRef.current = status;
   // 找不到执行记录的连续次数：老会话缺 sourceRunId/sessionId 关联时别无限轮询。
@@ -130,18 +164,23 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
     if (!pendingApproval || approvalBusy) return;
     setApprovalBusy(true);
     try {
-      // 与待过目收件箱同一条链路（first-responder-wins）；宿主已死时 host 会回报
-      // orphaned，这里如实出声，不让点击看起来「没反应」。
-      const result = (await ipcService.invoke(
+      // 与待过目收件箱同一条链路（first-responder-wins）。返回值按真实形状收窄
+      // （见 classifyPermissionDelivery）：已失效如实说「已失效」，台账写不进说
+      // 「没生效，请重试」——不让点击看起来「没反应」。
+      const result: unknown = await ipcService.invoke(
         IPC_CHANNELS.AGENT_PERMISSION_RESPONSE, pendingApproval.id, response, sessionId,
-      )) as { outcome?: string; orphaned?: boolean } | undefined;
-      if (result && (result.orphaned === true || (result.outcome && result.outcome !== 'delivered'))) {
+      );
+      const delivery = classifyPermissionDelivery(result);
+      if (delivery === 'stale') {
         toast.info(copy.approvalStale);
+      } else if (delivery === 'retryable') {
+        toast.error(copy.approvalFailed);
       }
     } catch {
       toast.error(copy.approvalFailed);
     } finally {
       setApprovalBusy(false);
+      // stale/失败也要立即刷新：等批准多半已不在，别等下一拍轮询才变。
       void refresh();
     }
   }, [approvalBusy, copy.approvalFailed, copy.approvalStale, pendingApproval, refresh, sessionId]);
@@ -207,7 +246,7 @@ export const CronRunSessionStatusBar: React.FC<{ sessionId: string }> = ({ sessi
         data-testid="cron-run-status"
         data-state="running"
       >
-        <span className="cron-run-status-dot--pulsing inline-block h-2 w-2 shrink-0 rounded-full bg-mark-warning" aria-hidden="true" />
+        <span className="cron-run-pulse-dot inline-block h-2 w-2 shrink-0 rounded-full bg-mark-warning" aria-hidden="true" />
         <span data-testid="cron-run-status-text">
           {copy.running.replace('{elapsed}', composeElapsed(splitElapsedParts(now - status.startedAt), {
             hm: copy.elapsedHm,

@@ -27,6 +27,14 @@ const ROLE_ID = '竞品观察员';
 const NEXT_AT = Date.UTC(2026, 9, 27, 1, 0, 0);
 const LAST_AT = Date.UTC(2026, 9, 26, 1, 0, 0);
 
+// 中文界面时间口径（N-CRON-DETAIL-TIME-FORMAT-MIXED）：24 小时制 YYYY/MM/DD HH:mm，
+// 从 Date 分量手工推导，任何机器 locale / 时区下都与组件输出一致。
+function zhDetailTime(ms: number): string {
+  const d = new Date(ms);
+  const pad = (part: number) => String(part).padStart(2, '0');
+  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function sampleJobs(): RoleBoundCronJob[] {
   return [
     {
@@ -88,8 +96,8 @@ describe('RoleRoutinesSection', () => {
 
   it('renders next run and last result for both routines, and keeps the empty state', async () => {
     const { unmount } = renderSection();
-    const nextLabel = new Date(NEXT_AT).toLocaleString();
-    const lastLabel = new Date(LAST_AT).toLocaleString();
+    const nextLabel = zhDetailTime(NEXT_AT);
+    const lastLabel = zhDetailTime(LAST_AT);
     const failed = screen.getByTestId('role-bound-automation-daily-report');
     const never = screen.getByTestId('role-bound-automation-weekly-report');
     expect(failed.textContent).toContain(`下次运行：${nextLabel}`);

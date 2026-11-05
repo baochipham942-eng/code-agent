@@ -41,6 +41,7 @@ import { CronWebhookScheduleFields } from './CronWebhookScheduleFields';
 import { CronWebhookCreatedView } from './CronWebhookCreatedView';
 import { useCronWebhookGate } from './useCronWebhookGate';
 import { takeCronEditorDraft } from './cronEditorDraftStash';
+import { useScrollToEventValidation } from './useScrollToEventValidation';
 
 interface CronJobEditorProps {
   isOpen: boolean;
@@ -129,6 +130,8 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
   const [eventValidationArmed, setEventValidationArmed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState<EditorTab>('basic');
+  const [eventFocusTick, setEventFocusTick] = useState(0);
+  useScrollToEventValidation(eventFocusTick);
 
   // Template-based creation state
   const [step, setStep] = useState<CreationStep>('simple');
@@ -315,6 +318,10 @@ export const CronJobEditor: React.FC<CronJobEditorProps> = ({ isOpen, job, copyS
         const violation = eventViolationFromDraft(draft);
         if (violation) {
           setEventValidationArmed(true);
+          if (violation.reason === 'invalid-schedule' || violation.reason === 'requires-budget') {
+            setActiveTab('basic');
+            setEventFocusTick((tick) => tick + 1);
+          }
           setErrors({
             form: draft.scheduleType === 'event-mail'
               ? mailEventValidationMessage(violation, cc)

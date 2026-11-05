@@ -13,7 +13,7 @@
 import { COMPANION_LIMITS } from '../../../shared/constants/companion';
 
 /** 一条在场上报的载荷形状（renderer → notification IPC reportPresence，schema 同形）。 */
-export interface DesktopPresenceReport {
+interface DesktopPresenceReport {
   visible: boolean;
   focused: boolean;
   lastInputAt: number;

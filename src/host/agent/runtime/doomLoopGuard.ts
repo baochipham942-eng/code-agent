@@ -8,6 +8,19 @@ import { normalizeErrorMessage } from '../../lightMemory/normalizeErrorMessage';
 // L1 doom-loop：同名同参工具调用连续 ×3 → 注入强警告；警告后仍重复 → 中止本次
 //    run 把控制权交还用户（MiMo 走 permission.ask 人工确认；Neo 主循环没有
 //    人工审批通道，以"中止 + 通知"作为架构等价物）。
+//    例外（N-FIX-BROWSER-DOOMLOOP-REAPPROVE r1/r2）：观察类 Browser 调用
+//    （get_content / get_dom_snapshot / get_a11y_snapshot / get_elements /
+//    screenshot / wait）的重复必须由"结果也没变"确认——recordStep 在工具
+//    执行前跑，只看参数会把"轮询一个正在演进的页面"（loading→ready）误判成
+//    空转。结果确认在 recordResults（noteBrowserObservation）里做：连续同
+//    参同结果才算一次确认重复；结果指纹一变就从新观察重数。确认满
+//    DOOM_LOOP_THRESHOLD 次重复才 nudge，再确认一次才 abort（比其他工具
+//    多一拍，因为第 3 次相同结果也可能是演进前的最后一步）。r2 修正三处
+//    真实形状：指纹前剥 host 注入的每调用唯一噪声（screenshot_<Date.now()>
+//    文件名、snapshotId uuid、capturedAtMs 毫秒）；确认链按签名分槽（交错
+//    观察互不清零）；失败的观察也算证据（同参同错误的失败重复同样升级，
+//    否则 tab 崩溃后的反复读只剩一次性 signal nudge、没有 abort 路径）。
+//    非观察类 Browser 动作（click/type/…）与其他工具行为不变。
 // L2 repeated-step：整步行动签名（全部工具调用 stableStringify 排序 key）连续
 //    ×3 → 注入 nudge 让模型自己换策略，不拒绝。
 // L3 invalid-output：空文本输出自动续接，带上限防无限续接。
@@ -39,6 +52,8 @@ const ABAB_CYCLE_STEPS = 4;
 const CUA_CLICK_NEAR_PX = 24;
 /** 与 L1/L2 对齐：近似点击 + 屏幕未变的连击第 3 次才算空转。 */
 const CUA_SCREEN_CLICK_THRESHOLD = 3;
+/** 观察确认链分槽上限：长会话里防无界增长，逐出最旧的槽（重数无害）。 */
+const OBS_CHAIN_LIMIT = 8;
 
 /** 空转信号枚举（N-DOOMLOOP-SIGNALS / N-JEV-WARDEN-MOCK 共享，Warden 直接引用不另立定义）。 */
 export const SIGNAL_POLLING_REPEAT = 'polling_repeat';
@@ -85,6 +100,16 @@ export interface GuardCallResult {
 interface GuardSignalCheck {
   signals: string[];
   nudge?: string;
+}
+
+/** 观察类 Browser 调用的结果确认链（N-FIX-BROWSER-DOOMLOOP-REAPPROVE r2）。 */
+interface ObsChain {
+  /** 上一次该签名观察的结果指纹；null = 尚无基线。 */
+  digest: string | null;
+  /** 连续"同参同结果"的确认重复数（基线 = 0）。 */
+  streak: number;
+  /** 该签名的观察 L1 已 nudge（再确认一次重复 → abort）。 */
+  nudged: boolean;
 }
 
 /** cua 近似点击连击状态（per pid:window_id）。 */
@@ -154,6 +179,12 @@ export class DoomLoopGuard {
   private cuaScreenFingerprints = new Map<string, string>();
   /** 本 run 已 nudge 过的信号。再命中不再注入。 */
   private firedSignals = new Set<string>();
+  /**
+   * 观察类 Browser 调用的 L1 结果确认链，按调用签名分槽
+   * （N-FIX-BROWSER-DOOMLOOP-REAPPROVE r2）：同一步/相邻步交错多个观察动作
+   * （screenshot + get_content 轮流）时各自的链互不清零。
+   */
+  private obsChains = new Map<string, ObsChain>();
 
   /** 记录一个 step 的全部工具调用，返回防护判定 */
   recordStep(toolCalls: GuardToolCall[]): DoomLoopCheck {
@@ -164,6 +195,7 @@ export class DoomLoopGuard {
     if (this.actionCycle.length > ABAB_CYCLE_STEPS) this.actionCycle.shift();
 
     // L1：逐个调用维护"连续相同"连击
+    let lastCall: GuardToolCall | null = null;
     for (const toolCall of toolCalls) {
       const sig = callSignature(toolCall);
       if (sig === this.lastCallSignature) {
@@ -172,10 +204,25 @@ export class DoomLoopGuard {
         this.lastCallSignature = sig;
         this.identicalCallStreak = 1;
         this.doomLoopNudged = false;
+        for (const chain of this.obsChains.values()) chain.nudged = false;
       }
+      lastCall = toolCall;
     }
 
     if (this.identicalCallStreak >= DOOM_LOOP_THRESHOLD) {
+      // 观察类 Browser 调用：重复要由"结果也没变"确认（见文件头注释）。
+      // 未确认时既不 nudge 也不写 L2 三步窗口——与非观察类 L1 命中时的
+      // 提前返回保持同一扇门。
+      if (lastCall !== null && isBrowserObservationCall(lastCall)) {
+        const chain = this.obsChain(callSignature(lastCall));
+        const confirmed = chain.nudged
+          ? chain.streak >= DOOM_LOOP_THRESHOLD + 1
+          : chain.streak >= DOOM_LOOP_THRESHOLD;
+        if (!confirmed) return { level: 'none' };
+        if (chain.nudged) return { level: 'doom-loop-abort' };
+        chain.nudged = true;
+        return { level: 'doom-loop', nudge: DOOM_LOOP_NUDGE };
+      }
       if (this.doomLoopNudged) {
         return { level: 'doom-loop-abort' };
       }
@@ -216,15 +263,19 @@ export class DoomLoopGuard {
     this.errorFamilyStreak = 0;
     this.cuaClickStreaks.clear();
     this.cuaScreenFingerprints.clear();
+    this.obsChains.clear();
   }
 
   /**
    * 工具执行完后回灌这一步的结果摘要。
-   * 不改 recordStep 的返回；L1/L2 仍在执行前判定。这里只追加三个信号。
+   * 不改 recordStep 的返回；L1/L2 仍在执行前判定。这里追加三个信号，并做
+   * 观察类 Browser 调用的 L1 结果确认（noteBrowserObservation，只改 guard
+   * 内部状态，供下一次 recordStep 判 L1 用）。
    */
   recordResults(step: GuardCallResult[]): GuardSignalCheck {
     const signals: string[] = [];
     for (const call of step) {
+      this.noteBrowserObservation(call);
       this.notePoll(call, signals);
       this.noteErrorFamily(call, signals);
       this.noteCuaSnapshot(call);
@@ -242,6 +293,50 @@ export class DoomLoopGuard {
     }
     this.emptyOutputContinuations += 1;
     return { action: 'continue', nudge: EMPTY_OUTPUT_NUDGE };
+  }
+
+  /**
+   * 观察类 Browser 调用的结果确认（N-FIX-BROWSER-DOOMLOOP-REAPPROVE r1/r2）：
+   * 同参重复且结果指纹也没变 → 计一次确认重复；指纹变了 = 页面在演进（或
+   * 错误族变了），折扣掉（streak 归零、nudge 标记清掉，从新观察重数）。
+   * r2 两处放宽/收紧：① 按签名分槽，交错的多条观察链互不清零；② 失败的
+   * 观察也算证据——同参同错误的失败重复（tab 崩溃后反复 get_content）同样
+   * 是空转，必须保留 abort 路径（成功↔失败交替 = 指纹变化，自然折扣）。
+   * 空输出仍不算证据。指纹前先剥 host 注入的每调用唯一噪声
+   * （browserObservationDigestInput），否则 screenshot/get_dom_snapshot 的
+   * 输出永远"在变"，确认链永远立不起来。
+   */
+  private noteBrowserObservation(call: GuardCallResult): void {
+    if (!isBrowserObservationCall(call)) return;
+    const fingerprint = screenFingerprint(browserObservationDigestInput(call.summary));
+    if (fingerprint === null) return;
+    const chain = this.obsChain(callSignature(call));
+    if (chain.digest === null) {
+      chain.digest = fingerprint;
+      chain.streak = 0;
+      return;
+    }
+    if (fingerprint !== chain.digest) {
+      chain.digest = fingerprint;
+      chain.streak = 0;
+      chain.nudged = false;
+      return;
+    }
+    chain.streak += 1;
+  }
+
+  /** 取（或建）该签名的观察确认链；槽有上限，超了逐出最旧的（陈旧链重数无害）。 */
+  private obsChain(sig: string): ObsChain {
+    let chain = this.obsChains.get(sig);
+    if (!chain) {
+      if (this.obsChains.size >= OBS_CHAIN_LIMIT) {
+        const oldest = this.obsChains.keys().next().value;
+        if (oldest !== undefined) this.obsChains.delete(oldest);
+      }
+      chain = { digest: null, streak: 0, nudged: false };
+      this.obsChains.set(sig, chain);
+    }
+    return chain;
   }
 
   private notePoll(call: GuardCallResult, signals: string[]): void {
@@ -351,6 +446,50 @@ const POLL_ACTIONS = new Set(['poll', 'output', 'log']);
 const CUA_TOOL_PREFIX = 'mcp__cua-driver__';
 /** 视为"点击类"的 cua 裸工具名（拖拽/输入不在其列）。 */
 const CUA_CLICK_ACTIONS = new Set(['click', 'double_click', 'right_click']);
+
+/**
+ * 观察类 Browser 工具名（托管浏览器注册名 `Browser` + surface-execution 统一名
+ * `browser_action`，见 browserComputerActionCatalog）。观察类动作的 L1 重复
+ * 要由结果确认：get_content / get_dom_snapshot / get_a11y_snapshot /
+ * get_elements / screenshot / wait（"wait-then-read"式读，选自 catalog 的
+ * read 动作，N-FIX-BROWSER-DOOMLOOP-REAPPROVE r1）。
+ */
+const BROWSER_OBSERVATION_TOOL_NAMES = new Set(['browser', 'browser_action']);
+const BROWSER_OBSERVATION_ACTIONS = new Set([
+  'get_content',
+  'get_dom_snapshot',
+  'get_a11y_snapshot',
+  'get_elements',
+  'screenshot',
+  'wait',
+]);
+
+/** 判一个调用是否"观察类 Browser 调用"（读当前页面状态，结果会随页面演进变化）。 */
+function isBrowserObservationCall(toolCall: { name: string; arguments?: Record<string, unknown> }): boolean {
+  if (!BROWSER_OBSERVATION_TOOL_NAMES.has(toolCall.name.toLowerCase())) return false;
+  const action = toolCall.arguments?.action;
+  return typeof action === 'string' && BROWSER_OBSERVATION_ACTIONS.has(action);
+}
+
+/**
+ * 观察结果指纹前的 host 噪声剥离（N-FIX-BROWSER-DOOMLOOP-REAPPROVE r2）。
+ * 写入点核对：screenshot 输出内嵌 `screenshot_${Date.now()}.png` 文件名
+ * （browserArtifactActions.ts 的 captureBrowserScreenshot），get_dom_snapshot /
+ * get_a11y_snapshot 的 JSON 内嵌每调用全新的 snapshotId uuid + capturedAtMs
+ * 裸 epoch 毫秒（domSnapshotBuilder.ts）。这些是 host 自己注入的"每次必不同"，
+ * 不是页面演进——不剥的话这些动作的确认链永远立不起来（反复截屏/反复快照的
+ * 真空转 L1 永不触发）。剥法刻意窄：uuid、13 位 epoch 毫秒、screenshot_<数字>
+ * 文件名；不抹平一般数字（页面正文里的计数器变化仍要能反映进指纹）。代价：
+ * 页面正文恰好只变了 uuid/13 位毫秒时会被当成"没变"——与信号归一化同一档
+ * 交换。screenshot analyze=true 时附带的视觉分析文本天然抖动，仍按"在变"
+ * 折扣（天花板，见证据档 r2）。
+ */
+function browserObservationDigestInput(summary: string): string {
+  return summary
+    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, 'ID')
+    .replace(/\b\d{13}\b/g, 'EPOCH')
+    .replace(/screenshot_\d+/gi, 'screenshot_ID');
+}
 
 /** 与 cuaNarration 的 windowKey 同构：pid 必须是数字；window_id 可缺省（按 app 兜底键）。 */
 function cuaWindowKey(args: Record<string, unknown>): string | null {

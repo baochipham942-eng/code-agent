@@ -626,6 +626,11 @@ export const CRON_GUARDRAILS = {
    * 存量值视为未设置，走指数退避；新代码显式写下的其它值不受影响。
    */
   LEGACY_DEFAULT_RETRY_DELAY_MS: 5_000,
+  /**
+   * timeout 的旧版默认值：旧保存路径把未设置写成 `|| 60000`，存量 agent 任务读回都是 60000。
+   * agent 分支把它与未设置同等对待（不限时），否则存量任务会在 60s 被误杀；shell 分支不受影响。
+   */
+  LEGACY_DEFAULT_TIMEOUT_MS: 60_000,
 } as const;
 
 /**

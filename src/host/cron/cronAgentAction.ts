@@ -8,7 +8,7 @@
 // ============================================================================
 
 import { UNATTENDED_TRUST_NOTICE } from '../../shared/unattendedTrust';
-import { CRON_AGENT_SNAPSHOT, EXTERNAL_WATCH } from '../../shared/constants';
+import { CRON_AGENT_SNAPSHOT, CRON_GUARDRAILS, EXTERNAL_WATCH } from '../../shared/constants';
 import type { AgentAction, CronJobDefinition } from '../../shared/contract/cron';
 import {
   buildCronAgentActionResult,
@@ -39,12 +39,37 @@ export interface CronAgentActionHost {
   recordSessionId: (executionId: string, sessionId: string) => Promise<void>;
 }
 
+/** 有效时限：有限、>0 且不是旧默认 60000 才生效；其余视为不限时（与改动前一致）。 */
+function effectiveAgentTimeoutMs(timeout: number | undefined): number | undefined {
+  if (timeout === undefined || !Number.isFinite(timeout) || timeout <= 0) return undefined;
+  return timeout === CRON_GUARDRAILS.LEGACY_DEFAULT_TIMEOUT_MS ? undefined : timeout;
+}
+
+/** 到点先取消底层 run 再抛错；cancel 后 sendMessage 即使正常 resolve 也不再算成功。 */
+function runWithAgentTimeout<T>(
+  limitMs: number | undefined,
+  cancel: () => Promise<void>,
+  operation: () => Promise<T>,
+): Promise<T> {
+  if (limitMs === undefined) return operation();
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const failure = new Error(`Cron job run exceeded its ${Number((limitMs / 1000).toFixed(1))}s time limit.`);
+      cancel().catch((cancelError) => {
+        console.warn('[CronService] Failed to cancel agent run after time limit', cancelError);
+      }).finally(() => reject(failure));
+    }, limitMs);
+    operation().then(resolve, reject).finally(() => clearTimeout(timer));
+  });
+}
+
 export async function executeCronAgentAction(
   host: CronAgentActionHost,
   definition: CronJobDefinition,
   action: AgentAction,
   executionId?: string,
   eventPayloadBlock?: string,
+  timeout?: number,
 ): Promise<unknown> {
   const runStartedAt = Date.now();
   // Heartbeat 任务: 检查 active_hours 窗口
@@ -106,7 +131,9 @@ export async function executeCronAgentAction(
         agentRunOptions,
         eventPayloadBlock === undefined ? undefined : { memoryTainted: true },
       );
-      result = await runWithCronJobBudget(definition.maxRunBudget, () => costMeter.run(sendMessage));
+      result = await runWithCronJobBudget(definition.maxRunBudget, () => runWithAgentTimeout(
+        effectiveAgentTimeoutMs(timeout), () => orchestrator.cancel(), () => costMeter.run(sendMessage),
+      ));
       const unattendedTimeout = (await import('../agent/unattendedApprovalTerminal')).takeUnattendedApprovalTimeout(cronSession.id);
       if (unattendedTimeout) throw new Error(unattendedTimeout);
 

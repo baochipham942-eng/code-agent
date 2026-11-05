@@ -123,6 +123,16 @@ describe('document share links', () => {
     expect(info.stale).toBe(false);
   });
 
+  it('reports an unreachable service, a 5xx and a rejected token as distinct plain errors', async () => {
+    publishVersion(filePath);
+    fetchMock.mockRejectedValueOnce(new TypeError('fetch failed'));
+    await expect(createShareLink(filePath, 604_800)).rejects.toThrow('Share service unavailable');
+    fetchMock.mockResolvedValueOnce(new Response('bad gateway', { status: 502 }));
+    await expect(createShareLink(filePath, 604_800)).rejects.toThrow('Share service unavailable');
+    fetchMock.mockResolvedValueOnce(new Response('{"error":"unauthorized"}', { status: 401 }));
+    await expect(createShareLink(filePath, 604_800)).rejects.toThrow('Share service token rejected');
+  });
+
   it('does not throw when the latest-content push fails and persists lastError', async () => {
     await create();
     await writeFile(filePath, 'version two');

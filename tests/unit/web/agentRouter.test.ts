@@ -2599,6 +2599,107 @@ describe('createAgentRouter', () => {
     ]);
   });
 
+  // N-RUN-CONCURRENT-PERSIST-FAIL-FU1：新会话的 kickoff running 写必须落在建行之后。
+  // 原实现 opening 处写 status，而新会话行要到 try 内 prePersistUserMessage 才建，
+  // assertAccessibleSession 必抛 Session not found ⇒ 真机每个新会话一条
+  // 「Failed to persist session status running」WARN。这里钉两件事：
+  // ① 新会话全程无这条 WARN；② running 写确实发生在建行之后且终态照旧收线。
+  it('new session defers the kickoff running write until the row exists (no failed-persist warn)', async () => {
+    const rows = new Map<string, Record<string, unknown>>();
+    const writeOrder: string[] = [];
+    const fakeSessionManager = {
+      getSession: vi.fn(async (id: string) => rows.get(id) ?? null),
+      updateSession: vi.fn(async (id: string, updates: Record<string, unknown>) => {
+        if (typeof updates.status === 'string') writeOrder.push(`update:${updates.status}`);
+        rows.set(id, { ...(rows.get(id) ?? {}), ...updates });
+      }),
+      addMessageToSession: vi.fn(async (id: string) => {
+        writeOrder.push('insertRow');
+        if (!rows.has(id)) rows.set(id, { id });
+      }),
+      getMessages: vi.fn(async () => []),
+    };
+    await closeServer();
+    await startAgentApi({ tryGetSessionManager: async () => fakeSessionManager });
+    setDbAvailable(true);
+
+    // 阻住 agentLoop，在建行后、终态前观察中间态
+    let releaseRun: (() => void) | undefined;
+    mockCreateAgentLoop.mockImplementationOnce(() => ({
+      run: vi.fn(() => new Promise<void>((resolve) => { releaseRun = resolve; })),
+      cancel: mockCancel,
+    }));
+
+    const sessionId = 'session-new-running-after-row';
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '新会话 running 补写', sessionId }),
+    });
+    expect(response.ok).toBe(true);
+
+    try {
+      // 行建好后 running 才写进去（补写发生在 pre-persist 建行之后）
+      await vi.waitFor(() => expect(writeOrder).toContain('update:running'));
+      expect(writeOrder.indexOf('insertRow')).toBeLessThan(writeOrder.indexOf('update:running'));
+      expect(rows.get(sessionId)).toMatchObject({ status: 'running' });
+
+      // opening 的失败持久化 WARN 一条都不能有（真机基线：每新会话一条）
+      expect(logger.warn.mock.calls.flat().join('\n')).not.toContain('Failed to persist session status');
+      // 'session:updated' 广播在状态真的写进去之后照常发
+      expect(mockBroadcastSSE.mock.calls).toContainEqual([
+        'session:updated',
+        expect.objectContaining({ sessionId, updates: expect.objectContaining({ status: 'running' }) }),
+      ]);
+    } finally {
+      releaseRun?.();
+    }
+    await response.text();
+
+    await vi.waitFor(() => expect(rows.get(sessionId)).toMatchObject({ status: 'completed' }));
+    expect(writeOrder.filter((entry) => entry === 'update:running')).toHaveLength(1);
+    expect(logger.warn.mock.calls.flat().join('\n')).not.toContain('Failed to persist session status');
+  });
+
+  // 老会话（行已存在）的 kickoff running 必须维持在 opening 原地写（与今天同一点），
+  // 且不产生第二笔补写。
+  it('existing session still writes running at the opening, before pre-persist inserts the user message', async () => {
+    const rows = new Map<string, Record<string, unknown>>();
+    const writeOrder: string[] = [];
+    const fakeSessionManager = {
+      getSession: vi.fn(async (id: string) => rows.get(id) ?? null),
+      updateSession: vi.fn(async (id: string, updates: Record<string, unknown>) => {
+        if (typeof updates.status === 'string') writeOrder.push(`update:${updates.status}`);
+        rows.set(id, { ...(rows.get(id) ?? {}), ...updates });
+      }),
+      addMessageToSession: vi.fn(async (id: string) => {
+        writeOrder.push('insertRow');
+        if (!rows.has(id)) rows.set(id, { id });
+      }),
+      getMessages: vi.fn(async () => []),
+    };
+    rows.set('session-existing-running-opening', { id: 'session-existing-running-opening', title: 'Existing' });
+    await closeServer();
+    await startAgentApi({ tryGetSessionManager: async () => fakeSessionManager });
+    setDbAvailable(true);
+    mockRun.mockResolvedValueOnce(undefined);
+
+    const response = await fetch(`${baseUrl}/api/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: '老会话原地写 running', sessionId: 'session-existing-running-opening' }),
+    });
+    expect(response.ok).toBe(true);
+    await response.text();
+
+    await vi.waitFor(() => expect(rows.get('session-existing-running-opening')).toMatchObject({ status: 'completed' }));
+    // running 在 opening 写（早于 pre-persist 的 user 消息落库），且只有这一笔
+    expect(writeOrder.indexOf('update:running')).toBeGreaterThanOrEqual(0);
+    expect(writeOrder.indexOf('update:running')).toBeLessThan(writeOrder.indexOf('insertRow'));
+    expect(writeOrder.filter((entry) => entry === 'update:running')).toHaveLength(1);
+    expect(logger.warn.mock.calls.flat().join('\n')).not.toContain('Failed to persist session status');
+  });
+
   // 工单行为不变清单 #5：路由缓存 push 保留 thinking/contentParts/artifacts/metadata，user attachments 也保留。
   it('keeps rich assistant fields and user attachments in the SSE-backed cache push', async () => {
     const attachment = {

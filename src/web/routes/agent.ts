@@ -644,11 +644,16 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
     let persistedSession: Session | null = null;
     let sessionManagerForRun: AgentSessionManagerLike | null = null;
     let sessionPreflightReadFailed = false;
+    // 行「确认还不存在」：preflight 真读了（sm 带 getSession、读未失败）且返回 null。
+    // 只有这种确认缺失才把 kickoff 的 running 写推迟到建行后（见 pre-persist 处）；
+    // 读失败或 sm 缺席（降级态）保持原地点写，行为不变。
+    let sessionRowMissingAtPreflight = false;
     try {
       const sm = await tryGetSessionManager();
       sessionManagerForRun = sm ?? null;
       if (sm?.getSession) {
         persistedSession = await sm.getSession(sessionId, 1);
+        sessionRowMissingAtPreflight = persistedSession === null;
       }
     } catch (err) {
       sessionPreflightReadFailed = true;
@@ -922,7 +927,14 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       ...(clientMessageId ? { clientMessageId } : {}),
       ...(runHandle ? { runId: runHandle.context.runId } : {}),
     });
-    await runController.updateSessionStatus('running');
+    // kickoff running 写：新会话的行此刻还没建（try 内 prePersistUserMessage 才建行），
+    // 在这里写必然 assertAccessibleSession 抛 Session not found ⇒ 每个新会话一条
+    // 「Failed to persist session status running」WARN（基线实测 3/3 个新会话各一条）。
+    // 行确认缺失就不在这里写：新会话的 running 在建行之后补写；老会话/读失败/降级态
+    // 维持原地点写不变。终态写路径（interrupted/completed/error）不在此列，照旧原样写。
+    if (!sessionRowMissingAtPreflight) {
+      await runController.updateSessionStatus('running');
+    }
 
     let externalEngineFailureContext: ExternalAgentEngineFailureContext | undefined;
     // try 路径 commitTurn 成功后置位：catch 里的失败收口据此避免二次 commit。
@@ -1540,6 +1552,13 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
           ...(userMsg.isMeta ? { isMeta: true } : {}),
         },
       });
+
+      // 新会话的 kickoff running 补写：行刚由 pre-persist 建好，此刻写才落得进去。
+      // pre-persist 失败（行仍缺）就不补写——再写还是必失败，只会多一条 WARN；
+      // 老会话的 running 已在 opening 原地写过，这里只补行刚建的那批。
+      if (sessionRowMissingAtPreflight && userMsgPrePersistedDb) {
+        await runController.updateSessionStatus('running');
+      }
 
       // 宿主自己起的轮次（抽干排队消息、断连后续跑）：这条用户消息只有宿主知道，
       // 前端没有本地乐观副本，不广播的话屏幕上只有回答、没有对应的问题

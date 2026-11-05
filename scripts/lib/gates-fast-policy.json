@@ -172,7 +172,7 @@
     },
     {
       "id": "perf-journey-long-session",
-      "note": "TurnBasedTraceView.tsx attaches here only: long-session harness hot path, 32-turn scroll is the most commit-sensitive probe. MessageBubble is first-token's. Post-merge job is the safety net.",
+      "note": "TurnBasedTraceView.tsx attaches here only: long-session harness hot path, 32-turn entry probe (mount + wheel signal; scrolling is no longer measured since N-PERF-LONG-SESSION-RATCHET-FLAKE, follow-up N-PERF-LONG-SESSION-SCROLL-COVERAGE). MessageBubble is first-token's. Post-merge job is the safety net.",
       "paths": [
         "src/renderer/components/features/chat/TurnBasedTraceView.tsx",
         "src/renderer/components/features/chat/TurnCard.tsx",

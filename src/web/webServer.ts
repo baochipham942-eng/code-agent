@@ -617,6 +617,21 @@ async function initializeServices(): Promise<void> {
   }
   bootMark('loop-recovery');
 
+  // 孤儿任务夹清扫（N-DELEGATE-WORKDIR-LAZY-FU1-FU1-FU2）：挂死的子代理 run 加上
+  // 进程重启后 createdByThisProcess 失忆，默认工作根里的元数据夹（只剩 .code-agent
+  // 脚手架）永远没人回收。启动时按运行期同一套内容判据扫一次（见
+  // sweepOrphanMetadataOnlyWorkDirectories）。fire-and-forget：不 await 清扫本身，
+  // 不阻塞 listen；失败只 warn。
+  try {
+    const { sweepOrphanMetadataOnlyWorkDirectories } = await import('../host/agent/runtime/workDirectoryMaterializer');
+    void sweepOrphanMetadataOnlyWorkDirectories().catch((error: Error) => {
+      logger.warn('Work directory orphan sweep failed (non-blocking):', error.message);
+    });
+  } catch (error) {
+    logger.warn('Work directory orphan sweep failed (non-blocking):', (error as Error).message);
+  }
+  bootMark('workdir-orphan-sweep');
+
   // Capability migration needs initialized settings and message history. Activation still
   // finishes before IPC registration and before the agent runtime can settle a turn.
   try {

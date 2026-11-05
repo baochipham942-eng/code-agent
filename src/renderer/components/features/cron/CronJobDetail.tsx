@@ -24,12 +24,13 @@ import { useEventScheduleNames } from './useChannelCatalog';
 import { CronGroupListenCheck } from './CronGroupListenCheck';
 import { CronWebhookLinkBlock } from './CronWebhookLinkBlock';
 import { CronEventDecisionsPanel } from './CronEventDecisionsPanel';
+import { awaitingApprovalLabel } from './awaitingApprovalLabel';
 import { isWebhookCronJob } from '@shared/cronWebhookJob';
 
 interface CronJobDetailProps {
   job: CronJobDefinition | null;
   /** 等批准运行（N-CRON-UNATTENDED-BASH-PARK-STUCK）：头 chip 换 amber 徽章 + 一句提示 + 去处理。 */
-  awaitingRun?: { executionId: string | null } | null;
+  awaitingRun?: { executionId: string | null; commandPreview?: string } | null;
   onReviewAwaiting?: () => void;
 }
 
@@ -134,7 +135,7 @@ export const CronJobDetail: React.FC<CronJobDetailProps> = ({ job, awaitingRun =
                 className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-badge-warning/30 bg-amber-500/5 px-3 py-2"
                 data-testid="cron-detail-awaiting-approval-hint"
               >
-                <span className="text-xs text-zinc-400">{cc.awaitingApprovalHint}</span>
+                <span className="text-xs text-zinc-400">{awaitingApprovalLabel(cc.awaitingApprovalWithPreview, awaitingRun?.commandPreview) ?? cc.awaitingApprovalHint}</span>
                 <Button
                   type="button"
                   variant="primary"

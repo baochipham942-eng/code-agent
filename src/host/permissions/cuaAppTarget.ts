@@ -70,7 +70,7 @@ const DESKTOP_READ_CUA_TOOLS = new Set([
 const CUA_MCP_TOOL_PREFIX = `mcp__${CUA_DRIVER_SERVER_NAME}__`;
 
 /** 命名空间 MCP 全名 → cua-driver 裸工具名；非 cua-driver 工具返回 null。 */
-function parseCuaToolName(executionToolName: string): string | null {
+export function parseCuaToolName(executionToolName: string): string | null {
   return executionToolName.startsWith(CUA_MCP_TOOL_PREFIX)
     ? executionToolName.slice(CUA_MCP_TOOL_PREFIX.length)
     : null;

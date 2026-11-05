@@ -93,6 +93,7 @@ describe('classifyCronFailure', () => {
   it('限流、并发、超时、鉴权、网络、其它各归一类', () => {
     expect(classifyCronFailure('429 Too Many Requests')).toEqual({ kind: 'rate_limit' });
     expect(classifyCronFailure('concurrency limit exceeded')).toEqual({ kind: 'rate_limit' });
+    expect(classifyCronFailure('Cron job run exceeded its 30s time limit.')).toEqual({ kind: 'timeout' });
     expect(classifyCronFailure('request timed out')).toEqual({ kind: 'timeout' });
     expect(classifyCronFailure('upstream timeout')).toEqual({ kind: 'timeout' });
     // ETIMEDOUT 不含子串 "timeout"（中间多一个 d），按字面不升成 timeout。

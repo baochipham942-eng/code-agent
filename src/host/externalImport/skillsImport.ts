@@ -18,6 +18,7 @@ import {
   readClaudeLegacySkillsPreference,
   writeClaudeLegacySkillsPreference,
 } from '../services/skills/claudeLegacySkillsPreference';
+import type { ImportHistoryTrigger } from '../../shared/contract/importHistory';
 import type {
   ExternalImportSetClaudeLegacySkillsResult,
   ExternalSkillCopySourceId,
@@ -115,11 +116,20 @@ export async function previewExternalSkillsImport(
   return { items, summary: summarize(items) };
 }
 
+export interface ApplyExternalSkillsOptions {
+  /** 导入历史的触发方；缺省 manual。 */
+  trigger?: ImportHistoryTrigger;
+  /** 按来源排除已处理过的技能名（保持同步的台账）；被排除的不进结果、不记历史。 */
+  excludeNames?: Partial<Record<ExternalSkillCopySourceId, string[]>>;
+}
+
 export async function applyExternalSkillsImport(
   payload?: ExternalSkillsApplyRequest,
+  options: ApplyExternalSkillsOptions = {},
 ): Promise<ExternalSkillsApplyResult> {
   const targetDir = getSkillsDir().user.new;
-  const plan = await buildPlan(resolveSourceIds(payload?.sourceIds), getHomeDir(), targetDir);
+  const plan = (await buildPlan(resolveSourceIds(payload?.sourceIds), getHomeDir(), targetDir))
+    .filter((item) => !options.excludeNames?.[item.sourceId]?.includes(item.name));
   const results: ExternalSkillsApplyResultItem[] = [];
   let copied = 0;
   for (const item of plan) {
@@ -169,7 +179,8 @@ export async function applyExternalSkillsImport(
       });
     }
   }
-  await recordSkillsImportHistory(results);
+  if (options.trigger === 'auto') await recordSkillsImportHistory(results, { trigger: 'auto' });
+  else await recordSkillsImportHistory(results);
   return {
     targetDir,
     copied,

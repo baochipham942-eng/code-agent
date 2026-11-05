@@ -189,16 +189,17 @@ describe('roleTrash', () => {
       await seedUserRole('冲突角色', '旧版');
       const trashed = await trashUserRole('冲突角色');
       expect(trashed.success).toBe(true);
+      if (!trashed.success) return;
       // 用户重建了同名角色
       await seedUserRole('冲突角色', '新版');
       const before = await snapshotDir(mockConfigDir.dir);
 
-      const restored = await restoreTrashedRole(trashed.trashId!);
+      const restored = await restoreTrashedRole(trashed.trashId);
 
       expect(restored).toMatchObject({ success: false, code: 'ROLE_RESTORE_CONFLICT' });
       expect(await snapshotDir(mockConfigDir.dir)).toEqual(before); // 新角色一个字节没被覆盖
       // 回收站条目保留（用户处理完冲突前不销毁证据）
-      expect(await exists(path.join(trashDir(), trashed.trashId!, 'agent.md'))).toBe(true);
+      expect(await exists(path.join(trashDir(), trashed.trashId, 'agent.md'))).toBe(true);
       expect(await restoreTrashedRole('没有这个条目')).toMatchObject({ success: false, code: 'ROLE_TRASH_NOT_FOUND' });
     });
   });
@@ -209,16 +210,18 @@ describe('roleTrash', () => {
       await seedUserRole('过期角色');
       const trashed = await trashUserRole('过期角色', new Date(t0));
       expect(trashed.success).toBe(true);
+      if (!trashed.success) return;
 
       // 29 天：仍在保留期内（purge 经 trash/restore 惰性触发，此处用 restore 驱动）
-      expect(await restoreTrashedRole(trashed.trashId!, new Date(t0 + 29 * DAY))).toMatchObject({ success: true });
+      expect(await restoreTrashedRole(trashed.trashId, new Date(t0 + 29 * DAY))).toMatchObject({ success: true });
       // 重新删一次，验证 31 天边界：restore 先惰性 purge 过期条目，条目已不存在 → 稳定拒绝
       const trashedAgain = await trashUserRole('过期角色', new Date(t0));
       expect(trashedAgain.success).toBe(true);
+      if (!trashedAgain.success) return;
 
-      expect(await restoreTrashedRole(trashedAgain.trashId!, new Date(t0 + 31 * DAY))).toMatchObject({ success: false, code: 'ROLE_TRASH_NOT_FOUND' });
+      expect(await restoreTrashedRole(trashedAgain.trashId, new Date(t0 + 31 * DAY))).toMatchObject({ success: false, code: 'ROLE_TRASH_NOT_FOUND' });
       // 拒绝的原因是条目真的被清掉了（目录已不在），而不是 restore 自己按时间拒绝
-      expect(await exists(path.join(trashDir(), trashedAgain.trashId!))).toBe(false);
+      expect(await exists(path.join(trashDir(), trashedAgain.trashId))).toBe(false);
     });
 
     it('没有 meta.json 的残骸目录（删除中途崩掉的半成品）直接清掉', async () => {
@@ -226,10 +229,11 @@ describe('roleTrash', () => {
       // 让 restore 成为触发清理的那次调用
       await seedUserRole('带残骸角色');
       const trashed = await trashUserRole('带残骸角色');
+      if (!trashed.success) return;
       await fs.mkdir(path.join(trashDir(), 'role-debris'), { recursive: true });
       await fs.writeFile(path.join(trashDir(), 'role-debris', 'agent.md'), '残骸', 'utf-8');
 
-      expect(await restoreTrashedRole(trashed.trashId!)).toMatchObject({ success: true });
+      expect(await restoreTrashedRole(trashed.trashId)).toMatchObject({ success: true });
 
       expect(await exists(path.join(trashDir(), 'role-debris'))).toBe(false);
     });

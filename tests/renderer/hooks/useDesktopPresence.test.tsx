@@ -9,7 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IPC_DOMAINS } from '../../../src/shared/ipc';
 import { COMPANION_LIMITS as L } from '../../../src/shared/constants/companion';
 
-const invokeDomain = vi.hoisted(() => vi.fn(() => Promise.resolve({ success: true })));
+// 参数签名要显式声明，否则 mock.calls 的元组是 []，按索引取参过不了类型检查
+const invokeDomain = vi.hoisted(() => vi.fn((_domain: string, _action: string, _payload?: unknown) => Promise.resolve({ success: true })));
 
 vi.mock('../../../src/renderer/services/ipcService', () => ({
   default: { invokeDomain },

@@ -1,18 +1,26 @@
 // ============================================================================
-// RoleFirstWakeCard — 新专家第一次醒来的介绍与建议
-// 确认创建后出现在原确认卡位置，也出现在该专家主会话顶部，直到点建议或跳过。
+// RoleFirstWakeCard — 新专家第一次醒来的开场与建议
+// 确认创建后出现在原确认卡位置，也出现在该专家主会话顶部，直到点建议或先不用。
+// 视觉范本 role-wake-prototype-v2.html 屏一/屏二（2026-11-05 owner 返修）：
+// 用户刚在确认卡看过名字与职责——卡片不再有名册行，头像只留首字（名字进
+// aria-label/title）；failed 先说「建好了能用」，再用次要色说哪里没成功，
+// 原始错误只在开发者模式露出，普通用户走 classifyAgentError 映射文案。
 // ============================================================================
 
 import React, { useEffect, useRef, useState } from 'react';
 import { readPersistedExpertThread } from '@shared/contract/expertThread';
 import type { RoleFirstWakeSnapshot } from '@shared/contract/roleAssets';
+import { classifyAgentError } from '@shared/utils/agentErrorClassification';
 import { Button } from '../../primitives/Button';
 import { useI18n } from '../../../hooks/useI18n';
 import { interpolate } from '../../../i18n/interpolate';
-import { getFirstWake, listRoles, skipFirstWake } from '../../../services/rolesClient';
+import { getFirstWake, listRoles, retryFirstWake, skipFirstWake } from '../../../services/rolesClient';
 import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { goToExpertThread } from '../../../utils/inviteExpert';
+import { resolveAgentErrorCopy, WAKE_CARD_CHECK_ACCOUNT_CATEGORIES } from './AgentErrorCard';
+import { MODEL_OVERRIDE_CHANGE_EVENT, OPEN_MODEL_SWITCHER_EVENT } from '../../StatusBar/ModelSwitcher';
+import { hasCalendarSource } from './roleWakeSources';
 import { RoleWakeProposalsCard } from './RoleWakeProposalsCard';
 
 const POLL_MS = 3000;
@@ -36,12 +44,14 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
   expectLive = false,
   onDismissed,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const copy = t.roleFirstWake;
   const [snapshot, setSnapshot] = useState<RoleFirstWakeSnapshot | null | undefined>(undefined);
   const [dismissed, setDismissed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [displayName, setDisplayName] = useState(roleId);
+  const [pollEpoch, setPollEpoch] = useState(0);
+  const developerMode = useAppStore((state) => state.developerMode);
   const onDismissedRef = useRef(onDismissed);
   onDismissedRef.current = onDismissed;
 
@@ -52,7 +62,7 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
       const name = entries.find((entry) => entry.roleId === roleId)?.displayName?.trim();
       if (name) setDisplayName(name);
     }).catch(() => {
-      // 展示名只是标题，失败就用 roleId
+      // 展示名只用于头像与无障碍标签，失败就用 roleId
     });
     return () => { cancelled = true; };
   }, [roleId]);
@@ -81,11 +91,26 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
       cancelled = true;
       if (timer !== undefined) clearTimeout(timer);
     };
-  }, [roleId]);
+    // pollEpoch：点「重新查看」后从 failed 复位 pending，轮询要跟着重启
+  }, [roleId, pollEpoch]);
 
   useEffect(() => {
     if (snapshot === null || snapshot?.state === 'skipped') onDismissedRef.current?.();
   }, [snapshot]);
+
+  const live = snapshot ?? (expectLive ? 'optimistic' : null);
+  const visible = !dismissed && snapshot !== null && snapshot?.state !== 'skipped' && Boolean(live);
+
+  // 空会话压空态（ChatView 据此不渲染「继续上次的会话」与起手卡）；卡不可见时还回去
+  useEffect(() => {
+    if (!visible) return undefined;
+    useAppStore.getState().setFirstWakeCardRoleId(roleId);
+    return () => { useAppStore.getState().setFirstWakeCardRoleId(null, roleId); };
+  }, [visible, roleId]);
+
+  // 「换个模型再看」打开选择器；用户真换了模型（override 事件）就自动重看一次。
+  // 走 ref：handler 依赖 busy 等渲染期闭包，直接进 deps 会每渲染重挂监听。
+  const handleRetryRef = useRef<() => void>(() => {});
 
   const hide = () => {
     setDismissed(true);
@@ -115,6 +140,22 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
     }
   };
 
+  // 「重新查看」：真实的 failed→pending 复位入队（roles IPC firstWakeRetry），
+  // 本地先摆回 pending 态并重启轮询，避免等到下一个 3s 拍才动。
+  const handleRetry = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await retryFirstWake(roleId);
+      setSnapshot((prev) => (prev ? { ...prev, state: 'pending' } : { state: 'pending', sourcesMode: 'none', suggestions: [] }));
+      setPollEpoch((epoch) => epoch + 1);
+    } catch {
+      // 宿主拒绝（已不 failed 等）不动本地态，下一拍轮询自然对齐
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const openConnectors = () => {
     // connectors 不是 SettingsTab。普通用户的「连接器」在能力中心，openSettingsTab('mcp') 也会落到同一页。
     useAppStore.getState().openCapabilityHub('connectors');
@@ -124,9 +165,16 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
     void goToExpertThread(roleId);
   };
 
-  if (dismissed || snapshot === null || snapshot?.state === 'skipped') return null;
-  const live = snapshot ?? (expectLive ? 'optimistic' : null);
-  if (!live) return null;
+  handleRetryRef.current = () => { void handleRetry(); };
+
+  useEffect(() => {
+    if (snapshot?.state !== 'failed') return undefined;
+    const handler = () => { handleRetryRef.current(); };
+    window.addEventListener(MODEL_OVERRIDE_CHANGE_EVENT, handler);
+    return () => window.removeEventListener(MODEL_OVERRIDE_CHANGE_EVENT, handler);
+  }, [snapshot?.state]);
+
+  if (!visible) return null;
 
   const state = snapshot?.state ?? 'pending';
   const sourcesMode = snapshot?.sourcesMode ?? 'none';
@@ -137,12 +185,30 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
   const showNone = state === 'completed' && sourcesMode === 'none';
   const showSuggestions = state === 'completed' && sourcesMode === 'connected';
 
-  // 视觉范本 role-wake-prototype.html 屏一：醒来角色像普通一轮发言——小头像 + 名字、
-  // 无填充面板；建议是一排安静的描边按钮，「跳过」淡在最右。颜色全部走主题 token，
-  // 亮暗（含高对比）两套都成立，不再用任何随主题翻转后洗成泥灰的固定底色。
-  // mt-2：composer 位（RoleDraftNotifications 原位挂卡）与 transcript 底部渐隐区
-  // 是零间距贴边（实测 scroller.bottom == card.top），渐隐的半透明残字会贴进卡面
-  // 读成「文字透出来」；补 8px 呼吸位把两块视觉分开（banner 位自带 mt-2 包装层）。
+  // failed 文案：普通用户只见 classifyAgentError 映射后的标题，原始错误仅开发者模式露出
+  const failureReason = snapshot?.failureReason?.trim() ?? '';
+  const failureCategory = (failureReason ? classifyAgentError({ message: failureReason })?.category : undefined) ?? 'generic';
+  const failureTitle = resolveAgentErrorCopy(
+    { category: failureCategory },
+    t,
+    language === 'zh' ? 'zh-CN' : 'en-US',
+  ).title;
+  const failedLookLine = developerMode && failureReason
+    ? failureReason
+    : interpolate(copy.failedLook, {
+      scope: hasCalendarSource(snapshot?.sources) ? copy.scopeCalendar : copy.scopeData,
+      reason: failureTitle,
+    });
+  // 出路按 category 分流（与 AgentErrorCard 同一套策略）：账号类给换模型+查账号，其余给重看
+  const showAccountActions = WAKE_CARD_CHECK_ACCOUNT_CATEGORIES.has(failureCategory);
+
+  const outlineButtonClass = 'rounded-lg border border-border-strong bg-void px-3 py-1.5 text-left text-sm font-normal text-text-secondary transition-colors hover:border-border-hover hover:bg-surface hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50';
+
+  // 视觉范本 role-wake-prototype-v2.html 屏一/屏二：醒来角色像普通一轮发言——28px
+  // 首字头像（名字进 aria-label/title，屏上不再有名册行）、无填充面板；建议是一排
+  // 安静的描边按钮，「先不用」淡在最右。颜色全走主题 token，亮暗（含高对比）都成立。
+  // mt-2：composer 位与 transcript 底部渐隐区是零间距贴边（实测 scroller.bottom ==
+  // card.top），渐隐的半透明残字会贴进卡面读成「文字透出来」；补 8px 呼吸位。
   const body = (
     <div
       className="mb-2 mt-2 grid grid-cols-[28px_minmax(0,1fr)] gap-x-3"
@@ -151,24 +217,21 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
       data-sources-mode={sourcesMode}
     >
       <div
-        aria-hidden="true"
+        role="img"
+        aria-label={displayName}
+        title={displayName}
         className="flex size-7 items-center justify-center rounded-full bg-badge-accent text-sm font-semibold text-badge-accent"
       >
         {displayName.trim().charAt(0) || '·'}
       </div>
-      <p className="text-sm font-semibold leading-7 text-text-primary">{displayName}</p>
-      <div className="col-start-2 min-w-0">
+      <div className="col-start-2 min-w-0 pt-[3px]">
         {showRunning && (
-          <p className="text-base leading-relaxed text-text-tertiary">
-            {interpolate(copy.running, { name: displayName })}
-          </p>
+          <p className="text-base leading-relaxed text-text-tertiary">{copy.running}</p>
         )}
         {showFailed && (
-          <div className="space-y-1">
-            <p className="text-base leading-relaxed text-status-error">{copy.failedTitle}</p>
-            {snapshot?.failureReason && (
-              <p className="text-sm text-text-tertiary" data-testid="role-first-wake-reason">{snapshot.failureReason}</p>
-            )}
+          <div className="space-y-0.5">
+            <p className="text-base leading-relaxed text-text-primary">{copy.failedReady}</p>
+            <p className="text-sm leading-relaxed text-text-secondary" data-testid="role-first-wake-reason">{failedLookLine}</p>
           </div>
         )}
         {(showSuggestions || showNone) && (
@@ -177,41 +240,67 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
           </p>
         )}
         {showNone && <p className="mt-1 text-sm text-text-tertiary">{copy.connectHint}</p>}
-        {(showSuggestions || showNone || showFailed) && (
-          <div className="mt-2.5 flex flex-wrap items-center gap-2">
-            {showSuggestions && suggestions.map((suggestion) => (
+        <div className="mt-2.5 flex flex-wrap items-center gap-2">
+          {showSuggestions && suggestions.map((suggestion) => (
+            <button
+              key={suggestion.prompt}
+              type="button"
+              disabled={busy}
+              className={outlineButtonClass}
+              onClick={() => { void handleSuggestion(suggestion.prompt); }}
+            >
+              {suggestion.title}
+            </button>
+          ))}
+          {showNone && (
+            <Button variant="primary" size="sm" onClick={openConnectors}>{copy.connect}</Button>
+          )}
+          {!framed && (showNone || showFailed) && (
+            <button
+              type="button"
+              className={outlineButtonClass}
+              onClick={openThread}
+            >
+              {copy.goToThread}
+            </button>
+          )}
+          {showFailed && showAccountActions && (
+            <>
               <button
-                key={suggestion.prompt}
                 type="button"
-                disabled={busy}
-                className="rounded-lg border border-border-strong bg-void px-3 py-1.5 text-left text-sm font-normal text-text-secondary transition-colors hover:border-border-hover hover:bg-surface hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
-                onClick={() => { void handleSuggestion(suggestion.prompt); }}
+                className={outlineButtonClass}
+                onClick={() => { window.dispatchEvent(new CustomEvent(OPEN_MODEL_SWITCHER_EVENT)); }}
               >
-                {suggestion.title}
+                {copy.switchModel}
               </button>
-            ))}
-            {showNone && (
-              <Button variant="primary" size="sm" onClick={openConnectors}>{copy.connect}</Button>
-            )}
-            {(showNone || showFailed) && (
               <button
                 type="button"
-                className="rounded-lg border border-border-strong bg-void px-3 py-1.5 text-sm font-normal text-text-secondary transition-colors hover:border-border-hover hover:bg-surface hover:text-text-primary"
-                onClick={openThread}
+                className={outlineButtonClass}
+                onClick={() => { useAppStore.getState().openSettingsTab('model'); }}
               >
-                {copy.goToThread}
+                {copy.checkAccount}
               </button>
-            )}
+            </>
+          )}
+          {showFailed && !showAccountActions && (
             <button
               type="button"
               disabled={busy}
-              className="ml-auto rounded-md px-2 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
-              onClick={() => { void handleSkip(); }}
+              className={outlineButtonClass}
+              onClick={() => { void handleRetry(); }}
             >
-              {showFailed ? copy.close : copy.skip}
+              {copy.retryLook}
             </button>
-          </div>
-        )}
+          )}
+          <button
+            type="button"
+            disabled={busy}
+            className="ml-auto rounded-md px-2 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={() => { void handleSkip(); }}
+          >
+            {copy.skip}
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -7,7 +7,7 @@ import React, { useEffect, useState } from 'react';
 import type { RoleWakeProposal } from '@shared/contract/roleAssets';
 import { useI18n } from '../../../hooks/useI18n';
 import { DomainInvokeError } from '../../../services/ipcService';
-import { acceptWakeProposal, dismissWakeProposal, listWakeProposals } from '../../../services/rolesClient';
+import { acceptWakeProposal, dismissWakeProposal, getFirstWake, listWakeProposals } from '../../../services/rolesClient';
 import { goToExpertThread } from '../../../utils/inviteExpert';
 
 interface RoleWakeProposalsCardProps {
@@ -24,8 +24,13 @@ export const RoleWakeProposalsCard: React.FC<RoleWakeProposalsCardProps> = ({ ro
 
   useEffect(() => {
     let cancelled = false;
-    void listWakeProposals(roleId)
-      .then((next) => { if (!cancelled) setProposals(next); })
+    // 首次醒来失败时不出现（2026-11-05 owner 返修）：失败卡已说明哪里没成功，
+    // 再叠「今天可以帮你做」会把重点从修问题引向接活。
+    void Promise.all([listWakeProposals(roleId), getFirstWake(roleId)])
+      .then(([next, wake]) => {
+        if (cancelled) return;
+        setProposals(wake?.state === 'failed' ? [] : next);
+      })
       .catch(() => { if (!cancelled) setProposals([]); });
     return () => { cancelled = true; };
   }, [roleId]);

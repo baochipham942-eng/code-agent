@@ -103,6 +103,7 @@ vi.mock('../../../../src/cli/bootstrap', () => ({
 import {
   enqueueFirstWake,
   skipFirstWake,
+  retryFirstWake,
   getFirstWakeSnapshot,
 } from '../../../../src/host/services/roleAssets/roleFirstWake';
 import { toRoleBoundaryRunAllowlist } from '../../../../src/host/services/roleAssets/rolePersonalization';
@@ -423,7 +424,7 @@ describe('提示词变体', () => {
     expect(harness.runnerCalls[0]!.prompt).toContain('帮我盯竞品动态');
   });
 
-  it('产出形状（返修 r1）：最多 3 次左右只读探查、恰好 3 项建议、2-3 句纯文本自介，不提轮数上限', async () => {
+  it('产出形状（返修 r2 / 2026-11-05 owner）：只讲新发现，不复述名字职责、不提第一次醒来；建议标题限长', async () => {
     harness.listCapabilities.mockResolvedValue(connectedInventory());
     await enqueueFirstWake('prompt-shape', {
       runner: async (input) => { harness.runnerCalls.push(input); return { finalOutput: suggestionsBlock([{ title: 't', prompt: 'p' }]) }; },
@@ -434,9 +435,15 @@ describe('提示词变体', () => {
     expect(prompt).toContain('看完就停');
     expect(prompt).toContain('恰好 3 件');
     expect(prompt).toContain('恰好 3 项');
-    expect(prompt).toContain('2-3 句');
+    expect(prompt).toContain('1-2 句话');
+    expect(prompt).toContain('中文不超过 10 个字');
     expect(prompt).toContain('不要任何 Markdown 标记');
     expect(prompt).toContain('不要提工具调用上限或轮数');
+    // owner 返修：确认卡已给过名字与职责，提示词禁止自报家门
+    expect(prompt).toContain('不要再提你的名字');
+    expect(prompt).toContain('不要再复述你的职责');
+    expect(prompt).not.toContain('第一次醒来');
+    expect(prompt).not.toContain('自我介绍');
     // 首次醒来用独立小预算，不许再借巡检醒来的 ROLE_PROACTIVITY.WAKE_MAX_ITERATIONS（r2 回归钉）
     expect(prompt).toContain(String(ROLE_ASSETS.FIRST_WAKE_MAX_ITERATIONS));
 
@@ -446,9 +453,39 @@ describe('提示词变体', () => {
     });
     await vi.waitFor(() => { expect(harness.runnerCalls).toHaveLength(2); });
     const promptNone = harness.runnerCalls[1]!.prompt;
-    expect(promptNone).toContain('2-3 句');
+    expect(promptNone).toContain('只有 1 句话');
     expect(promptNone).toContain('不要任何 Markdown 标记');
     expect(promptNone).toContain('不要做任何工具探查');
+    expect(promptNone).not.toContain('第一次醒来');
+    expect(promptNone).not.toContain('自我介绍');
+  });
+
+  it('输出侧防线（2026-11-05 owner）：模型仍以「我是<展示名>」开场时，含展示名的第一句整句丢弃', async () => {
+    await fs.mkdir(path.join(harness.configDir, 'agents'), { recursive: true });
+    await fs.writeFile(
+      path.join(harness.configDir, 'agents', 'self-intro-role.md'),
+      '---\ndisplay-name: 小满\n---\n\n你是日程管家。\n',
+      'utf-8',
+    );
+    harness.listCapabilities.mockResolvedValue(connectedInventory());
+    await enqueueFirstWake('self-intro-role', {
+      runner: async (input) => {
+        harness.runnerCalls.push(input);
+        return {
+          finalOutput: [
+            '我是小满，擅长整理日程，这是我的第一次醒来。',
+            '日历连上了，共 6 个。',
+            '```first_wake_suggestions',
+            '[]',
+            '```',
+          ].join('\n'),
+        };
+      },
+    });
+    await vi.waitFor(async () => {
+      await expect(readState('self-intro-role')).resolves.toMatchObject({ state: 'completed' });
+    });
+    expect(await readState('self-intro-role')).toMatchObject({ intro: '日历连上了，共 6 个。' });
   });
 });
 
@@ -661,6 +698,49 @@ describe('失败终态：runner 抛错 / 前置步骤抛错', () => {
 });
 
 // ----------------------------------------------------------------------------
+// 重看（failed 复位 pending 重新排队；其余终态拒绝）
+// ----------------------------------------------------------------------------
+
+describe('retryFirstWake', () => {
+  it('failed → 复位 pending 并重新排队跑完（runner 第二次真跑，状态 completed）', async () => {
+    harness.listCapabilities.mockResolvedValue(connectedInventory());
+    await enqueueFirstWake('retry-role', {
+      runner: async (input) => {
+        harness.runnerCalls.push(input);
+        if (harness.runnerCalls.length === 1) throw new Error('Invalid API key unauthorized');
+        return { finalOutput: suggestionsBlock([{ title: '查本周冲突', prompt: 'p' }]) };
+      },
+    });
+    await vi.waitFor(async () => { await expect(readState('retry-role')).resolves.toMatchObject({ state: 'failed' }); });
+
+    expect(await retryFirstWake('retry-role', {
+      runner: async (input) => {
+        harness.runnerCalls.push(input);
+        return { finalOutput: suggestionsBlock([{ title: '查本周冲突', prompt: 'p' }]) };
+      },
+    })).toEqual({ retried: true });
+    await vi.waitFor(() => { expect(harness.runnerCalls).toHaveLength(2); });
+    await vi.waitFor(async () => { await expect(readState('retry-role')).resolves.toMatchObject({ state: 'completed' }); });
+    expect((await readState('retry-role')).failureReason).toBeUndefined();
+    // 重看清掉失败痕迹：快照不再带 failureReason
+    expect(await getFirstWakeSnapshot('retry-role')).not.toHaveProperty('failureReason');
+  });
+
+  it('completed / skipped / 无文件 → 拒绝重看（终态不洗）', async () => {
+    harness.listCapabilities.mockResolvedValue({ items: [] });
+    await enqueueFirstWake('done-role', {
+      runner: async (input) => { harness.runnerCalls.push(input); return { finalOutput: '看完了' }; },
+    });
+    await vi.waitFor(async () => { await expect(readState('done-role')).resolves.toMatchObject({ state: 'completed' }); });
+    expect(await retryFirstWake('done-role')).toEqual({ retried: false, reason: 'not_failed' });
+    expect(await retryFirstWake('never-role')).toEqual({ retried: false, reason: 'not_failed' });
+    expect(await skipFirstWake('done-role')).toEqual({ success: true });
+    expect(await retryFirstWake('done-role')).toEqual({ retried: false, reason: 'not_failed' });
+    expect(await retryFirstWake('../escape')).toEqual({ retried: false, reason: 'invalid_role' });
+  });
+});
+
+// ----------------------------------------------------------------------------
 // 快照（IPC 读路径的数据源）
 // ----------------------------------------------------------------------------
 
@@ -680,6 +760,8 @@ describe('getFirstWakeSnapshot', () => {
       state: 'completed',
       sessionId: harness.runnerCalls[0]!.sessionId,
       sourcesMode: 'connected',
+      // 2026-11-05 返修：已连接源名字随快照透出（failed 卡区分「你的日历/你的数据」）
+      sources: ['日历', 'Lark 文档'],
       suggestions: [{ title: 't', prompt: 'p' }],
       intro: '这是自我介绍，一共两三句。',
     });

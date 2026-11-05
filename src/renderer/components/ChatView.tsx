@@ -124,6 +124,8 @@ export const ChatView: React.FC = () => {
   const effortLevelExplicit = useModeStore((state) => state.effortLevelExplicit);
   const appWorkingDirectory = useAppStore((state) => state.workingDirectory);
   const setAppWorkingDirectory = useAppStore((state) => state.setWorkingDirectory);
+  // 首次醒来卡可见时，空会话的欢迎空态让位（RoleFirstWakeCard 挂载时写入）
+  const firstWakeCardRoleId = useAppStore((state) => state.firstWakeCardRoleId);
   const setComposerWorkingDirectory = useComposerStore((state) => state.setWorkingDirectory);
   const viewingMemberId = useMemberViewStore((state) => state.viewingMemberId);
   const setTaskPlan = useAppStore((state) => state.setTaskPlan);
@@ -869,17 +871,19 @@ export const ChatView: React.FC = () => {
             // 三态分明（工单 2026-08-01）：加载中（hydration 未完）→ 骨架屏；
             // 真空会话（hydration 完成且零消息）→ #874 的「继续上次的会话」空态；
             // 冷启动未定会话 → 空白占位。加载中绝不能误渲染成空态/欢迎页。
+            // 首次醒来卡在场时空态让位（2026-11-05 owner 返修）：不要再叠
+            // 「继续上次的会话」标题和四张起手卡，卡消失后恢复原空态。
             <EmptySessionArea
               isHydratingSession={isHydratingSession}
               settled={!!currentSessionId && !isSessionLoading}
-              welcome={
+              welcome={firstWakeCardRoleId ? null : (
                 <NewSessionWelcome
                   onSend={handleSendMessage}
                   workingDirectory={currentSessionWorkingDirectory}
                   workbenchSnapshot={currentSession?.workbenchSnapshot}
                   session={currentSession}
                 />
-              }
+              )}
             />
           ) : (
             // 会话级错误边界：消息区一旦渲染失败（如虚拟列表反馈环打满 React 嵌套

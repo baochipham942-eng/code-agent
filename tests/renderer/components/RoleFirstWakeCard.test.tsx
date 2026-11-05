@@ -7,6 +7,7 @@ import type { RolePanelEntry } from '../../../src/shared/contract/roleAssets';
 
 const getFirstWake = vi.fn<(roleId: string) => Promise<RoleFirstWakeSnapshot | null>>();
 const skipFirstWake = vi.fn<(roleId: string) => Promise<{ success: boolean }>>();
+const retryFirstWake = vi.fn<(roleId: string) => Promise<{ retried: boolean }>>();
 const listRoles = vi.fn<() => Promise<RolePanelEntry[]>>();
 const goToExpertThread = vi.fn<(roleId: string, options?: { seed?: string }) => Promise<void>>();
 // 提议卡与首次醒来卡同位渲染：mock 需覆盖其 rolesClient 面（空 pending → 不渲染）
@@ -17,6 +18,7 @@ const listeners = new Map<string, (event: unknown) => void>();
 vi.mock('../../../src/renderer/services/rolesClient', () => ({
   getFirstWake: (roleId: string) => getFirstWake(roleId),
   skipFirstWake: (roleId: string) => skipFirstWake(roleId),
+  retryFirstWake: (roleId: string) => retryFirstWake(roleId),
   listRoles: () => listRoles(),
   listWakeProposals: (roleId: string) => listWakeProposals(roleId),
 }));
@@ -36,6 +38,7 @@ vi.mock('../../../src/renderer/services/ipcService', () => ({
 }));
 
 import { RoleFirstWakeCard, RoleFirstWakeThreadBanner } from '../../../src/renderer/components/features/chat/RoleFirstWakeCard';
+import { RoleWakeProposalsCard } from '../../../src/renderer/components/features/chat/RoleWakeProposalsCard';
 import { RoleDraftNotifications } from '../../../src/renderer/components/features/chat/ChatInput/RoleDraftCard';
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useSessionStore } from '../../../src/renderer/stores/sessionStore';
@@ -56,7 +59,7 @@ const COMPLETED: RoleFirstWakeSnapshot = {
     { title: '总结本周日历', prompt: '帮我总结本周的日程安排' },
     { title: '第二条', prompt: '第二条委托' },
   ],
-  intro: '我是小满，擅长整理日程。',
+  intro: '日历连上了，共 6 个，主要是 Home 和 Work。',
 };
 
 function emitDraft(draft: { id: string; roleId: string; description: string; tools: string[]; editingRoleId?: string }) {
@@ -74,12 +77,13 @@ describe('RoleFirstWakeCard', () => {
   beforeEach(() => {
     getFirstWake.mockReset();
     skipFirstWake.mockReset().mockResolvedValue({ success: true });
+    retryFirstWake.mockReset().mockResolvedValue({ retried: true });
     listRoles.mockReset().mockResolvedValue([ROLE]);
     goToExpertThread.mockReset().mockResolvedValue(undefined);
     invokeDomain.mockReset();
     listeners.clear();
     openCapabilityHub.mockReset();
-    useAppStore.setState({ openCapabilityHub });
+    useAppStore.setState({ openCapabilityHub, developerMode: false, firstWakeCardRoleId: null });
     useSessionStore.setState({ currentSessionId: 'sess-1' });
     sessionStorage.clear();
   });
@@ -92,7 +96,7 @@ describe('RoleFirstWakeCard', () => {
     getFirstWake.mockResolvedValue(COMPLETED);
     render(<RoleFirstWakeCard roleId="role-1" />);
 
-    expect(await screen.findByText('我是小满，擅长整理日程。')).toBeTruthy();
+    expect(await screen.findByText('日历连上了，共 6 个，主要是 Home 和 Work。')).toBeTruthy();
     expect(getFirstWake).toHaveBeenCalledWith('role-1');
     fireEvent.click(screen.getByRole('button', { name: '总结本周日历' }));
 
@@ -107,7 +111,7 @@ describe('RoleFirstWakeCard', () => {
   it('跳过调用 firstWakeSkip，卡片不再出现；skipped 快照直接不渲染', async () => {
     getFirstWake.mockResolvedValue(COMPLETED);
     const view = render(<RoleFirstWakeCard roleId="role-1" />);
-    fireEvent.click(await screen.findByRole('button', { name: '跳过' }));
+    fireEvent.click(await screen.findByRole('button', { name: '先不用' }));
     await waitFor(() => expect(skipFirstWake).toHaveBeenCalledWith('role-1'));
     expect(screen.queryByTestId('role-first-wake-card')).toBeNull();
 
@@ -120,7 +124,7 @@ describe('RoleFirstWakeCard', () => {
     });
     render(<RoleFirstWakeCard roleId="role-1" />);
     await waitFor(() => expect(getFirstWake).toHaveBeenCalled());
-    expect(screen.queryByText('我是小满，擅长整理日程。')).toBeNull();
+    expect(screen.queryByText('日历连上了，共 6 个，主要是 Home 和 Work。')).toBeNull();
     expect(screen.queryByTestId('role-first-wake-card')).toBeNull();
   });
 
@@ -148,15 +152,15 @@ describe('RoleFirstWakeCard', () => {
       sessionId: 'fw-1',
       sourcesMode: 'none',
       suggestions: [],
-      intro: '我是小满，擅长整理日程。连上数据源之后我能帮你看真实的安排。',
+      intro: '日历连上了，共 6 个，主要是 Home 和 Work。',
     });
     render(<RoleFirstWakeCard roleId="role-1" />);
 
-    expect(await screen.findByText('我是小满，擅长整理日程。连上数据源之后我能帮你看真实的安排。')).toBeTruthy();
+    expect(await screen.findByText('日历连上了，共 6 个，主要是 Home 和 Work。')).toBeTruthy();
     expect(screen.getByText('连上数据源后我能帮你更多')).toBeTruthy();
     expect(screen.getByRole('button', { name: '去连接' })).toBeTruthy();
     expect(screen.queryAllByRole('button').map((button) => button.textContent)).toEqual(
-      expect.arrayContaining(['去连接', '去 TA 的会话', '跳过']),
+      expect.arrayContaining(['去连接', '进入会话', '先不用']),
     );
     // none 模式没有建议按钮：卡片上的按钮只有引导/导航/跳过三类
     expect(screen.queryByTestId('role-first-wake-card')!.getAttribute('data-sources-mode')).toBe('none');
@@ -164,7 +168,7 @@ describe('RoleFirstWakeCard', () => {
     expect(openCapabilityHub).toHaveBeenCalledWith('connectors');
   });
 
-  it('失败态展示原因和出路，不是空卡', async () => {
+  it('失败态先说能用再说哪里没成功，出路可走，不是空卡', async () => {
     getFirstWake.mockResolvedValue({
       state: 'failed',
       sourcesMode: 'none',
@@ -172,22 +176,24 @@ describe('RoleFirstWakeCard', () => {
       failureReason: 'model exploded',
     });
     render(<RoleFirstWakeCard roleId="role-1" />);
-    expect(await screen.findByText('这次没能完成自我介绍')).toBeTruthy();
-    expect(screen.getByTestId('role-first-wake-reason').textContent).toBe('model exploded');
-    fireEvent.click(screen.getByRole('button', { name: '去 TA 的会话' }));
+    expect(await screen.findByText('建好了，现在就可以让我做事。')).toBeTruthy();
+    // 普通用户不见原始错误：reason 行是分类映射文案（generic → 运行失败），无 sources → 「你的数据」
+    expect(screen.getByTestId('role-first-wake-reason').textContent).toBe('刚才没能看你的数据：运行失败。');
+    fireEvent.click(screen.getByRole('button', { name: '进入会话' }));
     expect(goToExpertThread).toHaveBeenCalledWith('role-1');
     expect(skipFirstWake).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+    fireEvent.click(screen.getByRole('button', { name: '先不用' }));
     await waitFor(() => expect(skipFirstWake).toHaveBeenCalledWith('role-1'));
     expect(screen.queryByTestId('role-first-wake-card')).toBeNull();
   });
 
-  it('进行中显示熟悉数据，没有建议按钮', async () => {
+  it('进行中显示熟悉数据，没有建议按钮，「先不用」常在（F 钉）', async () => {
     getFirstWake.mockResolvedValue({ state: 'running', sourcesMode: 'connected', suggestions: [] });
     render(<RoleFirstWakeCard roleId="role-1" />);
-    expect(await screen.findByText('小满 正在熟悉你已连接的数据…')).toBeTruthy();
+    expect(await screen.findByText('正在熟悉你已连接的数据…')).toBeTruthy();
     expect(screen.queryByRole('button', { name: '去连接' })).toBeNull();
+    expect(screen.getByRole('button', { name: '先不用' })).toBeTruthy();
   });
 
   it('确认创建后在原位挂上卡片；确认修改不挂', async () => {
@@ -254,13 +260,13 @@ describe('RoleFirstWakeCard', () => {
       getFirstWake.mockResolvedValue(COMPLETED);
       openWakeSession();
       render(<RoleFirstWakeThreadBanner />);
-      expect(await screen.findByText('我是小满，擅长整理日程。')).toBeTruthy();
+      expect(await screen.findByText('日历连上了，共 6 个，主要是 Home 和 Work。')).toBeTruthy();
       expect(getFirstWake).toHaveBeenCalledWith('role-1');
       const card = screen.getByTestId('role-first-wake-card');
       for (const s of COMPLETED.suggestions) {
         expect(card.textContent).toContain(s.title);
       }
-      expect(screen.getByRole('button', { name: '跳过' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: '先不用' })).toBeTruthy();
     });
 
     it('点建议后卡片消失；重开时 skipped 快照不渲染', async () => {
@@ -283,7 +289,7 @@ describe('RoleFirstWakeCard', () => {
       getFirstWake.mockResolvedValue(COMPLETED);
       openWakeSession();
       render(<RoleFirstWakeThreadBanner />);
-      fireEvent.click(await screen.findByRole('button', { name: '跳过' }));
+      fireEvent.click(await screen.findByRole('button', { name: '先不用' }));
       await waitFor(() => expect(skipFirstWake).toHaveBeenCalledWith('role-1'));
       expect(screen.queryByTestId('role-first-wake-card')).toBeNull();
     });
@@ -309,5 +315,190 @@ describe('RoleFirstWakeCard', () => {
       expect(screen.queryByTestId('role-first-wake-card')).toBeNull();
       expect(getFirstWake).not.toHaveBeenCalled();
     });
+  });
+});
+
+// ----------------------------------------------------------------------------
+// 2026-11-05 owner 返修（role-wake-prototype-v2）：名字不出现在卡片可见文本、
+// 原始错误只对开发者露出、failed 出路按 category 分流、重看走真实 IPC。
+// ----------------------------------------------------------------------------
+
+describe('RoleFirstWakeCard 返修 r2', () => {
+  const openCapabilityHub = vi.fn();
+
+  beforeEach(() => {
+    getFirstWake.mockReset();
+    skipFirstWake.mockReset().mockResolvedValue({ success: true });
+    retryFirstWake.mockReset().mockResolvedValue({ retried: true });
+    listRoles.mockReset().mockResolvedValue([ROLE]);
+    goToExpertThread.mockReset().mockResolvedValue(undefined);
+    openCapabilityHub.mockReset();
+    useAppStore.setState({ openCapabilityHub, developerMode: false, firstWakeCardRoleId: null });
+    useSessionStore.setState({ currentSessionId: 'sess-1' });
+  });
+
+  afterEach(() => {
+    cleanup();
+    useAppStore.setState({ firstWakeCardRoleId: null, developerMode: false });
+  });
+
+  it('A：任何状态下卡片可见文本都不含展示名（名字只在头像 aria-label/title 里）', async () => {
+    const snapshots: RoleFirstWakeSnapshot[] = [
+      COMPLETED,
+      { state: 'running', sourcesMode: 'connected', suggestions: [] },
+      { state: 'failed', sourcesMode: 'none', suggestions: [], failureReason: 'Invalid API key unauthorized' },
+      { state: 'completed', sourcesMode: 'none', suggestions: [], intro: '我还没有数据。' },
+    ];
+    for (const snapshot of snapshots) {
+      getFirstWake.mockResolvedValue(snapshot);
+      const view = render(<RoleFirstWakeCard roleId="role-1" />);
+      await waitFor(() => {
+        expect(screen.getByTestId('role-first-wake-card').getAttribute('data-state')).toBe(snapshot.state);
+      });
+      const card = screen.getByTestId('role-first-wake-card');
+      expect(card.textContent, `state=${snapshot.state}`).not.toContain('小满');
+      // 名字进无障碍标签：头像带 aria-label
+      expect(card.querySelector('[aria-label="小满"]')).toBeTruthy();
+      view.unmount();
+      getFirstWake.mockClear();
+    }
+  });
+
+  it('B：failed 原始错误普通用户不可见，开发者模式原样露出', async () => {
+    getFirstWake.mockResolvedValue({
+      state: 'failed',
+      sourcesMode: 'connected',
+      sources: ['日历'],
+      suggestions: [],
+      failureReason: 'RAW SECRET invalid api key unauthorized',
+    });
+    render(<RoleFirstWakeCard roleId="role-1" />);
+    await waitFor(() => expect(screen.getByTestId('role-first-wake-card').getAttribute('data-state')).toBe('failed'));
+    // 有日历源 → 「你的日历」；auth 类错误映射成既有 agentError 文案，不见原始串
+    expect(screen.getByTestId('role-first-wake-reason').textContent)
+      .toBe('刚才没能看你的日历：这个模型暂时用不了：账号没通过授权。');
+    expect(screen.getByTestId('role-first-wake-card').textContent).not.toContain('RAW SECRET');
+
+    cleanup();
+    useAppStore.setState({ developerMode: true });
+    getFirstWake.mockResolvedValue({
+      state: 'failed',
+      sourcesMode: 'connected',
+      sources: ['日历'],
+      suggestions: [],
+      failureReason: 'RAW SECRET invalid api key unauthorized',
+    });
+    render(<RoleFirstWakeCard roleId="role-1" />);
+    await waitFor(() => expect(screen.getByTestId('role-first-wake-reason').textContent).toBe('RAW SECRET invalid api key unauthorized'));
+  });
+
+  it('C：auth 类 failed 给「换个模型再看 + 检查账号」，点击打开对应入口', async () => {
+    getFirstWake.mockResolvedValue({
+      state: 'failed',
+      sourcesMode: 'connected',
+      suggestions: [],
+      failureReason: 'Invalid API key unauthorized',
+    });
+    render(<RoleFirstWakeCard roleId="role-1" />);
+    await waitFor(() => expect(screen.getByTestId('role-first-wake-card').getAttribute('data-state')).toBe('failed'));
+    expect(screen.getByRole('button', { name: '换个模型再看' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '重新查看' })).toBeNull();
+
+    const events: string[] = [];
+    const record = (event: Event) => { events.push(event.type); };
+    window.addEventListener('code-agent:open-model-switcher', record);
+    fireEvent.click(screen.getByRole('button', { name: '换个模型再看' }));
+    window.removeEventListener('code-agent:open-model-switcher', record);
+    expect(events).toContain('code-agent:open-model-switcher');
+
+    useAppStore.setState({ openSettingsTab: openCapabilityHub });
+    fireEvent.click(screen.getByRole('button', { name: '检查账号' }));
+    expect(openCapabilityHub).toHaveBeenCalledWith('model');
+  });
+
+  it('C：换模型后（override 事件）自动重看一次', async () => {
+    getFirstWake.mockResolvedValue({
+      state: 'failed',
+      sourcesMode: 'connected',
+      suggestions: [],
+      failureReason: 'Invalid API key unauthorized',
+    });
+    render(<RoleFirstWakeCard roleId="role-1" />);
+    await waitFor(() => expect(screen.getByTestId('role-first-wake-card').getAttribute('data-state')).toBe('failed'));
+    window.dispatchEvent(new CustomEvent('code-agent:model-override-change', { detail: { sessionId: 'sess-1' } }));
+    await waitFor(() => expect(retryFirstWake).toHaveBeenCalledWith('role-1'));
+  });
+
+  it('C：其它类别 failed 给「重新查看」，点击走 firstWakeRetry 并回到进行中', async () => {
+    const failedSnapshot: RoleFirstWakeSnapshot = {
+      state: 'failed',
+      sourcesMode: 'none',
+      suggestions: [],
+      failureReason: 'model exploded',
+    };
+    // 第一次读 = failed（渲染失败态）；重看后轮询重启读到 running（host 侧已复位 pending）
+    let calls = 0;
+    getFirstWake.mockImplementation(async () => {
+      calls += 1;
+      return calls === 1 ? failedSnapshot : { state: 'running' as const, sourcesMode: 'connected', suggestions: [] };
+    });
+    render(<RoleFirstWakeCard roleId="role-1" />);
+    await waitFor(() => expect(screen.getByTestId('role-first-wake-card').getAttribute('data-state')).toBe('failed'));
+    expect(screen.queryByRole('button', { name: '换个模型再看' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '重新查看' }));
+    await waitFor(() => expect(retryFirstWake).toHaveBeenCalledWith('role-1'));
+    await waitFor(() => expect(screen.getByTestId('role-first-wake-card').getAttribute('data-state')).toBe('running'));
+    expect(screen.getByText('正在熟悉你已连接的数据…')).toBeTruthy();
+  });
+
+  it('C：framed（角色自己的会话顶部）不出现「进入会话」，原位卡有', async () => {
+    getFirstWake.mockResolvedValue({
+      state: 'failed',
+      sourcesMode: 'none',
+      suggestions: [],
+      failureReason: 'model exploded',
+    });
+    const framed = render(<RoleFirstWakeCard roleId="role-1" framed />);
+    await waitFor(() => expect(screen.getByTestId('role-first-wake-card').getAttribute('data-state')).toBe('failed'));
+    expect(screen.queryByRole('button', { name: '进入会话' })).toBeNull();
+    framed.unmount();
+
+    render(<RoleFirstWakeCard roleId="role-1" />);
+    await waitFor(() => expect(screen.getByTestId('role-first-wake-card').getAttribute('data-state')).toBe('failed'));
+    expect(screen.getByRole('button', { name: '进入会话' })).toBeTruthy();
+  });
+
+  it('D：首次醒来卡可见/消失驱动空态压制信号（ChatView 据此藏欢迎空态）', async () => {
+    getFirstWake.mockResolvedValue(COMPLETED);
+    const view = render(<RoleFirstWakeCard roleId="role-1" />);
+    await waitFor(() => expect(useAppStore.getState().firstWakeCardRoleId).toBe('role-1'));
+    // 点先不用 → 卡消失 → 信号清空、空态恢复
+    fireEvent.click(screen.getByRole('button', { name: '先不用' }));
+    await waitFor(() => expect(useAppStore.getState().firstWakeCardRoleId).toBeNull());
+    view.unmount();
+  });
+});
+
+describe('RoleWakeProposalsCard 返修 r2（首次醒来失败时不出现）', () => {
+  beforeEach(() => {
+    getFirstWake.mockReset();
+    listWakeProposals.mockReset().mockResolvedValue([
+      { title: '整理本周会议纪要', prompt: 'p', createdAt: 1 },
+    ]);
+  });
+
+  afterEach(() => cleanup());
+
+  it('first wake failed → 即便有 pending 提议也不渲染', async () => {
+    getFirstWake.mockResolvedValue({ state: 'failed', sourcesMode: 'none', suggestions: [] });
+    render(<RoleWakeProposalsCard roleId="role-1" />);
+    await waitFor(() => expect(getFirstWake).toHaveBeenCalledWith('role-1'));
+    await waitFor(() => expect(screen.queryByTestId('role-wake-proposals-card')).toBeNull());
+  });
+
+  it('first wake completed → 提议照常渲染', async () => {
+    getFirstWake.mockResolvedValue(COMPLETED);
+    render(<RoleWakeProposalsCard roleId="role-1" />);
+    await waitFor(() => expect(screen.getByTestId('role-wake-proposals-card')).toBeTruthy());
   });
 });

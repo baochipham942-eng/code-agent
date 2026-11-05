@@ -123,6 +123,32 @@ describe('document share links', () => {
     expect(info.stale).toBe(false);
   });
 
+  it('treats a saved retired Sealos address as unset', async () => {
+    configService.baseUrl = 'https://share-aix-7c8f2d.bja.sealos.run/';
+    publishVersion(filePath);
+    fetchMock.mockRejectedValueOnce(new TypeError('fetch failed'));
+    await expect(createShareLink(filePath, 604_800)).rejects.toThrow('Share service unavailable');
+    expect(fetchMock.mock.calls[0][0]).toBe('https://share.llmxy.xyz:8443/api/share');
+  });
+
+  it('keeps a self-hosted address on another sealos.run host', async () => {
+    configService.baseUrl = 'https://my-share.cloud.sealos.run';
+    publishVersion(filePath);
+    fetchMock.mockRejectedValueOnce(new TypeError('fetch failed'));
+    await expect(createShareLink(filePath, 604_800)).rejects.toThrow('Share service unavailable');
+    expect(fetchMock.mock.calls[0][0]).toBe('https://my-share.cloud.sealos.run/api/share');
+  });
+
+  it('reports an unreachable service, a 5xx and a rejected token as distinct plain errors', async () => {
+    publishVersion(filePath);
+    fetchMock.mockRejectedValueOnce(new TypeError('fetch failed'));
+    await expect(createShareLink(filePath, 604_800)).rejects.toThrow('Share service unavailable');
+    fetchMock.mockResolvedValueOnce(new Response('bad gateway', { status: 502 }));
+    await expect(createShareLink(filePath, 604_800)).rejects.toThrow('Share service unavailable');
+    fetchMock.mockResolvedValueOnce(new Response('{"error":"unauthorized"}', { status: 401 }));
+    await expect(createShareLink(filePath, 604_800)).rejects.toThrow('Share service token rejected');
+  });
+
   it('does not throw when the latest-content push fails and persists lastError', async () => {
     await create();
     await writeFile(filePath, 'version two');

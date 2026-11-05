@@ -19,6 +19,7 @@ import { decisionCardZh } from './decisionCard';
 import { planApprovalZh } from './planApproval';
 import { taskStatusPanelsZh } from './taskStatusPanels';
 import { noticesZh } from './notices';
+import { serverConnectionZh } from './serverConnection';
 import { agentErrorZh } from './agentError';
 import { labZh } from './lab';
 import { labGpt1Zh } from './labGpt1';
@@ -953,6 +954,7 @@ export const zh = {
   ...planApprovalZh,
   ...taskStatusPanelsZh,
   ...noticesZh,
+  ...serverConnectionZh,
   ...agentErrorZh,
   ...labZh,
   ...labGpt1Zh,

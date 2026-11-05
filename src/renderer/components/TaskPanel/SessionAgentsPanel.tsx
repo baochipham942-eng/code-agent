@@ -10,7 +10,7 @@
 // 面板不画输入框：对代理续话是后置单 N-SUBAGENT-INPUT。
 // ============================================================================
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Bot, ChevronDown, ChevronRight, Clock, Square, X, Zap } from 'lucide-react';
 import { cancelSwarmRunOrFallback } from '../features/swarm/SwarmInlineMonitor';
 import { useI18n } from '../../hooks/useI18n';
@@ -23,6 +23,7 @@ import { useComposerStore } from '../../stores/composerStore';
 import { useMemberViewStore } from '../../stores/memberViewStore';
 import { useVoiceLiveRuntime } from '../../hooks/useVoiceLiveRuntime';
 import { deriveAgentMergeState } from '../../utils/agentMergeState';
+import { isAgentRowQuiet } from '../../utils/agentRowStall';
 import { stopSessionAgent } from '../../utils/stopSessionAgent';
 import type { AgentRow } from '../../utils/agentRows';
 import { RoleInitialAvatar } from '../features/expert/RoleInitialAvatar';
@@ -42,6 +43,9 @@ function formatPanelDuration(ms: number): string {
   const seconds = totalSeconds % 60;
   return minutes > 0 ? `${minutes} 分 ${seconds} 秒` : `${seconds} 秒`;
 }
+
+/** 「暂无进展」提示的「现在」刷新节拍（UI 本地节拍，阈值本身在 WORKFLOW_STALL_THRESHOLDS）。 */
+const AGENT_STALL_HINT_TICK_MS = 5000;
 
 export const SessionAgentsPanel: React.FC = () => {
   const { t } = useI18n();
@@ -63,6 +67,15 @@ export const SessionAgentsPanel: React.FC = () => {
 
   const mergeState = deriveAgentMergeState(rows, conflicts);
   const stoppableRows = rows.filter((row) => row.stoppable);
+  // 「暂无进展」提示需要一个会走的「现在」（agentRowStall）：节拍只在有 working 行时
+  // 开，面板空闲/全部收尾即清，不给空闲会话留定时器（与 WorkflowInlineMonitor 同口径）。
+  const anyWorking = rows.some((row) => row.status === 'working');
+  const [hintNow, setHintNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!anyWorking) return;
+    const timer = window.setInterval(() => setHintNow(Date.now()), AGENT_STALL_HINT_TICK_MS);
+    return () => window.clearInterval(timer);
+  }, [anyWorking]);
   const totalTokens = durableDetail
     ? durableDetail.run.totalTokensIn + durableDetail.run.totalTokensOut
     : 0;
@@ -236,17 +249,29 @@ export const SessionAgentsPanel: React.FC = () => {
                       </span>
                     )}
                   </span>
-                  <span
-                    data-testid={`agents-panel-status-${row.key}`}
-                    className={`text-[10px] ${
-                      row.status === 'failed'
-                        ? 'text-badge-danger'
-                        : row.status === 'waiting'
-                          ? 'text-badge-warning'
-                          : 'text-zinc-500'
-                    }`}
-                  >
-                    {statusLabel(row)}
+                  <span className="flex min-w-0 items-baseline gap-1">
+                    <span
+                      data-testid={`agents-panel-status-${row.key}`}
+                      className={`text-[10px] ${
+                        row.status === 'failed'
+                          ? 'text-badge-danger'
+                          : row.status === 'waiting'
+                            ? 'text-badge-warning'
+                            : 'text-zinc-500'
+                      }`}
+                    >
+                      {statusLabel(row)}
+                    </span>
+                    {/* N-FIX-WF-STALL-SPAWN-AGENT：spawn_agent 静默子代理的行级软提示， */}
+                    {/* 文案复用 workflowStall.quiet（与 composer 工具条 90s 提示同一词条）。 */}
+                    {isAgentRowQuiet(row, hintNow) && (
+                      <span
+                        data-testid={`agents-panel-quiet-${row.key}`}
+                        className="truncate text-[10px] text-badge-warning"
+                      >
+                        · {t.workflowStall.quiet}
+                      </span>
+                    )}
                   </span>
                 </span>
               </button>

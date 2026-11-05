@@ -1,5 +1,5 @@
 // ============================================================================
-// 启动期保留清理（日志 + 数据库）—— 发行版路径接线
+// 启动期保留清理（日志 + 数据库 + 缓存 + 录音）—— 发行版路径接线
 //
 // logRetention / dbRetention 原本只在 Electron main 路径（app/bootstrap.ts:130/:138）
 // 启动，而所有发行版跑的是 src/web/webServer.ts —— 于是这两个"修死代码"的修复自己成了
@@ -19,7 +19,7 @@ import { SQLITE_INTEGRITY } from '../shared/constants';
 const logger = createLogger('WebStartupRetention');
 
 /**
- * fire-and-forget 触发两项保留清理。两者均 best-effort，失败只 warn，绝不影响启动。
+ * fire-and-forget 触发各项保留清理。均 best-effort，失败只 warn，绝不影响启动。
  *
  * ⚠️ 这里的「不 await」**不是**防阻塞手段（2026-07-31 事故推翻了原注释的假设）：
  * better-sqlite3 是同步 API，在本进程 `exec('VACUUM')` 会阻塞整个 event loop，
@@ -47,4 +47,10 @@ export function kickoffStartupRetention(): void {
   void import('../host/services/infra/appCacheRetention')
     .then(({ kickoffAppCacheRetention }) => kickoffAppCacheRetention())
     .catch((error) => logger.warn('App cache retention failed (non-blocking):', (error as Error).message));
+  // 录音保留：清扫原本只挂在采集启动/定时器上，采集关着的机器永远不清，
+  // 过期 wav 无限堆积。启动扫一次，与采集开关解耦；失败沿用既有记账
+  // （logger.warn + retention ledger → 设置页 AudioRetentionFailureLine）。
+  void import('../host/services/desktop/desktopAudioCapture')
+    .then(({ sweepCapturedAudio }) => sweepCapturedAudio())
+    .catch((error) => logger.warn('Audio retention failed (non-blocking):', (error as Error).message));
 }

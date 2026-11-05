@@ -23,6 +23,7 @@ import {
 import {
   SESSION_COMMAND_TASK_IDLE_TIMEOUT_MS,
   SESSION_COMMAND_TASK_APPROVAL_WAIT_CAP_MS,
+  composeSessionCommandTaskResultText,
   resolveSessionCommandTaskIdleTimeoutMs,
   resolveSessionCommandTaskApprovalWaitCapMs,
 } from '../../../shared/constants/sessionCommandCenter';
@@ -53,6 +54,8 @@ export interface SessionCommandTask {
   updatedAt: number;
   detail?: string;
   summary?: string;
+  /** 模型侧结果文本：detail 规范化后按 SESSION_COMMAND_TASK_RESULT_MODEL_MAX_CHARS 封顶（超限带截断标记）；UI/账本仍读 240 字 summary。 */
+  resultText?: string;
   attachments?: MessageAttachment[];
   options?: AgentRunOptions;
   parentRunId?: string;
@@ -723,6 +726,9 @@ export class SessionCommandCenter {
       detail,
       status === 'completed' ? '任务已完成。' : status === 'cancelled' ? '任务已取消。' : '任务执行失败。',
     );
+    // 模型侧文本与 UI/账本 summary 分家：240 字硬切会截断 SSRF 拒绝提示里的
+    // 「改走 Bash curl 审批」整句，前台拿不到可执行的下一步（FB-577）。
+    task.resultText = composeSessionCommandTaskResultText(detail);
     task.updatedAt = Date.now();
     this.projectTask(task);
     if (status === 'completed' && artifacts?.length) {
@@ -838,10 +844,13 @@ async function projectTerminalResult(
   task: SessionCommandTask,
   status: TerminalTaskStatus,
 ): Promise<void> {
+  // 模型读的是 resultText（1500 封顶带截断标记），不是 240 字 summary；
+  // backgroundTaskResult.metadata 的 reader 只取 taskId/artifacts，不拿它当 UI 文案。
+  const resultText = task.resultText ?? task.summary;
   await getSessionManager().addMessageToSession(task.sessionId, {
     id: `session-task-result-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     role: 'system',
-    content: `[任务结果] ${task.shortName}｜${status}｜${task.summary}`,
+    content: `[任务结果] ${task.shortName}｜${status}｜${resultText}`,
     timestamp: Date.now(),
     metadata: {
       backgroundTaskResult: {
@@ -849,7 +858,7 @@ async function projectTerminalResult(
         taskId: task.id,
         shortName: task.shortName,
         status,
-        summary: task.summary ?? '',
+        summary: resultText ?? '',
       },
     },
   });

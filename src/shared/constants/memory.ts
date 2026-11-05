@@ -217,6 +217,9 @@ export const ROLE_PROACTIVITY = {
   WAKE_SESSION_TITLE_PREFIX: '主动巡检',
   /** 醒来实例的运行超时（ms），超时按失败处理 */
   WAKE_TIMEOUT_MS: 600000,
+  /** 无人值守 goal run 的暂停巡检间隔（ms）：anti_spin 暂停后没有用户会恢复，
+   *  按此间隔查 goal_iteration 状态以及时中止（首查立即执行，不等第一个间隔）。 */
+  WAKE_PAUSE_POLL_MS: 1000,
   /** 默认主动等级（角色 frontmatter / settings 都没配置时）。
    *  出厂 silent = 功能默认关闭（opt-in）：用户通过 settings.roleAssets.proactivity 或角色 frontmatter 显式开启。 */
   DEFAULT_LEVEL: 'silent',

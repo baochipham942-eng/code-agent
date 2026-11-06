@@ -36,6 +36,8 @@ import {
   shouldShowPersistenceWarning,
 } from '../../../../services/persistenceHealth';
 import { useI18n } from '../../../../hooks/useI18n';
+import { formatDateTime } from '../../../../utils/formatDateTime';
+import type { Language } from '../../../../i18n';
 import { zh } from '../../../../i18n/zh';
 import {
   CacheRetentionFailureLine,
@@ -291,17 +293,18 @@ interface TelemetryHealthSummary {
 function formatLastEventAt(
   ts: number | null,
   text: DataSettingsText['telemetry']['time'] = DEFAULT_DATA_SETTINGS_TEXT.telemetry.time,
+  lang: Language = 'zh',
 ): string {
   if (!ts) return text.noEvents;
   const delta = Date.now() - ts;
   if (delta < 60_000) return text.justNow;
   if (delta < 3_600_000) return `${Math.floor(delta / 60_000)}${text.minuteSuffix}`;
   if (delta < 86_400_000) return `${Math.floor(delta / 3_600_000)}${text.hourSuffix}`;
-  return new Date(ts).toLocaleString();
+  return formatDateTime(ts, lang);
 }
 
 export const DataSettings: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const dataText = t.settings.data;
   const isAdmin = useAuthStore((s) => s.user?.isAdmin === true);
   const [stats, setStats] = useState<DataStats | null>(null);
@@ -674,7 +677,7 @@ export const DataSettings: React.FC = () => {
               </span>
               <span className="text-zinc-400">
                 {dataText.telemetry.recentPrefix}
-                {formatLastEventAt(telemetrySummary.lastEventAt, dataText.telemetry.time)}
+                {formatLastEventAt(telemetrySummary.lastEventAt, dataText.telemetry.time, language)}
               </span>
               {telemetrySummary.lastUploadError && (
                 <span
@@ -683,7 +686,7 @@ export const DataSettings: React.FC = () => {
                 >
                   {dataText.telemetry.uploadFailedSummary
                     .replace('{count}', String(telemetrySummary.uploadFailureCount))
-                    .replace('{time}', formatLastEventAt(telemetrySummary.lastUploadErrorAt, dataText.telemetry.time))}
+                    .replace('{time}', formatLastEventAt(telemetrySummary.lastUploadErrorAt, dataText.telemetry.time, language))}
                 </span>
               )}
             </div>

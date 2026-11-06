@@ -14,6 +14,7 @@ import type { PermissionGrantEntry } from '@shared/contract';
 import ipcService from '../../../../services/ipcService';
 import { SettingsSection } from '../SettingsLayout';
 import { useI18n } from '../../../../hooks/useI18n';
+import { formatDateTime } from '../../../../utils/formatDateTime';
 import { zh } from '../../../../i18n/zh';
 import { Button } from '../../../primitives';
 
@@ -32,7 +33,7 @@ function kindLabel(kind: PermissionGrantEntry['kind'], copy: PermissionGrantsTex
 }
 
 const PermissionGrantList: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const copy = t.settings.privacy.permissionGrants;
   const [grants, setGrants] = useState<PermissionGrantEntry[]>([]);
 
@@ -83,8 +84,8 @@ const PermissionGrantList: React.FC = () => {
                   {' · '}
                   {scopeLabel(grant.source, copy.scope)}
                   {' · '}
-                  {copy.grantedOn.replace('{date}', new Date(grant.grantedAt).toLocaleDateString())}
-                  {grant.expiresAt !== null ? ` · ${copy.expiresOn.replace('{date}', new Date(grant.expiresAt).toLocaleDateString())}` : ''}
+                  {copy.grantedOn.replace('{date}', formatDateTime(grant.grantedAt, language))}
+                  {grant.expiresAt !== null ? ` · ${copy.expiresOn.replace('{date}', formatDateTime(grant.expiresAt, language))}` : ''}
                 </div>
                 {grant.kind === 'tool-target' && grant.detail ? (
                   <div className="mt-0.5 truncate text-xs text-zinc-400">{copy.targetLabel.replace('{target}', grant.detail)}</div>

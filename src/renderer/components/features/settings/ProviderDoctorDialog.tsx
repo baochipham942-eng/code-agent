@@ -26,6 +26,7 @@ import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../services/ipcService';
 import { toast } from '../../../hooks/useToast';
 import { useI18n } from '../../../hooks/useI18n';
+import { formatDateTime } from '../../../utils/formatDateTime';
 
 // ============================================================================
 // Types — 与 src/host/diagnostics/types.ts 对齐
@@ -192,7 +193,7 @@ export const ProviderDoctorDialog: React.FC<ProviderDoctorDialogProps> = ({
   isOpen,
   onClose,
 }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const doctorText = t.settings.providerDoctor;
   const [report, setReport] = useState<DoctorReport | null>(null);
   const [isRunning, setIsRunning] = useState(false);
@@ -298,7 +299,7 @@ export const ProviderDoctorDialog: React.FC<ProviderDoctorDialogProps> = ({
             {report.summary.skip}{doctorText.summary.skipSuffix}
           </span>
           <span className="ml-auto text-xs text-zinc-500">
-            {(report.durationMs / 1000).toFixed(1)}s · {new Date(report.timestamp).toLocaleTimeString()}
+            {(report.durationMs / 1000).toFixed(1)}s · {formatDateTime(report.timestamp, language)}
           </span>
         </div>
       )}

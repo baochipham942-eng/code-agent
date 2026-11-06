@@ -9,6 +9,7 @@ import React, { useEffect, useState } from 'react';
 import { IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
 import { useI18n } from '../../../../hooks/useI18n';
+import { formatDateTime } from '../../../../utils/formatDateTime';
 import { Button, Toggle } from '../../../primitives';
 
 interface SkillsSyncState {
@@ -17,7 +18,7 @@ interface SkillsSyncState {
 }
 
 export const ExternalSkillsSyncSection: React.FC = () => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const copy = t.settings.externalImport.skillsSync;
   const [sync, setSync] = useState<SkillsSyncState>({ mode: 'off' });
   const [busy, setBusy] = useState(false);
@@ -54,7 +55,7 @@ export const ExternalSkillsSyncSection: React.FC = () => {
     : sync.mode === 'on'
       ? (sync.lastRun
         ? copy.statusOnLast
-          .replace('{time}', new Date(sync.lastRun.at).toLocaleString())
+          .replace('{time}', formatDateTime(sync.lastRun.at, language))
           .replace('{count}', String(sync.lastRun.imported))
         : copy.statusOn)
       : copy.statusOff;

@@ -38,6 +38,7 @@ import { Button } from '../../../primitives';
 import PermissionGrantList from './PermissionGrantList';
 import type { SettingsTab } from '../../../../utils/settingsTabs';
 import { useI18n } from '../../../../hooks/useI18n';
+import { formatDateTime } from '../../../../utils/formatDateTime';
 import { zh } from '../../../../i18n/zh';
 import { useAuthStore } from '../../../../stores/authStore';
 import {
@@ -162,7 +163,7 @@ function OutboundMaskReceiptCard(props: {
   expanded: boolean;
   onToggleExpand: () => void;
 }): React.ReactElement {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const receiptText = t.settings.outboundMaskReceipt;
   const lastRecord = props.records.length > 0 ? props.records[props.records.length - 1] : undefined;
   const replacements = lastRecord?.replacements ?? [];
@@ -184,7 +185,7 @@ function OutboundMaskReceiptCard(props: {
   const metaLine = [
     lastRecord?.provider,
     lastRecord?.model,
-    lastRecord ? new Date(lastRecord.timestamp).toLocaleTimeString() : undefined,
+    lastRecord ? formatDateTime(lastRecord.timestamp, language) : undefined,
   ].filter(Boolean).join(' · ');
 
   return (

@@ -22,7 +22,8 @@ export interface PermissionQueueStateDeps {
 }
 
 export interface PermissionQueueEventDeps {
-  clearPermissionRequestsForSession: (sessionId: string) => void;
+  clearForegroundPermissionRequestsForSession: (sessionId: string) => void;
+  removePermissionRequestsForBackgroundRun: (identity: { runId?: string | null; agentId?: string | null }) => void;
   debug: (message: string, context: Record<string, unknown>) => void;
   enqueuePermissionRequest: AgentEffectsProps['enqueuePermissionRequest'];
   getCurrentSessionId: () => string | null;
@@ -89,10 +90,26 @@ export function applyPermissionQueueEvent(
     case 'agent_cancelled':
     case 'error':
     case 'stream_end':
+      // 前台 run 终态只清前台（无 run 身份）的请求；后台任务/子代理的审批卡带自己的
+      // runId/agentId，宿主侧在前台 run 结束后仍 pending，卡要留给用户点
+      // （N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO）。它们的收线走下面的 subagent_run_end。
       if (event.sessionId) {
-        deps.clearPermissionRequestsForSession(event.sessionId);
+        deps.clearForegroundPermissionRequestsForSession(event.sessionId);
       }
       return;
+
+    case 'subagent_run_end': {
+      // 后台 lane 自己收线：它名下未裁决的审批卡已成死卡（宿主不再有这条 run），
+      // 按 lane 身份收走，别的 lane 不受牵连。
+      const runEndData = isRecord(event.data) ? event.data : null;
+      const runId = typeof runEndData?.runId === 'string' && runEndData.runId ? runEndData.runId : null;
+      const agentId = typeof runEndData?.agentId === 'string' && runEndData.agentId ? runEndData.agentId : null;
+      if (!runId && !agentId) {
+        break;
+      }
+      deps.removePermissionRequestsForBackgroundRun({ runId, agentId });
+      return;
+    }
 
     case 'permission_request': {
       deps.setLastEventAt(deps.now());
@@ -187,8 +204,10 @@ export const usePermissionQueueEffects = ({
   useEffect(() => {
     const unsubscribe = ipcService.on('agent:event', (event: AgentEvent) => {
       applyPermissionQueueEvent(event, {
-        clearPermissionRequestsForSession: (sessionId) =>
-          useAppStore.getState().clearPermissionRequestsForSession(sessionId),
+        clearForegroundPermissionRequestsForSession: (sessionId) =>
+          useAppStore.getState().clearForegroundPermissionRequestsForSession(sessionId),
+        removePermissionRequestsForBackgroundRun: (identity) =>
+          useAppStore.getState().removePermissionRequestsForBackgroundRun(identity),
         debug: (message, context) => logger.debug(message, context),
         enqueuePermissionRequest,
         getCurrentSessionId: () => useSessionStore.getState().currentSessionId,

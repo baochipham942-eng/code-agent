@@ -39,10 +39,11 @@ function createProductionDeps(currentSessionId: string | null): {
 } {
   const unreadSessionIds: string[] = [];
   const deps: PermissionQueueEventDeps = {
-    // 与 src/renderer/hooks/agent/effects/usePermissionQueueEffects.ts 的接线逐字同形
-    //（origin/main 上 end-of-run 清理的线上实现：clearPermissionRequestsForSession 整队清）。
-    clearPermissionRequestsForSession: (sessionId) =>
-      useAppStore.getState().clearPermissionRequestsForSession(sessionId),
+    // 与 src/renderer/hooks/agent/effects/usePermissionQueueEffects.ts 的接线逐字同形。
+    clearForegroundPermissionRequestsForSession: (sessionId) =>
+      useAppStore.getState().clearForegroundPermissionRequestsForSession(sessionId),
+    removePermissionRequestsForBackgroundRun: (identity) =>
+      useAppStore.getState().removePermissionRequestsForBackgroundRun(identity),
     debug: () => {},
     enqueuePermissionRequest: (sessionId, request, options) =>
       useAppStore.getState().enqueuePermissionRequest(sessionId, request, options),
@@ -172,7 +173,12 @@ describe('后台任务自己的 run 结束 → 卡收走（stale-card guard）',
   ] as const)('subagent_run_end(%s) 收掉该后台 lane 的 pending 与队列卡', (status) => {
     const { deps } = createProductionDeps('session-main');
     const pendingBg = backgroundPermissionRequest('bg-pending');
-    const queuedBg = backgroundPermissionRequest('bg-queued');
+    // 同一条后台 lane 先后抛的两张卡：一张在 pending 槽、一张在队列里。
+    const queuedBg: PermissionRequest = {
+      ...backgroundPermissionRequest('bg-queued'),
+      agentId: pendingBg.agentId,
+      runId: pendingBg.runId,
+    };
     const otherBg = backgroundPermissionRequest('bg-other-lane');
     applyPermissionQueueEvent(
       { type: 'permission_request', data: pendingBg, sessionId: 'session-main' },

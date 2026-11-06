@@ -51,7 +51,7 @@ import { createWorkbenchActions } from './workbenchActions';
 import { SECONDARY_PAGES_CLOSED } from './secondaryPages';
 import { discardCronEditorDraft } from '../components/features/cron/cronEditorDraftStash';
 import { buildContentPreviewState } from './contentPreviewState';
-import { buildPermissionDecisionState, buildPermissionDismissState } from './permissionDecisionState';
+import { buildPermissionDecisionState, buildPermissionDismissState, buildForegroundRunEndState, buildBackgroundRunEndState } from './permissionDecisionState';
 import { installedBundledCapabilityIds } from './bundledCapabilityStore';
 
 // V2-A: 关 tab 时 fire-and-forget 调 stopDevServer。lazy import 避免
@@ -767,28 +767,16 @@ export const useAppStore = create<AppState>()((set, get) => ({
     return nextRequest;
   },
 
-  clearPermissionRequestsForSession: (sessionId) =>
-    set((state) => {
-      const nextQueues = { ...state.queuedPermissionRequests };
-      delete nextQueues[sessionId];
+  // run 终态清理（agent_complete / agent_cancelled / error / stream_end）：只收该会话里
+  // 没有 run 身份的前台请求；后台任务/子代理的审批卡（带 runId/agentId）保留——它们
+  // 归后台 run，宿主侧在前台 run 结束后仍 pending，要留给用户点
+  // （N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO）。
+  clearForegroundPermissionRequestsForSession: (sessionId) =>
+    set((state) => buildForegroundRunEndState(state, sessionId, GLOBAL_PERMISSION_REQUEST_SESSION_ID)),
 
-      const shouldClearPending = state.pendingPermissionSessionId === sessionId
-        || (
-          sessionId === GLOBAL_PERMISSION_REQUEST_SESSION_ID
-          && state.pendingPermissionRequest !== null
-          && state.pendingPermissionSessionId === null
-        );
-
-      return {
-        queuedPermissionRequests: nextQueues,
-        ...(shouldClearPending
-          ? {
-            pendingPermissionRequest: null,
-            pendingPermissionSessionId: null,
-          }
-          : {}),
-      };
-    }),
+  // 后台任务自己的 run 收线（subagent_run_end）：该 lane 未裁决的卡成死卡，按身份收走。
+  removePermissionRequestsForBackgroundRun: (identity) =>
+    set((state) => buildBackgroundRunEndState(state, identity)),
 
   setSessionTaskProgress: (sessionId, progress) =>
     set((state) => ({

@@ -58,11 +58,37 @@ function createHarness(overrides: Partial<PermissionQueueState> = {}) {
   };
 
   const deps: PermissionQueueEventDeps = {
-    clearPermissionRequestsForSession: (sessionId) => {
-      if (state.pendingPermissionSessionId === sessionId) {
+    // 与真实 appStore 的 buildForegroundRunEndState 同语义：run 终态只清前台（无 run
+    // 身份）请求，后台任务（runId/agentId）的卡保留（N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO）。
+    clearForegroundPermissionRequestsForSession: (sessionId) => {
+      const belongsToBackgroundTask = (request: PermissionRequest): boolean =>
+        (typeof request.runId === 'string' && request.runId.length > 0)
+        || (typeof request.agentId === 'string' && request.agentId.length > 0);
+      const queue = state.queuedPermissionRequests[sessionId];
+      if (queue) {
+        const remaining = queue.filter(belongsToBackgroundTask);
+        if (remaining.length > 0) state.queuedPermissionRequests[sessionId] = remaining;
+        else delete state.queuedPermissionRequests[sessionId];
+      }
+      const considersPending = state.pendingPermissionSessionId === sessionId
+        || (sessionId === 'global' && state.pendingPermissionRequest !== null && state.pendingPermissionSessionId === null);
+      if (considersPending && state.pendingPermissionRequest && !belongsToBackgroundTask(state.pendingPermissionRequest)) {
         setPendingPermissionRequest(null);
       }
-      delete state.queuedPermissionRequests[sessionId];
+    },
+    removePermissionRequestsForBackgroundRun: (identity) => {
+      // 与真实 appStore 的 buildBackgroundRunEndState 同语义：按 lane 身份收死卡。
+      const matchesLane = (request: PermissionRequest): boolean =>
+        (identity.runId ? request.runId === identity.runId : false)
+        || (identity.agentId ? request.agentId === identity.agentId : false);
+      for (const [key, queue] of Object.entries(state.queuedPermissionRequests)) {
+        const remaining = queue.filter((request) => !matchesLane(request));
+        if (remaining.length > 0) state.queuedPermissionRequests[key] = remaining;
+        else delete state.queuedPermissionRequests[key];
+      }
+      if (state.pendingPermissionRequest && matchesLane(state.pendingPermissionRequest)) {
+        setPendingPermissionRequest(null);
+      }
     },
     debug: () => {},
     enqueuePermissionRequest,
@@ -318,6 +344,92 @@ describe('applyPermissionQueueEvent', () => {
       });
     },
   );
+
+  // N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO：后台任务的审批卡带自己的 run 身份
+  // （同 sessionId、独立 runId/agentId），前台 run 终态不清它们。
+  it.each(['agent_complete', 'agent_cancelled', 'error', 'stream_end'])(
+    'keeps background-task requests (runId/agentId) through %s of the foreground run',
+    (type) => {
+      const bgPending: PermissionRequest = {
+        ...permissionRequest('bg-active'),
+        sessionId: 'session-current',
+        agentId: 'bg-agent-1',
+        runId: 'bg-run-1',
+      };
+      const bgQueued: PermissionRequest = {
+        ...permissionRequest('bg-queued'),
+        sessionId: 'session-current',
+        agentId: 'bg-agent-2',
+        runId: 'bg-run-2',
+      };
+      const { deps, state } = createHarness({
+        currentSessionId: 'session-current',
+        lastEventAt: 41,
+        pendingPermissionRequest: bgPending,
+        pendingPermissionSessionId: 'session-current',
+        queuedPermissionRequests: { 'session-current': [bgQueued] },
+      });
+
+      applyPermissionQueueEvent({ type, data: null, sessionId: 'session-current' }, deps);
+
+      expect(state.pendingPermissionRequest).toBe(bgPending);
+      expect(state.pendingPermissionSessionId).toBe('session-current');
+      expect(state.queuedPermissionRequests).toEqual({ 'session-current': [bgQueued] });
+    },
+  );
+
+  it('removes a background lane cards when its own run ends via subagent_run_end', () => {
+    const lanePending: PermissionRequest = {
+      ...permissionRequest('lane-pending'),
+      sessionId: 'session-current',
+      agentId: 'bg-agent-1',
+      runId: 'bg-run-1',
+    };
+    const laneQueued: PermissionRequest = {
+      ...permissionRequest('lane-queued'),
+      sessionId: 'session-current',
+      agentId: 'bg-agent-1',
+      runId: 'bg-run-1',
+    };
+    const otherLane: PermissionRequest = {
+      ...permissionRequest('other-lane'),
+      sessionId: 'session-current',
+      agentId: 'bg-agent-2',
+      runId: 'bg-run-2',
+    };
+    const { deps, state } = createHarness({
+      currentSessionId: 'session-current',
+      pendingPermissionRequest: lanePending,
+      pendingPermissionSessionId: 'session-current',
+      queuedPermissionRequests: { 'session-current': [laneQueued, otherLane] },
+    });
+
+    applyPermissionQueueEvent({
+      type: 'subagent_run_end',
+      data: { agentId: 'bg-agent-1', runId: 'bg-run-1', status: 'completed' },
+      sessionId: 'session-current',
+    }, deps);
+
+    expect(state.pendingPermissionRequest).toBeNull();
+    expect(state.queuedPermissionRequests).toEqual({ 'session-current': [otherLane] });
+  });
+
+  it('ignores subagent_run_end without any run identity', () => {
+    const pending = permissionRequest('active');
+    const { deps, state } = createHarness({
+      currentSessionId: 'session-current',
+      pendingPermissionRequest: pending,
+      pendingPermissionSessionId: 'session-current',
+    });
+
+    applyPermissionQueueEvent({
+      type: 'subagent_run_end',
+      data: { status: 'completed' },
+      sessionId: 'session-current',
+    }, deps);
+
+    expect(state.pendingPermissionRequest).toBe(pending);
+  });
 });
 
 describe('reconcilePermissionQueue', () => {

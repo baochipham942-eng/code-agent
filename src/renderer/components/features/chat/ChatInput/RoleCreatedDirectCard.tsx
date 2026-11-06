@@ -21,7 +21,7 @@ export const RoleCreatedDirectCard: React.FC<{ role: RoleCreatedDirectSummary }>
     <section
       data-testid="role-created-direct-card"
       data-deleted={deleted ? 'true' : 'false'}
-      className="mb-2 rounded-xl border border-zinc-200/80 bg-white/60 px-4 py-3 shadow-sm dark:border-zinc-700/80 dark:bg-zinc-900/40"
+      className="mb-2 rounded-xl border border-border-strong bg-void px-4 py-3 shadow-sm"
     >
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
@@ -29,7 +29,7 @@ export const RoleCreatedDirectCard: React.FC<{ role: RoleCreatedDirectSummary }>
             <Check className="h-3.5 w-3.5" aria-hidden="true" />
             <span>{text.createdLabel}</span>
           </div>
-          <h3 className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+          <h3 className="truncate text-sm font-semibold text-text-primary">
             {role.displayName}
           </h3>
         </div>
@@ -38,7 +38,7 @@ export const RoleCreatedDirectCard: React.FC<{ role: RoleCreatedDirectSummary }>
             <button
               type="button"
               onClick={() => void startEditRoleChat(role.roleId)}
-              className="flex items-center gap-1 rounded px-2 py-1 text-xs text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+              className="flex items-center gap-1 rounded px-2 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
             >
               <MessageSquarePlus className="h-3.5 w-3.5" aria-hidden="true" />
               {text.editCreated}
@@ -54,10 +54,10 @@ export const RoleCreatedDirectCard: React.FC<{ role: RoleCreatedDirectSummary }>
         )}
       </div>
       <dl className="mt-2 grid grid-cols-[3rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs leading-5">
-        <dt className="text-zinc-500 dark:text-zinc-400">{text.canDoLabel}</dt>
-        <dd className="text-zinc-700 dark:text-zinc-200">{role.canDo}</dd>
-        <dt className="text-zinc-500 dark:text-zinc-400">{text.willNotDoLabel}</dt>
-        <dd className="text-zinc-700 dark:text-zinc-200">{role.willNotDo}</dd>
+        <dt className="text-text-tertiary">{text.canDoLabel}</dt>
+        <dd className="text-text-primary">{role.canDo}</dd>
+        <dt className="text-text-tertiary">{text.willNotDoLabel}</dt>
+        <dd className="text-text-primary">{role.willNotDo}</dd>
       </dl>
     </section>
   );

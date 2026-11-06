@@ -58,11 +58,15 @@ function withObservedStatus(
   id: string,
   kind: 'running' | 'awaiting' | 'interrupted' | 'failed-denied' | 'failed-generic' | 'cancelled' | 'finished',
 ): void {
+  // 夹具形状对齐 CronRunStatusLine：finished 必须带 durationMs（tsc-tests 棘轮），
+  // 值本身不参与 placeholder 分叉（组件只看 kind）。
   const line = kind === 'running'
     ? { kind, startedAt: Date.now() }
     : kind === 'awaiting'
       ? { kind, approval: { id: 'req-1', requestedAt: Date.now() } }
-      : { kind };
+      : kind === 'finished'
+        ? { kind, durationMs: 65_000 }
+        : { kind };
   setObservedCronRunStatusForSession(id, line);
 }
 

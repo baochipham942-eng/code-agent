@@ -5,7 +5,9 @@
  *     / 'no_session' / 'storage_unavailable'，agent.ipc.ts handlePermissionResponse）；
  *   web HTTP 桥 → 送达时解包成 {requestId, sessionId, source}（没有 outcome 字段）；
  *     停车审批宿主已随重启消失、由幸存行接手时 → {outcome:非 delivered, resumed}，
- *     resumed 非 'lost_race' 表示命令已由台账执行器执行/拒绝落定，算送达；
+ *     resumed 为 'executed' / 'denied' / 'already_present' 表示台账执行器已落定这一步，算送达；
+ *     'closed'（重启后超 24 小时、参数取不回、运行已结束：审批被收口拒绝、命令没跑）
+ *     与 'lost_race' 算失效；
  *     宿主消失且收口拒绝时 → {outcome, closed:true}，算失效；
  *     未送达时原样透传 {success:false, error:{code}}（webPermissionResponseHandler.ts）；
  *   host 同步入口会直接回报裸 outcome 字符串（agentAppService.handlePermissionResponse）。
@@ -13,6 +15,9 @@
  * storage_unavailable / PENDING_APPROVAL_STORAGE_UNAVAILABLE 是宿主活着、只是台账这次
  * 写不进的可重试中间态——运行没结束，不能说「已失效」，说「没生效，请重试」。
  */
+// 与 parkedApprovalResume.ts ParkedApprovalResumeOutcome 的已落定状态对齐；未知值按失效处理（fail-closed）。
+const RESUMED_SETTLED = new Set(['executed', 'denied', 'already_present']);
+
 export function classifyPermissionDelivery(result: unknown): 'stale' | 'retryable' | 'ok' {
   if (typeof result === 'string') {
     if (result === 'delivered') return 'ok';
@@ -24,7 +29,7 @@ export function classifyPermissionDelivery(result: unknown): 'stale' | 'retryabl
     const code = (record.error as { code?: unknown } | undefined)?.code;
     return code === 'PENDING_APPROVAL_STORAGE_UNAVAILABLE' ? 'retryable' : 'stale';
   }
-  if (typeof record.resumed === 'string' && record.resumed !== 'lost_race') return 'ok';
+  if (typeof record.resumed === 'string' && RESUMED_SETTLED.has(record.resumed)) return 'ok';
   if (typeof record.outcome === 'string' && record.outcome !== 'delivered') {
     return record.outcome === 'storage_unavailable' ? 'retryable' : 'stale';
   }

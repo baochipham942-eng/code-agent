@@ -335,6 +335,13 @@ describe('CronRunSessionStatusBar（组件）', () => {
       expect(toastErrorMock).not.toHaveBeenCalled();
     });
 
+    it('web 停车审批重启后作废 {outcome:"no_orchestrator",resumed:"closed"}：命令没跑，出「已失效」toast', async () => {
+      invokeMock.mockResolvedValue({ requestId: 'req-1', sessionId: 'session-1', outcome: 'no_orchestrator', resumed: 'closed' });
+      await renderAwaitingApproval();
+      fireEvent.click(screen.getByTestId('cron-run-status-approve'));
+      await waitFor(() => expect(toastInfoMock).toHaveBeenCalledWith(APPROVAL_STALE_COPY));
+    });
+
     it('web 停车审批恢复抢输 {outcome:"no_orchestrator",resumed:"lost_race"}：出「已失效」toast', async () => {
       invokeMock.mockResolvedValue({ requestId: 'req-1', sessionId: 'session-1', outcome: 'no_orchestrator', resumed: 'lost_race' });
       await renderAwaitingApproval();

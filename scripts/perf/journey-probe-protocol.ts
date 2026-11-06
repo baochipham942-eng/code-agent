@@ -1,4 +1,4 @@
-export const JOURNEY_IDS = ['cold-start', 'first-token', 'long-session', 'session-switch'] as const;
+export const JOURNEY_IDS = ['cold-start', 'first-token', 'long-session', 'long-session-scroll', 'session-switch'] as const;
 
 export type JourneyId = (typeof JOURNEY_IDS)[number];
 

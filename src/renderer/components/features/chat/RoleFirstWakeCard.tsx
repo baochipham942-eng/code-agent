@@ -349,7 +349,10 @@ export function resolveBannerRoleId(
 }
 
 /** 当前会话是某专家的主 thread 时，把同一张卡放在对话顶部。 */
-export const RoleFirstWakeThreadBanner: React.FC = () => {
+export const RoleFirstWakeThreadBanner: React.FC<{
+  /** 空会话欢迎页已承接同一批 wake proposals 时，不在顶部重复渲染。 */
+  suppressWakeProposals?: boolean;
+}> = ({ suppressWakeProposals = false }) => {
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const currentSession = useSessionStore((state) => (
     state.sessions.find((session) => session.id === state.currentSessionId)
@@ -359,7 +362,7 @@ export const RoleFirstWakeThreadBanner: React.FC = () => {
   return (
     <>
       <RoleFirstWakeCard roleId={roleId} framed />
-      <RoleWakeProposalsCard roleId={roleId} framed />
+      {!suppressWakeProposals && <RoleWakeProposalsCard roleId={roleId} framed />}
     </>
   );
 };

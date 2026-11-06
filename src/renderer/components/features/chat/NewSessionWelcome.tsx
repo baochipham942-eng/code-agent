@@ -6,7 +6,8 @@ import { useI18n } from '../../../hooks/useI18n';
 import type { Translations } from '../../../i18n';
 import { formatRelativeTime } from '../../../utils/i18nTime';
 import { isBlankNewSession, type SessionWithMeta } from '../../../stores/sessionStore';
-import { listRoles, listWakeProposals } from '../../../services/rolesClient';
+import { DomainInvokeError } from '../../../services/ipcService';
+import { acceptWakeProposal, listRoles, listWakeProposals } from '../../../services/rolesClient';
 import { PlanetSphere } from '../../brand/PlanetSphere';
 import { resolveRoleIcon } from '../shared/RoleIcon';
 import { usePinnedLibraryItems } from './ChatInput/PinnedLibraryChips';
@@ -24,6 +25,7 @@ interface SuggestionItem {
   prompt: string;
   accent: string;
   iconColor: string;
+  wakeProposalTitle?: string;
 }
 
 // 建议卡的中性用色（2026-07-26 拍板：除首张推荐外一律中性），角色建议卡也沿用同一档。
@@ -75,7 +77,6 @@ interface ExpertRoleInfo {
 }
 
 function buildExpertRoleCards(
-  roleId: string,
   entryIcon: string | undefined,
   quickPrompts: readonly string[],
   proposals: ReadonlyArray<{ title: string; prompt: string }>,
@@ -89,6 +90,7 @@ function buildExpertRoleCards(
       prompt: proposal.prompt,
       accent: NEUTRAL_CARD_ACCENT,
       iconColor: 'text-zinc-400',
+      wakeProposalTitle: proposal.title,
     })),
     ...quickPrompts.map((prompt) => ({
       icon,
@@ -161,7 +163,7 @@ export const NewSessionWelcome: React.FC<{
         const entry = entries.find((candidate) => candidate.roleId === expertRoleId);
         setExpert({
           name: entry?.displayName?.trim() || expertRoleId,
-          cards: buildExpertRoleCards(expertRoleId, entry?.icon, entry?.quickPrompts ?? [], proposals),
+          cards: buildExpertRoleCards(entry?.icon, entry?.quickPrompts ?? [], proposals),
         });
       })
       .catch(() => {
@@ -187,12 +189,39 @@ export const NewSessionWelcome: React.FC<{
   // 点卡绝不替他发送或丢弃草稿——模板进输入框（空行分隔），何时发送由他决定。
   // 判定放在本组件内而不是调用方：这样这条决策才被组件单测覆盖（同 isBlankNewSession
   // 的立规理由），不会被一次误删接线静默退回「点卡即重活开跑」的事故行为。
-  const handleSuggestionActivate = (prompt: string) => {
+  const activatePrompt = (prompt: string) => {
     if (isComposerOccupied?.()) {
       onFillDraft?.(prompt);
       return;
     }
     onSend(prompt);
+  };
+  const removeWakeProposalCard = (title: string) => {
+    setExpert((current) => current ? {
+      ...current,
+      cards: current.cards.filter((card) => card.wakeProposalTitle !== title),
+    } : current);
+  };
+  const handleSuggestionActivate = (prompt: string, wakeProposalTitle?: string) => {
+    if (!expertRoleId || !wakeProposalTitle) {
+      activatePrompt(prompt);
+      return;
+    }
+    // 与 RoleWakeProposalsCard 同一 accept 路径：先让 host 原子消费 pending 提议，
+    // 再使用 host 返回的 prompt 走原有一键直发 / FB-580 填草稿行为。
+    void acceptWakeProposal(expertRoleId, wakeProposalTitle)
+      .then((accepted) => {
+        removeWakeProposalCard(wakeProposalTitle);
+        if (!accepted) return;
+        activatePrompt(accepted.prompt);
+      })
+      .catch((error) => {
+        if (error instanceof DomainInvokeError && error.code === 'NOT_FOUND') {
+          removeWakeProposalCard(wakeProposalTitle);
+          return;
+        }
+        throw error;
+      });
   };
 
   return (
@@ -320,7 +349,8 @@ interface SuggestionCardProps {
   prompt: string;
   accent: string;
   iconColor: string;
-  onActivate: (prompt: string) => void;
+  wakeProposalTitle?: string;
+  onActivate: (prompt: string, wakeProposalTitle?: string) => void;
   delay: number;
 }
 
@@ -331,12 +361,13 @@ const SuggestionCard: React.FC<SuggestionCardProps> = ({
   prompt,
   accent,
   iconColor,
+  wakeProposalTitle,
   onActivate,
   delay,
 }) => {
   return (
     <button
-      onClick={() => onActivate(prompt)}
+      onClick={() => onActivate(prompt, wakeProposalTitle)}
       className={`group relative min-h-[128px] rounded-lg border p-4 text-left ${accent}
                   transition-colors duration-200 hover:border-border-hover hover:bg-surface-hover
                   animate-fade-in-up`}

@@ -18,17 +18,21 @@
 
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { RolePanelEntry } from '../../../src/shared/contract/roleAssets';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { RoleFirstWakeSnapshot, RolePanelEntry } from '../../../src/shared/contract/roleAssets';
 
 const listRoles = vi.fn<() => Promise<RolePanelEntry[]>>();
 const listWakeProposals = vi.fn<(roleId: string) => Promise<Array<{ title: string; prompt: string }>>>();
+const acceptWakeProposal = vi.fn<(roleId: string, title: string) => Promise<{ prompt: string } | null>>();
+const dismissWakeProposal = vi.fn<(roleId: string, title: string) => Promise<{ success: boolean }>>();
+const getFirstWake = vi.fn<(roleId: string) => Promise<RoleFirstWakeSnapshot | null>>();
 
 vi.mock('../../../src/renderer/services/rolesClient', () => ({
   listRoles: () => listRoles(),
   listWakeProposals: (roleId: string) => listWakeProposals(roleId),
-  // NewSessionWelcome 只消费这两个；同模块其余导出按需补空实现。
-  getFirstWake: vi.fn(async () => null),
+  acceptWakeProposal: (roleId: string, title: string) => acceptWakeProposal(roleId, title),
+  dismissWakeProposal: (roleId: string, title: string) => dismissWakeProposal(roleId, title),
+  getFirstWake: (roleId: string) => getFirstWake(roleId),
   skipFirstWake: vi.fn(async () => ({ success: true })),
   retryFirstWake: vi.fn(async () => ({ retried: false })),
 }));
@@ -39,8 +43,10 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
 });
 
 import { NewSessionWelcome } from '../../../src/renderer/components/features/chat/NewSessionWelcome';
+import { RoleFirstWakeThreadBanner } from '../../../src/renderer/components/features/chat/RoleFirstWakeCard';
 import { zh } from '../../../src/renderer/i18n/zh';
-import type { SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
+import { useAppStore } from '../../../src/renderer/stores/appStore';
+import { useSessionStore, type SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 
 const WELCOME_TITLE = zh.chat.welcomeTitle;
 const EXPERT_SUBTITLE = zh.chat.expertEmptySubtitle;
@@ -76,9 +82,18 @@ const ROLE: RolePanelEntry = {
   displayName: '小满',
 };
 
+beforeEach(() => {
+  vi.resetAllMocks();
+  getFirstWake.mockResolvedValue({ state: 'skipped', sourcesMode: 'connected', suggestions: [] });
+  dismissWakeProposal.mockResolvedValue({ success: true });
+  useAppStore.setState({ firstWakeCardRoleId: null });
+  useSessionStore.setState({ currentSessionId: null, sessions: [] });
+});
+
 afterEach(() => {
   cleanup();
-  vi.resetAllMocks();
+  useAppStore.setState({ firstWakeCardRoleId: null });
+  useSessionStore.setState({ currentSessionId: null, sessions: [] });
 });
 
 describe('专家空会话：标题写专家名，不再说「继续上次的会话」', () => {
@@ -144,6 +159,25 @@ describe('专家空会话：标题写专家名，不再说「继续上次的会�
 });
 
 describe('专家空会话的起手卡：只摆角色既有数据，最多四张', () => {
+  it('welcome 已展示 wake proposal 时顶部 banner 不重复渲染', async () => {
+    listRoles.mockResolvedValue([ROLE]);
+    listWakeProposals.mockResolvedValue([{ title: '提议甲', prompt: '提议甲的委托' }]);
+    useSessionStore.setState({
+      currentSessionId: 'session-role-1',
+      sessions: [expertThreadSession()] as never,
+    });
+
+    render(
+      <>
+        <RoleFirstWakeThreadBanner suppressWakeProposals />
+        <NewSessionWelcome onSend={vi.fn()} session={expertThreadSession()} />
+      </>,
+    );
+
+    await waitFor(() => expect(screen.getAllByText('提议甲')).toHaveLength(1));
+    expect(screen.queryByTestId('role-wake-proposals-card')).toBeNull();
+  });
+
   it('醒来提议 + 快捷开场 prompt 超过四条时只摆四张，醒来提议优先', async () => {
     listRoles.mockResolvedValue([
       {
@@ -209,6 +243,20 @@ describe('专家空会话的起手卡：只摆角色既有数据，最多四张'
 
     expect(onSend).toHaveBeenCalledTimes(1);
     expect(onSend).toHaveBeenCalledWith('帮我把这份资料读一遍');
+  });
+
+  it('wake proposal 卡先调 acceptWakeProposal 消费，再发送 host 返回的 prompt', async () => {
+    listRoles.mockResolvedValue([ROLE]);
+    listWakeProposals.mockResolvedValue([{ title: '提议甲', prompt: '旧的本地 prompt' }]);
+    acceptWakeProposal.mockResolvedValue({ prompt: 'host 接受后返回的 prompt' });
+    const onSend = vi.fn();
+
+    render(<NewSessionWelcome onSend={onSend} session={expertThreadSession()} />);
+    fireEvent.click(await screen.findByText('提议甲'));
+
+    await waitFor(() => expect(acceptWakeProposal).toHaveBeenCalledWith('role-1', '提议甲'));
+    await waitFor(() => expect(onSend).toHaveBeenCalledWith('host 接受后返回的 prompt'));
+    expect(screen.queryByText('提议甲')).toBeNull();
   });
 
   it('角色卡同 FB-580：composer 有字时不发送、改填草稿', async () => {

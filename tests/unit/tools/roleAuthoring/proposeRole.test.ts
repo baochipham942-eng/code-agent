@@ -13,7 +13,7 @@ const sessionState = vi.hoisted(() => ({
   origin: undefined as undefined | { kind: string },
   unattended: false,
 }));
-const firstWake = vi.hoisted(() => ({ enqueue: vi.fn(async () => ({ enqueued: true })) }));
+const firstWake = vi.hoisted(() => ({ enqueue: vi.fn(async (_roleId: string) => ({ enqueued: true })) }));
 const toolExecutorState = vi.hoisted(() => ({
   config: undefined as undefined | {
     requestPermission: (request: {

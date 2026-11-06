@@ -78,7 +78,7 @@ function forgetCreationFirstWake(sessionId: string): void {
   }
 }
 
-export function findPersistedDirectCreation(
+function findPersistedDirectCreation(
   messages: readonly Message[],
   sessionId: string | null,
 ): RoleCreatedDirectSummary | null {

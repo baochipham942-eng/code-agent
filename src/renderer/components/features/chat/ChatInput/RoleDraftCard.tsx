@@ -1,7 +1,7 @@
 // ============================================================================
 // RoleDraftCard - 对话式建角色草稿确认卡（role-creation-flow）
-// propose_role 工具起草后发 role_draft_pending 事件，在输入框上方弹确认卡。
-// 草稿严禁自动入库：只有用户点"确认创建"才会写 agents/<id>.md + 建 roles/<id>/。
+// propose_role 普通起草后发 role_draft_pending；明确直接创建后发 role_created_direct。
+// 两种事件都在输入框上方展示，直接创建卡下面接首次醒来。
 // 镜像 SkillDraftCard 范式。
 // ============================================================================
 
@@ -14,6 +14,10 @@ import { toast } from '../../../../hooks/useToast';
 import { useI18n } from '../../../../hooks/useI18n';
 import { useSessionStore } from '../../../../stores/sessionStore';
 import { RoleFirstWakeCard } from '../RoleFirstWakeCard';
+import {
+  RoleCreatedDirectCard,
+  type RoleCreatedDirectSummary,
+} from './RoleCreatedDirectCard';
 
 export interface RoleDraftSummary {
   id: string;
@@ -75,6 +79,7 @@ function forgetCreationFirstWake(sessionId: string): void {
 
 export const RoleDraftNotifications: React.FC = () => {
   const [drafts, setDrafts] = useState<RoleDraftSummary[]>([]);
+  const [createdDirect, setCreatedDirect] = useState<RoleCreatedDirectSummary | null>(null);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const [wakeRoleId, setWakeRoleId] = useState<string | null>(null);
 
@@ -84,6 +89,16 @@ export const RoleDraftNotifications: React.FC = () => {
 
   useEffect(() => {
     const unsubscribe = ipcService.on('agent:event', (event: { type: string; data: unknown }) => {
+      if (event.type === 'role_created_direct' && event.data) {
+        const payload = event.data as RoleCreatedDirectSummary;
+        if (!payload.roleId || !payload.sessionId) return;
+        setCreatedDirect(payload);
+        if (payload.sessionId === currentSessionId) {
+          rememberCreationFirstWake(payload.sessionId, payload.roleId);
+          setWakeRoleId(payload.roleId);
+        }
+        return;
+      }
       if (event.type !== 'role_draft_pending' || !event.data) return;
       const payload = event.data as { drafts?: RoleDraftSummary[] };
       if (!Array.isArray(payload.drafts) || payload.drafts.length === 0) return;
@@ -96,7 +111,7 @@ export const RoleDraftNotifications: React.FC = () => {
       });
     });
     return () => { unsubscribe?.(); };
-  }, []);
+  }, [currentSessionId]);
 
   // 确认卡是阻塞性决策，占住输入框上方那一格（成员条会据此收成极窄摘要）
   const handleCreated = useCallback((roleId: string) => {
@@ -111,11 +126,13 @@ export const RoleDraftNotifications: React.FC = () => {
 
   useEffect(() => {
     const setNotice = useComposerNoticeStore.getState().setNotice;
-    setNotice('role-draft', drafts.length > 0 || wakeRoleId !== null);
+    const hasCreatedCard = createdDirect?.sessionId === currentSessionId;
+    setNotice('role-draft', drafts.length > 0 || wakeRoleId !== null || hasCreatedCard);
     return () => setNotice('role-draft', false);
-  }, [drafts.length, wakeRoleId]);
+  }, [createdDirect, currentSessionId, drafts.length, wakeRoleId]);
 
-  if (drafts.length === 0 && !wakeRoleId) return null;
+  const visibleCreated = createdDirect?.sessionId === currentSessionId ? createdDirect : null;
+  if (drafts.length === 0 && !wakeRoleId && !visibleCreated) return null;
 
   return (
     <>
@@ -127,6 +144,7 @@ export const RoleDraftNotifications: React.FC = () => {
           onCreated={handleCreated}
         />
       )}
+      {visibleCreated && <RoleCreatedDirectCard role={visibleCreated} />}
       {wakeRoleId && (
         <RoleFirstWakeCard roleId={wakeRoleId} expectLive onDismissed={handleWakeDismissed} />
       )}

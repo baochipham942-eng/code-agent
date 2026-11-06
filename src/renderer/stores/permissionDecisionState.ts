@@ -67,7 +67,7 @@ export function buildPermissionDismissState(
  * 有身份的是后台任务的卡，留到它被裁决、被取消或它自己的 run 结束；
  * 没身份的按原样清掉（N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO）。
  */
-export function belongsToBackgroundTask(request: PermissionRequest): boolean {
+function belongsToBackgroundTask(request: PermissionRequest): boolean {
   return (typeof request.runId === 'string' && request.runId.length > 0)
     || (typeof request.agentId === 'string' && request.agentId.length > 0);
 }

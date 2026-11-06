@@ -275,7 +275,7 @@ export const RoleDraftCard: React.FC<RoleDraftCardProps> = ({ drafts, onResolved
   if (drafts.length === 0) return null;
 
   return (
-    <div className="px-3 py-2 mb-2 bg-emerald-500/10 border border-badge-success/20 rounded-lg animate-fadeIn">
+    <div data-testid="role-draft-card" className="px-3 py-2 mb-2 bg-emerald-500/10 border border-badge-success/20 rounded-lg animate-fadeIn">
       <div className="flex items-center gap-2 mb-1">
         <UserPlus className="w-4 h-4 text-badge-success flex-shrink-0" />
         <span className="text-xs text-badge-success flex-1">

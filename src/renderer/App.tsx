@@ -25,7 +25,7 @@ import { isDesktopShellMode, isTauriMode } from './utils/platform';
 import { ProjectCollaborationPage } from './components/features/projectCollaboration';
 import { ProjectSpacePage } from './components/features/projectSpace';
 import { DevServerLauncher } from './components/LivePreview/DevServerLauncher';
-import { ExpertWorkbenchAutoOpen, WorkbenchTabs } from './components/WorkbenchTabs';
+import { WorkbenchTabs } from './components/WorkbenchTabs';
 import { WorkbenchViewContent } from './components/WorkbenchViewContent';
 import { PromptManagerModal } from './components/features/prompts/PromptManagerModal';
 import { FullScreenPage } from './components/features/shared/FullScreenPage';
@@ -723,7 +723,6 @@ export const App: React.FC = () => {
       <VoiceBudgetAlertNotice />
       <CompanionPairRequestCard />
       <RuntimeNotices />
-      <ExpertWorkbenchAutoOpen />
       <SessionExpiredNotice />
       <div className="h-screen flex flex-col bg-zinc-950 text-zinc-200">
         {/* 后台服务死亡期间的顶部「重连中」横幅（N-WEBSERVER-DEATH-SUPERVISE-BANNER）；

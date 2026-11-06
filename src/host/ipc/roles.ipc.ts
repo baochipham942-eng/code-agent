@@ -287,6 +287,10 @@ const PROACTIVITY_LEVELS: ReadonlySet<string> = new Set(['silent', 'daily', 'rea
 // 面板需要按 roleId 对照预设清单还原成 'builtin'（显示"预设"标签）
 const builtinRoleIdSet = new Set<string>(BUILTIN_ROLE_IDS);
 
+function normalizeBuiltinDefinition(definition: string): string {
+  return definition.replace(/\r\n/g, '\n').trimEnd();
+}
+
 async function loadFrontmatterVisual(roleId: string): Promise<RoleVisual> {
   try {
     return parseAgentMdVisual(await fs.readFile(path.join(getAgentsMdDir().user, `${roleId}.md`), 'utf-8'));
@@ -358,13 +362,21 @@ async function handleDetail(roleId: string): Promise<RolePanelDetail> {
     ...getProtocolRegistry().getSchemas().map((tool) => tool.name),
     ...Object.keys(TOOL_ALIASES),
   ])].sort();
-  const packState = builtinRoleIdSet.has(roleId) ? null : await getInstalledRolePackState(roleId);
-  const factory = builtinRoleIdSet.has(roleId)
-    ? { agentMd: BUILTIN_ROLES.find((role) => role.id === roleId)?.agentMd }
+  const isBuiltin = builtinRoleIdSet.has(roleId);
+  const builtinFactoryDefinition = isBuiltin ? BUILTIN_ROLES.find((role) => role.id === roleId)?.agentMd : undefined;
+  const packState = isBuiltin ? null : await getInstalledRolePackState(roleId);
+  const factory = isBuiltin
+    ? { agentMd: builtinFactoryDefinition }
     : packState ? await getRolePackFactoryDefinition(roleId) : null;
-  const restore = builtinRoleIdSet.has(roleId)
+  const restore = isBuiltin
     ? { available: Boolean(factory?.agentMd) }
     : packState ? { available: Boolean(factory?.agentMd), ...(!factory?.agentMd ? { disabledReason: '当前无法取得云端出厂定义' } : {}) } : undefined;
+  // 已发布模板若未来变更，仍持有旧模板的用户会被判为已修改；当前没有历史基线。
+  const locallyModified = isBuiltin
+    ? (definition != null && builtinFactoryDefinition != null
+        ? normalizeBuiltinDefinition(definition) !== normalizeBuiltinDefinition(builtinFactoryDefinition)
+        : undefined)
+    : packState?.locallyModified;
   return {
     roleId,
     definition,
@@ -380,7 +392,7 @@ async function handleDetail(roleId: string): Promise<RolePanelDetail> {
     history: history.map((line) => sanitizeLastWork(line)).filter(Boolean),
     proactivity,
     visual: getBuiltinRoleVisual(roleId) ?? (definition ? parseAgentMdVisual(definition) : {}),
-    isBuiltin: builtinRoleIdSet.has(roleId),
+    isBuiltin,
     personalization: readRolePersonalization(roleId),
     ...(parsed?.connectors?.length
       ? {
@@ -393,7 +405,7 @@ async function handleDetail(roleId: string): Promise<RolePanelDetail> {
         }
       : {}),
     ...(parsed ? { equipment: { skills: parsed.skills ?? [], tools: parsed.tools, model: parsed.model, ...(parsed.engine ? { engine: parsed.engine } : {}), ...(parsed.modelOverride ? { modelOverride: parsed.modelOverride } : {}), ...(parsed.permissionPreset ? { permissionPreset: parsed.permissionPreset } : {}), maxIterations: parsed.maxIterations, availableSkills, availableTools } } : {}),
-    ...(packState ? { locallyModified: packState.locallyModified } : {}),
+    ...(locallyModified !== undefined ? { locallyModified } : {}),
     ...(restore ? { restore } : {}),
   };
 }

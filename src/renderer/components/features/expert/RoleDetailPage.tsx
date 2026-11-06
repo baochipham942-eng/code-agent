@@ -287,8 +287,6 @@ const VisualEditor: React.FC<{
 
   return (
     <SettingsSection title={text.title} description={text.description}>
-      {/* E6-3 接入 locallyModified 前，内置角色统一提示：这里拿不到角色包的本地修改状态。 */}
-      {detail.isBuiltin ? <p className="mb-3 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-badge-warning">{text.builtinNotice}</p> : null}
       <div className="grid gap-3 md:grid-cols-2">
         <label className="space-y-1 text-xs text-zinc-400">
           <span>{text.displayName}</span>

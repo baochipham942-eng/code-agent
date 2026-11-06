@@ -11,8 +11,8 @@ import {
   formatDuration,
   formatCost,
 } from '../../../../shared/contract/dagVisualization';
-import { useAppStore } from '../../../../stores/appStore';
-import { formatDateTime } from '../../../../utils/formatDateTime';
+import { useAppStore } from '../../../stores/appStore';
+import { formatDateTime } from '../../../utils/formatDateTime';
 
 interface TaskDetailPanelProps {
   task: TaskNodeData | null;

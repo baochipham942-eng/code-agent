@@ -170,4 +170,34 @@ describe('无人值守等批准可见性（N-CRON-UNATTENDED-BASH-PARK-STUCK-VIS
       { timeout: 3000 },
     );
   });
+  it('⑤ 带 commandPreview：详情提示与运行行 chip 显示「等你批准：<预览>」；无预览保持原文案', async () => {
+    render(<CronCenterPanel onClose={() => undefined} />);
+    awaitingRunsMock = [{
+      jobId: 'job-1', executionId: 'exec-1', requestId: 'req-1', requestedAt: 1,
+      commandPreview: 'node scripts/refresh-wechat.js --since yesterday --verbose-long-flag',
+    }];
+
+    await vi.waitFor(
+      () => {
+        expect(screen.getAllByTestId('cron-job-awaiting-approval')).toHaveLength(1);
+      },
+      { timeout: 3000 },
+    );
+    const hint = screen.getByTestId('cron-detail-awaiting-approval-hint').textContent ?? '';
+    expect(hint).toContain('等你批准：node scripts/refresh-wechat…');
+    expect(hint).toContain('…');
+    expect(hint).not.toContain('--verbose-long-flag');
+
+    fireEvent.click(screen.getByTestId('cron-detail-awaiting-approval-action'));
+    await vi.waitFor(
+      () => {
+        const chip = screen.getByTestId('cron-exec-awaiting-approval');
+        expect(chip.textContent).toContain('等你批准：node scripts/refresh-wechat…');
+        expect(chip.className).toContain('whitespace-nowrap');
+        expect(chip.className).toContain('max-w-[180px]');
+        expect(chip.getAttribute('title')).toContain('等你批准：node scripts/refresh-wechat.js --since yesterday --verbose-long-flag');
+      },
+      { timeout: 3000 },
+    );
+  });
 });

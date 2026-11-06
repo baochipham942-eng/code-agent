@@ -345,6 +345,11 @@
       "default": "mimo-v2.5-pro",
       "models": [
         {
+          "id": "mimo-v2.6-flash",
+          "label": "MiMo v2.6 Flash",
+          "desc": "1M · 全模态（图片/视频/音频）+ tool call"
+        },
+        {
           "id": "mimo-v2.5-pro",
           "label": "MiMo v2.5 Pro",
           "desc": "1M · thinking + tool call 旗舰"

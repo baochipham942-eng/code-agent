@@ -57,9 +57,8 @@ export const WAKE_NOOP_TOOL_NAME = 'wake_noop';
 // browser.schema.ts 两份逐字孪生）inputSchema 与 ## Parameters: 列表补列 secretRef，
 // 描述与 browser_action 的 secretRef 逐字一致；模型才能把密码引用作为 secretRef
 // 参数传入而非把引用文本打进 text（FB-552/FB-544）。
-// sys-v96：N-FG-CONNECTOR-TOOLS——指挥台 brain 提示词加 3a 条（连接器工具在场时
-// 发邮件/建日程/设提醒直调，审批卡在聊天内确认），且命中意图的轮次工具面新增
-// mail/calendar/reminders 连接器读写工具（ADR-059 修订，per-turn 进面）。
+// sys-v97：N-ROLE-CREATE-DIRECT-CORE——propose_role 工具说明明确 host 会从
+// 用户原话判定直接创建或确认卡，模型不得提供直接创建参数。
 export const PROMPT_VERSION = 'sys-v97' as const;
 
 /** Explore 角色在正常目录、静态工具描述和动态 fallback 中共享的单一描述。 */

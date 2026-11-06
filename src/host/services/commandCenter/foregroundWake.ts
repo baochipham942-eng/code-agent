@@ -35,8 +35,10 @@ interface WakeTaskManager {
   getOrCreateCurrentOrchestrator(sessionId: string): AgentOrchestrator | undefined;
   setSessionContext(sessionId: string, messages: Message[]): void;
   setWorkingDirectory(sessionId: string, directory: string): void;
-  /** TaskManager 的 state_change：会话回到 idle 就是延后唤醒的投递信号（不另起轮询） */
+  /** TaskManager 的 state_change：会话回到 idle 是延后唤醒的投递信号之一（不另起轮询） */
   on(event: 'state_change', listener: (event: { sessionId: string; data?: unknown }) => void): unknown;
+  /** RunRegistry 有 run 退场（前台轮结束）：延后唤醒的另一个投递信号，web 入口的轮不经 state_change */
+  onRunIdle(listener: () => void): unknown;
 }
 
 interface WakeLogger {
@@ -139,6 +141,13 @@ export function createForegroundWake(
     manager.on('state_change', (event) => {
       if ((event.data as { status?: unknown } | undefined)?.status !== 'idle') return;
       flushPending(event.sessionId);
+    });
+    manager.onRunIdle(() => {
+      for (const sessionId of [...pendingBySession.keys()]) {
+        if (manager.hasActivePrimaryRun(sessionId)) continue;
+        // 退场通知发生在 orchestrator 清 agentLoop 之前的同一同步段，放到微任务再检查 isProcessing
+        queueMicrotask(() => flushPending(sessionId));
+      }
     });
   };
 

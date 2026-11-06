@@ -50,7 +50,8 @@ class FakeTaskManager extends EventEmitter {
   // 以下是 foregroundWake 依赖的 TaskManager 面
   getSessionState(): { status: string } { return this.state; }
   getWaitingQueue(): string[] { return []; }
-  hasActivePrimaryRun(): boolean { return false; }
+  hasActivePrimaryRun(sessionId: string): boolean { return this.registry.hasSession(sessionId); }
+  onRunIdle(listener: () => void): () => void { return this.registry.onIdleTransition(listener); }
   setSessionContext = vi.fn();
   setWorkingDirectory = vi.fn();
 }
@@ -117,7 +118,8 @@ describe('background task settlement wake with a real RunRegistry', () => {
         ...manager,
         getSessionState: () => manager.getSessionState(),
         getWaitingQueue: () => [],
-        hasActivePrimaryRun: () => false,
+        hasActivePrimaryRun: (sessionId: string) => manager.hasActivePrimaryRun(sessionId),
+        onRunIdle: (listener: () => void) => manager.onRunIdle(listener),
         getOrCreateCurrentOrchestrator: () => orchestrator,
         setSessionContext: manager.setSessionContext,
         setWorkingDirectory: manager.setWorkingDirectory,
@@ -142,13 +144,15 @@ describe('background task settlement wake with a real RunRegistry', () => {
   });
 
   async function startForegroundWithTask(): Promise<SessionCommandTask> {
-    await registry.startDurable({ runId: 'run-fg', sessionId: SESSION, workspace: '/tmp/wake-project' }, 100);
+    const foreground = await registry.startDurable({ runId: 'run-fg', sessionId: SESSION, workspace: '/tmp/wake-project' }, 100);
     const spawned = await center.spawn({
       sessionId: SESSION, title: '任务一', shortName: '任务一', laneKey: 'lane-1', submissionKey: 'sub-1',
       prompt: '做点事', workspaceScope: SCOPE, parentRunId: 'run-fg',
     });
     if (spawned.outcome === 'requires_choice') throw new Error('unexpected');
     await vi.waitFor(() => expect(manager.startBackgroundTask).toHaveBeenCalledTimes(1));
+    // 前台轮在任务结束前就收尾了（和线上一致：任务是后台的）
+    registry.unregister('run-fg', foreground);
     return spawned.task;
   }
 
@@ -177,20 +181,31 @@ describe('background task settlement wake with a real RunRegistry', () => {
     expect(warn.mock.calls.map((c) => String(c[0]))).not.toContain('Foreground wake failed');
   });
 
-  it('defers the wake while the session is busy and delivers it once the session turns idle', async () => {
+  it('defers the wake while a foreground run is active and delivers it when that run leaves the registry', async () => {
     const task = await startForegroundWithTask();
-    manager.state = { status: 'running' };
+    // 前台模型正在轮询 task_status：一个真 primary run 占着会话
+    const polling = registry.start({ runId: 'run-fg-polling', sessionId: SESSION, workspace: '/tmp/wake-project' });
     settle(task);
     await vi.waitFor(() => expect(info.mock.calls.map((c) => String(c[0]))).toContain('Foreground wake deferred: session busy'));
     expect(wakeSends).toBe(0);
 
+    registry.unregister('run-fg-polling', polling);
+    await vi.waitFor(() => expect(wakeSends).toBe(1));
+    // 只投一次：之后再有 run 退场不重复唤醒
+    const other = registry.startAuxiliary({ runId: 'aux-other', sessionId: SESSION, workspace: '/tmp/wake-project' });
+    registry.unregister('aux-other', other);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(wakeSends).toBe(1);
+  });
+
+  it('also delivers a busy-deferred wake on the TaskManager idle state_change', async () => {
+    const task = await startForegroundWithTask();
+    manager.state = { status: 'running' };
+    settle(task);
+    await vi.waitFor(() => expect(info.mock.calls.map((c) => String(c[0]))).toContain('Foreground wake deferred: session busy'));
     manager.state = { status: 'idle' };
     manager.emit('state_change', { type: 'state_change', sessionId: SESSION, data: { status: 'idle' } });
     await vi.waitFor(() => expect(wakeSends).toBe(1));
-    // 只投一次：再来一个 idle 不重复唤醒
-    manager.emit('state_change', { type: 'state_change', sessionId: SESSION, data: { status: 'idle' } });
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(wakeSends).toBe(1);
   });
 
   it('defers behind queued user input with a distinct reason, then wakes after it drains', async () => {

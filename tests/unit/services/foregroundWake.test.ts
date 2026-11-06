@@ -23,6 +23,7 @@ const manager = {
   setSessionContext: vi.fn(),
   setWorkingDirectory: vi.fn(),
   on: vi.fn(),
+  onRunIdle: vi.fn(),
 };
 const wakeLogger = {
   info: vi.fn(),

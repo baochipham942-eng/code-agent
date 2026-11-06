@@ -26,6 +26,7 @@ const TASK = {
   type: 'agent' as const,
   status: 'completed' as const,
   priority: 'normal' as const,
+  retryCount: 0,
   startedAt: STARTED,
   completedAt: COMPLETED,
 };

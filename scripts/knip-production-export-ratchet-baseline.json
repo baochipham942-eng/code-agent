@@ -2083,42 +2083,12 @@
     },
     {
       "file": "src/host/context/agentsDiscovery.ts",
-      "name": "AgentInstructions",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/context/agentsDiscovery.ts",
-      "name": "AgentsDiscoveryService",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/agentsDiscovery.ts",
-      "name": "AgentSection",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/context/agentsDiscovery.ts",
       "name": "clearAgentsDiscoveryCache",
       "kind": "export"
     },
     {
       "file": "src/host/context/agentsDiscovery.ts",
       "name": "discoverAgentFiles",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/agentsDiscovery.ts",
-      "name": "getAgentsDiscoveryService",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/agentsDiscovery.ts",
-      "name": "getInstructionsForPath",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/agentsDiscovery.ts",
-      "name": "initAgentsDiscovery",
       "kind": "export"
     },
     {
@@ -2147,16 +2117,6 @@
       "kind": "type"
     },
     {
-      "file": "src/host/context/checkpoint/templates.ts",
-      "name": "CHECKPOINT_SECTION_BUDGETS",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/checkpoint/templates.ts",
-      "name": "getSectionHeading",
-      "kind": "export"
-    },
-    {
       "file": "src/host/context/compactionAuditRecorder.ts",
       "name": "buildCompactionAuditSummary",
       "kind": "export"
@@ -2164,16 +2124,6 @@
     {
       "file": "src/host/context/compactionAuditRecorder.ts",
       "name": "CompactionAuditSummary",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/context/compactionHooks.ts",
-      "name": "CompactionHookLoggerLike",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/context/compactionHooks.ts",
-      "name": "PreCompactHookResultLike",
       "kind": "type"
     },
     {
@@ -2194,26 +2144,6 @@
     {
       "file": "src/host/context/compactionSummaryValidator.ts",
       "name": "CompactionSummaryManifestFile",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/context/compactionSummaryValidator.ts",
-      "name": "CompactionSummaryManifestItem",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/context/compactModel.ts",
-      "name": "CompactModelFallbackReason",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/context/compactModel.ts",
-      "name": "isCompactModelAvailable",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/compressor.ts",
-      "name": "CompressionStrategyType",
       "kind": "type"
     },
     {
@@ -2247,144 +2177,9 @@
       "kind": "export"
     },
     {
-      "file": "src/host/context/contextEventLedger.ts",
-      "name": "CONTEXT_INJECTION_SOURCES",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/contextEventLedger.ts",
-      "name": "ContextEventSourceKind",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/context/contextInterventionState.ts",
-      "name": "applyInterventionsToTranscript",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/contextInterventionState.ts",
-      "name": "mergeInterventionSnapshots",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/contextPressureController.ts",
-      "name": "PressureTrigger",
-      "kind": "type"
-    },
-    {
       "file": "src/host/context/documentContext/documentContextService.ts",
       "name": "resetDocumentContextService",
       "kind": "export"
-    },
-    {
-      "file": "src/host/context/documentContext/types.ts",
-      "name": "SectionType",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/context/layers/microcompact.ts",
-      "name": "compactText",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/reminderBudget.ts",
-      "name": "adjustBudgetForContext",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/reminderBudget.ts",
-      "name": "estimateTotalTokens",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/reminderBudget.ts",
-      "name": "getTokenBudgetManager",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/reminderBudget.ts",
-      "name": "resetTokenBudgetManager",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/repoMap/index.ts",
-      "name": "buildDependencyGraph",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/repoMap/index.ts",
-      "name": "buildRepoMap",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/repoMap/index.ts",
-      "name": "DependencyNode",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/context/repoMap/index.ts",
-      "name": "invalidateRepoMapCache",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/repoMap/index.ts",
-      "name": "rankAndFormat",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/repoMap/index.ts",
-      "name": "RepoMapConfig",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/context/repoMap/index.ts",
-      "name": "RepoMapEntry",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/context/repoMap/index.ts",
-      "name": "RepoMapResult",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/context/repoMap/index.ts",
-      "name": "SymbolEntry",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/context/repoMap/index.ts",
-      "name": "SymbolKind",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/context/repoMap/repoMapBuilder.ts",
-      "name": "extractImports",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/repoMap/repoMapBuilder.ts",
-      "name": "extractSymbols",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/repoMap/repoMapBuilder.ts",
-      "name": "resolveImportPath",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/repoMap/repoMapCache.ts",
-      "name": "invalidateRepoMapCache",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/repoMap/repoMapRanker.ts",
-      "name": "buildDependencyGraph",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/repoMap/types.ts",
-      "name": "SymbolKind",
-      "kind": "type"
     },
     {
       "file": "src/host/context/survivorManifest.ts",
@@ -2400,46 +2195,6 @@
       "file": "src/host/context/survivorManifest.ts",
       "name": "extractAbsolutePaths",
       "kind": "export"
-    },
-    {
-      "file": "src/host/context/survivorManifest.ts",
-      "name": "SurvivorArchivedToolResultSummary",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/context/survivorManifest.ts",
-      "name": "SurvivorArtifactSummary",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/context/survivorManifest.ts",
-      "name": "SurvivorFileMetadata",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/context/survivorManifest.ts",
-      "name": "SurvivorFileRecord",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/context/survivorManifest.ts",
-      "name": "SurvivorFileSurvival",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/context/survivorManifest.ts",
-      "name": "SurvivorManifestSource",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/context/survivorManifest.ts",
-      "name": "SurvivorShellCommandSummary",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/context/survivorManifest.ts",
-      "name": "SurvivorTextItem",
-      "kind": "type"
     },
     {
       "file": "src/host/context/tokenEstimator.ts",
@@ -2488,43 +2243,8 @@
     },
     {
       "file": "src/host/context/tokenOptimizer.ts",
-      "name": "analyzeContent",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/tokenOptimizer.ts",
-      "name": "calculateTokenBreakdown",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/tokenOptimizer.ts",
       "name": "compressToolResult",
       "kind": "export"
-    },
-    {
-      "file": "src/host/context/tokenOptimizer.ts",
-      "name": "ContextCompressor",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/tokenOptimizer.ts",
-      "name": "RAGCacheConfig",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/context/tokenOptimizer.ts",
-      "name": "RAGCacheEntry",
-      "kind": "type"
-    },
-    {
-      "file": "src/host/context/tokenOptimizer.ts",
-      "name": "RAGContextCache",
-      "kind": "export"
-    },
-    {
-      "file": "src/host/context/tokenOptimizer.ts",
-      "name": "TokenBreakdown",
-      "kind": "type"
     },
     {
       "file": "src/host/context/tokenOptimizer.ts",
@@ -15508,17 +15228,17 @@
     },
     {
       "file": "src/shared/contract/update.ts",
+      "name": "RuntimeAssetPreparationStatus",
+      "kind": "type"
+    },
+    {
+      "file": "src/shared/contract/update.ts",
       "name": "RuntimeAssetsUpdateAsset",
       "kind": "type"
     },
     {
       "file": "src/shared/contract/update.ts",
       "name": "RuntimeAssetsUpdateInfo",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/update.ts",
-      "name": "RuntimeAssetPreparationStatus",
       "kind": "type"
     },
     {

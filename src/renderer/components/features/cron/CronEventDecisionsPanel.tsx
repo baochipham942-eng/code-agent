@@ -12,7 +12,7 @@ import { cronClient } from '../../../services/cronClient';
 import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { ConfirmDialog } from '../../composites/ConfirmDialog';
-import { formatDateTime } from './types';
+import { formatDateTime } from '../../../utils/formatDateTime';
 
 /** 决策行底色：「本会执行」是观察期要用户过目的，高亮。 */
 function decisionRowClass(decision: CronEventDecision['decision']): string {

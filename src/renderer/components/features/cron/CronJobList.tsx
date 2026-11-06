@@ -14,10 +14,10 @@ import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { getCronTriggerKind } from '../../../utils/cronHumanize';
 import {
-  formatDateTime,
   formatScheduleSummary,
   getLatestExecutionStatus,
 } from './types';
+import { formatDateTime } from '../../../utils/formatDateTime';
 import { CronRunsOnPill } from './CronRunsOnSelector';
 import { useEventScheduleNames } from './useChannelCatalog';
 

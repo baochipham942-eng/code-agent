@@ -11,10 +11,10 @@ import { useCronStore } from '../../../stores/cronStore';
 import { useI18n } from '../../../hooks/useI18n';
 import {
   formatActionSummary,
-  formatDateTime,
   formatScheduleSummary,
   getLatestExecutionStatus,
 } from './types';
+import { formatDateTime } from '../../../utils/formatDateTime';
 import { CronExecutionList } from './CronExecutionList';
 import { CronExecutionDetail } from './CronExecutionDetail';
 import { Button } from '../../primitives';

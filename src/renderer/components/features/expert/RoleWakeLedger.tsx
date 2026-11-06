@@ -11,7 +11,8 @@ import { cronClient } from '../../../services/cronClient';
 import { SettingsSection } from '../settings/SettingsLayout';
 import { CronDailyCostSummary } from '../cron/CronDailyCostSummary';
 import { wakeSkipSentence } from '../cron/wakeSkipSentence';
-import { formatDateTime, formatRunCostUsd } from '../cron/types';
+import { formatRunCostUsd } from '../cron/types';
+import { formatDateTime } from '../../../utils/formatDateTime';
 
 const WAKE_HISTORY_PER_JOB = 20;
 

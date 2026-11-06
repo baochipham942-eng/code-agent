@@ -15,6 +15,7 @@ import { validateEventScheduleConstraints } from '@shared/cronEventValidation';
 import { isCronPermissionDeniedMarker } from '@shared/cronPermissionDenied';
 import { CRON_AGENT_TYPES, CRON_EVENT_TRIGGER } from '@shared/constants';
 import { formatCronExpressionLabel, humanizeEverySchedule, type CronHumanLang } from '@shared/cronHumanize';
+import { formatDateTime } from '../../../utils/formatDateTime';
 
 export interface CronJobDraft {
   runsOn: CronJobDefinition['runsOn'];
@@ -469,19 +470,8 @@ export function buildCronJobInput(draft: CronJobDraft): Omit<CronJobDefinition, 
   };
 }
 
-/**
- * 详情页时间（FB-567/FB-570）：zh 固定 24 小时制 `YYYY/MM/DD HH:mm`（手工拼，跟
- * formatRunListTime 同一来源，绝不裸 toLocaleString() 跟机器 locale 走）；en 维持
- * en-US 原样。运行列表仍用 formatRunListTime（月/日短格式，避免撑出容器）。
- */
-export function formatDateTime(value?: string | number, lang: CronHumanLang = 'zh'): string {
-  if (value == null) return '未设置';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '无效时间';
-  if (lang === 'en') return date.toLocaleString('en-US');
-  const pad = (part: number) => String(part).padStart(2, '0');
-  return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
+// 详情页时间统一走 utils/formatDateTime（FB-567/FB-570；N-CRON-DETAIL-TIME-FORMAT-MIXED-FU1
+// 迁出供全 renderer 复用）。运行列表仍用 formatRunListTime（月/日短格式，避免撑出容器）。
 
 /** 运行记录表的时间：月/日 + 时/分。详情仍用完整本地时间，避免两列日期把表撑出容器。 */
 export function formatRunListTime(value?: string | number): string {

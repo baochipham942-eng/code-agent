@@ -11,6 +11,7 @@ import {
   publishJourneyError,
   publishJourneyResult,
   waitForCommitSettlement,
+  type JourneyInstrument,
 } from './journey-probe-instrument';
 
 const instrument = createJourneyInstrument();
@@ -25,6 +26,19 @@ const SESSION_ID = 'perf-journey-long-session-scroll';
 // and the ratchet catches the changed count; the drain below still refuses to
 // publish while that correction is in flight.
 const FIXTURE_ROW_HEIGHT_PX = 80;
+
+function createScrollPhaseInstrument(startCommitCount: number): JourneyInstrument {
+  return {
+    get commitCount() {
+      return instrument.commitCount - startCommitCount;
+    },
+    get hotRenderCount() {
+      return instrument.hotRenderCount;
+    },
+    onRender: instrument.onRender,
+    HotProbe: instrument.HotProbe,
+  };
+}
 
 // Fixed-height fixture (N-PERF-LONG-SESSION-SCROLL-COVERAGE): deterministic
 // row heights for the scripted window-swap scrolls. The [data-trace-turn-id]
@@ -165,16 +179,20 @@ function LongSessionScrollSurface(): React.ReactElement {
         scroller.dispatchEvent(new WheelEvent('wheel', { deltaY: -240, bubbles: true }));
         await settleScrollStep();
         const entryCommitCount = instrument.commitCount;
+        // This journey gates the second phase only. Entry already has its own
+        // long-session ratchet (13); excluding it also keeps CPU-load batching
+        // in the mount cascade from contaminating the scroll/window-swap count.
+        const scrollPhaseInstrument = createScrollPhaseInstrument(entryCommitCount);
         // Window swap 1: top window -> bottom window, every mounted row fresh.
         await jumpScrollerTo(scroller, scroller.scrollHeight);
-        const bottomCommitCount = instrument.commitCount;
+        const bottomCommitCount = scrollPhaseInstrument.commitCount;
         const bottomMountedTurns = document.querySelectorAll('[data-trace-turn-id]').length;
         // Window swap 2: bottom window -> top window, fresh rows plus rows the
         // list already measured before the first swap.
         await jumpScrollerTo(scroller, 0);
         const settledTurns = document.querySelectorAll('[data-trace-turn-id]').length;
         if (!cancelled) {
-          publishJourneyResult('long-session-scroll', instrument, {
+          publishJourneyResult('long-session-scroll', scrollPhaseInstrument, {
             turnCount: TURN_COUNT,
             mountedTurns: Math.max(bottomMountedTurns, settledTurns),
             entryCommitCount,

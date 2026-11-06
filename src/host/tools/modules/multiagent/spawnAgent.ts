@@ -30,6 +30,7 @@ import { withMultiagentMeta } from './resultMeta';
 import { getBackgroundSubagentRegistry } from '../../../agent/backgroundSubagentRegistry';
 import { withBackgroundDurableAgentId } from '../../../agent/backgroundSubagentLiveProgress';
 import { scheduleBackgroundSubagentIdleWake } from '../../../agent/backgroundSubagentIdleWake';
+import { beginWorkDirectoryRun, endWorkDirectoryRun } from '../../../agent/runtime/workDirectoryMaterializer';
 import type { SubagentResult } from '../../../agent/subagentExecutorTypes';
 import {
   AgentFailureCode,
@@ -82,6 +83,55 @@ function normalizeSpawnArgs(args: Record<string, unknown>): Record<string, unkno
   }
 
   return normalized;
+}
+
+/**
+ * 后台 lane 的执行体（ADR-025 A1）：独立 AbortController、事件带 durable agentId、
+ * 拓扑标 async_agent（bash 走 ask+forceConfirm）。执行结果重投影回 SubagentResult——
+ * N-BGSPAWN-DURABLE 顺手修的 cost/tokensUsed 与 N-SUBAGENT-ZEROTOOLS 的缺失清单
+ * 都在这一步捞回，完成通知 + collect_agent 才看得见。
+ */
+async function runBackgroundSubagent(
+  normalizedArgs: Record<string, unknown>,
+  executionContext: SubagentExecutionContext,
+  bgController: AbortController,
+  agentId: string,
+): Promise<SubagentResult> {
+  const bgResult = await executeSpawnAgent(normalizedArgs, {
+    ...executionContext,
+    events: withBackgroundDurableAgentId(executionContext.events, agentId),
+    abortSignal: bgController.signal,
+    // 后台子 agent 标 async_agent（2026-07-13 拍板）：bash 走 ask+forceConfirm
+    executionTopology: 'async_agent',
+  });
+  const failureCode = bgResult.success ? undefined : inferAgentFailureCode({
+    failureCode: bgResult.metadata?.failureCode,
+    error: bgResult.error,
+    defaultCode: AgentFailureCode.ModelError,
+  });
+  // N-SUBAGENT-ZEROTOOLS 返修 Important 2：service 层放在 metadata 里的缺失清单
+  // 在这次重投影里捞回 SubagentResult，否则后台路径（完成通知 + collect_agent）
+  // 全程看不到「声明的工具未全部装配」的事实。
+  const missingTools = Array.isArray(bgResult.metadata?.missingTools)
+    ? bgResult.metadata.missingTools.filter((name): name is string => typeof name === 'string')
+    : undefined;
+  // N-BGSPAWN-DURABLE 顺手修：metadata 里的 cost/tokensUsed 之前被这步重投影丢掉，
+  // 后台子代理「花了多少钱」连内存里都看不到（完成通知 stats.cost 恒 undefined）。
+  const cost = typeof bgResult.metadata?.cost === 'number' ? bgResult.metadata.cost : undefined;
+  const tokensUsed = typeof bgResult.metadata?.tokensUsed === 'number'
+    ? bgResult.metadata.tokensUsed
+    : undefined;
+  return {
+    success: bgResult.success,
+    output: bgResult.success && typeof bgResult.output === 'string' ? bgResult.output : '',
+    error: bgResult.success ? undefined : bgResult.error,
+    toolsUsed: [],
+    iterations: 0,
+    ...(cost !== undefined ? { cost } : {}),
+    ...(tokensUsed !== undefined ? { tokensUsed } : {}),
+    ...(failureCode ? { failureCode } : {}),
+    ...(missingTools && missingTools.length > 0 ? { missingTools } : {}),
+  };
 }
 
 /**
@@ -189,42 +239,18 @@ async function runSpawnAgent(
       ? normalizedArgs.task.trim()
       : (backgroundRole ?? '后台任务');
     const declaredOutputs = getDeclaredOutputsForRole(backgroundRole);
+    // N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO：后台 lane 不走 AgentLoop.run，工作目录的
+    // 占用计数（workDirectoryMaterializer）此前只由前台 run 持有——前台一收线，懒开的
+    // 会话目录就被回收，后台子代理随后的 Bash spawn cwd ENOENT，批准后的「任务继续」
+    // 必然失败。后台 lane 活多久，目录就占多久。
+    const bgWorkDir = ctx.workingDir;
+    beginWorkDirectoryRun(bgWorkDir);
     const agentId = getBackgroundSubagentRegistry().spawn(async (): Promise<SubagentResult> => {
-      const bgResult = await executeSpawnAgent(normalizedArgs, {
-        ...executionContext,
-        events: withBackgroundDurableAgentId(executionContext.events, agentId),
-        abortSignal: bgController.signal,
-        // 后台子 agent 标 async_agent（2026-07-13 拍板）：bash 走 ask+forceConfirm
-        executionTopology: 'async_agent',
-      });
-      const failureCode = bgResult.success ? undefined : inferAgentFailureCode({
-        failureCode: bgResult.metadata?.failureCode,
-        error: bgResult.error,
-        defaultCode: AgentFailureCode.ModelError,
-      });
-      // N-SUBAGENT-ZEROTOOLS 返修 Important 2：service 层放在 metadata 里的缺失清单
-      // 在这次重投影里捞回 SubagentResult，否则后台路径（完成通知 + collect_agent）
-      // 全程看不到「声明的工具未全部装配」的事实。
-      const missingTools = Array.isArray(bgResult.metadata?.missingTools)
-        ? bgResult.metadata.missingTools.filter((name): name is string => typeof name === 'string')
-        : undefined;
-      // N-BGSPAWN-DURABLE 顺手修：metadata 里的 cost/tokensUsed 之前被这步重投影丢掉，
-      // 后台子代理「花了多少钱」连内存里都看不到（完成通知 stats.cost 恒 undefined）。
-      const cost = typeof bgResult.metadata?.cost === 'number' ? bgResult.metadata.cost : undefined;
-      const tokensUsed = typeof bgResult.metadata?.tokensUsed === 'number'
-        ? bgResult.metadata.tokensUsed
-        : undefined;
-      return {
-        success: bgResult.success,
-        output: bgResult.success && typeof bgResult.output === 'string' ? bgResult.output : '',
-        error: bgResult.success ? undefined : bgResult.error,
-        toolsUsed: [],
-        iterations: 0,
-        ...(cost !== undefined ? { cost } : {}),
-        ...(tokensUsed !== undefined ? { tokensUsed } : {}),
-        ...(failureCode ? { failureCode } : {}),
-        ...(missingTools && missingTools.length > 0 ? { missingTools } : {}),
-      };
+      try {
+        return await runBackgroundSubagent(normalizedArgs, executionContext, bgController, agentId);
+      } finally {
+        endWorkDirectoryRun(bgWorkDir);
+      }
     }, {
       title: backgroundTitle,
       completionKind: backgroundRole === 'awaiter' ? 'shell' : 'internal',

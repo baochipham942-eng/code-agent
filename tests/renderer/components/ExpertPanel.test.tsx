@@ -374,6 +374,23 @@ describe('ExpertPanel', () => {
     expect(goToExpertThread).toHaveBeenCalledWith('牧之', { title: '牧之' });
   });
 
+  it('内置专家只在 locallyModified 为 true 时显示一次修改提示', async () => {
+    render(<RoleDetailPage roleId="牧之" />);
+    await waitFor(() => expect(screen.getByTestId('role-detail-basic-tab')).toBeTruthy());
+    expect(screen.queryByTestId('role-locally-modified')).toBeNull();
+    expect(screen.queryByText('你已改过这个专家，后续更新不会覆盖你的改动。')).toBeNull();
+
+    cleanup();
+    invokeDomain.mockImplementation((_domain: string, action: string) => {
+      if (action === 'detail') return Promise.resolve(makeRoleDetail({ locallyModified: true }));
+      if (action === 'listBoundCronJobs' || action === 'listBindings') return Promise.resolve([]);
+      return Promise.resolve(undefined);
+    });
+    render(<RoleDetailPage roleId="牧之" />);
+    await waitFor(() => expect(screen.getByTestId('role-locally-modified')).toBeTruthy());
+    expect(screen.getAllByText('你已改过这个专家，后续更新不会覆盖你的改动。')).toHaveLength(1);
+  });
+
   it('点「详情」请求打开独立全屏详情页', async () => {
     listRoles.mockResolvedValue([makeEntry()]);
     render(<ExpertPanel />);

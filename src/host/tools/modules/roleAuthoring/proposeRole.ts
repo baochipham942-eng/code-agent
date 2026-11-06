@@ -181,6 +181,7 @@ class ProposeRoleHandler implements ToolHandler<Record<string, unknown>, string>
           category: prepared.draft.category,
           tools: prepared.draft.tools,
           directCreated: true,
+          endRunWithoutAssistant: true,
         },
       };
     }

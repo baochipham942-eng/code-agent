@@ -140,6 +140,7 @@ describe('propose_role tool', () => {
     expect(result.ok && result.output).not.toContain('已创建');
     expect(result.ok && result.meta).toMatchObject({
       directCreated: true,
+      endRunWithoutAssistant: true,
       sessionId: 'sess-1',
       roleId: '日历助理',
       canDo: '每天盯日程，提醒冲突和临近的会议',

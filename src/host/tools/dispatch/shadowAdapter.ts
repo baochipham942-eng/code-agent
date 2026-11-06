@@ -142,6 +142,7 @@ export function buildProtocolContext(input: ProtocolContextInput): ProtocolToolC
     foregroundToolFace: legacy?.foregroundToolFace === true ? true : undefined,
     skillDiscoveryService: legacy?.skillDiscoveryService,
     telemetryCollector: legacy?.telemetryCollector,
+    neoTag: input.legacyCtx.neoTag,
     // PTC 再入口原样透传：由 ToolExecutor 绑定，adapter 只搬运不改写
     // （漏搬 = PTC 通道在真实调用路径上恒关闭，而单测里注入 ctx 又永远是通的）。
     executeTool: legacy?.executeTool as ProtocolToolContext['executeTool'],

@@ -447,7 +447,7 @@ export const SessionReplaySummaryDialog: React.FC<SessionReplaySummaryDialogProp
                             {formatDateTime(event.timestamp, language)}
                           </span>
                         </div>
-                        <div className="mt-0.5 truncate text-zinc-500">{formatTaskEventDetail(event)}</div>
+                        <div className="mt-0.5 truncate text-zinc-500">{formatTaskEventDetail(event, language)}</div>
                       </div>
                     ))}
                     {focusedBackgroundTask.events.length > 5 && (

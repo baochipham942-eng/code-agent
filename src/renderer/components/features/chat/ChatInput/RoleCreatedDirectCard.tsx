@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, MessageSquarePlus } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { startEditRoleChat } from '../../../../utils/startEditRoleChat';
 import { RoleDeleteControl } from '../../expert/RoleDeleteControl';
@@ -40,7 +40,6 @@ export const RoleCreatedDirectCard: React.FC<{ role: RoleCreatedDirectSummary }>
               onClick={() => void startEditRoleChat(role.roleId)}
               className="flex items-center gap-1 rounded px-2 py-1 text-xs text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
             >
-              <MessageSquarePlus className="h-3.5 w-3.5" aria-hidden="true" />
               {text.editCreated}
             </button>
             <RoleDeleteControl

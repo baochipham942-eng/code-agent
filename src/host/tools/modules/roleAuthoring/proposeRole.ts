@@ -144,11 +144,11 @@ class ProposeRoleHandler implements ToolHandler<Record<string, unknown>, string>
     if (direct) {
       const prepared = await prepareRoleDraft(draftInput);
       if (!prepared.draft || prepared.agentMd === undefined) {
-        return { ok: false, error: prepared.reason ?? '草稿入队失败', code: 'DRAFT_REJECTED' };
+        return { ok: false, error: prepared.reason ?? 'Role draft validation failed', code: 'DRAFT_REJECTED' };
       }
       const installed = await installRoleDraft(prepared.draft, prepared.agentMd);
       if (!installed.success) {
-        return { ok: false, error: installed.error ?? '角色安装失败', code: 'DRAFT_REJECTED' };
+        return { ok: false, error: installed.error ?? 'Role installation failed', code: 'DRAFT_REJECTED' };
       }
 
       const summary = buildRoleCreatedSummary(prepared.draft);
@@ -185,7 +185,7 @@ class ProposeRoleHandler implements ToolHandler<Record<string, unknown>, string>
 
     if (!draft) {
       // 入队被拒（重名/非法）——把原因回给模型，让它换名或调整后重试
-      return { ok: false, error: reason ?? '草稿入队失败', code: 'DRAFT_REJECTED' };
+      return { ok: false, error: reason ?? 'Role draft enqueue failed', code: 'DRAFT_REJECTED' };
     }
 
     // 发射事件 → 聊天渲染确认卡（RoleDraftNotifications 订阅 role_draft_pending）

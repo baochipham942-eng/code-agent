@@ -17,10 +17,10 @@ import {
 } from '../hooks/useWorkbenchCapabilities';
 import type { MCPServerStateSummary } from '../hooks/useMcpServerStates';
 
-export type WorkbenchCapabilityHealth = 'healthy' | 'degraded' | 'error' | 'inactive';
-export type WorkbenchCapabilityInstallState = 'installed' | 'missing' | 'not_applicable';
-export type WorkbenchCapabilityMountState = 'mounted' | 'unmounted' | 'not_applicable';
-export type WorkbenchCapabilityConnectionState =
+type WorkbenchCapabilityHealth = 'healthy' | 'degraded' | 'error' | 'inactive';
+type WorkbenchCapabilityInstallState = 'installed' | 'missing' | 'not_applicable';
+type WorkbenchCapabilityMountState = 'mounted' | 'unmounted' | 'not_applicable';
+type WorkbenchCapabilityConnectionState =
   | 'connected'
   | 'connecting'
   | 'disconnected'
@@ -30,7 +30,7 @@ export type WorkbenchCapabilityConnectionState =
 
 export type WorkbenchCapabilityBlockedState = Pick<BlockedCapabilityReason, 'code' | 'detail' | 'hint' | 'severity'>;
 
-export interface WorkbenchCapabilityLifecycle {
+interface WorkbenchCapabilityLifecycle {
   installState: WorkbenchCapabilityInstallState;
   mountState: WorkbenchCapabilityMountState;
   connectionState: WorkbenchCapabilityConnectionState;

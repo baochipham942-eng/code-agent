@@ -4,7 +4,7 @@
 
 import type { Message } from '@shared/contract';
 
-export type ContextBucket = 'rules' | 'files' | 'web' | 'other';
+type ContextBucket = 'rules' | 'files' | 'web' | 'other';
 
 export interface BucketSummary {
   rules: number;

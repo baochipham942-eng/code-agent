@@ -11,7 +11,7 @@ export interface SessionAssetsNavigationTarget {
   previewItemId?: string | null;
 }
 
-export function buildWorkspacePreviewArtifactItemId(
+function buildWorkspacePreviewArtifactItemId(
   target?: SessionAssetsNavigationTarget | null,
 ): string | null {
   const previewItemId = target?.previewItemId?.trim();

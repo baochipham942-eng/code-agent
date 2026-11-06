@@ -4,7 +4,7 @@ export interface SidebarGroupExpansionSignals {
   unfinishedCount: number;
 }
 
-export type SidebarGroupExpansionPhase = 'expanded' | 'collapsing' | 'collapsed' | 'forced-expanded';
+type SidebarGroupExpansionPhase = 'expanded' | 'collapsing' | 'collapsed' | 'forced-expanded';
 
 export interface SidebarGroupExpansionView {
   isVisibleExpanded: boolean;

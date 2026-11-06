@@ -11,7 +11,7 @@ import {
   isMcpAuthenticationFailure,
 } from './mcpRecovery';
 
-export type WorkbenchQuickActionKind =
+type WorkbenchQuickActionKind =
   | 'mount_skill'
   | 'open_skill_settings'
   | 'retry_mcp'

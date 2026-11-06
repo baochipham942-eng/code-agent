@@ -18,7 +18,7 @@ interface SavedProviderIconAsset {
 
 const resolvedIconCache = new Map<string, string>();
 
-export function getProviderIconImageSource(icon?: string): string | undefined {
+function getProviderIconImageSource(icon?: string): string | undefined {
   const parsed = parseProviderIconImageDataUrl(icon);
   if (parsed) return parsed.normalized;
   if (icon && isProviderIconAssetRef(icon)) return resolvedIconCache.get(icon);

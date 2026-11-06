@@ -1,6 +1,6 @@
 import type { SessionReplayEvidence } from './sessionReplayEvidence';
 
-export type EvidenceToastTone = 'success' | 'warning' | 'error';
+type EvidenceToastTone = 'success' | 'warning' | 'error';
 
 export interface OpenSessionReplayEvidenceDeps {
   openSessionReplay: () => Promise<void> | void;

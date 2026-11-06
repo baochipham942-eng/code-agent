@@ -22,7 +22,7 @@ import { useSessionStore } from '../stores/sessionStore';
  * 命中 skillInvocationResolver 的 DIRECT_SLASH_PATTERN，强制进入 edit-role skill 上下文，
  * roleId 作为 args 传给 skill（不依赖模型从自然语言里猜该用哪个 skill）。
  */
-export function buildEditRoleSeed(roleId: string): string {
+function buildEditRoleSeed(roleId: string): string {
   return `/edit-role ${roleId}`;
 }
 

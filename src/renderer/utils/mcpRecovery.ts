@@ -47,7 +47,7 @@ export function isMcpAuthenticationFailure(...sources: unknown[]): boolean {
   return MCP_AUTH_FAILURE_PATTERNS.some((pattern) => pattern.test(text));
 }
 
-export function isTavilyMcpServer(source: Pick<McpRecoverySource, 'id' | 'label'>): boolean {
+function isTavilyMcpServer(source: Pick<McpRecoverySource, 'id' | 'label'>): boolean {
   return /\btavily\b/i.test([source.id, source.label].filter(Boolean).join(' '));
 }
 

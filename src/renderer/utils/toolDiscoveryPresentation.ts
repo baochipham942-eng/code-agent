@@ -1,6 +1,6 @@
 import type { ToolCapabilityView } from '../types/runWorkbench';
 
-export type ToolDiscoveryGroupKey =
+type ToolDiscoveryGroupKey =
   | 'callable'
   | 'needsAuthorization'
   | 'blocked'

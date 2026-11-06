@@ -33,7 +33,7 @@ function redactSurfaceResultText(value: string | undefined): string | undefined 
   return value === undefined ? undefined : String(redactSurfaceExecutionValue(value));
 }
 
-export function formatToolResultForBrowserComputerExport(call: ToolCall): string | undefined {
+function formatToolResultForBrowserComputerExport(call: ToolCall): string | undefined {
   if (!isBrowserComputerToolName(call.name) || !call.result) {
     return undefined;
   }
@@ -66,7 +66,7 @@ function buildBrowserComputerExportMetadata(
   });
 }
 
-export function sanitizeBrowserComputerToolCallForExport(
+function sanitizeBrowserComputerToolCallForExport(
   call: ToolCall,
   resultMetadata?: Record<string, unknown>,
 ): ToolCall {

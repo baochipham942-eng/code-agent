@@ -29,7 +29,7 @@ export type StreamingPerformanceTiming =
   | 'stream.code.preview_ms'
   | 'stream.code.highlight_ms';
 
-export interface StreamingPerformanceTimingSummary {
+interface StreamingPerformanceTimingSummary {
   count: number;
   totalMs: number;
   meanMs: number;

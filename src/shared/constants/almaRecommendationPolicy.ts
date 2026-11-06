@@ -15,9 +15,9 @@ type AlmaRecommendationPolicyTier =
   | 'not_default'
   | 'unsupported';
 
-export type AlmaRecommendationSubjectKind = 'mcp' | 'skill' | 'plugin';
+type AlmaRecommendationSubjectKind = 'mcp' | 'skill' | 'plugin';
 
-export type AlmaRecommendationAction =
+type AlmaRecommendationAction =
   | 'show_in_default_surface'
   | 'show_when_relevant'
   | 'reference_only'
@@ -37,7 +37,7 @@ export interface AlmaRecommendationPolicy {
   coveredBy?: string;
 }
 
-export const ALMA_RECOMMENDATION_TIER_LABELS: Record<AlmaRecommendationPolicyTier, string> = {
+const ALMA_RECOMMENDATION_TIER_LABELS: Record<AlmaRecommendationPolicyTier, string> = {
   default_visible: '默认展示',
   conditional: '条件推荐',
   not_default: '暂不默认',

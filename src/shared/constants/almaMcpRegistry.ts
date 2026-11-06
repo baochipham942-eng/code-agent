@@ -12,7 +12,7 @@ export interface AlmaMcpRegistryPayload {
   servers?: AlmaMcpRegistryServer[];
 }
 
-export interface AlmaMcpRegistryServer {
+interface AlmaMcpRegistryServer {
   id?: string;
   name?: string;
   description?: string;

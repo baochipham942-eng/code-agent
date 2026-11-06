@@ -8,7 +8,7 @@
 
 export const ALMA_PLUGIN_REGISTRY_REVIEWED_AT = '2026-06-13';
 
-export type AlmaPluginKind = 'ui' | 'theme' | 'provider' | 'command';
+type AlmaPluginKind = 'ui' | 'theme' | 'provider' | 'command';
 
 export type AlmaPluginRecommendationTier =
   | 'default_visible'
@@ -31,7 +31,7 @@ export interface AlmaPluginRegistryPayload {
   plugins?: AlmaPluginRegistryItem[];
 }
 
-export interface AlmaPluginRegistryItem {
+interface AlmaPluginRegistryItem {
   id?: string;
   name?: string;
   type?: string | string[];
@@ -50,13 +50,13 @@ export interface AlmaPluginSlashCommandCandidate {
   commands: string[];
 }
 
-export type AlmaPluginAdapterSurface =
+type AlmaPluginAdapterSurface =
   | 'status_bar'
   | 'theme'
   | 'provider'
   | 'slash_command';
 
-export type AlmaPluginInstallability =
+type AlmaPluginInstallability =
   | 'reference_only'
   | 'managed_ui_asset'
   | 'managed_theme_asset'

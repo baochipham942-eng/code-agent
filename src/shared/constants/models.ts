@@ -125,7 +125,7 @@ export const PROVIDER_MODELS_MAP: Record<string, ProviderInfo> = Object.fromEntr
   PROVIDER_MODELS.map((p) => [p.id, p])
 );
 
-export const MODEL_LABELS: Record<string, string> = Object.fromEntries(
+const MODEL_LABELS: Record<string, string> = Object.fromEntries(
   PROVIDER_MODELS.flatMap((provider) =>
     provider.models.map((model) => [model.id, model.label] as const)
   )
@@ -339,53 +339,8 @@ export const MODEL_ABBREV: Record<string, string> = {
   'claude-opus-4-20250514': 'opus-4',
 };
 
-export function getModelAbbrev(modelId: string): string {
-  return MODEL_ABBREV[modelId] ?? modelId.slice(0, 12);
-}
-
 /** 智谱视觉模型（支持 base64）。glm-4.1v-thinking-flash 是免费档，带推理链。 */
 export const ZHIPU_VISION_MODEL = 'glm-4.1v-thinking-flash' as const;
-
-/**
- * 已知支持视觉的 model id 列表（文档用，运行时仍以 model-catalog.json 的
- * `capabilities: ['vision', ...]` 为权威标识，通过 ModelRouter.getModelInfo
- * 的 supportsVision 标志检测）。
- *
- * 用户分发场景：OCR 走 macOS Vision Framework（vision-ocr binary，零配置）。
- * 复合视觉理解（看图说话/截图分析）则需要用户配置以下任一支持视觉的模型——
- * 推荐配置 1 个即可，咱们走 getModelForCapability('vision') 路由自动选。
- */
-export const VISION_CAPABLE_MODELS = [
-  // OpenAI
-  'gpt-4o',
-  'gpt-4o-mini',
-  'gpt-4-turbo',
-  'gpt-5',
-  // Anthropic
-  'claude-sonnet-4-6',
-  'claude-opus-4-7',
-  'claude-3-5-sonnet-20241022',
-  // Google
-  'gemini-2.5-pro',
-  'gemini-2.5-flash',
-  // 智谱
-  'glm-4.1v-thinking-flash',
-  'glm-4.6v',
-  // 小米 MiMo
-  'mimo-vl-7b',
-  'mimo-v2.5-omni',
-  // 阿里通义 Qwen
-  'qwen-vl-max',
-  'qwen-vl-plus',
-  'qwen2.5-vl-72b-instruct',
-  // 字节豆包
-  'doubao-vision-pro-32k',
-  'doubao-vision-lite-32k',
-  // Moonshot Kimi
-  'moonshot-v1-128k-vision-preview',
-  // OpenRouter routes (兜底)
-  'google/gemini-2.0-flash-exp:free',
-] as const;
 
 /**
  * visual_edit 工具专用模型配置 — 可被环境变量 override。
@@ -398,43 +353,6 @@ export const VISUAL_EDIT_MODEL_VISION = ZHIPU_VISION_MODEL;
 
 /** Mermaid 在线渲染 API */
 export const MERMAID_INK_API = 'https://mermaid.ink';
-
-/**
- * Model ID → tokenizer family mapping.
- * GPT-family models (OpenAI, Claude via cl100k approximation, etc.) all use
- * the same BPE vocabulary in gpt-tokenizer.  Extend this map when new
- * tokenizer families are added.
- */
-export const TOKENIZER_MAP: Record<string, 'cl100k_base' | 'o200k_base'> = {
-  // OpenAI GPT-4 / GPT-3.5 family
-  'gpt-4': 'cl100k_base',
-  'gpt-4-turbo': 'cl100k_base',
-  'gpt-4o': 'o200k_base',
-  'gpt-3.5-turbo': 'cl100k_base',
-  // Claude — approximated with cl100k (closest public BPE)
-  'claude-3-5-sonnet-20241022': 'cl100k_base',
-  'claude-sonnet-4-6': 'cl100k_base',
-  // DeepSeek — cl100k approximation
-  'deepseek-flash': 'cl100k_base',
-  'deepseek-v4-flash': 'cl100k_base',
-  'deepseek-v4-pro': 'cl100k_base',
-  'deepseek-chat': 'cl100k_base',
-  'deepseek-reasoner': 'cl100k_base',
-  // Kimi / Moonshot — cl100k approximation
-  'kimi-k2.6': 'cl100k_base',
-  'kimi-k2.5': 'cl100k_base',
-  'moonshot-v1-8k': 'cl100k_base',
-  'moonshot-v1-32k': 'cl100k_base',
-  'moonshot-v1-128k': 'cl100k_base',
-  // 小米 MiMo — cl100k approximation（小米未公开 tokenizer，沿用通用近似）
-  'mimo-v2.5-pro': 'cl100k_base',
-  'mimo-v2.5': 'cl100k_base',
-  'mimo-v2-pro': 'cl100k_base',
-  'mimo-v2-omni': 'cl100k_base',
-} as const;
-
-/** Default tokenizer used when model is not in TOKENIZER_MAP */
-export const DEFAULT_TOKENIZER = 'cl100k_base' as const;
 
 // ============================================================================
 // Step 7 PR 1: Model domain capability — 单一权威源 (constants 路线)
@@ -455,32 +373,10 @@ export const DEFAULT_TOKENIZER = 'cl100k_base' as const;
 export type ModelDomainCapability = 'tool' | 'vision' | 'reasoning' | 'long-context' | 'search';
 
 /** `'long-context'` 判定阈值 — context window 超过该值即视为长上下文。 */
-export const LONG_CONTEXT_THRESHOLD = 100_000;
+const LONG_CONTEXT_THRESHOLD = 100_000;
 
 function modelIdLooksSearchCapable(modelId: string): boolean {
   return /sonar|search|perplexity/i.test(modelId);
-}
-
-/**
- * 查询 model 的领域能力标签集合。
- *
- * 数据合成：
- * - `MODEL_FEATURES[modelId]` 的 `'tool'/'vision'/'reasoning'` 字面量直接采用
- * - `'long-context'` 按 `getContextWindow(modelId) > LONG_CONTEXT_THRESHOLD` 派生
- * - `'search'` 按搜索特化 model id 派生
- *
- * 未知 model id 返回空数组（不抛错），由调用方决定 fallback。
- */
-export function getModelCapabilities(modelId: string): ModelDomainCapability[] {
-  const features = MODEL_FEATURES[modelId] ?? [];
-  const caps: ModelDomainCapability[] = [...features];
-  if (getContextWindow(modelId) > LONG_CONTEXT_THRESHOLD) {
-    caps.push('long-context');
-  }
-  if (modelIdLooksSearchCapable(modelId)) {
-    caps.push('search');
-  }
-  return caps;
 }
 
 /**

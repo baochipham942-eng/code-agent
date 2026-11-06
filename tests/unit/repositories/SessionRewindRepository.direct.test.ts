@@ -18,11 +18,15 @@ import Database from 'better-sqlite3';
 import type BetterSqlite3 from 'better-sqlite3';
 
 import { applyTestSessionSchema } from '../../utils/applyTestSessionSchema';
+import type { ConversationMessageSnapshot } from '../../../src/shared/contract/conversationBranch';
 import { applyConversationBranchSchema } from '../../../src/host/services/core/database/schemaConversationBranch';
 import { ConversationBranchRepository } from '../../../src/host/services/core/repositories/ConversationBranchRepository';
 import { SessionRewindRepository } from '../../../src/host/services/core/repositories/SessionRewindRepository';
 
 type SQLiteRow = Record<string, unknown>;
+
+/** Derived from the contract so the ledger append path stays type-checked. */
+type MessageRole = ConversationMessageSnapshot['role'];
 
 const OWNER = 'owner-1';
 
@@ -62,7 +66,7 @@ function seedSession(
 function seedMessages(
   db: BetterSqlite3.Database,
   sessionId: string,
-  rows: ReadonlyArray<readonly [id: string, role: string, content: string, timestamp: number]>,
+  rows: ReadonlyArray<readonly [id: string, role: MessageRole, content: string, timestamp: number]>,
 ): void {
   const insert = db.prepare(`
     INSERT INTO messages (id, session_id, role, content, timestamp, is_meta, visibility)
@@ -76,7 +80,7 @@ function appendToLedger(
   ledger: ConversationBranchRepository,
   sessionId: string,
   boundary: { ownerUserId: string | null; projectId: string | null },
-  rows: ReadonlyArray<readonly [id: string, role: string, content: string, timestamp: number]>,
+  rows: ReadonlyArray<readonly [id: string, role: MessageRole, content: string, timestamp: number]>,
 ): void {
   for (const [id, role, content, timestamp] of rows) {
     ledger.appendMessage({

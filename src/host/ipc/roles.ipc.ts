@@ -51,6 +51,7 @@ import {
   confirmRoleDraft,
   rejectRoleDraft,
   getFirstWakeSnapshot,
+  retryFirstWake,
   skipFirstWake,
   isSafeRoleId,
   trashUserRole,
@@ -820,6 +821,18 @@ const rolesHandlers: RawDomainRouteHandlers<RolesDomainRequest, void> = {
       return { success: false, error: { code: 'FIRST_WAKE_SKIP_FAILED', message: 'skip failed' } };
     }
     return { success: true, data: { success: true } };
+  },
+  // --- 首次醒来重看（failed 终态复位 pending 重新排队；其余终态拒绝） ---
+  firstWakeRetry: async (_ctx, payload) => {
+    const { roleId } = (payload ?? {}) as RoleIdPayload;
+    if (!roleId || !isSafeRoleId(roleId)) {
+      return { success: false, error: { code: 'INVALID_ARGS', message: 'a safe roleId is required' } };
+    }
+    const result = await retryFirstWake(roleId);
+    if (!result.retried) {
+      return { success: false, error: { code: 'FIRST_WAKE_NOT_RETRYABLE', message: result.reason ?? 'not retryable' } };
+    }
+    return { success: true, data: { retried: true } };
   },
 };
 

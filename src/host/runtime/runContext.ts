@@ -7,6 +7,7 @@ import type { WorkspaceScope } from '../../shared/contract/project';
 import type { GoalRecoverySnapshot } from '../agent/goalModeController';
 import { resolveBackgroundWorkspaceAuthority } from './workspaceAuthority';
 import {
+  isNonexistentPathCode,
   isPathWithinRoot,
   resolveWorkspacePath,
 } from './workspaceScope';
@@ -84,21 +85,6 @@ function requireIdentifier(value: string, label: string): string {
     throw new Error(`${label} must be a non-empty string`);
   }
   return normalized;
-}
-
-/** Single path-component limit (bytes) on macOS/Linux; a longer name cannot exist on disk. */
-const NAME_MAX_BYTES = 255;
-
-/**
- * ENAMETOOLONG proves "does not exist" only when the failing component itself
- * exceeds NAME_MAX. A whole path over PATH_MAX says nothing about deeper
- * entries (a real tree plus symlinks can live there), so that stays fail-closed.
- */
-function isNonexistentPathCode(code: string | undefined, component?: string): boolean {
-  if (code === 'ENOENT' || code === 'ENOTDIR') return true;
-  return code === 'ENAMETOOLONG'
-    && component !== undefined
-    && Buffer.byteLength(component) > NAME_MAX_BYTES;
 }
 
 /** Resolve symlink ancestors while preserving not-yet-created suffixes. */

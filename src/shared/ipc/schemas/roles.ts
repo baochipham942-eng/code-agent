@@ -18,6 +18,7 @@ const RolesDomainRequestSchema = z.object({
     'detail',
     'exportMemories',
     'firstWakeGet',
+    'firstWakeRetry',
     'firstWakeSkip',
     'list',
     'listBindings',

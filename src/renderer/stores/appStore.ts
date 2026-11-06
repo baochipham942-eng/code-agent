@@ -165,6 +165,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
   // 开发者模式默认关闭
   developerMode: false,
 
+  // 首次醒来卡片可见 roleId（null = 不可见）
+  firstWakeCardRoleId: null,
+
   // Initial Chat State (messages/todos/currentSessionId 已迁移到 sessionStore)
   isProcessing: false,
   processingSessionIds: new Set<string>(),
@@ -384,6 +387,16 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setCloudUIStrings: (strings) => set({ cloudUIStrings: strings }),
   setDisclosureLevel: (level) => set({ disclosureLevel: level }),
   setDeveloperMode: (enabled) => set({ developerMode: enabled }),
+  setFirstWakeCardRoleId: (roleId, previous) => {
+    if (roleId !== null) {
+      set({ firstWakeCardRoleId: roleId });
+      return;
+    }
+    // 清空只清自己那份：并发两张卡（banner + composer 位）不互相抹掉
+    const current = get().firstWakeCardRoleId;
+    if (previous && current !== previous) return;
+    set({ firstWakeCardRoleId: null });
+  },
 
 
   setIsProcessing: (processing) => set({ isProcessing: processing }),

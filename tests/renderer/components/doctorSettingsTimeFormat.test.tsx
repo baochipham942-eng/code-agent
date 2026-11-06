@@ -13,13 +13,14 @@ import { DoctorSettings } from '../../../src/renderer/components/features/settin
 import { useAppStore } from '../../../src/renderer/stores/appStore';
 import { useDoctorStore } from '../../../src/renderer/stores/doctorStore';
 import { useBundledCapabilityStore } from '../../../src/renderer/stores/bundledCapabilityStore';
+import type { DoctorReport } from '../../../src/renderer/types/doctor';
 
 // 本地时区构造（不跨时区换算），任何 TZ 下时分字段都是构造值本身。
 const REPORT_AT = new Date(2026, 10, 9, 16, 5, 0).getTime(); // 2026-11-09 16:05
 const ZH = '2026/11/09 16:05';
 const EN = '11/9/2026, 4:05:00 PM';
 
-const REPORT = {
+const REPORT: DoctorReport = {
   timestamp: REPORT_AT,
   durationMs: 1234,
   items: [

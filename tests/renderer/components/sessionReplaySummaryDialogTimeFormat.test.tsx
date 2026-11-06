@@ -10,6 +10,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 import { SessionReplaySummaryDialog } from '../../../src/renderer/components/features/sidebar/SessionReplaySummaryDialog';
+import type { Task } from '@shared/contract/backgroundTask';
 
 // renderToStaticMarkup（服务端渲染路径）下 zustand 的 getServerSnapshot 返回初始
 // state，useAppStore.setState 影响不到静态渲染——改 mock useI18n 定桩 language
@@ -28,7 +29,7 @@ const EVENT_AT = new Date(2026, 10, 9, 16, 5, 0).getTime(); // 2026-11-09 16:05
 const ZH = '2026/11/09 16:05';
 const EN = '11/9/2026, 4:05:00 PM';
 
-const BACKGROUND_TASK = {
+const BACKGROUND_TASK: Task = {
   id: 'task-1',
   sessionId: 'session-1',
   source: 'agent',

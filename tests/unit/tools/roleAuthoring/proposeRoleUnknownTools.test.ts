@@ -19,6 +19,17 @@ vi.mock('../../../../src/host/services/infra/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: loaderErrorSpy, debug: vi.fn() }),
 }));
 
+vi.mock('../../../../src/host/services/infra/sessionManager', () => ({
+  getSessionManager: () => ({
+    getMessages: async () => [{ id: 'u1', role: 'user', content: '帮我想想要不要建个日程助理', timestamp: 1 }],
+    getSession: async () => ({ origin: undefined }),
+  }),
+}));
+
+vi.mock('../../../../src/host/permissions/modes', () => ({
+  getPermissionModeManager: () => ({ isUnattendedSession: () => false }),
+}));
+
 import { proposeRoleModule } from '../../../../src/host/tools/modules/roleAuthoring/proposeRole';
 import { getProtocolRegistry } from '../../../../src/host/tools/protocolRegistry';
 import { getKnownToolNames } from '../../../../src/host/tools/knownToolNames';

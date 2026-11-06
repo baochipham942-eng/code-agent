@@ -40,6 +40,8 @@ export interface RoleDeleteControlProps {
   onDeleted: () => void;
   /** 撤销成功后重载详情 */
   onRestored: () => void;
+  /** 详情页默认在撤销后重开；聊天完成卡留在原位恢复按钮即可。 */
+  openDetailOnRestore?: boolean;
 }
 
 export const RoleDeleteControl: React.FC<RoleDeleteControlProps> = ({
@@ -47,6 +49,7 @@ export const RoleDeleteControl: React.FC<RoleDeleteControlProps> = ({
   displayName,
   onDeleted,
   onRestored,
+  openDetailOnRestore = true,
 }) => {
   const { t } = useI18n();
   const text = t.expert.roleDetail;
@@ -75,7 +78,7 @@ export const RoleDeleteControl: React.FC<RoleDeleteControlProps> = ({
               // 删除成功时 onDeleted 已离开详情页（组件卸载，onRestored 的 loadDetail 是
               // 死回调）：撤销后重新打开详情页 = 「undo reload the detail」，重挂载自带
               // 新数据；用户再关掉它时专家列表也会带着还原后的角色重挂载。
-              useAppStore.getState().openExpertRoleDetail(roleId);
+              if (openDetailOnRestore) useAppStore.getState().openExpertRoleDetail(roleId);
               onRestored();
             } catch (err) {
               // 过期被清 / 同名角色被重建：host 稳定 code 的 message 原样给人看

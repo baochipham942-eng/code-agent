@@ -884,18 +884,27 @@ export class MessageProcessor {
 
     if (isTerminalWakeNoop) return finishHiddenWakeNoop({ ctx: this.ctx, contextAssembly: this.contextAssembly, langfuse, toolResults, thinking: response.thinking });
 
-    // Desktop plan approval is a hard run boundary. The plan tool has already
-    // left plan mode, so allowing another inference here would expose normal
-    // execution tools before the user approves. CLI/testing opts into the
-    // established auto-approval path and continues unchanged.
+    // Some successful host actions own the next visible UI themselves. Direct
+    // role creation renders the created card + first wake, so another model
+    // inference would only add a duplicate "created" announcement. The
+    // tool-authored metadata is not a model argument and ends the run here.
+    const endsWithoutAssistant = toolResults.some((result) => (
+      result.success && result.metadata?.endRunWithoutAssistant === true
+    ));
+
+    // Desktop plan approval is also a hard run boundary. The plan tool has
+    // already left plan mode, so allowing another inference here would expose
+    // normal execution tools before the user approves. CLI/testing opts into
+    // the established auto-approval path and continues unchanged.
     const waitsForPlanApproval = shouldEndRunForPlanApproval(toolResults, this.ctx.autoApprovePlan);
-    if (waitsForPlanApproval) {
+    if (endsWithoutAssistant || waitsForPlanApproval) {
       this.contextAssembly.flushHookMessageBuffer();
       langfuse.endSpan(this.ctx.turn.currentIterationSpanId, {
         type: 'tool_calls',
         toolCount: toolCalls.length,
         successCount: toolResults.filter((result: ToolResult) => result.success).length,
-        waitingForPlanApproval: true,
+        endsWithoutAssistant,
+        waitingForPlanApproval: waitsForPlanApproval,
       });
       this.ctx.telemetryAdapter?.onTurnEnd(
         this.ctx.turn.currentTurnId,
@@ -908,7 +917,9 @@ export class MessageProcessor {
         data: { turnId: this.ctx.turn.currentTurnId },
       });
       this.contextAssembly.updateContextHealth();
-      logger.info('[AgentLoop] Plan proposal is waiting for desktop approval; ending run');
+      logger.info(endsWithoutAssistant
+        ? '[AgentLoop] Tool owns the next visible UI; ending run without assistant follow-up'
+        : '[AgentLoop] Plan proposal is waiting for desktop approval; ending run');
       return 'break';
     }
 

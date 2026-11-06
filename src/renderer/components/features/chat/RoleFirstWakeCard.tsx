@@ -333,8 +333,10 @@ export const RoleFirstWakeCard: React.FC<RoleFirstWakeCardProps> = ({
 /**
  * roleId 优先取 expertThread 标记；首次醒来会话没有该标记（写入会改变路由），
  * roleId 只在 origin.metadata（kind=cron, trigger=first_wake）里，重开会话时靠它找回卡片。
+ * 导出共用：空会话欢迎页（NewSessionWelcome）靠同一判定认出「这条空会话属于哪位专家」，
+ * 不另立第二份判据。
  */
-function resolveBannerRoleId(
+export function resolveBannerRoleId(
   session: { metadata?: unknown; origin?: { kind?: string; metadata?: Record<string, unknown> } } | undefined,
 ): string | undefined {
   if (!session) return undefined;
@@ -347,7 +349,10 @@ function resolveBannerRoleId(
 }
 
 /** 当前会话是某专家的主 thread 时，把同一张卡放在对话顶部。 */
-export const RoleFirstWakeThreadBanner: React.FC = () => {
+export const RoleFirstWakeThreadBanner: React.FC<{
+  /** 空会话欢迎页已承接同一批 wake proposals 时，不在顶部重复渲染。 */
+  suppressWakeProposals?: boolean;
+}> = ({ suppressWakeProposals = false }) => {
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const currentSession = useSessionStore((state) => (
     state.sessions.find((session) => session.id === state.currentSessionId)
@@ -357,7 +362,7 @@ export const RoleFirstWakeThreadBanner: React.FC = () => {
   return (
     <>
       <RoleFirstWakeCard roleId={roleId} framed />
-      <RoleWakeProposalsCard roleId={roleId} framed />
+      {!suppressWakeProposals && <RoleWakeProposalsCard roleId={roleId} framed />}
     </>
   );
 };

@@ -126,21 +126,6 @@ async function holdVisualTurnRunning(
   }));
 }
 
-async function ensureWorkbenchExpandedForVisualFrame(page: Page): Promise<void> {
-  const collapsePanel = page.getByRole('button', { name: '收起面板' }).first();
-  const expandPanel = page.getByRole('button', { name: '展开面板' });
-
-  if (await expandPanel.isVisible().catch(() => false)) {
-    await expandPanel.click();
-  }
-  await expect(collapsePanel).toBeVisible({ timeout: 10_000 });
-  await page.evaluate(() => new Promise<void>((resolve) => {
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-  }));
-  await expect(page.getByText(RUNTIME_COMPOSER_PLACEHOLDER, { exact: true }))
-    .toBeVisible({ timeout: 5_000 });
-}
-
 for (const theme of ['light', 'dark'] as const) {
   test(`危险命令审批卡 · ${theme}`, async ({ page, request }, testInfo) => {
     await openAppWithTheme(page, theme);
@@ -205,9 +190,8 @@ for (const theme of ['light', 'dark'] as const) {
     await waitForStableVisualFrame(page, theme);
 
     await holdVisualTurnRunning(page, request, token, sessionId, turnId);
-    // Linux 基线记录的是右侧专家面板展开态。agent event 到达后显式恢复
-    // 这一布局，等两帧并再次确认 turn 仍在运行。
-    await ensureWorkbenchExpandedForVisualFrame(page);
+    // 11-06 产品口径：专家面板不再自动打开，右栏默认收起。基线记录的就是这个默认态，
+    // 不再为截图强行展开右栏（展开后只剩一张空的视图启动页，反而不是用户会看到的画面）。
     // 基线保留成员条的文本与布局，只通过 avatarRegions mask 遮住动态头像。
     await expect(sessionMemberBar).toBeVisible({ timeout: 5_000 });
 

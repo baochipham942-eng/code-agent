@@ -82,6 +82,10 @@ chat: {
   welcomeSubtitle: '选一个示例，或者直接输入你想完成的事。',
   resumedEmptyTitle: '继续上次的会话：{title}',
   resumedEmptySubtitle: '{time} · 这条会话还没有内容。在这里发消息会接着它继续；想从头开始请点「新任务」。',
+  // 专家（角色绑定）会话的空态副标题：专家主 thread 的标题就是角色名，「继续上次的
+  // 会话」+「这条会话还没有内容」对刚建好的专家 thread 自相矛盾——专家空态只说现在
+  // 该做什么，标题即专家名（N-ROLE-EMPTY-SESSION-WELCOME-COPY）。
+  expertEmptySubtitle: '还没有对话。直接告诉它你想让它做什么。',
   blankSession: '空白会话',
   projectSession: '项目会话 · {name}',
   inheritedWorkspace: '继承工作区：{path}',
@@ -506,6 +510,30 @@ turnSections: { outputs: '产物', sources: '来源', executed: '操作记录', 
 // 分叉子会话首段用户输入上方的轻量来源提示（取代原顶部分支导航栏）。
 forkSourceHint: { source: '由此分支 · {parentTitle}', imported: '续接自 {source} 导入的对话 · {parentTitle}', originalChat: '原对话' },
 
+// 定时任务运行记录会话（origin cron/heartbeat）：首气泡上方的来源小标 + 气泡下方的
+// 状态行（N-UI-CRON-RUN-RECORD-CLEAR）。四种状态一眼可分：运行中（呼吸点+流逝时间）、
+// 等批准（带批准/拒绝）、已中断（带再跑一次）、已完成（带用时）。
+cronRunRecord: {
+  kindLabel: '定时任务自动运行',
+  running: '正在运行 · 已 {elapsed}',
+  elapsedHm: '{h} 时 {m} 分',
+  elapsedMs: '{m} 分 {s} 秒',
+  elapsedS: '{s} 秒',
+  awaiting: '等你批准',
+  awaitingBashPrefix: '运行 ',
+  approve: '批准',
+  reject: '拒绝',
+  approvalStale: '这条批准已经失效（发起它的运行已结束），已标记过期',
+  approvalFailed: '操作没有生效，请重试',
+  interrupted: `${outcomeWordsZh.outcomeWords['interrupted-restart'].timeline.label}，没有结果`,
+  failedDenied: '没跑成：命令被拒绝',
+  failedGeneric: '没跑成',
+  cancelled: outcomeWordsZh.outcomeWords['cancelled-by-user'].timeline.label,
+  rerun: '再跑一次',
+  rerunFailed: '没能重新运行，请稍后再试',
+  finished: '已完成 · 用时 {duration}',
+},
+
 // 工具调用展示（LiveToolOutput / ToolDetails / ToolResultMediaDisplays / CodeBlock / AbilityMenu）的零碎 UI 文案。
 toolDisplay: {
   liveOutput: '实时输出',
@@ -593,6 +621,10 @@ chat: {
   welcomeSubtitle: 'Pick an example, or just type what you want to do.',
   resumedEmptyTitle: 'Picking up your last session: {title}',
   resumedEmptySubtitle: '{time} · This session has no content yet. Sending here continues it — click “New task” to start fresh.',
+  // Expert (role-bound) session empty state: the expert main thread is titled with the
+  // role name, so "Picking up your last session" + "no content yet" contradicts itself
+  // on a just-created expert thread — say what to do now instead (title = expert name).
+  expertEmptySubtitle: 'No messages yet. Tell it what you want it to do.',
   blankSession: 'Blank session',
   projectSession: 'Project session · {name}',
   inheritedWorkspace: 'Inherited workspace: {path}',
@@ -1015,6 +1047,31 @@ livePreview: {
 // Turn timeline section titles (TraceNodeRenderer's ArtifactOwnershipNode / SkillActivityNode).
 turnSections: { outputs: 'Outputs', sources: 'Sources', executed: 'Activity', skills: 'Skills' },
 forkSourceHint: { source: 'Branched from · {parentTitle}', imported: 'Continued from a chat imported from {source} · {parentTitle}', originalChat: 'the original chat' },
+
+// Scheduled-run record session (origin cron/heartbeat): the small muted origin
+// label above the first bubble + the status line under it. Four visually
+// distinct states: running (pulsing dot + elapsed), awaiting approval (with
+// approve/reject), interrupted (with run-again), finished (with duration).
+cronRunRecord: {
+  kindLabel: 'Ran automatically by a scheduled task',
+  running: 'Running · {elapsed} elapsed',
+  elapsedHm: '{h}h {m}m',
+  elapsedMs: '{m}m {s}s',
+  elapsedS: '{s}s',
+  awaiting: 'Needs your approval',
+  awaitingBashPrefix: 'Run ',
+  approve: 'Approve',
+  reject: 'Reject',
+  approvalStale: 'This approval is stale (its run has ended) and was marked expired',
+  approvalFailed: 'That did not go through — please retry',
+  interrupted: `${outcomeWordsEn.outcomeWords['interrupted-restart'].timeline.label} — no result`,
+  failedDenied: "Didn't run: command was denied",
+  failedGeneric: "Didn't finish",
+  cancelled: outcomeWordsEn.outcomeWords['cancelled-by-user'].timeline.label,
+  rerun: 'Run again',
+  rerunFailed: 'Could not start another run — try again later',
+  finished: 'Finished · took {duration}',
+},
 
 toolDisplay: {
   liveOutput: 'Live output',

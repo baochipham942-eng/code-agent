@@ -21,8 +21,6 @@ vi.mock('../../../src/renderer/hooks/useI18n', async () => {
 
 import { ProjectCollaborationDetailPane } from '../../../src/renderer/components/features/projectCollaboration/ProjectCollaborationDetailPane';
 import type { NeoWorkCardDetail } from '../../../src/shared/contract/tag';
-import { zh } from '../../../src/renderer/i18n/zh';
-import { en } from '../../../src/renderer/i18n/en';
 
 // 本地时区构造（不跨时区换算），任何 TZ 下时分字段都是构造值本身。
 const UPDATED_AT = new Date(2026, 10, 9, 16, 5, 0).getTime(); // 2026-11-09 16:05

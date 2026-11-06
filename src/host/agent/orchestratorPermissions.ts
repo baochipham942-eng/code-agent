@@ -39,6 +39,16 @@ const logger = createLogger('AgentOrchestrator');
 const INTERACTIVE_PERMISSION_REMINDER_MS = 30 * 60_000;
 
 /**
+ * 后台任务/子代理 lane 的审批带着自己的 run 身份（subagentToolRuntime 把
+ * { agentId, runId } 摊进请求；前台请求两者皆无）。run 收线清理据此放过它们
+ * （N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO）。
+ */
+function hasBackgroundRunIdentity(request: PermissionRequest): boolean {
+  return (typeof request.runId === 'string' && request.runId.length > 0)
+    || (typeof request.agentId === 'string' && request.agentId.length > 0);
+}
+
+/**
  * 重新确认「还有没有面能裁决这条审批」的节拍。
  * ponytail: 用轮询是因为「面还在吗」是随时间衰减的条件，而没有可订阅的事件——companion
  * 通道是被 LanCompanionServer 自己的 prune() 定时拆掉的，不会回头通知这里。节拍只决定
@@ -350,15 +360,28 @@ export class OrchestratorPermissionIsland {
    *
    * B2 取消收尾：停车挂起的审批必须同步 repo resolve('rejected')，否则取消后 DB 留下
    * 孤儿 pending 行、收件箱永远挂着一条无对应 run 的待批准。
+   *
+   * N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO：`skipBackgroundLanes` 让 run 收线清理只解除
+   * 本 run 自己的（无 runId/agentId 身份）请求；后台任务/子代理 lane 的审批带着自己的
+   * run 身份，消费它的那条 run 还活着，不能因为前台 run 结束就被机器拒绝。
    */
-  drainPendingPermissions(response: PermissionResponse = 'deny'): void {
+  drainPendingPermissions(response: PermissionResponse = 'deny', options?: { skipBackgroundLanes?: boolean }): void {
     if (this.pendingPermissions.size === 0) return;
-    const count = this.pendingPermissions.size;
+    const skipBackgroundLanes = options?.skipBackgroundLanes === true;
+    const entries = [...this.pendingPermissions.entries()];
+    const drainable = skipBackgroundLanes
+      ? entries.filter(([, entry]) => !hasBackgroundRunIdentity(entry.request))
+      : entries;
+    if (drainable.length === 0) {
+      logger.info(`Skipped draining ${entries.length} pending background-lane permission(s) (owning run still alive)`, { response });
+      return;
+    }
+    const count = drainable.length;
     const repo = this.getPendingApprovalRepo();
-    for (const [id] of this.pendingPermissions.entries()) {
+    for (const [id] of drainable) {
       noteCompanionApprovalSettlement({ requestId: id, outcome: 'cancelled' });
     }
-    for (const [id, entry] of this.pendingPermissions.entries()) {
+    for (const [id, entry] of drainable) {
       if (entry.parked && repo) {
         try {
           const changes = repo.resolve({ id, status: 'rejected', feedback: 'run cancelled', resolvedAt: Date.now() });
@@ -371,9 +394,14 @@ export class OrchestratorPermissionIsland {
       }
       // 取消/新消息统一解除 ≠ 用户拒绝（N-PERMTRACE）。
       entry.resolve(response, 'cancelled');
+      this.pendingPermissions.delete(id);
     }
-    this.pendingPermissions.clear();
     logger.info(`Drained ${count} pending permission(s)`, { response });
+  }
+
+  /** 还有未裁决的请求吗（含后台 lane 的）。run 收线后据此决定岛要不要继续注册。 */
+  hasPendingRequests(): boolean {
+    return this.pendingPermissions.size > 0;
   }
 
   /**

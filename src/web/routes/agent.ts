@@ -1790,8 +1790,12 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         throw error;
       }
     } finally {
-      foregroundPermissionIsland?.drainPendingPermissions();
-      if (foregroundPermissionIsland) {
+      // N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO：run 收线只清本 run 自己的（无 runId/agentId
+      // 身份）挂起审批；后台任务/子代理 lane 的审批消费方还活着，机器拒绝会让「批准后后台任务
+      // 继续」变成不可能，卡也会跟着变成点了就 unknown_request 的死卡。还留着后台审批的岛
+      // 继续注册，让迟到的点击仍能送达（下次同会话新 run 注册时才收口）。
+      foregroundPermissionIsland?.drainPendingPermissions('deny', { skipBackgroundLanes: true });
+      if (foregroundPermissionIsland && !foregroundPermissionIsland.hasPendingRequests()) {
         unregisterForegroundPermissionIsland(sessionId, foregroundPermissionIsland);
       }
       runController.markSettled();

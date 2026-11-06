@@ -132,4 +132,49 @@ describe('前台 run 结束后，后台 lane 的审批在宿主仍 pending（N-S
     expect(result.denialSource).toBe('user');
     expect(island.listPendingRequests()).toHaveLength(0);
   });
+
+  it('run 收线清理（skipBackgroundLanes）只拒前台请求，后台 lane 的审批留活且仍可应答', async () => {
+    const events: AgentEvent[] = [];
+    const island = new OrchestratorPermissionIsland({
+      getSettings: settings,
+      isDevModeAutoApproveEnabled: () => false,
+      getExecutionTopology: () => 'async_agent',
+      hasApprovalUi: () => true,
+      onEvent: (event) => events.push(event),
+    });
+    const backgroundPromise = island.requestPermission({
+      type: 'command',
+      tool: 'bash',
+      details: { command: 'echo bg' },
+      sessionId: 'run-end-session',
+      agentId: 'bg-agent-1',
+      runId: 'bg-run-1',
+      forceConfirm: true,
+    });
+    const foregroundPromise = island.requestPermission({
+      type: 'file_write',
+      tool: 'Write',
+      details: { path: '/tmp/run-end-fg.txt' },
+      sessionId: 'run-end-session',
+      forceConfirm: true,
+    });
+    expect(island.listPendingRequests()).toHaveLength(2);
+
+    // /api/run 收线 finally 的同款调用：skipBackgroundLanes。
+    island.drainPendingPermissions('deny', { skipBackgroundLanes: true });
+
+    // 前台请求按原样被机器拒绝；后台 lane 的审批原样 pending、迟到的点击仍能送达。
+    const foregroundResult = await foregroundPromise;
+    expect(foregroundResult.approved).toBe(false);
+    expect(foregroundResult.denialSource).toBe('cancelled');
+    expect(await isStillPending(backgroundPromise)).toBe(true);
+    expect(island.hasPendingRequests()).toBe(true);
+
+    const [bgRequest] = island.listPendingRequests();
+    expect(bgRequest?.agentId).toBe('bg-agent-1');
+    const outcome = island.handlePermissionResponse(bgRequest!.id, 'allow');
+    expect(outcome).toBe('delivered');
+    expect((await backgroundPromise).approved).toBe(true);
+    expect(island.hasPendingRequests()).toBe(false);
+  });
 });

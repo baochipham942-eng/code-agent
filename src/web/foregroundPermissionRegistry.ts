@@ -22,6 +22,14 @@ export function registerForegroundPermissionIsland(
   sessionId: string,
   island: OrchestratorPermissionIsland,
 ): void {
+  // 同会话新 run 注册时，上一座岛里可能还留着没被裁决的后台 lane 审批（run 收线时被
+  // N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO 的收线清理故意放过的）。新用户消息 = 显式改向，
+  // 与桌面 orchestrator executeMessage 的 drain 同语义：整岛解除（deny/cancelled），
+  // 否则旧岛的 Promise 永远没人能 resolve，后台任务会永久挂死在那次 ask 上。
+  const previous = foregroundPermissionIslands.get(sessionId);
+  if (previous && previous !== island && previous.hasPendingRequests()) {
+    previous.drainPendingPermissions('deny');
+  }
   foregroundPermissionIslands.set(sessionId, island);
 }
 

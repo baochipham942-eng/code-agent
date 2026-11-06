@@ -610,6 +610,91 @@ describe('MessageProcessor persistence', () => {
     expect(ctx.onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'turn_end' }));
   });
 
+  it('ends after a direct role creation result without asking the model for a duplicate announcement', async () => {
+    const ctx = {
+      artifact: ArtifactState.forTest(),
+      sessionId: 'runtime-session-1',
+      messages: [],
+      stats: RunStatsState.forTest({ totalToolCallCount: 0 } as never),
+      modelConfig: { provider: 'xiaomi', model: 'mimo-v2.6-flash', maxTokens: 4096 },
+      contextHealth: ContextHealthState.forTest({ currentSystemPromptHash: 'hash-1' } as never),
+      control: ControlState.forTest({ isCancelled: false, isInterrupted: false } as never),
+      turn: TurnState.forTest({
+        effortLevel: 'medium',
+        currentTurnId: 'turn-1',
+        currentIterationSpanId: 'iteration-1',
+        toolsUsedInTurn: [],
+      } as never),
+      onEvent: vi.fn(),
+      telemetryAdapter: { onTurnEnd: vi.fn() },
+      nudgeManager: {
+        checkProgressState: vi.fn(),
+        checkPostForceExecute: vi.fn(),
+      },
+      autoApprovePlan: false,
+    };
+    const contextAssembly = {
+      stripInternalFormatMimicry: vi.fn((content: string) => content),
+      generateId: vi.fn()
+        .mockReturnValueOnce('assistant-message-1')
+        .mockReturnValueOnce('tool-message-1'),
+      addAndPersistMessage: vi.fn(async (message) => {
+        ctx.messages.push(message as never);
+      }),
+      flushHookMessageBuffer: vi.fn(),
+      updateContextHealth: vi.fn(),
+      checkAndAutoCompress: vi.fn(),
+      maybeInjectThinking: vi.fn(),
+    };
+    const runFinalizer = {
+      emitTaskProgress: vi.fn(),
+      tryParseTodosFromResponse: vi.fn(),
+      autoAdvanceTodos: vi.fn(),
+    };
+    const toolEngine = {
+      executeToolsWithHooks: vi.fn(async () => [{
+        toolCallId: 'tool-1',
+        success: true,
+        output: 'The host already installed this role.',
+        metadata: { directCreated: true, endRunWithoutAssistant: true },
+      }]),
+    };
+    const processor = createProcessor(
+      ctx as DeepPartial<RuntimeContext>,
+      contextAssembly,
+      runFinalizer,
+      toolEngine,
+    );
+
+    const action = await processor.handleToolResponse(
+      {
+        type: 'tool_use',
+        content: '我给它配好了需要的能力。',
+        toolCalls: [{ id: 'tool-1', name: 'propose_role', arguments: { roleId: '日历助理' } }],
+      } as ModelResponse,
+      false,
+      1,
+      { endSpan: vi.fn() },
+    );
+
+    expect(action).toBe('break');
+    expect(ctx.messages).toHaveLength(2);
+    expect(ctx.messages).toEqual([
+      expect.objectContaining({ id: 'assistant-message-1', role: 'assistant' }),
+      expect.objectContaining({
+        id: 'tool-message-1',
+        role: 'tool',
+        toolResults: [expect.objectContaining({
+          success: true,
+          metadata: expect.objectContaining({ endRunWithoutAssistant: true }),
+        })],
+      }),
+    ]);
+    expect(contextAssembly.checkAndAutoCompress).not.toHaveBeenCalled();
+    expect(ctx.telemetryAdapter.onTurnEnd).toHaveBeenCalledWith('turn-1', '', undefined, 'hash-1');
+    expect(ctx.onEvent).toHaveBeenCalledWith({ type: 'turn_end', data: { turnId: 'turn-1' } });
+  });
+
   it('转向时给在途工具结果打上 staleIntent，并把作废提示放进下一次推理', async () => {
     const voidNotice = '此前的工具结果属于用户刚刚换掉的计划，不要继续执行那个计划，按用户的新消息来。';
     const skillResult = { skillName: 'cleanup' };

@@ -196,7 +196,15 @@ export class AgentRunController {
       this.agentSSEBatcher.emit({ type: 'message_snapshot', data: finalSnapshot });
     }
     if (shouldDeliverAgentEvent(event, this.deps.eventFilter)) {
-      this.agentSSEBatcher.emit(event);
+      // N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO：run 收线清理会 destroy 批处理器，
+      // 而后台 lane 的审批（含沙箱升级确认）可以在那之后才抛——批处理器 destroy 后
+      // emit 是静默丢弃。收线后的 permission_request 绕过批处理器直发：流已关时走
+      // shouldBroadcastAfterStreamClosed 的补播通道进全局广播，卡必须到得了 renderer。
+      if (event.type === 'permission_request' && this.runSettled) {
+        this.emitSSE(event.type, event.data);
+      } else {
+        this.agentSSEBatcher.emit(event);
+      }
     }
     if (finalSnapshot) {
       this.messageAccumulator.clear(this.deps.sessionId);

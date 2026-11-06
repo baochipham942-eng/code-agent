@@ -82,6 +82,10 @@ chat: {
   welcomeSubtitle: '选一个示例，或者直接输入你想完成的事。',
   resumedEmptyTitle: '继续上次的会话：{title}',
   resumedEmptySubtitle: '{time} · 这条会话还没有内容。在这里发消息会接着它继续；想从头开始请点「新任务」。',
+  // 专家（角色绑定）会话的空态副标题：专家主 thread 的标题就是角色名，「继续上次的
+  // 会话」+「这条会话还没有内容」对刚建好的专家 thread 自相矛盾——专家空态只说现在
+  // 该做什么，标题即专家名（N-ROLE-EMPTY-SESSION-WELCOME-COPY）。
+  expertEmptySubtitle: '还没有对话。直接告诉它你想让它做什么。',
   blankSession: '空白会话',
   projectSession: '项目会话 · {name}',
   inheritedWorkspace: '继承工作区：{path}',
@@ -617,6 +621,10 @@ chat: {
   welcomeSubtitle: 'Pick an example, or just type what you want to do.',
   resumedEmptyTitle: 'Picking up your last session: {title}',
   resumedEmptySubtitle: '{time} · This session has no content yet. Sending here continues it — click “New task” to start fresh.',
+  // Expert (role-bound) session empty state: the expert main thread is titled with the
+  // role name, so "Picking up your last session" + "no content yet" contradicts itself
+  // on a just-created expert thread — say what to do now instead (title = expert name).
+  expertEmptySubtitle: 'No messages yet. Tell it what you want it to do.',
   blankSession: 'Blank session',
   projectSession: 'Project session · {name}',
   inheritedWorkspace: 'Inherited workspace: {path}',

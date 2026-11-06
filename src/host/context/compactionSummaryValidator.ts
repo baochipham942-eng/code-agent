@@ -1,13 +1,10 @@
 import path from 'node:path';
 import type {
-  CompactionSurvivorFile,
   CompactionSurvivorItem,
   CompactionSurvivorManifest,
 } from '../../shared/contract';
 
 export type CompactionSummaryManifest = CompactionSurvivorManifest;
-export type CompactionSummaryManifestFile = CompactionSurvivorFile;
-export type CompactionSummaryManifestItem = CompactionSurvivorItem;
 
 export interface CompactionSummaryValidation {
   ok: boolean;

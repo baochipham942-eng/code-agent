@@ -11,9 +11,7 @@ import type {
 import type { CompressionCommit } from './compressionState';
 import type { SubagentContextAnnotation } from './subagentContextStore';
 
-export { CONTEXT_INJECTION_SOURCES } from '../../shared/contract/contextView';
 export type {
-  ContextEventSourceKind,
   ContextInjectionSource,
 } from '../../shared/contract/contextView';
 

@@ -20,7 +20,7 @@ const logger = createLogger('CompactModel');
 // Types
 // ----------------------------------------------------------------------------
 
-export type CompactModelFallbackReason =
+type CompactModelFallbackReason =
   | 'compact_model_unavailable'
   | 'compact_model_missing_api_key'
   | 'compact_context_length_exceeded';
@@ -481,14 +481,6 @@ function initializeMainModel(): ModelConfig | null {
 export function resetCompactModel(): void {
   compactModelResolution = null;
   logger.debug('Compact model configuration reset');
-}
-
-/**
- * Check if compact model is available
- */
-export function isCompactModelAvailable(): boolean {
-  const config = initializeCompactModel();
-  return config !== null;
 }
 
 /**

@@ -31,7 +31,7 @@ const IDLE_PRESERVE_RECENT = 6;
  * - Strip leading indentation from non-code-block lines
  * - Preserve fenced code blocks verbatim
  */
-export function compactText(text: string): string {
+function compactText(text: string): string {
   // Split on code blocks to preserve them
   const segments = text.split(/(```[\s\S]*?```)/);
 

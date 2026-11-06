@@ -133,4 +133,3 @@ export function rankAndFormat(
   return { text, fileCount, symbolCount, estimatedTokens: totalTokens };
 }
 
-export { buildDependencyGraph };

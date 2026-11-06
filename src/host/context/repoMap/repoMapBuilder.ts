@@ -268,4 +268,3 @@ export async function buildRepoMap(config: RepoMapConfig): Promise<Map<string, R
   return entries;
 }
 
-export { resolveImportPath, extractSymbols, extractImports };

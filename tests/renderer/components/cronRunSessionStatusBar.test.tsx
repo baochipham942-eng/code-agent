@@ -326,6 +326,22 @@ describe('CronRunSessionStatusBar（组件）', () => {
       expect(toastErrorMock).not.toHaveBeenCalled();
     });
 
+    it('web 停车审批经幸存行恢复 {outcome:"no_orchestrator",resumed:"executed"}：已执行，不出声，绝不误报 stale', async () => {
+      invokeMock.mockResolvedValue({ requestId: 'req-1', sessionId: 'session-1', outcome: 'no_orchestrator', resumed: 'executed' });
+      await renderAwaitingApproval();
+      fireEvent.click(screen.getByTestId('cron-run-status-approve'));
+      await waitFor(() => expect(invokeMock).toHaveBeenCalled());
+      expect(toastInfoMock).not.toHaveBeenCalled();
+      expect(toastErrorMock).not.toHaveBeenCalled();
+    });
+
+    it('web 停车审批恢复抢输 {outcome:"no_orchestrator",resumed:"lost_race"}：出「已失效」toast', async () => {
+      invokeMock.mockResolvedValue({ requestId: 'req-1', sessionId: 'session-1', outcome: 'no_orchestrator', resumed: 'lost_race' });
+      await renderAwaitingApproval();
+      fireEvent.click(screen.getByTestId('cron-run-status-approve'));
+      await waitFor(() => expect(toastInfoMock).toHaveBeenCalledWith(APPROVAL_STALE_COPY));
+    });
+
     it('Electron 式 {outcome:"storage_unavailable"}（宿主活着、台账写不进）：说「没生效请重试」，不说「已失效」', async () => {
       invokeMock.mockResolvedValue({ outcome: 'storage_unavailable' });
       await renderAwaitingApproval();

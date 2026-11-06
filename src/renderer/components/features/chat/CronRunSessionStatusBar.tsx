@@ -22,6 +22,7 @@ import { useCronStore } from '../../../stores/cronStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { toast } from '../../../hooks/useToast';
+import { classifyPermissionDelivery } from '../../PermissionDialog/permissionDelivery';
 import {
   clearObservedCronRunStatusForSession,
   composeElapsed,
@@ -44,35 +45,6 @@ function awaitingLabelFromParked(item: ParkedApprovalInboxItem, bashRunPrefix: s
   }
   const parts = [item.displayTool ?? item.tool, preview].filter(Boolean);
   return parts.length > 0 ? parts.join('：') : undefined;
-}
-
-/**
- * 审批应答有没有真的送达宿主。AGENT_PERMISSION_RESPONSE 的注册类型写的是 Promise<void>
- * （src/shared/ipc/handlers.ts），与实现不符，所以按 unknown 收窄。真实写点只有三种形状：
- *   Electron 式 legacy handler → {outcome}（'delivered' / 'unknown_request' / 'no_orchestrator'
- *     / 'no_session' / 'storage_unavailable'，agent.ipc.ts handlePermissionResponse）；
- *   web HTTP 桥 → 送达时解包成 {requestId, sessionId, source}（没有 outcome 字段），
- *     未送达时原样透传 {success:false, error:{code}}（webPermissionResponseHandler.ts）；
- *   host 同步入口会直接回报裸 outcome 字符串（agentAppService.handlePermissionResponse）。
- * 传输层故障（审批应答发送失败）直接 throw，走 handleApproval 的 catch。
- * storage_unavailable / PENDING_APPROVAL_STORAGE_UNAVAILABLE 是宿主活着、只是台账这次
- * 写不进的可重试中间态——运行没结束，不能说「已失效」，说「没生效，请重试」。
- */
-function classifyPermissionDelivery(result: unknown): 'stale' | 'retryable' | 'ok' {
-  if (typeof result === 'string') {
-    if (result === 'delivered') return 'ok';
-    return result === 'storage_unavailable' ? 'retryable' : 'stale';
-  }
-  if (typeof result !== 'object' || result === null) return 'ok';
-  const record = result as { success?: unknown; outcome?: unknown; error?: unknown };
-  if (record.success === false) {
-    const code = (record.error as { code?: unknown } | undefined)?.code;
-    return code === 'PENDING_APPROVAL_STORAGE_UNAVAILABLE' ? 'retryable' : 'stale';
-  }
-  if (typeof record.outcome === 'string' && record.outcome !== 'delivered') {
-    return record.outcome === 'storage_unavailable' ? 'retryable' : 'stale';
-  }
-  return 'ok';
 }
 
 function findParkedApprovalForSession(

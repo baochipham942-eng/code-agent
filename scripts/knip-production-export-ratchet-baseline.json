@@ -12682,29 +12682,9 @@
       "kind": "export"
     },
     {
-      "file": "src/renderer/utils/browserComputerActionPreview.ts",
-      "name": "BrowserComputerActionRisk",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/utils/browserNavigationPending.ts",
-      "name": "BrowserNavigationPendingStatus",
-      "kind": "type"
-    },
-    {
       "file": "src/renderer/utils/browserNavigationPending.ts",
       "name": "resolveAddressDraft",
       "kind": "export"
-    },
-    {
-      "file": "src/renderer/utils/computerUseWorkbench.ts",
-      "name": "ComputerUseTargetSource",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/utils/contextBuckets.ts",
-      "name": "ContextBucket",
-      "kind": "type"
     },
     {
       "file": "src/renderer/utils/deliverables.ts",
@@ -12757,38 +12737,8 @@
       "kind": "export"
     },
     {
-      "file": "src/renderer/utils/logger.ts",
-      "name": "logger",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/utils/logger.ts",
-      "name": "LogLevel",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/utils/mcpRecovery.ts",
-      "name": "isTavilyMcpServer",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/utils/openSessionReplayEvidence.ts",
-      "name": "EvidenceToastTone",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/utils/osNotification.ts",
-      "name": "requestOsNotificationPermission",
-      "kind": "export"
-    },
-    {
       "file": "src/renderer/utils/osNotification.ts",
       "name": "shouldSuppressOsNotification",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/utils/overviewLabels.ts",
-      "name": "looksLikeInternalId",
       "kind": "export"
     },
     {
@@ -12807,11 +12757,6 @@
       "kind": "export"
     },
     {
-      "file": "src/renderer/utils/providerIconAssets.ts",
-      "name": "getProviderIconImageSource",
-      "kind": "export"
-    },
-    {
       "file": "src/renderer/utils/runWorkbenchProjection.ts",
       "name": "buildMemoryActivityEvents",
       "kind": "export"
@@ -12819,11 +12764,6 @@
     {
       "file": "src/renderer/utils/runWorkbenchProjection.ts",
       "name": "buildToolCapabilityViews",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/utils/sessionAssetsNavigation.ts",
-      "name": "buildWorkspacePreviewArtifactItemId",
       "kind": "export"
     },
     {
@@ -12852,21 +12792,6 @@
       "kind": "type"
     },
     {
-      "file": "src/renderer/utils/sessionRecoveryHints.ts",
-      "name": "SessionRecoveryHintKind",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/utils/sessionReplayEvidence.ts",
-      "name": "SessionReplayEvidenceActionKind",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/utils/sessionReplayEvidence.ts",
-      "name": "SessionReplayEvidenceType",
-      "kind": "type"
-    },
-    {
       "file": "src/renderer/utils/settingsIndex.ts",
       "name": "SETTINGS_INDEX",
       "kind": "export"
@@ -12880,11 +12805,6 @@
       "file": "src/renderer/utils/sidebarGroupExpansion.ts",
       "name": "shouldForceExpandSidebarGroup",
       "kind": "export"
-    },
-    {
-      "file": "src/renderer/utils/sidebarGroupExpansion.ts",
-      "name": "SidebarGroupExpansionPhase",
-      "kind": "type"
     },
     {
       "file": "src/renderer/utils/sidebarMessageSearch.ts",
@@ -12917,11 +12837,6 @@
       "kind": "export"
     },
     {
-      "file": "src/renderer/utils/startEditRoleChat.ts",
-      "name": "buildEditRoleSeed",
-      "kind": "export"
-    },
-    {
       "file": "src/renderer/utils/streamingPerformanceMetrics.ts",
       "name": "getStreamingPerformanceSnapshot",
       "kind": "export"
@@ -12942,39 +12857,9 @@
       "kind": "type"
     },
     {
-      "file": "src/renderer/utils/streamingPerformanceMetrics.ts",
-      "name": "StreamingPerformanceTimingSummary",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/utils/streamingStatePresentation.ts",
-      "name": "StreamingUiStatus",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/utils/streamingStatePresentation.ts",
-      "name": "StreamingUiTone",
-      "kind": "type"
-    },
-    {
       "file": "src/renderer/utils/surfaceExecutionProjection.ts",
       "name": "sortAndDedupeSurfaceEventsV1",
       "kind": "export"
-    },
-    {
-      "file": "src/renderer/utils/taskRailPresentation.ts",
-      "name": "TaskRailMode",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/utils/toolExecutionPresentation.ts",
-      "name": "ToolErrorAction",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/utils/toolExecutionPresentation.ts",
-      "name": "ToolErrorKind",
-      "kind": "type"
     },
     {
       "file": "src/renderer/utils/toolGrouping.ts",
@@ -12992,11 +12877,6 @@
       "kind": "export"
     },
     {
-      "file": "src/renderer/utils/toolStepGrouping.ts",
-      "name": "MIN_GROUP_SIZE",
-      "kind": "export"
-    },
-    {
       "file": "src/renderer/utils/turnContentVisibility.ts",
       "name": "HEAVY_TURN_CONTENT_MIN_CHARS",
       "kind": "export"
@@ -13009,11 +12889,6 @@
     {
       "file": "src/renderer/utils/turnDiffExpansionState.ts",
       "name": "clearTurnDiffExpansionForTests",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/utils/turnDiffSummary.ts",
-      "name": "FILE_WRITE_TOOLS",
       "kind": "export"
     },
     {
@@ -13037,41 +12912,6 @@
       "kind": "export"
     },
     {
-      "file": "src/renderer/utils/workbenchCapabilityRegistry.ts",
-      "name": "WorkbenchCapabilityConnectionState",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/utils/workbenchCapabilityRegistry.ts",
-      "name": "WorkbenchCapabilityHealth",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/utils/workbenchCapabilityRegistry.ts",
-      "name": "WorkbenchCapabilityInstallState",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/utils/workbenchCapabilityRegistry.ts",
-      "name": "WorkbenchCapabilityLifecycle",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/utils/workbenchCapabilityRegistry.ts",
-      "name": "WorkbenchCapabilityMountState",
-      "kind": "type"
-    },
-    {
-      "file": "src/renderer/utils/workbenchCapabilitySheet.ts",
-      "name": "buildWorkbenchCapabilityRegistryItemFromReference",
-      "kind": "export"
-    },
-    {
-      "file": "src/renderer/utils/workbenchCapabilitySheet.ts",
-      "name": "getWorkbenchCapabilityTargetKey",
-      "kind": "export"
-    },
-    {
       "file": "src/renderer/utils/workbenchPresentation.ts",
       "name": "formatWorkbenchSkillSecondaryText",
       "kind": "export"
@@ -13080,11 +12920,6 @@
       "file": "src/renderer/utils/workbenchPresentation.ts",
       "name": "getBrowserWorkbenchReadinessTone",
       "kind": "export"
-    },
-    {
-      "file": "src/renderer/utils/workbenchQuickActions.ts",
-      "name": "WorkbenchQuickActionKind",
-      "kind": "type"
     },
     {
       "file": "src/renderer/utils/workbenchScopeInspector.ts",
@@ -13303,11 +13138,6 @@
     },
     {
       "file": "src/shared/constants/almaMcpRegistry.ts",
-      "name": "AlmaMcpRegistryServer",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/constants/almaMcpRegistry.ts",
       "name": "normalizeAlmaMcpFeaturedServers",
       "kind": "export"
     },
@@ -13318,27 +13148,7 @@
     },
     {
       "file": "src/shared/constants/almaPluginRegistry.ts",
-      "name": "AlmaPluginAdapterSurface",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/constants/almaPluginRegistry.ts",
       "name": "AlmaPluginCodeAgentAdapterSpec",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/constants/almaPluginRegistry.ts",
-      "name": "AlmaPluginInstallability",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/constants/almaPluginRegistry.ts",
-      "name": "AlmaPluginKind",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/constants/almaPluginRegistry.ts",
-      "name": "AlmaPluginRegistryItem",
       "kind": "type"
     },
     {
@@ -13368,22 +13178,7 @@
     },
     {
       "file": "src/shared/constants/almaRecommendationPolicy.ts",
-      "name": "ALMA_RECOMMENDATION_TIER_LABELS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/almaRecommendationPolicy.ts",
-      "name": "AlmaRecommendationAction",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/constants/almaRecommendationPolicy.ts",
       "name": "AlmaRecommendationPolicy",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/constants/almaRecommendationPolicy.ts",
-      "name": "AlmaRecommendationSubjectKind",
       "kind": "type"
     },
     {
@@ -13400,11 +13195,6 @@
       "file": "src/shared/constants/almaRecommendationPolicy.ts",
       "name": "getAlmaSkillRecommendationPolicy",
       "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/almaRegistryAudit.ts",
-      "name": "AlmaRegistryKind",
-      "kind": "type"
     },
     {
       "file": "src/shared/constants/defaults.ts",
@@ -13452,73 +13242,8 @@
       "kind": "export"
     },
     {
-      "file": "src/shared/constants/misc.ts",
-      "name": "CHECKPOINT",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/misc.ts",
-      "name": "RETRY",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/misc.ts",
-      "name": "STRATEGY_SYNC",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/misc.ts",
-      "name": "SYNC",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/misc.ts",
-      "name": "TASK_ANALYSIS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/misc.ts",
-      "name": "TASK_SYNC",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/misc.ts",
-      "name": "WEBSOCKET",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/models.ts",
-      "name": "DEFAULT_TOKENIZER",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/models.ts",
-      "name": "getModelAbbrev",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/models.ts",
-      "name": "getModelCapabilities",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/models.ts",
-      "name": "LONG_CONTEXT_THRESHOLD",
-      "kind": "export"
-    },
-    {
       "file": "src/shared/constants/models.ts",
       "name": "MODEL_ABBREV",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/models.ts",
-      "name": "MODEL_LABELS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/models.ts",
-      "name": "TOKENIZER_MAP",
       "kind": "export"
     },
     {
@@ -13527,28 +13252,8 @@
       "kind": "export"
     },
     {
-      "file": "src/shared/constants/models.ts",
-      "name": "VISION_CAPABLE_MODELS",
-      "kind": "export"
-    },
-    {
       "file": "src/shared/constants/network.ts",
       "name": "COMPANION_RELAY_PLACEHOLDER_URL",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/network.ts",
-      "name": "getRendererBundleChannel",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/network.ts",
-      "name": "getRendererBundleManifestUrl",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/network.ts",
-      "name": "NETWORK",
       "kind": "export"
     },
     {
@@ -13567,129 +13272,14 @@
       "kind": "export"
     },
     {
-      "file": "src/shared/constants/network.ts",
-      "name": "TOOL_CACHE",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/previewHealth.ts",
-      "name": "ArtifactPreviewHealthViewportName",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/constants/pricing.ts",
-      "name": "DESIGN_VIDEO_MODELS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/providers.ts",
-      "name": "DIRECT_CONNECT_HOST_SUFFIXES",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/providers.ts",
-      "name": "OVERSEAS_PROVIDERS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/providers.ts",
-      "name": "PROVIDER_ALIAS_MAP",
-      "kind": "export"
-    },
-    {
       "file": "src/shared/constants/skillCatalog.ts",
       "name": "ALMA_BUNDLED_SKILL_MAPPINGS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/storage.ts",
-      "name": "EMBEDDING",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/storage.ts",
-      "name": "HISTORY",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/storage.ts",
-      "name": "RESOURCE_MANAGEMENT",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/storage.ts",
-      "name": "VECTOR_STORE",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/timeouts.ts",
-      "name": "AUTH_TIMEOUTS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/timeouts.ts",
-      "name": "BACKGROUND_TASK_TIMEOUTS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/timeouts.ts",
-      "name": "LOCK_TIMEOUTS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/timeouts.ts",
-      "name": "ORCHESTRATOR_TIMEOUTS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/timeouts.ts",
-      "name": "PERFORMANCE_THRESHOLDS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/timeouts.ts",
-      "name": "RESOURCE_LOCK_TIMEOUTS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/timeouts.ts",
-      "name": "SKILL_TIMEOUTS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/timeouts.ts",
-      "name": "STATUS_TIMEOUTS",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/timeouts.ts",
-      "name": "TASK_OUTPUT_TIMEOUTS",
       "kind": "export"
     },
     {
       "file": "src/shared/constants/toolConsentGroups.ts",
       "name": "TOOL_CONSENT_MAP",
       "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/tools.ts",
-      "name": "SANDBOX",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/ui.ts",
-      "name": "WINDOW",
-      "kind": "export"
-    },
-    {
-      "file": "src/shared/constants/visualModels.ts",
-      "name": "ImageEngineId",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/constants/visualModels.ts",
-      "name": "VisualProviderId",
-      "kind": "type"
     },
     {
       "file": "src/shared/contract/activityContext.ts",
@@ -15508,17 +15098,17 @@
     },
     {
       "file": "src/shared/contract/update.ts",
+      "name": "RuntimeAssetPreparationStatus",
+      "kind": "type"
+    },
+    {
+      "file": "src/shared/contract/update.ts",
       "name": "RuntimeAssetsUpdateAsset",
       "kind": "type"
     },
     {
       "file": "src/shared/contract/update.ts",
       "name": "RuntimeAssetsUpdateInfo",
-      "kind": "type"
-    },
-    {
-      "file": "src/shared/contract/update.ts",
-      "name": "RuntimeAssetPreparationStatus",
       "kind": "type"
     },
     {

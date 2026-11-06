@@ -6,7 +6,7 @@
 // 检查点经 ipcService.invoke(CHECKPOINT_LIST) 拉取（effect 驱动，jsdom 真 render）。
 // ============================================================================
 import React from 'react';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const invoke = vi.hoisted(() => vi.fn());

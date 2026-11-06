@@ -5,7 +5,7 @@
 // zh 24 小时制带年份、绝不跟机器 locale 出 AM/PM；en 维持 en-US 原样。
 // ============================================================================
 import React from 'react';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const invokeDomain = vi.hoisted(() => vi.fn());

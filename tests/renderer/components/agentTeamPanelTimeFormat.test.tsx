@@ -8,7 +8,6 @@
 import React from 'react';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { IPC_CHANNELS } from '../../../src/shared/ipc';
 import type { SwarmEvent } from '../../../src/shared/contract/swarm';
 
 const invokeMock = vi.hoisted(() => vi.fn());

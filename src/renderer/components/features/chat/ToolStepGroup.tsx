@@ -137,7 +137,7 @@ export const ToolStepGroup: React.FC<ToolStepGroupProps> = ({
             status: 'interrupted',
             toolCall: {
               name: tc.name,
-              arguments: tc.args as Record<string, unknown> | undefined,
+              arguments: tc.args,
               shortDescription: tc.shortDescription,
               stepLabel: tc.stepLabel,
             },

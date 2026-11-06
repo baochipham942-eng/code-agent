@@ -13,6 +13,7 @@ import {
 import type { VoiceCallSummary, VoiceTokenUsage } from '@shared/contract/voice';
 import { estimateRealtimeVoiceCost } from '@shared/pricing/estimateRealtimeVoiceCost';
 import { useI18n } from '../../../hooks/useI18n';
+import { formatDateTime } from '../../../utils/formatDateTime';
 import { toast } from '../../../hooks/useToast';
 import { Z_LAYERS } from '../../../styles/zLayers';
 import { Modal } from '../../primitives';
@@ -202,7 +203,7 @@ const LoadingState: React.FC<{ label: string }> = ({ label }) => (
 );
 
 export const VoiceAuditDialog: React.FC<VoiceAuditDialogProps> = ({ sessionId, sessionTitle, onClose }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const labels = t.voiceAudit;
   const showToast = toast.show;
   const [calls, setCalls] = useState<VoiceCallListItem[] | null>(null);
@@ -358,7 +359,7 @@ export const VoiceAuditDialog: React.FC<VoiceAuditDialogProps> = ({ sessionId, s
                         : 'border-white/[0.07] bg-white/[0.025] hover:bg-white/[0.05]'
                     }`}
                   >
-                    <div className="text-xs font-medium text-zinc-200">{new Date(call.summary.startedAt).toLocaleString()}</div>
+                    <div className="text-xs font-medium text-zinc-200">{formatDateTime(call.summary.startedAt, language)}</div>
                     <div className="mt-2 grid grid-cols-3 gap-2 text-[10px] text-zinc-500">
                       <span>{labels.duration}<b className="mt-0.5 block text-zinc-300">{labels.seconds.replace('{value}', String(call.summary.durationSec))}</b></span>
                       <span>{labels.dispatchCount}<b className="mt-0.5 block text-zinc-300">{call.summary.workItemCount}</b></span>

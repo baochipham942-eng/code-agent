@@ -26,6 +26,8 @@ import { useAppStore } from '../../../stores/appStore';
 import type { SwarmAgentState } from '@shared/contract/swarm';
 import ipcService from '../../../services/ipcService';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { useI18n } from '../../../hooks/useI18n';
+import { formatDateTime } from '../../../utils/formatDateTime';
 
 // ============================================================================
 // Types
@@ -113,6 +115,7 @@ const MessageItem: React.FC<{ message: TeammateMessageDisplay; currentAgentId?: 
   message,
   currentAgentId,
 }) => {
+  const { language } = useI18n();
   const isSent = message.from === currentAgentId || message.from === 'user';
   const isUser = message.from === 'user' || message.type === 'user';
 
@@ -157,7 +160,7 @@ const MessageItem: React.FC<{ message: TeammateMessageDisplay; currentAgentId?: 
           {isPlanApproved && <ShieldCheck className="w-3 h-3 text-badge-success" />}
           {isPlanRejected && <ShieldX className="w-3 h-3 text-badge-danger" />}
           <span className="text-zinc-600 ml-auto">
-            {new Date(message.timestamp).toLocaleTimeString()}
+            {formatDateTime(message.timestamp, language)}
           </span>
         </div>
         {/* Content */}

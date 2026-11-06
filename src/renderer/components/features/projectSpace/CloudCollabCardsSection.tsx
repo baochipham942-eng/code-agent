@@ -14,6 +14,7 @@ import type { NeoWorkCardStatus } from '@shared/contract/tag';
 import { listCloudCards, resyncCloudCards } from '../../../services/projectClient';
 import { useAuthStore } from '../../../stores/authStore';
 import { useI18n } from '../../../hooks/useI18n';
+import { formatDateTime } from '../../../utils/formatDateTime';
 import { SecondaryButton } from '../../primitives/Button';
 import {
   formatNeoTopicDueDay,
@@ -34,7 +35,7 @@ export interface CloudCollabCardsSectionProps {
 type LoadState = 'loading' | 'ready' | 'error';
 
 function CloudCardRow({ card }: { card: CloudCollabCard }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const currentUser = useAuthStore((state) => state.user ?? null);
   // 云卡 status/priority 是白名单元数据（string），复用本地卡的相位/优先级视觉映射；
   // 未知值落 statusPhase 默认分支，不会炸
@@ -76,7 +77,7 @@ function CloudCardRow({ card }: { card: CloudCollabCard }) {
       </div>
       <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-zinc-600">
         <span className="truncate">{formatRequesterLabel(card.requesterUserId, currentUser)}</span>
-        <span>{new Date(card.updatedAt).toLocaleString()}</span>
+        <span>{formatDateTime(card.updatedAt, language)}</span>
         {card.dueAt != null && (
           <span
             className={dueOverdue ? 'font-medium text-badge-danger' : undefined}

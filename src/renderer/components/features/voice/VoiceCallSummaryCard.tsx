@@ -26,10 +26,11 @@ import { AudioLines, ChevronDown } from 'lucide-react';
 import type { VoiceCallSummary } from '@shared/contract/voice';
 import { isVoiceInputMessage } from '@shared/contract/message';
 import { useI18n } from '../../../hooks/useI18n';
+import { formatDateTime } from '../../../utils/formatDateTime';
 import { useSessionStore } from '../../../stores/sessionStore';
 
 export const VoiceCallSummaryCard: React.FC<{ summary: VoiceCallSummary }> = ({ summary }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const text = t.voice.call;
   const [expanded, setExpanded] = React.useState(false);
   const messages = useSessionStore((s) => s.messages);
@@ -112,7 +113,7 @@ export const VoiceCallSummaryCard: React.FC<{ summary: VoiceCallSummary }> = ({ 
                         {m.content}
                       </span>
                       <span className="shrink-0 text-[10px] tabular-nums text-zinc-600">
-                        {new Date(m.timestamp).toLocaleTimeString()}
+                        {formatDateTime(m.timestamp, language)}
                       </span>
                     </li>
                   ))}

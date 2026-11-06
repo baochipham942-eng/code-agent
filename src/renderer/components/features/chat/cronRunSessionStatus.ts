@@ -44,7 +44,7 @@ const PERMISSION_DENIAL_ZH_TOKENS = [
   String.fromCharCode(0x672a, 0x83b7, 0x81ea, 0x52a8, 0x6279, 0x51c6), // 未获自动批准
 ];
 
-function isCronExecutionPermissionDenialError(error: string | undefined | null): boolean {
+export function isCronExecutionPermissionDenialError(error: string | undefined | null): boolean {
   if (!error) return false;
   if (PERMISSION_DENIAL_ERROR_RE.test(error)) return true;
   return PERMISSION_DENIAL_ZH_TOKENS.some((token) => error.includes(token));

@@ -900,8 +900,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     onSessionSelect: handleAtSessionSelect,
     onArtifactSelect: handleAtArtifactSelect,
   });
-  const { search: searchAtMention, dismiss: dismissAtMention } = atMention;
-
   // Track input changes for @ autocomplete and / command palette
   const handleValueChange = useCallback((newValue: string) => {
     setValue(newValue);
@@ -910,7 +908,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     }
     if (newValue.toLowerCase().startsWith('/agent ')) {
       setShowSlashPopover(false);
-      dismissAtMention();
+      atMention.dismiss();
       return;
     }
     // 触发词识别是光标位置感知的：只看光标前的纯文本算尾 token
@@ -921,17 +919,17 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     if (slashToken) {
       setShowSlashPopover(true);
       setSlashFilter(slashToken.query);
-      dismissAtMention();
+      atMention.dismiss();
       return;
     }
     setShowSlashPopover(false);
     if (isLeadingAgentMentionInput(newValue, swarmAgents)) {
-      dismissAtMention();
+      atMention.dismiss();
       return;
     }
     // Check for @ pattern at cursor position
-    searchAtMention(newValue, caret);
-  }, [dismissAtMention, pendingPromptCommand, searchAtMention, swarmAgents]);
+    atMention.search(newValue, caret);
+  }, [atMention.dismiss, atMention.search, pendingPromptCommand, swarmAgents]);
 
   const focusComposer = useCallback(() => {
     requestAnimationFrame(() => inputAreaRef.current?.focus());
@@ -1040,6 +1038,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     onSteer,
     onComposerDraftOptimisticClear: composerDraft.noteOptimisticClear,
     onComposerDraftSendSettled: composerDraft.noteSendSettled,
+    onDraftCleared: atMention.dismiss,
     onQueuedInputChanged: () => setQueuedInputRevision((value) => value + 1),
     agentEntries,
     buildEnvelope,

@@ -1,10 +1,14 @@
 import path from 'node:path';
 import type {
+  CompactionSurvivorFile,
   CompactionSurvivorItem,
   CompactionSurvivorManifest,
 } from '../../shared/contract';
 
 export type CompactionSummaryManifest = CompactionSurvivorManifest;
+// 保留此别名：CompactionSurvivorItem/File 是 shared contract 公开类型（本单不删），
+// File 仅此处 import，删掉别名会让它变成新的 dead export。
+export type CompactionSummaryManifestFile = CompactionSurvivorFile;
 
 export interface CompactionSummaryValidation {
   ok: boolean;

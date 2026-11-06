@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "reason": "2026-09-25 N-PERF-JOURNEY-RATCHET 初值：四条 Neo 用户旅程各钉一枚 React Profiler commitCount，只降不升。cold-start=2（InputArea 可输入）、first-token=3（MessageContent 首 token）、long-session=18（TurnBasedTraceView 32 轮滚动）、session-switch=4（EmptySessionArea 骨架 + 两会话正文）。同 commit 连跑 5 次计数逐字节相同；wallClockMs / longTaskCount 只记录、不进门。",
+  "reason": "2026-09-25 N-PERF-JOURNEY-RATCHET 初值：四条 Neo 用户旅程各钉一枚 React Profiler commitCount，只降不升。cold-start=2（InputArea 可输入）、first-token=3（MessageContent 首 token）、long-session=18（TurnBasedTraceView 32 轮滚动；2026-11-06 起改为 13，口径改成进入 + wheel 信号、不再测滚动，见 journeys.long-session.reason）、session-switch=4（EmptySessionArea 骨架 + 两会话正文）。同 commit 连跑 5 次计数逐字节相同；wallClockMs / longTaskCount 只记录、不进门。",
   "journeys": {
     "cold-start": {
       "commitCount": 2,
@@ -11,8 +11,8 @@
       "reason": "新会话首个流式 token 落到 MessageContent。热组件 MessageContent。初值 3。"
     },
     "long-session": {
-      "commitCount": 18,
-      "reason": "长会话 TurnBasedTraceView 32 轮一次滚动。热组件 TurnBasedTraceView。初值 18。"
+      "commitCount": 13,
+      "reason": "长会话 TurnBasedTraceView 32 轮进入 + 滚动开始信号（wheel）。热组件 TurnBasedTraceView。初值 18（2026-09-25，固定帧发布、含两次脚本滚动）。N-PERF-LONG-SESSION-RATCHET-FLAKE（2026-11-05）改口径：① 固定帧发布读在异步级联中途（Virtuoso 经 ResizeObserver→rAF 落 commit），18/19 翻转根因，改为等 commit 静默再发布；② 78c674839（#2705）加的 useSessionEntryScroll 进入结算（跳底 + 60 帧重发循环）不可测：等它跑完读 130/131/132（循环与渐进测量重叠成 2 commit/帧×60 帧自持振荡，尾帧合并 ±1），而 wheel 在首个 turn 挂载后立即发出会走产品自身的用户交互守卫把结算在跳底前中止——这是确定路径；③ 脚本 scrollTop 跳变（换窗滚动）挂载行高仍是估计值，估计→实测修正尾 ~300ms 后多数 run 落地、少数不落（18/19/20 混读），任何换窗滚动都带这个不可判定的尾巴，故去掉脚本滚动、只保留 wheel。终版级联 = 挂载 + 初始测距 + wheel 中止，同 commit 连跑全 13（负载 3-8）。基线 18→13：18 是截断伪影且含不可确定尾差，13 是这条旅程可复现确定的完整级联。"
     },
     "session-switch": {
       "commitCount": 4,

@@ -113,10 +113,16 @@ export class AgentRunController {
    * surface_execution 是唯一一类「宿主还在往下跑、renderer 必须知道」的事件：surface 投影的
    * 唯一进货渠道是「收到事件 → 拉全量快照」，终态/cleanup 事件丢了，行内紧凑条、composer
    * 「执行中」、chrome 条绿点就一起冻在 running（2026-08-02 排查报告 §2.2 腿 A）。
+   * permission_request 同理（N-SUBAGENT-APPROVAL-BUBBLE-UP-CARD-REPRO）：后台任务/子代理
+   * lane 的审批可以在 run 收线**之后**才抛（前台已回「已启动」，后台 Bash 才走到 ask），
+   * 流已关、mirrorToBroadcast 又因页面在线而为 false ⇒ 卡在两头都看不见。收线后补播
+   * permission_request 是安全的：流开着时它已经走流送达，关流后补播的只有本来就会丢的
+   * 那些条；renderer 按 requestId 去重（applyPermissionQueueEvent hasPermissionRequest）。
    * 直连轮已经关流 ⇒ 广播不会重复投递（canWriteSSE() 为真时不走这条）。
    */
   private shouldBroadcastAfterStreamClosed(event: string): boolean {
-    return event === 'surface_execution' && !this.deps.mirrorToBroadcast && !this.canWriteSSE();
+    if (this.canWriteSSE() || this.deps.mirrorToBroadcast) return false;
+    return event === 'surface_execution' || event === 'permission_request';
   }
 
   emitSSE(event: string, data: unknown): void {

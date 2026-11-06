@@ -174,6 +174,10 @@ class ProposeRoleHandler implements ToolHandler<Record<string, unknown>, string>
           'End this role-authoring turn so the first-wake message can take over.',
         meta: {
           roleId: prepared.draft.roleId,
+          sessionId: ctx.sessionId,
+          displayName: prepared.draft.roleId,
+          canDo: summary.canDo,
+          willNotDo: summary.willNotDo,
           category: prepared.draft.category,
           tools: prepared.draft.tools,
           directCreated: true,

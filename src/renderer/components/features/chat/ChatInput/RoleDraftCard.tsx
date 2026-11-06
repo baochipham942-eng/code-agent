@@ -5,7 +5,8 @@
 // 镜像 SkillDraftCard 范式。
 // ============================================================================
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import type { Message } from '@shared/contract';
 import { useComposerNoticeStore } from '../../../../stores/composerNoticeStore';
 import { UserPlus, Check, X, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 import ipcService from '../../../../services/ipcService';
@@ -77,14 +78,58 @@ function forgetCreationFirstWake(sessionId: string): void {
   }
 }
 
+export function findPersistedDirectCreation(
+  messages: readonly Message[],
+  sessionId: string | null,
+): RoleCreatedDirectSummary | null {
+  if (!sessionId) return null;
+  for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+    const results = messages[messageIndex]?.toolResults ?? [];
+    for (let resultIndex = results.length - 1; resultIndex >= 0; resultIndex -= 1) {
+      const meta = results[resultIndex]?.metadata;
+      if (meta?.directCreated !== true) continue;
+      const roleId = typeof meta.roleId === 'string' ? meta.roleId : '';
+      const displayName = typeof meta.displayName === 'string' ? meta.displayName : '';
+      const canDo = typeof meta.canDo === 'string' ? meta.canDo : '';
+      const willNotDo = typeof meta.willNotDo === 'string' ? meta.willNotDo : '';
+      if (!roleId || !displayName || !canDo || !willNotDo) continue;
+      return { sessionId, roleId, displayName, canDo, willNotDo };
+    }
+  }
+  return null;
+}
+
 export const RoleDraftNotifications: React.FC = () => {
   const [drafts, setDrafts] = useState<RoleDraftSummary[]>([]);
   const [createdDirect, setCreatedDirect] = useState<RoleCreatedDirectSummary | null>(null);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  const messages = useSessionStore((state) => state.messages);
   const [wakeRoleId, setWakeRoleId] = useState<string | null>(null);
+  const persistedCreated = useMemo(
+    () => findPersistedDirectCreation(messages, currentSessionId),
+    [currentSessionId, messages],
+  );
 
   useEffect(() => {
     setWakeRoleId(readCreationFirstWake(currentSessionId));
+  }, [currentSessionId]);
+
+  useEffect(() => {
+    if (!currentSessionId) {
+      setDrafts([]);
+      return;
+    }
+    let active = true;
+    void Promise.resolve(ipcService.invokeDomain<Array<RoleDraftSummary & { sessionId?: string }>>(
+      IPC_DOMAINS.ROLES,
+      'listDrafts',
+    )).then((listed) => {
+      if (!active || !Array.isArray(listed)) return;
+      setDrafts(listed.filter((draft) => draft.sessionId === currentSessionId));
+    }).catch(() => {
+      // Existing event-driven flow remains available when hydration fails.
+    });
+    return () => { active = false; };
   }, [currentSessionId]);
 
   useEffect(() => {
@@ -126,13 +171,14 @@ export const RoleDraftNotifications: React.FC = () => {
 
   useEffect(() => {
     const setNotice = useComposerNoticeStore.getState().setNotice;
-    const hasCreatedCard = createdDirect?.sessionId === currentSessionId;
+    const hasCreatedCard = createdDirect?.sessionId === currentSessionId || persistedCreated !== null;
     setNotice('role-draft', drafts.length > 0 || wakeRoleId !== null || hasCreatedCard);
     return () => setNotice('role-draft', false);
-  }, [createdDirect, currentSessionId, drafts.length, wakeRoleId]);
+  }, [createdDirect, currentSessionId, drafts.length, persistedCreated, wakeRoleId]);
 
-  const visibleCreated = createdDirect?.sessionId === currentSessionId ? createdDirect : null;
-  if (drafts.length === 0 && !wakeRoleId && !visibleCreated) return null;
+  const visibleCreated = createdDirect?.sessionId === currentSessionId ? createdDirect : persistedCreated;
+  const visibleWakeRoleId = wakeRoleId ?? visibleCreated?.roleId ?? null;
+  if (drafts.length === 0 && !visibleWakeRoleId && !visibleCreated) return null;
 
   return (
     <>
@@ -145,8 +191,8 @@ export const RoleDraftNotifications: React.FC = () => {
         />
       )}
       {visibleCreated && <RoleCreatedDirectCard role={visibleCreated} />}
-      {wakeRoleId && (
-        <RoleFirstWakeCard roleId={wakeRoleId} expectLive onDismissed={handleWakeDismissed} />
+      {visibleWakeRoleId && (
+        <RoleFirstWakeCard roleId={visibleWakeRoleId} expectLive onDismissed={handleWakeDismissed} />
       )}
     </>
   );

@@ -111,7 +111,7 @@ describe('RoleFirstWakeCard', () => {
       firstWakeCardRoleId: null,
       expertDetailRoleId: null,
     });
-    useSessionStore.setState({ currentSessionId: 'sess-1' });
+    useSessionStore.setState({ currentSessionId: 'sess-1', messages: [] });
     useToastStore.setState({ toasts: [] });
     sessionStorage.clear();
   });
@@ -308,6 +308,38 @@ describe('RoleFirstWakeCard', () => {
     ));
     await waitFor(() => expect(screen.getByRole('button', { name: '改一改' })).toBeTruthy());
     expect(useAppStore.getState().expertDetailRoleId).toBeNull();
+  });
+
+  it('重载会话后从已落库的工具结果恢复直接创建卡', async () => {
+    getFirstWake.mockResolvedValue(COMPLETED);
+    useSessionStore.setState({
+      currentSessionId: 'sess-1',
+      messages: [{
+        id: 'assistant-1',
+        role: 'assistant',
+        content: '',
+        timestamp: 1,
+        toolResults: [{
+          toolCallId: 'tool-1',
+          success: true,
+          output: 'installed',
+          metadata: {
+            directCreated: true,
+            sessionId: 'sess-1',
+            roleId: '日历助理AB12',
+            displayName: '日历助理AB12',
+            canDo: '每天盯日程，提醒冲突和临近的会议',
+            willNotDo: '新建、修改或删除日历事件',
+          },
+        }],
+      }],
+    });
+
+    render(<RoleDraftNotifications />);
+
+    expect(await screen.findByTestId('role-created-direct-card')).toBeTruthy();
+    expect(screen.getByText('日历助理AB12')).toBeTruthy();
+    expect(await screen.findByTestId('role-first-wake-card')).toBeTruthy();
   });
 
   it('专家主会话顶部按 expertThread 挂上同一张卡', async () => {

@@ -138,6 +138,13 @@ describe('propose_role tool', () => {
 
     expect(result.ok).toBe(true);
     expect(result.ok && result.output).not.toContain('已创建');
+    expect(result.ok && result.meta).toMatchObject({
+      directCreated: true,
+      sessionId: 'sess-1',
+      roleId: '日历助理',
+      canDo: '每天盯日程，提醒冲突和临近的会议',
+      willNotDo: '新建、修改或删除日历事件',
+    });
     expect(await exists(path.join(mockConfigDir.dir, 'agents', '日历助理.md'))).toBe(true);
     expect(await exists(path.join(mockConfigDir.dir, 'roles', '日历助理', 'MEMORY.md'))).toBe(true);
     expect(await fs.readdir(path.join(mockConfigDir.dir, 'role-drafts')).catch(() => [])).toEqual([]);

@@ -178,6 +178,7 @@ export const MODEL_MAX_OUTPUT_TOKENS: Record<string, number> = {
   'sonar-reasoning': 8_192,
   'sonar-deep-research': 8_192,
   // 小米 MiMo（API 实测 max_tokens 上限均为 131072）
+  'mimo-v2.6-flash': 131_072, // 11-06 Token Plan 实测 max_completion_tokens=131072 通过
   'mimo-v2.5-pro': 131_072,
   'mimo-v2.5': 131_072,
   'mimo-v2-pro': 131_072,
@@ -273,6 +274,7 @@ export const CONTEXT_WINDOWS: Record<string, number> = {
   'sonar-reasoning': 128_000,
   'sonar-deep-research': 128_000,
   // 小米 MiMo（mimo.xiaomi.com / OpenRouter 官方文档）
+  'mimo-v2.6-flash': 1_048_576, // 1M，官方：文本/图片/视频/音频全模态
   'mimo-v2.5-pro': 1_048_576, // 1M，hybrid attention 架构
   'mimo-v2.5': 1_048_576,
   'mimo-v2-pro': 1_048_576,

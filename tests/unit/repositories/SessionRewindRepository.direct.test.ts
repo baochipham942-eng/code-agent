@@ -349,6 +349,27 @@ describe('SessionRewindRepository (direct)', () => {
       .toEqual({ status: 'invalidated', resolved_at: 1_000, invalidation_reason: 'SOURCE_REWOUND' });
   });
 
+  it('skips generative-UI side effects when those tables are absent (legacy DB)', () => {
+    const { db, repo } = rig;
+    seedSession(db, 's1', { userId: OWNER });
+    seedMessages(db, 's1', [
+      ['u1', 'user', 'one', 10],
+      ['u2', 'user', 'two', 30],
+      ['a2', 'assistant', 'answer two', 40],
+    ]);
+    db.exec('DROP TABLE execution_manifests');
+    db.exec('DROP TABLE generative_ui_instances');
+
+    const result = repo.applyPromptRewind('s1', 'u2', { ownerUserId: OWNER, createdAt: 1_000 });
+
+    expect(result.hiddenMessageIds).toEqual(['a2']);
+    expect(messageRow(db, 'a2')).toMatchObject({ visibility: 'rewound', hidden_by_rewind_id: result.rewindId });
+
+    const restored = repo.restorePromptRewind('s1', result.rewindId, 2_000, OWNER);
+    expect(restored.restoredMessageCount).toBe(1);
+    expect(messageRow(db, 'a2')).toMatchObject({ visibility: 'active', hidden_by_rewind_id: null });
+  });
+
   // --- restorePromptRewind -----------------------------------------------------
 
   it('restores the hidden suffix, reactivates UI instances, and marks the rewind restored', () => {

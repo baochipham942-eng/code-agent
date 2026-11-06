@@ -273,6 +273,16 @@ describe('runSessionMessagesFtsSearch — FTS path', () => {
 
     expect(runSessionMessagesFtsSearch(db, '  needle  ').length).toBeGreaterThan(0);
   });
+
+  it('passes a query that already starts with a quote through verbatim', () => {
+    const { db } = rig;
+    seedNeedleCorpus(db);
+
+    // Leading quote → the caller owns the FTS quoting; no double wrap.
+    const hits = runSessionMessagesFtsSearch(db, '"needle"');
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits.every((hit) => hit.content.includes('needle'))).toBe(true);
+  });
 });
 
 describe('runSessionMessagesFtsSearch — short query LIKE fallback', () => {
@@ -320,6 +330,26 @@ describe('runSessionMessagesFtsSearch — short query LIKE fallback', () => {
     const hits = runSessionMessagesFtsSearch(db, 'a_', { shortQueryFallback: true });
 
     expect(hits.map((hit) => hit.messageId)).toEqual(['under-1']);
+  });
+
+  it('applies sessionIds, sessionId, and role filters inside the LIKE fallback', () => {
+    const { db } = rig;
+    seedSession(db, 's1');
+    seedSession(db, 's2');
+    seedMessage(db, 's1', 'q-u1', '甲问内容', 1_000);
+    seedMessage(db, 's1', 'q-a1', '乙答内容', 1_100, { role: 'assistant' });
+    seedMessage(db, 's2', 'q-a2', '乙答另外', 1_200, { role: 'assistant' });
+
+    const scoped = runSessionMessagesFtsSearch(db, '乙', { shortQueryFallback: true, sessionIds: ['s1', 's2'] });
+    expect(scoped.map((hit) => hit.messageId).sort()).toEqual(['q-a1', 'q-a2']);
+
+    const oneSession = runSessionMessagesFtsSearch(db, '乙', { shortQueryFallback: true, sessionId: 's1' });
+    expect(oneSession.map((hit) => hit.messageId)).toEqual(['q-a1']);
+
+    const byRole = runSessionMessagesFtsSearch(db, '乙', { shortQueryFallback: true, role: 'user' });
+    expect(byRole).toEqual([]);
+    const assistants = runSessionMessagesFtsSearch(db, '乙', { shortQueryFallback: true, role: 'assistant' });
+    expect(assistants).toHaveLength(2);
   });
 
   it('routes every query through LIKE while the FTS table is in a degraded state', () => {
@@ -372,6 +402,22 @@ describe('runSessionMessagesFtsSearch — corruption repair ladder', () => {
     db.exec('DROP TABLE session_messages_fts');
 
     expect(() => runSessionMessagesFtsSearch(db, 'needle')).toThrow(/no such table/);
+    db.close();
+  });
+
+  it('skips the repair ladder when the probe proves the FTS table is intact (source table corrupt)', () => {
+    // Corrupt the messages leaf pages, not the FTS index: MATCH fails with
+    // corruption, the probe proves session_messages_fts is healthy, repair is
+    // skipped, the retry fails again, and the LIKE fallback swallows to [].
+    const dbPath = tmpDbPath();
+    const seeded = seedCorruptibleSearchDb(dbPath);
+    seeded.close();
+
+    corruptFtsShadowPages(dbPath, ['messages']);
+    const db = openFileDb(dbPath);
+
+    expect(runSessionMessagesFtsSearch(db, 'needle', { limit: 50 })).toEqual([]);
+    expect(probeFtsTable(db, 'session_messages_fts')).toBe('ok');
     db.close();
   });
 });
@@ -436,6 +482,31 @@ describe('runSessionMessagesFtsCount', () => {
 
     expect(runSessionMessagesFtsCount(db, 'needle')).toEqual({ matches: 50, sessions: 1 });
     db.close();
+  });
+
+  it('retries after a successful repair when the corruption is in the source table', () => {
+    const dbPath = tmpDbPath();
+    const seeded = seedCorruptibleSearchDb(dbPath);
+    seeded.close();
+
+    // messages corrupt / FTS intact: repair is skipped (probe ok), retry fails,
+    // and the LIKE count fallback degrades to zero instead of throwing.
+    corruptFtsShadowPages(dbPath, ['messages']);
+    const db = openFileDb(dbPath);
+
+    expect(runSessionMessagesFtsCount(db, 'needle')).toEqual({ matches: 0, sessions: 0 });
+    expect(probeFtsTable(db, 'session_messages_fts')).toBe('ok');
+    db.close();
+  });
+
+  it('applies session filters inside the LIKE count fallback', () => {
+    const { db } = rig;
+    seedNeedleCorpus(db);
+
+    expect(runSessionMessagesFtsCount(db, '验收', { shortQueryFallback: true, sessionIds: ['s2'] }))
+      .toEqual({ matches: 1, sessions: 1 });
+    expect(runSessionMessagesFtsCount(db, '验收', { shortQueryFallback: true, role: 'assistant' }))
+      .toEqual({ matches: 0, sessions: 0 });
   });
 });
 

@@ -132,6 +132,8 @@ describe('matchDangerousBash', () => {
     'chmod -R 777 /etc',
     'chmod 777 /etc',
     'chmod -Rf 777 x',
+    'chmod -R 7777 /etc',
+    'chmod 7777 x',
     ':(){ :|:& };:',
   ])('flags dangerous command: %s', (command) => {
     expect(m(ctx({ toolName: 'bash', toolParams: { command } }))).toBe(true);
@@ -144,7 +146,7 @@ describe('matchDangerousBash', () => {
     expect(m(ctx({ toolName, toolParams: { command: 'rm -rf /' } }))).toBe(true);
   });
 
-  it.each(['ls -la', 'rm file.txt', 'git status', 'chmod 644 file', 'chmod 755 x', 'chmod 7777 x', 'chmod +x run.sh'])(
+  it.each(['ls -la', 'rm file.txt', 'git status', 'chmod 644 file', 'chmod 755 x', 'chmod +x run.sh'])(
     'allows safe command: %s',
     (command) => {
       expect(m(ctx({ toolName: 'bash', toolParams: { command } }))).toBe(false);

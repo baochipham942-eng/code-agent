@@ -138,6 +138,10 @@ export const chatInputZh = {
     configTitle: 'Routing / Browser 配置',
   },
   roleDraft: {
+    createdLabel: '已创建',
+    editCreated: '改一改',
+    canDoLabel: '能做',
+    willNotDoLabel: '不会',
     pendingEditBanner: '角色改动待确认：确认后才会更新角色定义（不动已有记忆与履历）',
     pendingCreateBanner: '新角色待确认：确认后才会创建（写入角色定义 + 角色记忆目录）',
     laterTitle: '稍后处理',
@@ -599,6 +603,10 @@ export const chatInputEn: typeof chatInputZh = {
     configTitle: 'Routing / Browser settings',
   },
   roleDraft: {
+    createdLabel: 'Created',
+    editCreated: 'Edit',
+    canDoLabel: 'Can do',
+    willNotDoLabel: 'Will not',
     pendingEditBanner: 'Role changes pending confirmation: confirming only updates the role definition (memory and history untouched)',
     pendingCreateBanner: 'New role pending confirmation: confirming creates it (writes the role definition + role memory folder)',
     laterTitle: 'Handle later',

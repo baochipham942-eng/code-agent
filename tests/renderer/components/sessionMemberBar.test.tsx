@@ -43,7 +43,6 @@ import { useTeamRecipeStore } from '../../../src/renderer/stores/teamRecipeStore
 import { useAgentRegistryStore } from '../../../src/renderer/stores/agentRegistryStore';
 import { useMemberViewStore } from '../../../src/renderer/stores/memberViewStore';
 import { useBackgroundTaskStore } from '../../../src/renderer/stores/backgroundTaskStore';
-import { useRightPanelTabsStore } from '../../../src/renderer/stores/rightPanelTabsStore';
 import { useSessionStore, type SessionWithMeta } from '../../../src/renderer/stores/sessionStore';
 
 const agents: SwarmRunAgentRecord[] = [
@@ -88,7 +87,6 @@ describe('SessionMemberBar（折叠 chip）', () => {
     useAgentRegistryStore.setState({ entries: [], isLoaded: true });
     useMemberViewStore.setState({ viewingMemberId: null });
     useBackgroundTaskStore.setState({ tasks: [] });
-    useRightPanelTabsStore.setState({ expertsDismissedBySession: {} });
     useSessionStore.setState({ sessions: [], currentSessionId: null });
   });
   afterEach(() => cleanup());

@@ -22,8 +22,10 @@ import type { AgentRow } from './agentRows';
  * - 只看 working 行：done/failed/cancelled/waiting/standby 都有自己的话，不叠这句。
  * - 等审批（hold === 'approval'）不算卡住：那是用户在等，不是代理在等。
  * - 无活锚点（非专家行 / 预选名单 / 数据缺失）→ false：宁可不说，不误报。
+ * - holdReleasedAt：审批放行的时刻。等审批期间锚点不动，放行后有效锚点取
+ *   max(锚点, 放行时刻)，让用户点「允许」后重开一个完整软阈值窗口，而不是立刻亮提示。
  */
-export function isAgentRowQuiet(row: AgentRow, now: number): boolean {
+export function isAgentRowQuiet(row: AgentRow, now: number, holdReleasedAt?: number): boolean {
   if (row.status !== 'working') return false;
   if (row.hold === 'approval') return false;
   let anchor: number | undefined;
@@ -36,5 +38,6 @@ export function isAgentRowQuiet(row: AgentRow, now: number): boolean {
     anchor = row.node?.lastToolStep?.at ?? row.node?.updatedAt ?? row.node?.createdAt;
   }
   if (anchor === undefined) return false; // fail-closed：没有可算的锚点就不误报
+  if (holdReleasedAt !== undefined) anchor = Math.max(anchor, holdReleasedAt);
   return now - anchor > WORKFLOW_STALL_THRESHOLDS.N_SOFT_MS;
 }

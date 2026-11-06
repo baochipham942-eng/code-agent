@@ -4,7 +4,7 @@
 // 成员条 pill 展开态搬进面板的断言（停止全部 / token / standby × / 行级停）都落在这里。
 // ============================================================================
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { zh } from '../../../src/renderer/i18n/zh';
 import type { AgentTreeNode, AgentTreeSnapshot } from '../../../src/shared/contract/agentTree';
@@ -544,5 +544,41 @@ describe('SessionAgentsPanel', () => {
     render(<SessionAgentsPanel />);
     expect((await screen.findByTestId('agents-panel-status-agent-9')).textContent).toBe('需要授权');
     expect(screen.queryByTestId('agents-panel-quiet-agent-9')).toBeNull();
+  });
+
+  // N-WF-STALL-SPAWN-AGENT-APPROVAL-VERIFY：审批等待期不报；放行后重开完整 120s 窗口（假时钟）。
+  describe('审批放行后的提示窗口', () => {
+    afterEach(() => { vi.useRealTimers(); });
+
+    it('等审批 5 分钟全程无提示；放行 tick 不闪，放行 120s 内不报，满 120s 才报', async () => {
+      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+      appState.pendingPermissionSessionId = 'session-1';
+      appState.pendingPermissionRequest = { agentId: 'researcher', resolved: false };
+      mockLedger(
+        [record({ status: 'running', endTime: null, durationMs: null, startTime: Date.now() - 300_000 })],
+        { status: 'running' },
+      );
+      useSwarmStore.setState({ agents: [liveAgentState({ contextSnapshot: liveSnapshot(Date.now() - 130_000) })] });
+
+      render(<SessionAgentsPanel />);
+      expect((await screen.findByTestId('agents-panel-status-researcher')).textContent).toBe('需要授权');
+      const tick = async (ms: number) => { await act(async () => { vi.advanceTimersByTime(ms); }); };
+
+      for (let i = 0; i < 60; i += 1) {
+        await tick(5_000); // 共 300s
+        expect(screen.queryByTestId('agents-panel-quiet-researcher')).toBeNull();
+      }
+
+      // 用户点允许：请求清空，hold 掉下来；锚点仍是 7 分钟前
+      appState.pendingPermissionRequest = null;
+      await tick(5_000);
+      expect(screen.getByTestId('agents-panel-status-researcher').textContent).toBe('工作中');
+      expect(screen.queryByTestId('agents-panel-quiet-researcher')).toBeNull();
+
+      await tick(110_000); // 放行后约 115s
+      expect(screen.queryByTestId('agents-panel-quiet-researcher')).toBeNull();
+      await tick(15_000); // 放行后约 130s
+      expect(screen.getByTestId('agents-panel-quiet-researcher').textContent).toContain('暂无进展');
+    });
   });
 });

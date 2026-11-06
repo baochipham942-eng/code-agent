@@ -87,6 +87,26 @@ describe('isAgentRowQuiet（N-FIX-WF-STALL-SPAWN-AGENT）', () => {
     expect(isAgentRowQuiet(row({ hold: 'approval' }), T0 + 121_000)).toBe(false);
   });
 
+  // N-WF-STALL-SPAWN-AGENT-APPROVAL-VERIFY：审批期间锚点不动，放行后必须重开一个完整窗口。
+  it('审批 hold 整段等待（5 分钟）都不报；放行瞬间不闪，放行后满 120s 才报', () => {
+    const held = row({ hold: 'approval' });
+    for (let t = 0; t <= 300_000; t += 5_000) {
+      expect(isAgentRowQuiet(held, T0 + t)).toBe(false);
+    }
+    const releasedAt = T0 + 300_000;
+    const released = row();
+    // 放行 tick：锚点还是 5 分钟前的 T0，但有效锚点应取 max(锚点, 放行时刻)
+    expect(isAgentRowQuiet(released, releasedAt, releasedAt)).toBe(false);
+    expect(isAgentRowQuiet(released, releasedAt + WORKFLOW_STALL_THRESHOLDS.N_SOFT_MS, releasedAt)).toBe(false);
+    expect(isAgentRowQuiet(released, releasedAt + WORKFLOW_STALL_THRESHOLDS.N_SOFT_MS + 1, releasedAt)).toBe(true);
+  });
+
+  it('放行后真实进展比放行时刻还新：以进展锚点为准', () => {
+    const fresh = row({ member: memberRow({ live: liveAgentState({ contextSnapshot: liveSnapshot(T0 + 400_000) }) }) });
+    expect(isAgentRowQuiet(fresh, T0 + 400_000 + 121_000, T0 + 300_000)).toBe(true);
+    expect(isAgentRowQuiet(fresh, T0 + 400_000 + 119_000, T0 + 300_000)).toBe(false);
+  });
+
   it('非 working 状态不报：waiting / done / failed / cancelled / standby', () => {
     expect(isAgentRowQuiet(row({ status: 'waiting' }), T0 + 121_000)).toBe(false);
     expect(isAgentRowQuiet(row({ status: 'done' }), T0 + 121_000)).toBe(false);

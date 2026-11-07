@@ -375,12 +375,7 @@ describe('dangerous-bash-block', () => {
     expect(matcher({ toolName: 'Bash' })).toBe(false);
   });
 
-  // KNOWN BUG (outside this ticket's modules): src/host/planning/matchers.ts uses
-  // /chmod\s+-R?\s+777/i — the `-R?` requires a literal dash, so a plain
-  // `chmod 777 /etc` is NOT flagged as dangerous even though the comment above
-  // the pattern says it should be. Do not fix here (tests-only ticket); flip
-  // this `it.fails` to a normal `it` once the matcher regex is repaired.
-  it.fails('flags a plain "chmod 777" as dangerous (blocked by matchers.ts regex bug)', () => {
+  it('flags a plain "chmod 777" as dangerous', () => {
     const { hooks } = makeHooks();
     const matcher = hooks['dangerous-bash-block'].matcher;
     expect(matcher({ toolName: 'Bash', toolParams: { command: 'chmod 777 /etc' } })).toBe(true);

@@ -3,6 +3,7 @@ import { Check, Clock3, Pencil, X } from 'lucide-react';
 import { Button } from '../../../primitives/Button';
 import { Input } from '../../../primitives/Input';
 import { Select } from '../../../primitives/Select';
+import { TimeInput24 } from '../../../primitives/TimeInput24';
 import { useI18n } from '../../../../hooks/useI18n';
 import { CRON_URGENCY_CRITERIA } from '@shared/constants';
 import { validateEventScheduleConstraints } from '@shared/cronEventValidation';
@@ -383,14 +384,13 @@ export const ScheduleConfirmCard: React.FC<ScheduleConfirmCardProps> = ({
               onChange={(event) => setWhenEdit({ ...whenEdit, freq: event.target.value as EditableFrequency })}
             />
             {(whenEdit.freq === 'daily' || whenEdit.freq === 'weekdays' || whenEdit.freq === 'weekly') && (
-              <Input
-                type="time"
-                inputSize="sm"
-                fullWidth={false}
-                className="!w-auto"
-                aria-label={labels.timeLabel}
+              <TimeInput24
+                testId="schedule-confirm-time"
                 value={whenEdit.time}
-                onChange={(event) => setWhenEdit({ ...whenEdit, time: event.target.value })}
+                onChange={(time) => setWhenEdit({ ...whenEdit, time })}
+                hourLabel={labels.hourLabel}
+                minuteLabel={labels.minuteLabel}
+                size="sm"
               />
             )}
             {whenEdit.freq === 'weekly' && (

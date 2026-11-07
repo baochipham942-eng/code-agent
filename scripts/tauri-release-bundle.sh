@@ -72,7 +72,7 @@ if [[ "${REQUIRE_NOTARIZATION:-0}" == "1" || "${REQUIRE_NOTARIZATION:-0}" == "tr
   fi
 fi
 
-REPOSITORY="${GITHUB_REPOSITORY:-baochipham942-eng/code-agent}"
+REPOSITORY="${GITHUB_REPOSITORY:-neo-cowork/code-agent}"
 UPDATER_ENDPOINT="${TAURI_UPDATER_ENDPOINT:-https://github.com/${REPOSITORY}/releases/latest/download/latest.json}"
 DMG_VOLUME_NAME="${DMG_VOLUME_NAME:-Install Agent Neo}"
 DMG_FINDER_STYLE="${DMG_FINDER_STYLE:-1}"

@@ -10,6 +10,8 @@
 // ============================================================================
 
 import type { CronJobExecution } from '@shared/contract/cron';
+import type { TraceTurn } from '@shared/contract/trace';
+import { isParkedApprovalClosureSentence } from '@shared/parkedApprovalClosure';
 
 export interface CronRunAwaitingApproval {
   /** requestId；批准/拒绝走 IPC_CHANNELS.AGENT_PERMISSION_RESPONSE。 */
@@ -27,6 +29,13 @@ export type CronRunStatusLine =
   | { kind: 'failed-generic' }
   | { kind: 'cancelled' }
   | { kind: 'finished'; durationMs: number };
+
+export function hasParkedApprovalClosure(turn: Pick<TraceTurn, 'nodes'>): boolean {
+  return turn.nodes.some((node) => (
+    node.type === 'tool_call'
+    && isParkedApprovalClosureSentence(node.toolCall?.result)
+  ));
+}
 
 /**
  * 判断失败运行是否由命令/权限被拒引起（与执行记录 error 字段及权限拒绝信号同源，

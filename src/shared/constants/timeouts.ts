@@ -704,3 +704,9 @@ export const CRON_REVIEW_INBOX_TIMEOUTS = {
   /** 页面可见时的轮询间隔：定时任务在页面停着时跑完，数字无需切页就更新 */
   POLL_INTERVAL: 10_000,
 } as const;
+
+/** 渲染端系统通知投递超时 */
+export const OS_NOTIFICATION_TIMEOUTS = {
+  /** 读取系统通知权限（聚合 native 探测）的上限，超时按 unknown 继续发送 */
+  PERMISSION_READ_MS: 3_000,
+} as const;

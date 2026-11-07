@@ -21,6 +21,7 @@ import {
   UNATTENDED_APPROVAL_TIMEOUT,
 } from '../../../src/host/agent/unattendedApprovalTerminal';
 import { getPermissionModeManager, resetPermissionModeManager } from '../../../src/host/permissions/modes';
+import { PARKED_APPROVAL_CLOSURE_SENTENCES } from '../../../src/shared/parkedApprovalClosure';
 import { INTERACTION_TIMEOUTS } from '../../../src/shared/constants/timeouts';
 import { requestPermissionWithTelemetry } from '../../../src/host/tools/toolExecutionTelemetry';
 import { createHumanWaitBoundTimeout, isHumanWaitActive } from '../../../src/host/services/infra/timeoutController';
@@ -202,11 +203,11 @@ describe('无人值守审批超时进终态', () => {
     await expect(result).resolves.toEqual({
       approved: false,
       denialSource: 'timeout',
-      message: 'parked approval expired',
+      message: PARKED_APPROVAL_CLOSURE_SENTENCES.expiredAfterRestart24h,
     });
     expect(repo.resolve).toHaveBeenCalledWith(expect.objectContaining({
       status: 'rejected',
-      feedback: 'parked approval expired',
+      feedback: PARKED_APPROVAL_CLOSURE_SENTENCES.expiredAfterRestart24h,
     }));
   });
 

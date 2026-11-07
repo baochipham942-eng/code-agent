@@ -455,6 +455,20 @@ function mapToolFailureCodeCopy(
 }
 
 /**
+ * metadata.code 的裸工程码（ENOENT / INVALID_ARGS / FS_ERROR 这类，host 工具直发、未登记进
+ * toolErrors.codes）→ 一句人话 + 下一步（FB-746）。登记表外的全大写码走 generic 兜底句；
+ * 翻不动的（数字退出码 / HTTP nnn / 小写杂串）返回 null，调用方保持「错误码 X」原样。
+ * 原始码仍在展开详情的 error 原文里可见，不丢排错信息。
+ */
+function mapRawToolCodeCopy(code: string, t: Translations): string | null {
+  const table = t.toolStepHumanize.rawFailureCodes as Record<string, string | undefined>;
+  const mapped = table[code];
+  if (mapped) return mapped;
+  if (/^[A-Z][A-Z0-9_]*$/.test(code)) return t.toolStepHumanize.rawFailureCodeFallback;
+  return null;
+}
+
+/**
  * Folded-row failure reason. Structured code/reason wins; absent structured evidence is stated
  * explicitly instead of filling the row with a generic claim that the tool failed.
  */
@@ -521,7 +535,10 @@ export function humanizeToolFailureReason(toolCall: Pick<ToolCall, 'name' | 'res
   if (classifiedCode) return classifiedCode.detail ?? classifiedCode.summary;
 
   const code = sanitizeCodeParamValue(metadata?.code);
-  if (code) return t.toolStepHumanize.failureCode.replace('{code}', code);
+  if (code) {
+    // 先查裸码人话表（FB-746），翻不动才退回「错误码 X」——数字退出码与 HTTP nnn 不进表，原样保留。
+    return mapRawToolCodeCopy(code, t) ?? t.toolStepHumanize.failureCode.replace('{code}', code);
+  }
 
   const exitCodeMetadata = sanitizeCodeParamValue(metadata?.exitCode);
   if (exitCodeMetadata) return t.toolStepHumanize.failureCode.replace('{code}', exitCodeMetadata);
